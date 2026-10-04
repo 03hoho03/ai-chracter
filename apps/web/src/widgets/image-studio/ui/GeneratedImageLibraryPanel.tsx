@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Images } from "lucide-react";
 
 import { useGeneratedImagesQuery } from "@/entities/generated-image";
+import { useGenerateImagesSubmit } from "@/features/generate-images";
 
 import { GeneratedImageDetailModal } from "./GeneratedImageDetailModal";
 
@@ -14,7 +15,21 @@ type GeneratedImageLibraryPanelProps = {
   // 폭이 넓어 이 문제가 없으므로 기본값 true를 유지하고 레일(wide) 호출부만 false를 넘긴다
   // (ImageStudioLibraryRail.tsx). aria-label의 날짜는 이 prop과 무관하게 항상 남는다.
   isCreatedAtVisible?: boolean;
+  /** 상세 모달에서 삭제가 성공한 이미지. 셸이 결과 영역에서도 그 이미지를 뺀다. */
+  onImageDeleted: (assetId: string) => void;
+  /** 넘기면 "참조로 쓰기" 뒤 참조 필드로 포커스를 옮기는 일을 호출부가 맡는다. 보관함 시트는 이걸로
+   * 시트를 먼저 닫는다 — 시트가 열린 채로는 포커스가 시트 안에 갇혀 참조 필드에 못 간다. 넘기지
+   * 않으면(좌열) 패널이 바로 참조 필드로 옮긴다. */
+  onUsedAsReference?: () => void;
 };
+
+// 상세 모달이 왜 닫혔는지. 닫힌 뒤 포커스를 둘 곳이 이유마다 다르고, 모달은 닫힐 때 그 이유를
+// 모르므로 닫기 직전에 여기 적어 두고 닫힘 처리에서 읽은 뒤 지운다.
+type DetailCloseReason =
+  | { kind: "dismiss" }
+  | { kind: "reference" }
+  // 지운 타일은 사라지므로 지우기 직전 목록에서 다음·이전 타일을 미리 골라 둔다.
+  | { kind: "deleted"; neighborAssetIds: string[] };
 
 // 좌열(p-4 → 208px 콘텐츠)에서는 grid-cols-2 고정이라야
 // 98×98 정사각 타일이 나온다(크랙 108). sm:/md: 이스케일은 뷰포트 폭 기준이라 lg 이상(=isWide)에서
@@ -31,7 +46,8 @@ const CREATED_AT_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
 
 /** 보관함(좌열/바텀시트). 생성 이미지를 최신순 그리드로
  * 보여준다(정렬은 서버의 created_at desc 그대로). 사용 중인 이미지에는 사용처 배지를 달고,
- * 셀을 누르면 사용처 목록·삭제가 있는 상세 모달을 연다.
+ * 셀을 누르면 사용처 목록·삭제·참조로 쓰기가 있는 상세 모달을 연다. 참조로 쓰기 때문에 생성 폼
+ * 컨텍스트를 읽으므로 `GenerateImagesFormProvider` 안에서만 그린다.
  *
  * '내 이미지'는 더 이상 탭이 아니라서 전환할 "생성 탭"이
  * 없다(중앙 열이 이미 항상 그 화면이다). `onNavigateToGenerate`는 좁은 화면(바텀시트)에서만 의미가
@@ -47,13 +63,57 @@ export function GeneratedImageLibraryPanel({
   onNavigateToGenerate,
   gridColumnsClassName = DEFAULT_GRID_COLUMNS_CLASSNAME,
   isCreatedAtVisible = true,
+  onImageDeleted,
+  onUsedAsReference,
 }: GeneratedImageLibraryPanelProps) {
+  const { isReferenceEnabled, unavailableReason, setReference, focusReferenceField } = useGenerateImagesSubmit();
+  // 모델 목록을 못 불러온 화면에서도 보관함은 열리지만, 그때는 참조 필드가 없어 넣을 자리가 없다.
+  const canUseAsReference = isReferenceEnabled && unavailableReason === undefined;
+  const closeReasonRef = useRef<DetailCloseReason>({ kind: "dismiss" });
+  const navigateButtonRef = useRef<HTMLButtonElement>(null);
   const galleryQuery = useGeneratedImagesQuery(true);
   const images = galleryQuery.data;
   // 항목 스냅샷이 아니라 id로 선택하고 목록에서 매번 찾는다 — 삭제 409로 목록을 다시 받으면
   // 열려 있는 상세 모달이 갱신된 usages를 보여줘야 한다(항목이 사라지면 모달도 내려간다).
   const [selectedAssetId, setSelectedAssetId] = useState<string>();
   const selectedImage = images?.find((image) => image.assetId === selectedAssetId);
+
+  function handleImageDeleted(assetId: string) {
+    const list = images ?? [];
+    const index = list.findIndex((image) => image.assetId === assetId);
+    const neighborAssetIds =
+      index < 0
+        ? []
+        : [list[index + 1]?.assetId, list[index - 1]?.assetId].filter((id): id is string => id !== undefined);
+    closeReasonRef.current = { kind: "deleted", neighborAssetIds };
+    onImageDeleted(assetId);
+  }
+
+  // 모달은 트리거 없이 열려 스스로는 돌아갈 곳이 없다(닫히면 `<body>`). 일반 닫기는 연 타일로,
+  // 삭제는 남은 이웃 타일로 보내고, 타일이 하나도 안 남으면 늘 있는 자리로 물러난다 — 시트의 빈 상태
+  // 버튼, 그다음 프롬프트 입력칸, 그것도 없으면(모델 목록을 못 불러와 중앙이 대체 화면이면) 생성 탭.
+  function restoreFocusAfterDetail(openedAssetId: string) {
+    const reason = closeReasonRef.current;
+    closeReasonRef.current = { kind: "dismiss" };
+
+    if (reason.kind === "reference") {
+      if (onUsedAsReference) onUsedAsReference();
+      else focusReferenceField();
+      return;
+    }
+
+    const tileAssetIds = reason.kind === "deleted" ? reason.neighborAssetIds : [openedAssetId];
+    const tile = tileAssetIds
+      .map((id) => document.querySelector<HTMLElement>(`[data-generated-image-tile="${id}"]`))
+      .find((element) => element !== null);
+    const target =
+      tile ??
+      navigateButtonRef.current ??
+      // 프롬프트 입력칸은 다른 슬라이스의 요소라 ref가 닿지 않아 그 필드가 단 id로 찾는다.
+      document.getElementById("generate-images-prompt") ??
+      document.querySelector<HTMLElement>('[data-image-studio-trigger="generate-tab"]');
+    target?.focus();
+  }
 
   if (galleryQuery.isPending) {
     return <LibraryGridSkeleton gridColumnsClassName={gridColumnsClassName} />;
@@ -84,7 +144,7 @@ export function GeneratedImageLibraryPanel({
           프롬프트 한 줄로 첫 이미지를 만들어보세요.
         </p>
         {onNavigateToGenerate && (
-          <Button variant="outline" size="sm" onClick={onNavigateToGenerate}>
+          <Button ref={navigateButtonRef} variant="outline" size="sm" onClick={onNavigateToGenerate}>
             이미지 생성하러 가기
           </Button>
         )}
@@ -102,6 +162,7 @@ export function GeneratedImageLibraryPanel({
             <figure key={image.assetId} className="flex flex-col gap-1.5">
               <button
                 type="button"
+                data-generated-image-tile={image.assetId}
                 // 날짜를 시각적으로 숨겨도 접근 이름에는 남긴다 — isCreatedAtVisible은 <figcaption>의
                 // 렌더 여부만 바꾼다.
                 aria-label={`${createdAtLabel} 생성 이미지 상세 보기`}
@@ -135,6 +196,16 @@ export function GeneratedImageLibraryPanel({
         <GeneratedImageDetailModal
           image={selectedImage}
           onClose={() => setSelectedAssetId(undefined)}
+          onRestoreFocus={() => restoreFocusAfterDetail(selectedImage.assetId)}
+          onUseAsReference={
+            canUseAsReference
+              ? () => {
+                  closeReasonRef.current = { kind: "reference" };
+                  setReference({ assetId: selectedImage.assetId, imageUrl: selectedImage.imageUrl });
+                }
+              : undefined
+          }
+          onDeleted={handleImageDeleted}
         />
       )}
     </>

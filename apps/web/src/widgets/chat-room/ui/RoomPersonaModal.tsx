@@ -2,6 +2,7 @@ import { useId, useState, type ReactNode } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -92,8 +93,9 @@ export const RoomPersonaModal = createCallable<RoomPersonaModalProps, void>(({ c
 
   return (
     <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end()}>
-      {/* 내용이 길어질 수 있어(프로필 10개 + 폼) 최대 높이와 내부 스크롤을 호출부에서 준다(packages/ui/CLAUDE.md). */}
-      <DialogContent className="max-h-dialog overflow-y-auto sm:max-w-md">
+      {/* 내용이 길어질 수 있어(프로필 10개 + 폼) 본문만 `DialogBody` 로 스크롤하고 제목·닫기는 위에 남긴다. 본문
+          상자는 화면(선택·만들기)과 무관하게 하나라, 화면이 바뀌어도 스크롤 상자가 새로 생기지 않고 같은 상자가 이어 쓴다. */}
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{isCreateView ? "새 대화 프로필" : "대화 프로필"}</DialogTitle>
           <DialogDescription className="break-keep">
@@ -103,7 +105,7 @@ export const RoomPersonaModal = createCallable<RoomPersonaModalProps, void>(({ c
           </DialogDescription>
         </DialogHeader>
 
-        {body}
+        <DialogBody>{body}</DialogBody>
       </DialogContent>
     </Dialog>
   );

@@ -1,6 +1,7 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -62,10 +63,10 @@ export const GeneratedImagePickerModal = createCallable<GeneratedImagePickerOpti
 
     return (
       <Dialog open={isOpen} onOpenChange={(next) => !next && call.end(undefined)}>
-        {/* 이미지가 많으면 그리드가 화면보다 길어진다 — `DialogContent`엔 최대 높이도 내부 스크롤도
-            없어서, 빼먹으면 Radix가 body 스크롤을 잠근 채 아래 행과 닫기에 닿을 방법이 없다. */}
+        {/* 이미지가 많으면 그리드가 화면보다 길어진다 — 링크와 그리드를 `DialogBody` 에 넣어 그것만 스크롤하고
+            제목·닫기는 위에 남긴다. Radix가 body 스크롤을 잠그므로 본문 스크롤 없이는 아래 행에 닿을 길이 없다. */}
         <DialogContent
-          className="max-h-dialog overflow-y-auto sm:max-w-md"
+          className="sm:max-w-md"
           onCloseAutoFocus={
             onRestoreFocus &&
             ((event) => {
@@ -80,22 +81,24 @@ export const GeneratedImagePickerModal = createCallable<GeneratedImagePickerOpti
             <DialogDescription className="break-keep">{description}</DialogDescription>
           </DialogHeader>
 
-          {shouldShowCreateLink && (
-            <Button variant="ghost" size="sm" className="w-fit hover:bg-secondary" asChild>
-              <a href="/studio/images" target="_blank" rel="noopener noreferrer">
-                새로 생성하기
-                <ExternalLink aria-hidden />
-              </a>
-            </Button>
-          )}
+          <DialogBody className="flex flex-col gap-4">
+            {shouldShowCreateLink && (
+              <Button variant="ghost" size="sm" className="w-fit hover:bg-secondary" asChild>
+                <a href="/studio/images" target="_blank" rel="noopener noreferrer">
+                  새로 생성하기
+                  <ExternalLink aria-hidden />
+                </a>
+              </Button>
+            )}
 
-          <GeneratedImageGridBody
-            query={galleryQuery}
-            emptyHint={emptyHint}
-            currentAssetId={currentAssetId}
-            usedAssetLabels={usedAssetLabels}
-            onPick={call.end}
-          />
+            <GeneratedImageGridBody
+              query={galleryQuery}
+              emptyHint={emptyHint}
+              currentAssetId={currentAssetId}
+              usedAssetLabels={usedAssetLabels}
+              onPick={call.end}
+            />
+          </DialogBody>
         </DialogContent>
       </Dialog>
     );

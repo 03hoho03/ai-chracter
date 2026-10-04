@@ -42,6 +42,7 @@ function setup(overrides: Partial<StartingSetupValues>): StartingSetupValues {
     suggestedReplies: [],
     stats: [],
     endings: [],
+    situationNotes: [],
     ...overrides,
   };
 }

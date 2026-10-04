@@ -17,6 +17,7 @@ import { focusNeighborToggle, itemOpenKey, useBuilderUiState } from "@/features/
 import {
   createKeywordNote,
   dragMoveIndices,
+  FieldLabelText,
   MAX_ALWAYS_ON_KEYWORD_NOTES,
   MAX_KEYWORD_NOTES,
   stepMoveIndices,
@@ -122,7 +123,7 @@ export function KeywordNoteTab() {
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <Label>키워드북</Label>
+          <Label><FieldLabelText field="keywordNotes" /></Label>
           <p className="text-xs tabular-nums text-muted-foreground">
             노트 {fields.length} / {MAX_KEYWORD_NOTES} · 상시 {alwaysOnCount} / {MAX_ALWAYS_ON_KEYWORD_NOTES}
           </p>

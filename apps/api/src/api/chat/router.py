@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -10,6 +10,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.sse import EventSourceResponse
+from pydantic import ValidationError
 from redis.exceptions import RedisError
 from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -98,12 +99,14 @@ from api.content.media_tags import media_tag_refs, normalize_media_tags, strip_m
 from api.content.schemas import (
     CharacterDraftPayload,
     MediaTagImage,
+    RULE_LIST_ADAPTER,
     EndingRuleDraftItem,
     EndingRuleGroupDraftItem,
     EndingRuleListDraftItem,
     ShortcutDraftItem,
     StatDefDraftItem,
     StoryDraftPayload,
+    count_rules,
 )
 from api.core.config import settings
 from api.core.clover import refund_in_new_transaction
@@ -136,6 +139,7 @@ from api.db.models.story import (
     MediaBookPerson,
     MediaBookScene,
     Shortcut,
+    SituationNote,
     StartingSetup,
     StatDef,
     StoryVersionDetail,
@@ -396,6 +400,45 @@ def _ending_rules_pass(
             ", ".join(sorted(missing_stat_ids)),
         )
     return evaluate_rule_list(rule_items, stats)
+
+
+async def _load_room_stats(
+    db: AsyncSession, room_id: uuid.UUID, setup_id: uuid.UUID
+) -> tuple[list[StatDef], dict[str, ChatRoomStat], dict[str, float]]:
+    """시작설정의 스탯 정의, 방의 스탯 행(스탯 entity_id 문자열 → 행), 지금 값(같은 키 → 값)을 읽는다. 판정 단계는
+    행 사전을 `_write_room_stat` 에 넘겨 바뀐 값을 쓰고, 생성 프롬프트 조립은 지금 값으로 상황 노트 조건을 본다 —
+    두 자리가 같은 값을 보도록 한 곳에서 읽는다.
+
+    행이 없는 스탯(버전을 옮긴 방에서 새 버전에 생긴 스탯)은 시작값으로 본다 — 승격이 채우는 값과 같다."""
+    stat_defs = list((await db.scalars(select(StatDef).where(StatDef.starting_setup_id == setup_id))).all())
+    # 같은 요청 안에서 두 번째로 읽을 때(생성 프롬프트 조립 뒤의 판정 단계) 세션에 남아 있는 행 객체는 SELECT 만으로는
+    # 값이 갱신되지 않는다. 스트리밍 동안 같은 방의 다른 요청이 커밋한 값을 판정이 보도록 매번 DB 값으로 덮어쓴다 —
+    # 객체 자체는 같은 것이 돌아오므로 `_write_room_stat` 가 고치는 행은 그대로 세션이 추적하는 행이다.
+    stat_rows = {
+        str(row.stat_entity_id): row
+        for row in (
+            await db.scalars(
+                select(ChatRoomStat)
+                .where(ChatRoomStat.chat_room_id == room_id)
+                .execution_options(populate_existing=True)
+            )
+        ).all()
+    }
+    current_stats = {stat_id: float(row.current_value) for stat_id, row in stat_rows.items()}
+    for stat_def in stat_defs:
+        current_stats.setdefault(str(stat_def.entity_id), float(stat_def.initial_value))
+    return stat_defs, stat_rows, current_stats
+
+
+def _situation_note_rules(note: SituationNote, room_id: uuid.UUID) -> list[EndingRuleListDraftItem]:
+    """노트 행의 JSON 조건을 규칙 타입으로 되읽는다. 저장 경로는 전부 검증을 지나지만 손으로 고친 행이 깨져 있으면
+    그 노트만 싣지 않는다(빈 조건 = 싣지 않음) — 생성 프롬프트 조립은 SSE 본문 안이라 예외가 새면 무관한 요청까지
+    500 이 된다."""
+    try:
+        return RULE_LIST_ADAPTER.validate_python(note.condition_rules)
+    except ValidationError:
+        logger.warning("대화방 %s 상황 노트 %s 의 조건을 읽지 못해 싣지 않는다", room_id, note.entity_id, exc_info=True)
+        return []
 
 
 def _write_room_stat(
@@ -1205,7 +1248,11 @@ async def _build_prompt(
     현재 요약 본문이 대신한다(`prompt_window`). 세 라우트의 생성 프롬프트가 모두 이 함수를 지나므로
     윈도우도 한 곳에서만 계산된다. 판정 호출(엔딩·상황이미지)은 호출부의 전체 히스토리를 받고, 판정
     윈도우 설정이 켜졌을 때만 각자 윈도우를 씌운다. 생성 윈도우 설정이 꺼져 있으면 전체 히스토리를 싣고 요약은 싣지 않는다(같은
-    대화가 두 번 들어가지 않게). 방의 기억 노트는 대화와 겹치지 않으므로 설정과 무관하게 싣는다."""
+    대화가 두 번 들어가지 않게). 방의 기억 노트는 대화와 겹치지 않으므로 설정과 무관하게 싣는다.
+
+    상황 노트 조건은 지금 DB 의 스탯 값(사용자가 보낸 순간 화면의 게이지, 이번 턴 판정 반영 전)으로 본다. 재생성은
+    이번 턴 판정이 이미 반영된 값을 보므로 원 생성과 다른 노트가 실릴 수 있다 — 그때도 화면 게이지와는 맞다. 엔딩
+    뒤에는 스탯이 멈춰 있어 같은 노트가 계속 실린다."""
     memory_summary = ""
     if settings.memory_window_generation:
         current_summary = await load_current_summary(db, room.id)
@@ -1230,6 +1277,20 @@ async def _build_prompt(
             )
         ).all()
         matched_notes = match_keyword_notes(notes, history, user_content)
+        situation_notes = (
+            await db.scalars(
+                select(SituationNote)
+                .where(SituationNote.starting_setup_id == setup.id)
+                .order_by(SituationNote.order, SituationNote.entity_id)
+            )
+        ).all()
+        situation_note_texts: list[str] = []
+        # 스탯은 노트가 있을 때만 읽는다 — 노트 없는 시작설정의 턴에는 스탯 쿼리를 더하지 않는다.
+        if situation_notes:
+            _, _, current_stats = await _load_room_stats(db, room.id, setup.id)
+            situation_note_texts = _situation_note_texts(
+                [(_situation_note_rules(note, room.id), note.info_text) for note in situation_notes], current_stats
+            )
         prompt = build_story_generation_prompt(
             prompt_set=prompt_set,
             sections=prompt_sections,
@@ -1246,6 +1307,7 @@ async def _build_prompt(
             memory_note=memory_note,
             memory_summary=memory_summary,
             keyword_note_texts=[note.info_text for note in matched_notes],
+            situation_note_texts=situation_note_texts,
             shortcut_prompt=shortcut.prompt if shortcut is not None else None,
         )
         return (
@@ -1438,19 +1500,7 @@ async def _stream_new_turn(
             stat_rows: dict[str, ChatRoomStat] = {}
             current_stats: dict[str, float] = {}
             if not room.ending_reached:
-                stat_defs = list(
-                    (await db.scalars(select(StatDef).where(StatDef.starting_setup_id == setup.id))).all()
-                )
-                stat_rows = {
-                    str(row.stat_entity_id): row
-                    for row in (
-                        await db.scalars(select(ChatRoomStat).where(ChatRoomStat.chat_room_id == room.id))
-                    ).all()
-                }
-                current_stats = {stat_id: float(row.current_value) for stat_id, row in stat_rows.items()}
-                # 행이 없는 스탯(버전을 옮긴 방에서 새 버전에 생긴 스탯)은 시작값으로 본다 — 승격이 채우는 값과 같다.
-                for stat_def in stat_defs:
-                    current_stats.setdefault(str(stat_def.entity_id), float(stat_def.initial_value))
+                stat_defs, stat_rows, current_stats = await _load_room_stats(db, room.id, setup.id)
                 stat_prompt = build_stat_judgment_prompt(
                     prompt_set=prompt_set,
                     sections=prompt_sections,
@@ -2953,6 +3003,8 @@ def _preview_stat_def(item: StatDefDraftItem) -> StatDef:
         max_value=item.max_value,
         initial_value=item.initial_value,
         per_turn_delta=item.per_turn_delta,
+        change_direction=item.change_direction,
+        max_change_per_turn=item.max_change_per_turn,
     )
 
 
@@ -2968,6 +3020,25 @@ def _preview_ending_rule_list_item(item: EndingRuleListDraftItem) -> EndingRuleL
             id=item.id, rules=[_preview_ending_rule_item(rule) for rule in item.rules], next_op=item.next_op
         )
     return _preview_ending_rule_item(item)
+
+
+def _situation_note_texts(
+    notes: Sequence[tuple[Sequence[EndingRuleListDraftItem], str]], stat_values: dict[str, float]
+) -> list[str]:
+    """`(조건, 본문)` 목록에서 조건이 참인 노트의 본문을 받은 순서대로 고른다. 실채팅·미리보기가 함께 쓴다 — 실채팅
+    노트도 조건을 초안과 같은 타입으로 저장하므로 미리보기 엔딩 변환을 그대로 쓴다.
+
+    조건 규칙이 하나도 없는 노트(빈 그룹만 있는 노트 포함)는 싣지 않는다. 평가기는 빈 목록을 참으로 보는데(엔딩은
+    판정 모델만으로 정하라는 뜻), 노트에 그대로 쓰면 조건을 다 지운 노트·막 추가한 노트가 매 턴 실린다. 규칙 수는
+    발행 검사와 같은 `count_rules` 로 세어 "발행이 거절하는 노트"와 "싣지 않는 노트"가 같게 한다.
+
+    값이 없는 스탯을 가리키는 규칙은 거짓이다(평가기 규칙). 스탯을 지운 초안에서 생길 수 있다."""
+    return [
+        info_text
+        for rules, info_text in notes
+        if count_rules(rules) > 0
+        and evaluate_rule_list([_preview_ending_rule_list_item(item) for item in rules], stat_values)
+    ]
 
 
 def _preview_keyword_notes(payload: StoryDraftPayload, setup_id: uuid.UUID | None) -> list[KeywordNote]:
@@ -3000,10 +3071,12 @@ def _build_preview_prompt(
     prompt_set: PromptSet,
     prompt_sections: list[PromptSection],
     user_persona: str,
+    stats: dict[str, float],
 ) -> str:
     """`_build_prompt`(실제 방)과 동일한 조립 규칙을 DB 조회 대신 payload 필드에서 직접
     읽어 적용한다. 스토리 draft가 시작설정을 아직 하나도 갖지 않으면("미완성 상태에서도
-    테스트 가능" 원칙) 빈 프롤로그로 진행한다."""
+    테스트 가능" 원칙) 빈 프롤로그로 진행한다. 상황 노트 조건은 세션의 지금 스탯(`stats`, 이번 턴 판정
+    반영 전)으로 본다 — 실제 방과 같은 시점이다."""
     if isinstance(payload, CharacterDraftPayload):
         return build_generation_prompt(
             prompt_set=prompt_set,
@@ -3020,6 +3093,7 @@ def _build_preview_prompt(
     setup = payload.starting_setups[0] if payload.starting_setups else None
     notes = _preview_keyword_notes(payload, setup.id if setup is not None else None)
     matched_notes = match_keyword_notes(notes, history, user_content)
+    situation_notes = setup.situation_notes if setup is not None else []
     return build_story_generation_prompt(
         prompt_set=prompt_set,
         sections=prompt_sections,
@@ -3038,6 +3112,9 @@ def _build_preview_prompt(
         memory_note="",
         memory_summary="",
         keyword_note_texts=[note.info_text for note in matched_notes],
+        situation_note_texts=_situation_note_texts(
+            [(note.condition_rules, note.info_text) for note in situation_notes], stats
+        ),
         shortcut_prompt=shortcut.prompt if shortcut is not None else None,
     )
 
@@ -3156,7 +3233,7 @@ async def _stream_preview_turn(
     template = state.payload.prompt_template if isinstance(state.payload, StoryDraftPayload) else None
     try:
         prompt = _build_preview_prompt(
-            state.payload, history, user_content, shortcut, prompt_set, prompt_sections, user_persona
+            state.payload, history, user_content, shortcut, prompt_set, prompt_sections, user_persona, state.stats
         )
         system_instruction = system_instruction_for(
             prompt_sections, is_story_chat=isinstance(state.payload, StoryDraftPayload), template=template

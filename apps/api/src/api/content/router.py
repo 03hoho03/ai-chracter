@@ -26,7 +26,9 @@ from api.content.publish import (
     PublishFilterResult,
     build_character_publish_filter_prompt,
     build_story_publish_filter_prompt,
+    draft_dangling_situation_note_paths,
     draft_dangling_stat_rule_paths,
+    setup_dangling_situation_note_paths,
     setup_dangling_stat_rule_paths,
     validate_character_publish,
     validate_story_publish,
@@ -34,6 +36,8 @@ from api.content.publish import (
 from api.content.publish_filter_memo import PASSED_KEY_PREFIX, has_passed, remember_pass, screening_key
 from api.content.schemas import (
     KEYWORD_NOTE_OPTION_FIELDS,
+    RULE_LIST_ADAPTER,
+    STAT_DEF_OPTION_FIELDS,
     CharacterDraftPayload,
     CharacterDraftResponse,
     CharacterSituationalImageItem,
@@ -68,6 +72,7 @@ from api.content.schemas import (
     MediaTagImage,
     ReportRequest,
     ShortcutDraftItem,
+    SituationNoteDraftItem,
     StartingSetupDraftItem,
     StartingSetupSummary,
     StatDefDraftItem,
@@ -107,6 +112,7 @@ from api.db.models.story import (
     MediaBookPerson,
     MediaBookScene,
     Shortcut,
+    SituationNote,
     StartingSetup,
     StatDef,
     StoryPromptTemplate,
@@ -815,6 +821,14 @@ async def _story_draft_response(
                 select(Ending).where(Ending.starting_setup_id == setup.id).order_by(Ending.order)
             )
         ).all()
+        # 키워드북처럼 순서가 같은 행은 entity_id 로 줄 세운다(조건이 참인 노트가 이 순서로 실린다).
+        situation_notes = (
+            await db.scalars(
+                select(SituationNote)
+                .where(SituationNote.starting_setup_id == setup.id)
+                .order_by(SituationNote.order, SituationNote.entity_id)
+            )
+        ).all()
         starting_setups.append(
             StartingSetupDraftItem(
                 id=setup.entity_id,
@@ -835,6 +849,8 @@ async def _story_draft_response(
                         unit=stat_def.unit,
                         description=stat_def.description,
                         per_turn_delta=stat_def.per_turn_delta,
+                        change_direction=stat_def.change_direction,
+                        max_change_per_turn=stat_def.max_change_per_turn,
                     )
                     for stat_def in stat_defs
                 ],
@@ -849,6 +865,15 @@ async def _story_draft_response(
                         stat_rules=await _ending_rule_draft_items(db, ending.id),
                     )
                     for ending in endings
+                ],
+                situation_notes=[
+                    SituationNoteDraftItem(
+                        id=note.entity_id,
+                        name=note.name,
+                        info_text=note.info_text,
+                        condition_rules=RULE_LIST_ADAPTER.validate_python(note.condition_rules),
+                    )
+                    for note in situation_notes
                 ],
             )
         )
@@ -1037,6 +1062,13 @@ async def _delete_starting_setup_subtree(db: AsyncSession, setup: StartingSetup)
     endings = (await db.scalars(select(Ending).where(Ending.starting_setup_id == setup.id))).all()
     for ending in endings:
         await _delete_ending_subtree(db, ending)
+    # 상황 노트는 시작설정을 물리 FK 로 가리키고 시작설정과 함께 사라진다. 저장 중 시작설정 제거·초안 삭제·편집 취소가
+    # 모두 이 함수를 지나므로 여기 한 곳에서 지운다.
+    situation_notes = (
+        await db.scalars(select(SituationNote).where(SituationNote.starting_setup_id == setup.id))
+    ).all()
+    for situation_note in situation_notes:
+        await db.delete(situation_note)
     await db.flush()
     await db.delete(setup)
 
@@ -1299,7 +1331,10 @@ async def _update_story_draft(
     고른 적용 범위가 말없이 넓어진다.
 
     엔딩 규칙이 같은 시작설정에 없는 스탯을 가리키면 422 `{"code": "ENDING_RULE_STAT_NOT_FOUND", "paths": [...]}` 이다
-    (경로 꼴은 `setup_dangling_stat_rule_paths`). 그 엔딩은 영영 열리지 않는다. 스키마 validator 가 아니라 여기서
+    (경로 꼴은 `setup_dangling_stat_rule_paths`). 그 엔딩은 영영 열리지 않는다. 상황 노트의 조건이 그러면 422
+    `{"code": "SITUATION_NOTE_STAT_NOT_FOUND", "paths": [...]}`(경로 꼴은 `setup_dangling_situation_note_paths`)이고,
+    둘 다 어긋났으면 엔딩 쪽을 먼저 알린다. 상황 노트는 시작설정이 `situation_notes` 를 보냈을 때만 맞춘다
+    (`StartingSetupDraftItem` docstring). 스키마 validator 가 아니라 여기서
     막는 것은 같은 페이로드 모델을 미리보기 시작·Redis 의 미리보기 세션 복원도 쓰기 때문이다 — validator 로 두면 이미
     저장된 미리보기 세션의 다음 턴이 역직렬화에서 깨진다."""
     known_setup_ids = {setup_item.id for setup_item in payload.starting_setups}
@@ -1318,6 +1353,12 @@ async def _update_story_draft(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={"code": "ENDING_RULE_STAT_NOT_FOUND", "paths": dangling_stat_rule_paths},
+        )
+    dangling_situation_note_paths = draft_dangling_situation_note_paths(payload.starting_setups)
+    if dangling_situation_note_paths:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "SITUATION_NOTE_STAT_NOT_FOUND", "paths": dangling_situation_note_paths},
         )
 
     detail = await db.get(StoryVersionDetail, version.id)
@@ -1403,6 +1444,14 @@ async def _update_story_draft(
             if ending_entity_id not in incoming_ending_ids:
                 await _delete_ending_subtree(db, ending_to_prune)
 
+        if "situation_notes" in setup_item.model_fields_set:
+            incoming_situation_note_ids = {note_item.id for note_item in setup_item.situation_notes}
+            for situation_note_to_prune in (
+                await db.scalars(select(SituationNote).where(SituationNote.starting_setup_id == kept_setup.id))
+            ).all():
+                if situation_note_to_prune.entity_id not in incoming_situation_note_ids:
+                    await db.delete(situation_note_to_prune)
+
     setup_physical_id: dict[uuid.UUID, uuid.UUID] = {}
     for order, setup_item in enumerate(payload.starting_setups):
         setup = existing_setups.get(setup_item.id)
@@ -1427,6 +1476,11 @@ async def _update_story_draft(
             if stat_def is None:
                 stat_def = StatDef(entity_id=stat_item.id, starting_setup_id=setup.id)
                 db.add(stat_def)
+                # 새 스탯은 안 보낸 옵션도 페이로드의 기본값으로 채운다.
+                provided_stat_options = STAT_DEF_OPTION_FIELDS
+            else:
+                # 기존 스탯에서 안 보낸 옵션은 그대로 둔다(`StatDefDraftItem` docstring).
+                provided_stat_options = STAT_DEF_OPTION_FIELDS & stat_item.model_fields_set
             stat_def.name = stat_item.name
             stat_def.icon = stat_item.icon
             stat_def.color = stat_item.color
@@ -1437,6 +1491,8 @@ async def _update_story_draft(
             stat_def.description = stat_item.description
             stat_def.per_turn_delta = stat_item.per_turn_delta
             stat_def.order = stat_order
+            for option in provided_stat_options:
+                setattr(stat_def, option, getattr(stat_item, option))
 
         existing_endings = {
             e.entity_id: e
@@ -1455,6 +1511,26 @@ async def _update_story_draft(
             ending.order = ending_order
             await db.flush()
             await _reconcile_ending_rules(db, ending.id, ending_item.stat_rules)
+
+        if "situation_notes" in setup_item.model_fields_set:
+            existing_situation_notes = {
+                note.entity_id: note
+                for note in (
+                    await db.scalars(select(SituationNote).where(SituationNote.starting_setup_id == setup.id))
+                ).all()
+            }
+            for situation_note_order, situation_note_item in enumerate(setup_item.situation_notes):
+                situation_note = existing_situation_notes.get(situation_note_item.id)
+                if situation_note is None:
+                    situation_note = SituationNote(entity_id=situation_note_item.id, starting_setup_id=setup.id)
+                    db.add(situation_note)
+                situation_note.name = situation_note_item.name
+                situation_note.info_text = situation_note_item.info_text
+                situation_note.order = situation_note_order
+                # 규칙에는 UUID·enum 이 있어 JSON 꼴로 바꿔야 JSONB 에 실린다.
+                situation_note.condition_rules = [
+                    rule_item.model_dump(mode="json") for rule_item in situation_note_item.condition_rules
+                ]
 
     for note_order, note_item in enumerate(payload.keyword_notes):
         note = existing_notes.get(note_item.id)
@@ -2062,7 +2138,9 @@ async def _clone_story_children(
 
     The one column that can't be copied as-is is `keyword_notes.starting_setup_id`: it's a
     physical FK, not an entity_id reference, so it goes through an `old -> entity_id -> new`
-    remap. `ending_rules.stat_def_entity_id` is an entity_id reference and needs none."""
+    remap. `ending_rules.stat_def_entity_id` is an entity_id reference and needs none. 상황 노트도 시작설정을 물리
+    FK 로 가리키지만 시작설정 루프 안에서 새 시작설정 id 로 바로 복제한다. 그 조건(JSONB)의 스탯 참조는 entity_id 라
+    값째 옮긴다."""
     setups = (
         await db.scalars(
             select(StartingSetup)
@@ -2105,6 +2183,8 @@ async def _clone_story_children(
                     unit=stat_def.unit,
                     description=stat_def.description,
                     per_turn_delta=stat_def.per_turn_delta,
+                    change_direction=stat_def.change_direction,
+                    max_change_per_turn=stat_def.max_change_per_turn,
                     order=stat_def.order,
                 )
             )
@@ -2124,6 +2204,21 @@ async def _clone_story_children(
             db.add(new_ending)
             await db.flush()
             await _clone_ending_rules(db, ending.id, new_ending.id)
+
+        situation_notes = (
+            await db.scalars(select(SituationNote).where(SituationNote.starting_setup_id == setup.id))
+        ).all()
+        for situation_note in situation_notes:
+            db.add(
+                SituationNote(
+                    entity_id=situation_note.entity_id,
+                    starting_setup_id=new_setup.id,
+                    name=situation_note.name,
+                    info_text=situation_note.info_text,
+                    order=situation_note.order,
+                    condition_rules=situation_note.condition_rules,
+                )
+            )
 
     keyword_notes = (
         await db.scalars(
@@ -2300,13 +2395,28 @@ async def _publish_story_content(
         await db.scalars(select(KeywordNote).where(KeywordNote.content_version_id == version.id))
     ).all()
     dangling_stat_rule_paths: list[str] = []
+    dangling_situation_note_paths: list[str] = []
     stat_defs: list[StatDef] = []
+    situation_notes: list[SituationNote] = []
     for setup_index, setup in enumerate(starting_setups):
         setup_stat_defs = (await db.scalars(select(StatDef).where(StatDef.starting_setup_id == setup.id))).all()
         stat_defs += setup_stat_defs
         stat_ids = {stat_def.entity_id for stat_def in setup_stat_defs}
         endings_rules = [await _ending_rule_draft_items(db, ending.id) for ending in endings_by_setup_id[setup.id]]
         dangling_stat_rule_paths += setup_dangling_stat_rule_paths(setup_index, stat_ids, endings_rules)
+        setup_situation_notes = (
+            await db.scalars(
+                select(SituationNote)
+                .where(SituationNote.starting_setup_id == setup.id)
+                .order_by(SituationNote.order, SituationNote.entity_id)
+            )
+        ).all()
+        situation_notes += setup_situation_notes
+        dangling_situation_note_paths += setup_dangling_situation_note_paths(
+            setup_index,
+            stat_ids,
+            [RULE_LIST_ADAPTER.validate_python(note.condition_rules) for note in setup_situation_notes],
+        )
 
     missing_fields = validate_story_publish(
         content,
@@ -2320,6 +2430,8 @@ async def _publish_story_content(
         keyword_notes=keyword_notes,
         dangling_stat_rule_paths=dangling_stat_rule_paths,
         stat_defs=stat_defs,
+        situation_notes=situation_notes,
+        dangling_situation_note_paths=dangling_situation_note_paths,
     )
     if missing_fields:
         raise HTTPException(

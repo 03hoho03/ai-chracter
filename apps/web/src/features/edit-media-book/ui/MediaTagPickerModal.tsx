@@ -1,5 +1,6 @@
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -27,14 +28,16 @@ type MediaTagPickerBodyProps = {
 export const MediaTagPickerModal = createCallable<MediaTagPickerModalProps, PickedMediaTag | undefined>(
   ({ call, groups }) => (
     <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end(undefined)}>
-      <DialogContent className="max-h-dialog overflow-y-auto sm:max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>넣을 이미지 고르기</DialogTitle>
           <DialogDescription className="break-keep">
             커서가 있던 자리에 이 칸의 표기를 넣어요. 화면에서는 그 자리에 이미지가 보여요.
           </DialogDescription>
         </DialogHeader>
-        <MediaTagPickerBody groups={groups} onPick={(picked) => call.end(picked)} />
+        <DialogBody>
+          <MediaTagPickerBody groups={groups} onPick={(picked) => call.end(picked)} />
+        </DialogBody>
       </DialogContent>
     </Dialog>
   ),

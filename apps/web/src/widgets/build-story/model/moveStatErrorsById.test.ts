@@ -23,6 +23,13 @@ describe("moveStatErrorsById", () => {
     ]);
   });
 
+  it("한 턴 최대 폭 칸의 오류도 스탯 id 를 따라 옮긴다", () => {
+    const maxChangeError = { type: "too_small", message: "1 이상의 정수로 입력해주세요" };
+    const errors = [{ maxChangePerTurn: maxChangeError }];
+    const moved = moveStatErrorsById(["a"], (index) => errors[index], ["b", "a"]);
+    expect(moved).toEqual([{ statIndex: 1, field: "maxChangePerTurn", error: maxChangeError }]);
+  });
+
   it("오류 객체의 칸 이름이 아닌 키와 FieldError 모양이 아닌 값은 옮기지 않는다", () => {
     const errors = [{ ref: { name: "x" }, type: "custom", message: "배열 전체 오류", id: maxError, max: maxError }];
     const moved = moveStatErrorsById(["a"], (index) => errors[index], ["b", "a"]);

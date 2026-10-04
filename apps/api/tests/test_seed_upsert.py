@@ -27,6 +27,7 @@ from api.db.models.story import (
     EndingRuleGroup,
     KeywordNote,
     Shortcut,
+    SituationNote,
     StartingSetup,
     StatDef,
     StoryVersionDetail,
@@ -36,6 +37,7 @@ from seed_content.loader import load_story
 from seed_content.upsert import (
     SeedPublishError,
     story_content_id,
+    story_draft_version_id,
     story_version_id,
     upsert_story,
 )
@@ -555,6 +557,98 @@ async def test_upsert_story_rejects_stat_whose_initial_value_is_outside_its_rang
 
     assert "stats.range" in str(exc_info.value)
     assert await db_session.get(Content, story_content_id(SLUG)) is None
+
+
+async def test_upsert_story_rejects_counter_stat_with_change_direction(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """시드도 발행과 같은 방향·폭 검사를 받는다. 턴당 변화가 있는 스탯에 방향을 걸면 그 옵션은 아무 일도 하지 않는다."""
+    await _seed_author(db_session)
+
+    def _counter_with_direction(raw: dict[str, Any]) -> None:
+        stat = raw["startingSetups"][1]["statDefs"][0]
+        stat["perTurnDelta"] = -1
+        stat["changeDirection"] = "decrease"
+
+    payload = await _load_seed_payload(db_session, tmp_path, _counter_with_direction)
+
+    with pytest.raises(SeedPublishError) as exc_info:
+        await upsert_story(db_session, SLUG, payload)
+
+    assert "stats.changeLimitWithCounter" in str(exc_info.value)
+    assert await db_session.get(Content, story_content_id(SLUG)) is None
+
+
+def _add_situation_note(raw: dict[str, Any]) -> None:
+    raw["startingSetups"][0]["situationNotes"] = [
+        {
+            "name": "의심",
+            "infoText": "그는 이제 너를 의심한다.",
+            "conditionRules": [{"kind": "rule", "stat": "의심", "operator": "gte", "threshold": 60}],
+        }
+    ]
+
+
+async def test_upsert_story_writes_situation_notes_to_both_versions(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """시드의 상황 노트는 빌더 저장 경로를 그대로 지나 발행본과 초안 양쪽에 같은 시작설정 밑으로 들어간다. 조건의 스탯
+    이름은 그 시작설정 스탯의 파생 id 가 된다."""
+    await _seed_author(db_session)
+    payload = await _load_seed_payload(db_session, tmp_path, _add_situation_note)
+
+    await upsert_story(db_session, SLUG, payload)
+
+    for version_id in (story_version_id(SLUG), story_draft_version_id(SLUG)):
+        rows = (
+            await db_session.execute(
+                select(StartingSetup.order, SituationNote)
+                .join(StartingSetup, StartingSetup.id == SituationNote.starting_setup_id)
+                .where(StartingSetup.content_version_id == version_id)
+            )
+        ).all()
+        assert [(setup_order, note.name, note.info_text) for setup_order, note in rows] == [
+            (0, "의심", "그는 이제 너를 의심한다.")
+        ]
+        assert rows[0][1].condition_rules[0]["stat_id"] == str(_stat_entity_id(0, 1))
+
+
+async def test_upsert_story_rejects_situation_note_pointing_at_stat_of_another_setup(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """손으로 적은 스탯 id 가 다른 시작설정의 스탯이면 그 노트는 영영 안 실린다 — 시드 시점에 경로와 발행 키로 막는다."""
+    await _seed_author(db_session)
+
+    def _dangle(raw: dict[str, Any]) -> None:
+        _add_situation_note(raw)
+        rule = raw["startingSetups"][0]["situationNotes"][0]["conditionRules"][0]
+        del rule["stat"]
+        rule["statId"] = str(_stat_entity_id(1, 0))
+
+    payload = await _load_seed_payload(db_session, tmp_path, _dangle)
+
+    with pytest.raises(SeedPublishError) as exc_info:
+        await upsert_story(db_session, SLUG, payload)
+
+    message = str(exc_info.value)
+    assert "startingSetups[0].situationNotes[0].conditionRules[0].statId" in message
+    assert "situationNotes.conditionRules" in message
+    assert await db_session.get(Content, story_content_id(SLUG)) is None
+
+
+async def test_upsert_story_rejects_situation_note_without_rules(db_session: AsyncSession, tmp_path: Path) -> None:
+    await _seed_author(db_session)
+
+    def _no_rules(raw: dict[str, Any]) -> None:
+        _add_situation_note(raw)
+        raw["startingSetups"][0]["situationNotes"][0]["conditionRules"] = []
+
+    payload = await _load_seed_payload(db_session, tmp_path, _no_rules)
+
+    with pytest.raises(SeedPublishError) as exc_info:
+        await upsert_story(db_session, SLUG, payload)
+
+    assert "situationNotes.emptyConditionRules" in str(exc_info.value)
 
 
 async def test_upsert_story_rejects_ending_rule_pointing_at_unknown_stat(

@@ -29,7 +29,7 @@ from api.chat.prompt_builder import (
 )
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.prompt import PromptSection, PromptSet
-from api.db.models.story import StoryPromptTemplate
+from api.db.models.story import StatDef, StoryPromptTemplate
 
 
 def _message(role: ChatMessageRole, content: str) -> ChatMessage:
@@ -321,6 +321,45 @@ def test_build_stat_judgment_prompt_uses_story_assistant_label() -> None:
     assert f"{prompt_set.story_assistant_label}: 응답" in prompt
     assert prompt_set.character_assistant_label not in prompt
     assert prompt_set.story_example_label not in prompt
+
+
+def _stat_lines_of(stat_defs: list[StatDef]) -> list[str]:
+    sections = [
+        _section(channel="stat_judgment", scope="story", slot="stats", body="{stat_lines}", conditional=False, order=1)
+    ]
+    prompt = build_stat_judgment_prompt(
+        prompt_set=_prompt_set(), sections=sections, stat_defs=stat_defs, current_stats={},
+        user_message="메시지", assistant_message="응답",
+    )
+    return prompt.split("\n")
+
+
+def test_build_stat_judgment_prompt_marks_only_constrained_judged_stats() -> None:
+    """방향·폭 제약이 있는 판정 스탯 줄에만 꼬리를 붙인다. 제약 없는 줄(옵션이 `None`·양방향)은 지금과 바이트가 같아야
+    하고(골든이 그 줄을 고정한다), 카운터 줄은 옵션이 남아 있어도 카운터 꼬리만 단다 — 카운터는 판정을 받지 않는다.
+    0 이하 폭은 자르기에서도 제한 없음이라 꼬리를 달지 않는다."""
+    def _stat(name: str, **options: object) -> StatDef:
+        return StatDef(entity_id=uuid.uuid4(), name=name, description="설명", min_value=0, max_value=10, initial_value=5, **options)
+
+    lines = _stat_lines_of(
+        [
+            _stat("없음"),
+            _stat("양방향", change_direction="both"),
+            _stat("감소", change_direction="decrease"),
+            _stat("증가폭", change_direction="increase", max_change_per_turn=3),
+            _stat("폭", change_direction="both", max_change_per_turn=2),
+            _stat("카운터", per_turn_delta=-1, change_direction="decrease", max_change_per_turn=1),
+            _stat("0폭", max_change_per_turn=0),
+        ]
+    )
+
+    assert lines[0].endswith("현재값=5")
+    assert lines[1].endswith("현재값=5")
+    assert lines[2].endswith("현재값=5  ※ 감소만 할 수 있다.")
+    assert lines[3].endswith("현재값=5  ※ 증가만 할 수 있다. 한 턴에 최대 3까지 바뀐다.")
+    assert lines[4].endswith("현재값=5  ※ 한 턴에 최대 2까지 바뀐다.")
+    assert lines[5].endswith("현재값=5  ※ 시스템이 매 턴 자동 조정하는 값이다. statChanges에 넣지 마라.")
+    assert lines[6].endswith("현재값=5")
 
 
 def test_build_ending_judgment_prompt_uses_story_assistant_label_for_history_and_this_turn() -> None:

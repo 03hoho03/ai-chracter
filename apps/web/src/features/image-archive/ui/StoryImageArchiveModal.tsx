@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -29,8 +30,9 @@ export const StoryImageArchiveModal = createCallable<StoryImageArchiveModalProps
 
   return (
     <Dialog open={isOpen} onOpenChange={(next) => !next && call.end()}>
-      {/* 칸이 50개까지라 길어진다 — 높이 상한과 내부 스크롤은 호출부 몫이다. */}
-      <DialogContent className="max-h-dialog overflow-y-auto sm:max-w-lg">
+      {/* 칸이 50개까지라 길어진다 — 그림 묶음을 `DialogBody` 에 넣어 그것만 스크롤하고 제목·닫기는 위에 남긴다.
+          보관함 칸은 버튼이 아니라 포커스할 것이 하나도 없으므로, 본문 자체를 Tab 정지로 둬야 키보드로 스크롤할 수 있다. */}
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>이미지 보관함</DialogTitle>
           <DialogDescription className="break-keep">
@@ -38,7 +40,9 @@ export const StoryImageArchiveModal = createCallable<StoryImageArchiveModalProps
           </DialogDescription>
         </DialogHeader>
 
-        <StoryImageArchiveBody query={archiveQuery} />
+        <DialogBody scrollLabel="보관함 이미지">
+          <StoryImageArchiveBody query={archiveQuery} />
+        </DialogBody>
       </DialogContent>
     </Dialog>
   );

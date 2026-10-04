@@ -6,8 +6,8 @@ import { PromptLaneEditor } from "./PromptLaneEditor";
 import { VersionHistorySection } from "./VersionHistorySection";
 
 /** 레인 축은 페이지 안 상위 탭이다. `TabsContent`에
- * `forceMount` + `data-[state=inactive]:hidden`을 함께 써서(관용구 선례
- * `apps/web/src/widgets/image-studio/ui/ImageStudioShell.tsx:180`) 세 레인이 항상
+ * `forceMount` + `data-[state=inactive]:hidden`을 함께 써서(같은 관용구가 web
+ * `ImageStudioShell.tsx`의 생성 `TabsContent`에도 있다) 세 레인이 항상
  * 마운트된 채로 숨어 있게 한다 — 레인을 바꿔도 각 레인의 `useForm` 인스턴스(미저장 편집)가
  * 사라지지 않는다. */
 export function PromptSetsPage() {

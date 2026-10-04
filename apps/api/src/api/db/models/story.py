@@ -1,7 +1,7 @@
 import enum
 import uuid
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import (
     ARRAY,
@@ -21,6 +21,11 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base
+
+
+# 판정 LLM 이 정하는 스탯이 한 턴에 움직일 수 있는 방향. 값 셋뿐이고 다른 테이블이 쓰지 않아 Postgres ENUM 대신
+# Text 로 둔다(ENUM 은 멤버 추가·삭제마다 손으로 쓰는 마이그레이션이 따라온다).
+StatChangeDirection = Literal["both", "increase", "decrease"]
 
 
 class StoryPromptTemplate(str, enum.Enum):
@@ -120,6 +125,12 @@ class StatDef(Base):
     # 건너뛰거나 거꾸로 올리는 일이 실제로 있었고(2026-08-07 실측), 그 카운터에 걸린 엔딩은
     # 도달 가능성이 통째로 흔들린다 — 그래서 카운터는 판단 대상이 아니라 시스템이 굴린다.
     per_turn_delta: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 판정 LLM 이 낸 값을 코드가 자르는 두 옵션(`api.chat.stats.apply_stat_changes`). `per_turn_delta` 가 있는 스탯은
+    # 판정을 받지 않으므로 두 옵션도 쓰지 않는다(발행이 막는다). 세션 없이 생성자로만 만든 행은 둘 다 `None` 이고,
+    # 읽는 쪽은 그것을 "양방향·제한 없음"으로 본다. `server_default` 는 이 컬럼을 모르는 이전 API 이미지로 되돌렸을 때
+    # 그 코드의 스탯 INSERT 가 NOT NULL 위반이 되지 않게 하려는 것이다.
+    change_direction: Mapped[StatChangeDirection] = mapped_column(Text, server_default="both", nullable=False)
+    max_change_per_turn: Mapped[int | None] = mapped_column(Integer, nullable=True)
     order: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
@@ -151,6 +162,33 @@ class KeywordNote(Base):
     )
     sticky_turns: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
     always_on: Mapped[bool] = mapped_column(Boolean, server_default=false(), nullable=False)
+
+
+class SituationNote(Base):
+    """시작설정 하나에 딸린 상황 노트. entity_id 패턴, 순서 있는 목록. 노트의 스탯 조건이 참인 턴에 본문이 이야기를
+    쓰는 프롬프트에 실린다.
+
+    조건(`condition_rules`)은 엔딩의 스탯 규칙과 같은 모양(`kind` 로 가르는 규칙·한 단계 그룹)의 JSON 목록이다.
+    엔딩처럼 규칙 테이블을 따로 두지 않는다 — 규칙의 스탯 참조는 어차피 entity_id 라 FK 가 없고, 한 칸에 두면 규칙
+    자식의 복제·삭제 순서를 따질 일이 없다. 노트 행 자체는 시작설정을 물리 FK 로 가리키므로 시작설정보다 먼저 지운다.
+
+    새 테이블이라 이 테이블을 모르는 이전 API 이미지가 행을 넣는 일은 없다. 그래도 컬럼마다 `server_default` 를
+    두어 손으로 넣는 행(시드 보정·운영 쿼리)이 필수 칸 하나 때문에 막히지 않게 한다 — 본문만 빼고."""
+
+    __tablename__ = "situation_notes"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    entity_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    starting_setup_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("starting_setups.id"), nullable=False
+    )
+    # 목록에서 노트를 알아보게 하는 이름이다. 모델에 보내는 프롬프트에는 싣지 않는다.
+    name: Mapped[str] = mapped_column(Text, server_default="", nullable=False)
+    info_text: Mapped[str] = mapped_column(Text, nullable=False)
+    order: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False)
+    condition_rules: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, server_default=text("'[]'::jsonb"), nullable=False
+    )
 
 
 class Shortcut(Base):

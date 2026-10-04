@@ -193,6 +193,12 @@
   /* sticky 헤더(h-14 = 3.5rem) 아래 남는 뷰포트 높이를 최소 높이로 — 인증 화면이 폼을 그 영역 가운데 놓는다 */
   min-height: calc(100dvh - 3.5rem);
 }
+@utility max-h-below-header {
+  /* 헤더 아래까지 자라는 바텀시트의 상한 — h-below-header 와 같은 계산(헤더 h-14 = 3.5rem 미러링).
+     쓰는 곳은 이미지 스튜디오 옵션 시트 하나라 위 머리 주석의 "2회 이상 반복"에는 들지 않지만, 헤더
+     높이를 미러링한 값이라 임의값으로 흩지 않고 짝들 옆에 모은다(헤더 높이를 바꿀 때 함께 찾히게) */
+  max-height: calc(100dvh - 3.5rem);
+}
 @utility min-h-placeholder {
   /* 준비 중·로딩·오류처럼 본문이 비는 화면의 세로 중앙 정렬용 최소 높이 */
   min-height: 60vh;
@@ -206,7 +212,7 @@
   top: 118px;
 }
 @utility max-h-dialog {
-  /* 다이얼로그 최대 높이 — 위아래 1rem 씩 뷰포트 안에 남긴다(DialogContent 에는 최대 높이가 없다) */
+  /* 다이얼로그 최대 높이 — 위아래 1rem 씩 뷰포트 안에 남긴다(DialogContent 는 안에 DialogBody 가 있을 때만 이 값을 스스로 건다) */
   max-height: calc(100dvh - 2rem);
 }
 

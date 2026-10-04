@@ -1,6 +1,7 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -9,7 +10,7 @@ import {
 } from "@ai-character-chat/ui/components/dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { BookOpen, ChevronRight, Trash2, UserRound } from "lucide-react";
+import { BookOpen, ChevronRight, ImagePlus, Trash2, UserRound } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -32,16 +33,31 @@ const FIELD_LABEL: Record<GeneratedImageItem["usages"][number]["field"], string>
   mediaBook: "미디어 북",
 };
 
+type GeneratedImageDetailModalProps = {
+  image: GeneratedImageItem;
+  onClose: () => void;
+  /** 모달이 완전히 닫힌 뒤 포커스를 둘 곳으로 옮긴다. 이 모달은 트리거 없이 열리므로 넘기지 않으면
+   * 닫힐 때 포커스가 `<body>`로 떨어진다 — 그래서 닫힌 이유(일반 닫기·참조로 쓰기·삭제)마다 갈 곳을
+   * 아는 호출부가 정한다. */
+  onRestoreFocus?: () => void;
+  /** 넘길 때만 "참조로 쓰기" 버튼이 보인다. 참조를 받지 않는 모델이거나 폼을 쓸 수 없는 화면이면
+   * 호출부가 넘기지 않는다. 부른 뒤 모달이 닫힌다. */
+  onUseAsReference?: () => void;
+  /** 삭제가 성공했을 때 모달이 닫히기 전에 부른다. 호출부는 이때 닫힌 뒤 포커스를 둘 곳을 정하고
+   * 다른 자리(결과 영역 등)에서도 그 이미지를 뺀다. */
+  onDeleted?: (assetId: string) => void;
+};
+
 /** 그리드 셀을 눌러 여는 생성 이미지 상세 모달. 이 이미지를 쓰는
  * 작품(usages) 목록을 보여주고 각 항목에서 해당 작품 상세로 이동하며, 미사용 이미지는 여기서
- * 삭제한다(사용 중이면 비활성 + 사유 안내). */
+ * 삭제한다(사용 중이면 비활성 + 사유 안내). 결과 영역과 보관함이 함께 쓴다. */
 export function GeneratedImageDetailModal({
   image,
   onClose,
-}: {
-  image: GeneratedImageItem;
-  onClose: () => void;
-}) {
+  onRestoreFocus,
+  onUseAsReference,
+  onDeleted,
+}: GeneratedImageDetailModalProps) {
   const queryClient = useQueryClient();
   const deleteMutation = useDeleteGeneratedImageMutation(image.assetId);
   const isInUse = image.usages.length > 0;
@@ -54,7 +70,14 @@ export function GeneratedImageDetailModal({
       mutationFn: async (call) => {
         try {
           await deleteMutation.mutateAsync();
+          onDeleted?.(image.assetId);
           toast.success("이미지를 삭제했어요.");
+          // 재조회를 기다리지 않고 캐시 목록에서 바로 뺀다 — 모달이 닫힌 직후 포커스를 옮길 때 지운
+          // 타일이 아직 그려져 있거나, 마지막 한 장을 지웠는데 빈 상태가 아직 안 그려져 있으면 갈 곳이
+          // 어긋난다. 캐시가 없으면(목록을 보는 화면이 없으면) 아무 일도 하지 않는다.
+          queryClient.setQueryData<GeneratedImageItem[]>(generatedImagesKeys.list(), (images) =>
+            images?.filter((item) => item.assetId !== image.assetId),
+          );
           void queryClient.invalidateQueries({ queryKey: generatedImagesKeys.list() });
           call.end();
           onClose();
@@ -75,9 +98,20 @@ export function GeneratedImageDetailModal({
 
   return (
     <Dialog open onOpenChange={(next) => !next && onClose()}>
-      {/* 원본 비율 이미지 때문에 높이가 낮은 뷰포트에서는 모달이 화면을 넘는다 — 삭제 푸터까지
-          닿도록 모달 내부 스크롤을 허용한다(바깥 페이지는 Radix가 스크롤을 잠근다). */}
-      <DialogContent className="max-h-dialog overflow-y-auto sm:max-w-md">
+      {/* 원본 비율 이미지와 사용처 목록 때문에 높이가 낮은 뷰포트에서는 내용이 화면을 넘는다 — 이미지와
+          목록을 `DialogBody` 에 넣어 그것만 스크롤하고, 제목·닫기와 삭제 푸터는 제자리에 둔다(바깥 페이지는
+          Radix가 스크롤을 잠근다). */}
+      <DialogContent
+        className="sm:max-w-md"
+        onCloseAutoFocus={
+          onRestoreFocus &&
+          ((event) => {
+            // 닫히는 중인 모달이 포커스를 도로 가두지 않게 닫힘이 끝난 다음 프레임에 옮긴다.
+            event.preventDefault();
+            requestAnimationFrame(onRestoreFocus);
+          })
+        }
+      >
         <DialogHeader>
           <DialogTitle>생성 이미지</DialogTitle>
           <DialogDescription>
@@ -88,51 +122,71 @@ export function GeneratedImageDetailModal({
           </DialogDescription>
         </DialogHeader>
 
-        {/* 상세에서는 원본 비율 그대로 보여준다(생성 비율이 1:1~9:16까지 다양 — 크롭 금지).
-            세로 이미지는 60dvh에서 멈추고 남는 폭은 bg-secondary가 레터박스로 받는다
-            (`bg-muted`는 모달 표면 `popover`와 같은 값이라 레터박스가 사라진다 — DESIGN.md Colors 절). */}
-        <div className="overflow-hidden rounded-lg bg-secondary">
-          {/* 모달을 연 직후 바로 보이는 주인공 이미지라 lazy를 걸지 않는다(decoding만). */}
-          <img src={image.imageUrl} alt="" decoding="async" className="max-h-[60dvh] w-full object-contain" />
-        </div>
+        <DialogBody className="flex flex-col gap-4">
+          {/* 상세에서는 원본 비율 그대로 보여준다(생성 비율이 1:1~9:16까지 다양 — 크롭 금지).
+              세로 이미지는 60dvh에서 멈추고 남는 폭은 bg-secondary가 레터박스로 받는다
+              (`bg-muted`는 모달 표면 `popover`와 같은 값이라 레터박스가 사라진다 — DESIGN.md Colors 절).
+              `shrink-0` — 본문이 flex 컬럼이고 이 상자는 `overflow-hidden` 이라 최소 높이가 0으로 계산된다. 그대로 두면
+              내용이 넘칠 때 본문이 스크롤하는 대신 이 상자를 납작하게 줄여 이미지를 잘라 낸다. */}
+          <div className="shrink-0 overflow-hidden rounded-lg bg-secondary">
+            {/* 모달을 연 직후 바로 보이는 주인공 이미지라 lazy를 걸지 않는다(decoding만). */}
+            <img src={image.imageUrl} alt="" decoding="async" className="max-h-[60dvh] w-full object-contain" />
+          </div>
 
-        <div className="flex flex-col gap-1.5">
-          <h3 className="text-sm font-medium text-foreground">사용 중인 작품</h3>
-          {image.usages.length === 0 ? (
-            <p className="text-sm text-muted-foreground">아직 사용 중인 작품이 없어요.</p>
-          ) : (
-            <ul className="flex flex-col">
-              {image.usages.map((usage) => (
-                <li key={`${usage.contentId}-${usage.field}`}>
-                  {/* 작품 상세(/content)가 아니라 빌더로 보낸다 — 사용처에는 발행 전 초안도 포함되는데
-                      (GeneratedImageUsage 스키마) 초안은 상세 페이지가 열리지 않고, 이미지를 떼어내는
-                      행동도 빌더에서 한다. */}
-                  <Link
-                    to="/builder/$type/$draftId"
-                    params={{ type: usage.contentType, draftId: usage.contentId }}
-                    className="-mx-2 flex items-center gap-2 rounded-lg px-2 py-2 hover:bg-accent motion-safe:transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-                  >
-                    {usage.contentType === "character" ? (
-                      <UserRound aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-                    ) : (
-                      <BookOpen aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-                    )}
-                    <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-                      {usage.contentTitle || "제목 없음"}
-                    </span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {FIELD_LABEL[usage.field]}
-                    </span>
-                    <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+          <div className="flex flex-col gap-1.5">
+            <h3 className="text-sm font-medium text-foreground">사용 중인 작품</h3>
+            {image.usages.length === 0 ? (
+              <p className="text-sm text-muted-foreground">아직 사용 중인 작품이 없어요.</p>
+            ) : (
+              <ul className="flex flex-col">
+                {image.usages.map((usage) => (
+                  <li key={`${usage.contentId}-${usage.field}`}>
+                    {/* 작품 상세(/content)가 아니라 빌더로 보낸다 — 사용처에는 발행 전 초안도 포함되는데
+                        (GeneratedImageUsage 스키마) 초안은 상세 페이지가 열리지 않고, 이미지를 떼어내는
+                        행동도 빌더에서 한다. */}
+                    <Link
+                      to="/builder/$type/$draftId"
+                      params={{ type: usage.contentType, draftId: usage.contentId }}
+                      className="-mx-2 flex items-center gap-2 rounded-lg px-2 py-2 hover:bg-accent motion-safe:transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                    >
+                      {usage.contentType === "character" ? (
+                        <UserRound aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                      ) : (
+                        <BookOpen aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                      )}
+                      <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+                        {usage.contentTitle || "제목 없음"}
+                      </span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {FIELD_LABEL[usage.field]}
+                      </span>
+                      <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </DialogBody>
 
         {/* flex-col — 기본 col-reverse를 뒤집어 모바일에서 비활성 사유가 버튼 위에 오게 한다. */}
         <DialogFooter className="flex-col sm:items-center">
+          {/* 참조로 쓰기를 사용 중 안내보다 앞에 둔다 — 그 안내는 삭제 버튼의 비활성 사유라 삭제 버튼과
+              붙어 있어야 한다. 솔리드 채움이 아닌 이유: 이 화면의 `primary` 솔리드는 이미 생성 버튼과 스타일
+              선택 체크 원 둘이고 더 늘리지 않는다(DESIGN.md Colors 절의 밝기 예산 규칙). */}
+          {onUseAsReference && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                onUseAsReference();
+                onClose();
+              }}
+            >
+              <ImagePlus aria-hidden />
+              참조로 쓰기
+            </Button>
+          )}
           {isInUse && (
             <p className="text-xs text-muted-foreground sm:mr-auto">
               위 작품에서 사용 중이라 삭제할 수 없어요.

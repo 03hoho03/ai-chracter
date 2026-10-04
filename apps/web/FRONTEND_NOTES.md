@@ -12,7 +12,7 @@ CLAUDE.md에서 분리한, **특정 코드를 만질 때만** 필요한 함정·
 ## 모달 / Radix
 
 - **중첩 Dialog**: shadcn `Dialog`를 다른 `Dialog` 안에서 열어도 `DialogPortal`이 각자 포털/오버레이라 그대로 스택된다. `Escape`는 가장 위(안쪽)만 닫는다.
-- **DialogContent에 DialogTitle 필수**: 없으면 a11y 경고. 풀페이지/모달 공용 뷰는 별도 `<DialogTitle className="sr-only">`를 모달 outlet에만 추가한다(공용 뷰를 Radix Title에 결합하지 않기 위함 — 풀페이지엔 Dialog가 없어 그 안에서 Radix Title을 쓰면 에러).
+- **DialogContent 안의 DialogTitle은 언제나 정확히 하나**: Radix는 Content의 `aria-labelledby`를 제목 id에 묶어서, 제목이 없으면 다이얼로그 이름이 비고 둘이면 id가 겹쳐 DOM 앞쪽 제목이 이름이 된다(설치된 Radix Dialog는 제목 누락 경고를 내지 않으니 콘솔로는 못 잡는다). 풀페이지/모달 공용 뷰는 모달 분기에서만 Radix Title을 렌더한다 — 풀페이지엔 Dialog가 없어 그 안에서 쓰면 던진다. 작품상세가 그 예다: `ContentDetailView`의 모달 분기가 로딩·오류·이용 불가 상태까지 모든 상태에서 제목을 하나 내고(작품명이 없으면 `sr-only`), outlet의 `sr-only` 제목은 뷰가 언마운트된 닫힘 애니메이션 동안에만 렌더한다.
 - **ToggleGroup 단일선택**: 초기값 `undefined`면 controlled/uncontrolled 전환 경고 → `value={state ?? ""}`("선택 없음"=빈 문자열, 어떤 item과도 매치 안 됨).
 
 ## 도메인 id · BE 매핑 경계
