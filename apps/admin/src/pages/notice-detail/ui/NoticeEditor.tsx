@@ -15,6 +15,8 @@ import {
   type AdminNoticeDetailResponse,
 } from "@/entities/notice";
 
+import { UnsavedChangesGuard } from "@/shared/ui/UnsavedChangesGuard";
+
 import { noticeEditorSchema, type NoticeEditorFormValues } from "../model/schema";
 import { PublishNoticeDialog } from "./PublishNoticeDialog";
 
@@ -34,7 +36,8 @@ const ERROR_MESSAGE = "저장에 실패했어요. 잠시 후 다시 시도해주
  * 폼 상태는 `LegalEditor`의 useState 버퍼가 아니라 RHF+zod다(`apps/web/CLAUDE.md` 폼 규약).
  * "저장할 게 있나"는 손으로 비교하지 않고 `formState.isDirty`가 지며, 저장 성공 시 `reset(values)`로
  * 새 기준선을 세운다. 다만 초안/게시본이 갈리지 않으므로 "저장해야 게시 가능" 잠금은 없다 —
- * 게시/숨김 버튼은 저장 여부와 무관하게 항상 눌릴 수 있다.
+ * 게시/숨김 버튼은 저장 여부와 무관하게 항상 눌릴 수 있다. 같은 `isDirty` 가 저장하지 않고 화면을 떠날 때의 확인도
+ * 정한다 — 저장 성공의 `reset(values)` 가 그 확인도 끈다.
  *
  * 저장 버튼의 비활성은 `disabled`가 아니라 `aria-disabled`다 — `disabled`면 누르는 즉시 브라우저가
  * blur해 키보드 사용자의 포커스가 `<body>`로 떨어진다(`apps/web/CLAUDE.md`, `ContentListLoadMore` 선례).
@@ -125,7 +128,8 @@ export function NoticeEditor({ notice, onCreated }: NoticeEditorProps) {
 
       <div className="flex flex-col gap-1.5">
         <Label>미리보기</Label>
-        <div className="max-w-2xl rounded-lg border border-border bg-card p-4">
+        {/* 띄어쓰기 없는 긴 줄·인라인 코드도 미리보기 폭 안에서 꺾는다(유저 화면 본문 칸과 같은 폭이라 넘치면 실제와 달라진다). */}
+        <div className="max-w-2xl min-w-0 rounded-lg border border-border bg-card p-4 wrap-anywhere">
           {bodyMarkdown.trim() ? (
             <Markdown content={bodyMarkdown} className="[&_code]:bg-secondary" />
           ) : (
@@ -193,6 +197,8 @@ export function NoticeEditor({ notice, onCreated }: NoticeEditorProps) {
             </Button>
           ))}
       </div>
+
+      <UnsavedChangesGuard isDirty={isDirty} />
     </form>
   );
 }

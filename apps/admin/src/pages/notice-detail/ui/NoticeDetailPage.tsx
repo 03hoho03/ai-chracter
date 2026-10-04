@@ -1,10 +1,13 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Link, useNavigate } from "@tanstack/react-router";
+import { ChevronLeft } from "lucide-react";
 
 import { useNoticeDetailQuery } from "@/entities/notice";
 import { useRememberedListSearch } from "@/shared/lib/list-search-memory/listSearchMemory";
 import { DetailLayout } from "@/shared/ui/DetailLayout";
 import { PageContainer } from "@/shared/ui/PageContainer";
+import { PageHeader } from "@/shared/ui/PageHeader";
+import { QueryState } from "@/shared/ui/QueryState";
 
 import { NoticeEditor } from "./NoticeEditor";
 
@@ -20,17 +23,20 @@ export function NoticeDetailPage({ noticeId }: NoticeDetailPageProps) {
 
   return (
     <PageContainer>
-      <DetailLayout actions={null}>
-        <Button asChild variant="outline" size="sm" className="self-start">
-          <Link to="/notices" search={rememberedListSearch ?? {}}>
-            목록으로
-          </Link>
-        </Button>
+      <PageHeader
+        title={isNew ? "새 공지" : "공지 편집"}
+        back={
+          <Button asChild variant="ghost" size="sm" className="self-start">
+            <Link to="/notices" search={rememberedListSearch ?? {}}>
+              <ChevronLeft aria-hidden />
+              목록으로
+            </Link>
+          </Button>
+        }
+      />
 
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">{isNew ? "새 공지" : "공지 편집"}</h1>
-
-        {isNew ? <NewNotice /> : <ExistingNotice noticeId={noticeId} />}
-      </DetailLayout>
+      {/* 편집 폼이 본문이라 조치 열·하단 바가 없다. 본문 열 폭만 상세와 같게 받는다. */}
+      <DetailLayout actions={null}>{isNew ? <NewNotice /> : <ExistingNotice noticeId={noticeId} />}</DetailLayout>
     </PageContainer>
   );
 }
@@ -41,7 +47,10 @@ function NewNotice() {
   return (
     <NoticeEditor
       notice={null}
-      onCreated={(id) => void navigate({ to: "/notices/$noticeId", params: { noticeId: id }, replace: true })}
+      // 저장 직후 같은 처리 안에서 옮겨 가 화면이 아직 "변경 있음"으로 그려져 있다 — 이미 저장했으니 이탈 확인을 건너뛴다.
+      onCreated={(id) =>
+        void navigate({ to: "/notices/$noticeId", params: { noticeId: id }, replace: true, ignoreBlocker: true })
+      }
     />
   );
 }
@@ -54,16 +63,12 @@ type ExistingNoticeProps = {
 function ExistingNotice({ noticeId }: ExistingNoticeProps) {
   const noticeDetailQuery = useNoticeDetailQuery(noticeId);
 
-  if (noticeDetailQuery.isPending) {
-    return <div className="h-64 animate-pulse rounded-xl bg-muted" />;
-  }
-
-  if (noticeDetailQuery.isError) {
-    return <p className="text-sm text-destructive-text">공지를 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>;
-  }
-
   // `key`로 공지 사이 이동 시 편집 버퍼(`NoticeEditor`의 RHF `defaultValues`)를 강제로 초기화한다 —
   // 같은 라우트(`/notices/$noticeId`)라 id만 바뀌면 컴포넌트가 재마운트되지 않고,
   // `defaultValues`는 마운트 시점 값이라 스스로는 새 공지를 따라가지 않는다.
-  return <NoticeEditor key={noticeDetailQuery.data.id} notice={noticeDetailQuery.data} />;
+  return (
+    <QueryState query={noticeDetailQuery} errorMessage="공지를 불러오지 못했어요.">
+      {(notice) => <NoticeEditor key={notice.id} notice={notice} />}
+    </QueryState>
+  );
 }

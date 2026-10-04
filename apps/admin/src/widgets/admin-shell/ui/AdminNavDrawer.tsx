@@ -55,6 +55,11 @@ export function AdminNavDrawer() {
           if (!isClosingForNavigationRef.current) return;
           isClosingForNavigationRef.current = false;
           event.preventDefault();
+          // 이동이 편집 화면의 이탈 확인으로 막혔으면 그 확인 창이 먼저 포커스를 가져갔다 — 빼앗지 않는다.
+          const active = document.activeElement;
+          const isHeldElsewhere =
+            active !== null && active !== document.body && active.isConnected && !contentRef.current?.contains(active);
+          if (isHeldElsewhere) return;
           document.getElementById(MAIN_CONTENT_ID)?.focus();
         }}
       >

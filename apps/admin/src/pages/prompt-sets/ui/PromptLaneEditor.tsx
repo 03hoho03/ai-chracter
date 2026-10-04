@@ -5,6 +5,7 @@ import { PromptLaneForm } from "./PromptLaneForm";
 
 type PromptLaneEditorProps = {
   lane: PromptLane;
+  onDirtyChange: (lane: PromptLane, isDirty: boolean) => void;
 };
 
 /** `draft`가 non-null이어야 `PromptLaneForm`의
@@ -12,7 +13,7 @@ type PromptLaneEditorProps = {
  * 지킨다. 활성 버전 배지는 자기 쿼리 상태를 직접 가르는 `ActiveVersionBadge`로 갈라낸다
  * (`VersionHistorySection`의 `VersionTable`과 같은 결) — 합쳐서 읽으면 목록 요청이 로딩·실패
  * 중에도 "아직 게시된 버전이 없어요"로 보인다. */
-export function PromptLaneEditor({ lane }: PromptLaneEditorProps) {
+export function PromptLaneEditor({ lane, onDirtyChange }: PromptLaneEditorProps) {
   const draftQuery = useDraftQuery(lane);
 
   return (
@@ -32,7 +33,7 @@ export function PromptLaneEditor({ lane }: PromptLaneEditorProps) {
         <p className="text-sm text-destructive-text">초안을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
       )}
 
-      {draftQuery.data && <PromptLaneForm lane={lane} draft={draftQuery.data} />}
+      {draftQuery.data && <PromptLaneForm lane={lane} draft={draftQuery.data} onDirtyChange={onDirtyChange} />}
     </div>
   );
 }
