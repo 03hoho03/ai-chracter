@@ -28,8 +28,9 @@
 
 ## 라우팅
 
-- **새 화면을 추가하면 `widgets/admin-sidebar/config/nav.ts`의 `ADMIN_NAV_ITEMS`에도 항목을 더해야 한다** — 안 하면 라우트는 있어도 **사이드바로는 도달할 수 없다**. 목록이 `as const`라 각 `to`가 리터럴로 좁혀져 라우터가 만든 경로 유니온과 대조되므로 없는 라우트는 타입 에러로 걸리는데, **에러는 `config/nav.ts`가 아니라 `ui/AdminSidebar.tsx`에 뜬다**(`AdminNavItem` 타입이 이 목록에서 도출된 것이라 제약을 걸지 않는다).
-- **사이드바는 `routes/__root.tsx`가 마운트해 로그인 화면을 제외한 모든 라우트를 감싼다.** `/login`이 세션 없는 유일한 비보호 라우트라 `pathname === "/login"`으로 분기한다(pathless layout route를 쓰지 않은 이유는 라우트 파일 5개를 옮기고 레이아웃 파일을 새로 만들어야 해서다).
+- **새 화면을 추가하면 `widgets/admin-shell/config/nav.ts`의 `ADMIN_NAV_GROUPS`에서 맞는 그룹(개요·검토 큐·콘텐츠·유저·서비스 설정)에 항목(`label`·`to`·lucide `icon`)을 더해야 한다** — 안 하면 라우트는 있어도 **내비로는 도달할 수 없다**. 그룹 배열 전체가 `as const`라 각 `to`가 리터럴로 좁혀져 라우터가 만든 경로 유니온과 대조되므로 없는 라우트는 타입 에러로 걸리는데, **에러는 `config/nav.ts`가 아니라 `ui/AdminNavList.tsx`(`Link`를 그리는 곳)에 뜬다**(`AdminNavItem` 타입이 이 목록에서 도출된 것이라 제약을 걸지 않는다). 사이드바·모바일 드로어·상단바 화면명이 모두 이 목록 하나를 쓴다.
+- **현재 화면 표시(`aria-current`)는 `lib/resolveActiveNavTo.ts` 하나가 정한다** — `/`는 정확히 일치할 때만, 나머지는 하위 경로까지 접두 일치(가장 긴 것). 내비 `Link`는 `activeOptions={{ exact: true, includeSearch: false }}`로 자기 판정을 좁혀 둔다: `Link`는 자기 판정의 `aria-current`를 props 맨 끝에 덮어써서, 기본(접두 일치)으로 두면 판정 함수와 다른 항목이 함께 현재가 될 수 있다.
+- **셸(`widgets/admin-shell`의 `AdminShell`)은 `routes/__root.tsx`가 마운트해 로그인 화면을 제외한 모든 라우트를 감싼다.** `/login`이 세션 없는 유일한 비보호 라우트라 `pathname === "/login"`으로 분기한다(pathless layout route를 쓰지 않은 이유는 라우트 파일 5개를 옮기고 레이아웃 파일을 새로 만들어야 해서다). `lg` 이상은 접을 수 있는 사이드바(펼침 224px / 아이콘 레일 64px, 접힘은 이 브라우저의 `localStorage`), 미만은 sticky `h-14` 상단바 + 좌측 드로어이고 둘은 CSS(`lg:`)로만 갈린다. **스크롤 컨테이너는 window 하나다** — 셸이나 본문 래퍼에 `overflow-*`를 걸면 상단바·사이드바의 sticky가 죽는다. 본문 래퍼는 `div#main-content`(건너뛰기 링크의 목표)이고 `<main>`은 각 화면이 갖는다.
 - **목록과 그 상세를 형제 화면으로 두려면 목록 쪽을 `.index.tsx`로 명명한다.** `reports.tsx`(실제 경로를 가진 라우트) 옆에 `reports.$reportId.tsx`를 두면 TanStack Router가 상세를 **`reports`의 자식으로 중첩**시키고, 부모에 `<Outlet/>`이 없으면 **URL만 바뀌고 화면은 그대로 부모가 보인다**(콘솔 에러 없는 조용한 실패). `reports.index.tsx`로 두면 `reports`가 암묵적 pathless 레이아웃이 되어 둘이 형제로 분리된다 — 지금 `contents`·`users`·`reports` 셋 다 이 모양이다.
   - `apps/web`의 `builder.$type.*`가 이 함정에 안 걸리는 건 `builder.$type.tsx` 파일 자체가 없어 공유 프리픽스가 처음부터 암묵적 레이아웃이기 때문이다.
   - **라우트 파일을 rename한 직후 `routeTree.gen.ts`가 깨진 채(참조 없는 심볼이 남은 채) 재생성되는 경우가 있다** — dev 서버를 죽이고 `routeTree.gen.ts`를 지운 뒤 `vite build`로 처음부터 다시 만든다.
@@ -37,5 +38,8 @@
 ## UI
 
 - **`react-call`(확인 모달)·`sonner`(토스트)는 web과 같은 관례다** — Callable은 `routes/__root.tsx`에 1회 마운트하고 `<Toaster />`는 `main.tsx`에 둔다. **두 의존성은 admin `package.json`에 직접 넣어야 한다**(pnpm 워크스페이스가 간접 의존성을 안 끌어온다).
+- **Callable은 `@/shared/lib/callable/createCallable`로만 만든다** — 모달이 닫힌 뒤 연 버튼으로 포커스를 돌려주는 래퍼다(web 래퍼의 사본 — 앱끼리 import할 수 없다). `react-call`에서 직접 만들면 포커스가 `<body>`로 떨어지고, eslint `no-restricted-imports`가 막는다.
+- **확인 모달의 첫 포커스는 `취소` 버튼이다**(`취소`에 `autoFocus`) — 무심코 Enter를 눌러도 아무 일도 일어나지 않게. 예외는 대상 이름을 다시 쳐야 확정되는 삭제 모달뿐이고 그 이름 확인칸이 첫 포커스다. 필수 칸(사유·수량)이 있어도 첫 포커스는 `취소`다.
+- **손가락 포인터에서 컨트롤을 40px로 올리는 규칙은 admin 전용 CSS `app/styles/admin.css`에 있다**(`packages/ui`에 넣으면 web까지 바뀐다). 프리미티브의 `data-slot`으로 걸고, 버튼만 Button의 기반 클래스로 건다 — Radix 트리거·닫기를 `asChild`로 씌우면 바깥 `data-slot`이 Button 것을 덮기 때문이다. 프리미티브가 아닌 손수 만든 행(내비 행 등)은 그 클래스에 `pointer-coarse:min-h-10`을 직접 둔다.
 - **되돌릴 수 없는 삭제는 이름 완전 일치로 확인받는다** — `features/act-on-report/ui/DeleteConfirmModal.tsx`(`{contentName, mutationFn}`, 입력값이 `contentName`과 정확히 같아야 확정 버튼 활성화). 도메인이 다르면 새 컴포넌트로 만들되 이 검증 패턴을 재사용한다.
 - **목록 항목에 상세 정보가 이미 다 들어 있으면 별도 라우트로 분리하지 말고 한 페이지 안에서 로컬 `useState`로 렌더한다**(`pages/appeals`가 그 사례 — 선택된 id로 `items.find(...)`). 별도 상세 쿼리도 라우트도 필요 없고, 필터·페이지가 바뀌어 선택된 id가 목록에서 사라지면 상세 섹션도 자연히 사라진다(정리 코드 불필요). **실제 detail 엔드포인트가 생기면** 그때 `reports` 패턴(형제 라우트 + 상세 쿼리)으로 옮긴다.
