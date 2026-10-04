@@ -112,8 +112,8 @@ async def create_appeal(
 
 
 async def _resolve_asset_url(db: AsyncSession, asset_id: uuid.UUID | None) -> str | None:
-    """Same shape as content/router.py's private helper of the same name — not imported
-    across router files by this codebase's convention (apps/api/CLAUDE.md)."""
+    """Signs the original — the admin reviews the image as uploaded. Duplicated rather than
+    imported across router files by this codebase's convention (apps/api/CLAUDE.md)."""
     if asset_id is None:
         return None
     asset = await db.get(Asset, asset_id)

@@ -268,11 +268,11 @@ async def test_list_contents_shows_placeholder_nickname_for_withdrawn_creator(
     assert item["creatorNickname"] == "(탈퇴한 사용자)"
 
 
-async def test_list_signs_thumbnail_variant_while_detail_signs_original(
+async def test_list_signs_thumbnail_variant_while_detail_signs_display_variant(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """List responses sign the `_thumb.webp` variant key; the detail view
-    keeps signing the original object (original extension)."""
+    """목록 카드는 작게 그리므로 `_thumb.webp` 를, 상세는 크게 그리므로 `_display.webp` 를 서명한다 —
+    어느 쪽도 원본(원래 확장자)을 내보내지 않는다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -300,8 +300,9 @@ async def test_list_signs_thumbnail_variant_while_detail_signs_original(
     detail_resp = await db_client.get(f"/contents/{content.id}")
     assert detail_resp.status_code == 200
     detail_url = detail_resp.json()["thumbnailUrl"]
+    assert "_display.webp" in detail_url
     assert "_thumb.webp" not in detail_url
-    assert ".png" in detail_url
+    assert ".png" not in detail_url
 
 
 async def test_list_thumbnail_url_is_identical_within_a_window_and_changes_at_its_boundary(

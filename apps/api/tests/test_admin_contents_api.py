@@ -203,6 +203,16 @@ async def test_regular_user_session_cannot_list_contents(
     assert resp.status_code == 401
 
 
+async def _thumbnail_storage_key(db_session: AsyncSession, content: Content) -> str:
+    asset = await db_session.scalar(
+        sa.select(Asset)
+        .join(CharacterVersionDetail, CharacterVersionDetail.thumbnail_asset_id == Asset.id)
+        .where(CharacterVersionDetail.content_version_id == content.current_published_version_id)
+    )
+    assert asset is not None
+    return asset.storage_key
+
+
 async def test_content_detail_requires_admin_session(db_client: httpx.AsyncClient) -> None:
     resp = await db_client.get(f"/admin/contents/{uuid.uuid4()}")
     assert resp.status_code == 401
@@ -544,7 +554,8 @@ async def test_content_detail_returns_prompt_versions_and_creator_for_character(
     assert body["name"] == "캐릭터E"
     assert body["prompt"] == "캐릭터 프롬프트"
     assert body["hasUnpublishedChanges"] is False
-    assert body["thumbnailUrl"] is not None
+    # 작품 심사는 올라온 그림 그대로를 봐야 하므로 표시용 변형이 아니라 원본을 서명한다.
+    assert _url_key(body["thumbnailUrl"]) == await _thumbnail_storage_key(db_session, character)
     assert body["creator"]["id"] == str(creator.id)
     assert body["creator"]["email"] == creator.email
     assert body["creator"]["nickname"] == "제작자"

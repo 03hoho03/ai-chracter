@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timezone, UTC
+from urllib.parse import urlparse
 
 import httpx
 import pytest
@@ -75,6 +76,16 @@ async def _make_published_character(
     content.current_published_version_id = version.id
     await db_session.flush()
     return content
+
+
+async def _thumbnail_storage_key(db_session: AsyncSession, content: Content) -> str:
+    asset = await db_session.scalar(
+        sa.select(Asset)
+        .join(CharacterVersionDetail, CharacterVersionDetail.thumbnail_asset_id == Asset.id)
+        .where(CharacterVersionDetail.content_version_id == content.current_published_version_id)
+    )
+    assert asset is not None
+    return asset.storage_key
 
 
 async def _make_published_story(
@@ -285,7 +296,10 @@ async def test_report_detail_returns_content_detail(
     assert body["content"]["name"] == "캐릭터C"
     assert body["content"]["detailDescription"] == "설명입니다"
     assert body["content"]["prompt"] == "캐릭터 프롬프트"
-    assert body["content"]["thumbnailUrl"] is not None
+    # 신고 심사는 올라온 그림 그대로를 봐야 하므로 표시용 변형이 아니라 원본을 서명한다.
+    assert urlparse(body["content"]["thumbnailUrl"]).path.split("/", 2)[2] == await _thumbnail_storage_key(
+        db_session, character
+    )
     assert body["content"]["moderationStatus"] == "normal"
 
 

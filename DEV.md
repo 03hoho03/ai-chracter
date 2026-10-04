@@ -223,13 +223,15 @@ export TEST_REDIS_URL=redis://localhost:6379/<인덱스>
 ## 트러블슈팅
 
 - **썸네일이 깨져 보임(이미지 404)**: moto는 인메모리라 `docker compose down`/재생성 시 업로드된 이미지가 사라집니다.
-  **시드 재실행만으로는 안 고쳐집니다** — 응답은 원본이 아니라 `build_thumbnail_key()`가 만드는 `_thumb.webp` 변형을
-  서명해 내려주는데(`apps/api/src/api/content/router.py`의 `_resolve_thumbnail_url`), `seed_dev.py`/`seed_content/images.py`의
-  시드 업로드 경로는 원본만 올리고 이 변형은 만들지 않습니다. 원본은 있는데 `_thumb`가 0건인지 확인:
+  **시드 재실행만으로는 안 고쳐집니다** — 응답은 원본이 아니라 변형을 서명해 내려주는데(목록은 `_thumb.webp`, 상세는
+  `_display.webp` — `apps/api/src/api/content/router.py`의 `_resolve_thumbnail_url`·`_resolve_display_url`), `seed_dev.py`/`seed_content/images.py`의
+  시드 업로드 경로는 원본만 올리고 변형은 만들지 않습니다. 원본은 있는데 변형이 0건인지 두 변형을 각각 셉니다(`grep -c` 는
+  줄 수를 세므로 키마다 한 줄로 나눈 뒤 센다):
   ```sh
-  curl -s "http://localhost:5001/ai-character-chat-assets-dev?list-type=2&max-keys=1000" | grep -c _thumb
+  curl -s "http://localhost:5001/ai-character-chat-assets-dev?list-type=2&max-keys=1000" | tr '<' '\n' | grep -c '_thumb\.webp$'
+  curl -s "http://localhost:5001/ai-character-chat-assets-dev?list-type=2&max-keys=1000" | tr '<' '\n' | grep -c '_display\.webp$'
   ```
-  0이면 백필:
+  어느 쪽이든 0이거나 원본 수보다 적으면 백필(두 변형을 함께 채운다):
   ```sh
   cd apps/api && uv run --env-file .env python scripts/backfill_thumbnails.py
   ```

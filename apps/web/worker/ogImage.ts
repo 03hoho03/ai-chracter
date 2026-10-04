@@ -136,7 +136,7 @@ function toImageResponse(source: Response, maxAge: number): Response {
   return new Response(source.body, {
     status: 200,
     headers: {
-      // Content-Type은 원본을 따른다 — 썸네일은 `_thumb.webp`라 `.jpg` 주소여도 webp다.
+      // Content-Type은 원본을 따른다 — 프로필은 `_thumb.webp`, 콘텐츠는 `_display.webp`라 `.jpg` 주소여도 webp다.
       "content-type": source.headers.get("content-type") ?? "image/png",
       "cache-control": `public, max-age=${maxAge}`,
     },
