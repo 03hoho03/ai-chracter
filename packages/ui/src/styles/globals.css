@@ -212,7 +212,7 @@
   top: 118px;
 }
 @utility max-h-dialog {
-  /* 다이얼로그 최대 높이 — 위아래 1rem 씩 뷰포트 안에 남긴다(DialogContent 에는 최대 높이가 없다) */
+  /* 다이얼로그 최대 높이 — 위아래 1rem 씩 뷰포트 안에 남긴다(DialogContent 는 안에 DialogBody 가 있을 때만 이 값을 스스로 건다) */
   max-height: calc(100dvh - 2rem);
 }
 

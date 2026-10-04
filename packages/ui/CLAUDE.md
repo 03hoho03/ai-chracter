@@ -36,7 +36,12 @@ CLI가 뱉은 소스를 그대로 두지 않는다. 새로 추가할 때도 같�
 ## 호출부에서 처방하는 것 (프리미티브를 고치면 안 되는 자리)
 
 - **`DropdownMenuContent`의 폭은 트리거 폭에 고정돼 있다**(`w-(--radix-dropdown-menu-trigger-width)` + `min-w-32`, `w-`는 이 저장소가 더한 것). 그래서 **아이콘 버튼(36px)이 트리거면 메뉴가 128px에 갇혀** 라벨이 두 줄로 깨진다 — 그 호출부에 `className="w-auto"`를 얹는다. 프리미티브를 고치면 헤더 프로필·알림 등 기존 메뉴 폭이 함께 바뀐다.
-- **`DialogContent`에는 최대 높이도 내부 스크롤도 없다.** 내용이 길어질 수 있는 다이얼로그는 호출부에서 `max-h-dialog overflow-y-auto`를 얹을 것(`max-h-dialog`는 `globals.css`의 유틸리티, `calc(100dvh - 2rem)`) — Radix가 body 스크롤을 잠그므로 빼먹으면 **화면 밖으로 밀린 푸터에 닿을 방법이 없다**.
+- **내용이 길어질 수 있는 다이얼로그는 `DialogHeader` / `DialogBody` / `DialogFooter`(있으면)로 짠다.** `DialogBody`가 자손에 있으면 `DialogContent`가 스스로 최대 높이(`max-h-dialog`, `globals.css`의 유틸리티)가 있는 flex 컬럼이 되어 헤더·X·푸터는 제자리에 있고 본문만 스크롤한다 — 호출부는 폭(`sm:max-w-*`)만 준다. `DialogContent`에 높이·overflow를 직접 얹지 않는다: 그러면 헤더·X·푸터가 본문과 한 상자로 스크롤되어 본문을 내려 읽는 동안 X·제목이 시야 밖으로 사라진다. 높이 상한마저 빠지면 Radix가 body 스크롤을 잠근 탓에 화면 밖으로 밀린 푸터에 닿을 방법이 없다. `DialogBody`가 없는 다이얼로그는 예전 그대로(grid, 최대 높이 없음)라 짧은 확인 모달은 손대지 않는다. 예외로 `CommentActionModal`은 본문 없이 헤더·푸터뿐이라 `DialogBody`로 옮기지 않고 `max-h-dialog overflow-y-auto`를 그대로 얹는다 — 아주 낮은 화면(390 폭에서 뷰포트 높이 249px 미만)에서만 넘치므로 상자째 스크롤되는 것을 안전망으로 받아들였다.
+  - **본문에 포커스 요소가 없을 수 있으면 `scrollLabel`을 준다**(예: `scrollLabel="보관함 이미지"`). 닫기 X가 본문 밖이라 그대로면 키보드로 본문을 스크롤할 길이 없다. 이름은 다이얼로그 제목과 다르게 "무엇이 스크롤되는가"로.
+  - **본문 자식이 둘 이상이면 `DialogBody className="flex flex-col gap-4"`.** `DialogBody`는 `gap`이 없는 블록이라 그대로 두면 예전에 `DialogContent`의 `gap-4`가 주던 간격이 0이 된다. **그 자식 중 `overflow`가 hidden/auto/scroll인 것(예: 이미지를 자르는 `overflow-hidden` 웰)에는 `shrink-0`을 준다** — flex 아이템의 자동 최소 높이는 overflow가 visible일 때만 내용 높이이고 그 밖에는 0이라, 본문이 넘칠 때 본문이 스크롤하는 대신 그 자식이 납작하게 줄어 내용이 잘린다.
+  - **폼·애니메이션 래퍼가 헤더와 본문/푸터 사이에 끼면** 그 래퍼를 패딩 없는 `flex min-h-0 flex-1 flex-col gap-4`로 만든다(`DialogFooter`의 음수 마진이 모서리에 붙으려면 래퍼가 마지막 아이템이어야 한다).
+  - **최대 높이를 바꾸려면 `has-data-[slot=dialog-body]:max-h-…`로 적는다.** 평범한 `max-h-*`는 변형 선택자의 특이도에 조용히 진다.
+  - `DialogBody`는 헤더 아래에 오는 것을 전제로 위쪽 경계선(`border-t`)을 갖는다. 헤더 없이 쓰면 `border-t-0`을 준다.
 - **`DialogDescription`에 `break-keep`이 없다.** 한국어 본문이 어절 중간에서 끊기는데 **넓은 폭에서만 나타나는 게 함정이다**(좁은 화면은 우연히 문장 경계로 접힌다). 지금은 한국어 본문 7곳 전부 호출부에서 `className="break-keep"`을 준다.
 - **`Button`의 `size="lg"`를 단독으로 쓸 때는 `default`와 폭이 같아진다는 점을 알고 써라.** `lg`(`h-10`, 40px)는 `default`(`h-9`, 36px)와 패딩·타이포가 같아, 같은 라벨의 두 버튼에 걸면 폭이 완전히 같아지고(실측 107.05px = 107.05px) 차이는 높이 +4px뿐이다 — 위계가 아니라 정렬 오차로 읽힌다. **어휘 자체는 이제 실재한다**: `xs`/`icon-xs` 24px · `sm`/`icon-sm` 32px · `default`/`icon` 36px · `lg`/`icon-lg` 40px, 호출부 오버라이드로만 존재하는 48px(`h-12`, 플레이 버튼 2곳) 예외 — `default`가 36px가 되기 전엔 `size="lg"` 12곳 중 10곳이 `h-10`으로 다시 덮어써 36px 티어가 실사용 0건이었지만, 그 오버라이드가 걷히며 사라졌다. 같은 화면에 목적지·라벨이 같은 두 진입점을 크기로 가르려 하지 말 것 — 폭이 같아 위계로 안 읽히고, 스크린리더에도 같은 이름이 연달아 읽힌다. 크기 대신 라벨·배치로 가른다.
 
