@@ -269,7 +269,9 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
   목록 값(`CORS_ALLOW_ORIGINS`)은 쉼표로 구분한다.
 - 같은 키를 두 번 쓰지 않는다(compose·`docker run` 은 뒤 값, `ops/backup.sh` 는 앞 값, 나머지 크론 스크립트는 두 값을 줄바꿈으로 이어 붙인 값을 쓴다). CR(`\r`) 금지, 파일은 개행으로 끝난다.
 
-검사기는 `ops/check_env.py` 다. 출력은 줄 번호·규칙 이름뿐이고 값도 키 이름도 찍지 않는다(키 자리의 글자가 잘린 비밀값 조각일 수 있다). 키를 고치기 전후에 VM 에서 돌려 본다:
+**배포가 이 형식을 검사한다.** `deploy-api.yml` 은 `git reset` 직후, `.env` 를 고치거나 compose 를 부르기 전에
+`ops/check_env.py --format /opt/ddona/.env` 를 돌리고 위반이면 배포를 멈춘다. 출력은 줄 번호·규칙 이름뿐이고 값도 키 이름도
+찍지 않는다(키 자리의 글자가 잘린 비밀값 조각일 수 있다). 키를 고치기 전후에 VM 에서 직접 돌려 본다:
 
 ```sh
 cd /opt/ddona/app && sudo python3 ops/check_env.py --format /opt/ddona/.env
@@ -592,7 +594,7 @@ sudo docker stats --no-stream ddona-monitoring-bugsink-1   # mem_limit(1g)을 �
 
 | 변수 | 값 | 비고 |
 |---|---|---|
-| `BUGSINK_SECRET_KEY` | `openssl rand -base64 50 \| tr -d '\n'` | Django SECRET_KEY. `django-insecure` 접두어 없이. `tr` 을 빼먹지 않는다 — openssl 은 base64 출력을 64자마다 줄바꿈해서, 그대로 붙여 넣으면 키가 64자로 잘리고 남은 조각이 `.env` 의 독립된 줄이 된다("BE 런타임" 절 끝의 "env 파일 형식" 항목의 검사기가 그 줄을 조각 모양에 따라 `key-format` 또는 `empty-value` 로 잡고, 줄 번호·규칙만 찍는다) |
+| `BUGSINK_SECRET_KEY` | `openssl rand -base64 50 \| tr -d '\n'` | Django SECRET_KEY. `django-insecure` 접두어 없이. `tr` 을 빼먹지 않는다 — openssl 은 base64 출력을 64자마다 줄바꿈해서, 그대로 붙여 넣으면 키가 64자로 잘리고 남은 조각이 `.env` 의 독립된 줄이 된다("BE 런타임" 절 끝의 "env 파일 형식" 항목의 검사기가 그 줄을 조각 모양에 따라 `key-format` 또는 `empty-value` 로 잡아 배포를 멈추고, 줄 번호·규칙만 찍는다) |
 | `BUGSINK_CREATE_SUPERUSER` | `관리자이메일:비밀번호` | 최초 1회만 동작한다 — 사용자가 이미 1명이라도 있으면 무시된다(공식 소스 `bsmain/management/commands/prestart.py` 확인). 부트스트랩 후 값을 지우지 않고 둬도 안전하다 |
 | `BUGSINK_BASE_URL` | `https://ddona.site/_ingest` | `api.ddona.site`가 아니다 — DSN·이메일 링크가 이 값으로 조립되고, 브라우저 ingest는 `ddona.site`(Worker 경유)를 쓴다. `/_ingest` 프리픽스는 DSN·관리자 UI가 그 경로 아래로 들어가게 만든다(Bugsink는 이 프리픽스를 `FORCE_SCRIPT_NAME`으로 링크 생성에만 쓰고, 실제 라우팅은 `Caddyfile`이 프리픽스를 벗겨서 맞춘다 — 아래 "DSN 발급 절차"·`Caddyfile` 참조) |
 | `INGEST_SHARED_SECRET` | 무작위 값(`openssl rand -hex 32`) | `Caddyfile`이 **`/_ingest/api/*/envelope/`(에러 이벤트 수신 경로)에만** 거는 게이트 값. 관리자 UI(`/_ingest/` 나머지)는 이 시크릿 없이 통과하고 Bugsink 자체 로그인으로 보호된다(사용자 결정 — 가입은 이미 `CB_NOBODY`로 잠겨 있어 시크릿의 목적은 로그인 페이지를 숨기는 게 아니라 익명 POST 홍수를 막는 것). Caddy 쪽 배선은 `docker-compose.prod.yml`에 돼 있다 — 배포 순서는 아래 "배포 순서 위험" 참조 |

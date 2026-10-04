@@ -5,7 +5,7 @@ name: env-files
 # 의존성 설치 없이 python3 표준 라이브러리만으로 돈다.
 #
 # 경로 필터: 키가 생기거나 사라지는 곳(config.py, web·admin 소스), example 자신, 검사기, 이 워크플로.
-# 검사기는 `dev-up.sh` 시작 단계와 `pnpm check:env` 도 쓰므로 검사기만 바뀐 커밋도 자체 시험을 거쳐야 한다.
+# 검사기는 배포(`deploy-api.yml`)·`dev-up.sh` 시작 단계·`pnpm check:env` 가 쓰므로 검사기만 바뀐 커밋도 자체 시험을 거쳐야 한다.
 on:
   push:
     branches: [main]
