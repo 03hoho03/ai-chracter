@@ -19,17 +19,21 @@ export function ContentDetailModalOutlet({ renderComments }: { renderComments: (
 
   return (
     <Dialog open={state !== undefined} onOpenChange={(open) => !open && close()}>
-      {/* flex-col로 바꿔 `ContentDetailView`가 내놓는
-          [스크롤 본문(flex-1 overflow-y-auto), 플레이 CTA(shrink-0)] 두 아이템을 그대로 받는다.
-          overflow-y-auto는 여기서 본문 쪽으로 옮겨갔다(CTA는 스크롤에 딸려가면 안 된다). */}
+      {/* `ContentDetailView`가 내놓는 [헤더, 스크롤 본문(`DialogBody`), 플레이 바]를 받는다. `DialogBody`가 있으면
+          이 상자가 스스로 flex 컬럼이 되므로 여기서는 높이 상한만 바꾼다 — 프리미티브 기본 상한
+          (`max-h-dialog`)이 같은 변형 선택자로 걸려 있어 평범한 `max-h-*`로는 이기지 못한다. 편집 중에는
+          아래 inline `maxHeight`가 이 클래스를 덮는다. */}
       {/* 스토리는 2열 레이아웃이 필요해 더 넓게(`sm:max-w-2xl`),
           캐릭터는 지금 폭(`sm:max-w-lg`)을 그대로 유지한다. */}
       <DialogContent
-        className={cn("flex max-h-[85vh] flex-col sm:max-w-lg", state?.type === "story" && "sm:max-w-2xl")}
+        className={cn("sm:max-w-lg has-data-[slot=dialog-body]:max-h-[85vh]", state?.type === "story" && "sm:max-w-2xl")}
         data-content-detail
         style={editingViewport ? { top: editingViewport.top + editingViewport.height / 2, maxHeight: Math.max(120, editingViewport.height - 24) } : undefined}
       >
-        <DialogTitle className="sr-only">콘텐츠 상세정보</DialogTitle>
+        {/* 열려 있는 동안은 `ContentDetailView`가 모든 상태에서 제목을 하나 낸다. 여기 제목은 닫힘 애니메이션
+            중(`state`가 먼저 비어 뷰가 언마운트된 뒤)에만 다이얼로그 이름을 지킨다 — 둘이 함께 있으면 제목 id가
+            겹쳐 앞쪽인 이 문구가 다이얼로그 이름이 된다. */}
+        {!state && <DialogTitle className="sr-only">콘텐츠 상세정보</DialogTitle>}
         {state && <ContentDetailView key={state.id} id={state.id} type={state.type} variant="modal" comments={renderComments(state.id)} />}
       </DialogContent>
     </Dialog>
