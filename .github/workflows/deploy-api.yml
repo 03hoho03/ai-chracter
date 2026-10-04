@@ -82,6 +82,15 @@ jobs:
           # compose·Caddyfile 변경을 받아온다. 로컬 수정본은 버린다 — 형상은 git 이 단일 소스다.
           git fetch --depth=1 origin main
           git reset --hard origin/main
+          # .env 를 고치거나 compose 가 읽기 전에 형식부터 본다. 이 파일은 compose(앱 컨테이너·보간),
+          # docker run --env-file, 크론의 grep|cut 이 각자 읽어서, 따옴표·$·줄바꿈으로 잘린 조각 같은 표기가
+          # 하나라도 있으면 앱과 크론이 서로 다른 값을 보면서 아무도 실패하지 않는다. 위반이면 배포를 멈춘다.
+          # 키 이름 검사는 하지 않는다 — 이 파일에는 앱이 읽지 않는 compose·크론·Bugsink 키도 있다.
+          # 출력은 줄 번호·규칙 이름뿐이다(값도 키 이름도 찍지 않는다). `< /dev/null` 은 아래 alembic 줄과 같은 이유다.
+          if ! /usr/bin/python3 ops/check_env.py --format /opt/ddona/.env < /dev/null; then
+            echo "::error::/opt/ddona/.env 형식 위반 — 위 줄을 VM 에서 고친 뒤 재실행한다(DEPLOY.md 의 'env 파일 형식' 절)"
+            exit 1
+          fi
           # 이미지 태그만 갈아끼운다. 롤백은 이 줄을 예전 SHA 로 되돌리고 다시 up 하면 끝이다.
           sed -i "s|^API_IMAGE=.*|API_IMAGE=asia-northeast3-docker.pkg.dev/ddona-ai-character-chat/ddona/api:${TAG}|" /opt/ddona/.env
           C="docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env"
