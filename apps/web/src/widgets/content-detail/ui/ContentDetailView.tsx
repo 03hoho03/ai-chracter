@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSetAtom } from "jotai";
@@ -352,7 +353,9 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
               to="/profile/$userId"
               params={{ userId: content.creatorUserId }}
               onClick={() => setModalState(undefined)}
-              className="w-fit text-sm text-muted-foreground hover:underline"
+              // 보더 없는 텍스트 컨트롤이라 반투명 헤일로만으로는 포커스가 배경 대비 3:1 에 못 미친다 — 불투명 1px
+              // 아웃라인이 그 몫을 진다(DESIGN.md Buttons 절의 Focus). 아래 해시태그도 같다.
+              className="w-fit rounded-sm text-sm text-muted-foreground hover:underline focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               {content.creatorNickname}
             </Link>
@@ -371,7 +374,9 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
                       // 싣는다 — 파라미터 없는 `/`는 스토리라, 빼면 캐릭터 태그로 스토리 목록을 걸러 빈 화면이 된다.
                       void navigate({ to: "/", search: { hashtag: tag, type: toHomeTypeParam(content.type) } });
                     }}
-                    className="text-xs text-muted-foreground hover:underline"
+                    // 터치에서는 높이만 40px 로 키운다 — 줄바꿈된 태그 줄 사이 간격이 6px 라, 보이는 크기를 두고 누르는
+                    // 영역만 넓히면 위아래 줄의 영역이 겹친다. 모달은 높이를 맞출 스켈레톤이 없어 높이가 바뀌어도 된다.
+                    className="inline-flex items-center rounded-sm text-xs text-muted-foreground hover:underline focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-3 focus-visible:ring-ring/50 pointer-coarse:min-h-10"
                   >
                     #{tag}
                   </button>
@@ -380,7 +385,17 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
             )}
           </div>
 
-          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+          {/* 좋아요·즐겨찾기는 `ghost` 버튼이라 포커스(불투명 보더 + 헤일로)와 누르는 높이를 프리미티브에서 얻는다.
+              글자·글리프 사이 보이는 간격은 버튼으로 바꾸기 전과 같은 16px 로 맞춘다. 버튼은 안쪽 여백이 패딩 8px + 투명
+              보더 1px(포커스 때 `ring` 이 되는 그 보더) = 9px 라, 줄 간격을 8px 로 줄이고 좋아요를 1px(`-ml-px`) 당겨
+              대화수 → 하트가 8 − 1 + 9 = 16px, 즐겨찾기를 10px(`-ml-2.5`) 당겨 좋아요 수 → 별이 9 + 8 − 10 + 9 = 16px 다.
+              터치에서는 별 버튼이 40px 정사각이라 안쪽 여백이 12px 로 늘어, 좋아요 오른쪽 패딩을 4px 로 줄이고 당김을
+              9px 로 바꿔 5 + 8 − 9 + 12 = 16px 를 지킨다(Tailwind 간격 단계가 2px 라 홀수 합을 맞출 단계가 없어 이 한 값만
+              임의값이다). 당김 때문에 두 버튼 상자는 투명 보더 몇 px 만 겹치고, 누르는 영역은 둘 다 40px 를 넘는다.
+              hover 는 `secondary` —
+              모달 표면(`popover`) 위에서 ghost 기본 hover(`muted`)는 값이 같아 사라진다. `font-normal` 은 버튼의
+              medium 을 옆 대화수와 같은 본문 굵기로 되돌린다. */}
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <span className="inline-flex items-center gap-1.5">
               <MessageCircle aria-hidden className="size-4" />
               {/* 아이콘이 숨겨져 숫자만 읽히므로 무엇의 수인지 붙인다 — 카드 지표와 같은 이름("대화수")이다. */}
@@ -388,32 +403,36 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
               <span aria-hidden>{content.chatCount.toLocaleString()}</span>
             </span>
 
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               aria-pressed={isLiked}
               onClick={() => setIsLikeDesired((current) => !(current ?? content.isLiked))}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-md motion-safe:transition-colors hover:text-foreground",
+                "-ml-px gap-1.5 px-2 text-sm font-normal text-muted-foreground hover:bg-secondary pointer-coarse:h-10 pointer-coarse:pr-1",
                 isLiked && "text-primary hover:text-primary",
               )}
             >
               <Heart aria-hidden className={cn("size-4", isLiked && "fill-primary")} />
               {likeCount.toLocaleString()}
               <span className="sr-only">{isLiked ? "좋아요 취소" : "좋아요"}</span>
-            </button>
+            </Button>
 
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               aria-pressed={isFavorited}
               onClick={() => setIsFavoriteDesired((current) => !(current ?? content.isFavorited))}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-md motion-safe:transition-colors hover:text-foreground",
+                "-ml-2.5 px-2 text-sm font-normal text-muted-foreground hover:bg-secondary pointer-coarse:-ml-[9px] pointer-coarse:size-10 pointer-coarse:px-0",
                 isFavorited && "text-primary hover:text-primary",
               )}
             >
               <Star aria-hidden className={cn("size-4", isFavorited && "fill-primary")} />
               <span className="sr-only">{isFavorited ? "즐겨찾기 해제" : "즐겨찾기"}</span>
-            </button>
+            </Button>
 
           </div>
 
@@ -448,13 +467,14 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
           hover 표면이 `bg-muted`가 아닌 이유: `--muted`와 `--popover`가 다크 0.210 / 라이트 0.970으로
           **값이 같아** 모달 안에서 hover가 통째로 사라진다(같은 함정을 Slider 트랙에서 겪었다).
           `secondary`는 페이지 배경·모달 표면 양쪽에서 살아남는다. hover에서 글자도 `foreground`로 올린다 —
-          라이트 `muted-foreground` on `secondary`는 4.29:1로 AA 미달이다(DESIGN.md Colors 절의 "표면 위 채움 규칙"). */}
+          라이트 `muted-foreground` on `secondary`는 4.29:1로 AA 미달이다(DESIGN.md Colors 절의 "표면 위 채움 규칙").
+          포커스 때 보더를 `ring` 으로 올린다 — 무채색 보더 위 반투명 헤일로만으로는 3:1 에 못 미친다. */}
       <section className="flex flex-col gap-2">
         <h2 className="text-sm font-semibold text-foreground">업데이트</h2>
         <button
           type="button"
           onClick={() => setIsVersionHistoryOpen(true)}
-          className="flex w-full items-center gap-2 rounded-lg border border-border px-3 py-2.5 text-left text-sm text-muted-foreground motion-safe:transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="flex w-full items-center gap-2 rounded-lg border border-border px-3 py-2.5 text-left text-sm text-muted-foreground motion-safe:transition-colors hover:bg-secondary hover:text-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         >
           <History aria-hidden className="size-4 shrink-0" />
           <span className="min-w-0 flex-1 break-keep">

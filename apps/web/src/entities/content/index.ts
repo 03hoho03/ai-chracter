@@ -69,7 +69,7 @@ export { resolveHomeContentType, toHomeTypeParam, toHomeTypeSwitchSearch } from 
 export type { HomeTypeParam } from "./model/homeContentType";
 export { toPriorityCount, toThumbnailAspect, toThumbnailAspectRatio } from "./model/cardLayout";
 export type { GridAspect, ThumbnailAspect } from "./model/cardLayout";
-export { useContentDetailModal } from "./lib/useContentDetailModal";
+export { takeDetailModalReturnFocus, useContentDetailModal } from "./lib/useContentDetailModal";
 export { toGridColumns, toThumbnailAspectClass } from "./ui/cardLayoutClass";
 export { ContentCard } from "./ui/ContentCard";
 export type { ContentCardMetrics, ContentCardProps, ContentCardTag } from "./ui/ContentCard";

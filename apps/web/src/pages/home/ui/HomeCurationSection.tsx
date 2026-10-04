@@ -47,7 +47,7 @@ export function HomeCurationSection({ item, onOpen }: HomeCurationSectionProps) 
           event.preventDefault();
           onOpen(item.type, item.id);
         }}
-        className="flex w-full max-w-xl cursor-pointer items-start gap-4 rounded-xl text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-px"
+        className="flex w-full max-w-xl cursor-pointer items-start gap-4 rounded-xl text-left focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-px"
       >
         <div
           className={cn(

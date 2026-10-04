@@ -35,27 +35,39 @@ export function StoryDetailBody({
 
   return (
     <div className="flex flex-col gap-3 border-t border-border pt-5">
-      <h2 className="text-sm font-semibold text-foreground">시작 상황 선택</h2>
+      {/* 하나뿐이면 고를 것이 없으니 칩 대신 이름만 적는다 — 선택된 칩 하나가 `primary` 솔리드라 아래 플레이 버튼과
+          함께 한 화면에 솔리드가 둘 선다(빌더 `StartingSetupPicker` 와 같은 처방). 이름은 아래 프롤로그가 어느 시작
+          상황의 글인지 상자 바로 위에서 알린다. */}
+      {startingSetups.length === 1 ? (
+        <div className="flex flex-col gap-1.5">
+          <h2 className="text-sm font-semibold text-foreground">시작 상황</h2>
+          <p className="text-sm leading-snug font-medium break-keep wrap-anywhere text-foreground">‘{selectedSetup.name}’</p>
+        </div>
+      ) : (
+        <>
+          <h2 className="text-sm font-semibold text-foreground">시작 상황 선택</h2>
 
-      <ToggleGroup
-        type="single"
-        variant="outline"
-        size="sm"
-        value={selectedSetup.id}
-        onValueChange={(value) => {
-          if (!value) return;
-          onSelectedSetupIdChange(value);
-          setIsExpanded(false);
-        }}
-        aria-label="시작설정 선택"
-        className="flex-wrap justify-start"
-      >
-        {startingSetups.map((setup) => (
-          <ToggleGroupItem key={setup.id} value={setup.id}>
-            {setup.name}
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="sm"
+            value={selectedSetup.id}
+            onValueChange={(value) => {
+              if (!value) return;
+              onSelectedSetupIdChange(value);
+              setIsExpanded(false);
+            }}
+            aria-label="시작설정 선택"
+            className="flex-wrap justify-start"
+          >
+            {startingSetups.map((setup) => (
+              <ToggleGroupItem key={setup.id} value={setup.id}>
+                {setup.name}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        </>
+      )}
 
       <div className="rounded-lg bg-secondary/50 p-4">
         {/* 접힌 요약은 글만 네 줄 보여 준다 — 그림 블록이 줄 수 자르기(`line-clamp`) 안에 들어가면 그림 하나가 요약
