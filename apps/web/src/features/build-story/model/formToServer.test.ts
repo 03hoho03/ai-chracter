@@ -516,11 +516,18 @@ describe("formToServer", () => {
     }
   });
 
-  it("sends a valid or empty default user name as written", () => {
-    for (const name of ["", "조수", " 조수 "]) {
+  // 서버도 앞뒤 공백을 걷어 저장한다. 미리보기는 보낸 값을 그대로 이름으로 쓰므로 여기서 걷지 않으면 미리보기 화면과
+  // 서버 프롬프트의 이름이 갈린다. 공백만 있으면 빈 값이 돼 서버처럼 대체어로 돌아간다.
+  it("sends a valid or empty default user name trimmed, like the server stores it", () => {
+    for (const [name, sent] of [
+      ["", ""],
+      ["조수", "조수"],
+      [" 조수 ", "조수"],
+      ["   ", ""],
+    ] as const) {
       const values = baseFormValues();
       values.storySetting.defaultUserName = name;
-      expect(formToServer(values).defaultUserName).toBe(name);
+      expect(formToServer(values).defaultUserName).toBe(sent);
     }
   });
 });

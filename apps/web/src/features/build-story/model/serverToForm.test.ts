@@ -514,6 +514,18 @@ describe("serverToForm", () => {
     expect(formToServer(serverToForm(response)).defaultUserName).toBe("조수");
   });
 
+  it("keeps a default user name typed with surrounding spaces the same after a save and reload", () => {
+    const form = serverToForm(baseDraftResponse());
+    form.storySetting.defaultUserName = " 조수 ";
+    const saved = formToServer(form).defaultUserName;
+    expect(saved).toBe("조수");
+
+    const reloaded = serverToForm({ ...baseDraftResponse(), defaultUserName: saved ?? "" });
+
+    expect(reloaded.storySetting.defaultUserName).toBe("조수");
+    expect(formToServer(reloaded).defaultUserName).toBe("조수");
+  });
+
   // 이 칸이 생기기 전 서버의 응답에는 키가 없다. 폼 값이 undefined 면 입력칸이 비제어로 시작하고 검사 함수가 던진다.
   it("treats a response without the default user name as an empty one", () => {
     const oldResponse: Partial<StoryDraftResponse> = baseDraftResponse();

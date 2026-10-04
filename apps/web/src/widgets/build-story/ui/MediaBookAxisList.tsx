@@ -1,6 +1,6 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
-import { Trash2, TriangleAlert } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useFormContext } from "react-hook-form";
 import { toast } from "sonner";
@@ -20,7 +20,6 @@ import {
   type StoryBuilderFormValues,
 } from "@/features/build-story";
 import { MediaBookConfirmModal } from "@/features/edit-media-book";
-import { hasUserMacro } from "@/shared/lib/text/authorMacroWarnings";
 
 import { useMediaBookEditor } from "../model/useMediaBookEditor";
 
@@ -166,7 +165,6 @@ export function MediaBookAxisList({ axis }: MediaBookAxisListProps) {
           추가
         </Button>
       </div>
-      <UserMacroInNameNotice name={newName} label={label} />
       {newNameError !== undefined && (
         <p id={`${listId}-new-error`} role="alert" className="text-xs text-destructive-text">
           {newNameError}
@@ -252,30 +250,12 @@ function AxisItemRow({ item, label, error, onErrorChange, onRename, onRemove }: 
           <Trash2 aria-hidden />
         </Button>
       </div>
-      <UserMacroInNameNotice name={draftName} label={label} />
       {error !== undefined && (
         <p id={`${inputId}-error`} role="alert" className="text-xs text-destructive-text">
           {error} — 저장되지 않았어요(Esc 로 되돌리기).
         </p>
       )}
     </li>
-  );
-}
-
-/**
- * 인물·장면 이름은 이미지 표기(`{{img::인물/장면}}`)의 열쇠라 `{{user}}` 를 사용자 이름으로 바꾸지 않는다 — 바꾸면 보는
- * 사람마다 표기가 가리키는 칸이 달라진다. 다른 글 칸과 달리 글자 그대로 남는다는 것을 알린다. 저장은 막지 않는다.
- */
-function UserMacroInNameNotice({ name, label }: { name: string; label: string }) {
-  if (!hasUserMacro(name)) return null;
-  return (
-    <p className="flex items-start gap-1.5 text-xs break-keep text-muted-foreground">
-      <TriangleAlert aria-hidden className="mt-px size-3.5 shrink-0" />
-      <span>
-        {label} 이름 속 <span className="text-foreground">{"{{user}}"}</span>는 사용자 이름으로 바뀌지 않고 글자 그대로
-        보여요.
-      </span>
-    </p>
   );
 }
 

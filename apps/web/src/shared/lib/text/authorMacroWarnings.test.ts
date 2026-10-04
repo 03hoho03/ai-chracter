@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { expandAuthorMacros } from "./authorMacros";
-import { findAuthorMacroTypos, hasCharMacro, hasUserMacro } from "./authorMacroWarnings";
+import { findAuthorMacroTypos, hasCharMacro } from "./authorMacroWarnings";
 
 const NAMES = { userName: "지훈", charName: "유나" };
 
@@ -31,22 +31,29 @@ describe("findAuthorMacroTypos", () => {
     expect(findAuthorMacroTypos(text)).toEqual([]);
   });
 
-  // 오타로 알린 모양은 실제로 이름으로 바뀌지 않아야 한다 — 바뀌는 모양을 오타라 하면 작가가 맞는 글을 고친다.
-  it("flags only shapes the expander leaves as written", () => {
+  // 오타로 알리는 모양은 대부분 이름으로 바뀌지 않고 글자 그대로 남는다.
+  it("flags shapes the expander leaves as written", () => {
     for (const typo of ["{user}", "{{user}", "{user}}", "{{user", "<USER>"]) {
       expect(expandAuthorMacros(typo, NAMES)).toBe(typo);
     }
   });
+
+  // 중괄호가 두 겹보다 많으면 엔진은 안쪽 `{{user}}` 를 이름으로 바꾸지만 남는 중괄호가 화면에 보인다. 그래서 이 모양도
+  // 오타로 알린다 — "두 겹으로 쓰라"는 안내가 결과적으로 맞는 조언이다.
+  it("flags extra braces even though the inner macro is replaced", () => {
+    expect(expandAuthorMacros("{{{user}}}", NAMES)).toBe("{지훈}");
+    expect(expandAuthorMacros("{{user}}}", NAMES)).toBe("지훈}");
+    expect(findAuthorMacroTypos("{{{user}}}")).toEqual(["{{{user}}}"]);
+    expect(findAuthorMacroTypos("{{user}}}")).toEqual(["{{user}}}"]);
+  });
 });
 
-describe("hasCharMacro / hasUserMacro", () => {
+describe("hasCharMacro", () => {
   it("finds macros the expander replaces", () => {
     expect(hasCharMacro("{{ Char }}가 손을 흔든다")).toBe(true);
-    expect(hasUserMacro("{{user}}의 자리")).toBe(true);
   });
 
   it("ignores typos and the other macro", () => {
     expect(hasCharMacro("{char} 와 {{user}}")).toBe(false);
-    expect(hasUserMacro("{user} 와 {{char}}")).toBe(false);
   });
 });
