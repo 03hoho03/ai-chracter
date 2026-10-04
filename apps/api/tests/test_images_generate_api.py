@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.assets import image_processing
 from api.core import clover, rate_limit_gate
 from api.core.config import settings
+from api.core.redis import redis_client
 from api.core.s3 import build_variant_keys
 from api.db.models.auth import User
 from api.db.models.clover import CloverLedger
@@ -27,6 +28,7 @@ from api.images import router as images_router
 from api.images.jobs import ImageGenerationJob, ImageGenerationJobStatus, get_job
 from api.llm.client import LLMClientError
 from api.llm.dependencies import get_image_client
+from api.llm import local_image
 from api.llm.image import ImageClient, ImageStylePreset
 from api.llm.local_image import (
     LocalCapabilities,
@@ -931,7 +933,11 @@ async def test_generate_returns_429_creates_no_request_row(
     await db_session.commit()
     await _login_as(db_client, user.id)
     _stub_capabilities_ready(monkeypatch)
-    monkeypatch.setattr("api.images.router.try_admit", lambda _user_id: False)
+
+    async def reject_admission(_redis: object, _user_id: uuid.UUID) -> str | None:
+        return None
+
+    monkeypatch.setattr("api.images.router.try_admit", reject_admission)
 
     resp = await db_client.post("/images/generate", json=_generate_payload())
 
@@ -1187,6 +1193,63 @@ async def test_token_paid_failure_does_not_touch_clover(
     assert await _clover_ledger(db_session, user.id) == []
     await db_session.refresh(user)
     assert user.clover_balance == 100
+
+
+async def test_a_running_job_keeps_its_queue_slot_past_the_lease_and_returns_it_when_done(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """대기열 칸은 짧은 만료로 잡히고 잡이 도는 동안 갱신이 민다. 라우터가 잡마다 갱신을 띄우지 않으면
+    대기·생성이 만료보다 길어지는 순간 살아 있는 잡의 칸이 풀려, 같은 유저가 잡을 하나 더 세우고 전역
+    상한도 넘친다. 잡이 끝나면 칸은 반납돼 남지 않아야 한다."""
+    monkeypatch.setattr(settings, "local_image_queue_limit", 4)
+    monkeypatch.setattr(local_image, "ADMISSION_LEASE_MS", 300)
+    monkeypatch.setattr(local_image, "ADMISSION_HEARTBEAT_SECONDS", 0.05)
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    _stub_capabilities_ready(monkeypatch)
+
+    started = asyncio.Event()
+    finish = asyncio.Event()
+
+    class _HeldImageClient(ImageClient):
+        def __init__(self, model_id: str) -> None:
+            self._model_id = model_id
+
+        async def generate_image(
+            self, prompt: str, style: ImageStylePreset, aspect_ratio: str, reference_image: bytes | None = None
+        ) -> tuple[bytes, str]:
+            started.set()
+            await finish.wait()
+            return _png_bytes(), "image/png"
+
+    app.dependency_overrides[get_image_client] = lambda: _HeldImageClient
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload())
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+
+    try:
+        await asyncio.wait_for(started.wait(), timeout=5)
+        # 만료(0.3초)의 두 배를 기다린다 — 갱신이 없으면 이 사이에 칸의 만료 시각이 지난다.
+        await asyncio.sleep(0.6)
+        # 만료 시각이 지난 칸은 다음 admit 이 지우기 전까지 집합에 남으므로, 있는지가 아니라 만료 시각이
+        # 아직 미래인지를 본다. 시각은 칸 점수와 같은 Redis 서버 시계로 읽는다.
+        seconds, microseconds = await redis_client.time()
+        now_ms = seconds * 1000 + microseconds // 1000
+        members = [str(member) for member in await redis_client.zrange(local_image.ADMISSION_KEY, 0, -1)]
+        held = [member for member in members if member.startswith(f"{user.id}:")]
+        assert len(held) == 1
+        expires_at = await redis_client.zscore(local_image.ADMISSION_KEY, held[0])
+        assert expires_at is not None and expires_at > now_ms
+    finally:
+        finish.set()
+
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+    assert job.status == ImageGenerationJobStatus.SUCCEEDED
+    assert await redis_client.zcard(local_image.ADMISSION_KEY) == 0
 
 
 # 차감 뒤 **되돌릴 수 있는 첫 지점 앞**의 구간. 채팅은 이미

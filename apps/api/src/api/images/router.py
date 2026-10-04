@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Literal, assert_never, get_args
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from redis.exceptions import RedisError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
@@ -33,6 +34,7 @@ from api.core.s3 import (
     generate_presigned_get_url,
     upload_object,
 )
+from api.core.redis import redis_client
 from api.core.sentry import capture_dependency_failure
 from api.db.models.media import Asset, AssetKind, AssetStatus, ImageGenerationRequest
 from api.db.session import get_db_session, get_session_factory
@@ -62,6 +64,7 @@ from api.llm.local_image import (
     LocalImageBlockedError,
     LocalImageInputError,
     get_capabilities,
+    keep_admission_alive,
     release_admission,
     try_admit,
 )
@@ -239,6 +242,7 @@ async def _refund_unmade_images(
 async def _run_generation(
     job_id: str,
     owner_user_id: uuid.UUID,
+    admission: str,
     request_id: uuid.UUID,
     image_client: ImageClient,
     session_factory: async_sessionmaker[AsyncSession],
@@ -250,13 +254,15 @@ async def _run_generation(
 ) -> None:
     # 이 잡을 위한 admission은 라우터의 `try_admit()`
     # 호출 하나에 대응한다(이미지 개수와 무관) — 잡이 끝나면(성공/실패 모두) 반드시
-    # 반납해야 한다. 안 그러면 이 잡이 상한 슬롯을 영구 점유해 게이트가 막힌다.
+    # 반납해야 한다. 안 그러면 이 잡이 만료까지 상한 슬롯을 점유해 그 유저가 429를 받는다.
+    # 칸은 짧은 만료로 잡혀 있어(죽은 워커의 칸을 회수하려고) 잡이 도는 동안 갱신 태스크가 만료를 민다.
     #
     # 이 둘은 `try` **밖**에서 초기화한다 — 아래 `except`가
     # 집계 도중 터진 경우에도 "그 시점까지 성공한 장수"를 읽어야 하기 때문이다. `try` 안에
     # 두면 `update_job(RUNNING)`이 터졌을 때 이름 자체가 없어 `UnboundLocalError`가 난다.
     succeeded_count = 0
     refund_settled = False
+    heartbeat = asyncio.create_task(keep_admission_alive(redis_client, admission))
     try:
         await update_job(job_id, status=ImageGenerationJobStatus.RUNNING)
         results = await asyncio.gather(
@@ -442,7 +448,8 @@ async def _run_generation(
             )
         raise
     finally:
-        release_admission(owner_user_id)
+        heartbeat.cancel()
+        await release_admission(redis_client, admission)
 
 
 def _style_items(served_style_ids: tuple[str, ...]) -> list[ImageStyleItem]:
@@ -623,12 +630,23 @@ async def generate_images(
             payload.reference_asset_id, owner_user_id, session_factory
         )
 
-        # 검사+증가가 `try_admit()` 하나의 동기
-        # 함수 안에 있어 그 사이에 await가 끼어들 수 없다(원자적인 것은 `+=1` 자체가 아니라
-        # 이 동기 블록이다) — 상한이 걸렸는데도 거절하지 않으면 한 사용자가 GPU 직렬
-        # 처리량을 몇 분씩 독점한다. 검사는 전역 상한 +
+        # 검사+추가가 `try_admit()` 안의 Redis 스크립트 한 번이라
+        # 다른 요청(다른 워커 포함)이 그 사이에 끼어들 수 없다 — 상한이 걸렸는데도 거절하지
+        # 않으면 한 사용자가 GPU 직렬 처리량을 몇 분씩 독점한다. 검사는 전역 상한 +
         # 유저별 1칸 둘이고, 429 바디는 유저 상한 429와 `code`로만 갈린다.
-        if not try_admit(owner_user_id):
+        #
+        # Redis 를 못 쓰면 칸을 셀 수 없으므로 거절한다(503). 채팅 레이트리밋은 Redis 장애 때
+        # 통과시키지만(fail-open) 여기서 통과시키면 워커마다 집 PC 를 부르는 잡이 무제한으로 쌓인다
+        # — 집 PC 보호가 우선이다. 바깥 `except` 가 이미 깎은 토큰·클로버를 돌려준다.
+        try:
+            admission = await try_admit(redis_client, owner_user_id)
+        except RedisError as exc:
+            logger.warning("image generation admission unavailable: %s", type(exc).__name__)
+            capture_dependency_failure(exc, dependency="redis")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Image generation is currently unavailable"
+            ) from exc
+        if admission is None:
             raise image_queue_full(owner_user_id)
 
         try:
@@ -655,6 +673,7 @@ async def generate_images(
                 _run_generation,
                 job.job_id,
                 owner_user_id,
+                admission,
                 request_row.id,
                 image_client,
                 session_factory,
@@ -673,7 +692,7 @@ async def generate_images(
             # admit과 백그라운드 인계 사이(예: `create_job`의 Redis 순단)에서 실패하면
             # `_run_generation`이 아예 시작되지 않아 그쪽의 finally가 못 돈다 — 여기서
             # 직접 반납하지 않으면 이 슬롯이 영구 점유돼 상한에서 게이트가 막힌다.
-            release_admission(owner_user_id)
+            await release_admission(redis_client, admission)
             raise
     except Exception:
         # 안쪽 `except Exception`(반납)보다 바깥이다 — 반납과 환불은 서로 다른 자원이고,

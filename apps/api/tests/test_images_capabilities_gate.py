@@ -28,6 +28,8 @@ from typing import cast
 
 import httpx
 import pytest
+from redis.asyncio import Redis
+from redis.exceptions import RedisError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -86,12 +88,15 @@ def _stub_ready_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _reset_admission(monkeypatch: pytest.MonkeyPatch, *, queue_limit: int) -> None:
-    """전역 깊이·유저별 깊이 둘 다 프로세스 전역이라(모듈 최상단 정수 + dict) 다른 테스트가
-    admit한 채 남긴 값과 격리해야 한다. monkeypatch가 teardown에서 원래 값(과 원래 dict
-    **객체**)을 되돌리므로 이 테스트들이 반납하지 않고 끝나도 뒤 테스트에 새지 않는다."""
-    monkeypatch.setattr("api.llm.local_image._queue_depth", 0)
-    monkeypatch.setattr("api.llm.local_image._user_queue_depth", {})
+    """대기열 칸은 Redis 의 고정 키라 다른 테스트가 admit한 채 남긴 칸과 격리해야 한다 — 그 키는
+    conftest 의 autouse `_flush_local_image_keys` 가 테스트마다 비우므로 여기서는 상한만 정한다.
+    이 테스트들이 반납하지 않고 끝나도 뒤 테스트에 새지 않는다."""
     monkeypatch.setattr(settings, "local_image_queue_limit", queue_limit)
+
+
+async def _reject_admission(_redis: object, _user_id: uuid.UUID) -> str | None:
+    """`try_admit` 이 상한에서 거절한 것과 같은 반환값."""
+    return None
 
 
 def _stub_job_pipeline(monkeypatch: pytest.MonkeyPatch) -> list[str]:
@@ -450,7 +455,7 @@ async def test_generate_returns_429_and_creates_no_job_when_admission_is_rejecte
         return _READY_MATCHING_LOCAL
 
     monkeypatch.setattr("api.images.router.get_capabilities", fake_get_capabilities)
-    monkeypatch.setattr("api.images.router.try_admit", lambda _user_id: False)
+    monkeypatch.setattr("api.images.router.try_admit", _reject_admission)
 
     create_job_calls = {"n": 0}
 
@@ -475,7 +480,7 @@ async def test_four_distinct_users_fill_the_global_queue_and_a_fifth_is_rejected
     요청부터 유저별 칸에서 먼저 걸리기 때문이다. 서로 다른 유저 5명이 **동시에** 도착해야
     전역 상한이 판정에 관여한다.
 
-    이 배치가 잡는 회귀가 하나 더 있다: `_queue_depth`(전역 정수)를 유저별 dict로 **교체**해
+    이 배치가 잡는 회귀가 하나 더 있다: 전역 상한 검사를 유저별 칸 검사로 **교체**해
     버리면 유저마다 1칸씩 무제한으로 열려 GPU 직렬 처리량 방어가 통째로 사라진다 —
     그때 5번째 유저가 429가 아니라 202를 받는다."""
     await _authed_user(db_client, db_session)
@@ -539,7 +544,6 @@ async def test_admission_is_released_when_create_job_raises_so_the_gate_does_not
     from api.llm.local_image import release_admission as real_release_admission
 
     await _authed_user(db_client, db_session)
-    monkeypatch.setattr("api.llm.local_image._queue_depth", 0)
 
     async def fake_get_capabilities() -> LocalCapabilities:
         return _READY_MATCHING_LOCAL
@@ -554,9 +558,9 @@ async def test_admission_is_released_when_create_job_raises_so_the_gate_does_not
 
     release_calls = {"n": 0}
 
-    def fake_release_admission(user_id: uuid.UUID) -> None:
+    async def fake_release_admission(redis: Redis, admission: str) -> None:
         release_calls["n"] += 1
-        real_release_admission(user_id)
+        await real_release_admission(redis, admission)
 
     monkeypatch.setattr("api.images.router.release_admission", fake_release_admission)
 
@@ -651,7 +655,6 @@ async def test_admission_is_released_when_the_job_finishes_so_a_later_request_is
     from api.llm.local_image import release_admission as real_release_admission
 
     user = await _authed_user(db_client, db_session)
-    monkeypatch.setattr("api.llm.local_image._queue_depth", 0)
 
     async def fake_get_capabilities() -> LocalCapabilities:
         return _READY_MATCHING_LOCAL
@@ -661,9 +664,9 @@ async def test_admission_is_released_when_the_job_finishes_so_a_later_request_is
 
     release_calls = {"n": 0}
 
-    def fake_release_admission(user_id: uuid.UUID) -> None:
+    async def fake_release_admission(redis: Redis, admission: str) -> None:
         release_calls["n"] += 1
-        real_release_admission(user_id)
+        await real_release_admission(redis, admission)
 
     monkeypatch.setattr("api.images.router.release_admission", fake_release_admission)
 
@@ -725,7 +728,7 @@ async def test_images_generate_returns_user_limit_body_when_token_bucket_is_empt
     assert detail["retryAfterSeconds"] >= 1
     assert created_job_ids == []
     # 큐 칸은 건드리지 않았다 — 게이트가 `Depends`라 라우트 본문(try_admit) 전에 끊는다.
-    assert local_image._user_queue_depth == {}
+    assert await redis_client.zcard(local_image.ADMISSION_KEY) == 0
     assert await _bucket_tokens(user.id) is None
 
 
@@ -737,7 +740,7 @@ async def test_global_queue_429_now_uses_the_structured_detail_body(
     두 429를 `code`로 가르고 `retryAfterSeconds`를 함께 싣는다."""
     await _authed_user(db_client, db_session)
     _stub_ready_capabilities(monkeypatch)
-    monkeypatch.setattr("api.images.router.try_admit", lambda _user_id: False)
+    monkeypatch.setattr("api.images.router.try_admit", _reject_admission)
 
     resp = await db_client.post("/images/generate", json=_generate_payload())
 
@@ -759,7 +762,7 @@ async def test_queue_full_refunds_the_charged_tokens(
     — 환불이 빠지면 8.0, 차감이 빠지면 None이다."""
     _reset_admission(monkeypatch, queue_limit=4)
     _stub_ready_capabilities(monkeypatch)
-    monkeypatch.setattr("api.images.router.try_admit", lambda _user_id: False)
+    monkeypatch.setattr("api.images.router.try_admit", _reject_admission)
 
     user = await _authed_user(db_client, db_session)
 
@@ -767,6 +770,35 @@ async def test_queue_full_refunds_the_charged_tokens(
 
     assert resp.status_code == 429
     assert resp.json()["detail"]["code"] == "QUEUE_FULL"
+    assert await _bucket_tokens(user.id) == pytest.approx(
+        float(rate_limit_gate.IMAGE_TOKEN_CAPACITY), abs=0.01
+    )
+
+
+async def test_redis_failure_at_admission_returns_503_creates_no_job_and_refunds(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """대기열 칸을 Redis 에서 세므로 Redis 가 죽으면 상한을 확인할 수 없다. 그때 통과시키면 워커마다
+    집 PC 를 부르는 잡이 무제한으로 쌓인다 — 거절하되, 서버 결함(500)이 아니라 일시적 사용 불가(503)
+    로 답하고, 이미 깎은 토큰은 돌려준다(이미지를 한 장도 못 받았다)."""
+    _stub_ready_capabilities(monkeypatch)
+    created_job_ids = _stub_job_pipeline(monkeypatch)
+
+    async def failing_try_admit(*args: object) -> str | None:
+        raise RedisError("redis down")
+
+    monkeypatch.setattr("api.images.router.try_admit", failing_try_admit)
+    user = await _authed_user(db_client, db_session)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://testserver",
+        cookies=db_client.cookies,
+    ) as client:
+        resp = await client.post("/images/generate", json=_generate_payload(count=2))
+
+    assert resp.status_code == 503
+    assert created_job_ids == []
     assert await _bucket_tokens(user.id) == pytest.approx(
         float(rate_limit_gate.IMAGE_TOKEN_CAPACITY), abs=0.01
     )
@@ -846,7 +878,7 @@ async def test_token_charge_equals_requested_image_count(
 
     # 같은 유저의 두 번째 요청이라 유저별 큐 1칸이 아직 차 있다(잡이 stub이라 반납되지 않는다).
     # 그 칸을 비워야 아래 429가 `QUEUE_FULL`이 아니라 토큰 부족 때문임이 확실해진다.
-    local_image._user_queue_depth.clear()
+    await redis_client.delete(local_image.ADMISSION_KEY)
     await _set_bucket_tokens(user.id, 1.0)
 
     rejected = await db_client.post("/images/generate", json=_generate_payload(count=2))
@@ -974,7 +1006,7 @@ async def test_whitespace_only_prompt_is_rejected_before_any_token_is_taken(
 
     assert resp.status_code == 422
     assert created_job_ids == []
-    assert local_image._user_queue_depth == {}
+    assert await redis_client.zcard(local_image.ADMISSION_KEY) == 0
     assert await _bucket_tokens(user.id) is None
 
 

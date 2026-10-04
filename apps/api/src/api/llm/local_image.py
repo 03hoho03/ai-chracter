@@ -12,18 +12,27 @@ PC가 생성 전(프롬프트·참조 이미지)·생성 후(이미지) 2단계�
 않는다.
 """
 
+import asyncio
 import base64
+import logging
+import secrets
 import time
 import uuid
 from asyncio import Lock, Semaphore
 from dataclasses import dataclass
 
 import httpx
+from redis.asyncio import Redis
+from redis.exceptions import RedisError
 
 from api.core.config import settings
+from api.core.redis import redis_client
+from api.core.redis_lock import release_lock, wait_for_lock
 from api.images.models import ImageBlockedReason, ImageInputError, ImageStylePreset
 from api.llm.client import LLMClientError
 from api.llm.image import ImageClient
+
+logger = logging.getLogger(__name__)
 
 
 class LocalImageBlockedError(LLMClientError):
@@ -68,6 +77,10 @@ class LocalCapabilities:
 
 UNAVAILABLE = LocalCapabilities(ready=False, models=())
 
+# 프로세스 안의 직렬화. 워커 사이의 직렬화는 아래 Redis 락이 맡고, 이 세마포어는 그 앞단에 남는다 —
+# ① 한 워커 안에서는 지금처럼 먼저 온 장이 먼저 나간다(같은 잡의 두 장이 순서대로) ② Redis 를 폴링하는
+# 대기자가 워커당 하나로 묶인다 ③ 워커가 하나면 순서·동작이 Redis 락 도입 전과 같다.
+#
 # `build_image_client`(`llm/dependencies.py`)는
 # `@lru_cache`가 없어 요청마다 새 `LocalImageClient` 인스턴스가 생긴다 — 세마포어를
 # 인스턴스 필드에 두면 아무것도 직렬화하지 않는다. 모듈 최상단이어야 프로세스 전역이다.
@@ -75,65 +88,140 @@ UNAVAILABLE = LocalCapabilities(ready=False, models=())
 # (최초 사용 시점에 실행 중인 루프에 붙는다).
 _generation_semaphore = Semaphore(1)
 
-# `asyncio.Semaphore`는 대기자 수를 공개하지 않는다
-# (`_waiters`는 private) — 대기열 상한(`generate_images`의 사전 차단)을 판정하려면 별도
-# 카운터가 필요하다.
+# 워커 사이의 생성 직렬화. 집 PC 는 다른 생성이 진행 중이면 대기열 없이 즉시 429 로 거절하므로, 두
+# 워커가 겹치면 GPU 가 아니라 사용자의 그 이미지가 실패한다.
+GENERATION_LOCK_KEY = "local_image:generation_lock"
+
+# 락 TTL 은 보호 구간(집 PC 호출 한 번)이 끝날 수 있는 가장 긴 시간보다 길어야 한다 — 짧으면 정상적으로
+# 오래 걸린 호출 도중에 락이 풀려 다음 워커가 들어온다. 그런데 httpx 타임아웃은 연결·쓰기·읽기 단계별
+# 이라 호출 전체 시간을 묶지 못한다. 그래서 호출 전체를 생성 타임아웃 + 15초에서 끊고, TTL 은 그보다
+# 15초 더 긴 생성 타임아웃 + 30초로 둔다(기본값으로 상한 105초, TTL 120초). 상한에 걸리는 것은 단계별
+# 타임아웃의 합이 그만큼 쌓인 병적인 경우뿐이고, 그 길이는 Cloudflare edge 한도(약 100초)에 이미 걸리는
+# 영역이다. 보유자가 해제 없이 죽으면 TTL 이 지나 다음 워커가 잡는다.
+GENERATION_CALL_CAP_MARGIN_SECONDS: float = 15
+GENERATION_LOCK_TTL_MARGIN_SECONDS: float = 30
+
+
+def generation_call_cap_seconds() -> float:
+    return settings.local_image_timeout_seconds + GENERATION_CALL_CAP_MARGIN_SECONDS
+
+
+def generation_lock_ttl_ms() -> int:
+    return int((settings.local_image_timeout_seconds + GENERATION_LOCK_TTL_MARGIN_SECONDS) * 1000)
+
+
+def _generation_lock_max_wait_seconds() -> float:
+    """락 대기 상한. 워커 사이의 대기 순서는 폴링 경쟁이라 다른 워커가 계속 이기면 이론상 끝이 없다 —
+    대기열에 들어올 수 있는 잡 전부(상한 × 잡당 최대 2장)가 앞에서 TTL 을 다 쓰는 시간을 넘기면 그
+    장을 실패로 접는다(환불 경로). admission 이 잡 수를 묶으므로 정상 경로에서는 닿지 않는다."""
+    return settings.local_image_queue_limit * 2 * generation_lock_ttl_ms() / 1000
+
+
+# 대기열(전역 상한 + 유저당 1칸). 모든 워커가 같은 정렬 집합 하나를 본다 — 멤버 하나 = admit 된 잡 하나
+# (대기 중이든 생성 중이든), 멤버 이름 = `{user_id}:{무작위}`, 점수 = 만료 시각(ms).
 #
-# 이전에는 검사(라우터)와 증가(`generate_image` 진입 시점)가 서로 다른
-# 시점에 있었고, 그 사이에 `await create_job(...)`이라는 진짜 yield 지점이 있어 동시
-# 도착 요청이 전부 증가 이전 값을 읽고 전부 통과했다(실제 재현: admitted=10 rejected=0
-# limit=4). 원인은 "`+=1`이 원자적이지 않아서"가 아니다 — 단일 이벤트 루프에서 `+=`/`-=`
-# 자체는 항상 원자적이다. 진짜 원인은 검사와 증가가 서로 다른 await 경계에 걸쳐 있어서
-# 그 사이에 다른 태스크가 끼어들 수 있었다는 것이다. 그래서 카운터의 의미를
-# "generate_image 호출 중"에서 "admit된 잡 수"로 옮기고, `try_admit()`이 검사+증가를
-# **하나의 동기 함수**(내부에 await가 전혀 없다) 안에 묶는다 — 동기 코드는 실행 도중
-# 이벤트 루프에 제어를 넘기지 않으므로 두 호출이 겹칠 수 없다. `generate_image`는 더
-# 이상 이 카운터를 건드리지 않는다(세마포어만으로 GPU 보호는 그대로 유지된다).
-_queue_depth = 0
+# 검사와 추가가 서로 다른 시점에 있으면 그 사이에 동시 도착한 요청이 전부 추가 이전 값을 읽고 통과한다
+# (프로세스 안 카운터 시절 실제 재현: admitted=10 rejected=0 limit=4). 그래서 "만료된 칸 정리 → 전역
+# 상한 검사 → 유저 칸 검사 → 추가"를 Lua 한 번으로 서버에서 원자적으로 끝낸다. 이 저장소의 다른
+# read-modify-write 는 WATCH/MULTI 재시도를 쓰지만, 여기서 재시도가 소진되면 통과시킬지 거절할지를 또
+# 정해야 하고 Lua 에는 그 분기가 없다. 전역·유저를 키 둘로 나누지 않는 이유도 같다 — 두 키를 함께
+# 정리·검사·증가하려면 원자 범위가 커진다. 멤버는 최대 상한(4)개라 유저 칸 검사의 전체 순회 비용은
+# 무시할 만하다. 시각은 Lua 안의 `TIME` 으로 Redis 서버 시계를 쓴다 — 워커마다 다른 시계를 섞지 않는다.
+#
+# 칸의 수명은 잡 전체(대기 수 분 + 생성)라 고정 만료로는 "길면 크래시 뒤 칸이 오래 새고, 짧으면 살아 있는
+# 잡의 칸이 풀려 상한을 넘는다" 사이에서 고를 수 없다. 그래서 만료는 짧게(60초) 두고 잡이 도는 동안
+# `keep_admission_alive` 가 20초마다 민다. 워커가 반납 없이 죽으면(배포 재생성·크래시) 그 칸은 최대 60초
+# 뒤 회수되고, 그 사이 그 유저는 `QUEUE_FULL` 을 받는다.
+ADMISSION_KEY = "local_image:admitted"
+ADMISSION_LEASE_MS = 60_000
+ADMISSION_HEARTBEAT_SECONDS: float = 20
 
 # 유저별 큐는 1칸이다 — 전역 상한(`local_image_queue_limit`)만
 # 있으면 한 사용자가 그 칸을 전부 차지해 나머지 전원이 429를 받는다. 정책 상수를 여기 두는
 # 이유는 정책 상수를 게이트·큐 모듈에 두기 때문이다(전역 큐 상한 바로 옆 = 같은 기구의
 # 정책값이 한자리에 모인다). 전역 상한은 GPU 직렬 처리량 보호라 그대로 남고, 이 상한은
-# 그 자원의 **분배**를 맡는다.
+# 그 자원의 **분배**를 맡는다. 유저 칸 검사가 전역 상한 검사를 **대체하지 않는다** — 대체하면
+# 유저마다 1칸씩 무제한으로 열려 전역 상한이 사라진다. 두 검사는 서로 다른 것을 지킨다.
 USER_QUEUE_LIMIT = 1
 
-# 유저별 깊이. `_queue_depth`를 이 dict로 **대체하지 않는다** — 대체하면 유저마다 1칸씩
-# 무제한으로 열려 전역 상한이 사라진다. 두 카운터는 서로 다른 것을 지킨다.
-_user_queue_depth: dict[uuid.UUID, int] = {}
+_NOW_MS_LUA = """
+local clock = redis.call('TIME')
+local now = tonumber(clock[1]) * 1000 + math.floor(tonumber(clock[2]) / 1000)
+"""
+
+_TRY_ADMIT_SCRIPT = (
+    _NOW_MS_LUA
+    + """
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now)
+if redis.call('ZCARD', KEYS[1]) >= tonumber(ARGV[1]) then
+    return 0
+end
+local prefix = ARGV[2]
+local held = 0
+for _, member in ipairs(redis.call('ZRANGE', KEYS[1], 0, -1)) do
+    if string.sub(member, 1, #prefix) == prefix then
+        held = held + 1
+    end
+end
+if held >= tonumber(ARGV[3]) then
+    return 0
+end
+redis.call('ZADD', KEYS[1], now + tonumber(ARGV[5]), ARGV[4])
+return 1
+"""
+)
+
+# `XX` 라 이미 회수된 칸은 되살리지 않는다 — 되살리면 그 사이 다른 잡이 들어간 자리 위에 칸이 하나 더
+# 생겨 상한을 넘는다.
+_EXTEND_ADMISSION_SCRIPT = (
+    _NOW_MS_LUA
+    + """
+return redis.call('ZADD', KEYS[1], 'XX', 'CH', now + tonumber(ARGV[2]), ARGV[1])
+"""
+)
 
 
-def try_admit(user_id: uuid.UUID) -> bool:
-    """상한 검사와 증가를 한 동기 블록에서 한다 — 그 사이에 await가 없어야 TOCTOU가
-    없다. 라우터가 `create_job` 이전에 호출하고, False면 잡을 만들지 않고 429.
+async def try_admit(redis: Redis, user_id: uuid.UUID) -> str | None:
+    """대기열에 칸을 하나 잡는다. 잡으면 반납·갱신에 쓸 칸 이름을, 전역 상한이나 이 유저의 칸이 차
+    있으면 None 을 돌려준다. 라우터가 `create_job` 이전에 호출하고, None 이면 잡을 만들지 않고 429.
 
-    검사가 둘(전역·유저별)이지만 dict 조회·증가는 전부 동기라 이 블록의 불변식
-    (내부에 `await`가 0개)은 그대로다 — 하나라도 await가 끼면 동시 도착한 같은 유저의 두
-    요청이 둘 다 증가 이전 값을 읽고 통과한다(`_queue_depth` 주석의, 실제로 재현된 그 결함)."""
-    global _queue_depth
-    if _queue_depth >= settings.local_image_queue_limit:
-        return False
-    if _user_queue_depth.get(user_id, 0) >= USER_QUEUE_LIMIT:
-        return False
-    _queue_depth += 1
-    _user_queue_depth[user_id] = _user_queue_depth.get(user_id, 0) + 1
-    return True
+    Redis 오류는 그대로 올린다 — 칸을 셀 수 없을 때 통과시킬지는 호출자가 정한다."""
+    admission = f"{user_id}:{secrets.token_hex(8)}"
+    admitted = await redis.eval(
+        _TRY_ADMIT_SCRIPT,
+        1,
+        ADMISSION_KEY,
+        settings.local_image_queue_limit,
+        f"{user_id}:",
+        USER_QUEUE_LIMIT,
+        admission,
+        ADMISSION_LEASE_MS,
+    )
+    return admission if admitted else None
 
 
-def release_admission(user_id: uuid.UUID) -> None:
-    """감소. 0 아래로 내려가지 않게 한다 — 안 그러면 상한이 사실상 무제한이 된다.
+async def keep_admission_alive(redis: Redis, admission: str) -> None:
+    """잡이 도는 동안 칸의 만료 시각을 주기적으로 민다. 취소될 때까지 돈다(잡의 `finally` 가 취소한다).
 
-    유저별 깊이는 0이 되면 **키 자체를 지운다**. 안 지우면 dict가 서비스 수명 동안 접속한
-    유저 수만큼 자라고(프로세스 전역이라 비워 주는 것도 없다), 판정은 그대로라 증상이
-    메모리 증가로만 나타난다."""
-    global _queue_depth
-    if _queue_depth > 0:
-        _queue_depth -= 1
-    depth = _user_queue_depth.get(user_id, 0)
-    if depth > 1:
-        _user_queue_depth[user_id] = depth - 1
-    elif depth == 1:
-        del _user_queue_depth[user_id]
+    갱신이 한 번 실패해도 멈추지 않는다 — 다음 주기에 다시 민다. 만료 전에 계속 실패하면 칸이 회수돼
+    그 사이 상한을 하나 넘겨 받을 수 있지만, 그것 때문에 진행 중인 생성을 멈추지는 않는다."""
+    while True:
+        await asyncio.sleep(ADMISSION_HEARTBEAT_SECONDS)
+        try:
+            await redis.eval(_EXTEND_ADMISSION_SCRIPT, 1, ADMISSION_KEY, admission, ADMISSION_LEASE_MS)
+        except RedisError as exc:
+            logger.warning("local image admission heartbeat failed: %s", type(exc).__name__)
+
+
+async def release_admission(redis: Redis, admission: str) -> None:
+    """칸을 반납한다. 잡지 않은 칸을 반납해도 아무것도 늘지 않는다(없는 멤버를 지울 뿐이다).
+
+    Redis 오류는 삼키고 경고만 남긴다 — 반납을 못 해도 칸은 만료로 회수되고, 여기서 예외를 올리면
+    잡의 `finally` 가 원래 예외를 가린다."""
+    try:
+        await redis.zrem(ADMISSION_KEY, admission)
+    except RedisError as exc:
+        logger.warning("local image admission release failed: %s", type(exc).__name__)
 
 
 _capabilities_cache: LocalCapabilities | None = None
@@ -255,11 +343,36 @@ class LocalImageClient(ImageClient):
     async def generate_image(
         self, prompt: str, style: ImageStylePreset, aspect_ratio: str, reference_image: bytes | None = None
     ) -> tuple[bytes, str]:
-        # 세마포어를 획득한 뒤에 httpx 요청을
+        # 세마포어와 락을 획득한 뒤에 httpx 요청을
         # 시작한다 — 순서가 뒤집히면 대기 시간이 요청 타임아웃 타이머에 실려
         # Cloudflare edge 한도 여유를 먹는다.
         async with _generation_semaphore:
-            return await self._call_generate(prompt, style, aspect_ratio, reference_image)
+            # Redis 를 확인할 수 없으면 집 PC 를 부르지 않는다 — 다른 워커와 겹칠 수 있어서다. 채팅
+            # 레이트리밋은 Redis 장애 때 통과시키지만(fail-open) 여기서는 집 PC 보호가 우선이다.
+            # `LLMClientError` 로 바꿔 올려야 잡이 그 장만 실패로 접고 환불한다.
+            try:
+                token = await wait_for_lock(
+                    redis_client,
+                    GENERATION_LOCK_KEY,
+                    ttl_ms=generation_lock_ttl_ms(),
+                    max_wait_seconds=_generation_lock_max_wait_seconds(),
+                )
+            except RedisError as exc:
+                raise LLMClientError(f"Local image generation lock unavailable: {type(exc).__name__}") from exc
+            if token is None:
+                raise LLMClientError("Local image generation timed out waiting for the generation lock")
+            try:
+                async with asyncio.timeout(generation_call_cap_seconds()):
+                    return await self._call_generate(prompt, style, aspect_ratio, reference_image)
+            except TimeoutError as exc:
+                raise LLMClientError("Local image generation exceeded the total call limit") from exc
+            finally:
+                # 해제 실패는 삼킨다 — 락은 TTL 로 풀리고, 여기서 예외를 올리면 생성 결과나 원래
+                # 예외를 가린다.
+                try:
+                    await release_lock(redis_client, GENERATION_LOCK_KEY, token)
+                except RedisError as exc:
+                    logger.warning("local image generation lock release failed: %s", type(exc).__name__)
 
     async def _call_generate(
         self, prompt: str, style: ImageStylePreset, aspect_ratio: str, reference_image: bytes | None

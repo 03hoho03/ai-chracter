@@ -189,6 +189,16 @@ async def _flush_publish_filter_passes() -> None:
         await redis_client.delete(*keys)
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def _flush_local_image_keys() -> None:
+    """이미지 생성 대기열·생성 락은 모든 워커가 함께 보는 고정 키라 테스트끼리 자연히 갈리지 않는다.
+    잡을 돌리지 않는 테스트가 admit 한 칸은 반납되지 않은 채 남으므로(만료까지 60초) 지우지
+    않으면 다음 테스트가 `QUEUE_FULL` 을 받는다."""
+    keys = await redis_client.keys("local_image:*")
+    if keys:
+        await redis_client.delete(*keys)
+
+
 @pytest_asyncio.fixture(scope="session")
 async def api_client() -> AsyncGenerator[httpx.AsyncClient, None]:
     """Session-scoped, `ASGITransport`-based (not `TestClient`): `TestClient`
