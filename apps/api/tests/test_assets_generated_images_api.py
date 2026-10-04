@@ -1,13 +1,15 @@
+import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone, UTC
 
 import boto3
 import httpx
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
-from api.core.s3 import build_variant_keys
+from api.core.s3 import build_variant_keys, delete_object
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import (
     Content,
@@ -18,7 +20,13 @@ from api.db.models.content import (
 )
 from api.db.models.media import Asset, AssetKind, AssetStatus, ImageGenerationRequest
 from api.db.models.story import StoryPromptTemplate, StoryVersionDetail
-from factories import _add_media_book_cell, _login_as, _make_user
+from factories import (
+    _add_media_book_cell,
+    _login_as,
+    _make_user,
+    _noting_open_transactions,
+    _open_transaction_probe,
+)
 
 
 async def test_generated_images_requires_login(api_client: httpx.AsyncClient) -> None:
@@ -686,3 +694,73 @@ async def test_delete_generated_image_conflicts_when_used_by_media_book_draft(
         {"contentId": str(content.id), "contentType": "story", "contentTitle": "초안 제목", "field": "mediaBook"}
     ]
     assert await db_session.get(Asset, asset.id) is not None
+
+
+# ── 생성 이미지 삭제가 저장소 삭제를 기다리는 동안 DB 트랜잭션을 쥐지 않는다 ──────────────────────
+#
+# 저장소 삭제 셋(원본·변형 둘)을 기다리는 동안 사용처 조회가 연 트랜잭션이 열려 있으면 커넥션 하나를 쥔다. 그래서
+# 조회를 커밋으로 닫고 저장소를 지운 뒤, 짧은 트랜잭션에서 사용처를 다시 보고 행을 지운다.
+
+
+async def test_delete_generated_image_holds_no_transaction_while_deleting_from_storage(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    asset = await _make_generated_asset(db_session, user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    seen: list[tuple[str, int]] = []
+    with _open_transaction_probe() as open_sessions:
+        monkeypatch.setattr(
+            "api.assets.router.delete_object", _noting_open_transactions(open_sessions, seen, "delete", delete_object)
+        )
+        resp = await db_client.delete(f"/me/generated-images/{asset.id}")
+
+    assert resp.status_code == 204
+    assert seen == [("delete", 0)] * 3
+    assert await db_session.get(Asset, asset.id) is None
+
+
+@pytest.mark.usefixtures("committing_request_session")
+async def test_delete_generated_image_is_409_when_it_becomes_used_while_deleting_from_storage(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """판정 기준: 저장소를 지우는 사이 다른 탭이 그 그림을 대표 이미지로 걸었으면 행을 지우지 않고 사용처와 함께
+    409 로 답한다(행을 지우려다 외래 키 오류로 500 이 나면 실패다). 저장소 객체는 이미 지워졌다 — 행이 남아 다시
+    지울 수 있다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    asset = await _make_generated_asset(db_session, user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    loop = asyncio.get_running_loop()
+    used: list[Content] = []
+
+    async def use_as_thumbnail() -> None:
+        content, _ = await _make_character_content(
+            db_session, creator_user_id=user.id, name="그사이에건캐릭터", thumbnail_asset_id=asset.id
+        )
+        await db_session.commit()
+        used.append(content)
+
+    def delete_while_another_tab_uses_it(key: str) -> None:
+        if not used:
+            asyncio.run_coroutine_threadsafe(use_as_thumbnail(), loop).result(10)
+        delete_object(key)
+
+    monkeypatch.setattr("api.assets.router.delete_object", delete_while_another_tab_uses_it)
+    resp = await db_client.delete(f"/me/generated-images/{asset.id}")
+
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["detail"]["usages"] == [
+        {
+            "contentId": str(used[0].id),
+            "contentType": "character",
+            "contentTitle": "그사이에건캐릭터",
+            "field": "thumbnail",
+        }
+    ]
+    assert await db_session.scalar(select(Asset.id).where(Asset.id == asset.id)) == asset.id

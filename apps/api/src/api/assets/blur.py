@@ -3,7 +3,6 @@
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from api.assets.image_processing import (
@@ -59,13 +58,3 @@ def blurred_asset_row(upload: BlurredUpload, *, owner_user_id: uuid.UUID) -> Ass
         width=upload.width,
         height=upload.height,
     )
-
-
-async def create_blurred_asset(db: AsyncSession, *, source_storage_key: str, owner_user_id: uuid.UUID) -> Asset:
-    """블러본을 올리고(`upload_blurred_copy`) READY 블러 자산 행을 세션에 더한다(flush·commit 은 호출자 몫 — 이
-    행을 가리키는 행보다 먼저 flush 해야 FK 가 맞는다).
-
-    S3 에 올린 뒤 호출자의 트랜잭션이 실패하면 두 객체는 가리키는 행 없이 남는다."""
-    asset = blurred_asset_row(await upload_blurred_copy(source_storage_key), owner_user_id=owner_user_id)
-    db.add(asset)
-    return asset

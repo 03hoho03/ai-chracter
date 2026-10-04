@@ -10,12 +10,12 @@ LLM 페이크 주입(`_override_llm_client`/`_clear_llm_override`)·SSE 파싱(`
 import asyncio
 import json
 import uuid
-from collections.abc import AsyncIterator, Callable, Generator
+from collections.abc import AsyncIterator, Awaitable, Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, UTC
 from pathlib import Path
-from typing import Any
+from typing import Any, ParamSpec, TypeVar
 
 import httpx
 import pytest
@@ -801,3 +801,33 @@ def _open_transaction_probe() -> Generator[set[int], None, None]:
     finally:
         sa.event.remove(Session, "after_begin", _after_begin)
         sa.event.remove(Session, "after_transaction_end", _after_transaction_end)
+
+
+_P = ParamSpec("_P")
+_T = TypeVar("_T")
+
+
+def _noting_open_transactions(
+    open_sessions: set[int], seen: list[tuple[str, int]], name: str, func: Callable[_P, _T]
+) -> Callable[_P, _T]:
+    """`func`(저장소 호출처럼 스레드에서 도는 동기 함수)를 부를 때마다 `(name, 그 순간 열린 루트 트랜잭션 수)` 를
+    `seen` 에 적고 진짜 함수를 부른다. `open_sessions` 는 `_open_transaction_probe` 가 주는 집합이다. 단언은 요청이
+    끝난 뒤 `seen` 으로 한다 — 이유는 그 프로브의 docstring."""
+
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _T:
+        seen.append((name, len(open_sessions)))
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+def _noting_open_transactions_async(
+    open_sessions: set[int], seen: list[tuple[str, int]], name: str, func: Callable[_P, Awaitable[_T]]
+) -> Callable[_P, Awaitable[_T]]:
+    """`_noting_open_transactions` 의 코루틴 함수판(집 PC capabilities 조회·메일 발송처럼 루프 위에서 기다리는 호출)."""
+
+    async def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _T:
+        seen.append((name, len(open_sessions)))
+        return await func(*args, **kwargs)
+
+    return wrapper

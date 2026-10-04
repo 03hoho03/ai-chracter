@@ -1,15 +1,18 @@
+import asyncio
 import io
 import uuid
 from datetime import UTC, datetime, timezone
 
 import boto3
 import httpx
+import pytest
 import sqlalchemy as sa
 from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
-from api.core.s3 import build_variant_keys
+from api.assets import blur as blur_module
+from api.core.s3 import build_variant_keys, download_object
 from api.db.models.character import SituationalImage
 from api.db.models.content import (
     Content,
@@ -20,7 +23,14 @@ from api.db.models.content import (
     ModerationStatus,
 )
 from api.db.models.media import Asset, AssetKind, AssetStatus
-from factories import _get_genre, _login_as, _make_user, _put_via_presigned_url
+from factories import (
+    _get_genre,
+    _login_as,
+    _make_user,
+    _noting_open_transactions,
+    _open_transaction_probe,
+    _put_via_presigned_url,
+)
 
 
 async def _make_draft_version(
@@ -470,3 +480,81 @@ async def test_register_situational_image_marks_content_as_having_unpublished_ch
 
     assert resp.status_code == 200
     assert await db_session.scalar(flag) is True
+
+
+# ── 등록이 블러본을 만드는 동안 DB 트랜잭션을 쥐지 않는다 ──────────────────────────────────────
+#
+# 등록은 원본 내려받기·블러·블러본과 변형 올리기 셋을 거친다(디코드는 프로세스 전역 한도를 기다릴 수 있다). 그동안
+# 확인 조회가 연 트랜잭션이 열려 있으면 커넥션 하나를 쥔다. 그래서 확인을 커밋으로 닫고 블러본을 올린 뒤, 짧은
+# 트랜잭션에서 작품 행을 잠그고 아직 초안인지 다시 보고 쓴다.
+
+
+def _register_body(version: ContentVersion) -> dict[str, object]:
+    return {
+        "entityId": str(uuid.uuid4()),
+        "contentVersionId": str(version.id),
+        "triggerCondition": "조건",
+        "order": 0,
+    }
+
+
+async def test_register_situational_image_holds_no_transaction_while_making_the_blur(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    version = await _make_draft_version(db_session, creator_user_id=user.id)
+    asset = await _make_ready_asset(db_session, user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    seen: list[tuple[str, int]] = []
+    with _open_transaction_probe() as open_sessions:
+        for attr in ("download_object", "upload_object"):
+            monkeypatch.setattr(
+                blur_module, attr, _noting_open_transactions(open_sessions, seen, attr, getattr(blur_module, attr))
+            )
+        resp = await db_client.post(f"/assets/{asset.id}/register-situational-image", json=_register_body(version))
+
+    assert resp.status_code == 200, resp.text
+    assert [name for name, _ in seen] == ["download_object", "upload_object", "upload_object", "upload_object"]
+    assert [(name, count) for name, count in seen if count != 0] == []
+
+
+@pytest.mark.usefixtures("committing_request_session")
+async def test_register_situational_image_is_refused_when_the_draft_is_published_meanwhile(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """판정 기준: 블러본을 만드는 사이 그 초안이 발행됐으면(다른 창의 발행) 등록은 409 이고 발행본에 이미지 행이
+    생기지 않아야 한다 — 생기면 심사를 거치지 않은 그림이 독자가 대화하는 버전에 들어간다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    version = await _make_draft_version(db_session, creator_user_id=user.id)
+    asset = await _make_ready_asset(db_session, user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    loop = asyncio.get_running_loop()
+
+    async def publish_elsewhere() -> None:
+        await db_session.execute(
+            sa.update(ContentVersion)
+            .where(ContentVersion.id == version.id)
+            .values(published_at=datetime.now(UTC), version_number=1)
+        )
+        await db_session.commit()
+
+    def download_while_published_elsewhere(key: str) -> bytes:
+        body = download_object(key)
+        asyncio.run_coroutine_threadsafe(publish_elsewhere(), loop).result(10)
+        return body
+
+    monkeypatch.setattr(blur_module, "download_object", download_while_published_elsewhere)
+    resp = await db_client.post(f"/assets/{asset.id}/register-situational-image", json=_register_body(version))
+
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["detail"] == "Content version is not a draft"
+    rows = (
+        await db_session.scalars(sa.select(SituationalImage).where(SituationalImage.content_version_id == version.id))
+    ).all()
+    assert rows == []

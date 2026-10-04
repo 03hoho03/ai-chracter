@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { ApiErrorObject } from "@/shared/api/client";
 
-import { getPublishFailureMessage, PUBLISH_SCREENING_UNAVAILABLE_MESSAGE } from "./publishFailureMessage";
+import {
+  getPublishFailureMessage,
+  PUBLISH_CONFLICT_MESSAGE,
+  PUBLISH_SCREENING_UNAVAILABLE_MESSAGE,
+} from "./publishFailureMessage";
 import { getFilterRejectionReason } from "./publishRejection";
 
 function apiError(status: number, detail: string | Record<string, unknown> = "x") {
@@ -44,13 +48,23 @@ describe("getPublishFailureMessage", () => {
     expect(getPublishFailureMessage(error)).toBe(PUBLISH_SCREENING_UNAVAILABLE_MESSAGE);
   });
 
+  it("409 PUBLISH_CONFLICT 는 확인한 뒤 다시 발행하라는 문구다", () => {
+    expect(PUBLISH_CONFLICT_MESSAGE).toBe(
+      "발행하는 사이에 이미지가 바뀌었거나 다른 창에서 먼저 발행됐어요. 확인한 뒤 다시 발행해 주세요.",
+    );
+    expect(getPublishFailureMessage(apiError(409, { code: "PUBLISH_CONFLICT" }))).toBe(PUBLISH_CONFLICT_MESSAGE);
+  });
+
   it.each([
+    apiError(409, { code: "MEDIA_BOOK_CELL_POSITION_TAKEN" }),
+    apiError(409, "Content version is not a draft"),
+    apiError(400, { code: "PUBLISH_CONFLICT" }),
     apiError(503, "Service Unavailable"),
     apiError(503, { code: "OTHER" }),
     apiError(502, { code: "PUBLISH_SCREENING_UNAVAILABLE", message: "x" }),
     apiError(400, { reason: "거부 사유" }),
     new Error("network"),
-  ])("심사 단계 실패가 아니면 undefined (%#)", (error) => {
+  ])("고를 수 있는 발행 실패가 아니면 undefined (%#)", (error) => {
     expect(getPublishFailureMessage(error)).toBeUndefined();
   });
 

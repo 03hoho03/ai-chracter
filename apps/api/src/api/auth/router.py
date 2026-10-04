@@ -63,7 +63,7 @@ from api.auth.schemas import (
     VerifyEmailResponse,
     WithdrawRequest,
 )
-from api.auth.withdrawal import delete_storage_object_now, delete_storage_objects_later, erase_account
+from api.auth.withdrawal import delete_storage_objects_later, erase_account
 from api.auth.verification import (
     VERIFICATION_ATTEMPTS_LIMIT,
     clear_verification_attempts,
@@ -336,6 +336,9 @@ async def resend_verification_code(
             raise _auth_too_many_requests(retry_after, code="AUTH_COOLDOWN")
 
     user = await db.scalar(select(User).where(User.email == payload.email))
+    # 메일은 응답 뒤 백그라운드로 나가는데, 요청 세션은 그 뒤에야 닫힌다 — 조회 트랜잭션을 여기서 닫아 발송(최대
+    # 10초) 동안 커넥션을 쥐지 않는다(롤백은 세션의 객체를 만료시켜 쓰지 않는다).
+    await db.commit()
 
     code = generate_code()
     await store_verification_code(payload.email, code, now)
@@ -821,6 +824,9 @@ async def request_password_reset(
     # Same 204 response whether or not the email is registered, so the caller
     # can't use this endpoint to probe which emails have an account.
     user = await db.scalar(select(User).where(User.email == payload.email))
+    # 메일은 응답 뒤 백그라운드로 나가는데, 요청 세션은 그 뒤에야 닫힌다 — 조회 트랜잭션을 여기서 닫아 발송(최대
+    # 10초) 동안 커넥션을 쥐지 않는다. 아래에서 읽는 `user` 값은 커밋 뒤에도 메모리에 남는다(롤백은 객체를 만료시켜 쓰지 않는다).
+    await db.commit()
     # 비밀번호가 없는 소셜 전용 계정에는 보내지 않는다 — 재설정 링크가 그 계정에 비밀번호를 새로
     # 만들어, 의도하지 않은 두 번째 로그인 수단이 생긴다. 응답은 미등록 이메일과 같은 204 다.
     if user is not None and user.password_hash is not None:
@@ -965,7 +971,17 @@ async def withdraw(
         )
     # 파기가 회원번호를 지우므로 연결 끊기에 쓸 값을 먼저 잡아 둔다.
     kakao_id = user.kakao_id
-    await erase_account(db, user, delete_storage_object=delete_storage_object_now)
+    # 저장소 삭제는 이미지 수에 비례하고 상한이 없다. 그동안 회원 행과 댓글·좋아요를 단 남의 작품 행을 잠근 채 커넥션을
+    # 쥐지 않도록 키만 모았다가 파기를 커밋한 뒤 응답 뒤에서 지운다(카카오 연결 끊기 알림과 같은 방식). 삭제가 실패하면
+    # 그 객체는 가리키는 행 없이 남는다 — 파기 기록·개인정보 삭제·재가입 차단은 이미 한 커밋으로 끝났다.
+    storage_keys: list[str] = []
+
+    async def collect_storage_key(storage_key: str) -> None:
+        storage_keys.append(storage_key)
+
+    await erase_account(db, user, delete_storage_object=collect_storage_key)
+    if storage_keys:
+        background_tasks.add_task(delete_storage_objects_later, storage_keys)
 
     # 역인덱스 배포 전에 만든 세션은 인덱스에 없어 아래 폐기가 못 지운다 — 현재 세션만은 쿠키로
     # 직접 지운다. 폐기보다 **먼저** 부르는 건 역인덱스 도입 전 순서 그대로다: 폐기의 Redis 호출이 중간에

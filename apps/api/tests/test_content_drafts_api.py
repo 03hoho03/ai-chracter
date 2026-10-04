@@ -57,7 +57,7 @@ async def _add_version(
     db_session.add(version)
     await db_session.flush()
     if published:
-        # `_publish_character_content`/`_publish_story_content` also point the content at the
+        # `_write_character_publish`/`_write_story_publish` also point the content at the
         # version they just published — the flag the drafts-list filter reads.
         content.current_published_version_id = version.id
         await db_session.flush()

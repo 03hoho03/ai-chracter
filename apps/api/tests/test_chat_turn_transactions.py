@@ -64,9 +64,7 @@ from api.db.models import (
 )
 from api.db.models.chat import DiscardedResponse, StoryEndingUnlock, StoryMediaExposure
 from api.db.models.clover import CloverLedger
-from api.db.session import get_db_session, get_session_factory
 from api.llm.client import LLMCallContext, LLMClient
-from api.main import app
 from factories import (
     _add_named_media_cell,
     _clear_llm_override,
@@ -694,28 +692,6 @@ class _AnswerAllLLMClient(LLMClient):
         if response_schema is ImageMatchJudgmentResult:
             return ImageMatchJudgmentResult(matched_image_entity_id=None)
         return MemorySummaryResult(summary="요약")
-
-
-@pytest_asyncio.fixture
-async def committing_request_session(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> AsyncGenerator[None, None]:
-    """요청 세션의 커밋이 진짜 경계가 되게 한다. `db_session` 은 바깥 트랜잭션에 그대로 얹혀 커밋이 아무것도 확정하지
-    않고 롤백은 테스트 셋업까지 지운다 — 그 위에서는 "중간 커밋이 있었는지"가 결과에 드러나지 않는다. 여기서는 요청마다
-    같은 커넥션 위에 SAVEPOINT 로 새 세션을 열어, 커밋은 그 SAVEPOINT 를 확정하고 실패한 요청은 운영처럼 세션이 닫히며
-    마지막 커밋 뒤의 쓰기만 되돌린다. 셋업과 단언은 여전히 `db_session` 으로 같은 커넥션을 본다."""
-    connection = db_session.bind
-
-    async def _request_session() -> AsyncGenerator[AsyncSession, None]:
-        async with AsyncSession(bind=connection, join_transaction_mode="create_savepoint", expire_on_commit=False) as s:
-            yield s
-
-    app.dependency_overrides[get_db_session] = _request_session
-    app.dependency_overrides[get_session_factory] = lambda: async_sessionmaker(
-        bind=connection, join_transaction_mode="create_savepoint", expire_on_commit=False
-    )
-    yield
-    # `db_client` 가 끝나며 두 키를 지우므로 되돌릴 것이 없다.
 
 
 async def _request_failure(client: httpx.AsyncClient, path: str, body: dict[str, object] | None) -> BaseException:

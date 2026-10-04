@@ -13,7 +13,7 @@ from api.core.email import get_email_sender
 from api.core.security import verify_password
 from api.db.models.auth import User
 from api.main import app
-from factories import _make_user
+from factories import _make_user, _open_transaction_probe
 
 
 def _signup_payload(**overrides: object) -> dict[str, object]:
@@ -262,3 +262,27 @@ async def test_confirm_rejects_token_for_social_only_account(
     assert resp.json() == {"detail": "Invalid or expired token"}
     await db_session.refresh(user)
     assert user.password_hash is None
+
+
+async def test_password_reset_request_holds_no_transaction_while_sending_the_email(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """메일 발송(Resend 호출, 최대 10초)은 응답 뒤 백그라운드에서 돈다. 요청 세션이 그때까지 사용자 조회의 트랜잭션을
+    열어 두면 발송이 끝날 때까지 커넥션 하나를 쥔다."""
+    user = _make_user(password_hash="x")
+    db_session.add(user)
+    await db_session.commit()
+    seen: list[int] = []
+    with _open_transaction_probe() as open_sessions:
+
+        async def _noting_sender(to: str, subject: str, body: str) -> None:
+            seen.append(len(open_sessions))
+
+        app.dependency_overrides[get_email_sender] = lambda: _noting_sender
+        try:
+            resp = await db_client.post("/auth/password-reset/request", json={"email": user.email})
+        finally:
+            app.dependency_overrides.pop(get_email_sender, None)
+
+    assert resp.status_code == 204
+    assert seen == [0]

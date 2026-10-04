@@ -1290,7 +1290,7 @@ async def test_patch_content_draft_deletes_removed_starting_setup_subtree(
 
 
 async def _mark_published(db_session: AsyncSession, content: Content) -> ContentVersion:
-    """Reproduces the state `_publish_character_content`/`_publish_story_content` leave
+    """Reproduces the state `_write_character_publish`/`_write_story_publish` leave
     behind: a published version the content points at, *alongside* the draft version publish
     auto-clones. Without `current_published_version_id` set, a test would sail through the
     409 guard while pretending to be published."""

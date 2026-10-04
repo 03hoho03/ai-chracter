@@ -4,12 +4,13 @@ from collections.abc import Sequence
 
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import or_, select
+from redis.exceptions import RedisError
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
-from api.assets.blur import create_blurred_asset
+from api.assets.blur import blurred_asset_row, upload_blurred_copy
 from api.assets.image_processing import (
     THUMBNAIL_CONTENT_TYPE,
     ImageTooLargeError,
@@ -31,6 +32,8 @@ from api.assets.schemas import (
     SituationalImageResponse,
 )
 from api.core.rate_limit_gate import enforce_upload_rate_limit
+from api.core.redis import redis_client
+from api.core.redis_lock import release_lock, wait_for_lock
 from api.core.s3 import (
     build_object_key,
     build_thumbnail_key,
@@ -43,6 +46,7 @@ from api.core.s3 import (
     get_object_size,
     upload_object,
 )
+from api.core.sentry import capture_dependency_failure
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import Content, ContentType, ContentVersion
 from api.db.models.media import Asset, AssetKind, AssetStatus
@@ -101,13 +105,38 @@ def _upload_size_limit(storage_key: str) -> int | None:
     return UPLOAD_SIZE_LIMIT_BYTES[purpose]
 
 
-async def _discard_upload(db: AsyncSession, asset: Asset, upload_key: str) -> None:
+# 같은 자산의 업로드 완료를 한 번에 하나만 들이는 락. TTL 은 완료 한 번이 걸릴 수 있는 가장 긴 시간보다 넉넉해야 한다
+# — 저장소 왕복 넷(HEAD·GET·PUT 셋)에 클라이언트 타임아웃을 따로 두지 않았고 디코드는 프로세스 전역 한도를 기다릴 수
+# 있다. 만료되면 늦게 끝난 쪽은 상태를 PENDING 일 때만 바꾸므로 먼저 끝난 결과를 덮지 않는다.
+_COMPLETE_LOCK_TTL_MS = 300_000
+_COMPLETE_LOCK_POLL_SECONDS = 0.2
+
+
+def _complete_lock_key(asset_id: uuid.UUID) -> str:
+    return f"asset_complete:{asset_id}"
+
+
+async def _discard_upload(db: AsyncSession, asset_id: uuid.UUID, upload_key: str) -> None:
     """검사에서 떨어진 업로드를 지운다. 저장소를 먼저 지워 실패하면 행이 남아 다시 시도할 수 있게 하고
     (`delete_generated_image` 와 같은 순서), 그다음 행을 지운다 — 검사를 못 넘은 업로드가 READY 로 남는 일은 없다.
-    최종 키에는 아직 아무것도 쓰지 않았으므로 지울 것은 임시 객체뿐이다."""
+    최종 키에는 아직 아무것도 쓰지 않았으므로 지울 것은 임시 객체뿐이다. 행은 아직 PENDING 일 때만 지운다 — 락이
+    만료된 사이 다른 완료가 READY 로 만든 자산을 지우면 그 그림을 쓰는 화면이 사라진 행을 가리킨다."""
     await run_in_threadpool(delete_object, upload_key)
-    await db.delete(asset)
+    await db.execute(delete(Asset).where(Asset.id == asset_id, Asset.status == AssetStatus.PENDING))
     await db.commit()
+
+
+async def _response_for_current_state(db: AsyncSession, asset_id: uuid.UUID) -> AssetCompleteResponse:
+    """다른 완료가 이 자산을 이미 처리했을 때 그 결과대로 답한다 — READY 면 같은 응답, 지워졌으면 404."""
+    current = await db.scalar(select(Asset.status).where(Asset.id == asset_id))
+    await db.commit()
+    if current is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
+    if current != AssetStatus.READY:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Upload is still being completed by another request"
+        )
+    return AssetCompleteResponse(asset_id=asset_id, status=current)
 
 
 @router.post(
@@ -123,17 +152,62 @@ async def complete_asset_upload(
     저장소 안에서 임시 객체를 복사하지 않는 이유: 검사와 복사 사이에 같은 서명 URL 로 임시 객체를 바꿔 올리면
     검사하지 않은 바이트가 최종 키로 간다. 이미 메모리에 있는 바이트를 올리면 최종 키 = 검사·축소본을 만든 바이트가
     보장된다. 이미 READY 인 자산은 저장소를 건드리지 않고 같은 응답을 돌려준다 — 같은 요청을 다시 보내는
-    클라이언트를 깨지 않으면서, 완료 뒤 같은 URL 로 다시 올린 객체는 아무도 읽지 않는다."""
-    # 같은 자산의 complete 가 겹치면 하나씩 처리한다 — 뒤의 요청은 앞의 커밋 뒤 READY 를 보고 그대로 돌아간다.
-    asset = await db.scalar(select(Asset).where(Asset.id == asset_id).with_for_update())
+    클라이언트를 깨지 않으면서, 완료 뒤 같은 URL 로 다시 올린 객체는 아무도 읽지 않는다.
+
+    같은 자산의 완료가 겹치면 Redis 락으로 하나씩 처리한다 — 뒤의 요청은 앞의 요청이 끝날 때까지 기다렸다가 상태를
+    다시 읽어 그대로 답한다. 둘이 각자 처리하면 그사이 바꿔 올린 바이트가 원본과 축소본에 섞일 수 있고, 발행 심사는
+    칸을 축소본으로 본다. 저장소·디코드를 기다리는 동안에는 DB 트랜잭션을 쥐지 않는다(쥐면 커넥션 하나를 통째로
+    잡는다). Redis 장애면 거절한다(503) — 채팅·발행 레이트리밋은 장애 때 통과시키지만 여기서 통과시키면 위 보호가
+    사라지고, 세션도 Redis 라 그 상황엔 대개 인증부터 실패한다."""
+    asset = await db.get(Asset, asset_id)
     if asset is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
     if asset.owner_user_id != current_user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not the asset owner")
     if asset.status == AssetStatus.READY:
         return AssetCompleteResponse(asset_id=asset.id, status=asset.status)
+    storage_key = asset.storage_key
+    # 읽기를 닫아 커넥션을 돌려준다(롤백은 세션의 객체를 만료시켜 쓰지 않는다).
+    await db.commit()
 
-    upload_key = build_upload_key(asset.storage_key)
+    lock_key = _complete_lock_key(asset_id)
+    try:
+        token = await wait_for_lock(
+            redis_client,
+            lock_key,
+            ttl_ms=_COMPLETE_LOCK_TTL_MS,
+            max_wait_seconds=_COMPLETE_LOCK_TTL_MS / 1000,
+            poll_interval_seconds=_COMPLETE_LOCK_POLL_SECONDS,
+        )
+    except RedisError as exc:
+        logger.warning("upload completion lock unavailable: %s", type(exc).__name__)
+        capture_dependency_failure(exc, dependency="redis")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Upload completion is currently unavailable"
+        ) from exc
+    if token is None:
+        # 락의 TTL 만큼 기다렸는데도 못 잡았다 — 다른 요청이 계속 새로 잡고 있다. 지금 상태대로 답한다.
+        return await _response_for_current_state(db, asset_id)
+    try:
+        return await _complete_locked_upload(db, asset_id, storage_key)
+    finally:
+        try:
+            await release_lock(redis_client, lock_key, token)
+        except RedisError:
+            logger.warning("Failed to release upload completion lock %s; it expires on its own", lock_key)
+
+
+async def _complete_locked_upload(db: AsyncSession, asset_id: uuid.UUID, storage_key: str) -> AssetCompleteResponse:
+    """락을 쥔 채 하는 업로드 완료 본체. DB 는 처음의 상태 확인과 마지막의 조건부 쓰기에서만 짧게 쓴다."""
+    # 락을 기다리는 사이 앞의 요청이 끝냈거나 지웠을 수 있다. 세션에 남은 옛 객체가 아니라 행을 다시 읽는다.
+    current = await db.scalar(select(Asset.status).where(Asset.id == asset_id))
+    await db.commit()
+    if current is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
+    if current == AssetStatus.READY:
+        return AssetCompleteResponse(asset_id=asset_id, status=current)
+
+    upload_key = build_upload_key(storage_key)
     reported_bytes = await run_in_threadpool(get_object_size, upload_key)
     if reported_bytes is None:
         raise HTTPException(
@@ -144,16 +218,16 @@ async def complete_asset_upload(
     # The FE resizes before upload, so oversize means the client bypassed it. The size
     # seen here only spares downloading an obviously oversized object; the object can
     # be replaced before the download, so the bytes actually downloaded are checked too.
-    max_bytes = _upload_size_limit(asset.storage_key)
+    max_bytes = _upload_size_limit(storage_key)
     if max_bytes is not None and reported_bytes > max_bytes:
-        await _discard_upload(db, asset, upload_key)
+        await _discard_upload(db, asset_id, upload_key)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"maxBytes": max_bytes, "actualBytes": reported_bytes},
         )
     original_bytes = await run_in_threadpool(download_object, upload_key)
     if max_bytes is not None and len(original_bytes) > max_bytes:
-        await _discard_upload(db, asset, upload_key)
+        await _discard_upload(db, asset_id, upload_key)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"maxBytes": max_bytes, "actualBytes": len(original_bytes)},
@@ -163,13 +237,13 @@ async def complete_asset_upload(
     # responses can derive the keys without an existence check. A failed variant
     # therefore fails the whole asset — never READY with only the original.
     try:
-        variants = await run_image_work(generate_variants, asset.storage_key, original_bytes)
+        variants = await run_image_work(generate_variants, storage_key, original_bytes)
         width, height = await run_in_threadpool(read_image_size, original_bytes)
         detected_content_type = await run_in_threadpool(read_image_content_type, original_bytes)
     except ImageTooLargeError as exc:
         # `ValueError` 하위라 아래보다 먼저 잡아야 원인이 "풀 수 없는 그림"으로 가려지지 않는다. 바이트 상한과 같은
         # 모양으로 알린다. 정상 화면은 업로드 전에 줄여 올리므로 여기 닿는 것은 화면을 거치지 않은 요청이다.
-        await _discard_upload(db, asset, upload_key)
+        await _discard_upload(db, asset_id, upload_key)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"maxPixels": exc.max_pixels, "actualPixels": exc.actual_pixels},
@@ -177,7 +251,7 @@ async def complete_asset_upload(
     except (OSError, ValueError) as exc:
         # Pillow can't decode the upload — deterministic failure, so clean up
         # like the oversize path instead of leaving an unretryable PENDING row.
-        await _discard_upload(db, asset, upload_key)
+        await _discard_upload(db, asset_id, upload_key)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Uploaded object is not a decodable image",
@@ -186,13 +260,21 @@ async def complete_asset_upload(
     # 표가 없는 운영 이미지에서는 WebP 키에 확장자가 붙지 않아 `application/octet-stream` 이 되고, 원본을 새 탭에서
     # 열면 그림 대신 다운로드가 된다.
     content_type = detected_content_type or "application/octet-stream"
-    await run_in_threadpool(upload_object, asset.storage_key, original_bytes, content_type)
+    await run_in_threadpool(upload_object, storage_key, original_bytes, content_type)
     for variant_key, variant_bytes in variants:
         await run_in_threadpool(upload_object, variant_key, variant_bytes, THUMBNAIL_CONTENT_TYPE)
 
-    asset.status = AssetStatus.READY
-    asset.width, asset.height = width, height
+    # 아직 PENDING 일 때만 READY 로 바꾼다. 락이 만료된 사이 다른 완료가 먼저 끝냈거나 지웠으면 그 결과를 덮지 않고
+    # 그대로 답한다.
+    marked = await db.scalar(
+        update(Asset)
+        .where(Asset.id == asset_id, Asset.status == AssetStatus.PENDING)
+        .values(status=AssetStatus.READY, width=width, height=height)
+        .returning(Asset.id)
+    )
     await db.commit()
+    if marked is None:
+        return await _response_for_current_state(db, asset_id)
 
     # 임시 객체는 이제 아무도 읽지 않는다. 지우지 못해도 업로드는 끝난 것이라 실패로 돌리지 않는다 — 남은
     # 객체는 임시 접두사의 버킷 수명 규칙이 치운다.
@@ -201,7 +283,7 @@ async def complete_asset_upload(
     except (BotoCoreError, ClientError):
         logger.warning("Failed to delete temporary upload object %s", upload_key, exc_info=True)
 
-    return AssetCompleteResponse(asset_id=asset.id, status=asset.status)
+    return AssetCompleteResponse(asset_id=asset_id, status=AssetStatus.READY)
 
 
 @router.post(
@@ -216,6 +298,10 @@ async def register_situational_image(
     """Downloads the original asset, synchronously
     generates a Gaussian-blurred variant (no queue — a single-image blur is
     sub-second), and upserts the situational_images row keyed by entity_id.
+
+    블러본을 만드는 동안(저장소 왕복 넷 + 디코드 한도 대기) DB 트랜잭션을 쥐지 않는다 — 확인을 커밋으로 닫고 블러본을
+    올린 뒤, 짧은 트랜잭션에서 작품 행을 잠그고 그 버전이 아직 초안인지 다시 보고 쓴다. 발행 쓰기도 같은 작품 행을
+    잠그므로 둘은 줄을 선다 — 그사이 발행됐으면 409 이고, 이 등록이 먼저면 발행이 그림이 바뀐 것을 보고 멈춘다.
     """
     asset = await db.get(Asset, asset_id)
     if asset is None:
@@ -244,8 +330,28 @@ async def register_situational_image(
             detail="Situational images are only for character content",
         )
 
-    blurred_asset = await create_blurred_asset(db, source_storage_key=asset.storage_key, owner_user_id=current_user_id)
-    blurred_asset_id = blurred_asset.id
+    content_id, source_storage_key = content.id, asset.storage_key
+    # 확인 조회를 닫아 커넥션을 돌려준다(롤백은 세션의 객체를 만료시켜 쓰지 않는다).
+    await db.commit()
+
+    blurred_upload = await upload_blurred_copy(source_storage_key)
+
+    # 세션에 남은 옛 객체가 아니라 행을 다시 읽는다 — 블러본을 만드는 사이 다른 창이 이 초안을 발행했을 수 있다.
+    content = await db.scalar(
+        select(Content).where(Content.id == content_id).with_for_update().execution_options(populate_existing=True)
+    )
+    content_version = await db.scalar(
+        select(ContentVersion)
+        .where(ContentVersion.id == payload.content_version_id)
+        .execution_options(populate_existing=True)
+    )
+    if content is None or content_version is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content version not found")
+    if content_version.published_at is not None:
+        # 올린 블러본은 가리키는 행 없이 남는다(아무 응답도 서명하지 않는다).
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Content version is not a draft")
+    blurred_asset_id = blurred_upload.asset_id
+    db.add(blurred_asset_row(blurred_upload, owner_user_id=current_user_id))
 
     # 읽고 나서 쓰면 그 사이 자동저장 PATCH 가 같은 새 항목을 만들 수 있다 — 읽지 않고 한 문장으로
     # upsert 한다. 위에서 add 한 블러 자산이 이 행의 FK 대상이라 먼저 flush 한다.
@@ -443,11 +549,26 @@ async def delete_generated_image(
             },
         )
 
+    storage_key = asset.storage_key
+    # 저장소 삭제를 기다리는 동안 커넥션을 쥐지 않도록 조회를 닫는다(롤백은 세션의 객체를 만료시켜 쓰지 않는다).
+    await db.commit()
+
     # S3를 먼저 지운다 — 실패하면 DB 행이 남아 재시도가 가능하다(고아 레코드 대신
     # 고아 파일을 피한다).
-    await run_in_threadpool(delete_object, asset.storage_key)
+    await run_in_threadpool(delete_object, storage_key)
     # READY asset은 항상 변형(썸네일·표시용)을 갖는다 — 안 지우면 사용자가 만든 그림의 사본이 고아로 남는다.
-    for variant_key in build_variant_keys(asset.storage_key):
+    for variant_key in build_variant_keys(storage_key):
         await run_in_threadpool(delete_object, variant_key)
+
+    # 저장소를 지우는 사이 다른 탭이 이 그림을 걸었을 수 있다 — 행을 지우기 전에 사용처를 다시 본다. 걸렸으면 행을 남겨
+    # (외래 키 오류로 500 이 나는 대신) 사용처와 함께 409 로 답한다. 저장소 객체는 이미 지워졌다.
+    usages = (await collect_asset_usages(db, [asset_id])).get(asset_id, [])
+    if usages:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "usages": [usage.model_dump(mode="json", by_alias=True) for usage in usages]
+            },
+        )
     await db.delete(asset)
     await db.commit()
