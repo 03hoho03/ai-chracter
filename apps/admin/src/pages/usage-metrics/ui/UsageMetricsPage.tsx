@@ -95,13 +95,13 @@ export function UsageMetricsPage({ from, to, onRangeChange }: UsageMetricsPagePr
           <div className="flex flex-wrap gap-4">
             <div className="flex min-w-64 flex-1 flex-col gap-2 rounded-xl border border-border bg-card p-6">
               <span className="text-sm text-muted-foreground">사용자 1인당 일일 평균 메시지 전송 수</span>
-              <span className="text-2xl font-bold tabular-nums text-foreground">
+              <span className="text-xl font-bold tabular-nums text-foreground">
                 {formatAverage(usageMetricsQuery.data.dailyAveragePerUser)}건
               </span>
             </div>
             <div className="flex min-w-64 flex-1 flex-col gap-2 rounded-xl border border-border bg-card p-6">
               <span className="text-sm text-muted-foreground">사용자 1인당 월간 평균 메시지 전송 수</span>
-              <span className="text-2xl font-bold tabular-nums text-foreground">
+              <span className="text-xl font-bold tabular-nums text-foreground">
                 {formatAverage(usageMetricsQuery.data.monthlyAveragePerUser)}건
               </span>
             </div>
