@@ -11,11 +11,16 @@
  * - 스토리(`charName` 이 null)에는 `{{char}}` 가 가리킬 한 사람이 없다. 몰래 지우면 작가가 모르므로 글자 그대로 둔다.
  *
  * 조사 보정
- * - 매크로 바로 뒤에 `은/는·이/가·을/를·과/와·아/야·이랑/랑·으로/로` 중 하나가 있고 그 뒤가 한글 음절이 아니거나
- *   글 끝일 때만, 이름의 끝 글자 받침에 맞는 쪽으로 바꾼다. 작가가 어느 쪽을 썼든 바꾼다(이름은 읽는 사람마다 다르다).
- *   뒤가 한글 음절이면 낱말의 일부일 수 있어(`{{user}}가방`) 그대로 둔다. 같은 경계 검사 덕에 `이랑` 이 `이` 로
- *   읽히는 일도 없다(`이` 뒤의 `랑` 이 한글이라 짧은 쪽은 맞지 않는다).
- * - ㄹ 받침 뒤에는 `으로` 가 아니라 `로` 가 맞다.
+ * - 고치는 쌍(받침 있을 때/없을 때): 조사 `은/는·이/가·을/를·과/와·아/야·이랑/랑·으로/로`, 서술격
+ *   `이에요/예요·이다/다·이나/나·이며/며·이고/고·이라고/라고·이라서/라서·이야/야`. 이 밖의 말은 손대지 않는다.
+ * - 매크로 바로 뒤(또는 닫는 따옴표·괄호 한 글자 `'’"”」』)` 뒤 — `'{{user}}'가`)에 쌍 중 하나가 있고 그 뒤가 한글
+ *   음절이 아니거나 글 끝일 때만, 이름의 끝 글자 받침에 맞는 쪽으로 바꾼다. 작가가 어느 쪽을 썼든 바꾼다(이름은 읽는
+ *   사람마다 다르다). 뒤가 한글 음절이면 낱말의 일부일 수 있어(`{{user}}가방`) 그대로 둔다.
+ * - 같은 경계 검사 덕에 긴 쌍과 그 앞부분이 겹쳐도 하나만 맞는다 — `{{user}}이고` 의 `이` 는 뒤의 `고` 가 한글이라
+ *   주격으로 읽히지 않는다. 그래서 대안의 순서가 결과를 바꾸지 않는다.
+ * - `야` 는 두 쌍에 다 있다. 작가가 쓴 `야` 는 부르는 말(`아/야`)로 읽고, 서술격은 `이야` 로 써야 고친다
+ *   (`그건 {{user}}이야` → 지훈이야·민수야).
+ * - ㄹ 받침 뒤에는 `으로` 가 아니라 `로` 가 맞다. 다른 쌍은 받침 유무만 본다.
  * - 이름 끝 글자가 한글 음절이 아니면(`Alex`, `R2`) 받침을 알 수 없어 작가가 쓴 조사를 그대로 둔다.
  */
 
@@ -57,15 +62,27 @@ const PARTICLE_PAIRS = [
   ["아", "야"],
   ["이랑", "랑"],
   ["으로", "로"],
+  ["이에요", "예요"],
+  ["이다", "다"],
+  ["이나", "나"],
+  ["이며", "며"],
+  ["이고", "고"],
+  ["이라고", "라고"],
+  ["이라서", "라서"],
+  ["이야", "야"],
 ] as const;
 type ParticlePair = (typeof PARTICLE_PAIRS)[number];
 
 const PARTICLE_BY_FORM = new Map<string, ParticlePair>(
   PARTICLE_PAIRS.flatMap((pair) => pair.map((form) => [form, pair] as const)),
 );
+// `야` 는 부르는 말과 서술격 두 쌍에 있다. 작가가 쓴 `야` 는 부르는 말로 읽는다 — 서술격은 `이야` 로 쓴다.
+PARTICLE_BY_FORM.set("야", ["아", "야"]);
+// 매크로와 조사 사이에 올 수 있는 닫는 따옴표·괄호 한 글자.
+const CLOSING_MARKS = `'’"”」』)`;
 const PARTICLE_ALTERNATION = [...PARTICLE_BY_FORM.keys()].join("|");
 const MACRO = new RegExp(
-  String.raw`\{\{[ \t]*([A-Za-z]+)[ \t]*\}\}(?:(${PARTICLE_ALTERNATION})(?![가-힣]))?`,
+  String.raw`\{\{[ \t]*([A-Za-z]+)[ \t]*\}\}(?:([${CLOSING_MARKS}])?(${PARTICLE_ALTERNATION})(?![가-힣]))?`,
   "g",
 );
 
@@ -106,10 +123,17 @@ export function expandAuthorMacros(
   ]);
   return text.replace(
     MACRO,
-    (match, macro: string, written: string | undefined) => {
+    (
+      match,
+      macro: string,
+      mark: string | undefined,
+      written: string | undefined,
+    ) => {
       const name = byMacro.get(macro.toLowerCase());
       if (name === undefined || name === null) return match;
-      return written === undefined ? name : name + particleFor(name, written);
+      return written === undefined
+        ? name
+        : name + (mark ?? "") + particleFor(name, written);
     },
   );
 }
@@ -134,7 +158,7 @@ export function userNameError(name: string): string | null {
   if (FORBIDDEN_LABEL_CHARACTERS.test(name))
     return "이름에는 콜론(:)이나 줄바꿈을 쓸 수 없어요";
   if (FORBIDDEN_NOTATION_CHARACTERS.test(name) || CHARACTER_REFERENCE.test(name))
-    return "이름에는 별표(*)·백틱(`)·역슬래시(\\)나 &…; 형태의 문자를 쓸 수 없어요";
+    return "이름에는 별표(*)·백틱(`)·역슬래시(\\)나 &와 ;로 둘러싼 표기를 쓸 수 없어요";
   if (LINE_START_MARKER.test(name) || THEMATIC_BREAK.test(name))
     return "이름을 >, -, +, 1. 같은 인용·목록 표시나 ~~~ 로 시작하거나 ---·___ 로만 지을 수 없어요";
   return null;
