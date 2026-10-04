@@ -28,6 +28,8 @@ type ContentActionsMenuProps = {
    * (`ContentDetailView`가 `canViewDetailPage`로 restricted/deleted를 이미 걷어낸다) 값을 받아 넘긴다 —
    * 호출부가 그 근거를 눈에 보이게 적게 하려는 것이다. */
   moderationStatus: ModerationStatus;
+  /** 모달 헤더에서는 옆의 닫기 X(32px)와 같은 크기로 맞춘다. 풀페이지는 기본 크기 그대로다. */
+  triggerSize?: "icon" | "icon-sm";
 };
 
 /** 공유(클립보드 복사)와, 남의 작품이면 신고 / 본인 소유면
@@ -38,6 +40,7 @@ export function ContentActionsMenu({
   isOwner,
   visibility,
   moderationStatus,
+  triggerSize = "icon",
 }: ContentActionsMenuProps) {
   const reportMutation = useReportContentMutation(contentId);
 
@@ -72,8 +75,16 @@ export function ContentActionsMenu({
 
   return (
     <DropdownMenu>
+      {/* ghost 기본 hover(`bg-muted`)는 모달 표면(`popover`)과 같은 값이라 사라진다. `secondary`는 모달과
+          풀페이지 배경 양쪽에서 보인다(닫기 X와 같은 처방). */}
       <DropdownMenuTrigger asChild>
-        <Button type="button" variant="ghost" size="icon" aria-label="더보기">
+        <Button
+          type="button"
+          variant="ghost"
+          size={triggerSize}
+          aria-label="더보기"
+          className="hover:bg-secondary aria-expanded:bg-secondary"
+        >
           <MoreHorizontal aria-hidden />
         </Button>
       </DropdownMenuTrigger>

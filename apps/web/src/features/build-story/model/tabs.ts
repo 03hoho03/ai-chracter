@@ -4,8 +4,8 @@ import type { BuilderTab } from "@/entities/content";
  * 스토리 빌더 탭의 단일 소스. `StoryBuilderShell.tsx`가 그리던
  * 탭 목록을 여기로 옮기고 `fields`(에러 탭 매칭용 경로 프리픽스)·`preview`를 더했다.
  *
- * `fields`는 **최상위 키가 아니다** — `startingSetups`가 `startingSetup`/`stat`/`ending` 세 탭에
- * 걸쳐 있다. `stat`/`ending`이 더 구체적인
+ * `fields`는 **최상위 키가 아니다** — `startingSetups`가 `startingSetup`/`stat`/`situationNote`/`ending` 네
+ * 탭에 걸쳐 있다. 뒤의 셋이 더 구체적인
  * 프리픽스이지만 배열 순서는 표시 순서(`startingSetup`이 먼저)를 따른다 — 매칭 우선순위는
  * `errorTabs`가 프리픽스 길이로 판정하므로 이 배열의 순서에 의존하지 않는다.
  */
@@ -14,6 +14,9 @@ export const STORY_TABS = [
   { id: "setting", label: "설정", fields: ["storySetting"], preview: "chat" },
   { id: "startingSetup", label: "시작설정", fields: ["startingSetups"], preview: "chat" },
   { id: "stat", label: "스탯", fields: ["startingSetups.*.stats"], preview: "chat" },
+  // 상황 노트는 스탯 값으로 조건을 거는 목록이라 스탯 바로 뒤에 둔다 — 스탯을 만든 직후가 노트를 떠올리는 때이고, 두 탭이
+  // 같은 "고른 시작설정"을 이어서 쓴다.
+  { id: "situationNote", label: "상황 노트", fields: ["startingSetups.*.situationNotes"], preview: "chat" },
   { id: "mediaBook", label: "미디어 북", fields: ["mediaBook"], preview: "chat" },
   { id: "keywordNote", label: "키워드북", fields: ["keywordNotes"], preview: "chat" },
   { id: "shortcut", label: "단축어", fields: ["shortcuts"], preview: "chat" },

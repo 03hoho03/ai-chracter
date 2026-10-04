@@ -57,6 +57,9 @@ describe("isKnownRoute", () => {
     // `new`는 정적 라우트가 아니라 `$draftId`가 받는 값이다(`NEW_DRAFT_SEGMENT`).
     expect(isKnownRoute("/builder/character/new")).toBe(true);
     expect(isKnownRoute("/builder/story/draft-1")).toBe(true);
+    // 작성 가이드 단계 페이지. 모르는 단계 id 도 셸을 받고, 화면이 개요로 돌려보낸다.
+    expect(isKnownRoute("/guide/story/setting")).toBe(true);
+    expect(isKnownRoute("/guide/character/intro")).toBe(true);
   });
 
   it("목록에 없는 경로는 false", () => {
@@ -65,9 +68,10 @@ describe("isKnownRoute", () => {
     expect(isKnownRoute("/content/character")).toBe(false);
     expect(isKnownRoute("/content/character/1/2")).toBe(false);
     expect(isKnownRoute("/onboarding")).toBe(false);
-    // 작성 가이드는 토픽별 정적 라우트뿐이라 목록 경로도, 없는 토픽도 없다.
+    // 작성 가이드는 토픽별 라우트(개요와 단계)뿐이라 목록 경로도, 없는 토픽도, 단계 아래 경로도 없다.
     expect(isKnownRoute("/guide")).toBe(false);
     expect(isKnownRoute("/guide/image")).toBe(false);
+    expect(isKnownRoute("/guide/story/setting/extra")).toBe(false);
     expect(isKnownRoute("/builder/character")).toBe(false);
     // `/my`와 `/mypage`는 접두사가 겹칠 뿐 다른 경로다.
     expect(isKnownRoute("/my/works")).toBe(false);

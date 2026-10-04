@@ -64,6 +64,7 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
             ("both", "memory_summary", ""),
             ("both", "history", ""),
             ("story", "keyword_notes", ""),
+            ("story", "situation_notes", ""),
             ("story", "shortcut_prompt", ""),
             ("both", "final_frame", ""),
         },

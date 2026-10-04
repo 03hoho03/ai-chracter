@@ -17,30 +17,16 @@ import { Controller, useFormContext, useWatch } from "react-hook-form";
 
 import { useGenreListQuery } from "@/entities/content";
 import {
+  FieldLabelText,
+  TARGET_LABELS,
   TARGET_VALUES,
+  VISIBILITY_LABELS,
   VISIBILITY_VALUES,
   type StoryBuilderFormValues,
-  type Target,
-  type Visibility,
 } from "@/features/build-story";
-import { RequiredText } from "@/shared/ui/RequiredText";
 
 import { MediaTagInsertButton } from "./MediaTagInsertButton";
 import { UnknownMediaTagNotice } from "./UnknownMediaTagNotice";
-
-// 값 목록(TARGET_VALUES/VISIBILITY_VALUES)은 스키마가 단일 소스다. 여기서는 그 배열을 map해
-// 라벨만 매핑한다.
-const TARGET_LABELS: Record<Target, string> = {
-  female: "여성향",
-  male: "남성향",
-  all: "공용",
-};
-
-const VISIBILITY_LABELS: Record<Visibility, string> = {
-  public: "전체공개",
-  link: "링크공개",
-  private: "비공개",
-};
 
 /** 등록 설명/장르/타겟/해시태그/공개범위 메타데이터. 캐릭터 빌더
  * `DetailTab`과 동일한 필드/UI 구성(`registration` 스키마가 이미 공유 모양으로
@@ -80,7 +66,7 @@ export function RegistrationTab() {
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between gap-2">
-          <Label htmlFor="story-registration-description"><RequiredText>등록 설명</RequiredText></Label>
+          <Label htmlFor="story-registration-description"><FieldLabelText field="registration.description" /></Label>
           <MediaTagInsertButton name="registration.description" fieldLabel="등록 설명" textareaRef={descriptionRef} />
         </div>
         <Textarea
@@ -104,7 +90,7 @@ export function RegistrationTab() {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="story-registration-genre"><RequiredText>장르</RequiredText></Label>
+        <Label htmlFor="story-registration-genre"><FieldLabelText field="registration.genre" /></Label>
         <Controller
           control={control}
           name="registration.genre"
@@ -137,7 +123,7 @@ export function RegistrationTab() {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <span className="text-sm leading-none font-medium"><RequiredText>타겟</RequiredText></span>
+        <span className="text-sm leading-none font-medium"><FieldLabelText field="registration.target" /></span>
         <Controller
           control={control}
           name="registration.target"
@@ -173,7 +159,7 @@ export function RegistrationTab() {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="story-registration-hashtag-input">해시태그</Label>
+        <Label htmlFor="story-registration-hashtag-input"><FieldLabelText field="registration.hashtags" /></Label>
         <div className="flex gap-2">
           <Input
             id="story-registration-hashtag-input"
@@ -215,7 +201,7 @@ export function RegistrationTab() {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <span className="text-sm leading-none font-medium"><RequiredText>공개범위</RequiredText></span>
+        <span className="text-sm leading-none font-medium"><FieldLabelText field="registration.visibility" /></span>
         <Controller
           control={control}
           name="registration.visibility"

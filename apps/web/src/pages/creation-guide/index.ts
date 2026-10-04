@@ -1,1 +1,2 @@
-export { CreationGuidePage } from "./ui/CreationGuidePage";
+export { CreationGuideOverviewPage } from "./ui/CreationGuideOverviewPage";
+export { CreationGuideStepPage } from "./ui/CreationGuideStepPage";

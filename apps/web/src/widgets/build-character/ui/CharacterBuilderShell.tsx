@@ -40,6 +40,7 @@ import {
   useProfileImageLocalUrl,
 } from "@/features/build-common";
 import { AppealModal } from "@/features/submit-appeal";
+import { creationGuidePath } from "@/shared/config/creationGuide";
 
 import { AdvancedTab } from "./AdvancedTab";
 import { DetailTab } from "./DetailTab";
@@ -275,7 +276,7 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
           autosaveNotice="변경사항은 자동으로 저장돼요."
           actions={
             <BuilderTopBarActions
-              guidePath="/guide/character"
+              guidePath={creationGuidePath("character", activeTab)}
               isPublishing={isPublishing}
               isPreviewOpen={isPreviewOpen}
               onPreview={() => setIsPreviewOpen((prev) => !prev)}

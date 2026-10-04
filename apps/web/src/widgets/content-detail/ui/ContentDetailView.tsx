@@ -29,20 +29,24 @@ import {
   useContentDetailQuery,
   useToggleFavoriteMutation,
   useToggleLikeMutation,
+  type ContentDetailResponse,
   type ContentType,
   type ThumbnailAspect,
 } from "@/entities/content";
 import { toMediaTagImages } from "@/entities/media-book";
+import { isApiError } from "@/shared/api/client";
 import { assertNever } from "@/shared/lib/assertNever";
 
 import { CharacterChatHistoryLink } from "./CharacterChatHistoryLink";
 import { CharacterPlayBar } from "./CharacterPlayBar";
 import { ContentActionsMenu } from "./ContentActionsMenu";
+import { ContentDetailModalShell } from "./ContentDetailModalShell";
 import { ContentUnavailableState } from "./ContentUnavailableState";
 import { MediaTagText } from "./MediaTagText";
 import { StoryDetailBody } from "./StoryDetailBody";
 import { StoryPlayBar } from "./StoryPlayBar";
 import { VersionHistoryModal } from "./VersionHistoryModal";
+import { applyLikeResult } from "../lib/applyLikeResult";
 import { useContentEditingViewport } from "../lib/useContentEditingViewport";
 
 type ContentDetailViewProps = {
@@ -144,75 +148,117 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
     [queryClient],
   );
 
+  // 정산 순서: 성공하면 보낸 값을 상세 캐시에 먼저 쓰고 같은 동기 구간에서 낙관값을 푼다. 둘 사이에 await 가
+  // 끼면 그 틈의 렌더가 캐시의 옛 값을 그려 버튼이 리페치가 올 때까지 꺼졌다 켜진다(POST/DELETE 가 204 라
+  // 새 값을 받으려면 리페치를 기다려야 했다). 무효화는 서버 값 확인용으로 그 뒤 백그라운드에 둔다 — 활성 쿼리의
+  // 무효화는 진행 중이던 옛 GET 을 취소하므로, 창 포커스 등으로 먼저 출발한 GET 이 늦게 와 캐시를 되돌리지 못한다.
+  // 해제는 호출 단위 `onSettled` 가 아니라 `mutateAsync` 프로미스에 건다 — 호출 단위 콜백은 같은 observer 로
+  // 다시 mutate 하면 덮어써지고, 요청 중 언마운트(모달 닫힘)하면 불리지 않는다.
+  // 요청 중에는 보내지 않고, deps 에 서버 값과 `isPending` 을 넣어 정산 뒤 다시 따져 본다. 느린 요청 중에
+  // 다시 눌러 바뀐 의도가 그 요청이 끝난 뒤에 나가야 화면과 서버가 갈린 채 굳지 않는다. 정산 뒤 낙관값이
+  // 서버 값과 같으면 위 조기 반환에 걸려 아무것도 보내지 않는다.
   useDebounce(
     () => {
-      if (content === undefined || isLikeDesired === undefined || isLikeDesired === content.isLiked) return;
+      if (
+        content === undefined ||
+        isLikeDesired === undefined ||
+        isLikeDesired === content.isLiked ||
+        toggleLike.isPending
+      )
+        return;
       const isNextLiked = isLikeDesired;
-      toggleLike.mutate(isNextLiked, {
-        onError: (error) => {
-          toast.error(
-            error.status === 401 ? "로그인 후 좋아요를 남길 수 있어요." : "좋아요 처리에 실패했어요. 잠시 후 다시 시도해주세요.",
+      // 정산되는 사이 다시 클릭해 isLikeDesired가 이미 다른 값으로 바뀌었다면(연타) 그 새 의도를 덮어쓰지 않는다.
+      const releaseOverride = () => setIsLikeDesired((current) => (current === isNextLiked ? undefined : current));
+      void toggleLike.mutateAsync(isNextLiked).then(
+        () => {
+          queryClient.setQueryData<ContentDetailResponse>(contentKeys.detail(id), (old) =>
+            applyLikeResult(old, isNextLiked),
           );
-        },
-        onSettled: () => {
-          // 정산되는 사이 다시 클릭해 isLikeDesired가 이미 다른 값으로 바뀌었다면(연타) 그 새 의도를 덮어쓰지 않는다.
-          setIsLikeDesired((current) => (current === isNextLiked ? undefined : current));
+          releaseOverride();
           void queryClient.invalidateQueries({ queryKey: contentKeys.detail(id) });
         },
-      });
+        (error: unknown) => {
+          toast.error(
+            isApiError(error) && error.status === 401
+              ? "로그인 후 좋아요를 남길 수 있어요."
+              : "좋아요 처리에 실패했어요. 잠시 후 다시 시도해주세요.",
+          );
+          // 실패하면 캐시를 쓰지 않으므로 낙관값만 풀면 마지막으로 받은 서버 값으로 돌아간다. 실패가 곧 서버에
+          // 반영되지 않았다는 뜻은 아니므로(응답만 잃은 경우) 다시 받아 확인한다.
+          releaseOverride();
+          void queryClient.invalidateQueries({ queryKey: contentKeys.detail(id) });
+        },
+      );
     },
     TOGGLE_SYNC_DEBOUNCE_MS,
-    [isLikeDesired],
+    [isLikeDesired, content?.isLiked, toggleLike.isPending],
   );
 
+  // 좋아요와 같은 정산 순서·보류 규칙이다(위 주석). 즐겨찾기는 수가 없어 값만 쓴다.
   useDebounce(
     () => {
       if (
         content === undefined ||
         isFavoriteDesired === undefined ||
-        isFavoriteDesired === content.isFavorited
+        isFavoriteDesired === content.isFavorited ||
+        toggleFavorite.isPending
       )
         return;
       const isNextFavorited = isFavoriteDesired;
-      toggleFavorite.mutate(isNextFavorited, {
-        onError: (error) => {
-          toast.error(
-            error.status === 401
-              ? "로그인 후 즐겨찾기에 담을 수 있어요."
-              : "즐겨찾기 처리에 실패했어요. 잠시 후 다시 시도해주세요.",
+      const releaseOverride = () =>
+        setIsFavoriteDesired((current) => (current === isNextFavorited ? undefined : current));
+      void toggleFavorite.mutateAsync(isNextFavorited).then(
+        () => {
+          queryClient.setQueryData<ContentDetailResponse>(contentKeys.detail(id), (old) =>
+            old === undefined ? old : { ...old, isFavorited: isNextFavorited },
           );
-        },
-        onSettled: () => {
-          setIsFavoriteDesired((current) => (current === isNextFavorited ? undefined : current));
+          releaseOverride();
           void queryClient.invalidateQueries({ queryKey: contentKeys.detail(id) });
           // `favoriteKeys.list(type)`이 타입별로 캐시를 가른다 — 접두사로
           // 두 타입 모두 무효화한다. 한쪽만 지우면 반대 타입 즐겨찾기 목록이 stale로 남는다.
           void queryClient.invalidateQueries({ queryKey: favoriteKeys.all });
         },
-      });
+        (error: unknown) => {
+          toast.error(
+            isApiError(error) && error.status === 401
+              ? "로그인 후 즐겨찾기에 담을 수 있어요."
+              : "즐겨찾기 처리에 실패했어요. 잠시 후 다시 시도해주세요.",
+          );
+          releaseOverride();
+          void queryClient.invalidateQueries({ queryKey: contentKeys.detail(id) });
+          void queryClient.invalidateQueries({ queryKey: favoriteKeys.all });
+        },
+      );
     },
     TOGGLE_SYNC_DEBOUNCE_MS,
-    [isFavoriteDesired],
+    [isFavoriteDesired, content?.isFavorited, toggleFavorite.isPending],
   );
 
-  if (detailQuery.isPending) return <ContentDetailSkeleton type={type} variant={variant} />;
+  // 모달은 어느 상태든 같은 [헤더, 스크롤 본문] 틀에 담는다(`ContentDetailModalShell`). 풀페이지는 다이얼로그
+  // 밖이라 그 틀(다이얼로그 제목)을 쓰면 Radix가 던지므로 내용만 그대로 낸다.
+  if (detailQuery.isPending) {
+    const skeleton = <ContentDetailSkeleton type={type} variant={variant} />;
+    return variant === "modal" ? <ContentDetailModalShell isTitlePending>{skeleton}</ContentDetailModalShell> : skeleton;
+  }
 
   if (detailQuery.isError) {
-    return (
+    const message = (
       <p className="p-6 text-center text-sm text-destructive-text">
         불러오지 못했어요. 잠시 후 다시 시도해주세요.
       </p>
     );
+    return variant === "modal" ? <ContentDetailModalShell>{message}</ContentDetailModalShell> : message;
   }
 
-  if (content === undefined) return null;
+  if (content === undefined) return variant === "modal" ? <ContentDetailModalShell /> : null;
 
   const access = toContentAccessStatus(content.accessStatus);
 
   // `kind` 검사는 `canViewDetailPage`가 이미 포함하지만(restricted/deleted면 false) 그 함수는 타입
   // 술어가 아니다 — 아래에서 `access.visibility`(전환 메뉴의 "현재 값")를 쓰려면 여기서 좁혀야 한다.
   if (access.kind !== "accessible" || !canViewDetailPage(access, content.isOwner)) {
-    return <ContentUnavailableState access={access} />;
+    const unavailable = <ContentUnavailableState access={access} />;
+    return variant === "modal" ? <ContentDetailModalShell>{unavailable}</ContentDetailModalShell> : unavailable;
   }
 
   const isLiked = isLikeDesired ?? content.isLiked;
@@ -244,8 +290,25 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
   const heroAspect = toThumbnailAspect(content.type);
   const TypeIcon = TYPE_ICON[content.type];
 
+  // `access.kind === "accessible"`로 이미 좁혀진 자리다(위 early return) — 그래서 여기 오는 콘텐츠의
+  // 모더레이션 상태는 `normal`이다. 상세 응답은 `moderationStatus`를 따로 내려주지 않고 `accessStatus`로
+  // 접어 주므로 이 좁힘이 그 값의 유일한 출처다. 모달은 이 메뉴를 헤더에, 풀페이지는 본문 메타 첫 줄에 둔다.
+  const actionsMenu = (
+    <ContentActionsMenu
+      contentId={content.id}
+      creatorUserId={content.creatorUserId}
+      isOwner={content.isOwner}
+      visibility={access.visibility}
+      moderationStatus="normal"
+      triggerSize={variant === "modal" ? "icon-sm" : "icon"}
+    />
+  );
+
+  // `p-1`은 패딩 없는 스크롤 상자 안에서 가장자리 컨트롤의 포커스 링이 잘리지 않게 하던 여유다. 모달의 스크롤
+  // 본문(`DialogBody`)은 그 여유를 스스로 주므로 모달에서는 빼서 본문 왼쪽 끝을 헤더 제목 왼쪽 끝에 맞추고,
+  // 풀페이지는 화면이 바뀌지 않게 그대로 둔다.
   const body = (
-    <article className="flex flex-col gap-5 p-1">
+    <article className={cn("flex flex-col gap-5", variant === "page" && "p-1")}>
       {/* 스토리는 ≥sm에서 hero+메타를 가로 2열로 두고(사용자 피드백
           "메타데이터가 이미지 오른쪽"), 캐릭터는 지금처럼 1열을 유지한다. */}
       <div
@@ -271,34 +334,19 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
         {/* min-w-0 — flex 자식의 기본 min-width:auto 때문에 긴 제목·해시태그가 열을 밀어내는 것을 막는다. */}
         <div className="flex min-w-0 flex-1 flex-col gap-5">
           <div className="flex flex-col gap-2">
-            {/* 모달의 스토리 2열(`sm` 이상)에서는 이 줄의 오른쪽 끝(`⋯`)이 모달 오른쪽 위 닫기(×) 자리와
-                겹친다 — 닫기는 공용 `DialogContent`가 절대배치로 그리므로 이 줄이 닫기 폭(32px)만큼
-                비켜선다. 공용 다이얼로그를 고치면 web·admin의 모든 다이얼로그가 바뀌어 여기서만 푼다.
-                풀페이지(닫기 없음)와 캐릭터(1열이라 `⋯`이 히어로 아래)는 겹치지 않아 그대로다. */}
-            <div
-              className={cn(
-                "flex items-center justify-between",
-                variant === "modal" && content.type === "story" && "sm:pr-8",
-              )}
-            >
+            <div className="flex items-center justify-between">
               <span className="inline-flex w-fit items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-badge font-medium text-secondary-foreground">
                 <TypeIcon aria-hidden className="size-3.5" />
                 {TYPE_LABEL[content.type]}
               </span>
 
-              {/* `access.kind === "accessible"`로 이미 좁혀진 자리다(위 early return) — 그래서 여기 오는
-                  콘텐츠의 모더레이션 상태는 `normal`이다. 상세 응답은 `moderationStatus`를 따로 내려주지 않고
-                  `accessStatus`로 접어 주므로 이 좁힘이 그 값의 유일한 출처다. */}
-              <ContentActionsMenu
-                contentId={content.id}
-                creatorUserId={content.creatorUserId}
-                isOwner={content.isOwner}
-                visibility={access.visibility}
-                moderationStatus="normal"
-              />
+              {variant === "page" && actionsMenu}
             </div>
 
-            <h1 className="text-xl font-bold tracking-tight text-foreground">{content.name}</h1>
+            {/* 모달에서는 헤더의 다이얼로그 제목이 작품명이라 본문에 다시 쓰지 않는다. */}
+            {variant === "page" && (
+              <h1 className="text-xl font-bold tracking-tight text-foreground">{content.name}</h1>
+            )}
 
             <Link
               to="/profile/$userId"
@@ -424,16 +472,22 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
 
   // 플레이 CTA를 스크롤 영역 밖으로 뽑아 하단에 고정한다.
   if (variant === "modal") {
-    // 모달은 폭과 무관하게 전 폭에서 고정한다(분기 없음) — `DialogContent`가 이 컴포넌트의 호출부에서
-    // 이미 `flex flex-col`이라, 여기서는 그 두 flex 아이템만 내놓는다. 카드 안 flex 배치라 겹칠
-    // 다른 fixed/absolute 레이어가 없으므로 z-index 경쟁이 없다.
+    // 모달은 폭과 무관하게 전 폭에서 고정한다(분기 없음) — 스크롤 본문(`DialogBody`)이 있으면
+    // `DialogContent`가 최대 높이가 있는 flex 컬럼이 되므로, 플레이 바는 그 컬럼의 마지막 아이템으로 바닥에
+    // 남는다. 카드 안 flex 배치라 겹칠 다른 fixed/absolute 레이어가 없으므로 z-index 경쟁이 없다.
     return (
-      <>
-        <div data-content-detail-scroll className="min-h-0 flex-1 overflow-y-auto">{body}{comments}</div>
-        <div data-content-play-bar className="-mx-4 -mb-4 shrink-0 rounded-b-xl border-t border-border bg-popover p-4 pb-4-safe">
-          {footer}
-        </div>
-      </>
+      <ContentDetailModalShell
+        title={content.name}
+        actions={actionsMenu}
+        footer={
+          <div data-content-play-bar className="-mx-4 -mb-4 shrink-0 rounded-b-xl border-t border-border bg-popover p-4 pb-4-safe">
+            {footer}
+          </div>
+        }
+      >
+        {body}
+        {comments}
+      </ContentDetailModalShell>
     );
   }
 
@@ -474,7 +528,8 @@ function ContentDetailSkeleton({ type, variant }: Pick<ContentDetailViewProps, "
   const heroAspect = toThumbnailAspect(type);
   const fill = SURFACE_FILL_CLASS[variant];
   return (
-    <div className="flex flex-col gap-4 p-1">
+    // 본문과 같은 이유로 `p-1`은 풀페이지에만 둔다.
+    <div className={cn("flex flex-col gap-4", variant === "page" && "p-1")}>
       {/* 실제 본문과 같은 2열 분기(스토리만 ≥sm에서 flex-row)를
           흉내 내지 않으면 도착 시 화면이 밀린다. */}
       <div className={cn("flex flex-col gap-4", type === "story" && "sm:flex-row sm:items-start sm:gap-6")}>
