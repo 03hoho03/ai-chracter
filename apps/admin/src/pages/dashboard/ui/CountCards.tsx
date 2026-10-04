@@ -5,9 +5,11 @@ import { formatCount } from "@/shared/lib/format/formatCount";
 
 import { useCountsQuery } from "../api/useCountsQuery";
 
-const CARD_CLASS = "flex flex-1 flex-col gap-2 rounded-xl border border-border bg-card p-6";
+const CARD_CLASS = "flex flex-1 flex-col gap-2 rounded-xl border border-border bg-card p-4 @2xl:p-6";
 const NUMBER_CLASS = "text-xl font-bold tabular-nums text-foreground";
-const GRID_CLASS = "grid grid-cols-2 gap-4 sm:grid-cols-4";
+/** 열 수는 뷰포트가 아니라 본문 폭(대시보드의 `@container`)으로 가른다 — 사이드바가 펴지고 접히면 같은 뷰포트에서도
+ * 카드 폭이 달라진다. 2열일 때 안쪽 여백을 줄여 320px 에서도 "처리 대기 신고"가 한 줄에 든다. */
+const GRID_CLASS = "grid grid-cols-2 gap-3 @2xl:grid-cols-4 @2xl:gap-4";
 
 /** 숫자 4개(총 유저 / 총 작품 / 오늘 메시지 / 처리 대기 신고). 이 영역만 실패해도 나머지
  * 세 영역(TrendChart/PopularList/ActivityFeed)은 각자 독립적으로 로딩·렌더된다. */

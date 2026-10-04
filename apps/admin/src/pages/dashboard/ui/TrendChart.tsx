@@ -4,7 +4,10 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@ai-character-chat/ui/components/chart";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
+
+import { CHART_FOCUS_CLASS } from "@/shared/ui/chartFocusClass";
 
 import { useTrendQuery, type AdminDashboardTrendPoint } from "../api/useTrendQuery";
 
@@ -35,13 +38,14 @@ export function TrendChart() {
   );
 }
 
-/** 제목은 로딩·에러에도 남아야 해서 쿼리에 의존하는 차트 그리드만 갈라낸다. */
+/** 제목은 로딩·에러에도 남아야 해서 쿼리에 의존하는 차트 그리드만 갈라낸다. 세 차트를 나란히 두는 것은 본문 폭이
+ * 896px(`@4xl`) 이상일 때뿐이다 — 그보다 좁으면 차트 하나가 280px 아래로 줄어 날짜 눈금이 겹친다. */
 function TrendCharts() {
   const trendQuery = useTrendQuery();
 
   if (trendQuery.isPending) {
     return (
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 @4xl:grid-cols-3">
         {MINI_CHARTS.map(({ key }) => (
           <div key={key} className="h-56 animate-pulse rounded-xl bg-muted" />
         ))}
@@ -58,7 +62,7 @@ function TrendCharts() {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 @4xl:grid-cols-3">
       {MINI_CHARTS.map(({ key, title, config }) => (
         <MiniTrendChart key={key} title={title} dataKey={key} data={trendQuery.data} config={config} />
       ))}
@@ -75,7 +79,7 @@ type MiniTrendChartProps = {
 
 function MiniTrendChart({ title, dataKey, data, config }: MiniTrendChartProps) {
   return (
-    <div className="rounded-xl border border-border bg-card p-6">
+    <div className={cn("rounded-xl border border-border bg-card p-6", CHART_FOCUS_CLASS)}>
       <h3 className="mb-4 text-sm font-medium text-foreground">{title}</h3>
       <ChartContainer config={config} className="aspect-auto h-48 w-full">
         <LineChart data={data} margin={{ left: 8, right: 8 }}>
@@ -91,9 +95,10 @@ function MiniTrendChart({ title, dataKey, data, config }: MiniTrendChartProps) {
           <ChartTooltip
             content={<ChartTooltipContent labelFormatter={(label) => formatTickDate(String(label))} />}
           />
+          {/* 일 단위 정수라 점 사이를 곧게 잇는다 — 곡선 보간은 없는 값(0 과 1 사이의 봉우리)을 그린다. */}
           <Line
             dataKey={dataKey}
-            type="monotone"
+            type="linear"
             stroke={`var(--color-${dataKey})`}
             strokeWidth={2}
             dot={false}

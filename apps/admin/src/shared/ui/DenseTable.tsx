@@ -26,9 +26,11 @@ export function DenseTable({ surface, children }: DenseTableProps) {
       className={cn(
         "[&_td:first-child]:min-w-32 [&_td:first-child]:whitespace-normal [&_td:first-child]:break-keep [&_td:first-child]:wrap-anywhere",
         "[&_td:first-child]:sticky [&_td:first-child]:left-0 [&_td:first-child]:z-10 [&_td:first-child]:border-r [&_td:first-child]:border-border [&_th:first-child]:sticky [&_th:first-child]:left-0 [&_th:first-child]:z-10 [&_th:first-child]:border-r [&_th:first-child]:border-border",
+        // 고정 열은 불투명 채움이라 행 hover·선택 채움이 그 칸만 비켜 간다 — 행 머리 칸(`th scope="row"`)까지 같은 채움을
+        // 따라가게 한다. 고른 행(`data-state="selected"`)도 같다.
         surface === "background"
-          ? "[&_td:first-child]:bg-background [&_th:first-child]:bg-background [&_tr:hover_td:first-child]:bg-muted"
-          : "[&_td:first-child]:bg-card [&_th:first-child]:bg-card [&_tbody_tr]:hover:bg-secondary/50 [&_tr:hover_td:first-child]:bg-secondary",
+          ? "[&_td:first-child]:bg-background [&_th:first-child]:bg-background [&_tr:hover_td:first-child]:bg-muted [&_tbody_tr:hover_th:first-child]:bg-muted [&_tr[data-state=selected]_:is(td,th):first-child]:bg-muted"
+          : "[&_td:first-child]:bg-card [&_th:first-child]:bg-card [&_tbody_tr]:hover:bg-secondary/50 [&_tr:hover_td:first-child]:bg-secondary [&_tbody_tr:hover_th:first-child]:bg-secondary [&_tbody_tr[data-state=selected]]:bg-secondary [&_tr[data-state=selected]_:is(td,th):first-child]:bg-secondary",
       )}
     >
       {children}
