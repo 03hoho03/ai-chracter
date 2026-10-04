@@ -40,6 +40,19 @@
 - **`react-call`(확인 모달)·`sonner`(토스트)는 web과 같은 관례다** — Callable은 `routes/__root.tsx`에 1회 마운트하고 `<Toaster />`는 `main.tsx`에 둔다. **두 의존성은 admin `package.json`에 직접 넣어야 한다**(pnpm 워크스페이스가 간접 의존성을 안 끌어온다).
 - **Callable은 `@/shared/lib/callable/createCallable`로만 만든다** — 모달이 닫힌 뒤 연 버튼으로 포커스를 돌려주는 래퍼다(web 래퍼의 사본 — 앱끼리 import할 수 없다). `react-call`에서 직접 만들면 포커스가 `<body>`로 떨어지고, eslint `no-restricted-imports`가 막는다.
 - **확인 모달의 첫 포커스는 `취소` 버튼이다**(`취소`에 `autoFocus`) — 무심코 Enter를 눌러도 아무 일도 일어나지 않게. 예외는 대상 이름을 다시 쳐야 확정되는 삭제 모달뿐이고 그 이름 확인칸이 첫 포커스다. 필수 칸(사유·수량)이 있어도 첫 포커스는 `취소`다.
+  - **하단 조치 시트 안에서 열릴 수 있는 모달은 첫 포커스 대상에 `data-initial-focus`를 함께 달고 `DialogContent`에 `onOpenAutoFocus={focusInitialElement}`(`shared/lib/callable/focusInitialElement`)를 준다.** `autoFocus`만 두면 모달이 자리 잡기 전에 시트의 포커스 트랩이 포커스를 되돌려 첫 포커스가 닫기 X로 빗나간다(실측).
 - **손가락 포인터에서 컨트롤을 40px로 올리는 규칙은 admin 전용 CSS `app/styles/admin.css`에 있다**(`packages/ui`에 넣으면 web까지 바뀐다). 프리미티브의 `data-slot`으로 걸고, 버튼만 Button의 기반 클래스로 건다 — Radix 트리거·닫기를 `asChild`로 씌우면 바깥 `data-slot`이 Button 것을 덮기 때문이다. 프리미티브가 아닌 손수 만든 행(내비 행 등)은 그 클래스에 `pointer-coarse:min-h-10`을 직접 둔다.
 - **되돌릴 수 없는 삭제는 이름 완전 일치로 확인받는다** — `features/act-on-report/ui/DeleteConfirmModal.tsx`(`{contentName, mutationFn}`, 입력값이 `contentName`과 정확히 같아야 확정 버튼 활성화). 도메인이 다르면 새 컴포넌트로 만들되 이 검증 패턴을 재사용한다.
 - **목록 항목에 상세 정보가 이미 다 들어 있으면 별도 라우트로 분리하지 말고 한 페이지 안에서 로컬 `useState`로 렌더한다**(`pages/appeals`가 그 사례 — 선택된 id로 `items.find(...)`). 별도 상세 쿼리도 라우트도 필요 없고, 필터·페이지가 바뀌어 선택된 id가 목록에서 사라지면 상세 섹션도 자연히 사라진다(정리 코드 불필요). **실제 detail 엔드포인트가 생기면** 그때 `reports` 패턴(형제 라우트 + 상세 쿼리)으로 옮긴다.
+
+## 공용 화면 프리미티브 (`shared/ui`)
+
+옮긴 화면부터 쓴다(지금은 작품 목록·신고 상세). 아직 옮기지 않은 화면은 자기 `<main>`·폭을 그대로 가진다.
+
+- **`PageContainer` + `PageHeader`** — 폭·거터의 단일 소스(`max-w-6xl`, `px-4 sm:px-6`)와 늘 줄바꿈되는 화면 머리. 머리는 쿼리 밖에 둬 로딩·오류에도 남긴다.
+- **`FilterBar` + `selectFilter`** — 필터 상태는 지금처럼 라우트 URL search 에 두고 콜백만 넘긴다. 셀렉트 값은 `selectFilter`가 옵션에서 다시 찾아 좁히므로 호출부에 술어·`as`가 필요 없다. 자기 폭 672px(`@2xl`) 미만에서 필터 시트 + 해제 칩이 된다.
+- **`DataList`** — 목록 행은 행 전체를 덮는 `Link` 하나다(`renderRowLink`로 타입 안전한 `Link`에 받은 props를 넘긴다). `tr role="button"`·셀 버튼으로 되돌리지 않는다 — 새 탭·접근 이름이 깨진다. 숫자를 가로로 비교하는 밀집 표는 카드 행 대신 `DenseTable`(첫 열 고정)로 감싼다.
+- **`QueryState`** — 로딩·오류(+ "다시 시도")·빈 상태를 한 모양으로. `card`·`popover` 위면 `surface="card"`(스켈레톤이 `secondary`).
+- **`DetailLayout`** — 상세의 조치는 `actions`로 넘긴다(`lg` 이상 sticky 열, 미만 하단 바 → 바텀시트). **"조치 없음" 판정은 호출부가 해 `null`을 넘긴다**(패널 안에서 `return null` 하지 않는다). 패널은 `render(host)` 안에서 한 번만 마운트되고, 성공하면(확인 모달이 있으면 모달이 닫힌 뒤) `host.onDone`을 부른다. 본문 열은 `@container`라 **그 안의 그리드·패딩은 뷰포트 `sm:`/`md:`가 아니라 `@xl:` 같은 컨테이너 쿼리로 가른다**(조치 열·사이드바에 따라 폭이 바뀐다).
+- **`ActionChoice`** — 처리 방법 고르기는 이 세로 라디오 목록 하나로 한다(가로 토글 그룹에 `flex-1`을 주면 좁은 폭에서 글자가 겹친다). 되돌릴 수 없는 처리는 `tone: "destructive"`.
+
