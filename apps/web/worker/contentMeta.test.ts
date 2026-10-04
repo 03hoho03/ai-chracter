@@ -34,6 +34,7 @@ function createSource(
     oneLiner: "달빛 마녀",
     detailDescription: "달빛을 다루는 마녀다.",
     creatorNickname: "제작자",
+    defaultUserName: "",
     ...overrides,
   };
 }
@@ -178,7 +179,9 @@ describe("buildContentHead", () => {
     );
   });
 
-  it("detailDescription으로 떨어질 때 미디어 북 그림 태그(칸 id·이름 형태)를 지운다", () => {
+  // 그림 태그가 아닌 `{{…}}` 는 지우지 않는다 — 예전엔 `{{user}}` 가 글자 그대로 남았지만, 이제 작가 글의 이름 매크로라
+  // 지우지 않고 이름으로 바꾼다(링크 미리보기엔 보는 사람이 없어 작품 기본 이름, 없으면 대체어).
+  it("detailDescription으로 떨어질 때 그림 태그는 지우고 {{user}} 는 지우지 않고 이름으로 바꾼다", () => {
     const head = buildContentHead(
       createSource({
         oneLiner: "",
@@ -189,9 +192,39 @@ describe("buildContentHead", () => {
     );
 
     expect(head).toContain(
-      '<meta name="description" content="첫 줄 둘째 줄 {{user}}" />',
+      '<meta name="description" content="첫 줄 둘째 줄 당신" />',
     );
     expect(head).not.toContain("img::");
+  });
+
+  it("한줄소개의 {{user}} 를 작품 기본 이름으로, 조사도 받침에 맞춰 바꾼다", () => {
+    const head = buildContentHead(
+      createSource({
+        type: "story",
+        oneLiner: "{{user}}는 영화 동아리의 막내다. {{char}}",
+        defaultUserName: "조감독",
+      }),
+      origin,
+    );
+
+    // 스토리에는 `{{char}}` 가 가리킬 한 사람이 없어 글자 그대로 둔다.
+    expect(head).toContain(
+      '<meta name="description" content="조감독은 영화 동아리의 막내다. {{char}}" />',
+    );
+    expect(head).toContain(
+      '<meta property="og:description" content="조감독은 영화 동아리의 막내다. {{char}}" />',
+    );
+  });
+
+  it("캐릭터 작품의 {{char}} 는 작품 이름으로 바꾼다", () => {
+    const head = buildContentHead(
+      createSource({ oneLiner: "{{char}}와 {{user}}의 새벽" }),
+      origin,
+    );
+
+    expect(head).toContain(
+      '<meta name="description" content="루나와 당신의 새벽" />',
+    );
   });
 
   it("그림 태그만 있는 설명이면 description 태그를 만들지 않는다", () => {
@@ -275,6 +308,21 @@ describe("handleContentMeta", () => {
     // index.html에 박힌 홈 title은 같은 키라 교체된다(중복 title을 남기지 않는다).
     expect(html).not.toContain("<title>또나 — AI 캐릭터 챗</title>");
     expect(html).toContain('<div id="root">');
+  });
+
+  it("상세 응답의 작품 기본 이름으로 한줄소개의 {{user}} 를 바꾼다", async () => {
+    stubJson(
+      createDetailBody({ oneLiner: "{{user}}를 기다린 달빛 마녀", defaultUserName: "나그네" }),
+    );
+
+    const html = await (
+      await handleContentMeta(botRequest(), createEnv(), ID)
+    ).text();
+
+    expect(html).toContain(
+      '<meta name="description" content="나그네를 기다린 달빛 마녀" />',
+    );
+    expect(html).not.toContain("{{user}}");
   });
 
   it("UUID가 아니면 API를 부르지 않고 404다", async () => {

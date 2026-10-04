@@ -12806,6 +12806,11 @@
             ],
             "title": "Playguide"
           },
+          "defaultUserName": {
+            "type": "string",
+            "maxLength": 20,
+            "title": "Defaultusername"
+          },
           "situationalImages": {
             "items": {
               "$ref": "#/components/schemas/CharacterSituationalImageDraftInput"
@@ -12943,6 +12948,10 @@
             ],
             "title": "Playguide"
           },
+          "defaultUserName": {
+            "type": "string",
+            "title": "Defaultusername"
+          },
           "situationalImages": {
             "items": {
               "$ref": "#/components/schemas/CharacterSituationalImageItem"
@@ -12999,6 +13008,7 @@
           "exampleDialogues",
           "characterPrompt",
           "playguide",
+          "defaultUserName",
           "situationalImages",
           "description",
           "genreId",
@@ -13640,6 +13650,25 @@
               }
             ],
             "title": "Personaid"
+          },
+          "personaName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Personaname"
+          },
+          "defaultUserName": {
+            "type": "string",
+            "title": "Defaultusername"
+          },
+          "contentName": {
+            "type": "string",
+            "title": "Contentname"
           },
           "mediaTagImages": {
             "additionalProperties": {
@@ -15070,6 +15099,10 @@
             "type": "string",
             "title": "Detaildescription"
           },
+          "defaultUserName": {
+            "type": "string",
+            "title": "Defaultusername"
+          },
           "chatCount": {
             "type": "integer",
             "title": "Chatcount"
@@ -16116,6 +16149,10 @@
           "oneLiner": {
             "type": "string",
             "title": "Oneliner"
+          },
+          "defaultUserName": {
+            "type": "string",
+            "title": "Defaultusername"
           },
           "thumbnailUrl": {
             "anyOf": [
@@ -17894,6 +17931,17 @@
               }
             ],
             "title": "Personaid"
+          },
+          "personaName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Personaname"
           }
         },
         "type": "object",
@@ -18497,6 +18545,11 @@
             ],
             "title": "Rules"
           },
+          "defaultUserName": {
+            "type": "string",
+            "maxLength": 20,
+            "title": "Defaultusername"
+          },
           "startingSetups": {
             "items": {
               "$ref": "#/components/schemas/StartingSetupDraftItem"
@@ -18694,6 +18747,10 @@
             ],
             "title": "Rules"
           },
+          "defaultUserName": {
+            "type": "string",
+            "title": "Defaultusername"
+          },
           "startingSetups": {
             "items": {
               "$ref": "#/components/schemas/StartingSetupDraftItem"
@@ -18769,6 +18826,7 @@
           "developmentExamples",
           "userGoal",
           "rules",
+          "defaultUserName",
           "startingSetups",
           "keywordNotes",
           "shortcuts",

@@ -38,6 +38,9 @@ _M = _load("2417f5829bb1")
 _PREVIOUS_STORY_SET_ID: uuid.UUID = _load("2519dde454e0").NEW_SET_ID
 # 손대지 않아야 하는 character 활성 세트 — 테스트 DB에서는 채팅방 기억 행을 넣은 리비전의 세트다.
 _CHARACTER_SET_ID: uuid.UUID = _load("c328445d4c2d").NEW_SET_IDS["character"]
+# 이 리비전 뒤에 두 레인에 사용자 이름 한 줄 행을 더하는 리비전 — 활성 세트가 그 세트로 넘어가고, 초안 게시 검사가 head
+# 코드 표를 쓰므로 초안도 그 패치를 거친다.
+_USER_NAME_MIGRATION = _load("8e895c898730")
 
 _NEW_KEY = ("generation", "story", "situation_notes", "")
 
@@ -173,10 +176,14 @@ def test_build_published_rows_puts_the_row_right_after_keyword_notes(rows: list[
 
 async def test_active_story_set_is_this_revisions_set_with_the_new_row(db_session: AsyncSession) -> None:
     """회귀 방지 — `published_at`이 원본보다 과거가 되면 새 세트가 활성이 되지 못하고, 골든은 옛 세트로도 통과하므로
-    신호가 없다. 그래서 활성 세트를 id 로 직접 단언한다. 다른 행은 원본과 바이트까지 같고 기준 뒤 generation 행만
-    한 칸 밀린다."""
-    active, sections = await load_active_prompt_set(db_session, lane="story")
-    assert active.id == _M.NEW_SET_ID
+    신호가 없다. 그래서 활성 세트를 id·게시 시각으로 직접 단언한다 — 이 리비전의 세트이거나, 뒤 리비전이 이 세트를
+    복사해 만든 더 나중 세트다(사용자 이름 한 줄 리비전이 그렇다). 이 리비전 세트의 다른 행은 원본과 바이트까지 같고
+    기준 뒤 generation 행만 한 칸 밀린다."""
+    latest, _ = await load_active_prompt_set(db_session, lane="story")
+    active = await db_session.get(PromptSet, _M.NEW_SET_ID)
+    assert active is not None
+    assert latest.published_at is not None and active.published_at is not None
+    assert latest.id == active.id or latest.published_at > active.published_at
     assert active.note == _M._NOTE
     # 이전 published 최대는 발행 심사 이미지 전용 리비전의 "8"이다.
     assert active.version == "9"
@@ -187,7 +194,7 @@ async def test_active_story_set_is_this_revisions_set_with_the_new_row(db_sessio
     labels = ("user_label", "story_assistant_label", "story_example_label", "character_assistant_label")
     assert [getattr(active, a) for a in labels] == [getattr(source_set, a) for a in labels]
 
-    new = _keyed(sections)
+    new = _keyed(await _sections_of(db_session, _M.NEW_SET_ID))
     old = _keyed(await _sections_of(db_session, _PREVIOUS_STORY_SET_ID))
     anchor_order = old[("generation", "story", "keyword_notes", "")][2]
     assert new.pop(_NEW_KEY) == (_M.SITUATION_NOTES_BODY, True, anchor_order + 1)
@@ -196,7 +203,7 @@ async def test_active_story_set_is_this_revisions_set_with_the_new_row(db_sessio
 
 async def test_character_lane_is_untouched(db_session: AsyncSession) -> None:
     active, sections = await load_active_prompt_set(db_session, lane="character")
-    assert active.id == _CHARACTER_SET_ID
+    assert active.id in (_CHARACTER_SET_ID, _USER_NAME_MIGRATION.NEW_SET_IDS["character"])
     assert all(s.slot != "situation_notes" for s in sections)
 
 
@@ -285,6 +292,9 @@ async def test_patch_draft_adds_the_row_in_place_and_draft_then_publishes(
     slots = _generation_slots(sections)
     assert slots[slots.index("keyword_notes") + 1] == "situation_notes"
 
+    # 코드 표는 지금 head 기준이라, 체인이 실제로 하듯 뒤 리비전(사용자 이름 한 줄)의 초안 패치도 거친 뒤 검사한다.
+    assert await connection.run_sync(_USER_NAME_MIGRATION._patch_draft, "story") is True
+    sections = await _sections_of(db_session, draft_id)
     draft = await db_session.get(PromptSet, draft_id)
     assert draft is not None
     _validate_prompt_draft_for_publish(draft, sections, lane="story")

@@ -38,6 +38,7 @@ import { MediaTagInsertButton } from "./MediaTagInsertButton";
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
 import { RuleListEditor } from "./RuleListEditor";
 import { StartingSetupPicker } from "./StartingSetupPicker";
+import { StoryMacroNotice } from "./StoryMacroNotice";
 import { UnknownMediaTagNotice } from "./UnknownMediaTagNotice";
 
 /** 열림 키의 목록 이름 — 발행 실패 때 셸이 오류 항목을 여는 키와 같은 이름이어야 한다(타입이 목록 정의의 키로 묶는다). */
@@ -192,6 +193,7 @@ function EndingRow({
           {...register(`${endingPath}.judgePrompt`)}
         />
         <MediaTagOutsideNotice name={`${endingPath}.judgePrompt`} />
+        <StoryMacroNotice name={`${endingPath}.judgePrompt`} />
         {endingErrors?.judgePrompt && (
           <p id={`ending-${id}-judge-prompt-error`} role="alert" className="text-xs text-destructive-text">
             {endingErrors.judgePrompt.message}
@@ -217,6 +219,7 @@ function EndingRow({
           }}
         />
         <UnknownMediaTagNotice name={epiloguePath} />
+        <StoryMacroNotice name={epiloguePath} />
         {endingErrors?.epilogue && (
           <p id={`ending-${id}-epilogue-error`} role="alert" className="text-xs text-destructive-text">
             {endingErrors.epilogue.message}
@@ -234,6 +237,7 @@ function EndingRow({
           {...register(`${endingPath}.hint`)}
         />
         <MediaTagOutsideNotice name={`${endingPath}.hint`} />
+        <StoryMacroNotice name={`${endingPath}.hint`} />
         {endingErrors?.hint && (
           <p id={`ending-${id}-hint-error`} role="alert" className="text-xs text-destructive-text">
             {endingErrors.hint.message}

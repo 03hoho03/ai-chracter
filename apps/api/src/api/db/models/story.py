@@ -82,6 +82,10 @@ class StoryVersionDetail(Base):
     # 필수로 만들지 않는다 — 기존 33건이 비어 있는 채로 발행돼 있다.
     user_goal: Mapped[str | None] = mapped_column(Text, nullable=True)
     rules: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 대화 프로필이 없는 사용자를 작가 글의 `{{user}}` 자리에서 부를 이름. 비어 있으면 대체어("당신")를 쓴다.
+    # `server_default` 는 이 컬럼을 모르는 이전 API 이미지로 되돌려도 그 코드의 INSERT(새 초안·발행 복제·시드)가
+    # NOT NULL 위반이 되지 않게 하려는 것이다.
+    default_user_name: Mapped[str] = mapped_column(Text, server_default="", nullable=False)
 
 
 class StartingSetup(Base):

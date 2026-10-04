@@ -31,6 +31,7 @@ import {
 
 import { KeywordChipField } from "./KeywordChipField";
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
+import { StoryMacroNotice } from "./StoryMacroNotice";
 
 const KEYWORD_NOTE_LIST: StoryCollapsibleList = "keywordNote";
 
@@ -218,6 +219,7 @@ export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onR
             {...register(`keywordNotes.${index}.content`)}
           />
           <MediaTagOutsideNotice name={`keywordNotes.${index}.content`} />
+          <StoryMacroNotice name={`keywordNotes.${index}.content`} />
           {!!noteErrors?.content && (
             <p id={ids.contentError} role="alert" className="text-xs text-destructive-text">
               {noteErrors.content.message}

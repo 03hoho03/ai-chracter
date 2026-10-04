@@ -1,5 +1,7 @@
 import type { components } from "@ai-character-chat/api-types";
 
+import { defaultUserNameIssue } from "@/entities/persona";
+
 import {
   mediaBookSchema,
   type DevelopmentExampleValues,
@@ -185,6 +187,12 @@ export function formToServer(values: StoryBuilderFormValues): StoryBuilderDraftP
     // 전개 예시의 출처는 이제 developmentExamples 하나뿐이다.
     developmentExamples: values.storySetting.developmentExamples.map(toApiDevelopmentExample),
     userGoal: values.storySetting.userGoal ?? null,
+    // 서버는 이 칸이 없으면 저장된 값을 그대로 둔다. 입력 중간 상태(금지 문자 등)처럼 서버가 거절할 값을 실으면 PATCH 전체가
+    // 422 가 돼 다른 칸의 수정까지 저장되지 않으므로, 그동안은 빼고 보낸다(칸 아래 오류가 그 사실을 알린다). 앞뒤 공백은 서버처럼
+    // 걷어 보낸다 — 미리보기는 이 값을 그대로 이름으로 쓰므로, 걷지 않으면 미리보기 화면과 서버 프롬프트의 이름이 갈린다.
+    ...(defaultUserNameIssue(values.storySetting.defaultUserName) === null
+      ? { defaultUserName: values.storySetting.defaultUserName.trim() }
+      : {}),
     rules: values.storySetting.rules ?? null,
     customPrompt: values.storySetting.customPrompt ?? null,
     startingSetups: values.startingSetups.map(toApiStartingSetup),

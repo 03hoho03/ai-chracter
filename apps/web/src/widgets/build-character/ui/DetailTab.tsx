@@ -25,6 +25,8 @@ import {
 } from "@/features/build-character";
 import { RequiredText } from "@/shared/ui/RequiredText";
 
+import { CharacterMacroNotice } from "./CharacterMacroNotice";
+
 // 값 목록(TARGET_VALUES/VISIBILITY_VALUES)은 스키마가 단일 소스다. 여기서는 그 배열을 map해
 // 라벨만 매핑한다.
 const TARGET_LABELS: Record<Target, string> = {
@@ -81,6 +83,7 @@ export function DetailTab() {
           aria-describedby={errors.registration?.description ? "character-detail-description-error" : undefined}
           {...register("registration.description")}
         />
+        <CharacterMacroNotice name="registration.description" />
         {errors.registration?.description && (
           <p id="character-detail-description-error" role="alert" className="text-xs text-destructive-text">
             {errors.registration.description.message}

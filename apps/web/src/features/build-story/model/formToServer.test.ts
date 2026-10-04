@@ -19,6 +19,7 @@ function baseFormValues(): StoryBuilderFormValues {
       worldSetting: "근미래 해양 도시",
       developmentExamples: [{ userLine: "무슨 일이 있었는지 설명해주세요", assistantLine: "폭풍우로 배가 좌초된다" }],
       userGoal: "표류에서 살아남아 무사히 귀환한다",
+      defaultUserName: "",
       rules: "선원들 앞에서 약한 모습을 보이지 않는다",
       customPrompt: undefined,
     },
@@ -103,6 +104,7 @@ describe("formToServer", () => {
       settingText: "근미래 해양 도시",
       developmentExamples: [{ userLine: "무슨 일이 있었는지 설명해주세요", assistantLine: "폭풍우로 배가 좌초된다" }],
       userGoal: "표류에서 살아남아 무사히 귀환한다",
+      defaultUserName: "",
       rules: "선원들 앞에서 약한 모습을 보이지 않는다",
       customPrompt: null,
       startingSetups: [
@@ -206,6 +208,7 @@ describe("formToServer", () => {
       worldSetting: "남겨둔 이전 세계관 텍스트",
       developmentExamples: [{ userLine: "사용자 메시지 예시", assistantLine: "스토리 응답 예시" }],
       userGoal: "커스텀 목표",
+      defaultUserName: "",
       rules: "커스텀 규칙",
       customPrompt: "커스텀 프롬프트 본문",
     };
@@ -503,5 +506,28 @@ describe("formToServer", () => {
     const validPayload = formToServer(baseFormValues());
     delete validPayload.mediaBook;
     expect(payload).toEqual(validPayload);
+  });
+  // 자동저장은 폼 검증을 거치지 않는다. 서버가 거절할 이름을 실으면 PATCH 전체가 422 가 되어 다른 칸까지 저장되지 않는다.
+  it("leaves out a default user name the server would reject, so the rest of the draft still saves", () => {
+    for (const name of ["별*", "{{user}}", "가".repeat(21)]) {
+      const values = baseFormValues();
+      values.storySetting.defaultUserName = name;
+      expect(formToServer(values)).not.toHaveProperty("defaultUserName");
+    }
+  });
+
+  // 서버도 앞뒤 공백을 걷어 저장한다. 미리보기는 보낸 값을 그대로 이름으로 쓰므로 여기서 걷지 않으면 미리보기 화면과
+  // 서버 프롬프트의 이름이 갈린다. 공백만 있으면 빈 값이 돼 서버처럼 대체어로 돌아간다.
+  it("sends a valid or empty default user name trimmed, like the server stores it", () => {
+    for (const [name, sent] of [
+      ["", ""],
+      ["조수", "조수"],
+      [" 조수 ", "조수"],
+      ["   ", ""],
+    ] as const) {
+      const values = baseFormValues();
+      values.storySetting.defaultUserName = name;
+      expect(formToServer(values).defaultUserName).toBe(sent);
+    }
   });
 });

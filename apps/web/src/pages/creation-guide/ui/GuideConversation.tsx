@@ -1,5 +1,6 @@
-import { ChatMarkdown, USER_MESSAGE_FRAME } from "@/entities/chat-room";
+import { AuthorMacroNamesProvider, ChatMarkdown, USER_MESSAGE_FRAME } from "@/entities/chat-room";
 
+import { GUIDE_CHAT_MACRO_NAMES } from "../config/guideChatMacroNames";
 import type { ConversationMessage } from "../model/toGuidePages";
 
 type GuideConversationProps = {
@@ -18,14 +19,17 @@ export function GuideConversation({ messages }: GuideConversationProps) {
   return (
     <figure className="m-0 flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
       <figcaption className="text-xs font-medium text-muted-foreground">채팅 화면 예시</figcaption>
-      <div className="flex flex-col gap-6">
-        {messages.map((message, index) => (
-          // 원고에서 온 고정 목록이라 순서가 바뀌지 않는다.
-          <div key={index} className={message.role === "user" ? USER_MESSAGE_FRAME : undefined}>
-            <ChatMarkdown content={message.body} codeBlockSurface="secondary" />
-          </div>
-        ))}
-      </div>
+      {/* 사용자 줄도 작가가 쓴 시드 글이라 함께 바꾼다(실채팅에서는 보낼 때 바뀐다). */}
+      <AuthorMacroNamesProvider names={GUIDE_CHAT_MACRO_NAMES}>
+        <div className="flex flex-col gap-6">
+          {messages.map((message, index) => (
+            // 원고에서 온 고정 목록이라 순서가 바뀌지 않는다.
+            <div key={index} className={message.role === "user" ? USER_MESSAGE_FRAME : undefined}>
+              <ChatMarkdown content={message.body} codeBlockSurface="secondary" />
+            </div>
+          ))}
+        </div>
+      </AuthorMacroNamesProvider>
     </figure>
   );
 }

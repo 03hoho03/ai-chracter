@@ -16,6 +16,7 @@ from typing import get_args
 
 from api.chat.prompt_builder import (
     PromptLane,
+    PromptNames,
     _PROMPT_LANES,
     build_ending_judgment_prompt,
     build_generation_prompt,
@@ -30,6 +31,10 @@ from api.chat.prompt_builder import (
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StatDef, StoryPromptTemplate
+
+
+# 이름이 없는 턴 — 이름 한 줄이 비어 섹션째 빠진다. 이름 치환은 `test_prompt_author_macros.py` 가 본다.
+_NO_NAMES = PromptNames(persona_name=None, default_user_name="", char_name=None)
 
 
 def _message(role: ChatMessageRole, content: str) -> ChatMessage:
@@ -244,6 +249,7 @@ def test_build_generation_prompt_uses_character_labels_not_story_labels() -> Non
         user_persona="",
         memory_note="",
         memory_summary="",
+        names=_NO_NAMES,
     )
 
     assert f"{prompt_set.user_label}: 안녕" in prompt
@@ -292,6 +298,7 @@ def test_build_story_generation_prompt_uses_example_label_only_for_development_e
         user_persona="",
         memory_note="",
         memory_summary="",
+        names=_NO_NAMES,
     )
 
     assert f"{prompt_set.story_example_label}: 환영" in prompt
@@ -316,6 +323,7 @@ def test_build_stat_judgment_prompt_uses_story_assistant_label() -> None:
     prompt = build_stat_judgment_prompt(
         prompt_set=prompt_set, sections=sections, stat_defs=[], current_stats={},
         user_message="메시지", assistant_message="응답",
+        names=_NO_NAMES,
     )
 
     assert f"{prompt_set.story_assistant_label}: 응답" in prompt
@@ -330,6 +338,7 @@ def _stat_lines_of(stat_defs: list[StatDef]) -> list[str]:
     prompt = build_stat_judgment_prompt(
         prompt_set=_prompt_set(), sections=sections, stat_defs=stat_defs, current_stats={},
         user_message="메시지", assistant_message="응답",
+        names=_NO_NAMES,
     )
     return prompt.split("\n")
 
@@ -381,6 +390,7 @@ def test_build_ending_judgment_prompt_uses_story_assistant_label_for_history_and
         user_message="이번 메시지",
         assistant_message="이번 응답",
         memory_summary="",
+        names=_NO_NAMES,
     )
 
     assert f"{prompt_set.story_assistant_label}: 이전 응답" in prompt
@@ -412,6 +422,7 @@ def test_build_image_judgment_prompt_uses_character_assistant_label() -> None:
         ],
         user_message="이번 메시지",
         assistant_message="이번 응답",
+        names=_NO_NAMES,
     )
 
     assert f"{prompt_set.character_assistant_label}: 이전 응답" in prompt
@@ -483,6 +494,7 @@ def test_migrated_development_example_pairs_reconstruct_to_the_original_free_tex
         user_persona="",
         memory_note="",
         memory_summary="",
+        names=_NO_NAMES,
     )
 
     reconstructed = prompt.split("[전개 예시]\n", 1)[1].split("\n\n[시작 상황]", 1)[0]

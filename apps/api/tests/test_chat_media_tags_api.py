@@ -30,6 +30,8 @@ from api.db.models import (
     SituationalImage,
     StartingSetup,
     StoryEndingUnlock,
+    StoryPromptTemplate,
+    StoryVersionDetail,
 )
 from api.llm.client import LLMCallContext, LLMClient
 from factories import (
@@ -58,6 +60,12 @@ async def _publish_next_version(db_session: AsyncSession, content: Content, setu
     )
     db_session.add(version)
     await db_session.flush()
+    # 실제 발행본은 언제나 버전 상세 행을 갖는다 — 방 응답이 그 행에서 작품명·작품 기본 이름을 읽는다.
+    db_session.add(
+        StoryVersionDetail(
+            content_version_id=version.id, name="스토리", one_liner="한줄소개", prompt_template=StoryPromptTemplate.BASIC
+        )
+    )
     db_session.add(
         StartingSetup(
             entity_id=setup.entity_id,

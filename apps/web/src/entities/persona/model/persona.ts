@@ -10,3 +10,9 @@ export type PersonaGender = NonNullable<Persona["gender"]>;
  * 않는다 — `GET /me/personas`의 `maxCount`를 쓴다. */
 export const PERSONA_NAME_MAX_LENGTH = 20;
 export const PERSONA_DESCRIPTION_MAX_LENGTH = 500;
+
+/** 목록에서 기본 프로필의 이름. 목록이 없거나 기본이 없거나 기본 id 가 목록에 없으면 null. */
+export function defaultPersonaName(personaList: PersonaList | undefined): string | null {
+  if (personaList === undefined || personaList.defaultPersonaId === null) return null;
+  return personaList.items.find((persona) => persona.id === personaList.defaultPersonaId)?.name ?? null;
+}

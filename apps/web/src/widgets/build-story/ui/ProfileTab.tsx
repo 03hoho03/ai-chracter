@@ -8,6 +8,7 @@ import { ImageCropModal } from "@/features/crop-image";
 import { GeneratedImageField } from "@/features/select-generated-image";
 
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
+import { StoryMacroNotice } from "./StoryMacroNotice";
 
 type ProfileTabProps = {
   /** 폼이 지금 가진 대표 이미지의 표시 주소. 미리보기 카드와 같은 값을 셸이 정해 내려 준다. */
@@ -85,6 +86,7 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
           {...register("profile.oneLiner")}
         />
         <MediaTagOutsideNotice name="profile.oneLiner" />
+        <StoryMacroNotice name="profile.oneLiner" />
         {errors.profile?.oneLiner && (
           <p id="story-profile-oneliner-error" role="alert" className="text-xs text-destructive-text">
             {errors.profile.oneLiner.message}
