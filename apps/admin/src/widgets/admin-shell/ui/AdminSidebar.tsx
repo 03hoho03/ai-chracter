@@ -26,9 +26,9 @@ export function AdminSidebar() {
     >
       <div className={cn("flex h-14 shrink-0 items-center", isCollapsed ? "justify-center" : "justify-between pr-2 pl-6")}>
         {!isCollapsed && <span className="truncate text-sm font-semibold text-foreground">또나 어드민</span>}
-        {/* 이름이 지금 할 동작을 말한다. `aria-expanded` 를 달지 않는 이유: 내비는 접혀도 아이콘으로 늘 보여 "숨김"이
-            아니고, `aria-expanded` + `aria-controls` 짝을 달면 나중에 내비 안에서 확인 모달을 열 때 포커스 복원
-            래퍼가 이 버튼을 "연 자리" 후보로 잡는다. */}
+        {/* 이름이 지금 할 동작을 말한다. `aria-expanded` 를 달지 않는 이유: 접힌 레일에서도 각 항목의 라벨이 `sr-only`
+            로 접근성 트리에 그대로 남아, 스크린리더 사용자에게는 펼쳐지거나 접히는 것이 없다 — 알릴 상태 변화가 없다.
+            `aria-pressed` 도 달지 않는다. 이름이 동작에 따라 바뀌는 버튼에 눌림 상태를 더하면 상태가 둘로 읽힌다. */}
         <Button
           type="button"
           variant="ghost"
