@@ -3,6 +3,7 @@ import { useAtom } from "jotai";
 import { Button } from "@ai-character-chat/ui/components/button";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -53,13 +54,16 @@ export function ChatMemoryTrigger({ roomId, triggerRef }: ChatMemoryTriggerProps
           <NotebookPen aria-hidden className="size-4" />
         </Button>
       </DialogTrigger>
-      {/* 요약 1,500자 + 노트 편집 칸이라 길어진다 — 최대 높이와 내부 스크롤은 호출부 몫이다(packages/ui/CLAUDE.md). */}
-      <DialogContent className="max-h-dialog overflow-y-auto sm:max-w-md">
+      {/* 요약 1,500자 + 노트 편집 칸이라 길어진다 — 편집기를 `DialogBody` 에 넣어 그것만 스크롤하고 제목·닫기는 위에
+          남긴다. 편집기에 버튼·입력 칸이 있어 본문을 따로 Tab 정지로 두지 않는다. */}
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>기억 노트</DialogTitle>
           <DialogDescription className="break-keep">{MEMORY_PANEL_DESCRIPTION}</DialogDescription>
         </DialogHeader>
-        <RoomMemoryEditor roomId={roomId} onClearNoteRequest={confirmClearMemoryNote} />
+        <DialogBody>
+          <RoomMemoryEditor roomId={roomId} onClearNoteRequest={confirmClearMemoryNote} />
+        </DialogBody>
       </DialogContent>
     </Dialog>
   );

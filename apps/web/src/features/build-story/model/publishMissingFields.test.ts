@@ -56,11 +56,32 @@ describe("STORY_MISSING_FIELD_FORM_PATH", () => {
     expectUnderTabPrefix(STORY_MISSING_FIELD_FORM_PATH["stats.range"] ?? "", "stat");
   });
 
+  it("스탯 변화 방향·최대 폭의 두 키는 라벨이 있고 스탯 탭으로 간다", () => {
+    for (const key of ["stats.changeLimitWithCounter", "stats.maxChangePerTurn"] as const) {
+      expect(STORY_MISSING_FIELD_LABELS[key]).toMatch(/최대 폭/);
+      expectUnderTabPrefix(STORY_MISSING_FIELD_FORM_PATH[key] ?? "", "stat");
+    }
+  });
+
   it("엔딩 조건이 지워진 스탯을 가리킨다는 키는 라벨이 있고 엔딩 탭 프리픽스 아래로 간다", () => {
     expect(STORY_MISSING_FIELD_LABELS["endings.statRules"]).toMatch(/엔딩.*스탯/);
 
     // 엔딩 탭 프리픽스(`startingSetups.*.endings`)와 세그먼트 단위로 맞아야 탭 이동이 엔딩 탭으로 간다.
     expectUnderTabPrefix(STORY_MISSING_FIELD_FORM_PATH["endings.statRules"] ?? "", "ending");
+  });
+});
+
+describe("STORY_MISSING_FIELD_FORM_PATH — 상황 노트", () => {
+  // 셋 다 서버가 어느 노트인지 알려 주지 않는다. 폼에서 그 노트를 못 찾을 때 이 경로가 상황 노트 탭으로 보낸다(시작설정 탭이 아니라).
+  it("상황 노트 세 키는 라벨이 있고 상황 노트 탭 프리픽스 아래로 간다", () => {
+    for (const key of [
+      "situationNotes.emptyConditionRules",
+      "situationNotes.infoText",
+      "situationNotes.conditionRules",
+    ] as const) {
+      expect(STORY_MISSING_FIELD_LABELS[key]).toMatch(/상황 노트/);
+      expectUnderTabPrefix(STORY_MISSING_FIELD_FORM_PATH[key] ?? "", "situationNote");
+    }
   });
 });
 
@@ -73,6 +94,16 @@ describe("collapseStartingSetupListPath", () => {
     }
     for (const path of ["startingSetups.0.endings.2.name", "startingSetups.1.endings.0.statRules.1.value"]) {
       expect(labelByKey[collapseStartingSetupListPath(path)]).toBe("엔딩");
+    }
+  });
+
+  it("상황 노트 칸의 오류 경로도 라벨이 있는 키 하나로 접는다", () => {
+    for (const path of [
+      "startingSetups.0.situationNotes.0.content",
+      "startingSetups.2.situationNotes.4.conditionRules",
+      "startingSetups.1.situationNotes.0.conditionRules.1.rules.0.statId",
+    ]) {
+      expect(labelByKey[collapseStartingSetupListPath(path)]).toBe("상황 노트");
     }
   });
 

@@ -54,6 +54,8 @@ _SOURCE_SET_IDS: dict[str, uuid.UUID] = _load("b72c33c70240").NEW_SET_IDS
 # 이 리비전 뒤에 같은 방식으로 story 레인에 행을 더하는 리비전 — 초안 게시 검사가 head 코드 표를 쓰므로 함께
 # 거친다.
 _NEXT_STORY_MIGRATION = _load("2519dde454e0")
+# 그 뒤 story 레인 generation 에 상황 노트 행을 더하는 리비전 — 같은 이유로 story 초안은 이것도 거친다.
+_SITUATION_NOTES_MIGRATION = _load("2417f5829bb1")
 
 _NOTE_KEY = ("generation", "both", "memory_note", "")
 _GEN_SUMMARY_KEY = ("generation", "both", "memory_summary", "")
@@ -483,6 +485,8 @@ async def test_patch_draft_adds_memory_rows_in_place_and_draft_then_publishes(
     # 지금 head 기준이라, 체인이 실제로 하듯 뒤 리비전(story 레인 미디어 북 칸 판정 행)의 초안 패치도 거친다.
     if lane == "story":
         assert await connection.run_sync(_NEXT_STORY_MIGRATION._patch_draft) is True
+        assert await connection.run_sync(_SITUATION_NOTES_MIGRATION._patch_draft) is True
+        db_session.expire_all()  # 원시 SQL이 민 order를 식별자 맵의 옛 값이 가리지 않게
     draft = await db_session.get(PromptSet, draft_id)
     assert draft is not None
     _validate_prompt_draft_for_publish(draft, await _sections_of(db_session, draft_id), lane=lane)

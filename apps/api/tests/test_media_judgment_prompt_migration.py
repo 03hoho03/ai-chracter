@@ -38,6 +38,9 @@ _M = _load("2519dde454e0")
 # 이 리비전이 복사한 원본(이전 story 활성 세트)과, 손대지 않아야 하는 character 활성 세트 — 테스트 DB에서는
 # 둘 다 채팅방 기억 행을 넣은 리비전의 세트다.
 _PREVIOUS_SET_IDS: dict[str, uuid.UUID] = _load("c328445d4c2d").NEW_SET_IDS
+# 이 리비전 뒤에 story 레인 generation 에 상황 노트 행을 더하는 리비전 — 초안 게시 검사가 head 코드 표를 쓰므로
+# 함께 거친다.
+_NEXT_STORY_MIGRATION = _load("2417f5829bb1")
 
 _NEW_KEYS = {
     ("image_judgment", "story", "image_list_intro", ""),
@@ -87,10 +90,14 @@ def test_assert_layout_raises_when_the_channel_is_already_there() -> None:
 
 
 async def test_active_story_set_is_this_revisions_set_with_media_judgment_rows(db_session: AsyncSession) -> None:
-    """회귀 방지 — `published_at`이 원본보다 과거가 되면 새 세트가 활성이 되지 못한다. 그래서 id를 직접
-    단언한다. 다른 행은 원본과 바이트까지 같다."""
-    active, sections = await load_active_prompt_set(db_session, lane="story")
-    assert active.id == _M.NEW_SET_ID
+    """회귀 방지 — `published_at`이 원본보다 과거가 되면 새 세트가 활성이 되지 못한다. 그래서 활성 세트를 id·게시
+    시각으로 직접 단언한다 — 이 리비전의 세트이거나, 뒤 리비전이 이 세트를 복사해 만든 더 나중 세트다(상황 노트
+    섹션 리비전이 그렇다). 이 리비전의 세트의 다른 행은 원본과 바이트까지 같다."""
+    latest, _ = await load_active_prompt_set(db_session, lane="story")
+    active = await db_session.get(PromptSet, _M.NEW_SET_ID)
+    assert active is not None
+    assert latest.published_at is not None and active.published_at is not None
+    assert latest.id == active.id or latest.published_at > active.published_at
     assert active.note == _M._NOTE
     assert active.version == "6"
 
@@ -99,7 +106,7 @@ async def test_active_story_set_is_this_revisions_set_with_media_judgment_rows(d
     labels = ("user_label", "story_assistant_label", "story_example_label", "character_assistant_label")
     assert [getattr(active, a) for a in labels] == [getattr(source_set, a) for a in labels]
 
-    new = _keyed(sections)
+    new = _keyed(await _sections_of(db_session, _M.NEW_SET_ID))
     old = _keyed(await _sections_of(db_session, _PREVIOUS_SET_IDS["story"]))
     assert {key: new.pop(key) for key in _NEW_KEYS} == {
         ("image_judgment", "story", "image_list_intro", ""): (_M.IMAGE_LIST_INTRO_BODY, False, 1),
@@ -197,6 +204,9 @@ async def test_patch_draft_adds_rows_in_place_and_draft_then_publishes(db_sessio
     }
     assert after == before
 
+    # 코드 표는 지금 head 기준이라, 체인이 실제로 하듯 뒤 리비전(상황 노트 행)의 초안 패치도 거친 뒤 검사한다.
+    assert await connection.run_sync(_NEXT_STORY_MIGRATION._patch_draft) is True
+    sections = await _sections_of(db_session, draft_id)
     draft = await db_session.get(PromptSet, draft_id)
     assert draft is not None
     _validate_prompt_draft_for_publish(draft, sections, lane="story")

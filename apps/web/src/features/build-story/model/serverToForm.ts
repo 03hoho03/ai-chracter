@@ -10,6 +10,7 @@ import type {
   MediaBookValues,
   RuleListItemValues,
   SingleRuleValues,
+  SituationNoteValues,
   StartingSetupValues,
   StatDefValues,
   StoryBuilderFormValues,
@@ -22,6 +23,7 @@ type KeywordNoteDraftItem = components["schemas"]["KeywordNoteDraftItem"];
 type EndingDraftItem = components["schemas"]["EndingDraftItem"];
 type EndingRuleDraftItem = components["schemas"]["EndingRuleDraftItem"];
 type EndingRuleGroupDraftItem = components["schemas"]["EndingRuleGroupDraftItem"];
+type SituationNoteDraftItem = components["schemas"]["SituationNoteDraftItem"];
 type MediaBookDraft = components["schemas"]["MediaBookDraft"];
 type MediaBookCellDraftItem = components["schemas"]["MediaBookCellDraftItem"];
 
@@ -78,6 +80,18 @@ function fromApiStatDef(stat: StatDefDraftItem): StatDefValues {
     unit: stat.unit ?? undefined,
     description: stat.description,
     perTurnDelta: stat.perTurnDelta ?? null,
+    // 생성 타입에서 선택 필드라(서버는 늘 채워 보낸다) 빠지면 새 스탯과 같은 기본값 — 양방향·제한 없음.
+    changeDirection: stat.changeDirection ?? "both",
+    maxChangePerTurn: stat.maxChangePerTurn ?? null,
+  };
+}
+
+function fromApiSituationNote(note: SituationNoteDraftItem): SituationNoteValues {
+  return {
+    id: note.id,
+    name: note.name,
+    content: note.infoText,
+    conditionRules: note.conditionRules.map(fromApiRuleListItem),
   };
 }
 
@@ -115,6 +129,8 @@ function fromApiStartingSetup(setup: StartingSetupDraftItem): StartingSetupValue
     suggestedReplies: setup.suggestedReplies,
     stats: setup.statDefs.map(fromApiStatDef),
     endings: setup.endings.map(fromApiEnding),
+    // 생성 타입에서 선택 필드라 없으면 빈 목록으로 받는다.
+    situationNotes: (setup.situationNotes ?? []).map(fromApiSituationNote),
   };
 }
 

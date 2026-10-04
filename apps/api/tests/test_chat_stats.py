@@ -1,7 +1,7 @@
 import uuid
 
 from api.chat.stats import StatChange, apply_stat_changes
-from api.db.models.story import StatDef
+from api.db.models.story import StatChangeDirection, StatDef
 
 
 def _stat_def(entity_id: uuid.UUID, min_value: int, max_value: int) -> StatDef:
@@ -146,3 +146,114 @@ def test_apply_stat_changes_still_judges_stats_without_a_delta() -> None:
 
     assert result[str(trust)] == 55
     assert result[str(days)] == 29
+
+
+def _limited_stat_def(
+    entity_id: uuid.UUID,
+    *,
+    change_direction: StatChangeDirection | None = None,
+    max_change_per_turn: int | None = None,
+    min_value: int = 0,
+    max_value: int = 100,
+) -> StatDef:
+    return StatDef(
+        entity_id=entity_id,
+        min_value=min_value,
+        max_value=max_value,
+        initial_value=50,
+        change_direction=change_direction,
+        max_change_per_turn=max_change_per_turn,
+    )
+
+
+def test_apply_stat_changes_decrease_only_stat_keeps_value_when_judged_upward() -> None:
+    """'남은 날' 같은 스탯을 판정 LLM 이 거꾸로 올리는 일이 실제로 있었다. 감소만 허용한 스탯은 올라가지 않고 그대로
+    남고, 내려가는 판정은 그대로 받는다."""
+    days = uuid.uuid4()
+    defs = [_limited_stat_def(days, change_direction="decrease")]
+
+    assert apply_stat_changes({str(days): 26.0}, [StatChange(str(days), 27.0)], defs)[str(days)] == 26
+    assert apply_stat_changes({str(days): 26.0}, [StatChange(str(days), 20.0)], defs)[str(days)] == 20
+
+
+def test_apply_stat_changes_increase_only_stat_keeps_value_when_judged_downward() -> None:
+    progress = uuid.uuid4()
+    defs = [_limited_stat_def(progress, change_direction="increase")]
+
+    assert apply_stat_changes({str(progress): 40.0}, [StatChange(str(progress), 35.0)], defs)[str(progress)] == 40
+    assert apply_stat_changes({str(progress): 40.0}, [StatChange(str(progress), 45.0)], defs)[str(progress)] == 45
+
+
+def test_apply_stat_changes_limits_step_to_max_change_per_turn_in_both_directions() -> None:
+    trust = uuid.uuid4()
+    defs = [_limited_stat_def(trust, max_change_per_turn=3)]
+
+    assert apply_stat_changes({str(trust): 50.0}, [StatChange(str(trust), 60.0)], defs)[str(trust)] == 53
+    assert apply_stat_changes({str(trust): 50.0}, [StatChange(str(trust), 40.0)], defs)[str(trust)] == 47
+    assert apply_stat_changes({str(trust): 50.0}, [StatChange(str(trust), 52.0)], defs)[str(trust)] == 52
+
+
+def test_apply_stat_changes_measures_step_from_turn_start_and_uses_only_the_last_entry_per_stat() -> None:
+    """판정 결과에 같은 스탯이 여러 번 오면 마지막 항목 하나만 받고, 폭은 턴 시작 값에서 잰다. 항목마다 누적해 자르면
+    50→53→56 처럼 중복 항목으로 한 턴 최대 폭을 넘길 수 있다."""
+    trust = uuid.uuid4()
+    defs = [_limited_stat_def(trust, max_change_per_turn=3)]
+
+    stacked = [StatChange(str(trust), 53.0), StatChange(str(trust), 56.0)]
+    assert apply_stat_changes({str(trust): 50.0}, stacked, defs)[str(trust)] == 53
+
+    last_wins = [StatChange(str(trust), 60.0), StatChange(str(trust), 49.0)]
+    assert apply_stat_changes({str(trust): 50.0}, last_wins, defs)[str(trust)] == 49
+
+
+def test_apply_stat_changes_measures_constraints_from_initial_value_when_stat_not_seeded() -> None:
+    days = uuid.uuid4()
+    defs = [_limited_stat_def(days, change_direction="decrease", max_change_per_turn=5)]
+
+    assert apply_stat_changes({}, [StatChange(str(days), 60.0)], defs)[str(days)] == 50
+    assert apply_stat_changes({}, [StatChange(str(days), 10.0)], defs)[str(days)] == 45
+
+
+def test_apply_stat_changes_clamps_to_range_after_direction_and_step() -> None:
+    """범위 clamp 가 마지막이다. 버전이 범위를 좁혀 현재값이 범위 밖에 남은 방에서는 증가만 허용한 스탯도 범위
+    안으로 내려간다 — 범위가 방향보다 우선한다."""
+    progress = uuid.uuid4()
+    defs = [_limited_stat_def(progress, change_direction="increase", max_change_per_turn=3, max_value=60)]
+
+    assert apply_stat_changes({str(progress): 70.0}, [StatChange(str(progress), 65.0)], defs)[str(progress)] == 60
+
+
+def test_apply_stat_changes_treats_unset_options_as_both_directions_without_step_limit() -> None:
+    """세션 없이 만든 스탯 행은 두 옵션이 `None` 이다. 양방향·제한 없음으로 읽어 종전과 똑같이 움직여야 한다."""
+    trust = uuid.uuid4()
+    defs = [_limited_stat_def(trust)]
+
+    assert apply_stat_changes({str(trust): 50.0}, [StatChange(str(trust), 95.0)], defs)[str(trust)] == 95
+    assert apply_stat_changes({str(trust): 50.0}, [StatChange(str(trust), 5.0)], defs)[str(trust)] == 5
+
+
+def test_apply_stat_changes_ignores_non_positive_step_limit_left_in_a_draft() -> None:
+    """초안 저장은 0 이하 폭도 받아 준다(발행이 막는다). 미리보기에서 그 값을 그대로 쓰면 스탯이 엉뚱한 쪽으로 튀므로
+    제한 없음으로 본다."""
+    trust = uuid.uuid4()
+    defs = [_limited_stat_def(trust, max_change_per_turn=-2)]
+
+    assert apply_stat_changes({str(trust): 50.0}, [StatChange(str(trust), 60.0)], defs)[str(trust)] == 60
+
+
+def test_apply_stat_changes_counter_ignores_direction_and_step_options() -> None:
+    """턴당 변화가 있는 스탯은 판정을 받지 않으므로 두 옵션도 쓰이지 않는다(초안·미리보기엔 함께 들어올 수 있다)."""
+    days = uuid.uuid4()
+    defs = [
+        StatDef(
+            entity_id=days,
+            min_value=0,
+            max_value=30,
+            initial_value=30,
+            per_turn_delta=-5,
+            change_direction="increase",
+            max_change_per_turn=1,
+        )
+    ]
+
+    assert apply_stat_changes({str(days): 26.0}, [StatChange(str(days), 27.0)], defs)[str(days)] == 21

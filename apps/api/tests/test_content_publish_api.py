@@ -49,7 +49,9 @@ from api.db.models.story import (
     MediaBookPerson,
     MediaBookScene,
     Shortcut,
+    SituationNote,
     StartingSetup,
+    StatChangeDirection,
     StatDef,
     StoryPromptTemplate,
     StoryVersionDetail,
@@ -2174,10 +2176,372 @@ def test_validate_story_publish_media_book(
         media_book_cells=cells,
         keyword_notes=[],
         dangling_stat_rule_paths=[],
+        situation_notes=[],
+        dangling_situation_note_paths=[],
         stat_defs=[],
     )
 
     assert missing == expected
+
+
+@pytest.mark.parametrize(
+    ("options", "expected"),
+    [
+        pytest.param([(None, None, None)], [], id="unset"),
+        pytest.param([(None, "decrease", 3), (None, "increase", 1)], [], id="judged-with-options"),
+        pytest.param([(-1, None, None), (-1, "both", None)], [], id="counter-without-options"),
+        pytest.param([(-1, "decrease", None)], ["stats.changeLimitWithCounter"], id="counter-with-direction"),
+        pytest.param([(-1, "both", 3)], ["stats.changeLimitWithCounter"], id="counter-with-step"),
+        pytest.param([(None, "both", 0)], ["stats.maxChangePerTurn"], id="zero-step"),
+        pytest.param([(None, "both", -2), (None, "both", 0)], ["stats.maxChangePerTurn"], id="several-reported-once"),
+        pytest.param(
+            [(2, "increase", 0)], ["stats.changeLimitWithCounter", "stats.maxChangePerTurn"], id="both-problems"
+        ),
+    ],
+)
+def test_validate_story_publish_stat_change_options(
+    options: list[tuple[int | None, StatChangeDirection | None, int | None]], expected: list[str]
+) -> None:
+    """턴당 변화가 있는 스탯은 판정을 받지 않아 방향·폭이 아무 일도 하지 않는다 — 걸려 있으면 발행이 막는다. 폭은 양의
+    정수만(빈 값이 제한 없음). 어긋난 스탯이 몇 개든 키는 한 번만 알린다."""
+    content, version, detail, setups = _valid_story_rows()
+
+    missing = validate_story_publish(
+        content,
+        version,
+        detail,
+        setups,
+        {},
+        media_book_people=[],
+        media_book_scenes=[],
+        media_book_cells=[],
+        keyword_notes=[],
+        dangling_stat_rule_paths=[],
+        situation_notes=[],
+        dangling_situation_note_paths=[],
+        stat_defs=[
+            StatDef(
+                min_value=0,
+                max_value=10,
+                initial_value=5,
+                per_turn_delta=delta,
+                change_direction=direction,
+                max_change_per_turn=step,
+            )
+            for delta, direction, step in options
+        ],
+    )
+
+    assert missing == expected
+
+
+def _stat_def_fields(stat_def: StatDef) -> tuple[object, ...]:
+    return (
+        stat_def.name,
+        stat_def.icon,
+        stat_def.color,
+        stat_def.min_value,
+        stat_def.max_value,
+        stat_def.initial_value,
+        stat_def.unit,
+        stat_def.description,
+        stat_def.per_turn_delta,
+        stat_def.change_direction,
+        stat_def.max_change_per_turn,
+        stat_def.order,
+    )
+
+
+async def test_publish_and_reset_clone_every_stat_def_field(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """발행과 편집 취소는 스탯을 생성자에 필드를 하나씩 나열해 복사한다. 하나를 빠뜨리면 그 필드가 조용히 기본값으로
+    돌아가므로(방향은 양방향, 폭·턴당 변화는 없음으로), 모든 필드를 기본값이 아닌 값으로 채워 두고 복사본과 맞춰 본다.
+    턴당 변화와 방향·폭은 발행에서 함께 쓸 수 없으므로 스탯 둘로 나눠 싣는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, _, _, setup, _, judged = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    judged.unit = "일"
+    judged.change_direction = "decrease"
+    judged.max_change_per_turn = 7
+    counter = StatDef(
+        entity_id=uuid.uuid4(),
+        starting_setup_id=setup.id,
+        name="산소",
+        icon="wind",
+        color="sky",
+        min_value=-5,
+        max_value=95,
+        initial_value=90,
+        unit="%",
+        description="매 턴 준다",
+        per_turn_delta=-3,
+        order=1,
+    )
+    db_session.add(counter)
+    await db_session.flush()
+    expected = {stat.entity_id: _stat_def_fields(stat) for stat in (judged, counter)}
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        publish_resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+    assert publish_resp.status_code == 200
+
+    content_id = content.id
+
+    async def _draft_copies() -> dict[uuid.UUID, tuple[object, ...]]:
+        copies = (
+            await db_session.scalars(
+                sa.select(StatDef)
+                .join(StartingSetup, StartingSetup.id == StatDef.starting_setup_id)
+                .join(ContentVersion, ContentVersion.id == StartingSetup.content_version_id)
+                .where(ContentVersion.content_id == content_id, ContentVersion.published_at.is_(None))
+                .execution_options(populate_existing=True)
+            )
+        ).all()
+        return {stat.entity_id: _stat_def_fields(stat) for stat in copies}
+
+    assert await _draft_copies() == expected
+
+    reset_resp = await db_client.post(f"/contents/{content.id}/draft/reset")
+    assert reset_resp.status_code == 204
+    assert await _draft_copies() == expected
+
+
+@pytest.mark.parametrize(
+    ("per_turn_delta", "change_direction", "max_change_per_turn", "expected"),
+    [
+        pytest.param(-1, "decrease", None, ["stats.changeLimitWithCounter"], id="counter-with-direction"),
+        pytest.param(None, "both", 0, ["stats.maxChangePerTurn"], id="zero-step"),
+    ],
+)
+async def test_publish_story_rejects_stat_change_options_before_filter(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    s3_bucket: None,
+    per_turn_delta: int | None,
+    change_direction: StatChangeDirection,
+    max_change_per_turn: int | None,
+    expected: list[str],
+) -> None:
+    """초안 저장은 방향·폭이 어긋난 스탯도 받아 주므로(자동저장이 멈추면 안 된다) 발행이 막는다. 라우터가 그 버전의
+    스탯 행(새 컬럼 포함)을 검증에 넘기는지 본다 — 심사 모델은 부르지 않는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, _version, _thumbnail, _setup, _ending, stat_def = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    stat_def.per_turn_delta = per_turn_delta
+    stat_def.change_direction = change_direction
+    stat_def.max_change_per_turn = max_change_per_turn
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == {"missingFields": expected}
+    assert fake.received_prompt is None
+
+
+def _json_rule(stat_id: uuid.UUID, *, operator: str = "lte", threshold: float = 7) -> dict[str, object]:
+    return {
+        "kind": "rule",
+        "id": str(uuid.uuid4()),
+        "stat_id": str(stat_id),
+        "operator": operator,
+        "threshold": threshold,
+        "next_op": None,
+    }
+
+
+def _situation_note_fields(note: SituationNote) -> tuple[object, ...]:
+    return (note.name, note.info_text, note.order, note.condition_rules)
+
+
+async def test_publish_and_reset_clone_every_situation_note_field(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """발행과 편집 취소는 상황 노트를 생성자에 필드를 하나씩 나열해 복사한다. 하나를 빠뜨리면 그 필드가 조용히 기본값으로
+    돌아가므로(이름은 빈 글, 순서는 0, 조건은 빈 목록) 모든 필드를 기본값이 아닌 값으로 채워 두고 복사본과 맞춰 본다.
+    노트는 복사본 시작설정 밑에 붙어야 하고, 조건의 스탯 참조는 entity_id 라 값 그대로다. 편집 취소는 노트가 든 초안을
+    지우고 다시 복제하므로 노트를 시작설정보다 먼저 지우는 경로도 함께 지난다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, _, _, setup, _, stat_def = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    group = {
+        "kind": "group",
+        "id": str(uuid.uuid4()),
+        "next_op": None,
+        "rules": [_json_rule(stat_def.entity_id, operator="gte", threshold=3)],
+    }
+    notes = [
+        SituationNote(
+            entity_id=uuid.uuid4(),
+            starting_setup_id=setup.id,
+            name=f"노트{order}",
+            info_text=f"상황 {order}",
+            order=order,
+            condition_rules=[{**_json_rule(stat_def.entity_id), "next_op": "or"}, group],
+        )
+        for order in (1, 2)
+    ]
+    db_session.add_all(notes)
+    await db_session.flush()
+    expected = {note.entity_id: (setup.entity_id, _situation_note_fields(note)) for note in notes}
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        publish_resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+    assert publish_resp.status_code == 200
+
+    content_id = content.id
+
+    async def _draft_copies() -> dict[uuid.UUID, tuple[object, ...]]:
+        rows = (
+            await db_session.execute(
+                sa.select(StartingSetup.entity_id, SituationNote)
+                .join(StartingSetup, StartingSetup.id == SituationNote.starting_setup_id)
+                .join(ContentVersion, ContentVersion.id == StartingSetup.content_version_id)
+                .where(ContentVersion.content_id == content_id, ContentVersion.published_at.is_(None))
+                .execution_options(populate_existing=True)
+            )
+        ).all()
+        return {note.entity_id: (setup_entity_id, _situation_note_fields(note)) for setup_entity_id, note in rows}
+
+    assert await _draft_copies() == expected
+
+    reset_resp = await db_client.post(f"/contents/{content.id}/draft/reset")
+    assert reset_resp.status_code == 204
+    assert await _draft_copies() == expected
+
+
+@pytest.mark.parametrize(
+    ("notes", "dangling", "expected"),
+    [
+        pytest.param([("본문", 1)], [], [], id="valid"),
+        pytest.param([("본문", 0)], [], ["situationNotes.emptyConditionRules"], id="no-rules"),
+        pytest.param([("본문", -1)], [], ["situationNotes.emptyConditionRules"], id="only-an-empty-group"),
+        pytest.param([("  \n", 1)], [], ["situationNotes.infoText"], id="blank-text"),
+        pytest.param(
+            [("본문", 1)],
+            ["startingSetups[0].situationNotes[0].conditionRules[0].statId"],
+            ["situationNotes.conditionRules"],
+            id="dangling-stat",
+        ),
+        pytest.param(
+            [("", 0), (" ", 0), ("본문", 1)],
+            ["a", "b"],
+            ["situationNotes.emptyConditionRules", "situationNotes.infoText", "situationNotes.conditionRules"],
+            id="each-reported-once",
+        ),
+    ],
+)
+def test_validate_story_publish_situation_notes(
+    notes: list[tuple[str, int]], dangling: list[str], expected: list[str]
+) -> None:
+    """조건 규칙이 없는 노트(빈 그룹만 있는 노트 포함)는 상시 지시가 되므로 막는다 — 그 자리는 스토리 설정이다. 본문이
+    공백뿐인 노트는 실려도 빈 줄이다. 없는 스탯을 가리키는 조건은 영영 참이 될 수 없다. 어긋난 노트가 몇 개든 키는 한
+    번씩이고, 엔딩의 키(`endings.statRules`)와는 따로다."""
+    content, version, detail, setups = _valid_story_rows()
+    stat_id = uuid.uuid4()
+
+    def rules(count: int) -> list[dict[str, object]]:
+        if count < 0:
+            return [{"kind": "group", "id": str(uuid.uuid4()), "next_op": None, "rules": []}]
+        return [_json_rule(stat_id) for _ in range(count)]
+
+    missing = validate_story_publish(
+        content,
+        version,
+        detail,
+        setups,
+        {},
+        media_book_people=[],
+        media_book_scenes=[],
+        media_book_cells=[],
+        keyword_notes=[],
+        dangling_stat_rule_paths=[],
+        stat_defs=[],
+        situation_notes=[SituationNote(info_text=text, condition_rules=rules(count)) for text, count in notes],
+        dangling_situation_note_paths=dangling,
+    )
+
+    assert missing == expected
+
+
+async def test_publish_story_rejects_situation_notes_before_filter(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """초안 저장은 조건 없는 노트·빈 본문을 받아 주고(자동저장이 멈추면 안 된다), 스탯을 지운 뒤 남은 조건은 옛 화면의
+    저장으로도 생길 수 있으므로 발행이 막는다. 라우터가 그 버전의 시작설정마다 노트를 읽어 검증에 넘기는지 본다 — 엔딩
+    키는 나오지 않고 심사 모델은 부르지 않는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, _version, _thumbnail, setup, _ending, stat_def = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    db_session.add_all(
+        [
+            SituationNote(entity_id=uuid.uuid4(), starting_setup_id=setup.id, info_text="조건 없음", order=0),
+            SituationNote(
+                entity_id=uuid.uuid4(),
+                starting_setup_id=setup.id,
+                info_text=" ",
+                order=1,
+                condition_rules=[_json_rule(stat_def.entity_id)],
+            ),
+            SituationNote(
+                entity_id=uuid.uuid4(),
+                starting_setup_id=setup.id,
+                info_text="지워진 스탯",
+                order=2,
+                condition_rules=[_json_rule(uuid.uuid4())],
+            ),
+        ]
+    )
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == {
+        "missingFields": [
+            "situationNotes.emptyConditionRules",
+            "situationNotes.infoText",
+            "situationNotes.conditionRules",
+        ]
+    }
+    assert fake.received_prompt is None
 
 
 def _keyword_note_fields(note: KeywordNote) -> tuple[object, ...]:
@@ -2321,6 +2685,8 @@ def test_validate_story_publish_keyword_notes(
             for info, keywords, always_on in notes
         ],
         dangling_stat_rule_paths=[],
+        situation_notes=[],
+        dangling_situation_note_paths=[],
         stat_defs=[],
     )
 
@@ -2356,6 +2722,8 @@ def test_validate_story_publish_stat_ranges(ranges: list[tuple[int, int, int]], 
         media_book_cells=[],
         keyword_notes=[],
         dangling_stat_rule_paths=[],
+        situation_notes=[],
+        dangling_situation_note_paths=[],
         stat_defs=[
             StatDef(min_value=low, max_value=high, initial_value=initial) for low, high, initial in ranges
         ],

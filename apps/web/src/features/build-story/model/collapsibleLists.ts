@@ -15,6 +15,9 @@ export const STORY_COLLAPSIBLE_LISTS = {
   shortcut: { path: "shortcuts", tabId: "shortcut", key: "id" },
   ending: { path: "startingSetups.*.endings", tabId: "ending", key: "id" },
   ruleGroup: { path: "startingSetups.*.endings.*.statRules", tabId: "ending", key: "id" },
+  situationNote: { path: "startingSetups.*.situationNotes", tabId: "situationNote", key: "id" },
+  // 엔딩 안 규칙 그룹과 목록 이름을 나눈다 — 같은 이름이면 탭으로 걸러지는 발행 실패 경로가 노트 안 그룹을 열지 못한다.
+  situationNoteRuleGroup: { path: "startingSetups.*.situationNotes.*.conditionRules", tabId: "situationNote", key: "id" },
 } as const satisfies Record<string, { path: string; tabId: StoryBuilderTab; key: "id" | "index" }>;
 
 export type StoryCollapsibleList = keyof typeof STORY_COLLAPSIBLE_LISTS;
@@ -23,11 +26,11 @@ export type StoryCollapsibleList = keyof typeof STORY_COLLAPSIBLE_LISTS;
  * 폼 오류가 없어 위 목록에는 넣지 않는다. */
 export const MEDIA_BOOK_AXIS_SECTION_LIST = "mediaBookAxis";
 
-/** 스탯·엔딩 탭이 함께 보는 "고른 시작설정 id" 의 선택 이름(`useBuilderSelection`). */
+/** 스탯·상황 노트·엔딩 탭이 함께 보는 "고른 시작설정 id" 의 선택 이름(`useBuilderSelection`). */
 export const SELECTED_STARTING_SETUP = "startingSetup";
 
 /** 시작설정 하나에 매달린 탭 — 셸이 발행 실패 때 `errorParentItemId` 에 넘겨 그 탭들이 보여야 할 시작설정을 고른다. */
-export const STARTING_SETUP_SCOPE = { path: "startingSetups", tabIds: ["stat", "ending"] } as const satisfies {
+export const STARTING_SETUP_SCOPE = { path: "startingSetups", tabIds: ["stat", "situationNote", "ending"] } as const satisfies {
   path: string;
   tabIds: readonly StoryBuilderTab[];
 };
