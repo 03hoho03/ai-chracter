@@ -1,14 +1,23 @@
+import asyncio
 import io
+import threading
+import time
+from collections.abc import Callable
 
 import pytest
 from PIL import Image
 
+from api.assets import image_processing
 from api.assets.image_processing import (
+    IMAGE_WORK_CONCURRENCY,
+    ImageTooLargeError,
     ReferenceImageRejectedError,
+    generate_blurred_image,
     generate_display_image,
     generate_thumbnail,
     generate_variants,
     read_image_size,
+    run_image_work,
     validate_reference_image,
 )
 from api.core.s3 import build_variant_keys
@@ -192,3 +201,93 @@ def test_read_image_size_returns_width_then_height(image_format: str) -> None:
 def test_read_image_size_rejects_bytes_that_are_not_an_image() -> None:
     with pytest.raises(OSError):
         read_image_size(b"not an image")
+
+
+def _bilevel_png_bytes(width: int, height: int) -> bytes:
+    """1비트 단색 PNG — 픽셀은 많고 바이트는 작다(화면을 거치지 않고 올린 큰 그림을 흉내 낸다)."""
+    output = io.BytesIO()
+    Image.new("1", (width, height)).save(output, format="PNG")
+    return output.getvalue()
+
+
+_DECODERS: list[Callable[[bytes], bytes]] = [generate_thumbnail, generate_display_image, generate_blurred_image]
+
+
+@pytest.mark.parametrize("decode", _DECODERS, ids=lambda decode: decode.__name__)
+def test_decoders_reject_images_over_the_pixel_limit_before_decoding(
+    decode: Callable[[bytes], bytes], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """상한을 넘는 그림은 픽셀을 풀기 전에 거부한다 — 풀고 나서 거부하면 메모리는 이미 쓴 뒤다."""
+    monkeypatch.setattr(image_processing, "MAX_DECODE_PIXELS", 40 * 30 - 1)
+    # 만드는 쪽(`save`)도 픽셀을 풀므로 감시를 걸기 전에 만든다.
+    data = _bilevel_png_bytes(40, 30)
+    loads: list[object] = []
+    real_load = Image.Image.load
+
+    def counting_load(self: Image.Image) -> object:
+        loads.append(self)
+        return real_load(self)
+
+    monkeypatch.setattr(Image.Image, "load", counting_load)
+
+    with pytest.raises(ImageTooLargeError) as raised:
+        decode(data)
+
+    assert raised.value.actual_pixels == 40 * 30
+    assert loads == []
+
+
+@pytest.mark.parametrize("decode", _DECODERS, ids=lambda decode: decode.__name__)
+def test_decoders_accept_images_exactly_at_the_pixel_limit(
+    decode: Callable[[bytes], bytes], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(image_processing, "MAX_DECODE_PIXELS", 40 * 30)
+
+    assert decode(_bilevel_png_bytes(40, 30))
+
+
+def test_default_pixel_limit_rejects_a_small_file_with_many_pixels() -> None:
+    """기본 상한(9M)에서 3001×3000 은 거부되고, 파일은 바이트 상한(수 MB)보다 훨씬 작다."""
+    data = _bilevel_png_bytes(3001, 3000)
+    assert len(data) < 100_000
+
+    with pytest.raises(ImageTooLargeError) as raised:
+        generate_thumbnail(data)
+
+    assert raised.value.actual_pixels == 3001 * 3000
+
+
+def test_pillow_decompression_bomb_becomes_the_same_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pillow 가 스스로 거부하는 폭탄은 `OSError`·`ValueError` 가 아니라서 호출자의 except 를 빠져나간다 — 같은
+    오류로 바꿔야 업로드 완료가 정리 후 400 을 낸다."""
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 100)
+    data = _bilevel_png_bytes(20, 20)
+
+    with pytest.raises(ImageTooLargeError) as raised:
+        generate_thumbnail(data)
+
+    assert raised.value.actual_pixels is None
+    assert isinstance(raised.value, ValueError)
+
+
+async def test_run_image_work_caps_concurrency_and_finishes_every_job() -> None:
+    """이미지 작업은 동시에 한도까지만 돌고, 한도보다 많이 몰려도 전부 끝난다(기다리는 쪽이 스레드를 잡지 않아
+    교착이 없다)."""
+    lock = threading.Lock()
+    counts = {"running": 0, "peak": 0}
+
+    def job(index: int) -> int:
+        with lock:
+            counts["running"] += 1
+            counts["peak"] = max(counts["peak"], counts["running"])
+        try:
+            time.sleep(0.05)
+            return index
+        finally:
+            with lock:
+                counts["running"] -= 1
+
+    results = await asyncio.wait_for(asyncio.gather(*(run_image_work(job, index) for index in range(8))), timeout=5)
+
+    assert results == list(range(8))
+    assert counts["peak"] == IMAGE_WORK_CONCURRENCY

@@ -20,10 +20,11 @@ from PIL import Image
 from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.assets.image_processing import generate_blurred_image
+from api.assets.image_processing import IMAGE_WORK_CONCURRENCY, generate_blurred_image
 from api.content import publish_filter_memo
 from api.content.publish import PublishFilterResult, validate_story_publish
 from api.content.router import _MEDIA_BOOK_S3_CONCURRENCY
+from api.core import rate_limit_gate
 from api.core.config import settings
 from api.core.redis import redis_client
 from api.core.s3 import build_thumbnail_key, build_variant_keys
@@ -56,7 +57,7 @@ from api.db.models.story import (
     StoryPromptTemplate,
     StoryVersionDetail,
 )
-from api.llm.client import LLMCallContext, LLMClient, LLMClientError, LLMPolicyViolationError
+from api.llm.client import LLMCallContext, LLMClient, LLMClientError, LLMPolicyViolationError, LLMRateLimitError
 from factories import (
     _add_media_book_cell,
     _add_named_media_cell,
@@ -1711,12 +1712,11 @@ async def test_publish_story_reports_cell_whose_image_cannot_be_blurred(
     assert version.published_at is None
 
 
-async def test_publish_story_blurs_cells_concurrently_within_s3_connection_limit(
+async def test_publish_story_reports_cell_whose_image_exceeds_the_pixel_limit(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """칸 블러본은 동시에 만든다 — 운영 저장소 왕복이 칸마다 붙어 50칸을 줄 세우면 발행이 1분을 넘긴다. 다만
-    공유 저장소 클라이언트의 연결 수를 넘지 않게 한 번에 정해진 칸 수까지만 돌린다. 동시에 돌아도 칸마다 자기
-    그림의 블러본과 그 크기를 받아야 한다."""
+    """칸 원본이 픽셀 상한을 넘으면(화면을 거치지 않고 올린 큰 그림) 블러를 만들지 않고, 이름 없는 500 이 아니라
+    그 칸을 다시 올리라는 응답으로 발행을 멈춘다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -1724,9 +1724,45 @@ async def test_publish_story_blurs_cells_concurrently_within_s3_connection_limit
     content, version, _, _, _, _ = await _make_publishable_story_draft(
         db_session, creator_user_id=user.id, genre_id=genre.id
     )
-    limit = _MEDIA_BOOK_S3_CONCURRENCY
+    cell, image = await _add_named_media_cell(db_session, version.id, user.id, "민아", "교실", size=None)
+    _upload_test_image(image.storage_key, size=(20, 30))
+    _upload_test_thumbnail(image.storage_key)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    monkeypatch.setattr("api.assets.image_processing.MAX_DECODE_PIXELS", 20 * 30 - 1)
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 502
+    assert (resp.json()["detail"]["code"], resp.json()["detail"]["cellId"]) == (
+        "MEDIA_BOOK_IMAGE_UNAVAILABLE",
+        str(cell.entity_id),
+    )
+    await db_session.refresh(cell)
+    assert cell.blurred_asset_id is None
+
+
+async def test_publish_story_blurs_cells_concurrently_within_s3_connection_limit(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """칸 블러본은 동시에 만든다 — 운영 저장소 왕복이 칸마다 붙어 50칸을 줄 세우면 발행이 1분을 넘긴다. 다만
+    공유 저장소 클라이언트의 연결 수를 넘지 않게 한 번에 정해진 칸 수까지만 돌리고, 그 안에서 그림을 푸는 블러
+    단계는 프로세스 전역 이미지 작업 한도까지만 겹친다(그림 한 장 디코드가 수백 MB 를 쓴다). 칸 수가 두 한도를
+    넘어도 전부 끝나야 하고, 동시에 돌아도 칸마다 자기 그림의 블러본과 그 크기를 받아야 한다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, _, _, _, _ = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    limit = min(_MEDIA_BOOK_S3_CONCURRENCY, IMAGE_WORK_CONCURRENCY)
     sized_cells: list[tuple[MediaBookCell, tuple[int, int]]] = []
-    for index in range(limit + 4):
+    for index in range(_MEDIA_BOOK_S3_CONCURRENCY + 4):
         cell, image = await _add_named_media_cell(db_session, version.id, user.id, f"인물{index}", "교실", size=None)
         # 칸마다 크기를 달리 둬 블러본이 다른 칸의 것과 뒤바뀌면 크기로 드러나게 한다.
         size = (10 + index, 40 - index)
@@ -1992,18 +2028,21 @@ async def test_publish_story_does_not_publish_when_filter_call_fails(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
     """심사 호출 자체가 실패하면(쿼터 소진, 요청 크기 초과로 거부 등) 판정이 없으므로 발행하지 않는다 — 블러도
-    만들지 않는다. 지금은 처리기 없이 500 으로 나간다."""
+    만들지 않는다. 이름 없는 500 이 아니라 다시 시도하라는 503 으로 알리고, 거부(`reason`)의 모양이 아니어야 화면이
+    이의제기로 안내하지 않는다."""
     content, version, _, cells = await _story_with_media_cells(db_session, db_client)
     keys_before = _bucket_keys()
 
     fake = _FailingFilterLLMClient(PublishFilterResult(passed=True, reason=None))
     _override_llm_client(fake)
     try:
-        with pytest.raises(LLMClientError):
-            await db_client.post(f"/contents/{content.id}/publish")
+        resp = await db_client.post(f"/contents/{content.id}/publish")
     finally:
         _clear_llm_override()
 
+    assert resp.status_code == 503
+    assert resp.json()["detail"]["code"] == "PUBLISH_SCREENING_UNAVAILABLE"
+    assert "reason" not in resp.json()["detail"]
     assert fake.received_images is not None and len(fake.received_images) == 1 + len(cells)
     await db_session.refresh(version)
     assert version.published_at is None
@@ -3027,13 +3066,13 @@ async def test_failed_filter_call_is_not_remembered(
 
     try:
         _override_llm_client(_FailingFilterLLMClient(PublishFilterResult(passed=True, reason=None)))
-        with pytest.raises(LLMClientError):
-            await db_client.post(f"/contents/{content.id}/publish")
+        failed = await db_client.post(f"/contents/{content.id}/publish")
         _override_llm_client(passing)
         retried = await db_client.post(f"/contents/{content.id}/publish")
     finally:
         _clear_llm_override()
 
+    assert failed.status_code == 503
     assert retried.status_code == 200
     assert passing.calls == 1
 
@@ -3188,3 +3227,139 @@ async def test_republish_story_with_media_book_name_changed_rescreens(
     assert resp.status_code == 200
     assert fake.calls == 2
     assert fake.received_prompt is not None and "4. 미디어 북 준호·교실" in fake.received_prompt
+
+
+class _QuotaExhaustedFilterLLMClient(_FakeLLMClient):
+    async def generate_structured(
+        self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
+    ) -> Any:
+        raise LLMRateLimitError("RESOURCE_EXHAUSTED")
+
+
+async def test_publish_screening_rate_limited_by_gemini_returns_503_and_reports_rate_limit_tag(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gemini 쿼터 소진(429)도 503 으로 알린다. 승격 태그를 갈라야 쿼터 소진이 다른 호출 실패와 섞이지 않는다."""
+    content, _, _, _ = await _publishable_character(db_session, db_client)
+    reported: list[str] = []
+    monkeypatch.setattr(
+        "api.content.router.capture_dependency_failure",
+        lambda _exc=None, *, dependency: reported.append(dependency),
+    )
+
+    _override_llm_client(_QuotaExhaustedFilterLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == {
+        "code": "PUBLISH_SCREENING_UNAVAILABLE",
+        "message": "발행 심사를 지금 진행하지 못했어요. 잠시 뒤 다시 발행해 주세요.",
+    }
+    assert reported == ["gemini_rate_limit"]
+
+
+async def test_publish_screening_returns_429_with_publish_window_after_hourly_limit(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """심사 LLM 호출은 작가당 시간당 상한이 있다. 넘으면 LLM 을 부르지 않고 429 를 주며, 다른 429 와 같은 모양에
+    `window` 로 기능을 가른다."""
+    monkeypatch.setattr(rate_limit_gate, "PUBLISH_SCREEN_LIMIT", 1)
+    content, _, _, _ = await _publishable_character(db_session, db_client)
+    fake = _FakeLLMClient(PublishFilterResult(passed=False, reason="부적절"))
+
+    _override_llm_client(fake)
+    try:
+        first = await db_client.post(f"/contents/{content.id}/publish")
+        second = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert first.status_code == 400
+    assert second.status_code == 429
+    detail = second.json()["detail"]
+    assert (detail["code"], detail["window"]) == ("USER_LIMIT", "publish")
+    assert 0 < detail["retryAfterSeconds"] <= rate_limit_gate.HOURLY_WINDOW_SECONDS
+    assert fake.calls == 1
+    await db_session.refresh(content)
+    assert content.current_published_version_id is None
+
+
+async def test_publish_screening_limit_does_not_count_validation_failures_or_remembered_passes(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """상한은 LLM 을 실제로 부를 때만 센다 — 필수 항목 누락이나 통과 기억 적중은 비용이 없어 작가의 몫을 깎지 않는다.
+    상한 1 에서 검증 실패, 심사 발행, 기억 적중 재발행이 모두 지나가야 한다."""
+    monkeypatch.setattr(rate_limit_gate, "PUBLISH_SCREEN_LIMIT", 1)
+    content, version, _, _ = await _publishable_character(db_session, db_client)
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    detail = await db_session.get(CharacterVersionDetail, version.id)
+    assert detail is not None
+    name = detail.name
+    detail.name = ""
+    await db_session.commit()
+
+    _override_llm_client(fake)
+    try:
+        incomplete = await db_client.post(f"/contents/{content.id}/publish")
+        detail.name = name
+        await db_session.commit()
+        published = await db_client.post(f"/contents/{content.id}/publish")
+        republished = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert (incomplete.status_code, published.status_code, republished.status_code) == (400, 200, 200)
+    assert "missingFields" in incomplete.json()["detail"]
+    assert fake.calls == 1
+
+
+async def test_publish_screening_limit_skips_exempt_users(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """예외 계정(시드 작가 등)은 채팅·이미지와 같은 판정으로 발행 상한도 건너뛴다."""
+    monkeypatch.setattr(rate_limit_gate, "PUBLISH_SCREEN_LIMIT", 0)
+    user = _make_user(rate_limit_exempt=True)
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, _, _, _ = await _make_publishable_character_draft(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert fake.calls == 1
+
+
+async def test_publish_screening_limit_fails_open_when_redis_fails(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """상한을 세는 장치가 죽어도 발행은 막지 않는다(채팅·이미지와 같은 fail-open). 장애는 승격한다."""
+    monkeypatch.setattr(rate_limit_gate, "PUBLISH_SCREEN_LIMIT", 0)
+    monkeypatch.setattr(rate_limit_gate, "check_rate_limit", _raise_redis_error)
+    monkeypatch.setattr(rate_limit_gate, "_last_redis_failure_reported_at", None)
+    reported: list[str] = []
+    monkeypatch.setattr(
+        rate_limit_gate, "capture_dependency_failure", lambda _exc=None, *, dependency: reported.append(dependency)
+    )
+    content, _, _, _ = await _publishable_character(db_session, db_client)
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert fake.calls == 1
+    assert reported == ["redis"]

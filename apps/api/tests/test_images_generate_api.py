@@ -16,6 +16,7 @@ from PIL import Image
 from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.assets import image_processing
 from api.core import clover, rate_limit_gate
 from api.core.config import settings
 from api.core.s3 import build_variant_keys
@@ -352,6 +353,36 @@ async def test_generated_image_records_dimensions(
     job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
     [asset] = (await db_session.scalars(sa.select(Asset).where(Asset.id.in_(job.asset_ids)))).all()
     assert (asset.width, asset.height) == (96, 128)
+
+
+async def test_generated_image_variants_run_through_the_image_work_limit(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """생성 결과의 변형 생성(디코드)도 업로드·블러와 같은 프로세스 전역 이미지 작업 한도를 거친다."""
+    calls: list[str] = []
+    real = image_processing.run_image_work
+
+    async def spy(func: object, *args: object) -> object:
+        calls.append(getattr(func, "__name__", ""))
+        return await real(func, *args)  # type: ignore[arg-type]
+
+    monkeypatch.setattr("api.images.router.run_image_work", spy)
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    _stub_capabilities_ready(monkeypatch)
+
+    _override_image_client(lambda: (_png_bytes(), "image/png"))
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=1))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+    assert job.status == ImageGenerationJobStatus.SUCCEEDED
+    assert calls == ["generate_variants"]
 
 
 async def test_generate_partial_failure_still_succeeds(

@@ -12,6 +12,7 @@ from api.assets.image_processing import (
     generate_blurred_image,
     generate_variants,
     read_image_size,
+    run_image_work,
 )
 from api.core.s3 import build_object_key, download_object, upload_object
 from api.db.models.media import Asset, AssetKind, AssetStatus
@@ -31,14 +32,14 @@ async def upload_blurred_copy(source_storage_key: str) -> BlurredUpload:
     """원본을 내려받아 블러본 PNG 와 그 변형(`_thumb.webp`·`_display.webp`)을 올린다. 세션을 건드리지 않아 여러 장을 동시에 돌릴 수
     있다 — 자산 행은 `blurred_asset_row` 로 따로 만든다."""
     original_bytes = await run_in_threadpool(download_object, source_storage_key)
-    blurred_bytes = await run_in_threadpool(generate_blurred_image, original_bytes)
+    blurred_bytes = await run_image_work(generate_blurred_image, original_bytes)
 
     blurred_asset_id = uuid.uuid4()
     blurred_storage_key = build_object_key("situational-image-blurred", blurred_asset_id, BLURRED_CONTENT_TYPE)
     await run_in_threadpool(upload_object, blurred_storage_key, blurred_bytes, BLURRED_CONTENT_TYPE)
     # READY 자산은 늘 변형 전부를 함께 가진다(응답이 존재 확인 없이 키를 만든다). 여기서 실패하면 행을
     # 만들기 전에 예외가 나가 변형 없는 READY 자산이 남지 않는다.
-    blurred_variants = await run_in_threadpool(generate_variants, blurred_storage_key, blurred_bytes)
+    blurred_variants = await run_image_work(generate_variants, blurred_storage_key, blurred_bytes)
     # 원본 행의 크기를 베끼지 않고 블러 바이트에서 잰다 — 원본이 크기를 채우기 전 자산이면 그 값이 비어 있다.
     blurred_width, blurred_height = await run_in_threadpool(read_image_size, blurred_bytes)
     for variant_key, variant_bytes in blurred_variants:

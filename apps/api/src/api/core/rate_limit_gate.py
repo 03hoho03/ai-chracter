@@ -19,6 +19,10 @@
 을 채팅과 **같은 구현**으로 공유한다 — 사본이 두 벌이 되면 한쪽만 고쳐진다. 그래서
 `api.images.schemas`를 이 모듈이 import한다(반대 방향은 없다 — `images/router.py`가 이
 게이트를 부르지만 이 모듈은 라우터를 모른다).
+
+**발행 심사와 업로드 발급도 같은 이유로 여기 있다.** 둘 다 사용자당 시간당 고정 창이다. 발행은
+심사 LLM 을 실제로 부르는 직전에만 센다(필수 항목 누락이나 통과 기억 적중은 비용이 없어 세지 않는다).
+업로드는 서명 URL 발급 1건을 센다 — 발급이 곧 `complete` 의 디코드 1회로 이어진다.
 """
 
 import logging
@@ -92,6 +96,18 @@ _IMAGE_SCOPE = "image_tokens"
 # `user_id` 필수라 인증 전인 auth에 안 맞는다).
 _IMAGE_WINDOW = "image"
 
+# 발행 심사·업로드 발급은 사용자당 시간당 고정 창이다. 30·10 처럼 정책값이지 실측값이 아니다.
+# 발행 10: 통과 기억이 적중하면(직전 통과와 그림·칸 이름·심사 세트·모델이 같으면) 심사를 부르지 않아 세지 않는다.
+# 거부·심사 실패는 기억하지 않아 같은 입력으로 다시 내도 매번 센다 — 그래도 정상 작가가 한 시간에 실제 심사를
+# 열 번 넘게 부를 일은 드물다(새 작품 첫 발행 1회, 거부 뒤 고쳐 다시 내기 몇 회). 업로드 120: 미디어 북 50칸 일괄 업로드에 캐릭터·썸네일 몇 장을 더해도 남는다.
+PUBLISH_SCREEN_LIMIT = 10
+UPLOAD_LIMIT = 120
+HOURLY_WINDOW_SECONDS = 3600
+_PUBLISH_SCOPE = "publish_screen"
+_UPLOAD_SCOPE = "asset_upload"
+_PUBLISH_WINDOW = "publish"
+_UPLOAD_WINDOW = "upload"
+
 # 클로버 부족은 **새 `code`**다. `window`는 경로마다 다르다 — 채팅은
 # 신규 `"clover"`, 이미지는 기존 `"image"`를 유지한다(위 주석의 규칙 그대로 — `window`는
 # "어느 기능이냐"고 이미지에서 상한 종류를 가르는 축은 이미 `code`다).
@@ -159,10 +175,10 @@ async def is_rate_limit_exempt(user_id: uuid.UUID, db: AsyncSession) -> bool:
     세션에 굳는 사본도 없어서 무효화할 캐시가 없다(어드민이 뒤집으면 다음 요청부터 곧바로
     적용된다).
 
-    **면제 범위는 일일 상한과 이미지 토큰버킷뿐이다.** 분당 버스트는 예외 계정도 그대로
-    받고(폭주 방어는 쿼터가 아니다), 이미지 유저별 동시 큐 1칸도 예외 계정에 그대로 적용된다.
-    이미지 쪽이 이 함수를 그대로 다시 부른다 — 그래서 게이트 본문이 아니라 별도
-    함수다.
+    **면제 범위는 일일 상한·이미지 토큰버킷·발행 심사 시간당 상한·업로드 발급 시간당 상한이다.**
+    분당 버스트는 예외 계정도 그대로 받고(폭주 방어는 쿼터가 아니다), 이미지 유저별 동시 큐 1칸도
+    예외 계정에 그대로 적용된다. 이미지·발행·업로드 쪽이 이 함수를 그대로 다시 부른다 — 그래서
+    게이트 본문이 아니라 별도 함수다.
 
     `is True`로 판정한다. `db.get`은 persistent 행만 돌려주므로 `rate_limit_exempt`가 `None`인
     경우(flush 전 인스턴스)는 여기 도달하지 않지만, 그래도 `None`이 새면 "면제 아님"이 되게
@@ -429,6 +445,40 @@ async def enforce_image_rate_limit(
             )
         return ImageCharge(count=payload.count, source="clover", clover_amount=clover_amount)
     return ImageCharge(count=payload.count, source="token")
+
+
+async def _enforce_hourly_limit(
+    user_id: uuid.UUID, db: AsyncSession, *, scope: str, limit: int, window: str
+) -> None:
+    """면제 → 시간당 고정 창. 면제 계정은 카운터를 올리지 않는다(채팅 일일 창과 같은 규칙). Redis 가 실패하면
+    채팅·이미지와 같은 fail-open 이다."""
+    if await is_rate_limit_exempt(user_id, db):
+        return
+    try:
+        retry_after = await check_rate_limit(scope, str(user_id), limit, window_seconds=HOURLY_WINDOW_SECONDS)
+    except RedisError:
+        logger.warning("%s 레이트리밋 검사 실패 — fail-open으로 통과시킨다", scope, exc_info=True)
+        _report_redis_failure()
+        return
+    if retry_after > 0:
+        raise _too_many_requests(user_id, window, retry_after)
+
+
+async def enforce_publish_screen_limit(user_id: uuid.UUID, db: AsyncSession) -> None:
+    """발행 심사 LLM 호출 직전에 라우트 본문이 부른다. `Depends` 가 아닌 이유는 세는 단위가 "요청"이 아니라
+    "심사 호출"이라서다 — 검증 실패와 통과 기억 적중은 LLM 을 부르지 않으므로 세지 않는다. 발행 라우트는 SSE 가
+    아니라 본문에서 429 를 던져도 된다."""
+    await _enforce_hourly_limit(
+        user_id, db, scope=_PUBLISH_SCOPE, limit=PUBLISH_SCREEN_LIMIT, window=_PUBLISH_WINDOW
+    )
+
+
+async def enforce_upload_rate_limit(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    """`POST /assets/presigned-upload` 게이트. 요청 1건이 곧 발급 1건이라 이미지 생성처럼 시그니처에서 본다."""
+    await _enforce_hourly_limit(user_id, db, scope=_UPLOAD_SCOPE, limit=UPLOAD_LIMIT, window=_UPLOAD_WINDOW)
 
 
 def image_queue_full(user_id: uuid.UUID) -> HTTPException:

@@ -12,9 +12,11 @@ from starlette.concurrency import run_in_threadpool
 from api.assets.blur import create_blurred_asset
 from api.assets.image_processing import (
     THUMBNAIL_CONTENT_TYPE,
+    ImageTooLargeError,
     generate_variants,
     read_image_content_type,
     read_image_size,
+    run_image_work,
 )
 from api.assets.schemas import (
     UPLOAD_SIZE_LIMIT_BYTES,
@@ -28,6 +30,7 @@ from api.assets.schemas import (
     RegisterSituationalImageRequest,
     SituationalImageResponse,
 )
+from api.core.rate_limit_gate import enforce_upload_rate_limit
 from api.core.s3 import (
     build_object_key,
     build_thumbnail_key,
@@ -55,7 +58,9 @@ me_router = APIRouter(prefix="/me", tags=["assets"])
 
 
 @router.post(
-    "/presigned-upload", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_legal_consent)]
+    "/presigned-upload",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_legal_consent), Depends(enforce_upload_rate_limit)],
 )
 async def create_presigned_upload(
     payload: PresignedUploadRequest,
@@ -158,9 +163,17 @@ async def complete_asset_upload(
     # responses can derive the keys without an existence check. A failed variant
     # therefore fails the whole asset — never READY with only the original.
     try:
-        variants = await run_in_threadpool(generate_variants, asset.storage_key, original_bytes)
+        variants = await run_image_work(generate_variants, asset.storage_key, original_bytes)
         width, height = await run_in_threadpool(read_image_size, original_bytes)
         detected_content_type = await run_in_threadpool(read_image_content_type, original_bytes)
+    except ImageTooLargeError as exc:
+        # `ValueError` 하위라 아래보다 먼저 잡아야 원인이 "풀 수 없는 그림"으로 가려지지 않는다. 바이트 상한과 같은
+        # 모양으로 알린다. 정상 화면은 업로드 전에 줄여 올리므로 여기 닿는 것은 화면을 거치지 않은 요청이다.
+        await _discard_upload(db, asset, upload_key)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"maxPixels": exc.max_pixels, "actualPixels": exc.actual_pixels},
+        ) from exc
     except (OSError, ValueError) as exc:
         # Pillow can't decode the upload — deterministic failure, so clean up
         # like the oversize path instead of leaving an unretryable PENDING row.

@@ -9,9 +9,12 @@ import httpx
 import pytest
 from botocore.exceptions import ClientError
 from PIL import Image
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.assets import image_processing
 from api.assets.schemas import UPLOAD_SIZE_LIMIT_BYTES, AssetPurpose
+from api.core import rate_limit_gate
 from api.core.config import settings
 from api.core.s3 import build_display_key, build_thumbnail_key
 from api.db.models.media import Asset, AssetStatus
@@ -365,3 +368,107 @@ async def test_complete_upload_records_image_dimensions(
     assert resp.status_code == 200
     await db_session.refresh(asset)
     assert (asset.width, asset.height) == (300, 400)
+
+
+def _bilevel_png_bytes(width: int, height: int) -> bytes:
+    output = io.BytesIO()
+    Image.new("1", (width, height)).save(output, format="PNG")
+    return output.getvalue()
+
+
+async def test_complete_rejects_image_over_pixel_limit_and_cleans_up(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """바이트는 작고 픽셀은 많은 그림은 풀기 전에 거부하고, 바이트 상한처럼 원인을 알리며 업로드를 치운다."""
+    monkeypatch.setattr(image_processing, "MAX_DECODE_PIXELS", 40 * 30 - 1)
+    await _logged_in_user(db_client, db_session)
+    asset_id, upload_url = await _presign(db_client)
+    asset = await db_session.get(Asset, uuid.UUID(asset_id))
+    assert asset is not None
+    storage_key = asset.storage_key
+    _put_via_presigned_url(upload_url, _bilevel_png_bytes(40, 30))
+
+    complete_resp = await db_client.post(f"/assets/{asset_id}/complete")
+
+    assert complete_resp.status_code == 400
+    assert complete_resp.json()["detail"] == {"maxPixels": 40 * 30 - 1, "actualPixels": 40 * 30}
+    assert _object_bytes(_signed_key(upload_url)) is None
+    assert _object_bytes(storage_key) is None
+    assert await db_session.get(Asset, uuid.UUID(asset_id)) is None
+
+
+async def test_complete_rejects_pillow_decompression_bomb_and_cleans_up(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pillow 가 스스로 거부하는 폭탄(약 1.8억 픽셀 초과)도 500 과 PENDING 행 잔존이 아니라 정리 후 400 이다. 작은
+    그림으로 흉내 내려고 Pillow 의 상한을 낮춘다."""
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 100)
+    await _logged_in_user(db_client, db_session)
+    asset_id, upload_url = await _presign(db_client)
+    _put_via_presigned_url(upload_url, _bilevel_png_bytes(20, 20))
+
+    complete_resp = await db_client.post(f"/assets/{asset_id}/complete")
+
+    assert complete_resp.status_code == 400
+    assert complete_resp.json()["detail"] == {"maxPixels": image_processing.MAX_DECODE_PIXELS, "actualPixels": None}
+    assert _object_bytes(_signed_key(upload_url)) is None
+    assert await db_session.get(Asset, uuid.UUID(asset_id)) is None
+
+
+async def test_complete_runs_variant_generation_through_the_image_work_limit(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """변형 생성(디코드)은 프로세스 전역 이미지 작업 한도를 거친다 — 동시 업로드 수만큼 디코드 메모리가 곱해지지 않게."""
+    calls: list[str] = []
+    real = image_processing.run_image_work
+
+    async def spy(func: object, *args: object) -> object:
+        calls.append(getattr(func, "__name__", ""))
+        return await real(func, *args)  # type: ignore[arg-type]
+
+    monkeypatch.setattr("api.assets.router.run_image_work", spy)
+    await _logged_in_user(db_client, db_session)
+    asset_id, upload_url = await _presign(db_client)
+    _put_via_presigned_url(upload_url, _png_bytes())
+
+    complete_resp = await db_client.post(f"/assets/{asset_id}/complete")
+
+    assert complete_resp.status_code == 200
+    assert calls == ["generate_variants"]
+
+
+async def test_presigned_upload_returns_429_with_upload_window_after_hourly_limit(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, s3_bucket: None
+) -> None:
+    """업로드 URL 발급은 사용자당 시간당 상한이 있다. 넘으면 다른 429 와 같은 모양에 `window` 로 기능을 가르고,
+    PENDING 자산 행도 만들지 않는다."""
+    monkeypatch.setattr(rate_limit_gate, "UPLOAD_LIMIT", 1)
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
+    await _presign(db_client)
+
+    resp = await db_client.post(
+        "/assets/presigned-upload", json={"contentType": "image/png", "purpose": "profile-image"}
+    )
+
+    assert resp.status_code == 429
+    detail = resp.json()["detail"]
+    assert (detail["code"], detail["window"]) == ("USER_LIMIT", "upload")
+    assert 0 < detail["retryAfterSeconds"] <= rate_limit_gate.HOURLY_WINDOW_SECONDS
+    assets = await db_session.scalar(select(func.count()).select_from(Asset).where(Asset.owner_user_id == user.id))
+    assert assets == 1
+
+
+async def test_presigned_upload_limit_skips_exempt_users(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, s3_bucket: None
+) -> None:
+    """예외 계정(시드 작가 일괄 업로드)은 채팅·이미지와 같은 판정으로 업로드 상한도 건너뛴다."""
+    monkeypatch.setattr(rate_limit_gate, "UPLOAD_LIMIT", 0)
+    user = _make_user(rate_limit_exempt=True)
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
+
+    await _presign(db_client)

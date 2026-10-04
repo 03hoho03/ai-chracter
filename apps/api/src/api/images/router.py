@@ -16,6 +16,7 @@ from api.assets.image_processing import (
     ReferenceImageRejectedError,
     generate_variants,
     read_image_size,
+    run_image_work,
     validate_reference_image,
 )
 from api.core import clover
@@ -139,7 +140,7 @@ async def _generate_and_store_one(
         # variant failure falls through to the except blocks below (return
         # "failed") before the Asset row is created — never READY with only the
         # original.
-        variants = await run_in_threadpool(generate_variants, storage_key, data)
+        variants = await run_image_work(generate_variants, storage_key, data)
         for variant_key, variant_bytes in variants:
             await run_in_threadpool(upload_object, variant_key, variant_bytes, THUMBNAIL_CONTENT_TYPE)
         width, height = await run_in_threadpool(read_image_size, data)
