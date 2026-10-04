@@ -7,8 +7,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@ai-character-chat/ui/components/dialog";
-import { createCallable } from "react-call";
 import { useMutationFlow, type MutationFn } from "react-call/mutation-flow";
+
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 type PublishNoticeDialogProps = {
   title: string;
@@ -38,7 +39,7 @@ export const PublishNoticeDialog = createCallable<PublishNoticeDialogProps, void
           </DialogHeader>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => call.end()}>
+            <Button type="button" variant="outline" autoFocus onClick={() => call.end()}>
               취소
             </Button>
             <Button type="button" disabled={submit.pending} onClick={() => submit()}>

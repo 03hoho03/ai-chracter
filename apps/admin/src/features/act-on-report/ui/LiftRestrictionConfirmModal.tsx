@@ -7,8 +7,9 @@ import {
   DialogTitle,
 } from "@ai-character-chat/ui/components/dialog";
 import { Button } from "@ai-character-chat/ui/components/button";
-import { createCallable } from "react-call";
 import { useMutationFlow, type MutationFn } from "react-call/mutation-flow";
+
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 type LiftRestrictionConfirmModalProps = {
   contentName: string;
@@ -44,7 +45,7 @@ export const LiftRestrictionConfirmModal = createCallable<LiftRestrictionConfirm
           </DialogHeader>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => call.end()}>
+            <Button type="button" variant="outline" autoFocus onClick={() => call.end()}>
               취소
             </Button>
             <Button

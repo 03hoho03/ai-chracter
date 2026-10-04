@@ -9,11 +9,11 @@ import {
 } from "@ai-character-chat/ui/components/dialog";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
-import { createCallable } from "react-call";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 import { isApiError } from "@/shared/lib/api/client";
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { usePublishMutation } from "../api/usePublishMutation";
 import type { PromptLane } from "../model/lane";
@@ -96,7 +96,7 @@ export const PublishPromptSetDialog = createCallable<PublishPromptSetDialogProps
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => call.end()}>
+            <Button type="button" variant="outline" autoFocus onClick={() => call.end()}>
               취소
             </Button>
             <Button type="submit" disabled={isSubmitting}>

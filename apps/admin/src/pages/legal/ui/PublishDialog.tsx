@@ -11,12 +11,12 @@ import {
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { createCallable } from "react-call";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 
 import { isApiError } from "@/shared/lib/api/client";
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { LEGAL_KIND_LABELS, type LegalKind } from "../model/legalKind";
 import { usePublishMutation } from "../api/usePublishMutation";
@@ -120,7 +120,7 @@ export const PublishDialog = createCallable<PublishDialogProps, void>(({ call, k
           />
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => call.end()}>
+            <Button type="button" variant="outline" autoFocus onClick={() => call.end()}>
               취소
             </Button>
             <Button type="submit" disabled={isSubmitting}>

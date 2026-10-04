@@ -10,9 +10,10 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMemo } from "react";
-import { createCallable } from "react-call";
 import { useMutationFlow, type MutationFn } from "react-call/mutation-flow";
 import { useForm } from "react-hook-form";
+
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { createDeleteConfirmSchema, type DeleteConfirmFormValues } from "../model/schema";
 

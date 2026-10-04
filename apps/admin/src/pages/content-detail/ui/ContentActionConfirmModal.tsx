@@ -12,13 +12,13 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ai-character-chat/ui/components/select";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { createCallable } from "react-call";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 
 import { useContentActionMutation, type AdminContentActionType } from "@/entities/admin-content";
 import { isReportReasonCategory, REPORT_REASON_OPTIONS, REPORT_REASON_VALUES } from "@/entities/report";
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 const ACTION_TITLE: Record<AdminContentActionType, string> = {
   restrict: "이용제한 부과",
@@ -188,8 +188,9 @@ export const ContentActionConfirmModal = createCallable<ContentActionConfirmModa
               </div>
             )}
 
+            {/* 첫 포커스는 취소다(무심코 Enter 를 눌러도 아무 일도 일어나지 않게). 삭제만 이름 확인칸이 그 자리를 갖는다. */}
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => call.end()}>
+              <Button type="button" variant="outline" autoFocus={!isNameMatchRequired} onClick={() => call.end()}>
                 취소
               </Button>
               <Button type="submit" variant={action === "delete" ? "destructive" : "default"} disabled={isSubmitting}>

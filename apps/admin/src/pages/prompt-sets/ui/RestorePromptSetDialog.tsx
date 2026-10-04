@@ -7,9 +7,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@ai-character-chat/ui/components/dialog";
-import { createCallable } from "react-call";
 import { toast } from "sonner";
 
+import { createCallable } from "@/shared/lib/callable/createCallable";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 
 import { useRestoreMutation } from "../api/useRestoreMutation";
@@ -53,7 +53,7 @@ export const RestorePromptSetDialog = createCallable<RestorePromptSetDialogProps
           </DialogHeader>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => call.end()}>
+            <Button type="button" variant="outline" autoFocus onClick={() => call.end()}>
               취소
             </Button>
             <Button type="button" disabled={restoreMutation.isPending} onClick={() => void handleRestore()}>
