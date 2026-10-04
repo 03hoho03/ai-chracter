@@ -100,6 +100,10 @@ class ChatMessage(Base):
     # 아니고, 방 종류에 따라 가리키는 테이블도 달라 형제 컬럼과 같은 다형 참조 관례를 따른다.
     image_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
 
+    # 턴마다의 히스토리 로드·방 조회·방 목록의 마지막 메시지가 전부 "한 방의 메시지를 `(created_at, id)` 순으로"
+    # 찾는다. 없으면 그 조회마다 플랫폼 전체 메시지를 순차 스캔한다(FK 는 Postgres 에서 인덱스를 만들지 않는다).
+    __table_args__ = (Index("ix_chat_messages_chat_room_id_created_at_id", "chat_room_id", "created_at", "id"),)
+
 
 class ChatRoomMemorySnapshot(Base):
     """방의 롤링 요약 한 판. 윈도우 밖으로 접힌 대화를 요약한 텍스트와, 그 요약이 덮는 마지막

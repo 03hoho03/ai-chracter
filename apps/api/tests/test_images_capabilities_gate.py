@@ -45,7 +45,7 @@ from api.llm.dependencies import get_image_client
 from api.llm.image import ImageClient, ImageStylePreset
 from api.llm.local_image import LocalCapabilities, ModelCapability
 from api.main import app
-from factories import _login_as, _make_user, _make_user_with_clover_lot
+from factories import _login_as, _make_user, _make_user_with_clover_lot, _open_transaction_probe
 
 
 async def _authed_user(
@@ -1035,3 +1035,45 @@ async def test_whitespace_only_prompt_does_not_spend_clover(
     assert user.clover_balance == 100
     rows = (await db_session.scalars(select(CloverLedger).where(CloverLedger.user_id == user.id))).all()
     assert list(rows) == []
+
+
+# ---- 집 PC 조회 동안 DB 트랜잭션 없음 ------------------------------------------
+#
+# capabilities 조회는 캐시가 비었을 때 집 PC 까지 다녀온다(최대 5초). 그동안 인증 의존성이 연 조회 트랜잭션이 열려
+# 있으면 커넥션 하나를 쥔다.
+
+
+def _noting_capabilities(monkeypatch: pytest.MonkeyPatch, open_sessions: set[int], seen: list[int]) -> None:
+    async def fake_get_capabilities() -> LocalCapabilities:
+        seen.append(len(open_sessions))
+        return _READY_MATCHING_LOCAL
+
+    monkeypatch.setattr("api.images.router.get_capabilities", fake_get_capabilities)
+
+
+async def test_list_image_models_holds_no_transaction_while_asking_the_home_pc(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _authed_user(db_client, db_session)
+    seen: list[int] = []
+    with _open_transaction_probe() as open_sessions:
+        _noting_capabilities(monkeypatch, open_sessions, seen)
+        resp = await db_client.get("/images/models")
+
+    assert resp.status_code == 200
+    assert seen == [0]
+
+
+async def test_generate_holds_no_transaction_while_asking_the_home_pc(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _authed_user(db_client, db_session)
+    _reset_admission(monkeypatch, queue_limit=4)
+    _stub_job_pipeline(monkeypatch)
+    seen: list[int] = []
+    with _open_transaction_probe() as open_sessions:
+        _noting_capabilities(monkeypatch, open_sessions, seen)
+        resp = await db_client.post("/images/generate", json=_generate_payload())
+
+    assert resp.status_code == 202, resp.text
+    assert seen == [0]

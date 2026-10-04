@@ -1,4 +1,6 @@
+import asyncio
 import io
+import threading
 import uuid
 from datetime import timezone
 from typing import TYPE_CHECKING
@@ -9,16 +11,25 @@ import httpx
 import pytest
 from botocore.exceptions import ClientError
 from PIL import Image
-from sqlalchemy import func, select
+from redis.exceptions import RedisError
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.assets import image_processing
+from api.assets import router as assets_router
 from api.assets.schemas import UPLOAD_SIZE_LIMIT_BYTES, AssetPurpose
 from api.core import rate_limit_gate
 from api.core.config import settings
-from api.core.s3 import build_display_key, build_thumbnail_key
+from api.core.s3 import build_display_key, build_thumbnail_key, delete_object, download_object, upload_object
 from api.db.models.media import Asset, AssetStatus
-from factories import _login_as, _make_user, _put_via_presigned_url
+from factories import (
+    _assert_blocked,
+    _login_as,
+    _make_user,
+    _noting_open_transactions,
+    _open_transaction_probe,
+    _put_via_presigned_url,
+)
 
 if TYPE_CHECKING:
     from mypy_boto3_s3 import S3Client
@@ -472,3 +483,219 @@ async def test_presigned_upload_limit_skips_exempt_users(
     await _login_as(db_client, user.id)
 
     await _presign(db_client)
+
+
+# ── 업로드 완료가 저장소·디코드를 기다리는 동안 DB 트랜잭션을 쥐지 않는다 ──────────────────────────────
+#
+# 업로드 완료는 저장소 HEAD·GET·PUT 셋과 이미지 디코드(프로세스 전역 한도를 기다릴 수 있다)를 거친다. 그동안 자산 행을
+# `FOR UPDATE` 로 쥐고 있으면 커넥션 하나를 통째로 잡는다. 그래서 같은 자산의 완료가 겹치는 것은 Redis 락으로 막고,
+# 상태는 "아직 PENDING 일 때만" 바꾸는 조건부 쓰기로 바꾼다.
+
+
+async def test_complete_holds_no_transaction_while_talking_to_storage_or_decoding(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _logged_in_user(db_client, db_session)
+    asset_id, upload_url = await _presign(db_client)
+    _put_via_presigned_url(upload_url, _png_bytes())
+    await db_session.commit()
+    seen: list[tuple[str, int]] = []
+    with _open_transaction_probe() as open_sessions:
+        for name in ("get_object_size", "download_object", "generate_variants", "upload_object", "delete_object"):
+            monkeypatch.setattr(
+                assets_router, name, _noting_open_transactions(open_sessions, seen, name, getattr(assets_router, name))
+            )
+        resp = await db_client.post(f"/assets/{asset_id}/complete")
+
+    assert resp.status_code == 200, resp.text
+    assert [name for name, _ in seen] == [
+        "get_object_size",
+        "download_object",
+        "generate_variants",
+        "upload_object",
+        "upload_object",
+        "upload_object",
+        "delete_object",
+    ]
+    assert [(name, count) for name, count in seen if count != 0] == []
+
+
+async def test_failed_complete_holds_no_transaction_while_deleting_the_upload(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _logged_in_user(db_client, db_session)
+    asset_id, upload_url = await _presign(db_client)
+    _put_via_presigned_url(upload_url, b"not-an-image")
+    await db_session.commit()
+    seen: list[tuple[str, int]] = []
+    with _open_transaction_probe() as open_sessions:
+        monkeypatch.setattr(
+            assets_router, "delete_object", _noting_open_transactions(open_sessions, seen, "delete", delete_object)
+        )
+        resp = await db_client.post(f"/assets/{asset_id}/complete")
+
+    assert resp.status_code == 400, resp.text
+    assert seen == [("delete", 0)]
+    assert await db_session.get(Asset, uuid.UUID(asset_id)) is None
+
+
+@pytest.mark.usefixtures("committing_request_session")
+async def test_overlapping_completes_of_one_upload_process_it_once(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """판정 기준(결과를 보기 전에 적었다): 같은 자산의 완료 둘이 겹치면 뒤의 요청은 앞의 요청이 끝날 때까지 기다렸다가
+    (`_assert_blocked`) 저장소를 건드리지 않고 같은 READY 응답을 받아야 한다. 저장소에서 두 번 내려받거나 기다리지 않고
+    끝나면 실패다 — 둘이 각자 내려받으면 그사이 같은 서명 URL 로 바꿔 올린 바이트가 원본·축소본에 섞일 수 있다."""
+    await _logged_in_user(db_client, db_session)
+    asset_id, upload_url = await _presign(db_client)
+    _put_via_presigned_url(upload_url, _png_bytes())
+    downloads: list[str] = []
+    entered, release = threading.Event(), threading.Event()
+
+    def gated_download(key: str) -> bytes:
+        downloads.append(key)
+        if len(downloads) == 1:
+            entered.set()
+            release.wait(10)
+        return download_object(key)
+
+    monkeypatch.setattr(assets_router, "download_object", gated_download)
+    first = asyncio.create_task(db_client.post(f"/assets/{asset_id}/complete"))
+    assert await asyncio.to_thread(entered.wait, 10)
+    second = asyncio.create_task(db_client.post(f"/assets/{asset_id}/complete"))
+    try:
+        await _assert_blocked(second, block_seconds=1.0)
+    finally:
+        release.set()
+    first_resp, second_resp = await first, await second
+
+    expected = {"assetId": asset_id, "status": "ready"}
+    assert (first_resp.status_code, first_resp.json()) == (200, expected)
+    assert (second_resp.status_code, second_resp.json()) == (200, expected)
+    assert len(downloads) == 1
+
+
+@pytest.mark.usefixtures("committing_request_session")
+async def test_complete_keeps_the_result_of_a_completion_that_finished_meanwhile(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """판정 기준: 락이 만료돼 다른 완료가 먼저 READY 로 바꿨다면(여기서는 저장소에 올리는 사이 행을 직접 READY 로
+    바꿔 흉내 낸다) 늦은 쪽은 그 결과를 덮어쓰지 않고 READY 응답만 돌려준다 — 먼저 끝난 쪽이 적은 크기가 남아야 한다."""
+    await _logged_in_user(db_client, db_session)
+    asset_id, upload_url = await _presign(db_client)
+    _put_via_presigned_url(upload_url, _png_bytes(64, 64))
+
+    async def finish_elsewhere() -> None:
+        await db_session.execute(
+            update(Asset).where(Asset.id == uuid.UUID(asset_id)).values(status=AssetStatus.READY, width=7, height=9)
+        )
+        await db_session.commit()
+
+    loop = asyncio.get_running_loop()
+    finished: list[bool] = []
+
+    def upload_after_someone_else_finished(key: str, body: bytes, content_type: str) -> None:
+        if not finished:
+            asyncio.run_coroutine_threadsafe(finish_elsewhere(), loop).result(10)
+            finished.append(True)
+        upload_object(key, body, content_type)
+
+    monkeypatch.setattr(assets_router, "upload_object", upload_after_someone_else_finished)
+    resp = await db_client.post(f"/assets/{asset_id}/complete")
+
+    assert (resp.status_code, resp.json()) == (200, {"assetId": asset_id, "status": "ready"})
+    row = (
+        await db_session.execute(
+            select(Asset.status, Asset.width, Asset.height).where(Asset.id == uuid.UUID(asset_id))
+        )
+    ).one()
+    assert tuple(row) == (AssetStatus.READY, 7, 9)
+
+
+@pytest.mark.usefixtures("committing_request_session")
+async def test_late_complete_does_not_overwrite_the_stored_image_of_a_completion_that_finished_meanwhile(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """판정 기준(결과를 보기 전에 적었다): 늦은 완료가 내려받는 사이 락이 만료돼 다른 완료가 먼저 READY 로 만들었다면,
+    늦은 쪽은 최종 키에 아무것도 올리지 않고 READY 응답만 돌려준다. 올리면 먼저 끝난 쪽의 행(크기·축소본)과 다른
+    바이트가 원본 자리에 남는다 — 행의 조건부 쓰기만으로는 저장소 객체를 지키지 못한다."""
+    await _logged_in_user(db_client, db_session)
+    asset_id, upload_url = await _presign(db_client)
+    _put_via_presigned_url(upload_url, _png_bytes(64, 64))
+
+    async def finish_elsewhere() -> None:
+        await db_session.execute(
+            update(Asset).where(Asset.id == uuid.UUID(asset_id)).values(status=AssetStatus.READY, width=7, height=9)
+        )
+        await db_session.commit()
+
+    loop = asyncio.get_running_loop()
+
+    def download_then_someone_else_finishes(key: str) -> bytes:
+        body = download_object(key)
+        asyncio.run_coroutine_threadsafe(finish_elsewhere(), loop).result(10)
+        return body
+
+    uploaded_keys: list[str] = []
+
+    def recording_upload(key: str, body: bytes, content_type: str) -> None:
+        uploaded_keys.append(key)
+        upload_object(key, body, content_type)
+
+    monkeypatch.setattr(assets_router, "download_object", download_then_someone_else_finishes)
+    monkeypatch.setattr(assets_router, "upload_object", recording_upload)
+    resp = await db_client.post(f"/assets/{asset_id}/complete")
+
+    assert (resp.status_code, resp.json()) == (200, {"assetId": asset_id, "status": "ready"})
+    assert uploaded_keys == []
+
+
+@pytest.mark.usefixtures("committing_request_session")
+async def test_failed_complete_does_not_delete_an_upload_that_finished_meanwhile(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """판정 기준: 검사에 떨어진 늦은 요청이 그사이 다른 완료가 READY 로 만든 자산 행을 지우면 실패다(그 그림을 쓰는
+    화면이 사라진 행을 가리킨다). 늦은 요청 자신은 자기가 받은 바이트에 대한 400 을 그대로 돌려준다."""
+    await _logged_in_user(db_client, db_session)
+    asset_id, upload_url = await _presign(db_client)
+    _put_via_presigned_url(upload_url, b"not-an-image")
+
+    async def finish_elsewhere() -> None:
+        await db_session.execute(
+            update(Asset).where(Asset.id == uuid.UUID(asset_id)).values(status=AssetStatus.READY, width=7, height=9)
+        )
+        await db_session.commit()
+
+    loop = asyncio.get_running_loop()
+
+    def download_then_someone_else_finishes(key: str) -> bytes:
+        body = download_object(key)
+        asyncio.run_coroutine_threadsafe(finish_elsewhere(), loop).result(10)
+        return body
+
+    monkeypatch.setattr(assets_router, "download_object", download_then_someone_else_finishes)
+    resp = await db_client.post(f"/assets/{asset_id}/complete")
+
+    assert resp.status_code == 400, resp.text
+    status_now = await db_session.scalar(select(Asset.status).where(Asset.id == uuid.UUID(asset_id)))
+    assert status_now == AssetStatus.READY
+
+
+async def test_complete_is_refused_when_the_completion_lock_cannot_be_reached(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Redis 장애 때는 완료를 거절한다(503) — 락 없이 진행하면 겹친 완료가 원본과 축소본을 서로 다른 바이트로 만들 수
+    있고, 발행 심사는 축소본을 본다. 자산은 PENDING 그대로라 장애가 풀린 뒤 다시 완료할 수 있다."""
+    await _logged_in_user(db_client, db_session)
+    asset_id, upload_url = await _presign(db_client)
+    _put_via_presigned_url(upload_url, _png_bytes())
+
+    async def redis_down(*_args: object, **_kwargs: object) -> object:
+        raise RedisError("down")
+
+    monkeypatch.setattr(assets_router, "wait_for_lock", redis_down)
+    resp = await db_client.post(f"/assets/{asset_id}/complete")
+
+    assert resp.status_code == 503, resp.text
+    status_now = await db_session.scalar(select(Asset.status).where(Asset.id == uuid.UUID(asset_id)))
+    assert status_now == AssetStatus.PENDING

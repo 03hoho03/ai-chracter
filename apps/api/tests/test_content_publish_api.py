@@ -20,14 +20,16 @@ from PIL import Image
 from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.assets import blur as blur_module
 from api.assets.image_processing import IMAGE_WORK_CONCURRENCY, generate_blurred_image
 from api.content import publish_filter_memo
 from api.content.publish import PublishFilterResult, validate_story_publish
+from api.content import router as content_router
 from api.content.router import _MEDIA_BOOK_S3_CONCURRENCY
 from api.core import rate_limit_gate
 from api.core.config import settings
 from api.core.redis import redis_client
-from api.core.s3 import build_thumbnail_key, build_variant_keys
+from api.core.s3 import build_thumbnail_key, build_variant_keys, download_object
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import (
     Content,
@@ -65,6 +67,8 @@ from factories import (
     _get_genre,
     _login_as,
     _make_user,
+    _noting_open_transactions,
+    _open_transaction_probe,
     _override_llm_client,
 )
 
@@ -3371,3 +3375,282 @@ async def test_publish_screening_limit_fails_open_when_redis_fails(
     assert resp.status_code == 200
     assert fake.calls == 1
     assert reported == ["redis"]
+
+
+# ── 발행이 저장소·심사를 기다리는 동안 DB 트랜잭션을 쥐지 않는다 ──────────────────────────────
+#
+# 발행은 대표 이미지·칸 축소본 내려받기(최대 50장), Gemini 심사, 칸 블러본 올리기를 기다린다. 그동안 요청 세션이
+# 트랜잭션을 열어 두면 커넥션 하나를 통째로 쥐어 다른 요청이 풀을 기다린다. 그래서 읽기를 끝내면 커밋으로 반납하고,
+# 외부 호출이 다 끝난 뒤 짧은 트랜잭션에서 초안을 잠가 그사이 바뀌지 않았는지 다시 보고 쓴다. 측정은 채팅 턴과 같은
+# 세션 이벤트 프로브다(`_open_transaction_probe` 의 docstring).
+
+
+class _NotingFilterLLMClient(_FakeLLMClient):
+    """심사를 부르는 순간 열린 루트 트랜잭션 수를 `seen` 에 적는다."""
+
+    def __init__(self, open_sessions: set[int], seen: list[tuple[str, int]]) -> None:
+        super().__init__(PublishFilterResult(passed=True, reason=None))
+        self._open_sessions = open_sessions
+        self._seen = seen
+
+    async def generate_structured(
+        self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
+    ) -> Any:
+        self._seen.append(("screen", len(self._open_sessions)))
+        return await super().generate_structured(prompt, response_schema, images, usage=usage)
+
+
+async def test_publish_character_holds_no_transaction_while_downloading_or_screening(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    content, _, _, _ = await _publishable_character(db_session, db_client)
+    seen: list[tuple[str, int]] = []
+    with _open_transaction_probe() as open_sessions:
+        monkeypatch.setattr(
+            "api.content.router.download_object",
+            _noting_open_transactions(open_sessions, seen, "download", download_object),
+        )
+        _override_llm_client(_NotingFilterLLMClient(open_sessions, seen))
+        try:
+            resp = await db_client.post(f"/contents/{content.id}/publish")
+        finally:
+            _clear_llm_override()
+
+    assert resp.status_code == 200, resp.text
+    # 대표 원본 1 + 상황 이미지 축소본 1, 그다음 심사 1.
+    assert seen == [("download", 0), ("download", 0), ("screen", 0)]
+
+
+async def test_publish_story_holds_no_transaction_while_downloading_screening_or_blurring(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    content, _, _, cells = await _story_with_media_cells(db_session, db_client)
+    seen: list[tuple[str, int]] = []
+    with _open_transaction_probe() as open_sessions:
+        for module, attr, name in (
+            (content_router, "download_object", "screening download"),
+            (blur_module, "download_object", "blur download"),
+            (blur_module, "upload_object", "blur upload"),
+        ):
+            real = getattr(module, attr)
+            monkeypatch.setattr(module, attr, _noting_open_transactions(open_sessions, seen, name, real))
+        _override_llm_client(_NotingFilterLLMClient(open_sessions, seen))
+        try:
+            resp = await db_client.post(f"/contents/{content.id}/publish")
+        finally:
+            _clear_llm_override()
+
+    assert resp.status_code == 200, resp.text
+    counts = {name: [count for seen_name, count in seen if seen_name == name] for name, _ in seen}
+    # 대표 원본 1 + 칸 축소본 셋 · 심사 1 · 블러가 필요한 칸 셋(원본 받기 1 + 블러본·변형 올리기 3).
+    assert {name: len(values) for name, values in counts.items()} == {
+        "screening download": 1 + len(cells),
+        "screen": 1,
+        "blur download": len(cells),
+        "blur upload": 3 * len(cells),
+    }
+    assert [(name, count) for name, count in seen if count != 0] == []
+
+
+class _PausingFilterLLMClient(_FakeLLMClient):
+    """첫 심사 호출만 `release` 가 열릴 때까지 붙잡는다(호출에 들어온 순간 `entered` 를 연다). 두 번째 호출부터는 바로
+    통과를 돌려준다 — 발행 하나가 심사를 기다리는 사이 다른 일이 끝나는 순서를 만든다."""
+
+    def __init__(self) -> None:
+        super().__init__(PublishFilterResult(passed=True, reason=None))
+        self.entered = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def generate_structured(
+        self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
+    ) -> Any:
+        first = self.calls == 0
+        result = await super().generate_structured(prompt, response_schema, images, usage=usage)
+        if first:
+            self.entered.set()
+            await asyncio.wait_for(self.release.wait(), 10)
+        return result
+
+
+async def _publish_while_first_screening_waits(
+    db_client: httpx.AsyncClient, content_id: uuid.UUID, during: Any
+) -> tuple[httpx.Response, Any]:
+    """발행 하나를 심사 호출 안에 붙잡아 둔 채 `during()` 을 돌리고, 풀어 준 뒤 그 발행의 응답과 `during()` 의 값을
+    돌려준다."""
+    fake = _PausingFilterLLMClient()
+    _override_llm_client(fake)
+    try:
+        first = asyncio.create_task(db_client.post(f"/contents/{content_id}/publish"))
+        await asyncio.wait_for(fake.entered.wait(), 10)
+        try:
+            during_result = await during()
+        finally:
+            fake.release.set()
+        return await first, during_result
+    finally:
+        _clear_llm_override()
+
+
+async def _versions(db_session: AsyncSession, content_id: uuid.UUID) -> list[tuple[int | None, bool]]:
+    """작품의 버전 번호와 발행 여부를 번호 순으로(초안은 뒤로)."""
+    rows = (
+        await db_session.execute(
+            sa.select(ContentVersion.version_number, ContentVersion.published_at.is_not(None))
+            .where(ContentVersion.content_id == content_id)
+            .order_by(ContentVersion.version_number.asc().nulls_last())
+        )
+    ).tuples()
+    return [(number, published) for number, published in rows]
+
+
+@pytest.mark.usefixtures("committing_request_session")
+async def test_overlapping_publishes_of_one_draft_publish_once_and_refuse_the_other(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """판정 기준(결과를 보기 전에 적었다): 같은 초안에 발행 둘이 겹쳐(다른 창·두 번 누름) 한쪽이 심사를 기다리는 사이
+    다른 쪽이 끝나면, 늦은 쪽은 409 `PUBLISH_CONFLICT` 이고 작품에는 발행본 1(번호 1)과 초안 하나만 남아야 한다.
+    늦은 쪽도 200 이거나, 초안이 둘이거나, 번호 1 이 비면(건너뜀) 실패다.
+
+    요청마다 같은 커넥션 위의 SAVEPOINT 세션이라 진짜 행 잠금 경쟁은 아니다 — 늦은 쪽이 "읽은 뒤 남이 바꾼 초안"에
+    쓰는 순서를 정확히 만든다. 잠금 자체는 `test_publish_lock_makes_a_second_publish_wait_and_then_refuse` 가 본다."""
+    content, _, _, _ = await _publishable_character(db_session, db_client)
+
+    async def publish_again() -> httpx.Response:
+        return await db_client.post(f"/contents/{content.id}/publish")
+
+    late, early = await _publish_while_first_screening_waits(db_client, content.id, publish_again)
+
+    assert early.status_code == 200, early.text
+    assert early.json()["versionNumber"] == 1
+    assert late.status_code == 409, late.text
+    assert late.json() == {"detail": {"code": "PUBLISH_CONFLICT"}}
+    assert await _versions(db_session, content.id) == [(1, True), (None, False)]
+
+
+@pytest.mark.usefixtures("committing_request_session")
+async def test_publish_is_refused_when_an_image_changes_while_it_is_being_screened(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """판정 기준: 심사하는 동안 상황 이미지가 다른 그림으로 바뀌면 그 발행은 409 `PUBLISH_CONFLICT` 이고 아무것도
+    발행되지 않는다(초안 그대로, 미발행 변경 표시도 그대로). 200 이면 심사하지 않은 그림이 발행된 것이다."""
+    content, _, _, situational_image = await _publishable_character(db_session, db_client)
+    replacement = await _make_ready_asset(db_session, owner_user_id=content.creator_user_id)
+    content.has_unpublished_changes = True
+    await db_session.commit()
+
+    async def swap_image() -> None:
+        await db_session.execute(
+            sa.update(SituationalImage)
+            .where(SituationalImage.id == situational_image.id)
+            .values(image_asset_id=replacement.id)
+        )
+        await db_session.commit()
+
+    resp, _ = await _publish_while_first_screening_waits(db_client, content.id, swap_image)
+
+    assert resp.status_code == 409, resp.text
+    assert resp.json() == {"detail": {"code": "PUBLISH_CONFLICT"}}
+    assert await _versions(db_session, content.id) == [(None, False)]
+    await db_session.refresh(content)
+    assert content.has_unpublished_changes is True
+    assert content.current_published_version_id is None
+
+
+@pytest.mark.usefixtures("committing_request_session")
+async def test_publish_story_is_refused_when_a_cell_image_changes_while_it_is_being_screened(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """판정 기준: 심사하는 동안 칸 그림이 바뀌면 409 이고 발행본·블러 자산 행이 하나도 생기지 않는다(올린 블러본
+    객체는 가리키는 행 없이 남는 것을 감수한다)."""
+    content, version, _, cells = await _story_with_media_cells(db_session, db_client)
+    replacement = await _make_ready_asset(db_session, owner_user_id=content.creator_user_id)
+    await db_session.commit()
+
+    async def swap_cell_image() -> None:
+        await db_session.execute(
+            sa.update(MediaBookCell).where(MediaBookCell.id == cells[0][0].id).values(image_asset_id=replacement.id)
+        )
+        await db_session.commit()
+
+    resp, _ = await _publish_while_first_screening_waits(db_client, content.id, swap_cell_image)
+
+    assert resp.status_code == 409, resp.text
+    assert resp.json() == {"detail": {"code": "PUBLISH_CONFLICT"}}
+    assert await _versions(db_session, content.id) == [(None, False)]
+    blurred_rows = await db_session.scalar(
+        sa.select(sa.func.count()).select_from(Asset).where(
+            Asset.owner_user_id == content.creator_user_id, Asset.kind == AssetKind.BLURRED
+        )
+    )
+    assert blurred_rows == 0
+    cell_blurs = (
+        await db_session.scalars(
+            sa.select(MediaBookCell.blurred_asset_id).where(MediaBookCell.content_version_id == version.id)
+        )
+    ).all()
+    assert set(cell_blurs) == {None}
+
+
+@pytest.mark.usefixtures("committing_request_session")
+async def test_publish_story_is_refused_when_a_cell_loses_its_blur_while_it_is_being_screened(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """판정 기준(결과를 보기 전에 적었다): 심사하는 동안 자동저장이 블러본이 있던 칸의 그림을 A→B→A 로 바꾸면 심사한
+    그림은 같지만 블러본은 비워져, 이 발행이 올리지 않은 칸이 블러 대상이 된다. 그 발행은 409 `PUBLISH_CONFLICT` 이고
+    아무것도 발행되지 않아야 한다. 500 이면 블러 대상 비교 없이 올리지 않은 블러본을 찾다 터진 것이다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, _, _, _, _ = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    kept_image = await _make_ready_asset(db_session, owner_user_id=user.id)
+    kept_blur = await _make_ready_asset(db_session, owner_user_id=user.id)
+    kept = await _add_media_book_cell(db_session, version.id, kept_image.id, kept_blur.id)
+    other_image = await _make_ready_asset(db_session, owner_user_id=user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    async def swap_away_and_back() -> None:
+        # 그림을 바꾸면 자동저장이 블러본을 비운다. 되돌려도 블러본은 돌아오지 않는다.
+        for image_id in (other_image.id, kept_image.id):
+            await db_session.execute(
+                sa.update(MediaBookCell)
+                .where(MediaBookCell.id == kept.id)
+                .values(image_asset_id=image_id, blurred_asset_id=None)
+            )
+            await db_session.commit()
+
+    resp, _ = await _publish_while_first_screening_waits(db_client, content.id, swap_away_and_back)
+
+    assert resp.status_code == 409, resp.text
+    assert resp.json() == {"detail": {"code": "PUBLISH_CONFLICT"}}
+    assert await _versions(db_session, content.id) == [(None, False)]
+    await db_session.refresh(kept)
+    assert (kept.image_asset_id, kept.blurred_asset_id) == (kept_image.id, None)
+
+
+@pytest.mark.usefixtures("committing_request_session")
+async def test_publish_still_succeeds_when_only_text_changes_while_it_is_being_screened(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """심사는 그림만 본다 — 그사이 글만 바뀐 자동저장은 충돌이 아니다. 발행본에는 발행 시점의 글이 실린다."""
+    content, version, _, _ = await _publishable_character(db_session, db_client)
+
+    async def edit_text() -> None:
+        await db_session.execute(
+            sa.update(CharacterVersionDetail)
+            .where(CharacterVersionDetail.content_version_id == version.id)
+            .values(one_liner="바뀐 한 줄 소개")
+        )
+        await db_session.commit()
+
+    resp, _ = await _publish_while_first_screening_waits(db_client, content.id, edit_text)
+
+    assert resp.status_code == 200, resp.text
+    assert await _versions(db_session, content.id) == [(1, True), (None, False)]
+    published_one_liner = await db_session.scalar(
+        sa.select(CharacterVersionDetail.one_liner).where(CharacterVersionDetail.content_version_id == version.id)
+    )
+    assert published_one_liner == "바뀐 한 줄 소개"

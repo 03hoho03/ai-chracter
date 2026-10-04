@@ -34,7 +34,7 @@ StorageObjectDeleter = Callable[[str], Awaitable[None]]
 
 
 async def delete_storage_object_now(storage_key: str) -> None:
-    """오브젝트 스토리지(R2)에서 그 자리에서 지운다. `DELETE /me` 가 쓰는 기본 동작이다."""
+    """오브젝트 스토리지(R2)에서 그 자리에서 지운다."""
     await run_in_threadpool(delete_object, storage_key)
 
 
@@ -59,10 +59,12 @@ async def erase_account(
     파기를 쓰려면 잠금과 판정을 호출자에게 남겨야 한다.
 
     오브젝트 스토리지 삭제는 `delete_storage_object` 로 받는다. 호출 수가 회원이 만든 이미지
-    수에 비례하고 상한이 없어서, 응답 시간 제한이 있는 경로는 키만 모아 두었다가 커밋 뒤
-    백그라운드에서 지울 수 있게 하려는 것이다. 그 경우 DB 행이 먼저 사라지므로 나중 삭제가
-    실패하면 오브젝트가 고아로 남는다 — 그 경로가 감수할 몫이다. `delete_storage_object_now`
-    를 넘기면 지금까지의 순서(오브젝트를 먼저 지우고 DB 행을 지운다) 그대로다.
+    수에 비례하고 상한이 없어서, 호출자가 키만 모아 두었다가 커밋 뒤 백그라운드에서 지울 수 있게
+    하려는 것이다 — 이 함수가 잠금을 쥔 채 저장소를 기다리지 않게 된다. 그 경우 DB 행이 먼저
+    사라지므로 나중 삭제가 실패하면 오브젝트가 고아로 남는다 — 그 경로가 감수할 몫이다.
+    `delete_storage_object_now` 를 넘기면 오브젝트를 먼저 지우고 DB 행을 지운다(저장소 삭제가
+    실패하면 파기 전체가 되돌아간다). 지금 두 호출자(`DELETE /me`·카카오 연결 끊기 알림)는 모두
+    키를 모은다.
     """
     user_id = user.id
     await lock_withdrawal_contents(db, user_id)
@@ -171,8 +173,8 @@ async def erase_account(
         ]
         deletable_ids = {asset.id for asset in deletable_assets}
         for asset in deletable_assets:
-            # S3를 먼저 지운다 — 실패하면 DB 행이 남아 재시도가 가능하다
-            # (assets/router.py의 delete_generated_image와 같은 이유).
+            # 바로 지우는 deleter 를 받았으면 S3를 먼저 지운다 — 실패하면 DB 행이 남아 재시도가 가능하다
+            # (assets/router.py의 delete_generated_image와 같은 이유). 키를 모으는 deleter 면 커밋 뒤에 지운다.
             await delete_storage_object(asset.storage_key)
             for variant_key in build_variant_keys(asset.storage_key):
                 await delete_storage_object(variant_key)

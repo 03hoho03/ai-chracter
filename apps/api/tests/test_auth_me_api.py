@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta, timezone, UTC
 
 import boto3
 import httpx
+import pytest
 import sqlalchemy as sa
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,7 +13,7 @@ from api.auth.verification import get_verification_code
 from api.core import rate_limit
 from api.core.config import settings
 from api.core.redis import redis_client
-from api.core.s3 import build_display_key, build_thumbnail_key
+from api.core.s3 import build_display_key, build_thumbnail_key, build_variant_keys, delete_object
 from api.core.security import hash_withdrawn_email, verify_password
 from api.db.models import (
     AdminActionLog,
@@ -48,6 +49,8 @@ from factories import (
     _make_user,
     _make_published_character,
     _make_published_story,
+    _noting_open_transactions,
+    _open_transaction_probe,
 )
 
 
@@ -848,3 +851,95 @@ async def test_withdraw_keeps_generated_asset_used_by_media_book_cell(
 
     assert resp.status_code == 204
     assert await db_session.get(Asset, asset_id) is not None
+
+
+# ── 탈퇴가 저장소 삭제를 기다리는 동안 DB 트랜잭션을 쥐지 않는다 ──────────────────────────────
+#
+# 탈퇴는 회원이 가진 이미지 수에 비례해 저장소 삭제를 부르고(상한 없음), 그동안 회원 행과 댓글·좋아요를 단 남의 작품
+# 행까지 잠근다. 그래서 지울 키만 모았다가 파기를 커밋한 뒤 응답 뒤에서 지운다(카카오 연결 끊기 알림과 같은 방식).
+# 삭제가 실패하면 그 객체는 가리키는 행 없이 남는다 — 파기 기록·개인정보 삭제·재가입 차단은 이미 커밋돼 있다.
+
+
+async def _withdrawing_user_with_images(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> tuple[dict[str, object], User, list[str]]:
+    """프로필 이미지 하나와 쓰지 않은 생성 이미지 하나를 가진 가입자. 저장소에 원본·변형 키를 모두 올려 두고 그 키들을
+    돌려준다."""
+    payload = await _signup_and_login(db_client)
+    user = await db_session.scalar(select(User).where(User.email == payload["email"]))
+    assert user is not None
+    profile = Asset(
+        owner_user_id=user.id,
+        storage_key=f"assets/profile-image/{uuid.uuid4()}.png",
+        kind=AssetKind.ORIGINAL,
+        status=AssetStatus.READY,
+    )
+    generated = Asset(
+        owner_user_id=user.id,
+        storage_key=f"assets/generated/{uuid.uuid4()}.png",
+        kind=AssetKind.GENERATED,
+        status=AssetStatus.READY,
+    )
+    db_session.add_all([profile, generated])
+    await db_session.flush()
+    user.profile_image_asset_id = profile.id
+    await db_session.commit()
+    s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
+    keys: list[str] = []
+    for asset in (profile, generated):
+        for key in (asset.storage_key, *build_variant_keys(asset.storage_key)):
+            s3.put_object(Bucket=settings.s3_bucket_name, Key=key, Body=b"image")
+            keys.append(key)
+    return payload, user, keys
+
+
+def _stored(keys: list[str]) -> list[str]:
+    s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
+    present: list[str] = []
+    for key in keys:
+        listed = s3.list_objects_v2(Bucket=settings.s3_bucket_name, Prefix=key)
+        if any(item["Key"] == key for item in listed.get("Contents", [])):
+            present.append(key)
+    return present
+
+
+async def test_withdraw_deletes_stored_images_only_after_the_erase_is_committed(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload, _, keys = await _withdrawing_user_with_images(db_client, db_session)
+    seen: list[tuple[str, int]] = []
+    with _open_transaction_probe() as open_sessions:
+        monkeypatch.setattr(
+            "api.auth.withdrawal.delete_object",
+            _noting_open_transactions(open_sessions, seen, "delete", delete_object),
+        )
+        resp = await db_client.request("DELETE", "/me", json={"currentPassword": payload["password"]})
+
+    assert resp.status_code == 204
+    assert seen == [("delete", 0)] * len(keys)
+    assert _stored(keys) == []
+
+
+@pytest.mark.usefixtures("committing_request_session")
+async def test_failed_withdrawal_keeps_the_account_the_erase_record_and_the_stored_images(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """판정 기준(결과를 보기 전에 적었다): 파기 도중(마지막 잔액 소멸에서) DB 오류가 나면 탈퇴는 하나도 남지 않아야
+    한다 — 재가입 차단 기록이 생겼거나, 회원이 탈퇴 상태이거나, 저장소의 사진이 지워졌으면 실패다. 사용자는 다시
+    누르면 된다."""
+    payload, user, keys = await _withdrawing_user_with_images(db_client, db_session)
+
+    async def broken_burn(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("burn failed")
+
+    monkeypatch.setattr("api.auth.withdrawal.clover.burn_all", broken_burn)
+    with pytest.raises(RuntimeError, match="burn failed"):
+        await db_client.request("DELETE", "/me", json={"currentPassword": payload["password"]})
+
+    withdrawn = await db_session.scalar(
+        select(WithdrawnEmail).where(WithdrawnEmail.email_hmac == hash_withdrawn_email(str(payload["email"])))
+    )
+    assert withdrawn is None
+    deleted_at = await db_session.scalar(select(User.deleted_at).where(User.id == user.id))
+    assert deleted_at is None
+    assert _stored(keys) == keys

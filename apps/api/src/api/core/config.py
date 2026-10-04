@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     db_max_overflow: int = Field(default=10, ge=0)
     # 풀이 다 찼을 때 연결을 기다리는 초. 넘기면 그 요청이 500 이다.
     db_pool_timeout: float = Field(default=30, gt=0)
+    # 이미지 디코드·블러·변형 생성을 한 워커(프로세스)에서 동시에 몇 건까지 돌릴지. 픽셀 상한 그림은 RGBA 한 장만
+    # 약 36MB 이고 블러·축소 복사본이 더 붙으므로, 워커 수 × 이 값 × 건당 최대 메모리가 VM 가용 메모리의 절반을
+    # 넘지 않게 정한다. 기본값은 이 설정이 생기기 전 상수로 박혀 있던 값과 같다. 0 이면 세마포어가 아무도 들여보내지
+    # 않아 업로드가 영원히 기다리므로 1 이상만 받는다.
+    image_decode_concurrency: int = Field(default=3, ge=1)
 
     # 프로덕션은 스키마 전수 노출을 막는다 — 안전한
     # 기본값(닫힘)이어야 env 설정 없이 배포해도 닫힌 채로 뜬다. 로컬 개발만 True로 켠다.

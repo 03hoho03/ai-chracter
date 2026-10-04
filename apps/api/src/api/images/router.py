@@ -490,6 +490,7 @@ def _known_aspect_ratios(aspect_ratios: tuple[str, ...]) -> list[AspectRatio]:
 @router.get("/models")
 async def list_image_models(
     owner_user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
 ) -> list[ImageModelItem]:
     """생성에 쓸 수 있는 모델 + 각 모델이 지원하는 종횡비/스타일. 정적 레지스트리(불투명
     id + 표시명)와 집 PC의 capabilities(가용성 + 지원 목록)를 교차한다.
@@ -500,7 +501,11 @@ async def list_image_models(
     보고한다 — 조회 키를 와이어 id로 바꾸지 않으면 이 교차가 항상 실패한다.
 
     `available`은 capability 존재 여부가 아니라 "실제로 생성 가능"을 뜻해야 한다 —
-    매핑된 style이 하나도 없으면 capability가 있어도 false다(이 경우도 WARNING)."""
+    매핑된 style이 하나도 없으면 capability가 있어도 false다(이 경우도 WARNING).
+
+    `db` 는 인증 의존성과 같은 요청 세션이다 — 그 조회가 연 트랜잭션을 집 PC 조회(캐시가 비면 최대 5초) 전에 닫아
+    커넥션을 쥐지 않으려고 받는다."""
+    await db.commit()
     capabilities = await get_capabilities()
     local_ids = {model.model_id for model in capabilities.models}
     missing = {spec.id for spec in IMAGE_MODELS if settings.local_image_model_wire_id not in local_ids}
@@ -586,6 +591,8 @@ async def generate_images(
     charge: ImageCharge = Depends(enforce_image_rate_limit),
     image_client_factory: Callable[[ImageModelId], ImageClient] = Depends(get_image_client),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+    # 인증·게이트 의존성과 같은 요청 세션. 그 조회들이 연 트랜잭션을 집 PC 조회 전에 닫으려고 받는다.
+    db: AsyncSession = Depends(get_db_session),
 ) -> GenerateImageResponse:
     # 토큰은 잡이 실제로 생성(202)될 때만 소모된다 — 차감 이후 202 이전에
     # 끝나는 경로는 예외 종류를 가리지 않고 **전부** 환불한다(큐 가득·가용성 503·비율/스타일
@@ -598,6 +605,10 @@ async def generate_images(
         #
         # 로컬은 공개 id(`payload.model`)가 아니라 와이어 id를 보고한다 — 조회 키를
         # 와이어 id로 바꾸지 않으면 이 확인이 항상 실패해 모든 생성이 503으로 막힌다.
+        #
+        # 집 PC 조회(캐시가 비면 최대 5초) 전에 의존성들의 조회 트랜잭션을 닫아 커넥션을 돌려준다(롤백은 세션의 객체를
+        # 만료시켜 쓰지 않는다). 커밋 실패도 이미 깎은 토큰·클로버를 돌려받도록 바깥 `try` 안에 둔다.
+        await db.commit()
         capabilities = await get_capabilities()
         capability = None if not capabilities.ready else capabilities.capability_for(settings.local_image_model_wire_id)
         if capability is None:

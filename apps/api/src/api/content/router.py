@@ -4,6 +4,7 @@ import json
 import logging
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal
@@ -158,8 +159,8 @@ async def list_my_drafts(
 ) -> DraftListResponse:
     """한 번도 발행된 적 없는 콘텐츠의 초안만 돌려준다.
 
-    발행하면 다음 편집을 위한 초안 버전이 자동 복제되므로(`_publish_character_content` /
-    `_publish_story_content` 끝부분) 발행작에도 항상 미발행 `content_version` 행이 딸려 있다.
+    발행하면 다음 편집을 위한 초안 버전이 자동 복제되므로(`_write_character_publish` /
+    `_write_story_publish` 끝부분) 발행작에도 항상 미발행 `content_version` 행이 딸려 있다.
     `published_at IS NULL`만으로 거르면 발행작이 전부 초안으로 섞여 나온다 — 그래서 콘텐츠
     단위로 `current_published_version_id IS NULL`을 함께 본다.
 
@@ -1844,26 +1845,61 @@ def _download_situational_image_for_screening(storage_key: str) -> tuple[bytes, 
     return _download_original_for_screening(storage_key)
 
 
-async def _load_publish_filter_images(
-    db: AsyncSession, detail: CharacterVersionDetail, situational_images: Sequence[SituationalImage]
+async def _storage_keys(db: AsyncSession, asset_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, str]:
+    """자산 id → 저장 키. 발행은 읽기 구간에서 키만 모아 두고 커넥션을 돌려준 뒤에 내려받는다."""
+    if not asset_ids:
+        return {}
+    rows = await db.execute(select(Asset.id, Asset.storage_key).where(Asset.id.in_(set(asset_ids))))
+    return dict(rows.tuples().all())
+
+
+async def _download_character_screening_images(
+    thumbnail_key: str | None, situational_keys: Sequence[str]
 ) -> list[tuple[bytes, str]]:
     """썸네일(대표 이미지) 원본 + 이 버전의 상황 이미지 축소본을 받은 순서대로 내려받아 (바이트, MIME 타입) 쌍으로
     반환한다 — LLMClient.generate_structured()의 멀티모달 images 인자로 그대로 전달된다. 대표 이미지는 작품
-    얼굴이라 원본 그대로 본다. 발행 검증이 이미지 없는 상황 이미지 행을 먼저 거부하므로 아래 `is not None` 은
-    타입을 좁힐 뿐이다."""
+    얼굴이라 원본 그대로 본다."""
     images: list[tuple[bytes, str]] = []
-    if detail.thumbnail_asset_id is not None:
-        thumbnail = await db.get(Asset, detail.thumbnail_asset_id)
-        assert thumbnail is not None
-        images.append(await run_in_threadpool(_download_original_for_screening, thumbnail.storage_key))
-
-    for image in situational_images:
-        if image.image_asset_id is None:
-            continue
-        asset = await db.get(Asset, image.image_asset_id)
-        assert asset is not None
-        images.append(await run_in_threadpool(_download_situational_image_for_screening, asset.storage_key))
+    if thumbnail_key is not None:
+        images.append(await run_in_threadpool(_download_original_for_screening, thumbnail_key))
+    for storage_key in situational_keys:
+        images.append(await run_in_threadpool(_download_situational_image_for_screening, storage_key))
     return images
+
+
+def _publish_conflict() -> HTTPException:
+    """발행이 심사를 기다리는 동안 초안이 바뀌어 심사한 것을 그대로 발행할 수 없을 때의 응답. 문구는 화면이 가진다 —
+    같은 문장을 서버에도 두면 한쪽만 고쳐진다."""
+    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "PUBLISH_CONFLICT"})
+
+
+@dataclass(frozen=True)
+class _PublishPlan:
+    """발행 읽기 구간이 정한 것 — 외부 호출 구간이 이것만 보고 일하고, 쓰기 구간이 초안을 다시 읽어 비교한다."""
+
+    # (대표 이미지 자산, 심사에 싣는 순서의 (항목 entity_id, 그림 자산)). 쓰기 구간에서 같아야 발행한다.
+    screened: tuple[uuid.UUID | None, tuple[tuple[uuid.UUID, uuid.UUID], ...]]
+    # 블러본을 만들 칸의 (entity_id, 그림 자산). 캐릭터는 비어 있다.
+    cells_to_blur: tuple[tuple[uuid.UUID, uuid.UUID], ...]
+    thumbnail_key: str | None
+    # 심사 순서의 (항목 entity_id, 원본 저장 키).
+    image_keys: list[tuple[uuid.UUID, str]]
+    prompt: str
+
+
+async def _lock_draft_for_publish(
+    db: AsyncSession, content_id: uuid.UUID, version_id: uuid.UUID
+) -> tuple[Content, ContentVersion]:
+    """발행 쓰기 구간의 시작. 작품 행을 잠가 같은 작품의 다른 발행·초안 쓰기와 줄을 세운 뒤, 읽기 구간에서 본 초안이
+    아직 초안인지 본다. 다른 창이나 두 번 누른 발행이 그사이 먼저 끝났으면 그 초안은 이미 발행본이다 — 그대로 쓰면
+    발행본 번호를 덮어쓰고 초안이 둘 생긴다. 잠금은 이 구간의 커밋까지만 쥔다(외부 호출이 없는 짧은 구간)."""
+    content = await db.scalar(select(Content).where(Content.id == content_id).with_for_update())
+    version = await db.scalar(
+        select(ContentVersion).where(ContentVersion.id == version_id, ContentVersion.published_at.is_(None))
+    )
+    if content is None or version is None:
+        raise _publish_conflict()
+    return content, version
 
 
 async def _screen_for_publish(
@@ -1883,7 +1919,10 @@ async def _screen_for_publish(
 
     작가당 시간당 심사 횟수 상한은 통과 기억을 본 **뒤**, LLM 을 부르기 직전에 센다 — 기억 적중은 호출이 없어
     비용도 없다. 심사 호출이 실패하면(Gemini 쿼터 429·타임아웃·응답 파싱 실패) 판정이 없으므로 발행하지 않고
-    503 으로 알린다."""
+    503 으로 알린다.
+
+    호출자는 읽기를 마치고 커밋한 세션을 넘긴다. 상한 판정이 면제 여부를 DB 에서 읽어 트랜잭션을 다시 열므로, 심사를
+    기다리기 전에 다시 커밋해 커넥션을 돌려준다."""
     model = structured_model(call_site, settings.gemini_model_name)
     memo_key = screening_key(
         content_id=content.id,
@@ -1899,6 +1938,7 @@ async def _screen_for_publish(
         )
         return
     await enforce_publish_screen_limit(content.creator_user_id, db)
+    await db.commit()
     try:
         filter_result = await llm_client.generate_structured(
             prompt,
@@ -1945,19 +1985,56 @@ async def publish_content(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
     llm_client: LLMClient = Depends(get_llm_client),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> ContentPublishResponse:
-    """Publish the draft of a character or story."""
-    content, version = await _get_owned_draft_version(
-        db, id, user_id, (ContentType.CHARACTER, ContentType.STORY)
-    )
-    # 발행하면 이 초안이 곧 발행본이 되므로 미발행 편집분은 0이다. 두 헬퍼는 이 함수만
-    # 호출하고 각자 마지막에 commit 하므로 여기 한 곳이 캐릭터·스토리 양쪽을 덮는다 — 발행 검증이나
-    # 자동 필터에서 raise 되면 commit 이 없어 플래그도 그대로 남는다.
-    content.has_unpublished_changes = False
-    prompt_set, prompt_sections = await load_active_prompt_set(db, lane="publish_filter")
+    """Publish the draft of a character or story.
+
+    세 구간으로 나눈다. 저장소에서 그림 수십 장을 받고 Gemini 심사를 기다리는 동안(수 초~십수 초) DB 트랜잭션을
+    열어 두면 커넥션 하나를 통째로 쥐어 다른 요청이 풀을 기다리기 때문이다.
+
+    1. 읽기: 따로 연 세션에서 소유·초안 확인, 발행 검증(400 은 여기서), 심사할 그림과 블러본을 만들 칸을 정하고 그
+       세션을 닫는다. 요청 세션에 읽은 객체를 남기지 않는 것은 3 이 그 세션에서 같은 행을 다시 읽기 때문이다 — 남아
+       있으면 커밋 뒤에도 옛 값을 들고 있어 다시 읽어도 옛 값이 나온다.
+    2. 외부 호출: 그림 내려받기 → 심사 → (스토리) 칸 블러본 올리기. 트랜잭션 없음.
+    3. 쓰기: 요청 세션의 짧은 트랜잭션에서 작품 행을 잠그고 초안을 다시 읽어, 아직 초안인지와 심사한 그림·블러 대상이
+       그대로인지 본다. 다르면 409 `PUBLISH_CONFLICT` 이고 아무것도 쓰지 않는다. 같으면 발행한다.
+
+    글만 바뀐 경우는 충돌로 치지 않는다 — 심사는 그림만 보고, 발행본에는 3 에서 다시 읽은 글이 실린다. 3 에서 검증을
+    다시 돌리므로 그사이 필수 칸이 비면 400 이다. 충돌로 멈춘 발행이 이미 올린 블러본은 가리키는 행 없이 남는다."""
+    # 인증 의존성이 요청 세션에 연 읽기 트랜잭션을 닫는다(롤백은 세션의 객체를 만료시켜 쓰지 않는다).
+    await db.commit()
+    async with session_factory() as read_db:
+        content, version = await _get_owned_draft_version(
+            read_db, id, user_id, (ContentType.CHARACTER, ContentType.STORY)
+        )
+        prompt_set, prompt_sections = await load_active_prompt_set(read_db, lane="publish_filter")
+        if content.type == ContentType.CHARACTER:
+            plan = await _plan_character_publish(read_db, content, version, prompt_sections)
+        else:
+            plan = await _plan_story_publish(read_db, content, version, prompt_sections)
+
     if content.type == ContentType.CHARACTER:
-        return await _publish_character_content(db, content, version, llm_client, prompt_set, prompt_sections)
-    return await _publish_story_content(db, content, version, llm_client, prompt_set, prompt_sections)
+        filter_images = await _download_character_screening_images(
+            plan.thumbnail_key, [storage_key for _, storage_key in plan.image_keys]
+        )
+    else:
+        filter_images = await _download_story_screening_images(plan.thumbnail_key, plan.image_keys)
+    await _screen_for_publish(
+        db,
+        llm_client,
+        call_site="publish_filter_character" if content.type == ContentType.CHARACTER else "publish_filter_story",
+        content=content,
+        prompt_set=prompt_set,
+        prompt=plan.prompt,
+        images=filter_images,
+    )
+    image_keys = dict(plan.image_keys)
+    blurs = await _upload_media_book_blurs([(cell_id, image_keys[cell_id]) for cell_id, _ in plan.cells_to_blur])
+
+    locked_content, locked_version = await _lock_draft_for_publish(db, content.id, version.id)
+    if content.type == ContentType.CHARACTER:
+        return await _write_character_publish(db, locked_content, locked_version, plan)
+    return await _write_story_publish(db, locked_content, locked_version, plan, blurs)
 
 
 async def _clone_character_children(
@@ -1987,14 +2064,26 @@ async def _clone_character_children(
         )
 
 
-async def _publish_character_content(
-    db: AsyncSession,
-    content: Content,
-    version: ContentVersion,
-    llm_client: LLMClient,
-    prompt_set: PromptSet,
-    prompt_sections: list[PromptSection],
-) -> ContentPublishResponse:
+@dataclass(frozen=True)
+class _CharacterPublishDraft:
+    """발행 검증을 통과한 캐릭터 초안. 읽기 구간과 쓰기 구간이 같은 함수(`_load_character_publish_draft`)로 만든다."""
+
+    detail: CharacterVersionDetail
+    situational_images: Sequence[SituationalImage]
+
+    def screened_images(self) -> tuple[uuid.UUID | None, tuple[tuple[uuid.UUID, uuid.UUID], ...]]:
+        """심사에 싣는 그림 — 대표 이미지와, 그림이 걸린 상황 이미지(항목·그림)를 싣는 순서대로. 쓰기 구간에서 이 값이
+        읽기 구간과 같아야 심사한 그림이 곧 발행되는 그림이다."""
+        return self.detail.thumbnail_asset_id, tuple(
+            (image.entity_id, image.image_asset_id)
+            for image in self.situational_images
+            if image.image_asset_id is not None
+        )
+
+
+async def _load_character_publish_draft(
+    db: AsyncSession, content: Content, version: ContentVersion
+) -> _CharacterPublishDraft:
     detail = await db.get(CharacterVersionDetail, version.id)
     assert detail is not None
 
@@ -2013,23 +2102,40 @@ async def _publish_character_content(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail={"missingFields": missing_fields}
         )
+    return _CharacterPublishDraft(detail=detail, situational_images=situational_images)
 
-    filter_images = await _load_publish_filter_images(db, detail, situational_images)
-    # 라벨 수는 로더가 그림을 고른 것과 같은 조건으로 센다 — 그래야 이미지 목록 줄과 실린 그림이 짝을 이룬다.
-    filter_prompt = build_character_publish_filter_prompt(
-        sections=prompt_sections,
-        situational_image_count=sum(1 for image in situational_images if image.image_asset_id is not None),
-    )
-    await _screen_for_publish(
-        db,
-        llm_client,
-        call_site="publish_filter_character",
-        content=content,
-        prompt_set=prompt_set,
-        prompt=filter_prompt,
-        images=filter_images,
+
+async def _plan_character_publish(
+    db: AsyncSession, content: Content, version: ContentVersion, prompt_sections: list[PromptSection]
+) -> _PublishPlan:
+    draft = await _load_character_publish_draft(db, content, version)
+    thumbnail_asset_id, situational = draft.screened_images()
+    screened_asset_ids = (thumbnail_asset_id, *(image_id for _, image_id in situational))
+    storage_keys = await _storage_keys(db, [image_id for image_id in screened_asset_ids if image_id is not None])
+    return _PublishPlan(
+        screened=draft.screened_images(),
+        cells_to_blur=(),
+        thumbnail_key=storage_keys[thumbnail_asset_id] if thumbnail_asset_id is not None else None,
+        image_keys=[(entity_id, storage_keys[image_id]) for entity_id, image_id in situational],
+        # 발행 검증이 이미지 없는 상황 이미지 행을 먼저 거부하므로 위 목록은 상황 이미지 전부다. 라벨 수는 실린 그림과
+        # 같은 목록에서 센다 — 그래야 이미지 목록 줄과 실린 그림이 짝을 이룬다.
+        prompt=build_character_publish_filter_prompt(
+            sections=prompt_sections, situational_image_count=len(situational)
+        ),
     )
 
+
+async def _write_character_publish(
+    db: AsyncSession, content: Content, version: ContentVersion, plan: _PublishPlan
+) -> ContentPublishResponse:
+    """발행 쓰기 구간(작품 행을 잠근 뒤). 심사한 그림이 그대로일 때만 쓰고 커밋한다."""
+    draft = await _load_character_publish_draft(db, content, version)
+    if draft.screened_images() != plan.screened:
+        raise _publish_conflict()
+    detail = draft.detail
+
+    # 발행하면 이 초안이 곧 발행본이 되므로 미발행 편집분은 0이다.
+    content.has_unpublished_changes = False
     latest_version_number = await db.scalar(
         select(func.max(ContentVersion.version_number)).where(ContentVersion.content_id == content.id)
     )
@@ -2075,32 +2181,22 @@ def _media_book_image_unavailable(cell_entity_id: uuid.UUID) -> HTTPException:
     )
 
 
-async def _load_story_publish_filter_images(
-    db: AsyncSession, detail: StoryVersionDetail, cells: Sequence[MediaBookCell]
+async def _download_story_screening_images(
+    thumbnail_key: str | None, cells: Sequence[tuple[uuid.UUID, str]]
 ) -> list[tuple[bytes, str]]:
     """대표 이미지 원본과, 그 뒤로 미디어 북 칸마다 축소본(`_thumb.webp`, 긴 변 512px) 한 장씩을 캐릭터의
-    `_load_publish_filter_images`와 같은 (바이트, MIME 타입) 쌍으로 돌려준다. 칸은 받은 순서 그대로 싣는다 — 심사
-    프롬프트의 이미지 목록 라벨과 짝이 맞아야 한다. 원본(장당 수 MB)을 50장 싣지 않으려고 축소본을 쓴다.
+    `_download_character_screening_images`와 같은 (바이트, MIME 타입) 쌍으로 돌려준다. `cells` 는 (칸 entity_id, 원본
+    저장 키)이고 받은 순서 그대로 싣는다 — 심사 프롬프트의 이미지 목록 라벨과 짝이 맞아야 한다. 원본(장당 수 MB)을
+    50장 싣지 않으려고 축소본을 쓴다.
 
-    축소본은 동시에 내려받는다(발행은 콘텐츠 행을 잠근 채 진행되므로 왕복 50번을 줄로 세우지 않는다). 칸 하나라도
-    못 읽으면 심사 없이 발행을 멈춘다 — 그 칸을 빼고 심사하면 아무도 보지 않은 그림이 발행된다."""
+    축소본은 동시에 내려받는다(운영 저장소 왕복 50번을 줄로 세우면 발행이 그만큼 늦어진다). 칸 하나라도 못 읽으면
+    심사 없이 발행을 멈춘다 — 그 칸을 빼고 심사하면 아무도 보지 않은 그림이 발행된다."""
     images: list[tuple[bytes, str]] = []
-    if detail.thumbnail_asset_id is not None:
-        asset = await db.get(Asset, detail.thumbnail_asset_id)
-        assert asset is not None
-        images.append(await run_in_threadpool(_download_original_for_screening, asset.storage_key))
+    if thumbnail_key is not None:
+        images.append(await run_in_threadpool(_download_original_for_screening, thumbnail_key))
     if not cells:
         return images
 
-    storage_keys = dict(
-        (
-            await db.execute(
-                select(Asset.id, Asset.storage_key).where(Asset.id.in_({cell.image_asset_id for cell in cells}))
-            )
-        )
-        .tuples()
-        .all()
-    )
     semaphore = asyncio.Semaphore(_MEDIA_BOOK_S3_CONCURRENCY)
 
     async def download_thumbnail(storage_key: str) -> bytes:
@@ -2108,13 +2204,13 @@ async def _load_story_publish_filter_images(
             return await run_in_threadpool(download_object, build_thumbnail_key(storage_key))
 
     results = await asyncio.gather(
-        *(download_thumbnail(storage_keys[cell.image_asset_id]) for cell in cells), return_exceptions=True
+        *(download_thumbnail(storage_key) for _, storage_key in cells), return_exceptions=True
     )
-    for cell, result in zip(cells, results, strict=True):
+    for (cell_entity_id, _), result in zip(cells, results, strict=True):
         if isinstance(result, (BotoCoreError, ClientError)):
-            logger.warning("미디어 북 칸 %s 축소본을 읽지 못함 — 심사 없이 발행을 멈춘다: %s", cell.entity_id, result)
+            logger.warning("미디어 북 칸 %s 축소본을 읽지 못함 — 심사 없이 발행을 멈춘다: %s", cell_entity_id, result)
             capture_dependency_failure(result, dependency="s3")
-            raise _media_book_image_unavailable(cell.entity_id) from result
+            raise _media_book_image_unavailable(cell_entity_id) from result
         if isinstance(result, BaseException):
             raise result
         images.append((result, THUMBNAIL_CONTENT_TYPE))
@@ -2341,30 +2437,18 @@ async def _clone_story_children(
         )
 
 
-async def _blur_new_media_book_cells(
-    db: AsyncSession, cells: Sequence[MediaBookCell], *, owner_user_id: uuid.UUID
-) -> None:
-    """블러본이 없는 칸(그림을 새로 걸었거나 바꾼 칸)에만 블러본을 만든다. 보관함은 아직 못 본 칸을 이 블러본으로
-    보여 준다. 앞 발행에서 만든 블러본은 복제로 초안에 따라오고, 그림을 바꾸면 자동저장이 비운다.
+async def _upload_media_book_blurs(cells: Sequence[tuple[uuid.UUID, str]]) -> dict[uuid.UUID, BlurredUpload]:
+    """블러본이 없는 칸(그림을 새로 걸었거나 바꾼 칸)마다 블러본을 만들어 올리고 칸 entity_id → 올린 블러본을
+    돌려준다. `cells` 는 (칸 entity_id, 원본 저장 키)이고 배치표 순서(인물 → 장면)여야 한다 — 여러 칸이 실패하면 그
+    순서로 가장 앞 칸을 알린다. 보관함은 아직 못 본 칸을 이 블러본으로 보여 준다. 앞 발행에서 만든 블러본은 복제로
+    초안에 따라오고, 그림을 바꾸면 자동저장이 비운다.
 
-    발행 심사를 통과한 뒤에 부른다 — 탈락할 발행이 S3 에 블러본을 올리면 가리키는 행 없이 남는다. 다음 초안
-    복제보다 앞이어야 새 블러본 id 가 초안으로 넘어간다.
+    발행 심사를 통과한 뒤에 부른다 — 탈락할 발행이 S3 에 블러본을 올리면 가리키는 행 없이 남는다. 세션을 쓰지 않는다
+    — 자산 행과 칸 갱신은 발행 쓰기 구간에서 `_attach_media_book_blurs` 가 한다.
 
-    칸마다 원본 받기·블러·올리기를 동시에 돌린다(발행은 콘텐츠 행을 잠근 채 진행되고, 운영 저장소 왕복이 칸마다
-    붙어 줄로 세우면 50칸에 1분이 넘는다). 세션은 동시에 쓸 수 없어 자산 행·칸 갱신은 모두 끝난 뒤 차례로 한다.
-    `cells` 는 배치표 순서(인물 → 장면)여야 한다 — 여러 칸이 실패하면 그 순서로 가장 앞 칸을 알린다."""
-    pending = [cell for cell in cells if cell.blurred_asset_id is None]
-    if not pending:
-        return
-    storage_keys = dict(
-        (
-            await db.execute(
-                select(Asset.id, Asset.storage_key).where(Asset.id.in_({cell.image_asset_id for cell in pending}))
-            )
-        )
-        .tuples()
-        .all()
-    )
+    칸마다 원본 받기·블러·올리기를 동시에 돌린다(운영 저장소 왕복이 칸마다 붙어 줄로 세우면 50칸에 1분이 넘는다)."""
+    if not cells:
+        return {}
     semaphore = asyncio.Semaphore(_MEDIA_BOOK_S3_CONCURRENCY)
 
     async def blur(storage_key: str) -> BlurredUpload:
@@ -2374,36 +2458,67 @@ async def _blur_new_media_book_cells(
     # 하나가 실패해도 나머지를 끝까지 기다린다. 남은 칸을 취소해도 스레드에서 돌던 저장소 호출은 끝날 때까지
     # 멈추지 않고(기다리지 않고 응답하면 응답 뒤에도 돈다), 여러 칸이 깨졌을 때 어느 칸을 알릴지가 완료 타이밍에
     # 따라 달라진다. 그사이 다른 칸이 올린 블러본은 가리키는 행 없이 남는다(아무 응답도 서명하지 않는다).
-    results = await asyncio.gather(
-        *(blur(storage_keys[cell.image_asset_id]) for cell in pending), return_exceptions=True
-    )
-    uploads: list[tuple[MediaBookCell, BlurredUpload]] = []
-    for cell, result in zip(pending, results, strict=True):
+    results = await asyncio.gather(*(blur(storage_key) for _, storage_key in cells), return_exceptions=True)
+    uploads: dict[uuid.UUID, BlurredUpload] = {}
+    for (cell_entity_id, _), result in zip(cells, results, strict=True):
         if isinstance(result, (BotoCoreError, ClientError, OSError, ValueError)):
             # 원본을 못 읽었거나(저장소에서 사라짐·연결 실패) 그림으로 풀지 못했다. 어느 칸인지 알려 발행을 멈춘다 —
             # 심사 거부(`reason`)의 모양을 쓰면 화면이 이의제기로 안내한다.
-            logger.warning("미디어 북 칸 %s 블러본 생성 실패 — 발행을 멈춘다: %s", cell.entity_id, result)
+            logger.warning("미디어 북 칸 %s 블러본 생성 실패 — 발행을 멈춘다: %s", cell_entity_id, result)
             capture_dependency_failure(result, dependency="s3")
-            raise _media_book_image_unavailable(cell.entity_id) from result
+            raise _media_book_image_unavailable(cell_entity_id) from result
         if isinstance(result, BaseException):
             raise result
-        uploads.append((cell, result))
-    # 블러 자산 행이 칸이 가리킬 FK 대상이라 먼저 넣는다.
-    db.add_all([blurred_asset_row(upload, owner_user_id=owner_user_id) for _, upload in uploads])
-    await db.flush()
-    for cell, upload in uploads:
-        cell.blurred_asset_id = upload.asset_id
-    await db.flush()
+        uploads[cell_entity_id] = result
+    return uploads
 
 
-async def _publish_story_content(
+async def _attach_media_book_blurs(
     db: AsyncSession,
-    content: Content,
-    version: ContentVersion,
-    llm_client: LLMClient,
-    prompt_set: PromptSet,
-    prompt_sections: list[PromptSection],
-) -> ContentPublishResponse:
+    cells: Sequence[MediaBookCell],
+    uploads: dict[uuid.UUID, BlurredUpload],
+    *,
+    owner_user_id: uuid.UUID,
+) -> None:
+    """올린 블러본을 자산 행으로 만들고 블러본이 비어 있던 칸에 건다. 다음 초안 복제보다 앞이어야 새 블러본 id 가
+    초안으로 넘어간다. 호출자가 블러 대상 칸이 올릴 때와 같음을 이미 확인했다."""
+    pending = [cell for cell in cells if cell.blurred_asset_id is None]
+    if not pending:
+        return
+    # 블러 자산 행이 칸이 가리킬 FK 대상이라 먼저 넣는다.
+    db.add_all([blurred_asset_row(uploads[cell.entity_id], owner_user_id=owner_user_id) for cell in pending])
+    await db.flush()
+    for cell in pending:
+        cell.blurred_asset_id = uploads[cell.entity_id].asset_id
+    await db.flush()
+
+
+@dataclass(frozen=True)
+class _StoryPublishDraft:
+    """발행 검증을 통과한 스토리 초안. 읽기 구간과 쓰기 구간이 같은 함수(`_load_story_publish_draft`)로 만든다."""
+
+    detail: StoryVersionDetail
+    # 배치표 순서(인물 → 장면). 심사 그림과 이미지 목록 라벨이 이 순서로 짝을 이룬다.
+    ordered_cells: list[MediaBookCell]
+    cell_labels: list[MediaBookFilterCell]
+
+    def screened_images(self) -> tuple[uuid.UUID | None, tuple[tuple[uuid.UUID, uuid.UUID], ...]]:
+        """심사에 싣는 그림 — 대표 이미지와 칸(칸·그림)을 싣는 순서대로. 쓰기 구간에서 이 값이 읽기 구간과 같아야
+        심사한 그림이 곧 발행되는 그림이다."""
+        return self.detail.thumbnail_asset_id, tuple(
+            (cell.entity_id, cell.image_asset_id) for cell in self.ordered_cells
+        )
+
+    def cells_to_blur(self) -> tuple[tuple[uuid.UUID, uuid.UUID], ...]:
+        """블러본이 없는 칸(칸·그림). 읽기 구간에서 이 칸들의 블러본을 올렸으므로 쓰기 구간에서도 같아야 건다."""
+        return tuple(
+            (cell.entity_id, cell.image_asset_id) for cell in self.ordered_cells if cell.blurred_asset_id is None
+        )
+
+
+async def _load_story_publish_draft(
+    db: AsyncSession, content: Content, version: ContentVersion
+) -> _StoryPublishDraft:
     detail = await db.get(StoryVersionDetail, version.id)
     assert detail is not None
 
@@ -2487,28 +2602,55 @@ async def _publish_story_content(
         cells, key=lambda cell: (person_by_id[cell.person_entity_id][0], scene_by_id[cell.scene_entity_id][0])
     )
 
-    filter_images = await _load_story_publish_filter_images(db, detail, ordered_cells)
-    filter_prompt = build_story_publish_filter_prompt(
-        sections=prompt_sections,
-        media_cells=[
+    return _StoryPublishDraft(
+        detail=detail,
+        ordered_cells=ordered_cells,
+        cell_labels=[
             MediaBookFilterCell(
                 person=person_by_id[cell.person_entity_id][1], scene=scene_by_id[cell.scene_entity_id][1]
             )
             for cell in ordered_cells
         ],
     )
-    await _screen_for_publish(
+
+
+async def _plan_story_publish(
+    db: AsyncSession, content: Content, version: ContentVersion, prompt_sections: list[PromptSection]
+) -> _PublishPlan:
+    draft = await _load_story_publish_draft(db, content, version)
+    thumbnail_asset_id = draft.detail.thumbnail_asset_id
+    storage_keys = await _storage_keys(
         db,
-        llm_client,
-        call_site="publish_filter_story",
-        content=content,
-        prompt_set=prompt_set,
-        prompt=filter_prompt,
-        images=filter_images,
+        [
+            *([thumbnail_asset_id] if thumbnail_asset_id is not None else []),
+            *(cell.image_asset_id for cell in draft.ordered_cells),
+        ],
+    )
+    return _PublishPlan(
+        screened=draft.screened_images(),
+        cells_to_blur=draft.cells_to_blur(),
+        thumbnail_key=storage_keys[thumbnail_asset_id] if thumbnail_asset_id is not None else None,
+        image_keys=[(cell.entity_id, storage_keys[cell.image_asset_id]) for cell in draft.ordered_cells],
+        prompt=build_story_publish_filter_prompt(sections=prompt_sections, media_cells=draft.cell_labels),
     )
 
-    await _blur_new_media_book_cells(db, ordered_cells, owner_user_id=content.creator_user_id)
 
+async def _write_story_publish(
+    db: AsyncSession,
+    content: Content,
+    version: ContentVersion,
+    plan: _PublishPlan,
+    blurs: dict[uuid.UUID, BlurredUpload],
+) -> ContentPublishResponse:
+    """발행 쓰기 구간(작품 행을 잠근 뒤). 심사한 그림과 블러 대상 칸이 그대로일 때만 쓰고 커밋한다."""
+    draft = await _load_story_publish_draft(db, content, version)
+    if draft.screened_images() != plan.screened or draft.cells_to_blur() != plan.cells_to_blur:
+        raise _publish_conflict()
+    detail = draft.detail
+    await _attach_media_book_blurs(db, draft.ordered_cells, blurs, owner_user_id=content.creator_user_id)
+
+    # 발행하면 이 초안이 곧 발행본이 되므로 미발행 편집분은 0이다.
+    content.has_unpublished_changes = False
     latest_version_number = await db.scalar(
         select(func.max(ContentVersion.version_number)).where(ContentVersion.content_id == content.id)
     )
@@ -2732,8 +2874,9 @@ async def _count_view(
 ) -> None:
     """Background task: 24h Redis dedup, then let the DB do the increment atomically.
 
-    Opens its own session — the request-scoped `Depends(get_db_session)` is already
-    closed by the time background tasks run (same pattern as api/images/router.py).
+    자기 세션을 연다. 요청 세션(`Depends(get_db_session)`)은 아직 닫히지 않았지만(FastAPI 는 백그라운드 작업을 응답
+    전송 뒤, 의존성 정리 전에 돈다) 이 핸들러가 커밋하지 않아 읽기 트랜잭션이 열린 채라, 그 세션에 쓰기를 얹지 않고
+    짧은 쓰기 트랜잭션을 따로 둔다. 그래서 이 작업이 도는 동안 커넥션이 순간 둘이다.
     The increment is a relative SQL UPDATE, not read-modify-write in Python, so
     concurrent views never lose counts.
     """

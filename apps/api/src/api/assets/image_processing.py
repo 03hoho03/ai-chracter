@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Literal, ParamSpec, TypeVar
 
 from starlette.concurrency import run_in_threadpool
 
+from api.core.config import settings
 from api.core.s3 import build_display_key, build_thumbnail_key
 
 if TYPE_CHECKING:
@@ -45,8 +46,9 @@ DISPLAY_WEBP_QUALITY = THUMBNAIL_WEBP_QUALITY
 MAX_DECODE_PIXELS = 9_000_000
 
 # 디코드·블러·변형 생성을 한 번에 몇 건까지 돌릴지(프로세스 전역). 픽셀 상한은 한 장의 메모리만 묶고, 동시 요청
-# 수(스레드풀 40, 미디어 북 블러 8)가 곱해지는 것은 못 막는다.
-IMAGE_WORK_CONCURRENCY = 3
+# 수(스레드풀 40, 미디어 북 블러 8)가 곱해지는 것은 못 막는다. 값은 env `IMAGE_DECODE_CONCURRENCY` 로 정한다 — 워커를
+# 늘리면 워커 수만큼 곱해지므로 VM 메모리에 맞춰 줄인다. import 시점에 한 번 읽는다(세마포어를 그때 만든다).
+IMAGE_WORK_CONCURRENCY = settings.image_decode_concurrency
 # asyncio 세마포어라 기다리는 요청은 스레드풀 칸을 잡지 않는다 — 스레드 안에서 기다리게 하면 기다리는 작업이
 # 스레드풀을 채워, 이미지와 무관한 `run_in_threadpool` 호출(저장소 왕복·비밀번호 해시)까지 줄을 선다.
 # 모듈 전역이라 처음 기다림이 생긴 이벤트 루프에 묶인다 — 앱은 루프 하나로 돌고, 테스트도 세션 루프 하나다.
