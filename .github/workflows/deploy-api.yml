@@ -120,8 +120,12 @@ jobs:
           # (04:42:59.45 ≈ …379.45)가 **0.07초 차**였다. compose 의 healthcheck 는 :80 을 보므로
           # admin API 준비를 보장하지 않는다. 그래서 짧게 재시도한다 — `|| true` 로 삼키지
           # 않는 이유는 Caddyfile 문법 오류 같은 진짜 실패를 배포 성공으로 만들면 안 되기 때문이다.
+          #
+          # `< /dev/null` 은 위 alembic 줄과 같은 이유다 — compose exec 도 -T 를 줘도 stdin 을
+          # 컨테이너에 붙인다. 이게 빠져 있던 동안은 reload 가 스크립트 나머지를 삼켜, 아래 ps·
+          # 실행 이미지 확인·이미지 정리가 어느 배포에서도 돌지 않은 채 step 이 성공으로 끝났다.
           for i in 1 2 3 4 5; do
-            if $C exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile; then
+            if $C exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile < /dev/null; then
               break
             fi
             if [ "$i" = 5 ]; then
