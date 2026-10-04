@@ -200,7 +200,7 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
 **43개 키다**(2026-10-02 VM 실측, 키 이름만 셈): 아래 표 29개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
-`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`와 `GEMINI_*_JUDGMENT_MODEL_NAME` 3개·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`DB_POOL_SIZE`·`DB_MAX_OVERFLOW`·`DB_POOL_TIMEOUT`·`WEB_CONCURRENCY`, 모두 13개 제외) + compose용
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`와 `GEMINI_*_JUDGMENT_MODEL_NAME` 3개·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`DB_POOL_SIZE`·`DB_MAX_OVERFLOW`·`DB_POOL_TIMEOUT`·`WEB_CONCURRENCY`·`IMAGE_DECODE_CONCURRENCY`, 모두 14개 제외) + compose용
 5개(`API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE`) + "Bugsink(에러 트래커)" 절의 6개
 (`BUGSINK_*` 3개·`INGEST_SHARED_SECRET`·`SENTRY_DSN`·`SENTRY_ENVIRONMENT`) + 크론 알림 3개
 (`DISCORD_WEBHOOK_URL`·`HEALTHCHECKS_BACKUP_PING_URL`은 "백업 · 복원" 절, `HEALTHCHECKS_RESOURCE_PING_URL`은 "VM 리소스 감시" 절). `apps/api/.env`는 **로컬 개발용이며 배포와 무관하다.**
@@ -245,6 +245,7 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `DB_POOL_SIZE` | 기본 `5` | 워커 하나의 SQLAlchemy 풀 상시 크기(1 이상). 기본값은 이 설정이 생기기 전과 같다. ⚠️ **워커 수 × (`DB_POOL_SIZE` + `DB_MAX_OVERFLOW`) ≤ 70** — Postgres `max_connections` 가 100 이고, 크론·백업·배포 마이그레이션·관리 접속 몫을 남긴다(앱 DB 사용자가 슈퍼유저라 예약 연결이 관리 접속을 따로 지켜 주지 않는다) |
 | `DB_MAX_OVERFLOW` | 기본 `10` | 풀이 다 찼을 때 잠깐 더 여는 연결 수. 위 식에 들어간다 |
 | `DB_POOL_TIMEOUT` | 기본 `30` | 풀이 다 찼을 때 연결을 기다리는 초. 넘기면 그 요청이 500 이다 |
+| `IMAGE_DECODE_CONCURRENCY` | 기본 `3` | 워커 하나에서 동시에 도는 이미지 디코드·블러·변형 생성 건수 상한(1 이상, 넘치면 기다린다). 기본값은 이 설정이 생기기 전과 같다. ⚠️ 워커마다 따로 세므로 **워커 수 × 이 값 × 건당 최대 메모리 ≤ VM 가용 메모리의 절반**으로 정한다 — 건당 최대 메모리는 아직 실측 전이다(픽셀 상한 9M 그림의 RGBA 한 장만 약 36MB 이고, 블러·축소 복사본이 그 위에 붙는다). `WEB_CONCURRENCY` 를 올릴 때 함께 본다 |
 
 > **`CORS_ALLOW_ORIGINS` 함정**: pydantic-settings는 `list[str]` 필드를 env에서 **JSON으로 파싱**한다.
 > 반드시 `["https://a","https://b"]` 형태로 넣을 것(콤마 구분 평문 아님).
