@@ -11,7 +11,6 @@ import {
   getChatRateLimit,
   isContentRestrictedError,
   restoreMessage,
-  truncateAndEdit,
 } from "@/entities/chat-room";
 import { chatStreamEventSchema } from "@/entities/chat-room";
 import type { ChatMessage, ChatRateLimit, ChatRoomState, ChatStreamRequest } from "@/entities/chat-room";
@@ -23,8 +22,15 @@ import { openChatStream } from "@/shared/api/sse/openChatStream";
 
 import { expandUserTextForRoom } from "./expandUserTextForRoom";
 import { imageArchiveKeyToInvalidate, type ImageArchiveTarget } from "./imageArchiveKeyToInvalidate";
+import { settleTurnInProgress } from "./settleTurnInProgress";
+import { truncateForEditAttempt } from "./truncateForEditAttempt";
 
-type PendingRequest = { payload: ChatStreamRequest; kind: "newTurn" | "regenerate" };
+// `messagesBeforeEdit`는 수정의 첫 시도 직전 목록이다. 재시도 요청에 실어 다녀야 앞 턴 거절 때 원래 목록으로 되돌린다.
+type PendingRequest = {
+  payload: ChatStreamRequest;
+  kind: "newTurn" | "regenerate";
+  messagesBeforeEdit?: ChatMessage[];
+};
 
 // isSending(boolean) + error(SendMessageError | null)의 조합은 "전송 중이면서 동시에
 // 에러"라는 불가능 상태를 타입으로 막지 못했다. 판별 유니언으로 상태를 하나로 묶는다.
@@ -36,10 +42,19 @@ type PendingRequest = { payload: ChatStreamRequest; kind: "newTurn" | "regenerat
 // 배너가 갈라 쓴다 — 실패하지 않은 일에 "실패했습니다"를 쓰면 거짓이다.
 // `restricted`는 작품이 이용제한·삭제돼 서버가 거부한 것이다. 기다려도 다시 보내도 안 풀리므로 화면은 재시도 대신
 // 입력창 자리에 안내를 띄운다(방을 열 때 이미 제한이었다면 응답의 `contentRestricted`가 같은 일을 한다).
+// `busy`는 같은 방의 앞 턴이 아직 끝나지 않아 서버가 시작 전에 거절한 것이다. 기다리면 풀리므로 실패 배너가 아니라
+// 중립 배너와 다시 보내기를 띄운다.
 type SendMessageStatus =
   | { kind: "idle" }
   | { kind: "sending" }
-  | { kind: "error"; retryPayload: PendingRequest; rateLimit?: ChatRateLimit; declined?: boolean; restricted?: boolean };
+  | {
+      kind: "error";
+      retryPayload: PendingRequest;
+      rateLimit?: ChatRateLimit;
+      declined?: boolean;
+      restricted?: boolean;
+      busy?: boolean;
+    };
 
 /** 낙관적 업데이트가 핵심: 사용자 메시지는 스트림 성공 여부와
  * 무관하게 먼저 캐시에 반영해 실패해도 화면에서 사라지지 않는다.
@@ -80,7 +95,7 @@ export function useSendMessage(
    * "정상"을 FE가 증명할 수 없다는 사실에 대한 보험이다 — 게이트 조건이 나중에 바뀌는 등으로
    * 둘의 판단이 갈리면, 없을 때 그 불일치가 **무한 왕복**이 된다. 사용자 조작 한 번당 모달을
    * 한 번으로 묶는 것이 이 인자의 전부다. */
-  async function openStream(pending: PendingRequest, allowCloverConfirm = true) {
+  async function openStream(request: PendingRequest, allowCloverConfirm = true) {
     setStatus({ kind: "sending" });
     setPolicyWarning(undefined);
     setStreamingText("");
@@ -92,9 +107,15 @@ export function useSendMessage(
     // 되돌린다.
     // 🔴 cancelQueries를 재생성일 때만 부르는 이유: 기본값이 `revert: true`라 취소되는 fetch가
     // *시작된 시점의* 캐시로 되돌린다(query-core `query.js`의 #revertState). send()/editMessage()는
-    // 낙관적 변경을 openStream 호출 *전에* 하므로, 무조건 부르면 방금 추가한 사용자 메시지나 편집
+    // 낙관적 변경을 이 줄보다 *앞에서* 하므로, 무조건 부르면 방금 추가한 사용자 메시지나 편집
     // 절단이 조용히 사라진다. 재생성은 제거가 이 줄 *뒤*라 그 창이 없다.
     let dropped: ChatMessage | undefined;
+    // 편집 절단을 여기서 하는 이유: retry()가 같은 payload로 다시 들어올 때도 같은 절단을 다시 한다. 되돌릴 목록은
+    // 첫 시도 것을 이어 받아 이후의 retryPayload에 실린다.
+    const pending: PendingRequest = {
+      ...request,
+      messagesBeforeEdit: truncateForEditAttempt(queryClient, roomId, request.payload, request.messagesBeforeEdit),
+    };
     if (pending.kind === "regenerate") {
       await queryClient.cancelQueries({ queryKey: chatRoomKeys.detail(roomId) });
       dropped = dropLastMessage(queryClient, roomId);
@@ -144,6 +165,11 @@ export function useSendMessage(
       if (isContentRestrictedError(error)) {
         void queryClient.invalidateQueries({ queryKey: chatRoomKeys.detail(roomId) });
         setStatus({ kind: "error", retryPayload: pending, restricted: true });
+        return;
+      }
+      // 앞 턴이 아직 돌고 있다. 클로버와 무관하므로 확인 모달도 띄우지 않는다.
+      if (settleTurnInProgress(queryClient, roomId, error, pending.messagesBeforeEdit)) {
+        setStatus({ kind: "error", retryPayload: pending, busy: true });
         return;
       }
       // 동의가 필요하면 배너가 아니라 모달이다. 동의하면 **같은
@@ -204,13 +230,12 @@ export function useSendMessage(
     void openStream({ payload: buildRegeneratePayload({ roomId }), kind: "regenerate" });
   }
 
-  // truncateAndEdit로 그 메시지 이후를 먼저 잘라낸 뒤, 일반 전송과 동일한 스트리밍 흐름을
+  // openStream이 truncateAndEdit로 그 메시지 이후를 먼저 잘라낸 뒤, 일반 전송과 동일한 스트리밍 흐름을
   // 재실행한다(편집 대상 이후 새 응답을 append) — send()와 달리 낙관적 사용자 메시지를 새로
   // 추가하지 않는다(이미 캐시에 있는 메시지를 truncateAndEdit이 갱신한다).
   function editMessage(messageId: string, rawText: string): void {
     if (status.kind === "sending") return;
     const text = expandUserTextForRoom(queryClient, roomId, rawText);
-    truncateAndEdit(queryClient, roomId, messageId, text);
     void openStream({ payload: buildEditPayload({ roomId, messageId, text }), kind: "newTurn" });
   }
 

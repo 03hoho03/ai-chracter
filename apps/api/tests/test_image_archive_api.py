@@ -232,7 +232,7 @@ async def test_image_archive_marks_image_exposed_right_after_chat_match(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """대화 중 매칭이 발동한 직후 보관함을 다시 조회하면 그 이미지가 해금(원본 자산)으로 보여야
-    한다 — 노출 기록(`_match_situational_image`)과 보관함 조회를 잇는 유일한 종단 경로다.
+    한다 — 노출 기록(`_record_character_image_exposure`)과 보관함 조회를 잇는 유일한 종단 경로다.
     보관함은 방이 고정한 버전이 아니라 콘텐츠의 현재 발행 버전을 나열하므로, 이 테스트는 두
     조회가 같은 이미지 집합을 보는지(entity_id 기준 대조)까지 함께 고정한다."""
     user = _make_user()

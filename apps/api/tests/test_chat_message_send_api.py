@@ -544,10 +544,10 @@ async def test_send_message_image_judgment_llm_failure_still_completes_the_turn(
 async def test_send_message_null_image_asset_id_candidate_excluded_from_judgment_prompt(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """`_match_situational_image`의 매칭 필터
+    """`_load_situational_candidates`의 매칭 필터
     (`image_asset_id IS NOT NULL`)가 NULL 후보를 판단 프롬프트에 싣기 전에 걸러낸다
     (발행 검증이 `situational_images.image_asset_id`를 보지 않아 NULL이 발행본까지
-    간다). `image_asset_id`가 NULL인 후보만 있으면 `_match_situational_image`가 판단 호출
+    간다). `image_asset_id`가 NULL인 후보만 있으면 `_prepare_situational_image_judgment`가 판단 호출
     자체를 생략해(`if not situational_images: return None`) 이 필터의 효과를 관측할 수
     없으므로, 정상 후보를 하나 더 둬 판단 호출이 실제로 일어나게 한다."""
     user = _make_user()
@@ -717,7 +717,7 @@ async def test_send_message_asset_lookup_failure_still_completes_the_turn_withou
 async def test_send_message_situational_image_candidate_query_failure_still_completes_the_turn_without_image(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`_match_situational_image`의 후보 조회
+    """`_load_situational_candidates`의 후보 조회
     (`db.scalars(select(SituationalImage)...)`)가 실패해도 이번 턴의 이미지 매칭만 포기하고
     스트림은 done까지 정상 종료된다. 이 호출은 presign·자산 조회를 감싸는 본문 가드(`:873~907`) 밖에 있고,
     호출부(`_stream_new_turn`)의 기존 `except (LLMClientError, PromptRenderError)`는 DB
@@ -788,7 +788,7 @@ async def test_send_message_situational_image_candidate_query_failure_still_comp
 async def test_send_message_image_exposure_lookup_failure_still_completes_the_turn_without_image(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`_match_situational_image`의 노출 이력 조회
+    """`_record_character_image_exposure`의 노출 이력 조회
     (`db.scalar(select(CharacterImageExposure)...)`)가 실패해도 같은 형태로 흡수된다. 이
     호출은 매칭(LLM 판단)이 이미 성공한 뒤라 위 후보 조회 실패와는 다른 지점을 재는 판정이다.
 
@@ -856,14 +856,13 @@ async def test_send_message_situational_image_candidate_query_real_sql_failure_i
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """위 후보 조회 실패 테스트(합성 `SQLAlchemyError`)가 원리적으로 못 재는 파열을
-    진짜 SQL로 재현한다. `_stream_new_turn`은 이 가드를
-    부르기 **전에** 이미 `db.add(assistant_message)` → `await db.flush()` →
-    `room.turn_count += 1`로 dirty 상태를 쌓아 둔다. `SELECT 1/0`으로 Postgres 트랜잭션을
-    실제로 aborted 상태로 만들면(리뷰어 재현 선례) — 처방 전에는 가드가 예외를 삼켜도
-    트랜잭션은 여전히 aborted라, 뒤따르는 `await db.commit()`이 `room`을 autoflush하려다
-    그대로 부딪혀 `DBAPIError`를 던진다(가드가 파열을 한 자리 뒤로 미룰 뿐). 처방 후에는
-    가드가 SAVEPOINT로 국소화돼 실패가 그 자리에 갇히고, 이미 flush된 assistant_message와
-    `room.turn_count` 증가분은 그대로 커밋된다 — 아래 회귀 감시(방 재조회)가 그 증거다."""
+    진짜 SQL로 재현한다. `SELECT 1/0`으로 Postgres 트랜잭션을 실제로 aborted 상태로 만들면(리뷰어 재현 선례)
+    가드가 예외를 삼켜도 같은 트랜잭션에서 이어지는 문장은 전부 `DBAPIError`로 부딪힌다. 이 테스트의 요청
+    세션은 바깥 트랜잭션에 묶여 있어 판정 앞의 반납 커밋이 그 트랜잭션을 끝내지 못하므로, SAVEPOINT 가 없으면
+    턴의 쓰기 구간(응답 INSERT)이 바로 그 aborted 트랜잭션에 부딪힌다(SAVEPOINT 를 빼면 이 테스트가 빨개지는
+    것을 확인했다). 운영에서는 aborted 트랜잭션의 커밋이 오류 없이 롤백으로 끝나 쓰기 구간이 새 트랜잭션에서
+    시작하지만, 가드가 호출부의 커밋 위치에 기대지 않게 SAVEPOINT 로 실패를 그 자리에 가둔다 — 아래 회귀
+    감시(방 재조회)가 턴이 그대로 저장됐다는 증거다."""
     captured: list[tuple[BaseException, str]] = []
     monkeypatch.setattr(
         chat_router,
@@ -914,10 +913,9 @@ async def test_send_message_situational_image_candidate_query_real_sql_failure_i
     assert isinstance(captured[0][0], sa.exc.DBAPIError)
     assert captured[0][1] == "db"
 
-    # SAVEPOINT 국소화의 직접 증거 — 가드 실패 이전에 이미 flush된 assistant_message와
-    # room.turn_count 증가분이 뒤따르는 commit()에서 그대로 살아남는다(처방 전에는 바로 이
-    # commit()이 aborted 트랜잭션에 부딪혀 DBAPIError를 던져 위 status_code 단언까지도
-    # 도달하지 못했다). `db_session.get(ChatRoom, ...)`는 쓰지
+    # SAVEPOINT 국소화의 직접 증거 — 가드 실패 뒤의 쓰기 구간이 응답 메시지와 room.turn_count 증가분을
+    # 그대로 커밋한다(SAVEPOINT 가 없으면 쓰기 구간이 aborted 트랜잭션에 부딪혀 위 status_code 단언까지도
+    # 도달하지 못한다). `db_session.get(ChatRoom, ...)`는 쓰지
     # 않는다 — `db_client`가 이 테스트의 `db_session`을 앱 요청과 **같은 세션 객체**로
     # 오버라이드해(conftest.py), `expire_on_commit=False`인 그 세션의 identity map에 요청 중
     # 만들어진 `room` 객체가 이미 캐시돼 있어 `.get()`이 SQL을 내지 않고 메모리 값만

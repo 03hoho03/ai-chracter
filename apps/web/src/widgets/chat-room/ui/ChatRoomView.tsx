@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import type { Ending, Shortcut } from "@/entities/chat-room";
 import {
   AuthorMacroNamesProvider,
+  CHAT_TURN_IN_PROGRESS_NOTICE,
   CONTENT_RESTRICTED_NOTICE,
   EndingDivider,
   isAuthorOpeningMessage,
@@ -177,12 +178,24 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
     })),
   };
 
-  // no-nested-ternary — 세 갈래(레이트리밋/거절/실패)를 렌더 전에 미리 갈라 둔다.
+  // no-nested-ternary — 네 갈래(레이트리밋/앞 턴 진행 중/거절/실패)를 렌더 전에 미리 갈라 둔다.
   // 제한 거부는 실패 배너를 띄우지 않는다 — 다시 시도해도 안 풀리고, 안내는 입력창 자리가 맡는다.
   let errorNotice: ReactNode = null;
   if (status.kind === "error" && !isRestricted) {
     if (status.rateLimit) {
       errorNotice = <RateLimitNotice rateLimit={status.rateLimit} surface="chat" onRetry={retry} />;
+    } else if (status.busy) {
+      // 앞 턴이 끝나지 않아 시작도 안 한 요청이다. 실패가 아니라 빨간 alert를 쓰지 않고, 아래 거절 배너와 같은
+      // 중립 표면에 사실과 다음 행동만 둔다.
+      errorNotice = (
+        <div role="status" className="flex items-center justify-between gap-3 rounded-lg border border-border px-3.5 py-2.5">
+          <span className="text-xs text-muted-foreground">{CHAT_TURN_IN_PROGRESS_NOTICE}</span>
+          <Button variant="outline" size="sm" onClick={retry}>
+            <RotateCw aria-hidden className="size-3.5" />
+            다시 보내기
+          </Button>
+        </div>
+      );
     } else if (status.declined) {
       // 확인 모달에서 그만둔 것은 실패가 아니다. `destructive`(위험 액션)도
       // 쓰지 않는다 — 사용자가 고른 결과라 경고할 일이 없다. 중립 표면으로 사실만

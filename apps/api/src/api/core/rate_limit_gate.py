@@ -246,10 +246,8 @@ async def enforce_chat_rate_limit(
     `get_current_user_id`는 재동의 게이트(`require_legal_consent`)도 이미 `Depends`로 쓰고 있어
     FastAPI의 요청 스코프 캐시가 한 번만 해석한다 — Redis 왕복이 더 늘지 않는다.
 
-    `db`도 같은 요청 스코프 캐시로 받는다 — 전송·재생성·편집 3경로에서는 라우트 본문·
-    `require_legal_consent`와 같은 세션이다. 미리보기 경로만은 라우트 본문이 세션을 받지 않아
-    (`_preview_prompt_set_dependency`가 풀 상한 때문에 `Depends(get_db_session)`을 피한다)
-    `get_current_user_id`·재동의 게이트·이 게이트만 그 세션을 쓴다 — 의존성 캐시라 커넥션이
+    `db`도 같은 요청 스코프 캐시로 받는다 — 채팅 4경로 모두 라우트 본문·`require_legal_consent`와 같은
+    세션이다(미리보기 본문은 그 세션을 첫머리에서 커밋해 반납하기만 한다) — 의존성 캐시라 커넥션이
     더 열리지는 않는다. ⚠️ 같은 세션이어도 `is_rate_limit_exempt`의 `db.get(User, user_id)`는
     identity map 히트가 **아니다** — 앞 의존성들이 읽은 `User`는 아무도 붙잡지 않아 이미
     수거됐으므로(약참조) SELECT가 따로 나간다.

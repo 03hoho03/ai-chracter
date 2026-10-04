@@ -55,12 +55,13 @@ export {
   isContentRestrictedError,
   toStartChatErrorMessage,
 } from "./model/contentRestricted";
+export { CHAT_TURN_IN_PROGRESS_NOTICE, isChatTurnInProgressError } from "./model/chatTurnInProgress";
 export { STAT_ICON_OPTIONS } from "./model/statIcons";
 export { isAuthorOpeningMessage, isAuthorTextMessage } from "./model/isAuthorOpeningMessage";
 export { roomAuthorMacroNames } from "./model/roomAuthorMacroNames";
 export { shouldShowSuggestedReplies } from "./model/shouldShowSuggestedReplies";
 export { OPERATOR_MAP as ENDING_RULE_OPERATOR_SYMBOLS, toChatRoomState } from "./api/toChatRoomState";
-export { truncateAndEdit } from "./model/truncateAndEdit";
+export { restoreMessages, truncateAndEdit } from "./model/truncateAndEdit";
 export { dropLastMessage, restoreMessage } from "./model/dropLastMessage";
 export { stripChatNotation } from "./model/stripChatNotation";
 export { chatStreamEventSchema } from "./api/chatStream";
