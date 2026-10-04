@@ -13,9 +13,12 @@
  * 조사 보정
  * - 고치는 쌍(받침 있을 때/없을 때): 조사 `은/는·이/가·을/를·과/와·아/야·이랑/랑·으로/로`, 서술격
  *   `이에요/예요·이다/다·이나/나·이며/며·이고/고·이라고/라고·이라서/라서·이야/야`. 이 밖의 말은 손대지 않는다.
- * - 매크로 바로 뒤(또는 닫는 따옴표·괄호 한 글자 `'’"”」』)` 뒤 — `'{{user}}'가`)에 쌍 중 하나가 있고 그 뒤가 한글
+ * - 매크로 바로 뒤(또는 닫는 따옴표 한 글자 `'’"”」』` 뒤 — `'{{user}}'가`)에 쌍 중 하나가 있고 그 뒤가 한글
  *   음절이 아니거나 글 끝일 때만, 이름의 끝 글자 받침에 맞는 쪽으로 바꾼다. 작가가 어느 쪽을 썼든 바꾼다(이름은 읽는
  *   사람마다 다르다). 뒤가 한글 음절이면 낱말의 일부일 수 있어(`{{user}}가방`) 그대로 둔다.
+ * - 닫는 괄호 `)` 는 닫는 표시가 아니다 — `그녀({{char}})가` 처럼 괄호 안 이름은 괄호 앞 말이 조사를 받는다.
+ * - 닫는 따옴표 뒤의 `이라고/라고` 는 고치지 않는다 — 직접 인용 조사 `라고` 는 받침과 상관없다(`"어서 와,
+ *   {{user}}"라고`). 따옴표 없이 이름 바로 뒤에 붙은 `{{user}}라고` 는 서술격이라 고친다.
  * - 같은 경계 검사 덕에 긴 쌍과 그 앞부분이 겹쳐도 하나만 맞는다 — `{{user}}이고` 의 `이` 는 뒤의 `고` 가 한글이라
  *   주격으로 읽히지 않는다. 그래서 대안의 순서가 결과를 바꾸지 않는다.
  * - `야` 는 두 쌍에 다 있다. 작가가 쓴 `야` 는 부르는 말(`아/야`)로 읽고, 서술격은 `이야` 로 써야 고친다
@@ -78,8 +81,10 @@ const PARTICLE_BY_FORM = new Map<string, ParticlePair>(
 );
 // `야` 는 부르는 말과 서술격 두 쌍에 있다. 작가가 쓴 `야` 는 부르는 말로 읽는다 — 서술격은 `이야` 로 쓴다.
 PARTICLE_BY_FORM.set("야", ["아", "야"]);
-// 매크로와 조사 사이에 올 수 있는 닫는 따옴표·괄호 한 글자.
-const CLOSING_MARKS = `'’"”」』)`;
+// 매크로와 조사 사이에 올 수 있는 닫는 따옴표 한 글자.
+const CLOSING_MARKS = `'’"”」』`;
+// 닫는 따옴표 뒤에서는 직접 인용 조사라 고치지 않는 형태.
+const QUOTATIVE_FORMS = new Set(["이라고", "라고"]);
 const PARTICLE_ALTERNATION = [...PARTICLE_BY_FORM.keys()].join("|");
 const MACRO = new RegExp(
   String.raw`\{\{[ \t]*([A-Za-z]+)[ \t]*\}\}(?:([${CLOSING_MARKS}])?(${PARTICLE_ALTERNATION})(?![가-힣]))?`,
@@ -131,9 +136,10 @@ export function expandAuthorMacros(
     ) => {
       const name = byMacro.get(macro.toLowerCase());
       if (name === undefined || name === null) return match;
-      return written === undefined
-        ? name
-        : name + (mark ?? "") + particleFor(name, written);
+      if (written === undefined) return name;
+      if (mark !== undefined && QUOTATIVE_FORMS.has(written))
+        return name + mark + written;
+      return name + (mark ?? "") + particleFor(name, written);
     },
   );
 }

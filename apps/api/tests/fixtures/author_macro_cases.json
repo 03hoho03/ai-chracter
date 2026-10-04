@@ -3,7 +3,7 @@
     "작가 글 속 {{user}}·{{char}} 치환 규칙의 입력 표. 서버(apps/api/tests/test_author_macros.py)와 웹 테스트(apps/web/test/authorMacroCases.ts 를 읽는 테스트)가 이 파일 하나를 함께 읽는다 — 프롬프트는 서버 구현으로, 화면은 웹 구현으로 바뀌므로 두 구현이 갈라지면 모델이 본 이름과 사용자가 본 이름이 달라진다. 행은 여기에만 더한다.",
     "expand: userName 은 호출부가 이미 고른 이름(대화 프로필 → 작품 기본 이름 → '당신'), charName 이 null 이면 스토리다 — 스토리에는 {{char}} 가 가리킬 한 사람이 없어 글자 그대로 둔다.",
     "particle- 행: 일곱 조사 쌍 × 받침 있는 이름(지훈)·없는 이름(민수)·ㄹ 받침 이름(하늘) × 작가가 쓴 쪽 두 가지. ㄹ 받침 뒤에는 '으로' 대신 '로'가 맞다.",
-    "copula- 행: 서술격 여덟 쌍 × 세 이름 × 작가가 쓴 쪽. '이야/야' 는 '이야' 로 쓴 것만 서술격이다 — 작가가 쓴 '야' 는 부르는 말(아/야)로 읽는다(ya-/iya- 행). closing- 행: 매크로 뒤 닫는 따옴표·괄호 한 글자를 사이에 둔 조사도 고친다. 곧은 따옴표는 여는 것과 닫는 것이 같아 매크로 바로 뒤의 여는 따옴표도 닫는 것으로 읽는다(straight-quote- 행)."
+    "copula- 행: 서술격 여덟 쌍 × 세 이름 × 작가가 쓴 쪽. '이야/야' 는 '이야' 로 쓴 것만 서술격이다 — 작가가 쓴 '야' 는 부르는 말(아/야)로 읽는다(ya-/iya- 행). closing- 행: 매크로 뒤 닫는 따옴표 한 글자를 사이에 둔 조사도 고친다. 다만 닫는 따옴표 뒤의 이라고/라고 는 직접 인용 조사라 쓴 그대로 둔다. 닫는 괄호는 닫는 표시가 아니다 — 괄호 안 이름은 괄호 앞 말이 조사를 받는다(paren- 행). 곧은 따옴표는 여는 것과 닫는 것이 같아 매크로 바로 뒤의 여는 따옴표도 닫는 것으로 읽는다(straight-quote- 행)."
   ],
   "expand": [
     {
@@ -1002,10 +1002,10 @@
     },
     {
       "id": "closing-straight-double-quote",
-      "text": "\"{{user}}\"이라고 적혀 있다.",
+      "text": "\"{{user}}\"을 적었다.",
       "userName": "민수",
       "charName": null,
-      "expected": "\"민수\"라고 적혀 있다."
+      "expected": "\"민수\"를 적었다."
     },
     {
       "id": "closing-curly-double-quote",
@@ -1029,11 +1029,74 @@
       "expected": "『지훈』과 함께"
     },
     {
-      "id": "closing-paren",
-      "text": "(조감독 {{user}})이 말했다.",
+      "id": "paren-is-not-a-closing-mark-ga",
+      "text": "그녀({{char}})가 말했다",
+      "userName": "지훈",
+      "charName": "세빈",
+      "expected": "그녀(세빈)가 말했다"
+    },
+    {
+      "id": "paren-is-not-a-closing-mark-neun",
+      "text": "너({{user}})는 웃었다",
+      "userName": "지훈",
+      "charName": null,
+      "expected": "너(지훈)는 웃었다"
+    },
+    {
+      "id": "paren-is-not-a-closing-mark-eul",
+      "text": "당신({{user}})을 본다",
       "userName": "민수",
       "charName": null,
-      "expected": "(조감독 민수)가 말했다."
+      "expected": "당신(민수)을 본다"
+    },
+    {
+      "id": "paren-is-not-a-closing-mark-i",
+      "text": "그 사람({{user}})이",
+      "userName": "민수",
+      "charName": null,
+      "expected": "그 사람(민수)이"
+    },
+    {
+      "id": "paren-is-not-a-closing-mark-after-equals",
+      "text": "선배(={{user}})는",
+      "userName": "하늘",
+      "charName": null,
+      "expected": "선배(=하늘)는"
+    },
+    {
+      "id": "closing-quote-rago-is-quotative-user",
+      "text": "\"어서 와, {{user}}\"라고 했다",
+      "userName": "지훈",
+      "charName": null,
+      "expected": "\"어서 와, 지훈\"라고 했다"
+    },
+    {
+      "id": "closing-quote-rago-is-quotative-char",
+      "text": "\"고마워, {{char}}\"라고 말했다",
+      "userName": "지훈",
+      "charName": "세빈",
+      "expected": "\"고마워, 세빈\"라고 말했다"
+    },
+    {
+      "id": "closing-quote-rago-name-only",
+      "text": "\"{{user}}\"라고 외쳤다",
+      "userName": "하늘",
+      "charName": null,
+      "expected": "\"하늘\"라고 외쳤다"
+    },
+    {
+      "id": "closing-quote-irago-kept-as-written",
+      "text": "\"{{user}}\"이라고 적혀 있다.",
+      "userName": "민수",
+      "charName": null,
+      "expected": "\"민수\"이라고 적혀 있다."
+    },
+    {
+      "id": "closing-curly-quote-rago-is-quotative",
+      "text": "“잘 자, {{user}}”라고 속삭였다",
+      "userName": "지훈",
+      "charName": null,
+      "expected": "“잘 자, 지훈”라고 속삭였다"
     },
     {
       "id": "closing-mark-with-text-before-macro",

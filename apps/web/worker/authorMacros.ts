@@ -33,8 +33,10 @@ const PARTICLE_BY_FORM = new Map<string, ParticlePair>(
 );
 // `야` 는 부르는 말과 서술격 두 쌍에 있다. 작가가 쓴 `야` 는 부르는 말로 읽는다 — 서술격은 `이야` 로 쓴다.
 PARTICLE_BY_FORM.set("야", ["아", "야"]);
-// 매크로와 조사 사이에 올 수 있는 닫는 따옴표·괄호 한 글자.
-const CLOSING_MARKS = `'’"”」』)`;
+// 매크로와 조사 사이에 올 수 있는 닫는 따옴표 한 글자.
+const CLOSING_MARKS = `'’"”」』`;
+// 닫는 따옴표 뒤에서는 직접 인용 조사라 고치지 않는 형태.
+const QUOTATIVE_FORMS = new Set(["이라고", "라고"]);
 const MACRO = new RegExp(
   String.raw`\{\{[ \t]*([A-Za-z]+)[ \t]*\}\}(?:([${CLOSING_MARKS}])?(${[...PARTICLE_BY_FORM.keys()].join("|")})(?![가-힣]))?`,
   "g",
@@ -75,9 +77,10 @@ export function expandAuthorMacros(
     ) => {
       const name = byMacro.get(macro.toLowerCase());
       if (name === undefined || name === null) return match;
-      return written === undefined
-        ? name
-        : name + (mark ?? "") + particleFor(name, written);
+      if (written === undefined) return name;
+      if (mark !== undefined && QUOTATIVE_FORMS.has(written))
+        return name + mark + written;
+      return name + (mark ?? "") + particleFor(name, written);
     },
   );
 }
