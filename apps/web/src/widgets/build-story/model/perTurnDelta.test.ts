@@ -12,7 +12,7 @@ const perTurnDeltaOptions = { setValueAs: perTurnDeltaFromInput };
 const STATS = "startingSetups.0.stats" as const;
 
 function stat(id: string, perTurnDelta: number | null): StatDefValues {
-  return { id, name: id, icon: "Heart", color: "c", min: 0, max: 100, initial: 0, description: "d", perTurnDelta };
+  return { id, name: id, icon: "Heart", color: "c", min: 0, max: 100, initial: 0, description: "d", perTurnDelta, changeDirection: "both", maxChangePerTurn: null };
 }
 
 /** 초안을 불러온 순간의 스탯이 `defaultValues` 로 굳은 폼. */
@@ -20,7 +20,7 @@ function createForm(loadedStats: StatDefValues[]) {
   const draft = createEmptyDraft("story");
   if (draft.type !== "story") throw new Error("story draft expected");
   const values: StoryBuilderFormValues = serverToForm(draft);
-  values.startingSetups = [{ id: "s1", name: "", prologue: "", suggestedReplies: [], stats: loadedStats, endings: [] }];
+  values.startingSetups = [{ id: "s1", name: "", prologue: "", suggestedReplies: [], stats: loadedStats, endings: [], situationNotes: [] }];
   return createFormControl<StoryBuilderFormValues>({ defaultValues: values });
 }
 

@@ -22,11 +22,18 @@ describe("STORY_TABS", () => {
     expect(tabsCovering("startingSetups").length).toBeGreaterThanOrEqual(1);
   });
 
-  it("startingSetups를 덮는 탭은 정확히 startingSetup/stat/ending 셋이다", () => {
+  it("startingSetups를 덮는 탭은 정확히 startingSetup/stat/situationNote/ending 넷이다", () => {
     const ids = tabsCovering("startingSetups")
       .map((tab) => tab.id)
       .sort();
 
-    expect(ids).toEqual(["ending", "startingSetup", "stat"]);
+    expect(ids).toEqual(["ending", "situationNote", "startingSetup", "stat"]);
+  });
+
+  // 상황 노트는 스탯 값으로 조건을 거는 목록이라 스탯 바로 뒤 탭이다.
+  it("상황 노트 탭이 스탯 탭 바로 뒤에 온다", () => {
+    const ids: string[] = STORY_TABS.map((tab) => tab.id);
+
+    expect(ids.indexOf("situationNote")).toBe(ids.indexOf("stat") + 1);
   });
 });

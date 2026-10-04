@@ -10,6 +10,7 @@ import { useId, useState, type ChangeEvent } from "react";
 import { toMediaNameTag } from "@/entities/media-book";
 import {
   countCharacters,
+  FieldLabelText,
   findCell,
   findNextIncompleteCell,
   isIncompleteCell,
@@ -290,7 +291,7 @@ function FilledCellFields({ cell, imageButtonsProps, onPatch, onClear }: FilledC
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`${fieldId}-situation`}>상황 설명</Label>
+        <Label htmlFor={`${fieldId}-situation`}><FieldLabelText field="mediaBook.cells.*.situationDescription" /></Label>
         <Textarea
           id={`${fieldId}-situation`}
           rows={2}
@@ -313,7 +314,7 @@ function FilledCellFields({ cell, imageButtonsProps, onPatch, onClear }: FilledC
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`${fieldId}-hint`}>해금 힌트</Label>
+        <Label htmlFor={`${fieldId}-hint`}><FieldLabelText field="mediaBook.cells.*.unlockHint" /></Label>
         <Input
           id={`${fieldId}-hint`}
           placeholder="예) 첫 리딩을 끝까지 지켜본 뒤"
@@ -336,7 +337,7 @@ function FilledCellFields({ cell, imageButtonsProps, onPatch, onClear }: FilledC
 
       <div className="flex items-center justify-between gap-4 rounded-xl border border-border px-4 py-3">
         <div className="flex flex-col gap-0.5">
-          <Label htmlFor={`${fieldId}-exclude`}>대화 중에는 띄우지 않기</Label>
+          <Label htmlFor={`${fieldId}-exclude`}><FieldLabelText field="mediaBook.cells.*.excludeFromChat" /></Label>
           <p className="text-sm break-keep text-muted-foreground">
             켜면 AI가 대화 중에 이 이미지를 고르지 않아요. 글 속 표기로 넣은 자리에는 그대로 보여요.
           </p>

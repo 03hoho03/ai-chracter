@@ -5,7 +5,19 @@ import type { StatDefValues } from "@/features/build-story";
 import { orderWithPendingRemovals, restoreRemovedStat, type RemovedStat } from "./restoreRemovedStat";
 
 function stat(id: string): StatDefValues {
-  return { id, name: id, icon: "Heart", color: "color", min: 0, max: 100, initial: 0, description: "d", perTurnDelta: null };
+  return {
+    id,
+    name: id,
+    icon: "Heart",
+    color: "color",
+    min: 0,
+    max: 100,
+    initial: 0,
+    description: "d",
+    perTurnDelta: null,
+    changeDirection: "both",
+    maxChangePerTurn: null,
+  };
 }
 
 const A = stat("a");

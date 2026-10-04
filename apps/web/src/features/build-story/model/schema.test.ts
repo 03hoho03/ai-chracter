@@ -148,6 +148,8 @@ function validStatDef() {
     unit: "pt",
     description: "생존에 필요한 신체 상태",
     perTurnDelta: null,
+    changeDirection: "both",
+    maxChangePerTurn: null,
   };
 }
 
@@ -234,6 +236,40 @@ describe("statDefSchema", () => {
 
       expect(result.error?.issues.map((issue) => issue.path.join("."))).toEqual(["stats.1.initial"]);
     });
+  });
+});
+
+describe("statDefSchema 변화 방향·한 턴 최대 폭", () => {
+  function issuesOf(overrides: Record<string, unknown>) {
+    const result = statDefSchema.safeParse({ ...validStatDef(), ...overrides });
+    return (result.error?.issues ?? []).map((issue) => ({ path: issue.path.join("."), message: issue.message }));
+  }
+
+  it("방향 셋과 빈 폭(제한 없음)·양의 정수 폭을 받는다", () => {
+    for (const changeDirection of ["both", "increase", "decrease"]) {
+      expect(issuesOf({ changeDirection })).toEqual([]);
+    }
+    expect(issuesOf({ maxChangePerTurn: 1 })).toEqual([]);
+    expect(issuesOf({ changeDirection: "decrease", maxChangePerTurn: 7 })).toEqual([]);
+  });
+
+  it("세 방향 밖의 값은 받지 않는다", () => {
+    expect(issuesOf({ changeDirection: "sideways" }).map((issue) => issue.path)).toEqual(["changeDirection"]);
+  });
+
+  it("폭이 0·음수·소수이거나 읽지 못한 칸(NaN)이면 폭 칸에 같은 한국어 문구를 붙인다", () => {
+    const message = "1 이상의 정수로 입력해주세요";
+    for (const maxChangePerTurn of [0, -3, 1.5, Number.NaN]) {
+      expect(issuesOf({ maxChangePerTurn })).toEqual([{ path: "maxChangePerTurn", message }]);
+    }
+  });
+
+  it("턴당 자동 변화와 방향·폭을 함께 건 스탯은 턴당 칸에 함께 쓸 수 없다는 문구를 붙인다", () => {
+    const message = "턴당 자동 변화와 변화 방향·최대 폭은 함께 쓸 수 없어요. 한쪽을 비워 주세요.";
+    expect(issuesOf({ perTurnDelta: -1, changeDirection: "decrease" })).toEqual([{ path: "perTurnDelta", message }]);
+    expect(issuesOf({ perTurnDelta: -1, maxChangePerTurn: 3 })).toEqual([{ path: "perTurnDelta", message }]);
+    // 기본값(오르내림·제한 없음)은 제한을 건 것이 아니다 — 기존 카운터 스탯이 그대로 통과해야 한다.
+    expect(issuesOf({ perTurnDelta: -1 })).toEqual([]);
   });
 });
 

@@ -42,9 +42,12 @@ function baseFormValues(): StoryBuilderFormValues {
             unit: "pt",
             description: "생존에 필요한 신체 상태",
             perTurnDelta: -1,
+            changeDirection: "both",
+            maxChangePerTurn: null,
           },
         ],
         endings: [],
+        situationNotes: [],
       },
     ],
     keywordNotes: [
@@ -122,9 +125,12 @@ describe("formToServer", () => {
               unit: "pt",
               description: "생존에 필요한 신체 상태",
               perTurnDelta: -1,
+              changeDirection: "both",
+              maxChangePerTurn: null,
             },
           ],
           endings: [],
+          situationNotes: [],
         },
       ],
       keywordNotes: [
@@ -257,6 +263,57 @@ describe("formToServer", () => {
 
     expect(payload.startingSetups.map((setup) => setup.id)).toEqual(["second", "first"]);
     expect(requireFirst(payload.startingSetups).statDefs.map((stat) => stat.id)).toEqual(["stat-b", "stat-a"]);
+  });
+
+  it("always sends a stat's change direction and max change per turn, even at their defaults", () => {
+    // 서버는 빠진 두 옵션을 "기존 값 유지"로 읽는다 — 빼면 기본값으로 되돌린 것이 저장되지 않고, 미리보기도 저장된 옵션을
+    // 쓰지 못한다.
+    const values = baseFormValues();
+    const stat = requireFirst(requireFirst(values.startingSetups).stats);
+    const defaultStat = requireFirst(requireFirst(formToServer(values).startingSetups).statDefs);
+    expect(defaultStat).toHaveProperty("changeDirection", "both");
+    expect(defaultStat).toHaveProperty("maxChangePerTurn", null);
+
+    stat.perTurnDelta = null;
+    stat.changeDirection = "decrease";
+    stat.maxChangePerTurn = 7;
+    const limitedStat = requireFirst(requireFirst(formToServer(values).startingSetups).statDefs);
+    expect(limitedStat).toMatchObject({ perTurnDelta: null, changeDirection: "decrease", maxChangePerTurn: 7 });
+  });
+
+  it("leaves out a max change per turn the input could not read as a whole number so the saved limit stays", () => {
+    // 정수가 아닌 값은 서버가 초안 저장째 거절하고, null 로 보내면 저장된 폭이 "제한 없음"으로 덮인다 — 서버는 빠진 키를
+    // "기존 값 유지"로 읽는다.
+    const values = baseFormValues();
+    requireFirst(requireFirst(values.startingSetups).stats).maxChangePerTurn = Number.NaN;
+
+    expect(requireFirst(requireFirst(formToServer(values).startingSetups).statDefs)).not.toHaveProperty(
+      "maxChangePerTurn",
+    );
+  });
+
+  it("always sends each starting setup's situation notes, even an empty list", () => {
+    // 서버는 이 키가 없으면 그 시작설정의 노트를 그대로 둔다 — 빼면 지운 노트와 스탯 삭제로 함께 지운 조건이 남는다.
+    const values = baseFormValues();
+    const setup = requireFirst(values.startingSetups);
+    expect(requireFirst(formToServer(values).startingSetups)).toHaveProperty("situationNotes", []);
+
+    setup.situationNotes = [
+      {
+        id: "situation-1",
+        name: "상영회 당일",
+        content: "오늘은 가을 상영회 당일이다.",
+        conditionRules: [{ kind: "rule", id: "r1", statId: "stat-1", operator: "<=", value: 0, nextOp: null }],
+      },
+    ];
+    expect(requireFirst(formToServer(values).startingSetups).situationNotes).toEqual([
+      {
+        id: "situation-1",
+        name: "상영회 당일",
+        infoText: "오늘은 가을 상영회 당일이다.",
+        conditionRules: [{ kind: "rule", id: "r1", statId: "stat-1", operator: "lte", threshold: 0, nextOp: null }],
+      },
+    ]);
   });
 
   it("always sends the four keyword note options, even at their defaults", () => {
