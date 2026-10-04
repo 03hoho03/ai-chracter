@@ -57,10 +57,11 @@ export function SectionRow({
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3">
       <div className="flex items-start justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-1.5">
+        {/* 슬롯 이름은 공백 없는 긴 snake_case 라 아무 데서나 꺾어, 좁은 화면에서도 오른쪽 순서 버튼을 밀어내지 않는다. */}
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <span className={BADGE_CLASS}>{isPromptScope(scope) ? PROMPT_SCOPE_LABELS[scope] : scope}</span>
           {variant && <span className={BADGE_CLASS}>variant: {variant}</span>}
-          <code className="font-mono text-xs text-muted-foreground">{slot}</code>
+          <code className="min-w-0 font-mono text-xs wrap-anywhere text-muted-foreground">{slot}</code>
           {conditional && (
             <span className="text-xs text-muted-foreground">· 값이 비면 섹션째 생략돼요</span>
           )}

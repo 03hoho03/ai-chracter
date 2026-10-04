@@ -5,6 +5,7 @@ import { Check } from "lucide-react";
 import { useState } from "react";
 
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { DenseTable } from "@/shared/ui/DenseTable";
 
 import { useVersionDetailQuery } from "../api/useVersionDetailQuery";
 import { useVersionListQuery } from "../api/useVersionListQuery";
@@ -50,64 +51,64 @@ function VersionTable() {
 
   return (
     <>
+      {/* 다섯 칸이라 좁은 화면에서는 표만 가로로 스크롤하고 버전 칸은 왼쪽에 고정한다. */}
       <div className="overflow-hidden rounded-lg border border-border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>
-                {/* 값 칸의 체크 글리프 슬롯(size-4 + gap-1.5)만큼 비워 `버전`과 `vN`의 왼쪽 끝을 맞춘다. */}
-                <span className="inline-flex items-center gap-1.5">
-                  <span aria-hidden className="size-4" />
-                  버전
-                </span>
-              </TableHead>
-              <TableHead>레인</TableHead>
-              <TableHead>게시일</TableHead>
-              <TableHead>메모</TableHead>
-              <TableHead>상태</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {publishedVersions.map((item) => {
-              const isSelected = item.id === selectedId;
-              return (
-                // 선택 채움은 `secondary`다 — 공용 `TableRow`의 `bg-muted`는 이 표가 앉은 `bg-card`와
-                // 같은 값이라 선택이 1.0000:1로 사라지고, 공용 hover `muted/50`도 같은 이유로 안 보여
-                // 호출부에서 둘 다 덮는다(공용 기본값은 두고 호출부만 덮는다). 채움은 card 대비
-                // 1.12:1뿐이라 선택을 전달하는 3:1 단서로 체크 글리프를 함께 둔다(`foreground` on
-                // `secondary` 14.06:1). 자리를 늘 비워 두어 선택이 바뀌어도 열 폭이 흔들리지 않는다.
-                // 행 전체 클릭은 두되 키보드·보조기술 진입점은 첫 셀의 네이티브 버튼이다 — `<tr
-                // role="button">`은 표의 행·열 의미를 지우고 `aria-selected`도 무효가 된다. 버튼엔
-                // onClick이 없다: Enter/Space가 만든 네이티브 click이 `tr`의 onClick으로 한 번만
-                // 버블된다.
-                <TableRow
-                  key={item.id}
-                  className={cn(
-                    "cursor-pointer hover:bg-secondary/50",
-                    isSelected && "bg-secondary hover:bg-secondary",
-                  )}
-                  onClick={() => setSelectedId(item.id)}
-                >
-                  <TableCell>
-                    <button
-                      type="button"
-                      aria-current={isSelected || undefined}
-                      className="flex w-full items-center gap-1.5 rounded-sm text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-                    >
-                      <Check aria-hidden className={cn("size-4 text-foreground", !isSelected && "invisible")} />
-                      v{item.version}
-                      <span className="sr-only">, {PROMPT_LANE_LABELS[item.lane]}</span>
-                    </button>
-                  </TableCell>
-                  <TableCell>{PROMPT_LANE_LABELS[item.lane]}</TableCell>
-                  <TableCell>{formatDateTime(item.publishedAt)}</TableCell>
-                  <TableCell className="max-w-64 truncate">{item.note || "-"}</TableCell>
-                  <TableCell>{item.isActive ? "활성" : "-"}</TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
+        <DenseTable surface="card">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>
+                  {/* 값 칸의 체크 글리프 슬롯(size-4 + gap-1.5)만큼 비워 `버전`과 `vN`의 왼쪽 끝을 맞춘다. */}
+                  <span className="inline-flex items-center gap-1.5">
+                    <span aria-hidden className="size-4" />
+                    버전
+                  </span>
+                </TableHead>
+                <TableHead>레인</TableHead>
+                <TableHead>게시일</TableHead>
+                <TableHead>메모</TableHead>
+                <TableHead>상태</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {publishedVersions.map((item) => {
+                const isSelected = item.id === selectedId;
+                return (
+                  // 고른 행은 `data-state="selected"` 로 알린다 — 채움(`secondary`, 고정한 버전 칸까지)은 `DenseTable` 이
+                  // 칠한다(공용 `TableRow` 의 선택 채움 `bg-muted` 는 이 표가 앉은 `bg-card` 와 같은 값이라 1.0000:1 로
+                  // 사라진다). 채움은 card 대비 1.12:1뿐이라 선택을 전달하는 3:1 단서로 체크 글리프를 함께 둔다(`foreground` on
+                  // `secondary` 14.06:1). 자리를 늘 비워 두어 선택이 바뀌어도 열 폭이 흔들리지 않는다.
+                  // 행 전체 클릭은 두되 키보드·보조기술 진입점은 첫 셀의 네이티브 버튼이다 — `<tr
+                  // role="button">`은 표의 행·열 의미를 지우고 `aria-selected`도 무효가 된다. 버튼엔
+                  // onClick이 없다: Enter/Space가 만든 네이티브 click이 `tr`의 onClick으로 한 번만
+                  // 버블된다.
+                  <TableRow
+                    key={item.id}
+                    data-state={isSelected ? "selected" : undefined}
+                    className="cursor-pointer"
+                    onClick={() => setSelectedId(item.id)}
+                  >
+                    <TableCell>
+                      <button
+                        type="button"
+                        aria-current={isSelected || undefined}
+                        className="flex w-full items-center gap-1.5 rounded-sm text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                      >
+                        <Check aria-hidden className={cn("size-4 text-foreground", !isSelected && "invisible")} />
+                        v{item.version}
+                        <span className="sr-only">, {PROMPT_LANE_LABELS[item.lane]}</span>
+                      </button>
+                    </TableCell>
+                    <TableCell>{PROMPT_LANE_LABELS[item.lane]}</TableCell>
+                    <TableCell>{formatDateTime(item.publishedAt)}</TableCell>
+                    <TableCell className="max-w-64 truncate">{item.note || "-"}</TableCell>
+                    <TableCell>{item.isActive ? "활성" : "-"}</TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </DenseTable>
       </div>
 
       {selectedId !== undefined && <VersionDetailPanel id={selectedId} />}
