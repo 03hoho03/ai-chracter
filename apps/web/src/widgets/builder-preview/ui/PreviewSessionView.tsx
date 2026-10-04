@@ -58,16 +58,16 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
   // useStartPreviewMutation의 성공 콜백으로만 채워진다. 지연 시작 이후 첫 전송 전에는 그 캐시가
   // 비어 있으므로, 세션 id 없이 계산한 로컬 상태로 대신한다 — 안 그러면 첫 전송 전까지 영구
   // 스켈레톤이 된다.
-  const payload = getPayload();
-  const state = stateQuery.data ?? buildPreviewStartState(undefined, payload, getMediaBookImages?.());
+  // 세션이 생긴 뒤에는 폼을 다시 변환하지 않는다 — 스트리밍 글자마다 이 화면이 다시 그려진다.
+  const state = stateQuery.data ?? buildPreviewStartState(undefined, getPayload(), getMediaBookImages?.());
   // 미리보기 턴은 작가의 기본 프로필을 조용히 쓴다. 무엇이 들어가는지 입력창
   // 위에 한 줄로 보인다. `isSuccess`만 넘기는 건 재조회 실패(옛 data가 남은 error)에도 숨기기 위해서다.
   const personasQuery = usePersonasQuery();
   const personaList = personasQuery.isSuccess ? personasQuery.data : undefined;
   const personaCaption = previewPersonaLabel(personaList);
   // 작가 글(첫 메시지·에필로그·칩·단축어·스탯 이름)의 `{{user}}`·`{{char}}` 를 서버의 미리보기 프롬프트와 같은 이름으로
-  // 바꿔 보인다. 캐시의 첫 메시지는 원문이라 프로필·기본 이름을 바꾸면 바로 다시 그려진다.
-  const macroNames = previewAuthorMacroNames(payload, state.contentType, personaList);
+  // 바꿔 보인다. 작품 쪽 값은 세션 상태의 것이라 세션 도중 폼에서 이름을 고쳐도 서버(시작 때 페이로드)와 갈리지 않는다.
+  const macroNames = previewAuthorMacroNames(state.authorNameSource, state.contentType, personaList);
   const expandForPreview = (text: string) => expandAuthorMacros(text, macroNames);
 
   // 미리보기도 채팅 4경로와 **같은 게이트**를 지나므로 같은

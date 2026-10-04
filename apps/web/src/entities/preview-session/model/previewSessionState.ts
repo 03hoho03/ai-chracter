@@ -21,11 +21,24 @@ export type PreviewShortcut = {
   prompt: string;
 };
 
+/**
+ * 작가 글의 `{{user}}`·`{{char}}` 를 고를 때 쓰는 작품 쪽 값. 서버는 세션을 시작할 때 받은 페이로드를 세션 내내 쓰므로
+ * (세션 중에 페이로드를 바꾸는 경로가 없다) 화면도 같은 순간의 값을 세션 상태에 들고 있다 — 세션 도중 폼에서 이름을
+ * 고쳐도 모델이 아는 이름과 화면·보내는 글의 이름이 갈리지 않는다. 새 세션(미리보기 초기화)에서 다시 잡힌다.
+ */
+export type PreviewAuthorNameSource = {
+  /** 작품 기본 이름. 페이로드에 없으면(서버가 받지 않을 값이라 빼고 보냈으면) 서버처럼 빈 값이다. */
+  defaultUserName: string;
+  /** 작품 이름 — 캐릭터 미리보기에서 `{{char}}` 가 된다. */
+  contentName: string;
+};
+
 export type PreviewSessionState = {
   // 첫 전송 전에는 서버 세션이 없다 — buildPreviewStartState가
   // 이 필드 없이 로컬 플레이스홀더 상태를 만들 수 있어야 해서 옵셔널이다.
   previewSessionId?: string;
   contentType: "character" | "story";
+  authorNameSource: PreviewAuthorNameSource;
   messages: PreviewChatMessage[];
   // 첫 메시지(작성자의 시작상황·프롤로그)의 칸 id 형태 태그가 가리키는 그림. 빌더가 가진 칸 썸네일로 만든다.
   openingMediaTagImages: MediaTagImages;

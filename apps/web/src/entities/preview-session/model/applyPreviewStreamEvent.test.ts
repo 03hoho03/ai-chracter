@@ -12,6 +12,7 @@ function buildState(overrides: Partial<PreviewSessionState> = {}): PreviewSessio
   return {
     previewSessionId: SESSION_ID,
     contentType: "story",
+    authorNameSource: { defaultUserName: "", contentName: "여름밤의 항해" },
     messages: [{ id: "m1", role: "assistant", content: "안녕", createdAt: "2026-07-08T00:00:00Z" }],
     openingMediaTagImages: {},
     stats: { hp: 50 },
