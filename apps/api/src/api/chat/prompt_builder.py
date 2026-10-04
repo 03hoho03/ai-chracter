@@ -82,6 +82,8 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
     ("generation", "memory_summary"): frozenset({"memory_summary"}),
     ("generation", "history"): frozenset({"history_lines"}),
     ("generation", "keyword_notes"): frozenset({"keyword_note_lines"}),
+    # 조건이 참인 상황 노트 본문. conditional 이라 참인 노트가 없으면 섹션째 빠진다.
+    ("generation", "situation_notes"): frozenset({"situation_note_lines"}),
     ("generation", "shortcut_prompt"): frozenset({"shortcut_prompt"}),
     ("generation", "final_frame"): frozenset({"user_label", "user_message", "assistant_label"}),
     ("stat_judgment", "stat_defs_intro"): frozenset({"stat_lines"}),
@@ -378,6 +380,7 @@ def build_story_generation_prompt(
     memory_note: str,
     memory_summary: str,
     keyword_note_texts: list[str] | None = None,
+    situation_note_texts: list[str] | None = None,
     shortcut_prompt: str | None = None,
 ) -> str:
     """생성 프롬프트를 조립한다 — 스토리 챗 전용.
@@ -391,6 +394,9 @@ def build_story_generation_prompt(
     `[키워드북]`은 `[대화 기록]`
     **뒤**에 온다 — 변하는 속도가 느린 것이 앞, 빠른 것이 뒤여야 캐시 프리픽스가
     안정된다는 이유는 `prompt_sections.order` 시드값이 이미 반영하고 있다.
+
+    `situation_note_texts` 는 스탯 조건이 참인 상황 노트 본문(호출부가 이미 골라 순서대로 넘긴다)이다. 값이
+    비면 빈 문자열을 넘겨 conditional 섹션째 빠지게 한다 — 노트가 없는 방의 프롬프트는 이 인자 이전과 같다.
 
     전개 예시(`development_examples`)는 `story_example_label`("서술자")을, 그 외
     자리(히스토리·마지막 프레임)는 `story_assistant_label`("진행자")을 쓴다 —
@@ -423,6 +429,7 @@ def build_story_generation_prompt(
         "memory_summary": memory_summary,
         "history_lines": history_lines,
         "keyword_note_lines": "\n".join(keyword_note_texts) if keyword_note_texts else "",
+        "situation_note_lines": "\n".join(situation_note_texts) if situation_note_texts else "",
         "shortcut_prompt": shortcut_prompt or "",
         "user_label": prompt_set.user_label,
         "user_message": user_message,
@@ -431,6 +438,23 @@ def build_story_generation_prompt(
     return render_prompt_channel(
         sections, channel="generation", scope="story", variant=_story_generation_variant(prompt_template), values=values
     )
+
+
+def _stat_line_tail(stat_def: StatDef) -> str:
+    """판정 프롬프트 스탯 줄 끝의 안내. 방향·폭 제약은 `apply_stat_changes` 가 어차피 잘라 내므로 정확성과는 무관하고,
+    판정이 처음부터 자를 값을 내지 않게 돕는 보조다. 제약 없는 스탯 줄은 꼬리 없이 그대로 둔다. 카운터 줄은 초안·미리보기에
+    옵션이 함께 남아 있어도 판정을 받지 않으므로 제약 꼬리를 달지 않는다."""
+    if stat_def.per_turn_delta is not None:
+        return "  ※ 시스템이 매 턴 자동 조정하는 값이다. statChanges에 넣지 마라."
+    notes: list[str] = []
+    if stat_def.change_direction == "increase":
+        notes.append("증가만 할 수 있다.")
+    elif stat_def.change_direction == "decrease":
+        notes.append("감소만 할 수 있다.")
+    step = stat_def.max_change_per_turn
+    if step is not None and step > 0:
+        notes.append(f"한 턴에 최대 {step}까지 바뀐다.")
+    return f"  ※ {' '.join(notes)}" if notes else ""
 
 
 def build_stat_judgment_prompt(
@@ -461,7 +485,7 @@ def build_stat_judgment_prompt(
         f"- statId={stat_def.entity_id}, 이름={stat_def.name}, 설명={stat_def.description}, "
         f"범위=[{stat_def.min_value}, {stat_def.max_value}], "
         f"현재값={current_stats.get(str(stat_def.entity_id), stat_def.initial_value)}"
-        + ("  ※ 시스템이 매 턴 자동 조정하는 값이다. statChanges에 넣지 마라." if stat_def.per_turn_delta is not None else "")
+        + _stat_line_tail(stat_def)
         for stat_def in stat_defs
     )
     values = {

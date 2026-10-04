@@ -2,6 +2,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { cn } from "@ai-character-chat/ui/lib/utils";
+import { Loader2 } from "lucide-react";
 import { useFormContext, useWatch } from "react-hook-form";
 
 import {
@@ -12,6 +13,7 @@ import {
   useCloverBalanceQuery,
 } from "@/entities/clover";
 
+import { getGenerateButtonState } from "../model/generateButtonState";
 import { getPromptSyntaxHint, PROMPT_WEIGHT_SYNTAX_HINT } from "../model/promptSyntaxHint";
 import type { GenerateImagesFormValues } from "../model/schema";
 import { useGenerateImagesSubmit } from "../model/useGenerateImagesSubmit";
@@ -23,9 +25,14 @@ import { useGenerateImagesSubmit } from "../model/useGenerateImagesSubmit";
 const PROMPT_PLACEHOLDER =
   "1girl, solo, long hair, white blouse, cardigan, cherry blossoms, looking at viewer, upper body";
 
+type GenerateImagesPromptFieldProps = {
+  /** 202 를 받은 잡이 아직 끝나지 않았는가 — 제출을 소유한 셸이 정한다. */
+  isJobInProgress: boolean;
+};
+
 // `<form>` 엘리먼트는 이 조각(중앙 열)이 감싼다. FormProvider는
 // React context라 DOM 위치와 무관하므로, 다른 열/시트의 필드도 이 제출에 포함된다.
-export function GenerateImagesPromptField() {
+export function GenerateImagesPromptField({ isJobInProgress }: GenerateImagesPromptFieldProps) {
   const {
     register,
     handleSubmit,
@@ -33,7 +40,11 @@ export function GenerateImagesPromptField() {
     formState: { errors, isSubmitting },
   } = useFormContext<GenerateImagesFormValues>();
   const { onSubmit, isModelsPending } = useGenerateImagesSubmit();
-  const isSubmitBlocked = isSubmitting || isModelsPending;
+  const { isBlocked: isSubmitBlocked, isGenerating } = getGenerateButtonState({
+    isSubmitting,
+    isModelsPending,
+    isJobInProgress,
+  });
   // 무료 토큰을 다 쓴 뒤에만 나타난다.
   // 단가는 1장 기준 `IMAGE_UNIT_COST`(30)다 — 한 요청 최대 2장이지만 "한 장도 못 만드는가"가
   // 부족의 기준이라 장수를 곱하지 않는다.
@@ -99,20 +110,44 @@ export function GenerateImagesPromptField() {
                 <body>로 떨어뜨린다. 제출 중(isSubmitting)에 실제로 그 상황이 되므로
                 ContentListLoadMore·ReconsentModal·WithdrawAccountDialog와 같은 레시피를 쓴다.
                 isModelsPending은 마운트 시점부터 true라 blur 위험은 없지만, 한 버튼에 두 어휘가
-                섞이지 않게 같은 축으로 묶는다 — 덕분에 모델 로딩 중에도 버튼이 tab 순서에 남는다. */}
+                섞이지 않게 같은 축으로 묶는다 — 덕분에 모델 로딩 중에도 버튼이 tab 순서에 남는다.
+                잡이 도는 동안(202 이후 완료·실패·폴링 오류 전까지)도 같은 방식으로 잠그고 라벨을 바꾼다 —
+                포커스가 버튼에 남아 있어야 결과를 보고 바로 다시 누를 수 있다. 스피너는 진행 표시라
+                모션 감소 설정에서도 끄지 않는다(멈추면 멈춘 화면으로 읽힌다).
+                두 라벨을 한 그리드 칸에 겹쳐 두고 지금 아닌 쪽만 `invisible`로 감춘다 — 버튼 폭이 늘 넓은
+                쪽(스피너 + "생성 중…")에 맞아, 라벨이 바뀌어도 버튼이 늘거나 줄지 않는다. `invisible`은
+                접근성 트리에서도 빠지므로 접근 이름은 보이는 라벨 하나다. */}
             <Button
               type="submit"
               aria-disabled={isSubmitBlocked}
               className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
             >
-              이미지 생성
+              <span className="grid">
+                <span
+                  className={cn(
+                    "col-start-1 row-start-1 inline-flex items-center justify-center",
+                    isGenerating && "invisible",
+                  )}
+                >
+                  이미지 생성
+                </span>
+                <span
+                  className={cn(
+                    "col-start-1 row-start-1 inline-flex items-center justify-center gap-1.5",
+                    !isGenerating && "invisible",
+                  )}
+                >
+                  <Loader2 aria-hidden className="animate-spin" />
+                  생성 중…
+                </span>
+              </span>
             </Button>
           </div>
         </div>
         {/* 가중치 문법 안내/괄호 경고를 한 줄로 합친다. 하드
             에러(errors.prompt)와 다른 어휘라 aria-invalid/role="alert"/text-destructive-text에는
-            연결하지 않는다 — 제출을 막지 않는 경고다(GenerateImagesOptionsFields.tsx:106-108 선례).
-            aria-live="polite" + 항상 마운트(GenerateImagesResultGrid.tsx:143-148 선례) — 문구가
+            연결하지 않는다 — 제출을 막지 않는 경고다.
+            aria-live="polite" + 항상 마운트(`GenerateImagesResultGrid` 의 상태 줄과 같은 방식) — 문구가
             타이핑마다 바뀌므로 조건부 마운트하면 announce 여부가 갈린다. */}
         <p
           id="generate-images-prompt-hint"

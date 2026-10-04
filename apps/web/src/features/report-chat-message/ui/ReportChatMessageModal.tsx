@@ -2,6 +2,7 @@ import { useId } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -73,7 +74,7 @@ export const ReportChatMessageModal = createCallable<ReportChatMessageModalProps
     return (
       <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end()}>
         <DialogContent
-          className="max-h-dialog overflow-y-auto sm:max-w-sm"
+          className="sm:max-w-sm"
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             requestAnimationFrame(returnFocus);
@@ -86,8 +87,10 @@ export const ReportChatMessageModal = createCallable<ReportChatMessageModalProps
             </DialogDescription>
           </DialogHeader>
 
+          {/* 폼이 본문과 푸터를 함께 감싼다 — 신고하기(submit) 버튼이 폼 안에 있어야 해서다. 그래서 폼이 다이얼로그의
+              남은 높이를 받아(`min-h-0 flex-1`) 그 안에서 본문만 스크롤하고 푸터는 바닥에 남는다. */}
           <form
-            className="flex flex-col gap-4"
+            className="flex min-h-0 flex-1 flex-col gap-4"
             noValidate
             onSubmit={(event) => {
               event.preventDefault();
@@ -96,61 +99,63 @@ export const ReportChatMessageModal = createCallable<ReportChatMessageModalProps
               void form.handleSubmit(handleValidSubmit)(event);
             }}
           >
-            <div className="flex flex-col gap-1.5">
-              <Controller
-                control={form.control}
-                name="reason"
-                render={({ field }) => (
-                  // `hover:bg-secondary` — 프리미티브의 `hover:bg-muted` 는 모달(popover) 표면과 같은 값이라 사라진다.
-                  <ToggleGroup
-                    type="single"
-                    variant="list"
-                    orientation="vertical"
-                    value={field.value ?? ""}
-                    onValueChange={(value) => field.onChange(isChatMessageReportReason(value) ? value : undefined)}
-                    aria-label="신고 사유"
-                    aria-invalid={!!errors.reason}
-                    aria-describedby={errors.reason ? reasonErrorId : undefined}
-                    className="w-full"
-                  >
-                    {CHAT_MESSAGE_REPORT_REASONS.map((reason) => (
-                      <ToggleGroupItem key={reason} value={reason} className="h-11 w-full justify-start px-3 hover:bg-secondary">
-                        {CHAT_MESSAGE_REPORT_REASON_LABELS[reason]}
-                      </ToggleGroupItem>
-                    ))}
-                  </ToggleGroup>
+            <DialogBody className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <Controller
+                  control={form.control}
+                  name="reason"
+                  render={({ field }) => (
+                    // `hover:bg-secondary` — 프리미티브의 `hover:bg-muted` 는 모달(popover) 표면과 같은 값이라 사라진다.
+                    <ToggleGroup
+                      type="single"
+                      variant="list"
+                      orientation="vertical"
+                      value={field.value ?? ""}
+                      onValueChange={(value) => field.onChange(isChatMessageReportReason(value) ? value : undefined)}
+                      aria-label="신고 사유"
+                      aria-invalid={!!errors.reason}
+                      aria-describedby={errors.reason ? reasonErrorId : undefined}
+                      className="w-full"
+                    >
+                      {CHAT_MESSAGE_REPORT_REASONS.map((reason) => (
+                        <ToggleGroupItem key={reason} value={reason} className="h-11 w-full justify-start px-3 hover:bg-secondary">
+                          {CHAT_MESSAGE_REPORT_REASON_LABELS[reason]}
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
+                  )}
+                />
+                {errors.reason && (
+                  <p id={reasonErrorId} role="alert" className="text-xs text-destructive-text">
+                    {errors.reason.message}
+                  </p>
                 )}
-              />
-              {errors.reason && (
-                <p id={reasonErrorId} role="alert" className="text-xs text-destructive-text">
-                  {errors.reason.message}
-                </p>
-              )}
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-baseline justify-between gap-2">
-                <Label htmlFor={noteId}>
-                  메모 <span className="font-normal text-muted-foreground">(선택)</span>
-                </Label>
-                <span id={noteCountId} className="text-xs text-muted-foreground tabular-nums">
-                  {noteLength}/{CHAT_MESSAGE_REPORT_NOTE_MAX_LENGTH}
-                </span>
               </div>
-              <Textarea
-                id={noteId}
-                rows={3}
-                placeholder="어떤 점이 문제였는지 적어주세요"
-                aria-invalid={!!errors.note}
-                aria-describedby={errors.note ? `${noteErrorId} ${noteCountId}` : noteCountId}
-                {...form.register("note")}
-              />
-              {errors.note && (
-                <p id={noteErrorId} role="alert" className="text-xs text-destructive-text">
-                  {errors.note.message}
-                </p>
-              )}
-            </div>
+
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-baseline justify-between gap-2">
+                  <Label htmlFor={noteId}>
+                    메모 <span className="font-normal text-muted-foreground">(선택)</span>
+                  </Label>
+                  <span id={noteCountId} className="text-xs text-muted-foreground tabular-nums">
+                    {noteLength}/{CHAT_MESSAGE_REPORT_NOTE_MAX_LENGTH}
+                  </span>
+                </div>
+                <Textarea
+                  id={noteId}
+                  rows={3}
+                  placeholder="어떤 점이 문제였는지 적어주세요"
+                  aria-invalid={!!errors.note}
+                  aria-describedby={errors.note ? `${noteErrorId} ${noteCountId}` : noteCountId}
+                  {...form.register("note")}
+                />
+                {errors.note && (
+                  <p id={noteErrorId} role="alert" className="text-xs text-destructive-text">
+                    {errors.note.message}
+                  </p>
+                )}
+              </div>
+            </DialogBody>
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => call.end()}>

@@ -8,46 +8,23 @@ import { Controller, useFieldArray, useFormContext, useWatch } from "react-hook-
 
 import {
   CollapsibleItemCard,
-  firstLine,
   focusNeighborToggle,
   indexOpenKey,
   ItemRemoveButton,
   useBuilderUiState,
 } from "@/features/build-common";
 import {
+  FieldLabelText,
+  MAX_DEVELOPMENT_EXAMPLES,
+  PROMPT_TEMPLATE_LABELS,
   PROMPT_TEMPLATE_VALUES,
-  type PromptTemplate,
+  STORY_FIELD_LABELS,
   type StoryBuilderFormValues,
   type StoryCollapsibleList,
 } from "@/features/build-story";
-import { RequiredText } from "@/shared/ui/RequiredText";
+import { firstLine } from "@/shared/lib/text/firstLine";
 
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
-
-// 템플릿마다 실제로 다른 지시문(생성 프롬프트 variant)을
-// 가지므로, 여기 설명이 빈말이 아니다. 안내문이라 지시문을 그대로 옮기지 않고 창작자가 읽을 말로 풀었다.
-// 값 목록(PROMPT_TEMPLATE_VALUES)은 스키마가 단일 소스다. 여기서는 그 배열을 map해 라벨·설명만
-// 매핑한다.
-const PROMPT_TEMPLATE_LABELS: Record<PromptTemplate, { label: string; description: string }> = {
-  basic: {
-    label: "기본",
-    description: "상황을 담백하게 그리며, 매 턴 다음 장면으로 이어질 실마리를 남겨요.",
-  },
-  emotional: {
-    label: "감정형",
-    description: "인물의 감정 변화를 섬세한 단서로 드러내 사용자가 알아챌 수 있게 해요.",
-  },
-  simulation: {
-    label: "시뮬레이션형",
-    description: "매 턴 무엇이 달라졌는지, 지금 무엇을 조작할 수 있는지 명확히 보여줘요.",
-  },
-  custom: {
-    label: "커스텀",
-    description: "직접 작성한 프롬프트로 진행하되, 기본 템플릿과 같은 진행 방식이 바탕에 깔려요.",
-  },
-};
-
-const MAX_DEVELOPMENT_EXAMPLES = 3;
 
 // 전개 예시는 폼 값에 id 가 없어 열림 키를 배열 위치로 만든다. 지울 때 저장소가 뒤 항목의 열림을 한 칸 당긴다.
 const DEVELOPMENT_EXAMPLE_LIST: StoryCollapsibleList = "developmentExample";
@@ -101,7 +78,7 @@ export function SettingTab() {
   return (
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-1.5">
-        <span className="text-sm leading-none font-medium"><RequiredText>프롬프트 템플릿</RequiredText></span>
+        <span className="text-sm leading-none font-medium"><FieldLabelText field="storySetting.promptTemplate" /></span>
         <Controller
           control={control}
           name="storySetting.promptTemplate"
@@ -145,7 +122,7 @@ export function SettingTab() {
 
       {isCustom ? (
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="story-setting-custom-prompt"><RequiredText>커스텀 프롬프트</RequiredText></Label>
+          <Label htmlFor="story-setting-custom-prompt"><FieldLabelText field="storySetting.customPrompt" /></Label>
           <Textarea
             id="story-setting-custom-prompt"
             placeholder="AI에게 지시할 프롬프트를 자유롭게 작성해주세요"
@@ -163,7 +140,7 @@ export function SettingTab() {
         </div>
       ) : (
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="story-setting-world"><RequiredText>스토리 설정/정보</RequiredText></Label>
+          <Label htmlFor="story-setting-world"><FieldLabelText field="storySetting.worldSetting" /></Label>
           <Textarea
             id="story-setting-world"
             placeholder="스토리의 세계관과 설정을 입력해주세요"
@@ -182,7 +159,7 @@ export function SettingTab() {
       )}
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="story-setting-rules">규칙</Label>
+        <Label htmlFor="story-setting-rules"><FieldLabelText field="storySetting.rules" /></Label>
         <Textarea
           id="story-setting-rules"
           placeholder="진행 중 지켜야 할 규칙을 입력해주세요"
@@ -200,7 +177,7 @@ export function SettingTab() {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="story-setting-user-goal">사용자의 역할과 목표</Label>
+        <Label htmlFor="story-setting-user-goal"><FieldLabelText field="storySetting.userGoal" /></Label>
         <Textarea
           id="story-setting-user-goal"
           placeholder="사용자가 이 이야기에서 맡는 역할과 이루고자 하는 목표를 입력해주세요"
@@ -218,7 +195,7 @@ export function SettingTab() {
       </div>
 
       <div className="flex flex-col gap-4" data-field-path="storySetting.developmentExamples">
-        <Label>전개 예시 (고급설정, 최대 {MAX_DEVELOPMENT_EXAMPLES}개)</Label>
+        <Label><FieldLabelText field="storySetting.developmentExamples" /></Label>
         {!!errors.storySetting?.developmentExamples?.message && (
           <p id="story-setting-development-examples-error" role="alert" className="text-xs text-destructive-text">
             {errors.storySetting.developmentExamples.message}
@@ -241,7 +218,7 @@ export function SettingTab() {
             >
               <div className="flex flex-col gap-2">
                 <Textarea
-                  placeholder="사용자 메시지"
+                  placeholder={STORY_FIELD_LABELS["storySetting.developmentExamples.*.userLine"].label}
                   rows={2}
                   aria-invalid={!!exampleErrors?.userLine}
                   aria-describedby={exampleErrors?.userLine ? userLineErrorId : undefined}
@@ -254,7 +231,7 @@ export function SettingTab() {
                   </p>
                 )}
                 <Textarea
-                  placeholder="스토리 응답"
+                  placeholder={STORY_FIELD_LABELS["storySetting.developmentExamples.*.assistantLine"].label}
                   rows={6}
                   aria-invalid={!!exampleErrors?.assistantLine}
                   aria-describedby={exampleErrors?.assistantLine ? assistantLineErrorId : undefined}

@@ -1,6 +1,7 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -20,18 +21,21 @@ type MediaBookOverwriteModalProps = { fileNames: string[] };
 export const MediaBookOverwriteModal = createCallable<MediaBookOverwriteModalProps, OverwriteChoice | undefined>(
   ({ call, fileNames }) => (
     <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end(undefined)}>
-      <DialogContent className="max-h-dialog overflow-y-auto sm:max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>이미 이미지가 있는 칸이 {fileNames.length}곳 있어요</DialogTitle>
           <DialogDescription className="break-keep">
             덮어쓰면 그 칸의 이미지만 바뀌고 상황 설명·해금 힌트는 그대로 남아요.
           </DialogDescription>
         </DialogHeader>
-        <ul className="flex flex-col gap-1 text-sm break-all text-foreground">
-          {fileNames.map((fileName) => (
-            <li key={fileName}>{fileName}</li>
-          ))}
-        </ul>
+        {/* 파일 이름 목록에는 포커스할 것이 없어, 본문 자체를 Tab 정지로 둬야 키보드로 목록을 스크롤할 수 있다. */}
+        <DialogBody scrollLabel="덮어쓸 파일 목록">
+          <ul className="flex flex-col gap-1 text-sm break-all text-foreground">
+            {fileNames.map((fileName) => (
+              <li key={fileName}>{fileName}</li>
+            ))}
+          </ul>
+        </DialogBody>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => call.end(undefined)}>
             취소

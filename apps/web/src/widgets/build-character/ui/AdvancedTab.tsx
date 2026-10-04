@@ -21,7 +21,6 @@ import { registerSituationalImage } from "@/entities/content";
 import type { CharacterBuilderFormValues, CharacterCollapsibleList } from "@/features/build-character";
 import {
   CollapsibleItemCard,
-  firstLine,
   focusNeighborToggle,
   ItemDragHandle,
   ItemRemoveButton,
@@ -30,6 +29,7 @@ import {
 } from "@/features/build-common";
 import { uploadAsset } from "@/shared/api/asset/uploadAsset";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
+import { firstLine } from "@/shared/lib/text/firstLine";
 import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
 
 const SITUATIONAL_IMAGE_LIST: CharacterCollapsibleList = "situationalImage";

@@ -34,10 +34,12 @@ import { Route as OnboardingGoogleRouteImport } from './routes/onboarding.google
 import { Route as NoticesNoticeIdRouteImport } from './routes/notices.$noticeId'
 import { Route as InquiriesNewRouteImport } from './routes/inquiries.new'
 import { Route as InquiriesInquiryIdRouteImport } from './routes/inquiries.$inquiryId'
-import { Route as GuideStoryRouteImport } from './routes/guide.story'
-import { Route as GuideCharacterRouteImport } from './routes/guide.character'
 import { Route as CloverHistoryRouteImport } from './routes/clover.history'
 import { Route as ChatRoomIdRouteImport } from './routes/chat.$roomId'
+import { Route as GuideStoryIndexRouteImport } from './routes/guide.story.index'
+import { Route as GuideCharacterIndexRouteImport } from './routes/guide.character.index'
+import { Route as GuideStoryStepRouteImport } from './routes/guide.story.$step'
+import { Route as GuideCharacterStepRouteImport } from './routes/guide.character.$step'
 import { Route as ContentTypeIdRouteImport } from './routes/content.$type.$id'
 import { Route as BuilderTypeDraftIdRouteImport } from './routes/builder.$type.$draftId'
 
@@ -166,16 +168,6 @@ const InquiriesInquiryIdRoute = InquiriesInquiryIdRouteImport.update({
   path: '/inquiries/$inquiryId',
   getParentRoute: () => rootRouteImport,
 } as any)
-const GuideStoryRoute = GuideStoryRouteImport.update({
-  id: '/guide/story',
-  path: '/guide/story',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const GuideCharacterRoute = GuideCharacterRouteImport.update({
-  id: '/guide/character',
-  path: '/guide/character',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const CloverHistoryRoute = CloverHistoryRouteImport.update({
   id: '/clover/history',
   path: '/clover/history',
@@ -184,6 +176,26 @@ const CloverHistoryRoute = CloverHistoryRouteImport.update({
 const ChatRoomIdRoute = ChatRoomIdRouteImport.update({
   id: '/chat/$roomId',
   path: '/chat/$roomId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuideStoryIndexRoute = GuideStoryIndexRouteImport.update({
+  id: '/guide/story/',
+  path: '/guide/story/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuideCharacterIndexRoute = GuideCharacterIndexRouteImport.update({
+  id: '/guide/character/',
+  path: '/guide/character/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuideStoryStepRoute = GuideStoryStepRouteImport.update({
+  id: '/guide/story/$step',
+  path: '/guide/story/$step',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuideCharacterStepRoute = GuideCharacterStepRouteImport.update({
+  id: '/guide/character/$step',
+  path: '/guide/character/$step',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ContentTypeIdRoute = ContentTypeIdRouteImport.update({
@@ -214,8 +226,6 @@ export interface FileRoutesByFullPath {
   '/ui-demo': typeof UiDemoRoute
   '/chat/$roomId': typeof ChatRoomIdRoute
   '/clover/history': typeof CloverHistoryRoute
-  '/guide/character': typeof GuideCharacterRoute
-  '/guide/story': typeof GuideStoryRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/inquiries/new': typeof InquiriesNewRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
@@ -229,6 +239,10 @@ export interface FileRoutesByFullPath {
   '/notices/': typeof NoticesIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
+  '/guide/character/$step': typeof GuideCharacterStepRoute
+  '/guide/story/$step': typeof GuideStoryStepRoute
+  '/guide/character/': typeof GuideCharacterIndexRoute
+  '/guide/story/': typeof GuideStoryIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -247,8 +261,6 @@ export interface FileRoutesByTo {
   '/ui-demo': typeof UiDemoRoute
   '/chat/$roomId': typeof ChatRoomIdRoute
   '/clover/history': typeof CloverHistoryRoute
-  '/guide/character': typeof GuideCharacterRoute
-  '/guide/story': typeof GuideStoryRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/inquiries/new': typeof InquiriesNewRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
@@ -262,6 +274,10 @@ export interface FileRoutesByTo {
   '/notices': typeof NoticesIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
+  '/guide/character/$step': typeof GuideCharacterStepRoute
+  '/guide/story/$step': typeof GuideStoryStepRoute
+  '/guide/character': typeof GuideCharacterIndexRoute
+  '/guide/story': typeof GuideStoryIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -281,8 +297,6 @@ export interface FileRoutesById {
   '/ui-demo': typeof UiDemoRoute
   '/chat/$roomId': typeof ChatRoomIdRoute
   '/clover/history': typeof CloverHistoryRoute
-  '/guide/character': typeof GuideCharacterRoute
-  '/guide/story': typeof GuideStoryRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/inquiries/new': typeof InquiriesNewRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
@@ -296,6 +310,10 @@ export interface FileRoutesById {
   '/notices/': typeof NoticesIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
+  '/guide/character/$step': typeof GuideCharacterStepRoute
+  '/guide/story/$step': typeof GuideStoryStepRoute
+  '/guide/character/': typeof GuideCharacterIndexRoute
+  '/guide/story/': typeof GuideStoryIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -316,8 +334,6 @@ export interface FileRouteTypes {
     | '/ui-demo'
     | '/chat/$roomId'
     | '/clover/history'
-    | '/guide/character'
-    | '/guide/story'
     | '/inquiries/$inquiryId'
     | '/inquiries/new'
     | '/notices/$noticeId'
@@ -331,6 +347,10 @@ export interface FileRouteTypes {
     | '/notices/'
     | '/builder/$type/$draftId'
     | '/content/$type/$id'
+    | '/guide/character/$step'
+    | '/guide/story/$step'
+    | '/guide/character/'
+    | '/guide/story/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -349,8 +369,6 @@ export interface FileRouteTypes {
     | '/ui-demo'
     | '/chat/$roomId'
     | '/clover/history'
-    | '/guide/character'
-    | '/guide/story'
     | '/inquiries/$inquiryId'
     | '/inquiries/new'
     | '/notices/$noticeId'
@@ -364,6 +382,10 @@ export interface FileRouteTypes {
     | '/notices'
     | '/builder/$type/$draftId'
     | '/content/$type/$id'
+    | '/guide/character/$step'
+    | '/guide/story/$step'
+    | '/guide/character'
+    | '/guide/story'
   id:
     | '__root__'
     | '/'
@@ -382,8 +404,6 @@ export interface FileRouteTypes {
     | '/ui-demo'
     | '/chat/$roomId'
     | '/clover/history'
-    | '/guide/character'
-    | '/guide/story'
     | '/inquiries/$inquiryId'
     | '/inquiries/new'
     | '/notices/$noticeId'
@@ -397,6 +417,10 @@ export interface FileRouteTypes {
     | '/notices/'
     | '/builder/$type/$draftId'
     | '/content/$type/$id'
+    | '/guide/character/$step'
+    | '/guide/story/$step'
+    | '/guide/character/'
+    | '/guide/story/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -416,8 +440,6 @@ export interface RootRouteChildren {
   UiDemoRoute: typeof UiDemoRoute
   ChatRoomIdRoute: typeof ChatRoomIdRoute
   CloverHistoryRoute: typeof CloverHistoryRoute
-  GuideCharacterRoute: typeof GuideCharacterRoute
-  GuideStoryRoute: typeof GuideStoryRoute
   InquiriesInquiryIdRoute: typeof InquiriesInquiryIdRoute
   InquiriesNewRoute: typeof InquiriesNewRoute
   NoticesNoticeIdRoute: typeof NoticesNoticeIdRoute
@@ -431,6 +453,10 @@ export interface RootRouteChildren {
   NoticesIndexRoute: typeof NoticesIndexRoute
   BuilderTypeDraftIdRoute: typeof BuilderTypeDraftIdRoute
   ContentTypeIdRoute: typeof ContentTypeIdRoute
+  GuideCharacterStepRoute: typeof GuideCharacterStepRoute
+  GuideStoryStepRoute: typeof GuideStoryStepRoute
+  GuideCharacterIndexRoute: typeof GuideCharacterIndexRoute
+  GuideStoryIndexRoute: typeof GuideStoryIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -610,20 +636,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InquiriesInquiryIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/guide/story': {
-      id: '/guide/story'
-      path: '/guide/story'
-      fullPath: '/guide/story'
-      preLoaderRoute: typeof GuideStoryRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/guide/character': {
-      id: '/guide/character'
-      path: '/guide/character'
-      fullPath: '/guide/character'
-      preLoaderRoute: typeof GuideCharacterRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/clover/history': {
       id: '/clover/history'
       path: '/clover/history'
@@ -636,6 +648,34 @@ declare module '@tanstack/react-router' {
       path: '/chat/$roomId'
       fullPath: '/chat/$roomId'
       preLoaderRoute: typeof ChatRoomIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guide/story/': {
+      id: '/guide/story/'
+      path: '/guide/story'
+      fullPath: '/guide/story/'
+      preLoaderRoute: typeof GuideStoryIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guide/character/': {
+      id: '/guide/character/'
+      path: '/guide/character'
+      fullPath: '/guide/character/'
+      preLoaderRoute: typeof GuideCharacterIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guide/story/$step': {
+      id: '/guide/story/$step'
+      path: '/guide/story/$step'
+      fullPath: '/guide/story/$step'
+      preLoaderRoute: typeof GuideStoryStepRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guide/character/$step': {
+      id: '/guide/character/$step'
+      path: '/guide/character/$step'
+      fullPath: '/guide/character/$step'
+      preLoaderRoute: typeof GuideCharacterStepRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/content/$type/$id': {
@@ -672,8 +712,6 @@ const rootRouteChildren: RootRouteChildren = {
   UiDemoRoute: UiDemoRoute,
   ChatRoomIdRoute: ChatRoomIdRoute,
   CloverHistoryRoute: CloverHistoryRoute,
-  GuideCharacterRoute: GuideCharacterRoute,
-  GuideStoryRoute: GuideStoryRoute,
   InquiriesInquiryIdRoute: InquiriesInquiryIdRoute,
   InquiriesNewRoute: InquiriesNewRoute,
   NoticesNoticeIdRoute: NoticesNoticeIdRoute,
@@ -687,6 +725,10 @@ const rootRouteChildren: RootRouteChildren = {
   NoticesIndexRoute: NoticesIndexRoute,
   BuilderTypeDraftIdRoute: BuilderTypeDraftIdRoute,
   ContentTypeIdRoute: ContentTypeIdRoute,
+  GuideCharacterStepRoute: GuideCharacterStepRoute,
+  GuideStoryStepRoute: GuideStoryStepRoute,
+  GuideCharacterIndexRoute: GuideCharacterIndexRoute,
+  GuideStoryIndexRoute: GuideStoryIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

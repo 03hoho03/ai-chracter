@@ -1,6 +1,6 @@
 import { ChatMarkdown, USER_MESSAGE_FRAME } from "@/entities/chat-room";
 
-import type { ConversationMessage } from "../model/toGuideLayout";
+import type { ConversationMessage } from "../model/toGuidePages";
 
 type GuideConversationProps = {
   messages: ConversationMessage[];
