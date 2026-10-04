@@ -1,6 +1,6 @@
 import type { RegisteredRouter, RouteById } from "@tanstack/react-router";
 import { atom, useAtomValue, useSetAtom } from "jotai";
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 
 /** "목록으로"가 돌아갈 목록들. 키는 라우트 id 다(목록을 `.index.tsx` 로 두는 규약이라 끝에 슬래시가 붙는다). */
 export type ListRouteId = "/contents/" | "/users/" | "/reports/" | "/inquiries/" | "/notices/" | "/image-generations/";
@@ -31,4 +31,14 @@ export function useRememberListSearch<Id extends ListRouteId>(id: Id, search: Li
 /** "목록으로"가 읽는다. 아직 그 목록을 연 적이 없으면 `undefined` — 링크는 search 없이 기본 목록으로 간다. */
 export function useRememberedListSearch<Id extends ListRouteId>(id: Id): ListSearch<Id> | undefined {
   return useAtomValue(listSearchMemoryAtom)[id];
+}
+
+/**
+ * 로그인·로그아웃이 성공하면 부른다. 로그아웃은 새로고침 없는 화면 이동이라, 같은 탭에서 다른 관리자가 로그인하면 앞
+ * 사람의 마지막 검색(찾아본 유저 이메일 등)이 "목록으로"에 실려 나온다. 세션이 바뀌는 길은 이 둘뿐이다(세션이 만료돼도
+ * 다시 들어오려면 로그인을 거친다).
+ */
+export function useClearListSearchMemory() {
+  const setMemory = useSetAtom(listSearchMemoryAtom);
+  return useCallback(() => setMemory({}), [setMemory]);
 }

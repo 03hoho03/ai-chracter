@@ -152,21 +152,30 @@ export function ImageGenerationViewPage({ userId, isFromImageGenerations }: Imag
   );
 }
 
+/** 전역 목록에서 들어왔으면 "목록으로" 옆에 유저 상세 링크도 둔다 — 이미지를 보고 정지 같은 후속 조치를 하려면 그 유저
+ * 상세로 바로 가야 하는데, 없으면 내비 → 유저 목록 → 검색을 다시 거쳐야 한다. */
 function BackLink({ userId, isFromImageGenerations }: { userId: string; isFromImageGenerations: boolean }) {
   const rememberedListSearch = useRememberedListSearch("/image-generations/");
 
-  return (
+  const userDetailLink = (
     <Button asChild variant="outline" size="sm" className="self-start">
-      {isFromImageGenerations ? (
+      <Link to="/users/$userId" params={{ userId }}>
+        유저 상세로
+      </Link>
+    </Button>
+  );
+
+  if (!isFromImageGenerations) return userDetailLink;
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Button asChild variant="outline" size="sm">
         <Link to="/image-generations" search={rememberedListSearch ?? {}}>
           목록으로
         </Link>
-      ) : (
-        <Link to="/users/$userId" params={{ userId }}>
-          유저 상세로
-        </Link>
-      )}
-    </Button>
+      </Button>
+      {userDetailLink}
+    </div>
   );
 }
 
