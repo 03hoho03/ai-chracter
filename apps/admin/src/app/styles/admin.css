@@ -1,0 +1,29 @@
+/* 손가락 포인터에서만 admin 컨트롤을 40px 로 올린다. packages/ui 프리미티브에 넣으면 web 화면 크기까지
+   바뀌므로 admin 에만 로드되는 이 파일이 프리미티브의 data-slot 으로 건다. 레이어 밖(unlayered)이라
+   Tailwind 유틸리티를 이긴다 — height 는 건드리지 않고 min-height 만 올려 h-8·h-9 가 하한으로 남는다.
+   체크박스는 이미 의사 요소로 히트 영역을 넓혔고 textarea 는 원래 크며, 셀렉트 항목은 프리미티브에
+   이미 같은 처방이 있어 여기서 빠진다. 사이드바 내비 행은 프리미티브가 아니라 그 행 클래스에 있다. */
+@media (pointer: coarse) {
+  [data-slot="button"],
+  [data-slot="select-trigger"],
+  [data-slot="toggle-group-item"],
+  [data-slot="toggle"],
+  [data-slot="input"] {
+    min-height: 2.5rem;
+  }
+
+  /* 아이콘 버튼은 정사각을 유지한다. */
+  [data-slot="button"][data-size^="icon"] {
+    min-width: 2.5rem;
+  }
+
+  /* 가로 탭은 목록이 h-9 로 고정이고 트리거가 그 높이를 퍼센트로 따라가 트리거만 올릴 수 없다 —
+     목록 높이를 풀어 트리거의 최소 높이가 목록을 밀게 한다. 목록이 루트의 직계 자식이 아닌 호출부
+     (가로 스크롤 래퍼 안의 프롬프트 탭)가 있어 자손 결합자로 찾는다. */
+  [data-slot="tabs"][data-orientation="horizontal"] [data-slot="tabs-list"] {
+    height: auto;
+  }
+  [data-slot="tabs"][data-orientation="horizontal"] [data-slot="tabs-trigger"] {
+    min-height: 2.5rem;
+  }
+}
