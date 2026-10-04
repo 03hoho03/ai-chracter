@@ -1,7 +1,8 @@
-from typing import Literal
+import json
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -53,7 +54,27 @@ class Settings(BaseSettings):
     # with a regular user's session cookie.
     admin_session_cookie_name: str = "admin_session_id"
 
-    cors_allow_origins: list[str] = ["http://localhost:5173", "http://localhost:5174"]
+    # env 에서는 쉼표 구분(`https://a,https://b`)과 JSON 배열(`["https://a","https://b"]`) 둘 다 받는다.
+    # 쉼표 구분이 기본 표기다 — env 파일은 따옴표 없는 값만 쓰는데(DEPLOY.md 의 env 파일 형식 절), JSON 배열은
+    # 큰따옴표가 필요하고 `uv run --env-file` 이 그 따옴표를 벗겨 JSON 이 깨진다. JSON 배열은 예전 운영 값과의
+    # 호환으로만 남긴다. `NoDecode` 는 pydantic-settings 가 list 필드를 JSON 으로 먼저 디코드하는 단계를 끄고
+    # 아래 검증기가 문자열을 직접 받게 한다.
+    cors_allow_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173", "http://localhost:5174"]
+
+    @field_validator("cors_allow_origins", mode="before")
+    @classmethod
+    def _split_cors_origins(cls, value: object) -> object:
+        """env 문자열을 리스트로 바꾼다. `[` 로 시작하면 JSON 배열, 아니면 쉼표 구분이다. 항목 앞뒤 공백은 지우고
+        빈 항목은 버린다. 남는 항목이 없으면 오류다 — 빈 값으로 기동하면 운영 FE 요청이 전부 CORS 로 막힌다."""
+        if not isinstance(value, str):
+            return value
+        text = value.strip()
+        if text.startswith("["):
+            return json.loads(text)
+        origins = [item.strip() for item in text.split(",") if item.strip()]
+        if not origins:
+            raise ValueError("CORS_ALLOW_ORIGINS 가 비어 있다 — 쉼표로 구분한 오리진을 하나 이상 넣는다")
+        return origins
 
     aws_region: str = "ap-northeast-2"
     s3_bucket_name: str = "ai-character-chat-assets-dev"
@@ -72,7 +93,7 @@ class Settings(BaseSettings):
     # 재가입 차단은 이 키로 만든 HMAC-SHA256(withdrawn_emails.email_hmac)을 조회해서 한다.
     # 키를 잃거나(배포 환경마다 값이 달라지는 등) 바꾸면 과거에 적립한 해시와 새 조회의 해시가
     # 어긋나 재가입 차단이 조용히 멈춘다(모든 조회가 미스) — DEPLOY.md에 남긴다.
-    withdrawn_email_hmac_key: str = ""
+    withdrawn_email_hmac_key: str = Field(default="", repr=False)
     google_client_id: str = ""
     google_client_secret: str = Field(default="", repr=False)
     # Used to build the redirect_uri sent to Google and the /auth/google/callback
@@ -182,7 +203,8 @@ class Settings(BaseSettings):
     # 와이어 id가 같아 `local_image.py`가 `style.value`를 그대로 싣는다. model 축만
     # 분리를 유지하는 이유: model 축은 실제로 다른 와이어 값을 가렸지만
     # style 축은 지금까지 아무것도 보호한 적이 없다.
-    local_image_model_wire_id: str = "v1"
+    # 실제 값이 드러나면 안 되므로 다른 비밀 필드처럼 repr 에서도 뺀다.
+    local_image_model_wire_id: str = Field(default="v1", repr=False)
     # 본인 생성 이미지를 참조로 집 PC 에 싣는 기능의 공개 스위치. 기본값이 닫힘이라 env 없이
     # 배포해도 닫힌 채로 뜬다. 참조 필드를 모르는 서버는 이 필드를 조용히 무시하고 참조 없이 200 을
     # 주므로, 서버 반영을 통지받은 뒤에만 켠다. `/images/models` 가 이 값을 FE 에 알리고
