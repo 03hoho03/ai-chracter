@@ -39,8 +39,10 @@ export function PublishedImagesSection({ images }: PublishedImagesSectionProps) 
                 </span>
                 <span className="truncate text-xs text-muted-foreground group-hover:text-foreground" title={image.label}>
                   {image.label}
-                  <span className="sr-only"> 원본 새 탭에서 열기</span>
                 </span>
+                {/* 잘리는 라벨(`truncate`) 칸 밖에 둔다. 그 안에 두면 읽기용 글자(`sr-only`, absolute)가 긴 라벨 끝 — 칸이 잘라
+                    낸 자리 — 에 놓이는데, 위치 기준 조상이 없어 잘림을 벗어나 좁은 화면의 문서를 가로로 넓힌다. */}
+                <span className="sr-only">원본 새 탭에서 열기</span>
               </a>
             </li>
           ))}
