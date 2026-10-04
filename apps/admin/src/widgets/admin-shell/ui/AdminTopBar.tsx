@@ -4,6 +4,7 @@ import { Search } from "lucide-react";
 
 import { ADMIN_NAV_ITEMS } from "../config/nav";
 import { resolveActiveNavTo } from "../lib/resolveActiveNavTo";
+import { PALETTE_SHORTCUT } from "../model/useAdminShortcuts";
 import { AdminNavDrawer } from "./AdminNavDrawer";
 
 type AdminTopBarProps = {
@@ -31,7 +32,7 @@ export function AdminTopBar({ onOpenPalette }: AdminTopBarProps) {
         size="icon"
         aria-label="빠른 이동"
         aria-haspopup="dialog"
-        aria-keyshortcuts="Meta+K Control+K"
+        aria-keyshortcuts={PALETTE_SHORTCUT.ariaKeyShortcuts}
         className="ml-auto"
         onClick={onOpenPalette}
       >

@@ -47,7 +47,15 @@ export function PromptSetsPage() {
         </div>
 
         {PROMPT_LANES.map((lane) => (
-          <TabsContent key={lane} value={lane} forceMount className="pt-4 data-[state=inactive]:hidden">
+          // Radix 탭 패널은 Tab 정지(`tabIndex=0`)인데 이 패널은 안의 편집칸·버튼이 진입점이다 — 정지를 빼야 포커스가
+          // 보이지 않는 패널에 한 번 앉지 않는다.
+          <TabsContent
+            key={lane}
+            value={lane}
+            forceMount
+            tabIndex={-1}
+            className="pt-4 data-[state=inactive]:hidden"
+          >
             <PromptLaneEditor lane={lane} onDirtyChange={handleDirtyChange} />
           </TabsContent>
         ))}

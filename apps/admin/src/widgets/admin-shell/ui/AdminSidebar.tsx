@@ -4,7 +4,7 @@ import { PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 
 import { Kbd } from "@/shared/ui/Command";
 
-import { IS_APPLE_PLATFORM } from "../model/useAdminShortcuts";
+import { PALETTE_SHORTCUT } from "../model/useAdminShortcuts";
 import { useSidebarCollapsed } from "../model/useSidebarCollapsed";
 import { AdminAccountFooter } from "./AdminAccountFooter";
 import { AdminNavList } from "./AdminNavList";
@@ -57,7 +57,7 @@ export function AdminSidebar({ onOpenPalette }: AdminSidebarProps) {
           variant="outline"
           size={isCollapsed ? "icon" : "sm"}
           aria-haspopup="dialog"
-          aria-keyshortcuts="Meta+K Control+K"
+          aria-keyshortcuts={PALETTE_SHORTCUT.ariaKeyShortcuts}
           aria-label={isCollapsed ? "빠른 이동" : undefined}
           title={isCollapsed ? "빠른 이동" : undefined}
           className={cn("hover:bg-secondary", !isCollapsed && "w-full justify-start")}
@@ -68,7 +68,7 @@ export function AdminSidebar({ onOpenPalette }: AdminSidebarProps) {
             <>
               빠른 이동
               <Kbd aria-hidden className="ml-auto">
-                {IS_APPLE_PLATFORM ? "⌘K" : "Ctrl K"}
+                {PALETTE_SHORTCUT.label}
               </Kbd>
             </>
           )}

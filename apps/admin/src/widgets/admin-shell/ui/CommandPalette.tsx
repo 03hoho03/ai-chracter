@@ -14,7 +14,7 @@ import {
 } from "@/shared/ui/Command";
 
 import { ADMIN_NAV_GROUPS } from "../config/nav";
-import { IS_APPLE_PLATFORM } from "../model/useAdminShortcuts";
+import { PALETTE_SHORTCUT } from "../model/useAdminShortcuts";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -150,7 +150,7 @@ function ShortcutHints() {
   return (
     <div className="flex flex-wrap gap-x-4 gap-y-1.5 border-t border-border px-3 py-2 text-xs text-muted-foreground">
       <span className="inline-flex items-center gap-1">
-        {IS_APPLE_PLATFORM ? <Kbd>⌘K</Kbd> : <Kbd>Ctrl K</Kbd>}
+        <Kbd>{PALETTE_SHORTCUT.label}</Kbd>
         열기·닫기
       </span>
       <span className="inline-flex items-center gap-1">

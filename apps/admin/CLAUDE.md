@@ -63,5 +63,5 @@
 
 - **팔레트는 `widgets/admin-shell/ui/CommandPalette`**(`shared/ui/Command` = cmdk 위의 shadcn `Command`, 공용 `Dialog` 안). 항목: 내비 11개(`ADMIN_NAV_GROUPS` 그대로 — 새 화면은 내비에 더하면 팔레트에도 나온다), 붙여 넣은 UUID 의 작품·유저 상세 두 후보, 그 밖의 글자는 유저 목록 `?q=`(이메일·닉네임 일부 일치). 검색어 필터는 cmdk 가 아니라 호출부가 한다(`shouldFilter={false}`).
 - **모든 이동은 라우터로** — 편집 화면의 이탈 확인이 그대로 걸린다. Esc·바깥 누르기로 닫으면 연 자리로, 항목으로 이동하면 `#main-content` 로 포커스가 간다(이탈 확인이 떴으면 빼앗지 않는다).
-- **여는 자리**: `lg` 미만 상단바 돋보기, `lg` 이상 사이드바 머리 아래 "빠른 이동" 버튼, ⌘K / 컨트롤+K.
-- **단축키는 둘뿐이다**(`model/useAdminShortcuts`): ⌘K·컨트롤+K(입력칸 안에서도, 다른 대화상자가 열려 있으면 무시)와 `/`(지금 화면의 `[data-filter-search]` 로 포커스). `/` 는 input·textarea·select·contenteditable·콤보박스·목록·차트 안이거나 대화상자·시트가 열려 있으면 아무것도 하지 않아 글자로 들어간다. 한글 조합 중 키는 무시한다. 단축키를 더하면 팔레트 바닥의 목록도 고친다.
+- **여는 자리**: `lg` 미만 상단바 돋보기, `lg` 이상 사이드바 머리 아래 "빠른 이동" 버튼, 단축키(맥은 ⌘K, 그 밖은 컨트롤+K).
+- **단축키는 둘뿐이다**(`model/useAdminShortcuts`): 팔레트 키 — 맥은 ⌘K, 그 밖은 컨트롤+K 만 받는다(맥 텍스트칸의 컨트롤+K 는 줄 끝까지 지우기라 빼앗지 않는다). 동작·`aria-keyshortcuts`·화면 표시가 `PALETTE_SHORTCUT` 하나를 따르고, 입력칸 안에서도 동작하며 다른 대화상자가 열려 있으면 무시한다 —와 `/`(지금 화면의 `[data-filter-search]` 로 포커스). `/` 는 input·textarea·select·contenteditable·콤보박스·목록·차트 안이거나 대화상자·시트가 열려 있으면 아무것도 하지 않아 글자로 들어간다. 한글 조합 중 키는 무시한다. 단축키를 더하면 팔레트 바닥의 목록도 고친다.
