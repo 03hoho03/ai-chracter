@@ -2352,15 +2352,20 @@ async def list_chat_rooms(
     }
     persona_names = await _persona_names(db, rooms)
 
-    last_messages: dict[uuid.UUID, ChatMessage] = {}
-    for message in (
-        await db.scalars(
-            select(ChatMessage)
-            .where(ChatMessage.chat_room_id.in_(room.id for room in rooms))
-            .order_by(ChatMessage.created_at.desc())
-        )
-    ).all():
-        last_messages.setdefault(message.chat_room_id, message)
+    # 방당 최신 메시지 1건만 Postgres DISTINCT ON 으로 고른다 — 방들의 메시지를 전부 메모리로 끌어오면 긴 방
+    # 하나가 목록 한 번에 수천 행을 읽힌다. 시각이 같으면 id 가 큰 쪽이다(턴 히스토리 정렬의 마지막,
+    # `list_my_chat_rooms` 와 같은 선택).
+    last_messages: dict[uuid.UUID, ChatMessage] = {
+        message.chat_room_id: message
+        for message in (
+            await db.scalars(
+                select(ChatMessage)
+                .where(ChatMessage.chat_room_id.in_([room.id for room in rooms]))
+                .distinct(ChatMessage.chat_room_id)
+                .order_by(ChatMessage.chat_room_id, ChatMessage.created_at.desc(), ChatMessage.id.desc())
+            )
+        ).all()
+    }
 
     items = []
     for ordinal, room in enumerate(rooms, start=1):
@@ -2409,10 +2414,9 @@ async def list_my_chat_rooms(
 
     room_ids = [room.id for room in rooms]
 
-    # 방당 최신 메시지 1건만 가져온다. 기존 list_chat_rooms(위)는 "전체 스캔 + setdefault"를
-    # 쓰지만 그 범위는 한 콘텐츠의 방들이라 작다 — 여기서는 사용자가 지금까지 주고받은
-    # 모든 메시지를 메모리로 끌어오게 되므로(로컬 dev DB에도 한 방에 250건 이상 있다)
-    # 일부러 Postgres DISTINCT ON으로 바꾼다.
+    # 방당 최신 메시지 1건만 Postgres DISTINCT ON 으로 가져온다 — 사용자가 지금까지 주고받은 모든
+    # 메시지를 메모리로 끌어오지 않으려고(로컬 dev DB에도 한 방에 250건 이상 있다).
+    # `list_chat_rooms`(위)도 같은 쿼리다.
     last_messages: dict[uuid.UUID, ChatMessage] = {
         message.chat_room_id: message
         for message in (

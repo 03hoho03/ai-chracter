@@ -375,6 +375,113 @@ async def test_list_chat_rooms_with_no_messages_returns_200_with_blank_preview(
     assert items[0]["lastMessagePreview"] == ""
 
 
+async def test_list_chat_rooms_response_bytes_pin_each_rooms_latest_message(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """작품별 방 목록이 방마다 고르는 마지막 메시지와 응답 바이트 전체를 고정한다 — 방별 마지막 메시지를 고르는
+    쿼리를 바꿔도 화면이 받는 목록은 한 글자도 달라지면 안 된다. 방 넷: 메시지 id 순서가 시각 순서와 거꾸로인 방,
+    가장 늦은 시각에 메시지 둘이 겹친 방, 메시지가 없는 방, 마지막 메시지가 미디어 태그뿐이라 미리보기가 빈 방.
+    id·시각을 모두 고정해 응답이 실행마다 같다. 시각만으로 정렬하면 겹친 두 행의 순서는 Postgres 정렬에 맡겨지는데,
+    이 배치(넣는 순서 포함)에서는 그 정렬도 id 가 큰 쪽을 골랐다(실측) — 그래서 id 로 동률을 가르는 쿼리와 응답이
+    같다. 정렬이 다른 쪽을 고르는 배치는 아래 동률 테스트가 따로 본다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    assert content.current_published_version_id is not None
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+
+    def room(suffix: str, minutes: int, name: str | None = None) -> ChatRoom:
+        return ChatRoom(
+            id=uuid.UUID(f"00000000-0000-0000-0000-0000000000{suffix}"),
+            user_id=user.id,
+            content_id=content.id,
+            content_version_id=content.current_published_version_id,
+            name=name,
+            created_at=base + timedelta(minutes=minutes),
+        )
+
+    def message(room_suffix: str, suffix: str, role: ChatMessageRole, text: str, seconds: int) -> ChatMessage:
+        return ChatMessage(
+            id=uuid.UUID(f"10000000-0000-0000-0000-0000000000{suffix}"),
+            chat_room_id=uuid.UUID(f"00000000-0000-0000-0000-0000000000{room_suffix}"),
+            role=role,
+            content=text,
+            created_at=base + timedelta(seconds=seconds),
+        )
+
+    db_session.add_all([room("a1", 0), room("a2", 1, name="이름 붙인 방"), room("a3", 2), room("a4", 3)])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            # 시각이 늦을수록 id 가 작다 — id 순으로 고르면 첫 메시지가 나온다.
+            message("a1", "19", ChatMessageRole.ASSISTANT, "첫 인사", 1),
+            message("a1", "18", ChatMessageRole.USER, "두 번째", 2),
+            message("a1", "17", ChatMessageRole.ASSISTANT, "{{img::민아/교실}}마지막이야 {{user}}, 나는 {{char}}", 3),
+            message("a2", "21", ChatMessageRole.ASSISTANT, "앞선 메시지", 1),
+            message("a2", "22", ChatMessageRole.ASSISTANT, "동률 중 id 가 작은 쪽", 5),
+            message("a2", "2f", ChatMessageRole.USER, "동률 중 id 가 큰 쪽", 5),
+            message("a4", "41", ChatMessageRole.USER, "{{img::7b0e3c1a-0000-0000-0000-000000000000}}", 4),
+        ]
+    )
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    resp = await db_client.get("/chat-rooms", params={"contentId": str(content.id)})
+
+    assert resp.status_code == 200
+    assert resp.content == (
+        '[{"id":"00000000-0000-0000-0000-0000000000a1","name":"대화 1","lastMessagePreview":"마지막이야 당신, 나는 캐릭터","createdAt":"2026-01-01T00:00:00Z"}'
+        ',{"id":"00000000-0000-0000-0000-0000000000a2","name":"이름 붙인 방","lastMessagePreview":"동률 중 id 가 큰 쪽","createdAt":"2026-01-01T00:01:00Z"}'
+        ',{"id":"00000000-0000-0000-0000-0000000000a3","name":"대화 3","lastMessagePreview":"","createdAt":"2026-01-01T00:02:00Z"}'
+        ',{"id":"00000000-0000-0000-0000-0000000000a4","name":"대화 4","lastMessagePreview":"","createdAt":"2026-01-01T00:03:00Z"}]'
+    ).encode()
+
+
+async def test_list_chat_rooms_breaks_a_latest_time_tie_by_the_larger_message_id(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """마지막 시각이 같은 메시지가 둘이면 id 가 큰 쪽을 미리보기로 쓴다 — 턴 히스토리 정렬 `(created_at, id)` 의
+    마지막이자 헤더 "내 채팅목록" 이 고르는 메시지라, 두 목록이 같은 방에 다른 미리보기를 보이지 않는다. 작은 id 를
+    먼저 넣는다 — 시각만으로 정렬하던 쿼리는 이 배치에서 작은 쪽을 골랐다(실측)."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    assert content.current_published_version_id is not None
+    chat_room = ChatRoom(
+        user_id=user.id, content_id=content.id, content_version_id=content.current_published_version_id
+    )
+    db_session.add(chat_room)
+    await db_session.flush()
+    tied_at = datetime(2026, 1, 1, tzinfo=UTC)
+    for message_id, text in (
+        ("20000000-0000-0000-0000-000000000001", "id 가 작은 쪽"),
+        ("20000000-0000-0000-0000-0000000000ff", "id 가 큰 쪽"),
+    ):
+        db_session.add(
+            ChatMessage(
+                id=uuid.UUID(message_id),
+                chat_room_id=chat_room.id,
+                role=ChatMessageRole.USER,
+                content=text,
+                created_at=tied_at,
+            )
+        )
+        await db_session.flush()
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    resp = await db_client.get("/chat-rooms", params={"contentId": str(content.id)})
+    header_resp = await db_client.get("/me/chat-rooms")
+
+    assert resp.status_code == 200
+    assert [item["lastMessagePreview"] for item in resp.json()] == ["id 가 큰 쪽"]
+    assert [item["lastMessagePreview"] for item in header_resp.json()] == ["id 가 큰 쪽"]
+
+
 async def test_reset_chat_room_clears_messages_and_turn_count(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
