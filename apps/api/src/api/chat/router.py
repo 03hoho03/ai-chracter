@@ -88,7 +88,8 @@ from api.chat.schemas import (
     StoryImageArchiveItem,
 )
 from api.chat.stats import StatChange, apply_stat_changes
-from api.content.access import is_open_to, is_open_to_participant
+from api.content.access import detail_model_for, is_open_to, is_open_to_participant
+from api.content.author_macros import expand_author_macros, resolve_user_name
 from api.content.media_book import (
     normalize_texts,
     normalize_texts_for_display,
@@ -890,6 +891,13 @@ async def _insert_opening_message(db: AsyncSession, room: ChatRoom, setup: Start
 async def _to_response(db: AsyncSession, room: ChatRoom) -> ChatRoomResponse:
     content = await db.get(Content, room.content_id)
     assert content is not None
+    version_detail: CharacterVersionDetail | StoryVersionDetail | None = (
+        await db.get(CharacterVersionDetail, room.content_version_id)
+        if content.type == ContentType.CHARACTER
+        else await db.get(StoryVersionDetail, room.content_version_id)
+    )
+    assert version_detail is not None
+    persona = await db.get(UserPersona, room.persona_id) if room.persona_id is not None else None
 
     siblings = await _room_siblings(db, room.user_id, room.content_id)
     ordinal = next(index for index, sibling in enumerate(siblings, start=1) if sibling.id == room.id)
@@ -977,6 +985,9 @@ async def _to_response(db: AsyncSession, room: ChatRoom) -> ChatRoomResponse:
         latest_version_available=content.current_published_version_id != room.content_version_id,
         version_auto_upgraded=room.version_auto_upgraded,
         persona_id=room.persona_id,
+        persona_name=persona.name if persona is not None else None,
+        default_user_name=version_detail.default_user_name,
+        content_name=version_detail.name,
         content_restricted=content.moderation_status != ModerationStatus.NORMAL,
         created_at=room.created_at,
         updated_at=room.updated_at,
@@ -2093,6 +2104,41 @@ async def delete_message(
     await db.commit()
 
 
+async def _persona_names(db: AsyncSession, rooms: Sequence[ChatRoom]) -> dict[uuid.UUID, str]:
+    """방들이 고른 대화 프로필의 이름을 한 번에 읽는다(방마다 읽으면 방 수만큼 쿼리가 는다)."""
+    persona_ids = {room.persona_id for room in rooms if room.persona_id is not None}
+    if not persona_ids:
+        return {}
+    return {
+        persona.id: persona.name
+        for persona in (await db.scalars(select(UserPersona).where(UserPersona.id.in_(persona_ids)))).all()
+    }
+
+
+def _last_message_preview(
+    message: ChatMessage | None,
+    room: ChatRoom,
+    content_type: ContentType,
+    content_name: str,
+    default_user_name: str,
+    persona_names: dict[uuid.UUID, str],
+) -> str:
+    """방 목록의 마지막 메시지 미리보기. 목록 화면은 방마다 다른 프로필 이름을 모르므로 작가 글의 `{{user}}`·
+    `{{char}}` 를 여기서 그 방의 이름으로 바꾼다. 바꾸는 것은 모델 응답·첫 메시지(작가 글의 복사본)뿐이다 — 사용자
+    메시지는 화면이 보내기 전에 이미 바꿔 저장한다. 이름이 이미지 태그로 읽히지 않게 태그를 먼저 지운다."""
+    if message is None:
+        return ""
+    preview = strip_media_tags(message.content)
+    if message.role != ChatMessageRole.ASSISTANT:
+        return preview
+    persona_name = persona_names.get(room.persona_id) if room.persona_id is not None else None
+    return expand_author_macros(
+        preview,
+        user_name=resolve_user_name(persona_name, default_user_name),
+        char_name=content_name if content_type == ContentType.CHARACTER else None,
+    )
+
+
 @router.get("")
 async def list_chat_rooms(
     content_id: uuid.UUID = Query(alias="contentId"),
@@ -2102,6 +2148,21 @@ async def list_chat_rooms(
     rooms = await _room_siblings(db, user_id, content_id)
     if not rooms:
         return []
+    content = await db.get(Content, content_id)
+    assert content is not None
+    detail_model = detail_model_for(content.type)
+    # 방마다 고정한 버전이 다를 수 있다 — 버전별 작품명·작품 기본 이름.
+    version_names: dict[uuid.UUID, tuple[str, str]] = {
+        version_id: (name, default_user_name)
+        for version_id, name, default_user_name in (
+            await db.execute(
+                select(detail_model.content_version_id, detail_model.name, detail_model.default_user_name).where(
+                    detail_model.content_version_id.in_({room.content_version_id for room in rooms})
+                )
+            )
+        ).all()
+    }
+    persona_names = await _persona_names(db, rooms)
 
     last_messages: dict[uuid.UUID, ChatMessage] = {}
     for message in (
@@ -2120,7 +2181,9 @@ async def list_chat_rooms(
             ChatRoomListItem(
                 id=room.id,
                 name=_display_name(room, ordinal),
-                last_message_preview=strip_media_tags(last_message.content) if last_message is not None else "",
+                last_message_preview=_last_message_preview(
+                    last_message, room, content.type, *version_names[room.content_version_id], persona_names
+                ),
                 created_at=room.created_at,
             )
         )
@@ -2206,6 +2269,8 @@ async def list_my_chat_rooms(
         ).all()
     }
 
+    persona_names = await _persona_names(db, rooms)
+
     all_details: list[CharacterVersionDetail | StoryVersionDetail] = [
         *character_details.values(),
         *story_details.values(),
@@ -2250,7 +2315,9 @@ async def list_my_chat_rooms(
                 content_type=content.type,
                 content_name=detail.name,
                 thumbnail_url=thumbnail_url,
-                last_message_preview=strip_media_tags(last_message.content) if last_message is not None else "",
+                last_message_preview=_last_message_preview(
+                    last_message, room, content.type, detail.name, detail.default_user_name, persona_names
+                ),
                 last_message_at=last_message.created_at if last_message is not None else None,
                 created_at=room.created_at,
             )
@@ -2381,11 +2448,10 @@ async def set_room_persona(
     **둘 다** 본다 — 방만 보면 남의 프로필 id를 내 방에 걸 수 있다."""
     room = await _get_owned_room(db, room_id, user_id)
     await lock_user_default_persona(db, user_id)
-    if payload.persona_id is not None:
-        await get_owned_persona(db, payload.persona_id, user_id)
+    persona = await get_owned_persona(db, payload.persona_id, user_id) if payload.persona_id is not None else None
     room.persona_id = payload.persona_id
     await db.commit()
-    return RoomPersonaResponse(persona_id=room.persona_id)
+    return RoomPersonaResponse(persona_id=room.persona_id, persona_name=persona.name if persona is not None else None)
 
 
 @router.post(

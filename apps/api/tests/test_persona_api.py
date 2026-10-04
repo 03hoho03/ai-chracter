@@ -143,6 +143,9 @@ async def test_create_persona_accepts_boundary_lengths_and_empty_description(
         pytest.param({"name": "a:b"}, id="name-colon"),
         pytest.param({"name": "a\nb"}, id="name-newline"),
         pytest.param({"name": "a\rb"}, id="name-carriage-return"),
+        pytest.param({"name": "*별*"}, id="name-markdown-star"),
+        pytest.param({"name": "`별`"}, id="name-backtick"),
+        pytest.param({"name": "- 별"}, id="name-starts-with-list-marker"),
         pytest.param({"name": "가" * 21}, id="name-21-chars"),
         pytest.param({"description": "나" * 501}, id="description-501-chars"),
     ],
@@ -158,6 +161,41 @@ async def test_create_persona_rejects_invalid_fields_with_422(
     assert resp.status_code == 422
     count = await db_session.scalar(select(func.count()).select_from(UserPersona).where(UserPersona.user_id == user.id))
     assert count == 0
+
+
+async def test_create_persona_explains_markdown_name_in_korean(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """이름은 작가 글 속 `{{user}}` 자리에 들어가므로 채팅 렌더러가 표기로 읽는 문자를 막는다. 화면이 그대로 띄울 문구다."""
+    await _logged_in_user(db_client, db_session)
+    await db_session.commit()
+
+    resp = await db_client.post("/me/personas", json=_create_body(name="*별*"))
+
+    assert resp.status_code == 422
+    assert "별표(*)" in resp.json()["detail"][0]["msg"]
+
+
+async def test_persona_saved_before_markdown_rule_stays_readable_and_must_be_renamed_to_edit(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """금지는 새 저장부터다 — 규칙 전에 저장된 이름도 목록에 그대로 나온다. 다만 수정은 전체 교체라 설명만 고쳐도
+    이름이 다시 검사된다. 그런 프로필은 이름을 바꿔야 저장된다."""
+    user = await _logged_in_user(db_client, db_session)
+    persona = await _make_persona(db_session, user.id, name="*별*")
+    await db_session.commit()
+
+    listed = await db_client.get("/me/personas")
+    same_name = await db_client.put(
+        f"/me/personas/{persona.id}", json={"name": "*별*", "gender": None, "description": "새 설명"}
+    )
+    renamed = await db_client.put(f"/me/personas/{persona.id}", json={"name": "별", "gender": None, "description": ""})
+
+    assert listed.status_code == 200
+    assert [item["name"] for item in listed.json()["items"]] == ["*별*"]
+    assert same_name.status_code == 422
+    assert renamed.status_code == 200
+    assert renamed.json()["name"] == "별"
 
 
 async def test_create_eleventh_persona_returns_409(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
@@ -407,12 +445,12 @@ async def test_set_room_persona_sets_and_clears(db_client: httpx.AsyncClient, db
 
     set_resp = await db_client.put(f"/chat-rooms/{room.id}/persona", json={"personaId": str(persona.id)})
     assert set_resp.status_code == 200
-    assert set_resp.json() == {"personaId": str(persona.id)}
+    assert set_resp.json() == {"personaId": str(persona.id), "personaName": "하늘"}
     assert await _room_persona_id(db_session, room.id) == persona.id
 
     clear_resp = await db_client.put(f"/chat-rooms/{room.id}/persona", json={"personaId": None})
     assert clear_resp.status_code == 200
-    assert clear_resp.json() == {"personaId": None}
+    assert clear_resp.json() == {"personaId": None, "personaName": None}
     assert await _room_persona_id(db_session, room.id) is None
 
 

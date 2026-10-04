@@ -19,6 +19,7 @@ function baseDraftResponse(): CharacterDraftResponse {
     exampleDialogues: [{ id: "dlg-1", userLine: "안녕?", characterLine: "반가워!" }],
     characterPrompt: "너는 상냥한 달빛 마법사다.",
     playguide: "존댓말을 쓰지 않아도 돼요.",
+    defaultUserName: "",
     situationalImages: [
       { id: "img-1", imageAssetId: "asset-1", triggerCondition: "웃을 때" },
       { id: "img-2", imageAssetId: null, triggerCondition: "화날 때" },

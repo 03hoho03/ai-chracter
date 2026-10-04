@@ -5221,6 +5221,8 @@ export interface components {
             characterPrompt: string;
             /** Playguide */
             playguide: string | null;
+            /** Defaultusername */
+            defaultUserName?: string;
             /** Situationalimages */
             situationalImages: components["schemas"]["CharacterSituationalImageDraftInput"][];
             /** Description */
@@ -5266,6 +5268,8 @@ export interface components {
             characterPrompt: string;
             /** Playguide */
             playguide: string | null;
+            /** Defaultusername */
+            defaultUserName: string;
             /** Situationalimages */
             situationalImages: components["schemas"]["CharacterSituationalImageItem"][];
             /** Description */
@@ -5540,6 +5544,12 @@ export interface components {
             versionAutoUpgraded: boolean;
             /** Personaid */
             personaId?: string | null;
+            /** Personaname */
+            personaName?: string | null;
+            /** Defaultusername */
+            defaultUserName?: string;
+            /** Contentname */
+            contentName?: string;
             /** Mediatagimages */
             mediaTagImages?: {
                 [key: string]: components["schemas"]["MediaTagImage"];
@@ -6084,6 +6094,8 @@ export interface components {
             oneLiner: string;
             /** Detaildescription */
             detailDescription: string;
+            /** Defaultusername */
+            defaultUserName?: string;
             /** Chatcount */
             chatCount: number;
             /** Likecount */
@@ -6529,6 +6541,8 @@ export interface components {
             name: string;
             /** Oneliner */
             oneLiner: string;
+            /** Defaultusername */
+            defaultUserName?: string;
             /** Thumbnailurl */
             thumbnailUrl: string | null;
         };
@@ -7239,6 +7253,8 @@ export interface components {
         RoomPersonaResponse: {
             /** Personaid */
             personaId: string | null;
+            /** Personaname */
+            personaName?: string | null;
         };
         /** ShortcutDraftItem */
         ShortcutDraftItem: {
@@ -7498,6 +7514,8 @@ export interface components {
             userGoal?: string | null;
             /** Rules */
             rules?: string | null;
+            /** Defaultusername */
+            defaultUserName?: string;
             /** Startingsetups */
             startingSetups: components["schemas"]["StartingSetupDraftItem"][];
             /** Keywordnotes */
@@ -7548,6 +7566,8 @@ export interface components {
             userGoal: string | null;
             /** Rules */
             rules: string | null;
+            /** Defaultusername */
+            defaultUserName: string;
             /** Startingsetups */
             startingSetups: components["schemas"]["StartingSetupDraftItem"][];
             /** Keywordnotes */

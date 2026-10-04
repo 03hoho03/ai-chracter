@@ -64,6 +64,7 @@ function baseDraftResponse(): StoryDraftResponse {
     developmentExamples: [{ userLine: "무슨 일이 있었는지 설명해주세요", assistantLine: "폭풍우로 배가 좌초된다" }],
     userGoal: "표류에서 살아남아 무사히 귀환한다",
     rules: "선원들 앞에서 약한 모습을 보이지 않는다",
+    defaultUserName: "",
     customPrompt: null,
     startingSetups: [
       {

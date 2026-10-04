@@ -37,6 +37,11 @@ _HANGUL_LAST = ord("힣")
 _RIEUL_FINAL = 8  # 한글 음절의 종성 번호에서 ㄹ
 
 
+def resolve_user_name(persona_name: str | None, default_user_name: str) -> str:
+    """`{{user}}` 자리에 넣을 이름을 고른다 — 대화 프로필 이름 → 작품 기본 이름 → `FALLBACK_USER_NAME`."""
+    return persona_name or default_user_name or FALLBACK_USER_NAME
+
+
 def _final_consonant(name: str) -> int | None:
     """이름 끝 글자의 종성 번호(0 = 받침 없음). 끝 글자가 한글 음절이 아니면 None."""
     if not name:
