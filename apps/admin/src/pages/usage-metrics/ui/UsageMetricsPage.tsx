@@ -10,6 +10,7 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 
 import { useUsageMetricsQuery } from "@/entities/usage-metrics";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle";
 import { CHART_FOCUS_CLASS } from "@/shared/ui/chartFocusClass";
 import { PageContainer } from "@/shared/ui/PageContainer";
 import { PageHeader } from "@/shared/ui/PageHeader";
@@ -39,6 +40,7 @@ type UsageMetricsPageProps = {
 }
 
 export function UsageMetricsPage({ from, to, onRangeChange }: UsageMetricsPageProps) {
+  useDocumentTitle("사용량 모니터링");
   const usageMetricsQuery = useUsageMetricsQuery({ from, to });
 
   return (

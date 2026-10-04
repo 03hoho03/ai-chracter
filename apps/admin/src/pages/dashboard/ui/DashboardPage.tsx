@@ -1,3 +1,4 @@
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle";
 import { PageContainer } from "@/shared/ui/PageContainer";
 
 import { ActivityFeed } from "./ActivityFeed";
@@ -13,6 +14,7 @@ import { TrendChart } from "./TrendChart";
  * 영역들을 감싼 `@container` 가 카드·차트 그리드의 열 수를 정한다 — 사이드바가 펴지고 접히면 같은 뷰포트에서도 본문
  * 폭이 달라져, 뷰포트 브레이크포인트로 가르면 카드 라벨이 꺾이고 차트가 짓눌린다. */
 export function DashboardPage() {
+  useDocumentTitle("대시보드");
   return (
     <PageContainer>
       <h1 className="text-2xl font-bold tracking-tight text-foreground">대시보드</h1>

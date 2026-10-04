@@ -1,6 +1,7 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/components/tabs";
 import { useCallback, useState } from "react";
 
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle";
 import { PageContainer } from "@/shared/ui/PageContainer";
 import { UnsavedChangesGuard } from "@/shared/ui/UnsavedChangesGuard";
 
@@ -15,6 +16,7 @@ import { VersionHistorySection } from "./VersionHistorySection";
  * 사라지지 않는다. 다른 화면으로 떠나면 그 편집이 사라지므로, 레인마다 알려 오는 "변경 있음"을 모아 하나라도 있으면
  * 확인을 받는다(확인 창이 레인 수만큼 뜨지 않게 가드는 여기 하나다). */
 export function PromptSetsPage() {
+  useDocumentTitle("프롬프트 관리");
   const [activeLane, setActiveLane] = useState<PromptLane>(() => PROMPT_LANES[0] ?? "story");
   const [dirtyByLane, setDirtyByLane] = useState<Partial<Record<PromptLane, boolean>>>({});
   const hasUnsavedLane = PROMPT_LANES.some((lane) => dirtyByLane[lane] === true);
@@ -26,7 +28,7 @@ export function PromptSetsPage() {
 
   return (
     <PageContainer>
-      <h1 className="text-2xl font-bold tracking-tight text-foreground">프롬프트 세트 관리</h1>
+      <h1 className="text-2xl font-bold tracking-tight text-foreground">프롬프트 관리</h1>
 
       <Tabs
         value={activeLane}

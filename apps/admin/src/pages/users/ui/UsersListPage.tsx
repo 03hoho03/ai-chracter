@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router";
 import { useUserListQuery, type AdminUserListParams, type AdminUserListResponse } from "@/entities/admin-user";
 import { formatCount } from "@/shared/lib/format/formatCount";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle";
 import { DataList, type DataListColumn } from "@/shared/ui/DataList";
 import { FilterBar, selectFilter } from "@/shared/ui/FilterBar";
 import { PageContainer } from "@/shared/ui/PageContainer";
@@ -38,6 +39,7 @@ type UsersListPageProps = {
 /** ContentsListPage 동형 — 필터·검색·페이지는 전부 라우트 search에 담긴다(routes/users.index.tsx).
  * 이메일·닉네임 검색은 제출 기반이다 — 타이핑마다 요청을 날리지 않는다. `sort`는 BE에 없어 만들지 않는다. */
 export function UsersListPage({ page, q, suspended, beta, onPageChange, onFilterChange }: UsersListPageProps) {
+  useDocumentTitle("유저 관리");
   const resetFilters = () => onFilterChange({ suspended: undefined, beta: undefined });
   const hasCondition = suspended !== undefined || beta !== undefined || q !== undefined;
 

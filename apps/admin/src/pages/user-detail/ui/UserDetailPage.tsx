@@ -16,6 +16,7 @@ import { CHAT_MESSAGE_REPORT_REASON_LABELS, REPORT_REASON_LABELS, REPORT_STATUS_
 import { formatCount } from "@/shared/lib/format/formatCount";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 import { useRememberedListSearch } from "@/shared/lib/list-search-memory/listSearchMemory";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle";
 import { DenseTable } from "@/shared/ui/DenseTable";
 import { DetailLayout } from "@/shared/ui/DetailLayout";
 import { PageContainer } from "@/shared/ui/PageContainer";
@@ -74,6 +75,7 @@ type UserDetailBodyProps = {
 /** 목록 링크·제목은 로딩·에러에도 남아야 해서 쿼리에 의존하는 본문만 갈라낸다. */
 function UserDetailBody({ userId }: UserDetailBodyProps) {
   const userDetailQuery = useUserDetailQuery(userId);
+  useDocumentTitle("유저 상세", userDetailQuery.data?.nickname);
 
   return (
     <QueryState query={userDetailQuery} skeleton="detail" errorMessage="유저 정보를 불러오지 못했어요.">

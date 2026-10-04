@@ -7,6 +7,7 @@ import { CONTENT_TYPE_LABELS, MODERATION_STATUS_LABELS } from "@/entities/admin-
 import { REPORT_REASON_LABELS, REPORT_STATUS_LABELS, useReportDetailQuery, type ReportTarget } from "@/entities/report";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 import { useRememberedListSearch } from "@/shared/lib/list-search-memory/listSearchMemory";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle";
 import { DetailLayout } from "@/shared/ui/DetailLayout";
 import { PageContainer } from "@/shared/ui/PageContainer";
 import { PageHeader } from "@/shared/ui/PageHeader";
@@ -74,6 +75,7 @@ type ReportDetailBodyProps = {
 /** 목록 링크·제목은 로딩·에러에도 남아야 해서 쿼리에 의존하는 본문만 갈라낸다. */
 function ReportDetailBody({ reportId }: ReportDetailBodyProps) {
   const reportDetailQuery = useReportDetailQuery(reportId);
+  useDocumentTitle("신고 상세", reportDetailQuery.data?.content.name);
 
   return (
     <QueryState query={reportDetailQuery} skeleton="detail" errorMessage="신고 정보를 불러오지 못했어요.">

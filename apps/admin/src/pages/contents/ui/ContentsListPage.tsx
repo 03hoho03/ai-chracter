@@ -18,6 +18,7 @@ import {
 } from "@/entities/admin-content";
 import { formatCount } from "@/shared/lib/format/formatCount";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle";
 import { DataList, type DataListColumn } from "@/shared/ui/DataList";
 import { FilterBar, selectFilter } from "@/shared/ui/FilterBar";
 import { PageContainer } from "@/shared/ui/PageContainer";
@@ -67,6 +68,7 @@ export function ContentsListPage({
   onPageChange,
   onFilterChange,
 }: ContentsListPageProps) {
+  useDocumentTitle("작품 관리");
   const resetFilters = () => onFilterChange({ type: undefined, visibility: undefined, moderationStatus: undefined });
   const hasCondition = type !== undefined || visibility !== undefined || moderationStatus !== undefined || q !== undefined;
 

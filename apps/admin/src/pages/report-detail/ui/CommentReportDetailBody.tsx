@@ -5,6 +5,7 @@ import { CommentReportActionPanel } from "@/features/act-on-comment-report";
 import { CONTENT_TYPE_LABELS } from "@/entities/admin-content";
 import { REPORT_REASON_LABELS, REPORT_STATUS_LABELS, useCommentReportDetailQuery, type CommentCurrent } from "@/entities/report";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle";
 import { DetailLayout } from "@/shared/ui/DetailLayout";
 import { QueryState } from "@/shared/ui/QueryState";
 
@@ -12,6 +13,7 @@ const WEB_BASE_URL = import.meta.env.VITE_FRONTEND_BASE_URL ?? "https://ddona.si
 
 export function CommentReportDetailBody({ reportId }: { reportId: string }) {
   const query = useCommentReportDetailQuery(reportId);
+  useDocumentTitle("신고 상세", query.data?.content.name);
   // 이미 처리된 신고도 다시 처리할 수 있어(운영 숨김 해제 등) 조치가 늘 있다.
   return <QueryState query={query} skeleton="detail" errorMessage="댓글 신고를 불러오지 못했어요.">{(report) =>
   <DetailLayout actions={{

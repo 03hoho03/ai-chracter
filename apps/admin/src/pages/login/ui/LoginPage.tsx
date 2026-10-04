@@ -1,15 +1,17 @@
 import { LoginForm } from "@/features/login";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle";
 
 type LoginPageProps = {
   redirectTo?: string;
 }
 
 export function LoginPage({ redirectTo }: LoginPageProps) {
+  useDocumentTitle("로그인");
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center gap-1 text-center">
-          <span className="text-sm font-semibold text-primary">AI 캐릭터 챗 관리자</span>
+          <span className="text-sm font-semibold text-primary">또나 어드민</span>
         </div>
 
         <div className="rounded-xl border border-border bg-card p-8">

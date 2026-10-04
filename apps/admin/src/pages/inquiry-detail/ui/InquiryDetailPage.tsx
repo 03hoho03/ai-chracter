@@ -6,6 +6,7 @@ import { InquiryReplyPanel } from "@/features/reply-inquiry";
 import { INQUIRY_CATEGORY_LABELS, INQUIRY_STATUS_LABELS, useInquiryDetailQuery } from "@/entities/inquiry";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 import { useRememberedListSearch } from "@/shared/lib/list-search-memory/listSearchMemory";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle";
 import { DetailLayout } from "@/shared/ui/DetailLayout";
 import { PageContainer } from "@/shared/ui/PageContainer";
 import { PageHeader } from "@/shared/ui/PageHeader";
@@ -46,6 +47,7 @@ type InquiryDetailBodyProps = {
  * 쓴 글이라 띄어쓰기 없이 길 수 있어 아무 데서나 꺾는다. */
 function InquiryDetailBody({ inquiryId }: InquiryDetailBodyProps) {
   const inquiryDetailQuery = useInquiryDetailQuery(inquiryId);
+  useDocumentTitle("문의 상세", inquiryDetailQuery.data?.title);
 
   return (
     <QueryState query={inquiryDetailQuery} errorMessage="문의 정보를 불러오지 못했어요.">
