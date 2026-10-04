@@ -173,7 +173,7 @@ async def test_admin_endpoints_ignore_suspended_user_marker(
     세션은 영향을 받지 않아야 한다."""
     email = f"admin-{uuid.uuid4()}@example.com"
     password = "adminpassword123"
-    admin = AdminUser(email=email, password_hash=hash_password(password))
+    admin = AdminUser(email=email, password_hash=await hash_password(password))
     db_session.add(admin)
     await db_session.flush()
 

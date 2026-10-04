@@ -16,6 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import seed_dev
+from api.core.config import settings
 from api.db.models.auth import User
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import Content, ContentType, ContentVersion, ContentVisibility
@@ -168,3 +169,30 @@ async def test_seed_dev_main_records_mia_thumbnail_dimensions(
     asset = await db_session.get(Asset, seed_dev.ASSET_ID, populate_existing=True)
     assert asset is not None
     assert (asset.width, asset.height) == images.SIZE
+
+
+@pytest.mark.parametrize(
+    "database_url",
+    [
+        pytest.param("postgresql+asyncpg://postgres:secret@postgres:5432/ai_character_chat", id="prod-compose-host"),
+        pytest.param("postgresql+asyncpg://u:p@db.example.com:5432/x", id="remote-host"),
+    ],
+)
+async def test_seed_dev_refuses_non_local_database_before_writing_anything(
+    database_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """운영 DB 를 가리키면 썸네일 업로드(저장소 쓰기)를 포함해 아무것도 쓰기 전에 멈춘다."""
+    monkeypatch.setattr(settings, "database_url", database_url)
+    touched: list[str] = []
+    monkeypatch.setattr(seed_dev, "upload_object", lambda *_args: touched.append("upload_object"))
+    monkeypatch.setattr(seed_dev, "read_image", lambda *_args: touched.append("read_image"))
+
+    with pytest.raises(SystemExit):
+        await seed_dev.main()
+
+    assert touched == []
+
+
+@pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "[::1]"])
+def test_seed_dev_allows_local_database_hosts(host: str) -> None:
+    seed_dev.ensure_local_database(f"postgresql+asyncpg://postgres:postgres@{host}:5447/ai_character_chat")

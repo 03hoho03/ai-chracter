@@ -2,16 +2,26 @@ import hashlib
 import hmac
 
 import bcrypt
+from starlette.concurrency import run_in_threadpool
 
 from api.core.config import settings
 
+# bcrypt 한 번은 수백 ms 가 걸리는 CPU 작업이라 이벤트 루프에서 돌리면 그동안 이 프로세스의 다른
+# 요청이 전부 멈춘다. bcrypt 는 해시 계산 중 GIL 을 놓으므로 스레드풀로 옮기면 루프가 실제로 풀린다.
+# 호출부마다 감싸지 않고 여기서 한 번에 비동기로 바꾼다 — 동기 판이 남아 있으면 그걸 다시 부르는
+# 실수를 막을 수단이 없다. `await` 를 빠뜨리면 코루틴이 항상 참이라 `not verify_password(...)` 가
+# 오답을 통과시키므로, mypy 의 `truthy-bool` 검사가 그 누락을 잡게 켜 두었다(pyproject.toml).
 
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+async def hash_password(password: str) -> str:
+    hashed = await run_in_threadpool(bcrypt.hashpw, password.encode("utf-8"), bcrypt.gensalt())
+    return hashed.decode("utf-8")
 
 
-def verify_password(password: str, password_hash: str) -> bool:
-    return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+async def verify_password(password: str, password_hash: str) -> bool:
+    return await run_in_threadpool(
+        bcrypt.checkpw, password.encode("utf-8"), password_hash.encode("utf-8")
+    )
 
 
 def hash_withdrawn_email(email: str) -> str:

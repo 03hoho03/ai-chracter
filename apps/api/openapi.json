@@ -3334,9 +3334,36 @@
         ],
         "summary": "Withdraw",
         "operationId": "withdraw_me_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/WithdrawRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
         }
       }
@@ -19020,6 +19047,24 @@
         "properties": {},
         "type": "object",
         "title": "VerifyEmailResponse"
+      },
+      "WithdrawRequest": {
+        "properties": {
+          "currentPassword": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currentpassword"
+          }
+        },
+        "type": "object",
+        "title": "WithdrawRequest",
+        "description": "탈퇴 재인증. 비밀번호가 있는 계정만 값을 요구하고, 그 판정은 서버가 계정을 보고 한다. 필드를\n선택으로 두는 이유: 소셜 계정의 프런트가 값 없이 보낸 `{}` 가 422 로 막히지 않게 한다."
       }
     }
   }

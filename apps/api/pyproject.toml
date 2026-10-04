@@ -85,6 +85,9 @@ python_version = "3.11"
 mypy_path = ["src", "scripts", "tests"]
 explicit_package_bases = true
 strict = true
+# strict 에 없는 검사다. 비동기 함수의 `await` 를 빠뜨리면 코루틴 객체가 항상 참이라
+# `if not verify_password(...)` 가 오답에도 통과하는데, strict 만으로는 이걸 못 잡는다.
+enable_error_code = ["truthy-bool"]
 
 [tool.pytest.ini_options]
 # `scripts/` 는 src 레이아웃 밖의 CLI 스크립트 모음이라 설치되지 않는다 — 테스트가

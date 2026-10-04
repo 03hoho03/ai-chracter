@@ -201,7 +201,7 @@ async def _create_admin(db_session: AsyncSession, **overrides: object) -> dict[s
     }
     defaults.update(overrides)
     admin = AdminUser(
-        email=str(defaults["email"]), password_hash=hash_password(str(defaults["password"]))
+        email=str(defaults["email"]), password_hash=await hash_password(str(defaults["password"]))
     )
     db_session.add(admin)
     await db_session.flush()

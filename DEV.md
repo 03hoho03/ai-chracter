@@ -134,7 +134,7 @@ https://<호스트>.<테일넷>.ts.net/s3/   → localhost:5001  (moto, 썸네�
 `./dev-up.sh`로도 돌아오지 않는다. 없으면 admin 화면에 로그인할 방법 자체가 없으니 다시 넣을 것:
 
 ```sh
-cd apps/api && H=$(uv run python -c "from api.core.security import hash_password; print(hash_password('password1234'))") \
+cd apps/api && H=$(uv run python -c "import asyncio; from api.core.security import hash_password; print(asyncio.run(hash_password('password1234')))") \
   && docker exec ai-character-chat-dev-postgres-1 psql -U postgres -d ai_character_chat \
     -c "insert into admin_users (id, email, password_hash) values (gen_random_uuid(), 'admin@example.com', '$H')
         on conflict (email) do update set password_hash = excluded.password_hash;"

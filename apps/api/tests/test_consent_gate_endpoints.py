@@ -223,7 +223,7 @@ async def test_withdraw_still_open_without_consent(db_client: httpx.AsyncClient,
 async def test_change_password_still_open_without_consent(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user(password_hash=hash_password("oldpassword123"), terms_version=None)
+    user = _make_user(password_hash=await hash_password("oldpassword123"), terms_version=None)
     db_session.add(user)
     await db_session.flush()
     await _make_published(db_session, kind="terms", version="2099-01-01", requires_reconsent=True)

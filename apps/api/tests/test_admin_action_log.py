@@ -10,10 +10,10 @@ from api.db.models import AdminActionLog, AdminUser
 from factories import _make_user
 
 
-def _make_admin(**overrides: object) -> AdminUser:
+async def _make_admin(**overrides: object) -> AdminUser:
     defaults: dict[str, object] = {
         "email": f"admin-{uuid.uuid4()}@example.com",
-        "password_hash": hash_password("adminpassword123"),
+        "password_hash": await hash_password("adminpassword123"),
     }
     defaults.update(overrides)
     return AdminUser(**defaults)
@@ -22,7 +22,7 @@ def _make_admin(**overrides: object) -> AdminUser:
 async def test_record_admin_action_does_not_commit(db_session: AsyncSession) -> None:
     """`db.add()`만 하고 커밋하지 않는다. 호출자가 롤백하면 행이 사라져야
     호출자의 트랜잭션에 로그가 얹혀 있다는 계약이 실제로 지켜지는 것이다."""
-    admin = _make_admin()
+    admin = await _make_admin()
     db_session.add(admin)
     await db_session.flush()
 
@@ -39,7 +39,7 @@ async def test_record_admin_action_does_not_commit(db_session: AsyncSession) -> 
 async def test_record_admin_action_partial_target_succeeds(db_session: AsyncSession) -> None:
     """경고/정지처럼 대상이 유저뿐인 조치는 target_user_id만 채우고 나머지 두 FK는
     null로 남아야 한다."""
-    admin = _make_admin()
+    admin = await _make_admin()
     user = _make_user()
     db_session.add_all([admin, user])
     await db_session.flush()
@@ -67,7 +67,7 @@ async def test_record_admin_action_partial_target_succeeds(db_session: AsyncSess
 async def test_record_admin_action_all_targets_null_succeeds(db_session: AsyncSession) -> None:
     """세 타깃 FK가 전부 null인 행도 허용돼야 한다(예: 약관 게시처럼 유저/콘텐츠/채팅방
     어느 것도 대상이 아닌 조치). `reason_category` 생략 시 기본값 빈 문자열도 함께 확인한다."""
-    admin = _make_admin()
+    admin = await _make_admin()
     db_session.add(admin)
     await db_session.flush()
 
