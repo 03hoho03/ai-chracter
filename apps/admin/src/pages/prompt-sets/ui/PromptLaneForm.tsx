@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
+import { RESTING_DISABLED_PRIMARY_CLASS } from "@/shared/ui/restingDisabledPrimaryClass";
+
 import { usePreviewQuery } from "../api/usePreviewQuery";
 import { useSaveDraftMutation } from "../api/useSaveDraftMutation";
 import { PROMPT_CHANNELS, PROMPT_CHANNEL_LABELS, isPromptChannel, type PromptChannel } from "../model/channels";
@@ -125,7 +127,13 @@ export function PromptLaneForm({ lane, draft, onDirtyChange }: PromptLaneFormPro
           </Tabs>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" size="sm" disabled={!isDirty || saveDraftMutation.isPending} onClick={() => void handleSave()}>
+            <Button
+              type="button"
+              size="sm"
+              className={RESTING_DISABLED_PRIMARY_CLASS}
+              disabled={!isDirty || saveDraftMutation.isPending}
+              onClick={() => void handleSave()}
+            >
               {saveDraftMutation.isPending ? "저장 중..." : "초안 저장"}
             </Button>
             {isDirty && (
