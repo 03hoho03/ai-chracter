@@ -7,7 +7,7 @@
 
 | 컴포넌트 | 서비스 | 주소 |
 |---|---|---|
-| BE (FastAPI + Postgres + Redis + Caddy) | **GCE VM** `ddona-api` (`asia-northeast3-a`, e2-medium) | `https://api.ddona.site` |
+| BE (FastAPI + Postgres + Redis + Caddy) | **GCE VM** `ddona-api` (`asia-northeast3-a`, e2-highcpu-4) | `https://api.ddona.site` |
 | PostgreSQL 18 | VM 컨테이너 (볼륨 `pgdata`) | 내부 전용 |
 | Redis 8 | VM 컨테이너 (AOF, 볼륨 `redisdata`) | 내부 전용 |
 | 오브젝트 스토리지 (자산·생성 이미지·**DB 백업**) | **Cloudflare R2** 버킷 `ai-chracter-chat` | `https://<accountid>.r2.cloudflarestorage.com` |
@@ -25,7 +25,7 @@ FE·BE가 같은 등록가능 도메인(`ddona.site`)에 있다 — 그래서 �
 | 구성 | 값 |
 |---|---|
 | GCP 프로젝트 | `ddona-ai-character-chat` (번호 377499972563, 계정 `ghwjd321@gmail.com`) |
-| VM | `ddona-api` / `asia-northeast3-a` / e2-medium / Ubuntu 24.04 / 30GB |
+| VM | `ddona-api` / `asia-northeast3-a` / e2-highcpu-4 / Ubuntu 24.04 / 30GB |
 | 고정 IP | `34.64.43.39` (`ddona-api-ip`) |
 | DNS | **Cloudflare**(등록기관은 가비아, NS만 이관). `api` A → 위 IP, **DNS only(회색 구름)** |
 | HTTPS | Caddy 자동 발급(Let's Encrypt). `Caddyfile`은 저장소 루트 |
@@ -50,6 +50,7 @@ Cloudflare 애니캐스트 IP(`104.x`/`172.67.x`)가 아니라 VM 고정 IP를 �
 | 배포 인증 | **Workload Identity Federation** | 조직 정책이 SA 키 발급을 막는다(`iam.disableServiceAccountKeyCreation`). 결과적으로 낫다 — **GitHub에 만료 없는 자격증명이 없다** |
 | VM 파일 소유 | **root + sudo 배포** | OS Login은 접속 주체마다 POSIX 사용자가 달라, 사람 계정 소유로 두면 배포 SA가 git·docker·`.env` 셋 다 막힌다 |
 | 백업 위치 | **자산 버킷의 `backup/`** | 기존 R2 토큰이 그 버킷 전용이라 새 토큰 없이 쓰려면 이 방법뿐. 대신 prune이 백업 파일명 형태에 **정확히** 맞는 것만 지우게 해 자산과 격리했다 |
+| VM 사양 | **e2-highcpu-4**(2026-10-04 e2-medium 에서 변경) | 동시 채팅 300명 부하 측정에서 e2-medium 은 공유 코어 한도(지속 용량 1코어분)에 걸려 버티지 못했고, e2-highcpu-4 + 워커 4 + 풀 10+7 이 통과했다. 메모리는 둘 다 4GB 라 그대로 충분했다. 무료 체험 크레딧이 끝나면 실요금(월 약 12만 원)이 나가므로 체험 종료 전에 사양을 다시 판단한다 |
 | `/health` vs `/ready` | **둘 다 둔다** | `/health`는 얕아야 한다(Caddy·compose healthcheck·배포 검증이 의존). 자원 장애 감지는 `/ready`가 맡는다 |
 | 이미지 생성 → 집 PC 경로 | **Cloudflare Tunnel + Access 서비스 토큰** | VM에 데몬·컨테이너 네트워크 변경·키 로테이션이 필요 없다. 생성 직렬화("이미지 생성" 절)가 매 HTTP 호출을 생성 1건으로 묶어 두므로 엣지 요청 제한에 다가가지 않는다. 체크포인트 스왑을 도입하면 그 전제가 깨져 Tailscale로 돌아간다. **요청 본문 크기 상한은 참조 상한보다 크다** — 참조 이미지를 실으면 요청 하나가 base64 최대 8,000,000자(약 8MB)를 싣는다. 실측(2026-09-29 KST, 운영 VM → Tunnel/Access → 집 PC, 측정 방법은 "참조 이미지 켜기 · 끄기 · 롤백" 절): 실제 생성 이미지 참조 126,056자 → `200 image/webp`(14:11:06→14:11:37), 무작위 1400×1400 PNG 7,852,932자 → `200 image/webp`(14:11:38→14:11:51), Cloudflare `413`·HTML 오류 없음. 서버팀 확인: cloudflared 설정에 본문 크기 제한이 없고 집 PC 서버 앱도 본문 전체 제한 없이 필드 단위로만 검증하므로, 경로 상한은 Cloudflare 플랜 기본값(Free·Pro 100MB)이다 |
 
@@ -199,8 +200,8 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**43개 키다**(2026-10-02 VM 실측, 키 이름만 셈): 아래 표 29개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
-`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`와 `GEMINI_*_JUDGMENT_MODEL_NAME` 3개·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`DB_POOL_SIZE`·`DB_MAX_OVERFLOW`·`DB_POOL_TIMEOUT`·`WEB_CONCURRENCY`·`IMAGE_DECODE_CONCURRENCY`, 모두 14개 제외) + compose용
+**48개 키다**(2026-10-02 VM 실측 43개에 2026-10-04 사양 변경 때 추가한 워커·풀·디코드 5개를 더한 값, 키 이름만 셈): 아래 표 34개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`와 `GEMINI_*_JUDGMENT_MODEL_NAME` 3개·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개, 모두 12개 제외) + compose용
 5개(`API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE`) + "Bugsink(에러 트래커)" 절의 6개
 (`BUGSINK_*` 3개·`INGEST_SHARED_SECRET`·`SENTRY_DSN`·`SENTRY_ENVIRONMENT`) + 크론 알림 3개
 (`DISCORD_WEBHOOK_URL`·`HEALTHCHECKS_BACKUP_PING_URL`은 "백업 · 복원" 절, `HEALTHCHECKS_RESOURCE_PING_URL`은 "VM 리소스 감시" 절). `apps/api/.env`는 **로컬 개발용이며 배포와 무관하다.**
@@ -241,11 +242,14 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `RESEND_API_KEY` | `re_...` | Resend API 키 |
 | `EMAIL_FROM` | `noreply@ddona.site` | `ddona.site` 도메인이 Resend에서 검증돼야 한다 |
 | `FORWARDED_ALLOW_IPS` | `172.18.0.0/16` | **uvicorn이 직접 읽는 env**(pydantic 설정 아님). ⚠️ **`*`를 쓰지 말 것** — uvicorn `proxy_headers.py`는 `*`(always_trust)일 때 `X-Forwarded-For` 체인의 **맨 앞** 값을 그대로 쓰는데, Caddy는 실제 IP를 **뒤에 덧붙이므로** 클라이언트가 보낸 위조 헤더가 채택된다(IP rate limit을 헤더 한 줄로 우회 가능). 대역을 주면 체인을 **역순**으로 훑어 신뢰 대역 밖 첫 값(=Caddy가 붙인 진짜 IP)을 고른다. 값은 `ddona_default`의 실측 subnet이며, 단일 IP 대신 대역인 이유는 컨테이너 재생성 시 도커가 IP를 재배정하기 때문이다. 실측: 프로덕션 uvicorn 액세스 로그의 클라이언트 IP가 `127.0.0.1`(헬스체크)과 `172.18.0.3`(`ddona-caddy-1` 컨테이너) 둘뿐이었다 — 실사용자 전원이 한 IP로 보인다. 원인은 uvicorn이 `forwarded_allow_ips` 미지정 시 `127.0.0.1`로 떨어뜨려 도커 브리지의 Caddy가 보낸 `X-Forwarded-For`를 신뢰하지 않는 것이다. 이게 없으면 IP 기반 rate limit이 전 사용자 공유 버킷이 된다. **api 컨테이너가 호스트에 포트를 게시하지 않는 것은 이 위협을 막지 못한다** — 포트 미게시가 막는 것은 "uvicorn에 직접 TCP로 붙어 peer 주소를 위장하는" 쪽이고, `*`가 여는 것은 "평범한 사용자로서 Caddy를 통과하는 정상 HTTPS 요청에 `X-Forwarded-For: 1.2.3.4` 한 줄을 얹는" 쪽이라 api 컨테이너에 직접 닿을 필요가 없다(`Caddyfile`의 api 라우트는 `reverse_proxy api:8000` 한 줄뿐이고(`/_ingest/*`만 `handle_path`로 bugsink에 따로 간다) `trusted_proxies`도 `header_up X-Forwarded-For` 덮어쓰기도 없어 클라이언트가 보낸 체인이 보존된 채 실제 IP가 뒤에 붙는다). 실측 반증: 대역 설정 상태에서 `X-Forwarded-For: 1.2.3.4`를 얹어 보냈지만 로그에는 실제 공인 IP가 찍혔다 — `*`였다면 `1.2.3.4`가 찍혔을 것이다(2026-09-12). 부수효과: `guardian_consents.ip_address`도 이때부터 진짜 IP가 된다(기존 저장값은 전부 프록시 IP다) |
-| `WEB_CONCURRENCY` | 기본 `1` | **uvicorn이 직접 읽는 env**(pydantic 설정 아님) — 워커 프로세스 수. Dockerfile CMD 에 `--workers` 가 없어서 이 값이 기본값이 된다(`--workers` 를 CMD 에 쓰면 이 env 가 무시된다). 워커는 앱을 각자 새로 import 하므로 DB 풀·메모리(1프로세스 약 190MB)·Redis 장애 보고·집 PC capabilities 프로브가 워커 수만큼 늘어난다. 이미지 생성 직렬화·대기열은 Redis 에 있어 워커 수와 무관하다. 올릴 때 아래 풀 크기를 함께 줄인다 |
-| `DB_POOL_SIZE` | 기본 `5` | 워커 하나의 SQLAlchemy 풀 상시 크기(1 이상). 기본값은 이 설정이 생기기 전과 같다. ⚠️ **워커 수 × (`DB_POOL_SIZE` + `DB_MAX_OVERFLOW`) ≤ 70** — Postgres `max_connections` 가 100 이고, 크론·백업·배포 마이그레이션·관리 접속 몫을 남긴다(앱 DB 사용자가 슈퍼유저라 예약 연결이 관리 접속을 따로 지켜 주지 않는다) |
-| `DB_MAX_OVERFLOW` | 기본 `10` | 풀이 다 찼을 때 잠깐 더 여는 연결 수. 위 식에 들어간다 |
-| `DB_POOL_TIMEOUT` | 기본 `30` | 풀이 다 찼을 때 연결을 기다리는 초. 넘기면 그 요청이 500 이다 |
-| `IMAGE_DECODE_CONCURRENCY` | 기본 `3` | 워커 하나에서 동시에 도는 이미지 디코드·블러·변형 생성 건수 상한(1 이상, 넘치면 기다린다). 기본값은 이 설정이 생기기 전과 같다. ⚠️ 워커마다 따로 세므로 **워커 수 × 이 값 × 건당 최대 메모리 ≤ VM 가용 메모리의 절반**으로 정한다 — 건당 최대 메모리는 아직 실측 전이다(픽셀 상한 9M 그림의 RGBA 한 장만 약 36MB 이고, 블러·축소 복사본이 그 위에 붙는다). `WEB_CONCURRENCY` 를 올릴 때 함께 본다 |
+| `WEB_CONCURRENCY` | **운영 `4`**(기본 `1`) | **uvicorn이 직접 읽는 env**(pydantic 설정 아님) — 워커 프로세스 수. Dockerfile CMD 에 `--workers` 가 없어서 이 값이 기본값이 된다(`--workers` 를 CMD 에 쓰면 이 env 가 무시된다). 워커는 앱을 각자 새로 import 하므로 DB 풀·메모리(1프로세스 약 190MB)·Redis 장애 보고·집 PC capabilities 프로브가 워커 수만큼 늘어난다. 이미지 생성 직렬화·대기열은 Redis 에 있어 워커 수와 무관하다. 올릴 때 아래 풀 크기를 함께 줄인다. 운영 값 4 는 동시 채팅 300명 부하 측정을 통과한 조합이다 |
+| `DB_POOL_SIZE` | **운영 `10`**(기본 `5`) | 워커 하나의 SQLAlchemy 풀 상시 크기(1 이상). 기본값은 이 설정이 생기기 전과 같다. ⚠️ **워커 수 × (`DB_POOL_SIZE` + `DB_MAX_OVERFLOW`) ≤ 70** — Postgres `max_connections` 가 100 이고, 크론·백업·배포 마이그레이션·관리 접속 몫을 남긴다(앱 DB 사용자가 슈퍼유저라 예약 연결이 관리 접속을 따로 지켜 주지 않는다). 운영 값은 4 × (10 + 7) = 68 ≤ 70 |
+| `DB_MAX_OVERFLOW` | **운영 `7`**(기본 `10`) | 풀이 다 찼을 때 잠깐 더 여는 연결 수. 위 식에 들어간다 |
+| `DB_POOL_TIMEOUT` | **운영 `30`**(기본값과 같다) | 풀이 다 찼을 때 연결을 기다리는 초. 넘기면 그 요청이 500 이다 |
+| `IMAGE_DECODE_CONCURRENCY` | **운영 `1`**(기본 `3`) | 워커 하나에서 동시에 도는 이미지 디코드·블러·변형 생성 건수 상한(1 이상, 넘치면 기다린다). 기본값은 이 설정이 생기기 전과 같다. ⚠️ 워커마다 따로 세므로 **워커 수 × 이 값 × 건당 최대 메모리 ≤ VM 가용 메모리의 절반**으로 정한다 — 건당 최대 메모리는 픽셀 상한 9M 그림의 블러·변형 생성 실측 피크 약 217MB 다. 운영 값 1 은 워커 4 × 1 × 약 217MB ≈ 868MB 가 부하 중 가용 메모리의 절반(약 950MB) 안에 드는 값이고, 2 면 넘는다. `WEB_CONCURRENCY` 를 올릴 때 함께 본다 |
+| `MEMORY_WINDOW_GENERATION` | 설정 안 함(기본 `true`) | 긴 방의 생성 프롬프트에서 요약이 덮은 메시지를 빼는 히스토리 윈도우. `false` 면 전체 히스토리를 싣는다 — 요약 품질 사고 때 재기동만으로 예전 동작으로 돌아가는 스위치이고, 끄면 아래 두 판정 스위치도 무시된다 |
+| `MEMORY_WINDOW_ENDING_JUDGMENT` | 설정 안 함(기본 `false`) | 엔딩 판정에도 윈도우를 씌운다(켜면 현재 요약을 함께 싣는다). ⚠️ 꺼져 있으면 판정이 대화 전체를 실으므로 긴 방에서 토큰 원가가 크게 늘고 컨텍스트 한도에 닿을 수 있다 |
+| `MEMORY_WINDOW_IMAGE_JUDGMENT` | 설정 안 함(기본 `false`) | 상황 이미지 판정에도 윈도우를 씌운다(켜면 최근 원문만 싣는다). 꺼져 있을 때의 주의는 위와 같다 |
 
 > **`CORS_ALLOW_ORIGINS` 함정**: pydantic-settings는 `list[str]` 필드를 env에서 **JSON으로 파싱**한다.
 > 반드시 `["https://a","https://b"]` 형태로 넣을 것(콤마 구분 평문 아님).
