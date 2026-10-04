@@ -314,6 +314,27 @@ def _boom(*args: Any, **kwargs: Any) -> Any:
     raise RuntimeError("라우트 본문 실패")
 
 
+async def _async_boom(*args: Any, **kwargs: Any) -> Any:
+    raise RuntimeError("라우트 본문 실패")
+
+
+_PREVIEW_CHARACTER_PAYLOAD: dict[str, object] = {
+    "name": "아리아",
+    "oneLiner": "한 줄 소개",
+    "thumbnailAssetId": None,
+    "intro": "안녕하세요, 아리아예요",
+    "exampleDialogues": [],
+    "characterPrompt": "너는 아리아다.",
+    "playguide": None,
+    "situationalImages": [],
+    "description": "상세 설명",
+    "genreId": None,
+    "target": None,
+    "hashtags": [],
+    "visibility": "private",
+}
+
+
 async def _opening_message(db_session: AsyncSession, room_id: uuid.UUID) -> ChatMessage:
     rows = (
         await db_session.scalars(
@@ -375,6 +396,19 @@ async def _run_body_failure(
                 await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
             except BaseException as exc:  # 무엇이 올라오든 기록만 한다
                 raised = exc
+        elif surface == "preview":
+            # 미리보기 본문 첫머리의 반납 커밋이 깨진다. 요청 세션(= 이 `db_session`)만 패치하므로 게이트의 차감
+            # 세션(세션 팩토리가 새로 여는 다른 객체)은 영향받지 않는다.
+            started = await db_client.post("/preview-sessions", json=_PREVIEW_CHARACTER_PAYLOAD)
+            assert started.status_code == 201
+            with monkeypatch.context() as patch:
+                patch.setattr(db_session, "commit", _async_boom)
+                try:
+                    await db_client.post(
+                        f"/preview-sessions/{started.json()['previewSessionId']}/messages", json={"content": "안녕"}
+                    )
+                except BaseException as exc:
+                    raised = exc
         elif surface == "edit":
             # 편집 본문의 `delete(ChatMessage)`가 깨진다(후행 메시지가 있어 반드시 지난다).
             # `_editable_user_message_dependency`는 `db.get`을 쓰므로 영향받지 않는다.
@@ -409,17 +443,15 @@ async def _run_body_failure(
     return user, raised
 
 
-@pytest.mark.parametrize("surface", ["send", "edit", "regenerate"])
+@pytest.mark.parametrize("surface", ["send", "edit", "regenerate", "preview"])
 async def test_route_body_failure_refunds_clover(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
     surface: str,
 ) -> None:
-    """차감은 커밋됐는데 본문이 첫 `yield` 전에 터지면 되돌린다.
-
-    미리보기는 대상이 아니다 — 본문에 DB 접근이 0건이라 이 창 자체가 없다.
-    """
+    """차감은 커밋됐는데 본문이 첫 `yield` 전에 터지면 되돌린다. 미리보기 본문의 DB 접근은 의존성이 연 요청 세션
+    트랜잭션을 반납하는 커밋 하나다."""
     user, raised = await _run_body_failure(db_client, db_session, monkeypatch, surface=surface)
 
     # 요청은 그대로 실패한다 — 환불이 원래 예외를 삼키면 안 된다.

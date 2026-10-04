@@ -1,0 +1,659 @@
+{
+  "edit-story": {
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "newValue": 80.0,
+        "statId": "<id1>",
+        "type": "statChange"
+      },
+      {
+        "endingId": "<id2>",
+        "epilogue": "그렇게 마을을 떠났다.",
+        "mediaTagImages": {},
+        "type": "endingReached"
+      },
+      {
+        "finalMessage": {
+          "content": "오늘은 비가 와.",
+          "createdAt": "<time>",
+          "id": "<id3>",
+          "imageHeight": 400,
+          "imageId": "<id4>",
+          "imageUrl": "/<bucket>/assets/situational-image/<id5>.webp",
+          "imageWidth": 300,
+          "role": "assistant"
+        },
+        "type": "done"
+      }
+    ],
+    "state": {
+      "characterExposures": 0,
+      "endingId": "<id2>",
+      "endingReached": true,
+      "endingReachedAtTurn": 1,
+      "endingUnlocks": 1,
+      "messages": [
+        {
+          "content": "다시 만났네요!",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "고쳐 말하면, 마을을 떠나자",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "오늘은 비가 와.",
+          "imageId": "<id4>",
+          "role": "assistant"
+        }
+      ],
+      "stats": [
+        {
+          "id": "<id1>",
+          "value": "80.0"
+        }
+      ],
+      "storyExposures": 1,
+      "turnCount": 1
+    }
+  },
+  "preview-story": {
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "newValue": 90.0,
+        "statId": "<id1>",
+        "type": "statChange"
+      },
+      {
+        "endingId": "<id2>",
+        "epilogue": "모두가 행복하게 살았다.",
+        "mediaTagImages": {},
+        "type": "endingReached"
+      },
+      {
+        "finalMessage": {
+          "content": "오늘은 비가 와.",
+          "createdAt": "<time>",
+          "id": "<id3>",
+          "imageHeight": null,
+          "imageId": null,
+          "imageUrl": null,
+          "imageWidth": null,
+          "role": "assistant"
+        },
+        "type": "done"
+      }
+    ],
+    "state": {
+      "endingReached": true,
+      "messages": [
+        {
+          "content": "어서 와.",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "행복해지자",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "오늘은 비가 와.",
+          "imageId": null,
+          "role": "assistant"
+        }
+      ],
+      "stats": {
+        "<id1>": 90.0
+      },
+      "turnCount": 1
+    }
+  },
+  "regenerate-character": {
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "finalMessage": {
+          "content": "오늘은 비가 와.",
+          "createdAt": "<time>",
+          "id": "<id1>",
+          "imageHeight": null,
+          "imageId": "<id2>",
+          "imageUrl": "/<bucket>/assets/situational-image/<id3>.webp",
+          "imageWidth": null,
+          "role": "assistant"
+        },
+        "type": "done"
+      }
+    ],
+    "state": {
+      "characterExposures": 1,
+      "endingId": null,
+      "endingReached": false,
+      "endingReachedAtTurn": null,
+      "endingUnlocks": 0,
+      "messages": [
+        {
+          "content": "인트로",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U01]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "오늘은 비가 와.",
+          "imageId": "<id2>",
+          "role": "assistant"
+        }
+      ],
+      "stats": [],
+      "storyExposures": 0,
+      "turnCount": 1
+    }
+  },
+  "regenerate-story": {
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "finalMessage": {
+          "content": "오늘은 비가 와.",
+          "createdAt": "<time>",
+          "id": "<id1>",
+          "imageHeight": 400,
+          "imageId": "<id2>",
+          "imageUrl": "/<bucket>/assets/situational-image/<id3>.webp",
+          "imageWidth": 300,
+          "role": "assistant"
+        },
+        "type": "done"
+      }
+    ],
+    "state": {
+      "characterExposures": 0,
+      "endingId": null,
+      "endingReached": false,
+      "endingReachedAtTurn": null,
+      "endingUnlocks": 0,
+      "messages": [
+        {
+          "content": "다시 만났네요!",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U01]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "오늘은 비가 와.",
+          "imageId": "<id2>",
+          "role": "assistant"
+        }
+      ],
+      "stats": [
+        {
+          "id": "<id4>",
+          "value": "73"
+        }
+      ],
+      "storyExposures": 1,
+      "turnCount": 1
+    }
+  },
+  "send-character": {
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "finalMessage": {
+          "content": "오늘은 비가 와.",
+          "createdAt": "<time>",
+          "id": "<id1>",
+          "imageHeight": null,
+          "imageId": "<id2>",
+          "imageUrl": "/<bucket>/assets/situational-image/<id3>.webp",
+          "imageWidth": null,
+          "role": "assistant"
+        },
+        "type": "done"
+      }
+    ],
+    "state": {
+      "characterExposures": 1,
+      "endingId": null,
+      "endingReached": false,
+      "endingReachedAtTurn": null,
+      "endingUnlocks": 0,
+      "messages": [
+        {
+          "content": "인트로",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U01]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A01]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U02]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A02]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U03]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A03]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U04]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A04]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U05]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A05]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U06]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A06]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U07]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A07]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U08]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A08]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U09]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A09]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U10]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A10]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U11]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A11]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U12]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A12]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U13]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A13]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U14]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A14]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U15]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A15]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U16]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A16]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U17]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A17]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U18]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A18]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U19]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A19]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U20]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A20]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U21]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A21]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U22]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A22]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U23]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A23]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U24]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A24]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U25]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A25]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U26]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A26]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U27]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A27]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U28]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A28]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U29]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A29]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "[U30]가가가가가가가가가가가가가가가",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "[A30]나나나나나나나나나나나나나나나",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "골목으로 가자",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "오늘은 비가 와.",
+          "imageId": "<id2>",
+          "role": "assistant"
+        }
+      ],
+      "stats": [],
+      "storyExposures": 0,
+      "turnCount": 31
+    }
+  },
+  "send-story": {
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "newValue": 80.0,
+        "statId": "<id1>",
+        "type": "statChange"
+      },
+      {
+        "endingId": "<id2>",
+        "epilogue": "그렇게 마을을 떠났다.",
+        "mediaTagImages": {},
+        "type": "endingReached"
+      },
+      {
+        "finalMessage": {
+          "content": "오늘은 비가 와.",
+          "createdAt": "<time>",
+          "id": "<id3>",
+          "imageHeight": 400,
+          "imageId": "<id4>",
+          "imageUrl": "/<bucket>/assets/situational-image/<id5>.webp",
+          "imageWidth": 300,
+          "role": "assistant"
+        },
+        "type": "done"
+      }
+    ],
+    "state": {
+      "characterExposures": 0,
+      "endingId": "<id2>",
+      "endingReached": true,
+      "endingReachedAtTurn": 1,
+      "endingUnlocks": 1,
+      "messages": [
+        {
+          "content": "다시 만났네요!",
+          "imageId": null,
+          "role": "assistant"
+        },
+        {
+          "content": "마을을 떠나자",
+          "imageId": null,
+          "role": "user"
+        },
+        {
+          "content": "오늘은 비가 와.",
+          "imageId": "<id4>",
+          "role": "assistant"
+        }
+      ],
+      "stats": [
+        {
+          "id": "<id1>",
+          "value": "80.0"
+        }
+      ],
+      "storyExposures": 1,
+      "turnCount": 1
+    }
+  }
+}

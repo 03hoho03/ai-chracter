@@ -20,7 +20,9 @@ from typing import Any
 import httpx
 import pytest
 import sqlalchemy as sa
+from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
+from sqlalchemy.orm import Session, SessionTransaction
 
 from api.chat.prompt_builder import ImageMatchJudgmentResult
 from api.core.config import settings
@@ -768,3 +770,34 @@ async def _assert_blocked(task: "asyncio.Task[object]", *, block_seconds: float 
     """
     with pytest.raises(asyncio.TimeoutError):
         await asyncio.wait_for(asyncio.shield(task), block_seconds)
+
+
+@contextmanager
+def _open_transaction_probe() -> Generator[set[int], None, None]:
+    """지금 루트 트랜잭션이 열려 있는(= 커넥션을 쥔) ORM 세션들의 집합을 실시간으로 유지한다.
+
+    외부 호출(LLM·S3·메일)을 기다리는 동안 DB 커넥션을 쥐지 않는다는 성질을 재려고 만들었다.
+    `engine.pool.checkedout()` 은 `db_client` 픽스처에서 쓸 수 없다 — 그 픽스처는 테스트 전체를 커넥션 하나에
+    묶어 두어 값이 요청 전·중·후 내내 1이다. 세션 트랜잭션 이벤트는 같은 픽스처 위에서도 세션마다 따로 오고,
+    실서버에서 "세션의 루트 트랜잭션이 열려 있다"는 "그 세션이 풀에서 커넥션을 빌려 쥐고 있다"와 같다
+    (세션은 루트 트랜잭션이 커넥션을 처음 쓸 때 빌리고 그 트랜잭션이 끝날 때 돌려준다).
+
+    SAVEPOINT 는 루트가 아니라 세지 않는다. 외부 호출 페이크는 이 집합의 크기를 **기록만** 하고 단언은 요청이
+    끝난 뒤에 한다 — 페이크 안에서 던지면 요약 접기처럼 예외를 전부 삼키는 자리가 신호를 지운다."""
+    open_sessions: set[int] = set()
+
+    def _after_begin(session: Session, transaction: SessionTransaction, _connection: Connection) -> None:
+        if transaction.parent is None:
+            open_sessions.add(id(session))
+
+    def _after_transaction_end(session: Session, transaction: SessionTransaction) -> None:
+        if transaction.parent is None:
+            open_sessions.discard(id(session))
+
+    sa.event.listen(Session, "after_begin", _after_begin)
+    sa.event.listen(Session, "after_transaction_end", _after_transaction_end)
+    try:
+        yield open_sessions
+    finally:
+        sa.event.remove(Session, "after_begin", _after_begin)
+        sa.event.remove(Session, "after_transaction_end", _after_transaction_end)

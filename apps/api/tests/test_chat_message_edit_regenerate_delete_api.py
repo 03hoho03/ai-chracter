@@ -369,7 +369,7 @@ async def test_regenerate_replaces_last_assistant_message_without_new_turn(
     assert done_events[0]["finalMessage"]["content"] == "새로운응답"
 
     # 이미지 매칭은 재실행되지만 이 방엔 등록된 이미지가
-    # 없어 `_match_situational_image`가 판정 호출 없이 반환한다 — 그래서 `generate_structured`는
+    # 없어 `_prepare_situational_image_judgment`가 판정 호출 없이 반환한다 — 그래서 `generate_structured`는
     # 불리지 않아야 한다.
     assert not fake.generate_structured_called
     assert fake.received_prompt is not None

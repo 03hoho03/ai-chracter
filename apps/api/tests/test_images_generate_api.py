@@ -1200,10 +1200,14 @@ async def test_a_running_job_keeps_its_queue_slot_past_the_lease_and_returns_it_
 ) -> None:
     """대기열 칸은 짧은 만료로 잡히고 잡이 도는 동안 갱신이 민다. 라우터가 잡마다 갱신을 띄우지 않으면
     대기·생성이 만료보다 길어지는 순간 살아 있는 잡의 칸이 풀려, 같은 유저가 잡을 하나 더 세우고 전역
-    상한도 넘친다. 잡이 끝나면 칸은 반납돼 남지 않아야 한다."""
+    상한도 넘친다. 잡이 끝나면 칸은 반납돼 남지 않아야 한다.
+
+    벽시계로 "만료 시각이 지난 뒤에도 미래인가"를 재면 이벤트 루프가 잠깐만 밀려도(전체 실행의 부하)
+    마지막 갱신과 확인 사이가 만료보다 길어져 갱신이 살아 있는데도 실패한다. 그래서 시간을 기다리지 않고
+    칸의 만료 시각이 처음 본 값 너머로 거듭 밀리는지를 넉넉한 상한 안에서 폴링한다 — 갱신이 없으면 만료
+    시각은 처음 잡힌 값에서 움직이지 않는다."""
     monkeypatch.setattr(settings, "local_image_queue_limit", 4)
-    monkeypatch.setattr(local_image, "ADMISSION_LEASE_MS", 300)
-    monkeypatch.setattr(local_image, "ADMISSION_HEARTBEAT_SECONDS", 0.05)
+    monkeypatch.setattr(local_image, "ADMISSION_HEARTBEAT_SECONDS", 0.01)
     user = _make_user()
     db_session.add(user)
     await db_session.commit()
@@ -1233,22 +1237,34 @@ async def test_a_running_job_keeps_its_queue_slot_past_the_lease_and_returns_it_
 
     try:
         await asyncio.wait_for(started.wait(), timeout=5)
-        # 만료(0.3초)의 두 배를 기다린다 — 갱신이 없으면 이 사이에 칸의 만료 시각이 지난다.
-        await asyncio.sleep(0.6)
-        # 만료 시각이 지난 칸은 다음 admit 이 지우기 전까지 집합에 남으므로, 있는지가 아니라 만료 시각이
-        # 아직 미래인지를 본다. 시각은 칸 점수와 같은 Redis 서버 시계로 읽는다.
-        seconds, microseconds = await redis_client.time()
-        now_ms = seconds * 1000 + microseconds // 1000
         members = [str(member) for member in await redis_client.zrange(local_image.ADMISSION_KEY, 0, -1)]
         held = [member for member in members if member.startswith(f"{user.id}:")]
         assert len(held) == 1
-        expires_at = await redis_client.zscore(local_image.ADMISSION_KEY, held[0])
-        assert expires_at is not None and expires_at > now_ms
+        first_expiry = await redis_client.zscore(local_image.ADMISSION_KEY, held[0])
+        assert first_expiry is not None
+        # 한 번 밀린 것으로는 주기적 갱신과 한 번뿐인 갱신이 갈리지 않으므로 서로 다른 값으로 두 번 밀리기를
+        # 기다린다. 갱신은 Redis 시계의 밀리초 단위라 같은 밀리초 안의 갱신은 값이 같아 세지 않는다.
+        expiries = [first_expiry]
+        for _ in range(500):
+            expiry = await redis_client.zscore(local_image.ADMISSION_KEY, held[0])
+            assert expiry is not None
+            if expiry > expiries[-1]:
+                expiries.append(expiry)
+                if len(expiries) == 3:
+                    break
+            await asyncio.sleep(0.01)
+        assert len(expiries) == 3, f"admission expiry was not renewed while the job ran: {expiries}"
     finally:
         finish.set()
 
     job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
     assert job.status == ImageGenerationJobStatus.SUCCEEDED
+    # 잡은 SUCCEEDED 를 기록한 뒤에 `finally` 에서 칸을 반납하므로, 완료를 본 직후에는 칸이 아직 남아
+    # 있을 수 있다. 반납을 상한 안에서 기다린다.
+    for _ in range(500):
+        if await redis_client.zcard(local_image.ADMISSION_KEY) == 0:
+            break
+        await asyncio.sleep(0.01)
     assert await redis_client.zcard(local_image.ADMISSION_KEY) == 0
 
 
