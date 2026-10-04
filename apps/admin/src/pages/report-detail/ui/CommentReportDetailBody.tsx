@@ -5,19 +5,25 @@ import { CommentReportActionPanel } from "@/features/act-on-comment-report";
 import { CONTENT_TYPE_LABELS } from "@/entities/admin-content";
 import { REPORT_REASON_LABELS, REPORT_STATUS_LABELS, useCommentReportDetailQuery, type CommentCurrent } from "@/entities/report";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { DetailLayout } from "@/shared/ui/DetailLayout";
+import { QueryState } from "@/shared/ui/QueryState";
 
 const WEB_BASE_URL = import.meta.env.VITE_FRONTEND_BASE_URL ?? "https://ddona.site";
 
 export function CommentReportDetailBody({ reportId }: { reportId: string }) {
   const query = useCommentReportDetailQuery(reportId);
-  if (query.isPending) return <div className="h-64 animate-pulse rounded-xl bg-muted" />;
-  if (query.isError) return <p role="alert" className="text-sm text-destructive-text">댓글 신고를 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>;
-  const report = query.data;
-  return <>
-    <section className="flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-card p-2 wrap-anywhere sm:p-6">
+  // 이미 처리된 신고도 다시 처리할 수 있어(운영 숨김 해제 등) 조치가 늘 있다.
+  return <QueryState query={query} skeleton="detail" errorMessage="댓글 신고를 불러오지 못했어요.">{(report) =>
+  <DetailLayout actions={{
+    title: "댓글 조치",
+    triggerLabel: "처리하기",
+    summary: `신고 ${REPORT_STATUS_LABELS[report.status]}`,
+    render: (host) => <CommentReportActionPanel report={report} onSuccess={host.onDone} />,
+  }}>
+    <section className="flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-card p-4 wrap-anywhere @xl:p-6">
       <div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium">{REPORT_STATUS_LABELS[report.status]}</span>
         <span className="text-sm text-muted-foreground">{formatDateTime(report.createdAt)} 접수</span></div>
-      <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+      <dl className="grid grid-cols-1 gap-3 text-sm @xl:grid-cols-2">
         <div><dt className="text-muted-foreground">신고 사유</dt><dd>{REPORT_REASON_LABELS[report.reasonCategory]}</dd></div>
         <div><dt className="text-muted-foreground">신고자</dt><dd><Link to="/users/$userId" params={{ userId: report.reporterUserId }} className="font-medium text-primary hover:underline focus-visible:underline">유저 상세 보기</Link></dd></div>
         <div><dt className="text-muted-foreground">대상 작품</dt><dd><Link to="/contents/$contentId" params={{ contentId: report.content.id }} className="break-all font-medium text-primary hover:underline focus-visible:underline">{CONTENT_TYPE_LABELS[report.content.type]} · {report.content.name || "(이름 없음)"}</Link></dd></div>
@@ -25,7 +31,7 @@ export function CommentReportDetailBody({ reportId }: { reportId: string }) {
       </dl>
     </section>
     <CurrentComment comment={report.comment} title="현재 신고 대상 댓글" />
-    <section className="flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-card p-2 wrap-anywhere sm:p-6">
+    <section className="flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-card p-4 wrap-anywhere @xl:p-6">
       <h2 className="text-lg font-semibold">신고 당시 원문 증거</h2>
       <p className="break-keep text-xs text-muted-foreground">신고 접수 때의 내용이에요. 현재 댓글의 수정·삭제와 별도로 보관하며 {formatDateTime(report.evidence.expiresAt)}에 만료돼요.</p>
       {report.evidence.available ? <>
@@ -36,8 +42,7 @@ export function CommentReportDetailBody({ reportId }: { reportId: string }) {
     </section>
     {report.root.id !== report.comment.id && <CurrentComment comment={report.root} title="원댓글 맥락" />}
     {!!report.replyTo && report.replyTo.id !== report.root.id && report.replyTo.id !== report.comment.id && <CurrentComment comment={report.replyTo} title="답글 대상 맥락" />}
-    <CommentReportActionPanel report={report} />
-  </>;
+  </DetailLayout>}</QueryState>;
 }
 
 function Sticker({ id, alt }: { id: string; alt: string }) {
@@ -52,7 +57,7 @@ function CurrentComment({ comment, title }: { comment: CommentCurrent; title: st
   if (comment.deletedAt) stateLabel = "삭제됨";
   else if (comment.moderatorHidden) stateLabel = "운영 숨김";
   else if (comment.creatorHidden) stateLabel = "작가 숨김";
-  return <section className="flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-card p-2 wrap-anywhere sm:p-6">
+  return <section className="flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-card p-4 wrap-anywhere @xl:p-6">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <h2 className="text-lg font-semibold">{title}</h2>
       <span className="text-xs text-muted-foreground">{stateLabel}</span>
