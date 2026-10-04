@@ -26,7 +26,7 @@ from api.content.publish import PublishFilterResult, validate_story_publish
 from api.content.router import _MEDIA_BOOK_S3_CONCURRENCY
 from api.core.config import settings
 from api.core.redis import redis_client
-from api.core.s3 import build_thumbnail_key
+from api.core.s3 import build_thumbnail_key, build_variant_keys
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import (
     Content,
@@ -1629,7 +1629,7 @@ async def test_publish_story_creates_blur_only_for_cells_without_blur(
         20,
         30,
     )
-    assert _bucket_keys() - keys_before == {blurred.storage_key, build_thumbnail_key(blurred.storage_key)}
+    assert _bucket_keys() - keys_before == {blurred.storage_key, *build_variant_keys(blurred.storage_key)}
     copied_blur_id = await db_session.scalar(
         sa.select(MediaBookCell.blurred_asset_id).where(
             MediaBookCell.entity_id == fresh.entity_id, MediaBookCell.content_version_id != version.id
@@ -1779,9 +1779,9 @@ async def test_publish_story_blurs_cells_concurrently_within_s3_connection_limit
             size,
         )
         assert Image.open(io.BytesIO(_object_bytes(blurred.storage_key))).size == size
-        blurred_keys |= {blurred.storage_key, build_thumbnail_key(blurred.storage_key)}
+        blurred_keys |= {blurred.storage_key, *build_variant_keys(blurred.storage_key)}
     assert _bucket_keys() - keys_before == blurred_keys
-    assert len(blurred_keys) == 2 * len(sized_cells)
+    assert len(blurred_keys) == 3 * len(sized_cells)
 
 
 async def test_publish_story_blur_failure_reports_first_cell_in_axis_order_after_all_blurs_finish(

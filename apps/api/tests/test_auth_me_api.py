@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.admin.action_log import record_admin_action
 from api.auth.verification import get_verification_code
 from api.core.config import settings
-from api.core.s3 import build_thumbnail_key
+from api.core.s3 import build_display_key, build_thumbnail_key
 from api.core.security import hash_withdrawn_email, verify_password
 from api.db.models import (
     AdminActionLog,
@@ -393,6 +393,7 @@ async def test_withdraw_deletes_profile_image_from_object_storage(
     s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
     s3.put_object(Bucket=settings.s3_bucket_name, Key=storage_key, Body=b"fake-profile-image")
     s3.put_object(Bucket=settings.s3_bucket_name, Key=thumbnail_key, Body=b"fake-thumbnail")
+    s3.put_object(Bucket=settings.s3_bucket_name, Key=build_display_key(storage_key), Body=b"fake-display")
 
     resp = await db_client.delete("/me")
     assert resp.status_code == 204
@@ -512,6 +513,7 @@ async def test_withdraw_deletes_unused_generated_asset_and_its_request_row(
     s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
     s3.put_object(Bucket=settings.s3_bucket_name, Key=storage_key, Body=b"fake-generated-image")
     s3.put_object(Bucket=settings.s3_bucket_name, Key=thumbnail_key, Body=b"fake-thumbnail")
+    s3.put_object(Bucket=settings.s3_bucket_name, Key=build_display_key(storage_key), Body=b"fake-display")
 
     resp = await db_client.delete("/me")
     assert resp.status_code == 204

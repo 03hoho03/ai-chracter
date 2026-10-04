@@ -12,7 +12,7 @@ from starlette.concurrency import run_in_threadpool
 from api.assets.blur import create_blurred_asset
 from api.assets.image_processing import (
     THUMBNAIL_CONTENT_TYPE,
-    generate_thumbnail,
+    generate_variants,
     read_image_content_type,
     read_image_size,
 )
@@ -32,6 +32,7 @@ from api.core.s3 import (
     build_object_key,
     build_thumbnail_key,
     build_upload_key,
+    build_variant_keys,
     delete_object,
     download_object,
     generate_presigned_get_url,
@@ -153,11 +154,11 @@ async def complete_asset_upload(
             detail={"maxBytes": max_bytes, "actualBytes": len(original_bytes)},
         )
 
-    # Invariant: a READY image asset always has a `{key}_thumb.webp` variant, so
-    # list endpoints can derive the key without an existence check. A failed
-    # variant therefore fails the whole asset — never READY with only the original.
+    # Invariant: a READY image asset always has every variant (`generate_variants`), so
+    # responses can derive the keys without an existence check. A failed variant
+    # therefore fails the whole asset — never READY with only the original.
     try:
-        thumbnail_bytes = await run_in_threadpool(generate_thumbnail, original_bytes)
+        variants = await run_in_threadpool(generate_variants, asset.storage_key, original_bytes)
         width, height = await run_in_threadpool(read_image_size, original_bytes)
         detected_content_type = await run_in_threadpool(read_image_content_type, original_bytes)
     except (OSError, ValueError) as exc:
@@ -173,12 +174,8 @@ async def complete_asset_upload(
     # 열면 그림 대신 다운로드가 된다.
     content_type = detected_content_type or "application/octet-stream"
     await run_in_threadpool(upload_object, asset.storage_key, original_bytes, content_type)
-    await run_in_threadpool(
-        upload_object,
-        build_thumbnail_key(asset.storage_key),
-        thumbnail_bytes,
-        THUMBNAIL_CONTENT_TYPE,
-    )
+    for variant_key, variant_bytes in variants:
+        await run_in_threadpool(upload_object, variant_key, variant_bytes, THUMBNAIL_CONTENT_TYPE)
 
     asset.status = AssetStatus.READY
     asset.width, asset.height = width, height
@@ -436,8 +433,8 @@ async def delete_generated_image(
     # S3를 먼저 지운다 — 실패하면 DB 행이 남아 재시도가 가능하다(고아 레코드 대신
     # 고아 파일을 피한다).
     await run_in_threadpool(delete_object, asset.storage_key)
-    # READY asset은 항상 `_thumb.webp`
-    # 변형을 갖는다(list_generated_images가 이걸 내보낸다) — 안 지우면 고아로 남는다.
-    await run_in_threadpool(delete_object, build_thumbnail_key(asset.storage_key))
+    # READY asset은 항상 변형(썸네일·표시용)을 갖는다 — 안 지우면 사용자가 만든 그림의 사본이 고아로 남는다.
+    for variant_key in build_variant_keys(asset.storage_key):
+        await run_in_threadpool(delete_object, variant_key)
     await db.delete(asset)
     await db.commit()

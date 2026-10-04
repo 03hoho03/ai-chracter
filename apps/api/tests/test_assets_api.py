@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.assets.schemas import UPLOAD_SIZE_LIMIT_BYTES, AssetPurpose
 from api.core.config import settings
-from api.core.s3 import build_thumbnail_key
+from api.core.s3 import build_display_key, build_thumbnail_key
 from api.db.models.media import Asset, AssetStatus
 from factories import _login_as, _make_user, _put_via_presigned_url
 
@@ -119,6 +119,29 @@ async def test_complete_writes_the_checked_bytes_to_the_final_key_and_removes_th
     with Image.open(io.BytesIO(thumbnail_bytes)) as thumbnail:
         assert thumbnail.format == "WEBP"
     assert _object_bytes(_signed_key(upload_url)) is None
+
+
+async def test_complete_stores_a_webp_display_variant_shrunk_to_a_1024_long_edge(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """상세 화면이 원본 대신 받을 표시용 변형도 READY 가 되기 전에 올라가 있어야 한다 — 응답은 존재 확인 없이
+    키를 유도한다."""
+    await _logged_in_user(db_client, db_session)
+    asset_id, upload_url = await _presign(db_client, purpose="content-thumbnail")
+    _put_via_presigned_url(upload_url, _png_bytes(1536, 2048))
+
+    assert (await db_client.post(f"/assets/{asset_id}/complete")).status_code == 200
+
+    asset = await db_session.get(Asset, uuid.UUID(asset_id))
+    assert asset is not None
+    display_bytes = _object_bytes(build_display_key(asset.storage_key))
+    assert display_bytes is not None
+    with Image.open(io.BytesIO(display_bytes)) as display:
+        assert (display.format, display.size) == ("WEBP", (768, 1024))
+    # 변형은 원본의 타입(`image/png`)이 아니라 실제 바이트 형식으로 저장돼야 한다 — 2단계에서 상세 히어로·링크
+    # 미리보기가 이 객체를 그대로 받는다.
+    for variant_key in (build_thumbnail_key(asset.storage_key), build_display_key(asset.storage_key)):
+        assert _s3().head_object(Bucket=settings.s3_bucket_name, Key=variant_key)["ContentType"] == "image/webp"
 
 
 async def test_complete_stores_the_type_of_the_checked_image_even_when_the_key_has_no_extension(

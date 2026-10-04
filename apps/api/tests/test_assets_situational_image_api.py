@@ -9,7 +9,7 @@ from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
-from api.core.s3 import build_thumbnail_key
+from api.core.s3 import build_variant_keys
 from api.db.models.character import SituationalImage
 from api.db.models.content import (
     Content,
@@ -174,11 +174,10 @@ async def test_register_situational_image_creates_thumbnails_for_original_and_bl
     assert blurred_asset is not None
 
     for storage_key in (asset.storage_key, blurred_asset.storage_key):
-        thumbnail_obj = s3.get_object(
-            Bucket=settings.s3_bucket_name, Key=build_thumbnail_key(storage_key)
-        )
-        with Image.open(io.BytesIO(thumbnail_obj["Body"].read())) as thumbnail:
-            assert thumbnail.format == "WEBP"
+        for variant_key in build_variant_keys(storage_key):
+            variant_obj = s3.get_object(Bucket=settings.s3_bucket_name, Key=variant_key)
+            with Image.open(io.BytesIO(variant_obj["Body"].read())) as variant:
+                assert variant.format == "WEBP"
 
 
 async def test_register_situational_image_upserts_by_entity_id(

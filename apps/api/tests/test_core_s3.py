@@ -11,7 +11,13 @@ from botocore.client import Config as BotoConfig
 
 from api.core import s3
 from api.core.config import settings
-from api.core.s3 import build_object_key, build_thumbnail_key, build_windowed_presigned_get_url
+from api.core.s3 import (
+    build_display_key,
+    build_object_key,
+    build_thumbnail_key,
+    build_variant_keys,
+    build_windowed_presigned_get_url,
+)
 
 if TYPE_CHECKING:
     from mypy_boto3_s3 import S3Client
@@ -46,6 +52,21 @@ def test_build_thumbnail_key_replaces_extension() -> None:
 def test_build_thumbnail_key_without_extension() -> None:
     key = build_thumbnail_key("assets/profile-image/abc")
     assert key == "assets/profile-image/abc_thumb.webp"
+
+
+def test_build_display_key_replaces_extension() -> None:
+    assert build_display_key("assets/profile-image/abc.png") == "assets/profile-image/abc_display.webp"
+
+
+def test_build_display_key_without_extension() -> None:
+    assert build_display_key("assets/profile-image/abc") == "assets/profile-image/abc_display.webp"
+
+
+def test_build_variant_keys_lists_thumbnail_and_display_keys() -> None:
+    assert build_variant_keys("assets/generated/abc.png") == (
+        "assets/generated/abc_thumb.webp",
+        "assets/generated/abc_display.webp",
+    )
 
 
 def _sign(

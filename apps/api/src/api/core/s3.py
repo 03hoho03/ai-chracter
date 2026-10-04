@@ -59,6 +59,22 @@ def build_thumbnail_key(storage_key: str) -> str:
     return f"{base}_thumb.webp"
 
 
+def build_display_key(storage_key: str) -> str:
+    """`assets/profile-image/abc.png` -> `assets/profile-image/abc_display.webp`.
+
+    상세 화면처럼 썸네일보다 크게 그리는 자리에 원본 대신 내보낼 변형이다. 이름에 크기를 넣지 않는다 — 긴 변
+    값을 바꾸면 크기를 담은 키 이름이 거짓말이 된다."""
+    base, _extension = posixpath.splitext(storage_key)
+    return f"{base}_display.webp"
+
+
+def build_variant_keys(storage_key: str) -> tuple[str, str]:
+    """READY 이미지 자산이 원본 곁에 늘 갖는 변형 키 전부. 자산을 지우는 경로는 이 목록을 그대로 지운다 — 하나라도
+    빠뜨리면 사용자가 올리거나 만든 그림의 사본이 저장소에 남는다. 만드는 쪽(`generate_variants`)도 같은 목록을
+    만든다(테스트가 둘이 같은지 본다)."""
+    return build_thumbnail_key(storage_key), build_display_key(storage_key)
+
+
 def generate_presigned_put_url(key: str, content_type: str) -> tuple[str, datetime]:
     """Local signing only, no network call — safe to call from an async context directly."""
     expires_in = settings.s3_presigned_url_expires_seconds
