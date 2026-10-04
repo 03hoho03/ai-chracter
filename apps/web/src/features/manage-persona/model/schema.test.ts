@@ -37,6 +37,23 @@ describe("personaFormSchema", () => {
     expect(result.error?.issues.map((issue) => issue.path[0])).toEqual(["name"]);
   });
 
+  // 이름은 작가 글의 `{{user}}` 자리에 들어가 채팅 렌더러를 지난다 — 서버가 422 로 막는 이름을 폼이 먼저 막아야 서버의
+  // 일반 오류 문구로 끝나지 않는다.
+  it.each([
+    ["별표", "*별*", "이름에는 별표(*)·백틱(`)·역슬래시(\\)나 &…; 형태의 문자를 쓸 수 없어요"],
+    ["문자 참조", "&#42;별", "이름에는 별표(*)·백틱(`)·역슬래시(\\)나 &…; 형태의 문자를 쓸 수 없어요"],
+    ["목록 표시로 시작", "- 별", "이름을 >, -, +, 1. 같은 인용·목록 표시나 ~~~ 로 시작하거나 ---·___ 로만 지을 수 없어요"],
+    ["콜론", "a:b", "이름에는 콜론(:)이나 줄바꿈을 쓸 수 없어요"],
+  ])("rejects a name the chat renderer would read as notation (%s) with the server's reason", (_label, name, message) => {
+    const result = personaFormSchema.safeParse({ ...validValues(), name });
+    expect(result.error?.issues.map((issue) => [issue.path[0], issue.message])).toEqual([["name", message]]);
+  });
+
+  it("checks the trimmed name, as the server does after stripping", () => {
+    expect(personaFormSchema.safeParse({ ...validValues(), name: "  > 별" }).success).toBe(false);
+    expect(personaFormSchema.safeParse({ ...validValues(), name: " 김-민 " }).success).toBe(true);
+  });
+
   it("allows a full-width colon because the stop sequence only sees the half-width one", () => {
     expect(personaFormSchema.safeParse({ ...validValues(), name: "a：b" }).success).toBe(true);
   });
