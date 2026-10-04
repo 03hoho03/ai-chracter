@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 from starlette.concurrency import run_in_threadpool
 
+from api.chat.chat_count import record_chat_participant
 from api.chat.ending_rules import evaluate_rule_list, is_ending_check_due, referenced_stat_ids
 from api.chat.keyword_notes import match_keyword_notes
 from api.chat.memory_fold import SUMMARY_MAX_LENGTH, fold_memory
@@ -87,6 +88,7 @@ from api.chat.schemas import (
     StoryImageArchiveItem,
 )
 from api.chat.stats import StatChange, apply_stat_changes
+from api.content.access import is_open_to, is_open_to_participant
 from api.content.media_book import (
     normalize_texts,
     normalize_texts_for_display,
@@ -124,7 +126,7 @@ from api.db.models.chat import (
     StoryEndingUnlock,
     StoryMediaExposure,
 )
-from api.db.models.content import Content, ContentType, ContentVisibility, ModerationStatus
+from api.db.models.content import Content, ContentType, ModerationStatus
 from api.db.models.media import Asset
 from api.db.models.persona import UserPersona
 from api.db.models.prompt import PromptSection, PromptSet
@@ -1030,6 +1032,7 @@ async def _create_room(
     )
     db.add(room)
     await db.flush()
+    await record_chat_participant(db, content, user_id)
 
     if setup is not None:
         await _seed_initial_stats(db, room, setup)
@@ -1064,6 +1067,10 @@ async def create_chat_room(
     if content is None or content.current_published_version_id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
     _ensure_content_playable(content)
+    # 이용제한·삭제는 바로 위가 걸렀으므로 여기서 닫히는 것은 작가 아닌 사람의 비공개 작품(작가 탈퇴 포함)뿐이다.
+    # 이미 방이 있는 사람도 새 방은 못 연다 — 비공개 작품에서는 기존 방에서 대화를 잇는 것만 된다.
+    if not is_open_to(content, user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"code": "CONTENT_PRIVATE"})
 
     expected_type = ContentType.STORY if payload.content_type == "story" else ContentType.CHARACTER
     if content.type != expected_type:
@@ -2345,6 +2352,9 @@ async def change_starting_setup(
     content = await db.get(Content, room.content_id)
     assert content is not None
     _ensure_content_playable(content)
+    # 시작설정 변경은 새 방을 만든다. 새 방 생성과 같은 이유로, 비공개 작품에서는 작가 본인만 할 수 있다.
+    if not is_open_to(content, user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"code": "CONTENT_PRIVATE"})
     setup = await _resolve_setup_for_content(db, content, payload.starting_setup_id)
 
     # 기본이 아니라 원래 방의 선택을 잇는다. `room.persona_id`는
@@ -2668,15 +2678,7 @@ async def get_image_archive(
         content is None
         or content.type != ContentType.CHARACTER
         or content.current_published_version_id is None
-        or content.moderation_status != ModerationStatus.NORMAL
-        or (
-            content.visibility == ContentVisibility.PRIVATE
-            and content.creator_user_id != user_id
-            and await db.scalar(
-                select(ChatRoom.id).where(ChatRoom.user_id == user_id, ChatRoom.content_id == content.id).limit(1)
-            )
-            is None
-        )
+        or not await is_open_to_participant(db, content, user_id)
     ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
 
@@ -2769,15 +2771,7 @@ async def get_story_image_archive(
         content is None
         or content.type != ContentType.STORY
         or content.current_published_version_id is None
-        or content.moderation_status != ModerationStatus.NORMAL
-        or (
-            content.visibility == ContentVisibility.PRIVATE
-            and content.creator_user_id != user_id
-            and await db.scalar(
-                select(ChatRoom.id).where(ChatRoom.user_id == user_id, ChatRoom.content_id == content.id).limit(1)
-            )
-            is None
-        )
+        or not await is_open_to_participant(db, content, user_id)
     ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story not found")
     version_id = content.current_published_version_id

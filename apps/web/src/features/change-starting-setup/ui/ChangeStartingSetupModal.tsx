@@ -10,12 +10,13 @@ import { Check } from "lucide-react";
 import { toast } from "sonner";
 
 import {
+  CONTENT_PRIVATE_START_MESSAGE,
   CONTENT_RESTRICTED_START_MESSAGE,
-  isContentRestrictedError,
+  toStartChatErrorMessage,
   useChangeStartingSetupMutation,
   useChatRoomQuery,
 } from "@/entities/chat-room";
-import { useContentDetailQuery } from "@/entities/content";
+import { canViewDetailPage, type ContentDetailResponse, toContentAccessStatus, useContentDetailQuery } from "@/entities/content";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { ConfirmStartingSetupChangeModal } from "./ConfirmStartingSetupChangeModal";
@@ -33,6 +34,9 @@ export const ChangeStartingSetupModal = createCallable<ChangeStartingSetupModalP
   const room = useChatRoomQuery(roomId).data;
   const contentQuery = useContentDetailQuery(room?.contentId ?? "", isOpen && room !== undefined);
   const startingSetups = contentQuery.data?.startingSetups ?? [];
+  // 볼 수 없는 작품(이용제한·삭제, 작가가 아닌 사람의 비공개)에서는 시작설정 변경이 새 방이라 막히고, 상세도 시작설정
+  // 목록을 비워 보낸다. 빈 창 대신 왜 안 되는지 말한다.
+  const blockedMessage = toBlockedMessage(contentQuery.data);
   const currentSetupId = room?.contentSnapshot?.pinnedStartingSetupId;
   const changeMutation = useChangeStartingSetupMutation(roomId);
   const navigate = useNavigate();
@@ -49,13 +53,9 @@ export const ChangeStartingSetupModal = createCallable<ChangeStartingSetupModalP
           call.end();
           void navigate({ to: "/chat/$roomId", params: { roomId: newRoom.id } });
         },
-        // 시작설정 변경은 새 방을 만든다 — 이용제한된 작품이면 새 대화 시작과 같은 이유로 막힌다.
+        // 시작설정 변경은 새 방을 만든다 — 이용제한·비공개 작품이면 새 대화 시작과 같은 이유로 막힌다.
         onError: (error) =>
-          toast.error(
-            isContentRestrictedError(error)
-              ? CONTENT_RESTRICTED_START_MESSAGE
-              : "시작설정 변경에 실패했어요. 잠시 후 다시 시도해주세요.",
-          ),
+          toast.error(toStartChatErrorMessage(error, "시작설정 변경에 실패했어요. 잠시 후 다시 시도해주세요.")),
       },
     );
   }
@@ -66,6 +66,8 @@ export const ChangeStartingSetupModal = createCallable<ChangeStartingSetupModalP
         <DialogHeader>
           <DialogTitle>시작 설정</DialogTitle>
         </DialogHeader>
+
+        {blockedMessage !== undefined && <p className="text-sm text-muted-foreground">{blockedMessage}</p>}
 
         <div className="flex flex-col gap-1.5">
           {startingSetups.map((setup) => {
@@ -98,3 +100,10 @@ export const ChangeStartingSetupModal = createCallable<ChangeStartingSetupModalP
     </Dialog>
   );
 });
+
+function toBlockedMessage(content: ContentDetailResponse | undefined): string | undefined {
+  if (content === undefined) return undefined;
+  const access = toContentAccessStatus(content.accessStatus);
+  if (canViewDetailPage(access, content.isOwner)) return undefined;
+  return access.kind === "accessible" ? CONTENT_PRIVATE_START_MESSAGE : CONTENT_RESTRICTED_START_MESSAGE;
+}

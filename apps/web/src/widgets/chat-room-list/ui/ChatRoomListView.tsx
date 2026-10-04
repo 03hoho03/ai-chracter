@@ -3,12 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 
-import {
-  CONTENT_RESTRICTED_START_MESSAGE,
-  isContentRestrictedError,
-  useChatRoomListQuery,
-  useStartChatMutation,
-} from "@/entities/chat-room";
+import { toStartChatErrorMessage, useChatRoomListQuery, useStartChatMutation } from "@/entities/chat-room";
 
 import { ChatRoomListItemRow } from "./ChatRoomListItemRow";
 
@@ -31,12 +26,8 @@ export function ChatRoomListView({
       const room = await startChatMutation.mutateAsync({ contentId, contentType: "character" });
       void navigate({ to: "/chat/$roomId", params: { roomId: room.id } });
     } catch (error) {
-      // 이용제한된 작품은 기다려도 안 풀리므로 "잠시 후 다시"라고 말하지 않는다.
-      toast.error(
-        isContentRestrictedError(error)
-          ? CONTENT_RESTRICTED_START_MESSAGE
-          : "새 대화를 시작하지 못했어요. 잠시 후 다시 시도해주세요.",
-      );
+      // 이용제한·비공개 작품은 기다려도 안 풀리므로 "잠시 후 다시"라고 말하지 않는다.
+      toast.error(toStartChatErrorMessage(error, "새 대화를 시작하지 못했어요. 잠시 후 다시 시도해주세요."));
     }
   };
 

@@ -1727,7 +1727,7 @@ export interface paths {
          *     all three columns lexicographically (chat_count first) instead of a single
          *     weighted score, so chat_count strictly dominates ties by construction — the
          *     actual weighted-score formula is still a PRD-level open question for later
-         *     tuning. `sort=genre` orders by the genre master's sort_order.
+         *     tuning.
          */
         get: operations["list_contents_contents_get"];
         put?: never;
@@ -1866,10 +1866,11 @@ export interface paths {
         };
         /**
          * Get Content Detail
-         * @description Access control is query-response-based, not a 403/404 gate here: the full detail
-         *     (including `accessStatus`/`isOwner`) is always returned for any existing, published
-         *     content, and `canViewDetailPage` on the FE decides
-         *     whether to render it or an "unavailable" state instead.
+         * @description Access control is query-response-based, not a 403/404 gate here: any existing,
+         *     published content returns 200 with `accessStatus`/`isOwner`, and `canViewDetailPage` on
+         *     the FE decides whether to render it or an "unavailable" state instead. When the viewer
+         *     may not see the content (`is_open_to` is false), the body — `detailDescription` and the
+         *     story's `startingSetups` — is sent empty; name, one-liner, thumbnail and hashtags stay.
          */
         get: operations["get_content_detail_contents__id__get"];
         put?: never;
@@ -10035,7 +10036,7 @@ export interface operations {
         parameters: {
             query: {
                 type: components["schemas"]["ContentType"];
-                sort?: "latest" | "popular" | "genre";
+                sort?: "latest" | "popular";
                 genre?: string | null;
                 creator?: string | null;
                 hashtag?: string | null;

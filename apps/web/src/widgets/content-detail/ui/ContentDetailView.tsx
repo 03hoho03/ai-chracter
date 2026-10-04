@@ -383,7 +383,9 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
             <span className="inline-flex items-center gap-1.5">
               <MessageCircle aria-hidden className="size-4" />
-              {content.chatCount.toLocaleString()}
+              {/* 아이콘이 숨겨져 숫자만 읽히므로 무엇의 수인지 붙인다 — 카드 지표와 같은 이름("대화수")이다. */}
+              <span className="sr-only">대화수 {content.chatCount.toLocaleString()}</span>
+              <span aria-hidden>{content.chatCount.toLocaleString()}</span>
             </span>
 
             <button

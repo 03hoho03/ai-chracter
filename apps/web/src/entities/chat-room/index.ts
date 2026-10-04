@@ -48,9 +48,11 @@ export { buildRegeneratePayload } from "./model/buildRegeneratePayload";
 export { buildSendPayload } from "./model/buildSendPayload";
 export { getChatRateLimit, type ChatRateLimit } from "./model/chatRateLimit";
 export {
+  CONTENT_PRIVATE_START_MESSAGE,
   CONTENT_RESTRICTED_NOTICE,
   CONTENT_RESTRICTED_START_MESSAGE,
   isContentRestrictedError,
+  toStartChatErrorMessage,
 } from "./model/contentRestricted";
 export { STAT_ICON_OPTIONS } from "./model/statIcons";
 export { isAuthorOpeningMessage } from "./model/isAuthorOpeningMessage";

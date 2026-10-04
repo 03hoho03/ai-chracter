@@ -27,6 +27,7 @@ from api.db.models.comments import (
 )
 from api.db.models.content import (
     Content,
+    ContentChatParticipant,
     ContentTarget,
     ContentType,
     ContentVersion,
@@ -102,6 +103,7 @@ __all__ = [
     "CommentReport",
     "CommentSticker",
     "Content",
+    "ContentChatParticipant",
     "ContentTarget",
     "ContentType",
     "ContentVersion",
