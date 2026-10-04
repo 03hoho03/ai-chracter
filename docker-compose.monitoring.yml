@@ -14,7 +14,8 @@
 # 목록만 잃는다).
 #
 # 필요한 env(전부 /opt/ddona/.env, 값은 DEPLOY.md의 "Bugsink" 절 참조):
-#   BUGSINK_SECRET_KEY        Django SECRET_KEY. `openssl rand -base64 50`
+#   BUGSINK_SECRET_KEY        Django SECRET_KEY. `openssl rand -base64 50 | tr -d '\n'` — tr 이 없으면
+#                             openssl 이 64자에서 줄을 바꿔 키가 잘린다
 #   BUGSINK_CREATE_SUPERUSER  최초 관리자 `email:password`. 이미 사용자가 1명이라도 있으면
 #                             무시된다(bsmain/management/commands/prestart.py 확인) — 부트스트랩
 #                             후에도 값을 지우지 않고 둬도 안전하다.

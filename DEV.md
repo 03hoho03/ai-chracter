@@ -25,7 +25,23 @@
 > ```
 > 로컬 개발 DB만 사라지고 시드는 `dev-up.sh`가 다시 채웁니다. **손으로 만든 대화방·업로드는 복구되지 않으니** 남길 게 있으면 먼저 덤프하세요. Redis도 8로 올렸지만 볼륨이 없어 아무 조치가 필요 없습니다.
 
-> 처음이라면 `apps/api/.env`를 열어 `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GEMINI_API_KEY`를 채운 뒤 `./dev-up.sh`를 한 번 더 실행하세요. (나머지 값 — DB/Redis/S3/AWS 더미 자격증명 — 은 로컬 기본값으로 이미 채워져 있습니다.)
+> 처음이라면 `apps/api/.env`를 열어 `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GEMINI_API_KEY` 줄의 주석을 풀고 값을 채운 뒤 `./dev-up.sh`를 한 번 더 실행하세요. (나머지 값 — DB/Redis/S3/AWS 더미 자격증명 — 은 로컬 기본값으로 이미 채워져 있습니다.)
+
+### env 파일 형식
+
+`apps/api/.env`·`apps/web/.env.local`·`apps/admin/.env.local` 은 운영 `.env` 와 같은 형식만 쓴다(`DEPLOY.md` 의
+"env 파일 형식" 항목). `./dev-up.sh` 가 시작할 때 있는 파일을 검사하고 위반이면 멈추며, 언제든 `pnpm check:env` 로
+같은 검사(+ `.env.example` 과 코드 키 일치)를 돌릴 수 있다. 위반은 줄 번호와 규칙 이름만 찍힌다(값은 찍지 않는다).
+
+- 빈 줄·`#` 주석·`KEY=value` 만, 키는 대문자로 시작하는 `[A-Z0-9_]`, `export` 없음, 중복 키·CR 금지, 파일 끝 개행.
+- **값 없는 `KEY=` 금지 — 값이 없으면 줄을 주석으로.** 빈 문자열이 코드 기본값을 덮는다(예전 example 의
+  `LOCAL_IMAGE_MODEL_WIRE_ID=` 는 기본값 `v1` 을 빈 문자열로 바꿔 놓고 있었다).
+- **값에 공백·탭·따옴표·`$`·`\` 금지, `#` 으로 시작하는 값 금지.** 로컬 기동 명령 `uv run --env-file .env` 가 값을 셸처럼
+  읽기 때문이다 — 공백이 든 값을 만나면 경고 한 줄만 내고 **그 줄부터 파일 끝까지 버리고**(그 뒤의 `AWS_*` 가 사라져
+  썸네일 서명이 `NoCredentialsError` 가 된다), 값 속 따옴표는 벗기고, `\` 는 이스케이프로 읽는다.
+- 목록 값(`CORS_ALLOW_ORIGINS`)은 쉼표로 구분한다. 로컬은 기본값(web·admin 로컬 오리진)으로 충분하다.
+- 어떤 키가 있는지는 `apps/api/.env.example`(그리고 `apps/web/.env.example`·`apps/admin/.env.example`)이 전부 보여 준다.
+  CI 가 example 과 코드가 읽는 키를 양방향으로 맞춰 본다.
 
 ## 2) 서버 기동 (각각 별도 터미널)
 
@@ -246,9 +262,9 @@ export TEST_REDIS_URL=redis://localhost:6379/<인덱스>
 - **시드 캐릭터의 문구/프롬프트를 고치고 싶을 때**: `apps/api/scripts/seed_dev.py`를 고친 뒤 그대로 다시 실행하면 된다.
   고정 UUID upsert라 재실행이 스크립트의 값으로 덮어쓴다. 직접 만든 대화방·자산은 건드리지 않는다.
   (단 '미아' 얘기다 — 시드 스토리 30개와 메이저 캐릭터는 `seed_dev.py`가 아니라 `seed_content/data/`의 JSON이 원본이다. 위 [시드 콘텐츠](#시드-콘텐츠-스토리-30개--캐릭터) 참고.)
-- **`.env`에 JSON 값(리스트 등)을 넣었더니 API가 `SettingsError`로 기동 실패**: `uv run --env-file`의 dotenv 파서가 값 안의 `"`를
-  셸 인용부호로 보고 벗겨낸다(`["a","b"]` → `[a,b]` → JSON 파싱 실패). **전체를 홑따옴표로 감쌀 것**: `KEY='["a","b"]'`.
-  `--env-file` 없이 띄우면 pydantic이 `.env`를 직접 읽어 이 문제가 안 나타나므로 재현 조건에 주의.
+- **`.env`의 `CORS_ALLOW_ORIGINS`를 JSON 배열로 넣었더니 API가 기동 실패**: `uv run --env-file`이 값 안의 `"`를 셸 인용부호로
+  보고 벗겨낸다(`["a","b"]` → `[a,b]` → JSON 파싱 실패). 쉼표 구분(`CORS_ALLOW_ORIGINS=http://a,http://b`)으로 쓰거나, 로컬 기본값이면
+  줄을 지운다. 홑따옴표로 감싸는 예전 우회(`KEY='["a","b"]'`)는 위 "env 파일 형식" 의 따옴표 규칙에 막힌다.
 - **`pnpm ... dev -- --host` 의 플래그가 무시됨**: pnpm 9는 `--` 구분자를 받지 않는다. `--`를 빼고 `pnpm ... dev --host`로 쓸 것.
 - **원격 접속 시 `Blocked request. This host is not allowed.`**: `apps/web/vite.config.ts`의 `server.allowedHosts` 확인.
   raw IP 접속에는 안 걸리고 호스트명(MagicDNS 등) 접속에서만 발생한다.

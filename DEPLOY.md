@@ -214,7 +214,7 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `REDIS_URL` | `redis://redis:6379/0` | 컨테이너 |
 | `API_BASE_URL` | `https://api.ddona.site` | OAuth redirect_uri 조립 |
 | `FRONTEND_BASE_URL` | `https://ddona.site` | OAuth 콜백 뒤 돌려보낼 목적지 |
-| `CORS_ALLOW_ORIGINS` | `["https://ddona.site","https://admin.ddona.site"]` | **JSON 배열 문자열** |
+| `CORS_ALLOW_ORIGINS` | `https://ddona.site,https://admin.ddona.site` | **쉼표 구분**(공백 없이). 예전 표기인 JSON 배열(`["https://a","https://b"]`)도 같은 리스트로 읽히지만 큰따옴표가 아래 "env 파일 형식" 에 어긋난다 |
 | `SESSION_COOKIE_SECURE` | `true` | HTTPS 필수 |
 | `SESSION_COOKIE_SAMESITE` | `lax` | FE·BE가 같은 등록가능 도메인이라 가능 |
 | `GEMINI_API_KEY` | AI Studio 키 | 채팅 |
@@ -251,8 +251,31 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `MEMORY_WINDOW_ENDING_JUDGMENT` | 설정 안 함(기본 `false`) | 엔딩 판정에도 윈도우를 씌운다(켜면 현재 요약을 함께 싣는다). ⚠️ 꺼져 있으면 판정이 대화 전체를 실으므로 긴 방에서 토큰 원가가 크게 늘고 컨텍스트 한도에 닿을 수 있다 |
 | `MEMORY_WINDOW_IMAGE_JUDGMENT` | 설정 안 함(기본 `false`) | 상황 이미지 판정에도 윈도우를 씌운다(켜면 최근 원문만 싣는다). 꺼져 있을 때의 주의는 위와 같다 |
 
-> **`CORS_ALLOW_ORIGINS` 함정**: pydantic-settings는 `list[str]` 필드를 env에서 **JSON으로 파싱**한다.
-> 반드시 `["https://a","https://b"]` 형태로 넣을 것(콤마 구분 평문 아님).
+> **`CORS_ALLOW_ORIGINS`**: `config.py` 가 쉼표 구분과 JSON 배열을 둘 다 받는다(`[` 로 시작하면 JSON). 항목 앞뒤 공백은
+> 지우고 빈 항목은 버리며, 남는 오리진이 없으면 기동에 실패한다. 새로 쓸 때는 쉼표 구분으로 쓴다.
+> ⚠️ **롤백 순서**: 운영 값을 쉼표 구분으로 바꾼 뒤 쉼표 구분을 받기 전의 이미지로 롤백하려면, **먼저 이 줄을 JSON 배열(바꾸기 전 백업의 값)로
+> 되돌리고** 이미지를 바꾼다 — 옛 `config.py` 는 쉼표 구분을 JSON 으로 디코드하다 실패해 api 가 기동하지 못한다.
+
+#### env 파일 형식
+
+`/opt/ddona/.env` 는 파서 넷이 각자 읽는다 — compose `env_file`(앱 컨테이너), compose `--env-file`(compose 파일 보간),
+`docker run --env-file`, 크론 스크립트(`ops/*.sh`)의 `grep | cut`. 로컬 `apps/api/.env` 는 python-dotenv(pydantic)와
+`uv run --env-file` 이 읽는다. 이들은 따옴표·`$`·`\`·공백·중복 키·`export` 를 서로 다르게 읽어서, 그런 줄이 하나라도
+있으면 앱과 크론이 다른 값을 보면서 아무도 실패하지 않는다(uv 는 공백이 든 값에서 그 줄부터 파일 끝까지 버린다).
+그래서 운영·로컬 모두 여섯 파서가 같은 값을 주는 표기 하나만 쓴다.
+
+- 한 줄은 빈 줄, `#` 으로 시작하는 주석, `KEY=value` 셋 중 하나다. 키는 대문자로 시작하는 `[A-Z0-9_]`, `=` 앞뒤 공백 없음, `export` 없음.
+- 값은 비우지 않는다(값이 없으면 줄을 주석으로). 값에는 공백·탭·따옴표(`"`·`'`)·`$`·`\` 가 없고, `#` 으로 시작하지 않는다.
+  목록 값(`CORS_ALLOW_ORIGINS`)은 쉼표로 구분한다.
+- 같은 키를 두 번 쓰지 않는다(compose·`docker run` 은 뒤 값, `ops/backup.sh` 는 앞 값, 나머지 크론 스크립트는 두 값을 줄바꿈으로 이어 붙인 값을 쓴다). CR(`\r`) 금지, 파일은 개행으로 끝난다.
+
+검사기는 `ops/check_env.py` 다. 출력은 줄 번호·규칙 이름뿐이고 값도 키 이름도 찍지 않는다(키 자리의 글자가 잘린 비밀값 조각일 수 있다). 키를 고치기 전후에 VM 에서 돌려 본다:
+
+```sh
+cd /opt/ddona/app && sudo python3 ops/check_env.py --format /opt/ddona/.env
+```
+
+키 이름(오타·누락)은 검사하지 않는다 — 이 파일에는 앱이 읽지 않는 compose·크론·Bugsink 키가 함께 있다.
 
 ### 2-2. FE 빌드타임 (Cloudflare Pages 환경변수)
 
@@ -569,7 +592,7 @@ sudo docker stats --no-stream ddona-monitoring-bugsink-1   # mem_limit(1g)을 �
 
 | 변수 | 값 | 비고 |
 |---|---|---|
-| `BUGSINK_SECRET_KEY` | `openssl rand -base64 50` | Django SECRET_KEY. `django-insecure` 접두어 없이 |
+| `BUGSINK_SECRET_KEY` | `openssl rand -base64 50 \| tr -d '\n'` | Django SECRET_KEY. `django-insecure` 접두어 없이. `tr` 을 빼먹지 않는다 — openssl 은 base64 출력을 64자마다 줄바꿈해서, 그대로 붙여 넣으면 키가 64자로 잘리고 남은 조각이 `.env` 의 독립된 줄이 된다("BE 런타임" 절 끝의 "env 파일 형식" 항목의 검사기가 그 줄을 조각 모양에 따라 `key-format` 또는 `empty-value` 로 잡고, 줄 번호·규칙만 찍는다) |
 | `BUGSINK_CREATE_SUPERUSER` | `관리자이메일:비밀번호` | 최초 1회만 동작한다 — 사용자가 이미 1명이라도 있으면 무시된다(공식 소스 `bsmain/management/commands/prestart.py` 확인). 부트스트랩 후 값을 지우지 않고 둬도 안전하다 |
 | `BUGSINK_BASE_URL` | `https://ddona.site/_ingest` | `api.ddona.site`가 아니다 — DSN·이메일 링크가 이 값으로 조립되고, 브라우저 ingest는 `ddona.site`(Worker 경유)를 쓴다. `/_ingest` 프리픽스는 DSN·관리자 UI가 그 경로 아래로 들어가게 만든다(Bugsink는 이 프리픽스를 `FORCE_SCRIPT_NAME`으로 링크 생성에만 쓰고, 실제 라우팅은 `Caddyfile`이 프리픽스를 벗겨서 맞춘다 — 아래 "DSN 발급 절차"·`Caddyfile` 참조) |
 | `INGEST_SHARED_SECRET` | 무작위 값(`openssl rand -hex 32`) | `Caddyfile`이 **`/_ingest/api/*/envelope/`(에러 이벤트 수신 경로)에만** 거는 게이트 값. 관리자 UI(`/_ingest/` 나머지)는 이 시크릿 없이 통과하고 Bugsink 자체 로그인으로 보호된다(사용자 결정 — 가입은 이미 `CB_NOBODY`로 잠겨 있어 시크릿의 목적은 로그인 페이지를 숨기는 게 아니라 익명 POST 홍수를 막는 것). Caddy 쪽 배선은 `docker-compose.prod.yml`에 돼 있다 — 배포 순서는 아래 "배포 순서 위험" 참조 |
