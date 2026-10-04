@@ -1,7 +1,10 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 
+import { Kbd } from "@/shared/ui/Command";
+
+import { IS_APPLE_PLATFORM } from "../model/useAdminShortcuts";
 import { useSidebarCollapsed } from "../model/useSidebarCollapsed";
 import { AdminAccountFooter } from "./AdminAccountFooter";
 import { AdminNavList } from "./AdminNavList";
@@ -14,7 +17,11 @@ import { AdminNavList } from "./AdminNavList";
  * 아래 세션·로그아웃이 밀려나지 않는다. `overflow-hidden` 은 aside 자신에만 걸어(접기 전이 중 글자 잘림용)
  * 자기 sticky 에 영향이 없다. 조상에는 overflow 를 걸지 않는다 — 걸면 sticky 가 죽는다.
  */
-export function AdminSidebar() {
+type AdminSidebarProps = {
+  onOpenPalette: () => void;
+};
+
+export function AdminSidebar({ onOpenPalette }: AdminSidebarProps) {
   const { isCollapsed, toggle } = useSidebarCollapsed();
 
   return (
@@ -39,6 +46,32 @@ export function AdminSidebar() {
           onClick={toggle}
         >
           {isCollapsed ? <PanelLeftOpen aria-hidden /> : <PanelLeftClose aria-hidden />}
+        </Button>
+      </div>
+
+      {/* 빠른 이동(팔레트)을 여는 자리. 단축키를 모르는 사람도 찾을 수 있게 늘 보인다. outline 의 hover 채움 `muted` 는
+          사이드바 `card` 와 같은 값이라 `secondary` 로 덮는다. */}
+      <div className={cn("shrink-0 pb-1", isCollapsed ? "flex justify-center px-2" : "px-3")}>
+        <Button
+          type="button"
+          variant="outline"
+          size={isCollapsed ? "icon" : "sm"}
+          aria-haspopup="dialog"
+          aria-keyshortcuts="Meta+K Control+K"
+          aria-label={isCollapsed ? "빠른 이동" : undefined}
+          title={isCollapsed ? "빠른 이동" : undefined}
+          className={cn("hover:bg-secondary", !isCollapsed && "w-full justify-start")}
+          onClick={onOpenPalette}
+        >
+          <Search aria-hidden className="text-muted-foreground" />
+          {!isCollapsed && (
+            <>
+              빠른 이동
+              <Kbd aria-hidden className="ml-auto">
+                {IS_APPLE_PLATFORM ? "⌘K" : "Ctrl K"}
+              </Kbd>
+            </>
+          )}
         </Button>
       </div>
 
