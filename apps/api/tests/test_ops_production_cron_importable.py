@@ -8,6 +8,7 @@
 `ops/cron.d/ddona-resource-check`가 리소스 감시를, `ops/cron.d/ddona-bugsink-vacuum`가
 Bugsink 이벤트 파기를, `ops/cron.d/ddona-image-request-purge`가 이미지 생성 요청 파기를,
 `ops/cron.d/ddona-clover-expire`가 출석·미션 클로버 만료를 같은 방식으로 돌린다.
+크론은 아니지만 `prune_api_images.py`도 배포 원격 셸이 같은 시스템 python3로 불러 함께 검사한다.
 **형제 모듈을 따로 검사하는 이유** — 진입점들의 허용 목록에 `ops`가 있어 `from ops.notify
 import ...` 자체는 통과하지만, `notify.py` 안에서 실제로 뭘 import하는지는 아무도 안 본다.
 `requests`를 몰래 넣어도 이 파일이 생기기 전엔 위 테스트들이 전부 통과했다(실측). `snapshot_redis.py`·
@@ -46,6 +47,7 @@ import ops.db_url as db_url
 import ops.expire_clover as expire_clover
 import ops.notify as notify
 import ops.pg as pg
+import ops.prune_api_images as prune_api_images
 import ops.purge_image_requests as purge_image_requests
 import ops.restore_db as restore_db
 import ops.vacuum_bugsink as vacuum_bugsink
@@ -83,12 +85,15 @@ _ALLOWED_TOP_LEVEL_MODULES: dict[str, set[str]] = {
     },
     # 리소스 감시도 시스템 python3로 돈다(ops/cron.d/ddona-resource-check). `notify.py`와
     # 마찬가지로 stdlib만 쓴다 — `free`/`df`는 서브프로세스로 부르지 파이썬 라이브러리로 읽지
-    # 않는다.
+    # 않는다. `json`·`time`은 알림 상태 파일(마지막 알림 시각)을 읽고 쓰는 데 쓴다.
     "check_resources": {
         "argparse",
+        "json",
         "os",
         "subprocess",
         "sys",
+        "time",
+        "typing",
         "ops",
     },
     # Bugsink vacuum도 시스템 python3로 돈다
@@ -122,6 +127,9 @@ _ALLOWED_TOP_LEVEL_MODULES: dict[str, set[str]] = {
         "datetime",
         "ops",
     },
+    # 크론은 아니지만 배포 원격 셸(.github/workflows/deploy-api.yml)이 같은 시스템 python3 로 부른다.
+    # 최상단 import 하나가 시스템에 없으면 배포 때마다 정리가 실패해 디스크가 다시 찬다.
+    "prune_api_images": {"argparse", "subprocess", "sys"},
     # `backup_db.py`가 `ops.notify`를 top-level import한다(alert). stdlib만 쓴다 — `http.client`는
     # `urlopen`이 던질 수 있는 예외를 잡기 위한 것으로, 네트워크 호출 자체는 여전히 `urllib.request`다.
     "notify": {
@@ -225,6 +233,17 @@ def test_expire_clover_top_level_imports_are_satisfied_by_production_cron_enviro
         "/usr/bin/python3(+boto3, PYTHONPATH=/opt/ddona/scripts)에 없다 — 배포하면 매일 도는 "
         "크론이 import 시점에 죽어 클로버 7일 유효기간 약속이 조용히 "
         "깨진다."
+    )
+
+
+def test_prune_api_images_top_level_imports_are_satisfied_by_production_cron_environment() -> None:
+    path = Path(prune_api_images.__file__)
+    imports = _top_level_import_names(path)
+
+    disallowed = imports - _ALLOWED_TOP_LEVEL_MODULES["prune_api_images"]
+    assert not disallowed, (
+        f"ops/prune_api_images.py 최상단 import {disallowed}는 배포가 부르는 VM 시스템 "
+        "/usr/bin/python3 에 없다 — 배포마다 이미지 정리가 import 시점에 죽어 디스크가 다시 찬다."
     )
 
 

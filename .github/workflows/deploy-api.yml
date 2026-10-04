@@ -140,6 +140,20 @@ jobs:
             echo "배포 실패: 실행 중인 이미지가 다르다 ($RUNNING != $EXPECTED)" >&2
             exit 1
           fi
+          # 받은 이미지를 지우지 않으면 배포마다 쌓여 디스크가 찬다. 실행 이미지 확인을 통과한 뒤에만
+          # 돌고, 로컬 API 이미지를 최근 3개(+ 실행 중)만 남긴다. 그보다 옛 태그로 롤백하면 up -d 가
+          # Artifact Registry 에서 다시 받는다.
+          #
+          # 배포는 이미 끝났으므로 정리 실패로 배포를 실패시키지 않고 경고만 남긴다. `if` 조건 자리의
+          # 명령은 set -e 대상이 아니라 실패를 여기서 받는다 — 셸 함수로 감싸 `if ! fn` 으로 부르면
+          # 함수 본문 전체의 errexit 가 꺼지므로, 정리 로직은 함수가 아니라 파이썬 모듈 안에 둔다.
+          # stdout 으로 echo 해야 러너가 원격 출력 줄에서 ::warning:: 을 주석으로 읽는다.
+          # `< /dev/null` 은 위 alembic 줄과 같은 이유(이 스크립트를 stdin 에서 읽고 있다)이고,
+          # timeout 은 도커 데몬이 멈췄을 때 배포 step 이 끝나지 않는 것을 막는다.
+          if ! timeout 120 env PYTHONPATH=/opt/ddona/app/apps/api/scripts /usr/bin/python3 -m ops.prune_api_images \
+               --repo asia-northeast3-docker.pkg.dev/ddona-ai-character-chat/ddona/api --keep 3 < /dev/null; then
+            echo "::warning::로컬 API 이미지 정리가 실패했다 — 위 출력과 VM 디스크(df -h /)를 확인한다"
+          fi
           REMOTE
 
       - name: 배포 검증
