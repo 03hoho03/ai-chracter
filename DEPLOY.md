@@ -332,6 +332,11 @@ sudo sed -i "s|^API_IMAGE=.*|API_IMAGE=asia-northeast3-docker.pkg.dev/ddona-ai-c
 sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d --wait api
 ```
 과거 태그는 `gcloud artifacts docker tags list asia-northeast3-docker.pkg.dev/ddona-ai-character-chat/ddona/api`.
+배포 워크플로가 끝에서(실행 이미지 확인 뒤) `apps/api/scripts/ops/prune_api_images.py`로 VM 로컬 API 이미지를
+**현재 것 포함 최근 3개**(+ 실행 중 이미지)만 남기고 지운다 — 다른 저장소 이미지(caddy·postgres 등)는 건드리지
+않고, 정리가 실패해도 배포는 성공으로 두고 `::warning::` 한 줄만 남긴다. 그래서 그보다 옛 태그는 VM에 없고,
+위 `up -d`가 Artifact Registry에서 받아 온다(compose `api`에 `pull_policy`가 없어 기본 동작을 따른다. 정리 도입
+뒤 옛 태그 롤백은 아직 실측 전 — 처음 해 보는 롤백에서 pull 줄이 나오는지 확인한다).
 
 ⚠️ **배포 성공 판정은 `/health` 200만으로 부족하다.** 옛 컨테이너도 200을 준다. 그래서 워크플로가
 `docker inspect`로 실행 중 이미지가 새 태그인지 대조한다 — 손으로 배포할 때도 같이 확인할 것.
@@ -733,8 +738,18 @@ healthchecks.io dead man's switch는 만들지 않았다 — 이 작업의 범�
 GCP Cloud Monitoring을 쓰지 않는 이유 —
 `instance/memory/balloon/ram_used`가 우리 VM에서 `free -m`과 2배 차이가 났고(실측 1.78GB vs
 890MB), 그 메트릭 자체가 e2 계열 전용이라 인스턴스 타입을 바꾸면 조용히 사라진다. 대신
-`apps/api/scripts/ops/check_resources.py`가 5분마다 `free`/`df`를 직접 읽어 임계 초과 시
-Discord로 알리고, 같은 실행이 healthchecks.io로도 ping해 VM 자체의 생사를 VM 밖에서 본다.
+`apps/api/scripts/ops/check_resources.py`가 5분마다 `free`/`df`를 직접 읽어 임계를 넘거나 다시
+내려올 때 Discord로 알리고, 같은 실행이 healthchecks.io로도 ping해 VM 자체의 생사를 VM 밖에서 본다.
+
+**알림은 상태가 바뀔 때만 간다** — 항목(메모리·디스크)별로 정상→경고에 1회, 경고→정상에 "복구" 1회.
+경고가 이어지는 동안은 보내지 않고, 첫 알림이 묻혔을 때를 대비해 24시간마다 1회만 다시 보낸다. 5분마다
+같은 경고를 보내면 채널이 같은 줄로 덮여 정작 새 경고가 묻히기 때문이다. 경고 값이 더 나빠져도(85%→97%)
+상태는 그대로라 다시 보내지 않는다. 항목별 마지막 상태는 `/var/lib/ddona/resource-check.state`(JSON)에
+남는다 — 배포마다 `git reset --hard` 되는 체크아웃 밖이어야 해서 `ops/resource-check.sh`가 디렉터리를 만들고
+`--state-file`로 넘긴다. 파일이 없거나 깨졌으면 "정상, 알린 적 없음"으로 보고 다음 실행이 한 번 더 알린다
+(놓치는 것보다 중복이 낫다). 보내기에 실패한 알림은 상태를 남기지 않아 다음 실행이 다시 보내고, 상태 파일을
+못 쓰면 stderr에 남기고 ping까지 간다. 로그(`/var/log/ddona-resource-check.log`)의 경고 줄 끝에 `(알림)`·
+`(지속 — 알림 생략)`·`(알림 실패)`가 붙어 실행마다 무엇을 했는지 보인다.
 
 | 변수 | 값 | 비고 |
 |---|---|---|
@@ -754,7 +769,7 @@ sudo ln -sf /opt/ddona/app/ops/cron.d/ddona-resource-check /etc/cron.d/ddona-res
 
 `ops/resource-check.sh`는 `/opt/ddona/.env`를 통째로 source하지 않고 필요한 두 키
 (`DISCORD_WEBHOOK_URL`·`HEALTHCHECKS_RESOURCE_PING_URL`)만 뽑아 export한 뒤
-`PYTHONPATH=/opt/ddona/scripts /usr/bin/python3 -m ops.check_resources`를 부른다 — `backup.sh`와
+`PYTHONPATH=/opt/ddona/scripts /usr/bin/python3 -m ops.check_resources --state-file /var/lib/ddona/resource-check.state`를 부른다 — `backup.sh`와
 같은 이유(JSON 값이 쉘 문법과 부딪친다)이고, 이 wrapper도 (`backup.sh`처럼) 저장소에 있어
 드리프트가 생기지 않는다.
 

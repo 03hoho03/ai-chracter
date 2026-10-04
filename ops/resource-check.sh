@@ -9,5 +9,12 @@ DISCORD_WEBHOOK_URL=$(grep '^DISCORD_WEBHOOK_URL=' /opt/ddona/.env | cut -d= -f2
 HEALTHCHECKS_RESOURCE_PING_URL=$(grep '^HEALTHCHECKS_RESOURCE_PING_URL=' /opt/ddona/.env | cut -d= -f2-)
 export DISCORD_WEBHOOK_URL HEALTHCHECKS_RESOURCE_PING_URL
 
+# 알림 상태(항목별 경고 여부·마지막 알림 시각)는 배포마다 `git reset --hard` 되는 체크아웃 밖에 둔다.
+# 디렉터리를 못 만들어도 멈추지 않는다 — 파이썬 쪽이 상태를 못 쓰면 stderr 에 남기고 계속해
+# healthchecks.io ping 까지 간다(그 대가는 같은 경고가 실행마다 다시 가는 것뿐이다).
+STATE_DIR=/var/lib/ddona
+mkdir -p "$STATE_DIR"
+
 cd /opt/ddona/app/apps/api || exit 1
-exec env PYTHONPATH=/opt/ddona/scripts /usr/bin/python3 -m ops.check_resources
+exec env PYTHONPATH=/opt/ddona/scripts /usr/bin/python3 -m ops.check_resources \
+  --state-file "$STATE_DIR/resource-check.state"
