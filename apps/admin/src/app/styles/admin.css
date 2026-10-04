@@ -31,3 +31,14 @@
     min-height: 2.5rem;
   }
 }
+
+/* 상세 화면의 하단 조치 바(`lg` 미만, 공용 DetailLayout). 바 높이는 safe-area 를 더한 값이고, 본문 끝 여백도 같은
+   값을 써서 마지막 요소가 바 뒤에 깔리지 않는다. 바가 떠 있는 동안만 토스트를 바 높이만큼 올린다 — 바는 `lg` 미만에서만
+   렌더되므로 넓은 화면의 토스트 위치는 그대로다. */
+:root {
+  --admin-action-bar-height: calc(4rem + env(safe-area-inset-bottom));
+  --admin-toast-lift: 0px;
+}
+:root:has([data-admin-action-bar]) {
+  --admin-toast-lift: var(--admin-action-bar-height);
+}

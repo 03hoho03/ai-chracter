@@ -1,4 +1,4 @@
-import { MAIN_CONTENT_ID } from "../config/landmarks";
+import { MAIN_CONTENT_ID } from "@/shared/config/landmarks";
 
 /**
  * 문서의 첫 Tab 정지. 쉬는 동안은 화면 위로 밀려 있다가 포커스를 받으면 내려온다. 해시 이동을 라우터가

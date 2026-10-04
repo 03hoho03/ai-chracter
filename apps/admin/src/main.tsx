@@ -18,7 +18,11 @@ createRoot(rootElement).render(
   <StrictMode>
     <AppProviders>
       <RouterProvider router={router} />
-      <Toaster />
+      {/* 하단 조치 바가 있으면 그 위로 올린다(`app/styles/admin.css` 의 `--admin-toast-lift`). 기본 간격은 sonner 기본값이다. */}
+      <Toaster
+        offset={{ bottom: "calc(24px + var(--admin-toast-lift))" }}
+        mobileOffset={{ bottom: "calc(16px + var(--admin-toast-lift))" }}
+      />
     </AppProviders>
   </StrictMode>,
 );

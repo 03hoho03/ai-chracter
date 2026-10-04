@@ -7,11 +7,11 @@ type PaginationProps = {
   onPageChange: (page: number) => void;
 };
 
-/** ReportsListPage/AppealsListPage에 동형으로 중복됐던 이전/다음 페이지네이션 UI를 추출한 것.
- * 마크업·클래스는 원본 그대로 옮겼다 — 화면이 조금도 달라지면 안 된다. */
+/** 목록 화면들이 함께 쓰는 이전/다음 페이지네이션. 320px 에서는 버튼 둘과 글자가 한 줄(288px)에 안 들어가
+ * 넘치므로 줄바꿈을 허용한다 — 넓은 화면에서는 한 줄 그대로다. */
 export function Pagination({ page, totalPages, totalCount, onPageChange }: PaginationProps) {
   return (
-    <div className="flex items-center justify-center gap-3">
+    <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2">
       <Button type="button" variant="outline" size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
         이전
       </Button>

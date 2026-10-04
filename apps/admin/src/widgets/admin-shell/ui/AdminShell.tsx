@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { MAIN_CONTENT_ID } from "../config/landmarks";
+import { MAIN_CONTENT_ID } from "@/shared/config/landmarks";
 import { AdminSidebar } from "./AdminSidebar";
 import { AdminTopBar } from "./AdminTopBar";
 import { SkipLink } from "./SkipLink";

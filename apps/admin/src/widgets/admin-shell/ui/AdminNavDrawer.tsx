@@ -3,9 +3,9 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@ai-
 import { Menu } from "lucide-react";
 import { useRef, useState } from "react";
 
+import { MAIN_CONTENT_ID } from "@/shared/config/landmarks";
 import { useIsDesktopLayout } from "@/shared/lib/useMediaQuery";
 
-import { MAIN_CONTENT_ID } from "../config/landmarks";
 import { AdminAccountFooter } from "./AdminAccountFooter";
 import { AdminNavList } from "./AdminNavList";
 
