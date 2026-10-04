@@ -964,6 +964,58 @@ async def test_send_preview_message_without_default_persona_has_no_persona_secti
     assert "바다" not in fake.received_prompt
 
 
+@pytest.mark.parametrize(
+    ("persona_name", "expected_setting", "expected_prologue"),
+    [
+        pytest.param("지훈", "지훈의 세계\n", "지훈은 문 앞에 선다.", id="authors-default-persona"),
+        pytest.param(None, "모험가의 세계\n", "모험가는 문 앞에 선다.", id="draft-default-name"),
+    ],
+)
+async def test_send_preview_message_names_the_user_like_a_real_room(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    persona_name: str | None,
+    expected_setting: str,
+    expected_prologue: str,
+) -> None:
+    """미리보기는 실제 방과 같은 규칙으로 이름을 고른다 — 작가의 기본 프로필, 없으면 초안의 작품 기본 이름. 프로필이
+    없을 때만 생성 채널에 이름 한 줄이 실린다. 사용자 메시지는 그대로다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    if persona_name is not None:
+        persona = UserPersona(user_id=user.id, name=persona_name, gender=None, description="")
+        db_session.add(persona)
+        await db_session.flush()
+        user.default_persona_id = persona.id
+        await db_session.flush()
+    await _login_as(db_client, user.id)
+    session_id = await _start_session(
+        db_client,
+        _story_payload(
+            settingText="{{user}}의 세계",
+            defaultUserName="모험가",
+            startingSetups=[_starting_setup_item(prologue="{{user}}는 문 앞에 선다.")],
+        ),
+    )
+
+    fake = _FakeLLMClient(tokens=["이야기"], structured_results=[StatJudgmentResult(stat_changes=[])])
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "{{user}}라고 쳤다"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    prompt = fake.received_prompt
+    assert prompt is not None
+    assert prompt.startswith(expected_setting)
+    # 프롤로그는 프롤로그 자리와 첫 메시지(대화 기록) 두 곳에 실린다.
+    assert prompt.count(expected_prologue) == 2
+    assert prompt.count("{{user}}") == 1
+    assert ("[사용자 이름]\n대화 속 사용자의 이름: 모험가" in prompt) is (persona_name is None)
+
+
 def test_send_preview_message_resolves_persona_before_the_clover_charge() -> None:
     """`Depends`는 시그니처
     순서대로 resolve되고 앞의 것이 raise하면 뒤는 불리지 않는다. 프로필 조회가 차감

@@ -20,10 +20,15 @@ from api.db.models import (
     StartingSetup,
     StoryPromptTemplate,
     StoryVersionDetail,
-    User,
-    UserPersona,
 )
-from factories import _get_genre, _login_as, _make_published_character, _make_user, _story_with_setup
+from factories import (
+    _get_genre,
+    _login_as,
+    _make_default_persona,
+    _make_published_character,
+    _make_user,
+    _story_with_setup,
+)
 
 
 async def _set_default_user_name(db_session: AsyncSession, content: Content, name: str) -> None:
@@ -61,16 +66,6 @@ async def _publish_renamed_version(db_session: AsyncSession, content: Content, s
     )
     content.current_published_version_id = version.id
     await db_session.flush()
-
-
-async def _make_default_persona(db_session: AsyncSession, user_id: uuid.UUID, name: str) -> UserPersona:
-    persona = UserPersona(user_id=user_id, name=name)
-    db_session.add(persona)
-    await db_session.flush()
-    user = await db_session.get(User, user_id)
-    assert user is not None
-    user.default_persona_id = persona.id
-    return persona
 
 
 async def _create_room(client: httpx.AsyncClient, content: Content, setup: StartingSetup | None) -> dict[str, Any]:

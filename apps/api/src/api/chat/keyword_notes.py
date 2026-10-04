@@ -9,6 +9,7 @@ import unicodedata
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
+from api.chat.prompt_builder import PromptNames
 from api.content.media_tags import strip_media_tags
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.story import KeywordNote
@@ -34,13 +35,25 @@ class ScanTurn:
     user_texts: tuple[str, ...]
 
 
-def recent_scan_turns(history: Sequence[ChatMessage], user_content: str, depth: int) -> list[ScanTurn]:
+def recent_scan_turns(
+    history: Sequence[ChatMessage], user_content: str, depth: int, *, names: PromptNames
+) -> list[ScanTurn]:
     """`[0]` 이 이번 턴, `[j]` 가 j 턴 전인 스캔 턴 목록(최대 `depth + 1` 개).
 
-    히스토리 글은 모델이 받는 사본과 같게 미디어 북 태그를 지운다 — 태그 속 칸 id 의 16진 조각이나 인물 이름이 키워드에
-    걸리면 모델이 보지 못한 글로 노트가 열린다. 이번 사용자 메시지는 모델에게도 그대로 가므로 그대로 본다. 연속된 AI
-    응답의 앞쪽(사이의 사용자 메시지가 지워진 것)은 어느 턴의 직전 응답도 아니라 보지 않는다."""
-    messages = [(message.role, strip_media_tags(message.content)) for message in history]
+    히스토리 글은 모델이 받는 사본과 같게 미디어 북 태그를 지우고, AI 응답 줄은 `{{user}}`·`{{char}}` 를 이름으로
+    바꾼다 — 태그 속 칸 id 의 16진 조각이나 인물 이름이 키워드에 걸리면 모델이 보지 못한 글로 노트가 열리고, 원문
+    `{{user}}` 로 매칭하면 모델이 받은 글과 다른 글로 고르게 된다. 이번 사용자 메시지와 기록의 사용자 줄은 모델에게도
+    그대로 가므로 그대로 본다. 연속된 AI 응답의 앞쪽(사이의 사용자 메시지가 지워진 것)은 어느 턴의 직전 응답도 아니라
+    보지 않는다."""
+    messages = [
+        (
+            message.role,
+            strip_media_tags(message.content)
+            if message.role == ChatMessageRole.USER
+            else names.expand(strip_media_tags(message.content)),
+        )
+        for message in history
+    ]
     messages.append((ChatMessageRole.USER, user_content))
     turns: list[ScanTurn] = []
     i = len(messages) - 1
@@ -102,10 +115,10 @@ def select_keyword_notes(notes: Sequence[KeywordNote], turns: Sequence[ScanTurn]
 
 
 def match_keyword_notes(
-    notes: Sequence[KeywordNote], history: Sequence[ChatMessage], user_content: str
+    notes: Sequence[KeywordNote], history: Sequence[ChatMessage], user_content: str, *, names: PromptNames
 ) -> list[KeywordNote]:
     """실채팅과 빌더 미리보기가 함께 쓰는 진입점. `history` 는 이번 턴 생성 프롬프트에 실리는 대화(요약이 덮은 앞부분을
     뺀 것)이고 `user_content` 는 이번 사용자 메시지다 — 유지 턴도 모델이 보는 대화 안에서만 센다. 노트 중 가장 긴
     유지 범위만큼만 거슬러 올라간다."""
     depth = max((note.sticky_turns for note in notes), default=0)
-    return select_keyword_notes(notes, recent_scan_turns(history, user_content, depth))
+    return select_keyword_notes(notes, recent_scan_turns(history, user_content, depth, names=names))

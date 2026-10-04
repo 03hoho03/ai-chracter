@@ -23,7 +23,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.chat.memory_window import MessageKey, load_current_summary, opening_message
-from api.chat.prompt_builder import MemorySummaryResult, PromptRenderError, build_memory_summary_prompt
+from api.chat.prompt_builder import MemorySummaryResult, PromptNames, PromptRenderError, build_memory_summary_prompt
 from api.core.redis import redis_client
 from api.core.sentry import capture_dependency_failure
 from api.db.models import ChatMessage, ChatMessageRole, ChatRoom, ChatRoomMemorySnapshot, PromptSection, PromptSet
@@ -93,8 +93,12 @@ async def fold_memory(
     prompt_set: PromptSet,
     sections: Sequence[PromptSection],
     is_story_chat: bool,
+    names: PromptNames,
 ) -> None:
     """접을 때가 된 방이면 요약을 만들어 스냅샷으로 커밋한다. 절대 예외를 내지 않는다.
+
+    `names` 는 이 접기를 예약한 턴의 이름이다(작가 글의 `{{user}}` 를 바꾸고 이름 한 줄을 채운다). 백그라운드라 방
+    프로필을 다시 읽지 않고 그 턴의 생성 프롬프트와 같은 값을 받는다.
 
     순서가 정합성의 전부다.
     1. 방의 `memory_version`을 **가장 먼저** 읽고, 그다음 현재 요약과 커서 뒤 메시지를 읽는다.
@@ -131,6 +135,7 @@ async def fold_memory(
             is_story_chat=is_story_chat,
             previous_summary=current.text if current else "",
             turns=plan.turns,
+            names=names,
         )
         if not prompt:
             raise PromptRenderError("요약 channel 이 비어 있다 — 활성 세트에 요약 지시문이 없다")

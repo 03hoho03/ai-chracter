@@ -41,6 +41,8 @@ _PREVIOUS_SET_IDS: dict[str, uuid.UUID] = _load("c328445d4c2d").NEW_SET_IDS
 # 이 리비전 뒤에 story 레인 generation 에 상황 노트 행을 더하는 리비전 — 초안 게시 검사가 head 코드 표를 쓰므로
 # 함께 거친다.
 _NEXT_STORY_MIGRATION = _load("2417f5829bb1")
+# 그 뒤 두 레인에 사용자 이름 한 줄 행을 더하는 리비전 — 같은 이유로 초안은 이것도 거친다.
+_USER_NAME_MIGRATION = _load("8e895c898730")
 
 _NEW_KEYS = {
     ("image_judgment", "story", "image_list_intro", ""),
@@ -117,8 +119,10 @@ async def test_active_story_set_is_this_revisions_set_with_media_judgment_rows(d
 
 
 async def test_character_lane_keeps_its_active_set(db_session: AsyncSession) -> None:
+    """이 리비전은 character 레인에 새 세트를 만들지 않는다 — 활성은 이전 세트이거나, 뒤 리비전(사용자 이름 한 줄)이
+    두 레인에 만든 세트다."""
     active, _ = await load_active_prompt_set(db_session, lane="character")
-    assert active.id == _PREVIOUS_SET_IDS["character"]
+    assert active.id in (_PREVIOUS_SET_IDS["character"], _USER_NAME_MIGRATION.NEW_SET_IDS["character"])
 
 
 async def test_story_media_judgment_renders_from_the_new_set(db_session: AsyncSession) -> None:
@@ -206,6 +210,7 @@ async def test_patch_draft_adds_rows_in_place_and_draft_then_publishes(db_sessio
 
     # 코드 표는 지금 head 기준이라, 체인이 실제로 하듯 뒤 리비전(상황 노트 행)의 초안 패치도 거친 뒤 검사한다.
     assert await connection.run_sync(_NEXT_STORY_MIGRATION._patch_draft) is True
+    assert await connection.run_sync(_USER_NAME_MIGRATION._patch_draft, "story") is True
     sections = await _sections_of(db_session, draft_id)
     draft = await db_session.get(PromptSet, draft_id)
     assert draft is not None

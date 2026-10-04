@@ -53,6 +53,7 @@ from api.db.models import (
     StoryPromptTemplate,
     StoryVersionDetail,
     User,
+    UserPersona,
 )
 from api.db.session import engine
 from api.llm.client import LLMCallContext, LLMClient
@@ -449,6 +450,17 @@ async def _story_with_setup(
     db_session.add(setup)
     await db_session.flush()
     return user.id, content, setup
+
+
+async def _make_default_persona(db_session: AsyncSession, user_id: uuid.UUID, name: str) -> UserPersona:
+    """대화 프로필을 만들어 사용자의 기본 프로필로 둔다 — 그 뒤 만드는 방은 이 프로필을 고른 채 시작한다."""
+    persona = UserPersona(user_id=user_id, name=name)
+    db_session.add(persona)
+    await db_session.flush()
+    user = await db_session.get(User, user_id)
+    assert user is not None
+    user.default_persona_id = persona.id
+    return persona
 
 
 async def _add_epilogue_ending(db_session: AsyncSession, setup: StartingSetup, epilogue: str, order: int = 1) -> Ending:

@@ -347,8 +347,8 @@ async def test_send_message_story_room_injects_room_persona_into_generation_prom
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """방이 고른 대화 프로필은 생성 프롬프트에만
-    들어가고 같은 턴의 스탯 판정 프롬프트에는 없다. 방의 `persona_id`는 방 생성 API를
-    거치지 않고 여기서 직접 넣는다."""
+    들어가고, 같은 턴의 스탯 판정 프롬프트에는 프로필 전체가 아니라 이름 한 줄만 간다(성별·설명은 없다). 방의
+    `persona_id`는 방 생성 API를 거치지 않고 여기서 직접 넣는다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -376,8 +376,10 @@ async def test_send_message_story_room_injects_room_persona_into_generation_prom
     assert fake.received_prompt is not None
     assert "이름: 하늘이\n성별: 여성\n설명: 밤하늘을 좋아한다" in fake.received_prompt
     assert fake.received_judgment_prompt is not None
-    assert "하늘이" not in fake.received_judgment_prompt
+    assert "대화 속 사용자의 이름: 하늘이" in fake.received_judgment_prompt
+    assert fake.received_judgment_prompt.count("하늘이") == 1
     assert "밤하늘을 좋아한다" not in fake.received_judgment_prompt
+    assert "여성" not in fake.received_judgment_prompt
 
 
 async def test_send_message_story_room_selects_template_instruction(
