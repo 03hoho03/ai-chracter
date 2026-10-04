@@ -34,6 +34,7 @@ import { ColorPicker, IconPicker } from "@/shared/ui/color-icon-picker";
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
 import { StartingSetupPicker } from "./StartingSetupPicker";
 import { StatChangeFields } from "./StatChangeFields";
+import { StoryMacroNotice } from "./StoryMacroNotice";
 import { UNDO_TOAST_DURATION_MS, UndoToastButton } from "./UndoToastButton";
 import { moveStatErrorsById } from "../model/moveStatErrorsById";
 import { orderWithPendingRemovals, restoreRemovedStat, type RemovedStat } from "../model/restoreRemovedStat";
@@ -322,6 +323,7 @@ function StatRow({
             : "AI가 매 턴 이 설명을 읽고 값을 바꿔요. 무엇이 올리고 무엇이 내리는지, 한 번에 얼마나 움직이는지 적어 주세요."}
         </p>
         <MediaTagOutsideNotice name={`${statPath}.description`} />
+        <StoryMacroNotice name={`${statPath}.description`} />
         {statErrors?.description && (
           <p id={`stat-${id}-description-error`} role="alert" className="text-xs break-keep text-destructive-text">
             {statErrors.description.message}

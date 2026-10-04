@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { defaultUserNameIssue } from "@/entities/persona";
+
 // 목록과 유니온 타입은 한쪽에서 도출한다. 값 목록을 스키마 옆의 단일 소스로 두고
 // widgets/build-character/ui/DetailTab.tsx가 이 배열을 map해 라벨만 매핑한다(손복사 금지).
 export const TARGET_VALUES = ["female", "male", "all"] as const;
@@ -48,6 +50,14 @@ export const characterBuilderSchema = z.object({
     firstMessage: z.string().min(1, "사용자와의 첫 대화에서 캐릭터가 건넬 말을 입력해주세요"),
     exampleDialogues: z.array(exampleDialogueSchema).default([]),
     playGuide: z.string().optional(),
+    // 인트로·예시 대화와 한 화면에 두는 작품 기본 이름. 대화 프로필이 없는 사람의 `{{user}}` 가 된다. 비우면 대체어를 쓴다.
+    defaultUserName: z
+      .string()
+      .superRefine((value, ctx) => {
+      const issue = defaultUserNameIssue(value);
+      if (issue !== null) ctx.addIssue({ code: "custom", message: issue });
+    })
+      .default(""),
   }),
   prompt: z.object({
     characterPrompt: z.string().min(1, "캐릭터의 성격, 말투, 배경 등을 자유롭게 서술해주세요"),

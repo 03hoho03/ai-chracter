@@ -8,6 +8,7 @@ import { Controller, useFieldArray, useFormContext, useWatch } from "react-hook-
 
 import {
   CollapsibleItemCard,
+  DefaultUserNameField,
   focusNeighborToggle,
   indexOpenKey,
   ItemRemoveButton,
@@ -25,6 +26,7 @@ import {
 import { firstLine } from "@/shared/lib/text/firstLine";
 
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
+import { StoryMacroNotice } from "./StoryMacroNotice";
 
 // 전개 예시는 폼 값에 id 가 없어 열림 키를 배열 위치로 만든다. 지울 때 저장소가 뒤 항목의 열림을 한 칸 당긴다.
 const DEVELOPMENT_EXAMPLE_LIST: StoryCollapsibleList = "developmentExample";
@@ -46,6 +48,7 @@ export function SettingTab() {
   } = form;
   const promptTemplate = useWatch({ control, name: "storySetting.promptTemplate" });
   const isCustom = promptTemplate === "custom";
+  const defaultUserName = useWatch({ control, name: "storySetting.defaultUserName" });
 
   const { fields, append, remove } = useFieldArray({ control, name: "storySetting.developmentExamples" });
   // 머리 줄 요약은 사용자 메시지만 쓴다 — 배열 전체를 구독하면 긴 스토리 응답에 한 글자 칠 때마다 탭 전체가 다시 그려진다.
@@ -132,6 +135,7 @@ export function SettingTab() {
             {...register("storySetting.customPrompt")}
           />
           <MediaTagOutsideNotice name="storySetting.customPrompt" />
+          <StoryMacroNotice name="storySetting.customPrompt" />
           {errors.storySetting?.customPrompt && (
             <p id="story-setting-custom-prompt-error" role="alert" className="text-xs text-destructive-text">
               {errors.storySetting.customPrompt.message}
@@ -150,6 +154,7 @@ export function SettingTab() {
             {...register("storySetting.worldSetting")}
           />
           <MediaTagOutsideNotice name="storySetting.worldSetting" />
+          <StoryMacroNotice name="storySetting.worldSetting" />
           {errors.storySetting?.worldSetting && (
             <p id="story-setting-world-error" role="alert" className="text-xs text-destructive-text">
               {errors.storySetting.worldSetting.message}
@@ -169,6 +174,7 @@ export function SettingTab() {
           {...register("storySetting.rules")}
         />
         <MediaTagOutsideNotice name="storySetting.rules" />
+        <StoryMacroNotice name="storySetting.rules" />
         {errors.storySetting?.rules && (
           <p id="story-setting-rules-error" role="alert" className="text-xs text-destructive-text">
             {errors.storySetting.rules.message}
@@ -187,12 +193,22 @@ export function SettingTab() {
           {...register("storySetting.userGoal")}
         />
         <MediaTagOutsideNotice name="storySetting.userGoal" />
+        <StoryMacroNotice name="storySetting.userGoal" />
         {errors.storySetting?.userGoal && (
           <p id="story-setting-user-goal-error" role="alert" className="text-xs text-destructive-text">
             {errors.storySetting.userGoal.message}
           </p>
         )}
       </div>
+
+      <DefaultUserNameField
+        id="story-setting-default-user-name"
+        label={<FieldLabelText field="storySetting.defaultUserName" />}
+        contentType="story"
+        value={defaultUserName}
+        publishError={errors.storySetting?.defaultUserName?.message}
+        registration={register("storySetting.defaultUserName")}
+      />
 
       <div className="flex flex-col gap-4" data-field-path="storySetting.developmentExamples">
         <Label><FieldLabelText field="storySetting.developmentExamples" /></Label>
@@ -225,6 +241,7 @@ export function SettingTab() {
                   {...register(`storySetting.developmentExamples.${index}.userLine`)}
                 />
                 <MediaTagOutsideNotice name={`storySetting.developmentExamples.${index}.userLine`} />
+                <StoryMacroNotice name={`storySetting.developmentExamples.${index}.userLine`} />
                 {exampleErrors?.userLine && (
                   <p id={userLineErrorId} role="alert" className="text-xs text-destructive-text">
                     {exampleErrors.userLine.message}
@@ -238,6 +255,7 @@ export function SettingTab() {
                   {...register(`storySetting.developmentExamples.${index}.assistantLine`)}
                 />
                 <MediaTagOutsideNotice name={`storySetting.developmentExamples.${index}.assistantLine`} />
+                <StoryMacroNotice name={`storySetting.developmentExamples.${index}.assistantLine`} />
                 {exampleErrors?.assistantLine && (
                   <p id={assistantLineErrorId} role="alert" className="text-xs text-destructive-text">
                     {exampleErrors.assistantLine.message}

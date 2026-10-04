@@ -11,6 +11,7 @@ function baseFormValues(): StoryBuilderFormValues {
       worldSetting: "근미래 해양 도시",
       developmentExamples: [],
       userGoal: undefined,
+      defaultUserName: "",
       rules: undefined,
       customPrompt: undefined,
     },
