@@ -4,6 +4,8 @@ import { Link } from "@tanstack/react-router";
 import { InquiryReplyPanel } from "@/features/reply-inquiry";
 import { INQUIRY_CATEGORY_LABELS, INQUIRY_STATUS_LABELS, useInquiryDetailQuery } from "@/entities/inquiry";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { DetailLayout } from "@/shared/ui/DetailLayout";
+import { PageContainer } from "@/shared/ui/PageContainer";
 
 type InquiryDetailPageProps = {
   inquiryId: string;
@@ -11,15 +13,17 @@ type InquiryDetailPageProps = {
 
 export function InquiryDetailPage({ inquiryId }: InquiryDetailPageProps) {
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-10">
-      <Button asChild variant="outline" size="sm" className="self-start">
-        <Link to="/inquiries">목록으로</Link>
-      </Button>
+    <PageContainer>
+      <DetailLayout actions={null}>
+        <Button asChild variant="outline" size="sm" className="self-start">
+          <Link to="/inquiries">목록으로</Link>
+        </Button>
 
-      <h1 className="text-2xl font-bold tracking-tight text-foreground">문의 상세</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">문의 상세</h1>
 
-      <InquiryDetailBody inquiryId={inquiryId} />
-    </main>
+        <InquiryDetailBody inquiryId={inquiryId} />
+      </DetailLayout>
+    </PageContainer>
   );
 }
 

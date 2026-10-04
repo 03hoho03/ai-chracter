@@ -13,6 +13,8 @@ import {
 import { CHAT_MESSAGE_REPORT_REASON_LABELS, REPORT_REASON_LABELS, REPORT_STATUS_LABELS } from "@/entities/report";
 import { formatCount } from "@/shared/lib/format/formatCount";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { DetailLayout } from "@/shared/ui/DetailLayout";
+import { PageContainer } from "@/shared/ui/PageContainer";
 
 import { UserActionPanel } from "./UserActionPanel";
 
@@ -39,15 +41,17 @@ const REASON_CATEGORY_LABELS_ALL: Record<string, string> = {
 
 export function UserDetailPage({ userId }: UserDetailPageProps) {
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-10">
-      <Button asChild variant="outline" size="sm" className="self-start">
-        <Link to="/users">목록으로</Link>
-      </Button>
+    <PageContainer>
+      <DetailLayout actions={null}>
+        <Button asChild variant="outline" size="sm" className="self-start">
+          <Link to="/users">목록으로</Link>
+        </Button>
 
-      <h1 className="text-2xl font-bold tracking-tight text-foreground">유저 상세</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">유저 상세</h1>
 
-      <UserDetailBody userId={userId} />
-    </main>
+        <UserDetailBody userId={userId} />
+      </DetailLayout>
+    </PageContainer>
   );
 }
 

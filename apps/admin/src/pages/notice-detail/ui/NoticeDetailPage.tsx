@@ -2,6 +2,8 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Link, useNavigate } from "@tanstack/react-router";
 
 import { useNoticeDetailQuery } from "@/entities/notice";
+import { DetailLayout } from "@/shared/ui/DetailLayout";
+import { PageContainer } from "@/shared/ui/PageContainer";
 
 import { NoticeEditor } from "./NoticeEditor";
 
@@ -14,15 +16,17 @@ export function NoticeDetailPage({ noticeId }: NoticeDetailPageProps) {
   const isNew = noticeId === "new";
 
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-10">
-      <Button asChild variant="outline" size="sm" className="self-start">
-        <Link to="/notices">목록으로</Link>
-      </Button>
+    <PageContainer>
+      <DetailLayout actions={null}>
+        <Button asChild variant="outline" size="sm" className="self-start">
+          <Link to="/notices">목록으로</Link>
+        </Button>
 
-      <h1 className="text-2xl font-bold tracking-tight text-foreground">{isNew ? "새 공지" : "공지 편집"}</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">{isNew ? "새 공지" : "공지 편집"}</h1>
 
-      {isNew ? <NewNotice /> : <ExistingNotice noticeId={noticeId} />}
-    </main>
+        {isNew ? <NewNotice /> : <ExistingNotice noticeId={noticeId} />}
+      </DetailLayout>
+    </PageContainer>
   );
 }
 

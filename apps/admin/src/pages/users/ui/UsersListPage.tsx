@@ -10,6 +10,7 @@ import { useUserListQuery, type AdminUserListParams } from "@/entities/admin-use
 import { Pagination } from "@/shared/ui/Pagination";
 import { formatCount } from "@/shared/lib/format/formatCount";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { PageContainer } from "@/shared/ui/PageContainer";
 
 type SuspendedFilterValue = "all" | "normal" | "suspended";
 
@@ -38,7 +39,7 @@ type UsersListPageProps = {
  * 이메일·닉네임 검색은 제출 기반이다 — 타이핑마다 요청을 날리지 않는다. `sort`는 BE에 없어 만들지 않는다. */
 export function UsersListPage({ page, q, suspended, beta, onPageChange, onFilterChange }: UsersListPageProps) {
   return (
-    <main className="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-10">
+    <PageContainer>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">유저 관리</h1>
 
@@ -89,7 +90,7 @@ export function UsersListPage({ page, q, suspended, beta, onPageChange, onFilter
       </div>
 
       <UsersTable params={{ page, q, suspended, beta }} onPageChange={onPageChange} />
-    </main>
+    </PageContainer>
   );
 }
 

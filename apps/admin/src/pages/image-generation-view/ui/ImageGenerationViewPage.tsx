@@ -5,6 +5,8 @@ import { toast } from "sonner";
 
 import { imageGenerationStatusLabel } from "@/entities/admin-image-generation";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { DetailLayout } from "@/shared/ui/DetailLayout";
+import { PageContainer } from "@/shared/ui/PageContainer";
 
 import { useImageGenerationsPager } from "../api/useImageGenerationsPager";
 import type {
@@ -36,15 +38,17 @@ export function ImageGenerationViewPage({ userId }: ImageGenerationViewPageProps
 
   if (pages.length === 0) {
     return (
-      <main className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-10">
-        <Button asChild variant="outline" size="sm" className="self-start">
-          <Link to="/users/$userId" params={{ userId }}>
-            유저 상세로
-          </Link>
-        </Button>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">생성 이미지 열람</h1>
-        <ViewReasonDialog userId={userId} onCancel={goToUserDetail} onConfirmed={(data) => setPages([data])} />
-      </main>
+      <PageContainer>
+        <DetailLayout actions={null}>
+          <Button asChild variant="outline" size="sm" className="self-start">
+            <Link to="/users/$userId" params={{ userId }}>
+              유저 상세로
+            </Link>
+          </Button>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">생성 이미지 열람</h1>
+          <ViewReasonDialog userId={userId} onCancel={goToUserDetail} onConfirmed={(data) => setPages([data])} />
+        </DetailLayout>
+      </PageContainer>
     );
   }
 
@@ -98,51 +102,53 @@ export function ImageGenerationViewPage({ userId }: ImageGenerationViewPageProps
   };
 
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-10">
-      <Button asChild variant="outline" size="sm" className="self-start">
-        <Link to="/users/$userId" params={{ userId }}>
-          유저 상세로
-        </Link>
-      </Button>
+    <PageContainer>
+      <DetailLayout actions={null}>
+        <Button asChild variant="outline" size="sm" className="self-start">
+          <Link to="/users/$userId" params={{ userId }}>
+            유저 상세로
+          </Link>
+        </Button>
 
-      <h1 className="text-2xl font-bold tracking-tight text-foreground">생성 이미지 열람</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">생성 이미지 열람</h1>
 
-      {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">생성 이력이 없어요.</p>
-      ) : (
-        <div className="flex flex-col gap-4">
-          {pages.map((page) => (
-            <Fragment key={page.page}>
-              {page.items.map((item) => (
-                <ImageGenerationRequestCard
-                  key={item.id}
-                  item={item}
-                  brokenAssetIds={brokenAssetIds}
-                  onImageError={(assetId) => handleImageError(page.page, assetId)}
-                />
-              ))}
-            </Fragment>
-          ))}
+        {items.length === 0 ? (
+          <p className="text-sm text-muted-foreground">생성 이력이 없어요.</p>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {pages.map((page) => (
+              <Fragment key={page.page}>
+                {page.items.map((item) => (
+                  <ImageGenerationRequestCard
+                    key={item.id}
+                    item={item}
+                    brokenAssetIds={brokenAssetIds}
+                    onImageError={(assetId) => handleImageError(page.page, assetId)}
+                  />
+                ))}
+              </Fragment>
+            ))}
 
-          {hasMore && (
-            <div className="flex justify-center">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                aria-disabled={pager.isFetching}
-                onClick={() => {
-                  if (!pager.isFetching) void handleLoadMore();
-                }}
-                className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
-              >
-                {pager.isFetching ? "불러오는 중..." : "더 보기"}
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
-    </main>
+            {hasMore && (
+              <div className="flex justify-center">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  aria-disabled={pager.isFetching}
+                  onClick={() => {
+                    if (!pager.isFetching) void handleLoadMore();
+                  }}
+                  className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
+                >
+                  {pager.isFetching ? "불러오는 중..." : "더 보기"}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      </DetailLayout>
+    </PageContainer>
   );
 }
 

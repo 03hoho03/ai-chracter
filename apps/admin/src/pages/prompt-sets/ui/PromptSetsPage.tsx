@@ -1,6 +1,8 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/components/tabs";
 import { useState } from "react";
 
+import { PageContainer } from "@/shared/ui/PageContainer";
+
 import { isPromptLane, PROMPT_LANE_LABELS, PROMPT_LANES, type PromptLane } from "../model/lane";
 import { PromptLaneEditor } from "./PromptLaneEditor";
 import { VersionHistorySection } from "./VersionHistorySection";
@@ -14,7 +16,7 @@ export function PromptSetsPage() {
   const [activeLane, setActiveLane] = useState<PromptLane>(() => PROMPT_LANES[0] ?? "story");
 
   return (
-    <main className="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-10">
+    <PageContainer>
       <h1 className="text-2xl font-bold tracking-tight text-foreground">프롬프트 세트 관리</h1>
 
       <Tabs
@@ -41,6 +43,6 @@ export function PromptSetsPage() {
       </Tabs>
 
       <VersionHistorySection />
-    </main>
+    </PageContainer>
   );
 }

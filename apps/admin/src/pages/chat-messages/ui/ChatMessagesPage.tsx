@@ -5,6 +5,8 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { DetailLayout } from "@/shared/ui/DetailLayout";
+import { PageContainer } from "@/shared/ui/PageContainer";
 
 import { useChatMessagesPager } from "../api/useChatMessagesPager";
 import type { ChatMessagesCursor } from "../api/keys";
@@ -54,22 +56,24 @@ export function ChatMessagesPage({ userId, roomId }: ChatMessagesPageProps) {
 
   if (!viewResult) {
     return (
-      <main className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-10">
-        <Button asChild variant="outline" size="sm" className="self-start">
-          <Link to="/users/$userId" params={{ userId }}>
-            유저 상세로
-          </Link>
-        </Button>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">채팅 열람</h1>
-        <ViewReasonDialog
-          roomId={roomId}
-          onCancel={handleCancel}
-          onConfirmed={(data) => {
-            setViewResult(data);
-            setCursor(nextCursor(data));
-          }}
-        />
-      </main>
+      <PageContainer>
+        <DetailLayout actions={null}>
+          <Button asChild variant="outline" size="sm" className="self-start">
+            <Link to="/users/$userId" params={{ userId }}>
+              유저 상세로
+            </Link>
+          </Button>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">채팅 열람</h1>
+          <ViewReasonDialog
+            roomId={roomId}
+            onCancel={handleCancel}
+            onConfirmed={(data) => {
+              setViewResult(data);
+              setCursor(nextCursor(data));
+            }}
+          />
+        </DetailLayout>
+      </PageContainer>
     );
   }
 
@@ -82,46 +86,48 @@ export function ChatMessagesPage({ userId, roomId }: ChatMessagesPageProps) {
   const displayItems = [...viewResult.items, ...olderItems].reverse();
 
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-10">
-      <Button asChild variant="outline" size="sm" className="self-start">
-        <Link to="/users/$userId" params={{ userId }}>
-          유저 상세로
-        </Link>
-      </Button>
+    <PageContainer>
+      <DetailLayout actions={null}>
+        <Button asChild variant="outline" size="sm" className="self-start">
+          <Link to="/users/$userId" params={{ userId }}>
+            유저 상세로
+          </Link>
+        </Button>
 
-      <h1 className="text-2xl font-bold tracking-tight text-foreground">채팅 열람</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">채팅 열람</h1>
 
-      <RoomMemorySection note={viewResult.memoryNote} summary={viewResult.memorySummary} />
+        <RoomMemorySection note={viewResult.memoryNote} summary={viewResult.memorySummary} />
 
-      {displayItems.length === 0 ? (
-        <p className="text-sm text-muted-foreground">메시지가 없어요.</p>
-      ) : (
-        <div className="flex flex-col gap-4">
-          {cursor && (
-            <div className="flex justify-center">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                aria-disabled={messagesPager.isFetching}
-                onClick={() => {
-                  if (!messagesPager.isFetching) void handleLoadMore();
-                }}
-                className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
-              >
-                {messagesPager.isFetching ? "불러오는 중..." : "더 보기"}
-              </Button>
-            </div>
-          )}
+        {displayItems.length === 0 ? (
+          <p className="text-sm text-muted-foreground">메시지가 없어요.</p>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {cursor && (
+              <div className="flex justify-center">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  aria-disabled={messagesPager.isFetching}
+                  onClick={() => {
+                    if (!messagesPager.isFetching) void handleLoadMore();
+                  }}
+                  className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
+                >
+                  {messagesPager.isFetching ? "불러오는 중..." : "더 보기"}
+                </Button>
+              </div>
+            )}
 
-          <ol className="flex flex-col gap-3">
-            {displayItems.map((item) => (
-              <ChatMessageRow key={item.id} item={item} />
-            ))}
-          </ol>
-        </div>
-      )}
-    </main>
+            <ol className="flex flex-col gap-3">
+              {displayItems.map((item) => (
+                <ChatMessageRow key={item.id} item={item} />
+              ))}
+            </ol>
+          </div>
+        )}
+      </DetailLayout>
+    </PageContainer>
   );
 }
 

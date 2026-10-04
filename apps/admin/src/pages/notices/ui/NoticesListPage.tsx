@@ -5,6 +5,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useNoticeListQuery } from "@/entities/notice";
 import { Pagination } from "@/shared/ui/Pagination";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { PageContainer } from "@/shared/ui/PageContainer";
 
 type NoticesListPageProps = {
   page: number;
@@ -13,7 +14,7 @@ type NoticesListPageProps = {
 
 export function NoticesListPage({ page, onPageChange }: NoticesListPageProps) {
   return (
-    <main className="mx-auto flex max-w-4xl flex-col gap-6 px-6 py-10">
+    <PageContainer>
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">공지 관리</h1>
 
@@ -25,7 +26,7 @@ export function NoticesListPage({ page, onPageChange }: NoticesListPageProps) {
       </div>
 
       <NoticesTable page={page} onPageChange={onPageChange} />
-    </main>
+    </PageContainer>
   );
 }
 

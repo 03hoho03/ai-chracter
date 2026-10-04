@@ -5,6 +5,8 @@ import { Link } from "@tanstack/react-router";
 import { CONTENT_TYPE_LABELS, CONTENT_VISIBILITY_LABELS, MODERATION_STATUS_LABELS, useContentDetailQuery } from "@/entities/admin-content";
 import { formatCount } from "@/shared/lib/format/formatCount";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { DetailLayout } from "@/shared/ui/DetailLayout";
+import { PageContainer } from "@/shared/ui/PageContainer";
 
 import { ContentActionPanel } from "./ContentActionPanel";
 import { HomeCurationSection } from "./HomeCurationSection";
@@ -16,15 +18,17 @@ type ContentDetailPageProps = {
 
 export function ContentDetailPage({ contentId }: ContentDetailPageProps) {
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-10">
-      <Button asChild variant="outline" size="sm" className="self-start">
-        <Link to="/contents">목록으로</Link>
-      </Button>
+    <PageContainer>
+      <DetailLayout actions={null}>
+        <Button asChild variant="outline" size="sm" className="self-start">
+          <Link to="/contents">목록으로</Link>
+        </Button>
 
-      <h1 className="text-2xl font-bold tracking-tight text-foreground">작품 상세</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">작품 상세</h1>
 
-      <ContentDetailBody contentId={contentId} />
-    </main>
+        <ContentDetailBody contentId={contentId} />
+      </DetailLayout>
+    </PageContainer>
   );
 }
 

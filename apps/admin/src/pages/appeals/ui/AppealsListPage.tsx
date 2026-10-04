@@ -13,6 +13,7 @@ import {
 import { AppealResolvePanel } from "@/features/resolve-appeal";
 import { Pagination } from "@/shared/ui/Pagination";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { PageContainer } from "@/shared/ui/PageContainer";
 
 const STATUS_FILTER_OPTIONS: { value: "all" | AppealStatusFilter; label: string }[] = [
   { value: "all", label: "전체" },
@@ -29,7 +30,7 @@ type AppealsListPageProps = {
 
 export function AppealsListPage({ page, status, onPageChange, onStatusChange }: AppealsListPageProps) {
   return (
-    <main className="mx-auto flex max-w-4xl flex-col gap-6 px-6 py-10">
+    <PageContainer>
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">이의제기 검토</h1>
 
@@ -51,7 +52,7 @@ export function AppealsListPage({ page, status, onPageChange, onStatusChange }: 
       </div>
 
       <AppealsTable page={page} status={status} onPageChange={onPageChange} />
-    </main>
+    </PageContainer>
   );
 }
 

@@ -20,6 +20,7 @@ import {
 } from "@/entities/admin-image-generation";
 import { Pagination } from "@/shared/ui/Pagination";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { PageContainer } from "@/shared/ui/PageContainer";
 
 type ImageGenerationFilterPatch = {
   q?: string;
@@ -74,7 +75,7 @@ export function ImageGenerationsListPage({
   ];
 
   return (
-    <main className="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-10">
+    <PageContainer>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">이미지 생성 관리</h1>
 
@@ -146,7 +147,7 @@ export function ImageGenerationsListPage({
       </div>
 
       <ImageGenerationsTable params={{ page, q, status, style, from, to }} onPageChange={onPageChange} />
-    </main>
+    </PageContainer>
   );
 }
 

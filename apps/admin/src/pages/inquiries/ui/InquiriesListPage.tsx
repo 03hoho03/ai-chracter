@@ -15,6 +15,7 @@ import {
 } from "@/entities/inquiry";
 import { Pagination } from "@/shared/ui/Pagination";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { PageContainer } from "@/shared/ui/PageContainer";
 
 /** 두 필터 모두 entities가 Record 키에서 도출한 옵션에 `"전체"`만 얹는다 — 멤버를 여기 손으로
  * 나열하면 서버에 값이 늘어도 이 필터만 조용히 빠진다. `SelectItem`의 value가 `string`이라
@@ -48,7 +49,7 @@ export function InquiriesListPage({
   onCategoryChange,
 }: InquiriesListPageProps) {
   return (
-    <main className="mx-auto flex max-w-4xl flex-col gap-6 px-6 py-10">
+    <PageContainer>
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">문의 관리</h1>
 
@@ -88,7 +89,7 @@ export function InquiriesListPage({
       </div>
 
       <InquiriesTable page={page} status={status} category={category} onPageChange={onPageChange} />
-    </main>
+    </PageContainer>
   );
 }
 
