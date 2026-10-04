@@ -19,6 +19,15 @@ class Settings(BaseSettings):
     )
     redis_url: str = "redis://localhost:6379/0"
 
+    # 워커(프로세스)마다 풀이 따로 생긴다. 워커를 늘리면 워커 수 × (`db_pool_size` + `db_max_overflow`)
+    # 가 Postgres 연결 상한(`max_connections`)을 넘지 않게 줄인다 — 크론·백업·관리 접속 몫을 남겨야 한다.
+    # 기본값은 이 설정이 생기기 전에 앱이 쓰던 SQLAlchemy 기본값과 같다. `db_pool_size` 가 0 이면
+    # SQLAlchemy 는 상한 없음으로 읽으므로 1 이상만 받는다.
+    db_pool_size: int = Field(default=5, ge=1)
+    db_max_overflow: int = Field(default=10, ge=0)
+    # 풀이 다 찼을 때 연결을 기다리는 초. 넘기면 그 요청이 500 이다.
+    db_pool_timeout: float = Field(default=30, gt=0)
+
     # 프로덕션은 스키마 전수 노출을 막는다 — 안전한
     # 기본값(닫힘)이어야 env 설정 없이 배포해도 닫힌 채로 뜬다. 로컬 개발만 True로 켠다.
     expose_api_docs: bool = False
@@ -151,9 +160,10 @@ class Settings(BaseSettings):
     local_image_timeout_seconds: int = 90
     # 잠정값 — 복구 감지 속도와 프로브 빈도의 타협(콜드/만료 시에만 프로브).
     local_image_capabilities_ttl_seconds: int = 30
-    # 잠정값. 잡 하나는 최대 2장(count<=2)이고 `llm/local_image.py` 의 세마포어가 집 PC 호출을
-    # 한 장씩 직렬로 보낸다. 장당 최악을 DEPLOY.md "이미지 생성" 절의 약 38초(서버 재기동 직후 첫
-    # 요청 — 보통은 워밍업 뒤 약 17초 이하)로 잡으면 잡당 약 76초, 네 번째로 받아들인 잡이 끝나기까지
+    # 잠정값. 모든 워커를 합친 값이다(대기열이 Redis 에 있다). 잡 하나는 최대 2장(count<=2)이고
+    # `llm/local_image.py` 의 생성 락이 집 PC 호출을 워커를 가리지 않고 한 장씩 직렬로 보낸다. 장당
+    # 최악을 DEPLOY.md "이미지 생성" 절의 약 38초(서버 재기동 직후 첫 요청 — 보통은 워밍업 뒤 약 17초
+    # 이하)로 잡으면 잡당 약 76초, 네 번째로 받아들인 잡이 끝나기까지
     # 약 5분이다. 큰 참조 이미지의 전송 시간(미측정)과 응답 없이 타임아웃까지 매달리는 실패는 이
     # 추정에 들어 있지 않다.
     local_image_queue_limit: int = 4

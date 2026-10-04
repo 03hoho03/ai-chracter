@@ -67,7 +67,7 @@ IMAGE_TOKEN_REFILL_SECONDS = 3600
 
 # 큐가 찼을 때 주는 재시도 초. **큐 길이 추정이 아니라 잡 하나의 최대 소요**를 고정값
 # 으로 준다 — `core/config.py`의 `local_image_queue_limit` 주석이 근거로 쓰는 그 60초(장당
-# 약 30초 × `count` 상한 2)다. 앞선 대기자 수는 `local_image._queue_depth`가 정확히 들고
+# 약 30초 × `count` 상한 2)다. 앞선 대기자 수는 대기열(`local_image.ADMISSION_KEY`)이 정확히 들고
 # 있다 — 모르는 것은 **각 잡의 잔여 시간**이라 그 깊이를 초로 환산할 수 없다. 그래서 잡
 # 하나의 상한 60초를 고정값으로 답한다("최대 60초 뒤 다시").
 # ⚠️ config에는 이 60이 **설정값이 아니라 주석으로만** 있어서 여기에 상수로 둔다
@@ -76,8 +76,8 @@ QUEUE_FULL_RETRY_AFTER_SECONDS = 60
 
 # Redis 장애 보고는 창당 1회. 장애는 초당 수십 요청에 그대로 곱해져서, 요청마다 보고하면
 # Bugsink 이벤트가 그 수만큼 쏟아진다.
-# ⚠️ **1워커 전제다.** 이 타임스탬프는 프로세스 전역이라 워커를 늘리면 워커 수만큼 보고된다
-# (현재 배포는 uvicorn 단일 워커 — `DEPLOY.md`). 워커를 늘릴 때 Redis 공유 키로 옮길 것.
+# 이 타임스탬프는 프로세스 전역이라 워커가 N개면 창당 최대 N건 보고된다. 그대로 둔다 — 억제를 Redis 공유
+# 키로 옮기면 이 억제가 다루는 사건(Redis 장애) 동안 그 키도 읽을 수 없어 억제가 동작하지 않는다.
 REDIS_FAILURE_REPORT_WINDOW_SECONDS = 60
 
 _BURST_SCOPE = "chat_burst"
@@ -373,8 +373,8 @@ async def enforce_image_rate_limit(
 
     순서는 **면제 → 토큰**이다. 면제 계정은 토큰 버킷만 건너뛰고 큐(전역·유저별
     1칸)는 그대로 받는다 — 큐는 쿼터가 아니라 GPU 직렬 처리량의 분배라서 면제 대상에게
-    열어 줄 이유가 없다. 큐 판정은 라우트 본문의 `try_admit`이 계속 맡는다(검사+증가가 한
-    동기 블록이어야 하는 불변식이 그쪽(`local_image.try_admit`)에 있다).
+    열어 줄 이유가 없다. 큐 판정은 라우트 본문의 `try_admit`이 계속 맡는다(검사+추가가 한
+    원자적 단계여야 하는 불변식이 그쪽(`local_image.try_admit`)에 있다).
     """
     try:
         if await is_rate_limit_exempt(user_id, db):
