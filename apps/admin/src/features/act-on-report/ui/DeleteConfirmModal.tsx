@@ -10,9 +10,11 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMemo } from "react";
-import { createCallable } from "react-call";
 import { useMutationFlow, type MutationFn } from "react-call/mutation-flow";
 import { useForm } from "react-hook-form";
+
+import { createCallable } from "@/shared/lib/callable/createCallable";
+import { focusInitialElement } from "@/shared/lib/callable/focusInitialElement";
 
 import { createDeleteConfirmSchema, type DeleteConfirmFormValues } from "../model/schema";
 
@@ -50,7 +52,7 @@ export const DeleteConfirmModal = createCallable<DeleteConfirmModalProps, void>(
 
   return (
     <Dialog open={!call.ended} onOpenChange={(open) => !open && call.end()}>
-      <DialogContent className="sm:max-w-sm">
+      <DialogContent className="sm:max-w-sm" onOpenAutoFocus={focusInitialElement}>
         <DialogHeader>
           <DialogTitle>콘텐츠 삭제</DialogTitle>
           <DialogDescription>
@@ -67,7 +69,7 @@ export const DeleteConfirmModal = createCallable<DeleteConfirmModalProps, void>(
             void handleSubmit(handleValidSubmit)(event);
           }}
         >
-          <Input placeholder={contentName} autoFocus aria-label="콘텐츠명 확인" {...register("confirmText")} />
+          <Input placeholder={contentName} autoFocus data-initial-focus aria-label="콘텐츠명 확인" {...register("confirmText")} />
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => call.end()}>

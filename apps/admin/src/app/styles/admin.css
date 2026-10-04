@@ -1,0 +1,44 @@
+/* 손가락 포인터에서만 admin 컨트롤을 40px 로 올린다. packages/ui 프리미티브에 넣으면 web 화면 크기까지
+   바뀌므로 admin 에만 로드되는 이 파일이 프리미티브의 표식으로 건다. 레이어 밖(unlayered)이라
+   Tailwind 유틸리티를 이긴다 — height 는 건드리지 않고 min-height 만 올려 h-8·h-9 가 하한으로 남는다.
+   체크박스는 빠진다 — 프리미티브가 의사 요소로 히트 영역을 40×32 로 넓혀 높이 40 에는 못 미치지만 최소
+   타깃 24px 는 넘고, 쓰는 자리(약관 게시 모달)는 옆 라벨도 눌린다. textarea 는 원래 크고, 셀렉트 항목은
+   프리미티브에 이미 같은 처방이 있어 여기서 빠진다. 사이드바 내비 행은 프리미티브가 아니라 그 행 클래스에 있다. */
+@media (pointer: coarse) {
+  /* 버튼만 data-slot 이 아니라 Button 의 기반 클래스로 찾는다. 시트 트리거(버거)·시트와 모달의 닫기 X 처럼
+     Radix 의 `asChild` 로 Button 을 감싼 자리는 바깥의 data-slot(sheet-trigger·dialog-close 등)이 Button 의
+     것을 덮어 `[data-slot="button"]` 으로는 빠진다. */
+  .group\/button,
+  [data-slot="select-trigger"],
+  [data-slot="toggle-group-item"],
+  [data-slot="toggle"],
+  [data-slot="input"] {
+    min-height: 2.5rem;
+  }
+
+  /* 아이콘 버튼은 정사각을 유지한다. */
+  .group\/button[data-size^="icon"] {
+    min-width: 2.5rem;
+  }
+
+  /* 가로 탭은 목록이 h-9 로 고정이고 트리거가 그 높이를 퍼센트로 따라가 트리거만 올릴 수 없다 —
+     목록 높이를 풀어 트리거의 최소 높이가 목록을 밀게 한다. 목록이 루트의 직계 자식이 아닌 호출부
+     (가로 스크롤 래퍼 안의 프롬프트 탭)가 있어 자손 결합자로 찾는다. */
+  [data-slot="tabs"][data-orientation="horizontal"] [data-slot="tabs-list"] {
+    height: auto;
+  }
+  [data-slot="tabs"][data-orientation="horizontal"] [data-slot="tabs-trigger"] {
+    min-height: 2.5rem;
+  }
+}
+
+/* 상세 화면의 하단 조치 바(`lg` 미만, 공용 DetailLayout). 바 높이는 safe-area 를 더한 값이고, 본문 끝 여백도 같은
+   값을 써서 마지막 요소가 바 뒤에 깔리지 않는다. 바가 떠 있는 동안만 토스트를 바 높이만큼 올린다 — 바는 `lg` 미만에서만
+   렌더되므로 넓은 화면의 토스트 위치는 그대로다. */
+:root {
+  --admin-action-bar-height: calc(4rem + env(safe-area-inset-bottom));
+  --admin-toast-lift: 0px;
+}
+:root:has([data-admin-action-bar]) {
+  --admin-toast-lift: var(--admin-action-bar-height);
+}

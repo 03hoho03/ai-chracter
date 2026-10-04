@@ -13,7 +13,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
-import { createCallable } from "react-call";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -29,6 +28,7 @@ import {
 } from "@/entities/admin-user";
 import { isReportReasonCategory, REPORT_REASON_OPTIONS, REPORT_REASON_VALUES } from "@/entities/report";
 import { isApiError } from "@/shared/lib/api/client";
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 type UserActionType =
   | "warn"
@@ -364,7 +364,7 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
             </div>
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => call.end()}>
+              <Button type="button" variant="outline" autoFocus onClick={() => call.end()}>
                 취소
               </Button>
               <Button type="submit" disabled={isSubmitting}>

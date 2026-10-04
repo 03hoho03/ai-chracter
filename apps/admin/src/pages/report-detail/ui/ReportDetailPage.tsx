@@ -1,10 +1,15 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Link } from "@tanstack/react-router";
+import { ChevronLeft } from "lucide-react";
 
-import { ReportActionPanel } from "@/features/act-on-report";
+import { canActOnContentReport, ReportActionPanel } from "@/features/act-on-report";
 import { CONTENT_TYPE_LABELS, MODERATION_STATUS_LABELS } from "@/entities/admin-content";
 import { REPORT_REASON_LABELS, REPORT_STATUS_LABELS, useReportDetailQuery, type ReportTarget } from "@/entities/report";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { DetailLayout } from "@/shared/ui/DetailLayout";
+import { PageContainer } from "@/shared/ui/PageContainer";
+import { PageHeader } from "@/shared/ui/PageHeader";
+import { QueryState } from "@/shared/ui/QueryState";
 
 import { ChatMessageReportDetailBody } from "./ChatMessageReportDetailBody";
 import { CommentReportDetailBody } from "./CommentReportDetailBody";
@@ -16,15 +21,21 @@ type ReportDetailPageProps = {
 
 export function ReportDetailPage({ reportId, target }: ReportDetailPageProps) {
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-10">
-      <Button asChild variant="outline" size="sm" className="self-start">
-        <Link to="/reports" search={{ target }}>목록으로</Link>
-      </Button>
-
-      <h1 className="text-2xl font-bold tracking-tight text-foreground">신고 상세</h1>
+    <PageContainer>
+      <PageHeader
+        title="신고 상세"
+        back={
+          <Button asChild variant="ghost" size="sm" className="self-start">
+            <Link to="/reports" search={{ target }}>
+              <ChevronLeft aria-hidden />
+              목록으로
+            </Link>
+          </Button>
+        }
+      />
 
       <TargetReportDetailBody target={target} reportId={reportId} />
-    </main>
+    </PageContainer>
   );
 }
 
@@ -55,101 +66,107 @@ type ReportDetailBodyProps = {
 function ReportDetailBody({ reportId }: ReportDetailBodyProps) {
   const reportDetailQuery = useReportDetailQuery(reportId);
 
-  if (reportDetailQuery.isPending) {
-    return <div className="h-64 animate-pulse rounded-xl bg-muted" />;
-  }
-
-  if (reportDetailQuery.isError) {
-    return <p className="text-sm text-destructive-text">신고 정보를 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>;
-  }
-
   return (
-    <>
-      <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-6">
-        <div className="flex items-center gap-2">
-          <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground">
-            {REPORT_STATUS_LABELS[reportDetailQuery.data.status]}
-          </span>
-          <span className="text-sm text-muted-foreground">
-            {formatDateTime(reportDetailQuery.data.createdAt)} 접수
-          </span>
-        </div>
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-          <div>
-            <dt className="text-muted-foreground">신고 사유</dt>
-            <dd className="text-foreground">{REPORT_REASON_LABELS[reportDetailQuery.data.reasonCategory]}</dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">신고자</dt>
-            <dd className="text-foreground">
-              <Link
-                to="/users/$userId"
-                params={{ userId: reportDetailQuery.data.reporterUserId }}
-                className="font-medium text-primary hover:underline"
-              >
-                유저 상세 보기
-              </Link>
-            </dd>
-          </div>
-          {!!reportDetailQuery.data.resolvedAt && (
-            <div>
-              <dt className="text-muted-foreground">처리일시</dt>
-              <dd className="text-foreground">
-                {formatDateTime(reportDetailQuery.data.resolvedAt)}
-              </dd>
-            </div>
-          )}
-        </dl>
-      </section>
+    <QueryState query={reportDetailQuery} skeleton="detail" errorMessage="신고 정보를 불러오지 못했어요.">
+      {(report) => {
+        const isReportPending = report.status === "pending";
+        const isContentRestricted = report.content.moderationStatus === "restricted";
+        const contentName = report.content.name || "(이름 없음)";
 
-      <section className="flex flex-col gap-4 rounded-xl border border-border bg-card p-6">
-        <h2 className="text-lg font-semibold text-foreground">대상 콘텐츠</h2>
+        return (
+          <DetailLayout
+            actions={
+              canActOnContentReport({ isReportPending, isContentRestricted })
+                ? {
+                    title: "신고 처리",
+                    triggerLabel: "처리하기",
+                    summary: isContentRestricted
+                      ? `신고 ${REPORT_STATUS_LABELS[report.status]} · 작품 이용제한 중`
+                      : `신고 ${REPORT_STATUS_LABELS[report.status]}`,
+                    render: (host) => (
+                      <ReportActionPanel
+                        reportId={report.id}
+                        isReportPending={isReportPending}
+                        contentName={contentName}
+                        isContentRestricted={isContentRestricted}
+                        onSuccess={host.onDone}
+                      />
+                    ),
+                  }
+                : null
+            }
+          >
+            <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 @xl:p-6">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground">
+                  {REPORT_STATUS_LABELS[report.status]}
+                </span>
+                <span className="text-sm text-muted-foreground">{formatDateTime(report.createdAt)} 접수</span>
+              </div>
+              <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                <div>
+                  <dt className="text-muted-foreground">신고 사유</dt>
+                  <dd className="text-foreground">{REPORT_REASON_LABELS[report.reasonCategory]}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">신고자</dt>
+                  <dd className="text-foreground">
+                    <Link
+                      to="/users/$userId"
+                      params={{ userId: report.reporterUserId }}
+                      className="font-medium text-primary hover:underline"
+                    >
+                      유저 상세 보기
+                    </Link>
+                  </dd>
+                </div>
+                {!!report.resolvedAt && (
+                  <div>
+                    <dt className="text-muted-foreground">처리일시</dt>
+                    <dd className="text-foreground">{formatDateTime(report.resolvedAt)}</dd>
+                  </div>
+                )}
+              </dl>
+            </section>
 
-        <div className="flex gap-4">
-          <div className="flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-secondary">
-            {!!reportDetailQuery.data.content.thumbnailUrl && (
-              <img
-                src={reportDetailQuery.data.content.thumbnailUrl}
-                alt=""
-                className="size-full object-cover"
-              />
-            )}
-          </div>
-          <div className="flex min-w-0 flex-col justify-center gap-1">
-            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              <span>{CONTENT_TYPE_LABELS[reportDetailQuery.data.content.type]}</span>
-              <span aria-hidden>·</span>
-              <span>{MODERATION_STATUS_LABELS[reportDetailQuery.data.content.moderationStatus]}</span>
-            </div>
-            <p className="truncate text-lg font-semibold text-foreground">
-              {reportDetailQuery.data.content.name || "(이름 없음)"}
-            </p>
-          </div>
-        </div>
+            <section className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 @xl:p-6">
+              <h2 className="text-lg font-semibold text-foreground">대상 콘텐츠</h2>
 
-        <div className="flex flex-col gap-1">
-          <h3 className="text-sm font-medium text-foreground">설명</h3>
-          <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-            {reportDetailQuery.data.content.detailDescription || "-"}
-          </p>
-        </div>
+              <div className="flex gap-4">
+                <div className="flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-secondary">
+                  {!!report.content.thumbnailUrl && (
+                    <img src={report.content.thumbnailUrl} alt="" className="size-full object-cover" />
+                  )}
+                </div>
+                <div className="flex min-w-0 flex-col justify-center gap-1">
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    <span>{CONTENT_TYPE_LABELS[report.content.type]}</span>
+                    <span aria-hidden>·</span>
+                    <span>{MODERATION_STATUS_LABELS[report.content.moderationStatus]}</span>
+                  </div>
+                  <p className="break-keep text-lg font-semibold text-foreground wrap-anywhere">{contentName}</p>
+                </div>
+              </div>
 
-        {!!reportDetailQuery.data.content.prompt && (
-          <div className="flex flex-col gap-1">
-            <h3 className="text-sm font-medium text-foreground">프롬프트</h3>
-            <p className="whitespace-pre-wrap rounded-lg bg-secondary p-3 text-sm text-foreground">
-              {reportDetailQuery.data.content.prompt}
-            </p>
-          </div>
-        )}
-      </section>
+              <div className="flex flex-col gap-1">
+                <h3 className="text-sm font-medium text-foreground">설명</h3>
+                <p className="whitespace-pre-wrap break-keep text-sm text-muted-foreground wrap-anywhere">
+                  {report.content.detailDescription || "-"}
+                </p>
+              </div>
 
-      <ReportActionPanel
-        reportId={reportDetailQuery.data.id}
-        isReportPending={reportDetailQuery.data.status === "pending"}
-        contentName={reportDetailQuery.data.content.name || "(이름 없음)"}
-        isContentRestricted={reportDetailQuery.data.content.moderationStatus === "restricted"}
-      />
-    </>
+              {!!report.content.prompt && (
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-sm font-medium text-foreground">프롬프트</h3>
+                  <p className="whitespace-pre-wrap rounded-lg bg-secondary p-3 text-sm text-foreground wrap-anywhere">
+                    {report.content.prompt}
+                  </p>
+                </div>
+              )}
+            </section>
+          </DetailLayout>
+        );
+      }}
+    </QueryState>
   );
 }

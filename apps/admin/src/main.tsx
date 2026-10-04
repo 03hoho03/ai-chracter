@@ -7,6 +7,7 @@ import { AppProviders } from "./app/providers";
 import { router } from "./app/router";
 
 import "@ai-character-chat/ui/globals.css";
+import "./app/styles/admin.css";
 
 // `index.html`의 `#root`가 사라지면 `!`는 `createRoot(null)`로 넘겨 리액트 내부에서 터진다 —
 // 스택이 앱 코드를 안 가리켜 원인을 찾기 어렵다. 부팅 지점이라 한 번만 도는 검사다.
@@ -17,7 +18,11 @@ createRoot(rootElement).render(
   <StrictMode>
     <AppProviders>
       <RouterProvider router={router} />
-      <Toaster />
+      {/* 하단 조치 바가 있으면 그 위로 올린다(`app/styles/admin.css` 의 `--admin-toast-lift`). 기본 간격은 sonner 기본값이다. */}
+      <Toaster
+        offset={{ bottom: "calc(24px + var(--admin-toast-lift))" }}
+        mobileOffset={{ bottom: "calc(16px + var(--admin-toast-lift))" }}
+      />
     </AppProviders>
   </StrictMode>,
 );

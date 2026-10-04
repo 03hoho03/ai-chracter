@@ -9,12 +9,12 @@ import {
 } from "@ai-character-chat/ui/components/dialog";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
-import { createCallable } from "react-call";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 import { CONTENT_TYPE_LABELS, useHomeCurationMutation, type ContentTypeFilter } from "@/entities/admin-content";
 import { isApiError } from "@/shared/lib/api/client";
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 /** 지정 거부 code 는 OpenAPI 에 노출되지 않아 생성 타입이 없다 — 구조화 dict `detail` 을 직접 읽는다. */
 const REJECTION_MESSAGES: Record<string, string> = {
@@ -104,7 +104,7 @@ export const HomeCurationConfirmModal = createCallable<HomeCurationConfirmModalP
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => call.end()}>
+            <Button type="button" variant="outline" autoFocus onClick={() => call.end()}>
               취소
             </Button>
             <Button type="submit" disabled={isSubmitting}>
