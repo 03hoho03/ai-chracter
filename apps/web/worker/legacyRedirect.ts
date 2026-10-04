@@ -32,15 +32,30 @@ export function buildLegacyRedirect(request: Request, env: WorkerEnv): Response 
 
   if (env.PUBLIC_ORIGIN === undefined) return undefined;
 
-  let target: URL;
+  let publicHost: string;
   try {
-    // 문자열 결합이 아니라 `new URL(path, base)`이라 `PUBLIC_ORIGIN`의 끝 슬래시가
-    // `//content/...` 같은 이중 슬래시를 만들지 않는다.
-    target = new URL(url.pathname + url.search, env.PUBLIC_ORIGIN);
+    publicHost = new URL(env.PUBLIC_ORIGIN).host;
   } catch {
     return undefined;
   }
-  if (target.host === LEGACY_PRODUCTION_HOST) return undefined;
+  if (publicHost === LEGACY_PRODUCTION_HOST) return undefined;
+  // `ddona.site:443` 처럼 scheme 이 빠진 값은 던지지 않고 `ddona.site:` 를 scheme 으로 읽어
+  // host 가 빈 URL 이 된다. 그 위에서는 아래 루트 폴백까지 던지므로 리다이렉트를 포기한다.
+  if (publicHost === "") return undefined;
+
+  // 문자열 결합이 아니라 `new URL(path, base)`이라 `PUBLIC_ORIGIN`의 끝 슬래시가
+  // `//content/...` 같은 이중 슬래시를 만들지 않는다.
+  // 대신 경로가 `//evil.com` 처럼 시작하면 scheme-relative 로 읽혀 host 가 바뀐다 — 공격자가
+  // 옛 도메인 링크로 임의 사이트에 301 을 태울 수 있다. 문제 형태(`//`, `\`, `///` …)를 하나씩
+  // 막는 대신 목적지 host 가 새 오리진과 다르면 새 오리진 루트로 보낸다. `//[x` 처럼 host 자리가
+  // 파싱되지 않아 생성자가 던지는 경로도 같은 부류라 루트로 보낸다.
+  let target: URL | undefined;
+  try {
+    target = new URL(url.pathname + url.search, env.PUBLIC_ORIGIN);
+  } catch {
+    target = undefined;
+  }
+  if (target?.host !== publicHost) target = new URL("/", env.PUBLIC_ORIGIN);
 
   return new Response(null, { status: 301, headers: { location: target.href } });
 }
