@@ -6,6 +6,7 @@ import { canActOnContentReport, ReportActionPanel } from "@/features/act-on-repo
 import { CONTENT_TYPE_LABELS, MODERATION_STATUS_LABELS } from "@/entities/admin-content";
 import { REPORT_REASON_LABELS, REPORT_STATUS_LABELS, useReportDetailQuery, type ReportTarget } from "@/entities/report";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { useRememberedListSearch } from "@/shared/lib/list-search-memory/listSearchMemory";
 import { DetailLayout } from "@/shared/ui/DetailLayout";
 import { PageContainer } from "@/shared/ui/PageContainer";
 import { PageHeader } from "@/shared/ui/PageHeader";
@@ -20,13 +21,21 @@ type ReportDetailPageProps = {
 }
 
 export function ReportDetailPage({ reportId, target }: ReportDetailPageProps) {
+  const rememberedListSearch = useRememberedListSearch("/reports/");
+  // 마지막으로 본 신고 목록으로 돌아가되, 그 목록이 다른 대상의 표였으면 이 신고의 대상 표로 간다 — 목록 search 의
+  // 대상이 비어 있으면 작품 신고 표다.
+  const listSearch =
+    rememberedListSearch !== undefined && (rememberedListSearch.target ?? "content") === target
+      ? rememberedListSearch
+      : { target };
+
   return (
     <PageContainer>
       <PageHeader
         title="신고 상세"
         back={
           <Button asChild variant="ghost" size="sm" className="self-start">
-            <Link to="/reports" search={{ target }}>
+            <Link to="/reports" search={listSearch}>
               <ChevronLeft aria-hidden />
               목록으로
             </Link>

@@ -2,6 +2,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Link, useNavigate } from "@tanstack/react-router";
 
 import { useNoticeDetailQuery } from "@/entities/notice";
+import { useRememberedListSearch } from "@/shared/lib/list-search-memory/listSearchMemory";
 import { DetailLayout } from "@/shared/ui/DetailLayout";
 import { PageContainer } from "@/shared/ui/PageContainer";
 
@@ -13,13 +14,17 @@ type NoticeDetailPageProps = {
 };
 
 export function NoticeDetailPage({ noticeId }: NoticeDetailPageProps) {
+  // 마지막으로 본 목록(필터·검색어·페이지)으로 돌아간다 — 대시보드 등 다른 입구로 들어왔어도 같다.
+  const rememberedListSearch = useRememberedListSearch("/notices/");
   const isNew = noticeId === "new";
 
   return (
     <PageContainer>
       <DetailLayout actions={null}>
         <Button asChild variant="outline" size="sm" className="self-start">
-          <Link to="/notices">목록으로</Link>
+          <Link to="/notices" search={rememberedListSearch ?? {}}>
+            목록으로
+          </Link>
         </Button>
 
         <h1 className="text-2xl font-bold tracking-tight text-foreground">{isNew ? "새 공지" : "공지 편집"}</h1>

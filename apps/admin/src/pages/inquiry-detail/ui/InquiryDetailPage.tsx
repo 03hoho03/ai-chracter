@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router";
 import { InquiryReplyPanel } from "@/features/reply-inquiry";
 import { INQUIRY_CATEGORY_LABELS, INQUIRY_STATUS_LABELS, useInquiryDetailQuery } from "@/entities/inquiry";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { useRememberedListSearch } from "@/shared/lib/list-search-memory/listSearchMemory";
 import { DetailLayout } from "@/shared/ui/DetailLayout";
 import { PageContainer } from "@/shared/ui/PageContainer";
 
@@ -12,11 +13,15 @@ type InquiryDetailPageProps = {
 }
 
 export function InquiryDetailPage({ inquiryId }: InquiryDetailPageProps) {
+  // 마지막으로 본 목록(필터·검색어·페이지)으로 돌아간다 — 대시보드 등 다른 입구로 들어왔어도 같다.
+  const rememberedListSearch = useRememberedListSearch("/inquiries/");
   return (
     <PageContainer>
       <DetailLayout actions={null}>
         <Button asChild variant="outline" size="sm" className="self-start">
-          <Link to="/inquiries">목록으로</Link>
+          <Link to="/inquiries" search={rememberedListSearch ?? {}}>
+            목록으로
+          </Link>
         </Button>
 
         <h1 className="text-2xl font-bold tracking-tight text-foreground">문의 상세</h1>

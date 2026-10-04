@@ -5,6 +5,7 @@ import { Link } from "@tanstack/react-router";
 import { CONTENT_TYPE_LABELS, CONTENT_VISIBILITY_LABELS, MODERATION_STATUS_LABELS, useContentDetailQuery } from "@/entities/admin-content";
 import { formatCount } from "@/shared/lib/format/formatCount";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { useRememberedListSearch } from "@/shared/lib/list-search-memory/listSearchMemory";
 import { DetailLayout } from "@/shared/ui/DetailLayout";
 import { PageContainer } from "@/shared/ui/PageContainer";
 
@@ -17,11 +18,15 @@ type ContentDetailPageProps = {
 };
 
 export function ContentDetailPage({ contentId }: ContentDetailPageProps) {
+  // 마지막으로 본 목록(필터·검색어·페이지)으로 돌아간다 — 대시보드 등 다른 입구로 들어왔어도 같다.
+  const rememberedListSearch = useRememberedListSearch("/contents/");
   return (
     <PageContainer>
       <DetailLayout actions={null}>
         <Button asChild variant="outline" size="sm" className="self-start">
-          <Link to="/contents">목록으로</Link>
+          <Link to="/contents" search={rememberedListSearch ?? {}}>
+            목록으로
+          </Link>
         </Button>
 
         <h1 className="text-2xl font-bold tracking-tight text-foreground">작품 상세</h1>

@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 
 import { requireSession } from "../entities/session";
+import { useRememberListSearch } from "../shared/lib/list-search-memory/listSearchMemory";
 import { UsersListPage } from "../pages/users";
 
 // 잘못된 값은 화면을 죽이는 대신 기본값으로 삼킨다(`.optional().catch(undefined)`,
@@ -24,8 +25,10 @@ export const Route = createFileRoute("/users/")({
 });
 
 function RouteComponent() {
-  const { page = 1, q, suspended, beta } = Route.useSearch();
+  const search = Route.useSearch();
+  const { page = 1, q, suspended, beta } = search;
   const navigate = Route.useNavigate();
+  useRememberListSearch("/users/", search);
 
   return (
     <UsersListPage

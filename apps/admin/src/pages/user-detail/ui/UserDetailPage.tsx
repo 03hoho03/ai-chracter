@@ -13,6 +13,7 @@ import {
 import { CHAT_MESSAGE_REPORT_REASON_LABELS, REPORT_REASON_LABELS, REPORT_STATUS_LABELS } from "@/entities/report";
 import { formatCount } from "@/shared/lib/format/formatCount";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { useRememberedListSearch } from "@/shared/lib/list-search-memory/listSearchMemory";
 import { DetailLayout } from "@/shared/ui/DetailLayout";
 import { PageContainer } from "@/shared/ui/PageContainer";
 
@@ -40,11 +41,15 @@ const REASON_CATEGORY_LABELS_ALL: Record<string, string> = {
 };
 
 export function UserDetailPage({ userId }: UserDetailPageProps) {
+  // 마지막으로 본 목록(필터·검색어·페이지)으로 돌아간다 — 대시보드 등 다른 입구로 들어왔어도 같다.
+  const rememberedListSearch = useRememberedListSearch("/users/");
   return (
     <PageContainer>
       <DetailLayout actions={null}>
         <Button asChild variant="outline" size="sm" className="self-start">
-          <Link to="/users">목록으로</Link>
+          <Link to="/users" search={rememberedListSearch ?? {}}>
+            목록으로
+          </Link>
         </Button>
 
         <h1 className="text-2xl font-bold tracking-tight text-foreground">유저 상세</h1>
