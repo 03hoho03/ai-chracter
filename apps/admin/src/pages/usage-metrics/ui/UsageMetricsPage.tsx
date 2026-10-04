@@ -108,7 +108,7 @@ export function UsageMetricsPage({ from, to, onRangeChange }: UsageMetricsPagePr
           <div className={cn("rounded-xl border border-border bg-card p-6", CHART_FOCUS_CLASS)}>
             <h2 className="mb-4 text-sm font-medium text-foreground">전체 메시지 전송량 추이</h2>
             <ChartContainer config={chartConfig} className="aspect-auto h-64 w-full">
-              <LineChart data={usageMetricsQuery.data.trend} margin={{ left: 8, right: 8 }}>
+              <LineChart title="전체 메시지 전송량 추이" data={usageMetricsQuery.data.trend} margin={{ left: 8, right: 8 }}>
                 <CartesianGrid vertical={false} />
                 <XAxis
                   dataKey="date"

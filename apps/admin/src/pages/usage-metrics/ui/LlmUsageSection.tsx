@@ -214,7 +214,8 @@ function UsageTable({ rows, showDay }: UsageTableProps) {
 function Definitions({ data }: { data: AdminLlmUsageResponse }) {
   return (
     <details className="text-xs text-muted-foreground">
-      <summary className="w-fit cursor-pointer rounded-sm font-medium outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
+      {/* 손가락 포인터에서는 한 줄(16px) 위아래로 12px 를 더해 누르는 높이를 40px 로 올린다. */}
+      <summary className="w-fit cursor-pointer rounded-sm font-medium outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 pointer-coarse:py-3">
         열 정의와 단가표
       </summary>
       <dl className="mt-3 grid max-w-3xl gap-x-6 gap-y-2 sm:grid-cols-[auto_1fr]">

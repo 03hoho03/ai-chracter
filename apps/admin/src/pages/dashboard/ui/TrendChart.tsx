@@ -82,7 +82,7 @@ function MiniTrendChart({ title, dataKey, data, config }: MiniTrendChartProps) {
     <div className={cn("rounded-xl border border-border bg-card p-6", CHART_FOCUS_CLASS)}>
       <h3 className="mb-4 text-sm font-medium text-foreground">{title}</h3>
       <ChartContainer config={config} className="aspect-auto h-48 w-full">
-        <LineChart data={data} margin={{ left: 8, right: 8 }}>
+        <LineChart title={`${title} 추이`} data={data} margin={{ left: 8, right: 8 }}>
           <CartesianGrid vertical={false} />
           <XAxis
             dataKey="date"

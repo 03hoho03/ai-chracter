@@ -117,7 +117,9 @@ export function LegalEditor({ kind, documentQuery, draftBody, onDraftBodyChange 
             <TabsTrigger value="preview">미리보기</TabsTrigger>
           </TabsList>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <TabsContent value="edit" forceMount className={PANE_CLASS}>
+            {/* Radix 탭 패널은 Tab 정지(`tabIndex=0`)인데 편집 패널은 진입점이 곧 안의 편집칸이라 정지를 뺀다 — 남기면
+                포커스가 보이지 않는 칸에 한 번 앉았다가 다음 Tab 에야 편집칸에 닿는다. */}
+            <TabsContent value="edit" forceMount tabIndex={-1} className={PANE_CLASS}>
               <Textarea
                 value={draftBody}
                 onChange={(event) => onDraftBodyChange(event.target.value)}
@@ -129,7 +131,11 @@ export function LegalEditor({ kind, documentQuery, draftBody, onDraftBodyChange 
             <TabsContent
               value="preview"
               forceMount
-              className={cn(PANE_CLASS, "max-h-128 overflow-y-auto rounded-lg border border-border bg-card p-4")}
+              // 미리보기는 긴 본문을 키보드로 스크롤하는 Tab 정지로 남긴다 — 그래서 하우스 포커스 표시(불투명 보더 + 50% 링)를 준다.
+              className={cn(
+                PANE_CLASS,
+                "max-h-128 overflow-y-auto rounded-lg border border-border bg-card p-4 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+              )}
             >
               {draftBody.trim() ? (
                 <Markdown content={draftBody} className="[&_code]:bg-secondary" />
