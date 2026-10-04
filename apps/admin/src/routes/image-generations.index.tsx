@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { IMAGE_GENERATION_STATUS_VALUES, IMAGE_STYLE_VALUES } from "../entities/admin-image-generation";
 import { requireSession } from "../entities/session";
+import { useRememberListSearch } from "../shared/lib/list-search-memory/listSearchMemory";
 import { ImageGenerationsListPage } from "../pages/image-generations";
 
 const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -29,8 +30,10 @@ export const Route = createFileRoute("/image-generations/")({
 });
 
 function RouteComponent() {
-  const { page = 1, q, status, style, from, to } = Route.useSearch();
+  const search = Route.useSearch();
+  const { page = 1, q, status, style, from, to } = search;
   const navigate = Route.useNavigate();
+  useRememberListSearch("/image-generations/", search);
 
   return (
     <ImageGenerationsListPage

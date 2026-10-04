@@ -11,8 +11,8 @@ import { SkipLink } from "./SkipLink";
  *
  * - 스크롤 컨테이너는 window 하나다. 이 셸과 본문 래퍼에 overflow 를 걸지 않는다 — 상단바·사이드바의 sticky 가
  *   죽고, 라우터의 이동 시 맨 위 리셋도 window 기준이다.
- * - 본문 래퍼는 `<main>` 이 아니라 div 다. 각 화면이 아직 자기 `<main>` 을 가져, 여기서 감싸면 main 이 중첩된다.
- *   건너뛰기 링크가 포커스를 줄 수 있게 `tabIndex={-1}` 이다.
+ * - 본문 래퍼가 문서의 유일한 `<main>` 이다 — 화면은 `PageContainer`(div)로 폭·거터만 정하고 랜드마크를 따로 두지
+ *   않는다. 건너뛰기 링크가 포커스를 줄 수 있게 `tabIndex={-1}` 이다.
  */
 export function AdminShell({ children }: { children: ReactNode }) {
   return (
@@ -21,9 +21,9 @@ export function AdminShell({ children }: { children: ReactNode }) {
       <div className="flex min-h-dvh flex-col lg:flex-row">
         <AdminTopBar />
         <AdminSidebar />
-        <div id={MAIN_CONTENT_ID} tabIndex={-1} className="min-w-0 flex-1 outline-none">
+        <main id={MAIN_CONTENT_ID} tabIndex={-1} className="min-w-0 flex-1 outline-none">
           {children}
-        </div>
+        </main>
       </div>
     </>
   );

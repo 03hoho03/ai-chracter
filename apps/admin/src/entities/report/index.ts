@@ -5,11 +5,11 @@ export { useModerationActionMutation, type ModerationActionType } from "./api/us
 export { useCommentReportListQuery } from "./api/useCommentReportListQuery";
 export { useCommentReportDetailQuery } from "./api/useCommentReportDetailQuery";
 export { useCommentReportActionMutation } from "./api/useCommentReportActionMutation";
-export type { CommentReportDetail, CommentCurrent, CommentReportAction } from "./api/commentReport";
+export type { CommentReportDetail, CommentCurrent, CommentReportAction, CommentReportList } from "./api/commentReport";
 export { useChatMessageReportListQuery } from "./api/useChatMessageReportListQuery";
 export { useChatMessageReportDetailQuery } from "./api/useChatMessageReportDetailQuery";
 export { useChatMessageReportActionMutation } from "./api/useChatMessageReportActionMutation";
-export type { ChatMessageReportDetail, ChatMessageReportAction } from "./api/chatMessageReport";
+export type { ChatMessageReportDetail, ChatMessageReportAction, ChatMessageReportList } from "./api/chatMessageReport";
 export {
   isReportReasonCategory,
   isReportTarget,

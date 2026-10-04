@@ -8,6 +8,7 @@ import {
   MODERATION_STATUS_VALUES,
 } from "../entities/admin-content";
 import { requireSession } from "../entities/session";
+import { useRememberListSearch } from "../shared/lib/list-search-memory/listSearchMemory";
 import { ContentsListPage } from "../pages/contents";
 
 // 잘못된 값은 화면을 죽이는 대신 기본값으로 삼킨다(`.optional().catch(undefined)`,
@@ -30,8 +31,10 @@ export const Route = createFileRoute("/contents/")({
 });
 
 function RouteComponent() {
-  const { page = 1, type, visibility, moderationStatus, q, sort } = Route.useSearch();
+  const search = Route.useSearch();
+  const { page = 1, type, visibility, moderationStatus, q, sort } = search;
   const navigate = Route.useNavigate();
+  useRememberListSearch("/contents/", search);
 
   return (
     <ContentsListPage

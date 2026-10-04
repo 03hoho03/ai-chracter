@@ -1,35 +1,90 @@
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@ai-character-chat/ui/components/table";
 import { Link } from "@tanstack/react-router";
 
 import { CONTENT_TYPE_LABELS } from "@/entities/admin-content";
-import { REPORT_REASON_LABELS, REPORT_STATUS_LABELS, useCommentReportListQuery, type ReportStatusFilter } from "@/entities/report";
+import {
+  REPORT_REASON_LABELS,
+  REPORT_STATUS_LABELS,
+  useCommentReportListQuery,
+  type CommentReportList,
+  type ReportStatusFilter,
+} from "@/entities/report";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { DataList, type DataListColumn } from "@/shared/ui/DataList";
 import { Pagination } from "@/shared/ui/Pagination";
+import { QueryState } from "@/shared/ui/QueryState";
 
-type CommentReportsTableProps = { page: number; status?: ReportStatusFilter; onPageChange: (page: number) => void };
+import { reportListEmpty } from "./reportListEmpty";
 
-export function CommentReportsTable({ page, status, onPageChange }: CommentReportsTableProps) {
+type CommentReportsTableProps = {
+  page: number;
+  status?: ReportStatusFilter;
+  onPageChange: (page: number) => void;
+  onReset: () => void;
+};
+
+type CommentReportListItem = CommentReportList["items"][number];
+
+const COLUMNS: readonly DataListColumn<CommentReportListItem>[] = [
+  { id: "reason", header: "신고 사유", isPrimary: true, cell: (item) => `${REPORT_REASON_LABELS[item.reasonCategory]} 신고` },
+  {
+    id: "content",
+    header: "작품",
+    cell: (item) => (
+      <span className="text-muted-foreground">
+        {CONTENT_TYPE_LABELS[item.contentType]} · {item.contentName || "(이름 없음)"}
+      </span>
+    ),
+  },
+  { id: "created", header: "신고일시", cell: (item) => formatDateTime(item.createdAt) },
+  { id: "evidence", header: "원문 증거", cell: (item) => <EvidenceState isAvailable={item.evidenceAvailable} /> },
+  { id: "status", header: "처리상태", cell: (item) => REPORT_STATUS_LABELS[item.status] },
+];
+
+/** 링크에 `target`을 반드시 실어야 한다 — 빠지면 상세 라우트가 기본값인 작품 신고로 열려 이 id로 작품 신고 상세를 부른다. */
+export function CommentReportsTable({ page, status, onPageChange, onReset }: CommentReportsTableProps) {
   const query = useCommentReportListQuery({ page, status });
-  if (query.isPending) return <div className="h-64 animate-pulse rounded-xl bg-muted" />;
-  if (query.isError) return <p role="alert" className="text-sm text-destructive-text">댓글 신고를 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>;
-  if (query.data.items.length === 0) return <p className="text-sm text-muted-foreground">접수된 댓글 신고가 없어요.</p>;
-  return <>
-    <div className="overflow-hidden rounded-xl border border-border">
-      <Table>
-        <TableHeader><TableRow>
-          <TableHead>신고 사유·작품</TableHead><TableHead>신고일시</TableHead><TableHead>원문 증거</TableHead><TableHead>처리상태</TableHead>
-        </TableRow></TableHeader>
-        <TableBody>{query.data.items.map((item) => <TableRow key={item.id}>
-          <TableCell><Link to="/reports/$reportId" params={{ reportId: item.id }} search={{ target: "comment" }}
-            className="font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-ring">
-            {REPORT_REASON_LABELS[item.reasonCategory]} 신고 보기
-          </Link><p className="mt-1 text-xs text-muted-foreground">{CONTENT_TYPE_LABELS[item.contentType]} · {item.contentName || "(이름 없음)"}</p></TableCell>
-          <TableCell>{formatDateTime(item.createdAt)}</TableCell>
-          <TableCell className="text-muted-foreground">{item.evidenceAvailable ? "보관 중" : "만료·파기"}</TableCell>
-          <TableCell>{REPORT_STATUS_LABELS[item.status]}</TableCell>
-        </TableRow>)}</TableBody>
-      </Table>
-    </div>
-    <Pagination page={query.data.page} totalPages={query.data.totalPages} totalCount={query.data.totalCount} onPageChange={onPageChange} />
-  </>;
+
+  return (
+    <QueryState
+      query={query}
+      errorMessage="댓글 신고를 불러오지 못했어요."
+      isEmpty={(data) => data.items.length === 0}
+      getPage={(data) => data}
+      empty={reportListEmpty({ noun: "댓글 신고", status, onReset })}
+    >
+      {(data) => (
+        <>
+          <DataList
+            caption="댓글 신고 목록"
+            rows={data.items}
+            getRowKey={(item) => item.id}
+            columns={COLUMNS}
+            renderRowTarget={(item, props) => (
+              <Link to="/reports/$reportId" params={{ reportId: item.id }} search={{ target: "comment" }} {...props} />
+            )}
+            card={{
+              title: (item) => `${REPORT_REASON_LABELS[item.reasonCategory]} 신고`,
+              meta: (item) => (
+                <>
+                  <span className="wrap-anywhere">
+                    {CONTENT_TYPE_LABELS[item.contentType]} · {item.contentName || "(이름 없음)"}
+                  </span>
+                  <span aria-hidden>·</span>
+                  <EvidenceState isAvailable={item.evidenceAvailable} />
+                  <span aria-hidden>·</span>
+                  <span className="font-medium text-foreground">{REPORT_STATUS_LABELS[item.status]}</span>
+                </>
+              ),
+              trailing: (item) => formatDateTime(item.createdAt),
+            }}
+          />
+          <Pagination page={data.page} totalPages={data.totalPages} totalCount={data.totalCount} onPageChange={onPageChange} />
+        </>
+      )}
+    </QueryState>
+  );
+}
+
+function EvidenceState({ isAvailable }: { isAvailable: boolean }) {
+  return <span className="text-muted-foreground">{isAvailable ? "증거 보관 중" : "증거 만료·파기"}</span>;
 }

@@ -25,8 +25,9 @@ type SelectFilterDef<V extends string> = {
   onChange: (value: V | undefined) => void;
 };
 
-/** 옵션 타입을 지워 한 배열에 담은 필터 하나. `selectFilter` 로만 만든다. */
-export type FilterField = {
+/** 옵션 타입을 지워 담은 셀렉트 필터. `selectFilter` 로만 만든다. */
+type SelectFilterField = {
+  kind: "select";
   id: string;
   label: string;
   options: readonly FilterOption<string>[];
@@ -37,13 +38,33 @@ export type FilterField = {
   select: (raw: string) => void;
 };
 
+/** 시작일·종료일 한 쌍(`YYYY-MM-DD`). 둘 다 비어 있으면 기간을 거르지 않는다. */
+type DateRangeFilterField = {
+  kind: "date-range";
+  id: string;
+  /** 보이는 접두 라벨("기간"). */
+  label: string;
+  from?: string;
+  to?: string;
+  /** 바뀐 끝만 담아 부른다(시작일을 고르면 `{ from }`) — 해제 칩은 둘 다 `undefined` 로 비운다. */
+  onChange: (patch: { from?: string; to?: string }) => void;
+};
+
+/** 필터 바 한 칸. 종류(`kind`)마다 모양이 다르고, 한 배열에 섞어 담는다. */
+export type FilterField = SelectFilterField | DateRangeFilterField;
+
 export function selectFilter<V extends string>({ onChange, options, role = "filter", ...rest }: SelectFilterDef<V>): FilterField {
   return {
     ...rest,
+    kind: "select",
     options,
     role,
     select: (raw) => onChange(options.find((option) => option.value === raw)?.value),
   };
+}
+
+export function dateRangeFilter(def: Omit<DateRangeFilterField, "kind">): FilterField {
+  return { ...def, kind: "date-range" };
 }
 
 type FilterBarProps = {
@@ -62,15 +83,15 @@ const DEFAULT_VALUE = "__default__";
  *
  * 자기 폭(컨테이너 쿼리 `@2xl`, 672px)으로 두 모양을 가른다 — 사이드바가 접히고 펴지면 같은 뷰포트에서도 본문 폭이
  * 바뀌어서다.
- * - 넓을 때: 검색 + 셀렉트들이 한 줄에서 줄바꿈된다. 트리거마다 "종류: 전체"처럼 보이는 접두 라벨이 있고 그 라벨이
+ * - 넓을 때: 검색 + 셀렉트·기간 칸이 한 줄에서 줄바꿈된다. 트리거마다 "종류: 전체"처럼 보이는 접두 라벨이 있고 그 라벨이
  *   접근 이름이다. 값이 기본값이면 흐린 글자, 걸렸으면 진한 글자다(색이 아니라 명도로 가른다).
- * - 좁을 때: 검색 + "필터 (n)" 버튼 → 바텀시트에 라벨 + 전폭 셀렉트를 세로로 쌓고, 걸린 필터는 아래에 해제 칩으로 남는다.
+ * - 좁을 때: 검색 + "필터 (n)" 버튼 → 바텀시트에 라벨 + 전폭 컨트롤을 세로로 쌓고, 걸린 필터는 아래에 해제 칩으로 남는다.
  *   시트 안 변경도 즉시 적용된다(넓을 때와 같은 동작).
  */
 export function FilterBar({ search, fields, onReset }: FilterBarProps) {
   const id = useId();
   const [isSheetOpen, setIsSheetOpen] = useState(false);
-  const appliedFields = fields.filter((field) => field.role === "filter" && field.value !== undefined);
+  const appliedFields = fields.filter(isApplied);
 
   return (
     <div className="@container">
@@ -80,26 +101,7 @@ export function FilterBar({ search, fields, onReset }: FilterBarProps) {
           {!!search && <FilterSearchForm key={search.value ?? ""} {...search} />}
 
           {fields.map((field) => (
-            <Select key={field.id} value={field.value ?? DEFAULT_VALUE} onValueChange={field.select}>
-              {/* 콤보박스는 내용에서 이름을 얻지 않아 보이는 접두 라벨을 `aria-labelledby` 로 이름 삼는다(값은 콤보박스
-                  값으로 따로 읽힌다). Radix 의 값 요소는 className 을 버려서 값 글자 명도는 트리거에서 자식 선택자로 건다. */}
-              <SelectTrigger
-                size="sm"
-                aria-labelledby={`${id}-${field.id}-inline-label`}
-                className={cn(
-                  "hidden w-auto @2xl:flex",
-                  field.value === undefined
-                    ? "*:data-[slot=select-value]:text-muted-foreground"
-                    : "*:data-[slot=select-value]:font-medium",
-                )}
-              >
-                <span id={`${id}-${field.id}-inline-label`} className="text-muted-foreground">
-                  {field.label}:
-                </span>
-                <SelectValue />
-              </SelectTrigger>
-              <FilterOptions field={field} />
-            </Select>
+            <InlineField key={field.id} field={field} labelId={`${id}-${field.id}-inline-label`} />
           ))}
 
           <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
@@ -121,15 +123,7 @@ export function FilterBar({ search, fields, onReset }: FilterBarProps) {
               </SheetHeader>
               <div className="flex min-h-0 flex-col gap-4 overflow-y-auto px-4">
                 {fields.map((field) => (
-                  <div key={field.id} className="flex flex-col gap-1.5">
-                    <Label htmlFor={`${id}-${field.id}`}>{field.label}</Label>
-                    <Select value={field.value ?? DEFAULT_VALUE} onValueChange={field.select}>
-                      <SelectTrigger id={`${id}-${field.id}`} className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <FilterOptions field={field} />
-                    </Select>
-                  </div>
+                  <SheetField key={field.id} field={field} controlId={`${id}-${field.id}`} />
                 ))}
               </div>
               <div className="flex shrink-0 items-center justify-between gap-2 px-4 pt-4 pb-4-safe">
@@ -148,7 +142,7 @@ export function FilterBar({ search, fields, onReset }: FilterBarProps) {
         {appliedFields.length > 0 && (
           <div className="flex flex-wrap gap-2 @2xl:hidden">
             {appliedFields.map((field) => {
-              const valueLabel = field.options.find((option) => option.value === field.value)?.label ?? field.value;
+              const valueLabel = appliedValueLabel(field);
               return (
                 <Button
                   key={field.id}
@@ -157,7 +151,7 @@ export function FilterBar({ search, fields, onReset }: FilterBarProps) {
                   size="sm"
                   className="h-auto min-h-8 max-w-full rounded-full whitespace-normal wrap-anywhere"
                   aria-label={`${field.label} 필터 해제: ${valueLabel}`}
-                  onClick={() => field.select(DEFAULT_VALUE)}
+                  onClick={() => clearField(field)}
                 >
                   {field.label}: {valueLabel}
                   <X aria-hidden />
@@ -171,7 +165,111 @@ export function FilterBar({ search, fields, onReset }: FilterBarProps) {
   );
 }
 
-function FilterOptions({ field }: { field: FilterField }) {
+/** 정렬은 목록을 줄이지 않아 "필터 (n)" 수와 해제 칩에서 빠진다. */
+function isApplied(field: FilterField) {
+  if (field.kind === "date-range") return field.from !== undefined || field.to !== undefined;
+  return field.role === "filter" && field.value !== undefined;
+}
+
+function appliedValueLabel(field: FilterField) {
+  if (field.kind === "date-range") return `${field.from ?? ""} ~ ${field.to ?? ""}`.trim();
+  return field.options.find((option) => option.value === field.value)?.label ?? field.value ?? "";
+}
+
+function clearField(field: FilterField) {
+  if (field.kind === "date-range") field.onChange({ from: undefined, to: undefined });
+  else field.select(DEFAULT_VALUE);
+}
+
+/** 넓을 때 한 줄에 놓이는 모양. 좁을 때는 숨고 시트가 같은 값을 보여 준다. */
+function InlineField({ field, labelId }: { field: FilterField; labelId: string }) {
+  if (field.kind === "date-range") {
+    return (
+      <div role="group" aria-labelledby={labelId} className="hidden items-center gap-1.5 @2xl:flex">
+        <span id={labelId} className="text-sm text-muted-foreground">
+          {field.label}:
+        </span>
+        <DateRangeInputs field={field} className="h-8 w-auto" />
+      </div>
+    );
+  }
+
+  return (
+    <Select value={field.value ?? DEFAULT_VALUE} onValueChange={field.select}>
+      {/* 콤보박스는 내용에서 이름을 얻지 않아 보이는 접두 라벨을 `aria-labelledby` 로 이름 삼는다(값은 콤보박스
+          값으로 따로 읽힌다). Radix 의 값 요소는 className 을 버려서 값 글자 명도는 트리거에서 자식 선택자로 건다. */}
+      <SelectTrigger
+        size="sm"
+        aria-labelledby={labelId}
+        className={cn(
+          "hidden w-auto @2xl:flex",
+          field.value === undefined
+            ? "*:data-[slot=select-value]:text-muted-foreground"
+            : "*:data-[slot=select-value]:font-medium",
+        )}
+      >
+        <span id={labelId} className="text-muted-foreground">
+          {field.label}:
+        </span>
+        <SelectValue />
+      </SelectTrigger>
+      <FilterOptions field={field} />
+    </Select>
+  );
+}
+
+/** 필터 시트 안의 모양 — 라벨이 위, 컨트롤이 전폭. */
+function SheetField({ field, controlId }: { field: FilterField; controlId: string }) {
+  if (field.kind === "date-range") {
+    return (
+      <fieldset className="flex min-w-0 flex-col gap-1.5">
+        <legend className="mb-1.5 text-sm font-medium text-foreground">{field.label}</legend>
+        <DateRangeInputs field={field} className="w-full" />
+      </fieldset>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={controlId}>{field.label}</Label>
+      <Select value={field.value ?? DEFAULT_VALUE} onValueChange={field.select}>
+        <SelectTrigger id={controlId} className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <FilterOptions field={field} />
+      </Select>
+    </div>
+  );
+}
+
+/** 시작일은 종료일을, 종료일은 시작일을 넘지 못하게 서로의 값을 한계로 준다. 비우면 그 끝은 거르지 않는다. */
+function DateRangeInputs({ field, className }: { field: DateRangeFilterField; className: string }) {
+  return (
+    <div className="flex min-w-0 items-center gap-1.5">
+      <Input
+        type="date"
+        aria-label="시작일"
+        value={field.from ?? ""}
+        max={field.to}
+        className={cn("min-w-0", className)}
+        onChange={(event) => field.onChange({ from: event.target.value || undefined })}
+      />
+      <span aria-hidden className="text-sm text-muted-foreground">
+        ~
+      </span>
+      <Input
+        type="date"
+        aria-label="종료일"
+        value={field.to ?? ""}
+        min={field.from}
+        className={cn("min-w-0", className)}
+        onChange={(event) => field.onChange({ to: event.target.value || undefined })}
+      />
+    </div>
+  );
+}
+
+function FilterOptions({ field }: { field: SelectFilterField }) {
   return (
     <SelectContent>
       {!!field.defaultLabel && <SelectItem value={DEFAULT_VALUE}>{field.defaultLabel}</SelectItem>}

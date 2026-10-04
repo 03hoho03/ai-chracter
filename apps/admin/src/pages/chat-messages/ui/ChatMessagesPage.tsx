@@ -2,9 +2,13 @@ import { useState } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Link, useNavigate } from "@tanstack/react-router";
+import { ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { DetailLayout } from "@/shared/ui/DetailLayout";
+import { PageContainer } from "@/shared/ui/PageContainer";
+import { PageHeader } from "@/shared/ui/PageHeader";
 
 import { useChatMessagesPager } from "../api/useChatMessagesPager";
 import type { ChatMessagesCursor } from "../api/keys";
@@ -54,22 +58,19 @@ export function ChatMessagesPage({ userId, roomId }: ChatMessagesPageProps) {
 
   if (!viewResult) {
     return (
-      <main className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-10">
-        <Button asChild variant="outline" size="sm" className="self-start">
-          <Link to="/users/$userId" params={{ userId }}>
-            유저 상세로
-          </Link>
-        </Button>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">채팅 열람</h1>
-        <ViewReasonDialog
-          roomId={roomId}
-          onCancel={handleCancel}
-          onConfirmed={(data) => {
-            setViewResult(data);
-            setCursor(nextCursor(data));
-          }}
-        />
-      </main>
+      <PageContainer>
+        <ChatMessagesHeader userId={userId} />
+        <DetailLayout actions={null}>
+          <ViewReasonDialog
+            roomId={roomId}
+            onCancel={handleCancel}
+            onConfirmed={(data) => {
+              setViewResult(data);
+              setCursor(nextCursor(data));
+            }}
+          />
+        </DetailLayout>
+      </PageContainer>
     );
   }
 
@@ -82,46 +83,58 @@ export function ChatMessagesPage({ userId, roomId }: ChatMessagesPageProps) {
   const displayItems = [...viewResult.items, ...olderItems].reverse();
 
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-10">
-      <Button asChild variant="outline" size="sm" className="self-start">
-        <Link to="/users/$userId" params={{ userId }}>
-          유저 상세로
-        </Link>
-      </Button>
+    <PageContainer>
+      <ChatMessagesHeader userId={userId} />
 
-      <h1 className="text-2xl font-bold tracking-tight text-foreground">채팅 열람</h1>
+      <DetailLayout actions={null}>
+        <RoomMemorySection note={viewResult.memoryNote} summary={viewResult.memorySummary} />
 
-      <RoomMemorySection note={viewResult.memoryNote} summary={viewResult.memorySummary} />
+        {displayItems.length === 0 ? (
+          <p className="text-sm text-muted-foreground">메시지가 없어요.</p>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {cursor && (
+              <div className="flex justify-center">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  aria-disabled={messagesPager.isFetching}
+                  onClick={() => {
+                    if (!messagesPager.isFetching) void handleLoadMore();
+                  }}
+                  className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
+                >
+                  {messagesPager.isFetching ? "불러오는 중..." : "더 보기"}
+                </Button>
+              </div>
+            )}
 
-      {displayItems.length === 0 ? (
-        <p className="text-sm text-muted-foreground">메시지가 없어요.</p>
-      ) : (
-        <div className="flex flex-col gap-4">
-          {cursor && (
-            <div className="flex justify-center">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                aria-disabled={messagesPager.isFetching}
-                onClick={() => {
-                  if (!messagesPager.isFetching) void handleLoadMore();
-                }}
-                className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
-              >
-                {messagesPager.isFetching ? "불러오는 중..." : "더 보기"}
-              </Button>
-            </div>
-          )}
+            <ol className="flex flex-col gap-3">
+              {displayItems.map((item) => (
+                <ChatMessageRow key={item.id} item={item} />
+              ))}
+            </ol>
+          </div>
+        )}
+      </DetailLayout>
+    </PageContainer>
+  );
+}
 
-          <ol className="flex flex-col gap-3">
-            {displayItems.map((item) => (
-              <ChatMessageRow key={item.id} item={item} />
-            ))}
-          </ol>
-        </div>
-      )}
-    </main>
+function ChatMessagesHeader({ userId }: { userId: string }) {
+  return (
+    <PageHeader
+      title="채팅 열람"
+      back={
+        <Button asChild variant="ghost" size="sm" className="self-start">
+          <Link to="/users/$userId" params={{ userId }}>
+            <ChevronLeft aria-hidden />
+            유저 상세로
+          </Link>
+        </Button>
+      }
+    />
   );
 }
 
@@ -145,7 +158,7 @@ function ChatMessageRow({ item }: { item: AdminChatMessageItem }) {
        * 구분한다. */}
       <p
         className={cn(
-          "max-w-3/4 whitespace-pre-wrap break-words rounded-lg px-3.5 py-2.5 text-sm text-foreground",
+          "max-w-3/4 whitespace-pre-wrap break-keep rounded-lg px-3.5 py-2.5 text-sm text-foreground wrap-anywhere",
           isUser ? "bg-secondary" : "border border-border bg-card",
         )}
       >
@@ -174,7 +187,7 @@ function RoomMemorySection({
       <div className="flex flex-col gap-1">
         <h3 className="text-xs font-medium text-muted-foreground">꼭 기억할 것</h3>
         {note ? (
-          <p className="whitespace-pre-wrap break-words break-keep text-sm text-foreground">{note}</p>
+          <p className="whitespace-pre-wrap break-keep text-sm text-foreground wrap-anywhere">{note}</p>
         ) : (
           <p className="text-sm text-muted-foreground">비어 있어요.</p>
         )}
@@ -184,7 +197,7 @@ function RoomMemorySection({
           지금까지의 이야기{summary && ` · ${SUMMARY_SOURCE_LABELS[summary.source]}`}
         </h3>
         {summary?.text ? (
-          <p className="whitespace-pre-wrap break-words break-keep text-sm text-foreground">{summary.text}</p>
+          <p className="whitespace-pre-wrap break-keep text-sm text-foreground wrap-anywhere">{summary.text}</p>
         ) : (
           <p className="text-sm text-muted-foreground">{emptySummaryText}</p>
         )}

@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { REPORT_TARGETS } from "../entities/report";
 import { requireSession } from "../entities/session";
+import { useRememberListSearch } from "../shared/lib/list-search-memory/listSearchMemory";
 import { ReportsListPage } from "../pages/reports";
 
 const reportsSearchSchema = z.object({
@@ -18,8 +19,10 @@ export const Route = createFileRoute("/reports/")({
 });
 
 function RouteComponent() {
-  const { page = 1, status, target = "content" } = Route.useSearch();
+  const search = Route.useSearch();
+  const { page = 1, status, target = "content" } = search;
   const navigate = Route.useNavigate();
+  useRememberListSearch("/reports/", search);
 
   return (
     <ReportsListPage

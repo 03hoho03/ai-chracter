@@ -29,6 +29,7 @@ import {
 import { isReportReasonCategory, REPORT_REASON_OPTIONS, REPORT_REASON_VALUES } from "@/entities/report";
 import { isApiError } from "@/shared/lib/api/client";
 import { createCallable } from "@/shared/lib/callable/createCallable";
+import { focusInitialElement } from "@/shared/lib/callable/focusInitialElement";
 
 type UserActionType =
   | "warn"
@@ -123,6 +124,9 @@ type UserActionConfirmModalProps = {
   action: UserActionType;
   restrictableContentCount: number;
   restorableContentCount: number;
+  /** 조치가 반영돼 모달이 닫힌 뒤 부른다 — 상세 레이아웃이 하단 시트를 닫는다. 고칠 입력이 없는 거부(베타 나이 제한)는
+   * 바뀐 것이 없어 부르지 않는다. */
+  onSuccess?: () => void;
 };
 
 /** ContentActionConfirmModal과 같은 결 — `warn`/`suspend`는 사유 카테고리가 필수다. `unsuspend`는
@@ -134,7 +138,7 @@ type UserActionConfirmModalProps = {
  * 두 값은 항상 일치해야 정지 확인의 예고가 사실과 맞는다. `unsuspend`도 같은 모양이다 — 정지로 이용제한됐다가
  * 해제로 정상으로 돌아올 작품 수(`restorableContentCount`)를 예고하고, 응답의 `restoredContentCount`를 toast에 담는다. */
 export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps, void>(
-  ({ call, userId, action, restrictableContentCount, restorableContentCount }) => {
+  ({ call, userId, action, restrictableContentCount, restorableContentCount, onSuccess }) => {
     const queryClient = useQueryClient();
     const warnMutation = useWarnUserMutation(userId);
     const suspendMutation = useSuspendUserMutation(userId);
@@ -213,6 +217,7 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
         // (무효화는 멱등하고 상세 화면의 작품 쿼리는 한 벌뿐이다).
         void queryClient.invalidateQueries({ queryKey: adminContentKeys.all });
         call.end();
+        onSuccess?.();
       } catch (error) {
         // 클로버는 실패 두 가지가 서로 다른 행동을 부른다 — 409는 "다시 누르지 마라"(이미 됐다),
         // 422는 "금액을 고쳐라"(잔액보다 크다). 한 문구로 뭉치면 운영자가 둘 다 재시도한다.
@@ -220,6 +225,8 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
         if (isCloverAction && status === 409) {
           toast.success(CLOVER_DUPLICATE_MESSAGE);
           call.end();
+          // 앞선 요청이 이미 반영했다 — 성공과 같은 결과라 시트도 닫는다.
+          onSuccess?.();
           return;
         }
         if (isCloverAction && status === 422) {
@@ -239,7 +246,7 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
 
     return (
       <Dialog open={!call.ended} onOpenChange={(open) => !open && call.end()}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md" onOpenAutoFocus={focusInitialElement}>
           <DialogHeader>
             <DialogTitle>{ACTION_TITLE[action]}</DialogTitle>
             <DialogDescription>
@@ -364,7 +371,7 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
             </div>
 
             <DialogFooter>
-              <Button type="button" variant="outline" autoFocus onClick={() => call.end()}>
+              <Button type="button" variant="outline" autoFocus data-initial-focus onClick={() => call.end()}>
                 취소
               </Button>
               <Button type="submit" disabled={isSubmitting}>

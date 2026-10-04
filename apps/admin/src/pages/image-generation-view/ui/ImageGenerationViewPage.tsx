@@ -1,10 +1,15 @@
 import { Fragment, useRef, useState } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Link, useNavigate } from "@tanstack/react-router";
+import { ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 
 import { imageGenerationStatusLabel } from "@/entities/admin-image-generation";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { useRememberedListSearch } from "@/shared/lib/list-search-memory/listSearchMemory";
+import { DetailLayout } from "@/shared/ui/DetailLayout";
+import { PageContainer } from "@/shared/ui/PageContainer";
+import { PageHeader } from "@/shared/ui/PageHeader";
 
 import { useImageGenerationsPager } from "../api/useImageGenerationsPager";
 import type {
@@ -15,10 +20,14 @@ import { ViewReasonDialog } from "./ViewReasonDialog";
 
 type ImageGenerationViewPageProps = {
   userId: string;
+  /** 전역 이미지 생성 목록의 행에서 들어왔는지(URL `from=image-generations`). 그러면 "목록으로"·사유 입력 취소가
+   * 유저 상세가 아니라 그 목록(마지막으로 본 필터·페이지)으로 돌아간다. */
+  isFromImageGenerations: boolean;
 };
 
-export function ImageGenerationViewPage({ userId }: ImageGenerationViewPageProps) {
+export function ImageGenerationViewPage({ userId, isFromImageGenerations }: ImageGenerationViewPageProps) {
   const navigate = useNavigate();
+  const rememberedListSearch = useRememberedListSearch("/image-generations/");
   // 페이지 단위 응답을 그대로 배열에 쌓는다(채팅 열람의 flat item 배열과 다른 점) — 각 항목이
   // 어느 페이지에서 왔는지를 유지해야 presigned 이미지 만료 시 그 페이지만 다시 불러올 수 있다
   // (아래 handleRetryPage 주석 참고).
@@ -32,19 +41,19 @@ export function ImageGenerationViewPage({ userId }: ImageGenerationViewPageProps
   // 두 번째로도 실패한 이미지는 화면에 "깨졌다"고 보여야 하므로 이건 리렌더가 필요해 state로 둔다.
   const [brokenAssetIds, setBrokenAssetIds] = useState<Set<string>>(new Set());
   const pager = useImageGenerationsPager(userId);
-  const goToUserDetail = () => void navigate({ to: "/users/$userId", params: { userId } });
+  const goBack = () =>
+    void (isFromImageGenerations
+      ? navigate({ to: "/image-generations", search: rememberedListSearch ?? {} })
+      : navigate({ to: "/users/$userId", params: { userId } }));
 
   if (pages.length === 0) {
     return (
-      <main className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-10">
-        <Button asChild variant="outline" size="sm" className="self-start">
-          <Link to="/users/$userId" params={{ userId }}>
-            유저 상세로
-          </Link>
-        </Button>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">생성 이미지 열람</h1>
-        <ViewReasonDialog userId={userId} onCancel={goToUserDetail} onConfirmed={(data) => setPages([data])} />
-      </main>
+      <PageContainer>
+        <ImageGenerationViewHeader userId={userId} isFromImageGenerations={isFromImageGenerations} />
+        <DetailLayout actions={null}>
+          <ViewReasonDialog userId={userId} onCancel={goBack} onConfirmed={(data) => setPages([data])} />
+        </DetailLayout>
+      </PageContainer>
     );
   }
 
@@ -98,51 +107,92 @@ export function ImageGenerationViewPage({ userId }: ImageGenerationViewPageProps
   };
 
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-10">
-      <Button asChild variant="outline" size="sm" className="self-start">
-        <Link to="/users/$userId" params={{ userId }}>
-          유저 상세로
-        </Link>
-      </Button>
+    <PageContainer>
+      <ImageGenerationViewHeader userId={userId} isFromImageGenerations={isFromImageGenerations} />
 
-      <h1 className="text-2xl font-bold tracking-tight text-foreground">생성 이미지 열람</h1>
+      <DetailLayout actions={null}>
+        {items.length === 0 ? (
+          <p className="text-sm text-muted-foreground">생성 이력이 없어요.</p>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {pages.map((page) => (
+              <Fragment key={page.page}>
+                {page.items.map((item) => (
+                  <ImageGenerationRequestCard
+                    key={item.id}
+                    item={item}
+                    brokenAssetIds={brokenAssetIds}
+                    onImageError={(assetId) => handleImageError(page.page, assetId)}
+                  />
+                ))}
+              </Fragment>
+            ))}
 
-      {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">생성 이력이 없어요.</p>
-      ) : (
-        <div className="flex flex-col gap-4">
-          {pages.map((page) => (
-            <Fragment key={page.page}>
-              {page.items.map((item) => (
-                <ImageGenerationRequestCard
-                  key={item.id}
-                  item={item}
-                  brokenAssetIds={brokenAssetIds}
-                  onImageError={(assetId) => handleImageError(page.page, assetId)}
-                />
-              ))}
-            </Fragment>
-          ))}
+            {hasMore && (
+              <div className="flex justify-center">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  aria-disabled={pager.isFetching}
+                  onClick={() => {
+                    if (!pager.isFetching) void handleLoadMore();
+                  }}
+                  className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
+                >
+                  {pager.isFetching ? "불러오는 중..." : "더 보기"}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      </DetailLayout>
+    </PageContainer>
+  );
+}
 
-          {hasMore && (
-            <div className="flex justify-center">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                aria-disabled={pager.isFetching}
-                onClick={() => {
-                  if (!pager.isFetching) void handleLoadMore();
-                }}
-                className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
-              >
-                {pager.isFetching ? "불러오는 중..." : "더 보기"}
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
-    </main>
+/** 전역 목록에서 들어왔으면 "목록으로"로 그 목록에 돌아가고, 머리 오른쪽에 유저 상세 링크도 둔다 — 이미지를 보고 정지
+ * 같은 후속 조치를 하려면 그 유저 상세로 바로 가야 하는데, 없으면 내비 → 유저 목록 → 검색을 다시 거쳐야 한다. */
+function ImageGenerationViewHeader({ userId, isFromImageGenerations }: { userId: string; isFromImageGenerations: boolean }) {
+  const rememberedListSearch = useRememberedListSearch("/image-generations/");
+
+  const userDetailLink = (
+    <Link to="/users/$userId" params={{ userId }}>
+      {!isFromImageGenerations && <ChevronLeft aria-hidden />}
+      유저 상세로
+    </Link>
+  );
+
+  if (!isFromImageGenerations) {
+    return (
+      <PageHeader
+        title="생성 이미지 열람"
+        back={
+          <Button asChild variant="ghost" size="sm" className="self-start">
+            {userDetailLink}
+          </Button>
+        }
+      />
+    );
+  }
+
+  return (
+    <PageHeader
+      title="생성 이미지 열람"
+      back={
+        <Button asChild variant="ghost" size="sm" className="self-start">
+          <Link to="/image-generations" search={rememberedListSearch ?? {}}>
+            <ChevronLeft aria-hidden />
+            목록으로
+          </Link>
+        </Button>
+      }
+      actions={
+        <Button asChild variant="outline" size="sm">
+          {userDetailLink}
+        </Button>
+      }
+    />
   );
 }
 
@@ -154,10 +204,11 @@ type ImageGenerationRequestCardProps = {
 
 function ImageGenerationRequestCard({ item, brokenAssetIds, onImageError }: ImageGenerationRequestCardProps) {
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-6">
-      <p className="whitespace-pre-wrap break-words text-sm text-foreground">{item.prompt}</p>
+    <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 @xl:p-6">
+      <p className="whitespace-pre-wrap text-sm text-foreground wrap-anywhere">{item.prompt}</p>
 
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+      {/* 스타일 이름·모델·차단 사유는 서버가 준 글이라 길이를 모른다 — 칸 안에서 아무 데서나 꺾는다. */}
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm wrap-anywhere">
         <div>
           <dt className="text-muted-foreground">상태</dt>
           <dd className="text-foreground">{imageGenerationStatusLabel(item.status)}</dd>

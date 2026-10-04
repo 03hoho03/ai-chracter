@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { INQUIRY_CATEGORY_VALUES, INQUIRY_STATUS_VALUES } from "../entities/inquiry";
 import { requireSession } from "../entities/session";
+import { useRememberListSearch } from "../shared/lib/list-search-memory/listSearchMemory";
 import { InquiriesListPage } from "../pages/inquiries";
 
 // 잘못된 값은 화면을 죽이는 대신 기본값으로 삼킨다(`.optional().catch(undefined)` —
@@ -22,8 +23,10 @@ export const Route = createFileRoute("/inquiries/")({
 });
 
 function RouteComponent() {
-  const { page = 1, status, category } = Route.useSearch();
+  const search = Route.useSearch();
+  const { page = 1, status, category } = search;
   const navigate = Route.useNavigate();
+  useRememberListSearch("/inquiries/", search);
 
   return (
     <InquiriesListPage
@@ -31,12 +34,7 @@ function RouteComponent() {
       status={status}
       category={category}
       onPageChange={(nextPage) => void navigate({ search: (prev) => ({ ...prev, page: nextPage }) })}
-      onStatusChange={(nextStatus) =>
-        void navigate({ search: (prev) => ({ ...prev, status: nextStatus, page: 1 }) })
-      }
-      onCategoryChange={(nextCategory) =>
-        void navigate({ search: (prev) => ({ ...prev, category: nextCategory, page: 1 }) })
-      }
+      onFilterChange={(patch) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: 1 }) })}
     />
   );
 }

@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/components/tabs";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -24,11 +24,13 @@ import { PublishPromptSetDialog } from "./PublishPromptSetDialog";
 type PromptLaneFormProps = {
   lane: PromptLane;
   draft: AdminPromptDraftResponse;
+  /** 이 레인에 저장하지 않은 변경이 생기고 사라질 때 알린다 — 페이지가 세 레인을 모아 이탈 확인 하나를 건다. */
+  onDirtyChange: (lane: PromptLane, isDirty: boolean) => void;
 };
 
 /** 레인 분리 전 단일 편집기(`PromptSetsEditor`)의 몸통을 그대로 옮겼다. `PromptLaneEditor`와
  * 2단으로 갈린 이유가 아래 `values`의 불변식이다 — 한 컴포넌트로 합치지 않는다. */
-export function PromptLaneForm({ lane, draft }: PromptLaneFormProps) {
+export function PromptLaneForm({ lane, draft, onDirtyChange }: PromptLaneFormProps) {
   // `values`는 참조가 바뀔 때마다 RHF의 동기화 effect를 다시 태운다 — 매 렌더 새 객체를
   // 넘기면(예: 인라인 `serverToForm(draft)`) 내용이 같아도 매번 재동기화가 돌아 `isDirty`가
   // 타이핑 도중 조용히 꺼진다(실측: 라벨 입력은 안 먹고 `setValue`만 먹혔다). `draft`가
@@ -55,6 +57,13 @@ export function PromptLaneForm({ lane, draft }: PromptLaneFormProps) {
 
   const isDirty = form.formState.isDirty;
   const draftId = draft.id;
+
+  // 폼 상태는 이 레인의 `useForm` 안에 있어 페이지가 읽을 수 없다 — 바뀔 때 알리고, 폼이 사라지면 변경도 사라진다.
+  // 저장·복원 응답이 `values` 를 바꿔 폼을 리셋하므로 그 직후 거짓으로 알린다.
+  useEffect(() => {
+    onDirtyChange(lane, isDirty);
+  }, [lane, isDirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange(lane, false), [lane, onDirtyChange]);
 
   const handleSave = form.handleSubmit(
     async (values) => {

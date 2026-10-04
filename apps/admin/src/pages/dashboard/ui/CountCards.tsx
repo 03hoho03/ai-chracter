@@ -46,9 +46,10 @@ export function CountCards() {
         <span className="text-sm text-muted-foreground">오늘 메시지</span>
         <span className={NUMBER_CLASS}>{formatCount(countsQuery.data.todayMessages)}</span>
       </div>
-      {/* 처리 대기 신고 카드는 신고 목록으로 가는 진입점이다. */}
+      {/* 처리 대기 신고 카드는 신고 목록으로 가는 진입점이다 — 카드가 센 대기 건만 보이게 처리상태를 대기중으로 걸어 연다. */}
       <Link
         to="/reports"
+        search={{ status: "pending" }}
         className={cn(
           CARD_CLASS,
           "group outline-none motion-safe:transition-colors hover:bg-secondary focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",

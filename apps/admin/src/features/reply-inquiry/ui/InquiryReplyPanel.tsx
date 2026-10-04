@@ -47,7 +47,7 @@ export function InquiryReplyPanel({ inquiryId, initialReplyBody }: InquiryReplyP
 
   return (
     <form
-      className="flex flex-col gap-4 rounded-xl border border-border bg-card p-6"
+      className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 @xl:p-6"
       noValidate
       onSubmit={(event) => {
         event.preventDefault();

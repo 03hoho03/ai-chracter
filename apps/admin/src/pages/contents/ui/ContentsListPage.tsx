@@ -164,6 +164,7 @@ function ContentsList({ params, hasCondition, onReset, onPageChange }: ContentsL
       query={contentListQuery}
       errorMessage="작품 목록을 불러오지 못했어요."
       isEmpty={(data) => data.items.length === 0}
+      getPage={(data) => data}
       empty={
         hasCondition
           ? {
@@ -184,7 +185,7 @@ function ContentsList({ params, hasCondition, onReset, onPageChange }: ContentsL
             rows={data.items}
             getRowKey={(item) => item.id}
             columns={COLUMNS}
-            renderRowLink={(item, props) => <Link to="/contents/$contentId" params={{ contentId: item.id }} {...props} />}
+            renderRowTarget={(item, props) => <Link to="/contents/$contentId" params={{ contentId: item.id }} {...props} />}
             card={{
               title: (item) => item.name || "(이름 없음)",
               meta: (item) => (

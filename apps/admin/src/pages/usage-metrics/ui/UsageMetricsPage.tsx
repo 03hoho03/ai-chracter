@@ -9,6 +9,7 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 
 import { useUsageMetricsQuery } from "@/entities/usage-metrics";
+import { PageContainer } from "@/shared/ui/PageContainer";
 
 import { LlmUsageSection } from "./LlmUsageSection";
 
@@ -38,7 +39,7 @@ export function UsageMetricsPage({ from, to, onRangeChange }: UsageMetricsPagePr
   const usageMetricsQuery = useUsageMetricsQuery({ from, to });
 
   return (
-    <main className="mx-auto flex max-w-4xl flex-col gap-6 px-6 py-10">
+    <PageContainer>
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">사용량 모니터링</h1>
 
@@ -128,6 +129,6 @@ export function UsageMetricsPage({ from, to, onRangeChange }: UsageMetricsPagePr
       )}
 
       <LlmUsageSection from={from} to={to} />
-    </main>
+    </PageContainer>
   );
 }

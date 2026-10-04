@@ -1,7 +1,5 @@
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ai-character-chat/ui/components/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@ai-character-chat/ui/components/table";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
-import { useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 
 import { CONTENT_TYPE_LABELS } from "@/entities/admin-content";
 import {
@@ -11,17 +9,23 @@ import {
   REPORT_TARGET_LABELS,
   REPORT_TARGETS,
   useReportListQuery,
+  type AdminReportListResponse,
   type ReportStatusFilter,
   type ReportTarget,
 } from "@/entities/report";
-import { Pagination } from "@/shared/ui/Pagination";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { DataList, type DataListColumn } from "@/shared/ui/DataList";
+import { FilterBar, selectFilter } from "@/shared/ui/FilterBar";
+import { PageContainer } from "@/shared/ui/PageContainer";
+import { PageHeader } from "@/shared/ui/PageHeader";
+import { Pagination } from "@/shared/ui/Pagination";
+import { QueryState } from "@/shared/ui/QueryState";
 
 import { ChatMessageReportsTable } from "./ChatMessageReportsTable";
 import { CommentReportsTable } from "./CommentReportsTable";
+import { reportListEmpty } from "./reportListEmpty";
 
-const STATUS_FILTER_OPTIONS: { value: "all" | ReportStatusFilter; label: string }[] = [
-  { value: "all", label: "전체" },
+const STATUS_OPTIONS: { value: ReportStatusFilter; label: string }[] = [
   { value: "pending", label: REPORT_STATUS_LABELS.pending },
   { value: "resolved", label: REPORT_STATUS_LABELS.resolved },
   { value: "rejected", label: REPORT_STATUS_LABELS.rejected },
@@ -38,28 +42,11 @@ type ReportsListPageProps = {
 
 export function ReportsListPage({ page, status, target, onPageChange, onStatusChange, onTargetChange }: ReportsListPageProps) {
   return (
-    <main className="mx-auto flex max-w-4xl flex-col gap-6 px-6 py-10">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">신고 관리</h1>
+    <PageContainer>
+      <PageHeader title="신고 관리" />
 
-        <Select
-          value={status ?? "all"}
-          onValueChange={(value) => onStatusChange(isReportStatus(value) ? value : undefined)}
-        >
-          <SelectTrigger size="sm" aria-label="처리상태 필터" className="w-32">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {STATUS_FILTER_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* 탭·가드를 대상 목록 하나에서 도출한다 — 손으로 적은 가드에서 값을 빠뜨리면 그 탭은 눌러도
+      {/* 대상 전환은 걸러 내는 필터가 아니라 표 자체를 바꾸는 축이라 필터 바 밖에 둔다 — 필터 수·해제 칩에 섞이지 않는다.
+       * 탭·가드를 대상 목록 하나에서 도출한다 — 손으로 적은 가드에서 값을 빠뜨리면 그 탭은 눌러도
        * 아무 일이 없다(타입 에러도 나지 않는다). */}
       <ToggleGroup type="single" variant="outline" value={target} aria-label="신고 대상" className="max-w-full flex-wrap"
         onValueChange={(value) => { if (isReportTarget(value)) onTargetChange(value); }}>
@@ -69,8 +56,29 @@ export function ReportsListPage({ page, status, target, onPageChange, onStatusCh
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
-      <TargetReportsTable target={target} page={page} status={status} onPageChange={onPageChange} />
-    </main>
+
+      <FilterBar
+        fields={[
+          selectFilter({
+            id: "status",
+            label: "처리상태",
+            options: STATUS_OPTIONS,
+            value: status,
+            defaultLabel: "전체",
+            onChange: onStatusChange,
+          }),
+        ]}
+        onReset={() => onStatusChange(undefined)}
+      />
+
+      <TargetReportsTable
+        target={target}
+        page={page}
+        status={status}
+        onPageChange={onPageChange}
+        onReset={() => onStatusChange(undefined)}
+      />
+    </PageContainer>
   );
 }
 
@@ -93,79 +101,75 @@ type ReportsTableProps = {
   page: number;
   status?: ReportStatusFilter;
   onPageChange: (page: number) => void;
+  /** 빈 결과에서 처리상태 필터를 푼다. */
+  onReset: () => void;
 };
 
+type ReportListItem = AdminReportListResponse["items"][number];
+
+const COLUMNS: readonly DataListColumn<ReportListItem>[] = [
+  { id: "reason", header: "신고 사유", cell: (item) => REPORT_REASON_LABELS[item.reasonCategory] },
+  {
+    id: "content",
+    header: "대상 콘텐츠",
+    isPrimary: true,
+    cell: (item) => (
+      <>
+        <span className="text-muted-foreground">{CONTENT_TYPE_LABELS[item.contentType]}</span> {item.contentName || "(이름 없음)"}
+      </>
+    ),
+  },
+  { id: "created", header: "신고일시", cell: (item) => formatDateTime(item.createdAt) },
+  { id: "status", header: "처리상태", cell: (item) => REPORT_STATUS_LABELS[item.status] },
+];
+
 /** 헤더(제목·필터)는 로딩·에러에도 남아야 해서 쿼리에 의존하는 본문만 갈라낸다. */
-function ReportsTable({ page, status, onPageChange }: ReportsTableProps) {
+function ReportsTable({ page, status, onPageChange, onReset }: ReportsTableProps) {
   const reportListQuery = useReportListQuery({ page, status });
-  const navigate = useNavigate();
-
-  if (reportListQuery.isPending) {
-    return <div className="h-64 animate-pulse rounded-xl bg-muted" />;
-  }
-
-  if (reportListQuery.isError) {
-    return <p className="text-sm text-destructive-text">신고 목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>;
-  }
-
-  if (reportListQuery.data.items.length === 0) {
-    return <p className="text-sm text-muted-foreground">접수된 신고가 없어요.</p>;
-  }
 
   return (
-    <>
-      <div className="overflow-hidden rounded-xl border border-border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>신고 사유</TableHead>
-              <TableHead>대상 콘텐츠</TableHead>
-              <TableHead>신고일시</TableHead>
-              <TableHead>처리상태</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {reportListQuery.data.items.map((item) => (
-              <TableRow
-                key={item.id}
-                tabIndex={0}
-                role="button"
-                className="cursor-pointer"
-                onClick={() => void navigate({ to: "/reports/$reportId", params: { reportId: item.id } })}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    void navigate({ to: "/reports/$reportId", params: { reportId: item.id } });
-                  }
-                }}
-              >
-                <TableCell>{REPORT_REASON_LABELS[item.reasonCategory]}</TableCell>
-                <TableCell>
-                  <span className="text-muted-foreground">{CONTENT_TYPE_LABELS[item.contentType]}</span>{" "}
-                  {item.contentName || "(이름 없음)"}
-                </TableCell>
-                <TableCell>{formatDateTime(item.createdAt)}</TableCell>
-                <TableCell>{REPORT_STATUS_LABELS[item.status]}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+    <QueryState
+      query={reportListQuery}
+      errorMessage="신고 목록을 불러오지 못했어요."
+      isEmpty={(data) => data.items.length === 0}
+      getPage={(data) => data}
+      empty={reportListEmpty({ noun: "신고", status, onReset })}
+    >
+      {(data) => (
+        <>
+          <DataList
+            caption="작품 신고 목록"
+            rows={data.items}
+            getRowKey={(item) => item.id}
+            columns={COLUMNS}
+            renderRowTarget={(item, props) => (
+              <Link to="/reports/$reportId" params={{ reportId: item.id }} {...props} />
+            )}
+            card={{
+              title: (item) => item.contentName || "(이름 없음)",
+              meta: (item) => (
+                <>
+                  <span>{CONTENT_TYPE_LABELS[item.contentType]}</span>
+                  <span aria-hidden>·</span>
+                  <span>{REPORT_REASON_LABELS[item.reasonCategory]}</span>
+                  <span aria-hidden>·</span>
+                  <span className="font-medium text-foreground">{REPORT_STATUS_LABELS[item.status]}</span>
+                </>
+              ),
+              trailing: (item) => formatDateTime(item.createdAt),
+            }}
+          />
 
-      <Pagination
-        page={reportListQuery.data.page}
-        totalPages={reportListQuery.data.totalPages}
-        totalCount={reportListQuery.data.totalCount}
-        onPageChange={onPageChange}
-      />
-    </>
+          <Pagination
+            page={data.page}
+            totalPages={data.totalPages}
+            totalCount={data.totalCount}
+            onPageChange={onPageChange}
+          />
+        </>
+      )}
+    </QueryState>
   );
-}
-
-/** `SelectItem`의 value가 `string`이라 좁힘이 필요하다. `as` 대신 술어를 쓴다.
- * 목록에 섞여 있는 `"all"`은 "필터 없음"이라 여기서 자연히 걸러진다. AppealsListPage 동형. */
-function isReportStatus(value: string): value is ReportStatusFilter {
-  return STATUS_FILTER_OPTIONS.some((option) => option.value !== "all" && option.value === value);
 }
 
 function assertNever(value: never): never {
