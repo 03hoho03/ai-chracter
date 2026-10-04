@@ -8,6 +8,7 @@ import {
   useChatMessageReportDetailQuery,
 } from "@/entities/report";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle";
 import { DetailLayout } from "@/shared/ui/DetailLayout";
 import { QueryState } from "@/shared/ui/QueryState";
 
@@ -16,6 +17,7 @@ const SECTION_CLASS = "flex min-w-0 flex-col gap-3 rounded-xl border border-bord
 /** 대화 열람 링크는 두지 않는다 — 신고 처리에 필요한 맥락은 신고 시점의 사본(응답 + 직전 사용자
  * 메시지)이고, 대화 전체 열람은 사유를 남기는 별도 절차(유저 상세 → 채팅방 열람)를 거친다. */
 export function ChatMessageReportDetailBody({ reportId }: { reportId: string }) {
+  useDocumentTitle("신고 상세");
   const query = useChatMessageReportDetailQuery(reportId);
   // 이미 처리된 신고도 다시 저장할 수 있어 조치가 늘 있다.
   return <QueryState query={query} skeleton="detail" errorMessage="채팅 응답 신고를 불러오지 못했어요.">{(report) =>
@@ -30,7 +32,7 @@ export function ChatMessageReportDetailBody({ reportId }: { reportId: string }) 
         <span className="text-sm text-muted-foreground">{formatDateTime(report.createdAt)} 접수</span></div>
       <dl className="grid grid-cols-1 gap-3 text-sm @xl:grid-cols-2">
         <div><dt className="text-muted-foreground">신고 사유</dt><dd>{CHAT_MESSAGE_REPORT_REASON_LABELS[report.reason]}</dd></div>
-        <div><dt className="text-muted-foreground">신고자</dt><dd><Link to="/users/$userId" params={{ userId: report.reporterUserId }} className="font-medium text-primary hover:underline focus-visible:underline">유저 상세 보기</Link></dd></div>
+        <div><dt className="text-muted-foreground">신고자</dt><dd><Link to="/users/$userId" params={{ userId: report.reporterUserId }} className="admin-hit-area font-medium text-primary hover:underline focus-visible:underline">유저 상세 보기</Link></dd></div>
         {/* 재생성·메시지 삭제·방 삭제로 원래 응답이 지워져도 신고와 사본은 남는다 — 사본이 지금 대화와
          * 다를 수 있다는 걸 처리자가 알도록 밝힌다. */}
         <div><dt className="text-muted-foreground">원래 응답</dt><dd>{report.chatMessageId === null ? "대화에서 지워졌어요" : "대화에 남아 있어요"}</dd></div>

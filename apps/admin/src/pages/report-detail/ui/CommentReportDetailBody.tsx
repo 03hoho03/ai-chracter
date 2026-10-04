@@ -5,6 +5,7 @@ import { CommentReportActionPanel } from "@/features/act-on-comment-report";
 import { CONTENT_TYPE_LABELS } from "@/entities/admin-content";
 import { REPORT_REASON_LABELS, REPORT_STATUS_LABELS, useCommentReportDetailQuery, type CommentCurrent } from "@/entities/report";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle";
 import { DetailLayout } from "@/shared/ui/DetailLayout";
 import { QueryState } from "@/shared/ui/QueryState";
 
@@ -12,6 +13,7 @@ const WEB_BASE_URL = import.meta.env.VITE_FRONTEND_BASE_URL ?? "https://ddona.si
 
 export function CommentReportDetailBody({ reportId }: { reportId: string }) {
   const query = useCommentReportDetailQuery(reportId);
+  useDocumentTitle("신고 상세", query.data?.content.name);
   // 이미 처리된 신고도 다시 처리할 수 있어(운영 숨김 해제 등) 조치가 늘 있다.
   return <QueryState query={query} skeleton="detail" errorMessage="댓글 신고를 불러오지 못했어요.">{(report) =>
   <DetailLayout actions={{
@@ -25,8 +27,8 @@ export function CommentReportDetailBody({ reportId }: { reportId: string }) {
         <span className="text-sm text-muted-foreground">{formatDateTime(report.createdAt)} 접수</span></div>
       <dl className="grid grid-cols-1 gap-3 text-sm @xl:grid-cols-2">
         <div><dt className="text-muted-foreground">신고 사유</dt><dd>{REPORT_REASON_LABELS[report.reasonCategory]}</dd></div>
-        <div><dt className="text-muted-foreground">신고자</dt><dd><Link to="/users/$userId" params={{ userId: report.reporterUserId }} className="font-medium text-primary hover:underline focus-visible:underline">유저 상세 보기</Link></dd></div>
-        <div><dt className="text-muted-foreground">대상 작품</dt><dd><Link to="/contents/$contentId" params={{ contentId: report.content.id }} className="break-all font-medium text-primary hover:underline focus-visible:underline">{CONTENT_TYPE_LABELS[report.content.type]} · {report.content.name || "(이름 없음)"}</Link></dd></div>
+        <div><dt className="text-muted-foreground">신고자</dt><dd><Link to="/users/$userId" params={{ userId: report.reporterUserId }} className="admin-hit-area font-medium text-primary hover:underline focus-visible:underline">유저 상세 보기</Link></dd></div>
+        <div><dt className="text-muted-foreground">대상 작품</dt><dd><Link to="/contents/$contentId" params={{ contentId: report.content.id }} className="admin-hit-area break-all font-medium text-primary hover:underline focus-visible:underline">{CONTENT_TYPE_LABELS[report.content.type]} · {report.content.name || "(이름 없음)"}</Link></dd></div>
         {!!report.resolvedAt && <div><dt className="text-muted-foreground">처리일시</dt><dd>{formatDateTime(report.resolvedAt)}</dd></div>}
       </dl>
     </section>
@@ -63,7 +65,7 @@ function CurrentComment({ comment, title }: { comment: CommentCurrent; title: st
       <span className="text-xs text-muted-foreground">{stateLabel}</span>
     </div>
     <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-      {comment.author ? <Link to="/users/$userId" params={{ userId: comment.author.id }} className="font-medium text-primary hover:underline focus-visible:underline">{comment.author.nickname} · 작성자 관리</Link> : <span>삭제된 작성자 정보</span>}
+      {comment.author ? <Link to="/users/$userId" params={{ userId: comment.author.id }} className="admin-hit-area font-medium text-primary hover:underline focus-visible:underline">{comment.author.nickname} · 작성자 관리</Link> : <span>삭제된 작성자 정보</span>}
       <time dateTime={comment.createdAt}>{formatDateTime(comment.createdAt)}</time>
       {comment.effectiveSpoiler && <span>스포일러 포함</span>}
       {comment.creatorHidden && comment.moderatorHidden && <span>작가·운영 숨김 모두 적용</span>}

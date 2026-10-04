@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 
 import { useNoticeListQuery, type AdminNoticeListItem } from "@/entities/notice";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle";
 import { DataList, type DataListColumn } from "@/shared/ui/DataList";
 import { PageContainer } from "@/shared/ui/PageContainer";
 import { PageHeader } from "@/shared/ui/PageHeader";
@@ -25,6 +26,7 @@ function NewNoticeButton() {
 }
 
 export function NoticesListPage({ page, onPageChange }: NoticesListPageProps) {
+  useDocumentTitle("공지 관리");
   return (
     <PageContainer>
       <PageHeader title="공지 관리" actions={<NewNoticeButton />} />

@@ -2,9 +2,10 @@ import { formatCount } from "@/shared/lib/format/formatCount";
 
 import { useGrowthQuery, type AdminDashboardGrowthResponse } from "../api/useGrowthQuery";
 
-const CARD_CLASS = "flex flex-1 flex-col gap-1 rounded-xl border border-border bg-card p-6";
+const CARD_CLASS = "flex flex-1 flex-col gap-1 rounded-xl border border-border bg-card p-4 @2xl:p-6";
 const RATE_CLASS = "text-xl font-bold tabular-nums text-foreground";
-const GRID_CLASS = "grid grid-cols-2 gap-4 sm:grid-cols-4";
+/** 열 수·여백은 `CountCards` 와 같은 규칙이다(본문 폭으로 가른다). */
+const GRID_CLASS = "grid grid-cols-2 gap-3 @2xl:grid-cols-4 @2xl:gap-4";
 
 /** 비율만 크게 띄우면 "34%"가 몇 명 기준인지 알 수 없다 — 운영자에게는 분자·분모가 더
  * 쓸모 있고(11명 중 4명), 표본이 작을 때 비율이 과장돼 보이는 것도 여기서 드러난다. */

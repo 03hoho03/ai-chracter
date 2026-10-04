@@ -2,17 +2,24 @@ import type { ApiError } from "@ai-character-chat/api-types";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Markdown } from "@ai-character-chat/ui/components/markdown";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@ai-character-chat/ui/components/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/components/tabs";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import type { UseQueryResult } from "@tanstack/react-query";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { RESTING_DISABLED_PRIMARY_CLASS } from "@/shared/ui/restingDisabledPrimaryClass";
 
 import { LEGAL_KIND_LABELS, type LegalKind } from "../model/legalKind";
 import type { AdminLegalDocumentResponse } from "../api/useLegalDocumentQuery";
 import { useSaveDraftMutation } from "../api/useSaveDraftMutation";
 import { useVersionsQuery } from "../api/useVersionsQuery";
 import { PublishDialog } from "./PublishDialog";
+
+/** 좁은 화면에서는 고른 탭만 보이고, `lg` 이상에서는 두 패널이 늘 함께 보인다. */
+const PANE_CLASS = "data-[state=inactive]:hidden lg:data-[state=inactive]:block";
 
 type LegalEditorProps = {
   kind: LegalKind;
@@ -21,15 +28,18 @@ type LegalEditorProps = {
   onDraftBodyChange: (next: string) => void;
 };
 
-/** 편집(좌)/미리보기(우)를 나란히 둔다 — 약관 본문이 6천~1만2천 자라 탭 전환보다 동시에
+/** 넓은 화면(`lg` 이상)에서는 편집(좌)/미리보기(우)를 나란히 둔다 — 약관 본문이 6천~1만2천 자라 탭 전환보다 동시에
  * 비교하는 편이 낫고, 각 패널은 `max-h`로 캡을 씌워 스크롤한다(안 그러면 Textarea의
- * `field-sizing-content`가 본문 길이만큼 그대로 늘어나 페이지가 지나치게 길어진다).
+ * `field-sizing-content`가 본문 길이만큼 그대로 늘어나 페이지가 지나치게 길어진다). 그보다 좁으면 반 폭 두 칸이 한
+ * 줄에 몇 글자 못 담아 둘 다 읽기 어렵고, 위아래로 쌓으면 미리보기가 512px 편집기 아래로 밀려 안 보이므로 편집/미리보기
+ * 탭으로 바꾼다. 두 패널은 늘 마운트돼 있다(탭은 숨기기만 한다) — 폭을 넘나들어도 편집기의 커서·스크롤이 남는다.
  *
  * 게시 버튼은 "저장된 초안이 있고, 지금 버퍼가 그 초안과 같을 때"만 활성화한다 — 게시는
  * 서버에 저장된 초안을 발행하지 화면의 버퍼를 발행하지 않으므로, 저장 전에 게시를 누르면
  * 방금 타이핑한 내용이 아니라 이전 저장분이 나간다. 이 간극을 버튼 disabled로 막는다. */
 export function LegalEditor({ kind, documentQuery, draftBody, onDraftBodyChange }: LegalEditorProps) {
   const saveDraftMutation = useSaveDraftMutation(kind);
+  const [pane, setPane] = useState<"edit" | "preview">("edit");
 
   if (documentQuery.isPending) {
     return <div className="h-96 animate-pulse rounded-xl bg-muted" />;
@@ -94,27 +104,53 @@ export function LegalEditor({ kind, documentQuery, draftBody, onDraftBodyChange 
           </p>
         )}
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <Textarea
-            value={draftBody}
-            onChange={(event) => onDraftBodyChange(event.target.value)}
-            placeholder="마크다운으로 본문을 작성하세요."
-            aria-label={`${LEGAL_KIND_LABELS[kind]} 초안 편집`}
-            className="max-h-128 min-h-128 resize-none overflow-y-auto"
-          />
-          <div className="max-h-128 overflow-y-auto rounded-lg border border-border bg-card p-4">
-            {draftBody.trim() ? (
-              <Markdown content={draftBody} className="[&_code]:bg-secondary" />
-            ) : (
-              <p className="text-sm text-muted-foreground">미리볼 내용이 없어요.</p>
-            )}
+        <Tabs
+          value={pane}
+          onValueChange={(value) => {
+            if (value === "edit" || value === "preview") setPane(value);
+          }}
+          className="gap-3"
+        >
+          {/* 위의 문서 종류 탭(밑줄)과 층이 다르다는 걸 모양으로 가른다. */}
+          <TabsList className="lg:hidden">
+            <TabsTrigger value="edit">편집</TabsTrigger>
+            <TabsTrigger value="preview">미리보기</TabsTrigger>
+          </TabsList>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {/* Radix 탭 패널은 Tab 정지(`tabIndex=0`)인데 편집 패널은 진입점이 곧 안의 편집칸이라 정지를 뺀다 — 남기면
+                포커스가 보이지 않는 칸에 한 번 앉았다가 다음 Tab 에야 편집칸에 닿는다. */}
+            <TabsContent value="edit" forceMount tabIndex={-1} className={PANE_CLASS}>
+              <Textarea
+                value={draftBody}
+                onChange={(event) => onDraftBodyChange(event.target.value)}
+                placeholder="마크다운으로 본문을 작성하세요."
+                aria-label={`${LEGAL_KIND_LABELS[kind]} 초안 편집`}
+                className="max-h-128 min-h-128 resize-none overflow-y-auto"
+              />
+            </TabsContent>
+            <TabsContent
+              value="preview"
+              forceMount
+              // 미리보기는 긴 본문을 키보드로 스크롤하는 Tab 정지로 남긴다 — 그래서 하우스 포커스 표시(불투명 보더 + 50% 링)를 준다.
+              className={cn(
+                PANE_CLASS,
+                "max-h-128 overflow-y-auto rounded-lg border border-border bg-card p-4 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+              )}
+            >
+              {draftBody.trim() ? (
+                <Markdown content={draftBody} className="[&_code]:bg-secondary" />
+              ) : (
+                <p className="text-sm text-muted-foreground">미리볼 내용이 없어요.</p>
+              )}
+            </TabsContent>
           </div>
-        </div>
+        </Tabs>
 
         <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
             size="sm"
+            className={RESTING_DISABLED_PRIMARY_CLASS}
             disabled={!hasUnsavedChanges || saveDraftMutation.isPending}
             onClick={() => void handleSave()}
           >

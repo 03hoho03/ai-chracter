@@ -14,6 +14,7 @@ import {
   type ReportTarget,
 } from "@/entities/report";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle";
 import { DataList, type DataListColumn } from "@/shared/ui/DataList";
 import { FilterBar, selectFilter } from "@/shared/ui/FilterBar";
 import { PageContainer } from "@/shared/ui/PageContainer";
@@ -41,6 +42,7 @@ type ReportsListPageProps = {
 }
 
 export function ReportsListPage({ page, status, target, onPageChange, onStatusChange, onTargetChange }: ReportsListPageProps) {
+  useDocumentTitle("신고 관리");
   return (
     <PageContainer>
       <PageHeader title="신고 관리" />

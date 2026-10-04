@@ -11,7 +11,8 @@ type PreviewPanelProps = {
 /** 미리보기가 이 화면의 존재 이유다. 문안 자체가 아니라 **샘플 입력으로 실제 렌더러를 태운 조립
  * 결과**를 보고 게시 여부를 판단한다. 레인마다 10/4/2개 항목(채널×템플릿/발행 대상 조합)을
  * 접이식 `<details>`로 늘어놓는다 — 항목마다 새 접근성 배선이 필요한 아코디언 프리미티브를
- * 추가하는 대신 네이티브 disclosure를 쓴다(키보드·스크린리더가 기본으로 지원한다).
+ * 추가하는 대신 네이티브 disclosure를 쓴다(키보드·스크린리더가 기본으로 지원한다). 항목은 테두리 상자가 아니라
+ * 구분선으로 가른다 — 이 패널이 이미 카드라 항목마다 상자를 두르면 상자 속 상자가 열 개 쌓인다.
  * `open={index === 0}`(첫 항목만 펼침)은 레인별로 가르지 않는다. 레인별 응답의 첫
  * 항목이 이미 다르므로(story: system·스토리·basic / character: system·캐릭터 /
  * publish_filter: publish_filter·캐릭터) 이 자리는 그대로 두고 `lane`만 흘려보낸다. */
@@ -20,7 +21,8 @@ export function PreviewPanel({ lane, isStale }: PreviewPanelProps) {
 
   return (
     <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
-      <div className="flex flex-col gap-1">
+      {/* 안내문은 한 줄 길이를 읽을 만한 폭으로 묶는다 — 넓은 화면에서 130자 넘는 한 줄은 눈이 다음 줄을 놓친다. */}
+      <div className="flex max-w-prose flex-col gap-1">
         <h2 className="text-lg font-semibold text-foreground">조립 미리보기</h2>
         <p className="break-keep text-xs text-muted-foreground">
           지금 저장된 초안을 샘플 입력으로 조립한 실제 전문이에요(모델 호출 없음). 문안이 아니라
@@ -35,7 +37,7 @@ export function PreviewPanel({ lane, isStale }: PreviewPanelProps) {
       </div>
 
       {isStale && (
-        <p className="break-keep text-xs text-muted-foreground">
+        <p className="max-w-prose break-keep text-xs text-muted-foreground">
           저장하지 않은 변경사항이 있어요 — 아래 미리보기는 마지막으로 저장한 초안 기준이에요.
         </p>
       )}
@@ -64,14 +66,10 @@ function PreviewBody({ previewQuery }: PreviewBodyProps) {
   return (
     <>
       {previewQuery.isError && <PreviewErrorNotice previewQuery={previewQuery} />}
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col divide-y divide-border border-y border-border">
         {previewQuery.data.items.map((item, index) => (
-          <details
-            key={`${item.channel}-${item.label}`}
-            className="rounded-lg border border-border p-3"
-            open={index === 0}
-          >
-            <summary className="cursor-pointer text-sm font-medium text-foreground">
+          <details key={`${item.channel}-${item.label}`} className="py-3" open={index === 0}>
+            <summary className="cursor-pointer rounded-sm text-sm font-medium break-keep wrap-anywhere text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
               {item.label}
             </summary>
             <pre className="mt-2 max-h-96 overflow-y-auto rounded-lg bg-secondary p-3 text-xs whitespace-pre-wrap text-foreground">

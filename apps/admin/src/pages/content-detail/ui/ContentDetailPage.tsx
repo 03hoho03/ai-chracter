@@ -15,6 +15,7 @@ import {
 import { formatCount } from "@/shared/lib/format/formatCount";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 import { useRememberedListSearch } from "@/shared/lib/list-search-memory/listSearchMemory";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle";
 import { DetailLayout } from "@/shared/ui/DetailLayout";
 import { PageContainer } from "@/shared/ui/PageContainer";
 import { PageHeader } from "@/shared/ui/PageHeader";
@@ -57,6 +58,7 @@ type ContentDetailBodyProps = {
 /** 목록 링크·제목은 로딩·에러에도 남아야 해서 쿼리에 의존하는 본문만 갈라낸다. */
 function ContentDetailBody({ contentId }: ContentDetailBodyProps) {
   const contentDetailQuery = useContentDetailQuery(contentId);
+  useDocumentTitle("작품 상세", contentDetailQuery.data?.name);
 
   return (
     <QueryState query={contentDetailQuery} skeleton="detail" errorMessage="작품 정보를 불러오지 못했어요.">

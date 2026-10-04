@@ -6,6 +6,7 @@ import { ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle";
 import { DetailLayout } from "@/shared/ui/DetailLayout";
 import { PageContainer } from "@/shared/ui/PageContainer";
 import { PageHeader } from "@/shared/ui/PageHeader";
@@ -35,6 +36,7 @@ type ChatMessagesPageProps = {
 };
 
 export function ChatMessagesPage({ userId, roomId }: ChatMessagesPageProps) {
+  useDocumentTitle("채팅 열람");
   const navigate = useNavigate();
   // 열람 응답(기억 포함)과 더보기로 이어 받은 메시지를 따로 든다 — 더보기 응답에는 기억이 없으므로 합쳐 두면
   // 첫 응답의 기억을 덮을 수 있다.

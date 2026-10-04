@@ -12,6 +12,7 @@ import {
   type InquiryStatusFilter,
 } from "@/entities/inquiry";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle";
 import { DataList, type DataListColumn } from "@/shared/ui/DataList";
 import { FilterBar, selectFilter } from "@/shared/ui/FilterBar";
 import { PageContainer } from "@/shared/ui/PageContainer";
@@ -41,6 +42,7 @@ export function InquiriesListPage({
   onPageChange,
   onFilterChange,
 }: InquiriesListPageProps) {
+  useDocumentTitle("문의 관리");
   const resetFilters = () => onFilterChange({ category: undefined, status: undefined });
 
   return (

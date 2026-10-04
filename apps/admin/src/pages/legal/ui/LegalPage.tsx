@@ -1,6 +1,7 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/components/tabs";
 import { useState } from "react";
 
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle";
 import { PageContainer } from "@/shared/ui/PageContainer";
 import { UnsavedChangesGuard } from "@/shared/ui/UnsavedChangesGuard";
 
@@ -13,6 +14,7 @@ import { LegalEditor } from "./LegalEditor";
  * 그래서 "저장 안 한 편집 내용이 있는데 탭을 바꾸면 잃는다"는 별도 경고 없이 자연히 해결된다. 다른 화면으로 떠날 때는
  * 버퍼가 사라지므로 두 문서 중 하나라도 저장하지 않은 변경이 있으면 확인을 받는다. */
 export function LegalPage() {
+  useDocumentTitle("약관 관리");
   const [activeKind, setActiveKind] = useState<LegalKind>("terms");
   // 사용자가 아직 손대지 않은 kind는 키가 없다 — 그때는 렌더 중에 서버 초안을 그대로 읽는다.
   const [draftBodyByKind, setDraftBodyByKind] = useState<Partial<Record<LegalKind, string>>>({});
@@ -45,7 +47,9 @@ export function LegalPage() {
         </TabsList>
 
         {LEGAL_KINDS.map((kind) => (
-          <TabsContent key={kind} value={kind} className="pt-4">
+          // Radix 탭 패널은 Tab 정지(`tabIndex=0`)인데 이 패널은 안에 편집칸·버튼이 있어 그것들이 진입점이다 — 정지를 빼야
+          // 포커스가 보이지 않는 패널에 한 번 앉지 않는다.
+          <TabsContent key={kind} value={kind} tabIndex={-1} className="pt-4">
             <LegalEditor
               kind={kind}
               documentQuery={queryByKind[kind]}

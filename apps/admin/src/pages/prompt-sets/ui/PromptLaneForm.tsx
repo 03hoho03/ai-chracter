@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
+import { RESTING_DISABLED_PRIMARY_CLASS } from "@/shared/ui/restingDisabledPrimaryClass";
+
 import { usePreviewQuery } from "../api/usePreviewQuery";
 import { useSaveDraftMutation } from "../api/useSaveDraftMutation";
 import { PROMPT_CHANNELS, PROMPT_CHANNEL_LABELS, isPromptChannel, type PromptChannel } from "../model/channels";
@@ -118,14 +120,22 @@ export function PromptLaneForm({ lane, draft, onDirtyChange }: PromptLaneFormPro
             </div>
 
             {channels.map((channel) => (
-              <TabsContent key={channel} value={channel} className="pt-4">
+              // Radix 탭 패널은 Tab 정지(`tabIndex=0`)인데 이 패널은 안의 버튼·입력칸이 진입점이다 — 정지를 빼야 채널 탭
+              // 다음 Tab 이 보이지 않는 패널에 앉지 않는다.
+              <TabsContent key={channel} value={channel} tabIndex={-1} className="pt-4">
                 <ChannelSectionList channel={channel} />
               </TabsContent>
             ))}
           </Tabs>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" size="sm" disabled={!isDirty || saveDraftMutation.isPending} onClick={() => void handleSave()}>
+            <Button
+              type="button"
+              size="sm"
+              className={RESTING_DISABLED_PRIMARY_CLASS}
+              disabled={!isDirty || saveDraftMutation.isPending}
+              onClick={() => void handleSave()}
+            >
               {saveDraftMutation.isPending ? "저장 중..." : "초안 저장"}
             </Button>
             {isDirty && (

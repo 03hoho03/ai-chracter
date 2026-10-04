@@ -10,6 +10,7 @@ import {
 } from "@/entities/appeal";
 import { AppealResolvePanel } from "@/features/resolve-appeal";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle";
 import { DataList, type DataListColumn } from "@/shared/ui/DataList";
 import { FilterBar, selectFilter } from "@/shared/ui/FilterBar";
 import { PageContainer } from "@/shared/ui/PageContainer";
@@ -30,6 +31,7 @@ type AppealsListPageProps = {
 }
 
 export function AppealsListPage({ page, status, onPageChange, onStatusChange }: AppealsListPageProps) {
+  useDocumentTitle("이의제기 검토");
   return (
     <PageContainer>
       <PageHeader title="이의제기 검토" />

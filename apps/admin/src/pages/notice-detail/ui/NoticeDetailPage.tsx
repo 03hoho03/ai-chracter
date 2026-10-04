@@ -4,6 +4,7 @@ import { ChevronLeft } from "lucide-react";
 
 import { useNoticeDetailQuery } from "@/entities/notice";
 import { useRememberedListSearch } from "@/shared/lib/list-search-memory/listSearchMemory";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle";
 import { DetailLayout } from "@/shared/ui/DetailLayout";
 import { PageContainer } from "@/shared/ui/PageContainer";
 import { PageHeader } from "@/shared/ui/PageHeader";
@@ -42,6 +43,7 @@ export function NoticeDetailPage({ noticeId }: NoticeDetailPageProps) {
 }
 
 function NewNotice() {
+  useDocumentTitle("새 공지");
   const navigate = useNavigate();
 
   return (
@@ -62,6 +64,7 @@ type ExistingNoticeProps = {
 /** 목록 링크·제목은 로딩·에러에도 남아야 해서 쿼리에 의존하는 본문만 갈라낸다(`ReportDetailPage` 관용구). */
 function ExistingNotice({ noticeId }: ExistingNoticeProps) {
   const noticeDetailQuery = useNoticeDetailQuery(noticeId);
+  useDocumentTitle("공지 편집", noticeDetailQuery.data?.title);
 
   // `key`로 공지 사이 이동 시 편집 버퍼(`NoticeEditor`의 RHF `defaultValues`)를 강제로 초기화한다 —
   // 같은 라우트(`/notices/$noticeId`)라 id만 바뀌면 컴포넌트가 재마운트되지 않고,

@@ -13,6 +13,7 @@ import {
   type ImageGenerationStyleFilter,
 } from "@/entities/admin-image-generation";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle";
 import { DataList, type DataListColumn } from "@/shared/ui/DataList";
 import { dateRangeFilter, FilterBar, selectFilter } from "@/shared/ui/FilterBar";
 import { PageContainer } from "@/shared/ui/PageContainer";
@@ -56,6 +57,7 @@ export function ImageGenerationsListPage({
   onPageChange,
   onFilterChange,
 }: ImageGenerationsListPageProps) {
+  useDocumentTitle("이미지 생성 관리");
   const styleOptionsQuery = useImageStyleOptionsQuery({ page, q, status, style, from, to });
   const styleOptions = (styleOptionsQuery.data ?? STYLE_ID_FALLBACK_OPTIONS).map((option) => ({
     value: option.id,

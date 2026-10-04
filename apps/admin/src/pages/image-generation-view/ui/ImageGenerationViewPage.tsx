@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { imageGenerationStatusLabel } from "@/entities/admin-image-generation";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 import { useRememberedListSearch } from "@/shared/lib/list-search-memory/listSearchMemory";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle";
 import { DetailLayout } from "@/shared/ui/DetailLayout";
 import { PageContainer } from "@/shared/ui/PageContainer";
 import { PageHeader } from "@/shared/ui/PageHeader";
@@ -26,6 +27,7 @@ type ImageGenerationViewPageProps = {
 };
 
 export function ImageGenerationViewPage({ userId, isFromImageGenerations }: ImageGenerationViewPageProps) {
+  useDocumentTitle("생성 이미지 열람");
   const navigate = useNavigate();
   const rememberedListSearch = useRememberedListSearch("/image-generations/");
   // 페이지 단위 응답을 그대로 배열에 쌓는다(채팅 열람의 flat item 배열과 다른 점) — 각 항목이
