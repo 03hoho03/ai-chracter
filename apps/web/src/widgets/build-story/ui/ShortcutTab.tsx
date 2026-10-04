@@ -7,14 +7,13 @@ import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
 import {
   CollapsibleItemCard,
-  firstLine,
   focusNeighborToggle,
   ItemRemoveButton,
   itemOpenKey,
   useBuilderUiState,
 } from "@/features/build-common";
-import type { StoryBuilderFormValues, StoryCollapsibleList } from "@/features/build-story";
-import { RequiredText } from "@/shared/ui/RequiredText";
+import { FieldLabelText, type StoryBuilderFormValues, type StoryCollapsibleList } from "@/features/build-story";
+import { firstLine } from "@/shared/lib/text/firstLine";
 
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
 
@@ -48,7 +47,7 @@ export function ShortcutTab() {
   return (
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-1">
-        <Label>단축어</Label>
+        <Label><FieldLabelText field="shortcuts" /></Label>
         <p className="text-sm text-muted-foreground">
           사용자가 채팅 중 짧은 명령어로 특정 동작을 실행할 수 있게 해요. 등록하지 않아도 발행할 수 있어요.
         </p>
@@ -118,7 +117,7 @@ function ShortcutRow({
       }
     >
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`shortcut-${id}-name`}><RequiredText>이름</RequiredText></Label>
+        <Label htmlFor={`shortcut-${id}-name`}><FieldLabelText field="shortcuts.*.name" /></Label>
         <Input
           id={`shortcut-${id}-name`}
           placeholder="단축어 이름을 입력해주세요"
@@ -134,7 +133,7 @@ function ShortcutRow({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`shortcut-${id}-description`}><RequiredText>설명</RequiredText></Label>
+        <Label htmlFor={`shortcut-${id}-description`}><FieldLabelText field="shortcuts.*.description" /></Label>
         <Textarea
           id={`shortcut-${id}-description`}
           placeholder="이 단축어가 어떤 동작을 하는지 설명해주세요"
@@ -152,7 +151,7 @@ function ShortcutRow({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`shortcut-${id}-prompt`}><RequiredText>실행될 프롬프트</RequiredText></Label>
+        <Label htmlFor={`shortcut-${id}-prompt`}><FieldLabelText field="shortcuts.*.prompt" /></Label>
         <Textarea
           id={`shortcut-${id}-prompt`}
           placeholder="단축어 실행 시 AI에게 전달할 프롬프트를 입력해주세요"

@@ -13,6 +13,8 @@ const STAT_ERROR_FIELDS: Record<StatErrorField, true> = {
   unit: true,
   description: true,
   perTurnDelta: true,
+  changeDirection: true,
+  maxChangePerTurn: true,
 };
 
 function isStatErrorField(key: string): key is StatErrorField {

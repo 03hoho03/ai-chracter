@@ -19,7 +19,6 @@ import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
 import {
   CollapsibleItemCard,
-  firstLine,
   focusNeighborToggle,
   ItemDragHandle,
   ItemRemoveButton,
@@ -27,14 +26,15 @@ import {
   useBuilderUiState,
 } from "@/features/build-common";
 import {
+  FieldLabelText,
   MAX_STARTING_SETUPS,
   MAX_SUGGESTED_REPLIES,
   reconcileKeywordNotesOnStartingSetupRemoval,
+  startingSetupSummary,
   type StoryBuilderFormValues,
   type StoryCollapsibleList,
 } from "@/features/build-story";
 import { MediaBookConfirmModal } from "@/features/edit-media-book";
-import { RequiredText } from "@/shared/ui/RequiredText";
 
 import { MediaTagInsertButton } from "./MediaTagInsertButton";
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
@@ -120,6 +120,7 @@ export function StartingSetupTab() {
         suggestedReplies: [],
         stats: [],
         endings: [],
+        situationNotes: [],
       },
       { focusName: `startingSetups.${fields.length}.name` },
     );
@@ -135,7 +136,7 @@ export function StartingSetupTab() {
   return (
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-1" data-field-path="startingSetups">
-        <Label>시작설정 * (최대 {MAX_STARTING_SETUPS}개)</Label>
+        <Label><FieldLabelText field="startingSetups" /></Label>
         <p className="text-sm text-muted-foreground">
           여러 개의 시작 상황을 만들 수 있어요. 목록의 첫 번째 항목이 기본 선택이에요.
         </p>
@@ -255,10 +256,6 @@ function StartingSetupRow({
   }
 
   const trimmedName = name.trim();
-  // 첫 시작설정이 기본 선택이라 그 사실과 프롤로그 첫 줄로 가른다(비어 있는 재료는 뺀다).
-  const summary = [index === 0 ? "기본" : undefined, firstLine(prologue) || undefined]
-    .filter((part) => part !== undefined)
-    .join(" · ");
 
   return (
     <CollapsibleItemCard
@@ -268,7 +265,7 @@ function StartingSetupRow({
       title={name}
       placeholderTitle="새 시작설정"
       srTitlePrefix={`${index + 1}번째 시작설정: `}
-      summary={summary}
+      summary={startingSetupSummary({ prologue }, index)}
       hasError={hasOwnError}
       leading={<ItemDragHandle {...attributes} {...listeners} aria-label={`${index + 1}번째 시작설정 순서 변경`} />}
       trailing={
@@ -279,7 +276,7 @@ function StartingSetupRow({
       }
     >
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`starting-setup-${id}-name`}><RequiredText>이름</RequiredText></Label>
+        <Label htmlFor={`starting-setup-${id}-name`}><FieldLabelText field="startingSetups.*.name" /></Label>
         <Input
           id={`starting-setup-${id}-name`}
           placeholder="시작설정 이름을 입력해주세요"
@@ -296,7 +293,7 @@ function StartingSetupRow({
 
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between gap-2">
-          <Label htmlFor={`starting-setup-${id}-prologue`}><RequiredText>프롤로그</RequiredText></Label>
+          <Label htmlFor={`starting-setup-${id}-prologue`}><FieldLabelText field="startingSetups.*.prologue" /></Label>
           <MediaTagInsertButton name={`startingSetups.${index}.prologue`} fieldLabel="프롤로그" textareaRef={prologueRef} />
         </div>
         <Textarea
@@ -321,7 +318,7 @@ function StartingSetupRow({
 
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between gap-2">
-          <Label htmlFor={`starting-setup-${id}-opening-situation`}>시작상황</Label>
+          <Label htmlFor={`starting-setup-${id}-opening-situation`}><FieldLabelText field="startingSetups.*.openingSituation" /></Label>
           <MediaTagInsertButton
             name={`startingSetups.${index}.openingSituation`}
             fieldLabel="시작상황"
@@ -357,7 +354,7 @@ function StartingSetupRow({
 
       <div className="flex items-center justify-between gap-4 rounded-xl border border-border px-4 py-3">
         <div className="flex flex-col gap-0.5">
-          <Label htmlFor={`starting-setup-${id}-advanced-toggle`}>고급설정</Label>
+          <Label htmlFor={`starting-setup-${id}-advanced-toggle`}><FieldLabelText field="startingSetups.*.$advanced" /></Label>
           <p className="text-sm text-muted-foreground">플레이가이드와 추천 답변을 추가할 수 있어요</p>
         </div>
         <Switch
@@ -370,7 +367,7 @@ function StartingSetupRow({
       {isAdvancedOpen && (
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor={`starting-setup-${id}-play-guide`}>플레이가이드</Label>
+            <Label htmlFor={`starting-setup-${id}-play-guide`}><FieldLabelText field="startingSetups.*.playGuide" /></Label>
             <Textarea
               id={`starting-setup-${id}-play-guide`}
               placeholder="사용자에게 노출할 플레이 안내를 입력해주세요"
@@ -389,7 +386,7 @@ function StartingSetupRow({
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor={`starting-setup-${id}-reply-input`}>
-              추천 답변 (최대 {MAX_SUGGESTED_REPLIES}개)
+              <FieldLabelText field="startingSetups.*.suggestedReplies" />
             </Label>
             {/* 상한에서도 입력칸과 [추가] 버튼을 트리에 남긴다.
                 `disabled`도, 조건부 렌더도 안 된다(apps/web/CLAUDE.md §포커스) — 둘 다 4번째를 넣는

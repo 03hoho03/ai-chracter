@@ -1,4 +1,7 @@
+import { useRef } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@ai-character-chat/ui/components/sheet";
+
+import { useGenerateImagesSubmit } from "@/features/generate-images";
 
 import { useIsImageStudioWideLayout } from "../lib/useIsImageStudioWideLayout";
 import { GeneratedImageLibraryPanel } from "./GeneratedImageLibraryPanel";
@@ -8,14 +11,18 @@ import { GeneratedImageLibraryPanel } from "./GeneratedImageLibraryPanel";
 // 같은 boolean으로 각자 "내가 렌더될지"를 판정하는 구조를 그대로 베낀다 — 어느 쪽이든
 // GeneratedImageLibraryPanel은 한 곳에만 마운트된다
 // (쿼리가 이중으로 나가는 게 아니라 DOM에 두 벌 남는 게 문제다).
-export function ImageStudioLibraryRail({
-  isOpen,
-  onOpenChange,
-}: {
+type ImageStudioLibraryRailProps = {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
-}) {
+  /** 보관함 상세 모달에서 삭제가 성공한 이미지. 셸이 결과 영역에서도 뺀다. */
+  onImageDeleted: (assetId: string) => void;
+};
+
+export function ImageStudioLibraryRail({ isOpen, onOpenChange, onImageDeleted }: ImageStudioLibraryRailProps) {
   const isWide = useIsImageStudioWideLayout();
+  const { focusReferenceField } = useGenerateImagesSubmit();
+  // 시트가 왜 닫혔는지. "참조로 쓰기"로 닫혔으면 보관함 아이콘이 아니라 방금 채운 참조 필드로 간다.
+  const sheetCloseReasonRef = useRef<"reference">(undefined);
 
   if (isWide) {
     return (
@@ -26,7 +33,11 @@ export function ImageStudioLibraryRail({
             상단 주석). */}
         {/* 브라우저 실측 피드백 — 98px 타일에서 날짜 캡션이 3행이면 72px을 먹는다. 레일에서만
             숨기고 시트(아래)는 폭이 넓어 그대로 둔다. aria-label의 날짜는 그대로 남는다. */}
-        <GeneratedImageLibraryPanel gridColumnsClassName="grid-cols-2" isCreatedAtVisible={false} />
+        <GeneratedImageLibraryPanel
+          gridColumnsClassName="grid-cols-2"
+          isCreatedAtVisible={false}
+          onImageDeleted={onImageDeleted}
+        />
       </div>
     );
   }
@@ -44,6 +55,13 @@ export function ImageStudioLibraryRail({
         // 트리거가 시트 트리 밖에 있어 복원 대상이 없으므로 직접 지정한다.
         onCloseAutoFocus={(event) => {
           event.preventDefault();
+          const reason = sheetCloseReasonRef.current;
+          sheetCloseReasonRef.current = undefined;
+          if (reason === "reference") {
+            // 닫히는 중인 시트가 포커스를 도로 가두지 않게 닫힘이 끝난 다음 프레임에 옮긴다.
+            requestAnimationFrame(focusReferenceField);
+            return;
+          }
           document.querySelector<HTMLElement>('[data-image-studio-trigger="library"]')?.focus();
         }}
       >
@@ -51,7 +69,14 @@ export function ImageStudioLibraryRail({
           <SheetTitle>보관함</SheetTitle>
         </SheetHeader>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          <GeneratedImageLibraryPanel onNavigateToGenerate={() => onOpenChange(false)} />
+          <GeneratedImageLibraryPanel
+            onNavigateToGenerate={() => onOpenChange(false)}
+            onImageDeleted={onImageDeleted}
+            onUsedAsReference={() => {
+              sheetCloseReasonRef.current = "reference";
+              onOpenChange(false);
+            }}
+          />
         </div>
       </SheetContent>
     </Sheet>

@@ -44,6 +44,8 @@ _SEED_SET_IDS: dict[str, uuid.UUID] = _load("a69cbd40dec8").NEW_SET_IDS
 _NEXT_SLOT_MIGRATION = _load("c328445d4c2d")
 # 그 뒤 story 레인에만 행을 더하는 리비전(미디어 북 칸 판정) — 같은 이유로 story 초안은 이것도 거친다.
 _NEXT_STORY_MIGRATION = _load("2519dde454e0")
+# 그 뒤 story 레인 generation 에 상황 노트 행을 더하는 리비전 — 같은 이유로 story 초안은 이것도 거친다.
+_SITUATION_NOTES_MIGRATION = _load("2417f5829bb1")
 
 _PERSONA_KEY = ("generation", "both", "user_persona", "")
 
@@ -372,6 +374,7 @@ async def test_patch_draft_adds_persona_row_in_place_and_draft_then_publishes(
     assert await connection.run_sync(_NEXT_SLOT_MIGRATION._patch_draft, lane) is True
     if lane == "story":
         assert await connection.run_sync(_NEXT_STORY_MIGRATION._patch_draft) is True
+        assert await connection.run_sync(_SITUATION_NOTES_MIGRATION._patch_draft) is True
     db_session.expire_all()  # 원시 SQL이 민 order를 식별자 맵의 옛 값이 가리지 않게
     draft = await db_session.get(PromptSet, draft_id)
     assert draft is not None

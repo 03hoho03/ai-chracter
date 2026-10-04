@@ -109,6 +109,8 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
                 ("both", "memory_summary", ""),
                 ("both", "history", ""),
                 ("story", "keyword_notes", ""),
+                # 마이그레이션 `2417f5829bb1`이 DB에 넣는 행과 같이 간다(위 user_persona와 같은 이유).
+                ("story", "situation_notes", ""),
                 ("story", "shortcut_prompt", ""),
                 ("both", "final_frame", ""),
             }
@@ -939,6 +941,7 @@ def _story_preview_items(prompt_set: PromptSet, sections: list[PromptSection]) -
                     memory_note=_SAMPLE_MEMORY_NOTE,
                     memory_summary=_SAMPLE_MEMORY_SUMMARY,
                     keyword_note_texts=["[샘플] 키워드북 항목"],
+                    situation_note_texts=["[샘플] 상황 노트"],
                     shortcut_prompt=None,
                 ),
             )

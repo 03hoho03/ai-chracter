@@ -22,8 +22,9 @@ type EndingRuleGroupItemDto = components["schemas"]["EndingRuleGroupItem"];
 
 // BE는 DB 컬럼명 그대로의 raw operator(gte/lte/eq/gt/lt)를
 // 쓰고, entities/chat-room의 provisional 타입은 비교 연산자
-// 기호(>=, <= ...)를 쓴다 — 이 매핑이 그 둘의 유일한 경계다.
-const OPERATOR_MAP: Record<EndingRuleItemDto["operator"], ComparisonOp> = {
+// 기호(>=, <= ...)를 쓴다 — 이 매핑이 그 둘의 유일한 경계다. 작성 가이드의 엔딩 규칙 예시도 시드(서버 표기) 값을 이
+// 매핑으로 빌더 화면의 기호로 바꿔 그린다.
+export const OPERATOR_MAP: Record<EndingRuleItemDto["operator"], ComparisonOp> = {
   gte: ">=",
   lte: "<=",
   eq: "==",

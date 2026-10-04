@@ -1,7 +1,7 @@
 """content chat participants
 
 Revision ID: ade2c1031e12
-Revises: b7db3d8a5201
+Revises: 2417f5829bb1
 Create Date: 2026-10-03 22:42:53.904785
 
 `contents.chat_count` 를 "그 작품과 대화를 시작한 사람 수(작가 본인 제외)" 로 세기 위해 (작품, 사용자) 쌍을
@@ -25,7 +25,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'ade2c1031e12'
-down_revision: str | Sequence[str] | None = 'b7db3d8a5201'
+down_revision: str | Sequence[str] | None = '2417f5829bb1'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

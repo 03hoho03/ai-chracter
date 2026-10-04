@@ -11,7 +11,7 @@ export {
   useBuilderUiState,
   useCreateBuilderUiState,
 } from "./model/builderUiState";
-export { flattenFieldErrorPaths } from "./model/fieldErrorPaths";
+export { flattenFieldErrorPaths, matchTabForPath } from "./model/fieldErrorPaths";
 export { firstErrorLocation, type FirstErrorLocation } from "./model/firstErrorLocation";
 export { fieldLabelByFormPath, invalidFieldsMessage, missingFieldsMessage } from "./model/missingFieldsMessage";
 export { getFilterRejectionReason, getMissingFields } from "./model/publishRejection";
@@ -20,7 +20,6 @@ export { useProfileImageLocalUrl } from "./model/useProfileImageLocalUrl";
 export { useFocusFirstError } from "./lib/useFocusFirstError";
 export { focusNeighborToggle } from "./lib/focusNeighborToggle";
 export { focusItemToggle, revealItemToggle } from "./lib/focusItemToggle";
-export { firstLine } from "./lib/firstLine";
 export { BuilderLayout } from "./ui/BuilderLayout";
 export { BuilderTabStrip } from "./ui/BuilderTabStrip";
 export { BuilderTopBar } from "./ui/BuilderTopBar";

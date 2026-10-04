@@ -339,6 +339,47 @@ async def test_send_preview_message_story_stat_change(db_client: httpx.AsyncClie
     assert state.stats == {stat_id: 80.0}
 
 
+async def test_send_preview_message_clips_judged_stat_by_direction_and_max_change(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """미리보기도 실채팅과 같이 판정값을 방향·폭으로 자른다. 미리보기 스탯 행 조립이 두 옵션을 빠뜨리면 미리보기에서만
+    자르기가 조용히 꺼진다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
+    step_id, days_id = str(uuid.uuid4()), str(uuid.uuid4())
+    stats = [
+        _stat_def_item(id=step_id, changeDirection="increase", maxChangePerTurn=3),
+        _stat_def_item(id=days_id, name="남은 날", changeDirection="decrease"),
+    ]
+    session_id = await _start_session(
+        db_client, _story_payload(startingSetups=[_starting_setup_item(statDefs=stats)])
+    )
+
+    fake = _FakeLLMClient(
+        tokens=["이야기"],
+        structured_results=[
+            StatJudgmentResult(
+                stat_changes=[
+                    StatChangeJudgment(stat_id=step_id, new_value=80),
+                    StatChangeJudgment(stat_id=days_id, new_value=51),
+                ]
+            )
+        ],
+    )
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "달려간다"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    state = await get_preview_session(session_id)
+    assert state is not None
+    assert state.stats == {step_id: 53.0, days_id: 50.0}
+
+
 @pytest.mark.parametrize(
     "judgment_error",
     [

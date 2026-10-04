@@ -36,8 +36,15 @@ function previewButtonOf(html: string): string {
 const STORY_GUIDE_PATH = creationGuidePath("story");
 
 describe("BuilderTopBarActions guide link", () => {
-  it.each(CREATION_GUIDE_TOPIC_IDS.map(creationGuidePath))("points at %s", (guidePath) => {
+  it.each(CREATION_GUIDE_TOPIC_IDS.map((topicId) => creationGuidePath(topicId)))("points at %s", (guidePath) => {
     expect(guideLinkOf(renderActions(guidePath))).toContain(`href="${guidePath}"`);
+  });
+
+  // 빌더는 지금 열린 탭의 단계 페이지로 건다.
+  it("points at a step page of a guide", () => {
+    const stepPath = creationGuidePath("story", "setting");
+    expect(stepPath).toBe("/guide/story/setting");
+    expect(guideLinkOf(renderActions(stepPath))).toContain('href="/guide/story/setting"');
   });
 
   // 같은 탭에서 이동하면 쓰던 폼을 떠나게 되므로 새 탭으로 열고, 열린 탭이 빌더 창을 조작하지 못하게 한다.
