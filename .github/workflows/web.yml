@@ -10,6 +10,8 @@ on:
       - "apps/api/scripts/seed_content/data/tutorial/**"
       # 미디어 북 태그 규칙 테스트가 서버 테스트와 함께 이 입력 표를 읽는다 — 표만 고친 변경에서도 돌아야 한다.
       - "apps/api/tests/fixtures/media_tag_cases.json"
+      # 작가 글 매크로 치환 테스트도 서버 테스트와 함께 이 입력 표를 읽는다.
+      - "apps/api/tests/fixtures/author_macro_cases.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
   pull_request:
@@ -20,6 +22,8 @@ on:
       - "apps/api/scripts/seed_content/data/tutorial/**"
       # 미디어 북 태그 규칙 테스트가 서버 테스트와 함께 이 입력 표를 읽는다 — 표만 고친 변경에서도 돌아야 한다.
       - "apps/api/tests/fixtures/media_tag_cases.json"
+      # 작가 글 매크로 치환 테스트도 서버 테스트와 함께 이 입력 표를 읽는다.
+      - "apps/api/tests/fixtures/author_macro_cases.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
 
