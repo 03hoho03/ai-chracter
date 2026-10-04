@@ -8,6 +8,24 @@
 # 발급이 무한 실패한다. 반드시 DNS only(회색)로 둘 것.
 
 {$SITE_ADDRESS} {
+	# 기본 보안 헤더(CSP 제외). 블록 최상위라 API 응답과 아래 `/_ingest/*`(Bugsink) 응답 양쪽에
+	# 걸린다. HSTS 는 `includeSubDomains`·`preload` 없이 둔다 — 한 번 내보내면 max-age 동안
+	# 되돌리기 어렵고, 서브도메인까지 묶으면 HTTPS 가 아닌 서브도메인 하나가 막힌다. Caddy 는
+	# 자동 HTTPS 를 해도 HSTS 를 넣지 않는다.
+	#
+	# ⚠️ 나머지 셋은 `?`(응답에 없을 때만) 를 **한 줄에 하나씩** 쓴다. 로컬 caddy 2.11 로 실측한
+	# 두 함정 때문이다.
+	#   - `?` 없이 쓰면 reverse_proxy 가 업스트림 헤더를 덧붙여 Bugsink 응답에 같은 헤더가 두 번
+	#     나간다(`X-Frame-Options: DENY` 와 `SAMEORIGIN` 이 함께 나가면 브라우저가 무효로 볼 수 있다).
+	#     Bugsink 는 자체 `Referrer-Policy: same-origin`(더 엄격)·`X-Frame-Options: DENY` 를 준다.
+	#   - `?` 여러 개를 한 `header { }` 블록에 묶으면 Caddy 가 handler 하나로 합쳐 "**전부** 없을
+	#     때만" 조건이 된다 — Bugsink 가 XFO 를 주면 nosniff 까지 통째로 빠진다.
+	# web Worker 도 같은 의미(없을 때만)로 맞춰 두었다.
+	header Strict-Transport-Security "max-age=31536000"
+	header ?X-Content-Type-Options nosniff
+	header ?Referrer-Policy strict-origin-when-cross-origin
+	header ?X-Frame-Options DENY
+
 	# 브라우저 에러 ingest. web은 Bugsink(도커 내부 네트워크,
 	# 포트 미게시)에 직접 못 닿으므로 Cloudflare Worker가 `ddona.site/_ingest/*`를 이 도메인으로
 	# 중계한다. `api.ddona.site`는 ACME 때문에 Cloudflare DNS only(회색 구름) 강제라 WAF·

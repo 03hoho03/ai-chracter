@@ -1,0 +1,10 @@
+# Cloudflare Pages 응답 헤더 — 기본 보안 헤더(CSP 제외). admin 은 Worker 없는 정적 Pages 라
+# 이 파일이 모든 응답에 걸린다. Pages 가 nosniff·Referrer-Policy 는 기본으로 붙이지만
+# X-Frame-Options·HSTS 는 붙이지 않는다. HSTS 는 includeSubDomains·preload 없이 둔다 —
+# 한 번 내보내면 max-age 동안 되돌리기 어렵고, 서브도메인까지 묶으면 HTTPS 가 아닌 서브도메인
+# 하나가 막힌다.
+/*
+  Strict-Transport-Security: max-age=31536000
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY
