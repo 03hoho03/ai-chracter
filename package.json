@@ -8,7 +8,8 @@
     "lint": "eslint apps packages",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "lint:fix": "eslint apps packages --fix"
+    "lint:fix": "eslint apps packages --fix",
+    "check:env": "python3 ops/check_env.py --examples --dev"
   },
   "devDependencies": {
     "eslint": "^9",

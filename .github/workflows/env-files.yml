@@ -1,0 +1,43 @@
+name: env-files
+
+# 추적되는 `.env.example` 이 형식 규칙을 지키는지, 코드가 읽는 env 키와 양방향으로 맞는지 본다.
+# 키 목록은 config.py 의 Settings 를 AST 로, web·admin 은 소스의 `import.meta.env.VITE_*` 를 읽어 얻는다 —
+# 의존성 설치 없이 python3 표준 라이브러리만으로 돈다.
+#
+# 경로 필터: 키가 생기거나 사라지는 곳(config.py, web·admin 소스), example 자신, 검사기, 이 워크플로.
+# 검사기는 `dev-up.sh` 시작 단계와 `pnpm check:env` 도 쓰므로 검사기만 바뀐 커밋도 자체 시험을 거쳐야 한다.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/api/src/api/core/config.py"
+      - "apps/web/src/**"
+      - "apps/admin/src/**"
+      - "**/.env.example"
+      - "ops/check_env.py"
+      - "ops/check_env_test.py"
+      - ".github/workflows/env-files.yml"
+  pull_request:
+    paths:
+      - "apps/api/src/api/core/config.py"
+      - "apps/web/src/**"
+      - "apps/admin/src/**"
+      - "**/.env.example"
+      - "ops/check_env.py"
+      - "ops/check_env_test.py"
+      - ".github/workflows/env-files.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  env-files:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 검사기 자체 시험
+        run: python3 ops/check_env_test.py
+
+      - name: .env.example 형식 · 키 일치
+        run: python3 ops/check_env.py --examples
