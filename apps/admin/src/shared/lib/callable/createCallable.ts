@@ -1,5 +1,7 @@
 import { createCallable as createReactCallable, type Callable, type UserComponent } from "react-call";
 
+import { MAIN_CONTENT_ID } from "@/shared/config/landmarks";
+
 /**
  * `react-call` 의 `createCallable` 에 "닫히면 연 자리로 포커스를 돌려준다"만 더한다. 이 앱의 Callable 은
  * 반드시 이것으로 만든다(eslint `no-restricted-imports` 가 `react-call` 의 `createCallable` 을 직접 가져오는 것 —
@@ -56,8 +58,10 @@ function findExpandedTrigger(element: HTMLElement): HTMLElement | null {
 }
 
 /**
- * 모달이 완전히 닫힌 뒤, 포커스를 잃은 상태일 때만 후보 중 살아 있는 첫 요소로 옮긴다. 이미 누가 포커스를
- * 옮겼으면(스스로 복원하는 모달, 결과를 받아 입력칸으로 옮기는 호출부, 바로 열린 다음 모달, 라우트 이동 뒤
+ * 모달이 완전히 닫힌 뒤, 포커스를 잃은 상태일 때만 후보 중 살아 있는 첫 요소로 옮긴다. 후보가 전부 사라졌으면
+ * 셸의 본문 영역(본문으로 건너뛰기가 가리키는 곳)으로 보낸다 — 모달에서 확정한 조치가 성공해 재조회가 조치
+ * 영역을 통째로 지우면, 모달을 연 버튼과 그 시트 트리거가 모달이 아직 열려 있는 동안 사라져 돌아갈 곳이 없다.
+ * 이미 누가 포커스를 옮겼으면(스스로 복원하는 모달, 결과를 받아 입력칸으로 옮기는 호출부, 바로 열린 다음 모달, 라우트 이동 뒤
  * 페이지) 아무것도 하지 않는다 — 이 래퍼는 빠진 기본값을 채울 뿐 호출부를 이기지 않는다.
  *
  * 기다리는 순서는 `react-call` 2.0 과 Radix Dialog 1.1 의 내부 타이밍에 맞춘 것이다: `unmountingDelay` 뒤
@@ -71,7 +75,7 @@ function restoreFocusAfterClose(targets: HTMLElement[], unmountingDelay: number)
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           if (!isFocusLost()) return;
-          targets.find(isFocusable)?.focus();
+          (targets.find(isFocusable) ?? document.getElementById(MAIN_CONTENT_ID))?.focus();
         });
       });
     }, 0);
