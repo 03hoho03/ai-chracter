@@ -109,6 +109,7 @@ function InquiriesList({ page, status, category, onPageChange, onReset }: Inquir
       query={inquiryListQuery}
       errorMessage="문의 목록을 불러오지 못했어요."
       isEmpty={(data) => data.items.length === 0}
+      getPage={(data) => data}
       empty={
         hasCondition
           ? {

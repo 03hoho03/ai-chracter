@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 
 import {
@@ -71,12 +71,6 @@ const COLUMNS: readonly DataListColumn<AppealListItem>[] = [
   { id: "status", header: "처리상태", cell: (item) => APPEAL_STATUS_LABELS[item.status] },
 ];
 
-/** 고른 이의제기 상세가 목록 아래에 열린다 — 좁은 화면에서는 화면 밖이라 그 자리로 포커스를 옮긴다. 상세가 고를 때마다
- * 새로 마운트되므로(`key`) 이 콜백은 고른 순간에만 불린다. */
-function focusOnMount(element: HTMLElement | null) {
-  element?.focus();
-}
-
 type AppealsTableProps = {
   page: number;
   status?: AppealStatusFilter;
@@ -89,12 +83,22 @@ type AppealsTableProps = {
 function AppealsTable({ page, status, onPageChange, onReset }: AppealsTableProps) {
   const appealListQuery = useAppealListQuery({ page, status });
   const [selectedAppealId, setSelectedAppealId] = useState<string>();
+  // 고른 이의제기 상세가 목록 아래에 열린다 — 좁은 화면에서는 화면 밖이라 고른 순간 그 자리로 포커스를 옮긴다. 상세는
+  // 페이지·필터를 바꿔 다시 불러올 때도 다시 마운트되므로, 마운트가 아니라 고르는 클릭이 남긴 표시로 옮길지 정한다
+  // (안 그러면 "다음"을 누를 때마다 포커스·스크롤을 상세가 가져간다).
+  const shouldFocusDetailRef = useRef(false);
+  const focusDetailIfJustSelected = (element: HTMLElement | null) => {
+    if (!element || !shouldFocusDetailRef.current) return;
+    shouldFocusDetailRef.current = false;
+    element.focus();
+  };
 
   return (
     <QueryState
       query={appealListQuery}
       errorMessage="이의제기 목록을 불러오지 못했어요."
       isEmpty={(data) => data.items.length === 0}
+      getPage={(data) => data}
       empty={
         status === undefined
           ? { title: "검토할 이의제기가 없어요. 이용제한·숨김을 받은 작가가 신청하면 여기에 쌓여요." }
@@ -124,7 +128,11 @@ function AppealsTable({ page, status, onPageChange, onReset }: AppealsTableProps
                 <button
                   type="button"
                   aria-current={item.id === selectedAppealId || undefined}
-                  onClick={() => setSelectedAppealId(item.id)}
+                  onClick={() => {
+                    // 이미 고른 행을 다시 누르면 상세가 다시 그려지지 않아 표시가 남는다 — 새로 고를 때만 단다.
+                    shouldFocusDetailRef.current = item.id !== selectedAppealId;
+                    setSelectedAppealId(item.id);
+                  }}
                   {...props}
                 />
               )}
@@ -145,7 +153,7 @@ function AppealsTable({ page, status, onPageChange, onReset }: AppealsTableProps
             {selectedAppeal && (
               <section
                 key={selectedAppeal.id}
-                ref={focusOnMount}
+                ref={focusDetailIfJustSelected}
                 tabIndex={-1}
                 aria-label="고른 이의제기"
                 className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 outline-none sm:p-6"

@@ -66,6 +66,7 @@ function NoticesList({ page, onPageChange }: NoticesListProps) {
       query={noticeListQuery}
       errorMessage="공지 목록을 불러오지 못했어요."
       isEmpty={(data) => data.items.length === 0}
+      getPage={(data) => data}
       empty={{ title: "아직 공지가 없어요. \"새 공지\"로 첫 공지를 쓸 수 있어요." }}
     >
       {(data) => (

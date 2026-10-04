@@ -122,6 +122,7 @@ function UsersList({ params, hasCondition, onReset, onPageChange }: UsersListPro
       query={userListQuery}
       errorMessage="유저 목록을 불러오지 못했어요."
       isEmpty={(data) => data.items.length === 0}
+      getPage={(data) => data}
       empty={
         hasCondition
           ? {

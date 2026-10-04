@@ -55,8 +55,10 @@ const SELECTED_ROW_CLASS = "data-[state=selected]:bg-secondary data-[state=selec
  * 반응형 목록. 자기 폭(컨테이너 쿼리 `@2xl`, 672px) 이상이면 표, 미만이면 카드 행이다. 사이드바가 접히고 펴지면 같은
  * 뷰포트에서도 본문 폭이 바뀌어 뷰포트가 아니라 자기 폭으로 가른다.
  *
- * 두 모양이 DOM 에 함께 있고 한쪽은 `display:none` 이라 접근성 트리·Tab 순서에는 하나만 있다. 표 칸은
- * 줄바꿈하지 않아(공용 `TableCell`) 긴 이름이 표를 넓히지만, 좁은 폭에서는 카드 행이 이름을 줄바꿈한다.
+ * 두 모양이 DOM 에 함께 있고 한쪽은 `display:none` 이라 접근성 트리·Tab 순서에는 하나만 있다. 공용 `TableCell` 은
+ * 줄바꿈하지 않는데, 행 대상 칸(이름·제목)만은 줄바꿈하게 둔다 — 사용자가 쓴 제목은 띄어쓰기가 있어도 100자쯤
+ * 되면 표를 넓혀 상태·날짜 칸을 화면 밖으로 밀고, macOS 처럼 스크롤바가 숨는 환경에서는 그 칸이 있다는 단서도 없다.
+ * 날짜·숫자 칸은 그대로 한 줄이다.
  */
 export function DataList<Row>({ caption, rows, getRowKey, columns, renderRowTarget, isRowSelected, card }: DataListProps<Row>) {
   const hasSelection = isRowSelected !== undefined;
@@ -102,7 +104,14 @@ export function DataList<Row>({ caption, rows, getRowKey, columns, renderRowTarg
                 className={cn("relative pointer-coarse:h-10", SELECTED_ROW_CLASS)}
               >
                 {columns.map((column) => (
-                  <TableCell key={column.id} className={cn(column.align === "end" && "text-right tabular-nums")}>
+                  <TableCell
+                    key={column.id}
+                    className={cn(
+                      column.align === "end" && "text-right tabular-nums",
+                      // 최소 폭을 두어 다른 칸이 많아도 이름이 한두 글자 폭으로 깎이지 않게 한다.
+                      column.isPrimary && "min-w-48 whitespace-normal break-keep wrap-anywhere",
+                    )}
+                  >
                     {column.isPrimary
                       ? renderRowTarget(row, { className: ROW_TARGET_CLASS, children: withCheck(row, column.cell(row)) })
                       : column.cell(row)}

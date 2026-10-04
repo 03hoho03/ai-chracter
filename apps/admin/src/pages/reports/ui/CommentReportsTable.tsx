@@ -49,6 +49,7 @@ export function CommentReportsTable({ page, status, onPageChange, onReset }: Com
       query={query}
       errorMessage="댓글 신고를 불러오지 못했어요."
       isEmpty={(data) => data.items.length === 0}
+      getPage={(data) => data}
       empty={reportListEmpty({ noun: "댓글 신고", status, onReset })}
     >
       {(data) => (

@@ -144,6 +144,7 @@ function ImageGenerationsList({ params, hasCondition, onReset, onPageChange }: I
       query={imageGenerationListQuery}
       errorMessage="이미지 생성 내역을 불러오지 못했어요."
       isEmpty={(data) => data.items.length === 0}
+      getPage={(data) => data}
       empty={
         hasCondition
           ? {

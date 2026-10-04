@@ -58,6 +58,7 @@ export function ChatMessageReportsTable({ page, status, onPageChange, onReset }:
       query={query}
       errorMessage="채팅 응답 신고를 불러오지 못했어요."
       isEmpty={(data) => data.items.length === 0}
+      getPage={(data) => data}
       empty={reportListEmpty({ noun: "채팅 응답 신고", status, onReset })}
     >
       {(data) => (

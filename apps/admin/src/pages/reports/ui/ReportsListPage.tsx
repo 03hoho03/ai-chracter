@@ -132,6 +132,7 @@ function ReportsTable({ page, status, onPageChange, onReset }: ReportsTableProps
       query={reportListQuery}
       errorMessage="신고 목록을 불러오지 못했어요."
       isEmpty={(data) => data.items.length === 0}
+      getPage={(data) => data}
       empty={reportListEmpty({ noun: "신고", status, onReset })}
     >
       {(data) => (
