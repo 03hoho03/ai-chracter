@@ -7,7 +7,7 @@ import { PublishDialog } from "../pages/legal";
 import { PublishNoticeDialog } from "../pages/notice-detail";
 import { PublishPromptSetDialog, RestorePromptSetDialog } from "../pages/prompt-sets";
 import { UserActionConfirmModal } from "../pages/user-detail";
-import { AdminSidebar } from "../widgets/admin-sidebar";
+import { AdminShell } from "../widgets/admin-shell";
 
 export type RouterContext = {
   queryClient: QueryClient;
@@ -17,7 +17,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
   component: RootComponent,
 });
 
-// `/login`은 세션이 없는 유일한 비보호 라우트라 사이드바(세션 정보·로그아웃)를 그릴 수 없다.
+// `/login`은 세션이 없는 유일한 비보호 라우트라 셸(내비·세션 정보·로그아웃)을 그릴 수 없다.
 // 라우트 파일을 pathless layout으로 쪼개는 대신 현재 경로로 분기한다.
 function RootComponent() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
@@ -28,12 +28,9 @@ function RootComponent() {
       {isLoginPage ? (
         <Outlet />
       ) : (
-        <div className="flex min-h-screen">
-          <AdminSidebar />
-          <div className="min-w-0 flex-1">
-            <Outlet />
-          </div>
-        </div>
+        <AdminShell>
+          <Outlet />
+        </AdminShell>
       )}
       <DeleteConfirmModal />
       <LiftRestrictionConfirmModal />
