@@ -2,7 +2,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
-import { CONTACT_EMAIL, SITE_NAME } from "@/shared/config/site";
+import { CONTACT_EMAIL, SITE_INTRO, SITE_NAME } from "@/shared/config/site";
 
 import { ABOUT_SCREENSHOTS, type AboutScreenshot } from "../model/aboutScreenshots";
 
@@ -56,9 +56,7 @@ export function AboutPage() {
             캐릭터와 이야기를 이어가는 곳
           </p>
         </div>
-        <p className="break-keep text-sm text-foreground">
-          {SITE_NAME}는 AI 캐릭터와 대화하고, 직접 만든 캐릭터와 스토리를 다른 사람과 나누는 서비스예요.
-        </p>
+        <p className="break-keep text-sm text-foreground">{SITE_INTRO}</p>
         <Button asChild size="lg" className="self-start">
           <Link to="/">둘러보기</Link>
         </Button>

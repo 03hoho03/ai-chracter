@@ -23,6 +23,7 @@ import {
   contentKeys,
   favoriteKeys,
   toContentAccessStatus,
+  toHomeTypeParam,
   toThumbnailAspect,
   toThumbnailAspectClass,
   useContentDetailQuery,
@@ -366,8 +367,9 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
                     type="button"
                     onClick={() => {
                       setModalState(undefined);
-                      // 해시태그 클릭 시 홈으로 이동해 해당 해시태그로 필터링한다.
-                      void navigate({ to: "/", search: { hashtag: tag } });
+                      // 해시태그 클릭 시 홈으로 이동해 해당 해시태그로 필터링한다. 유형도 이 작품의 유형으로
+                      // 싣는다 — 파라미터 없는 `/`는 스토리라, 빼면 캐릭터 태그로 스토리 목록을 걸러 빈 화면이 된다.
+                      void navigate({ to: "/", search: { hashtag: tag, type: toHomeTypeParam(content.type) } });
                     }}
                     className="text-xs text-muted-foreground hover:underline"
                   >
