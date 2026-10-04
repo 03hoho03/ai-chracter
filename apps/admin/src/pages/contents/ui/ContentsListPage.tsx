@@ -1,9 +1,5 @@
 import { Button } from "@ai-character-chat/ui/components/button";
-import { Input } from "@ai-character-chat/ui/components/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ai-character-chat/ui/components/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@ai-character-chat/ui/components/table";
-import { useNavigate } from "@tanstack/react-router";
-import { useForm } from "react-hook-form";
+import { Link } from "@tanstack/react-router";
 
 import {
   CONTENT_TYPE_LABELS,
@@ -12,41 +8,28 @@ import {
   CONTENT_VISIBILITY_OPTIONS,
   MODERATION_STATUS_LABELS,
   MODERATION_STATUS_OPTIONS,
-  isContentType,
-  isContentVisibility,
-  isModerationStatus,
   useContentListQuery,
   type AdminContentListParams,
+  type AdminContentListResponse,
   type ContentModerationStatusFilter,
   type ContentSortOption,
   type ContentTypeFilter,
   type ContentVisibilityFilter,
 } from "@/entities/admin-content";
-import { Pagination } from "@/shared/ui/Pagination";
 import { formatCount } from "@/shared/lib/format/formatCount";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { DataList, type DataListColumn } from "@/shared/ui/DataList";
+import { FilterBar, selectFilter } from "@/shared/ui/FilterBar";
+import { PageContainer } from "@/shared/ui/PageContainer";
+import { PageHeader } from "@/shared/ui/PageHeader";
+import { Pagination } from "@/shared/ui/Pagination";
+import { QueryState } from "@/shared/ui/QueryState";
 
 import { HomeCurationStatus } from "./HomeCurationStatus";
 
-/** 세 필터 모두 entities가 Record 키에서 도출한 옵션에 `"전체"`만 얹는다 — 멤버를 여기 손으로
- * 나열하면 서버에 값이 늘어도 이 필터만 조용히 빠진다. `SelectItem`의 value가 `string`이라
- * 되받을 때 좁힘이 필요한데, `as` 대신 entities의 술어를 쓴다(`ReportsListPage` 동형).
- * `"all"`은 애초에 유효한 멤버가 아니라 술어에서 자연히 걸러진다. */
-const TYPE_FILTER_OPTIONS: { value: "all" | ContentTypeFilter; label: string }[] = [
-  { value: "all", label: "전체" },
-  ...CONTENT_TYPE_OPTIONS,
-];
-
-const VISIBILITY_FILTER_OPTIONS: { value: "all" | ContentVisibilityFilter; label: string }[] = [
-  { value: "all", label: "전체" },
-  ...CONTENT_VISIBILITY_OPTIONS,
-];
-
-const MODERATION_FILTER_OPTIONS: { value: "all" | ContentModerationStatusFilter; label: string }[] = [
-  { value: "all", label: "전체" },
-  ...MODERATION_STATUS_OPTIONS,
-];
-
+/** 정렬만 도메인 라벨이 아니라 화면 전용 목록이라 여기 둔다(`CONTENT_SORT_OPTIONS`는 서버 스키마가 아니라 admin이
+ * 정한 값이다). 필터 셋은 entities가 Record 키에서 도출한 옵션을 그대로 쓴다 — 멤버를 여기 손으로 나열하면 서버에
+ * 값이 늘어도 이 필터만 조용히 빠진다. */
 const SORT_OPTIONS: { value: ContentSortOption; label: string }[] = [
   { value: "recent", label: "최신순" },
   { value: "views", label: "조회수" },
@@ -84,203 +67,147 @@ export function ContentsListPage({
   onPageChange,
   onFilterChange,
 }: ContentsListPageProps) {
+  const resetFilters = () => onFilterChange({ type: undefined, visibility: undefined, moderationStatus: undefined });
+  const hasCondition = type !== undefined || visibility !== undefined || moderationStatus !== undefined || q !== undefined;
+
   return (
-    <main className="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-10">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">작품 관리</h1>
+    <PageContainer>
+      <PageHeader title="작품 관리" />
 
-        <div className="flex flex-wrap items-center gap-3">
-          {/* 뒤로가기 등으로 라우트 search의 q가 외부에서 바뀌면 폼째 리마운트해 입력창을 맞춘다. */}
-          <ContentSearchForm
-            key={q ?? ""}
-            defaultQuery={q}
-            onSearch={(nextQuery) => onFilterChange({ q: nextQuery })}
-          />
-
-          <Select
-            value={type ?? "all"}
-            onValueChange={(value) => onFilterChange({ type: isContentType(value) ? value : undefined })}
-          >
-            <SelectTrigger size="sm" aria-label="종류 필터" className="w-28">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {TYPE_FILTER_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={visibility ?? "all"}
-            onValueChange={(value) => onFilterChange({ visibility: isContentVisibility(value) ? value : undefined })}
-          >
-            <SelectTrigger size="sm" aria-label="공개범위 필터" className="w-28">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {VISIBILITY_FILTER_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={moderationStatus ?? "all"}
-            onValueChange={(value) => onFilterChange({ moderationStatus: isModerationStatus(value) ? value : undefined })}
-          >
-            <SelectTrigger size="sm" aria-label="상태 필터" className="w-28">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {MODERATION_FILTER_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={sort ?? "recent"}
-            onValueChange={(value) => onFilterChange({ sort: isSortOption(value) ? value : undefined })}
-          >
-            <SelectTrigger size="sm" aria-label="정렬" className="w-28">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SORT_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      <FilterBar
+        search={{
+          label: "작품 이름 검색",
+          placeholder: "작품 이름 검색",
+          value: q,
+          onSubmit: (nextQuery) => onFilterChange({ q: nextQuery }),
+        }}
+        fields={[
+          selectFilter({
+            id: "type",
+            label: "종류",
+            options: CONTENT_TYPE_OPTIONS,
+            value: type,
+            defaultLabel: "전체",
+            onChange: (value) => onFilterChange({ type: value }),
+          }),
+          selectFilter({
+            id: "visibility",
+            label: "공개범위",
+            options: CONTENT_VISIBILITY_OPTIONS,
+            value: visibility,
+            defaultLabel: "전체",
+            onChange: (value) => onFilterChange({ visibility: value }),
+          }),
+          selectFilter({
+            id: "moderation-status",
+            label: "상태",
+            options: MODERATION_STATUS_OPTIONS,
+            value: moderationStatus,
+            defaultLabel: "전체",
+            onChange: (value) => onFilterChange({ moderationStatus: value }),
+          }),
+          // 정렬에는 "전체"가 없다 — 비어 있으면 최신순으로 보이고, 최신순을 고르면 search 에 `recent` 가 실린다.
+          selectFilter({
+            id: "sort",
+            label: "정렬",
+            role: "sort",
+            options: SORT_OPTIONS,
+            value: sort ?? "recent",
+            onChange: (value) => onFilterChange({ sort: value }),
+          }),
+        ]}
+        onReset={resetFilters}
+      />
 
       <HomeCurationStatus />
 
-      <ContentsTable params={{ page, type, visibility, moderationStatus, q, sort }} onPageChange={onPageChange} />
-    </main>
+      <ContentsList
+        params={{ page, type, visibility, moderationStatus, q, sort }}
+        hasCondition={hasCondition}
+        onReset={() => onFilterChange({ type: undefined, visibility: undefined, moderationStatus: undefined, q: undefined })}
+        onPageChange={onPageChange}
+      />
+    </PageContainer>
   );
 }
 
-/** 검색은 제출만 하고 검증이 없어 zod 스키마 없이 폼 값 타입만 둔다. */
-type SearchFormValues = {
-  q: string;
-};
+type ContentListItem = AdminContentListResponse["items"][number];
 
-type ContentSearchFormProps = {
-  defaultQuery?: string;
-  onSearch: (query: string | undefined) => void;
-};
+const COLUMNS: readonly DataListColumn<ContentListItem>[] = [
+  { id: "name", header: "이름", isPrimary: true, cell: (item) => item.name || "(이름 없음)" },
+  { id: "type", header: "종류", cell: (item) => <span className="text-muted-foreground">{CONTENT_TYPE_LABELS[item.type]}</span> },
+  {
+    id: "visibility",
+    header: "공개범위",
+    cell: (item) => <span className="text-muted-foreground">{CONTENT_VISIBILITY_LABELS[item.visibility]}</span>,
+  },
+  { id: "status", header: "상태", cell: (item) => MODERATION_STATUS_LABELS[item.moderationStatus] },
+  { id: "views", header: "조회수", align: "end", cell: (item) => formatCount(item.viewCount) },
+  { id: "chats", header: "채팅수", align: "end", cell: (item) => formatCount(item.chatCount) },
+  { id: "created", header: "등록일시", cell: (item) => formatDateTime(item.createdAt) },
+];
 
-function ContentSearchForm({ defaultQuery, onSearch }: ContentSearchFormProps) {
-  const { register, handleSubmit } = useForm<SearchFormValues>({ defaultValues: { q: defaultQuery ?? "" } });
-
-  return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        void handleSubmit(({ q }) => onSearch(q.trim() || undefined))(event);
-      }}
-      className="flex items-center gap-2"
-    >
-      {/* 옆 Button(size="sm")이 32px라 그 높이에 맞춘다. */}
-      <Input placeholder="작품 이름 검색" aria-label="작품 이름 검색" className="h-8 w-40 sm:w-56" {...register("q")} />
-      <Button type="submit" variant="outline" size="sm">
-        검색
-      </Button>
-    </form>
-  );
-}
-
-type ContentsTableProps = {
+type ContentsListProps = {
   params: AdminContentListParams;
+  /** 필터·검색어가 하나라도 걸렸는지 — 빈 결과의 안내가 갈린다. */
+  hasCondition: boolean;
+  onReset: () => void;
   onPageChange: (page: number) => void;
 };
 
-/** 헤더(제목·필터)는 로딩·에러에도 남아야 해서 쿼리에 의존하는 본문만 갈라낸다. */
-function ContentsTable({ params, onPageChange }: ContentsTableProps) {
+/** 머리(제목·필터)는 로딩·에러에도 남아야 해서 쿼리에 의존하는 본문만 갈라낸다. */
+function ContentsList({ params, hasCondition, onReset, onPageChange }: ContentsListProps) {
   const contentListQuery = useContentListQuery(params);
-  const navigate = useNavigate();
-
-  if (contentListQuery.isPending) {
-    return <div className="h-64 animate-pulse rounded-xl bg-muted" />;
-  }
-
-  if (contentListQuery.isError) {
-    return <p className="text-sm text-destructive-text">작품 목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>;
-  }
-
-  if (contentListQuery.data.items.length === 0) {
-    return <p className="text-sm text-muted-foreground">조건에 맞는 작품이 없어요.</p>;
-  }
-
-  const goToDetail = (contentId: string) => void navigate({ to: "/contents/$contentId", params: { contentId } });
 
   return (
-    <>
-      <div className="overflow-hidden rounded-xl border border-border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>이름</TableHead>
-              <TableHead>종류</TableHead>
-              <TableHead>공개범위</TableHead>
-              <TableHead>상태</TableHead>
-              <TableHead className="text-right">조회수</TableHead>
-              <TableHead className="text-right">채팅수</TableHead>
-              <TableHead>등록일시</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {contentListQuery.data.items.map((item) => (
-              <TableRow
-                key={item.id}
-                tabIndex={0}
-                role="button"
-                className="cursor-pointer"
-                onClick={() => goToDetail(item.id)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    goToDetail(item.id);
-                  }
-                }}
-              >
-                <TableCell>{item.name || "(이름 없음)"}</TableCell>
-                <TableCell className="text-muted-foreground">{CONTENT_TYPE_LABELS[item.type]}</TableCell>
-                <TableCell className="text-muted-foreground">
-                  {CONTENT_VISIBILITY_LABELS[item.visibility]}
-                </TableCell>
-                <TableCell>{MODERATION_STATUS_LABELS[item.moderationStatus]}</TableCell>
-                <TableCell className="text-right tabular-nums">{formatCount(item.viewCount)}</TableCell>
-                <TableCell className="text-right tabular-nums">{formatCount(item.chatCount)}</TableCell>
-                <TableCell>{formatDateTime(item.createdAt)}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+    <QueryState
+      query={contentListQuery}
+      errorMessage="작품 목록을 불러오지 못했어요."
+      isEmpty={(data) => data.items.length === 0}
+      empty={
+        hasCondition
+          ? {
+              title: "조건에 맞는 작품이 없어요.",
+              action: (
+                <Button type="button" variant="outline" size="sm" onClick={onReset}>
+                  검색·필터 초기화
+                </Button>
+              ),
+            }
+          : { title: "아직 등록된 작품이 없어요. 작가가 발행하면 여기에 나타나요." }
+      }
+    >
+      {(data) => (
+        <>
+          <DataList
+            caption="작품 목록"
+            rows={data.items}
+            getRowKey={(item) => item.id}
+            columns={COLUMNS}
+            renderRowLink={(item, props) => <Link to="/contents/$contentId" params={{ contentId: item.id }} {...props} />}
+            card={{
+              title: (item) => item.name || "(이름 없음)",
+              meta: (item) => (
+                <>
+                  <span>{CONTENT_TYPE_LABELS[item.type]}</span>
+                  <span aria-hidden>·</span>
+                  <span>{CONTENT_VISIBILITY_LABELS[item.visibility]}</span>
+                  <span aria-hidden>·</span>
+                  <span className="font-medium text-foreground">{MODERATION_STATUS_LABELS[item.moderationStatus]}</span>
+                </>
+              ),
+              trailing: (item) => formatDateTime(item.createdAt),
+            }}
+          />
 
-      <Pagination
-        page={contentListQuery.data.page}
-        totalPages={contentListQuery.data.totalPages}
-        totalCount={contentListQuery.data.totalCount}
-        onPageChange={onPageChange}
-      />
-    </>
+          <Pagination
+            page={data.page}
+            totalPages={data.totalPages}
+            totalCount={data.totalCount}
+            onPageChange={onPageChange}
+          />
+        </>
+      )}
+    </QueryState>
   );
-}
-
-/** 정렬만 도메인 라벨이 아니라 화면 전용 목록이라 술어가 여기 남는다(`CONTENT_SORT_OPTIONS`는
- * 서버 스키마가 아니라 admin이 정한 값이다). 나머지 셋은 entities의 술어를 그대로 쓴다. */
-function isSortOption(value: string): value is ContentSortOption {
-  return SORT_OPTIONS.some((option) => option.value === value);
 }
