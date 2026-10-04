@@ -45,7 +45,9 @@ export function LegalPage() {
         </TabsList>
 
         {LEGAL_KINDS.map((kind) => (
-          <TabsContent key={kind} value={kind} className="pt-4">
+          // Radix 탭 패널은 Tab 정지(`tabIndex=0`)인데 이 패널은 안에 편집칸·버튼이 있어 그것들이 진입점이다 — 정지를 빼야
+          // 포커스가 보이지 않는 패널에 한 번 앉지 않는다.
+          <TabsContent key={kind} value={kind} tabIndex={-1} className="pt-4">
             <LegalEditor
               kind={kind}
               documentQuery={queryByKind[kind]}
