@@ -1,16 +1,18 @@
 import asyncio
 import uuid
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from datetime import UTC, date, datetime
 
 import httpx
 import pytest
-from sqlalchemy import delete, insert, select
+import pytest_asyncio
+from sqlalchemy import delete, insert, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.google_oauth import (
     GoogleProfile,
     GoogleProfileFetcher,
+    PendingGoogleSignup,
     _pending_signup_key,
     _state_key,
     exchange_code_for_profile,
@@ -31,7 +33,7 @@ _STATE_COOKIE = "oauth_state_google"
 _PENDING_COOKIE = "oauth_pending_google"
 
 
-def _fake_profile(sub: str, email: str) -> GoogleProfile:
+def _fake_profile(sub: str, email: str | None) -> GoogleProfile:
     return GoogleProfile(sub=sub, email=email)
 
 
@@ -39,7 +41,7 @@ def _override_profile_fetcher(fetch: GoogleProfileFetcher) -> None:
     app.dependency_overrides[get_google_profile_fetcher] = lambda: fetch
 
 
-def _override_google_profile(sub: str, email: str) -> None:
+def _override_google_profile(sub: str, email: str | None) -> None:
     async def fetch(code: str) -> GoogleProfile:
         return _fake_profile(sub, email)
 
@@ -297,7 +299,8 @@ def _raise_connect_error(request: httpx.Request) -> httpx.Response:
         pytest.param(lambda request: httpx.Response(200, text="<html>"), id="token-not-json"),
         pytest.param(_token_ok_then(httpx.Response(500)), id="userinfo-non-200"),
         pytest.param(
-            _token_ok_then(httpx.Response(200, json={"sub": "s"})), id="userinfo-missing-email"
+            _token_ok_then(httpx.Response(200, json={"email": "a@example.com"})),
+            id="userinfo-missing-sub",
         ),
         pytest.param(_raise_connect_error, id="network-error"),
     ],
@@ -313,9 +316,32 @@ async def test_exchange_code_for_profile_normalizes_failures(
 
 
 async def test_exchange_code_for_profile_returns_profile(monkeypatch: pytest.MonkeyPatch) -> None:
-    handler = _token_ok_then(httpx.Response(200, json={"sub": "s-1", "email": "a@example.com"}))
+    handler = _token_ok_then(
+        httpx.Response(200, json={"sub": "s-1", "email": "a@example.com", "email_verified": True})
+    )
     _patch_httpx(monkeypatch, handler, module="api.auth.google_oauth")
     assert await exchange_code_for_profile("code") == {"sub": "s-1", "email": "a@example.com"}
+
+
+@pytest.mark.parametrize(
+    "userinfo",
+    [
+        pytest.param({"sub": "s-1", "email": "a@example.com", "email_verified": False}, id="false"),
+        pytest.param({"sub": "s-1", "email": "a@example.com"}, id="verified-missing"),
+        pytest.param(
+            {"sub": "s-1", "email": "a@example.com", "email_verified": "true"}, id="verified-string"
+        ),
+        pytest.param({"sub": "s-1", "email_verified": True}, id="email-missing"),
+    ],
+)
+async def test_exchange_code_for_profile_drops_unverified_email(
+    monkeypatch: pytest.MonkeyPatch, userinfo: dict[str, object]
+) -> None:
+    """구글이 인증했다고 확언하지 않은 이메일은 없는 것으로 다룬다 — 그 주소로 기존 계정을 찾아
+    붙이면 남의 이메일을 주장한 구글 계정이 그 계정에 들어간다. 교환 실패가 아니다(sub 로 찾을
+    기존 회원은 그대로 들어와야 한다)."""
+    _patch_httpx(monkeypatch, _token_ok_then(httpx.Response(200, json=userinfo)), module="api.auth.google_oauth")
+    assert await exchange_code_for_profile("code") == {"sub": "s-1", "email": None}
 
 
 async def test_google_callback_new_user_redirects_to_onboarding_without_session(
@@ -444,7 +470,9 @@ async def test_onboarding_google_without_pending_cookie_ignores_token_in_body(
     """URL·히스토리로 샌 토큰을 다른 브라우저가 들고 와도 가입을 끝낼 수 없어야 한다 — 쿠키만
     본다. 본문의 옛 `token` 필드는 무시된다(구 프런트가 보내도 422 가 아니다)."""
     token = await store_pending_google_signup(
-        GoogleProfile(sub=f"google-sub-{uuid.uuid4()}", email=f"leak-{uuid.uuid4()}@example.com")
+        PendingGoogleSignup(
+            sub=f"google-sub-{uuid.uuid4()}", email=f"leak-{uuid.uuid4()}@example.com"
+        )
     )
     resp = await db_client.post("/auth/onboarding/google", json={**_ONBOARDING_FORM, "token": token})
     assert resp.status_code == 400
@@ -518,6 +546,162 @@ async def test_google_callback_links_existing_password_account_by_email(
     assert user.google_sub == google_sub
 
 
+async def test_google_callback_unverified_email_does_not_link_existing_password_account(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user(password_hash=await hash_password("password123"))
+    db_session.add(user)
+    await db_session.flush()
+
+    state = await _start_google_login(db_client)
+    # 프로필의 email 이 None 이면 교환 단계에서 미인증 이메일을 버린 것이다 — 원래 주소가 이
+    # 계정과 같았더라도 콜백은 그 주소를 알 수 없어야 한다.
+    _override_google_profile(f"google-sub-{uuid.uuid4()}", None)
+    try:
+        resp = await db_client.get(
+            "/auth/google/callback", params={"state": state, "code": "c"}, follow_redirects=False
+        )
+    finally:
+        _clear_google_profile_override()
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == (
+        f"{settings.frontend_base_url}/login?error=google_email_required"
+    )
+    assert settings.session_cookie_name not in resp.cookies
+    assert not _set_cookie_headers(resp, _PENDING_COOKIE)
+    await db_session.refresh(user)
+    assert user.google_sub is None
+
+
+async def test_google_callback_without_verified_email_still_logs_in_existing_member_by_sub(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """이메일 인증 상태는 신규 가입·연결에만 쓴다. 이미 sub 로 묶인 회원을 이메일 상태로 막으면
+    고칠 길 없이 계정에 못 들어온다(카카오 콜백과 같은 판단)."""
+    ctx = await _onboard_new_google_user(db_client, "2000-01-01")
+    onboard_resp = await db_client.post("/auth/onboarding/google", json=ctx["payload"])
+    assert onboard_resp.status_code == 200
+    db_client.cookies.clear()
+
+    state = await _start_google_login(db_client, redirect="/mypage")
+    _override_google_profile(str(ctx["sub"]), None)
+    try:
+        resp = await db_client.get(
+            "/auth/google/callback", params={"state": state, "code": "c"}, follow_redirects=False
+        )
+    finally:
+        _clear_google_profile_override()
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == f"{settings.frontend_base_url}/mypage"
+    assert settings.session_cookie_name in resp.cookies
+
+
+async def test_google_callback_rejects_same_email_already_linked_to_another_google_account(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """같은 주소를 주장하는 다른 구글 계정(이메일 재발급 등)이 기존 구글 회원의 세션을 받으면
+    안 된다. 원래 구글 계정으로 로그인하라고 안내한다."""
+    original_sub = f"google-sub-{uuid.uuid4()}"
+    user = _make_user(google_sub=original_sub)
+    db_session.add(user)
+    await db_session.flush()
+
+    state = await _start_google_login(db_client)
+    _override_google_profile(f"google-sub-{uuid.uuid4()}", user.email)
+    try:
+        resp = await db_client.get(
+            "/auth/google/callback", params={"state": state, "code": "c"}, follow_redirects=False
+        )
+    finally:
+        _clear_google_profile_override()
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == (
+        f"{settings.frontend_base_url}/login?error=google_email_taken&method=google"
+    )
+    assert settings.session_cookie_name not in resp.cookies
+    assert not _set_cookie_headers(resp, _PENDING_COOKIE)
+    await db_session.refresh(user)
+    assert user.google_sub == original_sub
+
+
+@pytest_asyncio.fixture
+async def committed_user_ids() -> AsyncIterator[list[uuid.UUID]]:
+    """테스트 트랜잭션 밖에서 커밋한 users 행을 지운다. 콜백이 그 행을 잠근 채 테스트 트랜잭션이
+    끝날 때까지 쥐고 있으므로, 테스트 본문에서 지우면 그 잠금을 기다리다 멈춘다. 그래서 테스트
+    인자에서 `db_client` 보다 앞에 둬 그 트랜잭션이 되감긴 뒤에 정리되게 한다."""
+    ids: list[uuid.UUID] = []
+    yield ids
+    async with engine.begin() as conn:
+        await conn.execute(delete(User).where(User.id.in_(ids)))
+
+
+async def test_google_callback_racing_link_of_the_same_google_account_logs_in(
+    committed_user_ids: list[uuid.UUID], db_client: httpx.AsyncClient
+) -> None:
+    """같은 구글 계정의 콜백 두 개가 동시에 같은 비밀번호 계정에 연결을 시도한다. 먼저 커밋한 쪽이
+    붙인 sub 는 자기 것이라 "다른 구글 계정"으로 거부하면 안 된다. 별개 커넥션이 sub 를 미커밋으로
+    붙여 행을 잠그고, 콜백이 sub 조회를 놓친 뒤 이메일 행 잠금을 기다리는 것을 관측한 다음 커밋해
+    진짜 경합을 만든다."""
+    sub = f"google-sub-{uuid.uuid4()}"
+    email = f"race-{uuid.uuid4()}@example.com"
+    user_id = uuid.uuid4()
+    committed_user_ids.append(user_id)
+    async with engine.connect() as interloper:
+        await interloper.execute(
+            insert(User).values(
+                id=user_id,
+                email=email,
+                password_hash=await hash_password("password123"),
+                nickname="경합",
+                birth_date=date(2000, 1, 1),
+                terms_agreed_at=datetime.now(UTC),
+                privacy_agreed_at=datetime.now(UTC),
+                email_verified_at=datetime.now(UTC),
+            )
+        )
+        await interloper.commit()
+        await interloper.execute(update(User).where(User.id == user_id).values(google_sub=sub))
+        interloper_pid = await interloper.scalar(text("SELECT pg_backend_pid()"))
+
+        state = await _start_google_login(db_client)
+        _override_google_profile(sub, email)
+        try:
+            task = asyncio.create_task(
+                db_client.get(
+                    "/auth/google/callback", params={"state": state, "code": "c"}, follow_redirects=False
+                )
+            )
+            try:
+                # 콜백 커넥션이 이 커넥션의 트랜잭션 종료를 기다리는 상태(미승인 transactionid
+                # 잠금)를 pg_locks 로 직접 관측한다.
+                async with asyncio.timeout(5.0):
+                    while True:
+                        waiting = await interloper.scalar(
+                            text(
+                                "SELECT count(*) FROM pg_locks"
+                                " WHERE locktype = 'transactionid' AND NOT granted AND pid <> :pid"
+                            ),
+                            {"pid": interloper_pid},
+                        )
+                        if waiting:
+                            break
+                        await asyncio.sleep(0.01)
+                await interloper.commit()
+            finally:
+                # 관측에 실패해도 잠금을 풀어 콜백이 끝나게 한다.
+                await interloper.rollback()
+                resp = await task
+        finally:
+            _clear_google_profile_override()
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == f"{settings.frontend_base_url}/"
+    assert settings.session_cookie_name in resp.cookies
+
+
 async def test_google_callback_redirects_suspended_existing_user(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
@@ -568,7 +752,7 @@ async def test_onboarding_google_suspended_existing_user_is_rejected_without_sid
     )
     db_session.add(user)
     await db_session.flush()
-    token = await store_pending_google_signup(GoogleProfile(sub=sub, email=user.email))
+    token = await store_pending_google_signup(PendingGoogleSignup(sub=sub, email=user.email))
     db_client.cookies.set(_PENDING_COOKIE, token)
     payload = {
         "nickname": "바뀜",
@@ -631,7 +815,7 @@ async def test_google_callback_rejects_existing_minor_account_linked_by_email(
     분기를 빠뜨리면 링크된 기존 미성년 계정이 구글 로그인으로 그대로 들어온다."""
     user = _make_user(
         birth_date=date.today().replace(year=date.today().year - 13),
-        password_hash=hash_password("password123"),
+        password_hash=await hash_password("password123"),
     )
     db_session.add(user)
     await db_session.flush()
@@ -740,7 +924,7 @@ async def test_me_reports_password_account_linked_to_google_as_both(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """한 계정이 비밀번호와 구글을 함께 가질 수 있어(이메일 자동 연동) 두 필드가 따로 있다."""
-    user = _make_user(password_hash=hash_password("password123"), google_sub=f"g-{uuid.uuid4()}")
+    user = _make_user(password_hash=await hash_password("password123"), google_sub=f"g-{uuid.uuid4()}")
     db_session.add(user)
     await db_session.flush()
 

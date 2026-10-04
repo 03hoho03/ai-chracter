@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,9 +14,11 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 
-import { useWithdrawAccountMutation } from "../api/useWithdrawAccountMutation";
+import { useSessionQuery } from "@/entities/session";
 
-const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
+import { useWithdrawAccountMutation } from "../api/useWithdrawAccountMutation";
+import { WITHDRAW_GENERIC_ERROR_MESSAGE } from "../model/withdrawError";
+import { WithdrawPasswordForm } from "./WithdrawPasswordForm";
 
 type WithdrawAccountDialogProps = {
   /** ReconsentModal 안에서는 "동의하지 않고 탈퇴"가 맞는
@@ -23,26 +26,35 @@ type WithdrawAccountDialogProps = {
   label?: string;
 };
 
-/** 부수효과(발행작 비공개 전환, 대화기록 삭제, 초안 보존)는 전부 BE 책임이며 FE는 단일 mutation만 호출한다. */
+/** 부수효과(발행작 비공개 전환, 대화기록 삭제, 초안 보존)는 전부 BE 책임이며 FE는 단일 mutation만 호출한다.
+ *
+ * 비밀번호가 있는 계정은 서버가 현재 비밀번호를 다시 확인하므로 칸을 함께 보인다. 소셜 계정은 확인할 비밀번호가
+ * 없어 예전 확인 버튼 그대로다. 열림을 이 컴포넌트가 쥐는 이유는 비밀번호 칸 쪽이 실패하면 다이얼로그를 열어 둔 채
+ * 오류를 보여야 해서다. */
 export function WithdrawAccountDialog({ label = "회원탈퇴" }: WithdrawAccountDialogProps) {
   const navigate = useNavigate();
+  const { data: me } = useSessionQuery();
   const withdrawMutation = useWithdrawAccountMutation();
+  const [isOpen, setIsOpen] = useState(false);
+
+  const handleWithdrawn = () => {
+    setIsOpen(false);
+    toast.success("탈퇴가 완료되었어요.");
+    void navigate({ to: "/" });
+  };
 
   const handleConfirm = () => {
     if (withdrawMutation.isPending) return;
     withdrawMutation.mutate(undefined, {
-      onSuccess: () => {
-        toast.success("탈퇴가 완료되었어요.");
-        void navigate({ to: "/" });
-      },
+      onSuccess: handleWithdrawn,
       onError: () => {
-        toast.error(GENERIC_ERROR_MESSAGE);
+        toast.error(WITHDRAW_GENERIC_ERROR_MESSAGE);
       },
     });
   };
 
   return (
-    <AlertDialog>
+    <AlertDialog open={isOpen} onOpenChange={setIsOpen}>
       <AlertDialogTrigger asChild>
         <Button variant="destructive">{label}</Button>
       </AlertDialogTrigger>
@@ -58,22 +70,26 @@ export function WithdrawAccountDialog({ label = "회원탈퇴" }: WithdrawAccoun
             보존되지만 탈퇴 후에는 접근할 수 없어요. 이 작업은 되돌릴 수 없어요.
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>취소</AlertDialogCancel>
-          {/* apps/web/CLAUDE.md §포커스 — 로딩 중 plain `disabled`는 브라우저가 즉시 blur해
-              포커스를 <body>로 떨어뜨린다. ContentListLoadMore·ReconsentModal과 같은 처방으로
-              맞춘다(`aria-disabled` + 핸들러 early return + pointer-events-none·opacity-65).
-              이 버튼은 ESC를 막아 둔 ReconsentModal 안에서도 재사용되므로 키보드 복귀 수단이
-              Tab 하나뿐이다. */}
-          <AlertDialogAction
-            variant="destructive"
-            aria-disabled={withdrawMutation.isPending}
-            className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
-            onClick={handleConfirm}
-          >
-            {withdrawMutation.isPending ? "탈퇴 처리 중..." : "탈퇴하기"}
-          </AlertDialogAction>
-        </AlertDialogFooter>
+        {me?.hasPassword ? (
+          <WithdrawPasswordForm onWithdrawn={handleWithdrawn} />
+        ) : (
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            {/* apps/web/CLAUDE.md §포커스 — 로딩 중 plain `disabled`는 브라우저가 즉시 blur해
+                포커스를 <body>로 떨어뜨린다. ContentListLoadMore·ReconsentModal과 같은 처방으로
+                맞춘다(`aria-disabled` + 핸들러 early return + pointer-events-none·opacity-65).
+                이 버튼은 ESC를 막아 둔 ReconsentModal 안에서도 재사용되므로 키보드 복귀 수단이
+                Tab 하나뿐이다. */}
+            <AlertDialogAction
+              variant="destructive"
+              aria-disabled={withdrawMutation.isPending}
+              className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
+              onClick={handleConfirm}
+            >
+              {withdrawMutation.isPending ? "탈퇴 처리 중..." : "탈퇴하기"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        )}
       </AlertDialogContent>
     </AlertDialog>
   );

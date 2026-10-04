@@ -85,6 +85,7 @@ from api.content.schemas import (
 from api.content.view_count import resolve_viewer_key, try_mark_viewed
 from api.core.config import settings
 from api.core.constants import WITHDRAWN_USER_NICKNAME
+from api.core.rate_limit_gate import enforce_publish_screen_limit
 from api.core.s3 import build_display_key, build_thumbnail_key, download_object, generate_presigned_get_url
 from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User
@@ -120,7 +121,14 @@ from api.db.models.story import (
 )
 from api.db.session import get_db_session, get_session_factory
 from api.legal.dependencies import require_legal_consent
-from api.llm.client import LLMCallContext, LLMClient, LLMPolicyViolationError, structured_model
+from api.llm.client import (
+    LLMCallContext,
+    LLMClient,
+    LLMClientError,
+    LLMPolicyViolationError,
+    LLMRateLimitError,
+    structured_model,
+)
 from api.llm.dependencies import get_llm_client
 from api.session.dependencies import get_current_user_id, get_current_user_id_optional
 
@@ -1849,6 +1857,7 @@ async def _load_publish_filter_images(
 
 
 async def _screen_for_publish(
+    db: AsyncSession,
     llm_client: LLMClient,
     *,
     call_site: Literal["publish_filter_character", "publish_filter_story"],
@@ -1860,7 +1869,11 @@ async def _screen_for_publish(
     """발행 심사. 통과하지 못하면 400 `{reason}` 을 던진다. 직전에 통과한 심사와 입력이 전부 같으면 LLM 을
     부르지 않는다(`content/publish_filter_memo.py`). 모델은 클라이언트가 실제로 고를 값과 같은 함수로
     구해야 심사 모델을 바꾼 뒤 옛 모델의 통과로 건너뛰지 않는다. 기본 모델은 `get_llm_client` 가 만드는 클라이언트가
-    쓰는 `settings.gemini_model_name` 이다."""
+    쓰는 `settings.gemini_model_name` 이다.
+
+    작가당 시간당 심사 횟수 상한은 통과 기억을 본 **뒤**, LLM 을 부르기 직전에 센다 — 기억 적중은 호출이 없어
+    비용도 없다. 심사 호출이 실패하면(Gemini 쿼터 429·타임아웃·응답 파싱 실패) 판정이 없으므로 발행하지 않고
+    503 으로 알린다."""
     model = structured_model(call_site, settings.gemini_model_name)
     memo_key = screening_key(
         content_id=content.id,
@@ -1875,6 +1888,7 @@ async def _screen_for_publish(
             "publish_filter_skipped call_site=%s key=%s", call_site, memo_key.removeprefix(PASSED_KEY_PREFIX)[:12]
         )
         return
+    await enforce_publish_screen_limit(content.creator_user_id, db)
     try:
         filter_result = await llm_client.generate_structured(
             prompt,
@@ -1890,6 +1904,20 @@ async def _screen_for_publish(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"reason": "첨부한 이미지 중 안전 기준에 걸리는 그림이 있어 발행할 수 없어요."},
+        ) from exc
+    except LLMClientError as exc:
+        # 안전 차단(위)을 뺀 나머지 호출 실패다. 거부(`reason`)의 모양을 쓰면 화면이 이의제기로 안내하므로 다른
+        # 모양으로 돌려준다. 통과가 아니므로 기억하지 않는다. 쿼터 소진은 태그를 갈라 승격해야 이벤트로 행동할 수 있다.
+        logger.warning("publish_filter_unavailable call_site=%s: %s", call_site, exc)
+        capture_dependency_failure(
+            exc, dependency="gemini_rate_limit" if isinstance(exc, LLMRateLimitError) else "gemini"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "PUBLISH_SCREENING_UNAVAILABLE",
+                "message": "발행 심사를 지금 진행하지 못했어요. 잠시 뒤 다시 발행해 주세요.",
+            },
         ) from exc
     if not filter_result.passed:
         raise HTTPException(
@@ -1983,6 +2011,7 @@ async def _publish_character_content(
         situational_image_count=sum(1 for image in situational_images if image.image_asset_id is not None),
     )
     await _screen_for_publish(
+        db,
         llm_client,
         call_site="publish_filter_character",
         content=content,
@@ -2458,6 +2487,7 @@ async def _publish_story_content(
         ],
     )
     await _screen_for_publish(
+        db,
         llm_client,
         call_site="publish_filter_story",
         content=content,

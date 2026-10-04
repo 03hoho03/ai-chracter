@@ -15,6 +15,7 @@ export { flattenFieldErrorPaths, matchTabForPath } from "./model/fieldErrorPaths
 export { firstErrorLocation, type FirstErrorLocation } from "./model/firstErrorLocation";
 export { fieldLabelByFormPath, invalidFieldsMessage, missingFieldsMessage } from "./model/missingFieldsMessage";
 export { getFilterRejectionReason, getMissingFields } from "./model/publishRejection";
+export { getPublishFailureMessage } from "./model/publishFailureMessage";
 export { resolveProfileImageUrl, type ProfileImageLocalEntry } from "./model/resolveProfileImageUrl";
 export { useProfileImageLocalUrl } from "./model/useProfileImageLocalUrl";
 export { useFocusFirstError } from "./lib/useFocusFirstError";

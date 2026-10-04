@@ -100,6 +100,13 @@ class ChangePasswordRequest(CamelModel):
     new_password: str = Field(min_length=8)
 
 
+class WithdrawRequest(CamelModel):
+    """탈퇴 재인증. 비밀번호가 있는 계정만 값을 요구하고, 그 판정은 서버가 계정을 보고 한다. 필드를
+    선택으로 두는 이유: 소셜 계정의 프런트가 값 없이 보낸 `{}` 가 422 로 막히지 않게 한다."""
+
+    current_password: str | None = None
+
+
 class MeResponse(CamelModel):
     id: uuid.UUID
     email: str

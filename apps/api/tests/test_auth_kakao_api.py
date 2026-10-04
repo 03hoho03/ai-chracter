@@ -784,7 +784,7 @@ async def test_google_callback_waits_for_concurrent_kakao_replacement_and_refuse
             insert(User).values(
                 id=user_id,
                 email=email,
-                password_hash=hash_password("password123"),
+                password_hash=await hash_password("password123"),
                 nickname="미인증",
                 birth_date=date(2000, 1, 1),
                 terms_agreed_at=datetime.now(UTC),
@@ -1233,7 +1233,7 @@ async def test_kakao_unlink_webhook_duplicate_delivery_is_idempotent(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """첫 수신이 회원번호를 지우므로 같은 알림이 다시 와도 찾을 행이 없어 아무것도 하지 않는다."""
-    user = await _kakao_member(db_session, password_hash=hash_password("password123"))
+    user = await _kakao_member(db_session, password_hash=await hash_password("password123"))
     kakao_id = user.kakao_id
     first = await db_client.get(
         "/auth/kakao/unlink", params={"user_id": kakao_id}, headers=_webhook_headers()

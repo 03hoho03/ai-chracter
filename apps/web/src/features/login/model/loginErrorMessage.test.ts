@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import { SUSPENDED_ERROR_MESSAGE } from "@/entities/session";
+import { ApiErrorObject } from "@/shared/api/client";
 
 import {
   GENERIC_LOGIN_ERROR_MESSAGE,
   getLoginErrorMessage,
+  getLoginSubmitErrorMessage,
   LOGIN_ERROR_CODES,
+  MINIMUM_AGE_ERROR_MESSAGE,
   SIGNUP_METHODS,
   UNKNOWN_LOGIN_ERROR,
   type LoginErrorCode,
@@ -52,6 +55,13 @@ describe("getLoginErrorMessage", () => {
     expect(message).toContain("인증");
   });
 
+  it("구글 이메일 미인증은 구글 계정에서 이메일을 인증하라는 해결 방법을 준다", () => {
+    const message = getLoginErrorMessage("google_email_required");
+
+    expect(message).toContain("구글");
+    expect(message).toContain("인증");
+  });
+
   describe("이미 가입된 이메일", () => {
     it("kakao_email_taken 은 method 마다 서로 다른 문구이고 어느 것도 일반 오류가 아니다", () => {
       const messages = SIGNUP_METHODS.map((method) => getLoginErrorMessage("kakao_email_taken", method));
@@ -78,5 +88,38 @@ describe("getLoginErrorMessage", () => {
       expect(getLoginErrorMessage("kakao_email_taken")).toContain("처음 가입한 방법");
       expect(getLoginErrorMessage("google_email_taken")).toContain("처음 가입한 방법");
     });
+  });
+});
+
+function apiError(status: number, detail: string | Record<string, unknown> = "x") {
+  return new ApiErrorObject({ status, message: "x", detail });
+}
+
+describe("getLoginSubmitErrorMessage", () => {
+  // 맞는 비밀번호여도 상한을 넘으면 429 다 — 일반 오류나 오답 문구로 보이면 사용자는 같은 시도를 되풀이한다.
+  it("429 AUTH_LIMIT 는 기다릴 분을 올림으로 말한다", () => {
+    const message = getLoginSubmitErrorMessage(
+      apiError(429, { code: "AUTH_LIMIT", retryAfterSeconds: 61, window: "auth" }),
+    );
+
+    expect(message).toBe("로그인 시도가 너무 많았어요 · 약 2분 뒤에 다시 시도할 수 있어요");
+  });
+
+  it("모양이 다른 429 는 일반 오류로 떨어진다", () => {
+    expect(getLoginSubmitErrorMessage(apiError(429, "Too Many Requests"))).toBe(GENERIC_LOGIN_ERROR_MESSAGE);
+  });
+
+  it.each([
+    [apiError(401, "Invalid credentials"), "이메일 또는 비밀번호가 올바르지 않습니다."],
+    [apiError(403, "Account suspended"), SUSPENDED_ERROR_MESSAGE],
+    [apiError(403, "Minimum age not met"), MINIMUM_AGE_ERROR_MESSAGE],
+    [apiError(500), GENERIC_LOGIN_ERROR_MESSAGE],
+    [new Error("network"), GENERIC_LOGIN_ERROR_MESSAGE],
+  ])("기존 분기 문구는 그대로다 (%#)", (error, expected) => {
+    expect(getLoginSubmitErrorMessage(error)).toBe(expected);
+  });
+
+  it("그 밖의 403 은 이메일 미인증 안내다", () => {
+    expect(getLoginSubmitErrorMessage(apiError(403, "Email not verified"))).toContain("이메일 인증이 완료되지 않은");
   });
 });

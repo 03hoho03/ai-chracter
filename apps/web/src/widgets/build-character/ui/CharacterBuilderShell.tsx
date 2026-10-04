@@ -30,6 +30,7 @@ import {
   flattenFieldErrorPaths,
   getFilterRejectionReason,
   getMissingFields,
+  getPublishFailureMessage,
   invalidFieldsMessage,
   missingFieldsMessage,
   resolveProfileImageUrl,
@@ -217,6 +218,11 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
         revealErrorItems(form.formState.errors);
         focusFirstError(firstErrorLocation(form.formState.errors, TABS));
         toast.error(missingFieldsMessage(missingFields, MISSING_FIELD_LABELS));
+        return;
+      }
+      const publishFailure = getPublishFailureMessage(error);
+      if (publishFailure) {
+        toast.error(publishFailure);
         return;
       }
       toast.error("발행에 실패했어요. 잠시 후 다시 시도해주세요.");

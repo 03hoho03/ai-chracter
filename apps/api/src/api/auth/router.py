@@ -17,6 +17,7 @@ from api.comments.access import lock_active_user
 from api.auth.emails import send_password_reset_email, send_verification_code_email
 from api.auth.google_oauth import (
     GoogleProfileFetcher,
+    PendingGoogleSignup,
     build_authorization_url,
     consume_oauth_state,
     delete_pending_google_signup,
@@ -60,6 +61,7 @@ from api.auth.schemas import (
     SocialOnboardingResponse,
     VerifyEmailRequest,
     VerifyEmailResponse,
+    WithdrawRequest,
 )
 from api.auth.withdrawal import delete_storage_object_now, delete_storage_objects_later, erase_account
 from api.auth.verification import (
@@ -164,8 +166,10 @@ async def _start_onboarded_session(
 
 def _auth_too_many_requests(retry_after: int, *, code: str) -> HTTPException:
     # rate_limit_gate.py의 _too_many_requests를 재사용하지
-    # 않는다 — 그 함수는 user_id를 필수로 받아 로그에 찍는데, 이 파일의 세 엔드포인트는 인증 전이라
-    # user_id가 없고 키가 email/IP다. 이메일은 PII라 로그에 싣지 않는다(`user_id`까지가 한계다).
+    # 않는다 — 그 함수는 user_id를 필수로 받아 로그에 찍는데, 이 헬퍼를 쓰는 엔드포인트 대부분은
+    # 인증 전이라 user_id가 없고 키가 email/IP다. 이메일은 PII라 로그에 싣지 않는다(`user_id`까지가
+    # 한계다). 인증 뒤의 비밀번호 확인(비밀번호 변경·탈퇴)과 어드민 로그인도 이 헬퍼를 쓴다 — 그쪽
+    # 게이트의 `window` 값을 따르면 프런트가 auth 429 하나의 파서로 처리하지 못한다.
     # Retry-After 헤더는 여기도 주지 않는다 — 채팅 429와 같은 이유(CORS가 노출하지 않는
     # 헤더라 크로스오리진에서 못 읽는다). auth도 ddona.site→api.ddona.site로 크로스오리진이라
     # 같은 판단이 적용된다.
@@ -226,7 +230,7 @@ async def signup(
 
         # 순수하게 방치된 비밀번호 가입 — 기존 row를 덮어쓴다. id/created_at/google_sub 등은
         # 보존해야 하므로 새 User(...)로 교체하지 않고 기존 인스턴스의 속성만 바꾼다.
-        existing.password_hash = hash_password(payload.password)
+        existing.password_hash = await hash_password(payload.password)
         existing.nickname = payload.nickname
         existing.birth_date = payload.birth_date
         existing.terms_agreed_at = now
@@ -242,7 +246,7 @@ async def signup(
         privacy_version = await _latest_published_legal_version(db, "privacy")
         user = User(
             email=payload.email,
-            password_hash=hash_password(payload.password),
+            password_hash=await hash_password(payload.password),
             nickname=payload.nickname,
             birth_date=payload.birth_date,
             terms_agreed_at=now,
@@ -388,6 +392,12 @@ async def google_callback(
 
     user = await db.scalar(select(User).where(User.google_sub == profile["sub"]))
     if user is None:
+        email = profile["email"]
+        if email is None:
+            # 기존 회원(sub 매치)은 이메일 상태와 무관하게 들인다. 여기부터는 이메일로 기존 계정에
+            # 붙이거나 새로 가입하는 경로라 구글이 인증한 이메일이 있어야 한다 — 카카오 콜백과 같은
+            # 판단이다.
+            return oauth_login_error_redirect("google_email_required", provider="google")
         # Same email already registered via the password flow: link this Google
         # account to it instead of failing on the users.email unique constraint.
         # 행을 잠그고 읽는다 — 카카오 온보딩이 같은 미인증 행을 카카오 계정으로 대체하는 중이면 그
@@ -395,7 +405,7 @@ async def google_callback(
         # 붙여 한 행이 카카오와 구글을 함께 갖게 된다.
         user = await db.scalar(
             select(User)
-            .where(User.email == profile["email"])
+            .where(User.email == email)
             .with_for_update(key_share=True)
             .execution_options(populate_existing=True)
         )
@@ -406,24 +416,32 @@ async def google_callback(
                 f"{settings.frontend_base_url}/login?error=google_email_taken&method=kakao",
                 provider="google",
             )
-        if user is not None and user.google_sub is None:
+        # 같은 이메일에 다른 구글 계정이 이미 붙어 있다. 같은 주소를 주장한다는 것만으로 그 회원의
+        # 세션을 내주면 주소를 재발급받은 사람이 남의 계정에 들어간다. 원래 구글 계정으로 로그인하라고
+        # 안내한다. 같은 sub 면 막지 않는다 — 같은 구글 계정의 다른 콜백이 위 sub 조회와 이 잠금
+        # 사이에 먼저 연결을 커밋한 경우라 자기 계정이다(아래 대입은 같은 값이라 무해하다).
+        if user is not None and user.google_sub is not None and user.google_sub != profile["sub"]:
+            return oauth_callback_redirect(
+                f"{settings.frontend_base_url}/login?error=google_email_taken&method=google",
+                provider="google",
+            )
+        if user is not None:
             user.google_sub = profile["sub"]
             await db.commit()
-
-    if user is None:
-        token = await store_pending_google_signup(profile)
-        # 토큰을 URL 쿼리가 아니라 HttpOnly 쿠키로 내린다 — URL 은 히스토리·리퍼러·로그로 새고,
-        # 쿠키면 새더라도 이 브라우저 밖에서는 온보딩을 끝낼 수 없다.
-        response = oauth_callback_redirect(
-            f"{settings.frontend_base_url}/onboarding/google", provider="google"
-        )
-        set_oauth_cookie(
-            response,
-            pending_signup_cookie_name("google"),
-            token,
-            max_age=settings.google_pending_signup_ttl_seconds,
-        )
-        return response
+        else:
+            token = await store_pending_google_signup(PendingGoogleSignup(sub=profile["sub"], email=email))
+            # 토큰을 URL 쿼리가 아니라 HttpOnly 쿠키로 내린다 — URL 은 히스토리·리퍼러·로그로 새고,
+            # 쿠키면 새더라도 이 브라우저 밖에서는 온보딩을 끝낼 수 없다.
+            response = oauth_callback_redirect(
+                f"{settings.frontend_base_url}/onboarding/google", provider="google"
+            )
+            set_oauth_cookie(
+                response,
+                pending_signup_cookie_name("google"),
+                token,
+                max_age=settings.google_pending_signup_ttl_seconds,
+            )
+            return response
 
     return await finish_social_login(user, redirect_target, provider="google")
 
@@ -705,15 +723,35 @@ async def kakao_unlink_webhook_post(
 @router.post("/login", status_code=status.HTTP_204_NO_CONTENT)
 async def login(
     payload: LoginRequest,
+    request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
+    # 카운터는 DB 조회보다 먼저, 성공·실패와 무관하게 올린다 — 없는 이메일도 같은 횟수에서 429가
+    # 나야 상한이 계정 존재를 누설하지 않는다. 상한에 닿으면 맞는 비밀번호도 429 다.
+    client_ip = request.client.host if request.client else "unknown"
+    ip_retry_after = await rate_limit.check_rate_limit(
+        "login_ip",
+        client_ip,
+        rate_limit.LOGIN_IP_LIMIT,
+        window_seconds=rate_limit.LOGIN_IP_WINDOW_SECONDS,
+    )
+    email_retry_after = await rate_limit.check_rate_limit(
+        "login_email",
+        payload.email,
+        rate_limit.LOGIN_EMAIL_LIMIT,
+        window_seconds=rate_limit.LOGIN_EMAIL_WINDOW_SECONDS,
+    )
+    retry_after = ip_retry_after or email_retry_after
+    if retry_after > 0:
+        raise _auth_too_many_requests(retry_after, code="AUTH_LIMIT")
+
     user = await db.scalar(select(User).where(User.email == payload.email))
     if (
         user is None
         or user.password_hash is None
         or user.deleted_at is not None
-        or not verify_password(payload.password, user.password_hash)
+        or not await verify_password(payload.password, user.password_hash)
     ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
@@ -818,7 +856,7 @@ async def confirm_password_reset(
     if user.password_hash is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
 
-    user.password_hash = hash_password(payload.new_password)
+    user.password_hash = await hash_password(payload.new_password)
     await db.commit()
     # 재설정은 계정이 털렸을 때 쓰는 경로라 현재 세션 개념 없이 전부 폐기한다.
     # 토큰 삭제보다 먼저 한다 — 폐기가 실패해 500이 나도 토큰이 남아 있어야 같은 링크로 재시도하면
@@ -860,6 +898,27 @@ async def get_me(
     )
 
 
+async def _confirm_current_password(
+    user_id: uuid.UUID, password: str | None, password_hash: str
+) -> None:
+    """비밀번호 변경과 탈퇴가 같이 쓰는 현재 비밀번호 확인. 상한은 둘이 한 통을 공유한다(나누면
+    훔친 세션으로 시도할 수 있는 횟수가 두 배가 된다). 키는 세션의 user_id 라 존재 누설과 무관하고,
+    비밀번호가 있는 계정에서만 부르므로 소셜 계정의 탈퇴는 세지 않는다. 값이 없을 때도 오답과 같은
+    400 이다 — 어느 쪽이든 "현재 비밀번호를 확인하지 못했다"이다."""
+    retry_after = await rate_limit.check_rate_limit(
+        "password_confirm",
+        str(user_id),
+        rate_limit.PASSWORD_CONFIRM_USER_LIMIT,
+        window_seconds=rate_limit.PASSWORD_CONFIRM_USER_WINDOW_SECONDS,
+    )
+    if retry_after > 0:
+        raise _auth_too_many_requests(retry_after, code="AUTH_LIMIT")
+    if password is None or not await verify_password(password, password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect"
+        )
+
+
 @me_router.patch("/me/password", status_code=status.HTTP_204_NO_CONTENT)
 async def change_password(
     payload: ChangePasswordRequest,
@@ -877,12 +936,9 @@ async def change_password(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail={"code": "PASSWORD_NOT_SET"}
         )
-    if not verify_password(payload.current_password, user.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect"
-        )
+    await _confirm_current_password(user.id, payload.current_password, user.password_hash)
 
-    user.password_hash = hash_password(payload.new_password)
+    user.password_hash = await hash_password(payload.new_password)
     await db.commit()
     # 다른 기기 세션만 폐기한다 — 바꾼 사람은 지금 이 세션이다.
     await revoke_user_sessions(user_id, except_session_id=get_session_id_from_request(request))
@@ -894,11 +950,19 @@ async def withdraw(
     request: Request,
     response: Response,
     background_tasks: BackgroundTasks,
+    body: WithdrawRequest | None = None,
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
     kakao_unlinker: KakaoUnlinker = Depends(get_kakao_unlinker),
 ) -> None:
     user = await lock_active_user(db, user_id)
+    # 되돌릴 수 없는 파기라 세션만으로 넘기지 않고 비밀번호가 있는 계정은 현재 비밀번호를 다시
+    # 확인한다(소셜 전용 계정은 확인할 비밀번호가 없어 버튼 확인만 한다). 행을 잠근 뒤 확인하므로
+    # 확인과 파기 사이에 비밀번호가 바뀌지 않고, 실패하면 예외가 트랜잭션을 되감아 잠금이 풀린다.
+    if user.password_hash is not None:
+        await _confirm_current_password(
+            user.id, body.current_password if body is not None else None, user.password_hash
+        )
     # 파기가 회원번호를 지우므로 연결 끊기에 쓸 값을 먼저 잡아 둔다.
     kakao_id = user.kakao_id
     await erase_account(db, user, delete_storage_object=delete_storage_object_now)

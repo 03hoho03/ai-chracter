@@ -77,7 +77,7 @@ uv run alembic check                 # 모델과 마이그레이션이 정확히
 
 - SDK는 **`google-genai`**(`from google import genai`)이지 deprecated된 `google-generativeai`가 아니다.
 - 서비스 로직은 구체 클래스가 아니라 `dependencies.py`의 `get_llm_client()`를 통해서만 클라이언트를 받는다. 네트워크/타임아웃 실패는 `google.genai.errors.APIError`가 아니라 **`httpx.HTTPError`로 온다** — 두 예외 계열을 함께 잡아야 하고, **`generate`/`generate_structured`가 같은 `except` 튜플을 쓰는 대칭을 유지할 것**(한쪽만 좁으면 위 §SSE의 폭발 반경이 그대로 열린다).
-- **API를 거치는 LLM 동작의 모델은 실행 중인 서버 프로세스의 env로 정해진다** — CLI처럼 `GEMINI_MODEL_NAME=… uv run …`으로 우회할 수 없어 쿼터가 마르면 서버를 재기동해야 한다. `LLMClientError`에 전역 핸들러가 없어 **발행 심사(`content/router.py`)에서는 429가 HTTP 500으로 나가므로**(채팅은 SSE 안에서 잡아 `ChatErrorEvent`로 내고 클로버를 환불한다), 발행이 500이면 코드보다 로그의 `RESOURCE_EXHAUSTED`를 먼저 볼 것.
+- **API를 거치는 LLM 동작의 모델은 실행 중인 서버 프로세스의 env로 정해진다** — CLI처럼 `GEMINI_MODEL_NAME=… uv run …`으로 우회할 수 없어 쿼터가 마르면 서버를 재기동해야 한다. `LLMClientError`에 전역 핸들러는 없다 — **발행 심사(`content/router.py`)는 안전 차단을 뺀 호출 실패를 직접 잡아 503 `PUBLISH_SCREENING_UNAVAILABLE`로 내고**(채팅은 SSE 안에서 잡아 `ChatErrorEvent`로 내고 클로버를 환불한다), 쿼터 소진(429)이면 Bugsink 태그가 `gemini_rate_limit`, 그 밖의 실패는 `gemini`다. 발행이 503이면 코드보다 그 태그와 로그의 `RESOURCE_EXHAUSTED`를 먼저 볼 것.
 - **Gemini 무료 티어는 모델당 하루 20요청**이고 태평양 자정에 리셋된다(429의 `retryDelay: 30s`는 분당 제한용 상용구라 일일 쿼터엔 무의미). **쿼터는 모델 단위**라 같은 모델에 프로세스를 늘려도 예산이 안 늘고, `GEMINI_MODEL_NAME`을 잔량 있는 모델로 바꾸면 그대로 늘어난다. 스토리 챗 1턴 = 생성 + 스탯판단 **2요청**(+판정 시점이고 스탯 규칙을 통과한 엔딩 수까지) — 수동 검증 전에 예산부터 계산할 것.
 
 ## 백그라운드 · Redis

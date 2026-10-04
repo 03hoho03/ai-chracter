@@ -1,8 +1,12 @@
 import asyncio
 import logging
+import time
 import uuid
+from collections.abc import Callable, Coroutine
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
+import bcrypt
 import httpx
 import pytest
 from sqlalchemy import delete, insert, select
@@ -590,6 +594,66 @@ async def test_login_adult_issues_session_and_me_returns_user(
     }
 
 
+async def _health_finishes_while_bcrypt_runs(
+    monkeypatch: pytest.MonkeyPatch,
+    db_client: httpx.AsyncClient,
+    bcrypt_name: str,
+    request: Callable[[], Coroutine[Any, Any, httpx.Response]],
+) -> httpx.Response:
+    """`bcrypt.<bcrypt_name>` 을 0.5초 늦추고, 그 계산이 시작된 뒤 `/health` 를 부른다. 계산이
+    이벤트 루프 위에서 돌면 루프가 그동안 멈춰 health 는 계산이 끝난 뒤에야 끝난다. 시각은 늦춘
+    함수 안(워커 스레드든 루프든)에서 찍으므로 판정이 요청의 다른 await 순서에 흔들리지 않는다."""
+    real = getattr(bcrypt, bcrypt_name)
+    loop = asyncio.get_running_loop()
+    started = asyncio.Event()
+    finished_at: list[float] = []
+
+    def slow(*args: bytes) -> object:
+        loop.call_soon_threadsafe(started.set)
+        time.sleep(0.5)
+        finished_at.append(time.monotonic())
+        return real(*args)
+
+    monkeypatch.setattr(bcrypt, bcrypt_name, slow)
+    task = asyncio.create_task(request())
+    await started.wait()
+    health = await db_client.get("/health")
+    health_done_at = time.monotonic()
+    resp = await task
+
+    assert health.status_code == 200
+    assert finished_at and health_done_at < finished_at[0]
+    return resp
+
+
+async def test_login_does_not_block_event_loop_while_verifying_password(
+    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = await _signup_and_verify(db_client, birthDate="2000-01-01")
+
+    resp = await _health_finishes_while_bcrypt_runs(
+        monkeypatch,
+        db_client,
+        "checkpw",
+        lambda: db_client.post(
+            "/auth/login", json={"email": payload["email"], "password": payload["password"]}
+        ),
+    )
+    assert resp.status_code == 204
+
+
+async def test_signup_does_not_block_event_loop_while_hashing_password(
+    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    resp = await _health_finishes_while_bcrypt_runs(
+        monkeypatch,
+        db_client,
+        "hashpw",
+        lambda: db_client.post("/auth/signup", json=_signup_payload()),
+    )
+    assert resp.status_code == 201
+
+
 async def test_login_rejects_wrong_password(db_client: httpx.AsyncClient) -> None:
     payload = await _signup_and_verify(db_client, birthDate="2000-01-01")
 
@@ -597,6 +661,70 @@ async def test_login_rejects_wrong_password(db_client: httpx.AsyncClient) -> Non
         "/auth/login", json={"email": payload["email"], "password": "wrong-password"}
     )
     assert resp.status_code == 401
+
+
+def _assert_auth_limit(resp: httpx.Response, *, window_seconds: int) -> int:
+    assert resp.status_code == 429
+    detail = resp.json()["detail"]
+    assert detail == {
+        "code": "AUTH_LIMIT",
+        "retryAfterSeconds": detail.get("retryAfterSeconds"),
+        "window": "auth",
+    }
+    retry_after = detail["retryAfterSeconds"]
+    assert isinstance(retry_after, int) and 0 < retry_after <= window_seconds
+    return retry_after
+
+
+async def test_login_rate_limited_by_ip(db_client: httpx.AsyncClient) -> None:
+    """이메일을 매번 바꿔 이메일 상한을 피하고 IP 카운터만으로 막히는지 본다(테스트 클라이언트의
+    IP 는 모든 요청에서 같다)."""
+    for _ in range(rate_limit.LOGIN_IP_LIMIT):
+        resp = await db_client.post(
+            "/auth/login", json={"email": f"nobody-{uuid.uuid4()}@example.com", "password": "x"}
+        )
+        assert resp.status_code == 401
+
+    resp = await db_client.post(
+        "/auth/login", json={"email": f"nobody-{uuid.uuid4()}@example.com", "password": "x"}
+    )
+    _assert_auth_limit(resp, window_seconds=rate_limit.LOGIN_IP_WINDOW_SECONDS)
+
+
+async def test_login_rate_limited_by_email_even_with_correct_password(
+    db_client: httpx.AsyncClient,
+) -> None:
+    payload = await _signup_and_verify(db_client, birthDate="2000-01-01")
+    for _ in range(rate_limit.LOGIN_EMAIL_LIMIT):
+        resp = await db_client.post(
+            "/auth/login", json={"email": payload["email"], "password": "wrong-password"}
+        )
+        assert resp.status_code == 401
+
+    resp = await db_client.post(
+        "/auth/login", json={"email": payload["email"], "password": payload["password"]}
+    )
+    retry_after = _assert_auth_limit(resp, window_seconds=rate_limit.LOGIN_EMAIL_WINDOW_SECONDS)
+    # IP 창(10분)보다 길다 — 이 429 가 IP 카운터가 아니라 이메일 카운터(15분 창)에서 왔다.
+    assert retry_after > rate_limit.LOGIN_IP_WINDOW_SECONDS
+    assert settings.session_cookie_name not in resp.cookies
+
+
+async def test_login_rate_limit_hits_at_the_same_attempt_for_unknown_email(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """상한이 계정 존재를 누설하지 않는다 — 가입된 이메일과 없는 이메일이 같은 횟수에서 막힌다."""
+    payload = await _signup_and_verify(db_client, birthDate="2000-01-01")
+    for email in (payload["email"], f"nobody-{uuid.uuid4()}@example.com"):
+        statuses = [
+            (
+                await db_client.post(
+                    "/auth/login", json={"email": email, "password": "wrong-password"}
+                )
+            ).status_code
+            for _ in range(rate_limit.LOGIN_EMAIL_LIMIT + 1)
+        ]
+        assert statuses == [401] * rate_limit.LOGIN_EMAIL_LIMIT + [429]
 
 
 async def test_login_rejects_unknown_email(db_client: httpx.AsyncClient) -> None:
@@ -624,7 +752,7 @@ async def test_login_rejects_existing_minor_account_regardless_of_guardian_conse
     재현한다. 법정대리인 동의 기록(GuardianConsent)이 있어도 연령만으로 막힌다."""
     user = _make_user(
         birth_date=date.today().replace(year=date.today().year - 13),
-        password_hash=hash_password("password123"),
+        password_hash=await hash_password("password123"),
         email_verified_at=datetime.now(UTC),
     )
     db_session.add(user)

@@ -17,7 +17,8 @@ GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
 
 class GoogleProfile(TypedDict):
     sub: str
-    email: str
+    # 구글이 인증했다고 확언한 이메일만 담는다. 아니면 None 이다(`exchange_code_for_profile`).
+    email: str | None
 
 
 def callback_redirect_uri() -> str:
@@ -61,7 +62,15 @@ async def exchange_code_for_profile(code: str) -> GoogleProfile:
             if userinfo_resp.status_code != 200:
                 raise OAuthExchangeError(f"userinfo returned {userinfo_resp.status_code}")
             data = userinfo_resp.json()
-            return GoogleProfile(sub=data["sub"], email=data["email"])
+            # 인증되지 않은 이메일은 없는 것으로 다룬다(카카오 `parse_user_me` 와 같다). 콜백은 이
+            # 주소로 기존 계정을 찾아 구글을 붙이므로, 확인되지 않은 주소를 받으면 남의 이메일을
+            # 주장한 구글 계정이 그 계정에 들어간다. 교환 실패로 던지지 않는 이유는 sub 로 찾을
+            # 기존 회원까지 막히기 때문이다. `is True` 로 엄격하게 본다 — 다른 모양이 오면 미인증
+            # 쪽으로 실패한다.
+            email = data.get("email")
+            if not isinstance(email, str) or not email or data.get("email_verified") is not True:
+                email = None
+            return GoogleProfile(sub=data["sub"], email=email)
     except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
         # ValueError 는 JSON 이 아닌 본문, KeyError·TypeError 는 기대한 키가 없거나 모양이 다른
         # 본문이다. 예외 이름만 남긴다 — 메시지에 응답 본문이 섞일 수 있다.
@@ -108,9 +117,8 @@ def _pending_signup_key(token: str) -> str:
     return f"google_pending_signup:{token}"
 
 
-async def store_pending_google_signup(profile: GoogleProfile) -> str:
+async def store_pending_google_signup(payload: PendingGoogleSignup) -> str:
     token = secrets.token_urlsafe(24)
-    payload: PendingGoogleSignup = {"sub": profile["sub"], "email": profile["email"]}
     await redis_client.set(
         _pending_signup_key(token), json.dumps(payload), ex=settings.google_pending_signup_ttl_seconds
     )

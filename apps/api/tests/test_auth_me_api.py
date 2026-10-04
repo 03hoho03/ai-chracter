@@ -9,7 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin.action_log import record_admin_action
 from api.auth.verification import get_verification_code
+from api.core import rate_limit
 from api.core.config import settings
+from api.core.redis import redis_client
 from api.core.s3 import build_display_key, build_thumbnail_key
 from api.core.security import hash_withdrawn_email, verify_password
 from api.db.models import (
@@ -42,6 +44,8 @@ from factories import (
     _add_media_book_cell,
     _create_admin,
     _get_genre,
+    _login_as,
+    _make_user,
     _make_published_character,
     _make_published_story,
 )
@@ -93,7 +97,7 @@ async def test_change_password_updates_hash_and_allows_relogin(
     user = await db_session.scalar(select(User).where(User.email == payload["email"]))
     assert user is not None
     assert user.password_hash is not None
-    assert verify_password("newpassword456", user.password_hash)
+    assert await verify_password("newpassword456", user.password_hash)
 
     old_password_login = await db_client.post(
         "/auth/login", json={"email": payload["email"], "password": payload["password"]}
@@ -122,6 +126,81 @@ async def test_change_password_requires_session(db_client: httpx.AsyncClient) ->
         json={"currentPassword": "password123", "newPassword": "newpassword456"},
     )
     assert resp.status_code == 401
+
+
+async def test_password_confirm_limit_is_shared_by_change_password_and_withdraw(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """비밀번호 변경과 탈퇴의 비밀번호 확인이 사용자당 한 통을 같이 쓴다 — 나뉘어 있으면 아래
+    마지막 탈퇴는 자기 통의 절반만 쓴 상태라 통과한다."""
+    payload = await _signup_and_login(db_client)
+    half = rate_limit.PASSWORD_CONFIRM_USER_LIMIT // 2
+    for _ in range(half):
+        resp = await db_client.patch(
+            "/me/password", json={"currentPassword": "wrong-password", "newPassword": "newpassword456"}
+        )
+        assert resp.status_code == 400
+    for _ in range(rate_limit.PASSWORD_CONFIRM_USER_LIMIT - half):
+        resp = await db_client.request("DELETE", "/me", json={"currentPassword": "wrong-password"})
+        assert resp.status_code == 400
+
+    withdraw = await db_client.request("DELETE", "/me", json={"currentPassword": payload["password"]})
+    assert withdraw.status_code == 429
+    detail = withdraw.json()["detail"]
+    assert detail["code"] == "AUTH_LIMIT"
+    assert detail["window"] == "auth"
+    assert 0 < detail["retryAfterSeconds"] <= rate_limit.PASSWORD_CONFIRM_USER_WINDOW_SECONDS
+    change = await db_client.patch(
+        "/me/password", json={"currentPassword": payload["password"], "newPassword": "newpassword456"}
+    )
+    assert change.status_code == 429
+
+    user = await db_session.scalar(select(User).where(User.email == payload["email"]))
+    assert user is not None
+    assert user.deleted_at is None
+
+
+async def test_withdraw_of_password_account_requires_current_password(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """누락(바디 없음·빈 바디)과 오답이 비밀번호 변경과 같은 400 이고, 어느 경우도 파기하지 않는다."""
+    payload = await _signup_and_login(db_client)
+
+    for resp in (
+        await db_client.delete("/me"),
+        await db_client.request("DELETE", "/me", json={}),
+        await db_client.request("DELETE", "/me", json={"currentPassword": "wrong-password"}),
+    ):
+        assert resp.status_code == 400
+        assert resp.json() == {"detail": "Current password is incorrect"}
+
+    user = await db_session.scalar(select(User).where(User.email == payload["email"]))
+    assert user is not None
+    assert user.deleted_at is None
+    assert (await db_client.get("/me")).status_code == 200
+
+    resp = await db_client.request("DELETE", "/me", json={"currentPassword": payload["password"]})
+    assert resp.status_code == 204
+    await db_session.refresh(user)
+    assert user.deleted_at is not None
+
+
+async def test_withdraw_of_social_account_needs_no_password_and_skips_the_limit(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """소셜 전용 계정은 확인할 비밀번호가 없어 바디 없이 탈퇴하고, 비밀번호 확인 상한도 세지 않는다
+    (통이 가득 차 있어도 막히지 않는다)."""
+    user = _make_user(google_sub=f"google-sub-{uuid.uuid4()}")
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    await redis_client.set(f"rate_limit:password_confirm:{user.id}", 1000, ex=900)
+
+    resp = await db_client.delete("/me")
+
+    assert resp.status_code == 204
+    await db_session.refresh(user)
+    assert user.deleted_at is not None
 
 
 async def test_withdraw_soft_deletes_hides_content_and_deletes_own_chat_rooms(
@@ -201,7 +280,7 @@ async def test_withdraw_soft_deletes_hides_content_and_deletes_own_chat_rooms(
     content_id = content.id
     draft_version_id = draft_version.id
 
-    resp = await db_client.delete("/me")
+    resp = await db_client.request("DELETE", "/me", json={"currentPassword": payload["password"]})
     assert resp.status_code == 204
 
     reloaded_user = await db_session.scalar(select(User).where(User.id == user.id))
@@ -267,7 +346,7 @@ async def test_withdraw_purges_pii_and_records_withdrawn_email_hash(
     await db_session.commit()
     user_id = user.id
 
-    resp = await db_client.delete("/me")
+    resp = await db_client.request("DELETE", "/me", json={"currentPassword": payload["password"]})
     assert resp.status_code == 204
 
     reloaded = await db_session.get(User, user_id)
@@ -314,7 +393,7 @@ async def test_withdraw_deletes_personas_referenced_by_default_and_rooms(
     )
     await db_session.commit()
 
-    resp = await db_client.delete("/me")
+    resp = await db_client.request("DELETE", "/me", json={"currentPassword": payload["password"]})
 
     assert resp.status_code == 204
     remaining = await db_session.scalar(
@@ -350,7 +429,7 @@ async def test_withdraw_with_admin_viewed_room_keeps_the_view_log_without_the_ro
     )
     await db_session.commit()
 
-    resp = await db_client.delete("/me")
+    resp = await db_client.request("DELETE", "/me", json={"currentPassword": payload["password"]})
 
     assert resp.status_code == 204
     assert await db_session.scalar(select(sa.func.count()).select_from(ChatRoom).where(ChatRoom.id == room_id)) == 0
@@ -395,7 +474,7 @@ async def test_withdraw_deletes_profile_image_from_object_storage(
     s3.put_object(Bucket=settings.s3_bucket_name, Key=thumbnail_key, Body=b"fake-thumbnail")
     s3.put_object(Bucket=settings.s3_bucket_name, Key=build_display_key(storage_key), Body=b"fake-display")
 
-    resp = await db_client.delete("/me")
+    resp = await db_client.request("DELETE", "/me", json={"currentPassword": payload["password"]})
     assert resp.status_code == 204
 
     # storage_key 확장자 이전까지가 원본·썸네일 공통 접두사다(build_thumbnail_key가
@@ -416,7 +495,7 @@ async def test_signup_with_same_email_is_blocked_within_one_year_of_withdrawal(
     HMAC 조회로 재가입을 막는다(탈퇴 시 email을 자리표시자로 바꾸므로 옛 방식은
     더 이상 작동하지 않는다)."""
     payload = await _signup_and_login(db_client)
-    withdraw_resp = await db_client.delete("/me")
+    withdraw_resp = await db_client.request("DELETE", "/me", json={"currentPassword": payload["password"]})
     assert withdraw_resp.status_code == 204
 
     resp = await db_client.post("/auth/signup", json=_signup_payload(email=payload["email"]))
@@ -429,7 +508,7 @@ async def test_signup_with_same_email_succeeds_after_withdrawn_block_period_expi
     """withdrawn_at + 1년이 지난 행은 조회 시점에
     무시된다(행 자체의 삭제는 백업 크론이 담당한다)."""
     payload = await _signup_and_login(db_client)
-    withdraw_resp = await db_client.delete("/me")
+    withdraw_resp = await db_client.request("DELETE", "/me", json={"currentPassword": payload["password"]})
     assert withdraw_resp.status_code == 204
 
     withdrawn_row = await db_session.scalar(
@@ -452,7 +531,7 @@ async def test_verify_email_with_original_email_after_withdrawal_returns_400(
     바뀌어 원래 이메일로는 이 조회가 더는 유저를 찾지 못한다 — 크래시가 아니라 '유저
     없음'과 같은 400이어야 한다(계정 존재 여부 비노출)."""
     payload = await _signup_and_login(db_client)
-    withdraw_resp = await db_client.delete("/me")
+    withdraw_resp = await db_client.request("DELETE", "/me", json={"currentPassword": payload["password"]})
     assert withdraw_resp.status_code == 204
 
     resp = await db_client.post(
@@ -515,7 +594,7 @@ async def test_withdraw_deletes_unused_generated_asset_and_its_request_row(
     s3.put_object(Bucket=settings.s3_bucket_name, Key=thumbnail_key, Body=b"fake-thumbnail")
     s3.put_object(Bucket=settings.s3_bucket_name, Key=build_display_key(storage_key), Body=b"fake-display")
 
-    resp = await db_client.delete("/me")
+    resp = await db_client.request("DELETE", "/me", json={"currentPassword": payload["password"]})
     assert resp.status_code == 204
 
     assert await db_session.get(Asset, asset_id) is None
@@ -548,7 +627,7 @@ async def test_withdraw_deletes_own_generated_asset_used_as_profile_image(
     await db_session.commit()
     asset_id = asset.id
 
-    resp = await db_client.delete("/me")
+    resp = await db_client.request("DELETE", "/me", json={"currentPassword": payload["password"]})
     assert resp.status_code == 204
 
     assert await db_session.get(Asset, asset_id) is None
@@ -623,7 +702,7 @@ async def test_withdraw_keeps_generated_asset_used_as_content_thumbnail(
     asset_id = asset.id
     request_id = request.id
 
-    resp = await db_client.delete("/me")
+    resp = await db_client.request("DELETE", "/me", json={"currentPassword": payload["password"]})
     assert resp.status_code == 204
 
     assert await db_session.get(Asset, asset_id) is not None
@@ -664,7 +743,7 @@ async def test_withdraw_keeps_generated_asset_used_as_inquiry_attachment(
     asset_id = asset.id
     inquiry_id = inquiry.id
 
-    resp = await db_client.delete("/me")
+    resp = await db_client.request("DELETE", "/me", json={"currentPassword": payload["password"]})
     assert resp.status_code == 204
 
     assert await db_session.get(Asset, asset_id) is not None
@@ -695,7 +774,7 @@ async def test_withdraw_keeps_blocked_request_row_without_images(
     await db_session.commit()
     request_id = request.id
 
-    resp = await db_client.delete("/me")
+    resp = await db_client.request("DELETE", "/me", json={"currentPassword": payload["password"]})
     assert resp.status_code == 204
 
     assert await db_session.get(ImageGenerationRequest, request_id) is not None
@@ -734,7 +813,7 @@ async def test_withdraw_deletes_generated_asset_that_a_kept_request_row_used_as_
     await db_session.commit()
     asset_id = asset.id
 
-    resp = await db_client.delete("/me")
+    resp = await db_client.request("DELETE", "/me", json={"currentPassword": payload["password"]})
 
     assert resp.status_code == 204
     assert await db_session.get(Asset, asset_id) is None
@@ -765,7 +844,7 @@ async def test_withdraw_keeps_generated_asset_used_by_media_book_cell(
     await db_session.commit()
     asset_id = asset.id
 
-    resp = await db_client.delete("/me")
+    resp = await db_client.request("DELETE", "/me", json={"currentPassword": payload["password"]})
 
     assert resp.status_code == 204
     assert await db_session.get(Asset, asset_id) is not None

@@ -1,4 +1,10 @@
-import { isSuspendedError, SUSPENDED_ERROR_MESSAGE, type AuthFormErrorBanner } from "@/entities/session";
+import {
+  formatAuthRateLimitMessage,
+  getAuthRateLimit,
+  isSuspendedError,
+  SUSPENDED_ERROR_MESSAGE,
+  type AuthFormErrorBanner,
+} from "@/entities/session";
 import { isApiError } from "@/shared/api/client";
 
 /** 비밀번호 변경 실패 → 배너. 판별할 수 없는 실패는 `undefined`이고 호출부가 generic 배너로 보낸다.
@@ -18,5 +24,10 @@ export function getChangePasswordErrorBanner(error: unknown): AuthFormErrorBanne
     return { message: "소셜 로그인으로 가입한 계정이라 변경할 비밀번호가 없어요.", shouldShowLoginLink: false };
   }
   if (error.status === 400) return { message: "현재 비밀번호가 올바르지 않아요.", shouldShowLoginLink: false };
+  // 현재 비밀번호 확인 횟수 상한. 맞는 비밀번호여도 막히므로 오답 문구가 아니라 기다릴 시간을 말한다.
+  const rateLimit = getAuthRateLimit(error);
+  if (rateLimit) {
+    return { message: formatAuthRateLimitMessage(rateLimit, "password-confirm"), shouldShowLoginLink: false };
+  }
   return undefined;
 }

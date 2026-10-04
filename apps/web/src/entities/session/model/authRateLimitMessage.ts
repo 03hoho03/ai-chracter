@@ -39,13 +39,13 @@ export function getAuthRateLimit(error: unknown): AuthRateLimitDetail | undefine
  * 재실패가 된다(`imageRateLimitMessage.ts:16-18`의 근거와 동일 — auth의 상한 ≤3600은 이미지의
  * ≤7200보다 짧아 같은 규칙이 그대로 맞는다).
  *
- * 은닉 관련: 아래 세 문구 모두 "요청 횟수는 호출자 자신의 행동이다"만 말하고 계정 존재를
+ * 은닉 관련: 아래 문구 모두 "요청 횟수는 호출자 자신의 행동이다"만 말하고 계정 존재를
  * 암시하지 않는다. `그 계정으로는 …`·`등록된 이메일로 …`·`이미 보낸 메일이 {N}통 있어요` 같은 단정형
  * 문구는 여기서 금지고, BE가 IP 기준 429와 이메일 기준 429를 `retry_after = ip_retry_after or email_retry_after`로
  * 이미 한 숫자로 합쳐 주므로("이 기기에서"/"이 이메일로"를 구분하는 문구도 못 쓴다). */
 export function formatAuthRateLimitMessage(
   detail: AuthRateLimitDetail,
-  surface: "signup" | "password-reset" | "resend",
+  surface: "signup" | "password-reset" | "resend" | "login" | "password-confirm",
 ): string {
   switch (detail.code) {
     case "AUTH_LIMIT": {
@@ -57,6 +57,12 @@ export function formatAuthRateLimitMessage(
           return `재설정 메일을 너무 많이 요청했어요 · 약 ${minutes}분 뒤에 다시 요청할 수 있어요`;
         case "resend":
           return `재전송은 약 ${minutes}분 뒤에 다시 할 수 있어요`;
+        case "login":
+          return `로그인 시도가 너무 많았어요 · 약 ${minutes}분 뒤에 다시 시도할 수 있어요`;
+        // 비밀번호 변경과 탈퇴의 현재 비밀번호 확인은 BE 에서 한 상한을 나눠 쓴다 — 어느 화면에서 막혀도
+        // 같은 횟수를 말하는 것이라 문구도 하나다.
+        case "password-confirm":
+          return `비밀번호 확인을 너무 많이 시도했어요 · 약 ${minutes}분 뒤에 다시 시도할 수 있어요`;
         default:
           return assertNever(surface);
       }

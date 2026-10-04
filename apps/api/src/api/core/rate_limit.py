@@ -2,8 +2,8 @@
 
 정책값(분·일 상한, 버킷 용량)은 이 파일에 없다 — 호출자가 인자로 넘긴다
 (정책 상수는 게이트·큐 모듈에, 여기는 기구만).
-예외는 먼저 있던 발송 엔드포인트(signup/resend/password-reset)의 시간당 상한이다 —
-상한은 여기 모듈 상수로 둔다(env로 빼지 않는다.
+예외는 auth 엔드포인트(발송 signup/resend/password-reset, 로그인·어드민 로그인, 비밀번호
+확인)의 상한이다 — 상한과 창 길이는 여기 모듈 상수로 둔다(env로 빼지 않는다.
 조정이 필요하면 재배포 한 줄).
 
 고정 창 카운터(`check_rate_limit`). INCR로 창 안 호출 수를 세고, 첫 호출에서만 EXPIRE로 창의
@@ -59,6 +59,23 @@ SIGNUP_EMAIL_LIMIT = 5
 RESEND_VERIFICATION_EMAIL_LIMIT = 5
 PASSWORD_RESET_EMAIL_LIMIT = 5
 PASSWORD_RESET_IP_LIMIT = 10
+
+# 로그인 상한은 비밀번호 추측을 늦추는 장치다. 이메일 키는 공격자가 남의 이메일로 그 계정의
+# 로그인을 잠깐 막을 수 있게 하는 대가가 있어 창을 15분으로 짧게 둔다. IP 키는 한 곳에서 여러
+# 계정을 훑는 시도를 막고, 공유 IP(학교·통신사 NAT)의 정상 사용자를 덜 막도록 이메일보다 넉넉하다.
+LOGIN_IP_LIMIT = 30
+LOGIN_IP_WINDOW_SECONDS = 600
+LOGIN_EMAIL_LIMIT = 10
+LOGIN_EMAIL_WINDOW_SECONDS = 900
+# 어드민 계정은 몇 개뿐이고 뚫리면 피해가 크며 공유 IP 의 정상 사용자가 없어 더 낮게 둔다.
+ADMIN_LOGIN_IP_LIMIT = 10
+ADMIN_LOGIN_IP_WINDOW_SECONDS = 600
+ADMIN_LOGIN_EMAIL_LIMIT = 5
+ADMIN_LOGIN_EMAIL_WINDOW_SECONDS = 900
+# 로그인한 세션으로 현재 비밀번호를 확인하는 곳(비밀번호 변경·탈퇴)이 사용자당 한 통을 같이 쓴다.
+# 훔친 세션으로 같은 비밀번호를 맞히는 경로라, 통을 나누면 시도 횟수가 그만큼 늘어난다.
+PASSWORD_CONFIRM_USER_LIMIT = 10
+PASSWORD_CONFIRM_USER_WINDOW_SECONDS = 900
 
 
 class _TokenBucket(BaseModel):

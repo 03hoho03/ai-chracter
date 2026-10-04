@@ -1,4 +1,12 @@
-import { SOCIAL_PROVIDER_LABELS, SUSPENDED_ERROR_MESSAGE, type SocialProvider } from "@/entities/session";
+import {
+  formatAuthRateLimitMessage,
+  getAuthRateLimit,
+  isSuspendedError,
+  SOCIAL_PROVIDER_LABELS,
+  SUSPENDED_ERROR_MESSAGE,
+  type SocialProvider,
+} from "@/entities/session";
+import { isApiError } from "@/shared/api/client";
 import { assertNever } from "@/shared/lib/assertNever";
 
 /** 소셜 로그인 콜백이 실패하면 백엔드가 `/login?error=<code>`로 돌려보낸다. 이 코드는 OpenAPI에 실리지 않아
@@ -13,6 +21,7 @@ export const LOGIN_ERROR_CODES = [
   "google_failed",
   "kakao_failed",
   "kakao_email_required",
+  "google_email_required",
   "kakao_email_taken",
   "google_email_taken",
   "account_deleted",
@@ -70,6 +79,8 @@ export function getLoginErrorMessage(code: LoginErrorParam, method?: SignupMetho
       return `${SOCIAL_PROVIDER_LABELS[code === "google_failed" ? "google" : "kakao"]} 로그인 중 문제가 생겼어요. 잠시 후 다시 시도해주세요.`;
     case "kakao_email_required":
       return "카카오계정에 인증된 이메일이 있어야 가입할 수 있어요. 카카오계정 설정에서 이메일을 등록하고 인증한 뒤 다시 시도해주세요.";
+    case "google_email_required":
+      return "구글 계정의 이메일 인증이 확인되지 않아 가입할 수 없어요. 구글 계정 설정에서 이메일 인증을 마친 뒤 다시 시도해주세요.";
     case "kakao_email_taken":
       return emailTakenMessage("kakao", method);
     case "google_email_taken":
@@ -85,4 +96,20 @@ export function getLoginErrorMessage(code: LoginErrorParam, method?: SignupMetho
     default:
       return assertNever(code);
   }
+}
+
+const EMAIL_VERIFICATION_REQUIRED_MESSAGE =
+  "이메일 인증이 완료되지 않은 계정이에요. 같은 이메일로 회원가입을 다시 진행하면 인증 메일을 새로 받을 수 있어요.";
+
+/** 이메일·비밀번호 로그인 제출 실패 → 배너 문구. 429 는 맞는 비밀번호여도 상한을 넘으면 나므로 "비밀번호가
+ * 틀렸다"나 일반 오류로 보이면 사용자는 같은 시도를 되풀이하다 대기만 길어진다 — 기다릴 시간을 말한다. */
+export function getLoginSubmitErrorMessage(error: unknown): string {
+  const apiError = isApiError(error) ? error : undefined;
+  if (apiError?.status === 401) return "이메일 또는 비밀번호가 올바르지 않습니다.";
+  const rateLimit = getAuthRateLimit(error);
+  if (rateLimit) return formatAuthRateLimitMessage(rateLimit, "login");
+  if (isSuspendedError(error)) return SUSPENDED_ERROR_MESSAGE;
+  if (apiError?.status === 403 && apiError.detail === "Minimum age not met") return MINIMUM_AGE_ERROR_MESSAGE;
+  if (apiError?.status === 403) return EMAIL_VERIFICATION_REQUIRED_MESSAGE;
+  return GENERIC_LOGIN_ERROR_MESSAGE;
 }

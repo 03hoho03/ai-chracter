@@ -39,7 +39,7 @@ async def _other_device_session(user_id: uuid.UUID) -> str:
 async def _user_with_two_sessions(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> tuple[User, str, str]:
-    user = _make_user(password_hash=hash_password(_PASSWORD))
+    user = _make_user(password_hash=await hash_password(_PASSWORD))
     db_session.add(user)
     await db_session.commit()
     await _login_as(db_client, user.id)
@@ -53,7 +53,8 @@ async def test_withdraw_revokes_every_session_of_the_user(
 ) -> None:
     _, current, other = await _user_with_two_sessions(db_client, db_session)
 
-    assert (await db_client.delete("/me")).status_code == 204
+    resp = await db_client.request("DELETE", "/me", json={"currentPassword": _PASSWORD})
+    assert resp.status_code == 204
 
     assert not await _session_alive(current)
     assert not await _session_alive(other)

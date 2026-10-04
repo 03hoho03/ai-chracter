@@ -7672,6 +7672,15 @@ export interface components {
         };
         /** VerifyEmailResponse */
         VerifyEmailResponse: Record<string, never>;
+        /**
+         * WithdrawRequest
+         * @description 탈퇴 재인증. 비밀번호가 있는 계정만 값을 요구하고, 그 판정은 서버가 계정을 보고 한다. 필드를
+         *     선택으로 두는 이유: 소셜 계정의 프런트가 값 없이 보낸 `{}` 가 422 로 막히지 않게 한다.
+         */
+        WithdrawRequest: {
+            /** Currentpassword */
+            currentPassword?: string | null;
+        };
     };
     responses: never;
     parameters: never;
@@ -9842,7 +9851,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["WithdrawRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             204: {
@@ -9850,6 +9863,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

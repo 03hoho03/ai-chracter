@@ -94,6 +94,16 @@ describe("getRateLimitDetail", () => {
     ).toEqual({ code: "CLOVER_REQUIRED", retryAfterSeconds: 3600, window: "image" });
   });
 
+  it.each(["publish", "upload"])("429 + %s 창의 USER_LIMIT 바디를 파싱한다", (window) => {
+    expect(
+      getRateLimitDetail({
+        status: 429,
+        detail: { code: "USER_LIMIT", retryAfterSeconds: 1800, window },
+        message: "x",
+      }),
+    ).toEqual({ code: "USER_LIMIT", retryAfterSeconds: 1800, window });
+  });
+
   it("429여도 detail이 string이면 null이다 — 구조화 dict를 쓰지 않는 429와 구분돼야 한다", () => {
     expect(getRateLimitDetail({ status: 429, detail: "Too Many Requests", message: "x" })).toBeNull();
   });

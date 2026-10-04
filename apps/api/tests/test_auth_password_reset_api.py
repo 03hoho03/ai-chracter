@@ -207,7 +207,7 @@ async def test_confirm_updates_password_and_login_works(
     user = await db_session.scalar(select(User).where(User.email == payload["email"]))
     assert user is not None
     assert user.password_hash is not None
-    assert verify_password("new-password123", user.password_hash)
+    assert await verify_password("new-password123", user.password_hash)
 
     old_login = await db_client.post(
         "/auth/login", json={"email": payload["email"], "password": payload["password"]}
