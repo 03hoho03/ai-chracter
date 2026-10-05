@@ -14,8 +14,8 @@ WITH
 ss AS (SELECT id FROM starting_setups WHERE content_version_id = '73cf197c-a8a4-4629-af9b-34029cba4127'),
 en AS (SELECT id FROM endings WHERE starting_setup_id IN (SELECT id FROM ss)),
 gr AS (SELECT id FROM ending_rule_groups WHERE ending_id IN (SELECT id FROM en)),
-sets AS (SELECT unnest(ARRAY['7e6b6119-bc9c-4746-aecb-18cd5ee67c4f', '3b80a001-83b1-4828-990c-9a94d3bcf61f',
-                             'db13f4b4-8ac7-4351-87df-030d24ed5d5b']::uuid[]) AS id),
+sets AS (SELECT unnest(ARRAY['4f446070-dc83-416a-b53d-3f43546ac15c', '4da67d2d-bb07-44d8-b307-0e790bab03e3',
+                             'd22ab240-0abb-46bf-b12c-0d638563f0b1']::uuid[]) AS id),
 r AS (
   SELECT 'contents' AS tbl, t.id::text AS rid, to_jsonb(t) AS j FROM contents t WHERE t.id = 'f27bd660-1bb0-4f23-8212-755d440da457'
   -- 장르는 격리 DB 의 같은 이름 장르로 바뀌므로 id 대신 이름을 대조한다.

@@ -68,10 +68,10 @@ SELECT 'assets', coalesce(json_agg(t ORDER BY t.id), '[]') FROM assets t WHERE t
   UNION SELECT image_asset_id FROM media_book_cells WHERE content_version_id = '73cf197c-a8a4-4629-af9b-34029cba4127'
   UNION SELECT blurred_asset_id FROM media_book_cells WHERE content_version_id = '73cf197c-a8a4-4629-af9b-34029cba4127');
 SELECT 'prompt_sets', coalesce(json_agg(t ORDER BY t.lane), '[]') FROM prompt_sets t WHERE t.id IN (
-  '7e6b6119-bc9c-4746-aecb-18cd5ee67c4f', '3b80a001-83b1-4828-990c-9a94d3bcf61f', 'db13f4b4-8ac7-4351-87df-030d24ed5d5b');
+  '4f446070-dc83-416a-b53d-3f43546ac15c', '4da67d2d-bb07-44d8-b307-0e790bab03e3', 'd22ab240-0abb-46bf-b12c-0d638563f0b1');
 SELECT 'prompt_sections', coalesce(json_agg(t ORDER BY t.prompt_set_id, t.channel, t."order", t.variant, t.id), '[]')
   FROM prompt_sections t WHERE t.prompt_set_id IN (
-  '7e6b6119-bc9c-4746-aecb-18cd5ee67c4f', '3b80a001-83b1-4828-990c-9a94d3bcf61f', 'db13f4b4-8ac7-4351-87df-030d24ed5d5b');
+  '4f446070-dc83-416a-b53d-3f43546ac15c', '4da67d2d-bb07-44d8-b307-0e790bab03e3', 'd22ab240-0abb-46bf-b12c-0d638563f0b1');
 
 ROLLBACK;
 SELECT 'after', json_build_object('default_transaction_read_only', current_setting('default_transaction_read_only'));
