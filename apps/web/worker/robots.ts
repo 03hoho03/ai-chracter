@@ -14,6 +14,7 @@ const DISALLOWED_PATHS = [
   "/mypage",
   "/favorites",
   "/chats",
+  "/novels",
   "/chat/",
   "/builder/",
   "/studio/",

@@ -139,6 +139,42 @@ describe("createQueryClient — 세션 소실 전역 처리", () => {
     expect(qc.getQueryState(sessionKeys.current())?.isInvalidated).toBe(true);
     expect(qc.getQueryData(sessionKeys.current())).toEqual(ME);
   });
+
+  const NOVELIZE_NOT_ALLOWED = new ApiErrorObject({
+    status: 403,
+    message: "x",
+    detail: { code: "NOVELIZE_NOT_ALLOWED" },
+  });
+
+  it("소설화 허용 없음 403 쿼리는 세션을 invalidate만 한다(옛 허용 기능 목록을 다시 읽는다)", async () => {
+    const qc = makeClient();
+    qc.setQueryData(sessionKeys.current(), ME);
+
+    await expect(failQuery(qc, NOVELIZE_NOT_ALLOWED)).rejects.toBe(NOVELIZE_NOT_ALLOWED);
+
+    expect(qc.getQueryState(sessionKeys.current())?.isInvalidated).toBe(true);
+    expect(qc.getQueryData(sessionKeys.current())).toEqual(ME);
+  });
+
+  it("소설화 허용 없음 403 뮤테이션도 세션을 invalidate한다", async () => {
+    const qc = makeClient();
+    qc.setQueryData(sessionKeys.current(), ME);
+
+    await expect(runMutation(qc, NOVELIZE_NOT_ALLOWED)).rejects.toBe(NOVELIZE_NOT_ALLOWED);
+
+    expect(qc.getQueryState(sessionKeys.current())?.isInvalidated).toBe(true);
+  });
+
+  it("다른 403(남의 소설)은 세션을 건드리지 않는다", async () => {
+    const qc = makeClient();
+    qc.setQueryData(sessionKeys.current(), ME);
+    const forbidden = new ApiErrorObject({ status: 403, message: "x", detail: { code: "NOVEL_FORBIDDEN" } });
+
+    await expect(failQuery(qc, forbidden)).rejects.toBe(forbidden);
+    await expect(runMutation(qc, forbidden)).rejects.toBe(forbidden);
+
+    expect(qc.getQueryState(sessionKeys.current())?.isInvalidated).toBe(false);
+  });
 });
 
 describe("createQueryClient — 기본 retry", () => {

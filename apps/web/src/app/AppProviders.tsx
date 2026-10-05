@@ -3,6 +3,7 @@ import { Provider as JotaiProvider } from "jotai";
 import type { ReactNode } from "react";
 
 import { isLegalReconsentRequiredError } from "@/entities/legal";
+import { isNovelizeNotAllowedError } from "@/entities/novel";
 import { resetSessionIfLost, sessionKeys } from "@/entities/session";
 import { isApiError } from "@/shared/api/client";
 
@@ -13,7 +14,10 @@ export function createQueryClient(): QueryClient {
     // 세션을 잃은 탭이 로그인된 척하지 않도록 쿼리·뮤테이션 어느 쪽의
     // 실패든 세션 소실 401/정지 403이면 세션을 비운다. 무한 반복 가드는 `resetSessionIfLost`에 있다.
     queryCache: new QueryCache({
-      onError: (error) => resetSessionIfLost(client, error),
+      onError: (error) => {
+        invalidateSessionIfNovelizeRevoked(client, error);
+        resetSessionIfLost(client, error);
+      },
     }),
     /** 쓰기 21곳 각각에 onError를 다는 대신 전역
      * MutationCache 하나로 403 LEGAL_RECONSENT_REQUIRED를 잡는다. 세션을 다시 조회하면
@@ -24,6 +28,7 @@ export function createQueryClient(): QueryClient {
         if (isLegalReconsentRequiredError(error)) {
           void client.invalidateQueries({ queryKey: sessionKeys.current() });
         }
+        invalidateSessionIfNovelizeRevoked(client, error);
         resetSessionIfLost(client, error);
       },
     }),
@@ -38,6 +43,15 @@ export function createQueryClient(): QueryClient {
     },
   });
   return client;
+}
+
+/** 소설화 허용이 없다는 403 을 받으면 세션을 다시 읽는다. 허용을 회수한 직후의 탭은 옛 `GET /me` 의 허용 기능
+ * 목록을 들고 있어 채팅 더보기·프로필 메뉴에 소설 진입점을 계속 보이므로, 이 응답을 계기로 진입점까지 거둔다.
+ * 조회든 쓰기든 같은 일이라 두 캐시가 함께 부른다. */
+function invalidateSessionIfNovelizeRevoked(client: QueryClient, error: unknown) {
+  if (isNovelizeNotAllowedError(error)) {
+    void client.invalidateQueries({ queryKey: sessionKeys.current() });
+  }
 }
 
 export const queryClient = createQueryClient();

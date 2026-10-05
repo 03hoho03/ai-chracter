@@ -25,6 +25,7 @@ import { Route as FavoritesRouteImport } from './routes/favorites'
 import { Route as ChatsRouteImport } from './routes/chats'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as NovelsIndexRouteImport } from './routes/novels.index'
 import { Route as NoticesIndexRouteImport } from './routes/notices.index'
 import { Route as InquiriesIndexRouteImport } from './routes/inquiries.index'
 import { Route as CloverIndexRouteImport } from './routes/clover.index'
@@ -33,6 +34,7 @@ import { Route as StudioImagesRouteImport } from './routes/studio.images'
 import { Route as ProfileUserIdRouteImport } from './routes/profile.$userId'
 import { Route as OnboardingKakaoRouteImport } from './routes/onboarding.kakao'
 import { Route as OnboardingGoogleRouteImport } from './routes/onboarding.google'
+import { Route as NovelsNovelIdRouteImport } from './routes/novels.$novelId'
 import { Route as NoticesNoticeIdRouteImport } from './routes/notices.$noticeId'
 import { Route as InquiriesNewRouteImport } from './routes/inquiries.new'
 import { Route as InquiriesInquiryIdRouteImport } from './routes/inquiries.$inquiryId'
@@ -125,6 +127,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const NovelsIndexRoute = NovelsIndexRouteImport.update({
+  id: '/novels/',
+  path: '/novels/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const NoticesIndexRoute = NoticesIndexRouteImport.update({
   id: '/notices/',
   path: '/notices/',
@@ -163,6 +170,11 @@ const OnboardingKakaoRoute = OnboardingKakaoRouteImport.update({
 const OnboardingGoogleRoute = OnboardingGoogleRouteImport.update({
   id: '/onboarding/google',
   path: '/onboarding/google',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NovelsNovelIdRoute = NovelsNovelIdRouteImport.update({
+  id: '/novels/$novelId',
+  path: '/novels/$novelId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NoticesNoticeIdRoute = NoticesNoticeIdRouteImport.update({
@@ -243,6 +255,7 @@ export interface FileRoutesByFullPath {
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/inquiries/new': typeof InquiriesNewRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
+  '/novels/$novelId': typeof NovelsNovelIdRoute
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/onboarding/kakao': typeof OnboardingKakaoRoute
   '/profile/$userId': typeof ProfileUserIdRoute
@@ -251,6 +264,7 @@ export interface FileRoutesByFullPath {
   '/clover/': typeof CloverIndexRoute
   '/inquiries/': typeof InquiriesIndexRoute
   '/notices/': typeof NoticesIndexRoute
+  '/novels/': typeof NovelsIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
   '/guide/character/$step': typeof GuideCharacterStepRoute
@@ -280,6 +294,7 @@ export interface FileRoutesByTo {
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/inquiries/new': typeof InquiriesNewRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
+  '/novels/$novelId': typeof NovelsNovelIdRoute
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/onboarding/kakao': typeof OnboardingKakaoRoute
   '/profile/$userId': typeof ProfileUserIdRoute
@@ -288,6 +303,7 @@ export interface FileRoutesByTo {
   '/clover': typeof CloverIndexRoute
   '/inquiries': typeof InquiriesIndexRoute
   '/notices': typeof NoticesIndexRoute
+  '/novels': typeof NovelsIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
   '/guide/character/$step': typeof GuideCharacterStepRoute
@@ -318,6 +334,7 @@ export interface FileRoutesById {
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/inquiries/new': typeof InquiriesNewRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
+  '/novels/$novelId': typeof NovelsNovelIdRoute
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/onboarding/kakao': typeof OnboardingKakaoRoute
   '/profile/$userId': typeof ProfileUserIdRoute
@@ -326,6 +343,7 @@ export interface FileRoutesById {
   '/clover/': typeof CloverIndexRoute
   '/inquiries/': typeof InquiriesIndexRoute
   '/notices/': typeof NoticesIndexRoute
+  '/novels/': typeof NovelsIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
   '/guide/character/$step': typeof GuideCharacterStepRoute
@@ -357,6 +375,7 @@ export interface FileRouteTypes {
     | '/inquiries/$inquiryId'
     | '/inquiries/new'
     | '/notices/$noticeId'
+    | '/novels/$novelId'
     | '/onboarding/google'
     | '/onboarding/kakao'
     | '/profile/$userId'
@@ -365,6 +384,7 @@ export interface FileRouteTypes {
     | '/clover/'
     | '/inquiries/'
     | '/notices/'
+    | '/novels/'
     | '/builder/$type/$draftId'
     | '/content/$type/$id'
     | '/guide/character/$step'
@@ -394,6 +414,7 @@ export interface FileRouteTypes {
     | '/inquiries/$inquiryId'
     | '/inquiries/new'
     | '/notices/$noticeId'
+    | '/novels/$novelId'
     | '/onboarding/google'
     | '/onboarding/kakao'
     | '/profile/$userId'
@@ -402,6 +423,7 @@ export interface FileRouteTypes {
     | '/clover'
     | '/inquiries'
     | '/notices'
+    | '/novels'
     | '/builder/$type/$draftId'
     | '/content/$type/$id'
     | '/guide/character/$step'
@@ -431,6 +453,7 @@ export interface FileRouteTypes {
     | '/inquiries/$inquiryId'
     | '/inquiries/new'
     | '/notices/$noticeId'
+    | '/novels/$novelId'
     | '/onboarding/google'
     | '/onboarding/kakao'
     | '/profile/$userId'
@@ -439,6 +462,7 @@ export interface FileRouteTypes {
     | '/clover/'
     | '/inquiries/'
     | '/notices/'
+    | '/novels/'
     | '/builder/$type/$draftId'
     | '/content/$type/$id'
     | '/guide/character/$step'
@@ -469,6 +493,7 @@ export interface RootRouteChildren {
   InquiriesInquiryIdRoute: typeof InquiriesInquiryIdRoute
   InquiriesNewRoute: typeof InquiriesNewRoute
   NoticesNoticeIdRoute: typeof NoticesNoticeIdRoute
+  NovelsNovelIdRoute: typeof NovelsNovelIdRoute
   OnboardingGoogleRoute: typeof OnboardingGoogleRoute
   OnboardingKakaoRoute: typeof OnboardingKakaoRoute
   ProfileUserIdRoute: typeof ProfileUserIdRoute
@@ -477,6 +502,7 @@ export interface RootRouteChildren {
   CloverIndexRoute: typeof CloverIndexRoute
   InquiriesIndexRoute: typeof InquiriesIndexRoute
   NoticesIndexRoute: typeof NoticesIndexRoute
+  NovelsIndexRoute: typeof NovelsIndexRoute
   BuilderTypeDraftIdRoute: typeof BuilderTypeDraftIdRoute
   ContentTypeIdRoute: typeof ContentTypeIdRoute
   GuideCharacterStepRoute: typeof GuideCharacterStepRoute
@@ -599,6 +625,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/novels/': {
+      id: '/novels/'
+      path: '/novels'
+      fullPath: '/novels/'
+      preLoaderRoute: typeof NovelsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/notices/': {
       id: '/notices/'
       path: '/notices'
@@ -653,6 +686,13 @@ declare module '@tanstack/react-router' {
       path: '/onboarding/google'
       fullPath: '/onboarding/google'
       preLoaderRoute: typeof OnboardingGoogleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/novels/$novelId': {
+      id: '/novels/$novelId'
+      path: '/novels/$novelId'
+      fullPath: '/novels/$novelId'
+      preLoaderRoute: typeof NovelsNovelIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/notices/$noticeId': {
@@ -757,6 +797,7 @@ const rootRouteChildren: RootRouteChildren = {
   InquiriesInquiryIdRoute: InquiriesInquiryIdRoute,
   InquiriesNewRoute: InquiriesNewRoute,
   NoticesNoticeIdRoute: NoticesNoticeIdRoute,
+  NovelsNovelIdRoute: NovelsNovelIdRoute,
   OnboardingGoogleRoute: OnboardingGoogleRoute,
   OnboardingKakaoRoute: OnboardingKakaoRoute,
   ProfileUserIdRoute: ProfileUserIdRoute,
@@ -765,6 +806,7 @@ const rootRouteChildren: RootRouteChildren = {
   CloverIndexRoute: CloverIndexRoute,
   InquiriesIndexRoute: InquiriesIndexRoute,
   NoticesIndexRoute: NoticesIndexRoute,
+  NovelsIndexRoute: NovelsIndexRoute,
   BuilderTypeDraftIdRoute: BuilderTypeDraftIdRoute,
   ContentTypeIdRoute: ContentTypeIdRoute,
   GuideCharacterStepRoute: GuideCharacterStepRoute,
