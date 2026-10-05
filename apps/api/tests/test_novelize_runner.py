@@ -605,7 +605,8 @@ async def test_unusable_ai_edit_is_refunded(
     await runner.run_job(_factory(db_session), _NovelLLM(paragraphs=paragraphs), job.id)
 
     stored = await _job(db_session, job.id)
-    assert (stored.status, stored.failure_code, stored.result_text) == ("failed", code, None)
+    # 환불한 수정 요청은 지시문도 남기지 않는다 — 결과가 없는 지시문을 보관할 이유가 없다. 행은 재시도 집계로 남는다.
+    assert (stored.status, stored.failure_code, stored.instruction, stored.result_text) == ("failed", code, None, None)
     assert await _ledger(db_session, novel.user_id) == [
         ("novelize_spend", -20),
         ("novelize_spend", -5),
@@ -950,6 +951,33 @@ async def test_poll_expires_a_dead_job_before_answering(
     assert resp.status_code == 200, resp.text
     assert (resp.json()["status"], resp.json()["refunded"], resp.json()["failureReason"]) == ("failed", True, "expired")
     await _assert_failed_and_refunded_once(db_session, job.id, novel.user_id, "expired")
+
+
+async def test_poll_of_an_expired_ai_edit_reports_its_instruction_as_null(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """만료로 환불한 AI 수정은 지시문을 비운다. 폴링은 그 작업을 `aiEdit` 의 null 칸으로 답한다."""
+    novel, chapter = await _chapter_with_body(db_client, db_session, "\n\n".join(["문단이다. " * 40, "둘째."]))
+    await _allow(db_session, monkeypatch, novel.user_id)
+    job = await _ai_edit_job(db_session, novel, chapter, start=1, end=1)
+    await db_session.execute(
+        sa.update(NovelJob).where(NovelJob.id == job.id).values(heartbeat_at=sa.func.now() - timedelta(hours=1))
+    )
+    await db_session.commit()
+
+    resp = await db_client.get(f"/novels/{novel.id}/jobs/{job.id}")
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert (body["status"], body["refunded"], body["failureReason"]) == ("failed", True, "expired")
+    assert (body["aiEdit"]["instruction"], body["aiEdit"]["resultText"]) == (None, None)
+    stored = await _job(db_session, job.id)
+    assert (stored.instruction, stored.result_text) == (None, None)
+    assert await _ledger(db_session, novel.user_id) == [
+        ("novelize_spend", -20),
+        ("novelize_spend", -5),
+        ("novelize_refund", 5),
+    ]
 
 
 async def test_poll_hides_missing_and_foreign_jobs(

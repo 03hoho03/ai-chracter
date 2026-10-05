@@ -190,6 +190,9 @@ async def refund_job(db: AsyncSession, *, job_id: uuid.UUID, failure_code: Novel
     커밋이 실패하면 셋 다 없던 일이 되고 작업은 진행 중으로 남는다 — heartbeat 가 멈춘 그 작업을 만료 정리가 다시 이
     함수로 환불한다. 그래서 채팅의 `refund_in_new_transaction`(실패를 삼키고 재시도가 없다)을 쓰지 않는다.
 
+    같은 전이에서 AI 수정의 지시문·결과 본문을 비운다. 실패한 수정은 적용할 결과가 없어 사용자가 쓴 지시문을 보관할
+    이유가 없다. 행은 남긴다(차감 기록의 짝). 장 생성·재생성 작업은 두 칸을 쓰지 않아 늘 NULL 이라 종류를 가리지 않는다.
+
     탈퇴나 소설 삭제로 작업 행이 먼저 지워졌으면 아무것도 하지 않는다 — 탈퇴는 잔액을 통째로 소멸시키므로 뒤늦은
     환불이 그 뒤에 잔액을 되살리면 안 된다."""
     user_id = await db.scalar(select(NovelJob.user_id).where(NovelJob.id == job_id))
@@ -202,7 +205,14 @@ async def refund_job(db: AsyncSession, *, job_id: uuid.UUID, failure_code: Novel
         db,
         job_id=job_id,
         expected=ACTIVE_JOB_STATUSES,
-        values={"status": "failed", "failure_code": failure_code, "refunded_at": func.now(), "finished_at": func.now()},
+        values={
+            "status": "failed",
+            "failure_code": failure_code,
+            "refunded_at": func.now(),
+            "finished_at": func.now(),
+            "instruction": None,
+            "result_text": None,
+        },
     )
     if refunded is None:
         return None

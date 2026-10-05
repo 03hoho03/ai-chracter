@@ -373,6 +373,24 @@ async def test_refund_active_jobs_before_deleting_a_novel_refunds_once(db_sessio
     assert await _balance(db_session, owner.id) == 100
 
 
+async def test_refund_before_deleting_a_novel_empties_an_ai_edit_instruction(db_session: AsyncSession) -> None:
+    """환불한 AI 수정은 지시문·결과 본문을 같은 전이에서 비운다(행은 남긴다) — 소설 삭제 직전의 환불도 같은 함수다."""
+    owner = await _owner(db_session)
+    novel = await _make_novel(db_session, owner.id)
+    edit = _ai_edit_job(novel)
+    edit.instruction = "더 쓸쓸하게"
+    async with _service_session(db_session) as s:
+        job = await billing.create_charged_job(s, job=edit, expected_cost=5, now=datetime.now(UTC))
+
+    async with _service_session(db_session) as s:
+        assert await billing.refund_active_jobs(s, novel_id=novel.id, failure_code="internal") == 5
+        await s.commit()
+
+    stored = await db_session.get(NovelJob, job.id, populate_existing=True)
+    assert stored is not None
+    assert (stored.status, stored.instruction, stored.result_text) == ("failed", None, None)
+
+
 # ── 경쟁 (독립 커넥션) ──────────────────────────────────────────────────────
 _MARKER_DOMAIN = "novelize-billing-independent.test"
 
