@@ -1,4 +1,5 @@
 import logging
+import time
 from collections.abc import AsyncIterator
 from typing import Any, TypeVar
 
@@ -9,6 +10,7 @@ from google.genai import types as genai_types
 from pydantic import BaseModel
 
 from api.core.config import settings
+from api.core.filmclub_trace import trace_llm_call
 from api.llm.client import (
     LLMCallContext,
     LLMClient,
@@ -103,6 +105,7 @@ class GeminiLLMClient(LLMClient):
         # 메타데이터가 마지막 청크에만 온다고 가정하지 않는다 — 마지막으로 본 비-None 값을
         # 쓴다. `getattr` 기본값은 이 속성이 없는 테스트용 청크(SimpleNamespace)를 위한 것이다.
         usage_metadata: object | None = None
+        started = time.monotonic()
         try:
             stream = await self._client.aio.models.generate_content_stream(
                 model=self._model_name,
@@ -137,11 +140,25 @@ class GeminiLLMClient(LLMClient):
             # 쿼터 소진(429)과 네트워크 타임아웃을 구분한다 —
             # `httpx.HTTPError`에는 `.code`가 없으므로 `isinstance` 가드가 먼저다(순서를
             # 바꾸면 네트워크 쪽에서 AttributeError가 원래 예외를 가린다).
+            trace_llm_call(
+                call_site=usage.call_site,
+                model=self._model_name,
+                room_id=usage.room_id,
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+                error=exc,
+            )
             if isinstance(exc, genai_errors.APIError) and exc.code == 429:
                 raise LLMRateLimitError(f"Gemini generate() call failed: {exc}") from exc
             raise LLMClientError(f"Gemini generate() call failed: {exc}") from exc
         # 정상 종료한 스트림만 여기 닿는다 — 정책 차단·SDK 예외는 위에서 올라가고, 소비자가 중간에
         # 끊으면(aclose) `yield` 자리에서 GeneratorExit으로 빠진다. 그 경우는 기록하지 않는다.
+        trace_llm_call(
+            call_site=usage.call_site,
+            model=self._model_name,
+            room_id=usage.room_id,
+            elapsed_ms=round((time.monotonic() - started) * 1000),
+            error=None,
+        )
         _log_usage(usage, self._model_name, usage_metadata)
         await record_usage(usage.call_site, self._model_name, usage_metadata)
 
@@ -169,6 +186,7 @@ class GeminiLLMClient(LLMClient):
             response_schema=response_schema,
             http_options=genai_types.HttpOptions(timeout=request_timeout_ms(usage.call_site)),
         )
+        started = time.monotonic()
         try:
             response = await self._client.aio.models.generate_content(
                 model=model,
@@ -179,11 +197,25 @@ class GeminiLLMClient(LLMClient):
             # `generate()`와 동일하게 두 계열을 함께 잡는다 — SDK의 네트워크/타임아웃 실패는
             # APIError가 아니라 내부적으로 쓰는 httpx 예외로 올라온다. 429 구분도 `generate()`와
             # 대칭을 유지한다.
+            trace_llm_call(
+                call_site=usage.call_site,
+                model=model,
+                room_id=usage.room_id,
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+                error=exc,
+            )
             if isinstance(exc, genai_errors.APIError) and exc.code == 429:
                 raise LLMRateLimitError(f"Gemini generate_structured() call failed: {exc}") from exc
             raise LLMClientError(f"Gemini generate_structured() call failed: {exc}") from exc
 
         # 파싱 검사 **앞**이다 — 응답을 받은 시점에 토큰은 이미 과금됐다.
+        trace_llm_call(
+            call_site=usage.call_site,
+            model=model,
+            room_id=usage.room_id,
+            elapsed_ms=round((time.monotonic() - started) * 1000),
+            error=None,
+        )
         usage_metadata = getattr(response, "usage_metadata", None)
         _log_usage(usage, model, usage_metadata)
         await record_usage(usage.call_site, model, usage_metadata)

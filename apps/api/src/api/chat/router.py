@@ -118,6 +118,7 @@ from api.content.schemas import (
     count_rules,
 )
 from api.core.config import settings
+from api.core import filmclub_trace
 from api.core.clover import refund_in_new_transaction
 from api.core.rate_limit_gate import ChatCharge, enforce_chat_rate_limit
 from api.core.s3 import build_thumbnail_key, generate_presigned_get_url
@@ -1658,6 +1659,7 @@ async def _stream_new_turn(
     await db.commit()
 
     next_turn = room.turn_count + 1
+    filmclub_trace.set_turn(next_turn)
     chunks: list[str] = []
     try:
         async for token_event in _stream_generated_tokens(
@@ -1753,6 +1755,13 @@ async def _stream_new_turn(
             if judgment is not None:
                 changes = [StatChange(stat_id=c.stat_id, new_value=c.new_value) for c in judgment.stat_changes]
                 updated_stats = apply_stat_changes(current_stats, changes, stat_defs)
+                filmclub_trace.trace_stat_outcome(
+                    room_id=room.id,
+                    stat_defs=stat_defs,
+                    current=current_stats,
+                    requested={c.stat_id: c.new_value for c in changes},
+                    applied=updated_stats,
+                )
 
                 for stat_id, new_value in updated_stats.items():
                     if new_value != current_stats.get(stat_id):

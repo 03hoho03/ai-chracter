@@ -186,6 +186,9 @@ class Settings(BaseSettings):
     # 남길 파일 경로. None = 아무 일도 안 함(프로덕션 기본값이자 방어) — 프롬프트에는
     # 창작자의 비공개 설정이 들어 있어 기본으로 켜지면 안 된다.
     prompt_dump_path: str | None = None
+    # 측정 브랜치 전용 계측 trace(스탯 요청값 대 적용값, 호출별 경과 ms)를 남길 파일 경로. None = 끔. `.env` 에 넣지
+    # 않고 서버 기동 명령의 환경 변수로만 준다 — 넣으면 pytest 도 같은 파일에 기록한다.
+    filmclub_trace_path: str | None = None
     # 생성 잡 Redis 레코드 TTL(확정값 1시간).
     image_generation_job_ttl_seconds: int = 60 * 60
 
