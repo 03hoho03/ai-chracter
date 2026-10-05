@@ -291,6 +291,39 @@ def test_b9_over_seven_proxy_without_trace() -> None:
     assert w.b9_stats(_turns(20, t12=proxy, t13=proxy), traced, since=10) == []
 
 
+def _ooc(n: int, **over: Any) -> dict[str, Any]:
+    # OOC 턴은 드라이버에 OOC 태그가 없어 프로브 태그로 보내므로 채점에서 빠진 턴으로 들어온다.
+    return {"tag": "프로브", "probe": True, "scored": False} | over
+
+
+def test_b9_over_seven_requests_on_ooc_turns_do_not_stop() -> None:
+    # 사용자가 극 밖 발화로 게이지를 서사 날짜에 맞춰 달라고 한 턴은 큰 감소 요청이 의도한 결과다.
+    def request(start: float, requested: float) -> list[dict[str, Any]]:
+        return [{"name": "상영회까지", "start": start, "requested": requested}]
+
+    trace = {12: request(25, 1), 13: request(18, 1), 14: request(11, 1), 15: request(4, 0)}
+    ooc = {f"t{n}": _ooc(n) for n in (12, 13, 14)}
+    assert w.b9_stats(_turns(20, **ooc), trace, since=10, ooc_turns={12, 13, 14}) == []
+    # OOC 턴이 아닌 같은 요청 연속은 그대로 걸린다
+    plain = {13: request(18, 1), 14: request(11, 1)}
+    assert w.b9_stats(_turns(20), plain, since=10, ooc_turns={12}) == ["턴 13·14 감소 > 7 요청 연속"]
+
+
+def test_b9_countdown_increase_and_fraction_still_hit_on_ooc_turns() -> None:
+    up = {"t12": _ooc(12, countdownDelta=2.0)}
+    assert w.b9_stats(_turns(20, **up), {}, since=10, ooc_turns={12}) == ["턴 12 「상영회까지」 증가 2.0"]
+    frac = {"t12": _ooc(12, countdownAfter=17.5)}
+    assert w.b9_stats(_turns(20, **frac), {}, since=10, ooc_turns={12}) == ["턴 12 「상영회까지」 정수 아님 17.5"]
+
+
+def test_ooc_turns_are_read_from_the_run_meta(tmp_path: Path) -> None:
+    meta = tmp_path / "meta.json"
+    meta.write_text(json.dumps({"orchestratorState": {"ooc": [{"turn": 102}, {"turn": 103}]}}), encoding="utf-8")
+    assert w.ooc_turns(meta) == {102, 103}
+    meta.write_text(json.dumps({"orchestratorState": {}}), encoding="utf-8")
+    assert w.ooc_turns(meta) == set()
+
+
 # ---------------------------------------------------------------- B11 접기 정체·백오프·첫 절단
 
 

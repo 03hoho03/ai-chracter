@@ -257,9 +257,16 @@ def _over_seven(t: Turn, trace_stats: dict[int, list[dict[str, Any]]]) -> bool:
     return t.get("countdownDelta") == -7 and first_days is not None and first_days > 7
 
 
-def b9_stats(turns: list[Turn], trace_stats: dict[int, list[dict[str, Any]]], since: int) -> list[str]:
-    """「상영회까지」 증가 1회 · 감소 > 7 요청 2턴 연속 · 「상영회까지」 정수 아닌 값 1회."""
-    scored = _scored(turns)
+def b9_stats(
+    turns: list[Turn], trace_stats: dict[int, list[dict[str, Any]]], since: int, ooc_turns: set[int] | None = None
+) -> list[str]:
+    """「상영회까지」 증가 1회 · 감소 > 7 요청 2턴 연속 · 「상영회까지」 정수 아닌 값 1회.
+
+    OOC 턴(사용자가 극 밖 발화로 게이지를 서사 날짜에 맞춰 달라고 한 턴)은 채점에서 빠진 턴이지만 증가·정수 아닌
+    값은 똑같이 본다. 7 넘는 감소 요청은 그 턴이 의도한 결과라 연속 판정에서 7 이내 요청으로 친다.
+    """
+    ooc = ooc_turns or set()
+    scored = [t for t in turns if t.get("scored") or (t["turn"] in ooc and not t.get("lost"))]
     out: list[str] = []
     for t in scored:
         if t["turn"] <= since:
@@ -272,9 +279,19 @@ def b9_stats(turns: list[Turn], trace_stats: dict[int, list[dict[str, Any]]], si
     out += [
         f"턴 {a['turn']}·{b['turn']} 감소 > 7 요청 연속"
         for a, b in pairwise(scored)
-        if b["turn"] > since and _over_seven(a, trace_stats) and _over_seven(b, trace_stats)
+        if b["turn"] > since
+        and a["turn"] not in ooc
+        and b["turn"] not in ooc
+        and _over_seven(a, trace_stats)
+        and _over_seven(b, trace_stats)
     ]
     return out
+
+
+def ooc_turns(meta_path: Path) -> set[int]:
+    """런 meta 의 오케스트레이터 상태에 적힌 OOC 턴 번호."""
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    return {int(x["turn"]) for x in meta.get("orchestratorState", {}).get("ooc", [])}
 
 
 def _affinity_jumps(t: Turn) -> list[str]:
@@ -681,7 +698,7 @@ def check(run: Path, room: str, turn: int, observed: int, state: dict[str, Any],
         "B6b": b6b_long_repeat(turns, replies),
         "B6c": b6c_time_stuck(turns, since),
         "B8": b8_cost(turns, cost_lines, since),
-        "B9": b9_stats(turns, trace, since),
+        "B9": b9_stats(turns, trace, since, ooc_turns(run / "meta.json")),
         "B9.affinity": b9_affinity(turns, since),
         "B11": b11_memory(turns, raw_turn_count(room), backoff_failures(room), state),
         "B12": b12_size_latency(turns, since),
