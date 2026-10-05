@@ -191,7 +191,7 @@
 
 ### 대화 쪽 잔여 위험 — 수위 규칙은 지시일 뿐이다
 
-- 대화 수위 규칙은 모델에게 주는 지시라서, **미성년이 관련된 장면에서도 선을 넘는 응답이 일부 남는다.** 미성년 장면에 묶은 구체 행위 목록과 긴장 묘사 금지를 넣은 문안으로 오프라인 시험을 돌렸을 때, 이용자가 선을 넘도록 몰아가는 시나리오 11회 중 4회(약 1/3)에서 인물이 그쪽으로 따라가거나 긴장을 그렸다. 이전 문안에서는 11회 모두였다. 같은 시험에서 성인 인물끼리의 로맨스를 지나치게 거부하는 퇴행은 없었다.
+- 대화 수위 규칙은 모델에게 주는 지시라서, **미성년이 관련된 장면에서도 선을 넘는 응답이 일부 남는다.** 지금 게시된 수위 문안에는 미성년 인물·페르소나 규칙과 함께, 미성년 장면에 묶은 구체 행위 목록과 긴장 묘사 금지가 들어가 있다. 이 문안으로 오프라인 시험을 돌렸을 때, 이용자가 선을 넘도록 몰아가는 시나리오 11회 중 4회(약 1/3)에서 인물이 그쪽으로 따라가거나 긴장을 그렸다. 미성년 규칙이 없던 이전 문안에서는 11회 모두였다. 같은 시험에서 성인 인물끼리의 로맨스를 지나치게 거부하는 퇴행은 없었다.
 - 이 수치는 운영 대화가 아니라 한 모델로 돌린 소수 표본의 오프라인 시험 값이다. 운영에서의 비율은 재지 않았다. 문장을 더해도 측정상 줄지 않았고, 남은 실패는 이미 적힌 금지를 장르의 상투적 전개가 이기는 경우였다 — 문안만으로 0으로 만들 수 없다고 본다.
 - 그래서 남는 몫은 신고와 운영 조치로 처리한다. 채팅 응답 신고에 "아동·청소년 관련" 사유가 있고 다른 신고보다 먼저 본다("신고와 처리" 절). 신고된 응답은 사본이 남아 문안 개선의 입력이 되고, AI가 선을 넘도록 반복해 유도한 이용자는 "등급과 무관하게 금지" 절의 유도 금지로 계정 조치한다.
 
@@ -232,7 +232,7 @@
 | 작가 가이드 원고 `apps/web/src/pages/creation-guide/manuscripts/story.md`, `apps/web/src/pages/creation-guide/manuscripts/character.md` | "만들 때 지킬 것"(미성년 판단 기준 요약), 발행 심사 노트의 판정 축 | 원고 형식 규칙(개요 절만 추가 가능, 표 불가)은 원고 검사 테스트가 강제한다 |
 | `AUTHORING.md` "발행 자동 심사" 절 | 심사가 이미지만 본다는 사실, 판정 축 목록 | 판정 축을 바꾸면 이 절의 축 목록도 바꾼다 |
 | DB 프롬프트 세트 — story·character 레인의 system 채널 `rule_rating` | 대화 중 수위 규칙: 전연령 기준, 미성년 인물·페르소나 규칙 | 두 레인이 따로 행을 가진다 — 둘 다 고쳐 각각 게시한다. 어드민 `/prompt-sets` 게시가 곧 운영 반영이다. 저장소의 초기 문안(`apps/api/migrations/versions/bd258b26c34a_prompt_sets_and_sections.py`)과 그것을 단언하는 골든 파일(`apps/api/tests/golden/prompts/system_instruction_*.txt`)은 역사 값이라 DB 를 고쳐도 바뀌지 않는다 |
-| DB 프롬프트 세트 — `publish_filter` 레인 | 발행 심사 판정 축(`intro_instruction` 캐릭터·스토리 두 행)과 판정 규칙(`verdict_instruction`) | intro 두 행에 같은 문장이 있다 — 둘 다 고친다. 저장소의 마지막 시드 문안은 `apps/api/migrations/versions/859b0fb86629_publish_filter_image_only.py`. 게시하면 발행 심사 통과 기억이 모두 무효가 되어 각 작품의 다음 재발행이 다시 심사된다 |
+| DB 프롬프트 세트 — `publish_filter` 레인 | 발행 심사 판정 축(`intro_instruction` 캐릭터·스토리 두 행 — 선정성·폭력성·혐오 표현·불법 콘텐츠·미성년 성적 대상화. 미성년 축은 "이미지" 절의 선대로 교복 차림 일상 같은 비성적 그림은 반려하지 않는다)과 판정 규칙(`verdict_instruction`) | intro 두 행에 같은 문장이 있다 — 둘 다 고친다. 저장소의 마지막 시드 문안은 `apps/api/migrations/versions/859b0fb86629_publish_filter_image_only.py` 인데, 미성년 축이 들어가기 전 문안이라 역사 값이다. 게시하면 발행 심사 통과 기억이 모두 무효가 되어 각 작품의 다음 재발행이 다시 심사된다 |
 | 신고 사유 — 작품·댓글 `ReportReasonCategory`(`apps/api/src/api/db/models/moderation.py`), 채팅 `ChatMessageReportReason`(`apps/api/src/api/db/models/chat.py`) | "신고와 처리"의 사유 목록. "아동·청소년 관련"(`minor_safety`)이 두 체계에 모두 있다 | 웹 라벨 `apps/web/src/features/report-content/model/schema.ts`·`apps/web/src/features/work-comments/model/reportSchema.ts`·`apps/web/src/features/report-chat-message/model/schema.ts`, 알림 라벨 `apps/web/src/entities/notification/ui/NotificationItemContent.tsx`(키가 `apps/web/src/entities/notification/model/notification.ts` 의 작품·댓글 신고 사유 타입으로 묶여, 사유를 더하고 API 타입을 다시 만들면 라벨을 빠뜨린 채로는 타입 검사가 실패한다), 어드민 라벨 `apps/admin/src/entities/report/model/labels.ts` |
 | 시드 생성 스크립트 `apps/api/scripts/generate_seed_stories.py` `CONTENT_RATING_RULES` | 시드 작품을 만들 때 모델에 주는 수위 규칙 | "미성년 대상 연애 묘사" 금지를 "미성년 판단 기준"의 전연령 규칙(비성적 연애는 상대 제한 없이 가벼운 입맞춤까지 허용, 성적 묘사·암시와 그루밍 금지)에 맞춘다 |
 | `README.md` 첫 줄 | 서비스 한 줄 소개의 "전연령" | 전연령이 현재 제약이라는 서술과 어긋나지 않게 |
