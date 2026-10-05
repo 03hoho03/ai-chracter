@@ -421,6 +421,26 @@ def test_redis_cost_counts_stat_judgment_replay_as_replay() -> None:
     assert cost["replay"] > 0 and cost["convAllRooms"] == 0
 
 
+def test_redis_cost_counts_generation_replay_as_replay() -> None:
+    hashes = {
+        "llm_usage:2026-10-05": {
+            "replay_generate|gemini-3.5-flash-lite|prompt": "30000",
+            "replay_generate|gemini-3.5-flash-lite|candidates": "400",
+            "replay_generate|gemini-3.5-flash-lite|total": "30400",
+        }
+    }
+    cost = w.redis_cost(hashes, since_day="2026-10-05")
+    assert cost["replay"] > 0 and cost["convAllRooms"] == 0
+
+
+def test_replay_sites_cover_every_call_site_the_replay_scripts_record() -> None:
+    # 리플레이 스크립트가 새 call_site 를 쓰기 시작했는데 여기 빠지면 그 원가가 리플레이가 아니라 다른 방 대화로 집계된다.
+    from experiments.filmclub_longturn import generation_replay, judgment_replay
+
+    used = {site for site, _ in judgment_replay.REPLAY_SITES.values()} | {generation_replay.REPLAY_CALL_SITE}
+    assert set(w.REPLAY_SITES) == used
+
+
 def _line(conv: float, replay: float = 0.0, d: float = 0.01, unpriced: int = 0) -> dict[str, Any]:
     return {
         "turn": 10,

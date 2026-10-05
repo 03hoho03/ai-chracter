@@ -61,7 +61,7 @@ JUDGMENT_FAILURES = {
     "chat_media_book_image": "media_book_judgment",
     "chat_ending_judgment": "judgment",
 }
-REPLAY_SITES = ("replay_stat_judgment", "replay_ending_judgment", "replay_media_book_image")
+REPLAY_SITES = ("replay_stat_judgment", "replay_ending_judgment", "replay_media_book_image", "replay_generate")
 CONVERSATION_STOP_USD = 10.0
 TOTAL_STOP_USD = 25.0
 CONVERSATION_REPORT_USD = 8.0
