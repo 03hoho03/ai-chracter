@@ -36,6 +36,24 @@ export function joinChapterParagraphs(paragraphs: readonly string[]): string {
   return paragraphs.join(PARAGRAPH_SEPARATOR);
 }
 
+/** 직접 고치기를 시작한 순간의 장. 범위의 인덱스는 이 판의 문단을 가리킨다. */
+export type ManualEditBase = {
+  revisionId: string;
+  paragraphs: readonly string[];
+  range: ParagraphRange;
+};
+
+/** 직접 고친 글을 저장 요청으로 만든다. 본문은 **시작한 판**의 문단으로 조립하고 그 판을 기준으로 보낸다 — 입력칸이
+ * 열린 동안 다른 곳에서 판이 바뀌었으면 서버가 충돌로 막는다. 지금 보이는 판으로 조립하면 같은 인덱스가 새 판의 다른
+ * 문단을 가리키고 기준도 새 판이라, 이용자가 보지 못한 새 글을 서버가 그대로 받아 덮는다. */
+export function toManualEditSave(
+  base: ManualEditBase,
+  draft: string,
+): { baseRevisionId: string; body: string; isUnchanged: boolean } {
+  const body = assembleChapterBody(base.paragraphs, base.range, draft);
+  return { baseRevisionId: base.revisionId, body, isUnchanged: body === joinChapterParagraphs(base.paragraphs) };
+}
+
 /** 서버가 세는 방식의 글자 수 — 앞뒤 공백을 걷은 뒤 코드 포인트 수. `.length` 는 이모지를 2자로 센다. */
 export function countChapterChars(text: string): number {
   return Array.from(text.trim()).length;

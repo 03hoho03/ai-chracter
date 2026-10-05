@@ -6,6 +6,7 @@ import {
   joinParagraphRange,
   splitChapterParagraphs,
   toAiEditComparison,
+  toManualEditSave,
 } from "./chapterBody";
 
 describe("splitChapterParagraphs", () => {
@@ -38,6 +39,33 @@ describe("assembleChapterBody", () => {
   it("고치지 않은 글이면 원래 본문과 같다", () => {
     const range = { start: 1, end: 3 };
     expect(assembleChapterBody(paragraphs, range, joinParagraphRange(paragraphs, range))).toBe(paragraphs.join("\n\n"));
+  });
+});
+
+describe("toManualEditSave", () => {
+  // 고치기를 시작한 판. 이용자는 둘째 문단을 고치고 있다.
+  const base = { revisionId: "r1", paragraphs: ["하나", "둘", "셋"], range: { start: 1, end: 1 } };
+  // 입력칸이 열린 동안 다른 탭이 맨 앞에 문단을 넣고 셋째 문단을 고쳐 새 판 r2 가 됐다.
+  const newer = { revisionId: "r2", paragraphs: ["머리말", "하나", "둘", "다른 탭이 고친 셋"] };
+
+  it("지금 보이는 판으로 조립하면 다른 탭이 고친 글이 조용히 덮인다", () => {
+    // 고치기 전의 저장 방식: 지금 캐시의 문단·판으로 조립하고 그 판을 기준으로 보낸다 — 서버는 기준이 최신이라 받아들인다.
+    const body = assembleChapterBody(newer.paragraphs, base.range, "새 둘");
+    expect(body).toBe("머리말\n\n새 둘\n\n둘\n\n다른 탭이 고친 셋");
+    expect(body).not.toContain("하나");
+  });
+
+  it("고치기를 시작한 판의 문단으로 조립하고 그 판을 기준으로 보낸다 — 판이 바뀌었으면 서버가 충돌로 막는다", () => {
+    expect(toManualEditSave(base, "새 둘")).toEqual({
+      baseRevisionId: "r1",
+      body: "하나\n\n새 둘\n\n셋",
+      isUnchanged: false,
+    });
+    expect(toManualEditSave(base, "새 둘").baseRevisionId).not.toBe(newer.revisionId);
+  });
+
+  it("시작한 판과 같은 글이면 바뀐 것이 없다", () => {
+    expect(toManualEditSave(base, "둘").isUnchanged).toBe(true);
   });
 });
 

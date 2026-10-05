@@ -2,7 +2,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { BookX, CloudOff, Trash2 } from "lucide-react";
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type MouseEvent, type ReactNode } from "react";
 
 import { CONTENT_TYPE_LABEL, ContentListEmptyState } from "@/entities/content";
 import {
@@ -15,7 +15,7 @@ import {
 import { ConfirmNovelSpendModal } from "@/features/confirm-novel-spend";
 import { NovelChapterMaker, useNovelChapterJob } from "@/features/create-novel-chapter";
 import { DeleteNovelModal } from "@/features/delete-novel";
-import { useNovelAiEdit } from "@/features/edit-novel-chapter";
+import { DiscardManualEditModal, useNovelAiEdit } from "@/features/edit-novel-chapter";
 import { NovelNotesEditor } from "@/features/edit-novel-notes";
 import { NovelReader } from "@/widgets/novel-reader";
 
@@ -102,6 +102,11 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
   // 작업이 끝나 새로 만든(다시 만든) 장, 또는 마지막 장을 지운 뒤의 새 마지막 장. 그 장의 제목이 그려지면 포커스를
   // 받고 비운다.
   const [focusChapterId, setFocusChapterId] = useState<string | undefined>(undefined);
+  // 보고 있는 장에서 직접 고치던 글이 시작할 때와 달라졌는가. 장을 옮기면 그 장이 새로 마운트돼 글이 사라지므로 옮기기
+  // 전에 이 값을 본다. 작업이 끝난 뒤의 비동기 콜백에서도 읽어야 해서 렌더 값이 아니라 ref 다.
+  const isDraftDirtyRef = useRef(false);
+  // 고치던 글이 있어 옮겨 가지 않고 미뤄 둔 새 장. 그 장으로 가는 링크를 목차 아래에 둔다.
+  const [heldChapterId, setHeldChapterId] = useState<string | undefined>(undefined);
   // 금액 확인은 다른 기능의 모달이라 이 화면이 넣어 준다(기능끼리 서로 가져다 쓰지 않는다).
   const confirmSpend = (props: Parameters<typeof ConfirmNovelSpendModal.call>[0]) => ConfirmNovelSpendModal.call(props);
   // 모달은 루트에 마운트돼 라우트가 바뀌어도 남는다 — 이 화면을 떠나면(다른 소설로 옮겨 다시 마운트될 때도) 넣어 준
@@ -111,6 +116,13 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
     novel,
     confirmSpend,
     onChapterReady: (readyChapter, chapters) => {
+      // 고치던 글이 있으면 끌고 가지 않는다 — 옮기면 쓰던 글이 사라지고, 같은 장이어도 제목으로 포커스를 빼앗는다. 만든
+      // 장은 링크로 알리고 옮길지는 이용자가 정한다. 진행 중 작업 동안 고치기를 잠그는 길도 있지만, 장을 옮기기 전의
+      // 확인에 어차피 이 값이 필요해 여기서 하나 더 읽는 쪽이 더 단순하다(잠그면 이미 열려 있던 입력칸도 따로 다뤄야 한다).
+      if (isDraftDirtyRef.current) {
+        setHeldChapterId(readyChapter.id);
+        return;
+      }
       setFocusChapterId(readyChapter.id);
       void navigate({
         to: "/novels/$novelId",
@@ -129,6 +141,33 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
     .filter((part) => part !== undefined)
     .join(" · ");
   const isRoomGone = novel.chatRoomId === null;
+  const heldChapter =
+    heldChapterId !== undefined && heldChapterId !== selectedChapter?.id
+      ? novel.chapters.find((item) => item.id === heldChapterId)
+      : undefined;
+
+  /** 다른 장으로 옮긴다. 고치던 글이 있으면 버릴지 먼저 묻는다. */
+  async function goToChapter(target: NovelChapterSummary) {
+    if (isDraftDirtyRef.current && !(await DiscardManualEditModal.call({ chapterOrdinal: target.ordinal }))) return;
+    setHeldChapterId(undefined);
+    void navigate({
+      to: "/novels/$novelId",
+      params: { novelId: novel.id },
+      search: (prev) => ({ ...prev, chapter: toChapterSearchValue(novel.chapters, target.ordinal) }),
+    });
+  }
+
+  /** 장으로 가는 링크의 클릭. 고치던 글이 있을 때만 링크 이동을 멈추고 확인을 거친다. 새 탭으로 여는 클릭은 이 화면을
+   * 떠나지 않으니 그대로 둔다. */
+  function handleChapterLinkClick(event: MouseEvent<HTMLAnchorElement>, target: NovelChapterSummary) {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (!isDraftDirtyRef.current) {
+      setHeldChapterId(undefined);
+      return;
+    }
+    event.preventDefault();
+    void goToChapter(target);
+  }
 
   function handleChapterDeleted(deletedOrdinal: number) {
     // 지운 장 바로 앞 장이 새 마지막 장이다. 주소의 장 번호를 걷어 기본값(마지막 장)으로 돌린다.
@@ -156,7 +195,26 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
         <ContentListEmptyState title="아직 장이 없어요" message="만든 장이 여기에 차례로 쌓여요." />
       ) : (
         <>
-          <NovelChapterToc novelId={novel.id} chapters={novel.chapters} selectedOrdinal={selectedChapter.ordinal} />
+          <NovelChapterToc
+            novelId={novel.id}
+            chapters={novel.chapters}
+            selectedOrdinal={selectedChapter.ordinal}
+            onChapterLinkClick={handleChapterLinkClick}
+          />
+          {heldChapter !== undefined && (
+            <p className="text-sm break-keep text-muted-foreground">
+              {heldChapter.ordinal}장이 생겼어요.{" "}
+              <Link
+                to="/novels/$novelId"
+                params={{ novelId: novel.id }}
+                search={(prev) => ({ ...prev, chapter: toChapterSearchValue(novel.chapters, heldChapter.ordinal) })}
+                className="font-medium text-foreground underline underline-offset-4 outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring"
+                onClick={(event) => handleChapterLinkClick(event, heldChapter)}
+              >
+                보러 가기
+              </Link>
+            </p>
+          )}
           {/* 고치기 모드·고른 문단은 그 장에만 속한다 — 장을 옮기면 새로 마운트한다. */}
           <NovelReader
             key={selectedChapter.id}
@@ -167,6 +225,9 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
             shouldFocusHeading={focusChapterId === selectedChapter.id}
             onHeadingFocused={() => setFocusChapterId(undefined)}
             onChapterDeleted={() => handleChapterDeleted(selectedChapter.ordinal)}
+            onDraftDirtyChange={(isDirty) => {
+              isDraftDirtyRef.current = isDirty;
+            }}
           />
         </>
       )}
@@ -219,10 +280,13 @@ function NovelChapterToc({
   novelId,
   chapters,
   selectedOrdinal,
+  onChapterLinkClick,
 }: {
   novelId: string;
   chapters: NovelChapterSummary[];
   selectedOrdinal: number;
+  /** 링크를 누른 순간. 고치던 글이 있으면 호출부가 이동을 멈추고 확인을 거친다. */
+  onChapterLinkClick: (event: MouseEvent<HTMLAnchorElement>, chapter: NovelChapterSummary) => void;
 }) {
   const headingId = useId();
 
@@ -241,6 +305,10 @@ function NovelChapterToc({
                 params={{ novelId }}
                 search={(prev) => ({ ...prev, chapter: toChapterSearchValue(chapters, item.ordinal) })}
                 aria-current={isCurrent ? "page" : undefined}
+                onClick={(event) => {
+                  // 지금 장 링크는 다시 마운트하지 않아 쓰던 글이 그대로다 — 확인할 것이 없다.
+                  if (!isCurrent) onChapterLinkClick(event, item);
+                }}
                 className={cn(
                   "inline-flex h-8 min-w-12 items-center justify-center rounded-full border px-3 text-sm tabular-nums outline-none motion-safe:transition-colors focus-visible:ring-3 focus-visible:ring-ring/50",
                   isCurrent

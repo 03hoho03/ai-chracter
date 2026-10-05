@@ -22,6 +22,8 @@ type NovelReaderProps = {
   onHeadingFocused: () => void;
   /** 마지막 장을 지운 뒤. 화면이 새 마지막 장으로 옮기고 그 제목에 포커스를 둔다. */
   onChapterDeleted: () => void;
+  /** 직접 고치던 글이 시작할 때와 달라졌는가. 화면이 장을 옮기기 전에 확인을 받는 데 쓴다. */
+  onDraftDirtyChange: (isDirty: boolean) => void;
 };
 
 /** 장 하나를 읽고 고치는 자리 — 장 머리(제목·고치기·다시 만들기), AI 생성 고지, 진행 안내, 본문, 장 관리(판 이력·
@@ -38,6 +40,7 @@ export function NovelReader({
   shouldFocusHeading,
   onHeadingFocused,
   onChapterDeleted,
+  onDraftDirtyChange,
 }: NovelReaderProps) {
   const headingId = useId();
   const deleteReasonId = useId();
@@ -47,6 +50,7 @@ export function NovelReader({
   const isLastChapter = chapter.ordinal === Math.max(...novel.chapters.map((item) => item.ordinal));
   // 진행 중 작업이 있으면 서버가 마지막 장 지우기를 409 로 막는다 — 미리 막고 까닭을 말한다.
   const isDeleteBlocked = novel.activeJob !== null || chapterFlow.isBusy || aiEdit.isRunning;
+  const hasPendingAiEdits = novel.pendingAiEdits.some((edit) => edit.chapterId === chapter.id);
 
   useEffect(() => {
     if (!shouldFocusHeading) return;
@@ -97,6 +101,7 @@ export function NovelReader({
         isFixMode={isFixMode}
         aiEdit={aiEdit}
         onFocusFallback={focusHeading}
+        onDraftDirtyChange={onDraftDirtyChange}
       />
 
       <div className="flex flex-col gap-1.5 border-t border-border pt-4">
@@ -110,6 +115,7 @@ export function NovelReader({
                 novelId: novel.id,
                 chapterId: chapter.id,
                 chapterOrdinal: chapter.ordinal,
+                hasPendingAiEdits,
               }).then((isRestored) => {
                 if (isRestored) focusHeading();
               })
@@ -157,10 +163,11 @@ type ChapterBodyProps = {
   isFixMode: boolean;
   aiEdit: NovelAiEditFlow;
   onFocusFallback: () => void;
+  onDraftDirtyChange: (isDirty: boolean) => void;
 };
 
 /** 본문 로딩·실패·본문. 이미 받은 본문이 있으면 다시 받기가 실패해도 그대로 둔다. */
-function ChapterBody({ query, novel, isFixMode, aiEdit, onFocusFallback }: ChapterBodyProps) {
+function ChapterBody({ query, novel, isFixMode, aiEdit, onFocusFallback, onDraftDirtyChange }: ChapterBodyProps) {
   if (query.data !== undefined) {
     return (
       <NovelChapterText
@@ -169,6 +176,7 @@ function ChapterBody({ query, novel, isFixMode, aiEdit, onFocusFallback }: Chapt
         isFixMode={isFixMode}
         aiEdit={aiEdit}
         onFocusFallback={onFocusFallback}
+        onDraftDirtyChange={onDraftDirtyChange}
       />
     );
   }

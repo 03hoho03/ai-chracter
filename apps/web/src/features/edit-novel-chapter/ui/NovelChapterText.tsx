@@ -14,12 +14,7 @@ import {
 } from "@/entities/novel";
 
 import { useSaveChapterRevisionMutation } from "../api/useSaveChapterRevisionMutation";
-import {
-  assembleChapterBody,
-  countChapterChars,
-  joinChapterParagraphs,
-  joinParagraphRange,
-} from "../model/chapterBody";
+import { countChapterChars, joinParagraphRange, toManualEditSave, type ManualEditBase } from "../model/chapterBody";
 import {
   clampParagraphRange,
   formatParagraphRange,
@@ -40,9 +35,13 @@ type NovelChapterTextProps = {
   aiEdit: NovelAiEditFlow;
   /** 누른 버튼이 사라지는 일(수정안 적용·버리기)이 끝난 뒤 포커스를 둘 곳 — 장 제목. */
   onFocusFallback: () => void;
+  /** 직접 고치는 글이 시작할 때와 달라졌는가가 바뀔 때마다 알린다(사라질 때는 `false`). 화면이 장을 옮기기 전에
+   * 이 값으로 확인을 받는다 — 장을 옮기면 이 컴포넌트가 새로 마운트돼 쓰던 글이 없어진다. */
+  onDraftDirtyChange: (isDirty: boolean) => void;
 };
 
-type ManualEdit = { range: ParagraphRange; draft: string };
+/** 직접 고치기 하나. `base` 는 시작한 순간의 판·문단·범위라 그사이 본문이 바뀌어도 그대로다. */
+type ManualEdit = { base: ManualEditBase; draft: string };
 
 /** 장 본문과 그 위의 고치기 전부: 문단 고르기, 직접 고치기, AI 수정안 미리보기.
  *
@@ -54,9 +53,17 @@ type ManualEdit = { range: ParagraphRange; draft: string };
  *   그보다 두꺼운 강조색 링이라 둘이 모양으로 갈린다. 무엇을 골랐는지는 항상 마운트된 한 줄이 알린다.
  * - **동작 줄**: 고른 범위의 마지막 문단 바로 아래, 문서 흐름 안에 둔다. 화면 아래에 붙는 고정 막대는 이 앱의
  *   크롬 규칙(상시 크롬은 위쪽 머리 하나)에 어긋난다.
- * - **직접 고치기**: 고른 문단 자리에 입력칸이 들어선다(내용만큼 자란다). 저장은 장 전체 본문을 조립해 보내고,
- *   다른 곳에서 먼저 고쳤다는 409 를 받아도 입력한 글은 그대로 둔다. */
-export function NovelChapterText({ novel, chapter, isFixMode, aiEdit, onFocusFallback }: NovelChapterTextProps) {
+ * - **직접 고치기**: 고른 문단 자리에 입력칸이 들어선다(내용만큼 자란다). 시작한 순간의 판·문단을 잡아 두고 저장은
+ *   그 문단으로 장 전체 본문을 조립해 그 판을 기준으로 보낸다 — 그사이 판이 바뀌었으면 서버가 409 로 막고, 입력한
+ *   글은 그대로 둔다. */
+export function NovelChapterText({
+  novel,
+  chapter,
+  isFixMode,
+  aiEdit,
+  onFocusFallback,
+  onDraftDirtyChange,
+}: NovelChapterTextProps) {
   const queryClient = useQueryClient();
   const groupLabelId = useId();
   const editorId = useId();
@@ -74,9 +81,20 @@ export function NovelChapterText({ novel, chapter, isFixMode, aiEdit, onFocusFal
 
   // 다른 곳의 수정을 다시 받아 문단 수가 줄었으면 범위를 남은 문단 안으로 접는다.
   const activeRange = isFixMode ? clampParagraphRange(range, paragraphs.length) : null;
-  const editRange = manualEdit ? clampParagraphRange(manualEdit.range, paragraphs.length) : null;
+  // 입력칸을 놓을 자리. 범위는 시작한 판의 것이라, 다른 곳의 수정으로 문단 수가 줄었으면 남은 문단 안으로 접는다.
+  const editRange = manualEdit ? clampParagraphRange(manualEdit.base.range, paragraphs.length) : null;
+  // 시작한 뒤 판이 바뀌었는가. 그러면 저장은 서버가 충돌로 막고, 입력칸 자리의 새 글은 입력칸에 가려 보이지 않는다.
+  const isEditStale = manualEdit !== null && manualEdit.base.revisionId !== chapter.revision.id;
+  const isDraftDirty =
+    manualEdit !== null && manualEdit.draft !== joinParagraphRange(manualEdit.base.paragraphs, manualEdit.base.range);
   const pendingEdits = novel.pendingAiEdits.filter((edit) => edit.chapterId === chapter.id);
   const isSaving = saveMutation.isPending;
+
+  useEffect(() => {
+    onDraftDirtyChange(isDraftDirty);
+    // 알릴 시점은 값이 바뀐 순간이다. 콜백은 호출부의 ref 쓰기라 렌더마다 같은 일을 한다.
+  }, [isDraftDirty]);
+  useEffect(() => () => onDraftDirtyChange(false), []);
 
   // 모드를 끄면 고른 것도 푼다(입력 중인 직접 고치기는 그대로 둔다 — 쓰던 글을 지우지 않는다).
   useEffect(() => {
@@ -115,7 +133,10 @@ export function NovelChapterText({ novel, chapter, isFixMode, aiEdit, onFocusFal
 
   function startManualEdit(target: ParagraphRange) {
     setEditError(undefined);
-    setManualEdit({ range: target, draft: joinParagraphRange(paragraphs, target) });
+    setManualEdit({
+      base: { revisionId: chapter.revision.id, paragraphs, range: target },
+      draft: joinParagraphRange(paragraphs, target),
+    });
     setRange(null);
     setLiveMessage("");
   }
@@ -130,7 +151,7 @@ export function NovelChapterText({ novel, chapter, isFixMode, aiEdit, onFocusFal
   async function saveManualEdit() {
     if (isSaving || manualEdit === null || editRange === null) return;
     setEditError(undefined);
-    const body = assembleChapterBody(paragraphs, editRange, manualEdit.draft);
+    const { baseRevisionId, body, isUnchanged } = toManualEditSave(manualEdit.base, manualEdit.draft);
     const length = countChapterChars(body);
     if (length === 0) {
       setEditError("장 본문을 모두 비울 수는 없어요.");
@@ -140,7 +161,7 @@ export function NovelChapterText({ novel, chapter, isFixMode, aiEdit, onFocusFal
       setEditError(`장 본문은 ${novel.limits.chapterBodyMaxLength.toLocaleString()}자까지 쓸 수 있어요.`);
       return;
     }
-    if (body === joinChapterParagraphs(paragraphs)) {
+    if (isUnchanged) {
       closeManualEdit("바뀐 내용이 없어 그대로 두었어요.");
       return;
     }
@@ -148,7 +169,7 @@ export function NovelChapterText({ novel, chapter, isFixMode, aiEdit, onFocusFal
       await saveMutation.mutateAsync({
         novelId: novel.id,
         chapterId: chapter.id,
-        baseRevisionId: chapter.revision.id,
+        baseRevisionId,
         body,
       });
       closeManualEdit("고친 내용을 저장했어요. 이전 글은 판 이력에 남아요.");
@@ -199,6 +220,8 @@ export function NovelChapterText({ novel, chapter, isFixMode, aiEdit, onFocusFal
           rangeLabel={formatParagraphRange(editRange)}
           draft={manualEdit.draft}
           error={editError}
+          isStale={isEditStale}
+          hasPendingAiEdits={pendingEdits.length > 0}
           isSaving={isSaving}
           onDraftChange={(draft) => setManualEdit((current) => (current ? { ...current, draft } : current))}
           onCancel={() => closeManualEdit("직접 고치기를 그만뒀어요.")}
@@ -322,14 +345,19 @@ type ParagraphButtonProps = {
 };
 
 /** 고치기 모드의 문단 하나. 읽기 모드의 `<p>` 와 같은 상자(안쪽 여백·음수 바깥 여백)라 모드를 바꿔도 글자가
- * 움직이지 않는다. Shift+Enter 는 브라우저가 클릭으로 바꿔 주지 않아 키 입력에서 직접 받는다. */
+ * 움직이지 않는다. Shift+Enter 는 브라우저가 클릭으로 바꿔 주지 않아 키 입력에서 직접 받는다.
+ *
+ * 고른 윤곽(`aria-pressed:ring-*`)과 포커스 링(`focus-visible:ring-*`)은 같은 속성을 쓰고 선택자 특이도도 같아
+ * 컴파일된 순서가 이기는데, Tailwind 4 는 `aria-pressed:` 규칙을 뒤에 낸다 — 그대로 두면 고른 문단에 포커스가
+ * 있을 때(Enter 로 고른 직후가 그 상태다) 포커스 링이 1px 무채색 윤곽에 진다. 그래서 두 상태가 겹칠 때의 링을
+ * `aria-pressed:focus-visible:` 로 다시 건다 — 이 규칙은 특이도가 하나 더 높아 순서와 상관없이 이긴다. */
 function ParagraphButton({ ref, text, isSelected, onSelect }: ParagraphButtonProps) {
   return (
     <button
       ref={ref}
       type="button"
       aria-pressed={isSelected}
-      className="-mx-2 cursor-pointer rounded-md px-2 py-1 text-left whitespace-pre-line outline-none motion-safe:transition-colors hover:bg-muted aria-pressed:bg-secondary aria-pressed:ring-1 aria-pressed:ring-foreground/20 aria-pressed:hover:bg-secondary focus-visible:ring-3 focus-visible:ring-ring/50"
+      className="-mx-2 cursor-pointer rounded-md px-2 py-1 text-left whitespace-pre-line outline-none motion-safe:transition-colors hover:bg-muted aria-pressed:bg-secondary aria-pressed:ring-1 aria-pressed:ring-foreground/20 aria-pressed:hover:bg-secondary focus-visible:ring-3 focus-visible:ring-ring/50 aria-pressed:focus-visible:ring-3 aria-pressed:focus-visible:ring-ring/50"
       onClick={(event: MouseEvent<HTMLButtonElement>) => onSelect(event.shiftKey)}
       onKeyDown={(event: KeyboardEvent<HTMLButtonElement>) => {
         if (event.key !== "Enter" || !event.shiftKey) return;
@@ -347,6 +375,10 @@ type ManualEditorProps = {
   rangeLabel: string;
   draft: string;
   error: string | undefined;
+  /** 시작한 뒤 이 장의 판이 바뀌었는가. */
+  isStale: boolean;
+  /** 이 장에 적용하지 않은 AI 수정안이 있는가. 저장하면 서버가 그 수정안을 버린다. */
+  hasPendingAiEdits: boolean;
   isSaving: boolean;
   onDraftChange: (draft: string) => void;
   onCancel: () => void;
@@ -354,8 +386,22 @@ type ManualEditorProps = {
 };
 
 /** 고른 문단 자리에 들어서는 입력칸. 문단 사이는 빈 줄 하나로 띄운다(저장할 때 빈 줄로 다시 나뉜다). 버튼은
- * `취소` 먼저이고, 저장 중에는 `aria-disabled` 로 막아 누른 버튼의 포커스를 지킨다. */
-function ManualEditor({ id, rangeLabel, draft, error, isSaving, onDraftChange, onCancel, onSave }: ManualEditorProps) {
+ * `취소` 먼저이고, 저장 중에는 `aria-disabled` 로 막아 누른 버튼의 포커스를 지킨다.
+ *
+ * 판이 바뀐 뒤에는 저장해도 충돌로 막힌다 — 쓴 글은 지우지 않고, 복사해 두고 최신 글에서 다시 고르라고 말한다.
+ * 저장이 돈 낸 수정안을 버리게 되는 경우에는 저장 버튼 바로 위에서 미리 말한다. */
+function ManualEditor({
+  id,
+  rangeLabel,
+  draft,
+  error,
+  isStale,
+  hasPendingAiEdits,
+  isSaving,
+  onDraftChange,
+  onCancel,
+  onSave,
+}: ManualEditorProps) {
   return (
     <div className="flex flex-col gap-2 py-1">
       <Label htmlFor={id}>{rangeLabel} 직접 고치기</Label>
@@ -376,6 +422,17 @@ function ManualEditor({ id, rangeLabel, draft, error, isSaving, onDraftChange, o
           {error}
         </p>
       )}
+      {isStale && (
+        <p className="text-sm break-keep text-muted-foreground">
+          고치는 사이 이 장이 바뀌어 이대로는 저장할 수 없어요. 쓴 글을 복사해 두고 취소한 뒤, 최신 글에서 문단을 다시
+          골라 주세요.
+        </p>
+      )}
+      {hasPendingAiEdits && (
+        <p id={`${id}-pending`} className="text-sm break-keep text-muted-foreground">
+          저장하면 이 장에서 적용하지 않은 AI 수정안은 사라지고, 쓴 클로버는 돌아오지 않아요.
+        </p>
+      )}
       <div className="flex flex-wrap gap-2">
         <Button type="button" variant="outline" size="sm" onClick={onCancel}>
           취소
@@ -385,6 +442,7 @@ function ManualEditor({ id, rangeLabel, draft, error, isSaving, onDraftChange, o
           variant="secondary"
           size="sm"
           aria-disabled={isSaving}
+          aria-describedby={hasPendingAiEdits ? `${id}-pending` : undefined}
           className="aria-disabled:opacity-65"
           onClick={() => {
             if (isSaving) return;

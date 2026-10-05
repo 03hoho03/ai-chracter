@@ -25,6 +25,8 @@ type NovelRevisionHistoryModalProps = {
   novelId: string;
   chapterId: string;
   chapterOrdinal: number;
+  /** 이 장에 적용하지 않은 AI 수정안이 있는가. 되돌리면 서버가 그 수정안을 버린다. */
+  hasPendingAiEdits: boolean;
 };
 
 /** 장 하나의 판 이력. 판을 펼치면 그 판의 글이 보이고, 옛 판은 되돌릴 수 있다. 되돌리기는 옛 판을 **새 판으로**
@@ -35,7 +37,7 @@ type NovelRevisionHistoryModalProps = {
  * 다시 받아 기준이 새 판으로 바뀐다 — 이용자는 새로 생긴 판을 목록에서 보고 다시 고를 수 있다. 실패 문장은
  * 누른 순간 기록한 상태라 목록을 다시 받아도 남는다. */
 export const NovelRevisionHistoryModal = createCallable<NovelRevisionHistoryModalProps, boolean>(
-  ({ call, novelId, chapterId, chapterOrdinal }) => {
+  ({ call, novelId, chapterId, chapterOrdinal, hasPendingAiEdits }) => {
     const queryClient = useQueryClient();
     const revisionsQuery = useNovelRevisionsQuery(novelId, chapterId);
     const restoreMutation = useRestoreRevisionMutation();
@@ -91,6 +93,7 @@ export const NovelRevisionHistoryModal = createCallable<NovelRevisionHistoryModa
               chapterId={chapterId}
               expandedId={expandedId}
               isRestoring={restoreMutation.isPending}
+              hasPendingAiEdits={hasPendingAiEdits}
               onToggle={(id) => setExpandedId((open) => (open === id ? undefined : id))}
               onRestore={(revision) => void restore(revision)}
             />
@@ -107,13 +110,23 @@ type RevisionListBodyProps = {
   chapterId: string;
   expandedId: string | undefined;
   isRestoring: boolean;
+  hasPendingAiEdits: boolean;
   onToggle: (id: string) => void;
   onRestore: (revision: NovelRevisionSummary) => void;
 };
 
 /** 로딩·실패·목록이 배타적이라 순서대로 일찍 돌려준다. 모달 표면(`popover`) 위라 자리 표시는 `bg-secondary` 다 —
  * `bg-muted` 는 그 표면과 값이 같아 사라진다. */
-function RevisionListBody({ query, novelId, chapterId, expandedId, isRestoring, onToggle, onRestore }: RevisionListBodyProps) {
+function RevisionListBody({
+  query,
+  novelId,
+  chapterId,
+  expandedId,
+  isRestoring,
+  hasPendingAiEdits,
+  onToggle,
+  onRestore,
+}: RevisionListBodyProps) {
   if (query.isPending) {
     return (
       <ul className="flex flex-col gap-2">
@@ -157,6 +170,7 @@ function RevisionListBody({ query, novelId, chapterId, expandedId, isRestoring, 
           isCurrent={index === 0}
           isExpanded={expandedId === revision.id}
           isRestoring={isRestoring}
+          hasPendingAiEdits={hasPendingAiEdits}
           novelId={novelId}
           chapterId={chapterId}
           onToggle={() => onToggle(revision.id)}
@@ -174,6 +188,7 @@ type RevisionRowProps = {
   isCurrent: boolean;
   isExpanded: boolean;
   isRestoring: boolean;
+  hasPendingAiEdits: boolean;
   novelId: string;
   chapterId: string;
   onToggle: () => void;
@@ -190,12 +205,14 @@ function RevisionRow({
   isCurrent,
   isExpanded,
   isRestoring,
+  hasPendingAiEdits,
   novelId,
   chapterId,
   onToggle,
   onRestore,
 }: RevisionRowProps) {
   const panelId = useId();
+  const pendingNoteId = useId();
 
   return (
     <li className="flex flex-col border-b border-border last:border-b-0">
@@ -219,12 +236,18 @@ function RevisionRow({
       {isExpanded && (
         <div id={panelId} className="flex flex-col gap-3 pt-1 pb-3">
           <RevisionBody novelId={novelId} chapterId={chapterId} revisionId={revision.id} />
+          {!isCurrent && hasPendingAiEdits && (
+            <p id={pendingNoteId} className="text-sm break-keep text-muted-foreground">
+              되돌리면 이 장에서 적용하지 않은 AI 수정안은 사라지고, 쓴 클로버는 돌아오지 않아요.
+            </p>
+          )}
           {!isCurrent && (
             <Button
               type="button"
               variant="outline"
               size="sm"
               aria-disabled={isRestoring}
+              aria-describedby={hasPendingAiEdits ? pendingNoteId : undefined}
               className="self-start aria-disabled:opacity-65"
               onClick={() => {
                 if (isRestoring) return;

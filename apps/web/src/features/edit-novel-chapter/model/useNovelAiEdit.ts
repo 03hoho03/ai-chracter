@@ -84,6 +84,15 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
       ? { jobId: novel.activeJob.id, chapterId: novel.activeJob.chapterId }
       : undefined;
   const watched = activeAiEdit ?? tracked;
+
+  // 상세가 알려 온 진행 중 작업(새로고침·다른 기기에서 이어받은 것)도 이 화면이 지켜보는 작업으로 잡아 둔다. 상세가
+  // 작업 폴링보다 먼저 끝난 모습을 받으면 진행 중 작업이 사라지는데, 그때 잡아 둔 것이 없으면 작업을 더 묻지 않아
+  // 끝난 순간의 처리(실패·환불 안내, 잔액 갱신)가 돌지 않는다. 잡아 두면 그 작업 id 로 한 번 더 물어 끝을 받는다.
+  useEffect(() => {
+    if (activeAiEdit === undefined || activeAiEdit.jobId === tracked?.jobId) return;
+    setTracked(activeAiEdit);
+    // 잡을 시점은 상세가 새 작업을 알려 온 순간이다.
+  }, [activeAiEdit?.jobId]);
   const jobQuery = useNovelJobQuery(novel.id, watched?.jobId);
   const job = jobQuery.data;
   const hasPollError = hasNovelJobPollError(jobQuery);
