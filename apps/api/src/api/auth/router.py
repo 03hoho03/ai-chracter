@@ -83,6 +83,7 @@ from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User, WithdrawnEmail
 from api.db.session import get_db_session
 from api.legal.dependencies import _latest_published_legal_version, _reconsent_required
+from api.novelize.access import has_novelize_access
 from api.session.cookies import clear_session_cookie, get_session_id_from_request, set_session_cookie
 from api.session.dependencies import get_current_user_id
 from api.session.store import create_session, delete_session, revoke_user_sessions
@@ -901,6 +902,7 @@ async def get_me(
         privacy_reconsent_required=_reconsent_required(user.privacy_version, required_privacy_version),
         has_password=user.password_hash is not None,
         social_provider=None if method == "email" else method,
+        enabled_features=["novelize"] if await has_novelize_access(db, user.id) else [],
     )
 
 

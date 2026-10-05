@@ -55,6 +55,7 @@ from api.db.models import (
     StoryPromptTemplate,
     StoryVersionDetail,
     User,
+    UserFeatureGrant,
     UserPersona,
 )
 from api.db.session import engine
@@ -209,6 +210,18 @@ async def _create_admin(db_session: AsyncSession, **overrides: object) -> dict[s
     db_session.add(admin)
     await db_session.flush()
     return {**defaults, "id": admin.id}
+
+
+async def _grant_novelize(db_session: AsyncSession, user_id: uuid.UUID) -> UserFeatureGrant:
+    """소설화 허용 행 하나를 flush 한다(커밋은 호출자). 허용한 운영자 행이 FK 로 필요해 함께 만든다 — 로그인할
+    운영자가 아니라서 비밀번호 해시를 계산하지 않는다."""
+    admin = AdminUser(email=f"admin-{uuid.uuid4()}@example.com", password_hash="unused")
+    db_session.add(admin)
+    await db_session.flush()
+    grant = UserFeatureGrant(user_id=user_id, feature="novelize", granted_by=admin.id)
+    db_session.add(grant)
+    await db_session.flush()
+    return grant
 
 
 async def _make_asset(

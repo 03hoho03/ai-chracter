@@ -524,6 +524,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/users/{user_id}/novelize-grant": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set User Novelize Grant
+         * @description 소설화 허용 행(`user_feature_grants`)을 만들고 지우는 유일한 경로다. 모양은 `set_user_rate_limit_exempt`와
+         *     같다(공백 코멘트 422 → 탈퇴·없는 유저 404 → 변경 → 감사 로그 → 커밋, 켤 때와 끌 때 액션 타입이 다르다).
+         *
+         *     **허용은 env 명단(`novelize_grant_allowlist`) 안의 계정에만 줄 수 있다.** 명단 밖이면 422
+         *     `{"code": "NOVELIZE_GRANT_NOT_ALLOWLISTED"}`로 거부하고 행도 감사 로그도 남기지 않는다 — 명단은 처리방침이 소설화의
+         *     수집 항목·국외 이전을 싣고 재동의를 받기 전까지 허용을 운영 시험 계정 안에 가두는 장치다. 공백 코멘트 422 와 갈리도록 code 를
+         *     둔다. 회수는 명단과 상관없이 늘 된다(명단에서 이미 뺀 계정의 행도 지울 수 있어야 한다). 전역 스위치는 보지 않는다
+         *     — 켜기 전에 허용을 미리 줄 수 있다.
+         *
+         *     **이미 허용된 계정을 다시 허용해도 첫 행을 그대로 둔다**(허용 시각·허용한 운영자를 덮어쓰지 않는다). 동시에 두 번
+         *     눌려도 유니크 인덱스에 부딪혀 500 이 되지 않도록 충돌 시 아무것도 하지 않는 INSERT 를 쓴다. 누른 사실은 감사
+         *     로그에 한 행 더 남는다. 회수는 행 DELETE 라 없는 행을 회수해도 조용히 지나간다.
+         */
+        post: operations["set_user_novelize_grant_admin_users__user_id__novelize_grant_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users/{user_id}/clover": {
         parameters: {
             query?: never;
@@ -4935,7 +4966,7 @@ export interface components {
              * Actiontype
              * @enum {string}
              */
-            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "notice-publish" | "notice-unpublish" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-clover-grant" | "user-clover-revoke" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
+            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "notice-publish" | "notice-unpublish" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-clover-grant" | "user-clover-revoke" | "user-novelize-off" | "user-novelize-on" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
             /** Targetcontentid */
             targetContentId: string | null;
             /** Contentname */
@@ -5052,6 +5083,8 @@ export interface components {
             rateLimitExempt: boolean;
             /** Betajoinedat */
             betaJoinedAt: string | null;
+            /** Novelizegrantedat */
+            novelizeGrantedAt: string | null;
             /** Cloverbalance */
             cloverBalance: number;
             /** Chatroomcount */
@@ -5102,6 +5135,17 @@ export interface components {
             totalPages: number;
             /** Totalcount */
             totalCount: number;
+        };
+        /**
+         * AdminUserNovelizeGrantRequest
+         * @description 소설화 허용/회수를 `granted` 한 필드로 받는 토글이다. `admin_comment`가 필수인 이유는
+         *     `AdminUserRateLimitExemptRequest`와 같다(비어 있으면 422).
+         */
+        AdminUserNovelizeGrantRequest: {
+            /** Granted */
+            granted: boolean;
+            /** Admincomment */
+            adminComment?: string | null;
         };
         /**
          * AdminUserRateLimitExemptRequest
@@ -6841,6 +6885,8 @@ export interface components {
             hasPassword: boolean;
             /** Socialprovider */
             socialProvider: ("google" | "kakao") | null;
+            /** Enabledfeatures */
+            enabledFeatures: "novelize"[];
         };
         /** MediaBookAxisInput */
         MediaBookAxisInput: {
@@ -8388,6 +8434,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AdminUserBetaRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_user_novelize_grant_admin_users__user_id__novelize_grant_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserNovelizeGrantRequest"];
             };
         };
         responses: {

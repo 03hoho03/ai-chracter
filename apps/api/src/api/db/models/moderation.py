@@ -215,6 +215,8 @@ AdminActionType = Literal[
     "user-beta-on",
     "user-clover-grant",
     "user-clover-revoke",
+    "user-novelize-off",
+    "user-novelize-on",
     "user-rate-limit-exempt-off",
     "user-rate-limit-exempt-on",
     "user-suspend",

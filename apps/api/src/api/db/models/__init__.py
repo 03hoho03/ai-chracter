@@ -38,6 +38,7 @@ from api.db.models.content import (
     Like,
     ModerationStatus,
 )
+from api.db.models.feature_grant import FeatureName, UserFeatureGrant
 from api.db.models.inquiry import Inquiry, InquiryCategory, InquiryStatus
 from api.db.models.legal import LegalDocument
 from api.db.models.media import Asset, AssetKind, AssetStatus, ImageGenerationRequest
@@ -115,6 +116,7 @@ __all__ = [
     "EndingRuleGroup",
     "EndingRuleOperator",
     "Favorite",
+    "FeatureName",
     "Genre",
     "GuardianConsent",
     "HomeCuration",
@@ -150,6 +152,7 @@ __all__ = [
     "StoryPromptTemplate",
     "StoryVersionDetail",
     "User",
+    "UserFeatureGrant",
     "UserPersona",
     "WithdrawnEmail",
 ]

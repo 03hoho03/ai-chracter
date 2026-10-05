@@ -6,6 +6,7 @@ from pydantic import EmailStr, Field, field_validator
 from api.auth.age import is_under_minimum_age
 from api.auth.oauth_common import OAuthProvider
 from api.core.schema import CamelModel
+from api.db.models.feature_grant import FeatureName
 
 
 class SignupRequest(CamelModel):
@@ -119,3 +120,6 @@ class MeResponse(CamelModel):
     # 비밀번호 계정에 연동된다) 단일 "가입 방식" 값이 아니라 두 필드로 낸다.
     has_password: bool
     social_provider: OAuthProvider | None
+    # 이 계정이 지금 쓸 수 있는 기능. 서버가 라우트 게이트와 같은 판정으로 계산하고 FE 는 이것으로 진입점만
+    # 숨긴다(막는 것은 서버 게이트다).
+    enabled_features: list[FeatureName]

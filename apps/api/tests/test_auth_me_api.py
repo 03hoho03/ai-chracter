@@ -38,6 +38,7 @@ from api.db.models import (
     InquiryStatus,
     ModerationStatus,
     User,
+    UserFeatureGrant,
     UserPersona,
     WithdrawnEmail,
 )
@@ -45,6 +46,7 @@ from factories import (
     _add_media_book_cell,
     _create_admin,
     _get_genre,
+    _grant_novelize,
     _login_as,
     _make_user,
     _make_published_character,
@@ -943,3 +945,59 @@ async def test_failed_withdrawal_keeps_the_account_the_erase_record_and_the_stor
     deleted_at = await db_session.scalar(select(User.deleted_at).where(User.id == user.id))
     assert deleted_at is None
     assert _stored(keys) == keys
+
+
+# ---- 허용 기능 목록 -------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("enabled", "granted", "allowlisted", "expected"),
+    [
+        pytest.param(True, True, True, ["novelize"], id="enabled-granted-allowlisted"),
+        pytest.param(False, True, True, [], id="kill-switch-off"),
+        pytest.param(True, False, True, [], id="no-grant-row"),
+        pytest.param(True, True, False, [], id="removed-from-allowlist"),
+    ],
+)
+async def test_me_enabled_features_follow_the_route_gate(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enabled: bool,
+    granted: bool,
+    allowlisted: bool,
+    expected: list[str],
+) -> None:
+    """FE 는 이 목록으로 진입점만 숨기므로 라우트 게이트와 같은 판정이어야 한다 — 어긋나면 보이는 진입점이 403 을
+    받는다. 명단에서 빠진 경우는 허용 행이 남아 있어도 빈 목록이다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    if granted:
+        await _grant_novelize(db_session, user.id)
+    await db_session.commit()
+    monkeypatch.setattr(settings, "novelize_enabled", enabled)
+    monkeypatch.setattr(settings, "novelize_grant_allowlist", [user.id] if allowlisted else [uuid.uuid4()])
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.get("/me")
+
+    assert resp.status_code == 200
+    assert resp.json()["enabledFeatures"] == expected
+
+
+async def test_withdraw_erases_feature_grants(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+    payload = await _signup_and_login(db_client)
+    user = await db_session.scalar(select(User).where(User.email == payload["email"]))
+    assert user is not None
+    user_id = user.id
+    await _grant_novelize(db_session, user_id)
+    await db_session.commit()
+
+    resp = await db_client.request("DELETE", "/me", json={"currentPassword": payload["password"]})
+
+    assert resp.status_code == 204
+    remaining = await db_session.scalar(
+        select(sa.func.count()).select_from(UserFeatureGrant).where(UserFeatureGrant.user_id == user_id)
+    )
+    assert remaining == 0

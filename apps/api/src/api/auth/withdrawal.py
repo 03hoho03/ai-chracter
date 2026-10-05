@@ -24,6 +24,7 @@ from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User, WithdrawnEmail
 from api.db.models.chat import ChatMessageReport, ChatRoom
 from api.db.models.content import Content, ContentChatParticipant, ContentVisibility
+from api.db.models.feature_grant import UserFeatureGrant
 from api.db.models.inquiry import Inquiry
 from api.db.models.media import Asset, AssetKind, ImageGenerationRequest
 from api.db.models.persona import UserPersona
@@ -132,6 +133,8 @@ async def erase_account(
     # "이 사람이 어느 작품과 대화했는가" 의 기록도 대화와 함께 파기한다. 작품의 대화수는 이미 공개된 집계라 내리지
     # 않는다 — 내리면 탈퇴가 남의 작품 순위를 움직인다.
     await db.execute(delete(ContentChatParticipant).where(ContentChatParticipant.user_id == user_id))
+    # 기능 허용은 계정에 딸린 설정이라 계정과 함께 지운다. 누가 언제 허용했는지는 감사 로그에 남는다.
+    await db.execute(delete(UserFeatureGrant).where(UserFeatureGrant.user_id == user_id))
 
     # 위 `profile_image_asset_id = None` 대입이 DB에 반영된
     # 뒤라야 아래 `DELETE FROM assets`가 FK 위반을 내지 않는다. autoflush에 기대지 않는다.

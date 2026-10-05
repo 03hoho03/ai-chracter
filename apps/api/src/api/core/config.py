@@ -1,4 +1,5 @@
 import json
+import uuid
 from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
@@ -269,6 +270,24 @@ class Settings(BaseSettings):
     # 전체 히스토리로 돌아간다 — 되돌리기 스위치 하나로 전부 돌아가게.
     memory_window_ending_judgment: bool = True
     memory_window_image_judgment: bool = True
+
+    # 소설화 전역 스위치. 꺼져 있으면 허용 행이 있어도 아무도 못 쓴다 — 코드 기본값이 닫힘이어야 env 설정 없이
+    # 배포해도 닫힌 채로 뜬다. 끄면 다음 요청부터 막히고(재기동 필요), 허용 행은 남아 다시 켜면 그대로 돌아온다.
+    novelize_enabled: bool = False
+    # 소설화를 허용할 수 있는 계정 id 명단(쉼표 구분, 따옴표 없이). 어드민이 허용을 줄 때와 사용자가 접근할 때 둘 다
+    # 본다 — 명단에서 지우고 재기동하면 허용 행을 지우지 않아도 그 계정은 곧바로 막힌다. 비어 있으면 아무에게도 줄 수
+    # 없다. `NoDecode` 는 위 CORS 명단과 같은 이유로 JSON 디코드 단계를 끈다.
+    novelize_grant_allowlist: Annotated[list[uuid.UUID], NoDecode] = []
+
+    @field_validator("novelize_grant_allowlist", mode="before")
+    @classmethod
+    def _split_novelize_grant_allowlist(cls, value: object) -> object:
+        """env 문자열을 쉼표로 나눈다. 항목 앞뒤 공백은 지우고 빈 항목은 버린다. CORS 명단과 달리 남는 항목이
+        없어도 오류가 아니다 — 빈 명단은 "아무에게도 허용하지 않음"이라는 정상 값이고 기본값이다. UUID 가 아닌
+        항목은 pydantic 이 기동에서 거부한다."""
+        if not isinstance(value, str):
+            return value
+        return [item.strip() for item in value.split(",") if item.strip()]
 
     # 자가호스팅 Bugsink DSN. 비어 있으면 그 자체로 비활성이라
     # 별도 활성 플래그를 두지 않는다(플래그와 DSN 유무가 어긋나는 상태만 늘어나고 얻는 것이
