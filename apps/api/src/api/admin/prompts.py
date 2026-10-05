@@ -1,5 +1,6 @@
 import logging
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from string import Formatter
@@ -28,6 +29,7 @@ from api.chat.prompt_builder import (
     ALLOWED_PLACEHOLDERS,
     MediaCellCandidate,
     PromptLane,
+    PromptRenderError,
     PromptNames,
     as_prompt_lane,
     build_generation_prompt,
@@ -960,8 +962,16 @@ _SAMPLE_NOVELIZE_TURN_LINES = (
 _SAMPLE_NOVELIZE_PARAGRAPHS = ["[샘플] 첫 문단", "[샘플] 둘째 문단", "[샘플] 셋째 문단"]
 
 
-def _novelize_preview_text(built: NovelizePrompt) -> str:
-    return f"{built.system_instruction}\n\n{built.prompt}"
+def _novelize_preview_item(channel: str, build: Callable[[], NovelizePrompt]) -> AdminPromptPreviewItem:
+    """소설화 채널 이전 버전을 복원한 초안처럼 소설화 행이 없으면 빌더가 렌더를 거부한다. 그 한 채널만 안내로 바꿔
+    나머지 미리보기는 그대로 보여 준다(행이 빠진 초안의 게시는 슬롯 검사가 따로 막는다)."""
+    try:
+        built = build()
+    except PromptRenderError as exc:
+        text = f"이 초안으로는 이 채널을 미리 볼 수 없습니다 — 소설화 문안이 없거나 렌더에 필요한 행이 비어 있습니다.\n({exc})"
+    else:
+        text = f"{built.system_instruction}\n\n{built.prompt}"
+    return AdminPromptPreviewItem(channel=channel, label=channel, text=text)
 
 
 def _novelize_preview_items(
@@ -970,41 +980,44 @@ def _novelize_preview_items(
     """소설화 세 채널. 실호출은 지시문(뒤에 등급 규칙)과 본문을 따로 보내지만 미리보기는 그 순서대로 이어 보여 준다."""
     assistant = prompt_set.story_assistant_label if is_story_chat else prompt_set.character_assistant_label
     turn_lines = _SAMPLE_NOVELIZE_TURN_LINES.format(user=prompt_set.user_label, assistant=assistant)
-    boundary = build_novelize_boundary_prompt(
-        prompt_set=prompt_set,
-        sections=sections,
-        is_story_chat=is_story_chat,
-        max_turns=2,
-        user_name="[샘플] 하늘",
-        turn_lines=turn_lines,
-    )
-    chapter = build_novelize_chapter_prompt(
-        prompt_set=prompt_set,
-        sections=sections,
-        is_story_chat=is_story_chat,
-        work_setting="[샘플] 작품 설정",
-        user_name="[샘플] 하늘",
-        setting_notes="[샘플] 설정 노트",
-        previous_excerpt="[샘플] 앞 장의 마지막 문단",
-        turn_lines=turn_lines,
-    )
-    revise = build_novelize_revise_prompt(
-        sections=sections,
-        is_story_chat=is_story_chat,
-        work_setting="[샘플] 작품 설정",
-        setting_notes="[샘플] 설정 노트",
-        paragraphs=_SAMPLE_NOVELIZE_PARAGRAPHS,
-        first_index=1,
-        last_index=1,
-        user_request="[샘플] 더 긴장감 있게",
-    )
     return [
-        AdminPromptPreviewItem(channel=channel, label=channel, text=_novelize_preview_text(built))
-        for channel, built in (
-            ("novelize_boundary", boundary),
-            ("novelize_chapter", chapter),
-            ("novelize_revise", revise),
-        )
+        _novelize_preview_item(
+            "novelize_boundary",
+            lambda: build_novelize_boundary_prompt(
+                prompt_set=prompt_set,
+                sections=sections,
+                is_story_chat=is_story_chat,
+                max_turns=2,
+                user_name="[샘플] 하늘",
+                turn_lines=turn_lines,
+            ),
+        ),
+        _novelize_preview_item(
+            "novelize_chapter",
+            lambda: build_novelize_chapter_prompt(
+                prompt_set=prompt_set,
+                sections=sections,
+                is_story_chat=is_story_chat,
+                work_setting="[샘플] 작품 설정",
+                user_name="[샘플] 하늘",
+                setting_notes="[샘플] 설정 노트",
+                previous_excerpt="[샘플] 앞 장의 마지막 문단",
+                turn_lines=turn_lines,
+            ),
+        ),
+        _novelize_preview_item(
+            "novelize_revise",
+            lambda: build_novelize_revise_prompt(
+                sections=sections,
+                is_story_chat=is_story_chat,
+                work_setting="[샘플] 작품 설정",
+                setting_notes="[샘플] 설정 노트",
+                paragraphs=_SAMPLE_NOVELIZE_PARAGRAPHS,
+                first_index=1,
+                last_index=1,
+                user_request="[샘플] 더 긴장감 있게",
+            ),
+        ),
     ]
 
 

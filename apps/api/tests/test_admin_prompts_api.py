@@ -553,6 +553,33 @@ async def test_preview_uses_the_draft_when_one_exists(
     assert "[초안 전용] 우선순위 문장" in story_system["text"]
 
 
+async def test_preview_without_novelize_rows_shows_a_notice_instead_of_failing(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """소설화 채널 이전 버전을 복원했거나 그 전에 열어 둔 편집 탭에서 저장한 초안은 소설화 행이 없다. 그때도
+    미리보기 전체가 500 으로 죽지 않고, 소설화 세 항목만 안내로 바뀌고 나머지 항목은 그대로 렌더된다."""
+    await _login_new_admin(db_client, db_session)
+    draft = await _make_valid_draft(db_client, "story")
+    await db_session.execute(
+        sa.delete(PromptSection).where(
+            PromptSection.prompt_set_id == uuid.UUID(str(draft["id"])),
+            PromptSection.channel.like("novelize_%"),
+        )
+    )
+    await db_session.commit()
+
+    resp = await db_client.post("/admin/prompt-sets/story/draft/preview")
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert len(items) == 13
+    novelize = [i for i in items if i["channel"].startswith("novelize_")]
+    assert [i["channel"] for i in novelize] == ["novelize_boundary", "novelize_chapter", "novelize_revise"]
+    assert all(i["text"].startswith("이 초안으로는 이 채널을 미리 볼 수 없습니다") for i in novelize)
+    assert all("필수 슬롯이 없다" in i["text"] for i in novelize)
+    story_system = next(i for i in items if i["channel"] == "system" and "basic" in i["label"])
+    assert story_system["text"]
+
+
 @pytest.mark.parametrize(
     ("lane", "expected_count"),
     [

@@ -192,7 +192,11 @@ async def test_builders_render_the_seeded_text_with_the_lanes_rating_rule(
         turn_lines="[턴 1] 캐릭터: 왔어?",
     )
     assert boundary.system_instruction == _M.BOUNDARY_INSTRUCTION
-    assert "이름: 서진" in boundary.prompt and "1턴부터 7턴까지" in boundary.prompt
+    assert "이름: 서진" in boundary.prompt and "[턴 1]부터 [턴 7]까지" in boundary.prompt
+    # 경계 제안도 장 생성과 같은 줄 형식을 받으므로, 같은 번호의 줄이 한 턴이라는 설명을 같은 글자로 싣는다.
+    same_turn_note = "줄마다 앞에 [턴 n] 번호가 붙어 있고, 같은 번호의 줄은 한 턴이다."
+    assert same_turn_note in boundary.prompt and same_turn_note in _M.CHAPTER_TURN_CONTEXT
+    assert "[n턴]" not in boundary.system_instruction
 
     chapter = build_novelize_chapter_prompt(
         prompt_set=prompt_set,
