@@ -294,6 +294,35 @@ async def test_regenerate_adds_a_new_revision_to_the_same_chapter(
     assert len(await _chapters(db_session, novel.id)) == 1
 
 
+async def test_regenerate_erases_the_previews_its_new_revision_made_stale(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """재생성 결과가 새 판이 되면 옛 판을 기준으로 한 미리보기는 적용할 수 없다 — 지시문과 결과 사본을 비운다."""
+    room, novel, chapter, messages = await _first_chapter(db_client, db_session)
+    base = (await _revisions(db_session, chapter.id))[0]
+    preview = NovelJob(
+        novel_id=novel.id,
+        user_id=novel.user_id,
+        kind="ai_edit",
+        status="succeeded",
+        chapter_id=chapter.id,
+        base_revision_id=base.id,
+        paragraph_start=0,
+        paragraph_end=0,
+        instruction="더 쓸쓸하게",
+        result_text="고친 본문",
+        charged_amount=5,
+    )
+    db_session.add(preview)
+    await db_session.commit()
+    job = await _chapter_job(db_session, novel, messages[0], room.turns[2][1], chapter=chapter)
+
+    await runner.run_job(_factory(db_session), _NovelLLM(chunks=["다시 쓴 장. " * 30]), job.id)
+
+    stored = await _job(db_session, preview.id)
+    assert (stored.status, stored.instruction, stored.result_text) == ("succeeded", None, None)
+
+
 async def test_regenerate_after_the_source_changed_refunds_without_calling_the_model(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
@@ -532,6 +561,24 @@ async def test_ai_edit_keeps_a_preview_of_the_whole_body_and_makes_no_revision(
     assert usage.call_site == "novelize_revise"
     assert system_instruction is not None and "[고치는 규칙]" in system_instruction
     assert "[2] 둘째 문단이다." in prompt and "2번 문단부터 3번 문단까지" in prompt and "더 쓸쓸하게" in prompt
+
+
+async def test_ai_edit_finishing_after_its_chapter_changed_keeps_no_preview(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """모델을 부르는 동안 사용자가 그 장을 직접 고치면 결과의 기준 판이 더는 현재가 아니다. 그 결과는 적용할 수 없고
+    상세에도 안 나오므로 남기지 않는다(직접 수정 쪽 비우기는 이 작업이 아직 끝나기 전이라 이 행을 보지 못했다)."""
+    novel, chapter = await _chapter_with_body(db_client, db_session, "\n\n".join(["문단이다. " * 40, "둘째."]))
+    job = await _ai_edit_job(db_session, novel, chapter, start=1, end=1)
+
+    async def edit_meanwhile() -> None:
+        db_session.add(NovelChapterRevision(chapter_id=chapter.id, revision_no=2, body="딴 탭", source="manual_edit"))
+        await db_session.commit()
+
+    await runner.run_job(_factory(db_session), _NovelLLM(paragraphs=["고친 둘째."], during=edit_meanwhile), job.id)
+
+    stored = await _job(db_session, job.id)
+    assert (stored.status, stored.instruction, stored.result_text) == ("succeeded", None, None)
 
 
 @pytest.mark.parametrize(

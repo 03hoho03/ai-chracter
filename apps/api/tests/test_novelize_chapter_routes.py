@@ -581,6 +581,8 @@ async def test_deleting_the_last_chapter_keeps_its_jobs_and_rewinds_the_next_sta
         chapter_id=last.id,
         base_revision_id=revision.id,
         result_revision_id=revision.id,
+        instruction="더 쓸쓸하게",
+        result_text="고친 본문",
         charged_amount=5,
     )
     db_session.add(job)
@@ -598,6 +600,8 @@ async def test_deleting_the_last_chapter_keeps_its_jobs_and_rewinds_the_next_sta
     assert revisions == 0
     kept = await _job_row(db_session, job.id)
     assert (kept.chapter_id, kept.base_revision_id, kept.result_revision_id) == (None, None, None)
+    # 지운 장을 고치려던 지시문과 결과 본문도 함께 지운다 — 행은 하루 상한 집계용이라 본문이 필요 없다.
+    assert (kept.instruction, kept.result_text) == (None, None)
     assert proposal.json()["startMessageId"] == str(room.turns[2][0].id)
 
 

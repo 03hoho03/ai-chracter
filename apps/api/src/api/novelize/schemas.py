@@ -38,7 +38,10 @@ ProtagonistName = Annotated[
 
 # ── 작업 ───────────────────────────────────────────────────────────────────
 class NovelAiEditPreview(CamelModel):
-    """문단 수정 작업의 입력과 결과 후보. `result_text` 는 범위 밖 문단까지 이은 장 전체 본문이고, 성공 전에는 null."""
+    """문단 수정 작업의 입력과 결과 후보. `result_text` 는 범위 밖 문단까지 이은 장 전체 본문이고, 성공 전에는 null.
+
+    적용했거나 버렸거나, 그 장에 새 개정이 생겨 더는 적용할 수 없게 된 작업은 성공이어도 `instruction`·`result_text`
+    가 null 이다(쓸 데가 없어진 지시문과 결과 사본은 서버가 비운다). 장을 지운 작업도 같다."""
 
     base_revision_id: uuid.UUID | None
     paragraph_start: int | None

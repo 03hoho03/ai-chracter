@@ -498,3 +498,84 @@ async def test_dismissing_a_job_of_another_novel_is_404(
 
     assert resp.status_code == 404 and resp.json()["detail"] == {"code": "NOVEL_JOB_NOT_FOUND"}
     assert (await db_session.get_one(NovelJob, other_job.id, populate_existing=True)).dismissed_at is None
+
+
+# ── 쓰지 않을 지시문·미리보기 비우기 ────────────────────────────────────────
+async def _job_texts(db: AsyncSession, job_id: uuid.UUID) -> tuple[str | None, str | None]:
+    job = await db.get_one(NovelJob, job_id, populate_existing=True)
+    return job.instruction, job.result_text
+
+
+@pytest.mark.parametrize("action", ["apply", "dismiss"])
+async def test_applying_or_dismissing_an_ai_edit_erases_its_instruction_and_preview_but_keeps_the_row(
+    action: str, db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """적용한 결과는 개정에, 버린 결과는 어디에도 쓸 데가 없다 — 작업 행에 지시문과 결과 사본을 남겨 둘 이유가 없다.
+    행은 남는다(하루 재시도 상한을 행 수로 센다). 폴링은 그 작업에 미리보기가 없다고 답한다."""
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    base = (await _revisions(db_session, chapter.id))[0]
+    job = await _finished_ai_edit(db_session, novel_id, chapter, base)
+
+    resp = await db_client.post(f"/novels/{novel_id}/jobs/{job.id}/{action}")
+    polled = await db_client.get(f"/novels/{novel_id}/jobs/{job.id}")
+
+    assert resp.status_code in (201, 204), resp.text
+    assert await _job_texts(db_session, job.id) == (None, None)
+    stored = await db_session.get_one(NovelJob, job.id, populate_existing=True)
+    assert (stored.status, stored.charged_amount) == ("succeeded", 5)
+    assert polled.status_code == 200, polled.text
+    preview = polled.json()["aiEdit"]
+    assert (preview["instruction"], preview["resultText"]) == (None, None)
+    assert await _pending(db_client, novel_id) == []
+
+
+@pytest.mark.parametrize("change", ["manual_edit", "revert", "apply_other"])
+async def test_a_new_revision_erases_the_previews_it_made_stale_in_that_chapter_only(
+    change: str, db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """장의 현재 판이 바뀌면 그 앞 판을 기준으로 한 미리보기는 적용할 수 없고 상세에도 안 나온다 — 사용자가 버리기를
+    누를 길도 없으니 서버가 비운다. 다른 장의 미리보기는 그대로다."""
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    messages = await _room_messages(db_session, room.room_id)
+    chapter = await _add_chapter(db_session, novel_id, room, messages[0], room.turns[1][1], body=_BODY)
+    other_chapter = await _add_chapter(db_session, novel_id, room, room.turns[2][0], room.turns[3][1], body=_BODY)
+    base = (await _revisions(db_session, chapter.id))[0]
+    stale = [await _finished_ai_edit(db_session, novel_id, chapter, base) for _ in range(2)]
+    other_base = (await _revisions(db_session, other_chapter.id))[0]
+    other = await _finished_ai_edit(db_session, novel_id, other_chapter, other_base)
+
+    if change == "manual_edit":
+        resp = await db_client.post(
+            f"/novels/{novel_id}/chapters/{chapter.id}/revisions", json={"baseRevisionId": str(base.id), "body": "새 판"}
+        )
+    elif change == "revert":
+        resp = await db_client.post(
+            f"/novels/{novel_id}/chapters/{chapter.id}/revisions/{base.id}/restore",
+            json={"baseRevisionId": str(base.id)},
+        )
+    else:
+        resp = await db_client.post(f"/novels/{novel_id}/jobs/{stale[0].id}/apply")
+
+    assert resp.status_code == 201, resp.text
+    assert [await _job_texts(db_session, job.id) for job in stale] == [(None, None), (None, None)]
+    assert await _job_texts(db_session, other.id) == (
+        "더 쓸쓸하게",
+        "첫 문단이다.\n\n쓸쓸한 둘째 문단.\n\n셋째 문단이다.",
+    )
+    assert [edit["id"] for edit in await _pending(db_client, novel_id)] == [str(other.id)]
+
+
+async def test_detail_skips_a_preview_whose_text_was_erased_instead_of_failing(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """상세는 목차(현재 판)와 미리보기를 서로 다른 문장으로 읽는다. 그 사이 새 판이 생겨 미리보기가 비워지면 기준
+    판은 아직 목차의 현재 판인데 본문은 없는 행을 보게 된다 — 500 이 아니라 목록에서 빼야 한다."""
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    base = (await _revisions(db_session, chapter.id))[0]
+    job = await _finished_ai_edit(db_session, novel_id, chapter, base)
+    await db_session.execute(
+        sa.update(NovelJob).where(NovelJob.id == job.id).values(instruction=None, result_text=None)
+    )
+    await db_session.commit()
+
+    assert await _pending(db_client, novel_id) == []

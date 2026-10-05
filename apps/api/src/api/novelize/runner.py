@@ -39,6 +39,7 @@ from api.llm.client import (
     LLMTruncatedError,
 )
 from api.novelize.billing import ACTIVE_JOB_STATUSES, refund_job, transition_job
+from api.novelize.deletion import erase_stale_ai_edit_previews
 from api.novelize.inputs import (
     ChapterInput,
     SourceChangedError,
@@ -221,15 +222,22 @@ def _assemble_revision(paragraphs: list[str], first: int, last: int, replacement
 
 async def _save_ai_edit(session_factory: SessionFactory, job_id: uuid.UUID, body: str) -> None:
     """문단 수정 결과는 개정이 아니라 미리보기 후보다. 사용자가 적용할 때 새 개정이 된다. 전이와 결과 본문을 한
-    문장으로 써서 전이가 행을 받지 못하면 결과도 남지 않는다."""
+    문장으로 써서 전이가 행을 받지 못하면 결과도 남지 않는다.
+
+    커밋한 뒤 그 장의 낡은 미리보기를 비운다 — 모델을 부르는 동안 사용자가 장을 고쳤으면 이 결과의 기준 개정은 이미
+    현재가 아니라 적용할 수 없는데, 고친 쪽의 비우기는 이 결과가 저장되기 전에 돌아 이 행을 보지 못했다."""
     async with session_factory() as db:
-        await transition_job(
+        saved = await transition_job(
             db,
             job_id=job_id,
             expected=("running",),
             values={"status": "succeeded", "result_text": body, "finished_at": func.now()},
         )
         await db.commit()
+        chapter_id = await db.scalar(select(NovelJob.chapter_id).where(NovelJob.id == job_id))
+        if saved is not None and chapter_id is not None:
+            await erase_stale_ai_edit_previews(db, chapter_id)
+            await db.commit()
 
 
 async def _save_chapter(session_factory: SessionFactory, job_id: uuid.UUID, chapter_input: ChapterInput, body: str) -> None:
@@ -283,6 +291,11 @@ async def _save_chapter(session_factory: SessionFactory, job_id: uuid.UUID, chap
         )
         await db.execute(update(Novel).where(Novel.id == job.novel_id).values(updated_at=func.now()))
         await db.commit()
+        if source == "regenerate":
+            # 재생성 결과가 새 현재 개정이 되면 옛 개정을 기준으로 한 미리보기는 적용할 수 없다. 장을 잠근 트랜잭션을
+            # 끝낸 뒤에 비운다(장을 쥔 채 작업 행을 고치면 적용과 교착한다).
+            await erase_stale_ai_edit_previews(db, chapter_id)
+            await db.commit()
 
 
 async def keep_job_alive(session_factory: SessionFactory, job_id: uuid.UUID) -> None:
