@@ -56,3 +56,34 @@ def test_refusal_is_a_polite_cannot_sentence_outside_quotes_at_either_end(paragr
 def test_story_text_is_not_a_refusal(paragraphs: list[str]) -> None:
     """소설 속 인물의 사과·거절 대사나 '할 수 없었다' 같은 서술은 거절이 아니다. 판정은 처음과 끝 문단만 본다."""
     assert not looks_like_refusal(paragraphs)
+
+
+@pytest.mark.parametrize(
+    "paragraph",
+    [
+        # "-다니다 + 띄어쓰기"는 "-다가"의 준말로 쓰는 순수 서술이다. 높임 어미는 문장 끝에서만 센다.
+        pytest.param("골목을 떠돌아다니다 지친 그는 어쩔 수 없이 벤치에 앉았다.", id="danida-mid-sentence"),
+        # 따옴표 없이 옮긴 방송 멘트의 높임말과 서술의 "수 없었다"는 다른 문장이다.
+        pytest.param(
+            "라디오에서 늦은 밤 DJ의 목소리가 흘러나왔다. 오늘 밤도 함께해 주셔서 감사합니다. 지수는 웃음을 참을 수 없었다.",
+            id="unquoted-broadcast",
+        ),
+        # 따옴표 없이 옮긴 편지는 한 문장에 높임 어미와 "수 없"이 함께 있어도, 같은 문단의 3인칭 서술이 소설임을 보여 준다.
+        pytest.param(
+            "편지는 짧았다. 그동안 고마웠어요. 더는 기다릴 수 없을 것 같아요. 민준은 편지를 접었다.",
+            id="unquoted-letter",
+        ),
+        # 큰따옴표 대사가 문단 안에서 줄을 바꿔도 대사 전체가 지워져야 한다.
+        pytest.param('"정말 미안해요.\n저는 갈 수 없어요." 그녀가 말했다.', id="dialogue-across-line-break"),
+        pytest.param('"저는 갈 수 없어요.\n정말 미안해요."', id="dialogue-across-line-break-alone"),
+        # 아래 둘은 "-다" 로 끝나는 서술 문장이 없는 문단(명사로 끝나는 단상)이라 어미·문장 규칙만으로 걸러야 한다.
+        pytest.param("어쩔 수 없이 떠돌아다니다 멈춘 곳, 낡은 벤치 위.", id="danida-without-plain-sentence"),
+        pytest.param(
+            "오늘 밤도 함께해 주셔서 감사합니다. 그 목소리에, 참을 수 없는 그리움.", id="polite-and-cannot-apart"
+        ),
+    ],
+)
+def test_narration_with_polite_words_is_not_a_refusal(paragraph: str) -> None:
+    """정상 소설 서술이 거절로 잡히면 기다린 결과가 버려지고 같은 원문에서 되풀이해 실패한다. 그래서 판정은 놓침보다
+    오탐을 더 피한다 — 처음·끝 문단 하나만 두고도 거절로 보지 않아야 하는 모양들이다."""
+    assert not looks_like_refusal([paragraph])
