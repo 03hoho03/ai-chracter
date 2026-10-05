@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
     ImageMatchJudgmentResult,
+    PromptNames,
     StatChangeJudgment,
     StatJudgmentResult,
 )
@@ -396,3 +397,82 @@ async def test_stat_replay_call_uses_the_stat_model_replay_label_long_timeout_an
     by_name = {s["name"]: s for s in record["statResult"]}
     assert by_name["세빈 호감도"] == {"statId": str(liking.entity_id), "name": "세빈 호감도", "start": 53.0, "requested": 28.0, "applied": 28.0}  # fmt: skip
     assert by_name["상영회까지"] == {"statId": str(days.entity_id), "name": "상영회까지", "start": 42.0, "requested": 45.0, "applied": 42.0}  # fmt: skip
+
+
+# ── 스탯 줄 형식 비교 ────────────────────────────────────────────────────────
+
+
+async def test_stat_formats_rewrite_only_the_stat_lines_or_append_the_baseline_sentence(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    room_id, liking, days, fake, trace_path = await _played_stat_room(db_client, db_session, tmp_path, monkeypatch)
+    start = replay.stat_start_from_trace(trace_path, room_id, 2)
+    inputs = await replay.build_inputs(
+        db_session, room_id, 2, kinds=["stat"], variant="full", stat_start=start, stat_formats=list(replay.STAT_FORMATS)
+    )
+    by_format = {i.stat_format: i.prompt for i in inputs}
+    assert list(by_format) == ["current", "A", "L", "B"]
+    assert by_format["current"] == fake.stat_prompts[1]  # 현행은 서버가 보낸 그대로
+
+    # A: 현재값·범위가 이름 바로 뒤, 설명은 줄 끝. 프롬프트의 나머지는 한 글자도 다르지 않다.
+    a = by_format["A"]
+    assert f"- statId={liking.entity_id}, 이름=세빈 호감도, 현재값=53.0, 범위=[0, 100], 설명=하늘이 세빈의 일에 응하면 2~4 오른다." in a  # fmt: skip
+    assert f"- statId={days.entity_id}, 이름=상영회까지, 현재값=42.0, 범위=[0, 42], 설명=날이 넘어가면 줄어든다.  ※ 감소만 할 수 있다. 한 턴에 최대 7까지 바뀐다." in a  # fmt: skip
+    current = by_format["current"]
+    head, tail = current.split(f"- statId={liking.entity_id}", 1)
+    assert a.startswith(head)
+    assert a.endswith(tail.split("\n", 2)[2])  # 스탯 두 줄 뒤(사용자 이름·이번 턴·지시문)는 같다
+    assert len(a) == len(current)  # 같은 조각의 순서만 바뀐다
+
+    # L: 현행 + 지시문 끝 한 문장. B: A + 같은 문장.
+    assert by_format["L"] == current + " " + replay.BASELINE_SENTENCE
+    assert by_format["B"] == a + " " + replay.BASELINE_SENTENCE
+    assert all(i.call_site == "replay_stat_judgment" for i in inputs)
+
+
+def test_stat_format_rewrite_stops_when_the_server_lines_are_not_found() -> None:
+    # 서버 줄 형식이 바뀌어 복제한 현행 줄과 어긋나면, 엉뚱한 프롬프트를 보내지 않고 멈춘다.
+    stat = StatDef(
+        entity_id=uuid.uuid4(), starting_setup_id=uuid.uuid4(), name="호감", icon="heart", color="#ff0000",
+        min_value=0, max_value=100, initial_value=50, unit=None, order=1, description="오른다.",
+    )  # fmt: skip
+    names = PromptNames(persona_name="하늘", default_user_name="", char_name=None)
+    with pytest.raises(ValueError, match="스탯 줄"):
+        replay.stat_prompt_variant("다른 형식의 프롬프트", [stat], {str(stat.entity_id): 50.0}, names, "A")
+    assert replay.stat_prompt_variant("p", [stat], {}, names, "current") == "p"
+
+
+async def test_stat_format_is_recorded_on_every_call(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    room_id, liking, _days, _fake, trace_path = await _played_stat_room(db_client, db_session, tmp_path, monkeypatch)
+
+    async def record_usage(*_: object) -> None:
+        return None
+
+    monkeypatch.setattr(gemini, "record_usage", record_usage)
+    start = replay.stat_start_from_trace(trace_path, room_id, 2)
+    inputs = await replay.build_inputs(
+        db_session, room_id, 2, kinds=["stat"], variant="full", stat_start=start, stat_formats=["current", "B"]
+    )
+    raw = StatJudgmentResult(stat_changes=[StatChangeJudgment(stat_id=str(liking.entity_id), new_value=56)])
+    sent: list[dict[str, Any]] = []
+
+    async def generate_content(**kwargs: Any) -> SimpleNamespace:
+        sent.append(kwargs)
+        return SimpleNamespace(parsed=raw, usage_metadata=SimpleNamespace(prompt_token_count=1))
+
+    client = GeminiLLMClient(api_key="test-key")
+    monkeypatch.setattr(
+        client,
+        "_client",
+        SimpleNamespace(aio=SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))),
+    )
+    capture: dict[str, Any] = {}
+    replay.install_replay_transport(client, capture)
+    records: list[dict[str, Any]] = []
+    row = await db_session.get(ChatRoom, room_id)
+    assert row is not None
+    await replay.run_replay(client, capture, inputs, reps=2, budget=replay.CallBudget(9), room=row, sink=records.append)
+    assert [r["statFormat"] for r in records] == ["current", "current", "B", "B"]
+    assert [k["contents"] for k in sent] == [inputs[0].prompt] * 2 + [inputs[1].prompt] * 2

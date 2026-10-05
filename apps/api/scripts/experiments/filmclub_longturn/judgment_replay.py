@@ -8,6 +8,8 @@
         [--variant full|window] [--reps 3] [--limit-calls 6] --out <run>/replay/t<NNN>.jsonl [--execute]
     # 스탯 판정: 그 턴의 시작 값을 서버 trace 의 stat_outcome 에서 읽는다(DB 에는 지금 값만 있다).
     ... --kind stat --stat-start-trace <run>/trace.jsonl --reps 10 --limit-calls 10 ...
+    # 스탯 줄 형식 비교: 같은 입력을 현행·수정안 형식으로 만들어 갈래마다 reps 번 보낸다(아래 STAT_FORMATS).
+    ... --kind stat --stat-format current --stat-format A --stat-format L --stat-format B ...
 
 입력은 격리 DB 의 방이다. 턴 N 은 N 번째 (사용자 메시지, 바로 뒤 응답) 쌍이고, 판정 입력의 히스토리는 그 사용자 메시지
 앞의 메시지 전부다(유실 턴의 사용자 메시지도 서버가 그랬듯 히스토리에 든다). 프롬프트는 서버의 판정 준비 함수를 그대로
@@ -46,7 +48,9 @@ from api.chat.memory_window import load_current_summary, prompt_window
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
     ImageMatchJudgmentResult,
+    PromptNames,
     StatJudgmentResult,
+    _stat_line_tail,
     build_ending_judgment_prompt,
     build_stat_judgment_prompt,
     load_active_prompt_set,
@@ -80,6 +84,16 @@ OUTPUT_TOKENS = 60
 # 스탯 판정은 히스토리가 없어 턴과 무관하다. 측정 방 서버 로그의 스탯 판정 입력이 1,700 토큰대라 넉넉히 잡는다.
 STAT_INPUT_TOKENS = 2_000
 
+# 스탯 판정 프롬프트 형식 갈래. 판정이 한 호감의 새 값을 다른 호감의 현재값 기준으로 내는 오독을 줄이는지 본다.
+# current = 서버 출력 그대로. A = 스탯 줄에서 현재값·범위를 이름 바로 뒤로, 긴 작가 설명을 줄 끝으로 옮긴다(서버 줄은
+# 현재값이 설명 뒤 꼬리에 있어 이름에서 수백 자 떨어진다 — 줄 형식은 코드라 운영 반영은 코드 변경이다). L = 현행 줄에
+# 지시문 끝 한 문장(기준은 자기 현재값)을 덧붙인다 — 지시문은 레인 섹션이라 운영 반영은 문안 게시만으로 된다. B = A + L.
+STAT_FORMATS = ("current", "A", "L", "B")
+BASELINE_SENTENCE = (
+    "newValue는 그 statId 줄에 적힌 그 스탯 자신의 현재값에 이번 턴의 변화만큼 더하거나 빼서 정하라. "
+    "다른 스탯의 현재값을 기준으로 삼지 마라."
+)
+
 
 @dataclass(frozen=True)
 class ReplayInput:
@@ -96,6 +110,52 @@ class ReplayInput:
     # 스탯 판정만: 서버 적용 규칙을 다시 돌릴 정의와 그 턴의 시작 값.
     stat_defs: tuple[StatDef, ...] = ()
     stat_start: dict[str, float] = field(default_factory=dict)
+    stat_format: str = "current"
+
+
+def _stat_value(stat_def: StatDef, current_stats: dict[str, float]) -> float:
+    return current_stats.get(str(stat_def.entity_id), stat_def.initial_value)
+
+
+def _server_stat_lines(stat_defs: list[StatDef], current_stats: dict[str, float], names: PromptNames) -> str:
+    """서버 `build_stat_judgment_prompt` 의 스탯 줄을 같은 식으로 복제한다. 복제가 서버와 어긋나면 프롬프트에서 찾지
+    못해 `stat_prompt_variant` 가 멈춘다."""
+    return "\n".join(
+        f"- statId={stat_def.entity_id}, 이름={names.expand(stat_def.name)}, "
+        f"설명={names.expand(stat_def.description)}, "
+        f"범위=[{stat_def.min_value}, {stat_def.max_value}], "
+        f"현재값={_stat_value(stat_def, current_stats)}" + _stat_line_tail(stat_def)
+        for stat_def in stat_defs
+    )
+
+
+def _value_first_stat_lines(stat_defs: list[StatDef], current_stats: dict[str, float], names: PromptNames) -> str:
+    return "\n".join(
+        f"- statId={stat_def.entity_id}, 이름={names.expand(stat_def.name)}, "
+        f"현재값={_stat_value(stat_def, current_stats)}, "
+        f"범위=[{stat_def.min_value}, {stat_def.max_value}], "
+        f"설명={names.expand(stat_def.description)}" + _stat_line_tail(stat_def)
+        for stat_def in stat_defs
+    )
+
+
+def stat_prompt_variant(
+    prompt: str, stat_defs: list[StatDef], current_stats: dict[str, float], names: PromptNames, stat_format: str
+) -> str:
+    """서버가 만든 스탯 판정 프롬프트를 `stat_format` 갈래로 바꾼다. 스탯 줄 밖(사용자 이름·이번 턴·지시문)은 그대로
+    두고, 지시문 문장은 프롬프트 끝(마지막 섹션이 지시문이다)에 덧붙인다."""
+    if stat_format == "current":
+        return prompt
+    if stat_format in ("A", "B"):
+        server_lines = _server_stat_lines(stat_defs, current_stats, names)
+        if prompt.count(server_lines) != 1:
+            raise ValueError("서버 스탯 줄을 프롬프트에서 정확히 한 번 찾지 못했다 — 서버 줄 형식이 복제와 다르다")
+        prompt = prompt.replace(server_lines, _value_first_stat_lines(stat_defs, current_stats, names))
+    if stat_format in ("L", "B"):
+        prompt = f"{prompt} {BASELINE_SENTENCE}"
+    if stat_format not in STAT_FORMATS:
+        raise ValueError(f"모르는 스탯 형식: {stat_format}")
+    return prompt
 
 
 class CallBudget:
@@ -164,6 +224,7 @@ async def build_inputs(
     variant: str,
     ending_ids: list[uuid.UUID] | None = None,
     stat_start: dict[str, float] | None = None,
+    stat_formats: list[str] | None = None,
 ) -> list[ReplayInput]:
     room = await db.get(ChatRoom, room_id)
     if room is None:
@@ -203,28 +264,31 @@ async def build_inputs(
         if stat_start is None or set(stat_start) != expected:
             raise ValueError("스탯 판정은 그 턴의 시작 값이 스탯마다 있어야 한다(DB 에는 지금 값만 있다)")
         site, original = REPLAY_SITES["stat"]
-        inputs.append(
-            ReplayInput(
-                kind="stat",
-                variant=variant,
-                turn=turn,
-                prompt=build_stat_judgment_prompt(
-                    prompt_set=prompt_set,
-                    sections=sections,
-                    stat_defs=stat_defs,
-                    current_stats=stat_start,
-                    user_message=user.content,
-                    assistant_message=assistant.content,
-                    names=names,
-                ),
-                schema=StatJudgmentResult,
-                call_site=site,
-                original_call_site=original,
-                history_messages=0,
-                stat_defs=tuple(stat_defs),
-                stat_start=dict(stat_start),
-            )
+        server_prompt = build_stat_judgment_prompt(
+            prompt_set=prompt_set,
+            sections=sections,
+            stat_defs=stat_defs,
+            current_stats=stat_start,
+            user_message=user.content,
+            assistant_message=assistant.content,
+            names=names,
         )
+        for stat_format in stat_formats or ["current"]:
+            inputs.append(
+                ReplayInput(
+                    kind="stat",
+                    variant=variant,
+                    turn=turn,
+                    prompt=stat_prompt_variant(server_prompt, stat_defs, stat_start, names, stat_format),
+                    schema=StatJudgmentResult,
+                    call_site=site,
+                    original_call_site=original,
+                    history_messages=0,
+                    stat_defs=tuple(stat_defs),
+                    stat_start=dict(stat_start),
+                    stat_format=stat_format,
+                )
+            )
     with judgment_window(windowed):
         if "image" in kinds:
             judgment = await _prepare_media_cell_judgment(
@@ -405,6 +469,7 @@ async def run_replay(
                     "turn": item.turn,
                     "judgment": item.kind,
                     "variant": item.variant,
+                    "statFormat": item.stat_format if item.kind == "stat" else None,
                     "endingId": str(item.ending_id) if item.ending_id else None,
                     "rep": rep,
                     "callSite": item.call_site,
@@ -437,7 +502,14 @@ async def _main(args: argparse.Namespace) -> int:
             stat_start_from_trace(Path(args.stat_start_trace), room_id, args.turn) if args.stat_start_trace else None
         )
         inputs = await build_inputs(
-            db, room_id, args.turn, kinds=args.kind, variant=args.variant, ending_ids=endings, stat_start=stat_start
+            db,
+            room_id,
+            args.turn,
+            kinds=args.kind,
+            variant=args.variant,
+            ending_ids=endings,
+            stat_start=stat_start,
+            stat_formats=args.stat_format,
         )
     models = check_same_models(inputs, settings.gemini_model_name)
     plan = estimate(inputs, args.reps, models)
@@ -445,7 +517,8 @@ async def _main(args: argparse.Namespace) -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     if args.prompt_out:
         for item in inputs:
-            with open(f"{args.prompt_out}.{item.kind}.txt", "w", encoding="utf-8") as f:  # noqa: ASYNC230 — 한 번 쓰는 CLI
+            suffix = item.kind if item.stat_format == "current" else f"{item.kind}-{item.stat_format}"
+            with open(f"{args.prompt_out}.{suffix}.txt", "w", encoding="utf-8") as f:  # noqa: ASYNC230 — 한 번 쓰는 CLI
                 f.write(item.prompt)
 
     def sink(record: dict[str, Any]) -> None:
@@ -465,6 +538,7 @@ async def _main(args: argparse.Namespace) -> int:
             "inputs": [
                 {
                     "judgment": i.kind,
+                    "statFormat": i.stat_format if i.kind == "stat" else None,
                     "endingId": str(i.ending_id) if i.ending_id else None,
                     "historyMessages": i.history_messages,
                     "promptChars": len(i.prompt),
@@ -495,6 +569,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--turn", type=int, required=True, help="방 턴 번호(N 번째 완결 턴)")
     ap.add_argument("--kind", action="append", choices=["image", "ending", "stat"], required=True)
     ap.add_argument("--stat-start-trace", help="스탯 판정 시작 값을 읽을 서버 trace(stat_outcome) 파일")
+    ap.add_argument(
+        "--stat-format",
+        action="append",
+        choices=list(STAT_FORMATS),
+        help="스탯 판정 프롬프트 갈래(여럿 가능, 기본 current)",
+    )
     ap.add_argument("--prompt-out", help="만든 프롬프트를 판정 종류별로 이 접두 경로에 저장(<접두>.<종류>.txt)")
     ap.add_argument("--ending", action="append", help="엔딩 entity_id(여럿 가능) — 없으면 그 턴에 차례인 엔딩 전부")
     ap.add_argument("--variant", choices=["full", "window"], default="full")
