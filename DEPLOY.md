@@ -66,7 +66,6 @@ Cloudflare 애니캐스트 IP(`104.x`/`172.67.x`)가 아니라 VM 고정 IP를 �
 | GCP 프로젝트 `ai-character-chat-501906` | 유지 | **Google OAuth 클라이언트가 여기 있다**("Google OAuth" 절) — 지우면 로그인이 죽는다 |
 | `apps/api/cloudbuild.yaml` · `apps/api/scripts/ops/cloudrun_to_dotenv.py` | 사문 | Cloud Run 시절 산물. 실행 대상이 없다 |
 | Cloud Build 트리거 `ai-chat-deploy`(옛 프로젝트) | 비활성화 | 대상이 사라져 무해 |
-| R2 `backup/archive/` | 유지 | 이전 직전 최종본(`neon-final-20260902.dump`·`upstash-final-20260902.jsonl`). **prune 대상이 아니다** — `backup_db.py`는 `daily/`·`weekly/`만 본다 |
 
 ---
 
