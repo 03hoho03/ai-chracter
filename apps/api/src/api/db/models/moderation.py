@@ -11,6 +11,9 @@ from api.db.base import Base
 
 class ReportReasonCategory(str, enum.Enum):
     ADULT = "adult"
+    # 미성년으로 보이는 인물의 성적 대상화·그루밍 같은 신고. 다른 신고보다 먼저 처리하므로 다른 사유와 섞이지 않게
+    # 따로 받는다(기준은 `CONTENT_POLICY.md` 의 "신고와 처리" 절). 채팅 응답 신고 사유에도 같은 키가 있다.
+    MINOR_SAFETY = "minor_safety"
     COPYRIGHT = "copyright"
     HATE = "hate"
     SPAM = "spam"

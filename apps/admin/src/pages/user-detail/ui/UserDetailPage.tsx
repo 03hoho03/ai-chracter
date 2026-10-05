@@ -36,11 +36,13 @@ const INLINE_LINK_CLASS =
 
 
 /** `AdminUserActionLogItem.reasonCategory`는 enum이 아니라 plain `string | null`이다 — 작품 직접
- * 조치 로그(신고 사유 5종, REPORT_REASON_LABELS), 채팅 열람 로그(별도 사유 4종,
- * CHAT_VIEW_REASON_CATEGORY_LABELS), 채팅 응답 신고 처리 로그(신고 사유 6종,
+ * 조치 로그(신고 사유, REPORT_REASON_LABELS), 채팅 열람 로그(별도 사유,
+ * CHAT_VIEW_REASON_CATEGORY_LABELS), 채팅 응답 신고 처리 로그(신고 사유,
  * CHAT_MESSAGE_REPORT_REASON_LABELS)가 같은 테이블을 써서 세 사유 체계가 섞여 들어온다. 겹치는 키는
- * `other` 하나뿐이고 세 집합 모두 한글 라벨이 "기타"로 같으므로(entities/report, entities/admin-user
- * 각 model/labels.ts 확인) 스프레드 순서와 무관하게 값이 동일하다 — 합쳐도 의미가 바뀌지 않는다.
+ * `other`("기타", 세 집합 모두)와 `minor_safety`("아동·청소년 관련", 작품 신고·채팅 응답 신고 둘)이고
+ * 겹치는 집합끼리 한글 라벨이 같으므로(entities/report, entities/admin-user 각 model/labels.ts 확인)
+ * 스프레드 순서와 무관하게 값이 동일하다 — 합쳐도 의미가 바뀌지 않는다. 겹치는 키를 새로 만들면
+ * 라벨도 같게 둔다.
  * `Record<string, string>`이라 `??` 폴백으로 모르는 값은 원문 그대로 보여준다(CLOVER_KIND_LABELS와
  * 동일한 관례 — 유니언으로 강제하는 ACTION_TYPE_LABELS와는 다르다). */
 const REASON_CATEGORY_LABELS_ALL: Record<string, string> = {

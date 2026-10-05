@@ -243,7 +243,7 @@ export interface paths {
          *     없는 직접 조치에는 반려할 대상이 없다 — 400으로 거절한다.
          *
          *     사유 요구가 조치마다 다르다: `restrict`/`delete`는 아래에서 `Notification`을
-         *     만들고 그 통지 문구가 사유를 인용하므로 제품 결정으로 신고 사유 5종 중 하나가
+         *     만들고 그 통지 문구가 사유를 인용하므로 제품 결정으로 신고 사유 중 하나가
          *     필수다(없으면 422) — 예전엔 그 `reason_category` 컬럼이 NOT NULL이라는 DB 제약을
          *     근거로 들었지만, 이후 그 컬럼이 nullable로
          *     바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가 사라졌다. 반면
@@ -3630,7 +3630,7 @@ export interface components {
              * Reason
              * @enum {string}
              */
-            reason: "inappropriate" | "hateful" | "out_of_character" | "repetitive" | "broken" | "other";
+            reason: "inappropriate" | "minor_safety" | "hateful" | "out_of_character" | "repetitive" | "broken" | "other";
             /** Note */
             note: string | null;
             status: components["schemas"]["ReportStatus"];
@@ -3668,7 +3668,7 @@ export interface components {
              * Reason
              * @enum {string}
              */
-            reason: "inappropriate" | "hateful" | "out_of_character" | "repetitive" | "broken" | "other";
+            reason: "inappropriate" | "minor_safety" | "hateful" | "out_of_character" | "repetitive" | "broken" | "other";
             status: components["schemas"]["ReportStatus"];
             /**
              * Createdat
@@ -5365,7 +5365,7 @@ export interface components {
              * Reason
              * @enum {string}
              */
-            reason: "inappropriate" | "hateful" | "out_of_character" | "repetitive" | "broken" | "other";
+            reason: "inappropriate" | "minor_safety" | "hateful" | "out_of_character" | "repetitive" | "broken" | "other";
             /** Note */
             note?: string | null;
         };
@@ -5604,7 +5604,7 @@ export interface components {
         };
         /**
          * ChatViewReasonCategory
-         * @description 기존 `ReportReasonCategory`(adult/copyright/hate/spam/other)와
+         * @description 기존 `ReportReasonCategory`(작품·댓글 신고 사유)와
          *     다른 전용 enum이다 — 채팅 열람 사유는 신고 사유와 결이 달라 재사용하지 않는다.
          * @enum {string}
          */
@@ -7266,7 +7266,7 @@ export interface components {
          * ReportReasonCategory
          * @enum {string}
          */
-        ReportReasonCategory: "adult" | "copyright" | "hate" | "spam" | "other";
+        ReportReasonCategory: "adult" | "minor_safety" | "copyright" | "hate" | "spam" | "other";
         /** ReportRequest */
         ReportRequest: {
             reasonCategory: components["schemas"]["ReportReasonCategory"];

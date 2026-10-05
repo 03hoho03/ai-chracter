@@ -3,16 +3,24 @@ import { ChevronRight } from "lucide-react";
 
 import { assertNever } from "@/shared/lib/assertNever";
 
-import type { NotificationResponse } from "../model/notification";
+import type { NotificationResponse, ReportReasonCategory } from "../model/notification";
 import { resolveNotificationDestination } from "../model/notificationDestination";
 
-const REASON_CATEGORY_LABELS: Record<string, string> = {
+/** 알림의 사유는 서버가 작품·댓글 신고 사유 값을 그대로 복사해 둔 것이다(응답 스키마에서는 문자열). 생성된
+ * 사유 타입을 키로 받는 `Record` 라 서버가 사유를 더하고 api-types 를 다시 만들면 라벨을 넣기 전까지 typecheck
+ * 가 깨진다 — 문자열 키였을 때는 빠뜨려도 알림에 원문 값이 그대로 떴다. */
+const REASON_CATEGORY_LABELS: Record<ReportReasonCategory, string> = {
   adult: "선정성",
+  minor_safety: "아동·청소년 관련",
   copyright: "저작권 침해",
   hate: "혐오·차별",
   spam: "스팸",
   other: "기타",
 };
+
+function isReportReasonCategory(value: string): value is ReportReasonCategory {
+  return value in REASON_CATEGORY_LABELS;
+}
 
 /** 댓글이 붙지 않은 알림의 type별 제목 — 이용제한/삭제 조치 통지(moderation-action), 계정 경고(user-warned),
  * 계정 정지(user-suspended), 공지(notice), 문의 답변(inquiry-reply). 댓글 알림(`comment-*`)은 아래
@@ -86,7 +94,7 @@ export function NotificationItemContent({ notification }: { notification: Notifi
       <span className={cn("text-sm", !notification.read && "font-semibold text-foreground")}>
         {NOTIFICATION_TITLE_BY_TYPE[notification.type] ?? NOTIFICATION_TITLE_BY_TYPE["moderation-action"]}
         {notification.reasonCategory != null &&
-          ` · ${REASON_CATEGORY_LABELS[notification.reasonCategory] ?? notification.reasonCategory}`}
+          ` · ${isReportReasonCategory(notification.reasonCategory) ? REASON_CATEGORY_LABELS[notification.reasonCategory] : notification.reasonCategory}`}
       </span>
       <span className="line-clamp-2 text-xs text-muted-foreground">{notification.adminComment}</span>
     </>

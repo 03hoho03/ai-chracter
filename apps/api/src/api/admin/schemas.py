@@ -438,7 +438,7 @@ class AdminLegalVersionsResponse(CamelModel):
 
 
 class ChatViewReasonCategory(str, enum.Enum):
-    """기존 `ReportReasonCategory`(adult/copyright/hate/spam/other)와
+    """기존 `ReportReasonCategory`(작품·댓글 신고 사유)와
     다른 전용 enum이다 — 채팅 열람 사유는 신고 사유와 결이 달라 재사용하지 않는다."""
 
     REPORT_INVESTIGATION = "report-investigation"

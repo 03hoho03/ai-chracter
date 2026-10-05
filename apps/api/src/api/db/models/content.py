@@ -1,6 +1,7 @@
 import enum
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from sqlalchemy import (
     ARRAY,
@@ -43,6 +44,14 @@ class ModerationStatus(str, enum.Enum):
     NORMAL = "normal"
     RESTRICTED = "restricted"
     DELETED = "deleted"
+
+
+# 작품 등급. 지금은 전연령 하나만 허용한다 — 작품을 성인 등급으로 표시하는 순간 그 작품은 법상 청소년유해매체물로
+# 다뤄져 나이·본인 확인과 유해표시 의무가 생기는데, 그 의무를 지킬 수단(본인확인 서비스 계약)이 아직 없다(근거는
+# `CONTENT_POLICY.md` 의 "이 문서의 위치" 절). 타입과 DB CHECK 를 함께 좁혀 코드(mypy)와 DB 양쪽에서 막는다.
+# 성인 등급을 여는 순서는 같은 문서의 "성인 등급을 켜기 전에" 절에 있고, 이 타입과 CHECK 는 그 순서의 한 단계로
+# 함께 넓힌다.
+ContentRating = Literal["all"]
 
 
 class Genre(Base):
@@ -88,6 +97,10 @@ class Content(Base):
     # 조치로 제한된 작품, 정지 전부터 제한이던 작품은 해제 뒤에도 그대로다. 정지가 세우고, 작품 단위 조치(제한·삭제·
     # 해제)와 이의 수용이 내린다. 신고 반려는 상태를 바꾸지 않으므로 내리지 않는다.
     restricted_by_suspension: Mapped[bool] = mapped_column(Boolean, server_default=false(), nullable=False)
+    # 작품 등급(`ContentRating` — 왜 전연령만 허용하는지는 그 정의에). 버전이 아니라 헤더에 둔다 — 버전마다 등급이
+    # 바뀌면 이미 공유된 링크·목록의 노출 기준이 버전 게시 때마다 바뀐다. API 요청·응답·어드민·빌더 어디에도 싣지
+    # 않는다: 값이 하나뿐이라 보여 줄 것이 없고, 노출 경로를 미리 만들어 두면 성인 값이 새어 나갈 길이 하나 더 생긴다.
+    rating: Mapped[ContentRating] = mapped_column(Text, server_default="all", nullable=False)
     current_published_version_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid,
         ForeignKey(
@@ -119,12 +132,14 @@ class Content(Base):
 
     # 표식은 제한 상태에서만 설 수 있다. 삭제·해제·이의 수용에서 표식 내리기를 빠뜨리면 여기서 IntegrityError 로 터진다
     # (이미 제한인 작품을 다시 제한하는 경우의 누락은 상태가 그대로라 못 잡는다 — 그건 행위 테스트가 본다).
+    # 등급 CHECK 는 성인 값이 어떤 경로(raw SQL·시드·관리 스크립트 포함)로도 저장되지 않게 하는 마지막 잠금이다.
     # 🔴 `alembic check` 는 CHECK 제약을 비교하지 않는다 — 검증은 행위 테스트가 유일하다.
     __table_args__ = (
         CheckConstraint(
             "NOT restricted_by_suspension OR moderation_status = 'RESTRICTED'",
             name="ck_contents_suspension_flag_only_when_restricted",
         ),
+        CheckConstraint("rating = 'all'", name="ck_contents_rating_all_only"),
     )
 
 

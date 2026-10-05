@@ -460,7 +460,7 @@
           "admin"
         ],
         "summary": "Act On Content",
-        "description": "신고 없이 내리는 직접 조치. `reject`는 \"신고를 반려한다\"는 뜻이라, 애초에 신고가\n없는 직접 조치에는 반려할 대상이 없다 — 400으로 거절한다.\n\n사유 요구가 조치마다 다르다: `restrict`/`delete`는 아래에서 `Notification`을\n만들고 그 통지 문구가 사유를 인용하므로 제품 결정으로 신고 사유 5종 중 하나가\n필수다(없으면 422) — 예전엔 그 `reason_category` 컬럼이 NOT NULL이라는 DB 제약을\n근거로 들었지만, 이후 그 컬럼이 nullable로\n바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가 사라졌다. 반면\n`lift-restriction`은 `Notification`을 전혀 만들지 않으므로 신고 사유 카테고리를\n강제할 근거가 없다 — 관리자가 의미 없는 값을 고르게 될 뿐이다. 대신\n\"위험 조치는 확인 다이얼로그 + 사유 필수\" 요건을 만족시키는 건 `admin_comment`(자유\n텍스트, `admin_action_logs.reason_text`로 그대로 남는다) 쪽이라 이걸 필수로\n바꿨다(비어 있으면 422).",
+        "description": "신고 없이 내리는 직접 조치. `reject`는 \"신고를 반려한다\"는 뜻이라, 애초에 신고가\n없는 직접 조치에는 반려할 대상이 없다 — 400으로 거절한다.\n\n사유 요구가 조치마다 다르다: `restrict`/`delete`는 아래에서 `Notification`을\n만들고 그 통지 문구가 사유를 인용하므로 제품 결정으로 신고 사유 중 하나가\n필수다(없으면 422) — 예전엔 그 `reason_category` 컬럼이 NOT NULL이라는 DB 제약을\n근거로 들었지만, 이후 그 컬럼이 nullable로\n바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가 사라졌다. 반면\n`lift-restriction`은 `Notification`을 전혀 만들지 않으므로 신고 사유 카테고리를\n강제할 근거가 없다 — 관리자가 의미 없는 값을 고르게 될 뿐이다. 대신\n\"위험 조치는 확인 다이얼로그 + 사유 필수\" 요건을 만족시키는 건 `admin_comment`(자유\n텍스트, `admin_action_logs.reason_text`로 그대로 남는다) 쪽이라 이걸 필수로\n바꿨다(비어 있으면 422).",
         "operationId": "act_on_content_admin_contents__content_id__action_post",
         "parameters": [
           {
@@ -8783,6 +8783,7 @@
             "type": "string",
             "enum": [
               "inappropriate",
+              "minor_safety",
               "hateful",
               "out_of_character",
               "repetitive",
@@ -8894,6 +8895,7 @@
             "type": "string",
             "enum": [
               "inappropriate",
+              "minor_safety",
               "hateful",
               "out_of_character",
               "repetitive",
@@ -13128,6 +13130,7 @@
             "type": "string",
             "enum": [
               "inappropriate",
+              "minor_safety",
               "hateful",
               "out_of_character",
               "repetitive",
@@ -13733,7 +13736,7 @@
           "other"
         ],
         "title": "ChatViewReasonCategory",
-        "description": "기존 `ReportReasonCategory`(adult/copyright/hate/spam/other)와\n다른 전용 enum이다 — 채팅 열람 사유는 신고 사유와 결이 달라 재사용하지 않는다."
+        "description": "기존 `ReportReasonCategory`(작품·댓글 신고 사유)와\n다른 전용 enum이다 — 채팅 열람 사유는 신고 사유와 결이 달라 재사용하지 않는다."
       },
       "CloverAttendanceResponse": {
         "properties": {
@@ -17890,6 +17893,7 @@
         "type": "string",
         "enum": [
           "adult",
+          "minor_safety",
           "copyright",
           "hate",
           "spam",
