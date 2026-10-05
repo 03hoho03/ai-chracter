@@ -30,6 +30,10 @@ async def delete_novels(db: AsyncSession, novel_ids: Sequence[uuid.UUID]) -> Non
         return
     chapter_ids = select(NovelChapter.id).where(NovelChapter.novel_id.in_(novel_ids))
     await db.execute(delete(NovelJob).where(NovelJob.novel_id.in_(novel_ids)))
+    # 직접 수정·되돌리기·AI 수정 적용은 장 행을 잠근 채 새 개정을 넣는다. 장을 먼저 잠가 그 저장이 끝나기를 기다린다
+    # — 잠그지 않으면 아래 개정 DELETE 가 아직 커밋되지 않은 새 개정을 못 보고 지나가고, 장 DELETE 가 그 개정의 FK
+    # 에 걸린다. 기다린 뒤의 개정 DELETE 는 새 문장이라 커밋된 새 개정까지 본다.
+    await db.execute(select(NovelChapter.id).where(NovelChapter.novel_id.in_(novel_ids)).with_for_update())
     await db.execute(delete(NovelChapterRevision).where(NovelChapterRevision.chapter_id.in_(chapter_ids)))
     await db.execute(delete(NovelChapter).where(NovelChapter.novel_id.in_(novel_ids)))
     await db.execute(delete(Novel).where(Novel.id.in_(novel_ids)))

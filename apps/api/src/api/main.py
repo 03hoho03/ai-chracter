@@ -42,7 +42,7 @@ from api.inquiry.router import me_router as inquiry_me_router, router as inquiry
 from api.legal.router import router as legal_router
 from api.moderation.router import router as moderation_router
 from api.notice.router import router as notice_router
-from api.novelize.router import router as novelize_router
+from api.novelize.router import room_router as novelize_room_router, router as novelize_router
 from api.persona.router import me_router as persona_me_router
 from api.session.suspension import rebuild_suspended_user_markers
 
@@ -130,6 +130,7 @@ app.include_router(inquiry_router)
 app.include_router(inquiry_me_router)
 app.include_router(content_router)
 app.include_router(novelize_router)
+app.include_router(novelize_room_router)
 app.include_router(comments_router)
 app.include_router(comments_me_router)
 app.include_router(comment_reports_router)

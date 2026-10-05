@@ -1,18 +1,20 @@
-"""`require_legal_consent`가 "막는다" 28개에
-붙어 있고 "연다" 18개에는 안 붙어 있는지 3층으로 검증한다.
+"""`require_legal_consent`가 "막는다" 31개에
+붙어 있고 "연다" 19개에는 안 붙어 있는지 3층으로 검증한다.
 개수에는 대화 프로필 차단 4·개방 1과 방 기억 차단 3·개방 1이 들어 있다(그 전에는 21+15였다). 채팅 응답 신고 개방 1을 더해 18이다.
+소설 쓰기 차단 3(방의 소설 만들기·설정 노트·주인공 이름)과 소설 삭제 개방 1을 더해 31+19다. 소설 라우트는 소설화
+허용 게이트가 재동의 게이트보다 먼저 돌아 (b)는 사용자에게 소설화를 허용해 둔 채 요청한다.
 
-(a) 라우트 테이블 내성검사 — `app.routes`를 순회해 28개/18개의 실제 데코레이터를 대조한다.
+(a) 라우트 테이블 내성검사 — `app.routes`를 순회해 31개/19개의 실제 데코레이터를 대조한다.
     이 저장소가 신형 FastAPI(0.139) 내부 구조를 쓴다 — `app.routes`는 평범한 `APIRoute` 목록이
     아니라 `_IncludedRouter`(`app.include_router()`의 결과)로 감싸여 있어, 공개 API인
     `fastapi.routing.iter_route_contexts()`로 펼쳐야 각 라우트의 `.dependant`에 닿는다
     (`fastapi/openapi/utils.py`의 `get_openapi`가 스키마를 만들 때 쓰는 것과 같은 경로).
-(b) 28개에 최소 요청 → 403 + `LEGAL_RECONSENT_REQUIRED`. `require_legal_consent`가
-    데코레이터든(24개) 시그니처든(SSE 4개) `dependant.dependencies`의 나머지보다 먼저
+(b) 31개에 최소 요청 → 403 + `LEGAL_RECONSENT_REQUIRED`. `require_legal_consent`가
+    데코레이터든(27개) 시그니처든(SSE 4개) `dependant.dependencies`의 나머지보다 먼저
     해석되므로(fastapi.dependencies.utils.solve_dependencies가 그 리스트를 순서대로 돌며 첫
     HTTPException에서 곧장 전파한다) 경로 파라미터는 실존할 필요가 없다 — 라우터 본문의
     소유권 조회(404) 이전에 게이트가 먼저 막는다.
-(c) 18개 예외가 재동의가 실제로 필요한 상태에서도 여전히 200/204 — `require_legal_consent`를
+(c) 19개 예외가 재동의가 실제로 필요한 상태에서도 여전히 200/204 — `require_legal_consent`를
     `get_current_user_id`에 잘못 넣는 변이를 이 층만이 잡는다.
 
 `factories._make_user`는 기본적으로 어떤 게시본보다 큰 `terms_version`/`privacy_version`을
@@ -31,12 +33,21 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.security import hash_password
-from api.db.models import AssetKind, ChatMessage, ChatMessageRole, ChatRoom, Notification, User, UserPersona
+from api.db.models import AssetKind, ChatMessage, ChatMessageRole, ChatRoom, Notification, Novel, User, UserPersona
 from api.legal.dependencies import require_legal_consent
 from api.main import app
-from factories import _get_genre, _login_as, _make_asset, _make_published, _make_published_story, _make_user
+from factories import (
+    _allow_novelize,
+    _get_genre,
+    _login_as,
+    _make_asset,
+    _make_published,
+    _make_published_story,
+    _make_novel_tree,
+    _make_user,
+)
 
-# ---- (a)/(b) 공통: "막는다" 28개. path는 실제 라우트 경로(=(a)의 조회 키이자 (b)의 URL 템플릿) ----
+# ---- (a)/(b) 공통: "막는다" 31개. path는 실제 라우트 경로(=(a)의 조회 키이자 (b)의 URL 템플릿) ----
 
 _BLOCKED_REQUESTS: list[tuple[str, str, dict[str, object] | None]] = [
     ("POST", "/chat-rooms", {"contentId": str(uuid.uuid4()), "contentType": "character"}),
@@ -82,9 +93,13 @@ _BLOCKED_REQUESTS: list[tuple[str, str, dict[str, object] | None]] = [
     ("PUT", "/chat-rooms/{room_id}/memory/note", {"note": "메모"}),
     ("PUT", "/chat-rooms/{room_id}/memory/summary", {"summary": "요약", "version": 0}),
     ("POST", "/chat-rooms/{room_id}/memory/summary/revert", {"version": 0}),
+    # 소설 쓰기(소설 삭제는 아래 "연다")
+    ("POST", "/chat-rooms/{room_id}/novel", None),
+    ("PUT", "/novels/{novel_id}/notes", {"settingNotes": "메모"}),
+    ("PUT", "/novels/{novel_id}/protagonist-name", {"protagonistName": "하늘"}),
 ]
 
-# ---- (a)/(c) 공통: "연다" 18개 ----
+# ---- (a)/(c) 공통: "연다" 19개 ----
 
 _OPEN_PATHS: list[tuple[str, str]] = [
     ("POST", "/legal/consent"),
@@ -105,6 +120,7 @@ _OPEN_PATHS: list[tuple[str, str]] = [
     ("DELETE", "/chat-rooms/{room_id}/messages/{message_id}"),
     ("DELETE", "/me/personas/{persona_id}"),  # "자기 데이터 삭제"는 예외
     ("DELETE", "/chat-rooms/{room_id}/memory/note"),
+    ("DELETE", "/novels/{novel_id}"),
 ]
 
 
@@ -140,7 +156,7 @@ def test_open_endpoints_never_carry_the_consent_gate() -> None:
         assert require_legal_consent not in dependency_calls, f"{method} {path} must not require consent"
 
 
-# ---- (b) 28개 최소 요청 → 403 ----
+# ---- (b) 31개 최소 요청 → 403 ----
 
 _DUMMY_IDS = {
     "room_id": str(uuid.uuid4()),
@@ -148,6 +164,10 @@ _DUMMY_IDS = {
     "id": str(uuid.uuid4()),
     "asset_id": str(uuid.uuid4()),
     "persona_id": str(uuid.uuid4()),
+    "novel_id": str(uuid.uuid4()),
+    "chapter_id": str(uuid.uuid4()),
+    "revision_id": str(uuid.uuid4()),
+    "job_id": str(uuid.uuid4()),
 }
 
 
@@ -162,12 +182,13 @@ async def test_blocked_endpoint_returns_403_without_consent(
     body: dict[str, object] | None,
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     user = _make_user(terms_version=None)
     db_session.add(user)
     await db_session.flush()
     await _make_published(db_session, kind="terms", version="2099-01-01", requires_reconsent=True)
-    await db_session.commit()
+    await _allow_novelize(db_session, monkeypatch, user.id)
     await _login_as(db_client, user.id)
 
     resp = await db_client.request(method, path_template.format(**_DUMMY_IDS), json=body)
@@ -176,7 +197,7 @@ async def test_blocked_endpoint_returns_403_without_consent(
     assert resp.json()["detail"]["code"] == "LEGAL_RECONSENT_REQUIRED"
 
 
-# ---- (c) 18개 예외 — 재동의가 실제로 필요한 상태에서도 200/204 ----
+# ---- (c) 19개 예외 — 재동의가 실제로 필요한 상태에서도 200/204 ----
 
 
 async def _unconsented_user(db_client: httpx.AsyncClient, db_session: AsyncSession) -> User:
@@ -403,3 +424,17 @@ async def test_clear_memory_note_still_open_without_consent(
     assert cleared.status_code == 200
     stored = await db_session.scalar(select(ChatRoom.memory_note).where(ChatRoom.id == room.id))
     assert stored == ""
+
+
+async def test_delete_novel_still_open_without_consent(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """자기가 만든 소설은 새 문안에 동의하기 전에도 지울 수 있다(진행 중 작업은 환불된다)."""
+    user = await _unconsented_user(db_client, db_session)
+    tree = await _make_novel_tree(db_session, user.id)
+    await _allow_novelize(db_session, monkeypatch, user.id)
+
+    resp = await db_client.delete(f"/novels/{tree.novel.id}")
+
+    assert resp.status_code == 204
+    assert await db_session.get(Novel, tree.novel.id) is None
