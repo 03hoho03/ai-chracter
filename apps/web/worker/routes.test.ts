@@ -46,6 +46,8 @@ describe("isKnownRoute", () => {
     expect(isKnownRoute("/builder")).toBe(true);
     expect(isKnownRoute("/terms")).toBe(true);
     expect(isKnownRoute("/privacy")).toBe(true);
+    expect(isKnownRoute("/operation-policy")).toBe(true);
+    expect(isKnownRoute("/youth-policy")).toBe(true);
     expect(isKnownRoute("/guide/story")).toBe(true);
     expect(isKnownRoute("/guide/character")).toBe(true);
   });

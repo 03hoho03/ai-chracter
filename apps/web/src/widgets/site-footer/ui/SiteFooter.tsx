@@ -4,7 +4,15 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { CONTACT_EMAIL, SITE_NAME } from "@/shared/config/site";
 import { SUPPORT_DESTINATIONS, type SupportDestinationKey } from "@/shared/config/supportDestinations";
 
-const FOOTER_LINK_KEYS = ["about", "terms", "privacy", "notices", "inquiry-new"] as const satisfies readonly SupportDestinationKey[];
+const FOOTER_LINK_KEYS = [
+  "about",
+  "terms",
+  "privacy",
+  "operation-policy",
+  "youth-policy",
+  "notices",
+  "inquiry-new",
+] as const satisfies readonly SupportDestinationKey[];
 
 const LINK_CLASS =
   "whitespace-nowrap rounded-sm text-xs text-muted-foreground motion-safe:transition-colors hover:text-foreground focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-3 focus-visible:ring-ring/50";

@@ -31,6 +31,7 @@ export const KNOWN_ROUTES = [
   "/notices/$noticeId",
   "/onboarding/google",
   "/onboarding/kakao",
+  "/operation-policy",
   "/personas",
   "/privacy",
   "/profile/$userId",
@@ -39,6 +40,7 @@ export const KNOWN_ROUTES = [
   "/studio/images",
   "/terms",
   "/ui-demo",
+  "/youth-policy",
 ];
 
 function matchesRoute(route: string, segments: string[]): boolean {

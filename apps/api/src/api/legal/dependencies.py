@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.db.models.auth import User
 from api.db.models.legal import LegalDocument
 from api.db.session import get_db_session
-from api.legal.schemas import LegalDocumentKind
+from api.legal.schemas import LegalConsentKind
 from api.session.dependencies import get_current_user_id
 
 
@@ -65,7 +65,7 @@ async def require_legal_consent(
         db, "privacy", requires_reconsent=True
     )
 
-    kinds: list[LegalDocumentKind] = []
+    kinds: list[LegalConsentKind] = []
     if _reconsent_required(user.terms_version, required_terms_version):
         kinds.append("terms")
     if _reconsent_required(user.privacy_version, required_privacy_version):

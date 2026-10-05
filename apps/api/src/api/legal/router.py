@@ -1,5 +1,6 @@
 import uuid
 from datetime import UTC, datetime
+from typing import assert_never
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -74,7 +75,7 @@ async def consent_legal_document(
     if payload.kind == "terms":
         user.terms_version = document.version
         user.terms_agreed_at = now
-    else:
+    elif payload.kind == "privacy":
         user.privacy_version = document.version
         user.privacy_agreed_at = now
         # 국외이전 동의는 처리방침 버전에 묶인다.
@@ -83,6 +84,10 @@ async def consent_legal_document(
         # 어긋날 수 있다.
         user.transfer_version = document.version
         user.transfer_agreed_at = now
+    else:
+        # 동의 종류가 늘면 여기서 mypy 가 멈춘다 — 새 종류를 기존 분기에 흘려 넣으면
+        # 다른 문서의 동의 버전을 덮어쓰게 된다.
+        assert_never(payload.kind)
 
     await db.commit()
     return None

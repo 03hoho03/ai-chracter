@@ -15,9 +15,9 @@ import { useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import {
-  LEGAL_DOCUMENT_KINDS,
+  LEGAL_CONSENT_KINDS,
   LEGAL_DOCUMENT_LABEL,
-  type LegalDocumentKind,
+  type LegalConsentKind,
   type LegalDocumentResponse,
   useLegalConsentMutation,
   useLegalDocumentQuery,
@@ -44,7 +44,7 @@ export function ReconsentModal() {
   const [isTransferChecked, setIsTransferChecked] = useState(false);
 
   const session = sessionQuery.data;
-  const pendingKinds = LEGAL_DOCUMENT_KINDS.filter(
+  const pendingKinds = LEGAL_CONSENT_KINDS.filter(
     (kind) =>
       (kind === "terms" && session?.termsReconsentRequired) ||
       (kind === "privacy" && session?.privacyReconsentRequired),
@@ -53,7 +53,7 @@ export function ReconsentModal() {
   // 두 훅 다 무조건 호출한다(Rules of Hooks) — `enabled`로 실제 조회 여부만 가른다.
   const termsDocQuery = useLegalDocumentQuery("terms", pendingKinds.includes("terms"));
   const privacyDocQuery = useLegalDocumentQuery("privacy", pendingKinds.includes("privacy"));
-  const docQueryByKind: Record<LegalDocumentKind, typeof termsDocQuery> = {
+  const docQueryByKind: Record<LegalConsentKind, typeof termsDocQuery> = {
     terms: termsDocQuery,
     privacy: privacyDocQuery,
   };

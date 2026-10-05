@@ -90,3 +90,20 @@ async def test_require_legal_consent_passes_when_both_consented(db_session: Asyn
     await _make_published(db_session, kind="privacy", version="2099-02-01", requires_reconsent=True)
 
     await require_legal_consent(user_id=user.id, db=db_session)  # 예외 없이 통과하면 성공
+
+
+@pytest.mark.parametrize("kind", ["operation-policy", "youth-policy"])
+async def test_require_legal_consent_ignores_policy_kind_marked_reconsent(
+    db_session: AsyncSession, kind: str
+) -> None:
+    """게이트는 약관·처리방침만 요구한다 — 정책 문서 행에 `requires_reconsent=true` 가
+    들어가 있어도 두 문서에 동의한 회원은 막히지 않는다."""
+    await _clear_published_legal_documents(db_session)
+    user = _make_user(terms_version="2099-01-01", privacy_version="2099-02-01")
+    db_session.add(user)
+    await db_session.flush()
+    await _make_published(db_session, kind="terms", version="2099-01-01", requires_reconsent=True)
+    await _make_published(db_session, kind="privacy", version="2099-02-01", requires_reconsent=True)
+    await _make_published(db_session, kind=kind, version="2099-12-31", requires_reconsent=True)
+
+    await require_legal_consent(user_id=user.id, db=db_session)  # 예외 없이 통과하면 성공

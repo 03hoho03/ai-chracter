@@ -2,6 +2,7 @@ import uuid
 from datetime import timezone
 
 import httpx
+import pytest
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,6 +71,37 @@ async def test_get_public_document_returns_404_when_no_published_document(
 
     resp = await db_client.get("/legal/privacy")
     assert resp.status_code == 404
+
+
+@pytest.mark.parametrize("kind", ["operation-policy", "youth-policy"])
+async def test_get_public_document_serves_policy_kinds(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, kind: str
+) -> None:
+    """운영정책·청소년 보호정책도 약관과 같은 공개 조회 경로로 최신 게시본을 낸다."""
+    await _make_published(db_session, kind=kind, version="2024-06-01", body_markdown="정책 본문")
+    await db_session.commit()
+
+    resp = await db_client.get(f"/legal/{kind}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["kind"] == kind
+    assert body["version"] == "2024-06-01"
+    assert body["bodyMarkdown"] == "정책 본문"
+
+
+@pytest.mark.parametrize("kind", ["operation-policy", "youth-policy"])
+async def test_get_public_document_returns_404_for_policy_kind_without_published(
+    db_client: httpx.AsyncClient, kind: str
+) -> None:
+    """마이그레이션 시드는 약관·처리방침만 넣는다 — 게시 전의 정책 문서는 404 이고 웹은
+    이것을 "아직 게시된 문서가 없어요"로 보여 준다."""
+    resp = await db_client.get(f"/legal/{kind}")
+    assert resp.status_code == 404
+
+
+async def test_get_public_document_rejects_unknown_kind(db_client: httpx.AsyncClient) -> None:
+    resp = await db_client.get("/legal/operation")
+    assert resp.status_code == 422
 
 
 # ---- /me 재동의 판정 -----------------------------------------------------------
@@ -271,6 +303,62 @@ async def test_consent_privacy_updates_privacy_and_transfer_pair(
     assert user.transfer_version == "2099-02-01"
     assert user.transfer_version != before_transfer_version
     assert user.transfer_agreed_at != before_transfer_agreed_at
+
+
+@pytest.mark.parametrize("kind", ["operation-policy", "youth-policy"])
+async def test_consent_rejects_policy_kind_and_leaves_consent_versions_untouched(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, kind: str
+) -> None:
+    """동의를 기록하지 않는 문서로 동의를 보내면 422 이고 어떤 동의 버전도 바뀌지 않는다.
+    이 요청이 처리방침 동의로 흘러들면, 처리방침 요구 버전보다 늦은 날짜로 게시된 정책
+    문서 하나로 처리방침·국외이전 재동의를 건너뛸 수 있게 된다."""
+    payload = await _signup_and_login(db_client)
+    user = await db_session.scalar(select(User).where(User.email == payload["email"]))
+    assert user is not None
+    before = (
+        user.terms_version,
+        user.terms_agreed_at,
+        user.privacy_version,
+        user.privacy_agreed_at,
+        user.transfer_version,
+        user.transfer_agreed_at,
+    )
+    await _make_published(db_session, kind="privacy", version="2099-01-01", requires_reconsent=True)
+    await _make_published(db_session, kind=kind, version="2099-12-31")
+    await db_session.commit()
+
+    resp = await db_client.post("/legal/consent", json={"kind": kind, "version": "2099-12-31"})
+    assert resp.status_code == 422
+
+    await db_session.refresh(user)
+    assert (
+        user.terms_version,
+        user.terms_agreed_at,
+        user.privacy_version,
+        user.privacy_agreed_at,
+        user.transfer_version,
+        user.transfer_agreed_at,
+    ) == before
+    me = await db_client.get("/me")
+    assert me.json()["privacyReconsentRequired"] is True
+
+
+@pytest.mark.parametrize("kind", ["operation-policy", "youth-policy"])
+async def test_me_reconsent_flags_ignore_policy_kind_marked_reconsent(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, kind: str
+) -> None:
+    """재동의 판정은 약관·처리방침만 본다 — 정책 문서 행에 `requires_reconsent=true` 가
+    (어드민 검증을 거치지 않고) 들어가 있어도 `/me` 의 두 플래그는 그대로다."""
+    payload = await _signup_and_login(db_client)
+    user = await db_session.scalar(select(User).where(User.email == payload["email"]))
+    assert user is not None
+    await _make_published(db_session, kind=kind, version="2099-12-31", requires_reconsent=True)
+    await db_session.commit()
+
+    resp = await db_client.get("/me")
+    assert resp.status_code == 200
+    assert resp.json()["termsReconsentRequired"] is False
+    assert resp.json()["privacyReconsentRequired"] is False
 
 
 # ---- 신규 가입 시 버전 기록 -----------------------------------------------------

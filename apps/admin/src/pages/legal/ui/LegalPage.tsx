@@ -9,10 +9,10 @@ import { isLegalKind, LEGAL_KIND_LABELS, LEGAL_KINDS, type LegalKind } from "../
 import { useLegalDocumentQuery } from "../api/useLegalDocumentQuery";
 import { LegalEditor } from "./LegalEditor";
 
-/** 두 탭의 데이터는 항상 함께 불러온다(문서 2개뿐이라 비용이 작다) — 탭을 바꿔도 안 보이는
+/** 모든 탭의 데이터는 항상 함께 불러온다(문서 몇 개뿐이라 비용이 작다) — 탭을 바꿔도 안 보이는
  * `TabsContent`가 언마운트될 뿐, 로컬 편집 버퍼(`draftBodyByKind`)는 이 컴포넌트에 있어 살아남는다.
  * 그래서 "저장 안 한 편집 내용이 있는데 탭을 바꾸면 잃는다"는 별도 경고 없이 자연히 해결된다. 다른 화면으로 떠날 때는
- * 버퍼가 사라지므로 두 문서 중 하나라도 저장하지 않은 변경이 있으면 확인을 받는다. */
+ * 버퍼가 사라지므로 문서 중 하나라도 저장하지 않은 변경이 있으면 확인을 받는다. */
 export function LegalPage() {
   useDocumentTitle("약관 관리");
   const [activeKind, setActiveKind] = useState<LegalKind>("terms");
@@ -21,7 +21,15 @@ export function LegalPage() {
 
   const termsQuery = useLegalDocumentQuery("terms");
   const privacyQuery = useLegalDocumentQuery("privacy");
-  const queryByKind = { terms: termsQuery, privacy: privacyQuery };
+  const operationPolicyQuery = useLegalDocumentQuery("operation-policy");
+  const youthPolicyQuery = useLegalDocumentQuery("youth-policy");
+  // `Record`로 두어 종류가 늘면 여기서 컴파일 에러가 난다 — 훅을 하나 더 부르는 것을 잊으면 그 탭이 빈다.
+  const queryByKind: Record<LegalKind, typeof termsQuery> = {
+    terms: termsQuery,
+    privacy: privacyQuery,
+    "operation-policy": operationPolicyQuery,
+    "youth-policy": youthPolicyQuery,
+  };
   const savedDraftBodyOf = (kind: LegalKind) => queryByKind[kind].data?.draft?.bodyMarkdown ?? "";
   const draftBodyOf = (kind: LegalKind) => draftBodyByKind[kind] ?? savedDraftBodyOf(kind);
   // 편집기의 "저장하지 않은 변경사항" 표시와 같은 비교다(버퍼 ≠ 저장된 초안). 저장 응답이 캐시를 바로 채워 저장
