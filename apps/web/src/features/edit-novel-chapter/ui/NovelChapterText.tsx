@@ -157,7 +157,7 @@ export function NovelChapterText({
     setManualEdit(null);
     setEditError(undefined);
     setLiveMessage("");
-    aiEdit.report({ type: outcome });
+    aiEdit.report({ type: outcome, chapterOrdinal: chapter.ordinal });
   }
 
   async function saveManualEdit() {
@@ -344,7 +344,7 @@ export function NovelChapterText({
                     paragraphs={paragraphs}
                     isActing={aiEdit.actingEditId !== undefined}
                     onApply={() => void handlePreviewAction(() => aiEdit.apply(edit, chapter.ordinal))}
-                    onDismiss={() => void handlePreviewAction(() => aiEdit.dismiss(edit))}
+                    onDismiss={() => void handlePreviewAction(() => aiEdit.dismiss(edit, chapter.ordinal))}
                   />
                 ))}
               </Fragment>

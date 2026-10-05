@@ -21,22 +21,22 @@ describe("toChapterNotice", () => {
     });
   });
 
-  it("수정안을 버리면 버렸다고 말한다", () => {
-    expect(toChapterNotice({ type: "dismissed" })).toEqual({ tone: "info", message: "수정안을 버렸어요." });
+  it("수정안을 버리면 몇 장의 수정안을 버렸는지 말한다", () => {
+    expect(toChapterNotice({ type: "dismissed", chapterOrdinal: 2 })).toEqual({ tone: "info", message: "2장 수정안을 버렸어요." });
   });
 
-  it("직접 고치기의 세 끝(저장·바뀐 것 없음·그만둠)을 각각 말한다", () => {
-    expect(toChapterNotice({ type: "manualSaved" })).toEqual({
+  it("직접 고치기의 세 끝(저장·바뀐 것 없음·그만둠)을 각각 몇 장의 일인지와 함께 말한다", () => {
+    expect(toChapterNotice({ type: "manualSaved", chapterOrdinal: 1 })).toEqual({
       tone: "info",
-      message: "고친 내용을 저장했어요. 이전 글은 판 이력에 남아요.",
+      message: "1장을 고쳐 저장했어요. 이전 글은 판 이력에 남아요.",
     });
-    expect(toChapterNotice({ type: "manualUnchanged" })).toEqual({
+    expect(toChapterNotice({ type: "manualUnchanged", chapterOrdinal: 1 })).toEqual({
       tone: "info",
-      message: "바뀐 내용이 없어 그대로 두었어요.",
+      message: "1장은 바뀐 내용이 없어 그대로 두었어요.",
     });
-    expect(toChapterNotice({ type: "manualCancelled" })).toEqual({
+    expect(toChapterNotice({ type: "manualCancelled", chapterOrdinal: 1 })).toEqual({
       tone: "info",
-      message: "직접 고치기를 그만뒀어요.",
+      message: "1장 직접 고치기를 그만뒀어요.",
     });
   });
 

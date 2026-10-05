@@ -222,13 +222,13 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
     }
   }
 
-  async function dismiss(edit: NovelPendingAiEdit) {
+  async function dismiss(edit: NovelPendingAiEdit, chapterOrdinal: number) {
     if (actingEditId !== undefined) return;
     report({ type: "started" });
     setActingEditId(edit.id);
     try {
       await dismissMutation.mutateAsync({ novelId: novel.id, jobId: edit.id });
-      report({ type: "dismissed" });
+      report({ type: "dismissed", chapterOrdinal });
     } catch (error) {
       handleRequestError(error, "dismissAiEdit");
     } finally {
