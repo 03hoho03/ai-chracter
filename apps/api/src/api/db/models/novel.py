@@ -154,7 +154,8 @@ class NovelJob(Base):
 
     장 생성·재생성은 입력 구간(`start_*`·`end_*`, 장 행과 같은 이유로 FK 없음)을 갖고, 재시도 상한은 같은 시작
     메시지의 오늘 작업 수로 센다. AI 수정은 `chapter_id`·`base_revision_id`·문단 범위·지시문을 갖고, 결과를 곧바로
-    개정으로 만들지 않고 `result_text` 에 두었다가 사용자가 적용할 때 새 개정이 된다.
+    개정으로 만들지 않고 `result_text` 에 두었다가 사용자가 적용할 때 새 개정이 된다. 적용하지 않고 버리면
+    `dismissed_at` 을 찍는다(환불은 없다).
 
     대화방을 가리키는 칸은 두지 않는다 — 두면 방 삭제가 이 테이블을 알아야 하고, 모르면 방 DELETE 가 FK 위반으로
     실패한다. 개정이 작업을 가리키지도 않는다 — 작업 → 개정(`base_revision_id`·`result_revision_id`) 참조와 순환이
@@ -185,6 +186,8 @@ class NovelJob(Base):
     paragraph_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
     instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
     result_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 사용자가 AI 수정 미리보기를 적용하지 않고 버린 시각. 버린 미리보기는 상세의 미적용 목록에 다시 나오지 않는다.
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     charged_amount: Mapped[int] = mapped_column(Integer, nullable=False)
     refunded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     failure_code: Mapped[NovelJobFailureCode | None] = mapped_column(Text, nullable=True)

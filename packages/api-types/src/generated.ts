@@ -2411,13 +2411,37 @@ export interface paths {
         /**
          * Apply Novel Ai Edit
          * @description 끝난 AI 수정의 미리보기를 새 개정으로 쌓는다(무과금). 수정을 맡긴 뒤 장이 바뀌었으면(기준 개정이 현재가
-         *     아니면) 409 `NOVEL_REVISION_CONFLICT`. 적용할 수 없는 작업(AI 수정이 아님·아직 안 끝남·실패·이미 적용·장이
+         *     아니면) 409 `NOVEL_REVISION_CONFLICT`. 적용할 수 없는 작업(AI 수정이 아님·아직 안 끝남·실패·이미 적용·버림·장이
          *     지워짐)은 409 `NOVEL_JOB_NOT_APPLICABLE`. 적용한 개정은 작업의 결과 개정(`revisionId`)이 된다.
          *
          *     잠금은 작업 행 → 장 행이다(소설·마지막 장 삭제와 같은 순서). 같은 작업을 두 번 적용하려는 요청은 작업 행에서
          *     줄을 서고, 뒤 요청은 결과 개정이 채워진 것을 본다.
          */
         post: operations["apply_novel_ai_edit_novels__novel_id__jobs__job_id__apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/jobs/{job_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss Novel Ai Edit
+         * @description 끝난 AI 수정의 미리보기를 적용하지 않고 버린다(환불 없음). 버린 수정은 상세의 미적용 목록에서 빠지고 적용도
+         *     409 가 된다. 버릴 수 없는 작업(AI 수정이 아님·아직 안 끝남·실패·이미 적용·이미 버림)은 409
+         *     `NOVEL_JOB_NOT_APPLICABLE`.
+         *
+         *     적용과 같은 작업 행을 잠근다 — 같은 수정의 적용과 버리기가 겹치면 뒤 요청이 앞 요청의 결과를 보고 409 다.
+         */
+        post: operations["dismiss_novel_ai_edit_novels__novel_id__jobs__job_id__dismiss_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7748,6 +7772,8 @@ export interface components {
             /** Chapters */
             chapters: components["schemas"]["NovelChapterSummary"][];
             activeJob: components["schemas"]["NovelActiveJob"] | null;
+            /** Pendingaiedits */
+            pendingAiEdits: components["schemas"]["NovelPendingAiEdit"][];
             prices: components["schemas"]["NovelPrices"];
             limits: components["schemas"]["NovelLimits"];
             /**
@@ -7843,6 +7869,37 @@ export interface components {
             items: components["schemas"]["NovelListItem"][];
             /** Nextcursor */
             nextCursor: string | null;
+        };
+        /**
+         * NovelPendingAiEdit
+         * @description 끝났지만 적용도 버리기도 하지 않은 AI 수정. 기준 개정이 지금도 그 장의 현재 개정인 것만 싣는다 — 그 사이 장이
+         *     바뀌었으면 적용이 409 라 미리보기로 내보일 이유가 없다. 화면이 작업 id 를 잃어도(새로고침·다른 기기) 여기서
+         *     미리보기를 다시 찾아 적용(`apply`)하거나 버린다(`dismiss`). `result_text` 는 장 전체 본문이다.
+         */
+        NovelPendingAiEdit: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Chapterid
+             * Format: uuid
+             */
+            chapterId: string;
+            /** Paragraphstart */
+            paragraphStart: number;
+            /** Paragraphend */
+            paragraphEnd: number;
+            /** Instruction */
+            instruction: string;
+            /** Resulttext */
+            resultText: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
         };
         /**
          * NovelPrices
@@ -12240,6 +12297,36 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["NovelChapterResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_novel_ai_edit_novels__novel_id__jobs__job_id__dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

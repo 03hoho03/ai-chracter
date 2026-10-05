@@ -87,6 +87,20 @@ class NovelActiveJob(CamelModel):
     chapter_id: uuid.UUID | None
 
 
+class NovelPendingAiEdit(CamelModel):
+    """끝났지만 적용도 버리기도 하지 않은 AI 수정. 기준 개정이 지금도 그 장의 현재 개정인 것만 싣는다 — 그 사이 장이
+    바뀌었으면 적용이 409 라 미리보기로 내보일 이유가 없다. 화면이 작업 id 를 잃어도(새로고침·다른 기기) 여기서
+    미리보기를 다시 찾아 적용(`apply`)하거나 버린다(`dismiss`). `result_text` 는 장 전체 본문이다."""
+
+    id: uuid.UUID
+    chapter_id: uuid.UUID
+    paragraph_start: int
+    paragraph_end: int
+    instruction: str
+    result_text: str
+    created_at: datetime
+
+
 class NovelChapterSummary(CamelModel):
     """목차의 장 한 줄. 본문은 장 조회로 따로 읽는다."""
 
@@ -114,6 +128,8 @@ class NovelDetailResponse(CamelModel):
     setting_notes: str
     chapters: list[NovelChapterSummary]
     active_job: NovelActiveJob | None
+    # 최근 것 먼저.
+    pending_ai_edits: list[NovelPendingAiEdit]
     prices: NovelPrices
     limits: NovelLimits
     created_at: datetime

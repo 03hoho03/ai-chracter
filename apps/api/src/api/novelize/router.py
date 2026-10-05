@@ -71,6 +71,7 @@ from api.novelize.schemas import (
     NovelLimits,
     NovelListItem,
     NovelListResponse,
+    NovelPendingAiEdit,
     NovelPrices,
     NovelProtagonistNameRequest,
     NovelRevisionCreateRequest,
@@ -199,8 +200,53 @@ async def _active_job(db: AsyncSession, novel_id: uuid.UUID) -> NovelActiveJob |
     return NovelActiveJob(id=job.id, kind=job.kind, status=job.status, chapter_id=job.chapter_id)
 
 
+async def _pending_ai_edits(
+    db: AsyncSession, novel_id: uuid.UUID, chapters: list[NovelChapterSummary]
+) -> list[NovelPendingAiEdit]:
+    """성공했고 적용·버리기 전이며 기준 개정이 그 장의 현재 개정인 AI 수정. 현재 개정은 목차가 이미 읽은 값을 쓴다."""
+    current_revision_ids = [chapter.current_revision_id for chapter in chapters]
+    if not current_revision_ids:
+        return []
+    jobs = await db.scalars(
+        select(NovelJob)
+        .where(
+            NovelJob.novel_id == novel_id,
+            NovelJob.kind == "ai_edit",
+            NovelJob.status == "succeeded",
+            NovelJob.result_revision_id.is_(None),
+            NovelJob.dismissed_at.is_(None),
+            NovelJob.base_revision_id.in_(current_revision_ids),
+        )
+        .order_by(NovelJob.created_at.desc(), NovelJob.id.desc())
+        .execution_options(populate_existing=True)
+    )
+    pending: list[NovelPendingAiEdit] = []
+    for job in jobs.all():
+        # 성공한 AI 수정은 만들 때 장·범위·지시를, 성공 저장 때 결과 본문을 반드시 채운다.
+        assert (
+            job.chapter_id is not None
+            and job.paragraph_start is not None
+            and job.paragraph_end is not None
+            and job.instruction is not None
+            and job.result_text is not None
+        )
+        pending.append(
+            NovelPendingAiEdit(
+                id=job.id,
+                chapter_id=job.chapter_id,
+                paragraph_start=job.paragraph_start,
+                paragraph_end=job.paragraph_end,
+                instruction=job.instruction,
+                result_text=job.result_text,
+                created_at=job.created_at,
+            )
+        )
+    return pending
+
+
 async def _detail(db: AsyncSession, novel_id: uuid.UUID) -> NovelDetailResponse:
     novel = await db.get_one(Novel, novel_id, populate_existing=True)
+    chapters = await _chapter_summaries(db, novel.id)
     return NovelDetailResponse(
         id=novel.id,
         chat_room_id=novel.chat_room_id,
@@ -210,8 +256,9 @@ async def _detail(db: AsyncSession, novel_id: uuid.UUID) -> NovelDetailResponse:
         character_name=novel.character_name,
         protagonist_name=novel.protagonist_name,
         setting_notes=novel.setting_notes,
-        chapters=await _chapter_summaries(db, novel.id),
+        chapters=chapters,
         active_job=await _active_job(db, novel.id),
+        pending_ai_edits=await _pending_ai_edits(db, novel.id, chapters),
         prices=_prices(),
         limits=_LIMITS,
         created_at=novel.created_at,
@@ -970,7 +1017,7 @@ async def apply_novel_ai_edit(
     db: AsyncSession = Depends(get_db_session),
 ) -> NovelChapterResponse:
     """끝난 AI 수정의 미리보기를 새 개정으로 쌓는다(무과금). 수정을 맡긴 뒤 장이 바뀌었으면(기준 개정이 현재가
-    아니면) 409 `NOVEL_REVISION_CONFLICT`. 적용할 수 없는 작업(AI 수정이 아님·아직 안 끝남·실패·이미 적용·장이
+    아니면) 409 `NOVEL_REVISION_CONFLICT`. 적용할 수 없는 작업(AI 수정이 아님·아직 안 끝남·실패·이미 적용·버림·장이
     지워짐)은 409 `NOVEL_JOB_NOT_APPLICABLE`. 적용한 개정은 작업의 결과 개정(`revisionId`)이 된다.
 
     잠금은 작업 행 → 장 행이다(소설·마지막 장 삭제와 같은 순서). 같은 작업을 두 번 적용하려는 요청은 작업 행에서
@@ -988,6 +1035,7 @@ async def apply_novel_ai_edit(
         or job.status != "succeeded"
         or job.result_text is None
         or job.result_revision_id is not None
+        or job.dismissed_at is not None
         or job.chapter_id is None
         or job.base_revision_id is None
     ):
@@ -999,3 +1047,37 @@ async def apply_novel_ai_edit(
     await db.execute(update(NovelJob).where(NovelJob.id == job.id).values(result_revision_id=revision.id))
     await db.commit()
     return await _chapter_response(db, await _get_chapter(db, novel, current.chapter_id))
+
+
+@router.post(
+    "/{novel_id}/jobs/{job_id}/dismiss",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_legal_consent)],
+)
+async def dismiss_novel_ai_edit(
+    job_id: uuid.UUID,
+    novel: Novel = Depends(_owned_novel_dependency),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    """끝난 AI 수정의 미리보기를 적용하지 않고 버린다(환불 없음). 버린 수정은 상세의 미적용 목록에서 빠지고 적용도
+    409 가 된다. 버릴 수 없는 작업(AI 수정이 아님·아직 안 끝남·실패·이미 적용·이미 버림)은 409
+    `NOVEL_JOB_NOT_APPLICABLE`.
+
+    적용과 같은 작업 행을 잠근다 — 같은 수정의 적용과 버리기가 겹치면 뒤 요청이 앞 요청의 결과를 보고 409 다."""
+    job = await db.scalar(
+        select(NovelJob)
+        .where(NovelJob.id == job_id, NovelJob.novel_id == novel.id)
+        .with_for_update(key_share=True)
+        .execution_options(populate_existing=True)
+    )
+    if job is None:
+        raise _novel_error(status.HTTP_404_NOT_FOUND, "NOVEL_JOB_NOT_FOUND")
+    if (
+        job.kind != "ai_edit"
+        or job.status != "succeeded"
+        or job.result_revision_id is not None
+        or job.dismissed_at is not None
+    ):
+        raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_JOB_NOT_APPLICABLE")
+    await db.execute(update(NovelJob).where(NovelJob.id == job.id).values(dismissed_at=func.now()))
+    await db.commit()

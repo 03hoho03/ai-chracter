@@ -386,3 +386,115 @@ async def test_applying_a_job_of_another_novel_is_404(
     resp = await db_client.post(f"/novels/{novel_id}/jobs/{other_job.id}/apply")
 
     assert resp.status_code == 404 and resp.json()["detail"] == {"code": "NOVEL_JOB_NOT_FOUND"}
+
+
+# ── 미적용 AI 수정(새로고침 뒤 복구·버리기) ─────────────────────────────────
+async def _pending(db_client: httpx.AsyncClient, novel_id: uuid.UUID) -> list[dict[str, Any]]:
+    resp = await db_client.get(f"/novels/{novel_id}")
+    assert resp.status_code == 200, resp.text
+    pending: list[dict[str, Any]] = resp.json()["pendingAiEdits"]
+    return pending
+
+
+async def test_unapplied_ai_edit_comes_back_in_the_detail_until_it_is_applied(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """화면이 작업 id 를 잃어도(새로고침·다른 기기) 상세에서 미리보기를 다시 찾는다. 진행 중 수정은 아직 미리보기가
+    없으니 싣지 않고, 적용한 수정은 더 이상 미리보기가 아니다."""
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    base = (await _revisions(db_session, chapter.id))[0]
+    job = await _finished_ai_edit(db_session, novel_id, chapter, base)
+
+    pending = await _pending(db_client, novel_id)
+
+    assert pending == [
+        {
+            "id": str(job.id),
+            "chapterId": str(chapter.id),
+            "paragraphStart": 1,
+            "paragraphEnd": 1,
+            "instruction": "더 쓸쓸하게",
+            "resultText": "첫 문단이다.\n\n쓸쓸한 둘째 문단.\n\n셋째 문단이다.",
+            "createdAt": pending[0]["createdAt"],
+        }
+    ]
+    await db_session.execute(sa.update(NovelJob).where(NovelJob.id == job.id).values(status="running", result_text=None))
+    await db_session.commit()
+    assert await _pending(db_client, novel_id) == []
+
+    await db_session.execute(
+        sa.update(NovelJob).where(NovelJob.id == job.id).values(status="succeeded", result_text="고친 본문")
+    )
+    await db_session.commit()
+    applied = await db_client.post(f"/novels/{novel_id}/jobs/{job.id}/apply")
+    assert applied.status_code == 201, applied.text
+    assert await _pending(db_client, novel_id) == []
+
+
+async def test_dismissed_ai_edit_leaves_the_detail_and_can_no_longer_be_applied(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    base = (await _revisions(db_session, chapter.id))[0]
+    job = await _finished_ai_edit(db_session, novel_id, chapter, base)
+
+    dismissed = await db_client.post(f"/novels/{novel_id}/jobs/{job.id}/dismiss")
+    again = await db_client.post(f"/novels/{novel_id}/jobs/{job.id}/dismiss")
+    applied = await db_client.post(f"/novels/{novel_id}/jobs/{job.id}/apply")
+
+    assert dismissed.status_code == 204, dismissed.text
+    assert await _pending(db_client, novel_id) == []
+    assert again.status_code == 409 and again.json()["detail"] == {"code": "NOVEL_JOB_NOT_APPLICABLE"}
+    assert applied.status_code == 409 and applied.json()["detail"] == {"code": "NOVEL_JOB_NOT_APPLICABLE"}
+    assert len(await _revisions(db_session, chapter.id)) == 1
+
+
+@pytest.mark.parametrize("state", ["running", "applied"])
+async def test_only_an_unapplied_finished_ai_edit_can_be_dismissed(
+    state: str, db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    base = (await _revisions(db_session, chapter.id))[0]
+    job = await _finished_ai_edit(db_session, novel_id, chapter, base)
+    if state == "running":
+        await db_session.execute(
+            sa.update(NovelJob).where(NovelJob.id == job.id).values(status="running", result_text=None)
+        )
+        await db_session.commit()
+    else:
+        assert (await db_client.post(f"/novels/{novel_id}/jobs/{job.id}/apply")).status_code == 201
+
+    resp = await db_client.post(f"/novels/{novel_id}/jobs/{job.id}/dismiss")
+
+    assert resp.status_code == 409 and resp.json()["detail"] == {"code": "NOVEL_JOB_NOT_APPLICABLE"}
+    assert (await db_session.get_one(NovelJob, job.id, populate_existing=True)).dismissed_at is None
+
+
+async def test_ai_edit_over_a_replaced_revision_drops_out_of_the_detail(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """기준 개정이 더는 장의 현재 개정이 아니면 적용이 409 라 미리보기로 내보일 이유가 없다."""
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    base = (await _revisions(db_session, chapter.id))[0]
+    await _finished_ai_edit(db_session, novel_id, chapter, base)
+    edited = await db_client.post(
+        f"/novels/{novel_id}/chapters/{chapter.id}/revisions", json={"baseRevisionId": str(base.id), "body": "딴 탭"}
+    )
+    assert edited.status_code == 201, edited.text
+
+    assert await _pending(db_client, novel_id) == []
+
+
+async def test_dismissing_a_job_of_another_novel_is_404(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _other_user, other_novel, other_chapter = await _chapter(db_client, db_session, monkeypatch)
+    other_job = await _finished_ai_edit(
+        db_session, other_novel, other_chapter, (await _revisions(db_session, other_chapter.id))[0]
+    )
+    _user, novel_id, _chapter_row = await _chapter(db_client, db_session, monkeypatch)
+
+    resp = await db_client.post(f"/novels/{novel_id}/jobs/{other_job.id}/dismiss")
+
+    assert resp.status_code == 404 and resp.json()["detail"] == {"code": "NOVEL_JOB_NOT_FOUND"}
+    assert (await db_session.get_one(NovelJob, other_job.id, populate_existing=True)).dismissed_at is None

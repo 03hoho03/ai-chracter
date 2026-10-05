@@ -91,6 +91,7 @@ def upgrade() -> None:
     sa.Column('paragraph_end', sa.Integer(), nullable=True),
     sa.Column('instruction', sa.Text(), nullable=True),
     sa.Column('result_text', sa.Text(), nullable=True),
+    sa.Column('dismissed_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('charged_amount', sa.Integer(), nullable=False),
     sa.Column('refunded_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('failure_code', sa.Text(), nullable=True),
