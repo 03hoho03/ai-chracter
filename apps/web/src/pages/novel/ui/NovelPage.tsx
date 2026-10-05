@@ -21,6 +21,7 @@ import { NovelReader } from "@/widgets/novel-reader";
 
 import { shouldConfirmDraftDiscardOnHistory } from "../model/draftHistoryBlock";
 import {
+  PIN_CHAPTER_NAVIGATE_OPTIONS,
   novelSearchSchema,
   resolveSelectedChapter,
   toChapterSearchValue,
@@ -113,6 +114,8 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
   const isDraftDirtyRef = useRef(false);
   // 고치던 글이 있어 옮겨 가지 않고 미뤄 둔 새 장. 그 장으로 가는 링크를 목차 아래에 둔다.
   const [heldChapterId, setHeldChapterId] = useState<string | undefined>(undefined);
+  // 떠 있는 "고치던 글 버리기" 확인의 수. 뒤로가 떠 있는 확인을 닫고 새로 열 때 쓴다(아래 차단 함수).
+  const openDiscardConfirmCountRef = useRef(0);
   // 금액 확인은 다른 기능의 모달이라 이 화면이 넣어 준다(기능끼리 서로 가져다 쓰지 않는다).
   const confirmSpend = (props: Parameters<typeof ConfirmNovelSpendModal.call>[0]) => ConfirmNovelSpendModal.call(props);
   // 이 화면이 아직 떠 있나. 장 이동 확인·마지막 장 지우기는 기다린 뒤 화면을 옮기는데, 그사이 이용자가 다른 화면으로
@@ -181,8 +184,15 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
       const target = resolveSelectedChapter(novel.chapters, novelSearchSchema.parse(next.search).chapter);
       // 같은 장이면 다시 그려지지 않아 글이 남는다.
       if (target === undefined || target.id === selectedChapter?.id) return false;
+      // 떠 있던 확인을 닫고 바로 새로 열면, 새 확인이 닫힌 뒤 돌아갈 자리로 잡는 것이 곧 사라질 옛 확인의 버튼이라
+      // 포커스가 문서 처음으로 떨어진다. 그때는 머무는 장의 제목으로 돌린다 — 키보드 사용자가 고치던 글 바로 위에서
+      // 다시 이어 간다. 떠 있던 확인이 없으면 확인을 연 자리(입력칸)로 돌아가므로 손대지 않는다.
+      const isReplacingConfirm = openDiscardConfirmCountRef.current > 0;
       DiscardManualEditModal.end(false);
-      return !(await DiscardManualEditModal.call({ chapterOrdinal: target.ordinal }));
+      const isDiscarded = await confirmDiscard(target);
+      if (isDiscarded) setFocusChapterId(target.id);
+      else if (isReplacingConfirm) setFocusChapterId(selectedChapter?.id);
+      return !isDiscarded;
     },
     enableBeforeUnload: false,
   });
@@ -191,10 +201,23 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
       ? novel.chapters.find((item) => item.id === heldChapterId)
       : undefined;
 
-  /** 다른 장으로 옮긴다. 고치던 글이 있으면 버릴지 먼저 묻는다. */
+  async function confirmDiscard(target: NovelChapterSummary) {
+    openDiscardConfirmCountRef.current += 1;
+    try {
+      return await DiscardManualEditModal.call({ chapterOrdinal: target.ordinal });
+    } finally {
+      openDiscardConfirmCountRef.current -= 1;
+    }
+  }
+
+  /** 다른 장으로 옮긴다. 고치던 글이 있으면 버릴지 먼저 묻고, 버리고 옮기면 새 장 제목으로 포커스를 옮긴다 — 장이
+   * 다 만들어져 옮겨 올 때와 같은 자리다. 확인을 연 자리로 돌려보내면, 새 장 링크는 옮기면서 사라져 포커스가 문서
+   * 처음으로 떨어진다. */
   async function goToChapter(target: NovelChapterSummary) {
-    if (isDraftDirtyRef.current && !(await DiscardManualEditModal.call({ chapterOrdinal: target.ordinal }))) return;
+    const isDraftDirty = isDraftDirtyRef.current;
+    if (isDraftDirty && !(await confirmDiscard(target))) return;
     if (!isMountedRef.current) return;
+    if (isDraftDirty) setFocusChapterId(target.id);
     setHeldChapterId(undefined);
     void navigate({
       to: "/novels/$novelId",
@@ -278,7 +301,7 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
               // 쓰던 글이 사라진다. 글이 생긴 순간 지금 장 번호를 주소에 박는다. 화면 안에 따로 "고정한 장" 값을 두는
               // 길도 있지만, 그러면 장을 고르는 출처가 주소와 그 값 둘이 되어 장으로 옮기는 길(목차·새 장 링크·장
               // 지우기)마다 그 값을 풀어야 한다. 주소에 박으면 장 번호가 있는 화면의 보호(이동 보류·새 장 링크·버리기
-              // 확인)를 그대로 쓴다. 기록을 쌓지 않도록 바꿔 쓴다 — 쌓으면 뒤로가 같은 장의 번호 없는 주소로 간다.
+              // 확인)를 그대로 쓴다. 기록·스크롤을 건드리지 않는 까닭은 옵션 상수에 있다.
               const pinned = toPinnedChapterSearchValue({
                 requested: chapter,
                 selectedOrdinal: selectedChapter.ordinal,
@@ -289,7 +312,7 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
                 to: "/novels/$novelId",
                 params: { novelId: novel.id },
                 search: (prev) => ({ ...prev, chapter: pinned }),
-                replace: true,
+                ...PIN_CHAPTER_NAVIGATE_OPTIONS,
               });
             }}
           />

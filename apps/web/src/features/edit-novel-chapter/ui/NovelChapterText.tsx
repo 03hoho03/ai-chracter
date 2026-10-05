@@ -377,8 +377,10 @@ type ParagraphButtonProps = {
  * - **포커스**: 시스템의 보더 없는 컨트롤과 같은 레시피 — 불투명 1px `outline-ring` + 50% 링. 50% 링만으로는 페이지
  *   배경 대비 다크 2.58 / 라이트 2.55 로 미달이고, 불투명 윤곽은 7.18 / 6.70 이다. 보더를 쓰지 않는 것은 1px 가
  *   자리를 먹어 읽기 모드의 `<p>` 와 글자 위치가 어긋나서다.
- * - **고름**: 안쪽 1px `inset-ring-input`. 같은 자리의 고르기 전 픽셀(페이지 배경 / hover 면) 대비 다크 3.54 / 3.23,
- *   라이트 3.64 / 3.34 다. `input` 은 입력칸 테두리처럼 "배경 위 경계 3:1" 을 맡은 무채색이다.
+ * - **고름**: 안쪽 1px `inset-ring-input`. 선의 바깥은 페이지 배경과 맞닿아 다크 3.54 / 라이트 3.64 로 통과한다
+ *   (DESIGN.md 의 인풋 보더 대 `background` 실측과 같은 값). 안쪽은 고른 문단의 채움 `secondary` 와 맞닿아 다크 2.83 /
+ *   라이트 2.97 로 3:1 에 못 미친다(DESIGN.md Colors 절에 적힌 미달 쌍). hover 해도 채움은 `secondary` 그대로라
+ *   다른 쌍은 생기지 않는다. 바깥 경계 한 줄이 3:1 을 지므로 표시는 통과다.
  * 고름은 안쪽 그림자, 포커스는 바깥 링이라 Tailwind 4 가 한 `box-shadow` 에 함께 싣는다 — 고른 문단에 포커스가
  * 있어도(Enter 로 고른 직후가 그 상태다) 서로 덮지 않는다. */
 function ParagraphButton({ ref, text, isSelected, onSelect }: ParagraphButtonProps) {

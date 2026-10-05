@@ -42,6 +42,12 @@ export function toPinnedChapterSearchValue({
   return selectedOrdinal;
 }
 
+/** 장 번호를 주소에 박는 이동의 옵션. 기록을 쌓지 않도록 바꿔 쓴다 — 쌓으면 뒤로가 같은 장의 번호 없는 주소로
+ * 간다. 스크롤도 건드리지 않는다: 라우터는 이 옵션이 없으면 검색값만 바뀐 이동에도 렌더 뒤 창을 맨 위로 올린다.
+ * 박기는 고치던 글의 첫 글자에서 일어나므로, 올리면 입력하던 자리가 화면 밖으로 튄다. 보는 장이 바뀌지 않는
+ * 이동이라 스크롤을 옮길 까닭이 없다. */
+export const PIN_CHAPTER_NAVIGATE_OPTIONS = { replace: true, resetScroll: false } as const;
+
 function lastChapter<T extends ChapterLike>(chapters: readonly T[]): T | undefined {
   let last: T | undefined;
   for (const chapter of chapters) {

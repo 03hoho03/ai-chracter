@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  PIN_CHAPTER_NAVIGATE_OPTIONS,
   novelSearchSchema,
   resolveSelectedChapter,
   toChapterSearchValue,
@@ -70,5 +71,11 @@ describe("toPinnedChapterSearchValue", () => {
 
   it("보고 있는 장이 없으면(장이 하나도 없음) 박을 것이 없다", () => {
     expect(toPinnedChapterSearchValue({ requested: undefined, selectedOrdinal: undefined, isDraftDirty: true })).toBeUndefined();
+  });
+});
+
+describe("PIN_CHAPTER_NAVIGATE_OPTIONS", () => {
+  it("장 번호 박기는 기록을 쌓지 않고 창 스크롤을 맨 위로 올리지 않는다", () => {
+    expect(PIN_CHAPTER_NAVIGATE_OPTIONS).toEqual({ replace: true, resetScroll: false });
   });
 });
