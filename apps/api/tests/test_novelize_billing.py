@@ -687,3 +687,46 @@ async def test_regeneration_waiting_on_a_last_chapter_deletion_is_404_and_charge
     assert await _independent_ledger(independent_factory, user_id) == []
     async with independent_factory() as s:
         assert await s.get(Novel, novel_id) is not None
+
+
+async def test_chapter_whose_start_was_taken_by_a_chapter_saved_while_waiting_is_409_and_charges_nothing(
+    independent_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """장 생성은 다음 장 시작을 사용자 잠금 전에 정한다. 그 사이 앞 작업이 같은 구간으로 장을 저장하면, 잠금 뒤 다시
+    보지 않는 한 같은 구간이 두 장이 되고 차감도 두 번이다. 잠금을 얻은 뒤 마지막 장 끝이 이 작업 시작보다 앞인지
+    다시 보면 409 로 거절하고 원장에는 아무것도 남지 않는다."""
+    user_id, novel_id = await _seed(independent_factory)
+    start_at = datetime.now(UTC) - timedelta(minutes=5)
+    start_id = uuid.uuid4()
+
+    def from_the_old_start(novel: Novel) -> NovelJob:
+        job = _chapter_job(novel, start_message_id=start_id)
+        job.start_message_created_at = start_at
+        return job
+
+    saver = independent_factory()
+    try:
+        await billing._lock_user(saver, user_id)
+        task = _create_after_deleter(independent_factory, novel_id, from_the_old_start)
+        await _assert_blocked(task)
+        # 앞 작업의 결과 저장: 같은 시작부터 그 뒤 메시지까지를 장 1로 넣는다.
+        saver.add(
+            NovelChapter(
+                novel_id=novel_id,
+                ordinal=1,
+                start_message_id=start_id,
+                start_message_created_at=start_at,
+                end_message_id=uuid.uuid4(),
+                end_message_created_at=start_at + timedelta(minutes=1),
+                assistant_message_count=1,
+                source_hash="0" * 64,
+            )
+        )
+        await saver.commit()
+        result = await task
+    finally:
+        await saver.close()
+
+    assert isinstance(result, HTTPException)
+    assert (result.status_code, _detail(result)) == (409, {"code": "NOVEL_NOTHING_NEW"})
+    assert await _independent_ledger(independent_factory, user_id) == []

@@ -58,6 +58,22 @@ async def _lock_user(db: AsyncSession, user_id: uuid.UUID) -> bool:
     return locked is not None
 
 
+async def _starts_after_last_chapter(db: AsyncSession, job: NovelJob) -> bool:
+    """장 생성 작업의 시작이 지금 마지막 장의 끝보다 뒤인가. 라우트는 다음 장 시작을 잠금 전에 정하므로, 그 사이 앞
+    작업이 같은 구간으로 장을 저장했으면 이 작업은 이미 장이 된 구간을 다시 만든다. 사용자 잠금 뒤에 다시 본다 —
+    결과 저장은 사용자 행을 잡지 않지만, 잠금을 얻은 뒤의 조회는 그때까지 커밋된 장을 본다."""
+    assert job.start_message_created_at is not None and job.start_message_id is not None
+    last_end = (
+        await db.execute(
+            select(NovelChapter.end_message_created_at, NovelChapter.end_message_id)
+            .where(NovelChapter.novel_id == job.novel_id)
+            .order_by(NovelChapter.ordinal.desc())
+            .limit(1)
+        )
+    ).first()
+    return last_end is None or tuple(last_end) < (job.start_message_created_at, job.start_message_id)
+
+
 async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: int, now: datetime) -> NovelJob:
     """요청 세션 `db` 에서 `job` 을 진행 대기(`queued`)로 넣고 단가만큼 차감한 뒤 커밋한다. 넣은 작업을 돌려준다.
 
@@ -68,6 +84,8 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
     거절은 모두 `HTTPException` 이다(라우트 본문이 그대로 내보낸다).
     - 404 `NOVEL_NOT_FOUND`·`NOVEL_CHAPTER_NOT_FOUND`: 사용자 잠금을 기다리는 사이 소설이나 작업이 가리키는 장이
       지워졌다.
+    - 409 `NOVEL_NOTHING_NEW`(장 생성만): 사용자 잠금을 기다리는 사이 앞 작업이 이 작업의 시작을 덮는 장을 저장했다
+      (두 탭에서 동시에 다음 장을 만든 경우). 화면은 경계 제안을 다시 받는다.
     - 409 `NOVELIZE_PRICE_CHANGED` + `currentCost`: 사용자가 확인한 금액(`expected_cost`)이 지금 단가와 다르다. 단가가
       배포로 바뀌는 사이 열어 둔 확인 화면의 금액으로 차감하지 않으려는 것이다. DB 를 건드리기 전에 판정한다.
     - 409 `NOVEL_JOB_IN_PROGRESS`: 이 소설에 진행 중(대기·실행) 작업이 있다.
@@ -76,7 +94,7 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
     - 429 `CLOVER_REQUIRED`(`window: "novelize"`): 잔액 부족. 이 경우 참인 재시도 시각은 없지만, 클로버가 다시 생기는
       가장 이른 정기 시점이 출석이 다시 열리는 KST 자정이라 그때까지의 초를 싣는다.
 
-    순서는 단가 확인 → 사용자 잠금 → 소설·장 존재 확인 → 진행 중 확인 → 하루 상한 → 작업 INSERT → 차감(clover_lots 잠금)이다. 진행 중
+    순서는 단가 확인 → 사용자 잠금 → 소설·장 존재 확인 → 다음 장 시작 재확인(장 생성만) → 진행 중 확인 → 하루 상한 → 작업 INSERT → 차감(clover_lots 잠금)이다. 진행 중
     확인과 상한을 사용자 잠금 뒤에 읽으므로 같은 사용자의 동시 요청이 둘 다 통과하지 못한다(부분 유니크 인덱스는
     마지막 방어선으로 남는다)."""
     price = job_price(job.kind)
@@ -103,6 +121,9 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
     ):
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "NOVEL_CHAPTER_NOT_FOUND"})
+    if job.kind == "chapter_generate" and not await _starts_after_last_chapter(db, job):
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "NOVEL_NOTHING_NEW"})
 
     active = await db.scalar(
         select(NovelJob.id).where(NovelJob.novel_id == job.novel_id, NovelJob.status.in_(ACTIVE_JOB_STATUSES)).limit(1)
