@@ -19,7 +19,7 @@ import { DiscardManualEditModal, useNovelAiEdit } from "@/features/edit-novel-ch
 import { NovelNotesEditor } from "@/features/edit-novel-notes";
 import { NovelReader } from "@/widgets/novel-reader";
 
-import { resolveSelectedChapter, toChapterSearchValue } from "../model/novelChapterSearch";
+import { resolveSelectedChapter, toChapterSearchValue, toPinnedChapterSearchValue } from "../model/novelChapterSearch";
 
 const PAGE_CLASS = "mx-auto flex max-w-2xl flex-col gap-8 px-4 sm:px-6 py-10";
 
@@ -242,6 +242,23 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
             onChapterDeleted={() => handleChapterDeleted(selectedChapter.ordinal)}
             onDraftDirtyChange={(isDirty) => {
               isDraftDirtyRef.current = isDirty;
+              // 주소에 장 번호가 없으면 보이는 장은 "마지막 장"이라, 고치는 사이 새 장이 생기면 이동 없이 장이 바뀌어
+              // 쓰던 글이 사라진다. 글이 생긴 순간 지금 장 번호를 주소에 박는다. 화면 안에 따로 "고정한 장" 값을 두는
+              // 길도 있지만, 그러면 장을 고르는 출처가 주소와 그 값 둘이 되어 장으로 옮기는 길(목차·새 장 링크·장
+              // 지우기)마다 그 값을 풀어야 한다. 주소에 박으면 장 번호가 있는 화면의 보호(이동 보류·새 장 링크·버리기
+              // 확인)를 그대로 쓴다. 기록을 쌓지 않도록 바꿔 쓴다 — 쌓으면 뒤로가 같은 장의 번호 없는 주소로 간다.
+              const pinned = toPinnedChapterSearchValue({
+                requested: chapter,
+                selectedOrdinal: selectedChapter.ordinal,
+                isDraftDirty: isDirty,
+              });
+              if (pinned === undefined) return;
+              void navigate({
+                to: "/novels/$novelId",
+                params: { novelId: novel.id },
+                search: (prev) => ({ ...prev, chapter: pinned }),
+                replace: true,
+              });
             }}
           />
         </>

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { novelSearchSchema, resolveSelectedChapter, toChapterSearchValue } from "./novelChapterSearch";
+import {
+  novelSearchSchema,
+  resolveSelectedChapter,
+  toChapterSearchValue,
+  toPinnedChapterSearchValue,
+} from "./novelChapterSearch";
 
 const CHAPTERS = [{ ordinal: 1 }, { ordinal: 2 }, { ordinal: 3 }];
 
@@ -47,5 +52,23 @@ describe("toChapterSearchValue", () => {
 
   it("그 밖의 장은 번호를 싣는다", () => {
     expect(toChapterSearchValue(CHAPTERS, 1)).toBe(1);
+  });
+});
+
+describe("toPinnedChapterSearchValue", () => {
+  it("주소에 장 번호가 없는데 고치던 글이 생기면 보고 있는 장 번호를 주소에 박는다", () => {
+    expect(toPinnedChapterSearchValue({ requested: undefined, selectedOrdinal: 3, isDraftDirty: true })).toBe(3);
+  });
+
+  it("주소에 이미 장 번호가 있으면 다시 박지 않는다", () => {
+    expect(toPinnedChapterSearchValue({ requested: 2, selectedOrdinal: 2, isDraftDirty: true })).toBeUndefined();
+  });
+
+  it("고치던 글이 없으면 마지막 장을 따라가는 기본 주소를 그대로 둔다", () => {
+    expect(toPinnedChapterSearchValue({ requested: undefined, selectedOrdinal: 3, isDraftDirty: false })).toBeUndefined();
+  });
+
+  it("보고 있는 장이 없으면(장이 하나도 없음) 박을 것이 없다", () => {
+    expect(toPinnedChapterSearchValue({ requested: undefined, selectedOrdinal: undefined, isDraftDirty: true })).toBeUndefined();
   });
 });

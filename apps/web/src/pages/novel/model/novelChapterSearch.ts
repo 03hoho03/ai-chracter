@@ -25,6 +25,23 @@ export function toChapterSearchValue(chapters: readonly ChapterLike[], ordinal: 
   return lastChapter(chapters)?.ordinal === ordinal ? undefined : ordinal;
 }
 
+/** 고치던 글이 생긴 순간 주소에 박을 장 번호. 주소에 장 번호가 없는 화면은 "마지막 장"을 보므로, 그사이 새 장이
+ * 생기면 보이는 장이 이동 없이 새 장으로 바뀌어 고치던 자리가 새로 그려지고 쓰던 글이 사라진다. 그래서 글이 생기면
+ * 지금 장 번호를 주소에 박아 이 화면을 장 번호가 있는 화면과 같게 만든다 — 그 화면은 새 장이 생겨도 그 자리에 있고,
+ * 새 장은 링크로 알린 뒤 옮기기 전에 확인을 받는다. 박을 것이 없으면 `undefined`. */
+export function toPinnedChapterSearchValue({
+  requested,
+  selectedOrdinal,
+  isDraftDirty,
+}: {
+  requested: number | undefined;
+  selectedOrdinal: number | undefined;
+  isDraftDirty: boolean;
+}): number | undefined {
+  if (!isDraftDirty || requested !== undefined) return undefined;
+  return selectedOrdinal;
+}
+
 function lastChapter<T extends ChapterLike>(chapters: readonly T[]): T | undefined {
   let last: T | undefined;
   for (const chapter of chapters) {
