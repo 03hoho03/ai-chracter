@@ -411,3 +411,47 @@ def test_visible_tail_note_is_the_last_memory_snapshot_of_the_room_not_the_last_
     out = capsys.readouterr().out
     assert out.rstrip().splitlines()[-2] == "도희: 편집 담당"
     assert "다른 방 노트" not in out and "요약" not in out
+
+
+def _call(ts: datetime, turn: int | None, site: str, ms: int, error: str | None = None, room: str = "room-1") -> str:
+    return json.dumps(
+        {
+            "ts": ts.isoformat(),
+            "kind": "llm_call",
+            "turn": turn,
+            "callSite": site,
+            "model": "gemini-3.5-flash-lite",
+            "roomId": room,
+            "elapsedMs": ms,
+            "ok": error is None,
+            "errorType": error,
+        }
+    )
+
+
+def test_trace_calls_without_a_turn_are_kept_apart_instead_of_crashing(tmp_path: Path) -> None:
+    # 턴이 끝난 뒤 백그라운드로 도는 기억 요약 호출은 턴 번호 없이(null) 남는다.
+    at = datetime(2026, 10, 5, 15, 0, 0, tzinfo=KST)
+    trace = tmp_path / "trace.jsonl"
+    trace.write_text(
+        "\n".join(
+            [
+                _call(at, 1, "chat_generate", 2000),
+                _call(at + timedelta(seconds=20), None, "chat_memory_summary", 4000),
+                _call(at + timedelta(seconds=50), None, "chat_memory_summary", 300, "ReadTimeout"),
+                _call(at, None, "chat_memory_summary", 1, room="other-room"),
+            ]
+        )
+        + "\n"
+    )
+
+    by_turn, background = m.trace_calls(trace, "room-1")
+
+    assert [c["callSite"] for c in by_turn[1]] == ["chat_generate"]
+    assert [(c["callSite"], c["elapsedMs"], c["errorType"]) for c in background] == [
+        ("chat_memory_summary", 4000, None),
+        ("chat_memory_summary", 300, "ReadTimeout"),
+    ]
+    summary = m.background_summary(background)
+    assert summary["chat_memory_summary"]["n"] == 2
+    assert summary["chat_memory_summary"]["errors"] == {"ReadTimeout": 1}

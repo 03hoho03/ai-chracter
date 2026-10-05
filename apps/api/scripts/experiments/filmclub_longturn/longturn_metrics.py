@@ -306,17 +306,45 @@ def attach_log(turns: list[dict[str, Any]], records: list[dict[str, Any]], tz: t
     return before
 
 
-def trace_calls(path: Path | None, room_id: str) -> dict[int, list[dict[str, Any]]]:
-    """trace 의 호출별 지연. 레코드에 `roomId`·`turn`·`callSite`(또는 `call_site`)·`elapsedMs` 가 있는 줄만 쓴다."""
+def trace_calls(path: Path | None, room_id: str) -> tuple[dict[int, list[dict[str, Any]]], list[dict[str, Any]]]:
+    """trace 의 호출별 지연·성패. 레코드에 `roomId`·`callSite`(또는 `call_site`)·`elapsedMs` 가 있는 줄만 쓴다.
+    두 번째 값은 턴 번호가 없는(null) 호출 — 턴이 끝난 뒤 백그라운드로 도는 기억 요약이 그렇다. 턴에 붙이지 않고 따로 센다."""
     by_turn: dict[int, list[dict[str, Any]]] = {}
+    background: list[dict[str, Any]] = []
     if path is None or not path.exists():
-        return by_turn
+        return by_turn, background
     for record in read_jsonl(path):
         site = record.get("callSite") or record.get("call_site")
-        if record.get("roomId") != room_id or site is None or "elapsedMs" not in record or "turn" not in record:
+        if record.get("roomId") != room_id or site is None or "elapsedMs" not in record:
             continue
-        by_turn.setdefault(int(record["turn"]), []).append({"callSite": site, "elapsedMs": record["elapsedMs"]})
-    return by_turn
+        call = {
+            "callSite": site,
+            "elapsedMs": record["elapsedMs"],
+            "ok": record.get("ok", True),
+            "errorType": record.get("errorType"),
+            "ts": record.get("ts"),
+        }
+        if record.get("turn") is None:
+            background.append(call)
+        else:
+            by_turn.setdefault(int(record["turn"]), []).append(call)
+    return by_turn, background
+
+
+def background_summary(calls: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """턴 번호 없는 호출의 call_site 별 지연 p50·p90·수와 실패 종류별 수."""
+    by_site: dict[str, list[dict[str, Any]]] = {}
+    for call in calls:
+        by_site.setdefault(call["callSite"], []).append(call)
+    return {
+        site: {
+            "p50": _pct([float(c["elapsedMs"]) for c in group], 0.5),
+            "p90": _pct([float(c["elapsedMs"]) for c in group], 0.9),
+            "n": len(group),
+            "errors": dict(Counter(c["errorType"] or "?" for c in group if not c["ok"])),
+        }
+        for site, group in by_site.items()
+    }
 
 
 # ---------------------------------------------------------------- 턴 표
@@ -586,7 +614,7 @@ def run_turns(args: argparse.Namespace) -> None:
     )
     before = attach_log([t for t in turns if t.get("sentAt")], records, tz)
     summarize_log(turns)
-    calls = trace_calls(Path(args.trace) if args.trace else None, room_id)
+    calls, background = trace_calls(Path(args.trace) if args.trace else None, room_id)
     for t in turns:
         t["calls"] = calls.get(t["turn"], [])
     out = Path(args.out)
@@ -602,6 +630,7 @@ def run_turns(args: argparse.Namespace) -> None:
         "logLinesBeforeFirstTurn": len(before),
         "bins": bin_summary(turns, args.bin_size),
         "costUsdTotal": round(sum(u["costUsd"] or 0 for t in turns for u in t["usage"]), 6),
+        "callsWithoutTurn": background_summary(background),
     }
     (out / "bins-summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     print(
