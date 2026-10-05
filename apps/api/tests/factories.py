@@ -234,6 +234,7 @@ class NovelTree:
     chapter: NovelChapter
     first_revision: NovelChapterRevision
     reverting_revision: NovelChapterRevision
+    generate_job: NovelJob
     finished_job: NovelJob
     active_job: NovelJob
 
@@ -241,8 +242,9 @@ class NovelTree:
 async def _make_novel_tree(
     db_session: AsyncSession, user_id: uuid.UUID, *, chat_room_id: uuid.UUID | None = None
 ) -> NovelTree:
-    """소설 한 권과 그 아래 행을 FK 가 모두 이어지게 flush 한다(커밋은 호출자). 되돌리기 개정이 앞 개정을, 끝난
-    작업이 장·개정을 가리키고 진행 중 작업도 하나 있어, 지우는 순서가 틀리면 FK 위반이 난다."""
+    """소설 한 권과 그 아래 행을 FK 가 모두 이어지게 flush 한다(커밋은 호출자). 되돌리기 개정이 앞 개정을, 장 생성
+    작업이 자기가 만든 개정을, AI 수정 작업이 장·기준 개정을 가리키고 진행 중 작업도 하나 있어, 지우는 순서가 틀리면
+    FK 위반이 난다."""
     novel = Novel(
         user_id=user_id,
         chat_room_id=chat_room_id,
@@ -276,6 +278,15 @@ async def _make_novel_tree(
         source="revert",
         reverted_from_revision_id=first_revision.id,
     )
+    generate_job = NovelJob(
+        novel_id=novel.id,
+        user_id=user_id,
+        kind="chapter_generate",
+        status="succeeded",
+        chapter_id=chapter.id,
+        result_revision_id=first_revision.id,
+        charged_amount=1,
+    )
     finished_job = NovelJob(
         novel_id=novel.id,
         user_id=user_id,
@@ -288,9 +299,9 @@ async def _make_novel_tree(
     active_job = NovelJob(
         novel_id=novel.id, user_id=user_id, kind="chapter_generate", status="running", charged_amount=1
     )
-    db_session.add_all([reverting_revision, finished_job, active_job])
+    db_session.add_all([reverting_revision, generate_job, finished_job, active_job])
     await db_session.flush()
-    return NovelTree(novel, chapter, first_revision, reverting_revision, finished_job, active_job)
+    return NovelTree(novel, chapter, first_revision, reverting_revision, generate_job, finished_job, active_job)
 
 
 async def _make_asset(

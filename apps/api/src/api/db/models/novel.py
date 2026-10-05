@@ -157,7 +157,8 @@ class NovelJob(Base):
     개정으로 만들지 않고 `result_text` 에 두었다가 사용자가 적용할 때 새 개정이 된다.
 
     대화방을 가리키는 칸은 두지 않는다 — 두면 방 삭제가 이 테이블을 알아야 하고, 모르면 방 DELETE 가 FK 위반으로
-    실패한다. 개정이 작업을 가리키지도 않는다(작업 → 개정 참조와 순환이 된다)."""
+    실패한다. 개정이 작업을 가리키지도 않는다 — 작업 → 개정(`base_revision_id`·`result_revision_id`) 참조와 순환이
+    된다."""
 
     __tablename__ = "novel_jobs"
 
@@ -168,6 +169,12 @@ class NovelJob(Base):
     status: Mapped[NovelJobStatus] = mapped_column(Text, nullable=False)
     chapter_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("novel_chapters.id"), nullable=True)
     base_revision_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("novel_chapter_revisions.id"), nullable=True
+    )
+    # 이 작업이 만든 개정. 장의 현재 개정(번호 최대)으로는 대신할 수 없다 — 재생성이 끝난 뒤 직접 수정·되돌리기가
+    # 쌓이면 최대 번호 개정은 더 이상 이 작업의 결과가 아니다. FK 가 즉시 검사되므로 개정을 INSERT 한 뒤 두 번째
+    # UPDATE 로 채우고, 개정을 만들지 않은 작업은 NULL 로 남는다.
+    result_revision_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("novel_chapter_revisions.id"), nullable=True
     )
     start_message_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)

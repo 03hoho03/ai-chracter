@@ -82,6 +82,7 @@ def upgrade() -> None:
     sa.Column('status', sa.Text(), nullable=False),
     sa.Column('chapter_id', sa.Uuid(), nullable=True),
     sa.Column('base_revision_id', sa.Uuid(), nullable=True),
+    sa.Column('result_revision_id', sa.Uuid(), nullable=True),
     sa.Column('start_message_id', sa.Uuid(), nullable=True),
     sa.Column('start_message_created_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('end_message_id', sa.Uuid(), nullable=True),
@@ -105,6 +106,7 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['base_revision_id'], ['novel_chapter_revisions.id'], ),
     sa.ForeignKeyConstraint(['chapter_id'], ['novel_chapters.id'], ),
     sa.ForeignKeyConstraint(['novel_id'], ['novels.id'], ),
+    sa.ForeignKeyConstraint(['result_revision_id'], ['novel_chapter_revisions.id'], ),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
