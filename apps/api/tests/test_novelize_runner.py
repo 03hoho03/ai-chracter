@@ -605,7 +605,8 @@ async def test_unusable_ai_edit_is_refunded(
     await runner.run_job(_factory(db_session), _NovelLLM(paragraphs=paragraphs), job.id)
 
     stored = await _job(db_session, job.id)
-    # 환불한 수정 요청은 지시문도 남기지 않는다 — 결과가 없는 지시문을 보관할 이유가 없다. 행은 재시도 집계로 남는다.
+    # 환불한 수정 요청은 지시문도 남기지 않는다 — 결과가 없는 지시문을 보관할 이유가 없다.
+    # 행은 차감·환불 기록의 짝으로 남는다(하루 재시도 집계는 대기·실행·성공인 장 작업만 세므로 이 행과 무관하다).
     assert (stored.status, stored.failure_code, stored.instruction, stored.result_text) == ("failed", code, None, None)
     assert await _ledger(db_session, novel.user_id) == [
         ("novelize_spend", -20),

@@ -1,4 +1,4 @@
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useSetAtom } from "jotai";
 import { BookOpen, BookText, History, IdCard, Images, Repeat, Sparkles } from "lucide-react";
 import { toast } from "sonner";
@@ -14,6 +14,7 @@ import { UpdateInfoModal } from "@/features/update-info";
 import type { AuthorMacroNames } from "@/shared/lib/text/authorMacros";
 
 import { chatSidePanelAtom } from "../model/atoms";
+import { isStillInRoom } from "../model/roomNovelNavigation";
 import { visibleMoreItems, type FeatureGatedItem } from "../model/visibleMoreItems";
 import { RoomPersonaModal } from "./RoomPersonaModal";
 
@@ -71,6 +72,7 @@ export type ChatMoreNavProps = {
 export function ChatMoreNav({ roomId, contentType, startingSetupId, characterId, storyId, macroNames }: ChatMoreNavProps) {
   const setPanel = useSetAtom(chatSidePanelAtom);
   const navigate = useNavigate();
+  const router = useRouter();
   const { data: me } = useSessionQuery();
   const ensureRoomNovel = useEnsureRoomNovelMutation();
   const items = visibleMoreItems(contentType === "story" ? STORY_ITEMS : CHARACTER_ITEMS, me?.enabledFeatures ?? []);
@@ -78,10 +80,13 @@ export function ChatMoreNav({ roomId, contentType, startingSetupId, characterId,
   // 패널은 누르는 즉시 닫히므로(다른 항목과 같은 순서) 이 버튼은 결과를 기다리는 동안 화면에 없다 — 진행 표시를
   // 두지 않고 실패만 토스트로 알린다. `mutateAsync`를 쓰는 이유는 패널이 닫히며 이 컴포넌트가 언마운트돼도
   // 이동이 이어져야 해서다(`mutate`의 호출 단위 콜백은 언마운트와 함께 사라진다).
+  // 중복 클릭은 막지 않는다 — 패널을 다시 열면 새 인스턴스라 `isPending` 가드가 늘 거짓이고, 서버가 같은 방의
+  // 요청을 같은 소설로 돌려주므로(방마다 소설 하나) 두 번 눌러도 같은 주소로 두 번 옮길 뿐이다.
+  // 이동 직전 경로는 응답이 온 시점의 것을 라우터에서 읽는다(이 컴포넌트는 이미 언마운트됐을 수 있다).
   async function openRoomNovel() {
-    if (ensureRoomNovel.isPending) return;
     try {
       const novel = await ensureRoomNovel.mutateAsync(roomId);
+      if (!isStillInRoom(router.state.location.pathname, roomId)) return;
       void navigate({ to: "/novels/$novelId", params: { novelId: novel.id } });
     } catch (error) {
       // 재동의가 필요하면 전역 처리가 재동의 모달을 띄운다 — 토스트를 겹치지 않는다.
