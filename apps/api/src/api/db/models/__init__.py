@@ -56,6 +56,17 @@ from api.db.models.moderation import (
     ReportStatus,
 )
 from api.db.models.notice import Notice
+from api.db.models.novel import (
+    Novel,
+    NovelChapter,
+    NovelChapterRevision,
+    NovelContentType,
+    NovelJob,
+    NovelJobFailureCode,
+    NovelJobKind,
+    NovelJobStatus,
+    NovelRevisionSource,
+)
 from api.db.models.persona import UserPersona
 from api.db.models.prompt import PromptSection, PromptSet, PublishFilterTextSectionBackup
 from api.db.models.story import (
@@ -136,6 +147,15 @@ __all__ = [
     "ModerationStatus",
     "Notice",
     "Notification",
+    "Novel",
+    "NovelChapter",
+    "NovelChapterRevision",
+    "NovelContentType",
+    "NovelJob",
+    "NovelJobFailureCode",
+    "NovelJobKind",
+    "NovelJobStatus",
+    "NovelRevisionSource",
     "PromptSection",
     "PromptSet",
     "PublishFilterTextSectionBackup",

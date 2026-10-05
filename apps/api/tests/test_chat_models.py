@@ -22,12 +22,14 @@ from api.db.models import (
     DiscardedResponse,
     Genre,
     ModerationStatus,
+    Novel,
+    NovelChapterRevision,
     ReportStatus,
     StoryEndingUnlock,
     StoryMediaExposure,
     User,
 )
-from factories import _make_user
+from factories import _make_novel_tree, _make_user
 
 
 async def _make_published_version(db_session: AsyncSession, user: User) -> ContentVersion:
@@ -363,6 +365,29 @@ async def test_room_deletion_keeps_discarded_responses_and_reports_with_referenc
     assert report_row.chat_room_id is None
     assert report_row.chat_message_id is None
     assert report_row.evidence_response == "신고된 응답"
+
+
+async def test_room_deletion_keeps_the_novel_made_from_it_with_room_reference_cleared(
+    db_session: AsyncSession,
+) -> None:
+    """소설은 방과 따로 남는 문서다. `delete_chat_rooms` 는 소설 테이블을 모르고, 방 참조는 FK 의 `SET NULL` 이
+    비운다 — 이 동작이 빠지면 방 삭제가 FK 위반으로 실패한다."""
+    room = await _make_chat_room(db_session)
+    tree = await _make_novel_tree(db_session, room.user_id, chat_room_id=room.id)
+
+    await delete_chat_rooms(db_session, [room.id])
+
+    novel_row = (
+        await db_session.execute(sa.select(Novel.chat_room_id, Novel.user_id).where(Novel.id == tree.novel.id))
+    ).one()
+    assert novel_row.chat_room_id is None
+    assert novel_row.user_id == room.user_id
+    revision_count = await db_session.scalar(
+        sa.select(sa.func.count())
+        .select_from(NovelChapterRevision)
+        .where(NovelChapterRevision.chapter_id == tree.chapter.id)
+    )
+    assert revision_count == 2
 
 
 async def test_message_deletion_keeps_reports_with_message_reference_cleared(

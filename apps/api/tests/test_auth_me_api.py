@@ -37,6 +37,10 @@ from api.db.models import (
     InquiryCategory,
     InquiryStatus,
     ModerationStatus,
+    Novel,
+    NovelChapter,
+    NovelChapterRevision,
+    NovelJob,
     User,
     UserFeatureGrant,
     UserPersona,
@@ -48,6 +52,7 @@ from factories import (
     _get_genre,
     _grant_novelize,
     _login_as,
+    _make_novel_tree,
     _make_user,
     _make_published_character,
     _make_published_story,
@@ -1001,3 +1006,33 @@ async def test_withdraw_erases_feature_grants(db_client: httpx.AsyncClient, db_s
         select(sa.func.count()).select_from(UserFeatureGrant).where(UserFeatureGrant.user_id == user_id)
     )
     assert remaining == 0
+
+
+async def test_withdraw_erases_novels_even_when_the_source_room_is_gone(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """소설은 방과 따로 남는 문서라 방 파기에 딸려 지워지지 않는다 — 방이 이미 지워진 소설(`chat_room_id` NULL)까지
+    탈퇴가 직접 파기해야 한다."""
+    payload = await _signup_and_login(db_client)
+    user = await db_session.scalar(select(User).where(User.email == payload["email"]))
+    assert user is not None
+    user_id = user.id
+    tree = await _make_novel_tree(db_session, user_id)
+    await db_session.commit()
+
+    resp = await db_client.request("DELETE", "/me", json={"currentPassword": payload["password"]})
+
+    assert resp.status_code == 204
+    counts = [
+        await db_session.scalar(select(sa.func.count()).select_from(Novel).where(Novel.user_id == user_id)),
+        await db_session.scalar(
+            select(sa.func.count()).select_from(NovelChapter).where(NovelChapter.id == tree.chapter.id)
+        ),
+        await db_session.scalar(
+            select(sa.func.count())
+            .select_from(NovelChapterRevision)
+            .where(NovelChapterRevision.chapter_id == tree.chapter.id)
+        ),
+        await db_session.scalar(select(sa.func.count()).select_from(NovelJob).where(NovelJob.user_id == user_id)),
+    ]
+    assert counts == [0, 0, 0, 0]

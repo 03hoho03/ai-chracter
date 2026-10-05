@@ -50,6 +50,10 @@ from api.db.models import (
     MediaBookPerson,
     MediaBookScene,
     ModerationStatus,
+    Novel,
+    NovelChapter,
+    NovelChapterRevision,
+    NovelJob,
     StartingSetup,
     StatDef,
     StoryPromptTemplate,
@@ -222,6 +226,71 @@ async def _grant_novelize(db_session: AsyncSession, user_id: uuid.UUID) -> UserF
     db_session.add(grant)
     await db_session.flush()
     return grant
+
+
+@dataclass
+class NovelTree:
+    novel: Novel
+    chapter: NovelChapter
+    first_revision: NovelChapterRevision
+    reverting_revision: NovelChapterRevision
+    finished_job: NovelJob
+    active_job: NovelJob
+
+
+async def _make_novel_tree(
+    db_session: AsyncSession, user_id: uuid.UUID, *, chat_room_id: uuid.UUID | None = None
+) -> NovelTree:
+    """소설 한 권과 그 아래 행을 FK 가 모두 이어지게 flush 한다(커밋은 호출자). 되돌리기 개정이 앞 개정을, 끝난
+    작업이 장·개정을 가리키고 진행 중 작업도 하나 있어, 지우는 순서가 틀리면 FK 위반이 난다."""
+    novel = Novel(
+        user_id=user_id,
+        chat_room_id=chat_room_id,
+        content_id=uuid.uuid4(),
+        content_type="character",
+        content_title="원작",
+        character_name="인물",
+    )
+    db_session.add(novel)
+    await db_session.flush()
+    now = datetime.now(UTC)
+    chapter = NovelChapter(
+        novel_id=novel.id,
+        ordinal=1,
+        start_message_id=uuid.uuid4(),
+        start_message_created_at=now,
+        end_message_id=uuid.uuid4(),
+        end_message_created_at=now,
+        assistant_message_count=1,
+        source_hash="0" * 64,
+    )
+    db_session.add(chapter)
+    await db_session.flush()
+    first_revision = NovelChapterRevision(chapter_id=chapter.id, revision_no=1, body="첫 본문", source="generate")
+    db_session.add(first_revision)
+    await db_session.flush()
+    reverting_revision = NovelChapterRevision(
+        chapter_id=chapter.id,
+        revision_no=2,
+        body="첫 본문",
+        source="revert",
+        reverted_from_revision_id=first_revision.id,
+    )
+    finished_job = NovelJob(
+        novel_id=novel.id,
+        user_id=user_id,
+        kind="ai_edit",
+        status="succeeded",
+        chapter_id=chapter.id,
+        base_revision_id=first_revision.id,
+        charged_amount=1,
+    )
+    active_job = NovelJob(
+        novel_id=novel.id, user_id=user_id, kind="chapter_generate", status="running", charged_amount=1
+    )
+    db_session.add_all([reverting_revision, finished_job, active_job])
+    await db_session.flush()
+    return NovelTree(novel, chapter, first_revision, reverting_revision, finished_job, active_job)
 
 
 async def _make_asset(
