@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import type { MeResponse } from "@/entities/session";
 import { useLogoutMutation } from "@/features/logout";
 
+import { isProfileDestinationVisible } from "../model/profileDestinationVisibility";
 import { PROFILE_DESTINATION_GROUPS, ProfileDestinationLink } from "./ProfileDestinationLink";
 
 /** 창작 / 활동 / 계정 그룹 + 로그아웃.
@@ -103,11 +104,13 @@ export function ProfileMenu({ me }: { me: MeResponse }) {
         {PROFILE_DESTINATION_GROUPS.map((group) => (
           <Fragment key={group.label}>
             <ProfileMenuGroup label={group.label}>
-              {group.keys.map((key) => (
-                <DropdownMenuItem key={key} asChild>
-                  <ProfileDestinationLink destinationKey={key} me={me} />
-                </DropdownMenuItem>
-              ))}
+              {group.keys
+                .filter((key) => isProfileDestinationVisible(key, me.enabledFeatures))
+                .map((key) => (
+                  <DropdownMenuItem key={key} asChild>
+                    <ProfileDestinationLink destinationKey={key} me={me} />
+                  </DropdownMenuItem>
+                ))}
             </ProfileMenuGroup>
             <DropdownMenuSeparator />
           </Fragment>

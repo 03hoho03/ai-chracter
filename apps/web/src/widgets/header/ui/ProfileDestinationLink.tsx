@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import {
+  BookText,
   FileText,
   IdCard,
   ImagePlus,
@@ -32,7 +33,7 @@ import { assertNever } from "@/shared/lib/assertNever";
  * 빠뜨려도 컴파일이 통과해, 그 목적지가 메뉴와 드로어 어디에도 나타나지 않는다. */
 export const PROFILE_DESTINATION_GROUPS = [
   { label: "창작", keys: ["builder", "my-works", "studio-images"] },
-  { label: "활동", keys: ["chats", "favorites"] },
+  { label: "활동", keys: ["chats", "novels", "favorites"] },
   { label: "계정", keys: ["profile", "personas", "clover", "mypage"] },
   { label: "고객센터", keys: ["about", "notices", "inquiry-new", "terms", "privacy", "operation-policy", "youth-policy"] },
 ] as const satisfies readonly { label: string; keys: readonly string[] }[];
@@ -97,6 +98,15 @@ export const ProfileDestinationLink = forwardRef<HTMLAnchorElement, ProfileDesti
         <Link ref={ref} to="/chats" className={className} {...rest}>
           <MessagesSquare aria-hidden />
           내 채팅목록
+        </Link>
+      );
+    case "novels":
+      // 라벨은 페이지 h1(`내 소설`)과 같은 문자열이다. 허용된 계정에만 보인다(`isProfileDestinationVisible`).
+      // 글리프는 채팅 더보기의 `소설로 보기`와 같다.
+      return (
+        <Link ref={ref} to="/novels" className={className} {...rest}>
+          <BookText aria-hidden />
+          내 소설
         </Link>
       );
     case "favorites":
