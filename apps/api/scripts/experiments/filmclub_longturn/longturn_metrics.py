@@ -869,12 +869,23 @@ def visible_tail(rows: list[dict[str, Any]], frame: Frame, n: int) -> list[str]:
     return lines
 
 
+def current_note(snapshots: list[dict[str, Any]], room_id: str) -> str:
+    """그 방의 마지막 기억 스냅숏의 노트. 스냅숏 파일에는 정지·도달·방 정적 정보 줄이 섞여 있고, 정기 교대는 일시
+    정지 바로 뒤라 마지막 줄이 노트 없는 정지 줄이다 — 종류와 방으로 거르지 않으면 노트가 빈 값으로 나온다."""
+    note = ""
+    for row in snapshots:
+        if row.get("kind") == "memorySnapshot" and row.get("roomId") == room_id:
+            note = str(row.get("note") or "")
+    return note
+
+
 def run_visible_tail(args: argparse.Namespace) -> None:
     frame = Frame(json.loads(Path(args.frame).read_text(encoding="utf-8")))
-    lines = visible_tail(read_jsonl(Path(args.log)), frame, args.n)
+    rows = read_jsonl(Path(args.log))
+    lines = visible_tail(rows, frame, args.n)
     if args.snapshots:
-        snapshots = read_jsonl(Path(args.snapshots))
-        note = str(snapshots[-1].get("note") or "") if snapshots else ""
+        room_id = str(args.room or next(row for row in rows if row["kind"] == "meta")["roomId"])
+        note = current_note(read_jsonl(Path(args.snapshots)), room_id)
         lines += [
             "## 방의 현재 기억 노트(원문)",
             note or "(비어 있음)",
@@ -942,6 +953,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--log", required=True)
     p.add_argument("--frame", required=True)
     p.add_argument("--snapshots")
+    p.add_argument("--room", help="방 id(없으면 --log 의 meta 줄)")
     p.add_argument("--n", type=int, default=30)
     p.set_defaults(fn=run_visible_tail)
     args = ap.parse_args(argv)

@@ -387,3 +387,27 @@ def test_probe_check_applies_exclusions_then_category_rotation_then_earliest_tur
     assert report["chosen"]["category"] == "장소·일정" and report["chosen"]["sourceTurn"] == 20
     rotated = m.check_probe_candidates(candidates, texts, [], 101, "약속")
     assert rotated["categoryOrder"][0] == "약속" and rotated["chosen"]["sourceTurn"] == 15
+
+
+def test_visible_tail_note_is_the_last_memory_snapshot_of_the_room_not_the_last_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # 정기 교대는 일시 정지 바로 뒤라 스냅숏 파일의 마지막 줄은 노트가 없는 정지 줄이다.
+    log = tmp_path / "room.jsonl"
+    log.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in _rows(datetime(2026, 10, 5, 15))) + "\n")
+    frame = tmp_path / "frame.json"
+    frame.write_text(json.dumps(_frame_data(), ensure_ascii=False))
+    snapshots = tmp_path / "snap.jsonl"
+    rows = [
+        {"kind": "memorySnapshot", "roomId": "room-1", "turn": 3, "note": "도희: 편집 담당", "summary": "요약"},
+        {"kind": "memorySnapshot", "roomId": "other-room", "turn": 9, "note": "다른 방 노트", "summary": ""},
+        {"kind": "pause", "roomId": "room-1", "turnCount": 50, "trigger": "pause-at"},
+        {"kind": "roomStatic", "roomId": "room-1", "shortcuts": []},
+    ]
+    snapshots.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n")
+
+    m.main(["visible-tail", "--log", str(log), "--frame", str(frame), "--snapshots", str(snapshots), "--n", "2"])
+
+    out = capsys.readouterr().out
+    assert out.rstrip().splitlines()[-2] == "도희: 편집 담당"
+    assert "다른 방 노트" not in out and "요약" not in out
