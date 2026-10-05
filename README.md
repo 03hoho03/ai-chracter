@@ -1,6 +1,6 @@
 # 또나 (ddona)
 
-AI 캐릭터·스토리를 직접 만들고, 다른 사람이 만든 캐릭터와 롤플레이 대화를 나누는 전연령 반응형 웹 서비스.
+AI 캐릭터·스토리를 직접 만들고, 다른 사람이 만든 캐릭터와 롤플레이 대화를 나누는 반응형 웹 서비스. 이용 연령과 콘텐츠 등급은 [PRODUCT.md](PRODUCT.md)의 Product Purpose 절과 [CONTENT_POLICY.md](CONTENT_POLICY.md)에 있다.
 
 - 서비스: https://ddona.site
 - 어드민: https://admin.ddona.site
