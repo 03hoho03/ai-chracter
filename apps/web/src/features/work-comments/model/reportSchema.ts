@@ -4,6 +4,7 @@ import type { CommentReportReason } from "@/entities/comment";
 
 export const REASON_OPTIONS: { [Reason in CommentReportReason]: { value: Reason; label: string } } = {
   adult: { value: "adult", label: "성인/선정적 콘텐츠" },
+  minor_safety: { value: "minor_safety", label: "아동·청소년 관련" },
   copyright: { value: "copyright", label: "저작권 침해" },
   hate: { value: "hate", label: "혐오·범죄 조장" },
   spam: { value: "spam", label: "스팸" },

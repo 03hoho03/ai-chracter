@@ -243,7 +243,7 @@ export interface paths {
          *     없는 직접 조치에는 반려할 대상이 없다 — 400으로 거절한다.
          *
          *     사유 요구가 조치마다 다르다: `restrict`/`delete`는 아래에서 `Notification`을
-         *     만들고 그 통지 문구가 사유를 인용하므로 제품 결정으로 신고 사유 5종 중 하나가
+         *     만들고 그 통지 문구가 사유를 인용하므로 제품 결정으로 신고 사유 중 하나가
          *     필수다(없으면 422) — 예전엔 그 `reason_category` 컬럼이 NOT NULL이라는 DB 제약을
          *     근거로 들었지만, 이후 그 컬럼이 nullable로
          *     바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가 사라졌다. 반면
@@ -656,6 +656,11 @@ export interface paths {
          *     편집하던 내용이 초안 조회에 그대로 남아 관리자가 바로 이어서 다듬을 수 있다(예:
          *     오타 하나만 고쳐 재게시). 지우는 쪽을 골랐다면 매번 원고를 통째로 다시 붙여넣게
          *     되어 더 불편해질 뿐, 더 안전해지는 지점이 없다.
+         *
+         *     동의를 기록하지 않는 문서(운영정책·청소년 보호정책)는 `requires_reconsent=true` 로
+         *     게시할 수 없다. 재동의 게이트와 `GET /me` 는 약관·처리방침만 보므로 그 플래그는 아무
+         *     효과가 없는데, 게시 이력·감사 로그에는 "재동의 필요"로 남아 운영자가 회원 재동의를
+         *     받은 것으로 믿게 된다.
          */
         post: operations["publish_legal_document_admin_legal__kind__publish_post"];
         delete?: never;
@@ -3625,7 +3630,7 @@ export interface components {
              * Reason
              * @enum {string}
              */
-            reason: "inappropriate" | "hateful" | "out_of_character" | "repetitive" | "broken" | "other";
+            reason: "inappropriate" | "minor_safety" | "hateful" | "out_of_character" | "repetitive" | "broken" | "other";
             /** Note */
             note: string | null;
             status: components["schemas"]["ReportStatus"];
@@ -3663,7 +3668,7 @@ export interface components {
              * Reason
              * @enum {string}
              */
-            reason: "inappropriate" | "hateful" | "out_of_character" | "repetitive" | "broken" | "other";
+            reason: "inappropriate" | "minor_safety" | "hateful" | "out_of_character" | "repetitive" | "broken" | "other";
             status: components["schemas"]["ReportStatus"];
             /**
              * Createdat
@@ -4453,7 +4458,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "terms" | "privacy";
+            kind: "terms" | "privacy" | "operation-policy" | "youth-policy";
             draft: components["schemas"]["AdminLegalDraftItem"] | null;
             published: components["schemas"]["AdminLegalPublishedItem"] | null;
         };
@@ -5360,7 +5365,7 @@ export interface components {
              * Reason
              * @enum {string}
              */
-            reason: "inappropriate" | "hateful" | "out_of_character" | "repetitive" | "broken" | "other";
+            reason: "inappropriate" | "minor_safety" | "hateful" | "out_of_character" | "repetitive" | "broken" | "other";
             /** Note */
             note?: string | null;
         };
@@ -5599,7 +5604,7 @@ export interface components {
         };
         /**
          * ChatViewReasonCategory
-         * @description 기존 `ReportReasonCategory`(adult/copyright/hate/spam/other)와
+         * @description 기존 `ReportReasonCategory`(작품·댓글 신고 사유)와
          *     다른 전용 enum이다 — 채팅 열람 사유는 신고 사유와 결이 달라 재사용하지 않는다.
          * @enum {string}
          */
@@ -6767,7 +6772,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "terms" | "privacy";
+            kind: "terms" | "privacy" | "operation-policy" | "youth-policy";
             /** Version */
             version: string;
             /** Bodymarkdown */
@@ -7261,7 +7266,7 @@ export interface components {
          * ReportReasonCategory
          * @enum {string}
          */
-        ReportReasonCategory: "adult" | "copyright" | "hate" | "spam" | "other";
+        ReportReasonCategory: "adult" | "minor_safety" | "copyright" | "hate" | "spam" | "other";
         /** ReportRequest */
         ReportRequest: {
             reasonCategory: components["schemas"]["ReportReasonCategory"];
@@ -8455,7 +8460,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                kind: "terms" | "privacy";
+                kind: "terms" | "privacy" | "operation-policy" | "youth-policy";
             };
             cookie?: never;
         };
@@ -8486,7 +8491,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                kind: "terms" | "privacy";
+                kind: "terms" | "privacy" | "operation-policy" | "youth-policy";
             };
             cookie?: never;
         };
@@ -8521,7 +8526,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                kind: "terms" | "privacy";
+                kind: "terms" | "privacy" | "operation-policy" | "youth-policy";
             };
             cookie?: never;
         };
@@ -8556,7 +8561,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                kind: "terms" | "privacy";
+                kind: "terms" | "privacy" | "operation-policy" | "youth-policy";
             };
             cookie?: never;
         };
@@ -9961,7 +9966,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                kind: "terms" | "privacy";
+                kind: "terms" | "privacy" | "operation-policy" | "youth-policy";
             };
             cookie?: never;
         };

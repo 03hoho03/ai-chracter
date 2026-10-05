@@ -4,19 +4,26 @@ import { buildMetaTags, SITE_NAME } from "./meta";
 import { resolvePublicOrigin } from "./origin";
 import type { WorkerEnv } from "./workerRuntime";
 
-/** `/legal/{kind}` API와 값이 같은, 약관 공개 페이지 종류. */
-export type LegalKind = "terms" | "privacy";
+/** `/legal/{kind}` API와 값이 같은 법적 문서 종류. 값이 곧 웹 경로라(`/operation-policy` 등) 경로 해석과
+ * canonical 이 따로 표를 두지 않는다. */
+export type LegalKind = "terms" | "privacy" | "operation-policy" | "youth-policy";
 
 const LEGAL_LABEL: Record<LegalKind, string> = {
   terms: "이용약관",
   privacy: "개인정보처리방침",
+  "operation-policy": "운영정책",
+  "youth-policy": "청소년 보호정책",
 };
 
-/** 경로 → 약관 종류. 정적 경로 둘뿐이라 세그먼트 파싱이 필요 없다. */
+function isLegalKind(value: string): value is LegalKind {
+  // own key만 본다 — `in`이면 `/toString` 같은 경로가 프로토타입 키로 통과한다.
+  return Object.hasOwn(LEGAL_LABEL, value);
+}
+
+/** 경로 → 법적 문서 종류. 한 세그먼트 정적 경로뿐이라 앞 `/`만 떼어 종류 표에 대 본다. */
 export function parseLegalPath(pathname: string): LegalKind | undefined {
-  if (pathname === "/terms") return "terms";
-  if (pathname === "/privacy") return "privacy";
-  return undefined;
+  const kind = pathname.slice(1);
+  return pathname.startsWith("/") && isLegalKind(kind) ? kind : undefined;
 }
 
 /**
@@ -35,7 +42,7 @@ export function buildLegalHead(kind: LegalKind, origin: string): string {
   });
 }
 
-/** 봇 UA + `/terms`·`/privacy` — index.html에 title·description·canonical을 주입해 응답한다. */
+/** 봇 UA + 법적 문서 경로 — index.html에 title·description·canonical을 주입해 응답한다. */
 export async function handleLegalMeta(
   request: Request,
   env: WorkerEnv,

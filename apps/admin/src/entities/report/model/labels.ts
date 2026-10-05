@@ -4,6 +4,7 @@ export type ReportReasonCategory = components["schemas"]["ReportReasonCategory"]
 
 export const REPORT_REASON_LABELS: Record<ReportReasonCategory, string> = {
   adult: "성인물",
+  minor_safety: "아동·청소년 관련",
   copyright: "저작권 침해",
   hate: "혐오/차별",
   spam: "스팸",
@@ -36,6 +37,7 @@ export type ChatMessageReportReason = components["schemas"]["AdminChatMessageRep
 
 export const CHAT_MESSAGE_REPORT_REASON_LABELS: Record<ChatMessageReportReason, string> = {
   inappropriate: "부적절·선정적",
+  minor_safety: "아동·청소년 관련",
   hateful: "혐오·공격적",
   out_of_character: "캐릭터·설정 붕괴",
   repetitive: "반복·어색한 문장",

@@ -9,8 +9,10 @@ import {
   Megaphone,
   MessagesSquare,
   Plus,
+  ScrollText,
   Settings2,
   Shield,
+  Sprout,
   Star,
   User,
   type LucideIcon,
@@ -32,7 +34,7 @@ export const PROFILE_DESTINATION_GROUPS = [
   { label: "창작", keys: ["builder", "my-works", "studio-images"] },
   { label: "활동", keys: ["chats", "favorites"] },
   { label: "계정", keys: ["profile", "personas", "clover", "mypage"] },
-  { label: "고객센터", keys: ["about", "notices", "inquiry-new", "terms", "privacy"] },
+  { label: "고객센터", keys: ["about", "notices", "inquiry-new", "terms", "privacy", "operation-policy", "youth-policy"] },
 ] as const satisfies readonly { label: string; keys: readonly string[] }[];
 
 export type ProfileDestinationKey = (typeof PROFILE_DESTINATION_GROUPS)[number]["keys"][number];
@@ -44,6 +46,8 @@ const SUPPORT_DESTINATION_ICON: Record<SupportDestinationKey, LucideIcon> = {
   "inquiry-new": LifeBuoy,
   terms: FileText,
   privacy: Shield,
+  "operation-policy": ScrollText,
+  "youth-policy": Sprout,
 };
 
 /** `me`는 `내 프로필`만 쓴다. 그 키에서만 필수로 두어, 비로그인 드로어가 공개 목적지를 `me` 없이 그릴 수 있게 한다. */
@@ -138,7 +142,9 @@ export const ProfileDestinationLink = forwardRef<HTMLAnchorElement, ProfileDesti
     case "notices":
     case "inquiry-new":
     case "terms":
-    case "privacy": {
+    case "privacy":
+    case "operation-policy":
+    case "youth-policy": {
       const { label, to } = SUPPORT_DESTINATIONS[destinationKey];
       const Icon = SUPPORT_DESTINATION_ICON[destinationKey];
       return (

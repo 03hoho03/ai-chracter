@@ -102,12 +102,14 @@ async function collectLocations(
   apiBaseUrl: string,
   origin: string,
 ): Promise<string[]> {
-  // 서비스 소개·약관·개인정보처리방침은 조회 없이 정해지는 정적 경로다.
+  // 서비스 소개·법적 문서 네 종류는 조회 없이 정해지는 정적 경로다.
   const locations = [
     `${origin}/`,
     `${origin}/about`,
     `${origin}/terms`,
     `${origin}/privacy`,
+    `${origin}/operation-policy`,
+    `${origin}/youth-policy`,
   ];
 
   for (const type of CONTENT_TYPES) {

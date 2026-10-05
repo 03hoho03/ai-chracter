@@ -393,6 +393,68 @@ async def test_publish_after_duplicate_conflict_can_retry_with_new_version(
     assert retry_resp.json()["published"]["version"] == "2024-02-01"
 
 
+@pytest.mark.parametrize("kind", ["operation-policy", "youth-policy"])
+async def test_policy_kind_draft_publish_and_versions_round_trip(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, kind: str
+) -> None:
+    """정책 문서도 초안 저장 → 게시 → 이력이 약관과 같은 경로로 돈다. 같은 날짜 버전을
+    약관과 각각 게시해도 버전 유일성이 문서 종류별이라 충돌하지 않는다."""
+    await _make_published(db_session, kind="terms", version="2026-10-06")
+    await db_session.commit()
+    await _login_new_admin(db_client, db_session)
+
+    draft_resp = await db_client.put(f"/admin/legal/{kind}/draft", json={"bodyMarkdown": "정책 초안"})
+    assert draft_resp.status_code == 200
+    assert draft_resp.json()["kind"] == kind
+    assert draft_resp.json()["draft"]["bodyMarkdown"] == "정책 초안"
+    assert draft_resp.json()["published"] is None
+
+    publish_resp = await db_client.post(
+        f"/admin/legal/{kind}/publish",
+        json={"version": "2026-10-06", "requiresReconsent": False},
+    )
+    assert publish_resp.status_code == 200
+    assert publish_resp.json()["published"]["version"] == "2026-10-06"
+    assert publish_resp.json()["published"]["requiresReconsent"] is False
+
+    versions_resp = await db_client.get(f"/admin/legal/{kind}/versions")
+    assert [item["version"] for item in versions_resp.json()["items"]] == ["2026-10-06"]
+
+    public_resp = await db_client.get(f"/legal/{kind}")
+    assert public_resp.status_code == 200
+    assert public_resp.json()["bodyMarkdown"] == "정책 초안"
+
+
+@pytest.mark.parametrize("kind", ["operation-policy", "youth-policy"])
+async def test_publish_policy_kind_with_reconsent_returns_422_and_writes_nothing(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, kind: str
+) -> None:
+    """동의를 기록하지 않는 문서에 재동의를 걸면 게이트는 무시하지만 게시 이력·감사 로그엔
+    "재동의 필요"로 남아 운영자를 오도한다 — 서버가 게시 자체를 거부한다."""
+    await _make_draft(db_session, kind=kind)
+    await db_session.commit()
+    await _login_new_admin(db_client, db_session)
+
+    resp = await db_client.post(
+        f"/admin/legal/{kind}/publish",
+        json={"version": "2026-10-06", "requiresReconsent": True},
+    )
+    assert resp.status_code == 422
+
+    published_count = await db_session.scalar(
+        sa.select(sa.func.count())
+        .select_from(LegalDocument)
+        .where(LegalDocument.kind == kind, LegalDocument.status == "published")
+    )
+    assert published_count == 0
+    log_count = await db_session.scalar(
+        sa.select(sa.func.count())
+        .select_from(AdminActionLog)
+        .where(AdminActionLog.action_type == "legal-publish")
+    )
+    assert log_count == 0
+
+
 # ---- 이력 --------------------------------------------------------------------
 
 

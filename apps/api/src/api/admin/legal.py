@@ -1,5 +1,6 @@
 import uuid
 from datetime import UTC, datetime
+from typing import get_args
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -19,9 +20,11 @@ from api.admin.schemas import (
 )
 from api.db.models.legal import LegalDocument
 from api.db.session import get_db_session
-from api.legal.schemas import LegalDocumentKind
+from api.legal.schemas import LegalConsentKind, LegalDocumentKind
 
 router = APIRouter(tags=["admin"])
+
+_CONSENT_KINDS: frozenset[str] = frozenset(get_args(LegalConsentKind))
 
 
 async def _get_draft(db: AsyncSession, kind: LegalDocumentKind) -> LegalDocument | None:
@@ -129,7 +132,18 @@ async def publish_legal_document(
     편집하던 내용이 초안 조회에 그대로 남아 관리자가 바로 이어서 다듬을 수 있다(예:
     오타 하나만 고쳐 재게시). 지우는 쪽을 골랐다면 매번 원고를 통째로 다시 붙여넣게
     되어 더 불편해질 뿐, 더 안전해지는 지점이 없다.
+
+    동의를 기록하지 않는 문서(운영정책·청소년 보호정책)는 `requires_reconsent=true` 로
+    게시할 수 없다. 재동의 게이트와 `GET /me` 는 약관·처리방침만 보므로 그 플래그는 아무
+    효과가 없는데, 게시 이력·감사 로그에는 "재동의 필요"로 남아 운영자가 회원 재동의를
+    받은 것으로 믿게 된다.
     """
+    if body.requires_reconsent and kind not in _CONSENT_KINDS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="이 문서는 회원 동의 대상이 아니라 재동의를 요구할 수 없습니다.",
+        )
+
     draft = await _get_draft(db, kind)
     if draft is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="발행할 초안이 없습니다.")

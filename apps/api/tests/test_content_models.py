@@ -140,3 +140,22 @@ async def test_like_rejects_duplicate_composite_pk(db_session: AsyncSession) -> 
     db_session.add(Like(user_id=user.id, content_id=content.id))
     with pytest.raises(IntegrityError):
         await db_session.flush()
+
+
+async def test_new_content_gets_the_all_ages_rating_without_naming_it(db_session: AsyncSession) -> None:
+    """작품을 만드는 코드는 등급을 넘기지 않는다 — DB 기본값이 채운다. 기본값이 빠지면 모든 작품 생성이 NOT NULL
+    위반으로 실패한다. `alembic check` 는 `server_default` 를 비교하지 않아 이 테스트가 유일한 신호다."""
+    _, content = await _make_user_and_content(db_session)
+
+    rating = await db_session.scalar(sa.select(Content.rating).where(Content.id == content.id))
+
+    assert rating == "all"
+
+
+async def test_adult_rating_is_rejected_by_the_database(db_session: AsyncSession) -> None:
+    """성인 등급은 어떤 경로로도 저장되면 안 된다(CHECK). 파이썬 타입은 코드의 대입만 막고 raw SQL·관리 스크립트는
+    DB 만 막는다. `alembic check` 가 CHECK 를 비교하지 않아 이 테스트가 유일한 검증이다."""
+    _, content = await _make_user_and_content(db_session)
+
+    with pytest.raises(IntegrityError):
+        await db_session.execute(sa.text("UPDATE contents SET rating = 'adult' WHERE id = :id"), {"id": content.id})

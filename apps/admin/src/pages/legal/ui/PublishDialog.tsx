@@ -18,7 +18,7 @@ import { z } from "zod";
 import { isApiError } from "@/shared/lib/api/client";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
-import { LEGAL_KIND_LABELS, type LegalKind } from "../model/legalKind";
+import { canRequireReconsent, LEGAL_KIND_LABELS, type LegalKind } from "../model/legalKind";
 import { usePublishMutation } from "../api/usePublishMutation";
 
 // 서버(`AdminLegalPublishRequest.version`)와 같은 포맷 제약 — zero-padded ISO 날짜가
@@ -102,22 +102,30 @@ export const PublishDialog = createCallable<PublishDialogProps, void>(({ call, k
             )}
           </div>
 
-          <Controller
-            name="requiresReconsent"
-            control={control}
-            render={({ field }) => (
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="legal-publish-reconsent"
-                  checked={field.value}
-                  onCheckedChange={(checked) => field.onChange(checked === true)}
-                />
-                <Label htmlFor="legal-publish-reconsent" className="font-normal">
-                  중요한 변경 — 전원 재동의 필요
-                </Label>
-              </div>
-            )}
-          />
+          {/* 회원 동의를 기록하지 않는 문서는 재동의를 요구할 수 없다(서버가 422로 거부) — 선택지를 아예 두지 않고
+              기본값 false 로 게시한다. */}
+          {canRequireReconsent(kind) ? (
+            <Controller
+              name="requiresReconsent"
+              control={control}
+              render={({ field }) => (
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="legal-publish-reconsent"
+                    checked={field.value}
+                    onCheckedChange={(checked) => field.onChange(checked === true)}
+                  />
+                  <Label htmlFor="legal-publish-reconsent" className="font-normal">
+                    중요한 변경 — 전원 재동의 필요
+                  </Label>
+                </div>
+              )}
+            />
+          ) : (
+            <p className="text-xs text-muted-foreground break-keep">
+              회원 동의를 받는 문서가 아니라 게시해도 재동의를 요청하지 않아요.
+            </p>
+          )}
 
           <DialogFooter>
             <Button type="button" variant="outline" autoFocus onClick={() => call.end()}>

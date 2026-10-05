@@ -9,12 +9,14 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as YouthPolicyRouteImport } from './routes/youth-policy'
 import { Route as UiDemoRouteImport } from './routes/ui-demo'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as PersonasRouteImport } from './routes/personas'
+import { Route as OperationPolicyRouteImport } from './routes/operation-policy'
 import { Route as MypageRouteImport } from './routes/mypage'
 import { Route as MyRouteImport } from './routes/my'
 import { Route as LoginRouteImport } from './routes/login'
@@ -43,6 +45,11 @@ import { Route as GuideCharacterStepRouteImport } from './routes/guide.character
 import { Route as ContentTypeIdRouteImport } from './routes/content.$type.$id'
 import { Route as BuilderTypeDraftIdRouteImport } from './routes/builder.$type.$draftId'
 
+const YouthPolicyRoute = YouthPolicyRouteImport.update({
+  id: '/youth-policy',
+  path: '/youth-policy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const UiDemoRoute = UiDemoRouteImport.update({
   id: '/ui-demo',
   path: '/ui-demo',
@@ -71,6 +78,11 @@ const PrivacyRoute = PrivacyRouteImport.update({
 const PersonasRoute = PersonasRouteImport.update({
   id: '/personas',
   path: '/personas',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OperationPolicyRoute = OperationPolicyRouteImport.update({
+  id: '/operation-policy',
+  path: '/operation-policy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MypageRoute = MypageRouteImport.update({
@@ -218,12 +230,14 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/my': typeof MyRoute
   '/mypage': typeof MypageRoute
+  '/operation-policy': typeof OperationPolicyRoute
   '/personas': typeof PersonasRoute
   '/privacy': typeof PrivacyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/terms': typeof TermsRoute
   '/ui-demo': typeof UiDemoRoute
+  '/youth-policy': typeof YouthPolicyRoute
   '/chat/$roomId': typeof ChatRoomIdRoute
   '/clover/history': typeof CloverHistoryRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
@@ -253,12 +267,14 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/my': typeof MyRoute
   '/mypage': typeof MypageRoute
+  '/operation-policy': typeof OperationPolicyRoute
   '/personas': typeof PersonasRoute
   '/privacy': typeof PrivacyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/terms': typeof TermsRoute
   '/ui-demo': typeof UiDemoRoute
+  '/youth-policy': typeof YouthPolicyRoute
   '/chat/$roomId': typeof ChatRoomIdRoute
   '/clover/history': typeof CloverHistoryRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
@@ -289,12 +305,14 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/my': typeof MyRoute
   '/mypage': typeof MypageRoute
+  '/operation-policy': typeof OperationPolicyRoute
   '/personas': typeof PersonasRoute
   '/privacy': typeof PrivacyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/terms': typeof TermsRoute
   '/ui-demo': typeof UiDemoRoute
+  '/youth-policy': typeof YouthPolicyRoute
   '/chat/$roomId': typeof ChatRoomIdRoute
   '/clover/history': typeof CloverHistoryRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
@@ -326,12 +344,14 @@ export interface FileRouteTypes {
     | '/login'
     | '/my'
     | '/mypage'
+    | '/operation-policy'
     | '/personas'
     | '/privacy'
     | '/reset-password'
     | '/signup'
     | '/terms'
     | '/ui-demo'
+    | '/youth-policy'
     | '/chat/$roomId'
     | '/clover/history'
     | '/inquiries/$inquiryId'
@@ -361,12 +381,14 @@ export interface FileRouteTypes {
     | '/login'
     | '/my'
     | '/mypage'
+    | '/operation-policy'
     | '/personas'
     | '/privacy'
     | '/reset-password'
     | '/signup'
     | '/terms'
     | '/ui-demo'
+    | '/youth-policy'
     | '/chat/$roomId'
     | '/clover/history'
     | '/inquiries/$inquiryId'
@@ -396,12 +418,14 @@ export interface FileRouteTypes {
     | '/login'
     | '/my'
     | '/mypage'
+    | '/operation-policy'
     | '/personas'
     | '/privacy'
     | '/reset-password'
     | '/signup'
     | '/terms'
     | '/ui-demo'
+    | '/youth-policy'
     | '/chat/$roomId'
     | '/clover/history'
     | '/inquiries/$inquiryId'
@@ -432,12 +456,14 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   MyRoute: typeof MyRoute
   MypageRoute: typeof MypageRoute
+  OperationPolicyRoute: typeof OperationPolicyRoute
   PersonasRoute: typeof PersonasRoute
   PrivacyRoute: typeof PrivacyRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignupRoute: typeof SignupRoute
   TermsRoute: typeof TermsRoute
   UiDemoRoute: typeof UiDemoRoute
+  YouthPolicyRoute: typeof YouthPolicyRoute
   ChatRoomIdRoute: typeof ChatRoomIdRoute
   CloverHistoryRoute: typeof CloverHistoryRoute
   InquiriesInquiryIdRoute: typeof InquiriesInquiryIdRoute
@@ -461,6 +487,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/youth-policy': {
+      id: '/youth-policy'
+      path: '/youth-policy'
+      fullPath: '/youth-policy'
+      preLoaderRoute: typeof YouthPolicyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/ui-demo': {
       id: '/ui-demo'
       path: '/ui-demo'
@@ -501,6 +534,13 @@ declare module '@tanstack/react-router' {
       path: '/personas'
       fullPath: '/personas'
       preLoaderRoute: typeof PersonasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/operation-policy': {
+      id: '/operation-policy'
+      path: '/operation-policy'
+      fullPath: '/operation-policy'
+      preLoaderRoute: typeof OperationPolicyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/mypage': {
@@ -704,12 +744,14 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   MyRoute: MyRoute,
   MypageRoute: MypageRoute,
+  OperationPolicyRoute: OperationPolicyRoute,
   PersonasRoute: PersonasRoute,
   PrivacyRoute: PrivacyRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SignupRoute: SignupRoute,
   TermsRoute: TermsRoute,
   UiDemoRoute: UiDemoRoute,
+  YouthPolicyRoute: YouthPolicyRoute,
   ChatRoomIdRoute: ChatRoomIdRoute,
   CloverHistoryRoute: CloverHistoryRoute,
   InquiriesInquiryIdRoute: InquiriesInquiryIdRoute,

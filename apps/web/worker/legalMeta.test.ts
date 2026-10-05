@@ -37,15 +37,20 @@ function botRequest(path: string): Request {
 }
 
 describe("parseLegalPath", () => {
-  it("/terms·/privacy만 알아본다", () => {
+  it("법적 문서 네 경로를 알아본다", () => {
     expect(parseLegalPath("/terms")).toBe("terms");
     expect(parseLegalPath("/privacy")).toBe("privacy");
+    expect(parseLegalPath("/operation-policy")).toBe("operation-policy");
+    expect(parseLegalPath("/youth-policy")).toBe("youth-policy");
   });
 
   it("그 밖의 경로는 undefined", () => {
     expect(parseLegalPath("/")).toBeUndefined();
     expect(parseLegalPath("/terms/")).toBeUndefined();
     expect(parseLegalPath("/legal/terms")).toBeUndefined();
+    expect(parseLegalPath("/operation")).toBeUndefined();
+    expect(parseLegalPath("terms")).toBeUndefined();
+    expect(parseLegalPath("/toString")).toBeUndefined();
   });
 });
 
@@ -56,6 +61,20 @@ describe("buildLegalHead", () => {
     expect(head).toContain("<title>이용약관 — 또나</title>");
     expect(head).toContain(
       '<link rel="canonical" href="https://ddona.example/terms" />',
+    );
+  });
+
+  it("canonical 은 그 문서의 실제 웹 경로를 가리킨다", () => {
+    const operation = buildLegalHead("operation-policy", "https://ddona.example");
+    const youth = buildLegalHead("youth-policy", "https://ddona.example");
+
+    expect(operation).toContain("<title>운영정책 — 또나</title>");
+    expect(operation).toContain(
+      '<link rel="canonical" href="https://ddona.example/operation-policy" />',
+    );
+    expect(youth).toContain("<title>청소년 보호정책 — 또나</title>");
+    expect(youth).toContain(
+      '<link rel="canonical" href="https://ddona.example/youth-policy" />',
     );
   });
 });

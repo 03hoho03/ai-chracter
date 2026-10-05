@@ -254,6 +254,7 @@ class DiscardedResponse(Base):
 
 ChatMessageReportReason = Literal[
     "inappropriate",
+    "minor_safety",
     "hateful",
     "out_of_character",
     "repetitive",

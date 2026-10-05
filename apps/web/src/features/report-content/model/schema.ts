@@ -4,6 +4,7 @@ import type { ReportReasonCategory } from "@/entities/content";
 
 export const REPORT_REASON_LABELS: Record<ReportReasonCategory, string> = {
   adult: "성인/선정적 콘텐츠",
+  minor_safety: "아동·청소년 관련",
   copyright: "저작권 침해",
   hate: "혐오·범죄 조장",
   spam: "스팸",
