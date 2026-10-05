@@ -1,8 +1,8 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { BookX, CloudOff } from "lucide-react";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { BookX, CloudOff, Trash2 } from "lucide-react";
+import { useId, useState, type ReactNode } from "react";
 
 import { CONTENT_TYPE_LABEL, ContentListEmptyState } from "@/entities/content";
 import {
@@ -13,12 +13,11 @@ import {
   type NovelDetailResponse,
 } from "@/entities/novel";
 import { ConfirmNovelSpendModal } from "@/features/confirm-novel-spend";
-import {
-  NovelChapterMaker,
-  RegenerateChapterButton,
-  useNovelChapterJob,
-  type NovelChapterJobFlow,
-} from "@/features/create-novel-chapter";
+import { NovelChapterMaker, useNovelChapterJob } from "@/features/create-novel-chapter";
+import { DeleteNovelModal } from "@/features/delete-novel";
+import { useNovelAiEdit } from "@/features/edit-novel-chapter";
+import { NovelNotesEditor } from "@/features/edit-novel-notes";
+import { NovelReader } from "@/widgets/novel-reader";
 
 import { resolveSelectedChapter, toChapterSearchValue } from "../model/novelChapterSearch";
 
@@ -100,12 +99,14 @@ export function NovelPage({ novelId, chapter }: NovelPageProps) {
 
 function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter: number | undefined }) {
   const navigate = useNavigate();
-  // 작업이 끝나 새로 만든(다시 만든) 장. 그 장의 제목이 그려지면 포커스를 받고 비운다.
+  // 작업이 끝나 새로 만든(다시 만든) 장, 또는 마지막 장을 지운 뒤의 새 마지막 장. 그 장의 제목이 그려지면 포커스를
+  // 받고 비운다.
   const [focusChapterId, setFocusChapterId] = useState<string | undefined>(undefined);
+  // 금액 확인은 다른 기능의 모달이라 이 화면이 넣어 준다(기능끼리 서로 가져다 쓰지 않는다).
+  const confirmSpend = (props: Parameters<typeof ConfirmNovelSpendModal.call>[0]) => ConfirmNovelSpendModal.call(props);
   const flow = useNovelChapterJob({
     novel,
-    // 금액 확인은 다른 기능의 모달이라 이 화면이 넣어 준다(기능끼리 서로 가져다 쓰지 않는다).
-    confirmSpend: (props) => ConfirmNovelSpendModal.call(props),
+    confirmSpend,
     onChapterReady: (readyChapter, chapters) => {
       setFocusChapterId(readyChapter.id);
       void navigate({
@@ -115,11 +116,27 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
       });
     },
   });
+  const aiEdit = useNovelAiEdit({
+    novel,
+    confirmSpend,
+    isChapterJobBusy: flow.isJobRunning || flow.preparing !== undefined,
+  });
   const selectedChapter = resolveSelectedChapter(novel.chapters, chapter);
   const meta = [CONTENT_TYPE_LABEL[novel.contentType], novel.chapters.length > 0 ? `${novel.chapters.length}장` : undefined]
     .filter((part) => part !== undefined)
     .join(" · ");
   const isRoomGone = novel.chatRoomId === null;
+
+  function handleChapterDeleted(deletedOrdinal: number) {
+    // 지운 장 바로 앞 장이 새 마지막 장이다. 주소의 장 번호를 걷어 기본값(마지막 장)으로 돌린다.
+    const previous = novel.chapters.find((item) => item.ordinal === deletedOrdinal - 1);
+    setFocusChapterId(previous?.id);
+    void navigate({
+      to: "/novels/$novelId",
+      params: { novelId: novel.id },
+      search: (prev) => ({ ...prev, chapter: undefined }),
+    });
+  }
 
   return (
     <>
@@ -137,50 +154,58 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
       ) : (
         <>
           <NovelChapterToc novelId={novel.id} chapters={novel.chapters} selectedOrdinal={selectedChapter.ordinal} />
-          <NovelChapterHeading
+          {/* 고치기 모드·고른 문단은 그 장에만 속한다 — 장을 옮기면 새로 마운트한다. */}
+          <NovelReader
+            key={selectedChapter.id}
+            novel={novel}
             chapter={selectedChapter}
-            flow={flow}
-            shouldFocus={focusChapterId === selectedChapter.id}
-            onFocused={() => setFocusChapterId(undefined)}
+            chapterFlow={flow}
+            aiEdit={aiEdit}
+            shouldFocusHeading={focusChapterId === selectedChapter.id}
+            onHeadingFocused={() => setFocusChapterId(undefined)}
+            onChapterDeleted={() => handleChapterDeleted(selectedChapter.ordinal)}
           />
         </>
       )}
 
       <NovelChapterMaker flow={flow} hasChapters={novel.chapters.length > 0} />
+
+      <NovelNotesEditor novel={novel} />
+
+      <NovelDeleteSection novel={novel} />
     </>
   );
 }
 
-/** 보고 있는 장의 머리. 작업이 끝나 새 장(다시 만든 장)으로 옮겨 오면 이 제목이 포커스를 받는다 — 무엇이 생겼는지를
- * 화면 낭독기에도 알리고, 다음 Tab 이 그 장에서 이어진다. 제목은 조작 대상이 아니라 `tabIndex=-1` 이고 포커스
- * 테두리를 그리지 않는다. */
-function NovelChapterHeading({
-  chapter,
-  flow,
-  shouldFocus,
-  onFocused,
-}: {
-  chapter: NovelChapterSummary;
-  flow: NovelChapterJobFlow;
-  shouldFocus: boolean;
-  onFocused: () => void;
-}) {
-  const headingRef = useRef<HTMLHeadingElement>(null);
-
-  useEffect(() => {
-    if (!shouldFocus) return;
-    headingRef.current?.focus();
-    onFocused();
-    // `onFocused` 는 렌더마다 새로 만들어지는 화살표라 넣지 않는다 — 포커스 시점은 `shouldFocus` 가 정한다.
-  }, [shouldFocus]);
+/** 소설 지우기. 문서 끝, 다른 모든 것 아래에 둔다 — 되돌릴 수 없는 일이라 지나다 누를 자리에 두지 않는다. 실행
+ * 버튼은 빨강 틴트다(솔리드 빨강은 이 시스템에 없다). */
+function NovelDeleteSection({ novel }: { novel: NovelDetailResponse }) {
+  const headingId = useId();
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <h2 ref={headingRef} tabIndex={-1} className="text-lg font-semibold text-foreground outline-none">
-        {chapter.ordinal}장
+    <section aria-labelledby={headingId} className="flex flex-col items-start gap-2 border-t border-border pt-6">
+      <h2 id={headingId} className="text-sm font-medium text-muted-foreground">
+        소설 관리
       </h2>
-      <RegenerateChapterButton flow={flow} chapter={chapter} />
-    </div>
+      <p className="text-sm break-keep text-muted-foreground">
+        지우면 모든 장과 판 이력, 설정 노트가 함께 사라져요. 원래 대화방은 그대로예요.
+      </p>
+      <Button
+        type="button"
+        variant="destructive"
+        size="sm"
+        onClick={() =>
+          void DeleteNovelModal.call({
+            novelId: novel.id,
+            title: novel.contentTitle,
+            hasActiveJob: novel.activeJob !== null,
+          })
+        }
+      >
+        <Trash2 aria-hidden />
+        소설 지우기
+      </Button>
+    </section>
   );
 }
 

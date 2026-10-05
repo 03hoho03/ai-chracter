@@ -1,9 +1,17 @@
 import { Button } from "@ai-character-chat/ui/components/button";
+import { DropdownMenuItem } from "@ai-character-chat/ui/components/dropdown-menu";
 import { Link } from "@tanstack/react-router";
+import { Trash2 } from "lucide-react";
 import { useRef } from "react";
 
-import { CONTENT_TYPE_LABEL, ContentListEmptyState, ContentListLoadMore } from "@/entities/content";
+import {
+  CONTENT_TYPE_LABEL,
+  ContentCardActionMenu,
+  ContentListEmptyState,
+  ContentListLoadMore,
+} from "@/entities/content";
 import { isNovelizeNotAllowedError, NovelizeLockedState, useNovelListQuery, type NovelListItem } from "@/entities/novel";
+import { DeleteNovelModal } from "@/features/delete-novel";
 import { formatDate } from "@/shared/lib/time/formatDate";
 
 const PAGE_CLASS = "mx-auto flex max-w-2xl flex-col gap-6 px-4 sm:px-6 py-10";
@@ -72,7 +80,7 @@ function NovelListBody({ query }: { query: ReturnType<typeof useNovelListQuery> 
       <ul ref={listRef} tabIndex={-1} className="flex flex-col gap-3 outline-none">
         {items.map((novel) => (
           <li key={novel.id}>
-            <NovelListRow novel={novel} />
+            <NovelListRow novel={novel} onDeleted={() => listRef.current?.focus()} />
           </li>
         ))}
       </ul>
@@ -92,8 +100,12 @@ function NovelListBody({ query }: { query: ReturnType<typeof useNovelListQuery> 
 }
 
 /** 행은 문의 내역과 같은 클릭 카드 레시피(배경과 같은 면 + hover 에서 한 칸 밝게)다. 같은 작품의 방이 둘이면
- * 제목이 같은 소설이 둘 생기므로, 마지막으로 바뀐 날짜를 함께 보여 가른다. */
-function NovelListRow({ novel }: { novel: NovelListItem }) {
+ * 제목이 같은 소설이 둘 생기므로, 마지막으로 바뀐 날짜를 함께 보여 가른다.
+ *
+ * 링크 안에 메뉴 버튼을 넣을 수 없어(대화형 요소 중첩) 상자는 바깥 `div` 가 그리고, 링크는 `after:` 로 상자 전체를
+ * 덮어 어디를 눌러도 열린다. "⋯" 메뉴는 그 위 층에 형제로 놓인다. hover·포커스·눌림 표시는 상자가 링크의 상태를
+ * 보고(`has-`) 그린다 — 메뉴 버튼 hover 는 카드 hover 와 겹치지 않는다(메뉴 셸이 한 칸 밝은 면을 쓴다). */
+function NovelListRow({ novel, onDeleted }: { novel: NovelListItem; onDeleted: () => void }) {
   const meta = [
     CONTENT_TYPE_LABEL[novel.contentType],
     novel.chapterCount > 0 ? `${novel.chapterCount}장` : "아직 장이 없어요",
@@ -101,17 +113,37 @@ function NovelListRow({ novel }: { novel: NovelListItem }) {
   ];
 
   return (
-    <Link
-      to="/novels/$novelId"
-      params={{ novelId: novel.id }}
-      className="flex flex-col gap-1 rounded-xl border border-border bg-background p-4 outline-none motion-safe:transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-px"
-    >
-      <span className="break-keep text-lg font-semibold text-foreground">{novel.contentTitle}</span>
-      <span className="text-sm break-keep text-muted-foreground">{meta.join(" · ")}</span>
-      {novel.chatRoomId === null && (
-        <span className="text-sm break-keep text-muted-foreground">원래 대화방은 지워졌어요</span>
-      )}
-    </Link>
+    <div className="relative flex items-start gap-2 rounded-xl border border-border bg-background p-4 motion-safe:transition-colors has-[a:hover]:bg-muted has-[a:focus-visible]:border-ring has-[a:focus-visible]:ring-3 has-[a:focus-visible]:ring-ring/50 has-[a:active]:translate-y-px">
+      <Link
+        to="/novels/$novelId"
+        params={{ novelId: novel.id }}
+        className="flex min-w-0 flex-1 flex-col gap-1 outline-none after:absolute after:inset-0 after:rounded-xl"
+      >
+        <span className="break-keep text-lg font-semibold text-foreground">{novel.contentTitle}</span>
+        <span className="text-sm break-keep text-muted-foreground">{meta.join(" · ")}</span>
+        {novel.chatRoomId === null && (
+          <span className="text-sm break-keep text-muted-foreground">원래 대화방은 지워졌어요</span>
+        )}
+      </Link>
+      <div className="relative">
+        <ContentCardActionMenu title={novel.contentTitle}>
+          <DropdownMenuItem
+            variant="destructive"
+            onSelect={() =>
+              void DeleteNovelModal.call({ novelId: novel.id, title: novel.contentTitle, hasActiveJob: undefined }).then(
+                (isDeleted) => {
+                  // 지운 소설의 메뉴 버튼은 행과 함께 사라진다 — 목록으로 포커스를 받아 둔다.
+                  if (isDeleted) onDeleted();
+                },
+              )
+            }
+          >
+            <Trash2 aria-hidden />
+            소설 지우기
+          </DropdownMenuItem>
+        </ContentCardActionMenu>
+      </div>
+    </div>
   );
 }
 

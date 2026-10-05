@@ -23,6 +23,9 @@ import { isSiteFooterHidden, SiteFooter } from "@/widgets/site-footer";
 import { ConfirmCloverSpendModal } from "@/features/confirm-clover-spend";
 import { ConfirmNovelSpendModal } from "@/features/confirm-novel-spend";
 import { ChapterBoundaryModal, ProtagonistNameModal } from "@/features/create-novel-chapter";
+import { DeleteLastChapterModal, DeleteNovelModal } from "@/features/delete-novel";
+import { AiEditInstructionModal } from "@/features/edit-novel-chapter";
+import { NovelRevisionHistoryModal } from "@/features/novel-revision-history";
 import { CommentActionModal, CommentLoginModal, CommentReportModal } from "@/features/work-comments";
 import { ContentComments } from "@/widgets/content-comments";
 
@@ -93,6 +96,10 @@ function RootComponent() {
       <ConfirmNovelSpendModal />
       <ProtagonistNameModal />
       <ChapterBoundaryModal />
+      <AiEditInstructionModal />
+      <NovelRevisionHistoryModal />
+      <DeleteLastChapterModal />
+      <DeleteNovelModal />
       <DeletePersonaModal />
     </>
   );
