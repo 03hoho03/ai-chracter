@@ -6,13 +6,14 @@
      센다 — 스모크 방·합성 방의 호출은 측정이 아니라서 빼야 하고, 서버 로그는 재기동에도 이어 쓰여 Redis 처럼
      재시작으로 사라지지 않는다. 리플레이 원가는 리플레이 도구가 따로 돌아 서버 로그에 없으므로 Redis 사용량 해시의
      리플레이 call_site 로 센다.
-  3. 깨짐 기계 항목(B1·B2·B3·B4·B6a·B6b·B6c·B8·B9·B11·B12), 조기 점검 E1·E5, 원가 정지를 판정해 `<run>/checks/tNNN.json` 을 쓰고,
+  3. 깨짐 기계 항목(B1·B2·B3·B4·B6a·B6b·B6c·B8·B9·B9.affinity·B11·B12), 조기 점검 E1·E5, 원가 정지를 판정해 `<run>/checks/tNNN.json` 을 쓰고,
      걸린 것은 `<run>/watch/alerts.jsonl` 에 남긴다. 멈춰야 하면 `<run>/STOP` 만 만든다 — 드라이버가 다음 턴을 보내기
      전에 그 파일을 보고 종료 코드 10 으로 선다. 감시기는 시뮬레이터를 직접 건드리지 않는다.
 
 임계값은 사전 등록 문서의 깨짐 기준 표와 원가 규칙을 그대로 옮겼다. 사람 턴·프로브 턴·유실 턴은 채점에서 빠지고(연속
 판정은 채점 턴 순서로), 직전 점검에서 이미 본 턴은 다시 걸지 않는다(`since`). 재개한 뒤 같은 항목을 보고만 하려면
-`--report-only B3` 처럼 준다. 스탯 비정상 이동(B9)은 재개 뒤에도 매번 멈춘다 — 보고만 목록에 넣어도 풀리지 않는다.
+`--report-only B3` 처럼 준다. 「상영회까지」 비정상 이동(B9)은 재개 뒤에도 매번 멈춘다 — 보고만 목록에 넣어도 풀리지
+않는다. 호감 급변(B9.affinity)은 언제나 보고만 하고, 방 전체의 건수·턴 목록을 상태 파일에 누적해 둔다.
 
     cd apps/api
     uv run --env-file .env python scripts/experiments/filmclub_longturn/turn_watch.py run \\
@@ -47,9 +48,11 @@ COUNTDOWN = "상영회까지"
 STOP_ITEMS = ("B1", "B2", "B3", "B4", "B6a", "B6c", "B8", "B9", "B11", "B12", "E1", "E5")
 # 장거리 n-gram 반복은 판별력이 확인되지 않은 지표라 정지 없이 보고만 한다. E1·E5 교차 확인은 정의상 본 판정을
 # 대신하지 않는 보조 신호라 어긋나도 보고만 한다.
-REPORT_ONLY_ALWAYS = ("B6b", "E1.crosscheck", "E5.crosscheck")
-# 재개 뒤에도 매번 멈추는 항목. 호감 급변은 판정 오독일 수 있어 볼 때마다 원 출력을 확인해야 해서, 사용자가 보고만으로
-# 내리지 않기로 정했다.
+# 호감 급변은 스탯 판정이 다른 인물의 현재값을 기준으로 잘못 읽는 같은 패턴으로 두 번 확인됐다. 원인이 판명된 결함이라
+# 매번 멈춰 원 출력을 볼 이유가 없어져, 방을 멈추지 않고 빈도·턴만 쌓아 중간 보고서에서 집계한다.
+REPORT_ONLY_ALWAYS = ("B6b", "B9.affinity", "E1.crosscheck", "E5.crosscheck")
+# 재개 뒤에도 매번 멈추는 항목. 「상영회까지」는 엔딩 시점을 정하는 값이라 비정상 이동이 그대로 방 결말을 바꾼다 —
+# 보고만으로 내리지 않는다.
 STOP_ALWAYS = ("B9",)
 # 단계 노트 = 「상영회까지」 하나만 조건으로 가리키는 상황 노트 넷. 생성 프롬프트에는 언제나 이 중 정확히 하나가 실린다.
 STAGE_NOTES = ("준비 초반", "촬영 기간", "상영회 직전", "상영회 당일")
@@ -255,7 +258,7 @@ def _over_seven(t: Turn, trace_stats: dict[int, list[dict[str, Any]]]) -> bool:
 
 
 def b9_stats(turns: list[Turn], trace_stats: dict[int, list[dict[str, Any]]], since: int) -> list[str]:
-    """「상영회까지」 증가 1회 · 감소 > 7 요청 2턴 연속 · 호감 |Δ| > 8 1회 · 「상영회까지」 정수 아닌 값 1회."""
+    """「상영회까지」 증가 1회 · 감소 > 7 요청 2턴 연속 · 「상영회까지」 정수 아닌 값 1회."""
     scored = _scored(turns)
     out: list[str] = []
     for t in scored:
@@ -263,9 +266,6 @@ def b9_stats(turns: list[Turn], trace_stats: dict[int, list[dict[str, Any]]], si
             continue
         if (t.get("countdownDelta") or 0) > 0:
             out.append(f"턴 {t['turn']} 「상영회까지」 증가 {t['countdownDelta']}")
-        for name, delta in (t.get("affectionDelta") or {}).items():
-            if delta is not None and abs(delta) > 8:
-                out.append(f"턴 {t['turn']} {name} Δ {delta}")
         after = t.get("countdownAfter")
         if after is not None and float(after) % 1:
             out.append(f"턴 {t['turn']} 「상영회까지」 정수 아님 {after}")
@@ -275,6 +275,25 @@ def b9_stats(turns: list[Turn], trace_stats: dict[int, list[dict[str, Any]]], si
         if b["turn"] > since and _over_seven(a, trace_stats) and _over_seven(b, trace_stats)
     ]
     return out
+
+
+def _affinity_jumps(t: Turn) -> list[str]:
+    return [
+        f"턴 {t['turn']} {name} Δ {delta}"
+        for name, delta in (t.get("affectionDelta") or {}).items()
+        if delta is not None and abs(delta) > 8
+    ]
+
+
+def b9_affinity(turns: list[Turn], since: int) -> list[str]:
+    """보고만: 호감 |Δ| > 8 1회."""
+    return [line for t in _scored(turns) if t["turn"] > since for line in _affinity_jumps(t)]
+
+
+def affinity_misread_tally(turns: list[Turn]) -> dict[str, Any]:
+    """방 전체(직전 점검과 무관)의 호감 |Δ| > 8 채점 턴 수와 턴 목록. 정지 없이 집계만 이어 가기 위한 상태 값."""
+    hit = [t["turn"] for t in _scored(turns) if _affinity_jumps(t)]
+    return {"b9AffinityMisreads": len(hit), "b9AffinityMisreadTurns": hit}
 
 
 def b11_memory(turns: list[Turn], raw_turns: int | None, backoff_failures: int, state: dict[str, Any]) -> list[str]:
@@ -663,6 +682,7 @@ def check(run: Path, room: str, turn: int, observed: int, state: dict[str, Any],
         "B6c": b6c_time_stuck(turns, since),
         "B8": b8_cost(turns, cost_lines, since),
         "B9": b9_stats(turns, trace, since),
+        "B9.affinity": b9_affinity(turns, since),
         "B11": b11_memory(turns, raw_turn_count(room), backoff_failures(room), state),
         "B12": b12_size_latency(turns, since),
         "E1": e1_ending_judgment(turns, since),
@@ -677,6 +697,7 @@ def check(run: Path, room: str, turn: int, observed: int, state: dict[str, Any],
         items[name]["reportOnly"] = True
     alerts = item_alerts(items, report_only | set(REPORT_ONLY_ALWAYS)) + judge_cost(line, previous, state)
     stop = write_outcome(run, turn, items, alerts)
+    state.update(affinity_misread_tally(turns))
     state["lastTurnSeen"] = max((t["turn"] for t in turns), default=since)
     state["lastBucket"] = turn
     return stop

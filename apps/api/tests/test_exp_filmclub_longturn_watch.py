@@ -245,11 +245,32 @@ def test_b9_quiet_on_normal_moves() -> None:
     assert w.b9_stats(turns, {}, since=10) == []
 
 
-def test_b9_countdown_increase_affection_jump_and_fraction() -> None:
+def test_b9_countdown_increase_and_fraction() -> None:
     assert w.b9_stats(_turns(20, t12={"countdownDelta": 1.0}), {}, since=10)
-    jump = {name: 0.0 for name in AFF} | {"유나 호감도": 9.0}
-    assert w.b9_stats(_turns(20, t12={"affectionDelta": jump}), {}, since=10)
     assert w.b9_stats(_turns(20, t12={"countdownAfter": 38.5}), {}, since=10)
+
+
+def test_b9_no_longer_carries_affection_jumps() -> None:
+    # 호감 급변은 정지 항목 B9 에서 빠져 보고만 항목 B9.affinity 로 옮겼다.
+    jump = {name: 0.0 for name in AFF} | {"유나 호감도": 9.0}
+    assert w.b9_stats(_turns(20, t12={"affectionDelta": jump}), {}, since=10) == []
+
+
+def test_b9_affinity_catches_a_jump_over_eight_after_the_previous_check() -> None:
+    jump = {name: 0.0 for name in AFF} | {"세빈 호감도": -35.0}
+    assert w.b9_affinity(_turns(30, t25={"affectionDelta": jump}), since=20) == ["턴 25 세빈 호감도 Δ -35.0"]
+    assert w.b9_affinity(_turns(30, t25={"affectionDelta": jump}), since=30) == []
+    edge = {name: 0.0 for name in AFF} | {"세빈 호감도": 8.0}
+    assert w.b9_affinity(_turns(30, t25={"affectionDelta": edge}), since=20) == []
+
+
+def test_affinity_misread_tally_counts_every_turn_regardless_of_previous_checks() -> None:
+    def jump(value: float) -> dict[str, Any]:
+        return {"affectionDelta": {name: 0.0 for name in AFF} | {"세빈 호감도": value}}
+
+    turns = _turns(40, t13=jump(-25.0), t25=jump(-35.0), t33=jump(9.5))
+    assert w.affinity_misread_tally(turns) == {"b9AffinityMisreads": 3, "b9AffinityMisreadTurns": [13, 25, 33]}
+    assert w.affinity_misread_tally(_turns(10)) == {"b9AffinityMisreads": 0, "b9AffinityMisreadTurns": []}
 
 
 def test_b9_over_seven_request_twice_in_a_row_from_trace() -> None:
@@ -421,13 +442,25 @@ def test_report_only_items_and_long_repeat_never_touch_the_stop_file(tmp_path: P
     assert all(a["stop"] is False for a in alerts) and len(alerts) == 2
 
 
-def test_b9_stops_even_when_listed_as_report_only(tmp_path: Path) -> None:
-    # 호감 급변은 재개 뒤에도 매번 멈춘다 — 재기동 인자에 B9 를 보고만으로 넣어도 정지가 풀리지 않는다.
-    items = {"B9": {"hit": True, "evidence": ["턴 33 세빈 호감도 Δ -20.0"]}, "B3": {"hit": True, "evidence": ["x"]}}
+def test_b9_countdown_items_stop_even_when_listed_as_report_only(tmp_path: Path) -> None:
+    # 「상영회까지」 이상 이동은 재개 뒤에도 매번 멈춘다 — 재기동 인자에 B9 를 보고만으로 넣어도 정지가 풀리지 않는다.
+    items = {"B9": {"hit": True, "evidence": ["턴 33 「상영회까지」 증가 2.0"]}, "B3": {"hit": True, "evidence": ["x"]}}
     alerts = w.item_alerts(items, report_only={"B9", "B3"})
     assert {a["item"]: a["stop"] for a in alerts} == {"B9": True, "B3": False}
     w.write_outcome(tmp_path, 40, items, alerts)
     assert (tmp_path / "STOP").exists()
+
+
+def test_affection_jump_is_alerted_but_never_touches_the_stop_file(tmp_path: Path) -> None:
+    items = {
+        "B9": {"hit": False, "evidence": []},
+        "B9.affinity": {"hit": True, "evidence": ["턴 33 세빈 호감도 Δ -20.0"]},
+    }
+    alerts = w.item_alerts(items, report_only=set())
+    assert [(a["item"], a["stop"]) for a in alerts] == [("B9.affinity", False)]
+    w.write_outcome(tmp_path, 40, items, alerts)
+    assert not (tmp_path / "STOP").exists()
+    assert "B9.affinity" in w.REPORT_ONLY_ALWAYS
 
 
 def test_trace_reader_keeps_stats_when_the_record_also_carries_the_raw_judgment(tmp_path: Path) -> None:
