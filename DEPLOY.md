@@ -200,7 +200,7 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
 **50개 키다**(2026-10-04 VM 실측, 키 이름만 셈): 아래 표 68개 중 36개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
-`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 7개·소설화 조정용 `NOVELIZE_*` 8개 30개와,
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 7개·소설화 조정용 `NOVELIZE_*` 8개, 모두 30개와,
 소설화를 켤 때 넣는 `NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST` 2개 — 실측 때 VM 에 없던 키 — 모두 32개 제외) + compose용
 5개(`API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE`) + "Bugsink(에러 트래커)" 절의 6개
 (`BUGSINK_*` 3개·`INGEST_SHARED_SECRET`·`SENTRY_DSN`·`SENTRY_ENVIRONMENT`) + 크론 알림 3개
@@ -1128,8 +1128,11 @@ api` — 허용 행이 남아 있어도 명단 밖이면 접근 시점에 막힌
 - story·character 레인의 **어드민 프롬프트 게시가 막힌다.** 마이그레이션이 두 레인 초안에 소설화 행을 더했는데 옛 코드의
   게시 검증이 그 행을 "잉여"로 거부한다. 옛 코드에서 게시가 필요하면 마이그레이션 직전의 활성 버전을 복원해 게시한다(복원이
   초안을 그 버전 섹션으로 바꾼다). 채팅 렌더는 소설화 채널을 읽지 않아 무사하다.
+- 그동안 허용 계정이 **탈퇴하면 소설·장·개정·작업·허용 행이 지워지지 않고 남는다.** 옛 코드의 탈퇴 파기는 소설화 테이블을
+  모르고, 새 이미지를 다시 올려도 소급해 지우지 않는다 — 손으로 지운다.
 
-**롤백 뒤 새 이미지를 다시 올릴 때** — 마이그레이션은 이미 적용돼 다시 돌지 않는다. 옛 코드에서 복원·게시한 세트가
+**롤백 뒤 새 이미지를 다시 올릴 때** — 태그 롤백 중에는 무관한 PR 이라도 main 에 병합되면 자동 배포가 `API_IMAGE` 를 새
+코드로 되돌리므로, 그때도 이 절차가 필요하다. 마이그레이션은 이미 적용돼 다시 돌지 않는다. 옛 코드에서 복원·게시한 세트가
 활성이면 거기 소설화 행이 없어 소설화가 계속 렌더 실패로 거절되고, 새 코드의 게시 검증은 "누락"으로 막힌다(어드민에
 소설화 채널을 손으로 더할 길이 없다). 새 이미지가 뜬 직후 그 이미지로 프롬프트 시드만 다시 깐다 — downgrade 가 시드가
 만든 세트 둘과 초안의 소설화 행만 지우고, upgrade 가 그 시점 활성 세트를 다시 복사해 소설화 행을 더한 새 세트를 활성으로
@@ -1141,7 +1144,9 @@ sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:
 sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<새 코드 TAG> alembic upgrade head
 ```
 
-**스키마까지 되돌릴 때** — 순서는 "참조 이미지 켜기 · 끄기 · 롤백" 절과 같다: **태그 롤백으로 옛 코드부터 띄우고 →
+**스키마까지 되돌릴 때** — main 에 revert 커밋을 올려 옛 코드로 롤백을 굳힐 때는 그 병합 **전에** 이 downgrade 를 마친다.
+안 하면 그 배포의 `alembic upgrade head` 가 DB 의 모르는 리비전에서 `Can't locate revision` 으로 멈춘다("참조 이미지
+켜기 · 끄기 · 롤백" 절과 같은 경우다). 순서는 "참조 이미지 켜기 · 끄기 · 롤백" 절과 같다: **태그 롤백으로 옛 코드부터 띄우고 →
 새 이미지로 downgrade**(옛 이미지에는 이 리비전 파일이 없고, 먼저 내리면 떠 있는 새 코드가 없어진 테이블을 읽다 실패한다).
 **소설·장·개정·작업·계정별 허용 행이 전부 지워지고 되살릴 수 없으므로** 백업을 먼저 뜬다:
 
@@ -1155,7 +1160,8 @@ sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env \
   돌아간다(게시 시각 최신 규칙). 그 사이 운영자가 소설화 행이 든 새 버전을 게시했다면 그 버전은 남아 활성이고 옛 코드에서
   그 레인 게시가 계속 막힌다 — 마이그레이션 직전 활성 버전을 복원해 게시한다.
 - 거꾸로 **새 코드에서 마이그레이션 이전 버전(소설화 채널 없음)을 복원하면 게시가 "누락"으로 막힌다** — 받아들인 제약이다.
-- 원장 행은 downgrade 뒤에도 남는다 — 위 클로버 내역 500 은 옛 이미지가 떠 있는 한 계속된다.
+- 원장 행과 감사 로그 행은 downgrade 뒤에도 남는다 — 위 클로버 내역 500 과 어드민 유저 상세 500 은 옛 이미지가 떠 있는 한
+  계속된다.
 
 활성 세트 확인(시드 직후, 롤백 전후):
 
