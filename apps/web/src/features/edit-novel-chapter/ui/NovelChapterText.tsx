@@ -6,6 +6,8 @@ import { Pencil, Sparkles, X } from "lucide-react";
 import { Fragment, useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 
 import {
+  CHAPTER_REGENERATING_MESSAGE,
+  isChapterRegenerating,
   novelKeys,
   toNovelActionError,
   type NovelChapterResponse,
@@ -55,7 +57,10 @@ type ManualEdit = { base: ManualEditBase; draft: string };
  *   크롬 규칙(상시 크롬은 위쪽 머리 하나)에 어긋난다.
  * - **직접 고치기**: 고른 문단 자리에 입력칸이 들어선다(내용만큼 자란다). 시작한 순간의 판·문단을 잡아 두고 저장은
  *   그 문단으로 장 전체 본문을 조립해 그 판을 기준으로 보낸다 — 그사이 판이 바뀌었으면 서버가 409 로 막고, 입력한
- *   글은 그대로 둔다. */
+ *   글은 그대로 둔다.
+ * - **다시 만드는 중**: 이 장을 다시 만드는 작업이 도는 동안은 직접 고치기 시작과 저장을 `aria-disabled` 로 막고
+ *   사유를 단다. 다시 만든 글은 그때의 최신 판 위에 쌓여, 그사이 저장한 글을 판 이력으로 밀어낸다. 이미 열린
+ *   입력칸은 닫지 않는다(쓰던 글을 지우지 않는다) — 끝나면 판이 바뀌어 저장 대신 "최신 글에서 다시"를 안내한다. */
 export function NovelChapterText({
   novel,
   chapter,
@@ -67,7 +72,7 @@ export function NovelChapterText({
   const queryClient = useQueryClient();
   const groupLabelId = useId();
   const editorId = useId();
-  const aiBlockedReasonId = useId();
+  const actionBlockedReasonId = useId();
   const paragraphs = chapter.revision.paragraphs;
   const [range, setRange] = useState<ParagraphRange | null>(null);
   const [manualEdit, setManualEdit] = useState<ManualEdit | null>(null);
@@ -89,6 +94,7 @@ export function NovelChapterText({
     manualEdit !== null && manualEdit.draft !== joinParagraphRange(manualEdit.base.paragraphs, manualEdit.base.range);
   const pendingEdits = novel.pendingAiEdits.filter((edit) => edit.chapterId === chapter.id);
   const isSaving = saveMutation.isPending;
+  const isRegenerating = isChapterRegenerating(novel.activeJob, chapter.id);
 
   useEffect(() => {
     onDraftDirtyChange(isDraftDirty);
@@ -149,7 +155,7 @@ export function NovelChapterText({
   }
 
   async function saveManualEdit() {
-    if (isSaving || manualEdit === null || editRange === null) return;
+    if (isSaving || isRegenerating || manualEdit === null || editRange === null) return;
     setEditError(undefined);
     const { baseRevisionId, body, isUnchanged } = toManualEditSave(manualEdit.base, manualEdit.draft);
     const length = countChapterChars(body);
@@ -221,6 +227,7 @@ export function NovelChapterText({
           draft={manualEdit.draft}
           error={editError}
           isStale={isEditStale}
+          isRegenerating={isRegenerating}
           hasPendingAiEdits={pendingEdits.length > 0}
           isSaving={isSaving}
           onDraftChange={(draft) => setManualEdit((current) => (current ? { ...current, draft } : current))}
@@ -246,7 +253,8 @@ export function NovelChapterText({
   }
 
   const isAiBlocked = aiEdit.isBlocked;
-  const aiBlockedReason = toAiBlockedReason(aiEdit);
+  // 이 장을 다시 만드는 중이면 AI 수정도 막혀 있다(진행 중 작업은 하나) — 두 버튼의 사유를 한 문장으로 말한다.
+  const actionBlockedReason = isRegenerating ? CHAPTER_REGENERATING_MESSAGE : toAiBlockedReason(aiEdit);
 
   return (
     <div className="flex flex-col gap-3">
@@ -284,7 +292,7 @@ export function NovelChapterText({
                         variant="outline"
                         size="sm"
                         aria-disabled={isAiBlocked}
-                        aria-describedby={aiBlockedReason !== undefined ? aiBlockedReasonId : undefined}
+                        aria-describedby={isAiBlocked && actionBlockedReason !== undefined ? actionBlockedReasonId : undefined}
                         className="aria-disabled:opacity-65"
                         onClick={() => {
                           if (isAiBlocked) return;
@@ -294,7 +302,18 @@ export function NovelChapterText({
                         <Sparkles aria-hidden />
                         AI로 고치기
                       </Button>
-                      <Button type="button" variant="outline" size="sm" onClick={() => startManualEdit(activeRange)}>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        aria-disabled={isRegenerating}
+                        aria-describedby={isRegenerating ? actionBlockedReasonId : undefined}
+                        className="aria-disabled:opacity-65"
+                        onClick={() => {
+                          if (isRegenerating) return;
+                          startManualEdit(activeRange);
+                        }}
+                      >
                         <Pencil aria-hidden />
                         직접 고치기
                       </Button>
@@ -303,9 +322,9 @@ export function NovelChapterText({
                         선택 해제
                       </Button>
                     </div>
-                    {aiBlockedReason !== undefined && (
-                      <p id={aiBlockedReasonId} className="text-sm break-keep text-muted-foreground">
-                        {aiBlockedReason}
+                    {actionBlockedReason !== undefined && (
+                      <p id={actionBlockedReasonId} className="text-sm break-keep text-muted-foreground">
+                        {actionBlockedReason}
                       </p>
                     )}
                   </div>
@@ -377,6 +396,8 @@ type ManualEditorProps = {
   error: string | undefined;
   /** 시작한 뒤 이 장의 판이 바뀌었는가. */
   isStale: boolean;
+  /** 이 장을 다시 만드는 중인가. 그동안은 저장을 막는다. */
+  isRegenerating: boolean;
   /** 이 장에 적용하지 않은 AI 수정안이 있는가. 저장하면 서버가 그 수정안을 버린다. */
   hasPendingAiEdits: boolean;
   isSaving: boolean;
@@ -388,7 +409,7 @@ type ManualEditorProps = {
 /** 고른 문단 자리에 들어서는 입력칸. 문단 사이는 빈 줄 하나로 띄운다(저장할 때 빈 줄로 다시 나뉜다). 버튼은
  * `취소` 먼저이고, 저장 중에는 `aria-disabled` 로 막아 누른 버튼의 포커스를 지킨다.
  *
- * 판이 바뀐 뒤에는 저장해도 충돌로 막힌다 — 쓴 글은 지우지 않고, 복사해 두고 최신 글에서 다시 고르라고 말한다.
+ * 이 장을 다시 만드는 동안은 저장을 막고 사유를 단다. 판이 바뀐 뒤에는 저장해도 충돌로 막힌다 — 쓴 글은 지우지 않고, 복사해 두고 최신 글에서 다시 고르라고 말한다.
  * 저장이 돈 낸 수정안을 버리게 되는 경우에는 저장 버튼 바로 위에서 미리 말한다. */
 function ManualEditor({
   id,
@@ -396,12 +417,18 @@ function ManualEditor({
   draft,
   error,
   isStale,
+  isRegenerating,
   hasPendingAiEdits,
   isSaving,
   onDraftChange,
   onCancel,
   onSave,
 }: ManualEditorProps) {
+  const isSaveBlocked = isSaving || isRegenerating;
+  const saveDescribedBy = [isRegenerating && `${id}-regenerating`, hasPendingAiEdits && `${id}-pending`]
+    .filter((part) => part !== false)
+    .join(" ");
+
   return (
     <div className="flex flex-col gap-2 py-1">
       <Label htmlFor={id}>{rangeLabel} 직접 고치기</Label>
@@ -428,6 +455,11 @@ function ManualEditor({
           골라 주세요.
         </p>
       )}
+      {isRegenerating && (
+        <p id={`${id}-regenerating`} className="text-sm break-keep text-muted-foreground">
+          {CHAPTER_REGENERATING_MESSAGE}
+        </p>
+      )}
       {hasPendingAiEdits && (
         <p id={`${id}-pending`} className="text-sm break-keep text-muted-foreground">
           저장하면 이 장에서 적용하지 않은 AI 수정안은 사라지고, 쓴 클로버는 돌아오지 않아요.
@@ -441,11 +473,11 @@ function ManualEditor({
           type="button"
           variant="secondary"
           size="sm"
-          aria-disabled={isSaving}
-          aria-describedby={hasPendingAiEdits ? `${id}-pending` : undefined}
+          aria-disabled={isSaveBlocked}
+          aria-describedby={saveDescribedBy || undefined}
           className="aria-disabled:opacity-65"
           onClick={() => {
-            if (isSaving) return;
+            if (isSaveBlocked) return;
             onSave();
           }}
         >

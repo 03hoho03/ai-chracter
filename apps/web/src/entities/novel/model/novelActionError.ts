@@ -16,7 +16,8 @@ export type NovelAction =
   | "restore"
   | "notes"
   | "deleteChapter"
-  | "deleteNovel";
+  | "deleteNovel"
+  | "protagonistName";
 
 export type NovelActionErrorNotice = {
   message: string;
@@ -37,6 +38,7 @@ const ACTION_OBJECT: Record<NovelAction, string> = {
   notes: "설정 노트를 저장하지",
   deleteChapter: "장을 지우지",
   deleteNovel: "소설을 지우지",
+  protagonistName: "주인공 이름을 저장하지",
 };
 
 /** 원래 대화방이 지워져 장을 만들 수도 다시 만들 수도 없을 때의 문장. 만들기 버튼 아래 사유 문장과 두 요청의 409 가
@@ -45,7 +47,8 @@ export const NOVEL_ROOM_GONE_MESSAGE = "원래 대화방이 지워져 새 장을
 
 /** 코드 → 문구. 기다려도 풀리지 않는 거부는 "다시 시도"를 말하지 않고, 이용자가 할 수 있는 다음 일을 말한다. */
 const MESSAGE_BY_CODE: Record<string, NovelActionErrorNotice> = {
-  NOVELIZE_NOT_ALLOWED: { message: "소설로 보기를 지금 이 계정에서 쓸 수 없어요.", shouldRefetchNovel: false },
+  // 행동 중에 허용이 회수된 경우다. 상세를 다시 받으면 그 조회도 403 이라 화면이 잠김 화면으로 넘어간다.
+  NOVELIZE_NOT_ALLOWED: { message: "소설로 보기를 지금 이 계정에서 쓸 수 없어요.", shouldRefetchNovel: true },
   NOVEL_NOT_FOUND: { message: "소설이 지워졌어요. 내 소설에서 다시 확인해주세요.", shouldRefetchNovel: true },
   NOVEL_FORBIDDEN: { message: "이 계정의 소설이 아니에요.", shouldRefetchNovel: true },
   NOVEL_CURSOR_INVALID: { message: "목록을 처음부터 다시 불러와주세요.", shouldRefetchNovel: false },

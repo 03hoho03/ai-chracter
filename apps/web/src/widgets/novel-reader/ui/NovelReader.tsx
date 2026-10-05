@@ -52,6 +52,10 @@ export function NovelReader({
   const isDeleteBlocked = novel.activeJob !== null || chapterFlow.isBusy || aiEdit.isRunning;
   const hasPendingAiEdits = novel.pendingAiEdits.some((edit) => edit.chapterId === chapter.id);
 
+  // 판 이력 모달은 루트에 마운트돼 장을 옮겨도 남는다 — 이 장을 떠나면(목차·장 작업이 끝난 뒤의 자동 이동·화면
+  // 이탈) 이 장의 이력을 닫는다. 남겨 두면 다른 장을 보면서 옛 장의 이력을 보게 된다.
+  useEffect(() => () => NovelRevisionHistoryModal.end(false), []);
+
   useEffect(() => {
     if (!shouldFocusHeading) return;
     headingRef.current?.focus();
@@ -87,7 +91,12 @@ export function NovelReader({
               <PencilLine aria-hidden />
               {isFixMode ? "고치기 끝내기" : "고치기"}
             </Button>
-            <RegenerateChapterButton flow={chapterFlow} chapter={chapter} />
+            {/* AI 수정 중이라 못 누를 때의 사유는 장 머리 바로 아래 AI 수정 진행 줄이 진다. */}
+            <RegenerateChapterButton
+              flow={chapterFlow}
+              chapter={chapter}
+              blockedReasonId={aiEdit.isRunning ? aiEdit.statusId : undefined}
+            />
           </div>
         </div>
         <p className="text-sm break-keep text-muted-foreground">AI가 대화를 바탕으로 생성한 글이에요.</p>

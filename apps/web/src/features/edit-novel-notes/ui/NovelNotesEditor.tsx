@@ -1,10 +1,11 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
+import { useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { useFieldArray, useForm, useWatch } from "react-hook-form";
 
-import { toNovelActionError, type NovelDetailResponse } from "@/entities/novel";
+import { novelKeys, toNovelActionError, type NovelDetailResponse } from "@/entities/novel";
 
 import { useSaveNovelNotesMutation } from "../api/useSaveNovelNotesMutation";
 import { formToServer } from "../model/formToServer";
@@ -23,6 +24,7 @@ type NovelNotesEditorProps = {
  *
  * 저장 결과 문장과 실패 문장은 누른 순간 기록한 상태다. 저장 중에는 `aria-disabled` 로 막아 포커스를 지킨다. */
 export function NovelNotesEditor({ novel }: NovelNotesEditorProps) {
+  const queryClient = useQueryClient();
   const headingId = useId();
   const descriptionId = useId();
   const countId = useId();
@@ -54,6 +56,8 @@ export function NovelNotesEditor({ novel }: NovelNotesEditorProps) {
       // 재동의가 필요하면 전역 재동의 모달이 맡는다. 쓴 글은 그대로 남아 동의 뒤 다시 저장할 수 있다.
       if (notice === null) return;
       setResult({ tone: "error", message: notice.message });
+      // 소설이 지워졌거나 허용이 회수된 실패는 상세를 다시 받아야 화면이 「찾을 수 없어요」·잠김 화면으로 넘어간다.
+      if (notice.shouldRefetchNovel) void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
     }
   }
 

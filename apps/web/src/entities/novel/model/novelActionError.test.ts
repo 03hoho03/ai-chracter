@@ -73,6 +73,23 @@ describe("toNovelActionError", () => {
     expect(toNovelActionError(apiError(409, { code: "NOVEL_JOB_IN_PROGRESS" }), "generate")?.shouldRefetchNovel).toBe(true);
   });
 
+  // 행동 중에 허용이 회수되면 상세를 다시 받아야 상세 조회의 403 으로 잠김 화면에 모인다 — 다시 받지 않으면 버튼이
+  // 살아 있는 화면에 문장만 남는다.
+  it("소설화 허용 403 은 상세를 다시 받는다", () => {
+    expect(toNovelActionError(apiError(403, { code: "NOVELIZE_NOT_ALLOWED" }), "edit")?.shouldRefetchNovel).toBe(true);
+  });
+
+  it("이름 저장 실패의 일반 문구는 이름을 말한다", () => {
+    expect(toNovelActionError(apiError(500, undefined), "protagonistName")?.message).toContain("주인공 이름");
+  });
+
+  it.each([
+    [404, "NOVEL_NOT_FOUND"],
+    [403, "NOVELIZE_NOT_ALLOWED"],
+  ])("기다려도 풀리지 않는 거부(%i %s)는 이름 저장에서도 다시 시도를 말하지 않는다", (status, code) => {
+    expect(toNovelActionError(apiError(status, { code }), "protagonistName")?.message).not.toContain("잠시 후");
+  });
+
   it("재동의 403 은 이 화면이 말하지 않는다(전역 모달이 맡는다)", () => {
     expect(toNovelActionError(apiError(403, { code: "LEGAL_RECONSENT_REQUIRED", kinds: ["privacy"] }), "generate")).toBeNull();
   });

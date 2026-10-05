@@ -10,10 +10,11 @@ import {
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useQueryClient } from "@tanstack/react-query";
 import { useId } from "react";
 import { useForm } from "react-hook-form";
 
-import { toNovelActionError, useSetProtagonistNameMutation } from "@/entities/novel";
+import { novelKeys, toNovelActionError, useSetProtagonistNameMutation } from "@/entities/novel";
 import { isApiError } from "@/shared/api/client";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
@@ -31,6 +32,7 @@ type ProtagonistNameModalProps = {
  * 저장 뒤 동작이 늘 같아(이름 저장 → 상세 캐시 갱신) 자체 호출형이다. `true` 는 저장했다, `false` 는 그만뒀다.
  * 빈칸으로 시작하고 첫 칸이 포커스를 받는다(이 모달은 언제나 이용자가 누른 버튼으로 열린다). */
 export const ProtagonistNameModal = createCallable<ProtagonistNameModalProps, boolean>(({ call, novelId, maxLength }) => {
+  const queryClient = useQueryClient();
   const nameId = useId();
   const form = useForm<ProtagonistNameFormValues>({
     resolver: zodResolver(createProtagonistNameSchema(maxLength)),
@@ -45,8 +47,9 @@ export const ProtagonistNameModal = createCallable<ProtagonistNameModalProps, bo
       await mutateAsync({ novelId, protagonistName: values.protagonistName });
       call.end(true);
     } catch (error) {
+      const notice = toNovelActionError(error, "protagonistName");
       // 재동의가 필요하면 전역 재동의 모달이 뜬다 — 그 위에 이 모달을 남겨 두지 않는다.
-      if (toNovelActionError(error, "edit") === null) {
+      if (notice === null) {
         call.end(false);
         return;
       }
@@ -55,7 +58,10 @@ export const ProtagonistNameModal = createCallable<ProtagonistNameModalProps, bo
         form.setError("protagonistName", { message: "이 이름은 쓸 수 없어요. 다른 이름을 입력해주세요" });
         return;
       }
-      form.setError("root", { message: "이름을 저장하지 못했어요. 잠시 후 다시 시도해주세요." });
+      // 소설이 지워졌거나 허용이 회수된 거부는 기다려도 풀리지 않는다 — "다시 시도"가 아니라 그 사유를 말하고, 상세를
+      // 다시 받아 소설 화면이 「찾을 수 없어요」·잠김 화면으로 넘어가게 한다(그러면 이 모달도 함께 닫힌다).
+      form.setError("root", { message: notice.message });
+      if (notice.shouldRefetchNovel) void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novelId) });
     }
   }
 

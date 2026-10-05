@@ -152,6 +152,14 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     if (result.shouldRefetchNovel) void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
   }
 
+  /** 지금 캐시의 상세에 진행 중 작업이 있는가. 흐름을 시작할 때 받은 상세는 AI 수정이 막 시작된 것을 모를 수 있다
+   * (AI 수정이 금액 확인 뒤 요청을 보내는 동안, 그리고 202 뒤 상세를 다시 받기 전). 그 틈에 시작한 흐름이 경계
+   * 고르기·금액 확인을 다 거친 뒤에야 409 를 받지 않도록, 이용자에게 확인을 받기 직전에 한 번 더 본다. 작업이 있으면
+   * 흐름을 조용히 멈춘다 — 다시 그린 화면이 이미 그 작업의 진행 줄과 못 누르는 사유를 보이고 있다. */
+  function hasActiveJobNow() {
+    return (queryClient.getQueryData<NovelDetailResponse>(novelKeys.detail(novel.id))?.activeJob ?? null) !== null;
+  }
+
   function askProtagonistName() {
     return ProtagonistNameModal.call({ novelId: novel.id, maxLength: novel.limits.protagonistNameMaxLength });
   }
@@ -190,6 +198,7 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
         setNotice({ tone: "error", message: "장으로 묶을 새 대화가 없어요. 대화를 더 이어 간 뒤 만들어주세요." });
         return;
       }
+      if (hasActiveJobNow()) return;
       const chapterOrdinal = Math.max(0, ...novel.chapters.map((chapter) => chapter.ordinal)) + 1;
       const endMessageId = await ChapterBoundaryModal.call({ proposal, chapterOrdinal });
       if (endMessageId === null || !isMountedRef.current) return;
@@ -210,7 +219,7 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     setNotice(undefined);
     setPreparing("regenerate");
     try {
-      if (!(await ensureProtagonistName()) || !isMountedRef.current) return;
+      if (!(await ensureProtagonistName()) || !isMountedRef.current || hasActiveJobNow()) return;
       const cost = novel.prices.chapterRegenerate;
       const isConfirmed = await confirmSpend({
         title: `${chapter.ordinal}장을 다시 만들까요?`,

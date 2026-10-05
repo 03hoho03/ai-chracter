@@ -15,6 +15,7 @@ export {
 } from "./api/useNovelQuery";
 export { useSetProtagonistNameMutation } from "./api/useSetProtagonistNameMutation";
 export { writeNovelChapterRevision } from "./api/writeNovelChapterRevision";
+export { CHAPTER_REGENERATING_MESSAGE, isChapterRegenerating } from "./model/chapterRegenerationLock";
 export {
   isProtagonistNameRequiredError,
   NOVEL_ROOM_GONE_MESSAGE,

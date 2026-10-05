@@ -14,7 +14,7 @@ import {
 } from "@/entities/novel";
 import { ConfirmNovelSpendModal } from "@/features/confirm-novel-spend";
 import { NovelChapterMaker, useNovelChapterJob } from "@/features/create-novel-chapter";
-import { DeleteNovelModal } from "@/features/delete-novel";
+import { DeleteLastChapterModal, DeleteNovelModal } from "@/features/delete-novel";
 import { DiscardManualEditModal, useNovelAiEdit } from "@/features/edit-novel-chapter";
 import { NovelNotesEditor } from "@/features/edit-novel-notes";
 import { NovelReader } from "@/widgets/novel-reader";
@@ -109,9 +109,22 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
   const [heldChapterId, setHeldChapterId] = useState<string | undefined>(undefined);
   // 금액 확인은 다른 기능의 모달이라 이 화면이 넣어 준다(기능끼리 서로 가져다 쓰지 않는다).
   const confirmSpend = (props: Parameters<typeof ConfirmNovelSpendModal.call>[0]) => ConfirmNovelSpendModal.call(props);
-  // 모달은 루트에 마운트돼 라우트가 바뀌어도 남는다 — 이 화면을 떠나면(다른 소설로 옮겨 다시 마운트될 때도) 넣어 준
-  // 금액 확인을 닫는다. 두 흐름은 떠난 뒤 받은 확정으로 요청하지 않으므로, 남겨 두면 눌러도 아무 일 없는 버튼이 된다.
-  useEffect(() => () => ConfirmNovelSpendModal.end(false), []);
+  // 이 화면이 아직 떠 있나. 장 이동 확인·마지막 장 지우기는 기다린 뒤 화면을 옮기는데, 그사이 이용자가 다른 화면으로
+  // 갔으면 소설 화면으로 끌고 오지 않는다.
+  const isMountedRef = useRef(false);
+  // 모달은 루트에 마운트돼 라우트가 바뀌어도 남는다 — 이 화면을 떠나면(다른 소설로 옮겨 다시 마운트될 때도) 이 화면이
+  // 연 모달을 닫는다. 남겨 두면 다른 화면 위에서 눌러도 아무 일 없는 버튼이 되거나, 확정하면 떠난 화면으로 끌고 온다.
+  // 금액 확인은 두 흐름에 넣어 준 것이라 여기서 닫는다(두 흐름은 떠난 뒤 받은 확정으로 요청하지 않는다). 판 이력은
+  // 장마다 여는 자리가 닫는다.
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      ConfirmNovelSpendModal.end(false);
+      DiscardManualEditModal.end(false);
+      DeleteLastChapterModal.end(false);
+    };
+  }, []);
   const flow = useNovelChapterJob({
     novel,
     confirmSpend,
@@ -149,6 +162,7 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
   /** 다른 장으로 옮긴다. 고치던 글이 있으면 버릴지 먼저 묻는다. */
   async function goToChapter(target: NovelChapterSummary) {
     if (isDraftDirtyRef.current && !(await DiscardManualEditModal.call({ chapterOrdinal: target.ordinal }))) return;
+    if (!isMountedRef.current) return;
     setHeldChapterId(undefined);
     void navigate({
       to: "/novels/$novelId",
@@ -170,6 +184,7 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
   }
 
   function handleChapterDeleted(deletedOrdinal: number) {
+    if (!isMountedRef.current) return;
     // 지운 장 바로 앞 장이 새 마지막 장이다. 주소의 장 번호를 걷어 기본값(마지막 장)으로 돌린다.
     const previous = novel.chapters.find((item) => item.ordinal === deletedOrdinal - 1);
     setFocusChapterId(previous?.id);

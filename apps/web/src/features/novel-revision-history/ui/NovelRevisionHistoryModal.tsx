@@ -12,7 +12,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, RotateCcw } from "lucide-react";
 import { useId, useState } from "react";
 
-import { novelKeys, toNovelActionError } from "@/entities/novel";
+import {
+  CHAPTER_REGENERATING_MESSAGE,
+  isChapterRegenerating,
+  novelKeys,
+  toNovelActionError,
+  useNovelQuery,
+} from "@/entities/novel";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 import { formatRelativeTime } from "@/shared/lib/time/formatRelativeTime";
 
@@ -35,19 +41,26 @@ type NovelRevisionHistoryModalProps = {
  *
  * 되돌리기의 기준 판은 목록 맨 앞(지금 판)이다. 그사이 다른 곳에서 새 판이 생겼으면 서버가 409 로 막고, 목록을
  * 다시 받아 기준이 새 판으로 바뀐다 — 이용자는 새로 생긴 판을 목록에서 보고 다시 고를 수 있다. 실패 문장은
- * 누른 순간 기록한 상태라 목록을 다시 받아도 남는다. */
+ * 누른 순간 기록한 상태라 목록을 다시 받아도 남는다.
+ *
+ * 이 장을 다시 만드는 작업이 도는 동안은 되돌리기를 막고 사유를 단다 — 다시 만든 글이 그때의 최신 판 위에 쌓여
+ * 되돌린 판을 밀어낸다. 모달이 열린 사이에 작업이 끝나거나 시작될 수 있어 연 순간의 값이 아니라 소설 상세를 따라
+ * 읽는다. 상세는 받은 즉시 낡은 것으로 치는 쿼리라 모달을 열 때 한 번 다시 받는다 — 연 순간의 진행 중 작업도 그만큼
+ * 최신이 된다. */
 export const NovelRevisionHistoryModal = createCallable<NovelRevisionHistoryModalProps, boolean>(
   ({ call, novelId, chapterId, chapterOrdinal, hasPendingAiEdits }) => {
     const queryClient = useQueryClient();
     const revisionsQuery = useNovelRevisionsQuery(novelId, chapterId);
     const restoreMutation = useRestoreRevisionMutation();
+    const novelQuery = useNovelQuery(novelId);
+    const isRegenerating = isChapterRegenerating(novelQuery.data?.activeJob ?? null, chapterId);
     const [expandedId, setExpandedId] = useState<string | undefined>(undefined);
     const [restoreError, setRestoreError] = useState<string | undefined>(undefined);
     const revisions = revisionsQuery.data ?? [];
     const current = revisions[0];
 
     async function restore(revision: NovelRevisionSummary) {
-      if (restoreMutation.isPending || current === undefined) return;
+      if (restoreMutation.isPending || isRegenerating || current === undefined) return;
       setRestoreError(undefined);
       try {
         await restoreMutation.mutateAsync({
@@ -93,6 +106,7 @@ export const NovelRevisionHistoryModal = createCallable<NovelRevisionHistoryModa
               chapterId={chapterId}
               expandedId={expandedId}
               isRestoring={restoreMutation.isPending}
+              isRegenerating={isRegenerating}
               hasPendingAiEdits={hasPendingAiEdits}
               onToggle={(id) => setExpandedId((open) => (open === id ? undefined : id))}
               onRestore={(revision) => void restore(revision)}
@@ -110,6 +124,7 @@ type RevisionListBodyProps = {
   chapterId: string;
   expandedId: string | undefined;
   isRestoring: boolean;
+  isRegenerating: boolean;
   hasPendingAiEdits: boolean;
   onToggle: (id: string) => void;
   onRestore: (revision: NovelRevisionSummary) => void;
@@ -123,6 +138,7 @@ function RevisionListBody({
   chapterId,
   expandedId,
   isRestoring,
+  isRegenerating,
   hasPendingAiEdits,
   onToggle,
   onRestore,
@@ -170,6 +186,7 @@ function RevisionListBody({
           isCurrent={index === 0}
           isExpanded={expandedId === revision.id}
           isRestoring={isRestoring}
+          isRegenerating={isRegenerating}
           hasPendingAiEdits={hasPendingAiEdits}
           novelId={novelId}
           chapterId={chapterId}
@@ -188,6 +205,8 @@ type RevisionRowProps = {
   isCurrent: boolean;
   isExpanded: boolean;
   isRestoring: boolean;
+  /** 이 장을 다시 만드는 중인가. 그동안은 되돌리기를 막는다. */
+  isRegenerating: boolean;
   hasPendingAiEdits: boolean;
   novelId: string;
   chapterId: string;
@@ -205,6 +224,7 @@ function RevisionRow({
   isCurrent,
   isExpanded,
   isRestoring,
+  isRegenerating,
   hasPendingAiEdits,
   novelId,
   chapterId,
@@ -213,6 +233,11 @@ function RevisionRow({
 }: RevisionRowProps) {
   const panelId = useId();
   const pendingNoteId = useId();
+  const regeneratingNoteId = useId();
+  const isRestoreBlocked = isRestoring || isRegenerating;
+  const restoreDescribedBy = [isRegenerating && regeneratingNoteId, hasPendingAiEdits && pendingNoteId]
+    .filter((part) => part !== false)
+    .join(" ");
 
   return (
     <li className="flex flex-col border-b border-border last:border-b-0">
@@ -236,6 +261,11 @@ function RevisionRow({
       {isExpanded && (
         <div id={panelId} className="flex flex-col gap-3 pt-1 pb-3">
           <RevisionBody novelId={novelId} chapterId={chapterId} revisionId={revision.id} />
+          {!isCurrent && isRegenerating && (
+            <p id={regeneratingNoteId} className="text-sm break-keep text-muted-foreground">
+              {CHAPTER_REGENERATING_MESSAGE}
+            </p>
+          )}
           {!isCurrent && hasPendingAiEdits && (
             <p id={pendingNoteId} className="text-sm break-keep text-muted-foreground">
               되돌리면 이 장에서 적용하지 않은 AI 수정안은 사라지고, 쓴 클로버는 돌아오지 않아요.
@@ -246,11 +276,11 @@ function RevisionRow({
               type="button"
               variant="outline"
               size="sm"
-              aria-disabled={isRestoring}
-              aria-describedby={hasPendingAiEdits ? pendingNoteId : undefined}
+              aria-disabled={isRestoreBlocked}
+              aria-describedby={restoreDescribedBy || undefined}
               className="self-start aria-disabled:opacity-65"
               onClick={() => {
-                if (isRestoring) return;
+                if (isRestoreBlocked) return;
                 onRestore();
               }}
             >
