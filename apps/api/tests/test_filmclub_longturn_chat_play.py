@@ -5,6 +5,7 @@ import json
 import os
 import stat
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -529,3 +530,23 @@ def test_numbers_429_in_timestamps_and_token_counts_are_not_gemini_429(run: dict
         )
     hit, _ = chat_play.scan_gemini_429(run["server_log"], 0, ROOM_ID)
     assert hit is True
+
+
+def test_gemini_429_logged_while_the_note_is_saved_is_not_skipped(run: dict[str, Any]) -> None:
+    # 사전 검사 뒤 노트 저장·기억 조회 사이에 찍힌 줄(직전 턴의 요약 접기 실패)도 이 턴의 사후 검사가 본다.
+    _create(run)
+    run["server"].turns = [_turn(), _turn()]
+    assert _say(run) == 0
+    server = run["server"]
+    original: Callable[[httpx.Request], httpx.Response] = server.handler
+
+    def memory_with_429(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/memory") and request.method == "GET":
+            with run["server_log"].open("a") as f:
+                f.write(
+                    f"WARNING 대화방 {ROOM_ID} 요약 접기 실패 — 다음 턴 뒤에 다시 시도한다: 429 RESOURCE_EXHAUSTED\n"
+                )
+        return original(request)
+
+    server.handler = memory_with_429
+    assert _say(run) == 5

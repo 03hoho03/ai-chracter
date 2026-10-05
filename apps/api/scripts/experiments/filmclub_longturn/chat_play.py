@@ -739,13 +739,14 @@ def play_turn(args: argparse.Namespace, session_factory: Callable[[], Session], 
         "memory": memory,
     }
     started = time.monotonic()
-    pre_size = server_log.stat().st_size if server_log.exists() else 0
     result = send_turn(session, room_id, body)
     record["seconds"] = round(time.monotonic() - started, 1)
     record["ttftMs"] = result.ttft_ms
     record["http"] = result.status
     record["done"] = result.done
-    rate_limited, offset_after = scan_gemini_429(server_log, pre_size, room_id)
+    # 사전 검사가 끝난 줄 경계부터 이어 본다 — 노트 저장·기억 조회 사이에 찍힌 줄(직전 턴 요약 접기의 실패)도
+    # 여기서 걸린다. 보내기 직전 파일 크기부터 보면 그 구간을 아무도 보지 않고, 크기가 줄 중간이면 앞 조각도 잘린다.
+    rate_limited, offset_after = scan_gemini_429(server_log, offset, room_id)
     record["serverLogOffsetAfter"] = offset_after
     if rate_limited:
         record["geminiRateLimited"] = True
