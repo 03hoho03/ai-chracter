@@ -24,3 +24,9 @@ export function toNovelLoadFailure(error: unknown): NovelLoadFailure {
   if (code === "NOVEL_NOT_FOUND" || code === "NOVEL_FORBIDDEN") return "missing";
   return "failed";
 }
+
+/** 소설 쪽 오류가 이 코드인가. 같은 거절이라도 화면이 다르게 받아야 하는 자리(이미 지워진 것을 지우려 한 404 는
+ * 지운 것과 같다)에서 쓴다. */
+export function hasNovelErrorCode(error: unknown, code: string): boolean {
+  return novelErrorCode(error) === code;
+}

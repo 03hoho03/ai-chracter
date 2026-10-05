@@ -5,7 +5,18 @@ import type { NovelJobResponse } from "../api/useNovelJobQuery";
 
 /** 오류를 받은 요청이 무엇이었나. 같은 코드라도 요청에 따라 문장이 갈리는 자리가 있다 — 시간당 상한과 하루
  * 상한이 같은 429 로 오고, 이용 제한·일반 실패도 무엇을 못 했는지가 달라서다. */
-export type NovelAction = "proposal" | "generate" | "regenerate" | "aiEdit" | "edit";
+export type NovelAction =
+  | "proposal"
+  | "generate"
+  | "regenerate"
+  | "aiEdit"
+  | "applyAiEdit"
+  | "dismissAiEdit"
+  | "edit"
+  | "restore"
+  | "notes"
+  | "deleteChapter"
+  | "deleteNovel";
 
 export type NovelActionErrorNotice = {
   message: string;
@@ -19,7 +30,13 @@ const ACTION_OBJECT: Record<NovelAction, string> = {
   generate: "장을 만들지",
   regenerate: "장을 다시 만들지",
   aiEdit: "AI로 고치지",
+  applyAiEdit: "수정안을 적용하지",
+  dismissAiEdit: "수정안을 버리지",
   edit: "고친 내용을 저장하지",
+  restore: "이 판으로 되돌리지",
+  notes: "설정 노트를 저장하지",
+  deleteChapter: "장을 지우지",
+  deleteNovel: "소설을 지우지",
 };
 
 /** 코드 → 문구. 기다려도 풀리지 않는 거부는 "다시 시도"를 말하지 않고, 이용자가 할 수 있는 다음 일을 말한다. */
