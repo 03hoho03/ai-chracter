@@ -14,7 +14,9 @@
 입력은 격리 DB 의 방이다. 턴 N 은 N 번째 (사용자 메시지, 바로 뒤 응답) 쌍이고, 판정 입력의 히스토리는 그 사용자 메시지
 앞의 메시지 전부다(유실 턴의 사용자 메시지도 서버가 그랬듯 히스토리에 든다). 프롬프트는 서버의 판정 준비 함수를 그대로
 불러 만든다 — 판정 윈도 설정만 이 프로세스 안에서 끄거나 켠다. `window` 는 방의 현재 요약을 쓰므로 방의 마지막 턴에만
-허용한다(과거 턴에 그때의 요약을 재구성하지 않는다). 엔딩은 그 턴에 판정할 차례(게이트·5턴 간격)인 엔딩만 만들고,
+허용한다. `window-asof` 는 칸 판정만, 아무 턴에나 쓴다 — 그 턴 사용자 메시지보다 먼저 만들어진 요약 스냅샷 중 커서가 가장 큰
+것(그 턴 판정 때의 현재 요약)으로 서버와 같은 윈도를 씌운다. 요약은 턴이 끝난 뒤 접히므로 그 턴 판정 때 있던 스냅샷은
+사용자 메시지보다 먼저 생긴 것뿐이다. 칸 판정은 요약 본문을 싣지 않아 커서만 있으면 된다. 엔딩은 그 턴에 판정할 차례(게이트·5턴 간격)인 엔딩만 만들고,
 스탯 규칙은 보지 않는다 — 실제로 판정이 불린 엔딩을 `--ending` 으로 고른다. 스탯 판정 프롬프트는 서버와 같은
 빌더·같은 스탯 정의 순서로 만들고 현재값만 trace 의 시작 값으로 넣는다. 결과마다 서버 적용 규칙(방향·폭·범위)을 거친
 값도 함께 남긴다.
@@ -44,7 +46,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat.memory_window import load_current_summary, prompt_window
+from api.chat.memory_window import MessageKey, load_current_summary, prompt_window
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
     ImageMatchJudgmentResult,
@@ -64,7 +66,7 @@ from api.chat.router import (
 )
 from api.chat.stats import StatChange, apply_stat_changes
 from api.core.config import settings
-from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom
+from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom, ChatRoomMemorySnapshot
 from api.db.models.story import StatDef
 from api.llm.client import LLMCallContext, LLMCallSite, LLMClient, structured_model
 from api.llm.gemini import GeminiLLMClient
@@ -205,6 +207,20 @@ def stat_start_from_trace(path: Path, room_id: uuid.UUID, turn: int) -> dict[str
     return {stat["statId"]: float(stat["start"]) for stat in found[0]["stats"]}
 
 
+async def snapshot_cursor_asof(db: AsyncSession, room_id: uuid.UUID, before: datetime) -> MessageKey | None:
+    """`before` 보다 먼저 만들어진 스냅샷 중 커서가 가장 큰 것의 커서 — 그 시각의 현재 요약(서버의 "현재" 규칙과 같은
+    정렬)."""
+    row = (
+        await db.execute(
+            select(ChatRoomMemorySnapshot.cursor_created_at, ChatRoomMemorySnapshot.cursor_message_id)
+            .where(ChatRoomMemorySnapshot.chat_room_id == room_id, ChatRoomMemorySnapshot.created_at < before)
+            .order_by(ChatRoomMemorySnapshot.cursor_created_at.desc(), ChatRoomMemorySnapshot.cursor_message_id.desc())
+            .limit(1)
+        )
+    ).first()
+    return None if row is None else (row.cursor_created_at, row.cursor_message_id)
+
+
 def _turn_pairs(messages: list[ChatMessage]) -> list[int]:
     """턴 번호(1부터) → 그 턴 사용자 메시지의 인덱스. 바로 뒤가 응답인 사용자 메시지만 턴이다(유실 턴은 방 턴 수에
     세지 않는다)."""
@@ -234,6 +250,8 @@ async def build_inputs(
         raise ValueError("스토리 방만 리플레이한다")
     if variant == "window" and turn != room.turn_count:
         raise ValueError(f"window 는 방의 마지막 턴({room.turn_count})에만 쓸 수 있다")
+    if variant == "window-asof" and kinds != ["image"]:
+        raise ValueError("window-asof 는 칸 판정(image)만 만든다 — 엔딩 판정은 그때의 요약 본문도 싣는다")
     messages = list(
         (
             await db.scalars(
@@ -256,6 +274,11 @@ async def build_inputs(
         summary = await load_current_summary(db, room.id)
         if summary is not None:
             window_count = len(prompt_window(history, summary.cursor))
+    judged_history = history
+    if variant == "window-asof":
+        # 판정 윈도를 끈 채 미리 씌운 히스토리를 넘긴다 — 서버가 켠 상태에서 하는 `prompt_window(history, 커서)` 와 같다.
+        judged_history = prompt_window(history, await snapshot_cursor_asof(db, room.id, user.created_at))
+        window_count = len(judged_history)
 
     inputs: list[ReplayInput] = []
     if "stat" in kinds:
@@ -296,7 +319,7 @@ async def build_inputs(
                 room,
                 prompt_set=prompt_set,
                 prompt_sections=sections,
-                history=history,
+                history=judged_history,
                 user_message=user.content,
                 assistant_message=assistant.content,
                 names=names,
@@ -577,7 +600,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--prompt-out", help="만든 프롬프트를 판정 종류별로 이 접두 경로에 저장(<접두>.<종류>.txt)")
     ap.add_argument("--ending", action="append", help="엔딩 entity_id(여럿 가능) — 없으면 그 턴에 차례인 엔딩 전부")
-    ap.add_argument("--variant", choices=["full", "window"], default="full")
+    ap.add_argument("--variant", choices=["full", "window", "window-asof"], default="full")
     ap.add_argument("--reps", type=int, default=1)
     ap.add_argument("--limit-calls", type=int, required=True, help="실호출 하드 상한")
     ap.add_argument("--out", required=True)

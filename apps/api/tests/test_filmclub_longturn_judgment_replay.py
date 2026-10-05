@@ -4,6 +4,7 @@
 import json
 import uuid
 from collections.abc import AsyncIterator
+from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -21,7 +22,7 @@ from api.chat.prompt_builder import (
     StatJudgmentResult,
 )
 from api.core.config import settings
-from api.db.models.chat import ChatRoom
+from api.db.models.chat import ChatRoom, ChatRoomMemorySnapshot
 from api.db.models.story import Ending, StartingSetup, StatDef
 from api.llm import gemini
 from api.llm.client import LLMCallContext, LLMClient, LLMClientError, structured_model
@@ -108,6 +109,62 @@ async def test_window_variant_is_refused_for_a_past_turn(
     room = await _story_room(db_client, db_session)
     with pytest.raises(ValueError, match="마지막 턴"):
         await replay.build_inputs(db_session, room.room_id, 10, kinds=["image"], variant="window")
+
+
+async def _plant_snapshot_made_at(
+    db_session: AsyncSession, room: Room, *, cursor_turn: int, made_after_turn: int, text: str
+) -> None:
+    """`cursor_turn` 응답까지 덮는 요약을, `made_after_turn` 응답 직후(다음 사용자 메시지 전)에 만든 것으로 심는다."""
+    assistant = room.turns[cursor_turn][1]
+    db_session.add(
+        ChatRoomMemorySnapshot(
+            chat_room_id=room.room_id,
+            cursor_created_at=assistant.created_at,
+            cursor_message_id=assistant.id,
+            summary_text=text,
+            source="auto",
+            created_at=room.turns[made_after_turn][1].created_at + timedelta(milliseconds=500),
+        )
+    )
+    await db_session.commit()
+
+
+async def test_window_asof_uses_the_summary_that_existed_when_that_turn_was_judged(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    # _story_room 의 턴 8 요약은 모든 메시지 뒤에 만들어졌다 — 어느 턴의 판정 때도 아직 없었다.
+    room = await _story_room(db_client, db_session)
+    await _plant_snapshot_made_at(db_session, room, cursor_turn=4, made_after_turn=6, text="4턴까지")
+    full = await replay.build_inputs(db_session, room.room_id, 10, kinds=["image"], variant="full")
+    asof = await replay.build_inputs(db_session, room.room_id, 10, kinds=["image"], variant="window-asof")
+    assert EARLIEST_USER_TEXT in full[0].prompt
+    assert "[U04]" not in asof[0].prompt and "[A04]" not in asof[0].prompt  # 커서 이하는 빠진다
+    assert "[U05]" in asof[0].prompt and "[U10]" in asof[0].prompt and "[A10]" in asof[0].prompt
+    assert "4턴까지" not in asof[0].prompt  # 칸 판정은 요약을 싣지 않는다
+    assert asof[0].history_messages == 1 + 2 * 5  # 오프닝 + 턴 5~9
+    assert asof[0].variant == "window-asof"
+
+
+async def test_window_asof_equals_full_before_any_summary_existed(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    room = await _story_room(db_client, db_session)
+    await _plant_snapshot_made_at(db_session, room, cursor_turn=4, made_after_turn=6, text="4턴까지")
+    # 턴 6: 턴 4 요약은 턴 6 응답 뒤에 생겼으니 그 턴 판정 때는 없었다 — 전체와 같다.
+    full = await replay.build_inputs(db_session, room.room_id, 6, kinds=["image"], variant="full")
+    asof = await replay.build_inputs(db_session, room.room_id, 6, kinds=["image"], variant="window-asof")
+    assert asof[0].prompt == full[0].prompt
+    # 마지막 턴: `window` 는 지금 요약(턴 8)을 쓰지만, 그 요약은 턴 12 판정 뒤에 생겼다 — as-of 는 턴 4 요약을 쓴다.
+    asof_last = await replay.build_inputs(db_session, room.room_id, 12, kinds=["image"], variant="window-asof")
+    assert "[U04]" not in asof_last[0].prompt and "[U05]" in asof_last[0].prompt
+
+
+async def test_window_asof_is_only_for_the_cell_judgment(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    room = await _story_room(db_client, db_session)
+    with pytest.raises(ValueError, match="칸 판정"):
+        await replay.build_inputs(db_session, room.room_id, 10, kinds=["ending"], variant="window-asof")
 
 
 def _fake_gemini(monkeypatch: pytest.MonkeyPatch, sent: list[dict[str, Any]]) -> GeminiLLMClient:
