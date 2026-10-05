@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAtomValue } from "jotai";
 import { Avatar, AvatarFallback, AvatarImage } from "@ai-character-chat/ui/components/avatar";
 import { Button } from "@ai-character-chat/ui/components/button";
@@ -6,7 +7,7 @@ import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ArrowLeft, Ban, History, Loader2, RotateCw, Send, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 
-import type { Ending, Shortcut } from "@/entities/chat-room";
+import type { ChatRoomState, Ending, Shortcut } from "@/entities/chat-room";
 import {
   AuthorMacroNamesProvider,
   CHAT_TURN_IN_PROGRESS_NOTICE,
@@ -20,6 +21,7 @@ import {
   StatGaugePanel,
   TypingIndicator,
   canReportMessage,
+  chatRoomKeys,
   roomAuthorMacroNames,
   shouldShowSuggestedReplies,
   useAcknowledgeVersionUpgradeMutation,
@@ -44,6 +46,7 @@ import { expandAuthorMacros, type AuthorMacroNames } from "@/shared/lib/text/aut
 
 import { useMemoryFollowUpRefresh } from "../lib/useMemoryFollowUpRefresh";
 import { chatSidePanelAtom } from "../model/atoms";
+import { loadOlderKeepingScroll, restorePrependScroll } from "../model/prependScrollAnchor";
 import { ChatMemorySidebar } from "./ChatMemorySidebar";
 import { ChatMemoryTrigger } from "./ChatMemoryTrigger";
 import { ChatMorePanel } from "./ChatMorePanel";
@@ -89,6 +92,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
   const loadOlderMessagesMutation = useLoadOlderMessagesMutation(roomId);
   // 위로 불러온 메시지를 앞에 붙이기 직전의 "바닥에서 본 스크롤 위치". 붙인 뒤 같은 거리로 되돌려 읽던 자리가 그대로 보이게 한다.
   const scrollFromBottomBeforePrependRef = useRef<number | undefined>(undefined);
@@ -129,22 +133,22 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   const firstMessageId = room?.messages[0]?.id;
   useLayoutEffect(() => {
     const scrollArea = scrollAreaRef.current;
-    const fromBottom = scrollFromBottomBeforePrependRef.current;
-    if (!scrollArea || fromBottom === undefined) return;
-    scrollArea.scrollTop = scrollArea.scrollHeight - fromBottom;
+    if (scrollArea) restorePrependScroll(scrollFromBottomBeforePrependRef, scrollArea);
   }, [firstMessageId]);
 
   async function handleLoadOlderMessages() {
     const cursorId = room?.messages[0]?.id;
     const scrollArea = scrollAreaRef.current;
     if (!cursorId || !scrollArea || loadOlderMessagesMutation.isPending) return;
-    scrollFromBottomBeforePrependRef.current = scrollArea.scrollHeight - scrollArea.scrollTop;
     try {
-      await loadOlderMessagesMutation.mutateAsync(cursorId);
+      await loadOlderKeepingScroll(
+        scrollFromBottomBeforePrependRef,
+        scrollArea,
+        () => loadOlderMessagesMutation.mutateAsync(cursorId),
+        () => queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(roomId))?.messages[0]?.id,
+      );
     } catch {
       toast.error("이전 대화를 불러오지 못했어요. 잠시 후 다시 시도해주세요.");
-    } finally {
-      scrollFromBottomBeforePrependRef.current = undefined;
     }
   }
 
