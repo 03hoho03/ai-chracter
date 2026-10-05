@@ -270,7 +270,9 @@ def parse_server_log(lines: Iterable[str], room_id: str) -> list[dict[str, Any]]
             out.append({"kind": "usage", "at": at, **fields})
         elif "실패" in line:
             kind = next((name for phrase, name in _FAILURE_KINDS if phrase in line), "other")
-            timeout = bool(re.search(r"timeout|timed out|시간 초과", line, re.I))
+            # 보조 표시일 뿐이다 — httpx 읽기 타임아웃은 메시지가 빈 문자열이라 이 줄에 낱말이 없다. 타임아웃 수는
+            # trace 의 예외 이름(`callTimeouts`)으로 센다. 서버 쪽 기한 초과는 `DEADLINE_EXCEEDED` 로 찍힌다.
+            timeout = bool(re.search(r"timeout|timed out|시간 초과|DEADLINE_EXCEEDED", line, re.I))
             out.append({"kind": "failure", "at": at, "failure": kind, "timeout": timeout})
     return out
 
@@ -509,6 +511,7 @@ def bin_summary(turns: list[dict[str, Any]], size: int = BIN) -> list[dict[str, 
                 tokens.setdefault(u["callSite"], []).append(u["promptTokens"])
         seconds = [float(t["seconds"]) for t in done if t.get("seconds") is not None]
         images = [t["image"] for t in done if t.get("image")]
+        failures = _call_failures(inside)
         same_image_runs = sum(1 for a, b in pairwise(done) if a.get("image") and a.get("image") == b.get("image"))
         out.append(
             {
@@ -563,6 +566,12 @@ def bin_summary(turns: list[dict[str, Any]], size: int = BIN) -> list[dict[str, 
                 "secondsMax": max(seconds, default=None),
                 "over60s": [t["turn"] for t in done if (t.get("seconds") or 0) > 60],
                 "callLatencyMs": _latency(inside),
+                "callFailures": failures,
+                "callTimeouts": {
+                    site: timeouts
+                    for site, errors in failures.items()
+                    if (timeouts := sum(n for error, n in errors.items() if "Timeout" in error))
+                },
             }
         )
     return out
@@ -598,6 +607,16 @@ def _latency(turns: list[dict[str, Any]]) -> dict[str, dict[str, float | None]]:
         for call in t.get("calls", []):
             by_site.setdefault(call["callSite"], []).append(float(call["elapsedMs"]))
     return {site: {"p50": _pct(v, 0.5), "p90": _pct(v, 0.9), "n": len(v)} for site, v in by_site.items()}
+
+
+def _call_failures(turns: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    """trace 의 실패 호출을 call_site × 예외 이름(`ReadTimeout` 등)으로 센다."""
+    out: dict[str, Counter[str]] = {}
+    for t in turns:
+        for call in t.get("calls", []):
+            if not call.get("ok", True):
+                out.setdefault(call["callSite"], Counter())[call.get("errorType") or "?"] += 1
+    return {site: dict(errors) for site, errors in out.items()}
 
 
 def run_turns(args: argparse.Namespace) -> None:

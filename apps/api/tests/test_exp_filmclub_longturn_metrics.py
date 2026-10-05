@@ -455,3 +455,30 @@ def test_trace_calls_without_a_turn_are_kept_apart_instead_of_crashing(tmp_path:
     summary = m.background_summary(background)
     assert summary["chat_memory_summary"]["n"] == 2
     assert summary["chat_memory_summary"]["errors"] == {"ReadTimeout": 1}
+
+
+def test_timeouts_are_counted_from_the_trace_error_type_per_call_site() -> None:
+    # httpx 읽기 타임아웃은 메시지가 빈 문자열이라 서버 로그 실패 줄에는 타임아웃 낱말이 없다 — trace 의 예외 이름으로 센다.
+    start = datetime(2026, 10, 5, 15, 0, 0)
+    rows = _rows(start)[:4]
+    _, turns = m.build_turns(rows, m.Frame(_frame_data()))
+    m.summarize_log(turns)
+    ok = {"elapsedMs": 900, "ok": True, "errorType": None}
+    turns[0]["calls"] = [
+        {"callSite": "chat_generate", **ok},
+        {"callSite": "chat_stat_judgment", "elapsedMs": 30000, "ok": False, "errorType": "ReadTimeout"},
+        {"callSite": "chat_media_book_image", "elapsedMs": 50, "ok": False, "errorType": "ClientError"},
+    ]
+
+    (summary,) = m.bin_summary(turns)
+
+    assert summary["callFailures"] == {
+        "chat_stat_judgment": {"ReadTimeout": 1},
+        "chat_media_book_image": {"ClientError": 1},
+    }
+    assert summary["callTimeouts"] == {"chat_stat_judgment": 1}
+    deadline = (
+        "2026-10-05T15:00:31.000+0900 WARNING 대화방 room-1 판정 실패 — 이번 턴의 판정을 건너뛴다: "
+        "Gemini generate_structured() call failed: 504 DEADLINE_EXCEEDED. {}"
+    )
+    assert m.parse_server_log([deadline], "room-1")[0]["timeout"] is True
