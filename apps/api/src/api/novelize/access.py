@@ -36,7 +36,8 @@ async def require_novelize_access(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> uuid.UUID:
-    """모든 소설 라우트(읽기 포함)의 게이트. 통과하면 user_id 를 돌려준다.
+    """소설 삭제를 뺀 모든 소설 라우트(읽기 포함)의 게이트. 통과하면 user_id 를 돌려준다. 소설 삭제는 자기 데이터를
+    지울 권리라 이 게이트 밖에서 로그인·소유권만 본다(`router.py` 의 `owner_router`).
 
     거부는 403 + `{"code": "NOVELIZE_NOT_ALLOWED"}` 한 가지다. 꺼짐·미허용·명단 제외를 구분하지 않는다 — 셋 다
     사용자가 할 수 있는 일이 없고, 구분해 내면 기능이 켜져 있는지가 바깥에 드러난다. 403 이어도 FE 의 정지 판정은

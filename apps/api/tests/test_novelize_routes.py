@@ -15,7 +15,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core import clover
 from api.core.config import settings
-from api.db.models import ChatRoom, Novel, NovelChapter, NovelChapterRevision, NovelJob, User, UserPersona
+from api.db.models import (
+    ChatRoom,
+    Novel,
+    NovelChapter,
+    NovelChapterRevision,
+    NovelJob,
+    User,
+    UserFeatureGrant,
+    UserPersona,
+)
 from api.main import app
 from api.novelize import router as novelize_router
 from api.novelize.access import require_novelize_access
@@ -33,6 +42,9 @@ from factories import (
 )
 
 _NOVEL_PATH_PREFIXES = ("/novels", "/chat-rooms/{room_id}/novel")
+# 게이트 밖에 두는 라우트. 소설 삭제는 자기 데이터를 지울 권리라 기능 허용과 무관하다 — 허용을 거두거나 기능을
+# 끄면 게이트가 닫히는데, 그때도 이용자가 자기 소설을 지울 수 있어야 한다(로그인·소유권만 본다).
+_GATE_EXEMPT_ROUTES = {"DELETE /novels/{novel_id}"}
 
 
 def _novel_routes() -> list[tuple[str, APIRoute]]:
@@ -46,16 +58,16 @@ def _novel_routes() -> list[tuple[str, APIRoute]]:
 
 # ── 게이트 ──────────────────────────────────────────────────────────────────
 def test_every_novel_route_carries_the_novelize_gate() -> None:
-    """읽기 라우트 하나를 빠뜨리는 것이 이 게이트의 실제 위험이라 라우트 테이블 전체를 본다."""
+    """읽기 라우트 하나를 빠뜨리는 것이 이 게이트의 실제 위험이라 라우트 테이블 전체를 본다. 예외 목록의 라우트는
+    반대로 게이트가 **없어야** 한다 — 실수로 다시 게이트 뒤로 들어가면 회수된 이용자가 자기 소설을 못 지운다."""
     routes = _novel_routes()
     # 라우트가 하나도 안 잡히면 이 검사는 아무것도 지키지 않는다 — 접두사가 바뀌었는지부터 본다.
     assert len(routes) >= 19, [f"{m} {r.path}" for m, r in routes]
-    missing = [
-        f"{method} {route.path}"
+    gated = {
+        f"{method} {route.path}": require_novelize_access in [dep.call for dep in route.dependant.dependencies]
         for method, route in routes
-        if require_novelize_access not in [dep.call for dep in route.dependant.dependencies]
-    ]
-    assert missing == []
+    }
+    assert {key for key, has_gate in gated.items() if not has_gate} == _GATE_EXEMPT_ROUTES
 
 
 _DUMMY_PATH_IDS = {
@@ -79,6 +91,7 @@ async def test_without_access_every_novel_route_is_403_even_before_the_consent_g
     results = {
         f"{method} {route.path}": await db_client.request(method, route.path.format(**_DUMMY_PATH_IDS), json={})
         for method, route in _novel_routes()
+        if f"{method} {route.path}" not in _GATE_EXEMPT_ROUTES
     }
 
     wrong = {
@@ -338,6 +351,39 @@ async def test_deleting_a_novel_refunds_its_running_job_and_removes_every_row(
     assert await _novel_ledger(db_session, room.user_id) == [("novelize_spend", -20), ("novelize_refund", 20)]
     assert await db_session.get(ChatRoom, room.room_id) is not None
     assert (await db_client.get(f"/chat-rooms/{room.room_id}/novel")).status_code == 404
+
+
+@pytest.mark.parametrize("closed_by", ["kill_switch", "allowlist", "grant_row"])
+async def test_deleting_a_novel_needs_only_login_and_ownership_even_after_access_is_withdrawn(
+    closed_by: str, db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """기능을 끄거나 허용을 거둬도 자기 소설은 지울 수 있다. 남의 소설·없는 소설은 그대로 막힌다."""
+    _foreign_room, foreign_id = await _novel_setup(db_client, db_session, monkeypatch)
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    if closed_by == "kill_switch":
+        monkeypatch.setattr(settings, "novelize_enabled", False)
+    elif closed_by == "allowlist":
+        monkeypatch.setattr(settings, "novelize_grant_allowlist", [])
+    else:
+        await db_session.execute(sa.delete(UserFeatureGrant).where(UserFeatureGrant.user_id == room.user_id))
+        await db_session.commit()
+    assert (await db_client.get(f"/novels/{novel_id}")).status_code == 403
+
+    foreign = await db_client.delete(f"/novels/{foreign_id}")
+    missing = await db_client.delete(f"/novels/{uuid.uuid4()}")
+    own = await db_client.delete(f"/novels/{novel_id}")
+
+    assert foreign.status_code == 403 and foreign.json()["detail"] == {"code": "NOVEL_FORBIDDEN"}
+    assert missing.status_code == 404 and missing.json()["detail"] == {"code": "NOVEL_NOT_FOUND"}
+    assert own.status_code == 204, own.text
+    assert await db_session.get(Novel, novel_id, populate_existing=True) is None
+    assert await db_session.get(Novel, foreign_id, populate_existing=True) is not None
+
+
+async def test_deleting_a_novel_still_needs_a_login(db_client: httpx.AsyncClient) -> None:
+    resp = await db_client.delete(f"/novels/{uuid.uuid4()}")
+
+    assert resp.status_code == 401
 
 
 async def test_room_persona_name_is_read_from_the_room_not_the_default_profile(

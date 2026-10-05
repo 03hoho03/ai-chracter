@@ -1,4 +1,8 @@
-"""소설 라우트. 모든 라우트(읽기 포함)가 라우터 수준에서 소설화 접근 게이트를 거친다.
+"""소설 라우트. 소설 삭제 하나를 뺀 모든 라우트(읽기 포함)가 라우터 수준에서 소설화 접근 게이트를 거친다.
+
+소설 삭제는 게이트 밖의 세 번째 라우터(`owner_router`)에 있고 로그인·소유권만 본다. 자기 데이터를 지울 권리는 기능
+허용과 무관하다 — 운영자가 허용을 거두거나 기능을 끄면 게이트가 닫히는데, 그때도 이용자가 자기 소설을 지울 수
+있어야 한다(화면 진입점이 없어도 같은 라우트를 쓴다).
 
 의존성은 이 순서로 돈다: 로그인(`get_current_user_id`) → 라우터 수준 소설화 게이트 → 쓰기 라우트만 재동의 게이트
 (데코레이터) → 소유권(소설 또는 방) → 본문. 라우터 수준 의존성이 데코레이터 의존성보다 먼저 풀리므로, 허용이 없는
@@ -100,6 +104,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/novels", tags=["novels"], dependencies=[Depends(require_novelize_access)])
 # 방에서 소설로 들어가는 두 라우트. prefix 가 달라 두 번째 라우터로 두고, `main.py` 는 별칭으로 import 한다.
 room_router = APIRouter(prefix="/chat-rooms", tags=["novels"], dependencies=[Depends(require_novelize_access)])
+# 소설화 게이트 밖의 라우트(소설 삭제). 게이트를 라우터 수준에 걸었으므로 라우트 하나만 빼려면 라우터를 나눠야 한다.
+owner_router = APIRouter(prefix="/novels", tags=["novels"])
 
 # 내 소설 목록 한 페이지. 테스트가 바꿔 끼울 수 있게 부를 때 모듈 전역으로 읽는다.
 NOVEL_PAGE_SIZE = 20
@@ -437,13 +443,13 @@ async def get_novel(
     return await _expire_and_detail(db, novel.id)
 
 
-@router.delete("/{novel_id}", status_code=status.HTTP_204_NO_CONTENT)
+@owner_router.delete("/{novel_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_novel(
     novel: Novel = Depends(_owned_novel_dependency),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
     """소설과 그 아래 행을 지운다. 진행 중 작업은 같은 트랜잭션에서 먼저 환불한다 — 지우고 나면 실행 경로가 실패해도
-    환불할 행이 없다. 원래 방은 그대로다.
+    환불할 행이 없다. 원래 방은 그대로다. 소설화 허용이 없어도(기능 꺼짐·허용 회수) 자기 소설이면 지운다.
 
     사용자 행을 먼저 잠근다. 같은 사용자의 작업 생성이 이 사이에 끼어들면 지울 소설에 새 작업 행이 붙어 소설 DELETE
     가 FK 위반이 되는데, 작업 생성도 사용자 행을 먼저 잡으므로 둘이 줄을 선다. 소설 행은 잠그지 않는다(모듈 머리)."""
