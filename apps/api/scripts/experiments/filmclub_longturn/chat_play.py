@@ -461,9 +461,9 @@ def put_note(session: Session, log: Path, room_id: str, note: str, turn_count: i
 
 def memory_snapshot(
     session: Session, snapshot_log: Path, room_id: str, turn_count: int, previous: dict[str, Any] | None
-) -> tuple[dict[str, Any], str | None]:
-    """보내기 직전 기억. 턴 줄에는 해시·길이만, 바뀌었을 때만 전문을 `--snapshot-log` 에. 두 번째 값은 노트가 바뀌었으면
-    그 노트(시뮬레이터에게 보여 줄 것), 아니면 None."""
+) -> tuple[dict[str, Any], str]:
+    """보내기 직전 기억. 턴 줄에는 해시·길이만, 바뀌었을 때만 전문을 `--snapshot-log` 에. 두 번째 값은 지금 노트 —
+    시뮬레이터는 매 턴 출력에서 노트를 본다고 가정하므로 바뀌지 않은 턴에도 돌려준다."""
     body = _ok(session.request("GET", f"/chat-rooms/{room_id}/memory"), "기억 조회")
     note = body.get("note") or ""
     summary = body.get("summary") or {}
@@ -495,8 +495,7 @@ def memory_snapshot(
                 **memory,
             },
         )
-    note_changed = previous is None or previous.get("noteSha") != memory["noteSha"]
-    return memory, note if note_changed else None
+    return memory, note
 
 
 # ── 턴 전송 ─────────────────────────────────────────────────────────────────
@@ -708,9 +707,8 @@ def play_turn(args: argparse.Namespace, session_factory: Callable[[], Session], 
 
     if note is not None:
         put_note(session, log, room_id, note, turn_before)
-    memory, changed_note = memory_snapshot(session, snapshot_log, room_id, turn_before, state.last_memory)
-    if changed_note is not None:
-        print(f"[기억 노트]\n{changed_note or '(비어 있음)'}\n")
+    memory, current_note = memory_snapshot(session, snapshot_log, room_id, turn_before, state.last_memory)
+    print(f"[기억 노트]\n{current_note or '(비어 있음)'}\n")
 
     names = Names(static["names"]["personaName"], static["names"]["defaultUserName"], static["names"]["charName"])
     user_name = resolve_user_name(names.persona_name, names.default_user_name)

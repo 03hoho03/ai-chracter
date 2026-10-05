@@ -291,6 +291,20 @@ def test_memory_snapshot_is_written_only_when_note_or_summary_changes(run: dict[
     assert len(_records(run["snap"], "memorySnapshot")) == 1
 
 
+def test_note_is_printed_every_turn_even_when_unchanged(
+    run: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    # 시뮬레이터는 매 턴 출력에서 지금 노트를 본다고 가정하므로, 바뀌지 않은 턴에도 노트를 보여 준다.
+    _create(run)
+    note = run["dir"] / "note.txt"
+    note.write_text("도희: 편집 담당")
+    run["server"].turns = [_turn(), _turn()]
+    assert _say(run, "안녕", "--set-note", str(note)) == 0
+    capsys.readouterr()
+    assert _say(run) == 0
+    assert "[기억 노트]\n도희: 편집 담당" in capsys.readouterr().out
+
+
 def test_shortcut_sends_prompt_and_id_but_logs_only_the_name(
     run: dict[str, Any], capsys: pytest.CaptureFixture[str]
 ) -> None:
