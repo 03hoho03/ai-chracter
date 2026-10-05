@@ -13,33 +13,55 @@
 
 import base64
 import json
+import logging
+import re
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import func, select, tuple_, update
+from redis.exceptions import RedisError
+from sqlalchemy import delete, func, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from api.chat.router import _get_owned_room
+from api.chat.prompt_builder import PromptRenderError, load_active_prompt_set
+from api.chat.router import _ensure_content_playable, _get_owned_room
+from api.content.media_tags import strip_media_tags
+from api.core.config import settings
+from api.core.rate_limit import check_rate_limit
+from api.core.rate_limit_gate import _too_many_requests
 from api.db.models.character import CharacterVersionDetail
-from api.db.models.chat import ChatRoom
+from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom
 from api.db.models.content import Content, ContentType
 from api.db.models.novel import Novel, NovelChapter, NovelChapterRevision, NovelJob
 from api.db.models.persona import UserPersona
 from api.db.models.story import StoryVersionDetail
-from api.db.session import get_db_session
+from api.db.session import get_db_session, get_session_factory
 from api.legal.dependencies import require_legal_consent
+from api.llm.client import LLMCallContext, LLMClient, LLMClientError
+from api.llm.dependencies import get_llm_client
 from api.novelize.access import require_novelize_access
-from api.novelize.billing import ACTIVE_JOB_STATUSES, _lock_user, job_price, refund_active_jobs
+from api.novelize.billing import (
+    ACTIVE_JOB_STATUSES,
+    _lock_user,
+    create_charged_job,
+    job_price,
+    refund_active_jobs,
+)
 from api.novelize.deletion import delete_novels
-from api.novelize.runner import expire_stale_jobs
+from api.novelize.prompts import NovelizeBoundaryResult, build_novelize_boundary_prompt
+from api.novelize.runner import enqueue_job, expire_stale_jobs
 from api.novelize.schemas import (
     AI_EDIT_INSTRUCTION_MAX_LENGTH,
     CHAPTER_BODY_MAX_LENGTH,
     SETTING_NOTES_MAX_LENGTH,
     NovelActiveJob,
     NovelAiEditPreview,
+    NovelChapterCandidate,
+    NovelChapterCreateRequest,
+    NovelChapterProposalResponse,
+    NovelChapterRegenerateRequest,
+    NovelChapterSuggestion,
     NovelChapterSummary,
     NovelDetailResponse,
     NovelJobResponse,
@@ -50,8 +72,20 @@ from api.novelize.schemas import (
     NovelProtagonistNameRequest,
     NovelSettingNotesRequest,
 )
+from api.novelize.source import (
+    format_turn_lines,
+    group_turns,
+    load_candidates,
+    load_segment,
+    message_key,
+    next_chapter_start,
+    novel_prompt_names,
+    segment_hash,
+)
 from api.persona.schemas import PERSONA_NAME_MAX_LENGTH
 from api.session.dependencies import get_current_user_id
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/novels", tags=["novels"], dependencies=[Depends(require_novelize_access)])
 # 방에서 소설로 들어가는 두 라우트. prefix 가 달라 두 번째 라우터로 두고, `main.py` 는 별칭으로 import 한다.
@@ -290,7 +324,7 @@ def _decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
         updated_at, novel_id = json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
         return datetime.fromisoformat(updated_at), uuid.UUID(novel_id)
     except (ValueError, TypeError) as exc:
-        raise _novel_error(status.HTTP_422_UNPROCESSABLE_ENTITY, "NOVEL_CURSOR_INVALID") from exc
+        raise _novel_error(status.HTTP_422_UNPROCESSABLE_CONTENT, "NOVEL_CURSOR_INVALID") from exc
 
 
 @router.get("")
@@ -419,3 +453,302 @@ async def get_novel_job(
     if job is None:
         raise _job_not_found()
     return _job_response(job)
+
+
+# ── 장: 공통 검사 ───────────────────────────────────────────────────────────
+async def _get_chapter(db: AsyncSession, novel: Novel, chapter_id: uuid.UUID) -> NovelChapter:
+    chapter = await db.scalar(
+        select(NovelChapter)
+        .where(NovelChapter.id == chapter_id, NovelChapter.novel_id == novel.id)
+        .execution_options(populate_existing=True)
+    )
+    if chapter is None:
+        raise _novel_error(status.HTTP_404_NOT_FOUND, "NOVEL_CHAPTER_NOT_FOUND")
+    return chapter
+
+
+async def _ensure_content_allows_model(db: AsyncSession, novel: Novel) -> None:
+    """모델을 부르는 라우트(경계 제안·장 생성·재생성·AI 수정)만 막는다. 작품은 소설 행에 사본으로 둔 원작 id 로
+    읽어 방이 지워져도 판정한다. 원작 행이 아예 없으면 이용 제한과 같이 막는다(풀어 줄 근거가 없다)."""
+    content = await db.get(Content, novel.content_id, populate_existing=True)
+    if content is None:
+        raise _novel_error(status.HTTP_403_FORBIDDEN, "CONTENT_RESTRICTED")
+    _ensure_content_playable(content)
+
+
+def _source_room_id(novel: Novel) -> uuid.UUID:
+    """새 장의 원문이 있는 방. 방이 지워진 소설은 읽고 고칠 수는 있어도 새 장·재생성을 할 원문이 없다."""
+    if novel.chat_room_id is None:
+        raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_ROOM_GONE")
+    return novel.chat_room_id
+
+
+def _require_protagonist_name(novel: Novel) -> None:
+    """장 본문은 사용자 쪽 인물을 이름으로 부른다 — 이름이 없으면 차감하기 전에 받는다."""
+    if not (novel.protagonist_name or "").strip():
+        raise _novel_error(status.HTTP_422_UNPROCESSABLE_CONTENT, "NOVEL_PROTAGONIST_NAME_REQUIRED")
+
+
+async def _next_segment(db: AsyncSession, novel: Novel, room_id: uuid.UUID) -> list[ChatMessage]:
+    """다음 장이 될 수 있는 원문 — 시작 메시지부터 응답을 장 턴 상한만큼 셀 때까지. 시작은 서버가 정한다(마지막 장
+    끝 키보다 뒤의 첫 메시지). 장으로 만들 응답이 하나도 없으면 409 `NOVEL_NOTHING_NEW`."""
+    last_chapter = await db.scalar(
+        select(NovelChapter).where(NovelChapter.novel_id == novel.id).order_by(NovelChapter.ordinal.desc()).limit(1)
+    )
+    start = await next_chapter_start(db, room_id, last_chapter)
+    candidates = (
+        await load_candidates(db, room_id, message_key(start), settings.novelize_chapter_max_turns)
+        if start is not None
+        else []
+    )
+    if not candidates:
+        raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_NOTHING_NEW")
+    return candidates
+
+
+async def _start_job(
+    db: AsyncSession, job: NovelJob, expected_cost: int, session_factory: "SessionFactory", llm_client: LLMClient
+) -> NovelJobResponse:
+    """차감하며 작업을 넣고(커밋) 백그라운드로 띄운다. 거절 판정은 모두 이 앞에서 끝낸다 — 거절된 요청은 원장에
+    아무것도 남기지 않는다. 응답은 띄우기 전에 만든다: 띄운 작업이 같은 커넥션을 쓰는 테스트에서 겹치지 않게."""
+    job = await create_charged_job(db, job=job, expected_cost=expected_cost, now=datetime.now(UTC))
+    response = _job_response(await db.get_one(NovelJob, job.id, populate_existing=True))
+    await enqueue_job(session_factory, llm_client, job.id)
+    return response
+
+
+async def _expire_before_new_job(db: AsyncSession, novel: Novel) -> None:
+    """새 작업 차감 직전의 지연 정리. 커밋까지 해 둔다 — 작업 생성이 거절하며 롤백해도 정리(환불)는 남고, 서버
+    재기동으로 죽은 작업이 진행 중으로 남아 새 작업을 계속 409 로 막지 않는다."""
+    await expire_stale_jobs(db, novel_id=novel.id)
+    await db.commit()
+
+
+SessionFactory = async_sessionmaker[AsyncSession]
+
+
+# ── 장 경계 제안 ────────────────────────────────────────────────────────────
+_PROPOSAL_SCOPE = "novelize-proposal"
+_HOUR_SECONDS = 3600
+# 후보 턴 발췌 길이(글자)와 제안 이유 상한. 이유는 문안이 60자 이내로 쓰라고 하지만 넘쳐 와도 버리지 않고 자른다.
+_EXCERPT_CHARS = 80
+_REASON_MAX_CHARS = 100
+_WHITESPACE = re.compile(r"\s+")
+
+
+def _excerpt(message: ChatMessage, novel: Novel) -> str:
+    names = novel_prompt_names(protagonist_name=novel.protagonist_name or "", character_name=novel.character_name)
+    text = _WHITESPACE.sub(" ", names.expand(strip_media_tags(message.content))).strip()
+    return text[:_EXCERPT_CHARS]
+
+
+async def _check_proposal_limit(user_id: uuid.UUID) -> None:
+    """무과금 호출의 남용 상한(시간당 고정 창). 면제 계정도 센다 — 과금이 없어 이 상한이 유일한 제동이다. Redis 가
+    실패하면 채팅·이미지 상한과 같이 통과시킨다."""
+    try:
+        retry_after = await check_rate_limit(
+            _PROPOSAL_SCOPE, str(user_id), settings.novelize_proposal_hourly_limit, window_seconds=_HOUR_SECONDS
+        )
+    except RedisError:
+        logger.warning("소설 장 경계 제안 상한 검사 실패 — 통과시킨다", exc_info=True)
+        return
+    if retry_after > 0:
+        raise _too_many_requests(user_id, "novelize", retry_after)
+
+
+@router.post("/{novel_id}/chapter-proposal", dependencies=[Depends(require_legal_consent)])
+async def propose_novel_chapter(
+    novel: Novel = Depends(_owned_novel_dependency),
+    db: AsyncSession = Depends(get_db_session),
+    llm_client: LLMClient = Depends(get_llm_client),
+) -> NovelChapterProposalResponse:
+    """다음 장의 후보 턴 목록과 모델이 고른 끝 턴(무과금, 동기).
+
+    후보는 서버가 정한 시작부터 응답을 장 턴 상한만큼 센 턴들이고, 화면은 이 목록에서 끝을 고른다 — 화면의 방
+    메시지 캐시는 최근 일부뿐이라 장 시작이 그보다 앞일 수 있다. 모델 제안이 실패해도 200 에 `suggestion: null`
+    이다: 경계는 사용자가 고르는 것이라 제안 실패가 장 생성을 막을 이유가 없다. 모델을 부르기 전에 커밋해 커넥션을
+    돌려준다(모델 호출 동안 쥐지 않는다)."""
+    await _ensure_content_allows_model(db, novel)
+    room_id = _source_room_id(novel)
+    candidates = await _next_segment(db, novel, room_id)
+    turns = group_turns(candidates)
+    prompt_set, sections = await load_active_prompt_set(db, lane=novel.content_type)
+    await _check_proposal_limit(novel.user_id)
+    await db.commit()
+
+    suggestion: NovelChapterSuggestion | None = None
+    is_story = novel.content_type == "story"
+    names = novel_prompt_names(protagonist_name=novel.protagonist_name or "", character_name=novel.character_name)
+    try:
+        prompt = build_novelize_boundary_prompt(
+            prompt_set=prompt_set,
+            sections=sections,
+            is_story_chat=is_story,
+            max_turns=len(turns),
+            user_name=(novel.protagonist_name or "").strip(),
+            turn_lines=format_turn_lines(
+                turns,
+                names=names,
+                user_label=prompt_set.user_label,
+                assistant_label=prompt_set.story_assistant_label if is_story else prompt_set.character_assistant_label,
+            ),
+        )
+        result = await llm_client.generate_structured_with_instruction(
+            prompt.prompt,
+            NovelizeBoundaryResult,
+            system_instruction=prompt.system_instruction,
+            usage=LLMCallContext(call_site="novelize_boundary", user_id=novel.user_id, room_id=room_id),
+        )
+    except (LLMClientError, PromptRenderError) as exc:
+        logger.warning("소설 장 경계 제안이 실패해 후보만 돌려준다: %s", type(exc).__name__)
+    else:
+        # 범위 밖 번호는 실패로 버리지 않고 범위 끝으로 바꾼다 — 사용자가 어차피 확인·조정하는 제안이다.
+        end_turn = result.end_turn if 1 <= result.end_turn <= len(turns) else len(turns)
+        suggestion = NovelChapterSuggestion(
+            end_message_id=turns[end_turn - 1].assistant.id, reason=result.reason.strip()[:_REASON_MAX_CHARS]
+        )
+
+    return NovelChapterProposalResponse(
+        start_message_id=candidates[0].id,
+        candidates=[
+            NovelChapterCandidate(
+                message_id=turn.assistant.id,
+                ordinal=n,
+                created_at=turn.assistant.created_at,
+                excerpt=_excerpt(turn.assistant, novel),
+            )
+            for n, turn in enumerate(turns, start=1)
+        ],
+        suggestion=suggestion,
+        cost=job_price("chapter_generate"),
+    )
+
+
+# ── 장 생성·재생성 ──────────────────────────────────────────────────────────
+@router.post(
+    "/{novel_id}/chapters", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(require_legal_consent)]
+)
+async def create_novel_chapter(
+    payload: NovelChapterCreateRequest,
+    novel: Novel = Depends(_owned_novel_dependency),
+    db: AsyncSession = Depends(get_db_session),
+    session_factory: SessionFactory = Depends(get_session_factory),
+    llm_client: LLMClient = Depends(get_llm_client),
+) -> NovelJobResponse:
+    """다음 장을 만드는 작업(과금, 202). 시작은 서버가 정하고, 끝(`endMessageId`)은 경계 제안의 후보 턴 중 하나여야
+    한다 — 다음 장 시작부터 장 턴 상한 안의 AI 응답이 아니면 422 `NOVEL_CHAPTER_END_INVALID`.
+
+    순서: 작품 상태(403)·방(409)·주인공 이름(422) → 죽은 작업 정리·커밋 → 구간 검사(409·422) → 차감·작업 생성(단가
+    409·진행 중 409·하루 상한 429·잔액 429) → 띄우기. 차감 앞의 거절은 원장에 아무것도 남기지 않는다."""
+    await _ensure_content_allows_model(db, novel)
+    room_id = _source_room_id(novel)
+    _require_protagonist_name(novel)
+    await _expire_before_new_job(db, novel)
+
+    candidates = await _next_segment(db, novel, room_id)
+    end = next(
+        (m for m in candidates if m.id == payload.end_message_id and m.role == ChatMessageRole.ASSISTANT), None
+    )
+    if end is None:
+        raise _novel_error(status.HTTP_422_UNPROCESSABLE_CONTENT, "NOVEL_CHAPTER_END_INVALID")
+    start = candidates[0]
+    job = NovelJob(
+        novel_id=novel.id,
+        user_id=novel.user_id,
+        kind="chapter_generate",
+        start_message_id=start.id,
+        start_message_created_at=start.created_at,
+        end_message_id=end.id,
+        end_message_created_at=end.created_at,
+    )
+    return await _start_job(db, job, payload.expected_cost, session_factory, llm_client)
+
+
+@router.post(
+    "/{novel_id}/chapters/{chapter_id}/regenerate",
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_legal_consent)],
+)
+async def regenerate_novel_chapter(
+    chapter_id: uuid.UUID,
+    payload: NovelChapterRegenerateRequest,
+    novel: Novel = Depends(_owned_novel_dependency),
+    db: AsyncSession = Depends(get_db_session),
+    session_factory: SessionFactory = Depends(get_session_factory),
+    llm_client: LLMClient = Depends(get_llm_client),
+) -> NovelJobResponse:
+    """장 하나를 같은 원문 구간으로 다시 만드는 작업(과금, 202). 마지막 장이 아니어도 된다. 결과는 그 장의 새
+    개정으로 쌓이고, 그 사이의 직접 수정·되돌리기는 이력에 남는다.
+
+    원문이 장을 만든 때와 다르면(메시지 편집·응답 재생성·삭제) 차감 전에 409 `NOVEL_SOURCE_CHANGED` — 같은 입력으로
+    다시 만든다는 약속을 지킬 수 없다."""
+    chapter = await _get_chapter(db, novel, chapter_id)
+    await _ensure_content_allows_model(db, novel)
+    room_id = _source_room_id(novel)
+    _require_protagonist_name(novel)
+    await _expire_before_new_job(db, novel)
+
+    segment = await load_segment(
+        db,
+        room_id,
+        (chapter.start_message_created_at, chapter.start_message_id),
+        (chapter.end_message_created_at, chapter.end_message_id),
+    )
+    if (
+        not segment
+        or segment[0].id != chapter.start_message_id
+        or segment[-1].id != chapter.end_message_id
+        or segment_hash(segment) != chapter.source_hash
+    ):
+        raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_SOURCE_CHANGED")
+    job = NovelJob(
+        novel_id=novel.id,
+        user_id=novel.user_id,
+        kind="chapter_regenerate",
+        chapter_id=chapter.id,
+        start_message_id=chapter.start_message_id,
+        start_message_created_at=chapter.start_message_created_at,
+        end_message_id=chapter.end_message_id,
+        end_message_created_at=chapter.end_message_created_at,
+    )
+    return await _start_job(db, job, payload.expected_cost, session_factory, llm_client)
+
+
+# ── 마지막 장 삭제 ──────────────────────────────────────────────────────────
+@router.delete("/{novel_id}/chapters/{chapter_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_last_novel_chapter(
+    chapter_id: uuid.UUID,
+    novel: Novel = Depends(_owned_novel_dependency),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    """마지막 장만 지운다(무과금). 지우면 다음 장 시작이 그 장 시작으로 돌아간다 — 경계를 잘못 골랐을 때 고치는 길이다.
+    마지막이 아니면 409 `NOVEL_CHAPTER_NOT_LAST`, 소설에 진행 중 작업이 있으면 409 `NOVEL_JOB_IN_PROGRESS`(끝난 뒤
+    다시).
+
+    그 장을 가리키던 작업 행은 지우지 않고 장·개정 참조만 비운다 — 같은 장의 하루 재시도 상한이 작업 행 수로 세므로,
+    지우면 장을 지웠다 다시 만드는 것으로 상한이 풀린다. 차감 기록의 작업 쪽 짝도 남는다.
+
+    잠금: 사용자 행(작업 생성과 줄 세우기 — 진행 중 확인과 삭제 사이에 새 작업이 끼지 않게) → 작업 행 → 장 행.
+    장을 잠근 뒤 개정을 지운다 — 직접 수정·되돌리기가 장을 잠근 채 넣는 개정을 기다렸다가 함께 지우려는 것이다."""
+    await _lock_user(db, novel.user_id)
+    chapter = await _get_chapter(db, novel, chapter_id)
+    active = await db.scalar(
+        select(NovelJob.id).where(NovelJob.novel_id == novel.id, NovelJob.status.in_(ACTIVE_JOB_STATUSES)).limit(1)
+    )
+    if active is not None:
+        raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_JOB_IN_PROGRESS")
+    last_ordinal = await db.scalar(select(func.max(NovelChapter.ordinal)).where(NovelChapter.novel_id == novel.id))
+    if chapter.ordinal != last_ordinal:
+        raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_CHAPTER_NOT_LAST")
+
+    # 작업의 개정 참조는 모두 같은 장의 개정이다(작업의 `chapter_id` 가 그 장) — 장으로 골라 셋을 함께 비운다.
+    await db.execute(
+        update(NovelJob)
+        .where(NovelJob.chapter_id == chapter.id)
+        .values(chapter_id=None, base_revision_id=None, result_revision_id=None)
+    )
+    await db.execute(select(NovelChapter.id).where(NovelChapter.id == chapter.id).with_for_update())
+    await db.execute(delete(NovelChapterRevision).where(NovelChapterRevision.chapter_id == chapter.id))
+    await db.execute(delete(NovelChapter).where(NovelChapter.id == chapter.id))
+    await db.execute(update(Novel).where(Novel.id == novel.id).values(updated_at=func.now()))
+    await db.commit()

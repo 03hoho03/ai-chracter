@@ -327,6 +327,13 @@ class Settings(BaseSettings):
     # 다음 장 생성에 싣는 직전 장 끝 발췌의 목표 길이(글자). 문단 단위로 잘라 이 길이에 가장 가까운 만큼 싣는다.
     # 앞 장을 되풀이하지 않고 이어 쓰게 하려는 것이다. 임시값.
     novelize_previous_excerpt_chars: int = 1000
+    # 장 하나가 담을 수 있는 원문 턴(AI 응답) 수의 상한. 다음 장 경계 제안은 이 수만큼의 후보 턴을 보여 주고, 장 생성은
+    # 끝 메시지가 이 범위 밖이면 거절한다. 장이 길수록 출력 상한·작업 상한에 가까워지므로 본 시험에서 다시 정하는 임시값
+    # 이다(가능성 확인에서 쓴 후보 범위가 12턴이었다).
+    novelize_chapter_max_turns: int = 12
+    # 장 경계 제안(무과금 모델 호출)을 한 사용자가 한 시간에 몇 번까지 부를 수 있는지. 과금이 없어 남용을 막는 것이
+    # 이 상한뿐이다. 면제 계정도 똑같이 센다. 임시값.
+    novelize_proposal_hourly_limit: int = 30
 
     @field_validator("novelize_grant_allowlist", mode="before")
     @classmethod

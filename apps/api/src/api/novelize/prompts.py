@@ -49,6 +49,15 @@ class NovelizeReviseResult(BaseModel):
     )
 
 
+class NovelizeBoundaryResult(BaseModel):
+    """장 경계 제안의 응답 스키마. 필드 설명은 모델에게 가는 스키마에 그대로 실린다."""
+
+    end_turn: int = Field(
+        description="다음 장이 끝나는 턴 번호. [원문 대화]의 [턴 n] 번호 중 하나이며 1 이상 [고를 수 있는 범위]의 끝 이하."
+    )
+    reason: str = Field(description="그 턴에서 장면이 매듭지어지는 이유. 이야기 속 사건으로 쓴 한 문장, 60자 이내.")
+
+
 def _scope(is_story_chat: bool) -> str:
     return "story" if is_story_chat else "character"
 

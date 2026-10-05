@@ -49,7 +49,7 @@ def test_every_novel_route_carries_the_novelize_gate() -> None:
     """읽기 라우트 하나를 빠뜨리는 것이 이 게이트의 실제 위험이라 라우트 테이블 전체를 본다."""
     routes = _novel_routes()
     # 라우트가 하나도 안 잡히면 이 검사는 아무것도 지키지 않는다 — 접두사가 바뀌었는지부터 본다.
-    assert len(routes) >= 8, [f"{m} {r.path}" for m, r in routes]
+    assert len(routes) >= 12, [f"{m} {r.path}" for m, r in routes]
     missing = [
         f"{method} {route.path}"
         for method, route in routes
