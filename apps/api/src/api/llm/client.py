@@ -28,6 +28,10 @@ LLMCallSite = Literal[
     "publish_filter_story",
     "seed_story_generate",
     "seed_similarity_review",
+    # 측정 브랜치 전용 — 판정 리플레이 스크립트가 원래 판정과 같은 프롬프트를 다시 부를 때 쓴다. 운영 판정과 다른
+    # 라벨이라 사용량·지연이 섞이지 않고, 아래 판정 집합에 들어 있어 원래 판정과 같은 모델로 간다.
+    "replay_ending_judgment",
+    "replay_media_book_image",
 ]
 
 # 아래 집합들은 로그 라벨이면서 **모델 선택도 겸한다** — `llm/gemini.py` 의 `generate_structured` 가 아래
@@ -39,9 +43,11 @@ LLMCallSite = Literal[
 # 판정을 종류별로 나누는 건 모델을 바꿨을 때 품질이 종류마다 따로 움직여서다 — 같은 비교에서 스탯·엔딩은
 # 현행과 맞았지만 그림 매칭은 어긋나, 셋을 한 스위치로 묶으면 옮길 수 있는 둘까지 묶인다.
 STAT_JUDGMENT_CALL_SITES: frozenset[LLMCallSite] = frozenset({"chat_stat_judgment", "preview_stat_judgment"})
-ENDING_JUDGMENT_CALL_SITES: frozenset[LLMCallSite] = frozenset({"chat_ending_judgment", "preview_ending_judgment"})
+ENDING_JUDGMENT_CALL_SITES: frozenset[LLMCallSite] = frozenset(
+    {"chat_ending_judgment", "preview_ending_judgment", "replay_ending_judgment"}
+)
 IMAGE_JUDGMENT_CALL_SITES: frozenset[LLMCallSite] = frozenset(
-    {"chat_situational_image", "chat_media_book_image", "preview_media_book_image"}
+    {"chat_situational_image", "chat_media_book_image", "preview_media_book_image", "replay_media_book_image"}
 )
 # 판정 전체. 어드민 사용량 화면이 판정 비율(판정 호출 ÷ 생성 호출)을 낼 call_site 를 이것으로 가른다.
 JUDGMENT_CALL_SITES: frozenset[LLMCallSite] = (

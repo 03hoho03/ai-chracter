@@ -695,8 +695,13 @@ async def test_generate_structured_usage_missing_and_logging_failure_do_not_rais
 # ── call_site 로 고르는 구조화 호출 모델, 사용량 집계 ─────────────────────────────────
 
 _STAT_SITES = ("chat_stat_judgment", "preview_stat_judgment")
-_ENDING_SITES = ("chat_ending_judgment", "preview_ending_judgment")
-_IMAGE_SITES = ("chat_situational_image", "chat_media_book_image", "preview_media_book_image")
+_ENDING_SITES = ("chat_ending_judgment", "preview_ending_judgment", "replay_ending_judgment")
+_IMAGE_SITES = (
+    "chat_situational_image",
+    "chat_media_book_image",
+    "preview_media_book_image",
+    "replay_media_book_image",
+)
 _JUDGMENT_SITES = _STAT_SITES + _ENDING_SITES + _IMAGE_SITES
 _PUBLISH_FILTER_SITES = ("publish_filter_character", "publish_filter_story")
 # 판정·심사가 아닌 구조화 호출 — 어느 스위치에도 끌려가면 안 된다.
