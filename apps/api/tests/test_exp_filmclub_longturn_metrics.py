@@ -510,6 +510,62 @@ def test_lost_attempt_and_the_next_turn_with_the_same_number_split_trace_calls_b
     assert summary["callLatencyMs"]["chat_generate"]["n"] == 3
 
 
+def _human_row_from_db(n: int, created_at: str | None) -> dict[str, Any]:
+    # 사람 턴은 웹에서 쳐서 드라이버 줄이 없다 — DB 메시지로 덧붙인 줄에는 sentAt·seconds 가 없고 시각은 createdAt 뿐이다.
+    row = _turn(n, datetime(2026, 10, 5, 15, 0, 0), countdown=27.0, dohee=46.0, source="human")
+    for key in ("sentAt", "seconds"):
+        del row[key]
+    if created_at is not None:
+        row["createdAt"] = created_at
+    return row
+
+
+def test_human_turn_without_sent_at_takes_its_time_from_the_db_created_at() -> None:
+    start = datetime(2026, 10, 5, 15, 0, 0)
+    rows = _rows(start)[:4] + [_human_row_from_db(2, "2026-10-05T06:01:00+00:00")]
+    _, turns = m.build_turns(rows, m.Frame(_frame_data()))
+    human = turns[-1]
+    assert human["source"] == "human" and human["sentAt"] == "2026-10-05T06:01:00+00:00"
+    at = datetime(2026, 10, 5, 15, 1, 5, tzinfo=KST)
+    records = m.parse_server_log([_usage(at, "room-1")], "room-1")
+
+    m.attach_log(turns, records, KST)
+    m.summarize_log(turns)
+    m.attach_calls(
+        turns,
+        {2: [{"callSite": "chat_generate", "elapsedMs": 900, "ok": True, "errorType": None, "ts": at.isoformat()}]},
+        KST,
+    )
+
+    assert [u["callSite"] for u in human["usage"]] == ["chat_generate"]
+    assert [c["callSite"] for c in human["calls"]] == ["chat_generate"]
+
+
+def test_human_turn_with_no_time_at_all_gets_the_calls_of_its_number_once() -> None:
+    start = datetime(2026, 10, 5, 15, 0, 0)
+    lost = {**_rows(start)[5], "roomAfter": {"turnCount": 1, "stats": {}}}
+    rows = _rows(start)[:4] + [lost, _human_row_from_db(2, None)]
+    _, turns = m.build_turns(rows, m.Frame(_frame_data()))
+    m.summarize_log(turns)
+    assert [(t["turn"], t["lost"], t["source"]) for t in turns[1:]] == [(2, True, "simulator"), (2, False, "human")]
+    call = {
+        "callSite": "chat_generate",
+        "elapsedMs": 900,
+        "ok": True,
+        "errorType": None,
+        "ts": datetime(2026, 10, 5, 15, 1, 5, tzinfo=KST).isoformat(),
+    }
+
+    m.attach_calls(turns, {1: [dict(call)], 2: [dict(call)]}, KST)
+
+    human = turns[-1]
+    assert human["sentAt"] is None and [c["callSite"] for c in human["calls"]] == ["chat_generate"]
+    # 유실 시도와 같은 번호지만 시각이 없어 나눌 수 없다 — 호출은 마지막 시도에 한 번만 붙는다.
+    assert turns[1]["calls"] == [] and sum(len(t["calls"]) for t in turns) == 2
+    (summary,) = m.bin_summary(turns)
+    assert summary["callLatencyMs"]["chat_generate"]["n"] == 2
+
+
 def _shortcut_rows() -> list[dict[str, Any]]:
     rows = _rows(datetime(2026, 10, 5, 15, 0, 0))[:2]
     rows.append(_turn(1, datetime(2026, 10, 5, 15, 0, 0), countdown=30.0, userText=None, shortcut="동아리방 들르기"))

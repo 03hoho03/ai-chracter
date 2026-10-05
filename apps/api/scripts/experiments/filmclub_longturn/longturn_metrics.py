@@ -337,18 +337,23 @@ def trace_calls(path: Path | None, room_id: str) -> tuple[dict[int, list[dict[st
 def attach_calls(turns: list[dict[str, Any]], by_turn: dict[int, list[dict[str, Any]]], tz: timezone) -> None:
     """trace 호출을 턴 줄에 붙인다. 유실 턴과 그다음 성공 턴은 같은 턴 번호를 갖고 서버 trace 의 `turn` 도 둘 다 같다 —
     번호로만 붙이면 두 줄에 같은 호출이 붙어 지연이 두 번 들어간다. 그래서 같은 번호의 시도가 여럿이면 호출 시각
-    이하로 가장 늦게 보낸 시도에 붙인다(시도 사이에는 드라이버 최소 간격이 있다)."""
+    이하로 가장 늦게 보낸 시도에 붙인다(시도 사이에는 드라이버 최소 간격이 있다).
+    시각이 없는 시도(웹에서 친 사람 턴을 DB 로 덧붙였는데 시각까지 없는 줄)가 섞이면 시각으로 나눌 수 없으므로 같은 번호의
+    호출을 모두 로그 순서상 마지막 시도에 붙인다 — 한 번만 들어가게 하는 쪽을 고른다."""
     attempts: dict[int, list[dict[str, Any]]] = {}
     for t in turns:
         t["calls"] = []
         attempts.setdefault(t["turn"], []).append(t)
     for number, calls in by_turn.items():
-        tries = sorted(attempts.get(number, []), key=lambda t: parse_sent_at(t["sentAt"], tz))
+        tries = attempts.get(number, [])
         if not tries:
             continue
+        timed = all(t.get("sentAt") for t in tries)
+        if timed:
+            tries = sorted(tries, key=lambda t: parse_sent_at(t["sentAt"], tz))
         for call in calls:
             chosen = tries[-1]
-            if len(tries) > 1 and call.get("ts"):
+            if timed and len(tries) > 1 and call.get("ts"):
                 at = datetime.fromisoformat(call["ts"])
                 earlier = [t for t in tries if parse_sent_at(t["sentAt"], tz) <= at]
                 chosen = earlier[-1] if earlier else tries[0]
@@ -439,7 +444,8 @@ def build_turns(
             "turn": turn,
             # 유실 턴은 다음 성공 턴과 턴 번호가 같다 — 둘을 가르는 시도 번호(로그 순서).
             "attempt": attempt,
-            "sentAt": row.get("sentAt"),
+            # 사람 턴은 웹에서 쳐서 드라이버 시각이 없다 — DB 로 덧붙인 줄의 메시지 생성 시각(`createdAt`)으로 갈음한다.
+            "sentAt": row.get("sentAt") or row.get("createdAt"),
             "seconds": row.get("seconds"),
             "ttftMs": row.get("ttftMs"),
             "source": "human" if human else "simulator",

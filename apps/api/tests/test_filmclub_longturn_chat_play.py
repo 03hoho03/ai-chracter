@@ -532,6 +532,28 @@ def test_numbers_429_in_timestamps_and_token_counts_are_not_gemini_429(run: dict
     assert hit is True
 
 
+def test_gemini_429_without_a_json_body_still_counts_as_gemini_429(run: dict[str, Any]) -> None:
+    # 429 본문이 JSON 이 아니면 SDK 가 상태 자리를 HTTP 사유 문구로 채워 RESOURCE_EXHAUSTED 가 없다. 서버는 이 예외를
+    # "… call failed: {예외}" 로 감싸 싣고, 예외 문자열은 상태 코드로 시작한다.
+    with run["server_log"].open("a") as f:
+        f.write(
+            f"2026-10-05T15:52:00.100+0900 WARNING 대화방 {ROOM_ID} 판정 실패 — 이번 턴의 판정을 건너뛴다: "
+            "Gemini generate_structured() call failed: 429 Too Many Requests. <html>quota</html>\n"
+        )
+    hit, _ = chat_play.scan_gemini_429(run["server_log"], 0, ROOM_ID)
+    assert hit is True
+
+
+def test_other_gemini_status_codes_starting_with_429_digits_are_not_gemini_429(run: dict[str, Any]) -> None:
+    with run["server_log"].open("a") as f:
+        f.write(
+            f"2026-10-05T15:52:00.429+0900 WARNING 대화방 {ROOM_ID} 판정 실패 — 이번 턴의 판정을 건너뛴다: "
+            "Gemini generate_structured() call failed: 4290 Odd. candidates_tokens=429\n"
+        )
+    hit, _ = chat_play.scan_gemini_429(run["server_log"], 0, ROOM_ID)
+    assert hit is False
+
+
 def test_gemini_429_logged_while_the_note_is_saved_is_not_skipped(run: dict[str, Any]) -> None:
     # 사전 검사 뒤 노트 저장·기억 조회 사이에 찍힌 줄(직전 턴의 요약 접기 실패)도 이 턴의 사후 검사가 본다.
     _create(run)
