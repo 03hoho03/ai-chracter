@@ -2644,6 +2644,32 @@ export interface paths {
         patch: operations["rename_chat_room_chat_rooms__room_id__patch"];
         trace?: never;
     };
+    "/chat-rooms/{room_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Chat Messages Before
+         * @description 위로 불러오기 — 커서 메시지 바로 앞의 메시지 최대 `limit` 개를 오래된 것부터. 커서는 이 방의 메시지여야
+         *     한다(다른 방 메시지의 시각으로 이 방을 자르지 않는다).
+         */
+        get: operations["list_chat_messages_before_chat_rooms__room_id__messages_get"];
+        put?: never;
+        /**
+         * Send Message
+         * @description text/event-stream SSE 응답. 실제 생성+판단 파이프라인은
+         *     `_stream_new_turn`(이 방의 새 사용자 메시지를 커밋한 뒤 호출)이 담당한다.
+         */
+        post: operations["send_message_chat_rooms__room_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chat-rooms/{room_id}/play-guide": {
         parameters: {
             query?: never;
@@ -2659,27 +2685,6 @@ export interface paths {
         get: operations["get_play_guide_chat_rooms__room_id__play_guide_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/chat-rooms/{room_id}/messages": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Send Message
-         * @description text/event-stream SSE 응답. 실제 생성+판단 파이프라인은
-         *     `_stream_new_turn`(이 방의 새 사용자 메시지를 커밋한 뒤 호출)이 담당한다.
-         */
-        post: operations["send_message_chat_rooms__room_id__messages_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2783,6 +2788,9 @@ export interface paths {
          *     `content_version_id`만 콘텐츠의 현재 발행 버전으로 갱신 — 이후 응답(생성/판단)부터
          *     새 버전이 적용된다. 새 버전에 생긴 스탯은 시작값으로 채우고 지금까지의 스탯 값은 둔다.
          *     버전 목록/롤백 엔드포인트는 없다(항상 최신 1건만 대상).
+         *
+         *     화면은 이 응답으로 방 캐시를 통째로 바꾸므로, 위로 불러 둔 깊이만큼 `messageLimit` 을 넘겨 불러 둔 메시지가
+         *     잘리지 않게 한다.
          */
         post: operations["pin_latest_version_chat_rooms__room_id__pin_latest_version_post"];
         delete?: never;
@@ -5356,6 +5364,16 @@ export interface components {
             content: string;
         };
         /**
+         * ChatMessagePageResponse
+         * @description `GET /chat-rooms/{id}/messages?before=` 의 한 페이지 — 커서 메시지 바로 앞 메시지들을 오래된 것부터.
+         */
+        ChatMessagePageResponse: {
+            /** Messages */
+            messages: components["schemas"]["ChatMessageResponse"][];
+            /** Hasmorebefore */
+            hasMoreBefore: boolean;
+        };
+        /**
          * ChatMessageReportCreateRequest
          * @description 메모는 선택이다. 공백만 보내면 메모 없음(NULL)으로 저장한다 — 빈 문자열과 NULL 두 가지로
          *     "메모 없음"이 갈리면 어드민이 둘을 따로 다뤄야 한다.
@@ -5572,6 +5590,8 @@ export interface components {
             } | null;
             /** Messages */
             messages: components["schemas"]["ChatMessageResponse"][];
+            /** Hasmoremessagesbefore */
+            hasMoreMessagesBefore: boolean;
             contentSnapshot?: components["schemas"]["ChatRoomContentSnapshot"] | null;
             /** Latestversionavailable */
             latestVersionAvailable: boolean;
@@ -12067,7 +12087,9 @@ export interface operations {
     };
     get_chat_room_chat_rooms__room_id__get: {
         parameters: {
-            query?: never;
+            query?: {
+                messageLimit?: number | null;
+            };
             header?: never;
             path: {
                 room_id: string;
@@ -12160,9 +12182,12 @@ export interface operations {
             };
         };
     };
-    get_play_guide_chat_rooms__room_id__play_guide_get: {
+    list_chat_messages_before_chat_rooms__room_id__messages_get: {
         parameters: {
-            query?: never;
+            query: {
+                before: string;
+                limit: number;
+            };
             header?: never;
             path: {
                 room_id: string;
@@ -12177,7 +12202,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PlayGuideResponse"];
+                    "application/json": components["schemas"]["ChatMessagePageResponse"];
                 };
             };
             /** @description Validation Error */
@@ -12213,6 +12238,37 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_play_guide_chat_rooms__room_id__play_guide_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayGuideResponse"];
                 };
             };
             /** @description Validation Error */
@@ -12356,7 +12412,9 @@ export interface operations {
     };
     pin_latest_version_chat_rooms__room_id__pin_latest_version_post: {
         parameters: {
-            query?: never;
+            query?: {
+                messageLimit?: number | null;
+            };
             header?: never;
             path: {
                 room_id: string;

@@ -107,6 +107,13 @@ class ChatMessageResponse(CamelModel):
     image_height: int | None = None
 
 
+class ChatMessagePageResponse(CamelModel):
+    """`GET /chat-rooms/{id}/messages?before=` 의 한 페이지 — 커서 메시지 바로 앞 메시지들을 오래된 것부터."""
+
+    messages: list[ChatMessageResponse]
+    has_more_before: bool
+
+
 # 스토리 챗 전용 스냅샷. entity_id 기반 id를 쓴다 —
 # 물리적 PK가 아니라 버전이 바뀌어도 안정적인 참조라 SSE statChange/endingReached,
 # chat_room_stats, story_ending_unlocks가 참조하는 값과 그대로 일치한다.
@@ -183,6 +190,8 @@ class ChatRoomResponse(CamelModel):
     ending_reached: bool
     stats: dict[str, float] | None = None
     messages: list[ChatMessageResponse]
+    # `messageLimit` 로 꼬리만 받았을 때 그 앞에 메시지가 더 있는가. 전량 조회는 언제나 거짓이다.
+    has_more_messages_before: bool
     content_snapshot: ChatRoomContentSnapshot | None = None
     latest_version_available: bool
     version_auto_upgraded: bool

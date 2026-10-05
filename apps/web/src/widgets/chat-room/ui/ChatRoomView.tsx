@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAtomValue } from "jotai";
 import { Avatar, AvatarFallback, AvatarImage } from "@ai-character-chat/ui/components/avatar";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
-import { ArrowLeft, Ban, History, RotateCw, Send, TriangleAlert } from "lucide-react";
+import { ArrowLeft, Ban, History, Loader2, RotateCw, Send, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 
-import type { Ending, Shortcut } from "@/entities/chat-room";
+import type { ChatRoomState, Ending, Shortcut } from "@/entities/chat-room";
 import {
   AuthorMacroNamesProvider,
   CHAT_TURN_IN_PROGRESS_NOTICE,
@@ -20,11 +21,13 @@ import {
   StatGaugePanel,
   TypingIndicator,
   canReportMessage,
+  chatRoomKeys,
   roomAuthorMacroNames,
   shouldShowSuggestedReplies,
   useAcknowledgeVersionUpgradeMutation,
   useChatRoomQuery,
   useDeleteMessageMutation,
+  useLoadOlderMessagesMutation,
 } from "@/entities/chat-room";
 import {
   CHAT_TURN_CLOVER_COST,
@@ -43,6 +46,7 @@ import { expandAuthorMacros, type AuthorMacroNames } from "@/shared/lib/text/aut
 
 import { useMemoryFollowUpRefresh } from "../lib/useMemoryFollowUpRefresh";
 import { chatSidePanelAtom } from "../model/atoms";
+import { loadOlderKeepingScroll, restorePrependScroll } from "../model/prependScrollAnchor";
 import { ChatMemorySidebar } from "./ChatMemorySidebar";
 import { ChatMemoryTrigger } from "./ChatMemoryTrigger";
 import { ChatMorePanel } from "./ChatMorePanel";
@@ -87,6 +91,11 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   const [editingMessageId, setEditingMessageId] = useState<string>();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
+  const loadOlderMessagesMutation = useLoadOlderMessagesMutation(roomId);
+  // 위로 불러온 메시지를 앞에 붙이기 직전의 "바닥에서 본 스크롤 위치". 붙인 뒤 같은 거리로 되돌려 읽던 자리가 그대로 보이게 한다.
+  const scrollFromBottomBeforePrependRef = useRef<number | undefined>(undefined);
   // 기억 노트 인라인 패널을 닫을 때 포커스를 돌려줄 헤더 버튼.
   const memoryTriggerRef = useRef<HTMLButtonElement>(null);
 
@@ -114,9 +123,34 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
     });
   }
 
+  // 맨 아래로 내리는 기준은 마지막 메시지다 — 개수로 보면 위로 불러와 앞에 붙일 때도 바뀌어 읽던 자리에서 바닥으로 튄다.
+  const lastMessageId = room?.messages.at(-1)?.id;
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [room?.messages.length, streamingText]);
+  }, [lastMessageId, streamingText]);
+
+  // 앞에 붙은 높이만큼 스크롤을 밀어 읽던 메시지를 제자리에 둔다. 그리기 전에 맞춰야 한 프레임 튀는 것이 안 보인다.
+  const firstMessageId = room?.messages[0]?.id;
+  useLayoutEffect(() => {
+    const scrollArea = scrollAreaRef.current;
+    if (scrollArea) restorePrependScroll(scrollFromBottomBeforePrependRef, scrollArea);
+  }, [firstMessageId]);
+
+  async function handleLoadOlderMessages() {
+    const cursorId = room?.messages[0]?.id;
+    const scrollArea = scrollAreaRef.current;
+    if (!cursorId || !scrollArea || loadOlderMessagesMutation.isPending) return;
+    try {
+      await loadOlderKeepingScroll(
+        scrollFromBottomBeforePrependRef,
+        scrollArea,
+        () => loadOlderMessagesMutation.mutateAsync(cursorId),
+        () => queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(roomId))?.messages[0]?.id,
+      );
+    } catch {
+      toast.error("이전 대화를 불러오지 못했어요. 잠시 후 다시 시도해주세요.");
+    }
+  }
 
   useEffect(() => {
     if (policyWarning) inputRef.current?.focus();
@@ -274,10 +308,29 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
 
           {snapshot && <StatGaugePanel stats={snapshot.stats} values={room.stats} />}
 
-          <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
+          <div ref={scrollAreaRef} className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
             {/* 메시지 사이 gap-6(24px)은 한 메시지 안 문단 간격(12px)의 두 배다. 상자 없는 산문이 한 컬럼에 흐르므로
                 같은 값이면 메시지 경계와 문단 경계가 구분되지 않는다. */}
             <div className="flex flex-col gap-6">
+              {/* 긴 방은 최근 대화만 받아 온다. 스크롤이 닿으면 저절로 받지 않고 누를 때만 받는다 — 어두운 방에서 목록이
+                  손대지 않았는데 늘어나며 움직이지 않게. 받는 중 표시는 진행 표시라 모션 가드 밖이다. */}
+              {room.hasMoreMessagesBefore && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="self-center aria-disabled:opacity-65"
+                  aria-disabled={loadOlderMessagesMutation.isPending}
+                  onClick={() => void handleLoadOlderMessages()}
+                >
+                  {loadOlderMessagesMutation.isPending ? (
+                    <Loader2 aria-hidden className="size-3.5 animate-spin" />
+                  ) : (
+                    <History aria-hidden className="size-3.5" />
+                  )}
+                  이전 대화 더 보기
+                </Button>
+              )}
               {room.messages.map((message, index) => {
                 const isLastMessage = index === room.messages.length - 1;
                 const bubble = (
@@ -306,13 +359,14 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                 );
                 // 스토리 방 첫 메시지는 작성자 글의 복사본이라 글 속 미디어 북 태그를 그림으로 그린다(판정 규칙은
                 // `isAuthorOpeningMessage`). 나머지 메시지의 태그는 글자 그대로다.
-                const withImages = isAuthorOpeningMessage({ index, role: message.role, contentType: room.contentType }) ? (
+                const listPosition = { index, hasMoreBefore: room.hasMoreMessagesBefore };
+                const withImages = isAuthorOpeningMessage({ ...listPosition, role: message.role, contentType: room.contentType }) ? (
                   <MediaTagImagesProvider images={room.openingMediaTagImages}>{bubble}</MediaTagImagesProvider>
                 ) : (
                   bubble
                 );
                 // 첫 메시지(캐릭터 인사말 포함)는 작성자 글이라 이름 매크로를 방의 이름으로 바꾼다(`isAuthorTextMessage`).
-                return isAuthorTextMessage({ index, role: message.role }) ? (
+                return isAuthorTextMessage({ ...listPosition, role: message.role }) ? (
                   <AuthorMacroNamesProvider key={message.id} names={macroNames}>
                     {withImages}
                   </AuthorMacroNamesProvider>

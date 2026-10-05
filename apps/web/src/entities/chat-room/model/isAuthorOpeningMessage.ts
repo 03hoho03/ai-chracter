@@ -2,6 +2,9 @@ type MessageAtPosition = {
   index: number;
   role: "user" | "assistant";
   contentType: "character" | "story";
+  // 목록 앞에 아직 안 받은 메시지가 있는가(긴 방의 꼬리 창). 참이면 index 0 은 방의 첫 메시지가 아니다. 앞을 잘라
+  // 받지 않는 화면(빌더 미리보기)은 넘기지 않는다.
+  hasMoreBefore?: boolean;
 };
 
 /**
@@ -9,8 +12,8 @@ type MessageAtPosition = {
  * 복사본)뿐이다. 서버도 이 메시지에 대해서만 그림 맵을 준다. 그 밖(사용자 메시지·모델 응답·캐릭터 인사말)은 태그가
  * 글자 그대로 남는다 — 사용자가 칸 id 를 쳐서 그림을 불러내지 못하게, 캐릭터 화면은 이전과 같게.
  */
-export function isAuthorOpeningMessage({ index, role, contentType }: MessageAtPosition): boolean {
-  return contentType === "story" && index === 0 && role === "assistant";
+export function isAuthorOpeningMessage({ index, role, contentType, hasMoreBefore = false }: MessageAtPosition): boolean {
+  return contentType === "story" && index === 0 && !hasMoreBefore && role === "assistant";
 }
 
 /**
@@ -18,6 +21,6 @@ export function isAuthorOpeningMessage({ index, role, contentType }: MessageAtPo
  * 시작상황·프롤로그·인트로 복사본)다. 미디어 북 그림과 달리 캐릭터 인사말도 작성자 글이라 포함한다. 사용자 메시지는
  * 보낼 때 이미 바꿔 저장했고, 모델 응답은 작성자 글이 아니라 손대지 않는다.
  */
-export function isAuthorTextMessage({ index, role }: Omit<MessageAtPosition, "contentType">): boolean {
-  return index === 0 && role === "assistant";
+export function isAuthorTextMessage({ index, role, hasMoreBefore = false }: Omit<MessageAtPosition, "contentType">): boolean {
+  return index === 0 && !hasMoreBefore && role === "assistant";
 }

@@ -15,6 +15,7 @@ describe("toChatRoomState", () => {
       latestVersionAvailable: true,
       versionAutoUpgraded: false,
       contentRestricted: false,
+      hasMoreMessagesBefore: false,
       createdAt: "2026-07-08T00:00:00Z",
       updatedAt: "2026-07-08T00:00:00Z",
     });
@@ -33,6 +34,7 @@ describe("toChatRoomState", () => {
       latestVersionAvailable: true,
       versionAutoUpgraded: false,
       contentRestricted: false,
+      hasMoreMessagesBefore: false,
     });
   });
 
@@ -50,6 +52,7 @@ describe("toChatRoomState", () => {
       latestVersionAvailable: false,
       versionAutoUpgraded: false,
       contentRestricted: false,
+      hasMoreMessagesBefore: false,
       createdAt: "2026-07-08T00:00:00Z",
       updatedAt: "2026-07-08T00:00:00Z",
     };
@@ -90,6 +93,7 @@ describe("toChatRoomState", () => {
       latestVersionAvailable: false,
       versionAutoUpgraded: false,
       contentRestricted: false,
+      hasMoreMessagesBefore: false,
       createdAt: "2026-07-08T00:00:00Z",
       updatedAt: "2026-07-08T00:00:00Z",
     });
@@ -111,6 +115,7 @@ describe("toChatRoomState", () => {
       latestVersionAvailable: false,
       versionAutoUpgraded: false,
       contentRestricted: false,
+      hasMoreMessagesBefore: false,
       createdAt: "2026-07-08T00:00:00Z",
       updatedAt: "2026-07-08T00:00:00Z",
     };
@@ -130,11 +135,31 @@ describe("toChatRoomState", () => {
       latestVersionAvailable: false,
       versionAutoUpgraded: false,
       contentRestricted: false,
+      hasMoreMessagesBefore: false,
       createdAt: "2026-07-08T00:00:00Z",
       updatedAt: "2026-07-08T00:00:00Z",
     });
 
     expect(state.endingStatus).toEqual({ reached: true, endingId: undefined, reachedAtTurn: undefined, epilogue: undefined });
+  });
+
+  it("carries whether older messages are still on the server", () => {
+    const base = {
+      id: "room-1",
+      contentId: "content-1",
+      contentType: "character" as const,
+      name: "대화 1",
+      turnCount: 60,
+      endingReached: false,
+      messages: [],
+      latestVersionAvailable: false,
+      versionAutoUpgraded: false,
+      contentRestricted: false,
+      createdAt: "2026-07-08T00:00:00Z",
+      updatedAt: "2026-07-08T00:00:00Z",
+    };
+    expect(toChatRoomState({ ...base, hasMoreMessagesBefore: true }).hasMoreMessagesBefore).toBe(true);
+    expect(toChatRoomState({ ...base, hasMoreMessagesBefore: false }).hasMoreMessagesBefore).toBe(false);
   });
 
   it("maps story chat contentSnapshot/stats/startingSetupId, translating raw operators to comparison symbols", () => {
@@ -188,6 +213,7 @@ describe("toChatRoomState", () => {
       latestVersionAvailable: true,
       versionAutoUpgraded: false,
       contentRestricted: false,
+      hasMoreMessagesBefore: false,
       createdAt: "2026-07-08T00:00:00Z",
       updatedAt: "2026-07-08T00:00:00Z",
     });
