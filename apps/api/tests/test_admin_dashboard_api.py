@@ -3,8 +3,10 @@ from datetime import date, datetime, timedelta, timezone, UTC
 
 import httpx
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.admin.dashboard import _active_user_weeks
 from api.db.models import (
     Asset,
     AssetKind,
@@ -892,3 +894,70 @@ async def test_cohort_retention_beta_mode_ignores_messages_before_joined_at_with
     cohorts = resp.json()
     assert [(c["cohortWeekStart"], c["cohortSize"]) for c in cohorts] == [(joined_week_monday.isoformat(), 1)]
     assert [(w["weekOffset"], w["retainedUsers"]) for w in cohorts[0]["weeks"]] == [(0, 0), (1, 0)]
+
+
+async def test_cohort_retention_splits_weeks_at_utc_monday_regardless_of_session_time_zone(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """주 경계는 UTC 월요일 0시다. 일요일 23:30 UTC 메시지는 그 주, 월요일 00:30 UTC 메시지는
+    다음 주로 가야 한다. 연결의 세션 타임존을 서울로 바꿔 두면, 집계가 세션 타임존으로 날짜를
+    자를 때 일요일 23:30 UTC 가 서울 월요일 08:30 이 되어 다음 주로 밀리므로 이 둘이 갈린다."""
+    genre = await _get_genre(db_session)
+    now = datetime.now(UTC)
+    this_week_monday = now.date() - timedelta(days=now.weekday())
+    signup_week_start = this_week_monday - timedelta(weeks=3)
+    user = _make_user(created_at=_noon_of(signup_week_start))
+    db_session.add(user)
+    await db_session.flush()
+    character = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    w1_sunday = signup_week_start + timedelta(days=13)
+    sunday_late = datetime(w1_sunday.year, w1_sunday.month, w1_sunday.day, 23, 30, tzinfo=UTC)
+    await _add_user_message(db_session, user_id=user.id, character=character, created_at=sunday_late)
+    await _add_user_message(
+        db_session, user_id=user.id, character=character, created_at=sunday_late + timedelta(hours=1)
+    )
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+    await db_session.execute(text("SET LOCAL TIME ZONE 'Asia/Seoul'"))
+
+    resp = await db_client.get("/admin/dashboard/cohort-retention")
+    assert resp.status_code == 200
+    cohorts = resp.json()
+    assert [(c["cohortWeekStart"], c["cohortSize"]) for c in cohorts] == [(signup_week_start.isoformat(), 1)]
+    assert [(w["weekOffset"], w["retainedUsers"]) for w in cohorts[0]["weeks"]] == [(0, 0), (1, 1), (2, 1), (3, 0)]
+
+
+async def test_active_user_weeks_returns_one_row_per_user_week_not_per_message(db_session: AsyncSession) -> None:
+    """코호트 집계는 메시지 행을 전부 받아 오지 않고 (사용자, 활동 주의 월요일) 쌍만 받는다 —
+    긴 방 하나가 턴 수만큼 행을 늘리면 안 된다. 같은 주의 메시지 셋은 한 행으로, 주는 날짜가
+    아니라 그 주 월요일로 접혀야 하고, 사용자 메시지가 아닌 행은 활동으로 세지 않는다."""
+    genre = await _get_genre(db_session)
+    now = datetime.now(UTC)
+    week_a = now.date() - timedelta(days=now.weekday()) - timedelta(weeks=3)
+    week_b = week_a + timedelta(weeks=1)
+    week_c = week_a + timedelta(weeks=2)
+    user = _make_user(created_at=_noon_of(week_a))
+    db_session.add(user)
+    await db_session.flush()
+    character = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    room = ChatRoom(
+        user_id=user.id, content_id=character.id, content_version_id=character.current_published_version_id
+    )
+    db_session.add(room)
+    await db_session.flush()
+    for created_at, role in [
+        (_noon_of(week_a), ChatMessageRole.USER),
+        (_noon_of(week_a + timedelta(days=2)), ChatMessageRole.USER),
+        (_noon_of(week_a + timedelta(days=6)), ChatMessageRole.USER),
+        (_noon_of(week_b + timedelta(days=1)), ChatMessageRole.ASSISTANT),
+        (_noon_of(week_c + timedelta(days=1)), ChatMessageRole.USER),
+    ]:
+        db_session.add(ChatMessage(chat_room_id=room.id, role=role, content="메시지", created_at=created_at))
+    await db_session.flush()
+
+    rows = await _active_user_weeks(db_session, beta=False)
+
+    assert sorted(rows) == [(user.id, week_a), (user.id, week_c)]

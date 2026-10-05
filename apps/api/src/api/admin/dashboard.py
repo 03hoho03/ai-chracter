@@ -3,7 +3,7 @@ from collections.abc import Iterable
 from datetime import UTC, date, datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import Date, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin.dependencies import get_current_admin_id
@@ -284,6 +284,29 @@ def _week_start(dt: datetime) -> date:
     return d - timedelta(days=d.weekday())
 
 
+async def _active_user_weeks(db: AsyncSession, *, beta: bool) -> list[tuple[uuid.UUID, date]]:
+    """사용자 메시지를 보낸 (사용자, 그 주 월요일) 쌍. 메시지 행을 전부 받아 오면 긴 방 하나가 턴
+    수만큼 행을 늘리므로 DB 에서 주 단위로 접어 중복 없이 받는다.
+
+    주 경계는 `_week_start` 와 같은 UTC 날짜 기준이어야 한다. `date_trunc` 는 `timestamptz` 를
+    연결의 세션 타임존으로 자르므로 먼저 UTC 벽시계 시각으로 바꾼다(`timezone('UTC', …)` =
+    `AT TIME ZONE 'UTC'`). Postgres 의 `'week'` 도 월요일 시작이다.
+
+    `beta=True` 면 각 사용자의 베타 지정 시각 이후 메시지만 센다. 접기 전에 걸러야 지정한 주 안의
+    지정 전 활동이 그 주를 활동 주로 만들지 않는다."""
+    week_start = cast(func.date_trunc("week", func.timezone("UTC", ChatMessage.created_at)), Date)
+    query = (
+        select(ChatRoom.user_id, week_start.label("week_start"))
+        .select_from(ChatMessage)
+        .join(ChatRoom, ChatMessage.chat_room_id == ChatRoom.id)
+        .where(ChatMessage.role == ChatMessageRole.USER)
+        .distinct()
+    )
+    if beta:
+        query = query.join(User, User.id == ChatRoom.user_id).where(ChatMessage.created_at >= User.beta_joined_at)
+    return [(user_id, week) for user_id, week in (await db.execute(query)).all()]
+
+
 async def _cohort_retention(db: AsyncSession, *, beta: bool = False) -> list[AdminDashboardCohort]:
     """가입 주차 코호트별 유지율. **근사다** — 로그인 이벤트가 DB에 없어(`last_login`류
     필드 0건) '재방문'을 '그 주에 `ChatMessage.role == USER` 메시지를 보냈는가'로
@@ -305,30 +328,18 @@ async def _cohort_retention(db: AsyncSession, *, beta: bool = False) -> list[Adm
         return []
 
     cohort_start_by_user = {row.id: _week_start(row.cohort_at) for row in user_rows}
-    beta_joined_at_by_user = {row.id: row.cohort_at for row in user_rows} if beta else {}
     cohort_users: dict[date, set[uuid.UUID]] = {}
     for user_id, signup_week in cohort_start_by_user.items():
         cohort_users.setdefault(signup_week, set()).add(user_id)
 
-    message_rows = (
-        await db.execute(
-            select(ChatRoom.user_id, ChatMessage.created_at)
-            .select_from(ChatMessage)
-            .join(ChatRoom, ChatMessage.chat_room_id == ChatRoom.id)
-            .where(ChatMessage.role == ChatMessageRole.USER)
-        )
-    ).all()
-
     retained_by_cohort_offset: dict[tuple[date, int], set[uuid.UUID]] = {}
-    for row in message_rows:
-        cohort_start = cohort_start_by_user.get(row.user_id)
+    for user_id, active_week_start in await _active_user_weeks(db, beta=beta):
+        cohort_start = cohort_start_by_user.get(user_id)
         if cohort_start is None:
             continue  # 탈퇴 유저 — 코호트 분모에서 이미 빠졌다.
-        if beta and row.created_at < beta_joined_at_by_user[row.user_id]:
-            continue  # 베타 지정 전 활동 — 같은 주 안이어도 유지로 세지 않는다.
-        offset = (_week_start(row.created_at) - cohort_start).days // 7
+        offset = (active_week_start - cohort_start).days // 7
         if 0 <= offset <= _MAX_COHORT_WEEK_OFFSET:
-            retained_by_cohort_offset.setdefault((cohort_start, offset), set()).add(row.user_id)
+            retained_by_cohort_offset.setdefault((cohort_start, offset), set()).add(user_id)
 
     now_week_start = _week_start(datetime.now(UTC))
     cohorts: list[AdminDashboardCohort] = []

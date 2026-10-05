@@ -77,8 +77,16 @@ class ChatRoom(Base):
     )
 
     # 프로필 삭제의 `UPDATE chat_rooms SET persona_id=NULL WHERE persona_id=…`가 전체
-    # 스캔이 되지 않게 한다.
-    __table_args__ = (Index("ix_chat_rooms_persona_id", "persona_id"),)
+    # 스캔이 되지 않게 한다. Postgres 는 FK 열에 인덱스를 자동으로 만들지 않으므로
+    # `user_id`·`content_id` 도 직접 건다. 같은 작품의 내 방들(방 응답·작품 접근 판정)은
+    # 두 열을 함께 거르고 내 방 목록·탈퇴는 `user_id` 만 거르므로 앞 열이 `user_id` 인
+    # 복합 하나로 둘 다 받는다. 작품 하나의 방 전부를 고치는 버전 일괄 승격은
+    # `content_id` 만 거르므로 단일 인덱스를 따로 둔다.
+    __table_args__ = (
+        Index("ix_chat_rooms_persona_id", "persona_id"),
+        Index("ix_chat_rooms_user_id_content_id", "user_id", "content_id"),
+        Index("ix_chat_rooms_content_id", "content_id"),
+    )
 
 
 class ChatMessage(Base):
