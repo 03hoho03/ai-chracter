@@ -175,6 +175,49 @@ async def test_unrequested_stat_is_traced_as_not_requested(
     assert by_name["남은 날"]["clamped"] is False
 
 
+async def test_stat_outcome_keeps_the_judgment_output_verbatim_with_duplicates_and_unknown_ids(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # 요청 값 사전은 같은 스탯의 마지막 항목만 남기고 모르는 statId 를 버린다 — 판정 오독을 가리려면 모델이 낸
+    # 목록을 순서·중복·모르는 id 까지 그대로 봐야 한다. 적용 결과는 원 출력을 남기기 전과 같아야 한다.
+    trace_path = tmp_path / "trace.jsonl"
+    monkeypatch.setattr(settings, "filmclub_trace_path", str(trace_path))
+    room_id, affection, _ = await _story_room_with_two_stats(db_client, db_session)
+
+    unknown = str(uuid.uuid4())
+    fake = _StatJudgingLLMClient(
+        StatJudgmentResult(
+            stat_changes=[
+                StatChangeJudgment(stat_id=str(affection.entity_id), new_value=40),
+                StatChangeJudgment(stat_id=unknown, new_value=5),
+                StatChangeJudgment(stat_id=str(affection.entity_id), new_value=53),
+            ]
+        )
+    )
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "인사"})
+    finally:
+        _clear_llm_override()
+
+    (outcome,) = [r for r in _records(trace_path) if r["kind"] == "stat_outcome"]
+    assert outcome["judgmentOutput"] == {
+        "stat_changes": [
+            {"stat_id": str(affection.entity_id), "new_value": 40.0},
+            {"stat_id": unknown, "new_value": 5.0},
+            {"stat_id": str(affection.entity_id), "new_value": 53.0},
+        ]
+    }
+    by_name = {s["name"]: s for s in outcome["stats"]}
+    assert (by_name["호감"]["requested"], by_name["호감"]["applied"]) == (53.0, 53.0)
+    events = _parse_sse_events(resp.text)
+    assert [e["type"] for e in events] == ["token", "statChange", "done"]
+    assert events[1]["newValue"] == 53
+
+
 async def test_trace_write_failure_does_not_break_the_turn(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,

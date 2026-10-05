@@ -2,7 +2,9 @@
 
 두 종류의 레코드를 JSONL 한 줄씩 남긴다.
 - `stat_outcome`: 스토리 턴의 스탯 판정 결과를 스탯마다 시작 값·판정이 요청한 값·실제 적용 값으로. 요청과 적용이
-  다르면 방향·한 턴 최대 폭·범위 자르기가 일한 것이다.
+  다르면 방향·한 턴 최대 폭·범위 자르기가 일한 것이다. 판정 모델이 낸 변경 목록도 `judgmentOutput` 에 그대로
+  남긴다 — 요청 값은 같은 스탯의 마지막 항목만 남기고 모르는 statId 를 버려, 판정이 다른 줄의 값을 읽었는지 같은
+  오독을 가릴 수 없다.
 - `llm_call`: LLM 호출 한 건의 call_site·모델·경과 ms·성공 여부. 실패한 호출(시간 초과 포함)도 남긴다.
 
 `settings.filmclub_trace_path` 가 None 이면 아무것도 하지 않는다(기본값). 프롬프트 덤프처럼 `.env` 가 아니라 서버
@@ -75,8 +77,10 @@ def trace_stat_outcome(
     current: dict[str, float],
     requested: dict[str, float],
     applied: dict[str, float],
+    judgment_output: dict[str, Any] | None = None,
 ) -> None:
-    """`requested` 는 판정이 스탯마다 낸 마지막 값(적용 함수와 같은 규칙), 없으면 그 스탯은 요청 없음(None)."""
+    """`requested` 는 판정이 스탯마다 낸 마지막 값(적용 함수와 같은 규칙), 없으면 그 스탯은 요청 없음(None).
+    `judgment_output` 은 구조화 출력 전체(순서·중복·모르는 id 포함)."""
     if settings.filmclub_trace_path is None:
         return
     try:
@@ -98,6 +102,6 @@ def trace_stat_outcome(
                     "clamped": want is not None and float(want) != float(got),
                 }
             )
-        write_trace("stat_outcome", roomId=str(room_id), stats=stats)
+        write_trace("stat_outcome", roomId=str(room_id), stats=stats, judgmentOutput=judgment_output)
     except Exception:
         logger.warning("filmclub trace stat_outcome 조립 실패", exc_info=True)

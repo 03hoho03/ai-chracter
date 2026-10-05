@@ -1,16 +1,21 @@
-"""측정 방의 한 턴에서 미디어 북 칸 판정·엔딩 판정을 다시 부른다 — 실제 판정은 요약이 덮은 원문을 빼고(판정 윈도)
-불렸으니, 같은 턴을 대화 전체로 불러 결과가 갈리는지 본다. 기본은 프롬프트만 만들고 비용 견적을 내는 시험 실행이고,
-`--execute` 를 줘야 LLM 을 부른다.
+"""측정 방의 한 턴에서 미디어 북 칸 판정·엔딩 판정·스탯 판정을 다시 부른다 — 실제 판정은 요약이 덮은 원문을 빼고(판정
+윈도) 불렸으니, 같은 턴을 대화 전체로 불러 결과가 갈리는지 본다. 스탯 판정은 히스토리를 싣지 않아 윈도와 무관하고,
+같은 입력을 여러 번 보내 한 번 나온 판정 값이 다시 나오는지(재현성)를 본다. 기본은 프롬프트만 만들고 비용 견적을 내는
+시험 실행이고, `--execute` 를 줘야 LLM 을 부른다.
 
     uv run --env-file .env python scripts/experiments/filmclub_longturn/judgment_replay.py \\
         --room <id> --turn <방 턴 번호> --kind image --kind ending [--ending <엔딩 entity_id>] \\
         [--variant full|window] [--reps 3] [--limit-calls 6] --out <run>/replay/t<NNN>.jsonl [--execute]
+    # 스탯 판정: 그 턴의 시작 값을 서버 trace 의 stat_outcome 에서 읽는다(DB 에는 지금 값만 있다).
+    ... --kind stat --stat-start-trace <run>/trace.jsonl --reps 10 --limit-calls 10 ...
 
 입력은 격리 DB 의 방이다. 턴 N 은 N 번째 (사용자 메시지, 바로 뒤 응답) 쌍이고, 판정 입력의 히스토리는 그 사용자 메시지
 앞의 메시지 전부다(유실 턴의 사용자 메시지도 서버가 그랬듯 히스토리에 든다). 프롬프트는 서버의 판정 준비 함수를 그대로
 불러 만든다 — 판정 윈도 설정만 이 프로세스 안에서 끄거나 켠다. `window` 는 방의 현재 요약을 쓰므로 방의 마지막 턴에만
 허용한다(과거 턴에 그때의 요약을 재구성하지 않는다). 엔딩은 그 턴에 판정할 차례(게이트·5턴 간격)인 엔딩만 만들고,
-스탯 규칙은 보지 않는다 — 실제로 판정이 불린 엔딩을 `--ending` 으로 고른다.
+스탯 규칙은 보지 않는다 — 실제로 판정이 불린 엔딩을 `--ending` 으로 고른다. 스탯 판정 프롬프트는 서버와 같은
+빌더·같은 스탯 정의 순서로 만들고 현재값만 trace 의 시작 값으로 넣는다. 결과마다 서버 적용 규칙(방향·폭·범위)을 거친
+값도 함께 남긴다.
 
 모델·타임아웃·집계: 리플레이 call_site 는 앱의 판정 집합에 들어 있어 원래 판정과 같은 모델로 가고(시작할 때 같은지
 확인하고 다르면 멈춘다), 운영 판정과 다른 라벨이라 사용량·로그가 섞이지 않는다. 수십만 토큰 비스트리밍 호출이라 판정
@@ -41,17 +46,22 @@ from api.chat.memory_window import load_current_summary, prompt_window
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
     ImageMatchJudgmentResult,
+    StatJudgmentResult,
     build_ending_judgment_prompt,
+    build_stat_judgment_prompt,
     load_active_prompt_set,
 )
 from api.chat.router import (
     _build_prompt,
     _load_due_endings,
+    _load_room_stats,
     _prepare_media_cell_judgment,
     _require_starting_setup,
 )
+from api.chat.stats import StatChange, apply_stat_changes
 from api.core.config import settings
 from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom
+from api.db.models.story import StatDef
 from api.llm.client import LLMCallContext, LLMCallSite, LLMClient, structured_model
 from api.llm.gemini import GeminiLLMClient
 from api.llm.pricing import estimate_cost_usd
@@ -59,6 +69,7 @@ from api.llm.pricing import estimate_cost_usd
 REPLAY_TIMEOUT_MS = 300_000
 # 리플레이 call_site → 원래 판정 call_site. 모델이 같아야 "윈도 vs 전체" 대조에 모델 차이가 섞이지 않는다.
 REPLAY_SITES: dict[str, tuple[LLMCallSite, LLMCallSite]] = {
+    "stat": ("replay_stat_judgment", "chat_stat_judgment"),
     "image": ("replay_media_book_image", "chat_media_book_image"),
     "ending": ("replay_ending_judgment", "chat_ending_judgment"),
 }
@@ -66,6 +77,8 @@ REPLAY_SITES: dict[str, tuple[LLMCallSite, LLMCallSite]] = {
 # 글자 수와 함께 본다. window 변형에는 과대 견적이다). 출력은 짧은 JSON 이다.
 TOKENS_PER_TURN = 450
 OUTPUT_TOKENS = 60
+# 스탯 판정은 히스토리가 없어 턴과 무관하다. 측정 방 서버 로그의 스탯 판정 입력이 1,700 토큰대라 넉넉히 잡는다.
+STAT_INPUT_TOKENS = 2_000
 
 
 @dataclass(frozen=True)
@@ -80,6 +93,9 @@ class ReplayInput:
     history_messages: int
     ending_id: uuid.UUID | None = None
     candidate_ids: frozenset[uuid.UUID] = field(default_factory=frozenset)
+    # 스탯 판정만: 서버 적용 규칙을 다시 돌릴 정의와 그 턴의 시작 값.
+    stat_defs: tuple[StatDef, ...] = ()
+    stat_start: dict[str, float] = field(default_factory=dict)
 
 
 class CallBudget:
@@ -112,6 +128,23 @@ def judgment_window(enabled: bool) -> Iterator[None]:
             setattr(settings, key, value)
 
 
+def stat_start_from_trace(path: Path, room_id: uuid.UUID, turn: int) -> dict[str, float]:
+    """서버 trace 의 `stat_outcome` 에서 그 방·그 턴 판정의 시작 값(statId → start). 없거나 둘 이상이면 멈춘다 — 다른
+    턴의 값을 쓰면 재구성 프롬프트가 실제와 달라진다."""
+    found = [
+        record
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+        for record in [json.loads(line)]
+        if record.get("kind") == "stat_outcome" and record.get("roomId") == str(room_id) and record.get("turn") == turn
+    ]
+    if not found:
+        raise ValueError(f"trace 에 턴 {turn} 의 stat_outcome 이 없다")
+    if len(found) > 1:
+        raise ValueError(f"trace 에 턴 {turn} 의 stat_outcome 이 {len(found)}개다")
+    return {stat["statId"]: float(stat["start"]) for stat in found[0]["stats"]}
+
+
 def _turn_pairs(messages: list[ChatMessage]) -> list[int]:
     """턴 번호(1부터) → 그 턴 사용자 메시지의 인덱스. 바로 뒤가 응답인 사용자 메시지만 턴이다(유실 턴은 방 턴 수에
     세지 않는다)."""
@@ -130,6 +163,7 @@ async def build_inputs(
     kinds: list[str],
     variant: str,
     ending_ids: list[uuid.UUID] | None = None,
+    stat_start: dict[str, float] | None = None,
 ) -> list[ReplayInput]:
     room = await db.get(ChatRoom, room_id)
     if room is None:
@@ -163,6 +197,34 @@ async def build_inputs(
             window_count = len(prompt_window(history, summary.cursor))
 
     inputs: list[ReplayInput] = []
+    if "stat" in kinds:
+        stat_defs, _, _ = await _load_room_stats(db, room.id, setup.id)
+        expected = {str(stat_def.entity_id) for stat_def in stat_defs}
+        if stat_start is None or set(stat_start) != expected:
+            raise ValueError("스탯 판정은 그 턴의 시작 값이 스탯마다 있어야 한다(DB 에는 지금 값만 있다)")
+        site, original = REPLAY_SITES["stat"]
+        inputs.append(
+            ReplayInput(
+                kind="stat",
+                variant=variant,
+                turn=turn,
+                prompt=build_stat_judgment_prompt(
+                    prompt_set=prompt_set,
+                    sections=sections,
+                    stat_defs=stat_defs,
+                    current_stats=stat_start,
+                    user_message=user.content,
+                    assistant_message=assistant.content,
+                    names=names,
+                ),
+                schema=StatJudgmentResult,
+                call_site=site,
+                original_call_site=original,
+                history_messages=0,
+                stat_defs=tuple(stat_defs),
+                stat_start=dict(stat_start),
+            )
+        )
     with judgment_window(windowed):
         if "image" in kinds:
             judgment = await _prepare_media_cell_judgment(
@@ -239,7 +301,7 @@ def estimate(inputs: list[ReplayInput], reps: int, models: dict[str, str]) -> di
     for item in inputs:
         cost = estimate_cost_usd(
             models[item.call_site],
-            input_tokens=TOKENS_PER_TURN * item.turn,
+            input_tokens=_input_tokens(item),
             cached_tokens=0,
             output_tokens=OUTPUT_TOKENS,
             thoughts_tokens=0,
@@ -248,8 +310,29 @@ def estimate(inputs: list[ReplayInput], reps: int, models: dict[str, str]) -> di
     return {
         "calls": calls,
         "estimatedUsd": round(total, 4),
-        "tokensPerCall": [TOKENS_PER_TURN * i.turn for i in inputs],
+        "tokensPerCall": [_input_tokens(i) for i in inputs],
     }
+
+
+def _input_tokens(item: ReplayInput) -> int:
+    return STAT_INPUT_TOKENS if item.kind == "stat" else TOKENS_PER_TURN * item.turn
+
+
+def stat_result(item: ReplayInput, output: StatJudgmentResult) -> list[dict[str, Any]]:
+    """원 출력에 서버와 같은 적용 규칙(같은 스탯은 마지막 항목, 방향·폭·범위)을 돌린 스탯별 결과."""
+    changes = [StatChange(stat_id=c.stat_id, new_value=c.new_value) for c in output.stat_changes]
+    applied = apply_stat_changes(item.stat_start, changes, list(item.stat_defs))
+    requested = {c.stat_id: c.new_value for c in changes}
+    return [
+        {
+            "statId": str(stat_def.entity_id),
+            "name": stat_def.name,
+            "start": item.stat_start[str(stat_def.entity_id)],
+            "requested": requested.get(str(stat_def.entity_id)),
+            "applied": applied[str(stat_def.entity_id)],
+        }
+        for stat_def in item.stat_defs
+    ]
 
 
 # ── 호출 ────────────────────────────────────────────────────────────────────
@@ -302,6 +385,7 @@ async def run_replay(
             capture.clear()
             started = time.perf_counter()
             output: Any = None
+            applied: list[dict[str, Any]] | None = None
             error: str | None = None
             try:
                 parsed = await client.generate_structured(
@@ -310,6 +394,8 @@ async def run_replay(
                     usage=LLMCallContext(call_site=item.call_site, user_id=room.user_id, room_id=room.id),
                 )
                 output = parsed.model_dump()
+                if isinstance(parsed, StatJudgmentResult):
+                    applied = stat_result(item, parsed)
             except Exception as exc:  # 기록하고 다음 호출로 — 실패도 결과다(컨텍스트 한도 등)
                 error = f"{type(exc).__name__}: {str(exc)[:500]}"
             sink(
@@ -331,6 +417,7 @@ async def run_replay(
                     "promptChars": len(item.prompt),
                     "promptSha256": hashlib.sha256(item.prompt.encode()).hexdigest()[:16],
                     "output": output,
+                    "statResult": applied,
                     "error": error,
                 }
             )
@@ -346,11 +433,20 @@ async def _main(args: argparse.Namespace) -> int:
         if room is None:
             print(f"방이 없다: {room_id}")
             return 1
-        inputs = await build_inputs(db, room_id, args.turn, kinds=args.kind, variant=args.variant, ending_ids=endings)
+        stat_start = (
+            stat_start_from_trace(Path(args.stat_start_trace), room_id, args.turn) if args.stat_start_trace else None
+        )
+        inputs = await build_inputs(
+            db, room_id, args.turn, kinds=args.kind, variant=args.variant, ending_ids=endings, stat_start=stat_start
+        )
     models = check_same_models(inputs, settings.gemini_model_name)
     plan = estimate(inputs, args.reps, models)
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
+    if args.prompt_out:
+        for item in inputs:
+            with open(f"{args.prompt_out}.{item.kind}.txt", "w", encoding="utf-8") as f:  # noqa: ASYNC230 — 한 번 쓰는 CLI
+                f.write(item.prompt)
 
     def sink(record: dict[str, Any]) -> None:
         with out.open("a", encoding="utf-8") as f:
@@ -372,6 +468,8 @@ async def _main(args: argparse.Namespace) -> int:
                     "endingId": str(i.ending_id) if i.ending_id else None,
                     "historyMessages": i.history_messages,
                     "promptChars": len(i.prompt),
+                    "promptSha256": hashlib.sha256(i.prompt.encode()).hexdigest()[:16],
+                    "statStart": i.stat_start or None,
                 }
                 for i in inputs
             ],
@@ -395,7 +493,9 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--room", required=True)
     ap.add_argument("--turn", type=int, required=True, help="방 턴 번호(N 번째 완결 턴)")
-    ap.add_argument("--kind", action="append", choices=["image", "ending"], required=True)
+    ap.add_argument("--kind", action="append", choices=["image", "ending", "stat"], required=True)
+    ap.add_argument("--stat-start-trace", help="스탯 판정 시작 값을 읽을 서버 trace(stat_outcome) 파일")
+    ap.add_argument("--prompt-out", help="만든 프롬프트를 판정 종류별로 이 접두 경로에 저장(<접두>.<종류>.txt)")
     ap.add_argument("--ending", action="append", help="엔딩 entity_id(여럿 가능) — 없으면 그 턴에 차례인 엔딩 전부")
     ap.add_argument("--variant", choices=["full", "window"], default="full")
     ap.add_argument("--reps", type=int, default=1)

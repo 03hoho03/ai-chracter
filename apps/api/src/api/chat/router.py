@@ -1761,6 +1761,7 @@ async def _stream_new_turn(
                     current=current_stats,
                     requested={c.stat_id: c.new_value for c in changes},
                     applied=updated_stats,
+                    judgment_output=judgment.model_dump(mode="json"),
                 )
 
                 for stat_id, new_value in updated_stats.items():

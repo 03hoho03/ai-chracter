@@ -702,7 +702,7 @@ async def test_generate_structured_usage_missing_and_logging_failure_do_not_rais
 
 # ── call_site 로 고르는 구조화 호출 모델, 사용량 집계 ─────────────────────────────────
 
-_STAT_SITES = ("chat_stat_judgment", "preview_stat_judgment")
+_STAT_SITES = ("chat_stat_judgment", "preview_stat_judgment", "replay_stat_judgment")
 _ENDING_SITES = ("chat_ending_judgment", "preview_ending_judgment", "replay_ending_judgment")
 _IMAGE_SITES = (
     "chat_situational_image",
@@ -937,6 +937,7 @@ _EXPECTED_TIMEOUT_MS: dict[str, int] = {
     "preview_stat_judgment": 20_000,
     "preview_ending_judgment": 20_000,
     "preview_media_book_image": 20_000,
+    "replay_stat_judgment": 20_000,
     "replay_ending_judgment": 20_000,
     "replay_media_book_image": 20_000,
     "chat_memory_summary": 60_000,

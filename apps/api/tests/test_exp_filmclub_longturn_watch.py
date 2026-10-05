@@ -355,6 +355,18 @@ def test_redis_cost_splits_replay_from_conversation() -> None:
     assert cost["unpriced"] == 0
 
 
+def test_redis_cost_counts_stat_judgment_replay_as_replay() -> None:
+    hashes = {
+        "llm_usage:2026-10-05": {
+            "replay_stat_judgment|gemini-3.1-flash-lite|prompt": "1743",
+            "replay_stat_judgment|gemini-3.1-flash-lite|candidates": "76",
+            "replay_stat_judgment|gemini-3.1-flash-lite|total": "1819",
+        }
+    }
+    cost = w.redis_cost(hashes, since_day="2026-10-05")
+    assert cost["replay"] > 0 and cost["convAllRooms"] == 0
+
+
 def _line(conv: float, replay: float = 0.0, d: float = 0.01, unpriced: int = 0) -> dict[str, Any]:
     return {
         "turn": 10,
@@ -407,6 +419,29 @@ def test_report_only_items_and_long_repeat_never_touch_the_stop_file(tmp_path: P
     w.write_outcome(tmp_path, 20, items, alerts)
     assert not (tmp_path / "STOP").exists()
     assert all(a["stop"] is False for a in alerts) and len(alerts) == 2
+
+
+def test_b9_stops_even_when_listed_as_report_only(tmp_path: Path) -> None:
+    # 호감 급변은 재개 뒤에도 매번 멈춘다 — 재기동 인자에 B9 를 보고만으로 넣어도 정지가 풀리지 않는다.
+    items = {"B9": {"hit": True, "evidence": ["턴 33 세빈 호감도 Δ -20.0"]}, "B3": {"hit": True, "evidence": ["x"]}}
+    alerts = w.item_alerts(items, report_only={"B9", "B3"})
+    assert {a["item"]: a["stop"] for a in alerts} == {"B9": True, "B3": False}
+    w.write_outcome(tmp_path, 40, items, alerts)
+    assert (tmp_path / "STOP").exists()
+
+
+def test_trace_reader_keeps_stats_when_the_record_also_carries_the_raw_judgment(tmp_path: Path) -> None:
+    path = tmp_path / "trace.jsonl"
+    stats = [{"name": "세빈 호감도", "start": 52.5, "requested": 27.5, "applied": 27.5}]
+    record = {
+        "kind": "stat_outcome",
+        "turn": 13,
+        "roomId": "r",
+        "stats": stats,
+        "judgmentOutput": {"stat_changes": [{"stat_id": "s", "new_value": 27.5}]},
+    }
+    path.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
+    assert w.trace_stat_outcomes(path, "r") == {13: stats}
 
 
 # ---------------------------------------------------------------- E1 「상영회까지」 남은 턴의 엔딩 판정

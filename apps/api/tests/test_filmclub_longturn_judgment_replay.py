@@ -1,7 +1,10 @@
 """판정 리플레이 도구를 LLM 없이 본다 — 대화 전체가 실리는지, 리플레이 call_site 가 원래 판정과 같은 모델을 고르는지,
 요청 단위 타임아웃이 리플레이 값으로 나가는지, 호출 상한을 지키는지."""
 
+import json
 import uuid
+from collections.abc import AsyncIterator
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -10,15 +13,30 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat.prompt_builder import EndingJudgmentResult, ImageMatchJudgmentResult
+from api.chat.prompt_builder import (
+    EndingJudgmentResult,
+    ImageMatchJudgmentResult,
+    StatChangeJudgment,
+    StatJudgmentResult,
+)
 from api.core.config import settings
 from api.db.models.chat import ChatRoom
-from api.db.models.story import Ending, StartingSetup
+from api.db.models.story import Ending, StartingSetup, StatDef
 from api.llm import gemini
-from api.llm.client import structured_model
+from api.llm.client import LLMCallContext, LLMClient, LLMClientError, structured_model
 from api.llm.gemini import GeminiLLMClient
 from experiments.filmclub_longturn import judgment_replay as replay
-from factories import Room, _add_named_media_cell, _open_room, _plant_snapshot
+from factories import (
+    Room,
+    _add_named_media_cell,
+    _clear_llm_override,
+    _login_as,
+    _make_default_persona,
+    _open_room,
+    _override_llm_client,
+    _plant_snapshot,
+    _story_with_setup,
+)
 
 EARLIEST_USER_TEXT = "[U01]"
 
@@ -210,3 +228,171 @@ def test_estimate_grows_with_the_turn_number() -> None:
     assert small["calls"] == 1 and large["calls"] == 2
     assert large["tokensPerCall"] == [replay.TOKENS_PER_TURN * 500]
     assert large["estimatedUsd"] > small["estimatedUsd"] > 0
+
+
+# ── 스탯 판정 ────────────────────────────────────────────────────────────────
+
+
+class _CapturingStatLLM(LLMClient):
+    """생성은 고정 토큰, 스탯 판정은 턴마다 정한 값으로 답하며 서버가 실제로 보낸 스탯 판정 프롬프트를 모은다."""
+
+    def __init__(self, stat_id: str, values: list[float]) -> None:
+        self.stat_id = stat_id
+        self.values = values
+        self.stat_prompts: list[str] = []
+
+    async def generate(
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+        stop_sequences: list[str] | None = None,
+        *,
+        usage: LLMCallContext,
+    ) -> AsyncIterator[str]:
+        yield f"{{{{user}}}} 쪽을 본다 {len(self.stat_prompts)}"
+
+    async def generate_structured(
+        self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
+    ) -> Any:
+        if response_schema is not StatJudgmentResult:
+            raise LLMClientError("이 시험에서는 스탯 판정만 답한다")
+        self.stat_prompts.append(prompt)
+        value = self.values[len(self.stat_prompts) - 1]
+        return StatJudgmentResult(stat_changes=[StatChangeJudgment(stat_id=self.stat_id, new_value=value)])
+
+
+async def _played_stat_room(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[uuid.UUID, StatDef, StatDef, _CapturingStatLLM, Path]:
+    """프로필 이름이 있는 사용자가 스탯 둘(설명에 {{user}})인 스토리 방에서 두 턴을 실제 API 로 진행한다. trace 를 켜
+    턴마다 판정 시작 값이 남는다."""
+    trace_path = tmp_path / "trace.jsonl"
+    monkeypatch.setattr(settings, "filmclub_trace_path", str(trace_path))
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="어서 와요")
+    await _make_default_persona(db_session, user_id, "하늘")
+    liking = StatDef(
+        entity_id=uuid.uuid4(), starting_setup_id=setup.id, name="세빈 호감도", icon="heart", color="#ff0000",
+        min_value=0, max_value=100, initial_value=50, unit=None, order=1,
+        description="{{user}}가 세빈의 일에 응하면 2~4 오른다.",
+    )  # fmt: skip
+    days = StatDef(
+        entity_id=uuid.uuid4(), starting_setup_id=setup.id, name="상영회까지", icon="clock", color="#00ff00",
+        min_value=0, max_value=42, initial_value=42, unit="일", order=2, max_change_per_turn=7,
+        change_direction="decrease", description="날이 넘어가면 줄어든다.",
+    )  # fmt: skip
+    db_session.add_all([liking, days])
+    await db_session.commit()
+    await _login_as(db_client, user_id)
+    created = await db_client.post(
+        "/chat-rooms",
+        json={"contentId": str(content.id), "contentType": "story", "startingSetupId": str(setup.id)},
+    )
+    room_id = uuid.UUID(created.json()["id"])
+    fake = _CapturingStatLLM(str(liking.entity_id), [53.0, 28.0])
+    _override_llm_client(fake)
+    try:
+        for text in ("{{user}}: 이 정도 각도예요?", "벤치에 앉는다"):
+            resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": text})
+            assert resp.status_code == 200
+    finally:
+        _clear_llm_override()
+    return room_id, liking, days, fake, trace_path
+
+
+async def test_stat_replay_rebuilds_exactly_the_prompt_the_server_sent(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    room_id, liking, days, fake, trace_path = await _played_stat_room(db_client, db_session, tmp_path, monkeypatch)
+    start = replay.stat_start_from_trace(trace_path, room_id, 2)
+    assert start == {str(liking.entity_id): 53.0, str(days.entity_id): 42.0}
+
+    (item,) = await replay.build_inputs(db_session, room_id, 2, kinds=["stat"], variant="full", stat_start=start)
+    assert (item.kind, item.call_site, item.original_call_site) == (
+        "stat",
+        "replay_stat_judgment",
+        "chat_stat_judgment",
+    )
+    assert item.prompt == fake.stat_prompts[1]  # 서버가 턴 2 에 실제로 보낸 프롬프트와 글자 하나까지 같다
+    assert item.prompt != fake.stat_prompts[0]
+
+
+async def test_stat_replay_needs_start_values_for_every_stat(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # DB 에는 지금 값만 있어 과거 턴의 시작 값을 알 수 없다 — 추정하지 않고 멈춘다.
+    room_id, liking, _days, _fake, _trace = await _played_stat_room(db_client, db_session, tmp_path, monkeypatch)
+    with pytest.raises(ValueError, match="시작 값"):
+        await replay.build_inputs(db_session, room_id, 2, kinds=["stat"], variant="full")
+    with pytest.raises(ValueError, match="시작 값"):
+        await replay.build_inputs(
+            db_session, room_id, 2, kinds=["stat"], variant="full", stat_start={str(liking.entity_id): 53.0}
+        )
+
+
+def test_stat_start_from_trace_refuses_a_missing_or_ambiguous_turn(tmp_path: Path) -> None:
+    room = uuid.uuid4()
+    path = tmp_path / "trace.jsonl"
+    record = {"kind": "stat_outcome", "turn": 13, "roomId": str(room), "stats": [{"statId": "s", "start": 52.5}]}
+    other_room = record | {"roomId": str(uuid.uuid4()), "stats": [{"statId": "s", "start": 1.0}]}
+    path.write_text("\n".join(json.dumps(r) for r in (record, other_room)) + "\n", encoding="utf-8")
+    assert replay.stat_start_from_trace(path, room, 13) == {"s": 52.5}
+    with pytest.raises(ValueError, match="없다"):
+        replay.stat_start_from_trace(path, room, 12)
+    path.write_text("\n".join(json.dumps(r) for r in (record, record)) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="2개"):
+        replay.stat_start_from_trace(path, room, 13)
+
+
+async def test_stat_replay_call_uses_the_stat_model_replay_label_long_timeout_and_applies_server_rules(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    room_id, liking, days, _fake, trace_path = await _played_stat_room(db_client, db_session, tmp_path, monkeypatch)
+    monkeypatch.setattr(settings, "gemini_stat_judgment_model_name", "stat-model")
+    recorded: list[tuple[str, str]] = []
+
+    async def record_usage(call_site: str, model: str, usage: object) -> None:
+        recorded.append((call_site, model))
+
+    monkeypatch.setattr(gemini, "record_usage", record_usage)
+    start = replay.stat_start_from_trace(trace_path, room_id, 2)
+    inputs = await replay.build_inputs(db_session, room_id, 2, kinds=["stat"], variant="full", stat_start=start)
+    assert replay.check_same_models(inputs, settings.gemini_model_name) == {"replay_stat_judgment": "stat-model"}
+
+    # 원 출력: 호감 28(−25, 폭 제한 없음이라 그대로), 상영회까지 증가 요청(감소만이라 버려짐), 모르는 id(무시).
+    raw = StatJudgmentResult(
+        stat_changes=[
+            StatChangeJudgment(stat_id=str(liking.entity_id), new_value=28),
+            StatChangeJudgment(stat_id=str(days.entity_id), new_value=45),
+            StatChangeJudgment(stat_id="모르는-id", new_value=1),
+        ]
+    )
+    sent: list[dict[str, Any]] = []
+
+    async def generate_content(**kwargs: Any) -> SimpleNamespace:
+        sent.append(kwargs)
+        return SimpleNamespace(parsed=raw, usage_metadata=SimpleNamespace(prompt_token_count=1743))
+
+    client = GeminiLLMClient(api_key="test-key")
+    monkeypatch.setattr(
+        client,
+        "_client",
+        SimpleNamespace(aio=SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))),
+    )
+    capture: dict[str, Any] = {}
+    replay.install_replay_transport(client, capture)
+    records: list[dict[str, Any]] = []
+    row = await db_session.get(ChatRoom, room_id)
+    assert row is not None
+    await replay.run_replay(client, capture, inputs, reps=1, budget=replay.CallBudget(5), room=row, sink=records.append)
+
+    assert [k["model"] for k in sent] == ["stat-model"]
+    assert [k["config"].http_options.timeout for k in sent] == [replay.REPLAY_TIMEOUT_MS]
+    assert [k["contents"] for k in sent] == [inputs[0].prompt]
+    assert [k["config"].response_schema for k in sent] == [StatJudgmentResult]
+    assert recorded == [("replay_stat_judgment", "stat-model")]
+    (record,) = records
+    assert (record["callSite"], record["sentModel"], record["error"]) == ("replay_stat_judgment", "stat-model", None)
+    assert record["output"] == raw.model_dump()
+    by_name = {s["name"]: s for s in record["statResult"]}
+    assert by_name["세빈 호감도"] == {"statId": str(liking.entity_id), "name": "세빈 호감도", "start": 53.0, "requested": 28.0, "applied": 28.0}  # fmt: skip
+    assert by_name["상영회까지"] == {"statId": str(days.entity_id), "name": "상영회까지", "start": 42.0, "requested": 45.0, "applied": 42.0}  # fmt: skip

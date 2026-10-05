@@ -12,7 +12,7 @@
 
 임계값은 사전 등록 문서의 깨짐 기준 표와 원가 규칙을 그대로 옮겼다. 사람 턴·프로브 턴·유실 턴은 채점에서 빠지고(연속
 판정은 채점 턴 순서로), 직전 점검에서 이미 본 턴은 다시 걸지 않는다(`since`). 재개한 뒤 같은 항목을 보고만 하려면
-`--report-only B3,B9` 처럼 준다.
+`--report-only B3` 처럼 준다. 스탯 비정상 이동(B9)은 재개 뒤에도 매번 멈춘다 — 보고만 목록에 넣어도 풀리지 않는다.
 
     cd apps/api
     uv run --env-file .env python scripts/experiments/filmclub_longturn/turn_watch.py run \\
@@ -48,6 +48,9 @@ STOP_ITEMS = ("B1", "B2", "B3", "B4", "B6a", "B6c", "B8", "B9", "B11", "B12", "E
 # 장거리 n-gram 반복은 판별력이 확인되지 않은 지표라 정지 없이 보고만 한다. E1·E5 교차 확인은 정의상 본 판정을
 # 대신하지 않는 보조 신호라 어긋나도 보고만 한다.
 REPORT_ONLY_ALWAYS = ("B6b", "E1.crosscheck", "E5.crosscheck")
+# 재개 뒤에도 매번 멈추는 항목. 호감 급변은 판정 오독일 수 있어 볼 때마다 원 출력을 확인해야 해서, 사용자가 보고만으로
+# 내리지 않기로 정했다.
+STOP_ALWAYS = ("B9",)
 # 단계 노트 = 「상영회까지」 하나만 조건으로 가리키는 상황 노트 넷. 생성 프롬프트에는 언제나 이 중 정확히 하나가 실린다.
 STAGE_NOTES = ("준비 초반", "촬영 기간", "상영회 직전", "상영회 당일")
 JUDGMENT_FAILURES = {
@@ -55,7 +58,7 @@ JUDGMENT_FAILURES = {
     "chat_media_book_image": "media_book_judgment",
     "chat_ending_judgment": "judgment",
 }
-REPLAY_SITES = ("replay_ending_judgment", "replay_media_book_image")
+REPLAY_SITES = ("replay_stat_judgment", "replay_ending_judgment", "replay_media_book_image")
 CONVERSATION_STOP_USD = 10.0
 TOTAL_STOP_USD = 25.0
 CONVERSATION_REPORT_USD = 8.0
@@ -495,7 +498,7 @@ def item_alerts(items: dict[str, dict[str, Any]], report_only: set[str]) -> list
     return [
         {
             "item": name,
-            "stop": name in STOP_ITEMS and name not in report_only,
+            "stop": name in STOP_ITEMS and (name in STOP_ALWAYS or name not in report_only),
             "evidence": item["evidence"],
         }
         for name, item in items.items()
