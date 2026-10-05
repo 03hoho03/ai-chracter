@@ -508,3 +508,24 @@ def test_lost_turn_is_followed_by_a_rebase_before_the_next_turn(run: dict[str, A
     rebase = _records(run["log"], "rebase")[0]
     assert rebase["reason"] == "유실 턴 뒤" and rebase["roomAfter"]["source"] == "refetch"
     assert _records(run["log"], "turn")[1]["roomAfter"]["turnCount"] == 1
+
+
+def test_numbers_429_in_timestamps_and_token_counts_are_not_gemini_429(run: dict[str, Any]) -> None:
+    # 서버 로그의 모든 줄 앞에는 밀리초까지 시각이 붙고, 사용량 줄에는 토큰 수가 찍힌다 — 둘 다 숫자 429 가 될 수 있다.
+    usage = (
+        "WARNING gemini_usage call_site=chat_generate model=gemini-3.5-flash-lite prompt_tokens=13223 "
+        f"cached_content_tokens=None candidates_tokens=429 thoughts_tokens=None total_tokens=13652 user_id=u room_id={ROOM_ID}"
+    )
+    with run["server_log"].open("a") as f:
+        f.write(f"2026-10-05T15:51:43.580+0900 {usage}\n")
+        f.write(f"2026-10-05T15:51:12.429+0900 {usage.replace('candidates_tokens=429', 'candidates_tokens=589')}\n")
+        f.write(f"2026-10-05T15:51:12.429+0900 WARNING 대화방 {ROOM_ID} 판정 실패 — 이번 턴의 판정을 건너뛴다: \n")
+    hit, _ = chat_play.scan_gemini_429(run["server_log"], 0, ROOM_ID)
+    assert hit is False
+    with run["server_log"].open("a") as f:
+        f.write(
+            f"2026-10-05T15:52:00.100+0900 WARNING 대화방 {ROOM_ID} 스탯 판정 실패 — 이번 턴의 스탯·엔딩 판정을 건너뛴다: "
+            "Gemini generate_structured() call failed: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429}}\n"
+        )
+    hit, _ = chat_play.scan_gemini_429(run["server_log"], 0, ROOM_ID)
+    assert hit is True

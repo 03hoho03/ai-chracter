@@ -65,8 +65,10 @@ CLOVER_CODES = frozenset({"CLOVER_REQUIRED", "CLOVER_CONFIRM_REQUIRED"})
 RATE_LIMIT_NOTICE = "측정 중단: 외부 한도 — 오케스트레이터에게 보고"
 PAUSE_NOTICE = "일시 정지 — 오케스트레이터에게 보고"
 # 서버 로그에서 Gemini 429 흔적. 예외 클래스 이름·Sentry 태그는 로그에 찍히지 않고, 생성·판정·요약 실패 줄이 예외
-# 문자열(`429 RESOURCE_EXHAUSTED …`)과 방 id 를 함께 싣는다. 접근 로그 줄은 앱이 낸 429(버스트·클로버)라 뺀다.
-_GEMINI_429 = re.compile(r"RESOURCE_EXHAUSTED|\b429\b")
+# 문자열(genai `APIError` 의 `"429 RESOURCE_EXHAUSTED. …"`)과 방 id 를 함께 싣는다. 숫자 429 만으로는 보지 않는다 —
+# 모든 줄 앞 시각의 밀리초(`…:43.429+0900`)와 사용량 줄의 토큰 수(`candidates_tokens=429`)가 같은 숫자가 된다.
+# 접근 로그 줄은 앱이 낸 429(버스트·클로버)라 뺀다.
+_GEMINI_429 = re.compile(r"RESOURCE_EXHAUSTED")
 _ACCESS_LINE = re.compile(r'"[A-Z]+ \S+ HTTP/[0-9.]+" \d{3}')
 
 
