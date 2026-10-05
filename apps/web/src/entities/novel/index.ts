@@ -17,6 +17,7 @@ export { useSetProtagonistNameMutation } from "./api/useSetProtagonistNameMutati
 export { writeNovelChapterRevision } from "./api/writeNovelChapterRevision";
 export {
   isProtagonistNameRequiredError,
+  NOVEL_ROOM_GONE_MESSAGE,
   toNovelActionError,
   toNovelJobFailureMessage,
   type NovelAction,
@@ -28,5 +29,10 @@ export {
   toNovelLoadFailure,
   type NovelLoadFailure,
 } from "./model/novelError";
-export { hasNovelJobPollError, isTerminalNovelJobStatus, type NovelJobStatus } from "./model/novelJobPolling";
+export {
+  hasNovelJobPollError,
+  isNovelJobGone,
+  isTerminalNovelJobStatus,
+  type NovelJobStatus,
+} from "./model/novelJobPolling";
 export { NovelizeLockedState } from "./ui/NovelizeLockedState";

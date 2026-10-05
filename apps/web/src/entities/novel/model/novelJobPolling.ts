@@ -36,6 +36,13 @@ function isNovelJobGoneError(error: unknown): boolean {
   return isApiError(error) && error.status === 404;
 }
 
+/** 지켜보던 작업이 없어졌나 — 마지막 응답이 그 404 인가. 그렇다면 폴링이 멈추므로 화면은 작업을 끝난 것으로
+ * 다뤄야 한다(진행 중으로 남기면 버튼이 영영 잠기고, 진행 줄은 더는 묻지 않는데 다시 확인하겠다고 말한다). 404 뒤에
+ * 다시 성공했으면 없어진 것이 아니다. */
+export function isNovelJobGone(state: { error: unknown; errorUpdatedAt: number; dataUpdatedAt: number }): boolean {
+  return hasNovelJobPollError(state) && isNovelJobGoneError(state.error);
+}
+
 /** 작업 폴링 간격. 끝났으면 멈춘다. 조회가 실패하고 있으면 **멈추지 않고** 느린 간격으로 계속 묻는다 — 이미지
  * 작업은 오류에서 멈추고 창 포커스 복귀에 회복을 맡기지만, 장 작업은 길고 이용자가 화면을 떠나지 않고 지켜보므로
  * 포커스 복귀가 오지 않는다. 멈추면 서버가 다시 뜬 뒤에도 "확인하지 못하고 있어요"에 영원히 머문다. 예외는
@@ -47,9 +54,8 @@ export function getNovelJobRefetchInterval(state: {
   dataUpdatedAt: number;
 }): number | false {
   if (isTerminalNovelJobStatus(state.data?.status)) return false;
-  if (hasNovelJobPollError(state)) {
-    return isNovelJobGoneError(state.error) ? false : NOVEL_JOB_ERROR_POLL_INTERVAL_MS;
-  }
+  if (isNovelJobGone(state)) return false;
+  if (hasNovelJobPollError(state)) return NOVEL_JOB_ERROR_POLL_INTERVAL_MS;
   return NOVEL_JOB_POLL_INTERVAL_MS;
 }
 

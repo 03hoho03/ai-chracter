@@ -39,6 +39,10 @@ const ACTION_OBJECT: Record<NovelAction, string> = {
   deleteNovel: "소설을 지우지",
 };
 
+/** 원래 대화방이 지워져 장을 만들 수도 다시 만들 수도 없을 때의 문장. 만들기 버튼 아래 사유 문장과 두 요청의 409 가
+ * 같은 문장을 쓴다 — 409 문구는 요청 종류를 보지 않아서, 만들기만 말하면 다시 만들기에서 받았을 때 틀린 말이 된다. */
+export const NOVEL_ROOM_GONE_MESSAGE = "원래 대화방이 지워져 새 장을 만들거나 다시 만들 수 없어요.";
+
 /** 코드 → 문구. 기다려도 풀리지 않는 거부는 "다시 시도"를 말하지 않고, 이용자가 할 수 있는 다음 일을 말한다. */
 const MESSAGE_BY_CODE: Record<string, NovelActionErrorNotice> = {
   NOVELIZE_NOT_ALLOWED: { message: "소설로 보기를 지금 이 계정에서 쓸 수 없어요.", shouldRefetchNovel: false },
@@ -48,7 +52,7 @@ const MESSAGE_BY_CODE: Record<string, NovelActionErrorNotice> = {
   NOVEL_JOB_NOT_FOUND: { message: "작업을 찾을 수 없어요. 소설을 다시 불러왔어요.", shouldRefetchNovel: true },
   NOVEL_CHAPTER_NOT_FOUND: { message: "이 장이 지워졌어요. 소설을 다시 불러왔어요.", shouldRefetchNovel: true },
   NOVEL_REVISION_NOT_FOUND: { message: "이 판을 찾을 수 없어요. 소설을 다시 불러왔어요.", shouldRefetchNovel: true },
-  NOVEL_ROOM_GONE: { message: "원래 대화방이 지워져 새 장을 만들 수 없어요.", shouldRefetchNovel: true },
+  NOVEL_ROOM_GONE: { message: NOVEL_ROOM_GONE_MESSAGE, shouldRefetchNovel: true },
   NOVEL_PROTAGONIST_NAME_REQUIRED: { message: "주인공 이름을 먼저 정해주세요.", shouldRefetchNovel: true },
   NOVEL_NOTHING_NEW: {
     message: "장으로 묶을 새 대화가 없어요. 대화를 더 이어 간 뒤 만들어주세요.",

@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { cloverKeys } from "@/entities/clover";
 import {
   hasNovelJobPollError,
+  isNovelJobGone,
   isTerminalNovelJobStatus,
   novelKeys,
   toNovelActionError,
@@ -14,7 +15,6 @@ import {
   type NovelJobResponse,
   type NovelPendingAiEdit,
 } from "@/entities/novel";
-import { isApiError } from "@/shared/api/client";
 
 import { useApplyAiEditMutation } from "../api/useApplyAiEditMutation";
 import { useDismissAiEditMutation } from "../api/useDismissAiEditMutation";
@@ -88,11 +88,23 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
   const job = jobQuery.data;
   const hasPollError = hasNovelJobPollError(jobQuery);
   // 작업이 없어졌다는 404 는 다시 물어도 같다(폴링도 멈춘다) — 진행 중으로 남겨 두면 버튼이 영영 잠긴다.
-  const isJobGone = hasPollError && isApiError(jobQuery.error) && jobQuery.error.status === 404;
+  const isJobGone = isNovelJobGone(jobQuery);
   const isRunning = watched !== undefined && !isTerminalNovelJobStatus(job?.status) && !isJobGone;
   const runningChapterOrdinal = novel.chapters.find((chapter) => chapter.id === watched?.chapterId)?.ordinal;
   const isOtherJobRunning = isChapterJobBusy || (novel.activeJob !== null && novel.activeJob.kind !== "ai_edit");
   const isBlocked = isPreparing || isRunning || isOtherJobRunning;
+
+  // 이 화면이 아직 떠 있나. 지시 모달은 루트에 마운트돼 라우트가 바뀌어도 남고, 기다리던 응답은 화면을 떠난 뒤에도
+  // 돌아온다 — 각 기다림 뒤에 이 값을 보고, 떠났으면 과금 요청을 보내지 않는다(진행·결과를 알릴 화면이 없다). 떠나는
+  // 순간 지시 모달도 닫는다. 금액 확인 모달은 호출부가 넣어 준 것이라 호출부가 닫는다.
+  const isMountedRef = useRef(false);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      AiEditInstructionModal.end(null);
+    };
+  }, []);
 
   // 작업이 끝난 순간을 한 번만 처리한다.
   const settledJobIdsRef = useRef(new Set<string>());
@@ -153,7 +165,7 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
         maxLength: novel.limits.aiEditInstructionMaxLength,
         defaultInstruction: lastInstruction,
       });
-      if (instruction === null) return false;
+      if (instruction === null || !isMountedRef.current) return false;
       setLastInstruction(instruction);
       const cost = novel.prices.aiEdit;
       const isConfirmed = await confirmSpend({
@@ -163,7 +175,7 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
         cost,
         confirmLabel: "AI로 고치기",
       });
-      if (!isConfirmed) return false;
+      if (!isConfirmed || !isMountedRef.current) return false;
       const started = await startMutation.mutateAsync({
         novelId: novel.id,
         chapterId: target.chapterId,

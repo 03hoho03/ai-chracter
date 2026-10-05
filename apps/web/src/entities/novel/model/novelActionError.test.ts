@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { ApiErrorObject } from "@/shared/api/client";
 
-import { isProtagonistNameRequiredError, toNovelActionError, toNovelJobFailureMessage } from "./novelActionError";
+import {
+  isProtagonistNameRequiredError,
+  NOVEL_ROOM_GONE_MESSAGE,
+  toNovelActionError,
+  toNovelJobFailureMessage,
+} from "./novelActionError";
 
 function apiError(status: number, detail: string | Record<string, unknown> | undefined) {
   return new ApiErrorObject({ status, message: "x", detail });
@@ -49,6 +54,13 @@ describe("toNovelActionError", () => {
     expect(toNovelActionError(apiError(409, { code: "NOVEL_SOURCE_CHANGED" }), "regenerate")?.message).toBe(
       "원래 대화가 바뀌어 이 장은 다시 만들 수 없어요.",
     );
+  });
+
+  // 재생성도 이 코드를 받는다(상세를 받은 뒤 방이 지워진 경우) — 만들기 버튼 아래 사유 문장과 같은 문장이어야
+  // 다시 만들기에서 받아도 맞는 말이다.
+  it.each(["generate", "regenerate"] as const)("대화방이 지워진 409 는 %s 에서도 만들기·다시 만들기 둘 다 막혔다고 말한다", (action) => {
+    expect(toNovelActionError(apiError(409, { code: "NOVEL_ROOM_GONE" }), action)?.message).toBe(NOVEL_ROOM_GONE_MESSAGE);
+    expect(NOVEL_ROOM_GONE_MESSAGE).toContain("다시 만들");
   });
 
   it("단가가 바뀌었으면 지금 단가를 말하고 상세를 다시 받는다", () => {

@@ -6,6 +6,7 @@ import {
   getNovelJobRefetchInterval,
   getNovelJobStaleTime,
   hasNovelJobPollError,
+  isNovelJobGone,
   isTerminalNovelJobStatus,
   NOVEL_JOB_ERROR_POLL_INTERVAL_MS,
   NOVEL_JOB_POLL_INTERVAL_MS,
@@ -38,6 +39,31 @@ describe("hasNovelJobPollError", () => {
 
   it("아직 아무 응답도 없는 새 작업은 오류가 아니다", () => {
     expect(hasNovelJobPollError({ errorUpdatedAt: 0, dataUpdatedAt: 0 })).toBe(false);
+  });
+});
+
+describe("isNovelJobGone", () => {
+  it("마지막 응답이 작업이 없어졌다는 404 면 참", () => {
+    expect(isNovelJobGone({ error: jobGone, errorUpdatedAt: 20, dataUpdatedAt: 10 })).toBe(true);
+  });
+
+  it("응답을 한 번도 못 받은 채 404 여도 참", () => {
+    expect(isNovelJobGone({ error: jobGone, errorUpdatedAt: 20, dataUpdatedAt: 0 })).toBe(true);
+  });
+
+  it.each([
+    ["서버 오류", serverDown],
+    ["네트워크 끊김", networkDown],
+  ])("%s 는 없어진 것이 아니다 — 다시 물으면 답이 바뀔 수 있다", (_label, error) => {
+    expect(isNovelJobGone({ error, errorUpdatedAt: 20, dataUpdatedAt: 10 })).toBe(false);
+  });
+
+  it("404 뒤에 다시 성공했으면 없어진 것이 아니다", () => {
+    expect(isNovelJobGone({ error: jobGone, errorUpdatedAt: 10, dataUpdatedAt: 20 })).toBe(false);
+  });
+
+  it("오류가 없으면 거짓", () => {
+    expect(isNovelJobGone({ error: null, errorUpdatedAt: 0, dataUpdatedAt: 5 })).toBe(false);
   });
 });
 

@@ -2,7 +2,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { BookX, CloudOff, Trash2 } from "lucide-react";
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 
 import { CONTENT_TYPE_LABEL, ContentListEmptyState } from "@/entities/content";
 import {
@@ -104,6 +104,9 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
   const [focusChapterId, setFocusChapterId] = useState<string | undefined>(undefined);
   // 금액 확인은 다른 기능의 모달이라 이 화면이 넣어 준다(기능끼리 서로 가져다 쓰지 않는다).
   const confirmSpend = (props: Parameters<typeof ConfirmNovelSpendModal.call>[0]) => ConfirmNovelSpendModal.call(props);
+  // 모달은 루트에 마운트돼 라우트가 바뀌어도 남는다 — 이 화면을 떠나면(다른 소설로 옮겨 다시 마운트될 때도) 넣어 준
+  // 금액 확인을 닫는다. 두 흐름은 떠난 뒤 받은 확정으로 요청하지 않으므로, 남겨 두면 눌러도 아무 일 없는 버튼이 된다.
+  useEffect(() => () => ConfirmNovelSpendModal.end(false), []);
   const flow = useNovelChapterJob({
     novel,
     confirmSpend,

@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { cloverKeys } from "@/entities/clover";
 import {
   hasNovelJobPollError,
+  isNovelJobGone,
   isProtagonistNameRequiredError,
   isTerminalNovelJobStatus,
   novelKeys,
@@ -78,11 +79,28 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
   const jobQuery = useNovelJobQuery(novel.id, watched?.jobId);
   const job = jobQuery.data;
   const hasPollError = hasNovelJobPollError(jobQuery);
-  const isJobRunning = watched !== undefined && !isTerminalNovelJobStatus(job?.status);
+  // 작업이 없어졌다는 404 는 다시 물어도 같다(폴링도 멈춘다) — 진행 중으로 남겨 두면 버튼이 영영 잠긴다.
+  const isJobGone = isNovelJobGone(jobQuery);
+  const isJobRunning = watched !== undefined && !isTerminalNovelJobStatus(job?.status) && !isJobGone;
   const isAiEditRunning = novel.activeJob?.kind === "ai_edit";
   const isRoomGone = novel.chatRoomId === null;
   const isBusy = preparing !== undefined || isJobRunning || isAiEditRunning;
   const runningChapterOrdinal = novel.chapters.find((chapter) => chapter.id === watched?.chapterId)?.ordinal;
+
+  // 이 화면이 아직 떠 있나. 흐름의 모달은 루트에 마운트돼 라우트가 바뀌어도 남고, 기다리던 응답은 화면을 떠난 뒤에도
+  // 돌아온다 — 각 기다림 뒤에 이 값을 보고, 떠났으면 과금 요청도 화면 이동도 하지 않는다(진행·결과를 알릴 화면이
+  // 없고, 다른 소설로 옮긴 뒤라면 보이지 않는 소설에 장이 생긴다). 떠나는 순간 이 흐름이 연 모달도 닫는다 — 페이지
+  // 위에 남은 모달에서 확정해도 위 확인이 요청을 막지만, 누를 수 있는데 아무 일도 없는 버튼을 남기지 않는다. 금액
+  // 확인 모달은 호출부가 넣어 준 것이라 호출부가 닫는다.
+  const isMountedRef = useRef(false);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      ProtagonistNameModal.end(false);
+      ChapterBoundaryModal.end(null);
+    };
+  }, []);
 
   // 작업이 끝난 순간을 한 번만 처리한다. 같은 작업을 두 번 처리하면 이동·포커스가 되풀이된다.
   const settledJobIdsRef = useRef(new Set<string>());
@@ -92,6 +110,15 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     void settleJob(job);
     // `settleJob` 은 렌더마다 새로 만들어지는 이 훅 안의 함수라 의존성에 넣지 않는다 — 처리 시점은 `job` 이 정한다.
   }, [job]);
+
+  useEffect(() => {
+    if (!isJobGone || watched === undefined || settledJobIdsRef.current.has(watched.jobId)) return;
+    settledJobIdsRef.current.add(watched.jobId);
+    // 현실적인 경로는 다른 탭에서 소설을 지운 경우다 — 상세를 다시 받으면 화면이 「찾을 수 없어요」로 간다.
+    setNotice({ tone: "error", message: "장 작업을 찾을 수 없어요. 소설을 다시 불러왔어요." });
+    void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
+    // 처리 시점은 404 를 받은 순간 하나다.
+  }, [isJobGone]);
 
   async function settleJob(finished: NovelJobResponse) {
     // 성공은 차감 그대로, 실패는 환불이라 어느 쪽이든 잔액·내역이 바뀌었을 수 있다.
@@ -110,6 +137,8 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
       predicate: (query) => query.queryKey[1] !== "job",
     });
     const fresh = queryClient.getQueryData<NovelDetailResponse>(novelKeys.detail(novel.id));
+    // 기다리는 동안 이용자가 다른 화면으로 갔으면 소설 화면으로 끌고 오지 않는다.
+    if (!isMountedRef.current) return;
     const chapter = fresh?.chapters.find((item) => item.id === finished.chapterId);
     const verb = finished.kind === "chapter_regenerate" ? "다시 만들었어요" : "만들었어요";
     setNotice({ tone: "done", message: chapter ? `${chapter.ordinal}장을 ${verb}.` : `장을 ${verb}.` });
@@ -139,7 +168,7 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
       return await send();
     } catch (error) {
       if (!isProtagonistNameRequiredError(error)) throw error;
-      if (!(await askProtagonistName())) return undefined;
+      if (!(await askProtagonistName()) || !isMountedRef.current) return undefined;
       return send();
     }
   }
@@ -154,15 +183,16 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     setPreparing("create");
     let action: NovelAction = "proposal";
     try {
-      if (!(await ensureProtagonistName())) return;
+      if (!(await ensureProtagonistName()) || !isMountedRef.current) return;
       const proposal = await proposalMutation.mutateAsync(novel.id);
+      if (!isMountedRef.current) return;
       if (proposal.candidates.length === 0) {
         setNotice({ tone: "error", message: "장으로 묶을 새 대화가 없어요. 대화를 더 이어 간 뒤 만들어주세요." });
         return;
       }
       const chapterOrdinal = Math.max(0, ...novel.chapters.map((chapter) => chapter.ordinal)) + 1;
       const endMessageId = await ChapterBoundaryModal.call({ proposal, chapterOrdinal });
-      if (endMessageId === null) return;
+      if (endMessageId === null || !isMountedRef.current) return;
       action = "generate";
       const started = await requestJob(() =>
         createMutation.mutateAsync({ novelId: novel.id, endMessageId, expectedCost: proposal.cost }),
@@ -180,7 +210,7 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     setNotice(undefined);
     setPreparing("regenerate");
     try {
-      if (!(await ensureProtagonistName())) return;
+      if (!(await ensureProtagonistName()) || !isMountedRef.current) return;
       const cost = novel.prices.chapterRegenerate;
       const isConfirmed = await confirmSpend({
         title: `${chapter.ordinal}장을 다시 만들까요?`,
@@ -188,7 +218,7 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
         cost,
         confirmLabel: "다시 만들기",
       });
-      if (!isConfirmed) return;
+      if (!isConfirmed || !isMountedRef.current) return;
       const started = await requestJob(() =>
         regenerateMutation.mutateAsync({ novelId: novel.id, chapterId: chapter.id, expectedCost: cost }),
       );

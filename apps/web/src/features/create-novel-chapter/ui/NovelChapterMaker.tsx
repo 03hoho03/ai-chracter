@@ -3,6 +3,8 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Loader2 } from "lucide-react";
 import { useId, useRef } from "react";
 
+import { NOVEL_ROOM_GONE_MESSAGE } from "@/entities/novel";
+
 import type { NovelChapterJobFlow } from "../model/useNovelChapterJob";
 
 type NovelChapterMakerProps = {
@@ -98,7 +100,7 @@ export function NovelChapterMaker({ flow, hasChapters }: NovelChapterMakerProps)
 
 /** 버튼 바로 아래에 둘 "왜 못 누르나". 장 작업이 도는 중이면 여기 말고 진행 줄이 그 몫을 진다. */
 function toBlockedReason(flow: NovelChapterJobFlow): string | undefined {
-  if (flow.isRoomGone) return "원래 대화방이 지워져 새 장을 만들거나 다시 만들 수 없어요.";
+  if (flow.isRoomGone) return NOVEL_ROOM_GONE_MESSAGE;
   if (flow.isAiEditRunning) return "AI로 고치는 중이에요. 끝나면 새 장을 만들 수 있어요.";
   return undefined;
 }
