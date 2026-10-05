@@ -30,6 +30,7 @@ function buildState(messages: ChatMessage[]): ChatRoomState {
     latestVersionAvailable: false,
     versionAutoUpgraded: false,
     contentRestricted: false,
+    hasMoreMessagesBefore: false,
   };
 }
 

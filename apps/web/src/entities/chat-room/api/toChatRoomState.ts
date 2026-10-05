@@ -80,7 +80,7 @@ function toShortcut(dto: components["schemas"]["ShortcutSnapshot"]): Shortcut {
   return { id: dto.id, name: dto.name, description: dto.description, prompt: dto.prompt };
 }
 
-function toChatMessage(dto: ChatMessageDto): ChatMessage {
+export function toChatMessage(dto: ChatMessageDto): ChatMessage {
   return {
     id: dto.id,
     role: dto.role,
@@ -114,6 +114,7 @@ export function toChatRoomState(dto: ChatRoomResponseDto): ChatRoomState {
         }
       : undefined,
     messages: dto.messages.map(toChatMessage),
+    hasMoreMessagesBefore: dto.hasMoreMessagesBefore,
     openingMediaTagImages: toMediaTagImages(dto.mediaTagImages),
     stats: dto.stats ?? {},
     endingStatus: { reached: dto.endingReached, endingId: undefined, reachedAtTurn: undefined, epilogue: undefined },
