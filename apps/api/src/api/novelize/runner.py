@@ -20,7 +20,7 @@ import asyncio
 import logging
 import re
 import uuid
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Sequence
 from datetime import timedelta
 from typing import Any
 
@@ -307,24 +307,62 @@ async def beat(session_factory: SessionFactory, job_id: uuid.UUID) -> None:
         await db.commit()
 
 
+async def _stale_job_ids(db: AsyncSession, *, novel_id: uuid.UUID | None) -> Sequence[uuid.UUID]:
+    """heartbeat 가 만료된 진행 중 작업. `novel_id` 가 None 이면 모든 소설에서 찾는다. 만료는 DB 시계로 비교한다(작업
+    행의 시각도 DB 가 찍었다)."""
+    cutoff = func.now() - timedelta(seconds=settings.novelize_heartbeat_expiry_seconds)
+    query = select(NovelJob.id).where(NovelJob.status.in_(ACTIVE_JOB_STATUSES), NovelJob.heartbeat_at < cutoff)
+    if novel_id is not None:
+        query = query.where(NovelJob.novel_id == novel_id)
+    return (await db.scalars(query.order_by(NovelJob.id))).all()
+
+
 async def expire_stale_jobs(db: AsyncSession, *, novel_id: uuid.UUID) -> int:
     """소설의 진행 중 작업 중 heartbeat 가 만료된 것을 실패·환불하고 그 수를 돌려준다. 커밋은 호출자가 한다.
 
-    폴링·소설 조회·새 작업 차감 직전에 부르는 지연 정리다. 기동 때 일괄 실패 처리를 하지 않는 것은 워커가 여럿이라
-    다른 워커의 살아 있는 작업을 죽이기 때문이다. 만료는 DB 시계로 비교한다(작업 행의 시각도 DB 가 찍었다). 환불은
-    단일 환불 함수라 실행 경로의 실패 처리나 다른 요청의 정리와 겹쳐도 한 번만 나간다."""
-    cutoff = func.now() - timedelta(seconds=settings.novelize_heartbeat_expiry_seconds)
-    stale = (
-        await db.scalars(
-            select(NovelJob.id).where(
-                NovelJob.novel_id == novel_id,
-                NovelJob.status.in_(ACTIVE_JOB_STATUSES),
-                NovelJob.heartbeat_at < cutoff,
-            )
-        )
-    ).all()
+    폴링·소설 조회·새 작업 차감 직전에 부르는 지연 정리다. 기동 직후 곧바로 일괄 실패 처리를 하지 않는 것은 워커가
+    여럿이라 다른 워커의 살아 있는 작업을 죽이기 때문이다(기동 뒤 정리는 만료를 기다렸다 돈다 —
+    `expire_stale_jobs_after_startup`). 환불은 단일 환불 함수라 실행 경로의 실패 처리나 다른 요청의 정리와 겹쳐도 한
+    번만 나간다."""
     expired = 0
-    for job_id in stale:
+    for job_id in await _stale_job_ids(db, novel_id=novel_id):
         if await refund_job(db, job_id=job_id, failure_code="expired") is not None:
             expired += 1
     return expired
+
+
+async def expire_all_stale_jobs(session_factory: SessionFactory) -> int:
+    """모든 소설의 만료된 작업을 실패·환불하고 그 수를 돌려준다. 작업마다 커밋한다 — 환불은 사용자 행을 잠그므로
+    여러 사용자의 잠금을 한 트랜잭션에 쌓으면, 같은 정리를 도는 다른 워커나 그 사용자의 요청과 서로를 기다릴 수 있다."""
+    expired = 0
+    async with session_factory() as db:
+        for job_id in await _stale_job_ids(db, novel_id=None):
+            if await refund_job(db, job_id=job_id, failure_code="expired") is not None:
+                expired += 1
+            await db.commit()
+    return expired
+
+
+# 기동 뒤 정리를 heartbeat 만료 시간보다 이만큼 더 늦게 돌린다. 직전 프로세스가 죽기 직전에 민 heartbeat 까지 확실히
+# 만료된 뒤에 돌아야 그 작업들을 이번 한 번에 정리한다.
+_STARTUP_EXPIRY_MARGIN_SECONDS = 10
+# 테스트가 기다림을 건너뛰도록 바꿔 끼우는 자리.
+_sleep = asyncio.sleep
+
+
+async def expire_stale_jobs_after_startup(session_factory: SessionFactory) -> None:
+    """프로세스 기동 뒤 한 번, heartbeat 만료 시간(+여유)을 기다렸다가 모든 소설의 죽은 작업을 정리한다.
+
+    지연 정리는 사용자가 소설을 열거나 폴링할 때만 돌고 그 라우트는 모두 소설화 게이트 뒤에 있다. 킬 스위치를 끄거나
+    명단에서 빼려면 재기동해야 하고, 재기동은 돌던 작업을 죽인다 — 그때 게이트가 닫혀 있으면 사용자가 돌아올 수
+    없어 차감액이 묶인다. 그래서 이 정리는 게이트·킬 스위치를 보지 않는다. 워커마다 돌아도 상태 전이가 조건부라 한
+    작업은 한 번만 환불된다. 실패는 삼키고 남긴다(그 작업은 다음 기동이나 지연 정리가 다시 본다)."""
+    await _sleep(settings.novelize_heartbeat_expiry_seconds + _STARTUP_EXPIRY_MARGIN_SECONDS)
+    try:
+        expired = await expire_all_stale_jobs(session_factory)
+    except Exception as exc:
+        logger.warning("기동 뒤 소설화 만료 정리에 실패했다: %s", type(exc).__name__)
+        capture_dependency_failure(exc, dependency="novelize")
+        return
+    if expired:
+        logger.warning("기동 뒤 소설화 만료 정리로 작업 %d 건을 환불했다", expired)

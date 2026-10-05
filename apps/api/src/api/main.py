@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -43,6 +44,7 @@ from api.legal.router import router as legal_router
 from api.moderation.router import router as moderation_router
 from api.notice.router import router as notice_router
 from api.novelize.router import room_router as novelize_room_router, router as novelize_router
+from api.novelize.runner import expire_stale_jobs_after_startup
 from api.persona.router import me_router as persona_me_router
 from api.session.suspension import rebuild_suspended_user_markers
 
@@ -59,7 +61,15 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     않고, 기존 테스트에 영향이 없다.
     """
     await rebuild_suspended_user_markers(get_session_factory())
-    yield
+    # 재기동으로 죽은 소설화 작업의 환불. 만료를 기다렸다 도므로 기동을 막지 않게 백그라운드로 띄우고, 내려갈 때
+    # 아직 기다리는 중이면 취소한다.
+    novelize_cleanup = asyncio.create_task(expire_stale_jobs_after_startup(get_session_factory()))
+    try:
+        yield
+    finally:
+        novelize_cleanup.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await novelize_cleanup
 
 
 def _init_sentry() -> None:

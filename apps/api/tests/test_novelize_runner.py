@@ -652,6 +652,89 @@ async def test_expiry_refunds_only_stale_active_jobs_of_that_novel(
     assert (await _job(db_session, fresh.id)).status == "queued"
 
 
+async def test_cleanup_after_a_restart_refunds_stale_jobs_of_every_novel_with_the_gate_closed(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """재기동으로 죽은 작업은 원래 사용자가 소설을 다시 열어야 정리됐다. 게이트가 닫혀 있으면 사용자가 돌아올 수 없어
+    차감액이 묶인다 — 기동 뒤 한 번 도는 전역 정리는 게이트를 보지 않고 모든 소설의 죽은 작업을 환불한다."""
+    monkeypatch.setattr(settings, "novelize_enabled", False)
+    monkeypatch.setattr(settings, "novelize_heartbeat_expiry_seconds", 60)
+    room, novel = await _novel_for(db_client, db_session)
+    messages = await _room_messages(db_session, room.room_id)
+    stale = await _chapter_job(db_session, novel, messages[0], room.turns[1][1])
+    _, other = await _novel_for(db_client, db_session)
+    other_messages = await _room_messages(db_session, other.chat_room_id or uuid.uuid4())
+    other_stale = await _chapter_job(db_session, other, other_messages[0], other_messages[2])
+    _, third = await _novel_for(db_client, db_session)
+    third_messages = await _room_messages(db_session, third.chat_room_id or uuid.uuid4())
+    alive = await _chapter_job(db_session, third, third_messages[0], third_messages[2])
+    for job_id, age in ((stale.id, 61), (other_stale.id, 61), (alive.id, 59)):
+        await db_session.execute(
+            sa.update(NovelJob).where(NovelJob.id == job_id).values(heartbeat_at=sa.func.now() - timedelta(seconds=age))
+        )
+    await db_session.commit()
+
+    assert await runner.expire_all_stale_jobs(_factory(db_session)) == 2
+
+    await _assert_failed_and_refunded_once(db_session, stale.id, novel.user_id, "expired")
+    await _assert_failed_and_refunded_once(db_session, other_stale.id, other.user_id, "expired")
+    assert (await _job(db_session, alive.id)).status == "queued"
+
+
+async def test_cleanup_after_a_restart_waits_out_the_expiry_and_reports_a_failure_without_raising(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """백그라운드 태스크의 예외는 아무도 기다리지 않아 조용히 사라진다 — 실패는 경고와 오류 수집으로 남긴다. 정리는
+    죽은 작업의 마지막 heartbeat 가 확실히 만료된 뒤(만료 시간 + 여유)에 돈다."""
+    slept: list[float] = []
+    reported: list[str] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        slept.append(seconds)
+
+    def broken_factory() -> AsyncSession:
+        raise ConnectionError("db down")
+
+    monkeypatch.setattr(settings, "novelize_heartbeat_expiry_seconds", 60)
+    monkeypatch.setattr(runner, "_sleep", fake_sleep)
+    monkeypatch.setattr(
+        runner, "capture_dependency_failure", lambda _exc=None, *, dependency: reported.append(dependency)
+    )
+
+    with caplog.at_level("WARNING", logger=runner.__name__):
+        await runner.expire_stale_jobs_after_startup(broken_factory)  # type: ignore[arg-type]
+
+    assert len(slept) == 1 and slept[0] > 60
+    assert reported == ["novelize"]
+    assert "ConnectionError" in caplog.text
+
+
+async def test_lifespan_cancels_the_startup_cleanup_on_shutdown(monkeypatch: pytest.MonkeyPatch) -> None:
+    """정리가 아직 기다리는 중에 서버가 내려가면 태스크를 취소한다 — 닫힌 커넥션 풀로 정리를 시작하지 않게."""
+    from api import main
+
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def waiting_cleanup(_factory: object) -> None:
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    async def no_markers(_factory: object) -> None:
+        return None
+
+    monkeypatch.setattr(main, "rebuild_suspended_user_markers", no_markers)
+    monkeypatch.setattr(main, "expire_stale_jobs_after_startup", waiting_cleanup)
+
+    async with main.lifespan(main.app):
+        await asyncio.wait_for(started.wait(), 5)
+    assert cancelled.is_set()
+
+
 # ── 띄우기 ──────────────────────────────────────────────────────────────────
 async def test_enqueued_job_runs_in_the_background(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
     room, novel = await _novel_for(db_client, db_session)
