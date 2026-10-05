@@ -10,11 +10,15 @@ from pydantic import BaseModel
 
 from api.core.config import settings
 from api.llm.client import (
+    NOVELIZE_CALL_SITES,
+    NOVELIZE_MODEL_CALL_SITES,
     LLMCallContext,
     LLMClient,
     LLMClientError,
+    LLMEmptyResponseError,
     LLMPolicyViolationError,
     LLMRateLimitError,
+    LLMTruncatedError,
     request_timeout_ms,
     structured_model,
 )
@@ -29,6 +33,18 @@ _POLICY_FINISH_REASONS = frozenset(
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _novelize_thinking_config() -> genai_types.ThinkingConfig | None:
+    """소설화 모델 호출의 사고 설정. 정한 것만 싣고, 둘 다 비었으면 None 이라 thinking_config 를 아예 넘기지 않는다."""
+    budget = settings.gemini_novelize_thinking_budget
+    level = settings.gemini_novelize_thinking_level
+    if budget is None and level is None:
+        return None
+    return genai_types.ThinkingConfig(
+        thinking_budget=budget,
+        thinking_level=genai_types.ThinkingLevel(level) if level is not None else None,
+    )
 
 
 def _log_usage(usage: LLMCallContext, model: str, usage_metadata: object | None) -> None:
@@ -84,13 +100,21 @@ class GeminiLLMClient(LLMClient):
         # 화자 라벨(prompt_set.user_label)에서 파생시켜 넘긴다 —
         # 프롬프트가 `{user_label}: {입력}\n{assistant_label}:` 라는 대본 프레임으로 끝나서
         # 모델이 이어서 사용자의 다음 턴까지 지어낼 수 있는 구조이기 때문이다.
+        # 소설화 장 생성은 모델·출력 상한·사고 설정을 `gemini_novelize_*` 에서 고르고, 그 밖의 생성은 전역값을 쓴다.
+        novelize_model = usage.call_site in NOVELIZE_MODEL_CALL_SITES
+        model = structured_model(usage.call_site, self._model_name) if novelize_model else self._model_name
+        max_output_tokens = (
+            settings.gemini_novelize_max_output_tokens if novelize_model else settings.gemini_max_output_tokens
+        )
         config = genai_types.GenerateContentConfig(
-            max_output_tokens=settings.gemini_max_output_tokens,
+            max_output_tokens=max_output_tokens,
             stop_sequences=stop_sequences,
             system_instruction=system_instruction,
             http_options=genai_types.HttpOptions(timeout=request_timeout_ms(usage.call_site)),
         )
-        if settings.gemini_thinking_budget is not None:
+        if novelize_model:
+            config.thinking_config = _novelize_thinking_config()
+        elif settings.gemini_thinking_budget is not None:
             # None 이면 thinking_config 를 아예 넘기지 않아야 한다(모델 기본 사고 동작) —
             # 빈 ThinkingConfig 를 넘기는 것이 "안 넘김"과 같다는 보장이 없다.
             config.thinking_config = genai_types.ThinkingConfig(
@@ -103,9 +127,11 @@ class GeminiLLMClient(LLMClient):
         # 메타데이터가 마지막 청크에만 온다고 가정하지 않는다 — 마지막으로 본 비-None 값을
         # 쓴다. `getattr` 기본값은 이 속성이 없는 테스트용 청크(SimpleNamespace)를 위한 것이다.
         usage_metadata: object | None = None
+        truncated = False
+        has_text = False
         try:
             stream = await self._client.aio.models.generate_content_stream(
-                model=self._model_name,
+                model=model,
                 contents=prompt,
                 config=config,
             )
@@ -122,12 +148,11 @@ class GeminiLLMClient(LLMClient):
                     if candidate.finish_reason == genai_types.FinishReason.MAX_TOKENS:
                         # 상한에 걸리면 문장 중간에서 잘린 응답이 그대로 사용자에게 간다 —
                         # 조용히 넘기면 "AI가 말을 하다 말았다"로만 보이므로 로그에 남긴다.
-                        # 이게 자주 찍히면 상한이 너무 낮은 것이다.
-                        logger.warning(
-                            "Gemini 응답이 max_output_tokens(%d)에서 잘렸다",
-                            settings.gemini_max_output_tokens,
-                        )
+                        # 이게 자주 찍히면 상한이 너무 낮은 것이다. 값은 이 호출에 실제로 건 상한이다.
+                        truncated = True
+                        logger.warning("Gemini 응답이 max_output_tokens(%d)에서 잘렸다", max_output_tokens)
                 if chunk.text:
+                    has_text = has_text or bool(chunk.text.strip())
                     yield chunk.text
         except (genai_errors.APIError, httpx.HTTPError, TimeoutError) as exc:
             # `TimeoutError` 는 지금(httpx 경로)은 오지 않는다 — 시간 초과는 `httpx.TimeoutException` 으로 온다. 하지만
@@ -142,8 +167,15 @@ class GeminiLLMClient(LLMClient):
             raise LLMClientError(f"Gemini generate() call failed: {exc}") from exc
         # 정상 종료한 스트림만 여기 닿는다 — 정책 차단·SDK 예외는 위에서 올라가고, 소비자가 중간에
         # 끊으면(aclose) `yield` 자리에서 GeneratorExit으로 빠진다. 그 경우는 기록하지 않는다.
-        _log_usage(usage, self._model_name, usage_metadata)
-        await record_usage(usage.call_site, self._model_name, usage_metadata)
+        _log_usage(usage, model, usage_metadata)
+        await record_usage(usage.call_site, model, usage_metadata)
+        # 소설화만 잘림·빈 본문을 실패로 올린다 — 결과가 소설 본문으로 저장되기 때문이다. 사용량 기록 **뒤**라 과금된
+        # 호출이 집계에서 빠지지 않는다. 채팅은 위 경고만 남기고 받은 그대로 끝난다.
+        if usage.call_site in NOVELIZE_CALL_SITES:
+            if truncated:
+                raise LLMTruncatedError(f"Gemini output hit max_output_tokens({max_output_tokens})")
+            if not has_text:
+                raise LLMEmptyResponseError("Gemini returned an empty body")
 
     async def generate_structured(
         self,
@@ -163,12 +195,16 @@ class GeminiLLMClient(LLMClient):
         model = structured_model(usage.call_site, self._model_name)
         # 사고 설정(thinking_config)은 넘기지 않는다 — 판정·심사 호출은 gemini-3.5·3.1-flash-lite 모두 모델 기본
         # 설정에서 사고 토큰이 0 이라 끌 이득이 없었고, 3.5-flash-lite 는 사고 끔(thinking_budget=0)을 400 으로
-        # 거부해 끄는 설정은 판정을 실패시킬 뿐이었다(2026-10-02 실측).
+        # 거부해 끄는 설정은 판정을 실패시킬 뿐이었다(2026-10-02 실측). 예외는 소설화 문단 수정이다 — 판정이 아니라
+        # 본문을 쓰는 호출이라 장 생성과 같은 모델·출력 상한·사고 설정을 쓴다.
         config = genai_types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=response_schema,
             http_options=genai_types.HttpOptions(timeout=request_timeout_ms(usage.call_site)),
         )
+        if usage.call_site in NOVELIZE_MODEL_CALL_SITES:
+            config.max_output_tokens = settings.gemini_novelize_max_output_tokens
+            config.thinking_config = _novelize_thinking_config()
         try:
             response = await self._client.aio.models.generate_content(
                 model=model,
@@ -194,9 +230,19 @@ class GeminiLLMClient(LLMClient):
             prompt_feedback = getattr(response, "prompt_feedback", None)
             if prompt_feedback is not None and prompt_feedback.block_reason is not None:
                 raise LLMPolicyViolationError("Gemini blocked the structured prompt via safetySettings")
-            for candidate in getattr(response, "candidates", None) or []:
+            candidates = getattr(response, "candidates", None) or []
+            for candidate in candidates:
                 if candidate.finish_reason in _POLICY_FINISH_REASONS:
                     raise LLMPolicyViolationError("Gemini blocked the structured output via safetySettings")
+            # 소설화는 파싱 실패의 원인 중 잘림·빈 응답을 따로 알린다 — 작업 실패 사유가 갈리고, 잘림이 잦으면 출력 상한을
+            # 올려야 한다는 신호다. 판정·심사 호출부는 파싱 실패를 한 종류로 다루므로 그대로 둔다.
+            if usage.call_site in NOVELIZE_CALL_SITES:
+                if any(c.finish_reason == genai_types.FinishReason.MAX_TOKENS for c in candidates):
+                    raise LLMTruncatedError(
+                        f"Gemini structured output hit max_output_tokens for {response_schema.__name__}"
+                    )
+                if not (getattr(response, "text", None) or "").strip():
+                    raise LLMEmptyResponseError(f"Gemini returned an empty body for {response_schema.__name__}")
             raise LLMClientError(
                 f"Gemini structured response could not be parsed into {response_schema.__name__}"
             )

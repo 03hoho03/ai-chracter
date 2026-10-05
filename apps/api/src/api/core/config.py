@@ -169,7 +169,27 @@ class Settings(BaseSettings):
     # 클라이언트 기본값 — 요청 단위 값 없이 나가는 호출이 생겨도 무제한으로 기다리지 않게 하는 안전망.
     gemini_client_timeout_ms: int = 60_000
 
-    @field_validator("gemini_thinking_budget", mode="before")
+    # 소설화(대화를 장편 소설의 장으로 옮겨 쓰기). 장 생성과 문단 수정만 이 모델·출력 상한·사고 설정을 쓰고, 장 경계
+    # 제안은 턴 번호 몇 개를 고르는 판정이라 `gemini_model_name` 으로 간다 — 어느 호출이 어느 쪽인지는 `llm/client.py`
+    # 의 소설화 call_site 집합이 정한다. 모델명이 비면 `gemini_model_name` 으로 돈다.
+    gemini_novelize_model_name: str = "gemini-3.5-flash"
+    # 사고 토큰과 본문이 나눠 쓰는 예산이다(위 `gemini_max_output_tokens` 주석). 장 하나는 수천 자에 사고 토큰이 본문보다
+    # 많이 붙어 채팅 상한으로는 잘린다. 여기서 잘린 장은 실패로 끝나고 환불되므로 낮게 잡으면 원가만 버린다.
+    gemini_novelize_max_output_tokens: int = 32_768
+    # 사고 설정. 둘 다 None 이면 thinking_config 를 넘기지 않는다(모델 기본 사고 동작). 정한 것만 넘긴다 — 예산은
+    # 위 `gemini_thinking_budget` 과 같은 뜻이고, 수준은 사고형 모델이 받는 단계 이름이다.
+    gemini_novelize_thinking_budget: int | None = None
+    gemini_novelize_thinking_level: Literal["MINIMAL", "LOW", "MEDIUM", "HIGH"] | None = None
+    # 소설화 호출 상한(ms). 백그라운드 작업이라 Cloudflare 응답 상한(100초)과 무관하다. 장 생성은 스트리밍이라 "다음
+    # 청크까지"의 상한이고, 문단 수정·경계 제안은 비스트리밍이라 호출 전체의 상한이다. 경계 제안은 사용자가 화면에서
+    # 기다리므로 짧게 끊는다.
+    gemini_novelize_chapter_timeout_ms: int = 300_000
+    gemini_novelize_revise_timeout_ms: int = 120_000
+    gemini_novelize_boundary_timeout_ms: int = 30_000
+
+    @field_validator(
+        "gemini_thinking_budget", "gemini_novelize_thinking_budget", "gemini_novelize_thinking_level", mode="before"
+    )
     @classmethod
     def _empty_thinking_budget_is_unset(cls, value: object) -> object:
         """env 에 값을 비운 줄(`KEY=`)이 남으면 빈 문자열이 들어와 정수 파싱이 실패하고 api 가 기동하지 못한다.
