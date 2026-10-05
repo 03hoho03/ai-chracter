@@ -507,3 +507,36 @@ async def test_two_concurrent_refunds_of_one_job_refund_once(
         await first.close()
 
     assert await _independent_ledger(independent_factory, user_id) == [("novelize_spend", -5), ("novelize_refund", 5)]
+
+
+async def test_refund_waits_for_a_withdrawal_holding_the_user_instead_of_deadlocking(
+    independent_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """탈퇴는 사용자 행을 잡은 뒤 작업 행을 지운다. 환불이 사용자 행을 먼저 잡지 않고 작업 행부터 바꾸면, 탈퇴는
+    작업 행을, 환불은 지급하려는 사용자 행을 서로 기다리는 교착이 되어 한쪽이 교착 오류로 끊긴다. 사용자 행을 먼저
+    잡으면 환불이 줄을 서서 기다리고, 탈퇴가 지운 뒤에는 환불할 행이 없어 아무것도 하지 않는다."""
+    user_id, novel_id = await _seed(independent_factory)
+    async with independent_factory() as s:
+        novel = await s.get(Novel, novel_id)
+        assert novel is not None
+        job = await billing.create_charged_job(s, job=_ai_edit_job(novel), expected_cost=5, now=datetime.now(UTC))
+
+    withdrawal = independent_factory()
+    try:
+        await withdrawal.execute(select(User.id).where(User.id == user_id).with_for_update(key_share=True))
+
+        async def refund() -> int | None:
+            async with independent_factory() as s:
+                refunded = await billing.refund_job(s, job_id=job.id, failure_code="expired")
+                await s.commit()
+                return refunded
+
+        task = asyncio.ensure_future(refund())
+        await _assert_blocked(task)
+        await delete_novels(withdrawal, [novel_id])
+        await withdrawal.commit()
+        assert await task is None
+    finally:
+        await withdrawal.close()
+
+    assert await _independent_ledger(independent_factory, user_id) == [("novelize_spend", -5)]

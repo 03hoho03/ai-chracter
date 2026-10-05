@@ -154,6 +154,9 @@ async def refund_job(db: AsyncSession, *, job_id: uuid.UUID, failure_code: Novel
     탈퇴나 소설 삭제로 작업 행이 먼저 지워졌으면 아무것도 하지 않는다 — 탈퇴는 잔액을 통째로 소멸시키므로 뒤늦은
     환불이 그 뒤에 잔액을 되살리면 안 된다."""
     user_id = await db.scalar(select(NovelJob.user_id).where(NovelJob.id == job_id))
+    # 단일 환불만 보면 아래 조건부 전이로 충분해 보이지만, 사용자 행을 먼저 잡는 것은 탈퇴와의 교착을 막기 위해서다.
+    # 탈퇴는 사용자 행을 잡은 뒤 작업 행을 지운다. 여기서 작업 행부터 바꾸고 지급 때 사용자 행을 잡으면 두 경로가
+    # 서로의 행을 기다려 한쪽이 교착 오류로 끊긴다(탈퇴 요청이면 500).
     if user_id is None or not await _lock_user(db, user_id):
         return None
     refunded = await transition_job(
