@@ -134,7 +134,12 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
   const flow = useNovelChapterJob({
     novel,
     confirmSpend,
-    onChapterReady: (readyChapter, chapters) => {
+    onChapterReady: (readyChapter, chapters, isRegenerated) => {
+      // 다시 만든 장은 본문이 통째로 바뀌어, 장 머리에 남은 지난 고치기 결과(적용·버리기·저장)는 이제 옛 글의
+      // 이야기다. 본문을 바꾸는 다른 동작이 시작할 때처럼 그 문장을 지운다. 문장이 다른 장의 "수정안이 왔어요"였어도
+      // 지워지지만, 그 수정안은 그 장 본문 아래 상자로 남는다. 새 장을 만든 것은 있던 장의 본문을 바꾸지 않아 그대로
+      // 둔다.
+      if (isRegenerated) aiEdit.report({ type: "started" });
       // 고치던 글이 있으면 끌고 가지 않는다 — 옮기면 쓰던 글이 사라지고, 같은 장이어도 제목으로 포커스를 빼앗는다. 만든
       // 장은 링크로 알리고 옮길지는 이용자가 정한다. 진행 중 작업 동안 고치기를 잠그는 길도 있지만, 장을 옮기기 전의
       // 확인에 어차피 이 값이 필요해 여기서 하나 더 읽는 쪽이 더 단순하다(잠그면 이미 열려 있던 입력칸도 따로 다뤄야 한다).

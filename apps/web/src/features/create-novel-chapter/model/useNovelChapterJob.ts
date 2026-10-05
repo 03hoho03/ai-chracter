@@ -48,8 +48,9 @@ export type ChapterJobNotice =
 type UseNovelChapterJobOptions = {
   novel: NovelDetailResponse;
   confirmSpend: ConfirmNovelSpend;
-  /** 작업이 성공해 그 장이 상세에 실린 뒤 부른다 — 화면이 그 장으로 옮기고 제목에 포커스를 둔다. */
-  onChapterReady: (chapter: NovelChapterSummary, chapters: NovelChapterSummary[]) => void;
+  /** 작업이 성공해 그 장이 상세에 실린 뒤 부른다 — 화면이 그 장으로 옮기고 제목에 포커스를 둔다.
+   * `isRegenerated` 는 있던 장을 다시 만들었는가다(그 장의 본문이 통째로 바뀌었다). */
+  onChapterReady: (chapter: NovelChapterSummary, chapters: NovelChapterSummary[], isRegenerated: boolean) => void;
 };
 
 /** 장 만들기·다시 만들기의 흐름 전체: 주인공 이름 → (만들기) 경계 제안·끝 턴 고르기 / (다시 만들기) 금액 확인 →
@@ -142,9 +143,10 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     // 기다리는 동안 이용자가 다른 화면으로 갔으면 소설 화면으로 끌고 오지 않는다.
     if (!isMountedRef.current) return;
     const chapter = fresh?.chapters.find((item) => item.id === finished.chapterId);
-    const verb = finished.kind === "chapter_regenerate" ? "다시 만들었어요" : "만들었어요";
+    const isRegenerated = finished.kind === "chapter_regenerate";
+    const verb = isRegenerated ? "다시 만들었어요" : "만들었어요";
     setNotice({ tone: "done", message: chapter ? `${chapter.ordinal}장을 ${verb}.` : `장을 ${verb}.` });
-    if (fresh && chapter) onChapterReady(chapter, fresh.chapters);
+    if (fresh && chapter) onChapterReady(chapter, fresh.chapters, isRegenerated);
   }
 
   function handleRequestError(error: unknown, action: NovelAction) {
