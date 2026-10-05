@@ -333,13 +333,28 @@ async def expire_stale_jobs(db: AsyncSession, *, novel_id: uuid.UUID) -> int:
 
 async def expire_all_stale_jobs(session_factory: SessionFactory) -> int:
     """모든 소설의 만료된 작업을 실패·환불하고 그 수를 돌려준다. 작업마다 커밋한다 — 환불은 사용자 행을 잠그므로
-    여러 사용자의 잠금을 한 트랜잭션에 쌓으면, 같은 정리를 도는 다른 워커나 그 사용자의 요청과 서로를 기다릴 수 있다."""
+    여러 사용자의 잠금을 한 트랜잭션에 쌓으면, 같은 정리를 도는 다른 워커나 그 사용자의 요청과 서로를 기다릴 수 있다.
+
+    한 작업이 실패하면(그 사용자 행의 잠금 대기 초과 등) 그 작업만 되돌리고 남긴 뒤 다음 작업으로 넘어간다. 이 정리는
+    기동마다 한 번뿐이라, 거기서 멈추면 뒤 작업들은 게이트가 닫힌 동안 다음 기동까지 묶인다. 되돌린 작업은 진행 중으로
+    남아 다음 기동이나 지연 정리가 다시 본다."""
     expired = 0
     async with session_factory() as db:
         for job_id in await _stale_job_ids(db, novel_id=None):
-            if await refund_job(db, job_id=job_id, failure_code="expired") is not None:
+            try:
+                refunded = await refund_job(db, job_id=job_id, failure_code="expired") is not None
+                await db.commit()
+            except Exception as exc:
+                await db.rollback()
+                logger.warning(
+                    "기동 뒤 정리에서 소설화 작업 %s 환불에 실패했다(다음 작업은 계속한다): %s",
+                    job_id,
+                    type(exc).__name__,
+                )
+                capture_dependency_failure(exc, dependency="novelize")
+                continue
+            if refunded:
                 expired += 1
-            await db.commit()
     return expired
 
 

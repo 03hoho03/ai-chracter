@@ -681,6 +681,56 @@ async def test_cleanup_after_a_restart_refunds_stale_jobs_of_every_novel_with_th
     assert (await _job(db_session, alive.id)).status == "queued"
 
 
+async def test_cleanup_after_a_restart_keeps_going_when_one_refund_fails(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """이 정리는 기동마다 한 번뿐이라, 한 작업의 실패(그 사용자 행 잠금 대기 초과 등)에서 멈추면 뒤 작업들은 다음
+    기동까지 묶인다. 실패한 작업은 되돌려 진행 중으로 남기고(반쯤 쓴 환불이 남지 않게) 나머지를 계속 환불한다."""
+    monkeypatch.setattr(settings, "novelize_heartbeat_expiry_seconds", 60)
+    stale: list[tuple[NovelJob, Novel]] = []
+    for _ in range(3):
+        room, novel = await _novel_for(db_client, db_session)
+        messages = await _room_messages(db_session, room.room_id)
+        job = await _chapter_job(db_session, novel, messages[0], room.turns[1][1])
+        await db_session.execute(
+            sa.update(NovelJob).where(NovelJob.id == job.id).values(heartbeat_at=sa.func.now() - timedelta(seconds=61))
+        )
+        stale.append((job, novel))
+    await db_session.commit()
+    attempted: list[uuid.UUID] = []
+    reported: list[str] = []
+    real_refund = billing.refund_job
+
+    async def refund_then_fail_first(db: AsyncSession, *, job_id: uuid.UUID, failure_code: NovelJobFailureCode) -> Any:
+        attempted.append(job_id)
+        result = await real_refund(db, job_id=job_id, failure_code=failure_code)
+        if len(attempted) == 1:
+            raise TimeoutError("lock wait")
+        return result
+
+    monkeypatch.setattr(runner, "refund_job", refund_then_fail_first)
+    monkeypatch.setattr(
+        runner, "capture_dependency_failure", lambda _exc=None, *, dependency: reported.append(dependency)
+    )
+
+    with caplog.at_level("WARNING", logger=runner.__name__):
+        assert await runner.expire_all_stale_jobs(_factory(db_session)) == 2
+
+    assert len(attempted) == 3
+    failed_id = attempted[0]
+    for job, novel in stale:
+        if job.id == failed_id:
+            assert (await _job(db_session, job.id)).status == "queued"
+            assert await _ledger(db_session, novel.user_id) == [("novelize_spend", -20)]
+        else:
+            await _assert_failed_and_refunded_once(db_session, job.id, novel.user_id, "expired")
+    assert reported == ["novelize"]
+    assert str(failed_id) in caplog.text and "TimeoutError" in caplog.text
+
+
 async def test_cleanup_after_a_restart_waits_out_the_expiry_and_reports_a_failure_without_raising(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
