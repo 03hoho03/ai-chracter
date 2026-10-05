@@ -416,14 +416,44 @@ def check_pause_before_send(rules: PauseRules, state: LogState, log: Path, snaps
         raise _pause(log, snapshot_log, room_id, turn_count, "stop-file")
     if turn_count in rules.pause_at and turn_count not in state.paused_at:
         raise _pause(log, snapshot_log, room_id, turn_count, "pause-at")
+    held = held_milestones(snapshot_log, room_id)
+    if held:
+        raise _pause(log, snapshot_log, room_id, turn_count, "milestone", threshold=max(held), crossed=held)
+
+
+def _thresholds(record: dict[str, Any]) -> set[float]:
+    values = {float(t) for t in record.get("crossed") or []}
+    if record.get("threshold") is not None:
+        values.add(float(record["threshold"]))
+    return values
+
+
+def _milestone_records(snapshot_log: Path, room_id: str, kinds: tuple[str, ...]) -> set[float]:
+    found: set[float] = set()
+    for record in _records(snapshot_log):
+        if record.get("roomId") == room_id and record.get("kind") in kinds:
+            found |= _thresholds(record)
+    return found
 
 
 def reached_milestones(snapshot_log: Path, room_id: str) -> set[float]:
-    return {
-        float(r["threshold"])
-        for r in _records(snapshot_log)
-        if r.get("roomId") == room_id and r.get("kind") in ("pause", "milestone") and r.get("threshold") is not None
-    }
+    """이미 도달로 친 기준값 — 멈췄거나, 재기준이 넘은 것으로 적었거나, 멈춤을 미뤄 둔 것."""
+    return _milestone_records(snapshot_log, room_id, ("pause", "milestone", "heldMilestone"))
+
+
+def held_milestones(snapshot_log: Path, room_id: str) -> list[float]:
+    """도달한 턴이 다른 이유(Gemini 한도·대조 불일치)로 먼저 끝나 아직 멈추지 못한 기준값. 다음 턴을 보내기 전에 멈춘다."""
+    held = _milestone_records(snapshot_log, room_id, ("heldMilestone",))
+    paused = _milestone_records(snapshot_log, room_id, ("pause",))
+    return sorted(held - paused, reverse=True)
+
+
+def hold_milestones(snapshot_log: Path, room_id: str, turn_count: int, reached: list[float]) -> None:
+    if reached:
+        _append(
+            snapshot_log,
+            {"kind": "heldMilestone", "roomId": room_id, "turnCount": turn_count, "crossed": reached, "at": _now()},
+        )
 
 
 def new_milestones(rules: PauseRules, after: dict[str, Any], already: set[float]) -> list[float]:
@@ -632,7 +662,8 @@ def create_room(args: argparse.Namespace, session: Session, log: Path, snapshot_
 def rebase(
     session: Session, log: Path, snapshot_log: Path, room_id: str, reason: str, rules: PauseRules | None
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """전체 조회로 누적 기준을 다시 잡는다. 이미 넘은 정지 기준 값은 도달로 적어 다음 턴이 뒤늦게 멈추지 않게 한다."""
+    """전체 조회로 누적 기준을 다시 잡는다. 이미 넘은 정지 기준 값은 도달로 적어 다음 턴이 뒤늦게 멈추지 않게 한다.
+    드라이버 턴이 도달하고도 다른 종료 코드로 먼저 끝나 미뤄 둔 기준값은 도달로 덮지 않는다 — 다음 턴 전에 멈춘다."""
     room = fetch_room(session, room_id)
     static = room_static(room)
     _append(snapshot_log, static)
@@ -809,7 +840,9 @@ def play_turn(args: argparse.Namespace, session_factory: Callable[[], Session], 
         roomAfter=after if result.done else None,
     )
     _append(log, record)
+    reached = new_milestones(rules, after, reached_milestones(snapshot_log, room_id)) if result.done else []
     if rate_limited:
+        hold_milestones(snapshot_log, room_id, after["turnCount"], reached)
         raise DriverExitError(5, RATE_LIMIT_NOTICE)
     if not result.done:
         return 0
@@ -835,10 +868,10 @@ def play_turn(args: argparse.Namespace, session_factory: Callable[[], Session], 
             },
         )
         if mismatch:
+            hold_milestones(snapshot_log, room_id, after["turnCount"], reached)
             raise DriverExitError(8, "누적값과 조회값이 다르다 — 오케스트레이터에게 보고")
     if ending is not None:
         return 3
-    reached = new_milestones(rules, after, reached_milestones(snapshot_log, room_id))
     if reached:
         raise _pause(
             log, snapshot_log, room_id, after["turnCount"], "milestone", threshold=max(reached), crossed=reached

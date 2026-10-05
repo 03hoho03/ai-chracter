@@ -550,3 +550,43 @@ def test_gemini_429_logged_while_the_note_is_saved_is_not_skipped(run: dict[str,
 
     server.handler = memory_with_429
     assert _say(run) == 5
+
+
+def test_milestone_reached_on_a_turn_that_stops_with_8_still_pauses_after_a_rebase(run: dict[str, Any]) -> None:
+    # 25턴째 대조가 어긋나 8 로 멈춘 턴에 처음 7 이하가 됐다면, 원인을 본 뒤의 재기준이 그 도달을 삼키지 않는다.
+    _create(run)
+    server = run["server"]
+    server.turns = [_turn() for _ in range(24)] + [_turn({"type": "statChange", "statId": STAT_DAYS, "newValue": 7})]
+    server.turns.append(_turn())
+    for _ in range(24):
+        assert _say(run) == 0
+    server.stats[STAT_DAYS] = 7
+    server.stats[STAT_LIKE] = 99  # 누적에 없는 변화로 대조가 어긋난다
+    assert _say(run) == 8
+    assert _main(run, "--room", ROOM_ID, "--rebase", "대조 불일치 확인") == 0
+    sent_before = len(server.paths("POST", "/messages"))
+    assert _say(run) == 10
+    assert len(server.paths("POST", "/messages")) == sent_before
+    assert [r["threshold"] for r in _records(run["snap"], "pause")] == [7.0]
+    assert _say(run) == 0  # 한 번만 멈춘다
+
+
+def test_milestone_reached_on_a_turn_that_stops_with_5_pauses_before_the_next_turn(run: dict[str, Any]) -> None:
+    _create(run)
+    server = run["server"]
+    original: Callable[[httpx.Request], httpx.Response] = server.handler
+
+    def turn_with_429(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/messages"):
+            with run["server_log"].open("a") as f:
+                f.write(f"WARNING 대화방 {ROOM_ID} 판정 실패: 429 RESOURCE_EXHAUSTED\n")
+        return original(request)
+
+    server.handler = turn_with_429
+    server.turns = [_turn({"type": "statChange", "statId": STAT_DAYS, "newValue": 6}), _turn()]
+    assert _say(run) == 5
+    server.handler = original
+    sent_before = len(server.paths("POST", "/messages"))
+    assert _say(run) == 10
+    assert len(server.paths("POST", "/messages")) == sent_before
+    assert [r["threshold"] for r in _records(run["snap"], "pause")] == [7.0]
