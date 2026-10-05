@@ -41,6 +41,9 @@ _SOURCE_SET_IDS: dict[str, uuid.UUID] = {
     "character": _load("c328445d4c2d").NEW_SET_IDS["character"],
 }
 _LANES: tuple[PromptLane, ...] = ("story", "character")
+# 이 리비전 뒤에 두 레인에 소설화 채널 행을 더하는 리비전 — 활성 세트가 그 세트로 넘어가고, 초안 게시 검사가 head 코드
+# 표를 쓰므로 초안도 그 패치를 거친다.
+_NOVELIZE_MIGRATION = _load("3bb2cc159b6d")
 
 Layout = list[tuple[str, str, str, str, int]]
 
@@ -243,9 +246,13 @@ def _rows(sections: list[PromptSection]) -> list[tuple[str, str, str, str, int]]
 @pytest.mark.parametrize("lane", _LANES)
 async def test_active_set_is_this_revisions_set_with_name_rows(db_session: AsyncSession, lane: PromptLane) -> None:
     """회귀 방지 — `published_at`이 원본보다 과거가 되면 새 세트가 활성이 되지 못하고, 골든은 옛 세트로도 통과하므로
-    신호가 없다. 그래서 활성 세트를 id 로 직접 단언한다. 원본의 다른 행은 body·conditional 이 바이트 그대로다."""
-    active, sections = await load_active_prompt_set(db_session, lane=lane)
-    assert active.id == _M.NEW_SET_IDS[lane]
+    신호가 없다. 그래서 활성 세트를 id·게시 시각으로 직접 단언한다 — 이 리비전의 세트이거나, 뒤 리비전이 이 세트를
+    복사해 만든 더 나중 세트다(소설화 채널 리비전이 그렇다). 원본의 다른 행은 body·conditional 이 바이트 그대로다."""
+    latest, _ = await load_active_prompt_set(db_session, lane=lane)
+    active = await db_session.get(PromptSet, _M.NEW_SET_IDS[lane])
+    assert active is not None
+    assert latest.published_at is not None and active.published_at is not None
+    assert latest.id == active.id or latest.published_at > active.published_at
     assert active.note == _M._NOTE
     source_set = await db_session.get(PromptSet, _SOURCE_SET_IDS[lane])
     assert source_set is not None and source_set.published_at is not None and active.published_at is not None
@@ -253,7 +260,8 @@ async def test_active_set_is_this_revisions_set_with_name_rows(db_session: Async
     labels = ("user_label", "story_assistant_label", "story_example_label", "character_assistant_label")
     assert [getattr(active, a) for a in labels] == [getattr(source_set, a) for a in labels]
 
-    # `_sections_of` 가 식별자 맵을 만료시키므로 활성 세트 섹션 값은 그 전에 뽑는다.
+    # `_sections_of` 가 식별자 맵을 만료시키므로 이 리비전 세트 섹션 값은 그 전에 뽑는다.
+    sections = await _sections_of(db_session, _M.NEW_SET_IDS[lane])
     new = {(s.channel, s.scope, s.slot, s.variant): (s.body, s.conditional) for s in sections}
     new_rows = _rows(sections)
     old = {
@@ -373,6 +381,9 @@ async def test_patch_draft_adds_rows_in_place_and_draft_then_publishes(
     assert {key: body for key, body in after.items() if key[2] != "user_name"} == before
     _assert_neighbours(_rows(sections), lane)
 
+    # 코드 표는 지금 head 기준이라, 체인이 실제로 하듯 뒤 리비전(소설화 채널)의 초안 패치도 거친 뒤 검사한다.
+    assert await connection.run_sync(_NOVELIZE_MIGRATION._patch_draft, lane) is True
+    sections = await _sections_of(db_session, draft_id)
     draft = await db_session.get(PromptSet, draft_id)
     assert draft is not None
     _validate_prompt_draft_for_publish(draft, sections, lane=lane)

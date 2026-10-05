@@ -58,6 +58,8 @@ _NEXT_STORY_MIGRATION = _load("2519dde454e0")
 _SITUATION_NOTES_MIGRATION = _load("2417f5829bb1")
 # 그 뒤 두 레인에 사용자 이름 한 줄 행을 더하는 리비전 — 같은 이유로 초안은 이것도 거친다.
 _USER_NAME_MIGRATION = _load("8e895c898730")
+# 그 뒤 두 레인에 소설화 채널 행을 더하는 리비전 — 같은 이유로 초안은 이것도 거친다.
+_NOVELIZE_MIGRATION = _load("3bb2cc159b6d")
 
 _NOTE_KEY = ("generation", "both", "memory_note", "")
 _GEN_SUMMARY_KEY = ("generation", "both", "memory_summary", "")
@@ -489,6 +491,7 @@ async def test_patch_draft_adds_memory_rows_in_place_and_draft_then_publishes(
         assert await connection.run_sync(_NEXT_STORY_MIGRATION._patch_draft) is True
         assert await connection.run_sync(_SITUATION_NOTES_MIGRATION._patch_draft) is True
     assert await connection.run_sync(_USER_NAME_MIGRATION._patch_draft, lane) is True
+    assert await connection.run_sync(_NOVELIZE_MIGRATION._patch_draft, lane) is True
     db_session.expire_all()  # 원시 SQL이 민 order를 식별자 맵의 옛 값이 가리지 않게
     draft = await db_session.get(PromptSet, draft_id)
     assert draft is not None

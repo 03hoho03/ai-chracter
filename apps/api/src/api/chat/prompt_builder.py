@@ -114,6 +114,24 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
     ("publish_filter", "intro_instruction"): frozenset(),
     ("publish_filter", "image_list"): frozenset({"image_lines"}),
     ("publish_filter", "verdict_instruction"): frozenset(),
+    # 소설화 세 채널 — `novelize/prompts.py` 의 빌더가 만드는 `values`. `instruction` 은 system_instruction 으로 따로
+    # 렌더되므로(`values={}`) 빈 집합이어야 한다.
+    ("novelize_boundary", "instruction"): frozenset(),
+    ("novelize_boundary", "user_name"): frozenset({"user_name"}),
+    ("novelize_boundary", "max_turns"): frozenset({"max_turns"}),
+    ("novelize_boundary", "turn_context"): frozenset({"user_label", "assistant_label", "turn_lines"}),
+    ("novelize_chapter", "instruction"): frozenset(),
+    ("novelize_chapter", "work_setting"): frozenset({"work_setting"}),
+    ("novelize_chapter", "user_name"): frozenset({"user_name"}),
+    ("novelize_chapter", "setting_notes"): frozenset({"setting_notes"}),
+    ("novelize_chapter", "previous_excerpt"): frozenset({"previous_excerpt"}),
+    ("novelize_chapter", "turn_context"): frozenset({"user_label", "assistant_label", "turn_lines"}),
+    ("novelize_revise", "instruction"): frozenset(),
+    ("novelize_revise", "work_setting"): frozenset({"work_setting"}),
+    ("novelize_revise", "setting_notes"): frozenset({"setting_notes"}),
+    ("novelize_revise", "paragraphs"): frozenset({"paragraph_lines"}),
+    ("novelize_revise", "target_range"): frozenset({"first_paragraph", "last_paragraph"}),
+    ("novelize_revise", "user_request"): frozenset({"user_request"}),
 }
 
 
