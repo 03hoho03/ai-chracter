@@ -21,6 +21,8 @@ import { Header } from "@/widgets/header";
 import { ReconsentModal } from "@/widgets/reconsent-legal";
 import { isSiteFooterHidden, SiteFooter } from "@/widgets/site-footer";
 import { ConfirmCloverSpendModal } from "@/features/confirm-clover-spend";
+import { ConfirmNovelSpendModal } from "@/features/confirm-novel-spend";
+import { ChapterBoundaryModal, ProtagonistNameModal } from "@/features/create-novel-chapter";
 import { CommentActionModal, CommentLoginModal, CommentReportModal } from "@/features/work-comments";
 import { ContentComments } from "@/widgets/content-comments";
 
@@ -88,6 +90,9 @@ function RootComponent() {
       <ResetContentDraftModal />
       <ReconsentModal />
       <ConfirmCloverSpendModal />
+      <ConfirmNovelSpendModal />
+      <ProtagonistNameModal />
+      <ChapterBoundaryModal />
       <DeletePersonaModal />
     </>
   );

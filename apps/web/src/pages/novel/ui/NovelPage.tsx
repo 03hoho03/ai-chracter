@@ -1,8 +1,8 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { BookX, CloudOff } from "lucide-react";
-import { useId, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { CONTENT_TYPE_LABEL, ContentListEmptyState } from "@/entities/content";
 import {
@@ -12,6 +12,13 @@ import {
   type NovelChapterSummary,
   type NovelDetailResponse,
 } from "@/entities/novel";
+import { ConfirmNovelSpendModal } from "@/features/confirm-novel-spend";
+import {
+  NovelChapterMaker,
+  RegenerateChapterButton,
+  useNovelChapterJob,
+  type NovelChapterJobFlow,
+} from "@/features/create-novel-chapter";
 
 import { resolveSelectedChapter, toChapterSearchValue } from "../model/novelChapterSearch";
 
@@ -84,12 +91,30 @@ export function NovelPage({ novelId, chapter }: NovelPageProps) {
 
   return (
     <main className={PAGE_CLASS}>
-      <NovelContent novel={query.data} chapter={chapter} />
+      {/* 장 만들기 상태(지켜보는 작업·결과 안내)는 소설 하나에 묶인다 — 같은 라우트에서 다른 소설로 옮기면 새로
+          마운트해 이전 소설의 작업을 들고 가지 않게 한다. */}
+      <NovelContent key={query.data.id} novel={query.data} chapter={chapter} />
     </main>
   );
 }
 
 function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter: number | undefined }) {
+  const navigate = useNavigate();
+  // 작업이 끝나 새로 만든(다시 만든) 장. 그 장의 제목이 그려지면 포커스를 받고 비운다.
+  const [focusChapterId, setFocusChapterId] = useState<string | undefined>(undefined);
+  const flow = useNovelChapterJob({
+    novel,
+    // 금액 확인은 다른 기능의 모달이라 이 화면이 넣어 준다(기능끼리 서로 가져다 쓰지 않는다).
+    confirmSpend: (props) => ConfirmNovelSpendModal.call(props),
+    onChapterReady: (readyChapter, chapters) => {
+      setFocusChapterId(readyChapter.id);
+      void navigate({
+        to: "/novels/$novelId",
+        params: { novelId: novel.id },
+        search: (prev) => ({ ...prev, chapter: toChapterSearchValue(chapters, readyChapter.ordinal) }),
+      });
+    },
+  });
   const selectedChapter = resolveSelectedChapter(novel.chapters, chapter);
   const meta = [CONTENT_TYPE_LABEL[novel.contentType], novel.chapters.length > 0 ? `${novel.chapters.length}장` : undefined]
     .filter((part) => part !== undefined)
@@ -107,18 +132,55 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
       </div>
 
       {selectedChapter === undefined ? (
-        <ContentListEmptyState
-          title="아직 장이 없어요"
-          message={
-            isRoomGone
-              ? "원래 대화방이 지워져 새 장을 만들 수 없어요."
-              : "대화를 이어 가다 장을 만들면 여기에 차례로 쌓여요."
-          }
-        />
+        // 왜 만들 수 없는지(대화방이 지워짐)는 아래 만들기 버튼 바로 밑 문장이 말한다 — 여기서 되풀이하지 않는다.
+        <ContentListEmptyState title="아직 장이 없어요" message="만든 장이 여기에 차례로 쌓여요." />
       ) : (
-        <NovelChapterToc novelId={novel.id} chapters={novel.chapters} selectedOrdinal={selectedChapter.ordinal} />
+        <>
+          <NovelChapterToc novelId={novel.id} chapters={novel.chapters} selectedOrdinal={selectedChapter.ordinal} />
+          <NovelChapterHeading
+            chapter={selectedChapter}
+            flow={flow}
+            shouldFocus={focusChapterId === selectedChapter.id}
+            onFocused={() => setFocusChapterId(undefined)}
+          />
+        </>
       )}
+
+      <NovelChapterMaker flow={flow} hasChapters={novel.chapters.length > 0} />
     </>
+  );
+}
+
+/** 보고 있는 장의 머리. 작업이 끝나 새 장(다시 만든 장)으로 옮겨 오면 이 제목이 포커스를 받는다 — 무엇이 생겼는지를
+ * 화면 낭독기에도 알리고, 다음 Tab 이 그 장에서 이어진다. 제목은 조작 대상이 아니라 `tabIndex=-1` 이고 포커스
+ * 테두리를 그리지 않는다. */
+function NovelChapterHeading({
+  chapter,
+  flow,
+  shouldFocus,
+  onFocused,
+}: {
+  chapter: NovelChapterSummary;
+  flow: NovelChapterJobFlow;
+  shouldFocus: boolean;
+  onFocused: () => void;
+}) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    if (!shouldFocus) return;
+    headingRef.current?.focus();
+    onFocused();
+    // `onFocused` 는 렌더마다 새로 만들어지는 화살표라 넣지 않는다 — 포커스 시점은 `shouldFocus` 가 정한다.
+  }, [shouldFocus]);
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <h2 ref={headingRef} tabIndex={-1} className="text-lg font-semibold text-foreground outline-none">
+        {chapter.ordinal}장
+      </h2>
+      <RegenerateChapterButton flow={flow} chapter={chapter} />
+    </div>
   );
 }
 
