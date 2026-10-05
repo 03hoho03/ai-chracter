@@ -199,8 +199,8 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**50개 키다**(2026-10-04 VM 실측, 키 이름만 셈): 아래 표 46개 중 36개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
-`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개, 모두 10개 제외) + compose용
+**50개 키다**(2026-10-04 VM 실측, 키 이름만 셈): 아래 표 51개 중 36개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개, 모두 15개 제외) + compose용
 5개(`API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE`) + "Bugsink(에러 트래커)" 절의 6개
 (`BUGSINK_*` 3개·`INGEST_SHARED_SECRET`·`SENTRY_DSN`·`SENTRY_ENVIRONMENT`) + 크론 알림 3개
 (`DISCORD_WEBHOOK_URL`·`HEALTHCHECKS_BACKUP_PING_URL`은 "백업 · 복원" 절, `HEALTHCHECKS_RESOURCE_PING_URL`은 "VM 리소스 감시" 절). `apps/api/.env`는 **로컬 개발용이며 배포와 무관하다.**
@@ -221,6 +221,11 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `GEMINI_STAT_JUDGMENT_MODEL_NAME` / `GEMINI_ENDING_JUDGMENT_MODEL_NAME` / `GEMINI_IMAGE_JUDGMENT_MODEL_NAME` | 기본 비어 있음 | 판정 호출(실채팅·미리보기)을 종류별로 다른 모델로 돌리는 스위치 — 스탯 / 엔딩 / 그림 매칭(상황 이미지·미디어 북 칸). 줄이 없거나 값이 비면(`KEY=`) `GEMINI_MODEL_NAME`(지금 동작). 어느 호출이 어느 종류인지와 확인 방법은 "Gemini" 절 |
 | `GEMINI_PUBLISH_FILTER_MODEL_NAME` | 기본 비어 있음 | 발행 심사만 따로 바꾸는 같은 꼴의 스위치. ⚠️ 심사는 실패하면 발행이 500으로 막히므로(fail-closed) 바꾼 직후 발행 1회로 확인한다. 바꾸면 무변경 재발행도 한 번씩 다시 심사한다(통과 기억이 실제 심사 모델에 묶인다) |
 | `GEMINI_THINKING_BUDGET` | 기본 비어 있음 | 채팅 생성의 사고 예산(비면 사고 설정을 넘기지 않음, `0` = 끔). ⚠️ `gemini-3.5-flash-lite` 는 `0` 을 400 으로 거부했다(2026-10-02, 구조화 호출에서 실측 — 스트리밍 생성은 측정하지 않았다) — 그 모델에 `0` 을 넣지 않는다 |
+| `GEMINI_GENERATE_TIMEOUT_MS` | 설정 안 함(기본 `45000`) | 채팅·미리보기 생성 호출의 타임아웃(ms). 스트리밍이라 "다음 청크까지"의 상한이다. 시간 초과는 다른 네트워크 실패와 같다 — 오류 이벤트로 끝나고 채팅은 차감한 클로버를 돌려준다. 정상 생성이 잘리면(Bugsink 에서 `LLMClientError` 중 timeout 문구가 늘면) 값을 키워 넣고 `up -d --wait api` |
+| `GEMINI_JUDGMENT_TIMEOUT_MS` | 설정 안 함(기본 `20000`) | 판정 호출(스탯·엔딩·그림 매칭, 미리보기 포함)의 타임아웃(ms). 시간 초과는 판정 실패와 같아 그 턴의 판정만 건너뛴다(엔딩 판정은 `gemini_usage` 줄 없이 "판정 실패" 로그만 남는다). 판정 윈도우 두 스위치를 끄면 긴 방의 판정 입력이 대화 전체가 되어 이 값에 걸릴 수 있다 |
+| `GEMINI_MEMORY_SUMMARY_TIMEOUT_MS` | 설정 안 함(기본 `60000`) | 기억 요약 접기 호출의 타임아웃(ms). 턴 뒤 background 라 사용자가 기다리지 않고, 실패는 백오프 뒤 다시 한다 |
+| `GEMINI_PUBLISH_FILTER_TIMEOUT_MS` | 설정 안 함(기본 `60000`) | 발행 심사 호출의 타임아웃(ms). 시간 초과는 거부가 아니라 503 `PUBLISH_SCREENING_UNAVAILABLE`("잠시 뒤 다시 발행")이다 — 이의제기 대상이 생기지는 않지만, 시간당 심사 횟수는 호출 앞에서 세므로 한 번을 쓴다 |
+| `GEMINI_CLIENT_TIMEOUT_MS` | 설정 안 함(기본 `60000`) | 클라이언트 기본 타임아웃(ms). 모든 호출이 위 값 중 하나를 요청에 싣고 이것은 빠진 호출의 안전망이다. 재시도는 하지 않는다. 턴 락 TTL(60초)은 생성 + 판정 상한의 합보다 짧을 수 있다 — 넘친 턴은 해제 때 경고만 남는다 |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | OAuth 자격증명 | "Google OAuth" 절 |
 | `KAKAO_REST_API_KEY` / `KAKAO_CLIENT_SECRET` | 카카오 로그인 자격증명 | "카카오 로그인" 절. 둘 중 하나라도 비면 카카오 로그인 시작이 `?error=kakao_failed` 로 돌아온다 |
 | `KAKAO_ADMIN_KEY` | 카카오 **Primary(대표)** 어드민 키 | "카카오 로그인" 절. 탈퇴 시 연결 끊기 + 연결 해제 웹훅 인증. 비면 웹훅은 전부 401, 연결 끊기는 경고 로그만 |
@@ -247,8 +252,8 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `DB_POOL_TIMEOUT` | **운영 `30`**(기본값과 같다) | 풀이 다 찼을 때 연결을 기다리는 초. 넘기면 그 요청이 500 이다 |
 | `IMAGE_DECODE_CONCURRENCY` | **운영 `1`**(기본 `3`) | 워커 하나에서 동시에 도는 이미지 디코드·블러·변형 생성 건수 상한(1 이상, 넘치면 기다린다). 기본값은 이 설정이 생기기 전과 같다. ⚠️ 워커마다 따로 세므로 **워커 수 × 이 값 × 건당 최대 메모리 ≤ VM 가용 메모리의 절반**으로 정한다 — 건당 최대 메모리는 픽셀 상한 9M 그림의 블러·변형 생성 실측 피크 약 217MB 다. 운영 값 1 은 워커 4 × 1 × 약 217MB ≈ 868MB 가 부하 중 가용 메모리의 절반(약 950MB) 안에 드는 값이고, 2 면 넘는다. `WEB_CONCURRENCY` 를 올릴 때 함께 본다 |
 | `MEMORY_WINDOW_GENERATION` | 설정 안 함(기본 `true`) | 긴 방의 생성 프롬프트에서 요약이 덮은 메시지를 빼는 히스토리 윈도우. `false` 면 전체 히스토리를 싣는다 — 요약 품질 사고 때 재기동만으로 예전 동작으로 돌아가는 스위치이고, 끄면 아래 두 판정 스위치도 무시된다 |
-| `MEMORY_WINDOW_ENDING_JUDGMENT` | 설정 안 함(기본 `false`) | 엔딩 판정에도 윈도우를 씌운다(켜면 현재 요약을 함께 싣는다). ⚠️ 꺼져 있으면 판정이 대화 전체를 실으므로 긴 방에서 토큰 원가가 크게 늘고 컨텍스트 한도에 닿을 수 있다 |
-| `MEMORY_WINDOW_IMAGE_JUDGMENT` | 설정 안 함(기본 `false`) | 상황 이미지 판정에도 윈도우를 씌운다(켜면 최근 원문만 싣는다). 꺼져 있을 때의 주의는 위와 같다 |
+| `MEMORY_WINDOW_ENDING_JUDGMENT` | 설정 안 함(기본 `true`) | 엔딩 판정에도 윈도우를 씌운다(요약이 덮은 원문 대신 현재 요약을 싣는다). `false` 는 판정 품질 사고 때 되돌리는 용도다 — 끄면 판정이 대화 전체를 실어 긴 방에서 토큰 원가·지연이 턴 수만큼 늘고 판정 타임아웃·컨텍스트 한도에 닿을 수 있다. 되돌리기는 VM `.env` 에 `MEMORY_WINDOW_ENDING_JUDGMENT=false`·`MEMORY_WINDOW_IMAGE_JUDGMENT=false` 두 줄을 추가 → 아래 형식 검사 → `up -d --wait api`(`restart` 는 env 를 다시 읽지 않는다). 넣으면 위 VM 키 수를 다시 센다 |
+| `MEMORY_WINDOW_IMAGE_JUDGMENT` | 설정 안 함(기본 `true`) | 그림 매칭 판정 — 캐릭터 상황 이미지와 스토리 미디어 북 칸 둘 다 — 에도 윈도우를 씌운다(최근 원문만 싣고 요약은 싣지 않는다). 미디어 북 칸 판정은 엔딩 뒤·재생성까지 매 턴 돌아 끄면 가장 크게 늘어난다. 끄는 법·주의는 위와 같다 |
 
 > **`CORS_ALLOW_ORIGINS`**: `config.py` 가 쉼표 구분과 JSON 배열을 둘 다 받는다(`[` 로 시작하면 JSON). 항목 앞뒤 공백은
 > 지우고 빈 항목은 버리며, 남는 오리진이 없으면 기동에 실패한다. 새로 쓸 때는 쉼표 구분으로 쓴다.

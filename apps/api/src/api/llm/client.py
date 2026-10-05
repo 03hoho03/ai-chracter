@@ -72,6 +72,26 @@ def structured_model(call_site: LLMCallSite, default_model: str) -> str:
     return default_model
 
 
+# 시드 스크립트 호출은 작품 하나를 통째로 만드는 비스트리밍 호출이라 운영 호출 상한(최대 60초)에 걸릴 수 있다. 운영
+# 서버가 부르는 호출이 아니어서 `.env` 로 바꿀 일이 없으므로 설정 키가 아니라 여기 고정한다.
+_SEED_TIMEOUT_MS = 300_000
+
+
+def request_timeout_ms(call_site: LLMCallSite) -> int:
+    """호출 하나가 요청에 실을 타임아웃(ms). 값은 `core/config.py` 의 `gemini_*_timeout_ms` 설정이고 고르는 기준은
+    위 call_site 집합이다. 모든 call_site 가 값을 받는다 — 요청 단위 값 없이 나간 호출이 한 번이라도 있으면 SDK 가
+    클라이언트 헤더에 전역값의 서버 기한 헤더를 써 넣어, 뒤따르는 호출이 자기 값을 헤더에 싣지 못한다."""
+    if call_site in JUDGMENT_CALL_SITES:
+        return settings.gemini_judgment_timeout_ms
+    if call_site in PUBLISH_FILTER_CALL_SITES:
+        return settings.gemini_publish_filter_timeout_ms
+    if call_site == "chat_memory_summary":
+        return settings.gemini_memory_summary_timeout_ms
+    if call_site in ("seed_story_generate", "seed_similarity_review"):
+        return _SEED_TIMEOUT_MS
+    return settings.gemini_generate_timeout_ms
+
+
 @dataclass(frozen=True)
 class LLMCallContext:
     """호출 한 건의 사용량을 누구·어디에 귀속할지. 필수 키워드 인자라 새 호출부가

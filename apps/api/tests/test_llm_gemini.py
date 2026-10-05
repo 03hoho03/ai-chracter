@@ -1,18 +1,26 @@
+import json
 import logging
 from datetime import datetime
 import uuid
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, get_args
 
 import httpx
 import pytest
+from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types as genai_types
 from pydantic import BaseModel
 
 from api.core.config import Settings, settings
-from api.llm.client import LLMCallContext, LLMClientError, LLMPolicyViolationError, LLMRateLimitError
+from api.llm.client import (
+    LLMCallContext,
+    LLMCallSite,
+    LLMClientError,
+    LLMPolicyViolationError,
+    LLMRateLimitError,
+)
 from api.llm.gemini import GeminiLLMClient
 
 
@@ -908,3 +916,211 @@ async def test_usage_persistence_failure_does_not_break_generation(monkeypatch: 
 
     assert [t async for t in client.generate("hi", usage=_USAGE)] == ["a"]
     assert await client.generate_structured("judge", _JudgmentResult, usage=_CTX) == expected
+
+
+# ---- 호출 타임아웃 ---------------------------------------------------------------------------------
+
+# 호출 종류마다 기대하는 요청 단위 타임아웃(ms). 구현의 매핑 함수를 불러 기대값을 만들면 양쪽이 같은 값을 내
+# 아무것도 증명하지 못하므로 숫자를 그대로 적는다. 판정은 출력이 수십 토큰이라 생성보다 훨씬 짧게 끊는다.
+_EXPECTED_TIMEOUT_MS: dict[str, int] = {
+    "chat_generate": 45_000,
+    "preview_generate": 45_000,
+    "chat_stat_judgment": 20_000,
+    "chat_ending_judgment": 20_000,
+    "chat_situational_image": 20_000,
+    "chat_media_book_image": 20_000,
+    "preview_stat_judgment": 20_000,
+    "preview_ending_judgment": 20_000,
+    "preview_media_book_image": 20_000,
+    "chat_memory_summary": 60_000,
+    "publish_filter_character": 60_000,
+    "publish_filter_story": 60_000,
+    "seed_story_generate": 300_000,
+    "seed_similarity_review": 300_000,
+}
+
+
+def test_every_call_site_has_an_expected_timeout() -> None:
+    """새 call_site 가 생기면 이 표에 값을 정해 넣어야 한다 — 빠뜨린 호출이 요청 단위 값 없이 나가면 SDK 가
+    클라이언트 헤더에 전역값을 써 넣어 뒤따르는 호출의 서버 기한 헤더까지 바꾼다."""
+    assert set(_EXPECTED_TIMEOUT_MS) == set(get_args(LLMCallSite))
+
+
+@pytest.mark.parametrize("call_site", sorted(_EXPECTED_TIMEOUT_MS))
+async def test_generate_structured_sends_the_per_call_site_timeout(
+    monkeypatch: pytest.MonkeyPatch, call_site: LLMCallSite
+) -> None:
+    received: dict[str, Any] = {}
+
+    async def generate_content(**kwargs: Any) -> SimpleNamespace:
+        received.update(kwargs)
+        return SimpleNamespace(parsed=_JudgmentResult(triggered=False, ending_id=None))
+
+    client = _make_client(monkeypatch, generate_content=generate_content)
+
+    await client.generate_structured(
+        "judge", _JudgmentResult, usage=LLMCallContext(call_site=call_site, user_id=None, room_id=None)
+    )
+
+    assert received["config"].http_options.timeout == _EXPECTED_TIMEOUT_MS[call_site]
+
+
+@pytest.mark.parametrize("call_site", ["chat_generate", "preview_generate"])
+async def test_generate_sends_the_generation_timeout(monkeypatch: pytest.MonkeyPatch, call_site: LLMCallSite) -> None:
+    received: dict[str, Any] = {}
+
+    async def generate_content_stream(**kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+        received.update(kwargs)
+        return _chunks("a")
+
+    client = _make_client(monkeypatch, generate_content_stream=generate_content_stream)
+
+    [_ async for _ in client.generate("hi", usage=LLMCallContext(call_site=call_site, user_id=None, room_id=None))]
+
+    assert received["config"].http_options.timeout == 45_000
+
+
+async def test_request_timeouts_follow_the_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """운영에서 값이 맞지 않으면 배포 없이 `.env` 로 늘릴 수 있어야 한다 — 숫자가 코드에 박혀 있으면 안 된다."""
+    monkeypatch.setattr(settings, "gemini_generate_timeout_ms", 1_001)
+    monkeypatch.setattr(settings, "gemini_judgment_timeout_ms", 1_002)
+    monkeypatch.setattr(settings, "gemini_memory_summary_timeout_ms", 1_003)
+    monkeypatch.setattr(settings, "gemini_publish_filter_timeout_ms", 1_004)
+    sent: list[int] = []
+
+    async def generate_content(**kwargs: Any) -> SimpleNamespace:
+        sent.append(kwargs["config"].http_options.timeout)
+        return SimpleNamespace(parsed=_JudgmentResult(triggered=False, ending_id=None))
+
+    async def generate_content_stream(**kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+        sent.append(kwargs["config"].http_options.timeout)
+        return _chunks("a")
+
+    client = _make_client(
+        monkeypatch, generate_content=generate_content, generate_content_stream=generate_content_stream
+    )
+
+    [_ async for _ in client.generate("hi", usage=_USAGE)]
+    for call_site in ("chat_ending_judgment", "chat_memory_summary", "publish_filter_story"):
+        await client.generate_structured(
+            "judge", _JudgmentResult, usage=LLMCallContext(call_site=call_site, user_id=None, room_id=None)
+        )
+
+    assert sent == [1_001, 1_002, 1_003, 1_004]
+
+
+def test_client_carries_a_global_timeout_backstop(monkeypatch: pytest.MonkeyPatch) -> None:
+    """요청 단위 값이 빠진 호출이 생겨도 무제한으로 기다리지 않게 클라이언트 자체에 기본 상한을 건다."""
+    created: dict[str, Any] = {}
+
+    def fake_client(**kwargs: Any) -> SimpleNamespace:
+        created.update(kwargs)
+        return SimpleNamespace()
+
+    monkeypatch.setattr("api.llm.gemini.genai.Client", fake_client)
+
+    GeminiLLMClient(api_key="test-key")
+
+    assert created["http_options"].timeout == 60_000
+
+
+_SDK_DELAY_SECONDS = 1.0
+
+
+def _timeout_enforcing_transport(seen: list[httpx.Request]) -> httpx.MockTransport:
+    """httpx.MockTransport 는 타임아웃을 집행하지 않는다 — 지연만 주면 그만큼 기다렸다가 정상 응답한다. 그래서 SDK 가
+    요청에 실어 보낸 읽기 상한을 읽어, 그 상한이 가짜 서버의 응답 지연보다 짧으면 실제 네트워크 백엔드처럼
+    `httpx.ReadTimeout` 을 던진다. 상한이 없거나 넉넉하면 정상 응답을 돌려준다."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        read_timeout = request.extensions.get("timeout", {}).get("read")
+        if read_timeout is not None and read_timeout < _SDK_DELAY_SECONDS:
+            raise httpx.ReadTimeout("read timed out", request=request)
+        body = {
+            "candidates": [
+                {
+                    "content": {"role": "model", "parts": [{"text": '{"triggered": false, "ending_id": null}'}]},
+                    "finishReason": "STOP",
+                }
+            ]
+        }
+        if "streamGenerateContent" in request.url.path:
+            return httpx.Response(
+                200, text=f"data: {json.dumps(body)}\n\n", headers={"content-type": "text/event-stream"}
+            )
+        return httpx.Response(200, json=body)
+
+    return httpx.MockTransport(handler)
+
+
+def _sdk_backed_client(seen: list[httpx.Request]) -> GeminiLLMClient:
+    """진짜 `genai.Client` 를 쓰되 네트워크만 가짜로 바꾼다 — 가짜 클라이언트 테스트는 "인자를 넘겼다"만 보여 주고,
+    그 값이 SDK 안에서 실제로 httpx 요청까지 가는지는 이 경로로만 확인된다."""
+    client = GeminiLLMClient(api_key="test-key", model_name="gemini-test")
+    client._client = genai.Client(
+        api_key="test-key",
+        http_options=genai_types.HttpOptions(
+            httpx_async_client=httpx.AsyncClient(transport=_timeout_enforcing_transport(seen))
+        ),
+    )
+    return client
+
+
+async def test_structured_call_times_out_through_the_real_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "gemini_judgment_timeout_ms", 50)
+    seen: list[httpx.Request] = []
+    client = _sdk_backed_client(seen)
+
+    with pytest.raises(LLMClientError) as exc_info:
+        await client.generate_structured(
+            "judge",
+            _JudgmentResult,
+            usage=LLMCallContext(call_site="chat_stat_judgment", user_id=None, room_id=None),
+        )
+
+    assert not isinstance(exc_info.value, LLMRateLimitError)
+    (request,) = seen
+    assert request.extensions["timeout"]["read"] == pytest.approx(0.05)
+    # 같은 값이 서버 기한 헤더로도 나간다(초 단위 올림).
+    assert request.headers["X-Server-Timeout"] == "1"
+
+
+async def test_streaming_generation_times_out_through_the_real_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "gemini_generate_timeout_ms", 50)
+    seen: list[httpx.Request] = []
+    client = _sdk_backed_client(seen)
+
+    with pytest.raises(LLMClientError):
+        [_ async for _ in client.generate("hi", usage=_USAGE)]
+
+    (request,) = seen
+    assert request.extensions["timeout"]["read"] == pytest.approx(0.05)
+    assert request.headers["X-Server-Timeout"] == "1"
+
+
+async def test_generate_wraps_a_bare_timeout_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """aiohttp 경로의 SDK 는 타임아웃을 `asyncio.TimeoutError`(= `TimeoutError`)로 올린다. 이것이 감싸지지 않으면
+    SSE 제너레이터를 뚫고 나가 요청 스코프 DB 세션을 강제 종료시킨다."""
+
+    async def failing_stream() -> AsyncIterator[SimpleNamespace]:
+        yield SimpleNamespace(text="a")
+        raise TimeoutError
+
+    async def generate_content_stream(**_: Any) -> AsyncIterator[SimpleNamespace]:
+        return failing_stream()
+
+    client = _make_client(monkeypatch, generate_content_stream=generate_content_stream)
+
+    with pytest.raises(LLMClientError):
+        [_ async for _ in client.generate("hi", usage=_USAGE)]
+
+
+async def test_generate_structured_wraps_a_bare_timeout_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def generate_content(**_: Any) -> SimpleNamespace:
+        raise TimeoutError
+
+    client = _make_client(monkeypatch, generate_content=generate_content)
+
+    with pytest.raises(LLMClientError):
+        await client.generate_structured("judge", _JudgmentResult, usage=_USAGE)

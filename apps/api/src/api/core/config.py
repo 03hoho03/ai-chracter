@@ -149,6 +149,24 @@ class Settings(BaseSettings):
     gemini_ending_judgment_model_name: str | None = None
     gemini_image_judgment_model_name: str | None = None
     gemini_publish_filter_model_name: str | None = None
+    # Gemini 호출 하나를 기다리는 상한(ms). 호출마다 그 종류에 맞는 값을 요청에 싣는다(`llm/client.py` 의
+    # `request_timeout_ms`). SDK 의 httpx 경로에서는 연결·읽기·쓰기 단계마다의 상한이고 같은 값이 서버 기한 헤더로도
+    # 나간다 — 비스트리밍인 판정·요약·발행 심사는 응답이 끝나야 바이트가 오므로 사실상 호출 전체의 상한이고, 스트리밍
+    # 생성은 "다음 청크까지"의 상한이다. 재시도는 하지 않는다 — 판정은 실패를 흡수하도록 짜여 있고 재시도는 턴 길이를
+    # 곱으로 늘린다. 시간 초과는 다른 네트워크 실패와 같은 `LLMClientError` 로 올라가 기존 실패 경로를 탄다.
+    # 생성: 운영에서 잰 가장 긴 턴(약 21초)의 두 배쯤.
+    gemini_generate_timeout_ms: int = 45_000
+    # 판정(스탯·엔딩·그림 매칭, 미리보기 포함): 출력이 수십 토큰이라 정상 지연이 1~2초다. 판정 하나가 멈춰도 그 턴이
+    # 생성 상한 + 이 값 근처에서 끝나게 짧게 끊는다. 판정 윈도우를 끄면 긴 방의 판정 입력이 대화 전체로 커져 이 값에
+    # 걸릴 수 있다.
+    gemini_judgment_timeout_ms: int = 20_000
+    # 기억 요약 접기: 턴이 끝난 뒤 background 로 돌아 사용자가 기다리지 않고, 실패는 백오프 뒤 다음 턴에 다시 한다.
+    gemini_memory_summary_timeout_ms: int = 60_000
+    # 발행 심사: 작가가 기다리는 멀티모달 호출이라 이미지 수만큼 길어진다. 시간 초과는 거부가 아니라 "잠시 뒤 다시
+    # 발행"(503)으로 돌아가지만, 시간당 심사 횟수는 호출 앞에서 세므로 그 한 번을 쓴다.
+    gemini_publish_filter_timeout_ms: int = 60_000
+    # 클라이언트 기본값 — 요청 단위 값 없이 나가는 호출이 생겨도 무제한으로 기다리지 않게 하는 안전망.
+    gemini_client_timeout_ms: int = 60_000
 
     @field_validator("gemini_thinking_budget", mode="before")
     @classmethod
@@ -242,12 +260,15 @@ class Settings(BaseSettings):
     # 스냅샷이 있어도 전체 히스토리를 싣는다(스냅샷은 남고 무시될 뿐 지워지지 않는다) — 요약
     # 품질 사고 때 코드 배포 없이 `.env` 수정과 재기동만으로 예전 동작으로 돌아가는 스위치다.
     memory_window_generation: bool = True
-    # 판정 호출에도 윈도우를 씌울지 호출별로 켠다. 끄면(기본) 판정은 전체 히스토리를 받아 윈도우
-    # 도입 전과 같은 프롬프트를 보낸다. 엔딩은 누적 판단이라 켜면 현재 요약도 함께 싣고, 상황이미지는
-    # 장면 매칭이라 최근 원문만 싣는다. 판정 품질을 측정한 뒤 켤지 정한다. 위 생성 윈도우 스위치를
-    # 끄면 이 둘이 켜져 있어도 판정까지 전체 히스토리로 돌아간다 — 되돌리기 스위치 하나로 전부 돌아가게.
-    memory_window_ending_judgment: bool = False
-    memory_window_image_judgment: bool = False
+    # 판정 호출에도 윈도우를 씌울지 호출별로 정한다. 기본으로 켜 둔다 — 끄면 판정이 대화 전체를 실어, 미디어 북 칸
+    # 판정처럼 매 턴 도는 판정의 입력이 턴 수에 비례해 끝없이 자라고 원가·지연이 함께 늘어 긴 대화를 감당하지 못한다.
+    # 켜면 생성 프롬프트와 같은 요약 커서로 원문을 자른다. 엔딩은 누적 판단이라 현재 요약도
+    # 함께 싣고, 그림 매칭(캐릭터 상황 이미지·스토리 미디어 북 칸)은 장면 매칭이라 최근 원문만 싣는다.
+    # 판정 품질 사고 때는 `.env` 에 `MEMORY_WINDOW_ENDING_JUDGMENT=false`·`MEMORY_WINDOW_IMAGE_JUDGMENT=false` 를 넣고
+    # 재기동하면 윈도우 도입 전과 같은 프롬프트로 돌아간다. 위 생성 윈도우 스위치를 끄면 이 둘이 켜져 있어도 판정까지
+    # 전체 히스토리로 돌아간다 — 되돌리기 스위치 하나로 전부 돌아가게.
+    memory_window_ending_judgment: bool = True
+    memory_window_image_judgment: bool = True
 
     # 자가호스팅 Bugsink DSN. 비어 있으면 그 자체로 비활성이라
     # 별도 활성 플래그를 두지 않는다(플래그와 DSN 유무가 어긋나는 상태만 늘어나고 얻는 것이

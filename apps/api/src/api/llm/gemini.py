@@ -15,6 +15,7 @@ from api.llm.client import (
     LLMClientError,
     LLMPolicyViolationError,
     LLMRateLimitError,
+    request_timeout_ms,
     structured_model,
 )
 from api.llm.usage_store import record_usage
@@ -62,7 +63,12 @@ def _log_usage(usage: LLMCallContext, model: str, usage_metadata: object | None)
 
 class GeminiLLMClient(LLMClient):
     def __init__(self, api_key: str | None = None, model_name: str | None = None) -> None:
-        self._client = genai.Client(api_key=api_key if api_key is not None else settings.gemini_api_key)
+        # 요청마다 호출 종류별 상한을 따로 싣는다(`request_timeout_ms`). 클라이언트 값은 그게 빠진 호출을 위한
+        # 안전망이다. 재시도 설정은 넘기지 않는다 — SDK 기본이 1회 시도(재시도 없음)다.
+        self._client = genai.Client(
+            api_key=api_key if api_key is not None else settings.gemini_api_key,
+            http_options=genai_types.HttpOptions(timeout=settings.gemini_client_timeout_ms),
+        )
         self._model_name = model_name if model_name is not None else settings.gemini_model_name
 
     async def generate(
@@ -82,6 +88,7 @@ class GeminiLLMClient(LLMClient):
             max_output_tokens=settings.gemini_max_output_tokens,
             stop_sequences=stop_sequences,
             system_instruction=system_instruction,
+            http_options=genai_types.HttpOptions(timeout=request_timeout_ms(usage.call_site)),
         )
         if settings.gemini_thinking_budget is not None:
             # None 이면 thinking_config 를 아예 넘기지 않아야 한다(모델 기본 사고 동작) —
@@ -122,7 +129,11 @@ class GeminiLLMClient(LLMClient):
                         )
                 if chunk.text:
                     yield chunk.text
-        except (genai_errors.APIError, httpx.HTTPError) as exc:
+        except (genai_errors.APIError, httpx.HTTPError, TimeoutError) as exc:
+            # `TimeoutError` 는 지금(httpx 경로)은 오지 않는다 — 시간 초과는 `httpx.TimeoutException` 으로 온다. 하지만
+            # aiohttp 가 의존성으로 들어오면 SDK 가 그 경로로 바뀌어 `asyncio.TimeoutError`(= `TimeoutError`)를 올리고,
+            # 잡지 않으면 SSE 제너레이터를 뚫는다. 그 경로에서는 요청 타임아웃이 청크 사이가 아니라 스트림 전체의
+            # 상한이 된다는 점도 함께 바뀐다.
             # 쿼터 소진(429)과 네트워크 타임아웃을 구분한다 —
             # `httpx.HTTPError`에는 `.code`가 없으므로 `isinstance` 가드가 먼저다(순서를
             # 바꾸면 네트워크 쪽에서 AttributeError가 원래 예외를 가린다).
@@ -156,6 +167,7 @@ class GeminiLLMClient(LLMClient):
         config = genai_types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=response_schema,
+            http_options=genai_types.HttpOptions(timeout=request_timeout_ms(usage.call_site)),
         )
         try:
             response = await self._client.aio.models.generate_content(
@@ -163,7 +175,7 @@ class GeminiLLMClient(LLMClient):
                 contents=contents,
                 config=config,
             )
-        except (genai_errors.APIError, httpx.HTTPError) as exc:
+        except (genai_errors.APIError, httpx.HTTPError, TimeoutError) as exc:
             # `generate()`와 동일하게 두 계열을 함께 잡는다 — SDK의 네트워크/타임아웃 실패는
             # APIError가 아니라 내부적으로 쓰는 httpx 예외로 올라온다. 429 구분도 `generate()`와
             # 대칭을 유지한다.
