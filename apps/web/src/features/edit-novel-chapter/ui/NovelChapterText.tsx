@@ -53,8 +53,9 @@ type ManualEditOutcome = "manualSaved" | "manualUnchanged" | "manualCancelled";
  *   문단 범위가 어긋난다), 마크다운·지문 표기 해석은 하지 않는다. 이탤릭 없음, 읽기 폭은 `max-w-prose`.
  * - **고르기**: 고치기 모드에서만 문단이 `aria-pressed` 버튼이 되고, 묶음은 `role="group"` 이다. 읽다가 잘못
  *   눌러 골라지는 일이 없고, 브라우저 글자 선택을 쓰지 않아 길게 누르기·키보드 문제가 없다. 범위 규칙은
- *   `nextParagraphRange` 하나다. 고른 문단은 회색 면 + 무채색 윤곽으로 보이고(유채색 채움 없음), 키보드 포커스는
- *   그보다 두꺼운 강조색 링이라 둘이 모양으로 갈린다. 무엇을 골랐는지는 항상 마운트된 한 줄이 알린다.
+ *   `nextParagraphRange` 하나다. 고른 문단은 회색 면 + 안쪽 무채색 윤곽으로 보이고(유채색 채움 없음), 키보드
+ *   포커스는 바깥 강조색 윤곽 + 링이라 둘이 색·자리로 갈리고 겹쳐도 둘 다 보인다. 무엇을 골랐는지는 항상 마운트된
+ *   한 줄이 알린다.
  * - **동작 줄**: 고른 범위의 마지막 문단 바로 아래, 문서 흐름 안에 둔다. 화면 아래에 붙는 고정 막대는 이 앱의
  *   크롬 규칙(상시 크롬은 위쪽 머리 하나)에 어긋난다.
  * - **직접 고치기**: 고른 문단 자리에 입력칸이 들어선다(내용만큼 자란다). 시작한 순간의 판·문단을 잡아 두고 저장은
@@ -372,17 +373,21 @@ type ParagraphButtonProps = {
 /** 고치기 모드의 문단 하나. 읽기 모드의 `<p>` 와 같은 상자(안쪽 여백·음수 바깥 여백)라 모드를 바꿔도 글자가
  * 움직이지 않는다. Shift+Enter 는 브라우저가 클릭으로 바꿔 주지 않아 키 입력에서 직접 받는다.
  *
- * 고른 윤곽(`aria-pressed:ring-*`)과 포커스 링(`focus-visible:ring-*`)은 같은 속성을 쓰고 선택자 특이도도 같아
- * 컴파일된 순서가 이기는데, Tailwind 4 는 `aria-pressed:` 규칙을 뒤에 낸다 — 그대로 두면 고른 문단에 포커스가
- * 있을 때(Enter 로 고른 직후가 그 상태다) 포커스 링이 1px 무채색 윤곽에 진다. 그래서 두 상태가 겹칠 때의 링을
- * `aria-pressed:focus-visible:` 로 다시 건다 — 이 규칙은 특이도가 하나 더 높아 순서와 상관없이 이긴다. */
+ * 두 표시는 각자 배경 대비 3:1 을 넘는 불투명 선이 진다(면 채움은 배경과 1.2:1 남짓이라 표시를 지지 못한다).
+ * - **포커스**: 시스템의 보더 없는 컨트롤과 같은 레시피 — 불투명 1px `outline-ring` + 50% 링. 50% 링만으로는 페이지
+ *   배경 대비 다크 2.58 / 라이트 2.55 로 미달이고, 불투명 윤곽은 7.18 / 6.70 이다. 보더를 쓰지 않는 것은 1px 가
+ *   자리를 먹어 읽기 모드의 `<p>` 와 글자 위치가 어긋나서다.
+ * - **고름**: 안쪽 1px `inset-ring-input`. 같은 자리의 고르기 전 픽셀(페이지 배경 / hover 면) 대비 다크 3.54 / 3.23,
+ *   라이트 3.64 / 3.34 다. `input` 은 입력칸 테두리처럼 "배경 위 경계 3:1" 을 맡은 무채색이다.
+ * 고름은 안쪽 그림자, 포커스는 바깥 링이라 Tailwind 4 가 한 `box-shadow` 에 함께 싣는다 — 고른 문단에 포커스가
+ * 있어도(Enter 로 고른 직후가 그 상태다) 서로 덮지 않는다. */
 function ParagraphButton({ ref, text, isSelected, onSelect }: ParagraphButtonProps) {
   return (
     <button
       ref={ref}
       type="button"
       aria-pressed={isSelected}
-      className="-mx-2 cursor-pointer rounded-md px-2 py-1 text-left whitespace-pre-line outline-none motion-safe:transition-colors hover:bg-muted aria-pressed:bg-secondary aria-pressed:ring-1 aria-pressed:ring-foreground/20 aria-pressed:hover:bg-secondary focus-visible:ring-3 focus-visible:ring-ring/50 aria-pressed:focus-visible:ring-3 aria-pressed:focus-visible:ring-ring/50"
+      className="-mx-2 cursor-pointer rounded-md px-2 py-1 text-left whitespace-pre-line motion-safe:transition-colors hover:bg-muted aria-pressed:bg-secondary aria-pressed:inset-ring-1 aria-pressed:inset-ring-input aria-pressed:hover:bg-secondary focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-3 focus-visible:ring-ring/50"
       onClick={(event: MouseEvent<HTMLButtonElement>) => onSelect(event.shiftKey)}
       onKeyDown={(event: KeyboardEvent<HTMLButtonElement>) => {
         if (event.key !== "Enter" || !event.shiftKey) return;
