@@ -407,3 +407,86 @@ def test_report_only_items_and_long_repeat_never_touch_the_stop_file(tmp_path: P
     w.write_outcome(tmp_path, 20, items, alerts)
     assert not (tmp_path / "STOP").exists()
     assert all(a["stop"] is False for a in alerts) and len(alerts) == 2
+
+
+# ---------------------------------------------------------------- E1 「상영회까지」 남은 턴의 엔딩 판정
+
+
+def _ending_call() -> dict[str, Any]:
+    return {"usage": [{"callSite": "chat_ending_judgment", "promptTokens": 8000, "costUsd": 0.001}]}
+
+
+def test_e1_quiet_when_ending_judgment_runs_only_at_zero() -> None:
+    at_zero = _turns(20, t15={"countdownAfter": 0.0, **_ending_call()})
+    assert w.e1_ending_judgment(at_zero, since=10) == []
+
+
+def test_e1_ending_judgment_attempt_while_countdown_remains() -> None:
+    assert w.e1_ending_judgment(_turns(20, t15=_ending_call()), since=10)
+    failed = {"logFailures": [{"failure": "judgment", "timeout": False}]}
+    assert w.e1_ending_judgment(_turns(20, t15=failed), since=10)
+
+
+def test_e1_skips_turns_whose_stat_judgment_failed_and_turns_already_seen() -> None:
+    stat_failed = _ending_call() | {"logFailures": [{"failure": "stat_judgment", "timeout": False}]}
+    assert w.e1_ending_judgment(_turns(20, t15=stat_failed), since=10) == []
+    assert w.e1_ending_judgment(_turns(20, t5=_ending_call()), since=10) == []
+
+
+def test_e1_trace_crosscheck_reports_a_call_missing_from_the_log() -> None:
+    traced = {"calls": [{"callSite": "chat_ending_judgment", "ok": True}]}
+    assert w.e1_ending_judgment(_turns(20, t15=traced), since=10) == []
+    assert w.e1_crosscheck(_turns(20, t15=traced), since=10)
+    assert w.e1_crosscheck(_turns(20), since=10) == []
+
+
+# ---------------------------------------------------------------- E5 단계 노트 정확히 1
+
+
+STAGES = {
+    "준비 초반": "콘티를 짠다",
+    "촬영 기간": "카메라가 돈다",
+    "상영회 직전": "포스터를 붙인다",
+    "상영회 당일": "불이 꺼진다",
+}
+
+
+def _dump(turn: int, prompt: str, room: str = ROOM) -> dict[str, Any]:
+    return {"roomId": room, "turn": turn, "systemInstruction": "규칙", "prompt": prompt}
+
+
+def test_e5_quiet_with_exactly_one_stage_note() -> None:
+    records = [_dump(n, f"[현재 상황]\n{STAGES['준비 초반']}\n대화") for n in range(1, 21)]
+    assert w.e5_stage_notes(records, STAGES, ROOM, since=0) == []
+
+
+def test_e5_zero_or_two_stage_notes_in_one_record() -> None:
+    none = [_dump(n, "[현재 상황]\n대화") if n == 15 else _dump(n, STAGES["촬영 기간"]) for n in range(1, 21)]
+    assert w.e5_stage_notes(none, STAGES, ROOM, since=10)
+    two = [_dump(15, STAGES["촬영 기간"] + "\n" + STAGES["상영회 직전"])]
+    assert w.e5_stage_notes(two, STAGES, ROOM, since=10)
+
+
+def test_e5_ignores_other_rooms_and_records_already_seen() -> None:
+    records = [_dump(15, "대화", room=OTHER), _dump(5, "대화")]
+    assert w.e5_stage_notes(records, STAGES, ROOM, since=10) == []
+
+
+def test_e5_stage_texts_come_from_the_four_named_frame_notes(tmp_path: Path) -> None:
+    notes = [{"name": name, "infoText": text} for name, text in STAGES.items()]
+    notes.append({"name": "도희가 곁을 허락함", "infoText": "호감 노트"})
+    frame = tmp_path / "frame.json"
+    frame.write_text(json.dumps({"situationNotes": notes}, ensure_ascii=False), encoding="utf-8")
+    assert w.stage_note_texts(frame) == STAGES
+
+
+def test_e5_crosscheck_reports_turns_whose_recomputed_stage_is_not_one() -> None:
+    def staged(**over: dict[str, Any]) -> list[dict[str, Any]]:
+        turns = _turns(20, **over)
+        for t in turns:
+            t.setdefault("stage", ["준비 초반"])
+        return turns
+
+    assert w.e5_crosscheck(staged(), since=10) == []
+    assert w.e5_crosscheck(staged(t15={"stage": []}), since=10)
+    assert w.e5_crosscheck(staged(t15={"stage": ["준비 초반", "촬영 기간"]}), since=10)

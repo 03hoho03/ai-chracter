@@ -6,7 +6,7 @@
      센다 — 스모크 방·합성 방의 호출은 측정이 아니라서 빼야 하고, 서버 로그는 재기동에도 이어 쓰여 Redis 처럼
      재시작으로 사라지지 않는다. 리플레이 원가는 리플레이 도구가 따로 돌아 서버 로그에 없으므로 Redis 사용량 해시의
      리플레이 call_site 로 센다.
-  3. 깨짐 기계 항목(B1·B2·B3·B4·B6a·B6b·B6c·B8·B9·B11·B12)과 원가 정지를 판정해 `<run>/checks/tNNN.json` 을 쓰고,
+  3. 깨짐 기계 항목(B1·B2·B3·B4·B6a·B6b·B6c·B8·B9·B11·B12), 조기 점검 E1·E5, 원가 정지를 판정해 `<run>/checks/tNNN.json` 을 쓰고,
      걸린 것은 `<run>/watch/alerts.jsonl` 에 남긴다. 멈춰야 하면 `<run>/STOP` 만 만든다 — 드라이버가 다음 턴을 보내기
      전에 그 파일을 보고 종료 코드 10 으로 선다. 감시기는 시뮬레이터를 직접 건드리지 않는다.
 
@@ -44,9 +44,12 @@ from experiments.filmclub_longturn import longturn_text as text_rules
 
 KST = timezone(timedelta(hours=9))
 COUNTDOWN = "상영회까지"
-STOP_ITEMS = ("B1", "B2", "B3", "B4", "B6a", "B6c", "B8", "B9", "B11", "B12")
-# 장거리 n-gram 반복은 판별력이 확인되지 않은 지표라 정지 없이 보고만 한다.
-REPORT_ONLY_ALWAYS = ("B6b",)
+STOP_ITEMS = ("B1", "B2", "B3", "B4", "B6a", "B6c", "B8", "B9", "B11", "B12", "E1", "E5")
+# 장거리 n-gram 반복은 판별력이 확인되지 않은 지표라 정지 없이 보고만 한다. E1·E5 교차 확인은 정의상 본 판정을
+# 대신하지 않는 보조 신호라 어긋나도 보고만 한다.
+REPORT_ONLY_ALWAYS = ("B6b", "E1.crosscheck", "E5.crosscheck")
+# 단계 노트 = 「상영회까지」 하나만 조건으로 가리키는 상황 노트 넷. 생성 프롬프트에는 언제나 이 중 정확히 하나가 실린다.
+STAGE_NOTES = ("준비 초반", "촬영 기간", "상영회 직전", "상영회 당일")
 JUDGMENT_FAILURES = {
     "chat_stat_judgment": "stat_judgment",
     "chat_media_book_image": "media_book_judgment",
@@ -316,6 +319,73 @@ def b12_size_latency(turns: list[Turn], since: int) -> list[str]:
         if t["turn"] > since and not t.get("lost") and (t.get("seconds") or 0) > 60
     ]
     return out
+
+
+# ---------------------------------------------------------------- 조기 점검 E1·E5
+
+
+def _ending_window_turns(turns: list[Turn], since: int) -> list[Turn]:
+    """판정 반영 뒤에도 「상영회까지」가 남은 턴. 스탯 판정이 실패한 턴은 엔딩 판정을 건너뛰므로 대상이 아니다."""
+    return [
+        t
+        for t in turns
+        if t["turn"] > since
+        and t.get("countdownAfter") is not None
+        and float(t["countdownAfter"]) > 0
+        and not any(f.get("failure") == "stat_judgment" for f in t.get("logFailures", []))
+    ]
+
+
+def e1_ending_judgment(turns: list[Turn], since: int) -> list[str]:
+    """「상영회까지」 > 0 인 턴의 엔딩 판정 시도(서버 로그 사용량 줄 + 판정 실패 줄)가 하나라도 있으면 건다."""
+    out: list[str] = []
+    for t in _ending_window_turns(turns, since):
+        used = sum(1 for u in t.get("usage", []) if u.get("callSite") == "chat_ending_judgment")
+        failed = sum(1 for f in t.get("logFailures", []) if f.get("failure") == "judgment")
+        if used + failed:
+            out.append(f"턴 {t['turn']} 「상영회까지」 {t['countdownAfter']} 에서 엔딩 판정 시도 {used + failed}")
+    return out
+
+
+def e1_crosscheck(turns: list[Turn], since: int) -> list[str]:
+    """보고만: 같은 대상 턴의 trace `llm_call` 중 엔딩 판정 호출 수."""
+    out: list[str] = []
+    for t in _ending_window_turns(turns, since):
+        traced = sum(1 for c in t.get("calls", []) if c.get("callSite") == "chat_ending_judgment")
+        if traced:
+            out.append(f"턴 {t['turn']} trace 엔딩 판정 호출 {traced}")
+    return out
+
+
+def stage_note_texts(frame_path: Path) -> dict[str, str]:
+    """frame.json 에서 단계 노트 넷의 본문. 하나라도 없으면 점검이 공회전하므로 예외로 멈춘다."""
+    notes = json.loads(frame_path.read_text(encoding="utf-8"))["situationNotes"]
+    by_name = {n["name"]: n["infoText"] for n in notes}
+    missing = [name for name in STAGE_NOTES if name not in by_name]
+    if missing:
+        raise ValueError(f"frame.json 에 단계 노트가 없다: {missing}")
+    return {name: by_name[name] for name in STAGE_NOTES}
+
+
+def e5_stage_notes(records: list[dict[str, Any]], stage_texts: dict[str, str], room: str, since: int) -> list[str]:
+    """이 방의 덤프 레코드마다 단계 노트 본문이 프롬프트에 글자 그대로 들어 있는 개수가 1이 아니면 건다."""
+    out: list[str] = []
+    for r in records:
+        if r.get("roomId") != room or int(r.get("turn") or 0) <= since:
+            continue
+        present = [name for name, text in stage_texts.items() if text in str(r.get("prompt") or "")]
+        if len(present) != 1:
+            out.append(f"턴 {r['turn']} 덤프의 단계 노트 {len(present)}개 {present}")
+    return out
+
+
+def e5_crosscheck(turns: list[Turn], since: int) -> list[str]:
+    """보고만: 판정 전 스탯으로 다시 계산한 단계 노트가 정확히 하나가 아닌 턴."""
+    return [
+        f"턴 {t['turn']} 재계산 단계 {t.get('stage')}"
+        for t in turns
+        if t["turn"] > since and not t.get("lost") and len(t.get("stage") or []) != 1
+    ]
 
 
 # ---------------------------------------------------------------- 원가
@@ -592,6 +662,12 @@ def check(run: Path, room: str, turn: int, observed: int, state: dict[str, Any],
         "B9": b9_stats(turns, trace, since),
         "B11": b11_memory(turns, raw_turn_count(room), backoff_failures(room), state),
         "B12": b12_size_latency(turns, since),
+        "E1": e1_ending_judgment(turns, since),
+        "E1.crosscheck": e1_crosscheck(turns, since),
+        "E5": e5_stage_notes(
+            _read_lines(run / "prompt-dump.jsonl"), stage_note_texts(run / "analysis" / "frame.json"), room, since
+        ),
+        "E5.crosscheck": e5_crosscheck(turns, since),
     }
     items = {name: {"hit": bool(ev), "evidence": ev} for name, ev in found.items()}
     for name in REPORT_ONLY_ALWAYS:
