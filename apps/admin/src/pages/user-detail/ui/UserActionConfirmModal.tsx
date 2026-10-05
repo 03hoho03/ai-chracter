@@ -21,6 +21,7 @@ import { adminContentKeys, type ContentActionReasonCategory } from "@/entities/a
 import {
   useAdjustCloverMutation,
   useSetBetaMutation,
+  useSetNovelizeGrantMutation,
   useSetRateLimitExemptMutation,
   useSuspendUserMutation,
   useUnsuspendUserMutation,
@@ -39,6 +40,8 @@ type UserActionType =
   | "rate-limit-exempt-off"
   | "beta-on"
   | "beta-off"
+  | "novelize-on"
+  | "novelize-off"
   | "clover-grant"
   | "clover-revoke";
 
@@ -50,6 +53,8 @@ const ACTION_TITLE: Record<UserActionType, string> = {
   "rate-limit-exempt-off": "면제 해제",
   "beta-on": "베타 지정",
   "beta-off": "베타 해제",
+  "novelize-on": "소설화 허용",
+  "novelize-off": "소설화 회수",
   "clover-grant": "클로버 지급",
   "clover-revoke": "클로버 회수",
 };
@@ -66,6 +71,8 @@ const IS_CLOVER_ACTION: Record<UserActionType, boolean> = {
   "rate-limit-exempt-off": false,
   "beta-on": false,
   "beta-off": false,
+  "novelize-on": false,
+  "novelize-off": false,
   "clover-grant": true,
   "clover-revoke": true,
 };
@@ -88,6 +95,8 @@ const IS_REASON_CATEGORY_REQUIRED: Record<UserActionType, boolean> = {
   "rate-limit-exempt-off": false,
   "beta-on": false,
   "beta-off": false,
+  "novelize-on": false,
+  "novelize-off": false,
   "clover-grant": false,
   "clover-revoke": false,
 };
@@ -100,6 +109,11 @@ const CLOVER_DUPLICATE_MESSAGE = "이미 처리된 요청이에요. 잔액은 �
 
 /** 베타는 성인만 받는다 — BE가 지정 시 만 19세 미만이거나 생년월일이 없으면 422로 거부한다. */
 const BETA_AGE_RESTRICTED_MESSAGE = "만 19세 미만이거나 생년월일이 없는 유저라 베타 참가자로 지정할 수 없어요.";
+
+/** 소설화 허용은 서버 설정의 시험 계정 명단 안에만 줄 수 있다 — 처리방침이 소설화를 싣기 전까지 허용을 그 안에 가둔다.
+ * 명단은 어드민 화면에서 고칠 수 없어 운영자가 할 일은 "명단부터 바꿔야 한다"를 아는 것뿐이다. */
+const NOVELIZE_GRANT_NOT_ALLOWLISTED_MESSAGE =
+  "소설화 시험 명단에 없는 유저라 허용할 수 없어요. 서버 명단에 먼저 넣어야 해요.";
 
 const userActionSchema = z.object({
   reasonCategory: z.enum(REPORT_REASON_VALUES).optional(),
@@ -124,7 +138,7 @@ type UserActionConfirmModalProps = {
   action: UserActionType;
   restrictableContentCount: number;
   restorableContentCount: number;
-  /** 조치가 반영돼 모달이 닫힌 뒤 부른다 — 상세 레이아웃이 하단 시트를 닫는다. 고칠 입력이 없는 거부(베타 나이 제한)는
+  /** 조치가 반영돼 모달이 닫힌 뒤 부른다 — 상세 레이아웃이 하단 시트를 닫는다. 고칠 입력이 없는 거부(베타 나이 제한·소설화 명단 밖)는
    * 바뀐 것이 없어 부르지 않는다. */
   onSuccess?: () => void;
 };
@@ -145,6 +159,7 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
     const unsuspendMutation = useUnsuspendUserMutation(userId);
     const setRateLimitExemptMutation = useSetRateLimitExemptMutation(userId);
     const setBetaMutation = useSetBetaMutation(userId);
+    const setNovelizeGrantMutation = useSetNovelizeGrantMutation(userId);
     const adjustCloverMutation = useAdjustCloverMutation(userId);
     const {
       control,
@@ -188,6 +203,12 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
         } else if (action === "beta-off") {
           await setBetaMutation.mutateAsync({ beta: false, ...formToCommentOnlyRequest(values) });
           toast.success("베타 지정을 해제했어요.");
+        } else if (action === "novelize-on") {
+          await setNovelizeGrantMutation.mutateAsync({ granted: true, ...formToCommentOnlyRequest(values) });
+          toast.success("소설화를 허용했어요.");
+        } else if (action === "novelize-off") {
+          await setNovelizeGrantMutation.mutateAsync({ granted: false, ...formToCommentOnlyRequest(values) });
+          toast.success("소설화 허용을 회수했어요.");
         } else if (action === "clover-grant" || action === "clover-revoke") {
           // 스키마가 `optional()`이라 타입이 `number | undefined`다 — `superRefine`을 통과한 뒤라
           // 클로버 경로에서는 반드시 값이 있지만 타입체커는 그걸 모른다. `reasonCategory`를
@@ -240,6 +261,12 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
           call.end();
           return;
         }
+        // 명단 밖 거부도 같은 모양이다 — 공백 코멘트 422 와 `detail.code`로 가르고, 고칠 입력이 없어 모달을 닫는다.
+        if (action === "novelize-on" && status === 422 && hasDetailCode(error, "NOVELIZE_GRANT_NOT_ALLOWLISTED")) {
+          toast.error(NOVELIZE_GRANT_NOT_ALLOWLISTED_MESSAGE);
+          call.end();
+          return;
+        }
         toast.error(ERROR_MESSAGE);
       }
     };
@@ -267,6 +294,10 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
                 "이 유저를 베타 참가자로 지정합니다. 만 19세 이상만 지정할 수 있습니다. 이미 지정된 유저면 처음 지정한 시각이 유지됩니다."}
               {action === "beta-off" &&
                 "이 유저의 베타 지정을 해제합니다. 다시 지정하면 그때가 새 지정 시각이 됩니다."}
+              {action === "novelize-on" &&
+                "이 유저에게 소설화를 허용합니다. 서버의 시험 계정 명단 안에 있는 유저만 허용할 수 있고, 전역 스위치가 꺼져 있으면 허용해도 아직 쓸 수 없습니다. 이미 허용된 유저면 처음 허용한 시각이 유지됩니다."}
+              {action === "novelize-off" &&
+                "이 유저의 소설화 허용을 회수합니다. 이미 만든 소설은 지워지지 않지만 다시 허용하기 전까지 열 수 없고 지우기만 됩니다. 다시 허용하면 그때가 새 허용 시각이 됩니다."}
               {action === "clover-grant" && "이 유저에게 클로버를 지급합니다. 무료 일일 한도를 넘긴 뒤에 쓰입니다."}
               {action === "clover-revoke" &&
                 "이 유저의 클로버를 회수합니다. 현재 잔액보다 많이 회수할 수는 없습니다."}
@@ -390,7 +421,7 @@ function formToReasonedRequest(values: UserActionFormValues, reasonCategory: Con
   return { reasonCategory, adminComment: values.adminComment.trim() || undefined };
 }
 
-/** 사유 카테고리를 받지 않는 조치(정지 해제·레이트리밋 면제·베타 토글)는 코멘트가 필수다(빈 값이면 BE가 422). */
+/** 사유 카테고리를 받지 않는 조치(정지 해제·레이트리밋 면제·베타 토글·소설화 토글)는 코멘트가 필수다(빈 값이면 BE가 422). */
 function formToCommentOnlyRequest(values: UserActionFormValues) {
   return { adminComment: values.adminComment.trim() };
 }
@@ -441,8 +472,13 @@ function createUserActionSchema(action: UserActionType) {
 /** 나이 거부 code는 OpenAPI에 노출되지 않아 생성 타입이 없다 — 구조화 dict `detail`을 직접 읽는다
  * (`PublishPromptSetDialog`의 `"rule" in error.detail`과 같은 모양). */
 function isBetaAgeRestricted(error: unknown) {
+  return hasDetailCode(error, "BETA_AGE_RESTRICTED");
+}
+
+/** 거부 code 가 OpenAPI 에 없는 422 들(베타 나이·소설화 명단)을 `detail.code`로 가른다. */
+function hasDetailCode(error: unknown, code: string) {
   if (!isApiError(error) || typeof error.detail !== "object" || error.detail === null) return false;
-  return "code" in error.detail && error.detail.code === "BETA_AGE_RESTRICTED";
+  return "code" in error.detail && error.detail.code === code;
 }
 
 function assertNever(value: never): never {
