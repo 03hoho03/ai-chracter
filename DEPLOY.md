@@ -199,8 +199,9 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**50개 키다**(2026-10-04 VM 실측, 키 이름만 셈): 아래 표 51개 중 36개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
-`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개, 모두 15개 제외) + compose용
+**50개 키다**(2026-10-04 VM 실측, 키 이름만 셈): 아래 표 68개 중 36개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 7개·소설화 조정용 `NOVELIZE_*` 8개 30개와,
+소설화를 켤 때 넣는 `NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST` 2개 — 실측 때 VM 에 없던 키 — 모두 32개 제외) + compose용
 5개(`API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE`) + "Bugsink(에러 트래커)" 절의 6개
 (`BUGSINK_*` 3개·`INGEST_SHARED_SECRET`·`SENTRY_DSN`·`SENTRY_ENVIRONMENT`) + 크론 알림 3개
 (`DISCORD_WEBHOOK_URL`·`HEALTHCHECKS_BACKUP_PING_URL`은 "백업 · 복원" 절, `HEALTHCHECKS_RESOURCE_PING_URL`은 "VM 리소스 감시" 절). `apps/api/.env`는 **로컬 개발용이며 배포와 무관하다.**
@@ -254,6 +255,15 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `MEMORY_WINDOW_GENERATION` | 설정 안 함(기본 `true`) | 긴 방의 생성 프롬프트에서 요약이 덮은 메시지를 빼는 히스토리 윈도우. `false` 면 전체 히스토리를 싣는다 — 요약 품질 사고 때 재기동만으로 예전 동작으로 돌아가는 스위치이고, 끄면 아래 두 판정 스위치도 무시된다 |
 | `MEMORY_WINDOW_ENDING_JUDGMENT` | 설정 안 함(기본 `true`) | 엔딩 판정에도 윈도우를 씌운다(요약이 덮은 원문 대신 현재 요약을 싣는다). `false` 는 판정 품질 사고 때 되돌리는 용도다 — 끄면 판정이 대화 전체를 실어 긴 방에서 토큰 원가·지연이 턴 수만큼 늘고 판정 타임아웃·컨텍스트 한도에 닿을 수 있다. 되돌리기는 VM `.env` 에 `MEMORY_WINDOW_ENDING_JUDGMENT=false`·`MEMORY_WINDOW_IMAGE_JUDGMENT=false` 두 줄을 추가 → 아래 형식 검사 → `up -d --wait api`(`restart` 는 env 를 다시 읽지 않는다). 넣으면 위 VM 키 수를 다시 센다 |
 | `MEMORY_WINDOW_IMAGE_JUDGMENT` | 설정 안 함(기본 `true`) | 그림 매칭 판정 — 캐릭터 상황 이미지와 스토리 미디어 북 칸 둘 다 — 에도 윈도우를 씌운다(최근 원문만 싣고 요약은 싣지 않는다). 미디어 북 칸 판정은 엔딩 뒤·재생성까지 매 턴 돌아 끄면 가장 크게 늘어난다. 끄는 법·주의는 위와 같다 |
+| `NOVELIZE_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 소설화(대화를 장편 소설의 장으로 옮겨 쓰기) 전역 스위치. 쓰려면 이 스위치·아래 명단·어드민이 준 계정별 허용 셋이 모두 있어야 한다 — 코드 기본값이 닫힘이라 이 줄 없이 배포하면 닫힌 채 뜬다. 끄면 재기동 뒤 모든 소설 화면·API 가 403 이고 허용 행은 남는다(다시 켜면 그대로 돌아온다). 켜기·끄기·회수·롤백은 "소설화 켜기 · 끄기 · 회수 · 롤백" 절 |
+| `NOVELIZE_GRANT_ALLOWLIST` | 허용할 수 있는 계정 id, **쉼표 구분**(공백·따옴표 없이) | 어드민이 허용을 줄 때와 사용자가 접근할 때 둘 다 본다 — 명단 밖 계정에는 어드민이 허용을 줄 수 없고(422), 명단에서 빼고 재기동하면 허용 행이 남아 있어도 바로 막힌다. 비면 아무에게도 줄 수 없다(기본값). UUID 가 아닌 항목이 있으면 api 가 기동하지 못한다. 개인정보 처리방침이 소설화를 적기 전에는 운영자 계정만 넣는다 |
+| `GEMINI_NOVELIZE_MODEL_NAME` | 설정 안 함(기본값은 `apps/api/.env.example` 주석 줄) | 소설화 장 생성·문단 수정 모델. 장 경계 제안은 이 키가 아니라 `GEMINI_MODEL_NAME` 을 쓴다. 값이 비면 `GEMINI_MODEL_NAME` |
+| `GEMINI_NOVELIZE_MAX_OUTPUT_TOKENS` | 설정 안 함(기본값은 `.env.example`) | 장 생성·문단 수정의 출력 상한(사고 토큰 포함). 여기서 잘린 결과는 저장하지 않고 실패·환불하므로, 낮추면 원가만 버린다. 아주 작게 넣고 재기동하면 잘림 → 실패 → 환불 1회를 운영에서 일부러 관측할 수 있다(확인 뒤 줄을 지우고 다시 재기동) |
+| `GEMINI_NOVELIZE_THINKING_BUDGET` / `GEMINI_NOVELIZE_THINKING_LEVEL` | 설정 안 함(둘 다 비면 모델 기본 사고) | 소설화 사고 예산(정수) 또는 사고 수준(`MINIMAL`·`LOW`·`MEDIUM`·`HIGH`). ⚠️ **둘 중 하나만** — 둘 다 있으면 api 가 기동하지 못한다(한 요청에 둘을 함께 받으면 거부하는 모델이 있어, 뜬 채로 두면 장마다 실패·환불만 반복한다) |
+| `GEMINI_NOVELIZE_CHAPTER_TIMEOUT_MS` / `GEMINI_NOVELIZE_REVISE_TIMEOUT_MS` / `GEMINI_NOVELIZE_BOUNDARY_TIMEOUT_MS` | 설정 안 함(기본값은 `.env.example`) | 장 생성(스트리밍이라 "다음 청크까지") / 문단 수정 / 장 경계 제안(사용자가 화면에서 기다린다)의 타임아웃(ms). 장 생성·문단 수정은 백그라운드 작업이라 Cloudflare 응답 상한(100초)과 무관하다. 장 생성·문단 수정의 시간 초과는 실패·환불이고, 경계 제안(무과금)의 시간 초과는 제안 없이 후보 턴만 보인다 |
+| `NOVELIZE_CHAPTER_MAX_TURNS` / `NOVELIZE_CHAPTER_DAILY_LIMIT` / `NOVELIZE_PROPOSAL_HOURLY_LIMIT` | 설정 안 함(기본값은 `.env.example`) | 장 하나가 담는 원문 턴 상한(경계 제안 후보 수) / 같은 장을 하루(KST)에 만들 수 있는 횟수(생성·재생성 합, 진행 중·성공만 센다) / 무과금 경계 제안의 시간당 상한. 면제 계정도 똑같이 센다 |
+| `NOVELIZE_HEARTBEAT_INTERVAL_SECONDS` / `NOVELIZE_HEARTBEAT_EXPIRY_SECONDS` / `NOVELIZE_JOB_TIMEOUT_SECONDS` | 설정 안 함(기본값은 `.env.example`) | 소설화 작업의 살아 있음 표시 주기 / 그 표시가 이만큼 끊기면 죽은 작업으로 보고 실패·환불하는 만료 / 작업 하나의 전체 상한(초). 만료는 주기보다 넉넉히 길어야 한다 — 짧으면 DB 가 잠깐 느린 것만으로 살아 있는 작업이 환불되고 결과가 버려진다. "소설화 켜기 · 끄기 · 회수 · 롤백" 절의 대기 시간이 이 값들에서 나온다 |
+| `NOVELIZE_MIN_CHAPTER_CHARS` / `NOVELIZE_PREVIOUS_EXCERPT_CHARS` | 설정 안 함(기본값은 `.env.example`) | 이보다 짧은 장 본문은 정상 종료여도 실패·환불하는 하한(글자) / 다음 장 생성에 싣는 직전 장 끝 발췌의 목표 길이(글자) |
 
 > **`CORS_ALLOW_ORIGINS`**: `config.py` 가 쉼표 구분과 JSON 배열을 둘 다 받는다(`[` 로 시작하면 JSON). 항목 앞뒤 공백은
 > 지우고 빈 항목은 버리며, 남는 오리진이 없으면 기동에 실패한다. 새로 쓸 때는 쉼표 구분으로 쓴다.
@@ -1038,6 +1048,125 @@ curl -s -o /dev/null -D - "$(curl -s "https://api.ddona.site/contents/<콘텐츠
 다시 돌린다** — 롤백 기간에 READY 가 된 자산은 `_display.webp` 가 없어 다시 올린 코드에서 상세 히어로가 404 가 된다.
 다만 옛 코드의 자산 삭제·탈퇴 파기는 `_display.webp` 를 모르므로, **롤백해 둔 기간에 지워진 생성 이미지와 탈퇴한
 회원의 이미지는 표시용 변형이 R2 에 남는다.** 롤백했다면 그 기간에 지워진 자산의 `{원본키}_display.webp` 를 손으로 지운다.
+
+### 3-11. 소설화 켜기 · 끄기 · 회수 · 롤백
+
+소설화는 세 겹으로 닫혀 있다 — 전역 스위치 `NOVELIZE_ENABLED`, env 명단 `NOVELIZE_GRANT_ALLOWLIST`, 어드민 유저 상세의
+계정별 허용 토글. 셋 다 있어야 그 계정에 진입점(채팅 더보기 「소설로 보기」·프로필 메뉴 「내 소설」)과 소설 API 가
+열리고, 하나라도 빠지면 403 `NOVELIZE_NOT_ALLOWED` 다. 코드 기본값이 꺼짐·빈 명단이라 **배포만으로는 닫힌 채 뜬다.**
+예외는 소설 삭제 하나다 — 자기 데이터를 지울 권리는 허용과 무관해서 로그인·소유권만 본다. 면제 계정도 클로버가
+차감된다(소설화에는 면제 분기가 없다).
+
+**켜기** — `.env` 에 두 줄을 더한다. 파일을 통째로 덮거나 백업본으로 복원하지 않는다(자동배포가 같은 파일의 `API_IMAGE`
+를 고친다). 명단 값은 공백·따옴표 없는 쉼표 구분이다:
+
+```sh
+cd /opt/ddona/app
+sudo sh -c 'printf "\nNOVELIZE_ENABLED=true\nNOVELIZE_GRANT_ALLOWLIST=<계정 id>,<계정 id>\n" >> /opt/ddona/.env'
+sudo python3 ops/check_env.py --format /opt/ddona/.env
+sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d --wait api
+sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -T api \
+  python -c "from api.core.config import settings; print(settings.novelize_enabled, settings.novelize_grant_allowlist)"
+```
+
+`restart` 는 env 를 다시 읽지 않으므로 `up -d --wait api` 로 올린다. 그다음 "BE 런타임" 절의 키 개수 문장을 VM 에서 다시
+세어 고친다. 키를 넣은 것만으로는 아직 아무도 못 쓴다 — 어드민 유저 상세에서 그 계정의 소설화 허용을 켜고(명단 밖
+계정이면 거절된다), 클로버를 지급한다. 허용 직후 그 계정의 web 은 새로고침해야 진입점이 보인다(세션 정보를 다시 받지
+않는다).
+
+배포 직후 최대 300초(`prompt_set_cache_ttl_seconds`)는 소설화가 실패할 수 있다 — 마이그레이션이 프롬프트 세트 캐시를
+지우지 않아 그동안 소설화 채널이 없는 옛 세트로 렌더하고, 렌더가 모델 호출 전에 실패해 차감 전 거절 또는 환불로 끝난다.
+채팅은 영향이 없다. 배포 전부터 열어 둔 어드민 프롬프트 편집 탭은 새로고침한다 — 그 탭에서 저장하면 초안의 소설화 행이
+빠지고 게시가 "누락"으로 막힌다.
+
+**진행 중 작업 0 확인 — 끄기 · 명단 회수 · 롤백의 첫 단계.** 셋 다 재기동을 낀다. 재기동하면 그 순간 돌던 장 생성·문단
+수정 작업이 죽어 진행 중으로 남고, 그 차감액은 만료 정리가 환불할 때까지 묶인다. 새 코드는 프로세스마다 기동 뒤
+heartbeat 만료 + 10초(기본 70초)에 모든 소설의 죽은 작업을 한 번 환불하지만, **옛 이미지로 롤백하면 이 정리가 없고 스키마를
+내리면 작업 행이 사라져 환불 근거가 없어진다.** 그래서 먼저 비운다:
+
+1. (선택) 어드민에서 허용 계정들의 토글을 끈다 — 재기동 없이 새 작업이 바로 403 이 된다. 이미 돌던 작업은 끝까지 돈다.
+2. 살아 있는 진행 중 작업이 0 이 될 때까지 기다린다. 작업 하나의 상한이 `NOVELIZE_JOB_TIMEOUT_SECONDS`(기본 360초)라
+   길어야 그만큼이다. heartbeat 조건을 빼면 이미 죽은 작업이 끝내 0 이 되지 않는다 — 그건 4단계가 따로 센다.
+
+   ```sh
+   sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+     psql -U postgres -d ai_character_chat -Atc \
+     "SELECT count(*) FROM novel_jobs WHERE status IN ('queued','running') AND heartbeat_at >= now() - interval '60 seconds';"
+   ```
+
+3. 0 을 본 뒤 끄기·회수·롤백을 진행한다.
+4. 사후 확인 — 같은 명령에서 조건만 `heartbeat_at < now() - interval '60 seconds'` 로 바꿔 0 이어야 한다. 실패로 가는 길은
+   환불 함수 하나뿐이라 "실패인데 환불 안 됨"은 생기지 않고, 환불이 묶이는 것은 죽은 채 진행 중으로 남은 작업뿐이다.
+   0 이 아니면 새 이미지는 기동 70초 뒤 정리가 처리한다. 옛 이미지라면 손으로 환불하기 전에 그 작업 id·사용자·
+   `charged_amount` 를 기록으로 남긴다.
+
+(`60 seconds` 는 `NOVELIZE_HEARTBEAT_EXPIRY_SECONDS` 기본값이다 — 바꿨으면 같이 바꾼다.)
+
+**끄기** — 진행 중 작업 0 을 확인한 뒤 스위치 줄을 지우고 다시 올린다:
+
+```sh
+cd /opt/ddona/app
+sudo sed -i '/^NOVELIZE_ENABLED=/d' /opt/ddona/.env
+sudo python3 ops/check_env.py --format /opt/ddona/.env
+sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d --wait api
+```
+
+모든 계정에서 소설 화면·API 가 403 이 되고 진입점이 사라진다(새로고침 뒤). 허용 행·명단·소설 데이터는 남아 다시 켜면
+그대로 돌아온다. 꺼진 동안 사용자가 소설을 지우려면 탈퇴하거나 문의로 지운다(진입점이 없다). 줄을 지웠으니 키 개수
+문장을 다시 센다.
+
+**회수(한 계정)** — 어드민 유저 상세에서 그 계정의 허용 토글을 끄면 재기동 없이 바로 막힌다. 어드민을 거치지 않고
+확실히 막으려면 진행 중 작업 0 확인 뒤 명단에서 그 id 를 빼고(`sudo sed -i` 로 그 줄을 고친다) 형식 검사 → `up -d --wait
+api` — 허용 행이 남아 있어도 명단 밖이면 접근 시점에 막힌다.
+
+**롤백** — 스위치를 켠 적이 있으면 되돌릴 태그와 상관없이 **진행 중 작업 0 확인 → 끄기 → 롤백** 순서다. 태그 롤백은
+"BE → GCE VM" 절의 한 줄이다. 옛 이미지가 떠 있는 동안 알려진 문제:
+
+- 소설화를 쓴 계정의 **클로버 내역이 500** 이다. 소설화 차감·환불 원장 행이 남는데(원장 `kind` 는 Text 라 값 제약이 없다) 옛
+  코드의 내역 API 가 모르는 `kind` 를 범주 맵에서 찾다 실패한다. 영향은 허용했던 계정뿐이다. 잔액·차감은 정상이다.
+- 그 계정들의 **어드민 유저 상세가 500** 이다. 허용 토글이 남긴 감사 로그의 조치 종류를 옛 응답 스키마가 모른다.
+- story·character 레인의 **어드민 프롬프트 게시가 막힌다.** 마이그레이션이 두 레인 초안에 소설화 행을 더했는데 옛 코드의
+  게시 검증이 그 행을 "잉여"로 거부한다. 옛 코드에서 게시가 필요하면 마이그레이션 직전의 활성 버전을 복원해 게시한다(복원이
+  초안을 그 버전 섹션으로 바꾼다). 채팅 렌더는 소설화 채널을 읽지 않아 무사하다.
+
+**롤백 뒤 새 이미지를 다시 올릴 때** — 마이그레이션은 이미 적용돼 다시 돌지 않는다. 옛 코드에서 복원·게시한 세트가
+활성이면 거기 소설화 행이 없어 소설화가 계속 렌더 실패로 거절되고, 새 코드의 게시 검증은 "누락"으로 막힌다(어드민에
+소설화 채널을 손으로 더할 길이 없다). 새 이미지가 뜬 직후 그 이미지로 프롬프트 시드만 다시 깐다 — downgrade 가 시드가
+만든 세트 둘과 초안의 소설화 행만 지우고, upgrade 가 그 시점 활성 세트를 다시 복사해 소설화 행을 더한 새 세트를 활성으로
+만든다(소설·작업 테이블은 이 리비전 아래라 그대로다):
+
+```sh
+sudo /opt/ddona/backup.sh   # 먼저 백업
+sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<새 코드 TAG> alembic downgrade 668c7ae16cc0
+sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<새 코드 TAG> alembic upgrade head
+```
+
+**스키마까지 되돌릴 때** — 순서는 "참조 이미지 켜기 · 끄기 · 롤백" 절과 같다: **태그 롤백으로 옛 코드부터 띄우고 →
+새 이미지로 downgrade**(옛 이미지에는 이 리비전 파일이 없고, 먼저 내리면 떠 있는 새 코드가 없어진 테이블을 읽다 실패한다).
+**소설·장·개정·작업·계정별 허용 행이 전부 지워지고 되살릴 수 없으므로** 백업을 먼저 뜬다:
+
+```sh
+sudo /opt/ddona/backup.sh   # 먼저 백업
+sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env \
+  <IMAGE>:<새 코드 TAG> alembic downgrade 00ce650038ba
+```
+
+- downgrade 는 시드가 만든 프롬프트 세트 둘과 두 레인 초안의 소설화 행을 지운다. 활성은 마이그레이션 직전 세트로
+  돌아간다(게시 시각 최신 규칙). 그 사이 운영자가 소설화 행이 든 새 버전을 게시했다면 그 버전은 남아 활성이고 옛 코드에서
+  그 레인 게시가 계속 막힌다 — 마이그레이션 직전 활성 버전을 복원해 게시한다.
+- 거꾸로 **새 코드에서 마이그레이션 이전 버전(소설화 채널 없음)을 복원하면 게시가 "누락"으로 막힌다** — 받아들인 제약이다.
+- 원장 행은 downgrade 뒤에도 남는다 — 위 클로버 내역 500 은 옛 이미지가 떠 있는 한 계속된다.
+
+활성 세트 확인(시드 직후, 롤백 전후):
+
+```sh
+sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+  psql -U postgres -d ai_character_chat -c \
+  "SELECT DISTINCT ON (lane) lane, id, version, published_at FROM prompt_sets WHERE status = 'published' AND lane IN ('story','character') ORDER BY lane, published_at DESC;"
+```
+
+시드가 만드는 새 세트 id 는 환경 공통 리터럴(story `b5305c39-e0af-4d32-ac28-578550b31fb9`, character
+`502dcff3-66ce-46ad-8c84-13dbba6fe81a`)이고, 버전은 배포 시점 전 레인 게시 최대 + 1(story 먼저, character 그다음)이다.
 
 ---
 
