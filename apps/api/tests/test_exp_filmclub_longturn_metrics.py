@@ -508,3 +508,40 @@ def test_lost_attempt_and_the_next_turn_with_the_same_number_split_trace_calls_b
     assert [c["callSite"] for c in retried["calls"]] == ["chat_generate", "chat_stat_judgment"]
     (summary,) = m.bin_summary(turns)
     assert summary["callLatencyMs"]["chat_generate"]["n"] == 3
+
+
+def _shortcut_rows() -> list[dict[str, Any]]:
+    rows = _rows(datetime(2026, 10, 5, 15, 0, 0))[:2]
+    rows.append(_turn(1, datetime(2026, 10, 5, 15, 0, 0), countdown=30.0, userText=None, shortcut="동아리방 들르기"))
+    return rows
+
+
+def test_shortcut_turn_uses_the_shortcut_prompt_as_the_user_text_for_keyword_notes() -> None:
+    # 드라이버는 은폐 때문에 단축어 턴의 사용자 글을 비워 두지만, 서버는 단축어 원문을 사용자 메시지로 받아 키워드를 맞춘다.
+    snapshots: list[dict[str, Any]] = [
+        {
+            "kind": "roomStatic",
+            "roomId": "room-1",
+            "shortcuts": [{"id": "s1", "name": "동아리방 들르기", "prompt": "{{user}}가 편집실에 들른다"}],
+            "names": {"personaName": None, "defaultUserName": "민준", "charName": None},
+        },
+        {"kind": "roomStatic", "roomId": "other-room", "shortcuts": [], "names": {}},
+    ]
+    texts = m.shortcut_texts(snapshots, "room-1")
+    assert texts == {"동아리방 들르기": "민준이 편집실에 들른다"}
+
+    _, turns = m.build_turns(_shortcut_rows(), m.Frame(_frame_data()), texts)
+
+    assert turns[0]["keywordNotes"] == ["편집실"]
+    with pytest.raises(ValueError, match="동아리방 들르기"):
+        m.build_turns(_shortcut_rows(), m.Frame(_frame_data()))
+
+
+def test_visible_tail_shows_the_shortcut_name_and_the_image_label_of_each_turn() -> None:
+    rows = _shortcut_rows()
+    rows[-1]["imageLabel"] = "도희/기획 회의"
+
+    text = "\n".join(m.visible_tail(rows, m.Frame(_frame_data()), 30))
+
+    assert "나: [단축어: 동아리방 들르기]" in text and "None" not in text
+    assert "[그림: 도희/기획 회의]" in text

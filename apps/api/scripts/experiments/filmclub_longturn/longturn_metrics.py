@@ -7,7 +7,8 @@
     # 2) 턴별 표 + 50턴 구간 요약(중간 보고서 입력).
     uv run python scripts/experiments/filmclub_longturn/longturn_metrics.py \\
         turns --log <run>/<방>.jsonl --frame <run>/analysis/frame.json --server-log <run>/server.log \\
-        [--trace <run>/trace.jsonl] --out <run>/analysis
+        [--trace <run>/trace.jsonl] [--snapshots <run>/memory-snapshots.jsonl] --out <run>/analysis
+        # 단축어 턴이 있으면 --snapshots 가 필요하다(서버가 받은 단축어 원문은 그 파일에만 있다).
     # 3) 스토리 가이드 런의 집계 결과와 같은 값이 나오는지(정의 회귀).
     uv run python scripts/experiments/filmclub_longturn/longturn_metrics.py \\
         regress --story-guide <story-guide 런 폴더> --examples r1=<예시.json> r2=<…> r3=<…>
@@ -373,8 +374,39 @@ def background_summary(calls: list[dict[str, Any]]) -> dict[str, dict[str, Any]]
 # ---------------------------------------------------------------- 턴 표
 
 
-def build_turns(rows: list[dict[str, Any]], frame: Frame) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """(오프닝, 턴 목록). 앱 429·409 등 http≠200 줄은 같은 발화의 재시도라 턴이 아니다."""
+def shortcut_texts(snapshots: list[dict[str, Any]], room_id: str) -> dict[str, str]:
+    """단축어 이름 → 서버가 사용자 메시지로 받은 글. 드라이버와 같게 그 방의 마지막 정적 정보(`roomStatic`)의 원문에서
+    `{{user}}` 를 이름으로 바꾼다. 원문은 시뮬레이터가 읽는 로그에 없고 `--snapshot-log` 에만 있다."""
+    static: dict[str, Any] | None = None
+    for row in snapshots:
+        if row.get("kind") == "roomStatic" and row.get("roomId") == room_id:
+            static = row
+    if static is None:
+        return {}
+    names = static["names"]
+    user_name = resolve_user_name(names.get("personaName"), names.get("defaultUserName") or "")
+    return {
+        s["name"]: expand_author_macros(s["prompt"], user_name=user_name, char_name=names.get("charName"))
+        for s in static["shortcuts"]
+    }
+
+
+def turn_user_text(row: dict[str, Any], shortcuts: dict[str, str] | None) -> str:
+    """그 턴에 서버가 받은 사용자 글. 단축어 턴은 드라이버 로그에 글이 비어 있으므로 단축어 원문을 쓴다 — 비운 채로
+    두면 키워드 노트 발동·되풀이가 실제보다 적게 나온다."""
+    if row.get("userText") is None and row.get("shortcut"):
+        name = str(row["shortcut"])
+        if not shortcuts or name not in shortcuts:
+            raise ValueError(f"단축어 「{name}」 턴의 원문이 없다 — --snapshots 로 그 방의 roomStatic 을 넘긴다")
+        return shortcuts[name]
+    return str(row.get("userText") or "")
+
+
+def build_turns(
+    rows: list[dict[str, Any]], frame: Frame, shortcuts: dict[str, str] | None = None
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """(오프닝, 턴 목록). 앱 429·409 등 http≠200 줄은 같은 발화의 재시도라 턴이 아니다. `shortcuts` 는
+    `shortcut_texts` 의 결과 — 단축어 턴이 있으면 필요하다."""
     opening = next(row for row in rows if row["kind"] == "opening")
     stats = dict(opening["roomAfter"]["stats"])
     turn_count = int(opening["roomAfter"]["turnCount"])
@@ -425,7 +457,7 @@ def build_turns(rows: list[dict[str, Any]], frame: Frame) -> tuple[dict[str, Any
             "memory": row.get("memory"),
         }
         pending_note = None
-        user_text = str(row.get("userText") or "")
+        user_text = turn_user_text(row, shortcuts)
         fired = frame.fired_keyword_notes(history, user_text)
         record["keywordNotes"] = [frame.keyword_name[i] for i in fired]
         if lost:
@@ -650,7 +682,8 @@ def run_turns(args: argparse.Namespace) -> None:
     frame = Frame(json.loads(Path(args.frame).read_text(encoding="utf-8")))
     meta = next((row for row in rows if row["kind"] == "meta"), {})
     room_id = str(args.room or meta["roomId"])
-    _, turns = build_turns(rows, frame)
+    shortcuts = shortcut_texts(read_jsonl(Path(args.snapshots)), room_id) if args.snapshots else None
+    _, turns = build_turns(rows, frame, shortcuts)
     records = (
         parse_server_log(Path(args.server_log).read_text(encoding="utf-8").splitlines(), room_id)
         if args.server_log
@@ -926,15 +959,21 @@ def run_attribution(args: argparse.Namespace) -> None:
 
 
 def visible_tail(rows: list[dict[str, Any]], frame: Frame, n: int) -> list[str]:
-    """화면에 보였던 것만 — 사용자 발화, 응답(이름·그림 라벨 치환), 게이지. 태그·노트 갱신·기억 해시는 넣지 않는다."""
+    """화면에 보였던 것만 — 사용자 발화(단축어 턴은 버튼 이름), 응답(이름·그림 태그 치환), 응답에 붙은 그림 라벨,
+    게이지. 태그·노트 갱신·기억 해시·단축어 원문은 넣지 않는다."""
     lines: list[str] = []
     turns = [r for r in rows if r["kind"] == "turn" and r.get("http", 200) == 200]
     for row in turns[-n:]:
         after = row.get("roomAfter") or {}
         reply = row.get("display") or frame.render(str(row.get("reply") or ""))
         gauges = "  ".join(f"{k}={v:g}" for k, v in (after.get("stats") or {}).items())
-        lines.append(f"[턴 {after.get('turnCount', '?')}] 나: {row.get('userText')}")
+        said = row.get("userText")
+        if said is None and row.get("shortcut"):
+            said = f"[단축어: {row['shortcut']}]"
+        lines.append(f"[턴 {after.get('turnCount', '?')}] 나: {said}")
         lines.append(reply if not row.get("failure") else "(응답 없음 — 오류)")
+        if row.get("imageLabel") and not row.get("failure"):
+            lines.append(f"[그림: {row['imageLabel']}]")
         if gauges:
             lines.append(f"  게이지: {gauges}")
         lines.append("")
@@ -998,6 +1037,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--frame", required=True)
     p.add_argument("--server-log")
     p.add_argument("--trace")
+    p.add_argument("--snapshots", help="memory-snapshots.jsonl — 단축어 턴의 원문(roomStatic)")
     p.add_argument("--room")
     p.add_argument("--out", required=True)
     p.add_argument("--bin-size", type=int, default=BIN)
