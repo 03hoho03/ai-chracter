@@ -1,0 +1,183 @@
+"""소설화 과금 — 작업 생성과 함께 하는 선차감, 실패 확정 때의 단일 환불, 작업 상태의 조건부 전이.
+
+채팅 게이트(`core/rate_limit_gate.py`)를 쓰지 않는다. 그쪽은 SSE 라우트라 `Depends` 안에서 자기 트랜잭션으로
+차감하지만, 소설화는 202 JSON 이라 라우트 본문에서 예외를 내도 안전하고, 차감이 작업 행 생성과 같은 트랜잭션이어야
+한다(차감만 남고 작업이 없거나 그 반대가 생기지 않게). 그래서 요청 세션 하나에 얹는다. 면제 계정 분기도 없다 — 채팅·
+이미지 상한을 면제받는 운영 계정도 소설화는 똑같이 낸다.
+
+**락 순서는 모든 경로에서 users → novel_jobs → clover_lots 다.** 작업 생성·환불·소설 삭제·탈퇴가 모두 사용자 행을
+먼저 잠그므로 한 사용자의 이 경로들은 사용자 행에서 줄을 선다. 그 덕에 "진행 중 작업이 있나"·"오늘 몇 번 했나"를
+사용자 잠금 아래에서 읽으면 다른 요청이 그 사이에 작업을 끼워 넣을 수 없다.
+
+**상태 전이는 전부 조건부 UPDATE 다**(`transition_job`). 만료 정리와 정상 종료가 같은 작업을 동시에 끝내려 해도 조건
+(지금 상태)에 맞는 쪽 하나만 행을 받고, 받지 못한 쪽은 아무것도 하지 않는다 — 환불이 두 번 나가거나 이미 환불된
+작업에 장이 저장되지 않는 이유가 이것 하나다."""
+
+import uuid
+from collections.abc import Mapping, Sequence
+from datetime import datetime, time
+from typing import Any, assert_never
+
+from fastapi import HTTPException, status
+from sqlalchemy import func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from api.core import clover
+from api.core.config import settings
+from api.core.rate_limit import KST, seconds_until_kst_midnight
+from api.core.rate_limit_gate import _too_many_requests
+from api.db.models.auth import User
+from api.db.models.novel import NovelJob, NovelJobFailureCode, NovelJobKind, NovelJobStatus
+
+ACTIVE_JOB_STATUSES: tuple[NovelJobStatus, ...] = ("queued", "running")
+# 하루 상한에 세는 상태. 환불된 실패를 세면 우리 쪽 실패가 사용자의 하루 기회를 깎는다.
+_COUNTED_JOB_STATUSES: tuple[NovelJobStatus, ...] = ("queued", "running", "succeeded")
+_CHAPTER_JOB_KINDS: tuple[NovelJobKind, ...] = ("chapter_generate", "chapter_regenerate")
+
+_NOVELIZE_WINDOW = "novelize"
+
+
+def job_price(kind: NovelJobKind) -> int:
+    """작업 한 번의 클로버 단가. 단가 상수를 부를 때마다 모듈 전역으로 읽는다 — 값을 붙잡아 두면 테스트가 바꿀 수 없고,
+    화면에 금액을 내려주는 응답도 이 함수 하나에서 읽어야 차감액과 어긋나지 않는다."""
+    if kind == "chapter_generate":
+        return clover.NOVELIZE_CHAPTER_GENERATE_COST
+    if kind == "chapter_regenerate":
+        return clover.NOVELIZE_CHAPTER_REGENERATE_COST
+    if kind == "ai_edit":
+        return clover.NOVELIZE_AI_EDIT_COST
+    assert_never(kind)
+
+
+async def _lock_user(db: AsyncSession, user_id: uuid.UUID) -> bool:
+    """사용자 행을 `FOR NO KEY UPDATE` 로 잠근다. 작업 행 INSERT 가 FK 로 거는 `KEY SHARE` 와는 부딪히지 않고, 같은
+    사용자의 다른 과금 경로(작업 생성·환불·클로버 차감의 UPDATE)와는 부딪혀 줄을 세운다. 행이 없으면 False."""
+    locked = await db.scalar(select(User.id).where(User.id == user_id).with_for_update(key_share=True))
+    return locked is not None
+
+
+async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: int, now: datetime) -> NovelJob:
+    """요청 세션 `db` 에서 `job` 을 진행 대기(`queued`)로 넣고 단가만큼 차감한 뒤 커밋한다. 넣은 작업을 돌려준다.
+
+    `job` 은 호출자가 종류·소설·사용자와 입력(구간 또는 문단 범위)을 채운 새 행이다. 상태·차감액·heartbeat 는 여기서
+    채운다. 소유·작품 상태·원문 해시처럼 요청 자체를 거절하는 판정은 이 함수를 부르기 **전에** 끝낸다 — 거절된 요청은
+    원장에 아무것도 남기지 않는다. 부르기 전에 쓴 것이 있으면 먼저 커밋해 둔다: 거절할 때 이 함수가 롤백한다.
+
+    거절은 모두 `HTTPException` 이다(라우트 본문이 그대로 내보낸다).
+    - 409 `NOVELIZE_PRICE_CHANGED` + `currentCost`: 사용자가 확인한 금액(`expected_cost`)이 지금 단가와 다르다. 단가가
+      배포로 바뀌는 사이 열어 둔 확인 화면의 금액으로 차감하지 않으려는 것이다. DB 를 건드리기 전에 판정한다.
+    - 409 `NOVEL_JOB_IN_PROGRESS`: 이 소설에 진행 중(대기·실행) 작업이 있다.
+    - 429 `USER_LIMIT`(`window: "novelize"`): 같은 시작 메시지의 장 생성·재생성이 오늘(KST) 상한에 닿았다. 재시도 초는
+      상한이 풀리는 KST 자정까지다.
+    - 429 `CLOVER_REQUIRED`(`window: "novelize"`): 잔액 부족. 이 경우 참인 재시도 시각은 없지만, 클로버가 다시 생기는
+      가장 이른 정기 시점이 출석이 다시 열리는 KST 자정이라 그때까지의 초를 싣는다.
+
+    순서는 단가 확인 → 사용자 잠금 → 진행 중 확인 → 하루 상한 → 작업 INSERT → 차감(clover_lots 잠금)이다. 진행 중
+    확인과 상한을 사용자 잠금 뒤에 읽으므로 같은 사용자의 동시 요청이 둘 다 통과하지 못한다(부분 유니크 인덱스는
+    마지막 방어선으로 남는다)."""
+    price = job_price(job.kind)
+    if expected_cost != price:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "NOVELIZE_PRICE_CHANGED", "currentCost": price},
+        )
+
+    if not await _lock_user(db, job.user_id):
+        # 인증을 통과한 요청이라 도달할 수 없다. 도달했다면 500 이 맞다.
+        raise ValueError(f"소설화 작업을 만들 사용자를 찾지 못했다: {job.user_id}")
+
+    active = await db.scalar(
+        select(NovelJob.id).where(NovelJob.novel_id == job.novel_id, NovelJob.status.in_(ACTIVE_JOB_STATUSES)).limit(1)
+    )
+    if active is not None:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "NOVEL_JOB_IN_PROGRESS"})
+
+    if job.kind in _CHAPTER_JOB_KINDS:
+        today_start = datetime.combine(clover.kst_today(now), time.min, tzinfo=KST)
+        attempts = await db.scalar(
+            select(func.count())
+            .select_from(NovelJob)
+            .where(
+                NovelJob.novel_id == job.novel_id,
+                NovelJob.start_message_id == job.start_message_id,
+                NovelJob.kind.in_(_CHAPTER_JOB_KINDS),
+                NovelJob.status.in_(_COUNTED_JOB_STATUSES),
+                NovelJob.created_at >= today_start,
+            )
+        )
+        if (attempts or 0) >= settings.novelize_chapter_daily_limit:
+            await db.rollback()
+            raise _too_many_requests(job.user_id, _NOVELIZE_WINDOW, seconds_until_kst_midnight(now))
+
+    job.status = "queued"
+    job.charged_amount = price
+    # 만료 정리가 DB 시계로 비교하므로 앱 시계가 아니라 DB 시각을 넣는다.
+    job.heartbeat_at = await db.scalar(select(func.now()))
+    db.add(job)
+    await db.flush()
+
+    if await clover.spend(db, user_id=job.user_id, amount=price, kind="novelize_spend") is None:
+        await db.rollback()
+        raise _too_many_requests(job.user_id, _NOVELIZE_WINDOW, seconds_until_kst_midnight(now), code="CLOVER_REQUIRED")
+
+    await db.commit()
+    return job
+
+
+async def transition_job(
+    db: AsyncSession, *, job_id: uuid.UUID, expected: Sequence[NovelJobStatus], values: Mapping[str, Any]
+) -> int | None:
+    """작업 상태가 `expected` 중 하나일 때만 `values` 를 쓴다. 바뀌었으면 그 작업의 차감액을, 조건이 맞지 않았으면
+    (이미 다른 경로가 끝냈거나 작업이 지워졌으면) `None` 을 돌려준다. 커밋은 호출자가 한다.
+
+    작업을 끝내는 쪽은 저장보다 이 전이를 **먼저** 한다 — 성공이면 `running → succeeded` 가 행을 받은 뒤에야 장·개정을
+    넣고, 받지 못하면 결과를 버린다. 그래야 만료 정리가 먼저 실패·환불한 작업에 장이 저장되지 않고, 소설 삭제가 먼저
+    작업 행을 지웠을 때 지워진 소설에 장을 넣으려다 FK 위반이 나지 않는다."""
+    return await db.scalar(
+        update(NovelJob)
+        .where(NovelJob.id == job_id, NovelJob.status.in_(expected))
+        .values(**values)
+        .returning(NovelJob.charged_amount)
+    )
+
+
+async def refund_job(db: AsyncSession, *, job_id: uuid.UUID, failure_code: NovelJobFailureCode) -> int | None:
+    """진행 중(대기·실행) 작업을 실패로 확정하고 차감액을 돌려준다. 환불한 금액을, 이미 끝났거나 없는 작업이면 `None`
+    을 돌려준다. 커밋은 호출자가 하고, 소설 삭제처럼 같은 트랜잭션에서 더 할 일이 없으면 곧바로 커밋한다.
+
+    실행 경로의 실패 처리·만료 정리·소설 삭제가 모두 이 함수 하나를 쓴다. 순서: 작업의 사용자를 락 없이 읽고 → 사용자
+    행 잠금 → 조건부 전이(실패·사유·`refunded_at`) → 행을 받았을 때만 지급. 전이·지급·`refunded_at` 이 한 트랜잭션이라
+    커밋이 실패하면 셋 다 없던 일이 되고 작업은 진행 중으로 남는다 — heartbeat 가 멈춘 그 작업을 만료 정리가 다시 이
+    함수로 환불한다. 그래서 채팅의 `refund_in_new_transaction`(실패를 삼키고 재시도가 없다)을 쓰지 않는다.
+
+    탈퇴나 소설 삭제로 작업 행이 먼저 지워졌으면 아무것도 하지 않는다 — 탈퇴는 잔액을 통째로 소멸시키므로 뒤늦은
+    환불이 그 뒤에 잔액을 되살리면 안 된다."""
+    user_id = await db.scalar(select(NovelJob.user_id).where(NovelJob.id == job_id))
+    if user_id is None or not await _lock_user(db, user_id):
+        return None
+    refunded = await transition_job(
+        db,
+        job_id=job_id,
+        expected=ACTIVE_JOB_STATUSES,
+        values={"status": "failed", "failure_code": failure_code, "refunded_at": func.now(), "finished_at": func.now()},
+    )
+    if refunded is None:
+        return None
+    if refunded > 0:
+        await clover.grant(db, user_id=user_id, amount=refunded, kind="novelize_refund")
+    return refunded
+
+
+async def refund_active_jobs(db: AsyncSession, *, novel_id: uuid.UUID, failure_code: NovelJobFailureCode) -> int:
+    """소설의 진행 중 작업을 모두 환불하고 환불 합계를 돌려준다. 소설을 지우기 직전, 같은 트랜잭션에서 부른다(커밋은
+    호출자) — 지우고 나면 그 작업은 실행 경로가 실패해도 환불할 행이 없다."""
+    job_ids = (
+        await db.scalars(
+            select(NovelJob.id).where(NovelJob.novel_id == novel_id, NovelJob.status.in_(ACTIVE_JOB_STATUSES))
+        )
+    ).all()
+    total = 0
+    for job_id in job_ids:
+        total += await refund_job(db, job_id=job_id, failure_code=failure_code) or 0
+    return total

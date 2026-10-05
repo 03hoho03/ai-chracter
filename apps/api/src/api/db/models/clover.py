@@ -57,7 +57,7 @@ class CloverLot(Base):
 
     `kind`는 원장의 `CloverKind`(core/clover.py)와 값 범위가 다르다 — 로트는 지급에만
     생기므로(소모·회수·소멸류는 로트를 새로 만들지 않는다) `attendance_grant`·`mission_grant`·
-    `admin_grant`·`chat_refund`·`image_refund`, 그리고 백필 전용 값 `legacy_balance`
+    `admin_grant`·`chat_refund`·`image_refund`·`novelize_refund`, 그리고 백필 전용 값 `legacy_balance`
     (마이그레이션이 기존 `clover_balance`를 로트로 편입할 때만 쓴다)로 값이 갈린다. 같은
     타입을 재사용하지 않는다.
     """

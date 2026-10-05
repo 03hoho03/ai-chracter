@@ -306,6 +306,10 @@ class Settings(BaseSettings):
     # 본다 — 명단에서 지우고 재기동하면 허용 행을 지우지 않아도 그 계정은 곧바로 막힌다. 비어 있으면 아무에게도 줄 수
     # 없다. `NoDecode` 는 위 CORS 명단과 같은 이유로 JSON 디코드 단계를 끈다.
     novelize_grant_allowlist: Annotated[list[uuid.UUID], NoDecode] = []
+    # 같은 장(같은 시작 메시지)을 하루(KST)에 몇 번까지 만들 수 있는지 — 장 생성과 재생성을 함께 세고, 진행 중·성공만
+    # 센다(환불된 실패는 세지 않는다). 매번 과금되지만 같은 구간을 끝없이 다시 돌리는 것을 막는 상한이다. 소설화 본
+    # 시험에서 같은 장을 여러 번 돌려야 하므로 격리 환경에서 올릴 수 있게 설정으로 둔다. 기본값은 시험 뒤 확정하는 임시값.
+    novelize_chapter_daily_limit: int = 5
 
     @field_validator("novelize_grant_allowlist", mode="before")
     @classmethod

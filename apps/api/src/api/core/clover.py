@@ -30,6 +30,11 @@ logger = logging.getLogger(__name__)
 CHAT_TURN_COST = 10
 IMAGE_UNIT_COST = 30
 ATTENDANCE_GRANT_AMOUNT = 100
+# 소설화 단가 — 장 생성·장 재생성·AI 문단 수정 한 번에 드는 클로버. 소설화 본 시험에서 원가를 잰 뒤 확정하는 임시값이다.
+# 웹은 이 값의 사본을 갖지 않고 서버 응답으로만 받는다(배포 사이에 열어 둔 화면의 금액이 어긋나지 않게).
+NOVELIZE_CHAPTER_GENERATE_COST = 20
+NOVELIZE_CHAPTER_REGENERATE_COST = 20
+NOVELIZE_AI_EDIT_COST = 5
 
 # `db/models/clover.py`의 `kind` 컬럼 주석과 같은 목록이다. 컬럼은 Text라 DB가 값을 막지
 # 않으므로(마이그레이션 없이 넓히기 위해서다) 이 `Literal`이 유일한 강제 지점이다.
@@ -45,6 +50,9 @@ CloverKind = Literal[
     # 미션 청구(`clover/router.py`)와 만료 배치(`scripts/ops/expire_clover.py`)가 쓴다.
     "mission_grant",
     "expire_burn",
+    # 소설화 작업 생성 때의 선차감과 실패 확정 때의 환불(`novelize/billing.py`).
+    "novelize_spend",
+    "novelize_refund",
 ]
 
 # 소진은 만료 임박 우선, 회수는 최근 지급분부터 — 둘 다
