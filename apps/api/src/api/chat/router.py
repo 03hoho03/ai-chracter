@@ -12,7 +12,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, s
 from fastapi.sse import EventSourceResponse
 from pydantic import ValidationError
 from redis.exceptions import RedisError
-from sqlalchemy import and_, delete, func, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -63,6 +63,7 @@ from api.chat.schemas import (
     ChatErrorEvent,
     ChatMessageCreateRequest,
     ChatMessageEditRequest,
+    ChatMessagePageResponse,
     ChatMessageResponse,
     ChatPolicyWarningEvent,
     ChatRoomContentSnapshot,
@@ -973,38 +974,32 @@ async def _insert_opening_message(db: AsyncSession, room: ChatRoom, setup: Start
     return message
 
 
-async def _to_response(db: AsyncSession, room: ChatRoom) -> ChatRoomResponse:
-    content = await db.get(Content, room.content_id)
-    assert content is not None
-    version_detail: CharacterVersionDetail | StoryVersionDetail | None = (
-        await db.get(CharacterVersionDetail, room.content_version_id)
-        if content.type == ContentType.CHARACTER
-        else await db.get(StoryVersionDetail, room.content_version_id)
-    )
-    assert version_detail is not None
-    persona = await db.get(UserPersona, room.persona_id) if room.persona_id is not None else None
-
-    siblings = await _room_siblings(db, room.user_id, room.content_id)
-    ordinal = next(index for index, sibling in enumerate(siblings, start=1) if sibling.id == room.id)
-
-    messages = (
-        await db.scalars(
-            select(ChatMessage)
-            .where(ChatMessage.chat_room_id == room.id)
-            .order_by(ChatMessage.created_at.asc())
-        )
-    ).all()
-
-    setup = await _resolve_starting_setup(db, room)
-    content_snapshot = None
-    stats = None
-    if setup is not None:
-        content_snapshot = await _build_content_snapshot(db, room, setup)
-        stat_rows = (
-            await db.scalars(select(ChatRoomStat).where(ChatRoomStat.chat_room_id == room.id))
+async def _load_message_page(
+    db: AsyncSession, room_id: uuid.UUID, *, before: ChatMessage | None, limit: int | None
+) -> tuple[Sequence[ChatMessage], bool]:
+    """방 메시지를 오래된 것부터 돌려주고, 그 앞에 더 있는지를 함께 알린다. `before` 가 있으면 그 메시지보다 앞의
+    것만, `limit` 이 있으면 그중 최신 `limit` 개만. 정렬과 커서는 다른 모든 메시지 읽기와 같은 `(created_at, id)`
+    다 — 한 트랜잭션에 넣은 메시지처럼 `created_at` 이 같아도 페이지 경계에서 빠지거나 겹치지 않는다. 더 있는지는
+    하나 더 읽어 본다(개수 쿼리를 따로 부르지 않는다)."""
+    query = select(ChatMessage).where(ChatMessage.chat_room_id == room_id)
+    if before is not None:
+        query = query.where(tuple_(ChatMessage.created_at, ChatMessage.id) < (before.created_at, before.id))
+    if limit is None:
+        messages = (
+            await db.scalars(query.order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc()))
         ).all()
-        stats = {str(row.stat_entity_id): float(row.current_value) for row in stat_rows}
+        return messages, False
+    newest_first = (
+        await db.scalars(query.order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc()).limit(limit + 1))
+    ).all()
+    return list(reversed(newest_first[:limit])), len(newest_first) > limit
 
+
+async def _sign_message_images(
+    db: AsyncSession, room: ChatRoom, setup: StartingSetup | None, messages: Sequence[ChatMessage]
+) -> tuple[dict[uuid.UUID, str], dict[uuid.UUID, MediaTagImage]]:
+    """메시지에 실린 그림(`image_id`)의 URL 을 서명한다. 방 응답과 위로 불러오기 페이지가 같이 쓴다 — 한쪽만
+    서명하면 그쪽 메시지의 그림이 URL 없이 온다."""
     # 이미지가 실린 메시지들의 entity_id를 모아
     # SituationalImage·Asset을 각 1회만 조회하고 서명한다 — 메시지마다 db.get을 부르면
     # 메시지 수만큼 쿼리가 늘어난다(N+1). image_id는 있는데 해석이 안 되면(SituationalImage
@@ -1037,13 +1032,61 @@ async def _to_response(db: AsyncSession, room: ChatRoom) -> ChatRoomResponse:
                 continue
             image_urls[si.entity_id] = await run_in_threadpool(generate_presigned_get_url, asset.storage_key)
 
+    return image_urls, cell_images
+
+
+async def _to_response(db: AsyncSession, room: ChatRoom, *, message_limit: int | None = None) -> ChatRoomResponse:
+    """방 응답. `message_limit` 가 있으면 메시지는 최신 그만큼만(오래된 것부터) 싣고 그 앞이 더 있는지를
+    `has_more_messages_before` 로 알린다 — 긴 방의 진입 응답을 줄이려고 화면이 꼬리만 받고 위로 올라갈 때
+    `GET /chat-rooms/{id}/messages?before=` 로 이어 받는다. 없으면 전부다(파라미터를 모르는 화면과 호환)."""
+    content = await db.get(Content, room.content_id)
+    assert content is not None
+    version_detail: CharacterVersionDetail | StoryVersionDetail | None = (
+        await db.get(CharacterVersionDetail, room.content_version_id)
+        if content.type == ContentType.CHARACTER
+        else await db.get(StoryVersionDetail, room.content_version_id)
+    )
+    assert version_detail is not None
+    persona = await db.get(UserPersona, room.persona_id) if room.persona_id is not None else None
+
+    siblings = await _room_siblings(db, room.user_id, room.content_id)
+    ordinal = next(index for index, sibling in enumerate(siblings, start=1) if sibling.id == room.id)
+
+    messages, has_more_before = await _load_message_page(db, room.id, before=None, limit=message_limit)
+
+    setup = await _resolve_starting_setup(db, room)
+    content_snapshot = None
+    stats = None
+    if setup is not None:
+        content_snapshot = await _build_content_snapshot(db, room, setup)
+        stat_rows = (
+            await db.scalars(select(ChatRoomStat).where(ChatRoomStat.chat_room_id == room.id))
+        ).all()
+        stats = {str(row.stat_entity_id): float(row.current_value) for row in stat_rows}
+
+    image_urls, cell_images = await _sign_message_images(db, room, setup, messages)
+
     # 미디어 북 태그는 첫 메시지(작성자 글을 칸 id 형태로 복사한 것)에서만 해석하고, 그중에서도 방 버전의
     # 시작설정 첫 메시지가 실제로 가리키는 칸만 서명한다. 오프닝은 지울 수 있어 첫 자리에 사용자 메시지나
     # 모델 응답이 올 수 있다 — 그 글의 칸 id 를 그대로 믿으면 플레이어가 아무 칸 id 나 쳐 넣거나 모델에게
     # 따라 쓰게 해서 아직 보지 못한 칸의 원본 URL 을 받는다.
+    # 첫 메시지는 꼬리 창과 따로 읽는다 — 창에 오프닝이 없는 긴 방에서도, 위로 불러와 오프닝에 닿았을 때 그림이
+    # 그려지도록 맵은 언제나 방의 실제 첫 메시지로 만든다.
     media_tag_images = {}
-    if setup is not None and messages and messages[0].role == ChatMessageRole.ASSISTANT:
-        first_refs = media_tag_refs(messages[0].content)
+    if setup is not None:
+        first_message = (
+            await db.scalars(
+                select(ChatMessage)
+                .where(ChatMessage.chat_room_id == room.id)
+                .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
+                .limit(1)
+            )
+        ).first()
+        first_refs = (
+            media_tag_refs(first_message.content)
+            if first_message is not None and first_message.role == ChatMessageRole.ASSISTANT
+            else set()
+        )
         if first_refs:
             _, opening_refs = await normalize_texts(
                 db, room.content_version_id, [setup.opening_message or setup.prologue]
@@ -1065,6 +1108,7 @@ async def _to_response(db: AsyncSession, room: ChatRoom) -> ChatRoomResponse:
             _room_message_response(m, image_urls, cell_images)
             for m in messages
         ],
+        has_more_messages_before=has_more_before,
         content_snapshot=content_snapshot,
         media_tag_images=media_tag_images,
         latest_version_available=content.current_published_version_id != room.content_version_id,
@@ -1192,11 +1236,35 @@ async def create_chat_room(
 @router.get("/{room_id}")
 async def get_chat_room(
     room_id: uuid.UUID,
+    message_limit: int | None = Query(None, alias="messageLimit", ge=1),
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> ChatRoomResponse:
     room = await _get_owned_room(db, room_id, user_id)
-    return await _to_response(db, room)
+    return await _to_response(db, room, message_limit=message_limit)
+
+
+@router.get("/{room_id}/messages")
+async def list_chat_messages_before(
+    room_id: uuid.UUID,
+    before: uuid.UUID,
+    limit: int = Query(ge=1),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ChatMessagePageResponse:
+    """위로 불러오기 — 커서 메시지 바로 앞의 메시지 최대 `limit` 개를 오래된 것부터. 커서는 이 방의 메시지여야
+    한다(다른 방 메시지의 시각으로 이 방을 자르지 않는다)."""
+    room = await _get_owned_room(db, room_id, user_id)
+    cursor = await db.get(ChatMessage, before)
+    if cursor is None or cursor.chat_room_id != room.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
+    messages, has_more_before = await _load_message_page(db, room.id, before=cursor, limit=limit)
+    setup = await _resolve_starting_setup(db, room)
+    image_urls, cell_images = await _sign_message_images(db, room, setup, messages)
+    return ChatMessagePageResponse(
+        messages=[_room_message_response(m, image_urls, cell_images) for m in messages],
+        has_more_before=has_more_before,
+    )
 
 
 @router.get("/{room_id}/play-guide")
@@ -2571,13 +2639,17 @@ async def reset_chat_room(
 )
 async def pin_latest_version(
     room_id: uuid.UUID,
+    message_limit: int | None = Query(None, alias="messageLimit", ge=1),
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> ChatRoomResponse:
     """`messages`는 그대로 두고 방이 고정한
     `content_version_id`만 콘텐츠의 현재 발행 버전으로 갱신 — 이후 응답(생성/판단)부터
     새 버전이 적용된다. 새 버전에 생긴 스탯은 시작값으로 채우고 지금까지의 스탯 값은 둔다.
-    버전 목록/롤백 엔드포인트는 없다(항상 최신 1건만 대상)."""
+    버전 목록/롤백 엔드포인트는 없다(항상 최신 1건만 대상).
+
+    화면은 이 응답으로 방 캐시를 통째로 바꾸므로, 위로 불러 둔 깊이만큼 `messageLimit` 을 넘겨 불러 둔 메시지가
+    잘리지 않게 한다."""
     room = await _get_owned_room(db, room_id, user_id)
     content = await db.get(Content, room.content_id)
     assert content is not None
@@ -2585,7 +2657,7 @@ async def pin_latest_version(
         room.content_version_id = content.current_published_version_id
         await seed_missing_room_stats(db, ChatRoom.id == room.id)
     await db.commit()
-    return await _to_response(db, room)
+    return await _to_response(db, room, message_limit=message_limit)
 
 
 @router.post(

@@ -6625,6 +6625,23 @@
               "format": "uuid",
               "title": "Room Id"
             }
+          },
+          {
+            "name": "messageLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Messagelimit"
+            }
           }
         ],
         "responses": {
@@ -6737,14 +6754,14 @@
         }
       }
     },
-    "/chat-rooms/{room_id}/play-guide": {
+    "/chat-rooms/{room_id}/messages": {
       "get": {
         "tags": [
           "chat"
         ],
-        "summary": "Get Play Guide",
-        "description": "방이 고정한 버전 기준으로 플레이가이드를 온디맨드 조회한다 —\ncontentSnapshot에는 의도적으로 포함하지 않는다.",
-        "operationId": "get_play_guide_chat_rooms__room_id__play_guide_get",
+        "summary": "List Chat Messages Before",
+        "description": "위로 불러오기 — 커서 메시지 바로 앞의 메시지 최대 `limit` 개를 오래된 것부터. 커서는 이 방의 메시지여야\n한다(다른 방 메시지의 시각으로 이 방을 자르지 않는다).",
+        "operationId": "list_chat_messages_before_chat_rooms__room_id__messages_get",
         "parameters": [
           {
             "name": "room_id",
@@ -6755,6 +6772,26 @@
               "format": "uuid",
               "title": "Room Id"
             }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Before"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "title": "Limit"
+            }
           }
         ],
         "responses": {
@@ -6763,7 +6800,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlayGuideResponse"
+                  "$ref": "#/components/schemas/ChatMessagePageResponse"
                 }
               }
             }
@@ -6779,9 +6816,7 @@
             }
           }
         }
-      }
-    },
-    "/chat-rooms/{room_id}/messages": {
+      },
       "post": {
         "tags": [
           "chat"
@@ -6833,6 +6868,50 @@
                       "minimum": 0
                     }
                   }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat-rooms/{room_id}/play-guide": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Get Play Guide",
+        "description": "방이 고정한 버전 기준으로 플레이가이드를 온디맨드 조회한다 —\ncontentSnapshot에는 의도적으로 포함하지 않는다.",
+        "operationId": "get_play_guide_chat_rooms__room_id__play_guide_get",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayGuideResponse"
                 }
               }
             }
@@ -7082,7 +7161,7 @@
           "chat"
         ],
         "summary": "Pin Latest Version",
-        "description": "`messages`는 그대로 두고 방이 고정한\n`content_version_id`만 콘텐츠의 현재 발행 버전으로 갱신 — 이후 응답(생성/판단)부터\n새 버전이 적용된다. 새 버전에 생긴 스탯은 시작값으로 채우고 지금까지의 스탯 값은 둔다.\n버전 목록/롤백 엔드포인트는 없다(항상 최신 1건만 대상).",
+        "description": "`messages`는 그대로 두고 방이 고정한\n`content_version_id`만 콘텐츠의 현재 발행 버전으로 갱신 — 이후 응답(생성/판단)부터\n새 버전이 적용된다. 새 버전에 생긴 스탯은 시작값으로 채우고 지금까지의 스탯 값은 둔다.\n버전 목록/롤백 엔드포인트는 없다(항상 최신 1건만 대상).\n\n화면은 이 응답으로 방 캐시를 통째로 바꾸므로, 위로 불러 둔 깊이만큼 `messageLimit` 을 넘겨 불러 둔 메시지가\n잘리지 않게 한다.",
         "operationId": "pin_latest_version_chat_rooms__room_id__pin_latest_version_post",
         "parameters": [
           {
@@ -7093,6 +7172,23 @@
               "type": "string",
               "format": "uuid",
               "title": "Room Id"
+            }
+          },
+          {
+            "name": "messageLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Messagelimit"
             }
           }
         ],
@@ -13124,6 +13220,28 @@
         ],
         "title": "ChatMessageEditRequest"
       },
+      "ChatMessagePageResponse": {
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ChatMessageResponse"
+            },
+            "type": "array",
+            "title": "Messages"
+          },
+          "hasMoreBefore": {
+            "type": "boolean",
+            "title": "Hasmorebefore"
+          }
+        },
+        "type": "object",
+        "required": [
+          "messages",
+          "hasMoreBefore"
+        ],
+        "title": "ChatMessagePageResponse",
+        "description": "`GET /chat-rooms/{id}/messages?before=` 의 한 페이지 — 커서 메시지 바로 앞 메시지들을 오래된 것부터."
+      },
       "ChatMessageReportCreateRequest": {
         "properties": {
           "reason": {
@@ -13636,6 +13754,10 @@
             "type": "array",
             "title": "Messages"
           },
+          "hasMoreMessagesBefore": {
+            "type": "boolean",
+            "title": "Hasmoremessagesbefore"
+          },
           "contentSnapshot": {
             "anyOf": [
               {
@@ -13719,6 +13841,7 @@
           "turnCount",
           "endingReached",
           "messages",
+          "hasMoreMessagesBefore",
           "latestVersionAvailable",
           "versionAutoUpgraded",
           "contentRestricted",
