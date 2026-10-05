@@ -1,0 +1,409 @@
+"""측정 방의 한 턴에서 미디어 북 칸 판정·엔딩 판정을 다시 부른다 — 실제 판정은 요약이 덮은 원문을 빼고(판정 윈도)
+불렸으니, 같은 턴을 대화 전체로 불러 결과가 갈리는지 본다. 기본은 프롬프트만 만들고 비용 견적을 내는 시험 실행이고,
+`--execute` 를 줘야 LLM 을 부른다.
+
+    uv run --env-file .env python scripts/experiments/filmclub_longturn/judgment_replay.py \\
+        --room <id> --turn <방 턴 번호> --kind image --kind ending [--ending <엔딩 entity_id>] \\
+        [--variant full|window] [--reps 3] [--limit-calls 6] --out <run>/replay/t<NNN>.jsonl [--execute]
+
+입력은 격리 DB 의 방이다. 턴 N 은 N 번째 (사용자 메시지, 바로 뒤 응답) 쌍이고, 판정 입력의 히스토리는 그 사용자 메시지
+앞의 메시지 전부다(유실 턴의 사용자 메시지도 서버가 그랬듯 히스토리에 든다). 프롬프트는 서버의 판정 준비 함수를 그대로
+불러 만든다 — 판정 윈도 설정만 이 프로세스 안에서 끄거나 켠다. `window` 는 방의 현재 요약을 쓰므로 방의 마지막 턴에만
+허용한다(과거 턴에 그때의 요약을 재구성하지 않는다). 엔딩은 그 턴에 판정할 차례(게이트·5턴 간격)인 엔딩만 만들고,
+스탯 규칙은 보지 않는다 — 실제로 판정이 불린 엔딩을 `--ending` 으로 고른다.
+
+모델·타임아웃·집계: 리플레이 call_site 는 앱의 판정 집합에 들어 있어 원래 판정과 같은 모델로 가고(시작할 때 같은지
+확인하고 다르면 멈춘다), 운영 판정과 다른 라벨이라 사용량·로그가 섞이지 않는다. 수십만 토큰 비스트리밍 호출이라 판정
+상한에 잘리지 않게, SDK 호출 직전에 요청 단위 타임아웃을 `REPLAY_TIMEOUT_MS` 로 덮는다. 같은 자리에서 실제로 보낸
+모델·타임아웃·토큰을 담는다. 호출 수는 `--limit-calls` 하드 상한을 넘지 않는다.
+"""
+
+import argparse
+import asyncio
+import contextlib
+import hashlib
+import json
+import sys
+import time
+import uuid
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+from google.genai import types as genai_types
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from api.chat.memory_window import load_current_summary, prompt_window
+from api.chat.prompt_builder import (
+    EndingJudgmentResult,
+    ImageMatchJudgmentResult,
+    build_ending_judgment_prompt,
+    load_active_prompt_set,
+)
+from api.chat.router import (
+    _build_prompt,
+    _load_due_endings,
+    _prepare_media_cell_judgment,
+    _require_starting_setup,
+)
+from api.core.config import settings
+from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom
+from api.llm.client import LLMCallContext, LLMCallSite, LLMClient, structured_model
+from api.llm.gemini import GeminiLLMClient
+from api.llm.pricing import estimate_cost_usd
+
+REPLAY_TIMEOUT_MS = 300_000
+# 리플레이 call_site → 원래 판정 call_site. 모델이 같아야 "윈도 vs 전체" 대조에 모델 차이가 섞이지 않는다.
+REPLAY_SITES: dict[str, tuple[LLMCallSite, LLMCallSite]] = {
+    "image": ("replay_media_book_image", "chat_media_book_image"),
+    "ending": ("replay_ending_judgment", "chat_ending_judgment"),
+}
+# 견적: 전체 히스토리 판정 입력이 턴당 약 450 토큰씩 자란다는 추정치로 낸다(실측 아님 — 시험 실행 기록의 실제 프롬프트
+# 글자 수와 함께 본다. window 변형에는 과대 견적이다). 출력은 짧은 JSON 이다.
+TOKENS_PER_TURN = 450
+OUTPUT_TOKENS = 60
+
+
+@dataclass(frozen=True)
+class ReplayInput:
+    kind: str
+    variant: str
+    turn: int
+    prompt: str
+    schema: type[BaseModel]
+    call_site: LLMCallSite
+    original_call_site: LLMCallSite
+    history_messages: int
+    ending_id: uuid.UUID | None = None
+    candidate_ids: frozenset[uuid.UUID] = field(default_factory=frozenset)
+
+
+class CallBudget:
+    """프로세스 전체의 실호출 상한. `take` 와 그 앞의 검사 사이에 await 가 없어 동시 호출끼리도 넘지 않는다."""
+
+    def __init__(self, limit: int) -> None:
+        self.limit = limit
+        self.used = 0
+
+    def take(self) -> bool:
+        if self.used >= self.limit:
+            return False
+        self.used += 1
+        return True
+
+
+@contextlib.contextmanager
+def judgment_window(enabled: bool) -> Iterator[None]:
+    """이 프로세스에서만 판정 윈도 설정을 바꾼다. 생성 윈도는 판정 윈도의 전제라 켜진 상태여야 한다."""
+    keys = ("memory_window_image_judgment", "memory_window_ending_judgment")
+    saved = {key: getattr(settings, key) for key in keys}
+    if enabled and not settings.memory_window_generation:
+        raise ValueError("생성 윈도가 꺼져 있으면 판정 윈도도 쓰이지 않는다")
+    try:
+        for key in keys:
+            setattr(settings, key, enabled)
+        yield
+    finally:
+        for key, value in saved.items():
+            setattr(settings, key, value)
+
+
+def _turn_pairs(messages: list[ChatMessage]) -> list[int]:
+    """턴 번호(1부터) → 그 턴 사용자 메시지의 인덱스. 바로 뒤가 응답인 사용자 메시지만 턴이다(유실 턴은 방 턴 수에
+    세지 않는다)."""
+    return [
+        index
+        for index in range(len(messages) - 1)
+        if messages[index].role == ChatMessageRole.USER and messages[index + 1].role == ChatMessageRole.ASSISTANT
+    ]
+
+
+async def build_inputs(
+    db: AsyncSession,
+    room_id: uuid.UUID,
+    turn: int,
+    *,
+    kinds: list[str],
+    variant: str,
+    ending_ids: list[uuid.UUID] | None = None,
+) -> list[ReplayInput]:
+    room = await db.get(ChatRoom, room_id)
+    if room is None:
+        raise ValueError(f"방이 없다: {room_id}")
+    setup = await _require_starting_setup(db, room)
+    if setup is None:
+        raise ValueError("스토리 방만 리플레이한다")
+    if variant == "window" and turn != room.turn_count:
+        raise ValueError(f"window 는 방의 마지막 턴({room.turn_count})에만 쓸 수 있다")
+    messages = list(
+        (
+            await db.scalars(
+                select(ChatMessage)
+                .where(ChatMessage.chat_room_id == room.id)
+                .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
+            )
+        ).all()
+    )
+    pairs = _turn_pairs(messages)
+    if not 1 <= turn <= len(pairs):
+        raise ValueError(f"턴 {turn} 이 없다(완결 턴 {len(pairs)}개)")
+    index = pairs[turn - 1]
+    history, user, assistant = messages[:index], messages[index], messages[index + 1]
+    prompt_set, sections = await load_active_prompt_set(db, lane="story")
+    names = (await _build_prompt(db, room, setup, history, user.content, None, prompt_set, sections))[4]
+    windowed = variant == "window"
+    window_count = len(history)
+    if windowed:
+        summary = await load_current_summary(db, room.id)
+        if summary is not None:
+            window_count = len(prompt_window(history, summary.cursor))
+
+    inputs: list[ReplayInput] = []
+    with judgment_window(windowed):
+        if "image" in kinds:
+            judgment = await _prepare_media_cell_judgment(
+                db,
+                room,
+                prompt_set=prompt_set,
+                prompt_sections=sections,
+                history=history,
+                user_message=user.content,
+                assistant_message=assistant.content,
+                names=names,
+            )
+            if judgment is not None:
+                site, original = REPLAY_SITES["image"]
+                inputs.append(
+                    ReplayInput(
+                        kind="image",
+                        variant=variant,
+                        turn=turn,
+                        prompt=judgment.prompt,
+                        schema=ImageMatchJudgmentResult,
+                        call_site=site,
+                        original_call_site=original,
+                        history_messages=window_count,
+                        candidate_ids=frozenset(judgment.candidate_ids),
+                    )
+                )
+        if "ending" in kinds:
+            due = await _load_due_endings(db, room, setup, history, turn)
+            for ending, _rules in due.endings:
+                if ending_ids and ending.entity_id not in ending_ids:
+                    continue
+                site, original = REPLAY_SITES["ending"]
+                inputs.append(
+                    ReplayInput(
+                        kind="ending",
+                        variant=variant,
+                        turn=turn,
+                        prompt=build_ending_judgment_prompt(
+                            prompt_set=prompt_set,
+                            sections=sections,
+                            judgment_prompt=ending.judgment_prompt,
+                            history=due.history,
+                            user_message=user.content,
+                            assistant_message=assistant.content,
+                            memory_summary=due.summary,
+                            names=names,
+                        ),
+                        schema=EndingJudgmentResult,
+                        call_site=site,
+                        original_call_site=original,
+                        history_messages=len(due.history),
+                        ending_id=ending.entity_id,
+                    )
+                )
+    return inputs
+
+
+def check_same_models(inputs: list[ReplayInput], default_model: str) -> dict[str, str]:
+    """리플레이 call_site 가 원래 판정과 같은 모델을 고르는지. 다르면 대조가 무의미하므로 멈춘다."""
+    models: dict[str, str] = {}
+    for item in inputs:
+        replay_model = structured_model(item.call_site, default_model)
+        original_model = structured_model(item.original_call_site, default_model)
+        if replay_model != original_model:
+            raise ValueError(f"{item.call_site} 모델 {replay_model} ≠ {item.original_call_site} 모델 {original_model}")
+        models[item.call_site] = replay_model
+    return models
+
+
+def estimate(inputs: list[ReplayInput], reps: int, models: dict[str, str]) -> dict[str, Any]:
+    calls = len(inputs) * reps
+    total = 0.0
+    for item in inputs:
+        cost = estimate_cost_usd(
+            models[item.call_site],
+            input_tokens=TOKENS_PER_TURN * item.turn,
+            cached_tokens=0,
+            output_tokens=OUTPUT_TOKENS,
+            thoughts_tokens=0,
+        )
+        total += (cost or 0.0) * reps
+    return {
+        "calls": calls,
+        "estimatedUsd": round(total, 4),
+        "tokensPerCall": [TOKENS_PER_TURN * i.turn for i in inputs],
+    }
+
+
+# ── 호출 ────────────────────────────────────────────────────────────────────
+
+_TOKEN_FIELDS = {
+    "prompt": "prompt_token_count",
+    "cached": "cached_content_token_count",
+    "candidates": "candidates_token_count",
+    "thoughts": "thoughts_token_count",
+    "total": "total_token_count",
+}
+
+
+def install_replay_transport(client: GeminiLLMClient, capture: dict[str, Any]) -> None:
+    """`client` 의 SDK 구조화 호출 직전에 요청 단위 타임아웃을 리플레이 값으로 덮고, 실제로 보낸 모델·타임아웃과 토큰을
+    `capture` 에 담는다. 모델은 바꾸지 않는다 — 앱이 call_site 로 고른 값 그대로 나간다."""
+    models = client._client.aio.models
+    original = models.generate_content
+
+    async def generate_content(**kwargs: Any) -> Any:
+        config = kwargs.get("config") or genai_types.GenerateContentConfig()
+        kwargs["config"] = config.model_copy(
+            update={"http_options": genai_types.HttpOptions(timeout=REPLAY_TIMEOUT_MS)}
+        )
+        capture["sent_model"] = kwargs.get("model")
+        capture["sent_timeout_ms"] = REPLAY_TIMEOUT_MS
+        response = await original(**kwargs)
+        usage = getattr(response, "usage_metadata", None)
+        capture["tokens"] = {key: getattr(usage, attr, None) for key, attr in _TOKEN_FIELDS.items()}
+        return response
+
+    setattr(models, "generate_content", generate_content)  # noqa: B010 — 메서드 대입은 mypy 가 막는다
+
+
+async def run_replay(
+    client: LLMClient,
+    capture: dict[str, Any],
+    inputs: list[ReplayInput],
+    *,
+    reps: int,
+    budget: CallBudget,
+    room: ChatRoom,
+    sink: Callable[[dict[str, Any]], None],
+) -> None:
+    for item in inputs:
+        for rep in range(reps):
+            if not budget.take():
+                sink({"kind": "budgetExhausted", "limit": budget.limit, "input": item.kind, "rep": rep})
+                return
+            capture.clear()
+            started = time.perf_counter()
+            output: Any = None
+            error: str | None = None
+            try:
+                parsed = await client.generate_structured(
+                    item.prompt,
+                    item.schema,
+                    usage=LLMCallContext(call_site=item.call_site, user_id=room.user_id, room_id=room.id),
+                )
+                output = parsed.model_dump()
+            except Exception as exc:  # 기록하고 다음 호출로 — 실패도 결과다(컨텍스트 한도 등)
+                error = f"{type(exc).__name__}: {str(exc)[:500]}"
+            sink(
+                {
+                    "kind": "call",
+                    "at": datetime.now(UTC).isoformat(),
+                    "turn": item.turn,
+                    "judgment": item.kind,
+                    "variant": item.variant,
+                    "endingId": str(item.ending_id) if item.ending_id else None,
+                    "rep": rep,
+                    "callSite": item.call_site,
+                    "originalCallSite": item.original_call_site,
+                    "sentModel": capture.get("sent_model"),
+                    "sentTimeoutMs": capture.get("sent_timeout_ms"),
+                    "tokens": capture.get("tokens"),
+                    "latencyMs": round((time.perf_counter() - started) * 1000, 1),
+                    "historyMessages": item.history_messages,
+                    "promptChars": len(item.prompt),
+                    "promptSha256": hashlib.sha256(item.prompt.encode()).hexdigest()[:16],
+                    "output": output,
+                    "error": error,
+                }
+            )
+
+
+async def _main(args: argparse.Namespace) -> int:
+    from api.db.session import async_session_factory
+
+    room_id = uuid.UUID(args.room)
+    endings = [uuid.UUID(e) for e in args.ending] if args.ending else None
+    async with async_session_factory() as db:
+        room = await db.get(ChatRoom, room_id)
+        if room is None:
+            print(f"방이 없다: {room_id}")
+            return 1
+        inputs = await build_inputs(db, room_id, args.turn, kinds=args.kind, variant=args.variant, ending_ids=endings)
+    models = check_same_models(inputs, settings.gemini_model_name)
+    plan = estimate(inputs, args.reps, models)
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    def sink(record: dict[str, Any]) -> None:
+        with out.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    sink(
+        {
+            "kind": "plan",
+            "at": datetime.now(UTC).isoformat(),
+            "roomId": str(room_id),
+            "turn": args.turn,
+            "variant": args.variant,
+            "execute": args.execute,
+            "models": models,
+            "timeoutMs": REPLAY_TIMEOUT_MS,
+            "inputs": [
+                {
+                    "judgment": i.kind,
+                    "endingId": str(i.ending_id) if i.ending_id else None,
+                    "historyMessages": i.history_messages,
+                    "promptChars": len(i.prompt),
+                }
+                for i in inputs
+            ],
+            **plan,
+        }
+    )
+    print(json.dumps(plan, ensure_ascii=False))
+    if not args.execute:
+        print("시험 실행 — LLM 을 부르지 않았다(--execute 로 실행)")
+        return 0
+    if plan["calls"] > args.limit_calls:
+        print(f"예정 호출 {plan['calls']} 가 --limit-calls {args.limit_calls} 를 넘는다 — 상한까지만 부른다")
+    client = GeminiLLMClient()
+    capture: dict[str, Any] = {}
+    install_replay_transport(client, capture)
+    await run_replay(client, capture, inputs, reps=args.reps, budget=CallBudget(args.limit_calls), room=room, sink=sink)
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--room", required=True)
+    ap.add_argument("--turn", type=int, required=True, help="방 턴 번호(N 번째 완결 턴)")
+    ap.add_argument("--kind", action="append", choices=["image", "ending"], required=True)
+    ap.add_argument("--ending", action="append", help="엔딩 entity_id(여럿 가능) — 없으면 그 턴에 차례인 엔딩 전부")
+    ap.add_argument("--variant", choices=["full", "window"], default="full")
+    ap.add_argument("--reps", type=int, default=1)
+    ap.add_argument("--limit-calls", type=int, required=True, help="실호출 하드 상한")
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--execute", action="store_true", help="LLM 을 실제로 부른다(사용자 승인 뒤에만)")
+    return asyncio.run(_main(ap.parse_args(argv)))
+
+
+if __name__ == "__main__":
+    sys.exit(main())
