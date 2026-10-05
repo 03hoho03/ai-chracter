@@ -48,8 +48,8 @@ async def erase_stale_ai_edit_previews(db: AsyncSession, chapter_id: uuid.UUID) 
 
     새 개정을 커밋한 **뒤 별도 트랜잭션에서** 부른다. 개정을 쌓는 경로는 장 행을 잠그고, 적용은 작업 행 → 장 행 순서로
     잠근다 — 장을 쥔 채 작업 행을 고치면 같은 장의 적용과 서로를 기다린다. 따로 돌면 작업 행 잠금만 쥐고, 지금 커밋된
-    현재 개정으로 판정하므로 몇 번 돌아도 같다. AI 수정 결과 저장도 커밋한 뒤 이 함수를 부른다 — 결과 저장과 새
-    개정이 겹쳐도 둘 다 자기 커밋 뒤에 부르므로, 나중에 도는 호출이 두 커밋을 모두 보고 낡은 결과를 비운다."""
+    현재 개정으로 판정하므로 몇 번 돌아도 같다. AI 수정 결과 저장은 이 함수를 부르지 않는다 — 저장할 때 장 행을
+    잠그고 기준 개정이 현재인지 확인해, 낡은 결과는 아예 성공으로 남기지 않는다."""
     current = (
         select(NovelChapterRevision.id)
         .where(NovelChapterRevision.chapter_id == chapter_id)

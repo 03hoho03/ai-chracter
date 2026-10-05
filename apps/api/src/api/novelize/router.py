@@ -34,6 +34,7 @@ from api.content.media_tags import strip_media_tags
 from api.core.config import settings
 from api.core.rate_limit import check_rate_limit
 from api.core.rate_limit_gate import _too_many_requests
+from api.core.sentry import capture_dependency_failure
 from api.db.models.character import CharacterVersionDetail
 from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom
 from api.db.models.content import Content, ContentType
@@ -931,8 +932,21 @@ async def _stack_revision(
 
 async def _erase_stale_previews(db: AsyncSession, chapter_id: uuid.UUID) -> None:
     """새 개정을 커밋한 뒤 그 장의 낡은 AI 수정 미리보기를 비운다. 개정과 같은 트랜잭션에 두지 않는 이유는
-    `erase_stale_ai_edit_previews` 에 있다(장 잠금을 쥔 채 작업 행을 고치면 적용과 교착한다)."""
-    await erase_stale_ai_edit_previews(db, chapter_id)
+    `erase_stale_ai_edit_previews` 에 있다(장 잠금을 쥔 채 작업 행을 고치면 적용과 교착한다).
+
+    실패(교착 오류·잠금 대기 초과 등)는 되돌리고 남긴 뒤 삼킨다. 새 개정은 이미 커밋됐는데 여기서 500 을 내면 화면은
+    저장 실패로 보고 같은 기준 개정으로 다시 보내 409 를 받는다 — 성공한 수정이 "다른 탭이 먼저 고쳤다"로 보인다.
+    남은 낡은 미리보기는 상세 목록에서 이미 빠지고 적용해도 409 이며, 그 장의 다음 개정 때 비우기가 다시 지운다.
+
+    되돌리기는 세션 전체가 아니라 SAVEPOINT 까지다. 세션을 통째로 롤백하면 이미 읽어 둔 소설·장 객체가 만료돼, 뒤이어
+    응답을 만들 때 그 속성을 읽는 것이 예상 밖 DB 조회가 되어 실패한다. 커넥션이 아예 죽은 경우에는 뒤의 커밋도 응답
+    조회도 어차피 실패하므로 그때는 500 이 맞다."""
+    try:
+        async with db.begin_nested():
+            await erase_stale_ai_edit_previews(db, chapter_id)
+    except Exception as exc:
+        logger.warning("소설 장 %s 의 낡은 AI 수정 미리보기를 비우지 못했다: %s", chapter_id, type(exc).__name__)
+        capture_dependency_failure(exc, dependency="db")
     await db.commit()
 
 

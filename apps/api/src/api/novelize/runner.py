@@ -224,8 +224,16 @@ async def _save_ai_edit(session_factory: SessionFactory, job_id: uuid.UUID, body
     """문단 수정 결과는 개정이 아니라 미리보기 후보다. 사용자가 적용할 때 새 개정이 된다. 전이와 결과 본문을 한
     문장으로 써서 전이가 행을 받지 못하면 결과도 남지 않는다.
 
-    커밋한 뒤 그 장의 낡은 미리보기를 비운다 — 모델을 부르는 동안 사용자가 장을 고쳤으면 이 결과의 기준 개정은 이미
-    현재가 아니라 적용할 수 없는데, 고친 쪽의 비우기는 이 결과가 저장되기 전에 돌아 이 행을 보지 못했다."""
+    모델을 부르는 동안 사용자가 그 장을 고쳤으면(기준 개정이 이제 현재가 아니면) 결과는 적용할 수 없다. 쓸 수 없는
+    미리보기에 과금하지 않도록 성공으로 저장하지 않고 `source_changed` 로 실패·환불한다.
+
+    순서는 작업 행(성공 전이) → 장 행 잠금 → 현재 개정 확인이다. 장 행을 직접 수정·되돌리기·적용과 같은 잠금으로
+    잡아야 확인과 커밋 사이에 새 개정이 끼지 못한다 — 잠그지 않고 읽기만 하면, 확인 직후 커밋된 새 개정 쪽의 낡은
+    미리보기 비우기가 아직 커밋 전인 이 행(실행 중으로 보인다)을 지나쳐 낡은 결과가 성공으로 남는다. 저쪽이 장을 먼저
+    잡았으면 이쪽은 그 커밋을 기다렸다가 새 개정을 보고 실패하고, 이쪽이 먼저 잡았으면 저쪽은 이 커밋 뒤에 개정을
+    쌓고 그 뒤의 비우기가 이 결과를 본다. 장보다 작업 행을 먼저 잡는 것은 소설 삭제와 같은 순서라서다 — 삭제는 진행 중
+    작업을 환불하며 작업 행을 쥔 채 장 행을 잠그므로, 이쪽이 장을 쥔 채 작업 행을 기다리면 서로를 기다린다. 환불은 롤백해 잠금을 모두 놓은 뒤에 한다 — 환불은 사용자 행부터 잠그므로
+    작업 행을 쥔 채 부르면 사용자 → 작업 순서를 거스른다."""
     async with session_factory() as db:
         saved = await transition_job(
             db,
@@ -233,11 +241,25 @@ async def _save_ai_edit(session_factory: SessionFactory, job_id: uuid.UUID, body
             expected=("running",),
             values={"status": "succeeded", "result_text": body, "finished_at": func.now()},
         )
+        if saved is None:
+            await db.rollback()
+            return
+        chapter_id, base_revision_id = (
+            await db.execute(select(NovelJob.chapter_id, NovelJob.base_revision_id).where(NovelJob.id == job_id))
+        ).one()
+        current = None
+        if (
+            chapter_id is not None
+            and await db.scalar(
+                select(NovelChapter.id).where(NovelChapter.id == chapter_id).with_for_update(key_share=True)
+            )
+            is not None
+        ):
+            current = await current_revision(db, chapter_id)
+        if current is None or current.id != base_revision_id:
+            await db.rollback()
+            raise _JobFailedError("source_changed")
         await db.commit()
-        chapter_id = await db.scalar(select(NovelJob.chapter_id).where(NovelJob.id == job_id))
-        if saved is not None and chapter_id is not None:
-            await erase_stale_ai_edit_previews(db, chapter_id)
-            await db.commit()
 
 
 async def _save_chapter(session_factory: SessionFactory, job_id: uuid.UUID, chapter_input: ChapterInput, body: str) -> None:

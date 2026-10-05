@@ -565,6 +565,46 @@ async def test_a_new_revision_erases_the_previews_it_made_stale_in_that_chapter_
     assert [edit["id"] for edit in await _pending(db_client, novel_id)] == [str(other.id)]
 
 
+@pytest.mark.parametrize("change", ["manual_edit", "revert", "apply"])
+async def test_a_committed_revision_stays_201_when_erasing_stale_previews_fails(
+    change: str, db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """새 개정은 이미 커밋됐다. 그 뒤의 비우기가 DB 오류로 실패해도 응답이 500 이면 화면은 저장 실패로 보고 같은 기준으로
+    다시 보내 409 를 받는다 — 성공한 수정이 "다른 탭이 먼저 고쳤다"로 보인다. 비우기는 다음 개정 때 다시 돌므로 삼키고
+    남기기만 한다."""
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    messages = await _room_messages(db_session, room.room_id)
+    chapter = await _add_chapter(db_session, novel_id, room, messages[0], room.turns[1][1], body=_BODY)
+    base = (await _revisions(db_session, chapter.id))[0]
+    pending = await _finished_ai_edit(db_session, novel_id, chapter, base)
+
+    async def broken_erase(db: AsyncSession, _chapter_id: uuid.UUID) -> None:
+        await db.execute(sa.text("SELECT 1 / 0"))  # 트랜잭션을 깨진 상태로 만든다(롤백 없이는 다음 조회도 실패)
+
+    reported: list[str] = []
+    monkeypatch.setattr(novelize_router, "erase_stale_ai_edit_previews", broken_erase)
+    monkeypatch.setattr(
+        novelize_router, "capture_dependency_failure", lambda _exc, *, dependency: reported.append(dependency)
+    )
+
+    if change == "manual_edit":
+        resp = await db_client.post(
+            f"/novels/{novel_id}/chapters/{chapter.id}/revisions", json={"baseRevisionId": str(base.id), "body": "새 판"}
+        )
+    elif change == "revert":
+        resp = await db_client.post(
+            f"/novels/{novel_id}/chapters/{chapter.id}/revisions/{base.id}/restore",
+            json={"baseRevisionId": str(base.id)},
+        )
+    else:
+        resp = await db_client.post(f"/novels/{novel_id}/jobs/{pending.id}/apply")
+
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["revision"]["revisionNo"] == 2
+    assert [r.revision_no for r in await _revisions(db_session, chapter.id)] == [1, 2]
+    assert reported == ["db"]
+
+
 async def test_detail_skips_a_preview_whose_text_was_erased_instead_of_failing(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:

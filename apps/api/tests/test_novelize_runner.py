@@ -563,11 +563,11 @@ async def test_ai_edit_keeps_a_preview_of_the_whole_body_and_makes_no_revision(
     assert "[2] 둘째 문단이다." in prompt and "2번 문단부터 3번 문단까지" in prompt and "더 쓸쓸하게" in prompt
 
 
-async def test_ai_edit_finishing_after_its_chapter_changed_keeps_no_preview(
+async def test_ai_edit_finishing_after_its_chapter_changed_is_refunded_as_source_changed(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """모델을 부르는 동안 사용자가 그 장을 직접 고치면 결과의 기준 판이 더는 현재가 아니다. 그 결과는 적용할 수 없고
-    상세에도 안 나오므로 남기지 않는다(직접 수정 쪽 비우기는 이 작업이 아직 끝나기 전이라 이 행을 보지 못했다)."""
+    """모델을 부르는 동안 사용자가 그 장을 직접 고치면 결과의 기준 판이 더는 현재가 아니다. 적용할 수 없는 결과에
+    과금하지 않는다 — 성공으로 저장하지 않고 실패·환불하며 결과 본문도 남기지 않는다."""
     novel, chapter = await _chapter_with_body(db_client, db_session, "\n\n".join(["문단이다. " * 40, "둘째."]))
     job = await _ai_edit_job(db_session, novel, chapter, start=1, end=1)
 
@@ -578,7 +578,14 @@ async def test_ai_edit_finishing_after_its_chapter_changed_keeps_no_preview(
     await runner.run_job(_factory(db_session), _NovelLLM(paragraphs=["고친 둘째."], during=edit_meanwhile), job.id)
 
     stored = await _job(db_session, job.id)
-    assert (stored.status, stored.instruction, stored.result_text) == ("succeeded", None, None)
+    assert (stored.status, stored.failure_code, stored.result_text) == ("failed", "source_changed", None)
+    assert stored.refunded_at is not None
+    assert await _ledger(db_session, novel.user_id) == [
+        ("novelize_spend", -20),
+        ("novelize_spend", -5),
+        ("novelize_refund", 5),
+    ]
+    assert [r.body for r in await _revisions(db_session, chapter.id)][-1] == "딴 탭"
 
 
 @pytest.mark.parametrize(
