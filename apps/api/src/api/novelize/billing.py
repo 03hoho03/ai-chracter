@@ -29,7 +29,7 @@ from api.core.config import settings
 from api.core.rate_limit import KST, seconds_until_kst_midnight
 from api.core.rate_limit_gate import _too_many_requests
 from api.db.models.auth import User
-from api.db.models.novel import NovelJob, NovelJobFailureCode, NovelJobKind, NovelJobStatus
+from api.db.models.novel import Novel, NovelChapter, NovelJob, NovelJobFailureCode, NovelJobKind, NovelJobStatus
 
 ACTIVE_JOB_STATUSES: tuple[NovelJobStatus, ...] = ("queued", "running")
 # 하루 상한에 세는 상태. 환불된 실패를 세면 우리 쪽 실패가 사용자의 하루 기회를 깎는다.
@@ -66,6 +66,8 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
     원장에 아무것도 남기지 않는다. 부르기 전에 쓴 것이 있으면 먼저 커밋해 둔다: 거절할 때 이 함수가 롤백한다.
 
     거절은 모두 `HTTPException` 이다(라우트 본문이 그대로 내보낸다).
+    - 404 `NOVEL_NOT_FOUND`·`NOVEL_CHAPTER_NOT_FOUND`: 사용자 잠금을 기다리는 사이 소설이나 작업이 가리키는 장이
+      지워졌다.
     - 409 `NOVELIZE_PRICE_CHANGED` + `currentCost`: 사용자가 확인한 금액(`expected_cost`)이 지금 단가와 다르다. 단가가
       배포로 바뀌는 사이 열어 둔 확인 화면의 금액으로 차감하지 않으려는 것이다. DB 를 건드리기 전에 판정한다.
     - 409 `NOVEL_JOB_IN_PROGRESS`: 이 소설에 진행 중(대기·실행) 작업이 있다.
@@ -74,7 +76,7 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
     - 429 `CLOVER_REQUIRED`(`window: "novelize"`): 잔액 부족. 이 경우 참인 재시도 시각은 없지만, 클로버가 다시 생기는
       가장 이른 정기 시점이 출석이 다시 열리는 KST 자정이라 그때까지의 초를 싣는다.
 
-    순서는 단가 확인 → 사용자 잠금 → 진행 중 확인 → 하루 상한 → 작업 INSERT → 차감(clover_lots 잠금)이다. 진행 중
+    순서는 단가 확인 → 사용자 잠금 → 소설·장 존재 확인 → 진행 중 확인 → 하루 상한 → 작업 INSERT → 차감(clover_lots 잠금)이다. 진행 중
     확인과 상한을 사용자 잠금 뒤에 읽으므로 같은 사용자의 동시 요청이 둘 다 통과하지 못한다(부분 유니크 인덱스는
     마지막 방어선으로 남는다)."""
     price = job_price(job.kind)
@@ -87,6 +89,20 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
     if not await _lock_user(db, job.user_id):
         # 인증을 통과한 요청이라 도달할 수 없다. 도달했다면 500 이 맞다.
         raise ValueError(f"소설화 작업을 만들 사용자를 찾지 못했다: {job.user_id}")
+
+    # 라우트는 소설·장을 잠금 없이 읽고 들어온다. 그 뒤 소설 삭제나 마지막 장 삭제가 사용자 행을 쥔 채 지우고 커밋하면,
+    # 여기서 기다리던 요청이 지워진 행을 가리키는 작업을 넣다가 FK 위반(500)이 난다. 지우는 경로가 모두 사용자 행을
+    # 먼저 잡으므로 잠금을 얻은 뒤의 조회는 커밋된 삭제를 보고, 잠금을 쥔 동안에는 새 삭제가 끼어들 수 없다. AI 수정의
+    # 기준 개정은 장과 함께만 지워지므로 장 확인 하나로 덮인다.
+    if await db.scalar(select(Novel.id).where(Novel.id == job.novel_id)) is None:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "NOVEL_NOT_FOUND"})
+    if (
+        job.chapter_id is not None
+        and await db.scalar(select(NovelChapter.id).where(NovelChapter.id == job.chapter_id)) is None
+    ):
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "NOVEL_CHAPTER_NOT_FOUND"})
 
     active = await db.scalar(
         select(NovelJob.id).where(NovelJob.novel_id == job.novel_id, NovelJob.status.in_(ACTIVE_JOB_STATUSES)).limit(1)

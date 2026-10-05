@@ -10,7 +10,7 @@
 
 import asyncio
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from datetime import UTC, datetime, time, timedelta
 
 import pytest
@@ -27,6 +27,7 @@ from api.db.models.novel import NovelJobKind, NovelJobStatus
 from api.db.models.clover import CloverLedger, CloverLot
 from api.novelize import billing
 from api.novelize.deletion import delete_novels
+from api.novelize.router import delete_last_novel_chapter, delete_novel
 from factories import _assert_blocked, _make_user_with_clover_lot
 
 
@@ -590,3 +591,99 @@ async def test_novel_deletion_waits_for_an_edit_holding_the_chapter_and_removes_
         )
         assert left == 0
         assert await s.get(Novel, novel_id) is None
+
+
+def _create_after_deleter(
+    factory: async_sessionmaker[AsyncSession], novel_id: uuid.UUID, make_job: Callable[[Novel], NovelJob]
+) -> "asyncio.Task[object]":
+    """작업 생성 요청 하나를 띄운다. 라우트처럼 소설을 잠금 없이 먼저 읽고(그래서 아직 있는 소설을 본다) 차감으로
+    들어간다. 거절은 예외 대신 결과로 돌려준다."""
+
+    async def request() -> object:
+        async with factory() as s:
+            novel = await s.get(Novel, novel_id)
+            assert novel is not None
+            job = make_job(novel)
+            try:
+                return await billing.create_charged_job(
+                    s, job=job, expected_cost=billing.job_price(job.kind), now=datetime.now(UTC)
+                )
+            except HTTPException as exc:
+                return exc
+
+    return asyncio.create_task(request())
+
+
+async def test_job_creation_waiting_on_a_novel_deletion_is_404_and_charges_nothing(
+    independent_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """소설 삭제는 사용자 행을 쥔 채 소설을 지운다. 그 사이 장 생성이 소설을 읽고 차감에 들어와 사용자 행에서
+    기다리다가, 삭제가 커밋된 뒤 이미 없는 소설에 작업을 넣으려 하면 FK 위반(500)이다. 잠금을 얻은 뒤 소설을 다시
+    보면 404 로 거절하고 원장에는 아무것도 남지 않는다."""
+    user_id, novel_id = await _seed(independent_factory)
+    deleter = independent_factory()
+    try:
+        novel = await deleter.get(Novel, novel_id)
+        assert novel is not None
+        await billing._lock_user(deleter, user_id)
+
+        task = _create_after_deleter(
+            independent_factory, novel_id, lambda n: _chapter_job(n, start_message_id=uuid.uuid4())
+        )
+        await _assert_blocked(task)
+        await delete_novel(novel=novel, db=deleter)
+        result = await task
+    finally:
+        await deleter.close()
+
+    assert isinstance(result, HTTPException)
+    assert (result.status_code, _detail(result)) == (404, {"code": "NOVEL_NOT_FOUND"})
+    assert await _independent_ledger(independent_factory, user_id) == []
+
+
+async def test_regeneration_waiting_on_a_last_chapter_deletion_is_404_and_charges_nothing(
+    independent_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """마지막 장 삭제도 사용자 행을 먼저 잡는다. 그 장을 다시 만드는 요청이 그 뒤에서 기다렸다가 지워진 장을 가리키는
+    작업을 넣으면 FK 위반(500)이다. 잠금을 얻은 뒤 장을 다시 보면 404 로 거절하고 원장에는 아무것도 남지 않는다."""
+    user_id, novel_id = await _seed(independent_factory)
+    now = datetime.now(UTC)
+    async with independent_factory() as s:
+        chapter = NovelChapter(
+            novel_id=novel_id,
+            ordinal=1,
+            start_message_id=uuid.uuid4(),
+            start_message_created_at=now,
+            end_message_id=uuid.uuid4(),
+            end_message_created_at=now,
+            assistant_message_count=1,
+            source_hash="0" * 64,
+        )
+        s.add(chapter)
+        await s.flush()
+        s.add(NovelChapterRevision(chapter_id=chapter.id, revision_no=1, body="첫 본문", source="generate"))
+        await s.commit()
+
+    def regenerate(novel: Novel) -> NovelJob:
+        job = _chapter_job(novel, kind="chapter_regenerate", start_message_id=chapter.start_message_id)
+        job.chapter_id = chapter.id
+        return job
+
+    deleter = independent_factory()
+    try:
+        novel = await deleter.get(Novel, novel_id)
+        assert novel is not None
+        await billing._lock_user(deleter, user_id)
+
+        task = _create_after_deleter(independent_factory, novel_id, regenerate)
+        await _assert_blocked(task)
+        await delete_last_novel_chapter(chapter_id=chapter.id, novel=novel, db=deleter)
+        result = await task
+    finally:
+        await deleter.close()
+
+    assert isinstance(result, HTTPException)
+    assert (result.status_code, _detail(result)) == (404, {"code": "NOVEL_CHAPTER_NOT_FOUND"})
+    assert await _independent_ledger(independent_factory, user_id) == []
+    async with independent_factory() as s:
+        assert await s.get(Novel, novel_id) is not None
