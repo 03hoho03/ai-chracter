@@ -1,6 +1,6 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useBlocker, useNavigate } from "@tanstack/react-router";
 import { BookX, CloudOff, Trash2 } from "lucide-react";
 import { useEffect, useId, useRef, useState, type MouseEvent, type ReactNode } from "react";
 
@@ -19,7 +19,13 @@ import { DiscardManualEditModal, useNovelAiEdit } from "@/features/edit-novel-ch
 import { NovelNotesEditor } from "@/features/edit-novel-notes";
 import { NovelReader } from "@/widgets/novel-reader";
 
-import { resolveSelectedChapter, toChapterSearchValue, toPinnedChapterSearchValue } from "../model/novelChapterSearch";
+import { shouldConfirmDraftDiscardOnHistory } from "../model/draftHistoryBlock";
+import {
+  novelSearchSchema,
+  resolveSelectedChapter,
+  toChapterSearchValue,
+  toPinnedChapterSearchValue,
+} from "../model/novelChapterSearch";
 
 const PAGE_CLASS = "mx-auto flex max-w-2xl flex-col gap-8 px-4 sm:px-6 py-10";
 
@@ -154,6 +160,27 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
     .filter((part) => part !== undefined)
     .join(" · ");
   const isRoomGone = novel.chatRoomId === null;
+  // 브라우저 뒤로가 같은 소설의 다른 장으로 가면 고치던 장이 새로 그려져 쓰던 글이 사라진다 — 목차·새 장 링크와
+  // 같은 확인을 받는다. 그 링크에서 연 확인이 떠 있으면 먼저 닫는다: 가려던 장이 바뀌었고, 남겨 두면 옮긴 뒤에도
+  // 옛 장 이름으로 묻는 모달이 화면 위에 남는다(이 화면은 그대로 마운트돼 있어 떠날 때의 정리가 돌지 않는다).
+  // 새로고침·창 닫기 확인(`beforeunload`)은 이 화면이 하던 일이 아니라 켜지 않는다.
+  useBlocker({
+    shouldBlockFn: async ({ action, current, next }) => {
+      const shouldConfirm = shouldConfirmDraftDiscardOnHistory({
+        action,
+        currentPathname: current.pathname,
+        nextPathname: next.pathname,
+        isDraftDirty: isDraftDirtyRef.current,
+      });
+      if (!shouldConfirm) return false;
+      const target = resolveSelectedChapter(novel.chapters, novelSearchSchema.parse(next.search).chapter);
+      // 같은 장이면 다시 그려지지 않아 글이 남는다.
+      if (target === undefined || target.id === selectedChapter?.id) return false;
+      DiscardManualEditModal.end(false);
+      return !(await DiscardManualEditModal.call({ chapterOrdinal: target.ordinal }));
+    },
+    enableBeforeUnload: false,
+  });
   const heldChapter =
     heldChapterId !== undefined && heldChapterId !== selectedChapter?.id
       ? novel.chapters.find((item) => item.id === heldChapterId)
