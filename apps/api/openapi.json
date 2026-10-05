@@ -4811,6 +4811,60 @@
         }
       }
     },
+    "/novels/{novel_id}/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Get Novel Job",
+        "description": "작업 폴링. 없는 작업·남의 소설·다른 소설의 작업은 모두 404 다(남의 것이 있다는 사실도 드러내지 않는다).\n\n답하기 전에 이 소설의 죽은 작업을 정리한다 — 서버가 재기동되어 작업이 사라졌으면 폴링이 실패·환불을 보게 된다.",
+        "operationId": "get_novel_job_novels__novel_id__jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/comment-stickers": {
       "get": {
         "tags": [
@@ -17756,6 +17810,187 @@
           "unreadCount"
         ],
         "title": "NotificationUnreadCountResponse"
+      },
+      "NovelAiEditPreview": {
+        "properties": {
+          "baseRevisionId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baserevisionid"
+          },
+          "paragraphStart": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paragraphstart"
+          },
+          "paragraphEnd": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paragraphend"
+          },
+          "instruction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instruction"
+          },
+          "resultText": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resulttext"
+          }
+        },
+        "type": "object",
+        "required": [
+          "baseRevisionId",
+          "paragraphStart",
+          "paragraphEnd",
+          "instruction",
+          "resultText"
+        ],
+        "title": "NovelAiEditPreview",
+        "description": "문단 수정 작업의 입력과 결과 후보. `result_text` 는 범위 밖 문단까지 이은 장 전체 본문이고, 성공 전에는 null."
+      },
+      "NovelJobResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "chapter_generate",
+              "chapter_regenerate",
+              "ai_edit"
+            ],
+            "title": "Kind"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "chargedAmount": {
+            "type": "integer",
+            "title": "Chargedamount"
+          },
+          "refunded": {
+            "type": "boolean",
+            "title": "Refunded"
+          },
+          "failureReason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "llm_error",
+                  "timeout",
+                  "truncated",
+                  "refused",
+                  "blocked",
+                  "empty",
+                  "source_changed",
+                  "expired",
+                  "internal"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failurereason"
+          },
+          "chapterId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapterid"
+          },
+          "revisionId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revisionid"
+          },
+          "aiEdit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NovelAiEditPreview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "chargedAmount",
+          "refunded",
+          "failureReason",
+          "chapterId",
+          "revisionId",
+          "aiEdit",
+          "createdAt"
+        ],
+        "title": "NovelJobResponse"
       },
       "PasswordResetConfirmRequest": {
         "properties": {

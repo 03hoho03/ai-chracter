@@ -2096,6 +2096,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/novels/{novel_id}/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Novel Job
+         * @description 작업 폴링. 없는 작업·남의 소설·다른 소설의 작업은 모두 404 다(남의 것이 있다는 사실도 드러내지 않는다).
+         *
+         *     답하기 전에 이 소설의 죽은 작업을 정리한다 — 서버가 재기동되어 작업이 사라졌으면 폴링이 실패·환불을 보게 된다.
+         */
+        get: operations["get_novel_job_novels__novel_id__jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/comment-stickers": {
         parameters: {
             query?: never;
@@ -7193,6 +7215,56 @@ export interface components {
             /** Unreadcount */
             unreadCount: number;
         };
+        /**
+         * NovelAiEditPreview
+         * @description 문단 수정 작업의 입력과 결과 후보. `result_text` 는 범위 밖 문단까지 이은 장 전체 본문이고, 성공 전에는 null.
+         */
+        NovelAiEditPreview: {
+            /** Baserevisionid */
+            baseRevisionId: string | null;
+            /** Paragraphstart */
+            paragraphStart: number | null;
+            /** Paragraphend */
+            paragraphEnd: number | null;
+            /** Instruction */
+            instruction: string | null;
+            /** Resulttext */
+            resultText: string | null;
+        };
+        /** NovelJobResponse */
+        NovelJobResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "chapter_generate" | "chapter_regenerate" | "ai_edit";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "succeeded" | "failed";
+            /** Chargedamount */
+            chargedAmount: number;
+            /** Refunded */
+            refunded: boolean;
+            /** Failurereason */
+            failureReason: ("llm_error" | "timeout" | "truncated" | "refused" | "blocked" | "empty" | "source_changed" | "expired" | "internal") | null;
+            /** Chapterid */
+            chapterId: string | null;
+            /** Revisionid */
+            revisionId: string | null;
+            aiEdit: components["schemas"]["NovelAiEditPreview"] | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
         /** PasswordResetConfirmRequest */
         PasswordResetConfirmRequest: {
             /** Token */
@@ -10927,6 +10999,38 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_novel_job_novels__novel_id__jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelJobResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

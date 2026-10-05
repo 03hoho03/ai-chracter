@@ -182,3 +182,18 @@ class LLMClient(abc.ABC):
         """`images`는 (바이트, MIME 타입) 쌍의 목록 — 전달되면 멀티모달 판단(예: 발행
         자동 필터)에 프롬프트와 함께 첨부된다."""
         raise NotImplementedError
+
+    async def generate_structured_with_instruction(
+        self,
+        prompt: str,
+        response_schema: type[T],
+        *,
+        system_instruction: str,
+        usage: LLMCallContext,
+    ) -> T:
+        """`generate_structured` 와 같되 역할 규칙을 본문과 다른 통로(`system_instruction`)로 보낸다. 소설화의 문단
+        수정·경계 제안이 쓴다 — 본문이 사용자·작가가 쓴 글이라 규칙과 섞이면 그 글이 지시처럼 읽힐 수 있다.
+
+        추상 메서드가 아니다. `generate_structured` 에 인자를 더하면 그 메서드를 구현한 테스트 페이크 전부의
+        시그니처를 함께 바꿔야 해서, 이 호출을 쓰는 클라이언트(Gemini)와 소설화 테스트 페이크만 따로 구현한다."""
+        raise NotImplementedError

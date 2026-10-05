@@ -14,6 +14,8 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from pydantic import BaseModel, Field
+
 from api.chat.prompt_builder import PromptRenderError, render_prompt_channel, select_sections_for_render
 from api.db.models.prompt import PromptSection, PromptSet
 
@@ -34,6 +36,17 @@ class NovelizePrompt:
 
     system_instruction: str
     prompt: str
+
+
+class NovelizeReviseResult(BaseModel):
+    """문단 수정의 응답 스키마. 필드 설명은 모델에게 가는 스키마에 그대로 실린다."""
+
+    paragraphs: list[str] = Field(
+        description=(
+            "[고칠 범위]의 문단들을 순서대로 대신할 문단 목록. 보통 [고칠 범위]의 문단 수와 같다. 범위 밖 문단은 넣지 "
+            "않는다. 적어도 하나. 항목 하나가 문단 하나이고, 빈 줄과 [n] 번호를 넣지 않는다."
+        )
+    )
 
 
 def _scope(is_story_chat: bool) -> str:

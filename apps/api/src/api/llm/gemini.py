@@ -184,6 +184,7 @@ class GeminiLLMClient(LLMClient):
         images: list[tuple[bytes, str]] | None = None,
         *,
         usage: LLMCallContext,
+        system_instruction: str | None = None,
     ) -> T:
         contents: str | list[Any] = prompt
         if images:
@@ -200,6 +201,7 @@ class GeminiLLMClient(LLMClient):
         config = genai_types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=response_schema,
+            system_instruction=system_instruction,
             http_options=genai_types.HttpOptions(timeout=request_timeout_ms(usage.call_site)),
         )
         if usage.call_site in NOVELIZE_MODEL_CALL_SITES:
@@ -247,3 +249,15 @@ class GeminiLLMClient(LLMClient):
                 f"Gemini structured response could not be parsed into {response_schema.__name__}"
             )
         return response.parsed
+
+    async def generate_structured_with_instruction(
+        self,
+        prompt: str,
+        response_schema: type[T],
+        *,
+        system_instruction: str,
+        usage: LLMCallContext,
+    ) -> T:
+        return await self.generate_structured(
+            prompt, response_schema, usage=usage, system_instruction=system_instruction
+        )

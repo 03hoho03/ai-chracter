@@ -1302,6 +1302,30 @@ async def test_novelize_revise_uses_the_novelize_model_and_boundary_stays_on_the
     ]
 
 
+async def test_structured_call_with_instruction_sends_it_as_the_system_instruction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """문단 수정·경계 제안은 역할 규칙을 본문(사용자·작가 글)과 다른 통로로 보낸다. 지시문 없는 구조화 호출은
+    지금처럼 system_instruction 을 싣지 않는다."""
+    _recording(monkeypatch)
+    sent: list[dict[str, Any]] = []
+
+    async def generate_content(**kwargs: Any) -> SimpleNamespace:
+        sent.append(kwargs)
+        return SimpleNamespace(parsed=_JudgmentResult(triggered=False, ending_id=None))
+
+    client = _client_with(generate_content=generate_content)
+
+    await client.generate_structured_with_instruction(
+        "본문", _JudgmentResult, system_instruction="역할 규칙", usage=_REVISE
+    )
+    await client.generate_structured("판정", _JudgmentResult, usage=_CTX)
+
+    with_instruction, plain = sent
+    assert (with_instruction["contents"], with_instruction["config"].system_instruction) == ("본문", "역할 규칙")
+    assert plain["config"].system_instruction is None
+
+
 async def test_novelize_timeouts_follow_the_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "gemini_novelize_chapter_timeout_ms", 2_001)
     monkeypatch.setattr(settings, "gemini_novelize_revise_timeout_ms", 2_002)

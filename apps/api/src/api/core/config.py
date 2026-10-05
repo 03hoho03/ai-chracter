@@ -310,6 +310,22 @@ class Settings(BaseSettings):
     # 센다(환불된 실패는 세지 않는다). 매번 과금되지만 같은 구간을 끝없이 다시 돌리는 것을 막는 상한이다. 소설화 본
     # 시험에서 같은 장을 여러 번 돌려야 하므로 격리 환경에서 올릴 수 있게 설정으로 둔다. 기본값은 시험 뒤 확정하는 임시값.
     novelize_chapter_daily_limit: int = 5
+    # 소설화 작업이 살아 있다는 표시(`novel_jobs.heartbeat_at`)를 몇 초마다 갱신하는지, 몇 초 갱신이 없으면 죽은 작업으로
+    # 보고 실패·환불하는지. 만료는 주기보다 넉넉히 길어야 한다 — 짧으면 DB 가 잠깐 느린 것만으로 살아 있는 작업이
+    # 환불되고, 그 작업의 결과는 버려진다. 비교는 DB 시계로 한다. 둘 다 시험 뒤 확정하는 임시값.
+    novelize_heartbeat_interval_seconds: float = 10
+    novelize_heartbeat_expiry_seconds: int = 60
+    # 소설화 작업 하나의 전체 상한(초). heartbeat 가 살아 있어도 작업이 무한히 늘어지지 않게 한다. 장 생성 호출 자체의
+    # 상한(`gemini_novelize_chapter_timeout_ms`, 300초)보다 길어야 그 호출의 시간 초과가 먼저 나서 실패 사유가
+    # 정확해진다. 넘기면 실패·환불하고, 취소된 호출의 토큰 사용량은 기록되지 않는다. 임시값.
+    novelize_job_timeout_seconds: float = 360
+    # 장 본문이 이보다 짧으면(글자 수, 앞뒤 공백 제외) 정상 종료였어도 실패·환불한다. 출력 토큰 1개로 끝난 장이 실제로
+    # 나왔다. 200자는 측정으로 정한 값이 아니라 그런 몇 글자짜리 장을 거르려고 넉넉히 낮게 잡은 임시 하한이다 — 짧은
+    # 응답 한 턴만 담은 정상 장이 이 아래로 나올 수도 있어서, 본 시험에서 정상 장의 최단 길이를 보고 다시 정한다.
+    novelize_min_chapter_chars: int = 200
+    # 다음 장 생성에 싣는 직전 장 끝 발췌의 목표 길이(글자). 문단 단위로 잘라 이 길이에 가장 가까운 만큼 싣는다.
+    # 앞 장을 되풀이하지 않고 이어 쓰게 하려는 것이다. 임시값.
+    novelize_previous_excerpt_chars: int = 1000
 
     @field_validator("novelize_grant_allowlist", mode="before")
     @classmethod
