@@ -937,6 +937,8 @@ _EXPECTED_TIMEOUT_MS: dict[str, int] = {
     "preview_stat_judgment": 20_000,
     "preview_ending_judgment": 20_000,
     "preview_media_book_image": 20_000,
+    "replay_ending_judgment": 20_000,
+    "replay_media_book_image": 20_000,
     "chat_memory_summary": 60_000,
     "publish_filter_character": 60_000,
     "publish_filter_story": 60_000,
