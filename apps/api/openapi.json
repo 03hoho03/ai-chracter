@@ -4811,6 +4811,243 @@
         }
       }
     },
+    "/novels": {
+      "get": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "List Novels",
+        "description": "내 소설을 최근 수정 순으로. 원래 방이 지워진 소설도 나온다(`chatRoomId` null).",
+        "operationId": "list_novels_novels_get",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}": {
+      "get": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Get Novel",
+        "description": "소설 머리·설정 노트·목차(장마다 현재 개정)·진행 중 작업·지금 단가. 답하기 전에 죽은 작업을 정리한다.",
+        "operationId": "get_novel_novels__novel_id__get",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Delete Novel",
+        "description": "소설과 그 아래 행을 지운다. 진행 중 작업은 같은 트랜잭션에서 먼저 환불한다 — 지우고 나면 실행 경로가 실패해도\n환불할 행이 없다. 원래 방은 그대로다.\n\n사용자 행을 먼저 잠근다. 같은 사용자의 작업 생성이 이 사이에 끼어들면 지울 소설에 새 작업 행이 붙어 소설 DELETE\n가 FK 위반이 되는데, 작업 생성도 사용자 행을 먼저 잡으므로 둘이 줄을 선다. 소설 행은 잠그지 않는다(모듈 머리).",
+        "operationId": "delete_novel_novels__novel_id__delete",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/notes": {
+      "put": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Update Novel Notes",
+        "description": "설정 노트를 바꾼다. 다음 장 생성과 AI 수정부터 실린다(이미 만든 장은 그대로).",
+        "operationId": "update_novel_notes_novels__novel_id__notes_put",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NovelSettingNotesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/protagonist-name": {
+      "put": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Update Novel Protagonist Name",
+        "description": "주인공 이름을 바꾼다. 다음 장 생성부터 쓰이고 이미 만든 장 본문은 그대로다.",
+        "operationId": "update_novel_protagonist_name_novels__novel_id__protagonist_name_put",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NovelProtagonistNameRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/novels/{novel_id}/jobs/{job_id}": {
       "get": {
         "tags": [
@@ -4848,6 +5085,724 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NovelJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/chapter-proposal": {
+      "post": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Propose Novel Chapter",
+        "description": "다음 장의 후보 턴 목록과 모델이 고른 끝 턴(무과금, 동기).\n\n후보는 서버가 정한 시작부터 응답을 장 턴 상한만큼 센 턴들이고, 화면은 이 목록에서 끝을 고른다 — 화면의 방\n메시지 캐시는 최근 일부뿐이라 장 시작이 그보다 앞일 수 있다. 모델 제안이 실패해도 200 에 `suggestion: null`\n이다: 경계는 사용자가 고르는 것이라 제안 실패가 장 생성을 막을 이유가 없다. 모델을 부르기 전에 커밋해 커넥션을\n돌려준다(모델 호출 동안 쥐지 않는다).",
+        "operationId": "propose_novel_chapter_novels__novel_id__chapter_proposal_post",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelChapterProposalResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/chapters": {
+      "post": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Create Novel Chapter",
+        "description": "다음 장을 만드는 작업(과금, 202). 시작은 서버가 정하고, 끝(`endMessageId`)은 경계 제안의 후보 턴 중 하나여야\n한다 — 다음 장 시작부터 장 턴 상한 안의 AI 응답이 아니면 422 `NOVEL_CHAPTER_END_INVALID`.\n\n순서: 작품 상태(403)·방(409)·주인공 이름(422) → 죽은 작업 정리·커밋 → 구간 검사(409·422) → 차감·작업 생성(단가\n409·진행 중 409·하루 상한 429·잔액 429) → 띄우기. 차감 앞의 거절은 원장에 아무것도 남기지 않는다.",
+        "operationId": "create_novel_chapter_novels__novel_id__chapters_post",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NovelChapterCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/chapters/{chapter_id}/regenerate": {
+      "post": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Regenerate Novel Chapter",
+        "description": "장 하나를 같은 원문 구간으로 다시 만드는 작업(과금, 202). 마지막 장이 아니어도 된다. 결과는 그 장의 새\n개정으로 쌓이고, 그 사이의 직접 수정·되돌리기는 이력에 남는다.\n\n원문이 장을 만든 때와 다르면(메시지 편집·응답 재생성·삭제) 차감 전에 409 `NOVEL_SOURCE_CHANGED` — 같은 입력으로\n다시 만든다는 약속을 지킬 수 없다.",
+        "operationId": "regenerate_novel_chapter_novels__novel_id__chapters__chapter_id__regenerate_post",
+        "parameters": [
+          {
+            "name": "chapter_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chapter Id"
+            }
+          },
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NovelChapterRegenerateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/chapters/{chapter_id}": {
+      "delete": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Delete Last Novel Chapter",
+        "description": "마지막 장만 지운다(무과금). 지우면 다음 장 시작이 그 장 시작으로 돌아간다 — 경계를 잘못 골랐을 때 고치는 길이다.\n마지막이 아니면 409 `NOVEL_CHAPTER_NOT_LAST`, 소설에 진행 중 작업이 있으면 409 `NOVEL_JOB_IN_PROGRESS`(끝난 뒤\n다시).\n\n그 장을 가리키던 작업 행은 지우지 않고 장·개정 참조만 비운다 — 같은 장의 하루 재시도 상한이 작업 행 수로 세므로,\n지우면 장을 지웠다 다시 만드는 것으로 상한이 풀린다. 차감 기록의 작업 쪽 짝도 남는다.\n\n잠금: 사용자 행(작업 생성과 줄 세우기 — 진행 중 확인과 삭제 사이에 새 작업이 끼지 않게) → 작업 행 → 장 행.\n장을 잠근 뒤 개정을 지운다 — 직접 수정·되돌리기가 장을 잠근 채 넣는 개정을 기다렸다가 함께 지우려는 것이다.",
+        "operationId": "delete_last_novel_chapter_novels__novel_id__chapters__chapter_id__delete",
+        "parameters": [
+          {
+            "name": "chapter_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chapter Id"
+            }
+          },
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Get Novel Chapter",
+        "description": "장의 현재 개정 본문과 그 문단 배열. 문단 범위(AI 수정)는 이 배열의 인덱스다 — 화면이 본문을 다시 나누면 빈 줄\n해석 차이로 범위가 어긋난다.",
+        "operationId": "get_novel_chapter_novels__novel_id__chapters__chapter_id__get",
+        "parameters": [
+          {
+            "name": "chapter_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chapter Id"
+            }
+          },
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelChapterResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/chapters/{chapter_id}/revisions": {
+      "get": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "List Novel Chapter Revisions",
+        "description": "장의 개정 이력(최신 먼저). 본문은 싣지 않는다.",
+        "operationId": "list_novel_chapter_revisions_novels__novel_id__chapters__chapter_id__revisions_get",
+        "parameters": [
+          {
+            "name": "chapter_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chapter Id"
+            }
+          },
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelRevisionListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Create Novel Chapter Revision",
+        "description": "직접 수정 — 장 전체 본문을 새 개정으로 쌓는다(무과금). 화면이 고른 문단을 본문 안에서 바꿔 보내므로 서버는\n문단 범위를 모른다. 본문은 문단을 빈 줄 하나로 다시 이어 저장한다(문단 배열과 같은 나누기). 이용 제한 작품이나\n방이 지워진 소설도 고칠 수 있다(모델을 부르지 않는다).",
+        "operationId": "create_novel_chapter_revision_novels__novel_id__chapters__chapter_id__revisions_post",
+        "parameters": [
+          {
+            "name": "chapter_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chapter Id"
+            }
+          },
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NovelRevisionCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelChapterResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/chapters/{chapter_id}/revisions/{revision_id}": {
+      "get": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Get Novel Chapter Revision",
+        "operationId": "get_novel_chapter_revision_novels__novel_id__chapters__chapter_id__revisions__revision_id__get",
+        "parameters": [
+          {
+            "name": "chapter_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chapter Id"
+            }
+          },
+          {
+            "name": "revision_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Revision Id"
+            }
+          },
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelRevisionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/chapters/{chapter_id}/revisions/{revision_id}/restore": {
+      "post": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Restore Novel Chapter Revision",
+        "description": "옛 개정으로 되돌린다 — 옛 본문을 복제한 새 개정을 쌓는다(이력은 지우지 않는다).",
+        "operationId": "restore_novel_chapter_revision_novels__novel_id__chapters__chapter_id__revisions__revision_id__restore_post",
+        "parameters": [
+          {
+            "name": "chapter_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chapter Id"
+            }
+          },
+          {
+            "name": "revision_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Revision Id"
+            }
+          },
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NovelRevisionRestoreRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelChapterResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/chapters/{chapter_id}/ai-edits": {
+      "post": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Create Novel Ai Edit",
+        "description": "고른 문단 범위(0부터, 양 끝 포함 — 장 조회의 `paragraphs` 인덱스)를 지시대로 고치는 작업(과금, 202). 결과는\n개정이 아니라 작업의 미리보기 본문(`aiEdit.resultText`)이고, 적용해야 새 개정이 된다. 버려도 환불은 없다.\n\n방이 지워진 소설도 고칠 수 있다(원문 대화가 필요 없다). 기준 개정이 현재 개정이 아니면 409, 범위가 문단 밖이면\n422 — 둘 다 차감 전이다.",
+        "operationId": "create_novel_ai_edit_novels__novel_id__chapters__chapter_id__ai_edits_post",
+        "parameters": [
+          {
+            "name": "chapter_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chapter Id"
+            }
+          },
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NovelAiEditRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/jobs/{job_id}/apply": {
+      "post": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Apply Novel Ai Edit",
+        "description": "끝난 AI 수정의 미리보기를 새 개정으로 쌓는다(무과금). 수정을 맡긴 뒤 장이 바뀌었으면(기준 개정이 현재가\n아니면) 409 `NOVEL_REVISION_CONFLICT`. 적용할 수 없는 작업(AI 수정이 아님·아직 안 끝남·실패·이미 적용·장이\n지워짐)은 409 `NOVEL_JOB_NOT_APPLICABLE`. 적용한 개정은 작업의 결과 개정(`revisionId`)이 된다.\n\n잠금은 작업 행 → 장 행이다(소설·마지막 장 삭제와 같은 순서). 같은 작업을 두 번 적용하려는 요청은 작업 행에서\n줄을 서고, 뒤 요청은 결과 개정이 채워진 것을 본다.",
+        "operationId": "apply_novel_ai_edit_novels__novel_id__jobs__job_id__apply_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelChapterResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat-rooms/{room_id}/novel": {
+      "get": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Get Room Novel",
+        "description": "방에서 만든 소설. 아직 없으면 404 `NOVEL_NOT_FOUND`.",
+        "operationId": "get_room_novel_chat_rooms__room_id__novel_get",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Create Room Novel",
+        "description": "방의 소설을 만들거나, 이미 있으면 그대로 돌려준다(201 / 200). 무과금이다.\n\n원작 제목·캐릭터 이름·레인은 방이 고정한 버전에서 사본으로 떠 둔다 — 방이 지워지거나 작품이 바뀌어도 소설은\n그대로 읽혀야 한다. 주인공 이름은 방에 건 대화 프로필 이름, 없으면 그 버전의 작품 기본 이름이고, 둘 다 없으면\n비워 두었다가 첫 장을 만들기 전에 받는다. 이용 제한 작품이어도 만들 수 있다(모델을 부르지 않는다).",
+        "operationId": "create_room_novel_chat_rooms__room_id__novel_post",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelDetailResponse"
                 }
               }
             }
@@ -17811,6 +18766,55 @@
         ],
         "title": "NotificationUnreadCountResponse"
       },
+      "NovelActiveJob": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "chapter_generate",
+              "chapter_regenerate",
+              "ai_edit"
+            ],
+            "title": "Kind"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "chapterId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapterid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "chapterId"
+        ],
+        "title": "NovelActiveJob",
+        "description": "진행 중(대기·실행) 작업. 화면을 새로 열어도 이 id 로 폴링을 이어 간다."
+      },
       "NovelAiEditPreview": {
         "properties": {
           "baseRevisionId": {
@@ -17880,6 +18884,373 @@
         ],
         "title": "NovelAiEditPreview",
         "description": "문단 수정 작업의 입력과 결과 후보. `result_text` 는 범위 밖 문단까지 이은 장 전체 본문이고, 성공 전에는 null."
+      },
+      "NovelAiEditRequest": {
+        "properties": {
+          "baseRevisionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Baserevisionid"
+          },
+          "paragraphStart": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Paragraphstart"
+          },
+          "paragraphEnd": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Paragraphend"
+          },
+          "instruction": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Instruction"
+          },
+          "expectedCost": {
+            "type": "integer",
+            "title": "Expectedcost"
+          }
+        },
+        "type": "object",
+        "required": [
+          "baseRevisionId",
+          "paragraphStart",
+          "paragraphEnd",
+          "instruction",
+          "expectedCost"
+        ],
+        "title": "NovelAiEditRequest"
+      },
+      "NovelChapterCandidate": {
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Messageid"
+          },
+          "ordinal": {
+            "type": "integer",
+            "title": "Ordinal"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "excerpt": {
+            "type": "string",
+            "title": "Excerpt"
+          }
+        },
+        "type": "object",
+        "required": [
+          "messageId",
+          "ordinal",
+          "createdAt",
+          "excerpt"
+        ],
+        "title": "NovelChapterCandidate",
+        "description": "다음 장의 끝으로 고를 수 있는 턴 하나. `message_id` 는 그 턴의 AI 응답이고, `ordinal` 은 다음 장 시작부터 센\n턴 번호(1부터)다."
+      },
+      "NovelChapterCreateRequest": {
+        "properties": {
+          "endMessageId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Endmessageid"
+          },
+          "expectedCost": {
+            "type": "integer",
+            "title": "Expectedcost"
+          }
+        },
+        "type": "object",
+        "required": [
+          "endMessageId",
+          "expectedCost"
+        ],
+        "title": "NovelChapterCreateRequest"
+      },
+      "NovelChapterProposalResponse": {
+        "properties": {
+          "startMessageId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Startmessageid"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/NovelChapterCandidate"
+            },
+            "type": "array",
+            "title": "Candidates"
+          },
+          "suggestion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NovelChapterSuggestion"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cost": {
+            "type": "integer",
+            "title": "Cost"
+          }
+        },
+        "type": "object",
+        "required": [
+          "startMessageId",
+          "candidates",
+          "suggestion",
+          "cost"
+        ],
+        "title": "NovelChapterProposalResponse"
+      },
+      "NovelChapterRegenerateRequest": {
+        "properties": {
+          "expectedCost": {
+            "type": "integer",
+            "title": "Expectedcost"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expectedCost"
+        ],
+        "title": "NovelChapterRegenerateRequest"
+      },
+      "NovelChapterResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "novelId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Novelid"
+          },
+          "ordinal": {
+            "type": "integer",
+            "title": "Ordinal"
+          },
+          "assistantMessageCount": {
+            "type": "integer",
+            "title": "Assistantmessagecount"
+          },
+          "revision": {
+            "$ref": "#/components/schemas/NovelRevisionResponse"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "novelId",
+          "ordinal",
+          "assistantMessageCount",
+          "revision"
+        ],
+        "title": "NovelChapterResponse"
+      },
+      "NovelChapterSuggestion": {
+        "properties": {
+          "endMessageId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Endmessageid"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "endMessageId",
+          "reason"
+        ],
+        "title": "NovelChapterSuggestion"
+      },
+      "NovelChapterSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "ordinal": {
+            "type": "integer",
+            "title": "Ordinal"
+          },
+          "assistantMessageCount": {
+            "type": "integer",
+            "title": "Assistantmessagecount"
+          },
+          "currentRevisionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Currentrevisionid"
+          },
+          "currentRevisionNo": {
+            "type": "integer",
+            "title": "Currentrevisionno"
+          },
+          "currentRevisionSource": {
+            "type": "string",
+            "enum": [
+              "generate",
+              "regenerate",
+              "manual_edit",
+              "ai_edit",
+              "revert"
+            ],
+            "title": "Currentrevisionsource"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "ordinal",
+          "assistantMessageCount",
+          "currentRevisionId",
+          "currentRevisionNo",
+          "currentRevisionSource",
+          "updatedAt",
+          "createdAt"
+        ],
+        "title": "NovelChapterSummary",
+        "description": "목차의 장 한 줄. 본문은 장 조회로 따로 읽는다."
+      },
+      "NovelDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "chatRoomId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chatroomid"
+          },
+          "contentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Contentid"
+          },
+          "contentType": {
+            "type": "string",
+            "enum": [
+              "story",
+              "character"
+            ],
+            "title": "Contenttype"
+          },
+          "contentTitle": {
+            "type": "string",
+            "title": "Contenttitle"
+          },
+          "characterName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Charactername"
+          },
+          "protagonistName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protagonistname"
+          },
+          "settingNotes": {
+            "type": "string",
+            "title": "Settingnotes"
+          },
+          "chapters": {
+            "items": {
+              "$ref": "#/components/schemas/NovelChapterSummary"
+            },
+            "type": "array",
+            "title": "Chapters"
+          },
+          "activeJob": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NovelActiveJob"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "prices": {
+            "$ref": "#/components/schemas/NovelPrices"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/NovelLimits"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "chatRoomId",
+          "contentId",
+          "contentType",
+          "contentTitle",
+          "characterName",
+          "protagonistName",
+          "settingNotes",
+          "chapters",
+          "activeJob",
+          "prices",
+          "limits",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "NovelDetailResponse"
       },
       "NovelJobResponse": {
         "properties": {
@@ -17991,6 +19362,351 @@
           "createdAt"
         ],
         "title": "NovelJobResponse"
+      },
+      "NovelLimits": {
+        "properties": {
+          "settingNotesMaxLength": {
+            "type": "integer",
+            "title": "Settingnotesmaxlength"
+          },
+          "chapterBodyMaxLength": {
+            "type": "integer",
+            "title": "Chapterbodymaxlength"
+          },
+          "aiEditInstructionMaxLength": {
+            "type": "integer",
+            "title": "Aieditinstructionmaxlength"
+          },
+          "protagonistNameMaxLength": {
+            "type": "integer",
+            "title": "Protagonistnamemaxlength"
+          }
+        },
+        "type": "object",
+        "required": [
+          "settingNotesMaxLength",
+          "chapterBodyMaxLength",
+          "aiEditInstructionMaxLength",
+          "protagonistNameMaxLength"
+        ],
+        "title": "NovelLimits"
+      },
+      "NovelListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "chatRoomId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chatroomid"
+          },
+          "contentType": {
+            "type": "string",
+            "enum": [
+              "story",
+              "character"
+            ],
+            "title": "Contenttype"
+          },
+          "contentTitle": {
+            "type": "string",
+            "title": "Contenttitle"
+          },
+          "characterName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Charactername"
+          },
+          "chapterCount": {
+            "type": "integer",
+            "title": "Chaptercount"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "chatRoomId",
+          "contentType",
+          "contentTitle",
+          "characterName",
+          "chapterCount",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "NovelListItem"
+      },
+      "NovelListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NovelListItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "title": "NovelListResponse"
+      },
+      "NovelPrices": {
+        "properties": {
+          "chapterGenerate": {
+            "type": "integer",
+            "title": "Chaptergenerate"
+          },
+          "chapterRegenerate": {
+            "type": "integer",
+            "title": "Chapterregenerate"
+          },
+          "aiEdit": {
+            "type": "integer",
+            "title": "Aiedit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chapterGenerate",
+          "chapterRegenerate",
+          "aiEdit"
+        ],
+        "title": "NovelPrices",
+        "description": "작업 한 번의 클로버 단가. 화면은 이 값만 보여 주고, 요청에 확인한 금액(`expectedCost`)으로 싣는다."
+      },
+      "NovelProtagonistNameRequest": {
+        "properties": {
+          "protagonistName": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Protagonistname"
+          }
+        },
+        "type": "object",
+        "required": [
+          "protagonistName"
+        ],
+        "title": "NovelProtagonistNameRequest"
+      },
+      "NovelRevisionCreateRequest": {
+        "properties": {
+          "baseRevisionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Baserevisionid"
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 100000,
+            "minLength": 1,
+            "title": "Body"
+          }
+        },
+        "type": "object",
+        "required": [
+          "baseRevisionId",
+          "body"
+        ],
+        "title": "NovelRevisionCreateRequest",
+        "description": "직접 수정 — 장 전체 본문을 보낸다. 화면이 고른 문단을 본문 안에서 바꿔 보낸다."
+      },
+      "NovelRevisionListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NovelRevisionSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "NovelRevisionListResponse"
+      },
+      "NovelRevisionResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "revisionNo": {
+            "type": "integer",
+            "title": "Revisionno"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "generate",
+              "regenerate",
+              "manual_edit",
+              "ai_edit",
+              "revert"
+            ],
+            "title": "Source"
+          },
+          "revertedFromRevisionId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revertedfromrevisionid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "paragraphs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Paragraphs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "revisionNo",
+          "source",
+          "revertedFromRevisionId",
+          "createdAt",
+          "body",
+          "paragraphs"
+        ],
+        "title": "NovelRevisionResponse"
+      },
+      "NovelRevisionRestoreRequest": {
+        "properties": {
+          "baseRevisionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Baserevisionid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "baseRevisionId"
+        ],
+        "title": "NovelRevisionRestoreRequest"
+      },
+      "NovelRevisionSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "revisionNo": {
+            "type": "integer",
+            "title": "Revisionno"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "generate",
+              "regenerate",
+              "manual_edit",
+              "ai_edit",
+              "revert"
+            ],
+            "title": "Source"
+          },
+          "revertedFromRevisionId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revertedfromrevisionid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "revisionNo",
+          "source",
+          "revertedFromRevisionId",
+          "createdAt"
+        ],
+        "title": "NovelRevisionSummary"
+      },
+      "NovelSettingNotesRequest": {
+        "properties": {
+          "settingNotes": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Settingnotes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "settingNotes"
+        ],
+        "title": "NovelSettingNotesRequest",
+        "description": "공백만 보내면 빈 노트로 저장된다."
       },
       "PasswordResetConfirmRequest": {
         "properties": {

@@ -1,0 +1,388 @@
+"""소설 장 읽기·고치기 라우트 — 장 본문(문단), 개정 이력, 직접 수정, 되돌리기, AI 문단 수정, 수정 결과 적용.
+
+직접 수정·되돌리기·적용은 기준 개정(`baseRevisionId`)이 장의 현재 개정과 같을 때만 새 개정을 쌓는다. 이용 제한
+작품이어도, 방이 지워져도 된다(모델을 부르지 않는다). AI 문단 수정만 모델을 불러 과금·이용 제한 검사를 거친다 —
+그 실행은 `test_novelize_runner.py` 에 있고 여기서는 작업을 띄우는 함수를 기록용으로 바꿔 끼운다."""
+
+import uuid
+from collections.abc import Iterator
+from typing import Any
+
+import httpx
+import pytest
+import sqlalchemy as sa
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from api.db.models import Content, ModerationStatus, Novel, NovelChapter, NovelChapterRevision, NovelJob
+from api.novelize import router as novelize_router
+from factories import (
+    _NeverCalledLLMClient,
+    _add_chapter,
+    _clear_llm_override,
+    _novel_ledger,
+    _novel_setup,
+    _override_llm_client,
+    _room_messages,
+)
+
+_BODY = "첫 문단이다.\n\n둘째 문단이다.\n\n셋째 문단이다."
+
+
+@pytest.fixture(autouse=True)
+def _no_model() -> Iterator[None]:
+    """이 파일의 라우트는 모델을 직접 부르지 않는다 — 부르면 페이크가 실패시킨다."""
+    _override_llm_client(_NeverCalledLLMClient())
+    yield
+    _clear_llm_override()
+
+
+@pytest.fixture
+def enqueued(monkeypatch: pytest.MonkeyPatch) -> list[uuid.UUID]:
+    seen: list[uuid.UUID] = []
+
+    async def record(_factory: Any, _llm: Any, job_id: uuid.UUID) -> None:
+        seen.append(job_id)
+
+    monkeypatch.setattr(novelize_router, "enqueue_job", record)
+    return seen
+
+
+async def _chapter(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, body: str = _BODY
+) -> tuple[uuid.UUID, uuid.UUID, NovelChapter]:
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    messages = await _room_messages(db_session, room.room_id)
+    chapter = await _add_chapter(db_session, novel_id, room, messages[0], room.turns[1][1], body=body)
+    return room.user_id, novel_id, chapter
+
+
+async def _revisions(db: AsyncSession, chapter_id: uuid.UUID) -> list[NovelChapterRevision]:
+    rows = await db.scalars(
+        sa.select(NovelChapterRevision)
+        .where(NovelChapterRevision.chapter_id == chapter_id)
+        .order_by(NovelChapterRevision.revision_no)
+        .execution_options(populate_existing=True)
+    )
+    return list(rows.all())
+
+
+async def _restrict_and_forget_room(db: AsyncSession, novel_id: uuid.UUID) -> None:
+    novel = await db.get_one(Novel, novel_id)
+    await db.execute(
+        sa.update(Content).where(Content.id == novel.content_id).values(moderation_status=ModerationStatus.RESTRICTED)
+    )
+    await db.execute(sa.update(Novel).where(Novel.id == novel_id).values(chat_room_id=None))
+    await db.commit()
+
+
+# ── 읽기 ────────────────────────────────────────────────────────────────────
+async def test_chapter_returns_the_current_revision_split_into_paragraphs_by_the_server(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch, body="가.\n\n  \n나.\n다.\n\n라.")
+    db_session.add(NovelChapterRevision(chapter_id=chapter.id, revision_no=2, body="새 가.\n\n새 나.", source="manual_edit"))
+    await db_session.commit()
+
+    resp = await db_client.get(f"/novels/{novel_id}/chapters/{chapter.id}")
+    history = await db_client.get(f"/novels/{novel_id}/chapters/{chapter.id}/revisions")
+    first_id = history.json()["items"][-1]["id"]
+    old = await db_client.get(f"/novels/{novel_id}/chapters/{chapter.id}/revisions/{first_id}")
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert (body["ordinal"], body["revision"]["revisionNo"], body["revision"]["source"]) == (1, 2, "manual_edit")
+    assert body["revision"]["paragraphs"] == ["새 가.", "새 나."]
+    assert [(r["revisionNo"], r["source"]) for r in history.json()["items"]] == [(2, "manual_edit"), (1, "generate")]
+    assert old.json()["body"] == "가.\n\n  \n나.\n다.\n\n라."
+    assert old.json()["paragraphs"] == ["가.", "나.\n다.", "라."]
+
+
+async def test_chapters_and_revisions_of_another_novel_or_chapter_are_404(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _other_user, other_novel, other_chapter = await _chapter(db_client, db_session, monkeypatch)
+    other_revision = (await _revisions(db_session, other_chapter.id))[0]
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+
+    foreign_chapter = await db_client.get(f"/novels/{novel_id}/chapters/{other_chapter.id}")
+    foreign_revision = await db_client.get(f"/novels/{novel_id}/chapters/{chapter.id}/revisions/{other_revision.id}")
+    foreign_novel = await db_client.get(f"/novels/{other_novel}/chapters/{other_chapter.id}")
+
+    assert foreign_chapter.status_code == 404 and foreign_chapter.json()["detail"] == {"code": "NOVEL_CHAPTER_NOT_FOUND"}
+    assert foreign_revision.status_code == 404
+    assert foreign_revision.json()["detail"] == {"code": "NOVEL_REVISION_NOT_FOUND"}
+    assert foreign_novel.status_code == 403
+
+
+# ── 직접 수정 ───────────────────────────────────────────────────────────────
+async def test_direct_edit_stacks_a_new_revision_with_the_whole_body(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    base = (await _revisions(db_session, chapter.id))[0]
+
+    resp = await db_client.post(
+        f"/novels/{novel_id}/chapters/{chapter.id}/revisions",
+        json={"baseRevisionId": str(base.id), "body": "  고친 첫 문단.\n\n\n\n둘째 문단이다.  "},
+    )
+
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["revision"]["paragraphs"] == ["고친 첫 문단.", "둘째 문단이다."]
+    revisions = await _revisions(db_session, chapter.id)
+    assert [(r.revision_no, r.source) for r in revisions] == [(1, "generate"), (2, "manual_edit")]
+    assert revisions[1].body == "고친 첫 문단.\n\n둘째 문단이다."
+    assert revisions[0].body == _BODY
+
+
+async def test_direct_edit_on_a_stale_base_is_409_and_writes_nothing(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    base = (await _revisions(db_session, chapter.id))[0]
+    url = f"/novels/{novel_id}/chapters/{chapter.id}/revisions"
+
+    first = await db_client.post(url, json={"baseRevisionId": str(base.id), "body": "탭 1"})
+    second = await db_client.post(url, json={"baseRevisionId": str(base.id), "body": "탭 2"})
+    blank = await db_client.post(url, json={"baseRevisionId": first.json()["revision"]["id"], "body": " \n\n "})
+
+    assert first.status_code == 201
+    assert second.status_code == 409 and second.json()["detail"] == {"code": "NOVEL_REVISION_CONFLICT"}
+    assert blank.status_code == 422
+    assert [r.body for r in await _revisions(db_session, chapter.id)] == [_BODY, "탭 1"]
+
+
+async def test_direct_edit_and_restore_work_on_a_restricted_work_whose_room_is_gone(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    base = (await _revisions(db_session, chapter.id))[0]
+    await _restrict_and_forget_room(db_session, novel_id)
+
+    edited = await db_client.post(
+        f"/novels/{novel_id}/chapters/{chapter.id}/revisions", json={"baseRevisionId": str(base.id), "body": "고침"}
+    )
+    restored = await db_client.post(
+        f"/novels/{novel_id}/chapters/{chapter.id}/revisions/{base.id}/restore",
+        json={"baseRevisionId": edited.json()["revision"]["id"]},
+    )
+
+    assert [edited.status_code, restored.status_code] == [201, 201]
+
+
+# ── 되돌리기 ────────────────────────────────────────────────────────────────
+async def test_restore_copies_an_old_revision_into_a_new_one(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    first = (await _revisions(db_session, chapter.id))[0]
+    edited = await db_client.post(
+        f"/novels/{novel_id}/chapters/{chapter.id}/revisions", json={"baseRevisionId": str(first.id), "body": "고침"}
+    )
+    edited_id = edited.json()["revision"]["id"]
+    url = f"/novels/{novel_id}/chapters/{chapter.id}/revisions/{first.id}/restore"
+
+    stale = await db_client.post(url, json={"baseRevisionId": str(first.id)})
+    restored = await db_client.post(url, json={"baseRevisionId": edited_id})
+
+    assert stale.status_code == 409 and stale.json()["detail"] == {"code": "NOVEL_REVISION_CONFLICT"}
+    assert restored.status_code == 201, restored.text
+    revision = restored.json()["revision"]
+    assert (revision["revisionNo"], revision["source"], revision["revertedFromRevisionId"]) == (3, "revert", str(first.id))
+    assert revision["body"] == _BODY
+    assert [r.revision_no for r in await _revisions(db_session, chapter.id)] == [1, 2, 3]
+
+
+async def test_restoring_a_revision_of_another_chapter_is_404(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    messages = await _room_messages(db_session, room.room_id)
+    first = await _add_chapter(db_session, novel_id, room, messages[0], room.turns[1][1])
+    second = await _add_chapter(db_session, novel_id, room, room.turns[2][0], room.turns[2][1])
+    other_revision = (await _revisions(db_session, first.id))[0]
+    base = (await _revisions(db_session, second.id))[0]
+
+    resp = await db_client.post(
+        f"/novels/{novel_id}/chapters/{second.id}/revisions/{other_revision.id}/restore",
+        json={"baseRevisionId": str(base.id)},
+    )
+
+    assert resp.status_code == 404 and resp.json()["detail"] == {"code": "NOVEL_REVISION_NOT_FOUND"}
+
+
+# ── AI 문단 수정 ────────────────────────────────────────────────────────────
+async def test_ai_edit_charges_and_queues_a_job_for_the_paragraph_range(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+) -> None:
+    user_id, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    base = (await _revisions(db_session, chapter.id))[0]
+    await db_session.execute(sa.update(Novel).where(Novel.id == novel_id).values(chat_room_id=None))
+    await db_session.commit()
+
+    resp = await db_client.post(
+        f"/novels/{novel_id}/chapters/{chapter.id}/ai-edits",
+        json={
+            "baseRevisionId": str(base.id),
+            "paragraphStart": 1,
+            "paragraphEnd": 2,
+            "instruction": " 더 쓸쓸하게 ",
+            "expectedCost": 5,
+        },
+    )
+
+    assert resp.status_code == 202, resp.text
+    assert resp.json()["aiEdit"] == {
+        "baseRevisionId": str(base.id),
+        "paragraphStart": 1,
+        "paragraphEnd": 2,
+        "instruction": "더 쓸쓸하게",
+        "resultText": None,
+    }
+    job = await db_session.get_one(NovelJob, uuid.UUID(resp.json()["id"]), populate_existing=True)
+    assert (job.kind, job.chapter_id, job.status) == ("ai_edit", chapter.id, "queued")
+    assert enqueued == [job.id]
+    assert await _novel_ledger(db_session, user_id) == [("novelize_spend", -5)]
+
+
+@pytest.mark.parametrize(
+    ("change", "status_code", "code"),
+    [
+        pytest.param("stale_base", 409, "NOVEL_REVISION_CONFLICT", id="stale_base"),
+        pytest.param("past_the_end", 422, "NOVEL_PARAGRAPH_RANGE_INVALID", id="past_the_end"),
+        pytest.param("reversed", 422, "NOVEL_PARAGRAPH_RANGE_INVALID", id="reversed"),
+        pytest.param("restricted", 403, "CONTENT_RESTRICTED", id="restricted"),
+    ],
+)
+async def test_rejected_ai_edit_charges_nothing(
+    change: str,
+    status_code: int,
+    code: str,
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+) -> None:
+    user_id, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    base = (await _revisions(db_session, chapter.id))[0]
+    payload: dict[str, Any] = {
+        "baseRevisionId": str(base.id),
+        "paragraphStart": 0,
+        "paragraphEnd": 2,
+        "instruction": "고쳐 줘",
+        "expectedCost": 5,
+    }
+    if change == "stale_base":
+        db_session.add(NovelChapterRevision(chapter_id=chapter.id, revision_no=2, body="딴 탭", source="manual_edit"))
+        await db_session.commit()
+    elif change == "past_the_end":
+        payload["paragraphEnd"] = 3
+    elif change == "reversed":
+        payload["paragraphStart"] = 2
+        payload["paragraphEnd"] = 1
+    else:
+        await _restrict_and_forget_room(db_session, novel_id)
+
+    resp = await db_client.post(f"/novels/{novel_id}/chapters/{chapter.id}/ai-edits", json=payload)
+
+    assert resp.status_code == status_code, resp.text
+    assert resp.json()["detail"] == {"code": code}
+    assert (enqueued, await _novel_ledger(db_session, user_id)) == ([], [])
+
+
+# ── 적용 ────────────────────────────────────────────────────────────────────
+async def _finished_ai_edit(
+    db_session: AsyncSession, novel_id: uuid.UUID, chapter: NovelChapter, base: NovelChapterRevision
+) -> NovelJob:
+    job = NovelJob(
+        novel_id=novel_id,
+        user_id=(await db_session.get_one(Novel, novel_id)).user_id,
+        kind="ai_edit",
+        status="succeeded",
+        chapter_id=chapter.id,
+        base_revision_id=base.id,
+        paragraph_start=1,
+        paragraph_end=1,
+        instruction="더 쓸쓸하게",
+        result_text="첫 문단이다.\n\n쓸쓸한 둘째 문단.\n\n셋째 문단이다.",
+        charged_amount=5,
+    )
+    db_session.add(job)
+    await db_session.commit()
+    return job
+
+
+async def test_applying_an_ai_edit_makes_its_preview_the_new_revision_once(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    base = (await _revisions(db_session, chapter.id))[0]
+    job = await _finished_ai_edit(db_session, novel_id, chapter, base)
+    await _restrict_and_forget_room(db_session, novel_id)
+
+    applied = await db_client.post(f"/novels/{novel_id}/jobs/{job.id}/apply")
+    again = await db_client.post(f"/novels/{novel_id}/jobs/{job.id}/apply")
+    polled = await db_client.get(f"/novels/{novel_id}/jobs/{job.id}")
+
+    assert applied.status_code == 201, applied.text
+    revision = applied.json()["revision"]
+    assert (revision["revisionNo"], revision["source"]) == (2, "ai_edit")
+    assert revision["paragraphs"] == ["첫 문단이다.", "쓸쓸한 둘째 문단.", "셋째 문단이다."]
+    assert again.status_code == 409 and again.json()["detail"] == {"code": "NOVEL_JOB_NOT_APPLICABLE"}
+    assert polled.json()["revisionId"] == revision["id"]
+    assert len(await _revisions(db_session, chapter.id)) == 2
+
+
+async def test_applying_onto_a_changed_chapter_is_409(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    base = (await _revisions(db_session, chapter.id))[0]
+    job = await _finished_ai_edit(db_session, novel_id, chapter, base)
+    await db_client.post(
+        f"/novels/{novel_id}/chapters/{chapter.id}/revisions", json={"baseRevisionId": str(base.id), "body": "딴 탭"}
+    )
+
+    resp = await db_client.post(f"/novels/{novel_id}/jobs/{job.id}/apply")
+
+    assert resp.status_code == 409 and resp.json()["detail"] == {"code": "NOVEL_REVISION_CONFLICT"}
+    assert [r.source for r in await _revisions(db_session, chapter.id)] == ["generate", "manual_edit"]
+    stored = await db_session.get_one(NovelJob, job.id, populate_existing=True)
+    assert stored.result_revision_id is None
+
+
+@pytest.mark.parametrize("state", ["running", "chapter_job", "failed"])
+async def test_only_a_finished_ai_edit_can_be_applied(
+    state: str, db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _user, novel_id, chapter = await _chapter(db_client, db_session, monkeypatch)
+    base = (await _revisions(db_session, chapter.id))[0]
+    job = await _finished_ai_edit(db_session, novel_id, chapter, base)
+    states: dict[str, dict[str, Any]] = {
+        "running": {"status": "running", "result_text": None},
+        "chapter_job": {"kind": "chapter_generate"},
+        "failed": {"status": "failed", "result_text": None},
+    }
+    values = states[state]
+    await db_session.execute(sa.update(NovelJob).where(NovelJob.id == job.id).values(**values))
+    await db_session.commit()
+
+    resp = await db_client.post(f"/novels/{novel_id}/jobs/{job.id}/apply")
+
+    assert resp.status_code == 409 and resp.json()["detail"] == {"code": "NOVEL_JOB_NOT_APPLICABLE"}
+
+
+async def test_applying_a_job_of_another_novel_is_404(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _other_user, other_novel, other_chapter = await _chapter(db_client, db_session, monkeypatch)
+    other_job = await _finished_ai_edit(
+        db_session, other_novel, other_chapter, (await _revisions(db_session, other_chapter.id))[0]
+    )
+    _user, novel_id, _chapter_row = await _chapter(db_client, db_session, monkeypatch)
+
+    resp = await db_client.post(f"/novels/{novel_id}/jobs/{other_job.id}/apply")
+
+    assert resp.status_code == 404 and resp.json()["detail"] == {"code": "NOVEL_JOB_NOT_FOUND"}

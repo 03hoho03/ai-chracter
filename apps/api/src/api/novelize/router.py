@@ -49,6 +49,7 @@ from api.novelize.billing import (
     refund_active_jobs,
 )
 from api.novelize.deletion import delete_novels
+from api.novelize.inputs import current_revision
 from api.novelize.prompts import NovelizeBoundaryResult, build_novelize_boundary_prompt
 from api.novelize.runner import enqueue_job, expire_stale_jobs
 from api.novelize.schemas import (
@@ -57,10 +58,12 @@ from api.novelize.schemas import (
     SETTING_NOTES_MAX_LENGTH,
     NovelActiveJob,
     NovelAiEditPreview,
+    NovelAiEditRequest,
     NovelChapterCandidate,
     NovelChapterCreateRequest,
     NovelChapterProposalResponse,
     NovelChapterRegenerateRequest,
+    NovelChapterResponse,
     NovelChapterSuggestion,
     NovelChapterSummary,
     NovelDetailResponse,
@@ -70,6 +73,11 @@ from api.novelize.schemas import (
     NovelListResponse,
     NovelPrices,
     NovelProtagonistNameRequest,
+    NovelRevisionCreateRequest,
+    NovelRevisionListResponse,
+    NovelRevisionResponse,
+    NovelRevisionRestoreRequest,
+    NovelRevisionSummary,
     NovelSettingNotesRequest,
 )
 from api.novelize.source import (
@@ -82,6 +90,7 @@ from api.novelize.source import (
     novel_prompt_names,
     segment_hash,
 )
+from api.novelize.text import split_paragraphs
 from api.persona.schemas import PERSONA_NAME_MAX_LENGTH
 from api.session.dependencies import get_current_user_id
 
@@ -752,3 +761,241 @@ async def delete_last_novel_chapter(
     await db.execute(delete(NovelChapter).where(NovelChapter.id == chapter.id))
     await db.execute(update(Novel).where(Novel.id == novel.id).values(updated_at=func.now()))
     await db.commit()
+
+
+# ── 장 읽기·개정 이력 ───────────────────────────────────────────────────────
+def _revision_summary(revision: NovelChapterRevision) -> NovelRevisionSummary:
+    return NovelRevisionSummary(
+        id=revision.id,
+        revision_no=revision.revision_no,
+        source=revision.source,
+        reverted_from_revision_id=revision.reverted_from_revision_id,
+        created_at=revision.created_at,
+    )
+
+
+def _revision_response(revision: NovelChapterRevision) -> NovelRevisionResponse:
+    return NovelRevisionResponse(
+        **_revision_summary(revision).model_dump(), body=revision.body, paragraphs=split_paragraphs(revision.body)
+    )
+
+
+async def _chapter_response(db: AsyncSession, chapter: NovelChapter) -> NovelChapterResponse:
+    revision = await current_revision(db, chapter.id)
+    assert revision is not None  # 장 행과 첫 개정은 한 트랜잭션에서 함께 들어간다
+    return NovelChapterResponse(
+        id=chapter.id,
+        novel_id=chapter.novel_id,
+        ordinal=chapter.ordinal,
+        assistant_message_count=chapter.assistant_message_count,
+        revision=_revision_response(revision),
+    )
+
+
+async def _get_revision(db: AsyncSession, chapter: NovelChapter, revision_id: uuid.UUID) -> NovelChapterRevision:
+    revision = await db.scalar(
+        select(NovelChapterRevision).where(
+            NovelChapterRevision.id == revision_id, NovelChapterRevision.chapter_id == chapter.id
+        )
+    )
+    if revision is None:
+        raise _novel_error(status.HTTP_404_NOT_FOUND, "NOVEL_REVISION_NOT_FOUND")
+    return revision
+
+
+@router.get("/{novel_id}/chapters/{chapter_id}")
+async def get_novel_chapter(
+    chapter_id: uuid.UUID,
+    novel: Novel = Depends(_owned_novel_dependency),
+    db: AsyncSession = Depends(get_db_session),
+) -> NovelChapterResponse:
+    """장의 현재 개정 본문과 그 문단 배열. 문단 범위(AI 수정)는 이 배열의 인덱스다 — 화면이 본문을 다시 나누면 빈 줄
+    해석 차이로 범위가 어긋난다."""
+    return await _chapter_response(db, await _get_chapter(db, novel, chapter_id))
+
+
+@router.get("/{novel_id}/chapters/{chapter_id}/revisions")
+async def list_novel_chapter_revisions(
+    chapter_id: uuid.UUID,
+    novel: Novel = Depends(_owned_novel_dependency),
+    db: AsyncSession = Depends(get_db_session),
+) -> NovelRevisionListResponse:
+    """장의 개정 이력(최신 먼저). 본문은 싣지 않는다."""
+    chapter = await _get_chapter(db, novel, chapter_id)
+    revisions = await db.scalars(
+        select(NovelChapterRevision)
+        .where(NovelChapterRevision.chapter_id == chapter.id)
+        .order_by(NovelChapterRevision.revision_no.desc())
+    )
+    return NovelRevisionListResponse(items=[_revision_summary(revision) for revision in revisions.all()])
+
+
+@router.get("/{novel_id}/chapters/{chapter_id}/revisions/{revision_id}")
+async def get_novel_chapter_revision(
+    chapter_id: uuid.UUID,
+    revision_id: uuid.UUID,
+    novel: Novel = Depends(_owned_novel_dependency),
+    db: AsyncSession = Depends(get_db_session),
+) -> NovelRevisionResponse:
+    chapter = await _get_chapter(db, novel, chapter_id)
+    return _revision_response(await _get_revision(db, chapter, revision_id))
+
+
+# ── 직접 수정·되돌리기·적용 ─────────────────────────────────────────────────
+async def _lock_current_revision_for_edit(
+    db: AsyncSession, chapter_id: uuid.UUID, base_revision_id: uuid.UUID
+) -> NovelChapterRevision:
+    """개정을 쌓는 세 경로(직접 수정·되돌리기·AI 수정 적용)의 공통 앞부분. 장 행을 먼저 잠그고(`FOR NO KEY UPDATE`)
+    그 뒤에 현재 개정을 읽는다 — 잠그기 전에 읽으면 그사이 커밋된 새 개정을 못 보고 옛 개정 위에 덮어쓴다. 현재
+    개정이 요청의 기준 개정이 아니면 409 `NOVEL_REVISION_CONFLICT`(다른 탭이 먼저 고쳤다). 장이 그사이 지워졌으면
+    404. 재생성 결과 저장도 같은 잠금으로 줄을 서서 같은 번호를 두 번 쓰지 않는다."""
+    locked = await db.scalar(select(NovelChapter.id).where(NovelChapter.id == chapter_id).with_for_update(key_share=True))
+    if locked is None:
+        raise _novel_error(status.HTTP_404_NOT_FOUND, "NOVEL_CHAPTER_NOT_FOUND")
+    current = await current_revision(db, chapter_id)
+    if current is None or current.id != base_revision_id:
+        raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_REVISION_CONFLICT")
+    return current
+
+
+async def _stack_revision(
+    db: AsyncSession, novel: Novel, current: NovelChapterRevision, revision: NovelChapterRevision
+) -> NovelChapterRevision:
+    """잠근 현재 개정 다음 번호로 `revision` 을 넣고 소설 수정 시각을 민다(커밋은 호출자)."""
+    revision.chapter_id = current.chapter_id
+    revision.revision_no = current.revision_no + 1
+    db.add(revision)
+    await db.flush()
+    await db.execute(update(Novel).where(Novel.id == novel.id).values(updated_at=func.now()))
+    return revision
+
+
+@router.post(
+    "/{novel_id}/chapters/{chapter_id}/revisions",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_legal_consent)],
+)
+async def create_novel_chapter_revision(
+    chapter_id: uuid.UUID,
+    payload: NovelRevisionCreateRequest,
+    novel: Novel = Depends(_owned_novel_dependency),
+    db: AsyncSession = Depends(get_db_session),
+) -> NovelChapterResponse:
+    """직접 수정 — 장 전체 본문을 새 개정으로 쌓는다(무과금). 화면이 고른 문단을 본문 안에서 바꿔 보내므로 서버는
+    문단 범위를 모른다. 본문은 문단을 빈 줄 하나로 다시 이어 저장한다(문단 배열과 같은 나누기). 이용 제한 작품이나
+    방이 지워진 소설도 고칠 수 있다(모델을 부르지 않는다)."""
+    chapter = await _get_chapter(db, novel, chapter_id)
+    current = await _lock_current_revision_for_edit(db, chapter.id, payload.base_revision_id)
+    await _stack_revision(
+        db,
+        novel,
+        current,
+        NovelChapterRevision(body="\n\n".join(split_paragraphs(payload.body)), source="manual_edit"),
+    )
+    await db.commit()
+    return await _chapter_response(db, chapter)
+
+
+@router.post(
+    "/{novel_id}/chapters/{chapter_id}/revisions/{revision_id}/restore",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_legal_consent)],
+)
+async def restore_novel_chapter_revision(
+    chapter_id: uuid.UUID,
+    revision_id: uuid.UUID,
+    payload: NovelRevisionRestoreRequest,
+    novel: Novel = Depends(_owned_novel_dependency),
+    db: AsyncSession = Depends(get_db_session),
+) -> NovelChapterResponse:
+    """옛 개정으로 되돌린다 — 옛 본문을 복제한 새 개정을 쌓는다(이력은 지우지 않는다)."""
+    chapter = await _get_chapter(db, novel, chapter_id)
+    source = await _get_revision(db, chapter, revision_id)
+    current = await _lock_current_revision_for_edit(db, chapter.id, payload.base_revision_id)
+    await _stack_revision(
+        db,
+        novel,
+        current,
+        NovelChapterRevision(body=source.body, source="revert", reverted_from_revision_id=source.id),
+    )
+    await db.commit()
+    return await _chapter_response(db, chapter)
+
+
+@router.post(
+    "/{novel_id}/chapters/{chapter_id}/ai-edits",
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_legal_consent)],
+)
+async def create_novel_ai_edit(
+    chapter_id: uuid.UUID,
+    payload: NovelAiEditRequest,
+    novel: Novel = Depends(_owned_novel_dependency),
+    db: AsyncSession = Depends(get_db_session),
+    session_factory: SessionFactory = Depends(get_session_factory),
+    llm_client: LLMClient = Depends(get_llm_client),
+) -> NovelJobResponse:
+    """고른 문단 범위(0부터, 양 끝 포함 — 장 조회의 `paragraphs` 인덱스)를 지시대로 고치는 작업(과금, 202). 결과는
+    개정이 아니라 작업의 미리보기 본문(`aiEdit.resultText`)이고, 적용해야 새 개정이 된다. 버려도 환불은 없다.
+
+    방이 지워진 소설도 고칠 수 있다(원문 대화가 필요 없다). 기준 개정이 현재 개정이 아니면 409, 범위가 문단 밖이면
+    422 — 둘 다 차감 전이다."""
+    chapter = await _get_chapter(db, novel, chapter_id)
+    await _ensure_content_allows_model(db, novel)
+    await _expire_before_new_job(db, novel)
+    current = await current_revision(db, chapter.id)
+    if current is None or current.id != payload.base_revision_id:
+        raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_REVISION_CONFLICT")
+    if not payload.paragraph_start <= payload.paragraph_end < len(split_paragraphs(current.body)):
+        raise _novel_error(status.HTTP_422_UNPROCESSABLE_CONTENT, "NOVEL_PARAGRAPH_RANGE_INVALID")
+    job = NovelJob(
+        novel_id=novel.id,
+        user_id=novel.user_id,
+        kind="ai_edit",
+        chapter_id=chapter.id,
+        base_revision_id=current.id,
+        paragraph_start=payload.paragraph_start,
+        paragraph_end=payload.paragraph_end,
+        instruction=payload.instruction,
+    )
+    return await _start_job(db, job, payload.expected_cost, session_factory, llm_client)
+
+
+@router.post(
+    "/{novel_id}/jobs/{job_id}/apply", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_legal_consent)]
+)
+async def apply_novel_ai_edit(
+    job_id: uuid.UUID,
+    novel: Novel = Depends(_owned_novel_dependency),
+    db: AsyncSession = Depends(get_db_session),
+) -> NovelChapterResponse:
+    """끝난 AI 수정의 미리보기를 새 개정으로 쌓는다(무과금). 수정을 맡긴 뒤 장이 바뀌었으면(기준 개정이 현재가
+    아니면) 409 `NOVEL_REVISION_CONFLICT`. 적용할 수 없는 작업(AI 수정이 아님·아직 안 끝남·실패·이미 적용·장이
+    지워짐)은 409 `NOVEL_JOB_NOT_APPLICABLE`. 적용한 개정은 작업의 결과 개정(`revisionId`)이 된다.
+
+    잠금은 작업 행 → 장 행이다(소설·마지막 장 삭제와 같은 순서). 같은 작업을 두 번 적용하려는 요청은 작업 행에서
+    줄을 서고, 뒤 요청은 결과 개정이 채워진 것을 본다."""
+    job = await db.scalar(
+        select(NovelJob)
+        .where(NovelJob.id == job_id, NovelJob.novel_id == novel.id)
+        .with_for_update(key_share=True)
+        .execution_options(populate_existing=True)
+    )
+    if job is None:
+        raise _novel_error(status.HTTP_404_NOT_FOUND, "NOVEL_JOB_NOT_FOUND")
+    if (
+        job.kind != "ai_edit"
+        or job.status != "succeeded"
+        or job.result_text is None
+        or job.result_revision_id is not None
+        or job.chapter_id is None
+        or job.base_revision_id is None
+    ):
+        raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_JOB_NOT_APPLICABLE")
+    current = await _lock_current_revision_for_edit(db, job.chapter_id, job.base_revision_id)
+    revision = await _stack_revision(
+        db, novel, current, NovelChapterRevision(body=job.result_text, source="ai_edit")
+    )
+    await db.execute(update(NovelJob).where(NovelJob.id == job.id).values(result_revision_id=revision.id))
+    await db.commit()
+    return await _chapter_response(db, await _get_chapter(db, novel, current.chapter_id))

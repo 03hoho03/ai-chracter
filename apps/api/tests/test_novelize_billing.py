@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from api.core import clover
 from api.core.config import settings
 from api.core.rate_limit import KST, seconds_until_kst_midnight
-from api.db.models import Novel, NovelJob, User
+from api.db.models import Novel, NovelChapter, NovelChapterRevision, NovelJob, User
 from api.db.models.novel import NovelJobKind, NovelJobStatus
 from api.db.models.clover import CloverLedger, CloverLot
 from api.novelize import billing
@@ -540,3 +540,53 @@ async def test_refund_waits_for_a_withdrawal_holding_the_user_instead_of_deadloc
         await withdrawal.close()
 
     assert await _independent_ledger(independent_factory, user_id) == [("novelize_spend", -5)]
+
+
+async def test_novel_deletion_waits_for_an_edit_holding_the_chapter_and_removes_its_new_revision(
+    independent_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """직접 수정은 장 행을 잠근 채 새 개정을 넣는다. 삭제가 장을 먼저 잠그지 않으면 개정 DELETE 가 아직 커밋되지 않은
+    새 개정을 못 보고 지나가고, 장 DELETE 가 편집 커밋을 기다렸다가 그 개정의 FK 에 걸려 실패한다(삭제 요청 500).
+    장을 먼저 잠그면 편집이 끝나기를 기다린 뒤 새 개정까지 지운다."""
+    _user_id, novel_id = await _seed(independent_factory)
+    now = datetime.now(UTC)
+    async with independent_factory() as s:
+        chapter = NovelChapter(
+            novel_id=novel_id,
+            ordinal=1,
+            start_message_id=uuid.uuid4(),
+            start_message_created_at=now,
+            end_message_id=uuid.uuid4(),
+            end_message_created_at=now,
+            assistant_message_count=1,
+            source_hash="0" * 64,
+        )
+        s.add(chapter)
+        await s.flush()
+        s.add(NovelChapterRevision(chapter_id=chapter.id, revision_no=1, body="첫 본문", source="generate"))
+        await s.commit()
+
+    editor = independent_factory()
+    try:
+        await editor.execute(select(NovelChapter.id).where(NovelChapter.id == chapter.id).with_for_update(key_share=True))
+        editor.add(NovelChapterRevision(chapter_id=chapter.id, revision_no=2, body="고침", source="manual_edit"))
+        await editor.flush()
+
+        async def delete_novel() -> None:
+            async with independent_factory() as s:
+                await delete_novels(s, [novel_id])
+                await s.commit()
+
+        task = asyncio.ensure_future(delete_novel())
+        await _assert_blocked(task)
+        await editor.commit()
+        await task
+    finally:
+        await editor.close()
+
+    async with independent_factory() as s:
+        left = await s.scalar(
+            select(func.count()).select_from(NovelChapterRevision).where(NovelChapterRevision.chapter_id == chapter.id)
+        )
+        assert left == 0
+        assert await s.get(Novel, novel_id) is None
