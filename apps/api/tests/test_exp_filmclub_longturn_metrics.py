@@ -482,3 +482,29 @@ def test_timeouts_are_counted_from_the_trace_error_type_per_call_site() -> None:
         "Gemini generate_structured() call failed: 504 DEADLINE_EXCEEDED. {}"
     )
     assert m.parse_server_log([deadline], "room-1")[0]["timeout"] is True
+
+
+def test_lost_attempt_and_the_next_turn_with_the_same_number_split_trace_calls_by_time() -> None:
+    # 유실 턴과 그다음 성공 턴은 같은 턴 번호(3)를 갖고 trace 의 turn 도 둘 다 3이다 — 지연이 두 번 들어가면 안 된다.
+    start = datetime(2026, 10, 5, 15, 0, 0)
+    _, turns = m.build_turns(_rows(start), m.Frame(_frame_data()))
+    m.summarize_log(turns)
+    at = start.replace(tzinfo=KST).astimezone(timezone.utc)
+
+    def call(seconds: int, site: str, error: str | None = None) -> dict[str, Any]:
+        stamp = (at + timedelta(seconds=seconds)).isoformat()
+        return {"callSite": site, "elapsedMs": 1000, "ok": error is None, "errorType": error, "ts": stamp}
+
+    by_turn = {
+        1: [call(2, "chat_generate")],
+        3: [call(62, "chat_generate", "ReadTimeout"), call(92, "chat_generate"), call(93, "chat_stat_judgment")],
+    }
+
+    m.attach_calls(turns, by_turn, KST)
+
+    lost, retried = turns[2], turns[3]
+    assert lost["turn"] == retried["turn"] == 3 and lost["attempt"] != retried["attempt"]
+    assert [c["callSite"] for c in lost["calls"]] == ["chat_generate"]
+    assert [c["callSite"] for c in retried["calls"]] == ["chat_generate", "chat_stat_judgment"]
+    (summary,) = m.bin_summary(turns)
+    assert summary["callLatencyMs"]["chat_generate"]["n"] == 3

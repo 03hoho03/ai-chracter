@@ -333,6 +333,27 @@ def trace_calls(path: Path | None, room_id: str) -> tuple[dict[int, list[dict[st
     return by_turn, background
 
 
+def attach_calls(turns: list[dict[str, Any]], by_turn: dict[int, list[dict[str, Any]]], tz: timezone) -> None:
+    """trace 호출을 턴 줄에 붙인다. 유실 턴과 그다음 성공 턴은 같은 턴 번호를 갖고 서버 trace 의 `turn` 도 둘 다 같다 —
+    번호로만 붙이면 두 줄에 같은 호출이 붙어 지연이 두 번 들어간다. 그래서 같은 번호의 시도가 여럿이면 호출 시각
+    이하로 가장 늦게 보낸 시도에 붙인다(시도 사이에는 드라이버 최소 간격이 있다)."""
+    attempts: dict[int, list[dict[str, Any]]] = {}
+    for t in turns:
+        t["calls"] = []
+        attempts.setdefault(t["turn"], []).append(t)
+    for number, calls in by_turn.items():
+        tries = sorted(attempts.get(number, []), key=lambda t: parse_sent_at(t["sentAt"], tz))
+        if not tries:
+            continue
+        for call in calls:
+            chosen = tries[-1]
+            if len(tries) > 1 and call.get("ts"):
+                at = datetime.fromisoformat(call["ts"])
+                earlier = [t for t in tries if parse_sent_at(t["sentAt"], tz) <= at]
+                chosen = earlier[-1] if earlier else tries[0]
+            chosen["calls"].append(call)
+
+
 def background_summary(calls: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """턴 번호 없는 호출의 call_site 별 지연 p50·p90·수와 실패 종류별 수."""
     by_site: dict[str, list[dict[str, Any]]] = {}
@@ -364,12 +385,14 @@ def build_turns(rows: list[dict[str, Any]], frame: Frame) -> tuple[dict[str, Any
     previous_weekday = text_rules.weekday(text_rules.status_metrics(opening_text))
     pending_note: dict[str, Any] | None = None
     turns: list[dict[str, Any]] = []
+    attempt = 0
     for row in rows:
         if row["kind"] == "noteUpdate":
             pending_note = row
             continue
         if row["kind"] != "turn" or row.get("http", 200) != 200:
             continue
+        attempt += 1
         human = row.get("source") == "human"
         tag = row.get("tag")
         reply = str(row.get("reply") or "")
@@ -382,6 +405,8 @@ def build_turns(rows: list[dict[str, Any]], frame: Frame) -> tuple[dict[str, Any
         status = text_rules.status_metrics(reply)
         record: dict[str, Any] = {
             "turn": turn,
+            # 유실 턴은 다음 성공 턴과 턴 번호가 같다 — 둘을 가르는 시도 번호(로그 순서).
+            "attempt": attempt,
             "sentAt": row.get("sentAt"),
             "seconds": row.get("seconds"),
             "ttftMs": row.get("ttftMs"),
@@ -634,8 +659,7 @@ def run_turns(args: argparse.Namespace) -> None:
     before = attach_log([t for t in turns if t.get("sentAt")], records, tz)
     summarize_log(turns)
     calls, background = trace_calls(Path(args.trace) if args.trace else None, room_id)
-    for t in turns:
-        t["calls"] = calls.get(t["turn"], [])
+    attach_calls(turns, calls, tz)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     (out / "turns.json").write_text(json.dumps(turns, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
