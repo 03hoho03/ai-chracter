@@ -1192,10 +1192,11 @@ def test_novelize_thinking_settings_read_an_empty_env_value_as_unset(monkeypatch
     assert loaded.gemini_novelize_thinking_level is None
 
     monkeypatch.setenv("GEMINI_NOVELIZE_THINKING_BUDGET", "0")
+    assert Settings().gemini_novelize_thinking_budget == 0
+
+    monkeypatch.setenv("GEMINI_NOVELIZE_THINKING_BUDGET", "")
     monkeypatch.setenv("GEMINI_NOVELIZE_THINKING_LEVEL", "LOW")
-    loaded = Settings()
-    assert loaded.gemini_novelize_thinking_budget == 0
-    assert loaded.gemini_novelize_thinking_level == "LOW"
+    assert Settings().gemini_novelize_thinking_level == "LOW"
 
 
 async def test_novelize_chapter_uses_its_own_model_cap_and_thinking_while_chat_keeps_its_own(

@@ -2,7 +2,7 @@ import json
 import uuid
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -198,6 +198,14 @@ class Settings(BaseSettings):
         if isinstance(value, str) and not value.strip():
             return None
         return value
+
+    @model_validator(mode="after")
+    def _novelize_thinking_is_budget_or_level(self) -> "Settings":
+        """Gemini 3 계열은 사고 예산과 사고 수준을 한 요청에 함께 받으면 요청을 거부할 수 있다. 둘 다 둔 채로 뜨면
+        장 생성·문단 수정이 매번 실패하고 환불로 끝나므로, 둘 중 하나만 정하도록 기동에서 막는다."""
+        if self.gemini_novelize_thinking_budget is not None and self.gemini_novelize_thinking_level is not None:
+            raise ValueError("gemini_novelize_thinking_budget 과 gemini_novelize_thinking_level 은 둘 중 하나만 정한다")
+        return self
 
     # 회차 재현성을 위한 결정적 시드. None = seed 를 아예 안
     # 넘김(현재와 동일한 매 회차 난수 동작). generate()에만 붙인다 — generate_structured()

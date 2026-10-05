@@ -37,3 +37,35 @@ def test_novelize_defaults_are_closed(monkeypatch: pytest.MonkeyPatch) -> None:
     defaults = Settings(_env_file=None)  # type: ignore[call-arg]
     assert defaults.novelize_enabled is False
     assert defaults.novelize_grant_allowlist == []
+
+
+def _novelize_thinking_from_env(monkeypatch: pytest.MonkeyPatch, budget: str | None, level: str | None) -> Settings:
+    for key, raw in (("GEMINI_NOVELIZE_THINKING_BUDGET", budget), ("GEMINI_NOVELIZE_THINKING_LEVEL", level)):
+        if raw is None:
+            monkeypatch.delenv(key, raising=False)
+        else:
+            monkeypatch.setenv(key, raw)
+    return Settings(_env_file=None)  # type: ignore[call-arg]
+
+
+def test_novelize_thinking_budget_and_level_together_refuse_to_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Gemini 3 계열은 사고 예산과 사고 수준을 함께 받으면 요청을 거부할 수 있다 — 기동에서 막지 않으면 장 생성이
+    매번 실패·환불로 끝난다. 예산 0(사고 끔)도 지정한 값이다."""
+    with pytest.raises(ValidationError, match="gemini_novelize_thinking"):
+        _novelize_thinking_from_env(monkeypatch, "0", "LOW")
+
+
+@pytest.mark.parametrize(
+    ("budget", "level", "expected"),
+    [
+        pytest.param("1024", None, (1024, None), id="budget-only"),
+        pytest.param(None, "HIGH", (None, "HIGH"), id="level-only"),
+        pytest.param("512", "", (512, None), id="budget-with-empty-level"),
+        pytest.param(None, None, (None, None), id="neither"),
+    ],
+)
+def test_novelize_thinking_one_or_none_starts(
+    monkeypatch: pytest.MonkeyPatch, budget: str | None, level: str | None, expected: tuple[int | None, str | None]
+) -> None:
+    loaded = _novelize_thinking_from_env(monkeypatch, budget, level)
+    assert (loaded.gemini_novelize_thinking_budget, loaded.gemini_novelize_thinking_level) == expected
