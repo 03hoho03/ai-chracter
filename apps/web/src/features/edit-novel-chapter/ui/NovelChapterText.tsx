@@ -45,6 +45,8 @@ type NovelChapterTextProps = {
 /** 직접 고치기 하나. `base` 는 시작한 순간의 판·문단·범위라 그사이 본문이 바뀌어도 그대로다. */
 type ManualEdit = { base: ManualEditBase; draft: string };
 
+type ManualEditOutcome = "manualSaved" | "manualUnchanged" | "manualCancelled";
+
 /** 장 본문과 그 위의 고치기 전부: 문단 고르기, 직접 고치기, AI 수정안 미리보기.
  *
  * - **읽기**: `<article>` 안 평범한 `<p>` 나열이다. 서버가 나눈 문단을 그대로 쓰고(화면이 다시 나누면 AI 수정의
@@ -78,7 +80,8 @@ export function NovelChapterText({
   const [manualEdit, setManualEdit] = useState<ManualEdit | null>(null);
   // 저장 실패 문장. 저장을 누른 순간에 기록하고 다음 저장·취소에서만 지운다 — 409 뒤 상세를 다시 받아도 남는다.
   const [editError, setEditError] = useState<string | undefined>(undefined);
-  // 고르기·저장의 결과를 알리는 한 줄. 일이 일어난 순간에 기록한다.
+  // 고르기를 알리는 한 줄. 일이 일어난 순간에 기록한다. 직접 고치기의 결과는 여기가 아니라 장 머리 아래 결과
+  // 문장(`aiEdit.report`)에 남긴다 — 두 줄에 나눠 남기면 한쪽의 지난 결과가 다른 쪽의 새 결과 옆에 남는다.
   const [liveMessage, setLiveMessage] = useState("");
   const saveMutation = useSaveChapterRevisionMutation();
   const paragraphButtonsRef = useRef(new Map<number, HTMLButtonElement>());
@@ -138,6 +141,7 @@ export function NovelChapterText({
   }
 
   function startManualEdit(target: ParagraphRange) {
+    aiEdit.report({ type: "started" });
     setEditError(undefined);
     setManualEdit({
       base: { revisionId: chapter.revision.id, paragraphs, range: target },
@@ -147,15 +151,17 @@ export function NovelChapterText({
     setLiveMessage("");
   }
 
-  function closeManualEdit(message: string) {
+  function closeManualEdit(outcome: ManualEditOutcome) {
     if (editRange) pendingFocusIndexRef.current = editRange.start;
     setManualEdit(null);
     setEditError(undefined);
-    setLiveMessage(message);
+    setLiveMessage("");
+    aiEdit.report({ type: outcome });
   }
 
   async function saveManualEdit() {
     if (isSaving || isRegenerating || manualEdit === null || editRange === null) return;
+    aiEdit.report({ type: "started" });
     setEditError(undefined);
     const { baseRevisionId, body, isUnchanged } = toManualEditSave(manualEdit.base, manualEdit.draft);
     const length = countChapterChars(body);
@@ -168,7 +174,7 @@ export function NovelChapterText({
       return;
     }
     if (isUnchanged) {
-      closeManualEdit("바뀐 내용이 없어 그대로 두었어요.");
+      closeManualEdit("manualUnchanged");
       return;
     }
     try {
@@ -178,7 +184,7 @@ export function NovelChapterText({
         baseRevisionId,
         body,
       });
-      closeManualEdit("고친 내용을 저장했어요. 이전 글은 판 이력에 남아요.");
+      closeManualEdit("manualSaved");
     } catch (error) {
       const result = toNovelActionError(error, "edit");
       // 재동의가 필요하면 전역 재동의 모달이 맡는다 — 입력칸은 그대로 두어 동의 뒤 다시 저장할 수 있다.
@@ -231,7 +237,7 @@ export function NovelChapterText({
           hasPendingAiEdits={pendingEdits.length > 0}
           isSaving={isSaving}
           onDraftChange={(draft) => setManualEdit((current) => (current ? { ...current, draft } : current))}
-          onCancel={() => closeManualEdit("직접 고치기를 그만뒀어요.")}
+          onCancel={() => closeManualEdit("manualCancelled")}
           onSave={() => void saveManualEdit()}
         />
       );

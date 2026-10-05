@@ -54,7 +54,7 @@ export function NovelReader({
 
   // 판 이력 모달은 루트에 마운트돼 장을 옮겨도 남는다 — 이 장을 떠나면(목차·장 작업이 끝난 뒤의 자동 이동·화면
   // 이탈) 이 장의 이력을 닫는다. 남겨 두면 다른 장을 보면서 옛 장의 이력을 보게 된다.
-  useEffect(() => () => NovelRevisionHistoryModal.end(false), []);
+  useEffect(() => () => NovelRevisionHistoryModal.end(null), []);
 
   useEffect(() => {
     if (!shouldFocusHeading) return;
@@ -85,16 +85,21 @@ export function NovelReader({
               className="aria-disabled:opacity-65"
               onClick={() => {
                 if (chapterQuery.data === undefined) return;
+                // 고치기를 시작하면 지난 결과·거절 문장은 이제 이 동작과 상관없다.
+                if (!isFixMode) aiEdit.report({ type: "started" });
                 setIsFixMode((value) => !value);
               }}
             >
               <PencilLine aria-hidden />
               {isFixMode ? "고치기 끝내기" : "고치기"}
             </Button>
-            {/* AI 수정 중이라 못 누를 때의 사유는 장 머리 바로 아래 AI 수정 진행 줄이 진다. */}
+            {/* AI 수정을 준비·요청하는 동안과 202 뒤 상세를 다시 받기 전에는 상세에 진행 중 작업이 아직 없어 장 작업
+                흐름이 모른다 — 이 화면이 아는 AI 수정 상태로 잠근다. 못 누르는 사유는 장 머리 바로 아래 AI 수정 진행
+                줄이 진다(준비·요청 중에는 그 줄이 비어 있어 사유를 달지 않는다). */}
             <RegenerateChapterButton
               flow={chapterFlow}
               chapter={chapter}
+              isBlocked={aiEdit.isPreparing || aiEdit.isRunning}
               blockedReasonId={aiEdit.isRunning ? aiEdit.statusId : undefined}
             />
           </div>
@@ -125,8 +130,10 @@ export function NovelReader({
                 chapterId: chapter.id,
                 chapterOrdinal: chapter.ordinal,
                 hasPendingAiEdits,
-              }).then((isRestored) => {
-                if (isRestored) focusHeading();
+              }).then((restoredRevisionNo) => {
+                if (restoredRevisionNo === null) return;
+                aiEdit.report({ type: "restored", chapterOrdinal: chapter.ordinal, revisionNo: restoredRevisionNo });
+                focusHeading();
               })
             }
           >

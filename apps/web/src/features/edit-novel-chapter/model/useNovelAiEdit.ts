@@ -22,6 +22,7 @@ import { useStartAiEditMutation } from "../api/useStartAiEditMutation";
 import { AiEditInstructionModal } from "../ui/AiEditInstructionModal";
 
 import { toAiEditOutcome } from "./aiEditOutcome";
+import { toChapterNotice, type ChapterNotice, type ChapterNoticeEvent } from "./chapterNotice";
 import { formatParagraphRange, type ParagraphRange } from "./paragraphRange";
 
 /** 금액 확인. 이 기능 밖의 확인 모달을 호출부가 넣어 준다(기능끼리 서로 가져다 쓰지 않는다). */
@@ -32,10 +33,6 @@ export type ConfirmAiEditSpend = (props: {
   confirmLabel: string;
 }) => Promise<boolean>;
 
-/** 화면에 남겨 두는 결과 문장. 일이 끝난 **그 순간**에 기록하고 다음 동작에서만 지운다 — 쿼리 상태에서 파생하면
- * 상세를 다시 받는 순간(진행 중 작업·수정안이 바뀌는 순간) 안내도 함께 사라진다. `error` 는 경고 상자, `info` 는
- * 진행 줄에 남는 문장이다. */
-export type AiEditNotice = { tone: "error" | "info"; message: string };
 
 type TrackedJob = { jobId: string; chapterId: string };
 
@@ -69,7 +66,10 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
   const statusId = useId();
   const [tracked, setTracked] = useState<TrackedJob | undefined>(undefined);
   const [isPreparing, setIsPreparing] = useState(false);
-  const [notice, setNotice] = useState<AiEditNotice | undefined>(undefined);
+  // 장 머리 아래의 결과 문장. 일이 끝난 **그 순간**에 기록하고 다음 동작에서만 지운다 — 쿼리 상태에서 파생하면
+  // 상세를 다시 받는 순간(진행 중 작업·수정안이 바뀌는 순간) 안내도 함께 사라진다. AI 수정 말고 같은 장의 직접
+  // 고치기·되돌리기 결과도 `report` 로 여기 남긴다 — 문장이 한 줄이어야 지난 결과가 다음 동작 뒤에 남지 않는다.
+  const [notice, setNotice] = useState<ChapterNotice | undefined>(undefined);
   // 적용·버리기 중인 수정안. 한 번에 하나만 처리한다.
   const [actingEditId, setActingEditId] = useState<string | undefined>(undefined);
   // 마지막으로 적은 지시. 금액 확인에서 물렀거나 작업이 실패하면 다음에 지시 칸을 이 값으로 연다 — 환불된 작업은
@@ -154,17 +154,21 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
     });
   }
 
+  function report(event: ChapterNoticeEvent) {
+    setNotice(toChapterNotice(event));
+  }
+
   function handleRequestError(error: unknown, action: NovelAction) {
     const result = toNovelActionError(error, action);
     if (result === null) return;
-    setNotice({ tone: "error", message: result.message });
+    report({ type: "rejected", message: result.message });
     if (result.shouldRefetchNovel) void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
   }
 
   /** 지시를 받고 금액을 확인받아 작업을 만든다. 작업을 만들었으면 `true` — 호출부가 고른 범위를 푼다. */
   async function start(target: AiEditTarget): Promise<boolean> {
     if (isBlocked) return false;
-    setNotice(undefined);
+    report({ type: "started" });
     setIsPreparing(true);
     try {
       const rangeLabel = formatParagraphRange(target.range);
@@ -206,11 +210,11 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
 
   async function apply(edit: NovelPendingAiEdit, chapterOrdinal: number) {
     if (actingEditId !== undefined) return;
-    setNotice(undefined);
+    report({ type: "started" });
     setActingEditId(edit.id);
     try {
       await applyMutation.mutateAsync({ novelId: novel.id, jobId: edit.id });
-      setNotice({ tone: "info", message: `${chapterOrdinal}장에 수정안을 적용했어요. 이전 글은 판 이력에 남아요.` });
+      report({ type: "applied", chapterOrdinal });
     } catch (error) {
       handleRequestError(error, "applyAiEdit");
     } finally {
@@ -220,11 +224,11 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
 
   async function dismiss(edit: NovelPendingAiEdit) {
     if (actingEditId !== undefined) return;
-    setNotice(undefined);
+    report({ type: "started" });
     setActingEditId(edit.id);
     try {
       await dismissMutation.mutateAsync({ novelId: novel.id, jobId: edit.id });
-      setNotice({ tone: "info", message: "수정안을 버렸어요." });
+      report({ type: "dismissed" });
     } catch (error) {
       handleRequestError(error, "dismissAiEdit");
     } finally {
@@ -245,6 +249,7 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
     start,
     apply,
     dismiss,
+    report,
   };
 }
 

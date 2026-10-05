@@ -23,6 +23,8 @@ import { useRegenerateChapterMutation } from "../api/useRegenerateChapterMutatio
 import { ChapterBoundaryModal } from "../ui/ChapterBoundaryModal";
 import { ProtagonistNameModal } from "../ui/ProtagonistNameModal";
 
+import { toRegenerateConfirmDescription } from "./regenerateConfirm";
+
 /** 금액 확인. 이 기능 밖의 확인 모달을 호출부가 넣어 준다(기능끼리 서로 가져다 쓰지 않는다). */
 export type ConfirmNovelSpend = (props: {
   title: string;
@@ -152,10 +154,15 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     if (result.shouldRefetchNovel) void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
   }
 
-  /** 지금 캐시의 상세에 진행 중 작업이 있는가. 흐름을 시작할 때 받은 상세는 AI 수정이 막 시작된 것을 모를 수 있다
-   * (AI 수정이 금액 확인 뒤 요청을 보내는 동안, 그리고 202 뒤 상세를 다시 받기 전). 그 틈에 시작한 흐름이 경계
-   * 고르기·금액 확인을 다 거친 뒤에야 409 를 받지 않도록, 이용자에게 확인을 받기 직전에 한 번 더 본다. 작업이 있으면
-   * 흐름을 조용히 멈춘다 — 다시 그린 화면이 이미 그 작업의 진행 줄과 못 누르는 사유를 보이고 있다. */
+  /** 지금 캐시의 상세에 진행 중 작업이 있는가. 흐름을 시작할 때 받은 상세는 그 뒤에 시작된 AI 수정을 모를 수 있어,
+   * 이용자에게 확인을 받기 직전에 한 번 더 본다. 작업이 있으면 흐름을 조용히 멈춘다 — 다시 그린 화면이 이미 그
+   * 작업의 진행 줄과 못 누르는 사유를 보이고 있다.
+   *
+   * 캐시에 AI 수정이 실리는 때는 그 요청이 202 를 받고 상세를 다시 받은 **뒤**다. 요청이 날아가는 동안과 다시 받기
+   * 전에는 이 확인도 그 작업을 보지 못한다. 그래서 효과는 확인이 그보다 늦을 때뿐이다 — 장 만들기는 제안 호출(수 초)
+   * 을 기다린 뒤에 확인해 대개 늦다. 다시 만들기는 누르자마자 확인하므로 이 확인으로는 그 틈을 못 덮는다 — 장
+   * 화면이 AI 수정을 준비·요청 중인 동안 다시 만들기 버튼을 따로 잠근다. 다른 탭에서 시작한 작업은 서버가 409 로
+   * 막는다. */
   function hasActiveJobNow() {
     return (queryClient.getQueryData<NovelDetailResponse>(novelKeys.detail(novel.id))?.activeJob ?? null) !== null;
   }
@@ -223,7 +230,9 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
       const cost = novel.prices.chapterRegenerate;
       const isConfirmed = await confirmSpend({
         title: `${chapter.ordinal}장을 다시 만들까요?`,
-        description: "같은 대화로 이 장을 새로 써요. 지금 글은 이력에 남아요.",
+        description: toRegenerateConfirmDescription(
+          novel.pendingAiEdits.some((edit) => edit.chapterId === chapter.id),
+        ),
         cost,
         confirmLabel: "다시 만들기",
       });
