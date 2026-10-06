@@ -1,0 +1,12 @@
+{"turn": 8, "previousWeekday": "월", "previousTime": "월요일 저녁", "bodyBase": "2025-09-22", "bodyBaseWeekday": "월", "chainBase": "2025-09-22", "chainBaseWeekday": "월", "intendedDays": 2}
+{"turn": 21, "previousWeekday": "수", "previousTime": "수요일 낮", "bodyBase": "2025-09-24", "bodyBaseWeekday": "수", "chainBase": "2025-09-24", "chainBaseWeekday": "수", "intendedDays": null}
+{"turn": 22, "previousWeekday": "수", "previousTime": "수요일 저녁", "bodyBase": "2025-09-24", "bodyBaseWeekday": "수", "chainBase": "2025-09-24", "chainBaseWeekday": "수", "intendedDays": 1}
+{"turn": 38, "previousWeekday": "금", "previousTime": "금요일 밤", "bodyBase": "2025-09-27", "bodyBaseWeekday": "토", "chainBase": "2025-09-26", "chainBaseWeekday": "금", "intendedDays": 1}
+{"turn": 60, "previousWeekday": "일", "previousTime": "일요일 아침", "bodyBase": "2025-09-30", "bodyBaseWeekday": "화", "chainBase": "2025-09-28", "chainBaseWeekday": "일", "intendedDays": null}
+{"turn": 61, "previousWeekday": "일", "previousTime": "일요일 아침", "bodyBase": "2025-09-30", "bodyBaseWeekday": "화", "chainBase": "2025-09-28", "chainBaseWeekday": "일", "intendedDays": null}
+{"turn": 73, "previousWeekday": "일", "previousTime": "일요일 밤", "bodyBase": "2025-09-30", "bodyBaseWeekday": "화", "chainBase": "2025-09-28", "chainBaseWeekday": "일", "intendedDays": null}
+{"turn": 74, "previousWeekday": "일", "previousTime": "일요일 밤", "bodyBase": "2025-09-30", "bodyBaseWeekday": "화", "chainBase": "2025-09-28", "chainBaseWeekday": "일", "intendedDays": 1}
+{"turn": 88, "previousWeekday": "월", "previousTime": "월요일 밤", "bodyBase": "2025-10-03", "bodyBaseWeekday": "금", "chainBase": "2025-09-29", "chainBaseWeekday": "월", "intendedDays": 3}
+{"turn": 94, "previousWeekday": "목", "previousTime": "목요일 밤", "bodyBase": "2025-10-06", "bodyBaseWeekday": "월", "chainBase": "2025-10-02", "chainBaseWeekday": "목", "intendedDays": null}
+{"turn": 95, "previousWeekday": "목", "previousTime": "목요일 밤", "bodyBase": "2025-10-06", "bodyBaseWeekday": "월", "chainBase": "2025-10-02", "chainBaseWeekday": "목", "intendedDays": 1}
+{"turn": 105, "previousWeekday": "금", "previousTime": "금요일 오후", "bodyBase": "2025-10-09", "bodyBaseWeekday": "목", "chainBase": "2025-10-03", "chainBaseWeekday": "금", "intendedDays": 1}
