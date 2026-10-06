@@ -1,6 +1,13 @@
 import uuid
 
-from api.chat.ending_rules import evaluate_item, evaluate_rule_list, is_ending_check_due, referenced_stat_ids
+from api.chat.ending_rules import (
+    EndingCandidate,
+    ending_judgment_order,
+    evaluate_item,
+    evaluate_rule_list,
+    is_ending_check_due,
+    referenced_stat_ids,
+)
 from api.chat.schemas import EndingRuleGroupItem, EndingRuleItem, EndingRuleListItem
 from api.db.models.story import EndingRuleOperator, LogicalOp
 
@@ -183,3 +190,67 @@ def test_is_ending_check_due_with_gate_not_a_multiple_of_five() -> None:
     assert is_ending_check_due(12, 12) is True
     assert is_ending_check_due(17, 12) is True
     assert is_ending_check_due(13, 12) is False
+
+
+# 판정 순서. 엔딩은 이름 문자열로 대신한다 — 순서 함수는 엔딩 객체를 들여다보지 않고 되돌려 주기만 한다.
+_DOHEE, _YUNA, _SEBIN = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+
+
+def _candidate(name: str, priority_stat_id: uuid.UUID | None = None) -> EndingCandidate[str]:
+    return EndingCandidate(ending=name, ending_id=uuid.uuid4(), priority_stat_id=priority_stat_id)
+
+
+def _routes() -> list[EndingCandidate[str]]:
+    """루트 셋을 목록 순서(도희 → 유나 → 세빈)로. 우선 스탯은 각자의 호감이다."""
+    return [_candidate("도희", _DOHEE), _candidate("유나", _YUNA), _candidate("세빈", _SEBIN)]
+
+
+def test_ending_judgment_order_judges_only_the_highest_priority_value_in_the_group() -> None:
+    """세 루트가 함께 규칙을 넘었고 세빈 100·도희 98·유나 86 이면 목록 맨 뒤의 세빈만 판정한다. 판정이 아니오여도
+    도희·유나로 내려가지 않으므로 목록에 둘이 없어야 한다."""
+    order = ending_judgment_order(_routes(), {str(_SEBIN): 100, str(_DOHEE): 98, str(_YUNA): 86})
+
+    assert order.endings == ["세빈"]
+    assert order.missing_priority == []
+
+
+def test_ending_judgment_order_judges_tied_highest_values_in_list_order() -> None:
+    """세빈과 도희가 100 으로 같으면 둘을 목록 순서(도희 → 세빈)로 판정하고, 더 낮은 유나는 빠진다."""
+    order = ending_judgment_order(_routes(), {str(_SEBIN): 100, str(_DOHEE): 100, str(_YUNA): 86})
+
+    assert order.endings == ["도희", "세빈"]
+
+
+def test_ending_judgment_order_places_group_at_its_first_member_and_ends_the_list_there() -> None:
+    """무리는 무리 가운데 목록상 가장 앞선 엔딩(도희)의 자리에 선다 — 그래서 앞의 우선 스탯 없는 "처음" 이 먼저다.
+    무리 뒤의 "노말" 은 넣지 않는다. 1등이 아니오여도 그 턴에 노말 엔딩으로 떨어지면 안 되기 때문이다."""
+    candidates = [
+        _candidate("처음"),
+        _candidate("도희", _DOHEE),
+        _candidate("노말"),
+        _candidate("세빈", _SEBIN),
+    ]
+
+    order = ending_judgment_order(candidates, {str(_SEBIN): 100, str(_DOHEE): 90})
+
+    assert order.endings == ["처음", "세빈"]
+
+
+def test_ending_judgment_order_treats_valueless_priority_stat_as_no_priority() -> None:
+    """우선 스탯 값이 없는 엔딩(스탯을 지운 초안)은 무리에서 빠져 우선 스탯이 없는 엔딩처럼 제자리에 서고, 호출부가
+    경고하도록 따로 돌려준다. 값을 0 으로 읽어 무리에 넣으면 판정 목록에서 사라진다."""
+    missing = _candidate("지워진 스탯", uuid.uuid4())
+    candidates = [missing, _candidate("도희", _DOHEE), _candidate("세빈", _SEBIN)]
+
+    order = ending_judgment_order(candidates, {str(_SEBIN): 100, str(_DOHEE): 90})
+
+    assert order.endings == ["지워진 스탯", "세빈"]
+    assert order.missing_priority == [missing]
+
+
+def test_ending_judgment_order_without_any_priority_keeps_the_list_order() -> None:
+    """우선 스탯을 하나도 안 채운 작품은 받은 순서 그대로다(지금까지의 동작)."""
+    candidates = [_candidate("가"), _candidate("나"), _candidate("다")]
+
+    assert ending_judgment_order(candidates, {str(_SEBIN): 100}).endings == ["가", "나", "다"]
+    assert ending_judgment_order([], {}).endings == []

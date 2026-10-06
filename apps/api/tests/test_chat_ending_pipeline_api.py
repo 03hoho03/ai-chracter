@@ -25,6 +25,8 @@ from api.db.models import (
 )
 from api.llm.client import LLMCallContext, LLMClient, LLMClientError, LLMPolicyViolationError
 from factories import (
+    ENDING_PRIORITY_SCENARIOS,
+    EndingPriorityScenario,
     _clear_llm_override,
     _get_genre,
     _login_as,
@@ -32,6 +34,8 @@ from factories import (
     _make_user,
     _override_llm_client,
     _parse_sse_events,
+    ending_priority_marker,
+    judged_ending_names,
 )
 
 
@@ -121,6 +125,7 @@ class _FakeLLMClient(LLMClient):
         self.tokens = tokens
         self._structured_results = list(structured_results)
         self.generate_structured_calls: list[Any] = []
+        self.structured_prompts: list[str] = []
         self.usages: list[LLMCallContext] = []
 
     async def generate(
@@ -140,6 +145,7 @@ class _FakeLLMClient(LLMClient):
     ) -> Any:
         self.usages.append(usage)
         self.generate_structured_calls.append(response_schema)
+        self.structured_prompts.append(prompt)
         result = self._structured_results.pop(0)
         if isinstance(result, Exception):
             raise result
@@ -380,6 +386,65 @@ async def test_send_message_treats_rule_on_missing_stat_as_false_and_completes_t
     [warning] = [r.getMessage() for r in caplog.records if str(missing_stat_id) in r.getMessage()]
     assert str(room_id) in warning
     assert str(ending.entity_id) in warning
+
+
+@pytest.mark.parametrize("scenario", ENDING_PRIORITY_SCENARIOS)
+async def test_send_message_judges_priority_stat_group_by_highest_value(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, scenario: EndingPriorityScenario
+) -> None:
+    """우선 스탯을 채운 엔딩끼리는 이번 턴 반영 뒤 그 스탯 값이 가장 높은 것만 판정한다. 같은 시나리오를 빌더
+    미리보기(`test_send_preview_message_judges_priority_stat_group_by_highest_value`)에도 넣어 결과가 같은지 본다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    setup = await _add_starting_setup(db_session, content)
+    stat_ids = {
+        name: (await _add_stat_def(db_session, setup, name=name, initial_value=value, order=index)).entity_id
+        for index, (name, value) in enumerate(scenario.stats.items())
+    }
+    for order, (name, priority, rule) in enumerate(scenario.endings):
+        ending = await _add_ending(
+            db_session,
+            setup,
+            name=name,
+            order=order,
+            judgment_prompt=ending_priority_marker(name),
+            priority_stat_def_entity_id=stat_ids[priority] if priority is not None else None,
+        )
+        if rule is not None:
+            _add_rule(db_session, ending, stat_ids[rule[0]], threshold=rule[1])
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
+
+    stat_judgment = StatJudgmentResult(
+        stat_changes=[
+            StatChangeJudgment(stat_id=str(stat_ids[name]), new_value=value)
+            for name, value in scenario.stat_changes.items()
+        ]
+    )
+    fake = _FakeLLMClient(
+        tokens=["안녕"],
+        structured_results=[stat_judgment, *(EndingJudgmentResult(triggered=v) for v in scenario.verdicts)],
+    )
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "메시지"})
+    finally:
+        _clear_llm_override()
+
+    events = _parse_sse_events(resp.text)
+    assert judged_ending_names(fake.structured_prompts, scenario) == scenario.judged
+    assert len(fake.structured_prompts) == 1 + len(scenario.judged)
+    reached = [e["endingId"] for e in events if e["type"] == "endingReached"]
+    ending_ids = {
+        e.name: e.entity_id
+        for e in (await db_session.scalars(sa.select(Ending).where(Ending.starting_setup_id == setup.id))).all()
+    }
+    assert reached == ([str(ending_ids[scenario.reached])] if scenario.reached is not None else [])
 
 
 async def test_send_message_only_top_priority_ending_reached_when_multiple_due(

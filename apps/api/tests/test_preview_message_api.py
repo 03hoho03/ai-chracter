@@ -24,12 +24,16 @@ from api.db.models.chat import ChatMessageRole, ChatRoom
 from api.db.models.persona import UserPersona
 from api.llm.client import LLMCallContext, LLMClient, LLMClientError, LLMPolicyViolationError
 from factories import (
+    ENDING_PRIORITY_SCENARIOS,
+    EndingPriorityScenario,
     _clear_llm_override,
     _login_as,
     _make_user,
     _override_llm_client,
     _parse_sse_events,
     _read_golden_prompt,
+    ending_priority_marker,
+    judged_ending_names,
 )
 
 
@@ -133,6 +137,7 @@ class _FakeLLMClient(LLMClient):
         self.tokens = tokens
         self._structured_results = list(structured_results or [])
         self.generate_structured_calls: list[Any] = []
+        self.structured_prompts: list[str] = []
         self.received_prompt: str | None = None
         self.received_system_instruction: str | None = None
         self.error = error
@@ -157,6 +162,7 @@ class _FakeLLMClient(LLMClient):
     async def generate_structured(self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext) -> Any:
         self.usages.append(usage)
         self.generate_structured_calls.append(response_schema)
+        self.structured_prompts.append(prompt)
         result = self._structured_results.pop(0)
         if isinstance(result, Exception):
             raise result
@@ -821,6 +827,80 @@ async def test_send_preview_message_treats_rule_on_missing_stat_as_false_and_com
     state = await get_preview_session(session_id)
     assert state is not None
     assert (state.turn_count, state.ending_reached) == (1, False)
+    [warning] = [r.getMessage() for r in caplog.records if str(missing_stat_id) in r.getMessage()]
+    assert str(ending["id"]) in warning
+
+
+@pytest.mark.parametrize("scenario", ENDING_PRIORITY_SCENARIOS)
+async def test_send_preview_message_judges_priority_stat_group_by_highest_value(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, scenario: EndingPriorityScenario
+) -> None:
+    """실채팅(`test_send_message_judges_priority_stat_group_by_highest_value`)과 같은 시나리오 — 미리보기도 같은 순서
+    함수를 써서 판정한 엔딩과 발동한 엔딩이 같아야 한다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
+    stats = {name: _stat_def_item(name=name, initialValue=value) for name, value in scenario.stats.items()}
+    endings = {
+        name: _ending_item(
+            name=name,
+            judgmentPrompt=ending_priority_marker(name),
+            priorityStatId=stats[priority]["id"] if priority is not None else None,
+            statRules=[_gte_rule(stats[rule[0]]["id"], rule[1])] if rule is not None else [],
+        )
+        for name, priority, rule in scenario.endings
+    }
+    session_id = await _start_session(
+        db_client,
+        _story_payload(
+            startingSetups=[_starting_setup_item(statDefs=list(stats.values()), endings=list(endings.values()))]
+        ),
+    )
+
+    stat_judgment = StatJudgmentResult(
+        stat_changes=[
+            StatChangeJudgment(stat_id=str(stats[name]["id"]), new_value=value)
+            for name, value in scenario.stat_changes.items()
+        ]
+    )
+    fake = _FakeLLMClient(
+        tokens=["안녕"],
+        structured_results=[stat_judgment, *(EndingJudgmentResult(triggered=v) for v in scenario.verdicts)],
+    )
+    events = await _send_preview(db_client, session_id, fake)
+
+    assert judged_ending_names(fake.structured_prompts, scenario) == scenario.judged
+    assert len(fake.structured_prompts) == 1 + len(scenario.judged)
+    reached = [e["endingId"] for e in events if e["type"] == "endingReached"]
+    assert reached == ([endings[scenario.reached]["id"]] if scenario.reached is not None else [])
+
+
+async def test_send_preview_message_judges_ending_with_valueless_priority_stat_at_its_own_slot(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    """빌더는 스탯을 지운 초안으로도 미리보기를 시작할 수 있다. 우선 스탯 값이 없는 엔딩은 무리에서 빠져 제자리에서
+    판정되고, 어느 엔딩·스탯인지 경고로 남긴다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
+    missing_stat_id = uuid.uuid4()
+    ending = _ending_item(priorityStatId=str(missing_stat_id))
+    session_id = await _start_session(
+        db_client,
+        _story_payload(startingSetups=[_starting_setup_item(statDefs=[_stat_def_item()], endings=[ending])]),
+    )
+
+    fake = _FakeLLMClient(
+        tokens=["안녕"],
+        structured_results=[StatJudgmentResult(stat_changes=[]), EndingJudgmentResult(triggered=True)],
+    )
+    with caplog.at_level(logging.WARNING, logger="api.chat.router"):
+        events = await _send_preview(db_client, session_id, fake)
+
+    assert [e["type"] for e in events] == ["token", "endingReached", "done"]
+    assert events[1]["endingId"] == ending["id"]
     [warning] = [r.getMessage() for r in caplog.records if str(missing_stat_id) in r.getMessage()]
     assert str(ending["id"]) in warning
 

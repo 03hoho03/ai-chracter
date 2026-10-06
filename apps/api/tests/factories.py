@@ -1045,3 +1045,110 @@ async def _novel_ledger(db: AsyncSession, user_id: uuid.UUID) -> list[tuple[str,
         .order_by(CloverLedger.amount, CloverLedger.kind)
     )
     return [(kind, amount) for kind, amount in rows.all()]
+
+
+@dataclass(frozen=True)
+class EndingPriorityScenario:
+    """엔딩 우선 스탯 판정 순서를 실채팅·빌더 미리보기에 같은 입력으로 넣어 같은 결과가 나오는지 보는 시나리오.
+
+    `stats` 는 스탯 이름 → 초기값, `stat_changes` 는 이번 턴 스탯 판정이 내는 새 값이다. `endings` 는 목록 순서대로
+    (이름, 우선 스탯 이름 또는 None, `스탯 >= 문턱` 규칙 하나 또는 None). `verdicts` 는 엔딩 판정 모델이 차례로 낼
+    답이고, `judged` 는 판정 모델을 부른 엔딩 이름 순서, `reached` 는 발동한 엔딩 이름이다. 판정한 엔딩은 판정 문안에
+    `ending_priority_marker(이름)` 을 넣어 판정 프롬프트에서 찾는다."""
+
+    stats: dict[str, int]
+    stat_changes: dict[str, int]
+    endings: list[tuple[str, str | None, tuple[str, int] | None]]
+    verdicts: list[bool]
+    judged: list[str]
+    reached: str | None
+
+
+def ending_priority_marker(name: str) -> str:
+    return f"판정표지-{name}"
+
+
+def judged_ending_names(prompts: list[str], scenario: EndingPriorityScenario) -> list[str]:
+    """판정 프롬프트마다 어느 엔딩의 판정 문안이 실렸는지 이름으로 바꾼다(스탯 판정 프롬프트는 건너뛴다)."""
+    names = [name for name, _, _ in scenario.endings]
+    return [name for prompt in prompts for name in names if ending_priority_marker(name) in prompt]
+
+
+_ROUTE_ENDINGS: list[tuple[str, str | None, tuple[str, int] | None]] = [
+    ("처음", None, None),
+    ("도희", "도희", ("도희", 55)),
+    ("유나", "유나", ("유나", 55)),
+    ("세빈", "세빈", ("세빈", 55)),
+    ("노말", None, None),
+]
+
+ENDING_PRIORITY_SCENARIOS = [
+    pytest.param(
+        # 조감독 장기 측정의 턴 105 모양 — 루트 셋, 규칙이 거짓인 배드, 시계가 0 이라 규칙이 참인 노말(무리 뒤). 이번 턴
+        # 판정이 세빈을 95 → 100 으로 올려 반영 뒤 값으로 비교해야 세빈이 1등이다. 세빈이 아니오면 도희·유나로 내려가지
+        # 않고, 노말로도 떨어지지 않는다 — 그 턴은 엔딩 없이 끝난다.
+        EndingPriorityScenario(
+            stats={"도희": 98, "유나": 86, "세빈": 95, "상영회까지": 0},
+            stat_changes={"세빈": 100},
+            endings=[
+                ("도희", "도희", ("도희", 55)),
+                ("유나", "유나", ("유나", 55)),
+                ("세빈", "세빈", ("세빈", 55)),
+                ("배드", None, ("유나", 90)),
+                ("노말", None, ("상영회까지", 0)),
+            ],
+            verdicts=[False],
+            judged=["세빈"],
+            reached=None,
+        ),
+        id="turn-105-highest-only-then-no-ending",
+    ),
+    pytest.param(
+        # 도희·세빈 동점이면 목록 순서로 둘 다, 무리는 도희 자리(처음 다음)에 선다. 세빈에서 발동한다.
+        EndingPriorityScenario(
+            stats={"도희": 100, "유나": 86, "세빈": 100},
+            stat_changes={},
+            endings=_ROUTE_ENDINGS,
+            verdicts=[False, False, True],
+            judged=["처음", "도희", "세빈"],
+            reached="세빈",
+        ),
+        id="tie-in-list-order",
+    ),
+    pytest.param(
+        # 동점 둘이 모두 아니오면 무리 뒤의 노말도 판정하지 않고 그 턴을 끝낸다.
+        EndingPriorityScenario(
+            stats={"도희": 100, "유나": 86, "세빈": 100},
+            stat_changes={},
+            endings=_ROUTE_ENDINGS,
+            verdicts=[False, False, False],
+            judged=["처음", "도희", "세빈"],
+            reached=None,
+        ),
+        id="tie-all-decline-ends-turn",
+    ),
+    pytest.param(
+        # 무리 앞의 우선 스탯 없는 엔딩이 발동하면 무리는 판정하지 않는다.
+        EndingPriorityScenario(
+            stats={"도희": 100, "유나": 86, "세빈": 90},
+            stat_changes={},
+            endings=_ROUTE_ENDINGS,
+            verdicts=[True],
+            judged=["처음"],
+            reached="처음",
+        ),
+        id="earlier-ending-reached-first",
+    ),
+    pytest.param(
+        # 우선 스탯 엔딩이 하나도 규칙을 넘지 않은 턴은 무리가 없어 지금처럼 목록 순서대로 노말까지 판정한다.
+        EndingPriorityScenario(
+            stats={"도희": 40, "유나": 40, "세빈": 40},
+            stat_changes={},
+            endings=_ROUTE_ENDINGS,
+            verdicts=[False, True],
+            judged=["처음", "노말"],
+            reached="노말",
+        ),
+        id="no-group-keeps-list-order",
+    ),
+]
