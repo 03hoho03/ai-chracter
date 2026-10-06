@@ -111,6 +111,21 @@ def request_timeout_ms(call_site: LLMCallSite) -> int:
     return settings.gemini_generate_timeout_ms
 
 
+class SegmentedPrompt(str):
+    """블록 경계를 함께 싣는 프롬프트 문자열. 값은 `segments` 를 이은 것 그대로라, 문자열로만 다루는 쪽(Gemini, 프롬프트
+    덤프, 테스트 가짜)에는 보통의 `str` 과 똑같다. 경계를 읽는 것은 Bedrock 구현뿐이다(Claude 프롬프트 캐시의 블록).
+
+    값을 조각에서만 만들어 "이으면 원문과 바이트까지 같다"가 늘 참이다. `+`·`strip` 같은 문자열 연산의 결과는 보통의
+    `str` 이라 경계가 사라진다 — 틀린 글이 나가지는 않고 캐시만 못 맞는다."""
+
+    segments: tuple[str, ...]
+
+    def __new__(cls, segments: tuple[str, ...]) -> "SegmentedPrompt":
+        prompt = super().__new__(cls, "".join(segments))
+        prompt.segments = segments
+        return prompt
+
+
 @dataclass(frozen=True)
 class LLMCallContext:
     """호출 한 건의 사용량을 누구·어디에 귀속할지. 필수 키워드 인자라 새 호출부가

@@ -19,6 +19,7 @@ import botocore.exceptions
 import httpx
 import httpx2
 from anthropic import AsyncAnthropicBedrock
+from anthropic.types import TextBlockParam
 from pydantic import BaseModel
 
 from api.core.config import settings
@@ -33,6 +34,7 @@ from api.llm.client import (
     LLMPolicyViolationError,
     LLMRateLimitError,
     LLMTruncatedError,
+    SegmentedPrompt,
 )
 from api.llm.usage_store import record_usage
 
@@ -69,6 +71,31 @@ def _is_throttling(exc: BaseException) -> bool:
     if isinstance(exc, anthropic.RateLimitError):
         return True
     return isinstance(exc, anthropic.APIStatusError) and "throttl" in str(exc.body).lower()
+
+
+def _user_content(prompt: str, call_site: LLMCallSite) -> str | list[TextBlockParam]:
+    """대본을 user 메시지 내용으로 만든다. 채팅 턴은 빌더가 나눈 블록 셋으로 보내고 둘째 블록(대화 기록 끝)에만 캐시
+    체크포인트를 단다 — 다음 턴은 이 턴의 첫째·둘째 블록을 이은 것을 첫째 블록으로 보내므로, 자기 첫째 블록 경계에서 이
+    체크포인트가 쓴 캐시를 찾는다. 셋째 블록(키워드북·현재 상황·이번 입력)은 턴마다 바뀌어 표시하지 않는다. system 은
+    메시지보다 앞이라 체크포인트까지의 앞부분에 저절로 들어간다. 체크포인트까지가 모델별 최소 캐시 길이보다 짧으면 Bedrock 은
+    오류 없이 캐시만 하지 않으므로 길이를 따로 재지 않는다.
+
+    소설 장은 장마다 내용이 거의 다 바뀌어 캐시 쓰기 할증만 내므로 걸지 않는다. 블록이 없는 채팅 턴은 하나로 보내되 캐시를
+    못 맞추므로 경고로 남긴다."""
+    if call_site == "chat_generate":
+        if isinstance(prompt, SegmentedPrompt) and len(prompt.segments) == 3:
+            first, history_end, rest = prompt.segments
+            return [
+                {"type": "text", "text": first},
+                {"type": "text", "text": history_end, "cache_control": {"type": "ephemeral"}},
+                {"type": "text", "text": rest},
+            ]
+        try:
+            # 로그 실패가 턴을 막지 않게 한다(`_log_usage` 와 같은 규칙).
+            logger.warning("채팅 턴 프롬프트에 캐시 경계가 없어 블록 하나로 보낸다(캐시 미적중)")
+        except Exception:
+            pass
+    return str(prompt)
 
 
 @dataclass(frozen=True)
@@ -158,7 +185,8 @@ class BedrockLLMClient(LLMClient):
         *,
         usage: LLMCallContext,
     ) -> AsyncIterator[str]:
-        # 정지 시퀀스는 Gemini 와 같이 호출부가 대본의 화자 라벨에서 만들어 넘긴다. 대본은 user 메시지 하나로 싣는다.
+        # 정지 시퀀스는 Gemini 와 같이 호출부가 대본의 화자 라벨에서 만들어 넘긴다. 대본은 user 메시지 하나로 싣는다
+        # (채팅 턴은 그 안을 캐시 블록으로 나눈다, `_user_content`).
         # 사고는 끈다 — 채팅은 첫 글자 지연이 체감이고, 두 모델 모두 끌 수 있다.
         model = actual_model_id(usage.model)
         max_tokens = _max_tokens(usage.call_site)
@@ -172,7 +200,7 @@ class BedrockLLMClient(LLMClient):
             stream = await self._sdk().messages.create(
                 model=model,
                 max_tokens=max_tokens,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[{"role": "user", "content": _user_content(prompt, usage.call_site)}],
                 system=system_instruction if system_instruction is not None else anthropic.omit,
                 stop_sequences=stop_sequences if stop_sequences else anthropic.omit,
                 thinking={"type": "disabled"},

@@ -14,6 +14,7 @@ from api.db.models.character import SituationalImage
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StatDef, StoryPromptTemplate
+from api.llm.client import SegmentedPrompt
 
 # `"legacy"`를 이 유니온에 넣지 않는다 — 넣는
 # 순간 `list_prompt_sets`가 legacy를 걸러야 할 이유가 사라지고 FE가 4번째 탭을 만들게 된다.
@@ -379,6 +380,54 @@ def _generation_slot_rendered(
     return any(section.slot == slot for section in selected)
 
 
+# 캐시 블록 경계를 렌더 결과 안에서 찾기 위한 표지. Postgres text 는 NUL 을 담지 못해 DB 에서 온 문안·작가 글·대화
+# 기록과 겹치지 않는다. 겹치더라도(이번 입력에 섞여 온 NUL) 아래 검사가 표지 개수와 원문 일치를 보고 나누지 않는다.
+_BLOCK_MARK = "\x00"
+
+
+def _render_generation(
+    sections: Sequence[PromptSection],
+    *,
+    scope: str,
+    variant: str = "",
+    values: dict[str, str],
+    history_lines: list[str],
+    history_roles: list[ChatMessageRole],
+) -> str:
+    """생성 채널을 렌더하고, 대화 기록이 있으면 Claude 프롬프트 캐시용 블록 셋으로 나눈 `SegmentedPrompt` 를 돌려준다.
+
+    블록은 [대화 기록의 직전 교환 앞까지][직전 교환][기록 뒤 섹션 + 이번 입력]이다. 직전 교환은 기록의 마지막 사용자 줄부터
+    끝까지(사용자 줄이 없으면 마지막 줄)다. 다음 턴에는 이 턴의 첫째·둘째 블록을 이은 것이 그대로 첫째 블록이 되어, 이
+    턴이 둘째 블록 끝에 쓴 캐시를 다음 턴이 자기 첫째 블록 경계에서 찾는다(캐시는 블록 모양이 아니라 경계까지의 누적
+    내용으로 맞춘다). 기록 줄 사이의 줄바꿈은 뒤 블록 앞에 붙인다 — 앞 블록 끝에 붙이면 이 턴의 둘째 블록만 줄바꿈 없이
+    끝나 다음 턴의 누적 내용과 어긋난다. 기억 노트가 바뀌거나 요약이 접히는 턴은 앞부분이 달라져 어차피 맞지 않는다.
+
+    경계는 섹션 제목이 아니라 기록 값에 박은 표지로 찾는다(문안은 어드민이 고친다). 표지가 정확히 두 번 나오지 않거나,
+    나눈 조각을 이은 것이 표지 없이 렌더한 문자열과 다르거나, 빈 블록이 생기면 나누지 않고 보통 문자열을 돌려준다 —
+    캐시를 못 맞출 뿐 보내는 글은 같다. 기록이 비면 표지를 넣지 않는다(넣으면 조건부 기록 섹션이 살아난다)."""
+    plain = render_prompt_channel(
+        sections, channel="generation", scope=scope, variant=variant, values={**values, "history_lines": "\n".join(history_lines)}
+    )
+    if not history_lines:
+        return plain
+    exchange_start = max(
+        (i for i, role in enumerate(history_roles) if role == ChatMessageRole.USER), default=len(history_lines) - 1
+    )
+    marked_lines = [*history_lines]
+    if exchange_start > 0:
+        marked_lines[exchange_start - 1] += _BLOCK_MARK
+    else:
+        marked_lines[0] = _BLOCK_MARK + marked_lines[0]
+    marked_lines[-1] += _BLOCK_MARK
+    marked = render_prompt_channel(
+        sections, channel="generation", scope=scope, variant=variant, values={**values, "history_lines": "\n".join(marked_lines)}
+    )
+    segments = tuple(marked.split(_BLOCK_MARK))
+    if len(segments) != 3 or "".join(segments) != plain or not all(segments):
+        return plain
+    return SegmentedPrompt(segments)
+
+
 def build_generation_prompt(
     *,
     prompt_set: PromptSet,
@@ -414,11 +463,11 @@ def build_generation_prompt(
         f"{prompt_set.character_assistant_label}: {names.expand(pair['characterLine'])}"
         for pair in example_dialogues
     )
-    history_lines = "\n".join(
+    history_lines = [
         f"{prompt_set.user_label if message.role == ChatMessageRole.USER else prompt_set.character_assistant_label}: "
         f"{_turn_text(message, names, strip_tags=False)}"
         for message in history
-    )
+    ]
     values = {
         "character_prompt": names.expand(character_prompt),
         "example_lines": example_lines,
@@ -426,12 +475,17 @@ def build_generation_prompt(
         "user_name": names.generation_user_name,
         "memory_note": memory_note,
         "memory_summary": memory_summary,
-        "history_lines": history_lines,
         "user_label": prompt_set.user_label,
         "user_message": user_message,
         "assistant_label": prompt_set.character_assistant_label,
     }
-    return render_prompt_channel(sections, channel="generation", scope="character", values=values)
+    return _render_generation(
+        sections,
+        scope="character",
+        values=values,
+        history_lines=history_lines,
+        history_roles=[message.role for message in history],
+    )
 
 
 def build_story_generation_prompt(
@@ -489,11 +543,11 @@ def build_story_generation_prompt(
         f"{prompt_set.story_example_label}: {names.expand(pair['assistantLine'])}"
         for pair in development_examples
     )
-    history_lines = "\n".join(
+    history_lines = [
         f"{prompt_set.user_label if message.role == ChatMessageRole.USER else prompt_set.story_assistant_label}: "
         f"{_turn_text(message, names, strip_tags=True)}"
         for message in history
-    )
+    ]
     values = {
         "setting_text": names.expand(setting_text or ""),
         "custom_prompt": names.expand(custom_prompt or ""),
@@ -505,7 +559,6 @@ def build_story_generation_prompt(
         "user_name": names.generation_user_name,
         "memory_note": memory_note,
         "memory_summary": memory_summary,
-        "history_lines": history_lines,
         "keyword_note_lines": "\n".join(names.expand(text) for text in keyword_note_texts) if keyword_note_texts else "",
         "situation_note_lines": (
             "\n".join(names.expand(text) for text in situation_note_texts) if situation_note_texts else ""
@@ -515,8 +568,13 @@ def build_story_generation_prompt(
         "user_message": user_message,
         "assistant_label": prompt_set.story_assistant_label,
     }
-    return render_prompt_channel(
-        sections, channel="generation", scope="story", variant=_story_generation_variant(prompt_template), values=values
+    return _render_generation(
+        sections,
+        scope="story",
+        variant=_story_generation_variant(prompt_template),
+        values=values,
+        history_lines=history_lines,
+        history_roles=[message.role for message in history],
     )
 
 

@@ -26,6 +26,7 @@ from api.llm.client import (
     LLMPolicyViolationError,
     LLMRateLimitError,
     LLMTruncatedError,
+    SegmentedPrompt,
 )
 
 _CHAT = LLMCallContext("chat_generate", None, None, model="sonnet")
@@ -174,6 +175,58 @@ async def test_generate_without_system_or_stop_sequences_sends_neither(
 
     assert seen[0]["system"] is anthropic.omit
     assert seen[0]["stop_sequences"] is anthropic.omit
+
+
+_SEGMENTED = SegmentedPrompt(("앞부분", "\n나: 직전\n너: 응답", "\n\n나: 지금\n너:"))
+
+
+async def test_a_segmented_chat_prompt_goes_as_three_blocks_with_one_checkpoint_on_the_second(
+    monkeypatch: pytest.MonkeyPatch, recorded: list[Any]
+) -> None:
+    """체크포인트는 대화 기록 끝(둘째 블록) 하나다 — 셋째 블록은 턴마다 바뀌어 캐시해도 다시 읽히지 않고, 첫째 블록 끝은
+    다음 턴이 거슬러 보며 찾는 경계라 따로 표시하지 않아도 된다."""
+    client, seen = _client_streaming(monkeypatch, _start(input_tokens=1), _text("x"), _end())
+
+    [_ async for _ in client.generate(_SEGMENTED, usage=_CHAT)]
+
+    assert seen[0]["messages"] == [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "앞부분"},
+                {"type": "text", "text": "\n나: 직전\n너: 응답", "cache_control": {"type": "ephemeral"}},
+                {"type": "text", "text": "\n\n나: 지금\n너:"},
+            ],
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("prompt", "usage", "warns"),
+    [
+        pytest.param("대본", _CHAT, True, id="chat-without-segments"),
+        pytest.param(SegmentedPrompt(("앞", "뒤")), _CHAT, True, id="chat-with-two-segments"),
+        pytest.param(_SEGMENTED, _CHAPTER, False, id="chapter-never-caches"),
+    ],
+)
+async def test_other_prompts_go_as_one_plain_block_without_a_checkpoint(
+    monkeypatch: pytest.MonkeyPatch,
+    recorded: list[Any],
+    caplog: pytest.LogCaptureFixture,
+    prompt: str,
+    usage: LLMCallContext,
+    warns: bool,
+) -> None:
+    """채팅 턴이 경계 없이 오면 보내기는 하되(캐시만 못 맞는다) 로그로 드러낸다. 소설 장은 장마다 내용이 거의 다 바뀌어
+    캐시 쓰기 할증만 내므로 경계가 있어도 걸지 않는다."""
+    client, seen = _client_streaming(monkeypatch, _start(input_tokens=1), _text("x"), _end())
+
+    with caplog.at_level(logging.WARNING, logger="api.llm.bedrock"):
+        [_ async for _ in client.generate(prompt, usage=usage)]
+
+    content = seen[0]["messages"][0]["content"]
+    assert type(content) is str and content == prompt
+    assert any("캐시 경계" in r.getMessage() for r in caplog.records) is warns
 
 
 async def test_a_refusal_is_a_policy_violation_and_records_nothing(
@@ -500,6 +553,17 @@ async def test_the_request_reaches_the_wire_in_bedrock_shape(monkeypatch: pytest
     assert body["max_tokens"] == 4096
     assert body["thinking"] == {"type": "disabled"}
     assert "metadata" not in body
+
+
+async def test_cache_blocks_reach_the_wire_through_the_real_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
+    client, seen = _sdk_backed(monkeypatch, 400, {"message": "bad request"})
+
+    with pytest.raises(LLMClientError):
+        [_ async for _ in client.generate(_SEGMENTED, usage=_CHAT)]
+
+    blocks = json.loads(seen[0].content)["messages"][0]["content"]
+    assert [b["text"] for b in blocks] == list(_SEGMENTED.segments)
+    assert [b.get("cache_control") for b in blocks] == [None, {"type": "ephemeral"}, None]
 
 
 async def test_a_429_through_the_real_sdk_is_a_rate_limit_error(monkeypatch: pytest.MonkeyPatch) -> None:
