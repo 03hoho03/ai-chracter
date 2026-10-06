@@ -30,11 +30,14 @@ logger = logging.getLogger(__name__)
 CHAT_TURN_COST = 10
 IMAGE_UNIT_COST = 30
 ATTENDANCE_GRANT_AMOUNT = 100
-# 소설화 단가 — 장 생성·장 재생성·AI 문단 수정 한 번에 드는 클로버. 소설화 본 시험에서 원가를 잰 뒤 확정하는 임시값이다.
+# 소설화 단가 — 장 생성·장 재생성·AI 문단 수정 한 번에 드는 클로버. 본 시험에서 기본 모델로 잰 평균 원가(장 약 $0.049,
+# 문단 수정 약 $0.026 — 이 모델의 2027년 인상 후 단가로 계산)를 1달러 1,400원·1클로버 3원·순매출 88% 로 환산하면
+# 장 40·수정 20 에서 원가가 매출의 약 3분의 2다. 시험한 장이 다섯 개뿐이고 사고 토큰이 보고되지 않은 호출이 있어
+# 원가가 낮게 잡혔을 수 있으므로, 운영에서 원가를 다시 보고 고친다. 재생성은 같은 호출이라 장 생성과 같은 값이다.
 # 웹은 이 값의 사본을 갖지 않고 서버 응답으로만 받는다(배포 사이에 열어 둔 화면의 금액이 어긋나지 않게).
-NOVELIZE_CHAPTER_GENERATE_COST = 20
-NOVELIZE_CHAPTER_REGENERATE_COST = 20
-NOVELIZE_AI_EDIT_COST = 5
+NOVELIZE_CHAPTER_GENERATE_COST = 40
+NOVELIZE_CHAPTER_REGENERATE_COST = 40
+NOVELIZE_AI_EDIT_COST = 20
 
 # `db/models/clover.py`의 `kind` 컬럼 주석과 같은 목록이다. 컬럼은 Text라 DB가 값을 막지
 # 않으므로(마이그레이션 없이 넓히기 위해서다) 이 `Literal`이 유일한 강제 지점이다.

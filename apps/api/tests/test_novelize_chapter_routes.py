@@ -144,7 +144,7 @@ async def test_first_proposal_starts_at_the_opening_lists_turns_and_maps_the_sug
     ]
     assert body["candidates"][1]["excerpt"].startswith("[A01]")
     assert body["suggestion"] == {"endMessageId": str(room.turns[2][1].id), "reason": "첫날 대화가 마무리된다."}
-    assert body["cost"] == 20
+    assert body["cost"] == 40
     (prompt, system_instruction, usage) = llm.boundary_calls[0]
     assert (usage.call_site, usage.user_id, usage.room_id) == ("novelize_boundary", room.user_id, room.room_id)
     assert "[턴 2] 사용자: [U01]" in prompt and "[턴 4] 캐릭터: [A03]" in prompt
@@ -283,9 +283,9 @@ async def _model_route_requests(
     return [
         await db_client.post(f"/novels/{novel_id}/chapter-proposal"),
         await db_client.post(
-            f"/novels/{novel_id}/chapters", json={"endMessageId": str(room.turns[2][1].id), "expectedCost": 20}
+            f"/novels/{novel_id}/chapters", json={"endMessageId": str(room.turns[2][1].id), "expectedCost": 40}
         ),
-        await db_client.post(f"/novels/{novel_id}/chapters/{chapter.id}/regenerate", json={"expectedCost": 20}),
+        await db_client.post(f"/novels/{novel_id}/chapters/{chapter.id}/regenerate", json={"expectedCost": 40}),
     ]
 
 
@@ -335,9 +335,9 @@ async def test_novel_whose_room_is_gone_cannot_get_new_chapters(
     responses = [
         await db_client.post(f"/novels/{novel_id}/chapter-proposal"),
         await db_client.post(
-            f"/novels/{novel_id}/chapters", json={"endMessageId": str(room.turns[2][1].id), "expectedCost": 20}
+            f"/novels/{novel_id}/chapters", json={"endMessageId": str(room.turns[2][1].id), "expectedCost": 40}
         ),
-        await db_client.post(f"/novels/{novel_id}/chapters/{chapter.id}/regenerate", json={"expectedCost": 20}),
+        await db_client.post(f"/novels/{novel_id}/chapters/{chapter.id}/regenerate", json={"expectedCost": 40}),
     ]
 
     assert [(r.status_code, r.json()["detail"]) for r in responses] == [(409, {"code": "NOVEL_ROOM_GONE"})] * 3
@@ -356,14 +356,14 @@ async def test_creating_a_chapter_charges_queues_a_job_from_the_server_computed_
     opening = (await _room_messages(db_session, room.room_id))[0]
     end = room.turns[2][1]
 
-    resp = await db_client.post(f"/novels/{novel_id}/chapters", json={"endMessageId": str(end.id), "expectedCost": 20})
+    resp = await db_client.post(f"/novels/{novel_id}/chapters", json={"endMessageId": str(end.id), "expectedCost": 40})
 
     assert resp.status_code == 202, resp.text
     body = resp.json()
     assert (body["kind"], body["status"], body["chargedAmount"], body["refunded"]) == (
         "chapter_generate",
         "queued",
-        20,
+        40,
         False,
     )
     job = await _job_row(db_session, uuid.UUID(body["id"]))
@@ -373,7 +373,7 @@ async def test_creating_a_chapter_charges_queues_a_job_from_the_server_computed_
         end.created_at,
     )
     assert enqueued == [job.id]
-    assert await _novel_ledger(db_session, room.user_id) == [("novelize_spend", -20)]
+    assert await _novel_ledger(db_session, room.user_id) == [("novelize_spend", -40)]
 
 
 @pytest.mark.parametrize("pick", ["user_message", "beyond_limit", "unknown"])
@@ -393,7 +393,7 @@ async def test_chapter_end_outside_the_candidate_turns_is_422_without_a_charge(
         "unknown": uuid.uuid4(),
     }[pick]
 
-    resp = await db_client.post(f"/novels/{novel_id}/chapters", json={"endMessageId": str(end_id), "expectedCost": 20})
+    resp = await db_client.post(f"/novels/{novel_id}/chapters", json={"endMessageId": str(end_id), "expectedCost": 40})
 
     assert resp.status_code == 422, resp.text
     assert resp.json()["detail"] == {"code": "NOVEL_CHAPTER_END_INVALID"}
@@ -408,7 +408,7 @@ async def test_chapter_without_a_protagonist_name_is_422_until_one_is_given(
     enqueued: list[uuid.UUID],
 ) -> None:
     room, novel_id = await _novel_setup(db_client, db_session, monkeypatch, persona=None)
-    payload = {"endMessageId": str(room.turns[1][1].id), "expectedCost": 20}
+    payload = {"endMessageId": str(room.turns[1][1].id), "expectedCost": 40}
 
     missing = await db_client.post(f"/novels/{novel_id}/chapters", json=payload)
     await db_client.put(f"/novels/{novel_id}/protagonist-name", json={"protagonistName": "서진"})
@@ -417,7 +417,7 @@ async def test_chapter_without_a_protagonist_name_is_422_until_one_is_given(
     assert missing.status_code == 422 and missing.json()["detail"] == {"code": "NOVEL_PROTAGONIST_NAME_REQUIRED"}
     assert given.status_code == 202
     assert len(enqueued) == 1
-    assert await _novel_ledger(db_session, room.user_id) == [("novelize_spend", -20)]
+    assert await _novel_ledger(db_session, room.user_id) == [("novelize_spend", -40)]
 
 
 async def test_chapter_with_a_stale_price_is_409_with_the_current_one(
@@ -434,7 +434,7 @@ async def test_chapter_with_a_stale_price_is_409_with_the_current_one(
     )
 
     assert resp.status_code == 409
-    assert resp.json()["detail"] == {"code": "NOVELIZE_PRICE_CHANGED", "currentCost": 20}
+    assert resp.json()["detail"] == {"code": "NOVELIZE_PRICE_CHANGED", "currentCost": 40}
     assert (enqueued, await _novel_ledger(db_session, room.user_id)) == ([], [])
 
 
@@ -451,7 +451,7 @@ async def test_dead_job_is_expired_before_a_new_chapter_instead_of_blocking_it(
     room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
     messages = await _room_messages(db_session, room.room_id)
     live_id = (await _queue_job(db_session, novel_id, messages[0], room.turns[1][1])).id
-    payload = {"endMessageId": str(room.turns[1][1].id), "expectedCost": 20}
+    payload = {"endMessageId": str(room.turns[1][1].id), "expectedCost": 40}
 
     blocked = await db_client.post(f"/novels/{novel_id}/chapters", json=payload)
     await db_session.execute(
@@ -464,9 +464,9 @@ async def test_dead_job_is_expired_before_a_new_chapter_instead_of_blocking_it(
     assert after_expiry.status_code == 202, after_expiry.text
     assert (await _job_row(db_session, live_id)).failure_code == "expired"
     assert await _novel_ledger(db_session, room.user_id) == [
-        ("novelize_spend", -20),
-        ("novelize_spend", -20),
-        ("novelize_refund", 20),
+        ("novelize_spend", -40),
+        ("novelize_spend", -40),
+        ("novelize_refund", 40),
     ]
 
 
@@ -477,7 +477,7 @@ async def test_created_chapter_job_really_runs_and_the_poll_sees_the_chapter(
     room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
 
     created = await db_client.post(
-        f"/novels/{novel_id}/chapters", json={"endMessageId": str(room.turns[1][1].id), "expectedCost": 20}
+        f"/novels/{novel_id}/chapters", json={"endMessageId": str(room.turns[1][1].id), "expectedCost": 40}
     )
     # 테스트 커넥션은 하나라 백그라운드 작업이 끝나기 전에 같은 커넥션으로 읽으면 부딪힌다 — 태스크를 기다린다.
     await asyncio.gather(*runner._background_tasks)
@@ -502,7 +502,7 @@ async def test_regenerating_an_earlier_chapter_queues_a_job_over_the_same_segmen
     first = await _add_chapter(db_session, novel_id, room, messages[0], room.turns[1][1])
     await _add_chapter(db_session, novel_id, room, room.turns[2][0], room.turns[3][1])
 
-    resp = await db_client.post(f"/novels/{novel_id}/chapters/{first.id}/regenerate", json={"expectedCost": 20})
+    resp = await db_client.post(f"/novels/{novel_id}/chapters/{first.id}/regenerate", json={"expectedCost": 40})
 
     assert resp.status_code == 202, resp.text
     job = await _job_row(db_session, uuid.UUID(resp.json()["id"]))
@@ -539,7 +539,7 @@ async def test_regenerating_after_the_source_changed_is_409_without_a_charge(
         await db_session.execute(sa.delete(ChatMessage).where(ChatMessage.id == room.turns[1][1].id))
     await db_session.commit()
 
-    resp = await db_client.post(f"/novels/{novel_id}/chapters/{chapter.id}/regenerate", json={"expectedCost": 20})
+    resp = await db_client.post(f"/novels/{novel_id}/chapters/{chapter.id}/regenerate", json={"expectedCost": 40})
 
     assert resp.status_code == 409 and resp.json()["detail"] == {"code": "NOVEL_SOURCE_CHANGED"}
     assert (enqueued, await _novel_ledger(db_session, room.user_id)) == ([], [])
@@ -558,7 +558,7 @@ async def test_regenerating_a_chapter_of_another_novel_is_404(
     )
     _room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
 
-    resp = await db_client.post(f"/novels/{novel_id}/chapters/{other_chapter.id}/regenerate", json={"expectedCost": 20})
+    resp = await db_client.post(f"/novels/{novel_id}/chapters/{other_chapter.id}/regenerate", json={"expectedCost": 40})
 
     assert resp.status_code == 404 and resp.json()["detail"] == {"code": "NOVEL_CHAPTER_NOT_FOUND"}
 
@@ -583,7 +583,7 @@ async def test_deleting_the_last_chapter_keeps_its_jobs_and_rewinds_the_next_sta
         result_revision_id=revision.id,
         instruction="더 쓸쓸하게",
         result_text="고친 본문",
-        charged_amount=5,
+        charged_amount=20,
     )
     db_session.add(job)
     await db_session.commit()

@@ -277,7 +277,7 @@ async def test_detail_shows_the_running_job_and_expires_a_dead_one_first(
         sa.select(NovelJob).where(NovelJob.id == job.id).execution_options(populate_existing=True)
     )
     assert stored is not None and (stored.status, stored.failure_code) == ("failed", "expired")
-    assert await _novel_ledger(db_session, room.user_id) == [("novelize_spend", -20), ("novelize_refund", 20)]
+    assert await _novel_ledger(db_session, room.user_id) == [("novelize_spend", -40), ("novelize_refund", 40)]
 
 
 async def test_room_novel_lookup_also_expires_a_dead_job(
@@ -294,7 +294,7 @@ async def test_room_novel_lookup_also_expires_a_dead_job(
     resp = await db_client.get(f"/chat-rooms/{room.room_id}/novel")
 
     assert resp.json()["activeJob"] is None
-    assert await _novel_ledger(db_session, room.user_id) == [("novelize_spend", -20), ("novelize_refund", 20)]
+    assert await _novel_ledger(db_session, room.user_id) == [("novelize_spend", -40), ("novelize_refund", 40)]
 
 
 # ── 설정 노트·주인공 이름 ───────────────────────────────────────────────────
@@ -348,7 +348,7 @@ async def test_deleting_a_novel_refunds_its_running_job_and_removes_every_row(
         (NovelJob, NovelJob.id, job.id),
     ):
         assert await db_session.scalar(sa.select(sa.func.count()).select_from(model).where(column == value)) == 0
-    assert await _novel_ledger(db_session, room.user_id) == [("novelize_spend", -20), ("novelize_refund", 20)]
+    assert await _novel_ledger(db_session, room.user_id) == [("novelize_spend", -40), ("novelize_refund", 40)]
     assert await db_session.get(ChatRoom, room.room_id) is not None
     assert (await db_client.get(f"/chat-rooms/{room.room_id}/novel")).status_code == 404
 

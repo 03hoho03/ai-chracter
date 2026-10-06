@@ -153,7 +153,7 @@ async def _chapter_job(
         end_message_id=end.id,
         end_message_created_at=end.created_at,
     )
-    return await billing.create_charged_job(db_session, job=job, expected_cost=20, now=datetime.now(UTC))
+    return await billing.create_charged_job(db_session, job=job, expected_cost=40, now=datetime.now(UTC))
 
 
 async def _ledger(db: AsyncSession, user_id: uuid.UUID) -> list[tuple[str, int]]:
@@ -188,7 +188,7 @@ async def _revisions(db: AsyncSession, chapter_id: uuid.UUID) -> list[NovelChapt
 
 
 async def _assert_failed_and_refunded_once(
-    db: AsyncSession, job_id: uuid.UUID, user_id: uuid.UUID, code: NovelJobFailureCode, charged: int = 20
+    db: AsyncSession, job_id: uuid.UUID, user_id: uuid.UUID, code: NovelJobFailureCode, charged: int = 40
 ) -> None:
     job = await _job(db, job_id)
     assert (job.status, job.failure_code, job.refunded_at is not None) == ("failed", code, True)
@@ -220,7 +220,7 @@ async def test_chapter_job_saves_the_chapter_and_its_first_revision_after_the_st
     assert revisions[0].body == "비가 내리는 저녁이었다.\n\n" + ("도윤이 잔을 밀어 주었다. " * 20).strip()
     assert (stored.status, stored.chapter_id, stored.result_revision_id) == ("succeeded", chapter.id, revisions[0].id)
     assert stored.finished_at is not None and stored.refunded_at is None
-    assert await _ledger(db_session, novel.user_id) == [("novelize_spend", -20)]
+    assert await _ledger(db_session, novel.user_id) == [("novelize_spend", -40)]
 
     prompt, system_instruction, usage = llm.calls[0]
     assert (usage.call_site, usage.user_id, usage.room_id) == ("novelize_chapter", novel.user_id, room.room_id)
@@ -311,7 +311,7 @@ async def test_regenerate_erases_the_previews_its_new_revision_made_stale(
         paragraph_end=0,
         instruction="더 쓸쓸하게",
         result_text="고친 본문",
-        charged_amount=5,
+        charged_amount=20,
     )
     db_session.add(preview)
     await db_session.commit()
@@ -340,9 +340,9 @@ async def test_regenerate_after_the_source_changed_refunds_without_calling_the_m
     assert (job_row.status, job_row.failure_code) == ("failed", "source_changed")
     assert [r.revision_no for r in await _revisions(db_session, chapter.id)] == [1]
     assert await _ledger(db_session, novel.user_id) == [
-        ("novelize_spend", -20),
-        ("novelize_spend", -20),
-        ("novelize_refund", 20),
+        ("novelize_spend", -40),
+        ("novelize_spend", -40),
+        ("novelize_refund", 40),
     ]
 
 
@@ -494,7 +494,7 @@ async def test_novel_deleted_mid_job_leaves_nothing_and_raises_nothing(
 
     assert await db_session.scalar(sa.select(Novel.id).where(Novel.id == novel.id)) is None
     assert await db_session.scalar(sa.select(sa.func.count()).select_from(NovelChapter)) == 0
-    assert await _ledger(db_session, novel.user_id) == [("novelize_spend", -20), ("novelize_refund", 20)]
+    assert await _ledger(db_session, novel.user_id) == [("novelize_spend", -40), ("novelize_refund", 40)]
 
 
 async def test_job_already_finished_before_it_starts_is_left_alone(
@@ -528,7 +528,7 @@ async def _ai_edit_job(
         paragraph_end=end,
         instruction="더 쓸쓸하게",
     )
-    return await billing.create_charged_job(db_session, job=job, expected_cost=5, now=datetime.now(UTC))
+    return await billing.create_charged_job(db_session, job=job, expected_cost=20, now=datetime.now(UTC))
 
 
 async def _chapter_with_body(db_client: httpx.AsyncClient, db_session: AsyncSession, body: str) -> tuple[Novel, NovelChapter]:
@@ -581,9 +581,9 @@ async def test_ai_edit_finishing_after_its_chapter_changed_is_refunded_as_source
     assert (stored.status, stored.failure_code, stored.result_text) == ("failed", "source_changed", None)
     assert stored.refunded_at is not None
     assert await _ledger(db_session, novel.user_id) == [
+        ("novelize_spend", -40),
         ("novelize_spend", -20),
-        ("novelize_spend", -5),
-        ("novelize_refund", 5),
+        ("novelize_refund", 20),
     ]
     assert [r.body for r in await _revisions(db_session, chapter.id)][-1] == "딴 탭"
 
@@ -609,9 +609,9 @@ async def test_unusable_ai_edit_is_refunded(
     # 행은 차감·환불 기록의 짝으로 남는다(하루 재시도 집계는 대기·실행·성공인 장 작업만 세므로 이 행과 무관하다).
     assert (stored.status, stored.failure_code, stored.instruction, stored.result_text) == ("failed", code, None, None)
     assert await _ledger(db_session, novel.user_id) == [
+        ("novelize_spend", -40),
         ("novelize_spend", -20),
-        ("novelize_spend", -5),
-        ("novelize_refund", 5),
+        ("novelize_refund", 20),
     ]
 
 
@@ -780,7 +780,7 @@ async def test_cleanup_after_a_restart_keeps_going_when_one_refund_fails(
     for job, novel in stale:
         if job.id == failed_id:
             assert (await _job(db_session, job.id)).status == "queued"
-            assert await _ledger(db_session, novel.user_id) == [("novelize_spend", -20)]
+            assert await _ledger(db_session, novel.user_id) == [("novelize_spend", -40)]
         else:
             await _assert_failed_and_refunded_once(db_session, job.id, novel.user_id, "expired")
     assert reported == ["novelize"]
@@ -896,7 +896,7 @@ async def test_poll_reports_a_finished_chapter_job(
         "id": str(job.id),
         "kind": "chapter_generate",
         "status": "succeeded",
-        "chargedAmount": 20,
+        "chargedAmount": 40,
         "refunded": False,
         "failureReason": None,
         "chapterId": str(stored.chapter_id),
@@ -975,9 +975,9 @@ async def test_poll_of_an_expired_ai_edit_reports_its_instruction_as_null(
     stored = await _job(db_session, job.id)
     assert (stored.instruction, stored.result_text) == (None, None)
     assert await _ledger(db_session, novel.user_id) == [
+        ("novelize_spend", -40),
         ("novelize_spend", -20),
-        ("novelize_spend", -5),
-        ("novelize_refund", 5),
+        ("novelize_refund", 20),
     ]
 
 

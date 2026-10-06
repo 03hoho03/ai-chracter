@@ -100,9 +100,9 @@ async def _owner(db_session: AsyncSession, balance: int = 100, **overrides: obje
 # ── 단가 ────────────────────────────────────────────────────────────────────
 def test_job_price_reads_the_constant_at_call_time(monkeypatch: pytest.MonkeyPatch) -> None:
     """단가가 바뀌면 다음 호출부터 바로 바뀐 값을 낸다 — 정의 시점에 값을 붙잡아 두면 바꿔도 옛 값이 나간다."""
-    assert billing.job_price("chapter_generate") == 20
-    assert billing.job_price("chapter_regenerate") == 20
-    assert billing.job_price("ai_edit") == 5
+    assert billing.job_price("chapter_generate") == 40
+    assert billing.job_price("chapter_regenerate") == 40
+    assert billing.job_price("ai_edit") == 20
     monkeypatch.setattr(clover, "NOVELIZE_CHAPTER_REGENERATE_COST", 33)
     assert billing.job_price("chapter_regenerate") == 33
 
@@ -114,16 +114,16 @@ async def test_create_charges_and_inserts_a_queued_job(db_session: AsyncSession)
 
     async with _service_session(db_session) as s:
         job = await billing.create_charged_job(
-            s, job=_chapter_job(novel, start_message_id=uuid.uuid4()), expected_cost=20, now=datetime.now(UTC)
+            s, job=_chapter_job(novel, start_message_id=uuid.uuid4()), expected_cost=40, now=datetime.now(UTC)
         )
 
     stored = await db_session.get(NovelJob, job.id)
     assert stored is not None
-    assert (stored.status, stored.charged_amount, stored.refunded_at) == ("queued", 20, None)
+    assert (stored.status, stored.charged_amount, stored.refunded_at) == ("queued", 40, None)
     assert stored.heartbeat_at is not None
-    assert await _ledger(db_session, owner.id) == [("novelize_spend", -20)]
-    assert await _balance(db_session, owner.id) == 80
-    assert await _lot_sum(db_session, owner.id) == 80
+    assert await _ledger(db_session, owner.id) == [("novelize_spend", -40)]
+    assert await _balance(db_session, owner.id) == 60
+    assert await _lot_sum(db_session, owner.id) == 60
 
 
 async def test_create_charges_an_exempt_account_too(db_session: AsyncSession) -> None:
@@ -132,10 +132,10 @@ async def test_create_charges_an_exempt_account_too(db_session: AsyncSession) ->
     novel = await _make_novel(db_session, owner.id)
 
     async with _service_session(db_session) as s:
-        await billing.create_charged_job(s, job=_ai_edit_job(novel), expected_cost=5, now=datetime.now(UTC))
+        await billing.create_charged_job(s, job=_ai_edit_job(novel), expected_cost=20, now=datetime.now(UTC))
 
-    assert await _ledger(db_session, owner.id) == [("novelize_spend", -5)]
-    assert await _balance(db_session, owner.id) == 95
+    assert await _ledger(db_session, owner.id) == [("novelize_spend", -20)]
+    assert await _balance(db_session, owner.id) == 80
 
 
 async def test_create_rejects_a_stale_expected_cost_before_charging(
@@ -148,7 +148,7 @@ async def test_create_rejects_a_stale_expected_cost_before_charging(
     async with _service_session(db_session) as s:
         with pytest.raises(HTTPException) as caught:
             await billing.create_charged_job(
-                s, job=_chapter_job(novel, start_message_id=uuid.uuid4()), expected_cost=20, now=datetime.now(UTC)
+                s, job=_chapter_job(novel, start_message_id=uuid.uuid4()), expected_cost=40, now=datetime.now(UTC)
             )
 
     assert caught.value.status_code == 409
@@ -165,7 +165,7 @@ async def test_create_without_enough_clover_is_429_and_leaves_nothing(db_session
     async with _service_session(db_session) as s:
         with pytest.raises(HTTPException) as caught:
             await billing.create_charged_job(
-                s, job=_chapter_job(novel, start_message_id=uuid.uuid4()), expected_cost=20, now=now
+                s, job=_chapter_job(novel, start_message_id=uuid.uuid4()), expected_cost=40, now=now
             )
 
     assert caught.value.status_code == 429
@@ -182,12 +182,12 @@ async def test_create_without_enough_clover_is_429_and_leaves_nothing(db_session
 async def test_create_while_a_job_is_active_is_409_and_charges_nothing(db_session: AsyncSession) -> None:
     owner = await _owner(db_session)
     novel = await _make_novel(db_session, owner.id)
-    db_session.add(NovelJob(novel_id=novel.id, user_id=owner.id, kind="ai_edit", status="running", charged_amount=5))
+    db_session.add(NovelJob(novel_id=novel.id, user_id=owner.id, kind="ai_edit", status="running", charged_amount=20))
     await db_session.flush()
 
     async with _service_session(db_session) as s:
         with pytest.raises(HTTPException) as caught:
-            await billing.create_charged_job(s, job=_ai_edit_job(novel), expected_cost=5, now=datetime.now(UTC))
+            await billing.create_charged_job(s, job=_ai_edit_job(novel), expected_cost=20, now=datetime.now(UTC))
 
     assert caught.value.status_code == 409
     assert _detail(caught.value) == {"code": "NOVEL_JOB_IN_PROGRESS"}
@@ -212,7 +212,7 @@ async def test_daily_chapter_limit_counts_only_todays_live_attempts_at_the_same_
     ) -> NovelJob:
         job = _chapter_job(novel, kind=kind, start_message_id=start_message_id)
         job.status = status
-        job.charged_amount = 20
+        job.charged_amount = 40
         return job
 
     yesterday = done("succeeded")
@@ -231,7 +231,7 @@ async def test_daily_chapter_limit_counts_only_todays_live_attempts_at_the_same_
     async def attempt() -> None:
         async with _service_session(db_session) as s:
             job = await billing.create_charged_job(
-                s, job=_chapter_job(novel, kind="chapter_regenerate", start_message_id=start), expected_cost=20, now=now
+                s, job=_chapter_job(novel, kind="chapter_regenerate", start_message_id=start), expected_cost=40, now=now
             )
         await db_session.execute(update(NovelJob).where(NovelJob.id == job.id).values(status="succeeded"))
 
@@ -241,7 +241,7 @@ async def test_daily_chapter_limit_counts_only_todays_live_attempts_at_the_same_
     async with _service_session(db_session) as s:
         with pytest.raises(HTTPException) as caught:
             await billing.create_charged_job(
-                s, job=_chapter_job(novel, kind="chapter_regenerate", start_message_id=start), expected_cost=20, now=now
+                s, job=_chapter_job(novel, kind="chapter_regenerate", start_message_id=start), expected_cost=40, now=now
             )
 
     assert caught.value.status_code == 429
@@ -250,7 +250,7 @@ async def test_daily_chapter_limit_counts_only_todays_live_attempts_at_the_same_
         "retryAfterSeconds": seconds_until_kst_midnight(now),
         "window": "novelize",
     }
-    assert await _ledger(db_session, owner.id) == [("novelize_spend", -20), ("novelize_spend", -20)]
+    assert await _ledger(db_session, owner.id) == [("novelize_spend", -40), ("novelize_spend", -40)]
 
 
 async def test_ai_edit_is_outside_the_daily_chapter_limit(
@@ -261,9 +261,9 @@ async def test_ai_edit_is_outside_the_daily_chapter_limit(
     novel = await _make_novel(db_session, owner.id)
 
     async with _service_session(db_session) as s:
-        await billing.create_charged_job(s, job=_ai_edit_job(novel), expected_cost=5, now=datetime.now(UTC))
+        await billing.create_charged_job(s, job=_ai_edit_job(novel), expected_cost=20, now=datetime.now(UTC))
 
-    assert await _ledger(db_session, owner.id) == [("novelize_spend", -5)]
+    assert await _ledger(db_session, owner.id) == [("novelize_spend", -20)]
 
 
 # ── 단일 환불 ───────────────────────────────────────────────────────────────
@@ -272,7 +272,7 @@ async def _charged_job(db_session: AsyncSession, balance: int = 100) -> tuple[Us
     novel = await _make_novel(db_session, owner.id)
     async with _service_session(db_session) as s:
         job = await billing.create_charged_job(
-            s, job=_chapter_job(novel, start_message_id=uuid.uuid4()), expected_cost=20, now=datetime.now(UTC)
+            s, job=_chapter_job(novel, start_message_id=uuid.uuid4()), expected_cost=40, now=datetime.now(UTC)
         )
     return owner, job
 
@@ -287,12 +287,12 @@ async def test_refund_fails_the_job_and_returns_the_charge_once(db_session: Asyn
         second = await billing.refund_job(s, job_id=job.id, failure_code="expired")
         await s.commit()
 
-    assert (first, second) == (20, None)
+    assert (first, second) == (40, None)
     stored = await db_session.get(NovelJob, job.id, populate_existing=True)
     assert stored is not None
     assert (stored.status, stored.failure_code) == ("failed", "llm_error")
     assert stored.refunded_at is not None and stored.finished_at is not None
-    assert await _ledger(db_session, owner.id) == [("novelize_spend", -20), ("novelize_refund", 20)]
+    assert await _ledger(db_session, owner.id) == [("novelize_spend", -40), ("novelize_refund", 40)]
     # 원장 합 = 잔액 = 로트 잔여 합.
     assert await _balance(db_session, owner.id) == 100 == await _lot_sum(db_session, owner.id)
 
@@ -302,7 +302,7 @@ async def test_refund_after_success_does_nothing(db_session: AsyncSession) -> No
     async with _service_session(db_session) as s:
         await billing.transition_job(s, job_id=job.id, expected=("queued",), values={"status": "running"})
         assert (
-            await billing.transition_job(s, job_id=job.id, expected=("running",), values={"status": "succeeded"}) == 20
+            await billing.transition_job(s, job_id=job.id, expected=("running",), values={"status": "succeeded"}) == 40
         )
         await s.commit()
 
@@ -310,14 +310,14 @@ async def test_refund_after_success_does_nothing(db_session: AsyncSession) -> No
         assert await billing.refund_job(s, job_id=job.id, failure_code="expired") is None
         await s.commit()
 
-    assert await _ledger(db_session, owner.id) == [("novelize_spend", -20)]
+    assert await _ledger(db_session, owner.id) == [("novelize_spend", -40)]
 
 
 async def test_success_after_refund_does_nothing(db_session: AsyncSession) -> None:
     _, job = await _charged_job(db_session)
     async with _service_session(db_session) as s:
         await billing.transition_job(s, job_id=job.id, expected=("queued",), values={"status": "running"})
-        assert await billing.refund_job(s, job_id=job.id, failure_code="expired") == 20
+        assert await billing.refund_job(s, job_id=job.id, failure_code="expired") == 40
         assert (
             await billing.transition_job(s, job_id=job.id, expected=("running",), values={"status": "succeeded"})
             is None
@@ -333,17 +333,17 @@ async def test_refund_whose_commit_failed_is_retried_once_by_the_next_caller(db_
     owner, job = await _charged_job(db_session)
 
     async with _service_session(db_session) as s:
-        assert await billing.refund_job(s, job_id=job.id, failure_code="llm_error") == 20
+        assert await billing.refund_job(s, job_id=job.id, failure_code="llm_error") == 40
         await s.rollback()  # 커밋 실패 대신
 
     stored = await db_session.get(NovelJob, job.id, populate_existing=True)
     assert stored is not None and stored.status == "queued"
 
     async with _service_session(db_session) as s:
-        assert await billing.refund_job(s, job_id=job.id, failure_code="expired") == 20
+        assert await billing.refund_job(s, job_id=job.id, failure_code="expired") == 40
         await s.commit()
 
-    assert await _ledger(db_session, owner.id) == [("novelize_spend", -20), ("novelize_refund", 20)]
+    assert await _ledger(db_session, owner.id) == [("novelize_spend", -40), ("novelize_refund", 40)]
 
 
 async def test_refund_of_a_job_erased_with_its_novel_is_harmless(db_session: AsyncSession) -> None:
@@ -356,20 +356,20 @@ async def test_refund_of_a_job_erased_with_its_novel_is_harmless(db_session: Asy
         assert await billing.refund_job(s, job_id=job.id, failure_code="llm_error") is None
         await s.commit()
 
-    assert await _ledger(db_session, owner.id) == [("novelize_spend", -20)]
+    assert await _ledger(db_session, owner.id) == [("novelize_spend", -40)]
 
 
 async def test_refund_active_jobs_before_deleting_a_novel_refunds_once(db_session: AsyncSession) -> None:
     owner, job = await _charged_job(db_session)
 
     async with _service_session(db_session) as s:
-        assert await billing.refund_active_jobs(s, novel_id=job.novel_id, failure_code="internal") == 20
+        assert await billing.refund_active_jobs(s, novel_id=job.novel_id, failure_code="internal") == 40
         assert await billing.refund_active_jobs(s, novel_id=job.novel_id, failure_code="internal") == 0
         await delete_novels(s, [job.novel_id])
         await s.commit()
 
     assert await _job_count(db_session, job.novel_id) == 0
-    assert await _ledger(db_session, owner.id) == [("novelize_spend", -20), ("novelize_refund", 20)]
+    assert await _ledger(db_session, owner.id) == [("novelize_spend", -40), ("novelize_refund", 40)]
     assert await _balance(db_session, owner.id) == 100
 
 
@@ -380,10 +380,10 @@ async def test_refund_before_deleting_a_novel_empties_an_ai_edit_instruction(db_
     edit = _ai_edit_job(novel)
     edit.instruction = "더 쓸쓸하게"
     async with _service_session(db_session) as s:
-        job = await billing.create_charged_job(s, job=edit, expected_cost=5, now=datetime.now(UTC))
+        job = await billing.create_charged_job(s, job=edit, expected_cost=20, now=datetime.now(UTC))
 
     async with _service_session(db_session) as s:
-        assert await billing.refund_active_jobs(s, novel_id=novel.id, failure_code="internal") == 5
+        assert await billing.refund_active_jobs(s, novel_id=novel.id, failure_code="internal") == 20
         await s.commit()
 
     stored = await db_session.get(NovelJob, job.id, populate_existing=True)
@@ -435,7 +435,7 @@ async def test_concurrent_create_for_the_same_novel_waits_on_the_user_and_charge
     try:
         # 앞 요청이 하는 일을 그대로: 사용자 잠금 → 진행 중 작업 INSERT, 아직 커밋 전.
         await first.execute(select(User.id).where(User.id == user_id).with_for_update(key_share=True))
-        first.add(NovelJob(novel_id=novel_id, user_id=user_id, kind="ai_edit", status="queued", charged_amount=5))
+        first.add(NovelJob(novel_id=novel_id, user_id=user_id, kind="ai_edit", status="queued", charged_amount=20))
         await first.flush()
 
         async def second_request() -> object:
@@ -444,7 +444,7 @@ async def test_concurrent_create_for_the_same_novel_waits_on_the_user_and_charge
                 assert novel is not None
                 try:
                     return await billing.create_charged_job(
-                        s, job=_ai_edit_job(novel), expected_cost=5, now=datetime.now(UTC)
+                        s, job=_ai_edit_job(novel), expected_cost=20, now=datetime.now(UTC)
                     )
                 except HTTPException as exc:
                     return exc
@@ -470,7 +470,7 @@ async def test_refund_racing_a_success_loses_and_does_not_refund(
     async with independent_factory() as s:
         novel = await s.get(Novel, novel_id)
         assert novel is not None
-        job = await billing.create_charged_job(s, job=_ai_edit_job(novel), expected_cost=5, now=datetime.now(UTC))
+        job = await billing.create_charged_job(s, job=_ai_edit_job(novel), expected_cost=20, now=datetime.now(UTC))
         await billing.transition_job(s, job_id=job.id, expected=("queued",), values={"status": "running"})
         await s.commit()
 
@@ -478,7 +478,7 @@ async def test_refund_racing_a_success_loses_and_does_not_refund(
     try:
         assert (
             await billing.transition_job(winner, job_id=job.id, expected=("running",), values={"status": "succeeded"})
-            == 5
+            == 20
         )
 
         async def late_refund() -> int | None:
@@ -494,7 +494,7 @@ async def test_refund_racing_a_success_loses_and_does_not_refund(
     finally:
         await winner.close()
 
-    assert await _independent_ledger(independent_factory, user_id) == [("novelize_spend", -5)]
+    assert await _independent_ledger(independent_factory, user_id) == [("novelize_spend", -20)]
 
 
 async def test_two_concurrent_refunds_of_one_job_refund_once(
@@ -506,11 +506,11 @@ async def test_two_concurrent_refunds_of_one_job_refund_once(
     async with independent_factory() as s:
         novel = await s.get(Novel, novel_id)
         assert novel is not None
-        job = await billing.create_charged_job(s, job=_ai_edit_job(novel), expected_cost=5, now=datetime.now(UTC))
+        job = await billing.create_charged_job(s, job=_ai_edit_job(novel), expected_cost=20, now=datetime.now(UTC))
 
     first = independent_factory()
     try:
-        assert await billing.refund_job(first, job_id=job.id, failure_code="llm_error") == 5
+        assert await billing.refund_job(first, job_id=job.id, failure_code="llm_error") == 20
 
         async def second_refund() -> int | None:
             async with independent_factory() as s:
@@ -525,7 +525,7 @@ async def test_two_concurrent_refunds_of_one_job_refund_once(
     finally:
         await first.close()
 
-    assert await _independent_ledger(independent_factory, user_id) == [("novelize_spend", -5), ("novelize_refund", 5)]
+    assert await _independent_ledger(independent_factory, user_id) == [("novelize_spend", -20), ("novelize_refund", 20)]
 
 
 async def test_refund_waits_for_a_withdrawal_holding_the_user_instead_of_deadlocking(
@@ -538,7 +538,7 @@ async def test_refund_waits_for_a_withdrawal_holding_the_user_instead_of_deadloc
     async with independent_factory() as s:
         novel = await s.get(Novel, novel_id)
         assert novel is not None
-        job = await billing.create_charged_job(s, job=_ai_edit_job(novel), expected_cost=5, now=datetime.now(UTC))
+        job = await billing.create_charged_job(s, job=_ai_edit_job(novel), expected_cost=20, now=datetime.now(UTC))
 
     withdrawal = independent_factory()
     try:
@@ -558,7 +558,7 @@ async def test_refund_waits_for_a_withdrawal_holding_the_user_instead_of_deadloc
     finally:
         await withdrawal.close()
 
-    assert await _independent_ledger(independent_factory, user_id) == [("novelize_spend", -5)]
+    assert await _independent_ledger(independent_factory, user_id) == [("novelize_spend", -20)]
 
 
 async def test_novel_deletion_waits_for_an_edit_holding_the_chapter_and_removes_its_new_revision(

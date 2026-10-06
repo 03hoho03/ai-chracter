@@ -1021,7 +1021,7 @@ async def _add_chapter(
 async def _queue_job(
     db_session: AsyncSession, novel_id: uuid.UUID, start: ChatMessage, end: ChatMessage
 ) -> NovelJob:
-    """차감까지 한 진행 대기 장 생성 작업 하나(단가 20). 실행은 띄우지 않는다."""
+    """차감까지 한 진행 대기 장 생성 작업 하나(단가 40). 실행은 띄우지 않는다."""
     from api.novelize.billing import create_charged_job
 
     novel = await db_session.get_one(Novel, novel_id)
@@ -1034,7 +1034,7 @@ async def _queue_job(
         end_message_id=end.id,
         end_message_created_at=end.created_at,
     )
-    return await create_charged_job(db_session, job=job, expected_cost=20, now=datetime.now(UTC))
+    return await create_charged_job(db_session, job=job, expected_cost=40, now=datetime.now(UTC))
 
 
 async def _novel_ledger(db: AsyncSession, user_id: uuid.UUID) -> list[tuple[str, int]]:

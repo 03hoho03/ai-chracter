@@ -229,7 +229,7 @@ async def test_ai_edit_charges_and_queues_a_job_for_the_paragraph_range(
             "paragraphStart": 1,
             "paragraphEnd": 2,
             "instruction": " 더 쓸쓸하게 ",
-            "expectedCost": 5,
+            "expectedCost": 20,
         },
     )
 
@@ -244,7 +244,7 @@ async def test_ai_edit_charges_and_queues_a_job_for_the_paragraph_range(
     job = await db_session.get_one(NovelJob, uuid.UUID(resp.json()["id"]), populate_existing=True)
     assert (job.kind, job.chapter_id, job.status) == ("ai_edit", chapter.id, "queued")
     assert enqueued == [job.id]
-    assert await _novel_ledger(db_session, user_id) == [("novelize_spend", -5)]
+    assert await _novel_ledger(db_session, user_id) == [("novelize_spend", -20)]
 
 
 @pytest.mark.parametrize(
@@ -272,7 +272,7 @@ async def test_rejected_ai_edit_charges_nothing(
         "paragraphStart": 0,
         "paragraphEnd": 2,
         "instruction": "고쳐 줘",
-        "expectedCost": 5,
+        "expectedCost": 20,
     }
     if change == "stale_base":
         db_session.add(NovelChapterRevision(chapter_id=chapter.id, revision_no=2, body="딴 탭", source="manual_edit"))
@@ -307,7 +307,7 @@ async def _finished_ai_edit(
         paragraph_end=1,
         instruction="더 쓸쓸하게",
         result_text="첫 문단이다.\n\n쓸쓸한 둘째 문단.\n\n셋째 문단이다.",
-        charged_amount=5,
+        charged_amount=20,
     )
     db_session.add(job)
     await db_session.commit()
@@ -522,7 +522,7 @@ async def test_applying_or_dismissing_an_ai_edit_erases_its_instruction_and_prev
     assert resp.status_code in (201, 204), resp.text
     assert await _job_texts(db_session, job.id) == (None, None)
     stored = await db_session.get_one(NovelJob, job.id, populate_existing=True)
-    assert (stored.status, stored.charged_amount) == ("succeeded", 5)
+    assert (stored.status, stored.charged_amount) == ("succeeded", 20)
     assert polled.status_code == 200, polled.text
     preview = polled.json()["aiEdit"]
     assert (preview["instruction"], preview["resultText"]) == (None, None)
