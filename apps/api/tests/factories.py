@@ -966,6 +966,19 @@ async def _allow_chat_premium(db_session: AsyncSession, monkeypatch: pytest.Monk
     await db_session.commit()
 
 
+async def _allow_novel_premium(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, user_id: uuid.UUID
+) -> None:
+    """소설 상위 모델을 켜고 `user_id` 를 명단에 더한 뒤 허용 행을 넣고 커밋한다. 소설화 자체 허용은 따로 있어야 한다
+    (`_allow_novelize`·`_novel_setup`)."""
+    monkeypatch.setattr(settings, "novelize_premium_models_enabled", True)
+    monkeypatch.setattr(
+        settings, "novelize_premium_model_allowlist", [*settings.novelize_premium_model_allowlist, user_id]
+    )
+    await _grant_feature(db_session, user_id, "novelize_premium_models")
+    await db_session.commit()
+
+
 async def _novel_setup(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,

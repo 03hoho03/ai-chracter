@@ -120,6 +120,8 @@ async def build_chapter_input(db: AsyncSession, job: NovelJob, novel: Novel) -> 
             raise SourceChangedError(f"job={job.id} 재생성할 장의 원문이 바뀌었다")
 
     previous_excerpt = await _previous_excerpt(db, novel.id, before_ordinal=chapter.ordinal if chapter else None)
+    # 작업이 상위 모델이어도 기본 모델(Gemini) 세트를 읽는다 — 모델별 세트에는 소설 장 채널이 없고, 장 지시·등급 규칙은
+    # 모델과 무관하게 이 세트의 것이다. 바뀌는 것은 생성 모델뿐이다(`runner.py`).
     prompt_set, sections = await load_active_prompt_set(db, lane=novel.content_type)
     is_story = novel.content_type == "story"
     turns = group_turns(segment)

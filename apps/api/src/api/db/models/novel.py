@@ -188,6 +188,10 @@ class NovelJob(Base):
     result_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     # 사용자가 AI 수정 미리보기를 적용하지 않고 버린 시각. 버린 미리보기는 상세의 미적용 목록에 다시 나오지 않는다.
     dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 장 생성·재생성에 쓴 글쓰기 모델의 레지스트리 id(`llm/chat_models.py`). 과금할 때 정해 적고, 실행은 이 값을 그대로
+    # 쓴다 — 그 사이 허용이 회수돼도 값을 낸 모델로 생성한다. NULL 은 이 칸이 생기기 전의 장 작업(전부 Gemini)과 모델을
+    # 고르지 않는 AI 수정이다. 값 제약을 두지 않는다 — 레지스트리에서 내린 모델의 옛 값이 남아도 행이 살아 있어야 한다.
+    model: Mapped[str | None] = mapped_column(Text, nullable=True)
     charged_amount: Mapped[int] = mapped_column(Integer, nullable=False)
     refunded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     failure_code: Mapped[NovelJobFailureCode | None] = mapped_column(Text, nullable=True)

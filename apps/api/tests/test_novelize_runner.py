@@ -903,6 +903,7 @@ async def test_poll_reports_a_finished_chapter_job(
         "revisionId": str(stored.result_revision_id),
         "aiEdit": None,
         "createdAt": body["createdAt"],
+        "model": "gemini",
     }
 
 

@@ -15,6 +15,7 @@ from api.db.models.novel import (
     NovelJobStatus,
     NovelRevisionSource,
 )
+from api.llm.chat_models import CHAT_MODELS_BY_ID, DEFAULT_CHAT_MODEL, ChatModelId, novel_chapter_cost
 from api.persona.schemas import PERSONA_NAME_MAX_LENGTH
 
 # 설정 노트·직접 수정 본문·AI 수정 지시문의 길이 상한. 상세 응답의 `limits` 로 내려 보내 FE 가 사본을 들지 않게 한다.
@@ -63,6 +64,10 @@ class NovelJobResponse(CamelModel):
     revision_id: uuid.UUID | None
     ai_edit: NovelAiEditPreview | None
     created_at: datetime
+    # 장 생성·재생성에 쓴(쓰는) 글쓰기 모델의 레지스트리 id — 모델 칸이 생기기 전의 장 작업은 `"gemini"` 다. AI 수정은
+    # 모델을 고르지 않아 null 이다. 레지스트리에서 내린 모델의 옛 값일 수도 있어 문자열이다. 기본값은 이 필드를 모르는
+    # 생성 타입·픽스처와의 호환용이고, 응답에는 항상 실린다.
+    model: str | None = None
 
 
 # ── 소설 ───────────────────────────────────────────────────────────────────
@@ -72,6 +77,28 @@ class NovelPrices(CamelModel):
     chapter_generate: int
     chapter_regenerate: int
     ai_edit: int
+
+
+class NovelChapterModel(CamelModel):
+    """이 계정이 장 생성·재생성에 고를 수 있는 모델 하나와 그 모델의 장 가격. 요청의 `model` 과 `expectedCost` 로 싣는다."""
+
+    id: ChatModelId
+    name: str
+    chapter_generate: int
+    chapter_regenerate: int
+
+
+def chapter_model_option(model: ChatModelId) -> NovelChapterModel:
+    return NovelChapterModel(
+        id=model,
+        name=CHAT_MODELS_BY_ID[model].name,
+        chapter_generate=novel_chapter_cost(model, regenerate=False),
+        chapter_regenerate=novel_chapter_cost(model, regenerate=True),
+    )
+
+
+def _default_chapter_models() -> list[NovelChapterModel]:
+    return [chapter_model_option(DEFAULT_CHAT_MODEL)]
 
 
 class NovelLimits(CamelModel):
@@ -137,6 +164,13 @@ class NovelDetailResponse(CamelModel):
     limits: NovelLimits
     created_at: datetime
     updated_at: datetime
+    # 장 생성·재생성 확인에서 고를 수 있는 모델과 그 가격. 기본 모델(맨 앞)은 늘 있고, 상위 모델은 소설 상위 모델 허용이
+    # 있을 때만 실린다. `prices` 의 장 가격은 기본 모델 값 그대로다(옛 화면이 읽는 칸). 아래 둘의 기본값은 이 필드를 모르는
+    # 생성 타입·픽스처와의 호환용이고, 응답에는 항상 실린다.
+    chapter_models: list[NovelChapterModel] = Field(default_factory=_default_chapter_models)
+    # 확인 화면의 기본 선택 — 이 소설에서 가장 최근에 성공한 장 작업의 모델이다. 그런 작업이 없거나 그 모델을 지금 쓸 수
+    # 없으면(허용 회수·레지스트리에서 내림) 기본 모델이다.
+    last_chapter_model: ChatModelId = Field(default_factory=lambda: DEFAULT_CHAT_MODEL)
 
 
 class NovelListItem(CamelModel):
@@ -195,16 +229,23 @@ class NovelChapterProposalResponse(CamelModel):
     candidates: list[NovelChapterCandidate]
     # 모델 제안. 호출이 실패하면 null 이다 — 후보는 그대로라 사용자가 직접 고를 수 있다.
     suggestion: NovelChapterSuggestion | None
+    # 기본 모델의 장 생성 가격. 모델별 가격은 `chapter_models` 에 있다(상세 응답의 같은 이름 칸과 같은 목록).
     cost: int
+    chapter_models: list[NovelChapterModel] = Field(default_factory=_default_chapter_models)
 
 
 class NovelChapterCreateRequest(CamelModel):
     end_message_id: uuid.UUID
     expected_cost: int
+    # 이 장을 쓸 모델. 보내지 않으면 기본 모델이다(이 필드를 모르는 옛 화면). 상위 모델은 소설 상위 모델 허용이 있어야
+    # 하고(없으면 403 `NOVEL_MODEL_NOT_ALLOWED`), `expected_cost` 는 그 모델의 가격이어야 한다.
+    model: ChatModelId = DEFAULT_CHAT_MODEL
 
 
 class NovelChapterRegenerateRequest(CamelModel):
     expected_cost: int
+    # 장 생성 요청의 같은 칸과 같다. 처음 만든 모델과 달라도 된다.
+    model: ChatModelId = DEFAULT_CHAT_MODEL
 
 
 # ── 장·개정 ─────────────────────────────────────────────────────────────────
