@@ -14,6 +14,7 @@ DSN이 비어 `init()`이 안 불린 환경(dev·테스트)에서는 활성 클�
 from typing import Any
 
 import sentry_sdk
+from sentry_sdk.integrations.anthropic import AnthropicIntegration
 from sentry_sdk.integrations.google_genai import GoogleGenAIIntegration
 from sentry_sdk.types import Event, Hint
 
@@ -55,12 +56,12 @@ def build_sentry_options() -> dict[str, Any]:
       `_filter_headers()`로 거르는데, 그 차단 목록(`integrations/_wsgi_common.py`의
       `SENSITIVE_HEADERS`)에 User-Agent가 없고, `request.url`은 아예 게이트 없이 항상
       채워진다(sentry-sdk 2.69.1 소스로 확인).
-    - `disabled_integrations=[GoogleGenAIIntegration]`: `google-genai`가 의존성에 있어 이 통합이
-      auto-enabling 이고 `include_prompts` 기본값이 True라 프롬프트가 span에 실린다.
+    - `disabled_integrations=[GoogleGenAIIntegration, AnthropicIntegration]`: `google-genai`·`anthropic`이
+      의존성에 있어 두 통합이 auto-enabling 이고 `include_prompts` 기본값이 True라 프롬프트가 span에 실린다.
       지금은 트레이싱이 꺼져 있어(`traces_sample_rate=0`) 전송되지 않지만, 그 안전은 "트레이싱을
       켜지 않는다"는 별도 결정에 기대는 간접 보증이라 명시적으로도 막는다.
     - `traces_sample_rate=0`: Bugsink가 트레이싱을 지원하지 않아 어차피 권장 설정이고, 위
-      GenAI 통합 방어의 두 번째 축이다.
+      LLM 통합 방어의 두 번째 축이다.
       ⚠️ 트레이싱을 켜려면(`traces_sample_rate>0`) **`before_send_transaction`을 먼저 만들어야
       한다** — `before_send`는 트랜잭션을 보지 않는다(이 저장소는 아직 트랜잭션을 만들지 않아
       지금은 걸지 않는다).
@@ -71,7 +72,7 @@ def build_sentry_options() -> dict[str, Any]:
         "max_request_body_size": "never",
         "include_local_variables": False,
         "send_default_pii": False,
-        "disabled_integrations": [GoogleGenAIIntegration],
+        "disabled_integrations": [GoogleGenAIIntegration, AnthropicIntegration],
         "traces_sample_rate": 0,
         "before_send": _strip_query_string,
     }
@@ -79,15 +80,15 @@ def build_sentry_options() -> dict[str, Any]:
 
 def capture_dependency_failure(exc: BaseException | None = None, *, dependency: str) -> None:
     """흡수(사용자 응답 유지 + `logger.warning`)는 그대로 두고
-    Bugsink 이벤트로도 승격한다. `dependency` 태그(`clover`/`db`/`email`/`gemini`/
+    Bugsink 이벤트로도 승격한다. `dependency` 태그(`bedrock`/`bedrock_rate_limit`/`clover`/`db`/`email`/`gemini`/
     `gemini_rate_limit`/`google_oauth`/`kakao_oauth`/`local_image`/`memory_fold`/`prompt_render`/`redis`/`reference_image`/`s3`)로만 Bugsink에서 묶어 본다 —
     **태그·컨텍스트에는 이 리터럴 문자열 외에 아무것도 싣지 않는다.** 사용자 입력·프롬프트·
     이메일 주소는 호출부가 절대 넘기지 말 것(PII 금지).
 
     이 목록은 호출부 실사용과 대조해 다시 썼다. ⚠️ 리터럴
-    `dependency="..."`만 grep하면 **`gemini`/`gemini_rate_limit`/`prompt_render` 셋을 놓친다** —
-    그 셋은 `chat/router.py`의 `_llm_dependency_tag(exc)`가 계산해서 넘기므로 호출부 9곳에
-    문자열로 나타나지 않는다.
+    `dependency="..."`만 grep하면 **`gemini`/`gemini_rate_limit`/`bedrock`/`bedrock_rate_limit`/`prompt_render`를
+    놓친다** — 그것들은 `chat/router.py`의 `_llm_dependency_tag(exc)`가 계산해서 넘기므로 호출부 9곳에
+    문자열로 나타나지 않는다(LLM 공급자 이름은 `llm/client.py` 의 `dependency_tag` 가 예외의 `provider` 로 만든다).
 
     `exc`를 생략하면 `sentry_sdk.capture_exception`이 `sys.exc_info()`를 쓴다 — 호출부의
     `except` 절이 예외를 `as exc`로 바인딩하지 않은 경우(`prompt_set_cache.py`·

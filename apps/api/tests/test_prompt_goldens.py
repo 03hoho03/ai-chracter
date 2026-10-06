@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.prompt_builder import PromptLane, load_active_prompt_set
 from api.db.models.prompt import PromptSection, PromptSet
+from api.llm.client import SegmentedPrompt
 from dump_prompt_goldens import GOLDEN_CASES, GOLDEN_DIR
 
 
@@ -54,3 +55,33 @@ async def test_prompt_golden_matches(
     prompt_set, sections = active_prompt_set
     expected = (GOLDEN_DIR / filename).read_text(encoding="utf-8")
     assert build(prompt_set, sections) == expected
+
+
+_GENERATION_CASES = [case for case in GOLDEN_CASES if case[0].startswith("generation_")]
+
+
+@pytest.mark.parametrize(
+    ("filename", "active_prompt_set", "build"),
+    _GENERATION_CASES,
+    indirect=["active_prompt_set"],
+    ids=[filename for filename, _, _ in _GENERATION_CASES],
+)
+async def test_generation_prompt_cache_blocks_join_to_the_golden(
+    filename: str,
+    build: Callable[[PromptSet, list[PromptSection]], str],
+    active_prompt_set: tuple[PromptSet, list[PromptSection]],
+) -> None:
+    """Claude 로 갈 때만 쓰는 캐시 블록이 시드 문안에서도 Gemini 로 가는 골든 문자열을 그대로 나눈 것인지 본다. 대화
+    기록이 있는 골든(시드 문안의 기록 섹션 제목이 든 것)만 셋으로 나뉘고, 없는 골든은 나뉘지 않는다."""
+    prompt_set, sections = active_prompt_set
+    expected = (GOLDEN_DIR / filename).read_text(encoding="utf-8")
+    prompt = build(prompt_set, sections)
+
+    if "[대화 기록]" not in expected:
+        assert type(prompt) is str
+        return
+    assert isinstance(prompt, SegmentedPrompt)
+    assert "".join(prompt.segments) == expected
+    assert len(prompt.segments) == 3 and all(prompt.segments)
+    # 셋째 블록(히스토리 뒤 섹션 + 이번 입력)은 섹션 구분자로 시작한다 — 히스토리 끝에서 정확히 잘렸다는 뜻이다.
+    assert prompt.segments[2].startswith("\n\n")

@@ -34,7 +34,15 @@ from api.db.models import (
     UserFeatureGrant,
 )
 from api.session.suspension import SUSPENDED_USER_KEY_PREFIX, is_user_suspended
-from factories import _count_queries, _create_admin, _grant_novelize, _login_as, _login_as_admin, _make_user
+from factories import (
+    _count_queries,
+    _create_admin,
+    _grant_feature,
+    _grant_novelize,
+    _login_as,
+    _login_as_admin,
+    _make_user,
+)
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -217,6 +225,18 @@ _ADMIN_SESSION_GUARD_CASES = [
         f"/admin/users/{uuid.uuid4()}/novelize-grant",
         {"granted": True, "adminComment": "운영 시험"},
         id="novelize-grant",
+    ),
+    pytest.param(
+        "post",
+        f"/admin/users/{uuid.uuid4()}/chat-premium-models-grant",
+        {"granted": True, "adminComment": "운영 시험"},
+        id="chat-premium-models-grant",
+    ),
+    pytest.param(
+        "post",
+        f"/admin/users/{uuid.uuid4()}/novelize-premium-models-grant",
+        {"granted": True, "adminComment": "운영 시험"},
+        id="novelize-premium-models-grant",
     ),
 ]
 
@@ -1940,3 +1960,146 @@ async def test_user_detail_exposes_novelize_granted_at(
     plain_detail = (await db_client.get(f"/admin/users/{plain_user.id}")).json()
     assert datetime.fromisoformat(granted_detail["novelizeGrantedAt"]) == grant.granted_at
     assert plain_detail["novelizeGrantedAt"] is None
+
+
+# ---- 상위 모델 허용(채팅·소설) ---------------------------------------------------
+#
+# 소설화 허용과 같은 공용 처리라 소설화 블록의 갈래(켜기·끄기·다시 켜기·명단 밖·공백·탈퇴)를 기능마다 한 번씩 본다. 기능을
+# 바꿔 끼우는 실수(채팅 경로가 소설 행을 만드는 것)가 드러나도록 행의 feature·감사 로그 종류·명단 설정을 경로마다 따로 단언한다.
+
+_PREMIUM_GRANT_CASES = [
+    pytest.param(
+        "chat-premium-models-grant",
+        "chat_premium_models",
+        "chat_premium_model_allowlist",
+        "user-chat-premium-models",
+        "CHAT_PREMIUM_MODELS_GRANT_NOT_ALLOWLISTED",
+        id="chat",
+    ),
+    pytest.param(
+        "novelize-premium-models-grant",
+        "novelize_premium_models",
+        "novelize_premium_model_allowlist",
+        "user-novelize-premium-models",
+        "NOVELIZE_PREMIUM_MODELS_GRANT_NOT_ALLOWLISTED",
+        id="novel",
+    ),
+]
+
+
+async def _premium_grant(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, user_id: uuid.UUID, route: str, granted: bool, comment: str
+) -> httpx.Response:
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+    return await db_client.post(
+        f"/admin/users/{user_id}/{route}", json={"granted": granted, "adminComment": comment}
+    )
+
+
+@pytest.mark.parametrize(("route", "feature", "allowlist", "action", "code"), _PREMIUM_GRANT_CASES)
+async def test_premium_models_grant_on_and_off(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    route: str,
+    feature: str,
+    allowlist: str,
+    action: str,
+    code: str,
+) -> None:
+    """스위치가 꺼져 있어도 미리 허용할 수 있다. 다시 켜면 첫 행을 그대로 두고 로그만 더하고, 끄면 명단 밖이어도 지운다.
+    다른 기능의 허용 행은 건드리지 않는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _grant_novelize(db_session, user.id)
+    await db_session.commit()
+    monkeypatch.setattr(settings, allowlist, [user.id])
+
+    assert (await _premium_grant(db_client, db_session, user.id, route, True, "켜기")).status_code == 204
+    first = [(g.feature, g.id) for g in await _novelize_grants(db_session, user.id) if g.feature == feature]
+    assert len(first) == 1
+    assert (await _premium_grant(db_client, db_session, user.id, route, True, "다시")).status_code == 204
+    assert [(g.feature, g.id) for g in await _novelize_grants(db_session, user.id) if g.feature == feature] == first
+
+    monkeypatch.setattr(settings, allowlist, [])
+    assert (await _premium_grant(db_client, db_session, user.id, route, False, "끄기")).status_code == 204
+
+    assert [g.feature for g in await _novelize_grants(db_session, user.id)] == ["novelize"]
+    # 한 테스트 안의 `created_at` 은 같은 값이라(트랜잭션 시작 시각) 순서가 아니라 내용으로 비교한다.
+    assert sorted(await _novelize_logs(db_session, user.id)) == sorted(
+        [(f"{action}-on", "켜기"), (f"{action}-on", "다시"), (f"{action}-off", "끄기")]
+    )
+
+
+@pytest.mark.parametrize(("route", "feature", "allowlist", "action", "code"), _PREMIUM_GRANT_CASES)
+async def test_premium_models_grant_outside_its_own_allowlist_returns_422(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    route: str,
+    feature: str,
+    allowlist: str,
+    action: str,
+    code: str,
+) -> None:
+    """명단은 기능마다 따로다 — 다른 두 명단에 있어도 이 기능의 명단에 없으면 거절이다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    for name in ("novelize_grant_allowlist", "chat_premium_model_allowlist", "novelize_premium_model_allowlist"):
+        monkeypatch.setattr(settings, name, [] if name == allowlist else [user.id])
+
+    resp = await _premium_grant(db_client, db_session, user.id, route, True, "허용")
+
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == {"code": code}
+    assert await _novelize_grants(db_session, user.id) == []
+    assert await _novelize_logs(db_session, user.id) == []
+
+
+@pytest.mark.parametrize(("route", "feature", "allowlist", "action", "code"), _PREMIUM_GRANT_CASES)
+async def test_premium_models_grant_needs_a_comment_and_a_live_user(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    route: str,
+    feature: str,
+    allowlist: str,
+    action: str,
+    code: str,
+) -> None:
+    live = _make_user()
+    gone = _make_user(deleted_at=datetime.now(UTC))
+    db_session.add_all([live, gone])
+    await db_session.commit()
+    monkeypatch.setattr(settings, allowlist, [live.id, gone.id])
+
+    blank = await _premium_grant(db_client, db_session, live.id, route, True, "   ")
+    deleted = await _premium_grant(db_client, db_session, gone.id, route, True, "허용")
+
+    assert blank.status_code == 422
+    assert deleted.status_code == 404
+    assert await _novelize_grants(db_session, live.id) == []
+
+
+async def test_user_detail_exposes_premium_models_granted_at(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    chat_grant = await _grant_feature(db_session, user.id, "chat_premium_models")
+    await db_session.commit()
+    await db_session.refresh(chat_grant)
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    detail = (await db_client.get(f"/admin/users/{user.id}")).json()
+    assert datetime.fromisoformat(detail["chatPremiumModelsGrantedAt"]) == chat_grant.granted_at
+    assert detail["novelizePremiumModelsGrantedAt"] is None
+    assert detail["novelizeGrantedAt"] is None

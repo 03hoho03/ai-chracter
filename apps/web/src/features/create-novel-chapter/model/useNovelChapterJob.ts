@@ -11,7 +11,10 @@ import {
   toNovelActionError,
   toNovelJobFailureMessage,
   useNovelJobQuery,
+  initialChapterModelId,
   type NovelAction,
+  type NovelChapterModel,
+  type NovelChapterModelId,
   type NovelChapterSummary,
   type NovelDetailResponse,
   type NovelJobResponse,
@@ -25,13 +28,19 @@ import { ProtagonistNameModal } from "../ui/ProtagonistNameModal";
 
 import { toRegenerateConfirmDescription } from "./regenerateConfirm";
 
-/** 금액 확인. 이 기능 밖의 확인 모달을 호출부가 넣어 준다(기능끼리 서로 가져다 쓰지 않는다). */
-export type ConfirmNovelSpend = (props: {
+/** 장 다시 만들기의 금액 확인. 이 기능 밖의 확인 모달을 호출부가 넣어 준다(기능끼리 서로 가져다 쓰지 않는다).
+ * 소설 상위 모델 허용이 있으면 모달이 모델도 고르게 하므로, 확정하면 고른 모델과 이용자가 본 금액을 돌려준다.
+ * 그만두면 `null` 이다. */
+export type ConfirmChapterSpend = (props: {
   title: string;
   description: string;
-  cost: number;
   confirmLabel: string;
-}) => Promise<boolean>;
+  kind: "generate" | "regenerate";
+  models: NovelChapterModel[];
+  initialModelId: NovelChapterModelId;
+  /** 모델 목록이 없는 서버일 때의 금액 — 이 기능 전부터 서버가 주던 기본 모델 가격이다. */
+  fallbackCost: number;
+}) => Promise<{ model: NovelChapterModelId; cost: number } | null>;
 
 type ChapterJobKind = "chapter_generate" | "chapter_regenerate";
 
@@ -47,7 +56,7 @@ export type ChapterJobNotice =
 
 type UseNovelChapterJobOptions = {
   novel: NovelDetailResponse;
-  confirmSpend: ConfirmNovelSpend;
+  confirmSpend: ConfirmChapterSpend;
   /** 작업이 성공해 그 장이 상세에 실린 뒤 부른다 — 화면이 그 장으로 옮기고 제목에 포커스를 둔다.
    * `isRegenerated` 는 있던 장을 다시 만들었는가다(그 장의 본문이 통째로 바뀌었다). */
   onChapterReady: (chapter: NovelChapterSummary, chapters: NovelChapterSummary[], isRegenerated: boolean) => void;
@@ -209,11 +218,20 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
       }
       if (hasActiveJobNow()) return;
       const chapterOrdinal = Math.max(0, ...novel.chapters.map((chapter) => chapter.ordinal)) + 1;
-      const endMessageId = await ChapterBoundaryModal.call({ proposal, chapterOrdinal });
-      if (endMessageId === null || !isMountedRef.current) return;
+      const choice = await ChapterBoundaryModal.call({
+        proposal,
+        chapterOrdinal,
+        lastChapterModel: novel.lastChapterModel,
+      });
+      if (choice === null || !isMountedRef.current) return;
       action = "generate";
       const started = await requestJob(() =>
-        createMutation.mutateAsync({ novelId: novel.id, endMessageId, expectedCost: proposal.cost }),
+        createMutation.mutateAsync({
+          novelId: novel.id,
+          endMessageId: choice.endMessageId,
+          expectedCost: choice.cost,
+          model: choice.model,
+        }),
       );
       if (started) track(started, "chapter_generate");
     } catch (error) {
@@ -229,18 +247,26 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     setPreparing("regenerate");
     try {
       if (!(await ensureProtagonistName()) || !isMountedRef.current || hasActiveJobNow()) return;
-      const cost = novel.prices.chapterRegenerate;
-      const isConfirmed = await confirmSpend({
+      const models = novel.chapterModels ?? [];
+      const choice = await confirmSpend({
         title: `${chapter.ordinal}장을 다시 만들까요?`,
         description: toRegenerateConfirmDescription(
           novel.pendingAiEdits.some((edit) => edit.chapterId === chapter.id),
         ),
-        cost,
         confirmLabel: "다시 만들기",
+        kind: "regenerate",
+        models,
+        initialModelId: initialChapterModelId(models, novel.lastChapterModel),
+        fallbackCost: novel.prices.chapterRegenerate,
       });
-      if (!isConfirmed || !isMountedRef.current) return;
+      if (choice === null || !isMountedRef.current) return;
       const started = await requestJob(() =>
-        regenerateMutation.mutateAsync({ novelId: novel.id, chapterId: chapter.id, expectedCost: cost }),
+        regenerateMutation.mutateAsync({
+          novelId: novel.id,
+          chapterId: chapter.id,
+          expectedCost: choice.cost,
+          model: choice.model,
+        }),
       );
       if (started) track(started, "chapter_regenerate");
     } catch (error) {

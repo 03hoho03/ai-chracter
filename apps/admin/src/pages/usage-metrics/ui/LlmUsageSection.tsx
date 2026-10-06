@@ -157,7 +157,7 @@ function UsageTable({ rows, showDay }: UsageTableProps) {
       <DenseTable surface="card">
         <Table>
           <caption className="sr-only">
-            {showDay ? "일자(KST)" : "기간 합계"} 호출 위치·모델별 LLM 호출 수, 토큰, 캐시 적중률, 판정 비율, 추정 원가.
+            {showDay ? "일자(KST)" : "기간 합계"} 호출 위치·모델별 LLM 호출 수, 토큰(캐시 읽기·쓰기 포함), 캐시 적중률, 판정 비율, 추정 원가.
           </caption>
           <TableHeader>
             <TableRow>
@@ -169,7 +169,8 @@ function UsageTable({ rows, showDay }: UsageTableProps) {
               <TableHead className={HEAD_CELL_CLASS}>캐시 적중</TableHead>
               <TableHead className={HEAD_CELL_CLASS}>추정 원가</TableHead>
               <TableHead className={HEAD_CELL_CLASS}>입력</TableHead>
-              <TableHead className={HEAD_CELL_CLASS}>캐시</TableHead>
+              <TableHead className={HEAD_CELL_CLASS}>캐시 읽기</TableHead>
+              <TableHead className={HEAD_CELL_CLASS}>캐시 쓰기</TableHead>
               <TableHead className={HEAD_CELL_CLASS}>출력</TableHead>
               <TableHead className={HEAD_CELL_CLASS}>사고</TableHead>
               <TableHead className={HEAD_CELL_CLASS}>합계</TableHead>
@@ -199,6 +200,7 @@ function UsageTable({ rows, showDay }: UsageTableProps) {
                 </TableCell>
                 <TableCell className={CELL_CLASS}>{formatCount(row.inputTokens)}</TableCell>
                 <TableCell className={CELL_CLASS}>{formatCount(row.cachedTokens)}</TableCell>
+                <TableCell className={CELL_CLASS}>{formatCount(row.cacheWriteTokens)}</TableCell>
                 <TableCell className={CELL_CLASS}>{formatCount(row.outputTokens)}</TableCell>
                 <TableCell className={CELL_CLASS}>{formatCount(row.thoughtsTokens)}</TableCell>
                 <TableCell className={CELL_CLASS}>{formatCount(row.totalTokens)}</TableCell>
@@ -233,7 +235,12 @@ function Definitions({ data }: { data: AdminLlmUsageResponse }) {
           “could not be parsed” 이벤트로 봅니다.
         </dd>
         <dt className="font-medium text-foreground">캐시 적중</dt>
-        <dd>캐시 ÷ 보고된 입력 토큰. 모델이 보고한 적중이며 청구 할인으로 확인된 값은 아닙니다.</dd>
+        <dd>캐시 읽기 ÷ 보고된 입력 토큰. 모델이 보고한 적중이며 청구 할인으로 확인된 값은 아닙니다.</dd>
+        <dt className="font-medium text-foreground">캐시 쓰기</dt>
+        <dd>
+          캐시에 새로 올린 입력 토큰. 입력 열에 포함되지만 적중이 아니라 입력 단가보다 비싼 캐시 쓰기 단가로 셉니다. Claude
+          모델만 보고하고 Gemini 는 늘 0입니다.
+        </dd>
         <dt className="font-medium text-foreground">입력 미보고</dt>
         <dd>
           입력 토큰 없이 응답한 호출 수(이미지가 실린 호출). 입력 열은 이 호출의 입력을 합계 − 출력 − 사고로
@@ -247,8 +254,8 @@ function Definitions({ data }: { data: AdminLlmUsageResponse }) {
           <ul className="mt-1 flex flex-col gap-0.5 tabular-nums">
             {data.prices.map((price) => (
               <li key={price.model}>
-                {price.model} — 입력 {price.inputUsdPerMillion} · 캐시 {price.cachedInputUsdPerMillion} · 출력{" "}
-                {price.outputUsdPerMillion}
+                {price.model} — 입력 {price.inputUsdPerMillion} · 캐시 읽기 {price.cachedInputUsdPerMillion} · 캐시
+                쓰기 {price.cacheWriteUsdPerMillion} · 출력 {price.outputUsdPerMillion}
               </li>
             ))}
           </ul>

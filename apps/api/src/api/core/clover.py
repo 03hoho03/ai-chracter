@@ -38,6 +38,15 @@ ATTENDANCE_GRANT_AMOUNT = 100
 NOVELIZE_CHAPTER_GENERATE_COST = 40
 NOVELIZE_CHAPTER_REGENERATE_COST = 40
 NOVELIZE_AI_EDIT_COST = 20
+# 상위 모델(Bedrock 의 Claude)로 쓰는 채팅 턴·소설 장 한 번의 클로버. 위 Gemini 값과 짝이고 모델 레지스트리
+# (`llm/chat_models.py`)가 호출 때마다 여기서 읽는다. **원가 최악 기준의 임시값이다** — 채팅 턴은 조감독 작품 긴 방의
+# 캐시 미적중 턴 실측 원가(Sonnet 약 $0.08)를 1달러 1,400원·1클로버 3원으로 환산한 값보다 높게 잡았고 Opus 는 단가 비율로
+# 올렸다. 장은 원가를 재지 않았고 Gemini 장 40 에 턴 가격 비율을 곱해 어림했다. 상위 모델은 꺼진 채 배포되므로 켜기 전에
+# 실측으로 다시 정한다. 장 재생성은 같은 호출이라 생성과 같은 값 하나만 둔다.
+CHAT_TURN_COST_SONNET = 40
+CHAT_TURN_COST_OPUS = 65
+NOVELIZE_CHAPTER_COST_SONNET = 160
+NOVELIZE_CHAPTER_COST_OPUS = 260
 
 # `db/models/clover.py`의 `kind` 컬럼 주석과 같은 목록이다. 컬럼은 Text라 DB가 값을 막지
 # 않으므로(마이그레이션 없이 넓히기 위해서다) 이 `Literal`이 유일한 강제 지점이다.

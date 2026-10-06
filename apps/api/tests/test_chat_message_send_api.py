@@ -1270,3 +1270,22 @@ async def test_send_message_dumps_prompt_when_configured(
     # 지시문이 실렸는지 모르면 회차를 나중에 설명할 수 없다.
     assert record["systemInstruction"] == _read_golden_prompt("system_instruction_character.txt")
     assert record["prompt"] == fake.received_prompt
+
+
+def test_prompt_dump_names_the_chat_model_and_its_actual_id(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """덤프로 회차를 재현하려면 그 턴이 실제로 어느 모델로 갔는지가 남아야 한다. 시드는 Gemini 만 받는 설정이라 다른
+    모델의 줄에 남기면 재현 조건을 잘못 적은 것이 된다."""
+    dump_path = tmp_path / "prompts.jsonl"
+    monkeypatch.setattr(settings, "prompt_dump_path", str(dump_path))
+    monkeypatch.setattr(settings, "gemini_seed", 42)
+    monkeypatch.setattr(settings, "gemini_model_name", "gemini-x")
+    monkeypatch.setattr(settings, "bedrock_sonnet_model_id", "sonnet-actual")
+
+    for model in ("gemini", "sonnet"):
+        chat_router._dump_prompt(room_id=None, model=model, turn=1, prompt="p", system_instruction="s")
+
+    records = [json.loads(line) for line in dump_path.read_text(encoding="utf-8").splitlines()]
+    assert [(r["chatModel"], r["model"], r["seed"]) for r in records] == [
+        ("gemini", "gemini-x", 42),
+        ("sonnet", "sonnet-actual", None),
+    ]

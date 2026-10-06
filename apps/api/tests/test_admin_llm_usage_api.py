@@ -155,6 +155,7 @@ async def test_llm_usage_aggregates_rows_ratios_and_cost(
         "inputUsdPerMillion": 0.30,
         "cachedInputUsdPerMillion": 0.03,
         "outputUsdPerMillion": 2.50,
+        "cacheWriteUsdPerMillion": 0.0,
     }
 
 
@@ -194,3 +195,35 @@ async def test_llm_usage_judgment_ratio_covers_every_judgment_kind(
     for call_site, (model, ratio) in judgments.items():
         assert _row(rows, call_site, model, DAY0)["judgmentRatio"] == pytest.approx(ratio)
     assert _row(rows, "chat_generate", day=DAY0)["judgmentRatio"] is None
+
+
+async def test_llm_usage_prices_claude_cache_writes_separately(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Claude 는 캐시 쓰기가 정가의 1.25배라 입력 전체를 정가로 치면 원가가 낮게 나온다. 입력 열은 캐시 읽기·쓰기를
+    포함한 합으로 기록된다(Gemini 와 같은 뜻) — 정가로 치는 몫은 그 둘을 뺀 나머지다."""
+    sonnet = "global.anthropic.claude-sonnet-4-6"
+    await _put(
+        DAY0, "chat_generate", sonnet,
+        calls=2, prompt=1_000_000, cached=600_000, cache_write=300_000, candidates=10_000, total=1_010_000,
+    )  # fmt: skip
+
+    resp = await _admin_get(db_client, db_session, _url(DAY0, DAY0))
+
+    assert resp.status_code == 200
+    body = resp.json()
+    row = _row(body["rows"], "chat_generate", sonnet, DAY0)
+    assert row["cacheWriteTokens"] == 300_000
+    assert row["inputTokens"] == 1_000_000
+    assert row["cacheHitRate"] == pytest.approx(0.6)
+    # (100k 정가 × 3 + 600k 읽기 × 0.30 + 300k 쓰기 × 3.75 + 10k 출력 × 15) / 1M
+    assert row["estimatedCostUsd"] == pytest.approx(0.3 + 0.18 + 1.125 + 0.15)
+    assert body["unpricedCalls"] == 0
+    opus = next(p for p in body["prices"] if p["model"] == "global.anthropic.claude-opus-4-6-v1")
+    assert opus == {
+        "model": "global.anthropic.claude-opus-4-6-v1",
+        "inputUsdPerMillion": 5.0,
+        "cachedInputUsdPerMillion": 0.50,
+        "outputUsdPerMillion": 25.0,
+        "cacheWriteUsdPerMillion": 6.25,
+    }

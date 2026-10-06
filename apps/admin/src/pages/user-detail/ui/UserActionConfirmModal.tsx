@@ -22,10 +22,12 @@ import {
   useAdjustCloverMutation,
   useSetBetaMutation,
   useSetNovelizeGrantMutation,
+  useSetPremiumModelsGrantMutation,
   useSetRateLimitExemptMutation,
   useSuspendUserMutation,
   useUnsuspendUserMutation,
   useWarnUserMutation,
+  type PremiumModelsGrantScope,
 } from "@/entities/admin-user";
 import { isReportReasonCategory, REPORT_REASON_OPTIONS, REPORT_REASON_VALUES } from "@/entities/report";
 import { isApiError } from "@/shared/lib/api/client";
@@ -42,6 +44,10 @@ type UserActionType =
   | "beta-off"
   | "novelize-on"
   | "novelize-off"
+  | "chat-premium-models-on"
+  | "chat-premium-models-off"
+  | "novelize-premium-models-on"
+  | "novelize-premium-models-off"
   | "clover-grant"
   | "clover-revoke";
 
@@ -55,6 +61,10 @@ const ACTION_TITLE: Record<UserActionType, string> = {
   "beta-off": "베타 해제",
   "novelize-on": "소설화 허용",
   "novelize-off": "소설화 회수",
+  "chat-premium-models-on": "채팅 상위 모델 허용",
+  "chat-premium-models-off": "채팅 상위 모델 회수",
+  "novelize-premium-models-on": "소설화 상위 모델 허용",
+  "novelize-premium-models-off": "소설화 상위 모델 회수",
   "clover-grant": "클로버 지급",
   "clover-revoke": "클로버 회수",
 };
@@ -73,6 +83,10 @@ const IS_CLOVER_ACTION: Record<UserActionType, boolean> = {
   "beta-off": false,
   "novelize-on": false,
   "novelize-off": false,
+  "chat-premium-models-on": false,
+  "chat-premium-models-off": false,
+  "novelize-premium-models-on": false,
+  "novelize-premium-models-off": false,
   "clover-grant": true,
   "clover-revoke": true,
 };
@@ -97,6 +111,10 @@ const IS_REASON_CATEGORY_REQUIRED: Record<UserActionType, boolean> = {
   "beta-off": false,
   "novelize-on": false,
   "novelize-off": false,
+  "chat-premium-models-on": false,
+  "chat-premium-models-off": false,
+  "novelize-premium-models-on": false,
+  "novelize-premium-models-off": false,
   "clover-grant": false,
   "clover-revoke": false,
 };
@@ -114,6 +132,41 @@ const BETA_AGE_RESTRICTED_MESSAGE = "만 19세 미만이거나 생년월일이 �
  * 명단은 어드민 화면에서 고칠 수 없어 운영자가 할 일은 "명단부터 바꿔야 한다"를 아는 것뿐이다. */
 const NOVELIZE_GRANT_NOT_ALLOWLISTED_MESSAGE =
   "소설화 시험 명단에 없는 유저라 허용할 수 없어요. 서버 명단에 먼저 넣어야 해요.";
+
+/** 상위 모델 허용도 같은 이유로 기능마다 따로 있는 서버 명단 안에만 줄 수 있다 — 채팅 명단에 있어도 소설화 명단에는 없을 수 있다. */
+const PREMIUM_MODELS_GRANT_REJECTION = {
+  chat: {
+    code: "CHAT_PREMIUM_MODELS_GRANT_NOT_ALLOWLISTED",
+    message: "채팅 상위 모델 시험 명단에 없는 유저라 허용할 수 없어요. 서버 명단에 먼저 넣어야 해요.",
+  },
+  novelize: {
+    code: "NOVELIZE_PREMIUM_MODELS_GRANT_NOT_ALLOWLISTED",
+    message: "소설화 상위 모델 시험 명단에 없는 유저라 허용할 수 없어요. 서버 명단에 먼저 넣어야 해요.",
+  },
+} as const;
+
+const PREMIUM_MODELS_GRANT_SUCCESS = {
+  chat: { on: "채팅 상위 모델을 허용했어요.", off: "채팅 상위 모델 허용을 회수했어요." },
+  novelize: { on: "소설화 상위 모델을 허용했어요.", off: "소설화 상위 모델 허용을 회수했어요." },
+} as const;
+
+type PremiumModelsGrantAction =
+  | "chat-premium-models-on"
+  | "chat-premium-models-off"
+  | "novelize-premium-models-on"
+  | "novelize-premium-models-off";
+
+/** 상위 모델 토글 넷을 (채팅/소설화, 허용/회수)로 푼다 — 제출 분기 하나가 넷을 함께 받는다. */
+const PREMIUM_MODELS_GRANT: Record<PremiumModelsGrantAction, { scope: PremiumModelsGrantScope; granted: boolean }> = {
+  "chat-premium-models-on": { scope: "chat", granted: true },
+  "chat-premium-models-off": { scope: "chat", granted: false },
+  "novelize-premium-models-on": { scope: "novelize", granted: true },
+  "novelize-premium-models-off": { scope: "novelize", granted: false },
+};
+
+function isPremiumModelsGrantAction(action: UserActionType): action is PremiumModelsGrantAction {
+  return action in PREMIUM_MODELS_GRANT;
+}
 
 const userActionSchema = z.object({
   reasonCategory: z.enum(REPORT_REASON_VALUES).optional(),
@@ -138,7 +191,7 @@ type UserActionConfirmModalProps = {
   action: UserActionType;
   restrictableContentCount: number;
   restorableContentCount: number;
-  /** 조치가 반영돼 모달이 닫힌 뒤 부른다 — 상세 레이아웃이 하단 시트를 닫는다. 고칠 입력이 없는 거부(베타 나이 제한·소설화 명단 밖)는
+  /** 조치가 반영돼 모달이 닫힌 뒤 부른다 — 상세 레이아웃이 하단 시트를 닫는다. 고칠 입력이 없는 거부(베타 나이 제한·소설화·상위 모델 명단 밖)는
    * 바뀐 것이 없어 부르지 않는다. */
   onSuccess?: () => void;
 };
@@ -160,6 +213,7 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
     const setRateLimitExemptMutation = useSetRateLimitExemptMutation(userId);
     const setBetaMutation = useSetBetaMutation(userId);
     const setNovelizeGrantMutation = useSetNovelizeGrantMutation(userId);
+    const setPremiumModelsGrantMutation = useSetPremiumModelsGrantMutation(userId);
     const adjustCloverMutation = useAdjustCloverMutation(userId);
     const {
       control,
@@ -173,6 +227,7 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
 
     const isReasonCategoryRequired = IS_REASON_CATEGORY_REQUIRED[action];
     const isCloverAction = IS_CLOVER_ACTION[action];
+    const premiumModelsGrant = isPremiumModelsGrantAction(action) ? PREMIUM_MODELS_GRANT[action] : null;
 
     const onSubmit = async (values: UserActionFormValues) => {
       try {
@@ -209,6 +264,10 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
         } else if (action === "novelize-off") {
           await setNovelizeGrantMutation.mutateAsync({ granted: false, ...formToCommentOnlyRequest(values) });
           toast.success("소설화 허용을 회수했어요.");
+        } else if (isPremiumModelsGrantAction(action)) {
+          const grant = PREMIUM_MODELS_GRANT[action];
+          await setPremiumModelsGrantMutation.mutateAsync({ ...grant, ...formToCommentOnlyRequest(values) });
+          toast.success(PREMIUM_MODELS_GRANT_SUCCESS[grant.scope][grant.granted ? "on" : "off"]);
         } else if (action === "clover-grant" || action === "clover-revoke") {
           // 스키마가 `optional()`이라 타입이 `number | undefined`다 — `superRefine`을 통과한 뒤라
           // 클로버 경로에서는 반드시 값이 있지만 타입체커는 그걸 모른다. `reasonCategory`를
@@ -267,6 +326,14 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
           call.end();
           return;
         }
+        if (premiumModelsGrant?.granted && status === 422) {
+          const rejection = PREMIUM_MODELS_GRANT_REJECTION[premiumModelsGrant.scope];
+          if (hasDetailCode(error, rejection.code)) {
+            toast.error(rejection.message);
+            call.end();
+            return;
+          }
+        }
         toast.error(ERROR_MESSAGE);
       }
     };
@@ -298,6 +365,14 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
                 "이 유저에게 소설화를 허용합니다. 서버의 시험 계정 명단 안에 있는 유저만 허용할 수 있고, 전역 스위치가 꺼져 있으면 허용해도 아직 쓸 수 없습니다. 이미 허용된 유저면 처음 허용한 시각이 유지됩니다."}
               {action === "novelize-off" &&
                 "이 유저의 소설화 허용을 회수합니다. 이미 만든 소설은 지워지지 않습니다. 다시 허용하기 전까지 사용자 화면에서 소설을 열거나 지울 수 없어, 삭제 요청은 문의나 탈퇴로 처리합니다. 다시 허용하면 그때가 새 허용 시각이 됩니다."}
+              {action === "chat-premium-models-on" &&
+                "이 유저가 채팅방에서 상위 글쓰기 모델(Claude)을 고를 수 있게 합니다. 서버의 시험 계정 명단 안에 있는 유저만 허용할 수 있고, 전역 스위치가 꺼져 있으면 허용해도 아직 쓸 수 없습니다. 상위 모델 턴은 레이트리밋 면제 유저도 클로버를 냅니다. 이미 허용된 유저면 처음 허용한 시각이 유지됩니다."}
+              {action === "chat-premium-models-off" &&
+                "이 유저의 채팅 상위 모델 허용을 회수합니다. 상위 모델을 고른 방은 막히지 않고 다음 턴부터 Gemini 로, Gemini 가격에 돕니다. 진행 중이던 턴은 이미 값을 낸 모델로 끝납니다. 다시 허용하면 방에 저장된 모델로 돌아갑니다."}
+              {action === "novelize-premium-models-on" &&
+                "이 유저가 소설 장을 만들 때 상위 글쓰기 모델(Claude)을 고를 수 있게 합니다. 소설화 허용도 있어야 보이고, 서버의 시험 계정 명단 안에 있는 유저만 허용할 수 있으며, 전역 스위치가 꺼져 있으면 허용해도 아직 쓸 수 없습니다. 이미 허용된 유저면 처음 허용한 시각이 유지됩니다."}
+              {action === "novelize-premium-models-off" &&
+                "이 유저의 소설화 상위 모델 허용을 회수합니다. 이후 상위 모델로 장을 요청하면 거부됩니다(Gemini 로 바꿔 만들지 않습니다). 회수 전에 값을 낸 장 작업은 그 모델로 끝납니다."}
               {action === "clover-grant" && "이 유저에게 클로버를 지급합니다. 무료 일일 한도를 넘긴 뒤에 쓰입니다."}
               {action === "clover-revoke" &&
                 "이 유저의 클로버를 회수합니다. 현재 잔액보다 많이 회수할 수는 없습니다."}
@@ -421,7 +496,7 @@ function formToReasonedRequest(values: UserActionFormValues, reasonCategory: Con
   return { reasonCategory, adminComment: values.adminComment.trim() || undefined };
 }
 
-/** 사유 카테고리를 받지 않는 조치(정지 해제·레이트리밋 면제·베타 토글·소설화 토글)는 코멘트가 필수다(빈 값이면 BE가 422). */
+/** 사유 카테고리를 받지 않는 조치(정지 해제·레이트리밋 면제·베타 토글·소설화·상위 모델 토글)는 코멘트가 필수다(빈 값이면 BE가 422). */
 function formToCommentOnlyRequest(values: UserActionFormValues) {
   return { adminComment: values.adminComment.trim() };
 }
@@ -475,7 +550,7 @@ function isBetaAgeRestricted(error: unknown) {
   return hasDetailCode(error, "BETA_AGE_RESTRICTED");
 }
 
-/** 거부 code 가 OpenAPI 에 없는 422 들(베타 나이·소설화 명단)을 `detail.code`로 가른다. */
+/** 거부 code 가 OpenAPI 에 없는 422 들(베타 나이·소설화·상위 모델 명단)을 `detail.code`로 가른다. */
 function hasDetailCode(error: unknown, code: string) {
   if (!isApiError(error) || typeof error.detail !== "object" || error.detail === null) return false;
   return "code" in error.detail && error.detail.code === code;

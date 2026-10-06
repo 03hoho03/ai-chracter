@@ -40,6 +40,7 @@ from api.chat.prompt_builder import (
     PromptLane,
     PromptNames,
     PromptRenderError,
+    PromptSetNotFoundError,
     StatJudgmentResult,
     build_ending_judgment_prompt,
     build_generation_prompt,
@@ -72,6 +73,7 @@ from api.chat.schemas import (
     ChatMessageEditRequest,
     ChatMessagePageResponse,
     ChatMessageResponse,
+    ChatModelItem,
     ChatPolicyWarningEvent,
     ChatRoomContentSnapshot,
     ChatRoomCreateRequest,
@@ -82,6 +84,8 @@ from api.chat.schemas import (
     ChatRoomMemoryRevertRequest,
     ChatRoomMemorySummary,
     ChatRoomMemorySummaryRequest,
+    ChatRoomModelResponse,
+    ChatRoomModelSelectRequest,
     ChatRoomRenameRequest,
     ChatRoomResponse,
     ChatStatChangeEvent,
@@ -126,7 +130,7 @@ from api.content.schemas import (
 )
 from api.core.config import settings
 from api.core.clover import refund_in_new_transaction
-from api.core.rate_limit_gate import ChatCharge, enforce_chat_rate_limit
+from api.core.rate_limit_gate import ChatCharge, charge_chat_turn, enforce_chat_rate_limit
 from api.core.s3 import build_thumbnail_key, generate_presigned_get_url
 from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User
@@ -162,14 +166,16 @@ from api.db.models.story import (
 )
 from api.db.session import get_db_session, get_session_factory
 from api.legal.dependencies import require_legal_consent
+from api.llm.chat_models import CHAT_MODELS, DEFAULT_CHAT_MODEL, ChatModelId, actual_model_id, chat_turn_cost
 from api.llm.client import (
     LLMCallContext,
     LLMClient,
     LLMClientError,
     LLMPolicyViolationError,
-    LLMRateLimitError,
+    dependency_tag,
 )
 from api.llm.dependencies import get_llm_client
+from api.llm.model_access import effective_room_model, has_chat_premium_access
 from api.persona.router import get_owned_persona, lock_user_default_persona
 from api.persona.schemas import PersonaSelectRequest, RoomPersonaResponse
 from api.session.dependencies import get_current_user_id
@@ -191,6 +197,8 @@ preview_router = APIRouter(prefix="/preview-sessions", tags=["chat"])
 # 필요하다 — 위 stories_router/characters_router와 동일 이유. `api.auth.router.me_router`가
 # 이미 그 이름을 쓰므로 main.py에서 반드시 별칭으로 import한다.
 me_router = APIRouter(prefix="/me", tags=["chat"])
+# 채팅방에 고를 수 있는 글쓰기 모델 목록. prefix 가 달라 따로 둔다(위 라우터들과 같은 이유).
+chat_models_router = APIRouter(prefix="/chat-models", tags=["chat"])
 
 
 async def _get_owned_room(db: AsyncSession, room_id: uuid.UUID, user_id: uuid.UUID) -> ChatRoom:
@@ -230,7 +238,7 @@ async def _playable_room_dependency(
     db: AsyncSession = Depends(get_db_session),
 ) -> ChatRoom:
     """모델을 부르는 세 경로(전송·재생성·편집)의 방 의존성. 소유권 검사 바로 뒤에서 작품 상태를 본다 — 차감
-    게이트(`enforce_chat_rate_limit`)보다 앞이라 막힌 작품에서는 분당 상한도 세지 않고, 클로버 확인 모달도 뜨지 않고,
+    게이트(`enforce_room_chat_charge`)보다 앞이라 막힌 작품에서는 분당 상한도 세지 않고, 클로버 확인 모달도 뜨지 않고,
     클로버도 깎이지 않는다. SSE 제너레이터 본문에서 raise 하면 깨진 스트림이 되므로 `Depends` 로 둔다."""
     content = await db.get(Content, room.content_id)
     assert content is not None
@@ -262,6 +270,26 @@ async def _room_turn_lock_dependency(
         yield lock
     finally:
         await release_room_turn_lock(lock)
+
+
+async def enforce_room_chat_charge(
+    # 락이 방보다 앞이다 — 같은 요청 안에서 두 의존성은 한 번씩만 해석되므로(요청 스코프 캐시) 여기서 받는 방은 락을
+    # 잡은 직후 다시 읽은 그 객체다. 라우트 시그니처가 이 순서를 이미 지키지만, 게이트가 스스로 보장하게 둔다.
+    _turn_lock: RoomTurnLock = Depends(_room_turn_lock_dependency),
+    room: ChatRoom = Depends(_playable_room_dependency),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> ChatCharge:
+    """턴 세 경로(전송·재생성·편집)의 차감 게이트. 방이 고른 모델을 지금 쓸 모델로 읽어(허용이 없거나 레지스트리에서 내린
+    모델이면 Gemini) 그 모델의 가격으로 차감한다. 상한·차감 본문은 미리보기와 같은 `charge_chat_turn` 이다.
+
+    영수증의 `model` 이 이 턴의 생성 모델이다 — 생성 쪽은 방을 다시 읽지 않는다. 이 게이트와 생성 사이에 방의 모델이
+    바뀌어도(모델 지정 라우트는 턴 락을 잡지 않는다) 값을 낸 모델로 생성한다.
+
+    라우트 시그니처의 맨 뒤에 둔다(`send_message` 의 같은 자리 주석) — 조회·검증이 실패한 요청은 차감하지 않는다."""
+    model = await effective_room_model(db, user_id, room.chat_model)
+    return await charge_chat_turn(user_id, db, session_factory, model=model, price=chat_turn_cost(model))
 
 
 async def _validate_shortcut(
@@ -311,7 +339,10 @@ async def _active_prompt_set_dependency(
     setup: StartingSetup | None = Depends(_starting_setup_dependency),
     db: AsyncSession = Depends(get_db_session),
 ) -> tuple[PromptSet, list[PromptSection]]:
-    """실제 채팅은 요청 스코프 `db` 세션을 이미 갖고 있으므로 그대로 재사용한다
+    """이 세트는 언제나 그 레인의 **Gemini 세트**다 — 판정·요약·그림 판정은 방의 글쓰기 모델과 무관하게 이 세트를
+    읽는다(Claude 세트에는 그 채널이 없다).
+
+    실제 채팅은 요청 스코프 `db` 세션을 이미 갖고 있으므로 그대로 재사용한다
     (미리보기의 `_preview_prompt_set_dependency`와 달리
     세션을 짧게 여닫을 이유가 없다). 레인은 `_starting_setup_dependency`가 넘겨준 `setup`
     으로 정한다 — 라우트 본문이 따로 판별하지 않는다. 캐시 히트면 `db`를 조회하지
@@ -319,11 +350,34 @@ async def _active_prompt_set_dependency(
     제너레이터 본문이 시작되기 전이라 정상적인 에러 응답이 된다 — 이 예외는 캐싱하지
     않는다(negative caching 금지)."""
     lane = _lane_for_setup(setup)
-    cached = await get_cached_active_prompt_set(lane)
+    cached = await get_cached_active_prompt_set(lane, model="gemini")
     if cached is not None:
         return cached
-    prompt_set, sections = await load_active_prompt_set(db, lane=lane)
-    await set_cached_active_prompt_set(lane, prompt_set, sections)
+    prompt_set, sections = await load_active_prompt_set(db, lane=lane, model="gemini")
+    await set_cached_active_prompt_set(lane, prompt_set, sections, model="gemini")
+    return prompt_set, sections
+
+
+async def _generation_prompt_set(
+    db: AsyncSession,
+    *,
+    lane: PromptLane,
+    model: ChatModelId,
+    gemini_set: tuple[PromptSet, list[PromptSection]],
+) -> tuple[PromptSet, list[PromptSection]]:
+    """이 턴의 생성(바닥 지시문·생성 프롬프트·화자 라벨·정지 시퀀스)에 쓸 세트. 글쓰기 모델마다 독립 세트가 있고, 판정·요약은
+    모델과 무관하게 `gemini_set`(`_active_prompt_set_dependency`)을 쓴다.
+
+    Gemini 면 받은 Gemini 세트를 그대로 돌려준다 — 조회가 없고, Gemini 턴의 프롬프트는 모델별 세트가 생기기 전과 바이트까지
+    같다. 그 밖의 모델은 캐시를 보고 없으면 (레인, 모델) 활성 세트를 읽는다. 모델은 차감 영수증에서 오므로 차감 뒤에 읽는다 —
+    세트가 없으면(`PromptSetNotFoundError`) 호출부가 렌더 실패와 같은 자리에서 오류 이벤트를 내고 환불한다."""
+    if model == DEFAULT_CHAT_MODEL:
+        return gemini_set
+    cached = await get_cached_active_prompt_set(lane, model=model)
+    if cached is not None:
+        return cached
+    prompt_set, sections = await load_active_prompt_set(db, lane=lane, model=model)
+    await set_cached_active_prompt_set(lane, prompt_set, sections, model=model)
     return prompt_set, sections
 
 
@@ -1104,6 +1158,8 @@ async def _to_response(db: AsyncSession, room: ChatRoom, *, message_limit: int |
         stats = {str(row.stat_entity_id): float(row.current_value) for row in stat_rows}
 
     image_urls, cell_images = await _sign_message_images(db, room, setup, messages)
+    # 다음 턴이 실제로 쓸 모델. 기본 모델 방이거나 상위 모델 스위치가 꺼져 있으면 쿼리가 없다.
+    effective_model = await effective_room_model(db, room.user_id, room.chat_model)
 
     # 미디어 북 태그는 첫 메시지(작성자 글을 칸 id 형태로 복사한 것)에서만 해석하고, 그중에서도 방 버전의
     # 시작설정 첫 메시지가 실제로 가리키는 칸만 서명한다. 오프닝은 지울 수 있어 첫 자리에 사용자 메시지나
@@ -1157,6 +1213,9 @@ async def _to_response(db: AsyncSession, room: ChatRoom, *, message_limit: int |
         default_user_name=version_detail.default_user_name,
         content_name=version_detail.name,
         content_restricted=content.moderation_status != ModerationStatus.NORMAL,
+        chat_model=room.chat_model,
+        effective_chat_model=effective_model,
+        turn_cost=chat_turn_cost(effective_model),
         created_at=room.created_at,
         updated_at=room.updated_at,
     )
@@ -1346,16 +1405,14 @@ def _policy_warning_message(persona_rendered: bool, note_rendered: bool) -> str:
     return _POLICY_WARNING_MESSAGE
 
 
-def _llm_dependency_tag(exc: LLMClientError | PromptRenderError) -> str:
+def _llm_dependency_tag(exc: LLMClientError | PromptRenderError | PromptSetNotFoundError) -> str:
     """이 파일의 생성/판정 흡수 지점 8곳이 공유하는 승격 태그
     분류다. `PromptRenderError`는 외부 의존이 아니라 우리 템플릿 결함이라 별도 태그로 갈라
-    묶어 본다. Gemini 429(쿼터 소진)는 `llm/gemini.py`의 `LLMRateLimitError`로
-    다른 실패와 구분한다 — 안 갈라 붙이면 승격된 이벤트가 행동 가능하지 않다."""
-    if isinstance(exc, PromptRenderError):
+    묶어 본다. 생성 세트가 없는 것(`PromptSetNotFoundError`)도 같은 묶음이다 — 둘 다 어드민 문안 쪽을 고쳐야 한다. LLM 실패는 공급자와 쿼터 소진(429) 여부로 가른다(`llm/client.py` 의 `dependency_tag`) —
+    안 갈라 붙이면 승격된 이벤트가 행동 가능하지 않다."""
+    if isinstance(exc, (PromptRenderError, PromptSetNotFoundError)):
         return "prompt_render"
-    if isinstance(exc, LLMRateLimitError):
-        return "gemini_rate_limit"
-    return "gemini"
+    return dependency_tag(exc)
 
 
 async def _refund_clover(
@@ -1578,18 +1635,20 @@ async def _build_prompt(
 
 
 def _dump_prompt(
-    *, room_id: uuid.UUID | None, turn: int, prompt: str, system_instruction: str
+    *, room_id: uuid.UUID | None, model: ChatModelId, turn: int, prompt: str, system_instruction: str
 ) -> None:
     """회차 재현용으로 조립된 프롬프트를 JSONL 한
     줄로 남긴다. 호출부는 `settings.prompt_dump_path is not None`일 때만 부른다.
 
     바닥 지시문도 함께 남긴다 — 실험에서 바꿔 가며 비교하는 것이 바로 그것이라, 대화록만 남고 그때
-    어떤 지시문이 실렸는지 모르면 회차를 나중에 설명할 수 없다."""
+    어떤 지시문이 실렸는지 모르면 회차를 나중에 설명할 수 없다. 모델은 고른 모델(`chatModel`)과 실제로 보낸 모델 id
+    (`model`)를 함께 남기고, 시드는 Gemini 만 받는 설정이라 Gemini 턴에만 적는다."""
     record = {
         "roomId": str(room_id) if room_id is not None else None,
         "turn": turn,
-        "model": settings.gemini_model_name,
-        "seed": settings.gemini_seed,
+        "chatModel": model,
+        "model": actual_model_id(model),
+        "seed": settings.gemini_seed if model == "gemini" else None,
         "systemInstruction": system_instruction,
         "prompt": prompt,
     }
@@ -1623,7 +1682,11 @@ async def _stream_generated_tokens(
     if settings.prompt_dump_path is not None:
         try:
             _dump_prompt(
-                room_id=usage.room_id, turn=turn, prompt=prompt, system_instruction=system_instruction
+                room_id=usage.room_id,
+                model=usage.model,
+                turn=turn,
+                prompt=prompt,
+                system_instruction=system_instruction,
             )
         except Exception:
             logger.warning("프롬프트 덤프 실패 (room=%s, turn=%s)", usage.room_id, turn, exc_info=True)
@@ -1680,13 +1743,17 @@ async def _stream_new_turn(
     생성 윈도우 설정이 꺼져 있으면 요약을 싣지 않으므로 접기도 예약하지 않는다.
     """
     try:
-        prompt, system_instruction, persona_rendered, note_rendered, names = await _build_prompt(
-            db, room, setup, history, user_content, shortcut, prompt_set, prompt_sections
+        # 생성은 값을 낸 모델의 세트로, 판정·요약은 받은 Gemini 세트(`prompt_set`)로 한다.
+        generation_set, generation_sections = await _generation_prompt_set(
+            db, lane=_lane_for_setup(setup), model=charge.model, gemini_set=(prompt_set, prompt_sections)
         )
-    except PromptRenderError as exc:
+        prompt, system_instruction, persona_rendered, note_rendered, names = await _build_prompt(
+            db, room, setup, history, user_content, shortcut, generation_set, generation_sections
+        )
+    except (PromptRenderError, PromptSetNotFoundError) as exc:
         # apps/api/CLAUDE.md §SSE: 이 예외를 여기서 흡수하지 않으면 제너레이터 본문을 뚫고
         # 나가 태스크 취소 → 커넥션 강제종료로 번진다. LLM 호출 전이므로 흡수해도 잃는
-        # 게 없다 — 아직 아무 것도 스트리밍되지 않았다.
+        # 게 없다 — 아직 아무 것도 스트리밍되지 않았다. 생성 세트가 없는 것도 같은 자리다(차감 뒤에야 모델을 안다).
         logger.warning("대화방 %s 프롬프트 렌더 실패: %s", room.id, exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
         # 환불은 `yield` **앞**이다 — 뒤에 두면 클라이언트가 이미 끊었을 때 실행되지 않는다.
@@ -1704,8 +1771,10 @@ async def _stream_new_turn(
             prompt,
             chunks,
             system_instruction,
-            prompt_set.user_label,
-            usage=LLMCallContext(call_site="chat_generate", user_id=room.user_id, room_id=room.id),
+            generation_set.user_label,
+            usage=LLMCallContext(
+                call_site="chat_generate", user_id=room.user_id, room_id=room.id, model=charge.model
+            ),
             turn=next_turn,
         ):
             yield token_event
@@ -2003,7 +2072,8 @@ async def send_message(
     # 폭주 방어)에는 오히려 맞다 — 실패한 요청은 둘 다 안 태운다. "상한이 DB를 보호한다"는
     # 근거로는 쓸 수 없는데, 재동의 검사가 이미 게이트보다 앞에서 DB를 치고 있어 그 명제는
     # 이 변경 전에도 부분적으로만 참이었다.
-    charge: ChatCharge = Depends(enforce_chat_rate_limit),
+    # 방의 세 경로는 방이 고른 모델로 가격을 정하는 게이트(`enforce_room_chat_charge`), 미리보기는 Gemini 게이트다.
+    charge: ChatCharge = Depends(enforce_room_chat_charge),
 ) -> AsyncIterator[ChatStreamEvent]:
     """text/event-stream SSE 응답. 실제 생성+판단 파이프라인은
     `_stream_new_turn`(이 방의 새 사용자 메시지를 커밋한 뒤 호출)이 담당한다."""
@@ -2092,7 +2162,7 @@ async def regenerate_message(
     setup: StartingSetup | None = Depends(_starting_setup_dependency),
     # 차감 게이트(mypy가 안 잡는다, 조회·검증
     # 의존성 전부보다 뒤에 둔다 — `send_message`의 같은 자리 주석 참조)
-    charge: ChatCharge = Depends(enforce_chat_rate_limit),
+    charge: ChatCharge = Depends(enforce_room_chat_charge),
 ) -> AsyncIterator[ChatStreamEvent]:
     """마지막 AI 응답만 새로 생성해 교체한다(기존 메시지 전송과 동일한 SSE 이벤트
     스키마). `send_message`/`edit_message`와 달리 새 턴이 아니라 같은 턴의 응답을 바꾸는
@@ -2129,10 +2199,14 @@ async def regenerate_message(
             )
             user_content = history[-1].content
         try:
-            prompt, system_instruction, persona_rendered, note_rendered, names = await _build_prompt(
-                db, room, setup, history[:-1], user_content, None, prompt_set, prompt_sections
+            # 생성 세트는 `_stream_new_turn` 의 같은 자리와 같다(판정은 Gemini 세트).
+            generation_set, generation_sections = await _generation_prompt_set(
+                db, lane=_lane_for_setup(setup), model=charge.model, gemini_set=(prompt_set, prompt_sections)
             )
-        except PromptRenderError as exc:
+            prompt, system_instruction, persona_rendered, note_rendered, names = await _build_prompt(
+                db, room, setup, history[:-1], user_content, None, generation_set, generation_sections
+            )
+        except (PromptRenderError, PromptSetNotFoundError) as exc:
             logger.warning("대화방 %s 재생성 프롬프트 렌더 실패: %s", room.id, exc)
             capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
             # 환불은 `yield` 앞이다(`_stream_new_turn`의 같은 자리 주석 참조).
@@ -2149,8 +2223,10 @@ async def regenerate_message(
                 prompt,
                 chunks,
                 system_instruction,
-                prompt_set.user_label,
-                usage=LLMCallContext(call_site="chat_generate", user_id=room.user_id, room_id=room.id),
+                generation_set.user_label,
+                usage=LLMCallContext(
+                    call_site="chat_generate", user_id=room.user_id, room_id=room.id, model=charge.model
+                ),
                 # 재생성은 turn_count 를 올리지 않는다 — 같은 턴의 응답을 교체하는 것이다.
                 turn=room.turn_count,
             ):
@@ -2308,7 +2384,7 @@ async def edit_message(
     setup: StartingSetup | None = Depends(_starting_setup_dependency),
     # 차감 게이트(mypy가 안 잡는다, 조회·검증
     # 의존성 전부보다 뒤에 둔다 — `send_message`의 같은 자리 주석 참조)
-    charge: ChatCharge = Depends(enforce_chat_rate_limit),
+    charge: ChatCharge = Depends(enforce_room_chat_charge),
 ) -> AsyncIterator[ChatStreamEvent]:
     """수정된 메시지 이후의 모든 메시지를 삭제하고 수정된 내용부터 새 AI 응답을 이어서
     생성한다. `send_message`와 마찬가지로 완전히 새로운 턴이라 `_stream_new_turn`
@@ -2490,6 +2566,21 @@ async def list_chat_rooms(
             )
         )
     return items
+
+
+@chat_models_router.get("")
+async def list_chat_models(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> list[ChatModelItem]:
+    """이 계정이 채팅방에 고를 수 있는 모델과 턴 가격. 기본 모델(Gemini)은 언제나 있고 맨 앞이다 — 빌더 미리보기도 이 항목에서
+    턴 가격을 읽는다. 상위 모델은 채팅 상위 모델 허용이 있을 때만 싣는다(모델 지정 라우트·턴 게이트와 같은 판정)."""
+    allowed = await has_chat_premium_access(db, user_id)
+    return [
+        ChatModelItem(id=spec.id, name=spec.name, turn_cost=chat_turn_cost(spec.id))
+        for spec in CHAT_MODELS
+        if spec.id == DEFAULT_CHAT_MODEL or allowed
+    ]
 
 
 @me_router.get("/chat-rooms")
@@ -2759,6 +2850,29 @@ async def set_room_persona(
     room.persona_id = payload.persona_id
     await db.commit()
     return RoomPersonaResponse(persona_id=room.persona_id, persona_name=persona.name if persona is not None else None)
+
+
+@router.put("/{room_id}/model", dependencies=[Depends(require_legal_consent)])  # 재동의 게이트
+async def set_room_model(
+    room_id: uuid.UUID,
+    payload: ChatRoomModelSelectRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ChatRoomModelResponse:
+    """방의 글쓰기 모델을 바꾼다. 다음 턴부터 반영되고 과거 메시지는 그대로다. 진행 중인 턴은 이미 값을 낸 모델로 끝난다
+    (턴 게이트의 영수증) — 그래서 턴 락을 잡지 않는다.
+
+    기본 모델(`"gemini"`·null)은 누구나 고를 수 있다 — 허용을 거둔 뒤에도 방을 되돌릴 수 있어야 한다. 기본 모델은 빈 값으로
+    저장한다(새 방과 같은 상태). 상위 모델은 채팅 상위 모델 허용(`has_chat_premium_access`)이 있어야 하고, 없으면 403
+    `{"code": "CHAT_MODEL_NOT_ALLOWED"}` 하나다 — 꺼짐·명단 밖·허용 행 없음을 가르지 않는다(소설화 게이트와 같은 이유).
+    고를 때 확인하는 가격은 응답의 턴 가격이고, 그 뒤 턴은 하루 1회 확인 없이 그 가격으로 차감된다."""
+    room = await _get_owned_room(db, room_id, user_id)
+    model = payload.model or DEFAULT_CHAT_MODEL
+    if model != DEFAULT_CHAT_MODEL and not await has_chat_premium_access(db, user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"code": "CHAT_MODEL_NOT_ALLOWED"})
+    room.chat_model = None if model == DEFAULT_CHAT_MODEL else model
+    await db.commit()
+    return ChatRoomModelResponse(chat_model=room.chat_model, effective_chat_model=model, turn_cost=chat_turn_cost(model))
 
 
 @router.post(
@@ -3276,7 +3390,9 @@ async def _preview_prompt_set_dependency(
     state: PreviewSessionState = Depends(_owned_preview_session_dependency),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> tuple[PromptSet, list[PromptSection]]:
-    """미리보기의 DB 읽기는 요청 스코프 세션에 얹지 않는다 — `Depends`가
+    """미리보기는 Gemini 로만 돌므로 그 레인의 Gemini 세트를 읽는다.
+
+    미리보기의 DB 읽기는 요청 스코프 세션에 얹지 않는다 — `Depends`가
     세션이 아니라 값(활성 세트)을 반환하게 만들어, 세션을 짧게 열고 즉시 닫는다. 레인은
     `state.payload`의 판별 유니언 타입으로 정한다 — DB 조회도, 별도 판별자도
     필요 없다.
@@ -3287,12 +3403,12 @@ async def _preview_prompt_set_dependency(
     수십 초 걸려서다(실측) — 요청 세션에 얹은 읽기는 라우트 본문이 반납 커밋을 하기 전까지 커넥션을 쥐므로, 값만
     돌려주는 의존성은 그 세션에 기대지 않는 편이 본문의 반납 위치와 무관하게 안전하다."""
     lane = _lane_for_preview_payload(state.payload)
-    cached = await get_cached_active_prompt_set(lane)
+    cached = await get_cached_active_prompt_set(lane, model="gemini")
     if cached is not None:
         return cached
     async with session_factory() as session:
-        prompt_set, sections = await load_active_prompt_set(session, lane=lane)
-    await set_cached_active_prompt_set(lane, prompt_set, sections)
+        prompt_set, sections = await load_active_prompt_set(session, lane=lane, model="gemini")
+    await set_cached_active_prompt_set(lane, prompt_set, sections, model="gemini")
     return prompt_set, sections
 
 

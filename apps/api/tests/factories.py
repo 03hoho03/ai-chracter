@@ -45,6 +45,7 @@ from api.db.models import (
     ContentVersion,
     ContentVisibility,
     Ending,
+    FeatureName,
     Genre,
     LegalDocument,
     MediaBookCell,
@@ -218,12 +219,17 @@ async def _create_admin(db_session: AsyncSession, **overrides: object) -> dict[s
 
 
 async def _grant_novelize(db_session: AsyncSession, user_id: uuid.UUID) -> UserFeatureGrant:
-    """소설화 허용 행 하나를 flush 한다(커밋은 호출자). 허용한 운영자 행이 FK 로 필요해 함께 만든다 — 로그인할
+    """소설화 허용 행 하나를 flush 한다(커밋은 호출자)."""
+    return await _grant_feature(db_session, user_id, "novelize")
+
+
+async def _grant_feature(db_session: AsyncSession, user_id: uuid.UUID, feature: FeatureName) -> UserFeatureGrant:
+    """기능 허용 행 하나를 flush 한다(커밋은 호출자). 허용한 운영자 행이 FK 로 필요해 함께 만든다 — 로그인할
     운영자가 아니라서 비밀번호 해시를 계산하지 않는다."""
     admin = AdminUser(email=f"admin-{uuid.uuid4()}@example.com", password_hash="unused")
     db_session.add(admin)
     await db_session.flush()
-    grant = UserFeatureGrant(user_id=user_id, feature="novelize", granted_by=admin.id)
+    grant = UserFeatureGrant(user_id=user_id, feature=feature, granted_by=admin.id)
     db_session.add(grant)
     await db_session.flush()
     return grant
@@ -947,6 +953,29 @@ async def _allow_novelize(db_session: AsyncSession, monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(settings, "novelize_enabled", True)
     monkeypatch.setattr(settings, "novelize_grant_allowlist", [*settings.novelize_grant_allowlist, user_id])
     await _grant_novelize(db_session, user_id)
+    await db_session.commit()
+
+
+async def _allow_chat_premium(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, user_id: uuid.UUID) -> None:
+    """채팅 상위 모델을 켜고 `user_id` 를 명단에 더한 뒤 허용 행을 넣고 커밋한다. 앞서 더한 계정은 명단에 남는다."""
+    monkeypatch.setattr(settings, "chat_premium_models_enabled", True)
+    monkeypatch.setattr(
+        settings, "chat_premium_model_allowlist", [*settings.chat_premium_model_allowlist, user_id]
+    )
+    await _grant_feature(db_session, user_id, "chat_premium_models")
+    await db_session.commit()
+
+
+async def _allow_novel_premium(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, user_id: uuid.UUID
+) -> None:
+    """소설 상위 모델을 켜고 `user_id` 를 명단에 더한 뒤 허용 행을 넣고 커밋한다. 소설화 자체 허용은 따로 있어야 한다
+    (`_allow_novelize`·`_novel_setup`)."""
+    monkeypatch.setattr(settings, "novelize_premium_models_enabled", True)
+    monkeypatch.setattr(
+        settings, "novelize_premium_model_allowlist", [*settings.novelize_premium_model_allowlist, user_id]
+    )
+    await _grant_feature(db_session, user_id, "novelize_premium_models")
     await db_session.commit()
 
 

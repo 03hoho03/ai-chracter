@@ -20,4 +20,16 @@ describe("visibleMoreItems", () => {
   it("준비 중(isActive: false) 항목은 숨기지 않는다", () => {
     expect(visibleMoreItems(ITEMS, []).some((item) => !item.isActive)).toBe(true);
   });
+
+  // 채팅 상위 모델과 소설화는 따로 허용된다 — 한쪽 허용이 다른 쪽 항목을 열면 안 된다.
+  it("기능마다 따로 거른다 — 소설화 허용만 있으면 모델 항목은 빠진다", () => {
+    const items = [...ITEMS, { key: "chat-model", isActive: true, requiredFeature: "chat_premium_models" as const }];
+
+    expect(visibleMoreItems(items, ["novelize"]).map((item) => item.key)).toEqual(["play-guide", "novel", "coming-soon"]);
+    expect(visibleMoreItems(items, ["chat_premium_models"]).map((item) => item.key)).toEqual([
+      "play-guide",
+      "coming-soon",
+      "chat-model",
+    ]);
+  });
 });

@@ -1,6 +1,6 @@
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useSetAtom } from "jotai";
-import { BookOpen, BookText, History, IdCard, Images, Repeat, Sparkles } from "lucide-react";
+import { BookOpen, BookText, Cpu, History, IdCard, Images, Repeat, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 import { isLegalReconsentRequiredError } from "@/entities/legal";
@@ -16,6 +16,7 @@ import type { AuthorMacroNames } from "@/shared/lib/text/authorMacros";
 import { chatSidePanelAtom } from "../model/atoms";
 import { isStillInRoom } from "../model/roomNovelNavigation";
 import { visibleMoreItems, type FeatureGatedItem } from "../model/visibleMoreItems";
+import { RoomChatModelModal } from "./RoomChatModelModal";
 import { RoomPersonaModal } from "./RoomPersonaModal";
 
 type MorePanelItem = FeatureGatedItem & {
@@ -35,12 +36,22 @@ const NOVEL_ITEM: MorePanelItem = {
   requiredFeature: "novelize",
 };
 
+// 상위 모델 허용이 있는 계정에만 보인다. 허용이 없으면 고를 것이 기본 모델 하나뿐이라 항목 자체를 두지 않는다.
+const CHAT_MODEL_ITEM: MorePanelItem = {
+  key: "chat-model",
+  label: "AI 모델",
+  icon: Cpu,
+  isActive: true,
+  requiredFeature: "chat_premium_models",
+};
+
 const CHARACTER_ITEMS: MorePanelItem[] = [
   { key: "play-guide", label: "플레이가이드", icon: BookOpen, isActive: true },
   { key: "update-info", label: "업데이트 정보", icon: History, isActive: true },
   { key: "image-archive", label: "이미지 보관함", icon: Images, isActive: true },
   NOVEL_ITEM,
   { key: "persona", label: "대화 프로필", icon: IdCard, isActive: true },
+  CHAT_MODEL_ITEM,
 ];
 
 const STORY_ITEMS: MorePanelItem[] = [
@@ -51,6 +62,7 @@ const STORY_ITEMS: MorePanelItem[] = [
   { key: "image-archive", label: "이미지 보관함", icon: Images, isActive: true },
   NOVEL_ITEM,
   { key: "persona", label: "대화 프로필", icon: IdCard, isActive: true },
+  CHAT_MODEL_ITEM,
 ];
 
 export type ChatMoreNavProps = {
@@ -112,6 +124,7 @@ export function ChatMoreNav({ roomId, contentType, startingSetupId, characterId,
     }
     // 선택 UI를 모달로 둔 근거는 RoomPersonaModal 주석.
     if (item.key === "persona") void RoomPersonaModal.call({ roomId });
+    if (item.key === "chat-model") void RoomChatModelModal.call({ roomId });
     if (item.key === "image-archive" && characterId) {
       void ImageArchiveModal.call({ characterId });
     }

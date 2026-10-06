@@ -7,10 +7,11 @@ from typing import Literal, TypeVar
 from pydantic import BaseModel
 
 from api.core.config import settings
+from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, ChatModelProvider
 
 T = TypeVar("T", bound=BaseModel)
 
-# `gemini_usage` 로그의 grep 키다. 호출부와 1:1이라
+# `gemini_usage`·`bedrock_usage` 로그의 grep 키다. 호출부와 1:1이라
 # 값을 바꾸거나 합치면 로그 분포가 끊긴다. 재생성은 `chat_generate`로 함께 집계한다.
 LLMCallSite = Literal[
     "chat_generate",
@@ -110,18 +111,45 @@ def request_timeout_ms(call_site: LLMCallSite) -> int:
     return settings.gemini_generate_timeout_ms
 
 
+class SegmentedPrompt(str):
+    """블록 경계를 함께 싣는 프롬프트 문자열. 값은 `segments` 를 이은 것 그대로라, 문자열로만 다루는 쪽(프롬프트 덤프, 응답
+    모델, 테스트 가짜)에는 보통의 `str` 과 똑같다. 경계를 읽는 것은 Bedrock 구현뿐이다(Claude 프롬프트 캐시의 블록).
+    예외는 타입을 정확히 `str` 로 따지는 외부 라이브러리다 — Gemini SDK 는 하위 클래스를 빈 내용으로 바꿔 보내므로, Gemini
+    구현이 SDK 에 넘기기 직전에 보통의 `str` 로 바꾼다.
+
+    값을 조각에서만 만들어 "이으면 원문과 바이트까지 같다"가 늘 참이다. `+`·`strip` 같은 문자열 연산의 결과는 보통의
+    `str` 이라 경계가 사라진다 — 틀린 글이 나가지는 않고 캐시만 못 맞는다."""
+
+    segments: tuple[str, ...]
+
+    def __new__(cls, segments: tuple[str, ...]) -> "SegmentedPrompt":
+        prompt = super().__new__(cls, "".join(segments))
+        prompt.segments = segments
+        return prompt
+
+
 @dataclass(frozen=True)
 class LLMCallContext:
     """호출 한 건의 사용량을 누구·어디에 귀속할지. 필수 키워드 인자라 새 호출부가
-    빠뜨리면 mypy가 잡는다. `room_id`는 DB 방이 없는 호출(미리보기·발행 심사·스크립트)에서 None."""
+    빠뜨리면 mypy가 잡는다. `room_id`는 DB 방이 없는 호출(미리보기·발행 심사·스크립트)에서 None.
+
+    `model` 은 사용자가 고른 글쓰기 모델이다. 앞의 셋과 달리 기본값(Gemini)이 있다 — 모델을 고를 수 있는 호출은 채팅 턴
+    생성과 소설 장 생성뿐이고, 나머지 호출부가 빠뜨려도 Gemini 로 가는 것이 맞는 동작이라서다. 빠뜨리는 실수가 비싼
+    모델로 새는 방향이 아니다. 이 값을 보고 공급자를 고르는 것은 `llm/routing.py` 이고, 거기서도 그 두 호출만 따른다."""
 
     call_site: LLMCallSite
     user_id: uuid.UUID | None
     room_id: uuid.UUID | None
+    model: ChatModelId = DEFAULT_CHAT_MODEL
 
 
 class LLMClientError(Exception):
-    """Raised when an LLM provider call fails or returns an unusable response."""
+    """Raised when an LLM provider call fails or returns an unusable response.
+
+    `provider` 는 실패한 호출의 공급자다. 클래스 기본값이 Gemini 라 Gemini 클라이언트와 기존 호출부는 그대로이고, Bedrock
+    클라이언트만 자기가 올리는 예외에 `bedrock` 을 적는다. Bugsink 태그(`dependency_tag`)가 이 값으로 갈린다."""
+
+    provider: ChatModelProvider = "gemini"
 
 
 class LLMPolicyViolationError(LLMClientError):
@@ -146,6 +174,15 @@ class LLMEmptyResponseError(LLMClientError):
     """소설화 호출이 정상 종료했는데 본문이 비었다(공백뿐인 것 포함). 종료 사유는 STOP 이라 그것만 보면 성공으로
     보인다. 채팅 호출에서는 올라오지 않는다. 사용량은 이 예외를 올리기 전에 이미 기록됐다. 비지는 않았지만 너무 짧은
     본문을 실패로 볼 기준은 호출부가 정한다."""
+
+
+def dependency_tag(exc: LLMClientError) -> str:
+    """흡수한 LLM 실패를 Bugsink 로 승격할 때의 `dependency` 태그. 공급자마다 이름이 따로다(`gemini`·`gemini_rate_limit`,
+    `bedrock`·`bedrock_rate_limit`) — 한 이름으로 합치면 기존 Gemini 이벤트 묶음과 로그 검색이 끊긴다. 쿼터 소진(429)을
+    다른 실패와 갈라 붙여야 승격된 이벤트로 행동할 수 있다."""
+    if isinstance(exc, LLMRateLimitError):
+        return f"{exc.provider}_rate_limit"
+    return exc.provider
 
 
 class LLMClient(abc.ABC):

@@ -1015,7 +1015,7 @@
           "admin"
         ],
         "summary": "Set User Novelize Grant",
-        "description": "소설화 허용 행(`user_feature_grants`)을 만들고 지우는 유일한 경로다. 모양은 `set_user_rate_limit_exempt`와\n같다(공백 코멘트 422 → 탈퇴·없는 유저 404 → 변경 → 감사 로그 → 커밋, 켤 때와 끌 때 액션 타입이 다르다).\n\n**허용은 env 명단(`novelize_grant_allowlist`) 안의 계정에만 줄 수 있다.** 명단 밖이면 422\n`{\"code\": \"NOVELIZE_GRANT_NOT_ALLOWLISTED\"}`로 거부하고 행도 감사 로그도 남기지 않는다 — 명단은 처리방침이 소설화의\n수집 항목·국외 이전을 싣고 재동의를 받기 전까지 허용을 운영 시험 계정 안에 가두는 장치다. 공백 코멘트 422 와 갈리도록 code 를\n둔다. 회수는 명단과 상관없이 늘 된다(명단에서 이미 뺀 계정의 행도 지울 수 있어야 한다). 전역 스위치는 보지 않는다\n— 켜기 전에 허용을 미리 줄 수 있다.\n\n**이미 허용된 계정을 다시 허용해도 첫 행을 그대로 둔다**(허용 시각·허용한 운영자를 덮어쓰지 않는다). 동시에 두 번\n눌려도 유니크 인덱스에 부딪혀 500 이 되지 않도록 충돌 시 아무것도 하지 않는 INSERT 를 쓴다. 누른 사실은 감사\n로그에 한 행 더 남는다. 회수는 행 DELETE 라 없는 행을 회수해도 조용히 지나간다.",
+        "description": "소설화 허용 행을 만들고 지우는 유일한 경로다(규칙은 `_set_feature_grant`). 명단은 `novelize_grant_allowlist`, 명단 밖\n거부 code 는 `NOVELIZE_GRANT_NOT_ALLOWLISTED` 다.",
         "operationId": "set_user_novelize_grant_admin_users__user_id__novelize_grant_post",
         "parameters": [
           {
@@ -1035,6 +1035,100 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/AdminUserNovelizeGrantRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{user_id}/chat-premium-models-grant": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Set User Chat Premium Models Grant",
+        "description": "채팅방에 상위 글쓰기 모델을 고를 수 있게 하는 허용 행의 유일한 경로다(규칙은 `_set_feature_grant`). 명단은\n`chat_premium_model_allowlist` 다.",
+        "operationId": "set_user_chat_premium_models_grant_admin_users__user_id__chat_premium_models_grant_post",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUserFeatureGrantRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{user_id}/novelize-premium-models-grant": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Set User Novelize Premium Models Grant",
+        "description": "소설 장 생성에 상위 글쓰기 모델을 고를 수 있게 하는 허용 행의 유일한 경로다(규칙은 `_set_feature_grant`). 명단은\n`novelize_premium_model_allowlist` 다. 실제로 쓰려면 소설화 허용도 있어야 하지만 여기서는 보지 않는다 — 허용 순서를 강제하지\n않는다.",
+        "operationId": "set_user_novelize_premium_models_grant_admin_users__user_id__novelize_premium_models_grant_post",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUserFeatureGrantRequest"
               }
             }
           }
@@ -2219,6 +2313,23 @@
               "type": "string",
               "title": "Lane"
             }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "gemini",
+                "sonnet",
+                "opus"
+              ],
+              "type": "string",
+              "description": "세트의 글쓰기 모델. 생략하면 Gemini 세트다.",
+              "default": "gemini",
+              "title": "Model"
+            },
+            "description": "세트의 글쓰기 모델. 생략하면 Gemini 세트다."
           }
         ],
         "responses": {
@@ -2264,6 +2375,23 @@
               "type": "string",
               "title": "Lane"
             }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "gemini",
+                "sonnet",
+                "opus"
+              ],
+              "type": "string",
+              "description": "세트의 글쓰기 모델. 생략하면 Gemini 세트다.",
+              "default": "gemini",
+              "title": "Model"
+            },
+            "description": "세트의 글쓰기 모델. 생략하면 Gemini 세트다."
           }
         ],
         "requestBody": {
@@ -2322,6 +2450,23 @@
               "type": "string",
               "title": "Lane"
             }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "gemini",
+                "sonnet",
+                "opus"
+              ],
+              "type": "string",
+              "description": "세트의 글쓰기 모델. 생략하면 Gemini 세트다.",
+              "default": "gemini",
+              "title": "Model"
+            },
+            "description": "세트의 글쓰기 모델. 생략하면 Gemini 세트다."
           }
         ],
         "responses": {
@@ -2369,6 +2514,23 @@
               "type": "string",
               "title": "Lane"
             }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "gemini",
+                "sonnet",
+                "opus"
+              ],
+              "type": "string",
+              "description": "세트의 글쓰기 모델. 생략하면 Gemini 세트다.",
+              "default": "gemini",
+              "title": "Model"
+            },
+            "description": "세트의 글쓰기 모델. 생략하면 Gemini 세트다."
           }
         ],
         "requestBody": {
@@ -2411,7 +2573,7 @@
           "admin"
         ],
         "summary": "Restore Prompt Set",
-        "description": "옛 버전을 초안으로 복제한다(= 롤백 경로). 게시하지 않는 한 서비스에는 아무 영향이\n없다 — 실제 롤백은 이 뒤에 이어지는 `POST /publish`가 한다.\n\n레인은 요청에서 따로 받지 않는다 — `source.lane`에서만 나온다.\n`source.lane`이 `legacy`(레인 분리 과도기의 격리 값)면 422로 거부한다 — 레인\n분리 이전 버전은 복원 대상이 아니다.",
+        "description": "옛 버전을 초안으로 복제한다(= 롤백 경로). 게시하지 않는 한 서비스에는 아무 영향이\n없다 — 실제 롤백은 이 뒤에 이어지는 `POST /publish`가 한다.\n\n레인·모델은 요청에서 따로 받지 않는다 — `source.lane`·`source.model`에서만 나온다(그 체인의 초안으로 들어간다).\n`source.lane`이 `legacy`(레인 분리 과도기의 격리 값)면 422로 거부한다 — 레인\n분리 이전 버전은 복원 대상이 아니다.",
         "operationId": "restore_prompt_set_admin_prompt_sets__id__restore_post",
         "parameters": [
           {
@@ -5152,7 +5314,7 @@
           "novels"
         ],
         "summary": "Create Novel Chapter",
-        "description": "다음 장을 만드는 작업(과금, 202). 시작은 서버가 정하고, 끝(`endMessageId`)은 경계 제안의 후보 턴 중 하나여야\n한다 — 다음 장 시작부터 장 턴 상한 안의 AI 응답이 아니면 422 `NOVEL_CHAPTER_END_INVALID`.\n\n순서: 작품 상태(403)·방(409)·주인공 이름(422) → 죽은 작업 정리·커밋 → 구간 검사(409·422) → 차감·작업 생성(단가\n409·진행 중 409·하루 상한 429·잔액 429) → 띄우기. 차감 앞의 거절은 원장에 아무것도 남기지 않는다.",
+        "description": "다음 장을 만드는 작업(과금, 202). 시작은 서버가 정하고, 끝(`endMessageId`)은 경계 제안의 후보 턴 중 하나여야\n한다 — 다음 장 시작부터 장 턴 상한 안의 AI 응답이 아니면 422 `NOVEL_CHAPTER_END_INVALID`.\n\n`model` 은 이 장을 쓸 모델이다(기본 Gemini). 작업에 적혀 실행이 그대로 쓰고, 단가도 그 모델의 장 가격이다.\n\n순서: 작품 상태(403)·방(409)·주인공 이름(422)·모델 허용(403) → 죽은 작업 정리·커밋 → 구간 검사(409·422) → 차감·작업 생성(단가\n409·진행 중 409·하루 상한 429·잔액 429) → 띄우기. 차감 앞의 거절은 원장에 아무것도 남기지 않는다.",
         "operationId": "create_novel_chapter_novels__novel_id__chapters_post",
         "parameters": [
           {
@@ -5206,7 +5368,7 @@
           "novels"
         ],
         "summary": "Regenerate Novel Chapter",
-        "description": "장 하나를 같은 원문 구간으로 다시 만드는 작업(과금, 202). 마지막 장이 아니어도 된다. 결과는 그 장의 새\n개정으로 쌓이고, 그 사이의 직접 수정·되돌리기는 이력에 남는다.\n\n원문이 장을 만든 때와 다르면(메시지 편집·응답 재생성·삭제) 차감 전에 409 `NOVEL_SOURCE_CHANGED` — 같은 입력으로\n다시 만든다는 약속을 지킬 수 없다.",
+        "description": "장 하나를 같은 원문 구간으로 다시 만드는 작업(과금, 202). 마지막 장이 아니어도 된다. 결과는 그 장의 새\n개정으로 쌓이고, 그 사이의 직접 수정·되돌리기는 이력에 남는다.\n\n원문이 장을 만든 때와 다르면(메시지 편집·응답 재생성·삭제) 차감 전에 409 `NOVEL_SOURCE_CHANGED` — 같은 입력으로\n다시 만든다는 약속을 지킬 수 없다. `model` 은 장 생성과 같은 규칙이고, 처음 만든 모델과 달라도 된다.",
         "operationId": "regenerate_novel_chapter_novels__novel_id__chapters__chapter_id__regenerate_post",
         "parameters": [
           {
@@ -8427,6 +8589,60 @@
         }
       }
     },
+    "/chat-rooms/{room_id}/model": {
+      "put": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Set Room Model",
+        "description": "방의 글쓰기 모델을 바꾼다. 다음 턴부터 반영되고 과거 메시지는 그대로다. 진행 중인 턴은 이미 값을 낸 모델로 끝난다\n(턴 게이트의 영수증) — 그래서 턴 락을 잡지 않는다.\n\n기본 모델(`\"gemini\"`·null)은 누구나 고를 수 있다 — 허용을 거둔 뒤에도 방을 되돌릴 수 있어야 한다. 기본 모델은 빈 값으로\n저장한다(새 방과 같은 상태). 상위 모델은 채팅 상위 모델 허용(`has_chat_premium_access`)이 있어야 하고, 없으면 403\n`{\"code\": \"CHAT_MODEL_NOT_ALLOWED\"}` 하나다 — 꺼짐·명단 밖·허용 행 없음을 가르지 않는다(소설화 게이트와 같은 이유).\n고를 때 확인하는 가격은 응답의 턴 가격이고, 그 뒤 턴은 하루 1회 확인 없이 그 가격으로 차감된다.",
+        "operationId": "set_room_model_chat_rooms__room_id__model_put",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRoomModelSelectRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatRoomModelResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/chat-rooms/{room_id}/acknowledge-version-upgrade": {
       "post": {
         "tags": [
@@ -8959,6 +9175,32 @@
                   },
                   "type": "array",
                   "title": "Response List My Chat Rooms Me Chat Rooms Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat-models": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "List Chat Models",
+        "description": "이 계정이 채팅방에 고를 수 있는 모델과 턴 가격. 기본 모델(Gemini)은 언제나 있고 맨 앞이다 — 빌더 미리보기도 이 항목에서\n턴 가격을 읽는다. 상위 모델은 채팅 상위 모델 허용이 있을 때만 싣는다(모델 지정 라우트·턴 게이트와 같은 판정).",
+        "operationId": "list_chat_models_chat_models_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ChatModelItem"
+                  },
+                  "type": "array",
+                  "title": "Response List Chat Models Chat Models Get"
                 }
               }
             }
@@ -12221,6 +12463,10 @@
           "outputUsdPerMillion": {
             "type": "number",
             "title": "Outputusdpermillion"
+          },
+          "cacheWriteUsdPerMillion": {
+            "type": "number",
+            "title": "Cachewriteusdpermillion"
           }
         },
         "type": "object",
@@ -12228,7 +12474,8 @@
           "model",
           "inputUsdPerMillion",
           "cachedInputUsdPerMillion",
-          "outputUsdPerMillion"
+          "outputUsdPerMillion",
+          "cacheWriteUsdPerMillion"
         ],
         "title": "AdminLlmModelPrice"
       },
@@ -12314,6 +12561,10 @@
             "type": "integer",
             "title": "Cachedtokens"
           },
+          "cacheWriteTokens": {
+            "type": "integer",
+            "title": "Cachewritetokens"
+          },
           "outputTokens": {
             "type": "integer",
             "title": "Outputtokens"
@@ -12376,6 +12627,7 @@
           "calls",
           "promptTokens",
           "cachedTokens",
+          "cacheWriteTokens",
           "outputTokens",
           "thoughtsTokens",
           "totalTokens",
@@ -12608,6 +12860,15 @@
             ],
             "title": "Id"
           },
+          "model": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "sonnet",
+              "opus"
+            ],
+            "title": "Model"
+          },
           "labels": {
             "$ref": "#/components/schemas/AdminPromptLabels"
           },
@@ -12622,6 +12883,7 @@
         "type": "object",
         "required": [
           "id",
+          "model",
           "labels",
           "sections"
         ],
@@ -12845,6 +13107,15 @@
             ],
             "title": "Lane"
           },
+          "model": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "sonnet",
+              "opus"
+            ],
+            "title": "Model"
+          },
           "note": {
             "type": "string",
             "title": "Note"
@@ -12883,6 +13154,7 @@
           "version",
           "status",
           "lane",
+          "model",
           "note",
           "createdAt",
           "publishedAt",
@@ -12960,6 +13232,15 @@
             ],
             "title": "Lane"
           },
+          "model": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "sonnet",
+              "opus"
+            ],
+            "title": "Model"
+          },
           "isActive": {
             "type": "boolean",
             "title": "Isactive"
@@ -12974,6 +13255,7 @@
           "createdAt",
           "publishedAt",
           "lane",
+          "model",
           "isActive"
         ],
         "title": "AdminPromptSetSummary",
@@ -13216,10 +13498,14 @@
               "report-reject",
               "user-beta-off",
               "user-beta-on",
+              "user-chat-premium-models-off",
+              "user-chat-premium-models-on",
               "user-clover-grant",
               "user-clover-revoke",
               "user-novelize-off",
               "user-novelize-on",
+              "user-novelize-premium-models-off",
+              "user-novelize-premium-models-on",
               "user-rate-limit-exempt-off",
               "user-rate-limit-exempt-on",
               "user-suspend",
@@ -13514,6 +13800,30 @@
             ],
             "title": "Novelizegrantedat"
           },
+          "chatPremiumModelsGrantedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chatpremiummodelsgrantedat"
+          },
+          "novelizePremiumModelsGrantedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Novelizepremiummodelsgrantedat"
+          },
           "cloverBalance": {
             "type": "integer",
             "title": "Cloverbalance"
@@ -13585,6 +13895,31 @@
           "chatRooms"
         ],
         "title": "AdminUserDetailResponse"
+      },
+      "AdminUserFeatureGrantRequest": {
+        "properties": {
+          "granted": {
+            "type": "boolean",
+            "title": "Granted"
+          },
+          "adminComment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admincomment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "granted"
+        ],
+        "title": "AdminUserFeatureGrantRequest",
+        "description": "기능 허용/회수를 `granted` 한 필드로 받는 토글이다. `admin_comment`가 필수인 이유는\n`AdminUserRateLimitExemptRequest`와 같다(비어 있으면 422). 채팅·소설 상위 모델 허용 경로가 쓴다."
       },
       "AdminUserListItem": {
         "properties": {
@@ -13706,7 +14041,7 @@
           "granted"
         ],
         "title": "AdminUserNovelizeGrantRequest",
-        "description": "소설화 허용/회수를 `granted` 한 필드로 받는 토글이다. `admin_comment`가 필수인 이유는\n`AdminUserRateLimitExemptRequest`와 같다(비어 있으면 422)."
+        "description": "소설화 허용 경로의 요청. 모양은 `AdminUserFeatureGrantRequest` 와 같고, 이 이름은 그 경로의 생성 타입 이름을 지키려고\n남긴다."
       },
       "AdminUserRateLimitExemptRequest": {
         "properties": {
@@ -14565,6 +14900,35 @@
         ],
         "title": "ChatMessageRole"
       },
+      "ChatModelItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "sonnet",
+              "opus"
+            ],
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "turnCost": {
+            "type": "integer",
+            "title": "Turncost"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "turnCost"
+        ],
+        "title": "ChatModelItem",
+        "description": "`GET /chat-models` 의 한 항목 — 이 계정이 채팅방에 고를 수 있는 모델과 그 모델의 턴 가격."
+      },
       "ChatRoomContentSnapshot": {
         "properties": {
           "stats": {
@@ -14823,6 +15187,68 @@
         "title": "ChatRoomMemorySummaryRequest",
         "description": "`version`은 편집 폼을 연 시점의 `memoryVersion`이다 — 그 사이 요약이 새로 접혔거나 대화가\n되감겼으면 서버 값과 달라 409로 거절된다(사용자 편집이 새 요약을 조용히 덮지 않게)."
       },
+      "ChatRoomModelResponse": {
+        "properties": {
+          "chatModel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chatmodel"
+          },
+          "effectiveChatModel": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "sonnet",
+              "opus"
+            ],
+            "title": "Effectivechatmodel"
+          },
+          "turnCost": {
+            "type": "integer",
+            "title": "Turncost"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chatModel",
+          "effectiveChatModel",
+          "turnCost"
+        ],
+        "title": "ChatRoomModelResponse",
+        "description": "지정한 뒤의 방 모델. 방 응답의 같은 이름 세 필드와 같은 값이다 — 화면이 방을 다시 읽지 않고 바로 반영한다."
+      },
+      "ChatRoomModelSelectRequest": {
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "gemini",
+                  "sonnet",
+                  "opus"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model"
+        ],
+        "title": "ChatRoomModelSelectRequest",
+        "description": "`PUT /chat-rooms/{id}/model`. 필드는 필수다 — 기본 모델로 되돌리기는 `\"gemini\"` 나 null 을 명시한다. 레지스트리 밖\n값은 422 다."
+      },
       "ChatRoomRenameRequest": {
         "properties": {
           "name": {
@@ -14963,6 +15389,30 @@
           "contentRestricted": {
             "type": "boolean",
             "title": "Contentrestricted"
+          },
+          "chatModel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chatmodel"
+          },
+          "effectiveChatModel": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "sonnet",
+              "opus"
+            ],
+            "title": "Effectivechatmodel"
+          },
+          "turnCost": {
+            "type": "integer",
+            "title": "Turncost"
           },
           "createdAt": {
             "type": "string",
@@ -18068,7 +18518,11 @@
           "enabledFeatures": {
             "items": {
               "type": "string",
-              "const": "novelize"
+              "enum": [
+                "novelize",
+                "chat_premium_models",
+                "novelize_premium_models"
+              ]
             },
             "type": "array",
             "title": "Enabledfeatures"
@@ -19024,6 +19478,16 @@
           "expectedCost": {
             "type": "integer",
             "title": "Expectedcost"
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "sonnet",
+              "opus"
+            ],
+            "title": "Model",
+            "default": "gemini"
           }
         },
         "type": "object",
@@ -19032,6 +19496,40 @@
           "expectedCost"
         ],
         "title": "NovelChapterCreateRequest"
+      },
+      "NovelChapterModel": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "sonnet",
+              "opus"
+            ],
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "chapterGenerate": {
+            "type": "integer",
+            "title": "Chaptergenerate"
+          },
+          "chapterRegenerate": {
+            "type": "integer",
+            "title": "Chapterregenerate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "chapterGenerate",
+          "chapterRegenerate"
+        ],
+        "title": "NovelChapterModel",
+        "description": "이 계정이 장 생성·재생성에 고를 수 있는 모델 하나와 그 모델의 장 가격. 요청의 `model` 과 `expectedCost` 로 싣는다."
       },
       "NovelChapterProposalResponse": {
         "properties": {
@@ -19060,6 +19558,13 @@
           "cost": {
             "type": "integer",
             "title": "Cost"
+          },
+          "chapterModels": {
+            "items": {
+              "$ref": "#/components/schemas/NovelChapterModel"
+            },
+            "type": "array",
+            "title": "Chaptermodels"
           }
         },
         "type": "object",
@@ -19076,6 +19581,16 @@
           "expectedCost": {
             "type": "integer",
             "title": "Expectedcost"
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "sonnet",
+              "opus"
+            ],
+            "title": "Model",
+            "default": "gemini"
           }
         },
         "type": "object",
@@ -19298,6 +19813,22 @@
             "type": "string",
             "format": "date-time",
             "title": "Updatedat"
+          },
+          "chapterModels": {
+            "items": {
+              "$ref": "#/components/schemas/NovelChapterModel"
+            },
+            "type": "array",
+            "title": "Chaptermodels"
+          },
+          "lastChapterModel": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "sonnet",
+              "opus"
+            ],
+            "title": "Lastchaptermodel"
           }
         },
         "type": "object",
@@ -19414,6 +19945,17 @@
             "type": "string",
             "format": "date-time",
             "title": "Createdat"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
           }
         },
         "type": "object",

@@ -9,7 +9,9 @@ from api.db.base import Base
 
 # 계정별로 허용해야 쓸 수 있는 기능의 이름. `feature` 컬럼은 native enum 이 아니라 Text 라 값이 늘어도
 # 마이그레이션이 필요 없고, 값 범위는 이 Literal 이 파이썬 쪽에서만 강제한다.
-FeatureName = Literal["novelize"]
+# `chat_premium_models`·`novelize_premium_models` 는 채팅 턴·소설 장 생성에 Gemini 밖의 글쓰기 모델을 고를 수 있게 하는
+# 허용이다(`llm/model_access.py`). 채팅과 소설을 따로 연다.
+FeatureName = Literal["novelize", "chat_premium_models", "novelize_premium_models"]
 
 
 class UserFeatureGrant(Base):
@@ -17,7 +19,7 @@ class UserFeatureGrant(Base):
     누가 언제 켜고 껐는지는 `admin_action_logs` 에 남는다(행에 이력을 쌓지 않는다).
 
     행이 있다고 곧 쓸 수 있는 것은 아니다. 실제 접근은 전역 스위치와 env 허용 명단까지 함께 보는
-    판정 함수(`novelize/access.py`)가 정한다 — 이 테이블은 그 조건 중 하나다.
+    판정 함수(`novelize/access.py`, `llm/model_access.py`)가 정한다 — 이 테이블은 그 조건 중 하나다.
 
     탈퇴하면 지운다(`auth/withdrawal.py` 의 `erase_account`). 운영자 계정 쪽(`granted_by`)은
     지우지 않는다."""

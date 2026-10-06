@@ -24,4 +24,11 @@ describe("formatCloverSpendConfirmDescription", () => {
     const text = formatCloverSpendConfirmDescription("image", 30);
     expect(text).not.toMatch(/\d+\s*(분|시간)\s*뒤/);
   });
+
+  it("가격을 모르면 숫자를 지어내지 않고 차감 사실만 말한다", () => {
+    const text = formatCloverSpendConfirmDescription("chat", undefined);
+    expect(text).not.toMatch(/\d/);
+    expect(text).toContain("차감");
+    expect(text).toContain("자정");
+  });
 });

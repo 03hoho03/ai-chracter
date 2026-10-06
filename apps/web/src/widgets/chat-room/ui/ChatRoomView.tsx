@@ -22,6 +22,7 @@ import {
   TypingIndicator,
   canReportMessage,
   chatRoomKeys,
+  refreshChatRoomTurnPrice,
   roomAuthorMacroNames,
   shouldShowSuggestedReplies,
   useAcknowledgeVersionUpgradeMutation,
@@ -29,8 +30,8 @@ import {
   useDeleteMessageMutation,
   useLoadOlderMessagesMutation,
 } from "@/entities/chat-room";
+import { isPremiumChatModel } from "@/entities/chat-model";
 import {
-  CHAT_TURN_CLOVER_COST,
   CloverBalance,
   isCloverInsufficient,
   shouldShowCloverBalance,
@@ -42,6 +43,7 @@ import { NarrationMarkerButton } from "@/features/insert-narration-marker";
 import { ReportChatMessageModal } from "@/features/report-chat-message";
 import { useSendMessage } from "@/features/send-message";
 import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
+import { getRateLimitDetail } from "@/shared/api/rateLimit";
 import { expandAuthorMacros, type AuthorMacroNames } from "@/shared/lib/text/authorMacros";
 
 import { useMemoryFollowUpRefresh } from "../lib/useMemoryFollowUpRefresh";
@@ -51,6 +53,7 @@ import { ChatMemorySidebar } from "./ChatMemorySidebar";
 import { ChatMemoryTrigger } from "./ChatMemoryTrigger";
 import { ChatMorePanel } from "./ChatMorePanel";
 import { ChatMoreSidebar } from "./ChatMoreSidebar";
+import { RoomChatModelModal } from "./RoomChatModelModal";
 import { RoomPersonaModal } from "./RoomPersonaModal";
 
 // 대화방 상세 조회 + 메시지 전송/스트리밍 표시 + 오류·정책경고 배너를 갖춘 캐릭터/스토리 공용 대화 화면.
@@ -65,26 +68,38 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   const storyId = room?.contentType === "story" ? room.contentId : undefined;
   // 확인 게이트의 트리거를 **위젯이** 만들어 넘긴다(FSD: feature가
   // 다른 feature를 import하지 않는다). 단가를 여기서 묶는 이유는 표면마다 다르기 때문이다 —
-  // 채팅은 한 턴 `CHAT_TURN_CLOVER_COST`, 이미지는 장수 × 단가다.
+  // 채팅은 그 방 모델의 한 턴 가격(`room.turnCost`), 이미지는 장수 × 단가다. 하루 한 번 확인은 기본 모델 방에서만
+  // 오고(상위 모델은 모델을 고를 때 이미 확인했다) 그 가격도 방 응답에 있다.
+  // 클로버 429 에서는 캐시의 가격을 믿지 않고 방을 다시 받아 쓴다 — 화면을 띄워 둔 사이 상위 모델이 꺼졌으면 서버는
+  // 기본 모델 가격을 매기는데 캐시는 옛 모델 가격이다. 다시 받은 값이 캐시에도 들어가 부족 안내도 함께 맞춰진다.
+  const queryClient = useQueryClient();
   const confirmCloverSpend = useConfirmCloverSpend();
   const { send, retry, regenerate, editMessage, status, policyWarning, streamingText } = useSendMessage(
     roomId,
     room && { contentType: room.contentType, contentId: room.contentId },
-    (error) => confirmCloverSpend(error, CHAT_TURN_CLOVER_COST, "chat"),
+    async (error) => {
+      const turnCost =
+        getRateLimitDetail(error)?.window === "clover"
+          ? await refreshChatRoomTurnPrice(queryClient, roomId)
+          : room?.turnCost;
+      return confirmCloverSpend(error, turnCost, "chat");
+    },
   );
   const isSending = status.kind === "sending";
   const isMemoryPanelOpen = useAtomValue(chatSidePanelAtom) === "memory";
   useMemoryFollowUpRefresh({ roomId, isSending, isPanelOpen: isMemoryPanelOpen });
-  // 무료 일일분을 쓴 뒤에만 나타난다.
-  // 단가는 한 턴 `CHAT_TURN_COST`(10)다.
+  // 기본 모델 방은 무료 일일분을 쓴 뒤에만, 상위 모델 방은 첫 턴부터 턴마다 깎이므로 언제나 나타난다.
+  // 단가는 그 방 모델의 한 턴 가격이다. 서버가 가격을 주지 않았으면(이 칸이 생기기 전의 서버) 부족을 판정하지 않는다.
   const { data: clover } = useCloverBalanceQuery();
   const cloverBalance = clover?.balance ?? 0;
-  const isCloverShort = isCloverInsufficient(cloverBalance, CHAT_TURN_CLOVER_COST);
+  const isPremiumRoom = room !== undefined && isPremiumChatModel(room.effectiveChatModel);
+  const isCloverShort = room?.turnCost !== undefined && isCloverInsufficient(cloverBalance, room.turnCost);
   const shouldShowClover =
     clover !== undefined &&
     shouldShowCloverBalance({
       spendConfirmedToday: clover.spendConfirmedToday,
       hasCloverShortage: isCloverShort,
+      chargesEveryTurn: isPremiumRoom,
     });
   const deleteMessageMutation = useDeleteMessageMutation(roomId);
   const [text, setText] = useState("");
@@ -92,7 +107,6 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const queryClient = useQueryClient();
   const loadOlderMessagesMutation = useLoadOlderMessagesMutation(roomId);
   // 위로 불러온 메시지를 앞에 붙이기 직전의 "바닥에서 본 스크롤 위치". 붙인 뒤 같은 거리로 되돌려 읽던 자리가 그대로 보이게 한다.
   const scrollFromBottomBeforePrependRef = useRef<number | undefined>(undefined);
@@ -217,7 +231,9 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   let errorNotice: ReactNode = null;
   if (status.kind === "error" && !isRestricted) {
     if (status.rateLimit) {
-      errorNotice = <RateLimitNotice rateLimit={status.rateLimit} surface="chat" onRetry={retry} />;
+      errorNotice = (
+        <RateLimitNotice rateLimit={status.rateLimit} surface={isPremiumRoom ? "premiumChat" : "chat"} onRetry={retry} />
+      );
     } else if (status.busy) {
       // 앞 턴이 끝나지 않아 시작도 안 한 요청이다. 실패가 아니라 빨간 alert를 쓰지 않고, 아래 거절 배너와 같은
       // 중립 표면에 사실과 다음 행동만 둔다.
@@ -507,8 +523,9 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
 
       {/* 다른 Callable과 달리 `__root`가 아니라 여기 마운트한다 — 루트가 `@/widgets/chat-room`을 import하면
           ChatRoomView까지 메인 청크로 끌려온다(vite build A/B: chat 라우트 청크 17.07kB → 0.25kB, index
-          733 → 755kB). 이 모달을 여는 곳은 이 위젯의 `ChatMoreNav` 하나뿐이다. */}
+          733 → 755kB). 두 모달을 여는 곳은 이 위젯의 `ChatMoreNav` 하나뿐이다. */}
       <RoomPersonaModal />
+      <RoomChatModelModal />
     </div>
   );
 }

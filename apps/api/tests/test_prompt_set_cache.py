@@ -5,12 +5,13 @@
 전부를 지워준다 — 이 키들은 랜덤 ID가 없는 고정 키라 그 픽스처 없이는 한 테스트가 캐싱한
 세트를 다음 테스트가 그대로 보게 된다.
 
-캐시 키가 레인별로 3개(`prompt_set:active:story` 등)다. 캐시 모듈 자체(GET/SET/TTL/DEL)의
-동작 검증은 어느 레인을 쓰든 무관하므로 `_LANE`(character) 하나로 고정하고, 레인 간 격리 자체는 별도 테스트가
-세 레인을 모두 다룬다.
+캐시 키는 (레인, 모델)마다 하나다(`prompt_set:active:story:gemini` 등). 캐시 모듈 자체(GET/SET/TTL/DEL)의
+동작 검증은 어느 레인을 쓰든 무관하므로 `_LANE`(character)의 Gemini 세트 하나로 고정하고, 레인 간·모델 간 격리는
+별도 테스트가 다룬다.
 """
 
 import logging
+from datetime import timedelta
 from typing import get_args
 
 import sqlalchemy as sa
@@ -75,7 +76,7 @@ async def active_prompt_set(db_session: AsyncSession) -> tuple[PromptSet, list[P
 
 
 async def test_get_returns_none_on_cache_miss() -> None:
-    assert await get_cached_active_prompt_set(_LANE) is None
+    assert await get_cached_active_prompt_set(_LANE, model="gemini") is None
 
 
 async def test_set_then_get_round_trips_prompt_set_and_sections(
@@ -83,16 +84,17 @@ async def test_set_then_get_round_trips_prompt_set_and_sections(
 ) -> None:
     prompt_set, sections = active_prompt_set
 
-    await set_cached_active_prompt_set(_LANE, prompt_set, sections)
-    cached = await get_cached_active_prompt_set(_LANE)
+    await set_cached_active_prompt_set(_LANE, prompt_set, sections, model="gemini")
+    cached = await get_cached_active_prompt_set(_LANE, model="gemini")
 
     assert cached is not None
     cached_prompt_set, cached_sections = cached
     assert cached_prompt_set.id == prompt_set.id
     assert cached_prompt_set.version == prompt_set.version
     # `_CachedPromptSet.lane`이 `_from_cached_prompt_set`에서도 채워지는지의 유일한 방어(세 번째
-    # `PromptSet(...)` 생성 지점, flush()가 없어 NOT NULL이 못 잡는다).
+    # `PromptSet(...)` 생성 지점, flush()가 없어 NOT NULL이 못 잡는다). `model` 도 같다.
     assert cached_prompt_set.lane == prompt_set.lane
+    assert cached_prompt_set.model == prompt_set.model
     assert cached_prompt_set.user_label == prompt_set.user_label
     assert cached_prompt_set.story_assistant_label == prompt_set.story_assistant_label
     assert cached_prompt_set.story_example_label == prompt_set.story_example_label
@@ -109,9 +111,9 @@ async def test_set_applies_the_configured_ttl(
     active_prompt_set: tuple[PromptSet, list[PromptSection]],
 ) -> None:
     prompt_set, sections = active_prompt_set
-    await set_cached_active_prompt_set(_LANE, prompt_set, sections)
+    await set_cached_active_prompt_set(_LANE, prompt_set, sections, model="gemini")
 
-    ttl = await redis_client.ttl(prompt_set_cache._active_prompt_set_key(_LANE))
+    ttl = await redis_client.ttl(prompt_set_cache._active_prompt_set_key(_LANE, "gemini"))
 
     assert 0 < ttl <= settings.prompt_set_cache_ttl_seconds
 
@@ -120,12 +122,12 @@ async def test_invalidate_deletes_the_cached_value(
     active_prompt_set: tuple[PromptSet, list[PromptSection]],
 ) -> None:
     prompt_set, sections = active_prompt_set
-    await set_cached_active_prompt_set(_LANE, prompt_set, sections)
-    assert await get_cached_active_prompt_set(_LANE) is not None
+    await set_cached_active_prompt_set(_LANE, prompt_set, sections, model="gemini")
+    assert await get_cached_active_prompt_set(_LANE, model="gemini") is not None
 
-    await invalidate_active_prompt_set(_LANE)
+    await invalidate_active_prompt_set(_LANE, model="gemini")
 
-    assert await get_cached_active_prompt_set(_LANE) is None
+    assert await get_cached_active_prompt_set(_LANE, model="gemini") is None
 
 
 # ---- 레인 격리 ----------------------------------------------------------------
@@ -139,15 +141,43 @@ async def test_invalidating_one_lane_leaves_the_other_two_cached(db_session: Asy
     된다."""
     for lane in get_args(PromptLane):
         prompt_set, sections = await load_active_prompt_set(db_session, lane=lane)
-        await set_cached_active_prompt_set(lane, prompt_set, sections)
+        await set_cached_active_prompt_set(lane, prompt_set, sections, model="gemini")
     for lane in get_args(PromptLane):
-        assert await get_cached_active_prompt_set(lane) is not None
+        assert await get_cached_active_prompt_set(lane, model="gemini") is not None
 
-    await invalidate_active_prompt_set("story")
+    await invalidate_active_prompt_set("story", model="gemini")
 
-    assert await get_cached_active_prompt_set("story") is None
-    assert await get_cached_active_prompt_set("character") is not None
-    assert await get_cached_active_prompt_set("publish_filter") is not None
+    assert await get_cached_active_prompt_set("story", model="gemini") is None
+    assert await get_cached_active_prompt_set("character", model="gemini") is not None
+    assert await get_cached_active_prompt_set("publish_filter", model="gemini") is not None
+
+
+# ---- 모델 격리 ----------------------------------------------------------------
+
+
+async def test_key_carries_lane_and_model() -> None:
+    assert prompt_set_cache._active_prompt_set_key("story", "sonnet") == "prompt_set:active:story:sonnet"
+    assert prompt_set_cache._active_prompt_set_key("story", "gemini") == "prompt_set:active:story:gemini"
+
+
+async def test_each_model_has_its_own_cached_value_and_invalidation(db_session: AsyncSession) -> None:
+    """같은 레인의 Gemini·Sonnet 세트가 서로의 키를 덮지 않고, 한 모델을 무효화해도 다른 모델 키는 남는다. 왕복한
+    세트의 `model` 이 저장한 세트의 것이다(Gemini 키에 Claude 세트가 들어가는 혼선을 잡는다)."""
+    for model in ("gemini", "sonnet"):
+        prompt_set, sections = await load_active_prompt_set(db_session, lane=_LANE, model=model)
+        await set_cached_active_prompt_set(_LANE, prompt_set, sections, model=model)
+
+    gemini = await get_cached_active_prompt_set(_LANE, model="gemini")
+    sonnet = await get_cached_active_prompt_set(_LANE, model="sonnet")
+    assert gemini is not None and sonnet is not None
+    assert (gemini[0].model, sonnet[0].model) == ("gemini", "sonnet")
+    assert gemini[0].id != sonnet[0].id
+    assert await get_cached_active_prompt_set(_LANE, model="opus") is None
+
+    await invalidate_active_prompt_set(_LANE, model="sonnet")
+
+    assert await get_cached_active_prompt_set(_LANE, model="sonnet") is None
+    assert await get_cached_active_prompt_set(_LANE, model="gemini") is not None
 
 
 # ---- 실제 채팅 경로 — `_active_prompt_set_dependency` --------------------------
@@ -176,12 +206,32 @@ async def test_active_prompt_set_dependency_hits_cache_serves_stale_value_and_re
     assert get_count() == 0  # 캐시 히트 — DB 조회 0건
     assert cached_prompt_set.note == original_note  # 옛 값 그대로
 
-    await invalidate_active_prompt_set(_LANE)
+    await invalidate_active_prompt_set(_LANE, model="gemini")
 
     with _count_queries() as get_count:
         refreshed_prompt_set, _ = await chat_router._active_prompt_set_dependency(setup=None, db=db_session)
     assert get_count() > 0  # 무효화 뒤엔 다시 DB 를 읽는다
     assert refreshed_prompt_set.note == "캐시-오염-확인용-새-값"
+
+
+async def test_active_prompt_set_dependency_reads_the_gemini_set_even_with_a_newer_claude_set(
+    db_session: AsyncSession,
+) -> None:
+    """채팅 판정·요약이 읽는 세트는 언제나 Gemini 세트다 — 같은 레인에 더 최신의 Claude 게시본이 생겨도 바뀌지 않는다."""
+    gemini_set, _ = await load_active_prompt_set(db_session, lane=_LANE)
+    sonnet_set, _ = await load_active_prompt_set(db_session, lane=_LANE, model="sonnet")
+    assert gemini_set.published_at is not None
+    await db_session.execute(
+        sa.update(PromptSet)
+        .where(PromptSet.id == sonnet_set.id)
+        .values(published_at=gemini_set.published_at + timedelta(hours=1))
+    )
+    await db_session.flush()
+
+    prompt_set, _ = await chat_router._active_prompt_set_dependency(setup=None, db=db_session)
+
+    assert prompt_set.id == gemini_set.id
+    assert await get_cached_active_prompt_set(_LANE, model="sonnet") is None
 
 
 async def test_active_prompt_set_dependency_does_not_cache_a_missing_active_set(
@@ -195,7 +245,7 @@ async def test_active_prompt_set_dependency_does_not_cache_a_missing_active_set(
     with pytest.raises(PromptSetNotFoundError):
         await chat_router._active_prompt_set_dependency(setup=None, db=db_session)
 
-    assert await get_cached_active_prompt_set(_LANE) is None
+    assert await get_cached_active_prompt_set(_LANE, model="gemini") is None
 
     await db_session.execute(sa.update(PromptSet).where(PromptSet.status == "archived").values(status="published"))
     await db_session.flush()
@@ -274,7 +324,7 @@ async def test_preview_prompt_set_dependency_does_not_open_a_session_on_cache_hi
     active_prompt_set: tuple[PromptSet, list[PromptSection]],
 ) -> None:
     prompt_set, sections = active_prompt_set
-    await set_cached_active_prompt_set(_LANE, prompt_set, sections)
+    await set_cached_active_prompt_set(_LANE, prompt_set, sections, model="gemini")
 
     state = PreviewSessionState(payload=_character_draft_payload(), messages=[], stats={})
     result_prompt_set, result_sections = await chat_router._preview_prompt_set_dependency(
@@ -298,13 +348,13 @@ async def test_preview_prompt_set_dependency_does_not_open_a_session_on_cache_hi
 async def test_flush_prompt_set_cache_fixture_sets_up_three_lane_keys_a(db_session: AsyncSession) -> None:
     for lane in get_args(PromptLane):
         prompt_set, sections = await load_active_prompt_set(db_session, lane=lane)
-        await set_cached_active_prompt_set(lane, prompt_set, sections)
+        await set_cached_active_prompt_set(lane, prompt_set, sections, model="gemini")
     for lane in get_args(PromptLane):
-        assert await get_cached_active_prompt_set(lane) is not None
+        assert await get_cached_active_prompt_set(lane, model="gemini") is not None
 
 
 async def test_flush_prompt_set_cache_fixture_cleared_them_before_this_test_b() -> None:
     """위 `_a`가 SET한 세 키가 이 테스트 시작 전 `_flush_prompt_set_cache`에 의해 전부
     지워졌는지 확인한다. **반드시 `_a` 바로 다음에 실행돼야 한다.**"""
     for lane in get_args(PromptLane):
-        assert await get_cached_active_prompt_set(lane) is None
+        assert await get_cached_active_prompt_set(lane, model="gemini") is None

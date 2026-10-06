@@ -97,6 +97,8 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
                 isRateLimitExempt={user.rateLimitExempt}
                 isBeta={user.betaJoinedAt !== null}
                 isNovelizeGranted={user.novelizeGrantedAt !== null}
+                isChatPremiumModelsGranted={!!user.chatPremiumModelsGrantedAt}
+                isNovelizePremiumModelsGranted={!!user.novelizePremiumModelsGrantedAt}
                 restrictableContentCount={user.restrictableContentCount}
                 restorableContentCount={user.restorableContentCount}
                 onSuccess={host.onDone}
@@ -176,6 +178,18 @@ function UserDetailSections({ userId, user }: UserDetailSectionsProps) {
             <div>
               <dt className="text-muted-foreground">소설화 허용</dt>
               <dd className="text-foreground">{formatDateTime(user.novelizeGrantedAt)}</dd>
+            </div>
+          )}
+          {!!user.chatPremiumModelsGrantedAt && (
+            <div>
+              <dt className="text-muted-foreground">채팅 상위 모델 허용</dt>
+              <dd className="text-foreground">{formatDateTime(user.chatPremiumModelsGrantedAt)}</dd>
+            </div>
+          )}
+          {!!user.novelizePremiumModelsGrantedAt && (
+            <div>
+              <dt className="text-muted-foreground">소설화 상위 모델 허용</dt>
+              <dd className="text-foreground">{formatDateTime(user.novelizePremiumModelsGrantedAt)}</dd>
             </div>
           )}
         </dl>
@@ -447,13 +461,15 @@ function formatSignedCount(amount: number) {
   return amount > 0 ? `+${formatCount(amount)}` : formatCount(amount);
 }
 
-/** 하단 바 한 줄 요약 — 조치가 바꾸는 상태(정지·면제·베타·소설화)만. 기본값(아님)은 붙이지 않는다. */
+/** 하단 바 한 줄 요약 — 조치가 바꾸는 상태(정지·면제·베타·소설화·상위 모델)만. 기본값(아님)은 붙이지 않는다. */
 function userStatusSummary(user: AdminUserDetailResponse) {
   return [
     user.suspendedAt ? "정지" : "정상",
     user.rateLimitExempt && "면제",
     user.betaJoinedAt && "베타",
     user.novelizeGrantedAt && "소설화",
+    user.chatPremiumModelsGrantedAt && "채팅 상위 모델",
+    user.novelizePremiumModelsGrantedAt && "소설화 상위 모델",
   ]
     .filter(Boolean)
     .join(" · ");

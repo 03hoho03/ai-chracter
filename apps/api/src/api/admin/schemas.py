@@ -16,6 +16,7 @@ from api.db.models.moderation import (
     ReportStatus,
 )
 from api.legal.schemas import LegalDocumentKind
+from api.llm.chat_models import ChatModelId
 
 
 class AdminLoginRequest(CamelModel):
@@ -297,6 +298,11 @@ class AdminUserDetailResponse(CamelModel):
     # 소설화 허용 행이 생긴 시각(NULL 이면 허용 행 없음). 상세에만 실린다. 허용 행만 보여 주는 값이라 전역 스위치와
     # env 명단 때문에 실제로는 막혀 있을 수 있다. 값을 바꾸는 유일한 경로는 `POST /admin/users/{id}/novelize-grant`다.
     novelize_granted_at: datetime | None
+    # 채팅·소설 상위 모델 허용 행이 생긴 시각(NULL 이면 허용 행 없음). 소설화 허용 시각과 같은 성질이고(기능 스위치·env 명단
+    # 때문에 실제로는 막혀 있을 수 있다), 바꾸는 경로는 각각 `POST /admin/users/{id}/chat-premium-models-grant`·
+    # `POST /admin/users/{id}/novelize-premium-models-grant` 다. 기본값은 이 필드를 모르는 생성 타입과의 호환용이다.
+    chat_premium_models_granted_at: datetime | None = None
+    novelize_premium_models_granted_at: datetime | None = None
     # 잔액도 상세에만 실린다(목록·필터 없음). 변동 **이력**은 이
     # 응답에 넣지 않고 `GET /admin/users/{id}/clover-ledger`가 따로 준다 — 상세 응답은 이미
     # reports·action_logs·chat_rooms 셋을 싣고 있어 네 번째 목록을 더하면 한 요청이 무거워진다.
@@ -354,12 +360,17 @@ class AdminUserBetaRequest(CamelModel):
     admin_comment: str | None = None
 
 
-class AdminUserNovelizeGrantRequest(CamelModel):
-    """소설화 허용/회수를 `granted` 한 필드로 받는 토글이다. `admin_comment`가 필수인 이유는
-    `AdminUserRateLimitExemptRequest`와 같다(비어 있으면 422)."""
+class AdminUserFeatureGrantRequest(CamelModel):
+    """기능 허용/회수를 `granted` 한 필드로 받는 토글이다. `admin_comment`가 필수인 이유는
+    `AdminUserRateLimitExemptRequest`와 같다(비어 있으면 422). 채팅·소설 상위 모델 허용 경로가 쓴다."""
 
     granted: bool
     admin_comment: str | None = None
+
+
+class AdminUserNovelizeGrantRequest(AdminUserFeatureGrantRequest):
+    """소설화 허용 경로의 요청. 모양은 `AdminUserFeatureGrantRequest` 와 같고, 이 이름은 그 경로의 생성 타입 이름을 지키려고
+    남긴다."""
 
 
 class AdminUserCloverRequest(CamelModel):
@@ -509,6 +520,7 @@ class AdminPromptSetSummary(CamelModel):
     created_at: datetime
     published_at: datetime | None
     lane: PromptLane
+    model: ChatModelId
     is_active: bool
 
 
@@ -540,6 +552,7 @@ class AdminPromptSetDetailResponse(CamelModel):
     version: str | None
     status: str
     lane: PromptLane
+    model: ChatModelId
     note: str
     created_at: datetime
     published_at: datetime | None
@@ -553,6 +566,7 @@ class AdminPromptDraftResponse(CamelModel):
     조회)."""
 
     id: uuid.UUID | None
+    model: ChatModelId
     labels: AdminPromptLabels
     sections: list[AdminPromptSectionItem]
 
@@ -600,6 +614,8 @@ class AdminLlmUsageRow(CamelModel):
     calls: int
     prompt_tokens: int
     cached_tokens: int
+    # 캐시에 새로 쓴 입력(Claude 만 보고한다). `prompt_tokens` 안의 몫이고, 정가보다 비싸게 과금된다.
+    cache_write_tokens: int
     output_tokens: int
     thoughts_tokens: int
     total_tokens: int
@@ -616,6 +632,7 @@ class AdminLlmModelPrice(CamelModel):
     input_usd_per_million: float
     cached_input_usd_per_million: float
     output_usd_per_million: float
+    cache_write_usd_per_million: float
 
 
 class AdminLlmUsageResponse(CamelModel):

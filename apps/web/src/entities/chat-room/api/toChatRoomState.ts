@@ -1,5 +1,6 @@
 import type { components } from "@ai-character-chat/api-types";
 
+import { DEFAULT_CHAT_MODEL } from "@/entities/chat-model/@x/chat-room";
 import { toMediaTagImages } from "@/entities/media-book/@x/chat-room";
 
 import type { ChatMessage } from "./chatStream";
@@ -126,5 +127,9 @@ export function toChatRoomState(dto: ChatRoomResponseDto): ChatRoomState {
     latestVersionAvailable: dto.latestVersionAvailable,
     versionAutoUpgraded: dto.versionAutoUpgraded,
     contentRestricted: dto.contentRestricted,
+    // 두 칸은 응답 스키마상 선택이다(서버 기본값이 있는 칸). 모델은 서버 기본값과 같은 기본 모델로 채우고, 가격은
+    // 화면이 사본을 두지 않도록 비워 둔다.
+    effectiveChatModel: dto.effectiveChatModel ?? DEFAULT_CHAT_MODEL,
+    turnCost: dto.turnCost,
   };
 }

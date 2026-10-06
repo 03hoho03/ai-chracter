@@ -30,6 +30,7 @@ from api.core.rate_limit import KST, seconds_until_kst_midnight
 from api.core.rate_limit_gate import _too_many_requests
 from api.db.models.auth import User
 from api.db.models.novel import Novel, NovelChapter, NovelJob, NovelJobFailureCode, NovelJobKind, NovelJobStatus
+from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, novel_chapter_cost, parse_chat_model_id
 
 ACTIVE_JOB_STATUSES: tuple[NovelJobStatus, ...] = ("queued", "running")
 # 하루 상한에 세는 상태. 환불된 실패를 세면 우리 쪽 실패가 사용자의 하루 기회를 깎는다.
@@ -39,16 +40,29 @@ _CHAPTER_JOB_KINDS: tuple[NovelJobKind, ...] = ("chapter_generate", "chapter_reg
 _NOVELIZE_WINDOW = "novelize"
 
 
-def job_price(kind: NovelJobKind) -> int:
-    """작업 한 번의 클로버 단가. 단가 상수를 부를 때마다 모듈 전역으로 읽는다 — 값을 붙잡아 두면 테스트가 바꿀 수 없고,
-    화면에 금액을 내려주는 응답도 이 함수 하나에서 읽어야 차감액과 어긋나지 않는다."""
+def job_price(kind: NovelJobKind, model: ChatModelId = DEFAULT_CHAT_MODEL) -> int:
+    """작업 한 번의 클로버 단가. 장 생성·재생성은 고른 글쓰기 모델의 장 가격이고, AI 수정은 모델과 무관하다(언제나
+    Gemini 로 돈다). 단가 상수를 부를 때마다 모듈 전역으로 읽는다 — 값을 붙잡아 두면 테스트가 바꿀 수 없고, 화면에
+    금액을 내려주는 응답도 이 함수 하나에서 읽어야 차감액과 어긋나지 않는다."""
     if kind == "chapter_generate":
-        return clover.NOVELIZE_CHAPTER_GENERATE_COST
+        return novel_chapter_cost(model, regenerate=False)
     if kind == "chapter_regenerate":
-        return clover.NOVELIZE_CHAPTER_REGENERATE_COST
+        return novel_chapter_cost(model, regenerate=True)
     if kind == "ai_edit":
         return clover.NOVELIZE_AI_EDIT_COST
     assert_never(kind)
+
+
+def chapter_job_model(job: NovelJob) -> ChatModelId:
+    """장 작업에 적힌 모델을 레지스트리 id 로 읽는다. 빈 값은 모델 칸이 생기기 전의 작업이라 기본 모델이다. 레지스트리
+    밖 값(작업이 도는 사이 배포로 모델을 내렸다)은 예외다 — 값을 낸 모델로 쓸 수 없는데 기본 모델로 바꿔 쓰면 다른
+    모델의 글을 받게 되므로, 실행 경로가 실패·환불로 끝낸다. 허용은 여기서 보지 않는다(과금할 때 판정했다)."""
+    if job.model is None:
+        return DEFAULT_CHAT_MODEL
+    model = parse_chat_model_id(job.model)
+    if model is None:
+        raise ValueError(f"소설화 작업 {job.id} 의 모델이 레지스트리에 없다: {job.model}")
+    return model
 
 
 async def _lock_user(db: AsyncSession, user_id: uuid.UUID) -> bool:
@@ -87,7 +101,8 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
     - 409 `NOVEL_NOTHING_NEW`(장 생성만): 사용자 잠금을 기다리는 사이 앞 작업이 이 작업의 시작을 덮는 장을 저장했다
       (두 탭에서 동시에 다음 장을 만든 경우). 화면은 경계 제안을 다시 받는다.
     - 409 `NOVELIZE_PRICE_CHANGED` + `currentCost`: 사용자가 확인한 금액(`expected_cost`)이 지금 단가와 다르다. 단가가
-      배포로 바뀌는 사이 열어 둔 확인 화면의 금액으로 차감하지 않으려는 것이다. DB 를 건드리기 전에 판정한다.
+      배포로 바뀌는 사이 열어 둔 확인 화면의 금액으로 차감하지 않으려는 것이다. 장 작업의 단가는 작업에 적힌 모델의
+      가격이다(`job.model`, 허용 판정은 호출자가 먼저 한다). DB 를 건드리기 전에 판정한다.
     - 409 `NOVEL_JOB_IN_PROGRESS`: 이 소설에 진행 중(대기·실행) 작업이 있다.
     - 429 `USER_LIMIT`(`window: "novelize"`): 같은 시작 메시지의 장 생성·재생성이 오늘(KST) 상한에 닿았다. 재시도 초는
       상한이 풀리는 KST 자정까지다.
@@ -97,7 +112,7 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
     순서는 단가 확인 → 사용자 잠금 → 소설·장 존재 확인 → 다음 장 시작 재확인(장 생성만) → 진행 중 확인 → 하루 상한 → 작업 INSERT → 차감(clover_lots 잠금)이다. 진행 중
     확인과 상한을 사용자 잠금 뒤에 읽으므로 같은 사용자의 동시 요청이 둘 다 통과하지 못한다(부분 유니크 인덱스는
     마지막 방어선으로 남는다)."""
-    price = job_price(job.kind)
+    price = job_price(job.kind, chapter_job_model(job))
     if expected_cost != price:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

@@ -172,7 +172,7 @@ async def _corrupt_section_body(db_session: AsyncSession, *, channel: str, slot:
     # 무효화가 없으면 다음 요청이 캐시 히트로 이 손상을 못 보고 지나가 테스트 의도(렌더
     # 실패 재현)가 캐시 여부에 우연히 좌우된다. `lane`은 호출부가 만든 방/미리보기의
     # 레인과 같아야 한다(캐시 키가 레인별로 갈린다).
-    await invalidate_active_prompt_set(lane)
+    await invalidate_active_prompt_set(lane, model="gemini")
 
 
 class _FakeLLMClient(LLMClient):

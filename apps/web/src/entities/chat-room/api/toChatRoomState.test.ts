@@ -35,7 +35,60 @@ describe("toChatRoomState", () => {
       versionAutoUpgraded: false,
       contentRestricted: false,
       hasMoreMessagesBefore: false,
+      effectiveChatModel: "gemini",
     });
+  });
+
+  // 방의 글쓰기 모델과 턴 가격은 응답 값을 그대로 옮긴다 — 화면은 가격의 사본을 두지 않고 이 값으로 잔액 부족과 확인
+  // 금액을 정한다.
+  it("carries the room's effective chat model and its per-turn clover cost", () => {
+    const base = {
+      id: "room-1",
+      contentId: "content-1",
+      contentType: "story" as const,
+      name: "대화 1",
+      turnCount: 0,
+      endingReached: false,
+      messages: [],
+      hasMoreMessagesBefore: false,
+      latestVersionAvailable: false,
+      versionAutoUpgraded: false,
+      contentRestricted: false,
+      createdAt: "2026-07-08T00:00:00Z",
+      updatedAt: "2026-07-08T00:00:00Z",
+    };
+
+    const premium = toChatRoomState({ ...base, chatModel: "opus", effectiveChatModel: "opus", turnCost: 65 });
+    expect(premium.effectiveChatModel).toBe("opus");
+    expect(premium.turnCost).toBe(65);
+
+    // 허용을 거둔 방은 저장값(opus)이 아니라 서버가 정한 유효 모델과 그 가격을 따른다.
+    const fallenBack = toChatRoomState({ ...base, chatModel: "opus", effectiveChatModel: "gemini", turnCost: 10 });
+    expect(fallenBack.effectiveChatModel).toBe("gemini");
+    expect(fallenBack.turnCost).toBe(10);
+  });
+
+  // 이 칸들이 생기기 전의 서버는 값을 보내지 않는다. 모델은 서버 기본값과 같은 기본 모델로 채우고, 가격은 비워 둔다 —
+  // 화면에 가격 사본을 두지 않기로 해서 지어낼 숫자가 없다.
+  it("falls back to the default model and an unknown cost when the server omits them", () => {
+    const state = toChatRoomState({
+      id: "room-1",
+      contentId: "content-1",
+      contentType: "character",
+      name: "대화 1",
+      turnCount: 0,
+      endingReached: false,
+      messages: [],
+      hasMoreMessagesBefore: false,
+      latestVersionAvailable: false,
+      versionAutoUpgraded: false,
+      contentRestricted: false,
+      createdAt: "2026-07-08T00:00:00Z",
+      updatedAt: "2026-07-08T00:00:00Z",
+    });
+
+    expect(state.effectiveChatModel).toBe("gemini");
+    expect(state.turnCost).toBeUndefined();
   });
 
   // 화면이 작가 글의 `{{user}}`·`{{char}}` 를 방이 고정한 버전의 이름으로 바꾸려면 세 이름이 방 상태에 있어야 한다.

@@ -27,7 +27,7 @@ import type { CloverSpendSurface } from "../model/confirmCloverSpendCopy";
  * 🔴 `bg-muted`를 쓰지 않는다 — 모달 표면이 `popover`라 값이 같아 1.0000:1로 사라진다
  * (DESIGN.md Status badges 절). 잔량은 `CloverBalance`의 무채색 잉크 그대로 둔다. */
 export const ConfirmCloverSpendModal = createCallable<
-  { balance: number; cost: number; surface: CloverSpendSurface },
+  { balance: number; cost: number | undefined; surface: CloverSpendSurface },
   boolean
 >(
   ({ call, balance, cost, surface }) => {

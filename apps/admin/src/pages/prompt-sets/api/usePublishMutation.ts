@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/shared/lib/api/client";
 
 import type { PromptLane } from "../model/lane";
+import type { PromptModel } from "../model/model";
 import { promptSetKeys } from "./keys";
 
 export type AdminPromptPublishRequest = components["schemas"]["AdminPromptPublishRequest"];
@@ -11,17 +12,21 @@ export type AdminPromptSetDetailResponse = components["schemas"]["AdminPromptSet
 
 /** 게시는 저장된 초안을 새 버전으로 복제할 뿐 초안 자체는 그대로 남는다(legal과 같다) —
  * 그래서 초안 캐시는 건드리지 않고 버전 목록·미리보기만 무효화한다. `list()`는 레인이 없는
- * 한 엔드포인트라 레인을 가로질러 무효화한다 — 그래야 세 레인의 `isActive` 배지가
+ * 한 엔드포인트라 체인을 가로질러 무효화한다 — 그래야 다른 체인의 `isActive` 배지가
  * 함께 갱신된다. */
-export function usePublishMutation(lane: PromptLane) {
+export function usePublishMutation(lane: PromptLane, model: PromptModel) {
   const queryClient = useQueryClient();
 
   return useMutation<AdminPromptSetDetailResponse, ApiError, AdminPromptPublishRequest>({
     mutationFn: async (payload) =>
-      (await apiClient.post<AdminPromptSetDetailResponse>(`/admin/prompt-sets/${lane}/publish`, payload)).data,
+      (
+        await apiClient.post<AdminPromptSetDetailResponse>(`/admin/prompt-sets/${lane}/publish`, payload, {
+          params: { model },
+        })
+      ).data,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: promptSetKeys.list() });
-      void queryClient.invalidateQueries({ queryKey: promptSetKeys.preview(lane) });
+      void queryClient.invalidateQueries({ queryKey: promptSetKeys.preview(lane, model) });
     },
   });
 }

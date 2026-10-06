@@ -30,15 +30,22 @@ export function getChatRateLimit(error: unknown): ChatRateLimit | undefined {
   return { window: detail.window, retryAfterSeconds: detail.retryAfterSeconds };
 }
 
+/** 배너가 놓인 자리. 같은 창이어도 자리마다 참인 문장이 다르다.
+ * - `chat`: 기본 모델 방. 무료 일일분이 있어 클로버가 없어도 자정에 다시 보낼 수 있다.
+ * - `premiumChat`: 상위 모델 방. 무료분이 없어 턴마다 클로버를 쓴다 — 자정이 와도 풀리지 않으므로 부족 사실만 말한다.
+ *   서버가 같은 `CLOVER_REQUIRED` 에 자정까지의 초를 싣지만 이 방에서는 그 값이 다시 보낼 수 있는 시점이 아니다.
+ * - `preview`: 빌더 미리보기. 늘 기본 모델이고 실제 채팅과 같은 한도를 쓴다. */
+export type ChatRateLimitSurface = "chat" | "premiumChat" | "preview";
+
 /** 미리보기는 실제 채팅과 같은 상한을 공유한다(BE는 채팅 4경로에 같은 게이트를 건다) — 빌더에서
  * 갑자기 막히면 "미리보기만의 제약"으로 읽히므로 그 사실을 문구가 먼저 말한다. */
 const PREVIEW_LEAD = "미리보기도 채팅과 같은 한도를 써요";
 
-function minuteLead(surface: "chat" | "preview"): string {
+function minuteLead(surface: ChatRateLimitSurface): string {
   return surface === "preview" ? PREVIEW_LEAD : "너무 빠르게 보냈어요";
 }
 
-/** 문구가 **두 사실을 함께** 말한다: 지금 막힌 이유(클로버가 없다)와
+/** 기본 모델 방의 문구는 **두 사실을 함께** 말한다: 지금 막힌 이유(클로버가 없다)와
  * 다시 되는 시점(자정에 무료 한도가 돌아온다). 하나만 말하면 사용자가 할 수 있는 일이 안 보인다.
  *
  * `retryAfterSeconds`는 KST 자정까지 남은 초라 **참값이다** — 그때 무료 일일분이 돌아오므로 실제로
@@ -46,8 +53,18 @@ function minuteLead(surface: "chat" | "preview"): string {
  * 86400이라 초 타이머를 걸지 않고 "자정"이라는 고정 시점으로 말한다. 카운트다운이 없어
  * `formatChatRateLimitMessage`와 `formatChatRateLimitAnnouncement`가 이 문구를 그대로 공유한다
  * (사본을 두지 않는다). */
-function cloverMessage(surface: "chat" | "preview"): string {
-  return `${surface === "preview" ? PREVIEW_LEAD : "클로버가 없어요"} · 자정에 무료 한도가 돌아와요`;
+function cloverMessage(surface: ChatRateLimitSurface): string {
+  switch (surface) {
+    case "chat":
+      return "클로버가 없어요 · 자정에 무료 한도가 돌아와요";
+    case "premiumChat":
+      // 상위 모델 방에는 돌아올 무료 한도가 없다. 모델을 바꾸라는 말도 넣지 않는다 — 고른 모델은 이용자의 결정이다.
+      return "클로버가 부족해요";
+    case "preview":
+      return `${PREVIEW_LEAD} · 자정에 무료 한도가 돌아와요`;
+    default:
+      return assertNever(surface);
+  }
 }
 
 /** 채팅·미리보기 429 배너 문구. 창마다 다음 행동이 다르므로
@@ -62,7 +79,7 @@ function cloverMessage(surface: "chat" | "preview"): string {
  * "지금 다시 보낼 수 있다"를 말해야 한다. */
 export function formatChatRateLimitMessage(
   rateLimit: ChatRateLimit,
-  surface: "chat" | "preview",
+  surface: ChatRateLimitSurface,
   secondsLeft: number,
 ): string {
   switch (rateLimit.window) {
@@ -80,7 +97,7 @@ export function formatChatRateLimitMessage(
 /** `RateLimitNotice`의 `role="alert"` `sr-only` 쌍둥이가 읽을 문장. `secondsLeft`를 인자로
  * 받지 않는 것이 설계의 핵심이다 — 숫자가 없으면 마운트 1회 말고는 반환값이 바뀔 길이 없어(뮤테이션이
  * 원리적으로 불가능해) alert가 매초 재발화하지 않는다. clover 문구는 `cloverMessage`를 공유한다. */
-export function formatChatRateLimitAnnouncement(rateLimit: ChatRateLimit, surface: "chat" | "preview"): string {
+export function formatChatRateLimitAnnouncement(rateLimit: ChatRateLimit, surface: ChatRateLimitSurface): string {
   switch (rateLimit.window) {
     case "minute":
       return `${minuteLead(surface)} · 잠시 뒤 다시 보낼 수 있어요`;

@@ -555,7 +555,7 @@ async def test_story_turn_skips_media_judgment_when_prompt_renders_empty(
     room_id = await _open_story_room(db_client, db_session, user, content, setup)
     prompt_set, sections = await load_active_prompt_set(db_session, lane="story")
     await set_cached_active_prompt_set(
-        "story", prompt_set, [s for s in sections if s.channel != "image_judgment"]
+        "story", prompt_set, [s for s in sections if s.channel != "image_judgment"], model="gemini"
     )
     fake = _JudgingLLMClient()
 

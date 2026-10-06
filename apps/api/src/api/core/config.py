@@ -2,7 +2,7 @@ import json
 import uuid
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -197,6 +197,75 @@ class Settings(BaseSettings):
     gemini_novelize_revise_timeout_ms: int = 120_000
     gemini_novelize_boundary_timeout_ms: int = 30_000
 
+    # 상위 모델(AWS Bedrock 의 Claude). 채팅 턴 생성과 소설 장 생성만 이 모델로 갈 수 있고 나머지 호출은 Gemini 다.
+    # 🔴 env 이름을 `AWS_` 로 시작하지 않는다 — 그 이름들은 R2 용이고 boto3 가 프로세스 env 에서 직접 읽는다. 자격은 Bedrock
+    # 호출만 허용한 전용 IAM 사용자 키를 여기서 SDK 에 명시로 넘긴다(`llm/bedrock.py`). 키나 리전이 빈 채로 SDK 에 가면 기본
+    # 자격 체인이 R2 키로 서명하거나 R2 리전(`auto`)으로 엔드포인트를 만들어서, 아래 스위치가 켜져 있으면 셋이 다 있어야 기동한다.
+    bedrock_access_key_id: str = Field(default="", repr=False)
+    bedrock_secret_access_key: str = Field(default="", repr=False)
+    bedrock_region: str = "ap-northeast-2"
+    # 실제 모델 id. 서울 출발 호출은 global 교차 리전 프로필만 열려 있다. 새 버전으로 옮길 때 이 값만 바꾸면 방·작업에 저장된
+    # 모델 값(`sonnet`·`opus`)은 그대로다 — 단가표(`llm/pricing.py`)에 없는 id 면 어드민 원가가 "단가 없음"이 된다.
+    bedrock_sonnet_model_id: str = "global.anthropic.claude-sonnet-4-6"
+    bedrock_opus_model_id: str = "global.anthropic.claude-opus-4-6-v1"
+    # 요청 타임아웃(ms). SDK 가 httpx 계열이라 스트리밍에서는 Gemini 와 같이 "다음 청크까지"의 상한이고 호출 전체의 상한이
+    # 아니다. 채팅은 Gemini 생성 상한과 같은 값, 장은 Gemini 장 생성 상한과 같은 값이다. 재시도는 하지 않는다.
+    bedrock_chat_timeout_ms: int = 45_000
+    bedrock_chapter_timeout_ms: int = 300_000
+    # 출력 상한. 사고를 끄므로 응답만 쓰는 예산이다. 채팅은 같은 방의 같은 입력으로 Sonnet 을 돌려 본 비교에서 쓴 값이고,
+    # 장은 Gemini 소설화 상한과 같은 값이다. Bedrock 은 요청마다 입력 + 이 출력 상한 전체를 분당 토큰 쿼터에서 먼저 잡고
+    # (출력 토큰은 모델에 따라 몇 배로 센다), 무작정 올리면 동시 요청이 스로틀된다. 장 상한이 채팅의 8배라 장 하나가 채팅
+    # 턴 여럿만큼 쿼터를 잡는다. 상위 모델을 켜기 전에 Service Quotas 의 교차 리전 TPM 과 그 모델의 출력 배수로 동시 장
+    # 몇 개가 들어가는지 계산해 본다.
+    bedrock_chat_max_tokens: int = 4096
+    bedrock_chapter_max_tokens: int = 32_768
+    # 상위 모델 스위치와 허용 가능 계정 명단 — 채팅과 소설화에 한 벌씩. 뜻은 소설화 스위치·명단과 같다(기본 닫힘, 명단에서
+    # 빼고 재기동하면 허용 행이 있어도 막힘). 소설 장의 상위 모델은 소설화 자체 허용도 함께 있어야 쓸 수 있다.
+    chat_premium_models_enabled: bool = False
+    chat_premium_model_allowlist: Annotated[list[uuid.UUID], NoDecode] = []
+    novelize_premium_models_enabled: bool = False
+    novelize_premium_model_allowlist: Annotated[list[uuid.UUID], NoDecode] = []
+
+    @field_validator(
+        "bedrock_sonnet_model_id",
+        "bedrock_opus_model_id",
+        "bedrock_chat_timeout_ms",
+        "bedrock_chapter_timeout_ms",
+        "bedrock_chat_max_tokens",
+        "bedrock_chapter_max_tokens",
+        "chat_premium_models_enabled",
+        "novelize_premium_models_enabled",
+        mode="before",
+    )
+    @classmethod
+    def _empty_bedrock_value_is_default(cls, value: object, info: ValidationInfo) -> object:
+        """env 에 값만 비운 줄(`KEY=`)이 남아도 기동하게 빈 값은 코드 기본값으로 읽는다 — 숫자·불리언 파싱은 빈 문자열에서
+        실패하고, 빈 모델 id 는 어떤 모델도 가리키지 않는다. 키·리전은 여기 넣지 않는다(빈 값이 곧 "없음"이고 아래 기동
+        검사가 본다)."""
+        if isinstance(value, str) and not value.strip():
+            assert info.field_name is not None
+            return cls.model_fields[info.field_name].default
+        return value
+
+    @model_validator(mode="after")
+    def _premium_models_need_bedrock_credentials(self) -> "Settings":
+        """스위치 하나라도 켜져 있으면 Bedrock 키·비밀 키·리전이 모두 있어야 한다. 켜진 채 빈 값으로 뜨면 첫 상위 모델
+        호출에서야 실패하고(그 턴은 환불된다), 클라이언트가 막지 못한 경로가 생기면 R2 자격으로 서명된다."""
+        if not (self.chat_premium_models_enabled or self.novelize_premium_models_enabled):
+            return self
+        missing = [
+            env_name
+            for env_name, value in (
+                ("BEDROCK_ACCESS_KEY_ID", self.bedrock_access_key_id),
+                ("BEDROCK_SECRET_ACCESS_KEY", self.bedrock_secret_access_key),
+                ("BEDROCK_REGION", self.bedrock_region),
+            )
+            if not value.strip()
+        ]
+        if missing:
+            raise ValueError(f"상위 모델 스위치가 켜져 있는데 {', '.join(missing)} 가 비어 있다")
+        return self
+
     @field_validator(
         "gemini_thinking_budget", "gemini_novelize_thinking_budget", "gemini_novelize_thinking_level", mode="before"
     )
@@ -326,9 +395,12 @@ class Settings(BaseSettings):
     novelize_heartbeat_interval_seconds: float = 10
     novelize_heartbeat_expiry_seconds: int = 60
     # 소설화 작업 하나의 전체 상한(초). heartbeat 가 살아 있어도 작업이 무한히 늘어지지 않게 한다. 지금 SDK 경로(httpx)
-    # 에서 장 생성 호출의 타임아웃(`gemini_novelize_chapter_timeout_ms`)은 스트리밍의 청크 사이 읽기 상한이라, 꾸준히
-    # 흘러나오는 긴 장의 전체 시간을 끊는 것은 이 작업 상한 하나뿐이다. 그 호출 타임아웃은 첫 청크 전(또는 청크 사이)에
-    # 오래 멈춘 경우에만 먼저 난다. 넘기면 실패·환불하고, 취소된 호출의 토큰 사용량은 기록되지 않는다. 임시값.
+    # 에서 장 생성 호출의 타임아웃(Gemini `gemini_novelize_chapter_timeout_ms`, 상위 모델 `bedrock_chapter_timeout_ms`)은
+    # 스트리밍의 청크 사이 읽기 상한이라, 꾸준히 흘러나오는 긴 장의 전체 시간을 끊는 것은 이 작업 상한 하나뿐이다. 그 호출
+    # 타임아웃은 첫 청크 전(또는 청크 사이)에 오래 멈춘 경우에만 먼저 난다. 넘기면 실패·환불하고(상위 모델도 그 모델 값
+    # 그대로 환불), 취소된 호출의 토큰 사용량은 기록되지 않는다 — 원가는 나갔는데 집계에 안 잡힌다. 상위 모델, 특히 Opus
+    # 의 긴 장이 이 상한 안에 드는지는 아직 재지 않았다. 상위 모델을 켜기 전에 가장 긴 장(턴 상한 끝까지)을 Opus 로 한 번
+    # 돌려 걸린 시간을 보고, 넘으면 이 값을 올린다. 임시값.
     novelize_job_timeout_seconds: float = 360
     # 장 본문이 이보다 짧으면(글자 수, 앞뒤 공백 제외) 정상 종료였어도 실패·환불한다. 출력 토큰 1개로 끝난 장이 실제로
     # 나왔다. 200자는 측정으로 정한 값이 아니라 그런 몇 글자짜리 장을 거르려고 넉넉히 낮게 잡은 임시 하한이다 — 짧은
@@ -347,7 +419,9 @@ class Settings(BaseSettings):
     # 이 상한뿐이다. 면제 계정도 똑같이 센다. 임시값.
     novelize_proposal_hourly_limit: int = 30
 
-    @field_validator("novelize_grant_allowlist", mode="before")
+    @field_validator(
+        "novelize_grant_allowlist", "chat_premium_model_allowlist", "novelize_premium_model_allowlist", mode="before"
+    )
     @classmethod
     def _split_novelize_grant_allowlist(cls, value: object) -> object:
         """env 문자열을 쉼표로 나눈다. 항목 앞뒤 공백은 지우고 빈 항목은 버린다. CORS 명단과 달리 남는 항목이

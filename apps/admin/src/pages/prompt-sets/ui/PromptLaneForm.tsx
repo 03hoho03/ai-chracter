@@ -11,6 +11,7 @@ import { usePreviewQuery } from "../api/usePreviewQuery";
 import { useSaveDraftMutation } from "../api/useSaveDraftMutation";
 import { PROMPT_CHANNELS, PROMPT_CHANNEL_LABELS, isPromptChannel, type PromptChannel } from "../model/channels";
 import type { PromptLane } from "../model/lane";
+import { promptChainKey, type PromptChainKey, type PromptModel } from "../model/model";
 import {
   formToServer,
   promptSetFormSchema,
@@ -25,14 +26,15 @@ import { PublishPromptSetDialog } from "./PublishPromptSetDialog";
 
 type PromptLaneFormProps = {
   lane: PromptLane;
+  model: PromptModel;
   draft: AdminPromptDraftResponse;
-  /** 이 레인에 저장하지 않은 변경이 생기고 사라질 때 알린다 — 페이지가 세 레인을 모아 이탈 확인 하나를 건다. */
-  onDirtyChange: (lane: PromptLane, isDirty: boolean) => void;
+  /** 이 체인에 저장하지 않은 변경이 생기고 사라질 때 알린다 — 페이지가 모든 체인을 모아 이탈 확인 하나를 건다. */
+  onDirtyChange: (chain: PromptChainKey, isDirty: boolean) => void;
 };
 
 /** 레인 분리 전 단일 편집기(`PromptSetsEditor`)의 몸통을 그대로 옮겼다. `PromptLaneEditor`와
  * 2단으로 갈린 이유가 아래 `values`의 불변식이다 — 한 컴포넌트로 합치지 않는다. */
-export function PromptLaneForm({ lane, draft, onDirtyChange }: PromptLaneFormProps) {
+export function PromptLaneForm({ lane, model, draft, onDirtyChange }: PromptLaneFormProps) {
   // `values`는 참조가 바뀔 때마다 RHF의 동기화 effect를 다시 태운다 — 매 렌더 새 객체를
   // 넘기면(예: 인라인 `serverToForm(draft)`) 내용이 같아도 매번 재동기화가 돌아 `isDirty`가
   // 타이핑 도중 조용히 꺼진다(실측: 라벨 입력은 안 먹고 `setValue`만 먹혔다). `draft`가
@@ -42,15 +44,15 @@ export function PromptLaneForm({ lane, draft, onDirtyChange }: PromptLaneFormPro
     resolver: zodResolver(promptSetFormSchema),
     values,
   });
-  const saveDraftMutation = useSaveDraftMutation(lane);
+  const saveDraftMutation = useSaveDraftMutation(lane, model);
   // `PreviewPanel`도 같은 queryKey로 이 쿼리를 부른다 — react-query가 캐시를 공유해 요청이
   // 중복되지 않는다(`PageHeader`/`VersionHistorySection`이 `useVersionListQuery`를 각자
   // 부르는 것과 같은 패턴). 게시 버튼이 "미리보기를 실제로 봤는가"를 알아야 해서 여기서도
   // 구독한다.
-  const previewQuery = usePreviewQuery(lane);
+  const previewQuery = usePreviewQuery(lane, model);
 
-  // 채널은 이 레인의 초안이 실제로 들고 있는 섹션에서
-  // 도출한다. 손으로 `Record<PromptLane, PromptChannel[]>`을 적으면 BE
+  // 채널은 이 체인의 초안이 실제로 들고 있는 섹션에서
+  // 도출한다(Claude 세트는 그래서 시스템 지침·생성 두 탭이 된다). 손으로 `Record<PromptLane, PromptChannel[]>`을 적으면 BE
   // `_EXPECTED_ROWS_BY_LANE`(admin/prompts.py)과 같은 사실의 두 번째 사본이 된다.
   const channels = PROMPT_CHANNELS.filter((c) => draft.sections.some((s) => s.channel === c));
   // ⚠️ 초기값을 `"system"` 리터럴로 고정하면 `system` 채널이 없는 `publish_filter` 레인이
@@ -60,12 +62,14 @@ export function PromptLaneForm({ lane, draft, onDirtyChange }: PromptLaneFormPro
   const isDirty = form.formState.isDirty;
   const draftId = draft.id;
 
-  // 폼 상태는 이 레인의 `useForm` 안에 있어 페이지가 읽을 수 없다 — 바뀔 때 알리고, 폼이 사라지면 변경도 사라진다.
+  const chain = promptChainKey(lane, model);
+
+  // 폼 상태는 이 체인의 `useForm` 안에 있어 페이지가 읽을 수 없다 — 바뀔 때 알리고, 폼이 사라지면 변경도 사라진다.
   // 저장·복원 응답이 `values` 를 바꿔 폼을 리셋하므로 그 직후 거짓으로 알린다.
   useEffect(() => {
-    onDirtyChange(lane, isDirty);
-  }, [lane, isDirty, onDirtyChange]);
-  useEffect(() => () => onDirtyChange(lane, false), [lane, onDirtyChange]);
+    onDirtyChange(chain, isDirty);
+  }, [chain, isDirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange(chain, false), [chain, onDirtyChange]);
 
   const handleSave = form.handleSubmit(
     async (values) => {
@@ -144,7 +148,7 @@ export function PromptLaneForm({ lane, draft, onDirtyChange }: PromptLaneFormPro
           </div>
         </section>
 
-        <PreviewPanel lane={lane} isStale={isDirty} />
+        <PreviewPanel lane={lane} model={model} isStale={isDirty} />
 
         <section className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4">
           <h2 className="text-lg font-semibold text-foreground">게시</h2>
@@ -157,7 +161,7 @@ export function PromptLaneForm({ lane, draft, onDirtyChange }: PromptLaneFormPro
               type="button"
               variant="outline"
               disabled={!!actionDisabledReason}
-              onClick={() => void PublishPromptSetDialog.call({ lane })}
+              onClick={() => void PublishPromptSetDialog.call({ lane, model })}
             >
               게시
             </Button>

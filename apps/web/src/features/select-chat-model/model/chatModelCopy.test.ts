@@ -1,0 +1,31 @@
+import { describe, expect, it } from "vitest";
+
+import { formatChatModelPrice, formatPremiumModelConfirm } from "./chatModelCopy";
+
+const GEMINI = { id: "gemini", name: "Gemini", turnCost: 10 } as const;
+const OPUS = { id: "opus", name: "Claude Opus 4.6", turnCost: 65 } as const;
+
+describe("formatChatModelPrice", () => {
+  it("상위 모델은 턴 가격과 무료 대화가 없다는 사실을 함께 말한다", () => {
+    const text = formatChatModelPrice(OPUS);
+    expect(text).toContain("65개");
+    expect(text).toContain("무료 대화 없음");
+  });
+
+  // 짝: 기본 모델에 "무료 대화 없음"이 붙으면 거짓이다 — 하루 무료 대화를 다 쓴 뒤에만 깎인다.
+  it("기본 모델은 무료 대화 뒤부터 깎인다고 말한다", () => {
+    const text = formatChatModelPrice(GEMINI);
+    expect(text).toContain("10개");
+    expect(text).toContain("무료 대화를 다 쓴 뒤");
+    expect(text).not.toContain("무료 대화 없음");
+  });
+});
+
+describe("formatPremiumModelConfirm", () => {
+  it("턴 가격, 무료 대화 없음, 따로 묻지 않는다는 것을 모두 말한다", () => {
+    const text = formatPremiumModelConfirm(OPUS);
+    expect(text).toContain("65개");
+    expect(text).toContain("무료 대화 없이");
+    expect(text).toContain("따로 묻지 않고");
+  });
+});

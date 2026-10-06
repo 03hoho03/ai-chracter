@@ -4,22 +4,24 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/shared/lib/api/client";
 
 import type { PromptLane } from "../model/lane";
+import type { PromptModel } from "../model/model";
 import type { AdminPromptDraftResponse, AdminPromptDraftUpsertRequest } from "../model/schema";
 import { promptSetKeys } from "./keys";
 
 /** PUT .../draft는 섹션 전체 교체다(부분 패치가 아니다) — 응답이 이미 최신 전체 초안이라
  * invalidate 대신 setQueryData로 캐시를 바로 채운다(legal의 `useSaveDraftMutation`과 같은 모양).
  * 미리보기는 저장된 초안을 렌더하므로(요청 바디가 없다) 저장 직후엔 낡은 값이라 함께 무효화한다.
- * 무효화는 이 레인 안에서만 일어난다(레인 간 교차 없음). */
-export function useSaveDraftMutation(lane: PromptLane) {
+ * 무효화는 이 (레인, 모델) 체인 안에서만 일어난다(체인 간 교차 없음). */
+export function useSaveDraftMutation(lane: PromptLane, model: PromptModel) {
   const queryClient = useQueryClient();
 
   return useMutation<AdminPromptDraftResponse, ApiError, AdminPromptDraftUpsertRequest>({
     mutationFn: async (payload) =>
-      (await apiClient.put<AdminPromptDraftResponse>(`/admin/prompt-sets/${lane}/draft`, payload)).data,
+      (await apiClient.put<AdminPromptDraftResponse>(`/admin/prompt-sets/${lane}/draft`, payload, { params: { model } }))
+        .data,
     onSuccess: (data) => {
-      queryClient.setQueryData(promptSetKeys.draft(lane), data);
-      void queryClient.invalidateQueries({ queryKey: promptSetKeys.preview(lane) });
+      queryClient.setQueryData(promptSetKeys.draft(lane, model), data);
+      void queryClient.invalidateQueries({ queryKey: promptSetKeys.preview(lane, model) });
     },
   });
 }

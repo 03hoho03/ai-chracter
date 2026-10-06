@@ -38,7 +38,7 @@ from api.llm.client import (
     LLMPolicyViolationError,
     LLMTruncatedError,
 )
-from api.novelize.billing import ACTIVE_JOB_STATUSES, refund_job, transition_job
+from api.novelize.billing import ACTIVE_JOB_STATUSES, chapter_job_model, refund_job, transition_job
 from api.novelize.deletion import erase_stale_ai_edit_previews
 from api.novelize.inputs import (
     ChapterInput,
@@ -140,11 +140,18 @@ async def _execute(session_factory: SessionFactory, llm_client: LLMClient, job_i
                     chapter_input = await build_chapter_input(db, job, novel)
             except SourceChangedError as exc:
                 raise _JobFailedError("source_changed") from exc
-            usage = LLMCallContext(
-                call_site="novelize_revise" if job.kind == "ai_edit" else "novelize_chapter",
-                user_id=job.user_id,
-                room_id=novel.chat_room_id,
-            )
+            if job.kind == "ai_edit":
+                usage = LLMCallContext(call_site="novelize_revise", user_id=job.user_id, room_id=novel.chat_room_id)
+            else:
+                # 작업에 적힌 모델 그대로다. 허용은 과금할 때 판정했고 여기서 다시 보지 않는다 — 그 사이 허용이 회수됐다고
+                # 기본 모델로 바꾸면 상위 모델 값을 내고 다른 모델의 글을 받는다. 프롬프트 세트는 모델과 무관하게 기본
+                # 모델 세트다(`build_chapter_input`).
+                usage = LLMCallContext(
+                    call_site="novelize_chapter",
+                    user_id=job.user_id,
+                    room_id=novel.chat_room_id,
+                    model=chapter_job_model(job),
+                )
             kind = job.kind
         # 여기서부터 모델 호출 — 세션을 닫은 뒤다.
         if kind == "ai_edit":

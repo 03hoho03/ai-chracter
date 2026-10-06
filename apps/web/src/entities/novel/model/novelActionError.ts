@@ -49,6 +49,12 @@ export const NOVEL_ROOM_GONE_MESSAGE = "원래 대화방이 지워져 새 장을
 const MESSAGE_BY_CODE: Record<string, NovelActionErrorNotice> = {
   // 행동 중에 허용이 회수된 경우다. 상세를 다시 받으면 그 조회도 403 이라 화면이 잠김 화면으로 넘어간다.
   NOVELIZE_NOT_ALLOWED: { message: "소설로 보기를 지금 이 계정에서 쓸 수 없어요.", shouldRefetchNovel: true },
+  // 고른 상위 모델을 쓸 허용이 없다(기능이 꺼졌거나 허용을 거뒀다). 상세를 다시 받으면 고를 수 있는 모델 목록이 줄어
+  // 다음 확인 화면이 맞아진다.
+  NOVEL_MODEL_NOT_ALLOWED: {
+    message: "고른 모델을 지금 이 계정에서 쓸 수 없어요. 다른 모델을 골라주세요.",
+    shouldRefetchNovel: true,
+  },
   NOVEL_NOT_FOUND: { message: "소설이 지워졌어요. 내 소설에서 다시 확인해주세요.", shouldRefetchNovel: true },
   NOVEL_FORBIDDEN: { message: "이 계정의 소설이 아니에요.", shouldRefetchNovel: true },
   NOVEL_CURSOR_INVALID: { message: "목록을 처음부터 다시 불러와주세요.", shouldRefetchNovel: false },

@@ -22,6 +22,7 @@ from api.llm.client import (
     LLMPolicyViolationError,
     LLMRateLimitError,
     LLMTruncatedError,
+    SegmentedPrompt,
 )
 from api.llm.gemini import GeminiLLMClient
 
@@ -1109,6 +1110,45 @@ async def test_streaming_generation_times_out_through_the_real_sdk(monkeypatch: 
     (request,) = seen
     assert request.extensions["timeout"]["read"] == pytest.approx(0.05)
     assert request.headers["X-Server-Timeout"] == "1"
+
+
+def _sent_texts(request: httpx.Request) -> tuple[list[str], list[str]]:
+    """SDK 가 실제로 보낸 요청 본문에서 대화 내용과 지시문의 글 조각을 꺼낸다."""
+    body = json.loads(request.content)
+    contents = [part.get("text") for content in body.get("contents", []) for part in content.get("parts", [])]
+    instruction = [part.get("text") for part in body.get("systemInstruction", {}).get("parts", [])]
+    return contents, instruction
+
+
+_SEGMENTED = SegmentedPrompt(("앞 기록\n", "직전 교환\n", "이번 입력"))
+_SEGMENTED_INSTRUCTION = SegmentedPrompt(("지시문 앞\n", "지시문 뒤"))
+
+
+async def test_streaming_generation_sends_a_segmented_prompt_as_its_full_text_through_the_real_sdk() -> None:
+    """채팅 턴의 프롬프트는 `str` 하위 클래스다. SDK 의 요청 모델이 이것을 빈 `Content` 로 바꾸면 본문 없는 요청이 나가
+    운영의 모든 Gemini 턴이 400 으로 실패하므로, 진짜 SDK 가 만든 요청 본문에 글 전체가 실렸는지 본다."""
+    seen: list[httpx.Request] = []
+    client = _sdk_backed_client(seen)
+
+    [_ async for _ in client.generate(_SEGMENTED, _SEGMENTED_INSTRUCTION, usage=_USAGE)]
+
+    (request,) = seen
+    assert _sent_texts(request) == ([str(_SEGMENTED)], [str(_SEGMENTED_INSTRUCTION)])
+
+
+async def test_structured_call_sends_a_segmented_prompt_as_its_full_text_through_the_real_sdk() -> None:
+    seen: list[httpx.Request] = []
+    client = _sdk_backed_client(seen)
+
+    await client.generate_structured(
+        _SEGMENTED,
+        _JudgmentResult,
+        usage=LLMCallContext(call_site="chat_stat_judgment", user_id=None, room_id=None),
+        system_instruction=_SEGMENTED_INSTRUCTION,
+    )
+
+    (request,) = seen
+    assert _sent_texts(request) == ([str(_SEGMENTED)], [str(_SEGMENTED_INSTRUCTION)])
 
 
 async def test_generate_wraps_a_bare_timeout_error(monkeypatch: pytest.MonkeyPatch) -> None:

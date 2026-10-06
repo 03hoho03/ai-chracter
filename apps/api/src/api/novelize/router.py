@@ -43,8 +43,10 @@ from api.db.models.persona import UserPersona
 from api.db.models.story import StoryVersionDetail
 from api.db.session import get_db_session, get_session_factory
 from api.legal.dependencies import require_legal_consent
+from api.llm.chat_models import CHAT_MODELS, DEFAULT_CHAT_MODEL, ChatModelId
 from api.llm.client import LLMCallContext, LLMClient, LLMClientError
 from api.llm.dependencies import get_llm_client
+from api.llm.model_access import effective_model, has_novel_premium_access
 from api.novelize.access import require_novelize_access
 from api.novelize.billing import (
     ACTIVE_JOB_STATUSES,
@@ -66,6 +68,7 @@ from api.novelize.schemas import (
     NovelAiEditRequest,
     NovelChapterCandidate,
     NovelChapterCreateRequest,
+    NovelChapterModel,
     NovelChapterProposalResponse,
     NovelChapterRegenerateRequest,
     NovelChapterResponse,
@@ -85,6 +88,7 @@ from api.novelize.schemas import (
     NovelRevisionRestoreRequest,
     NovelRevisionSummary,
     NovelSettingNotesRequest,
+    chapter_model_option,
 )
 from api.novelize.source import (
     format_turn_lines,
@@ -145,6 +149,31 @@ async def _owned_room_dependency(
 
 
 # ── 응답 조립 ───────────────────────────────────────────────────────────────
+async def _chapter_models(db: AsyncSession, user_id: uuid.UUID) -> tuple[list[NovelChapterModel], bool]:
+    """장 확인 화면에서 고를 수 있는 모델과 그 가격, 그리고 상위 모델 허용 여부. 기본 모델은 늘 맨 앞에 있고, 상위 모델은
+    장 요청 게이트(`_require_chapter_model`)와 같은 판정이 참일 때만 싣는다 — 화면이 고를 수 있게 보여 준 모델을 요청이
+    막는 어긋남이 없게."""
+    allowed = await has_novel_premium_access(db, user_id)
+    models = [chapter_model_option(spec.id) for spec in CHAT_MODELS if spec.id == DEFAULT_CHAT_MODEL or allowed]
+    return models, allowed
+
+
+async def _last_chapter_model(db: AsyncSession, novel_id: uuid.UUID, *, allowed: bool) -> ChatModelId:
+    """이 소설에서 가장 최근에 성공한 장 작업의 모델을 지금 쓸 모델로 읽는다. 실패한 장은 환불돼 사용자가 그 모델로 글을
+    받은 적이 없으므로 세지 않는다."""
+    stored = await db.scalar(
+        select(NovelJob.model)
+        .where(
+            NovelJob.novel_id == novel_id,
+            NovelJob.kind.in_(("chapter_generate", "chapter_regenerate")),
+            NovelJob.status == "succeeded",
+        )
+        .order_by(NovelJob.created_at.desc(), NovelJob.id.desc())
+        .limit(1)
+    )
+    return effective_model(stored, allowed=allowed)
+
+
 def _prices() -> NovelPrices:
     return NovelPrices(
         chapter_generate=job_price("chapter_generate"),
@@ -259,6 +288,7 @@ async def _pending_ai_edits(
 async def _detail(db: AsyncSession, novel_id: uuid.UUID) -> NovelDetailResponse:
     novel = await db.get_one(Novel, novel_id, populate_existing=True)
     chapters = await _chapter_summaries(db, novel.id)
+    chapter_models, premium_allowed = await _chapter_models(db, novel.user_id)
     return NovelDetailResponse(
         id=novel.id,
         chat_room_id=novel.chat_room_id,
@@ -275,6 +305,8 @@ async def _detail(db: AsyncSession, novel_id: uuid.UUID) -> NovelDetailResponse:
         limits=_LIMITS,
         created_at=novel.created_at,
         updated_at=novel.updated_at,
+        chapter_models=chapter_models,
+        last_chapter_model=await _last_chapter_model(db, novel.id, allowed=premium_allowed),
     )
 
 
@@ -309,6 +341,7 @@ def _job_response(job: NovelJob) -> NovelJobResponse:
         revision_id=job.result_revision_id,
         ai_edit=ai_edit,
         created_at=job.created_at,
+        model=None if job.kind == "ai_edit" else job.model or DEFAULT_CHAT_MODEL,
     )
 
 
@@ -551,6 +584,14 @@ def _source_room_id(novel: Novel) -> uuid.UUID:
     return novel.chat_room_id
 
 
+async def _require_chapter_model(db: AsyncSession, novel: Novel, model: ChatModelId) -> None:
+    """장 요청이 고른 모델을 이 계정이 쓸 수 있는지 차감 전에 본다. 기본 모델은 누구나 된다. 상위 모델은 소설 상위 모델
+    허용이 있어야 하고, 없으면 403 `NOVEL_MODEL_NOT_ALLOWED` 하나다(꺼짐·명단 밖·허용 행 없음을 가르지 않는다). 방에
+    저장된 모델처럼 기본 모델로 바꿔 받지 않는다 — 장 요청의 모델은 사용자가 그 가격과 함께 지금 고른 값이다."""
+    if model != DEFAULT_CHAT_MODEL and not await has_novel_premium_access(db, novel.user_id):
+        raise _novel_error(status.HTTP_403_FORBIDDEN, "NOVEL_MODEL_NOT_ALLOWED")
+
+
 def _require_protagonist_name(novel: Novel) -> None:
     """장 본문은 사용자 쪽 인물을 이름으로 부른다 — 이름이 없으면 차감하기 전에 받는다."""
     if not (novel.protagonist_name or "").strip():
@@ -642,6 +683,7 @@ async def propose_novel_chapter(
     turns = group_turns(candidates)
     prompt_set, sections = await load_active_prompt_set(db, lane=novel.content_type)
     await _check_proposal_limit(novel.user_id)
+    chapter_models, _ = await _chapter_models(db, novel.user_id)
     await db.commit()
 
     suggestion: NovelChapterSuggestion | None = None
@@ -689,6 +731,7 @@ async def propose_novel_chapter(
         ],
         suggestion=suggestion,
         cost=job_price("chapter_generate"),
+        chapter_models=chapter_models,
     )
 
 
@@ -706,11 +749,14 @@ async def create_novel_chapter(
     """다음 장을 만드는 작업(과금, 202). 시작은 서버가 정하고, 끝(`endMessageId`)은 경계 제안의 후보 턴 중 하나여야
     한다 — 다음 장 시작부터 장 턴 상한 안의 AI 응답이 아니면 422 `NOVEL_CHAPTER_END_INVALID`.
 
-    순서: 작품 상태(403)·방(409)·주인공 이름(422) → 죽은 작업 정리·커밋 → 구간 검사(409·422) → 차감·작업 생성(단가
+    `model` 은 이 장을 쓸 모델이다(기본 Gemini). 작업에 적혀 실행이 그대로 쓰고, 단가도 그 모델의 장 가격이다.
+
+    순서: 작품 상태(403)·방(409)·주인공 이름(422)·모델 허용(403) → 죽은 작업 정리·커밋 → 구간 검사(409·422) → 차감·작업 생성(단가
     409·진행 중 409·하루 상한 429·잔액 429) → 띄우기. 차감 앞의 거절은 원장에 아무것도 남기지 않는다."""
     await _ensure_content_allows_model(db, novel)
     room_id = _source_room_id(novel)
     _require_protagonist_name(novel)
+    await _require_chapter_model(db, novel, payload.model)
     await _expire_before_new_job(db, novel)
 
     candidates = await _next_segment(db, novel, room_id)
@@ -724,6 +770,7 @@ async def create_novel_chapter(
         novel_id=novel.id,
         user_id=novel.user_id,
         kind="chapter_generate",
+        model=payload.model,
         start_message_id=start.id,
         start_message_created_at=start.created_at,
         end_message_id=end.id,
@@ -749,11 +796,12 @@ async def regenerate_novel_chapter(
     개정으로 쌓이고, 그 사이의 직접 수정·되돌리기는 이력에 남는다.
 
     원문이 장을 만든 때와 다르면(메시지 편집·응답 재생성·삭제) 차감 전에 409 `NOVEL_SOURCE_CHANGED` — 같은 입력으로
-    다시 만든다는 약속을 지킬 수 없다."""
+    다시 만든다는 약속을 지킬 수 없다. `model` 은 장 생성과 같은 규칙이고, 처음 만든 모델과 달라도 된다."""
     chapter = await _get_chapter(db, novel, chapter_id)
     await _ensure_content_allows_model(db, novel)
     room_id = _source_room_id(novel)
     _require_protagonist_name(novel)
+    await _require_chapter_model(db, novel, payload.model)
     await _expire_before_new_job(db, novel)
 
     segment = await load_segment(
@@ -773,6 +821,7 @@ async def regenerate_novel_chapter(
         novel_id=novel.id,
         user_id=novel.user_id,
         kind="chapter_regenerate",
+        model=payload.model,
         chapter_id=chapter.id,
         start_message_id=chapter.start_message_id,
         start_message_created_at=chapter.start_message_created_at,

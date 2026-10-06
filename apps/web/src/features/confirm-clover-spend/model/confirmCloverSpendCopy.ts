@@ -14,8 +14,11 @@
  * 사유가 그대로 참이다. */
 export type CloverSpendSurface = "chat" | "image";
 
-export function formatCloverSpendConfirmDescription(surface: CloverSpendSurface, cost: number): string {
-  const spend = `계속하면 한 번에 ${cost.toLocaleString()}개씩 차감돼요.`;
+/** `cost` 가 undefined 면 숫자 없이 차감 사실만 말한다 — 화면이 서버에서 가격을 아직 못 받은 경우다(가격 사본을 두지
+ * 않는다). 정확한 금액은 서버가 차감할 때 정한다. */
+export function formatCloverSpendConfirmDescription(surface: CloverSpendSurface, cost: number | undefined): string {
+  const spend =
+    cost === undefined ? "계속하면 클로버가 차감돼요." : `계속하면 한 번에 ${cost.toLocaleString()}개씩 차감돼요.`;
   switch (surface) {
     case "chat":
       return `오늘 무료 한도를 다 썼어요. ${spend} 자정이 지나면 무료 한도가 다시 열려요.`;
