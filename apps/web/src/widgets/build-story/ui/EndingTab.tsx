@@ -290,9 +290,10 @@ type PriorityStatFieldProps = {
 };
 
 /**
- * 같은 턴에 조건을 넘은 엔딩이 여럿일 때 비교할 스탯. 고른 엔딩끼리는 각자 고른 스탯 값이 가장 높은 엔딩 하나만 판정하고, 그
- * 판정이 아니면 그 턴엔 엔딩이 나지 않는다 — 그래서 설명은 비교 규칙과 그 결과를 함께 말한다. 고른 스탯이 지워졌으면(다른
- * 기기에서 고친 초안) 조건 줄과 같은 '지워짐' 표시와 고치는 법을 보인다. 서버는 그런 초안의 저장을 거절한다.
+ * 같은 턴에 조건을 넘은 엔딩이 여럿일 때 비교할 스탯. 고른 엔딩끼리는 각자 고른 스탯 값이 가장 높은 엔딩만(같으면 목록
+ * 순서대로) 판정하고, 그 가운데 통과하는 엔딩이 없으면 그 턴엔 엔딩이 나지 않는다 — 그래서 설명은 비교 규칙과 그 결과를 함께
+ * 말한다. 고른 스탯이 지워졌으면(다른 기기에서 고친 초안) 조건 줄과 같은 '지워짐' 표시와 고치는 법을 보인다. 서버는 그런
+ * 초안의 저장을 거절한다.
  */
 function PriorityStatField({ id, stats, value, isMissing, onChange }: PriorityStatFieldProps) {
   const triggerId = `ending-${id}-priority-stat`;
@@ -333,8 +334,8 @@ function PriorityStatField({ id, stats, value, isMissing, onChange }: PrioritySt
         </p>
       )}
       <p id={hintId} className="text-xs break-keep text-muted-foreground">
-        같은 턴에 여러 엔딩이 조건을 채우면, 우선순위 스탯을 고른 엔딩 가운데 그 값이 가장 높은 엔딩 하나만 판정해요. 그
-        엔딩이 판정을 통과하지 못하면 그 턴에는 엔딩이 나지 않아요.
+        같은 턴에 여러 엔딩이 조건을 채우면, 우선순위 스탯을 고른 엔딩 가운데 그 값이 가장 높은 엔딩만 판정해요(같으면 목록
+        위쪽부터). 가장 높은 엔딩이 하나도 판정을 통과하지 못하면 그 턴에는 엔딩이 나지 않아요.
       </p>
     </div>
   );
@@ -393,7 +394,7 @@ function EndingSection({ startingSetupIndex }: { startingSetupIndex: number }) {
     <div className="flex flex-col gap-4">
       <p className="text-sm break-keep text-muted-foreground">
         같은 턴에 여러 엔딩 조건이 동시에 충족되면 목록 위쪽 엔딩부터 판정해요. 우선순위 스탯을 고른 엔딩끼리는 그 값이 가장
-        높은 엔딩 하나만 판정해요.
+        높은 엔딩만 판정해요(같으면 목록 위쪽부터).
       </p>
 
       {fields.length === 0 ? (
