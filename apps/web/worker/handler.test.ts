@@ -325,14 +325,23 @@ describe("handleRequest", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("일반 브라우저 UA의 서비스 소개에는 주입하지 않는다", async () => {
-    const env = createEnv();
+  it("일반 브라우저 UA의 서비스 소개에도 본문을 넣는다 — 심사 도구의 UA를 알 수 없다", async () => {
+    const env = createEnv({
+      ASSETS: {
+        fetch: () =>
+          Promise.resolve(
+            new Response('<html><head></head><body><div id="root"></div></body></html>', {
+              headers: { "content-type": "text/html; charset=utf-8" },
+            }),
+          ),
+      },
+    });
 
     const response = await handleRequest(get("/about"), env, {
       cache: NOOP_CACHE,
     });
 
-    expect(await response.text()).toBe("/index.html");
+    expect(await response.text()).toContain("<h1>서비스 소개</h1>");
   });
 
   it("봇 UA의 콘텐츠 상세는 API를 거쳐 메타를 주입한다", async () => {

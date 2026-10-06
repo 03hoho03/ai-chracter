@@ -110,7 +110,8 @@ async function routeRequest(
   }
 
   // 서비스 소개도 같은 이유로 API_BASE_URL 가드보다 위에 둔다 — 본문이 정적 문장이다.
-  if (isBot && url.pathname === ABOUT_PATH) {
+  // 봇만이 아니라 모든 UA에 준다(이유는 `handleAboutMeta`).
+  if (url.pathname === ABOUT_PATH) {
     return handleAboutMeta(request, env);
   }
 
