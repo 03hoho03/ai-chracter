@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import type { StatDefValues } from "@/features/build-story";
 
-import { orderWithPendingRemovals, restoreRemovedStat, type RemovedStat } from "./restoreRemovedStat";
+import {
+  endingsToRestorePriority,
+  orderWithPendingRemovals,
+  restoreRemovedStat,
+  type RemovedStat,
+} from "./restoreRemovedStat";
 
 function stat(id: string): StatDefValues {
   return {
@@ -41,6 +46,7 @@ function simulate(initial: StatDefValues[]) {
         startingSetupId: "s1",
         order: orderWithPendingRemovals(ids(stats), pending),
         stat: target,
+        priorityEndingIds: [],
       };
       stats = stats.filter((each) => each.id !== id);
       pending.push(removed);
@@ -147,5 +153,22 @@ describe("연달아 지운 스탯을 되돌리는 차례", () => {
     run.undo(removedB);
 
     expect(run.ids()).toEqual(["b", "c"]);
+  });
+});
+
+describe("endingsToRestorePriority", () => {
+  it("지울 때 비운 엔딩 가운데 아직 '없음'인 것만 다시 채운다", () => {
+    const endings = [
+      { id: "e1", priorityStatId: null },
+      { id: "e2", priorityStatId: "other" },
+      { id: "e3", priorityStatId: null },
+      { id: "e4", priorityStatId: null },
+    ];
+    // e2 는 그 사이 작가가 다른 스탯을 골랐고, e4 는 지울 때 비운 엔딩이 아니다. 지운 엔딩(e9)은 목록에 없어 빠진다.
+    expect(endingsToRestorePriority(endings, { priorityEndingIds: ["e1", "e2", "e3", "e9"] })).toEqual([0, 2]);
+  });
+
+  it("비운 엔딩이 없으면 아무것도 채우지 않는다", () => {
+    expect(endingsToRestorePriority([{ id: "e1", priorityStatId: null }], { priorityEndingIds: [] })).toEqual([]);
   });
 });

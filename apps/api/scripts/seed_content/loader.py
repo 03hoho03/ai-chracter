@@ -166,7 +166,8 @@ def _fill_entity_ids(node: dict[str, Any], path: str) -> None:
 
 
 def _resolve_stat_refs(raw: dict[str, Any], filename: str) -> None:
-    """엔딩 규칙·상황 노트 조건이 이름으로 가리킨 스탯(`stat`)을 같은 시작설정의 파생 id(`statId`)로 바꾼다."""
+    """엔딩 규칙·상황 노트 조건이 이름으로 가리킨 스탯(`stat`)과 엔딩의 우선 스탯(`priorityStat`)을 같은 시작설정의
+    파생 id(`statId`·`priorityStatId`)로 바꾼다."""
     for setup in _dict_items(raw.get("startingSetups")):
         stat_ids = {
             stat["name"]: stat["id"]
@@ -175,6 +176,7 @@ def _resolve_stat_refs(raw: dict[str, Any], filename: str) -> None:
         }
         for ending in _dict_items(setup.get("endings")):
             _fill_rule_list_stat_ids(ending.get("statRules"), stat_ids, filename, "엔딩 규칙")
+            _fill_priority_stat_id(ending, stat_ids, filename)
         for note in _dict_items(setup.get("situationNotes")):
             _fill_rule_list_stat_ids(note.get("conditionRules"), stat_ids, filename, "상황 노트 조건")
 
@@ -196,6 +198,25 @@ def _fill_stat_id(rule: dict[str, Any], stat_ids: dict[str, str], filename: str,
             f"— 쓸 수 있는 이름: {sorted(stat_ids)}"
         )
     rule["statId"] = stat_ids[name]
+
+
+def _fill_priority_stat_id(ending: dict[str, Any], stat_ids: dict[str, str], filename: str) -> None:
+    """`priorityStat` 을 적지 않은 엔딩은 `priorityStatId` 도 적지 않은 채로 둔다 — 저장이 그 엔딩의 기존 값을 건드리지
+    않는다(`EndingDraftItem` docstring). `null` 로 적으면 비운다. 모델이 모르는 키라 그대로 두면 조용히 버려지므로 뺀다."""
+    if "priorityStat" not in ending:
+        return
+    name = ending.pop("priorityStat")
+    if "priorityStatId" in ending:
+        return
+    if name is None:
+        ending["priorityStatId"] = None
+        return
+    if name not in stat_ids:
+        raise SeedContentError(
+            f"{filename}: 엔딩 우선 스탯이 같은 시작설정에 없는 스탯 '{name}' 을 가리킨다 "
+            f"— 쓸 수 있는 이름: {sorted(stat_ids)}"
+        )
+    ending["priorityStatId"] = stat_ids[name]
 
 
 def _dict_items(value: Any) -> list[dict[str, Any]]:

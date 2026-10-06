@@ -49,8 +49,20 @@ describe("storyAutosaveErrorMessage", () => {
     expect(storyAutosaveErrorMessage(error)).toBe(ENDING_RULE_STAT_NOT_FOUND_MESSAGE);
     expect(ENDING_RULE_STAT_NOT_FOUND_MESSAGE).toMatch(/엔딩/);
     // 편집기가 그런 조건의 스탯 칸에 그리는 글자로 가리켜야 작가가 화면에서 찾는다.
-    expect(ENDING_RULE_STAT_NOT_FOUND_MESSAGE).toContain("스탯 칸에 ‘지워짐’이 보이는 조건");
+    expect(ENDING_RULE_STAT_NOT_FOUND_MESSAGE).toContain("‘지워짐’이 보이는 조건");
     expect(ENDING_RULE_STAT_NOT_FOUND_MESSAGE).not.toMatch(/글자 수|잠시 후/);
+  });
+
+  // 서버는 엔딩의 우선순위 스탯이 지워진 스탯을 가리킬 때도 같은 코드로 거절한다 — 조건만 말하면 작가가 조건만 찾다 멈춘다.
+  it("also tells how to fix a deleted priority stat, which the server rejects with the same code", () => {
+    const error = new ApiErrorObject({
+      status: 422,
+      message: "Request failed with status code 422",
+      detail: { code: "ENDING_RULE_STAT_NOT_FOUND", paths: ["startingSetups[0].endings[2].priorityStatId"] },
+    });
+
+    expect(storyAutosaveErrorMessage(error)).toBe(ENDING_RULE_STAT_NOT_FOUND_MESSAGE);
+    expect(ENDING_RULE_STAT_NOT_FOUND_MESSAGE).toContain("우선순위 스탯은 다른 스탯이나 ‘없음’으로");
   });
 });
 

@@ -12,6 +12,8 @@ export type RemovedStat = {
   startingSetupId: string;
   order: readonly string[];
   stat: StatDefValues;
+  /** 지우면서 우선순위 스탯을 '없음'으로 비운 엔딩의 id — 되돌릴 때 그 칸도 다시 이 스탯으로 채운다. */
+  priorityEndingIds: readonly string[];
 };
 
 type StartingSetupStats = { id: string; stats: readonly StatDefValues[] };
@@ -51,7 +53,7 @@ export function orderWithPendingRemovals(ids: readonly string[], pending: readon
  */
 export function restoreRemovedStat(
   startingSetups: readonly StartingSetupStats[],
-  removed: RemovedStat,
+  removed: Pick<RemovedStat, "startingSetupId" | "order" | "stat">,
 ): { startingSetupIndex: number; stats: StatDefValues[] } | undefined {
   const startingSetupIndex = startingSetups.findIndex((setup) => setup.id === removed.startingSetupId);
   const setup = startingSetups[startingSetupIndex];
@@ -67,4 +69,17 @@ export function restoreRemovedStat(
     startingSetupIndex,
     stats: [...setup.stats.slice(0, index), removed.stat, ...setup.stats.slice(index)],
   };
+}
+
+/**
+ * 되살린 스탯을 다시 우선순위 스탯으로 채울 엔딩의 인덱스(되살린 시작설정의 엔딩 목록 기준). 지울 때 비운 엔딩을 id 로 찾고,
+ * 그 사이 작가가 다른 스탯을 고른 엔딩은 덮지 않는다 — 여전히 '없음'인 엔딩만 채운다. 그 사이 지운 엔딩은 빠진다.
+ */
+export function endingsToRestorePriority(
+  endings: readonly { id: string; priorityStatId: string | null }[],
+  removed: Pick<RemovedStat, "priorityEndingIds">,
+): number[] {
+  return endings.flatMap((ending, index) =>
+    ending.priorityStatId === null && removed.priorityEndingIds.includes(ending.id) ? [index] : [],
+  );
 }

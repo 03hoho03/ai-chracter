@@ -226,6 +226,10 @@ class Ending(Base):
     epilogue: Mapped[str | None] = mapped_column(Text, nullable=True)
     hint: Mapped[str | None] = mapped_column(Text, nullable=True)
     order: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 같은 턴에 규칙을 통과한 엔딩이 여럿일 때 비교할 스탯(같은 시작설정 `StatDef.entity_id`). 이 칸을 채운 엔딩끼리는
+    # 이 스탯 값이 가장 높은 것만 판정하고 그 턴의 판정을 끝낸다(`api.chat.ending_rules.ending_judgment_order`). 비우면
+    # 목록 순서대로 판정한다. 엔딩 규칙의 스탯 참조처럼 entity_id 를 가리키므로 FK 가 없다 — 버전 복제 때 그대로 복사한다.
+    priority_stat_def_entity_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
 
 
 class EndingRuleGroup(Base):

@@ -311,6 +311,7 @@ describe("serverToForm", () => {
             ],
           },
         ],
+        priorityStatId: "stat-2",
       },
     ];
   }
@@ -424,6 +425,7 @@ describe("serverToForm", () => {
             ],
           },
         ],
+        priorityStatId: "stat-2",
       },
     ]);
   });
@@ -447,6 +449,30 @@ describe("serverToForm", () => {
     const firstEnding = requireFirst(requireFirst(form.startingSetups).endings);
     expect(firstEnding.epilogue).toBeUndefined();
     expect(firstEnding.hint).toBeUndefined();
+  });
+
+  // 빈 우선순위 스탯은 `undefined` 가 아니라 `null` 로 채운다 — `undefined` 칸은 RHF 가 같은 자리 옛 엔딩의 값으로 되살린다.
+  it.each([
+    ["null", null],
+    ["omitted", undefined],
+  ])("reads a %s ending priority stat as null", (_, priorityStatId) => {
+    const data = baseDraftResponse();
+    requireFirst(data.startingSetups).endings = [
+      {
+        id: "ending-1",
+        name: "열린 결말",
+        turnCountGate: 10,
+        judgmentPrompt: "판정 프롬프트",
+        epilogue: null,
+        hint: null,
+        statRules: [],
+        ...(priorityStatId === undefined ? {} : { priorityStatId }),
+      },
+    ];
+
+    const firstEnding = requireFirst(requireFirst(serverToForm(data).startingSetups).endings);
+
+    expect(firstEnding.priorityStatId).toBeNull();
   });
 
   it("preserves endings/statRules array order as returned by the server (no explicit order field)", () => {

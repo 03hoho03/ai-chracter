@@ -245,6 +245,7 @@ export const STORY_FIELD_MOCKUPS = {
     seedPath: "startingSetups.*.endings.*.statRules",
     readTiming: null,
   },
+  "startingSetups.*.endings.*.priorityStatId": { kind: "select", seedPath: null, readTiming: null },
 
   "registration.description": { kind: "textarea", seedPath: "description", readTiming: "notRead" },
   "registration.genre": { kind: "select", seedPath: "genreId", readTiming: "notRead" },

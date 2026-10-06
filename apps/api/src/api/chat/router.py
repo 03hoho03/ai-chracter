@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import TypeVar
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.sse import EventSourceResponse
@@ -20,7 +21,13 @@ from sqlalchemy.orm import aliased
 from starlette.concurrency import run_in_threadpool
 
 from api.chat.chat_count import record_chat_participant
-from api.chat.ending_rules import evaluate_rule_list, is_ending_check_due, referenced_stat_ids
+from api.chat.ending_rules import (
+    EndingCandidate,
+    ending_judgment_order,
+    evaluate_rule_list,
+    is_ending_check_due,
+    referenced_stat_ids,
+)
 from api.chat.keyword_notes import match_keyword_notes
 from api.chat.memory_fold import SUMMARY_MAX_LENGTH, fold_memory
 from api.chat.memory_rewind import rewind_memory
@@ -437,9 +444,41 @@ def _ending_rules_pass(
     return evaluate_rule_list(rule_items, stats)
 
 
+_JudgedEndingT = TypeVar("_JudgedEndingT")
+
+
+def _endings_to_judge(
+    due: Sequence[tuple[_JudgedEndingT, uuid.UUID, uuid.UUID | None, list[EndingRuleListItem]]],
+    stats: dict[str, float],
+    *,
+    log_subject: str,
+) -> list[_JudgedEndingT]:
+    """판정 차례인 엔딩(목록 순서, `(엔딩, entity_id, 우선 스탯, 규칙)`)에서 이번 턴에 판정 모델을 부를 엔딩과 그 순서.
+    실채팅·미리보기 엔딩 루프가 함께 쓴다 — 호출부는 이 순서로 판정하다 처음 발동한 엔딩에서 멈추고, 끝까지 발동이
+    없으면 그 턴은 엔딩 없이 끝난다(우선 스탯 무리가 선 턴은 무리 1등까지만 판정한다).
+
+    규칙을 먼저 전부 본 뒤 순서를 정한다(`ending_judgment_order`). 규칙은 이번 턴 반영 뒤 스탯만으로 정해지고 발동은
+    규칙과 판정의 논리곱이라, 판정 모델 앞에서 미리 봐도 결과는 같고 규칙이 거짓인 엔딩의 호출만 준다. 우선 스탯 값이
+    없어 무리에서 빠진 엔딩은 경고로 남긴다 — 무리 비교에서 빠진 이유를 찾을 단서다."""
+    candidates = [
+        EndingCandidate(ending=ending, ending_id=ending_id, priority_stat_id=priority_stat_id)
+        for ending, ending_id, priority_stat_id, rule_items in due
+        if _ending_rules_pass(rule_items, stats, log_subject=log_subject, ending_id=ending_id)
+    ]
+    order = ending_judgment_order(candidates, stats)
+    for candidate in order.missing_priority:
+        logger.warning(
+            "%s 엔딩 %s 의 우선 스탯 %s 에 값이 없다 — 우선 스탯 비교에서 빼고 우선 스탯이 없는 엔딩처럼 다룬다",
+            log_subject,
+            candidate.ending_id,
+            candidate.priority_stat_id,
+        )
+    return order.endings
+
+
 @dataclass(frozen=True)
 class _DueEndings:
-    """이번 턴 엔딩 판정의 DB 읽기 결과 — 판정할 때가 된 엔딩(우선순위 순)과 그 스탯 규칙, 판정 프롬프트에 실을
+    """이번 턴 엔딩 판정의 DB 읽기 결과 — 판정할 때가 된 엔딩(목록 순서)과 그 스탯 규칙, 판정 프롬프트에 실을
     히스토리·요약."""
 
     endings: list[tuple[Ending, list[EndingRuleListItem]]]
@@ -1759,17 +1798,19 @@ async def _stream_new_turn(
                         stat_writes[stat_id] = new_value
                         stat_change_events.append(ChatStatChangeEvent(stat_id=stat_id, new_value=new_value))
 
-                # 엔딩 판정: 엔딩별 turn_count_gate를 넘긴 시점부터 5턴마다만 호출하고, 그 외
-                # 턴은 스킵한다. endings.order가 가장 낮은(우선순위 최상위) 엔딩부터 순서대로 판정해
-                # 첫 충족 엔딩에서 멈춘다(동시 충족 시 최상위 하나만 발동). 스탯 반영 뒤라 순차다.
-                # 엔딩마다 스탯 규칙을 먼저 보고 참일 때만 판정 모델을 부른다. 규칙은 이번 턴 반영 뒤 스탯만으로
-                # 정해지고 발동은 둘의 논리곱이라 결과는 모델을 먼저 부를 때와 같고, 규칙이 거짓인 엔딩의 호출만 준다.
+                # 엔딩 판정: 엔딩별 turn_count_gate를 넘긴 시점부터 5턴마다만 호출하고, 그 외 턴은 스킵한다.
+                # 스탯 규칙을 통과한 엔딩만, `_endings_to_judge` 가 정한 순서(목록 순서, 우선 스탯을 채운 엔딩끼리는
+                # 그 값이 가장 높은 것만, 그 뒤는 없음)로 판정해 첫 충족 엔딩에서 멈춘다(동시 충족 시 하나만 발동).
+                # 스탯 반영 뒤라 순차다.
                 assert due_endings is not None  # 스탯 판정은 엔딩 전에만 돌고, 그때 엔딩도 함께 읽었다.
-                for ending, rule_items in due_endings.endings:
-                    if not _ending_rules_pass(
-                        rule_items, updated_stats, log_subject=log_subject, ending_id=ending.entity_id
-                    ):
-                        continue
+                for ending in _endings_to_judge(
+                    [
+                        (ending, ending.entity_id, ending.priority_stat_def_entity_id, rule_items)
+                        for ending, rule_items in due_endings.endings
+                    ],
+                    updated_stats,
+                    log_subject=log_subject,
+                ):
                     ending_judgment_prompt = build_ending_judgment_prompt(
                         prompt_set=prompt_set,
                         sections=prompt_sections,
@@ -3560,7 +3601,7 @@ async def _stream_preview_turn(
     """`_stream_new_turn`과 같은 순서(생성 스트리밍 → 스탯 판단 → 엔딩 판정)를 따르되
     `ChatRoom`/DB 대신 `PreviewSessionState`(Redis, 호출부가 커밋)를 직접 갱신한다. 스탯
     클램핑(`apply_stat_changes`)/엔딩 규칙 평가(`evaluate_rule_list`)/턴게이트
-    (`is_ending_check_due`)/키워드 매칭(`match_keyword_notes`) 엔진과 SSE 이벤트 스키마는
+    (`is_ending_check_due`)/엔딩 판정 순서(`_endings_to_judge`)/키워드 매칭(`match_keyword_notes`) 엔진과 SSE 이벤트 스키마는
     실제 채팅과 완전히 동일하게 재사용한다 — `ChatRoom`/`chat_room_stats` 등 방
     상태는 DB 대신 Redis 상태 갱신으로 대체했다. 프롬프트 세트(`prompt_set`/`prompt_sections`)는
     호출부(`send_preview_message`)의 `Depends`가 DB에서 값으로 읽어 넘긴 것이다 — 이
@@ -3702,15 +3743,21 @@ async def _stream_preview_turn(
                         stat_change_events.append(ChatStatChangeEvent(stat_id=stat_id, new_value=new_value))
                 state.stats = updated_stats
 
-                # 실채팅과 같이 스탯 규칙을 먼저 보고 참인 엔딩만 판정 모델을 부른다.
-                for ending in setup.endings:
-                    if not is_ending_check_due(state.turn_count, ending.turn_count_gate):
-                        continue
-                    rule_items: list[EndingRuleListItem] = [
-                        _preview_ending_rule_list_item(item) for item in ending.stat_rules
-                    ]
-                    if not _ending_rules_pass(rule_items, updated_stats, log_subject="미리보기", ending_id=ending.id):
-                        continue
+                # 실채팅과 같은 순서 함수로 판정 차례·규칙 통과 엔딩의 판정 순서를 정한다.
+                for ending in _endings_to_judge(
+                    [
+                        (
+                            ending,
+                            ending.id,
+                            ending.priority_stat_id,
+                            [_preview_ending_rule_list_item(item) for item in ending.stat_rules],
+                        )
+                        for ending in setup.endings
+                        if is_ending_check_due(state.turn_count, ending.turn_count_gate)
+                    ],
+                    updated_stats,
+                    log_subject="미리보기",
+                ):
                     ending_judgment_prompt = build_ending_judgment_prompt(
                         prompt_set=prompt_set,
                         sections=prompt_sections,

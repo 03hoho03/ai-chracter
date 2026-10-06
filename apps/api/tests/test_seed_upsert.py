@@ -671,3 +671,47 @@ async def test_upsert_story_rejects_ending_rule_pointing_at_unknown_stat(
     assert "startingSetups[0].endings[0].statRules[0].statId" in message
     assert "startingSetups[0].endings[0].statRules[1].rules[0].statId" in message
     assert await db_session.get(Content, story_content_id(SLUG)) is None
+
+
+async def test_upsert_story_writes_ending_priority_stat_to_both_versions(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """시드 JSON 의 우선 스탯 이름은 그 시작설정 스탯의 파생 id 가 되어, 빌더 저장 경로를 지나 발행본과 초안 양쪽 엔딩에
+    들어간다."""
+    await _seed_author(db_session)
+
+    def _prioritize(raw: dict[str, Any]) -> None:
+        raw["startingSetups"][0]["endings"][0]["priorityStat"] = "의심"
+
+    payload = await _load_seed_payload(db_session, tmp_path, _prioritize)
+
+    await upsert_story(db_session, SLUG, payload)
+
+    for version_id in (story_version_id(SLUG), story_draft_version_id(SLUG)):
+        rows = (
+            await db_session.scalars(
+                select(Ending)
+                .join(StartingSetup, StartingSetup.id == Ending.starting_setup_id)
+                .where(StartingSetup.content_version_id == version_id, StartingSetup.order == 0)
+                .order_by(Ending.order)
+            )
+        ).all()
+        assert rows[0].priority_stat_def_entity_id == _stat_entity_id(0, 1)
+
+
+async def test_upsert_story_rejects_ending_priority_stat_of_another_setup(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """id 로 직접 적은 우선 스탯이 다른 시작설정의 스탯이면 시드 시점에 막힌다."""
+    await _seed_author(db_session)
+
+    def _dangle(raw: dict[str, Any]) -> None:
+        raw["startingSetups"][0]["endings"][0]["priorityStatId"] = str(_stat_entity_id(1, 0))
+
+    payload = await _load_seed_payload(db_session, tmp_path, _dangle)
+
+    with pytest.raises(SeedPublishError) as exc_info:
+        await upsert_story(db_session, SLUG, payload)
+
+    assert "startingSetups[0].endings[0].priorityStatId" in str(exc_info.value)
+    assert await db_session.get(Content, story_content_id(SLUG)) is None

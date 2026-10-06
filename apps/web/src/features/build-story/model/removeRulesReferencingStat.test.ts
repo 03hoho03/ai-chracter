@@ -108,6 +108,11 @@ describe("removeRulesReferencingStat matches deleting the same conditions by han
 describe("planStatRemoval", () => {
   const confirmed = () => vi.fn((_counts: StatRemovalCounts) => Promise.resolve(true));
   const noNotes: { conditionRules: RuleListItemValues[] }[] = [];
+  let endingSeq = 0;
+  function ending(statRules: RuleListItemValues[], priorityStatId: string | null = null) {
+    endingSeq += 1;
+    return { id: `ending-${endingSeq}`, statRules, priorityStatId };
+  }
 
   it("asks first with the number of ending conditions that go with the stat, counting rules inside groups", async () => {
     const confirm = confirmed();
@@ -117,23 +122,29 @@ describe("planStatRemoval", () => {
       nextOp: null,
       rules: [rule("r3", "gone", "or"), rule("r4", "gone")],
     };
-    const endings = [{ statRules: [rule("r1", "gone", "and"), rule("r2", "kept")] }, { statRules: [group] }];
+    const endings = [ending([rule("r1", "gone", "and"), rule("r2", "kept")]), ending([group])];
 
     const updates = await planStatRemoval({ endings, situationNotes: noNotes }, "gone", confirm);
 
-    expect(confirm).toHaveBeenCalledExactlyOnceWith({ endingRuleCount: 3, noteRuleCount: 0, emptiedNoteCount: 0 });
+    expect(confirm).toHaveBeenCalledExactlyOnceWith({
+      endingRuleCount: 3,
+      noteRuleCount: 0,
+      emptiedNoteCount: 0,
+      priorityEndingCount: 0,
+    });
     expect(updates).toEqual({
       endings: [
         { endingIndex: 0, statRules: [rule("r2", "kept")] },
         { endingIndex: 1, statRules: [] },
       ],
+      priorityStatEndings: [],
       situationNotes: [],
     });
   });
 
   it("counts ending and situation note conditions together and asks only once", async () => {
     const confirm = confirmed();
-    const endings = [{ statRules: [rule("e1", "gone")] }];
+    const endings = [ending([rule("e1", "gone")])];
     const situationNotes = [
       { conditionRules: [rule("n1", "gone", "and"), rule("n2", "kept")] },
       { conditionRules: [{ kind: "group", id: "g1", nextOp: null, rules: [rule("n3", "gone"), rule("n4", "gone")] }] },
@@ -143,9 +154,15 @@ describe("planStatRemoval", () => {
     const updates = await planStatRemoval({ endings, situationNotes }, "gone", confirm);
 
     // 두 번째 노트는 조건이 하나도 남지 않는다 — 발행이 막히는 노트라 확인 문장이 따로 알린다.
-    expect(confirm).toHaveBeenCalledExactlyOnceWith({ endingRuleCount: 1, noteRuleCount: 3, emptiedNoteCount: 1 });
+    expect(confirm).toHaveBeenCalledExactlyOnceWith({
+      endingRuleCount: 1,
+      noteRuleCount: 3,
+      emptiedNoteCount: 1,
+      priorityEndingCount: 0,
+    });
     expect(updates).toEqual({
       endings: [{ endingIndex: 0, statRules: [] }],
+      priorityStatEndings: [],
       situationNotes: [
         { noteIndex: 0, conditionRules: [rule("n2", "kept")] },
         { noteIndex: 1, conditionRules: [] },
@@ -159,8 +176,17 @@ describe("planStatRemoval", () => {
 
     const updates = await planStatRemoval({ endings: [], situationNotes }, "gone", confirm);
 
-    expect(confirm).toHaveBeenCalledExactlyOnceWith({ endingRuleCount: 0, noteRuleCount: 1, emptiedNoteCount: 1 });
-    expect(updates).toEqual({ endings: [], situationNotes: [{ noteIndex: 0, conditionRules: [] }] });
+    expect(confirm).toHaveBeenCalledExactlyOnceWith({
+      endingRuleCount: 0,
+      noteRuleCount: 1,
+      emptiedNoteCount: 1,
+      priorityEndingCount: 0,
+    });
+    expect(updates).toEqual({
+      endings: [],
+      priorityStatEndings: [],
+      situationNotes: [{ noteIndex: 0, conditionRules: [] }],
+    });
   });
 
   it("does not count a note the author had already left without conditions as emptied by this removal", async () => {
@@ -172,11 +198,16 @@ describe("planStatRemoval", () => {
 
     await planStatRemoval({ endings: [], situationNotes }, "gone", confirm);
 
-    expect(confirm).toHaveBeenCalledExactlyOnceWith({ endingRuleCount: 0, noteRuleCount: 1, emptiedNoteCount: 0 });
+    expect(confirm).toHaveBeenCalledExactlyOnceWith({
+      endingRuleCount: 0,
+      noteRuleCount: 1,
+      emptiedNoteCount: 0,
+      priorityEndingCount: 0,
+    });
   });
 
   it("changes nothing when the author cancels", async () => {
-    const endings = [{ statRules: [rule("r1", "gone")] }];
+    const endings = [ending([rule("r1", "gone")], "gone")];
     const situationNotes = [{ conditionRules: [rule("n1", "gone")] }];
     const cancelled = vi.fn(() => Promise.resolve(false));
 
@@ -185,14 +216,48 @@ describe("planStatRemoval", () => {
 
   it("removes without asking when no condition uses the stat", async () => {
     const confirm = confirmed();
-    const endings = [{ statRules: [rule("r1", "kept")] }, { statRules: [] }];
+    const endings = [ending([rule("r1", "kept")], "kept"), ending([])];
     const situationNotes = [{ conditionRules: [rule("n1", "kept")] }];
 
     expect(await planStatRemoval({ endings, situationNotes }, "gone", confirm)).toEqual({
       endings: [],
+      priorityStatEndings: [],
       situationNotes: [],
     });
     expect(confirm).not.toHaveBeenCalled();
+  });
+
+  // 우선순위 스탯이 지워진 스탯을 가리킨 채 남으면 서버가 초안 저장을 거절해 자동저장이 멈춘다.
+  it("clears the priority stat of endings that chose the removed stat without asking, keeping their ids for undo", async () => {
+    const confirm = confirmed();
+    const endings = [ending([], "gone"), ending([], "kept"), ending([rule("r1", "kept")], "gone")];
+
+    const updates = await planStatRemoval({ endings, situationNotes: noNotes }, "gone", confirm);
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(updates).toEqual({
+      endings: [],
+      priorityStatEndings: [
+        { endingIndex: 0, endingId: endings[0]?.id },
+        { endingIndex: 2, endingId: endings[2]?.id },
+      ],
+      situationNotes: [],
+    });
+  });
+
+  it("counts endings whose priority stat goes away in the same question when conditions make it ask", async () => {
+    const confirm = confirmed();
+    const endings = [ending([rule("r1", "gone")], "gone"), ending([], "gone")];
+
+    const updates = await planStatRemoval({ endings, situationNotes: noNotes }, "gone", confirm);
+
+    expect(confirm).toHaveBeenCalledExactlyOnceWith({
+      endingRuleCount: 1,
+      noteRuleCount: 0,
+      emptiedNoteCount: 0,
+      priorityEndingCount: 2,
+    });
+    expect(updates?.priorityStatEndings.map((each) => each.endingIndex)).toEqual([0, 1]);
   });
 });
 

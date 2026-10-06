@@ -73,6 +73,8 @@ function toApiEnding(ending: EndingValues): EndingDraftItem {
     epilogue: ending.epilogue ?? null,
     hint: ending.hint ?? null,
     statRules: ending.statRules.map(toApiRuleListItem),
+    // 서버는 빠진 값을 "기존 값 유지"로 읽는다 — '없음'(null)도 보내야 비운 것이 저장된다.
+    priorityStatId: ending.priorityStatId,
   };
 }
 

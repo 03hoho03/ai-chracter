@@ -594,6 +594,7 @@ describe("endingSchema", () => {
       name: "함께 살아남기",
       turnGate: 10,
       judgePrompt: "주인공들이 서로를 구조했는지 판정",
+      priorityStatId: null,
     };
   }
 
@@ -623,6 +624,15 @@ describe("endingSchema", () => {
   it("requires name/judgePrompt", () => {
     expect(endingSchema.safeParse({ ...validEnding(), name: "" }).success).toBe(false);
     expect(endingSchema.safeParse({ ...validEnding(), judgePrompt: "" }).success).toBe(false);
+  });
+
+  // '없음'은 발행을 막지 않는 값이고, 키를 빼면(undefined) RHF 가 같은 자리 옛 엔딩의 값으로 다시 채우므로 거절한다.
+  it("accepts a priority stat id or null, but not an omitted key", () => {
+    expect(endingSchema.safeParse({ ...validEnding(), priorityStatId: "stat-1" }).success).toBe(true);
+    expect(endingSchema.safeParse({ ...validEnding(), priorityStatId: null }).success).toBe(true);
+    const withoutPriority: Partial<ReturnType<typeof validEnding>> = validEnding();
+    delete withoutPriority.priorityStatId;
+    expect(endingSchema.safeParse(withoutPriority).success).toBe(false);
   });
 });
 

@@ -104,6 +104,7 @@ export const STORY_FIELD_LABELS = {
   "startingSetups.*.endings.*.epilogue": { label: "에필로그", required: false },
   "startingSetups.*.endings.*.hint": { label: "엔딩힌트", required: false },
   "startingSetups.*.endings.*.statRules": { label: "스탯 기반 규칙", required: false, note: "선택" },
+  "startingSetups.*.endings.*.priorityStatId": { label: "우선순위 스탯", required: false, note: "선택" },
 
   "registration.description": { label: "등록 설명", required: true },
   "registration.genre": { label: "장르", required: true },

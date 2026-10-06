@@ -2367,6 +2367,82 @@ async def test_publish_and_reset_clone_every_stat_def_field(
     assert await _draft_copies() == expected
 
 
+async def test_publish_and_reset_clone_ending_priority_stat(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """발행과 편집 취소는 엔딩을 생성자에 필드를 하나씩 나열해 복사한다. 우선 스탯을 빠뜨리면 새 초안에서 조용히 비워져
+    다음 발행부터 루트 비교가 사라진다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, _, _, _, ending, stat_def = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    ending.priority_stat_def_entity_id = stat_def.entity_id
+    ending_entity_id, stat_entity_id = ending.entity_id, stat_def.entity_id
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        publish_resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+    assert publish_resp.status_code == 200
+
+    content_id = content.id
+
+    async def _draft_priority_stats() -> list[uuid.UUID | None]:
+        copies = (
+            await db_session.scalars(
+                sa.select(Ending)
+                .join(StartingSetup, StartingSetup.id == Ending.starting_setup_id)
+                .join(ContentVersion, ContentVersion.id == StartingSetup.content_version_id)
+                .where(
+                    ContentVersion.content_id == content_id,
+                    ContentVersion.published_at.is_(None),
+                    Ending.entity_id == ending_entity_id,
+                )
+                .execution_options(populate_existing=True)
+            )
+        ).all()
+        return [copy.priority_stat_def_entity_id for copy in copies]
+
+    assert await _draft_priority_stats() == [stat_entity_id]
+
+    reset_resp = await db_client.post(f"/contents/{content.id}/draft/reset")
+    assert reset_resp.status_code == 204
+    assert await _draft_priority_stats() == [stat_entity_id]
+
+
+async def test_publish_story_rejects_ending_priority_stat_missing_from_its_setup_before_filter(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """옛 번들은 우선 스탯을 보내지 않아 저장이 기존 값을 그대로 두므로, 그 화면에서 스탯을 지우면 지운 스탯을 가리키는
+    우선 스탯이 저장 검사를 지나 남는다. 발행이 엔딩 규칙과 같은 키로 막고 심사 모델은 부르지 않는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, _, _, _, ending, _ = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    ending.priority_stat_def_entity_id = uuid.uuid4()
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == {"missingFields": ["endings.statRules"]}
+    assert fake.received_prompt is None
+
+
 @pytest.mark.parametrize(
     ("per_turn_delta", "change_direction", "max_change_per_turn", "expected"),
     [
