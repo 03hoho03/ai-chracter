@@ -6,9 +6,11 @@
 
 출처는 Gemini Developer API 가격 페이지(ai.google.dev/gemini-api/docs/pricing)의 Paid tier
 Standard 값이다. 입력은 텍스트·이미지 단가, 출력은 사고 토큰을 포함한 단가다(사고 토큰은 출력
-단가로 과금된다). 넣지 않은 모델과 이유:
-- 입력 길이(200k)로 단가가 갈리는 Pro 계열 — 일 단위 합산으로는 호출별 길이를 알 수 없다.
-- 2026-12-31 까지만 유효한 할인가가 붙은 3.6~3.8 Flash — 날짜가 지나면 조용히 틀린 값이 된다.
+단가로 과금된다). 입력 길이(200k)로 단가가 갈리는 Pro 계열은 넣지 않았다 — 일 단위 합산으로는 호출별 길이를 알 수 없다.
+
+3.8 Flash 는 2026-12-31 까지 할인가가 붙어 있는데, 할인가를 넣으면 날짜가 지나 조용히 틀린 값이 된다. 그래서 2027-01-01
+부터의 정가로 넣었다 — 연말까지는 원가를 실제의 두 배로 높게 보인다(낮게 보이는 쪽보다 안전하다). 할인가가 붙은 다른
+3.6·3.7 Flash 는 쓰지 않아 넣지 않았다.
 """
 
 from dataclasses import dataclass
@@ -22,12 +24,13 @@ class ModelPrice:
     output_usd_per_million: float
 
 
-PRICES_AS_OF = date(2026, 10, 2)
+PRICES_AS_OF = date(2026, 10, 6)
 
 MODEL_PRICES: dict[str, ModelPrice] = {
     "gemini-3.5-flash-lite": ModelPrice(0.30, 0.03, 2.50),
     "gemini-3.1-flash-lite": ModelPrice(0.25, 0.025, 1.50),
     "gemini-3.5-flash": ModelPrice(1.50, 0.15, 9.00),
+    "gemini-3.8-flash": ModelPrice(1.50, 0.15, 7.50),
     "gemini-3-flash-preview": ModelPrice(0.50, 0.05, 3.00),
     "gemini-2.5-flash": ModelPrice(0.30, 0.03, 2.50),
     "gemini-2.5-flash-lite": ModelPrice(0.10, 0.01, 0.40),

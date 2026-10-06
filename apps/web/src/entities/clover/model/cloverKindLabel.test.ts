@@ -3,15 +3,17 @@ import { describe, expect, it } from "vitest";
 import { CLOVER_KIND_LABELS } from "./cloverKindLabel";
 
 describe("CLOVER_KIND_LABELS", () => {
-  it("BE CLOVER_KIND_CATEGORY(clover/router.py)의 kind 10종을 전부 덮는다", () => {
+  it("BE CLOVER_KIND_CATEGORY(clover/router.py)의 kind 12종을 전부 덮는다", () => {
     const kinds = [
       "attendance_grant",
       "mission_grant",
       "admin_grant",
       "chat_refund",
       "image_refund",
+      "novelize_refund",
       "chat_spend",
       "image_spend",
+      "novelize_spend",
       "expire_burn",
       "admin_revoke",
       "withdrawal_burn",

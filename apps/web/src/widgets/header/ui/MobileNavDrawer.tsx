@@ -30,6 +30,7 @@ import { assertNever } from "@/shared/lib/assertNever";
 
 import { NotificationFeedStatus } from "./NotificationFeedStatus";
 import { ContentTypeToggle } from "./ContentTypeToggle";
+import { isProfileDestinationVisible } from "../model/profileDestinationVisibility";
 import { PROFILE_DESTINATION_GROUPS, ProfileDestinationLink } from "./ProfileDestinationLink";
 
 const ROW_CLASS =
@@ -109,11 +110,13 @@ export function MobileNavDrawer({ className }: { className?: string }) {
 
           {me ? (
             <>
-              {PROFILE_DESTINATION_GROUPS.flatMap((group) => group.keys).map((key) => (
-                <SheetClose asChild key={key}>
-                  <ProfileDestinationLink destinationKey={key} me={me} className={ROW_CLASS} />
-                </SheetClose>
-              ))}
+              {PROFILE_DESTINATION_GROUPS.flatMap((group) => group.keys)
+                .filter((key) => isProfileDestinationVisible(key, me.enabledFeatures))
+                .map((key) => (
+                  <SheetClose asChild key={key}>
+                    <ProfileDestinationLink destinationKey={key} me={me} className={ROW_CLASS} />
+                  </SheetClose>
+                ))}
               {/* 로그아웃은 `destructive`가 아니다 — `ProfileMenu`가 3단 근거(지우는 게 없고 다시 로그인하면
                   되돌아온다 / 앱의 다른 destructive 항목은 전부 데이터를 지운다 / `MyPagePage`의 로그아웃이
                   이미 `outline`)로 중립으로 정한 결정을 그대로 따른다. 비동기 액션이라 `aria-disabled` +

@@ -225,7 +225,7 @@ function AccountSection() {
             기록한 "줄바꿈 결함은 넓은 쪽에만 있을 수 있다"의 재발이다 — 320/390에서는 문장 경계로 깨끗이
             접힌다. 묶어도 272px 컬럼(320px)에서 넘칠 길이가 아니다. */}
         <p className="text-sm break-keep text-muted-foreground">
-          탈퇴하면 대화기록이 삭제되고 발행한 작품은 비공개로 전환돼요.{" "}
+          탈퇴하면 대화기록과 만든 소설이 삭제되고 발행한 작품은 비공개로 전환돼요.{" "}
           <span className="whitespace-nowrap">되돌릴 수 없어요.</span>
         </p>
         <WithdrawAccountDialog />

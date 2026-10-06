@@ -28,6 +28,10 @@ LLMCallSite = Literal[
     "publish_filter_story",
     "seed_story_generate",
     "seed_similarity_review",
+    # 소설화: 장 생성(스트리밍, 재생성도 여기로 함께 집계한다), AI 문단 수정(구조화), 장 경계 제안(구조화).
+    "novelize_chapter",
+    "novelize_revise",
+    "novelize_boundary",
 ]
 
 # 아래 집합들은 로그 라벨이면서 **모델 선택도 겸한다** — `llm/gemini.py` 의 `generate_structured` 가 아래
@@ -51,6 +55,12 @@ JUDGMENT_CALL_SITES: frozenset[LLMCallSite] = (
 PUBLISH_FILTER_CALL_SITES: frozenset[LLMCallSite] = frozenset(
     {"publish_filter_character", "publish_filter_story"}
 )
+# 소설화 호출 전체. 이 호출들은 결과를 소설 본문으로 저장하므로, 채팅이라면 경고만 남기고 넘길 결과(출력 상한에서
+# 잘림·빈 본문)를 `llm/gemini.py` 가 구분된 실패(`LLMTruncatedError`·`LLMEmptyResponseError`)로 올린다.
+NOVELIZE_CALL_SITES: frozenset[LLMCallSite] = frozenset({"novelize_chapter", "novelize_revise", "novelize_boundary"})
+# 그중 소설화 모델·출력 상한·사고 설정(`gemini_novelize_*`)을 쓰는 호출 — 본문을 쓰는 장 생성과 문단 수정이다. 장 경계
+# 제안은 턴 번호 몇 개를 고르는 판정이라 넣지 않아 기본 모델로 간다.
+NOVELIZE_MODEL_CALL_SITES: frozenset[LLMCallSite] = frozenset({"novelize_chapter", "novelize_revise"})
 
 
 def structured_model(call_site: LLMCallSite, default_model: str) -> str:
@@ -69,6 +79,8 @@ def structured_model(call_site: LLMCallSite, default_model: str) -> str:
         return settings.gemini_image_judgment_model_name or default_model
     if call_site in PUBLISH_FILTER_CALL_SITES:
         return settings.gemini_publish_filter_model_name or default_model
+    if call_site in NOVELIZE_MODEL_CALL_SITES:
+        return settings.gemini_novelize_model_name or default_model
     return default_model
 
 
@@ -89,6 +101,12 @@ def request_timeout_ms(call_site: LLMCallSite) -> int:
         return settings.gemini_memory_summary_timeout_ms
     if call_site in ("seed_story_generate", "seed_similarity_review"):
         return _SEED_TIMEOUT_MS
+    if call_site == "novelize_chapter":
+        return settings.gemini_novelize_chapter_timeout_ms
+    if call_site == "novelize_revise":
+        return settings.gemini_novelize_revise_timeout_ms
+    if call_site == "novelize_boundary":
+        return settings.gemini_novelize_boundary_timeout_ms
     return settings.gemini_generate_timeout_ms
 
 
@@ -117,6 +135,17 @@ class LLMRateLimitError(LLMClientError):
     쿼터 소진(`genai_errors.APIError(code=429)`)을 구분하려고 두는 서브클래스다 — 여전히
     `LLMClientError`라 기존 `except LLMClientError`가 그대로 잡으므로 사용자에게 보이는
     동작(흡수)은 바뀌지 않는다. 호출부는 `isinstance` 검사로 승격 이벤트의 태그만 갈라 붙인다."""
+
+
+class LLMTruncatedError(LLMClientError):
+    """소설화 호출의 출력이 출력 상한(`MAX_TOKENS`)에서 잘렸다. 채팅 호출에서는 올라오지 않는다 — 채팅은 잘린 응답을
+    경고 로그만 남기고 그대로 돌려준다. 사용량은 이 예외를 올리기 전에 이미 기록됐다."""
+
+
+class LLMEmptyResponseError(LLMClientError):
+    """소설화 호출이 정상 종료했는데 본문이 비었다(공백뿐인 것 포함). 종료 사유는 STOP 이라 그것만 보면 성공으로
+    보인다. 채팅 호출에서는 올라오지 않는다. 사용량은 이 예외를 올리기 전에 이미 기록됐다. 비지는 않았지만 너무 짧은
+    본문을 실패로 볼 기준은 호출부가 정한다."""
 
 
 class LLMClient(abc.ABC):
@@ -152,4 +181,19 @@ class LLMClient(abc.ABC):
     ) -> T:
         """`images`는 (바이트, MIME 타입) 쌍의 목록 — 전달되면 멀티모달 판단(예: 발행
         자동 필터)에 프롬프트와 함께 첨부된다."""
+        raise NotImplementedError
+
+    async def generate_structured_with_instruction(
+        self,
+        prompt: str,
+        response_schema: type[T],
+        *,
+        system_instruction: str,
+        usage: LLMCallContext,
+    ) -> T:
+        """`generate_structured` 와 같되 역할 규칙을 본문과 다른 통로(`system_instruction`)로 보낸다. 소설화의 문단
+        수정·경계 제안이 쓴다 — 본문이 사용자·작가가 쓴 글이라 규칙과 섞이면 그 글이 지시처럼 읽힐 수 있다.
+
+        추상 메서드가 아니다. `generate_structured` 에 인자를 더하면 그 메서드를 구현한 테스트 페이크 전부의
+        시그니처를 함께 바꿔야 해서, 이 호출을 쓰는 클라이언트(Gemini)와 소설화 테스트 페이크만 따로 구현한다."""
         raise NotImplementedError

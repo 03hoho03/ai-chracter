@@ -46,6 +46,22 @@ const ALLOWED_PLACEHOLDERS: Record<string, readonly string[]> = {
   "publish_filter:intro_instruction": [],
   "publish_filter:image_list": ["image_lines"],
   "publish_filter:verdict_instruction": [],
+  "novelize_boundary:instruction": [],
+  "novelize_boundary:user_name": ["user_name"],
+  "novelize_boundary:max_turns": ["max_turns"],
+  "novelize_boundary:turn_context": ["user_label", "assistant_label", "turn_lines"],
+  "novelize_chapter:instruction": [],
+  "novelize_chapter:work_setting": ["work_setting"],
+  "novelize_chapter:user_name": ["user_name"],
+  "novelize_chapter:setting_notes": ["setting_notes"],
+  "novelize_chapter:previous_excerpt": ["previous_excerpt"],
+  "novelize_chapter:turn_context": ["user_label", "assistant_label", "turn_lines"],
+  "novelize_revise:instruction": [],
+  "novelize_revise:work_setting": ["work_setting"],
+  "novelize_revise:setting_notes": ["setting_notes"],
+  "novelize_revise:paragraphs": ["paragraph_lines"],
+  "novelize_revise:target_range": ["first_paragraph", "last_paragraph"],
+  "novelize_revise:user_request": ["user_request"],
 };
 
 export function allowedPlaceholdersFor(channel: string, slot: string): readonly string[] {

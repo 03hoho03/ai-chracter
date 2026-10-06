@@ -9,6 +9,7 @@ import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.core.config import settings
 from api.core.redis import redis_client
 from api.db.models import (
     AdminActionLog,
@@ -30,9 +31,10 @@ from api.db.models import (
     Report,
     ReportReasonCategory,
     ReportStatus,
+    UserFeatureGrant,
 )
 from api.session.suspension import SUSPENDED_USER_KEY_PREFIX, is_user_suspended
-from factories import _count_queries, _create_admin, _login_as, _login_as_admin, _make_user
+from factories import _count_queries, _create_admin, _grant_novelize, _login_as, _login_as_admin, _make_user
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -210,6 +212,12 @@ _ADMIN_SESSION_GUARD_CASES = [
         id="clover",
     ),
     pytest.param("get", f"/admin/users/{uuid.uuid4()}/clover-ledger?page=1", None, id="clover-ledger"),
+    pytest.param(
+        "post",
+        f"/admin/users/{uuid.uuid4()}/novelize-grant",
+        {"granted": True, "adminComment": "운영 시험"},
+        id="novelize-grant",
+    ),
 ]
 
 
@@ -1755,3 +1763,180 @@ async def test_list_users_filters_by_beta(
     ids = {item["id"] for item in (await db_client.get("/admin/users?page=1&beta=false")).json()["items"]}
     assert str(plain_user.id) in ids
     assert str(beta_user.id) not in ids
+
+
+# ---- 소설화 허용 ---------------------------------------------------------------
+
+
+async def _novelize_grants(db_session: AsyncSession, user_id: uuid.UUID) -> list[UserFeatureGrant]:
+    return list(
+        (
+            await db_session.scalars(sa.select(UserFeatureGrant).where(UserFeatureGrant.user_id == user_id))
+        ).all()
+    )
+
+
+async def _novelize_logs(db_session: AsyncSession, user_id: uuid.UUID) -> list[tuple[str, str]]:
+    logs = (
+        await db_session.scalars(
+            sa.select(AdminActionLog)
+            .where(AdminActionLog.target_user_id == user_id)
+            .order_by(AdminActionLog.created_at, AdminActionLog.id)
+        )
+    ).all()
+    return [(log.action_type, log.reason_text) for log in logs]
+
+
+async def test_novelize_grant_on_creates_the_row_and_logs_even_with_the_kill_switch_off(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """전역 스위치를 켜기 전에 허용을 미리 줄 수 있어야 한다. 허용 행에는 누른 운영자가 남는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    monkeypatch.setattr(settings, "novelize_enabled", False)
+    monkeypatch.setattr(settings, "novelize_grant_allowlist", [user.id])
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.post(
+        f"/admin/users/{user.id}/novelize-grant", json={"granted": True, "adminComment": "운영 시험 계정"}
+    )
+    assert resp.status_code == 204
+
+    grants = await _novelize_grants(db_session, user.id)
+    assert [(grant.feature, grant.granted_by) for grant in grants] == [("novelize", admin_payload["id"])]
+    assert await _novelize_logs(db_session, user.id) == [("user-novelize-on", "운영 시험 계정")]
+
+
+async def test_novelize_grant_off_deletes_the_row_even_for_a_user_outside_the_allowlist(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """명단 가드는 허용을 줄 때만 막는다 — 명단에서 이미 빠진 계정의 행도 회수할 수 있어야 한다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _grant_novelize(db_session, user.id)
+    await db_session.commit()
+    monkeypatch.setattr(settings, "novelize_grant_allowlist", [])
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.post(
+        f"/admin/users/{user.id}/novelize-grant", json={"granted": False, "adminComment": "시험 종료"}
+    )
+    assert resp.status_code == 204
+
+    assert await _novelize_grants(db_session, user.id) == []
+    assert await _novelize_logs(db_session, user.id) == [("user-novelize-off", "시험 종료")]
+
+
+async def test_novelize_grant_again_keeps_the_first_row_but_still_logs(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    first = await _grant_novelize(db_session, user.id)
+    await db_session.commit()
+    first_id, first_granted_by = first.id, first.granted_by
+    monkeypatch.setattr(settings, "novelize_grant_allowlist", [user.id])
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.post(
+        f"/admin/users/{user.id}/novelize-grant", json={"granted": True, "adminComment": "다시 허용"}
+    )
+    assert resp.status_code == 204
+
+    grants = await _novelize_grants(db_session, user.id)
+    assert [(grant.id, grant.granted_by) for grant in grants] == [(first_id, first_granted_by)]
+    assert await _novelize_logs(db_session, user.id) == [("user-novelize-on", "다시 허용")]
+
+
+async def test_novelize_grant_outside_the_allowlist_returns_422_without_any_change(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """명단에는 다른 계정을 둬서 "명단이 비어 막힌다"가 아니라 "이 계정이 명단에 없어 막힌다"를 본다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    monkeypatch.setattr(settings, "novelize_enabled", True)
+    monkeypatch.setattr(settings, "novelize_grant_allowlist", [uuid.uuid4()])
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.post(
+        f"/admin/users/{user.id}/novelize-grant", json={"granted": True, "adminComment": "허용"}
+    )
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == {"code": "NOVELIZE_GRANT_NOT_ALLOWLISTED"}
+
+    assert await _novelize_grants(db_session, user.id) == []
+    assert await _novelize_logs(db_session, user.id) == []
+
+
+async def test_novelize_grant_blank_admin_comment_returns_422(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    monkeypatch.setattr(settings, "novelize_grant_allowlist", [user.id])
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.post(
+        f"/admin/users/{user.id}/novelize-grant", json={"granted": True, "adminComment": "   "}
+    )
+    assert resp.status_code == 422
+    assert await _novelize_grants(db_session, user.id) == []
+
+
+async def test_novelize_grant_on_deleted_user_returns_404(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user = _make_user(deleted_at=datetime.now(UTC))
+    db_session.add(user)
+    await db_session.commit()
+    monkeypatch.setattr(settings, "novelize_grant_allowlist", [user.id])
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.post(
+        f"/admin/users/{user.id}/novelize-grant", json={"granted": True, "adminComment": "허용"}
+    )
+    assert resp.status_code == 404
+
+
+async def test_user_detail_exposes_novelize_granted_at(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    granted_user = _make_user()
+    plain_user = _make_user()
+    db_session.add_all([granted_user, plain_user])
+    await db_session.flush()
+    grant = await _grant_novelize(db_session, granted_user.id)
+    await db_session.commit()
+    await db_session.refresh(grant)
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    granted_detail = (await db_client.get(f"/admin/users/{granted_user.id}")).json()
+    plain_detail = (await db_client.get(f"/admin/users/{plain_user.id}")).json()
+    assert datetime.fromisoformat(granted_detail["novelizeGrantedAt"]) == grant.granted_at
+    assert plain_detail["novelizeGrantedAt"] is None

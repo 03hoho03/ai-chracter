@@ -24,9 +24,12 @@ from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User, WithdrawnEmail
 from api.db.models.chat import ChatMessageReport, ChatRoom
 from api.db.models.content import Content, ContentChatParticipant, ContentVisibility
+from api.db.models.feature_grant import UserFeatureGrant
 from api.db.models.inquiry import Inquiry
 from api.db.models.media import Asset, AssetKind, ImageGenerationRequest
+from api.db.models.novel import Novel
 from api.db.models.persona import UserPersona
+from api.novelize.deletion import delete_novels
 
 logger = logging.getLogger(__name__)
 
@@ -127,11 +130,18 @@ async def erase_account(
         .where(ChatMessageReport.reporter_user_id == user_id, ChatMessageReport.evidence_purged_at.is_(None))
         .values(evidence_response=None, evidence_user_message=None, note=None, evidence_purged_at=now)
     )
+    # 소설은 방과 따로 남는 문서라(방이 지워진 소설도 있다) 방 파기에 딸려 지워지지 않는다 — 여기서 직접 파기한다.
+    # 방보다 먼저 지우면 방 DELETE 가 소설의 방 참조를 비우는 UPDATE 를 할 일이 없다. 진행 중 작업도 환불하지 않고
+    # 지운다 — 잔액은 아래 `burn_all` 이 통째로 소멸시킨다.
+    novel_ids = (await db.scalars(select(Novel.id).where(Novel.user_id == user_id))).all()
+    await delete_novels(db, novel_ids)
     room_ids = (await db.scalars(select(ChatRoom.id).where(ChatRoom.user_id == user_id))).all()
     await delete_chat_rooms(db, room_ids)
     # "이 사람이 어느 작품과 대화했는가" 의 기록도 대화와 함께 파기한다. 작품의 대화수는 이미 공개된 집계라 내리지
     # 않는다 — 내리면 탈퇴가 남의 작품 순위를 움직인다.
     await db.execute(delete(ContentChatParticipant).where(ContentChatParticipant.user_id == user_id))
+    # 기능 허용은 계정에 딸린 설정이라 계정과 함께 지운다. 누가 언제 허용했는지는 감사 로그에 남는다.
+    await db.execute(delete(UserFeatureGrant).where(UserFeatureGrant.user_id == user_id))
 
     # 위 `profile_image_asset_id = None` 대입이 DB에 반영된
     # 뒤라야 아래 `DELETE FROM assets`가 FK 위반을 내지 않는다. autoflush에 기대지 않는다.

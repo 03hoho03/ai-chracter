@@ -7,6 +7,9 @@ import { sessionKeys } from "./keys";
 
 export type MeResponse = components["schemas"]["MeResponse"];
 
+/** 계정별로 열리는 기능 이름. 서버가 라우트 게이트와 같은 판정으로 `GET /me` 에 실어 보낸다. */
+export type EnabledFeature = MeResponse["enabledFeatures"][number];
+
 /** 세션도 서버 상태이므로 useQuery(훅)와
  * beforeLoad 라우터 가드(ensureQueryData) 양쪽이 동일한 옵션을 공유한다. */
 export const sessionQueryOptions = queryOptions({

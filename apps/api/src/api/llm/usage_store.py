@@ -31,7 +31,7 @@ from api.core.sentry import capture_dependency_failure
 logger = logging.getLogger(__name__)
 
 USAGE_KEY_PREFIX = "llm_usage:"
-# 하루 해시 하나가 많아야 call_site 14 × 모델 1~2 × 지표 7 개의 정수라, 400일을 둬도 수 MB 에
+# 하루 해시 하나가 많아야 call_site 17 × 모델 1~2 × 지표 7 개의 정수라, 400일을 둬도 수 MB 에
 # 못 미친다. 모델 전환 전후·월 대비 비교가 40일 같은 짧은 창을 넘기기 쉬워 길게 둔다.
 USAGE_RETENTION_SECONDS = 400 * 24 * 60 * 60
 # 생성 스트림은 이 기록이 끝나야 `done` 으로 넘어가므로, 이 값이 Redis 장애 때 턴 하나가 더

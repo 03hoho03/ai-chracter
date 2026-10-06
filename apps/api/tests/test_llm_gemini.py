@@ -18,8 +18,10 @@ from api.llm.client import (
     LLMCallContext,
     LLMCallSite,
     LLMClientError,
+    LLMEmptyResponseError,
     LLMPolicyViolationError,
     LLMRateLimitError,
+    LLMTruncatedError,
 )
 from api.llm.gemini import GeminiLLMClient
 
@@ -708,7 +710,12 @@ _IMAGE_SITES = ("chat_situational_image", "chat_media_book_image", "preview_medi
 _JUDGMENT_SITES = _STAT_SITES + _ENDING_SITES + _IMAGE_SITES
 _PUBLISH_FILTER_SITES = ("publish_filter_character", "publish_filter_story")
 # 판정·심사가 아닌 구조화 호출 — 어느 스위치에도 끌려가면 안 된다.
-_OTHER_STRUCTURED_SITES = ("chat_memory_summary", "seed_story_generate", "seed_similarity_review")
+_OTHER_STRUCTURED_SITES = (
+    "chat_memory_summary",
+    "seed_story_generate",
+    "seed_similarity_review",
+    "novelize_boundary",
+)
 _ALL_STRUCTURED_SITES = _JUDGMENT_SITES + _PUBLISH_FILTER_SITES + _OTHER_STRUCTURED_SITES
 # 설정 이름 → 그 설정을 따라가야 하는 call_site.
 _MODEL_SWITCHES = {
@@ -937,6 +944,11 @@ _EXPECTED_TIMEOUT_MS: dict[str, int] = {
     "publish_filter_story": 60_000,
     "seed_story_generate": 300_000,
     "seed_similarity_review": 300_000,
+    # 소설화 장 생성은 수천 자를 한 번에 쓰고 사고 토큰도 많아 가장 길게, 경계 제안은 사용자가 화면에서 기다리는
+    # 짧은 구조화 호출이라 짧게, 문단 수정은 그 사이.
+    "novelize_chapter": 300_000,
+    "novelize_revise": 120_000,
+    "novelize_boundary": 30_000,
 }
 
 
@@ -1124,3 +1136,398 @@ async def test_generate_structured_wraps_a_bare_timeout_error(monkeypatch: pytes
 
     with pytest.raises(LLMClientError):
         await client.generate_structured("judge", _JudgmentResult, usage=_USAGE)
+
+
+# ---- 소설화 호출 ---------------------------------------------------------------------------------------------
+# 소설화는 채팅과 다른 모델·출력 상한·사고 설정·타임아웃을 쓰고, 잘리거나 빈 결과를 실패로 돌려준다. 채팅 쪽은
+# 하나도 바뀌지 않아야 하므로, 각 테스트는 채팅 값과 소설화 값을 **서로 다르게** 두고 둘 다 본다 — 같은 값이면
+# 배선이 엇갈려도 통과한다.
+
+_CHAPTER = LLMCallContext(call_site="novelize_chapter", user_id=_USER_ID, room_id=None)
+_REVISE = LLMCallContext(call_site="novelize_revise", user_id=_USER_ID, room_id=None)
+_BOUNDARY = LLMCallContext(call_site="novelize_boundary", user_id=_USER_ID, room_id=None)
+
+
+def _novelize_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "gemini_max_output_tokens", 1_111)
+    monkeypatch.setattr(settings, "gemini_thinking_budget", 222)
+    monkeypatch.setattr(settings, "gemini_novelize_model_name", "novel-model")
+    monkeypatch.setattr(settings, "gemini_novelize_max_output_tokens", 3_333)
+    monkeypatch.setattr(settings, "gemini_novelize_thinking_budget", 444)
+    monkeypatch.setattr(settings, "gemini_novelize_thinking_level", None)
+
+
+def _recording(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
+    recorded: list[tuple[str, str]] = []
+
+    async def fake_record(call_site: str, model: str, _usage_metadata: object | None) -> None:
+        recorded.append((call_site, model))
+
+    monkeypatch.setattr("api.llm.gemini.record_usage", fake_record)
+    return recorded
+
+
+def _client_with(**models: Any) -> GeminiLLMClient:
+    client = GeminiLLMClient(api_key="test-key", model_name="base-model")
+    client._client = SimpleNamespace(aio=SimpleNamespace(models=SimpleNamespace(**models)))  # type: ignore[assignment]
+    return client
+
+
+def test_novelize_settings_defaults() -> None:
+    """코드 기본값 — 소설화는 채팅보다 비싼 모델로 장 하나를 통째로 쓰므로 출력 상한이 채팅보다 크다."""
+    assert Settings.model_fields["gemini_novelize_model_name"].default == "gemini-3.8-flash"
+    assert Settings.model_fields["gemini_novelize_max_output_tokens"].default == 32_768
+    assert Settings.model_fields["gemini_novelize_thinking_budget"].default is None
+    assert Settings.model_fields["gemini_novelize_thinking_level"].default is None
+    assert Settings.model_fields["gemini_novelize_chapter_timeout_ms"].default == 300_000
+    assert Settings.model_fields["gemini_novelize_revise_timeout_ms"].default == 120_000
+    assert Settings.model_fields["gemini_novelize_boundary_timeout_ms"].default == 30_000
+    assert Settings.model_fields["novelize_chapter_max_turns"].default == 20
+
+
+def test_novelize_thinking_settings_read_an_empty_env_value_as_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GEMINI_NOVELIZE_THINKING_BUDGET", "")
+    monkeypatch.setenv("GEMINI_NOVELIZE_THINKING_LEVEL", " ")
+    loaded = Settings()
+    assert loaded.gemini_novelize_thinking_budget is None
+    assert loaded.gemini_novelize_thinking_level is None
+
+    monkeypatch.setenv("GEMINI_NOVELIZE_THINKING_BUDGET", "0")
+    assert Settings().gemini_novelize_thinking_budget == 0
+
+    monkeypatch.setenv("GEMINI_NOVELIZE_THINKING_BUDGET", "")
+    monkeypatch.setenv("GEMINI_NOVELIZE_THINKING_LEVEL", "LOW")
+    assert Settings().gemini_novelize_thinking_level == "LOW"
+
+
+async def test_novelize_chapter_uses_its_own_model_cap_and_thinking_while_chat_keeps_its_own(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _novelize_settings(monkeypatch)
+    sent: list[dict[str, Any]] = []
+
+    async def generate_content_stream(**kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+        sent.append(kwargs)
+        return _chunks("본문")
+
+    client = _client_with(generate_content_stream=generate_content_stream)
+
+    assert [t async for t in client.generate("장", usage=_CHAPTER)] == ["본문"]
+    assert [t async for t in client.generate("턴", usage=_USAGE)] == ["본문"]
+
+    chapter, chat = sent
+    assert chapter["model"] == "novel-model"
+    assert chapter["config"].max_output_tokens == 3_333
+    assert chapter["config"].thinking_config.thinking_budget == 444
+    assert chapter["config"].thinking_config.thinking_level is None
+    assert chapter["config"].http_options.timeout == 300_000
+    assert chat["model"] == "base-model"
+    assert chat["config"].max_output_tokens == 1_111
+    assert chat["config"].thinking_config.thinking_budget == 222
+    assert chat["config"].http_options.timeout == 45_000
+
+
+async def test_novelize_thinking_sends_only_what_is_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    """둘 다 비면 사고 설정을 아예 싣지 않는다(모델 기본 동작) — 채팅 예산이 소설화로 새지도 않는다."""
+    _novelize_settings(monkeypatch)
+    monkeypatch.setattr(settings, "gemini_novelize_thinking_budget", None)
+    sent: list[dict[str, Any]] = []
+
+    async def generate_content_stream(**kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+        sent.append(kwargs)
+        return _chunks("본문")
+
+    client = _client_with(generate_content_stream=generate_content_stream)
+
+    [_ async for _ in client.generate("장", usage=_CHAPTER)]
+    monkeypatch.setattr(settings, "gemini_novelize_thinking_level", "LOW")
+    [_ async for _ in client.generate("장", usage=_CHAPTER)]
+
+    assert sent[0]["config"].thinking_config is None
+    assert sent[1]["config"].thinking_config.thinking_level == genai_types.ThinkingLevel.LOW
+    assert sent[1]["config"].thinking_config.thinking_budget is None
+
+
+async def test_empty_novelize_model_name_falls_back_to_the_base_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    _novelize_settings(monkeypatch)
+    monkeypatch.setattr(settings, "gemini_novelize_model_name", "")
+    sent: list[dict[str, Any]] = []
+
+    async def generate_content_stream(**kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+        sent.append(kwargs)
+        return _chunks("본문")
+
+    client = _client_with(generate_content_stream=generate_content_stream)
+    [_ async for _ in client.generate("장", usage=_CHAPTER)]
+
+    assert sent[0]["model"] == "base-model"
+
+
+async def test_novelize_revise_uses_the_novelize_model_and_boundary_stays_on_the_base_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """문단 수정은 장 본문과 같은 문체를 써야 해 소설화 모델로, 경계 제안은 턴 번호 몇 개를 고르는 판정이라 싼
+    기본 모델로 간다. 사고 설정은 소설화 모델을 쓰는 호출에만 싣는다."""
+    _novelize_settings(monkeypatch)
+    monkeypatch.setattr(settings, "gemini_novelize_thinking_level", "MEDIUM")
+    recorded = _recording(monkeypatch)
+    sent: list[dict[str, Any]] = []
+
+    async def generate_content(**kwargs: Any) -> SimpleNamespace:
+        sent.append(kwargs)
+        return SimpleNamespace(parsed=_JudgmentResult(triggered=False, ending_id=None))
+
+    client = _client_with(generate_content=generate_content)
+
+    await client.generate_structured("고쳐", _JudgmentResult, usage=_REVISE)
+    await client.generate_structured("나눠", _JudgmentResult, usage=_BOUNDARY)
+    await client.generate_structured("판정", _JudgmentResult, usage=_CTX)
+
+    revise, boundary, judgment = sent
+    assert revise["model"] == "novel-model"
+    assert revise["config"].max_output_tokens == 3_333
+    assert revise["config"].thinking_config.thinking_budget == 444
+    assert revise["config"].thinking_config.thinking_level == genai_types.ThinkingLevel.MEDIUM
+    assert revise["config"].http_options.timeout == 120_000
+    assert boundary["model"] == "base-model"
+    assert boundary["config"].max_output_tokens is None
+    assert boundary["config"].thinking_config is None
+    assert boundary["config"].http_options.timeout == 30_000
+    assert judgment["model"] == "base-model"
+    assert judgment["config"].max_output_tokens is None
+    assert judgment["config"].thinking_config is None
+    assert recorded == [
+        ("novelize_revise", "novel-model"),
+        ("novelize_boundary", "base-model"),
+        ("chat_stat_judgment", "base-model"),
+    ]
+
+
+async def test_structured_call_with_instruction_sends_it_as_the_system_instruction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """문단 수정·경계 제안은 역할 규칙을 본문(사용자·작가 글)과 다른 통로로 보낸다. 지시문 없는 구조화 호출은
+    지금처럼 system_instruction 을 싣지 않는다."""
+    _recording(monkeypatch)
+    sent: list[dict[str, Any]] = []
+
+    async def generate_content(**kwargs: Any) -> SimpleNamespace:
+        sent.append(kwargs)
+        return SimpleNamespace(parsed=_JudgmentResult(triggered=False, ending_id=None))
+
+    client = _client_with(generate_content=generate_content)
+
+    await client.generate_structured_with_instruction(
+        "본문", _JudgmentResult, system_instruction="역할 규칙", usage=_REVISE
+    )
+    await client.generate_structured("판정", _JudgmentResult, usage=_CTX)
+
+    with_instruction, plain = sent
+    assert (with_instruction["contents"], with_instruction["config"].system_instruction) == ("본문", "역할 규칙")
+    assert plain["config"].system_instruction is None
+
+
+async def test_novelize_timeouts_follow_the_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "gemini_novelize_chapter_timeout_ms", 2_001)
+    monkeypatch.setattr(settings, "gemini_novelize_revise_timeout_ms", 2_002)
+    monkeypatch.setattr(settings, "gemini_novelize_boundary_timeout_ms", 2_003)
+    sent: list[int] = []
+
+    async def generate_content(**kwargs: Any) -> SimpleNamespace:
+        sent.append(kwargs["config"].http_options.timeout)
+        return SimpleNamespace(parsed=_JudgmentResult(triggered=False, ending_id=None))
+
+    async def generate_content_stream(**kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+        sent.append(kwargs["config"].http_options.timeout)
+        return _chunks("a")
+
+    client = _client_with(generate_content=generate_content, generate_content_stream=generate_content_stream)
+
+    [_ async for _ in client.generate("장", usage=_CHAPTER)]
+    await client.generate_structured("고쳐", _JudgmentResult, usage=_REVISE)
+    await client.generate_structured("나눠", _JudgmentResult, usage=_BOUNDARY)
+
+    assert sent == [2_001, 2_002, 2_003]
+
+
+async def test_usage_is_recorded_under_the_model_that_actually_ran(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """소설화 토큰이 채팅 모델 이름으로 쌓이면 모델별 원가표가 틀린다 — 로그와 집계 둘 다 실제 모델이어야 한다."""
+    caplog.set_level(logging.WARNING, logger="api.llm.gemini")
+    _novelize_settings(monkeypatch)
+    recorded = _recording(monkeypatch)
+    client = _client_with(
+        generate_content_stream=_stream_of(SimpleNamespace(text="본문", usage_metadata=_usage(10, 5, 7, 22)))
+    )
+
+    [_ async for _ in client.generate("장", usage=_CHAPTER)]
+    [_ async for _ in client.generate("턴", usage=_USAGE)]
+
+    assert recorded == [("novelize_chapter", "novel-model"), ("chat_generate", "base-model")]
+    assert [_fields(r)["model"] for r in _usage_records(caplog)] == ["novel-model", "base-model"]
+
+
+def _max_tokens_stream(*texts: str) -> Any:
+    """마지막 청크가 출력 상한에 걸려 끝난 스트림. 앞 청크는 본문을 싣는다."""
+    chunks = [SimpleNamespace(text=t, candidates=None) for t in texts[:-1]]
+    chunks.append(
+        SimpleNamespace(
+            text=texts[-1],
+            usage_metadata=_usage(10, 5, 7, 22),
+            candidates=[SimpleNamespace(finish_reason=genai_types.FinishReason.MAX_TOKENS)],
+        )
+    )
+    return _stream_of(*chunks)
+
+
+async def test_novelize_chapter_cut_off_at_the_cap_fails_after_recording_usage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """잘린 장은 문장 중간에서 끝난 글이라 성공으로 저장하면 안 된다. 그래도 토큰은 과금됐으므로 실패를 올리기
+    전에 사용량을 남긴다 — 빠지면 실패한 장의 원가가 집계에서 사라진다."""
+    _novelize_settings(monkeypatch)
+    recorded = _recording(monkeypatch)
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        "api.llm.gemini.logger",
+        SimpleNamespace(warning=lambda message, *args: warnings.append(message % args)),
+    )
+    client = _client_with(generate_content_stream=_max_tokens_stream("그날 밤, ", "그는 문을"))
+    tokens: list[str] = []
+
+    with pytest.raises(LLMTruncatedError):
+        async for token in client.generate("장", usage=_CHAPTER):
+            tokens.append(token)
+
+    assert tokens == ["그날 밤, ", "그는 문을"]
+    assert recorded == [("novelize_chapter", "novel-model")]
+    # 경고는 이 호출에 실제로 걸린 상한을 찍는다 — 채팅 상한(1111)을 찍으면 상한을 올릴지 판단을 그르친다.
+    assert "Gemini 응답이 max_output_tokens(3333)에서 잘렸다" in warnings
+
+
+async def test_chat_cut_off_at_the_cap_still_returns_the_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    """채팅은 잘린 응답도 그대로 보여 주고 경고만 남긴다(기존 동작) — 소설화의 잘림 실패가 채팅으로 새면 안 된다."""
+    _novelize_settings(monkeypatch)
+    recorded = _recording(monkeypatch)
+    client = _client_with(generate_content_stream=_max_tokens_stream("말을 ", "하다"))
+
+    assert [t async for t in client.generate("턴", usage=_USAGE)] == ["말을 ", "하다"]
+    assert recorded == [("chat_generate", "base-model")]
+
+
+@pytest.mark.parametrize("texts", [(), ("",), ("  ", "\n")], ids=["no-chunks", "empty", "whitespace"])
+async def test_novelize_chapter_with_an_empty_body_fails_even_on_stop(
+    monkeypatch: pytest.MonkeyPatch, texts: tuple[str, ...]
+) -> None:
+    """정상 종료(STOP)로 빈 본문이 오는 일이 실제로 있었다 — 종료 사유만 보면 성공이라 본문을 따로 본다."""
+    _novelize_settings(monkeypatch)
+    recorded = _recording(monkeypatch)
+    chunks = [SimpleNamespace(text=t) for t in texts] or [SimpleNamespace(text=None)]
+    chunks[-1].usage_metadata = _usage(10, 1, 7, 18)
+    chunks[-1].candidates = [SimpleNamespace(finish_reason=genai_types.FinishReason.STOP)]
+    client = _client_with(generate_content_stream=_stream_of(*chunks))
+
+    with pytest.raises(LLMEmptyResponseError):
+        [_ async for _ in client.generate("장", usage=_CHAPTER)]
+
+    assert recorded == [("novelize_chapter", "novel-model")]
+
+
+async def test_chat_with_an_empty_body_still_ends_normally(monkeypatch: pytest.MonkeyPatch) -> None:
+    _novelize_settings(monkeypatch)
+    recorded = _recording(monkeypatch)
+    client = _client_with(generate_content_stream=_stream_of(SimpleNamespace(text="")))
+
+    assert [t async for t in client.generate("턴", usage=_USAGE)] == []
+    assert recorded == [("chat_generate", "base-model")]
+
+
+async def test_novelize_chapter_block_stays_a_policy_violation(monkeypatch: pytest.MonkeyPatch) -> None:
+    _novelize_settings(monkeypatch)
+    client = _client_with(
+        generate_content_stream=_stream_of(
+            SimpleNamespace(
+                text=None,
+                prompt_feedback=None,
+                candidates=[genai_types.Candidate(finish_reason=genai_types.FinishReason.PROHIBITED_CONTENT)],
+            )
+        )
+    )
+
+    with pytest.raises(LLMPolicyViolationError):
+        [_ async for _ in client.generate("장", usage=_CHAPTER)]
+
+
+@pytest.mark.parametrize("usage", [_REVISE, _BOUNDARY], ids=lambda u: u.call_site)
+async def test_novelize_structured_failures_are_told_apart(
+    monkeypatch: pytest.MonkeyPatch, usage: LLMCallContext
+) -> None:
+    """구조화 응답이 파싱되지 않을 때 소설화는 잘림·빈 응답을 따로 알려 작업 실패 사유로 옮길 수 있게 한다."""
+    _novelize_settings(monkeypatch)
+    recorded = _recording(monkeypatch)
+    responses = iter(
+        [
+            SimpleNamespace(
+                parsed=None,
+                text='{"triggered": tr',
+                candidates=[SimpleNamespace(finish_reason=genai_types.FinishReason.MAX_TOKENS)],
+            ),
+            SimpleNamespace(
+                parsed=None, text=None, candidates=[SimpleNamespace(finish_reason=genai_types.FinishReason.STOP)]
+            ),
+            SimpleNamespace(
+                parsed=None, text="not json", candidates=[SimpleNamespace(finish_reason=genai_types.FinishReason.STOP)]
+            ),
+        ]
+    )
+
+    async def generate_content(**_: Any) -> SimpleNamespace:
+        return next(responses)
+
+    client = _client_with(generate_content=generate_content)
+
+    with pytest.raises(LLMTruncatedError):
+        await client.generate_structured("x", _JudgmentResult, usage=usage)
+    with pytest.raises(LLMEmptyResponseError):
+        await client.generate_structured("x", _JudgmentResult, usage=usage)
+    with pytest.raises(LLMClientError) as exc_info:
+        await client.generate_structured("x", _JudgmentResult, usage=usage)
+    assert type(exc_info.value) is LLMClientError
+    assert len(recorded) == 3
+
+
+async def test_chat_structured_parse_failures_stay_plain_client_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """판정·심사 호출부는 파싱 실패를 한 종류로 다룬다 — 잘림·빈 응답 구분은 소설화에만 붙는다."""
+    _novelize_settings(monkeypatch)
+
+    async def generate_content(**_: Any) -> SimpleNamespace:
+        return SimpleNamespace(
+            parsed=None, text=None, candidates=[SimpleNamespace(finish_reason=genai_types.FinishReason.MAX_TOKENS)]
+        )
+
+    client = _client_with(generate_content=generate_content)
+
+    with pytest.raises(LLMClientError) as exc_info:
+        await client.generate_structured("x", _JudgmentResult, usage=_CTX)
+    assert type(exc_info.value) is LLMClientError
+
+
+async def test_novelize_chapter_settings_reach_the_wire_through_the_real_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
+    """가짜 클라이언트는 config 객체만 본다 — 사고 수준 문자열이 SDK 를 거쳐 실제 요청 본문까지 가는지는 이 경로로만
+    확인된다."""
+    _novelize_settings(monkeypatch)
+    monkeypatch.setattr(settings, "gemini_novelize_thinking_budget", None)
+    monkeypatch.setattr(settings, "gemini_novelize_thinking_level", "HIGH")
+    seen: list[httpx.Request] = []
+    client = _sdk_backed_client(seen)
+
+    assert [t async for t in client.generate("장", usage=_CHAPTER)] != []
+
+    (request,) = seen
+    assert "/models/novel-model:streamGenerateContent" in request.url.path
+    body = json.loads(request.content)
+    assert body["generationConfig"]["maxOutputTokens"] == 3_333
+    # SDK 는 사고 설정 안쪽 필드를 snake_case 로 싣는다 — 운영에서 도는 채팅 사고 예산(`thinking_budget`)도 같은
+    # 모양으로 나간다. 정하지 않은 예산은 아예 빠져야 한다.
+    assert body["generationConfig"]["thinkingConfig"] == {"thinking_level": "HIGH"}

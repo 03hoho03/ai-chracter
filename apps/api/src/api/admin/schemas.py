@@ -294,6 +294,9 @@ class AdminUserDetailResponse(CamelModel):
     # 베타 참가자로 처음 지정된 시각(NULL 이면 참가자 아님). 목록 항목에도 실린다.
     # 값을 바꾸는 유일한 경로는 `POST /admin/users/{id}/beta`다.
     beta_joined_at: datetime | None
+    # 소설화 허용 행이 생긴 시각(NULL 이면 허용 행 없음). 상세에만 실린다. 허용 행만 보여 주는 값이라 전역 스위치와
+    # env 명단 때문에 실제로는 막혀 있을 수 있다. 값을 바꾸는 유일한 경로는 `POST /admin/users/{id}/novelize-grant`다.
+    novelize_granted_at: datetime | None
     # 잔액도 상세에만 실린다(목록·필터 없음). 변동 **이력**은 이
     # 응답에 넣지 않고 `GET /admin/users/{id}/clover-ledger`가 따로 준다 — 상세 응답은 이미
     # reports·action_logs·chat_rooms 셋을 싣고 있어 네 번째 목록을 더하면 한 요청이 무거워진다.
@@ -348,6 +351,14 @@ class AdminUserBetaRequest(CamelModel):
     `AdminUserRateLimitExemptRequest`와 같다(비어 있으면 422)."""
 
     beta: bool
+    admin_comment: str | None = None
+
+
+class AdminUserNovelizeGrantRequest(CamelModel):
+    """소설화 허용/회수를 `granted` 한 필드로 받는 토글이다. `admin_comment`가 필수인 이유는
+    `AdminUserRateLimitExemptRequest`와 같다(비어 있으면 422)."""
+
+    granted: bool
     admin_comment: str | None = None
 
 

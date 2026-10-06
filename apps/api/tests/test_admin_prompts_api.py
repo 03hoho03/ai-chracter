@@ -17,9 +17,9 @@ baseline으로 쓴다(`legacy` 48행은 더 이상 어느 레인의 표와도 �
 북 칸 판정 행을 더한 세트를, 마이그레이션 `bd29dd69bc0f`가 publish_filter 레인에 미디어 북 칸 줄 행을 더한
 세트를, 마이그레이션 `859b0fb86629`가 publish_filter 레인을 이미지 전용 문안으로 바꾼 세트를, 마이그레이션
 `2417f5829bb1`이 story 레인에 상황 노트 행을 더한 세트를, 마이그레이션 `8e895c898730`이 두 레인에 사용자 이름 한 줄
-행을 더한 세트를 만든다. 그래서 테스트 DB의 published는 레인별로 story v1·v2·v4·v6·v9·v10, character v1·v3·v5·v11,
-publish_filter v1·v7·v8이고, 활성은 story v10·character v11·publish_filter v8이다. 다음 게시 버전은 "12"부터다(전 레인
-대상 자동 증가).
+행을 더한 세트를, 마이그레이션 `3bb2cc159b6d`가 두 레인에 소설화 채널 행을 더한 세트를 만든다. 그래서 테스트 DB의
+published는 레인별로 story v1·v2·v4·v6·v9·v10·v12, character v1·v3·v5·v11·v13, publish_filter v1·v7·v8이고, 활성은
+story v12·character v13·publish_filter v8이다. 다음 게시 버전은 "14"부터다(전 레인 대상 자동 증가).
 섹션 수는 `_expected_section_count`로 코드 표에서 도출한다 — DB 행은 마이그레이션이
 만드므로 동어반복이 아니다.
 """
@@ -429,15 +429,15 @@ async def test_list_returns_metadata_only_and_marks_active(
 
     published = [item for item in items if item["status"] == "published"]
     draft = [item for item in items if item["status"] == "draft"]
-    # story v1·v2·v4·v6·v9·v10, character v1·v3·v5·v11, publish_filter v1·v7·v8 (모듈 docstring — 세트를 만든 일곱
-    # 마이그레이션이 v2·v3, v4·v5, v6, v7, v8, v9, v10·v11을 만든다).
-    assert len(published) == 13
+    # story v1·v2·v4·v6·v9·v10·v12, character v1·v3·v5·v11·v13, publish_filter v1·v7·v8 (모듈 docstring — 세트를 만든
+    # 여덟 마이그레이션이 v2·v3, v4·v5, v6, v7, v8, v9, v10·v11, v12·v13을 만든다).
+    assert len(published) == 15
     assert len(draft) == 1
     active = [item for item in published if item["isActive"]]
     assert sorted(item["lane"] for item in active) == ["character", "publish_filter", "story"]
     assert {(item["lane"], item["version"]) for item in active} == {
-        ("story", "10"),
-        ("character", "11"),
+        ("story", "12"),
+        ("character", "13"),
         ("publish_filter", "8"),
     }
     # 레인별 마지막 마이그레이션 이전 세트 열은 비활성이다.
@@ -447,14 +447,16 @@ async def test_list_returns_metadata_only_and_marks_active(
         ("story", "4"),
         ("story", "6"),
         ("story", "9"),
+        ("story", "10"),
         ("character", "1"),
         ("character", "3"),
         ("character", "5"),
+        ("character", "11"),
         ("publish_filter", "1"),
         ("publish_filter", "7"),
     }
     assert draft[0]["isActive"] is False
-    assert {item["version"] for item in published} == {"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"}
+    assert {item["version"] for item in published} == {"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13"}
 
 
 async def test_get_by_id_returns_full_sections(
@@ -467,7 +469,7 @@ async def test_get_by_id_returns_full_sections(
     assert resp.status_code == 200
     body = resp.json()
     assert len(body["sections"]) == _expected_section_count("story")
-    assert body["version"] == "10"  # story 활성은 사용자 이름 한 줄 행을 더한 마이그레이션의 세트다
+    assert body["version"] == "12"  # story 활성은 소설화 채널 행을 더한 마이그레이션의 세트다
     assert body["lane"] == "story"
 
 
@@ -519,7 +521,17 @@ async def test_preview_reuses_the_real_renderer(
     assert story_system_basic["text"] == expected
 
     channels = {item["channel"] for item in items}
-    assert channels == {"system", "generation", "stat_judgment", "ending_judgment", "memory_summary", "image_judgment"}
+    assert channels == {
+        "system",
+        "generation",
+        "stat_judgment",
+        "ending_judgment",
+        "memory_summary",
+        "image_judgment",
+        "novelize_boundary",
+        "novelize_chapter",
+        "novelize_revise",
+    }
 
 
 async def test_preview_uses_the_draft_when_one_exists(
@@ -541,11 +553,38 @@ async def test_preview_uses_the_draft_when_one_exists(
     assert "[초안 전용] 우선순위 문장" in story_system["text"]
 
 
+async def test_preview_without_novelize_rows_shows_a_notice_instead_of_failing(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """소설화 채널 이전 버전을 복원했거나 그 전에 열어 둔 편집 탭에서 저장한 초안은 소설화 행이 없다. 그때도
+    미리보기 전체가 500 으로 죽지 않고, 소설화 세 항목만 안내로 바뀌고 나머지 항목은 그대로 렌더된다."""
+    await _login_new_admin(db_client, db_session)
+    draft = await _make_valid_draft(db_client, "story")
+    await db_session.execute(
+        sa.delete(PromptSection).where(
+            PromptSection.prompt_set_id == uuid.UUID(str(draft["id"])),
+            PromptSection.channel.like("novelize_%"),
+        )
+    )
+    await db_session.commit()
+
+    resp = await db_client.post("/admin/prompt-sets/story/draft/preview")
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert len(items) == 13
+    novelize = [i for i in items if i["channel"].startswith("novelize_")]
+    assert [i["channel"] for i in novelize] == ["novelize_boundary", "novelize_chapter", "novelize_revise"]
+    assert all(i["text"].startswith("이 초안으로는 이 채널을 미리 볼 수 없습니다") for i in novelize)
+    assert all("필수 슬롯이 없다" in i["text"] for i in novelize)
+    story_system = next(i for i in items if i["channel"] == "system" and "basic" in i["label"])
+    assert story_system["text"]
+
+
 @pytest.mark.parametrize(
     ("lane", "expected_count"),
     [
-        pytest.param("story", 10, id="story"),
-        pytest.param("character", 4, id="character"),
+        pytest.param("story", 13, id="story"),
+        pytest.param("character", 7, id="character"),
         pytest.param("publish_filter", 2, id="publish_filter"),
     ],
 )
@@ -555,7 +594,7 @@ async def test_preview_item_count_per_lane(
     """리뷰가 찾은 공백 — `_character_preview_items`/`_publish_filter_preview_items`가
     story 레인 미리보기 테스트에만 가려져 미커버였다. R-7의 `StopIteration` → 500이
     `publish_filter` 레인에서만 터지던 결함이었던 선례를 생각하면 같은 부류가 숨어 있을 수
-    있어 3레인 전부 200 + 항목 수(story 10 / character 4 / publish_filter 2)를
+    있어 3레인 전부 200 + 항목 수(story 13 / character 7 / publish_filter 2)를
     직접 고정한다."""
     await _login_new_admin(db_client, db_session)
 
@@ -603,7 +642,7 @@ async def test_publish_valid_unmodified_draft_succeeds_with_next_version(
     resp = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "정기 점검 후 재게시"})
     assert resp.status_code == 200
     body = resp.json()
-    assert body["version"] == "12"
+    assert body["version"] == "14"
     assert body["status"] == "published"
     assert body["lane"] == "story"
     assert body["note"] == "정기 점검 후 재게시"
@@ -630,35 +669,35 @@ async def test_publish_assigns_sequential_integer_versions(
 ) -> None:
     await _login_new_admin(db_client, db_session)
     await _make_valid_draft(db_client, "story")
-    first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v12"})
-    assert first.json()["version"] == "12"
+    first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v14"})
+    assert first.json()["version"] == "14"
 
     await _make_valid_draft(db_client, "story")
-    second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v13"})
-    assert second.json()["version"] == "13"
+    second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v15"})
+    assert second.json()["version"] == "15"
 
 
 async def test_next_version_is_global_monotonic_not_per_lane(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """`_next_published_version`에 레인 필터가 없다("안 넣는 것"이 결정이다).
-    세트를 만든 마이그레이션들이 story v2·v4·v6·v9·v10·character v3·v5·v11·publish_filter v7·v8을 만든 테스트 DB에서,
-    story가 v12·v13을 게시한 뒤 character 게시가 v14를 받아야 한다(레인별 독립 증가라면 character의 다음 게시는 v12일
-    것이다) —
+    세트를 만든 마이그레이션들이 story v2·v4·v6·v9·v10·v12·character v3·v5·v11·v13·publish_filter v7·v8을 만든 테스트
+    DB에서, story가 v14·v15를 게시한 뒤 character 게시가 v16을 받아야 한다(레인별 독립 증가라면 character의 다음 게시는
+    v14일 것이다) —
     이 테스트는 그 레인 필터의 **부재**를 고정한다."""
     await _login_new_admin(db_client, db_session)
 
     await _make_valid_draft(db_client, "story")
-    first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v12"})
-    assert first.json()["version"] == "12"
+    first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v14"})
+    assert first.json()["version"] == "14"
 
     await _make_valid_draft(db_client, "story")
-    second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v13"})
-    assert second.json()["version"] == "13"
+    second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v15"})
+    assert second.json()["version"] == "15"
 
     await _make_valid_draft(db_client, "character")
-    third = await db_client.post("/admin/prompt-sets/character/publish", json={"note": "character v14"})
-    assert third.json()["version"] == "14"
+    third = await db_client.post("/admin/prompt-sets/character/publish", json={"note": "character v16"})
+    assert third.json()["version"] == "16"
 
 
 async def test_publishing_one_lane_does_not_affect_other_lanes_active_set(
@@ -742,7 +781,7 @@ async def test_publish_succeeds_even_when_cache_invalidation_fails(
         resp = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "캐시 실패해도 성공"})
 
     assert resp.status_code == 200
-    assert resp.json()["version"] == "12"
+    assert resp.json()["version"] == "14"
     assert any(record.levelno >= logging.WARNING for record in caplog.records)
     assert captured == ["redis"]
 
@@ -770,8 +809,8 @@ async def test_publish_version_conflict_returns_409(
         )
     ).all()
     # story published는 v1(a69cbd40dec8)·v2(b72c33c70240)·v4(c328445d4c2d)·v6(2519dde454e0)·v9(2417f5829bb1)·
-    # v10(8e895c898730) 여섯이다 — 실패한 시도가 일곱째를 남기지 않는다.
-    assert len(published) == 6
+    # v10(8e895c898730)·v12(3bb2cc159b6d) 일곱이다 — 실패한 시도가 여덟째를 남기지 않는다.
+    assert len(published) == 7
 
 
 # ---- 롤백 (restore) -------------------------------------------------------------

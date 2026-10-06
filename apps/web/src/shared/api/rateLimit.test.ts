@@ -15,6 +15,18 @@ describe("getRateLimitDetail", () => {
     ).toEqual({ code: "USER_LIMIT", retryAfterSeconds: 42, window: "minute" });
   });
 
+  it("429 + 소설화 CLOVER_REQUIRED·USER_LIMIT 바디를 파싱한다", () => {
+    for (const code of ["CLOVER_REQUIRED", "USER_LIMIT"] as const) {
+      expect(
+        getRateLimitDetail({
+          status: 429,
+          detail: { code, retryAfterSeconds: 3600, window: "novelize" },
+          message: "x",
+        }),
+      ).toEqual({ code, retryAfterSeconds: 3600, window: "novelize" });
+    }
+  });
+
   it("429 + 이미지 QUEUE_FULL 바디를 파싱한다", () => {
     expect(
       getRateLimitDetail({

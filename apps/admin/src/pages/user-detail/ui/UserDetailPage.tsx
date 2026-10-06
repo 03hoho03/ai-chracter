@@ -96,6 +96,7 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
                 isSuspended={user.suspendedAt !== null}
                 isRateLimitExempt={user.rateLimitExempt}
                 isBeta={user.betaJoinedAt !== null}
+                isNovelizeGranted={user.novelizeGrantedAt !== null}
                 restrictableContentCount={user.restrictableContentCount}
                 restorableContentCount={user.restorableContentCount}
                 onSuccess={host.onDone}
@@ -168,6 +169,13 @@ function UserDetailSections({ userId, user }: UserDetailSectionsProps) {
             <div>
               <dt className="text-muted-foreground">베타 지정</dt>
               <dd className="text-foreground">{formatDateTime(user.betaJoinedAt)}</dd>
+            </div>
+          )}
+          {/* 허용 행이 있을 때만 — 재허용해도 BE가 첫 허용 시각을 유지하고, 회수하면 행이 지워져 사라진다. */}
+          {!!user.novelizeGrantedAt && (
+            <div>
+              <dt className="text-muted-foreground">소설화 허용</dt>
+              <dd className="text-foreground">{formatDateTime(user.novelizeGrantedAt)}</dd>
             </div>
           )}
         </dl>
@@ -439,9 +447,14 @@ function formatSignedCount(amount: number) {
   return amount > 0 ? `+${formatCount(amount)}` : formatCount(amount);
 }
 
-/** 하단 바 한 줄 요약 — 조치가 바꾸는 상태(정지·면제·베타)만. 기본값(아님)은 붙이지 않는다. */
+/** 하단 바 한 줄 요약 — 조치가 바꾸는 상태(정지·면제·베타·소설화)만. 기본값(아님)은 붙이지 않는다. */
 function userStatusSummary(user: AdminUserDetailResponse) {
-  return [user.suspendedAt ? "정지" : "정상", user.rateLimitExempt && "면제", user.betaJoinedAt && "베타"]
+  return [
+    user.suspendedAt ? "정지" : "정상",
+    user.rateLimitExempt && "면제",
+    user.betaJoinedAt && "베타",
+    user.novelizeGrantedAt && "소설화",
+  ]
     .filter(Boolean)
     .join(" · ");
 }

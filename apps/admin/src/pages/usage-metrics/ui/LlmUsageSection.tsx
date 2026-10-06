@@ -25,6 +25,10 @@ const CALL_SITE_LABELS: Record<string, string> = {
   publish_filter_story: "발행 심사(스토리)",
   seed_story_generate: "시드 스토리 생성",
   seed_similarity_review: "시드 유사도 심사",
+  novelize_boundary: "소설 장 경계 제안",
+  // 장 생성과 재생성이 같은 call site 를 쓴다.
+  novelize_chapter: "소설 장 생성",
+  novelize_revise: "소설 문단 수정",
 };
 
 const CELL_CLASS = "text-right tabular-nums";

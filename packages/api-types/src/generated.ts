@@ -524,6 +524,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/users/{user_id}/novelize-grant": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set User Novelize Grant
+         * @description 소설화 허용 행(`user_feature_grants`)을 만들고 지우는 유일한 경로다. 모양은 `set_user_rate_limit_exempt`와
+         *     같다(공백 코멘트 422 → 탈퇴·없는 유저 404 → 변경 → 감사 로그 → 커밋, 켤 때와 끌 때 액션 타입이 다르다).
+         *
+         *     **허용은 env 명단(`novelize_grant_allowlist`) 안의 계정에만 줄 수 있다.** 명단 밖이면 422
+         *     `{"code": "NOVELIZE_GRANT_NOT_ALLOWLISTED"}`로 거부하고 행도 감사 로그도 남기지 않는다 — 명단은 처리방침이 소설화의
+         *     수집 항목·국외 이전을 싣고 재동의를 받기 전까지 허용을 운영 시험 계정 안에 가두는 장치다. 공백 코멘트 422 와 갈리도록 code 를
+         *     둔다. 회수는 명단과 상관없이 늘 된다(명단에서 이미 뺀 계정의 행도 지울 수 있어야 한다). 전역 스위치는 보지 않는다
+         *     — 켜기 전에 허용을 미리 줄 수 있다.
+         *
+         *     **이미 허용된 계정을 다시 허용해도 첫 행을 그대로 둔다**(허용 시각·허용한 운영자를 덮어쓰지 않는다). 동시에 두 번
+         *     눌려도 유니크 인덱스에 부딪혀 500 이 되지 않도록 충돌 시 아무것도 하지 않는 INSERT 를 쓴다. 누른 사실은 감사
+         *     로그에 한 행 더 남는다. 회수는 행 DELETE 라 없는 행을 회수해도 조용히 지나간다.
+         */
+        post: operations["set_user_novelize_grant_admin_users__user_id__novelize_grant_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users/{user_id}/clover": {
         parameters: {
             query?: never;
@@ -2059,6 +2090,391 @@ export interface paths {
          *     reports table having no unique constraint on (reporter_user_id, content_id).
          */
         post: operations["report_content_contents__id__report_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Novels
+         * @description 내 소설을 최근 수정 순으로. 원래 방이 지워진 소설도 나온다(`chatRoomId` null).
+         */
+        get: operations["list_novels_novels_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Novel
+         * @description 소설 머리·설정 노트·목차(장마다 현재 개정)·진행 중 작업·지금 단가. 답하기 전에 죽은 작업을 정리한다.
+         */
+        get: operations["get_novel_novels__novel_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Novel
+         * @description 소설과 그 아래 행을 지운다. 진행 중 작업은 같은 트랜잭션에서 먼저 환불한다 — 지우고 나면 실행 경로가 실패해도
+         *     환불할 행이 없다. 원래 방은 그대로다. 소설화 허용이 없어도(기능 꺼짐·허용 회수) 자기 소설이면 지운다.
+         *
+         *     사용자 행을 먼저 잠근다. 같은 사용자의 작업 생성이 이 사이에 끼어들면 지울 소설에 새 작업 행이 붙어 소설 DELETE
+         *     가 FK 위반이 되는데, 작업 생성도 사용자 행을 먼저 잡으므로 둘이 줄을 선다. 소설 행은 잠그지 않는다(모듈 머리).
+         */
+        delete: operations["delete_novel_novels__novel_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Novel Notes
+         * @description 설정 노트를 바꾼다. 다음 장 생성과 AI 수정부터 실린다(이미 만든 장은 그대로).
+         */
+        put: operations["update_novel_notes_novels__novel_id__notes_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/protagonist-name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Novel Protagonist Name
+         * @description 주인공 이름을 바꾼다. 다음 장 생성부터 쓰이고 이미 만든 장 본문은 그대로다.
+         */
+        put: operations["update_novel_protagonist_name_novels__novel_id__protagonist_name_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Novel Job
+         * @description 작업 폴링. 없는 작업·남의 소설·다른 소설의 작업은 모두 404 다(남의 것이 있다는 사실도 드러내지 않는다).
+         *
+         *     답하기 전에 이 소설의 죽은 작업을 정리한다 — 서버가 재기동되어 작업이 사라졌으면 폴링이 실패·환불을 보게 된다.
+         */
+        get: operations["get_novel_job_novels__novel_id__jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/chapter-proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Propose Novel Chapter
+         * @description 다음 장의 후보 턴 목록과 모델이 고른 끝 턴(무과금, 동기).
+         *
+         *     후보는 서버가 정한 시작부터 응답을 장 턴 상한만큼 센 턴들이고, 화면은 이 목록에서 끝을 고른다 — 화면의 방
+         *     메시지 캐시는 최근 일부뿐이라 장 시작이 그보다 앞일 수 있다. 모델 제안이 실패해도 200 에 `suggestion: null`
+         *     이다: 경계는 사용자가 고르는 것이라 제안 실패가 장 생성을 막을 이유가 없다. 모델을 부르기 전에 커밋해 커넥션을
+         *     돌려준다(모델 호출 동안 쥐지 않는다).
+         */
+        post: operations["propose_novel_chapter_novels__novel_id__chapter_proposal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/chapters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Novel Chapter
+         * @description 다음 장을 만드는 작업(과금, 202). 시작은 서버가 정하고, 끝(`endMessageId`)은 경계 제안의 후보 턴 중 하나여야
+         *     한다 — 다음 장 시작부터 장 턴 상한 안의 AI 응답이 아니면 422 `NOVEL_CHAPTER_END_INVALID`.
+         *
+         *     순서: 작품 상태(403)·방(409)·주인공 이름(422) → 죽은 작업 정리·커밋 → 구간 검사(409·422) → 차감·작업 생성(단가
+         *     409·진행 중 409·하루 상한 429·잔액 429) → 띄우기. 차감 앞의 거절은 원장에 아무것도 남기지 않는다.
+         */
+        post: operations["create_novel_chapter_novels__novel_id__chapters_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/chapters/{chapter_id}/regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Regenerate Novel Chapter
+         * @description 장 하나를 같은 원문 구간으로 다시 만드는 작업(과금, 202). 마지막 장이 아니어도 된다. 결과는 그 장의 새
+         *     개정으로 쌓이고, 그 사이의 직접 수정·되돌리기는 이력에 남는다.
+         *
+         *     원문이 장을 만든 때와 다르면(메시지 편집·응답 재생성·삭제) 차감 전에 409 `NOVEL_SOURCE_CHANGED` — 같은 입력으로
+         *     다시 만든다는 약속을 지킬 수 없다.
+         */
+        post: operations["regenerate_novel_chapter_novels__novel_id__chapters__chapter_id__regenerate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/chapters/{chapter_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Novel Chapter
+         * @description 장의 현재 개정 본문과 그 문단 배열. 문단 범위(AI 수정)는 이 배열의 인덱스다 — 화면이 본문을 다시 나누면 빈 줄
+         *     해석 차이로 범위가 어긋난다.
+         */
+        get: operations["get_novel_chapter_novels__novel_id__chapters__chapter_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Last Novel Chapter
+         * @description 마지막 장만 지운다(무과금). 지우면 다음 장 시작이 그 장 시작으로 돌아간다 — 경계를 잘못 골랐을 때 고치는 길이다.
+         *     마지막이 아니면 409 `NOVEL_CHAPTER_NOT_LAST`, 소설에 진행 중 작업이 있으면 409 `NOVEL_JOB_IN_PROGRESS`(끝난 뒤
+         *     다시).
+         *
+         *     그 장을 가리키던 작업 행은 지우지 않고 장·개정 참조와 AI 수정 지시문·결과 본문만 비운다 — 같은 장의 하루 재시도
+         *     상한이 작업 행 수로 세므로, 지우면 장을 지웠다 다시 만드는 것으로 상한이 풀린다. 차감 기록의 작업 쪽 짝도 남는다.
+         *     지시문·결과 본문은 지운 장을 고치려던 것이라 더 쓸 데가 없다.
+         *
+         *     잠금: 사용자 행(작업 생성과 줄 세우기 — 진행 중 확인과 삭제 사이에 새 작업이 끼지 않게) → 작업 행 → 장 행.
+         *     장을 잠근 뒤 개정을 지운다 — 직접 수정·되돌리기가 장을 잠근 채 넣는 개정을 기다렸다가 함께 지우려는 것이다.
+         */
+        delete: operations["delete_last_novel_chapter_novels__novel_id__chapters__chapter_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/chapters/{chapter_id}/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Novel Chapter Revisions
+         * @description 장의 개정 이력(최신 먼저). 본문은 싣지 않는다.
+         */
+        get: operations["list_novel_chapter_revisions_novels__novel_id__chapters__chapter_id__revisions_get"];
+        put?: never;
+        /**
+         * Create Novel Chapter Revision
+         * @description 직접 수정 — 장 전체 본문을 새 개정으로 쌓는다(무과금). 화면이 고른 문단을 본문 안에서 바꿔 보내므로 서버는
+         *     문단 범위를 모른다. 본문은 문단을 빈 줄 하나로 다시 이어 저장한다(문단 배열과 같은 나누기). 이용 제한 작품이나
+         *     방이 지워진 소설도 고칠 수 있다(모델을 부르지 않는다).
+         */
+        post: operations["create_novel_chapter_revision_novels__novel_id__chapters__chapter_id__revisions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/chapters/{chapter_id}/revisions/{revision_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Novel Chapter Revision */
+        get: operations["get_novel_chapter_revision_novels__novel_id__chapters__chapter_id__revisions__revision_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/chapters/{chapter_id}/revisions/{revision_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Novel Chapter Revision
+         * @description 옛 개정으로 되돌린다 — 옛 본문을 복제한 새 개정을 쌓는다(이력은 지우지 않는다).
+         */
+        post: operations["restore_novel_chapter_revision_novels__novel_id__chapters__chapter_id__revisions__revision_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/chapters/{chapter_id}/ai-edits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Novel Ai Edit
+         * @description 고른 문단 범위(0부터, 양 끝 포함 — 장 조회의 `paragraphs` 인덱스)를 지시대로 고치는 작업(과금, 202). 결과는
+         *     개정이 아니라 작업의 미리보기 본문(`aiEdit.resultText`)이고, 적용해야 새 개정이 된다. 버려도 환불은 없다.
+         *
+         *     방이 지워진 소설도 고칠 수 있다(원문 대화가 필요 없다). 기준 개정이 현재 개정이 아니면 409, 범위가 문단 밖이면
+         *     422 — 둘 다 차감 전이다.
+         */
+        post: operations["create_novel_ai_edit_novels__novel_id__chapters__chapter_id__ai_edits_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/jobs/{job_id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Novel Ai Edit
+         * @description 끝난 AI 수정의 미리보기를 새 개정으로 쌓는다(무과금). 수정을 맡긴 뒤 장이 바뀌었으면(기준 개정이 현재가
+         *     아니면) 409 `NOVEL_REVISION_CONFLICT`. 적용할 수 없는 작업(AI 수정이 아님·아직 안 끝남·실패·이미 적용·버림·장이
+         *     지워짐)은 409 `NOVEL_JOB_NOT_APPLICABLE`. 적용한 개정은 작업의 결과 개정(`revisionId`)이 된다. 적용한 작업의
+         *     지시문·결과 본문은 비운다(결과는 이제 개정에 있다). 새 개정 때문에 낡은 같은 장의 다른 미리보기도 비운다.
+         *
+         *     결과 본문이 있는지는 기준 개정 검사 **뒤에** 본다 — 장이 바뀌어 낡은 미리보기는 본문이 비워져 있지만, 사용자에게
+         *     알릴 사유는 "장이 바뀌었다"(409 `NOVEL_REVISION_CONFLICT`)다.
+         *
+         *     잠금은 작업 행 → 장 행이다(소설·마지막 장 삭제와 같은 순서). 같은 작업을 두 번 적용하려는 요청은 작업 행에서
+         *     줄을 서고, 뒤 요청은 결과 개정이 채워진 것을 본다.
+         */
+        post: operations["apply_novel_ai_edit_novels__novel_id__jobs__job_id__apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/jobs/{job_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss Novel Ai Edit
+         * @description 끝난 AI 수정의 미리보기를 적용하지 않고 버린다(환불 없음). 버린 수정은 상세의 미적용 목록에서 빠지고 적용도
+         *     409 가 된다. 지시문과 결과 본문은 비운다 — 버린 결과는 더 쓸 데가 없고, 행은 하루 상한 집계용으로 남는다.
+         *     버릴 수 없는 작업(AI 수정이 아님·아직 안 끝남·실패·이미 적용·이미 버림)은 409 `NOVEL_JOB_NOT_APPLICABLE`.
+         *
+         *     적용과 같은 작업 행을 잠근다 — 같은 수정의 적용과 버리기가 겹치면 뒤 요청이 앞 요청의 결과를 보고 409 다.
+         */
+        post: operations["dismiss_novel_ai_edit_novels__novel_id__jobs__job_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat-rooms/{room_id}/novel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Room Novel
+         * @description 방에서 만든 소설. 아직 없으면 404 `NOVEL_NOT_FOUND`.
+         */
+        get: operations["get_room_novel_chat_rooms__room_id__novel_get"];
+        put?: never;
+        /**
+         * Create Room Novel
+         * @description 방의 소설을 만들거나, 이미 있으면 그대로 돌려준다(201 / 200). 무과금이다.
+         *
+         *     원작 제목·캐릭터 이름·레인은 방이 고정한 버전에서 사본으로 떠 둔다 — 방이 지워지거나 작품이 바뀌어도 소설은
+         *     그대로 읽혀야 한다. 주인공 이름은 방에 건 대화 프로필 이름, 없으면 그 버전의 작품 기본 이름이고, 둘 다 없으면
+         *     비워 두었다가 첫 장을 만들기 전에 받는다. 이용 제한 작품이어도 만들 수 있다(모델을 부르지 않는다).
+         */
+        post: operations["create_room_novel_chat_rooms__room_id__novel_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4935,7 +5351,7 @@ export interface components {
              * Actiontype
              * @enum {string}
              */
-            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "notice-publish" | "notice-unpublish" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-clover-grant" | "user-clover-revoke" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
+            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "notice-publish" | "notice-unpublish" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-clover-grant" | "user-clover-revoke" | "user-novelize-off" | "user-novelize-on" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
             /** Targetcontentid */
             targetContentId: string | null;
             /** Contentname */
@@ -5052,6 +5468,8 @@ export interface components {
             rateLimitExempt: boolean;
             /** Betajoinedat */
             betaJoinedAt: string | null;
+            /** Novelizegrantedat */
+            novelizeGrantedAt: string | null;
             /** Cloverbalance */
             cloverBalance: number;
             /** Chatroomcount */
@@ -5102,6 +5520,17 @@ export interface components {
             totalPages: number;
             /** Totalcount */
             totalCount: number;
+        };
+        /**
+         * AdminUserNovelizeGrantRequest
+         * @description 소설화 허용/회수를 `granted` 한 필드로 받는 토글이다. `admin_comment`가 필수인 이유는
+         *     `AdminUserRateLimitExemptRequest`와 같다(비어 있으면 422).
+         */
+        AdminUserNovelizeGrantRequest: {
+            /** Granted */
+            granted: boolean;
+            /** Admincomment */
+            adminComment?: string | null;
         };
         /**
          * AdminUserRateLimitExemptRequest
@@ -6841,6 +7270,8 @@ export interface components {
             hasPassword: boolean;
             /** Socialprovider */
             socialProvider: ("google" | "kakao") | null;
+            /** Enabledfeatures */
+            enabledFeatures: "novelize"[];
         };
         /** MediaBookAxisInput */
         MediaBookAxisInput: {
@@ -7146,6 +7577,436 @@ export interface components {
         NotificationUnreadCountResponse: {
             /** Unreadcount */
             unreadCount: number;
+        };
+        /**
+         * NovelActiveJob
+         * @description 진행 중(대기·실행) 작업. 화면을 새로 열어도 이 id 로 폴링을 이어 간다.
+         */
+        NovelActiveJob: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "chapter_generate" | "chapter_regenerate" | "ai_edit";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "succeeded" | "failed";
+            /** Chapterid */
+            chapterId: string | null;
+        };
+        /**
+         * NovelAiEditPreview
+         * @description 문단 수정 작업의 입력과 결과 후보. `result_text` 는 범위 밖 문단까지 이은 장 전체 본문이고, 성공 전에는 null.
+         *
+         *     적용했거나 버렸거나, 그 장에 새 개정이 생겨 더는 적용할 수 없게 된 작업은 성공이어도 `instruction`·`result_text`
+         *     가 null 이다(쓸 데가 없어진 지시문과 결과 사본은 서버가 비운다). 장을 지운 작업, 실패·환불된 작업도 같다.
+         */
+        NovelAiEditPreview: {
+            /** Baserevisionid */
+            baseRevisionId: string | null;
+            /** Paragraphstart */
+            paragraphStart: number | null;
+            /** Paragraphend */
+            paragraphEnd: number | null;
+            /** Instruction */
+            instruction: string | null;
+            /** Resulttext */
+            resultText: string | null;
+        };
+        /** NovelAiEditRequest */
+        NovelAiEditRequest: {
+            /**
+             * Baserevisionid
+             * Format: uuid
+             */
+            baseRevisionId: string;
+            /** Paragraphstart */
+            paragraphStart: number;
+            /** Paragraphend */
+            paragraphEnd: number;
+            /** Instruction */
+            instruction: string;
+            /** Expectedcost */
+            expectedCost: number;
+        };
+        /**
+         * NovelChapterCandidate
+         * @description 다음 장의 끝으로 고를 수 있는 턴 하나. `message_id` 는 그 턴의 AI 응답이고, `ordinal` 은 다음 장 시작부터 센
+         *     턴 번호(1부터)다.
+         */
+        NovelChapterCandidate: {
+            /**
+             * Messageid
+             * Format: uuid
+             */
+            messageId: string;
+            /** Ordinal */
+            ordinal: number;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Excerpt */
+            excerpt: string;
+        };
+        /** NovelChapterCreateRequest */
+        NovelChapterCreateRequest: {
+            /**
+             * Endmessageid
+             * Format: uuid
+             */
+            endMessageId: string;
+            /** Expectedcost */
+            expectedCost: number;
+        };
+        /** NovelChapterProposalResponse */
+        NovelChapterProposalResponse: {
+            /**
+             * Startmessageid
+             * Format: uuid
+             */
+            startMessageId: string;
+            /** Candidates */
+            candidates: components["schemas"]["NovelChapterCandidate"][];
+            suggestion: components["schemas"]["NovelChapterSuggestion"] | null;
+            /** Cost */
+            cost: number;
+        };
+        /** NovelChapterRegenerateRequest */
+        NovelChapterRegenerateRequest: {
+            /** Expectedcost */
+            expectedCost: number;
+        };
+        /** NovelChapterResponse */
+        NovelChapterResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Novelid
+             * Format: uuid
+             */
+            novelId: string;
+            /** Ordinal */
+            ordinal: number;
+            /** Assistantmessagecount */
+            assistantMessageCount: number;
+            revision: components["schemas"]["NovelRevisionResponse"];
+        };
+        /** NovelChapterSuggestion */
+        NovelChapterSuggestion: {
+            /**
+             * Endmessageid
+             * Format: uuid
+             */
+            endMessageId: string;
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * NovelChapterSummary
+         * @description 목차의 장 한 줄. 본문은 장 조회로 따로 읽는다.
+         */
+        NovelChapterSummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Ordinal */
+            ordinal: number;
+            /** Assistantmessagecount */
+            assistantMessageCount: number;
+            /**
+             * Currentrevisionid
+             * Format: uuid
+             */
+            currentRevisionId: string;
+            /** Currentrevisionno */
+            currentRevisionNo: number;
+            /**
+             * Currentrevisionsource
+             * @enum {string}
+             */
+            currentRevisionSource: "generate" | "regenerate" | "manual_edit" | "ai_edit" | "revert";
+            /**
+             * Updatedat
+             * Format: date-time
+             */
+            updatedAt: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** NovelDetailResponse */
+        NovelDetailResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Chatroomid */
+            chatRoomId: string | null;
+            /**
+             * Contentid
+             * Format: uuid
+             */
+            contentId: string;
+            /**
+             * Contenttype
+             * @enum {string}
+             */
+            contentType: "story" | "character";
+            /** Contenttitle */
+            contentTitle: string;
+            /** Charactername */
+            characterName: string | null;
+            /** Protagonistname */
+            protagonistName: string | null;
+            /** Settingnotes */
+            settingNotes: string;
+            /** Chapters */
+            chapters: components["schemas"]["NovelChapterSummary"][];
+            activeJob: components["schemas"]["NovelActiveJob"] | null;
+            /** Pendingaiedits */
+            pendingAiEdits: components["schemas"]["NovelPendingAiEdit"][];
+            prices: components["schemas"]["NovelPrices"];
+            limits: components["schemas"]["NovelLimits"];
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /**
+             * Updatedat
+             * Format: date-time
+             */
+            updatedAt: string;
+        };
+        /** NovelJobResponse */
+        NovelJobResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "chapter_generate" | "chapter_regenerate" | "ai_edit";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "succeeded" | "failed";
+            /** Chargedamount */
+            chargedAmount: number;
+            /** Refunded */
+            refunded: boolean;
+            /** Failurereason */
+            failureReason: ("llm_error" | "timeout" | "truncated" | "refused" | "blocked" | "empty" | "source_changed" | "expired" | "internal") | null;
+            /** Chapterid */
+            chapterId: string | null;
+            /** Revisionid */
+            revisionId: string | null;
+            aiEdit: components["schemas"]["NovelAiEditPreview"] | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** NovelLimits */
+        NovelLimits: {
+            /** Settingnotesmaxlength */
+            settingNotesMaxLength: number;
+            /** Chapterbodymaxlength */
+            chapterBodyMaxLength: number;
+            /** Aieditinstructionmaxlength */
+            aiEditInstructionMaxLength: number;
+            /** Protagonistnamemaxlength */
+            protagonistNameMaxLength: number;
+        };
+        /** NovelListItem */
+        NovelListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Chatroomid */
+            chatRoomId: string | null;
+            /**
+             * Contenttype
+             * @enum {string}
+             */
+            contentType: "story" | "character";
+            /** Contenttitle */
+            contentTitle: string;
+            /** Charactername */
+            characterName: string | null;
+            /** Chaptercount */
+            chapterCount: number;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /**
+             * Updatedat
+             * Format: date-time
+             */
+            updatedAt: string;
+        };
+        /** NovelListResponse */
+        NovelListResponse: {
+            /** Items */
+            items: components["schemas"]["NovelListItem"][];
+            /** Nextcursor */
+            nextCursor: string | null;
+        };
+        /**
+         * NovelPendingAiEdit
+         * @description 끝났지만 적용도 버리기도 하지 않은 AI 수정. 기준 개정이 지금도 그 장의 현재 개정인 것만 싣는다 — 그 사이 장이
+         *     바뀌었으면 적용이 409 라 미리보기로 내보일 이유가 없다. 화면이 작업 id 를 잃어도(새로고침·다른 기기) 여기서
+         *     미리보기를 다시 찾아 적용(`apply`)하거나 버린다(`dismiss`). `result_text` 는 장 전체 본문이다.
+         */
+        NovelPendingAiEdit: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Chapterid
+             * Format: uuid
+             */
+            chapterId: string;
+            /** Paragraphstart */
+            paragraphStart: number;
+            /** Paragraphend */
+            paragraphEnd: number;
+            /** Instruction */
+            instruction: string;
+            /** Resulttext */
+            resultText: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /**
+         * NovelPrices
+         * @description 작업 한 번의 클로버 단가. 화면은 이 값만 보여 주고, 요청에 확인한 금액(`expectedCost`)으로 싣는다.
+         */
+        NovelPrices: {
+            /** Chaptergenerate */
+            chapterGenerate: number;
+            /** Chapterregenerate */
+            chapterRegenerate: number;
+            /** Aiedit */
+            aiEdit: number;
+        };
+        /** NovelProtagonistNameRequest */
+        NovelProtagonistNameRequest: {
+            /** Protagonistname */
+            protagonistName: string;
+        };
+        /**
+         * NovelRevisionCreateRequest
+         * @description 직접 수정 — 장 전체 본문을 보낸다. 화면이 고른 문단을 본문 안에서 바꿔 보낸다.
+         */
+        NovelRevisionCreateRequest: {
+            /**
+             * Baserevisionid
+             * Format: uuid
+             */
+            baseRevisionId: string;
+            /** Body */
+            body: string;
+        };
+        /** NovelRevisionListResponse */
+        NovelRevisionListResponse: {
+            /** Items */
+            items: components["schemas"]["NovelRevisionSummary"][];
+        };
+        /** NovelRevisionResponse */
+        NovelRevisionResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Revisionno */
+            revisionNo: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "generate" | "regenerate" | "manual_edit" | "ai_edit" | "revert";
+            /** Revertedfromrevisionid */
+            revertedFromRevisionId: string | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Body */
+            body: string;
+            /** Paragraphs */
+            paragraphs: string[];
+        };
+        /** NovelRevisionRestoreRequest */
+        NovelRevisionRestoreRequest: {
+            /**
+             * Baserevisionid
+             * Format: uuid
+             */
+            baseRevisionId: string;
+        };
+        /** NovelRevisionSummary */
+        NovelRevisionSummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Revisionno */
+            revisionNo: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "generate" | "regenerate" | "manual_edit" | "ai_edit" | "revert";
+            /** Revertedfromrevisionid */
+            revertedFromRevisionId: string | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /**
+         * NovelSettingNotesRequest
+         * @description 공백만 보내면 빈 노트로 저장된다.
+         */
+        NovelSettingNotesRequest: {
+            /** Settingnotes */
+            settingNotes: string;
         };
         /** PasswordResetConfirmRequest */
         PasswordResetConfirmRequest: {
@@ -8388,6 +9249,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AdminUserBetaRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_user_novelize_grant_admin_users__user_id__novelize_grant_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserNovelizeGrantRequest"];
             };
         };
         responses: {
@@ -10848,6 +11742,661 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_novels_novels_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_novel_novels__novel_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_novel_novels__novel_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_novel_notes_novels__novel_id__notes_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelSettingNotesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_novel_protagonist_name_novels__novel_id__protagonist_name_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelProtagonistNameRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_novel_job_novels__novel_id__jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    propose_novel_chapter_novels__novel_id__chapter_proposal_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelChapterProposalResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_novel_chapter_novels__novel_id__chapters_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelChapterCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    regenerate_novel_chapter_novels__novel_id__chapters__chapter_id__regenerate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chapter_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelChapterRegenerateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_novel_chapter_novels__novel_id__chapters__chapter_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chapter_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelChapterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_last_novel_chapter_novels__novel_id__chapters__chapter_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chapter_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_novel_chapter_revisions_novels__novel_id__chapters__chapter_id__revisions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chapter_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelRevisionListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_novel_chapter_revision_novels__novel_id__chapters__chapter_id__revisions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chapter_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelRevisionCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelChapterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_novel_chapter_revision_novels__novel_id__chapters__chapter_id__revisions__revision_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chapter_id: string;
+                revision_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelRevisionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_novel_chapter_revision_novels__novel_id__chapters__chapter_id__revisions__revision_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chapter_id: string;
+                revision_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelRevisionRestoreRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelChapterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_novel_ai_edit_novels__novel_id__chapters__chapter_id__ai_edits_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chapter_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelAiEditRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_novel_ai_edit_novels__novel_id__jobs__job_id__apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelChapterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_novel_ai_edit_novels__novel_id__jobs__job_id__dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_room_novel_chat_rooms__room_id__novel_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_room_novel_chat_rooms__room_id__novel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelDetailResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

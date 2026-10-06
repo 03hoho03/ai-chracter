@@ -37,6 +37,7 @@ from api.db.models import (
     ChatMessageRole,
     ChatRoom,
     ChatRoomMemorySnapshot,
+    CloverLedger,
     CloverLot,
     Content,
     ContentTarget,
@@ -50,11 +51,16 @@ from api.db.models import (
     MediaBookPerson,
     MediaBookScene,
     ModerationStatus,
+    Novel,
+    NovelChapter,
+    NovelChapterRevision,
+    NovelJob,
     StartingSetup,
     StatDef,
     StoryPromptTemplate,
     StoryVersionDetail,
     User,
+    UserFeatureGrant,
     UserPersona,
 )
 from api.db.session import engine
@@ -209,6 +215,94 @@ async def _create_admin(db_session: AsyncSession, **overrides: object) -> dict[s
     db_session.add(admin)
     await db_session.flush()
     return {**defaults, "id": admin.id}
+
+
+async def _grant_novelize(db_session: AsyncSession, user_id: uuid.UUID) -> UserFeatureGrant:
+    """소설화 허용 행 하나를 flush 한다(커밋은 호출자). 허용한 운영자 행이 FK 로 필요해 함께 만든다 — 로그인할
+    운영자가 아니라서 비밀번호 해시를 계산하지 않는다."""
+    admin = AdminUser(email=f"admin-{uuid.uuid4()}@example.com", password_hash="unused")
+    db_session.add(admin)
+    await db_session.flush()
+    grant = UserFeatureGrant(user_id=user_id, feature="novelize", granted_by=admin.id)
+    db_session.add(grant)
+    await db_session.flush()
+    return grant
+
+
+@dataclass
+class NovelTree:
+    novel: Novel
+    chapter: NovelChapter
+    first_revision: NovelChapterRevision
+    reverting_revision: NovelChapterRevision
+    generate_job: NovelJob
+    finished_job: NovelJob
+    active_job: NovelJob
+
+
+async def _make_novel_tree(
+    db_session: AsyncSession, user_id: uuid.UUID, *, chat_room_id: uuid.UUID | None = None
+) -> NovelTree:
+    """소설 한 권과 그 아래 행을 FK 가 모두 이어지게 flush 한다(커밋은 호출자). 되돌리기 개정이 앞 개정을, 장 생성
+    작업이 자기가 만든 개정을, AI 수정 작업이 장·기준 개정을 가리키고 진행 중 작업도 하나 있어, 지우는 순서가 틀리면
+    FK 위반이 난다."""
+    novel = Novel(
+        user_id=user_id,
+        chat_room_id=chat_room_id,
+        content_id=uuid.uuid4(),
+        content_type="character",
+        content_title="원작",
+        character_name="인물",
+    )
+    db_session.add(novel)
+    await db_session.flush()
+    now = datetime.now(UTC)
+    chapter = NovelChapter(
+        novel_id=novel.id,
+        ordinal=1,
+        start_message_id=uuid.uuid4(),
+        start_message_created_at=now,
+        end_message_id=uuid.uuid4(),
+        end_message_created_at=now,
+        assistant_message_count=1,
+        source_hash="0" * 64,
+    )
+    db_session.add(chapter)
+    await db_session.flush()
+    first_revision = NovelChapterRevision(chapter_id=chapter.id, revision_no=1, body="첫 본문", source="generate")
+    db_session.add(first_revision)
+    await db_session.flush()
+    reverting_revision = NovelChapterRevision(
+        chapter_id=chapter.id,
+        revision_no=2,
+        body="첫 본문",
+        source="revert",
+        reverted_from_revision_id=first_revision.id,
+    )
+    generate_job = NovelJob(
+        novel_id=novel.id,
+        user_id=user_id,
+        kind="chapter_generate",
+        status="succeeded",
+        chapter_id=chapter.id,
+        result_revision_id=first_revision.id,
+        charged_amount=1,
+    )
+    finished_job = NovelJob(
+        novel_id=novel.id,
+        user_id=user_id,
+        kind="ai_edit",
+        status="succeeded",
+        chapter_id=chapter.id,
+        base_revision_id=first_revision.id,
+        charged_amount=1,
+    )
+    active_job = NovelJob(
+        novel_id=novel.id, user_id=user_id, kind="chapter_generate", status="running", charged_amount=1
+    )
+    db_session.add_all([reverting_revision, generate_job, finished_job, active_job])
+    await db_session.flush()
+    return NovelTree(novel, chapter, first_revision, reverting_revision, generate_job, finished_job, active_job)
 
 
 async def _make_asset(
@@ -843,3 +937,111 @@ def _noting_open_transactions_async(
         return await func(*args, **kwargs)
 
     return wrapper
+
+
+# --- 소설 라우트 ----------------------------------------------------------------------
+
+
+async def _allow_novelize(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, user_id: uuid.UUID) -> None:
+    """소설화를 켜고 `user_id` 를 명단에 더한 뒤 허용 행을 넣고 커밋한다. 앞서 더한 계정은 명단에 남는다."""
+    monkeypatch.setattr(settings, "novelize_enabled", True)
+    monkeypatch.setattr(settings, "novelize_grant_allowlist", [*settings.novelize_grant_allowlist, user_id])
+    await _grant_novelize(db_session, user_id)
+    await db_session.commit()
+
+
+async def _novel_setup(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    turns: int = 3,
+    lane: str = "character",
+    persona: str | None = "서진",
+) -> tuple[Room, uuid.UUID]:
+    """잔액 100 클로버인 새 사용자로 `turns` 턴짜리 방을 열고(로그인된다), 소설화를 허용한 뒤 방의 소설을 라우트로
+    만든다. `persona` 가 있으면 그 이름의 대화 프로필을 방에 걸어 두어 소설의 주인공 이름이 된다."""
+    owner = await _make_user_with_clover_lot(db_session, clover_balance=100)
+    room = await _open_room(db_client, db_session, turns=turns, lane=lane, user=owner)
+    if persona is not None:
+        profile = UserPersona(user_id=owner.id, name=persona)
+        db_session.add(profile)
+        await db_session.flush()
+        await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room.room_id).values(persona_id=profile.id))
+    await _allow_novelize(db_session, monkeypatch, owner.id)
+    created = await db_client.post(f"/chat-rooms/{room.room_id}/novel")
+    assert created.status_code == 201, created.text
+    return room, uuid.UUID(created.json()["id"])
+
+
+async def _room_messages(db: AsyncSession, room_id: uuid.UUID) -> list[ChatMessage]:
+    rows = await db.scalars(
+        sa.select(ChatMessage)
+        .where(ChatMessage.chat_room_id == room_id)
+        .order_by(ChatMessage.created_at, ChatMessage.id)
+        .execution_options(populate_existing=True)
+    )
+    return list(rows.all())
+
+
+async def _add_chapter(
+    db_session: AsyncSession,
+    novel_id: uuid.UUID,
+    room: Room,
+    start: ChatMessage,
+    end: ChatMessage,
+    body: str = "첫 문단이다.\n\n둘째 문단이다.\n\n셋째 문단이다.",
+) -> NovelChapter:
+    """작업을 거치지 않고 장 하나와 첫 개정을 넣고 커밋한다. 장의 구간 모양(응답 수·해시)은 지금 방 원문으로 계산한다
+    — 재생성의 원문 변경 검사가 이 값과 비교한다."""
+    from api.novelize.source import segment_hash
+
+    messages = await _room_messages(db_session, room.room_id)
+    segment = messages[messages.index(start) : messages.index(end) + 1]
+    ordinal = await db_session.scalar(
+        sa.select(sa.func.coalesce(sa.func.max(NovelChapter.ordinal), 0)).where(NovelChapter.novel_id == novel_id)
+    )
+    chapter = NovelChapter(
+        novel_id=novel_id,
+        ordinal=(ordinal or 0) + 1,
+        start_message_id=start.id,
+        start_message_created_at=start.created_at,
+        end_message_id=end.id,
+        end_message_created_at=end.created_at,
+        assistant_message_count=sum(1 for m in segment if m.role == ChatMessageRole.ASSISTANT),
+        source_hash=segment_hash(segment),
+    )
+    db_session.add(chapter)
+    await db_session.flush()
+    db_session.add(NovelChapterRevision(chapter_id=chapter.id, revision_no=1, body=body, source="generate"))
+    await db_session.commit()
+    return chapter
+
+
+async def _queue_job(
+    db_session: AsyncSession, novel_id: uuid.UUID, start: ChatMessage, end: ChatMessage
+) -> NovelJob:
+    """차감까지 한 진행 대기 장 생성 작업 하나(단가 40). 실행은 띄우지 않는다."""
+    from api.novelize.billing import create_charged_job
+
+    novel = await db_session.get_one(Novel, novel_id)
+    job = NovelJob(
+        novel_id=novel_id,
+        user_id=novel.user_id,
+        kind="chapter_generate",
+        start_message_id=start.id,
+        start_message_created_at=start.created_at,
+        end_message_id=end.id,
+        end_message_created_at=end.created_at,
+    )
+    return await create_charged_job(db_session, job=job, expected_cost=40, now=datetime.now(UTC))
+
+
+async def _novel_ledger(db: AsyncSession, user_id: uuid.UUID) -> list[tuple[str, int]]:
+    """사용자의 소설화 원장 행(종류, 금액) — 금액·종류 순."""
+    rows = await db.execute(
+        sa.select(CloverLedger.kind, CloverLedger.amount)
+        .where(CloverLedger.user_id == user_id, CloverLedger.kind.in_(("novelize_spend", "novelize_refund")))
+        .order_by(CloverLedger.amount, CloverLedger.kind)
+    )
+    return [(kind, amount) for kind, amount in rows.all()]

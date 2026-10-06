@@ -26,4 +26,5 @@ export { CLOVER_MISSION_LABELS } from "./model/cloverMissionLabel";
 export { CLOVER_KIND_LABELS } from "./model/cloverKindLabel";
 export { formatCloverLedgerAmount } from "./model/cloverLedgerAmountDisplay";
 export { CloverBalance } from "./ui/CloverBalance";
+export { CloverSpendSummary } from "./ui/CloverSpendSummary";
 export { CloverIcon } from "./ui/CloverIcon";

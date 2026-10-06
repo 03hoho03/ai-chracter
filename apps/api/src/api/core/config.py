@@ -1,7 +1,8 @@
 import json
+import uuid
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -168,7 +169,37 @@ class Settings(BaseSettings):
     # 클라이언트 기본값 — 요청 단위 값 없이 나가는 호출이 생겨도 무제한으로 기다리지 않게 하는 안전망.
     gemini_client_timeout_ms: int = 60_000
 
-    @field_validator("gemini_thinking_budget", mode="before")
+    # 소설화(대화를 장편 소설의 장으로 옮겨 쓰기). 장 생성과 문단 수정만 이 모델·출력 상한·사고 설정을 쓰고, 장 경계
+    # 제안은 턴 번호 몇 개를 고르는 판정이라 `gemini_model_name` 으로 간다 — 어느 호출이 어느 쪽인지는 `llm/client.py`
+    # 의 소설화 call_site 집합이 정한다. 모델명이 비면 `gemini_model_name` 으로 돈다.
+    # 기본 모델은 같은 장을 세 후보 모델로 써 본 비교에서 골랐다. 모델 이름을 가리고 매긴 1위 횟수는 가장 많이 받은
+    # 후보와 비슷했고(장만 보면 2 대 2, 문단 AI 수정까지 8건이면 3 대 4), 장당 원가는 다음으로 싼 후보의 약 절반,
+    # 지연도 가장 짧았으며, 원문 응답 끝의 상태 표를 장 본문에 옮겨 적은 일이 없었다. 시험한 장이 다섯 개뿐이라
+    # 원가는 운영에서 다시 본다.
+    gemini_novelize_model_name: str = "gemini-3.8-flash"
+    # 사고 토큰과 본문이 나눠 쓰는 예산이다(위 `gemini_max_output_tokens` 주석). 장 하나는 수천 자에 사고 토큰이 본문보다
+    # 많이 붙어 채팅 상한으로는 잘린다. 여기서 잘린 장은 실패로 끝나고 환불되므로 낮게 잡으면 원가만 버린다.
+    # 시험에서 기본 모델이 한 장에 쓴 출력·사고 토큰 합은 보고된 값으로 많아야 약 7천이었고(원문 21턴 장), 비교한 다른
+    # 모델은 약 2만 3천까지 썼다. 장이 길어지거나 사고가 길게 붙는 날에도 잘리지 않게 그 몇 배인 이 값을 그대로 둔다.
+    gemini_novelize_max_output_tokens: int = 32_768
+    # 사고 설정. 둘 다 None 이면 thinking_config 를 넘기지 않는다(모델 기본 사고 동작). 정한 것만 넘긴다 — 예산은
+    # 위 `gemini_thinking_budget` 과 같은 뜻이고, 수준은 사고형 모델이 받는 단계 이름이다. 기본 모델의 품질·원가는
+    # 사고 설정 없이(모델 기본) 잰 것이라 기본값도 정하지 않음으로 둔다. 이 모델은 가장 낮은 사고 수준(MINIMAL)을 받지
+    # 않는다.
+    gemini_novelize_thinking_budget: int | None = None
+    gemini_novelize_thinking_level: Literal["MINIMAL", "LOW", "MEDIUM", "HIGH"] | None = None
+    # 소설화 호출 상한(ms). 백그라운드 작업이라 Cloudflare 응답 상한(100초)과 무관하다. 장 생성은 스트리밍이라 "다음
+    # 청크까지"의 상한이고, 문단 수정·경계 제안은 비스트리밍이라 호출 전체의 상한이다. 경계 제안은 사용자가 화면에서
+    # 기다리므로 짧게 끊는다. 시험에서 기본 모델은 장 하나를 길어야 31초, 문단 수정을 11초 안에 끝냈다. 이 값들은 호출이
+    # 멈췄을 때만 걸리는 상한이라 줄여도 정상 호출은 빨라지지 않고, 느린 날의 정상 호출을 실패·환불로 바꿀 위험만 늘어
+    # 그대로 둔다.
+    gemini_novelize_chapter_timeout_ms: int = 300_000
+    gemini_novelize_revise_timeout_ms: int = 120_000
+    gemini_novelize_boundary_timeout_ms: int = 30_000
+
+    @field_validator(
+        "gemini_thinking_budget", "gemini_novelize_thinking_budget", "gemini_novelize_thinking_level", mode="before"
+    )
     @classmethod
     def _empty_thinking_budget_is_unset(cls, value: object) -> object:
         """env 에 값을 비운 줄(`KEY=`)이 남으면 빈 문자열이 들어와 정수 파싱이 실패하고 api 가 기동하지 못한다.
@@ -177,6 +208,14 @@ class Settings(BaseSettings):
         if isinstance(value, str) and not value.strip():
             return None
         return value
+
+    @model_validator(mode="after")
+    def _novelize_thinking_is_budget_or_level(self) -> "Settings":
+        """Gemini 3 계열은 사고 예산과 사고 수준을 한 요청에 함께 받으면 요청을 거부할 수 있다. 둘 다 둔 채로 뜨면
+        장 생성·문단 수정이 매번 실패하고 환불로 끝나므로, 둘 중 하나만 정하도록 기동에서 막는다."""
+        if self.gemini_novelize_thinking_budget is not None and self.gemini_novelize_thinking_level is not None:
+            raise ValueError("gemini_novelize_thinking_budget 과 gemini_novelize_thinking_level 은 둘 중 하나만 정한다")
+        return self
 
     # 회차 재현성을 위한 결정적 시드. None = seed 를 아예 안
     # 넘김(현재와 동일한 매 회차 난수 동작). generate()에만 붙인다 — generate_structured()
@@ -269,6 +308,54 @@ class Settings(BaseSettings):
     # 전체 히스토리로 돌아간다 — 되돌리기 스위치 하나로 전부 돌아가게.
     memory_window_ending_judgment: bool = True
     memory_window_image_judgment: bool = True
+
+    # 소설화 전역 스위치. 꺼져 있으면 허용 행이 있어도 아무도 못 쓴다 — 코드 기본값이 닫힘이어야 env 설정 없이
+    # 배포해도 닫힌 채로 뜬다. 끄면 다음 요청부터 막히고(재기동 필요), 허용 행은 남아 다시 켜면 그대로 돌아온다.
+    novelize_enabled: bool = False
+    # 소설화를 허용할 수 있는 계정 id 명단(쉼표 구분, 따옴표 없이). 어드민이 허용을 줄 때와 사용자가 접근할 때 둘 다
+    # 본다 — 명단에서 지우고 재기동하면 허용 행을 지우지 않아도 그 계정은 곧바로 막힌다. 비어 있으면 아무에게도 줄 수
+    # 없다. `NoDecode` 는 위 CORS 명단과 같은 이유로 JSON 디코드 단계를 끈다.
+    novelize_grant_allowlist: Annotated[list[uuid.UUID], NoDecode] = []
+    # 같은 장(같은 시작 메시지)을 하루(KST)에 몇 번까지 만들 수 있는지 — 장 생성과 재생성을 함께 세고, 진행 중·성공만
+    # 센다(환불된 실패는 세지 않는다). 매번 과금되지만 같은 구간을 끝없이 다시 돌리는 것을 막는 상한이다. 소설화 본
+    # 시험에서 같은 장을 여러 번 돌려야 하므로 격리 환경에서 올릴 수 있게 설정으로 둔다. 기본값은 시험 뒤 확정하는 임시값.
+    novelize_chapter_daily_limit: int = 5
+    # 소설화 작업이 살아 있다는 표시(`novel_jobs.heartbeat_at`)를 몇 초마다 갱신하는지, 몇 초 갱신이 없으면 죽은 작업으로
+    # 보고 실패·환불하는지. 만료는 주기보다 넉넉히 길어야 한다 — 짧으면 DB 가 잠깐 느린 것만으로 살아 있는 작업이
+    # 환불되고, 그 작업의 결과는 버려진다. 비교는 DB 시계로 한다. 둘 다 시험 뒤 확정하는 임시값.
+    novelize_heartbeat_interval_seconds: float = 10
+    novelize_heartbeat_expiry_seconds: int = 60
+    # 소설화 작업 하나의 전체 상한(초). heartbeat 가 살아 있어도 작업이 무한히 늘어지지 않게 한다. 지금 SDK 경로(httpx)
+    # 에서 장 생성 호출의 타임아웃(`gemini_novelize_chapter_timeout_ms`)은 스트리밍의 청크 사이 읽기 상한이라, 꾸준히
+    # 흘러나오는 긴 장의 전체 시간을 끊는 것은 이 작업 상한 하나뿐이다. 그 호출 타임아웃은 첫 청크 전(또는 청크 사이)에
+    # 오래 멈춘 경우에만 먼저 난다. 넘기면 실패·환불하고, 취소된 호출의 토큰 사용량은 기록되지 않는다. 임시값.
+    novelize_job_timeout_seconds: float = 360
+    # 장 본문이 이보다 짧으면(글자 수, 앞뒤 공백 제외) 정상 종료였어도 실패·환불한다. 출력 토큰 1개로 끝난 장이 실제로
+    # 나왔다. 200자는 측정으로 정한 값이 아니라 그런 몇 글자짜리 장을 거르려고 넉넉히 낮게 잡은 임시 하한이다 — 짧은
+    # 응답 한 턴만 담은 정상 장이 이 아래로 나올 수도 있어서, 본 시험에서 정상 장의 최단 길이를 보고 다시 정한다.
+    novelize_min_chapter_chars: int = 200
+    # 다음 장 생성에 싣는 직전 장 끝 발췌의 목표 길이(글자). 문단 단위로 잘라 이 길이에 가장 가까운 만큼 싣는다.
+    # 앞 장을 되풀이하지 않고 이어 쓰게 하려는 것이다. 임시값.
+    novelize_previous_excerpt_chars: int = 1000
+    # 장 하나가 담을 수 있는 원문 턴(AI 응답) 수의 상한. 다음 장 경계 제안은 이 수만큼의 후보 턴을 보여 주고, 장 생성은
+    # 끝 메시지가 이 범위 밖이면 거절한다. 장이 길수록 출력 상한·작업 상한에 가까워진다. 20턴 장으로 시험했을 때 기본
+    # 모델의 장 본문은 약 5천 자였고 지연·출력 토큰은 위 상한들 안에 넉넉히 들었다. 시험에서 경계 제안이 장 여섯 중
+    # 셋을 이 상한 끝에서 끊어, 장 길이는 이 값에 가까워지기 쉽다(마지막 장도 후보 끝에서 끝났지만 그건 방이 거기서
+    # 끝나서라 세지 않았다).
+    novelize_chapter_max_turns: int = 20
+    # 장 경계 제안(무과금 모델 호출)을 한 사용자가 한 시간에 몇 번까지 부를 수 있는지. 과금이 없어 남용을 막는 것이
+    # 이 상한뿐이다. 면제 계정도 똑같이 센다. 임시값.
+    novelize_proposal_hourly_limit: int = 30
+
+    @field_validator("novelize_grant_allowlist", mode="before")
+    @classmethod
+    def _split_novelize_grant_allowlist(cls, value: object) -> object:
+        """env 문자열을 쉼표로 나눈다. 항목 앞뒤 공백은 지우고 빈 항목은 버린다. CORS 명단과 달리 남는 항목이
+        없어도 오류가 아니다 — 빈 명단은 "아무에게도 허용하지 않음"이라는 정상 값이고 기본값이다. UUID 가 아닌
+        항목은 pydantic 이 기동에서 거부한다."""
+        if not isinstance(value, str):
+            return value
+        return [item.strip() for item in value.split(",") if item.strip()]
 
     # 자가호스팅 Bugsink DSN. 비어 있으면 그 자체로 비활성이라
     # 별도 활성 플래그를 두지 않는다(플래그와 DSN 유무가 어긋나는 상태만 늘어나고 얻는 것이

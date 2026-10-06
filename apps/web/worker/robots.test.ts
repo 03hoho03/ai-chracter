@@ -27,6 +27,7 @@ describe("buildRobotsTxt", () => {
     "/mypage",
     "/favorites",
     "/chats",
+    "/novels",
     "/chat/",
     "/builder/",
     "/studio/",

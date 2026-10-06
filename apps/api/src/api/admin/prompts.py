@@ -1,5 +1,6 @@
 import logging
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from string import Formatter
@@ -28,6 +29,7 @@ from api.chat.prompt_builder import (
     ALLOWED_PLACEHOLDERS,
     MediaCellCandidate,
     PromptLane,
+    PromptRenderError,
     PromptNames,
     as_prompt_lane,
     build_generation_prompt,
@@ -55,10 +57,35 @@ from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StatDef, StoryPromptTemplate
 from api.db.session import get_db_session
+from api.novelize.prompts import (
+    NovelizePrompt,
+    build_novelize_boundary_prompt,
+    build_novelize_chapter_prompt,
+    build_novelize_revise_prompt,
+)
 
 router = APIRouter(tags=["admin"])
 
 logger = logging.getLogger(__name__)
+
+# 소설화 세 채널 — story·character 두 레인에 같은 행이 `scope="both"` 로 있다.
+_NOVELIZE_ROWS: dict[str, frozenset[tuple[str, str, str]]] = {
+    "novelize_boundary": frozenset(
+        {("both", slot, "") for slot in ("instruction", "user_name", "max_turns", "turn_context")}
+    ),
+    "novelize_chapter": frozenset(
+        {
+            ("both", slot, "")
+            for slot in ("instruction", "work_setting", "user_name", "setting_notes", "previous_excerpt", "turn_context")
+        }
+    ),
+    "novelize_revise": frozenset(
+        {
+            ("both", slot, "")
+            for slot in ("instruction", "work_setting", "setting_notes", "paragraphs", "target_range", "user_request")
+        }
+    ),
+}
 
 # 코드가 레인별로 아는 (channel, scope, slot, variant)
 # 정확한 집합. 마이그레이션 a69cbd40dec8이 심은 레인별 26/13/16행에 b72c33c70240이 story·
@@ -69,7 +96,8 @@ logger = logging.getLogger(__name__)
 # 859b0fb86629가 publish_filter 레인의 작가 글 슬롯 13개를 빼고 이미지 목록 슬롯 `image_list` 1행을 더한
 # 36/19/4행, 2417f5829bb1이 story generation 에 상황 노트 행 1개를 더한 37/19/4행, 여기에 사용자 이름 한 줄
 # 리비전이 슬롯 `user_name`을 story 5행(generation·stat·ending·image 판정·요약)·character 3행(generation·image 판정·
-# 요약) 더한 42/22/4행과 정확히 같다.
+# 요약) 더한 42/22/4행, 여기에 소설화 채널 리비전이 소설화 세 채널(장 경계 제안 4·장 생성 6·문단 수정 6)을 story·
+# character 에 16행씩 더한 58/38/4행과 정확히 같다.
 # `tests/test_prompt_seed.py`의 `_EXPECTED_SLOTS_BY_LANE`이 "시드가 이 표와 일치하는가"를 보는
 # 반면, 이 상수는 "임의의 초안이 이 표와 일치하는가"(게시 검증)를 본다 — 검증 대상이
 # 달라 두 파일에 따로 둔다(시드 하나는 상수 데이터, 이건 임의 입력을 거부하는 게이트).
@@ -155,6 +183,8 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
                 ("story", "judgment_instruction", ""),
             }
         ),
+        # 소설화 채널 리비전이 DB에 넣는 행과 같이 간다(위 user_persona와 같은 이유). 두 레인이 같다.
+        **_NOVELIZE_ROWS,
     },
     "character": {
         "system": frozenset(
@@ -195,6 +225,7 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
                 ("both", "turn_context", ""),
             }
         ),
+        **_NOVELIZE_ROWS,  # 위 story와 같다
     },
     "publish_filter": {
         "publish_filter": frozenset(
@@ -924,6 +955,72 @@ def _memory_summary_preview_item(
     )
 
 
+# 소설화 샘플 — 조건부 섹션(설정 노트·앞 장의 끝)도 문안이 보이게 채운다. 원문 줄은 빌더 docstring 의 형식을 따른다.
+_SAMPLE_NOVELIZE_TURN_LINES = (
+    "[턴 1] {assistant}: [샘플] 왔어?\n[턴 2] {user}: [샘플] 응, 늦어서 미안.\n[턴 2] {assistant}: [샘플] 괜찮아."
+)
+_SAMPLE_NOVELIZE_PARAGRAPHS = ["[샘플] 첫 문단", "[샘플] 둘째 문단", "[샘플] 셋째 문단"]
+
+
+def _novelize_preview_item(channel: str, build: Callable[[], NovelizePrompt]) -> AdminPromptPreviewItem:
+    """소설화 채널 이전 버전을 복원한 초안처럼 소설화 행이 없으면 빌더가 렌더를 거부한다. 그 한 채널만 안내로 바꿔
+    나머지 미리보기는 그대로 보여 준다(행이 빠진 초안의 게시는 슬롯 검사가 따로 막는다)."""
+    try:
+        built = build()
+    except PromptRenderError as exc:
+        text = f"이 초안으로는 이 채널을 미리 볼 수 없습니다 — 소설화 문안이 없거나 렌더에 필요한 행이 비어 있습니다.\n({exc})"
+    else:
+        text = f"{built.system_instruction}\n\n{built.prompt}"
+    return AdminPromptPreviewItem(channel=channel, label=channel, text=text)
+
+
+def _novelize_preview_items(
+    prompt_set: PromptSet, sections: list[PromptSection], *, is_story_chat: bool
+) -> list[AdminPromptPreviewItem]:
+    """소설화 세 채널. 실호출은 지시문(뒤에 등급 규칙)과 본문을 따로 보내지만 미리보기는 그 순서대로 이어 보여 준다."""
+    assistant = prompt_set.story_assistant_label if is_story_chat else prompt_set.character_assistant_label
+    turn_lines = _SAMPLE_NOVELIZE_TURN_LINES.format(user=prompt_set.user_label, assistant=assistant)
+    return [
+        _novelize_preview_item(
+            "novelize_boundary",
+            lambda: build_novelize_boundary_prompt(
+                prompt_set=prompt_set,
+                sections=sections,
+                is_story_chat=is_story_chat,
+                max_turns=2,
+                user_name="[샘플] 하늘",
+                turn_lines=turn_lines,
+            ),
+        ),
+        _novelize_preview_item(
+            "novelize_chapter",
+            lambda: build_novelize_chapter_prompt(
+                prompt_set=prompt_set,
+                sections=sections,
+                is_story_chat=is_story_chat,
+                work_setting="[샘플] 작품 설정",
+                user_name="[샘플] 하늘",
+                setting_notes="[샘플] 설정 노트",
+                previous_excerpt="[샘플] 앞 장의 마지막 문단",
+                turn_lines=turn_lines,
+            ),
+        ),
+        _novelize_preview_item(
+            "novelize_revise",
+            lambda: build_novelize_revise_prompt(
+                sections=sections,
+                is_story_chat=is_story_chat,
+                work_setting="[샘플] 작품 설정",
+                setting_notes="[샘플] 설정 노트",
+                paragraphs=_SAMPLE_NOVELIZE_PARAGRAPHS,
+                first_index=1,
+                last_index=1,
+                user_request="[샘플] 더 긴장감 있게",
+            ),
+        ),
+    ]
+
+
 def _story_preview_items(prompt_set: PromptSet, sections: list[PromptSection]) -> list[AdminPromptPreviewItem]:
     items: list[AdminPromptPreviewItem] = []
 
@@ -1016,6 +1113,7 @@ def _story_preview_items(prompt_set: PromptSet, sections: list[PromptSection]) -
         )
     )
     items.append(_memory_summary_preview_item(prompt_set, sections, is_story_chat=True, names=_SAMPLE_STORY_NAMES))
+    items.extend(_novelize_preview_items(prompt_set, sections, is_story_chat=True))
 
     return items
 
@@ -1068,6 +1166,7 @@ def _character_preview_items(prompt_set: PromptSet, sections: list[PromptSection
     items.append(
         _memory_summary_preview_item(prompt_set, sections, is_story_chat=False, names=_SAMPLE_CHARACTER_NAMES)
     )
+    items.extend(_novelize_preview_items(prompt_set, sections, is_story_chat=False))
 
     return items
 

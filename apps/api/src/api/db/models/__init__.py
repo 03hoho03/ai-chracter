@@ -38,6 +38,7 @@ from api.db.models.content import (
     Like,
     ModerationStatus,
 )
+from api.db.models.feature_grant import FeatureName, UserFeatureGrant
 from api.db.models.inquiry import Inquiry, InquiryCategory, InquiryStatus
 from api.db.models.legal import LegalDocument
 from api.db.models.media import Asset, AssetKind, AssetStatus, ImageGenerationRequest
@@ -55,6 +56,17 @@ from api.db.models.moderation import (
     ReportStatus,
 )
 from api.db.models.notice import Notice
+from api.db.models.novel import (
+    Novel,
+    NovelChapter,
+    NovelChapterRevision,
+    NovelContentType,
+    NovelJob,
+    NovelJobFailureCode,
+    NovelJobKind,
+    NovelJobStatus,
+    NovelRevisionSource,
+)
 from api.db.models.persona import UserPersona
 from api.db.models.prompt import PromptSection, PromptSet, PublishFilterTextSectionBackup
 from api.db.models.story import (
@@ -115,6 +127,7 @@ __all__ = [
     "EndingRuleGroup",
     "EndingRuleOperator",
     "Favorite",
+    "FeatureName",
     "Genre",
     "GuardianConsent",
     "HomeCuration",
@@ -134,6 +147,15 @@ __all__ = [
     "ModerationStatus",
     "Notice",
     "Notification",
+    "Novel",
+    "NovelChapter",
+    "NovelChapterRevision",
+    "NovelContentType",
+    "NovelJob",
+    "NovelJobFailureCode",
+    "NovelJobKind",
+    "NovelJobStatus",
+    "NovelRevisionSource",
     "PromptSection",
     "PromptSet",
     "PublishFilterTextSectionBackup",
@@ -150,6 +172,7 @@ __all__ = [
     "StoryPromptTemplate",
     "StoryVersionDetail",
     "User",
+    "UserFeatureGrant",
     "UserPersona",
     "WithdrawnEmail",
 ]

@@ -29,8 +29,8 @@ type PublishPromptSetDialogProps = {
 // 레인화로 "다음 채팅 턴부터"가 거짓이 되는 레인이 있다.
 // `publish_filter`는 채팅 턴이 아니라 제작자가 발행 버튼을 누를 때(다음 발행 심사부터) 읽힌다.
 const PUBLISH_EFFECT_COPY: Record<PromptLane, string> = {
-  story: "다음 채팅 턴부터 전 서비스에 즉시 반영되고",
-  character: "다음 채팅 턴부터 전 서비스에 즉시 반영되고",
+  story: "다음 채팅 턴과 소설화(장 경계 제안·장 생성·문단 수정)부터 전 서비스에 즉시 반영되고",
+  character: "다음 채팅 턴과 소설화(장 경계 제안·장 생성·문단 수정)부터 전 서비스에 즉시 반영되고",
   publish_filter: "다음 발행 심사부터 즉시 반영되고",
 };
 
