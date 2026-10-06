@@ -28,6 +28,7 @@ import {
   countRules,
   hasRuleWithMissingStat,
   isMissingStat,
+  LOGIC_OPERATOR_LABELS,
   LOGIC_OPERATORS,
   removeRuleListItem,
   type RuleListItemValues,
@@ -88,12 +89,6 @@ type RuleGroupRowProps = {
   noStatsReason: string | undefined;
   onChange: (group: Extract<RuleListItemValues, { kind: "group" }>) => void;
   onRemove: () => void;
-};
-
-/** 그룹 내부 규칙을 잇는 접속사. 화면이 이 목록(LOGIC_OPERATORS)으로 항목을 그리므로 술어와 어긋날 수 없다. */
-const GROUP_OPERATOR_LABEL: Record<LogicOp, string> = {
-  and: "그리고",
-  or: "또는",
 };
 
 /** 스탯 기반 규칙 목록 편집기. "단일 규칙 추가"/"규칙 그룹 추가"로 항목을 늘리고 dnd-kit로 재정렬한다.
@@ -284,7 +279,7 @@ function LogicOpToggle({ value, onChange }: { value: LogicOp; onChange: (op: Log
     >
       {LOGIC_OPERATORS.map((op) => (
         <ToggleGroupItem key={op} value={op}>
-          {GROUP_OPERATOR_LABEL[op]}
+          {LOGIC_OPERATOR_LABELS[op]}
         </ToggleGroupItem>
       ))}
     </ToggleGroup>

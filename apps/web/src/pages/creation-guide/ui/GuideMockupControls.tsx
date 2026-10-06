@@ -157,24 +157,28 @@ export function MockupTextarea({ text, clampsLongText = true }: MockupTextareaPr
 
 type MockupChoiceChipsProps = {
   choices: readonly MockupChoice[];
+  /** 빌더 토글의 크기. `sm` 은 규칙 사이 관계 토글처럼 작은 묶음이다. */
+  size?: "default" | "sm";
+  className?: string;
 };
 
 /**
- * 하나를 고르는 칩 묶음(템플릿·타겟·공개범위·적용 대상). 빌더 묶음은 줄을 바꾸지 않지만 그림은 바꾼다 — 넘치는 칩이
- * 페이지를 가로로 밀거나, 그림 속에 가로 스크롤이 생겨 만져 볼 것처럼 보이지 않게.
+ * 하나를 고르는 칩 묶음(템플릿·타겟·공개범위·적용 대상·규칙 사이 관계). 빌더 묶음은 줄을 바꾸지 않지만 그림은 바꾼다 —
+ * 넘치는 칩이 페이지를 가로로 밀거나, 그림 속에 가로 스크롤이 생겨 만져 볼 것처럼 보이지 않게.
  */
-export function MockupChoiceChips({ choices }: MockupChoiceChipsProps) {
+export function MockupChoiceChips({ choices, size = "default", className }: MockupChoiceChipsProps) {
   return (
-    <ul className="flex flex-wrap gap-2">
+    <ul className={cn("flex flex-wrap gap-2", className)}>
       {choices.map((choice) => (
         <li
           key={choice.label}
           className={cn(
-            "inline-flex h-9 items-center gap-1 rounded-full border px-4 text-sm font-medium whitespace-nowrap",
+            "inline-flex items-center gap-1 rounded-full border font-medium whitespace-nowrap",
+            size === "sm" ? "h-8 px-3 text-xs" : "h-9 px-4 text-sm",
             choice.isSelected ? "border-foreground text-foreground" : "border-input text-muted-foreground",
           )}
         >
-          {choice.isSelected && <Check aria-hidden className="size-4 shrink-0" />}
+          {choice.isSelected && <Check aria-hidden className={cn("shrink-0", size === "sm" ? "size-3.5" : "size-4")} />}
           {choice.label}
           {choice.isSelected && <span className="sr-only"> (선택됨)</span>}
         </li>

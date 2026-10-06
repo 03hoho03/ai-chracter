@@ -8,7 +8,7 @@ import { assertNever } from "@/shared/lib/assertNever";
 import { findGuideImage } from "../config/guideImages";
 import type { GuideMockupContext } from "../model/guideMockupContext";
 import { isStoryFieldKey } from "../model/mockupCaption";
-import { choicesOf, selectLabelOf } from "../model/mockupChoices";
+import { choicesOf, logicOpChoices, selectLabelOf } from "../model/mockupChoices";
 import { isRecord, parseMockupValue, type MockupValue } from "../model/mockupValue";
 import type { FieldValue } from "../model/parseManuscript";
 import { GuideCardListMockup } from "./GuideCardListMockup";
@@ -199,29 +199,39 @@ function StatIdentityMockup({ values }: { values: readonly FieldValue[] }) {
   );
 }
 
-/** 엔딩의 스탯 기반 규칙 줄. 원고 값은 시드(서버) 표기라 연산자를 빌더 화면의 기호로 바꿔 그린다. */
+/** 엔딩의 스탯 기반 규칙 줄. 원고 값은 시드(서버) 표기라 연산자를 빌더 화면의 기호로 바꿔 그린다. 이웃한 두 항목 사이에는
+ * 빌더처럼 관계(그리고/또는)를 그리고, 마지막 항목 뒤에는 그리지 않는다 — 그 `nextOp` 는 평가에서 쓰이지 않는다. 그룹은
+ * 빌더에서 접힌 채로 보이는 머리 줄만 그려 그 안의 관계는 그리지 않는다. */
 function StatRulesMockup({ rules }: { rules: readonly Record<string, unknown>[] }) {
   return (
     <ul className="flex flex-col gap-2">
       {rules.map((rule, index) => (
         // 원고에서 온 고정 목록이라 순서가 바뀌지 않는다.
-        <li key={index} className="flex items-center gap-2 rounded-lg border border-border p-3">
-          <GripVertical aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-          {rule.kind === "group" ? (
-            <span className="text-sm font-semibold text-foreground">
-              규칙 그룹{" "}
-              <span className="text-xs font-normal text-muted-foreground">
-                조건 {Array.isArray(rule.rules) ? rule.rules.filter(isRecord).length : 0}개
+        <li key={index} className="flex flex-col gap-2">
+          <div className="flex items-center gap-2 rounded-lg border border-border p-3">
+            <GripVertical aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+            {rule.kind === "group" ? (
+              <span className="text-sm font-semibold text-foreground">
+                규칙 그룹{" "}
+                <span className="text-xs font-normal text-muted-foreground">
+                  조건 {Array.isArray(rule.rules) ? rule.rules.filter(isRecord).length : 0}개
+                </span>
               </span>
-            </span>
-          ) : (
-            <div className="@container min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <MockupSelect value={typeof rule.stat === "string" ? rule.stat : ""} className="w-full @xs:w-32" />
-                <MockupSelect value={operatorSymbol(rule.operator)} className="w-20 shrink-0" />
-                <MockupInput value={typeof rule.threshold === "number" ? String(rule.threshold) : ""} className="w-24 shrink-0" />
+            ) : (
+              <div className="@container min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <MockupSelect value={typeof rule.stat === "string" ? rule.stat : ""} className="w-full @xs:w-32" />
+                  <MockupSelect value={operatorSymbol(rule.operator)} className="w-20 shrink-0" />
+                  <MockupInput
+                    value={typeof rule.threshold === "number" ? String(rule.threshold) : ""}
+                    className="w-24 shrink-0"
+                  />
+                </div>
               </div>
-            </div>
+            )}
+          </div>
+          {index < rules.length - 1 && (
+            <MockupChoiceChips choices={logicOpChoices(rule.nextOp)} size="sm" className="ml-7" />
           )}
         </li>
       ))}
