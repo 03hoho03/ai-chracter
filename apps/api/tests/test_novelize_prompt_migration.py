@@ -197,6 +197,9 @@ async def test_builders_render_the_seeded_text_with_the_lanes_rating_rule(
     same_turn_note = "줄마다 앞에 [턴 n] 번호가 붙어 있고, 같은 번호의 줄은 한 턴이다."
     assert same_turn_note in boundary.prompt and same_turn_note in _M.CHAPTER_TURN_CONTEXT
     assert "[n턴]" not in boundary.system_instruction
+    # 이야기 밖 말(OOC·AI·저장 같은 질문)에 상대가 작중 말투로 답하면 모델은 그 교환을 이야기 속 대화로 남겼다 —
+    # 경계 제안은 그 교환을 장면으로 치지 않고, 장 생성은 말과 반응을 함께 뺀다.
+    assert "그에 대한 상대 쪽의 반응은 장면으로 치지 않는다" in boundary.system_instruction
 
     chapter = build_novelize_chapter_prompt(
         prompt_set=prompt_set,
@@ -209,6 +212,8 @@ async def test_builders_render_the_seeded_text_with_the_lanes_rating_rule(
         turn_lines="[턴 1] 캐릭터: 왔어?",
     )
     assert chapter.system_instruction == f"{_M.CHAPTER_INSTRUCTION}\n\n{rule}"
+    assert "그 교환을 통째로 빼고 앞뒤 이야기를 자연스럽게 잇는다" in chapter.system_instruction
+    assert "이야기 밖 말과 그에 대한 반응만 있는 줄은 예외다" in chapter.system_instruction
     assert chapter.prompt.startswith("[작품 설정]") and "[설정 노트]" not in chapter.prompt
 
     revise = build_novelize_revise_prompt(
