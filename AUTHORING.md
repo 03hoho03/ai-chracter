@@ -11,7 +11,7 @@
 
 ## 1. 필드가 프롬프트의 어디에 실리는가
 
-생성 프롬프트는 `api/chat/prompt_builder.py`가 조립한다. 섹션의 문안과 순서는 코드가 아니라 DB의 프롬프트 세트에 있고(어드민 `/prompt-sets`), 코드는 어느 값이 어느 자리(`slot`)로 흘러가는지만 정한다. 호출부는 `api/chat/router.py`의 `_build_prompt`(실제 방)와 `_build_preview_prompt`(빌더 미리보기)다.
+생성 프롬프트는 `api/chat/prompt_builder.py`가 조립한다. 섹션의 문안과 순서는 코드가 아니라 DB의 프롬프트 세트에 있고(어드민 `/prompt-sets`), 코드는 어느 값이 어느 자리(`slot`)로 흘러가는지만 정한다. 호출부는 `api/chat/router.py`의 `_build_prompt`(실제 방)와 `_build_preview_prompt`(빌더 미리보기)다. 프롬프트 세트는 레인 × 글쓰기 모델마다 따로 있다 — Claude(Sonnet·Opus) 세트는 생성에 쓰는 `system`·`generation` 채널과 라벨만 갖고, 판정·요약·소설화는 언제나 그 레인의 Gemini 세트를 읽는다. 아래 표의 자리는 두 세트에서 같다.
 
 ### 스토리 — 생성 호출 (`build_story_generation_prompt`, 매 턴)
 

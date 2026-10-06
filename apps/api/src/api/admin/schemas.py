@@ -16,6 +16,7 @@ from api.db.models.moderation import (
     ReportStatus,
 )
 from api.legal.schemas import LegalDocumentKind
+from api.llm.chat_models import ChatModelId
 
 
 class AdminLoginRequest(CamelModel):
@@ -509,6 +510,7 @@ class AdminPromptSetSummary(CamelModel):
     created_at: datetime
     published_at: datetime | None
     lane: PromptLane
+    model: ChatModelId
     is_active: bool
 
 
@@ -540,6 +542,7 @@ class AdminPromptSetDetailResponse(CamelModel):
     version: str | None
     status: str
     lane: PromptLane
+    model: ChatModelId
     note: str
     created_at: datetime
     published_at: datetime | None
@@ -553,6 +556,7 @@ class AdminPromptDraftResponse(CamelModel):
     조회)."""
 
     id: uuid.UUID | None
+    model: ChatModelId
     labels: AdminPromptLabels
     sections: list[AdminPromptSectionItem]
 

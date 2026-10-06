@@ -14,6 +14,7 @@ from api.db.models.character import SituationalImage
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StatDef, StoryPromptTemplate
+from api.llm.chat_models import ChatModelId
 from api.llm.client import SegmentedPrompt
 
 # `"legacy"`를 이 유니온에 넣지 않는다 — 넣는
@@ -137,10 +138,11 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
 
 
 async def load_active_prompt_set(
-    db: AsyncSession, *, lane: PromptLane
+    db: AsyncSession, *, lane: PromptLane, model: ChatModelId = "gemini"
 ) -> tuple[PromptSet, list[PromptSection]]:
-    """`lane`의 활성 세트(published 중 `published_at`이 가장 최신인 것)와 그 섹션 전부를
-    읽는다. `legal_documents`의 `_get_latest_published`와 같은 모양이다. 활성 세트가 없으면
+    """`(lane, model)`의 활성 세트(published 중 `published_at`이 가장 최신인 것)와 그 섹션 전부를
+    읽는다. `model` 기본값이 Gemini 인 것은 판정·요약·심사·소설화처럼 고른 모델과 무관한 호출이 전부 Gemini 세트를
+    읽기 때문이고, 모델을 빠뜨린 호출부도 지금까지와 같은 세트로 간다(Claude 세트에는 판정·요약 채널이 없다). `legal_documents`의 `_get_latest_published`와 같은 모양이다. 활성 세트가 없으면
     `PromptSetNotFoundError` — downgrade 직후처럼 테이블 자체가 없는 게 아니라
     행만 없는 상태는 만들어지기 어렵지만, 그 경우에도 조용히 넘어가지 않는다.
 
@@ -148,12 +150,12 @@ async def load_active_prompt_set(
     두 번째 인자가 섞여 들어가는 실수가 타입 체커를 통과할 여지가 생긴다."""
     prompt_set = await db.scalar(
         select(PromptSet)
-        .where(PromptSet.status == "published", PromptSet.lane == lane)
+        .where(PromptSet.status == "published", PromptSet.lane == lane, PromptSet.model == model)
         .order_by(PromptSet.published_at.desc())
         .limit(1)
     )
     if prompt_set is None:
-        raise PromptSetNotFoundError(f"활성 프롬프트 세트가 없다 (lane={lane})")
+        raise PromptSetNotFoundError(f"활성 프롬프트 세트가 없다 (lane={lane}, model={model})")
     sections = list(
         (
             await db.scalars(

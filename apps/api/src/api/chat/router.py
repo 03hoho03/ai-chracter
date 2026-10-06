@@ -312,7 +312,10 @@ async def _active_prompt_set_dependency(
     setup: StartingSetup | None = Depends(_starting_setup_dependency),
     db: AsyncSession = Depends(get_db_session),
 ) -> tuple[PromptSet, list[PromptSection]]:
-    """실제 채팅은 요청 스코프 `db` 세션을 이미 갖고 있으므로 그대로 재사용한다
+    """이 세트는 언제나 그 레인의 **Gemini 세트**다 — 판정·요약·그림 판정은 방의 글쓰기 모델과 무관하게 이 세트를
+    읽는다(Claude 세트에는 그 채널이 없다).
+
+    실제 채팅은 요청 스코프 `db` 세션을 이미 갖고 있으므로 그대로 재사용한다
     (미리보기의 `_preview_prompt_set_dependency`와 달리
     세션을 짧게 여닫을 이유가 없다). 레인은 `_starting_setup_dependency`가 넘겨준 `setup`
     으로 정한다 — 라우트 본문이 따로 판별하지 않는다. 캐시 히트면 `db`를 조회하지
@@ -320,11 +323,11 @@ async def _active_prompt_set_dependency(
     제너레이터 본문이 시작되기 전이라 정상적인 에러 응답이 된다 — 이 예외는 캐싱하지
     않는다(negative caching 금지)."""
     lane = _lane_for_setup(setup)
-    cached = await get_cached_active_prompt_set(lane)
+    cached = await get_cached_active_prompt_set(lane, model="gemini")
     if cached is not None:
         return cached
-    prompt_set, sections = await load_active_prompt_set(db, lane=lane)
-    await set_cached_active_prompt_set(lane, prompt_set, sections)
+    prompt_set, sections = await load_active_prompt_set(db, lane=lane, model="gemini")
+    await set_cached_active_prompt_set(lane, prompt_set, sections, model="gemini")
     return prompt_set, sections
 
 
@@ -3281,7 +3284,9 @@ async def _preview_prompt_set_dependency(
     state: PreviewSessionState = Depends(_owned_preview_session_dependency),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> tuple[PromptSet, list[PromptSection]]:
-    """미리보기의 DB 읽기는 요청 스코프 세션에 얹지 않는다 — `Depends`가
+    """미리보기는 Gemini 로만 돌므로 그 레인의 Gemini 세트를 읽는다.
+
+    미리보기의 DB 읽기는 요청 스코프 세션에 얹지 않는다 — `Depends`가
     세션이 아니라 값(활성 세트)을 반환하게 만들어, 세션을 짧게 열고 즉시 닫는다. 레인은
     `state.payload`의 판별 유니언 타입으로 정한다 — DB 조회도, 별도 판별자도
     필요 없다.
@@ -3292,12 +3297,12 @@ async def _preview_prompt_set_dependency(
     수십 초 걸려서다(실측) — 요청 세션에 얹은 읽기는 라우트 본문이 반납 커밋을 하기 전까지 커넥션을 쥐므로, 값만
     돌려주는 의존성은 그 세션에 기대지 않는 편이 본문의 반납 위치와 무관하게 안전하다."""
     lane = _lane_for_preview_payload(state.payload)
-    cached = await get_cached_active_prompt_set(lane)
+    cached = await get_cached_active_prompt_set(lane, model="gemini")
     if cached is not None:
         return cached
     async with session_factory() as session:
-        prompt_set, sections = await load_active_prompt_set(session, lane=lane)
-    await set_cached_active_prompt_set(lane, prompt_set, sections)
+        prompt_set, sections = await load_active_prompt_set(session, lane=lane, model="gemini")
+    await set_cached_active_prompt_set(lane, prompt_set, sections, model="gemini")
     return prompt_set, sections
 
 

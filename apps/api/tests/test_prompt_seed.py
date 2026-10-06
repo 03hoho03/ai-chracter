@@ -11,16 +11,19 @@ published 세트를 만들어 레인마다 published가 여럿이다.
    (누락·잉여 0).
 2. `system` 채널 시드를 scope로 거르고 order로 정렬해 "\\n\\n"으로 이은 결과가
    `system_instruction_for()`의 실제 출력과 바이트 단위로 같다 — 6가지 경우 전부.
-3. `UNIQUE(lane) WHERE status='draft'` / `UNIQUE(lane, version) WHERE status='published'`
-   부분 인덱스가 실제로 **레인 축으로** 동작한다 —
-   같은 레인 두 번째 draft/같은 (레인,버전)의 두 번째 published가 IntegrityError로
-   거부되고, 다른 레인이면 **막지 않는다**(`alembic check`가 부분 인덱스의 predicate를
+3. `UNIQUE(lane, model) WHERE status='draft'` / `UNIQUE(lane, model, version) WHERE status='published'`
+   부분 인덱스가 실제로 **(레인, 모델) 축으로** 동작한다 —
+   같은 (레인, 모델) 두 번째 draft/같은 (레인, 모델, 버전)의 두 번째 published가 IntegrityError로
+   거부되고, 레인이나 모델이 다르면 **막지 않는다**(`alembic check`가 부분 인덱스의 predicate를
    비교하지 않는 사각지대라 행위 테스트가 유일한 검증 — 근거는 아래 테스트 함수
    docstring의 실측 기록).
+4. 활성 세트 조회가 모델로 거른다 — 모델을 주지 않으면 Gemini 세트다.
+
+1·2는 Gemini 세트를 본다. Claude 세트(system·generation 사본)는 `test_prompt_model_sets_migration.py`가 본다.
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy.exc import IntegrityError
@@ -236,12 +239,13 @@ async def test_system_channel_reconstruction_matches_current_code(
     assert reconstructed == expected
 
 
-def _draft_prompt_set(*, lane: str) -> PromptSet:
+def _draft_prompt_set(*, lane: str, model: str = "gemini") -> PromptSet:
     return PromptSet(
         id=uuid.uuid4(),
         version=None,
         status="draft",
         lane=lane,
+        model=model,
         user_label="사용자",
         story_assistant_label="진행자",
         story_example_label="서술자",
@@ -249,12 +253,13 @@ def _draft_prompt_set(*, lane: str) -> PromptSet:
     )
 
 
-def _published_prompt_set(*, lane: str, version: str) -> PromptSet:
+def _published_prompt_set(*, lane: str, version: str, model: str = "gemini") -> PromptSet:
     return PromptSet(
         id=uuid.uuid4(),
         version=version,
         status="published",
         lane=lane,
+        model=model,
         user_label="사용자",
         story_assistant_label="진행자",
         story_example_label="서술자",
@@ -264,8 +269,8 @@ def _published_prompt_set(*, lane: str, version: str) -> PromptSet:
 
 
 async def test_draft_partial_unique_index_rejects_second_draft(db_session: AsyncSession) -> None:
-    """`UNIQUE(lane) WHERE status='draft'`가 실제로 **같은 레인 안에서** 초안 1개를
-    강제하는지 — 같은 레인에 두 번째 draft를 넣으면 거부된다. `alembic check`는 부분
+    """`UNIQUE(lane, model) WHERE status='draft'`가 실제로 **같은 (레인, 모델) 안에서** 초안 1개를
+    강제하는지 — 같은 (레인, 모델)에 두 번째 draft를 넣으면 거부된다. `alembic check`는 부분
     인덱스의 술어를 비교하지 않으므로 행위 테스트가 유일한 검증이다."""
     db_session.add(_draft_prompt_set(lane="story"))
     await db_session.flush()
@@ -291,7 +296,7 @@ async def test_draft_partial_unique_index_allows_one_draft_per_lane(db_session: 
 async def test_published_version_partial_unique_index_rejects_duplicate_version(
     db_session: AsyncSession,
 ) -> None:
-    """`UNIQUE(lane, version) WHERE status='published'`가 실제로 **같은 레인 안에서**
+    """`UNIQUE(lane, model, version) WHERE status='published'`가 실제로 **같은 (레인, 모델) 안에서**
     버전 중복을 막는지 — `ix_prompt_sets_draft`와 정확히 같은 이유로(부분 인덱스
     predicate는 `alembic check`가 비교하지 않는다) 행위 테스트가 유일한 검증이다. dev
     Postgres에서 이 인덱스를 잠시 지운 뒤 같은 시나리오를 재현하면 두 번째 INSERT가
@@ -318,3 +323,48 @@ async def test_published_version_partial_unique_index_allows_different_versions(
     db_session.add(_published_prompt_set(lane="story", version="9001"))
     db_session.add(_published_prompt_set(lane="character", version="9001"))
     await db_session.flush()
+
+
+async def test_draft_partial_unique_index_allows_one_draft_per_model_in_a_lane(db_session: AsyncSession) -> None:
+    """짝 — 인덱스가 `model`도 유니크 축으로 삼는지: 같은 레인이라도 모델마다 초안 1행씩은 함께 들어간다. 인덱스가
+    `(lane)`만 보던 예전 형태로 남아 있으면 두 번째 INSERT가 IntegrityError로 이 테스트가 실패한다(위 거부 테스트는
+    같은 모델 두 초안이라 두 형태가 같은 값을 낸다)."""
+    for model in ("gemini", "sonnet", "opus"):
+        db_session.add(_draft_prompt_set(lane="story", model=model))
+    await db_session.flush()
+
+
+async def test_published_version_partial_unique_index_allows_the_same_version_across_models(
+    db_session: AsyncSession,
+) -> None:
+    """짝 — 같은 레인·같은 버전이라도 모델이 다르면 막지 않는다. 인덱스가 `(lane, version)`으로 남아 있으면 두 번째
+    INSERT가 거부돼 이 테스트가 실패한다."""
+    db_session.add(_published_prompt_set(lane="story", version="9001", model="gemini"))
+    db_session.add(_published_prompt_set(lane="story", version="9001", model="sonnet"))
+    await db_session.flush()
+
+
+async def test_published_version_partial_unique_index_rejects_duplicate_version_within_a_claude_chain(
+    db_session: AsyncSession,
+) -> None:
+    db_session.add(_published_prompt_set(lane="character", version="9001", model="opus"))
+    await db_session.flush()
+
+    db_session.add(_published_prompt_set(lane="character", version="9001", model="opus"))
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+
+
+async def test_load_active_prompt_set_filters_by_model(db_session: AsyncSession) -> None:
+    """같은 레인에 더 최신 published_at 의 Claude 게시본이 있어도 모델을 주지 않으면 Gemini 세트다(판정·요약이 읽는
+    세트가 Claude 게시에 휩쓸리지 않는다). 모델을 주면 그 체인의 최신 게시본이다."""
+    gemini_set, _ = await load_active_prompt_set(db_session, lane="story")
+    assert gemini_set.published_at is not None
+    newer_sonnet = _published_prompt_set(lane="story", version="9002", model="sonnet")
+    newer_sonnet.published_at = gemini_set.published_at + timedelta(hours=1)
+    db_session.add(newer_sonnet)
+    await db_session.flush()
+
+    assert (await load_active_prompt_set(db_session, lane="story"))[0].id == gemini_set.id
+    assert (await load_active_prompt_set(db_session, lane="story", model="gemini"))[0].id == gemini_set.id
+    assert (await load_active_prompt_set(db_session, lane="story", model="sonnet"))[0].id == newer_sonnet.id

@@ -2219,6 +2219,23 @@
               "type": "string",
               "title": "Lane"
             }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "gemini",
+                "sonnet",
+                "opus"
+              ],
+              "type": "string",
+              "description": "세트의 글쓰기 모델. 생략하면 Gemini 세트다.",
+              "default": "gemini",
+              "title": "Model"
+            },
+            "description": "세트의 글쓰기 모델. 생략하면 Gemini 세트다."
           }
         ],
         "responses": {
@@ -2264,6 +2281,23 @@
               "type": "string",
               "title": "Lane"
             }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "gemini",
+                "sonnet",
+                "opus"
+              ],
+              "type": "string",
+              "description": "세트의 글쓰기 모델. 생략하면 Gemini 세트다.",
+              "default": "gemini",
+              "title": "Model"
+            },
+            "description": "세트의 글쓰기 모델. 생략하면 Gemini 세트다."
           }
         ],
         "requestBody": {
@@ -2322,6 +2356,23 @@
               "type": "string",
               "title": "Lane"
             }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "gemini",
+                "sonnet",
+                "opus"
+              ],
+              "type": "string",
+              "description": "세트의 글쓰기 모델. 생략하면 Gemini 세트다.",
+              "default": "gemini",
+              "title": "Model"
+            },
+            "description": "세트의 글쓰기 모델. 생략하면 Gemini 세트다."
           }
         ],
         "responses": {
@@ -2369,6 +2420,23 @@
               "type": "string",
               "title": "Lane"
             }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "gemini",
+                "sonnet",
+                "opus"
+              ],
+              "type": "string",
+              "description": "세트의 글쓰기 모델. 생략하면 Gemini 세트다.",
+              "default": "gemini",
+              "title": "Model"
+            },
+            "description": "세트의 글쓰기 모델. 생략하면 Gemini 세트다."
           }
         ],
         "requestBody": {
@@ -2411,7 +2479,7 @@
           "admin"
         ],
         "summary": "Restore Prompt Set",
-        "description": "옛 버전을 초안으로 복제한다(= 롤백 경로). 게시하지 않는 한 서비스에는 아무 영향이\n없다 — 실제 롤백은 이 뒤에 이어지는 `POST /publish`가 한다.\n\n레인은 요청에서 따로 받지 않는다 — `source.lane`에서만 나온다.\n`source.lane`이 `legacy`(레인 분리 과도기의 격리 값)면 422로 거부한다 — 레인\n분리 이전 버전은 복원 대상이 아니다.",
+        "description": "옛 버전을 초안으로 복제한다(= 롤백 경로). 게시하지 않는 한 서비스에는 아무 영향이\n없다 — 실제 롤백은 이 뒤에 이어지는 `POST /publish`가 한다.\n\n레인·모델은 요청에서 따로 받지 않는다 — `source.lane`·`source.model`에서만 나온다(그 체인의 초안으로 들어간다).\n`source.lane`이 `legacy`(레인 분리 과도기의 격리 값)면 422로 거부한다 — 레인\n분리 이전 버전은 복원 대상이 아니다.",
         "operationId": "restore_prompt_set_admin_prompt_sets__id__restore_post",
         "parameters": [
           {
@@ -12618,6 +12686,15 @@
             ],
             "title": "Id"
           },
+          "model": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "sonnet",
+              "opus"
+            ],
+            "title": "Model"
+          },
           "labels": {
             "$ref": "#/components/schemas/AdminPromptLabels"
           },
@@ -12632,6 +12709,7 @@
         "type": "object",
         "required": [
           "id",
+          "model",
           "labels",
           "sections"
         ],
@@ -12855,6 +12933,15 @@
             ],
             "title": "Lane"
           },
+          "model": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "sonnet",
+              "opus"
+            ],
+            "title": "Model"
+          },
           "note": {
             "type": "string",
             "title": "Note"
@@ -12893,6 +12980,7 @@
           "version",
           "status",
           "lane",
+          "model",
           "note",
           "createdAt",
           "publishedAt",
@@ -12970,6 +13058,15 @@
             ],
             "title": "Lane"
           },
+          "model": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "sonnet",
+              "opus"
+            ],
+            "title": "Model"
+          },
           "isActive": {
             "type": "boolean",
             "title": "Isactive"
@@ -12984,6 +13081,7 @@
           "createdAt",
           "publishedAt",
           "lane",
+          "model",
           "isActive"
         ],
         "title": "AdminPromptSetSummary",

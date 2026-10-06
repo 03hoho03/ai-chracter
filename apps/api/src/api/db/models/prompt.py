@@ -13,8 +13,9 @@ class PromptSet(Base):
     `status`는 Postgres enum이 아니라 Text다(`legal_documents` 선례) — draft/published
     외 값이 늘 여지가 있다. `version`은 draft일 때 null이고 게시 시점에 서버가 자동
     증가 정수 문자열을 부여한다. 부분 유니크 인덱스 2개(마이그레이션에서 생성)로
-    무결성을 지킨다 — **초안은 레인별 최대 1개, published 는 `(lane, version)` 중복 금지**다
-    (`bcfbfd0cd960` 이전에는 둘 다 전역이었다 — 아래 `lane` 문단).
+    무결성을 지킨다 — **초안은 (레인, 모델)마다 최대 1개, published 는 `(lane, model, version)` 중복 금지**다
+    (`bcfbfd0cd960` 이전에는 둘 다 전역이었다 — 아래 `lane` 문단. 모델 축은 아래 `model` 문단).
+    활성 세트 = 그 (레인, 모델)의 published 중 `published_at` 이 가장 최신인 것이다.
 
     `story_example_label`("서술자")과 `story_assistant_label`("진행자")이 둘로 갈리는
     것은 표류가 아니라 실측된 현재 동작이다 — 전개 예시에서만 다른 라벨을 쓴다.
@@ -30,6 +31,14 @@ class PromptSet(Base):
     `lane`을 빠뜨려도 조용히 `'legacy'`가 되어 증상이 없다 — 떼야 NOT NULL 위반으로
     즉시 드러난다. 부분 유니크 인덱스 2개(초안 전역 1개·게시 버전 중복 금지)의 유니크
     범위가 전역에서 **레인별**로 좁혀진다(아래 `__table_args__`).
+
+    **`model`**은 이 세트로 생성하는 글쓰기 모델의 레지스트리 id(`llm/chat_models.py` 의 `ChatModelId`)다. story·
+    character 레인은 모델마다 초안·게시·복원·활성 판정이 따로 가는 독립 버전 체인을 갖는다. Gemini 세트는 모든 채널을
+    담고, 판정·요약·심사·소설화처럼 고른 모델과 무관한 호출도 언제나 Gemini 세트를 읽는다. 그래서 Claude 세트에는 생성에
+    쓰는 `system`·`generation` 채널과 라벨만 있다. publish_filter 레인은 Gemini 세트뿐이다. `lane` 과 달리
+    `server_default` 를 남긴다 — 이 열을 모르는 옛 이미지로 되돌린 동안 어드민이 게시한 행도 Gemini 체인에 들어가고,
+    모델을 적지 않은 생성 지점은 가장 안전한 쪽(지금까지와 같은 Gemini)으로 간다. 버전 번호는 레인·모델을 가리지 않는
+    전역 자동 증가 그대로다.
     """
 
     __tablename__ = "prompt_sets"
@@ -38,6 +47,7 @@ class PromptSet(Base):
     version: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(Text, nullable=False)
     lane: Mapped[str] = mapped_column(Text, nullable=False)
+    model: Mapped[str] = mapped_column(Text, nullable=False, default="gemini", server_default="gemini")
     user_label: Mapped[str] = mapped_column(Text, nullable=False)
     story_assistant_label: Mapped[str] = mapped_column(Text, nullable=False)
     story_example_label: Mapped[str] = mapped_column(Text, nullable=False)
@@ -54,16 +64,17 @@ class PromptSet(Base):
     # 마이그레이션 소스에 `MappedColumn` 객체 repr이 박혀 `SyntaxError`가 난다(실측) —
     # `== "draft"`로 명시적 불리언 식을 만들어야 렌더러가 `sa.text(...)`로 정상 변환한다.
     __table_args__ = (
-        Index("ix_prompt_sets_draft", "lane", unique=True, postgresql_where=status == "draft"),
+        Index("ix_prompt_sets_draft", "lane", "model", unique=True, postgresql_where=status == "draft"),
         Index(
-            "ix_prompt_sets_lane_version_published",
+            "ix_prompt_sets_lane_model_version_published",
             "lane",
+            "model",
             "version",
             unique=True,
             postgresql_where=status == "published",
         ),
         Index("ix_prompt_sets_published_at", published_at.desc()),
-        Index("ix_prompt_sets_lane_published_at", "lane", published_at.desc()),
+        Index("ix_prompt_sets_lane_model_published_at", "lane", "model", published_at.desc()),
     )
 
 

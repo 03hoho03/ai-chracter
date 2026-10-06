@@ -237,7 +237,7 @@ async def test_prompt_set_cache_write_failure_local_variables_are_not_captured(
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(redis_client, "set", _raise_redis_error)
         mp.setattr(prompt_set_cache.logger, "warning", _capture_on_next_warning(client))
-        await prompt_set_cache.set_cached_active_prompt_set("story", prompt_set, sections)
+        await prompt_set_cache.set_cached_active_prompt_set("story", prompt_set, sections, model="gemini")
 
     assert len(transport.envelopes) == 1
     event = transport.envelopes[0].get_event()

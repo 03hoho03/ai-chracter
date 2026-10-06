@@ -613,9 +613,10 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
 
 
 async def _load_active_prompt_sets() -> dict[PromptLane, tuple[PromptSet, list[PromptSection]]]:
+    # 골든은 Gemini 세트만 고정한다 — Claude 세트는 마이그레이션 시점에 그 사본이라 따로 떠도 새 신호가 없다.
     async with async_session_factory() as session:
         return {
-            lane: await load_active_prompt_set(session, lane=lane) for lane in get_args(PromptLane)
+            lane: await load_active_prompt_set(session, lane=lane, model="gemini") for lane in get_args(PromptLane)
         }
 
 

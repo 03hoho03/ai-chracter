@@ -1064,7 +1064,7 @@ export interface paths {
          * @description 옛 버전을 초안으로 복제한다(= 롤백 경로). 게시하지 않는 한 서비스에는 아무 영향이
          *     없다 — 실제 롤백은 이 뒤에 이어지는 `POST /publish`가 한다.
          *
-         *     레인은 요청에서 따로 받지 않는다 — `source.lane`에서만 나온다.
+         *     레인·모델은 요청에서 따로 받지 않는다 — `source.lane`·`source.model`에서만 나온다(그 체인의 초안으로 들어간다).
          *     `source.lane`이 `legacy`(레인 분리 과도기의 격리 값)면 422로 거부한다 — 레인
          *     분리 이전 버전은 복원 대상이 아니다.
          */
@@ -5109,6 +5109,11 @@ export interface components {
         AdminPromptDraftResponse: {
             /** Id */
             id: string | null;
+            /**
+             * Model
+             * @enum {string}
+             */
+            model: "gemini" | "sonnet" | "opus";
             labels: components["schemas"]["AdminPromptLabels"];
             /** Sections */
             sections: components["schemas"]["AdminPromptSectionItem"][];
@@ -5215,6 +5220,11 @@ export interface components {
              * @enum {string}
              */
             lane: "story" | "character" | "publish_filter";
+            /**
+             * Model
+             * @enum {string}
+             */
+            model: "gemini" | "sonnet" | "opus";
             /** Note */
             note: string;
             /**
@@ -5262,6 +5272,11 @@ export interface components {
              * @enum {string}
              */
             lane: "story" | "character" | "publish_filter";
+            /**
+             * Model
+             * @enum {string}
+             */
+            model: "gemini" | "sonnet" | "opus";
             /** Isactive */
             isActive: boolean;
         };
@@ -9980,7 +9995,10 @@ export interface operations {
     };
     get_prompt_draft_admin_prompt_sets__lane__draft_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 세트의 글쓰기 모델. 생략하면 Gemini 세트다. */
+                model?: "gemini" | "sonnet" | "opus";
+            };
             header?: never;
             path: {
                 lane: "story" | "character" | "publish_filter";
@@ -10011,7 +10029,10 @@ export interface operations {
     };
     upsert_prompt_draft_admin_prompt_sets__lane__draft_put: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 세트의 글쓰기 모델. 생략하면 Gemini 세트다. */
+                model?: "gemini" | "sonnet" | "opus";
+            };
             header?: never;
             path: {
                 lane: "story" | "character" | "publish_filter";
@@ -10046,7 +10067,10 @@ export interface operations {
     };
     preview_prompt_draft_admin_prompt_sets__lane__draft_preview_post: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 세트의 글쓰기 모델. 생략하면 Gemini 세트다. */
+                model?: "gemini" | "sonnet" | "opus";
+            };
             header?: never;
             path: {
                 lane: "story" | "character" | "publish_filter";
@@ -10077,7 +10101,10 @@ export interface operations {
     };
     publish_prompt_set_admin_prompt_sets__lane__publish_post: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 세트의 글쓰기 모델. 생략하면 Gemini 세트다. */
+                model?: "gemini" | "sonnet" | "opus";
+            };
             header?: never;
             path: {
                 lane: "story" | "character" | "publish_filter";

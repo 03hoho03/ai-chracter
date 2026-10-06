@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from string import Formatter
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from redis.exceptions import RedisError
 from sqlalchemy import Integer, cast, delete, func, select
 from sqlalchemy.exc import IntegrityError
@@ -57,6 +57,7 @@ from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StatDef, StoryPromptTemplate
 from api.db.session import get_db_session
+from api.llm.chat_models import ChatModelId, parse_chat_model_id
 from api.novelize.prompts import (
     NovelizePrompt,
     build_novelize_boundary_prompt,
@@ -250,6 +251,28 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str]]]]
     for lane, by_channel in _EXPECTED_ROWS_BY_LANE.items()
 }
 
+# Claude 세트(story·character 레인의 sonnet·opus 체인)는 생성에 쓰는 `system`·`generation` 채널만 갖는다 — 판정·
+# 요약·소설화 호출은 고른 모델과 무관하게 Gemini 세트를 읽는다. 그래서 Claude 세트의 R-1 기대 집합은 같은 레인 Gemini
+# 표에서 그 두 채널만 남긴 것이다(표를 따로 적지 않는다 — 생성 슬롯이 늘면 두 체인이 함께 따라온다).
+_CLAUDE_SET_CHANNELS: frozenset[str] = frozenset({"system", "generation"})
+
+
+def _expected_slots(lane: PromptLane, model: ChatModelId) -> dict[str, frozenset[tuple[str, str]]]:
+    expected = _EXPECTED_SLOTS_BY_LANE[lane]
+    if model == "gemini":
+        return expected
+    return {channel: slots for channel, slots in expected.items() if channel in _CLAUDE_SET_CHANNELS}
+
+
+def _require_lane_model(lane: PromptLane, model: ChatModelId) -> None:
+    """publish_filter 레인은 Gemini 세트뿐이다 — 발행 심사는 모델을 고르지 않는다."""
+    if lane == "publish_filter" and model != "gemini":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"rule": "lane-model", "message": "발행 심사 레인에는 Gemini 세트만 있습니다."},
+        )
+
+
 # R-2 — variant 전종이 반드시 있어야 하는 슬롯. story
 # 레인에만 있다 — `template_instruction`/`base_content` 둘 다 story 레인 전용 슬롯이라,
 # 안 쪼개면 character·publish_filter 레인은 그 `(channel, scope, slot)` 행 자체가 없어
@@ -301,19 +324,19 @@ def _validation_error(rule: str, message: str) -> HTTPException:
 
 
 def _validate_prompt_draft_for_publish(
-    prompt_set: PromptSet, sections: list[PromptSection], *, lane: PromptLane
+    prompt_set: PromptSet, sections: list[PromptSection], *, lane: PromptLane, model: ChatModelId = "gemini"
 ) -> None:
     """R-1~R-8. 규칙
     이름이 붙은 순서대로 검사하고 첫 위반에서 멈춘다("순서대로 본다") — 뒤의 규칙들은
     앞이 통과했다는 것에 기대어 있다(예: R-2는 슬롯 자체가 있다는 R-1의 결과를 전제한다).
     `lane`은 키워드 전용이다 — 앞 두 인자가 위치 인자라 세 번째 위치 인자가 붙으면 순서
-    실수가 조용히 통과할 여지가 있다."""
+    실수가 조용히 통과할 여지가 있다. `model` 은 R-1 의 기대 집합만 바꾼다(`_expected_slots`)."""
     # R-1 — `variant`는 보지 않는다(위 `_EXPECTED_SLOTS_BY_LANE` 주석 참고, R-2와 역할을 가른다).
     grouped: dict[str, set[tuple[str, str]]] = {}
     for section in sections:
         grouped.setdefault(section.channel, set()).add((section.scope, section.slot))
     actual = {channel: frozenset(rows) for channel, rows in grouped.items()}
-    if actual != _EXPECTED_SLOTS_BY_LANE[lane]:
+    if actual != _expected_slots(lane, model):
         raise _validation_error(
             "R-1", "슬롯 집합이 코드가 아는 목록과 다릅니다(누락 또는 잉여가 있습니다)."
         )
@@ -422,13 +445,15 @@ async def _next_published_version(db: AsyncSession) -> str:
     return str((latest_version or 0) + 1)
 
 
-async def _get_draft(db: AsyncSession, lane: PromptLane) -> PromptSet | None:
+async def _get_draft(db: AsyncSession, lane: PromptLane, model: ChatModelId) -> PromptSet | None:
     """`lane`이 없는 `db.scalar()`는 레인 필터가
-    빠져도 조용히 첫 행을 반환한다 — `.scalars(...).one_or_none()`으로 두면 레인 필터가
-    빠졌을 때(부분 유니크 인덱스가 레인별이라 초안이 여러 행일 수 있다) `MultipleResultsFound`로
+    빠져도 조용히 첫 행을 반환한다 — `.scalars(...).one_or_none()`으로 두면 레인·모델 필터가
+    빠졌을 때(부분 유니크 인덱스가 (레인, 모델)별이라 초안이 여러 행일 수 있다) `MultipleResultsFound`로
     시끄럽게 터진다."""
     return (
-        await db.scalars(select(PromptSet).where(PromptSet.status == "draft", PromptSet.lane == lane))
+        await db.scalars(
+            select(PromptSet).where(PromptSet.status == "draft", PromptSet.lane == lane, PromptSet.model == model)
+        )
     ).one_or_none()
 
 
@@ -493,7 +518,12 @@ def _find_duplicate_section_keys(sections: list[_SectionFields]) -> list[tuple[s
 
 
 async def _replace_draft_content(
-    db: AsyncSession, *, lane: PromptLane, labels: AdminPromptLabels, sections: list[_SectionFields]
+    db: AsyncSession,
+    *,
+    lane: PromptLane,
+    model: ChatModelId,
+    labels: AdminPromptLabels,
+    sections: list[_SectionFields],
 ) -> PromptSet:
     """초안 upsert — 섹션 전체 교체다. `PUT /{lane}/draft`와 `POST /{id}/restore`가
     공유한다.
@@ -509,9 +539,9 @@ async def _replace_draft_content(
     같은 SAVEPOINT 안에서 한다 — `relationship()`이 없어 순서를 직접 지켜야 한다.
 
     `try`/`except IntegrityError` 두 블록 모두
-    `_get_draft(db, lane)`로 **이 레인의** 초안만 찾고, `delete(PromptSection)` 직전에
-    `assert draft.lane == lane`을 둔다. 한쪽만 고치면 정상 경로는 멀쩡한데 경쟁 상황에서만
-    다른 레인 초안의 섹션이 통째로 삭제될 수 있다 — 재현 난이도가 가장 높은 부류의
+    `_get_draft(db, lane, model)`로 **이 (레인, 모델)의** 초안만 찾고, `delete(PromptSection)` 직전에
+    레인·모델 assert 를 둔다. 한쪽만 고치면 정상 경로는 멀쩡한데 경쟁 상황에서만
+    다른 체인 초안의 섹션이 통째로 삭제될 수 있다 — 재현 난이도가 가장 높은 부류의
     데이터 소실이라 코드 리뷰로 두 블록을 각각 확인해야 한다."""
     duplicate_keys = _find_duplicate_section_keys(sections)
     if duplicate_keys:
@@ -523,7 +553,7 @@ async def _replace_draft_content(
             },
         )
 
-    draft = await _get_draft(db, lane)
+    draft = await _get_draft(db, lane, model)
     try:
         async with db.begin_nested():
             if draft is None:
@@ -532,6 +562,7 @@ async def _replace_draft_content(
                     version=None,
                     status="draft",
                     lane=lane,
+                    model=model,
                     note="",
                     user_label=labels.user_label,
                     story_assistant_label=labels.story_assistant_label,
@@ -546,7 +577,7 @@ async def _replace_draft_content(
                 draft.story_example_label = labels.story_example_label
                 draft.character_assistant_label = labels.character_assistant_label
 
-            assert draft.lane == lane  # 이 레인의 초안만 지운다
+            assert draft.lane == lane and draft.model == model  # 이 (레인, 모델)의 초안만 지운다
             await db.execute(delete(PromptSection).where(PromptSection.prompt_set_id == draft.id))
             await db.flush()
             for item in sections:
@@ -565,13 +596,13 @@ async def _replace_draft_content(
                 )
             await db.flush()
     except IntegrityError:
-        draft = await _get_draft(db, lane)
-        assert draft is not None  # 유니크 위반은 곧 이 레인의 초안이 이제 존재한다는 뜻이다
+        draft = await _get_draft(db, lane, model)
+        assert draft is not None  # 유니크 위반은 곧 이 (레인, 모델)의 초안이 이제 존재한다는 뜻이다
         draft.user_label = labels.user_label
         draft.story_assistant_label = labels.story_assistant_label
         draft.story_example_label = labels.story_example_label
         draft.character_assistant_label = labels.character_assistant_label
-        assert draft.lane == lane  # except 복구 경로도 이 레인의 초안만 지운다
+        assert draft.lane == lane and draft.model == model  # except 복구 경로도 이 (레인, 모델)의 초안만 지운다
         await db.execute(delete(PromptSection).where(PromptSection.prompt_set_id == draft.id))
         await db.flush()
         for item in sections:
@@ -596,9 +627,15 @@ async def _replace_draft_content(
 # ---- 목록·조회 ----------------------------------------------------------------
 
 
+# `{lane}` 라우트의 모델은 쿼리 `?model=`(기본 gemini)로 받는다 — 경로 세그먼트를 늘리지 않아 아래 `/{id}` 충돌
+# 규약이 그대로이고, 모델을 모르는 옛 어드민 화면도 그대로 Gemini 세트를 편집한다.
+_MODEL_QUERY = Query("gemini", description="세트의 글쓰기 모델. 생략하면 Gemini 세트다.")
+
+
 @router.get("/admin/prompt-sets/{lane}/draft")
 async def get_prompt_draft(
     lane: PromptLane,
+    model: ChatModelId = _MODEL_QUERY,
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminPromptDraftResponse:
@@ -607,16 +644,17 @@ async def get_prompt_draft(
     도달 가능하다. **`GET /admin/prompt-sets/{lane}`(1세그먼트) 라우트는 만들지 않는다** —
     만들면 `GET /{id}`와 정규식이 글자 그대로 같아져 한쪽이 도달 불가가 되고, 정상 요청이
     404가 아니라 422를 받는다(`{id}`가 먼저 등록돼 있으면 레인 문자열의 UUID 파싱 실패)."""
-    draft = await _get_draft(db, lane)
+    _require_lane_model(lane, model)
+    draft = await _get_draft(db, lane, model)
     if draft is not None:
         sections = await _sections_of(db, draft.id)
         return AdminPromptDraftResponse(
-            id=draft.id, labels=_to_labels(draft), sections=[_to_section_item(s) for s in sections]
+            id=draft.id, model=model, labels=_to_labels(draft), sections=[_to_section_item(s) for s in sections]
         )
 
-    active_set, active_sections = await load_active_prompt_set(db, lane=lane)
+    active_set, active_sections = await load_active_prompt_set(db, lane=lane, model=model)
     return AdminPromptDraftResponse(
-        id=None, labels=_to_labels(active_set), sections=[_to_section_item(s) for s in active_sections]
+        id=None, model=model, labels=_to_labels(active_set), sections=[_to_section_item(s) for s in active_sections]
     )
 
 
@@ -624,9 +662,11 @@ async def get_prompt_draft(
 async def upsert_prompt_draft(
     lane: PromptLane,
     body: AdminPromptDraftUpsertRequest,
+    model: ChatModelId = _MODEL_QUERY,
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminPromptDraftResponse:
+    _require_lane_model(lane, model)
     fields = [
         _SectionFields(
             channel=item.channel,
@@ -639,30 +679,32 @@ async def upsert_prompt_draft(
         )
         for item in body.sections
     ]
-    draft = await _replace_draft_content(db, lane=lane, labels=body.labels, sections=fields)
+    draft = await _replace_draft_content(db, lane=lane, model=model, labels=body.labels, sections=fields)
     sections = await _sections_of(db, draft.id)
     return AdminPromptDraftResponse(
-        id=draft.id, labels=_to_labels(draft), sections=[_to_section_item(s) for s in sections]
+        id=draft.id, model=model, labels=_to_labels(draft), sections=[_to_section_item(s) for s in sections]
     )
 
 
 @router.post("/admin/prompt-sets/{lane}/draft/preview")
 async def preview_prompt_draft(
     lane: PromptLane,
+    model: ChatModelId = _MODEL_QUERY,
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminPromptPreviewResponse:
     """샘플 입력으로 **실제 렌더러**를 태워 조립된 전문을 채널별로 돌려준다.
     LLM은 부르지 않는다. 이 레인의 초안이 없으면 이 레인의 활성 세트로 미리보기한다
     (`GET .../draft`와 같은 폴백)."""
-    draft = await _get_draft(db, lane)
+    _require_lane_model(lane, model)
+    draft = await _get_draft(db, lane, model)
     if draft is not None:
         prompt_set = draft
         sections = await _sections_of(db, draft.id)
     else:
-        prompt_set, sections = await load_active_prompt_set(db, lane=lane)
+        prompt_set, sections = await load_active_prompt_set(db, lane=lane, model=model)
 
-    items = _build_preview_items(prompt_set, sections, lane=lane)
+    items = _build_preview_items(prompt_set, sections, lane=lane, model=model)
     return AdminPromptPreviewResponse(items=items)
 
 
@@ -670,18 +712,20 @@ async def preview_prompt_draft(
 async def publish_prompt_set(
     lane: PromptLane,
     body: AdminPromptPublishRequest,
+    model: ChatModelId = _MODEL_QUERY,
     admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminPromptSetDetailResponse:
-    draft = await _get_draft(db, lane)
+    _require_lane_model(lane, model)
+    draft = await _get_draft(db, lane, model)
     if draft is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="발행할 초안이 없습니다.")
     sections = await _sections_of(db, draft.id)
 
-    _validate_prompt_draft_for_publish(draft, sections, lane=lane)
+    _validate_prompt_draft_for_publish(draft, sections, lane=lane, model=model)
 
-    # 레인 필터가 없다("안 넣는 것"이 결정이다). 버전 문자열 하나가 "언제 게시됐는가"를
-    # 전역 시간축 위에 놓는다 — story의 v3 다음 게시가 v5일 수 있다(중간 v4는 다른 레인 게시).
+    # 레인·모델 필터가 없다("안 넣는 것"이 결정이다). 버전 문자열 하나가 "언제 게시됐는가"를
+    # 전역 시간축 위에 놓는다 — story의 v3 다음 게시가 v5일 수 있다(중간 v4는 다른 레인이나 다른 모델의 게시).
     next_version = await _next_published_version(db)
 
     # `admin/legal.py:139-153`과 같은 이유로 `begin_nested()`(SAVEPOINT)로 감싼다 — 두
@@ -696,6 +740,7 @@ async def publish_prompt_set(
                 version=next_version,
                 status="published",
                 lane=lane,
+                model=model,
                 note=body.note,
                 user_label=draft.user_label,
                 story_assistant_label=draft.story_assistant_label,
@@ -743,7 +788,7 @@ async def publish_prompt_set(
     # 잘못 알리는 것이다. TTL(`prompt_set_cache_ttl_seconds`)이 이 실패의 상한이라 최대
     # 그 시간만큼만 옛 문안이 나간다 — DB read/SET 캐시 모듈이 이미 쓰는 것과 같은 판단이다.
     try:
-        await invalidate_active_prompt_set(lane)
+        await invalidate_active_prompt_set(lane, model=model)
     except RedisError:
         logger.warning("게시 후 프롬프트 세트 캐시 무효화 실패", exc_info=True)
         # 낡은 프롬프트가 TTL만큼 계속 나가는 신호라 이벤트로도 남긴다.
@@ -752,6 +797,7 @@ async def publish_prompt_set(
     return AdminPromptSetDetailResponse(
         id=published.id,
         lane=lane,
+        model=model,
         version=published.version,
         status=published.status,
         note=published.note,
@@ -771,7 +817,7 @@ async def restore_prompt_set(
     """옛 버전을 초안으로 복제한다(= 롤백 경로). 게시하지 않는 한 서비스에는 아무 영향이
     없다 — 실제 롤백은 이 뒤에 이어지는 `POST /publish`가 한다.
 
-    레인은 요청에서 따로 받지 않는다 — `source.lane`에서만 나온다.
+    레인·모델은 요청에서 따로 받지 않는다 — `source.lane`·`source.model`에서만 나온다(그 체인의 초안으로 들어간다).
     `source.lane`이 `legacy`(레인 분리 과도기의 격리 값)면 422로 거부한다 — 레인
     분리 이전 버전은 복원 대상이 아니다."""
     source = await db.get(PromptSet, id)
@@ -785,6 +831,12 @@ async def restore_prompt_set(
                 "rule": "legacy-lane",
                 "message": "레인 분리 이전 버전은 복원할 수 없습니다.",
             },
+        )
+    model = parse_chat_model_id(source.model)
+    if model is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"rule": "unknown-model", "message": "지금은 없는 모델의 버전은 복원할 수 없습니다."},
         )
     source_sections = await _sections_of(db, source.id)
 
@@ -800,10 +852,10 @@ async def restore_prompt_set(
         )
         for s in source_sections
     ]
-    draft = await _replace_draft_content(db, lane=lane, labels=_to_labels(source), sections=fields)
+    draft = await _replace_draft_content(db, lane=lane, model=model, labels=_to_labels(source), sections=fields)
     sections = await _sections_of(db, draft.id)
     return AdminPromptDraftResponse(
-        id=draft.id, labels=_to_labels(draft), sections=[_to_section_item(s) for s in sections]
+        id=draft.id, model=model, labels=_to_labels(draft), sections=[_to_section_item(s) for s in sections]
     )
 
 
@@ -815,14 +867,16 @@ async def get_prompt_set(
 ) -> AdminPromptSetDetailResponse:
     prompt_set = await db.get(PromptSet, id)
     lane = as_prompt_lane(prompt_set.lane) if prompt_set is not None else None
-    if prompt_set is None or lane is None:
+    model = parse_chat_model_id(prompt_set.model) if prompt_set is not None else None
+    if prompt_set is None or lane is None or model is None:
         # `lane`이 `legacy`면 응답의 `lane: PromptLane`을 채울 수 없다 — 새
-        # 코드는 legacy를 읽지 않는다는 원칙을 그대로 따라 404로 취급한다.
+        # 코드는 legacy를 읽지 않는다는 원칙을 그대로 따라 404로 취급한다. 레지스트리에서 내린 모델도 같다.
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="해당 버전을 찾을 수 없습니다.")
     sections = await _sections_of(db, prompt_set.id)
     return AdminPromptSetDetailResponse(
         id=prompt_set.id,
         lane=lane,
+        model=model,
         version=prompt_set.version,
         status=prompt_set.status,
         note=prompt_set.note,
@@ -841,27 +895,29 @@ async def list_prompt_sets(
     prompt_sets = (
         await db.scalars(select(PromptSet).order_by(PromptSet.created_at.desc()))
     ).all()
-    # 레인마다 "현재 활성본" 하나씩 — `chat/router.py:1183`의 DISTINCT ON 선례와 같은 모양.
+    # (레인, 모델)마다 "현재 활성본" 하나씩 — DISTINCT ON 으로 고른다.
     active_ids = {
         prompt_set.id
         for prompt_set in (
             await db.scalars(
                 select(PromptSet)
                 .where(PromptSet.status == "published")
-                .distinct(PromptSet.lane)
-                .order_by(PromptSet.lane, PromptSet.published_at.desc(), PromptSet.id.desc())
+                .distinct(PromptSet.lane, PromptSet.model)
+                .order_by(PromptSet.lane, PromptSet.model, PromptSet.published_at.desc(), PromptSet.id.desc())
             )
         ).all()
     }
     items: list[AdminPromptSetSummary] = []
     for prompt_set in prompt_sets:
         lane = as_prompt_lane(prompt_set.lane)
-        if lane is None:
-            continue  # legacy(레인 분리 과도기의 격리 값)는 목록에서 뺀다.
+        model = parse_chat_model_id(prompt_set.model)
+        if lane is None or model is None:
+            continue  # legacy(레인 분리 과도기의 격리 값)와 레지스트리에서 내린 모델의 세트는 목록에서 뺀다.
         items.append(
             AdminPromptSetSummary(
                 id=prompt_set.id,
                 lane=lane,
+                model=model,
                 version=prompt_set.version,
                 status=prompt_set.status,
                 note=prompt_set.note,
@@ -1021,7 +1077,10 @@ def _novelize_preview_items(
     ]
 
 
-def _story_preview_items(prompt_set: PromptSet, sections: list[PromptSection]) -> list[AdminPromptPreviewItem]:
+def _story_preview_items(
+    prompt_set: PromptSet, sections: list[PromptSection], *, generation_only: bool
+) -> list[AdminPromptPreviewItem]:
+    """`generation_only` 면 system·generation 항목만 만든다(Claude 세트 — 다른 채널 행이 없어 렌더할 수 없다)."""
     items: list[AdminPromptPreviewItem] = []
 
     for template in StoryPromptTemplate:
@@ -1063,6 +1122,8 @@ def _story_preview_items(prompt_set: PromptSet, sections: list[PromptSection]) -
                 ),
             )
         )
+    if generation_only:
+        return items
 
     items.append(
         AdminPromptPreviewItem(
@@ -1118,7 +1179,10 @@ def _story_preview_items(prompt_set: PromptSet, sections: list[PromptSection]) -
     return items
 
 
-def _character_preview_items(prompt_set: PromptSet, sections: list[PromptSection]) -> list[AdminPromptPreviewItem]:
+def _character_preview_items(
+    prompt_set: PromptSet, sections: list[PromptSection], *, generation_only: bool
+) -> list[AdminPromptPreviewItem]:
+    """`generation_only` 는 `_story_preview_items` 와 같다."""
     items: list[AdminPromptPreviewItem] = []
 
     items.append(
@@ -1146,6 +1210,8 @@ def _character_preview_items(prompt_set: PromptSet, sections: list[PromptSection
             ),
         )
     )
+    if generation_only:
+        return items
     items.append(
         AdminPromptPreviewItem(
             channel="image_judgment",
@@ -1197,10 +1263,11 @@ def _publish_filter_preview_items(sections: list[PromptSection]) -> list[AdminPr
 
 
 def _build_preview_items(
-    prompt_set: PromptSet, sections: list[PromptSection], *, lane: PromptLane
+    prompt_set: PromptSet, sections: list[PromptSection], *, lane: PromptLane, model: ChatModelId
 ) -> list[AdminPromptPreviewItem]:
+    generation_only = model != "gemini"
     if lane == "story":
-        return _story_preview_items(prompt_set, sections)
+        return _story_preview_items(prompt_set, sections, generation_only=generation_only)
     if lane == "character":
-        return _character_preview_items(prompt_set, sections)
+        return _character_preview_items(prompt_set, sections, generation_only=generation_only)
     return _publish_filter_preview_items(sections)

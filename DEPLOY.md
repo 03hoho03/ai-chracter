@@ -1175,8 +1175,10 @@ sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env \
 ```sh
 sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
   psql -U postgres -d ai_character_chat -c \
-  "SELECT DISTINCT ON (lane) lane, id, version, published_at FROM prompt_sets WHERE status = 'published' AND lane IN ('story','character') ORDER BY lane, published_at DESC;"
+  "SELECT DISTINCT ON (lane) lane, id, version, published_at FROM prompt_sets WHERE status = 'published' AND lane IN ('story','character') AND model = 'gemini' ORDER BY lane, published_at DESC;"
 ```
+
+`model` 조건은 모델 축 리비전(`e6aa289fea62`, 아래 3-12 절) 이후에만 쓴다 — 그보다 아래로 내린 DB 에는 이 열이 없다.
 
 시드가 만드는 새 세트 id 는 환경 공통 리터럴(story `b5305c39-e0af-4d32-ac28-578550b31fb9`, character
 `502dcff3-66ce-46ad-8c84-13dbba6fe81a`)이고, 버전은 배포 시점 전 레인 게시 최대 + 1(story 먼저, character 그다음)이다.
@@ -1241,6 +1243,28 @@ sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d 
 (`llm_usage_report.py --model global.anthropic.claude-sonnet-4-6` 처럼 실제 모델 id 로 좁힌다)와 어드민 사용량 화면에 Gemini
 호출과 같은 표로 나온다. 채팅에서 흡수된 실패는 Bugsink 태그 `dependency=bedrock`(쿼터 소진은 `bedrock_rate_limit`)로
 Gemini 와 따로 묶인다. 소설 장 실패는 공급자와 무관하게 지금처럼 `dependency=novelize` 다.
+
+**프롬프트 세트와 롤백.** 이 배포의 마이그레이션(`e6aa289fea62`)이 `prompt_sets` 에 모델 열을 더하고 Claude 세트 네 개
+(story·character × Sonnet·Opus, 그 레인 Gemini 활성 세트의 `system`·`generation` 사본)를 게시본으로 심는다. 초안은 심지 않고,
+게시 시각은 원본 Gemini 세트보다 1초 과거다 — 모델 열을 모르는 옛 코드는 레인만 보고 최신 게시본을 고르므로 계속 Gemini
+세트를 집는다. 그래서:
+
+- 어드민에서 Claude 세트를 새로 저장·게시하지 않았다면 **이미지만 되돌려도 안전하다**.
+- 저장·게시했다면 이미지를 되돌리기 **전에** Claude 행을 지운다. 남겨 두면 옛 코드가 그 초안·게시본을 레인의 초안·최신 게시본으로
+  읽는다(초안 조회 500, 판정·요약 채널이 없는 세트가 활성). downgrade 가 하는 데이터 삭제와 같은 일이고, 스위치가 꺼져 있으면
+  새 코드에도 영향이 없다:
+
+  ```sh
+  sudo /opt/ddona/backup.sh   # 먼저 백업
+  sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+    psql -U postgres -d ai_character_chat -c \
+    "BEGIN; DELETE FROM prompt_sections WHERE prompt_set_id IN (SELECT id FROM prompt_sets WHERE model <> 'gemini'); DELETE FROM prompt_sets WHERE model <> 'gemini'; COMMIT;"
+  ```
+
+- 스키마까지 되돌리면(`alembic downgrade 3bb2cc159b6d`, 순서는 위 절들과 같이 태그 롤백 먼저) downgrade 가 Gemini 가 아닌
+  세트 전부(시드 + 어드민이 만든 것)를 지우고 인덱스를 되돌린 뒤 열을 지운다.
+- 앞으로 슬롯을 더하는 마이그레이션은 Gemini 두 레인뿐 아니라 Claude 체인 네 개도 다룰지 판단한다 — `system`·`generation`
+  슬롯이면 Claude 체인에도 넣어야 게시 검증의 슬롯 집합이 맞는다.
 
 ---
 

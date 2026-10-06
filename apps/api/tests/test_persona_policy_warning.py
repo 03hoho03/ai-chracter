@@ -69,7 +69,7 @@ async def _cache_pre_m2_character_set(db_session: AsyncSession) -> None:
     sections = list(
         (await db_session.scalars(select(PromptSection).where(PromptSection.prompt_set_id == prompt_set.id))).all()
     )
-    await set_cached_active_prompt_set("character", prompt_set, sections)
+    await set_cached_active_prompt_set("character", prompt_set, sections, model="gemini")
 
 
 async def _run_policy_turn(
