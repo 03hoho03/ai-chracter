@@ -28,6 +28,7 @@ from redis.exceptions import RedisError
 from sentry_sdk.envelope import Envelope
 from sentry_sdk.integrations._asgi_common import _get_request_data, _RootPathInPath
 from sentry_sdk.integrations._wsgi_common import request_body_within_bounds
+from sentry_sdk.integrations.anthropic import AnthropicIntegration
 from sentry_sdk.integrations.google_genai import GoogleGenAIIntegration
 from sentry_sdk.transport import Transport
 from sentry_sdk.types import Event
@@ -125,13 +126,19 @@ def test_build_sentry_options_matches_expected_values() -> None:
     assert options["include_local_variables"] is False
     assert options["send_default_pii"] is False
     assert options["traces_sample_rate"] == 0
-    assert options["disabled_integrations"] == [GoogleGenAIIntegration]
+    assert options["disabled_integrations"] == [GoogleGenAIIntegration, AnthropicIntegration]
     assert options["before_send"] is _strip_query_string
 
 
 def test_google_genai_integration_is_disabled_despite_being_auto_enabling() -> None:
     client, _ = _make_client()
     assert client.get_integration(GoogleGenAIIntegration) is None
+
+
+def test_anthropic_integration_is_disabled_despite_being_auto_enabling() -> None:
+    """`anthropic` 이 의존성에 들어오면 이 통합도 저절로 켜지고 프롬프트를 span 에 싣는다 — GenAI 통합과 같은 이유로 끈다."""
+    client, _ = _make_client()
+    assert client.get_integration(AnthropicIntegration) is None
 
 
 def test_request_body_size_gate_is_always_closed() -> None:

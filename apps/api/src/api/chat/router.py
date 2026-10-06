@@ -162,12 +162,13 @@ from api.db.models.story import (
 )
 from api.db.session import get_db_session, get_session_factory
 from api.legal.dependencies import require_legal_consent
+from api.llm.chat_models import ChatModelId, actual_model_id
 from api.llm.client import (
     LLMCallContext,
     LLMClient,
     LLMClientError,
     LLMPolicyViolationError,
-    LLMRateLimitError,
+    dependency_tag,
 )
 from api.llm.dependencies import get_llm_client
 from api.persona.router import get_owned_persona, lock_user_default_persona
@@ -1349,13 +1350,11 @@ def _policy_warning_message(persona_rendered: bool, note_rendered: bool) -> str:
 def _llm_dependency_tag(exc: LLMClientError | PromptRenderError) -> str:
     """이 파일의 생성/판정 흡수 지점 8곳이 공유하는 승격 태그
     분류다. `PromptRenderError`는 외부 의존이 아니라 우리 템플릿 결함이라 별도 태그로 갈라
-    묶어 본다. Gemini 429(쿼터 소진)는 `llm/gemini.py`의 `LLMRateLimitError`로
-    다른 실패와 구분한다 — 안 갈라 붙이면 승격된 이벤트가 행동 가능하지 않다."""
+    묶어 본다. LLM 실패는 공급자와 쿼터 소진(429) 여부로 가른다(`llm/client.py` 의 `dependency_tag`) —
+    안 갈라 붙이면 승격된 이벤트가 행동 가능하지 않다."""
     if isinstance(exc, PromptRenderError):
         return "prompt_render"
-    if isinstance(exc, LLMRateLimitError):
-        return "gemini_rate_limit"
-    return "gemini"
+    return dependency_tag(exc)
 
 
 async def _refund_clover(
@@ -1578,18 +1577,20 @@ async def _build_prompt(
 
 
 def _dump_prompt(
-    *, room_id: uuid.UUID | None, turn: int, prompt: str, system_instruction: str
+    *, room_id: uuid.UUID | None, model: ChatModelId, turn: int, prompt: str, system_instruction: str
 ) -> None:
     """회차 재현용으로 조립된 프롬프트를 JSONL 한
     줄로 남긴다. 호출부는 `settings.prompt_dump_path is not None`일 때만 부른다.
 
     바닥 지시문도 함께 남긴다 — 실험에서 바꿔 가며 비교하는 것이 바로 그것이라, 대화록만 남고 그때
-    어떤 지시문이 실렸는지 모르면 회차를 나중에 설명할 수 없다."""
+    어떤 지시문이 실렸는지 모르면 회차를 나중에 설명할 수 없다. 모델은 고른 모델(`chatModel`)과 실제로 보낸 모델 id
+    (`model`)를 함께 남기고, 시드는 Gemini 만 받는 설정이라 Gemini 턴에만 적는다."""
     record = {
         "roomId": str(room_id) if room_id is not None else None,
         "turn": turn,
-        "model": settings.gemini_model_name,
-        "seed": settings.gemini_seed,
+        "chatModel": model,
+        "model": actual_model_id(model),
+        "seed": settings.gemini_seed if model == "gemini" else None,
         "systemInstruction": system_instruction,
         "prompt": prompt,
     }
@@ -1623,7 +1624,11 @@ async def _stream_generated_tokens(
     if settings.prompt_dump_path is not None:
         try:
             _dump_prompt(
-                room_id=usage.room_id, turn=turn, prompt=prompt, system_instruction=system_instruction
+                room_id=usage.room_id,
+                model=usage.model,
+                turn=turn,
+                prompt=prompt,
+                system_instruction=system_instruction,
             )
         except Exception:
             logger.warning("프롬프트 덤프 실패 (room=%s, turn=%s)", usage.room_id, turn, exc_info=True)

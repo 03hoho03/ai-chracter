@@ -1,6 +1,6 @@
 """LLM 호출 사용량을 Redis 일 단위 해시에 누적한다.
 
-`gemini_usage` 로그 줄은 컨테이너가 배포마다 새로 떠서 사라진다. 그래서 같은 숫자를 배포를
+`gemini_usage`·`bedrock_usage` 로그 줄은 컨테이너가 배포마다 새로 떠서 사라진다. 그래서 같은 숫자를 배포를
 넘겨 남기려고 둔다. 키는 `llm_usage:{KST 날짜}` 하나, 필드는 `{call_site}|{model}|{지표}` 이고
 값은 HINCRBY 누적이다. 사용자·방 id 는 넣지 않는다 — 개인 단위 이용 기록이 되면 처리방침
 항목·보존기간·탈퇴 파기와 엮인다.
@@ -8,6 +8,9 @@
 지표:
 - `calls` 응답을 받은 호출 수(실패·중단 스트림은 `_log_usage` 와 같이 세지 않는다)
 - `prompt`·`cached`·`candidates`·`thoughts`·`total` SDK 가 보고한 토큰 합
+- `cache_write` 캐시에 새로 쓴 입력 토큰 합(Bedrock 의 Claude 만 보고한다). Claude 는 입력 토큰을 캐시 읽기·쓰기를 뺀 값으로
+  보고하지만 `llm/bedrock.py` 가 셋을 더해 `prompt` 에 넣으므로, 모든 모델에서 `prompt` 는 캐시를 포함한 입력 전체이고
+  `cached`·`cache_write` 는 그 안의 몫이다
 - `missing` 사용량 메타데이터가 없거나 `prompt_token_count` 가 None 인 호출 수. 이미지가 실린
   호출은 입력 토큰이 None 으로 오고 `total` 만 온다 — 입력 원가는 `total − candidates − thoughts`
   로 복원해 읽는다.
@@ -31,7 +34,7 @@ from api.core.sentry import capture_dependency_failure
 logger = logging.getLogger(__name__)
 
 USAGE_KEY_PREFIX = "llm_usage:"
-# 하루 해시 하나가 많아야 call_site 17 × 모델 1~2 × 지표 7 개의 정수라, 400일을 둬도 수 MB 에
+# 하루 해시 하나가 많아야 call_site 17 × 모델 1~3 × 지표 8 개의 정수라, 400일을 둬도 수 MB 에
 # 못 미친다. 모델 전환 전후·월 대비 비교가 40일 같은 짧은 창을 넘기기 쉬워 길게 둔다.
 USAGE_RETENTION_SECONDS = 400 * 24 * 60 * 60
 # 생성 스트림은 이 기록이 끝나야 `done` 으로 넘어가므로, 이 값이 Redis 장애 때 턴 하나가 더
@@ -40,10 +43,11 @@ USAGE_RETENTION_SECONDS = 400 * 24 * 60 * 60
 # 이 상한이 없으면 응답 없는 Redis 가 턴을 무한정 붙잡는다.
 RECORD_TIMEOUT_SECONDS = 0.1
 
-_METRICS = ("calls", "prompt", "cached", "candidates", "thoughts", "total", "missing")
+_METRICS = ("calls", "prompt", "cached", "cache_write", "candidates", "thoughts", "total", "missing")
 _TOKEN_ATTRS = {
     "prompt": "prompt_token_count",
     "cached": "cached_content_token_count",
+    "cache_write": "cache_write_token_count",
     "candidates": "candidates_token_count",
     "thoughts": "thoughts_token_count",
     "total": "total_token_count",
@@ -104,6 +108,7 @@ class UsageRow:
     calls: int = 0
     prompt: int = 0
     cached: int = 0
+    cache_write: int = 0
     candidates: int = 0
     thoughts: int = 0
     total: int = 0

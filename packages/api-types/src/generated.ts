@@ -4958,6 +4958,8 @@ export interface components {
             cachedInputUsdPerMillion: number;
             /** Outputusdpermillion */
             outputUsdPerMillion: number;
+            /** Cachewriteusdpermillion */
+            cacheWriteUsdPerMillion: number;
         };
         /** AdminLlmUsageResponse */
         AdminLlmUsageResponse: {
@@ -4994,6 +4996,8 @@ export interface components {
             promptTokens: number;
             /** Cachedtokens */
             cachedTokens: number;
+            /** Cachewritetokens */
+            cacheWriteTokens: number;
             /** Outputtokens */
             outputTokens: number;
             /** Thoughtstokens */

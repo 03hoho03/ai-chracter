@@ -218,3 +218,26 @@ async def test_read_usage_returns_rows_per_day_and_sums_by_call_site_and_model()
             missing=1,
         ),
     ]
+
+
+async def test_cache_writes_are_their_own_metric_and_absent_for_gemini() -> None:
+    """Claude 의 캐시 쓰기는 정가보다 비싸게 과금돼 입력과 따로 세야 원가가 맞는다. Gemini 메타데이터에는 그 속성이
+    없어 필드 자체가 생기지 않는다(옛 해시와 같은 모양)."""
+    bedrock_meta = SimpleNamespace(
+        prompt_token_count=1300,
+        cached_content_token_count=1000,
+        cache_write_token_count=200,
+        candidates_token_count=50,
+        thoughts_token_count=0,
+        total_token_count=1350,
+    )
+    await record_usage("chat_generate", "claude", bedrock_meta, now=_NOW)
+    await record_usage("chat_generate", "gemini", _meta(10, 1, None, 11), now=_NOW)
+
+    stored = await _hash(_DAY)
+    assert stored["chat_generate|claude|cache_write"] == "200"
+    assert "chat_generate|gemini|cache_write" not in stored
+
+    rows = await read_usage(_DAY, _DAY)
+    assert [(r.model, r.cache_write) for r in rows] == [("claude", 200), ("gemini", 0)]
+    assert sum_by_call_site_and_model(rows + rows)[0].cache_write == 400

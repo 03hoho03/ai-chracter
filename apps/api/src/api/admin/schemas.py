@@ -600,6 +600,8 @@ class AdminLlmUsageRow(CamelModel):
     calls: int
     prompt_tokens: int
     cached_tokens: int
+    # 캐시에 새로 쓴 입력(Claude 만 보고한다). `prompt_tokens` 안의 몫이고, 정가보다 비싸게 과금된다.
+    cache_write_tokens: int
     output_tokens: int
     thoughts_tokens: int
     total_tokens: int
@@ -616,6 +618,7 @@ class AdminLlmModelPrice(CamelModel):
     input_usd_per_million: float
     cached_input_usd_per_million: float
     output_usd_per_million: float
+    cache_write_usd_per_million: float
 
 
 class AdminLlmUsageResponse(CamelModel):

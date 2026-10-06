@@ -13,17 +13,21 @@ def get_llm_client() -> LLMClient:
     """FastAPI dependency: 서비스 로직은 이 함수를 통해서만 LLMClient를 얻는다.
 
     구체 구현체(GeminiLLMClient)를 직접 참조하지 않도록 하기 위한 DI 지점 —
-    같은 이유로 만든 `api.auth.google_oauth.get_google_profile_fetcher` 패턴과 동일.
+    같은 이유로 만든 `api.auth.google_oauth.get_google_profile_fetcher` 패턴과 동일. 돌려주는 것은 고른 모델에 따라
+    Gemini·Bedrock 구현으로 나눠 보내는 라우팅 클라이언트다(`llm/routing.py`).
 
     import이 함수 안에 있는 건 프로세스 기동(재배포·재시작·크래시 복구) 비용 때문이다:
     `api.llm.gemini`가 끌고 오는 `google.genai`는 import에만 약 1초가 든다(1 vCPU 실측).
     여기 두면 그 비용을 기동 시점이 아니라 첫 LLM 호출 시점(`@lru_cache`라 프로세스당 한
     번)에 문다 — 홈/목록 같은 LLM 무관 경로만 타는 프로세스는 이 비용을 아예 안 낸다.
-    모듈 최상단으로 올리지 말 것.
+    모듈 최상단으로 올리지 말 것. Gemini 클라이언트는 지금처럼 여기서 바로 만든다 — 키가 없을 때의 `ValueError` 가
+    라우트 본문(SSE 제너레이터) 밖인 의존성 해석 시점에 나야 한다. Bedrock 클라이언트는 라우팅 클라이언트가 첫 상위 모델
+    호출 때 만든다(같은 import 비용 이유).
     """
     from api.llm.gemini import GeminiLLMClient
+    from api.llm.routing import RoutingLLMClient
 
-    return GeminiLLMClient()
+    return RoutingLLMClient(GeminiLLMClient())
 
 
 def build_image_client(model_id: ImageModelId) -> ImageClient:

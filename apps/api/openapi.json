@@ -12221,6 +12221,10 @@
           "outputUsdPerMillion": {
             "type": "number",
             "title": "Outputusdpermillion"
+          },
+          "cacheWriteUsdPerMillion": {
+            "type": "number",
+            "title": "Cachewriteusdpermillion"
           }
         },
         "type": "object",
@@ -12228,7 +12232,8 @@
           "model",
           "inputUsdPerMillion",
           "cachedInputUsdPerMillion",
-          "outputUsdPerMillion"
+          "outputUsdPerMillion",
+          "cacheWriteUsdPerMillion"
         ],
         "title": "AdminLlmModelPrice"
       },
@@ -12314,6 +12319,10 @@
             "type": "integer",
             "title": "Cachedtokens"
           },
+          "cacheWriteTokens": {
+            "type": "integer",
+            "title": "Cachewritetokens"
+          },
           "outputTokens": {
             "type": "integer",
             "title": "Outputtokens"
@@ -12376,6 +12385,7 @@
           "calls",
           "promptTokens",
           "cachedTokens",
+          "cacheWriteTokens",
           "outputTokens",
           "thoughtsTokens",
           "totalTokens",

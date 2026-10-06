@@ -14,7 +14,8 @@
 
 열 `prompt` 는 SDK 가 입력 토큰을 보고한 호출만의 합이다. 이미지가 실린 호출은 입력 토큰이
 비어 `missing` 으로 세지고 `total` 에만 들어간다 — 그 몫의 입력은 `total − candidates − thoughts`
-로 읽는다. `cached` 는 SDK 가 보고한 암시 캐시 적중이지 청구 할인이 확인된 값이 아니다.
+로 읽는다. `cached` 는 SDK 가 보고한 암시 캐시 적중이지 청구 할인이 확인된 값이 아니다. `cache_write` 는 Claude 가
+캐시에 새로 쓴 입력이다(Gemini 줄은 0). `prompt` 는 모든 모델에서 캐시 읽기·쓰기를 포함한 입력 전체다.
 """
 
 import argparse
@@ -24,7 +25,7 @@ from datetime import date, datetime, timedelta
 from api.core.rate_limit import KST
 from api.llm.usage_store import UsageRow, read_usage, sum_by_call_site_and_model
 
-_COLUMNS = ("calls", "prompt", "cached", "candidates", "thoughts", "total", "missing")
+_COLUMNS = ("calls", "prompt", "cached", "cache_write", "candidates", "thoughts", "total", "missing")
 
 
 def _date_range(args: argparse.Namespace) -> tuple[date, date]:
