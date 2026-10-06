@@ -16,11 +16,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
-from api.db.models.chat import ChatRoom, ChatRoomMemorySnapshot
+from api.db.models.chat import ChatMessage, ChatRoom, ChatRoomMemorySnapshot
 from api.db.models.story import StoryVersionDetail
 from api.llm import gemini
 from api.llm.gemini import GeminiLLMClient
 from api.llm.pricing import estimate_cost_usd
+from experiments.filmclub_longturn import build_swap_tables, supplement_swap
 from experiments.filmclub_longturn import generation_replay as replay
 from experiments.filmclub_longturn.replay_budget import UNKNOWN_CALL_USD, CallBudget, ledger_paths, sum_ledger
 from experiments.filmclub_longturn.supplement_swap import SwapSlot, check_swap, load_swap_table
@@ -226,6 +227,114 @@ def test_swap_check_passes_only_when_every_due_slot_was_swapped_and_nothing_else
     base = "[무대] 사흘 뒤처럼 적는다. 일주일도 안 남았다. [대화]"
     leaked = _check("[무대] 다음 날·이틀 뒤처럼 적는다. 코앞이다. [대화]", _slots(), [], base=base)
     assert leaked["unexpectedSlots"] == ["직전"] and not leaked["passed"]
+
+
+def test_swap_check_fails_when_only_one_of_two_places_of_the_same_text_was_swapped() -> None:
+    # 같은 v6-fix 조각이 두 자리에 실렸는데 한 자리만 바뀌었다 — 되돌리면 같아지고(역치환) 보완판 조각도 한 번은 있어서
+    # (양성) 앞의 두 겹은 통과한다. 개수 단언과 잔존 단언이 잡는다.
+    base = "[무대] 사흘 뒤처럼 적는다. [예시] 사흘 뒤처럼 적는다. [대화]"
+    half = _check("[무대] 다음 날·이틀 뒤처럼 적는다. [예시] 사흘 뒤처럼 적는다. [대화]", _slots(), [], base=base)
+    assert half["reverseIdentical"] and not half["missingSlots"]
+    assert half["countMismatch"] == ["무대"] and half["v6fixLeftover"] == {"무대": 1} and not half["passed"]
+    full = _check(
+        "[무대] 다음 날·이틀 뒤처럼 적는다. [예시] 다음 날·이틀 뒤처럼 적는다. [대화]", _slots(), [], base=base
+    )
+    assert full["passed"] and full["baseCounts"]["무대"] == full["swapCounts"]["무대"] == 2
+
+
+def test_unique_fragment_residue_counts_history_copies_and_catches_old_text_outside_the_slot() -> None:
+    slot = SwapSlot(key="규칙", v6fix="시간 | 요일과 때", supplement="시간 | 날짜·요일과 때", when="always")
+    # 고유 조각은 끼워 넣기 자리의 앞뒤 글자로 만들고, 보완판 문안에는 없다.
+    (fragment,) = supplement_swap.unique_fragments(slot.v6fix, slot.supplement)
+    assert fragment in slot.v6fix and fragment not in slot.supplement
+    # 대화 기록에 v6-fix 와 같은 말이 원래 있으면 셈에 들어가 통과한다.
+    base = "[규칙] 시간 | 요일과 때 [대화] 시간 | 요일과 때"
+    ok = check_swap(
+        base_prompt=base,
+        base_system="s",
+        swapped_prompt="[규칙] 시간 | 날짜·요일과 때 [대화] 시간 | 요일과 때",
+        swapped_system="s",
+        slots=[slot],
+        situation_notes=[],
+        keyword_notes=[],
+    )
+    assert ok["swapCounts"] == {"규칙": 1} and ok["countMismatch"] == ["규칙"] and not ok["passed"]
+
+
+def test_prompt_form_lets_the_check_compare_author_text_with_the_rendered_prompt() -> None:
+    slot = SwapSlot(key="설정", v6fix="{{user}}의 사흘 뒤", supplement="{{user}}의 다음 날", when="always")
+    result = check_swap(
+        base_prompt="[설정] 하늘의 사흘 뒤",
+        base_system="s",
+        swapped_prompt="[설정] 하늘의 다음 날",
+        swapped_system="s",
+        slots=[slot],
+        situation_notes=[],
+        keyword_notes=[],
+        prompt_form=lambda text: text.replace("{{user}}", "하늘"),
+    )
+    assert result["passed"]
+
+
+async def test_supplement_swaps_the_history_opening_and_restores_it(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    room = await _room_with_summary(db_client, db_session)
+    (window,) = await replay.build_generation_inputs(db_session, room.room_id, 10, variants=["window"])
+    opening = (
+        await db_session.scalars(
+            select(ChatMessage).where(ChatMessage.chat_room_id == room.room_id).order_by(ChatMessage.created_at)
+        )
+    ).first()
+    assert opening is not None and opening.content in window.prompt
+    slot = SwapSlot(
+        key="오프닝", v6fix=opening.content, supplement="보완판 오프닝 9월 22일", when="always", target="historyOpening"
+    )
+    window, supplement = await replay.build_generation_inputs(
+        db_session, room.room_id, 10, variants=["window", "supplement"], swap=replay.SwapSpec([slot])
+    )
+    assert "보완판 오프닝 9월 22일" in supplement.prompt and opening.content not in supplement.prompt
+    result = check_swap(
+        base_prompt=window.prompt,
+        base_system=window.system_instruction,
+        swapped_prompt=supplement.prompt,
+        swapped_system=supplement.system_instruction,
+        slots=[slot],
+        situation_notes=[],
+        keyword_notes=[],
+        prompt_form=window.prompt_form,
+    )
+    assert result["passed"], result
+    await db_session.refresh(opening)
+    assert opening.content == slot.v6fix
+    (again,) = await replay.build_generation_inputs(db_session, room.room_id, 10, variants=["window"])
+    assert again.prompt == window.prompt
+    with pytest.raises(ValueError, match="다르다"):
+        await replay.build_generation_inputs(
+            db_session,
+            room.room_id,
+            10,
+            variants=["window", "supplement"],
+            swap=replay.SwapSpec(
+                [SwapSlot(key="o", v6fix="다른 오프닝", supplement="x", when="always", target="historyOpening")]
+            ),
+        )
+
+
+def test_build_swap_tables_gives_n_its_own_stage_text_and_marks_the_opening() -> None:
+    cell = {"v6fix_text": "v", "supplement_text_W": "w", "loaded": "always"}
+    source = {
+        "variants": {"W": "w안", "N": "n안"},
+        "slots": [
+            {**cell, "key": "setting_text", "supplement_text_N": "n"},
+            {**cell, "key": "opening_message"},
+            {**cell, "key": "same", "supplement_text_W": "v"},
+        ],
+    }
+    tables = build_swap_tables.build_tables(source)
+    assert [s["supplement"] for s in tables["W"]["slots"]] == ["w", "w"]
+    assert [s["supplement"] for s in tables["N"]["slots"]] == ["n", "w"]
+    assert [s["target"] for s in tables["N"]["slots"]] == ["rows", "historyOpening"]
 
 
 def test_swap_table_rejects_duplicate_keys_unchanged_text_and_unknown_conditions(tmp_path: Path) -> None:

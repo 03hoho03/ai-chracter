@@ -9,8 +9,11 @@
         --variant window --variant supplement --swap-version <보완판 버전 id> --swap-table <치환 표.json> \\
         --reps 10 --limit-calls 40 --limit-usd 5 --ledger '<run>/replay/**/*.jsonl' \\
         --out <run>/replay/gen-<묶음>.jsonl [--execute]
-    # 격리 DB 에 보완판 버전이 없을 때 치환 표만으로 메모리 안에서 바꿔 끼운다(도구 시험·버전 대조용):
-    ... --variant window --variant supplement --swap-inmemory --swap-table <표.json> ...
+    # 격리 DB 에 보완판 버전이 없을 때 치환 표만으로 메모리 안에서 바꿔 끼운다(DB 쓰기 0):
+    ... --variant window --variant supplement --swap-inmemory --swap-table <표.json> --swap-label W ...
+    # 같은 턴을 다른 표로 한 번 더 — window 는 단언에만 쓰고 보완판만 부른다:
+    ... --variant window --variant supplement --swap-inmemory --swap-table <표 N.json> --swap-label N \
+        --call-variant supplement ...
     # 장부의 실제 원가 합계: replay_budget.py '<run>/replay/**/*.jsonl'
 
 입력은 격리 DB 의 방이다. 턴 N 은 N 번째 (사용자 메시지, 바로 뒤 응답) 쌍이고, 히스토리는 그 사용자 메시지 앞의
@@ -55,8 +58,9 @@ from sqlalchemy.orm.attributes import set_committed_value
 
 from api.chat import router
 from api.chat.memory_window import CurrentSummary, MessageKey, prompt_window
-from api.chat.prompt_builder import load_active_prompt_set
+from api.chat.prompt_builder import PromptNames, load_active_prompt_set
 from api.chat.router import _build_prompt, _require_starting_setup
+from api.content.media_tags import strip_media_tags
 from api.core.config import settings
 from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom, ChatRoomMemorySnapshot
 from api.db.models.story import KeywordNote, SituationNote, StartingSetup, StoryVersionDetail
@@ -92,6 +96,13 @@ class GenerationInput:
     user_label: str
     history_messages: int
     call_site: LLMCallSite = REPLAY_CALL_SITE
+    names: PromptNames | None = None
+
+    def prompt_form(self, text: str) -> str:
+        """작품 글 원문을 이 턴 프롬프트에 실리는 모양으로 — 조립 함수처럼 이미지 태그를 지우고 `{{user}}` 를 이름으로
+        바꾼다(태그 없는 칸은 지워도 바이트 그대로다)."""
+        assert self.names is not None
+        return self.names.expand(strip_media_tags(text))
 
 
 @dataclass(frozen=True)
@@ -253,27 +264,65 @@ async def _build_swapped_prompt(
     user_content: str,
     prompt_set: Any,
     sections: Any,
-) -> tuple[str, str]:
+) -> tuple[str, str, PromptNames]:
     """보완판 작품 글로 같은 턴의 생성 프롬프트를 만든다. `room` 은 세션에서 떼어 낸 객체여야 한다.
 
     버전이 있으면 방의 버전만 바꾸고 시작설정을 그 버전에서 다시 찾는다(시작설정·노트·스탯 정의는 버전마다 새 행이고
     entity_id 로 이어진다). 없으면 그 턴에 읽힌 v6-fix 행(상세·시작설정·키워드 노트·상황 노트)의 글을 치환 표대로 바꾼 값을
     `set_committed_value` 로 얹는다 — 바뀐 것으로 표시되지 않아 flush 가 쓰지 않고, 끝나면 원래 값으로 되돌린다. 표의
-    칸이 그 행들 어디에도 없으면 멈춘다(표의 v6-fix 문안이 틀렸다)."""
-    if swap.version_id is not None:
-        original_version = room.content_version_id
-        room.content_version_id = swap.version_id
-        try:
-            swapped_setup = await _require_starting_setup(db, room)
-            if swapped_setup is None:
-                raise ValueError("보완판 버전에서 방의 시작설정을 찾지 못했다")
-            prompt, system_instruction, *_ = await _build_prompt(
-                db, room, swapped_setup, history, user_content, None, prompt_set, sections
-            )
-        finally:
-            room.content_version_id = original_version
-        return prompt, system_instruction
+    칸이 그 행들 어디에도 없으면 멈춘다(표의 v6-fix 문안이 틀렸다).
 
+    `target` 이 `historyOpening` 인 칸은 두 방식 모두 대화 기록 첫 줄(진행자 오프닝)을 보완판 오프닝으로 바꾼다 — 운영 새
+    방은 보완판 오프닝으로 시작하기 때문이다. 첫 줄이 진행자 줄이 아니거나, 태그를 지운 모양이 표의 v6-fix 오프닝과 다르면
+    멈춘다(방에 복사된 오프닝은 이미지 태그가 id 형태라 원문 그대로는 표와 다르다)."""
+    hits: dict[str, int] = {}
+    restore: list[tuple[Any, str, Any]] = []
+    try:
+        for slot in swap.slots:
+            if slot.target != "historyOpening":
+                continue
+            first = history[0] if history else None
+            if first is None or first.role != ChatMessageRole.ASSISTANT:
+                raise ValueError("대화 기록 첫 줄이 진행자 오프닝이 아니다")
+            if strip_media_tags(first.content) != strip_media_tags(slot.v6fix):
+                raise ValueError(f"칸 {slot.key}: 대화 기록 첫 줄이 표의 v6-fix 오프닝과 다르다")
+            restore.append((first, "content", first.content))
+            set_committed_value(first, "content", slot.supplement)
+            hits[slot.key] = 1
+        if swap.version_id is not None:
+            original_version = room.content_version_id
+            room.content_version_id = swap.version_id
+            try:
+                swapped_setup = await _require_starting_setup(db, room)
+                if swapped_setup is None:
+                    raise ValueError("보완판 버전에서 방의 시작설정을 찾지 못했다")
+                prompt, system_instruction, _, _, names = await _build_prompt(
+                    db, room, swapped_setup, history, user_content, None, prompt_set, sections
+                )
+            finally:
+                room.content_version_id = original_version
+            return prompt, system_instruction, names
+        return await _build_inmemory_prompt(
+            db, room, setup, swap, history, user_content, prompt_set, sections, hits, restore
+        )
+    finally:
+        for obj, name, before in reversed(restore):
+            set_committed_value(obj, name, before)
+
+
+async def _build_inmemory_prompt(
+    db: AsyncSession,
+    room: ChatRoom,
+    setup: StartingSetup,
+    swap: SwapSpec,
+    history: list[ChatMessage],
+    user_content: str,
+    prompt_set: Any,
+    sections: Any,
+    hits: dict[str, int],
+    restore: list[tuple[Any, str, Any]],
+) -> tuple[str, str, PromptNames]:
+    """그 턴에 읽힌 v6-fix 행의 글을 표대로 바꿔 얹고 조립한다. 되돌릴 값은 `restore` 에 쌓고 되돌리기는 부른 쪽이 한다."""
     detail = await db.get(StoryVersionDetail, room.content_version_id)
     assert detail is not None
     keyword_notes = (
@@ -283,25 +332,19 @@ async def _build_swapped_prompt(
     targets: list[tuple[Any, str]] = [(detail, name) for name in _DETAIL_TEXT_FIELDS]
     targets += [(setup, "prologue")]
     targets += [(note, "info_text") for note in [*keyword_notes, *situation_notes]]
-    hits: dict[str, int] = {}
-    restore: list[tuple[Any, str, Any]] = []
-    try:
-        for obj, name in targets:
-            before = getattr(obj, name)
-            after = replace_in_value(before, swap.slots, hits)
-            if after != before:
-                restore.append((obj, name, before))
-                set_committed_value(obj, name, after)
-        absent = [slot.key for slot in swap.slots if not hits.get(slot.key)]
-        if absent:
-            raise ValueError(f"치환 표의 v6-fix 문안을 작품 글에서 찾지 못한 칸: {absent}")
-        prompt, system_instruction, *_ = await _build_prompt(
-            db, room, setup, history, user_content, None, prompt_set, sections
-        )
-    finally:
-        for obj, name, before in restore:
-            set_committed_value(obj, name, before)
-    return prompt, system_instruction
+    for obj, name in targets:
+        before = getattr(obj, name)
+        after = replace_in_value(before, swap.slots, hits)
+        if after != before:
+            restore.append((obj, name, before))
+            set_committed_value(obj, name, after)
+    absent = [slot.key for slot in swap.slots if not hits.get(slot.key)]
+    if absent:
+        raise ValueError(f"치환 표의 v6-fix 문안을 작품 글에서 찾지 못한 칸: {absent}")
+    prompt, system_instruction, _, _, names = await _build_prompt(
+        db, room, setup, history, user_content, None, prompt_set, sections
+    )
+    return prompt, system_instruction, names
 
 
 async def build_generation_inputs(
@@ -348,11 +391,11 @@ async def build_generation_inputs(
         with generation_state(summary, window=window), room_stats_asof(stats_before):
             if variant == "supplement":
                 assert swap is not None
-                prompt, system_instruction = await _build_swapped_prompt(
+                prompt, system_instruction, names = await _build_swapped_prompt(
                     db, room, setup, swap, history, user.content, prompt_set, sections
                 )
             else:
-                prompt, system_instruction, *_ = await _build_prompt(
+                prompt, system_instruction, _, _, names = await _build_prompt(
                     db, room, setup, history, user.content, None, prompt_set, sections
                 )
         shown = prompt_window(history, summary.cursor) if window and summary is not None else history
@@ -364,6 +407,7 @@ async def build_generation_inputs(
                 system_instruction=system_instruction,
                 user_label=prompt_set.user_label,
                 history_messages=len(shown),
+                names=names,
             )
         )
     return inputs
@@ -429,6 +473,7 @@ async def run_generation_replay(
     budget: CallBudget,
     room: ChatRoom,
     sink: Callable[[dict[str, Any]], None],
+    label: str | None = None,
 ) -> None:
     for item in inputs:
         for rep in range(reps):
@@ -455,6 +500,7 @@ async def run_generation_replay(
                 "at": datetime.now(UTC).isoformat(),
                 "turn": item.turn,
                 "variant": item.variant,
+                "swapLabel": label if item.variant == "supplement" else None,
                 "rep": rep,
                 "callSite": item.call_site,
                 "sentModel": capture.get("sent_model"),
@@ -517,6 +563,7 @@ async def _plan_turn(
             slots=swap.slots,
             situation_notes=row["situationNotes"],
             keyword_notes=row["keywordNotes"],
+            prompt_form=window.prompt_form,
         )
     model = settings.gemini_model_name
     input_tokens = [round((len(i.prompt) + len(i.system_instruction)) / CHARS_PER_TOKEN) for i in inputs]
@@ -536,6 +583,8 @@ async def _plan_turn(
         "estimatedUsd": round(per_round * args.reps, 4),
         "swapVersion": str(swap.version_id) if swap is not None and swap.version_id else None,
         "swapInMemory": swap is not None and swap.version_id is None,
+        "swapLabel": args.swap_label,
+        "callVariants": _call_variants(args),
         "statsBefore": {name: stats[stat_id] for name, stat_id in ids_by_name.items()},
         "checks": checks,
         "inputs": [
@@ -551,6 +600,12 @@ async def _plan_turn(
         ],
     }
     return plan, inputs
+
+
+def _call_variants(args: argparse.Namespace) -> list[str]:
+    """실제로 부를 갈래 — `--call-variant` 가 없으면 만든 갈래 전부. 단언용으로만 만든 갈래(예: 다른 표로 이미 부른
+    window)는 빼고 부를 수 있다."""
+    return list(args.call_variant or args.variant)
 
 
 def plan_passed(plan: dict[str, Any], variants: list[str]) -> bool:
@@ -612,6 +667,7 @@ async def _main(args: argparse.Namespace) -> int:
     if failed:
         print(f"단언 실패 턴 {failed} — 되살린 조립이나 바꿔 끼우기가 틀렸으니 실행하지 않는다")
         return 2
+    all_inputs = [item for item in all_inputs if item.variant in _call_variants(args)]
     spent = sum_ledger(ledger_paths(args.ledger)).charged_usd if args.ledger else 0.0
     planned = min(len(all_inputs) * args.reps, args.limit_calls)
     print(
@@ -630,7 +686,9 @@ async def _main(args: argparse.Namespace) -> int:
     install_stream_capture(client, capture)
     budget = CallBudget(args.limit_calls, usd_limit=args.limit_usd, spent_usd=spent)
     room_ref = ChatRoom(id=room_id, user_id=user_id)
-    await run_generation_replay(client, capture, all_inputs, reps=args.reps, budget=budget, room=room_ref, sink=sink)
+    await run_generation_replay(
+        client, capture, all_inputs, reps=args.reps, budget=budget, room=room_ref, sink=sink, label=args.swap_label
+    )
     print(json.dumps({"calls": budget.used, "cumulativeChargedUsd": round(budget.spent_usd, 6)}, ensure_ascii=False))
     return 0
 
@@ -648,6 +706,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--swap-version", help="supplement: 격리 DB 에 얹은 보완판 버전 id")
     ap.add_argument("--swap-inmemory", action="store_true", help="supplement: 버전 없이 치환 표로 메모리 안에서 바꾼다")
     ap.add_argument("--swap-table", help="supplement: 치환 표 JSON(칸 키·v6-fix 문안·보완판 문안·실림 조건)")
+    ap.add_argument("--swap-label", help="supplement: 기록에 남길 보완판 안 이름(예: W, N)")
+    ap.add_argument(
+        "--call-variant",
+        action="append",
+        choices=["window", "full", "supplement"],
+        help="실제로 부를 갈래(여럿 가능, 없으면 --variant 전부) — 나머지는 단언에만 쓴다",
+    )
     ap.add_argument("--prompt-out", help="만든 프롬프트를 이 접두 경로에 저장(<접두>.tNNN.<variant>.txt)")
     ap.add_argument("--reps", type=int, default=1)
     ap.add_argument("--limit-calls", type=int, required=True, help="이 실행의 실호출 하드 상한")
