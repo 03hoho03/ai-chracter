@@ -20,6 +20,12 @@ import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/t
 import { useId, useRef, useState } from "react";
 
 import { CloverSpendSummary, useCloverBalanceQuery } from "@/entities/clover";
+import {
+  ChapterModelSelect,
+  chapterModelCost,
+  initialChapterModelId,
+  type NovelChapterModelId,
+} from "@/entities/novel";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import type { NovelChapterProposal } from "../api/useChapterProposalMutation";
@@ -30,24 +36,37 @@ type ChapterBoundaryModalProps = {
   proposal: NovelChapterProposal;
   /** 만들 장의 번호(지금 마지막 장 + 1). */
   chapterOrdinal: number;
+  /** 이 소설이 직전에 쓴 글쓰기 모델(상세의 값). 모델 선택이 이 값으로 골라진 채 열린다. */
+  lastChapterModel: NovelChapterModelId | undefined;
 };
+
+/** 확정한 끝 턴, 그 장을 쓸 모델, 이용자가 본 금액. 모델 선택이 보이지 않는 계정도 요청에는 늘 모델을 싣는다(기본
+ * 모델). 금액을 함께 돌려주는 이유는 요청의 `expectedCost` 가 화면에 보인 숫자와 같은 값이어야 해서다. */
+export type ChapterBoundaryChoice = { endMessageId: string; model: NovelChapterModelId; cost: number };
 
 const LIST_LABEL = "고를 수 있는 턴";
 
-/** 다음 장을 어느 턴에서 끝낼지 고르고, 그 자리에서 금액을 확인한다. 고른 턴의 AI 응답 id 를 돌려주고, 그만두면
- * `null` 이다.
+/** 다음 장을 어느 턴에서 끝낼지 고르고, 그 자리에서 금액을 확인한다. 고른 턴의 AI 응답 id 와 쓸 모델을 돌려주고,
+ * 그만두면 `null` 이다.
  *
  * 금액 확인을 따로 띄우지 않고 여기서 받는 이유: 장 생성은 경계를 확인하는 단계에서 금액을 보이고 동의를 받기로
  * 했다. 고른 직후 같은 화면에 "클로버 N개를 써요"와 잔액이 있으니 실행 버튼이 곧 동의이고, 모달을 하나 더 띄우면
- * 같은 결정을 두 번 묻는다. 단가는 제안 응답의 `cost` 다(이 순간의 서버 값).
+ * 같은 결정을 두 번 묻는다. 단가는 제안 응답의 이 순간 서버 값이다 — 고른 모델의 가격(`chapterModels`), 그 목록이
+ * 없는 서버면 `cost`.
+ *
+ * 소설 상위 모델 허용이 있으면 금액 줄 위에 모델 선택이 생기고, 금액이 고른 모델을 따라 바뀐다. 허용이 없으면 모델이
+ * 하나뿐이라 선택이 그려지지 않는다.
  *
  * 좁은 화면은 아래 시트, 넓은 화면은 가운데 다이얼로그다 — 둘 중 하나만 마운트한다(포털·포커스 가둠 때문에 공존할
  * 수 없다). 고른 값은 이 컴포넌트가 쥐므로 열린 채 화면 폭이 바뀌어도 남는다. */
-export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, string | null>(
-  ({ call, proposal, chapterOrdinal }) => {
+export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, ChapterBoundaryChoice | null>(
+  ({ call, proposal, chapterOrdinal, lastChapterModel }) => {
     const isDialogLayout = useIsChapterBoundaryDialogLayout();
     const { data: clover } = useCloverBalanceQuery();
     const [selectedId, setSelectedId] = useState(() => toInitialChapterEnd(proposal));
+    const models = proposal.chapterModels ?? [];
+    const [modelId, setModelId] = useState(() => initialChapterModelId(models, lastChapterModel));
+    const cost = chapterModelCost(models, modelId, "generate", proposal.cost);
     // 고르지 않고 실행을 눌렀을 때의 안내. 한 번 띄우면 고를 때까지 남는다(렌더 때 파생하지 않는다 — 처음 열었을
     // 때부터 "골라주세요" 오류가 떠 있으면 아직 아무것도 안 한 이용자를 탓하는 셈이다).
     const [isSelectionMissing, setIsSelectionMissing] = useState(false);
@@ -75,7 +94,7 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, st
         setIsSelectionMissing(true);
         return;
       }
-      call.end(selectedId);
+      call.end({ endMessageId: selectedId, model: modelId, cost });
     }
 
     // 열리면 골라 둔 턴(없으면 첫 턴)으로 포커스를 보낸다 — 기본 동작은 닫기 X 로 가고, 제안 턴이 목록 아래쪽이면
@@ -140,7 +159,12 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, st
       </div>
     );
 
-    const summary = <CloverSpendSummary cost={proposal.cost} balance={clover?.balance} />;
+    const summary = (
+      <>
+        <ChapterModelSelect models={models} value={modelId} onValueChange={setModelId} kind="generate" />
+        <CloverSpendSummary cost={cost} balance={clover?.balance} />
+      </>
+    );
     const confirmLabel = `${chapterOrdinal}장 만들기`;
 
     if (isDialogLayout) {

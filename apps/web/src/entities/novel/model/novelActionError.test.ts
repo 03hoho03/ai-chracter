@@ -16,6 +16,7 @@ function apiError(status: number, detail: string | Record<string, unknown> | und
 /** 서버 소설 라우트가 `detail.code` 로 내는 코드 전부와 그 상태. 429 둘은 아래에서 따로 본다. */
 const SERVER_CODES: [number, string][] = [
   [403, "NOVELIZE_NOT_ALLOWED"],
+  [403, "NOVEL_MODEL_NOT_ALLOWED"],
   [403, "CONTENT_RESTRICTED"],
   [404, "NOVEL_NOT_FOUND"],
   [403, "NOVEL_FORBIDDEN"],
@@ -77,6 +78,13 @@ describe("toNovelActionError", () => {
   // 살아 있는 화면에 문장만 남는다.
   it("소설화 허용 403 은 상세를 다시 받는다", () => {
     expect(toNovelActionError(apiError(403, { code: "NOVELIZE_NOT_ALLOWED" }), "edit")?.shouldRefetchNovel).toBe(true);
+  });
+
+  // 허용을 거둔 뒤 옛 상세의 모델 목록으로 고른 경우다 — 다시 받아야 다음 확인 화면에서 그 모델이 빠진다.
+  it("상위 모델 허용 403 은 상세를 다시 받는다", () => {
+    expect(toNovelActionError(apiError(403, { code: "NOVEL_MODEL_NOT_ALLOWED" }), "regenerate")?.shouldRefetchNovel).toBe(
+      true,
+    );
   });
 
   it("이름 저장 실패의 일반 문구는 이름을 말한다", () => {

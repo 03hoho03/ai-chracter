@@ -15,6 +15,12 @@ export {
 } from "./api/useNovelQuery";
 export { useSetProtagonistNameMutation } from "./api/useSetProtagonistNameMutation";
 export { writeNovelChapterRevision } from "./api/writeNovelChapterRevision";
+export {
+  chapterModelCost,
+  initialChapterModelId,
+  type NovelChapterModel,
+  type NovelChapterModelId,
+} from "./model/chapterModel";
 export { CHAPTER_REGENERATING_MESSAGE, isChapterRegenerating } from "./model/chapterRegenerationLock";
 export {
   isProtagonistNameRequiredError,
@@ -36,4 +42,5 @@ export {
   isTerminalNovelJobStatus,
   type NovelJobStatus,
 } from "./model/novelJobPolling";
+export { ChapterModelSelect } from "./ui/ChapterModelSelect";
 export { NovelizeLockedState } from "./ui/NovelizeLockedState";

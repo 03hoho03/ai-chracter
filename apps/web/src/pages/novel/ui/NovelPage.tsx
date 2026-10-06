@@ -12,7 +12,7 @@ import {
   type NovelChapterSummary,
   type NovelDetailResponse,
 } from "@/entities/novel";
-import { ConfirmNovelSpendModal } from "@/features/confirm-novel-spend";
+import { ConfirmChapterSpendModal, ConfirmNovelSpendModal } from "@/features/confirm-novel-spend";
 import { NovelChapterMaker, useNovelChapterJob } from "@/features/create-novel-chapter";
 import { DeleteLastChapterModal, DeleteNovelModal } from "@/features/delete-novel";
 import { DiscardManualEditModal, useNovelAiEdit } from "@/features/edit-novel-chapter";
@@ -116,8 +116,11 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
   const [heldChapterId, setHeldChapterId] = useState<string | undefined>(undefined);
   // 떠 있는 "고치던 글 버리기" 확인의 수. 뒤로가 떠 있는 확인을 닫고 새로 열 때 쓴다(아래 차단 함수).
   const openDiscardConfirmCountRef = useRef(0);
-  // 금액 확인은 다른 기능의 모달이라 이 화면이 넣어 준다(기능끼리 서로 가져다 쓰지 않는다).
+  // 금액 확인은 다른 기능의 모달이라 이 화면이 넣어 준다(기능끼리 서로 가져다 쓰지 않는다). 장 다시 만들기는 모델도
+  // 고르는 확인을, AI 수정은 금액만 묻는 확인을 받는다 — AI 수정은 모델을 고르지 않는다.
   const confirmSpend = (props: Parameters<typeof ConfirmNovelSpendModal.call>[0]) => ConfirmNovelSpendModal.call(props);
+  const confirmChapterSpend = (props: Parameters<typeof ConfirmChapterSpendModal.call>[0]) =>
+    ConfirmChapterSpendModal.call(props);
   // 이 화면이 아직 떠 있나. 장 이동 확인·마지막 장 지우기는 기다린 뒤 화면을 옮기는데, 그사이 이용자가 다른 화면으로
   // 갔으면 소설 화면으로 끌고 오지 않는다.
   const isMountedRef = useRef(false);
@@ -130,13 +133,14 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
     return () => {
       isMountedRef.current = false;
       ConfirmNovelSpendModal.end(false);
+      ConfirmChapterSpendModal.end(null);
       DiscardManualEditModal.end(false);
       DeleteLastChapterModal.end(false);
     };
   }, []);
   const flow = useNovelChapterJob({
     novel,
-    confirmSpend,
+    confirmSpend: confirmChapterSpend,
     onChapterReady: (readyChapter, chapters, isRegenerated) => {
       // 다시 만든 장은 본문이 통째로 바뀌어, 장 머리에 남은 지난 고치기 결과(적용·버리기·저장)는 이제 옛 글의
       // 이야기다. 본문을 바꾸는 다른 동작이 시작할 때처럼 그 문장을 지운다. 문장이 다른 장의 "수정안이 왔어요"였어도
