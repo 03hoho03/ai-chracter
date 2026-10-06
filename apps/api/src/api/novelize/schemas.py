@@ -378,6 +378,33 @@ class NovelBatchRegenerateRequest(CamelModel):
     expected_cost: int
 
 
+class NovelChainEstimate(CamelModel):
+    """"남은 대화 한 번에"를 이 모델로 할 때. 묶음 경계는 돌면서 정하므로 금액은 묶음마다 이 모델의 화 수 상한만큼
+    미리 받는 값이고(`max_episode_count` × 화 단가), 끝나면 쓰지 않은 몫을 돌려준다. 같은 남은 대화라도 턴 상한이 작은
+    모델은 묶음이 더 많이 들고, 한 번에 만드는 묶음 수에는 상한이 있어 덜 진행할 수 있다."""
+
+    model: ChatModelId
+    name: str
+    # 이번에 만들 묶음 수(남은 대화를 이 모델의 턴 상한으로 나눈 수, 한 번의 상한까지). 생성 요청의 `maxBatches` 로 보낸다.
+    batch_count: int
+    max_episode_count: int
+    cost: int
+
+
+class NovelChainEstimateResponse(CamelModel):
+    # 이 계정이 고를 수 있는 모델마다(상세의 `chapter_models` 와 같은 모델·같은 순서).
+    options: list[NovelChainEstimate]
+
+
+class NovelChainCreateRequest(CamelModel):
+    # 연쇄 전체를 쓸 모델 하나. 상위 모델은 소설 상위 모델 허용이 있어야 한다(없으면 403 `NOVEL_MODEL_NOT_ALLOWED`).
+    model: ChatModelId
+    # 견적에서 고른 모델의 `cost` 와 `batch_count`. 묶음 수는 상한이다 — 그 사이 대화가 늘어도 이 수까지만 만들고 금액도
+    # 그대로다. 대화가 줄어 묶음 수가 줄면 금액이 달라져 409 `NOVELIZE_PRICE_CHANGED` + `currentCost` 다.
+    expected_cost: int
+    max_batches: int = Field(ge=1)
+
+
 class NovelUpdateRequest(CamelModel):
     """보낸 칸만 바꾼다. 제목을 바꾸면 그 뒤로 AI 가 제목을 덮지 않는다. `coverAssetId` 는 null 을 보내면 원작 썸네일로
     되돌리고, 값을 보내면 내 생성 이미지 중 준비가 끝난 것이어야 한다(아니면 422 `NOVEL_COVER_INVALID`)."""

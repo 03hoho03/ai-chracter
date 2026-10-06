@@ -123,14 +123,16 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
     - 409 `NOVELIZE_PRICE_CHANGED` + `currentCost`: 사용자가 확인한 금액(`expected_cost`)이 지금 금액과 다르다. 단가가
       배포로 바뀌는 사이 열어 둔 확인 화면의 금액으로 차감하지 않으려는 것이다. 생성·다시 만들기의 금액은 작업에 적힌
       모델(`job.model`, 허용 판정은 호출자가 먼저 한다)의 화 단가 × 화 수다. 생성의 화 수는 호출자가
-      `episode_count_target` 에 싣는다(비어 있으면 1). 생성·AI 수정은 DB 를 건드리기 전에 판정하고, 다시 만들기는 화
-      수가 묶음에서 나오므로 사용자 잠금 뒤에 판정한다.
+      `episode_count_target` 에 싣는다(비어 있으면 1). 연쇄 부모는 호출자가 실은 `planned_batches` × 그 모델의 화 수
+      상한 × 화 단가다. 생성·AI 수정·연쇄는 DB 를 건드리기 전에 판정하고, 다시 만들기는 화 수가 묶음에서 나오므로
+      사용자 잠금 뒤에 판정한다.
     - 409 `NOVEL_MODEL_INELIGIBLE` + `reason`(다시 만들기만): 고른 모델이 그 묶음을 담지 못한다 — 묶음의 화 수가 그
       모델의 화 수 상한을 넘거나(`too_many_episodes`) 묶음의 턴 수가 그 모델의 턴 상한을 넘는다(`too_many_turns`).
       다시 만들기는 지금 화 수를 그대로 지키므로 화 수를 줄여 맞출 수 없다.
     - 409 `NOVEL_JOB_IN_PROGRESS`: 이 소설에 진행 중(대기·실행) 작업이 있다.
     - 429 `USER_LIMIT`(`window: "novelize"`): 같은 시작 메시지의 장 생성·재생성이 오늘(KST) 상한에 닿았다. 재시도 초는
-      상한이 풀리는 KST 자정까지다.
+      상한이 풀리는 KST 자정까지다. 연쇄 부모는 시작 메시지가 없어 세지도 막히지도 않는다(자식은 이 함수를 거치지
+      않는다 — 부모가 이미 진행 중이라 진행 중 확인에 걸린다).
     - 429 `CLOVER_REQUIRED`(`window: "novelize"`): 잔액 부족. 이 경우 참인 재시도 시각은 없지만, 클로버가 다시 생기는
       가장 이른 정기 시점이 출석이 다시 열리는 KST 자정이라 그때까지의 초를 싣는다.
 
@@ -211,8 +213,18 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
 
 
 def _checked_price(job: NovelJob, expected_cost: int) -> int:
-    """작업의 금액을 계산해 확인한 금액과 다르면 409 `NOVELIZE_PRICE_CHANGED` 를 낸다. 롤백은 호출자가 한다."""
-    price = job_price(job.kind, chapter_job_model(job), job.episode_count_target or 1)
+    """작업의 금액을 계산해 확인한 금액과 다르면 409 `NOVELIZE_PRICE_CHANGED` 를 낸다. 롤백은 호출자가 한다.
+
+    연쇄 부모는 호출자가 실은 묶음 수(`planned_batches`)로 계산하고, 그 계산에 쓴 화 단가와 묶음 하나의 화 수 상한을 행에
+    고정한다 — 실행 중 설정이 바뀌어도 자식의 화 수 상한과 쓴 몫이 낸 금액의 근거대로 간다."""
+    if job.kind == "chain_generate":
+        assert job.planned_batches is not None  # 연쇄 라우트가 묶음 수를 실어 보낸다
+        model = chapter_job_model(job)
+        job.unit_price = novel_episode_unit_price(model)
+        job.batch_k_max = k_max(model)
+        price = chain_price(model, job.planned_batches)
+    else:
+        price = job_price(job.kind, chapter_job_model(job), job.episode_count_target or 1)
     if expected_cost != price:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -325,6 +337,14 @@ async def refund_job(db: AsyncSession, *, job_id: uuid.UUID, failure_code: Novel
     )
     if moved is None:
         return None
+    # 연쇄 부모면 묶음을 맡아 돌던 자식도 같은 사유로 끝낸다(자식은 차감 0 이라 환불도 0). 자식이 진행 중으로 남으면
+    # 부모가 끝난 뒤에도 소설이 진행 중으로 보이고, 자식 결과가 늦게 와도 저장은 부모가 진행 중일 때만 되므로 남길 이유가
+    # 없다. 연쇄 부모가 아니면 자식이 없어 바뀌는 행이 없다.
+    await db.execute(
+        update(NovelJob)
+        .where(NovelJob.parent_job_id == job_id, NovelJob.status.in_(ACTIVE_JOB_STATUSES))
+        .values(status="failed", failure_code=failure_code, finished_at=func.now())
+    )
     refunded = moved.refunded_amount or 0
     if refunded > 0:
         await clover.grant(db, user_id=user_id, amount=refunded, kind="novelize_refund")

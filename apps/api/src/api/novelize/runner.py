@@ -13,6 +13,10 @@
 저장은 **사용자 행 잠금 → 작업 상태 전이**를 먼저 하고 묶음·화·개정을 나중에 넣는다 — 전이가 행을 받지 못하면(만료
 정리가 먼저 실패·환불했거나 소설 삭제가 작업 행을 지웠으면) 결과를 버린다.
 
+**연쇄 생성**("남은 대화 한 번에")은 부모 작업 하나가 묶음마다 자식 장 생성 작업(차감 0)을 하나씩 만들어 위 흐름으로
+돌린다(`run_chain`). 자식 성공 저장은 부모가 아직 실행 중일 때만 부모의 소비액을 올리며 결과를 남기고, 자식이 실패하면
+부모도 실패로 끝내 쓰지 않은 몫을 돌려준다.
+
 **작업 전체 상한**은 `asyncio.timeout` 이다. 상한에 걸리면 진행 중인 모델 호출이 취소되고, 취소된 호출의 토큰 사용량은
 기록되지 않는다(사용량 기록은 정상 종료한 호출에만 있다). 서버 종료로 태스크가 취소되면(`CancelledError`) 잡지 않는다 —
 heartbeat 가 멈춘 그 작업은 만료 정리가 환불한다."""
@@ -25,7 +29,7 @@ from collections.abc import Coroutine, Sequence
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.core import clover
@@ -41,6 +45,7 @@ from api.db.models.novel import (
     NovelJob,
     NovelJobFailureCode,
 )
+from api.chat.prompt_builder import load_active_prompt_set
 from api.llm.client import (
     LLMCallContext,
     LLMClient,
@@ -57,7 +62,9 @@ from api.novelize.billing import (
     shortfall_refund,
     transition_job,
 )
+from api.novelize.boundary import episode_counts, suggest_end_turn
 from api.novelize.deletion import erase_stale_ai_edit_previews
+from api.novelize.episodes import chapter_max_turns
 from api.novelize.inputs import (
     ChapterInput,
     SourceChangedError,
@@ -75,6 +82,7 @@ from api.novelize.output import (
     parse_batch_output,
 )
 from api.novelize.prompts import NovelizeReviseResult
+from api.novelize.source import group_turns, load_candidates, message_key, next_chapter_start
 from api.novelize.text import clean_chapter_body, looks_like_refusal, split_paragraphs
 
 logger = logging.getLogger(__name__)
@@ -190,6 +198,212 @@ async def _execute(session_factory: SessionFactory, llm_client: LLMClient, job_i
             await _save_batch(session_factory, job_id, chapter_input, batch)
     finally:
         heartbeat.cancel()
+
+
+# ── 연쇄 생성("남은 대화 한 번에") ─────────────────────────────────────────
+async def enqueue_chain_job(session_factory: SessionFactory, llm_client: LLMClient, job_id: uuid.UUID) -> None:
+    """차감·커밋까지 끝난 연쇄 부모를 백그라운드로 띄운다. 띄우지 못하면 그 자리에서 실패·환불한다(`enqueue_job` 과
+    같은 이유)."""
+    try:
+        _spawn(run_chain(session_factory, llm_client, job_id))
+    except Exception as exc:
+        logger.warning("소설화 연쇄 작업 %s 를 띄우지 못해 환불한다: %s", job_id, type(exc).__name__)
+        capture_dependency_failure(exc, dependency="novelize")
+        await _refund(session_factory, job_id, "internal")
+
+
+def chain_timeout_seconds(planned_batches: int) -> float:
+    """연쇄 부모 하나의 전체 시간 상한. 자식마다 작업 하나의 상한이 걸리고, 묶음 사이의 경계 제안·DB 일은 여유로 덮는다."""
+    return planned_batches * settings.novelize_job_timeout_seconds + settings.novelize_chain_timeout_margin_seconds
+
+
+async def run_chain(session_factory: SessionFactory, llm_client: LLMClient, job_id: uuid.UUID) -> None:
+    """연쇄 부모 하나를 끝까지 돌린다. 예외를 밖으로 내지 않는다(취소만 예외) — 실패는 전부 쓰지 않은 몫 환불로 끝낸다.
+
+    부모는 `run_job` 으로 돌리지 않는다 — 작업 하나의 상한(360초)과 장 생성 분기를 타면 안 된다. 부모는 자기 heartbeat
+    와 전체 상한(`chain_timeout_seconds`)을 갖고, 묶음마다 자식 장 생성 작업을 하나 만들어 `run_job` 으로 끝까지 기다린다
+    (자식은 자기 heartbeat·작업 상한을 그대로 갖는다). heartbeat 가 살아 있어도 전체 상한을 넘으면 실패다 — 걸린 부모가
+    소설을 진행 중으로 영영 잠그지 않게. 그때 돌던 자식은 취소되고, 부모 환불이 그 자식도 실패로 끝낸다."""
+    code: NovelJobFailureCode
+    try:
+        async with session_factory() as db:
+            planned = await db.scalar(select(NovelJob.planned_batches).where(NovelJob.id == job_id))
+        if planned is None:
+            # 작업 행이 없다(띄우기 전에 소설이 지워졌다). 연쇄 부모는 CHECK 로 묶음 수를 늘 갖는다.
+            return
+        async with asyncio.timeout(chain_timeout_seconds(planned)):
+            await _execute_chain(session_factory, llm_client, job_id)
+        return
+    except _JobFailedError as failed:
+        code = failed.code
+    except TimeoutError:
+        code = "timeout"
+    except Exception as exc:
+        logger.warning("소설화 연쇄 작업 %s 가 예상하지 못한 오류로 실패했다: %s", job_id, type(exc).__name__)
+        capture_dependency_failure(exc, dependency="novelize")
+        code = "internal"
+    await _refund(session_factory, job_id, code)
+
+
+async def _execute_chain(session_factory: SessionFactory, llm_client: LLMClient, job_id: uuid.UUID) -> None:
+    """묶음을 하나씩 만든다. 자식 하나가 실패하면 그 사유로 부모도 실패시키고(쓰지 않은 몫 환불) 남은 묶음은 만들지
+    않는다. 만들 원문이 떨어지면 계획보다 일찍 끝낸다."""
+    async with session_factory() as db:
+        started = await transition_job(
+            db,
+            job_id=job_id,
+            expected=("queued",),
+            values={"status": "running", "started_at": func.now(), "heartbeat_at": func.now()},
+        )
+        await db.commit()
+    if started is None:
+        return
+
+    heartbeat = asyncio.create_task(keep_job_alive(session_factory, job_id))
+    try:
+        async with session_factory() as db:
+            planned = int(await db.scalar(select(NovelJob.planned_batches).where(NovelJob.id == job_id)) or 0)
+        for _ in range(planned):
+            child_id = await _start_chain_child(session_factory, llm_client, job_id)
+            if child_id is None:
+                break
+            await run_job(session_factory, llm_client, child_id)
+            async with session_factory() as db:
+                child = (
+                    await db.execute(select(NovelJob.status, NovelJob.failure_code).where(NovelJob.id == child_id))
+                ).first()
+            if child is None:
+                # 소설 삭제가 부모·자식을 환불하고 지웠다. 끝낼 행이 없다.
+                return
+            if child.status != "succeeded":
+                raise _JobFailedError(child.failure_code or "internal")
+        await _finish_chain(session_factory, job_id)
+    finally:
+        heartbeat.cancel()
+
+
+async def _start_chain_child(
+    session_factory: SessionFactory, llm_client: LLMClient, parent_id: uuid.UUID
+) -> uuid.UUID | None:
+    """다음 묶음을 맡을 자식 작업을 넣고 그 id 를 돌려준다. 만들 원문이 없거나 부모가 더는 실행 중이 아니면 None.
+
+    후보는 다음 묶음 시작부터 부모 모델의 턴 상한까지이고, 끝은 경계 제안이 고른 턴(실패하면 상한 끝)이다. 이 제안은
+    사용자가 누른 것이 아니라 시간당 제안 상한에 세지 않는다. 화 수는 경계 모달과 같은 계산이되 부모가 차감할 때 고정한
+    화 수 상한을 넘지 않는다 — 쓴 몫이 낸 금액을 넘지 않게.
+
+    자식은 부모 모델을 그대로 쓰고 허용을 다시 보지 않는다(값을 낸 모델로 끝낸다). 차감 0 이고 `create_charged_job` 을
+    거치지 않는다 — 진행 중 확인이 부모를 보고 거절한다. 넣기 전에 사용자 행을 잠그고 부모가 실행 중인지 다시 본다:
+    부모를 끝내는 경로(만료 정리·소설 삭제)도 사용자 행을 먼저 잡으므로, 끝난 부모 아래 자식이 생기지 않는다."""
+    async with session_factory() as db:
+        parent = await db.get(NovelJob, parent_id, populate_existing=True)
+        if parent is None or parent.status != "running":
+            return None
+        novel = await db.get(Novel, parent.novel_id)
+        if novel is None or novel.chat_room_id is None:
+            return None
+        room_id = novel.chat_room_id
+        model = chapter_job_model(parent)
+        last_chapter = await db.scalar(
+            select(NovelChapter)
+            .where(NovelChapter.novel_id == novel.id)
+            .order_by(NovelChapter.ordinal.desc())
+            .limit(1)
+        )
+        start = await next_chapter_start(db, room_id, last_chapter)
+        candidates = (
+            await load_candidates(db, room_id, message_key(start), chapter_max_turns(model)) if start is not None else []
+        )
+        turns = group_turns(candidates)
+        if not turns:
+            return None
+        prompt_set, sections = await load_active_prompt_set(db, lane=novel.content_type)
+        await db.commit()
+
+    suggested = await suggest_end_turn(
+        llm_client, novel=novel, turns=turns, prompt_set=prompt_set, sections=sections, room_id=room_id
+    )
+    end_index = (suggested[0] if suggested is not None else len(turns)) - 1
+    episodes = episode_counts(turns[: end_index + 1], novel, model)[-1]
+    assert parent.batch_k_max is not None  # 연쇄 부모는 CHECK 로 화 수 상한을 갖는다
+    end = turns[end_index].assistant
+
+    async with session_factory() as db:
+        if not await _lock_user(db, parent.user_id):
+            await db.rollback()
+            return None
+        if await db.scalar(select(NovelJob.status).where(NovelJob.id == parent_id)) != "running":
+            await db.rollback()
+            return None
+        child = NovelJob(
+            novel_id=parent.novel_id,
+            user_id=parent.user_id,
+            kind="chapter_generate",
+            status="queued",
+            model=parent.model,
+            parent_job_id=parent_id,
+            charged_amount=0,
+            start_message_id=candidates[0].id,
+            start_message_created_at=candidates[0].created_at,
+            end_message_id=end.id,
+            end_message_created_at=end.created_at,
+            episode_count_target=min(episodes, parent.batch_k_max),
+            heartbeat_at=func.now(),
+        )
+        db.add(child)
+        await db.commit()
+        return child.id
+
+
+async def _finish_chain(session_factory: SessionFactory, job_id: uuid.UUID) -> None:
+    """연쇄를 성공으로 끝내고 쓰지 않은 몫(`charged_amount - consumed_amount`)을 돌려준다. 한 묶음도 만들지 못했으면
+    (시작할 때 원문이 이미 사라졌다) 성공이 아니라 실패·전액 환불이다 — 전액 환불은 성공 행에 둘 수 없다(성공의 환불은
+    부분 환불뿐이다).
+
+    작업 폴링 화면이 이동하도록 첫 묶음과 그 첫 화를 부모 행에 남긴다. 사용자 행을 먼저 잡는다 — 환불 지급이 사용자
+    행을 고친다(`billing.py` 의 락 순서)."""
+    async with session_factory() as db:
+        user_id = await db.scalar(select(NovelJob.user_id).where(NovelJob.id == job_id))
+        if user_id is None or not await _lock_user(db, user_id):
+            await db.rollback()
+            return
+        consumed = await db.scalar(
+            select(NovelJob.consumed_amount).where(NovelJob.id == job_id, NovelJob.status == "running")
+        )
+        if consumed is None:
+            await db.rollback()
+            return
+        if consumed == 0:
+            await db.rollback()
+            raise _JobFailedError("source_changed")
+        first = (
+            await db.execute(
+                select(NovelJob.batch_id, NovelJob.chapter_id)
+                .join(NovelBatch, NovelBatch.id == NovelJob.batch_id)
+                .where(NovelJob.parent_job_id == job_id, NovelJob.status == "succeeded")
+                .order_by(NovelBatch.ordinal)
+                .limit(1)
+            )
+        ).first()
+        unused = NovelJob.charged_amount - NovelJob.consumed_amount
+        moved = await transition_job(
+            db,
+            job_id=job_id,
+            expected=("running",),
+            values={
+                "status": "succeeded",
+                "finished_at": func.now(),
+                "refunded_at": case((unused > 0, func.now()), else_=None),
+                "refunded_amount": func.nullif(unused, 0),
+                "batch_id": first[0] if first is not None else None,
+                "chapter_id": first[1] if first is not None else None,
+            },
+        )
+        if moved is None:
+            await db.rollback()
+            return
+        if moved.refunded_amount:
+            await clover.grant(db, user_id=user_id, amount=moved.refunded_amount, kind="novelize_refund")
+        await db.commit()
 
 
 async def _generate_batch(llm_client: LLMClient, chapter_input: ChapterInput, usage: LLMCallContext) -> ParsedBatch:
@@ -351,6 +565,11 @@ async def _save_batch(
             return
         job = await db.get(NovelJob, job_id)
         assert job is not None  # 방금 전이가 행을 받았고 같은 트랜잭션이 그 행을 잠그고 있다
+        if job.parent_job_id is not None and not await _consume_parent_share(db, job, delivered=len(batch.episodes)):
+            # 부모가 이미 끝났다(만료·실패·환불). 돈을 낸 부모 없이 저장하면 공짜 묶음이 된다. 부모를 끝내는 경로가
+            # 진행 중 자식도 함께 끝내므로 보통은 위 전이에서 걸러지고, 여기는 자식을 모르는 경로가 부모만 끝낸 경우다.
+            await db.rollback()
+            raise _JobFailedError("expired")
         if job.kind == "chapter_regenerate":
             saved = await _save_regenerated(db, job, batch)
             if saved is None:
@@ -395,6 +614,21 @@ async def _save_batch(
             for chapter in chapters:
                 await erase_stale_ai_edit_previews(db, chapter.id)
             await db.commit()
+
+
+async def _consume_parent_share(db: AsyncSession, job: NovelJob, *, delivered: int) -> bool:
+    """연쇄 자식이 쓴 몫을 부모의 소비액에 더한다. 부모가 아직 실행 중일 때만 더하고, 더했으면 True. 쓴 몫은 자식에게
+    계산한 화 수와 실제로 낸 화 수 중 작은 쪽 × 부모가 고정한 화 단가다 — 많이 낸 화는 단일 묶음처럼 추가로 받지 않는다.
+    성공 저장 트랜잭션 안(사용자 행 → 자식 행 다음)에서 부른다. 부모를 끝내는 경로도 사용자 행을 먼저 잡으므로, 여기서
+    본 "실행 중"은 커밋까지 그대로다."""
+    share = min(job.episode_count_target or 1, delivered)
+    consumed = await db.scalar(
+        update(NovelJob)
+        .where(NovelJob.id == job.parent_job_id, NovelJob.status == "running")
+        .values(consumed_amount=NovelJob.consumed_amount + share * NovelJob.unit_price)
+        .returning(NovelJob.id)
+    )
+    return consumed is not None
 
 
 async def _save_generated(

@@ -30,7 +30,7 @@ from sqlalchemy import func, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from api.chat.prompt_builder import PromptRenderError, load_active_prompt_set
+from api.chat.prompt_builder import load_active_prompt_set
 from api.chat.router import _ensure_content_playable, _get_owned_room
 from api.content.access import is_open_to
 from api.content.media_tags import strip_media_tags
@@ -40,7 +40,7 @@ from api.core.rate_limit_gate import _too_many_requests
 from api.core.s3 import build_display_key, build_thumbnail_key, generate_presigned_get_url
 from api.core.sentry import capture_dependency_failure
 from api.db.models.character import CharacterVersionDetail
-from api.db.models.chat import ChatMessage, ChatRoom
+from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom
 from api.db.models.content import Content, ContentType
 from api.db.models.media import Asset, AssetKind, AssetStatus
 from api.db.models.novel import (
@@ -59,9 +59,8 @@ from api.llm.chat_models import (
     CHAT_MODELS,
     DEFAULT_CHAT_MODEL,
     ChatModelId,
-    parse_chat_model_id,
 )
-from api.llm.client import LLMCallContext, LLMClient, LLMClientError
+from api.llm.client import LLMClient
 from api.llm.dependencies import get_llm_client
 from api.llm.model_access import effective_model, has_novel_premium_access
 from api.novelize.access import require_novelize_access
@@ -69,21 +68,16 @@ from api.novelize.batches import ensure_batches
 from api.novelize.billing import (
     ACTIVE_JOB_STATUSES,
     _lock_user,
+    chain_price,
     create_charged_job,
     job_price,
     refund_active_jobs,
 )
 from api.novelize.deletion import delete_batch, delete_novels, erase_stale_ai_edit_previews
-from api.novelize.episodes import (
-    chapter_max_turns,
-    episode_count,
-    k_max,
-    regenerate_ineligibility,
-    source_chars,
-)
+from api.novelize.boundary import episode_counts, suggest_end_turn
+from api.novelize.episodes import chapter_max_turns, k_max, regenerate_ineligibility
 from api.novelize.inputs import current_revision
-from api.novelize.prompts import NovelizeBoundaryResult, build_novelize_boundary_prompt
-from api.novelize.runner import enqueue_job, expire_stale_jobs
+from api.novelize.runner import enqueue_chain_job, enqueue_job, expire_stale_jobs
 from api.novelize.schemas import (
     AI_EDIT_INSTRUCTION_MAX_LENGTH,
     AUTHOR_NOTE_MAX_LENGTH,
@@ -97,6 +91,9 @@ from api.novelize.schemas import (
     NovelAiEditRequest,
     NovelBatchRegenerateRequest,
     NovelBatchSummary,
+    NovelChainCreateRequest,
+    NovelChainEstimate,
+    NovelChainEstimateResponse,
     NovelChapterCandidate,
     NovelChapterCreateRequest,
     NovelChapterModel,
@@ -130,7 +127,6 @@ from api.novelize.schemas import (
 )
 from api.novelize.source import (
     SourceTurn,
-    format_turn_lines,
     group_turns,
     load_candidates,
     load_segment,
@@ -411,11 +407,8 @@ async def _source(db: AsyncSession, novel: Novel, thumbnail_url: str | None) -> 
 
 
 async def _chain_progress(db: AsyncSession, job: NovelJob) -> tuple[int | None, int | None]:
-    """연쇄 생성 부모의 (끝낸 묶음 수, 계획한 묶음 수). 연쇄가 아니면 둘 다 None.
-
-    계획한 묶음 수는 부모 행에 따로 적지 않고 차감액에서 되읽는다 — 부모는 묶음마다 그 모델의 화 수 상한 × 고정 단가를
-    미리 받으므로(`billing.chain_price`) 차감액 ÷ (화 수 상한 × 고정 단가)가 계획한 묶음 수다. 모델이 레지스트리에서
-    내려갔거나 단가가 비어 있으면 셀 수 없어 None 이다."""
+    """연쇄 생성 부모의 (끝낸 묶음 수, 계획한 묶음 수). 연쇄가 아니면 둘 다 None. 계획한 묶음 수는 차감할 때 부모 행에
+    적어 둔 값이다 — 차감액에서 지금 설정으로 되읽으면 그 사이 화 수 상한이 바뀐 배포 뒤에 틀린 수가 나온다."""
     if job.kind != "chain_generate":
         return None, None
     completed = await db.scalar(
@@ -423,9 +416,7 @@ async def _chain_progress(db: AsyncSession, job: NovelJob) -> tuple[int | None, 
         .select_from(NovelJob)
         .where(NovelJob.parent_job_id == job.id, NovelJob.status == "succeeded")
     )
-    model = parse_chat_model_id(job.model or DEFAULT_CHAT_MODEL)
-    per_batch = job.unit_price * k_max(model) if job.unit_price and model is not None else None
-    return int(completed or 0), job.charged_amount // per_batch if per_batch else None
+    return int(completed or 0), job.planned_batches
 
 
 async def _active_job(db: AsyncSession, novel_id: uuid.UUID) -> NovelActiveJob | None:
@@ -918,18 +909,6 @@ async def _next_segment(
     return candidates
 
 
-def _episode_counts(turns: list[SourceTurn], novel: Novel, model: ChatModelId) -> list[int]:
-    """턴마다 "다음 묶음 시작부터 이 턴까지"를 `model` 로 만들 때의 화 수. 경계 제안의 후보 금액과 생성 요청의 금액
-    확인이 이 함수 하나를 쓴다 — 둘이 다르게 세면 확인한 금액으로 낸 요청이 늘 409 가 된다."""
-    names = novel_prompt_names(protagonist_name=novel.protagonist_name or "", character_name=novel.character_name)
-    counts: list[int] = []
-    chars = 0
-    for turn in turns:
-        chars += source_chars([turn], names)
-        counts.append(episode_count(chars, model))
-    return counts
-
-
 async def _start_job(
     db: AsyncSession, job: NovelJob, expected_cost: int, session_factory: "SessionFactory", llm_client: LLMClient
 ) -> NovelJobResponse:
@@ -937,7 +916,8 @@ async def _start_job(
     아무것도 남기지 않는다. 응답은 띄우기 전에 만든다: 띄운 작업이 같은 커넥션을 쓰는 테스트에서 겹치지 않게."""
     job = await create_charged_job(db, job=job, expected_cost=expected_cost, now=datetime.now(UTC))
     response = await _job_response(db, await db.get_one(NovelJob, job.id, populate_existing=True))
-    await enqueue_job(session_factory, llm_client, job.id)
+    enqueue = enqueue_chain_job if job.kind == "chain_generate" else enqueue_job
+    await enqueue(session_factory, llm_client, job.id)
     return response
 
 
@@ -1005,42 +985,20 @@ async def propose_novel_chapter(
     await _require_chapter_model(db, novel, model)
     candidates = await _next_segment(db, novel, room_id, model)
     turns = group_turns(candidates)
-    counts = _episode_counts(turns, novel, model)
+    counts = episode_counts(turns, novel, model)
     prompt_set, sections = await load_active_prompt_set(db, lane=novel.content_type)
     await _check_proposal_limit(novel.user_id)
     chapter_models, _ = await _chapter_models(db, novel.user_id)
     await db.commit()
 
     suggestion: NovelChapterSuggestion | None = None
-    is_story = novel.content_type == "story"
-    names = novel_prompt_names(protagonist_name=novel.protagonist_name or "", character_name=novel.character_name)
-    try:
-        prompt = build_novelize_boundary_prompt(
-            prompt_set=prompt_set,
-            sections=sections,
-            is_story_chat=is_story,
-            max_turns=len(turns),
-            user_name=(novel.protagonist_name or "").strip(),
-            turn_lines=format_turn_lines(
-                turns,
-                names=names,
-                user_label=prompt_set.user_label,
-                assistant_label=prompt_set.story_assistant_label if is_story else prompt_set.character_assistant_label,
-            ),
-        )
-        result = await llm_client.generate_structured_with_instruction(
-            prompt.prompt,
-            NovelizeBoundaryResult,
-            system_instruction=prompt.system_instruction,
-            usage=LLMCallContext(call_site="novelize_boundary", user_id=novel.user_id, room_id=room_id),
-        )
-    except (LLMClientError, PromptRenderError) as exc:
-        logger.warning("소설 장 경계 제안이 실패해 후보만 돌려준다: %s", type(exc).__name__)
-    else:
-        # 범위 밖 번호는 실패로 버리지 않고 범위 끝으로 바꾼다 — 사용자가 어차피 확인·조정하는 제안이다.
-        end_turn = result.end_turn if 1 <= result.end_turn <= len(turns) else len(turns)
+    suggested = await suggest_end_turn(
+        llm_client, novel=novel, turns=turns, prompt_set=prompt_set, sections=sections, room_id=room_id
+    )
+    if suggested is not None:
+        end_turn, reason = suggested
         suggestion = NovelChapterSuggestion(
-            end_message_id=turns[end_turn - 1].assistant.id, reason=result.reason.strip()[:_REASON_MAX_CHARS]
+            end_message_id=turns[end_turn - 1].assistant.id, reason=reason.strip()[:_REASON_MAX_CHARS]
         )
 
     return NovelChapterProposalResponse(
@@ -1104,7 +1062,98 @@ async def create_novel_chapter(
         start_message_created_at=start.created_at,
         end_message_id=end.id,
         end_message_created_at=end.created_at,
-        episode_count_target=_episode_counts(turns[: end_index + 1], novel, payload.model)[-1],
+        episode_count_target=episode_counts(turns[: end_index + 1], novel, payload.model)[-1],
+    )
+    return await _start_job(db, job, payload.expected_cost, session_factory, llm_client)
+
+
+# ── 남은 대화 한 번에(연쇄 생성) ────────────────────────────────────────────
+async def _remaining_turns(db: AsyncSession, novel: Novel, room_id: uuid.UUID) -> int:
+    """다음 묶음 시작부터 방 끝까지의 턴(AI 응답) 수. 끝에 응답 없이 남은 사용자 메시지는 묶음이 될 수 없어 세지 않는다."""
+    last_chapter = await db.scalar(
+        select(NovelChapter).where(NovelChapter.novel_id == novel.id).order_by(NovelChapter.ordinal.desc()).limit(1)
+    )
+    start = await next_chapter_start(db, room_id, last_chapter)
+    if start is None:
+        return 0
+    turns = await db.scalar(
+        select(func.count())
+        .select_from(ChatMessage)
+        .where(
+            ChatMessage.chat_room_id == room_id,
+            ChatMessage.role == ChatMessageRole.ASSISTANT,
+            tuple_(ChatMessage.created_at, ChatMessage.id) >= message_key(start),
+        )
+    )
+    return int(turns or 0)
+
+
+def _chain_batch_count(remaining_turns: int, model: ChatModelId) -> int:
+    """남은 턴을 `model` 의 묶음 턴 상한으로 나눈 묶음 수(올림), 한 번의 상한까지. 실제 경계는 묶음마다 자동 제안이 그
+    상한 안에서 고르므로 묶음이 더 필요할 수 있다 — 그때 남은 대화는 다음에 다시 누른다."""
+    needed = -(-remaining_turns // chapter_max_turns(model))
+    return min(needed, settings.novelize_chain_max_batches)
+
+
+@router.get("/{novel_id}/chain-estimate")
+async def estimate_novel_chain(
+    novel: Novel = Depends(_owned_novel_dependency),
+    db: AsyncSession = Depends(get_db_session),
+) -> NovelChainEstimateResponse:
+    """"남은 대화 한 번에"의 모델별 견적. 이 계정이 고를 수 있는 모델마다 묶음 수·최대 화 수·금액이다. 작품 상태(403)·방
+    (409 `NOVEL_ROOM_GONE`)을 생성과 같이 보고, 만들 턴이 없으면 409 `NOVEL_NOTHING_NEW` 다."""
+    await _ensure_content_allows_model(db, novel)
+    room_id = _source_room_id(novel)
+    remaining = await _remaining_turns(db, novel, room_id)
+    if remaining == 0:
+        raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_NOTHING_NEW")
+    chapter_models, _ = await _chapter_models(db, novel.user_id)
+    options: list[NovelChainEstimate] = []
+    for option in chapter_models:
+        batches = _chain_batch_count(remaining, option.id)
+        options.append(
+            NovelChainEstimate(
+                model=option.id,
+                name=option.name,
+                batch_count=batches,
+                max_episode_count=batches * k_max(option.id),
+                cost=chain_price(option.id, batches),
+            )
+        )
+    return NovelChainEstimateResponse(options=options)
+
+
+@router.post("/{novel_id}/chain", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(require_legal_consent)])
+async def create_novel_chain(
+    payload: NovelChainCreateRequest,
+    novel: Novel = Depends(_owned_novel_dependency),
+    db: AsyncSession = Depends(get_db_session),
+    session_factory: SessionFactory = Depends(get_session_factory),
+    llm_client: LLMClient = Depends(get_llm_client),
+) -> NovelJobResponse:
+    """"남은 대화 한 번에"(과금, 202 부모 작업). 모델은 연쇄 전체에 하나다. 묶음 수는 남은 대화를 그 모델의 턴 상한으로
+    나눈 수를 `maxBatches` 와 한 번의 상한으로 자른 값이고, 금액은 묶음 수 × 그 모델의 화 수 상한 × 화 단가다(견적의
+    `cost`). 확인한 금액과 다르면 409 `NOVELIZE_PRICE_CHANGED` + `currentCost`. 묶음마다 자동 경계로 하나씩 만들고, 끝나면
+    쓰지 않은 몫을 돌려준다. 폴링은 이 부모 작업으로 하고 진행은 `completedBatches`/`plannedBatches` 다.
+
+    순서: 작품 상태(403)·방(409)·주인공 이름(422)·모델 허용(403) → 죽은 작업 정리·묶음 보정·커밋 → 남은 턴(409
+    `NOVEL_NOTHING_NEW`) → 차감·작업 생성(금액 409·진행 중 409·잔액 429) → 띄우기. 같은 시작 메시지 하루 상한은 연쇄
+    부모에 걸지 않는다 — 부모는 한 구간이 아니라 남은 대화 전체를 맡는다."""
+    await _ensure_content_allows_model(db, novel)
+    room_id = _source_room_id(novel)
+    _require_protagonist_name(novel)
+    await _require_chapter_model(db, novel, payload.model)
+    await _expire_before_new_job(db, novel)
+
+    remaining = await _remaining_turns(db, novel, room_id)
+    if remaining == 0:
+        raise _novel_error(status.HTTP_409_CONFLICT, "NOVEL_NOTHING_NEW")
+    job = NovelJob(
+        novel_id=novel.id,
+        user_id=novel.user_id,
+        kind="chain_generate",
+        model=payload.model,
+        planned_batches=min(payload.max_batches, _chain_batch_count(remaining, payload.model)),
     )
     return await _start_job(db, job, payload.expected_cost, session_factory, llm_client)
 

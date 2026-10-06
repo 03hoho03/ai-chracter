@@ -435,6 +435,13 @@ class Settings(BaseSettings):
     # 장 경계 제안(무과금 모델 호출)을 한 사용자가 한 시간에 몇 번까지 부를 수 있는지. 과금이 없어 남용을 막는 것이
     # 이 상한뿐이다. 면제 계정도 똑같이 센다. 임시값.
     novelize_proposal_hourly_limit: int = 30
+    # "남은 대화 한 번에"(연쇄 생성)가 한 번에 만드는 묶음 수의 상한. 금액을 묶음마다 화 수 상한만큼 미리 받으므로 이
+    # 값이 한 번에 묶이는 클로버의 상한이기도 하다 — 남은 대화가 더 있으면 다시 누른다. 임시값.
+    novelize_chain_max_batches: int = Field(default=5, ge=1)
+    # 연쇄 부모 작업의 전체 시간 상한 = 계획한 묶음 수 × 작업 하나의 상한(`novelize_job_timeout_seconds`) + 이 여유(초).
+    # 여유는 묶음마다 부르는 경계 제안(Gemini 경계 제안 타임아웃 30초) 다섯 번과 묶음 사이 DB 일을 담는다. heartbeat 가
+    # 살아 있어도 이 상한을 넘으면 실패·남은 몫 환불이다 — 걸린 부모가 소설을 영영 진행 중으로 잠그지 않게. 임시값.
+    novelize_chain_timeout_margin_seconds: float = Field(default=180, gt=0)
 
     @field_validator(
         "novelize_grant_allowlist", "chat_premium_model_allowlist", "novelize_premium_model_allowlist", mode="before"
