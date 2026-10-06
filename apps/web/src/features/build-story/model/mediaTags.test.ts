@@ -48,7 +48,7 @@ function setup(overrides: Partial<StartingSetupValues>): StartingSetupValues {
 }
 
 function ending(epilogue: string): StartingSetupValues["endings"][number] {
-  return { id: "ending", name: "엔딩", turnGate: 10, judgePrompt: "판단", statRules: [], epilogue };
+  return { id: "ending", name: "엔딩", turnGate: 10, judgePrompt: "판단", statRules: [], epilogue, priorityStatId: null };
 }
 
 describe("renameMediaTagsInFields", () => {

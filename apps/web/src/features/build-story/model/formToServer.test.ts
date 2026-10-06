@@ -395,6 +395,7 @@ describe("formToServer", () => {
         ],
         epilogue: "두 사람은 무사히 구조되었다.",
         hint: "체력과 신뢰를 함께 관리하세요.",
+        priorityStatId: "stat-2",
       },
     ];
 
@@ -420,6 +421,7 @@ describe("formToServer", () => {
             ],
           },
         ],
+        priorityStatId: "stat-2",
       },
     ]);
   });
@@ -435,6 +437,7 @@ describe("formToServer", () => {
         statRules: [],
         epilogue: undefined,
         hint: undefined,
+        priorityStatId: null,
       },
     ];
 
@@ -445,12 +448,25 @@ describe("formToServer", () => {
     expect(firstEnding.hint).toBeNull();
   });
 
+  // 서버는 빠진 우선순위 스탯을 "기존 값 유지"로 읽는다 — '없음'을 키째 빼면 작가가 비운 값이 저장되지 않는다.
+  it("sends a cleared ending priority stat as an explicit null key, not an omitted one", () => {
+    const values = baseFormValues();
+    requireFirst(values.startingSetups).endings = [
+      { id: "ending-1", name: "열린 결말", turnGate: 10, judgePrompt: "판정", statRules: [], priorityStatId: null },
+    ];
+
+    const firstEnding = requireFirst(requireFirst(formToServer(values).startingSetups).endings);
+
+    expect(Object.hasOwn(firstEnding, "priorityStatId")).toBe(true);
+    expect(firstEnding.priorityStatId).toBeNull();
+  });
+
   it("preserves endings/statRules array order as the wire's implicit order (no explicit order field)", () => {
     const values = baseFormValues();
     const firstSetup = requireFirst(values.startingSetups);
     firstSetup.endings = [
-      { id: "second", name: "second", turnGate: 10, judgePrompt: "판정", statRules: [] },
-      { id: "first", name: "first", turnGate: 10, judgePrompt: "판정", statRules: [] },
+      { id: "second", name: "second", turnGate: 10, judgePrompt: "판정", statRules: [], priorityStatId: null },
+      { id: "first", name: "first", turnGate: 10, judgePrompt: "판정", statRules: [], priorityStatId: null },
     ];
     requireFirst(firstSetup.endings).statRules = [
       { kind: "rule", id: "rule-b", statId: "stat-1", operator: ">", value: 1, nextOp: null },

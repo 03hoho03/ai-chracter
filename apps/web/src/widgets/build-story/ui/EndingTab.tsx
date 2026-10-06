@@ -11,7 +11,9 @@ import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ai-character-chat/ui/components/select";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
+import { TriangleAlert } from "lucide-react";
 import { useRef } from "react";
 import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
@@ -28,6 +30,7 @@ import {
   endingSummary,
   FieldLabelText,
   hasRuleWithMissingStat,
+  isMissingStat,
   SELECTED_STARTING_SETUP,
   type StatDefValues,
   type StoryBuilderFormValues,
@@ -47,6 +50,10 @@ const RULE_GROUP_LIST: StoryCollapsibleList = "ruleGroup";
 
 /** 엔딩의 스탯 규칙은 선택이다 — 비워 두면 판단 프롬프트만으로 판정한다. */
 const ENDING_RULES_EMPTY_TEXT = "등록된 규칙이 없어요. 비워두면 판단 프롬프트만으로 엔딩을 판정해요.";
+
+/** 우선순위 스탯 '없음'의 선택지 값. Radix Select 는 빈 문자열을 값으로 받지 않아, 폼의 `null` 과 이 값을 오간다. 스탯 id 는
+ * UUID 라 겹치지 않는다. */
+const NO_PRIORITY_STAT = "none";
 
 /** 엔딩은 시작설정별 독립 목록이라 StatTab과 동일하게 먼저
  * 시작설정을 고른다(0개 등록해도 발행 가능, 열린 결말). 고른 시작설정은 스탯 탭과 함께 셸의 화면 상태에서 읽고 쓴다. */
@@ -120,6 +127,8 @@ function EndingRow({
   const name = useWatch({ control, name: `${endingPath}.name` });
   const turnGate = useWatch({ control, name: `${endingPath}.turnGate` });
   const statRules = useWatch({ control, name: `${endingPath}.statRules` });
+  const priorityStatId = useWatch({ control, name: `${endingPath}.priorityStatId` });
+  const isPriorityStatMissing = priorityStatId !== null && isMissingStat(priorityStatId, stats);
   const endingErrors = errors.startingSetups?.[startingSetupIndex]?.endings?.[endingIndex];
   const epiloguePath = `${endingPath}.epilogue` as const;
   const epilogueField = register(epiloguePath);
@@ -137,7 +146,7 @@ function EndingRow({
       srTitlePrefix={`${endingIndex + 1}번째 엔딩: `}
       summary={endingSummary({ turnGate, statRules })}
       // 지워진 스탯을 쓰는 조건은 폼 오류가 아니라 데이터 사실이라 따로 본다 — 접혀 있어도 머리 줄에 경고가 보여야 찾는다.
-      hasError={!!endingErrors || hasRuleWithMissingStat(statRules, stats)}
+      hasError={!!endingErrors || hasRuleWithMissingStat(statRules, stats) || isPriorityStatMissing}
       leading={<ItemDragHandle {...attributes} {...listeners} aria-label={`${endingIndex + 1}번째 엔딩 순서 변경`} />}
       trailing={
         <ItemRemoveButton
@@ -260,7 +269,74 @@ function EndingRow({
           }
         />
       </div>
+
+      <PriorityStatField
+        id={id}
+        stats={stats}
+        value={priorityStatId}
+        isMissing={isPriorityStatMissing}
+        onChange={(next) => setValue(`${endingPath}.priorityStatId`, next, { shouldDirty: true })}
+      />
     </CollapsibleItemCard>
+  );
+}
+
+type PriorityStatFieldProps = {
+  id: string;
+  stats: StatDefValues[];
+  value: string | null;
+  isMissing: boolean;
+  onChange: (next: string | null) => void;
+};
+
+/**
+ * 같은 턴에 조건을 넘은 엔딩이 여럿일 때 비교할 스탯. 고른 엔딩끼리는 각자 고른 스탯 값이 가장 높은 엔딩 하나만 판정하고, 그
+ * 판정이 아니면 그 턴엔 엔딩이 나지 않는다 — 그래서 설명은 비교 규칙과 그 결과를 함께 말한다. 고른 스탯이 지워졌으면(다른
+ * 기기에서 고친 초안) 조건 줄과 같은 '지워짐' 표시와 고치는 법을 보인다. 서버는 그런 초안의 저장을 거절한다.
+ */
+function PriorityStatField({ id, stats, value, isMissing, onChange }: PriorityStatFieldProps) {
+  const triggerId = `ending-${id}-priority-stat`;
+  const hintId = `${triggerId}-hint`;
+  const missingHintId = `${triggerId}-missing`;
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={triggerId}><FieldLabelText field="startingSetups.*.endings.*.priorityStatId" /></Label>
+      <Select value={value ?? NO_PRIORITY_STAT} onValueChange={(next) => onChange(next === NO_PRIORITY_STAT ? null : next)}>
+        <SelectTrigger
+          id={triggerId}
+          className="w-full sm:w-56"
+          aria-invalid={isMissing || undefined}
+          aria-describedby={isMissing ? `${missingHintId} ${hintId}` : hintId}
+        >
+          <SelectValue>
+            {isMissing ? (
+              <>
+                <TriangleAlert aria-hidden className="size-3.5 text-destructive-text" />
+                <span className="truncate text-destructive-text">지워짐</span>
+              </>
+            ) : undefined}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={NO_PRIORITY_STAT}>없음</SelectItem>
+          {stats.map((stat) => (
+            <SelectItem key={stat.id} value={stat.id}>
+              {stat.name || "이름없음"}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {isMissing && (
+        <p id={missingHintId} className="text-xs break-keep text-destructive-text">
+          고른 스탯이 지워졌어요. 다른 스탯을 고르거나 ‘없음’으로 바꿔 주세요.
+        </p>
+      )}
+      <p id={hintId} className="text-xs break-keep text-muted-foreground">
+        같은 턴에 여러 엔딩이 조건을 채우면, 우선순위 스탯을 고른 엔딩 가운데 그 값이 가장 높은 엔딩 하나만 판정해요. 그
+        엔딩이 판정을 통과하지 못하면 그 턴에는 엔딩이 나지 않아요.
+      </p>
+    </div>
   );
 }
 
@@ -307,6 +383,7 @@ function EndingSection({ startingSetupIndex }: { startingSetupIndex: number }) {
         statRules: [],
         epilogue: "",
         hint: "",
+        priorityStatId: null,
       },
       { focusName: `${endingsPath}.${fields.length}.name` },
     );
@@ -314,8 +391,9 @@ function EndingSection({ startingSetupIndex }: { startingSetupIndex: number }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm text-muted-foreground">
-        같은 턴에 여러 엔딩 조건이 동시에 충족되면 목록 위쪽 엔딩이 우선 발동돼요.
+      <p className="text-sm break-keep text-muted-foreground">
+        같은 턴에 여러 엔딩 조건이 동시에 충족되면 목록 위쪽 엔딩부터 판정해요. 우선순위 스탯을 고른 엔딩끼리는 그 값이 가장
+        높은 엔딩 하나만 판정해요.
       </p>
 
       {fields.length === 0 ? (

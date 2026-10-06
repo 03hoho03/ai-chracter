@@ -255,11 +255,12 @@ const OPTION_VALUES: Partial<Record<string, readonly unknown[]>> = {
 
 /**
  * 선택지가 코드 상수에 없는 선택 칸과 그 이유. 장르 목록은 서버에서 받아 오고, 적용 대상은 "스토리 전체"(null) 또는 특정
- * 시작설정 id 다.
+ * 시작설정 id 다. 엔딩의 우선순위 스탯은 그 시작설정에 작가가 만든 스탯 가운데 하나라, 원고는 스탯 이름으로 적는다.
  */
 const OPTIONS_OUTSIDE_CODE: Record<string, (value: unknown) => boolean> = {
   "registration.genre": (value) => typeof value === "string" && value !== "",
   "keywordNotes.*.scope": (value) => value === null || typeof value === "string",
+  "startingSetups.*.endings.*.priorityStatId": (value) => typeof value === "string" && value !== "",
 };
 
 describe.each(BLOCK_TOPICS)("%s field blocks", (_id, topic: GuideTopic, manuscript, mockups: StoryFieldMockups) => {

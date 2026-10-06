@@ -37,7 +37,12 @@ import { StatChangeFields } from "./StatChangeFields";
 import { StoryMacroNotice } from "./StoryMacroNotice";
 import { UNDO_TOAST_DURATION_MS, UndoToastButton } from "./UndoToastButton";
 import { moveStatErrorsById } from "../model/moveStatErrorsById";
-import { orderWithPendingRemovals, restoreRemovedStat, type RemovedStat } from "../model/restoreRemovedStat";
+import {
+  endingsToRestorePriority,
+  orderWithPendingRemovals,
+  restoreRemovedStat,
+  type RemovedStat,
+} from "../model/restoreRemovedStat";
 import { revalidateStatRange, revalidateStatRangeIfInvalid } from "../model/statRangeValidation";
 import { statRemovalConfirmDescription } from "../model/statRemovalConfirm";
 
@@ -412,6 +417,11 @@ function StatSection({
         shouldDirty: true,
       });
     }
+    for (const { endingIndex } of updates.priorityStatEndings) {
+      setValue(`startingSetups.${startingSetupIndex}.endings.${endingIndex}.priorityStatId`, null, {
+        shouldDirty: true,
+      });
+    }
     for (const { noteIndex, conditionRules } of updates.situationNotes) {
       setValue(`startingSetups.${startingSetupIndex}.situationNotes.${noteIndex}.conditionRules`, conditionRules, {
         shouldDirty: true,
@@ -425,6 +435,7 @@ function StatSection({
         [...pendingRemovalsRef.current.values()].filter((each) => each.startingSetupId === startingSetupId),
       ),
       stat: structuredClone(getValues(`${statsPath}.${statIndex}`)),
+      priorityEndingIds: updates.priorityStatEndings.map(({ endingId }) => endingId),
     };
     remove(statIndex);
     // 되돌리기는 묻지 않고 지운 경로에만 둔다. 확인을 거친 삭제는 엔딩·상황 노트 조건도 함께 지웠고 사용자가 그것까지
@@ -440,7 +451,12 @@ function StatSection({
     const pendingRemovals = pendingRemovalsRef.current;
     pendingRemovals.set(toastId, removed);
     const forget = () => void pendingRemovals.delete(toastId);
-    toast(`${statNoun(removed)}을 지웠어요.`, {
+    // 우선순위 스탯만 걸린 삭제는 묻지 않고 비우므로, 엔딩 탭에 가서야 알게 되지 않도록 여기서 함께 알린다.
+    const priorityNote =
+      removed.priorityEndingIds.length > 0
+        ? ` 이 스탯을 고른 엔딩 ${removed.priorityEndingIds.length}개의 우선순위 스탯도 비웠어요.`
+        : "";
+    toast(`${statNoun(removed)}을 지웠어요.${priorityNote}`, {
       id: toastId,
       duration: UNDO_TOAST_DURATION_MS,
       onDismiss: forget,
@@ -475,6 +491,10 @@ function StatSection({
     flushSync(() => {
       uiState.select(SELECTED_STARTING_SETUP, removed.startingSetupId);
       setValue(restoredStatsPath, restored.stats, { shouldDirty: true });
+      const restoredEndingsPath = `startingSetups.${restored.startingSetupIndex}.endings` as const;
+      for (const endingIndex of endingsToRestorePriority(getValues(restoredEndingsPath), removed)) {
+        setValue(`${restoredEndingsPath}.${endingIndex}.priorityStatId`, removed.stat.id, { shouldDirty: true });
+      }
       // `setValue` 는 오류를 옛 인덱스에 두므로 스탯 id 를 따라 다시 꽂는다. 되살린 스탯 자신은 오류 없이 돌아온다(다음
       // blur 나 발행 때 다시 검사된다). 오류만 바꾸므로 자동저장은 돌지 않는다.
       afterIds.forEach((_, index) => clearErrors(`${restoredStatsPath}.${index}`));

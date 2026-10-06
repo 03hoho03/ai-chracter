@@ -65,6 +65,7 @@ function fromApiEnding(dto: EndingDraftItem): EndingValues {
     statRules: dto.statRules.map(fromApiRuleListItem),
     epilogue: dto.epilogue ?? undefined,
     hint: dto.hint ?? undefined,
+    priorityStatId: dto.priorityStatId ?? null,
   };
 }
 

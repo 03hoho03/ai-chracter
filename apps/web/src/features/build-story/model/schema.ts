@@ -202,6 +202,12 @@ export const endingSchema = z.object({
   statRules: z.array(ruleListItemSchema).default([]),
   epilogue: z.string().optional(),
   hint: z.string().optional(),
+  /**
+   * 같은 턴에 조건을 넘은 엔딩이 여럿일 때 비교할 같은 시작설정의 스탯 id. 이 칸을 정한 엔딩끼리는 각자 고른 스탯 값이 가장
+   * 높은 엔딩만 판정한다. 빈 값(목록 순서대로 판정)은 `null` 이고 키를 빼지 못하게 둔다 — 이유는 스탯의 `perTurnDelta` 와
+   * 같다(RHF 가 `undefined` 칸을 같은 자리 옛 엔딩의 값으로 다시 채운다). 비어 있어도 발행할 수 있는 선택 칸이다.
+   */
+  priorityStatId: z.string().nullable(),
 });
 
 /** 조건 수. 그룹 자체는 세지 않고 그 안의 조건을 센다 — 서버가 상황 노트의 조건 상한·"조건 없음"을 따지는 셈과 같다. */
