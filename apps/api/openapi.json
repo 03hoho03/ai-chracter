@@ -6283,6 +6283,625 @@
         }
       }
     },
+    "/novels/{novel_id}/characters": {
+      "get": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "List Novel Characters",
+        "description": "인물 카드(만든 순서)와 카드마다 나온 화.",
+        "operationId": "list_novel_characters_novels__novel_id__characters_get",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelCharacterListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Add Novel Character",
+        "description": "생성 출력이 아직 내지 않은 인물의 카드를 직접 만든다(무과금). 같은 이름의 카드가 있으면 아무것도 바꾸지 않으므로\n다시 보내도 결과가 같다. 다른 카드의 별칭이면 409 `NOVEL_CHARACTER_NAME_TAKEN` + `name`. 카드를 단독으로 지우는\n길은 없다(합치기만) — 메모가 다음 묶음 입력에 실리는 카드를 실수로 잃지 않게.\n\n인물 카드를 고치는 모든 경로처럼 사용자 행을 먼저 잠근다 — 생성 결과 저장이 같은 잠금 아래에서 이름을 카드에 붙이므로,\n잠그지 않으면 둘이 같은 이름의 카드를 하나씩 만든다(`characters.py` 머리).",
+        "operationId": "add_novel_character_novels__novel_id__characters_put",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NovelCharacterAddRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelCharacterListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/characters/{character_id}": {
+      "patch": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Update Novel Character",
+        "description": "카드 이름·별칭·메모를 바꾼다(보낸 칸만, 무과금). 메모는 다음 묶음 생성 입력에 실린다(메모가 빈 인물은 빠진다).\n이름이나 별칭이 다른 카드의 이름·별칭과 겹치면 409 `NOVEL_CHARACTER_NAME_TAKEN` + `name`(겹친 값). 없는 카드는 404\n`NOVEL_CHARACTER_NOT_FOUND`. 잠금은 추가와 같다.",
+        "operationId": "update_novel_character_novels__novel_id__characters__character_id__patch",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NovelCharacterUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelCharacterListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/characters/{character_id}/merge": {
+      "post": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Merge Novel Character",
+        "description": "같은 인물의 이름 표기가 갈려 생긴 카드를 합친다(무과금). 경로의 카드가 `intoCharacterId` 카드로 흡수된다 — 이름·별칭은\n남는 카드의 별칭이 되고(그 뒤 생성 출력이 그 이름을 내면 남는 카드에 붙는다), 메모는 남는 카드 메모 뒤에 `[이름] 메모`\n로 붙고, 나온 화가 옮겨진 뒤 경로 카드는 지워진다. 편집 보드에 저장된 그 카드의 자리는 다음 배치 조회부터 빠진다.\n두 카드가 같으면 422 `NOVEL_CHARACTER_MERGE_SELF`, 어느 쪽이든 없으면 404 `NOVEL_CHARACTER_NOT_FOUND`.\n\n사용자 행을 먼저 잠근다. 생성 결과 저장은 같은 잠금을 쥔 채 카드 목록을 읽고 이름을 붙이므로, 합치기가 잠그지 않으면\n저장이 합치기 전 목록을 읽고 흡수될 카드에 연결을 넣는다(합치기가 그 카드를 지우는 것과 엇갈린다).",
+        "operationId": "merge_novel_character_novels__novel_id__characters__character_id__merge_post",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NovelCharacterMergeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelCharacterListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/board-layout": {
+      "get": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Get Novel Board Layout",
+        "description": "저장한 편집 보드 배치. 지금 없는 화·인물의 자리는 빼고 돌려준다 — 묶음 삭제·인물 합치기 뒤에도 저장값을 고치지\n않으므로, 화면이 받은 키만 다음 저장에 다시 보내면 저절로 정리된다. 저장한 적이 없으면 `layout` 이 null 이다.",
+        "operationId": "get_novel_board_layout_novels__novel_id__board_layout_get",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelBoardLayoutResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Save Novel Board Layout",
+        "description": "편집 보드 배치를 통째로 저장한다. 끌기·화면 이동이 멈출 때마다 오므로 소설 수정 시각은 밀지 않는다(목록이 최근\n수정 순이다). 직렬화한 크기가 `limits.boardLayoutMaxBytes` 를 넘으면 422 `NOVEL_BOARD_LAYOUT_TOO_LARGE`.\n\n소설 행 하나만 고치고 다른 행을 잡지 않으므로 잠금 순서에 끼지 않는다.",
+        "operationId": "save_novel_board_layout_novels__novel_id__board_layout_put",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NovelBoardLayout"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/chapters/{chapter_id}/reading-position": {
+      "put": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Save Novel Reading Position",
+        "description": "화를 읽던 자리를 저장한다. 화면을 떠날 때 응답을 기다리지 않는 요청으로도 오므로 본문이 작고 응답 본문이 없다.\n같은 값을 다시 보내도 결과가 같고, 한 번 다 읽은 화(`finished`)는 앞부분을 다시 읽어 저장해도 다 읽은 화로 남는다.\n문단 번호가 문단 수 밖이면 422 `NOVEL_PARAGRAPH_RANGE_INVALID`, 없는 화(지워진 화 포함)는 404\n`NOVEL_CHAPTER_NOT_FOUND`. 읽기는 수정이 아니라 소설 수정 시각은 밀지 않는다.\n\n화 행을 키 공유 잠금으로 확인한 뒤 저장한다. 묶음·소설 삭제는 화를 `FOR UPDATE` 로 잠근 뒤 읽은 위치를 지우므로, 이쪽이\n먼저 잡으면 삭제가 이 저장을 기다렸다가 함께 지우고, 삭제가 먼저 잡았으면 이 확인이 기다렸다가 화가 없음을 보고 404\n다. 확인 없이 저장하면 삭제가 커밋된 뒤 FK 위반(500)이 난다. 사용자 행은 잡지 않는다 — 이 저장은 사용자 행 아래의\n행(작업·인물·스냅샷·클로버)을 고치지 않고 화 행 하나와 자기 행만 쥐므로, 사용자 → 작업 → 화 순서로 잡는 삭제와 서로를\n기다리는 일이 없다.",
+        "operationId": "save_novel_reading_position_novels__novel_id__chapters__chapter_id__reading_position_put",
+        "parameters": [
+          {
+            "name": "chapter_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chapter Id"
+            }
+          },
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NovelReadingPositionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/snapshots": {
+      "get": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "List Novel Snapshots",
+        "description": "스냅샷 목록(최근 것 먼저). 내용은 상세로 따로 읽는다.",
+        "operationId": "list_novel_snapshots_novels__novel_id__snapshots_get",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelSnapshotListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Create Novel Snapshot",
+        "description": "지금 상태를 이름 붙여 저장한다(무과금) — 소설 제목·소개·설정 노트, 인물 카드, 화마다 지금 개정·제목·요약·작가의\n말. 상한에 닿으면 가장 오래된 복원 직전 자동 스냅샷부터 지우고, 이름 붙인 것만으로 차 있으면 409\n`NOVEL_SNAPSHOT_LIMIT`(하나 지운 뒤 다시).\n\n사용자 행을 먼저 잠근다 — 개수를 세고 지우고 넣는 사이에 같은 소설의 다른 저장·복원이 끼면 둘 다 자리가 있다고 보고\n상한을 넘긴다. 인물 카드를 읽는 순간도 카드를 고치는 경로들과 같은 잠금 아래라 어중간한 상태를 뜨지 않는다.",
+        "operationId": "create_novel_snapshot_novels__novel_id__snapshots_post",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NovelSnapshotCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelSnapshotSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/snapshots/{snapshot_id}": {
+      "get": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Get Novel Snapshot",
+        "description": "스냅샷 내용. 화의 본문은 싣지 않는다 — 비교 화면은 화마다 `revisionId` 의 개정을 개정 조회로 읽는다(화가 지워졌으면\n그 항목은 `deleted`).",
+        "operationId": "get_novel_snapshot_novels__novel_id__snapshots__snapshot_id__get",
+        "parameters": [
+          {
+            "name": "snapshot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Snapshot Id"
+            }
+          },
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelSnapshotDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Delete Novel Snapshot",
+        "description": "스냅샷 하나를 지운다(이름 붙인 것·자동 것 모두). 자기 데이터를 지우는 길이라 재동의 게이트를 걸지 않는다. 없으면 404\n`NOVEL_SNAPSHOT_NOT_FOUND`. 개정은 스냅샷과 무관하게 남는다.",
+        "operationId": "delete_novel_snapshot_novels__novel_id__snapshots__snapshot_id__delete",
+        "parameters": [
+          {
+            "name": "snapshot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Snapshot Id"
+            }
+          },
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/snapshots/{snapshot_id}/restore": {
+      "post": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Restore Novel Snapshot",
+        "description": "스냅샷 때의 내용으로 되돌린다(무과금). 구조는 그대로다 — 스냅샷 뒤에 생긴 화는 지우지 않고, 스냅샷의 화는 그때\n본문을 새 개정으로 쌓고(이력은 남는다) 화 제목·요약·작가의 말을 그때 값으로 덮는다. 소설 제목·소개·설정 노트와 인물\n카드도 그때 값이다. 화나 그때 개정이 지워진 화는 건너뛰고 `skippedChapters` 에 싣는다. 되돌리기 직전 상태는 자동\n스냅샷(`autoSnapshotId`)으로 남는다(상한에 닿아도 한 장 더 둔다). 진행 중 작업이 있으면(연쇄 포함) 409\n`NOVEL_JOB_IN_PROGRESS` — 생성 결과 저장이 같은 화·인물·제목을 고치기 때문이다. 없는 스냅샷은 404\n`NOVEL_SNAPSHOT_NOT_FOUND`.\n\n죽은 작업을 먼저 정리해 커밋한다(서버 재기동으로 남은 작업이 복원을 계속 막지 않게). 그다음 사용자 행을 잠근다 — 작업\n생성도 사용자 행을 먼저 잡으므로, 진행 중 확인과 복원 사이에 새 작업이 끼지 못한다. 화 → 소설 순서는\n`snapshots.restore_snapshot` 에 있다. 커밋한 뒤 새 개정을 쌓은 화마다 낡은 AI 수정 미리보기를 **별도 트랜잭션에서**\n비운다 — 화를 쥔 채 작업 행을 고치면 작업 → 화 순서로 잡는 적용과 교착한다(직접 수정과 같은 이유).",
+        "operationId": "restore_novel_snapshot_novels__novel_id__snapshots__snapshot_id__restore_post",
+        "parameters": [
+          {
+            "name": "snapshot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Snapshot Id"
+            }
+          },
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelSnapshotRestoreResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/chat-rooms/{room_id}/novel": {
       "get": {
         "tags": [
@@ -19880,6 +20499,103 @@
         "title": "NovelBatchSummary",
         "description": "묶음 하나 = 생성 한 번이 옮긴 원문 구간. 다시 만들기·마지막 묶음 삭제의 단위다."
       },
+      "NovelBoardLayout": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Version"
+          },
+          "positions": {
+            "patternProperties": {
+              "^(notes|(episode|character):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$": {
+                "$ref": "#/components/schemas/NovelBoardPosition"
+              }
+            },
+            "type": "object",
+            "title": "Positions"
+          },
+          "viewport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NovelBoardViewport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "positions",
+          "viewport"
+        ],
+        "title": "NovelBoardLayout",
+        "description": "편집 보드의 노드 위치와 화면 위치. 서버는 형식만 보고 통째로 저장한다. 읽을 때는 지금 없는 화·인물의 키를 빼고\n돌려주므로(묶음 삭제·인물 합치기 뒤), 화면은 받은 키만 다시 보내면 된다. 직렬화한 크기가 상세 `limits` 의\n`board_layout_max_bytes` 를 넘으면 422 `NOVEL_BOARD_LAYOUT_TOO_LARGE`."
+      },
+      "NovelBoardLayoutResponse": {
+        "properties": {
+          "layout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NovelBoardLayout"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "layout"
+        ],
+        "title": "NovelBoardLayoutResponse"
+      },
+      "NovelBoardPosition": {
+        "properties": {
+          "x": {
+            "type": "number",
+            "title": "X"
+          },
+          "y": {
+            "type": "number",
+            "title": "Y"
+          }
+        },
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "title": "NovelBoardPosition"
+      },
+      "NovelBoardViewport": {
+        "properties": {
+          "x": {
+            "type": "number",
+            "title": "X"
+          },
+          "y": {
+            "type": "number",
+            "title": "Y"
+          },
+          "zoom": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Zoom"
+          }
+        },
+        "type": "object",
+        "required": [
+          "x",
+          "y",
+          "zoom"
+        ],
+        "title": "NovelBoardViewport"
+      },
       "NovelChainCreateRequest": {
         "properties": {
           "model": {
@@ -20347,6 +21063,156 @@
         "type": "object",
         "title": "NovelChapterUpdateRequest",
         "description": "보낸 칸만 바꾼다. 화 제목은 다음 다시 만들기가 새 출력으로 덮는다(본문과 함께 나온 값이다)."
+      },
+      "NovelCharacterAddRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "NovelCharacterAddRequest",
+        "description": "이 이름의 카드가 있게 한다. 같은 이름의 카드가 이미 있으면 아무것도 바꾸지 않는다(다시 보내도 같다). 다른 카드의\n별칭이면 409 `NOVEL_CHARACTER_NAME_TAKEN` + `name`."
+      },
+      "NovelCharacterListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NovelCharacterResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "NovelCharacterListResponse"
+      },
+      "NovelCharacterMergeRequest": {
+        "properties": {
+          "intoCharacterId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Intocharacterid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "intoCharacterId"
+        ],
+        "title": "NovelCharacterMergeRequest",
+        "description": "경로의 카드를 이 카드로 합친다 — 경로 카드의 이름·별칭이 이 카드의 별칭이 되고, 메모는 이 카드 메모 뒤에\n`[이름] 메모` 로 붙고, 등장 화가 옮겨진 뒤 경로 카드는 지워진다."
+      },
+      "NovelCharacterResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "aliases": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Aliases"
+          },
+          "memo": {
+            "type": "string",
+            "title": "Memo"
+          },
+          "chapterIds": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Chapterids"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "aliases",
+          "memo",
+          "chapterIds",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "NovelCharacterResponse",
+        "description": "인물 카드 하나. 이름과 별칭을 모은 공간은 소설 안에서 겹치지 않는다 — 생성 출력의 등장 인물 이름이 이름이나 별칭에\n맞는 카드에 붙는다. `chapter_ids` 는 이 인물이 나온 화(화 번호 순)다."
+      },
+      "NovelCharacterUpdateRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "aliases": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "maxLength": 50,
+                  "minLength": 1
+                },
+                "type": "array",
+                "maxItems": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aliases"
+          },
+          "memo": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memo"
+          }
+        },
+        "type": "object",
+        "title": "NovelCharacterUpdateRequest",
+        "description": "보낸 칸만 바꾼다. `aliases` 는 목록 통째다(앞뒤 공백·빈 값·중복·이름과 같은 값은 서버가 뺀다). 이름이나 별칭이 다른\n카드의 이름·별칭과 겹치면 409 `NOVEL_CHARACTER_NAME_TAKEN` + `name`(겹친 값)."
       },
       "NovelCover": {
         "properties": {
@@ -20816,6 +21682,26 @@
           "authorNoteMaxLength": {
             "type": "integer",
             "title": "Authornotemaxlength"
+          },
+          "characterNameMaxLength": {
+            "type": "integer",
+            "title": "Characternamemaxlength"
+          },
+          "characterAliasesMaxCount": {
+            "type": "integer",
+            "title": "Characteraliasesmaxcount"
+          },
+          "characterMemoMaxLength": {
+            "type": "integer",
+            "title": "Charactermemomaxlength"
+          },
+          "snapshotNameMaxLength": {
+            "type": "integer",
+            "title": "Snapshotnamemaxlength"
+          },
+          "boardLayoutMaxBytes": {
+            "type": "integer",
+            "title": "Boardlayoutmaxbytes"
           }
         },
         "type": "object",
@@ -20827,7 +21713,12 @@
           "titleMaxLength",
           "synopsisMaxLength",
           "chapterTitleMaxLength",
-          "authorNoteMaxLength"
+          "authorNoteMaxLength",
+          "characterNameMaxLength",
+          "characterAliasesMaxCount",
+          "characterMemoMaxLength",
+          "snapshotNameMaxLength",
+          "boardLayoutMaxBytes"
         ],
         "title": "NovelLimits"
       },
@@ -21030,6 +21921,38 @@
           "protagonistName"
         ],
         "title": "NovelProtagonistNameRequest"
+      },
+      "NovelReadingPositionRequest": {
+        "properties": {
+          "paragraphIndex": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Paragraphindex"
+          },
+          "paragraphCount": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Paragraphcount"
+          },
+          "revisionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Revisionid"
+          },
+          "finished": {
+            "type": "boolean",
+            "title": "Finished"
+          }
+        },
+        "type": "object",
+        "required": [
+          "paragraphIndex",
+          "paragraphCount",
+          "revisionId",
+          "finished"
+        ],
+        "title": "NovelReadingPositionRequest",
+        "description": "화를 읽던 자리. 같은 값을 다시 보내도 결과가 같다. `finished` 가 한 번 참이 되면 그 화는 그 뒤 앞부분으로 돌아가\n저장해도 다 읽은 화로 남는다. `revision_id` 는 읽던 개정이다(그 뒤 개정이 바뀌면 문단 수 비율로 옮긴다)."
       },
       "NovelRegenerateOption": {
         "properties": {
@@ -21260,6 +22183,283 @@
         ],
         "title": "NovelSettingNotesRequest",
         "description": "공백만 보내면 빈 노트로 저장된다."
+      },
+      "NovelSnapshotChapter": {
+        "properties": {
+          "chapterId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Chapterid"
+          },
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          },
+          "revisionId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revisionid"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "authorNote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authornote"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chapterId",
+          "deleted",
+          "revisionId",
+          "title",
+          "summary",
+          "authorNote"
+        ],
+        "title": "NovelSnapshotChapter",
+        "description": "스냅샷의 화 하나. `deleted` 가 참이면 그 뒤 마지막 묶음 삭제로 화가 지워진 것이고, 나머지 칸은 null 이다(지운 화의\n내용은 스냅샷에서도 함께 지워진다)."
+      },
+      "NovelSnapshotCharacter": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "aliases": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Aliases"
+          },
+          "memo": {
+            "type": "string",
+            "title": "Memo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "aliases",
+          "memo"
+        ],
+        "title": "NovelSnapshotCharacter"
+      },
+      "NovelSnapshotCreateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "NovelSnapshotCreateRequest"
+      },
+      "NovelSnapshotDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "auto_before_restore"
+            ],
+            "title": "Kind"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "titleEdited": {
+            "type": "boolean",
+            "title": "Titleedited"
+          },
+          "synopsis": {
+            "type": "string",
+            "title": "Synopsis"
+          },
+          "settingNotes": {
+            "type": "string",
+            "title": "Settingnotes"
+          },
+          "characters": {
+            "items": {
+              "$ref": "#/components/schemas/NovelSnapshotCharacter"
+            },
+            "type": "array",
+            "title": "Characters"
+          },
+          "chapters": {
+            "items": {
+              "$ref": "#/components/schemas/NovelSnapshotChapter"
+            },
+            "type": "array",
+            "title": "Chapters"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "createdAt",
+          "title",
+          "titleEdited",
+          "synopsis",
+          "settingNotes",
+          "characters",
+          "chapters"
+        ],
+        "title": "NovelSnapshotDetail"
+      },
+      "NovelSnapshotListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NovelSnapshotSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "limit"
+        ],
+        "title": "NovelSnapshotListResponse"
+      },
+      "NovelSnapshotRestoreResponse": {
+        "properties": {
+          "novel": {
+            "$ref": "#/components/schemas/NovelDetailResponse"
+          },
+          "skippedChapters": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Skippedchapters"
+          },
+          "autoSnapshotId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Autosnapshotid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "novel",
+          "skippedChapters",
+          "autoSnapshotId"
+        ],
+        "title": "NovelSnapshotRestoreResponse",
+        "description": "복원 결과. 스냅샷 뒤에 생긴 화는 그대로 두고, 스냅샷에 있던 화는 그때의 본문을 새 개정으로 쌓는다. 화나 그 개정이\n지워져 되돌릴 수 없던 화는 `skipped_chapters` 에 있다. 복원 직전 상태는 `auto_snapshot_id` 스냅샷으로 남는다."
+      },
+      "NovelSnapshotSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "auto_before_restore"
+            ],
+            "title": "Kind"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "createdAt"
+        ],
+        "title": "NovelSnapshotSummary",
+        "description": "`manual` 은 사용자가 이름 붙여 저장한 것, `auto_before_restore` 는 복원 직전 상태를 서버가 떠 둔 것이다."
       },
       "NovelSource": {
         "properties": {

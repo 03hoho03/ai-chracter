@@ -674,11 +674,16 @@ async def test_chain_over_its_overall_time_cap_fails_and_ends_the_running_batch(
     assert detail["activeJob"] is None
 
 
-def test_overall_time_cap_is_each_batchs_job_cap_plus_a_margin(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_overall_time_cap_grows_by_a_job_cap_and_a_boundary_call_per_batch_plus_a_fixed_margin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """묶음마다 경계 제안 한 번과 자식 작업 하나가 돈다 — 경계 제안 몫이 고정 여유에 묻혀 있으면 묶음이 많을수록 여유가
+    모자라 마지막 묶음이 끊긴다."""
     monkeypatch.setattr(settings, "novelize_job_timeout_seconds", 360)
-    monkeypatch.setattr(settings, "novelize_chain_timeout_margin_seconds", 180)
+    monkeypatch.setattr(settings, "gemini_novelize_boundary_timeout_ms", 30_000)
+    monkeypatch.setattr(settings, "novelize_chain_timeout_margin_seconds", 60)
 
-    assert [runner.chain_timeout_seconds(n) for n in (1, 5)] == [540, 1980]
+    assert [runner.chain_timeout_seconds(n) for n in (1, 5)] == [450, 2010]
 
 
 async def test_chain_cut_by_a_restart_is_refunded_by_expiry_minus_what_it_used(

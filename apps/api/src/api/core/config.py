@@ -438,10 +438,14 @@ class Settings(BaseSettings):
     # "남은 대화 한 번에"(연쇄 생성)가 한 번에 만드는 묶음 수의 상한. 금액을 묶음마다 화 수 상한만큼 미리 받으므로 이
     # 값이 한 번에 묶이는 클로버의 상한이기도 하다 — 남은 대화가 더 있으면 다시 누른다. 임시값.
     novelize_chain_max_batches: int = Field(default=5, ge=1)
-    # 연쇄 부모 작업의 전체 시간 상한 = 계획한 묶음 수 × 작업 하나의 상한(`novelize_job_timeout_seconds`) + 이 여유(초).
-    # 여유는 묶음마다 부르는 경계 제안(Gemini 경계 제안 타임아웃 30초) 다섯 번과 묶음 사이 DB 일을 담는다. heartbeat 가
-    # 살아 있어도 이 상한을 넘으면 실패·남은 몫 환불이다 — 걸린 부모가 소설을 영영 진행 중으로 잠그지 않게. 임시값.
-    novelize_chain_timeout_margin_seconds: float = Field(default=180, gt=0)
+    # 연쇄 부모 작업의 전체 시간 상한 = 계획한 묶음 수 × (작업 하나의 상한 `novelize_job_timeout_seconds` + 경계 제안
+    # 타임아웃 `gemini_novelize_boundary_timeout_ms`) + 이 여유(초). 묶음마다 경계 제안 한 번과 자식 작업 하나가 돌므로 둘은
+    # 묶음 수에 비례해 곱하고, 여유는 묶음 수와 무관한 몫(부모 시작·끝의 DB 일)만 담는다. heartbeat 가 살아 있어도 이
+    # 상한을 넘으면 실패·남은 몫 환불이다 — 걸린 부모가 소설을 영영 진행 중으로 잠그지 않게. 임시값.
+    novelize_chain_timeout_margin_seconds: float = Field(default=60, gt=0)
+    # 소설 하나의 스냅샷 개수 상한. 닿으면 가장 오래된 복원 직전 자동 스냅샷부터 지우고, 이름 붙인 것만 남았으면 새 저장을
+    # 거절한다. 복원 직전 자동 스냅샷은 복원이 막히지 않게 이 상한을 넘어 한 장 더 둘 수 있다. 임시값.
+    novelize_snapshot_limit: int = Field(default=50, ge=1)
 
     @field_validator(
         "novelize_grant_allowlist", "chat_premium_model_allowlist", "novelize_premium_model_allowlist", mode="before"

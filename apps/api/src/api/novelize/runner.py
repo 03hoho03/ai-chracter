@@ -213,8 +213,11 @@ async def enqueue_chain_job(session_factory: SessionFactory, llm_client: LLMClie
 
 
 def chain_timeout_seconds(planned_batches: int) -> float:
-    """연쇄 부모 하나의 전체 시간 상한. 자식마다 작업 하나의 상한이 걸리고, 묶음 사이의 경계 제안·DB 일은 여유로 덮는다."""
-    return planned_batches * settings.novelize_job_timeout_seconds + settings.novelize_chain_timeout_margin_seconds
+    """연쇄 부모 하나의 전체 시간 상한. 묶음마다 경계 제안 한 번과 자식 작업 하나가 돌므로 둘의 상한 합을 묶음 수만큼
+    곱하고, 묶음 수와 무관한 부모 앞뒤의 DB 일은 고정 여유로 덮는다. 경계 제안 몫을 고정 여유에 넣으면 묶음이 늘수록
+    여유가 모자라 마지막 묶음이 제 상한을 다 쓰기 전에 부모가 끊긴다."""
+    per_batch = settings.novelize_job_timeout_seconds + settings.gemini_novelize_boundary_timeout_ms / 1000
+    return planned_batches * per_batch + settings.novelize_chain_timeout_margin_seconds
 
 
 async def run_chain(session_factory: SessionFactory, llm_client: LLMClient, job_id: uuid.UUID) -> None:

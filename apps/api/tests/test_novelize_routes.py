@@ -80,7 +80,8 @@ def test_every_novel_route_carries_the_novelize_gate() -> None:
 
 
 _DUMMY_PATH_IDS = {
-    name: str(uuid.uuid4()) for name in ("novel_id", "chapter_id", "revision_id", "job_id", "room_id", "batch_id")
+    name: str(uuid.uuid4())
+    for name in ("novel_id", "chapter_id", "revision_id", "job_id", "room_id", "batch_id", "character_id", "snapshot_id")
 }
 
 

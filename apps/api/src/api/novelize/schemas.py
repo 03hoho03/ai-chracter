@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import Field, StringConstraints, field_validator
+from pydantic import Field, FiniteFloat, StringConstraints, field_validator
 
 from api.content.author_macros import user_name_error
 from api.core.schema import CamelModel
@@ -14,6 +14,7 @@ from api.db.models.novel import (
     NovelJobKind,
     NovelJobStatus,
     NovelRevisionSource,
+    NovelSnapshotKind,
 )
 from api.llm.chat_models import CHAT_MODELS_BY_ID, DEFAULT_CHAT_MODEL, ChatModelId, novel_episode_unit_price
 from api.novelize.episodes import RegenerateIneligibility
@@ -50,6 +51,26 @@ ChapterTitleText = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=CHAPTER_TITLE_MAX_LENGTH)
 ]
 AuthorNoteText = Annotated[str, StringConstraints(strip_whitespace=True, max_length=AUTHOR_NOTE_MAX_LENGTH)]
+
+# 인물 이름·별칭은 카드와 목차에 한 줄로 보이는 길이, 메모는 설정 노트와 같은 정도로 둔다. 메모가 빈 인물은 다음 묶음
+# 입력에서 빠지고, 메모는 다음 묶음 생성 입력에 실리므로 설정 노트보다 넉넉하게 두지 않는다. 별칭 수는 표기가 갈린 이름을
+# 몇 번 합쳐도 닿지 않을 정도로 둔다(합치기는 이 상한을 보지 않는다 — 사용자가 직접 적는 목록에만 건다).
+CHARACTER_NAME_MAX_LENGTH = 50
+CHARACTER_ALIASES_MAX_COUNT = 20
+CHARACTER_MEMO_MAX_LENGTH = 2_000
+# 스냅샷 이름은 목록에 한 줄로 보이는 길이.
+SNAPSHOT_NAME_MAX_LENGTH = 50
+# 편집 보드 배치를 직렬화한 크기 상한(바이트). 화·인물 노드 수백 개의 좌표와 화면 위치가 한참 아래에 든다. 화면이 같은
+# 값을 상세의 `limits` 로 받아 보낼 몫을 미리 줄인다.
+BOARD_LAYOUT_MAX_BYTES = 65_536
+
+CharacterNameText = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=CHARACTER_NAME_MAX_LENGTH)
+]
+CharacterMemoText = Annotated[str, StringConstraints(strip_whitespace=True, max_length=CHARACTER_MEMO_MAX_LENGTH)]
+SnapshotNameText = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=SNAPSHOT_NAME_MAX_LENGTH)
+]
 
 
 # ── 작업 ───────────────────────────────────────────────────────────────────
@@ -134,6 +155,11 @@ class NovelLimits(CamelModel):
     synopsis_max_length: int
     chapter_title_max_length: int
     author_note_max_length: int
+    character_name_max_length: int
+    character_aliases_max_count: int
+    character_memo_max_length: int
+    snapshot_name_max_length: int
+    board_layout_max_bytes: int
 
 
 class NovelActiveJob(CamelModel):
@@ -465,3 +491,153 @@ class NovelAiEditRequest(CamelModel):
     paragraph_end: int = Field(ge=0)
     instruction: InstructionText
     expected_cost: int
+
+
+# ── 인물 카드 ───────────────────────────────────────────────────────────────
+class NovelCharacterResponse(CamelModel):
+    """인물 카드 하나. 이름과 별칭을 모은 공간은 소설 안에서 겹치지 않는다 — 생성 출력의 등장 인물 이름이 이름이나 별칭에
+    맞는 카드에 붙는다. `chapter_ids` 는 이 인물이 나온 화(화 번호 순)다."""
+
+    id: uuid.UUID
+    name: str
+    aliases: list[str]
+    memo: str
+    chapter_ids: list[uuid.UUID]
+    created_at: datetime
+    updated_at: datetime
+
+
+class NovelCharacterListResponse(CamelModel):
+    # 만든 순서대로.
+    items: list[NovelCharacterResponse]
+
+
+class NovelCharacterAddRequest(CamelModel):
+    """이 이름의 카드가 있게 한다. 같은 이름의 카드가 이미 있으면 아무것도 바꾸지 않는다(다시 보내도 같다). 다른 카드의
+    별칭이면 409 `NOVEL_CHARACTER_NAME_TAKEN` + `name`."""
+
+    name: CharacterNameText
+
+
+class NovelCharacterUpdateRequest(CamelModel):
+    """보낸 칸만 바꾼다. `aliases` 는 목록 통째다(앞뒤 공백·빈 값·중복·이름과 같은 값은 서버가 뺀다). 이름이나 별칭이 다른
+    카드의 이름·별칭과 겹치면 409 `NOVEL_CHARACTER_NAME_TAKEN` + `name`(겹친 값)."""
+
+    name: CharacterNameText | None = None
+    aliases: list[CharacterNameText] | None = Field(default=None, max_length=CHARACTER_ALIASES_MAX_COUNT)
+    memo: CharacterMemoText | None = None
+
+
+class NovelCharacterMergeRequest(CamelModel):
+    """경로의 카드를 이 카드로 합친다 — 경로 카드의 이름·별칭이 이 카드의 별칭이 되고, 메모는 이 카드 메모 뒤에
+    `[이름] 메모` 로 붙고, 등장 화가 옮겨진 뒤 경로 카드는 지워진다."""
+
+    into_character_id: uuid.UUID
+
+
+# ── 편집 보드 배치 ──────────────────────────────────────────────────────────
+# 노드 키: 화 `episode:{화 id}`, 인물 `character:{인물 id}`, 설정 노트 `notes`.
+BoardNodeKey = Annotated[
+    str,
+    StringConstraints(
+        pattern=r"^(notes|(episode|character):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
+    ),
+]
+
+
+class NovelBoardPosition(CamelModel):
+    # 유한한 수만 받는다 — JSON 에 무한·NaN 은 적을 수 없어 저장이 DB 오류가 된다.
+    x: FiniteFloat
+    y: FiniteFloat
+
+
+class NovelBoardViewport(CamelModel):
+    x: FiniteFloat
+    y: FiniteFloat
+    zoom: FiniteFloat = Field(gt=0)
+
+
+class NovelBoardLayout(CamelModel):
+    """편집 보드의 노드 위치와 화면 위치. 서버는 형식만 보고 통째로 저장한다. 읽을 때는 지금 없는 화·인물의 키를 빼고
+    돌려주므로(묶음 삭제·인물 합치기 뒤), 화면은 받은 키만 다시 보내면 된다. 직렬화한 크기가 상세 `limits` 의
+    `board_layout_max_bytes` 를 넘으면 422 `NOVEL_BOARD_LAYOUT_TOO_LARGE`."""
+
+    version: Literal[1]
+    positions: dict[BoardNodeKey, NovelBoardPosition]
+    viewport: NovelBoardViewport | None
+
+
+class NovelBoardLayoutResponse(CamelModel):
+    # 저장한 배치가 없으면 null 이다(화면이 자동 배치한다).
+    layout: NovelBoardLayout | None
+
+
+# ── 읽은 위치 ───────────────────────────────────────────────────────────────
+class NovelReadingPositionRequest(CamelModel):
+    """화를 읽던 자리. 같은 값을 다시 보내도 결과가 같다. `finished` 가 한 번 참이 되면 그 화는 그 뒤 앞부분으로 돌아가
+    저장해도 다 읽은 화로 남는다. `revision_id` 는 읽던 개정이다(그 뒤 개정이 바뀌면 문단 수 비율로 옮긴다)."""
+
+    paragraph_index: int = Field(ge=0)
+    paragraph_count: int = Field(ge=1)
+    revision_id: uuid.UUID
+    finished: bool
+
+
+# ── 스냅샷 ─────────────────────────────────────────────────────────────────
+class NovelSnapshotCreateRequest(CamelModel):
+    name: SnapshotNameText
+
+
+class NovelSnapshotSummary(CamelModel):
+    """`manual` 은 사용자가 이름 붙여 저장한 것, `auto_before_restore` 는 복원 직전 상태를 서버가 떠 둔 것이다."""
+
+    id: uuid.UUID
+    name: str
+    kind: NovelSnapshotKind
+    created_at: datetime
+
+
+class NovelSnapshotListResponse(CamelModel):
+    # 최근 것 먼저.
+    items: list[NovelSnapshotSummary]
+    # 소설 하나의 스냅샷 수 상한. 닿으면 가장 오래된 자동 스냅샷부터 지워지고, 이름 붙인 것만 남았으면 새 저장이 409
+    # `NOVEL_SNAPSHOT_LIMIT` 다.
+    limit: int
+
+
+class NovelSnapshotCharacter(CamelModel):
+    id: uuid.UUID
+    name: str
+    aliases: list[str]
+    memo: str
+
+
+class NovelSnapshotChapter(CamelModel):
+    """스냅샷의 화 하나. `deleted` 가 참이면 그 뒤 마지막 묶음 삭제로 화가 지워진 것이고, 나머지 칸은 null 이다(지운 화의
+    내용은 스냅샷에서도 함께 지워진다)."""
+
+    chapter_id: uuid.UUID
+    deleted: bool
+    revision_id: uuid.UUID | None
+    title: str | None
+    summary: str | None
+    author_note: str | None
+
+
+class NovelSnapshotDetail(NovelSnapshotSummary):
+    title: str | None
+    title_edited: bool
+    synopsis: str
+    setting_notes: str
+    characters: list[NovelSnapshotCharacter]
+    # 스냅샷 때의 화 번호 순.
+    chapters: list[NovelSnapshotChapter]
+
+
+class NovelSnapshotRestoreResponse(CamelModel):
+    """복원 결과. 스냅샷 뒤에 생긴 화는 그대로 두고, 스냅샷에 있던 화는 그때의 본문을 새 개정으로 쌓는다. 화나 그 개정이
+    지워져 되돌릴 수 없던 화는 `skipped_chapters` 에 있다. 복원 직전 상태는 `auto_snapshot_id` 스냅샷으로 남는다."""
+
+    novel: NovelDetailResponse
+    skipped_chapters: list[uuid.UUID]
+    auto_snapshot_id: uuid.UUID
