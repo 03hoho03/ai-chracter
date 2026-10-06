@@ -1289,9 +1289,10 @@ Gemini 와 따로 묶인다. 소설 장 실패는 공급자와 무관하게 지�
     "BEGIN; DELETE FROM prompt_sections WHERE prompt_set_id IN (SELECT id FROM prompt_sets WHERE model <> 'gemini' AND id NOT IN ('ba2a926c-e9ed-46e0-b42c-9c21c63552f6','f3237e56-5ff6-4b27-9135-98495c0094bb','b9c2f1ec-5e8c-48ce-8fc9-ffefdc6950d2','9b308ef1-bdb9-4f23-a2d8-fb6ae6ad778c')); DELETE FROM prompt_sets WHERE model <> 'gemini' AND id NOT IN ('ba2a926c-e9ed-46e0-b42c-9c21c63552f6','f3237e56-5ff6-4b27-9135-98495c0094bb','b9c2f1ec-5e8c-48ce-8fc9-ffefdc6950d2','9b308ef1-bdb9-4f23-a2d8-fb6ae6ad778c'); COMMIT;"
   ```
 
-- 스키마까지 되돌리면(`alembic downgrade 3bb2cc159b6d`, 순서는 위 절들과 같이 태그 롤백 먼저) downgrade 가 Gemini 가 아닌
+- 스키마까지 되돌리면(`alembic downgrade a966fc016bf1`, 순서는 위 절들과 같이 태그 롤백 먼저) downgrade 가 Gemini 가 아닌
   세트 전부(시드 + 어드민이 만든 것)를 지우고 인덱스를 되돌린 뒤 열을 지운다. 그 위의 방 모델·장 작업 모델 리비전(`519329713933`·
-  `2494aa0e607e`, 아래)이 먼저 내려가야 하므로 이 한 줄이 셋 다 내린다.
+  `2494aa0e607e`, 아래)이 먼저 내려가야 하므로 이 한 줄이 셋 다 내린다. 목표는 엔딩 우선 스탯 리비전(`a966fc016bf1`)이다 —
+  이 배포의 세 리비전이 그 위에 쌓여 있어, 그보다 아래(`3bb2cc159b6d`)로 내리면 엔딩의 우선 스탯 열과 값까지 지워진다.
 - 앞으로 슬롯을 더하는 마이그레이션은 Gemini 두 레인뿐 아니라 Claude 체인 네 개도 다룰지 판단한다 — `system`·`generation`
   슬롯이면 Claude 체인에도 넣어야 게시 검증의 슬롯 집합이 맞는다.
 - 앞으로 활성·초안 세트를 원시 SQL 로 고르는 마이그레이션은 반드시 모델로 거른다(`AND model = 'gemini'` 또는 대상 모델). 레인만
@@ -1309,9 +1310,10 @@ Gemini 와 따로 묶인다. 소설 장 실패는 공급자와 무관하게 지�
    종류(`user-chat-premium-models-on` 등)를 옛 응답 스키마가 모른다(3-11 절의 소설화 토글과 같은 성질). 장 작업의 모델 칸
    (`novel_jobs.model`)도 옛 코드가 읽지 않고, 새 작업은 그 칸이 NULL(Gemini)로 들어간다.
 4. 스키마까지 되돌리면 옛 이미지가 떠 있는 상태에서 새 코드 이미지로 내린다. 리비전은 위에서부터 장 작업 모델
-   (`2494aa0e607e`) → 방 모델(`519329713933`) → 모델 축(`e6aa289fea62`) 순서로 쌓여 있다. 장 작업 모델 리비전만 내리면 작업마다
-   적은 모델이 사라지고(차감액은 남는다), 방 모델 리비전까지 내리면 방마다 고른 모델이 사라지고(전부 Gemini), 그 아래 모델 축
-   리비전까지 내리면 Claude 세트 전부(시드 포함) 삭제도 함께 일어난다:
+   (`2494aa0e607e`) → 방 모델(`519329713933`) → 모델 축(`e6aa289fea62`) 순서로 엔딩 우선 스탯 리비전(`a966fc016bf1`) 위에
+   쌓여 있다. 장 작업 모델 리비전만 내리면 작업마다 적은 모델이 사라지고(차감액은 남는다), 방 모델 리비전까지 내리면 방마다
+   고른 모델이 사라지고(전부 Gemini), 그 아래 모델 축 리비전까지 내리면 Claude 세트 전부(시드 포함) 삭제도 함께 일어난다.
+   마지막 줄보다 더 내리지 않는다 — 엔딩 우선 스탯 열은 이 배포와 무관하다:
 
    ```sh
    sudo /opt/ddona/backup.sh   # 먼저 백업
@@ -1320,7 +1322,7 @@ Gemini 와 따로 묶인다. 소설 장 실패는 공급자와 무관하게 지�
    # 방 모델 열까지
    sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<새 코드 TAG> alembic downgrade e6aa289fea62
    # 모델 축까지(Claude 세트 삭제 포함)
-   sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<새 코드 TAG> alembic downgrade 3bb2cc159b6d
+   sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<새 코드 TAG> alembic downgrade a966fc016bf1
    ```
 
 ---

@@ -1,7 +1,7 @@
 """prompt sets model chains
 
 Revision ID: e6aa289fea62
-Revises: 3bb2cc159b6d
+Revises: a966fc016bf1
 Create Date: 2026-10-06 12:00:00.000000
 
 프롬프트 세트에 글쓰기 모델 축(`prompt_sets.model`)을 더하고, story·character 레인에 Claude Sonnet·Opus 용 published
@@ -70,7 +70,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = 'e6aa289fea62'
-down_revision: str | Sequence[str] | None = '3bb2cc159b6d'
+down_revision: str | Sequence[str] | None = 'a966fc016bf1'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
