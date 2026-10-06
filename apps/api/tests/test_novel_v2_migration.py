@@ -157,6 +157,30 @@ async def test_backfill_leaves_batched_chapters_alone_and_numbers_new_batches_af
     assert pairs[2][1].id != tree.batch.id
 
 
+async def test_backfill_drops_batches_emptied_by_old_chapter_delete(db_session: AsyncSession) -> None:
+    """옛 이미지 동안: 마지막 장(화 2, 묶음 2) 삭제는 개정 → 장만 지워 빈 묶음 2가 남고, 옛 코드가 같은 번호로 장 2를
+    다시 만든다. 다시 채우면 빈 묶음은 사라지고 새 장은 묶음 2를 받는다 — 지우지 않으면 묶음 3이 되고 지운 구간을 든
+    빈 묶음 2가 영영 남는다."""
+    novel_id = await _novel(db_session)
+    for ordinal in (1, 2):
+        await _old_chapter(db_session, novel_id, ordinal)
+    await _call(db_session, _R1._backfill_batches)
+    (_, first_batch), (removed, emptied_batch) = await _chapter_batches(db_session, novel_id)
+    await db_session.execute(sa.delete(NovelChapter).where(NovelChapter.id == removed.id))
+    recreated = await _old_chapter(db_session, novel_id, 2)
+
+    await _call(db_session, _R1._backfill_batches)
+
+    pairs = await _chapter_batches(db_session, novel_id)
+    assert [(chapter.id, batch.ordinal) for chapter, batch in pairs] == [(pairs[0][0].id, 1), (recreated.id, 2)]
+    assert pairs[0][1].id == first_batch.id
+    batch_ids = (
+        await db_session.scalars(sa.select(NovelBatch.id).where(NovelBatch.novel_id == novel_id))
+    ).all()
+    assert sorted(batch_ids) == sorted([first_batch.id, pairs[1][1].id])
+    assert emptied_batch.id not in batch_ids
+
+
 # ── R1 downgrade 거부 ────────────────────────────────────────────────────────
 
 
