@@ -1,11 +1,13 @@
 import { useDraftQuery } from "../api/useDraftQuery";
 import { useVersionListQuery } from "../api/useVersionListQuery";
 import type { PromptLane } from "../model/lane";
+import { PROMPT_MODEL_LABELS, type PromptChainKey, type PromptModel } from "../model/model";
 import { PromptLaneForm } from "./PromptLaneForm";
 
 type PromptLaneEditorProps = {
   lane: PromptLane;
-  onDirtyChange: (lane: PromptLane, isDirty: boolean) => void;
+  model: PromptModel;
+  onDirtyChange: (chain: PromptChainKey, isDirty: boolean) => void;
 };
 
 /** `draft`가 non-null이어야 `PromptLaneForm`의
@@ -13,13 +15,21 @@ type PromptLaneEditorProps = {
  * 지킨다. 활성 버전 배지는 자기 쿼리 상태를 직접 가르는 `ActiveVersionBadge`로 갈라낸다
  * (`VersionHistorySection`의 `VersionTable`과 같은 결) — 합쳐서 읽으면 목록 요청이 로딩·실패
  * 중에도 "아직 게시된 버전이 없어요"로 보인다. */
-export function PromptLaneEditor({ lane, onDirtyChange }: PromptLaneEditorProps) {
-  const draftQuery = useDraftQuery(lane);
+export function PromptLaneEditor({ lane, model, onDirtyChange }: PromptLaneEditorProps) {
+  const draftQuery = useDraftQuery(lane, model);
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex justify-end">
-        <ActiveVersionBadge lane={lane} />
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-4">
+        {/* Claude 세트에는 생성에 쓰는 두 채널만 있다 — 나머지 채널 탭이 왜 없는지, 이 세트를 고쳐도 무엇이 안 바뀌는지를
+         * 편집 전에 밝힌다. */}
+        {model !== "gemini" && (
+          <p className="max-w-prose break-keep text-xs text-muted-foreground">
+            {PROMPT_MODEL_LABELS[model]} 세트는 이 모델을 고른 방의 응답 생성(시스템 지침·생성)에만 쓰여요. 판정(스탯·엔딩·이미지),
+            기억 요약, 소설화는 고른 모델과 상관없이 Gemini 세트를 읽어요.
+          </p>
+        )}
+        <ActiveVersionBadge lane={lane} model={model} />
       </div>
 
       {draftQuery.isPending && (
@@ -33,19 +43,27 @@ export function PromptLaneEditor({ lane, onDirtyChange }: PromptLaneEditorProps)
         <p className="text-sm text-destructive-text">초안을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
       )}
 
-      {draftQuery.data && <PromptLaneForm lane={lane} draft={draftQuery.data} onDirtyChange={onDirtyChange} />}
+      {draftQuery.data && (
+        <PromptLaneForm
+          lane={lane}
+          model={model}
+          draft={draftQuery.data}
+          onDirtyChange={onDirtyChange}
+        />
+      )}
     </div>
   );
 }
 
 type ActiveVersionBadgeProps = {
   lane: PromptLane;
+  model: PromptModel;
 };
 
-/** 이 레인 값만 읽는다(TS-J) — 옛 `PageHeader`의 `items.find(isActive)`는 활성본이 셋이 되는
- * 순간 아무거나 집는 결함이 있었다. 로딩·에러를 "게시 이력 없음"과 분리한다 — 목록 요청이
+/** 이 (레인, 모델) 체인 값만 읽는다 — 목록의 활성본은 체인마다 하나라 레인만 맞추면 다른 모델의 활성본을 집는다(옛
+ * `PageHeader`의 `items.find(isActive)`가 활성본이 셋이 되는 순간 아무거나 집던 것과 같은 결함). 로딩·에러를 "게시 이력 없음"과 분리한다 — 목록 요청이
  * 실패한 순간에도 실제로는 활성 버전이 있을 수 있다. */
-function ActiveVersionBadge({ lane }: ActiveVersionBadgeProps) {
+function ActiveVersionBadge({ lane, model }: ActiveVersionBadgeProps) {
   const versionListQuery = useVersionListQuery();
 
   if (versionListQuery.isPending) {
@@ -56,10 +74,12 @@ function ActiveVersionBadge({ lane }: ActiveVersionBadgeProps) {
     return <span className="text-sm text-destructive-text">활성 버전을 확인하지 못했어요.</span>;
   }
 
-  const activeVersion = versionListQuery.data.items.find((item) => item.isActive && item.lane === lane);
+  const activeVersion = versionListQuery.data.items.find(
+    (item) => item.isActive && item.lane === lane && item.model === model,
+  );
 
   return (
-    <span className="text-sm text-muted-foreground">
+    <span className="shrink-0 text-sm text-muted-foreground sm:ml-auto">
       {activeVersion ? `현재 활성 버전 v${activeVersion.version}` : "아직 게시된 버전이 없어요"}
     </span>
   );

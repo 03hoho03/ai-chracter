@@ -8,6 +8,11 @@ import { allowedPlaceholdersFor } from "../model/allowedPlaceholders";
 import { isPromptScope, PROMPT_SCOPE_LABELS } from "../model/channels";
 import type { PromptSetFormValues } from "../model/schema";
 
+/** 수위 규칙은 체인마다 사본이라(레인 2 × 모델 3) 한 곳만 고치면 체인끼리 조용히 어긋난다 — 검증이 잡지 않으니 그 칸에서
+ * 알린다. */
+const RULE_RATING_HINT =
+  "수위 규칙은 스토리·캐릭터 레인마다 Gemini·Claude Sonnet 4.6·Claude Opus 4.6 세트에 하나씩, 모두 여섯 벌이 따로 있어요. 바꿀 때는 여섯 세트를 모두 고쳐 각각 게시하세요 — 서로 달라도 알려 주는 곳이 없어요.";
+
 const BADGE_CLASS =
   "inline-flex items-center rounded-full border border-border px-2 py-0.5 text-badge font-medium text-muted-foreground";
 
@@ -47,8 +52,9 @@ export function SectionRow({
   } = useFormContext<PromptSetFormValues>();
   const bodyError = errors.sections?.[fieldIndex]?.body;
   const placeholders = allowedPlaceholdersFor(channel, slot);
+  const isRuleRating = channel === "system" && slot === "rule_rating";
   // 공통 슬롯(channel/scope/slot/variant)은 레인마다 사본으로 반복돼 `fieldKey`가 레인 사이에서
-  // 겹친다 — 레인 3개가 `forceMount`로 동시에 마운트되면(PromptSetsPage) 이 id도 DOM에 3벌
+  // 겹친다 — 체인 여럿이 `forceMount`로 동시에 마운트되면(PromptSetsPage) 이 id도 DOM에 여러 벌
   // 생겨 `aria-describedby`가 남의 레인 에러 노드를 가리킨다. `useId()`로 컴포넌트 인스턴스별
   // 접두어를 섞는다(선례: `LabelsCard`).
   const uid = useId();
@@ -96,12 +102,21 @@ export function SectionRow({
         id={bodyFieldId}
         aria-label={`${slot}${variant ? ` (variant: ${variant})` : ""} 본문`}
         aria-invalid={!!bodyError}
-        aria-describedby={bodyError ? `${bodyFieldId}-error` : undefined}
+        aria-describedby={
+          [bodyError && `${bodyFieldId}-error`, isRuleRating && `${bodyFieldId}-rule-rating`]
+            .filter(Boolean)
+            .join(" ") || undefined
+        }
         {...register(`sections.${fieldIndex}.body`)}
       />
       {bodyError && (
         <p id={`${bodyFieldId}-error`} role="alert" className="text-xs text-destructive-text">
           {bodyError.message}
+        </p>
+      )}
+      {isRuleRating && (
+        <p id={`${bodyFieldId}-rule-rating`} className="max-w-prose break-keep text-xs text-muted-foreground">
+          {RULE_RATING_HINT}
         </p>
       )}
       {placeholders.length > 0 && (

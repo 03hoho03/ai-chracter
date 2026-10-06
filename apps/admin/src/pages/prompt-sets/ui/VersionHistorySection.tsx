@@ -10,6 +10,7 @@ import { DenseTable } from "@/shared/ui/DenseTable";
 import { useVersionDetailQuery } from "../api/useVersionDetailQuery";
 import { useVersionListQuery } from "../api/useVersionListQuery";
 import { PROMPT_LANE_LABELS } from "../model/lane";
+import { PROMPT_MODEL_LABELS } from "../model/model";
 import { RestorePromptSetDialog } from "./RestorePromptSetDialog";
 
 /** 제목은 로딩·에러에도 남아야 해서 쿼리에 의존하는 본문만 `VersionTable`로 갈라낸다
@@ -51,7 +52,7 @@ function VersionTable() {
 
   return (
     <>
-      {/* 다섯 칸이라 좁은 화면에서는 표만 가로로 스크롤하고 버전 칸은 왼쪽에 고정한다. */}
+      {/* 여섯 칸이라 좁은 화면에서는 표만 가로로 스크롤하고 버전 칸은 왼쪽에 고정한다. */}
       <div className="overflow-hidden rounded-lg border border-border">
         <DenseTable surface="card">
           <Table>
@@ -65,6 +66,7 @@ function VersionTable() {
                   </span>
                 </TableHead>
                 <TableHead>레인</TableHead>
+                <TableHead>모델</TableHead>
                 <TableHead>게시일</TableHead>
                 <TableHead>메모</TableHead>
                 <TableHead>상태</TableHead>
@@ -96,10 +98,13 @@ function VersionTable() {
                       >
                         <Check aria-hidden className={cn("size-4 text-foreground", !isSelected && "invisible")} />
                         v{item.version}
-                        <span className="sr-only">, {PROMPT_LANE_LABELS[item.lane]}</span>
+                        <span className="sr-only">
+                          , {PROMPT_LANE_LABELS[item.lane]} · {PROMPT_MODEL_LABELS[item.model]}
+                        </span>
                       </button>
                     </TableCell>
                     <TableCell>{PROMPT_LANE_LABELS[item.lane]}</TableCell>
+                    <TableCell>{PROMPT_MODEL_LABELS[item.model]}</TableCell>
                     <TableCell>{formatDateTime(item.publishedAt)}</TableCell>
                     <TableCell className="max-w-64 truncate">{item.note || "-"}</TableCell>
                     <TableCell>{item.isActive ? "활성" : "-"}</TableCell>
@@ -165,6 +170,7 @@ function VersionDetailPanel({ id }: VersionDetailPanelProps) {
               version: detail.version,
               publishedAt: detail.publishedAt,
               lane: detail.lane,
+              model: detail.model,
             })
           }
         >

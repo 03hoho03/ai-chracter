@@ -59,8 +59,8 @@ export function LabelsCard({ lane }: LabelsCardProps) {
     formState: { errors },
   } = useFormContext<PromptSetFormValues>();
   const unusedInLane = UNUSED_LABELS_BY_LANE[lane];
-  // 레인 3개가 `forceMount`로 동시에 마운트된다(PromptSetsPage) — `field.id`가 정적이면
-  // 같은 id가 DOM에 3벌 생겨 `htmlFor`가 항상 첫 레인만 가리킨다. `useId()`로 레인(=컴포넌트
+  // 체인 여럿이 `forceMount`로 동시에 마운트된다(PromptSetsPage) — `field.id`가 정적이면
+  // 같은 id가 DOM에 여러 벌 생겨 `htmlFor`가 항상 첫 체인만 가리킨다. `useId()`로 레인(=컴포넌트
   // 인스턴스)별 접두어를 섞는다(선례: `apps/web/.../ContentCard.tsx`의 `useId()`).
   const uid = useId();
 

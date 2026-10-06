@@ -2,9 +2,11 @@ import { Button } from "@ai-character-chat/ui/components/button";
 
 import { usePreviewQuery } from "../api/usePreviewQuery";
 import type { PromptLane } from "../model/lane";
+import type { PromptModel } from "../model/model";
 
 type PreviewPanelProps = {
   lane: PromptLane;
+  model: PromptModel;
   isStale: boolean;
 };
 
@@ -15,9 +17,10 @@ type PreviewPanelProps = {
  * 구분선으로 가른다 — 이 패널이 이미 카드라 항목마다 상자를 두르면 상자 속 상자가 열 개 쌓인다.
  * `open={index === 0}`(첫 항목만 펼침)은 레인별로 가르지 않는다. 레인별 응답의 첫
  * 항목이 이미 다르므로(story: system·스토리·basic / character: system·캐릭터 /
- * publish_filter: publish_filter·캐릭터) 이 자리는 그대로 두고 `lane`만 흘려보낸다. */
-export function PreviewPanel({ lane, isStale }: PreviewPanelProps) {
-  const previewQuery = usePreviewQuery(lane);
+ * publish_filter: publish_filter·캐릭터) 이 자리는 그대로 두고 `lane`만 흘려보낸다. Claude 세트는 서버가
+ * 시스템 지침·생성 항목만 조립해 보낸다(판정·요약·소설화는 그 세트에 없다). */
+export function PreviewPanel({ lane, model, isStale }: PreviewPanelProps) {
+  const previewQuery = usePreviewQuery(lane, model);
 
   return (
     <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
