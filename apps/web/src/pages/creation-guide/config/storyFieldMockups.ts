@@ -131,33 +131,40 @@ export const STORY_FIELD_MOCKUPS = {
   },
   // 시드의 단위는 모두 null 이라 인용할 글이 없다.
   "startingSetups.*.stats.*.unit": { kind: "text", seedPath: null, readTiming: null },
-  "startingSetups.*.stats.*.perTurnDelta": {
-    kind: "number",
-    seedPath: "startingSetups.*.statDefs.*.perTurnDelta",
+  // 튜토리얼 시드의 스탯은 턴당 자동 변화를 쓰지 않는다 — 시계도 판정을 받는 스탯이다.
+  "startingSetups.*.stats.*.perTurnDelta": { kind: "number", seedPath: null, readTiming: null },
+  "startingSetups.*.stats.*.changeDirection": {
+    kind: "select",
+    seedPath: "startingSetups.*.statDefs.*.changeDirection",
     readTiming: null,
   },
-  // 튜토리얼 시드의 스탯은 변화 방향·최대 폭을 쓰지 않는다(기본값 오르내림·제한 없음).
-  "startingSetups.*.stats.*.changeDirection": { kind: "select", seedPath: null, readTiming: null },
-  "startingSetups.*.stats.*.maxChangePerTurn": { kind: "number", seedPath: null, readTiming: null },
+  "startingSetups.*.stats.*.maxChangePerTurn": {
+    kind: "number",
+    seedPath: "startingSetups.*.statDefs.*.maxChangePerTurn",
+    readTiming: null,
+  },
   "startingSetups.*.stats.*.description": {
     kind: "textarea",
     seedPath: "startingSetups.*.statDefs.*.description",
     readTiming: "judge",
   },
 
-  // 튜토리얼 시드에는 상황 노트가 없다 — 이 탭의 예시는 모두 free 다.
-  "startingSetups.*.situationNotes": { kind: "cardList", seedPath: null, readTiming: null },
+  "startingSetups.*.situationNotes": { kind: "cardList", seedPath: "startingSetups.*.situationNotes", readTiming: null },
   "startingSetups.*.situationNotes.*.name": {
     kind: "text",
-    seedPath: null,
+    seedPath: "startingSetups.*.situationNotes.*.name",
     readTiming: null,
     limit: MAX_SITUATION_NOTE_NAME_LENGTH,
     counter: true,
   },
-  "startingSetups.*.situationNotes.*.conditionRules": { kind: "statRules", seedPath: null, readTiming: null },
+  "startingSetups.*.situationNotes.*.conditionRules": {
+    kind: "statRules",
+    seedPath: "startingSetups.*.situationNotes.*.conditionRules",
+    readTiming: null,
+  },
   "startingSetups.*.situationNotes.*.content": {
     kind: "textarea",
-    seedPath: null,
+    seedPath: "startingSetups.*.situationNotes.*.infoText",
     readTiming: "situationCondition",
     limit: MAX_SITUATION_NOTE_CONTENT_LENGTH,
     counter: true,
@@ -245,7 +252,12 @@ export const STORY_FIELD_MOCKUPS = {
     seedPath: "startingSetups.*.endings.*.statRules",
     readTiming: null,
   },
-  "startingSetups.*.endings.*.priorityStatId": { kind: "select", seedPath: null, readTiming: null },
+  // 시드는 우선 스탯을 이름(`priorityStat`)으로 적는다 — 로더가 id 로 바꾼다.
+  "startingSetups.*.endings.*.priorityStatId": {
+    kind: "select",
+    seedPath: "startingSetups.*.endings.*.priorityStat",
+    readTiming: null,
+  },
 
   "registration.description": { kind: "textarea", seedPath: "description", readTiming: "notRead" },
   "registration.genre": { kind: "select", seedPath: "genreId", readTiming: "notRead" },

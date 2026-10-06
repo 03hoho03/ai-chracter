@@ -37,12 +37,10 @@ import { toGuidePages } from "./toGuidePages";
  * 적는다(점으로 잇고, `*` 는 배열의 모든 항목).
  * 튜토리얼 시드에는 미디어 북이 없다. 서비스에 올린 예시 작품에는 미디어 북이 있지만, 시드 적재가 미디어 북을 싣지 않고
  * 칸마다 이미지가 필요해 시드에 글만 넣을 수도 없다. 그래서 이 탭의 예시는 원고의 free 값이다.
- * 상황 노트도 튜토리얼 예시 작품에 일부러 넣지 않았다. 시작설정마다 두는 목록이라 경로가 `startingSetups.*.situationNotes` 다.
  * 아래 "seed-less tab exceptions" 검사가 이 목록이 다른 탭을 가리지 못하게 잡는다.
  */
 const TABS_WITHOUT_TUTORIAL_SEED: Partial<Record<CreationGuideTopicId, readonly { tabId: string; seedPath: string }[]>> = {
   story: [
-    { tabId: "situationNote", seedPath: "startingSetups.*.situationNotes" },
     { tabId: "mediaBook", seedPath: "mediaBook" },
   ],
 };
