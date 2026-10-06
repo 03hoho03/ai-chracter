@@ -28,6 +28,7 @@ from api.llm import gemini
 from api.llm.client import LLMCallContext, LLMClient, LLMClientError, structured_model
 from api.llm.gemini import GeminiLLMClient
 from experiments.filmclub_longturn import judgment_replay as replay
+from experiments.filmclub_longturn.replay_budget import CallBudget
 from factories import (
     Room,
     _add_named_media_cell,
@@ -213,9 +214,7 @@ async def test_replay_calls_use_the_original_judgment_model_replay_label_and_lon
     capture: dict[str, Any] = {}
     replay.install_replay_transport(client, capture)
     records: list[dict[str, Any]] = []
-    await replay.run_replay(
-        client, capture, inputs, reps=1, budget=replay.CallBudget(10), room=row, sink=records.append
-    )
+    await replay.run_replay(client, capture, inputs, reps=1, budget=CallBudget(10), room=row, sink=records.append)
 
     assert [k["model"] for k in sent] == [settings.gemini_model_name, "ending-model"]
     assert [k["config"].http_options.timeout for k in sent] == [replay.REPLAY_TIMEOUT_MS] * 2
@@ -262,7 +261,7 @@ async def test_call_budget_is_a_hard_cap(
     capture: dict[str, Any] = {}
     replay.install_replay_transport(client, capture)
     records: list[dict[str, Any]] = []
-    await replay.run_replay(client, capture, inputs, reps=2, budget=replay.CallBudget(3), room=row, sink=records.append)
+    await replay.run_replay(client, capture, inputs, reps=2, budget=CallBudget(3), room=row, sink=records.append)
     assert len(sent) == 3
     assert records[-1]["kind"] == "budgetExhausted"
 
@@ -441,7 +440,7 @@ async def test_stat_replay_call_uses_the_stat_model_replay_label_long_timeout_an
     records: list[dict[str, Any]] = []
     row = await db_session.get(ChatRoom, room_id)
     assert row is not None
-    await replay.run_replay(client, capture, inputs, reps=1, budget=replay.CallBudget(5), room=row, sink=records.append)
+    await replay.run_replay(client, capture, inputs, reps=1, budget=CallBudget(5), room=row, sink=records.append)
 
     assert [k["model"] for k in sent] == ["stat-model"]
     assert [k["config"].http_options.timeout for k in sent] == [replay.REPLAY_TIMEOUT_MS]
@@ -530,6 +529,66 @@ async def test_stat_format_is_recorded_on_every_call(
     records: list[dict[str, Any]] = []
     row = await db_session.get(ChatRoom, room_id)
     assert row is not None
-    await replay.run_replay(client, capture, inputs, reps=2, budget=replay.CallBudget(9), room=row, sink=records.append)
+    await replay.run_replay(client, capture, inputs, reps=2, budget=CallBudget(9), room=row, sink=records.append)
     assert [r["statFormat"] for r in records] == ["current", "current", "B", "B"]
     assert [k["contents"] for k in sent] == [inputs[0].prompt] * 2 + [inputs[1].prompt] * 2
+
+
+async def test_stat_replay_judges_generation_replay_replies_with_overridden_definitions_in_the_main_line_order(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    room_id, _liking, days, _fake, trace_path = await _played_stat_room(db_client, db_session, tmp_path, monkeypatch)
+    start = replay.stat_start_from_trace(trace_path, room_id, 2)
+    gen = tmp_path / "gen.jsonl"
+    gen.write_text(
+        "\n".join(
+            json.dumps(r, ensure_ascii=False)
+            for r in (
+                {"kind": "plan", "turn": 2},
+                {
+                    "kind": "call",
+                    "turn": 2,
+                    "variant": "supplement",
+                    "rep": 0,
+                    "reply": "이틀 뒤, 편집실.",
+                    "error": None,
+                },
+                {"kind": "call", "turn": 2, "variant": "supplement", "rep": 1, "reply": "", "error": "Boom"},
+                {"kind": "call", "turn": 2, "variant": "window", "rep": 0, "reply": "같은 날 밤.", "error": None},
+            )
+        ),
+        encoding="utf-8",
+    )
+    replies = replay.replies_from_generation(gen, 2, "supplement")
+    assert replies == [("gen:supplement:rep0", "이틀 뒤, 편집실.")]
+    overrides = {"상영회까지": {"max_value": 46, "description": "보완판 설명. '사흘 뒤'면 3."}}
+    (item,) = await replay.build_inputs(
+        db_session,
+        room_id,
+        2,
+        kinds=["stat"],
+        variant="full",
+        stat_start=start,
+        stat_formats=["A"],
+        assistant_messages=replies,
+        stat_overrides=overrides,
+    )
+    assert item.source == "gen:supplement:rep0" and "이틀 뒤, 편집실." in item.prompt
+    # 운영 main 의 줄 순서: statId → 이름 → 현재값 → 범위 → 설명 → 제약 꼬리.
+    assert (
+        f"- statId={days.entity_id}, 이름=상영회까지, 현재값=42.0, 범위=[0, 46], 설명=보완판 설명. '사흘 뒤'면 3."
+        "  ※ 감소만 할 수 있다. 한 턴에 최대 7까지 바뀐다."
+    ) in item.prompt
+    assert [d.max_value for d in item.stat_defs] == [100, 46]
+    await db_session.refresh(days)
+    assert days.max_value == 42  # 원 행은 그대로
+    with pytest.raises(ValueError, match="형식"):
+        await replay.build_inputs(
+            db_session, room_id, 2, kinds=["stat"], variant="full", stat_start=start, assistant_messages=replies
+        )
+    with pytest.raises(ValueError, match="없는 스탯"):
+        replay.override_stat_defs(list(item.stat_defs), {"없는 스탯": {"max_value": 1}})
+    path = tmp_path / "override.json"
+    path.write_text(json.dumps({"stats": {"상영회까지": {"name": "x"}}}), encoding="utf-8")
+    with pytest.raises(ValueError, match="덮을 수 없는"):
+        replay.load_stat_overrides(path)

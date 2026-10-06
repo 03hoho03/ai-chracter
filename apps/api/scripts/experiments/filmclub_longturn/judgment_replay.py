@@ -10,6 +10,11 @@
     ... --kind stat --stat-start-trace <run>/trace.jsonl --reps 10 --limit-calls 10 ...
     # 스탯 줄 형식 비교: 같은 입력을 현행·수정안 형식으로 만들어 갈래마다 reps 번 보낸다(아래 STAT_FORMATS).
     ... --kind stat --stat-format current --stat-format A --stat-format L --stat-format B ...
+    # 생성 리플레이 응답으로 스탯 판정: 그 턴 원 응답 대신 생성 리플레이 기록의 응답마다 한 입력을 만든다. 스탯 정의는
+    # 외부 JSON 으로 덮을 수 있다(보완판 「상영회까지」 범위·설명 등). 줄 형식은 운영 main 과 같은 A 만 허용한다.
+    ... --kind stat --stat-start-trace <측정>/trace.jsonl --assistant-from <run>/replay/gen-<묶음>.jsonl \\
+        --assistant-variant supplement --stat-override <정의.json> [--stat-start-set 상영회까지=50] \\
+        --stat-format A --limit-calls 20 --limit-usd 5 --ledger '<run>/replay/**/*.jsonl' ...
 
 입력은 격리 DB 의 방이다. 턴 N 은 N 번째 (사용자 메시지, 바로 뒤 응답) 쌍이고, 판정 입력의 히스토리는 그 사용자 메시지
 앞의 메시지 전부다(유실 턴의 사용자 메시지도 서버가 그랬듯 히스토리에 든다). 프롬프트는 서버의 판정 준비 함수를 그대로
@@ -20,6 +25,10 @@
 스탯 규칙은 보지 않는다 — 실제로 판정이 불린 엔딩을 `--ending` 으로 고른다. 스탯 판정 프롬프트는 서버와 같은
 빌더·같은 스탯 정의 순서로 만들고 현재값만 trace 의 시작 값으로 넣는다. 결과마다 서버 적용 규칙(방향·폭·범위)을 거친
 값도 함께 남긴다.
+
+스탯 줄 형식: 이 브랜치의 서버 빌더는 측정 때 코드라 줄이 `statId→이름→설명→범위→현재값` 순서다. 운영 main 은 그 뒤
+설명이 길면 다른 스탯의 현재값을 기준으로 읽는 오독 때문에 `statId→이름→현재값→범위→설명`(제약 꼬리는 줄 끝)으로 바꿨고,
+그 순서가 여기의 `A` 형식과 같다. 그래서 생성 리플레이 응답을 판정할 때는 `A` 만 받는다 — 운영에 나갈 판정과 같은 조립이다.
 
 모델·타임아웃·집계: 리플레이 call_site 는 앱의 판정 집합에 들어 있어 원래 판정과 같은 모델로 가고(시작할 때 같은지
 확인하고 다르면 멈춘다), 운영 판정과 다른 라벨이라 사용량·로그가 섞이지 않는다. 수십만 토큰 비스트리밍 호출이라 판정
@@ -43,6 +52,7 @@ from typing import Any
 
 from google.genai import types as genai_types
 from pydantic import BaseModel
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -71,6 +81,10 @@ from api.db.models.story import StatDef
 from api.llm.client import LLMCallContext, LLMCallSite, LLMClient, structured_model
 from api.llm.gemini import GeminiLLMClient
 from api.llm.pricing import estimate_cost_usd
+
+# 스크립트로 실행할 때도 `scripts/` 를 패키지 기준으로 둔다(pytest·mypy 와 같은 모듈 경로).
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from experiments.filmclub_longturn.replay_budget import CallBudget, ledger_paths, sum_ledger
 
 REPLAY_TIMEOUT_MS = 300_000
 # 리플레이 call_site → 원래 판정 call_site. 모델이 같아야 "윈도 vs 전체" 대조에 모델 차이가 섞이지 않는다.
@@ -113,6 +127,8 @@ class ReplayInput:
     stat_defs: tuple[StatDef, ...] = ()
     stat_start: dict[str, float] = field(default_factory=dict)
     stat_format: str = "current"
+    # 판정한 응답의 출처 — None 이면 그 턴 원 응답, 아니면 생성 리플레이 기록(갈래·반복 번호).
+    source: str | None = None
 
 
 def _stat_value(stat_def: StatDef, current_stats: dict[str, float]) -> float:
@@ -160,20 +176,6 @@ def stat_prompt_variant(
     return prompt
 
 
-class CallBudget:
-    """프로세스 전체의 실호출 상한. `take` 와 그 앞의 검사 사이에 await 가 없어 동시 호출끼리도 넘지 않는다."""
-
-    def __init__(self, limit: int) -> None:
-        self.limit = limit
-        self.used = 0
-
-    def take(self) -> bool:
-        if self.used >= self.limit:
-            return False
-        self.used += 1
-        return True
-
-
 @contextlib.contextmanager
 def judgment_window(enabled: bool) -> Iterator[None]:
     """이 프로세스에서만 판정 윈도 설정을 바꾼다. 생성 윈도는 판정 윈도의 전제라 켜진 상태여야 한다."""
@@ -188,6 +190,63 @@ def judgment_window(enabled: bool) -> Iterator[None]:
     finally:
         for key, value in saved.items():
             setattr(settings, key, value)
+
+
+# 덮을 수 있는 스탯 정의 칸. 판정 줄과 서버 적용 규칙이 읽는 칸이다.
+STAT_OVERRIDE_FIELDS = frozenset(
+    {
+        "description",
+        "min_value",
+        "max_value",
+        "initial_value",
+        "max_change_per_turn",
+        "change_direction",
+        "per_turn_delta",
+    }
+)
+
+
+def load_stat_overrides(path: Path) -> dict[str, dict[str, Any]]:
+    """스탯 이름 → 덮을 칸. 형식 `{"stats": {"상영회까지": {"max_value": 46, "description": "..."}}}`."""
+    data = json.loads(path.read_text(encoding="utf-8"))["stats"]
+    for name, fields in data.items():
+        unknown = set(fields) - STAT_OVERRIDE_FIELDS
+        if unknown:
+            raise ValueError(f"{name}: 덮을 수 없는 칸 {sorted(unknown)}")
+    return dict(data)
+
+
+def override_stat_defs(stat_defs: list[StatDef], overrides: dict[str, dict[str, Any]]) -> list[StatDef]:
+    """덮은 값을 담은 세션 밖 사본(원 행은 그대로). 없는 스탯 이름을 덮으려 하면 멈춘다."""
+    names = {stat_def.name for stat_def in stat_defs}
+    missing = set(overrides) - names
+    if missing:
+        raise ValueError(f"시작설정에 없는 스탯: {sorted(missing)}")
+    keys = [attr.key for attr in sa_inspect(StatDef).column_attrs]
+    copies = []
+    for stat_def in stat_defs:
+        values = {key: getattr(stat_def, key) for key in keys}
+        values.update(overrides.get(stat_def.name, {}))
+        copies.append(StatDef(**values))
+    return copies
+
+
+def replies_from_generation(path: Path, turn: int, variant: str) -> list[tuple[str, str]]:
+    """생성 리플레이 기록에서 그 턴·그 갈래의 응답(출처 라벨, 본문). 오류·빈 응답은 뺀다."""
+    found = [
+        (f"gen:{record['variant']}:rep{record['rep']}", str(record["reply"]))
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+        for record in [json.loads(line)]
+        if record.get("kind") == "call"
+        and record.get("turn") == turn
+        and record.get("variant") == variant
+        and not record.get("error")
+        and record.get("reply")
+    ]
+    if not found:
+        raise ValueError(f"생성 기록에 턴 {turn} {variant} 응답이 없다")
+    return found
 
 
 def stat_start_from_trace(path: Path, room_id: uuid.UUID, turn: int) -> dict[str, float]:
@@ -241,7 +300,13 @@ async def build_inputs(
     ending_ids: list[uuid.UUID] | None = None,
     stat_start: dict[str, float] | None = None,
     stat_formats: list[str] | None = None,
+    assistant_messages: list[tuple[str, str]] | None = None,
+    stat_overrides: dict[str, dict[str, Any]] | None = None,
 ) -> list[ReplayInput]:
+    if assistant_messages is not None and kinds != ["stat"]:
+        raise ValueError("생성 리플레이 응답은 스탯 판정(stat)에만 넣는다")
+    if assistant_messages is not None and any(f != "A" for f in stat_formats or ["current"]):
+        raise ValueError("생성 리플레이 응답 판정은 운영 main 과 같은 줄 형식(A)만 쓴다")
     room = await db.get(ChatRoom, room_id)
     if room is None:
         raise ValueError(f"방이 없다: {room_id}")
@@ -283,35 +348,42 @@ async def build_inputs(
     inputs: list[ReplayInput] = []
     if "stat" in kinds:
         stat_defs, _, _ = await _load_room_stats(db, room.id, setup.id)
+        if stat_overrides:
+            stat_defs = override_stat_defs(stat_defs, stat_overrides)
         expected = {str(stat_def.entity_id) for stat_def in stat_defs}
         if stat_start is None or set(stat_start) != expected:
             raise ValueError("스탯 판정은 그 턴의 시작 값이 스탯마다 있어야 한다(DB 에는 지금 값만 있다)")
         site, original = REPLAY_SITES["stat"]
-        server_prompt = build_stat_judgment_prompt(
-            prompt_set=prompt_set,
-            sections=sections,
-            stat_defs=stat_defs,
-            current_stats=stat_start,
-            user_message=user.content,
-            assistant_message=assistant.content,
-            names=names,
+        answers: list[tuple[str | None, str]] = (
+            [(None, assistant.content)] if assistant_messages is None else list(assistant_messages)
         )
-        for stat_format in stat_formats or ["current"]:
-            inputs.append(
-                ReplayInput(
-                    kind="stat",
-                    variant=variant,
-                    turn=turn,
-                    prompt=stat_prompt_variant(server_prompt, stat_defs, stat_start, names, stat_format),
-                    schema=StatJudgmentResult,
-                    call_site=site,
-                    original_call_site=original,
-                    history_messages=0,
-                    stat_defs=tuple(stat_defs),
-                    stat_start=dict(stat_start),
-                    stat_format=stat_format,
-                )
+        for source, answer in answers:
+            server_prompt = build_stat_judgment_prompt(
+                prompt_set=prompt_set,
+                sections=sections,
+                stat_defs=stat_defs,
+                current_stats=stat_start,
+                user_message=user.content,
+                assistant_message=answer,
+                names=names,
             )
+            for stat_format in stat_formats or ["current"]:
+                inputs.append(
+                    ReplayInput(
+                        kind="stat",
+                        variant=variant,
+                        turn=turn,
+                        prompt=stat_prompt_variant(server_prompt, stat_defs, stat_start, names, stat_format),
+                        schema=StatJudgmentResult,
+                        call_site=site,
+                        original_call_site=original,
+                        history_messages=0,
+                        stat_defs=tuple(stat_defs),
+                        stat_start=dict(stat_start),
+                        stat_format=stat_format,
+                        source=source,
+                    )
+                )
     with judgment_window(windowed):
         if "image" in kinds:
             judgment = await _prepare_media_cell_judgment(
@@ -467,7 +539,7 @@ async def run_replay(
     for item in inputs:
         for rep in range(reps):
             if not budget.take():
-                sink({"kind": "budgetExhausted", "limit": budget.limit, "input": item.kind, "rep": rep})
+                sink({**budget.exhausted(), "turn": item.turn, "input": item.kind, "rep": rep})
                 return
             capture.clear()
             started = time.perf_counter()
@@ -485,30 +557,46 @@ async def run_replay(
                     applied = stat_result(item, parsed)
             except Exception as exc:  # 기록하고 다음 호출로 — 실패도 결과다(컨텍스트 한도 등)
                 error = f"{type(exc).__name__}: {str(exc)[:500]}"
-            sink(
-                {
-                    "kind": "call",
-                    "at": datetime.now(UTC).isoformat(),
-                    "turn": item.turn,
-                    "judgment": item.kind,
-                    "variant": item.variant,
-                    "statFormat": item.stat_format if item.kind == "stat" else None,
-                    "endingId": str(item.ending_id) if item.ending_id else None,
-                    "rep": rep,
-                    "callSite": item.call_site,
-                    "originalCallSite": item.original_call_site,
-                    "sentModel": capture.get("sent_model"),
-                    "sentTimeoutMs": capture.get("sent_timeout_ms"),
-                    "tokens": capture.get("tokens"),
-                    "latencyMs": round((time.perf_counter() - started) * 1000, 1),
-                    "historyMessages": item.history_messages,
-                    "promptChars": len(item.prompt),
-                    "promptSha256": hashlib.sha256(item.prompt.encode()).hexdigest()[:16],
-                    "output": output,
-                    "statResult": applied,
-                    "error": error,
-                }
-            )
+            tokens = capture.get("tokens")
+            record: dict[str, Any] = {
+                "kind": "call",
+                "at": datetime.now(UTC).isoformat(),
+                "turn": item.turn,
+                "judgment": item.kind,
+                "source": item.source,
+                "variant": item.variant,
+                "statFormat": item.stat_format if item.kind == "stat" else None,
+                "endingId": str(item.ending_id) if item.ending_id else None,
+                "rep": rep,
+                "callSite": item.call_site,
+                "originalCallSite": item.original_call_site,
+                "sentModel": capture.get("sent_model"),
+                "sentTimeoutMs": capture.get("sent_timeout_ms"),
+                "tokens": tokens,
+                "costUsd": _cost(capture.get("sent_model"), tokens),
+                "latencyMs": round((time.perf_counter() - started) * 1000, 1),
+                "historyMessages": item.history_messages,
+                "promptChars": len(item.prompt),
+                "promptSha256": hashlib.sha256(item.prompt.encode()).hexdigest()[:16],
+                "output": output,
+                "statResult": applied,
+                "error": error,
+            }
+            budget.charge(record)
+            record["cumulativeChargedUsd"] = round(budget.spent_usd, 6)
+            sink(record)
+
+
+def _cost(model: str | None, tokens: dict[str, Any] | None) -> float | None:
+    if model is None or not tokens:
+        return None
+    return estimate_cost_usd(
+        model,
+        input_tokens=tokens.get("prompt") or 0,
+        cached_tokens=tokens.get("cached") or 0,
+        output_tokens=tokens.get("candidates") or 0,
+        thoughts_tokens=tokens.get("thoughts") or 0,
+    )
 
 
 async def _main(args: argparse.Namespace) -> int:
@@ -524,6 +612,22 @@ async def _main(args: argparse.Namespace) -> int:
         stat_start = (
             stat_start_from_trace(Path(args.stat_start_trace), room_id, args.turn) if args.stat_start_trace else None
         )
+        overrides = load_stat_overrides(Path(args.stat_override)) if args.stat_override else None
+        if args.stat_start_set:
+            if stat_start is None:
+                print("--stat-start-set 은 --stat-start-trace 의 시작 값 위에 덮는다")
+                return 1
+            setup = await _require_starting_setup(db, room)
+            assert setup is not None
+            ids = {d.name: str(d.entity_id) for d in (await _load_room_stats(db, room.id, setup.id))[0]}
+            for item in args.stat_start_set:
+                name, _, value = item.partition("=")
+                stat_start[ids[name]] = float(value)
+        replies = (
+            replies_from_generation(Path(args.assistant_from), args.turn, args.assistant_variant)
+            if args.assistant_from
+            else None
+        )
         inputs = await build_inputs(
             db,
             room_id,
@@ -533,6 +637,8 @@ async def _main(args: argparse.Namespace) -> int:
             ending_ids=endings,
             stat_start=stat_start,
             stat_formats=args.stat_format,
+            assistant_messages=replies,
+            stat_overrides=overrides,
         )
     models = check_same_models(inputs, settings.gemini_model_name)
     plan = estimate(inputs, args.reps, models)
@@ -567,6 +673,7 @@ async def _main(args: argparse.Namespace) -> int:
                     "promptChars": len(i.prompt),
                     "promptSha256": hashlib.sha256(i.prompt.encode()).hexdigest()[:16],
                     "statStart": i.stat_start or None,
+                    "source": i.source,
                 }
                 for i in inputs
             ],
@@ -582,7 +689,13 @@ async def _main(args: argparse.Namespace) -> int:
     client = GeminiLLMClient()
     capture: dict[str, Any] = {}
     install_replay_transport(client, capture)
-    await run_replay(client, capture, inputs, reps=args.reps, budget=CallBudget(args.limit_calls), room=room, sink=sink)
+    spent = sum_ledger(ledger_paths(args.ledger)).charged_usd if args.ledger else 0.0
+    if args.limit_usd is not None and spent >= args.limit_usd:
+        print(f"장부 누적 ${spent:.4f} 가 이미 상한 ${args.limit_usd} 이상이다 — 부르지 않는다")
+        return 3
+    budget = CallBudget(args.limit_calls, usd_limit=args.limit_usd, spent_usd=spent)
+    await run_replay(client, capture, inputs, reps=args.reps, budget=budget, room=room, sink=sink)
+    print(json.dumps({"calls": budget.used, "cumulativeChargedUsd": round(budget.spent_usd, 6)}, ensure_ascii=False))
     return 0
 
 
@@ -603,6 +716,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--variant", choices=["full", "window", "window-asof"], default="full")
     ap.add_argument("--reps", type=int, default=1)
     ap.add_argument("--limit-calls", type=int, required=True, help="실호출 하드 상한")
+    ap.add_argument("--limit-usd", type=float, help="장부 포함 실제 원가 누적 상한(달러)")
+    ap.add_argument("--ledger", help="앞 묶음 호출 기록 glob(재귀 **) — 실제 원가를 상한에 넣는다")
+    ap.add_argument("--assistant-from", help="스탯 판정에 넣을 응답을 이 생성 리플레이 기록에서 읽는다")
+    ap.add_argument("--assistant-variant", default="supplement", help="--assistant-from 에서 고를 갈래")
+    ap.add_argument("--stat-override", help="스탯 정의를 덮는 JSON(스탯 이름 → 칸)")
+    ap.add_argument("--stat-start-set", action="append", help="시작 값 덮기 NAME=VALUE(여럿 가능)")
     ap.add_argument("--out", required=True)
     ap.add_argument("--execute", action="store_true", help="LLM 을 실제로 부른다(사용자 승인 뒤에만)")
     return asyncio.run(_main(ap.parse_args(argv)))

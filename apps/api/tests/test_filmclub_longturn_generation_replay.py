@@ -2,6 +2,7 @@
 요약을 빼는지, 기억 노트를 그 턴 값으로 바꿔 끼워도 DB 는 그대로인지, 호출이 리플레이 라벨·생성 모델·생성 설정으로
 나가고 상한을 지키는지."""
 
+import json
 import uuid
 from collections.abc import AsyncIterator
 from datetime import timedelta
@@ -11,14 +12,18 @@ from typing import Any
 
 import httpx
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
 from api.db.models.chat import ChatRoom, ChatRoomMemorySnapshot
+from api.db.models.story import StoryVersionDetail
 from api.llm import gemini
 from api.llm.gemini import GeminiLLMClient
 from api.llm.pricing import estimate_cost_usd
 from experiments.filmclub_longturn import generation_replay as replay
+from experiments.filmclub_longturn.replay_budget import UNKNOWN_CALL_USD, CallBudget, ledger_paths, sum_ledger
+from experiments.filmclub_longturn.supplement_swap import SwapSlot, check_swap, load_swap_table
 from factories import Room, _open_room
 
 
@@ -100,8 +105,164 @@ def test_dump_and_note_lookups_pick_that_room_and_turn(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert replay.note_for_turn(snaps, room_id, 5) == "노트"
-    with pytest.raises(ValueError):
-        replay.note_for_turn(snaps, room_id, 6)
+    # 드라이버는 노트가 바뀐 턴에만 스냅샷을 남긴다 — 그 사이 턴은 앞 스냅샷의 노트였다.
+    assert replay.note_for_turn(snaps, room_id, 6) == "노트"
+    with pytest.raises(ValueError, match="이하"):
+        replay.note_for_turn(snaps, room_id, 4)
+
+
+def test_note_for_turn_picks_the_latest_snapshot_at_or_before_the_turn(tmp_path: Path) -> None:
+    room_id = uuid.uuid4()
+    snaps = tmp_path / "snaps.jsonl"
+    snaps.write_text(
+        "\n".join(
+            f'{{"kind": "memorySnapshot", "roomId": "{room}", "turn": {turn}, "note": "{note}"}}'
+            for room, turn, note in ((room_id, 1, "1턴"), (room_id, 7, "7턴"), (uuid.uuid4(), 9, "다른 방"))
+        ),
+        encoding="utf-8",
+    )
+    assert [replay.note_for_turn(snaps, room_id, t) for t in (1, 6, 7, 30)] == ["1턴", "1턴", "7턴", "7턴"]
+
+
+def test_stats_before_turn_rolls_affection_back_by_that_turns_change(tmp_path: Path) -> None:
+    room_id = uuid.uuid4()
+    snaps = tmp_path / "snaps.jsonl"
+    stats = [{"id": "d", "name": "도희 호감도"}, {"id": "c", "name": "상영회까지"}]
+    static = {"kind": "roomStatic", "roomId": str(room_id), "stats": stats}
+    snaps.write_text(json.dumps(static) + "\n" + json.dumps(static) + "\n", encoding="utf-8")
+    ids = replay.stat_ids_by_name(snaps, room_id)
+    assert ids == {"도희 호감도": "d", "상영회까지": "c"}
+    turns = tmp_path / "turns.json"
+    row = {
+        "turn": 3,
+        "countdownBefore": 40.0,
+        "affection": {"도희 호감도": 57.0},
+        "affectionDelta": {"도희 호감도": 3.0},
+    }
+    turns.write_text(json.dumps([row]), encoding="utf-8")
+    # 생성은 판정 앞이다 — 호감은 판정 뒤 값에서 그 턴 변화를 뺀 값, 게이지는 판정 전 값.
+    assert replay.stats_before_turn(turns, ids, 3) == {"d": 54.0, "c": 40.0}
+    with pytest.raises(ValueError, match="턴 4"):
+        replay.stats_before_turn(turns, ids, 4)
+    other = static | {"stats": [{"id": "x", "name": "도희 호감도"}]}
+    snaps.write_text(json.dumps(static) + "\n" + json.dumps(other) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="다르다"):
+        replay.stat_ids_by_name(snaps, room_id)
+
+
+async def test_supplement_in_memory_swaps_only_the_table_text_and_leaves_the_rows_alone(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    room = await _room_with_summary(db_client, db_session)
+    slot = SwapSlot(key="설정", v6fix="세계관 설정", supplement="보완판 세계관", when="always")
+    inputs = await replay.build_generation_inputs(
+        db_session, room.room_id, 10, variants=["window", "supplement"], swap=replay.SwapSpec([slot])
+    )
+    window, supplement = inputs
+    assert "세계관 설정" in window.prompt and "보완판 세계관" not in window.prompt
+    assert "보완판 세계관" in supplement.prompt and "세계관 설정" not in supplement.prompt
+    result = check_swap(
+        base_prompt=window.prompt,
+        base_system=window.system_instruction,
+        swapped_prompt=supplement.prompt,
+        swapped_system=supplement.system_instruction,
+        slots=[slot],
+        situation_notes=[],
+        keyword_notes=[],
+    )
+    assert result["passed"] and result["swapCounts"] == {"설정": 1}
+    await db_session.commit()
+    db_session.expire_all()
+    detail = (await db_session.scalars(select(StoryVersionDetail))).all()
+    assert detail and all(row.setting_text != "보완판 세계관" for row in detail)
+    # 이어서 만든 v6-fix 입력에도 바꾼 글이 남지 않는다(메모리 안 치환을 되돌렸다).
+    (again,) = await replay.build_generation_inputs(db_session, room.room_id, 10, variants=["window"])
+    assert again.prompt == window.prompt
+    with pytest.raises(ValueError, match="찾지 못한"):
+        await replay.build_generation_inputs(
+            db_session,
+            room.room_id,
+            10,
+            variants=["window", "supplement"],
+            swap=replay.SwapSpec([SwapSlot(key="없음", v6fix="작품에 없는 글", supplement="x", when="always")]),
+        )
+
+
+def _slots() -> list[SwapSlot]:
+    return [
+        SwapSlot(key="무대", v6fix="사흘 뒤처럼", supplement="다음 날·이틀 뒤처럼", when="always"),
+        SwapSlot(key="직전", v6fix="일주일도 안 남았다.", supplement="코앞이다.", when="situationNote:상영회 직전"),
+    ]
+
+
+def _check(
+    swapped: str, slots: list[SwapSlot], notes: list[str], base: str = "[무대] 사흘 뒤처럼 적는다. [대화]"
+) -> Any:
+    return check_swap(
+        base_prompt=base,
+        base_system="s",
+        swapped_prompt=swapped,
+        swapped_system="s",
+        slots=slots,
+        situation_notes=notes,
+        keyword_notes=[],
+    )
+
+
+def test_swap_check_passes_only_when_every_due_slot_was_swapped_and_nothing_else_changed() -> None:
+    swapped = "[무대] 다음 날·이틀 뒤처럼 적는다. [대화]"
+    ok = _check(swapped, _slots(), [])
+    assert ok["passed"] and ok["expectedSlots"] == ["무대"] and ok["swapCounts"] == {"무대": 1, "직전": 0}
+    # 덜 바꿔 끼움 — 역치환은 통과하지만 양성 단언이 잡는다.
+    under = _check("[무대] 사흘 뒤처럼 적는다. [대화]", _slots(), [])
+    assert under["reverseIdentical"] and under["missingSlots"] == ["무대"] and not under["passed"]
+    # 표 밖 변경 — 역치환이 잡는다.
+    extra = _check("[무대] 다음 날·이틀 뒤처럼 적는다. [대화!]", _slots(), [])
+    assert not extra["reverseIdentical"] and not extra["passed"] and extra["firstDifferenceAt"] == 20
+    # 실림 조건이 틀림 — 분석표는 직전 노트가 실렸다는데 v6-fix 프롬프트엔 없다.
+    wrong = _check(swapped, _slots(), ["상영회 직전"])
+    assert wrong["conditionMismatch"] == ["직전"] and wrong["missingSlots"] == ["직전"] and not wrong["passed"]
+    # 실리지 말아야 할 칸이 실림.
+    base = "[무대] 사흘 뒤처럼 적는다. 일주일도 안 남았다. [대화]"
+    leaked = _check("[무대] 다음 날·이틀 뒤처럼 적는다. 코앞이다. [대화]", _slots(), [], base=base)
+    assert leaked["unexpectedSlots"] == ["직전"] and not leaked["passed"]
+
+
+def test_swap_table_rejects_duplicate_keys_unchanged_text_and_unknown_conditions(tmp_path: Path) -> None:
+    path = tmp_path / "table.json"
+    for slots, message in (
+        ([{"key": "a", "v6fix": "x", "supplement": "y", "when": "always"}] * 2, "같은 칸"),
+        ([{"key": "a", "v6fix": "x", "supplement": "x", "when": "always"}], "같다"),
+        ([{"key": "a", "v6fix": "x", "supplement": "y", "when": "stat:상영회까지"}], "모른다"),
+    ):
+        path.write_text(json.dumps({"slots": slots}), encoding="utf-8")
+        with pytest.raises(ValueError, match=message):
+            load_swap_table(path)
+
+
+def test_budget_stops_on_calls_or_on_actual_cost_including_the_ledger(tmp_path: Path) -> None:
+    budget = CallBudget(5, usd_limit=0.01, spent_usd=0.004)
+    assert budget.take()
+    budget.charge({"costUsd": 0.005})
+    assert budget.take()
+    budget.charge({"costUsd": 0.002})  # 누적 0.011 ≥ 0.01
+    assert not budget.take() and budget.used == 2
+    unknown = CallBudget(5, usd_limit=0.015)
+    assert unknown.take()
+    unknown.charge({"costUsd": None})  # 원가를 모르면 넉넉히 센다
+    assert unknown.spent_usd == UNKNOWN_CALL_USD
+    ledger = tmp_path / "a" / "gen.jsonl"
+    ledger.parent.mkdir()
+    ledger.write_text(
+        "\n".join(
+            json.dumps(r)
+            for r in ({"kind": "plan"}, {"kind": "call", "costUsd": 0.002}, {"kind": "call", "costUsd": None})
+        ),
+        encoding="utf-8",
+    )
+    total = sum_ledger(ledger_paths(str(tmp_path / "**" / "*.jsonl")))
+    assert (total.calls, total.unknown_calls) == (2, 1)
+    assert total.charged_usd == pytest.approx(0.002 + UNKNOWN_CALL_USD)
 
 
 def _fake_stream_client(monkeypatch: pytest.MonkeyPatch, sent: list[dict[str, Any]]) -> GeminiLLMClient:
@@ -153,7 +314,7 @@ async def test_replay_calls_go_out_with_the_replay_label_generation_model_and_se
     assert row is not None
     records: list[dict[str, Any]] = []
     await replay.run_generation_replay(
-        client, capture, inputs, reps=2, budget=replay.CallBudget(3), room=row, sink=records.append
+        client, capture, inputs, reps=2, budget=CallBudget(3), room=row, sink=records.append
     )
     calls = [r for r in records if r["kind"] == "call"]
     assert [c["variant"] for c in calls] == ["window", "window", "full"]
