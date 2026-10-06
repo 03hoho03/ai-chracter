@@ -10,8 +10,11 @@
     ... --kind stat --stat-start-trace <run>/trace.jsonl --reps 10 --limit-calls 10 ...
     # 스탯 줄 형식 비교: 같은 입력을 현행·수정안 형식으로 만들어 갈래마다 reps 번 보낸다(아래 STAT_FORMATS).
     ... --kind stat --stat-format current --stat-format A --stat-format L --stat-format B ...
+    # 오프라인 입력(스탯 판정만): DB 없이 입력 JSON(extract_stat_inputs.py 가 만든다)과 레인 섹션 파일로 조립한다.
+    ... --input-json <입력>.json [--input-json …] --sections-json <운영 stat_judgment 섹션>.json \\
+        --stat-format current --stat-format A --stat-format L --stat-format B --prompt-dir <디렉터리> ...
 
-입력은 격리 DB 의 방이다. 턴 N 은 N 번째 (사용자 메시지, 바로 뒤 응답) 쌍이고, 판정 입력의 히스토리는 그 사용자 메시지
+입력은 격리 DB 의 방이다(오프라인 입력은 아래 「오프라인 입력」). 턴 N 은 N 번째 (사용자 메시지, 바로 뒤 응답) 쌍이고, 판정 입력의 히스토리는 그 사용자 메시지
 앞의 메시지 전부다(유실 턴의 사용자 메시지도 서버가 그랬듯 히스토리에 든다). 프롬프트는 서버의 판정 준비 함수를 그대로
 불러 만든다 — 판정 윈도 설정만 이 프로세스 안에서 끄거나 켠다. `window` 는 방의 현재 요약을 쓰므로 방의 마지막 턴에만
 허용한다. `window-asof` 는 칸 판정만, 아무 턴에나 쓴다 — 그 턴 사용자 메시지보다 먼저 만들어진 요약 스냅샷 중 커서가 가장 큰
@@ -20,6 +23,12 @@
 스탯 규칙은 보지 않는다 — 실제로 판정이 불린 엔딩을 `--ending` 으로 고른다. 스탯 판정 프롬프트는 서버와 같은
 빌더·같은 스탯 정의 순서로 만들고 현재값만 trace 의 시작 값으로 넣는다. 결과마다 서버 적용 규칙(방향·폭·범위)을 거친
 값도 함께 남긴다.
+
+오프라인 입력: 원천마다 DB 스키마와 활성 프롬프트 세트가 달라 방에서 바로 조립하면 원천마다 문안이 달라진다. 그래서
+입력마다 스탯 정의·그 턴 시작값·사용자 메시지·응답·이름을 JSON 으로 뽑아 두고, 레인 섹션(채널 `stat_judgment`)과 라벨은
+파일 하나에서 받아 서버 `build_stat_judgment_prompt` 로 조립한다 — 모든 입력이 같은 문안 위에서 비교된다. L 갈래는
+지시문 섹션 본문 끝에 공백 한 칸과 문장을 붙여 렌더하고, 그것이 현행 프롬프트 끝에 같은 것을 붙인 문자열과 같은지
+확인한다(레인 문안으로 게시하는 형태와 리플레이 형태가 같다는 확인 — 지시문이 마지막 섹션일 때만 성립한다).
 
 모델·타임아웃·집계: 리플레이 call_site 는 앱의 판정 집합에 들어 있어 원래 판정과 같은 모델로 가고(시작할 때 같은지
 확인하고 다르면 멈춘다), 운영 판정과 다른 라벨이라 사용량·로그가 섞이지 않는다. 수십만 토큰 비스트리밍 호출이라 판정
@@ -67,6 +76,7 @@ from api.chat.router import (
 from api.chat.stats import StatChange, apply_stat_changes
 from api.core.config import settings
 from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom, ChatRoomMemorySnapshot
+from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StatDef
 from api.llm.client import LLMCallContext, LLMCallSite, LLMClient, structured_model
 from api.llm.gemini import GeminiLLMClient
@@ -113,6 +123,17 @@ class ReplayInput:
     stat_defs: tuple[StatDef, ...] = ()
     stat_start: dict[str, float] = field(default_factory=dict)
     stat_format: str = "current"
+    # 오프라인 입력만: 입력 파일의 id 와 검증 군.
+    input_id: str | None = None
+    group: str | None = None
+
+
+@dataclass(frozen=True)
+class OfflineOwner:
+    """오프라인 입력 호출의 사용량 귀속 — DB 방이 없어 원천 방 id 만 적고 사용자는 비운다."""
+
+    id: uuid.UUID
+    user_id: uuid.UUID | None = None
 
 
 def _stat_value(stat_def: StatDef, current_stats: dict[str, float]) -> float:
@@ -422,6 +443,142 @@ def stat_result(item: ReplayInput, output: StatJudgmentResult) -> list[dict[str,
     ]
 
 
+# ── 오프라인 입력 ────────────────────────────────────────────────────────────
+
+
+def _md5(text: str) -> str:
+    return hashlib.md5(text.encode()).hexdigest()
+
+
+def load_sections(path: Path) -> tuple[PromptSet, list[PromptSection]]:
+    """레인 섹션 파일(`stat_judgment_sections` + `labels`)을 세션 없는 행으로 읽는다. 본문·라벨이 파일에 적힌 md5·글자
+    수와 다르면 멈춘다 — 손으로 고친 사본이 운영 문안으로 행세하지 않게."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    labels = payload["labels"]
+    for key in ("user_label", "story_assistant_label"):
+        if f"{key}_md5" in labels and _md5(labels[key]) != labels[f"{key}_md5"]:
+            raise ValueError(f"라벨 {key} 의 md5 가 파일에 적힌 값과 다르다")
+    sections: list[PromptSection] = []
+    for row in payload["stat_judgment_sections"]:
+        if _md5(row["body"]) != row["md5"] or len(row["body"]) != row["length"]:
+            raise ValueError(f"섹션 {row['slot']} 본문이 파일에 적힌 md5·길이와 다르다")
+        sections.append(
+            PromptSection(
+                channel="stat_judgment",
+                scope=row["scope"],
+                slot=row["slot"],
+                variant=row["variant"],
+                order=row["order"],
+                conditional=row["conditional"],
+                body=row["body"],
+            )
+        )
+    prompt_set = PromptSet(user_label=labels["user_label"], story_assistant_label=labels["story_assistant_label"])
+    return prompt_set, sections
+
+
+def with_baseline_sentence(sections: list[PromptSection]) -> list[PromptSection]:
+    """지시문 섹션 본문 끝에 공백 한 칸 + 문장 — 운영 레인 문안에 게시할 형태 그대로."""
+    targets = [s for s in sections if s.slot == "judgment_instruction"]
+    if len(targets) != 1:
+        raise ValueError(f"judgment_instruction 섹션이 {len(targets)}개다")
+    return [
+        PromptSection(
+            channel=s.channel,
+            scope=s.scope,
+            slot=s.slot,
+            variant=s.variant,
+            order=s.order,
+            conditional=s.conditional,
+            body=f"{s.body} {BASELINE_SENTENCE}" if s.slot == "judgment_instruction" else s.body,
+        )
+        for s in sections
+    ]
+
+
+def offline_stat_defs(data: dict[str, Any]) -> list[StatDef]:
+    """입력 파일의 스탯 정의를 서버가 읽은 순서(`serverIndex`) 그대로 세션 없는 행으로."""
+    rows = data["statDefs"]
+    if [row["serverIndex"] for row in rows] != list(range(len(rows))):
+        raise ValueError(f"{data['inputId']}: 스탯 정의가 서버 순서로 적혀 있지 않다")
+    return [
+        StatDef(
+            entity_id=uuid.UUID(row["entity_id"]),
+            name=row["name"],
+            description=row["description"],
+            min_value=row["min_value"],
+            max_value=row["max_value"],
+            initial_value=row["initial_value"],
+            per_turn_delta=row["per_turn_delta"],
+            change_direction=row["change_direction"],
+            max_change_per_turn=row["max_change_per_turn"],
+            order=row["order"],
+        )
+        for row in rows
+    ]
+
+
+def build_offline_inputs(
+    data: dict[str, Any], prompt_set: PromptSet, sections: list[PromptSection], stat_formats: list[str]
+) -> list[ReplayInput]:
+    """입력 JSON 한 개 → 갈래별 스탯 판정 입력. 시작값이 스탯마다 있어야 하고(빠지면 서버가 초기값을 넣어 실제와
+    달라진다), L 갈래의 섹션 렌더가 현행 + `" "` + 문장과 바이트 단위로 같아야 한다."""
+    stat_defs = offline_stat_defs(data)
+    stat_start = {str(k): float(v) for k, v in data["statStart"].items()}
+    if set(stat_start) != {str(d.entity_id) for d in stat_defs}:
+        raise ValueError(f"{data['inputId']}: 시작값이 스탯 정의와 맞지 않는다")
+    names = PromptNames(
+        persona_name=data["names"]["personaName"],
+        default_user_name=data["names"]["defaultUserName"],
+        char_name=None,
+    )
+    if names.judgment_user_name != data["names"]["userNameLine"]:
+        raise ValueError(f"{data['inputId']}: 이름 한 줄 값이 입력 파일과 다르다")
+
+    def render(rendered_sections: list[PromptSection]) -> str:
+        return build_stat_judgment_prompt(
+            prompt_set=prompt_set,
+            sections=rendered_sections,
+            stat_defs=stat_defs,
+            current_stats=stat_start,
+            user_message=data["userMessage"],
+            assistant_message=data["assistantMessage"],
+            names=names,
+        )
+
+    current = render(sections)
+    with_sentence = render(with_baseline_sentence(sections))
+    if with_sentence != f"{current} {BASELINE_SENTENCE}":
+        raise ValueError(
+            f"{data['inputId']}: 문장을 붙인 섹션 렌더가 현행 + 문장과 다르다(지시문이 마지막 섹션이 아니다)"
+        )
+    prompts = {fmt: stat_prompt_variant(current, stat_defs, stat_start, names, fmt) for fmt in STAT_FORMATS}
+    if (
+        prompts["L"] != with_sentence
+        or stat_prompt_variant(with_sentence, stat_defs, stat_start, names, "A") != prompts["B"]
+    ):
+        raise ValueError(f"{data['inputId']}: L·B 갈래가 섹션 렌더와 다르다")
+    site, original = REPLAY_SITES["stat"]
+    return [
+        ReplayInput(
+            kind="stat",
+            variant="offline",
+            turn=int(data["turn"]),
+            prompt=prompts[fmt],
+            schema=StatJudgmentResult,
+            call_site=site,
+            original_call_site=original,
+            history_messages=0,
+            stat_defs=tuple(stat_defs),
+            stat_start=dict(stat_start),
+            stat_format=fmt,
+            input_id=data["inputId"],
+            group=data["group"],
+        )
+        for fmt in stat_formats
+    ]
+
+
 # ── 호출 ────────────────────────────────────────────────────────────────────
 
 _TOKEN_FIELDS = {
@@ -461,7 +618,7 @@ async def run_replay(
     *,
     reps: int,
     budget: CallBudget,
-    room: ChatRoom,
+    room: ChatRoom | OfflineOwner,
     sink: Callable[[dict[str, Any]], None],
 ) -> None:
     for item in inputs:
@@ -485,9 +642,11 @@ async def run_replay(
                     applied = stat_result(item, parsed)
             except Exception as exc:  # 기록하고 다음 호출로 — 실패도 결과다(컨텍스트 한도 등)
                 error = f"{type(exc).__name__}: {str(exc)[:500]}"
+            offline = {} if item.input_id is None else {"inputId": item.input_id, "group": item.group}
             sink(
                 {
                     "kind": "call",
+                    **offline,
                     "at": datetime.now(UTC).isoformat(),
                     "turn": item.turn,
                     "judgment": item.kind,
@@ -509,6 +668,91 @@ async def run_replay(
                     "error": error,
                 }
             )
+
+
+def _prompt_sha(prompt: str) -> str:
+    return hashlib.sha256(prompt.encode()).hexdigest()[:16]
+
+
+def _offline_main(args: argparse.Namespace) -> int:
+    """입력 파일을 조립해 프롬프트·plan 줄을 남기고, `--execute` 면 호출한다(파일 쓰기는 이벤트 루프 밖에서)."""
+    prompt_set, sections = load_sections(Path(args.sections_json))
+    per_file: list[tuple[dict[str, Any], list[ReplayInput]]] = []
+    for path in args.input_json:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        per_file.append((data, build_offline_inputs(data, prompt_set, sections, args.stat_format or ["current"])))
+    all_inputs = [item for _, items in per_file for item in items]
+    models = check_same_models(all_inputs, settings.gemini_model_name)
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if args.prompt_dir:
+        Path(args.prompt_dir).mkdir(parents=True, exist_ok=True)
+        for item in all_inputs:
+            path = Path(args.prompt_dir) / f"{item.input_id}.{item.stat_format}.txt"
+            path.write_text(item.prompt, encoding="utf-8")
+
+    def sink(record: dict[str, Any]) -> None:
+        with out.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    plans = []
+    for data, items in per_file:
+        plan = estimate(items, args.reps, models)
+        plans.append(plan)
+        sink(
+            {
+                "kind": "plan",
+                "at": datetime.now(UTC).isoformat(),
+                "inputId": data["inputId"],
+                "group": data["group"],
+                "source": data["source"],
+                "roomId": data["roomId"],
+                "turn": data["turn"],
+                "variant": "offline",
+                "sectionsJson": str(args.sections_json),
+                "execute": args.execute,
+                "models": models,
+                "timeoutMs": REPLAY_TIMEOUT_MS,
+                "inputs": [
+                    {
+                        "statFormat": i.stat_format,
+                        "promptChars": len(i.prompt),
+                        "promptSha256": _prompt_sha(i.prompt),
+                        "statStart": i.stat_start,
+                    }
+                    for i in items
+                ],
+                **plan,
+            }
+        )
+    total = {
+        "inputs": len(per_file),
+        "calls": sum(p["calls"] for p in plans),
+        "estimatedUsd": round(sum(p["estimatedUsd"] for p in plans), 4),
+    }
+    print(json.dumps(total, ensure_ascii=False))
+    if not args.execute:
+        print("시험 실행 — LLM 을 부르지 않았다(--execute 로 실행)")
+        return 0
+    if total["calls"] > args.limit_calls:
+        print(f"예정 호출 {total['calls']} 가 --limit-calls {args.limit_calls} 를 넘는다 — 상한까지만 부른다")
+    asyncio.run(_offline_execute(per_file, reps=args.reps, budget=CallBudget(args.limit_calls), sink=sink))
+    return 0
+
+
+async def _offline_execute(
+    per_file: list[tuple[dict[str, Any], list[ReplayInput]]],
+    *,
+    reps: int,
+    budget: CallBudget,
+    sink: Callable[[dict[str, Any]], None],
+) -> None:
+    client = GeminiLLMClient()
+    capture: dict[str, Any] = {}
+    install_replay_transport(client, capture)
+    for data, items in per_file:
+        owner = OfflineOwner(id=uuid.UUID(data["roomId"]))
+        await run_replay(client, capture, items, reps=reps, budget=budget, room=owner, sink=sink)
 
 
 async def _main(args: argparse.Namespace) -> int:
@@ -588,9 +832,12 @@ async def _main(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--room", required=True)
-    ap.add_argument("--turn", type=int, required=True, help="방 턴 번호(N 번째 완결 턴)")
-    ap.add_argument("--kind", action="append", choices=["image", "ending", "stat"], required=True)
+    ap.add_argument("--room", help="방 id(오프라인 입력이 아니면 필수)")
+    ap.add_argument("--turn", type=int, help="방 턴 번호(N 번째 완결 턴, 오프라인 입력이 아니면 필수)")
+    ap.add_argument("--kind", action="append", choices=["image", "ending", "stat"], help="오프라인 입력이 아니면 필수")
+    ap.add_argument("--input-json", action="append", help="오프라인 스탯 판정 입력 파일(여럿 가능) — DB 를 읽지 않는다")
+    ap.add_argument("--sections-json", help="오프라인 입력의 레인 섹션·라벨 파일(stat_judgment_sections·labels)")
+    ap.add_argument("--prompt-dir", help="오프라인 입력의 프롬프트를 <디렉터리>/<inputId>.<갈래>.txt 로 저장")
     ap.add_argument("--stat-start-trace", help="스탯 판정 시작 값을 읽을 서버 trace(stat_outcome) 파일")
     ap.add_argument(
         "--stat-format",
@@ -605,7 +852,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--limit-calls", type=int, required=True, help="실호출 하드 상한")
     ap.add_argument("--out", required=True)
     ap.add_argument("--execute", action="store_true", help="LLM 을 실제로 부른다(사용자 승인 뒤에만)")
-    return asyncio.run(_main(ap.parse_args(argv)))
+    args = ap.parse_args(argv)
+    if args.input_json:
+        if not args.sections_json:
+            ap.error("--input-json 에는 --sections-json 이 필요하다")
+        if args.room or args.turn is not None or (args.kind and args.kind != ["stat"]):
+            ap.error("--input-json 은 스탯 판정 전용이고 --room/--turn 과 함께 쓰지 않는다")
+        return _offline_main(args)
+    if not args.room or args.turn is None or not args.kind:
+        ap.error("--room, --turn, --kind 가 필요하다(또는 --input-json)")
+    return asyncio.run(_main(args))
 
 
 if __name__ == "__main__":
