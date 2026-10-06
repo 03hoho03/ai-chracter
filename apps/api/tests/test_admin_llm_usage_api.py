@@ -148,7 +148,7 @@ async def test_llm_usage_aggregates_rows_ratios_and_cost(
     assert body["estimatedCostUsdTotal"] == pytest.approx(priced_total)
     assert body["unpricedCalls"] == 1
 
-    assert body["pricesAsOf"] == "2026-10-02"
+    assert body["pricesAsOf"] == "2026-10-06"
     lite_price = next(p for p in body["prices"] if p["model"] == LITE)
     assert lite_price == {
         "model": LITE,
