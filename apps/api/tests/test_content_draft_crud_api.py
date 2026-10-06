@@ -3052,6 +3052,110 @@ async def test_patch_story_draft_keeps_stat_change_options_when_fields_omitted(
     assert await _saved_stat_options(db_session, version.id) == [("남은 날", None, "both", None)]
 
 
+def _priority_ending_item(**overrides: object) -> dict[str, object]:
+    item: dict[str, object] = {
+        "id": str(uuid.uuid4()),
+        "name": "루트",
+        "turnCountGate": 10,
+        "judgmentPrompt": "판정",
+        "epilogue": None,
+        "hint": None,
+        "statRules": [],
+    }
+    item.update(overrides)
+    return item
+
+
+async def _saved_priority_stats(db_session: AsyncSession, version_id: uuid.UUID) -> list[tuple[str, object]]:
+    saved = (
+        await db_session.scalars(
+            sa.select(Ending)
+            .join(StartingSetup, Ending.starting_setup_id == StartingSetup.id)
+            .where(StartingSetup.content_version_id == version_id)
+            .order_by(Ending.order)
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    return [(e.name, e.priority_stat_def_entity_id) for e in saved]
+
+
+async def test_patch_story_draft_round_trips_ending_priority_stat_and_keeps_it_when_omitted(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """우선 스탯을 저장하고 초안 응답이 돌려준다. 이 칸을 모르는 화면(배포 전부터 열려 있던 탭의 옛 번들)의 자동저장이
+    작가가 고른 값을 지우면 안 되므로 키를 빼면 그대로 두고, 새 엔딩은 비운 채로 들어간다. `null` 을 보내면 지운다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    setup_id = str(uuid.uuid4())
+    stat = _limited_stat_item(name="호감")
+    route = _priority_ending_item(name="루트", priorityStatId=stat["id"])
+    first = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(startingSetups=[_starting_setup_item(id=setup_id, statDefs=[stat], endings=[route])]),
+    )
+    assert first.status_code == 200
+    stat_id = uuid.UUID(str(stat["id"]))
+    assert await _saved_priority_stats(db_session, version.id) == [("루트", stat_id)]
+    got = await db_client.get(f"/contents/{content.id}/draft")
+    assert [e["priorityStatId"] for e in got.json()["startingSetups"][0]["endings"]] == [stat["id"]]
+
+    old_bundle_route = {key: value for key, value in route.items() if key != "priorityStatId"}
+    old_bundle_new = _priority_ending_item(name="새 엔딩")
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            startingSetups=[
+                _starting_setup_item(id=setup_id, statDefs=[stat], endings=[old_bundle_route, old_bundle_new])
+            ]
+        ),
+    )
+    assert resp.status_code == 200
+    assert await _saved_priority_stats(db_session, version.id) == [("루트", stat_id), ("새 엔딩", None)]
+
+    cleared = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            startingSetups=[
+                _starting_setup_item(id=setup_id, statDefs=[stat], endings=[{**route, "priorityStatId": None}])
+            ]
+        ),
+    )
+    assert cleared.status_code == 200
+    assert await _saved_priority_stats(db_session, version.id) == [("루트", None)]
+
+
+async def test_patch_story_draft_rejects_ending_priority_stat_missing_from_its_setup(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """우선 스탯이 같은 시작설정에 없는 스탯(지운 스탯, 다른 시작설정의 스탯)을 가리키면 그 엔딩은 무리 비교에서 늘
+    빠진다. 엔딩 규칙과 같은 422 코드로 경로를 알리고 아무것도 저장하지 않는다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    own_stat = _limited_stat_item(name="호감")
+    other_setup_stat = _limited_stat_item(name="다른 호감")
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            startingSetups=[
+                _starting_setup_item(
+                    statDefs=[own_stat],
+                    endings=[
+                        _priority_ending_item(priorityStatId=own_stat["id"]),
+                        _priority_ending_item(priorityStatId=other_setup_stat["id"]),
+                    ],
+                ),
+                _starting_setup_item(statDefs=[other_setup_stat]),
+            ]
+        ),
+    )
+
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == {
+        "code": "ENDING_RULE_STAT_NOT_FOUND",
+        "paths": ["startingSetups[0].endings[1].priorityStatId"],
+    }
+    assert await _saved_priority_stats(db_session, version.id) == []
+
+
 async def test_patch_story_draft_persists_keyword_note_order_from_array_position(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

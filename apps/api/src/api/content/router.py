@@ -30,6 +30,7 @@ from api.content.publish import (
     draft_dangling_situation_note_paths,
     draft_dangling_stat_rule_paths,
     setup_dangling_situation_note_paths,
+    setup_dangling_priority_stat_paths,
     setup_dangling_stat_rule_paths,
     validate_character_publish,
     validate_story_publish,
@@ -875,6 +876,7 @@ async def _story_draft_response(
                         epilogue=ending.epilogue,
                         hint=ending.hint,
                         stat_rules=await _ending_rule_draft_items(db, ending.id),
+                        priority_stat_id=ending.priority_stat_def_entity_id,
                     )
                     for ending in endings
                 ],
@@ -1347,9 +1349,11 @@ async def _update_story_draft(
     고른 적용 범위가 말없이 넓어진다.
 
     엔딩 규칙이 같은 시작설정에 없는 스탯을 가리키면 422 `{"code": "ENDING_RULE_STAT_NOT_FOUND", "paths": [...]}` 이다
-    (경로 꼴은 `setup_dangling_stat_rule_paths`). 그 엔딩은 영영 열리지 않는다. 상황 노트의 조건이 그러면 422
-    `{"code": "SITUATION_NOTE_STAT_NOT_FOUND", "paths": [...]}`(경로 꼴은 `setup_dangling_situation_note_paths`)이고,
-    둘 다 어긋났으면 엔딩 쪽을 먼저 알린다. 상황 노트는 시작설정이 `situation_notes` 를 보냈을 때만 맞춘다
+    (경로 꼴은 `setup_dangling_stat_rule_paths`). 그 엔딩은 영영 열리지 않는다. 엔딩의 우선 스탯이 그러면 같은 코드로
+    `startingSetups[i].endings[j].priorityStatId` 경로를 알린다(`setup_dangling_priority_stat_paths`) — 그 엔딩은 우선
+    스탯 비교에서 늘 빠진다. 이 검사는 페이로드만 보므로, 우선 스탯을 보내지 않아 기존 값을 그대로 둔 엔딩은 발행이 막는다.
+    상황 노트의 조건이 그러면 422 `{"code": "SITUATION_NOTE_STAT_NOT_FOUND", "paths": [...]}`(경로 꼴은
+    `setup_dangling_situation_note_paths`)이고, 둘 다 어긋났으면 엔딩 쪽을 먼저 알린다. 상황 노트는 시작설정이 `situation_notes` 를 보냈을 때만 맞춘다
     (`StartingSetupDraftItem` docstring). 스키마 validator 가 아니라 여기서
     막는 것은 같은 페이로드 모델을 미리보기 시작·Redis 의 미리보기 세션 복원도 쓰기 때문이다 — validator 로 두면 이미
     저장된 미리보기 세션의 다음 턴이 역직렬화에서 깨진다."""
@@ -1519,6 +1523,7 @@ async def _update_story_draft(
         }
         for ending_order, ending_item in enumerate(setup_item.endings):
             ending = existing_endings.get(ending_item.id)
+            is_new_ending = ending is None
             if ending is None:
                 ending = Ending(entity_id=ending_item.id, starting_setup_id=setup.id)
                 db.add(ending)
@@ -1528,6 +1533,9 @@ async def _update_story_draft(
             ending.epilogue = ending_item.epilogue
             ending.hint = ending_item.hint
             ending.order = ending_order
+            if is_new_ending or "priority_stat_id" in ending_item.model_fields_set:
+                # 기존 엔딩에서 안 보낸 우선 스탯은 그대로 둔다(`EndingDraftItem` docstring).
+                ending.priority_stat_def_entity_id = ending_item.priority_stat_id
             await db.flush()
             await _reconcile_ending_rules(db, ending.id, ending_item.stat_rules)
 
@@ -2338,6 +2346,7 @@ async def _clone_story_children(
                 epilogue=ending.epilogue,
                 hint=ending.hint,
                 order=ending.order,
+                priority_stat_def_entity_id=ending.priority_stat_def_entity_id,
             )
             db.add(new_ending)
             await db.flush()
@@ -2561,6 +2570,9 @@ async def _load_story_publish_draft(
         stat_ids = {stat_def.entity_id for stat_def in setup_stat_defs}
         endings_rules = [await _ending_rule_draft_items(db, ending.id) for ending in endings_by_setup_id[setup.id]]
         dangling_stat_rule_paths += setup_dangling_stat_rule_paths(setup_index, stat_ids, endings_rules)
+        dangling_stat_rule_paths += setup_dangling_priority_stat_paths(
+            setup_index, stat_ids, [ending.priority_stat_def_entity_id for ending in endings_by_setup_id[setup.id]]
+        )
         setup_situation_notes = (
             await db.scalars(
                 select(SituationNote)

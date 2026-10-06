@@ -237,6 +237,36 @@ def test_load_story_reports_unknown_stat_name(tmp_path: Path) -> None:
         load_story(path)
 
 
+def test_load_story_resolves_ending_priority_stat_by_name(tmp_path: Path) -> None:
+    """우선 스탯도 이름(`priorityStat`)으로 적으면 같은 시작설정의 파생 id 로 바뀐다. 적지 않은 엔딩은 저장이 기존 값을
+    건드리지 않도록 필드를 보낸 것으로 치지 않는다."""
+    raw = _story_payload()
+    raw["startingSetups"][0]["endings"][0]["priorityStat"] = "신뢰"
+    raw["startingSetups"][0]["endings"].append({**raw["startingSetups"][0]["endings"][0], "priorityStat": None})
+    raw["startingSetups"][0]["endings"].append(
+        {key: value for key, value in raw["startingSetups"][0]["endings"][0].items() if key != "priorityStat"}
+    )
+    path = _write(tmp_path, "romance-3rdloop", raw)
+
+    payload = load_story(path)
+
+    setup = payload.starting_setups[0]
+    named, cleared, omitted = setup.endings
+    assert named.priority_stat_id == setup.stat_defs[0].id
+    assert cleared.priority_stat_id is None
+    assert "priority_stat_id" in cleared.model_fields_set
+    assert "priority_stat_id" not in omitted.model_fields_set
+
+
+def test_load_story_reports_unknown_ending_priority_stat_name(tmp_path: Path) -> None:
+    raw = _story_payload()
+    raw["startingSetups"][0]["endings"][0]["priorityStat"] = "없는스탯"
+    path = _write(tmp_path, "dangling-priority", raw)
+
+    with pytest.raises(SeedContentError, match=re.escape("dangling-priority.json: 엔딩 우선 스탯이")):
+        load_story(path)
+
+
 def _with_situation_notes(raw: dict[str, Any], stat_name: str = "신뢰") -> dict[str, Any]:
     raw["startingSetups"][0]["situationNotes"] = [
         {

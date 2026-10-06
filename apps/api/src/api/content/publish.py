@@ -137,9 +137,11 @@ def validate_story_publish(
     하나도 없으면 `keywordNotes.triggerKeywords`(열릴 길이 없다), 정보가 공백뿐인 노트가 있으면 `keywordNotes.infoText`
     (실려도 빈 줄이다)를 노트 수와 상관없이 한 번씩 알린다 — 어느 노트인지는 빌더 폼 검증이 노트 자리에서 먼저 보여 준다.
 
-    엔딩 규칙이 같은 시작설정에 없는 스탯을 가리키면(`dangling_stat_rule_paths`, 호출부가 `setup_dangling_stat_rule_paths`
-    로 구한다) `endings.statRules` 를 한 번 알린다. 그 조건은 영영 참이 될 수 없다. 초안 저장이 같은 검사로 경로까지
-    알려 막으므로, 여기는 그 검사 전에 저장된 초안과 API 직접 호출을 막는 마지막 관문이다.
+    엔딩 규칙이나 엔딩의 우선 스탯이 같은 시작설정에 없는 스탯을 가리키면(`dangling_stat_rule_paths`, 호출부가
+    `setup_dangling_stat_rule_paths`·`setup_dangling_priority_stat_paths` 로 구한다) `endings.statRules` 를 한 번 알린다.
+    규칙은 영영 참이 될 수 없고, 우선 스탯은 비교에서 늘 빠진다. 키를 하나로 두는 것은 둘 다 빌더의 같은 엔딩 자리에서
+    고치기 때문이다. 초안 저장이 같은 검사로 경로까지 알려 막으므로, 여기는 그 검사 전에 저장된 초안, 우선 스탯을 보내지
+    않는 옛 화면이 스탯만 지운 초안, API 직접 호출을 막는 마지막 관문이다.
 
     스탯(`stat_defs`, 모든 시작설정의 것)은 최소 < 최대, 최소 ≤ 초기 ≤ 최대여야 하고, 어긋난 스탯이 하나라도 있으면
     `stats.range` 를 한 번 알린다. 대화는 방을 열 때 초기값을 그대로 두고 이후 변화부터 범위로 잘라 쓴다 — 범위 밖
@@ -275,17 +277,37 @@ def setup_dangling_situation_note_paths(
     )
 
 
-def draft_dangling_stat_rule_paths(starting_setups: Sequence[StartingSetupDraftItem]) -> list[str]:
-    """초안 페이로드 전체에 `setup_dangling_stat_rule_paths` 를 적용한다(초안 저장과 시드가 쓴다)."""
+def setup_dangling_priority_stat_paths(
+    setup_index: int,
+    stat_ids: Collection[uuid.UUID],
+    priority_stat_ids: Sequence[uuid.UUID | None],
+) -> list[str]:
+    """시작설정 하나에서, 그 시작설정의 스탯(`stat_ids`, entity_id)에 없는 스탯을 우선 스탯으로 고른 엔딩의 필드 경로.
+    `priority_stat_ids` 는 엔딩 목록 순서의 우선 스탯이다(비운 엔딩은 None).
+
+    엔딩 규칙의 스탯 참조와 같이 FK 가 없어 스탯을 지운 뒤에도 남을 수 있다. 대화는 그 엔딩을 우선 스탯 비교에서 빼고
+    우선 스탯이 없는 엔딩처럼 판정하므로, 작가가 고른 비교가 조용히 사라진다. 엔딩 규칙과 같은 자리에서 막는다(초안 저장 422 의
+    같은 코드, 발행의 같은 키). 경로는 빌더 폼과 같은 `startingSetups[i].endings[j].priorityStatId` 꼴이다."""
     return [
-        path
-        for setup_index, setup_item in enumerate(starting_setups)
-        for path in setup_dangling_stat_rule_paths(
-            setup_index,
-            {stat_item.id for stat_item in setup_item.stat_defs},
-            [ending_item.stat_rules for ending_item in setup_item.endings],
-        )
+        f"startingSetups[{setup_index}].endings[{ending_index}].priorityStatId"
+        for ending_index, priority_stat_id in enumerate(priority_stat_ids)
+        if priority_stat_id is not None and priority_stat_id not in stat_ids
     ]
+
+
+def draft_dangling_stat_rule_paths(starting_setups: Sequence[StartingSetupDraftItem]) -> list[str]:
+    """초안 페이로드 전체에 `setup_dangling_stat_rule_paths` 와 `setup_dangling_priority_stat_paths` 를 적용한다(초안
+    저장과 시드가 쓴다). 시작설정마다 규칙 경로 뒤에 우선 스탯 경로가 온다."""
+    paths: list[str] = []
+    for setup_index, setup_item in enumerate(starting_setups):
+        stat_ids = {stat_item.id for stat_item in setup_item.stat_defs}
+        paths += setup_dangling_stat_rule_paths(
+            setup_index, stat_ids, [ending_item.stat_rules for ending_item in setup_item.endings]
+        )
+        paths += setup_dangling_priority_stat_paths(
+            setup_index, stat_ids, [ending_item.priority_stat_id for ending_item in setup_item.endings]
+        )
+    return paths
 
 
 def draft_dangling_situation_note_paths(starting_setups: Sequence[StartingSetupDraftItem]) -> list[str]:
