@@ -298,6 +298,11 @@ class NovelJob(Base):
     episode_count_target: Mapped[int | None] = mapped_column(Integer, nullable=True)
     unit_price: Mapped[int | None] = mapped_column(Integer, nullable=True)
     consumed_amount: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # 연쇄 부모가 차감할 때 정한 묶음 수와 묶음 하나의 화 수 상한. 진행 표시(끝낸 묶음 / 계획한 묶음)와 자식의 화 수
+    # 상한이 이 값을 읽는다 — 그 사이 설정이 바뀌어도 낸 금액의 근거(묶음 수 × 화 수 상한 × 단가)대로 가야 쓴 몫이 낸
+    # 돈을 넘지 않는다. 연쇄 부모가 아니면 비어 있다.
+    planned_batches: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    batch_k_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
     failure_code: Mapped[NovelJobFailureCode | None] = mapped_column(Text, nullable=True)
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -334,6 +339,12 @@ class NovelJob(Base):
         # 연쇄 부모가 쓴 몫은 낸 돈 안에 있다. 넘으면 실패 환불액이 음수가 되므로 누적하는 자리에서 거절한다.
         CheckConstraint(
             "consumed_amount >= 0 AND consumed_amount <= charged_amount", name="ck_novel_jobs_consumed_amount"
+        ),
+        # 연쇄 부모는 계획 세 값을 모두 갖는다. 비교만 쓰면 빈 칸에서 식이 NULL 이 되어 통과하므로 `IS NOT NULL` 을 건다.
+        CheckConstraint(
+            "kind <> 'chain_generate' OR (planned_batches IS NOT NULL AND batch_k_max IS NOT NULL"
+            " AND unit_price IS NOT NULL AND planned_batches >= 1 AND batch_k_max >= 1 AND unit_price >= 1)",
+            name="ck_novel_jobs_chain_plan",
         ),
         Index("ix_novel_jobs_user_id_created_at", "user_id", "created_at"),
         Index("ix_novel_jobs_novel_id_start_message_id_created_at", "novel_id", "start_message_id", "created_at"),

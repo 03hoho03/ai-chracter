@@ -413,7 +413,11 @@ async def test_refund_backfill_on_old_job_rows(ddl_engine: AsyncEngine) -> None:
             "성공 + 환불(부분 환불)",
             id="partial-refund",
         ),
-        pytest.param({"kind": "chain_generate"}, "연쇄 부모(chain_generate)", id="chain-parent"),
+        pytest.param(
+            {"kind": "chain_generate", "planned_batches": 1, "batch_k_max": 3, "unit_price": 40},
+            "연쇄 부모(chain_generate)",
+            id="chain-parent",
+        ),
         pytest.param(
             {"status": "failed", "failure_code": "malformed"},
             "실패 사유 malformed·episode_count_mismatch",

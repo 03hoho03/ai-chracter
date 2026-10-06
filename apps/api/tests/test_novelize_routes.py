@@ -511,6 +511,8 @@ async def test_detail_shows_the_chain_parent_as_the_active_job_with_its_progress
         model="gemini",
         charged_amount=240,
         unit_price=40,
+        planned_batches=2,
+        batch_k_max=3,
         created_at=base + timedelta(minutes=1),
     )
     db_session.add(parent)

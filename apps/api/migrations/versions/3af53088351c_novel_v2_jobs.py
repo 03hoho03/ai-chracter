@@ -6,7 +6,8 @@ Create Date: 2026-10-06 23:55:00.000000
 
 소설 작업 행(`novel_jobs`)을 여러 화 생성·부분 환불·연쇄 생성에 맞게 넓힌다.
 - 새 칸: 환불액 `refunded_amount`, 연쇄 부모 `parent_job_id`, 대상 묶음 `batch_id`, 화 수 목표 `episode_count_target`,
-  연쇄 부모가 고정하는 화 단가 `unit_price`, 연쇄 부모가 성공한 자식 몫을 쌓는 `consumed_amount`(기본 0).
+  연쇄 부모가 고정하는 화 단가 `unit_price`, 연쇄 부모가 성공한 자식 몫을 쌓는 `consumed_amount`(기본 0), 연쇄 부모가
+  차감할 때 정한 묶음 수 `planned_batches` 와 묶음 하나의 화 수 상한 `batch_k_max`.
 - 종류에 연쇄 부모 `chain_generate`, 실패 사유에 출력 형식 위반 `malformed`·다시 만들기 화 수 불일치
   `episode_count_mismatch` 를 더한다. CHECK 의 값 목록은 모델 Literal 을 import 하지 않고 여기 리터럴로 적는다 — 나중에
   Literal 이 바뀌면 이 옛 리비전의 SQL 까지 바뀌기 때문이다.
@@ -24,6 +25,9 @@ Create Date: 2026-10-06 23:55:00.000000
 **소비액 CHECK** — `ck_novel_jobs_consumed_amount`: `0 <= consumed_amount <= charged_amount`. 연쇄 부모가 쓴 몫이
 낸 돈을 넘으면 실패 환불액(`charged_amount - consumed_amount`)이 음수가 되어 환불 CHECK 가 그 실패 전이를 막는다 — 잘못된
 누적을 그 자리에서 거절해 원인 쪽에서 드러나게 한다.
+**연쇄 계획 CHECK** — `ck_novel_jobs_chain_plan`: 연쇄 부모는 묶음 수·화 수 상한·화 단가를 모두 1 이상으로 갖는다. 진행
+표시와 자식의 화 수 상한이 이 세 값을 읽고(설정이 그 사이 바뀌어도 낸 금액의 근거대로 간다), 하나라도 비면 진행을 셀 수
+없고 쓴 몫이 낸 돈을 넘을 수 있다. 연쇄 부모가 아닌 행은 보지 않는다.
 
 환불액 0 은 환불이 아니므로 `refunded_at` 도 찍지 않는다. 그래서 바꾸기 전에 차감 0 인데 `refunded_at` 이 찍힌 옛 행을
 세어 `refunded_at` 을 비운다(옛 단가는 0 이 아니라 운영에는 없을 것으로 보지만, 있으면 새 CHECK 에 걸려 배포가 멈춘다).
@@ -34,7 +38,8 @@ Create Date: 2026-10-06 23:55:00.000000
 
 **downgrade** — 다음 행이 하나라도 있으면 아무것도 바꾸기 전에 `RuntimeError` 로 멈춘다. 옛 CHECK·부분 유니크가 그
 행들을 받아들이지 못한다: 성공 + 환불(부분 환불), 종류 `chain_generate`, 실패 사유 `malformed`·`episode_count_mismatch`,
-`parent_job_id` 가 있는 연쇄 자식. 그 밖에는 막지 않고 환불액·대상 묶음·화 수 목표·단가·소비액이 사라진다. 차감 0
+`parent_job_id` 가 있는 연쇄 자식. 그 밖에는 막지 않고 환불액·대상 묶음·화 수 목표·단가·소비액·연쇄 계획 두 칸이
+사라진다. 차감 0
 행에서 비운 `refunded_at` 은 되살리지 않는다(옛 CHECK 는 NULL 을 받는다).
 
 이 파일은 `api.*` 를 import 하지 않는다. 테스트(`tests/test_novel_v2_migration.py`)가 이 모듈을 `importlib` 로 불러
@@ -58,6 +63,11 @@ depends_on: str | Sequence[str] | None = None
 logger = logging.getLogger("alembic.runtime.migration")
 
 _CONSUMED_CHECK = "consumed_amount >= 0 AND consumed_amount <= charged_amount"
+# 비교만 쓰면 빈 칸에서 식이 NULL 이 되어 CHECK 를 통과하므로 `IS NOT NULL` 을 따로 건다.
+_CHAIN_PLAN_CHECK = (
+    "kind <> 'chain_generate' OR (planned_batches IS NOT NULL AND batch_k_max IS NOT NULL AND unit_price IS NOT NULL"
+    " AND planned_batches >= 1 AND batch_k_max >= 1 AND unit_price >= 1)"
+)
 _OLD_KIND_CHECK = "kind IN ('chapter_generate', 'chapter_regenerate', 'ai_edit')"
 _NEW_KIND_CHECK = "kind IN ('chapter_generate', 'chapter_regenerate', 'ai_edit', 'chain_generate')"
 _OLD_FAILURE_CODE_CHECK = (
@@ -138,6 +148,8 @@ def upgrade() -> None:
     op.add_column('novel_jobs', sa.Column('episode_count_target', sa.Integer(), nullable=True))
     op.add_column('novel_jobs', sa.Column('unit_price', sa.Integer(), nullable=True))
     op.add_column('novel_jobs', sa.Column('consumed_amount', sa.Integer(), server_default='0', nullable=False))
+    op.add_column('novel_jobs', sa.Column('planned_batches', sa.Integer(), nullable=True))
+    op.add_column('novel_jobs', sa.Column('batch_k_max', sa.Integer(), nullable=True))
     op.create_index('ix_novel_jobs_base_revision_id', 'novel_jobs', ['base_revision_id'], unique=False)
     op.create_index('ix_novel_jobs_chapter_id', 'novel_jobs', ['chapter_id'], unique=False)
     op.create_index('ix_novel_jobs_parent_job_id', 'novel_jobs', ['parent_job_id'], unique=False)
@@ -154,6 +166,7 @@ def upgrade() -> None:
     op.drop_constraint('ck_novel_jobs_refund_only_when_failed', 'novel_jobs', type_='check')
     op.create_check_constraint('ck_novel_jobs_refund_amount', 'novel_jobs', _NEW_REFUND_CHECK)
     op.create_check_constraint('ck_novel_jobs_consumed_amount', 'novel_jobs', _CONSUMED_CHECK)
+    op.create_check_constraint('ck_novel_jobs_chain_plan', 'novel_jobs', _CHAIN_PLAN_CHECK)
 
     op.drop_index('ux_novel_jobs_novel_id_active', table_name='novel_jobs', postgresql_where=sa.text(_OLD_ACTIVE_WHERE))
     op.create_index(
@@ -172,7 +185,8 @@ def downgrade() -> None:
         'ux_novel_jobs_novel_id_active', 'novel_jobs', ['novel_id'], unique=True,
         postgresql_where=sa.text(_OLD_ACTIVE_WHERE),
     )
-    # 이 CHECK 는 이 리비전이 배포되기 전에 더했다 — 그 전판으로 올린 개발 DB 에는 없어서 있을 때만 지운다.
+    # 이 CHECK 둘과 아래 두 칸은 이 리비전이 배포되기 전에 더했다 — 그 전판으로 올린 개발 DB 에는 없어서 있을 때만 지운다.
+    op.execute("ALTER TABLE novel_jobs DROP CONSTRAINT IF EXISTS ck_novel_jobs_chain_plan")
     op.execute("ALTER TABLE novel_jobs DROP CONSTRAINT IF EXISTS ck_novel_jobs_consumed_amount")
     op.drop_constraint('ck_novel_jobs_refund_amount', 'novel_jobs', type_='check')
     op.create_check_constraint('ck_novel_jobs_refund_only_when_failed', 'novel_jobs', _OLD_REFUND_CHECK)
@@ -185,6 +199,8 @@ def downgrade() -> None:
     op.drop_index('ix_novel_jobs_parent_job_id', table_name='novel_jobs')
     op.drop_index('ix_novel_jobs_chapter_id', table_name='novel_jobs')
     op.drop_index('ix_novel_jobs_base_revision_id', table_name='novel_jobs')
+    op.execute("ALTER TABLE novel_jobs DROP COLUMN IF EXISTS batch_k_max")
+    op.execute("ALTER TABLE novel_jobs DROP COLUMN IF EXISTS planned_batches")
     op.drop_column('novel_jobs', 'consumed_amount')
     op.drop_column('novel_jobs', 'unit_price')
     op.drop_column('novel_jobs', 'episode_count_target')

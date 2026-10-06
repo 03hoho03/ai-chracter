@@ -33,6 +33,11 @@ async def _tree(db_session: AsyncSession) -> NovelTree:
     return await _make_novel_tree(db_session, user.id)
 
 
+# 연쇄 부모가 늘 갖는 계획 세 값(묶음 수·묶음 하나의 화 수 상한·화 단가). 연쇄 부모 행을 넣는 테스트는 이것을 함께 넣어
+# 시험하려는 제약이 아니라 계획 CHECK 에 걸리지 않게 한다.
+_CHAIN_PLAN: dict[str, Any] = {"planned_batches": 2, "batch_k_max": 3, "unit_price": 40}
+
+
 def _job_values(tree: NovelTree, **overrides: Any) -> dict[str, Any]:
     # 기본값은 끝난 작업이라 진행 중 부분 유니크(트리에 이미 running 하나가 있다)에 걸리지 않는다.
     values: dict[str, Any] = {
@@ -162,6 +167,7 @@ async def test_novel_chapter_revision_rejects_unknown_source(db_session: AsyncSe
         pytest.param(
             {
                 "kind": "chain_generate",
+                **_CHAIN_PLAN,
                 "status": "failed",
                 "charged_amount": 120,
                 "consumed_amount": 40,
@@ -200,6 +206,7 @@ async def test_novel_job_refund_check_accepts_each_refund_shape(
         pytest.param(
             {
                 "kind": "chain_generate",
+                **_CHAIN_PLAN,
                 "status": "failed",
                 "charged_amount": 120,
                 "consumed_amount": 40,
@@ -226,13 +233,35 @@ async def test_novel_job_refund_check_rejects_inconsistent_refunds(
 async def test_novel_job_consumed_amount_stays_within_the_charge(db_session: AsyncSession) -> None:
     """연쇄 부모가 쓴 몫은 0 과 낸 돈 사이다 — 넘으면 실패 환불액이 음수가 된다. 양 끝은 받고 바깥은 거절한다."""
     tree = await _tree(db_session)
-    chain = {"kind": "chain_generate", "charged_amount": 120}
+    chain = {"kind": "chain_generate", "charged_amount": 120, **_CHAIN_PLAN}
 
     await _insert_job(db_session, _job_values(tree, consumed_amount=0, **chain))
     await _insert_job(db_session, _job_values(tree, consumed_amount=120, **chain))
     for consumed in (-1, 121):
         with pytest.raises(IntegrityError):
             await _insert_job(db_session, _job_values(tree, consumed_amount=consumed, **chain))
+
+
+@pytest.mark.parametrize(
+    "plan",
+    [
+        pytest.param({**_CHAIN_PLAN, "planned_batches": None}, id="no-planned-batches"),
+        pytest.param({**_CHAIN_PLAN, "batch_k_max": None}, id="no-episode-cap"),
+        pytest.param({**_CHAIN_PLAN, "unit_price": None}, id="no-unit-price"),
+        pytest.param({**_CHAIN_PLAN, "planned_batches": 0}, id="zero-batches"),
+        pytest.param({**_CHAIN_PLAN, "batch_k_max": 0}, id="zero-episode-cap"),
+        pytest.param({**_CHAIN_PLAN, "unit_price": 0}, id="zero-unit-price"),
+    ],
+)
+async def test_chain_parent_needs_its_whole_plan(db_session: AsyncSession, plan: dict[str, Any]) -> None:
+    """연쇄 진행 표시와 자식의 화 수 상한이 이 세 값을 읽는다. 빈 칸은 비교식을 NULL 로 만들어 CHECK 를 그냥 통과하므로
+    빈 칸 갈래를 따로 둔다. 다 갖춘 부모는 받고, 연쇄 부모가 아닌 행은 세 값이 비어도 받는다."""
+    tree = await _tree(db_session)
+    await _insert_job(db_session, _job_values(tree, kind="chain_generate", **_CHAIN_PLAN))
+    await _insert_job(db_session, _job_values(tree, kind="chapter_generate"))
+
+    with pytest.raises(IntegrityError):
+        await _insert_job(db_session, _job_values(tree, kind="chain_generate", **plan))
 
 
 async def test_novel_job_refund_amount_requires_refunded_at(db_session: AsyncSession) -> None:
@@ -248,7 +277,7 @@ async def test_novel_job_refund_amount_requires_refunded_at(db_session: AsyncSes
 @pytest.mark.parametrize(
     "overrides",
     [
-        pytest.param({"kind": "chain_generate"}, id="chain-parent-kind"),
+        pytest.param({"kind": "chain_generate", **_CHAIN_PLAN}, id="chain-parent-kind"),
         pytest.param({"status": "failed", "failure_code": "malformed"}, id="malformed"),
         pytest.param({"status": "failed", "failure_code": "episode_count_mismatch"}, id="episode-count-mismatch"),
     ],
