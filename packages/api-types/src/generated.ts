@@ -6787,7 +6787,13 @@ export interface components {
                 [key: string]: components["schemas"]["MediaTagImage"];
             };
         };
-        /** EndingDraftItem */
+        /**
+         * EndingDraftItem
+         * @description `priority_stat_id` 는 같은 턴에 규칙을 통과한 엔딩이 여럿일 때 비교할 스탯이다(같은 시작설정 `StatDefDraftItem.id`,
+         *     비우면 목록 순서 자리에서 판정). 안 보내면 기존 엔딩의 값을 그대로 둔다(router 가 `model_fields_set` 으로 가른다) —
+         *     이 칸을 모르는 화면(배포 전부터 열려 있던 탭의 옛 번들)의 자동저장이 작가가 고른 값을 지우지 않게 하려는 것이다.
+         *     지우려면 `null` 을 보낸다. 기본값을 `default_factory` 로 두는 이유는 `KeywordNoteDraftInput` 의 같은 주석과 같다.
+         */
         EndingDraftItem: {
             /**
              * Id
@@ -6806,6 +6812,8 @@ export interface components {
             hint: string | null;
             /** Statrules */
             statRules: (components["schemas"]["EndingRuleDraftItem"] | components["schemas"]["EndingRuleGroupDraftItem"])[];
+            /** Prioritystatid */
+            priorityStatId?: string | null;
         };
         /**
          * EndingRuleDraftItem
