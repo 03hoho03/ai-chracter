@@ -35,6 +35,13 @@ _POLICY_FINISH_REASONS = frozenset(
 logger = logging.getLogger(__name__)
 
 
+def _plain_text(text: str) -> str:
+    """SDK 에 넘길 글을 정확히 `str` 타입으로 바꾼다. SDK 의 요청 모델은 pydantic 유니온 검증에서 `str` 하위 클래스를 글로
+    보지 않고 빈 `Content` 로 바꿔 버려, 채팅 턴의 `SegmentedPrompt` 를 그대로 넘기면 본문 없는 요청이 나가 400(빈 입력)으로
+    실패한다. 지시문도 같은 검증을 타므로 프롬프트와 함께 이것을 거친다."""
+    return str(text)
+
+
 def _novelize_thinking_config() -> genai_types.ThinkingConfig | None:
     """소설화 모델 호출의 사고 설정. 정한 것만 싣고, 둘 다 비었으면 None 이라 thinking_config 를 아예 넘기지 않는다."""
     budget = settings.gemini_novelize_thinking_budget
@@ -109,7 +116,7 @@ class GeminiLLMClient(LLMClient):
         config = genai_types.GenerateContentConfig(
             max_output_tokens=max_output_tokens,
             stop_sequences=stop_sequences,
-            system_instruction=system_instruction,
+            system_instruction=_plain_text(system_instruction) if system_instruction is not None else None,
             http_options=genai_types.HttpOptions(timeout=request_timeout_ms(usage.call_site)),
         )
         if novelize_model:
@@ -132,7 +139,7 @@ class GeminiLLMClient(LLMClient):
         try:
             stream = await self._client.aio.models.generate_content_stream(
                 model=model,
-                contents=prompt,
+                contents=_plain_text(prompt),
                 config=config,
             )
             async for chunk in stream:
@@ -186,10 +193,10 @@ class GeminiLLMClient(LLMClient):
         usage: LLMCallContext,
         system_instruction: str | None = None,
     ) -> T:
-        contents: str | list[Any] = prompt
+        contents: str | list[Any] = _plain_text(prompt)
         if images:
             contents = [
-                prompt,
+                _plain_text(prompt),
                 *(genai_types.Part.from_bytes(data=data, mime_type=mime_type) for data, mime_type in images),
             ]
 
@@ -201,7 +208,7 @@ class GeminiLLMClient(LLMClient):
         config = genai_types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=response_schema,
-            system_instruction=system_instruction,
+            system_instruction=_plain_text(system_instruction) if system_instruction is not None else None,
             http_options=genai_types.HttpOptions(timeout=request_timeout_ms(usage.call_site)),
         )
         if usage.call_site in NOVELIZE_MODEL_CALL_SITES:
