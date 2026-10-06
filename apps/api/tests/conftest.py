@@ -13,7 +13,8 @@ import pytest_asyncio
 from alembic import command
 from alembic.config import Config
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 # boto3 resolves and caches credentials once, at client-construction time (see
 # api/core/s3.py's module-level `s3_client`) — these must be set before that
@@ -231,6 +232,20 @@ def s3_bucket() -> None:
 @pytest.fixture
 def db_engine() -> AsyncEngine:
     return engine
+
+
+@pytest_asyncio.fixture
+async def ddl_engine(db_engine: AsyncEngine) -> AsyncGenerator[AsyncEngine, None]:
+    """마이그레이션 함수(DDL)를 롤백되는 트랜잭션 안에서 직접 돌리는 테스트용 엔진. 공용 풀 밖에서 돌린다 — 공용 풀
+    커넥션에 남은 준비된 문장 캐시가 롤백으로 사라진 테이블·타입 OID 를 가리키지 않게 하려고 풀 없는 엔진을 따로
+    만든다. 잠금을 기다리다 멈추지 않게 `lock_timeout` 을 건다."""
+    ddl = create_async_engine(
+        db_engine.url.render_as_string(hide_password=False),
+        poolclass=NullPool,
+        connect_args={"server_settings": {"lock_timeout": "5s"}},
+    )
+    yield ddl
+    await ddl.dispose()
 
 
 @pytest_asyncio.fixture

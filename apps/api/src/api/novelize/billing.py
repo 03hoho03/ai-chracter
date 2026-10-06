@@ -50,6 +50,9 @@ def job_price(kind: NovelJobKind, model: ChatModelId = DEFAULT_CHAT_MODEL) -> in
         return novel_chapter_cost(model, regenerate=True)
     if kind == "ai_edit":
         return clover.NOVELIZE_AI_EDIT_COST
+    if kind == "chain_generate":
+        # 연쇄 부모의 금액은 남은 대화의 묶음 수에 달려 작업 종류만으로 정해지지 않는다 — 부모 전용 계산이 따로 한다.
+        raise ValueError("chain_generate 의 금액은 job_price 로 계산하지 않는다")
     assert_never(kind)
 
 

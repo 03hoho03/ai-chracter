@@ -1,10 +1,17 @@
-"""대화를 소설로 옮긴 결과물. 소설 → 장 → 장 개정, 그리고 장을 만들거나 고치는 작업 행 넷이다.
+"""대화를 소설로 옮긴 결과물. 소설 → 묶음 → 화(장) → 화 개정, 그리고 화를 만들거나 고치는 작업 행이 뼈대이고, 그
+옆에 인물 카드·화별 등장 인물·스냅샷·읽은 위치가 붙는다.
 
 소설은 원래 대화방과 떨어진 문서다. 방을 지워도 소설은 남고(`novels.chat_room_id` 만 비워진다), 원작 작품을
-가리키는 칸은 FK 없는 사본이라 작품이 사라져도 영향이 없다. 탈퇴하면 네 테이블을 모두 파기한다.
+가리키는 칸은 FK 없는 사본이라 작품이 사라져도 영향이 없다. 탈퇴하면 소설 아래 테이블을 모두 파기한다.
 
-`relationship()`·`ON DELETE CASCADE` 가 없으므로 지울 때는 작업 → 개정 → 장 → 소설 순서를 직접 지킨다
-(`novelize/deletion.py` 의 `delete_novels` 한 곳).
+`relationship()` 이 없고 뼈대 테이블(소설·화·개정·작업)에는 `ON DELETE CASCADE` 도 없으므로, 지울 때는 작업 → 개정 →
+화 → 소설 순서를 직접 지킨다(`novelize/deletion.py` 의 `delete_novels` 한 곳).
+
+🔴 예외: 묶음·인물·등장 인물·스냅샷·읽은 위치는 부모(소설·화)를 지우면 함께 지워지는 `ON DELETE CASCADE` 다. 이 저장소의
+"cascade 없음" 관례를 일부러 어긴 것이다 — 이미지만 옛 판으로 되돌렸을 때 옛 코드의 화 삭제·소설 삭제·탈퇴는 이
+테이블들을 모르고 위 순서대로만 지우는데, cascade 가 없으면 그 DELETE 가 FK 위반으로 500 이 된다. 같은 이유로
+`novel_chapters.batch_id` 는 nullable 이다(옛 코드의 화 INSERT 는 이 칸을 모른다). 새 코드는 cascade 에 기대지 않고
+삭제 순서를 직접 적는다.
 
 종류·상태처럼 값이 정해진 칸은 native enum 이 아니라 Text + Literal 이고(값이 늘 때 타입 변경 마이그레이션이 필요
 없다), DB 쪽 범위는 CHECK 가 막는다. CHECK 문의 값 목록은 아래 Literal 에서 만든다 — 두 곳에 따로 적으면 한쪽만
@@ -15,7 +22,8 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal, get_args
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, Text, Uuid, func, text
+from sqlalchemy import ARRAY, CheckConstraint, DateTime, ForeignKey, Index, Integer, Text, Uuid, func, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base
@@ -24,11 +32,22 @@ from api.db.base import Base
 # 읽지 않고 소설 행에 사본으로 둔다.
 NovelContentType = Literal["story", "character"]
 NovelRevisionSource = Literal["generate", "regenerate", "manual_edit", "ai_edit", "revert"]
-NovelJobKind = Literal["chapter_generate", "chapter_regenerate", "ai_edit"]
+NovelJobKind = Literal["chapter_generate", "chapter_regenerate", "ai_edit", "chain_generate"]
 NovelJobStatus = Literal["queued", "running", "succeeded", "failed"]
 NovelJobFailureCode = Literal[
-    "llm_error", "timeout", "truncated", "refused", "blocked", "empty", "source_changed", "expired", "internal"
+    "llm_error",
+    "timeout",
+    "truncated",
+    "refused",
+    "blocked",
+    "empty",
+    "source_changed",
+    "expired",
+    "internal",
+    "malformed",
+    "episode_count_mismatch",
 ]
+NovelSnapshotKind = Literal["manual", "auto_before_restore"]
 
 
 def _sql_in_list(literal: Any) -> str:
@@ -63,6 +82,18 @@ class Novel(Base):
     # 장을 만들 때마다 프롬프트에 함께 싣는 작가 메모. 길이 상한은 요청 스키마가 정한다.
     setting_notes: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     protagonist_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 소설 제목. 생성 출력이 채우고, 사용자가 고친 뒤(`title_edited_at` 이 찍힌 뒤)에는 AI 가 덮지 않는다. NULL 이면
+    # 화면은 원작 제목으로 대신한다.
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    title_edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    synopsis: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    # 표지로 고른 이미지. 이미지를 지우면 표지만 비고 소설은 남는다(SET NULL). 아래 새 NOT NULL 칸들이 모두
+    # server_default 를 갖는 것은 옛 코드의 소설 INSERT 가 이 칸들을 모르기 때문이다.
+    cover_asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("assets.id", ondelete="SET NULL", name="fk_novels_cover_asset_id"), nullable=True
+    )
+    # 편집 보드의 노드 위치. 형식은 화면이 정하고 서버는 통째로 저장한다(노드별 행을 두지 않는다).
+    board_layout: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -71,10 +102,52 @@ class Novel(Base):
     )
 
     # 목록은 내 소설을 최근 수정 순으로 읽는다. 방 유니크 인덱스는 방 DELETE 때 Postgres 가 이 방을 가리키는 소설을
-    # 찾아 비우는 조회도 겸한다.
+    # 찾아 비우는 조회도 겸한다. 표지 인덱스는 이미지 DELETE 때 SET NULL 이 이 이미지를 표지로 쓴 소설을 찾는 조회용이고,
+    # 표지 없는 소설이 대부분이라 NULL 은 담지 않는다.
     __table_args__ = (
         Index("ix_novels_user_id_updated_at", "user_id", updated_at.desc()),
         Index("ux_novels_chat_room_id", "chat_room_id", unique=True),
+        Index(
+            "ix_novels_cover_asset_id",
+            "cover_asset_id",
+            postgresql_where=text("cover_asset_id IS NOT NULL"),
+        ),
+    )
+
+
+class NovelBatch(Base):
+    """한 번의 생성이 만든 화 묶음 = 원래 대화의 연속 구간 하나. 생성 한 번이 구간을 여러 화로 나눠 쓸 수 있어, 원문
+    구간의 주인은 화가 아니라 이 행이다. 다시 만들기도 묶음 단위다(구간 전체를 다시 써 화들을 갈아 끼운다).
+
+    구간 칸(시작·끝 메시지와 그 시각, AI 응답 수, 원문 해시)의 뜻은 `NovelChapter` 와 같고, 같은 묶음의 화 행에도 같은
+    값의 사본이 있다 — 옛 코드는 화 행의 구간 칸만 읽기 때문이다. `target_episode_count` 는 생성할 때 정한 화 수 목표다.
+    처음 생성에서는 모델이 그보다 적게 쓰면 모자란 화만큼 환불하고 많이 쓰면 추가 과금 없이 받아들이므로, 실제 화 수와
+    다를 수 있다.
+
+    어느 모델로 썼는지는 이 행에 두지 않는다 — 다시 만들기가 다른 모델일 수 있어 묶음 하나의 모델이 정해지지 않고, 그
+    기록은 작업 행(`NovelJob.model`)에 있다."""
+
+    __tablename__ = "novel_batches"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    novel_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("novels.id", ondelete="CASCADE"), nullable=False)
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    start_message_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    start_message_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end_message_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    end_message_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    assistant_message_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    target_episode_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # 묶음 번호 유니크는 같은 소설에 묶음 생성이 동시에 둘 들어왔을 때의 마지막 방어선이고, 소설 삭제 때 `novel_id` 로
+    # 묶음을 찾는 조회도 겸한다.
+    __table_args__ = (
+        CheckConstraint("target_episode_count >= 1", name="ck_novel_batches_target_episode_count_positive"),
+        Index("ux_novel_batches_novel_id_ordinal", "novel_id", "ordinal", unique=True),
     )
 
 
@@ -101,15 +174,26 @@ class NovelChapter(Base):
     end_message_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     assistant_message_count: Mapped[int] = mapped_column(Integer, nullable=False)
     source_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    # 이 화가 속한 묶음과 묶음 안 순번(0부터). 묶음을 지워도 화가 조용히 사라지지 않게 cascade 를 걸지 않는다 — 새
+    # 코드는 화를 먼저 지운다. nullable 인 것은 옛 코드가 이 칸 없이 화를 INSERT 하기 때문이고(모듈 docstring), 그렇게
+    # 생긴 화는 묶음 이관이 다시 채운다.
+    batch_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("novel_batches.id"), nullable=True)
+    episode_index: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 다음 화 머리의 "이전 줄거리"와 다음 묶음 생성 입력에 쓰는 이 화 요약.
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    author_note: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     # 장 번호 유니크는 같은 소설에 장 생성이 동시에 둘 들어왔을 때의 마지막 방어선이다(첫 방어선은 작업 행의 소설당
-    # 진행 중 1건 인덱스). 이 인덱스가 소설 삭제 때 `novel_id` 로 장을 찾는 조회도 겸한다.
+    # 진행 중 1건 인덱스). 이 인덱스가 소설 삭제 때 `novel_id` 로 장을 찾는 조회도 겸한다. 묶음 인덱스는 묶음의 화를
+    # 읽는 조회와 묶음 DELETE 때 FK 검사용이다.
     __table_args__ = (
         CheckConstraint("assistant_message_count >= 1", name="ck_novel_chapters_assistant_message_count_positive"),
         Index("ux_novel_chapters_novel_id_ordinal", "novel_id", "ordinal", unique=True),
+        Index("ix_novel_chapters_batch_id", "batch_id"),
     )
 
 
@@ -141,6 +225,8 @@ class NovelChapterRevision(Base):
             f"source IN ({_sql_in_list(NovelRevisionSource)})", name="ck_novel_chapter_revisions_source"
         ),
         Index("ux_novel_chapter_revisions_chapter_id_revision_no", "chapter_id", "revision_no", unique=True),
+        # 개정 DELETE 때 그 개정을 되돌리기 원본으로 가리키는 행을 찾는 FK 검사용.
+        Index("ix_novel_chapter_revisions_reverted_from_revision_id", "reverted_from_revision_id"),
     )
 
 
@@ -148,9 +234,15 @@ class NovelJob(Base):
     """장 생성·재생성·AI 수정 한 번 = 한 행. 요청은 행을 만들고 곧바로 돌아가며, 실제 LLM 호출은 백그라운드에서 돌고
     클라이언트는 이 행을 폴링한다.
 
-    클로버는 행을 만들 때 미리 차감해 `charged_amount` 에 적는다. 실패로 확정되면 환불하고 `refunded_at` 을 찍는다 —
-    상태 전이를 조건부 UPDATE 로 하므로 정리 경로와 정상 종료가 겹쳐도 환불은 한 번이다. 환불은 실패한 작업에만
-    있을 수 있다(CHECK). `heartbeat_at` 이 오래 멈춘 진행 중 작업은 죽은 것으로 보고 실패 처리한다.
+    클로버는 행을 만들 때 미리 차감해 `charged_amount` 에 적는다. 실패로 확정되면 환불하고 `refunded_at` 과 환불액
+    `refunded_amount` 를 찍는다 — 상태 전이를 조건부 UPDATE 로 하므로 정리 경로와 정상 종료가 겹쳐도 환불은 한 번이다.
+    성공한 작업도 목표보다 적은 화를 냈으면 모자란 몫만큼 부분 환불할 수 있다. 환불액 0 은 환불이 아니라서 `refunded_at`
+    을 찍지 않는다. 금액·상태 조합은 `ck_novel_jobs_refund_amount` 가 막는다. `heartbeat_at` 이 오래 멈춘 진행 중 작업은
+    죽은 것으로 보고 실패 처리한다.
+
+    "남은 대화 한 번에"(연쇄 생성)는 부모 행 하나(`chain_generate`)가 전체 금액을 미리 차감하고, 묶음마다 자식 장 생성
+    행(`parent_job_id`, 차감 0)을 하나씩 만든다. 부모는 차감 시점 화 단가(`unit_price`)를 고정해 두고, 성공한 자식이 쓴
+    몫을 `consumed_amount` 에 쌓는다 — 실패하면 쓰지 않은 몫(`charged_amount - consumed_amount`)만 돌려준다.
 
     장 생성·재생성은 입력 구간(`start_*`·`end_*`, 장 행과 같은 이유로 FK 없음)을 갖고, 재시도 상한은 같은 시작
     메시지의 오늘 작업 수로 센다. AI 수정은 `chapter_id`·`base_revision_id`·문단 범위·지시문을 갖고, 결과를 곧바로
@@ -194,6 +286,18 @@ class NovelJob(Base):
     model: Mapped[str | None] = mapped_column(Text, nullable=True)
     charged_amount: Mapped[int] = mapped_column(Integer, nullable=False)
     refunded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 돌려준 클로버. NULL 인데 `refunded_at` 이 찍힌 실패 행은 이 칸을 모르는 옛 코드가 환불한 것이라 전액 환불로 읽는다.
+    refunded_amount: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 연쇄 생성의 부모 작업. 자기 참조 FK 를 두지 않는다 — 부모와 자식은 같은 소설의 작업 행이라 늘 함께 남고 소설을
+    # 지울 때 함께 지워져, FK 가 막아 줄 상황이 없다.
+    parent_job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    # 묶음 생성·다시 만들기·연쇄 자식이 대상으로 삼은 묶음. FK 를 두지 않는다 — 작업 행은 차감 기록이라 묶음을 지운
+    # 뒤에도 남는데, FK 면 묶음을 지울 때마다 이 칸을 먼저 비워야 한다. 여러 화를 내는 작업은 화 하나를 가리킬 수 없어
+    # `chapter_id`·`result_revision_id` 를 비운다.
+    batch_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    episode_count_target: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    unit_price: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    consumed_amount: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     failure_code: Mapped[NovelJobFailureCode | None] = mapped_column(Text, nullable=True)
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -205,7 +309,9 @@ class NovelJob(Base):
     # `(user_id, created_at)` 는 KST 하루 단위 집계, `(novel_id, start_message_id, created_at)` 는 같은 시작
     # 메시지의 재시도 수 집계용이고, 뒤의 것이 소설 삭제 때 `novel_id` 로 작업을 찾는 조회도 겸한다.
     # 진행 중 부분 유니크는 소설 하나에 queued·running 작업이 동시에 둘 생기지 않게 한다 — 같은 소설의 동시 요청은
-    # 두 번째 INSERT 가 여기에 걸린다. 끝난 작업(succeeded·failed)은 몇 개든 쌓인다.
+    # 두 번째 INSERT 가 여기에 걸린다. 끝난 작업(succeeded·failed)은 몇 개든 쌓인다. 연쇄 자식은 이 제약에서 빠진다 —
+    # 부모가 running 인 채로 자식을 돌리므로 둘이 동시에 진행 중이다. 자식은 부모가 하나씩만 만든다.
+    # 장·개정을 가리키는 세 인덱스는 장·개정 DELETE 때 FK 검사용이다.
     __table_args__ = (
         CheckConstraint(f"kind IN ({_sql_in_list(NovelJobKind)})", name="ck_novel_jobs_kind"),
         CheckConstraint(f"status IN ({_sql_in_list(NovelJobStatus)})", name="ck_novel_jobs_status"),
@@ -214,8 +320,16 @@ class NovelJob(Base):
             name="ck_novel_jobs_failure_code",
         ),
         CheckConstraint("charged_amount >= 0", name="ck_novel_jobs_charged_amount_non_negative"),
+        # 환불이 있으면 금액도 있다. 실패는 쓰지 않은 몫 전부(연쇄 부모가 아니면 `consumed_amount` 가 0 이라 전액), 성공은
+        # 0 과 전액 사이의 부분 환불만 된다. 마지막 갈래는 금액 칸을 모르는 옛 코드가 실패 작업에 `refunded_at` 만 찍는
+        # 경우다 — 막으면 이미지만 되돌렸을 때 옛 코드의 환불이 500 이 된다.
         CheckConstraint(
-            "refunded_at IS NULL OR status = 'failed'", name="ck_novel_jobs_refund_only_when_failed"
+            "(refunded_at IS NULL AND refunded_amount IS NULL)"
+            " OR (refunded_at IS NOT NULL AND refunded_amount IS NOT NULL AND ("
+            "(status = 'failed' AND refunded_amount = charged_amount - consumed_amount AND refunded_amount > 0)"
+            " OR (status = 'succeeded' AND refunded_amount > 0 AND refunded_amount < charged_amount)))"
+            " OR (status = 'failed' AND refunded_at IS NOT NULL AND refunded_amount IS NULL)",
+            name="ck_novel_jobs_refund_amount",
         ),
         Index("ix_novel_jobs_user_id_created_at", "user_id", "created_at"),
         Index("ix_novel_jobs_novel_id_start_message_id_created_at", "novel_id", "start_message_id", "created_at"),
@@ -223,6 +337,108 @@ class NovelJob(Base):
             "ux_novel_jobs_novel_id_active",
             "novel_id",
             unique=True,
-            postgresql_where=text("status IN ('queued', 'running')"),
+            postgresql_where=text("status IN ('queued', 'running') AND parent_job_id IS NULL"),
         ),
+        Index("ix_novel_jobs_chapter_id", "chapter_id"),
+        Index("ix_novel_jobs_base_revision_id", "base_revision_id"),
+        Index("ix_novel_jobs_result_revision_id", "result_revision_id"),
+        # 연쇄 부모의 자식 목록 조회용.
+        Index("ix_novel_jobs_parent_job_id", "parent_job_id"),
+    )
+
+
+class NovelCharacter(Base):
+    """소설 속 인물 카드 하나. 생성 출력이 화마다 등장 인물 이름을 내면 그 이름의 카드에 붙인다(없으면 새로 만든다).
+
+    소설 안에서 이름과 별칭을 모은 공간은 겹치지 않는다 — AI 가 낸 이름 하나가 카드 둘에 붙으면 안 되기 때문이다. DB 는
+    `(novel_id, name)` 유니크만 막고, 별칭까지 포함한 유일성은 코드가 사용자 행 잠금 아래에서 지킨다. 합치기는 흡수되는
+    카드의 이름·별칭을 남는 카드의 `aliases` 로 옮기고 흡수되는 카드를 지운다 — 그 뒤 AI 가 같은 이름을 내면 남는 카드에
+    붙는다."""
+
+    __tablename__ = "novel_characters"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    novel_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("novels.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    aliases: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default=text("'{}'::text[]"))
+    memo: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # 이름 유니크가 소설의 인물 목록 조회와 소설 삭제 때 FK 검사도 겸한다.
+    __table_args__ = (Index("ux_novel_characters_novel_id_name", "novel_id", "name", unique=True),)
+
+
+class NovelChapterCharacter(Base):
+    """어느 화에 어느 인물이 나왔는지. 생성 출력에서 나온 사실이라 스냅샷 복원 대상이 아니다.
+
+    🔴 `(chapter_id, character_id)` 복합 PK 는 `alembic check` 가 비교하지 않는다 — 검증은 `IntegrityError` 행위
+    테스트뿐이다."""
+
+    __tablename__ = "novel_chapter_characters"
+
+    chapter_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("novel_chapters.id", ondelete="CASCADE"), primary_key=True
+    )
+    character_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("novel_characters.id", ondelete="CASCADE"), primary_key=True
+    )
+
+    # 인물 쪽에서 등장 화를 찾는 조회와 인물 DELETE 때 FK 검사용(화 쪽은 PK 앞자리가 겸한다).
+    __table_args__ = (Index("ix_novel_chapter_characters_character_id", "character_id"),)
+
+
+class NovelSnapshot(Base):
+    """소설의 편집 가능한 상태(제목·소개·노트·인물·화마다 개정 id·제목·요약·작가의 말)를 한 시점에 떠 둔 것. `payload`
+    한 덩어리로 두고 항목 테이블을 두지 않는다 — 복원·비교는 payload 를 읽어 처리하고, 개정은 FK 없이 id 로만 가리켜
+    개정이 지워져도 스냅샷이 남는다.
+
+    `manual` 은 사용자가 이름 붙여 저장한 것, `auto_before_restore` 는 복원 직전에 지금 상태를 자동으로 떠 둔 것이다."""
+
+    __tablename__ = "novel_snapshots"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    novel_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("novels.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[NovelSnapshotKind] = mapped_column(Text, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # 목록은 최근 것부터 읽는다. 이 인덱스가 소설 삭제 때 FK 검사도 겸한다.
+    __table_args__ = (
+        CheckConstraint(f"kind IN ({_sql_in_list(NovelSnapshotKind)})", name="ck_novel_snapshots_kind"),
+        Index("ix_novel_snapshots_novel_id_created_at", "novel_id", created_at.desc()),
+    )
+
+
+class NovelReadingPosition(Base):
+    """화마다 마지막으로 읽은 문단. 소설은 한 사용자 것이라 사용자 칸이 없고, 화 하나에 행 하나다.
+
+    `paragraph_count` 는 저장할 때의 문단 수다 — 그 뒤 개정이 바뀌어 문단 수가 달라지면 옛 위치를 새 문단 수에 비례해
+    옮기는 데 쓴다. `revision_id` 는 그때 읽던 개정이고 FK 를 두지 않는다(개정이 지워져도 위치는 남는다). 마지막 읽은
+    화는 소설 안에서 `updated_at` 이 가장 큰 행이다. `finished_at` 은 끝까지 읽은 시각이고 한 번 찍히면 되돌리지 않는다."""
+
+    __tablename__ = "novel_reading_positions"
+
+    chapter_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("novel_chapters.id", ondelete="CASCADE"), primary_key=True
+    )
+    novel_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("novels.id", ondelete="CASCADE"), nullable=False)
+    paragraph_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    paragraph_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    revision_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # 소설의 마지막 읽은 화 조회용이고, 소설 삭제 때 FK 검사도 겸한다.
+    __table_args__ = (
+        Index("ix_novel_reading_positions_novel_id_updated_at", "novel_id", updated_at.desc()),
     )

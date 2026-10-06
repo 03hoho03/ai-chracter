@@ -53,6 +53,7 @@ from api.db.models import (
     MediaBookScene,
     ModerationStatus,
     Novel,
+    NovelBatch,
     NovelChapter,
     NovelChapterRevision,
     NovelJob,
@@ -238,6 +239,7 @@ async def _grant_feature(db_session: AsyncSession, user_id: uuid.UUID, feature: 
 @dataclass
 class NovelTree:
     novel: Novel
+    batch: NovelBatch
     chapter: NovelChapter
     first_revision: NovelChapterRevision
     reverting_revision: NovelChapterRevision
@@ -249,9 +251,9 @@ class NovelTree:
 async def _make_novel_tree(
     db_session: AsyncSession, user_id: uuid.UUID, *, chat_room_id: uuid.UUID | None = None
 ) -> NovelTree:
-    """소설 한 권과 그 아래 행을 FK 가 모두 이어지게 flush 한다(커밋은 호출자). 되돌리기 개정이 앞 개정을, 장 생성
-    작업이 자기가 만든 개정을, AI 수정 작업이 장·기준 개정을 가리키고 진행 중 작업도 하나 있어, 지우는 순서가 틀리면
-    FK 위반이 난다."""
+    """소설 한 권과 그 아래 행을 FK 가 모두 이어지게 flush 한다(커밋은 호출자). 화는 화 하나짜리 묶음에 들어 있다.
+    되돌리기 개정이 앞 개정을, 장 생성 작업이 자기가 만든 개정을, AI 수정 작업이 장·기준 개정을 가리키고 진행 중 작업도
+    하나 있어, 지우는 순서가 틀리면 FK 위반이 난다."""
     novel = Novel(
         user_id=user_id,
         chat_room_id=chat_room_id,
@@ -263,16 +265,18 @@ async def _make_novel_tree(
     db_session.add(novel)
     await db_session.flush()
     now = datetime.now(UTC)
-    chapter = NovelChapter(
-        novel_id=novel.id,
-        ordinal=1,
-        start_message_id=uuid.uuid4(),
-        start_message_created_at=now,
-        end_message_id=uuid.uuid4(),
-        end_message_created_at=now,
-        assistant_message_count=1,
-        source_hash="0" * 64,
-    )
+    segment: dict[str, Any] = {
+        "start_message_id": uuid.uuid4(),
+        "start_message_created_at": now,
+        "end_message_id": uuid.uuid4(),
+        "end_message_created_at": now,
+        "assistant_message_count": 1,
+        "source_hash": "0" * 64,
+    }
+    batch = NovelBatch(novel_id=novel.id, ordinal=1, target_episode_count=1, **segment)
+    db_session.add(batch)
+    await db_session.flush()
+    chapter = NovelChapter(novel_id=novel.id, ordinal=1, batch_id=batch.id, episode_index=0, **segment)
     db_session.add(chapter)
     await db_session.flush()
     first_revision = NovelChapterRevision(chapter_id=chapter.id, revision_no=1, body="첫 본문", source="generate")
@@ -308,7 +312,7 @@ async def _make_novel_tree(
     )
     db_session.add_all([reverting_revision, generate_job, finished_job, active_job])
     await db_session.flush()
-    return NovelTree(novel, chapter, first_revision, reverting_revision, generate_job, finished_job, active_job)
+    return NovelTree(novel, batch, chapter, first_revision, reverting_revision, generate_job, finished_job, active_job)
 
 
 async def _make_asset(
@@ -1021,24 +1025,31 @@ async def _add_chapter(
     end: ChatMessage,
     body: str = "첫 문단이다.\n\n둘째 문단이다.\n\n셋째 문단이다.",
 ) -> NovelChapter:
-    """작업을 거치지 않고 장 하나와 첫 개정을 넣고 커밋한다. 장의 구간 모양(응답 수·해시)은 지금 방 원문으로 계산한다
-    — 재생성의 원문 변경 검사가 이 값과 비교한다."""
+    """작업을 거치지 않고 화 하나짜리 묶음과 그 화, 첫 개정을 넣고 커밋한다. 구간 모양(응답 수·해시)은 지금 방 원문으로
+    계산한다 — 재생성의 원문 변경 검사가 이 값과 비교한다."""
     from api.novelize.source import segment_hash
 
     messages = await _room_messages(db_session, room.room_id)
     segment = messages[messages.index(start) : messages.index(end) + 1]
+    shape: dict[str, Any] = {
+        "start_message_id": start.id,
+        "start_message_created_at": start.created_at,
+        "end_message_id": end.id,
+        "end_message_created_at": end.created_at,
+        "assistant_message_count": sum(1 for m in segment if m.role == ChatMessageRole.ASSISTANT),
+        "source_hash": segment_hash(segment),
+    }
     ordinal = await db_session.scalar(
         sa.select(sa.func.coalesce(sa.func.max(NovelChapter.ordinal), 0)).where(NovelChapter.novel_id == novel_id)
     )
+    batch_ordinal = await db_session.scalar(
+        sa.select(sa.func.coalesce(sa.func.max(NovelBatch.ordinal), 0)).where(NovelBatch.novel_id == novel_id)
+    )
+    batch = NovelBatch(novel_id=novel_id, ordinal=(batch_ordinal or 0) + 1, target_episode_count=1, **shape)
+    db_session.add(batch)
+    await db_session.flush()
     chapter = NovelChapter(
-        novel_id=novel_id,
-        ordinal=(ordinal or 0) + 1,
-        start_message_id=start.id,
-        start_message_created_at=start.created_at,
-        end_message_id=end.id,
-        end_message_created_at=end.created_at,
-        assistant_message_count=sum(1 for m in segment if m.role == ChatMessageRole.ASSISTANT),
-        source_hash=segment_hash(segment),
+        novel_id=novel_id, ordinal=(ordinal or 0) + 1, batch_id=batch.id, episode_index=0, **shape
     )
     db_session.add(chapter)
     await db_session.flush()
