@@ -21,6 +21,11 @@ export {
   useSetNovelizeGrantMutation,
   type AdminUserNovelizeGrantRequest,
 } from "./api/useSetNovelizeGrantMutation";
+export {
+  useSetPremiumModelsGrantMutation,
+  type AdminUserFeatureGrantRequest,
+  type PremiumModelsGrantScope,
+} from "./api/useSetPremiumModelsGrantMutation";
 export { useAdjustCloverMutation, type AdminUserCloverRequest } from "./api/useAdjustCloverMutation";
 export {
   useCloverLedgerQuery,
