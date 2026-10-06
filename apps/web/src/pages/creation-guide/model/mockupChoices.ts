@@ -1,5 +1,6 @@
 import {
   KEYWORD_NOTE_SCOPE_LABELS,
+  LOGIC_OPERATOR_LABELS,
   PROMPT_TEMPLATE_LABELS,
   STAT_CHANGE_DIRECTION_LABELS,
   STICKY_TURN_OPTIONS,
@@ -46,6 +47,17 @@ export function selectLabelOf(key: StoryFieldKey, value: string | number | null)
     return label;
   }
   return value === null ? "" : String(value);
+}
+
+/**
+ * 규칙 그림에서 이웃한 두 항목 사이의 관계 칩. 원고 값은 시드 표기의 `nextOp` 다. 값이 없으면 빌더가 그 자리에 "그리고"를
+ * 눌린 채로 보이므로 그림도 같게 그린다. 모르는 값은 원고 오류라 던진다.
+ */
+export function logicOpChoices(nextOp: unknown): MockupChoice[] {
+  const selected = nextOp ?? "and";
+  const choices = labelChoices(Object.entries(LOGIC_OPERATOR_LABELS), typeof selected === "string" ? selected : null);
+  if (!choices.some((choice) => choice.isSelected)) throw new Error(`모르는 규칙 관계: ${String(nextOp)}`);
+  return choices;
 }
 
 function labelChoices(entries: readonly (readonly [string, string])[], value: string | number | null): MockupChoice[] {

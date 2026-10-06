@@ -1,4 +1,5 @@
 import {
+  type LOGIC_OPERATORS,
   MAX_KEYWORD_NOTE_STICKY_TURNS,
   type KeywordNoteValues,
   type PromptTemplate,
@@ -53,6 +54,12 @@ export const STAT_CHANGE_DIRECTION_LABELS: Record<StatChangeDirection, string> =
   both: "오르내림",
   increase: "오르기만",
   decrease: "내리기만",
+};
+
+/** 스탯 기반 규칙 목록에서 이웃한 두 항목을 잇는 접속사. 빌더의 관계 토글과 작성 가이드의 규칙 그림이 같은 말을 쓴다. */
+export const LOGIC_OPERATOR_LABELS: Record<(typeof LOGIC_OPERATORS)[number], string> = {
+  and: "그리고",
+  or: "또는",
 };
 
 export const STICKY_TURN_OPTIONS = Array.from({ length: MAX_KEYWORD_NOTE_STICKY_TURNS + 1 }, (_, turns) => ({
