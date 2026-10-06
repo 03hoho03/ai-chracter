@@ -16,4 +16,15 @@ describe("isSiteFooterHidden", () => {
       expect(isSiteFooterHidden(pathname)).toBe(false);
     },
   );
+
+  it("hides the footer on the immersive novel episode viewer", () => {
+    expect(isSiteFooterHidden("/novels/a/episodes/b")).toBe(true);
+  });
+
+  it.each(["/novels", "/novels/a", "/novels/a/episodes", "/novels/a/episodes/b/extra"])(
+    "keeps the footer on the novel document screen %s",
+    (pathname) => {
+      expect(isSiteFooterHidden(pathname)).toBe(false);
+    },
+  );
 });

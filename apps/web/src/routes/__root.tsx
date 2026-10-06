@@ -17,7 +17,7 @@ import { GeneratedImagePickerModal } from "@/features/select-generated-image";
 import { AppealModal } from "@/features/submit-appeal";
 import { UpdateInfoModal } from "@/features/update-info";
 import { ContentDetailModalOutlet } from "@/widgets/content-detail";
-import { Header } from "@/widgets/header";
+import { Header, isGlobalHeaderHidden } from "@/widgets/header";
 import { ReconsentModal } from "@/widgets/reconsent-legal";
 import { isSiteFooterHidden, SiteFooter } from "@/widgets/site-footer";
 import { ConfirmCloverSpendModal } from "@/features/confirm-clover-spend";
@@ -48,13 +48,12 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 });
 
 function RootComponent() {
-  // 빌더 라우트(`/builder`, `/builder/$type/$draftId`)는 전역
-  // Header 대신 전용 상단바(`features/build-common`의 `BuilderTopBar`)를 쓴다. 두 상단바가 같은 56px
-  // (`h-14`) 자리를 차지하므로 헤더를 빼도 `calc(100dvh-3.5rem)` 높이 계산은 그대로다(DESIGN.md
-  // §Navigation). 판정은 경로 매칭 대신 pathname 접두사로 한다 — `useRouterState`가 이미 헤더
-  // 자신(SearchInlineExpand)·채팅 리스트에서 쓰는 방식이라 새 패턴을 들이지 않는다.
+  // 전역 Header 를 건너뛰는 라우트(빌더·소설 화 읽기)와 그 이유는 `isGlobalHeaderHidden` 에 모아 둔다. 빌더는 같은
+  // 56px(`h-14`) 자리에 전용 상단바(`features/build-common`의 `BuilderTopBar`)를 두므로 헤더를 빼도
+  // `calc(100dvh-3.5rem)` 높이 계산은 그대로다(DESIGN.md Navigation 절). 판정은 경로 매칭 대신 pathname 으로
+  // 한다 — `useRouterState`가 이미 헤더 자신(SearchInlineExpand)·채팅 리스트에서 쓰는 방식이라 새 패턴을 들이지
+  // 않는다.
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const isBuilderRoute = pathname === "/builder" || pathname.startsWith("/builder/");
 
   return (
     <>
@@ -62,7 +61,7 @@ function RootComponent() {
           안에 둔다 — 각 페이지의 `<main>`은 `w-full` 없이 `mx-auto`로 가운데 놓이므로, flex 아이템이 되면
           내용 폭으로 줄어든다. */}
       <div className="flex min-h-dvh flex-col">
-        {!isBuilderRoute && <Header />}
+        {!isGlobalHeaderHidden(pathname) && <Header />}
         <div className="flex-1">
           <Outlet />
         </div>
