@@ -14,17 +14,20 @@ export type DiffRunners = { words: DiffRunner; sentences: DiffRunner };
 
 export type DiffSegment = { kind: "equal" | "added" | "removed"; text: string };
 
-/** 문단 단위 표시 묶음. 바뀐 문단은 하나씩 펼치고, 사이의 바뀌지 않은 문단은 한 덩어리로 접어 둘 수 있게 모은다. */
+/** 문단 단위 표시 묶음. 바뀐 문단은 하나씩 펼치고, 사이의 바뀌지 않은 문단은 한 덩어리로 접어 둘 수 있게 모은다.
+ * `whitespaceOnly` 는 글자는 그대로이고 문단 나눔·공백만 바뀐 문단이다 — 단어 단위 비교는 공백 차이를 차이로 보지
+ * 않아 조각이 전부 `equal` 이므로, 화면이 표시할 다른 말이 필요하다. */
 export type DiffBlock =
-  | { kind: "changed"; segments: DiffSegment[] }
+  | { kind: "changed"; segments: DiffSegment[]; whitespaceOnly: boolean }
   | { kind: "unchanged"; paragraphs: string[] };
 
 export type DiffView =
   | { status: "compared"; granularity: "word" | "sentence"; blocks: DiffBlock[]; changedParagraphCount: number }
   | { status: "tooLarge" };
 
-// 한국어는 공백 단위가 어절이라 정규식 단어 나누기로는 조사·어미가 붙은 어절 전체가 바뀐 것으로 잡힌다. 브라우저의
-// 한국어 단어 경계를 쓰면 바뀐 부분이 더 좁게 잡힌다.
+// 기본 정규식 나누기는 한글을 음절 단위로 쪼개 "그녀는→그녀가" 를 "그녀" 그대로 + "는" 삭제 + "가" 추가로 잡는다.
+// 더 좁지만 음절 조각이 문장 곳곳에 흩어져 읽기 어렵다. 한국어 단어 경계는 어절 단위("그녀는" 삭제 + "그녀가" 추가)로
+// 잡아 바뀐 자리가 낱말로 읽히고, 토큰 수도 한 문장에서 21개가 8개로 줄어 같은 시간 상한에 덜 걸린다.
 const koreanWordSegmenter = new Intl.Segmenter("ko", { granularity: "word" });
 
 export function createDiffRunners(
@@ -42,6 +45,16 @@ const defaultRunners = createDiffRunners();
 
 // 문단 구분은 빈 줄(공백만 있는 줄 포함)이다. 저장된 본문은 문단을 빈 줄 하나로 잇는다.
 const PARAGRAPH_SEPARATOR = /\n[ \t]*\n/g;
+
+/** 원문을 같은 규칙으로 나눈 문단들(앞뒤 공백을 걷고 빈 문단은 버린다). */
+function paragraphSet(text: string): Set<string> {
+  return new Set(
+    text
+      .split(PARAGRAPH_SEPARATOR)
+      .map((paragraph) => paragraph.trim())
+      .filter((paragraph) => paragraph.length > 0),
+  );
+}
 
 function toKind(change: Change): DiffSegment["kind"] {
   if (change.added) return "added";
@@ -63,8 +76,10 @@ function trimParagraph(paragraph: Paragraph): Paragraph {
 
 /**
  * 비교 결과를 문단으로 자른다. 문단 구분은 이어 붙인 글 전체에서 찾는다 — 빈 줄의 두 줄바꿈이 서로 다른 비교 조각에
- * 걸쳐 있어도 놓치지 않으려는 것이다. 구분 자체가 더해지거나 지워졌으면(문단을 나누거나 합쳤으면) 구분 앞 문단을
- * 바뀐 것으로 친다 — 구분 뒤 문단까지 치면 문단 하나를 끼워 넣었을 때 그 뒤의 그대로인 문단도 펼쳐진다.
+ * 걸쳐 있어도 놓치지 않으려는 것이다. 여기서는 더하거나 지운 글자가 든 문단만 바뀐 것으로 친다. 구분 자체가 더해지거나
+ * 지워진 것으로는 치지 않는다 — 치면 끝 문단을 지웠을 때 지운 구분 앞의 그대로인 문단까지 펼쳐진다. 글자 변경 없이
+ * 문단만 나누거나 합친 경우는 단어 단위 비교가 구분을 차이로 내놓지도 않으므로, `markWhitespaceChanges` 가 원문의
+ * 문단과 대조해 따로 잡는다.
  */
 function splitParagraphs(changes: Change[]): Paragraph[] {
   const pieces = changes.map((change) => ({ kind: toKind(change), text: change.value }));
@@ -87,7 +102,6 @@ function splitParagraphs(changes: Change[]): Paragraph[] {
       if (separator && absolute >= separator.start) {
         // 구분 안의 글자는 문단 내용이 아니다. 구분이 끝나는 곳까지 건너뛰고 새 문단을 연다.
         const skipEnd = Math.min(piece.text.length, separator.end - offset);
-        if (piece.kind !== "equal") current.isChanged = true;
         cursor = skipEnd;
         if (offset + cursor >= separator.end) {
           paragraphs.push(current);
@@ -108,14 +122,33 @@ function splitParagraphs(changes: Change[]): Paragraph[] {
   return paragraphs.map(trimParagraph).filter((paragraph) => paragraph.segments.length > 0);
 }
 
+function paragraphText(paragraph: Paragraph): string {
+  return paragraph.segments.map((segment) => segment.text).join("");
+}
+
+/**
+ * 더하거나 지운 글자는 없지만 두 원문 어느 한쪽에 그 모양 그대로의 문단이 없는 문단을 바뀐 것으로 고친다. 문단을
+ * 나누거나 합치거나 문단 안 공백만 고친 판이 여기 걸린다 — 이것을 빼면 글이 달라도 "바뀐 문단 0" 이 된다.
+ */
+function markWhitespaceChanges(paragraphs: Paragraph[], before: string, after: string): Paragraph[] {
+  const beforeParagraphs = paragraphSet(before);
+  const afterParagraphs = paragraphSet(after);
+  return paragraphs.map((paragraph) => {
+    if (paragraph.isChanged) return paragraph;
+    const text = paragraphText(paragraph);
+    return beforeParagraphs.has(text) && afterParagraphs.has(text) ? paragraph : { ...paragraph, isChanged: true };
+  });
+}
+
 function toBlocks(paragraphs: Paragraph[]): DiffBlock[] {
   const blocks: DiffBlock[] = [];
   for (const paragraph of paragraphs) {
     if (paragraph.isChanged) {
-      blocks.push({ kind: "changed", segments: paragraph.segments });
+      const whitespaceOnly = paragraph.segments.every((segment) => segment.kind === "equal");
+      blocks.push({ kind: "changed", segments: paragraph.segments, whitespaceOnly });
       continue;
     }
-    const text = paragraph.segments.map((segment) => segment.text).join("");
+    const text = paragraphText(paragraph);
     const previous = blocks.at(-1);
     if (previous?.kind === "unchanged") previous.paragraphs.push(text);
     else blocks.push({ kind: "unchanged", paragraphs: [text] });
@@ -123,8 +156,8 @@ function toBlocks(paragraphs: Paragraph[]): DiffBlock[] {
   return blocks;
 }
 
-function toView(changes: Change[], granularity: "word" | "sentence"): DiffView {
-  const blocks = toBlocks(splitParagraphs(changes));
+function toView(changes: Change[], granularity: "word" | "sentence", before: string, after: string): DiffView {
+  const blocks = toBlocks(markWhitespaceChanges(splitParagraphs(changes), before, after));
   const changedParagraphCount = blocks.filter((block) => block.kind === "changed").length;
   return { status: "compared", granularity, blocks, changedParagraphCount };
 }
@@ -136,8 +169,8 @@ function toView(changes: Change[], granularity: "word" | "sentence"): DiffView {
  */
 export function buildDiffView(before: string, after: string, runners: DiffRunners = defaultRunners): DiffView {
   const words = runners.words(before, after);
-  if (words) return toView(words, "word");
+  if (words) return toView(words, "word", before, after);
   const sentences = runners.sentences(before, after);
-  if (sentences) return toView(sentences, "sentence");
+  if (sentences) return toView(sentences, "sentence", before, after);
   return { status: "tooLarge" };
 }

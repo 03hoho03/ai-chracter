@@ -67,6 +67,39 @@ describe("buildDiffView", () => {
     expect(blocks[2]).toEqual({ kind: "unchanged", paragraphs: ["뒤 문단."] });
   });
 
+  it("shows a paragraph split without any letter change as changed paragraphs", () => {
+    const view = buildDiffView("가나 다라\n\n마바", "가나\n\n다라\n\n마바");
+    expect(view).toMatchObject({ status: "compared", changedParagraphCount: 2 });
+    expect(blocksOf(view)).toEqual([
+      { kind: "changed", segments: [{ kind: "equal", text: "가나" }], whitespaceOnly: true },
+      { kind: "changed", segments: [{ kind: "equal", text: "다라" }], whitespaceOnly: true },
+      { kind: "unchanged", paragraphs: ["마바"] },
+    ]);
+  });
+
+  it("shows a paragraph merge without any letter change as a changed paragraph", () => {
+    const view = buildDiffView("가나\n\n다라\n\n마바", "가나 다라\n\n마바");
+    expect(view).toMatchObject({ status: "compared", changedParagraphCount: 1 });
+    expect(blocksOf(view)).toEqual([
+      { kind: "changed", segments: [{ kind: "equal", text: "가나 다라" }], whitespaceOnly: true },
+      { kind: "unchanged", paragraphs: ["마바"] },
+    ]);
+  });
+
+  it("counts a blank line turned into a single line break as a change", () => {
+    const view = buildDiffView("가나\n\n다라", "가나\n다라");
+    expect(view).toMatchObject({ status: "compared", changedParagraphCount: 1 });
+  });
+
+  it("expands only the deleted last paragraph, not the untouched paragraph before it", () => {
+    const view = buildDiffView("하나\n\n둘", "하나");
+    expect(view).toMatchObject({ status: "compared", changedParagraphCount: 1 });
+    const blocks = blocksOf(view);
+    expect(blocks[0]).toEqual({ kind: "unchanged", paragraphs: ["하나"] });
+    expect(changedTexts(blocks[1], "removed")).toEqual(["둘"]);
+    expect(blocks[1]).toMatchObject({ whitespaceOnly: false });
+  });
+
   it("does not run the sentence diff when the word diff finishes", () => {
     const runners = stub([{ value: "같다.", added: false, removed: false, count: 1 }], undefined);
     expect(buildDiffView("같다.", "같다.", runners)).toMatchObject({ status: "compared", granularity: "word" });
