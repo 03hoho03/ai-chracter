@@ -1125,6 +1125,8 @@ async def _chapter_batch(db: AsyncSession, novel: Novel, chapter_id: uuid.UUID) 
     넣는다(커밋까지 — 뒤의 거절이 롤백해도 보정은 남는다)."""
     chapter = await _get_chapter(db, novel, chapter_id)
     if chapter.batch_id is None:
+        # 다시 만들기 경로에서만 온다. 삭제 경로는 사용자 잠금을 쥔 채 보정을 먼저 돌린 뒤 부르므로 여기서 묶음 없는 화를
+        # 보지 않는다 — 그래서 이 커밋이 삭제의 사용자 잠금을 중간에 풀지 않는다.
         await ensure_batches(db, novel.id)
         await db.commit()
         chapter = await _get_chapter(db, novel, chapter_id)
@@ -1291,6 +1293,8 @@ async def delete_last_novel_chapter(
     같은 규칙). 마지막 묶음의 화가 아니면 409 `NOVEL_CHAPTER_NOT_LAST`, 진행 중 작업이 있으면 409
     `NOVEL_JOB_IN_PROGRESS`."""
     await _lock_user(db, novel.user_id)
+    # 보정을 먼저 돌려 둔다 — 그 뒤라 `_chapter_batch` 는 묶음 없는 화를 보지 않고, 그 안의 보정·커밋 갈래(잠금을 푼다)를
+    # 타지 않는다.
     await ensure_batches(db, novel.id)
     batch = await _chapter_batch(db, novel, chapter_id)
     await _delete_last_batch(db, novel, batch, not_last_code="NOVEL_CHAPTER_NOT_LAST")

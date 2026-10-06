@@ -21,9 +21,10 @@ from api.novelize.billing import _lock_user
 _DROP_EMPTY_BATCHES_SQL = text(
     "DELETE FROM novel_batches b WHERE b.novel_id = :novel_id"
     " AND NOT EXISTS (SELECT 1 FROM novel_chapters c WHERE c.batch_id = b.id)"
+    " RETURNING b.id"
 )
 
-# 마이그레이션의 이관 문장에 소설 조건만 더한 것. `targets` 는 휘발성 함수(`gen_random_uuid()`)를 담아 한 번만 계산되므로
+# 마이그레이션의 이관 문장에 소설 조건과(바꾼 행이 있었는지 알려고) RETURNING 만 더한 것. `targets` 는 휘발성 함수(`gen_random_uuid()`)를 담아 한 번만 계산되므로
 # INSERT 와 UPDATE 가 같은 묶음 id 를 본다. 묶음 INSERT 와 화 UPDATE 를 한 문장에 두는 것은 FK 검사가 문장 끝에 돌기
 # 때문에 가능하다.
 _BACKFILL_SQL = text(
@@ -59,12 +60,14 @@ UPDATE novel_chapters c
 SET batch_id = t.batch_id, episode_index = 0
 FROM targets t
 WHERE c.id = t.chapter_id
+RETURNING c.id
 """
 )
 
 
 async def ensure_batches(db: AsyncSession, novel_id: uuid.UUID) -> bool:
-    """소설 `novel_id` 의 빈 묶음을 지우고 묶음 없는 화를 묶음에 넣는다. 고칠 것이 있었으면 True. 커밋은 호출자가 한다.
+    """소설 `novel_id` 의 빈 묶음을 지우고 묶음 없는 화를 묶음에 넣는다. 실제로 지우거나 채운 것이 있으면 True. 커밋은
+    호출자가 한다.
 
     고칠 것이 있는지는 잠금 없이 먼저 본다 — 대부분의 소설은 고칠 것이 없고, 상세 조회마다 사용자 행을 잠그면 같은
     사용자의 차감·환불과 줄을 서게 된다. 고칠 것이 있으면 사용자 행을 잠근 뒤 고친다: 두 요청이 동시에 같은 화를 채우면
@@ -80,6 +83,6 @@ async def ensure_batches(db: AsyncSession, novel_id: uuid.UUID) -> bool:
     user_id = await db.scalar(select(Novel.user_id).where(Novel.id == novel_id))
     if user_id is None or not await _lock_user(db, user_id):
         return False
-    await db.execute(_DROP_EMPTY_BATCHES_SQL, {"novel_id": novel_id})
-    await db.execute(_BACKFILL_SQL, {"novel_id": novel_id})
-    return True
+    dropped = (await db.execute(_DROP_EMPTY_BATCHES_SQL, {"novel_id": novel_id})).all()
+    filled = (await db.execute(_BACKFILL_SQL, {"novel_id": novel_id})).all()
+    return bool(dropped or filled)

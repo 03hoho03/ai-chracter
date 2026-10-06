@@ -31,7 +31,8 @@ from api.novelize import billing, runner
 from api.novelize.inputs import ChapterInput
 from api.novelize.output import ParsedBatch, ParsedEpisode
 from api.novelize.prompts import NovelizePrompt
-from api.novelize.deletion import delete_novels
+from api.novelize.batches import ensure_batches
+from api.novelize.deletion import delete_batch, delete_novels
 from api.novelize.router import delete_last_novel_chapter, delete_novel
 from factories import _assert_blocked, _make_user_with_clover_lot
 
@@ -299,7 +300,8 @@ async def test_regenerating_with_a_model_that_cannot_hold_the_batch_is_409_befor
 
 
 async def test_regenerating_a_batch_with_no_episodes_is_refused_before_charging(db_session: AsyncSession) -> None:
-    """화가 없는 묶음(옛 판 코드가 화만 지운 경우)을 다시 만들면 0 클로버 작업이 묶음 전체를 다시 쓰려 든다."""
+    """화가 없는 묶음(옛 판 코드가 화만 지운 경우)을 다시 만들면 0 클로버 작업이 묶음 전체를 다시 쓰려 든다 — 없는
+    묶음과 같은 404 다."""
     owner = await _owner(db_session)
     novel = await _make_novel(db_session, owner.id)
     (chapter,) = await _batch(db_session, novel, episodes=1)
@@ -309,9 +311,10 @@ async def test_regenerating_a_batch_with_no_episodes_is_refused_before_charging(
     job.batch_id = batch_id
 
     async with _service_session(db_session) as s:
-        with pytest.raises(ValueError, match="화가 없다"):
+        with pytest.raises(HTTPException) as caught:
             await billing.create_charged_job(s, job=job, expected_cost=0, now=datetime.now(UTC))
 
+    assert (caught.value.status_code, _detail(caught.value)) == (404, {"code": "NOVEL_BATCH_NOT_FOUND"})
     assert await _ledger(db_session, owner.id) == []
 
 
@@ -1077,3 +1080,92 @@ async def test_chapter_whose_start_was_taken_by_a_chapter_saved_while_waiting_is
     assert isinstance(result, HTTPException)
     assert (result.status_code, _detail(result)) == (409, {"code": "NOVEL_NOTHING_NEW"})
     assert await _independent_ledger(independent_factory, user_id) == []
+
+
+async def test_last_batch_delete_lets_an_edit_holding_the_job_finish_instead_of_deadlocking(
+    independent_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """AI 수정 적용은 작업 행을 잠근 뒤 화 행을 잠근다. 묶음 삭제가 화를 먼저 잠그고 작업 행을 고치면 둘이 서로를 기다려
+    한쪽이 교착 오류로 끊긴다(삭제든 적용이든 500). 삭제도 작업 행 → 화 순서면 삭제가 적용 커밋을 기다린다."""
+    user_id, novel_id = await _seed(independent_factory)
+    async with independent_factory() as s:
+        novel = await s.get_one(Novel, novel_id)
+        (chapter,) = await _batch(s, novel, episodes=1)
+        revision = NovelChapterRevision(chapter_id=chapter.id, revision_no=1, body="본문", source="generate")
+        s.add(revision)
+        await s.flush()
+        edit = NovelJob(
+            novel_id=novel_id,
+            user_id=user_id,
+            kind="ai_edit",
+            status="succeeded",
+            chapter_id=chapter.id,
+            base_revision_id=revision.id,
+            instruction="고쳐",
+            result_text="고친 본문",
+            charged_amount=20,
+        )
+        s.add(edit)
+        await s.commit()
+        batch_id = chapter.batch_id
+        assert batch_id is not None
+
+    applier = independent_factory()
+    try:
+        # 적용이 하는 일 그대로: 작업 행 잠금 → (삭제가 끼어든 뒤) 화 행 잠금.
+        await applier.execute(select(NovelJob.id).where(NovelJob.id == edit.id).with_for_update(key_share=True))
+
+        async def delete_last_batch() -> None:
+            async with independent_factory() as s:
+                await billing._lock_user(s, user_id)
+                await delete_batch(s, novel_id=novel_id, batch_id=batch_id)
+                await s.commit()
+
+        task = asyncio.ensure_future(delete_last_batch())
+        await _assert_blocked(task)
+        async with asyncio.timeout(5):
+            await applier.execute(
+                select(NovelChapter.id).where(NovelChapter.id == chapter.id).with_for_update(key_share=True)
+            )
+        await applier.commit()
+        await task
+    finally:
+        await applier.close()
+
+    async with independent_factory() as s:
+        assert await s.get(NovelBatch, batch_id) is None
+        kept = await s.get_one(NovelJob, edit.id)
+        assert (kept.chapter_id, kept.result_text) == (None, None)
+
+
+async def test_two_concurrent_batch_fills_give_each_chapter_one_batch_without_a_duplicate_number(
+    independent_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """상세 두 개가 동시에 같은 묶음 없는 화를 채우면 같은 묶음 번호를 두 번 쓰려다 유니크 위반(500)이 날 수 있다. 사용자
+    행에서 줄을 서므로 뒤 요청은 앞 요청이 채운 결과를 보고 아무것도 하지 않는다."""
+    _user_id, novel_id = await _seed(independent_factory)
+    async with independent_factory() as s:
+        novel = await s.get_one(Novel, novel_id)
+        await _batch(s, novel, episodes=1)
+        await s.execute(update(NovelChapter).where(NovelChapter.novel_id == novel_id).values(batch_id=None))
+        await s.execute(delete(NovelBatch).where(NovelBatch.novel_id == novel_id))
+        await s.commit()
+
+    async def fill() -> bool:
+        async with independent_factory() as s:
+            changed = await ensure_batches(s, novel_id)
+            await asyncio.sleep(0.2)  # 커밋 전에 잠시 쥐고 있어 다른 요청이 같은 순간에 들어오게 한다
+            await s.commit()
+            return changed
+
+    results = await asyncio.gather(fill(), fill())
+
+    assert sorted(results) == [False, True]
+    async with independent_factory() as s:
+        ordinals = (await s.scalars(select(NovelBatch.ordinal).where(NovelBatch.novel_id == novel_id))).all()
+        unbatched = await s.scalar(
+            select(func.count())
+            .select_from(NovelChapter)
+            .where(NovelChapter.novel_id == novel_id, NovelChapter.batch_id.is_(None))
+        )
+    assert (list(ordinals), unbatched) == ([1], 0)

@@ -35,6 +35,7 @@ from api.core.rate_limit_gate import _too_many_requests
 from api.db.models.auth import User
 from api.db.models.novel import (
     Novel,
+    NovelBatch,
     NovelChapter,
     NovelJob,
     NovelJobFailureCode,
@@ -43,7 +44,6 @@ from api.db.models.novel import (
 )
 from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, novel_episode_unit_price, parse_chat_model_id
 from api.novelize.episodes import k_max, regenerate_ineligibility
-from api.novelize.inputs import regenerate_batch
 
 ACTIVE_JOB_STATUSES: tuple[NovelJobStatus, ...] = ("queued", "running")
 # 하루 상한에 세는 상태. 환불된 실패를 세면 우리 쪽 실패가 사용자의 하루 기회를 깎는다.
@@ -117,7 +117,7 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
 
     거절은 모두 `HTTPException` 이다(라우트 본문이 그대로 내보낸다).
     - 404 `NOVEL_NOT_FOUND`·`NOVEL_CHAPTER_NOT_FOUND`: 사용자 잠금을 기다리는 사이 소설이나 작업이 가리키는 장이
-      지워졌다.
+      지워졌다. 다시 만들기는 대상 묶음이 지금 없거나 화가 하나도 없으면 `NOVEL_BATCH_NOT_FOUND` 다.
     - 409 `NOVEL_NOTHING_NEW`(장 생성만): 사용자 잠금을 기다리는 사이 앞 작업이 이 작업의 시작을 덮는 장을 저장했다
       (두 탭에서 동시에 다음 장을 만든 경우). 화면은 경계 제안을 다시 받는다.
     - 409 `NOVELIZE_PRICE_CHANGED` + `currentCost`: 사용자가 확인한 금액(`expected_cost`)이 지금 금액과 다르다. 단가가
@@ -226,24 +226,29 @@ async def _fix_regenerate_batch(db: AsyncSession, job: NovelJob) -> None:
     묶음의 화를 지우는 경로도 사용자 행을 먼저 잡으므로 여기서 센 화 수가 차감 뒤까지 그대로다.
 
     묶음은 호출자가 실은 `batch_id` 이고, 없으면 작업이 가리키는 화의 묶음이다(화 하나를 골라 다시 만드는 요청은 그 화가
-    든 묶음 전체를 다시 쓴다). 화는 묶음 이관이 늘 묶음에 넣으므로 묶음 없는 화는 이 경로에 오지 않는다."""
-    batch = await regenerate_batch(db, job)
-    if batch is None:
-        raise ValueError(f"다시 만들 작업 {job.id} 의 묶음을 찾지 못했다")
+    든 묶음 전체를 다시 쓴다). 묶음이 지금 없거나 화가 하나도 없으면 404 `NOVEL_BATCH_NOT_FOUND` 다 — 라우트가 잠금 없이
+    읽은 뒤 사용자 잠금을 기다리는 사이 마지막 묶음 삭제가 그 묶음을 지웠거나, 옛 화면이 들고 있던 빈 묶음을 보정이
+    지웠다. 묶음은 세션에 이미 올라온 객체가 아니라 이 자리에서 다시 읽는다 — 지워진 행도 세션에는 남아 있을 수 있다."""
+    batch_id = job.batch_id
+    if batch_id is None and job.chapter_id is not None:
+        batch_id = await db.scalar(select(NovelChapter.batch_id).where(NovelChapter.id == job.chapter_id))
+    turns = (
+        await db.scalar(select(NovelBatch.assistant_message_count).where(NovelBatch.id == batch_id))
+        if batch_id is not None
+        else None
+    )
     episodes = int(
-        await db.scalar(select(func.count()).select_from(NovelChapter).where(NovelChapter.batch_id == batch.id)) or 0
+        await db.scalar(select(func.count()).select_from(NovelChapter).where(NovelChapter.batch_id == batch_id)) or 0
     )
-    if episodes < 1:
+    if batch_id is None or turns is None or episodes < 1:
         # 화가 없는 묶음은 다시 만들 것이 없다 — 화 0 으로 받으면 0 클로버 작업이 묶음 전체를 다시 쓰려 든다.
-        raise ValueError(f"다시 만들 작업 {job.id} 의 묶음 {batch.id} 에 화가 없다")
-    reason = regenerate_ineligibility(
-        chapter_job_model(job), episode_count=episodes, turn_count=batch.assistant_message_count
-    )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "NOVEL_BATCH_NOT_FOUND"})
+    reason = regenerate_ineligibility(chapter_job_model(job), episode_count=episodes, turn_count=turns)
     if reason is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail={"code": "NOVEL_MODEL_INELIGIBLE", "reason": reason}
         )
-    job.batch_id = batch.id
+    job.batch_id = batch_id
     job.episode_count_target = episodes
 
 

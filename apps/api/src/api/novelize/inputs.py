@@ -19,7 +19,6 @@ from api.db.models.content import Content
 from api.db.models.novel import Novel, NovelBatch, NovelChapter, NovelChapterRevision, NovelCharacter, NovelJob
 from api.db.models.story import StoryVersionDetail
 from api.novelize.prompts import NovelizePrompt, build_novelize_chapter_prompt, build_novelize_revise_prompt
-from api.novelize.episodes import episode_count
 from api.novelize.source import format_turn_lines, group_turns, load_segment, novel_prompt_names, segment_hash
 from api.novelize.text import ending_excerpt, split_paragraphs
 

@@ -72,21 +72,20 @@ async def delete_batch(db: AsyncSession, *, novel_id: uuid.UUID, batch_id: uuid.
     그다음 화를 잠그고(`delete_novels` 와 같은 이유) 읽은 위치·등장 인물·개정·화·묶음 순으로 지운다. 인물 카드는 남긴다 —
     사용자가 메모를 적은 카드일 수 있고, 다른 화에도 나온다.
 
+    잠금 순서는 작업 행 → 화 행이다(`delete_novels` 와 같다). 화 id 는 잠금 없이 고른다 — 호출자가 사용자 행을 쥐고 있어
+    같은 묶음에 화를 더하거나 빼는 경로(묶음 저장·삭제)가 끼어들 수 없다. 화를 먼저 잠그고 작업 행을 고치면, 작업 행을 쥔
+    채 화를 기다리는 AI 수정 적용과 서로를 기다려 한쪽이 교착 오류로 끊긴다.
+
     스냅샷은 남기되 지운 화의 항목을 `{chapterId, deleted: true}` 로 줄인다. 화 제목·요약·작가의 말은 지운 화의
     내용이라 지울 때 함께 사라져야 하고(처리방침의 "즉시 삭제"), 항목 자리를 남기는 것은 그 스냅샷을 복원할 때 화가
     지워졌다는 사실을 알리기 위해서다."""
-    chapter_ids = list(
-        (
-            await db.scalars(
-                select(NovelChapter.id).where(NovelChapter.batch_id == batch_id).with_for_update()
-            )
-        ).all()
-    )
+    chapter_ids = list((await db.scalars(select(NovelChapter.id).where(NovelChapter.batch_id == batch_id))).all())
     await db.execute(
         update(NovelJob)
         .where(NovelJob.chapter_id.in_(chapter_ids))
         .values(chapter_id=None, base_revision_id=None, result_revision_id=None, instruction=None, result_text=None)
     )
+    await db.execute(select(NovelChapter.id).where(NovelChapter.id.in_(chapter_ids)).with_for_update())
     await db.execute(delete(NovelReadingPosition).where(NovelReadingPosition.chapter_id.in_(chapter_ids)))
     await db.execute(delete(NovelChapterCharacter).where(NovelChapterCharacter.chapter_id.in_(chapter_ids)))
     await db.execute(delete(NovelChapterRevision).where(NovelChapterRevision.chapter_id.in_(chapter_ids)))

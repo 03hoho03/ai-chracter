@@ -931,3 +931,53 @@ async def test_an_empty_batch_left_by_old_code_does_not_block_deleting_the_real_
     assert resp.status_code == 204, resp.text
     left = (await db_session.scalars(sa.select(NovelBatch.id).where(NovelBatch.novel_id == novel_id))).all()
     assert left == []
+
+
+async def test_regenerating_a_batch_the_fill_dropped_as_empty_is_404_without_a_charge(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    llm: _NovelRouteLLM,
+    enqueued: list[uuid.UUID],
+    committing_request_session: None,
+) -> None:
+    """옛 화면이 들고 있던 묶음이 그 사이 빈 묶음이 되어 보정이 지우면, 다시 만들기는 지워진 묶음을 붙잡고 500 이 아니라
+    404 다(옛 판 코드의 마지막 장 삭제가 화만 지운 경우)."""
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    messages = await _room_messages(db_session, room.room_id)
+    (chapter,) = await _add_batch(db_session, novel_id, room, messages[0], room.turns[1][1])
+    await db_session.execute(sa.delete(NovelChapterRevision).where(NovelChapterRevision.chapter_id == chapter.id))
+    await db_session.execute(sa.delete(NovelChapter).where(NovelChapter.id == chapter.id))
+    await db_session.commit()
+
+    resp = await db_client.post(
+        f"/novels/{novel_id}/batches/{chapter.batch_id}/regenerate", json={"model": "gemini", "expectedCost": 40}
+    )
+
+    assert resp.status_code == 404 and resp.json()["detail"] == {"code": "NOVEL_BATCH_NOT_FOUND"}
+    assert (enqueued, await _novel_ledger(db_session, room.user_id)) == ([], [])
+
+
+async def test_a_batch_of_another_novel_is_404_for_regenerate_and_delete(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    llm: _NovelRouteLLM,
+    enqueued: list[uuid.UUID],
+) -> None:
+    other_room, other_id = await _novel_setup(db_client, db_session, monkeypatch)
+    (other,) = await _add_batch(
+        db_session, other_id, other_room, (await _room_messages(db_session, other_room.room_id))[0], other_room.turns[1][1]
+    )
+    _room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+
+    regenerate = await db_client.post(
+        f"/novels/{novel_id}/batches/{other.batch_id}/regenerate", json={"model": "gemini", "expectedCost": 40}
+    )
+    delete = await db_client.delete(f"/novels/{novel_id}/batches/{other.batch_id}")
+
+    assert [(r.status_code, r.json()["detail"]) for r in (regenerate, delete)] == [
+        (404, {"code": "NOVEL_BATCH_NOT_FOUND"})
+    ] * 2
+    assert await db_session.get(NovelBatch, other.batch_id, populate_existing=True) is not None
+    assert enqueued == []
