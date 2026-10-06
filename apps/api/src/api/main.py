@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Response, status as status_module
 from fastapi.middleware.cors import CORSMiddleware
@@ -114,6 +115,11 @@ app = FastAPI(
 # 실패가 아니라 타임아웃으로 보여 원인이 흐려진다.
 _READY_CHECK_TIMEOUT_SECONDS = 3
 
+# 이 파일이 있으면 `/health` 가 503 을 낸다. 교체 배포 스크립트가 옛 컨테이너 안에 만들고
+# 앱은 존재만 본다 — 스크립트와 앱 사이의 고정 약속이라 설정값으로 열어 두지 않는다.
+# `/tmp` 는 컨테이너의 비루트 사용자도 권한 조정 없이 쓸 수 있다.
+_DRAIN_FLAG_PATH = Path("/tmp/draining")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_allow_origins,
@@ -164,13 +170,23 @@ app.include_router(images_router)
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
+def health(response: Response) -> dict[str, str]:
     """프로세스가 살아 있는지만 본다 — 의존 자원을 건드리지 않는다.
 
     Caddy 헬스체크와 배포 검증(`.github/workflows/deploy-api.yml`)이 이 얕음에 의존한다:
-    DB 가 잠깐 흔들린다고 배포가 실패하거나 리버스 프록시가 백엔드를 빼면 안 된다.
+    DB 가 잠깐 흔들린다고 배포가 실패하거나 리버스 프록시가 백엔드를 빼서는 안 된다.
     "의존 자원까지 살아 있는가"는 `/ready` 가 답한다.
+
+    예외는 드레인 플래그(`_DRAIN_FLAG_PATH`) 하나다. 파일이 있으면 503 을 낸다 — 교체 배포
+    때 옛 컨테이너를 리버스 프록시가 **일부러 먼저 빼게** 만들어, 새 요청은 새 컨테이너로
+    가고 옛 컨테이너는 받던 요청만 끝낸 뒤 내려가게 하려는 장치다. 플래그 확인은 로컬
+    파일시스템에서 파일 존재만 보는 것이라 의존 자원을 건드리지 않는다는 불변식은 그대로다.
+    매 요청마다 다시 보므로 파일을 지우면 재시작 없이 200 으로 돌아온다. `/ready` 는
+    플래그를 보지 않는다 — 외부 업타임 모니터가 드레인을 장애로 오인하지 않게.
     """
+    if _DRAIN_FLAG_PATH.exists():
+        response.status_code = status_module.HTTP_503_SERVICE_UNAVAILABLE
+        return {"status": "draining"}
     return {"status": "ok"}
 
 

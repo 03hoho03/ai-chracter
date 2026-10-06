@@ -5,12 +5,23 @@
 "자원이 죽으면 503 이 된다"가 깨지면 이 엔드포인트는 아무 일도 하지 않는 셈이 된다.
 """
 
+import asyncio
+from pathlib import Path
 from typing import Any
 
 import pytest
 from httpx import AsyncClient
 
 from api import main
+
+
+@pytest.fixture
+def drain_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """드레인 플래그 경로를 테스트 전용 임시 경로로 바꾼다 — 호스트의 `/tmp/draining`
+    유무에 결과가 흔들리지 않게. 파일은 만들지 않은 채로 돌려준다."""
+    path = tmp_path / "draining"
+    monkeypatch.setattr(main, "_DRAIN_FLAG_PATH", path)
+    return path
 
 
 async def test_returns_200_ready_when_all_resources_are_alive(api_client: AsyncClient) -> None:
@@ -30,12 +41,45 @@ async def test_head_ready_is_allowed(api_client: AsyncClient) -> None:
     assert response.status_code == 200
 
 
-async def test_health_does_not_check_dependent_resources(api_client: AsyncClient) -> None:
+async def test_health_does_not_check_dependent_resources(api_client: AsyncClient, drain_flag: Path) -> None:
     """`/health` 가 얕다는 것 자체가 계약이다 — Caddy 헬스체크와 배포 검증이 여기 의존한다."""
     response = await api_client.get("/health")
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+async def test_health_returns_503_while_drain_flag_exists(api_client: AsyncClient, drain_flag: Path) -> None:
+    """교체 배포가 옛 컨테이너에 플래그를 두면 프록시가 그 컨테이너를 먼저 빼야 한다 —
+    HTTP 상태만 보는 헬스체커가 알아채도록 503 이어야 한다."""
+    await asyncio.to_thread(drain_flag.touch)
+
+    response = await api_client.get("/health")
+
+    assert response.status_code == 503
+    assert response.json() == {"status": "draining"}
+
+
+async def test_health_returns_200_again_after_drain_flag_removed(api_client: AsyncClient, drain_flag: Path) -> None:
+    """플래그는 매 요청마다 다시 본다 — 지우면 재시작 없이 다시 받아들여야 한다."""
+    await asyncio.to_thread(drain_flag.touch)
+    assert (await api_client.get("/health")).status_code == 503
+
+    await asyncio.to_thread(drain_flag.unlink)
+    response = await api_client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+async def test_ready_ignores_drain_flag(api_client: AsyncClient, drain_flag: Path) -> None:
+    """외부 업타임 모니터는 `/ready` 를 본다 — 드레인 중 오경보가 나면 안 된다."""
+    await asyncio.to_thread(drain_flag.touch)
+
+    response = await api_client.get("/ready")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready"
 
 
 @pytest.mark.parametrize(
