@@ -50,6 +50,7 @@ class _ModelLLM(LLMClient):
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, str | None, LLMCallContext]] = []
+        self.boundary_calls = 0
 
     async def generate(
         self,
@@ -71,6 +72,7 @@ class _ModelLLM(LLMClient):
         self, prompt: str, response_schema: type[T], *, system_instruction: str, usage: LLMCallContext
     ) -> T:
         assert response_schema is NovelizeBoundaryResult
+        self.boundary_calls += 1
         return response_schema.model_validate({"end_turn": 1, "reason": "끝"})
 
 
@@ -620,3 +622,80 @@ async def test_a_job_whose_model_left_the_registry_fails_and_is_refunded_instead
     assert (job.status, job.failure_code) == ("failed", "internal")
     assert llm.calls == []
     assert await _novel_ledger(db_session, owner_id) == [("novelize_spend", -105), ("novelize_refund", 105)]
+
+
+# ── 경계 제안·생성의 모델별 턴 상한 ─────────────────────────────────────────
+def _per_model_turn_limits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Gemini 는 3턴 방 전체(4턴)를 담고 Opus 는 2턴까지만 담게 한다."""
+    monkeypatch.setattr(settings, "novelize_chapter_max_turns", 45)
+    monkeypatch.setattr(settings, "novelize_chapter_max_turns_opus", 2)
+
+
+async def test_an_opus_proposal_has_no_candidate_beyond_the_opus_turn_limit(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ModelLLM
+) -> None:
+    """후보와 AI 제안이 요청한 모델의 턴 상한 안이다 — Gemini 상한으로 자르면 Opus 가 담지 못하는 끝을 고를 수 있다.
+    후보마다 화 수·금액도 그 모델 기준이다(Opus 는 화 수 상한 1이라 늘 1화)."""
+    room, novel_id, _ = await _novel(db_client, db_session, monkeypatch, premium=True)
+    _per_model_turn_limits(monkeypatch)
+    opening = (await _room_messages(db_session, room.room_id))[0]
+
+    opus = await db_client.post(f"/novels/{novel_id}/chapter-proposal", json={"model": "opus"})
+    gemini = await db_client.post(f"/novels/{novel_id}/chapter-proposal", json={"model": "gemini"})
+
+    assert opus.status_code == 200, opus.text
+    assert [(c["messageId"], c["episodeCount"], c["cost"]) for c in opus.json()["candidates"]] == [
+        (str(opening.id), 1, 170),
+        (str(room.turns[1][1].id), 1, 170),
+    ]
+    assert len(gemini.json()["candidates"]) == 4
+
+
+async def test_an_opus_chapter_ending_beyond_the_opus_turn_limit_is_422(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    llm: _ModelLLM,
+    enqueued: list[uuid.UUID],
+) -> None:
+    room, novel_id, owner_id = await _novel(db_client, db_session, monkeypatch, premium=True)
+    _per_model_turn_limits(monkeypatch)
+    end = {"endMessageId": str(room.turns[2][1].id)}
+
+    opus = await db_client.post(f"/novels/{novel_id}/chapters", json={**end, "model": "opus", "expectedCost": 170})
+    gemini = await db_client.post(f"/novels/{novel_id}/chapters", json={**end, "model": "gemini", "expectedCost": 40})
+
+    assert opus.status_code == 422 and opus.json()["detail"] == {"code": "NOVEL_CHAPTER_END_INVALID"}
+    assert gemini.status_code == 202, gemini.text
+    assert await _novel_ledger(db_session, owner_id) == [("novelize_spend", -40)]
+
+
+async def test_a_premium_proposal_without_novel_premium_access_is_403_before_the_model_or_the_limit(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ModelLLM
+) -> None:
+    """허용 없는 계정의 상위 모델 제안은 경계 제안 모델을 부르지 않고, 시간당 제안 상한도 깎지 않는다."""
+    monkeypatch.setattr(settings, "novelize_proposal_hourly_limit", 1)
+    _, novel_id, _ = await _novel(db_client, db_session, monkeypatch, premium=False)
+
+    denied = await db_client.post(f"/novels/{novel_id}/chapter-proposal", json={"model": "opus"})
+    allowed = await db_client.post(f"/novels/{novel_id}/chapter-proposal", json={"model": "gemini"})
+
+    assert denied.status_code == 403 and denied.json()["detail"] == {"code": "NOVEL_MODEL_NOT_ALLOWED"}
+    assert allowed.status_code == 200, allowed.text
+    assert llm.boundary_calls == 1
+
+
+async def test_asking_again_with_another_model_counts_toward_the_hourly_proposal_limit(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ModelLLM
+) -> None:
+    """모델을 바꿔 다시 받는 제안도 경계 제안 모델을 실제로 부르므로 같은 상한에 센다."""
+    monkeypatch.setattr(settings, "novelize_proposal_hourly_limit", 2)
+    _, novel_id, _ = await _novel(db_client, db_session, monkeypatch, premium=True)
+
+    statuses = [
+        (await db_client.post(f"/novels/{novel_id}/chapter-proposal", json={"model": model})).status_code
+        for model in ("gemini", "opus", "sonnet")
+    ]
+
+    assert statuses == [200, 200, 429]
+    assert llm.boundary_calls == 2

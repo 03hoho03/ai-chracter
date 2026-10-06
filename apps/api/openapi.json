@@ -5066,6 +5066,58 @@
           }
         }
       },
+      "patch": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Update Novel",
+        "description": "소설 제목·소개·표지를 바꾼다(보낸 칸만). 제목을 바꾸면 그 뒤로 생성이 제목을 덮지 않는다 — 같은 문장에서 제목과\n고친 시각을 함께 쓰므로, 겹친 생성 저장의 \"고친 적 없을 때만 쓰기\"와 엇갈리지 않는다.\n\n표지는 내 생성 이미지 중 준비가 끝난 것만 된다(아니면 422 `NOVEL_COVER_INVALID` — 남의 것·없는 것·업로드 이미지·준비\n중을 가르지 않는다). 그 이미지 행을 키 공유 잠금으로 확인한다 — 확인과 저장 사이에 이미지가 지워지면 저장이 FK 위반으로\n500 이 되는데, 잠금을 쥐면 삭제가 이 저장이 끝나기를 기다렸다가 표지를 비운다(표지 FK 는 SET NULL).",
+        "operationId": "update_novel_novels__novel_id__patch",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NovelUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "tags": [
           "novels"
@@ -5210,166 +5262,14 @@
         }
       }
     },
-    "/novels/{novel_id}/jobs/{job_id}": {
-      "get": {
+    "/novels/{novel_id}/chapters/{chapter_id}": {
+      "patch": {
         "tags": [
           "novels"
         ],
-        "summary": "Get Novel Job",
-        "description": "작업 폴링. 없는 작업·남의 소설·다른 소설의 작업은 모두 404 다(남의 것이 있다는 사실도 드러내지 않는다).\n\n답하기 전에 이 소설의 죽은 작업을 정리한다 — 서버가 재기동되어 작업이 사라졌으면 폴링이 실패·환불을 보게 된다.",
-        "operationId": "get_novel_job_novels__novel_id__jobs__job_id__get",
-        "parameters": [
-          {
-            "name": "novel_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Novel Id"
-            }
-          },
-          {
-            "name": "job_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Job Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NovelJobResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/novels/{novel_id}/chapter-proposal": {
-      "post": {
-        "tags": [
-          "novels"
-        ],
-        "summary": "Propose Novel Chapter",
-        "description": "다음 장의 후보 턴 목록과 모델이 고른 끝 턴(무과금, 동기).\n\n후보는 서버가 정한 시작부터 응답을 장 턴 상한만큼 센 턴들이고, 화면은 이 목록에서 끝을 고른다 — 화면의 방\n메시지 캐시는 최근 일부뿐이라 장 시작이 그보다 앞일 수 있다. 모델 제안이 실패해도 200 에 `suggestion: null`\n이다: 경계는 사용자가 고르는 것이라 제안 실패가 장 생성을 막을 이유가 없다. 모델을 부르기 전에 커밋해 커넥션을\n돌려준다(모델 호출 동안 쥐지 않는다).",
-        "operationId": "propose_novel_chapter_novels__novel_id__chapter_proposal_post",
-        "parameters": [
-          {
-            "name": "novel_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Novel Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NovelChapterProposalResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/novels/{novel_id}/chapters": {
-      "post": {
-        "tags": [
-          "novels"
-        ],
-        "summary": "Create Novel Chapter",
-        "description": "다음 장을 만드는 작업(과금, 202). 시작은 서버가 정하고, 끝(`endMessageId`)은 경계 제안의 후보 턴 중 하나여야\n한다 — 다음 장 시작부터 장 턴 상한 안의 AI 응답이 아니면 422 `NOVEL_CHAPTER_END_INVALID`.\n\n`model` 은 이 장을 쓸 모델이다(기본 Gemini). 작업에 적혀 실행이 그대로 쓰고, 단가도 그 모델의 장 가격이다.\n\n순서: 작품 상태(403)·방(409)·주인공 이름(422)·모델 허용(403) → 죽은 작업 정리·커밋 → 구간 검사(409·422) → 차감·작업 생성(단가\n409·진행 중 409·하루 상한 429·잔액 429) → 띄우기. 차감 앞의 거절은 원장에 아무것도 남기지 않는다.",
-        "operationId": "create_novel_chapter_novels__novel_id__chapters_post",
-        "parameters": [
-          {
-            "name": "novel_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Novel Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NovelChapterCreateRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NovelJobResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/novels/{novel_id}/chapters/{chapter_id}/regenerate": {
-      "post": {
-        "tags": [
-          "novels"
-        ],
-        "summary": "Regenerate Novel Chapter",
-        "description": "장 하나를 같은 원문 구간으로 다시 만드는 작업(과금, 202). 마지막 장이 아니어도 된다. 결과는 그 장의 새\n개정으로 쌓이고, 그 사이의 직접 수정·되돌리기는 이력에 남는다.\n\n원문이 장을 만든 때와 다르면(메시지 편집·응답 재생성·삭제) 차감 전에 409 `NOVEL_SOURCE_CHANGED` — 같은 입력으로\n다시 만든다는 약속을 지킬 수 없다. `model` 은 장 생성과 같은 규칙이고, 처음 만든 모델과 달라도 된다.",
-        "operationId": "regenerate_novel_chapter_novels__novel_id__chapters__chapter_id__regenerate_post",
+        "summary": "Update Novel Chapter",
+        "description": "화 제목·작가의 말을 바꾼다(보낸 칸만, 무과금). 본문은 개정 라우트로 고친다. 작가의 말은 프롬프트에 실리지 않는다.",
+        "operationId": "update_novel_chapter_novels__novel_id__chapters__chapter_id__patch",
         "parameters": [
           {
             "name": "chapter_id",
@@ -5397,18 +5297,18 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/NovelChapterRegenerateRequest"
+                "$ref": "#/components/schemas/NovelChapterUpdateRequest"
               }
             }
           }
         },
         "responses": {
-          "202": {
+          "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NovelJobResponse"
+                  "$ref": "#/components/schemas/NovelDetailResponse"
                 }
               }
             }
@@ -5424,15 +5324,13 @@
             }
           }
         }
-      }
-    },
-    "/novels/{novel_id}/chapters/{chapter_id}": {
+      },
       "delete": {
         "tags": [
           "novels"
         ],
         "summary": "Delete Last Novel Chapter",
-        "description": "마지막 장만 지운다(무과금). 지우면 다음 장 시작이 그 장 시작으로 돌아간다 — 경계를 잘못 골랐을 때 고치는 길이다.\n마지막이 아니면 409 `NOVEL_CHAPTER_NOT_LAST`, 소설에 진행 중 작업이 있으면 409 `NOVEL_JOB_IN_PROGRESS`(끝난 뒤\n다시).\n\n그 장을 가리키던 작업 행은 지우지 않고 장·개정 참조와 AI 수정 지시문·결과 본문만 비운다 — 같은 장의 하루 재시도\n상한이 작업 행 수로 세므로, 지우면 장을 지웠다 다시 만드는 것으로 상한이 풀린다. 차감 기록의 작업 쪽 짝도 남는다.\n지시문·결과 본문은 지운 장을 고치려던 것이라 더 쓸 데가 없다.\n\n잠금: 사용자 행(작업 생성과 줄 세우기 — 진행 중 확인과 삭제 사이에 새 작업이 끼지 않게) → 작업 행 → 장 행.\n장을 잠근 뒤 개정을 지운다 — 직접 수정·되돌리기가 장을 잠근 채 넣는 개정을 기다렸다가 함께 지우려는 것이다.",
+        "description": "화 하나를 골라 들어오는 옛 마지막 장 삭제 — 그 화가 마지막 묶음에 들어 있으면 그 묶음 전체를 지운다(묶음 삭제와\n같은 규칙). 마지막 묶음의 화가 아니면 409 `NOVEL_CHAPTER_NOT_LAST`, 진행 중 작업이 있으면 409\n`NOVEL_JOB_IN_PROGRESS`.",
         "operationId": "delete_last_novel_chapter_novels__novel_id__chapters__chapter_id__delete",
         "parameters": [
           {
@@ -5511,6 +5409,350 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Get Novel Job",
+        "description": "작업 폴링. 없는 작업·남의 소설·다른 소설의 작업은 모두 404 다(남의 것이 있다는 사실도 드러내지 않는다).\n\n답하기 전에 이 소설의 죽은 작업을 정리한다 — 서버가 재기동되어 작업이 사라졌으면 폴링이 실패·환불을 보게 된다.",
+        "operationId": "get_novel_job_novels__novel_id__jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/chapter-proposal": {
+      "post": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Propose Novel Chapter",
+        "description": "다음 묶음의 후보 턴 목록과 모델이 고른 끝 턴(무과금, 동기). 본문이 없으면 기본 모델이다(이 본문을 모르는 옛 화면).\n\n후보는 서버가 정한 시작부터 응답을 요청한 모델의 턴 상한만큼 센 턴들이고, 후보마다 그 모델로 거기까지 만들 때의 화\n수·금액이 붙는다 — 화면은 모델을 먼저 고르고 그 모델로 이 제안을 받는다. 화면의 방 메시지 캐시는 최근 일부뿐이라 묶음\n시작이 그보다 앞일 수 있어 후보를 서버가 준다. 모델 제안은 그 후보 안에서 고르고, 실패해도 200 에 `suggestion: null`\n이다: 경계는 사용자가 고르는 것이라 제안 실패가 생성을 막을 이유가 없다. 모델을 부르기 전에 커밋해 커넥션을 돌려준다\n(모델 호출 동안 쥐지 않는다).\n\n모델을 바꿔 다시 받는 호출도 시간당 제안 상한에 센다 — 호출마다 실제로 경계 제안 모델을 부른다. 상위 모델은 허용이\n있어야 하고(없으면 403 `NOVEL_MODEL_NOT_ALLOWED`), 그 판정이 상한 검사보다 앞이라 거절된 요청은 상한을 깎지 않는다.",
+        "operationId": "propose_novel_chapter_novels__novel_id__chapter_proposal_post",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/NovelChapterProposalRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelChapterProposalResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/chapters": {
+      "post": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Create Novel Chapter",
+        "description": "다음 묶음을 만드는 작업(과금, 202). 시작은 서버가 정하고, 끝(`endMessageId`)은 경계 제안의 후보 턴 중 하나여야\n한다 — 다음 묶음 시작부터 요청 모델의 턴 상한 안의 AI 응답이 아니면 422 `NOVEL_CHAPTER_END_INVALID`.\n\n`model` 은 이 묶음을 쓸 모델이다(기본 Gemini). 작업에 적혀 실행이 그대로 쓴다. 화 수는 서버가 그 구간의 원문 분량과\n모델로 다시 세어 작업에 싣고(경계 제안의 후보 화 수와 같은 계산), 금액은 그 화 수 × 모델의 화 단가다 — 확인한 금액과\n다르면 409 `NOVELIZE_PRICE_CHANGED` + `currentCost`.\n\n순서: 작품 상태(403)·방(409)·주인공 이름(422)·모델 허용(403) → 죽은 작업 정리·묶음 보정·커밋 → 구간 검사(409·422) →\n차감·작업 생성(금액 409·진행 중 409·하루 상한 429·잔액 429) → 띄우기. 차감 앞의 거절은 원장에 아무것도 남기지 않는다.",
+        "operationId": "create_novel_chapter_novels__novel_id__chapters_post",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NovelChapterCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/batches/{batch_id}/regenerate": {
+      "post": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Regenerate Novel Batch",
+        "description": "묶음 하나를 같은 원문 구간으로 다시 만드는 작업(과금, 202). 마지막 묶음이 아니어도 된다. 화 수는 지금 그대로다 —\n결과는 화마다 새 개정으로 쌓이고(화 제목·요약·등장 인물도 바뀐다) 읽은 위치·작가의 말·개정 이력은 남는다. 결과 화 수가\n다르면 작업이 실패하고 전액 돌려준다.\n\n금액은 묶음의 화 수 × 고른 모델의 화 단가(상세의 묶음 `regenerateOptions`)다. 고른 모델이 그 화 수나 묶음의 턴 수를\n담지 못하면 차감 전에 409 `NOVEL_MODEL_INELIGIBLE` + `reason`. 원문이 묶음을 만든 때와 다르면(메시지 편집·응답\n재생성·삭제) 차감 전에 409 `NOVEL_SOURCE_CHANGED`. 없는 묶음은 404 `NOVEL_BATCH_NOT_FOUND`.",
+        "operationId": "regenerate_novel_batch_novels__novel_id__batches__batch_id__regenerate_post",
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Batch Id"
+            }
+          },
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NovelBatchRegenerateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/chapters/{chapter_id}/regenerate": {
+      "post": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Regenerate Novel Chapter",
+        "description": "화 하나를 골라 들어오는 옛 다시 만들기 — 그 화가 든 묶음 전체를 다시 만든다(묶음 다시 만들기와 같은 검사·금액).\n작업 응답의 `chapterId` 는 고른 화이고, 끝나면 그 화의 새 개정이 `revisionId` 다.",
+        "operationId": "regenerate_novel_chapter_novels__novel_id__chapters__chapter_id__regenerate_post",
+        "parameters": [
+          {
+            "name": "chapter_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chapter Id"
+            }
+          },
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NovelChapterRegenerateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/batches/{batch_id}": {
+      "delete": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Delete Last Novel Batch",
+        "description": "마지막 묶음만 지운다(무과금) — 그 묶음의 화 전부와 개정·등장 인물·읽은 위치가 함께 지워지고, 다음 묶음 시작이 그\n묶음 시작으로 돌아간다. 경계를 잘못 골랐을 때 고치는 길이다. 인물 카드는 남고, 스냅샷은 남되 지운 화의 항목만\n`{chapterId, deleted: true}` 로 줄어든다. 마지막이 아니면 409 `NOVEL_BATCH_NOT_LAST`, 소설에 진행 중 작업이 있으면\n409 `NOVEL_JOB_IN_PROGRESS`(끝난 뒤 다시), 없는 묶음은 404 `NOVEL_BATCH_NOT_FOUND`.\n\n그 화들을 가리키던 작업 행은 지우지 않고 참조와 AI 수정 지시문·결과 본문만 비운다(`deletion.delete_batch`).\n\n잠금: 사용자 행(작업 생성과 줄 세우기 — 진행 중 확인과 삭제 사이에 새 작업이 끼지 않게) → 작업 행 → 화 행. 묶음 보정도\n이 잠금 아래에서 먼저 한다 — 빈 묶음이 남아 있으면 그것이 \"마지막\"으로 보여 실제 마지막 묶음을 지울 수 없다.",
+        "operationId": "delete_last_novel_batch_novels__novel_id__batches__batch_id__delete",
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Batch Id"
+            }
+          },
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",
@@ -19292,7 +19534,8 @@
             "enum": [
               "chapter_generate",
               "chapter_regenerate",
-              "ai_edit"
+              "ai_edit",
+              "chain_generate"
             ],
             "title": "Kind"
           },
@@ -19317,6 +19560,40 @@
               }
             ],
             "title": "Chapterid"
+          },
+          "batchId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batchid"
+          },
+          "completedBatches": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completedbatches"
+          },
+          "plannedBatches": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plannedbatches"
           }
         },
         "type": "object",
@@ -19324,10 +19601,13 @@
           "id",
           "kind",
           "status",
-          "chapterId"
+          "chapterId",
+          "batchId",
+          "completedBatches",
+          "plannedBatches"
         ],
         "title": "NovelActiveJob",
-        "description": "진행 중(대기·실행) 작업. 화면을 새로 열어도 이 id 로 폴링을 이어 간다."
+        "description": "진행 중(대기·실행) 작업. 화면을 새로 열어도 이 id 로 폴링을 이어 간다. 연쇄 생성 중에는 부모 작업이다 — 화면이\n묶음 하나를 맡은 자식을 폴링하면 첫 묶음이 끝날 때 전체가 끝난 것으로 읽는다."
       },
       "NovelAiEditPreview": {
         "properties": {
@@ -19437,6 +19717,71 @@
         ],
         "title": "NovelAiEditRequest"
       },
+      "NovelBatchRegenerateRequest": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "sonnet",
+              "opus"
+            ],
+            "title": "Model"
+          },
+          "expectedCost": {
+            "type": "integer",
+            "title": "Expectedcost"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model",
+          "expectedCost"
+        ],
+        "title": "NovelBatchRegenerateRequest"
+      },
+      "NovelBatchSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "ordinal": {
+            "type": "integer",
+            "title": "Ordinal"
+          },
+          "chapterIds": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Chapterids"
+          },
+          "assistantMessageCount": {
+            "type": "integer",
+            "title": "Assistantmessagecount"
+          },
+          "regenerateOptions": {
+            "items": {
+              "$ref": "#/components/schemas/NovelRegenerateOption"
+            },
+            "type": "array",
+            "title": "Regenerateoptions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "ordinal",
+          "chapterIds",
+          "assistantMessageCount",
+          "regenerateOptions"
+        ],
+        "title": "NovelBatchSummary",
+        "description": "묶음 하나 = 생성 한 번이 옮긴 원문 구간. 다시 만들기·마지막 묶음 삭제의 단위다."
+      },
       "NovelChapterCandidate": {
         "properties": {
           "messageId": {
@@ -19456,6 +19801,14 @@
           "excerpt": {
             "type": "string",
             "title": "Excerpt"
+          },
+          "episodeCount": {
+            "type": "integer",
+            "title": "Episodecount"
+          },
+          "cost": {
+            "type": "integer",
+            "title": "Cost"
           }
         },
         "type": "object",
@@ -19463,10 +19816,12 @@
           "messageId",
           "ordinal",
           "createdAt",
-          "excerpt"
+          "excerpt",
+          "episodeCount",
+          "cost"
         ],
         "title": "NovelChapterCandidate",
-        "description": "다음 장의 끝으로 고를 수 있는 턴 하나. `message_id` 는 그 턴의 AI 응답이고, `ordinal` 은 다음 장 시작부터 센\n턴 번호(1부터)다."
+        "description": "다음 묶음의 끝으로 고를 수 있는 턴 하나. `message_id` 는 그 턴의 AI 응답이고, `ordinal` 은 다음 묶음 시작부터 센\n턴 번호(1부터)다. `episode_count`·`cost` 는 이 턴까지를 요청한 모델로 만들 때의 화 수와 금액이다 — 생성 요청의\n`expectedCost` 는 고른 후보의 `cost` 다."
       },
       "NovelChapterCreateRequest": {
         "properties": {
@@ -19529,7 +19884,23 @@
           "chapterRegenerate"
         ],
         "title": "NovelChapterModel",
-        "description": "이 계정이 장 생성·재생성에 고를 수 있는 모델 하나와 그 모델의 장 가격. 요청의 `model` 과 `expectedCost` 로 싣는다."
+        "description": "이 계정이 장 생성·재생성에 고를 수 있는 모델 하나와 그 모델의 화 하나 가격. 생성 한 번은 여러 화를 쓸 수 있어\n요청의 `expectedCost` 는 이 값 × 화 수다. 생성·재생성 두 칸은 같은 값이다(옛 화면이 읽는 칸 이름을 그대로 둔다)."
+      },
+      "NovelChapterProposalRequest": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "sonnet",
+              "opus"
+            ],
+            "title": "Model",
+            "default": "gemini"
+          }
+        },
+        "type": "object",
+        "title": "NovelChapterProposalRequest"
       },
       "NovelChapterProposalResponse": {
         "properties": {
@@ -19597,7 +19968,8 @@
         "required": [
           "expectedCost"
         ],
-        "title": "NovelChapterRegenerateRequest"
+        "title": "NovelChapterRegenerateRequest",
+        "description": "화 하나를 골라 다시 만들기 — 그 화가 든 묶음 전체를 다시 만든다(묶음 다시 만들기 요청과 같다)."
       },
       "NovelChapterResponse": {
         "properties": {
@@ -19696,6 +20068,49 @@
             "type": "string",
             "format": "date-time",
             "title": "Createdat"
+          },
+          "batchId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Batchid"
+          },
+          "episodeIndex": {
+            "type": "integer",
+            "title": "Episodeindex"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "authorNote": {
+            "type": "string",
+            "title": "Authornote"
+          },
+          "charCount": {
+            "type": "integer",
+            "title": "Charcount"
+          },
+          "finishedReading": {
+            "type": "boolean",
+            "title": "Finishedreading"
           }
         },
         "type": "object",
@@ -19707,10 +20122,92 @@
           "currentRevisionNo",
           "currentRevisionSource",
           "updatedAt",
-          "createdAt"
+          "createdAt",
+          "batchId",
+          "episodeIndex",
+          "title",
+          "summary",
+          "authorNote",
+          "charCount",
+          "finishedReading"
         ],
         "title": "NovelChapterSummary",
-        "description": "목차의 장 한 줄. 본문은 장 조회로 따로 읽는다."
+        "description": "목차의 화 한 줄. 본문은 화 조회로 따로 읽는다. `ordinal` 은 소설 전체의 화 번호다."
+      },
+      "NovelChapterUpdateRequest": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "authorNote": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authornote"
+          }
+        },
+        "type": "object",
+        "title": "NovelChapterUpdateRequest",
+        "description": "보낸 칸만 바꾼다. 화 제목은 다음 다시 만들기가 새 출력으로 덮는다(본문과 함께 나온 값이다)."
+      },
+      "NovelCover": {
+        "properties": {
+          "assetId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assetid"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "generated",
+              "work"
+            ],
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "assetId",
+          "url",
+          "source"
+        ],
+        "title": "NovelCover",
+        "description": "표지. 사용자가 고른 생성 이미지(`generated`)가 있으면 그것이고, 없거나 그 이미지가 지워졌으면 원작 썸네일\n(`work`)이다. 원작 썸네일도 없으면 `url` 이 null 이다."
       },
       "NovelDetailResponse": {
         "properties": {
@@ -19774,12 +20271,54 @@
             "type": "string",
             "title": "Settingnotes"
           },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "titleEdited": {
+            "type": "boolean",
+            "title": "Titleedited"
+          },
+          "synopsis": {
+            "type": "string",
+            "title": "Synopsis"
+          },
+          "cover": {
+            "$ref": "#/components/schemas/NovelCover"
+          },
+          "source": {
+            "$ref": "#/components/schemas/NovelSource"
+          },
+          "batches": {
+            "items": {
+              "$ref": "#/components/schemas/NovelBatchSummary"
+            },
+            "type": "array",
+            "title": "Batches"
+          },
           "chapters": {
             "items": {
               "$ref": "#/components/schemas/NovelChapterSummary"
             },
             "type": "array",
             "title": "Chapters"
+          },
+          "lastRead": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NovelLastRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "activeJob": {
             "anyOf": [
@@ -19841,7 +20380,14 @@
           "characterName",
           "protagonistName",
           "settingNotes",
+          "title",
+          "titleEdited",
+          "synopsis",
+          "cover",
+          "source",
+          "batches",
           "chapters",
+          "lastRead",
           "activeJob",
           "pendingAiEdits",
           "prices",
@@ -19863,7 +20409,8 @@
             "enum": [
               "chapter_generate",
               "chapter_regenerate",
-              "ai_edit"
+              "ai_edit",
+              "chain_generate"
             ],
             "title": "Kind"
           },
@@ -19898,7 +20445,9 @@
                   "empty",
                   "source_changed",
                   "expired",
-                  "internal"
+                  "internal",
+                  "malformed",
+                  "episode_count_mismatch"
                 ]
               },
               {
@@ -19956,6 +20505,44 @@
               }
             ],
             "title": "Model"
+          },
+          "refundedAmount": {
+            "type": "integer",
+            "title": "Refundedamount"
+          },
+          "batchId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batchid"
+          },
+          "completedBatches": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completedbatches"
+          },
+          "plannedBatches": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plannedbatches"
           }
         },
         "type": "object",
@@ -19969,9 +20556,50 @@
           "chapterId",
           "revisionId",
           "aiEdit",
-          "createdAt"
+          "createdAt",
+          "refundedAmount",
+          "batchId",
+          "completedBatches",
+          "plannedBatches"
         ],
         "title": "NovelJobResponse"
+      },
+      "NovelLastRead": {
+        "properties": {
+          "chapterId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Chapterid"
+          },
+          "paragraphIndex": {
+            "type": "integer",
+            "title": "Paragraphindex"
+          },
+          "paragraphCount": {
+            "type": "integer",
+            "title": "Paragraphcount"
+          },
+          "revisionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Revisionid"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chapterId",
+          "paragraphIndex",
+          "paragraphCount",
+          "revisionId",
+          "updatedAt"
+        ],
+        "title": "NovelLastRead",
+        "description": "이 소설에서 가장 최근에 읽은 자리. `paragraph_count` 는 그때의 문단 수라, 그 뒤 개정이 바뀌었으면 비율로 옮긴다."
       },
       "NovelLimits": {
         "properties": {
@@ -19990,6 +20618,22 @@
           "protagonistNameMaxLength": {
             "type": "integer",
             "title": "Protagonistnamemaxlength"
+          },
+          "titleMaxLength": {
+            "type": "integer",
+            "title": "Titlemaxlength"
+          },
+          "synopsisMaxLength": {
+            "type": "integer",
+            "title": "Synopsismaxlength"
+          },
+          "chapterTitleMaxLength": {
+            "type": "integer",
+            "title": "Chaptertitlemaxlength"
+          },
+          "authorNoteMaxLength": {
+            "type": "integer",
+            "title": "Authornotemaxlength"
           }
         },
         "type": "object",
@@ -19997,7 +20641,11 @@
           "settingNotesMaxLength",
           "chapterBodyMaxLength",
           "aiEditInstructionMaxLength",
-          "protagonistNameMaxLength"
+          "protagonistNameMaxLength",
+          "titleMaxLength",
+          "synopsisMaxLength",
+          "chapterTitleMaxLength",
+          "authorNoteMaxLength"
         ],
         "title": "NovelLimits"
       },
@@ -20047,6 +20695,20 @@
             "type": "integer",
             "title": "Chaptercount"
           },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "cover": {
+            "$ref": "#/components/schemas/NovelCover"
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -20066,6 +20728,8 @@
           "contentTitle",
           "characterName",
           "chapterCount",
+          "title",
+          "cover",
           "createdAt",
           "updatedAt"
         ],
@@ -20184,6 +20848,56 @@
           "protagonistName"
         ],
         "title": "NovelProtagonistNameRequest"
+      },
+      "NovelRegenerateOption": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "sonnet",
+              "opus"
+            ],
+            "title": "Model"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "cost": {
+            "type": "integer",
+            "title": "Cost"
+          },
+          "eligible": {
+            "type": "boolean",
+            "title": "Eligible"
+          },
+          "ineligibleReason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "too_many_episodes",
+                  "too_many_turns"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ineligiblereason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model",
+          "name",
+          "cost",
+          "eligible",
+          "ineligibleReason"
+        ],
+        "title": "NovelRegenerateOption",
+        "description": "묶음 하나를 이 모델로 다시 만들 때의 금액과 고를 수 있는지. 다시 만들기는 묶음의 화 수를 그대로 지키므로 금액은 그\n화 수 × 이 모델의 화 단가이고, 그 화 수나 묶음의 턴 수가 이 모델의 상한을 넘으면 고를 수 없다(요청하면 409\n`NOVEL_MODEL_INELIGIBLE`) — `ineligible_reason` 이 그 이유다(`too_many_episodes`·`too_many_turns`)."
       },
       "NovelRevisionCreateRequest": {
         "properties": {
@@ -20364,6 +21078,76 @@
         ],
         "title": "NovelSettingNotesRequest",
         "description": "공백만 보내면 빈 노트로 저장된다."
+      },
+      "NovelSource": {
+        "properties": {
+          "thumbnailUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnailurl"
+          },
+          "linkable": {
+            "type": "boolean",
+            "title": "Linkable"
+          }
+        },
+        "type": "object",
+        "required": [
+          "thumbnailUrl",
+          "linkable"
+        ],
+        "title": "NovelSource",
+        "description": "원작 표기. 작품명·캐릭터명은 상세의 `content_title`·`character_name` 이다. `linkable` 은 지금 이 사용자가 원작\n상세를 볼 수 있는가(이용 제한·삭제·남의 비공개 작품이면 거짓 — 화면은 글자만 보인다)."
+      },
+      "NovelUpdateRequest": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "synopsis": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Synopsis"
+          },
+          "coverAssetId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverassetid"
+          }
+        },
+        "type": "object",
+        "title": "NovelUpdateRequest",
+        "description": "보낸 칸만 바꾼다. 제목을 바꾸면 그 뒤로 AI 가 제목을 덮지 않는다. `coverAssetId` 는 null 을 보내면 원작 썸네일로\n되돌리고, 값을 보내면 내 생성 이미지 중 준비가 끝난 것이어야 한다(아니면 422 `NOVEL_COVER_INVALID`)."
       },
       "PasswordResetConfirmRequest": {
         "properties": {

@@ -1272,6 +1272,10 @@ async def test_poll_reports_a_finished_chapter_job(
         "aiEdit": None,
         "createdAt": body["createdAt"],
         "model": "gemini",
+        "refundedAmount": 0,
+        "batchId": str(stored.batch_id),
+        "completedBatches": None,
+        "plannedBatches": None,
     }
 
 

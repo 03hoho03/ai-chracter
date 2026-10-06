@@ -38,9 +38,13 @@ from api.db.models import (
     InquiryStatus,
     ModerationStatus,
     Novel,
+    NovelBatch,
     NovelChapter,
     NovelChapterRevision,
+    NovelCharacter,
     NovelJob,
+    NovelReadingPosition,
+    NovelSnapshot,
     User,
     UserFeatureGrant,
     UserPersona,
@@ -53,6 +57,7 @@ from factories import (
     _grant_novelize,
     _login_as,
     _make_novel_tree,
+    _plant_novel_extras,
     _make_user,
     _make_published_character,
     _make_published_story,
@@ -1018,6 +1023,7 @@ async def test_withdraw_erases_novels_even_when_the_source_room_is_gone(
     assert user is not None
     user_id = user.id
     tree = await _make_novel_tree(db_session, user_id)
+    await _plant_novel_extras(db_session, tree)
     await db_session.commit()
 
     resp = await db_client.request("DELETE", "/me", json={"currentPassword": payload["password"]})
@@ -1025,6 +1031,15 @@ async def test_withdraw_erases_novels_even_when_the_source_room_is_gone(
     assert resp.status_code == 204
     counts = [
         await db_session.scalar(select(sa.func.count()).select_from(Novel).where(Novel.user_id == user_id)),
+        *[
+            await db_session.scalar(select(sa.func.count()).select_from(model).where(column == tree.novel.id))
+            for model, column in (
+                (NovelBatch, NovelBatch.novel_id),
+                (NovelCharacter, NovelCharacter.novel_id),
+                (NovelSnapshot, NovelSnapshot.novel_id),
+                (NovelReadingPosition, NovelReadingPosition.novel_id),
+            )
+        ],
         await db_session.scalar(
             select(sa.func.count()).select_from(NovelChapter).where(NovelChapter.id == tree.chapter.id)
         ),
@@ -1035,4 +1050,4 @@ async def test_withdraw_erases_novels_even_when_the_source_room_is_gone(
         ),
         await db_session.scalar(select(sa.func.count()).select_from(NovelJob).where(NovelJob.user_id == user_id)),
     ]
-    assert counts == [0, 0, 0, 0]
+    assert counts == [0, 0, 0, 0, 0, 0, 0, 0]

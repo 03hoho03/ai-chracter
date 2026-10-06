@@ -181,6 +181,88 @@ async def test_backfill_drops_batches_emptied_by_old_chapter_delete(db_session: 
     assert emptied_batch.id not in batch_ids
 
 
+async def _batch_shape(db_session: AsyncSession, novel_ids: list[uuid.UUID]) -> list[list[tuple[Any, ...]]]:
+    """소설마다 묶음 번호 순으로 (번호, 화 수 목표, 구간 칸, 그 묶음의 (화 번호, 묶음 안 순번)들). 묶음 id 는 무작위라
+    빼고, 묶음 없는 화는 번호 None 의 묶음 하나로 모은다."""
+    shapes: list[list[tuple[Any, ...]]] = []
+    for novel_id in novel_ids:
+        batches = (
+            await db_session.scalars(
+                sa.select(NovelBatch)
+                .where(NovelBatch.novel_id == novel_id)
+                .order_by(NovelBatch.ordinal)
+                .execution_options(populate_existing=True)
+            )
+        ).all()
+        chapters = (
+            await db_session.scalars(
+                sa.select(NovelChapter)
+                .where(NovelChapter.novel_id == novel_id)
+                .order_by(NovelChapter.ordinal)
+                .execution_options(populate_existing=True)
+            )
+        ).all()
+        shape: list[tuple[Any, ...]] = [
+            (
+                batch.ordinal,
+                batch.target_episode_count,
+                *(getattr(batch, column) for column in _segment(0)),
+                [(c.ordinal, c.episode_index) for c in chapters if c.batch_id == batch.id],
+            )
+            for batch in batches
+        ]
+        shape.append((None, [c.ordinal for c in chapters if c.batch_id is None]))
+        shapes.append(shape)
+    return shapes
+
+
+async def test_runtime_batch_fill_matches_the_migration_backfill(db_session: AsyncSession) -> None:
+    """새 판 코드의 보정(`ensure_batches`)은 이관 함수와 같은 결과를 내야 한다 — 다르면 이미지 롤백 뒤 다시 올렸을 때
+    마이그레이션으로 이관된 소설과 보정으로 채워진 소설의 묶음 모양이 갈린다. 처음 이관할 소설, 이미 여러 화 묶음이 있고
+    옛 코드가 화를 더한 소설, 옛 코드의 삭제가 빈 묶음을 남긴 소설, 빈 묶음만 있는 소설을 한 상태에 두고 둘을 따로 돌린다."""
+    from api.novelize.batches import ensure_batches
+
+    # 이관을 한 번 거친 뒤 옛 코드가 마지막 장을 지우고 같은 번호로 다시 만든 소설 — 이관을 먼저 돌려야 해서 맨 앞에 둔다.
+    emptied = await _novel(db_session)
+    for ordinal in (1, 2):
+        await _old_chapter(db_session, emptied, ordinal)
+    await _call(db_session, _R1._backfill_batches)
+    await db_session.execute(sa.delete(NovelChapter).where(NovelChapter.novel_id == emptied, NovelChapter.ordinal == 2))
+    await _old_chapter(db_session, emptied, 2)
+
+    fresh = await _novel(db_session)
+    for ordinal in (1, 2, 3):
+        await _old_chapter(db_session, fresh, ordinal)
+
+    owner = _make_user()
+    db_session.add(owner)
+    await db_session.flush()
+    tree = await _make_novel_tree(db_session, owner.id)
+    db_session.add(
+        NovelChapter(novel_id=tree.novel.id, ordinal=2, batch_id=tree.batch.id, episode_index=1, **_segment(1))
+    )
+    await db_session.flush()
+    await _old_chapter(db_session, tree.novel.id, 3)
+
+    only_empty = await _novel(db_session)
+    db_session.add(NovelBatch(novel_id=only_empty, ordinal=1, target_episode_count=1, **_segment(9)))
+    await db_session.flush()
+
+    novel_ids = [fresh, tree.novel.id, emptied, only_empty]
+    before = await _batch_shape(db_session, novel_ids)
+    savepoint = await db_session.begin_nested()
+    await _call(db_session, _R1._backfill_batches)
+    by_migration = await _batch_shape(db_session, novel_ids)
+    await savepoint.rollback()
+    assert await _batch_shape(db_session, novel_ids) == before
+
+    changed = [await ensure_batches(db_session, novel_id) for novel_id in novel_ids]
+
+    assert await _batch_shape(db_session, novel_ids) == by_migration
+    assert changed == [True, True, True, True]
+    assert [await ensure_batches(db_session, novel_id) for novel_id in novel_ids] == [False] * 4
+
+
 # ── R1 downgrade 거부 ────────────────────────────────────────────────────────
 
 

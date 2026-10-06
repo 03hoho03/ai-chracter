@@ -1,21 +1,22 @@
-"""`require_legal_consent`가 "막는다" 40개에
-붙어 있고 "연다" 20개에는 안 붙어 있는지 3층으로 검증한다.
+"""`require_legal_consent`가 "막는다" 43개에
+붙어 있고 "연다" 21개에는 안 붙어 있는지 3층으로 검증한다.
 개수에는 대화 프로필 차단 4·개방 1과 방 기억 차단 3·개방 1이 들어 있다(그 전에는 21+15였다). 채팅 응답 신고 개방 1을 더해 18이다.
 소설 쓰기 차단 11(방의 소설 만들기·설정 노트·주인공 이름·장 경계 제안·장 생성·재생성·직접 수정·되돌리기·AI 수정·
 수정 적용·수정 버리기)과 자기 데이터 삭제 개방 2(소설·마지막 장)를 더해 39+20이었고, 방의 글쓰기 모델 지정 차단 1을 더해
-40+20이다. 소설 라우트는 소설화 허용 게이트가 재동의 게이트보다 먼저 돌아 (b)는 사용자에게 소설화를 허용해 둔 채 요청한다.
+40+20이었다. 소설 묶음 구조의 쓰기 차단 3(소설 제목·소개·표지 바꾸기, 화 제목·작가의 말 바꾸기, 묶음 다시 만들기)과
+자기 데이터 삭제 개방 1(마지막 묶음)을 더해 43+21이다. 소설 라우트는 소설화 허용 게이트가 재동의 게이트보다 먼저 돌아 (b)는 사용자에게 소설화를 허용해 둔 채 요청한다.
 
-(a) 라우트 테이블 내성검사 — `app.routes`를 순회해 40개/20개의 실제 데코레이터를 대조한다.
+(a) 라우트 테이블 내성검사 — `app.routes`를 순회해 43개/21개의 실제 데코레이터를 대조한다.
     이 저장소가 신형 FastAPI(0.139) 내부 구조를 쓴다 — `app.routes`는 평범한 `APIRoute` 목록이
     아니라 `_IncludedRouter`(`app.include_router()`의 결과)로 감싸여 있어, 공개 API인
     `fastapi.routing.iter_route_contexts()`로 펼쳐야 각 라우트의 `.dependant`에 닿는다
     (`fastapi/openapi/utils.py`의 `get_openapi`가 스키마를 만들 때 쓰는 것과 같은 경로).
-(b) 40개에 최소 요청 → 403 + `LEGAL_RECONSENT_REQUIRED`. `require_legal_consent`가
-    데코레이터든(36개) 시그니처든(SSE 4개) `dependant.dependencies`의 나머지보다 먼저
+(b) 43개에 최소 요청 → 403 + `LEGAL_RECONSENT_REQUIRED`. `require_legal_consent`가
+    데코레이터든(39개) 시그니처든(SSE 4개) `dependant.dependencies`의 나머지보다 먼저
     해석되므로(fastapi.dependencies.utils.solve_dependencies가 그 리스트를 순서대로 돌며 첫
     HTTPException에서 곧장 전파한다) 경로 파라미터는 실존할 필요가 없다 — 라우터 본문의
     소유권 조회(404) 이전에 게이트가 먼저 막는다.
-(c) 20개 예외가 재동의가 실제로 필요한 상태에서도 여전히 200/204 — `require_legal_consent`를
+(c) 21개 예외가 재동의가 실제로 필요한 상태에서도 여전히 200/204 — `require_legal_consent`를
     `get_current_user_id`에 잘못 넣는 변이를 이 층만이 잡는다.
 
 `factories._make_user`는 기본적으로 어떤 게시본보다 큰 `terms_version`/`privacy_version`을
@@ -48,7 +49,7 @@ from factories import (
     _make_user,
 )
 
-# ---- (a)/(b) 공통: "막는다" 40개. path는 실제 라우트 경로(=(a)의 조회 키이자 (b)의 URL 템플릿) ----
+# ---- (a)/(b) 공통: "막는다" 43개. path는 실제 라우트 경로(=(a)의 조회 키이자 (b)의 URL 템플릿) ----
 
 _BLOCKED_REQUESTS: list[tuple[str, str, dict[str, object] | None]] = [
     ("POST", "/chat-rooms", {"contentId": str(uuid.uuid4()), "contentType": "character"}),
@@ -122,9 +123,12 @@ _BLOCKED_REQUESTS: list[tuple[str, str, dict[str, object] | None]] = [
     ),
     ("POST", "/novels/{novel_id}/jobs/{job_id}/apply", None),
     ("POST", "/novels/{novel_id}/jobs/{job_id}/dismiss", None),
+    ("PATCH", "/novels/{novel_id}", {"title": "제목"}),
+    ("PATCH", "/novels/{novel_id}/chapters/{chapter_id}", {"title": "화 제목"}),
+    ("POST", "/novels/{novel_id}/batches/{batch_id}/regenerate", {"model": "gemini", "expectedCost": 40}),
 ]
 
-# ---- (a)/(c) 공통: "연다" 20개 ----
+# ---- (a)/(c) 공통: "연다" 21개 ----
 
 _OPEN_PATHS: list[tuple[str, str]] = [
     ("POST", "/legal/consent"),
@@ -147,6 +151,7 @@ _OPEN_PATHS: list[tuple[str, str]] = [
     ("DELETE", "/chat-rooms/{room_id}/memory/note"),
     ("DELETE", "/novels/{novel_id}"),
     ("DELETE", "/novels/{novel_id}/chapters/{chapter_id}"),
+    ("DELETE", "/novels/{novel_id}/batches/{batch_id}"),
 ]
 
 
@@ -182,7 +187,7 @@ def test_open_endpoints_never_carry_the_consent_gate() -> None:
         assert require_legal_consent not in dependency_calls, f"{method} {path} must not require consent"
 
 
-# ---- (b) 40개 최소 요청 → 403 ----
+# ---- (b) 43개 최소 요청 → 403 ----
 
 _DUMMY_IDS = {
     "room_id": str(uuid.uuid4()),
@@ -194,6 +199,7 @@ _DUMMY_IDS = {
     "chapter_id": str(uuid.uuid4()),
     "revision_id": str(uuid.uuid4()),
     "job_id": str(uuid.uuid4()),
+    "batch_id": str(uuid.uuid4()),
 }
 
 
@@ -223,7 +229,7 @@ async def test_blocked_endpoint_returns_403_without_consent(
     assert resp.json()["detail"]["code"] == "LEGAL_RECONSENT_REQUIRED"
 
 
-# ---- (c) 20개 예외 — 재동의가 실제로 필요한 상태에서도 200/204 ----
+# ---- (c) 21개 예외 — 재동의가 실제로 필요한 상태에서도 200/204 ----
 
 
 async def _unconsented_user(db_client: httpx.AsyncClient, db_session: AsyncSession) -> User:
@@ -475,5 +481,18 @@ async def test_delete_last_novel_chapter_still_open_without_consent(
     await _allow_novelize(db_session, monkeypatch, user.id)
 
     resp = await db_client.delete(f"/novels/{tree.novel.id}/chapters/{tree.chapter.id}")
+
+    assert resp.status_code == 204
+
+
+async def test_delete_last_novel_batch_still_open_without_consent(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user = await _unconsented_user(db_client, db_session)
+    tree = await _make_novel_tree(db_session, user.id)
+    tree.active_job.status = "succeeded"
+    await _allow_novelize(db_session, monkeypatch, user.id)
+
+    resp = await db_client.delete(f"/novels/{tree.novel.id}/batches/{tree.batch.id}")
 
     assert resp.status_code == 204

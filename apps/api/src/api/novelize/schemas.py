@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field, StringConstraints, field_validator
 
@@ -16,6 +16,7 @@ from api.db.models.novel import (
     NovelRevisionSource,
 )
 from api.llm.chat_models import CHAT_MODELS_BY_ID, DEFAULT_CHAT_MODEL, ChatModelId, novel_episode_unit_price
+from api.novelize.episodes import RegenerateIneligibility
 from api.persona.schemas import PERSONA_NAME_MAX_LENGTH
 
 # 설정 노트·직접 수정 본문·AI 수정 지시문의 길이 상한. 상세 응답의 `limits` 로 내려 보내 FE 가 사본을 들지 않게 한다.
@@ -24,6 +25,12 @@ from api.persona.schemas import PERSONA_NAME_MAX_LENGTH
 SETTING_NOTES_MAX_LENGTH = 2_000
 CHAPTER_BODY_MAX_LENGTH = 100_000
 AI_EDIT_INSTRUCTION_MAX_LENGTH = 500
+# 소설 제목·화 제목은 목차와 표지에 한 줄로 보이는 길이, 소개는 작품 정보 화면의 몇 문단, 작가의 말은 설정 노트와 같은
+# 정도로 둔다. 작가의 말은 프롬프트에 실리지 않아 넉넉해도 비용이 없다.
+NOVEL_TITLE_MAX_LENGTH = 100
+SYNOPSIS_MAX_LENGTH = 1_000
+CHAPTER_TITLE_MAX_LENGTH = 100
+AUTHOR_NOTE_MAX_LENGTH = 2_000
 
 SettingNotesText = Annotated[str, StringConstraints(strip_whitespace=True, max_length=SETTING_NOTES_MAX_LENGTH)]
 ChapterBodyText = Annotated[
@@ -35,6 +42,14 @@ InstructionText = Annotated[
 ProtagonistName = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=PERSONA_NAME_MAX_LENGTH)
 ]
+NovelTitleText = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=NOVEL_TITLE_MAX_LENGTH)
+]
+SynopsisText = Annotated[str, StringConstraints(strip_whitespace=True, max_length=SYNOPSIS_MAX_LENGTH)]
+ChapterTitleText = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=CHAPTER_TITLE_MAX_LENGTH)
+]
+AuthorNoteText = Annotated[str, StringConstraints(strip_whitespace=True, max_length=AUTHOR_NOTE_MAX_LENGTH)]
 
 
 # ── 작업 ───────────────────────────────────────────────────────────────────
@@ -68,6 +83,14 @@ class NovelJobResponse(CamelModel):
     # 모델을 고르지 않아 null 이다. 레지스트리에서 내린 모델의 옛 값일 수도 있어 문자열이다. 기본값은 이 필드를 모르는
     # 생성 타입·픽스처와의 호환용이고, 응답에는 항상 실린다.
     model: str | None = None
+    # 실제로 돌려준 클로버. 실패한 작업만이 아니라 목표보다 적은 화를 낸 성공도 모자란 화만큼 돌려받으므로, 화면은
+    # `refunded` 가 아니라 이 금액으로 안내한다. 돌려준 것이 없으면 0 이다.
+    refunded_amount: int
+    # 묶음 생성·다시 만들기가 대상으로 삼은(성공하면 만든) 묶음. AI 수정과 아직 묶음이 정해지지 않은 생성은 null 이다.
+    batch_id: uuid.UUID | None
+    # "남은 대화 한 번에"(연쇄 생성)의 진행 — 끝낸 묶음 수와 계획한 묶음 수. 연쇄가 아닌 작업은 둘 다 null 이다.
+    completed_batches: int | None
+    planned_batches: int | None
 
 
 # ── 소설 ───────────────────────────────────────────────────────────────────
@@ -107,15 +130,24 @@ class NovelLimits(CamelModel):
     chapter_body_max_length: int
     ai_edit_instruction_max_length: int
     protagonist_name_max_length: int
+    title_max_length: int
+    synopsis_max_length: int
+    chapter_title_max_length: int
+    author_note_max_length: int
 
 
 class NovelActiveJob(CamelModel):
-    """진행 중(대기·실행) 작업. 화면을 새로 열어도 이 id 로 폴링을 이어 간다."""
+    """진행 중(대기·실행) 작업. 화면을 새로 열어도 이 id 로 폴링을 이어 간다. 연쇄 생성 중에는 부모 작업이다 — 화면이
+    묶음 하나를 맡은 자식을 폴링하면 첫 묶음이 끝날 때 전체가 끝난 것으로 읽는다."""
 
     id: uuid.UUID
     kind: NovelJobKind
     status: NovelJobStatus
     chapter_id: uuid.UUID | None
+    # 작업 응답의 같은 이름 칸과 같다.
+    batch_id: uuid.UUID | None
+    completed_batches: int | None
+    planned_batches: int | None
 
 
 class NovelPendingAiEdit(CamelModel):
@@ -133,7 +165,7 @@ class NovelPendingAiEdit(CamelModel):
 
 
 class NovelChapterSummary(CamelModel):
-    """목차의 장 한 줄. 본문은 장 조회로 따로 읽는다."""
+    """목차의 화 한 줄. 본문은 화 조회로 따로 읽는다. `ordinal` 은 소설 전체의 화 번호다."""
 
     id: uuid.UUID
     ordinal: int
@@ -144,6 +176,71 @@ class NovelChapterSummary(CamelModel):
     # 현재 개정이 만들어진 시각(장의 마지막 수정 시각).
     updated_at: datetime
     created_at: datetime
+    # 이 화가 든 묶음(생성 한 번)과 묶음 안 순번(0부터). 묶음의 원문 구간·다시 만들기 금액은 `batches` 에 있다.
+    batch_id: uuid.UUID
+    episode_index: int
+    # 생성 출력이 쓴 화 제목·요약. 이 칸들이 생기기 전에 만든 화는 null 이다.
+    title: str | None
+    summary: str | None
+    author_note: str
+    # 현재 개정 본문의 글자 수.
+    char_count: int
+    # 이 화를 끝까지 읽은 적이 있는가. 한 번 끝까지 읽으면 그 뒤 앞부분을 다시 읽어도 참이다.
+    finished_reading: bool
+
+
+class NovelRegenerateOption(CamelModel):
+    """묶음 하나를 이 모델로 다시 만들 때의 금액과 고를 수 있는지. 다시 만들기는 묶음의 화 수를 그대로 지키므로 금액은 그
+    화 수 × 이 모델의 화 단가이고, 그 화 수나 묶음의 턴 수가 이 모델의 상한을 넘으면 고를 수 없다(요청하면 409
+    `NOVEL_MODEL_INELIGIBLE`) — `ineligible_reason` 이 그 이유다(`too_many_episodes`·`too_many_turns`)."""
+
+    model: ChatModelId
+    name: str
+    cost: int
+    eligible: bool
+    ineligible_reason: RegenerateIneligibility | None
+
+
+class NovelBatchSummary(CamelModel):
+    """묶음 하나 = 생성 한 번이 옮긴 원문 구간. 다시 만들기·마지막 묶음 삭제의 단위다."""
+
+    id: uuid.UUID
+    ordinal: int
+    # 이 묶음의 화(묶음 안 순서대로).
+    chapter_ids: list[uuid.UUID]
+    assistant_message_count: int
+    # 이 계정이 고를 수 있는 모델마다 다시 만들기 금액(상세의 `chapter_models` 와 같은 모델·같은 순서).
+    regenerate_options: list[NovelRegenerateOption]
+
+
+NovelCoverSource = Literal["generated", "work"]
+
+
+class NovelCover(CamelModel):
+    """표지. 사용자가 고른 생성 이미지(`generated`)가 있으면 그것이고, 없거나 그 이미지가 지워졌으면 원작 썸네일
+    (`work`)이다. 원작 썸네일도 없으면 `url` 이 null 이다."""
+
+    asset_id: uuid.UUID | None
+    url: str | None
+    source: NovelCoverSource
+
+
+class NovelSource(CamelModel):
+    """원작 표기. 작품명·캐릭터명은 상세의 `content_title`·`character_name` 이다. `linkable` 은 지금 이 사용자가 원작
+    상세를 볼 수 있는가(이용 제한·삭제·남의 비공개 작품이면 거짓 — 화면은 글자만 보인다)."""
+
+    thumbnail_url: str | None
+    linkable: bool
+
+
+class NovelLastRead(CamelModel):
+    """이 소설에서 가장 최근에 읽은 자리. `paragraph_count` 는 그때의 문단 수라, 그 뒤 개정이 바뀌었으면 비율로 옮긴다."""
+
+    chapter_id: uuid.UUID
+    paragraph_index: int
+    paragraph_count: int
+    revision_id: uuid.UUID
+    updated_at: datetime
 
 
 class NovelDetailResponse(CamelModel):
@@ -157,7 +254,16 @@ class NovelDetailResponse(CamelModel):
     # 본문에서 사용자 쪽 인물을 부르는 이름. null 이면 첫 장을 만들기 전에 받아야 한다.
     protagonist_name: str | None
     setting_notes: str
+    # 소설 제목. 생성이 채우고, 사용자가 고친 뒤(`title_edited`)에는 AI 가 덮지 않는다. null 이면 화면은 원작 제목을 쓴다.
+    title: str | None
+    title_edited: bool
+    synopsis: str
+    cover: NovelCover
+    source: NovelSource
+    # 묶음 번호 순.
+    batches: list[NovelBatchSummary]
     chapters: list[NovelChapterSummary]
+    last_read: NovelLastRead | None
     active_job: NovelActiveJob | None
     # 최근 것 먼저.
     pending_ai_edits: list[NovelPendingAiEdit]
@@ -181,6 +287,9 @@ class NovelListItem(CamelModel):
     content_title: str
     character_name: str | None
     chapter_count: int
+    # 상세의 같은 이름 칸과 같다.
+    title: str | None
+    cover: NovelCover
     created_at: datetime
     updated_at: datetime
 
@@ -211,13 +320,16 @@ class NovelProtagonistNameRequest(CamelModel):
 
 # ── 장 경계 제안·장 생성 ────────────────────────────────────────────────────
 class NovelChapterCandidate(CamelModel):
-    """다음 장의 끝으로 고를 수 있는 턴 하나. `message_id` 는 그 턴의 AI 응답이고, `ordinal` 은 다음 장 시작부터 센
-    턴 번호(1부터)다."""
+    """다음 묶음의 끝으로 고를 수 있는 턴 하나. `message_id` 는 그 턴의 AI 응답이고, `ordinal` 은 다음 묶음 시작부터 센
+    턴 번호(1부터)다. `episode_count`·`cost` 는 이 턴까지를 요청한 모델로 만들 때의 화 수와 금액이다 — 생성 요청의
+    `expectedCost` 는 고른 후보의 `cost` 다."""
 
     message_id: uuid.UUID
     ordinal: int
     created_at: datetime
     excerpt: str
+    episode_count: int
+    cost: int
 
 
 class NovelChapterSuggestion(CamelModel):
@@ -225,12 +337,20 @@ class NovelChapterSuggestion(CamelModel):
     reason: str
 
 
+class NovelChapterProposalRequest(CamelModel):
+    # 묶음을 쓸 모델. 후보는 이 모델의 턴 상한까지이고 후보마다 화 수·금액도 이 모델 기준이다. 모델을 바꾸면 제안을 다시
+    # 받는다. 상위 모델은 소설 상위 모델 허용이 있어야 한다(없으면 403 `NOVEL_MODEL_NOT_ALLOWED`).
+    model: ChatModelId = DEFAULT_CHAT_MODEL
+
+
 class NovelChapterProposalResponse(CamelModel):
     start_message_id: uuid.UUID
+    # 요청한 모델의 턴 상한까지.
     candidates: list[NovelChapterCandidate]
     # 모델 제안. 호출이 실패하면 null 이다 — 후보는 그대로라 사용자가 직접 고를 수 있다.
     suggestion: NovelChapterSuggestion | None
-    # 기본 모델의 장 생성 가격. 모델별 가격은 `chapter_models` 에 있다(상세 응답의 같은 이름 칸과 같은 목록).
+    # 기본 모델의 화 단가(옛 화면이 읽는 칸). 실제 금액은 후보의 `cost` 이고, 모델별 단가는 `chapter_models` 에 있다(상세
+    # 응답의 같은 이름 칸과 같은 목록).
     cost: int
     chapter_models: list[NovelChapterModel] = Field(default_factory=_default_chapter_models)
 
@@ -238,15 +358,40 @@ class NovelChapterProposalResponse(CamelModel):
 class NovelChapterCreateRequest(CamelModel):
     end_message_id: uuid.UUID
     expected_cost: int
-    # 이 장을 쓸 모델. 보내지 않으면 기본 모델이다(이 필드를 모르는 옛 화면). 상위 모델은 소설 상위 모델 허용이 있어야
-    # 하고(없으면 403 `NOVEL_MODEL_NOT_ALLOWED`), `expected_cost` 는 그 모델의 가격이어야 한다.
+    # 이 묶음을 쓸 모델. 보내지 않으면 기본 모델이다(이 필드를 모르는 옛 화면). 상위 모델은 소설 상위 모델 허용이 있어야
+    # 하고(없으면 403 `NOVEL_MODEL_NOT_ALLOWED`), `expected_cost` 는 그 모델로 이 끝까지 만들 때의 금액(경계 제안의 후보
+    # `cost`)이어야 한다.
     model: ChatModelId = DEFAULT_CHAT_MODEL
 
 
 class NovelChapterRegenerateRequest(CamelModel):
+    """화 하나를 골라 다시 만들기 — 그 화가 든 묶음 전체를 다시 만든다(묶음 다시 만들기 요청과 같다)."""
+
     expected_cost: int
     # 장 생성 요청의 같은 칸과 같다. 처음 만든 모델과 달라도 된다.
     model: ChatModelId = DEFAULT_CHAT_MODEL
+
+
+class NovelBatchRegenerateRequest(CamelModel):
+    # 상세의 묶음 `regenerate_options` 에서 고른 모델과 그 `cost`.
+    model: ChatModelId
+    expected_cost: int
+
+
+class NovelUpdateRequest(CamelModel):
+    """보낸 칸만 바꾼다. 제목을 바꾸면 그 뒤로 AI 가 제목을 덮지 않는다. `coverAssetId` 는 null 을 보내면 원작 썸네일로
+    되돌리고, 값을 보내면 내 생성 이미지 중 준비가 끝난 것이어야 한다(아니면 422 `NOVEL_COVER_INVALID`)."""
+
+    title: NovelTitleText | None = None
+    synopsis: SynopsisText | None = None
+    cover_asset_id: uuid.UUID | None = None
+
+
+class NovelChapterUpdateRequest(CamelModel):
+    """보낸 칸만 바꾼다. 화 제목은 다음 다시 만들기가 새 출력으로 덮는다(본문과 함께 나온 값이다)."""
+
+    title: ChapterTitleText | None = None
+    author_note: AuthorNoteText | None = None
 
 
 # ── 장·개정 ─────────────────────────────────────────────────────────────────
