@@ -2278,7 +2278,9 @@ export interface paths {
          * @description 다음 장을 만드는 작업(과금, 202). 시작은 서버가 정하고, 끝(`endMessageId`)은 경계 제안의 후보 턴 중 하나여야
          *     한다 — 다음 장 시작부터 장 턴 상한 안의 AI 응답이 아니면 422 `NOVEL_CHAPTER_END_INVALID`.
          *
-         *     순서: 작품 상태(403)·방(409)·주인공 이름(422) → 죽은 작업 정리·커밋 → 구간 검사(409·422) → 차감·작업 생성(단가
+         *     `model` 은 이 장을 쓸 모델이다(기본 Gemini). 작업에 적혀 실행이 그대로 쓰고, 단가도 그 모델의 장 가격이다.
+         *
+         *     순서: 작품 상태(403)·방(409)·주인공 이름(422)·모델 허용(403) → 죽은 작업 정리·커밋 → 구간 검사(409·422) → 차감·작업 생성(단가
          *     409·진행 중 409·하루 상한 429·잔액 429) → 띄우기. 차감 앞의 거절은 원장에 아무것도 남기지 않는다.
          */
         post: operations["create_novel_chapter_novels__novel_id__chapters_post"];
@@ -2303,7 +2305,7 @@ export interface paths {
          *     개정으로 쌓이고, 그 사이의 직접 수정·되돌리기는 이력에 남는다.
          *
          *     원문이 장을 만든 때와 다르면(메시지 편집·응답 재생성·삭제) 차감 전에 409 `NOVEL_SOURCE_CHANGED` — 같은 입력으로
-         *     다시 만든다는 약속을 지킬 수 없다.
+         *     다시 만든다는 약속을 지킬 수 없다. `model` 은 장 생성과 같은 규칙이고, 처음 만든 모델과 달라도 된다.
          */
         post: operations["regenerate_novel_chapter_novels__novel_id__chapters__chapter_id__regenerate_post"];
         delete?: never;
@@ -7836,6 +7838,29 @@ export interface components {
             endMessageId: string;
             /** Expectedcost */
             expectedCost: number;
+            /**
+             * Model
+             * @default gemini
+             * @enum {string}
+             */
+            model: "gemini" | "sonnet" | "opus";
+        };
+        /**
+         * NovelChapterModel
+         * @description 이 계정이 장 생성·재생성에 고를 수 있는 모델 하나와 그 모델의 장 가격. 요청의 `model` 과 `expectedCost` 로 싣는다.
+         */
+        NovelChapterModel: {
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "gemini" | "sonnet" | "opus";
+            /** Name */
+            name: string;
+            /** Chaptergenerate */
+            chapterGenerate: number;
+            /** Chapterregenerate */
+            chapterRegenerate: number;
         };
         /** NovelChapterProposalResponse */
         NovelChapterProposalResponse: {
@@ -7849,11 +7874,19 @@ export interface components {
             suggestion: components["schemas"]["NovelChapterSuggestion"] | null;
             /** Cost */
             cost: number;
+            /** Chaptermodels */
+            chapterModels?: components["schemas"]["NovelChapterModel"][];
         };
         /** NovelChapterRegenerateRequest */
         NovelChapterRegenerateRequest: {
             /** Expectedcost */
             expectedCost: number;
+            /**
+             * Model
+             * @default gemini
+             * @enum {string}
+             */
+            model: "gemini" | "sonnet" | "opus";
         };
         /** NovelChapterResponse */
         NovelChapterResponse: {
@@ -7964,6 +7997,13 @@ export interface components {
              * Format: date-time
              */
             updatedAt: string;
+            /** Chaptermodels */
+            chapterModels?: components["schemas"]["NovelChapterModel"][];
+            /**
+             * Lastchaptermodel
+             * @enum {string}
+             */
+            lastChapterModel?: "gemini" | "sonnet" | "opus";
         };
         /** NovelJobResponse */
         NovelJobResponse: {
@@ -7998,6 +8038,8 @@ export interface components {
              * Format: date-time
              */
             createdAt: string;
+            /** Model */
+            model?: string | null;
         };
         /** NovelLimits */
         NovelLimits: {
