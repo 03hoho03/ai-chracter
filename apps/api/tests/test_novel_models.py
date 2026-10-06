@@ -223,6 +223,18 @@ async def test_novel_job_refund_check_rejects_inconsistent_refunds(
         await _insert_job(db_session, _job_values(tree, refunded_at=sa.func.now(), **overrides))
 
 
+async def test_novel_job_consumed_amount_stays_within_the_charge(db_session: AsyncSession) -> None:
+    """연쇄 부모가 쓴 몫은 0 과 낸 돈 사이다 — 넘으면 실패 환불액이 음수가 된다. 양 끝은 받고 바깥은 거절한다."""
+    tree = await _tree(db_session)
+    chain = {"kind": "chain_generate", "charged_amount": 120}
+
+    await _insert_job(db_session, _job_values(tree, consumed_amount=0, **chain))
+    await _insert_job(db_session, _job_values(tree, consumed_amount=120, **chain))
+    for consumed in (-1, 121):
+        with pytest.raises(IntegrityError):
+            await _insert_job(db_session, _job_values(tree, consumed_amount=consumed, **chain))
+
+
 async def test_novel_job_refund_amount_requires_refunded_at(db_session: AsyncSession) -> None:
     tree = await _tree(db_session)
 

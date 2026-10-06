@@ -49,6 +49,38 @@ def test_blank_lines_and_surrounding_spaces_between_structural_lines_are_tolerat
     assert episode.body == "첫 줄\n둘째 줄"
 
 
+_FIELDS = "제목: 저녁\n요약: 비가 왔다.\n등장인물: 서진\n"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param(f"```\n===1화===\n{_FIELDS}---\n{_BODY_1}\n```\n", id="fenced"),
+        pytest.param(f"\n```text\n===1화===\n{_FIELDS}---\n{_BODY_1}\n```", id="fenced-with-language"),
+        pytest.param(f"**===1화===**\n{_FIELDS}---\n{_BODY_1}", id="bold-header"),
+        pytest.param(f"=== 1화 ===\n{_FIELDS}---\n{_BODY_1}", id="spaced-header"),
+        pytest.param(f"## ===1화===\n{_FIELDS}---\n{_BODY_1}", id="markdown-heading-header"),
+        pytest.param(f"===1화===\n**제목:** 저녁\n**요약:** 비가 왔다.\n**등장인물:** 서진\n---\n{_BODY_1}", id="bold-fields"),
+        pytest.param(f"===1화===\n제목：저녁\n요약：비가 왔다.\n등장인물：서진\n---\n{_BODY_1}", id="fullwidth-colon"),
+    ],
+)
+def test_decorations_that_keep_the_boundaries_clear_are_accepted(text: str) -> None:
+    """모델이 흔히 붙이는 장식(펜스·굵게·제목 마크다운·안쪽 공백·전각 쌍점)은 어느 줄이 머리 줄인지 흐리지 않는다 —
+    받지 않으면 장식 하나로 묶음 전체를 환불한다."""
+    (episode,) = parse_batch_output(text).episodes
+    assert (episode.title, episode.summary, episode.characters) == ("저녁", "비가 왔다.", ("서진",))
+    assert episode.body == _BODY_1
+
+
+def test_scene_breaks_inside_a_body_become_blank_lines() -> None:
+    text = "===소설 제목===\n**빗소리**\n" + _episode_text("첫 장면\n---\n둘째 장면\n***\n셋째 장면")
+
+    parsed = parse_batch_output(text)
+
+    assert parsed.novel_title == "빗소리"
+    assert parsed.episodes[0].body == "첫 장면\n\n둘째 장면\n\n셋째 장면"
+
+
 @pytest.mark.parametrize(
     "text",
     [
@@ -65,8 +97,9 @@ def test_blank_lines_and_surrounding_spaces_between_structural_lines_are_tolerat
         pytest.param("===1화===\n제목:\n요약: 비\n등장인물: 서진\n---\n본문", id="empty-title"),
         pytest.param("===1화===\n제목: 저녁\n요약:  \n등장인물: 서진\n---\n본문", id="empty-summary"),
         pytest.param("===1화===\n제목: 저녁\n요약: 비\n등장인물: 서진\n", id="ends-before-separator"),
-        pytest.param("===1 화===\n제목: 저녁\n요약: 비\n등장인물: 서진\n---\n본문", id="malformed-header"),
-        pytest.param(_episode_text("첫 문단\n---\n장면 전환"), id="separator-inside-body"),
+        pytest.param("==1화\n제목: 저녁\n요약: 비\n등장인물: 서진\n---\n본문", id="header-without-closing-equals"),
+        pytest.param("===1장===\n제목: 저녁\n요약: 비\n등장인물: 서진\n---\n본문", id="header-says-chapter"),
+        pytest.param(_episode_text("첫 문단\n--- 장면 전환\n둘째"), id="separator-with-text-inside-body"),
         pytest.param(_episode_text("첫 문단\n===막간===\n둘째"), id="header-like-line-inside-body"),
         pytest.param("===소설 제목===\n\n===1화===\n제목: 저녁\n요약: 비\n등장인물: 서진\n---\n본문", id="empty-novel-title"),
         pytest.param(_episode_text(_BODY_1) + "\n===소설 제목===\n늦은 제목", id="novel-title-after-episodes"),

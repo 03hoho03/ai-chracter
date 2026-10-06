@@ -534,7 +534,7 @@ class _UnusedGemini(_ModelLLM):
     [
         pytest.param([_start(), _text(_BODY), _stop("max_tokens")], "truncated", id="max-tokens"),
         pytest.param([_start(), _stop("end_turn")], "empty", id="empty-body"),
-        pytest.param([_start(), _text("짧다."), _stop("end_turn")], "malformed", id="prose-without-the-format"),
+        pytest.param([_start(), _text("짧다."), _stop("end_turn")], "malformed", id="too-short-old-style-body"),
         pytest.param(
             [_start(), _text(_batch_output("짧다.")), _stop("end_turn")], "malformed", id="too-short-episode"
         ),

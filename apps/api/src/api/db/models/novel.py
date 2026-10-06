@@ -331,6 +331,10 @@ class NovelJob(Base):
             " OR (status = 'failed' AND refunded_at IS NOT NULL AND refunded_amount IS NULL)",
             name="ck_novel_jobs_refund_amount",
         ),
+        # 연쇄 부모가 쓴 몫은 낸 돈 안에 있다. 넘으면 실패 환불액이 음수가 되므로 누적하는 자리에서 거절한다.
+        CheckConstraint(
+            "consumed_amount >= 0 AND consumed_amount <= charged_amount", name="ck_novel_jobs_consumed_amount"
+        ),
         Index("ix_novel_jobs_user_id_created_at", "user_id", "created_at"),
         Index("ix_novel_jobs_novel_id_start_message_id_created_at", "novel_id", "start_message_id", "created_at"),
         Index(

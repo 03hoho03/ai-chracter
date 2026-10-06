@@ -37,6 +37,7 @@ from api.novelize import billing, runner
 from api.novelize import inputs
 from api.novelize.deletion import delete_novels
 from api.novelize.source import segment_hash
+from api.novelize.text import clean_chapter_body
 from factories import (
     Room,
     _batch_output,
@@ -691,7 +692,6 @@ async def test_chapter_whose_end_message_disappeared_is_refunded_as_source_chang
         pytest.param(_NovelLLM(chunks=[], error=LLMRateLimitError("429")), "llm_error", id="rate-limit"),
         pytest.param(_NovelLLM(chunks=[], error=LLMClientError("down")), "llm_error", id="client-error"),
         pytest.param(_NovelLLM(chunks=[_batch_output("짧다.")]), "malformed", id="near-empty-episode"),
-        pytest.param(_NovelLLM(chunks=[_BODY]), "malformed", id="prose-without-the-format"),
         pytest.param(
             _NovelLLM(chunks=[_batch_output("죄송하지만 이 장면은 콘텐츠 정책상 작성해 드릴 수 없습니다. " * 10)]),
             "refused",
@@ -705,6 +705,8 @@ async def test_chapter_whose_end_message_disappeared_is_refunded_as_source_chang
         pytest.param(
             _NovelLLM(chunks=[_batch_output(_BODY, "짧다.")]), "malformed", id="one-of-two-episodes-too-short"
         ),
+        # 구분자 줄을 쓰다 만 출력은 옛 형식(본문만)이 아니다 — 한 화 목표여도 통째로 본문으로 받지 않는다.
+        pytest.param(_NovelLLM(chunks=["===1화===\n" + _BODY]), "malformed", id="broken-format-is-not-old-style"),
     ],
 )
 async def test_failed_generation_is_refunded_once_and_saves_nothing(
@@ -719,6 +721,39 @@ async def test_failed_generation_is_refunded_once_and_saves_nothing(
     await _assert_failed_and_refunded_once(db_session, job.id, novel.user_id, code)
     assert await _chapters(db_session, novel.id) == []
     assert (await _job(db_session, job.id)).result_text is None
+
+
+async def test_an_old_style_body_for_a_one_episode_target_is_kept_as_one_episode(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """소설 문안이 게시되기 전에는 옛 지시문이 장 본문만 쓰게 한다 — 구분자 줄이 하나도 없고 목표가 1화면 전체를 한
+    화로 받는다(제목·요약 없음). 본문 정리·거절·최소 길이 판정은 그대로다."""
+    room, novel = await _novel_for(db_client, db_session)
+    messages = await _room_messages(db_session, room.room_id)
+    job = await _chapter_job(db_session, novel, messages[0], room.turns[1][1])
+
+    await runner.run_job(_factory(db_session), _NovelLLM(chunks=["[턴 1] " + _BODY]), job.id)
+
+    stored = await _job(db_session, job.id)
+    (chapter,) = await _chapters(db_session, novel.id)
+    assert (stored.status, chapter.title, chapter.summary, chapter.episode_index) == ("succeeded", None, None, 0)
+    assert (await _revisions(db_session, chapter.id))[0].body == clean_chapter_body(_BODY)
+    assert await _links(db_session, chapter.id) == []
+    assert await _ledger(db_session, novel.user_id) == [("novelize_spend", -40)]
+
+
+async def test_an_old_style_body_for_a_two_episode_target_is_malformed(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """화가 둘 이상이면 경계를 알 길이 없어 옛 형식을 받지 않는다."""
+    room, novel = await _novel_for(db_client, db_session)
+    messages = await _room_messages(db_session, room.room_id)
+    job = await _chapter_job(db_session, novel, messages[0], room.turns[1][1], episodes=2)
+
+    await runner.run_job(_factory(db_session), _NovelLLM(chunks=[_BODY]), job.id)
+
+    await _assert_failed_and_refunded_once(db_session, job.id, novel.user_id, "malformed", charged=80)
+    assert await _chapters(db_session, novel.id) == []
 
 
 async def test_job_over_the_overall_limit_is_refunded_as_timeout(

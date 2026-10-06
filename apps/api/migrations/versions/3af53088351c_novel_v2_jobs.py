@@ -21,6 +21,10 @@ Create Date: 2026-10-06 23:55:00.000000
 2. 환불 있음: 실패면 쓰지 않은 몫 전부(`charged_amount - consumed_amount`, 0 초과), 성공이면 0 과 전액 사이의 부분 환불.
 3. 옛 코드 호환: 실패 작업에 `refunded_at` 만 찍히고 금액이 NULL. 이미지만 되돌렸을 때 옛 코드의 환불은 금액 칸을 모른다
    — 막으면 그 환불이 500 이 된다. 읽는 쪽은 금액 NULL 을 전액 환불로 본다.
+**소비액 CHECK** — `ck_novel_jobs_consumed_amount`: `0 <= consumed_amount <= charged_amount`. 연쇄 부모가 쓴 몫이
+낸 돈을 넘으면 실패 환불액(`charged_amount - consumed_amount`)이 음수가 되어 환불 CHECK 가 그 실패 전이를 막는다 — 잘못된
+누적을 그 자리에서 거절해 원인 쪽에서 드러나게 한다.
+
 환불액 0 은 환불이 아니므로 `refunded_at` 도 찍지 않는다. 그래서 바꾸기 전에 차감 0 인데 `refunded_at` 이 찍힌 옛 행을
 세어 `refunded_at` 을 비운다(옛 단가는 0 이 아니라 운영에는 없을 것으로 보지만, 있으면 새 CHECK 에 걸려 배포가 멈춘다).
 그다음 환불된 옛 행에 `refunded_amount = charged_amount` 를 채운다(옛 환불은 모두 전액이었다).
@@ -53,6 +57,7 @@ depends_on: str | Sequence[str] | None = None
 
 logger = logging.getLogger("alembic.runtime.migration")
 
+_CONSUMED_CHECK = "consumed_amount >= 0 AND consumed_amount <= charged_amount"
 _OLD_KIND_CHECK = "kind IN ('chapter_generate', 'chapter_regenerate', 'ai_edit')"
 _NEW_KIND_CHECK = "kind IN ('chapter_generate', 'chapter_regenerate', 'ai_edit', 'chain_generate')"
 _OLD_FAILURE_CODE_CHECK = (
@@ -148,6 +153,7 @@ def upgrade() -> None:
     _backfill_refunded_amount(conn)
     op.drop_constraint('ck_novel_jobs_refund_only_when_failed', 'novel_jobs', type_='check')
     op.create_check_constraint('ck_novel_jobs_refund_amount', 'novel_jobs', _NEW_REFUND_CHECK)
+    op.create_check_constraint('ck_novel_jobs_consumed_amount', 'novel_jobs', _CONSUMED_CHECK)
 
     op.drop_index('ux_novel_jobs_novel_id_active', table_name='novel_jobs', postgresql_where=sa.text(_OLD_ACTIVE_WHERE))
     op.create_index(
@@ -166,6 +172,8 @@ def downgrade() -> None:
         'ux_novel_jobs_novel_id_active', 'novel_jobs', ['novel_id'], unique=True,
         postgresql_where=sa.text(_OLD_ACTIVE_WHERE),
     )
+    # 이 CHECK 는 이 리비전이 배포되기 전에 더했다 — 그 전판으로 올린 개발 DB 에는 없어서 있을 때만 지운다.
+    op.execute("ALTER TABLE novel_jobs DROP CONSTRAINT IF EXISTS ck_novel_jobs_consumed_amount")
     op.drop_constraint('ck_novel_jobs_refund_amount', 'novel_jobs', type_='check')
     op.create_check_constraint('ck_novel_jobs_refund_only_when_failed', 'novel_jobs', _OLD_REFUND_CHECK)
     op.drop_constraint('ck_novel_jobs_failure_code', 'novel_jobs', type_='check')

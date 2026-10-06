@@ -233,6 +233,9 @@ async def _fix_regenerate_batch(db: AsyncSession, job: NovelJob) -> None:
     episodes = int(
         await db.scalar(select(func.count()).select_from(NovelChapter).where(NovelChapter.batch_id == batch.id)) or 0
     )
+    if episodes < 1:
+        # 화가 없는 묶음은 다시 만들 것이 없다 — 화 0 으로 받으면 0 클로버 작업이 묶음 전체를 다시 쓰려 든다.
+        raise ValueError(f"다시 만들 작업 {job.id} 의 묶음 {batch.id} 에 화가 없다")
     reason = regenerate_ineligibility(
         chapter_job_model(job), episode_count=episodes, turn_count=batch.assistant_message_count
     )

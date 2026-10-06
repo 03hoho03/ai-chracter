@@ -298,6 +298,23 @@ async def test_regenerating_with_a_model_that_cannot_hold_the_batch_is_409_befor
     assert await _ledger(db_session, owner.id) == []
 
 
+async def test_regenerating_a_batch_with_no_episodes_is_refused_before_charging(db_session: AsyncSession) -> None:
+    """화가 없는 묶음(옛 판 코드가 화만 지운 경우)을 다시 만들면 0 클로버 작업이 묶음 전체를 다시 쓰려 든다."""
+    owner = await _owner(db_session)
+    novel = await _make_novel(db_session, owner.id)
+    (chapter,) = await _batch(db_session, novel, episodes=1)
+    batch_id = chapter.batch_id
+    await db_session.execute(delete(NovelChapter).where(NovelChapter.id == chapter.id))
+    job = _chapter_job(novel, kind="chapter_regenerate", start_message_id=uuid.uuid4())
+    job.batch_id = batch_id
+
+    async with _service_session(db_session) as s:
+        with pytest.raises(ValueError, match="화가 없다"):
+            await billing.create_charged_job(s, job=job, expected_cost=0, now=datetime.now(UTC))
+
+    assert await _ledger(db_session, owner.id) == []
+
+
 async def test_a_model_at_both_caps_can_regenerate_the_batch(db_session: AsyncSession) -> None:
     owner = await _owner(db_session, balance=1000)
     novel = await _make_novel(db_session, owner.id)

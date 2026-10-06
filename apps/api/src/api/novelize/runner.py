@@ -67,7 +67,13 @@ from api.novelize.inputs import (
     next_ordinal,
     regenerate_batch,
 )
-from api.novelize.output import MalformedOutputError, ParsedBatch, ParsedEpisode, parse_batch_output
+from api.novelize.output import (
+    MalformedOutputError,
+    ParsedBatch,
+    ParsedEpisode,
+    has_structure_lines,
+    parse_batch_output,
+)
 from api.novelize.prompts import NovelizeReviseResult
 from api.novelize.text import clean_chapter_body, looks_like_refusal, split_paragraphs
 
@@ -212,9 +218,15 @@ async def _generate_batch(llm_client: LLMClient, chapter_input: ChapterInput, us
     try:
         parsed = parse_batch_output(raw)
     except MalformedOutputError as exc:
-        _judge(split_paragraphs(clean_chapter_body(raw)))
-        logger.warning("소설화 묶음 출력이 형식에 맞지 않는다: %s", exc)
-        raise _JobFailedError("malformed") from exc
+        if chapter_input.episode_count == 1 and not has_structure_lines(raw):
+            # 구분자 형식을 아예 쓰지 않은 한 화 목표 출력은 옛 형식(장 본문만)으로 받는다. 새 코드가 배포된 뒤 소설 문안이
+            # 게시되기 전까지는 옛 지시문이 본문만 쓰게 하므로, 이 창에서 생성마다 실패·환불하지 않으려는 것이다. 화가
+            # 둘 이상이면 경계를 알 길이 없어 받지 않는다.
+            parsed = ParsedBatch(novel_title=None, episodes=(ParsedEpisode(None, None, (), raw),))
+        else:
+            _judge(split_paragraphs(clean_chapter_body(raw)))
+            logger.warning("소설화 묶음 출력이 형식에 맞지 않는다: %s", exc)
+            raise _JobFailedError("malformed") from exc
     episodes: list[ParsedEpisode] = []
     for episode in parsed.episodes:
         body = clean_chapter_body(episode.body)
@@ -442,8 +454,9 @@ async def _save_regenerated(
 ) -> tuple[uuid.UUID, list[NovelChapter], list[NovelChapterRevision]] | None:
     """묶음의 화마다 새 개정을 쌓는다. 화 수가 출력과 다르면 아무것도 쓰지 않고 None.
 
-    화 행을 `FOR KEY SHARE` 로 잠근다 — 직접 수정·되돌리기도 화 행을 먼저 잠그고 다음 개정 번호를 쓰므로 같은 번호를
-    동시에 쓰지 않게 줄을 선다."""
+    화 행을 `FOR NO KEY UPDATE`(`with_for_update(key_share=True)`)로 잠근다 — 직접 수정·되돌리기도 같은 잠금으로 화
+    행을 먼저 잡고 다음 개정 번호를 쓰므로, 같은 번호를 동시에 쓰지 않게 줄을 선다. 키를 바꾸지 않는 잠금이라 개정
+    INSERT 가 FK 로 거는 `KEY SHARE` 와는 부딪히지 않는다."""
     target = await regenerate_batch(db, job)
     if target is None:
         # 다시 만들 묶음이 지워졌다 — 묶음 삭제는 진행 중 작업이 있으면 거절하므로 옛 판 코드가 지운 경우뿐이다.
