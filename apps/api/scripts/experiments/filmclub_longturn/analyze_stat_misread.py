@@ -40,6 +40,9 @@ MISREAD_MIN_DISTANCE = 8.0
 FISHER_ALPHA = 0.05
 # 현행 E 군 오독이 이보다 적으면 감소 검정이 정보를 주지 못한다(현행 6/60 에서 수정 갈래 1건이면 이미 p≈0.057).
 G1_MIN_INFORMATIVE = 6
+# 오류 호출은 오독이 될 수 없어 G1 분모에서 그 갈래에 유리하다. G2e 는 카운터 요청·모르는 id 까지 E·N 전체로 묶어 이
+# 이득을 막지 못하므로, G1 이 E 군 오류 호출 수를 현행 + 이 값까지만 허용한다.
+G1_MAX_EXTRA_E_ERRORS = 1
 G2A_MAX_CHANGED_SHARE = 0.10
 G2B_MAX_MEAN_ABS_PCT_DIFF = 1.0
 G2B_CELL_MEDIAN_PCT_DIFF = 2.5
@@ -328,27 +331,33 @@ def g1(data: Data, arm: str) -> dict[str, Any]:
     per_group: dict[str, dict[str, int]] = {}
     for input_id in e_ids:
         group = data.specs[input_id].group
-        slot = per_group.setdefault(group, {"x": 0, "c": 0, "xn": 0, "cn": 0})
-        for name, key, nkey in ((arm, "x", "xn"), ("current", "c", "cn")):
+        slot = per_group.setdefault(group, {"x": 0, "c": 0, "xn": 0, "cn": 0, "xe": 0, "ce": 0})
+        for name, key, nkey, ekey in ((arm, "x", "xn", "xe"), ("current", "c", "cn", "ce")):
             calls = data.get(input_id, name)
             slot[key] += sum(is_misread_call(c, data.specs[input_id]) for c in calls)
             slot[nkey] += len(calls)
+            slot[ekey] += sum(c.error is not None for c in calls)
     x = sum(g["x"] for g in per_group.values())
     c = sum(g["c"] for g in per_group.values())
     xn = sum(g["xn"] for g in per_group.values())
     cn = sum(g["cn"] for g in per_group.values())
     p = fisher_one_sided_less(x, xn, c, cn) if xn and cn else None
     per_source_ok = all(g["x"] <= g["c"] for g in per_group.values())
+    errors_x = sum(g["xe"] for g in per_group.values())
+    errors_c = sum(g["ce"] for g in per_group.values())
+    errors_ok = errors_x <= errors_c + G1_MAX_EXTRA_E_ERRORS
     informative = c >= G1_MIN_INFORMATIVE
     if not e_ids:
         status = "해당 없음"
         ok = None
     elif informative:
-        ok = x < c and p is not None and p < FISHER_ALPHA and per_source_ok
+        ok = x < c and p is not None and p < FISHER_ALPHA and per_source_ok and errors_ok
         status = "통과" if ok else "실패"
     else:
-        ok = x <= c and per_source_ok
+        ok = x <= c and per_source_ok and errors_ok
         status = "비정보적(X≤현행 충족)" if ok else "비정보적(X≤현행 위반)"
+    if e_ids and not errors_ok:
+        status += f"(E 군 오류 {errors_x} > 현행 {errors_c}+{G1_MAX_EXTRA_E_ERRORS})"
     return {
         "x": x,
         "xn": xn,
@@ -357,6 +366,9 @@ def g1(data: Data, arm: str) -> dict[str, Any]:
         "p": p,
         "perGroup": per_group,
         "perSourceOk": per_source_ok,
+        "errorsX": errors_x,
+        "errorsCurrent": errors_c,
+        "errorsOk": errors_ok,
         "informative": informative,
         "ok": ok,
         "status": status,
@@ -572,14 +584,16 @@ def render(data: Data, results: dict[str, dict[str, Any]], whatif: dict[str, dic
     gate_b = results.get("B", {}).get("final")
     lines += ["", f"- L 게시 조건(L 통과): {gate_l}", f"- A 병합 조건(L+A 통과): {gate_b}"]
 
-    lines += ["", "## G1 오독 감소(E 군)", "", "| 갈래 | 오독 호출 | 현행 | Fisher 단측 p | 원천별 X≤현행 | 상태 |"]
-    lines.append("|---|---|---|---|---|---|")
+    lines += ["", "## G1 오독 감소(E 군)", ""]
+    lines.append("| 갈래 | 오독 호출 | 현행 | Fisher 단측 p | 원천별 X≤현행 | E 군 오류 X/현행 | 상태 |")
+    lines.append("|---|---|---|---|---|---|---|")
     for arm, r in results.items():
         g = r["g1"]
         groups = ", ".join(f"{k} {v['x']}/{v['xn']} vs {v['c']}/{v['cn']}" for k, v in sorted(g["perGroup"].items()))
         lines.append(
             f"| {ARM_LABEL[arm]} | {g['x']}/{g['xn']} | {g['current']}/{g['currentN']} | {_p(g['p'])} | "
-            f"{_ok(g['perSourceOk'])} ({groups}) | {g['status']} |"
+            f"{_ok(g['perSourceOk'])} ({groups}) | {g['errorsX']}/{g['errorsCurrent']} {_ok(g['errorsOk'])} | "
+            f"{g['status']} |"
         )
 
     lines += ["", "## G2 정상 판정 불변", ""]

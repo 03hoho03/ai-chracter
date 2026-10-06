@@ -266,3 +266,29 @@ def test_g1_is_non_informative_below_six_current_misreads_and_needs_user_judgmen
     # 현행 6건이면 검정이 정보를 준다 — 0 대 6/10 은 단측 p≈0.005 로 통과.
     result = an.verdict(_g1_data(6), "L")
     assert result["g1"]["informative"] and result["final"] == "통과"
+
+
+def test_g1_fails_when_the_arm_has_more_than_one_extra_e_error_even_if_g2e_passes() -> None:
+    # 현행이 카운터를 3번 넣으면 G2e 허용이 4 로 커진다. 그 틈에 X 의 E 군 오류 4호출은 G2e 를 통과하면서 G1 에서
+    # 오독이 될 수 없는 호출로 세인다 — G1 이 E 군 오류를 따로 묶지 않으면 그만큼 감소가 공짜로 생긴다.
+    spec = _spec(
+        "E2", [_stat("c", lo=0, hi=20, counter=True), *E_STATS[:3]], {"d": 24.5, "y": 24.5, "s": 52.5, "c": 4.0}
+    )
+    n_spec = _spec("N2", [_stat("a"), _stat("b")], {"a": 10.0, "b": 20.0}, input_id="n")
+    calls = []
+    for arm in an.ARMS:
+        for rep in range(10):
+            if arm == "current":
+                changes = [("s", 26.5 if rep < 8 else 55.5)] + ([("c", 4.0)] if rep < 3 else [])
+                calls.append(_call(changes, arm=arm, rep=rep))
+            elif rep < 4:
+                calls.append(_call([], arm=arm, rep=rep, error="LLMClientError: timeout"))
+            else:
+                calls.append(_call([("s", 55.5)], arm=arm, rep=rep))
+            calls.append(_call([("a", 12.0)], arm=arm, rep=rep, input_id="n"))
+    data = an.Data(specs={"x": spec, "n": n_spec}, calls=calls)
+    an.check_counts(data, 10)
+    result = an.verdict(data, "L")
+    assert result["g2e"]["ok"]  # 4 ≤ 3 + 1
+    assert not result["g1"]["ok"] and result["final"] == "실패"
+    assert result["g1"]["errorsX"] == 4 and result["g1"]["errorsCurrent"] == 0
