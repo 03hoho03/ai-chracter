@@ -224,7 +224,7 @@ def test_synthetic_outputs_on_the_run_inputs_give_the_expected_verdicts(
             "--reps",
             "5",
             "--out",
-            str(tmp_path / "result.md"),
+            str(tmp_path / "result.out"),
             "--json",
             str(out_json),
         ]
