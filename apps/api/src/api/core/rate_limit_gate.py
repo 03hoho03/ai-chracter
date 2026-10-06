@@ -1,8 +1,15 @@
 """유저별 채팅 레이트리밋 게이트.
 
 `core/rate_limit.py`가 기구(고정 창 카운터)를, 이 모듈이 **정책**(누구를, 무엇을, 몇 번까지)을
-맡는다. 채팅 4경로 — 메시지 전송 · 재생성 · 편집 · 빌더 미리보기 — 가 `Depends`로 이
-함수 하나를 공유한다.
+맡는다. 채팅 4경로 — 메시지 전송 · 재생성 · 편집 · 빌더 미리보기 — 가 차감 본문 하나(`charge_chat_turn`)를
+공유한다. `Depends` 자리는 둘이다 — 미리보기는 이 모듈의 `enforce_chat_rate_limit`(방이 없어 언제나 Gemini), 방의
+세 경로는 방이 고른 모델을 읽어 가격을 정하는 `chat/router.py` 의 게이트다. 방을 읽는 게이트를 여기 두면 이 모듈이
+채팅 라우터를 import 해야 해 순환이 된다.
+
+**모델에 따라 갈래가 둘이다.** Gemini 턴은 면제 통과·하루 무료분·하루 1회 확인·Redis 장애 통과를 그대로 따른다.
+상위 모델(Gemini 밖의 글쓰기 모델) 턴은 그 넷을 타지 않는다 — 면제 계정도 그 모델 가격을 내고, 무료분을 쓰지도
+깎지도 않고, 확인을 묻지 않고(모델을 고를 때 본 턴당 가격이 확인이다), Redis 장애면 거절한다(분당 상한을 못 센 채
+비싼 호출을 열지 않는다). 분당 버스트는 두 갈래 모두 받는다.
 
 **단일 버킷이다.** 세는 단위는 "LLM을 태우는 요청 1건"이라 재생성도 편집도 1로 센다 —
 방의 `turn_count`는 재생성에서 늘지 않고 편집에서는 되감겼다가 다시 늘지만, 그 회계는 대화의
@@ -49,6 +56,7 @@ from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User
 from api.db.session import get_db_session, get_session_factory
 from api.images.schemas import GenerateImageRequest
+from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId
 from api.session.dependencies import get_current_user_id
 
 logger = logging.getLogger(__name__)
@@ -123,6 +131,10 @@ _CLOVER_WINDOW = "clover"
 # 띄우면 **무료분을 안 쓴 사용자까지 매일 붙잡는다.** 게이트만이 그 시점을 알고, 그래서 게이트가
 # 단일 판정자다 — 경쟁 조건도 여기서 사라진다.
 _CLOVER_CONFIRM_CODE = "CLOVER_CONFIRM_REQUIRED"
+
+# 상위 모델 턴이 Redis 장애로 분당 상한을 셀 수 없을 때의 거절. 429 가 아닌 이유는 그 코드들이 "기다리면 다시 된다"는
+# 상한 계약이라서다 — 이것은 장애라 화면은 일반 오류로 다룬다.
+_CHAT_MODEL_UNAVAILABLE_CODE = "CHAT_MODEL_UNAVAILABLE"
 
 _last_redis_failure_reported_at: float | None = None
 
@@ -232,8 +244,11 @@ class ChatCharge:
 
     source: Literal["free", "clover", "skipped"]
     # `source != "clover"`이면 0이다. 되돌릴 양을 라우트가 상수에서 다시 계산하지 않고
-    # 영수증에서 읽게 한다 — 상수가 바뀌어도 진행 중이던 요청의 환불액이 어긋나지 않는다.
+    # 영수증에서 읽게 한다 — 상수가 바뀌어도 진행 중이던 요청의 환불액이 어긋나지 않는다. 상위 모델 턴이면 그 모델 가격이다.
     clover_amount: int = 0
+    # 이 턴을 생성할 글쓰기 모델. 값을 받은 모델이 곧 생성 모델이다 — 생성 직전에 방을 다시 읽으면, 게이트와 생성 사이에
+    # 방의 모델이 바뀌었을 때 받은 값과 다른 모델로 생성한다.
+    model: ChatModelId = DEFAULT_CHAT_MODEL
 
 
 async def enforce_chat_rate_limit(
@@ -241,10 +256,25 @@ async def enforce_chat_rate_limit(
     db: AsyncSession = Depends(get_db_session),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> ChatCharge:
-    """채팅 4경로 공용 게이트. 키는 `user_id`다 — IP가 아니라 계정이 비용의 단위다.
+    """빌더 미리보기의 게이트. 미리보기는 방이 없고 모델을 고르지 않아 언제나 Gemini 가격의 Gemini 턴이다.
 
-    `get_current_user_id`는 재동의 게이트(`require_legal_consent`)도 이미 `Depends`로 쓰고 있어
-    FastAPI의 요청 스코프 캐시가 한 번만 해석한다 — Redis 왕복이 더 늘지 않는다.
+    가격은 부를 때마다 `clover` 모듈에서 읽는다(기본 인자로 잡으면 `monkeypatch` 가 통하지 않는다)."""
+    return await charge_chat_turn(user_id, db, session_factory, model=DEFAULT_CHAT_MODEL, price=clover.CHAT_TURN_COST)
+
+
+async def charge_chat_turn(
+    user_id: uuid.UUID,
+    db: AsyncSession,
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    model: ChatModelId,
+    price: int,
+) -> ChatCharge:
+    """채팅 턴 하나의 상한 검사와 차감. 키는 `user_id`다 — IP가 아니라 계정이 비용의 단위다. `model` 은 이 턴을 생성할
+    모델이고 `price` 는 그 모델의 턴 가격이다(호출부가 레지스트리에서 정한다).
+
+    두 게이트는 `user_id` 를 `get_current_user_id` 로 받는다. 재동의 게이트(`require_legal_consent`)도 이미 그 `Depends` 를
+    쓰고 있어 FastAPI의 요청 스코프 캐시가 한 번만 해석한다 — Redis 왕복이 더 늘지 않는다.
 
     `db`도 같은 요청 스코프 캐시로 받는다 — 채팅 4경로 모두 라우트 본문·`require_legal_consent`와 같은
     세션이다(미리보기 본문은 그 세션을 첫머리에서 커밋해 반납하기만 한다) — 의존성 캐시라 커넥션이
@@ -252,11 +282,13 @@ async def enforce_chat_rate_limit(
     identity map 히트가 **아니다** — 앞 의존성들이 읽은 `User`는 아무도 붙잡지 않아 이미
     수거됐으므로(약참조) SELECT가 따로 나간다.
 
-    순서는 **버스트 → 면제 → 일일 → 클로버**다. 짧은
+    Gemini 턴의 순서는 **버스트 → 면제 → 일일 → 클로버**다. 짧은
     창이 먼저 걸리는 게 사용자에게 유용한 `retryAfterSeconds`(몇 초 뒤 재시도)를 주기 때문이고,
     일일 창이 먼저면 몇 시간짜리 값이 앞서 나간다. 면제가 그 사이에 있는 이유는 면제 대상도
     버스트는 받기 때문이다. 클로버가 맨 뒤인 이유는 두 가지다 — 분당 버스트는 **폭주 방어라
     돈으로 끌 수 없고**, 예외 계정은 애초에 차감 대상이 아니다.
+
+    상위 모델 턴은 **버스트 → 클로버**다(모듈 docstring 의 갈래).
     """
     now = datetime.now(UTC)
     key = str(user_id)
@@ -266,6 +298,9 @@ async def enforce_chat_rate_limit(
         )
         if burst_retry_after > 0:
             raise _too_many_requests(user_id, "minute", burst_retry_after)
+
+        if model != DEFAULT_CHAT_MODEL:
+            return await _charge_premium_turn(user_id, session_factory, now, model=model, price=price)
 
         # 면제 대상은 버스트를 그대로 받고 일일만 건너뛴다. 건너뛰는 것이라 일일
         # 카운터도 올라가지 않는다 — 어드민이 도중에 면제를 거두면 그날 그때까지의 요청은
@@ -299,9 +334,7 @@ async def enforce_chat_rate_limit(
             # 🔴 이 검사는 **일일 분기 안**이다. 밖으로 옮기면 무료분이 남은 사용자까지 429를
             # 받는다 — "소진 시 하루 1회 확인"의 "소진 시"가 지켜지지 않는다. 그리고 면제 `return`(위)보다 뒤라
             # 예외 계정에게는 묻지 않는다.
-            if await _needs_clover_spend_confirmation(
-                user_id, db, now, clover.CHAT_TURN_COST
-            ):
+            if await _needs_clover_spend_confirmation(user_id, db, now, price):
                 # `retryAfterSeconds`는 부족(`CLOVER_REQUIRED`)과 같은 자정까지 초다 — 동의를
                 # 안 하고 기다리기만 해도 그때 무료 일일분이 돌아오므로 여전히 참값이다.
                 raise _too_many_requests(
@@ -316,7 +349,7 @@ async def enforce_chat_rate_limit(
             spent = await clover.spend_in_new_transaction(
                 session_factory,
                 user_id=user_id,
-                amount=clover.CHAT_TURN_COST,
+                amount=price,
                 kind="chat_spend",
             )
             if spent is None:
@@ -328,9 +361,18 @@ async def enforce_chat_rate_limit(
                     seconds_until_kst_midnight(now),
                     code=_CLOVER_CODE,
                 )
-            return ChatCharge(source="clover", clover_amount=clover.CHAT_TURN_COST)
+            return ChatCharge(source="clover", clover_amount=price)
         return ChatCharge(source="free")
     except RedisError:
+        if model != DEFAULT_CHAT_MODEL:
+            # 상위 모델 턴은 fail-closed 다. 아래 Gemini 의 통과 근거("최악은 상한이 느슨해지는 것")가 여기서는 성립하지
+            # 않는다 — 분당 상한 없이 비싼 호출이 열리는 것이 최악이고, 그 턴들은 무료분도 아니다. 차감 전이라 되돌릴 것이
+            # 없다(차감은 Redis 를 쓰지 않으므로 이 예외는 버스트 검사에서만 난다).
+            logger.warning("채팅 레이트리밋 검사 실패 — 상위 모델 턴(%s)은 거절한다", model, exc_info=True)
+            _report_redis_failure()
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"code": _CHAT_MODEL_UNAVAILABLE_CODE}
+            ) from None
         # fail-open. 상한을 세는 장치가 죽었다고 채팅까지 죽일 이유가 없다 —
         # 최악의 결과는 그 창 동안 상한이 느슨해지는 것이고, fail-closed의 최악은 전면 장애다.
         # ⚠️ 이 fail-open이 지키는 것은 **부분 장애**다(Redis는 살았는데 이 키에만 문제가 있는
@@ -343,6 +385,27 @@ async def enforce_chat_rate_limit(
         _report_redis_failure()
         # 차감이 없었으므로 환불 대상도 아니다 — 이미지 쪽 `:279`와 같은 결론이다.
         return ChatCharge(source="skipped")
+
+
+async def _charge_premium_turn(
+    user_id: uuid.UUID,
+    session_factory: async_sessionmaker[AsyncSession],
+    now: datetime,
+    *,
+    model: ChatModelId,
+    price: int,
+) -> ChatCharge:
+    """상위 모델 턴의 차감. 면제·일일 무료분·하루 1회 확인을 보지 않는다 — 면제는 횟수 상한만 비켜 가고(소설화의 상위
+    모델 장도 면제 계정이 낸다), 무료분은 Gemini 턴의 것이라 상위 모델 턴이 쓰지도 깎지도 않고, 확인은 모델을 고를 때
+    본 턴당 가격이다.
+
+    부족이면 Gemini 와 같은 `CLOVER_REQUIRED` 429 다. 그 `retryAfterSeconds`(자정까지)는 이 갈래에서는 약속이 아니다 —
+    자정에 돌아오는 무료분은 Gemini 턴에만 쓰인다. 값은 계약 모양을 지키려고 그대로 싣고, 상위 모델 방의 화면은 이 값으로
+    "자정에 다시"를 안내하지 않는다."""
+    spent = await clover.spend_in_new_transaction(session_factory, user_id=user_id, amount=price, kind="chat_spend")
+    if spent is None:
+        raise _too_many_requests(user_id, _CLOVER_WINDOW, seconds_until_kst_midnight(now), code=_CLOVER_CODE)
+    return ChatCharge(source="clover", clover_amount=price, model=model)
 
 
 @dataclass(frozen=True)

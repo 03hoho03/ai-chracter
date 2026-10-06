@@ -18,6 +18,7 @@ from api.admin.schemas import (
     AdminUserChatRoomItem,
     AdminUserCloverRequest,
     AdminUserDetailResponse,
+    AdminUserFeatureGrantRequest,
     AdminUserListItem,
     AdminUserListResponse,
     AdminUserNovelizeGrantRequest,
@@ -38,8 +39,8 @@ from api.db.models.clover import CloverLedger
 from api.db.models.character import CharacterVersionDetail
 from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom
 from api.db.models.content import Content, ContentType, ContentVisibility, ModerationStatus
-from api.db.models.feature_grant import UserFeatureGrant
-from api.db.models.moderation import AdminActionLog, Notification, Report
+from api.db.models.feature_grant import FeatureName, UserFeatureGrant
+from api.db.models.moderation import AdminActionLog, AdminActionType, Notification, Report
 from api.db.models.story import StoryVersionDetail
 from api.db.session import get_db_session
 from api.session.suspension import mark_user_suspended, unmark_user_suspended
@@ -280,11 +281,16 @@ async def _build_user_detail_response(db: AsyncSession, user: User) -> AdminUser
     }
     content_names_by_id = await _content_names_by_id(db, all_content_ids)
 
-    novelize_granted_at = await db.scalar(
-        select(UserFeatureGrant.granted_at).where(
-            UserFeatureGrant.user_id == user.id, UserFeatureGrant.feature == "novelize"
-        )
-    )
+    granted_at_by_feature: dict[str, datetime] = {
+        feature: granted_at
+        for feature, granted_at in (
+            await db.execute(
+                select(UserFeatureGrant.feature, UserFeatureGrant.granted_at).where(
+                    UserFeatureGrant.user_id == user.id
+                )
+            )
+        ).all()
+    }
 
     # 유일한 호출부 get_admin_user_detail이
     # deleted_at is not None인 유저를 404로 이미 배제한 뒤에만 이 함수를 부른다 — 탈퇴 유저는
@@ -304,7 +310,9 @@ async def _build_user_detail_response(db: AsyncSession, user: User) -> AdminUser
         restorable_content_count=restorable_content_count,
         rate_limit_exempt=user.rate_limit_exempt,
         beta_joined_at=user.beta_joined_at,
-        novelize_granted_at=novelize_granted_at,
+        novelize_granted_at=granted_at_by_feature.get("novelize"),
+        chat_premium_models_granted_at=granted_at_by_feature.get("chat_premium_models"),
+        novelize_premium_models_granted_at=granted_at_by_feature.get("novelize_premium_models"),
         clover_balance=user.clover_balance,
         chat_room_count=chat_room_count,
         message_count=message_count,
@@ -650,21 +658,25 @@ async def set_user_beta(
     await db.commit()
 
 
-@router.post("/admin/users/{user_id}/novelize-grant", status_code=status.HTTP_204_NO_CONTENT)
-async def set_user_novelize_grant(
+async def _set_feature_grant(
+    db: AsyncSession,
+    *,
+    admin_id: uuid.UUID,
     user_id: uuid.UUID,
-    body: AdminUserNovelizeGrantRequest,
-    admin_id: uuid.UUID = Depends(get_current_admin_id),
-    db: AsyncSession = Depends(get_db_session),
+    body: AdminUserFeatureGrantRequest,
+    feature: FeatureName,
+    allowlist: list[uuid.UUID],
+    not_allowlisted_code: str,
+    on_action: AdminActionType,
+    off_action: AdminActionType,
 ) -> None:
-    """소설화 허용 행(`user_feature_grants`)을 만들고 지우는 유일한 경로다. 모양은 `set_user_rate_limit_exempt`와
+    """기능 허용 행(`user_feature_grants`)을 만들고 지우는 공용 처리. 모양은 `set_user_rate_limit_exempt`와
     같다(공백 코멘트 422 → 탈퇴·없는 유저 404 → 변경 → 감사 로그 → 커밋, 켤 때와 끌 때 액션 타입이 다르다).
 
-    **허용은 env 명단(`novelize_grant_allowlist`) 안의 계정에만 줄 수 있다.** 명단 밖이면 422
-    `{"code": "NOVELIZE_GRANT_NOT_ALLOWLISTED"}`로 거부하고 행도 감사 로그도 남기지 않는다 — 명단은 처리방침이 소설화의
-    수집 항목·국외 이전을 싣고 재동의를 받기 전까지 허용을 운영 시험 계정 안에 가두는 장치다. 공백 코멘트 422 와 갈리도록 code 를
-    둔다. 회수는 명단과 상관없이 늘 된다(명단에서 이미 뺀 계정의 행도 지울 수 있어야 한다). 전역 스위치는 보지 않는다
-    — 켜기 전에 허용을 미리 줄 수 있다.
+    **허용은 그 기능의 env 명단(`allowlist`) 안의 계정에만 줄 수 있다.** 명단 밖이면 422 `{"code": not_allowlisted_code}`로
+    거부하고 행도 감사 로그도 남기지 않는다 — 명단은 처리방침이 그 기능의 수집 항목·국외 이전을 싣고 재동의를 받기 전까지
+    허용을 운영 시험 계정 안에 가두는 장치다. 공백 코멘트 422 와 갈리도록 code 를 둔다. 회수는 명단과 상관없이 늘 된다(명단에서
+    이미 뺀 계정의 행도 지울 수 있어야 한다). 전역 스위치는 보지 않는다 — 켜기 전에 허용을 미리 줄 수 있다.
 
     **이미 허용된 계정을 다시 허용해도 첫 행을 그대로 둔다**(허용 시각·허용한 운영자를 덮어쓰지 않는다). 동시에 두 번
     눌려도 유니크 인덱스에 부딪혀 500 이 되지 않도록 충돌 시 아무것도 하지 않는 INSERT 를 쓴다. 누른 사실은 감사
@@ -679,30 +691,94 @@ async def set_user_novelize_grant(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     if body.granted:
-        if user_id not in settings.novelize_grant_allowlist:
+        if user_id not in allowlist:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail={"code": "NOVELIZE_GRANT_NOT_ALLOWLISTED"},
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail={"code": not_allowlisted_code}
             )
         await db.execute(
             insert(UserFeatureGrant)
-            .values(id=uuid.uuid4(), user_id=user_id, feature="novelize", granted_by=admin_id)
+            .values(id=uuid.uuid4(), user_id=user_id, feature=feature, granted_by=admin_id)
             .on_conflict_do_nothing(index_elements=[UserFeatureGrant.user_id, UserFeatureGrant.feature])
         )
     else:
         await db.execute(
-            delete(UserFeatureGrant).where(
-                UserFeatureGrant.user_id == user_id, UserFeatureGrant.feature == "novelize"
-            )
+            delete(UserFeatureGrant).where(UserFeatureGrant.user_id == user_id, UserFeatureGrant.feature == feature)
         )
     await record_admin_action(
         db,
         admin_id=admin_id,
-        action_type="user-novelize-on" if body.granted else "user-novelize-off",
+        action_type=on_action if body.granted else off_action,
         target_user_id=user_id,
         reason_text=body.admin_comment or "",
     )
     await db.commit()
+
+
+@router.post("/admin/users/{user_id}/novelize-grant", status_code=status.HTTP_204_NO_CONTENT)
+async def set_user_novelize_grant(
+    user_id: uuid.UUID,
+    body: AdminUserNovelizeGrantRequest,
+    admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    """소설화 허용 행을 만들고 지우는 유일한 경로다(규칙은 `_set_feature_grant`). 명단은 `novelize_grant_allowlist`, 명단 밖
+    거부 code 는 `NOVELIZE_GRANT_NOT_ALLOWLISTED` 다."""
+    await _set_feature_grant(
+        db,
+        admin_id=admin_id,
+        user_id=user_id,
+        body=body,
+        feature="novelize",
+        allowlist=settings.novelize_grant_allowlist,
+        not_allowlisted_code="NOVELIZE_GRANT_NOT_ALLOWLISTED",
+        on_action="user-novelize-on",
+        off_action="user-novelize-off",
+    )
+
+
+@router.post("/admin/users/{user_id}/chat-premium-models-grant", status_code=status.HTTP_204_NO_CONTENT)
+async def set_user_chat_premium_models_grant(
+    user_id: uuid.UUID,
+    body: AdminUserFeatureGrantRequest,
+    admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    """채팅방에 상위 글쓰기 모델을 고를 수 있게 하는 허용 행의 유일한 경로다(규칙은 `_set_feature_grant`). 명단은
+    `chat_premium_model_allowlist` 다."""
+    await _set_feature_grant(
+        db,
+        admin_id=admin_id,
+        user_id=user_id,
+        body=body,
+        feature="chat_premium_models",
+        allowlist=settings.chat_premium_model_allowlist,
+        not_allowlisted_code="CHAT_PREMIUM_MODELS_GRANT_NOT_ALLOWLISTED",
+        on_action="user-chat-premium-models-on",
+        off_action="user-chat-premium-models-off",
+    )
+
+
+@router.post("/admin/users/{user_id}/novelize-premium-models-grant", status_code=status.HTTP_204_NO_CONTENT)
+async def set_user_novelize_premium_models_grant(
+    user_id: uuid.UUID,
+    body: AdminUserFeatureGrantRequest,
+    admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    """소설 장 생성에 상위 글쓰기 모델을 고를 수 있게 하는 허용 행의 유일한 경로다(규칙은 `_set_feature_grant`). 명단은
+    `novelize_premium_model_allowlist` 다. 실제로 쓰려면 소설화 허용도 있어야 하지만 여기서는 보지 않는다 — 허용 순서를 강제하지
+    않는다."""
+    await _set_feature_grant(
+        db,
+        admin_id=admin_id,
+        user_id=user_id,
+        body=body,
+        feature="novelize_premium_models",
+        allowlist=settings.novelize_premium_model_allowlist,
+        not_allowlisted_code="NOVELIZE_PREMIUM_MODELS_GRANT_NOT_ALLOWLISTED",
+        on_action="user-novelize-premium-models-on",
+        off_action="user-novelize-premium-models-off",
+    )
 
 
 @router.post("/admin/users/{user_id}/clover", status_code=status.HTTP_204_NO_CONTENT)

@@ -142,10 +142,11 @@
 ## 6. 레이트리밋과 클로버 요점
 
 - 정책 상수는 `api/core/rate_limit_gate.py`, 비용은 `api/core/clover.py`에 있다.
-- 채팅 게이트 `enforce_chat_rate_limit` 하나를 네 경로(메시지 전송·재생성·편집·빌더 미리보기)가 공유한다. 재생성·편집도 1건으로 센다. 미리보기 한 턴도 실제 채팅과 똑같이 세고 차감된다.
-- 순서는 버스트(`CHAT_BURST_LIMIT`/`CHAT_BURST_WINDOW_SECONDS`) → 면제 확인 → 일일(`CHAT_DAILY_LIMIT`, KST 자정 기준) → 클로버다. 면제 계정(`users.rate_limit_exempt`)도 버스트는 받는다. 일일 무료분을 다 쓴 뒤에만 클로버(`CHAT_TURN_COST`)가 대신 내고, 그날 처음이면 차감 전에 확인을 받는다.
+- 채팅 차감 본문 `charge_chat_turn` 하나를 네 경로(메시지 전송·재생성·편집·빌더 미리보기)가 공유한다. 미리보기는 `enforce_chat_rate_limit`(언제나 Gemini), 방의 세 경로는 방이 고른 글쓰기 모델로 가격을 정하는 `api/chat/router.py`의 `enforce_room_chat_charge`를 거친다. 재생성·편집도 1건으로 센다. 미리보기 한 턴도 실제 채팅과 똑같이 세고 차감된다.
+- Gemini 턴의 순서는 버스트(`CHAT_BURST_LIMIT`/`CHAT_BURST_WINDOW_SECONDS`) → 면제 확인 → 일일(`CHAT_DAILY_LIMIT`, KST 자정 기준) → 클로버다. 면제 계정(`users.rate_limit_exempt`)도 버스트는 받는다. 일일 무료분을 다 쓴 뒤에만 클로버(`CHAT_TURN_COST`)가 대신 내고, 그날 처음이면 차감 전에 확인을 받는다.
+- 상위 모델(Gemini 밖의 글쓰기 모델) 턴은 버스트 → 클로버(`CHAT_TURN_COST_SONNET`·`CHAT_TURN_COST_OPUS`)다. 면제 계정도 내고, 일일 무료분을 쓰지도 깎지도 않고, 하루 1회 확인을 묻지 않는다.
 - 이미지 생성은 토큰 버킷(`IMAGE_TOKEN_CAPACITY`, `IMAGE_TOKEN_REFILL_SECONDS`)이고 장당 클로버는 `IMAGE_UNIT_COST`다. 면제 계정은 건너뛰지만 큐 상한(`QUEUE_FULL_RETRY_AFTER_SECONDS`로 재시도 안내)은 받는다.
-- Redis 장애 중에는 게이트가 통과시킨다(fail-open).
+- Redis 장애 중에는 Gemini 턴을 통과시키고(fail-open) 상위 모델 턴은 503 `CHAT_MODEL_UNAVAILABLE`로 거절한다.
 
 ## 7. 시드 작성 불변식
 
