@@ -592,3 +592,36 @@ async def test_stat_replay_judges_generation_replay_replies_with_overridden_defi
     path.write_text(json.dumps({"stats": {"상영회까지": {"name": "x"}}}), encoding="utf-8")
     with pytest.raises(ValueError, match="덮을 수 없는"):
         replay.load_stat_overrides(path)
+
+
+async def test_stat_replay_judges_an_exchange_from_another_room_with_its_own_user_message(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 운영 스모크 방의 한 턴처럼 격리 DB 에 없는 대화도, 측정 방의 스탯 정의를 빌려 같은 조립으로 판정한다.
+    room_id, _liking, _days, fake, trace_path = await _played_stat_room(db_client, db_session, tmp_path, monkeypatch)
+    start = replay.stat_start_from_trace(trace_path, room_id, 2)
+    path = tmp_path / "exchange.json"
+    path.write_text(
+        json.dumps({"source": "smoke-t2", "user": "이틀 뒤 리허설 때 봬요.", "assistant": "그래, 오늘은 여기까지."}),
+        encoding="utf-8",
+    )
+    user, reply = replay.load_exchange(path)
+    assert reply == ("exchange:smoke-t2", "그래, 오늘은 여기까지.")
+    (item,) = await replay.build_inputs(
+        db_session,
+        room_id,
+        2,
+        kinds=["stat"],
+        variant="full",
+        stat_start=start,
+        stat_formats=["A"],
+        assistant_messages=[reply],
+        user_message=user,
+    )
+    assert "이틀 뒤 리허설 때 봬요." in item.prompt and "그래, 오늘은 여기까지." in item.prompt
+    assert "벤치에 앉는다" not in item.prompt  # 측정 방의 그 턴 사용자 메시지는 싣지 않는다
+    assert "벤치에 앉는다" in fake.stat_prompts[1]
+    with pytest.raises(ValueError, match="응답도 함께"):
+        await replay.build_inputs(
+            db_session, room_id, 2, kinds=["stat"], variant="full", stat_start=start, user_message=user
+        )

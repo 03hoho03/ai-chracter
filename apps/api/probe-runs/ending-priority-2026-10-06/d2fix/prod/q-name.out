@@ -1,0 +1,18 @@
+Pager usage is off.
+BEGIN
+ transaction_read_only 
+-----------------------
+ on
+(1 row)
+
+ persona_id | persona_name 
+------------+--------------
+            | 
+(1 row)
+
+          content_version_id          | quote_literal 
+--------------------------------------+---------------
+ 3895ffe1-e4a3-4b8b-9099-3349287794bc | ''
+(1 row)
+
+ROLLBACK

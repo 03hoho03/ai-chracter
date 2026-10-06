@@ -249,6 +249,12 @@ def replies_from_generation(path: Path, turn: int, variant: str) -> list[tuple[s
     return found
 
 
+def load_exchange(path: Path) -> tuple[str, tuple[str, str]]:
+    """다른 방의 한 턴 `{source, user, assistant}` → (사용자 메시지, (출처 라벨, 응답))."""
+    exchange = json.loads(path.read_text(encoding="utf-8"))
+    return str(exchange["user"]), (f"exchange:{exchange['source']}", str(exchange["assistant"]))
+
+
 def stat_start_from_trace(path: Path, room_id: uuid.UUID, turn: int) -> dict[str, float]:
     """서버 trace 의 `stat_outcome` 에서 그 방·그 턴 판정의 시작 값(statId → start). 없거나 둘 이상이면 멈춘다 — 다른
     턴의 값을 쓰면 재구성 프롬프트가 실제와 달라진다."""
@@ -302,7 +308,10 @@ async def build_inputs(
     stat_formats: list[str] | None = None,
     assistant_messages: list[tuple[str, str]] | None = None,
     stat_overrides: dict[str, dict[str, Any]] | None = None,
+    user_message: str | None = None,
 ) -> list[ReplayInput]:
+    if user_message is not None and assistant_messages is None:
+        raise ValueError("사용자 메시지를 바꿀 때는 응답도 함께 바꾼다 — 원 응답은 원 사용자 메시지에 대한 것이다")
     if assistant_messages is not None and kinds != ["stat"]:
         raise ValueError("생성 리플레이 응답은 스탯 판정(stat)에만 넣는다")
     if assistant_messages is not None and any(f != "A" for f in stat_formats or ["current"]):
@@ -363,7 +372,7 @@ async def build_inputs(
                 sections=sections,
                 stat_defs=stat_defs,
                 current_stats=stat_start,
-                user_message=user.content,
+                user_message=user.content if user_message is None else user_message,
                 assistant_message=answer,
                 names=names,
             )
@@ -628,6 +637,13 @@ async def _main(args: argparse.Namespace) -> int:
             if args.assistant_from
             else None
         )
+        exchange_user: str | None = None
+        if args.exchange_from:
+            if replies is not None:
+                print("--exchange-from 과 --assistant-from 은 함께 쓰지 않는다")
+                return 1
+            exchange_user, exchange_reply = load_exchange(Path(args.exchange_from))
+            replies = [exchange_reply]
         inputs = await build_inputs(
             db,
             room_id,
@@ -639,6 +655,7 @@ async def _main(args: argparse.Namespace) -> int:
             stat_formats=args.stat_format,
             assistant_messages=replies,
             stat_overrides=overrides,
+            user_message=exchange_user,
         )
     models = check_same_models(inputs, settings.gemini_model_name)
     plan = estimate(inputs, args.reps, models)
@@ -720,6 +737,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--ledger", help="앞 묶음 호출 기록 glob(재귀 **) — 실제 원가를 상한에 넣는다")
     ap.add_argument("--assistant-from", help="스탯 판정에 넣을 응답을 이 생성 리플레이 기록에서 읽는다")
     ap.add_argument("--assistant-variant", default="supplement", help="--assistant-from 에서 고를 갈래")
+    ap.add_argument(
+        "--exchange-from",
+        help="다른 방(운영 스모크 등)의 한 턴을 판정한다: JSON {source, user, assistant}. --turn 의 방은 스탯 정의·이름만 "
+        "빌려 오고, 시작 값은 --stat-start-set 으로 스탯마다 덮는다",
+    )
     ap.add_argument("--stat-override", help="스탯 정의를 덮는 JSON(스탯 이름 → 칸)")
     ap.add_argument("--stat-start-set", action="append", help="시작 값 덮기 NAME=VALUE(여럿 가능)")
     ap.add_argument("--out", required=True)
