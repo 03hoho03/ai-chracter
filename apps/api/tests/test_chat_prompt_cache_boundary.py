@@ -6,15 +6,19 @@
 달라지는 것, 히스토리가 비었는데 표지가 남아 조건부 섹션이 살아나는 것.
 """
 
+import logging
 import uuid
 
+import httpx
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.prompt_builder import PromptNames, build_generation_prompt, build_story_generation_prompt
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StoryPromptTemplate
 from api.llm.client import SegmentedPrompt
+from factories import _clear_llm_override, _FakeLLMClient, _open_room, _override_llm_client
 
 _NO_NAMES = PromptNames(persona_name=None, default_user_name="", char_name=None)
 _PROMPT_SET = PromptSet(
@@ -200,3 +204,37 @@ def test_an_unsplittable_render_falls_back_to_the_plain_string(
 
     assert type(prompt) is str
     assert prompt == expected
+
+
+def test_a_fallback_is_logged_but_an_empty_history_is_not(caplog: pytest.LogCaptureFixture) -> None:
+    """기록이 있는데 나누지 못한 턴은 캐시를 못 맞추므로 로그로 드러낸다. 기록이 빈 턴은 나눌 경계가 원래 없어 남기지
+    않는다 — Bedrock 쪽은 경계 없는 보통 문자열을 받아도 이유를 모르므로, 이유를 아는 빌더가 남긴다."""
+    with caplog.at_level(logging.WARNING, logger="api.chat.prompt_builder"):
+        _character([])
+        assert not caplog.records
+        _character([_u("u1"), _a("a1")], sections=[_section("echo", "[다시]\n{history_lines}", order=0), *_SECTIONS])
+
+    assert len(caplog.records) == 1
+    assert "캐시 경계" in caplog.records[0].getMessage()
+
+
+async def test_the_chat_route_hands_the_llm_the_three_blocks(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """빌더와 Bedrock 사이(라우트의 프롬프트 조립·생성 호출)에서 경계가 사라지지 않는다 — 문자열 연산 하나만 끼어도 보통의
+    `str` 이 되어 Claude 턴이 캐시를 못 맞춘다. 기록이 있는 방의 실제 전송으로 본다."""
+    room = await _open_room(db_client, db_session, turns=2)
+    fake = _FakeLLMClient(tokens=["응답"])
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room.room_id}/messages", json={"content": "이번 입력"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    prompt = fake.received_prompt
+    assert isinstance(prompt, SegmentedPrompt)
+    first, second, third = prompt.segments
+    assert room.turns[1][1].content in first
+    assert second.startswith("\n") and room.turns[2][0].content in second and room.turns[2][1].content in second
+    assert "이번 입력" in third

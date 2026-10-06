@@ -80,10 +80,11 @@ def _user_content(prompt: str, call_site: LLMCallSite) -> str | list[TextBlockPa
     메시지보다 앞이라 체크포인트까지의 앞부분에 저절로 들어간다. 체크포인트까지가 모델별 최소 캐시 길이보다 짧으면 Bedrock 은
     오류 없이 캐시만 하지 않으므로 길이를 따로 재지 않는다.
 
-    소설 장은 장마다 내용이 거의 다 바뀌어 캐시 쓰기 할증만 내므로 걸지 않는다. 블록이 없는 채팅 턴은 하나로 보내되 캐시를
-    못 맞추므로 경고로 남긴다."""
-    if call_site == "chat_generate":
-        if isinstance(prompt, SegmentedPrompt) and len(prompt.segments) == 3:
+    소설 장은 장마다 내용이 거의 다 바뀌어 캐시 쓰기 할증만 내므로 걸지 않는다. 경계가 없는 채팅 턴(보통 문자열)은 하나로
+    보낸다 — 빌더는 대화 기록이 빈 턴에 일부러 보통 문자열을 내고, 기록이 있는데 나누지 못한 턴은 이유를 아는 빌더가 경고로
+    남긴다. 여기서는 경계가 있는데 셋이 아닌 경우(빌더와 이 구현이 어긋난 것)만 경고로 남긴다."""
+    if call_site == "chat_generate" and isinstance(prompt, SegmentedPrompt):
+        if len(prompt.segments) == 3:
             first, history_end, rest = prompt.segments
             return [
                 {"type": "text", "text": first},
@@ -92,7 +93,7 @@ def _user_content(prompt: str, call_site: LLMCallSite) -> str | list[TextBlockPa
             ]
         try:
             # 로그 실패가 턴을 막지 않게 한다(`_log_usage` 와 같은 규칙).
-            logger.warning("채팅 턴 프롬프트에 캐시 경계가 없어 블록 하나로 보낸다(캐시 미적중)")
+            logger.warning("채팅 턴 프롬프트의 캐시 경계가 셋이 아니라 블록 하나로 보낸다(조각 %d개)", len(prompt.segments))
         except Exception:
             pass
     return str(prompt)

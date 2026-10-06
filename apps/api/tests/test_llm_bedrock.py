@@ -204,7 +204,8 @@ async def test_a_segmented_chat_prompt_goes_as_three_blocks_with_one_checkpoint_
 @pytest.mark.parametrize(
     ("prompt", "usage", "warns"),
     [
-        pytest.param("대본", _CHAT, True, id="chat-without-segments"),
+        # 빌더는 기록이 빈 턴에 일부러 보통 문자열을 낸다. 나누지 못한 턴은 빌더가 이유와 함께 남기므로 여기서는 남기지 않는다.
+        pytest.param("대본", _CHAT, False, id="chat-without-segments"),
         pytest.param(SegmentedPrompt(("앞", "뒤")), _CHAT, True, id="chat-with-two-segments"),
         pytest.param(_SEGMENTED, _CHAPTER, False, id="chapter-never-caches"),
     ],
@@ -217,7 +218,7 @@ async def test_other_prompts_go_as_one_plain_block_without_a_checkpoint(
     usage: LLMCallContext,
     warns: bool,
 ) -> None:
-    """채팅 턴이 경계 없이 오면 보내기는 하되(캐시만 못 맞는다) 로그로 드러낸다. 소설 장은 장마다 내용이 거의 다 바뀌어
+    """채팅 턴이 경계 없이 오면 블록 하나로 보낸다(캐시만 못 맞는다). 경계가 있는데 모양이 셋이 아니면 로그로 드러낸다. 소설 장은 장마다 내용이 거의 다 바뀌어
     캐시 쓰기 할증만 내므로 경계가 있어도 걸지 않는다."""
     client, seen = _client_streaming(monkeypatch, _start(input_tokens=1), _text("x"), _end())
 

@@ -1,3 +1,4 @@
+import logging
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -16,6 +17,8 @@ from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StatDef, StoryPromptTemplate
 from api.llm.chat_models import ChatModelId
 from api.llm.client import SegmentedPrompt
+
+logger = logging.getLogger(__name__)
 
 # `"legacy"`를 이 유니온에 넣지 않는다 — 넣는
 # 순간 `list_prompt_sets`가 legacy를 걸러야 할 이유가 사라지고 FE가 4번째 탭을 만들게 된다.
@@ -406,7 +409,8 @@ def _render_generation(
 
     경계는 섹션 제목이 아니라 기록 값에 박은 표지로 찾는다(문안은 어드민이 고친다). 표지가 정확히 두 번 나오지 않거나,
     나눈 조각을 이은 것이 표지 없이 렌더한 문자열과 다르거나, 빈 블록이 생기면 나누지 않고 보통 문자열을 돌려준다 —
-    캐시를 못 맞출 뿐 보내는 글은 같다. 기록이 비면 표지를 넣지 않는다(넣으면 조건부 기록 섹션이 살아난다)."""
+    캐시를 못 맞출 뿐 보내는 글은 같고, 경고로 남긴다. 기록이 비면 표지를 넣지 않고 보통 문자열을 돌려준다(넣으면 조건부 기록
+    섹션이 살아난다) — 나눌 경계가 원래 없는 정상 경우라 남기지 않는다."""
     plain = render_prompt_channel(
         sections, channel="generation", scope=scope, variant=variant, values={**values, "history_lines": "\n".join(history_lines)}
     )
@@ -426,6 +430,9 @@ def _render_generation(
     )
     segments = tuple(marked.split(_BLOCK_MARK))
     if len(segments) != 3 or "".join(segments) != plain or not all(segments):
+        # 기록이 있는데 나누지 못한 턴만 남긴다(기록이 빈 턴은 위에서 이미 돌아갔다). Bedrock 은 경계 없는 문자열을 받아도
+        # 이유를 몰라 남기지 않으므로 여기가 유일한 신호다. Gemini 턴에서도 남지만 보내는 글은 같다.
+        logger.warning("생성 프롬프트를 캐시 경계로 나누지 못해 블록 하나로 보낸다(조각 %d개)", len(segments))
         return plain
     return SegmentedPrompt(segments)
 
