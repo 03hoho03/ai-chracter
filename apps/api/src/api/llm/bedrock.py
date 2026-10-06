@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from typing import TypeVar
 
 import anthropic
+import botocore.eventstream
+import botocore.exceptions
 import httpx
 import httpx2
 from anthropic import AsyncAnthropicBedrock
@@ -204,10 +206,19 @@ class BedrockLLMClient(LLMClient):
                         # 조용히 넘기면 "AI가 말을 하다 말았다"로만 보인다. 자주 찍히면 상한이 낮은 것이다.
                         truncated = True
                         logger.warning("Bedrock 응답이 max_tokens(%d)에서 잘렸다", max_tokens)
-        except (anthropic.AnthropicError, httpx2.HTTPError, httpx.HTTPError, TimeoutError) as exc:
+        except (
+            anthropic.AnthropicError,
+            botocore.exceptions.BotoCoreError,
+            botocore.eventstream.ParserError,
+            httpx2.HTTPError,
+            httpx.HTTPError,
+            TimeoutError,
+        ) as exc:
             # SDK 는 요청 단계의 실패를 자기 예외(`AnthropicError` 계열)로 바꾸지만, 스트림을 읽는 도중의 네트워크 실패는
             # 자기가 쓰는 `httpx2` 예외 그대로 올린다. `httpx`(이 저장소의 다른 SDK 가 쓰는 쪽)와 `TimeoutError` 는 전송 계층이
-            # 바뀌어도 SSE 본문을 뚫지 않게 함께 잡는다.
+            # 바뀌어도 SSE 본문을 뚫지 않게 함께 잡는다. botocore 예외도 SDK 가 감싸지 않고 그대로 올린다 — 요청 서명
+            # 단계(`BotoCoreError` 계열, 프로세스 env 의 `AWS_PROFILE` 이 없는 프로필을 가리키면 `ProfileNotFound`)와 응답
+            # event-stream 디코딩 단계(`ParserError` 계열, 체크섬·길이가 깨진 프레임)다.
             if _is_throttling(exc):
                 raise _bedrock_error(LLMRateLimitError, f"Bedrock generate() call failed: {exc}") from exc
             raise _bedrock_error(LLMClientError, f"Bedrock generate() call failed: {exc}") from exc

@@ -1,10 +1,15 @@
+import base64
+import binascii
 import json
 import logging
+import struct
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
 from typing import Any
 
 import anthropic
+import botocore.eventstream
+import botocore.exceptions
 import httpx
 import httpx2
 import pytest
@@ -318,7 +323,7 @@ async def test_a_usage_logging_failure_does_not_break_the_stream(
                 200,
                 {"type": "error", "error": {"type": "throttlingException", "message": "Too many requests"}},
             ),
-            id="mid-stream-throttling",
+            id="throttling-error-body",
         ),
     ],
 )
@@ -329,6 +334,26 @@ async def test_throttling_is_a_rate_limit_error(monkeypatch: pytest.MonkeyPatch,
         await _collect(client)
     assert exc_info.value.provider == "bedrock"
     assert _llm_dependency_tag(exc_info.value) == "bedrock_rate_limit"
+
+
+async def test_throttling_after_some_text_is_a_rate_limit_error_and_records_nothing(
+    monkeypatch: pytest.MonkeyPatch, recorded: list[Any]
+) -> None:
+    throttled = _status_error(
+        anthropic.APIStatusError,
+        200,
+        {"type": "error", "error": {"type": "throttlingException", "message": "Too many tokens"}},
+    )
+    client, _ = _client_streaming(monkeypatch, _start(input_tokens=1), _text("말을"), raise_at=throttled)
+    received: list[str] = []
+
+    with pytest.raises(LLMRateLimitError) as exc_info:
+        async for token in client.generate("대본", usage=_CHAT):
+            received.append(token)
+
+    assert received == ["말을"]
+    assert exc_info.value.provider == "bedrock"
+    assert recorded == []
 
 
 @pytest.mark.parametrize(
@@ -342,6 +367,10 @@ async def test_throttling_is_a_rate_limit_error(monkeypatch: pytest.MonkeyPatch,
         pytest.param(httpx2.ReadTimeout("read timed out"), id="httpx2-read-timeout"),
         pytest.param(httpx.ReadTimeout("read timed out"), id="httpx-read-timeout"),
         pytest.param(TimeoutError(), id="bare-timeout"),
+        # 요청 서명 단계 — SDK 가 감싸지 않는다. 프로세스 env 의 `AWS_PROFILE` 이 없는 프로필을 가리키면 이것이 난다.
+        pytest.param(botocore.exceptions.ProfileNotFound(profile="missing"), id="botocore-signing"),
+        # 응답 event-stream 디코딩 단계 — 깨진 프레임. 역시 SDK 가 감싸지 않는다.
+        pytest.param(botocore.eventstream.ChecksumMismatch(1, 2), id="eventstream-decoding"),
     ],
 )
 @pytest.mark.parametrize("where", ["create", "mid-stream"])
@@ -480,3 +509,85 @@ async def test_a_429_through_the_real_sdk_is_a_rate_limit_error(monkeypatch: pyt
         await _collect(client)
     assert len(seen) == 1  # 재시도하지 않는다
 
+
+def _event_stream_frame(headers: dict[str, str], payload: bytes) -> bytes:
+    """AWS event-stream 프레임 하나. 전체 길이·헤더 길이·프렐류드 CRC, 문자열 헤더들(이름 길이 1바이트, 값 타입 7,
+    값 길이 2바이트), 본문, 메시지 CRC 순서다."""
+    encoded = b"".join(
+        struct.pack(">B", len(name.encode()))
+        + name.encode()
+        + b"\x07"
+        + struct.pack(">H", len(value.encode()))
+        + value.encode()
+        for name, value in headers.items()
+    )
+    prelude = struct.pack(">II", 12 + len(encoded) + len(payload) + 4, len(encoded))
+    prelude += struct.pack(">I", binascii.crc32(prelude))
+    message = prelude + encoded + payload
+    return message + struct.pack(">I", binascii.crc32(message))
+
+
+def _chunk_frame(event: dict[str, Any]) -> bytes:
+    payload = {"bytes": base64.b64encode(json.dumps(event).encode()).decode()}
+    return _event_stream_frame(
+        {":event-type": "chunk", ":content-type": "application/json", ":message-type": "event"},
+        json.dumps(payload).encode(),
+    )
+
+
+async def test_a_throttling_frame_mid_stream_through_the_real_sdk_is_a_rate_limit_error(
+    monkeypatch: pytest.MonkeyPatch, recorded: list[Any]
+) -> None:
+    """스트림 도중의 스로틀은 HTTP 상태가 이미 200 이라 event-stream 의 예외 프레임으로만 온다. 진짜 SDK 의 디코더가
+    그 프레임을 오류 본문으로 바꾼 것을 스로틀로 알아보는지 본다 — SDK 가 프레임을 옮기는 모양이 바뀌면 여기서 드러난다."""
+    body = (
+        _chunk_frame(
+            {
+                "type": "message_start",
+                "message": {
+                    "id": "msg",
+                    "type": "message",
+                    "role": "assistant",
+                    "model": "m",
+                    "content": [],
+                    "stop_reason": None,
+                    "stop_sequence": None,
+                    "usage": {"input_tokens": 5, "output_tokens": 1},
+                },
+            }
+        )
+        + _chunk_frame({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}})
+        + _chunk_frame({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "말을"}})
+        + _event_stream_frame(
+            {
+                ":exception-type": "throttlingException",
+                ":content-type": "application/json",
+                ":message-type": "exception",
+            },
+            json.dumps({"message": "Too many tokens, please wait"}).encode(),
+        )
+    )
+    transport = httpx2.MockTransport(
+        lambda _: httpx2.Response(200, headers={"content-type": "application/vnd.amazon.eventstream"}, content=body)
+    )
+    client = BedrockLLMClient()
+    monkeypatch.setattr(
+        client,
+        "_client",
+        anthropic.AsyncAnthropicBedrock(
+            aws_access_key="AKIATEST",
+            aws_secret_key="secret-test",
+            aws_region="ap-northeast-2",
+            max_retries=0,
+            http_client=httpx2.AsyncClient(transport=transport),
+        ),
+    )
+    received: list[str] = []
+
+    with pytest.raises(LLMRateLimitError) as exc_info:
+        async for token in client.generate("대본", usage=_CHAT):
+            received.append(token)
+
+    assert received == ["말을"]
+    assert exc_info.value.provider == "bedrock"
+    assert recorded == []

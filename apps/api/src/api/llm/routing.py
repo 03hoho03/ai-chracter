@@ -23,8 +23,10 @@ MODEL_SELECTABLE_CALL_SITES: frozenset[LLMCallSite] = frozenset({"chat_generate"
 
 
 def _build_bedrock_client() -> LLMClient:
-    # import 를 여기 두는 이유는 `get_llm_client` 의 Gemini import 와 같다 — `anthropic`·`botocore` import 비용을 상위 모델을
-    # 실제로 부르는 프로세스만 낸다. 운영은 상위 모델이 꺼져 있어 대부분의 프로세스가 이 비용을 내지 않는다.
+    # 지연 import 로 아끼는 것은 거의 없다 — `anthropic` 은 Sentry 통합(`core/sentry.py` 의 최상단 import, DSN 이 있으면
+    # `sentry_sdk.init()` 의 auto-enabling 목록)이 기동 때 이미 끌어오고(개발 맥 실측 약 0.5초, 차가운 캐시 1.0초),
+    # `botocore` 는 S3 클라이언트(`core/s3.py`)가 끌어온다. 그 뒤 `api.llm.bedrock` 자체의 import 는 1ms 안팎이다. 이
+    # 비용을 기동에서 빼려면 Sentry 를 `auto_enabling_integrations=False` 와 명시 통합 목록으로 초기화해야 한다.
     from api.llm.bedrock import BedrockLLMClient
 
     return BedrockLLMClient()
