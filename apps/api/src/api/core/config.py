@@ -172,17 +172,26 @@ class Settings(BaseSettings):
     # 소설화(대화를 장편 소설의 장으로 옮겨 쓰기). 장 생성과 문단 수정만 이 모델·출력 상한·사고 설정을 쓰고, 장 경계
     # 제안은 턴 번호 몇 개를 고르는 판정이라 `gemini_model_name` 으로 간다 — 어느 호출이 어느 쪽인지는 `llm/client.py`
     # 의 소설화 call_site 집합이 정한다. 모델명이 비면 `gemini_model_name` 으로 돈다.
-    gemini_novelize_model_name: str = "gemini-3.5-flash"
+    # 기본 모델은 같은 장을 세 후보 모델로 써 본 비교에서 골랐다. 모델 이름을 가리고 매긴 1위 횟수는 가장 많이 받은
+    # 후보와 비슷했고(8건 중 3 대 4), 장당 원가는 다음으로 싼 후보의 절반 아래, 지연도 가장 짧았으며, 원문 응답 끝의
+    # 상태 표를 장 본문에 옮겨 적은 일이 없었다. 시험한 장이 다섯 개뿐이라 원가는 운영에서 다시 본다.
+    gemini_novelize_model_name: str = "gemini-3.8-flash"
     # 사고 토큰과 본문이 나눠 쓰는 예산이다(위 `gemini_max_output_tokens` 주석). 장 하나는 수천 자에 사고 토큰이 본문보다
     # 많이 붙어 채팅 상한으로는 잘린다. 여기서 잘린 장은 실패로 끝나고 환불되므로 낮게 잡으면 원가만 버린다.
+    # 시험에서 기본 모델이 한 장에 쓴 출력·사고 토큰 합은 보고된 값으로 많아야 약 7천이었고(원문 21턴 장), 비교한 다른
+    # 모델은 약 2만 3천까지 썼다. 장이 길어지거나 사고가 길게 붙는 날에도 잘리지 않게 그 몇 배인 이 값을 그대로 둔다.
     gemini_novelize_max_output_tokens: int = 32_768
     # 사고 설정. 둘 다 None 이면 thinking_config 를 넘기지 않는다(모델 기본 사고 동작). 정한 것만 넘긴다 — 예산은
-    # 위 `gemini_thinking_budget` 과 같은 뜻이고, 수준은 사고형 모델이 받는 단계 이름이다.
+    # 위 `gemini_thinking_budget` 과 같은 뜻이고, 수준은 사고형 모델이 받는 단계 이름이다. 기본 모델의 품질·원가는
+    # 사고 설정 없이(모델 기본) 잰 것이라 기본값도 정하지 않음으로 둔다. 이 모델은 가장 낮은 사고 수준(MINIMAL)을 받지
+    # 않는다.
     gemini_novelize_thinking_budget: int | None = None
     gemini_novelize_thinking_level: Literal["MINIMAL", "LOW", "MEDIUM", "HIGH"] | None = None
     # 소설화 호출 상한(ms). 백그라운드 작업이라 Cloudflare 응답 상한(100초)과 무관하다. 장 생성은 스트리밍이라 "다음
     # 청크까지"의 상한이고, 문단 수정·경계 제안은 비스트리밍이라 호출 전체의 상한이다. 경계 제안은 사용자가 화면에서
-    # 기다리므로 짧게 끊는다.
+    # 기다리므로 짧게 끊는다. 시험에서 기본 모델은 장 하나를 길어야 31초, 문단 수정을 11초 안에 끝냈다. 이 값들은 호출이
+    # 멈췄을 때만 걸리는 상한이라 줄여도 정상 호출은 빨라지지 않고, 느린 날의 정상 호출을 실패·환불로 바꿀 위험만 늘어
+    # 그대로 둔다.
     gemini_novelize_chapter_timeout_ms: int = 300_000
     gemini_novelize_revise_timeout_ms: int = 120_000
     gemini_novelize_boundary_timeout_ms: int = 30_000
@@ -328,9 +337,10 @@ class Settings(BaseSettings):
     # 앞 장을 되풀이하지 않고 이어 쓰게 하려는 것이다. 임시값.
     novelize_previous_excerpt_chars: int = 1000
     # 장 하나가 담을 수 있는 원문 턴(AI 응답) 수의 상한. 다음 장 경계 제안은 이 수만큼의 후보 턴을 보여 주고, 장 생성은
-    # 끝 메시지가 이 범위 밖이면 거절한다. 장이 길수록 출력 상한·작업 상한에 가까워지므로 본 시험에서 다시 정하는 임시값
-    # 이다(가능성 확인에서 쓴 후보 범위가 12턴이었다).
-    novelize_chapter_max_turns: int = 12
+    # 끝 메시지가 이 범위 밖이면 거절한다. 장이 길수록 출력 상한·작업 상한에 가까워진다. 20턴 장으로 시험했을 때 기본
+    # 모델의 장 본문은 약 5천 자였고 지연·출력 토큰은 위 상한들 안에 넉넉히 들었다. 시험에서 경계 제안이 장 여섯 중
+    # 넷을 후보 끝에서 끊어, 장 길이는 이 값에 가까워지기 쉽다.
+    novelize_chapter_max_turns: int = 20
     # 장 경계 제안(무과금 모델 호출)을 한 사용자가 한 시간에 몇 번까지 부를 수 있는지. 과금이 없어 남용을 막는 것이
     # 이 상한뿐이다. 면제 계정도 똑같이 센다. 임시값.
     novelize_proposal_hourly_limit: int = 30

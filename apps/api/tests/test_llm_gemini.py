@@ -1175,13 +1175,14 @@ def _client_with(**models: Any) -> GeminiLLMClient:
 
 def test_novelize_settings_defaults() -> None:
     """코드 기본값 — 소설화는 채팅보다 비싼 모델로 장 하나를 통째로 쓰므로 출력 상한이 채팅보다 크다."""
-    assert Settings.model_fields["gemini_novelize_model_name"].default == "gemini-3.5-flash"
+    assert Settings.model_fields["gemini_novelize_model_name"].default == "gemini-3.8-flash"
     assert Settings.model_fields["gemini_novelize_max_output_tokens"].default == 32_768
     assert Settings.model_fields["gemini_novelize_thinking_budget"].default is None
     assert Settings.model_fields["gemini_novelize_thinking_level"].default is None
     assert Settings.model_fields["gemini_novelize_chapter_timeout_ms"].default == 300_000
     assert Settings.model_fields["gemini_novelize_revise_timeout_ms"].default == 120_000
     assert Settings.model_fields["gemini_novelize_boundary_timeout_ms"].default == 30_000
+    assert Settings.model_fields["novelize_chapter_max_turns"].default == 20
 
 
 def test_novelize_thinking_settings_read_an_empty_env_value_as_unset(monkeypatch: pytest.MonkeyPatch) -> None:
