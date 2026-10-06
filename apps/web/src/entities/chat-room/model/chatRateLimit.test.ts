@@ -149,3 +149,36 @@ describe("getChatRateLimit — 확인 코드", () => {
     ).toEqual({ window: "clover", retryAfterSeconds: 3600 });
   });
 });
+
+/** 상위 모델 방에는 무료분이 없다. 서버가 같은 `CLOVER_REQUIRED` 에 자정까지의 초를 실어 보내도 자정에 풀리지
+ * 않으므로, 기본 모델 방의 "자정에 무료 한도" 문장을 내면 거짓이 된다 — 부족 사실만 말한다. */
+describe("상위 모델 방의 클로버 부족 문구", () => {
+  const rateLimit = { window: "clover", retryAfterSeconds: 43200 } as const;
+
+  it("부족 사실만 말하고 자정·무료 한도를 약속하지 않는다", () => {
+    const message = formatChatRateLimitMessage(rateLimit, "premiumChat", 43200);
+
+    expect(message).toContain("클로버가 부족해요");
+    expect(message).not.toContain("자정");
+    expect(message).not.toContain("무료");
+  });
+
+  it("읽어 주는 문장도 같은 문구다 — 사본이 아니다", () => {
+    expect(formatChatRateLimitAnnouncement(rateLimit, "premiumChat")).toBe(
+      formatChatRateLimitMessage(rateLimit, "premiumChat", 43200),
+    );
+  });
+
+  // 짝 테스트: 기본 모델 방은 여전히 자정을 말한다 — 위 케이스가 두 방의 문구를 하나로 합쳐 통과하지 못하게.
+  it("기본 모델 방 문구와 다르다", () => {
+    expect(formatChatRateLimitMessage(rateLimit, "premiumChat", 43200)).not.toBe(
+      formatChatRateLimitMessage(rateLimit, "chat", 43200),
+    );
+  });
+
+  it("분당 상한 문구는 기본 모델 방과 같다 — 모델과 무관한 상한이다", () => {
+    const minute = { window: "minute", retryAfterSeconds: 30 } as const;
+
+    expect(formatChatRateLimitMessage(minute, "premiumChat", 12)).toBe(formatChatRateLimitMessage(minute, "chat", 12));
+  });
+});

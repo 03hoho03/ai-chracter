@@ -8,7 +8,10 @@
  * 두고 `MyPagePage`·`StoryDetailBody`가 문장 속에서 이미 쓴다. 그래서 부족 상태를 primary로
  * 칠해도 전송/생성 버튼과 경합하지 않는다. */
 
-/** 무료 한도를 아직 안 쓴 사용자에게는 잔량이 보이지 않는다("필요할 때만 노출").
+/** 무료 한도를 아직 안 쓴 사용자에게는 잔량이 보이지 않는다("필요할 때만 노출"). 다만 턴마다 클로버를 쓰는 자리
+ * (`chargesEveryTurn` — 상위 모델 채팅방)는 언제나 보인다. 그 방에는 무료분이 없어 첫 턴부터 차감되는데, 하루 한 번
+ * 확인도 묻지 않으므로 `spendConfirmedToday` 가 영영 거짓일 수 있다 — 그 신호에 기대면 매 턴 깎이는 잔액이 끝내
+ * 안 보인다.
  *
  * 판정 근거로 `spendConfirmedToday`를 쓰는 이유: FE는 "무료 일일분이 남았는가"를 직접 알 수
  * 없다(`GET /me/clover`는 잔액·오늘 확인 여부·출석 가능만 준다). 확인 모달은 **소진 시점에만**
@@ -20,11 +23,13 @@
 export function shouldShowCloverBalance({
   spendConfirmedToday,
   hasCloverShortage,
+  chargesEveryTurn = false,
 }: {
   spendConfirmedToday: boolean;
   hasCloverShortage: boolean;
+  chargesEveryTurn?: boolean;
 }): boolean {
-  return spendConfirmedToday || hasCloverShortage;
+  return chargesEveryTurn || spendConfirmedToday || hasCloverShortage;
 }
 
 /** 잔액이 **다음 한 번을 못 내는** 상태. `balance < cost`이지 `balance === 0`이 아니다 —

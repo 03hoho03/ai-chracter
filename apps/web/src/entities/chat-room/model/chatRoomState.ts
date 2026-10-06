@@ -1,6 +1,7 @@
 // StatDef/Shortcut/Ending은 이 스키마를 그대로 반영한다.
 // ChatRoomState는 캐릭터/스토리 챗 공용 상태 모델이다.
 
+import type { ChatModelId } from "@/entities/chat-model/@x/chat-room";
 import type { MediaTagImages } from "@/entities/media-book/@x/chat-room";
 
 import type { ChatMessage } from "../api/chatStream";
@@ -82,4 +83,9 @@ export type ChatRoomState = {
   latestVersionAvailable: boolean; // 원작에 이 방보다 최신 버전이 있는지
   versionAutoUpgraded: boolean; // 이번 조회에서 서버가 자동 마이그레이션했는지
   contentRestricted: boolean; // 작품이 이용제한·삭제돼 이 방에서 대화를 이어갈 수 없는지(읽기·삭제·초기화는 된다)
+  // 다음 턴을 실제로 쓸 모델. 방에 저장한 모델을 지금 쓸 수 없으면(허용 회수·기능 꺼짐) 서버가 기본 모델로 바꿔 준 값이다.
+  effectiveChatModel: ChatModelId;
+  // 다음 턴 하나의 클로버(그 모델의 가격). undefined 는 서버가 값을 주지 않았다는 뜻이다 — 이 칸이 생기기 전의 서버가
+  // 그렇다(서버와 화면은 따로 배포된다). 그때 화면은 가격 숫자를 말하지 않고 부족 여부도 판정하지 않는다.
+  turnCost: number | undefined;
 };

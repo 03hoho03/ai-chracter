@@ -17,6 +17,14 @@ describe("shouldShowCloverBalance", () => {
   it("확인 전이라도 부족하면 보여준다", () => {
     expect(shouldShowCloverBalance({ spendConfirmedToday: false, hasCloverShortage: true })).toBe(true);
   });
+
+  // 상위 모델 방은 무료분 없이 첫 턴부터 차감하고 하루 확인도 묻지 않아 `spendConfirmedToday` 가 거짓으로 남는다 —
+  // 이 케이스가 없으면 매 턴 깎이는 잔액이 숨는다.
+  it("턴마다 차감하는 자리면 확인 기록·부족과 무관하게 보여준다", () => {
+    expect(
+      shouldShowCloverBalance({ spendConfirmedToday: false, hasCloverShortage: false, chargesEveryTurn: true }),
+    ).toBe(true);
+  });
 });
 
 describe("isCloverInsufficient", () => {

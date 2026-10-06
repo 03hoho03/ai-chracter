@@ -4,6 +4,7 @@ import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { RotateCw, Send, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 
+import { defaultChatTurnCost, useChatModelsQuery } from "@/entities/chat-model";
 import type { PreviewShortcut, PreviewStartPayload } from "@/entities/preview-session";
 import {
   AuthorMacroNamesProvider,
@@ -17,7 +18,6 @@ import {
   TypingIndicator,
   shouldShowSuggestedReplies,
 } from "@/entities/chat-room";
-import { CHAT_TURN_CLOVER_COST } from "@/entities/clover";
 import type { MediaTagImages } from "@/entities/media-book";
 import { usePersonasQuery } from "@/entities/persona";
 import { buildPreviewStartState, usePreviewSessionQuery, useStartPreviewMutation } from "@/entities/preview-session";
@@ -72,12 +72,14 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
 
   // 미리보기도 채팅 4경로와 **같은 게이트**를 지나므로 같은
   // 확인이 필요하다. 트리거를 위젯이 만들어 넘기는 이유와 단가를 여기서 묶는 이유는
-  // `ChatRoomView`와 같다 — 한 턴 단가다.
+  // `ChatRoomView`와 같다 — 한 턴 단가다. 미리보기는 언제나 기본 모델이라 그 가격을 모델 목록의 기본 모델 항목에서
+  // 읽는다(방이 없어 방 응답의 가격이 없다). 목록을 못 받았으면 확인 문구가 숫자 없이 말한다.
   const confirmCloverSpend = useConfirmCloverSpend();
+  const turnCost = defaultChatTurnCost(useChatModelsQuery().data);
   const { send, status, policyWarning, streamingText } = usePreviewSendMessage(
     (error) =>
       // 미리보기도 `"chat"`이다 — 게이트가 채팅 4경로에 같은 일일 버킷을 쓰므로 자정 사유가 참이다.
-      confirmCloverSpend(error, CHAT_TURN_CLOVER_COST, "chat"),
+      confirmCloverSpend(error, turnCost, "chat"),
     macroNames,
   );
   const isSending = status.kind === "sending";

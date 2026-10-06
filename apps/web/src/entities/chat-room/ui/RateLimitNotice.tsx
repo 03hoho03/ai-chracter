@@ -2,12 +2,17 @@ import { useEffect, useState } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { RotateCw } from "lucide-react";
 
-import { formatChatRateLimitAnnouncement, formatChatRateLimitMessage, type ChatRateLimit } from "../model/chatRateLimit";
+import {
+  formatChatRateLimitAnnouncement,
+  formatChatRateLimitMessage,
+  type ChatRateLimit,
+  type ChatRateLimitSurface,
+} from "../model/chatRateLimit";
 
 type RateLimitNoticeProps = {
   rateLimit: ChatRateLimit;
-  /** 문구만 갈린다 — 미리보기는 "채팅과 같은 한도"라는 사실을 먼저 말한다. */
-  surface: "chat" | "preview";
+  /** 문구만 갈린다 — 미리보기는 "채팅과 같은 한도"라는 사실을 먼저 말하고, 상위 모델 방은 자정 약속을 하지 않는다. */
+  surface: ChatRateLimitSurface;
   /** 미리보기 배너에는 재시도가 없다 — 넘기지 않으면 버튼이 그려지지 않는다. */
   onRetry?: () => void;
 };

@@ -32,6 +32,8 @@ function buildState(messages: ChatMessage[]): ChatRoomState {
     latestVersionAvailable: false,
     versionAutoUpgraded: false,
     contentRestricted: false,
+    effectiveChatModel: "gemini",
+    turnCost: 10,
     hasMoreMessagesBefore: false,
   };
 }

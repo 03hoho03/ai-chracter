@@ -29,7 +29,7 @@ import type { CloverSpendSurface } from "./confirmCloverSpendCopy";
  * 또 `CLOVER_CONFIRM_REQUIRED`를 내고, 호출부의 차단기가 없었다면 그대로 루프가 된다. */
 export function useConfirmCloverSpend(): (
   error: unknown,
-  cost: number,
+  cost: number | undefined,
   surface: CloverSpendSurface,
 ) => Promise<CloverSpendConfirmOutcome> {
   const queryClient = useQueryClient();
