@@ -1077,6 +1077,24 @@ async def _queue_job(
     return await create_charged_job(db_session, job=job, expected_cost=40, now=datetime.now(UTC))
 
 
+def _episode_text(
+    body: str,
+    *,
+    number: int = 1,
+    title: str = "비 오는 저녁",
+    summary: str = "서진이 도윤을 만났다.",
+    characters: str = "서진, 도윤",
+) -> str:
+    """생성 출력의 화 하나 — 머리 줄·필드 세 줄·구분 줄·본문(`novelize/output.py` 의 형식)."""
+    return f"==={number}화===\n제목: {title}\n요약: {summary}\n등장인물: {characters}\n---\n{body}"
+
+
+def _batch_output(*bodies: str, novel_title: str | None = None) -> str:
+    """본문마다 화 하나를 1화부터 차례로 이은 생성 출력. `novel_title` 이 있으면 맨 앞에 소설 제목 블록을 둔다."""
+    head = f"===소설 제목===\n{novel_title}\n" if novel_title is not None else ""
+    return head + "\n".join(_episode_text(body, number=n) for n, body in enumerate(bodies, start=1))
+
+
 async def _novel_ledger(db: AsyncSession, user_id: uuid.UUID) -> list[tuple[str, int]]:
     """사용자의 소설화 원장 행(종류, 금액) — 금액·종류 순."""
     rows = await db.execute(

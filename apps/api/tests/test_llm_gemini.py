@@ -1222,7 +1222,7 @@ def test_novelize_settings_defaults() -> None:
     assert Settings.model_fields["gemini_novelize_chapter_timeout_ms"].default == 300_000
     assert Settings.model_fields["gemini_novelize_revise_timeout_ms"].default == 120_000
     assert Settings.model_fields["gemini_novelize_boundary_timeout_ms"].default == 30_000
-    assert Settings.model_fields["novelize_chapter_max_turns"].default == 20
+    assert Settings.model_fields["novelize_chapter_max_turns"].default == 45
 
 
 def test_novelize_thinking_settings_read_an_empty_env_value_as_unset(monkeypatch: pytest.MonkeyPatch) -> None:

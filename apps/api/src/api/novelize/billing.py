@@ -5,11 +5,14 @@
 한다(차감만 남고 작업이 없거나 그 반대가 생기지 않게). 그래서 요청 세션 하나에 얹는다. 면제 계정 분기도 없다 — 채팅·
 이미지 상한을 면제받는 운영 계정도 소설화는 똑같이 낸다.
 
-**락 순서는 모든 경로에서 users → novel_jobs → clover_lots 다.** 작업 생성·환불·소설 삭제·탈퇴가 모두 사용자 행을
-먼저 잠그므로 한 사용자의 이 경로들은 사용자 행에서 줄을 선다. 그 덕에 "진행 중 작업이 있나"·"오늘 몇 번 했나"를
-사용자 잠금 아래에서 읽으면 다른 요청이 그 사이에 작업을 끼워 넣을 수 없다. 예외로 성공 저장은 사용자 행 없이 작업 행 →
-소설 행 순서로 잠근다 — 그래서 소설 삭제는 소설 행을 먼저 잠그면 안 된다(삭제는 소설 행을 쥔 채 작업 행을, 성공 저장은
-작업 행을 쥔 채 소설 행을 기다려 교착이 된다).
+**락 순서는 모든 경로에서 users → novel_jobs → clover_lots 다.** 작업 생성·환불·소설 삭제·탈퇴, 그리고 화를 저장하는
+성공 저장이 모두 사용자 행을 먼저 잠그므로 한 사용자의 이 경로들은 사용자 행에서 줄을 선다. 그 덕에 "진행 중 작업이
+있나"·"오늘 몇 번 했나"를 사용자 잠금 아래에서 읽으면 다른 요청이 그 사이에 작업을 끼워 넣을 수 없다. 화 저장이
+사용자 행을 먼저 잡는 것은 목표보다 적은 화를 낸 성공이 그 자리에서 차액을 돌려주기 때문이다 — 지급은 사용자 행을
+고치므로, 작업 행을 쥔 채 사용자 행을 기다리면 사용자 행을 쥔 채 작업 행을 지우는 탈퇴와 교착한다. 예외는 AI 수정의
+성공 저장 하나다. 지급이 없어 사용자 행 없이 작업 행 → 장 행 순서로 잠근다. 어느 저장이든 소설 행은 맨 뒤라, 소설
+삭제는 소설 행을 먼저 잠그면 안 된다(삭제는 소설 행을 쥔 채 작업 행을, 저장은 작업 행을 쥔 채 소설 행을 기다려 교착이
+된다).
 
 **상태 전이는 전부 조건부 UPDATE 다**(`transition_job`). 만료 정리와 정상 종료가 같은 작업을 동시에 끝내려 해도 조건
 (지금 상태)에 맞는 쪽 하나만 행을 받고, 받지 못한 쪽은 아무것도 하지 않는다 — 환불이 두 번 나가거나 이미 환불된
@@ -17,11 +20,12 @@
 
 import uuid
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime, time
 from typing import Any, assert_never
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core import clover
@@ -29,8 +33,17 @@ from api.core.config import settings
 from api.core.rate_limit import KST, seconds_until_kst_midnight
 from api.core.rate_limit_gate import _too_many_requests
 from api.db.models.auth import User
-from api.db.models.novel import Novel, NovelChapter, NovelJob, NovelJobFailureCode, NovelJobKind, NovelJobStatus
-from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, novel_chapter_cost, parse_chat_model_id
+from api.db.models.novel import (
+    Novel,
+    NovelChapter,
+    NovelJob,
+    NovelJobFailureCode,
+    NovelJobKind,
+    NovelJobStatus,
+)
+from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, novel_episode_unit_price, parse_chat_model_id
+from api.novelize.episodes import k_max, regenerate_ineligibility
+from api.novelize.inputs import regenerate_batch
 
 ACTIVE_JOB_STATUSES: tuple[NovelJobStatus, ...] = ("queued", "running")
 # 하루 상한에 세는 상태. 환불된 실패를 세면 우리 쪽 실패가 사용자의 하루 기회를 깎는다.
@@ -40,20 +53,24 @@ _CHAPTER_JOB_KINDS: tuple[NovelJobKind, ...] = ("chapter_generate", "chapter_reg
 _NOVELIZE_WINDOW = "novelize"
 
 
-def job_price(kind: NovelJobKind, model: ChatModelId = DEFAULT_CHAT_MODEL) -> int:
-    """작업 한 번의 클로버 단가. 장 생성·재생성은 고른 글쓰기 모델의 장 가격이고, AI 수정은 모델과 무관하다(언제나
-    Gemini 로 돈다). 단가 상수를 부를 때마다 모듈 전역으로 읽는다 — 값을 붙잡아 두면 테스트가 바꿀 수 없고, 화면에
-    금액을 내려주는 응답도 이 함수 하나에서 읽어야 차감액과 어긋나지 않는다."""
-    if kind == "chapter_generate":
-        return novel_chapter_cost(model, regenerate=False)
-    if kind == "chapter_regenerate":
-        return novel_chapter_cost(model, regenerate=True)
+def job_price(kind: NovelJobKind, model: ChatModelId = DEFAULT_CHAT_MODEL, episode_count: int = 1) -> int:
+    """작업 한 번의 클로버. 생성·다시 만들기는 고른 글쓰기 모델의 화 단가 × 화 수이고, AI 수정은 화 수·모델과 무관하다
+    (언제나 Gemini 로 화 하나의 문단을 고친다). 단가 상수를 부를 때마다 모듈 전역으로 읽는다 — 값을 붙잡아 두면
+    테스트가 바꿀 수 없고, 화면에 금액을 내려주는 응답도 이 함수 하나에서 읽어야 차감액과 어긋나지 않는다."""
+    if kind == "chapter_generate" or kind == "chapter_regenerate":
+        return novel_episode_unit_price(model) * episode_count
     if kind == "ai_edit":
         return clover.NOVELIZE_AI_EDIT_COST
     if kind == "chain_generate":
         # 연쇄 부모의 금액은 남은 대화의 묶음 수에 달려 작업 종류만으로 정해지지 않는다 — 부모 전용 계산이 따로 한다.
         raise ValueError("chain_generate 의 금액은 job_price 로 계산하지 않는다")
     assert_never(kind)
+
+
+def chain_price(model: ChatModelId, batch_count: int) -> int:
+    """연쇄 생성("남은 대화 한 번에")의 선차감액. 묶음 경계를 아직 모르므로 묶음마다 그 모델이 낼 수 있는 가장 많은 화
+    수를 미리 받고, 끝난 뒤 쓰지 않은 몫을 돌려준다."""
+    return batch_count * k_max(model) * novel_episode_unit_price(model)
 
 
 def chapter_job_model(job: NovelJob) -> ChatModelId:
@@ -78,7 +95,7 @@ async def _lock_user(db: AsyncSession, user_id: uuid.UUID) -> bool:
 async def _starts_after_last_chapter(db: AsyncSession, job: NovelJob) -> bool:
     """장 생성 작업의 시작이 지금 마지막 장의 끝보다 뒤인가. 라우트는 다음 장 시작을 잠금 전에 정하므로, 그 사이 앞
     작업이 같은 구간으로 장을 저장했으면 이 작업은 이미 장이 된 구간을 다시 만든다. 사용자 잠금 뒤에 다시 본다 —
-    결과 저장은 사용자 행을 잡지 않지만, 잠금을 얻은 뒤의 조회는 그때까지 커밋된 장을 본다."""
+    결과 저장도 사용자 행을 먼저 잡으므로, 잠금을 얻은 뒤의 조회는 그때까지 커밋된 장을 본다."""
     assert job.start_message_created_at is not None and job.start_message_id is not None
     last_end = (
         await db.execute(
@@ -103,24 +120,28 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
       지워졌다.
     - 409 `NOVEL_NOTHING_NEW`(장 생성만): 사용자 잠금을 기다리는 사이 앞 작업이 이 작업의 시작을 덮는 장을 저장했다
       (두 탭에서 동시에 다음 장을 만든 경우). 화면은 경계 제안을 다시 받는다.
-    - 409 `NOVELIZE_PRICE_CHANGED` + `currentCost`: 사용자가 확인한 금액(`expected_cost`)이 지금 단가와 다르다. 단가가
-      배포로 바뀌는 사이 열어 둔 확인 화면의 금액으로 차감하지 않으려는 것이다. 장 작업의 단가는 작업에 적힌 모델의
-      가격이다(`job.model`, 허용 판정은 호출자가 먼저 한다). DB 를 건드리기 전에 판정한다.
+    - 409 `NOVELIZE_PRICE_CHANGED` + `currentCost`: 사용자가 확인한 금액(`expected_cost`)이 지금 금액과 다르다. 단가가
+      배포로 바뀌는 사이 열어 둔 확인 화면의 금액으로 차감하지 않으려는 것이다. 생성·다시 만들기의 금액은 작업에 적힌
+      모델(`job.model`, 허용 판정은 호출자가 먼저 한다)의 화 단가 × 화 수다. 생성의 화 수는 호출자가
+      `episode_count_target` 에 싣는다(비어 있으면 1). 생성·AI 수정은 DB 를 건드리기 전에 판정하고, 다시 만들기는 화
+      수가 묶음에서 나오므로 사용자 잠금 뒤에 판정한다.
+    - 409 `NOVEL_MODEL_INELIGIBLE` + `reason`(다시 만들기만): 고른 모델이 그 묶음을 담지 못한다 — 묶음의 화 수가 그
+      모델의 화 수 상한을 넘거나(`too_many_episodes`) 묶음의 턴 수가 그 모델의 턴 상한을 넘는다(`too_many_turns`).
+      다시 만들기는 지금 화 수를 그대로 지키므로 화 수를 줄여 맞출 수 없다.
     - 409 `NOVEL_JOB_IN_PROGRESS`: 이 소설에 진행 중(대기·실행) 작업이 있다.
     - 429 `USER_LIMIT`(`window: "novelize"`): 같은 시작 메시지의 장 생성·재생성이 오늘(KST) 상한에 닿았다. 재시도 초는
       상한이 풀리는 KST 자정까지다.
     - 429 `CLOVER_REQUIRED`(`window: "novelize"`): 잔액 부족. 이 경우 참인 재시도 시각은 없지만, 클로버가 다시 생기는
       가장 이른 정기 시점이 출석이 다시 열리는 KST 자정이라 그때까지의 초를 싣는다.
 
-    순서는 단가 확인 → 사용자 잠금 → 소설·장 존재 확인 → 다음 장 시작 재확인(장 생성만) → 진행 중 확인 → 하루 상한 → 작업 INSERT → 차감(clover_lots 잠금)이다. 진행 중
-    확인과 상한을 사용자 잠금 뒤에 읽으므로 같은 사용자의 동시 요청이 둘 다 통과하지 못한다(부분 유니크 인덱스는
+    순서는 금액 확인(다시 만들기 빼고) → 사용자 잠금 → 소설·장 존재 확인 → 다시 만들기의 묶음·화 수·모델 적격성·금액
+    확인 → 다음 장 시작 재확인(장 생성만) → 진행 중 확인 → 하루 상한 → 작업 INSERT → 차감(clover_lots 잠금)이다. 진행
+    중 확인과 상한을 사용자 잠금 뒤에 읽으므로 같은 사용자의 동시 요청이 둘 다 통과하지 못한다(부분 유니크 인덱스는
     마지막 방어선으로 남는다)."""
-    price = job_price(job.kind, chapter_job_model(job))
-    if expected_cost != price:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "NOVELIZE_PRICE_CHANGED", "currentCost": price},
-        )
+    if job.kind == "chapter_generate" and job.episode_count_target is None:
+        job.episode_count_target = 1
+    if job.kind != "chapter_regenerate":
+        price = _checked_price(job, expected_cost)
 
     if not await _lock_user(db, job.user_id):
         # 인증을 통과한 요청이라 도달할 수 없다. 도달했다면 500 이 맞다.
@@ -139,6 +160,13 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
     ):
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "NOVEL_CHAPTER_NOT_FOUND"})
+    if job.kind == "chapter_regenerate":
+        try:
+            await _fix_regenerate_batch(db, job)
+            price = _checked_price(job, expected_cost)
+        except HTTPException:
+            await db.rollback()
+            raise
     if job.kind == "chapter_generate" and not await _starts_after_last_chapter(db, job):
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "NOVEL_NOTHING_NEW"})
@@ -182,26 +210,79 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
     return job
 
 
+def _checked_price(job: NovelJob, expected_cost: int) -> int:
+    """작업의 금액을 계산해 확인한 금액과 다르면 409 `NOVELIZE_PRICE_CHANGED` 를 낸다. 롤백은 호출자가 한다."""
+    price = job_price(job.kind, chapter_job_model(job), job.episode_count_target or 1)
+    if expected_cost != price:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "NOVELIZE_PRICE_CHANGED", "currentCost": price},
+        )
+    return price
+
+
+async def _fix_regenerate_batch(db: AsyncSession, job: NovelJob) -> None:
+    """다시 만들기 작업에 대상 묶음과 화 수를 싣고, 고른 모델이 그 묶음을 담는지 본다. 사용자 잠금 아래에서 부른다 —
+    묶음의 화를 지우는 경로도 사용자 행을 먼저 잡으므로 여기서 센 화 수가 차감 뒤까지 그대로다.
+
+    묶음은 호출자가 실은 `batch_id` 이고, 없으면 작업이 가리키는 화의 묶음이다(화 하나를 골라 다시 만드는 요청은 그 화가
+    든 묶음 전체를 다시 쓴다). 화는 묶음 이관이 늘 묶음에 넣으므로 묶음 없는 화는 이 경로에 오지 않는다."""
+    batch = await regenerate_batch(db, job)
+    if batch is None:
+        raise ValueError(f"다시 만들 작업 {job.id} 의 묶음을 찾지 못했다")
+    episodes = int(
+        await db.scalar(select(func.count()).select_from(NovelChapter).where(NovelChapter.batch_id == batch.id)) or 0
+    )
+    reason = regenerate_ineligibility(
+        chapter_job_model(job), episode_count=episodes, turn_count=batch.assistant_message_count
+    )
+    if reason is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail={"code": "NOVEL_MODEL_INELIGIBLE", "reason": reason}
+        )
+    job.batch_id = batch.id
+    job.episode_count_target = episodes
+
+
+@dataclass(frozen=True)
+class TransitionedJob:
+    """조건부 전이가 받은 작업 행의 전이 뒤 값 중 환불 계산에 드는 것."""
+
+    charged_amount: int
+    refunded_amount: int | None
+    episode_count_target: int | None
+
+
 async def transition_job(
     db: AsyncSession, *, job_id: uuid.UUID, expected: Sequence[NovelJobStatus], values: Mapping[str, Any]
-) -> int | None:
-    """작업 상태가 `expected` 중 하나일 때만 `values` 를 쓴다. 바뀌었으면 그 작업의 차감액을, 조건이 맞지 않았으면
-    (이미 다른 경로가 끝냈거나 작업이 지워졌으면) `None` 을 돌려준다. 커밋은 호출자가 한다.
+) -> TransitionedJob | None:
+    """작업 상태가 `expected` 중 하나일 때만 `values` 를 쓴다. 바뀌었으면 그 작업의 전이 뒤 금액 칸을, 조건이 맞지
+    않았으면(이미 다른 경로가 끝냈거나 작업이 지워졌으면) `None` 을 돌려준다. 커밋은 호출자가 한다.
 
     작업을 끝내는 쪽은 저장보다 이 전이를 **먼저** 한다 — 성공이면 `running → succeeded` 가 행을 받은 뒤에야 장·개정을
     넣고, 받지 못하면 결과를 버린다. 그래야 만료 정리가 먼저 실패·환불한 작업에 장이 저장되지 않고, 소설 삭제가 먼저
     작업 행을 지웠을 때 지워진 소설에 장을 넣으려다 FK 위반이 나지 않는다."""
-    return await db.scalar(
-        update(NovelJob)
-        .where(NovelJob.id == job_id, NovelJob.status.in_(expected))
-        .values(**values)
-        .returning(NovelJob.charged_amount)
-    )
+    row = (
+        await db.execute(
+            update(NovelJob)
+            .where(NovelJob.id == job_id, NovelJob.status.in_(expected))
+            .values(**values)
+            .returning(NovelJob.charged_amount, NovelJob.refunded_amount, NovelJob.episode_count_target)
+        )
+    ).first()
+    if row is None:
+        return None
+    return TransitionedJob(charged_amount=row[0], refunded_amount=row[1], episode_count_target=row[2])
 
 
 async def refund_job(db: AsyncSession, *, job_id: uuid.UUID, failure_code: NovelJobFailureCode) -> int | None:
-    """진행 중(대기·실행) 작업을 실패로 확정하고 차감액을 돌려준다. 환불한 금액을, 이미 끝났거나 없는 작업이면 `None`
-    을 돌려준다. 커밋은 호출자가 하고, 소설 삭제처럼 같은 트랜잭션에서 더 할 일이 없으면 곧바로 커밋한다.
+    """진행 중(대기·실행) 작업을 실패로 확정하고 쓰지 않은 몫(`charged_amount - consumed_amount`)을 돌려준다. 연쇄
+    생성의 부모가 아니면 쓴 몫이 0 이라 전액이다. 돌려준 금액(0 일 수 있다)을, 이미 끝났거나 없는 작업이면 `None` 을
+    돌려준다. 커밋은 호출자가 하고, 소설 삭제처럼 같은 트랜잭션에서 더 할 일이 없으면 곧바로 커밋한다.
+
+    돌려줄 몫이 0 이면(차감 0 인 연쇄 자식, 다 쓰고 실패한 연쇄 부모) 실패로만 확정하고 `refunded_at`·환불액을 비워
+    두며 원장에도 쓰지 않는다 — 환불 기록이 있는데 금액이 0 인 행은 화면에서 "환불됨"으로 읽힌다. 금액은 전이 문장
+    안에서 그 행의 값으로 계산한다(따로 읽고 쓰면 그 사이 연쇄 자식이 쓴 몫을 놓친다).
 
     실행 경로의 실패 처리·만료 정리·소설 삭제가 모두 이 함수 하나를 쓴다. 순서: 작업의 사용자를 락 없이 읽고 → 사용자
     행 잠금 → 조건부 전이(실패·사유·`refunded_at`) → 행을 받았을 때만 지급. 전이·지급·`refunded_at` 이 한 트랜잭션이라
@@ -219,24 +300,35 @@ async def refund_job(db: AsyncSession, *, job_id: uuid.UUID, failure_code: Novel
     # 서로의 행을 기다려 한쪽이 교착 오류로 끊긴다(탈퇴 요청이면 500).
     if user_id is None or not await _lock_user(db, user_id):
         return None
-    refunded = await transition_job(
+    unused = NovelJob.charged_amount - NovelJob.consumed_amount
+    moved = await transition_job(
         db,
         job_id=job_id,
         expected=ACTIVE_JOB_STATUSES,
         values={
             "status": "failed",
             "failure_code": failure_code,
-            "refunded_at": func.now(),
+            "refunded_at": case((unused > 0, func.now()), else_=None),
+            "refunded_amount": func.nullif(unused, 0),
             "finished_at": func.now(),
             "instruction": None,
             "result_text": None,
         },
     )
-    if refunded is None:
+    if moved is None:
         return None
+    refunded = moved.refunded_amount or 0
     if refunded > 0:
         await clover.grant(db, user_id=user_id, amount=refunded, kind="novelize_refund")
     return refunded
+
+
+def shortfall_refund(*, charged_amount: int, target: int, delivered: int) -> int:
+    """목표 `target` 화로 `charged_amount` 를 낸 생성이 `delivered` 화를 냈을 때 돌려줄 몫 — 모자란 화만큼의 화 단가.
+    많이 낸 화는 추가로 받지 않는다. 단가는 지금 상수가 아니라 낸 금액에서 나눠 얻는다(그 사이 단가가 바뀌어도 낸
+    값 기준으로 돌려준다). 차감액은 언제나 화 수 × 단가라 나누어떨어진다."""
+    missing = target - min(target, delivered)
+    return charged_amount * missing // target
 
 
 async def refund_active_jobs(db: AsyncSession, *, novel_id: uuid.UUID, failure_code: NovelJobFailureCode) -> int:

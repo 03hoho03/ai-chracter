@@ -8,9 +8,10 @@
 부르는 동안에는 세션을 쥐지 않는다 — 장 생성은 수 분까지 걸릴 수 있고, 그동안 커넥션을 붙잡으면 풀이 마른다.
 
 **결과 저장 규칙**: 스트림 청크는 메모리에만 모은다(작업 행·heartbeat 에 본문을 싣지 않는다). 저장은 스트림이 예외
-없이 끝까지 돈 뒤에만 한다 — 루프 안이나 `finally` 에서 저장하면 잘린 장이 저장된다. 중간에 끊지도 않는다(끊으면
-잘림·빈 본문 판정과 사용량 기록이 일어나지 않는다). 성공 저장은 **작업 상태 전이를 먼저** 하고 장·개정을 나중에 넣는다
-— 전이가 행을 받지 못하면(만료 정리가 먼저 실패·환불했거나 소설 삭제가 작업 행을 지웠으면) 결과를 버린다.
+없이 끝까지 돈 뒤에만 한다 — 루프 안이나 `finally` 에서 저장하면 잘린 묶음이 저장된다. 중간에 끊지도 않는다(끊으면
+잘림·빈 본문 판정과 사용량 기록이 일어나지 않는다). 모은 출력은 구분자 형식으로 읽어 화로 나눈다(`output.py`). 성공
+저장은 **사용자 행 잠금 → 작업 상태 전이**를 먼저 하고 묶음·화·개정을 나중에 넣는다 — 전이가 행을 받지 못하면(만료
+정리가 먼저 실패·환불했거나 소설 삭제가 작업 행을 지웠으면) 결과를 버린다.
 
 **작업 전체 상한**은 `asyncio.timeout` 이다. 상한에 걸리면 진행 중인 모델 호출이 취소되고, 취소된 호출의 토큰 사용량은
 기록되지 않는다(사용량 기록은 정상 종료한 호출에만 있다). 서버 종료로 태스크가 취소되면(`CancelledError`) 잡지 않는다 —
@@ -24,12 +25,22 @@ from collections.abc import Coroutine, Sequence
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from api.core import clover
 from api.core.config import settings
 from api.core.sentry import capture_dependency_failure
-from api.db.models.novel import Novel, NovelChapter, NovelChapterRevision, NovelJob, NovelJobFailureCode
+from api.db.models.novel import (
+    Novel,
+    NovelBatch,
+    NovelChapter,
+    NovelChapterCharacter,
+    NovelChapterRevision,
+    NovelCharacter,
+    NovelJob,
+    NovelJobFailureCode,
+)
 from api.llm.client import (
     LLMCallContext,
     LLMClient,
@@ -38,7 +49,14 @@ from api.llm.client import (
     LLMPolicyViolationError,
     LLMTruncatedError,
 )
-from api.novelize.billing import ACTIVE_JOB_STATUSES, chapter_job_model, refund_job, transition_job
+from api.novelize.billing import (
+    ACTIVE_JOB_STATUSES,
+    _lock_user,
+    chapter_job_model,
+    refund_job,
+    shortfall_refund,
+    transition_job,
+)
 from api.novelize.deletion import erase_stale_ai_edit_previews
 from api.novelize.inputs import (
     ChapterInput,
@@ -47,7 +65,9 @@ from api.novelize.inputs import (
     build_revise_input,
     current_revision,
     next_ordinal,
+    regenerate_batch,
 )
+from api.novelize.output import MalformedOutputError, ParsedBatch, ParsedEpisode, parse_batch_output
 from api.novelize.prompts import NovelizeReviseResult
 from api.novelize.text import clean_chapter_body, looks_like_refusal, split_paragraphs
 
@@ -145,7 +165,8 @@ async def _execute(session_factory: SessionFactory, llm_client: LLMClient, job_i
             else:
                 # 작업에 적힌 모델 그대로다. 허용은 과금할 때 판정했고 여기서 다시 보지 않는다 — 그 사이 허용이 회수됐다고
                 # 기본 모델로 바꾸면 상위 모델 값을 내고 다른 모델의 글을 받는다. 프롬프트 세트는 모델과 무관하게 기본
-                # 모델 세트다(`build_chapter_input`).
+                # 모델 세트다(`build_chapter_input`). call site 를 바꾸지 않는다 — 상위 모델을 Bedrock 으로 보내는
+                # 라우팅이 이 call site 로 고른다.
                 usage = LLMCallContext(
                     call_site="novelize_chapter",
                     user_id=job.user_id,
@@ -159,13 +180,19 @@ async def _execute(session_factory: SessionFactory, llm_client: LLMClient, job_i
             body = _assemble_revision(revise.paragraphs, revise.first_index, revise.last_index, result_text)
             await _save_ai_edit(session_factory, job_id, body)
         else:
-            body = await _generate_chapter(llm_client, chapter_input, usage)
-            await _save_chapter(session_factory, job_id, chapter_input, body)
+            batch = await _generate_batch(llm_client, chapter_input, usage)
+            await _save_batch(session_factory, job_id, chapter_input, batch)
     finally:
         heartbeat.cancel()
 
 
-async def _generate_chapter(llm_client: LLMClient, chapter_input: ChapterInput, usage: LLMCallContext) -> str:
+async def _generate_batch(llm_client: LLMClient, chapter_input: ChapterInput, usage: LLMCallContext) -> ParsedBatch:
+    """모델을 불러 묶음 출력을 받고 화로 나눈다. 판정 순서는 형식 → 화마다 본문 후처리 → 거절 → 최소 길이다. 후처리가
+    빈 줄을 접으므로 형식을 먼저 읽는다. 형식이 어긋났어도 출력 전체가 거절문이면 거절로 실패한다 — 모델은 거절할 때
+    형식을 지키지 않고, 사용자에게는 "형식 오류"보다 "거절"이 맞는 안내다.
+
+    화 수는 여기서 판정하지 않는다. 생성은 목표보다 적어도 성공(모자란 몫 환불)이고 많아도 받아들이며, 다시 만들기의
+    화 수 불일치는 저장이 묶음의 화를 잠근 뒤 판정한다."""
     chunks: list[str] = []
     try:
         async for chunk in llm_client.generate(
@@ -181,11 +208,23 @@ async def _generate_chapter(llm_client: LLMClient, chapter_input: ChapterInput, 
     except LLMClientError as exc:
         logger.warning("소설화 장 생성 호출이 실패했다: %s", type(exc).__name__)
         raise _JobFailedError("llm_error") from exc
-    body = clean_chapter_body("".join(chunks))
-    _judge(split_paragraphs(body))
-    if len(body) < settings.novelize_min_chapter_chars:
-        raise _JobFailedError("empty")
-    return body
+    raw = "".join(chunks)
+    try:
+        parsed = parse_batch_output(raw)
+    except MalformedOutputError as exc:
+        _judge(split_paragraphs(clean_chapter_body(raw)))
+        logger.warning("소설화 묶음 출력이 형식에 맞지 않는다: %s", exc)
+        raise _JobFailedError("malformed") from exc
+    episodes: list[ParsedEpisode] = []
+    for episode in parsed.episodes:
+        body = clean_chapter_body(episode.body)
+        _judge(split_paragraphs(body))
+        if len(body) < settings.novelize_min_chapter_chars:
+            raise _JobFailedError("malformed")
+        episodes.append(
+            ParsedEpisode(title=episode.title, summary=episode.summary, characters=episode.characters, body=body)
+        )
+    return ParsedBatch(novel_title=parsed.novel_title, episodes=tuple(episodes))
 
 
 def _judge(paragraphs: list[str]) -> None:
@@ -270,62 +309,206 @@ async def _save_ai_edit(session_factory: SessionFactory, job_id: uuid.UUID, body
         await db.commit()
 
 
-async def _save_chapter(session_factory: SessionFactory, job_id: uuid.UUID, chapter_input: ChapterInput, body: str) -> None:
+async def _save_batch(
+    session_factory: SessionFactory, job_id: uuid.UUID, chapter_input: ChapterInput, batch: ParsedBatch
+) -> None:
+    """묶음 결과 저장. 한 트랜잭션에서 사용자 행 잠금 → 성공 전이 → 묶음·화·개정 → 인물·등장 연결 → 소설 제목 → 모자란
+    화 환불이다.
+
+    사용자 행을 먼저 잡는 이유는 모자란 화 환불이 사용자 행을 고치기 때문이다(`billing.py` 의 락 순서). 탈퇴가 사용자
+    행을 쥔 채 작업을 지우는 중이면 여기서 기다렸다가, 탈퇴가 끝난 뒤 사용자나 작업 행이 없어 결과를 버린다. 만료
+    정리와 겹쳐도 둘 다 사용자 행에서 줄을 서고 조건부 전이라 한쪽만 작업을 끝낸다.
+
+    생성은 새 묶음 하나와 화 n 행을 넣는다(화마다 묶음 구간의 사본, 화 번호는 이어서). 목표보다 적게 냈으면 모자란
+    화만큼 돌려주고, 많이 냈으면 추가로 받지 않고 모두 넣는다. 다시 만들기는 묶음의 화를 잠그고 화 수가 지금 화 수와
+    같아야 한다 — 다르면 롤백한 뒤 `episode_count_mismatch` 로 실패·환불한다(화 행을 그대로 두어야 읽은 위치·작가의
+    말·개정 이력이 산다). 같으면 화마다 새 개정을 쌓고 화 제목·요약·등장 인물을 바꾼다.
+
+    작업 행에는 묶음과 화 하나를 남긴다 — 생성은 첫 화, 다시 만들기는 요청이 가리킨 화(없으면 첫 화)와 그 화의 새
+    개정이다. 작업 폴링 화면이 이 화로 이동한다."""
     async with session_factory() as db:
-        if (
-            await transition_job(
-                db, job_id=job_id, expected=("running",), values={"status": "succeeded", "finished_at": func.now()}
-            )
-            is None
-        ):
+        user_id = await db.scalar(select(NovelJob.user_id).where(NovelJob.id == job_id))
+        if user_id is None or not await _lock_user(db, user_id):
+            await db.rollback()
+            return
+        moved = await transition_job(
+            db, job_id=job_id, expected=("running",), values={"status": "succeeded", "finished_at": func.now()}
+        )
+        if moved is None:
             await db.rollback()
             return
         job = await db.get(NovelJob, job_id)
         assert job is not None  # 방금 전이가 행을 받았고 같은 트랜잭션이 그 행을 잠그고 있다
         if job.kind == "chapter_regenerate":
-            assert job.chapter_id is not None
-            # 직접 수정·되돌리기도 장 행을 먼저 잠그고 다음 번호를 쓴다 — 같은 번호를 동시에 쓰지 않게 줄을 선다.
-            await db.execute(
-                select(NovelChapter.id).where(NovelChapter.id == job.chapter_id).with_for_update(key_share=True)
-            )
-            latest = await current_revision(db, job.chapter_id)
-            chapter_id = job.chapter_id
-            revision_no = (latest.revision_no if latest else 0) + 1
-            source = "regenerate"
+            saved = await _save_regenerated(db, job, batch)
+            if saved is None:
+                await db.rollback()
+                raise _JobFailedError("episode_count_mismatch")
+            batch_id, chapters, revisions = saved
         else:
-            assert (
-                job.start_message_id is not None
-                and job.start_message_created_at is not None
-                and job.end_message_id is not None
-                and job.end_message_created_at is not None
+            batch_id, chapters, revisions = await _save_generated(db, job, chapter_input, batch)
+        await _link_characters(db, job.novel_id, chapters, batch.episodes)
+        if chapter_input.writes_novel_title and batch.novel_title:
+            # 사용자가 그사이 제목을 고쳤으면 덮지 않는다 — 조건을 문장에 걸어 읽고 쓰는 사이에 끼어들 틈이 없다.
+            await db.execute(
+                update(Novel)
+                .where(Novel.id == job.novel_id, Novel.title_edited_at.is_(None))
+                .values(title=batch.novel_title)
             )
-            chapter = NovelChapter(
-                novel_id=job.novel_id,
-                ordinal=await next_ordinal(db, job.novel_id),
-                start_message_id=job.start_message_id,
-                start_message_created_at=job.start_message_created_at,
-                end_message_id=job.end_message_id,
-                end_message_created_at=job.end_message_created_at,
-                assistant_message_count=chapter_input.assistant_count,
-                source_hash=chapter_input.source_hash,
-            )
-            db.add(chapter)
-            await db.flush()
-            chapter_id, revision_no, source = chapter.id, 1, "generate"
-        revision = NovelChapterRevision(chapter_id=chapter_id, revision_no=revision_no, body=body, source=source)
-        db.add(revision)
-        await db.flush()
-        # 결과 개정을 가리키는 칸은 개정을 넣은 뒤에야 채울 수 있다(FK 를 바로 검사한다).
+        target_index = next((i for i, c in enumerate(chapters) if c.id == job.chapter_id), 0)
         await db.execute(
-            update(NovelJob).where(NovelJob.id == job_id).values(chapter_id=chapter_id, result_revision_id=revision.id)
+            update(NovelJob)
+            .where(NovelJob.id == job_id)
+            .values(
+                batch_id=batch_id,
+                chapter_id=chapters[target_index].id,
+                result_revision_id=revisions[target_index].id,
+            )
         )
+        refund = shortfall_refund(
+            charged_amount=moved.charged_amount,
+            target=moved.episode_count_target or 1,
+            delivered=len(batch.episodes),
+        )
+        if refund > 0:
+            await db.execute(
+                update(NovelJob).where(NovelJob.id == job_id).values(refunded_at=func.now(), refunded_amount=refund)
+            )
+            await clover.grant(db, user_id=user_id, amount=refund, kind="novelize_refund")
         await db.execute(update(Novel).where(Novel.id == job.novel_id).values(updated_at=func.now()))
         await db.commit()
-        if source == "regenerate":
-            # 재생성 결과가 새 현재 개정이 되면 옛 개정을 기준으로 한 미리보기는 적용할 수 없다. 장을 잠근 트랜잭션을
-            # 끝낸 뒤에 비운다(장을 쥔 채 작업 행을 고치면 적용과 교착한다).
-            await erase_stale_ai_edit_previews(db, chapter_id)
+        if job.kind == "chapter_regenerate":
+            # 다시 만든 결과가 화마다 새 현재 개정이 되면 옛 개정을 기준으로 한 미리보기는 적용할 수 없다. 화를 잠근
+            # 트랜잭션을 끝낸 뒤에 비운다(화를 쥔 채 작업 행을 고치면 적용과 교착한다).
+            for chapter in chapters:
+                await erase_stale_ai_edit_previews(db, chapter.id)
             await db.commit()
+
+
+async def _save_generated(
+    db: AsyncSession, job: NovelJob, chapter_input: ChapterInput, batch: ParsedBatch
+) -> tuple[uuid.UUID, list[NovelChapter], list[NovelChapterRevision]]:
+    assert (
+        job.start_message_id is not None
+        and job.start_message_created_at is not None
+        and job.end_message_id is not None
+        and job.end_message_created_at is not None
+    )
+    segment = {
+        "start_message_id": job.start_message_id,
+        "start_message_created_at": job.start_message_created_at,
+        "end_message_id": job.end_message_id,
+        "end_message_created_at": job.end_message_created_at,
+        "assistant_message_count": chapter_input.assistant_count,
+        "source_hash": chapter_input.source_hash,
+    }
+    batch_ordinal = await db.scalar(
+        select(func.coalesce(func.max(NovelBatch.ordinal), 0)).where(NovelBatch.novel_id == job.novel_id)
+    )
+    row = NovelBatch(
+        novel_id=job.novel_id,
+        ordinal=int(batch_ordinal or 0) + 1,
+        target_episode_count=job.episode_count_target or 1,
+        **segment,
+    )
+    db.add(row)
+    await db.flush()
+    first_ordinal = await next_ordinal(db, job.novel_id)
+    chapters = [
+        NovelChapter(
+            novel_id=job.novel_id,
+            ordinal=first_ordinal + index,
+            batch_id=row.id,
+            episode_index=index,
+            title=episode.title,
+            summary=episode.summary,
+            **segment,
+        )
+        for index, episode in enumerate(batch.episodes)
+    ]
+    db.add_all(chapters)
+    await db.flush()
+    revisions = [
+        NovelChapterRevision(chapter_id=chapter.id, revision_no=1, body=episode.body, source="generate")
+        for chapter, episode in zip(chapters, batch.episodes, strict=True)
+    ]
+    db.add_all(revisions)
+    await db.flush()
+    return row.id, chapters, revisions
+
+
+async def _save_regenerated(
+    db: AsyncSession, job: NovelJob, batch: ParsedBatch
+) -> tuple[uuid.UUID, list[NovelChapter], list[NovelChapterRevision]] | None:
+    """묶음의 화마다 새 개정을 쌓는다. 화 수가 출력과 다르면 아무것도 쓰지 않고 None.
+
+    화 행을 `FOR KEY SHARE` 로 잠근다 — 직접 수정·되돌리기도 화 행을 먼저 잠그고 다음 개정 번호를 쓰므로 같은 번호를
+    동시에 쓰지 않게 줄을 선다."""
+    target = await regenerate_batch(db, job)
+    if target is None:
+        # 다시 만들 묶음이 지워졌다 — 묶음 삭제는 진행 중 작업이 있으면 거절하므로 옛 판 코드가 지운 경우뿐이다.
+        return None
+    chapters = list(
+        (
+            await db.scalars(
+                select(NovelChapter)
+                .where(NovelChapter.batch_id == target.id)
+                .order_by(NovelChapter.episode_index, NovelChapter.ordinal)
+                .with_for_update(key_share=True)
+            )
+        ).all()
+    )
+    if len(chapters) != len(batch.episodes):
+        return None
+    revisions: list[NovelChapterRevision] = []
+    for chapter, episode in zip(chapters, batch.episodes, strict=True):
+        latest = await current_revision(db, chapter.id)
+        revisions.append(
+            NovelChapterRevision(
+                chapter_id=chapter.id,
+                revision_no=(latest.revision_no if latest else 0) + 1,
+                body=episode.body,
+                source="regenerate",
+            )
+        )
+        chapter.title = episode.title
+        chapter.summary = episode.summary
+    db.add_all(revisions)
+    await db.flush()
+    return target.id, chapters, revisions
+
+
+async def _link_characters(
+    db: AsyncSession, novel_id: uuid.UUID, chapters: Sequence[NovelChapter], episodes: Sequence[ParsedEpisode]
+) -> None:
+    """화마다 출력이 적은 등장 인물을 인물 카드에 붙인다. 이름이나 별칭이 같은 카드가 있으면 그 카드, 없으면 새 카드다.
+    다시 만들기는 그 화의 옛 연결을 지우고 새로 붙인다(연결은 본문과 함께 나온 사실이다). 카드는 지우지 않는다 — 사용자가
+    메모를 적은 카드일 수 있다.
+
+    사용자 행 잠금 아래에서 부른다. 이름 ∪ 별칭이 소설 안에서 겹치지 않는 것은 DB 가 아니라 코드가 지키므로, 카드를 고치는
+    다른 경로도 같은 잠금을 잡아야 같은 이름으로 카드가 둘 생기지 않는다."""
+    cards = (await db.scalars(select(NovelCharacter).where(NovelCharacter.novel_id == novel_id))).all()
+    by_name: dict[str, NovelCharacter] = {}
+    for card in cards:
+        by_name[card.name] = card
+        for alias in card.aliases:
+            by_name.setdefault(alias, card)
+    await db.execute(
+        delete(NovelChapterCharacter).where(NovelChapterCharacter.chapter_id.in_([c.id for c in chapters]))
+    )
+    for chapter, episode in zip(chapters, episodes, strict=True):
+        linked: set[uuid.UUID] = set()
+        for name in episode.characters:
+            found = by_name.get(name)
+            if found is None:
+                found = NovelCharacter(novel_id=novel_id, name=name)
+                db.add(found)
+                await db.flush()
+                by_name[name] = found
+            if found.id not in linked:
+                linked.add(found.id)
+                db.add(NovelChapterCharacter(chapter_id=chapter.id, character_id=found.id))
+    await db.flush()
 
 
 async def keep_job_alive(session_factory: SessionFactory, job_id: uuid.UUID) -> None:

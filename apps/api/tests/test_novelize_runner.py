@@ -18,7 +18,9 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.core.config import settings
-from api.db.models import ChatMessage, ChatRoom, Novel, NovelChapter, NovelChapterRevision, NovelJob
+from api.db.models import ChatMessage, ChatRoom, Novel, NovelChapter, NovelChapterRevision, NovelJob, User
+from api.db.models.clover import CloverLot
+from api.db.models.novel import NovelBatch, NovelChapterCharacter, NovelCharacter
 from api.db.models.clover import CloverLedger
 from api.db.models.novel import NovelJobFailureCode
 from api.llm.client import (
@@ -32,10 +34,13 @@ from api.llm.client import (
     T,
 )
 from api.novelize import billing, runner
+from api.novelize import inputs
 from api.novelize.deletion import delete_novels
 from api.novelize.source import segment_hash
 from factories import (
     Room,
+    _batch_output,
+    _episode_text,
     _grant_novelize,
     _login_as,
     _make_user_with_clover_lot,
@@ -59,7 +64,7 @@ class _NovelLLM(LLMClient):
         paragraphs: list[str] | None = None,
         during: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
-        self.chunks = chunks if chunks is not None else [_BODY]
+        self.chunks = chunks if chunks is not None else [_batch_output(_BODY)]
         self.error = error
         self.paragraphs = paragraphs
         self.during = during
@@ -114,8 +119,9 @@ async def _novel_for(
     turns: int = 3,
     lane: str = "character",
     protagonist: str | None = "서진",
+    balance: int = 100,
 ) -> tuple[Room, Novel]:
-    owner = await _make_user_with_clover_lot(db_session, clover_balance=100)
+    owner = await _make_user_with_clover_lot(db_session, clover_balance=balance)
     room = await _open_room(db_client, db_session, turns=turns, lane=lane, user=owner)
     chat_room = await db_session.get(ChatRoom, room.room_id)
     assert chat_room is not None
@@ -141,8 +147,16 @@ async def _room_messages(db: AsyncSession, room_id: uuid.UUID) -> list[ChatMessa
 
 
 async def _chapter_job(
-    db_session: AsyncSession, novel: Novel, start: ChatMessage, end: ChatMessage, *, chapter: NovelChapter | None = None
+    db_session: AsyncSession,
+    novel: Novel,
+    start: ChatMessage,
+    end: ChatMessage,
+    *,
+    chapter: NovelChapter | None = None,
+    episodes: int = 1,
 ) -> NovelJob:
+    """차감까지 한 장 작업. 생성은 목표 화 수 `episodes` 를 싣고, 다시 만들기는 그 화가 든 묶음의 화 수를 작업 생성이
+    정한다 — 금액은 둘 다 화 수 × 40 이다."""
     job = NovelJob(
         novel_id=novel.id,
         user_id=novel.user_id,
@@ -152,8 +166,9 @@ async def _chapter_job(
         start_message_created_at=start.created_at,
         end_message_id=end.id,
         end_message_created_at=end.created_at,
+        episode_count_target=None if chapter is not None else episodes,
     )
-    return await billing.create_charged_job(db_session, job=job, expected_cost=40, now=datetime.now(UTC))
+    return await billing.create_charged_job(db_session, job=job, expected_cost=40 * episodes, now=datetime.now(UTC))
 
 
 async def _ledger(db: AsyncSession, user_id: uuid.UUID) -> list[tuple[str, int]]:
@@ -174,7 +189,12 @@ async def _job(db: AsyncSession, job_id: uuid.UUID) -> NovelJob:
 
 
 async def _chapters(db: AsyncSession, novel_id: uuid.UUID) -> list[NovelChapter]:
-    rows = await db.scalars(sa.select(NovelChapter).where(NovelChapter.novel_id == novel_id).order_by(NovelChapter.ordinal))
+    rows = await db.scalars(
+        sa.select(NovelChapter)
+        .where(NovelChapter.novel_id == novel_id)
+        .order_by(NovelChapter.ordinal)
+        .execution_options(populate_existing=True)
+    )
     return list(rows.all())
 
 
@@ -203,7 +223,7 @@ async def test_chapter_job_saves_the_chapter_and_its_first_revision_after_the_st
     messages = await _room_messages(db_session, room.room_id)
     opening, a2 = messages[0], room.turns[2][1]
     job = await _chapter_job(db_session, novel, opening, a2)
-    llm = _NovelLLM(chunks=["[턴 1] 비가 내리는 ", "저녁이었다.\n\n\n\n", "도윤이 잔을 밀어 주었다. " * 20])
+    llm = _NovelLLM(chunks=[_episode_text("[턴 1] 비가 내리는 "), "저녁이었다.\n\n\n\n", "도윤이 잔을 밀어 주었다. " * 20])
 
     await runner.run_job(_factory(db_session), llm, job.id)
 
@@ -239,7 +259,7 @@ async def test_next_chapter_carries_the_end_of_the_previous_chapter_and_gets_the
     room, novel = await _novel_for(db_client, db_session)
     messages = await _room_messages(db_session, room.room_id)
     first = await _chapter_job(db_session, novel, messages[0], room.turns[1][1])
-    await runner.run_job(_factory(db_session), _NovelLLM(chunks=["앞 문단 " * 40 + "\n\n마지막 문단이다."]), first.id)
+    await runner.run_job(_factory(db_session), _NovelLLM(chunks=[_batch_output("앞 문단 " * 40 + "\n\n마지막 문단이다.")]), first.id)
 
     second = await _chapter_job(db_session, novel, room.turns[2][0], room.turns[3][1])
     llm = _NovelLLM()
@@ -267,6 +287,307 @@ async def test_story_novel_uses_the_story_setting_and_the_narrator_label(
     assert "[턴 1] 진행자: " in prompt
 
 
+# ── 여러 화 묶음 ────────────────────────────────────────────────────────────
+_BODIES = ("첫 화 본문이다. " * 30, "둘째 화 본문이다. " * 30, "셋째 화 본문이다. " * 30)
+
+
+def _three_episodes(*, novel_title: str | None = "빗소리의 계절", count: int = 3) -> str:
+    episodes = [
+        _episode_text(_BODIES[0], number=1, title="비 오는 저녁", summary="서진이 도윤을 만났다.", characters="서진, 도윤"),
+        _episode_text(_BODIES[1], number=2, title="우산", summary="도윤이 우산을 건넸다.", characters="도윤"),
+        _episode_text(_BODIES[2], number=3, title="정류장", summary="둘은 버스를 기다렸다.", characters="서진, 하늘"),
+    ][:count]
+    head = f"===소설 제목===\n{novel_title}\n" if novel_title is not None else ""
+    return head + "\n".join(episodes)
+
+
+async def _batches(db: AsyncSession, novel_id: uuid.UUID) -> list[NovelBatch]:
+    rows = await db.scalars(sa.select(NovelBatch).where(NovelBatch.novel_id == novel_id).order_by(NovelBatch.ordinal))
+    return list(rows.all())
+
+
+async def _links(db: AsyncSession, chapter_id: uuid.UUID) -> list[str]:
+    rows = await db.scalars(
+        sa.select(NovelCharacter.name)
+        .join(NovelChapterCharacter, NovelChapterCharacter.character_id == NovelCharacter.id)
+        .where(NovelChapterCharacter.chapter_id == chapter_id)
+        .order_by(NovelCharacter.name)
+    )
+    return list(rows.all())
+
+
+async def _assert_balance_matches_lots(db: AsyncSession, user_id: uuid.UUID) -> int:
+    balance = await db.scalar(sa.select(User.clover_balance).where(User.id == user_id))
+    lots = await db.scalar(sa.select(sa.func.coalesce(sa.func.sum(CloverLot.remaining), 0)).where(CloverLot.user_id == user_id))
+    assert balance == lots
+    assert balance is not None
+    return balance
+
+
+async def test_a_batch_of_three_episodes_saves_one_batch_three_episodes_their_characters_and_the_novel_title(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    room, novel = await _novel_for(db_client, db_session, balance=300)
+    messages = await _room_messages(db_session, room.room_id)
+    a2 = room.turns[2][1]
+    job = await _chapter_job(db_session, novel, messages[0], a2, episodes=3)
+
+    await runner.run_job(_factory(db_session), _NovelLLM(chunks=[_three_episodes()]), job.id)
+
+    (batch,) = await _batches(db_session, novel.id)
+    chapters = await _chapters(db_session, novel.id)
+    assert (batch.ordinal, batch.target_episode_count, batch.start_message_id, batch.end_message_id) == (
+        1,
+        3,
+        messages[0].id,
+        a2.id,
+    )
+    assert [(c.ordinal, c.episode_index, c.batch_id, c.title, c.summary) for c in chapters] == [
+        (1, 0, batch.id, "비 오는 저녁", "서진이 도윤을 만났다."),
+        (2, 1, batch.id, "우산", "도윤이 우산을 건넸다."),
+        (3, 2, batch.id, "정류장", "둘은 버스를 기다렸다."),
+    ]
+    # 화마다 묶음 구간의 사본을 갖는다 — 옛 코드는 화 행의 구간만 읽는다.
+    assert {(c.start_message_id, c.end_message_id, c.source_hash) for c in chapters} == {
+        (batch.start_message_id, batch.end_message_id, batch.source_hash)
+    }
+    bodies = [(await _revisions(db_session, c.id))[0].body for c in chapters]
+    assert bodies == [body.strip() for body in _BODIES]
+    assert [await _links(db_session, c.id) for c in chapters] == [["도윤", "서진"], ["도윤"], ["서진", "하늘"]]
+    assert await db_session.scalar(
+        sa.select(sa.func.count()).select_from(NovelCharacter).where(NovelCharacter.novel_id == novel.id)
+    ) == 3
+    stored = await _job(db_session, job.id)
+    first_revision = (await _revisions(db_session, chapters[0].id))[0]
+    assert (stored.status, stored.batch_id, stored.chapter_id, stored.result_revision_id) == (
+        "succeeded",
+        batch.id,
+        chapters[0].id,
+        first_revision.id,
+    )
+    assert (stored.refunded_at, stored.refunded_amount) == (None, None)
+    assert (await db_session.get_one(Novel, novel.id, populate_existing=True)).title == "빗소리의 계절"
+    assert await _ledger(db_session, novel.user_id) == [("novelize_spend", -120)]
+
+
+async def test_fewer_episodes_than_the_target_refund_the_missing_ones_in_the_same_success(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    room, novel = await _novel_for(db_client, db_session, balance=300)
+    messages = await _room_messages(db_session, room.room_id)
+    job = await _chapter_job(db_session, novel, messages[0], room.turns[2][1], episodes=3)
+
+    await runner.run_job(_factory(db_session), _NovelLLM(chunks=[_three_episodes(count=2)]), job.id)
+
+    stored = await _job(db_session, job.id)
+    assert (stored.status, stored.refunded_amount, stored.refunded_at is not None) == ("succeeded", 40, True)
+    assert len(await _chapters(db_session, novel.id)) == 2
+    assert (await _batches(db_session, novel.id))[0].target_episode_count == 3
+    assert await _ledger(db_session, novel.user_id) == [("novelize_spend", -120), ("novelize_refund", 40)]
+    assert await _assert_balance_matches_lots(db_session, novel.user_id) == 300 - 120 + 40
+
+
+async def test_more_episodes_than_the_target_are_all_kept_at_no_extra_charge(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    room, novel = await _novel_for(db_client, db_session)
+    messages = await _room_messages(db_session, room.room_id)
+    job = await _chapter_job(db_session, novel, messages[0], room.turns[2][1], episodes=1)
+
+    await runner.run_job(_factory(db_session), _NovelLLM(chunks=[_three_episodes(count=2)]), job.id)
+
+    stored = await _job(db_session, job.id)
+    assert (stored.status, stored.refunded_at, stored.refunded_amount) == ("succeeded", None, None)
+    assert [c.episode_index for c in await _chapters(db_session, novel.id)] == [0, 1]
+    assert await _ledger(db_session, novel.user_id) == [("novelize_spend", -40)]
+
+
+async def test_the_novel_title_is_written_only_by_the_first_batch_and_never_over_a_users_title(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    room, novel = await _novel_for(db_client, db_session, turns=4, balance=300)
+    messages = await _room_messages(db_session, room.room_id)
+    first = await _chapter_job(db_session, novel, messages[0], room.turns[1][1])
+    first_llm = _NovelLLM(chunks=[_three_episodes(novel_title="첫 제목", count=1)])
+    await runner.run_job(_factory(db_session), first_llm, first.id)
+    second = await _chapter_job(db_session, novel, room.turns[2][0], room.turns[3][1])
+    await runner.run_job(_factory(db_session), _NovelLLM(chunks=[_three_episodes(novel_title="둘째 제목", count=1)]), second.id)
+
+    assert (await db_session.get_one(Novel, novel.id, populate_existing=True)).title == "첫 제목"
+
+    # 사용자가 제목을 고쳤으면 첫 묶음을 다시 만들어도 덮지 않는다.
+    await db_session.execute(
+        sa.update(Novel).where(Novel.id == novel.id).values(title="내 제목", title_edited_at=sa.func.now())
+    )
+    await db_session.commit()
+    (chapter, _) = await _chapters(db_session, novel.id)
+    again = await _chapter_job(db_session, novel, messages[0], room.turns[1][1], chapter=chapter)
+    await runner.run_job(_factory(db_session), _NovelLLM(chunks=[_three_episodes(novel_title="새 제목", count=1)]), again.id)
+
+    assert (await _job(db_session, again.id)).status == "succeeded"
+    assert (await db_session.get_one(Novel, novel.id, populate_existing=True)).title == "내 제목"
+
+
+async def test_a_title_the_user_sets_while_the_model_writes_is_not_overwritten(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """입력을 만들 때는 제목이 비어 있어 모델에게 제목을 쓰라고 했어도, 모델이 쓰는 사이 사용자가 제목을 정했으면 저장이
+    덮지 않는다 — 판정은 입력이 아니라 저장 문장의 조건이 한다."""
+    room, novel = await _novel_for(db_client, db_session)
+    messages = await _room_messages(db_session, room.room_id)
+    job = await _chapter_job(db_session, novel, messages[0], room.turns[1][1])
+
+    async def user_sets_the_title() -> None:
+        await db_session.execute(
+            sa.update(Novel).where(Novel.id == novel.id).values(title="내 제목", title_edited_at=sa.func.now())
+        )
+        await db_session.commit()
+
+    llm = _NovelLLM(chunks=[_three_episodes(novel_title="AI 제목", count=1)], during=user_sets_the_title)
+    await runner.run_job(_factory(db_session), llm, job.id)
+
+    assert (await _job(db_session, job.id)).status == "succeeded"
+    assert (await db_session.get_one(Novel, novel.id, populate_existing=True)).title == "내 제목"
+
+
+async def test_regenerating_a_batch_adds_a_revision_to_every_episode_and_relinks_its_characters(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    room, novel = await _novel_for(db_client, db_session, balance=300)
+    messages = await _room_messages(db_session, room.room_id)
+    first = await _chapter_job(db_session, novel, messages[0], room.turns[2][1], episodes=3)
+    await runner.run_job(_factory(db_session), _NovelLLM(chunks=[_three_episodes()]), first.id)
+    chapters = await _chapters(db_session, novel.id)
+    regenerated = "\n".join(
+        _episode_text("다시 쓴 화. " * 30, number=n, title=f"새 제목 {n}", summary=f"새 요약 {n}", characters="하늘")
+        for n in (1, 2, 3)
+    )
+
+    # 가운데 화를 골라도 묶음 전체를 다시 쓴다 — 금액은 묶음의 화 수(3) × 40 이다.
+    job = await _chapter_job(db_session, novel, messages[0], room.turns[2][1], chapter=chapters[1], episodes=3)
+    await runner.run_job(_factory(db_session), _NovelLLM(chunks=[regenerated]), job.id)
+
+    after = await _chapters(db_session, novel.id)
+    assert [c.id for c in after] == [c.id for c in chapters]
+    assert [(c.title, c.summary) for c in after] == [(f"새 제목 {n}", f"새 요약 {n}") for n in (1, 2, 3)]
+    for chapter in after:
+        assert [(r.revision_no, r.source) for r in await _revisions(db_session, chapter.id)] == [
+            (1, "generate"),
+            (2, "regenerate"),
+        ]
+        assert await _links(db_session, chapter.id) == ["하늘"]
+    stored = await _job(db_session, job.id)
+    middle_revision = (await _revisions(db_session, chapters[1].id))[1]
+    assert (stored.status, stored.batch_id, stored.chapter_id, stored.result_revision_id) == (
+        "succeeded",
+        after[0].batch_id,
+        chapters[1].id,
+        middle_revision.id,
+    )
+    assert await _ledger(db_session, novel.user_id) == [("novelize_spend", -120), ("novelize_spend", -120)]
+
+
+@pytest.mark.parametrize("count", [pytest.param(2, id="fewer"), pytest.param(4, id="more")])
+async def test_regenerating_with_a_different_episode_count_fails_and_refunds_everything(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, count: int
+) -> None:
+    """다시 만들기는 화 수를 지킨다 — 화 행을 그대로 두어야 읽은 위치·작가의 말·개정 이력이 산다. 다르면 아무것도 쓰지
+    않고 전액 환불한다(생성의 "모자란 몫만 환불"과 다르다)."""
+    room, novel = await _novel_for(db_client, db_session, balance=300)
+    messages = await _room_messages(db_session, room.room_id)
+    first = await _chapter_job(db_session, novel, messages[0], room.turns[2][1], episodes=3)
+    await runner.run_job(_factory(db_session), _NovelLLM(chunks=[_three_episodes()]), first.id)
+    chapters = await _chapters(db_session, novel.id)
+    output = _batch_output(*["다시 쓴 화. " * 30] * count)
+
+    job = await _chapter_job(db_session, novel, messages[0], room.turns[2][1], chapter=chapters[0], episodes=3)
+    await runner.run_job(_factory(db_session), _NovelLLM(chunks=[output]), job.id)
+
+    stored = await _job(db_session, job.id)
+    assert (stored.status, stored.failure_code, stored.refunded_amount) == ("failed", "episode_count_mismatch", 120)
+    for chapter in await _chapters(db_session, novel.id):
+        assert [r.revision_no for r in await _revisions(db_session, chapter.id)] == [1]
+    assert [c.title for c in await _chapters(db_session, novel.id)] == ["비 오는 저녁", "우산", "정류장"]
+    assert await _ledger(db_session, novel.user_id) == [
+        ("novelize_spend", -120),
+        ("novelize_spend", -120),
+        ("novelize_refund", 120),
+    ]
+    assert await _assert_balance_matches_lots(db_session, novel.user_id) == 300 - 120
+
+
+async def test_a_name_that_is_an_alias_of_a_card_links_to_that_card(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """합친 카드의 옛 이름은 남는 카드의 별칭이다 — AI 가 그 이름을 다시 내도 새 카드를 만들지 않는다."""
+    room, novel = await _novel_for(db_client, db_session)
+    db_session.add(NovelCharacter(novel_id=novel.id, name="도윤", aliases=["윤이"], memo="서진의 소꿉친구"))
+    await db_session.commit()
+    messages = await _room_messages(db_session, room.room_id)
+    job = await _chapter_job(db_session, novel, messages[0], room.turns[1][1])
+
+    output = _episode_text(_BODY, characters="윤이, 서진")
+    await runner.run_job(_factory(db_session), _NovelLLM(chunks=[output]), job.id)
+
+    (chapter,) = await _chapters(db_session, novel.id)
+    assert await _links(db_session, chapter.id) == ["도윤", "서진"]
+    names = (await db_session.scalars(sa.select(NovelCharacter.name).where(NovelCharacter.novel_id == novel.id))).all()
+    assert sorted(names) == ["도윤", "서진"]
+
+
+async def test_the_chapter_input_carries_the_episode_plan_summaries_and_character_notes(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """다음 묶음 입력에는 앞 화 요약이 오래된 순으로, 메모를 적은 인물만 실린다. 다시 만들기는 그 묶음 앞 화까지만
+    본다(자기 묶음의 옛 요약은 다시 쓸 대상이라 넣지 않는다). 이 값을 쓰는 섹션은 소설 프롬프트 세트에 들어간다 —
+    여기서는 입력 조립까지를 본다."""
+    room, novel = await _novel_for(db_client, db_session, turns=4, balance=300)
+    messages = await _room_messages(db_session, room.room_id)
+    first = await _chapter_job(db_session, novel, messages[0], room.turns[1][1], episodes=2)
+    await runner.run_job(_factory(db_session), _NovelLLM(chunks=[_three_episodes(count=2)]), first.id)
+    db_session.add_all(
+        [
+            NovelCharacter(novel_id=novel.id, name="민지", memo="  "),
+        ]
+    )
+    await db_session.execute(
+        sa.update(NovelCharacter).where(NovelCharacter.name == "도윤").values(aliases=["윤이"], memo="소꿉친구다.")
+    )
+    await db_session.commit()
+    second = await _chapter_job(db_session, novel, room.turns[2][0], room.turns[3][1], episodes=1)
+    job = await _job(db_session, second.id)
+    loaded = await db_session.get_one(Novel, novel.id, populate_existing=True)
+
+    built = await inputs.build_chapter_input(db_session, job, loaded)
+
+    assert (built.episode_count, built.writes_novel_title) == (1, False)
+    assert await inputs._previous_summaries(db_session, novel.id, before_ordinal=None) == (
+        "1화: 서진이 도윤을 만났다.\n2화: 도윤이 우산을 건넸다."
+    )
+    assert await inputs._previous_summaries(db_session, novel.id, before_ordinal=2) == "1화: 서진이 도윤을 만났다."
+    assert await inputs._character_notes(db_session, novel.id) == "도윤(윤이): 소꿉친구다."
+    monkeypatch.setattr(settings, "novelize_previous_summaries_max_chars", 20)
+    # 넘치면 오래된 화부터 빼고, 한 줄도 넘치면 그 줄의 뒤쪽만 남긴다.
+    assert await inputs._previous_summaries(db_session, novel.id, before_ordinal=None) == "2화: 도윤이 우산을 건넸다."
+    monkeypatch.setattr(settings, "novelize_previous_summaries_max_chars", 6)
+    assert await inputs._previous_summaries(db_session, novel.id, before_ordinal=None) == "우산을 건넸다."[-6:]
+
+
+async def test_the_first_batch_input_asks_for_the_novel_title_unless_the_user_set_one(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    room, novel = await _novel_for(db_client, db_session, balance=300)
+    messages = await _room_messages(db_session, room.room_id)
+    job = await _chapter_job(db_session, novel, messages[0], room.turns[1][1], episodes=3)
+    stored = await _job(db_session, job.id)
+
+    fresh = await inputs.build_chapter_input(db_session, stored, novel)
+    novel.title_edited_at = datetime.now(UTC)
+    edited = await inputs.build_chapter_input(db_session, stored, novel)
+
+    assert (fresh.episode_count, fresh.writes_novel_title, edited.writes_novel_title) == (3, True, False)
+
+
 # ── 재생성 ──────────────────────────────────────────────────────────────────
 async def _first_chapter(
     db_client: httpx.AsyncClient, db_session: AsyncSession
@@ -285,7 +606,7 @@ async def test_regenerate_adds_a_new_revision_to_the_same_chapter(
     room, novel, chapter, messages = await _first_chapter(db_client, db_session)
     job = await _chapter_job(db_session, novel, messages[0], room.turns[2][1], chapter=chapter)
 
-    await runner.run_job(_factory(db_session), _NovelLLM(chunks=["다시 쓴 장. " * 30]), job.id)
+    await runner.run_job(_factory(db_session), _NovelLLM(chunks=[_batch_output("다시 쓴 장. " * 30)]), job.id)
 
     revisions = await _revisions(db_session, chapter.id)
     assert [(r.revision_no, r.source) for r in revisions] == [(1, "generate"), (2, "regenerate")]
@@ -317,7 +638,7 @@ async def test_regenerate_erases_the_previews_its_new_revision_made_stale(
     await db_session.commit()
     job = await _chapter_job(db_session, novel, messages[0], room.turns[2][1], chapter=chapter)
 
-    await runner.run_job(_factory(db_session), _NovelLLM(chunks=["다시 쓴 장. " * 30]), job.id)
+    await runner.run_job(_factory(db_session), _NovelLLM(chunks=[_batch_output("다시 쓴 장. " * 30)]), job.id)
 
     stored = await _job(db_session, preview.id)
     assert (stored.status, stored.instruction, stored.result_text) == ("succeeded", None, None)
@@ -369,11 +690,20 @@ async def test_chapter_whose_end_message_disappeared_is_refunded_as_source_chang
         pytest.param(_NovelLLM(chunks=["본문 일부"], error=LLMPolicyViolationError("blocked")), "blocked", id="blocked"),
         pytest.param(_NovelLLM(chunks=[], error=LLMRateLimitError("429")), "llm_error", id="rate-limit"),
         pytest.param(_NovelLLM(chunks=[], error=LLMClientError("down")), "llm_error", id="client-error"),
-        pytest.param(_NovelLLM(chunks=["짧다."]), "empty", id="near-empty"),
+        pytest.param(_NovelLLM(chunks=[_batch_output("짧다.")]), "malformed", id="near-empty-episode"),
+        pytest.param(_NovelLLM(chunks=[_BODY]), "malformed", id="prose-without-the-format"),
+        pytest.param(
+            _NovelLLM(chunks=[_batch_output("죄송하지만 이 장면은 콘텐츠 정책상 작성해 드릴 수 없습니다. " * 10)]),
+            "refused",
+            id="refusal",
+        ),
         pytest.param(
             _NovelLLM(chunks=["죄송하지만 이 장면은 콘텐츠 정책상 작성해 드릴 수 없습니다. " * 10]),
             "refused",
-            id="refusal",
+            id="refusal-without-the-format",
+        ),
+        pytest.param(
+            _NovelLLM(chunks=[_batch_output(_BODY, "짧다.")]), "malformed", id="one-of-two-episodes-too-short"
         ),
     ],
 )
@@ -394,12 +724,15 @@ async def test_failed_generation_is_refunded_once_and_saves_nothing(
 async def test_job_over_the_overall_limit_is_refunded_as_timeout(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(settings, "novelize_job_timeout_seconds", 0.5)
+    # 상한은 모델 호출 중에 걸려야 한다. 입력 조립(DB)까지 상한에 걸리면 취소가 그 문장을 끊는데, 이 시험의 세션
+    # 팩토리는 테스트 커넥션 하나라 끊긴 커넥션이 환불까지 막는다 — 부하가 큰 전체 실행에서도 입력 조립이 끝나도록
+    # 여유를 둔다(평소 모델 호출까지 0.1초 안쪽).
+    monkeypatch.setattr(settings, "novelize_job_timeout_seconds", 2)
     room, novel = await _novel_for(db_client, db_session)
     messages = await _room_messages(db_session, room.room_id)
     job = await _chapter_job(db_session, novel, messages[0], room.turns[1][1])
 
-    await runner.run_job(_factory(db_session), _NovelLLM(during=lambda: asyncio.sleep(5)), job.id)
+    await runner.run_job(_factory(db_session), _NovelLLM(during=lambda: asyncio.sleep(10)), job.id)
 
     await _assert_failed_and_refunded_once(db_session, job.id, novel.user_id, "timeout")
 
@@ -535,7 +868,7 @@ async def _chapter_with_body(db_client: httpx.AsyncClient, db_session: AsyncSess
     room, novel = await _novel_for(db_client, db_session)
     messages = await _room_messages(db_session, room.room_id)
     job = await _chapter_job(db_session, novel, messages[0], room.turns[1][1])
-    await runner.run_job(_factory(db_session), _NovelLLM(chunks=[body]), job.id)
+    await runner.run_job(_factory(db_session), _NovelLLM(chunks=[_batch_output(body)]), job.id)
     (chapter,) = await _chapters(db_session, novel.id)
     return novel, chapter
 

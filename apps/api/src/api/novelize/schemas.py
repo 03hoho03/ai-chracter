@@ -15,7 +15,7 @@ from api.db.models.novel import (
     NovelJobStatus,
     NovelRevisionSource,
 )
-from api.llm.chat_models import CHAT_MODELS_BY_ID, DEFAULT_CHAT_MODEL, ChatModelId, novel_chapter_cost
+from api.llm.chat_models import CHAT_MODELS_BY_ID, DEFAULT_CHAT_MODEL, ChatModelId, novel_episode_unit_price
 from api.persona.schemas import PERSONA_NAME_MAX_LENGTH
 
 # 설정 노트·직접 수정 본문·AI 수정 지시문의 길이 상한. 상세 응답의 `limits` 로 내려 보내 FE 가 사본을 들지 않게 한다.
@@ -80,7 +80,8 @@ class NovelPrices(CamelModel):
 
 
 class NovelChapterModel(CamelModel):
-    """이 계정이 장 생성·재생성에 고를 수 있는 모델 하나와 그 모델의 장 가격. 요청의 `model` 과 `expectedCost` 로 싣는다."""
+    """이 계정이 장 생성·재생성에 고를 수 있는 모델 하나와 그 모델의 화 하나 가격. 생성 한 번은 여러 화를 쓸 수 있어
+    요청의 `expectedCost` 는 이 값 × 화 수다. 생성·재생성 두 칸은 같은 값이다(옛 화면이 읽는 칸 이름을 그대로 둔다)."""
 
     id: ChatModelId
     name: str
@@ -92,8 +93,8 @@ def chapter_model_option(model: ChatModelId) -> NovelChapterModel:
     return NovelChapterModel(
         id=model,
         name=CHAT_MODELS_BY_ID[model].name,
-        chapter_generate=novel_chapter_cost(model, regenerate=False),
-        chapter_regenerate=novel_chapter_cost(model, regenerate=True),
+        chapter_generate=novel_episode_unit_price(model),
+        chapter_regenerate=novel_episode_unit_price(model),
     )
 
 

@@ -28,6 +28,7 @@ from api.novelize.prompts import NovelizeBoundaryResult
 from factories import (
     Room,
     _add_chapter,
+    _batch_output,
     _clear_llm_override,
     _novel_ledger,
     _novel_setup,
@@ -42,7 +43,7 @@ _CHAPTER_BODY = "비가 내리는 저녁이었다. 서진은 가방을 내려놓
 
 class _NovelRouteLLM(LLMClient):
     """경계 제안은 `end_turn`·`reason` 을 돌려주거나 `error` 를 낸다. 장 생성(끝의 실제 띄우기 시험)은 `_CHAPTER_BODY`
-    를 흘린다. 경계 제안이 불릴 때 열린 DB 세션 수를 `open_at_call` 에 적는다."""
+    한 화짜리 출력을 흘린다. 경계 제안이 불릴 때 열린 DB 세션 수를 `open_at_call` 에 적는다."""
 
     def __init__(self, *, end_turn: int = 3, reason: str = "첫날 대화가 마무리된다.", error: Exception | None = None):
         self.end_turn = end_turn
@@ -60,7 +61,7 @@ class _NovelRouteLLM(LLMClient):
         *,
         usage: LLMCallContext,
     ) -> AsyncIterator[str]:
-        yield _CHAPTER_BODY
+        yield _batch_output(_CHAPTER_BODY)
 
     async def generate_structured(
         self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext

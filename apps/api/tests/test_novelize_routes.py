@@ -231,8 +231,7 @@ async def test_detail_lists_chapters_with_their_current_revision_and_the_prices_
     second = await _add_chapter(db_session, novel_id, room, room.turns[2][0], room.turns[3][1])
     db_session.add(NovelChapterRevision(chapter_id=first.id, revision_no=2, body="고친 본문", source="manual_edit"))
     await db_session.commit()
-    monkeypatch.setattr(clover, "NOVELIZE_CHAPTER_GENERATE_COST", 31)
-    monkeypatch.setattr(clover, "NOVELIZE_CHAPTER_REGENERATE_COST", 32)
+    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_COST", 31)
     monkeypatch.setattr(clover, "NOVELIZE_AI_EDIT_COST", 7)
 
     resp = await db_client.get(f"/novels/{novel_id}")
@@ -243,7 +242,7 @@ async def test_detail_lists_chapters_with_their_current_revision_and_the_prices_
         (c["id"], c["ordinal"], c["assistantMessageCount"], c["currentRevisionNo"], c["currentRevisionSource"])
         for c in body["chapters"]
     ] == [(str(first.id), 1, 2, 2, "manual_edit"), (str(second.id), 2, 2, 1, "generate")]
-    assert body["prices"] == {"chapterGenerate": 31, "chapterRegenerate": 32, "aiEdit": 7}
+    assert body["prices"] == {"chapterGenerate": 31, "chapterRegenerate": 31, "aiEdit": 7}
     assert body["limits"]["settingNotesMaxLength"] == 2000
     assert body["activeJob"] is None
 

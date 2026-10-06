@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pydantic import BaseModel, Field
 
 from api.chat.prompt_builder import PromptRenderError, render_prompt_channel, select_sections_for_render
+from api.core.config import settings
 from api.db.models.prompt import PromptSection, PromptSet
 
 _INSTRUCTION_SLOT = "instruction"
@@ -141,6 +142,11 @@ def build_novelize_chapter_prompt(
     setting_notes: str,
     previous_excerpt: str,
     turn_lines: str,
+    character_notes: str = "",
+    previous_summaries: str = "",
+    episode_count: int = 1,
+    episode_chars: int | None = None,
+    novel_title_rule: str = "",
 ) -> NovelizePrompt:
     """장 생성·재생성(자유 텍스트, 과금). 지시문 뒤에 같은 레인의 등급 규칙을 붙인다.
 
@@ -156,7 +162,15 @@ def build_novelize_chapter_prompt(
       에 넣는 값과 같은 글자다. 본문은 이미지 태그를 지우고, 모델 응답 줄만 작가 글 이름 치환을 한다(사용자 줄은
       사용자가 친 글자 그대로). 장 경계 제안도 같은 형식을 쓴다 — 두 호출의 n 이 같은 턴을 가리키게.
 
-      예: `[턴 1] 캐릭터: 왔어?` / `[턴 2] 사용자: 응, 늦어서 미안.` / `[턴 2] 캐릭터: 괜찮아.`"""
+      예: `[턴 1] 캐릭터: 왔어?` / `[턴 2] 사용자: 응, 늦어서 미안.` / `[턴 2] 캐릭터: 괜찮아.`
+    - `character_notes`·`previous_summaries`: 메모를 적은 인물마다 한 줄, 앞 화 요약을 오래된 순으로 한 줄씩. 비면
+      섹션째 빠진다.
+    - `episode_count`·`episode_chars`·`novel_title_rule`: 이번 묶음을 나눌 화 수, 화 하나의 목표 글자 수, 소설 제목을
+      쓸지 알리는 한 줄.
+
+    뒤의 다섯 값은 이 값을 쓰는 섹션이 있는 세트에서만 프롬프트에 들어간다 — 렌더러는 섹션이 쓰지 않는 값을 무시하므로,
+    그 섹션이 없는 세트도 지금처럼 렌더된다. 기본값은 이 값들을 아직 넘기지 않는 호출부(어드민 미리보기)용이고, 글자
+    수를 비우면 설정의 화 목표 길이다."""
     _require("novelize_chapter", user_name=user_name, turn_lines=turn_lines)
     values = {
         **_labels(prompt_set, is_story_chat=is_story_chat),
@@ -165,6 +179,11 @@ def build_novelize_chapter_prompt(
         "setting_notes": setting_notes,
         "previous_excerpt": previous_excerpt,
         "turn_lines": turn_lines,
+        "character_notes": character_notes,
+        "previous_summaries": previous_summaries,
+        "episode_count": str(episode_count),
+        "episode_chars": str(episode_chars if episode_chars is not None else settings.novelize_episode_target_chars),
+        "novel_title_rule": novel_title_rule,
     }
     return _render(sections, channel="novelize_chapter", is_story_chat=is_story_chat, values=values, with_rating=True)
 
