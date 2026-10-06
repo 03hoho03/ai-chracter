@@ -22,6 +22,7 @@ import {
   TypingIndicator,
   canReportMessage,
   chatRoomKeys,
+  refreshChatRoomTurnPrice,
   roomAuthorMacroNames,
   shouldShowSuggestedReplies,
   useAcknowledgeVersionUpgradeMutation,
@@ -42,6 +43,7 @@ import { NarrationMarkerButton } from "@/features/insert-narration-marker";
 import { ReportChatMessageModal } from "@/features/report-chat-message";
 import { useSendMessage } from "@/features/send-message";
 import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
+import { getRateLimitDetail } from "@/shared/api/rateLimit";
 import { expandAuthorMacros, type AuthorMacroNames } from "@/shared/lib/text/authorMacros";
 
 import { useMemoryFollowUpRefresh } from "../lib/useMemoryFollowUpRefresh";
@@ -68,11 +70,20 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   // 다른 feature를 import하지 않는다). 단가를 여기서 묶는 이유는 표면마다 다르기 때문이다 —
   // 채팅은 그 방 모델의 한 턴 가격(`room.turnCost`), 이미지는 장수 × 단가다. 하루 한 번 확인은 기본 모델 방에서만
   // 오고(상위 모델은 모델을 고를 때 이미 확인했다) 그 가격도 방 응답에 있다.
+  // 클로버 429 에서는 캐시의 가격을 믿지 않고 방을 다시 받아 쓴다 — 화면을 띄워 둔 사이 상위 모델이 꺼졌으면 서버는
+  // 기본 모델 가격을 매기는데 캐시는 옛 모델 가격이다. 다시 받은 값이 캐시에도 들어가 부족 안내도 함께 맞춰진다.
+  const queryClient = useQueryClient();
   const confirmCloverSpend = useConfirmCloverSpend();
   const { send, retry, regenerate, editMessage, status, policyWarning, streamingText } = useSendMessage(
     roomId,
     room && { contentType: room.contentType, contentId: room.contentId },
-    (error) => confirmCloverSpend(error, room?.turnCost, "chat"),
+    async (error) => {
+      const turnCost =
+        getRateLimitDetail(error)?.window === "clover"
+          ? await refreshChatRoomTurnPrice(queryClient, roomId)
+          : room?.turnCost;
+      return confirmCloverSpend(error, turnCost, "chat");
+    },
   );
   const isSending = status.kind === "sending";
   const isMemoryPanelOpen = useAtomValue(chatSidePanelAtom) === "memory";
@@ -96,7 +107,6 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const queryClient = useQueryClient();
   const loadOlderMessagesMutation = useLoadOlderMessagesMutation(roomId);
   // 위로 불러온 메시지를 앞에 붙이기 직전의 "바닥에서 본 스크롤 위치". 붙인 뒤 같은 거리로 되돌려 읽던 자리가 그대로 보이게 한다.
   const scrollFromBottomBeforePrependRef = useRef<number | undefined>(undefined);

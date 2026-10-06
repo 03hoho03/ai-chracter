@@ -19,6 +19,7 @@ export type {
   StatDef,
 } from "./model/chatRoomState";
 export { useChatRoomQuery } from "./api/useChatRoomQuery";
+export { refreshChatRoomTurnPrice } from "./api/refreshChatRoomTurnPrice";
 export { useLoadOlderMessagesMutation } from "./api/useLoadOlderMessagesMutation";
 export { useChatRoomMemoryQuery } from "./api/useChatRoomMemoryQuery";
 export type { ChatRoomMemory } from "./model/chatRoomMemory";
