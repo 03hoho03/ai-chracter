@@ -535,20 +535,53 @@ export interface paths {
         put?: never;
         /**
          * Set User Novelize Grant
-         * @description 소설화 허용 행(`user_feature_grants`)을 만들고 지우는 유일한 경로다. 모양은 `set_user_rate_limit_exempt`와
-         *     같다(공백 코멘트 422 → 탈퇴·없는 유저 404 → 변경 → 감사 로그 → 커밋, 켤 때와 끌 때 액션 타입이 다르다).
-         *
-         *     **허용은 env 명단(`novelize_grant_allowlist`) 안의 계정에만 줄 수 있다.** 명단 밖이면 422
-         *     `{"code": "NOVELIZE_GRANT_NOT_ALLOWLISTED"}`로 거부하고 행도 감사 로그도 남기지 않는다 — 명단은 처리방침이 소설화의
-         *     수집 항목·국외 이전을 싣고 재동의를 받기 전까지 허용을 운영 시험 계정 안에 가두는 장치다. 공백 코멘트 422 와 갈리도록 code 를
-         *     둔다. 회수는 명단과 상관없이 늘 된다(명단에서 이미 뺀 계정의 행도 지울 수 있어야 한다). 전역 스위치는 보지 않는다
-         *     — 켜기 전에 허용을 미리 줄 수 있다.
-         *
-         *     **이미 허용된 계정을 다시 허용해도 첫 행을 그대로 둔다**(허용 시각·허용한 운영자를 덮어쓰지 않는다). 동시에 두 번
-         *     눌려도 유니크 인덱스에 부딪혀 500 이 되지 않도록 충돌 시 아무것도 하지 않는 INSERT 를 쓴다. 누른 사실은 감사
-         *     로그에 한 행 더 남는다. 회수는 행 DELETE 라 없는 행을 회수해도 조용히 지나간다.
+         * @description 소설화 허용 행을 만들고 지우는 유일한 경로다(규칙은 `_set_feature_grant`). 명단은 `novelize_grant_allowlist`, 명단 밖
+         *     거부 code 는 `NOVELIZE_GRANT_NOT_ALLOWLISTED` 다.
          */
         post: operations["set_user_novelize_grant_admin_users__user_id__novelize_grant_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{user_id}/chat-premium-models-grant": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set User Chat Premium Models Grant
+         * @description 채팅방에 상위 글쓰기 모델을 고를 수 있게 하는 허용 행의 유일한 경로다(규칙은 `_set_feature_grant`). 명단은
+         *     `chat_premium_model_allowlist` 다.
+         */
+        post: operations["set_user_chat_premium_models_grant_admin_users__user_id__chat_premium_models_grant_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{user_id}/novelize-premium-models-grant": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set User Novelize Premium Models Grant
+         * @description 소설 장 생성에 상위 글쓰기 모델을 고를 수 있게 하는 허용 행의 유일한 경로다(규칙은 `_set_feature_grant`). 명단은
+         *     `novelize_premium_model_allowlist` 다. 실제로 쓰려면 소설화 허용도 있어야 하지만 여기서는 보지 않는다 — 허용 순서를 강제하지
+         *     않는다.
+         */
+        post: operations["set_user_novelize_premium_models_grant_admin_users__user_id__novelize_premium_models_grant_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3260,6 +3293,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chat-rooms/{room_id}/model": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Room Model
+         * @description 방의 글쓰기 모델을 바꾼다. 다음 턴부터 반영되고 과거 메시지는 그대로다. 진행 중인 턴은 이미 값을 낸 모델로 끝난다
+         *     (턴 게이트의 영수증) — 그래서 턴 락을 잡지 않는다.
+         *
+         *     기본 모델(`"gemini"`·null)은 누구나 고를 수 있다 — 허용을 거둔 뒤에도 방을 되돌릴 수 있어야 한다. 기본 모델은 빈 값으로
+         *     저장한다(새 방과 같은 상태). 상위 모델은 채팅 상위 모델 허용(`has_chat_premium_access`)이 있어야 하고, 없으면 403
+         *     `{"code": "CHAT_MODEL_NOT_ALLOWED"}` 하나다 — 꺼짐·명단 밖·허용 행 없음을 가르지 않는다(소설화 게이트와 같은 이유).
+         *     고를 때 확인하는 가격은 응답의 턴 가격이고, 그 뒤 턴은 하루 1회 확인 없이 그 가격으로 차감된다.
+         */
+        put: operations["set_room_model_chat_rooms__room_id__model_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chat-rooms/{room_id}/acknowledge-version-upgrade": {
         parameters: {
             query?: never;
@@ -3465,6 +3524,27 @@ export interface paths {
          *     여기서만 감추면 방 안에서는 보이는 대화가 목록에서만 사라지는 것처럼 보인다).
          */
         get: operations["list_my_chat_rooms_me_chat_rooms_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat-models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Chat Models
+         * @description 이 계정이 채팅방에 고를 수 있는 모델과 턴 가격. 기본 모델(Gemini)은 언제나 있고 맨 앞이다 — 빌더 미리보기도 이 항목에서
+         *     턴 가격을 읽는다. 상위 모델은 채팅 상위 모델 허용이 있을 때만 싣는다(모델 지정 라우트·턴 게이트와 같은 판정).
+         */
+        get: operations["list_chat_models_chat_models_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5370,7 +5450,7 @@ export interface components {
              * Actiontype
              * @enum {string}
              */
-            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "notice-publish" | "notice-unpublish" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-clover-grant" | "user-clover-revoke" | "user-novelize-off" | "user-novelize-on" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
+            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "notice-publish" | "notice-unpublish" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
             /** Targetcontentid */
             targetContentId: string | null;
             /** Contentname */
@@ -5489,6 +5569,10 @@ export interface components {
             betaJoinedAt: string | null;
             /** Novelizegrantedat */
             novelizeGrantedAt: string | null;
+            /** Chatpremiummodelsgrantedat */
+            chatPremiumModelsGrantedAt?: string | null;
+            /** Novelizepremiummodelsgrantedat */
+            novelizePremiumModelsGrantedAt?: string | null;
             /** Cloverbalance */
             cloverBalance: number;
             /** Chatroomcount */
@@ -5503,6 +5587,17 @@ export interface components {
             actionLogs: components["schemas"]["AdminUserActionLogItem"][];
             /** Chatrooms */
             chatRooms: components["schemas"]["AdminUserChatRoomItem"][];
+        };
+        /**
+         * AdminUserFeatureGrantRequest
+         * @description 기능 허용/회수를 `granted` 한 필드로 받는 토글이다. `admin_comment`가 필수인 이유는
+         *     `AdminUserRateLimitExemptRequest`와 같다(비어 있으면 422). 채팅·소설 상위 모델 허용 경로가 쓴다.
+         */
+        AdminUserFeatureGrantRequest: {
+            /** Granted */
+            granted: boolean;
+            /** Admincomment */
+            adminComment?: string | null;
         };
         /** AdminUserListItem */
         AdminUserListItem: {
@@ -5542,8 +5637,8 @@ export interface components {
         };
         /**
          * AdminUserNovelizeGrantRequest
-         * @description 소설화 허용/회수를 `granted` 한 필드로 받는 토글이다. `admin_comment`가 필수인 이유는
-         *     `AdminUserRateLimitExemptRequest`와 같다(비어 있으면 422).
+         * @description 소설화 허용 경로의 요청. 모양은 `AdminUserFeatureGrantRequest` 와 같고, 이 이름은 그 경로의 생성 타입 이름을 지키려고
+         *     남긴다.
          */
         AdminUserNovelizeGrantRequest: {
             /** Granted */
@@ -5891,6 +5986,21 @@ export interface components {
          * @enum {string}
          */
         ChatMessageRole: "user" | "assistant";
+        /**
+         * ChatModelItem
+         * @description `GET /chat-models` 의 한 항목 — 이 계정이 채팅방에 고를 수 있는 모델과 그 모델의 턴 가격.
+         */
+        ChatModelItem: {
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "gemini" | "sonnet" | "opus";
+            /** Name */
+            name: string;
+            /** Turncost */
+            turnCost: number;
+        };
         /** ChatRoomContentSnapshot */
         ChatRoomContentSnapshot: {
             /** Stats */
@@ -6006,6 +6116,30 @@ export interface components {
             /** Version */
             version: number;
         };
+        /**
+         * ChatRoomModelResponse
+         * @description 지정한 뒤의 방 모델. 방 응답의 같은 이름 세 필드와 같은 값이다 — 화면이 방을 다시 읽지 않고 바로 반영한다.
+         */
+        ChatRoomModelResponse: {
+            /** Chatmodel */
+            chatModel: string | null;
+            /**
+             * Effectivechatmodel
+             * @enum {string}
+             */
+            effectiveChatModel: "gemini" | "sonnet" | "opus";
+            /** Turncost */
+            turnCost: number;
+        };
+        /**
+         * ChatRoomModelSelectRequest
+         * @description `PUT /chat-rooms/{id}/model`. 필드는 필수다 — 기본 모델로 되돌리기는 `"gemini"` 나 null 을 명시한다. 레지스트리 밖
+         *     값은 422 다.
+         */
+        ChatRoomModelSelectRequest: {
+            /** Model */
+            model: ("gemini" | "sonnet" | "opus") | null;
+        };
         /** ChatRoomRenameRequest */
         ChatRoomRenameRequest: {
             /** Name */
@@ -6059,6 +6193,15 @@ export interface components {
             };
             /** Contentrestricted */
             contentRestricted: boolean;
+            /** Chatmodel */
+            chatModel?: string | null;
+            /**
+             * Effectivechatmodel
+             * @enum {string}
+             */
+            effectiveChatModel?: "gemini" | "sonnet" | "opus";
+            /** Turncost */
+            turnCost?: number;
             /**
              * Createdat
              * Format: date-time
@@ -7298,7 +7441,7 @@ export interface components {
             /** Socialprovider */
             socialProvider: ("google" | "kakao") | null;
             /** Enabledfeatures */
-            enabledFeatures: "novelize"[];
+            enabledFeatures: ("novelize" | "chat_premium_models" | "novelize_premium_models")[];
         };
         /** MediaBookAxisInput */
         MediaBookAxisInput: {
@@ -9309,6 +9452,72 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AdminUserNovelizeGrantRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_user_chat_premium_models_grant_admin_users__user_id__chat_premium_models_grant_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserFeatureGrantRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_user_novelize_premium_models_grant_admin_users__user_id__novelize_premium_models_grant_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserFeatureGrantRequest"];
             };
         };
         responses: {
@@ -14101,6 +14310,41 @@ export interface operations {
             };
         };
     };
+    set_room_model_chat_rooms__room_id__model_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatRoomModelSelectRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatRoomModelResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     acknowledge_version_upgrade_chat_rooms__room_id__acknowledge_version_upgrade_post: {
         parameters: {
             query?: never;
@@ -14449,6 +14693,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MyChatRoomListItem"][];
+                };
+            };
+        };
+    };
+    list_chat_models_chat_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatModelItem"][];
                 };
             };
         };
