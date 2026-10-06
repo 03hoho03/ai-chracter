@@ -19,6 +19,7 @@
 
 import hashlib
 import json
+import re
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -303,12 +304,26 @@ ACTIONS = ("send", "regenerate", "edit")
 CASES = [f"{lane}-{shape}-{action}" for lane in LANES for shape in SHAPES for action in ACTIONS]
 
 
+_VALUE_FIRST_STAT_LINE = re.compile(
+    r"^(- statId=[^,]+, 이름=.*?), 현재값=([^,]+), 범위=(\[[^\]]*\]), 설명=(.*?)((?:  ※ .*)?)$", re.MULTILINE
+)
+
+
+def _as_recorded_stat_line_order(call: RecordedCall) -> str:
+    """스탯 판정 프롬프트의 스탯 줄을 기대값 파일을 뜰 때의 순서(설명 → 범위 → 현재값)로 되돌린다. 그 뒤 스탯 줄은
+    현재값·범위를 설명 앞에 두도록 바뀌었는데, 이 파일은 다시 뜨지 않으므로 줄 순서만 되돌려 비교한다 — 나머지
+    바이트(히스토리·이번 턴·지시문)는 여전히 기대값 파일과 그대로 맞아야 한다. 새 순서 자체는 골든이 고정한다."""
+    if call.call_site != "chat_stat_judgment":
+        return call.prompt
+    return _VALUE_FIRST_STAT_LINE.sub(r"\1, 설명=\4, 범위=\3, 현재값=\2\5", call.prompt)
+
+
 def fingerprint(calls: list[RecordedCall]) -> list[dict[str, object]]:
     return [
         {
             "callSite": call.call_site,
             "chars": len(call.prompt),
-            "sha256": hashlib.sha256(call.prompt.encode("utf-8")).hexdigest(),
+            "sha256": hashlib.sha256(_as_recorded_stat_line_order(call).encode("utf-8")).hexdigest(),
             "systemSha256": (
                 hashlib.sha256(call.system_instruction.encode("utf-8")).hexdigest()
                 if call.system_instruction is not None

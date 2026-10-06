@@ -362,13 +362,28 @@ def test_build_stat_judgment_prompt_marks_only_constrained_judged_stats() -> Non
         ]
     )
 
-    assert lines[0].endswith("현재값=5")
-    assert lines[1].endswith("현재값=5")
-    assert lines[2].endswith("현재값=5  ※ 감소만 할 수 있다.")
-    assert lines[3].endswith("현재값=5  ※ 증가만 할 수 있다. 한 턴에 최대 3까지 바뀐다.")
-    assert lines[4].endswith("현재값=5  ※ 한 턴에 최대 2까지 바뀐다.")
-    assert lines[5].endswith("현재값=5  ※ 시스템이 매 턴 자동 조정하는 값이다. statChanges에 넣지 마라.")
-    assert lines[6].endswith("현재값=5")
+    assert lines[0].endswith("현재값=5, 범위=[0, 10], 설명=설명")
+    assert lines[1].endswith("설명=설명")
+    assert lines[2].endswith("설명=설명  ※ 감소만 할 수 있다.")
+    assert lines[3].endswith("설명=설명  ※ 증가만 할 수 있다. 한 턴에 최대 3까지 바뀐다.")
+    assert lines[4].endswith("설명=설명  ※ 한 턴에 최대 2까지 바뀐다.")
+    assert lines[5].endswith("설명=설명  ※ 시스템이 매 턴 자동 조정하는 값이다. statChanges에 넣지 마라.")
+    assert lines[6].endswith("설명=설명")
+
+
+def test_build_stat_judgment_prompt_puts_current_value_and_range_before_long_description() -> None:
+    """스탯 줄에서 현재값은 이름 바로 뒤, 범위는 그다음, 설명은 그 뒤에 온다. 설명이 길면 현재값이 이름에서 멀어져
+    판정 모델이 다른 스탯 줄의 현재값을 이 스탯의 기준으로 읽고 새 값을 내는 일이 있었다."""
+    long_description = " ".join(["도희가 감독을 얼마나 믿고 따르는지."] * 8)
+    stat = StatDef(
+        entity_id=uuid.uuid4(), name="도희 호감", description=long_description,
+        min_value=0, max_value=100, initial_value=52.5,
+    )
+
+    (line,) = _stat_lines_of([stat])
+
+    assert f"이름=도희 호감, 현재값=52.5, 범위=[0, 100], 설명={long_description}" in line
+    assert line.index("현재값=") < line.index("범위=") < line.index("설명=")
 
 
 def test_build_ending_judgment_prompt_uses_story_assistant_label_for_history_and_this_turn() -> None:

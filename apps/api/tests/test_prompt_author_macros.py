@@ -213,7 +213,7 @@ def test_stat_judgment_expands_stat_name_description_and_this_turn_response() ->
     )
 
     assert prompt.split("|") == [
-        f"- statId={stat.entity_id}, 이름=지훈의 용기, 설명=지훈이 겁먹으면 내려간다, 범위=[0, 10], 현재값=5",
+        f"- statId={stat.entity_id}, 이름=지훈의 용기, 현재값=5, 범위=[0, 10], 설명=지훈이 겁먹으면 내려간다",
         "{{user}} 그대로",
         "지훈은 버틴다",
         "지훈",
