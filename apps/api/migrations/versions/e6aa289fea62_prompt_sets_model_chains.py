@@ -38,9 +38,19 @@ id 불변 포함).
   맞는다.
 - 마이그레이션은 활성 세트 캐시를 지우지 않는다. 캐시 키 형식이 이 변경과 함께 모델을 포함하는 형식으로 바뀌어 새 코드는
   옛 키를 읽지 않으므로 영향이 없다.
+- 앞으로 활성·초안 세트를 원시 SQL 로 고르는 마이그레이션은 반드시 모델로 거른다(`AND model = 'gemini'` 또는 대상 모델).
+  레인만 보는 조회는 Claude 세트를 집을 수 있고, 초안을 한 행으로 읽으면 레인에 초안이 둘 이상일 때 `MultipleResultsFound`
+  로 깨진다.
+- `upgrade()` 는 첫 문장으로 `SET LOCAL lock_timeout = '5s'` 를 건다. 배포 중에도 떠 있는 API 가 `prompt_sets` 를 읽으므로
+  `ALTER TABLE` 이 오래 걸린 트랜잭션 뒤에서 락을 기다리면 그 뒤로 모든 읽기가 줄을 선다. 5초 안에 락을 못 잡으면 마이그레이션이
+  실패해 배포가 멈추고(체인 전체 롤백), 다시 돌리면 된다. `SET LOCAL` 은 트랜잭션 끝까지 유효해 같은 실행에서 뒤따르는
+  리비전에도 걸린다.
 
 **롤백**: Claude 행을 어드민에서 새로 만들지 않았다면 이미지만 되돌려도 안전하다(위 `published_at`·초안 미시드 덕분).
-만들었다면 이미지를 되돌리기 **전에** `model <> 'gemini'` 인 섹션과 세트를 지운다 — `downgrade()` 의 데이터 삭제와 같은 일이다.
+만들었다면 이미지를 되돌리기 **전에** `model <> 'gemini'` 인 섹션과 세트를 지우되 `NEW_SET_IDS` 의 시드 4개는 남긴다.
+시드까지 지우면 나중에 새 이미지를 다시 올릴 때 `alembic upgrade head` 가 이미 적용된 이 리비전을 건너뛰어 Claude 체인이
+빈 채로 남는다(초안 조회 500, 상위 모델 턴 실패). 시드는 남겨도 옛 코드에 안전하다 — `published_at` 이 원본 Gemini 세트보다
+1초 과거라 레인만 보는 "최신 게시본" 조회가 집지 않고, 초안이 아니라 초안 조회에도 걸리지 않는다.
 
 `downgrade()`: `model <> 'gemini'` 인 **모든** 세트를 섹션 → 세트 순으로 지운다(FK 에 cascade 가 없다). 리터럴 id 만
 지우면 어드민이 만든 Claude 초안·게시본이 남은 채 열이 사라져, 그 행이 레인의 초안 유니크를 깨거나 레인의 최신 게시본이
@@ -180,6 +190,8 @@ def _delete_non_gemini_sets(conn: Connection) -> None:
 
 def upgrade() -> None:
     """Upgrade schema."""
+    # 떠 있는 API 의 prompt_sets 읽기가 ALTER 의 락 대기 뒤로 줄서지 않게 — 위 docstring 운영 메모.
+    op.execute("SET LOCAL lock_timeout = '5s'")
     op.add_column("prompt_sets", sa.Column("model", sa.Text(), server_default="gemini", nullable=False))
 
     op.drop_index("ix_prompt_sets_draft", table_name="prompt_sets", postgresql_where=sa.text("status = 'draft'"))

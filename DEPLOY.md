@@ -1270,15 +1270,18 @@ Gemini 와 따로 묶인다. 소설 장 실패는 공급자와 무관하게 지�
 세트를 집는다. 그래서:
 
 - 어드민에서 Claude 세트를 새로 저장·게시하지 않았다면 **이미지만 되돌려도 안전하다**.
-- 저장·게시했다면 이미지를 되돌리기 **전에** Claude 행을 지운다. 남겨 두면 옛 코드가 그 초안·게시본을 레인의 초안·최신 게시본으로
-  읽는다(초안 조회 500, 판정·요약 채널이 없는 세트가 활성). downgrade 가 하는 데이터 삭제와 같은 일이고, 스위치가 꺼져 있으면
-  새 코드에도 영향이 없다:
+- 저장·게시했다면 이미지를 되돌리기 **전에** 어드민이 만든 Claude 행을 지운다. 남겨 두면 옛 코드가 그 초안·게시본을 레인의
+  초안·최신 게시본으로 읽는다(초안 조회 500, 판정·요약 채널이 없는 세트가 활성). 마이그레이션이 심은 시드 세트 4개(아래 id)는
+  **남긴다** — 시드까지 지우면 나중에 새 이미지를 다시 올릴 때 `alembic upgrade head` 가 이미 적용된 리비전을 건너뛰어 Claude
+  체인이 빈 채로 남는다(어드민 초안 조회 `?model=sonnet` 500, 상위 모델 턴 실패). 시드는 남겨도 옛 코드에 안전하다 — 게시 시각이
+  원본 Gemini 세트보다 1초 과거라 레인만 보는 "최신 게시본" 조회가 집지 않고, 초안이 아니라 초안 조회에도 걸리지 않는다.
+  스위치가 꺼져 있으면 새 코드에도 영향이 없다:
 
   ```sh
   sudo /opt/ddona/backup.sh   # 먼저 백업
   sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
     psql -U postgres -d ai_character_chat -c \
-    "BEGIN; DELETE FROM prompt_sections WHERE prompt_set_id IN (SELECT id FROM prompt_sets WHERE model <> 'gemini'); DELETE FROM prompt_sets WHERE model <> 'gemini'; COMMIT;"
+    "BEGIN; DELETE FROM prompt_sections WHERE prompt_set_id IN (SELECT id FROM prompt_sets WHERE model <> 'gemini' AND id NOT IN ('ba2a926c-e9ed-46e0-b42c-9c21c63552f6','f3237e56-5ff6-4b27-9135-98495c0094bb','b9c2f1ec-5e8c-48ce-8fc9-ffefdc6950d2','9b308ef1-bdb9-4f23-a2d8-fb6ae6ad778c')); DELETE FROM prompt_sets WHERE model <> 'gemini' AND id NOT IN ('ba2a926c-e9ed-46e0-b42c-9c21c63552f6','f3237e56-5ff6-4b27-9135-98495c0094bb','b9c2f1ec-5e8c-48ce-8fc9-ffefdc6950d2','9b308ef1-bdb9-4f23-a2d8-fb6ae6ad778c'); COMMIT;"
   ```
 
 - 스키마까지 되돌리면(`alembic downgrade 3bb2cc159b6d`, 순서는 위 절들과 같이 태그 롤백 먼저) downgrade 가 Gemini 가 아닌
@@ -1286,18 +1289,20 @@ Gemini 와 따로 묶인다. 소설 장 실패는 공급자와 무관하게 지�
   먼저 내려가야 하므로 이 한 줄이 둘 다 내린다.
 - 앞으로 슬롯을 더하는 마이그레이션은 Gemini 두 레인뿐 아니라 Claude 체인 네 개도 다룰지 판단한다 — `system`·`generation`
   슬롯이면 Claude 체인에도 넣어야 게시 검증의 슬롯 집합이 맞는다.
+- 앞으로 활성·초안 세트를 원시 SQL 로 고르는 마이그레이션은 반드시 모델로 거른다(`AND model = 'gemini'` 또는 대상 모델). 레인만
+  보는 조회는 Claude 세트를 집을 수 있고, 초안을 한 행으로 읽으면 레인에 초안이 둘 이상일 때 `MultipleResultsFound` 로 깨진다.
 
 **롤백 순서.** 1차는 스위치 끄기(위 「끄기」)다 — 재기동 한 번으로 모든 턴·장이 Gemini 로 돌고 방은 막히지 않는다. 코드까지
 되돌릴 때는 스위치를 끈 뒤 태그 롤백(옛 이미지)을 하고, 스키마는 그 뒤에 내린다:
 
 1. 스위치를 끄고 진행 중인 소설 장 작업이 0 인지 본다(3-11 절의 확인 SQL).
-2. 어드민에서 Claude 세트를 저장·게시했다면 위의 Claude 행 삭제를 먼저 한다.
+2. 어드민에서 Claude 세트를 저장·게시했다면 위의 Claude 행 삭제(시드 4개 제외)를 먼저 한다.
 3. 태그 롤백으로 옛 이미지를 띄운다. 옛 코드는 방 모델 열(`chat_rooms.chat_model`)을 모르고 읽지 않으며, 새 방도 그 열이 NULL 로
    들어가 그대로 돈다. 상위 모델 허용 행(`user_feature_grants` 의 새 기능 값)은 옛 코드가 소설화 행만 골라 읽어 영향이 없다.
    다만 어드민에서 상위 모델 허용을 켜고 끈 계정은 옛 코드에서 **어드민 유저 상세가 500** 이다 — 그 감사 로그의 조치
    종류(`user-chat-premium-models-on` 등)를 옛 응답 스키마가 모른다(3-11 절의 소설화 토글과 같은 성질).
 4. 스키마까지 되돌리면 옛 이미지가 떠 있는 상태에서 새 코드 이미지로 내린다. 방 모델 리비전만 내리면 방마다 고른 모델이
-   사라지고(전부 Gemini), 그 아래 모델 축 리비전까지 내리면 위의 Claude 세트 삭제도 함께 일어난다:
+   사라지고(전부 Gemini), 그 아래 모델 축 리비전까지 내리면 Claude 세트 전부(시드 포함) 삭제도 함께 일어난다:
 
    ```sh
    sudo /opt/ddona/backup.sh   # 먼저 백업
