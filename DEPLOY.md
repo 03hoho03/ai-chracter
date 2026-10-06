@@ -1226,6 +1226,21 @@ sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d 
 
 `restart` 는 env 를 다시 읽지 않으므로 `up -d --wait api` 로 올린다. 줄을 넣었으니 키 개수 문장을 다시 센다.
 
+**계정 허용.** 스위치와 명단만으로는 아직 아무도 못 쓴다 — 계정마다 허용 행이 있어야 한다(채팅·소설 따로).
+
+1. 명단에 그 계정 id 가 있는지 본다(위 `CHAT_PREMIUM_MODEL_ALLOWLIST`·`NOVELIZE_PREMIUM_MODEL_ALLOWLIST`). 명단 밖 계정의 허용은
+   어드민이 422 `CHAT_PREMIUM_MODELS_GRANT_NOT_ALLOWLISTED`·`NOVELIZE_PREMIUM_MODELS_GRANT_NOT_ALLOWLISTED` 로 거절한다.
+2. 어드민 유저 상세에서 허용을 켠다 — API 로는 `POST /admin/users/{id}/chat-premium-models-grant`·
+   `POST /admin/users/{id}/novelize-premium-models-grant` 에 `{"granted": true, "adminComment": "…"}`. 스위치가 꺼져 있어도 미리 줄
+   수 있다. 소설 상위 모델은 그 계정에 소설화 허용(3-11 절)도 있어야 보인다.
+3. 클로버를 지급한다. 상위 모델 턴·장은 레이트리밋 면제 계정도 값을 내고(턴 Sonnet 40·Opus 65, 장 Sonnet 160·Opus 260 —
+   `api/core/clover.py`), 하루 무료분은 Gemini 턴에만 쓰인다.
+4. 그 계정의 web 을 새로고침하면(세션 정보를 다시 받는다) 채팅 더보기에 모델 선택이 보인다. 고른 모델은 방마다 저장되고 다음
+   턴부터 그 모델·그 가격으로 돈다.
+
+회수는 어드민에서 허용을 끄는 것(재기동 없음) 또는 명단에서 지우고 `up -d --wait api` 다. 허용 행만 남은 계정도 명단 밖이면
+접근 시점에 막힌다.
+
 **끄기.** 스위치 줄만 지우고 다시 올린다. 키·명단 줄은 남겨 두면 다시 켤 때 스위치 한 줄이면 된다:
 
 ```sh
@@ -1234,6 +1249,11 @@ sudo sed -i '/^CHAT_PREMIUM_MODELS_ENABLED=/d;/^NOVELIZE_PREMIUM_MODELS_ENABLED=
 sudo python3 ops/check_env.py --format /opt/ddona/.env
 sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d --wait api
 ```
+
+끄거나 허용을 거둬도 **상위 모델을 고른 방은 막히지 않는다.** 방에 저장된 모델(`chat_rooms.chat_model`)은 그대로 남고, 그
+방의 다음 턴은 Gemini 로 Gemini 가격(하루 무료분 포함)에 돈다. 방 응답과 모델 목록은 실제로 쓰일 모델(Gemini)을 보인다. 다시
+켜면 저장된 모델로 돌아간다. 진행 중이던 턴은 이미 값을 낸 모델로 끝난다. 끄는 동안 Redis 일부 장애가 나도 Gemini 턴은 지금처럼
+통과한다(상위 모델 턴만 503 `CHAT_MODEL_UNAVAILABLE` 로 거절된다 — 켜져 있을 때의 동작이다).
 
 **키 교체·회수.** 새 키를 만든 뒤 `.env` 의 두 줄을 `sudo sed -i` 로 바꾸고 형식 검사 → `up -d --wait api` → 위 확인 명령,
 그다음 AWS 콘솔에서 옛 키를 비활성화한다. 키가 새어 나갔으면 먼저 콘솔에서 비활성화한다 — 스위치가 켜져 있으면 그동안의
@@ -1262,9 +1282,30 @@ Gemini 와 따로 묶인다. 소설 장 실패는 공급자와 무관하게 지�
   ```
 
 - 스키마까지 되돌리면(`alembic downgrade 3bb2cc159b6d`, 순서는 위 절들과 같이 태그 롤백 먼저) downgrade 가 Gemini 가 아닌
-  세트 전부(시드 + 어드민이 만든 것)를 지우고 인덱스를 되돌린 뒤 열을 지운다.
+  세트 전부(시드 + 어드민이 만든 것)를 지우고 인덱스를 되돌린 뒤 열을 지운다. 그 위의 방 모델 리비전(`519329713933`, 아래)이
+  먼저 내려가야 하므로 이 한 줄이 둘 다 내린다.
 - 앞으로 슬롯을 더하는 마이그레이션은 Gemini 두 레인뿐 아니라 Claude 체인 네 개도 다룰지 판단한다 — `system`·`generation`
   슬롯이면 Claude 체인에도 넣어야 게시 검증의 슬롯 집합이 맞는다.
+
+**롤백 순서.** 1차는 스위치 끄기(위 「끄기」)다 — 재기동 한 번으로 모든 턴·장이 Gemini 로 돌고 방은 막히지 않는다. 코드까지
+되돌릴 때는 스위치를 끈 뒤 태그 롤백(옛 이미지)을 하고, 스키마는 그 뒤에 내린다:
+
+1. 스위치를 끄고 진행 중인 소설 장 작업이 0 인지 본다(3-11 절의 확인 SQL).
+2. 어드민에서 Claude 세트를 저장·게시했다면 위의 Claude 행 삭제를 먼저 한다.
+3. 태그 롤백으로 옛 이미지를 띄운다. 옛 코드는 방 모델 열(`chat_rooms.chat_model`)을 모르고 읽지 않으며, 새 방도 그 열이 NULL 로
+   들어가 그대로 돈다. 상위 모델 허용 행(`user_feature_grants` 의 새 기능 값)은 옛 코드가 소설화 행만 골라 읽어 영향이 없다.
+   다만 어드민에서 상위 모델 허용을 켜고 끈 계정은 옛 코드에서 **어드민 유저 상세가 500** 이다 — 그 감사 로그의 조치
+   종류(`user-chat-premium-models-on` 등)를 옛 응답 스키마가 모른다(3-11 절의 소설화 토글과 같은 성질).
+4. 스키마까지 되돌리면 옛 이미지가 떠 있는 상태에서 새 코드 이미지로 내린다. 방 모델 리비전만 내리면 방마다 고른 모델이
+   사라지고(전부 Gemini), 그 아래 모델 축 리비전까지 내리면 위의 Claude 세트 삭제도 함께 일어난다:
+
+   ```sh
+   sudo /opt/ddona/backup.sh   # 먼저 백업
+   # 방 모델 열만
+   sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<새 코드 TAG> alembic downgrade e6aa289fea62
+   # 모델 축까지(Claude 세트 삭제 포함)
+   sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<새 코드 TAG> alembic downgrade 3bb2cc159b6d
+   ```
 
 ---
 
