@@ -1,0 +1,1758 @@
+{
+ "summary": {
+  "supplement-N": {
+   "replies": 24,
+   "item1_saheulShare": {
+    "n": 2,
+    "of": 8,
+    "rate": 0.25
+   },
+   "item1_overJump": {
+    "n": 2,
+    "of": 8,
+    "rate": 0.25
+   },
+   "item1_intendedDays": {
+    "n": 6,
+    "of": 8,
+    "rate": 0.75
+   },
+   "dayTurns_leadPhrase": {
+    "n": 8,
+    "of": 14,
+    "rate": 0.571
+   },
+   "dayTurns_moved": {
+    "n": 12,
+    "of": 14,
+    "rate": 0.857
+   },
+   "item2_unmarkedOfMoved": {
+    "n": 4,
+    "of": 12,
+    "rate": 0.333
+   },
+   "item3a_datePresent": {
+    "n": 11,
+    "of": 24,
+    "rate": 0.458
+   },
+   "item3b_weekdayMatches": {
+    "n": 9,
+    "of": 11,
+    "rate": 0.818
+   },
+   "item3c_matchesBody": {
+    "n": 0,
+    "of": 11,
+    "rate": 0.0
+   },
+   "item3c_matchesChain": {
+    "n": 0,
+    "of": 11,
+    "rate": 0.0
+   },
+   "exampleDateCopies": 0,
+   "item4_controlMoved": {
+    "n": 0,
+    "of": 10,
+    "rate": 0.0
+   },
+   "item5_defects": {
+    "n": 1,
+    "of": 24,
+    "rate": 0.042
+   },
+   "weekdayMissing": 0,
+   "otherPhrasesToRead": 3
+  },
+  "supplement-W": {
+   "replies": 24,
+   "item1_saheulShare": {
+    "n": 0,
+    "of": 11,
+    "rate": 0.0
+   },
+   "item1_overJump": {
+    "n": 5,
+    "of": 11,
+    "rate": 0.455
+   },
+   "item1_intendedDays": {
+    "n": 5,
+    "of": 11,
+    "rate": 0.455
+   },
+   "dayTurns_leadPhrase": {
+    "n": 11,
+    "of": 14,
+    "rate": 0.786
+   },
+   "dayTurns_moved": {
+    "n": 12,
+    "of": 14,
+    "rate": 0.857
+   },
+   "item2_unmarkedOfMoved": {
+    "n": 2,
+    "of": 13,
+    "rate": 0.154
+   },
+   "item3a_datePresent": {
+    "n": 11,
+    "of": 24,
+    "rate": 0.458
+   },
+   "item3b_weekdayMatches": {
+    "n": 11,
+    "of": 11,
+    "rate": 1.0
+   },
+   "item3c_matchesBody": {
+    "n": 1,
+    "of": 11,
+    "rate": 0.091
+   },
+   "item3c_matchesChain": {
+    "n": 2,
+    "of": 11,
+    "rate": 0.182
+   },
+   "exampleDateCopies": 1,
+   "item4_controlMoved": {
+    "n": 1,
+    "of": 10,
+    "rate": 0.1
+   },
+   "item5_defects": {
+    "n": 4,
+    "of": 24,
+    "rate": 0.167
+   },
+   "weekdayMissing": 0,
+   "otherPhrasesToRead": 1
+  },
+  "v6fix": {
+   "replies": 24,
+   "item1_saheulShare": {
+    "n": 6,
+    "of": 7,
+    "rate": 0.857
+   },
+   "item1_overJump": {
+    "n": 5,
+    "of": 7,
+    "rate": 0.714
+   },
+   "item1_intendedDays": {
+    "n": 2,
+    "of": 7,
+    "rate": 0.286
+   },
+   "dayTurns_leadPhrase": {
+    "n": 7,
+    "of": 14,
+    "rate": 0.5
+   },
+   "dayTurns_moved": {
+    "n": 12,
+    "of": 14,
+    "rate": 0.857
+   },
+   "item2_unmarkedOfMoved": {
+    "n": 6,
+    "of": 14,
+    "rate": 0.429
+   },
+   "item3a_datePresent": {
+    "n": 0,
+    "of": 24,
+    "rate": 0.0
+   },
+   "item3b_weekdayMatches": {
+    "n": 0,
+    "of": 0,
+    "rate": null
+   },
+   "item3c_matchesBody": {
+    "n": 0,
+    "of": 0,
+    "rate": null
+   },
+   "item3c_matchesChain": {
+    "n": 0,
+    "of": 0,
+    "rate": null
+   },
+   "exampleDateCopies": 0,
+   "item4_controlMoved": {
+    "n": 2,
+    "of": 10,
+    "rate": 0.2
+   },
+   "item5_defects": {
+    "n": 2,
+    "of": 24,
+    "rate": 0.083
+   },
+   "weekdayMissing": 0,
+   "otherPhrasesToRead": 3
+  }
+ },
+ "reads": {
+  "supplement-N": [
+   {
+    "turn": 8,
+    "time": "10월 1일 수요일 오후",
+    "weekday": "수",
+    "weekdayStep": 2,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "이틀 뒤"
+    ],
+    "leadDays": 2,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": {
+     "text": "10월 1일",
+     "valid": true,
+     "calendarWeekday": "수",
+     "weekdayMatches": true,
+     "advance": 2,
+     "expectedBody": "2025-09-24",
+     "matchesBody": false,
+     "expectedChain": "2025-09-24",
+     "matchesChain": false,
+     "exampleCopy": false
+    },
+    "rep": 0,
+    "source": "gen-main-N.jsonl"
+   },
+   {
+    "turn": 8,
+    "time": "10월 1일 수요일 낮",
+    "weekday": "수",
+    "weekdayStep": 2,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "이틀 뒤"
+    ],
+    "leadDays": 2,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": {
+     "text": "10월 1일",
+     "valid": true,
+     "calendarWeekday": "수",
+     "weekdayMatches": true,
+     "advance": 2,
+     "expectedBody": "2025-09-24",
+     "matchesBody": false,
+     "expectedChain": "2025-09-24",
+     "matchesChain": false,
+     "exampleCopy": false
+    },
+    "rep": 1,
+    "source": "gen-main-N.jsonl"
+   },
+   {
+    "turn": 21,
+    "time": "수요일 저녁",
+    "weekday": "수",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 0,
+    "source": "gen-main-N.jsonl"
+   },
+   {
+    "turn": 21,
+    "time": "수요일 저녁",
+    "weekday": "수",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 1,
+    "source": "gen-main-N.jsonl"
+   },
+   {
+    "turn": 22,
+    "time": "10월 9일 목요일 아침",
+    "weekday": "목",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [
+     "다음 날"
+    ],
+    "moved": true,
+    "unmarkedMove": true,
+    "saheul": false,
+    "defects": [],
+    "date": {
+     "text": "10월 9일",
+     "valid": true,
+     "calendarWeekday": "목",
+     "weekdayMatches": true,
+     "advance": 1,
+     "expectedBody": "2025-09-25",
+     "matchesBody": false,
+     "expectedChain": "2025-09-25",
+     "matchesChain": false,
+     "exampleCopy": false
+    },
+    "rep": 0,
+    "source": "gen-main-N.jsonl"
+   },
+   {
+    "turn": 22,
+    "time": "10월 9일 목요일 아침",
+    "weekday": "목",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [
+     "다음 날"
+    ],
+    "moved": true,
+    "unmarkedMove": true,
+    "saheul": false,
+    "defects": [],
+    "date": {
+     "text": "10월 9일",
+     "valid": true,
+     "calendarWeekday": "목",
+     "weekdayMatches": true,
+     "advance": 1,
+     "expectedBody": "2025-09-25",
+     "matchesBody": false,
+     "expectedChain": "2025-09-25",
+     "matchesChain": false,
+     "exampleCopy": false
+    },
+    "rep": 1,
+    "source": "gen-main-N.jsonl"
+   },
+   {
+    "turn": 38,
+    "time": "일요일 새벽",
+    "weekday": "일",
+    "weekdayStep": 2,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [
+     "이틀 뒤"
+    ],
+    "moved": true,
+    "unmarkedMove": true,
+    "saheul": false,
+    "defects": [
+     "네 줄·이름 아님"
+    ],
+    "date": null,
+    "rep": 0,
+    "source": "gen-main-N.jsonl"
+   },
+   {
+    "turn": 38,
+    "time": "10월 11일 토요일 밤",
+    "weekday": "토",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "사흘 뒤"
+    ],
+    "leadDays": 3,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": true,
+    "defects": [],
+    "date": {
+     "text": "10월 11일",
+     "valid": true,
+     "calendarWeekday": "토",
+     "weekdayMatches": true,
+     "advance": 3,
+     "expectedBody": "2025-09-30",
+     "matchesBody": false,
+     "expectedChain": "2025-09-29",
+     "matchesChain": false,
+     "exampleCopy": false
+    },
+    "rep": 1,
+    "source": "gen-main-N.jsonl"
+   },
+   {
+    "turn": 60,
+    "time": "일요일 아침",
+    "weekday": "일",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 0,
+    "source": "gen-main-N.jsonl"
+   },
+   {
+    "turn": 60,
+    "time": "일요일 아침",
+    "weekday": "일",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 1,
+    "source": "gen-main-N.jsonl"
+   },
+   {
+    "turn": 61,
+    "time": "10월 19일 일요일 밤",
+    "weekday": "일",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": {
+     "text": "10월 19일",
+     "valid": true,
+     "calendarWeekday": "일",
+     "weekdayMatches": true,
+     "advance": 0,
+     "expectedBody": "2025-09-30",
+     "matchesBody": false,
+     "expectedChain": "2025-09-28",
+     "matchesChain": false,
+     "exampleCopy": false
+    },
+    "rep": 0,
+    "source": "gen-main-N.jsonl"
+   },
+   {
+    "turn": 61,
+    "time": "10월 19일 일요일 밤",
+    "weekday": "일",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": {
+     "text": "10월 19일",
+     "valid": true,
+     "calendarWeekday": "일",
+     "weekdayMatches": true,
+     "advance": 0,
+     "expectedBody": "2025-09-30",
+     "matchesBody": false,
+     "expectedChain": "2025-09-28",
+     "matchesChain": false,
+     "exampleCopy": false
+    },
+    "rep": 1,
+    "source": "gen-main-N.jsonl"
+   },
+   {
+    "turn": 73,
+    "time": "일요일 밤",
+    "weekday": "일",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 0,
+    "source": "gen-main-N.jsonl"
+   },
+   {
+    "turn": 73,
+    "time": "일요일 밤",
+    "weekday": "일",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 1,
+    "source": "gen-main-N.jsonl"
+   },
+   {
+    "turn": 74,
+    "time": "10월 13일 월요일 오후",
+    "weekday": "월",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "다음 날"
+    ],
+    "leadDays": 1,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": {
+     "text": "10월 13일",
+     "valid": true,
+     "calendarWeekday": "월",
+     "weekdayMatches": true,
+     "advance": 1,
+     "expectedBody": "2025-10-01",
+     "matchesBody": false,
+     "expectedChain": "2025-09-29",
+     "matchesChain": false,
+     "exampleCopy": false
+    },
+    "rep": 0,
+    "source": "gen-main-N.jsonl"
+   },
+   {
+    "turn": 74,
+    "time": "10월 20일 월요일 낮",
+    "weekday": "월",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "다음 날"
+    ],
+    "leadDays": 1,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": {
+     "text": "10월 20일",
+     "valid": true,
+     "calendarWeekday": "월",
+     "weekdayMatches": true,
+     "advance": 1,
+     "expectedBody": "2025-10-01",
+     "matchesBody": false,
+     "expectedChain": "2025-09-29",
+     "matchesChain": false,
+     "exampleCopy": false
+    },
+    "rep": 1,
+    "source": "gen-main-N.jsonl"
+   },
+   {
+    "turn": 88,
+    "time": "월요일 밤",
+    "weekday": "월",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 0,
+    "source": "gen-main-N.jsonl"
+   },
+   {
+    "turn": 88,
+    "time": "월요일 밤",
+    "weekday": "월",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 1,
+    "source": "gen-main-N.jsonl"
+   },
+   {
+    "turn": 94,
+    "time": "목요일 밤",
+    "weekday": "목",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 0,
+    "source": "gen-main-N.jsonl"
+   },
+   {
+    "turn": 94,
+    "time": "목요일 밤",
+    "weekday": "목",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 1,
+    "source": "gen-main-N.jsonl"
+   },
+   {
+    "turn": 95,
+    "time": "금요일 오후",
+    "weekday": "금",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "다음 날"
+    ],
+    "leadDays": 1,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 0,
+    "source": "gen-main-N.jsonl"
+   },
+   {
+    "turn": 95,
+    "time": "금요일 낮",
+    "weekday": "금",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "사흘 뒤"
+    ],
+    "leadDays": 3,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": true,
+    "defects": [],
+    "date": null,
+    "rep": 1,
+    "source": "gen-main-N.jsonl"
+   },
+   {
+    "turn": 105,
+    "time": "11월 7일 토요일 저녁",
+    "weekday": "토",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "다음 날"
+    ],
+    "leadDays": 1,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": {
+     "text": "11월 7일",
+     "valid": true,
+     "calendarWeekday": "금",
+     "weekdayMatches": false,
+     "advance": 1,
+     "expectedBody": "2025-10-10",
+     "matchesBody": false,
+     "expectedChain": "2025-10-04",
+     "matchesChain": false,
+     "exampleCopy": false
+    },
+    "rep": 0,
+    "source": "gen-main-N.jsonl"
+   },
+   {
+    "turn": 105,
+    "time": "11월 7일 토요일 저녁",
+    "weekday": "토",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": true,
+    "saheul": false,
+    "defects": [],
+    "date": {
+     "text": "11월 7일",
+     "valid": true,
+     "calendarWeekday": "금",
+     "weekdayMatches": false,
+     "advance": 1,
+     "expectedBody": "2025-10-10",
+     "matchesBody": false,
+     "expectedChain": "2025-10-04",
+     "matchesChain": false,
+     "exampleCopy": false
+    },
+    "rep": 1,
+    "source": "gen-main-N.jsonl"
+   }
+  ],
+  "v6fix": [
+   {
+    "turn": 8,
+    "time": "수요일 낮",
+    "weekday": "수",
+    "weekdayStep": 2,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "사흘 뒤"
+    ],
+    "leadDays": 3,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": true,
+    "defects": [],
+    "date": null,
+    "rep": 0,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 8,
+    "time": "수요일 낮",
+    "weekday": "수",
+    "weekdayStep": 2,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "이틀 뒤"
+    ],
+    "leadDays": 2,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 1,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 21,
+    "time": "수요일 낮",
+    "weekday": "수",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 0,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 21,
+    "time": "금요일 저녁",
+    "weekday": "금",
+    "weekdayStep": 2,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [
+     "사흘 뒤"
+    ],
+    "moved": true,
+    "unmarkedMove": true,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 1,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 22,
+    "time": "목요일 낮",
+    "weekday": "목",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [
+     "이틀 뒤"
+    ],
+    "moved": true,
+    "unmarkedMove": true,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 0,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 22,
+    "time": "수요일 저녁",
+    "weekday": "수",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 1,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 38,
+    "time": "토요일 밤",
+    "weekday": "토",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "사흘 뒤"
+    ],
+    "leadDays": 3,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": true,
+    "defects": [],
+    "date": null,
+    "rep": 0,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 38,
+    "time": "토요일 밤",
+    "weekday": "토",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "사흘 뒤"
+    ],
+    "leadDays": 3,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": true,
+    "defects": [],
+    "date": null,
+    "rep": 1,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 60,
+    "time": "일요일 아침",
+    "weekday": "일",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [
+     "마지막 블록 아님"
+    ],
+    "date": null,
+    "rep": 0,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 60,
+    "time": "일요일 밤",
+    "weekday": "일",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "사흘 뒤"
+    ],
+    "leadDays": 3,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": true,
+    "defects": [],
+    "date": null,
+    "rep": 1,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 61,
+    "time": "일요일 밤",
+    "weekday": "일",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 0,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 61,
+    "time": "일요일 밤",
+    "weekday": "일",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 1,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 73,
+    "time": "일요일 밤",
+    "weekday": "일",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [
+     "다음 주"
+    ],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 0,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 73,
+    "time": "일요일 밤",
+    "weekday": "일",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 1,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 74,
+    "time": "월요일 오후",
+    "weekday": "월",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": true,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 0,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 74,
+    "time": "월요일 오후",
+    "weekday": "월",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": true,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 1,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 88,
+    "time": "목요일 밤",
+    "weekday": "목",
+    "weekdayStep": 3,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "사흘 뒤"
+    ],
+    "leadDays": 3,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": true,
+    "defects": [],
+    "date": null,
+    "rep": 0,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 88,
+    "time": "월요일 밤",
+    "weekday": "월",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 1,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 94,
+    "time": "목요일 밤",
+    "weekday": "목",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 0,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 94,
+    "time": "목요일 밤",
+    "weekday": "목",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 1,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 95,
+    "time": "금요일 오후",
+    "weekday": "금",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "사흘 뒤"
+    ],
+    "leadDays": 3,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": true,
+    "defects": [],
+    "date": null,
+    "rep": 0,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 95,
+    "time": "금요일 오후",
+    "weekday": "금",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "사흘 뒤"
+    ],
+    "leadDays": 3,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": true,
+    "defects": [],
+    "date": null,
+    "rep": 1,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 105,
+    "time": "토요일 오후",
+    "weekday": "토",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": true,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 0,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 105,
+    "time": "금요일 아침",
+    "weekday": "금",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": true,
+    "saheul": false,
+    "defects": [
+     "네 줄·이름 아님"
+    ],
+    "date": null,
+    "rep": 1,
+    "source": "gen-main-W.jsonl"
+   }
+  ],
+  "supplement-W": [
+   {
+    "turn": 8,
+    "time": "월요일 밤",
+    "weekday": "월",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [
+     "네 줄·이름 아님"
+    ],
+    "date": null,
+    "rep": 0,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 8,
+    "time": "9월 24일 수요일 오후",
+    "weekday": "수",
+    "weekdayStep": 2,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "이틀 뒤"
+    ],
+    "leadDays": 2,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [
+     "네 줄·이름 아님"
+    ],
+    "date": {
+     "text": "9월 24일",
+     "valid": true,
+     "calendarWeekday": "수",
+     "weekdayMatches": true,
+     "advance": 2,
+     "expectedBody": "2025-09-24",
+     "matchesBody": true,
+     "expectedChain": "2025-09-24",
+     "matchesChain": true,
+     "exampleCopy": false
+    },
+    "rep": 1,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 21,
+    "time": "수요일 저녁",
+    "weekday": "수",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 0,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 21,
+    "time": "수요일 낮",
+    "weekday": "수",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 1,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 22,
+    "time": "10월 9일 목요일 낮",
+    "weekday": "목",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "다음 날"
+    ],
+    "leadDays": 1,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": {
+     "text": "10월 9일",
+     "valid": true,
+     "calendarWeekday": "목",
+     "weekdayMatches": true,
+     "advance": 1,
+     "expectedBody": "2025-09-25",
+     "matchesBody": false,
+     "expectedChain": "2025-09-25",
+     "matchesChain": false,
+     "exampleCopy": false
+    },
+    "rep": 0,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 22,
+    "time": "10월 9일 목요일 낮",
+    "weekday": "목",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "이틀 뒤"
+    ],
+    "leadDays": 2,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [
+     "마지막 블록 아님"
+    ],
+    "date": {
+     "text": "10월 9일",
+     "valid": true,
+     "calendarWeekday": "목",
+     "weekdayMatches": true,
+     "advance": 2,
+     "expectedBody": "2025-09-26",
+     "matchesBody": false,
+     "expectedChain": "2025-09-26",
+     "matchesChain": false,
+     "exampleCopy": false
+    },
+    "rep": 1,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 38,
+    "time": "10월 18일 토요일 아침",
+    "weekday": "토",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "다음 날"
+    ],
+    "leadDays": 1,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [
+     "네 줄·이름 아님"
+    ],
+    "date": {
+     "text": "10월 18일",
+     "valid": true,
+     "calendarWeekday": "토",
+     "weekdayMatches": true,
+     "advance": 1,
+     "expectedBody": "2025-09-28",
+     "matchesBody": false,
+     "expectedChain": "2025-09-27",
+     "matchesChain": false,
+     "exampleCopy": true
+    },
+    "rep": 0,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 38,
+    "time": "9월 28일 일요일 밤",
+    "weekday": "일",
+    "weekdayStep": 2,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "이틀 뒤"
+    ],
+    "leadDays": 2,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": {
+     "text": "9월 28일",
+     "valid": true,
+     "calendarWeekday": "일",
+     "weekdayMatches": true,
+     "advance": 2,
+     "expectedBody": "2025-09-29",
+     "matchesBody": false,
+     "expectedChain": "2025-09-28",
+     "matchesChain": true,
+     "exampleCopy": false
+    },
+    "rep": 1,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 60,
+    "time": "일요일 아침",
+    "weekday": "일",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 0,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 60,
+    "time": "일요일 아침",
+    "weekday": "일",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 1,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 61,
+    "time": "10월 19일 일요일 밤",
+    "weekday": "일",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": {
+     "text": "10월 19일",
+     "valid": true,
+     "calendarWeekday": "일",
+     "weekdayMatches": true,
+     "advance": 0,
+     "expectedBody": "2025-09-30",
+     "matchesBody": false,
+     "expectedChain": "2025-09-28",
+     "matchesChain": false,
+     "exampleCopy": false
+    },
+    "rep": 0,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 61,
+    "time": "10월 19일 일요일 밤",
+    "weekday": "일",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": {
+     "text": "10월 19일",
+     "valid": true,
+     "calendarWeekday": "일",
+     "weekdayMatches": true,
+     "advance": 0,
+     "expectedBody": "2025-09-30",
+     "matchesBody": false,
+     "expectedChain": "2025-09-28",
+     "matchesChain": false,
+     "exampleCopy": false
+    },
+    "rep": 1,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 73,
+    "time": "월요일 새벽",
+    "weekday": "월",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": true,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 0,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 73,
+    "time": "일요일 밤",
+    "weekday": "일",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 1,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 74,
+    "time": "9월 29일 월요일 낮",
+    "weekday": "월",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "일주일 뒤"
+    ],
+    "leadDays": 7,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": {
+     "text": "9월 29일",
+     "valid": true,
+     "calendarWeekday": "월",
+     "weekdayMatches": true,
+     "advance": 7,
+     "expectedBody": "2025-10-07",
+     "matchesBody": false,
+     "expectedChain": "2025-10-05",
+     "matchesChain": false,
+     "exampleCopy": false
+    },
+    "rep": 0,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 74,
+    "time": "10월 13일 월요일 오후",
+    "weekday": "월",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "다음 날"
+    ],
+    "leadDays": 1,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": {
+     "text": "10월 13일",
+     "valid": true,
+     "calendarWeekday": "월",
+     "weekdayMatches": true,
+     "advance": 1,
+     "expectedBody": "2025-10-01",
+     "matchesBody": false,
+     "expectedChain": "2025-09-29",
+     "matchesChain": false,
+     "exampleCopy": false
+    },
+    "rep": 1,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 88,
+    "time": "10월 8일 수요일 저녁",
+    "weekday": "수",
+    "weekdayStep": 2,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "이틀 뒤"
+    ],
+    "leadDays": 2,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": {
+     "text": "10월 8일",
+     "valid": true,
+     "calendarWeekday": "수",
+     "weekdayMatches": true,
+     "advance": 2,
+     "expectedBody": "2025-10-05",
+     "matchesBody": false,
+     "expectedChain": "2025-10-01",
+     "matchesChain": false,
+     "exampleCopy": false
+    },
+    "rep": 0,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 88,
+    "time": "월요일 밤",
+    "weekday": "월",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 1,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 94,
+    "time": "목요일 밤",
+    "weekday": "목",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 0,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 94,
+    "time": "목요일 밤",
+    "weekday": "목",
+    "weekdayStep": 0,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": false,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 1,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 95,
+    "time": "11월 7일 금요일 오후",
+    "weekday": "금",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "이틀 뒤"
+    ],
+    "leadDays": 2,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": {
+     "text": "11월 7일",
+     "valid": true,
+     "calendarWeekday": "금",
+     "weekdayMatches": true,
+     "advance": 2,
+     "expectedBody": "2025-10-08",
+     "matchesBody": false,
+     "expectedChain": "2025-10-04",
+     "matchesChain": false,
+     "exampleCopy": false
+    },
+    "rep": 0,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 95,
+    "time": "토요일 낮",
+    "weekday": "토",
+    "weekdayStep": 2,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "이틀 뒤"
+    ],
+    "leadDays": 2,
+    "otherPhrases": [
+     "이틀 뒤"
+    ],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 1,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 105,
+    "time": "토요일 오후",
+    "weekday": "토",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [],
+    "leadDays": null,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": true,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 0,
+    "source": "gen-main-W.jsonl"
+   },
+   {
+    "turn": 105,
+    "time": "토요일 저녁",
+    "weekday": "토",
+    "weekdayStep": 1,
+    "weekdayMissing": false,
+    "leadPhrases": [
+     "다음 날"
+    ],
+    "leadDays": 1,
+    "otherPhrases": [],
+    "moved": true,
+    "unmarkedMove": false,
+    "saheul": false,
+    "defects": [],
+    "date": null,
+    "rep": 1,
+    "source": "gen-main-W.jsonl"
+   }
+  ]
+ }
+}

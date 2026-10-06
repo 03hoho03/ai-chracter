@@ -1,0 +1,17 @@
+{
+ "rule": "사전 등록의 사람 판독 규칙 — 서술이 장면을 그 날수만큼 옮기면 장면 머리 문구로 센다(문단 머리 12자 밖이어도), 대사·회상 속 날수는 세지 않는다, 판독이 판독기를 이긴다",
+ "overrides": [
+  {"arm": "v6fix", "turn": 21, "rep": 1, "field": "leadPhrases", "from": [], "to": ["사흘 뒤"], "why": "작별 문단 끝 서술 「사흘 뒤, 금요일 저녁.」으로 장면을 옮김 — 무문구 이동 아님(대조 턴 날 이동은 그대로)"},
+  {"arm": "v6fix", "turn": 22, "rep": 0, "field": "leadPhrases", "from": [], "to": ["이틀 뒤"], "why": "서술 「이틀 뒤 목요일 오후, 동아리방 안에는…」 — 장면 이동 문구"},
+  {"arm": "v6fix", "turn": 73, "rep": 0, "field": "otherPhrases", "from": ["다음 주"], "to": [], "why": "세빈 대사 「다음 주 촬영 끝나면」 — 세지 않음(판독기와 같은 결론)"},
+  {"arm": "supplement-W", "turn": 73, "rep": 0, "field": "moved", "from": true, "to": false, "why": "일요일 밤 기숙사까지 걸어와 헤어지는 같은 장면, 상태창만 「월요일 새벽」 — 자정 넘긴 같은 밤(밤→새벽 규칙)"},
+  {"arm": "supplement-W", "turn": 95, "rep": 1, "field": "otherPhrases", "from": ["이틀 뒤"], "to": [], "why": "서술 「어느덧 이틀 뒤의 오후」와 머리 「*이틀 뒤*」가 같은 이동 — 하나로 셈"},
+  {"arm": "supplement-N", "turn": 22, "rep": 0, "field": "leadPhrases", "from": [], "to": ["다음 날"], "why": "서술 「다음 날 아침, 학생회관 삼층 동아리방…」 — 장면 이동 문구"},
+  {"arm": "supplement-N", "turn": 22, "rep": 1, "field": "leadPhrases", "from": [], "to": ["다음 날"], "why": "같음"},
+  {"arm": "supplement-N", "turn": 38, "rep": 0, "field": "leadPhrases", "from": [], "to": ["이틀 뒤"], "why": "서술 「이틀 뒤 밤, 어두운 방 안에서…」 — 장면 이동 문구"}
+ ],
+ "notes": [
+  "형식 결함 「네 줄·이름 아님」 7건(v6fix 105/1, W 8/0·8/1·38/0, N 38/0)은 전부 혼자 있는 장면의 빈 「함께 |」 줄이다. 사전 등록 정의(측정 판독기와 같음)대로 결함으로 셌다.",
+  "「마지막 블록 아님」 2건(v6fix 60/0 상태창 뒤 '다음 행동' 목록, W 22/1 상태창 뒤 사용자 줄 생성)은 실제 결함이다."
+ ]
+}
