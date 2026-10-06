@@ -549,7 +549,7 @@ def build_stat_judgment_prompt(
 ) -> str:
     """판단 프롬프트를 조립한다 — 스탯 변경 판단(스토리 챗 전용).
 
-    스탯 정의(설명/범위/현재값)와 **이번 턴만**을 근거로 LLMClient.generateStructured()가
+    스탯 정의(현재값/범위/설명)와 **이번 턴만**을 근거로 LLMClient.generateStructured()가
     StatJudgmentResult(구조화 출력)로 각 스탯의 변경 여부를 판단하게 한다.
 
     히스토리 전체를 안 싣는다. 스탯
@@ -560,15 +560,18 @@ def build_stat_judgment_prompt(
     판정할 수 없다. 이 비대칭이 이 변경의 핵심이다.
 
     스탯 이름·설명(작가 글)과 이번 턴 모델 응답은 `names` 로 `{{user}}` 를 바꾸고, 이름 한 줄에 실제 이름을 싣는다.
+
+    스탯 줄은 이름 바로 뒤에 현재값·범위를 두고 설명을 그 뒤에 둔다 — 설명이 길면 현재값이 이름에서 멀어져, 판정 모델이
+    다른 스탯 줄의 현재값을 이 스탯의 기준으로 읽고 새 값을 내는 일이 있었다. 제약 꼬리는 그대로 줄 끝(설명 뒤)에 붙는다.
     """
     # `per_turn_delta`가 있는 스탯은 `apply_stat_changes`가 매 턴 결정적으로 굴리고 LLM 판단은
     # 무시된다. 그래도 현재값은 서사 판단의 근거이므로 목록에는 남기고, 판단 대상이 아니라는
     # 것만 표시해 불필요한 출력을 줄인다.
     stat_lines = "\n".join(
         f"- statId={stat_def.entity_id}, 이름={names.expand(stat_def.name)}, "
-        f"설명={names.expand(stat_def.description)}, "
+        f"현재값={current_stats.get(str(stat_def.entity_id), stat_def.initial_value)}, "
         f"범위=[{stat_def.min_value}, {stat_def.max_value}], "
-        f"현재값={current_stats.get(str(stat_def.entity_id), stat_def.initial_value)}"
+        f"설명={names.expand(stat_def.description)}"
         + _stat_line_tail(stat_def)
         for stat_def in stat_defs
     )
