@@ -1,0 +1,200 @@
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1762 cached_content_tokens=None candidates_tokens=252 thoughts_tokens=None total_tokens=2014 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1762 cached_content_tokens=None candidates_tokens=252 thoughts_tokens=None total_tokens=2014 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1762 cached_content_tokens=None candidates_tokens=252 thoughts_tokens=None total_tokens=2014 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.002456}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1814 cached_content_tokens=None candidates_tokens=192 thoughts_tokens=None total_tokens=2006 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1814 cached_content_tokens=None candidates_tokens=192 thoughts_tokens=None total_tokens=2006 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1814 cached_content_tokens=None candidates_tokens=192 thoughts_tokens=None total_tokens=2006 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.00468}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1819 cached_content_tokens=None candidates_tokens=74 thoughts_tokens=None total_tokens=1893 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1819 cached_content_tokens=None candidates_tokens=252 thoughts_tokens=None total_tokens=2071 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1819 cached_content_tokens=None candidates_tokens=252 thoughts_tokens=None total_tokens=2071 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.006911}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1802 cached_content_tokens=None candidates_tokens=130 thoughts_tokens=None total_tokens=1932 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1802 cached_content_tokens=None candidates_tokens=130 thoughts_tokens=None total_tokens=1932 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1802 cached_content_tokens=None candidates_tokens=130 thoughts_tokens=None total_tokens=1932 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.008848}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1854 cached_content_tokens=None candidates_tokens=130 thoughts_tokens=None total_tokens=1984 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1854 cached_content_tokens=None candidates_tokens=130 thoughts_tokens=None total_tokens=1984 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1854 cached_content_tokens=None candidates_tokens=130 thoughts_tokens=None total_tokens=1984 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.010823}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1859 cached_content_tokens=None candidates_tokens=130 thoughts_tokens=None total_tokens=1989 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1859 cached_content_tokens=None candidates_tokens=130 thoughts_tokens=None total_tokens=1989 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1859 cached_content_tokens=None candidates_tokens=130 thoughts_tokens=None total_tokens=1989 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.012803}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1792 cached_content_tokens=None candidates_tokens=136 thoughts_tokens=None total_tokens=1928 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1792 cached_content_tokens=None candidates_tokens=136 thoughts_tokens=None total_tokens=1928 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1792 cached_content_tokens=None candidates_tokens=136 thoughts_tokens=None total_tokens=1928 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.014758}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1844 cached_content_tokens=None candidates_tokens=136 thoughts_tokens=None total_tokens=1980 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1844 cached_content_tokens=None candidates_tokens=136 thoughts_tokens=None total_tokens=1980 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1844 cached_content_tokens=None candidates_tokens=136 thoughts_tokens=None total_tokens=1980 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.016754}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1849 cached_content_tokens=None candidates_tokens=136 thoughts_tokens=None total_tokens=1985 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1849 cached_content_tokens=None candidates_tokens=136 thoughts_tokens=None total_tokens=1985 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1849 cached_content_tokens=None candidates_tokens=136 thoughts_tokens=None total_tokens=1985 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.018752}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1774 cached_content_tokens=None candidates_tokens=74 thoughts_tokens=None total_tokens=1848 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1774 cached_content_tokens=None candidates_tokens=74 thoughts_tokens=None total_tokens=1848 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1774 cached_content_tokens=None candidates_tokens=74 thoughts_tokens=None total_tokens=1848 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.020416}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1826 cached_content_tokens=None candidates_tokens=74 thoughts_tokens=None total_tokens=1900 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1826 cached_content_tokens=None candidates_tokens=74 thoughts_tokens=None total_tokens=1900 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1826 cached_content_tokens=None candidates_tokens=74 thoughts_tokens=None total_tokens=1900 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.022118}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1831 cached_content_tokens=None candidates_tokens=74 thoughts_tokens=None total_tokens=1905 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1831 cached_content_tokens=None candidates_tokens=74 thoughts_tokens=None total_tokens=1905 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1831 cached_content_tokens=None candidates_tokens=74 thoughts_tokens=None total_tokens=1905 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.023824}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1790 cached_content_tokens=None candidates_tokens=74 thoughts_tokens=None total_tokens=1864 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1790 cached_content_tokens=None candidates_tokens=74 thoughts_tokens=None total_tokens=1864 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1790 cached_content_tokens=None candidates_tokens=74 thoughts_tokens=None total_tokens=1864 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.0255}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1842 cached_content_tokens=None candidates_tokens=74 thoughts_tokens=None total_tokens=1916 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1842 cached_content_tokens=None candidates_tokens=74 thoughts_tokens=None total_tokens=1916 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1842 cached_content_tokens=None candidates_tokens=74 thoughts_tokens=None total_tokens=1916 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.027214}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1847 cached_content_tokens=None candidates_tokens=74 thoughts_tokens=None total_tokens=1921 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1847 cached_content_tokens=None candidates_tokens=74 thoughts_tokens=None total_tokens=1921 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1847 cached_content_tokens=None candidates_tokens=74 thoughts_tokens=None total_tokens=1921 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.028933}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1851 cached_content_tokens=None candidates_tokens=197 thoughts_tokens=None total_tokens=2048 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1851 cached_content_tokens=None candidates_tokens=197 thoughts_tokens=None total_tokens=2048 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1851 cached_content_tokens=None candidates_tokens=197 thoughts_tokens=None total_tokens=2048 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.031207}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1903 cached_content_tokens=None candidates_tokens=197 thoughts_tokens=None total_tokens=2100 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1903 cached_content_tokens=None candidates_tokens=197 thoughts_tokens=None total_tokens=2100 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1903 cached_content_tokens=None candidates_tokens=197 thoughts_tokens=None total_tokens=2100 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.033521}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1908 cached_content_tokens=None candidates_tokens=197 thoughts_tokens=None total_tokens=2105 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1908 cached_content_tokens=None candidates_tokens=197 thoughts_tokens=None total_tokens=2105 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1908 cached_content_tokens=None candidates_tokens=197 thoughts_tokens=None total_tokens=2105 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.035839}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1922 cached_content_tokens=None candidates_tokens=74 thoughts_tokens=None total_tokens=1996 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1922 cached_content_tokens=None candidates_tokens=74 thoughts_tokens=None total_tokens=1996 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1922 cached_content_tokens=None candidates_tokens=72 thoughts_tokens=None total_tokens=1994 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.03761}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1974 cached_content_tokens=None candidates_tokens=137 thoughts_tokens=None total_tokens=2111 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1974 cached_content_tokens=None candidates_tokens=137 thoughts_tokens=None total_tokens=2111 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1974 cached_content_tokens=None candidates_tokens=137 thoughts_tokens=None total_tokens=2111 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.039707}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1979 cached_content_tokens=None candidates_tokens=137 thoughts_tokens=None total_tokens=2116 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+llm_usage 기록 실패 — 이 호출 한 건은 집계에서 빠진다
+Traceback (most recent call last):
+  File "/Users/janghojeong/Projects/work/ai-chracter/.claude/worktrees/ending-priority-replay/apps/api/src/api/llm/usage_store.py", line 91, in record_usage
+    await _write(call_site, model, usage_metadata, now or datetime.now(UTC))
+  File "/Users/janghojeong/Projects/work/ai-chracter/.claude/worktrees/ending-priority-replay/apps/api/src/api/llm/usage_store.py", line 79, in _write
+    await pipe.execute()
+  File "/Users/janghojeong/Projects/work/ai-chracter/.claude/worktrees/ending-priority-replay/apps/api/.venv/lib/python3.11/site-packages/redis/asyncio/client.py", line 2106, in execute
+    await self.reset()
+  File "/Users/janghojeong/Projects/work/ai-chracter/.claude/worktrees/ending-priority-replay/apps/api/.venv/lib/python3.11/site-packages/redis/asyncio/client.py", line 1729, in reset
+    await asyncio.shield(self.connection_pool.release(connection))
+asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/janghojeong/Projects/work/ai-chracter/.claude/worktrees/ending-priority-replay/apps/api/src/api/llm/usage_store.py", line 90, in record_usage
+    async with asyncio.timeout(RECORD_TIMEOUT_SECONDS):
+  File "/Users/janghojeong/.local/share/uv/python/cpython-3.11.15-macos-aarch64-none/lib/python3.11/asyncio/timeouts.py", line 115, in __aexit__
+    raise TimeoutError from exc_val
+TimeoutError
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1979 cached_content_tokens=None candidates_tokens=137 thoughts_tokens=None total_tokens=2116 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1979 cached_content_tokens=None candidates_tokens=137 thoughts_tokens=None total_tokens=2116 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.041808}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1859 cached_content_tokens=None candidates_tokens=137 thoughts_tokens=None total_tokens=1996 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1859 cached_content_tokens=None candidates_tokens=137 thoughts_tokens=None total_tokens=1996 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1859 cached_content_tokens=None candidates_tokens=137 thoughts_tokens=None total_tokens=1996 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.043819}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1911 cached_content_tokens=None candidates_tokens=74 thoughts_tokens=None total_tokens=1985 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1911 cached_content_tokens=None candidates_tokens=133 thoughts_tokens=None total_tokens=2044 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1911 cached_content_tokens=None candidates_tokens=133 thoughts_tokens=None total_tokens=2044 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.045762}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1916 cached_content_tokens=None candidates_tokens=74 thoughts_tokens=None total_tokens=1990 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1916 cached_content_tokens=None candidates_tokens=74 thoughts_tokens=None total_tokens=1990 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1916 cached_content_tokens=None candidates_tokens=74 thoughts_tokens=None total_tokens=1990 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.047532}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1713 cached_content_tokens=None candidates_tokens=73 thoughts_tokens=None total_tokens=1786 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1713 cached_content_tokens=None candidates_tokens=71 thoughts_tokens=None total_tokens=1784 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1713 cached_content_tokens=None candidates_tokens=71 thoughts_tokens=None total_tokens=1784 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.049139}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1765 cached_content_tokens=None candidates_tokens=73 thoughts_tokens=None total_tokens=1838 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1765 cached_content_tokens=None candidates_tokens=71 thoughts_tokens=None total_tokens=1836 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1765 cached_content_tokens=None candidates_tokens=73 thoughts_tokens=None total_tokens=1838 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.050789}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1770 cached_content_tokens=None candidates_tokens=71 thoughts_tokens=None total_tokens=1841 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1770 cached_content_tokens=None candidates_tokens=71 thoughts_tokens=None total_tokens=1841 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1770 cached_content_tokens=None candidates_tokens=73 thoughts_tokens=None total_tokens=1843 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.052438}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1851 cached_content_tokens=None candidates_tokens=77 thoughts_tokens=None total_tokens=1928 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1851 cached_content_tokens=None candidates_tokens=77 thoughts_tokens=None total_tokens=1928 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1851 cached_content_tokens=None candidates_tokens=77 thoughts_tokens=None total_tokens=1928 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.054173}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1903 cached_content_tokens=None candidates_tokens=77 thoughts_tokens=None total_tokens=1980 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1903 cached_content_tokens=None candidates_tokens=77 thoughts_tokens=None total_tokens=1980 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1903 cached_content_tokens=None candidates_tokens=77 thoughts_tokens=None total_tokens=1980 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.055947}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1908 cached_content_tokens=None candidates_tokens=137 thoughts_tokens=None total_tokens=2045 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1908 cached_content_tokens=None candidates_tokens=137 thoughts_tokens=None total_tokens=2045 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1908 cached_content_tokens=None candidates_tokens=133 thoughts_tokens=None total_tokens=2041 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.057988}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1851 cached_content_tokens=None candidates_tokens=70 thoughts_tokens=None total_tokens=1921 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1851 cached_content_tokens=None candidates_tokens=70 thoughts_tokens=None total_tokens=1921 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1851 cached_content_tokens=None candidates_tokens=133 thoughts_tokens=None total_tokens=1984 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.059786}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1903 cached_content_tokens=None candidates_tokens=133 thoughts_tokens=None total_tokens=2036 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1903 cached_content_tokens=None candidates_tokens=133 thoughts_tokens=None total_tokens=2036 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1903 cached_content_tokens=None candidates_tokens=133 thoughts_tokens=None total_tokens=2036 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.061812}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1908 cached_content_tokens=None candidates_tokens=133 thoughts_tokens=None total_tokens=2041 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1908 cached_content_tokens=None candidates_tokens=133 thoughts_tokens=None total_tokens=2041 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1908 cached_content_tokens=None candidates_tokens=133 thoughts_tokens=None total_tokens=2041 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.063841}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1773 cached_content_tokens=None candidates_tokens=76 thoughts_tokens=None total_tokens=1849 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1773 cached_content_tokens=None candidates_tokens=76 thoughts_tokens=None total_tokens=1849 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1773 cached_content_tokens=None candidates_tokens=76 thoughts_tokens=None total_tokens=1849 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.065513}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1825 cached_content_tokens=None candidates_tokens=76 thoughts_tokens=None total_tokens=1901 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1825 cached_content_tokens=None candidates_tokens=76 thoughts_tokens=None total_tokens=1901 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1825 cached_content_tokens=None candidates_tokens=76 thoughts_tokens=None total_tokens=1901 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.067224}
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1830 cached_content_tokens=None candidates_tokens=76 thoughts_tokens=None total_tokens=1906 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1830 cached_content_tokens=None candidates_tokens=76 thoughts_tokens=None total_tokens=1906 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+gemini_usage call_site=replay_stat_judgment model=gemini-3.1-flash-lite prompt_tokens=1830 cached_content_tokens=None candidates_tokens=76 thoughts_tokens=None total_tokens=1906 user_id=5eed0000-0000-4000-8000-0000000000d1 room_id=6787bb78-c54d-4c65-966c-024e1dff0c74
+{"calls": 3, "estimatedUsd": 0.0018, "tokensPerCall": [2000]}
+{"calls": 3, "cumulativeChargedUsd": 0.068939}
