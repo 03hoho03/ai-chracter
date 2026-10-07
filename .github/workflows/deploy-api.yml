@@ -33,7 +33,7 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "배포할 이미지 태그(커밋 SHA 앞 7자리). 비우면 이 커밋을 빌드해 배포한다. 채우면 빌드 없이 레지스트리에 있는 그 태그로 롤백·재배포한다."
+        description: "배포할 이미지 태그(커밋 SHA 앞 7자리). 비우면 이 커밋을 빌드해 배포한다. 채우면 빌드 없이 레지스트리에 있는 그 태그로 롤백·재배포한다(롤백으로 보고 DB 가 그 이미지보다 앞서 있으면 마이그레이션을 건너뛴다)."
         type: string
         required: false
         default: ""
@@ -85,12 +85,17 @@ jobs:
             echo "::error::수동 실행은 main 브랜치에서만 받는다(지금 ref: $GITHUB_REF) — Run workflow 에서 브랜치를 main 으로 고른다"
             exit 1
           fi
+          # 태그를 지정한 수동 실행만 롤백으로 보고 교체 스크립트에 롤백 표시를 넘긴다. 표시가 있어야 DB 가 그
+          # 이미지보다 앞서 있을 때 마이그레이션을 건너뛰고, 없으면 그 상황에서 교체 스크립트가 멈춘다 — main 을
+          # 빌드한 배포에서 DB 가 앞서 있다면 이미지와 스키마가 갈라진 것이라 조용히 건너뛰면 안 된다.
           if [ -n "$IMAGE_TAG_INPUT" ]; then
             TAG="$IMAGE_TAG_INPUT"
             BUILD=false
+            ROLLBACK=true
           else
             TAG="${GITHUB_SHA::7}"
             BUILD=true
+            ROLLBACK=false
           fi
           if ! [[ "$TAG" =~ ^[0-9a-f]{7}$ ]]; then
             echo "::error::image_tag 는 커밋 SHA 앞 7자리(소문자 16진수)여야 한다: '$TAG'"
@@ -103,11 +108,12 @@ jobs:
               exit 1
               ;;
           esac
-          echo "배포 입력: tag=$TAG build=$BUILD skip_overlap=$SKIP_OVERLAP_INPUT"
+          echo "배포 입력: tag=$TAG build=$BUILD skip_overlap=$SKIP_OVERLAP_INPUT rollback=$ROLLBACK"
           {
             echo "tag=$TAG"
             echo "build=$BUILD"
             echo "skip_overlap=$SKIP_OVERLAP_INPUT"
+            echo "rollback=$ROLLBACK"
           } >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
@@ -160,8 +166,9 @@ jobs:
         # 원격 스크립트는 따옴표 heredoc(`<<'REMOTE'`)이라 러너 쪽 변수가 그 안에서 펼쳐지지 않는다.
         # 원격 셸에 들어가는 값은 `--command` 의 `sudo VAR=…` 에 적은 것뿐이다 — 여기서 빠뜨리면 원격에서는
         # 조용히 빈 값이 된다. 특히 SKIP_OVERLAP 이 빠지면 탈출구를 켠 배포도 평상시 겹침 교체로 돌고 아무
-        # 에러도 나지 않는다. 그래서 둘 다 넘기고, 교체 스크립트가 시작 줄에 받은 값을 찍는다. 두 값은
-        # '배포 입력 확정' step 이 형식을 검증했다(작은따옴표 안에 들어가도 안전한 글자만 남는다).
+        # 에러도 나지 않는다. 그래서 셋 다 넘기고, 교체 스크립트가 시작 줄에 받은 값을 찍는다. 세 값은
+        # '배포 입력 확정' step 이 정했거나 형식을 검증했다(작은따옴표 안에 들어가도 안전한 글자만 남는다).
+        # 롤백 표시(DDONA_ROLLBACK)는 그 step 이 태그를 지정한 수동 실행에서만 true 로 둔다.
         #
         # 원격 출력은 파일로도 받아 마지막 줄의 완료 표식을 확인한다. 원격 스크립트가 stdin 에서 읽히는
         # 탓에, 중간 명령 하나가 stdin 을 삼키면 bash 는 남은 줄을 못 읽고 정상 종료해 이 step 이 성공으로
@@ -169,13 +176,14 @@ jobs:
         env:
           TAG: ${{ steps.params.outputs.tag }}
           SKIP_OVERLAP: ${{ steps.params.outputs.skip_overlap }}
+          ROLLBACK: ${{ steps.params.outputs.rollback }}
         run: |
           set -euo pipefail
           REMOTE_LOG="$RUNNER_TEMP/remote-deploy.log"
           gcloud compute ssh "$INSTANCE" --zone="$ZONE" --tunnel-through-iap --quiet \
-            --command="sudo TAG='$TAG' SKIP_OVERLAP='$SKIP_OVERLAP' bash -s" <<'REMOTE' | tee "$REMOTE_LOG"
+            --command="sudo TAG='$TAG' SKIP_OVERLAP='$SKIP_OVERLAP' DDONA_ROLLBACK='$ROLLBACK' bash -s" <<'REMOTE' | tee "$REMOTE_LOG"
           set -euo pipefail
-          echo "원격 입력: tag=$TAG skip_overlap=${SKIP_OVERLAP:-}"
+          echo "원격 입력: tag=$TAG skip_overlap=${SKIP_OVERLAP:-} rollback=${DDONA_ROLLBACK:-}"
           cd /opt/ddona/app
           # compose·Caddyfile 변경을 받아온다. 로컬 수정본은 버린다 — 형상은 git 이 단일 소스다.
           git fetch --depth=1 origin main
@@ -212,7 +220,7 @@ jobs:
           #    평상시 교체로 보내면 Caddy 가 아직 옛 설정이라 매번 실패하고 옛 api 는 영영 안 지워진다 — 그래서
           #    옛 api 가 남아 있는 한 이행 스크립트로 보낸다. 이행 스크립트는 재실행 가능해서 된 단계는 건너뛴다.
           #    복구는 같은 태그로 이 워크플로를 다시 돌리는 것이다(image_tag 에 그 태그, 또는 실패한 실행의 재실행).
-          # 2. 떠 있는 색이 하나 이상 → 평상시 교체. SKIP_OVERLAP 은 위 sudo 로 이미 환경에 들어와 있다.
+          # 2. 떠 있는 색이 하나 이상 → 평상시 교체. SKIP_OVERLAP·DDONA_ROLLBACK 은 위 sudo 로 이미 환경에 들어와 있다.
           # 3. 그 밖(컨테이너가 하나도 없다 — VM 재구축 직후) → 교체할 대상이 없어 멈춘다.
           OLD_API="$(docker ps -aq --filter label=com.docker.compose.project=ddona --filter label=com.docker.compose.service=api < /dev/null)"
           BLUE_UP="$(docker ps -q --filter label=com.docker.compose.project=ddona --filter label=com.docker.compose.service=api_blue < /dev/null)"

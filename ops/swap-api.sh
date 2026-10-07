@@ -3,6 +3,7 @@
 #
 #   sudo bash ops/swap-api.sh [태그]          # 태그 생략 = 지금 active 의 이미지로 다시 교체(env 반영용)
 #   sudo SKIP_OVERLAP=true bash ops/swap-api.sh <태그>   # 겹침 없이 active 를 그 자리에서 교체
+#   sudo DDONA_ROLLBACK=1 bash ops/swap-api.sh <이전 태그>  # 롤백 — DB 가 그 이미지보다 앞서 있어도 이어 간다
 #
 # root 로 돈다 — 상태 파일·잠금 파일이 root 소유 `/var/lib/ddona/` 에 있다.
 #
@@ -22,8 +23,8 @@
 # 끝난다. 재실행은 떠 있는 색을 드레인 없이 멈추지 않는다 — 한쪽에 드레인 플래그가 있으면 그쪽이 내리던
 # 옛 색이라 마저 내리고, 플래그가 없으면 이번에 다시 만들 쪽을 먼저 드레인해 내린 뒤 다시 만든다.
 #
-# 마이그레이션은 DB 가 올릴 이미지보다 앞서 있으면(마이그레이션이 낀 배포를 옛 태그로 되돌리는 롤백)
-# 건너뛴다 — 아래 `migrate`.
+# 마이그레이션은 DB 가 올릴 이미지보다 앞서 있을 때 롤백 표시(`DDONA_ROLLBACK=1`)가 있으면 건너뛰고,
+# 없으면 멈춘다 — 아래 `migrate`.
 #
 # SKIP_OVERLAP=true 는 위험한 마이그레이션 배포의 탈출구다 — 옛 코드와 새 스키마가 겹치는 구간을 아예
 # 없애려고 쉬는 색을 띄우지 않고 active 를 그 자리에서 재생성한다. 그 대가로 끊김이 생긴다. 길이는 옛
@@ -106,12 +107,17 @@ print("DDONA_DB_REVISION", "ahead" if any(r not in known for r in revs) else "kn
 PY
 )"
 
-# 마이그레이션. DB 의 현재 리비전을 올릴 이미지가 모르면 — DB 가 이 이미지보다 앞서 있다(마이그레이션이 낀
-# 배포를 옛 태그로 되돌리는 롤백) — 건너뛰고 그 사실을 남긴다. 그 이미지로 `alembic upgrade head` 를 돌리면
-# `Can't locate revision` 으로 멈춰 롤백 자체가 안 되고, 앞선 DB 에서 upgrade 가 할 일은 원래 없다. 스키마를
-# 되돌리는 downgrade 는 이 스크립트가 하지 않는다(순서를 사람이 정한다). DB 가 이미지보다 뒤거나 같으면
-# 평소대로 upgrade 한다. 판정 자체가 실패하면 건너뛰지 않고 멈춘다 — 확인 못 한 채 건너뛰면 새 코드가 옛
-# 스키마 위에서 뜰 수 있다. 인자: 올릴 이미지가 걸린 색.
+# 마이그레이션. DB 의 현재 리비전을 올릴 이미지가 모르면 DB 가 이 이미지보다 앞서 있거나 이미지와 갈라져
+# 있는데, 판정은 둘을 구분하지 못한다. 마이그레이션이 낀 배포를 옛 태그로 되돌리는 롤백이면 앞선 쪽이라
+# 건너뛰는 게 맞다 — 그 이미지로 `alembic upgrade head` 를 돌리면 `Can't locate revision` 으로 멈춰 롤백
+# 자체가 안 되고, 앞선 DB 에서 upgrade 가 할 일은 원래 없다. 롤백이 아닌 배포에서는 이 상황이 정상적으로
+# 생기지 않는다. downgrade 없이 revert 를 main 에 올리면 DB 가 앞선 채 남고, 그 뒤 새 마이그레이션이 든
+# 배포는 갈라진 쪽이라 건너뛰면 새 코드가 자기 마이그레이션 없는 스키마에서 뜬다(`/health` 는 DB 를 보지
+# 않아 교체는 성공으로 끝난다). 그래서 건너뜀은 부른 쪽이 롤백이라고 밝혔을 때(`DDONA_ROLLBACK`)만 하고,
+# 아니면 멈춘다 — 실패 정리가 쉬는 색을 되돌리고 옛 색은 계속 서빙한다. 스키마를 되돌리는 downgrade 는
+# 이 스크립트가 하지 않는다(순서를 사람이 정한다). DB 가 이미지보다 뒤거나 같으면 표시와 상관없이
+# upgrade 한다. 판정 자체가 실패하면 건너뛰지 않고 멈춘다 — 확인 못 한 채 건너뛰면 새 코드가 옛 스키마
+# 위에서 뜰 수 있다. 인자: 올릴 이미지가 걸린 색.
 migrate() {
   local c="$1" out verdict
   out="$(compose run --rm -T "api_$c" python -c "$DB_REVISION_CHECK" </dev/null)" ||
@@ -123,7 +129,11 @@ migrate() {
       compose run --rm -T "api_$c" alembic upgrade head </dev/null
       ;;
     ahead\ *)
-      log "DB 리비전(${verdict#ahead })을 이 이미지가 모른다 — DB 가 이 이미지보다 앞서 있다(마이그레이션이 낀 배포의 롤백). 마이그레이션 건너뜀"
+      if [ "$IS_ROLLBACK" = 1 ]; then
+        log "DB 리비전(${verdict#ahead })을 이 이미지가 모른다 — 롤백 표시가 있어 DB 가 이 이미지보다 앞선 것으로 보고 마이그레이션 건너뜀"
+      else
+        die "DB 리비전(${verdict#ahead })을 이 이미지가 모른다 — DB 가 이 이미지보다 앞서 있거나 갈라져 있다. 롤백이 아닌 배포에서 마이그레이션을 건너뛰면 새 코드가 맞지 않는 스키마에서 뜰 수 있어 멈춘다(옛 색은 그대로 서빙). 옛 태그로 되돌리는 롤백이면 DDONA_ROLLBACK=1 을 붙여 다시 부른다(Actions 수동 실행은 image_tag 를 채우면 붙는다)"
+      fi
       ;;
     *) die "DB 리비전 판정 출력을 읽지 못했다 — 마이그레이션을 건너뛸지 정하지 못해 멈춘다" ;;
   esac
@@ -132,12 +142,18 @@ migrate() {
 TAG_ARG="${1:-}"
 # 받은 값을 무엇보다 먼저 찍는다 — 워크플로가 값을 못 넘겼는지(특히 SKIP_OVERLAP 이 원격 셸까지
 # 갔는지) 배포 로그만 보고 알 수 있어야 한다.
-log "시작: tag=${TAG_ARG:-(생략)} skip_overlap=${SKIP_OVERLAP:-}"
+log "시작: tag=${TAG_ARG:-(생략)} skip_overlap=${SKIP_OVERLAP:-} rollback=${DDONA_ROLLBACK:-}"
 
 case "${SKIP_OVERLAP:-}" in
   true) SKIP=1 ;;
   false | '') SKIP=0 ;;
   *) die "SKIP_OVERLAP 은 true·false·빈 값만 받는다: '${SKIP_OVERLAP}'" ;;
+esac
+# 롤백 표시. DB 가 올릴 이미지보다 앞서 있을 때 마이그레이션을 건너뛸지만 정한다(`migrate`).
+case "${DDONA_ROLLBACK:-}" in
+  1 | true) IS_ROLLBACK=1 ;;
+  0 | false | '') IS_ROLLBACK=0 ;;
+  *) die "DDONA_ROLLBACK 은 1·true·0·false·빈 값만 받는다: '${DDONA_ROLLBACK}'" ;;
 esac
 if [ -n "$TAG_ARG" ] && ! valid_tag "$TAG_ARG"; then
   die "태그 형식이 아니다: '$TAG_ARG'"
