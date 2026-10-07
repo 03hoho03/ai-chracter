@@ -51,7 +51,7 @@ Cloudflare 애니캐스트 IP(`104.x`/`172.67.x`)가 아니라 VM 고정 IP를 �
 | VM 파일 소유 | **root + sudo 배포** | OS Login은 접속 주체마다 POSIX 사용자가 달라, 사람 계정 소유로 두면 배포 SA가 git·docker·`.env` 셋 다 막힌다 |
 | 백업 위치 | **자산 버킷의 `backup/`** | 기존 R2 토큰이 그 버킷 전용이라 새 토큰 없이 쓰려면 이 방법뿐. 대신 prune이 백업 파일명 형태에 **정확히** 맞는 것만 지우게 해 자산과 격리했다 |
 | VM 사양 | **e2-highcpu-4**(2026-10-04 e2-medium 에서 변경) | 동시 채팅 300명 부하 측정에서 e2-medium 은 공유 코어 한도(지속 용량 1코어분)에 걸려 버티지 못했고, e2-highcpu-4 + 워커 4 + 풀 10+7 이 통과했다. 메모리는 둘 다 4GB 라 그대로 충분했다. 무료 체험 크레딧이 끝나면 실요금(월 약 12만 원)이 나가므로 체험 종료 전에 사양을 다시 판단한다 |
-| `/health` vs `/ready` | **둘 다 둔다** | `/health`는 얕아야 한다(Caddy·compose healthcheck·배포 검증이 의존). 자원 장애 감지는 `/ready`가 맡는다 |
+| `/health` vs `/ready` | **둘 다 둔다** | `/health`는 얕아야 한다(Caddy·compose healthcheck·배포 검증이 의존) — DB·Redis를 건드리지 않고 프로세스 생존과 컨테이너 안 드레인 플래그 파일(`/tmp/draining`)만 본다. 플래그가 서면 503이 되어 Caddy가 그 색을 업스트림에서 뺀다("BE → GCE VM" 절의 blue/green 교체). 자원 장애 감지는 `/ready`가 맡고, 외부 업타임 감시도 `/ready`를 본다 — 그래서 교체 중 드레인 503은 외부 경보로 이어지지 않는다 |
 | 이미지 생성 → 집 PC 경로 | **Cloudflare Tunnel + Access 서비스 토큰** | VM에 데몬·컨테이너 네트워크 변경·키 로테이션이 필요 없다. 생성 직렬화("이미지 생성" 절)가 매 HTTP 호출을 생성 1건으로 묶어 두므로 엣지 요청 제한에 다가가지 않는다. 체크포인트 스왑을 도입하면 그 전제가 깨져 Tailscale로 돌아간다. **요청 본문 크기 상한은 참조 상한보다 크다** — 참조 이미지를 실으면 요청 하나가 base64 최대 8,000,000자(약 8MB)를 싣는다. 실측(2026-09-29 KST, 운영 VM → Tunnel/Access → 집 PC, 측정 방법은 "참조 이미지 켜기 · 끄기 · 롤백" 절): 실제 생성 이미지 참조 126,056자 → `200 image/webp`(14:11:06→14:11:37), 무작위 1400×1400 PNG 7,852,932자 → `200 image/webp`(14:11:38→14:11:51), Cloudflare `413`·HTML 오류 없음. 서버팀 확인: cloudflared 설정에 본문 크기 제한이 없고 집 PC 서버 앱도 본문 전체 제한 없이 필드 단위로만 검증하므로, 경로 상한은 Cloudflare 플랜 기본값(Free·Pro 100MB)이다 |
 
 **기각한 것**: Caddy `flush_interval -1` — 있으나 없으나 SSE 도착 간격이 같았다(300ms 간격 5개 실측:
@@ -138,7 +138,7 @@ call_site 가 옛·새 모델 두 행으로 나뉘어 각 행의 비율이 낮�
 여기 잡히지 않는다 — 판정 쪽은 메시지가 `Gemini blocked the structured prompt via safetySettings`(또는
 `… structured output …`)인 이벤트로, 발행 심사 쪽은 발행 400 과 API 로그의 `publish_filter_blocked` 경고
 줄로만 남고 Bugsink 이벤트는 없으니, 새 모델이 더 많이 막는지는 파싱 실패 수로 알 수 없다. 되돌리기는 env 줄을
-지우거나 값을 비우고 `up -d --wait api`.
+지우거나 값을 비우고 `sudo bash ops/swap-api.sh`("env 반영 재기동" 절).
 
 **사용량 집계** — 호출마다 call_site·실제 모델별 호출 수와 토큰(입력·캐시 적중·출력·사고·합계, 입력
 토큰이 비어 온 호출 수)을 Redis 해시 `llm_usage:{KST 날짜}`에 더한다(보존 400일, 사용자·방 단위 없음).
@@ -146,7 +146,7 @@ call_site 가 옛·새 모델 두 행으로 나뉘어 각 행의 비율이 낮�
 
 ```sh
 cd /opt/ddona/app && sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env \
-  exec -T api python scripts/llm_usage_report.py --days 7          # 기간 합계
+  exec -T api_$(sudo bash ops/active-color.sh) python scripts/llm_usage_report.py --days 7          # 기간 합계
 # --from/--to(KST 날짜) · --by-day(날짜별) · --call-site · --model 로 좁힌다
 ```
 
@@ -202,7 +202,9 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 **52개 키다**(2026-10-06 VM 실측, 키 이름만 셈): 아래 표 68개 중 38개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
 `LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 7개·소설화 조정용 `NOVELIZE_*` 8개, 모두 30개 제외 —
 소설화를 켤 때 넣는 `NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST` 2개는 운영에서 켜 두었으므로 셈에 들어간다) + compose용
-5개(`API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE`) + "Bugsink(에러 트래커)" 절의 6개
+5개(그때는 `API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE` — api 가 blue/green 두 색으로 나뉜 뒤
+compose 가 읽는 이미지 키는 `API_IMAGE_BLUE`·`API_IMAGE_GREEN` 둘이고 `API_IMAGE` 는 읽지 않는다. 두 키가 생기고 옛 줄이 지워지면
+6개가 되므로 그때 아래 명령으로 다시 센다) + "Bugsink(에러 트래커)" 절의 6개
 (`BUGSINK_*` 3개·`INGEST_SHARED_SECRET`·`SENTRY_DSN`·`SENTRY_ENVIRONMENT`) + 크론 알림 3개
 (`DISCORD_WEBHOOK_URL`·`HEALTHCHECKS_BACKUP_PING_URL`은 "백업 · 복원" 절, `HEALTHCHECKS_RESOURCE_PING_URL`은 "VM 리소스 감시" 절). `apps/api/.env`는 **로컬 개발용이며 배포와 무관하다.**
 이 수는 날짜가 붙은 실측값이라 VM에 키를 넣거나 빼면 낡는다 — 그때 VM에서 다시 세어 이 문장을 고친다
@@ -218,11 +220,11 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `SESSION_COOKIE_SECURE` | `true` | HTTPS 필수 |
 | `SESSION_COOKIE_SAMESITE` | `lax` | FE·BE가 같은 등록가능 도메인이라 가능 |
 | `GEMINI_API_KEY` | AI Studio 키 | 채팅 |
-| `GEMINI_MODEL_NAME` | `gemini-3.5-flash-lite`(코드 기본값은 `gemini-2.5-flash`) | 2026-09-24부터 프로덕션에 명시. 되돌리려면 이 한 줄만 지우고 `up -d --wait api` — `.env` 백업을 통째로 복원하지 말 것(자동배포가 같은 파일의 `API_IMAGE`를 고친다) |
+| `GEMINI_MODEL_NAME` | `gemini-3.5-flash-lite`(코드 기본값은 `gemini-2.5-flash`) | 2026-09-24부터 프로덕션에 명시. 되돌리려면 이 한 줄만 지우고 `sudo bash ops/swap-api.sh`("env 반영 재기동" 절) — `.env` 백업을 통째로 복원하지 말 것(교체 스크립트가 같은 파일의 `API_IMAGE_BLUE`·`API_IMAGE_GREEN`을 고친다) |
 | `GEMINI_STAT_JUDGMENT_MODEL_NAME` / `GEMINI_ENDING_JUDGMENT_MODEL_NAME` / `GEMINI_IMAGE_JUDGMENT_MODEL_NAME` | 기본 비어 있음 | 판정 호출(실채팅·미리보기)을 종류별로 다른 모델로 돌리는 스위치 — 스탯 / 엔딩 / 그림 매칭(상황 이미지·미디어 북 칸). 줄이 없거나 값이 비면(`KEY=`) `GEMINI_MODEL_NAME`(지금 동작). 어느 호출이 어느 종류인지와 확인 방법은 "Gemini" 절 |
 | `GEMINI_PUBLISH_FILTER_MODEL_NAME` | 기본 비어 있음 | 발행 심사만 따로 바꾸는 같은 꼴의 스위치. ⚠️ 심사는 실패하면 발행이 500으로 막히므로(fail-closed) 바꾼 직후 발행 1회로 확인한다. 바꾸면 무변경 재발행도 한 번씩 다시 심사한다(통과 기억이 실제 심사 모델에 묶인다) |
 | `GEMINI_THINKING_BUDGET` | 기본 비어 있음 | 채팅 생성의 사고 예산(비면 사고 설정을 넘기지 않음, `0` = 끔). ⚠️ `gemini-3.5-flash-lite` 는 `0` 을 400 으로 거부했다(2026-10-02, 구조화 호출에서 실측 — 스트리밍 생성은 측정하지 않았다) — 그 모델에 `0` 을 넣지 않는다 |
-| `GEMINI_GENERATE_TIMEOUT_MS` | 설정 안 함(기본 `45000`) | 채팅·미리보기 생성 호출의 타임아웃(ms). 스트리밍이라 "다음 청크까지"의 상한이다. 시간 초과는 다른 네트워크 실패와 같다 — 오류 이벤트로 끝나고 채팅은 차감한 클로버를 돌려준다. 정상 생성이 잘리면(Bugsink 에서 `LLMClientError` 중 timeout 문구가 늘면) 값을 키워 넣고 `up -d --wait api` |
+| `GEMINI_GENERATE_TIMEOUT_MS` | 설정 안 함(기본 `45000`) | 채팅·미리보기 생성 호출의 타임아웃(ms). 스트리밍이라 "다음 청크까지"의 상한이다. 시간 초과는 다른 네트워크 실패와 같다 — 오류 이벤트로 끝나고 채팅은 차감한 클로버를 돌려준다. 정상 생성이 잘리면(Bugsink 에서 `LLMClientError` 중 timeout 문구가 늘면) 값을 키워 넣고 `sudo bash ops/swap-api.sh` |
 | `GEMINI_JUDGMENT_TIMEOUT_MS` | 설정 안 함(기본 `20000`) | 판정 호출(스탯·엔딩·그림 매칭, 미리보기 포함)의 타임아웃(ms). 시간 초과는 판정 실패와 같아 그 턴의 판정만 건너뛴다(엔딩 판정은 `gemini_usage` 줄 없이 "판정 실패" 로그만 남는다). 판정 윈도우 두 스위치를 끄면 긴 방의 판정 입력이 대화 전체가 되어 이 값에 걸릴 수 있다 |
 | `GEMINI_MEMORY_SUMMARY_TIMEOUT_MS` | 설정 안 함(기본 `60000`) | 기억 요약 접기 호출의 타임아웃(ms). 턴 뒤 background 라 사용자가 기다리지 않고, 실패는 백오프 뒤 다시 한다 |
 | `GEMINI_PUBLISH_FILTER_TIMEOUT_MS` | 설정 안 함(기본 `60000`) | 발행 심사 호출의 타임아웃(ms). 시간 초과는 거부가 아니라 503 `PUBLISH_SCREENING_UNAVAILABLE`("잠시 뒤 다시 발행")이다 — 이의제기 대상이 생기지는 않지만, 시간당 심사 횟수는 호출 앞에서 세므로 한 번을 쓴다 |
@@ -246,14 +248,14 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `EMAIL_PROVIDER` | `resend` | 미설정 시 `console`(발송 안 함) |
 | `RESEND_API_KEY` | `re_...` | Resend API 키 |
 | `EMAIL_FROM` | `noreply@ddona.site` | `ddona.site` 도메인이 Resend에서 검증돼야 한다 |
-| `FORWARDED_ALLOW_IPS` | `172.18.0.0/16` | **uvicorn이 직접 읽는 env**(pydantic 설정 아님). ⚠️ **`*`를 쓰지 말 것** — uvicorn `proxy_headers.py`는 `*`(always_trust)일 때 `X-Forwarded-For` 체인의 **맨 앞** 값을 그대로 쓰는데, Caddy는 실제 IP를 **뒤에 덧붙이므로** 클라이언트가 보낸 위조 헤더가 채택된다(IP rate limit을 헤더 한 줄로 우회 가능). 대역을 주면 체인을 **역순**으로 훑어 신뢰 대역 밖 첫 값(=Caddy가 붙인 진짜 IP)을 고른다. 값은 `ddona_default`의 실측 subnet이며, 단일 IP 대신 대역인 이유는 컨테이너 재생성 시 도커가 IP를 재배정하기 때문이다. 실측: 프로덕션 uvicorn 액세스 로그의 클라이언트 IP가 `127.0.0.1`(헬스체크)과 `172.18.0.3`(`ddona-caddy-1` 컨테이너) 둘뿐이었다 — 실사용자 전원이 한 IP로 보인다. 원인은 uvicorn이 `forwarded_allow_ips` 미지정 시 `127.0.0.1`로 떨어뜨려 도커 브리지의 Caddy가 보낸 `X-Forwarded-For`를 신뢰하지 않는 것이다. 이게 없으면 IP 기반 rate limit이 전 사용자 공유 버킷이 된다. **api 컨테이너가 호스트에 포트를 게시하지 않는 것은 이 위협을 막지 못한다** — 포트 미게시가 막는 것은 "uvicorn에 직접 TCP로 붙어 peer 주소를 위장하는" 쪽이고, `*`가 여는 것은 "평범한 사용자로서 Caddy를 통과하는 정상 HTTPS 요청에 `X-Forwarded-For: 1.2.3.4` 한 줄을 얹는" 쪽이라 api 컨테이너에 직접 닿을 필요가 없다(`Caddyfile`의 api 라우트는 `reverse_proxy api:8000` 한 줄뿐이고(`/_ingest/*`만 `handle_path`로 bugsink에 따로 간다) `trusted_proxies`도 `header_up X-Forwarded-For` 덮어쓰기도 없어 클라이언트가 보낸 체인이 보존된 채 실제 IP가 뒤에 붙는다). 실측 반증: 대역 설정 상태에서 `X-Forwarded-For: 1.2.3.4`를 얹어 보냈지만 로그에는 실제 공인 IP가 찍혔다 — `*`였다면 `1.2.3.4`가 찍혔을 것이다(2026-09-12). 부수효과: `guardian_consents.ip_address`도 이때부터 진짜 IP가 된다(기존 저장값은 전부 프록시 IP다) |
+| `FORWARDED_ALLOW_IPS` | `172.18.0.0/16` | **uvicorn이 직접 읽는 env**(pydantic 설정 아님). ⚠️ **`*`를 쓰지 말 것** — uvicorn `proxy_headers.py`는 `*`(always_trust)일 때 `X-Forwarded-For` 체인의 **맨 앞** 값을 그대로 쓰는데, Caddy는 실제 IP를 **뒤에 덧붙이므로** 클라이언트가 보낸 위조 헤더가 채택된다(IP rate limit을 헤더 한 줄로 우회 가능). 대역을 주면 체인을 **역순**으로 훑어 신뢰 대역 밖 첫 값(=Caddy가 붙인 진짜 IP)을 고른다. 값은 `ddona_default`의 실측 subnet이며, 단일 IP 대신 대역인 이유는 컨테이너 재생성 시 도커가 IP를 재배정하기 때문이다. 실측: 프로덕션 uvicorn 액세스 로그의 클라이언트 IP가 `127.0.0.1`(헬스체크)과 `172.18.0.3`(`ddona-caddy-1` 컨테이너) 둘뿐이었다 — 실사용자 전원이 한 IP로 보인다. 원인은 uvicorn이 `forwarded_allow_ips` 미지정 시 `127.0.0.1`로 떨어뜨려 도커 브리지의 Caddy가 보낸 `X-Forwarded-For`를 신뢰하지 않는 것이다. 이게 없으면 IP 기반 rate limit이 전 사용자 공유 버킷이 된다. **api 컨테이너가 호스트에 포트를 게시하지 않는 것은 이 위협을 막지 못한다** — 포트 미게시가 막는 것은 "uvicorn에 직접 TCP로 붙어 peer 주소를 위장하는" 쪽이고, `*`가 여는 것은 "평범한 사용자로서 Caddy를 통과하는 정상 HTTPS 요청에 `X-Forwarded-For: 1.2.3.4` 한 줄을 얹는" 쪽이라 api 컨테이너에 직접 닿을 필요가 없다(`Caddyfile`의 api 라우트는 두 색을 업스트림으로 든 `reverse_proxy api_blue:8000 api_green:8000` 블록 하나뿐이고(`/_ingest/*`만 `handle_path`로 bugsink에 따로 간다) `trusted_proxies`도 `header_up X-Forwarded-For` 덮어쓰기도 없어 클라이언트가 보낸 체인이 보존된 채 실제 IP가 뒤에 붙는다). 실측 반증: 대역 설정 상태에서 `X-Forwarded-For: 1.2.3.4`를 얹어 보냈지만 로그에는 실제 공인 IP가 찍혔다 — `*`였다면 `1.2.3.4`가 찍혔을 것이다(2026-09-12). 부수효과: `guardian_consents.ip_address`도 이때부터 진짜 IP가 된다(기존 저장값은 전부 프록시 IP다) |
 | `WEB_CONCURRENCY` | **운영 `4`**(기본 `1`) | **uvicorn이 직접 읽는 env**(pydantic 설정 아님) — 워커 프로세스 수. Dockerfile CMD 에 `--workers` 가 없어서 이 값이 기본값이 된다(`--workers` 를 CMD 에 쓰면 이 env 가 무시된다). 워커는 앱을 각자 새로 import 하므로 DB 풀·메모리(1프로세스 약 190MB)·Redis 장애 보고·집 PC capabilities 프로브가 워커 수만큼 늘어난다. 이미지 생성 직렬화·대기열은 Redis 에 있어 워커 수와 무관하다. 올릴 때 아래 풀 크기를 함께 줄인다. 운영 값 4 는 동시 채팅 300명 부하 측정을 통과한 조합이다 |
-| `DB_POOL_SIZE` | **운영 `10`**(기본 `5`) | 워커 하나의 SQLAlchemy 풀 상시 크기(1 이상). 기본값은 이 설정이 생기기 전과 같다. ⚠️ **워커 수 × (`DB_POOL_SIZE` + `DB_MAX_OVERFLOW`) ≤ 70** — Postgres `max_connections` 가 100 이고, 크론·백업·배포 마이그레이션·관리 접속 몫을 남긴다(앱 DB 사용자가 슈퍼유저라 예약 연결이 관리 접속을 따로 지켜 주지 않는다). 운영 값은 4 × (10 + 7) = 68 ≤ 70 |
+| `DB_POOL_SIZE` | **운영 `10`**(기본 `5`) | 워커 하나의 SQLAlchemy 풀 상시 크기(1 이상). 기본값은 이 설정이 생기기 전과 같다. ⚠️ **2 × 워커 수 × (`DB_POOL_SIZE` + `DB_MAX_OVERFLOW`) ≤ 170** — blue/green 교체 중에는 옛 색이 드레인하는 동안 새 색도 떠 있어 두 색의 풀이 함께 열린다. Postgres `max_connections` 200 에서 크론·백업·배포 마이그레이션·관리 접속 몫 30 을 남긴다(앱 DB 사용자가 슈퍼유저라 예약 연결이 관리 접속을 따로 지켜 주지 않는다). 운영 값은 2 × 4 × (10 + 7) = 136 ≤ 170 이고, 한 색만 떠 있는 평소에는 68 이다. 200 은 Postgres 기본값이 아니라 운영에서 따로 올린 값이다 — 설정·확인·되돌리기와 볼륨을 새로 만들 때 다시 넣는 법은 "겹침 대비 운영 설정" 절 |
 | `DB_MAX_OVERFLOW` | **운영 `7`**(기본 `10`) | 풀이 다 찼을 때 잠깐 더 여는 연결 수. 위 식에 들어간다 |
 | `DB_POOL_TIMEOUT` | **운영 `30`**(기본값과 같다) | 풀이 다 찼을 때 연결을 기다리는 초. 넘기면 그 요청이 500 이다 |
 | `IMAGE_DECODE_CONCURRENCY` | **운영 `1`**(기본 `3`) | 워커 하나에서 동시에 도는 이미지 디코드·블러·변형 생성 건수 상한(1 이상, 넘치면 기다린다). 기본값은 이 설정이 생기기 전과 같다. ⚠️ 워커마다 따로 세므로 **워커 수 × 이 값 × 건당 최대 메모리 ≤ VM 가용 메모리의 절반**으로 정한다 — 건당 최대 메모리는 픽셀 상한 9M 그림의 블러·변형 생성 실측 피크 약 217MB 다. 운영 값 1 은 워커 4 × 1 × 약 217MB ≈ 868MB 가 부하 중 가용 메모리의 절반(약 950MB) 안에 드는 값이고, 2 면 넘는다. `WEB_CONCURRENCY` 를 올릴 때 함께 본다 |
 | `MEMORY_WINDOW_GENERATION` | 설정 안 함(기본 `true`) | 긴 방의 생성 프롬프트에서 요약이 덮은 메시지를 빼는 히스토리 윈도우. `false` 면 전체 히스토리를 싣는다 — 요약 품질 사고 때 재기동만으로 예전 동작으로 돌아가는 스위치이고, 끄면 아래 두 판정 스위치도 무시된다 |
-| `MEMORY_WINDOW_ENDING_JUDGMENT` | 설정 안 함(기본 `true`) | 엔딩 판정에도 윈도우를 씌운다(요약이 덮은 원문 대신 현재 요약을 싣는다). `false` 는 판정 품질 사고 때 되돌리는 용도다 — 끄면 판정이 대화 전체를 실어 긴 방에서 토큰 원가·지연이 턴 수만큼 늘고 판정 타임아웃·컨텍스트 한도에 닿을 수 있다. 되돌리기는 VM `.env` 에 `MEMORY_WINDOW_ENDING_JUDGMENT=false`·`MEMORY_WINDOW_IMAGE_JUDGMENT=false` 두 줄을 추가 → 아래 형식 검사 → `up -d --wait api`(`restart` 는 env 를 다시 읽지 않는다). 넣으면 위 VM 키 수를 다시 센다 |
+| `MEMORY_WINDOW_ENDING_JUDGMENT` | 설정 안 함(기본 `true`) | 엔딩 판정에도 윈도우를 씌운다(요약이 덮은 원문 대신 현재 요약을 싣는다). `false` 는 판정 품질 사고 때 되돌리는 용도다 — 끄면 판정이 대화 전체를 실어 긴 방에서 토큰 원가·지연이 턴 수만큼 늘고 판정 타임아웃·컨텍스트 한도에 닿을 수 있다. 되돌리기는 VM `.env` 에 `MEMORY_WINDOW_ENDING_JUDGMENT=false`·`MEMORY_WINDOW_IMAGE_JUDGMENT=false` 두 줄을 추가 → 아래 형식 검사 → `sudo bash ops/swap-api.sh`(`restart` 는 env 를 다시 읽지 않는다 — "env 반영 재기동" 절). 넣으면 위 VM 키 수를 다시 센다 |
 | `MEMORY_WINDOW_IMAGE_JUDGMENT` | 설정 안 함(기본 `true`) | 그림 매칭 판정 — 캐릭터 상황 이미지와 스토리 미디어 북 칸 둘 다 — 에도 윈도우를 씌운다(최근 원문만 싣고 요약은 싣지 않는다). 미디어 북 칸 판정은 엔딩 뒤·재생성까지 매 턴 돌아 끄면 가장 크게 늘어난다. 끄는 법·주의는 위와 같다 |
 | `NOVELIZE_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 소설화(대화를 장편 소설의 장으로 옮겨 쓰기) 전역 스위치. 쓰려면 이 스위치·아래 명단·어드민이 준 계정별 허용 셋이 모두 있어야 한다 — 코드 기본값이 닫힘이라 이 줄 없이 배포하면 닫힌 채 뜬다. 끄면 재기동 뒤 모든 소설 화면·API 가 403 이고 허용 행은 남는다(다시 켜면 그대로 돌아온다). 켜기·끄기·회수·롤백은 "소설화 켜기 · 끄기 · 회수 · 롤백" 절 |
 | `NOVELIZE_GRANT_ALLOWLIST` | 허용할 수 있는 계정 id, **쉼표 구분**(공백·따옴표 없이) | 어드민이 허용을 줄 때와 사용자가 접근할 때 둘 다 본다 — 명단 밖 계정에는 어드민이 허용을 줄 수 없고(422), 명단에서 빼고 재기동하면 허용 행이 남아 있어도 바로 막힌다. 비면 아무에게도 줄 수 없다(기본값). UUID 가 아닌 항목이 있으면 api 가 기동하지 못한다. 개인정보 처리방침이 소설화를 적기 전에는 운영자 계정만 넣는다 |
@@ -341,10 +343,58 @@ web 프로젝트 → Settings → Environment variables(현 UI는 **Variables an
 ### 3-1. BE → GCE VM
 
 **자동배포가 정상 경로다.** `main` push 시 `.github/workflows/deploy-api.yml`이 이미지 빌드 →
-Artifact Registry push → IAP SSH로 VM 교체 → 인터넷 쪽 `/health` 확인까지 한다(실측 1분 35초).
+Artifact Registry push → IAP SSH로 VM에서 `ops/swap-api.sh <태그>`(아래 blue/green 교체) → 인터넷 쪽 `/health`
+확인까지 한다(실측 1분 35초 — api 가 단일 컨테이너이던 시절 값이다. blue/green 교체는 옛 색에 남은 요청이 끝나기를
+기다리므로 그만큼 길어질 수 있다).
 트리거 경로는 `apps/api/**` · `docker-compose.prod.yml` · `Caddyfile` · 저장소 루트 `ops/**` ·
 워크플로 자신이다.
 **GitHub Secrets에 넣는 값은 없다** — WIF라 키를 저장하지 않는다.
+
+**api 는 blue/green 두 색으로 교체한다.** compose 에 `api_blue`·`api_green` 두 서비스가 있고 평소에는 한 색만 떠
+있다(서빙 중인 색 = active, 비어 있는 색 = idle). Caddy 는 두 색을 고정 업스트림으로 들고 1초마다 각 색의 `/health`를
+찔러(능동 헬스체크) 200 을 주는 색에만 요청을 보낸다. 배포·롤백·env 반영 재기동이 모두 `ops/swap-api.sh` 하나를 부르고,
+한 번의 교체는 이렇게 흐른다:
+
+1. **잠금** — `/var/lib/ddona/deploy.lock`에 `flock`. 수동 교체와 자동배포가 겹치면 뒤에 온 쪽이 앞 교체가 끝날 때까지
+   최대 600초 기다렸다가 이어서 하고, 넘으면 아무것도 안 바꾸고 실패한다. 워크플로의 `concurrency`는 워크플로끼리만
+   막아서 이 잠금이 따로 있다 — 없으면 두 교체가 같은 active 를 보고 두 색을 함께 내릴 수 있다.
+2. **active 판정** — 상태 파일 `/var/lib/ddona/active_color`(`blue`/`green` 한 줄)와 실제로 떠 있는 색을 함께 본다. 한
+   색만 떠 있으면 그 색이다. 둘 다 떠 있으면(중단된 교체의 잔재) 먼저 드레인 플래그를 본다 — 한쪽에만 있으면 그쪽이 내리던 옛
+   색이라 플래그 없는 색이 active 다(상태 파일은 교체 맨 끝에만 바뀌어 이 형상에선 늘 옛 색을 가리킨다). 플래그가 없으면 상태
+   파일이 가리키는 색, 상태 파일도 못 믿으면 먼저 뜬 색이다.
+3. **pull** — 새 이미지를 `.env`를 고치기 **전에** 받는다. 실패하면 아무것도 안 바꾸고 끝난다. VM 에 이미 있는 태그도 다시
+   받는다(배포 끝의 이미지 정리가 옛 태그를 지웠을 수 있다).
+4. **idle 색 준비** — `.env`의 idle 색 줄(`API_IMAGE_BLUE` 또는 `API_IMAGE_GREEN`)을 새 참조로 바꾸고, 그 이미지로
+   `alembic upgrade head`(옛 색이 아직 서빙하는 동안, 새 색 기동 **전** — "DB 마이그레이션" 절의 순서 그대로. DB 가 그
+   이미지보다 앞서 있으면 롤백 표시가 있을 때만 건너뛰고 없으면 멈춘다 — 아래 "롤백")를 돌린 뒤
+   idle 색을 새 컨테이너로 띄운다(`--force-recreate --wait`). Caddy 로그에 그 색의 `host is up`이 찍히면 합류한 것이다.
+   여기까지 어디서 실패하든 idle 색만 지우고 그 줄을 원래 값으로 되돌린 뒤 종료코드 1 로 끝난다 — 옛 색은 손대지 않아
+   서비스는 그대로다.
+5. **드레인** — active 색 안에 플래그 파일 `/tmp/draining`을 만들어 그 색의 `/health`를 503 으로 바꾼다. Caddy 가 1~2초
+   안에 그 색을 업스트림에서 빼면 새 요청은 새 색으로만 간다. 그 뒤 `stop`(정지 유예 `stop_grace_period` 65초 안에서 하던
+   요청과 SSE 턴을 마친다) → `rm`. 플래그로 먼저 빼는 이유: 그냥 멈추면 정지 중인 컨테이너로 새 연결이 몰려 매달린다.
+6. **마무리** — 내려간 색의 줄도 같은 참조로 맞추고(서비스명 없는 `up -d`가 실수로 그 색을 띄워도 같은 코드가 뜨게)
+   상태 파일을 새 색으로 쓴다. 마지막 로그 줄 `13) 완료: active=…`가 찍혀야 끝까지 돈 것이다.
+
+교체 소요 시간은 옛 색에 남은 가장 긴 요청에 비례한다(최대 정지 유예 65초) — 느린 게 아니라 드레인이 기다리는 것이다.
+중간에 끊겨 두 색이 다 떠 있으면 같은 명령을 다시 부르면 이어서 끝난다 — 옛 색에 드레인 플래그가 서 있으면 그 색을 마저
+드레인·정지하고(같은 태그 재실행이면 거기서 끝), 플래그가 없으면 다시 만들 색을 먼저 드레인해 내린 뒤 교체한다. 어느 쪽도
+서빙 중인 색을 드레인 없이 멈추지 않는다. 워크플로 실행 중 SSH 가 끊기면 교체 스크립트가 실패 정리 없이 끝날 수 있는데, 그
+형상도 같은 명령(또는 같은 태그의 워크플로 재실행)이 이어서 끝낸다. Caddy 재시도는 기본값 그대로라 업스트림에
+연결조차 안 된 요청과 GET 만 다른 색으로 다시 보낸다 — POST 를 넓히면 채팅 메시지가 두 번 처리돼 클로버가 두 번 차감된다.
+
+VM 에서 쓰는 명령 셋(`cd /opt/ddona/app` 에서):
+
+- `sudo bash ops/swap-api.sh [태그]` — 교체. 태그를 생략하면 지금 active 가 쓰는 이미지 그대로 다시 교체한다
+  ("env 반영 재기동" 절). root 로 돈다 — 상태·잠금 파일이 root 소유 `/var/lib/ddona/`에 있다. 옛 태그로 되돌리는
+  롤백은 `sudo DDONA_ROLLBACK=1 bash ops/swap-api.sh <이전SHA>`(아래 "롤백").
+- `sudo bash ops/active-color.sh` — 지금 서빙 중인 색(`blue`/`green`)을 한 줄로 찍는다. 컨테이너 안에서 명령을 돌릴 때
+  `exec -T api_$(sudo bash ops/active-color.sh) …`로 쓴다. 아무것도 바꾸지 않지만 compose 가 0600 `/opt/ddona/.env`를
+  읽어야 해서 sudo 가 필요하다. 두 색이 다 떠 있으면 드레인 플래그가 선 색(곧 내려갈 색)은 고르지 않는다. 남은 색이 없거나
+  둘이고 상태 파일이 그중 하나를 가리키지 않으면(교체 중이거나 중단 잔재) 0 이 아닌 코드로 멈춘다 — 그 명령이 엉뚱한
+  컨테이너로 가지 않게 하려는 것이다.
+- `sudo bash ops/bootstrap-bluegreen.sh <태그>` — 단일 `api` 형상에서 처음 옮길 때 한 번만 쓴다
+  ("단일 api 에서 blue/green 으로 최초 이행" 절).
 
 ```sh
 # VM 접속 (22번은 인터넷에 안 열려 있다)
@@ -353,7 +403,9 @@ gcloud compute ssh ddona-api --zone=asia-northeast3-a --tunnel-through-iap
 # 스택 상태 · 로그
 cd /opt/ddona/app
 sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env ps
-sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env logs -f api
+cat /var/lib/ddona/active_color   # 상태 파일이 가리키는 색(실제와 대조는 위 ps)
+# 두 색을 다 적는다 — 교체 중에는 둘 다 봐야 하고, 떠 있지 않은 색은 조용히 건너뛴다
+sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env logs -f api_blue api_green
 
 # caddy 접근 로그는 파일로만 쓴다 — `logs caddy`에는
 # 더는 뜨지 않는다. 호스트 bind mount라 컨테이너에 안 들어가고 호스트에서 바로 본다.
@@ -381,23 +433,62 @@ sudo ln -sf /opt/ddona/app/ops/logrotate.d/ddona-caddy /etc/logrotate.d/ddona-ca
 sudo logrotate -d /etc/logrotate.d/ddona-caddy
 ```
 
-**롤백**(실측) — `.env`의 태그 한 줄을 되돌리고 다시 올린다:
+**롤백** — 평상시 배포와 같은 무중단 교체로 이전 태그를 올린다. 둘 중 하나:
+
 ```sh
-sudo sed -i "s|^API_IMAGE=.*|API_IMAGE=asia-northeast3-docker.pkg.dev/ddona-ai-character-chat/ddona/api:<이전SHA>|" /opt/ddona/.env
-sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d --wait api
+# VM 에서 — 이전 커밋 SHA 앞 7자리. DDONA_ROLLBACK=1 이 롤백 표시다(아래)
+cd /opt/ddona/app && sudo DDONA_ROLLBACK=1 bash ops/swap-api.sh <이전SHA>
 ```
+
+또는 GitHub Actions → `deploy-api` → **Run workflow** 에서 `image_tag`에 이전 SHA 7자리를 넣는다(빌드 없이 레지스트리의 그
+태그로 교체한다. 비우면 `main` 최신 커밋을 빌드해 배포한다). 어느 쪽이든 compose·`Caddyfile`·`ops/` 스크립트는 `main`
+최신 그대로이고 이미지만 과거 태그다 — 수동 실행도 `git reset --hard origin/main`을 하기 때문이다. 롤백해 둔 동안 무관한 PR
+이라도 `main`에 병합되면 자동배포가 새 코드로 다시 교체한다.
+되돌리는 배포에 마이그레이션이 있었으면 DB 가 옛 이미지보다 앞서 있다. 교체 스크립트는 올릴 이미지 안에서 DB 리비전을 그 이미지가
+아는지 먼저 보고, 모르는데 **롤백 표시**(`DDONA_ROLLBACK=1`, Actions 수동 실행은 `image_tag`를 채우면 워크플로가 붙인다)가 있으면
+마이그레이션을 건너뛰고 `… 롤백 표시가 있어 … 마이그레이션 건너뜀` 로그를 남긴 채 교체를 이어 간다(옛 이미지로 `alembic upgrade head`를
+돌리면 `Can't locate revision`으로 멈춰 롤백이 안 된다). 스키마는 새 것 그대로 남으니, 옛 코드가 그 스키마에서 도는지와 되돌릴
+순서는 해당 기능 절을 본다. 표시가 없으면 — `main` push 배포, `image_tag`를 비운 수동 실행, 표시 없이 VM 에서 부른 교체 — 같은
+상황에서 DB 리비전과 이미지가 그것을 모른다는 사실, 롤백이면 표시를 켜라는 안내를 찍고 **실패**한다(쉬는 색 줄을 되돌리고 옛 색은
+계속 서빙한다). 조용히 건너뛰지 않으려는 것이다: 판정은 DB 가 이미지보다 앞선 경우와 갈라진 경우를 구분하지 못하는데, 롤백이 아닌
+배포에서 이 상황은 갈라진 쪽이다(예: downgrade 없이 revert 를 병합해 DB 가 앞선 채 남은 뒤 새 마이그레이션이 든 배포) — 그때
+건너뛰면 새 코드가 자기 마이그레이션 없는 스키마에서 뜨고 `/health` 는 DB 를 보지 않아 배포가 초록으로 끝난다. 롤백해 둔 동안
+태그를 생략한 env 반영 재교체도 같은 상황이라 표시를 붙인다(`sudo DDONA_ROLLBACK=1 bash ops/swap-api.sh`). DB 가 이미지보다
+뒤거나 같으면 표시와 상관없이 upgrade 한다. 판정 자체가 실패하면(DB 에 못 닿음 등) 건너뛰지 않고 멈춘다.
 과거 태그는 `gcloud artifacts docker tags list asia-northeast3-docker.pkg.dev/ddona-ai-character-chat/ddona/api`.
 배포 워크플로가 끝에서(실행 이미지 확인 뒤) `apps/api/scripts/ops/prune_api_images.py`로 VM 로컬 API 이미지를
 **현재 것 포함 최근 3개**(+ 실행 중 이미지)만 남기고 지운다 — 다른 저장소 이미지(caddy·postgres 등)는 건드리지
-않고, 정리가 실패해도 배포는 성공으로 두고 `::warning::` 한 줄만 남긴다. 그래서 그보다 옛 태그는 VM에 없고,
-위 `up -d`가 Artifact Registry에서 받아 온다(compose `api`에 `pull_policy`가 없어 기본 동작을 따른다. 정리 도입
-뒤 옛 태그 롤백은 아직 실측 전 — 처음 해 보는 롤백에서 pull 줄이 나오는지 확인한다).
+않고, 정리가 실패해도 배포는 성공으로 두고 `::warning::` 한 줄만 남긴다. 그래서 그보다 옛 태그는 VM에 없을 수 있는데,
+교체 스크립트는 언제나 `docker pull`부터 하므로 Artifact Registry에서 받아 온다.
+
+⚠️ 배포가 도는 중에 수동 실행을 큐에 넣으면 대기열에서 밀려날 수 있다 — 워크플로 `concurrency`(`cancel-in-progress: false`)는
+그룹당 **대기 1개**만 남기므로, 그 사이 `main` push 가 하나 더 오면 먼저 기다리던 수동 롤백이 취소된다. 롤백은 진행 중인
+배포가 끝난 뒤 실행 목록에서 실제로 돌았는지 확인한다.
+
+**위험한 마이그레이션은 겹침 없이 — `skip_overlap`.** 평상시 교체는 마이그레이션이 끝난 뒤에도 옛 색이 새 색 기동·healthy
+(로컬 리허설 실측 약 15~35초)와 드레인(최대 65초) 동안 새 스키마 위에서 돈다. 옛 코드가 새 스키마에서 깨지는 마이그레이션(판단 기준은
+`apps/api/CLAUDE.md`의 "배포 중에는 옛 코드가 새 스키마 위에서 돈다" 절)은 이 겹침을 끄고 배포한다. 수동 실행에서 `skip_overlap`을 켜면 교체 스크립트가
+idle 색을 띄우지 않고 active 색을 그 자리에서 재생성한다(마이그레이션 → 재생성, 드레인 없음). 끊김은 "짧은" 정도가
+아니다 — 옛 컨테이너가 하던 가장 긴 요청이 끝날 때까지(정지 유예 상한 65초) + 새 컨테이너 기동(약 15초)이다(로컬 리허설
+실측 31.1초 — 26초짜리 SSE 턴 진행 중 / 10.6초 — 진행 중 요청 없음). 그동안 들어온 요청은 Caddy 에서 최대 30초
+(`lb_try_duration`) 기다리다 실패할 수 있고, 클라이언트가 이미 포기한 POST 가 그 뒤에 처리될 수도 있다. 외부 감시(`/ready`) 알림도 올 수 있다. 쉬는 색 줄은 같은 참조로 맞추되 그 색 컨테이너는
+만들지 않는다. 두 색이 다 떠 있던 잔재면 쉬는 색부터 내린다 — 남겨 두면 옛 코드가 새 스키마로 트래픽을 받는다.
+
+`main` 병합은 그 자체로 겹침 교체 배포를 부르므로, 그런 PR 은 병합 커밋 메시지에 `[skip actions]`를 넣어 push 배포를
+건너뛰게 한 뒤 Actions 수동 실행(`image_tag` 비움 = 그 커밋을 빌드, `skip_overlap` 켬)으로 배포한다. `[skip actions]`는
+그 push 로 도는 다른 워크플로(CI·인용 검사)도 함께 건너뛰게 하니, 병합 전에 PR 에서 초록인지 본다. ⚠️ 병합 직후 **다른
+병합 없이 바로** 수동 실행한다 — 수동 실행 전에 다른 PR 이 `main`에 병합되면 그 push 배포가 위험한 마이그레이션을 포함한
+`main` 최신을 평상시 겹침 교체로 올린다. 수동 실행은 `main` 브랜치에서만 받는다(다른 브랜치를 고르면 첫 단계에서 실패한다). 이미 레지스트리에 있는
+태그를 VM 에서 직접 올릴 때는 `sudo SKIP_OVERLAP=true bash ops/swap-api.sh <태그>`. 스크립트 첫 로그 줄 `시작: tag=… skip_overlap=true`로 탈출구가 실제로
+켜졌는지 확인한다 — 워크플로가 값을 원격까지 못 넘기면 조용히 평상시 겹침 교체로 돈다.
 
 ⚠️ **배포 성공 판정은 `/health` 200만으로 부족하다.** 옛 컨테이너도 200을 준다. 그래서 워크플로가
-`docker inspect`로 실행 중 이미지가 새 태그인지 대조한다 — 손으로 배포할 때도 같이 확인할 것.
+`ops/active-color.sh`로 서빙 중인 색을 정한 뒤 `docker inspect`로 그 색(`ddona-api_<색>-1`)의 실행 이미지가 새 태그인지
+대조한다 — 손으로 배포할 때도 같이 확인할 것(`sudo docker inspect --format '{{.Config.Image}}' ddona-api_$(sudo bash
+ops/active-color.sh)-1`). 교체 스크립트가 0 으로 끝나고 마지막 줄이 `13) 완료`인지도 본다.
 
 ⚠️ **`Caddyfile`만 바뀐 배포는 `caddy reload`가 성공해도 컨테이너 안 내용이 안 바뀔 수 있다**
-(2026-09-15 실측). `docker-compose.prod.yml`이 그대로면 `up -d --wait api caddy`는 caddy
+(2026-09-15 실측). `docker-compose.prod.yml`이 그대로면 배포의 `up -d --wait caddy`는 caddy
 컨테이너를 재생성하지 않고(`Caddyfile` 내용만으로는 compose의 config-hash가 안 바뀐다), 대신
 `deploy-api.yml`이 `caddy reload --config /etc/caddy/Caddyfile`을 명시적으로 부른다. 그런데
 `Caddyfile`은 **파일 단위 bind mount**(`./Caddyfile:/etc/caddy/Caddyfile:ro`)이고, 매 배포가
@@ -423,11 +514,185 @@ sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d 
   나는 타이밍 경합을 다룬다. 이건 정반대로 **컨테이너가 재생성되지 않았을 때** bind mount가 새
   파일을 못 보는 문제라, 재시도해도 고쳐지지 않는다 — 매번 같은 옛 inode를 다시 읽을 뿐이다.
 
+#### env 반영 재기동
+
+`.env`의 앱 설정을 바꾼 뒤에는 태그 없이 교체 스크립트를 부른다:
+
+```sh
+cd /opt/ddona/app
+sudo python3 ops/check_env.py --format /opt/ddona/.env
+sudo bash ops/swap-api.sh          # 태그 생략 = 지금 active 의 이미지 그대로 다시 교체
+```
+
+env 는 컨테이너를 만들 때만 읽혀서(`restart`는 다시 읽지 않는다) 컨테이너를 새로 만들어야 한다. 서빙 중인 색 하나를 제자리에서
+다시 만들면(`up -d --wait api_<색>`) 그동안 끊기고, 새 env 로 기동이 실패하면 서비스가 그대로 내려간다. 태그를 생략한 교체는 쉬는
+색을 새 env 로 띄워 healthy 를 확인한 뒤에 옛 색을 드레인하므로 끊김이 없고, 새 env 로 기동이 실패하면 옛 색이 그대로 남는다
+(종료코드 1). 그때는 `.env`를 고친 뒤 다시 부른다 — 고치지 않으면 다음 배포도 같은 이유로 실패한다. 드레인이 끝날 때까지 옛
+색은 옛 env 로 하던 요청을 마저 처리한다.
+
+#### 빈 상태에서 첫 기동
+
+api 컨테이너가 하나도 없을 때(VM 재구축 직후 등) 쓴다. 교체 스크립트는 떠 있는 색이 있어야 하고 이행 스크립트는 옛 단일 `api`
+컨테이너가 있어야 해서 둘 다 이 형상에서는 멈추고, 배포 워크플로도 "교체할 대상이 없다"로 멈춘다. 그래서 서비스명을 지정해
+손으로 띄운다. **서비스명 없는 `up -d`는 쓰지 않는다** — 쉬는 색까지 떠서 Caddy 업스트림에 합류한다.
+
+```sh
+cd /opt/ddona/app
+C="sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env"
+REF=asia-northeast3-docker.pkg.dev/ddona-ai-character-chat/ddona/api:<SHA 7자리>
+
+# 1. 두 색 이미지 키를 같은 참조로. 하나라도 없거나 비면 compose 가 어떤 명령도 받지 않는다(서비스명을 줘도).
+#    키마다 줄 수를 보고, 0 이면 더하고 1 이면 값을 바꾼다(2 이상인 중복 키는 형식 검사가 배포를 멈춘다).
+sudo grep -c '^API_IMAGE_BLUE=' /opt/ddona/.env; sudo grep -c '^API_IMAGE_GREEN=' /opt/ddona/.env
+sudo sh -c "printf 'API_IMAGE_BLUE=%s\nAPI_IMAGE_GREEN=%s\n' '$REF' '$REF' >> /opt/ddona/.env"        # 둘 다 0 일 때
+sudo sed -i "s|^API_IMAGE_BLUE=.*|API_IMAGE_BLUE=$REF|;s|^API_IMAGE_GREEN=.*|API_IMAGE_GREEN=$REF|" /opt/ddona/.env   # 둘 다 1 일 때
+sudo python3 ops/check_env.py --format /opt/ddona/.env
+
+# 2. DB · Redis
+$C up -d --wait postgres redis
+
+# 3. 마이그레이션 — api 를 띄우기 전에("DB 마이그레이션" 절의 순서)
+$C run --rm -T api_blue alembic upgrade head
+
+# 4. blue 와 caddy
+$C up -d --wait api_blue caddy
+
+# 5. 상태 파일
+sudo mkdir -p /var/lib/ddona && echo blue | sudo tee /var/lib/ddona/active_color
+sudo bash ops/active-color.sh   # blue
+```
+
+`.env` 파일이 개행으로 끝나지 않으면 1 의 `printf`가 마지막 줄에 붙는다 — 형식 검사가 잡지만, 먼저 `sudo tail -c1 /opt/ddona/.env |
+od -c`로 끝이 `\n`인지 본다. 새 VM 이면 2 와 3 사이에 "겹침 대비 운영 설정" 절의 `max_connections`(새 볼륨은 기본 100)와, 데이터를
+되살릴 때는 "백업 · 복원" 절의 `restore_db`(갓 만든 DB 는 비어 있어 DROP·CREATE 단계는 필요 없다)를 넣는다. 스왑·swappiness 와
+로그·크론 심볼릭 링크도 같은 절들대로 다시 건다. 이 뒤로는 평상시처럼 배포·`swap-api.sh`가 돈다.
+
+#### 단일 api 에서 blue/green 으로 최초 이행
+
+api 를 두 색으로 나누기 전의 형상(compose 서비스 `api` 하나, 컨테이너 `ddona-api-1`)에서 옮기는 1회성 절차다. 이 전환이 `main`에
+병합되면 자동배포가 VM 에 옛 `api` 컨테이너가 있는 것을 보고 이 절차를 스스로 돈다 — `ops/bootstrap-bluegreen.sh <태그>`에 이어
+같은 배포 안에서 같은 태그로 `ops/swap-api.sh`를 한 번 더 돌려, 평상시 교체가 운영에서 실제로 도는지까지 본다. 그래서 이행이
+끝나면 active 는 green 이다.
+
+이행 스크립트가 하는 일:
+
+1. 잠금(교체와 같은 파일) → 전제 확인: 옛 `api` 컨테이너가 있고 `api_green` 컨테이너는 없어야 한다. compose 가 아니라 docker
+   라벨로 본다 — 이 시점엔 `.env`에 색 키가 없어 compose 가 `ps`까지 거부한다.
+2. `docker pull` → `.env`에 `API_IMAGE_BLUE`·`API_IMAGE_GREEN` 두 줄을 같은 참조로(어떤 compose 호출보다 먼저) → 형식 검사.
+3. 마이그레이션(옛 `api`가 아직 서빙 중) → `api_blue`를 옛 `api` 옆에 띄운다. Caddy 가 아직 옛 설정이라 blue 는 트래픽을 받지 않는다.
+4. 상태 파일 `blue` → **caddy 재생성** — 새 `Caddyfile`(두 색 업스트림)·api 의존 제거·로그 상한이 여기서 반영된다. 80/443 에
+   듣는 프로세스가 없는 이 몇 초가 이행이 감수하는 끊김이다. `caddy:2-alpine`은 떠다니는 태그라 재생성 때 버전이 바뀔 수 있어
+   직후 `caddy version`을 로그에 찍는다.
+5. blue·Caddy 정상 확인 → 옛 `api` 컨테이너 정리(`up -d --no-recreate --remove-orphans api_blue caddy`) → 마지막 줄
+   `8) 부트스트랩 정리 완료`.
+
+**재실행 가능하다.** 어디서 실패하든 같은 태그로 워크플로를 다시 돌리면(실패한 실행의 Re-run, 또는 Run workflow 의 `image_tag`)
+된 단계는 건너뛰고 이어서 끝낸다. 옛 `api`가 남아 있는 한 배포는 이행 스크립트로 가고, 교체 스크립트는 그 형상을 거부한다. blue
+기동 전에 실패하면 서비스는 옛 `api`+옛 caddy 로, caddy 재생성 뒤에 실패하면 blue+새 caddy 로 계속된다. caddy 재생성이 이미
+끝났으면(caddy 정의 해시로 판정) 재실행은 blue·caddy 를 다시 만들지 않는다 — 끊김을 두 번 만들지 않으려는 것이다.
+
+하기 전과 한 뒤:
+
+- "겹침 대비 운영 설정" 절이 먼저 끝나 있어야 한다 — 이행 배포 안의 첫 교체부터 두 색이 겹친다.
+- 한가한 시간에 병합한다. 외부 업타임 감시(`/ready`)가 끊기는 몇 초에 걸려 알림이 올 수 있다.
+- 끊김 구간은 Caddy 접근 로그로 못 잰다 — 재생성 중엔 듣는 프로세스가 없어 로그 자체가 비어 있다. 병합 직전부터 VM 밖에서
+  폴링을 띄워 두고 비-2xx·연결 실패(`000`) 구간을 본다. 이어지는 첫 교체는 접근 로그(`/opt/ddona/logs/caddy/access.log`)에서 그
+  시각 구간의 비-2xx 로 본다.
+
+  ```bash
+  while :; do
+    printf '%s %s\n' "$(perl -MTime::HiRes=time -e 'printf "%.3f", time')" \
+      "$(curl -s -o /dev/null -w '%{http_code}' --max-time 1 https://api.ddona.site/genres)"
+    sleep 0.1
+  done | tee bootstrap-poll.log
+  ```
+
+- 끝난 뒤 `.env`의 옛 `API_IMAGE=` 줄은 스크립트가 지우지 않는다. compose 가 더는 읽지 않으니 지우고(`sudo sed -i '/^API_IMAGE=/d'
+  /opt/ddona/.env`, 값은 출력하지 않는다) 형식 검사를 다시 돌린다. 아래 되돌리기를 하게 되면 그 줄을 다시 넣는다.
+- 로그 상한이 걸렸는지 본다 — caddy 는 이행 중 재생성, 색은 교체 때 새로 만들어져 걸린다(postgres·redis 는 일부러 안 건다):
+  `sudo docker inspect --format '{{.HostConfig.LogConfig}}' ddona-caddy-1 ddona-api_$(sudo bash ops/active-color.sh)-1` →
+  `{json-file map[max-file:5 max-size:20m]}`.
+
+#### blue/green 을 단일 api 로 되돌리기
+
+blue/green 전환 자체를 되돌릴 때만 쓴다(이미지 롤백은 위 "롤백"). **순서가 고정이다** — 되돌림이 `main`에 병합되면 그 커밋의 옛
+`deploy-api.yml`이 자동배포로 돌기 때문이다. 이행처럼 짧은 끊김 한 번을 감수하고, 같은 외부 폴링으로 잰다.
+
+1. 🔴 VM `.env`에 `API_IMAGE=` 한 줄을 지금 active 색 줄과 같은 값으로 넣는다(있으면 고치고, 없으면 더한다) → 형식 검사 통과.
+   값은 `sudo grep "^API_IMAGE_$(sudo bash ops/active-color.sh | tr a-z A-Z)=" /opt/ddona/.env`로 본다. 이 줄이 없으면 2 에서 옛
+   워크플로의 `sed`는 아무것도 안 하고 `pull api`가 빈 image 변수로 실패해, VM 은 **파일만 옛 형상인 채 blue/green 컨테이너가
+   서빙하는 혼합 상태**가 된다 — 그 상태에서 caddy 가 재생성되면(VM 재부팅 포함) `api:8000`이 없어 전면 끊긴다. 이 뒤로는 교체
+   스크립트를 부르지 않는다.
+2. 🔴 blue/green 전환 커밋을 `git revert`해 `main`에 병합한다. 옛 워크플로가 자동으로 `API_IMAGE`를 그 배포의 태그로 바꾸고 →
+   `pull api` → `run --rm api alembic upgrade head` → `up -d --wait api caddy`로 단일 `api`를 띄운다. caddy 는 정의(api 의존
+   복귀·로그 상한 제거)가 바뀌어 재생성된다(수 초 끊김). blue/green 컨테이너는 옛 compose 에 없는 고아로 떠 있다. **VM 에서만
+   옛 커밋을 체크아웃하는 방식은 쓰지 않는다** — 다음 배포의 `git reset --hard origin/main`이 blue/green 파일로 되돌려 놓아 이행이
+   다시 돈다(끊김 한 번 더).
+3. 남은 수동 단계(`cd /opt/ddona/app`, `$C`는 "빈 상태에서 첫 기동" 절과 같다): caddy 가 2 에서 재생성되지 않았으면
+   (`sudo docker inspect --format '{{.Created}}' ddona-caddy-1`로 본다) `$C up -d --force-recreate --wait caddy` →
+   `$C up -d --no-recreate --remove-orphans api caddy`로 두 색 컨테이너 정리 → `sudo rm /var/lib/ddona/active_color`. `.env`의 `API_IMAGE_BLUE`·`API_IMAGE_GREEN` 줄은 옛 compose 가 안 읽고 형식 검사도 키
+   이름을 안 봐서 남겨도 무해하다.
+
+#### 겹침 대비 운영 설정 — Postgres max_connections · 스왑
+
+blue/green 교체 중에는 새 색 기동부터 옛 색 드레인이 끝날 때까지(최대 1분 남짓) 두 색이 함께 떠 있다. 그동안:
+
+- **DB 커넥션** — 두 색의 풀이 함께 열려 최악 2 × 워커 4 × (10 + 7) = 136 연결이 된다. Postgres 기본 `max_connections` 100 을
+  넘으므로 200 으로 올려 둔다(식은 "BE 런타임" 절 `DB_POOL_SIZE` 행).
+- **메모리** — api 컨테이너 하나가 운영에서 약 0.8GB 를 쓰는데 교체 중에는 둘이 된다. 3.9GB VM 에서 여유가 빠듯해 스왑 2GB 를
+  완충으로 둔다 — 이 VM 은 `vm.overcommit_memory=1`이라 할당이 거절되지 않고 모자라면 OOM killer 가 프로세스를 죽인다.
+  `vm.swappiness`는 기본 60 에서 10 으로 낮춘다 — 60 이면 겹침이 없는 평소에도 커널이 쉬는 페이지를 디스크로 내보낸다. 목적은
+  OOM 대신 완충이지 상시 스왑이 아니다.
+
+둘 다 저장소 밖(Postgres 볼륨·VM 설정)에 살아서 VM 재구축·볼륨 재생성 때 빠지기 쉽다 — 그때 이 절을 다시 적용한다.
+
+**Postgres `max_connections` 200** — `ALTER SYSTEM`으로 볼륨 안 `postgresql.auto.conf`에 쓴다. 재시작해야 반영된다(reload 로는
+안 된다). 재시작하는 몇 초 동안 DB 를 쓰는 요청은 실패하고 `/ready`가 503 이라 외부 감시 알림이 올 수 있으니 진행 중인 채팅 턴이
+없는 한가한 시간에 한다. `restart postgres`는 api 를 따라 재시작시키지 않고, 풀에 남은 끊긴 연결은 `pool_pre_ping`이 갈아 끼운다.
+
+```sh
+cd /opt/ddona/app
+C="sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env"
+$C exec -T postgres psql -U postgres -c "ALTER SYSTEM SET max_connections = 200;"
+# 재시작 전에는 pg_settings 가 바뀌지 않는다(setting 100, pending_restart 는 리로드 전까지 f) — 파일에 들어갔는지는 이것으로 본다
+$C exec -T postgres psql -U postgres -Atc "SELECT setting, applied, error FROM pg_file_settings WHERE name = 'max_connections' AND sourcefile LIKE '%auto.conf';"   # 200|f|setting could not be applied
+$C restart postgres
+$C exec -T postgres psql -U postgres -Atc "SHOW max_connections;"   # 200
+curl -s https://api.ddona.site/ready
+```
+
+되돌리기는 `ALTER SYSTEM RESET max_connections;` → `$C restart postgres`(볼륨의 `postgresql.conf` 값 100 으로 돌아간다). 되돌리면
+"BE 런타임" 절의 식이 깨지므로 풀 크기도 함께 줄인다. 볼륨을 새로 만들면(VM 재구축, 새 볼륨으로 복원) 기본 100 으로 돌아가 있으니
+위를 다시 적용한다.
+
+**스왑 2GB + `vm.swappiness=10`**(2026-10-07 KST 운영 적용, 무중단):
+
+```sh
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab            # 재부팅 뒤에도 켜진다
+echo 'vm.swappiness = 10' | sudo tee /etc/sysctl.d/60-ddona-swap.conf  # 재부팅 뒤에도 10
+sudo sysctl -p /etc/sysctl.d/60-ddona-swap.conf                       # 지금 적용 — 이 파일 하나만
+swapon --show; free -m; sysctl vm.swappiness
+```
+
+🔴 **적용에 `sysctl --system`을 쓰지 않는다.** 모든 sysctl 파일을 다시 읽으면서 GCE 기본 파일
+`/etc/sysctl.d/60-gce-network-security.conf`의 `net.ipv4.ip_forward=0`이 Docker 가 기동 때 켜 둔 1 을 덮어, 외부에서 컨테이너로 가는
+트래픽이 전부 끊긴다(2026-10-07 운영에서 실제로 3분 42초 끊겼고 `sudo sysctl -w net.ipv4.ip_forward=1`로 복구했다). 파일 하나만
+`sysctl -p <파일>`로 읽히거나 `sysctl -w vm.swappiness=10`으로 값만 바꾼다.
+
+되돌리기: `sudo swapoff /swapfile`(스왑에 올라간 페이지를 RAM 으로 되돌리므로 그만큼 여유가 있어야 한다) →
+`sudo sed -i '\|^/swapfile none swap|d' /etc/fstab` → `sudo rm /swapfile`, 그리고 `sudo rm /etc/sysctl.d/60-ddona-swap.conf` →
+`sudo sysctl -w vm.swappiness=60`(여기서도 `--system`은 쓰지 않는다).
+
 ### 3-2. DB 마이그레이션
 
-**기본은 파이프라인이 처리한다.** `deploy-api.yml`이 `compose pull api` 직후, `up -d` 직전에 새
-이미지로 `compose run --rm -T api alembic upgrade head`를 돌린다. 사람이 따로 돌릴 일은 원칙적으로
-없다.
+**기본은 파이프라인이 처리한다.** 교체 스크립트(`ops/swap-api.sh`)가 새 이미지를 pull 하고 `.env`의 idle 색 줄을 바꾼 직후,
+idle 색을 띄우기 전에 그 색의 새 이미지로 `compose run --rm -T api_<idle> alembic upgrade head`를 돌린다(옛 색은 아직
+서빙 중이다). 사람이 따로 돌릴 일은 원칙적으로 없다. 마이그레이션이 끝난 뒤에도 옛 색이 수십 초~1분 남짓 새 스키마 위에서
+돌기 때문에, 옛 코드를 깨뜨리는 마이그레이션은 "BE → GCE VM" 절의 `skip_overlap`으로 배포한다.
 
 **수동으로 미리 적용해야 할 때**(2026-09-06에 실제로 성공시킨 절차):
 ```bash
@@ -444,10 +709,11 @@ sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env \
   <IMAGE>:<TAG> alembic upgrade head
 ```
 
-⚠️ **순서 고정: 마이그레이션은 반드시 `up -d`보다 먼저 돈다.** `main.py`의 lifespan 훅이 기동마다
+⚠️ **순서 고정: 마이그레이션은 반드시 새 컨테이너 기동(`up -d`)보다 먼저 돈다.** `main.py`의 lifespan 훅이 기동마다
 `rebuild_suspended_user_markers()`를 불러 `users.suspended_at`을 SELECT 한다 — 스키마가 없는 채로 새
-이미지가 뜨면 `UndefinedColumnError`로 죽고 healthcheck·배포 검증이 함께 실패해 **API가 내려간 채로
-남는다.** 미리 적용해 두면 파이프라인의 자동 마이그레이션은 멱등이라 no-op이 된다.
+이미지가 뜨면 `UndefinedColumnError`로 죽고 healthcheck·배포 검증이 함께 실패한다. blue/green 교체에서는 그 새 색이 healthy 가
+안 되어 교체가 실패하고 옛 색이 계속 서빙하지만, "빈 상태에서 첫 기동"처럼 옛 색이 없을 때는 **API가 내려간 채로 남는다.**
+미리 적용해 두면 파이프라인의 자동 마이그레이션은 멱등이라 no-op이 된다.
 
 ### 3-3. FE → Cloudflare Pages (web, admin 각각)
 
@@ -491,15 +757,19 @@ sudo /opt/ddona/backup.sh   # 수동 실행
 # 복원 — restore_db 는 빈 DB 를 전제한다. 운영 DB 를 실수로 덮지 않도록 대상을 명시적으로 만든다.
 cd /opt/ddona/app
 C="sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env"
-$C stop api
+$C stop api_blue api_green   # 두 색 모두 — 떠 있지 않은 색은 조용히 건너뛴다
 $C exec -T postgres psql -U postgres -d postgres -c "DROP DATABASE ai_character_chat WITH (FORCE);"
 $C exec -T postgres psql -U postgres -d postgres -c "CREATE DATABASE ai_character_chat;"
 cd /opt/ddona/scripts
 sudo TARGET_DATABASE_URL="$(sudo grep ^DATABASE_URL= /opt/ddona/.env | cut -d= -f2-)" \
      PG_DOCKER_NETWORK=ddona_default PYTHONPATH=. python3 -m ops.restore_db /경로/백업.dump
 # 위 명령이 성공한 경우에만 API를 다시 연다. 실패했다면 중단 상태에서 원인을 확인한다.
-cd /opt/ddona/app && $C up -d --wait api
+# 다시 여는 것은 "빈 상태에서 첫 기동" 절의 3~5단계(마이그레이션 → api_blue·caddy 기동 → 상태 파일)와 같다.
+# 교체 스크립트는 떠 있는 색이 없으면 멈추므로 여기서 쓰지 않는다.
 ```
+
+볼륨을 새로 만든 복원(VM 재구축 등)이면 Postgres `max_connections`가 기본 100 으로 돌아가 있다 — API 를 열기 전에
+"겹침 대비 운영 설정" 절의 `ALTER SYSTEM`을 다시 적용한다.
 
 `restore_db`는 `pg_restore` 성공 후 API를 공개하기 전에 만료된 댓글 신고 원문 증거와
 채팅 응답 신고 대화 사본 증거를 제거한다. `evidence_expires_at <= 현재 시각`인 증거 칸(댓글은
@@ -595,8 +865,9 @@ grace time 초과 감지**가 이 경우를 대신 잡는다 — 두 경로가 �
 자가호스팅 Bugsink(Sentry 호환)는 `docker-compose.prod.yml`과
 **다른 compose 프로젝트**(`docker-compose.monitoring.yml`)이고 **앱 배포와 별도로 손으로** 기동한다.
 
-**왜 별도 compose·별도 배포인가.** "BE → GCE VM" 절의 자동배포는 `up -d --wait api caddy`로 **서비스명을 명시**한다
-— 여기에 Bugsink를 얹으면 앱을 배포할 때마다 에러 추적기도 같이 재시작돼, "배포가 뭔가 깨뜨리는 바로
+**왜 별도 compose·별도 배포인가.** "BE → GCE VM" 절의 자동배포는 api 색을 교체 스크립트로 바꾸고 caddy 는
+`up -d --wait caddy`로, 모두 **서비스명을 명시**해 다룬다 — 여기에 Bugsink를 얹으면
+앱을 배포할 때마다 에러 추적기도 같이 재시작돼, "배포가 뭔가 깨뜨리는 바로
 그 창"에서 에러 추적이 눈을 감는다. 그래서 Bugsink는 이 워크플로가 아예 건드리지 않는
 별도 파일이다 — `.github/workflows/deploy-api.yml`의 트리거 경로에 `docker-compose.monitoring.yml`이
 없으므로 **이 서비스는 앱 배포로 뜨지 않는다.** 이미지를 갈아끼우거나 설정을 바꿀 때도 아래 명령을
@@ -625,11 +896,11 @@ sudo docker stats --no-stream ddona-monitoring-bugsink-1   # mem_limit(1g)을 �
 **`SENTRY_DSN` 발급 절차**(최초 1회):
 1. 위 명령으로 기동 후 `BUGSINK_BASE_URL`(`https://ddona.site/_ingest/` — **트레일링 슬래시
    필수**. `Caddyfile`의 매처가 `/_ingest/*`라 슬래시 없는 `/_ingest`는 이 라우트에 안 걸리고
-   `api:8000`으로 흘러가 404가 난다 — 로컬 caddy 컨테이너로 확인)로 접속해 `BUGSINK_CREATE_SUPERUSER`의
+   api 업스트림으로 흘러가 404가 난다 — 로컬 caddy 컨테이너로 확인)로 접속해 `BUGSINK_CREATE_SUPERUSER`의
    `email:password`로 로그인한다. 이 경로는 시크릿을 요구하지 않는다(위 표 참조).
 2. 프로젝트를 하나 만든다(예: `ddona-api`). Bugsink가 DSN을 보여준다 — 형태는
    `https://<key>@ddona.site/_ingest/<project_id>`다.
-3. **API(백엔드) 자신의 `SENTRY_DSN`에는 위 값을 그대로 쓰지 않는다.** `api` 컨테이너는 Bugsink와
+3. **API(백엔드) 자신의 `SENTRY_DSN`에는 위 값을 그대로 쓰지 않는다.** api 색 컨테이너는 Bugsink와
    같은 `ddona_default` 네트워크에 있어 Caddy·Worker를 거칠 이유가 없다 — host만 내부 서비스명으로
    바꿔 `http://<key>@bugsink:8000/<project_id>`로 쓴다(key·project_id는 2단계와 동일, host만
    다름, **경로에 `/_ingest`를 넣지 않는다** — 그 프리픽스는 Caddy가 벗겨주는 것을 전제로 한
@@ -712,7 +983,7 @@ caddyfile tokens for 'route': malformed header matcher: expected both field and 
 
 `header X-Ingest-Secret {$INGEST_SHARED_SECRET}`에서 변수가 완전 미설정이든 빈 문자열이든 Caddy는
 같은 빈 값으로 치환하고, 치환된 토큰이 비어 있으면 `header` 매처가 인자 1개만 받아 파싱 에러다 —
-`{$SITE_ADDRESS}` 블록 전체(=`api:8000`으로 가는 기존 프록시 포함)가 **적재 자체에 실패**한다.
+`{$SITE_ADDRESS}` 블록 전체(=api 색으로 가는 기존 프록시 포함)가 **적재 자체에 실패**한다.
 실제 영향은 이 라우트를 언제 적용하느냐에 따라 갈린다:
 
 - **`Caddyfile`만 바뀐 상태로 배포**(현재 `deploy-api.yml`의 정상 경로 — 바인드 마운트만 바뀌면
@@ -977,7 +1248,7 @@ WebP q80). 응답은 변형 키를 **존재 확인 없이** 유도하므로, 표
 자산은 표시용 변형을 함께 갖는다) → ② 아래 백필 → ③ 아래 확인 통과 → ④ 상세 응답을 표시용 변형으로 바꾸는 PR 병합.
 ①과 ② 사이에 생긴 자산도 이미 변형을 가지므로 ②를 다시 돌릴 필요는 없다.
 
-**실행 위치** — VM 의 실행 중인 `api` 컨테이너 안에서 돈다. 스크립트는 이미지에 들어 있고(`apps/api/Dockerfile` 의
+**실행 위치** — VM 에서 서빙 중인 api 색의 이미지로 돈다. 스크립트는 이미지에 들어 있고(`apps/api/Dockerfile` 의
 `COPY . /app`) 컨테이너 env 가 운영 DB·R2 를 이미 가리키므로 시크릿을 따로 넘기지 않는다. DB 는 읽기만 하고 R2 에
 변형 객체만 더한다(있는 객체를 덮어쓰지 않는다).
 
@@ -992,15 +1263,18 @@ C="sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env"
 # 1. dry-run 먼저 — 첫 줄의 "대상:" 이 R2 엔드포인트·운영 버킷인지, 빠진 변형이 `_display.webp` 뿐인지, "원본 없음"
 #    이 몇 건인지 본다. `_thumb.webp` 도 빠져 있다고 나오면 썸네일 불변식이 이미 깨진 자산이 있다는 뜻이다(이 백필이
 #    함께 채운다).
-$C exec -T api python -u scripts/backfill_thumbnails.py --dry-run
+$C exec -T api_$(sudo bash ops/active-color.sh) python -u scripts/backfill_thumbnails.py --dry-run
 
 # 2. 본 실행 — 자산마다 원본을 받아 빠진 변형만 올린다. 개별 실패는 멈추지 않고 모아서 마지막에 요약한다.
 #    exit 0 = 전부 채움 · 1 = 다시 돌려 볼 실패가 있음 · 2 = 남은 것이 원본 없는 자산뿐(아래 "원본이 없는 자산").
-$C exec -T api python -u scripts/backfill_thumbnails.py
+#    오래 걸리므로 서빙 중인 색 안(`exec`)이 아니라 같은 이미지의 일회용 컨테이너(`run --rm --no-deps`)로 돌린다 —
+#    도중에 배포가 api 색을 교체하면 옛 색이 멈추면서 그 안의 `exec` 프로세스도 같이 죽지만, 일회용 컨테이너는
+#    교체 대상이 아니라 끝까지 돈다(교체의 정지·삭제는 서비스 컨테이너만 건드린다).
+$C run --rm --no-deps -T api_$(sudo bash ops/active-color.sh) python -u scripts/backfill_thumbnails.py
 
 # 3. 확인(읽기 전용) — 마지막 줄이 "✓ 불변식 충족 — 변형이 빠진 READY 자산 0건" 이고 exit 0 이어야 한다(1·2 의 뜻은
 #    백필과 같다). "표시용 변형 합계" 줄이 원본 대비 비율을 보인다. --verbose 는 자산별 크기·치수(객체를 내려받는다).
-$C exec -T api python -u scripts/verify_thumbnails.py
+$C exec -T api_$(sudo bash ops/active-color.sh) python -u scripts/verify_thumbnails.py
 ```
 
 **재실행 안전** — 변형이 다 있는 자산은 원본을 내려받지 않고 건너뛴다. exit 1 이면 원인(R2 일시 오류, 원본이 그림이
@@ -1022,7 +1296,7 @@ $C exec -T api python -u scripts/verify_thumbnails.py
 
 **소요 추정** — 로컬 moto 실측은 시드 자산 52건(원본 중앙값 960KB PNG)에 약 8초(프로세스 기동 포함)였다. 운영은 자산마다
 R2 왕복(HEAD 3회·원본 GET·변형 PUT)이 더해지므로 dry-run 이 보인 생성 대상 수 × 0.5~1초 정도로 잡는다 — 이 값은
-실측이 아니라 추정이다. 한 장씩 순서대로 처리해 API 컨테이너의 CPU·메모리를 크게 점유하지 않는다. 같은 실측에서
+실측이 아니라 추정이다. 한 장씩 순서대로 처리해 VM 의 CPU·메모리를 크게 점유하지 않는다. 같은 실측에서
 표시용 변형은 장당 중앙값 약 46KB(최대 119KB)였다.
 
 **상세 응답 전환 PR 을 병합하기 전에 확인할 것**
@@ -1064,19 +1338,19 @@ curl -s -o /dev/null -D - "$(curl -s "https://api.ddona.site/contents/<콘텐츠
 예외는 소설 삭제 하나다 — 자기 데이터를 지울 권리는 허용과 무관해서 로그인·소유권만 본다. 면제 계정도 클로버가
 차감된다(소설화에는 면제 분기가 없다).
 
-**켜기** — `.env` 에 두 줄을 더한다. 파일을 통째로 덮거나 백업본으로 복원하지 않는다(자동배포가 같은 파일의 `API_IMAGE`
-를 고친다). 명단 값은 공백·따옴표 없는 쉼표 구분이다:
+**켜기** — `.env` 에 두 줄을 더한다. 파일을 통째로 덮거나 백업본으로 복원하지 않는다(교체 스크립트가 같은 파일의
+`API_IMAGE_BLUE`·`API_IMAGE_GREEN`을 고친다). 명단 값은 공백·따옴표 없는 쉼표 구분이다:
 
 ```sh
 cd /opt/ddona/app
 sudo sh -c 'printf "\nNOVELIZE_ENABLED=true\nNOVELIZE_GRANT_ALLOWLIST=<계정 id>,<계정 id>\n" >> /opt/ddona/.env'
 sudo python3 ops/check_env.py --format /opt/ddona/.env
-sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d --wait api
-sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -T api \
+sudo bash ops/swap-api.sh
+sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -T api_$(sudo bash ops/active-color.sh) \
   python -c "from api.core.config import settings; print(settings.novelize_enabled, settings.novelize_grant_allowlist)"
 ```
 
-`restart` 는 env 를 다시 읽지 않으므로 `up -d --wait api` 로 올린다. 그다음 "BE 런타임" 절의 키 개수 문장을 VM 에서 다시
+`restart` 는 env 를 다시 읽지 않으므로 교체 스크립트를 태그 없이 불러 새 env 로 다시 띄운다("env 반영 재기동" 절). 그다음 "BE 런타임" 절의 키 개수 문장을 VM 에서 다시
 세어 고친다. 키를 넣은 것만으로는 아직 아무도 못 쓴다 — 어드민 유저 상세에서 그 계정의 소설화 허용을 켜고(명단 밖
 계정이면 거절된다), 클로버를 지급한다. 허용 직후 그 계정의 web 은 새로고침해야 진입점이 보인다(세션 정보를 다시 받지
 않는다).
@@ -1115,7 +1389,7 @@ heartbeat 만료 + 10초(기본 70초)에 모든 소설의 죽은 작업을 한 
 cd /opt/ddona/app
 sudo sed -i '/^NOVELIZE_ENABLED=/d' /opt/ddona/.env
 sudo python3 ops/check_env.py --format /opt/ddona/.env
-sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d --wait api
+sudo bash ops/swap-api.sh
 ```
 
 모든 계정에서 소설 화면·API 가 403 이 되고 진입점이 사라진다(새로고침 뒤). 허용 행·명단·소설 데이터는 남아 다시 켜면
@@ -1123,8 +1397,8 @@ sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d 
 문장을 다시 센다.
 
 **회수(한 계정)** — 어드민 유저 상세에서 그 계정의 허용 토글을 끄면 재기동 없이 바로 막힌다. 어드민을 거치지 않고
-확실히 막으려면 진행 중 작업 0 확인 뒤 명단에서 그 id 를 빼고(`sudo sed -i` 로 그 줄을 고친다) 형식 검사 → `up -d --wait
-api` — 허용 행이 남아 있어도 명단 밖이면 접근 시점에 막힌다.
+확실히 막으려면 진행 중 작업 0 확인 뒤 명단에서 그 id 를 빼고(`sudo sed -i` 로 그 줄을 고친다) 형식 검사 → `sudo bash
+ops/swap-api.sh` — 허용 행이 남아 있어도 명단 밖이면 접근 시점에 막힌다.
 
 **롤백** — 스위치를 켠 적이 있으면 되돌릴 태그와 상관없이 **진행 중 작업 0 확인 → 끄기 → 롤백** 순서다. 태그 롤백은
 "BE → GCE VM" 절의 한 줄이다. 옛 이미지가 떠 있는 동안 알려진 문제:
@@ -1138,8 +1412,8 @@ api` — 허용 행이 남아 있어도 명단 밖이면 접근 시점에 막힌
 - 그동안 허용 계정이 **탈퇴하면 소설·장·개정·작업·허용 행이 지워지지 않고 남는다.** 옛 코드의 탈퇴 파기는 소설화 테이블을
   모르고, 새 이미지를 다시 올려도 소급해 지우지 않는다 — 손으로 지운다.
 
-**롤백 뒤 새 이미지를 다시 올릴 때** — 태그 롤백 중에는 무관한 PR 이라도 main 에 병합되면 자동 배포가 `API_IMAGE` 를 새
-코드로 되돌리므로, 그때도 이 절차가 필요하다. 마이그레이션은 이미 적용돼 다시 돌지 않는다. 옛 코드에서 복원·게시한 세트가
+**롤백 뒤 새 이미지를 다시 올릴 때** — 태그 롤백 중에는 무관한 PR 이라도 main 에 병합되면 자동 배포가 api 를 새
+코드로 다시 교체하므로, 그때도 이 절차가 필요하다. 마이그레이션은 이미 적용돼 다시 돌지 않는다. 옛 코드에서 복원·게시한 세트가
 활성이면 거기 소설화 행이 없어 소설화가 계속 렌더 실패로 거절되고, 새 코드의 게시 검증은 "누락"으로 막힌다(어드민에
 소설화 채널을 손으로 더할 길이 없다). 새 이미지가 뜬 직후 그 이미지로 프롬프트 시드만 다시 깐다 — downgrade 가 시드가
 만든 세트 둘과 초안의 소설화 행만 지우고, upgrade 가 그 시점 활성 세트를 다시 복사해 소설화 행을 더한 새 세트를 활성으로
@@ -1152,8 +1426,8 @@ sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:
 ```
 
 **스키마까지 되돌릴 때** — main 에 revert 커밋을 올려 옛 코드로 롤백을 굳힐 때는 그 병합 **전에** 이 downgrade 를 마친다.
-안 하면 그 배포의 `alembic upgrade head` 가 DB 의 모르는 리비전에서 `Can't locate revision` 으로 멈춘다("참조 이미지
-켜기 · 끄기 · 롤백" 절과 같은 경우다). 순서는 "참조 이미지 켜기 · 끄기 · 롤백" 절과 같다: **태그 롤백으로 옛 코드부터 띄우고 →
+안 하면 그 배포(롤백 표시 없는 `main` push 배포)의 교체 스크립트가 DB 가 이미지보다 앞서 있음을 보고 실패한다 — 옛 색이
+계속 서빙하니 downgrade 를 마친 뒤 다시 배포한다("참조 이미지 켜기 · 끄기 · 롤백" 절과 같은 경우다). 순서는 "참조 이미지 켜기 · 끄기 · 롤백" 절과 같다: **태그 롤백으로 옛 코드부터 띄우고 →
 새 이미지로 downgrade**(옛 이미지에는 이 리비전 파일이 없고, 먼저 내리면 떠 있는 새 코드가 없어진 테이블을 읽다 실패한다).
 **소설·장·개정·작업·계정별 허용 행이 전부 지워지고 되살릴 수 없으므로** 백업을 먼저 뜬다:
 
@@ -1196,16 +1470,16 @@ sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/dd
    그 줄을 고치지 않는다 — 그 줄들은 boto3 가 R2 자격으로 읽는다.
 2. Bedrock 계정 설정에서 모델 호출 로깅(model invocation logging)이 꺼져 있는지 본다. 개인정보 처리방침 초안이 대화 원문을
    AWS 쪽에 남기지 않는다는 전제로 쓰였다.
-3. `.env` 에 두 줄을 더한다(리전은 기본값이면 생략). 파일을 통째로 덮거나 백업본으로 복원하지 않는다(자동배포가 같은 파일의
-   `API_IMAGE` 를 고친다). 값은 셸 기록에 남지 않게 편집기로 넣어도 된다:
+3. `.env` 에 두 줄을 더한다(리전은 기본값이면 생략). 파일을 통째로 덮거나 백업본으로 복원하지 않는다(교체 스크립트가 같은
+   파일의 `API_IMAGE_BLUE`·`API_IMAGE_GREEN` 을 고친다). 값은 셸 기록에 남지 않게 편집기로 넣어도 된다:
 
    ```sh
    cd /opt/ddona/app
    sudo sh -c 'printf "\nBEDROCK_ACCESS_KEY_ID=<키 id>\nBEDROCK_SECRET_ACCESS_KEY=<비밀 키>\n" >> /opt/ddona/.env'
    sudo python3 ops/check_env.py --format /opt/ddona/.env
-   sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d --wait api
+   sudo bash ops/swap-api.sh
    # 값은 찍지 않고 들어갔는지만 본다 — True True ap-northeast-2 False False 여야 한다.
-   sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -T api python -c \
+   sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -T api_$(sudo bash ops/active-color.sh) python -c \
      "from api.core.config import settings as s; print(bool(s.bedrock_access_key_id.strip()), bool(s.bedrock_secret_access_key.strip()), s.bedrock_region, s.chat_premium_models_enabled, s.novelize_premium_models_enabled)"
    ```
 
@@ -1214,17 +1488,18 @@ sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/dd
 키만 있고 스위치가 꺼져 있으면 아무 호출도 Bedrock 으로 가지 않는다.
 
 **켜기.** 위 확인에서 키 두 개가 `True` 인 것을 먼저 본다 — 🔴 스위치가 켜졌는데 키나 리전이 비어 있으면 api 가 기동하지
-못하고, `up -d --wait` 가 새 컨테이너를 띄우다 실패해 서비스가 멈춘다. 그다음 쓸 기능의 스위치와 명단만 더한다(채팅만이면
-`CHAT_PREMIUM_*` 두 줄, 소설 장까지면 `NOVELIZE_PREMIUM_*` 두 줄도):
+못한다. 교체 스크립트의 새 색이 healthy 가 안 돼 교체가 실패하고(옛 색은 그대로 서빙, 종료코드 1), 그 줄을 고치기 전에는
+다음 배포도 같은 이유로 실패한다. 그다음 쓸 기능의 스위치와 명단만 더한다(채팅만이면 `CHAT_PREMIUM_*` 두 줄, 소설 장까지면
+`NOVELIZE_PREMIUM_*` 두 줄도):
 
 ```sh
 cd /opt/ddona/app
 sudo sh -c 'printf "\nCHAT_PREMIUM_MODELS_ENABLED=true\nCHAT_PREMIUM_MODEL_ALLOWLIST=<계정 id>,<계정 id>\n" >> /opt/ddona/.env'
 sudo python3 ops/check_env.py --format /opt/ddona/.env
-sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d --wait api
+sudo bash ops/swap-api.sh
 ```
 
-`restart` 는 env 를 다시 읽지 않으므로 `up -d --wait api` 로 올린다. 줄을 넣었으니 키 개수 문장을 다시 센다.
+`restart` 는 env 를 다시 읽지 않으므로 교체 스크립트를 태그 없이 부른다("env 반영 재기동" 절). 줄을 넣었으니 키 개수 문장을 다시 센다.
 
 **계정 허용.** 스위치와 명단만으로는 아직 아무도 못 쓴다 — 계정마다 허용 행이 있어야 한다(채팅·소설 따로).
 
@@ -1241,7 +1516,7 @@ sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d 
    (`GET /novels/{id}`)를 열어 `chapterModels` 에 Sonnet·Opus 가 실렸는지로 본다 — 허용이 없으면 Gemini 하나뿐이다. 장 작업은
    요청한 모델을 `novel_jobs.model` 에 적고, 실행은 그 값으로 돈다.
 
-회수는 어드민에서 허용을 끄는 것(재기동 없음) 또는 명단에서 지우고 `up -d --wait api` 다. 허용 행만 남은 계정도 명단 밖이면
+회수는 어드민에서 허용을 끄는 것(재기동 없음) 또는 명단에서 지우고 `sudo bash ops/swap-api.sh` 다. 허용 행만 남은 계정도 명단 밖이면
 접근 시점에 막힌다. 소설은 회수 뒤의 장 요청이 상위 모델이면 403 `NOVEL_MODEL_NOT_ALLOWED` 다(방과 달리 Gemini 로 바꿔
 받지 않는다 — 장 요청의 모델은 그 가격과 함께 지금 고른 값이다). 회수 전에 값을 낸 장 작업은 회수와 무관하게 그 모델로 끝난다.
 
@@ -1251,7 +1526,7 @@ sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d 
 cd /opt/ddona/app
 sudo sed -i '/^CHAT_PREMIUM_MODELS_ENABLED=/d;/^NOVELIZE_PREMIUM_MODELS_ENABLED=/d' /opt/ddona/.env
 sudo python3 ops/check_env.py --format /opt/ddona/.env
-sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d --wait api
+sudo bash ops/swap-api.sh
 ```
 
 끄거나 허용을 거둬도 **상위 모델을 고른 방은 막히지 않는다.** 방에 저장된 모델(`chat_rooms.chat_model`)은 그대로 남고, 그
@@ -1260,7 +1535,7 @@ sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d 
 않는다 — 상위 모델 값을 내고 Gemini 글을 받게 된다). 끄는 동안 Redis 일부 장애가 나도 Gemini 턴은 지금처럼
 통과한다(상위 모델 턴만 503 `CHAT_MODEL_UNAVAILABLE` 로 거절된다 — 켜져 있을 때의 동작이다).
 
-**키 교체·회수.** 새 키를 만든 뒤 `.env` 의 두 줄을 `sudo sed -i` 로 바꾸고 형식 검사 → `up -d --wait api` → 위 확인 명령,
+**키 교체·회수.** 새 키를 만든 뒤 `.env` 의 두 줄을 `sudo sed -i` 로 바꾸고 형식 검사 → `sudo bash ops/swap-api.sh` → 위 확인 명령,
 그다음 AWS 콘솔에서 옛 키를 비활성화한다. 키가 새어 나갔으면 먼저 콘솔에서 비활성화한다 — 스위치가 켜져 있으면 그동안의
 상위 모델 호출은 실패하고 환불된다.
 
@@ -1329,7 +1604,9 @@ Gemini 와 따로 묶인다. 소설 장 실패는 공급자와 무관하게 지�
 
 ## 4. 배포 후 스모크 검증
 
-1. `curl https://api.ddona.site/health` → `{"status":"ok"}` · `/ready`로 DB·Redis까지 확인
+1. `curl https://api.ddona.site/health` → `{"status":"ok"}` · `/ready`로 DB·Redis까지 확인. 배포 로그에서 교체 스크립트의
+   마지막 줄이 `13) 완료: active=<색> … 이미지 …:<태그>`이고 그 뒤 실행 이미지 확인 줄이 같은 태그인지도 본다(이행 배포면
+   그 앞에 `8) 부트스트랩 정리 완료`) — `/health` 200 은 옛 이미지도 낸다
 2. web에서 Google 로그인 → 세션 쿠키가 실제로 설정/전송되는지(Network의 `Set-Cookie`/요청 Cookie)
 3. 자산 업로드(presigned PUT) → R2 CORS 통과 확인
 4. 채팅 SSE 스트리밍 수신
@@ -1426,7 +1703,7 @@ sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -
   "SELECT storage_key FROM assets WHERE kind='GENERATED' AND status='READY' ORDER BY created_at DESC LIMIT 1;"
 
 # 그 키 + 약 7,850,000자(1400×1400 무작위 PNG, 약 5.9MB) 두 건을 보낸다. REF_KEY 를 빼면 큰 PNG 한 건만
-sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -T -e REF_KEY='<위 키>' api python - <<'EOF'
+sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -T -e REF_KEY='<위 키>' api_$(sudo bash ops/active-color.sh) python - <<'EOF'
 import base64, io, os
 import httpx
 from PIL import Image
@@ -1463,14 +1740,14 @@ EOF
 낮추는 작업을 먼저 한다. 결과는 "현재 형상의 근거" 표의 집 PC 경로 행에 적는다. (2026-09-29 운영 경로에서 이 스크립트를 돌려 두 건 모두
 `200 image/webp`를 받았다.)
 
-**켜기** — `.env`에 **한 줄만 더한다.** 파일을 통째로 덮거나 백업본으로 복원하지 않는다(자동배포가 같은 파일의
-`API_IMAGE`를 고친다):
+**켜기** — `.env`에 **한 줄만 더한다.** 파일을 통째로 덮거나 백업본으로 복원하지 않는다(교체 스크립트가 같은 파일의
+`API_IMAGE_BLUE`·`API_IMAGE_GREEN`을 고친다):
 
 ```sh
 cd /opt/ddona/app
 sudo sh -c 'printf "\nLOCAL_IMAGE_REFERENCE_ENABLED=true\n" >> /opt/ddona/.env'
-sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d --wait api
-sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -T api \
+sudo bash ops/swap-api.sh
+sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -T api_$(sudo bash ops/active-color.sh) \
   python -c "from api.core.config import settings; print(settings.local_image_reference_enabled)"   # True
 ```
 
@@ -1486,7 +1763,7 @@ sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -
 ```sh
 cd /opt/ddona/app
 sudo sed -i 's/^LOCAL_IMAGE_REFERENCE_ENABLED=.*/LOCAL_IMAGE_REFERENCE_ENABLED=false/' /opt/ddona/.env
-sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d --wait api
+sudo bash ops/swap-api.sh
 ```
 
 새로 연 생성 화면에는 참조 행이 없다. 이미 열려 있던 화면에서 참조를 실어 보내면 `400 reference image disabled`로
@@ -1507,7 +1784,7 @@ PR #65(머지 `4e52c81`)보다 앞선 태그로 되돌릴 때는 추가로 1시�
 
 마이그레이션 `739e7f1039b1`(요청 행의 참조 컬럼, nullable)은 태그 롤백만이면 되돌리지 않는다 — 옛 코드는 그 컬럼을
 모른 채 동작하고, 새 행에는 NULL이 들어간다. 되돌려야 할 때(예: main에 revert 커밋을 올려 옛 코드를 다시 배포할 때 —
-그 배포의 `alembic upgrade head`는 DB가 모르는 리비전에 있어 `Can't locate revision`으로 멈춘다)는 순서가 고정이다:
+그 배포는 롤백 표시가 없어 DB가 이미지보다 앞서 있으면 교체 스크립트가 실패하므로 병합 전에 downgrade 를 마친다)는 순서가 고정이다:
 **태그 롤백으로 옛 코드부터 띄우고 → 새 이미지로 downgrade**. 옛 이미지에는 이 리비전 파일이 없어 downgrade를 못 하고,
 downgrade를 먼저 하면 아직 떠 있는 새 코드가 없어진 컬럼을 조회하다 실패한다. downgrade는 "어떤 요청이 어떤
 이미지를 참조했는지" 기록을 지운다.
@@ -1525,12 +1802,24 @@ sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env \
 - **이미지 생성이 집 PC 한 대의 가동률에 종속된다.** 그 PC의 다운타임이 곧 이 기능의 실패율이다 —
   폴백이 없다(Cloudflare의 모델을 없앤 것은 의도적 결정이라, 조용히 낮은 품질로 대체되면 애초에
   로컬로 옮긴 이유가 무너진다). 사용자가 보는 것은 깨진 폼이 아니라 제출 전 사전 차단(503, "이미지 생성" 절)이다.
-- **스테이징 환경 없음**: main push → 바로 prod. 대신 BE는 태그 한 줄 롤백("BE → GCE VM" 절), FE는 Pages 이전
-  배포로 롤백 가능 → 문제 시 1순위는 롤백, fix는 그 다음.
+- **스테이징 환경 없음**: main push → 바로 prod. 대신 BE는 명령 한 줄 롤백(`sudo DDONA_ROLLBACK=1 bash ops/swap-api.sh <이전SHA>` 또는
+  Actions 수동 실행의 `image_tag`, "BE → GCE VM" 절 — 평상시 배포와 같은 무중단 교체다), FE는 Pages 이전 배포로 롤백 가능 →
+  문제 시 1순위는 롤백, fix는 그 다음.
+- **무중단 교체가 지키지 못하는 것 — 컨테이너 안 백그라운드 작업.** 드레인은 Caddy 를 거치는 HTTP 요청(SSE 채팅 턴 포함)만
+  기다린다. 응답을 보낸 뒤 컨테이너 안에서 도는 작업 — 이미지 생성 잡(운영 최대 약 42초), 소설 장 생성·문단 수정(상한 360초),
+  턴 뒤 기억 요약 — 은 옛 색이 멈출 때 함께 끊긴다(단일 컨테이너 시절의 완전교체도 같았다). 이미지 생성은 Redis 의 락·대기열
+  칸이 TTL 로 풀리고("이미지 생성" 절), 잡 기록은 1시간 TTL 까지 진행 중으로 남는다 — 끊긴 잡의 환불 경로는 확인하지 않았다.
+  기억 요약은 다음 턴에 다시 한다. 소설 작업은 진행 중으로 남고, 새 프로세스가 기동 뒤 heartbeat 만료 + 10초(기본 70초)에 죽은
+  작업을 한 번 일괄 환불하는데, 이 정리는 "옛 프로세스가 새 프로세스보다 먼저 죽었다"는 전제다. blue/green 에서는 옛 색이 새 색
+  기동 **뒤**(healthy 약 15~35초 + 드레인 최대 65초)에 멈추므로 옛 색에서 끊긴 작업의 heartbeat 가 그 일괄 정리 시점에 아직 만료되지
+  않아 놓칠 수 있다 — 놓친 작업은 그 소설을 열거나 폴링할 때의 지연 정리가 환불하고, 그때까지 차감액이 묶인다. 소설화는 허용
+  명단 계정에만 열려 있어 영향이 작다.
+- **드레인 유예(65초)보다 긴 요청은 교체 때 끊긴다.** 지금 가장 긴 동기 요청은 발행 자동 심사(상한 60초)다. 상위 모델(Opus)
+  채팅 턴처럼 더 긴 요청을 열 때는 `docker-compose.prod.yml`의 `stop_grace_period`를 다시 정한다.
 - **Pages 프리뷰에서는 API 연동 확인 불가**: `CORS_ALLOW_ORIGINS`가 prod 두 도메인만 허용해 PR
   프리뷰(랜덤 서브도메인)에서 CORS로 막힌다. 필요해지면 완화.
 - **즉시 롤백 스위치(옛 스택)는 없다.** 인프라 장애 복구는 "VM 재구축 → compose → R2 백업 복원"이고
-  시간이 걸린다.
+  시간이 걸린다(compose 기동·복원 순서는 "빈 상태에서 첫 기동" 절).
 
 ---
 

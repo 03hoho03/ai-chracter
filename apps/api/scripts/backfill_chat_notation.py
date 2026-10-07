@@ -35,7 +35,7 @@
         --rollback /tmp/chat-notation-backup.json --apply
 
 운영에서 돌리는 방법은 `DEPLOY.md` 의 다른 컨테이너 안 스크립트와 같다(api 컨테이너에서
-`exec -T api python scripts/backfill_chat_notation.py …`).
+`exec -T api_$(sudo bash ops/active-color.sh) python scripts/backfill_chat_notation.py …` — 서빙 중인 색 컨테이너).
 
 콘텐츠 문안을 담아 두는 서버 캐시는 없다(Redis 의 캐시는 프롬프트 세트뿐이고 나머지 키는 세션·
 레이트리밋 같은 상태다) — 적용 뒤 무효화할 것이 없고, 채팅은 방에 고정된 버전의 칸을 매 턴 읽으므로
