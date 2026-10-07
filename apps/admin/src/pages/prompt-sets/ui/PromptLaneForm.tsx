@@ -9,7 +9,13 @@ import { RESTING_DISABLED_PRIMARY_CLASS } from "@/shared/ui/restingDisabledPrima
 
 import { usePreviewQuery } from "../api/usePreviewQuery";
 import { useSaveDraftMutation } from "../api/useSaveDraftMutation";
-import { PROMPT_CHANNELS, PROMPT_CHANNEL_LABELS, isPromptChannel, type PromptChannel } from "../model/channels";
+import {
+  PROMPT_CHANNELS,
+  PROMPT_CHANNEL_LABELS,
+  isChannelEditableInLane,
+  isPromptChannel,
+  type PromptChannel,
+} from "../model/channels";
 import type { PromptLane } from "../model/lane";
 import { promptChainKey, type PromptChainKey, type PromptModel } from "../model/model";
 import {
@@ -54,7 +60,9 @@ export function PromptLaneForm({ lane, model, draft, onDirtyChange }: PromptLane
   // 채널은 이 체인의 초안이 실제로 들고 있는 섹션에서
   // 도출한다(Claude 세트는 그래서 시스템 지침·생성 두 탭이 된다). 손으로 `Record<PromptLane, PromptChannel[]>`을 적으면 BE
   // `_EXPECTED_ROWS_BY_LANE`(admin/prompts.py)과 같은 사실의 두 번째 사본이 된다.
-  const channels = PROMPT_CHANNELS.filter((c) => draft.sections.some((s) => s.channel === c));
+  const channels = PROMPT_CHANNELS.filter(
+    (c) => isChannelEditableInLane(lane, c) && draft.sections.some((s) => s.channel === c),
+  );
   // ⚠️ 초기값을 `"system"` 리터럴로 고정하면 `system` 채널이 없는 `publish_filter` 레인이
   // 빈 화면이 된다(가장 조용한 회귀) — `channels[0]`에서 도출한다.
   const [activeChannel, setActiveChannel] = useState<PromptChannel>(() => channels[0] ?? "system");

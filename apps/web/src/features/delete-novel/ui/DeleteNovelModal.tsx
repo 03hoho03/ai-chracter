@@ -63,7 +63,7 @@ export const DeleteNovelModal = createCallable<DeleteNovelModalProps, boolean>((
         <DialogHeader>
           <DialogTitle className="break-keep">‘{title}’ 소설을 지울까요?</DialogTitle>
           <DialogDescription className="break-keep">
-            모든 장과 판 이력, 설정 노트가 함께 지워지고 되돌릴 수 없어요. 원래 대화방은 그대로예요.
+            모든 화와 판 이력, 설정 노트가 함께 지워지고 되돌릴 수 없어요. 원래 대화방은 그대로예요.
             {hasActiveJob === true && " 진행 중인 작업은 멈추고, 쓴 클로버는 돌려드려요."}
             {hasActiveJob === undefined && " 진행 중인 작업이 있으면 멈추고, 쓴 클로버는 돌려드려요."}
           </DialogDescription>

@@ -8,6 +8,7 @@ export const PROMPT_LANE_LABELS: Record<PromptLane, string> = {
   story: "스토리",
   character: "캐릭터",
   publish_filter: "발행 검열",
+  novel: "소설",
 };
 
 export function isPromptLane(value: string): value is PromptLane {

@@ -7,36 +7,36 @@ describe("toChapterNotice", () => {
     expect(toChapterNotice({ type: "started" })).toBeUndefined();
   });
 
-  it("되돌리면 몇 장을 몇 판으로 되돌렸는지 말한다", () => {
+  it("되돌리면 몇 화를 몇 판으로 되돌렸는지 말한다", () => {
     expect(toChapterNotice({ type: "restored", chapterOrdinal: 1, revisionNo: 2 })).toEqual({
       tone: "info",
-      message: "1장을 2판으로 되돌렸어요. 되돌리기 전 글도 판 이력에 남아요.",
+      message: "1화를 2판으로 되돌렸어요. 되돌리기 전 글도 판 이력에 남아요.",
     });
   });
 
-  it("수정안을 적용하면 그 장에 적용했다고 말한다", () => {
+  it("수정안을 적용하면 그 화에 적용했다고 말한다", () => {
     expect(toChapterNotice({ type: "applied", chapterOrdinal: 3 })).toEqual({
       tone: "info",
-      message: "3장에 수정안을 적용했어요. 이전 글은 판 이력에 남아요.",
+      message: "3화에 수정안을 적용했어요. 이전 글은 판 이력에 남아요.",
     });
   });
 
-  it("수정안을 버리면 몇 장의 수정안을 버렸는지 말한다", () => {
-    expect(toChapterNotice({ type: "dismissed", chapterOrdinal: 2 })).toEqual({ tone: "info", message: "2장 수정안을 버렸어요." });
+  it("수정안을 버리면 몇 화의 수정안을 버렸는지 말한다", () => {
+    expect(toChapterNotice({ type: "dismissed", chapterOrdinal: 2 })).toEqual({ tone: "info", message: "2화 수정안을 버렸어요." });
   });
 
-  it("직접 고치기의 세 끝(저장·바뀐 것 없음·그만둠)을 각각 몇 장의 일인지와 함께 말한다", () => {
+  it("직접 고치기의 세 끝(저장·바뀐 것 없음·그만둠)을 각각 몇 화의 일인지와 함께 말한다", () => {
     expect(toChapterNotice({ type: "manualSaved", chapterOrdinal: 1 })).toEqual({
       tone: "info",
-      message: "1장을 고쳐 저장했어요. 이전 글은 판 이력에 남아요.",
+      message: "1화를 고쳐 저장했어요. 이전 글은 판 이력에 남아요.",
     });
     expect(toChapterNotice({ type: "manualUnchanged", chapterOrdinal: 1 })).toEqual({
       tone: "info",
-      message: "1장은 바뀐 내용이 없어 그대로 두었어요.",
+      message: "1화는 바뀐 내용이 없어 그대로 두었어요.",
     });
     expect(toChapterNotice({ type: "manualCancelled", chapterOrdinal: 1 })).toEqual({
       tone: "info",
-      message: "1장 직접 고치기를 그만뒀어요.",
+      message: "1화 직접 고치기를 그만뒀어요.",
     });
   });
 

@@ -17,18 +17,23 @@ import { useDeleteLastChapterMutation } from "../api/useDeleteLastChapterMutatio
 
 type DeleteLastChapterModalProps = {
   novelId: string;
-  chapterId: string;
-  chapterOrdinal: number;
+  /** 지울 묶음 — 마지막에 한 번에 만든 화들. */
+  batchId: string;
+  /** 그 묶음의 화들. 지운 뒤 그 화들의 본문·판 캐시를 버린다. */
+  chapterIds: string[];
+  /** 그 화들의 이름(`3~5화`). */
+  rangeLabel: string;
 };
 
-/** 마지막 장 지우기 확인. 클로버를 쓰지 않고, 지우면 다음 장은 이 장이 시작한 대화부터 다시 만든다는 것을 확정
- * 전에 말한다. 이미 지워진 장(404)은 지운 것과 같다.
+/** 마지막 화 지우기 확인. 지우기는 마지막에 한 번에 만든 화들(묶음) 단위라 그 화가 여럿이면 함께 지워진다는 것을,
+ * 클로버를 쓰지 않는다는 것과 다음 화는 그 화들이 시작한 대화부터 다시 만든다는 것을 확정 전에 말한다. 이미 지워진
+ * 묶음·화(404)는 지운 것과 같다.
  *
- * 지운 뒤에는 상세를 먼저 다시 받아 화면이 그 장을 떠나게 하고, 그다음에 그 장의 본문·판 캐시를 버린다 — 순서를
- * 바꾸면 아직 그 장을 보던 화면이 본문을 다시 받아 404 를 그린다. 돌려주는 값은 지웠는가다(연 버튼이 그 장과 함께
+ * 지운 뒤에는 상세를 먼저 다시 받아 화면이 그 화들을 떠나게 하고, 그다음에 그 화들의 본문·판 캐시를 버린다 — 순서를
+ * 바꾸면 아직 그 화를 보던 화면이 본문을 다시 받아 404 를 그린다. 돌려주는 값은 지웠는가다(연 버튼이 그 화와 함께
  * 사라져 호출부가 포커스를 옮긴다). 실패 문장은 누른 순간 기록한 상태다. */
 export const DeleteLastChapterModal = createCallable<DeleteLastChapterModalProps, boolean>(
-  ({ call, novelId, chapterId, chapterOrdinal }) => {
+  ({ call, novelId, batchId, chapterIds, rangeLabel }) => {
     const queryClient = useQueryClient();
     const deleteMutation = useDeleteLastChapterMutation();
     const [error, setError] = useState<string | undefined>(undefined);
@@ -38,19 +43,21 @@ export const DeleteLastChapterModal = createCallable<DeleteLastChapterModalProps
       if (isDeleting) return;
       setError(undefined);
       try {
-        await deleteMutation.mutateAsync({ novelId, chapterId });
+        await deleteMutation.mutateAsync({ novelId, batchId });
       } catch (deleteError) {
-        if (!hasNovelErrorCode(deleteError, "NOVEL_CHAPTER_NOT_FOUND")) {
+        if (!hasNovelErrorCode(deleteError, "NOVEL_BATCH_NOT_FOUND")) {
           const notice = toNovelActionError(deleteError, "deleteChapter");
-          setError(notice?.message ?? "장을 지우지 못했어요. 잠시 후 다시 시도해주세요.");
-          // 진행 중 작업·마지막 장 아님 409 는 화면이 낡았다는 뜻이다 — 버튼 잠금과 목차를 맞춘다.
+          setError(notice?.message ?? "화를 지우지 못했어요. 잠시 후 다시 시도해주세요.");
+          // 진행 중 작업·마지막 묶음 아님 409 는 화면이 낡았다는 뜻이다 — 버튼 잠금과 목차를 맞춘다.
           if (notice?.shouldRefetchNovel) void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novelId) });
           return;
         }
       }
       await queryClient.invalidateQueries({ queryKey: novelKeys.detail(novelId) });
-      queryClient.removeQueries({ queryKey: novelKeys.chapterAll(novelId, chapterId) });
-      queryClient.removeQueries({ queryKey: novelKeys.revisions(novelId, chapterId) });
+      for (const chapterId of chapterIds) {
+        queryClient.removeQueries({ queryKey: novelKeys.chapterAll(novelId, chapterId) });
+        queryClient.removeQueries({ queryKey: novelKeys.revisions(novelId, chapterId) });
+      }
       void queryClient.invalidateQueries({ queryKey: novelKeys.list() });
       call.end(true);
     }
@@ -59,10 +66,13 @@ export const DeleteLastChapterModal = createCallable<DeleteLastChapterModalProps
       <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end(false)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>{chapterOrdinal}장을 지울까요?</DialogTitle>
+            <DialogTitle>{rangeLabel}를 지울까요?</DialogTitle>
             <DialogDescription className="break-keep">
-              이 장의 글과 판 이력이 지워지고 되돌릴 수 없어요. 다음 장은 이 장이 시작한 대화부터 다시 만들어요. 클로버는
-              쓰지 않아요.
+              {chapterIds.length > 1
+                ? `한 번에 함께 만든 ${rangeLabel}가 모두 지워져요. `
+                : ""}
+              글과 판 이력이 지워지고 되돌릴 수 없어요. 다음 화는 지운 화가 시작한 대화부터 다시 만들어요. 클로버는 쓰지
+              않아요.
             </DialogDescription>
           </DialogHeader>
 
@@ -83,7 +93,7 @@ export const DeleteLastChapterModal = createCallable<DeleteLastChapterModalProps
               className="aria-disabled:opacity-65"
               onClick={() => void handleDelete()}
             >
-              {isDeleting ? "지우는 중…" : "장 지우기"}
+              {isDeleting ? "지우는 중…" : `${rangeLabel} 지우기`}
             </Button>
           </DialogFooter>
         </DialogContent>

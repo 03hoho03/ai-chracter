@@ -28,10 +28,10 @@ export function NovelChapterMaker({ flow, hasChapters }: NovelChapterMakerProps)
   const isBlocked = flow.isBusy || flow.isRoomGone;
   const describedBy = blockedReason !== undefined ? reasonId : runningStatusId(flow);
   const isPreparingCreate = flow.preparing === "create";
-  const label = hasChapters ? "다음 장 만들기" : "첫 장 만들기";
+  const label = hasChapters ? "다음 화 만들기" : "첫 화 만들기";
 
   return (
-    <section aria-label="장 만들기" className="flex flex-col gap-3">
+    <section aria-label="화 만들기" className="flex flex-col gap-3">
       <div className="flex flex-col items-start gap-2">
         <Button
           ref={createButtonRef}
@@ -101,7 +101,7 @@ export function NovelChapterMaker({ flow, hasChapters }: NovelChapterMakerProps)
 /** 버튼 바로 아래에 둘 "왜 못 누르나". 장 작업이 도는 중이면 여기 말고 진행 줄이 그 몫을 진다. */
 function toBlockedReason(flow: NovelChapterJobFlow): string | undefined {
   if (flow.isRoomGone) return NOVEL_ROOM_GONE_MESSAGE;
-  if (flow.isAiEditRunning) return "AI로 고치는 중이에요. 끝나면 새 장을 만들 수 있어요.";
+  if (flow.isAiEditRunning) return "AI로 고치는 중이에요. 끝나면 새 화를 만들 수 있어요.";
   return undefined;
 }
 
@@ -112,11 +112,20 @@ function runningStatusId(flow: NovelChapterJobFlow): string | undefined {
 function toStatusText(flow: NovelChapterJobFlow): string {
   if (flow.isJobRunning) {
     if (flow.hasPollError) return "진행 상황을 확인하지 못하고 있어요. 잠시 뒤 다시 확인할게요.";
-    const subject =
-      flow.runningKind === "chapter_regenerate"
-        ? `${flow.runningChapterOrdinal === undefined ? "장" : `${flow.runningChapterOrdinal}장`}을 다시 쓰고 있어요.`
-        : "새 장을 쓰고 있어요.";
-    return `${subject} 이 화면을 떠나도 계속 써요.`;
+    return `${toRunningSubject(flow)} 이 화면을 떠나도 계속 써요.`;
   }
   return flow.notice?.tone === "done" ? flow.notice.message : "";
+}
+
+/** 진행 중인 작업이 무엇을 쓰고 있나. 남은 대화 한 번에(연쇄)는 이 화면이 시작하지 않지만 다른 화면에서 시작했으면
+ * 여기서도 진행 중으로 보인다 — 몇 번째 묶음인지까지는 말하지 않고 쓰고 있다는 것만 말한다. */
+function toRunningSubject(flow: NovelChapterJobFlow): string {
+  switch (flow.runningKind) {
+    case "chapter_regenerate":
+      return `${flow.runningRangeLabel ?? "화"}를 다시 쓰고 있어요.`;
+    case "chain_generate":
+      return "남은 대화를 소설로 쓰고 있어요.";
+    default:
+      return "새 화를 쓰고 있어요.";
+  }
 }

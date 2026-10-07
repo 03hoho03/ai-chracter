@@ -30,15 +30,25 @@ type PublishPromptSetDialogProps = {
 
 // 레인화로 "다음 채팅 턴부터"가 거짓이 되는 레인이 있다.
 // `publish_filter`는 채팅 턴이 아니라 제작자가 발행 버튼을 누를 때(다음 발행 심사부터) 읽힌다.
+// 소설 문안은 소설 레인으로 옮겨, 채팅 레인 게시가 소설에 닿는 것은 원문 줄의 화자 라벨과 등급 규칙뿐이다(소설 호출이
+// 그 둘은 원작 종류의 채팅 Gemini 세트에서 읽는다). 소설 레인 Gemini 세트는 경계 제안·문단 수정과 Gemini 로 쓰는 화
+// 생성에 읽힌다.
 const PUBLISH_EFFECT_COPY: Record<PromptLane, string> = {
-  story: "다음 채팅 턴과 소설화(장 경계 제안·장 생성·문단 수정)부터 전 서비스에 즉시 반영되고",
-  character: "다음 채팅 턴과 소설화(장 경계 제안·장 생성·문단 수정)부터 전 서비스에 즉시 반영되고",
+  story: "다음 채팅 턴부터 전 서비스에 즉시 반영되고(화자 라벨과 등급 규칙은 다음 소설 작업에도 쓰여요)",
+  character: "다음 채팅 턴부터 전 서비스에 즉시 반영되고(화자 라벨과 등급 규칙은 다음 소설 작업에도 쓰여요)",
   publish_filter: "다음 발행 심사부터 즉시 반영되고",
+  novel: "다음 소설 경계 제안·문단 수정과 Gemini 로 쓰는 다음 화 생성부터 즉시 반영되고",
 };
 
-// Claude 세트는 그 모델을 고른 방의 응답 생성에만 읽힌다 — 판정·요약·소설화는 Gemini 세트라 위 문구가 거짓이 된다. 상위
-// 모델이 꺼져 있으면 그런 방의 턴도 Gemini 로 돌아 게시해도 아무 데도 쓰이지 않는다.
-const CLAUDE_PUBLISH_EFFECT_COPY = "이 모델을 고른 방의 다음 채팅 턴 응답 생성부터 즉시 반영되고(상위 모델이 꺼져 있으면 쓰이지 않아요)";
+/** Claude 세트는 레인마다 읽히는 자리가 하나뿐이라 문구가 레인을 따른다. 채팅 레인은 그 모델을 고른 방의 응답 생성에만
+ * 읽히고(판정·요약은 Gemini 세트), 소설 레인은 그 모델로 쓰는 화 생성에만 읽힌다(경계 제안·문단 수정은 Gemini 세트).
+ * 상위 모델이 꺼져 있거나 허용이 없으면 그 자리도 Gemini 로 돌아 게시해도 아무 데도 쓰이지 않는다. */
+function toClaudePublishEffectCopy(lane: PromptLane): string {
+  if (lane === "novel") {
+    return "이 모델로 쓰는 다음 소설 화 생성부터 즉시 반영되고(상위 모델이 꺼져 있거나 허용이 없으면 쓰이지 않아요)";
+  }
+  return "이 모델을 고른 방의 다음 채팅 턴 응답 생성부터 즉시 반영되고(상위 모델이 꺼져 있으면 쓰이지 않아요)";
+}
 
 /** 게시는 전 서비스 채팅에 즉시 반영되는 되돌리기 어려운 행동이라 다이얼로그로 한 번
  * 더 확인받는다 — legal의 `PublishDialog`와 같은 어휘(react-call, 자체 호출형). 버전은
@@ -83,7 +93,7 @@ export const PublishPromptSetDialog = createCallable<PublishPromptSetDialogProps
           <DialogTitle>프롬프트 세트 게시</DialogTitle>
           <DialogDescription className="break-keep">
             지금 저장된 <span className="font-medium text-foreground">{chainName}</span> 초안을 새 버전으로
-            게시해요. {model === "gemini" ? PUBLISH_EFFECT_COPY[lane] : CLAUDE_PUBLISH_EFFECT_COPY}, 초안은 게시
+            게시해요. {model === "gemini" ? PUBLISH_EFFECT_COPY[lane] : toClaudePublishEffectCopy(lane)}, 초안은 게시
             후에도 그대로 남아요.
           </DialogDescription>
         </DialogHeader>

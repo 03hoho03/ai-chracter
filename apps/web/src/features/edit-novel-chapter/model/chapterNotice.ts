@@ -21,19 +21,19 @@ export function toChapterNotice(event: ChapterNoticeEvent): ChapterNotice | unde
     case "started":
       return undefined;
     case "manualSaved":
-      return { tone: "info", message: `${event.chapterOrdinal}장을 고쳐 저장했어요. 이전 글은 판 이력에 남아요.` };
+      return { tone: "info", message: `${event.chapterOrdinal}화를 고쳐 저장했어요. 이전 글은 판 이력에 남아요.` };
     case "manualUnchanged":
-      return { tone: "info", message: `${event.chapterOrdinal}장은 바뀐 내용이 없어 그대로 두었어요.` };
+      return { tone: "info", message: `${event.chapterOrdinal}화는 바뀐 내용이 없어 그대로 두었어요.` };
     case "manualCancelled":
-      return { tone: "info", message: `${event.chapterOrdinal}장 직접 고치기를 그만뒀어요.` };
+      return { tone: "info", message: `${event.chapterOrdinal}화 직접 고치기를 그만뒀어요.` };
     case "applied":
-      return { tone: "info", message: `${event.chapterOrdinal}장에 수정안을 적용했어요. 이전 글은 판 이력에 남아요.` };
+      return { tone: "info", message: `${event.chapterOrdinal}화에 수정안을 적용했어요. 이전 글은 판 이력에 남아요.` };
     case "dismissed":
-      return { tone: "info", message: `${event.chapterOrdinal}장 수정안을 버렸어요.` };
+      return { tone: "info", message: `${event.chapterOrdinal}화 수정안을 버렸어요.` };
     case "restored":
       return {
         tone: "info",
-        message: `${event.chapterOrdinal}장을 ${event.revisionNo}판으로 되돌렸어요. 되돌리기 전 글도 판 이력에 남아요.`,
+        message: `${event.chapterOrdinal}화를 ${event.revisionNo}판으로 되돌렸어요. 되돌리기 전 글도 판 이력에 남아요.`,
       };
     case "rejected":
       return { tone: "error", message: event.message };

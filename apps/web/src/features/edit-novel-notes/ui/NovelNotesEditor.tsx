@@ -16,7 +16,7 @@ type NovelNotesEditorProps = {
   novel: NovelDetailResponse;
 };
 
-/** 설정 노트 — 소설 내내 지켜야 할 짧은 사실을 한 줄씩. 다음 장을 만들 때와 AI로 고칠 때 함께 전해진다.
+/** 설정 노트 — 소설 내내 지켜야 할 짧은 사실을 한 줄씩. 다음 화를 만들 때와 AI로 고칠 때 함께 전해진다.
  *
  * 저장 버튼으로만 저장한다(입력마다 저장하지 않는다 — 노트는 다음 작업을 부를 때만 쓰여 고치는 도중 값이 서버에
  * 있을 이유가 없다). 기준값은 처음 한 번 굳히고, 저장하면 응답으로 다시 굳힌다 — 쓰는 도중 상세를 다시 받아도
@@ -50,7 +50,7 @@ export function NovelNotesEditor({ novel }: NovelNotesEditorProps) {
     try {
       const saved = await saveMutation.mutateAsync({ novelId: novel.id, ...formToServer(values) });
       form.reset(serverToForm(saved.settingNotes));
-      setResult({ tone: "done", message: "설정 노트를 저장했어요. 다음 장과 AI 수정부터 반영돼요." });
+      setResult({ tone: "done", message: "설정 노트를 저장했어요. 다음 화와 AI 수정부터 반영돼요." });
     } catch (error) {
       const notice = toNovelActionError(error, "notes");
       // 재동의가 필요하면 전역 재동의 모달이 맡는다. 쓴 글은 그대로 남아 동의 뒤 다시 저장할 수 있다.
@@ -77,7 +77,7 @@ export function NovelNotesEditor({ novel }: NovelNotesEditorProps) {
           설정 노트
         </h2>
         <p id={descriptionId} className="text-sm break-keep text-muted-foreground">
-          이름·관계·말버릇처럼 소설 내내 지켜야 할 사실을 한 줄에 하나씩 적어주세요. 다음 장을 만들 때와 AI로 고칠 때
+          이름·관계·말버릇처럼 소설 내내 지켜야 할 사실을 한 줄에 하나씩 적어주세요. 다음 화를 만들 때와 AI로 고칠 때
           함께 전해요.
         </p>
       </div>

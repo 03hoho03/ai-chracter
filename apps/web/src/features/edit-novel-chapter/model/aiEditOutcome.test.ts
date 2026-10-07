@@ -17,17 +17,17 @@ describe("toAiEditOutcome", () => {
     });
   });
 
-  it("본문이 비었고 장이 없으면 장이 지워졌다", () => {
+  it("본문이 비었고 화가 없으면 화가 지워졌다", () => {
     expect(toAiEditOutcome({ revisionId: null, chapterId: null, aiEdit: emptied })).toEqual({
       kind: "unavailable",
-      message: "장이 지워져 수정안을 쓸 수 없어요.",
+      message: "화가 지워져 수정안을 쓸 수 없어요.",
     });
   });
 
-  it("그 밖의 빈 본문은 장이 바뀐 것이다", () => {
+  it("그 밖의 빈 본문은 화가 바뀐 것이다", () => {
     expect(toAiEditOutcome({ revisionId: null, chapterId: "c1", aiEdit: emptied })).toEqual({
       kind: "unavailable",
-      message: "그사이 장이 바뀌어 이 수정안은 적용할 수 없어요.",
+      message: "그사이 화가 바뀌어 이 수정안은 적용할 수 없어요.",
     });
   });
 

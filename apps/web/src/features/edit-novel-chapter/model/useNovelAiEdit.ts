@@ -150,7 +150,7 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
     const ordinal = novel.chapters.find((chapter) => chapter.id === finished.chapterId)?.ordinal;
     setNotice({
       tone: "info",
-      message: `${ordinal === undefined ? "" : `${ordinal}장 `}수정안이 왔어요. 고른 문단 아래에서 적용하거나 버릴 수 있어요.`,
+      message: `${ordinal === undefined ? "" : `${ordinal}화 `}수정안이 왔어요. 고른 문단 아래에서 적용하거나 버릴 수 있어요.`,
     });
   }
 
@@ -182,7 +182,7 @@ export function useNovelAiEdit({ novel, confirmSpend, isChapterJobBusy }: UseNov
       setLastInstruction(instruction);
       const cost = novel.prices.aiEdit;
       const isConfirmed = await confirmSpend({
-        title: `${target.chapterOrdinal}장 ${rangeLabel}을 AI로 고칠까요?`,
+        title: `${target.chapterOrdinal}화 ${rangeLabel}을 AI로 고칠까요?`,
         description:
           "적은 대로 고친 수정안을 만들어요. 수정안은 적용하기 전까지 본문을 바꾸지 않아요. 마음에 들지 않아 버려도 쓴 클로버는 돌려드리지 않아요.",
         cost,

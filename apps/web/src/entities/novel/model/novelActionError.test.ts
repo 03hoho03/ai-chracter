@@ -29,6 +29,16 @@ const SERVER_CODES: [number, string][] = [
   [409, "NOVEL_NOTHING_NEW"],
   [422, "NOVEL_CHAPTER_END_INVALID"],
   [409, "NOVEL_CHAPTER_NOT_LAST"],
+  [404, "NOVEL_BATCH_NOT_FOUND"],
+  [409, "NOVEL_BATCH_NOT_LAST"],
+  [409, "NOVEL_MODEL_INELIGIBLE"],
+  [422, "NOVEL_COVER_INVALID"],
+  [404, "NOVEL_CHARACTER_NOT_FOUND"],
+  [409, "NOVEL_CHARACTER_NAME_TAKEN"],
+  [422, "NOVEL_CHARACTER_MERGE_SELF"],
+  [404, "NOVEL_SNAPSHOT_NOT_FOUND"],
+  [409, "NOVEL_SNAPSHOT_LIMIT"],
+  [422, "NOVEL_BOARD_LAYOUT_TOO_LARGE"],
   [422, "NOVEL_PARAGRAPH_RANGE_INVALID"],
   [409, "NOVEL_JOB_NOT_APPLICABLE"],
   [409, "NOVEL_REVISION_CONFLICT"],
@@ -53,8 +63,21 @@ describe("toNovelActionError", () => {
 
   it("원문 변경 409 는 다시 만들 수 없다고 말한다", () => {
     expect(toNovelActionError(apiError(409, { code: "NOVEL_SOURCE_CHANGED" }), "regenerate")?.message).toBe(
-      "원래 대화가 바뀌어 이 장은 다시 만들 수 없어요.",
+      "원래 대화가 바뀌어 이 화는 다시 만들 수 없어요.",
     );
+  });
+
+  // 서버가 이유를 실어 주면 고른 모델이 왜 안 되는지 말한다. 다시 받은 상세가 그 모델을 비활성 + 이유로 보인다.
+  it("모델 부적격 409 는 이유에 따라 문장을 고르고 상세를 다시 받는다", () => {
+    const turns = toNovelActionError(apiError(409, { code: "NOVEL_MODEL_INELIGIBLE", reason: "too_many_turns" }), "regenerate");
+    const episodes = toNovelActionError(
+      apiError(409, { code: "NOVEL_MODEL_INELIGIBLE", reason: "too_many_episodes" }),
+      "regenerate",
+    );
+    expect(turns?.message).toContain("대화가 길어");
+    expect(episodes?.message).toContain("화가 많아");
+    expect(turns?.shouldRefetchNovel).toBe(true);
+    expect(episodes?.shouldRefetchNovel).toBe(true);
   });
 
   // 재생성도 이 코드를 받는다(상세를 받은 뒤 방이 지워진 경우) — 만들기 버튼 아래 사유 문장과 같은 문장이어야
@@ -157,20 +180,31 @@ describe("isProtagonistNameRequiredError", () => {
 });
 
 describe("toNovelJobFailureMessage", () => {
-  const base = { kind: "chapter_generate", failureReason: "llm_error", refunded: true, chargedAmount: 20 } as const;
+  const base = { kind: "chapter_generate", failureReason: "llm_error", refundedAmount: 120 } as const;
 
-  it("환불한 클로버 수를 말한다", () => {
-    expect(toNovelJobFailureMessage(base)).toBe("새 장을 만들지 못했어요. 쓴 클로버 20개는 돌려드렸어요.");
+  // 묶음·연쇄는 낸 금액과 돌려준 금액이 다를 수 있다 — 서버가 적은 환불액을 그대로 말한다.
+  it("서버가 돌려준 클로버 수를 말한다", () => {
+    expect(toNovelJobFailureMessage(base)).toBe("새 화를 만들지 못했어요. 쓴 클로버 120개는 돌려드렸어요.");
+    expect(toNovelJobFailureMessage({ ...base, kind: "chain_generate", refundedAmount: 45 })).toBe(
+      "남은 대화를 소설로 만들지 못했어요. 쓴 클로버 45개는 돌려드렸어요.",
+    );
   });
 
-  it("환불하지 않았으면 환불을 말하지 않는다", () => {
-    expect(toNovelJobFailureMessage({ ...base, refunded: false })).not.toContain("돌려드렸어요");
+  it("돌려준 것이 없으면 환불을 말하지 않는다", () => {
+    expect(toNovelJobFailureMessage({ ...base, refundedAmount: 0 })).not.toContain("돌려드렸어요");
   });
 
   it("재생성이 원문 변경으로 실패하면 다시 만들 수 없다고 말한다", () => {
     expect(toNovelJobFailureMessage({ ...base, kind: "chapter_regenerate", failureReason: "source_changed" })).toContain(
-      "원래 대화가 바뀌어 이 장은 다시 만들 수 없어요.",
+      "원래 대화가 바뀌어 이 화는 다시 만들 수 없어요.",
     );
+  });
+
+  it("글 형식·화 수가 어긋난 실패는 그 사유를 말한다", () => {
+    expect(toNovelJobFailureMessage({ ...base, failureReason: "malformed" })).toContain("형식");
+    expect(
+      toNovelJobFailureMessage({ ...base, kind: "chapter_regenerate", failureReason: "episode_count_mismatch" }),
+    ).toContain("화 수");
   });
 
   it("안전 차단은 그 사유를 말한다", () => {

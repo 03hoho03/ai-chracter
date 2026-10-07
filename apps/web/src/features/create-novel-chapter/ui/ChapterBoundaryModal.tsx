@@ -17,84 +17,129 @@ import {
   SheetTitle,
 } from "@ai-character-chat/ui/components/sheet";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
+import { Loader2 } from "lucide-react";
 import { useId, useRef, useState } from "react";
 
 import { CloverSpendSummary, useCloverBalanceQuery } from "@/entities/clover";
 import {
   ChapterModelSelect,
-  chapterModelCost,
-  initialChapterModelId,
+  hasChapterModelChoice,
+  toEpisodeRangeLabel,
+  toNovelActionError,
+  type ChapterModelOption,
   type NovelChapterModelId,
 } from "@/entities/novel";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
-import type { NovelChapterProposal } from "../api/useChapterProposalMutation";
+import { useChapterProposalMutation, type NovelChapterProposal } from "../api/useChapterProposalMutation";
 import { useIsChapterBoundaryDialogLayout } from "../lib/useIsChapterBoundaryDialogLayout";
-import { toInitialChapterEnd } from "../model/chapterBoundarySelection";
+import { toChapterEndAfterModelChange, toInitialChapterEnd } from "../model/chapterBoundarySelection";
 
 type ChapterBoundaryModalProps = {
+  novelId: string;
+  /** `initialModelId` 로 받은 제안. 모델을 바꾸면 모달이 그 모델로 다시 받는다. */
   proposal: NovelChapterProposal;
-  /** 만들 장의 번호(지금 마지막 장 + 1). */
-  chapterOrdinal: number;
-  /** 이 소설이 직전에 쓴 글쓰기 모델(상세의 값). 모델 선택이 이 값으로 골라진 채 열린다. */
-  lastChapterModel: NovelChapterModelId | undefined;
+  /** 고를 수 있는 글쓰기 모델. 하나뿐이면 모델 선택이 그려지지 않는다. */
+  modelOptions: ChapterModelOption[];
+  initialModelId: NovelChapterModelId;
+  /** 만들 화들 중 첫 화의 번호(지금 마지막 화 + 1). */
+  firstEpisodeOrdinal: number;
 };
 
-/** 확정한 끝 턴, 그 장을 쓸 모델, 이용자가 본 금액. 모델 선택이 보이지 않는 계정도 요청에는 늘 모델을 싣는다(기본
+/** 확정한 끝 턴, 그 화들을 쓸 모델, 이용자가 본 금액. 모델 선택이 보이지 않는 계정도 요청에는 늘 모델을 싣는다(기본
  * 모델). 금액을 함께 돌려주는 이유는 요청의 `expectedCost` 가 화면에 보인 숫자와 같은 값이어야 해서다. */
 export type ChapterBoundaryChoice = { endMessageId: string; model: NovelChapterModelId; cost: number };
 
 const LIST_LABEL = "고를 수 있는 턴";
 
-/** 다음 장을 어느 턴에서 끝낼지 고르고, 그 자리에서 금액을 확인한다. 고른 턴의 AI 응답 id 와 쓸 모델을 돌려주고,
+/** 다음 화들을 어느 턴에서 끝낼지 고르고, 그 자리에서 금액을 확인한다. 고른 턴의 AI 응답 id 와 쓸 모델을 돌려주고,
  * 그만두면 `null` 이다.
  *
- * 금액 확인을 따로 띄우지 않고 여기서 받는 이유: 장 생성은 경계를 확인하는 단계에서 금액을 보이고 동의를 받기로
+ * 금액 확인을 따로 띄우지 않고 여기서 받는 이유: 화 생성은 경계를 확인하는 단계에서 금액을 보이고 동의를 받기로
  * 했다. 고른 직후 같은 화면에 "클로버 N개를 써요"와 잔액이 있으니 실행 버튼이 곧 동의이고, 모달을 하나 더 띄우면
- * 같은 결정을 두 번 묻는다. 단가는 제안 응답의 이 순간 서버 값이다 — 고른 모델의 가격(`chapterModels`), 그 목록이
- * 없는 서버면 `cost`.
+ * 같은 결정을 두 번 묻는다.
  *
- * 소설 상위 모델 허용이 있으면 금액 줄 위에 모델 선택이 생기고, 금액이 고른 모델을 따라 바뀐다. 허용이 없으면 모델이
+ * 모델을 먼저 고른다 — 모델마다 한 번에 담을 수 있는 턴 수가 달라, 후보 목록과 AI 제안, 후보마다의 화 수와 금액이
+ * 모델을 따라 바뀐다. 그래서 모델을 바꾸면 그 모델로 제안을 다시 받고, 받는 동안은 고르기·실행을 막는다. 금액은
+ * 고른 후보에 서버가 붙인 값 그대로다(화면에서 화 수와 단가를 곱하지 않는다). 소설 상위 모델 허용이 없으면 모델이
  * 하나뿐이라 선택이 그려지지 않는다.
  *
  * 좁은 화면은 아래 시트, 넓은 화면은 가운데 다이얼로그다 — 둘 중 하나만 마운트한다(포털·포커스 가둠 때문에 공존할
  * 수 없다). 고른 값은 이 컴포넌트가 쥐므로 열린 채 화면 폭이 바뀌어도 남는다. */
 export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, ChapterBoundaryChoice | null>(
-  ({ call, proposal, chapterOrdinal, lastChapterModel }) => {
+  ({ call, novelId, proposal: initialProposal, modelOptions, initialModelId, firstEpisodeOrdinal }) => {
     const isDialogLayout = useIsChapterBoundaryDialogLayout();
     const { data: clover } = useCloverBalanceQuery();
-    const [selectedId, setSelectedId] = useState(() => toInitialChapterEnd(proposal));
-    const models = proposal.chapterModels ?? [];
-    const [modelId, setModelId] = useState(() => initialChapterModelId(models, lastChapterModel));
-    const cost = chapterModelCost(models, modelId, "generate", proposal.cost);
+    const proposalMutation = useChapterProposalMutation();
+    const [proposal, setProposal] = useState(initialProposal);
+    const [selectedId, setSelectedId] = useState(() => toInitialChapterEnd(initialProposal));
+    const [modelId, setModelId] = useState(initialModelId);
+    // 바꾼 모델의 제안을 받는 중인가와 실패 문장. 여러 번 바꾸면 마지막 요청의 응답만 쓴다. 받는 동안 선택·목록을
+    // `disabled` 로 잠그지 않는다 — 방금 누른 셀렉트가 비활성이 되면 포커스가 문서 처음으로 떨어진다. 대신 고르기와
+    // 실행을 무시하고 실행 버튼을 `aria-disabled` 로 둔다.
+    const [isReloading, setIsReloading] = useState(false);
+    const [reloadError, setReloadError] = useState<string | undefined>(undefined);
+    const latestRequestRef = useRef(0);
     // 고르지 않고 실행을 눌렀을 때의 안내. 한 번 띄우면 고를 때까지 남는다(렌더 때 파생하지 않는다 — 처음 열었을
     // 때부터 "골라주세요" 오류가 떠 있으면 아직 아무것도 안 한 이용자를 탓하는 셈이다).
     const [isSelectionMissing, setIsSelectionMissing] = useState(false);
     const listRef = useRef<HTMLDivElement>(null);
     const errorId = useId();
+    const statusId = useId();
 
-    const title = `${chapterOrdinal}장을 어디까지 담을까요?`;
+    const selected = proposal.candidates.find((candidate) => candidate.messageId === selectedId);
+    const toRange = (episodeCount: number) =>
+      toEpisodeRangeLabel(firstEpisodeOrdinal, firstEpisodeOrdinal + episodeCount - 1);
+    const title = `${firstEpisodeOrdinal}화부터 어디까지 담을까요?`;
     const suggestedOrdinal = proposal.candidates.find(
       (candidate) => candidate.messageId === proposal.suggestion?.endMessageId,
     )?.ordinal;
     const description =
       suggestedOrdinal === undefined
-        ? "끝낼 턴을 골라주세요. 고른 턴까지의 대화가 한 장이 돼요."
+        ? "끝낼 턴을 골라주세요. 고른 턴까지의 대화가 분량에 따라 한 화 이상이 돼요."
         : `AI가 ${suggestedOrdinal}번째 턴에서 끊기를 제안했어요. 그대로 두거나 다른 턴을 골라주세요.`;
+
+    async function handleModelChange(next: NovelChapterModelId) {
+      if (next === modelId) return;
+      const previous = modelId;
+      const requestNo = latestRequestRef.current + 1;
+      latestRequestRef.current = requestNo;
+      setModelId(next);
+      setReloadError(undefined);
+      setIsReloading(true);
+      try {
+        const fresh = await proposalMutation.mutateAsync({ novelId, model: next });
+        if (requestNo !== latestRequestRef.current) return;
+        setProposal(fresh);
+        setSelectedId((current) => toChapterEndAfterModelChange(current, fresh));
+        setIsSelectionMissing(false);
+      } catch (error) {
+        if (requestNo !== latestRequestRef.current) return;
+        // 받은 후보·금액은 앞 모델의 것이라 모델 선택도 앞 모델로 되돌린다 — 둘이 어긋난 채 실행하면 다른 모델의 금액을
+        // 확인받는 셈이다.
+        setModelId(previous);
+        setReloadError(
+          toNovelActionError(error, "proposal")?.message ?? "이 모델의 후보를 받지 못했어요. 잠시 후 다시 시도해주세요.",
+        );
+      } finally {
+        if (requestNo === latestRequestRef.current) setIsReloading(false);
+      }
+    }
 
     function handleSelect(value: string) {
       // 단일 토글 그룹은 고른 항목을 다시 누르면 빈 값을 보낸다 — 끝 턴은 늘 하나라 해제를 받지 않는다.
-      if (value === "") return;
+      if (value === "" || isReloading) return;
       setSelectedId(value);
       setIsSelectionMissing(false);
     }
 
     function handleConfirm() {
-      if (selectedId === undefined) {
+      if (isReloading) return;
+      if (selected === undefined) {
         setIsSelectionMissing(true);
         return;
       }
-      call.end({ endMessageId: selectedId, model: modelId, cost });
+      call.end({ endMessageId: selected.messageId, model: modelId, cost: selected.cost });
     }
 
     // 열리면 골라 둔 턴(없으면 첫 턴)으로 포커스를 보낸다 — 기본 동작은 닫기 X 로 가고, 제안 턴이 목록 아래쪽이면
@@ -109,14 +154,14 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, Ch
     }
 
     const list = (
-      <div ref={listRef} className="flex flex-col gap-1.5">
+      <div ref={listRef} aria-busy={isReloading} className="flex flex-col gap-1.5">
         <ToggleGroup
           type="single"
           variant="list"
           orientation="vertical"
           value={selectedId ?? ""}
           onValueChange={handleSelect}
-          aria-label="장을 끝낼 턴"
+          aria-label="화를 끝낼 턴"
           aria-invalid={isSelectionMissing}
           aria-describedby={isSelectionMissing ? errorId : undefined}
           className="w-full"
@@ -133,6 +178,9 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, Ch
               >
                 <span className="flex items-center gap-2">
                   <span className="font-semibold tabular-nums">{candidate.ordinal}번째 턴</span>
+                  <span className="text-xs font-normal text-muted-foreground tabular-nums">
+                    {toRange(candidate.episodeCount)}
+                  </span>
                   {isSuggested && (
                     <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-badge font-medium">
                       제안
@@ -159,13 +207,39 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, Ch
       </div>
     );
 
-    const summary = (
-      <>
-        <ChapterModelSelect models={models} value={modelId} onValueChange={setModelId} kind="generate" />
-        <CloverSpendSummary cost={cost} balance={clover?.balance} />
-      </>
-    );
-    const confirmLabel = `${chapterOrdinal}장 만들기`;
+    // 모델 선택과 그 아래 받는 중·실패 줄. 고를 모델이 하나뿐이면 다시 받을 일이 없어 둘 다 그리지 않는다 — 화면이 이
+    // 선택이 생기기 전과 같다. 진행 줄은 선택이 있는 동안 늘 마운트된 `aria-live` 다(붙는 순간의 문장을 화면 낭독기가
+    // 놓치지 않게). 스피너는 진행 표시라 동작 줄이기 설정에서도 돈다(멈추면 멈춘 화면으로 읽힌다). 실패 문장은 앞
+    // 모델로 되돌렸다는 뜻으로 그 자리에 남는다.
+    const modelPicker = hasChapterModelChoice(modelOptions) ? (
+      <div className="flex flex-col gap-1.5">
+        <ChapterModelSelect
+          options={modelOptions}
+          value={modelId}
+          onValueChange={(next) => void handleModelChange(next)}
+        />
+        <p id={statusId} aria-live="polite" className="text-sm break-keep text-muted-foreground">
+          {isReloading && (
+            <span className="inline-flex items-center gap-1.5">
+              <Loader2 aria-hidden className="size-4 animate-spin" />이 모델로 고를 수 있는 턴을 다시 받는 중이에요.
+            </span>
+          )}
+          {!isReloading && reloadError !== undefined && <span className="text-destructive-text">{reloadError}</span>}
+        </p>
+      </div>
+    ) : null;
+    const summary =
+      selected === undefined ? (
+        <p className="text-sm break-keep text-muted-foreground">끝낼 턴을 고르면 몇 화가 되는지와 금액이 보여요.</p>
+      ) : (
+        <CloverSpendSummary cost={selected.cost} balance={clover?.balance} />
+      );
+    const confirmLabel = selected === undefined ? "만들기" : `${toRange(selected.episodeCount)} 만들기`;
+    const confirmButtonProps = {
+      "aria-disabled": isReloading,
+      "aria-describedby": isReloading ? statusId : undefined,
+      className: "aria-disabled:opacity-65",
+    };
 
     if (isDialogLayout) {
       return (
@@ -175,6 +249,7 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, Ch
               <DialogTitle className="break-keep">{title}</DialogTitle>
               <DialogDescription className="break-keep">{description}</DialogDescription>
             </DialogHeader>
+            {modelPicker}
             <DialogBody scrollLabel={LIST_LABEL}>{list}</DialogBody>
             {/* 금액은 목록 밖에 고정한다 — 목록을 내려 읽는 동안에도 누르면 얼마가 빠지는지가 보인다. */}
             {summary}
@@ -182,7 +257,7 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, Ch
               <Button type="button" variant="outline" onClick={() => call.end(null)}>
                 취소
               </Button>
-              <Button type="button" onClick={handleConfirm}>
+              <Button type="button" {...confirmButtonProps} onClick={handleConfirm}>
                 {confirmLabel}
               </Button>
             </DialogFooter>
@@ -199,6 +274,7 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, Ch
             <SheetTitle className="break-keep">{title}</SheetTitle>
             <SheetDescription className="break-keep">{description}</SheetDescription>
           </SheetHeader>
+          {modelPicker !== null && <div className="px-4 pb-4">{modelPicker}</div>}
           {/* 다이얼로그의 `DialogBody scrollLabel` 과 같은 몫 — 닫기 X 가 목록 밖이라 목록 자체가 Tab 정지이자 이름
               있는 영역이어야 키보드로 스크롤할 수 있다. 포커스 표시도 같은 안쪽 outline 이다. */}
           <div
@@ -215,7 +291,7 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, Ch
               <Button type="button" variant="outline" className="flex-1" onClick={() => call.end(null)}>
                 취소
               </Button>
-              <Button type="button" className="flex-1" onClick={handleConfirm}>
+              <Button type="button" {...confirmButtonProps} className="flex-1 aria-disabled:opacity-65" onClick={handleConfirm}>
                 {confirmLabel}
               </Button>
             </div>

@@ -54,7 +54,8 @@ export const NovelRevisionHistoryModal = createCallable<NovelRevisionHistoryModa
     const revisionsQuery = useNovelRevisionsQuery(novelId, chapterId);
     const restoreMutation = useRestoreRevisionMutation();
     const novelQuery = useNovelQuery(novelId);
-    const isRegenerating = isChapterRegenerating(novelQuery.data?.activeJob ?? null, chapterId);
+    const batchId = novelQuery.data?.chapters.find((item) => item.id === chapterId)?.batchId;
+    const isRegenerating = isChapterRegenerating(novelQuery.data?.activeJob ?? null, chapterId, batchId);
     const [expandedId, setExpandedId] = useState<string | undefined>(undefined);
     const [restoreError, setRestoreError] = useState<string | undefined>(undefined);
     const revisions = revisionsQuery.data ?? [];
@@ -89,7 +90,7 @@ export const NovelRevisionHistoryModal = createCallable<NovelRevisionHistoryModa
       <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end(null)}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{chapterOrdinal}장 판 이력</DialogTitle>
+            <DialogTitle>{chapterOrdinal}화 판 이력</DialogTitle>
             <DialogDescription className="break-keep">
               판을 펼쳐 그때의 글을 볼 수 있어요. 옛 판으로 되돌리면 그 글이 새 판으로 쌓이고, 지금 글도 이력에 남아요.
             </DialogDescription>
@@ -269,7 +270,7 @@ function RevisionRow({
           )}
           {!isCurrent && hasPendingAiEdits && (
             <p id={pendingNoteId} className="text-sm break-keep text-muted-foreground">
-              되돌리면 이 장에서 적용하지 않은 AI 수정안은 사라지고, 쓴 클로버는 돌아오지 않아요.
+              되돌리면 이 화에서 적용하지 않은 AI 수정안은 사라지고, 쓴 클로버는 돌아오지 않아요.
             </p>
           )}
           {!isCurrent && (

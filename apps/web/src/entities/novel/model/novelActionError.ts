@@ -27,23 +27,23 @@ export type NovelActionErrorNotice = {
 };
 
 const ACTION_OBJECT: Record<NovelAction, string> = {
-  proposal: "다음 장을 준비하지",
-  generate: "장을 만들지",
-  regenerate: "장을 다시 만들지",
+  proposal: "다음 화를 준비하지",
+  generate: "화를 만들지",
+  regenerate: "화를 다시 만들지",
   aiEdit: "AI로 고치지",
   applyAiEdit: "수정안을 적용하지",
   dismissAiEdit: "수정안을 버리지",
   edit: "고친 내용을 저장하지",
   restore: "이 판으로 되돌리지",
   notes: "설정 노트를 저장하지",
-  deleteChapter: "장을 지우지",
+  deleteChapter: "화를 지우지",
   deleteNovel: "소설을 지우지",
   protagonistName: "주인공 이름을 저장하지",
 };
 
-/** 원래 대화방이 지워져 장을 만들 수도 다시 만들 수도 없을 때의 문장. 만들기 버튼 아래 사유 문장과 두 요청의 409 가
+/** 원래 대화방이 지워져 화를 만들 수도 다시 만들 수도 없을 때의 문장. 만들기 버튼 아래 사유 문장과 두 요청의 409 가
  * 같은 문장을 쓴다 — 409 문구는 요청 종류를 보지 않아서, 만들기만 말하면 다시 만들기에서 받았을 때 틀린 말이 된다. */
-export const NOVEL_ROOM_GONE_MESSAGE = "원래 대화방이 지워져 새 장을 만들거나 다시 만들 수 없어요.";
+export const NOVEL_ROOM_GONE_MESSAGE = "원래 대화방이 지워져 새 화를 만들거나 다시 만들 수 없어요.";
 
 /** 코드 → 문구. 기다려도 풀리지 않는 거부는 "다시 시도"를 말하지 않고, 이용자가 할 수 있는 다음 일을 말한다. */
 const MESSAGE_BY_CODE: Record<string, NovelActionErrorNotice> = {
@@ -59,19 +59,21 @@ const MESSAGE_BY_CODE: Record<string, NovelActionErrorNotice> = {
   NOVEL_FORBIDDEN: { message: "이 계정의 소설이 아니에요.", shouldRefetchNovel: true },
   NOVEL_CURSOR_INVALID: { message: "목록을 처음부터 다시 불러와주세요.", shouldRefetchNovel: false },
   NOVEL_JOB_NOT_FOUND: { message: "작업을 찾을 수 없어요. 소설을 다시 불러왔어요.", shouldRefetchNovel: true },
-  NOVEL_CHAPTER_NOT_FOUND: { message: "이 장이 지워졌어요. 소설을 다시 불러왔어요.", shouldRefetchNovel: true },
+  NOVEL_CHAPTER_NOT_FOUND: { message: "이 화가 지워졌어요. 소설을 다시 불러왔어요.", shouldRefetchNovel: true },
+  NOVEL_BATCH_NOT_FOUND: { message: "함께 만든 화들이 지워졌어요. 소설을 다시 불러왔어요.", shouldRefetchNovel: true },
   NOVEL_REVISION_NOT_FOUND: { message: "이 판을 찾을 수 없어요. 소설을 다시 불러왔어요.", shouldRefetchNovel: true },
   NOVEL_ROOM_GONE: { message: NOVEL_ROOM_GONE_MESSAGE, shouldRefetchNovel: true },
   NOVEL_PROTAGONIST_NAME_REQUIRED: { message: "주인공 이름을 먼저 정해주세요.", shouldRefetchNovel: true },
   NOVEL_NOTHING_NEW: {
-    message: "장으로 묶을 새 대화가 없어요. 대화를 더 이어 간 뒤 만들어주세요.",
+    message: "화로 묶을 새 대화가 없어요. 대화를 더 이어 간 뒤 만들어주세요.",
     shouldRefetchNovel: true,
   },
   NOVEL_CHAPTER_END_INVALID: {
-    message: "고른 턴으로는 장을 끝낼 수 없어요. 다음 장 만들기를 다시 눌러 골라주세요.",
+    message: "고른 턴으로는 화를 끝낼 수 없어요. 다음 화 만들기를 다시 눌러 골라주세요.",
     shouldRefetchNovel: true,
   },
-  NOVEL_CHAPTER_NOT_LAST: { message: "마지막 장만 지울 수 있어요.", shouldRefetchNovel: true },
+  NOVEL_CHAPTER_NOT_LAST: { message: "마지막 화만 지울 수 있어요.", shouldRefetchNovel: true },
+  NOVEL_BATCH_NOT_LAST: { message: "마지막에 함께 만든 화들만 지울 수 있어요.", shouldRefetchNovel: true },
   NOVEL_PARAGRAPH_RANGE_INVALID: { message: "고른 문단이 바뀌었어요. 다시 골라주세요.", shouldRefetchNovel: true },
   NOVEL_JOB_NOT_APPLICABLE: { message: "이 수정안은 더 이상 적용할 수 없어요.", shouldRefetchNovel: true },
   NOVEL_REVISION_CONFLICT: {
@@ -79,7 +81,26 @@ const MESSAGE_BY_CODE: Record<string, NovelActionErrorNotice> = {
     shouldRefetchNovel: true,
   },
   NOVEL_SOURCE_CHANGED: {
-    message: "원래 대화가 바뀌어 이 장은 다시 만들 수 없어요.",
+    message: "원래 대화가 바뀌어 이 화는 다시 만들 수 없어요.",
+    shouldRefetchNovel: false,
+  },
+  // 다시 만들기 목록이 낡았다(그사이 허용 모델·묶음이 바뀌었다) — 상세를 다시 받으면 비활성 항목과 이유가 맞아진다.
+  // 이유별 문장은 아래에서 `reason` 을 보고 고른다.
+  NOVEL_MODEL_INELIGIBLE: {
+    message: "고른 모델로는 이 화들을 다시 만들 수 없어요. 다른 모델을 골라주세요.",
+    shouldRefetchNovel: true,
+  },
+  NOVEL_COVER_INVALID: { message: "고른 이미지는 표지로 쓸 수 없어요. 다른 이미지를 골라주세요.", shouldRefetchNovel: false },
+  NOVEL_CHARACTER_NOT_FOUND: { message: "이 인물이 지워졌어요. 소설을 다시 불러왔어요.", shouldRefetchNovel: true },
+  NOVEL_CHARACTER_NAME_TAKEN: { message: "같은 이름의 인물이 이미 있어요. 다른 이름을 써주세요.", shouldRefetchNovel: false },
+  NOVEL_CHARACTER_MERGE_SELF: { message: "같은 인물끼리는 합칠 수 없어요.", shouldRefetchNovel: false },
+  NOVEL_SNAPSHOT_NOT_FOUND: { message: "이 버전이 지워졌어요. 소설을 다시 불러왔어요.", shouldRefetchNovel: true },
+  NOVEL_SNAPSHOT_LIMIT: {
+    message: "이름 붙인 버전이 가득 찼어요. 쓰지 않는 버전을 지운 뒤 다시 저장해주세요.",
+    shouldRefetchNovel: false,
+  },
+  NOVEL_BOARD_LAYOUT_TOO_LARGE: {
+    message: "편집 보드 배치가 너무 커서 저장하지 못했어요. 카드 몇 개를 정리한 뒤 다시 해주세요.",
     shouldRefetchNovel: false,
   },
   NOVEL_JOB_IN_PROGRESS: {
@@ -87,7 +108,7 @@ const MESSAGE_BY_CODE: Record<string, NovelActionErrorNotice> = {
     shouldRefetchNovel: true,
   },
   CONTENT_RESTRICTED: {
-    message: "이용이 제한된 작품이라 새로 쓰는 작업을 할 수 없어요. 지금까지 만든 장은 그대로 볼 수 있어요.",
+    message: "이용이 제한된 작품이라 새로 쓰는 작업을 할 수 없어요. 지금까지 만든 화는 그대로 볼 수 있어요.",
     shouldRefetchNovel: false,
   },
 };
@@ -96,6 +117,12 @@ function detailCode(detail: unknown): string | undefined {
   if (!detail || typeof detail !== "object" || !("code" in detail)) return undefined;
   const { code } = detail;
   return typeof code === "string" ? code : undefined;
+}
+
+function reasonOf(detail: unknown): string | undefined {
+  if (!detail || typeof detail !== "object" || !("reason" in detail)) return undefined;
+  const { reason } = detail;
+  return typeof reason === "string" ? reason : undefined;
 }
 
 function currentCostOf(detail: unknown): number | undefined {
@@ -122,9 +149,9 @@ export function toNovelActionError(error: unknown, action: NovelAction): NovelAc
     }
     if (rateLimit.code === "USER_LIMIT") {
       return action === "proposal"
-        ? { message: "다음 장 준비를 너무 자주 요청했어요. 잠시 후 다시 시도해주세요.", shouldRefetchNovel: false }
+        ? { message: "다음 화 준비를 너무 자주 요청했어요. 잠시 후 다시 시도해주세요.", shouldRefetchNovel: false }
         : {
-            message: "같은 장을 오늘 만들 수 있는 횟수를 다 썼어요. 자정이 지나면 다시 만들 수 있어요.",
+            message: "같은 화를 오늘 만들 수 있는 횟수를 다 썼어요. 자정이 지나면 다시 만들 수 있어요.",
             shouldRefetchNovel: false,
           };
     }
@@ -146,6 +173,15 @@ export function toNovelActionError(error: unknown, action: NovelAction): NovelAc
       shouldRefetchNovel: true,
     };
   }
+  if (code === "NOVEL_MODEL_INELIGIBLE") {
+    const reason = reasonOf(error.detail);
+    if (reason === "too_many_turns") {
+      return { message: "대화가 길어 고른 모델로는 이 화들을 다시 만들 수 없어요. 다른 모델을 골라주세요.", shouldRefetchNovel: true };
+    }
+    if (reason === "too_many_episodes") {
+      return { message: "화가 많아 고른 모델로는 이 화들을 다시 만들 수 없어요. 다른 모델을 골라주세요.", shouldRefetchNovel: true };
+    }
+  }
   return MESSAGE_BY_CODE[code] ?? fallback(action);
 }
 
@@ -156,17 +192,21 @@ export function isProtagonistNameRequiredError(error: unknown): boolean {
 }
 
 const FAILURE_SUBJECT: Record<NovelJobResponse["kind"], string> = {
-  chapter_generate: "새 장을 만들지 못했어요.",
-  chapter_regenerate: "장을 다시 만들지 못했어요.",
+  chapter_generate: "새 화를 만들지 못했어요.",
+  chapter_regenerate: "화를 다시 만들지 못했어요.",
   ai_edit: "AI로 고치지 못했어요.",
+  chain_generate: "남은 대화를 소설로 만들지 못했어요.",
 };
 
-/** 실패로 끝난 작업의 안내. 실패한 작업은 서버가 언제나 환불하므로 환불을 함께 말한다(`refunded` 가 거짓인 실패는
- * 계약에 없지만, 있다면 거짓말하지 않도록 그때는 환불을 말하지 않는다). */
-export function toNovelJobFailureMessage(job: Pick<NovelJobResponse, "kind" | "failureReason" | "refunded" | "chargedAmount">): string {
-  const reason = failureReasonSentence(job);
-  const refund = job.refunded && job.chargedAmount > 0 ? ` 쓴 클로버 ${job.chargedAmount.toLocaleString()}개는 돌려드렸어요.` : "";
-  return `${reason}${refund}`;
+/** 실패로 끝난 작업의 안내. 돌려준 클로버는 서버가 적은 환불액(`refundedAmount`)을 그대로 말한다 — 묶음·연쇄는 일부만
+ * 돌려줄 수 있어 낸 금액(`chargedAmount`)과 다를 수 있다. 돌려준 것이 없으면 환불을 말하지 않는다. */
+export function toNovelJobFailureMessage(job: Pick<NovelJobResponse, "kind" | "failureReason" | "refundedAmount">): string {
+  return `${failureReasonSentence(job)}${toRefundSentence(job.refundedAmount)}`;
+}
+
+/** 돌려준 클로버 한 문장(앞에 띄어쓰기 포함). 없으면 빈 문자열이다. */
+export function toRefundSentence(refundedAmount: number): string {
+  return refundedAmount > 0 ? ` 쓴 클로버 ${refundedAmount.toLocaleString()}개는 돌려드렸어요.` : "";
 }
 
 function failureReasonSentence(job: Pick<NovelJobResponse, "kind" | "failureReason">): string {
@@ -175,9 +215,14 @@ function failureReasonSentence(job: Pick<NovelJobResponse, "kind" | "failureReas
     case "blocked":
       return `${FAILURE_SUBJECT[job.kind]} 안전 기준에 걸리는 내용이 있었어요.`;
     case "source_changed":
-      return job.kind === "ai_edit"
-        ? "고치는 동안 장이 바뀌어 수정안을 쓸 수 없게 됐어요."
-        : "원래 대화가 바뀌어 이 장은 다시 만들 수 없어요.";
+      if (job.kind === "ai_edit") return "고치는 동안 화가 바뀌어 수정안을 쓸 수 없게 됐어요.";
+      if (job.kind === "chain_generate") return "원래 대화가 바뀌어 남은 대화를 이어 만들 수 없어요.";
+      return "원래 대화가 바뀌어 이 화는 다시 만들 수 없어요.";
+    // 모델이 약속한 글 형식이나 화 수를 지키지 않았다 — 같은 요청으로 다시 하면 대개 맞게 나온다.
+    case "malformed":
+      return `${FAILURE_SUBJECT[job.kind]} AI가 쓴 글의 형식이 맞지 않았어요.`;
+    case "episode_count_mismatch":
+      return `${FAILURE_SUBJECT[job.kind]} AI가 지금과 다른 화 수로 썼어요.`;
     default:
       return FAILURE_SUBJECT[job.kind];
   }

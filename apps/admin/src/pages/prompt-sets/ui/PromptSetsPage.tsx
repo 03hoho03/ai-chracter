@@ -21,9 +21,10 @@ const INITIAL_MODEL_BY_LANE: Record<PromptLane, PromptModel> = {
   story: "gemini",
   character: "gemini",
   publish_filter: "gemini",
+  novel: "gemini",
 };
 
-/** 레인 축은 페이지 안 상위 탭이고, 스토리·캐릭터 레인 안에 모델 하위 탭(Gemini·Claude 둘)이 있다 — (레인, 모델)마다
+/** 레인 축은 페이지 안 상위 탭이고, 스토리·캐릭터·소설 레인 안에 모델 하위 탭(Gemini·Claude 둘)이 있다 — (레인, 모델)마다
  * 초안·게시가 따로인 독립 체인이다(발행 심사는 Gemini 하나뿐이라 하위 탭이 없다).
  *
  * 편집기는 한 번 열린 뒤에는 `forceMount` + `data-[state=inactive]:hidden`으로(같은 관용구가 web

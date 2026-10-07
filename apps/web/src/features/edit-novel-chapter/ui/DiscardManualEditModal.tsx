@@ -21,7 +21,7 @@ export const DiscardManualEditModal = createCallable<DiscardManualEditModalProps
   <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end(false)}>
     <DialogContent className="sm:max-w-sm">
       <DialogHeader>
-        <DialogTitle>고치던 글을 버리고 {chapterOrdinal}장으로 갈까요?</DialogTitle>
+        <DialogTitle>고치던 글을 버리고 {chapterOrdinal}화로 갈까요?</DialogTitle>
         <DialogDescription className="break-keep">
           저장하지 않은 글은 남지 않아요. 남기려면 취소하고 먼저 저장해 주세요.
         </DialogDescription>
