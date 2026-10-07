@@ -38,7 +38,7 @@ on:
         required: false
         default: ""
       skip_overlap:
-        description: "겹침 없이 교체한다(위험한 마이그레이션용 탈출구). 새 색을 옆에 띄우지 않고 서빙 중인 색을 그 자리에서 재생성해 짧은 끊김이 생긴다."
+        description: "겹침 없이 교체한다(위험한 마이그레이션용 탈출구). 새 색을 옆에 띄우지 않고 서빙 중인 색을 그 자리에서 재생성해, 옛 컨테이너의 가장 긴 진행 중 요청이 끝나고(최대 65초) 새 컨테이너가 뜰 때까지(약 15초) 끊긴다."
         type: boolean
         required: false
         default: false
@@ -72,11 +72,19 @@ jobs:
         # 태그는 SHA 앞 7자리만 받는다. 빌드 step 이 그 형태로만 푸시하므로 다른 형태는 레지스트리에 없다.
         # 빌드 여부는 이 step 의 출력으로 정한다 — 뒤 step 의 `if:` 가 null 과 빈 문자열 비교 규칙에
         # 기대지 않게 하려는 것이다.
+        #
+        # 수동 실행은 main 에서만 받는다. 수동 실행은 ref 를 고를 수 있는데, 태그를 비우면 그 ref 의 커밋을
+        # 빌드해 운영에 올리므로 병합 안 된 브랜치 코드가 배포되는 길이 된다(VM 이 받아 가는 compose·스크립트는
+        # 어느 경우든 main 이라 이미지만 그 브랜치 것이 된다).
         env:
           IMAGE_TAG_INPUT: ${{ inputs.image_tag }}
           SKIP_OVERLAP_INPUT: ${{ inputs.skip_overlap && 'true' || 'false' }}
         run: |
           set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error::수동 실행은 main 브랜치에서만 받는다(지금 ref: $GITHUB_REF) — Run workflow 에서 브랜치를 main 으로 고른다"
+            exit 1
+          fi
           if [ -n "$IMAGE_TAG_INPUT" ]; then
             TAG="$IMAGE_TAG_INPUT"
             BUILD=false
