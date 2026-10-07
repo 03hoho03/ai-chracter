@@ -180,6 +180,9 @@ class NovelChapter(Base):
     batch_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("novel_batches.id"), nullable=True)
     episode_index: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 사용자가 화 제목을 고친 시각. 찍혀 있으면 다시 만들기가 그 화의 제목만 그대로 두고 본문·요약·등장 인물은 새로
+    # 쓴다(소설 제목의 `title_edited_at` 과 같은 규칙). 제목을 비우면 다시 NULL 이 되어 AI 가 쓸 수 있다.
+    title_edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # 다음 화 머리의 "이전 줄거리"와 다음 묶음 생성 입력에 쓰는 이 화 요약.
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     author_note: Mapped[str] = mapped_column(Text, nullable=False, server_default="")

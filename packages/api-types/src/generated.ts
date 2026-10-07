@@ -2253,6 +2253,9 @@ export interface paths {
         /**
          * Update Novel Chapter
          * @description 화 제목·작가의 말을 바꾼다(보낸 칸만, 무과금). 본문은 개정 라우트로 고친다. 작가의 말은 프롬프트에 실리지 않는다.
+         *
+         *     제목을 보내면 고친 시각을 찍어 다시 만들기가 그 제목을 덮지 않게 하고, 제목에 null 을 보내면 제목과 고친 시각을 함께
+         *     비워 다음 다시 만들기가 AI 제목을 다시 쓰게 한다.
          */
         patch: operations["update_novel_chapter_novels__novel_id__chapters__chapter_id__patch"];
         trace?: never;
@@ -8421,6 +8424,8 @@ export interface components {
             episodeIndex: number;
             /** Title */
             title: string | null;
+            /** Titleedited */
+            titleEdited: boolean;
             /** Summary */
             summary: string | null;
             /** Authornote */
@@ -8432,7 +8437,8 @@ export interface components {
         };
         /**
          * NovelChapterUpdateRequest
-         * @description 보낸 칸만 바꾼다. 화 제목은 다음 다시 만들기가 새 출력으로 덮는다(본문과 함께 나온 값이다).
+         * @description 보낸 칸만 바꾼다. 화 제목을 보내면 그 뒤 다시 만들기가 그 제목을 덮지 않는다(본문·요약·등장 인물은 새로 쓴다).
+         *     `title` 에 null 을 보내면 제목을 비우고, 다음 다시 만들기가 AI 제목을 다시 쓴다.
          */
         NovelChapterUpdateRequest: {
             /** Title */

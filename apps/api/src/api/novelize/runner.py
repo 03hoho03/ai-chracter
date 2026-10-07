@@ -63,7 +63,7 @@ from api.novelize.billing import (
 )
 from api.novelize.boundary import episode_counts, suggest_end_turn
 from api.novelize.deletion import erase_stale_ai_edit_previews
-from api.novelize.episodes import chapter_max_turns
+from api.novelize.episodes import chapter_max_turns, k_max
 from api.novelize.inputs import (
     ChapterInput,
     SourceChangedError,
@@ -414,8 +414,8 @@ async def _generate_batch(llm_client: LLMClient, chapter_input: ChapterInput, us
     빈 줄을 접으므로 형식을 먼저 읽는다. 형식이 어긋났어도 출력 전체가 거절문이면 거절로 실패한다 — 모델은 거절할 때
     형식을 지키지 않고, 사용자에게는 "형식 오류"보다 "거절"이 맞는 안내다.
 
-    화 수는 여기서 판정하지 않는다. 생성은 목표보다 적어도 성공(모자란 몫 환불)이고 많아도 받아들이며, 다시 만들기의
-    화 수 불일치는 저장이 묶음의 화를 잠근 뒤 판정한다."""
+    화 수는 여기서 판정하지 않는다. 생성의 화 수 상한(연쇄 자식은 부모 행의 값)과 다시 만들기의 화 수 불일치는 저장이
+    작업 행을 잡은 뒤 판정한다."""
     chunks: list[str] = []
     try:
         async for chunk in llm_client.generate(
@@ -549,7 +549,10 @@ async def _save_batch(
     정리와 겹쳐도 둘 다 사용자 행에서 줄을 서고 조건부 전이라 한쪽만 작업을 끝낸다.
 
     생성은 새 묶음 하나와 화 n 행을 넣는다(화마다 묶음 구간의 사본, 화 번호는 이어서). 목표보다 적게 냈으면 모자란
-    화만큼 돌려주고, 많이 냈으면 추가로 받지 않고 모두 넣는다. 다시 만들기는 묶음의 화를 잠그고 화 수가 지금 화 수와
+    화만큼 돌려주고, 많이 냈어도 그 모델의 화 수 상한 안이면 추가로 받지 않고 모두 넣는다. 상한을 넘으면 롤백한 뒤
+    `malformed` 로 실패·전액 환불한다 — 상한을 넘는 묶음은 어느 모델로도 다시 만들 수 없고(다시 만들기는 화 수를 지키고
+    그 화 수가 모델 상한 안이어야 한다), 모델별 작업 시간 상한의 근거도 깨진다. 연쇄 자식의 상한은 지금 설정이 아니라
+    부모가 차감할 때 고정한 값이다(`_episode_cap`). 다시 만들기는 묶음의 화를 잠그고 화 수가 지금 화 수와
     같아야 한다 — 다르면 롤백한 뒤 `episode_count_mismatch` 로 실패·환불한다(화 행을 그대로 두어야 읽은 위치·작가의
     말·개정 이력이 산다). 같으면 화마다 새 개정을 쌓고 화 제목·요약·등장 인물을 바꾼다.
 
@@ -573,6 +576,9 @@ async def _save_batch(
             # 진행 중 자식도 함께 끝내므로 보통은 위 전이에서 걸러지고, 여기는 자식을 모르는 경로가 부모만 끝낸 경우다.
             await db.rollback()
             raise _JobFailedError("expired")
+        if job.kind != "chapter_regenerate" and len(batch.episodes) > await _episode_cap(db, job):
+            await db.rollback()
+            raise _JobFailedError("malformed")
         if job.kind == "chapter_regenerate":
             saved = await _save_regenerated(db, job, batch)
             if saved is None:
@@ -617,6 +623,16 @@ async def _save_batch(
             for chapter in chapters:
                 await erase_stale_ai_edit_previews(db, chapter.id)
             await db.commit()
+
+
+async def _episode_cap(db: AsyncSession, job: NovelJob) -> int:
+    """생성 작업이 낼 수 있는 화 수의 상한. 연쇄 자식은 부모 행에 고정한 값이다 — 그 사이 설정이 바뀌어도 값을 낸
+    시점의 상한을 따른다. 부모 행이 아직 실행 중인 것은 호출 전에 소비액을 올리며 확인했다."""
+    if job.parent_job_id is not None:
+        cap = await db.scalar(select(NovelJob.batch_k_max).where(NovelJob.id == job.parent_job_id))
+        assert cap is not None  # 연쇄 부모는 CHECK 로 화 수 상한을 갖는다
+        return cap
+    return k_max(chapter_job_model(job))
 
 
 async def _consume_parent_share(db: AsyncSession, job: NovelJob, *, delivered: int) -> bool:
@@ -721,7 +737,9 @@ async def _save_regenerated(
                 source="regenerate",
             )
         )
-        chapter.title = episode.title
+        if chapter.title_edited_at is None:
+            # 사용자가 고친 화 제목은 덮지 않는다. 화 행을 잠근 뒤 읽은 값이라 제목 수정과 엇갈리지 않는다.
+            chapter.title = episode.title
         chapter.summary = episode.summary
     db.add_all(revisions)
     await db.flush()

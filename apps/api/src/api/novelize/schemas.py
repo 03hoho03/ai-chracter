@@ -207,6 +207,8 @@ class NovelChapterSummary(CamelModel):
     episode_index: int
     # 생성 출력이 쓴 화 제목·요약. 이 칸들이 생기기 전에 만든 화는 null 이다.
     title: str | None
+    # 사용자가 화 제목을 고쳤는가. 참이면 다시 만들기가 그 제목을 그대로 둔다.
+    title_edited: bool
     summary: str | None
     author_note: str
     # 현재 개정 본문의 글자 수.
@@ -441,7 +443,8 @@ class NovelUpdateRequest(CamelModel):
 
 
 class NovelChapterUpdateRequest(CamelModel):
-    """보낸 칸만 바꾼다. 화 제목은 다음 다시 만들기가 새 출력으로 덮는다(본문과 함께 나온 값이다)."""
+    """보낸 칸만 바꾼다. 화 제목을 보내면 그 뒤 다시 만들기가 그 제목을 덮지 않는다(본문·요약·등장 인물은 새로 쓴다).
+    `title` 에 null 을 보내면 제목을 비우고, 다음 다시 만들기가 AI 제목을 다시 쓴다."""
 
     title: ChapterTitleText | None = None
     author_note: AuthorNoteText | None = None

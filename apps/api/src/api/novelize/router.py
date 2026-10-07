@@ -315,6 +315,7 @@ async def _chapter_summaries(db: AsyncSession, novel_id: uuid.UUID) -> list[Nove
                 batch_id=chapter.batch_id,
                 episode_index=chapter.episode_index,
                 title=chapter.title,
+                title_edited=chapter.title_edited_at is not None,
                 summary=chapter.summary,
                 author_note=chapter.author_note,
                 char_count=len(revision.body),
@@ -842,11 +843,15 @@ async def update_novel_chapter(
     novel: Novel = Depends(_owned_novel_dependency),
     db: AsyncSession = Depends(get_db_session),
 ) -> NovelDetailResponse:
-    """화 제목·작가의 말을 바꾼다(보낸 칸만, 무과금). 본문은 개정 라우트로 고친다. 작가의 말은 프롬프트에 실리지 않는다."""
+    """화 제목·작가의 말을 바꾼다(보낸 칸만, 무과금). 본문은 개정 라우트로 고친다. 작가의 말은 프롬프트에 실리지 않는다.
+
+    제목을 보내면 고친 시각을 찍어 다시 만들기가 그 제목을 덮지 않게 하고, 제목에 null 을 보내면 제목과 고친 시각을 함께
+    비워 다음 다시 만들기가 AI 제목을 다시 쓰게 한다."""
     chapter = await _get_chapter(db, novel, chapter_id)
     values: dict[str, object] = {}
-    if payload.title is not None:
+    if "title" in payload.model_fields_set:
         values["title"] = payload.title
+        values["title_edited_at"] = func.now() if payload.title is not None else None
     if payload.author_note is not None:
         values["author_note"] = payload.author_note
     if values:

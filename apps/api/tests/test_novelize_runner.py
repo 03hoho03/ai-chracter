@@ -388,9 +388,11 @@ async def test_fewer_episodes_than_the_target_refund_the_missing_ones_in_the_sam
     assert await _assert_balance_matches_lots(db_session, novel.user_id) == 300 - 120 + 40
 
 
-async def test_more_episodes_than_the_target_are_all_kept_at_no_extra_charge(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
+async def test_more_episodes_than_the_target_up_to_the_models_cap_are_all_kept_at_no_extra_charge(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """목표 1화에 그 모델의 화 수 상한(2화)만큼 냈다 — 상한 안이라 모두 받고 추가로 받지 않는다."""
+    monkeypatch.setattr(settings, "novelize_k_max_gemini", 2)
     room, novel = await _novel_for(db_client, db_session)
     messages = await _room_messages(db_session, room.room_id)
     job = await _chapter_job(db_session, novel, messages[0], room.turns[2][1], episodes=1)
@@ -401,6 +403,31 @@ async def test_more_episodes_than_the_target_are_all_kept_at_no_extra_charge(
     assert (stored.status, stored.refunded_at, stored.refunded_amount) == ("succeeded", None, None)
     assert [c.episode_index for c in await _chapters(db_session, novel.id)] == [0, 1]
     assert await _ledger(db_session, novel.user_id) == [("novelize_spend", -40)]
+
+
+async def test_more_episodes_than_the_models_cap_fail_as_malformed_and_refund_everything(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """화 수 상한(2화)을 넘는 출력은 받지 않는다 — 그 묶음은 어느 모델로도 다시 만들 수 없다(다시 만들기는 화 수를
+    지키고 그 화 수가 모델 상한 안이어야 한다). 묶음·화를 하나도 남기지 않고 낸 금액을 모두 돌려준다."""
+    monkeypatch.setattr(settings, "novelize_k_max_gemini", 2)
+    room, novel = await _novel_for(db_client, db_session)
+    messages = await _room_messages(db_session, room.room_id)
+    job = await _chapter_job(db_session, novel, messages[0], room.turns[2][1], episodes=1)
+
+    await runner.run_job(_factory(db_session), _NovelLLM(chunks=[_three_episodes(count=3)]), job.id)
+
+    stored = await _job(db_session, job.id)
+    assert (stored.status, stored.failure_code, stored.refunded_amount) == ("failed", "malformed", 40)
+    assert (stored.batch_id, stored.chapter_id) == (None, None)
+    assert await _batches(db_session, novel.id) == []
+    assert await _chapters(db_session, novel.id) == []
+    assert await db_session.scalar(
+        sa.select(sa.func.count()).select_from(NovelCharacter).where(NovelCharacter.novel_id == novel.id)
+    ) == 0
+    assert (await db_session.get_one(Novel, novel.id, populate_existing=True)).title is None
+    assert await _ledger(db_session, novel.user_id) == [("novelize_spend", -40), ("novelize_refund", 40)]
+    assert await _assert_balance_matches_lots(db_session, novel.user_id) == 100
 
 
 async def test_the_novel_title_is_written_only_by_the_first_batch_and_never_over_a_users_title(
@@ -486,6 +513,41 @@ async def test_regenerating_a_batch_adds_a_revision_to_every_episode_and_relinks
         middle_revision.id,
     )
     assert await _ledger(db_session, novel.user_id) == [("novelize_spend", -120), ("novelize_spend", -120)]
+
+
+async def test_regenerating_keeps_an_episode_title_the_user_edited_and_replaces_the_rest(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """사용자가 고친 화 제목은 다시 만들기가 덮지 않는다(그 화의 본문·요약·등장 인물은 새로 쓴다). 고치지 않은 화의
+    제목은 새 출력으로 바뀐다."""
+    room, novel = await _novel_for(db_client, db_session, balance=300)
+    messages = await _room_messages(db_session, room.room_id)
+    first = await _chapter_job(db_session, novel, messages[0], room.turns[2][1], episodes=3)
+    await runner.run_job(_factory(db_session), _NovelLLM(chunks=[_three_episodes()]), first.id)
+    chapters = await _chapters(db_session, novel.id)
+    await db_session.execute(
+        sa.update(NovelChapter)
+        .where(NovelChapter.id == chapters[1].id)
+        .values(title="내 화 제목", title_edited_at=sa.func.now())
+    )
+    await db_session.commit()
+    regenerated = "\n".join(
+        _episode_text("다시 쓴 화. " * 30, number=n, title=f"새 제목 {n}", summary=f"새 요약 {n}", characters="하늘")
+        for n in (1, 2, 3)
+    )
+
+    job = await _chapter_job(db_session, novel, messages[0], room.turns[2][1], chapter=chapters[0], episodes=3)
+    await runner.run_job(_factory(db_session), _NovelLLM(chunks=[regenerated]), job.id)
+
+    assert (await _job(db_session, job.id)).status == "succeeded"
+    after = await _chapters(db_session, novel.id)
+    assert [(c.title, c.title_edited_at is not None, c.summary) for c in after] == [
+        ("새 제목 1", False, "새 요약 1"),
+        ("내 화 제목", True, "새 요약 2"),
+        ("새 제목 3", False, "새 요약 3"),
+    ]
+    assert (await _revisions(db_session, after[1].id))[-1].body == ("다시 쓴 화. " * 30).strip()
+    assert await _links(db_session, after[1].id) == ["하늘"]
 
 
 @pytest.mark.parametrize("count", [pytest.param(2, id="fewer"), pytest.param(4, id="more")])

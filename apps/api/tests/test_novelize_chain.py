@@ -383,37 +383,41 @@ async def test_consumed_share_is_the_smaller_of_the_planned_and_delivered_episod
     monkeypatch: pytest.MonkeyPatch,
     enqueued: list[uuid.UUID],
 ) -> None:
-    """화 목표 길이를 1자로 줄여 묶음마다 화 수 상한(3화)을 계획한다. 첫 묶음은 한 화만 내 한 화 몫, 둘째는 네 화를 내도
-    계획한 세 화 몫만 쓴다(많이 낸 화는 단일 묶음처럼 추가로 받지 않는다) — 낸 240 중 160 을 쓰고 80 을 돌려준다."""
+    """화 목표 길이를 1자로 줄여 묶음마다 화 수 상한(3화)을 계획하고 차감한다. 차감 뒤 상한 설정이 2 로 내려가 자식의
+    목표는 2화다. 첫 묶음은 한 화만 내 한 화 몫, 둘째는 세 화를 내도 목표 두 화 몫만 쓴다(많이 낸 화는 단일 묶음처럼
+    추가로 받지 않는다) — 낸 240 중 120 을 쓰고 120 을 돌려준다. 세 화는 지금 설정(2)을 넘지만 부모가 차감할 때 고정한
+    상한(3) 안이라 받는다."""
     _, novel_id, owner_id = await _chain_novel(db_client, db_session, monkeypatch, turns=3)
     monkeypatch.setattr(settings, "novelize_chapter_max_turns", 2)
     monkeypatch.setattr(settings, "novelize_episode_target_chars", 1)
     parent_id = await _start(db_client, novel_id)
-    fake = _ChainLLM([_batch_output(_BODY), _batch_output(_BODY, _BODY, _BODY, _BODY)])
+    monkeypatch.setattr(settings, "novelize_k_max_gemini", 2)
+    fake = _ChainLLM([_batch_output(_BODY), _batch_output(_BODY, _BODY, _BODY)])
 
     await runner.run_chain(_factory(db_session), fake, parent_id)
 
     parent = await _job(db_session, parent_id)
-    assert [c.episode_count_target for c in await _children(db_session, parent_id)] == [3, 3]
+    assert [c.episode_count_target for c in await _children(db_session, parent_id)] == [2, 2]
     assert (parent.status, parent.charged_amount, parent.consumed_amount, parent.refunded_amount) == (
         "succeeded",
         240,
-        160,
-        80,
+        120,
+        120,
     )
-    assert await _chapter_count(db_session, novel_id) == 5
+    assert await _chapter_count(db_session, novel_id) == 4
     await _assert_lots_match_balance(db_session, owner_id)
 
 
-async def test_child_episode_target_stays_within_the_cap_fixed_at_charge_time(
+async def test_child_episode_target_and_accepted_count_stay_within_the_cap_fixed_at_charge_time(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
     enqueued: list[uuid.UUID],
 ) -> None:
     """차감은 묶음마다 그때의 화 수 상한(3)만큼 받았다. 그 뒤 상한이 5 로 올라도 자식은 3화를 넘겨 계획하지 않는다 —
-    넘기면 쓴 몫이 낸 돈을 넘을 수 있다."""
-    _, novel_id, _ = await _chain_novel(db_client, db_session, monkeypatch, turns=1)
+    넘기면 쓴 몫이 낸 돈을 넘을 수 있다. 받는 화 수의 상한도 차감 때 고정한 3 이다: 다섯 화를 내면 지금 설정(5) 안이어도
+    형식 위반으로 실패하고, 부모는 아무것도 쓰지 않아 낸 금액을 모두 돌려준다."""
+    _, novel_id, owner_id = await _chain_novel(db_client, db_session, monkeypatch, turns=1)
     monkeypatch.setattr(settings, "novelize_episode_target_chars", 1)
     parent_id = await _start(db_client, novel_id)
     monkeypatch.setattr(settings, "novelize_k_max_gemini", 5)
@@ -422,8 +426,19 @@ async def test_child_episode_target_stays_within_the_cap_fixed_at_charge_time(
     await runner.run_chain(_factory(db_session), fake, parent_id)
 
     parent = await _job(db_session, parent_id)
-    assert [c.episode_count_target for c in await _children(db_session, parent_id)] == [3]
-    assert (parent.status, parent.charged_amount, parent.consumed_amount) == ("succeeded", 120, 120)
+    (child,) = await _children(db_session, parent_id)
+    assert (child.episode_count_target, child.status, child.failure_code) == (3, "failed", "malformed")
+    assert (parent.status, parent.failure_code, parent.charged_amount, parent.consumed_amount) == (
+        "failed",
+        "malformed",
+        120,
+        0,
+    )
+    assert parent.refunded_amount == 120
+    assert await _batches(db_session, novel_id) == []
+    assert await _chapter_count(db_session, novel_id) == 0
+    assert await _novel_ledger(db_session, owner_id) == [("novelize_spend", -120), ("novelize_refund", 120)]
+    await _assert_lots_match_balance(db_session, owner_id)
 
 
 async def test_a_failed_batch_stops_the_chain_and_refunds_the_rest(

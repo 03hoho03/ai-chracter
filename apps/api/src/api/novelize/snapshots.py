@@ -1,14 +1,16 @@
 """스냅샷 — 소설의 편집 가능한 상태를 이름 붙여 떠 두고 그 상태로 되돌리기.
 
 담는 것은 사용자가 고치는 값뿐이다: 소설 제목(과 사용자가 고친 시각)·소개·설정 노트, 인물 카드(이름·별칭·메모), 화마다 그때의
-현재 개정 id·화 제목·요약·작가의 말. 등장 연결은 담지 않는다 — 본문과 함께 생성 출력에서 나온 사실이라 되돌릴 대상이 아니다.
+현재 개정 id·화 제목(과 사용자가 고친 시각)·요약·작가의 말. 등장 연결은 담지 않는다 — 본문과 함께 생성 출력에서 나온 사실이라 되돌릴 대상이 아니다.
 payload 형식(`v` = 1):
 
     {v, title, titleEditedAt, synopsis, settingNotes,
      characters: [{id, name, aliases, memo}],
-     chapters: [{chapterId, revisionId, title, summary, authorNote} | {chapterId, deleted: true}]}
+     chapters: [{chapterId, revisionId, title, titleEditedAt, summary, authorNote} | {chapterId, deleted: true}]}
 
-`deleted` 항목은 그 뒤 마지막 묶음 삭제가 화를 지우며 줄여 놓은 것이다(`deletion.delete_batch`).
+`deleted` 항목은 그 뒤 마지막 묶음 삭제가 화를 지우며 줄여 놓은 것이다(`deletion.delete_batch`). 화의 `titleEditedAt` 은
+나중에 더한 키라 그 전에 뜬 스냅샷에는 없다 — 없으면 null(AI 가 쓴 제목)로 읽는다. 형식 버전을 올리지 않은 것은 키가
+없을 때의 뜻이 그 값 하나로 정해져서다.
 
 복원은 구조를 바꾸지 않고 내용만 되돌린다 — 스냅샷 뒤에 생긴 화는 지우지 않고(값을 치른 화가 사라지지 않게), 스냅샷의 화는
 그때 본문을 새 개정으로 쌓는다(이력은 남는다). 여기 함수는 호출자가 사용자 행을 잠근 뒤 부르고, 커밋도 호출자가 한다. 이
@@ -37,6 +39,14 @@ from api.novelize.inputs import current_revision
 PAYLOAD_VERSION = 1
 
 
+def _isoformat(value: datetime | None) -> str | None:
+    return value.isoformat() if value is not None else None
+
+
+def _parse_time(value: str | None) -> datetime | None:
+    return datetime.fromisoformat(value) if value is not None else None
+
+
 class SnapshotLimitError(Exception):
     """이름 붙인 스냅샷만으로 상한이 찼다."""
 
@@ -63,7 +73,7 @@ async def build_payload(db: AsyncSession, novel_id: uuid.UUID) -> dict[str, Any]
     return {
         "v": PAYLOAD_VERSION,
         "title": novel.title,
-        "titleEditedAt": novel.title_edited_at.isoformat() if novel.title_edited_at is not None else None,
+        "titleEditedAt": _isoformat(novel.title_edited_at),
         "synopsis": novel.synopsis,
         "settingNotes": novel.setting_notes,
         "characters": [
@@ -75,6 +85,7 @@ async def build_payload(db: AsyncSession, novel_id: uuid.UUID) -> dict[str, Any]
                 "chapterId": str(chapter.id),
                 "revisionId": str(revisions[chapter.id]),
                 "title": chapter.title,
+                "titleEditedAt": _isoformat(chapter.title_edited_at),
                 "summary": chapter.summary,
                 "authorNote": chapter.author_note,
             }
@@ -163,14 +174,13 @@ async def restore_snapshot(db: AsyncSession, novel_id: uuid.UUID, snapshot: Nove
         if entry.get("deleted") or not await _restore_chapter(db, novel_id, chapter_id, entry, restacked):
             skipped.append(chapter_id)
     await _restore_characters(db, novel_id, payload["characters"])
-    edited_at = payload["titleEditedAt"]
     await db.execute(
         update(Novel)
         .where(Novel.id == novel_id)
         .values(
             title=payload["title"],
             # 스냅샷 때 AI 가 쓴 제목이었으면 비워진 채로 돌아가, 다음 생성이 제목을 다시 쓸 수 있다.
-            title_edited_at=datetime.fromisoformat(edited_at) if edited_at is not None else None,
+            title_edited_at=_parse_time(payload["titleEditedAt"]),
             synopsis=payload["synopsis"],
             setting_notes=payload["settingNotes"],
             updated_at=func.now(),
@@ -216,7 +226,13 @@ async def _restore_chapter(
     await db.execute(
         update(NovelChapter)
         .where(NovelChapter.id == chapter_id)
-        .values(title=entry["title"], summary=entry["summary"], author_note=entry["authorNote"])
+        .values(
+            title=entry["title"],
+            # 스냅샷 때 사용자가 고친 화 제목이 아니었으면 다시 AI 가 쓸 수 있는 상태로 돌아간다.
+            title_edited_at=_parse_time(entry.get("titleEditedAt")),
+            summary=entry["summary"],
+            author_note=entry["authorNote"],
+        )
     )
     return True
 

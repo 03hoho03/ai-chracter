@@ -153,10 +153,10 @@ async def test_restore_brings_back_text_titles_notes_and_cards_as_new_revisions_
         "옛 소개",
         "옛 노트",
     )
-    assert [(c["id"], c["title"], c["summary"], c["authorNote"]) for c in novel["chapters"]] == [
-        (str(first.id), None, "옛 요약", ""),
-        (str(second.id), None, None, ""),
-        (str(later.id), None, None, ""),
+    assert [(c["id"], c["title"], c["titleEdited"], c["summary"], c["authorNote"]) for c in novel["chapters"]] == [
+        (str(first.id), None, False, "옛 요약", ""),
+        (str(second.id), None, False, None, ""),
+        (str(later.id), None, False, None, ""),
     ]
     assert await _revisions(db_session, first.id) == [
         (1, "generate", "옛 본문"),
@@ -195,6 +195,54 @@ async def test_restore_keeps_a_user_edited_title_edited(
 
     stored = await db_session.get_one(Novel, novel_id, populate_existing=True)
     assert (stored.title, stored.title_edited_at) == ("내 제목", edited_at)
+
+
+async def test_restore_brings_back_whether_each_episode_title_was_user_edited(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """스냅샷 때 사용자가 고친 화 제목은 고친 시각까지 되돌아와 다음 다시 만들기가 덮지 않고, 그때 AI 제목이던 화는 그 뒤
+    사용자가 고쳤어도 고친 표시가 비워진다."""
+    novel_id, (first, second) = await _novel_with_two_episodes(db_client, db_session, monkeypatch)
+    await db_client.patch(f"/novels/{novel_id}/chapters/{first.id}", json={"title": "내 1화"})
+    edited_at = (await db_session.get_one(NovelChapter, first.id, populate_existing=True)).title_edited_at
+    snapshot_id = (await _snapshot(db_client, novel_id)).json()["id"]
+    saved = await db_session.get_one(NovelSnapshot, uuid.UUID(snapshot_id))
+    assert [c["titleEditedAt"] is not None for c in saved.payload["chapters"]] == [True, False]
+    await db_client.patch(f"/novels/{novel_id}/chapters/{first.id}", json={"title": None})
+    await db_client.patch(f"/novels/{novel_id}/chapters/{second.id}", json={"title": "내 2화"})
+
+    resp = await db_client.post(f"/novels/{novel_id}/snapshots/{snapshot_id}/restore")
+
+    assert resp.status_code == 200, resp.text
+    assert [(c["title"], c["titleEdited"]) for c in resp.json()["novel"]["chapters"]] == [
+        ("내 1화", True),
+        (None, False),
+    ]
+    restored = await db_session.get_one(NovelChapter, first.id, populate_existing=True)
+    assert restored.title_edited_at == edited_at
+
+
+async def test_restoring_a_snapshot_saved_before_episode_title_edits_were_recorded_reads_them_as_ai_titles(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """화의 고친 시각 키가 없는 옛 payload 도 복원된다 — 키가 없으면 AI 가 쓴 제목으로 읽는다."""
+    novel_id, (first, _second) = await _novel_with_two_episodes(db_client, db_session, monkeypatch)
+    snapshot_id = uuid.UUID((await _snapshot(db_client, novel_id)).json()["id"])
+    saved = await db_session.get_one(NovelSnapshot, snapshot_id)
+    old_payload = {
+        **saved.payload,
+        "chapters": [{k: v for k, v in c.items() if k != "titleEditedAt"} for c in saved.payload["chapters"]],
+    }
+    await db_session.execute(
+        sa.update(NovelSnapshot).where(NovelSnapshot.id == snapshot_id).values(payload=old_payload)
+    )
+    await db_session.commit()
+    await db_client.patch(f"/novels/{novel_id}/chapters/{first.id}", json={"title": "내 1화"})
+
+    resp = await db_client.post(f"/novels/{novel_id}/snapshots/{snapshot_id}/restore")
+
+    assert resp.status_code == 200, resp.text
+    assert [(c["title"], c["titleEdited"]) for c in resp.json()["novel"]["chapters"]] == [(None, False), (None, False)]
 
 
 async def test_restore_skips_episodes_whose_episode_or_revision_is_gone(

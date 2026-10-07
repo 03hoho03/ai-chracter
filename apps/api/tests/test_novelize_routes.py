@@ -675,12 +675,26 @@ async def test_chapter_title_and_author_note_can_be_edited_only_in_my_novel(
 
     note_only = await db_client.patch(f"/novels/{novel_id}/chapters/{chapter.id}", json={"authorNote": " 고마워요 "})
     titled = await db_client.patch(f"/novels/{novel_id}/chapters/{chapter.id}", json={"title": "새 제목"})
+    note_again = await db_client.patch(f"/novels/{novel_id}/chapters/{chapter.id}", json={"authorNote": "또"})
+    edited_at = (await db_session.get_one(NovelChapter, chapter.id, populate_existing=True)).title_edited_at
+    cleared = await db_client.patch(f"/novels/{novel_id}/chapters/{chapter.id}", json={"title": None})
     foreign = await db_client.patch(f"/novels/{novel_id}/chapters/{other.id}", json={"title": "남의 화"})
 
     assert note_only.status_code == 200, note_only.text
+    assert (note_only.json()["chapters"][0]["title"], note_only.json()["chapters"][0]["titleEdited"]) == (None, False)
     (summary,) = titled.json()["chapters"]
-    assert (summary["title"], summary["authorNote"]) == ("새 제목", "고마워요")
-    assert note_only.json()["chapters"][0]["title"] is None
+    assert (summary["title"], summary["titleEdited"], summary["authorNote"]) == ("새 제목", True, "고마워요")
+    # 제목을 보내지 않은 수정은 제목도 고친 표시도 건드리지 않는다.
+    assert (note_again.json()["chapters"][0]["title"], note_again.json()["chapters"][0]["titleEdited"]) == (
+        "새 제목",
+        True,
+    )
+    assert edited_at is not None
+    # 제목을 비우면 고친 표시도 비워져 다음 다시 만들기가 AI 제목을 쓴다.
+    assert cleared.status_code == 200, cleared.text
+    assert (cleared.json()["chapters"][0]["title"], cleared.json()["chapters"][0]["titleEdited"]) == (None, False)
+    stored = await db_session.get_one(NovelChapter, chapter.id, populate_existing=True)
+    assert (stored.title, stored.title_edited_at) == (None, None)
     assert foreign.status_code == 404 and foreign.json()["detail"] == {"code": "NOVEL_CHAPTER_NOT_FOUND"}
 
 
