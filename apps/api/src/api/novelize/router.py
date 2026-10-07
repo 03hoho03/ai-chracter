@@ -33,7 +33,6 @@ from sqlalchemy import delete, func, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from api.chat.prompt_builder import load_active_prompt_set
 from api.chat.router import _ensure_content_playable, _get_owned_room
 from api.content.access import is_open_to
 from api.content.media_tags import strip_media_tags
@@ -89,7 +88,7 @@ from api.novelize.characters import (
     update_character,
 )
 from api.novelize.episodes import chapter_max_turns, k_max, regenerate_ineligibility
-from api.novelize.inputs import current_revision
+from api.novelize.inputs import current_revision, load_novel_prompt_source
 from api.novelize.runner import enqueue_chain_job, enqueue_job, expire_stale_jobs
 from api.novelize.snapshots import SnapshotLimitError, restore_snapshot, save_snapshot
 from api.novelize.schemas import (
@@ -1025,14 +1024,14 @@ async def propose_novel_chapter(
     candidates = await _next_segment(db, novel, room_id, model)
     turns = group_turns(candidates)
     counts = episode_counts(turns, novel, model)
-    prompt_set, sections = await load_active_prompt_set(db, lane=novel.content_type)
+    source = await load_novel_prompt_source(db, novel)
     await _check_proposal_limit(novel.user_id)
     chapter_models, _ = await _chapter_models(db, novel.user_id)
     await db.commit()
 
     suggestion: NovelChapterSuggestion | None = None
     suggested = await suggest_end_turn(
-        llm_client, novel=novel, turns=turns, prompt_set=prompt_set, sections=sections, room_id=room_id
+        llm_client, novel=novel, turns=turns, sections=source.sections, chat_set=source.chat_set, room_id=room_id
     )
     if suggested is not None:
         end_turn, reason = suggested

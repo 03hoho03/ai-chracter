@@ -20,7 +20,9 @@ baseline으로 쓴다(`legacy` 48행은 더 이상 어느 레인의 표와도 �
 행을 더한 세트를, 마이그레이션 `3bb2cc159b6d`가 두 레인에 소설화 채널 행을 더한 세트를 만든다. 그래서 테스트 DB의 Gemini
 published는 레인별로 story v1·v2·v4·v6·v9·v10·v12, character v1·v3·v5·v11·v13, publish_filter v1·v7·v8이고, 활성은
 story v12·character v13·publish_filter v8이다. 마이그레이션 `e6aa289fea62`가 Claude 세트 4개(story sonnet v14·opus v15,
-character sonnet v16·opus v17)를 더하므로 다음 게시 버전은 "18"부터다(전 레인·전 모델 대상 자동 증가).
+character sonnet v16·opus v17)를 더하고, 소설 프롬프트 레인 마이그레이션이 `novel` 레인 세트 4개(gemini 옛 문안 v18·
+새 문안 v19, sonnet v20, opus v21)를 더하므로 다음 게시 버전은 "22"부터다(전 레인·전 모델 대상 자동 증가).
+채팅 레인 Gemini 초안 응답은 얼린 소설화 행을 싣지 않는다(`_visible_section_count`).
 섹션 수는 `_expected_section_count`로 코드 표에서 도출한다 — DB 행은 마이그레이션이
 만드므로 동어반복이 아니다.
 """
@@ -79,6 +81,15 @@ async def _assert_requires_admin_session(
 
 def _expected_section_count(lane: PromptLane) -> int:
     return sum(len(rows) for rows in admin_prompts._EXPECTED_ROWS_BY_LANE[lane].values())
+
+
+_NOVELIZE_CHANNELS = {"novelize_boundary", "novelize_chapter", "novelize_revise"}
+
+
+def _visible_section_count(lane: PromptLane) -> int:
+    """채팅 레인 Gemini 초안 응답의 섹션 수 — 얼린 소설화 행은 화면에 싣지 않는다."""
+    rows = admin_prompts._EXPECTED_ROWS_BY_LANE[lane]
+    return sum(len(r) for channel, r in rows.items() if channel not in _NOVELIZE_CHANNELS)
 
 
 async def _make_valid_draft(db_client: httpx.AsyncClient, lane: str, model: str = "gemini") -> dict[str, object]:
@@ -192,7 +203,8 @@ async def test_get_draft_with_no_draft_returns_active_set_clone(
     body = resp.json()
     assert body["id"] is None
     assert body["labels"]["userLabel"] == "사용자"
-    assert len(body["sections"]) == _expected_section_count("story")
+    assert len(body["sections"]) == _visible_section_count("story")
+    assert not {s["channel"] for s in body["sections"]} & _NOVELIZE_CHANNELS
 
 
 async def test_draft_upsert_creates_new_draft_when_none_exists(
@@ -214,7 +226,7 @@ async def test_draft_upsert_creates_new_draft_when_none_exists(
 async def test_draft_upsert_replaces_sections_entirely(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """섹션 전체 교체다 — 이전 내용 중 이번 PUT에 없는 슬롯은 사라져야 한다."""
+    """섹션 전체 교체다 — 이전 내용 중 이번 PUT에 없는 슬롯은 사라져야 한다. 얼린 소설화 행만은 서버가 다시 채운다."""
     await _login_new_admin(db_client, db_session)
     first = await _make_valid_draft(db_client, "story")
     draft_id = uuid.UUID(str(first["id"]))
@@ -241,9 +253,11 @@ async def test_draft_upsert_replaces_sections_entirely(
             sa.select(PromptSection).where(PromptSection.prompt_set_id == draft_id)
         )
     ).all()
-    assert len(remaining) == 1
-    assert remaining[0].slot == "priority_tail"
-    assert remaining[0].body == "[교체] 우선순위 문장"
+    chat_rows = [s for s in remaining if s.channel not in _NOVELIZE_CHANNELS]
+    assert len(chat_rows) == 1
+    assert chat_rows[0].slot == "priority_tail"
+    assert chat_rows[0].body == "[교체] 우선순위 문장"
+    assert len(remaining) - 1 == sum(len(r) for r in admin_prompts._FROZEN_NOVELIZE_ROWS.values())
 
 
 async def test_draft_upsert_concurrent_insert_race_falls_back_to_update_not_500(
@@ -433,8 +447,8 @@ async def test_list_returns_metadata_only_and_marks_active(
     published = [item for item in items if item["status"] == "published"]
     draft = [item for item in items if item["status"] == "draft"]
     # Gemini: story v1·v2·v4·v6·v9·v10·v12, character v1·v3·v5·v11·v13, publish_filter v1·v7·v8 (모듈 docstring — 세트를
-    # 만든 여덟 마이그레이션이 v2·v3, v4·v5, v6, v7, v8, v9, v10·v11, v12·v13을 만든다). Claude: v14~v17.
-    assert len(published) == 19
+    # 만든 여덟 마이그레이션이 v2·v3, v4·v5, v6, v7, v8, v9, v10·v11, v12·v13을 만든다). Claude: v14~v17. 소설: v18~v21.
+    assert len(published) == 23
     assert len(draft) == 1
     active = [item for item in published if item["isActive"]]
     # (레인, 모델)마다 하나 — Claude 세트는 원본 Gemini 세트보다 published_at 이 과거지만 모델이 달라 각자 활성이다.
@@ -446,8 +460,11 @@ async def test_list_returns_metadata_only_and_marks_active(
         ("story", "opus", "15"),
         ("character", "sonnet", "16"),
         ("character", "opus", "17"),
+        ("novel", "gemini", "19"),
+        ("novel", "sonnet", "20"),
+        ("novel", "opus", "21"),
     }
-    # 레인별 마지막 마이그레이션 이전 세트 열은 비활성이다.
+    # 레인별 마지막 마이그레이션 이전 세트 열은 비활성이다(소설 레인은 옛 문안을 옮긴 첫 판).
     assert {(item["lane"], item["version"]) for item in published if not item["isActive"]} == {
         ("story", "1"),
         ("story", "2"),
@@ -461,9 +478,10 @@ async def test_list_returns_metadata_only_and_marks_active(
         ("character", "11"),
         ("publish_filter", "1"),
         ("publish_filter", "7"),
+        ("novel", "18"),
     }
     assert draft[0]["isActive"] is False
-    assert {item["version"] for item in published} == {str(n) for n in range(1, 18)}
+    assert {item["version"] for item in published} == {str(n) for n in range(1, 22)}
 
 
 async def test_get_by_id_returns_full_sections(
@@ -511,7 +529,7 @@ async def test_preview_reuses_the_real_renderer(
 
     `_build_preview_items`가 레인별로 갈라진 뒤로는 story 레인 미리보기에 `publish_filter` 항목이 없다
     (publish_filter 레인 전용이다). `image_judgment` 는 두 레인에 다 있다 — story 는 미디어 북 칸 판정,
-    character 는 상황별 이미지 판정이다."""
+    character 는 상황별 이미지 판정이다. 소설화 항목은 `novel` 레인 미리보기에만 있다(채팅 레인 행은 얼린 옛 문안)."""
     await _login_new_admin(db_client, db_session)
     active_id = await db_session.scalar(_select_active_id("story"))
     sections = (
@@ -535,9 +553,6 @@ async def test_preview_reuses_the_real_renderer(
         "ending_judgment",
         "memory_summary",
         "image_judgment",
-        "novelize_boundary",
-        "novelize_chapter",
-        "novelize_revise",
     }
 
 
@@ -560,39 +575,39 @@ async def test_preview_uses_the_draft_when_one_exists(
     assert "[초안 전용] 우선순위 문장" in story_system["text"]
 
 
-async def test_preview_without_novelize_rows_shows_a_notice_instead_of_failing(
+async def test_novel_preview_without_chapter_rows_shows_a_notice_instead_of_failing(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """소설화 채널 이전 버전을 복원했거나 그 전에 열어 둔 편집 탭에서 저장한 초안은 소설화 행이 없다. 그때도
-    미리보기 전체가 500 으로 죽지 않고, 소설화 세 항목만 안내로 바뀌고 나머지 항목은 그대로 렌더된다."""
+    """화 생성 행이 빠진 소설 초안(게시는 슬롯 검사가 막는다)도 미리보기 전체가 500 으로 죽지 않고, 화 생성 항목만 안내로
+    바뀌고 나머지 항목은 그대로 렌더된다."""
     await _login_new_admin(db_client, db_session)
-    draft = await _make_valid_draft(db_client, "story")
+    draft = await _make_valid_draft(db_client, "novel")
     await db_session.execute(
         sa.delete(PromptSection).where(
             PromptSection.prompt_set_id == uuid.UUID(str(draft["id"])),
-            PromptSection.channel.like("novelize_%"),
+            PromptSection.channel == "novelize_chapter",
         )
     )
     await db_session.commit()
 
-    resp = await db_client.post("/admin/prompt-sets/story/draft/preview")
+    resp = await db_client.post("/admin/prompt-sets/novel/draft/preview")
     assert resp.status_code == 200
     items = resp.json()["items"]
-    assert len(items) == 13
-    novelize = [i for i in items if i["channel"].startswith("novelize_")]
-    assert [i["channel"] for i in novelize] == ["novelize_boundary", "novelize_chapter", "novelize_revise"]
-    assert all(i["text"].startswith("이 초안으로는 이 채널을 미리 볼 수 없습니다") for i in novelize)
-    assert all("필수 슬롯이 없다" in i["text"] for i in novelize)
-    story_system = next(i for i in items if i["channel"] == "system" and "basic" in i["label"])
-    assert story_system["text"]
+    chapter = [i for i in items if i["channel"] == "novelize_chapter"]
+    others = [i for i in items if i["channel"] != "novelize_chapter"]
+    assert [i["label"] for i in chapter] == ["novelize_chapter · 스토리", "novelize_chapter · 캐릭터"]
+    assert all(i["text"].startswith("이 초안으로는 이 채널을 미리 볼 수 없습니다") for i in chapter)
+    assert all("필수 슬롯이 없다" in i["text"] for i in chapter)
+    assert len(others) == 4 and not any(i["text"].startswith("이 초안으로는") for i in others)
 
 
 @pytest.mark.parametrize(
     ("lane", "expected_count"),
     [
-        pytest.param("story", 13, id="story"),
-        pytest.param("character", 7, id="character"),
+        pytest.param("story", 10, id="story"),
+        pytest.param("character", 4, id="character"),
         pytest.param("publish_filter", 2, id="publish_filter"),
+        pytest.param("novel", 6, id="novel"),
     ],
 )
 async def test_preview_item_count_per_lane(
@@ -601,8 +616,8 @@ async def test_preview_item_count_per_lane(
     """리뷰가 찾은 공백 — `_character_preview_items`/`_publish_filter_preview_items`가
     story 레인 미리보기 테스트에만 가려져 미커버였다. R-7의 `StopIteration` → 500이
     `publish_filter` 레인에서만 터지던 결함이었던 선례를 생각하면 같은 부류가 숨어 있을 수
-    있어 3레인 전부 200 + 항목 수(story 13 / character 7 / publish_filter 2)를
-    직접 고정한다."""
+    있어 레인 전부 200 + 항목 수(story 10 / character 4 / publish_filter 2 / novel 6 — 소설은 경계 제안·화 생성·문단
+    수정 × 스토리·캐릭터 원작)를 직접 고정한다."""
     await _login_new_admin(db_client, db_session)
 
     resp = await db_client.post(f"/admin/prompt-sets/{lane}/draft/preview")
@@ -649,7 +664,7 @@ async def test_publish_valid_unmodified_draft_succeeds_with_next_version(
     resp = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "정기 점검 후 재게시"})
     assert resp.status_code == 200
     body = resp.json()
-    assert body["version"] == "18"
+    assert body["version"] == "22"
     assert body["status"] == "published"
     assert body["lane"] == "story"
     assert body["note"] == "정기 점검 후 재게시"
@@ -676,12 +691,12 @@ async def test_publish_assigns_sequential_integer_versions(
 ) -> None:
     await _login_new_admin(db_client, db_session)
     await _make_valid_draft(db_client, "story")
-    first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v18"})
-    assert first.json()["version"] == "18"
+    first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v22"})
+    assert first.json()["version"] == "22"
 
     await _make_valid_draft(db_client, "story")
-    second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v19"})
-    assert second.json()["version"] == "19"
+    second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v23"})
+    assert second.json()["version"] == "23"
 
 
 async def test_next_version_is_global_monotonic_not_per_lane(
@@ -689,22 +704,22 @@ async def test_next_version_is_global_monotonic_not_per_lane(
 ) -> None:
     """`_next_published_version`에 레인 필터가 없다("안 넣는 것"이 결정이다).
     세트를 만든 마이그레이션들이 story v2·v4·v6·v9·v10·v12·character v3·v5·v11·v13·publish_filter v7·v8을 만든 테스트
-    DB(+ Claude 세트 v14~v17)에서, story가 v18·v19를 게시한 뒤 character 게시가 v20을 받아야 한다(레인별 독립 증가라면
-    character의 다음 게시는 v18일 것이다) —
+    DB(+ Claude 세트 v14~v17, 소설 세트 v18~v21)에서, story가 v22·v23을 게시한 뒤 character 게시가 v24를 받아야 한다(레인별
+    독립 증가라면 character의 다음 게시는 v18일 것이다) —
     이 테스트는 그 레인 필터의 **부재**를 고정한다."""
     await _login_new_admin(db_client, db_session)
 
     await _make_valid_draft(db_client, "story")
-    first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v18"})
-    assert first.json()["version"] == "18"
+    first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v22"})
+    assert first.json()["version"] == "22"
 
     await _make_valid_draft(db_client, "story")
-    second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v19"})
-    assert second.json()["version"] == "19"
+    second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v23"})
+    assert second.json()["version"] == "23"
 
     await _make_valid_draft(db_client, "character")
-    third = await db_client.post("/admin/prompt-sets/character/publish", json={"note": "character v20"})
-    assert third.json()["version"] == "20"
+    third = await db_client.post("/admin/prompt-sets/character/publish", json={"note": "character v24"})
+    assert third.json()["version"] == "24"
 
 
 async def test_publishing_one_lane_does_not_affect_other_lanes_active_set(
@@ -788,7 +803,7 @@ async def test_publish_succeeds_even_when_cache_invalidation_fails(
         resp = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "캐시 실패해도 성공"})
 
     assert resp.status_code == 200
-    assert resp.json()["version"] == "18"
+    assert resp.json()["version"] == "22"
     assert any(record.levelno >= logging.WARNING for record in caplog.records)
     assert captured == ["redis"]
 
@@ -905,7 +920,7 @@ async def test_list_excludes_legacy_and_marks_exactly_one_active_per_lane_and_mo
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """`GET /admin/prompt-sets` 응답에 legacy 행이 없고 `isActive`가
-    정확히 7개((레인, 모델)마다 하나씩 — Gemini 3 + Claude 4)다."""
+    정확히 10개((레인, 모델)마다 하나씩 — 채팅·심사 Gemini 3 + 채팅 Claude 4 + 소설 3)다."""
     await _login_new_admin(db_client, db_session)
 
     resp = await db_client.get("/admin/prompt-sets")
@@ -914,14 +929,17 @@ async def test_list_excludes_legacy_and_marks_exactly_one_active_per_lane_and_mo
 
     lanes = {item["lane"] for item in items}
     assert "legacy" not in lanes
-    assert lanes == {"story", "character", "publish_filter"}
+    assert lanes == {"story", "character", "publish_filter", "novel"}
 
     active_items = [item for item in items if item["isActive"]]
-    assert len(active_items) == 7
+    assert len(active_items) == 10
     assert sorted((item["lane"], item["model"]) for item in active_items) == [
         ("character", "gemini"),
         ("character", "opus"),
         ("character", "sonnet"),
+        ("novel", "gemini"),
+        ("novel", "opus"),
+        ("novel", "sonnet"),
         ("publish_filter", "gemini"),
         ("story", "gemini"),
         ("story", "opus"),
@@ -1200,7 +1218,7 @@ async def test_draft_without_model_query_is_the_gemini_chain(
     resp = await db_client.get("/admin/prompt-sets/story/draft")
 
     assert resp.json()["model"] == "gemini"
-    assert len(resp.json()["sections"]) == _expected_section_count("story")
+    assert len(resp.json()["sections"]) == _visible_section_count("story")
 
 
 async def test_claude_and_gemini_drafts_are_separate_rows(
@@ -1304,8 +1322,10 @@ async def test_claude_publish_becomes_that_models_active_set_and_invalidates_onl
     assert resp.status_code == 200
     body = resp.json()
     assert body["model"] == "sonnet"
-    assert body["version"] == "18"
+    assert body["version"] == "22"
     assert len(body["sections"]) == _claude_section_count("story")
+    # 얼린 소설화 행은 채팅 Gemini 체인에만 있다 — Claude 채팅 체인 게시에 끼워 넣지 않는다.
+    assert {s["channel"] for s in body["sections"]} == _CLAUDE_CHANNELS
     db_session.expire_all()
     sonnet_after, _ = await load_active_prompt_set(db_session, lane="story", model="sonnet")
     assert str(sonnet_after.id) == body["id"]
@@ -1351,3 +1371,197 @@ async def test_claude_preview_has_only_system_and_generation_items(
     assert [(i["channel"], i["label"], i["text"]) for i in claude_items] == [
         (i["channel"], i["label"], i["text"]) for i in gemini.json()["items"] if i["channel"] in _CLAUDE_CHANNELS
     ]
+
+
+# ---- 소설 레인과 채팅 레인의 얼린 소설 행 ---------------------------------------------------
+#
+# 소설 문안은 `novel` 레인((novel, 모델) 체인 셋)에서만 고친다. 채팅 레인 Gemini 체인의 소설화 행은 옛 이미지가 읽는 옛
+# 문안이라 얼려 둔다 — 화면에 싣지 않고, 저장·복원·게시 때 서버가 직전 게시본의 값을 넣는다.
+
+
+def _rows(sections: list[PromptSection]) -> set[tuple[str, str, str, str, str, bool, int]]:
+    return {(s.channel, s.scope, s.slot, s.variant, s.body, s.conditional, s.order) for s in sections}
+
+
+def _frozen(sections: list[PromptSection]) -> set[tuple[str, str, str, str, str, bool, int]]:
+    return {row for row in _rows(sections) if row[0] in _NOVELIZE_CHANNELS}
+
+
+@pytest.mark.parametrize(
+    ("model", "channels"),
+    [
+        pytest.param("gemini", _NOVELIZE_CHANNELS, id="gemini"),
+        pytest.param("sonnet", {"novelize_chapter"}, id="sonnet"),
+        pytest.param("opus", {"novelize_chapter"}, id="opus"),
+    ],
+)
+async def test_novel_draft_opens_for_every_model_chain(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, model: ChatModelId, channels: set[str]
+) -> None:
+    """소설 탭은 세 모델 탭을 다 그린다 — 체인이 하나라도 비어 있으면 초안 조회가 500 이다. Claude 체인은 화 생성만 그
+    체인을 읽어 그 채널만 있다."""
+    await _login_new_admin(db_client, db_session)
+
+    resp = await db_client.get("/admin/prompt-sets/novel/draft", params={"model": model})
+
+    assert resp.status_code == 200
+    assert {s["channel"] for s in resp.json()["sections"]} == channels
+
+
+async def test_novel_sonnet_publish_passes_with_only_the_chapter_channel_and_rejects_others_r1(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Claude 세트의 R-1 기대 집합은 레인마다 다르다 — 채팅 레인 집합(system·generation)을 소설 레인에 쓰면 화 생성만 가진
+    소설 Claude 체인은 영원히 게시할 수 없다. 반대로 다른 채널이 섞이면 아무 호출도 읽지 않는 잉여다."""
+    await _login_new_admin(db_client, db_session)
+    await _make_valid_draft(db_client, "novel", "sonnet")
+
+    ok = await db_client.post("/admin/prompt-sets/novel/publish", params={"model": "sonnet"}, json={"note": "n"})
+    assert ok.status_code == 200, ok.text
+    assert {s["channel"] for s in ok.json()["sections"]} == {"novelize_chapter"}
+    db_session.expire_all()
+    assert str((await load_active_prompt_set(db_session, lane="novel", model="sonnet"))[0].id) == ok.json()["id"]
+
+    _, gemini_sections = await load_active_prompt_set(db_session, lane="novel")
+    sonnet = (await db_client.get("/admin/prompt-sets/novel/draft", params={"model": "sonnet"})).json()
+    boundary_rows = [
+        {"channel": s.channel, "scope": s.scope, "slot": s.slot, "variant": s.variant, "body": s.body,
+         "conditional": s.conditional, "order": s.order}
+        for s in gemini_sections
+        if s.channel == "novelize_boundary"
+    ]
+    put = await db_client.put(
+        "/admin/prompt-sets/novel/draft",
+        params={"model": "sonnet"},
+        json={"labels": sonnet["labels"], "sections": [*sonnet["sections"], *boundary_rows]},
+    )
+    assert put.status_code == 200
+    mixed = await db_client.post("/admin/prompt-sets/novel/publish", params={"model": "sonnet"}, json={"note": ""})
+    assert mixed.status_code == 422
+    assert mixed.json()["detail"]["rule"] == "R-1"
+
+
+async def test_novel_publish_leaves_the_chat_sets_alone(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """소설 문안을 게시해도 채팅 세트 버전은 바뀌지 않는다 — 소설을 고치려고 채팅 문안을 다시 게시하던 결합을 끊은 것이다."""
+    await _login_new_admin(db_client, db_session)
+    story_before = (await load_active_prompt_set(db_session, lane="story"))[0].id
+    character_before = (await load_active_prompt_set(db_session, lane="character"))[0].id
+    await _make_valid_draft(db_client, "novel")
+
+    resp = await db_client.post("/admin/prompt-sets/novel/publish", json={"note": "소설"})
+
+    assert resp.status_code == 200, resp.text
+    db_session.expire_all()
+    assert str((await load_active_prompt_set(db_session, lane="novel"))[0].id) == resp.json()["id"]
+    assert (await load_active_prompt_set(db_session, lane="story"))[0].id == story_before
+    assert (await load_active_prompt_set(db_session, lane="character"))[0].id == character_before
+
+
+async def test_chat_draft_put_with_changed_novel_rows_keeps_and_publishes_the_frozen_rows(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """배포 전부터 열린 편집 탭은 소설화 행을 보낸다. 그 행을 고쳐 보내도 저장·게시되는 값은 직전 게시본의 얼린 값이다."""
+    await _login_new_admin(db_client, db_session)
+    _, active_sections = await load_active_prompt_set(db_session, lane="story")
+    frozen = _frozen(active_sections)
+    shown = (await db_client.get("/admin/prompt-sets/story/draft")).json()
+    tampered = [
+        {"channel": s.channel, "scope": s.scope, "slot": s.slot, "variant": s.variant, "body": f"[바꿈] {s.body}",
+         "conditional": s.conditional, "order": s.order}
+        for s in active_sections
+        if s.channel in _NOVELIZE_CHANNELS
+    ]
+
+    put = await db_client.put(
+        "/admin/prompt-sets/story/draft",
+        json={"labels": shown["labels"], "sections": [*shown["sections"], *tampered]},
+    )
+    assert put.status_code == 200
+    assert not {s["channel"] for s in put.json()["sections"]} & _NOVELIZE_CHANNELS
+    stored = await _sections_of_set(db_session, uuid.UUID(put.json()["id"]))
+    assert _frozen(stored) == frozen
+
+    published = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "채팅만"})
+    assert published.status_code == 200, published.text
+    assert _frozen(await _sections_of_set(db_session, uuid.UUID(published.json()["id"]))) == frozen
+
+
+async def test_restoring_a_set_from_before_the_novel_rows_publishes_with_the_frozen_rows(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """소설화 행이 없던 옛 버전(story v10)을 복원해도 게시 슬롯 검사가 "누락"으로 막지 않고, 얼린 값이 그대로 실린다."""
+    await _login_new_admin(db_client, db_session)
+    _, active_sections = await load_active_prompt_set(db_session, lane="story")
+    frozen = _frozen(active_sections)
+    old_id = await db_session.scalar(
+        sa.select(PromptSet.id).where(
+            PromptSet.lane == "story", PromptSet.status == "published", PromptSet.version == "10"
+        )
+    )
+    assert old_id is not None
+    assert not _frozen(await _sections_of_set(db_session, old_id))
+
+    restored = await db_client.post(f"/admin/prompt-sets/{old_id}/restore")
+    assert restored.status_code == 200
+    published = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "되돌림"})
+
+    assert published.status_code == 200, published.text
+    assert _frozen(await _sections_of_set(db_session, uuid.UUID(published.json()["id"]))) == frozen
+
+
+async def test_a_draft_saved_before_the_freeze_publishes_the_frozen_rows(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """얼림 규칙 전에 저장된 초안(운영에는 채팅 레인 초안이 있다)의 소설화 행이 달라도, 게시하는 값은 직전 게시본의
+    얼린 값이다 — 저장 경로를 거치지 않은 초안도 게시 때 한 번 더 갈아 끼운다."""
+    await _login_new_admin(db_client, db_session)
+    _, active_sections = await load_active_prompt_set(db_session, lane="story")
+    frozen = _frozen(active_sections)
+    draft = await _make_valid_draft(db_client, "story")
+    await db_session.execute(
+        sa.update(PromptSection)
+        .where(
+            PromptSection.prompt_set_id == uuid.UUID(str(draft["id"])),
+            PromptSection.channel.in_(_NOVELIZE_CHANNELS),
+        )
+        .values(body="[옛 초안] 다른 문안")
+    )
+    await db_session.commit()
+
+    published = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "옛 초안"})
+
+    assert published.status_code == 200, published.text
+    assert _frozen(await _sections_of_set(db_session, uuid.UUID(published.json()["id"]))) == frozen
+
+
+async def test_novel_preview_reads_labels_and_the_rating_rule_from_the_chat_gemini_set(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """소설 미리보기는 실호출과 같은 세트로 렌더한다 — 원문 줄 라벨과 등급 규칙은 원작 종류의 채팅 Gemini 세트에서 온다.
+    Claude 체인은 화 생성 항목만이다."""
+    await _login_new_admin(db_client, db_session)
+    story_set, story_sections = await load_active_prompt_set(db_session, lane="story")
+    rule = next(s.body for s in story_sections if s.channel == "system" and s.slot == "rule_rating")
+
+    gemini = (await db_client.post("/admin/prompt-sets/novel/draft/preview")).json()["items"]
+    opus = (await db_client.post("/admin/prompt-sets/novel/draft/preview", params={"model": "opus"})).json()["items"]
+
+    story_chapter = next(i for i in gemini if i["label"] == "novelize_chapter · 스토리")
+    assert rule in story_chapter["text"]
+    assert f"[턴 1] {story_set.story_assistant_label}: [샘플] 왔어?" in story_chapter["text"]
+    assert "[이번 묶음]" in story_chapter["text"] and "[인물 메모]" in story_chapter["text"]
+    assert [i["label"] for i in opus] == ["novelize_chapter · 스토리", "novelize_chapter · 캐릭터"]
+
+
+async def _sections_of_set(db_session: AsyncSession, set_id: uuid.UUID) -> list[PromptSection]:
+    return list(
+        (
+            await db_session.scalars(
+                sa.select(PromptSection)
+                .where(PromptSection.prompt_set_id == set_id)
+                .execution_options(populate_existing=True)
+            )
+        ).all()
+    )

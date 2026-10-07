@@ -17,7 +17,10 @@ from api.db.models.character import CharacterVersionDetail
 from api.db.models.chat import ChatMessageRole, ChatRoom
 from api.db.models.content import Content
 from api.db.models.novel import Novel, NovelBatch, NovelChapter, NovelChapterRevision, NovelCharacter, NovelJob
+from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StoryVersionDetail
+from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId
+from api.novelize.billing import chapter_job_model
 from api.novelize.prompts import NovelizePrompt, build_novelize_chapter_prompt, build_novelize_revise_prompt
 from api.novelize.source import format_turn_lines, group_turns, load_segment, novel_prompt_names, segment_hash
 from api.novelize.text import ending_excerpt, split_paragraphs
@@ -34,6 +37,31 @@ def require_protagonist_name(novel: Novel) -> str:
     if not name:
         raise ProtagonistNameMissingError(f"novel={novel.id} 주인공 이름이 없다")
     return name
+
+
+@dataclass(frozen=True)
+class NovelPromptSource:
+    """소설 호출 한 번이 읽는 두 세트. `sections` 는 `novel` 레인의 그 모델 체인 활성 세트(소설 문안), `chat_set`·
+    `chat_sections` 는 소설 원작 종류(스토리·캐릭터) 채팅 레인의 Gemini 활성 세트(화자 라벨·등급 규칙)다."""
+
+    sections: list[PromptSection]
+    chat_set: PromptSet
+    chat_sections: list[PromptSection]
+
+
+async def load_novel_prompt_source(
+    db: AsyncSession, novel: Novel, *, model: ChatModelId = DEFAULT_CHAT_MODEL
+) -> NovelPromptSource:
+    """`model` 은 소설 레인 체인이다 — 화 생성만 작업의 모델을 넘기고 경계 제안·문단 수정은 기본(Gemini)이다. 그 체인에
+    활성 세트가 없으면 다른 체인으로 대신하지 않고 `PromptSetNotFoundError` 를 그대로 낸다: 다른 모델용 문안으로 값을 낸
+    모델을 부르면 조용히 다른 글이 나오고, 마이그레이션이 세 체인을 모두 심고 어드민에는 세트를 지우는 길이 없어 이 실패는
+    배포 결함일 때만 난다. 작업 실행은 이 실패를 실패·환불로 끝낸다.
+
+    등급 규칙·라벨은 채팅 레인의 **Gemini** 세트에서만 읽는다 — Claude 채팅 세트는 생성 채널만 갖고 모델별로 손질될 수
+    있어, 소설 모델이 무엇이든 같은 등급 규칙을 붙이려면 소스가 한 곳이어야 한다."""
+    _, sections = await load_active_prompt_set(db, lane="novel", model=model)
+    chat_set, chat_sections = await load_active_prompt_set(db, lane=novel.content_type)
+    return NovelPromptSource(sections=sections, chat_set=chat_set, chat_sections=chat_sections)
 
 
 async def _version_id(db: AsyncSession, novel: Novel) -> uuid.UUID | None:
@@ -142,23 +170,25 @@ async def build_chapter_input(db: AsyncSession, job: NovelJob, novel: Novel) -> 
     writes_novel_title = is_first and novel.title_edited_at is None
 
     previous_excerpt = await _previous_excerpt(db, novel.id, before_ordinal=first_ordinal)
-    # 작업이 상위 모델이어도 기본 모델(Gemini) 세트를 읽는다 — 모델별 세트에는 소설 장 채널이 없고, 장 지시·등급 규칙은
-    # 모델과 무관하게 이 세트의 것이다. 바뀌는 것은 생성 모델뿐이다(`runner.py`).
-    prompt_set, sections = await load_active_prompt_set(db, lane=novel.content_type)
+    # 화 문안은 작업 모델의 소설 체인에서, 라벨·등급 규칙은 채팅 Gemini 세트에서 읽는다 — 어드민이 화 문안을 모델마다
+    # 따로 고칠 수 있게 체인을 나눴고, 등급 규칙은 모델과 무관하게 한 곳이다.
+    source = await load_novel_prompt_source(db, novel, model=chapter_job_model(job))
     is_story = novel.content_type == "story"
     turns = group_turns(segment)
     names = novel_prompt_names(protagonist_name=protagonist, character_name=novel.character_name)
-    assistant_label = prompt_set.story_assistant_label if is_story else prompt_set.character_assistant_label
+    chat_set = source.chat_set
+    assistant_label = chat_set.story_assistant_label if is_story else chat_set.character_assistant_label
     prompt = build_novelize_chapter_prompt(
-        prompt_set=prompt_set,
-        sections=sections,
+        chat_set=chat_set,
+        chat_sections=source.chat_sections,
+        sections=source.sections,
         is_story_chat=is_story,
         work_setting=await load_work_setting(db, novel),
         user_name=protagonist,
         setting_notes=novel.setting_notes,
         previous_excerpt=previous_excerpt,
         turn_lines=format_turn_lines(
-            turns, names=names, user_label=prompt_set.user_label, assistant_label=assistant_label
+            turns, names=names, user_label=chat_set.user_label, assistant_label=assistant_label
         ),
         character_notes=await _character_notes(db, novel.id),
         previous_summaries=await _previous_summaries(db, novel.id, before_ordinal=first_ordinal),
@@ -246,9 +276,10 @@ async def build_revise_input(db: AsyncSession, job: NovelJob, novel: Novel) -> R
     if base is None or job.paragraph_start is None or job.paragraph_end is None:
         raise ValueError(f"job={job.id} 문단 수정의 기준 개정이나 범위가 없다")
     paragraphs = split_paragraphs(base.body)
-    _, sections = await load_active_prompt_set(db, lane=novel.content_type)
+    source = await load_novel_prompt_source(db, novel)
     prompt = build_novelize_revise_prompt(
-        sections=sections,
+        chat_sections=source.chat_sections,
+        sections=source.sections,
         is_story_chat=novel.content_type == "story",
         work_setting=await load_work_setting(db, novel),
         setting_notes=novel.setting_notes,

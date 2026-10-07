@@ -32,9 +32,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.core import clover
 from api.core.config import settings
+from api.chat.prompt_builder import PromptLane, load_active_prompt_set
 from api.db.models import Novel, NovelJob
+from api.db.models.prompt import PromptSection, PromptSet
 from api.llm import bedrock as bedrock_module
 from api.llm.bedrock import BedrockLLMClient
+from api.llm.chat_models import ChatModelId
 from api.llm.client import LLMCallContext, LLMClient, T
 from api.llm.routing import RoutingLLMClient
 from api.novelize import router as novelize_router
@@ -468,27 +471,77 @@ async def test_an_old_chapter_job_without_a_model_runs_on_gemini(
     assert usage.model == "gemini"
 
 
-async def test_a_premium_chapter_uses_the_gemini_prompt_set(
+async def _set_instruction(
+    db: AsyncSession, *, lane: PromptLane, model: ChatModelId, channel: str, slot: str, body: str
+) -> None:
+    """(lane, model) 활성 세트의 한 행 문안을 바꾼다 — 어느 세트에서 읽었는지 글자로 가르려는 것이다."""
+    _, sections = await load_active_prompt_set(db, lane=lane, model=model)
+    row = next(s for s in sections if s.channel == channel and s.slot == slot)
+    row.body = body
+    await db.commit()
+
+
+async def test_a_premium_chapter_uses_its_models_novel_chain_and_the_chat_gemini_rating_rule(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
     llm: _ModelLLM,
     enqueued: list[uuid.UUID],
 ) -> None:
-    """Claude 체인에는 소설 장 채널이 없다 — 상위 모델 장도 지시문·장 지시·등급 규칙을 Gemini 세트에서 읽고, 바뀌는
-    것은 생성 모델뿐이다. 같은 구간을 Gemini 로 만든 뒤 Sonnet 으로 재생성해 두 입력이 같은지 본다."""
+    """화 문안은 작업 모델의 소설 체인에서 읽는다 — Sonnet 다시 만들기는 (novel, sonnet) 세트의 지시문, Gemini 생성은
+    (novel, gemini) 세트의 지시문이다. 등급 규칙은 모델과 무관하게 원작 종류 채팅 레인의 Gemini 세트에서 붙인다(Claude
+    채팅 세트의 등급 규칙이 따로 손질돼 있어도). 세 세트의 문안을 서로 다른 글자로 바꿔 어느 세트를 읽었는지 가른다."""
     room, novel_id, _ = await _novel(db_client, db_session, monkeypatch, premium=True)
+    content = (await db_session.get_one(Novel, novel_id)).content_type
+    await _set_instruction(
+        db_session, lane="novel", model="gemini", channel="novelize_chapter", slot="instruction", body="제미나이 화 지시"
+    )
+    await _set_instruction(
+        db_session, lane="novel", model="sonnet", channel="novelize_chapter", slot="instruction", body="소네트 화 지시"
+    )
+    await _set_instruction(
+        db_session, lane=content, model="gemini", channel="system", slot="rule_rating", body="[수위] 채팅 제미나이"
+    )
+    await _set_instruction(
+        db_session, lane=content, model="sonnet", channel="system", slot="rule_rating", body="[수위] 채팅 소네트"
+    )
+
     first = await _create(db_client, novel_id, room, cost=40, model="gemini")
     await runner.run_job(_factory(db_session), llm, uuid.UUID(first.json()["id"]))
     chapter_id = uuid.UUID((await db_client.get(f"/novels/{novel_id}")).json()["chapters"][0]["id"])
-
     again = await _regenerate(db_client, novel_id, chapter_id, cost=105, model="sonnet")
     await runner.run_job(_factory(db_session), llm, uuid.UUID(again.json()["id"]))
 
-    (gemini_prompt, gemini_system, gemini_usage), (sonnet_prompt, sonnet_system, sonnet_usage) = llm.calls
+    (_, gemini_system, gemini_usage), (_, sonnet_system, sonnet_usage) = llm.calls
     assert (gemini_usage.model, sonnet_usage.model) == ("gemini", "sonnet")
-    assert sonnet_system == gemini_system and sonnet_prompt == gemini_prompt
+    assert gemini_system == "제미나이 화 지시\n\n[수위] 채팅 제미나이"
+    assert sonnet_system == "소네트 화 지시\n\n[수위] 채팅 제미나이"
     assert {job.status for job in await _jobs(db_session, novel_id)} == {"succeeded"}
+
+
+async def test_a_chapter_whose_model_has_no_novel_chain_fails_and_refunds_without_a_fallback(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    llm: _ModelLLM,
+    enqueued: list[uuid.UUID],
+) -> None:
+    """그 모델의 소설 체인이 없으면 Gemini 문안으로 대신 쓰지 않는다 — 값을 낸 모델에 다른 모델용 문안을 보내면 조용히
+    다른 글이 나온다. 모델을 부르지 않고 실패·환불한다."""
+    room, novel_id, owner_id = await _novel(db_client, db_session, monkeypatch, premium=True)
+    resp = await _create(db_client, novel_id, room, cost=170, model="opus")
+    assert resp.status_code == 202, resp.text
+    opus_sets = sa.select(PromptSet.id).where(PromptSet.lane == "novel", PromptSet.model == "opus")
+    await db_session.execute(sa.delete(PromptSection).where(PromptSection.prompt_set_id.in_(opus_sets)))
+    await db_session.execute(sa.delete(PromptSet).where(PromptSet.lane == "novel", PromptSet.model == "opus"))
+    await db_session.commit()
+
+    await runner.run_job(_factory(db_session), llm, enqueued[0])
+
+    (job,) = await _jobs(db_session, novel_id)
+    assert (job.status, job.failure_code) == ("failed", "internal")
+    assert llm.calls == []
+    assert await _novel_ledger(db_session, owner_id) == [("novelize_spend", -170), ("novelize_refund", 170)]
 
 
 # ── Bedrock 실패 → 실패 사유·환불 ──────────────────────────────────────────

@@ -250,7 +250,7 @@ async def test_chapter_job_saves_the_chapter_and_its_first_revision_after_the_st
     assert "[턴 3] 사용자: [U02]" in prompt and "[턴 3] 캐릭터: [A02]" in prompt
     assert "[U03]" not in prompt
     assert "이름: 서진" in prompt
-    assert "[앞 장의 끝]" not in prompt
+    assert "[앞 화의 끝]" not in prompt
 
 
 async def test_next_chapter_carries_the_end_of_the_previous_chapter_and_gets_the_next_ordinal(
@@ -268,7 +268,7 @@ async def test_next_chapter_carries_the_end_of_the_previous_chapter_and_gets_the
 
     assert [c.ordinal for c in await _chapters(db_session, novel.id)] == [1, 2]
     prompt = llm.calls[0][0]
-    assert "[앞 장의 끝]" in prompt and "마지막 문단이다." in prompt and "앞 문단" not in prompt
+    assert "[앞 화의 끝]" in prompt and "마지막 문단이다." in prompt and "앞 문단" not in prompt
     assert "[턴 1] 사용자: [U02]" in prompt
 
 
@@ -540,8 +540,7 @@ async def test_the_chapter_input_carries_the_episode_plan_summaries_and_characte
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """다음 묶음 입력에는 앞 화 요약이 오래된 순으로, 메모를 적은 인물만 실린다. 다시 만들기는 그 묶음 앞 화까지만
-    본다(자기 묶음의 옛 요약은 다시 쓸 대상이라 넣지 않는다). 이 값을 쓰는 섹션은 소설 프롬프트 세트에 들어간다 —
-    여기서는 입력 조립까지를 본다."""
+    본다(자기 묶음의 옛 요약은 다시 쓸 대상이라 넣지 않는다). 세 값이 소설 레인 세트의 슬롯으로 프롬프트에 실린다."""
     room, novel = await _novel_for(db_client, db_session, turns=4, balance=300)
     messages = await _room_messages(db_session, room.room_id)
     first = await _chapter_job(db_session, novel, messages[0], room.turns[1][1], episodes=2)
@@ -562,6 +561,9 @@ async def test_the_chapter_input_carries_the_episode_plan_summaries_and_characte
     built = await inputs.build_chapter_input(db_session, job, loaded)
 
     assert (built.episode_count, built.writes_novel_title) == (1, False)
+    assert "[지난 화 요약]" in built.prompt.prompt and "1화: 서진이 도윤을 만났다.\n2화: 도윤이 우산을 건넸다." in built.prompt.prompt
+    assert "[인물 메모]" in built.prompt.prompt and "도윤(윤이): 소꿉친구다." in built.prompt.prompt
+    assert "정확히 1화로 나눈다" in built.prompt.prompt and "소설 제목은 쓰지 않는다." in built.prompt.prompt
     assert await inputs._previous_summaries(db_session, novel.id, before_ordinal=None) == (
         "1화: 서진이 도윤을 만났다.\n2화: 도윤이 우산을 건넸다."
     )

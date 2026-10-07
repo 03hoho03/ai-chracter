@@ -2308,7 +2308,8 @@
               "enum": [
                 "story",
                 "character",
-                "publish_filter"
+                "publish_filter",
+                "novel"
               ],
               "type": "string",
               "title": "Lane"
@@ -2370,7 +2371,8 @@
               "enum": [
                 "story",
                 "character",
-                "publish_filter"
+                "publish_filter",
+                "novel"
               ],
               "type": "string",
               "title": "Lane"
@@ -2445,7 +2447,8 @@
               "enum": [
                 "story",
                 "character",
-                "publish_filter"
+                "publish_filter",
+                "novel"
               ],
               "type": "string",
               "title": "Lane"
@@ -2509,7 +2512,8 @@
               "enum": [
                 "story",
                 "character",
-                "publish_filter"
+                "publish_filter",
+                "novel"
               ],
               "type": "string",
               "title": "Lane"
@@ -14062,7 +14066,8 @@
             "enum": [
               "story",
               "character",
-              "publish_filter"
+              "publish_filter",
+              "novel"
             ],
             "title": "Lane"
           },
@@ -14187,7 +14192,8 @@
             "enum": [
               "story",
               "character",
-              "publish_filter"
+              "publish_filter",
+              "novel"
             ],
             "title": "Lane"
           },

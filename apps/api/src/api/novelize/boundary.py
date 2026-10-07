@@ -35,19 +35,20 @@ async def suggest_end_turn(
     *,
     novel: Novel,
     turns: list[SourceTurn],
-    prompt_set: PromptSet,
     sections: list[PromptSection],
+    chat_set: PromptSet,
     room_id: uuid.UUID,
 ) -> tuple[int, str] | None:
     """후보 `turns` 중 모델이 고른 끝 턴 번호(1부터)와 이유. 호출이나 문안 렌더가 실패하면 None 이다 — 경계는 사람이
     확인하거나(경계 모달) 턴 상한 끝으로 대신하므로(연쇄) 실패가 생성을 막을 이유가 없다. 범위 밖 번호는 버리지 않고
     마지막 후보로 바꾼다. 세션을 받지 않는다 — 부르는 쪽이 세트를 읽고 세션을 닫은 뒤 부른다(모델 호출 동안 커넥션을
-    쥐지 않는다). 호출은 구조화 호출이라 고른 글쓰기 모델과 무관하게 늘 Gemini 다."""
+    쥐지 않는다). 호출은 구조화 호출이라 고른 글쓰기 모델과 무관하게 늘 Gemini 다. `sections` 는 소설 레인 Gemini 체인
+    세트, `chat_set` 은 원문 줄 라벨을 읽을 채팅 세트다(`inputs.load_novel_prompt_source`)."""
     is_story = novel.content_type == "story"
     names = novel_prompt_names(protagonist_name=novel.protagonist_name or "", character_name=novel.character_name)
     try:
         prompt = build_novelize_boundary_prompt(
-            prompt_set=prompt_set,
+            chat_set=chat_set,
             sections=sections,
             is_story_chat=is_story,
             max_turns=len(turns),
@@ -55,8 +56,8 @@ async def suggest_end_turn(
             turn_lines=format_turn_lines(
                 turns,
                 names=names,
-                user_label=prompt_set.user_label,
-                assistant_label=prompt_set.story_assistant_label if is_story else prompt_set.character_assistant_label,
+                user_label=chat_set.user_label,
+                assistant_label=chat_set.story_assistant_label if is_story else chat_set.character_assistant_label,
             ),
         )
         result = await llm_client.generate_structured_with_instruction(

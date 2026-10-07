@@ -45,7 +45,6 @@ from api.db.models.novel import (
     NovelJob,
     NovelJobFailureCode,
 )
-from api.chat.prompt_builder import load_active_prompt_set
 from api.llm.client import (
     LLMCallContext,
     LLMClient,
@@ -71,6 +70,7 @@ from api.novelize.inputs import (
     build_chapter_input,
     build_revise_input,
     current_revision,
+    load_novel_prompt_source,
     next_ordinal,
     regenerate_batch,
 )
@@ -178,8 +178,8 @@ async def _execute(session_factory: SessionFactory, llm_client: LLMClient, job_i
                 usage = LLMCallContext(call_site="novelize_revise", user_id=job.user_id, room_id=novel.chat_room_id)
             else:
                 # 작업에 적힌 모델 그대로다. 허용은 과금할 때 판정했고 여기서 다시 보지 않는다 — 그 사이 허용이 회수됐다고
-                # 기본 모델로 바꾸면 상위 모델 값을 내고 다른 모델의 글을 받는다. 프롬프트 세트는 모델과 무관하게 기본
-                # 모델 세트다(`build_chapter_input`). call site 를 바꾸지 않는다 — 상위 모델을 Bedrock 으로 보내는
+                # 기본 모델로 바꾸면 상위 모델 값을 내고 다른 모델의 글을 받는다. 화 문안도 그 모델의 소설 체인
+                # 세트다(`build_chapter_input`). call site 를 바꾸지 않는다 — 상위 모델을 Bedrock 으로 보내는
                 # 라우팅이 이 call site 로 고른다.
                 usage = LLMCallContext(
                     call_site="novelize_chapter",
@@ -319,11 +319,11 @@ async def _start_chain_child(
         turns = group_turns(candidates)
         if not turns:
             return None
-        prompt_set, sections = await load_active_prompt_set(db, lane=novel.content_type)
+        source = await load_novel_prompt_source(db, novel)
         await db.commit()
 
     suggested = await suggest_end_turn(
-        llm_client, novel=novel, turns=turns, prompt_set=prompt_set, sections=sections, room_id=room_id
+        llm_client, novel=novel, turns=turns, sections=source.sections, chat_set=source.chat_set, room_id=room_id
     )
     end_index = (suggested[0] if suggested is not None else len(turns)) - 1
     episodes = episode_counts(turns[: end_index + 1], novel, model)[-1]
