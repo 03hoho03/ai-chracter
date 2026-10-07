@@ -22,9 +22,9 @@ type NovelReaderProps = {
   /** 이 장 제목으로 포커스를 옮길 차례인가(새로 만든·다시 만든 장으로 옮겨 왔을 때). */
   shouldFocusHeading: boolean;
   onHeadingFocused: () => void;
-  /** 마지막 화들을 지운 뒤. 지운 화들 중 첫 화의 번호를 넘긴다 — 화면이 그 앞 화(새 마지막 화)로 옮기고 그 제목에
-   * 포커스를 둔다. */
-  onChapterDeleted: (firstDeletedOrdinal: number) => void;
+  /** 마지막 화들을 지운 뒤. 지운 화들 중 첫 화의 번호와 지운 화들을 넘긴다 — 화면이 그 앞 화(새 마지막 화)로 옮겨
+   * 그 제목에 포커스를 두고, 옮긴 뒤 지운 화들의 캐시를 버린다. */
+  onChapterDeleted: (firstDeletedOrdinal: number, deletedChapterIds: string[]) => void;
   /** 직접 고치던 글이 시작할 때와 달라졌는가. 화면이 장을 옮기기 전에 확인을 받는 데 쓴다. */
   onDraftDirtyChange: (isDirty: boolean) => void;
 };
@@ -170,7 +170,7 @@ export function NovelReader({
                   chapterIds: batchChapters.map((item) => item.id),
                   rangeLabel: batchRangeLabel,
                 }).then((isDeleted) => {
-                  if (isDeleted) onChapterDeleted(firstInBatch.ordinal);
+                  if (isDeleted) onChapterDeleted(firstInBatch.ordinal, batchChapters.map((item) => item.id));
                 });
               }}
             >

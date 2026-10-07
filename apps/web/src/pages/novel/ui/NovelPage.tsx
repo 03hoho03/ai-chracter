@@ -1,5 +1,6 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useBlocker, useNavigate } from "@tanstack/react-router";
 import { BookX, CloudOff, Trash2 } from "lucide-react";
 import { useEffect, useId, useRef, useState, type MouseEvent, type ReactNode } from "react";
@@ -14,11 +15,12 @@ import {
 } from "@/entities/novel";
 import { ConfirmChapterSpendModal, ConfirmNovelSpendModal } from "@/features/confirm-novel-spend";
 import { NovelChapterMaker, useNovelChapterJob } from "@/features/create-novel-chapter";
-import { DeleteLastChapterModal, DeleteNovelModal } from "@/features/delete-novel";
+import { DeleteLastChapterModal, DeleteNovelModal, removeDeletedChapterCaches } from "@/features/delete-novel";
 import { DiscardManualEditModal, useNovelAiEdit } from "@/features/edit-novel-chapter";
 import { NovelNotesEditor } from "@/features/edit-novel-notes";
 import { NovelReader } from "@/widgets/novel-reader";
 
+import { canRemoveDeletedChapterCaches } from "../model/deletedChapterCaches";
 import { shouldConfirmDraftDiscardOnHistory } from "../model/draftHistoryBlock";
 import {
   PIN_CHAPTER_NAVIGATE_OPTIONS,
@@ -106,6 +108,9 @@ export function NovelPage({ novelId, chapter }: NovelPageProps) {
 
 function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter: number | undefined }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  // 지웠지만 아직 캐시를 버리지 않은 화들. 화면이 그 화를 떠난 렌더의 커밋 뒤에 버린다(아래 effect).
+  const [deletedChapterIds, setDeletedChapterIds] = useState<string[]>([]);
   // 작업이 끝나 새로 만든(다시 만든) 장, 또는 마지막 장을 지운 뒤의 새 마지막 장. 그 장의 제목이 그려지면 포커스를
   // 받고 비운다.
   const [focusChapterId, setFocusChapterId] = useState<string | undefined>(undefined);
@@ -168,6 +173,13 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
     isChapterJobBusy: flow.isJobRunning || flow.preparing !== undefined,
   });
   const selectedChapter = resolveSelectedChapter(novel.chapters, chapter);
+  // 지운 화의 본문·판 캐시는 그 화를 그리던 읽기 화면이 내려간 뒤에 버린다 — effect 는 커밋 뒤에 돌아 그때는 옛 화면의
+  // 쿼리 구독이 이미 풀려 있다. 그 전에 버리면 남은 구독이 곧바로 다시 받아 404 가 난다.
+  useEffect(() => {
+    if (!canRemoveDeletedChapterCaches(deletedChapterIds, selectedChapter?.id)) return;
+    removeDeletedChapterCaches(queryClient, novel.id, deletedChapterIds);
+    setDeletedChapterIds([]);
+  }, [deletedChapterIds, selectedChapter?.id]);
   const meta = [CONTENT_TYPE_LABEL[novel.contentType], novel.chapters.length > 0 ? `${novel.chapters.length}화` : undefined]
     .filter((part) => part !== undefined)
     .join(" · ");
@@ -242,8 +254,13 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
     void goToChapter(target);
   }
 
-  function handleChapterDeleted(firstDeletedOrdinal: number) {
-    if (!isMountedRef.current) return;
+  function handleChapterDeleted(firstDeletedOrdinal: number, deleted: string[]) {
+    if (!isMountedRef.current) {
+      // 화면을 이미 떠났으면 지운 화를 보는 구독도 없다 — 바로 버린다.
+      removeDeletedChapterCaches(queryClient, novel.id, deleted);
+      return;
+    }
+    setDeletedChapterIds(deleted);
     // 지운 화들 중 첫 화 바로 앞 화가 새 마지막 화다. 주소의 화 번호를 걷어 기본값(마지막 화)으로 돌린다.
     const previous = novel.chapters.find((item) => item.ordinal === firstDeletedOrdinal - 1);
     setFocusChapterId(previous?.id);
