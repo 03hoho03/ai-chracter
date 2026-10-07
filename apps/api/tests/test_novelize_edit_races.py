@@ -19,6 +19,7 @@ from api.db.models.novel import (
     Novel,
     NovelChapter,
     NovelChapterCharacter,
+    NovelChapterRevision,
     NovelCharacter,
     NovelJob,
     NovelReadingPosition,
@@ -28,7 +29,11 @@ from api.novelize import runner
 from api.novelize.billing import _lock_user
 from api.novelize.deletion import delete_batch, delete_novels
 from api.novelize.output import ParsedEpisode
-from api.novelize.schemas import NovelCharacterMergeRequest, NovelReadingPositionRequest
+from api.novelize.schemas import (
+    NovelCharacterMergeRequest,
+    NovelReadingPositionRequest,
+    NovelRevisionCreateRequest,
+)
 from api.novelize.snapshots import save_snapshot
 from factories import _assert_blocked, _make_novel_tree, _make_user
 
@@ -62,6 +67,7 @@ class _Seed:
     batch_id: uuid.UUID
     chapter_id: uuid.UUID
     revision_id: uuid.UUID
+    current_revision_id: uuid.UUID
     doyun_id: uuid.UUID
     yuni_id: uuid.UUID
     snapshot_id: uuid.UUID
@@ -82,7 +88,15 @@ async def _seed(factory: async_sessionmaker[AsyncSession]) -> _Seed:
         snapshot = await save_snapshot(s, tree.novel.id, name="저장", kind="manual")
         await s.commit()
     return _Seed(
-        owner.id, tree.novel.id, tree.batch.id, tree.chapter.id, tree.first_revision.id, doyun.id, yuni.id, snapshot.id
+        owner.id,
+        tree.novel.id,
+        tree.batch.id,
+        tree.chapter.id,
+        tree.first_revision.id,
+        tree.reverting_revision.id,
+        doyun.id,
+        yuni.id,
+        snapshot.id,
     )
 
 
@@ -242,3 +256,70 @@ async def test_merge_waiting_on_a_generation_save_moves_the_link_it_just_made(
         ).all()
         assert linked == [seed.doyun_id]
         assert await s.get(NovelCharacter, seed.yuni_id) is None
+
+
+async def _pending_preview(
+    factory: async_sessionmaker[AsyncSession], seed: _Seed, base_revision_id: uuid.UUID
+) -> uuid.UUID:
+    """기준 개정이 `base_revision_id` 인, 적용도 버리기도 안 한 AI 수정 결과 하나(커밋)."""
+    async with factory() as s:
+        job = NovelJob(
+            novel_id=seed.novel_id,
+            user_id=seed.user_id,
+            kind="ai_edit",
+            status="succeeded",
+            charged_amount=5,
+            chapter_id=seed.chapter_id,
+            base_revision_id=base_revision_id,
+            paragraph_start=0,
+            paragraph_end=0,
+            instruction="고쳐 줘",
+            result_text="고친 본문",
+        )
+        s.add(job)
+        await s.commit()
+    return job.id
+
+
+async def _preview_texts(factory: async_sessionmaker[AsyncSession], job_id: uuid.UUID) -> tuple[str | None, str | None]:
+    """다른 커넥션에서 읽는다 — 요청 세션이 커밋하지 않은 비우기는 여기서 보이지 않는다."""
+    async with factory() as s:
+        row = (await s.execute(select(NovelJob.instruction, NovelJob.result_text).where(NovelJob.id == job_id))).one()
+        return row.instruction, row.result_text
+
+
+async def test_a_direct_edit_commits_the_stale_preview_cleanup(
+    independent_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """비우기는 새 개정을 커밋한 뒤 같은 세션에서 돈다. 그 뒤에 커밋이 없으면 세션이 닫힐 때 되돌려져, 같은 커넥션의
+    테스트에서는 비워진 것처럼 보여도 실제로는 낡은 지시문·결과 본문이 남는다."""
+    seed = await _seed(independent_factory)
+    job_id = await _pending_preview(independent_factory, seed, seed.current_revision_id)
+
+    async with independent_factory() as s:
+        novel = await s.get_one(Novel, seed.novel_id)
+        await novelize_router.create_novel_chapter_revision(
+            chapter_id=seed.chapter_id,
+            payload=NovelRevisionCreateRequest(base_revision_id=seed.current_revision_id, body="고친 판"),
+            novel=novel,
+            db=s,
+        )
+
+    assert await _preview_texts(independent_factory, job_id) == (None, None)
+
+
+async def test_a_snapshot_restore_commits_the_stale_preview_cleanup(
+    independent_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    seed = await _seed(independent_factory)
+    async with independent_factory() as s:
+        newer = NovelChapterRevision(chapter_id=seed.chapter_id, revision_no=3, body="고침", source="manual_edit")
+        s.add(newer)
+        await s.commit()
+    job_id = await _pending_preview(independent_factory, seed, newer.id)
+
+    async with independent_factory() as s:
+        novel = await s.get_one(Novel, seed.novel_id)
+        await novelize_router.restore_novel_snapshot(snapshot_id=seed.snapshot_id, novel=novel, db=s)
+
+    assert await _preview_texts(independent_factory, job_id) == (None, None)

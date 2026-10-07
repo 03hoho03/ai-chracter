@@ -21926,11 +21926,13 @@
         "properties": {
           "paragraphIndex": {
             "type": "integer",
+            "exclusiveMaximum": 100000.0,
             "minimum": 0.0,
             "title": "Paragraphindex"
           },
           "paragraphCount": {
             "type": "integer",
+            "maximum": 100000.0,
             "minimum": 1.0,
             "title": "Paragraphcount"
           },

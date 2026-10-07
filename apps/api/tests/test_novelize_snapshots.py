@@ -417,3 +417,43 @@ async def test_deleting_a_snapshot_and_an_unknown_one(
     assert (again.status_code, again.json()["detail"]) == (404, {"code": "NOVEL_SNAPSHOT_NOT_FOUND"})
     assert detail.status_code == 404
     assert (await db_client.get(f"/novels/{novel_id}/snapshots")).json()["items"] == []
+
+
+async def test_restore_does_not_append_a_merged_memo_again_to_a_card_made_after_the_snapshot(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """남는 카드가 스냅샷 뒤에 생긴 카드면 합치기가 이미 `[이름] 메모` 를 이어 두었다. 복원이 다시 이으면 복원할 때마다 같은
+    줄이 쌓이고, 그 메모가 다음 묶음 생성 입력에 실린다."""
+    novel_id, _chapters = await _novel_with_two_episodes(db_client, db_session, monkeypatch)
+    kim = NovelCharacter(novel_id=novel_id, name="김철수", memo="m1")
+    db_session.add(kim)
+    await db_session.commit()
+    snapshot_id = (await _snapshot(db_client, novel_id)).json()["id"]
+    later = NovelCharacter(novel_id=novel_id, name="철수")
+    db_session.add(later)
+    await db_session.commit()
+    await db_client.post(f"/novels/{novel_id}/characters/{kim.id}/merge", json={"intoCharacterId": str(later.id)})
+
+    first = await db_client.post(f"/novels/{novel_id}/snapshots/{snapshot_id}/restore")
+    second = await db_client.post(f"/novels/{novel_id}/snapshots/{snapshot_id}/restore")
+
+    assert (first.status_code, second.status_code) == (200, 200)
+    (card,) = (await db_client.get(f"/novels/{novel_id}/characters")).json()["items"]
+    assert (card["name"], card["memo"]) == ("철수", "[김철수] m1")
+
+
+async def test_restoring_an_auto_snapshot_at_the_cap_does_not_rotate_it_away(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """상한에서 자리를 낼 때 가장 오래된 자동 스냅샷을 지우는데, 지금 복원하는 것이 바로 그 자동 스냅샷일 수 있다 — 지우면
+    사용자가 고른 판이 복원과 함께 사라진다."""
+    monkeypatch.setattr(settings, "novelize_snapshot_limit", 2)
+    novel_id, _chapters = await _novel_with_two_episodes(db_client, db_session, monkeypatch)
+    one = (await _snapshot(db_client, novel_id, "하나")).json()["id"]
+    auto = (await db_client.post(f"/novels/{novel_id}/snapshots/{one}/restore")).json()["autoSnapshotId"]
+
+    resp = await db_client.post(f"/novels/{novel_id}/snapshots/{auto}/restore")
+
+    assert resp.status_code == 200, resp.text
+    kept = (await db_client.get(f"/novels/{novel_id}/snapshots/{auto}")).status_code
+    assert kept == 200

@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
@@ -85,11 +85,19 @@ async def build_payload(db: AsyncSession, novel_id: uuid.UUID) -> dict[str, Any]
     }
 
 
-async def save_snapshot(db: AsyncSession, novel_id: uuid.UUID, *, name: str, kind: NovelSnapshotKind) -> NovelSnapshot:
+async def save_snapshot(
+    db: AsyncSession,
+    novel_id: uuid.UUID,
+    *,
+    name: str,
+    kind: NovelSnapshotKind,
+    keep: uuid.UUID | None = None,
+) -> NovelSnapshot:
     """지금 상태를 스냅샷으로 넣는다(flush). 상한에 닿아 있으면 가장 오래된 자동 스냅샷부터 지워 자리를 낸다. 이름 붙인
     것만으로 차 있으면 이름 붙인 저장은 `SnapshotLimitError` 이고, 복원 직전 자동 스냅샷은 그래도 넣는다 — 상한 때문에
     복원이 막히면 안 되기 때문이다. 그래서 소설 하나의 스냅샷은 상한보다 한 장 많을 수 있고, 그 한 장은 다음 저장이나
-    복원 때 가장 오래된 자동 스냅샷으로 먼저 지워진다."""
+    복원 때 가장 오래된 자동 스냅샷으로 먼저 지워진다. `keep` 은 자리를 내느라 지우면 안 되는 스냅샷이다 — 자동 스냅샷을
+    복원하는 중이면 그 스냅샷이 가장 오래된 자동 것일 수 있다."""
     limit = settings.novelize_snapshot_limit
     count = int(
         await db.scalar(select(func.count()).select_from(NovelSnapshot).where(NovelSnapshot.novel_id == novel_id)) or 0
@@ -98,7 +106,11 @@ async def save_snapshot(db: AsyncSession, novel_id: uuid.UUID, *, name: str, kin
         autos = (
             await db.scalars(
                 select(NovelSnapshot.id)
-                .where(NovelSnapshot.novel_id == novel_id, NovelSnapshot.kind == "auto_before_restore")
+                .where(
+                    NovelSnapshot.novel_id == novel_id,
+                    NovelSnapshot.kind == "auto_before_restore",
+                    NovelSnapshot.id != keep if keep is not None else true(),
+                )
                 .order_by(NovelSnapshot.created_at, NovelSnapshot.id)
                 .limit(count - limit + 1)
             )
@@ -126,12 +138,24 @@ class RestoreResult:
 async def restore_snapshot(db: AsyncSession, novel_id: uuid.UUID, snapshot: NovelSnapshot) -> RestoreResult:
     """`snapshot` 으로 되돌린다. 먼저 지금 상태를 자동 스냅샷으로 떠 둔다(되돌린 것을 다시 되돌릴 수 있게).
 
-    잠금 순서는 사용자(호출자) → 화들 → 소설이다. 화를 하나씩 잠그며 개정을 쌓고, 소설 행은 화를 다 잠근 뒤 맨 끝에 한 번만
+    잠금 순서는 사용자(호출자) → 화들 → 소설이다. 화를 먼저 다 잠근 뒤 개정을 쌓고, 소설 행은 맨 끝에 한 번만
     고친다. 화마다 소설 수정 시각을 밀면 소설 행을 쥔 채 다음 화를 기다리게 되는데, 직접 수정은 화 → 소설 순서라 그 화를
     쥔 채 소설 행을 기다려 서로 교착한다. 작업 행은 잡지 않는다 — 낡은 AI 수정 미리보기는 커밋 뒤 호출자가 별도
     트랜잭션에서 비운다(적용이 작업 → 화 순서로 잡기 때문이다)."""
     payload = snapshot.payload
-    auto = await save_snapshot(db, novel_id, name=f"「{snapshot.name}」 복원 직전", kind="auto_before_restore")
+    # 되돌릴 화를 자동 스냅샷을 뜨기 전에 화 번호 순으로 먼저 잠근다. 뜬 뒤에 잠그면 그 사이 커밋된 직접 수정이 자동
+    # 스냅샷에도 빠지고 복원에도 덮여, 되돌린 것을 다시 되돌려도 그 수정이 돌아오지 않는다.
+    targets = [uuid.UUID(entry["chapterId"]) for entry in payload["chapters"] if not entry.get("deleted")]
+    if targets:
+        await db.execute(
+            select(NovelChapter.id)
+            .where(NovelChapter.id.in_(targets), NovelChapter.novel_id == novel_id)
+            .order_by(NovelChapter.ordinal)
+            .with_for_update(key_share=True)
+        )
+    auto = await save_snapshot(
+        db, novel_id, name=f"「{snapshot.name}」 복원 직전", kind="auto_before_restore", keep=snapshot.id
+    )
     skipped: list[uuid.UUID] = []
     restacked: list[uuid.UUID] = []
     for entry in payload["chapters"]:
@@ -201,8 +225,9 @@ async def _restore_characters(db: AsyncSession, novel_id: uuid.UUID, saved: list
     """인물 카드를 되돌린다. 카드를 지우거나 새로 만들지 않는다(합치기·생성이 만든 구조는 그대로).
 
     - 스냅샷의 카드가 살아 있으면 이름·별칭·메모를 그때 값으로.
-    - 그 뒤 합쳐져 사라진 카드는 그 이름을 별칭으로 가진 카드(남은 카드)에 메모를 돌려준다 — 남은 카드 자신의 그때 메모(그때
-      없던 카드면 지금 메모) 뒤에 사라진 카드의 그때 메모를 `[이름] 메모` 꼴로 잇는다. 남은 카드의 별칭에서 합쳐 온 이름은
+    - 그 뒤 합쳐져 사라진 카드는 그 이름을 별칭으로 가진 카드(남은 카드)에 메모를 돌려준다 — 남은 카드 자신의 그때 메모
+      뒤에 사라진 카드의 그때 메모를 `[이름] 메모` 꼴로 잇는다. 남은 카드가 그때 없던 카드면 메모를 그대로 둔다(합치기가
+      이미 이어 두었다). 남은 카드의 별칭에서 합쳐 온 이름은
       빼지 않는다 — 빼면 그 이름이 다음 생성에서 새 카드로 갈라진다. 남은 카드를 찾지 못하면(별칭을 그 뒤 지웠다) 그 메모는
       되돌리지 않는다.
     - 그때 이름·별칭이 스냅샷에 없던 카드(그 뒤 생긴 카드)의 이름·별칭과 겹치면 그 카드의 이름·별칭은 지금 값으로 두고
@@ -246,12 +271,13 @@ async def _restore_characters(db: AsyncSession, novel_id: uuid.UUID, saved: list
             await db.execute(update(NovelCharacter).where(NovelCharacter.id == card_id).values(name=str(card_id)))
     for card in cards:
         entry = saved_by_id.get(card.id)
-        gone = absorbed.get(card.id, [])
-        if entry is None and not gone:
+        if entry is None:
+            # 그때 없던 카드다. 흡수한 카드가 있어도 메모를 건드리지 않는다 — 합치기가 이미 `[이름] 메모` 를 붙여 두었으므로
+            # 다시 이으면 복원할 때마다 같은 줄이 쌓이고, 그 메모가 다음 묶음 생성 입력에 실린다.
             continue
-        base = entry["memo"] if entry is not None else card.memo
+        gone = absorbed.get(card.id, [])
         values: dict[str, object] = {
-            "memo": joined_memo(base, [(item["name"], item["memo"]) for item in gone]),
+            "memo": joined_memo(entry["memo"], [(item["name"], item["memo"]) for item in gone]),
             "updated_at": func.now(),
         }
         if card.id in targets:

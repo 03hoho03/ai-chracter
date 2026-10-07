@@ -577,8 +577,10 @@ class NovelReadingPositionRequest(CamelModel):
     """화를 읽던 자리. 같은 값을 다시 보내도 결과가 같다. `finished` 가 한 번 참이 되면 그 화는 그 뒤 앞부분으로 돌아가
     저장해도 다 읽은 화로 남는다. `revision_id` 는 읽던 개정이다(그 뒤 개정이 바뀌면 문단 수 비율로 옮긴다)."""
 
-    paragraph_index: int = Field(ge=0)
-    paragraph_count: int = Field(ge=1)
+    # 문단은 한 글자 이상이라 문단 수는 본문 글자 수를 넘지 못하고, 본문은 본문 상한(생성 출력으로 나올 수 있는 길이보다
+    # 넉넉하게 잡은 값) 안에 있다. 상한이 없으면 큰 값이 DB 정수 칸을 넘쳐 500 이 된다.
+    paragraph_index: int = Field(ge=0, lt=CHAPTER_BODY_MAX_LENGTH)
+    paragraph_count: int = Field(ge=1, le=CHAPTER_BODY_MAX_LENGTH)
     revision_id: uuid.UUID
     finished: bool
 

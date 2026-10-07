@@ -190,3 +190,19 @@ async def test_reading_position_outside_the_paragraphs_is_422_and_a_missing_chap
     assert other_novels.status_code == 404
     assert await _positions(db_session, novel_id) == []
     assert await _positions(db_session, other_novel) == []
+
+
+async def test_reading_position_beyond_any_body_length_is_422_not_an_integer_overflow(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    messages = await _room_messages(db_session, room.room_id)
+    (chapter,) = await _add_batch(db_session, novel_id, room, messages[0], room.turns[1][1])
+    url = f"/novels/{novel_id}/chapters/{chapter.id}/reading-position"
+
+    resp = await db_client.put(
+        url, json={"paragraphIndex": 0, "paragraphCount": 2**31, "revisionId": str(uuid.uuid4()), "finished": False}
+    )
+
+    assert resp.status_code == 422
+    assert await _positions(db_session, novel_id) == []
