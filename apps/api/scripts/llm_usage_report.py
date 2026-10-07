@@ -2,7 +2,7 @@
 
     # 운영 VM — 돌고 있는 api 컨테이너 안에서(REDIS_URL 이 이미 들어 있다)
     cd /opt/ddona/app && sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env \\
-        exec -T api python scripts/llm_usage_report.py --from 2026-10-01 --to 2026-10-07
+        exec -T api_$(sudo bash ops/active-color.sh) python scripts/llm_usage_report.py --from 2026-10-01 --to 2026-10-07
 
     # 로컬
     cd apps/api && uv run --env-file .env python scripts/llm_usage_report.py --days 7

@@ -359,11 +359,14 @@ Artifact Registry push → IAP SSH로 VM에서 `ops/swap-api.sh <태그>`(아래
    최대 600초 기다렸다가 이어서 하고, 넘으면 아무것도 안 바꾸고 실패한다. 워크플로의 `concurrency`는 워크플로끼리만
    막아서 이 잠금이 따로 있다 — 없으면 두 교체가 같은 active 를 보고 두 색을 함께 내릴 수 있다.
 2. **active 판정** — 상태 파일 `/var/lib/ddona/active_color`(`blue`/`green` 한 줄)와 실제로 떠 있는 색을 함께 본다. 한
-   색만 떠 있으면 그 색, 둘 다 떠 있으면(중단된 교체의 잔재) 상태 파일이 가리키는 색, 상태 파일도 못 믿으면 먼저 뜬 색이다.
+   색만 떠 있으면 그 색이다. 둘 다 떠 있으면(중단된 교체의 잔재) 먼저 드레인 플래그를 본다 — 한쪽에만 있으면 그쪽이 내리던 옛
+   색이라 플래그 없는 색이 active 다(상태 파일은 교체 맨 끝에만 바뀌어 이 형상에선 늘 옛 색을 가리킨다). 플래그가 없으면 상태
+   파일이 가리키는 색, 상태 파일도 못 믿으면 먼저 뜬 색이다.
 3. **pull** — 새 이미지를 `.env`를 고치기 **전에** 받는다. 실패하면 아무것도 안 바꾸고 끝난다. VM 에 이미 있는 태그도 다시
    받는다(배포 끝의 이미지 정리가 옛 태그를 지웠을 수 있다).
 4. **idle 색 준비** — `.env`의 idle 색 줄(`API_IMAGE_BLUE` 또는 `API_IMAGE_GREEN`)을 새 참조로 바꾸고, 그 이미지로
-   `alembic upgrade head`(옛 색이 아직 서빙하는 동안, 새 색 기동 **전** — "DB 마이그레이션" 절의 순서 그대로)를 돌린 뒤
+   `alembic upgrade head`(옛 색이 아직 서빙하는 동안, 새 색 기동 **전** — "DB 마이그레이션" 절의 순서 그대로. DB 가 그
+   이미지보다 앞서 있으면 건너뛴다 — 아래 "롤백")를 돌린 뒤
    idle 색을 새 컨테이너로 띄운다(`--force-recreate --wait`). Caddy 로그에 그 색의 `host is up`이 찍히면 합류한 것이다.
    여기까지 어디서 실패하든 idle 색만 지우고 그 줄을 원래 값으로 되돌린 뒤 종료코드 1 로 끝난다 — 옛 색은 손대지 않아
    서비스는 그대로다.
@@ -374,7 +377,10 @@ Artifact Registry push → IAP SSH로 VM에서 `ops/swap-api.sh <태그>`(아래
    상태 파일을 새 색으로 쓴다. 마지막 로그 줄 `13) 완료: active=…`가 찍혀야 끝까지 돈 것이다.
 
 교체 소요 시간은 옛 색에 남은 가장 긴 요청에 비례한다(최대 정지 유예 65초) — 느린 게 아니라 드레인이 기다리는 것이다.
-중간에 끊겨 두 색이 다 떠 있으면 같은 명령을 다시 부르면 이어서 끝난다. Caddy 재시도는 기본값 그대로라 업스트림에
+중간에 끊겨 두 색이 다 떠 있으면 같은 명령을 다시 부르면 이어서 끝난다 — 옛 색에 드레인 플래그가 서 있으면 그 색을 마저
+드레인·정지하고(같은 태그 재실행이면 거기서 끝), 플래그가 없으면 다시 만들 색을 먼저 드레인해 내린 뒤 교체한다. 어느 쪽도
+서빙 중인 색을 드레인 없이 멈추지 않는다. 워크플로 실행 중 SSH 가 끊기면 교체 스크립트가 실패 정리 없이 끝날 수 있는데, 그
+형상도 같은 명령(또는 같은 태그의 워크플로 재실행)이 이어서 끝낸다. Caddy 재시도는 기본값 그대로라 업스트림에
 연결조차 안 된 요청과 GET 만 다른 색으로 다시 보낸다 — POST 를 넓히면 채팅 메시지가 두 번 처리돼 클로버가 두 번 차감된다.
 
 VM 에서 쓰는 명령 셋(`cd /opt/ddona/app` 에서):
@@ -383,8 +389,9 @@ VM 에서 쓰는 명령 셋(`cd /opt/ddona/app` 에서):
   ("env 반영 재기동" 절). root 로 돈다 — 상태·잠금 파일이 root 소유 `/var/lib/ddona/`에 있다.
 - `sudo bash ops/active-color.sh` — 지금 서빙 중인 색(`blue`/`green`)을 한 줄로 찍는다. 컨테이너 안에서 명령을 돌릴 때
   `exec -T api_$(sudo bash ops/active-color.sh) …`로 쓴다. 아무것도 바꾸지 않지만 compose 가 0600 `/opt/ddona/.env`를
-  읽어야 해서 sudo 가 필요하다. 떠 있는 색이 없거나 둘 다 떠 있고 상태 파일이 그중 하나를 가리키지 않으면(교체 중이거나
-  중단 잔재) 0 이 아닌 코드로 멈춘다 — 그 명령이 엉뚱한 컨테이너로 가지 않게 하려는 것이다.
+  읽어야 해서 sudo 가 필요하다. 두 색이 다 떠 있으면 드레인 플래그가 선 색(곧 내려갈 색)은 고르지 않는다. 남은 색이 없거나
+  둘이고 상태 파일이 그중 하나를 가리키지 않으면(교체 중이거나 중단 잔재) 0 이 아닌 코드로 멈춘다 — 그 명령이 엉뚱한
+  컨테이너로 가지 않게 하려는 것이다.
 - `sudo bash ops/bootstrap-bluegreen.sh <태그>` — 단일 `api` 형상에서 처음 옮길 때 한 번만 쓴다
   ("단일 api 에서 blue/green 으로 최초 이행" 절).
 
@@ -436,6 +443,10 @@ cd /opt/ddona/app && sudo bash ops/swap-api.sh <이전SHA>
 태그로 교체한다. 비우면 `main` 최신 커밋을 빌드해 배포한다). 어느 쪽이든 compose·`Caddyfile`·`ops/` 스크립트는 `main`
 최신 그대로이고 이미지만 과거 태그다 — 수동 실행도 `git reset --hard origin/main`을 하기 때문이다. 롤백해 둔 동안 무관한 PR
 이라도 `main`에 병합되면 자동배포가 새 코드로 다시 교체한다.
+되돌리는 배포에 마이그레이션이 있었으면 DB 가 옛 이미지보다 앞서 있다. 교체 스크립트는 올릴 이미지 안에서 DB 리비전을 그 이미지가
+아는지 먼저 보고, 모르면 마이그레이션을 건너뛰고 `… DB 가 이 이미지보다 앞서 있다 … 마이그레이션 건너뜀` 로그를 남긴 채 교체를
+이어 간다(옛 이미지로 `alembic upgrade head`를 돌리면 `Can't locate revision`으로 멈춰 롤백이 안 된다). 스키마는 새 것 그대로
+남으니, 옛 코드가 그 스키마에서 도는지와 되돌릴 순서는 해당 기능 절을 본다. 판정 자체가 실패하면(DB 에 못 닿음 등) 건너뛰지 않고 멈춘다.
 과거 태그는 `gcloud artifacts docker tags list asia-northeast3-docker.pkg.dev/ddona-ai-character-chat/ddona/api`.
 배포 워크플로가 끝에서(실행 이미지 확인 뒤) `apps/api/scripts/ops/prune_api_images.py`로 VM 로컬 API 이미지를
 **현재 것 포함 최근 3개**(+ 실행 중 이미지)만 남기고 지운다 — 다른 저장소 이미지(caddy·postgres 등)는 건드리지
@@ -449,13 +460,17 @@ cd /opt/ddona/app && sudo bash ops/swap-api.sh <이전SHA>
 **위험한 마이그레이션은 겹침 없이 — `skip_overlap`.** 평상시 교체는 마이그레이션이 끝난 뒤에도 옛 색이 새 색 기동·healthy
 (약 10초)와 드레인(최대 65초) 동안 새 스키마 위에서 돈다. 옛 코드가 새 스키마에서 깨지는 마이그레이션(판단 기준은
 `apps/api/CLAUDE.md`의 "배포 중에는 옛 코드가 새 스키마 위에서 돈다" 절)은 이 겹침을 끄고 배포한다. 수동 실행에서 `skip_overlap`을 켜면 교체 스크립트가
-idle 색을 띄우지 않고 active 색을 그 자리에서 재생성한다(마이그레이션 → 재생성, 드레인 없음). 단일 컨테이너 시절의
-완전교체처럼 짧은 끊김이 생기고, 외부 감시(`/ready`) 알림이 올 수 있다. 쉬는 색 줄은 같은 참조로 맞추되 그 색 컨테이너는
+idle 색을 띄우지 않고 active 색을 그 자리에서 재생성한다(마이그레이션 → 재생성, 드레인 없음). 끊김은 "짧은" 정도가
+아니다 — 옛 컨테이너가 하던 가장 긴 요청이 끝날 때까지(정지 유예 상한 65초) + 새 컨테이너 기동(약 15초)이다(로컬 리허설
+실측 31.1초 — 26초짜리 SSE 턴 진행 중 / 10.6초 — 진행 중 요청 없음). 그동안 들어온 요청은 Caddy 에서 최대 30초
+(`lb_try_duration`) 기다리다 실패할 수 있고, 클라이언트가 이미 포기한 POST 가 그 뒤에 처리될 수도 있다. 외부 감시(`/ready`) 알림도 올 수 있다. 쉬는 색 줄은 같은 참조로 맞추되 그 색 컨테이너는
 만들지 않는다. 두 색이 다 떠 있던 잔재면 쉬는 색부터 내린다 — 남겨 두면 옛 코드가 새 스키마로 트래픽을 받는다.
 
 `main` 병합은 그 자체로 겹침 교체 배포를 부르므로, 그런 PR 은 병합 커밋 메시지에 `[skip actions]`를 넣어 push 배포를
 건너뛰게 한 뒤 Actions 수동 실행(`image_tag` 비움 = 그 커밋을 빌드, `skip_overlap` 켬)으로 배포한다. `[skip actions]`는
-그 push 로 도는 다른 워크플로(CI·인용 검사)도 함께 건너뛰게 하니, 병합 전에 PR 에서 초록인지 본다. 이미 레지스트리에 있는
+그 push 로 도는 다른 워크플로(CI·인용 검사)도 함께 건너뛰게 하니, 병합 전에 PR 에서 초록인지 본다. ⚠️ 병합 직후 **다른
+병합 없이 바로** 수동 실행한다 — 수동 실행 전에 다른 PR 이 `main`에 병합되면 그 push 배포가 위험한 마이그레이션을 포함한
+`main` 최신을 평상시 겹침 교체로 올린다. 수동 실행은 `main` 브랜치에서만 받는다(다른 브랜치를 고르면 첫 단계에서 실패한다). 이미 레지스트리에 있는
 태그를 VM 에서 직접 올릴 때는 `sudo SKIP_OVERLAP=true bash ops/swap-api.sh <태그>`. 스크립트 첫 로그 줄 `시작: tag=… skip_overlap=true`로 탈출구가 실제로
 켜졌는지 확인한다 — 워크플로가 값을 원격까지 못 넘기면 조용히 평상시 겹침 교체로 돈다.
 
@@ -631,7 +646,8 @@ blue/green 교체 중에는 새 색 기동부터 옛 색 드레인이 끝날 때
 cd /opt/ddona/app
 C="sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env"
 $C exec -T postgres psql -U postgres -c "ALTER SYSTEM SET max_connections = 200;"
-$C exec -T postgres psql -U postgres -Atc "SELECT setting, pending_restart FROM pg_settings WHERE name = 'max_connections';"   # 100|t
+# 재시작 전에는 pg_settings 가 바뀌지 않는다(setting 100, pending_restart 는 리로드 전까지 f) — 파일에 들어갔는지는 이것으로 본다
+$C exec -T postgres psql -U postgres -Atc "SELECT setting, applied, error FROM pg_file_settings WHERE name = 'max_connections' AND sourcefile LIKE '%auto.conf';"   # 200|f|setting could not be applied
 $C restart postgres
 $C exec -T postgres psql -U postgres -Atc "SHOW max_connections;"   # 200
 curl -s https://api.ddona.site/ready
@@ -1402,8 +1418,8 @@ sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:
 ```
 
 **스키마까지 되돌릴 때** — main 에 revert 커밋을 올려 옛 코드로 롤백을 굳힐 때는 그 병합 **전에** 이 downgrade 를 마친다.
-안 하면 그 배포의 `alembic upgrade head` 가 DB 의 모르는 리비전에서 `Can't locate revision` 으로 멈춘다("참조 이미지
-켜기 · 끄기 · 롤백" 절과 같은 경우다). 순서는 "참조 이미지 켜기 · 끄기 · 롤백" 절과 같다: **태그 롤백으로 옛 코드부터 띄우고 →
+안 하면 그 배포의 교체 스크립트는 DB 가 이미지보다 앞서 있다고 보고 마이그레이션을 건너뛴다 — 배포는 되지만 스키마는 되돌아가지
+않은 채 남는다("참조 이미지 켜기 · 끄기 · 롤백" 절과 같은 경우다). 순서는 "참조 이미지 켜기 · 끄기 · 롤백" 절과 같다: **태그 롤백으로 옛 코드부터 띄우고 →
 새 이미지로 downgrade**(옛 이미지에는 이 리비전 파일이 없고, 먼저 내리면 떠 있는 새 코드가 없어진 테이블을 읽다 실패한다).
 **소설·장·개정·작업·계정별 허용 행이 전부 지워지고 되살릴 수 없으므로** 백업을 먼저 뜬다:
 
@@ -1760,7 +1776,7 @@ PR #65(머지 `4e52c81`)보다 앞선 태그로 되돌릴 때는 추가로 1시�
 
 마이그레이션 `739e7f1039b1`(요청 행의 참조 컬럼, nullable)은 태그 롤백만이면 되돌리지 않는다 — 옛 코드는 그 컬럼을
 모른 채 동작하고, 새 행에는 NULL이 들어간다. 되돌려야 할 때(예: main에 revert 커밋을 올려 옛 코드를 다시 배포할 때 —
-그 배포의 `alembic upgrade head`는 DB가 모르는 리비전에 있어 `Can't locate revision`으로 멈춘다)는 순서가 고정이다:
+그 배포의 교체 스크립트는 DB가 이미지보다 앞서 있다고 보고 마이그레이션을 건너뛰므로, 배포는 되지만 컬럼은 남는다)는 순서가 고정이다:
 **태그 롤백으로 옛 코드부터 띄우고 → 새 이미지로 downgrade**. 옛 이미지에는 이 리비전 파일이 없어 downgrade를 못 하고,
 downgrade를 먼저 하면 아직 떠 있는 새 코드가 없어진 컬럼을 조회하다 실패한다. downgrade는 "어떤 요청이 어떤
 이미지를 참조했는지" 기록을 지운다.

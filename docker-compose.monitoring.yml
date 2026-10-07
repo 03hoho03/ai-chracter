@@ -2,8 +2,8 @@
 #
 #   docker compose -f docker-compose.monitoring.yml --env-file /opt/ddona/.env up -d
 #
-# `docker-compose.prod.yml`과 합치지 않는 이유: 그 파일의 배포
-# 워크플로가 `up -d --wait api caddy`로 서비스명을 명시한다. 여기 합치면 앱 배포마다 이 서비스도
+# `docker-compose.prod.yml`과 합치지 않는 이유: 그 파일의 배포 워크플로와 교체 스크립트
+# (`ops/swap-api.sh`)가 `api_blue`·`api_green`·`caddy`처럼 서비스명을 명시해 띄운다. 여기 합치면 앱 배포마다 이 서비스도
 # 같이 재시작해, 배포가 뭔가 깨뜨리는 바로 그 창에서 에러 추적이 눈을 감는다. 기동·재기동은
 # 앱 배포와 별도로 수동으로 한다(절차는 DEPLOY.md).
 #
