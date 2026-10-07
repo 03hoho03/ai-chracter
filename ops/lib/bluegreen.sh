@@ -189,13 +189,35 @@ write_state() {
   mv -f "$DDONA_STATE_FILE.tmp" "$DDONA_STATE_FILE"
 }
 
-# 교체용 active/idle 판정. 인자: 실행 중인 색 목록(줄바꿈 구분), 상태 파일 값. 출력: "active idle".
+# 실행 중인 색(인자, 줄바꿈 구분) 중 드레인 플래그(`/tmp/draining`)가 선 색을 한 줄에 하나씩. 교체가 플래그를
+# 세운 뒤 옛 색을 내리기 전에 끊기면 두 색이 다 떠 있는데, 그때 어느 쪽이 서빙 중인지는 상태 파일(교체 맨 끝에만
+# 쓰인다)도 기동 시각도 답하지 못하고 이 플래그만 답한다. 확인을 못 하면 멈춘다 — "플래그 없음"으로 잘못 읽으면
+# 이미 업스트림에서 빠진 옛 색을 서빙 색으로 보고, 진짜 서빙 색을 재생성해 업스트림이 0 이 된다.
+draining_colors() {
+  local c out
+  while read -r c; do
+    [ -n "$c" ] || continue
+    out="$(compose exec -T "api_$c" sh -c 'if [ -e /tmp/draining ]; then echo yes; else echo no; fi')" ||
+      die "api_$c 의 드레인 플래그를 확인하지 못했다(위 메시지)"
+    case "$out" in
+      yes) echo "$c" ;;
+      no) ;;
+      *) die "api_$c 의 드레인 플래그 확인 출력을 읽지 못했다: '$out'" ;;
+    esac
+  done <<<"$1"
+}
+
+# 교체용 active/idle 판정. 인자: 실행 중인 색 목록(줄바꿈 구분), 상태 파일 값, 드레인 플래그가 선 색 목록
+# (`draining_colors`, 두 색이 다 떠 있을 때만 의미가 있다). 출력: "active idle".
 # - 한 색만 떠 있으면 그 색이 active 다(상태 파일과 달라도 실제가 이긴다).
-# - 둘 다 떠 있으면(중단된 교체의 잔재) 상태 파일이 가리키는 색이 떠 있으면 그 색이 active.
+# - 둘 다 떠 있고 한쪽에만 드레인 플래그가 있으면 그쪽이 내려가던 옛 색이다 — 플래그 없는 쪽이 active,
+#   플래그 선 쪽이 idle. 상태 파일보다 먼저 본다: 상태 파일은 옛 색을 내린 뒤에야 바뀌므로 이 형상에선
+#   언제나 옛 색을 가리킨다. 둘 다 플래그면 서빙 색이 없는 형상이라 사람이 본다.
+# - 둘 다 떠 있고 플래그가 없으면(새 색 합류 직후 끊김) 상태 파일이 가리키는 색이 떠 있으면 그 색이 active.
 # - 상태 파일을 못 믿으면 먼저 뜬 쪽이 active 다 — 교체는 늘 "떠 있는 색을 두고 빈 색에 새것을
 #   올리는" 방향이라, 어디서 끊겼든 나중에 뜬 컨테이너가 이번에 넣으려던 새 배포다.
 pick_active() {
-  local running="$1" recorded="$2" n blue_ns green_ns
+  local running="$1" recorded="$2" draining="${3:-}" n nd blue_ns green_ns
   n="$(grep -c . <<<"$running" || true)"
   case "$n" in
     0) die "떠 있는 색이 없다" ;;
@@ -206,14 +228,23 @@ pick_active() {
       echo "$running $(other_color "$running")"
       ;;
     2)
+      nd="$(grep -c . <<<"$draining" || true)"
+      case "$nd" in
+        1)
+          log "두 색이 모두 떠 있고 api_$draining 에 드레인 플래그가 있다 — 내려가던 옛 색으로 보고 api_$(other_color "$draining") 를 active 로 본다"
+          echo "$(other_color "$draining") $draining"
+          return
+          ;;
+        2) die "두 색 모두에 드레인 플래그가 있다 — 서빙 중인 색이 없는 형상이다. 직접 확인한다" ;;
+      esac
       if [ -n "$recorded" ]; then
-        log "두 색이 모두 떠 있다 — 상태 파일($recorded)을 active 로 본다"
+        log "두 색이 모두 떠 있다(드레인 플래그 없음) — 상태 파일($recorded)을 active 로 본다"
         echo "$recorded $(other_color "$recorded")"
         return
       fi
       blue_ns="$(started_at_ns blue)"
       green_ns="$(started_at_ns green)"
-      log "두 색이 모두 떠 있고 상태 파일을 못 믿는다 — 먼저 뜬 쪽을 active 로 본다(blue=$blue_ns green=$green_ns)"
+      log "두 색이 모두 떠 있고(드레인 플래그 없음) 상태 파일을 못 믿는다 — 먼저 뜬 쪽을 active 로 본다(blue=$blue_ns green=$green_ns)"
       if [ "$blue_ns" -le "$green_ns" ]; then
         echo "blue green"
       else
@@ -224,11 +255,15 @@ pick_active() {
   esac
 }
 
-# 운영 명령용 active 판정(`active-color.sh`). 교체용보다 보수적이다: 상태 파일의 색이 실제로 떠
-# 있으면 그 색, 아니면 떠 있는 색이 정확히 하나일 때만 그 색. 0개·2개(교체 중이거나 중단 잔재)는
-# 사람이 볼 상황이라 에러다 — 조용히 아무 색이나 내면 그 명령이 엉뚱한 컨테이너에 간다.
+# 운영 명령용 active 판정(`active-color.sh`). 교체용보다 보수적이다: 드레인 플래그가 선 색(곧 내려갈 색)은
+# 후보에서 빼고, 남은 색 중 상태 파일의 색이 있으면 그 색, 아니면 남은 색이 정확히 하나일 때만 그 색.
+# 0개·2개(교체 중이거나 중단 잔재)는 사람이 볼 상황이라 에러다 — 조용히 아무 색이나 내면 그 명령이 엉뚱한
+# 컨테이너에 간다.
 pick_active_for_ops() {
-  local running="$1" recorded="$2" n
+  local running="$1" recorded="$2" draining="${3:-}" n
+  if [ -n "$draining" ]; then
+    running="$(grep -Fvx -- "$draining" <<<"$running" || true)"
+  fi
   if [ -n "$recorded" ] && grep -Fqx "$recorded" <<<"$running"; then
     echo "$recorded"
     return
@@ -236,7 +271,7 @@ pick_active_for_ops() {
   n="$(grep -c . <<<"$running" || true)"
   case "$n" in
     1) echo "$running" ;;
-    0) die "떠 있는 api 색이 없다(VM 재구축 직후라면 DEPLOY.md 의 '빈 상태에서 첫 기동' 절차)" ;;
+    0) die "서빙 중인 api 색이 없다(드레인 플래그가 선 색은 뺐다. VM 재구축 직후라면 DEPLOY.md 의 '빈 상태에서 첫 기동' 절차)" ;;
     *) die "두 색이 모두 떠 있고 상태 파일(${recorded:-없음})이 그중 하나를 가리키지 않는다 — 교체 중이거나 중단된 교체의 잔재다" ;;
   esac
 }

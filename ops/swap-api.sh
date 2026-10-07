@@ -19,11 +19,16 @@
 # 실패하면: 새 색이 끝내 healthy 가 안 되면(가장 흔한 실패) 그 색만 정리하고 `.env` 의 그 색 줄을 실행 전
 # 값으로 되돌린 뒤 종료코드 1 — 옛 색은 손대지 않아 서비스는 그대로다. 드레인을 시작한 뒤에는 새 색이
 # 이미 서빙 중이라 되돌리지 않는다. 중간에 끊겨 두 색이 다 떠 있으면 같은 명령을 다시 부르면 이어서
-# 끝난다(색 판정이 그 형상을 알아본다).
+# 끝난다. 재실행은 떠 있는 색을 드레인 없이 멈추지 않는다 — 한쪽에 드레인 플래그가 있으면 그쪽이 내리던
+# 옛 색이라 마저 내리고, 플래그가 없으면 이번에 다시 만들 쪽을 먼저 드레인해 내린 뒤 다시 만든다.
+#
+# 마이그레이션은 DB 가 올릴 이미지보다 앞서 있으면(마이그레이션이 낀 배포를 옛 태그로 되돌리는 롤백)
+# 건너뛴다 — 아래 `migrate`.
 #
 # SKIP_OVERLAP=true 는 위험한 마이그레이션 배포의 탈출구다 — 옛 코드와 새 스키마가 겹치는 구간을 아예
-# 없애려고 쉬는 색을 띄우지 않고 active 를 그 자리에서 재생성한다. 그 대가로 단일 컨테이너 시절의
-# 완전교체처럼 짧은 끊김이 생긴다.
+# 없애려고 쉬는 색을 띄우지 않고 active 를 그 자리에서 재생성한다. 그 대가로 끊김이 생긴다. 길이는 옛
+# 컨테이너에 남은 가장 긴 요청이 끝날 때까지(정지 유예 상한 65초) + 새 컨테이너 기동(약 15초)이고, 그동안
+# 들어온 요청은 Caddy 에서 기다리다(최대 30초) 실패할 수 있다.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -35,6 +40,94 @@ LOG_NAME=swap-api
 HEALTHY_TIMEOUT=60
 # 드레인 플래그를 세운 뒤 Caddy 가 그 색을 빼기까지(보통 1~2초) 기다리는 상한.
 UNHEALTHY_TIMEOUT=30
+
+# 한 색을 끊김 없이 내린다: 드레인 플래그 → Caddy 가 그 색을 뺀 것을 확인 → 정지(정지 유예
+# `stop_grace_period` 를 그대로 존중해 하던 요청과 SSE 턴을 마칠 때까지 기다린다) → 삭제. 평상시 교체의 옛
+# 색과 재실행이 만나는 중단 잔재가 모두 이것 하나로 내려간다. 플래그가 이미 서 있어도(드레인 중에 끊긴
+# 잔재) 다시 세우면 된다 — 플래그가 서 있는 동안 헬스체크가 매번 실패 로그를 남겨 아래 확인이 곧 통과한다.
+# 인자: 색, 로그 줄 머리표.
+drain_and_remove() {
+  local c="$1" step="$2" t_flag deadline drained=0
+  t_flag="$(date +%s)"
+  log "$step) api_$c 에 드레인 플래그"
+  compose exec -T "api_$c" touch /tmp/draining </dev/null ||
+    die "api_$c 에 드레인 플래그를 못 세웠다 — 그 색은 아직 떠 있다. 원인을 본 뒤 같은 명령을 다시 부른다"
+  deadline=$(($(date +%s) + UNHEALTHY_TIMEOUT))
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    if caddy_saw_fail "api_$c:8000" "$t_flag"; then
+      drained=1
+      break
+    fi
+    sleep 1
+  done
+  if [ "$drained" = 1 ]; then
+    # 1초 여유는 이 교체 방식을 실측(비-2xx 0건)할 때 쓴 값 그대로다 — 줄이거나 뺀 형태는 재 보지 않았다.
+    sleep 1
+    log "$step) Caddy 가 api_$c 를 뺐다"
+  else
+    log "⚠️ ${UNHEALTHY_TIMEOUT}s 안에 Caddy 가 api_$c 를 빼는 로그를 못 봤다 — 그래도 정지로 간다(정지 유예 동안 하던 요청은 마친다)"
+  fi
+  log "$step) api_$c 정지·삭제"
+  compose stop "api_$c"
+  compose rm -f "api_$c"
+}
+
+# 올릴 이미지 안에서 돌리는 판정: 그 이미지의 리비전 파일 목록과 DB 의 `alembic_version` 을 대조해 마지막에
+# `DDONA_DB_REVISION known|ahead <리비전들>` 한 줄을 낸다(`alembic_version` 이 없거나 비면 known). `alembic
+# current` 의 실패로 가리지 않는 이유: DB 에 못 닿은 실패와 문구 말고는 구분되지 않는다. 여기서는 DB 에 못
+# 닿으면 예외로 0 이 아닌 코드가 나 판정 실패가 된다. DB 주소는 마이그레이션과 같은 설정값(`settings.database_url`)이다.
+DB_REVISION_CHECK="$(
+  cat <<'PY'
+import asyncio
+
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
+
+from api.core.config import settings
+
+known = {s.revision for s in ScriptDirectory.from_config(Config("alembic.ini")).walk_revisions()}
+
+
+async def db_revisions():
+    engine = create_async_engine(settings.database_url)
+    try:
+        async with engine.connect() as conn:
+            if (await conn.execute(text("SELECT to_regclass('alembic_version')"))).scalar() is None:
+                return []
+            return list((await conn.execute(text("SELECT version_num FROM alembic_version"))).scalars())
+    finally:
+        await engine.dispose()
+
+
+revs = asyncio.run(db_revisions())
+print("DDONA_DB_REVISION", "ahead" if any(r not in known for r in revs) else "known", " ".join(revs) or "-")
+PY
+)"
+
+# 마이그레이션. DB 의 현재 리비전을 올릴 이미지가 모르면 — DB 가 이 이미지보다 앞서 있다(마이그레이션이 낀
+# 배포를 옛 태그로 되돌리는 롤백) — 건너뛰고 그 사실을 남긴다. 그 이미지로 `alembic upgrade head` 를 돌리면
+# `Can't locate revision` 으로 멈춰 롤백 자체가 안 되고, 앞선 DB 에서 upgrade 가 할 일은 원래 없다. 스키마를
+# 되돌리는 downgrade 는 이 스크립트가 하지 않는다(순서를 사람이 정한다). DB 가 이미지보다 뒤거나 같으면
+# 평소대로 upgrade 한다. 판정 자체가 실패하면 건너뛰지 않고 멈춘다 — 확인 못 한 채 건너뛰면 새 코드가 옛
+# 스키마 위에서 뜰 수 있다. 인자: 올릴 이미지가 걸린 색.
+migrate() {
+  local c="$1" out verdict
+  out="$(compose run --rm -T "api_$c" python -c "$DB_REVISION_CHECK" </dev/null)" ||
+    die "DB 리비전 판정이 실패했다(위 메시지) — 마이그레이션을 건너뛸지 정하지 못해 멈춘다"
+  verdict="$(sed -n 's/^DDONA_DB_REVISION //p' <<<"$out" | tail -n 1)"
+  case "$verdict" in
+    known\ *)
+      log "DB 리비전(${verdict#known })을 이 이미지가 안다 — alembic upgrade head"
+      compose run --rm -T "api_$c" alembic upgrade head </dev/null
+      ;;
+    ahead\ *)
+      log "DB 리비전(${verdict#ahead })을 이 이미지가 모른다 — DB 가 이 이미지보다 앞서 있다(마이그레이션이 낀 배포의 롤백). 마이그레이션 건너뜀"
+      ;;
+    *) die "DB 리비전 판정 출력을 읽지 못했다 — 마이그레이션을 건너뛸지 정하지 못해 멈춘다" ;;
+  esac
+}
 
 TAG_ARG="${1:-}"
 # 받은 값을 무엇보다 먼저 찍는다 — 워크플로가 값을 못 넘겼는지(특히 SKIP_OVERLAP 이 원격 셸까지
@@ -69,8 +162,13 @@ if [ -z "$RUNNING" ]; then
   die "떠 있는 api 색이 없다 — 이 스크립트는 첫 기동을 다루지 않는다(VM 재구축 직후라면 DEPLOY.md 의 '빈 상태에서 첫 기동' 절차)"
 fi
 
-# 3) active/idle 판정.
-PAIR="$(pick_active "$RUNNING" "$(read_state)")"
+# 3) active/idle 판정. 두 색이 다 떠 있으면(중단된 교체의 잔재) 드레인 플래그부터 본다 — 그 형상에서 어느
+#    쪽이 서빙 중인지는 플래그만 답한다(`lib/bluegreen.sh` 의 `pick_active`).
+DRAINING=""
+if [ "$(grep -c . <<<"$RUNNING")" = 2 ]; then
+  DRAINING="$(draining_colors "$RUNNING")"
+fi
+PAIR="$(pick_active "$RUNNING" "$(read_state)" "$DRAINING")"
 read -r ACTIVE IDLE <<<"$PAIR"
 ACTIVE_KEY="$(image_key "$ACTIVE")"
 IDLE_KEY="$(image_key "$IDLE")"
@@ -90,6 +188,23 @@ else
 fi
 valid_ref "$REF" || die "이미지 참조에 허용하지 않는 글자가 있다: '$REF'"
 log "이미지: $REF"
+
+# 4-1) 드레인 시작 뒤 끊긴 교체의 잔재(쉬는 색에 드레인 플래그)면 그 색을 마저 내린다. 이미 Caddy 밖이고
+#      하던 요청은 정지 유예 안에서 마친다. 끝나면 한 색 형상이라 아래가 평소처럼 이어진다. 원래 요청이 끊긴
+#      교체가 올리던 바로 그 이미지면(같은 태그로 재실행) 그 교체에 남은 일은 이것뿐이라 여기서 끝낸다.
+#      태그를 생략한 재실행(env 반영)은 끊긴 교체가 지금 env 로 떴는지 알 수 없어 한 번 더 교체한다.
+if grep -Fqx "$IDLE" <<<"$DRAINING"; then
+  log "4-1) 중단된 교체의 잔재: api_$IDLE 에 드레인 플래그가 있다 — 마저 내리고 이어 간다"
+  drain_and_remove "$IDLE" "4-1"
+  env_set "$IDLE_KEY" "$CURRENT_REF"
+  write_state "$ACTIVE"
+  RUNNING="$ACTIVE"
+  log "4-1) 잔재 정리 완료: active=$ACTIVE 상태 파일 기록"
+  if [ -n "$TAG_ARG" ] && [ "$REF" = "$CURRENT_REF" ]; then
+    log "완료: api_$ACTIVE 가 이미 $REF 다 — 끊긴 교체를 마저 끝냈고 더 할 일이 없다. 소요 $(($(date +%s) - START))s"
+    exit 0
+  fi
+fi
 
 # 5) pull 을 `.env` 수정보다 먼저 한다. 반대 순서면 pull 이 실패했을 때 `.env` 가 받을 수 없는 태그를
 #    가리킨 채 남는다. 로컬에 있어도 받는다 — 로컬 이미지 정리가 옛 태그를 지웠을 수 있다.
@@ -123,17 +238,18 @@ on_exit() {
 }
 trap on_exit EXIT
 # 신호로 끝날 때도 위 정리를 타게 한다(SIGKILL 은 어쩔 수 없다 — 그때는 재실행이 이어서 끝낸다).
+# 워크플로가 부른 실행은 SSH 가 끊긴 뒤 다음 로그 줄에서 SIGPIPE 로 이 정리 없이 끝날 수도 있다. 그때 남는
+# 형상(쉬는 색 줄이 새 값이거나 두 색이 다 떠 있음)도 같은 명령을 다시 부르면 이어서 끝난다.
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
 if [ "$SKIP" = 1 ]; then
   # 겹침 없는 교체. 두 색이 다 떠 있으면(중단 잔재) 쉬는 색부터 내린다 — 남겨 두면 옛 코드의 잔재가
-  # 새 스키마로 트래픽을 받는다. 겹침을 끄려는 바로 그 상황이다.
+  # 새 스키마로 트래픽을 받는다. 겹침을 끄려는 바로 그 상황이다. 그 색이 서빙 중일 수 있어 드레인한 뒤 내린다.
   if [ "$(grep -c . <<<"$RUNNING")" = 2 ]; then
-    log "skip_overlap: 남아 있던 api_$IDLE 를 먼저 정지·삭제"
-    compose stop "api_$IDLE"
-    compose rm -f "api_$IDLE"
+    log "skip_overlap: 남아 있던 api_$IDLE 를 먼저 드레인·정지·삭제"
+    drain_and_remove "$IDLE" "skip_overlap"
   fi
 
   PREV_REF="$CURRENT_REF"
@@ -141,12 +257,12 @@ if [ "$SKIP" = 1 ]; then
   ROLLBACK=active
   log "skip_overlap: $ACTIVE_KEY 갱신, 마이그레이션(api_$ACTIVE 의 새 이미지)"
   # 기동보다 먼저다 — 앱이 기동할 때 새 스키마를 읽는 코드가 있어 순서가 바뀌면 새 컨테이너가 죽는다.
-  compose run --rm -T "api_$ACTIVE" alembic upgrade head </dev/null
+  migrate "$ACTIVE"
 
   # 여기부터는 되돌리지 않는다 — 재생성이 시작되면 active 가 이미 바뀌는 중이라, 복구는 이전 태그로 이
   # 스크립트를 다시 부르는 것이다.
   ROLLBACK=""
-  log "skip_overlap: api_$ACTIVE 를 그 자리에서 재생성(드레인 없음 — 짧은 끊김)"
+  log "skip_overlap: api_$ACTIVE 를 그 자리에서 재생성(드레인 없음 — 하던 요청이 끝나고 새 컨테이너가 뜰 때까지 끊긴다)"
   compose up -d --force-recreate --wait --wait-timeout "$DDONA_WAIT_TIMEOUT" "api_$ACTIVE" ||
     die "api_$ACTIVE 가 healthy 가 안 됐다 — 서비스가 내려갔을 수 있다. 이전 태그로 이 스크립트를 다시 부른다"
 
@@ -158,6 +274,14 @@ if [ "$SKIP" = 1 ]; then
   exit 0
 fi
 
+# 5-1) 쉬는 색이 떠 있으면(새 색 합류 직후 끊긴 교체의 잔재 — 플래그 없는 두 색) 그 색은 Caddy 업스트림에
+#      들어가 서빙 중일 수 있다. 8단계의 재생성은 그 색을 그냥 멈추므로 하던 요청이 끊긴다. 그래서 아무것도
+#      바꾸기 전에 드레인해 내린다 — 그동안은 active 혼자 서빙한다.
+if [ "$(grep -c . <<<"$RUNNING")" = 2 ]; then
+  log "5-1) 떠 있는 api_$IDLE(중단된 교체의 잔재)를 다시 만들기 전에 드레인"
+  drain_and_remove "$IDLE" "5-1"
+fi
+
 # 6) idle 줄 교체 — 바로 되돌리기를 건다. 여기서 Caddy 확인(9)까지 어디서 실패하든 idle 을 정리하고 줄을
 #    되돌려, 실패 뒤 형상이 "실행 전과 같음" 하나로 판정되게 한다.
 PREV_REF="$(env_get "$IDLE_KEY")"
@@ -167,7 +291,7 @@ log "6) $IDLE_KEY 갱신"
 
 # 7) 마이그레이션은 idle 의 새 이미지로, 옛 색이 서빙하는 동안, idle 기동 전에.
 log "7) 마이그레이션(api_$IDLE 의 새 이미지)"
-compose run --rm -T "api_$IDLE" alembic upgrade head </dev/null
+migrate "$IDLE"
 
 # 8) idle 기동. `--force-recreate` 는 매번 새 컨테이너를 만들게 한다 — 앞선 교체가 드레인 플래그를 세운
 #    채 멈춘 컨테이너가 재사용되면 `/health` 가 영원히 503 이다. 이 시각 이후의 Caddy 로그만 본다.
@@ -187,32 +311,8 @@ done
 ROLLBACK=""
 log "9) api_$IDLE 합류 확인"
 
-# 10) active 드레인.
-T_FLAG="$(date +%s)"
-log "10) api_$ACTIVE 에 드레인 플래그"
-compose exec -T "api_$ACTIVE" touch /tmp/draining </dev/null ||
-  die "api_$ACTIVE 에 드레인 플래그를 못 세웠다 — 두 색이 다 떠 있다. 원인을 본 뒤 같은 명령을 다시 부른다"
-deadline=$(($(date +%s) + UNHEALTHY_TIMEOUT))
-drained=0
-while [ "$(date +%s)" -lt "$deadline" ]; do
-  if caddy_saw_fail "api_$ACTIVE:8000" "$T_FLAG"; then
-    drained=1
-    break
-  fi
-  sleep 1
-done
-if [ "$drained" = 1 ]; then
-  # 1초 여유는 이 교체 방식을 실측(비-2xx 0건)할 때 쓴 값 그대로다 — 줄이거나 뺀 형태는 재 보지 않았다.
-  sleep 1
-  log "10) Caddy 가 api_$ACTIVE 를 뺐다"
-else
-  log "⚠️ ${UNHEALTHY_TIMEOUT}s 안에 Caddy 가 api_$ACTIVE 를 빼는 로그를 못 봤다 — 그래도 정지로 간다(정지 유예 동안 하던 요청은 마친다)"
-fi
-
-# 11) active 정지 — 유예(`stop_grace_period`)를 그대로 존중해 하던 요청을 마칠 때까지 기다린다.
-log "11) api_$ACTIVE 정지·삭제"
-compose stop "api_$ACTIVE"
-compose rm -f "api_$ACTIVE"
+# 10~11) active 드레인 → 정지·삭제. 여기서 끊기면(두 색이 다 떠 있고 옛 색에 플래그) 재실행의 4-1 이 잇는다.
+drain_and_remove "$ACTIVE" "10~11"
 
 # 12) 쉬는 색이 된 옛 active 의 변수도 새 참조로 — 서비스명 없는 `up -d` 가 실수로 그 색을 띄우면 옛
 #     코드가 업스트림에 합류하기 때문이다.
