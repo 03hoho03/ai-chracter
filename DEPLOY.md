@@ -199,8 +199,8 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**52개 키다**(2026-10-06 VM 실측, 키 이름만 셈): 아래 표 68개 중 38개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
-`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 7개·소설화 조정용 `NOVELIZE_*` 8개, 모두 30개 제외 —
+**52개 키다**(2026-10-06 VM 실측, 키 이름만 셈): 아래 표 92개 중 38개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 7개·소설화 조정용 `NOVELIZE_*` 19개, 실측 때 넣지 않은 상위 모델 키 13개(`BEDROCK_*` 9개·`CHAT_PREMIUM_*` 2개·`NOVELIZE_PREMIUM_*` 2개), 모두 54개 제외 —
 소설화를 켤 때 넣는 `NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST` 2개는 운영에서 켜 두었으므로 셈에 들어간다) + compose용
 5개(그때는 `API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE` — api 가 blue/green 두 색으로 나뉜 뒤
 compose 가 읽는 이미지 키는 `API_IMAGE_BLUE`·`API_IMAGE_GREEN` 둘이고 `API_IMAGE` 는 읽지 않는다. 두 키가 생기고 옛 줄이 지워지면
@@ -263,9 +263,14 @@ compose 가 읽는 이미지 키는 `API_IMAGE_BLUE`·`API_IMAGE_GREEN` 둘이�
 | `GEMINI_NOVELIZE_MAX_OUTPUT_TOKENS` | 설정 안 함(기본값은 `.env.example`) | 장 생성·문단 수정의 출력 상한(사고 토큰 포함). 여기서 잘린 결과는 저장하지 않고 실패·환불하므로, 낮추면 원가만 버린다. 아주 작게 넣고 재기동하면 잘림 → 실패 → 환불 1회를 운영에서 일부러 관측할 수 있다(확인 뒤 줄을 지우고 다시 재기동) |
 | `GEMINI_NOVELIZE_THINKING_BUDGET` / `GEMINI_NOVELIZE_THINKING_LEVEL` | 설정 안 함(둘 다 비면 모델 기본 사고) | 소설화 사고 예산(정수) 또는 사고 수준(`MINIMAL`·`LOW`·`MEDIUM`·`HIGH`). ⚠️ **둘 중 하나만** — 둘 다 있으면 api 가 기동하지 못한다(한 요청에 둘을 함께 받으면 거부하는 모델이 있어, 뜬 채로 두면 장마다 실패·환불만 반복한다) |
 | `GEMINI_NOVELIZE_CHAPTER_TIMEOUT_MS` / `GEMINI_NOVELIZE_REVISE_TIMEOUT_MS` / `GEMINI_NOVELIZE_BOUNDARY_TIMEOUT_MS` | 설정 안 함(기본값은 `.env.example`) | 장 생성(스트리밍이라 "다음 청크까지") / 문단 수정 / 장 경계 제안(사용자가 화면에서 기다린다)의 타임아웃(ms). 장 생성·문단 수정은 백그라운드 작업이라 Cloudflare 응답 상한(100초)과 무관하다. 장 생성·문단 수정의 시간 초과는 실패·환불이고, 경계 제안(무과금)의 시간 초과는 제안 없이 후보 턴만 보인다 |
-| `NOVELIZE_CHAPTER_MAX_TURNS` / `NOVELIZE_CHAPTER_DAILY_LIMIT` / `NOVELIZE_PROPOSAL_HOURLY_LIMIT` | 설정 안 함(기본값은 `.env.example`) | 장 하나가 담는 원문 턴 상한(경계 제안 후보 수) / 같은 장을 하루(KST)에 만들 수 있는 횟수(생성·재생성 합, 진행 중·성공만 센다) / 무과금 경계 제안의 시간당 상한. 면제 계정도 똑같이 센다 |
+| `NOVELIZE_CHAPTER_MAX_TURNS` / `NOVELIZE_CHAPTER_MAX_TURNS_SONNET` / `NOVELIZE_CHAPTER_MAX_TURNS_OPUS` | 설정 안 함(기본 `45` / `20` / `20`) | 생성 한 번(묶음 하나)이 담는 원문 턴(AI 응답) 수의 상한 — 모델마다 따로다. 경계 제안이 이만큼의 후보 턴을 보이고, 생성은 끝 메시지가 이 범위 밖이면 거절한다. 첫 키는 Gemini 값이다(키 이름은 모델이 하나뿐이던 때의 것). 운영 `.env` 에 이 키가 없으면 코드 기본값 `45` 가 그대로 쓰이고, 있으면 그 값이 이긴다 |
+| `NOVELIZE_K_MAX_GEMINI` / `NOVELIZE_K_MAX_SONNET` / `NOVELIZE_K_MAX_OPUS` | 설정 안 함(기본 `3` / `1` / `1`) | 묶음 하나가 나뉘는 화 수의 상한(모델별). 화 수는 원문 분량으로 정하고 이 값에서 자른다. 연쇄 생성("남은 대화 한 번에")은 묶음마다 이 상한만큼의 화 값을 미리 받는다 |
+| `NOVELIZE_EPISODE_TARGET_CHARS` / `NOVELIZE_SOURCE_RATIO` | 설정 안 함(기본 `5000` / `0.8`) | 화 하나의 목표 길이(공백 포함 글자)와 원문 글자를 본문 글자로 바꾸는 비율. 화 수 = 원문 글자 × 비율 ÷ 목표 길이를 반올림한 값(위 상한에서 자른다) |
+| `NOVELIZE_CHAPTER_DAILY_LIMIT` / `NOVELIZE_PROPOSAL_HOURLY_LIMIT` | 설정 안 함(기본값은 `.env.example`) | 같은 시작 메시지에서 하루(KST)에 낼 수 있는 묶음 생성·다시 만들기 작업 수(진행 중·성공만 센다) / 무과금 경계 제안의 시간당 상한. 면제 계정도 똑같이 센다 |
+| `NOVELIZE_CHAIN_MAX_BATCHES` / `NOVELIZE_CHAIN_TIMEOUT_MARGIN_SECONDS` | 설정 안 함(기본 `5` / `60`) | 연쇄 생성 한 번이 만드는 묶음 수의 상한(한 번에 묶이는 클로버의 상한이기도 하다) / 연쇄 부모 작업의 전체 시간 상한에 더하는 고정 여유(초). 그 상한은 계획한 묶음 수 × (`NOVELIZE_JOB_TIMEOUT_SECONDS` + `GEMINI_NOVELIZE_BOUNDARY_TIMEOUT_MS` 의 초) + 이 여유다(기본값이면 묶음 5개에 5 × 390 + 60 = 2,010초). 넘으면 부모가 실패하고 아직 쓰지 않은 몫을 환불한다 |
+| `NOVELIZE_PREVIOUS_SUMMARIES_MAX_CHARS` / `NOVELIZE_SNAPSHOT_LIMIT` | 설정 안 함(기본 `8000` / `50`) | 다음 묶음 생성에 싣는 지난 화 요약 전체의 글자 상한(넘으면 오래된 화부터 뺀다) / 소설 하나의 스냅샷 개수 상한(닿으면 가장 오래된 복원 직전 자동 스냅샷부터 지우고, 이름 붙인 것만 남았으면 새 저장을 거절한다) |
 | `NOVELIZE_HEARTBEAT_INTERVAL_SECONDS` / `NOVELIZE_HEARTBEAT_EXPIRY_SECONDS` / `NOVELIZE_JOB_TIMEOUT_SECONDS` | 설정 안 함(기본값은 `.env.example`) | 소설화 작업의 살아 있음 표시 주기 / 그 표시가 이만큼 끊기면 죽은 작업으로 보고 실패·환불하는 만료 / 작업 하나의 전체 상한(초). 만료는 주기보다 넉넉히 길어야 한다 — 짧으면 DB 가 잠깐 느린 것만으로 살아 있는 작업이 환불되고 결과가 버려진다. "소설화 켜기 · 끄기 · 회수 · 롤백" 절의 대기 시간이 이 값들에서 나온다 |
-| `NOVELIZE_MIN_CHAPTER_CHARS` / `NOVELIZE_PREVIOUS_EXCERPT_CHARS` | 설정 안 함(기본값은 `.env.example`) | 이보다 짧은 장 본문은 정상 종료여도 실패·환불하는 하한(글자) / 다음 장 생성에 싣는 직전 장 끝 발췌의 목표 길이(글자) |
+| `NOVELIZE_MIN_CHAPTER_CHARS` / `NOVELIZE_PREVIOUS_EXCERPT_CHARS` | 설정 안 함(기본값은 `.env.example`) | 화 본문 하나라도 이보다 짧으면 정상 종료여도 그 묶음 생성을 실패·환불하는 하한(글자) / 다음 묶음 생성에 싣는 직전 화 끝 발췌의 목표 길이(글자) |
 | `BEDROCK_ACCESS_KEY_ID` / `BEDROCK_SECRET_ACCESS_KEY` | Bedrock 호출만 허용한 전용 IAM 사용자의 액세스 키 쌍 | 상위 모델(Bedrock 의 Claude) 자격. 🔴 R2 용 `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` 와 다른 키이고 그 줄들은 건드리지 않는다 — 앱이 이 두 키를 SDK 에 명시로 넘기며, 비어 있으면 호출 전에 실패한다(R2 키로 내려가지 않게). 아래 상위 모델 스위치가 하나라도 켜져 있는데 비어 있으면 api 가 기동하지 못한다. 넣는 순서는 "상위 모델(Bedrock) — 꺼진 채 배포 · 켜기 · 끄기" 절 |
 | `BEDROCK_REGION` | 설정 안 함(기본 `ap-northeast-2`) | 호출 출발 리전. `AWS_REGION`(R2 의 `auto`)과 별개다. 스위치가 켜져 있는데 값만 비우면(`BEDROCK_REGION=`) 기동하지 못한다 |
 | `BEDROCK_SONNET_MODEL_ID` / `BEDROCK_OPUS_MODEL_ID` | 설정 안 함(기본값은 `.env.example`) | 실제 모델 id. 새 버전으로 옮길 때 이 값만 바꾸면 방·작업에 저장된 모델 값은 그대로다. 단가표(`apps/api/src/api/llm/pricing.py`)에 없는 id 면 어드민 사용량의 원가가 "단가 없음"으로 빠진다 — 단가를 함께 넣는다 |
@@ -1355,10 +1360,13 @@ sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -
 계정이면 거절된다), 클로버를 지급한다. 허용 직후 그 계정의 web 은 새로고침해야 진입점이 보인다(세션 정보를 다시 받지
 않는다).
 
-배포 직후 최대 300초(`prompt_set_cache_ttl_seconds`)는 소설화가 실패할 수 있다 — 마이그레이션이 프롬프트 세트 캐시를
-지우지 않아 그동안 소설화 채널이 없는 옛 세트로 렌더하고, 렌더가 모델 호출 전에 실패해 차감 전 거절 또는 환불로 끝난다.
-채팅은 영향이 없다. 배포 전부터 열어 둔 어드민 프롬프트 편집 탭은 새로고침한다 — 그 탭에서 저장하면 초안의 소설화 행이
-빠지고 게시가 "누락"으로 막힌다.
+**소설 문안이 있는 곳.** 소설화는 프롬프트 세트 캐시를 쓰지 않는다 — 경계 제안·화 생성·문단 수정 모두 호출마다 DB 에서
+활성 세트를 읽으므로(캐시는 채팅만 쓴다) 마이그레이션이 심은 세트도, 어드민이 게시한 판도 바로 다음 호출부터 쓰인다. 소설
+문안은 어드민 프롬프트 화면의 「소설」 탭(`novel` 레인)에서 고친다. 화 생성은 작업이 고른 모델의 체인(Gemini·Sonnet·Opus)을,
+경계 제안과 문단 수정은 Gemini 체인을 읽고, 등급 규칙(`system` 채널 `rule_rating`)과 화자 라벨은 원작 종류(스토리·캐릭터)의
+채팅 Gemini 세트에서 읽는다. 스토리·캐릭터 레인 Gemini 세트에도 옛 소설 문안 행(`novelize_*`)이 남아 있다 — 옛 이미지로
+되돌렸을 때 옛 코드가 읽는 값이라 새 코드는 읽지 않고, 어드민 채팅 탭에는 보이지 않으며, 채팅 레인을 저장·게시할 때 서버가
+직전 게시본의 값을 그대로 복사한다.
 
 **진행 중 작업 0 확인 — 끄기 · 명단 회수 · 롤백의 첫 단계.** 셋 다 재기동을 낀다. 재기동하면 그 순간 돌던 장 생성·문단
 수정 작업이 죽어 진행 중으로 남고, 그 차감액은 만료 정리가 환불할 때까지 묶인다. 새 코드는 프로세스마다 기동 뒤
@@ -1367,7 +1375,11 @@ heartbeat 만료 + 10초(기본 70초)에 모든 소설의 죽은 작업을 한 
 
 1. (선택) 어드민에서 허용 계정들의 토글을 끈다 — 재기동 없이 새 작업이 바로 403 이 된다. 이미 돌던 작업은 끝까지 돈다.
 2. 살아 있는 진행 중 작업이 0 이 될 때까지 기다린다. 작업 하나의 상한이 `NOVELIZE_JOB_TIMEOUT_SECONDS`(기본 360초)라
-   길어야 그만큼이다. heartbeat 조건을 빼면 이미 죽은 작업이 끝내 0 이 되지 않는다 — 그건 4단계가 따로 센다.
+   단일 작업은 길어야 그만큼이다. 연쇄 생성("남은 대화 한 번에")의 부모 작업(`kind = 'chain_generate'`)은 자식 작업을
+   차례로 띄우며 그동안 진행 중으로 남고, 상한이 따로다 — 계획한 묶음 수 × (`NOVELIZE_JOB_TIMEOUT_SECONDS` + 경계 제안
+   타임아웃 `GEMINI_NOVELIZE_BOUNDARY_TIMEOUT_MS`) + `NOVELIZE_CHAIN_TIMEOUT_MARGIN_SECONDS`, 기본값이면 묶음 5개에
+   5 × 390 + 60 = 2,010초다. 연쇄 부모만 세려면 아래 SQL 에 `AND kind = 'chain_generate'` 를 더한다. heartbeat 조건을
+   빼면 이미 죽은 작업이 끝내 0 이 되지 않는다 — 그건 4단계가 따로 센다.
 
    ```sh
    sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
@@ -1401,35 +1413,76 @@ sudo bash ops/swap-api.sh
 ops/swap-api.sh` — 허용 행이 남아 있어도 명단 밖이면 접근 시점에 막힌다.
 
 **롤백** — 스위치를 켠 적이 있으면 되돌릴 태그와 상관없이 **진행 중 작업 0 확인 → 끄기 → 롤백** 순서다. 태그 롤백은
-"BE → GCE VM" 절의 한 줄이다. 옛 이미지가 떠 있는 동안 알려진 문제:
+"BE → GCE VM" 절의 한 줄이다.
+
+**묶음·화 구조 이전 이미지로 되돌릴 때 — 이미지만 되돌린다.** 소설을 묶음(생성 한 번)과 화로 나눈 세 리비전
+(`4a4af1ac1df8` 묶음·화 스키마 → `3af53088351c` 작업 행·환불 → `a7a87e3ba631` 소설 프롬프트 레인)은 내리지 않아도 옛 코드가
+돈다. 새 테이블은 소설·화에 `ON DELETE CASCADE` 라 옛 코드의 화·소설 삭제와 탈퇴가 막히지 않고, 화 행은 묶음 구간의 사본을
+그대로 갖고, 화의 묶음 칸(`batch_id`)은 비어도 되며, 옛 코드가 읽는 소설 문안(채팅 레인에 남겨 둔 행)도 그대로다.
+🔴 **전제: 진행 중 작업 0, 특히 연쇄 부모 0**(위 확인 SQL). 옛 코드는 연쇄 부모 종류(`chain_generate`)와 새 실패 사유
+(`malformed`·`episode_count_mismatch`)를 모른다 — 진행 중인 새 작업이 남은 채 옛 이미지가 뜨면 그 소설의 상세·작업 폴링이
+500 이 되고, 죽은 연쇄 부모를 옛 만료 정리가 환불할 때 이미 만든 묶음 몫(소비액)을 모르고 차감액 전액을 돌려준다(만든 화는
+남는다). 옛 이미지가 떠 있는 동안 알려진 동작:
+
+- 화가 여럿인 묶음은 옛 화면에서 같은 구간의 장 여러 개로 보인다(화 행마다 묶음 구간의 사본을 갖는다).
+- 그중 하나를 옛 화면에서 다시 만들면 묶음 전체 원문이 그 장 하나에 다시 쓰인다.
+- 옛 코드가 만든 장은 묶음 없는 화(`batch_id` NULL)로 남는다. 새 이미지를 다시 올리면 그 소설의 상세를 열거나 새 작업·다시
+  만들기·마지막 묶음 삭제를 할 때 런타임 보정(`novelize/batches.py` 의 `ensure_batches`)이 빈 묶음을 지우고 그런 화를 묶음
+  하나씩에 넣는다 — 마이그레이션이나 보정 스크립트를 따로 돌리지 않는다.
+- 옛 어드민에서 스토리·캐릭터 레인의 소설 문안을 고쳐 게시하면 옛 코드는 그 문안으로 돈다. 새 이미지는 소설 레인에서
+  읽으므로 그 수정은 다시 올린 뒤 따라오지 않는다 — 살릴 수정이면 어드민 「소설」 탭에 손으로 옮겨 게시한다.
+- 이 동안 소설 레인(`novel`) 세트를 SQL 로 지우지 않는다. 옛 코드는 레인으로 세트를 골라 그 세트를 읽지 않고, 다시 올릴 때
+  `alembic upgrade head` 는 이미 적용된 리비전을 건너뛰어 지운 체인이 빈 채로 남는다(화 생성 실패·환불, 「소설」 탭 초안
+  조회 500).
+
+**소설화 이전 이미지까지 되돌릴 때** 알려진 문제(위 전제와 동작에 더해):
 
 - 소설화를 쓴 계정의 **클로버 내역이 500** 이다. 소설화 차감·환불 원장 행이 남는데(원장 `kind` 는 Text 라 값 제약이 없다) 옛
   코드의 내역 API 가 모르는 `kind` 를 범주 맵에서 찾다 실패한다. 영향은 허용했던 계정뿐이다. 잔액·차감은 정상이다.
 - 그 계정들의 **어드민 유저 상세가 500** 이다. 허용 토글이 남긴 감사 로그의 조치 종류를 옛 응답 스키마가 모른다.
 - story·character 레인의 **어드민 프롬프트 게시가 막힌다.** 마이그레이션이 두 레인 초안에 소설화 행을 더했는데 옛 코드의
-  게시 검증이 그 행을 "잉여"로 거부한다. 옛 코드에서 게시가 필요하면 마이그레이션 직전의 활성 버전을 복원해 게시한다(복원이
-  초안을 그 버전 섹션으로 바꾼다). 채팅 렌더는 소설화 채널을 읽지 않아 무사하다.
+  게시 검증이 그 행을 "잉여"로 거부한다. 채팅 렌더는 소설화 채널을 읽지 않아 무사하다. 이 동안에는 두 레인을 복원·게시하지
+  않는다 — 소설화 행이 없는 버전이 활성이 되면, 새 이미지를 다시 올린 뒤 그 레인 게시가 "누락"으로 막힌다(새 코드는 채팅
+  레인 게시 때 남겨 둔 소설 행을 활성 세트에서 가져오는데 거기 없다). 예전에 이 경우를 고치던 "프롬프트 시드 리비전만
+  내렸다 올리기"(`alembic downgrade 668c7ae16cc0` → `upgrade head`)는 더 쓰지 않는다 — 지금 head 에서는 그 위의 엔딩 우선
+  스탯·모델 축·방 모델·장 작업 모델 리비전까지 내렸다 올려 그 값이 사라지고, 화가 여럿인 묶음이 하나라도 있으면 묶음·화
+  스키마 리비전의 downgrade 거부에서 멈춘다.
 - 그동안 허용 계정이 **탈퇴하면 소설·장·개정·작업·허용 행이 지워지지 않고 남는다.** 옛 코드의 탈퇴 파기는 소설화 테이블을
   모르고, 새 이미지를 다시 올려도 소급해 지우지 않는다 — 손으로 지운다.
 
 **롤백 뒤 새 이미지를 다시 올릴 때** — 태그 롤백 중에는 무관한 PR 이라도 main 에 병합되면 자동 배포가 api 를 새
-코드로 다시 교체하므로, 그때도 이 절차가 필요하다. 마이그레이션은 이미 적용돼 다시 돌지 않는다. 옛 코드에서 복원·게시한 세트가
-활성이면 거기 소설화 행이 없어 소설화가 계속 렌더 실패로 거절되고, 새 코드의 게시 검증은 "누락"으로 막힌다(어드민에
-소설화 채널을 손으로 더할 길이 없다). 새 이미지가 뜬 직후 그 이미지로 프롬프트 시드만 다시 깐다 — downgrade 가 시드가
-만든 세트 둘과 초안의 소설화 행만 지우고, upgrade 가 그 시점 활성 세트를 다시 복사해 소설화 행을 더한 새 세트를 활성으로
-만든다(소설·작업 테이블은 이 리비전 아래라 그대로다):
+코드로 다시 교체하므로 그때도 같다. 마이그레이션은 이미 적용돼 다시 돌지 않고, 손으로 할 일은 없다. 옛 코드가 만든 묶음 없는
+화는 위 런타임 보정이 채운다. 확인은 아래 「활성 세트 확인」 SQL 로 소설 레인 세 체인이 그대로인지 본다.
 
-```sh
-sudo /opt/ddona/backup.sh   # 먼저 백업
-sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<새 코드 TAG> alembic downgrade 668c7ae16cc0
-sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<새 코드 TAG> alembic upgrade head
-```
-
-**스키마까지 되돌릴 때** — main 에 revert 커밋을 올려 옛 코드로 롤백을 굳힐 때는 그 병합 **전에** 이 downgrade 를 마친다.
+**스키마까지 되돌릴 때** — main 에 revert 커밋을 올려 옛 코드로 롤백을 굳힐 때는 그 병합 **전에** 아래 downgrade 를 마친다.
 안 하면 그 배포(롤백 표시 없는 `main` push 배포)의 교체 스크립트가 DB 가 이미지보다 앞서 있음을 보고 실패한다 — 옛 색이
 계속 서빙하니 downgrade 를 마친 뒤 다시 배포한다("참조 이미지 켜기 · 끄기 · 롤백" 절과 같은 경우다). 순서는 "참조 이미지 켜기 · 끄기 · 롤백" 절과 같다: **태그 롤백으로 옛 코드부터 띄우고 →
 새 이미지로 downgrade**(옛 이미지에는 이 리비전 파일이 없고, 먼저 내리면 떠 있는 새 코드가 없어진 테이블을 읽다 실패한다).
-**소설·장·개정·작업·계정별 허용 행이 전부 지워지고 되살릴 수 없으므로** 백업을 먼저 뜬다:
+마이그레이션 체인은 한 트랜잭션이라, 도중의 리비전이 거부하면 그 앞에서 내린 리비전도 함께 되돌려진다. 둘 다 되살릴 수 없는
+데이터를 지우므로 백업을 먼저 뜬다.
+
+*묶음·화 구조만 내릴 때*(목표 `2494aa0e607e`, 장 작업 모델 리비전) — 이미지만 되돌려도 옛 코드가 도므로 대개 필요 없다:
+
+```sh
+sudo /opt/ddona/backup.sh   # 먼저 백업
+sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env \
+  <IMAGE>:<새 코드 TAG> alembic downgrade 2494aa0e607e
+```
+
+- **거부**: 화가 둘 이상인 묶음이 하나라도 있으면 묶음·화 스키마 리비전(`4a4af1ac1df8`)이, 부분 환불된 성공 작업·연쇄
+  부모·연쇄 자식·새 실패 사유(`malformed`·`episode_count_mismatch`) 작업 행이 하나라도 있으면 작업 행 리비전
+  (`3af53088351c`)이 아무것도 바꾸기 전에 `RuntimeError` 로 멈춘다. 오류 메시지에 정리 방법이 있다 — 여러 화 묶음은 새 코드가
+  떠 있는 동안 그 소설에서 뒤에서부터 지운다(마지막 묶음 삭제).
+- **성공해도 사라지는 것**: 소설 레인(`novel`) 세트 전부(어드민이 만든 초안·게시본 포함), 소설 제목·소개·표지 선택·보드
+  배치, 화 제목·요약·작가의 말, 인물 카드와 화별 등장 인물, 스냅샷, 읽은 위치, 작업 행의 환불액·대상 묶음·화 수 목표·단가·
+  소비액·연쇄 계획 칸. 화 본문·개정·작업 행과 채팅 레인의 소설 문안 행은 남는다.
+
+*소설화 전체를 내릴 때*(목표 `00ce650038ba`) — **소설·장·개정·작업·계정별 허용 행이 전부 지워진다.** 지금 head 에서 이
+목표로 내리면 소설화 리비전들만이 아니라 그 위에 쌓인 엔딩 우선 스탯(`a966fc016bf1`)·모델 축(`e6aa289fea62`)·방
+모델(`519329713933`)·장 작업 모델(`2494aa0e607e`) 리비전과 묶음·화 구조 세 리비전까지 함께 내린다 — 엔딩의 우선 스탯 값,
+Claude 프롬프트 세트, 방마다 고른 모델도 사라지고, 위 묶음·화 구조의 거부 조건이 그대로 걸린다. 그래서 먼저 위 「묶음·화
+구조만 내릴 때」를 통과시키고, 상위 모델 리비전은 "상위 모델(Bedrock) — 꺼진 채 배포 · 켜기 · 끄기" 절의 롤백 순서를 본 뒤에
+내린다:
 
 ```sh
 sudo /opt/ddona/backup.sh   # 먼저 백업
@@ -1437,25 +1490,29 @@ sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env \
   <IMAGE>:<새 코드 TAG> alembic downgrade 00ce650038ba
 ```
 
-- downgrade 는 시드가 만든 프롬프트 세트 둘과 두 레인 초안의 소설화 행을 지운다. 활성은 마이그레이션 직전 세트로
-  돌아간다(게시 시각 최신 규칙). 그 사이 운영자가 소설화 행이 든 새 버전을 게시했다면 그 버전은 남아 활성이고 옛 코드에서
-  그 레인 게시가 계속 막힌다 — 마이그레이션 직전 활성 버전을 복원해 게시한다.
-- 거꾸로 **새 코드에서 마이그레이션 이전 버전(소설화 채널 없음)을 복원하면 게시가 "누락"으로 막힌다** — 받아들인 제약이다.
+- 소설화 프롬프트 채널 리비전(`3bb2cc159b6d`)의 downgrade 는 그 리비전이 심은 프롬프트 세트 둘과 두 레인 초안의 소설화
+  행을 지운다. 활성은 그 마이그레이션 직전 세트로 돌아간다(게시 시각 최신 규칙). 그 사이 운영자가 소설화 행이 든 새 버전을
+  게시했다면 그 버전은 남아 활성이고 옛 코드에서 그 레인 게시가 계속 막힌다 — 마이그레이션 직전 활성 버전을 복원해 게시한다.
+- 거꾸로 **새 코드에서 소설화 채널이 없는 버전을 복원하면 채팅 레인 게시가 "누락"으로 막힌다** — 받아들인 제약이다.
 - 원장 행과 감사 로그 행은 downgrade 뒤에도 남는다 — 위 클로버 내역 500 과 어드민 유저 상세 500 은 옛 이미지가 떠 있는 한
   계속된다.
 
-활성 세트 확인(시드 직후, 롤백 전후):
+활성 세트 확인(배포 직후, 롤백 전후):
 
 ```sh
 sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
   psql -U postgres -d ai_character_chat -c \
-  "SELECT DISTINCT ON (lane) lane, id, version, published_at FROM prompt_sets WHERE status = 'published' AND lane IN ('story','character') AND model = 'gemini' ORDER BY lane, published_at DESC;"
+  "SELECT DISTINCT ON (lane, model) lane, model, id, version, published_at FROM prompt_sets WHERE status = 'published' AND lane IN ('story','character','novel') ORDER BY lane, model, published_at DESC;"
 ```
 
-`model` 조건은 모델 축 리비전(`e6aa289fea62`, 아래 3-12 절) 이후에만 쓴다 — 그보다 아래로 내린 DB 에는 이 열이 없다.
+`model` 열은 모델 축 리비전(`e6aa289fea62`, 아래 3-12 절) 이후에만 있다 — 그보다 아래로 내린 DB 에서는 `model` 을 빼고
+`DISTINCT ON (lane)` 으로 본다. `novel` 레인은 묶음·화 구조 이후에만 있다.
 
-시드가 만드는 새 세트 id 는 환경 공통 리터럴(story `b5305c39-e0af-4d32-ac28-578550b31fb9`, character
-`502dcff3-66ce-46ad-8c84-13dbba6fe81a`)이고, 버전은 배포 시점 전 레인 게시 최대 + 1(story 먼저, character 그다음)이다.
+마이그레이션이 심는 세트 id 는 환경 공통 리터럴이다. 소설화 프롬프트 채널 리비전(`3bb2cc159b6d`): story
+`b5305c39-e0af-4d32-ac28-578550b31fb9`, character `502dcff3-66ce-46ad-8c84-13dbba6fe81a`(버전은 배포 시점 전 레인 게시 최대 + 1,
+story 먼저). 소설 프롬프트 레인 리비전(`a7a87e3ba631`): `novel` 레인 Gemini 옛 문안 사본 `43c582e7-02c3-4d63-9c8d-ea466e9db3f8`,
+Gemini 활성 `85102fbf-51a6-48bb-a44f-b320eaa6325d`, Sonnet `dace3703-a59e-4d5d-b765-a64085001771`, Opus
+`2b816f0c-0de0-4d23-ac90-6648c705d271` — 어드민이 게시하기 전이면 (novel, gemini)·(novel, sonnet)·(novel, opus) 행이 뒤의 셋이다.
 
 ### 3-12. 상위 모델(Bedrock) — 꺼진 채 배포 · 켜기 · 끄기
 
@@ -1508,8 +1565,8 @@ sudo bash ops/swap-api.sh
 2. 어드민 유저 상세에서 허용을 켠다 — API 로는 `POST /admin/users/{id}/chat-premium-models-grant`·
    `POST /admin/users/{id}/novelize-premium-models-grant` 에 `{"granted": true, "adminComment": "…"}`. 스위치가 꺼져 있어도 미리 줄
    수 있다. 소설 상위 모델은 그 계정에 소설화 허용(3-11 절)도 있어야 보인다.
-3. 클로버를 지급한다. 상위 모델 턴·장은 레이트리밋 면제 계정도 값을 내고(턴 Sonnet 40·Opus 65, 장 Sonnet 160·Opus 260 —
-   `api/core/clover.py`), 하루 무료분은 Gemini 턴에만 쓰인다.
+3. 클로버를 지급한다. 상위 모델 턴·소설 화는 레이트리밋 면제 계정도 값을 내고(턴 Sonnet 40·Opus 65, 소설은 화 하나당
+   Sonnet 105·Opus 170 이라 생성 한 번이 화 수 × 화 단가다 — `api/core/clover.py`), 하루 무료분은 Gemini 턴에만 쓰인다.
 4. 그 계정의 web 을 새로고침하면(세션 정보를 다시 받는다) 채팅 더보기에 모델 선택이 보인다. 고른 모델은 방마다 저장되고 다음
    턴부터 그 모델·그 가격으로 돈다.
 5. 소설 상위 모델은 장 생성·재생성 요청마다 고른다(방처럼 저장하지 않는다). 허용이 들어갔는지는 그 계정으로 소설 상세
@@ -1555,16 +1612,20 @@ Gemini 와 따로 묶인다. 소설 장 실패는 공급자와 무관하게 지�
   **남긴다** — 시드까지 지우면 나중에 새 이미지를 다시 올릴 때 `alembic upgrade head` 가 이미 적용된 리비전을 건너뛰어 Claude
   체인이 빈 채로 남는다(어드민 초안 조회 `?model=sonnet` 500, 상위 모델 턴 실패). 시드는 남겨도 옛 코드에 안전하다 — 게시 시각이
   원본 Gemini 세트보다 1초 과거라 레인만 보는 "최신 게시본" 조회가 집지 않고, 초안이 아니라 초안 조회에도 걸리지 않는다.
-  스위치가 꺼져 있으면 새 코드에도 영향이 없다:
+  스위치가 꺼져 있으면 새 코드에도 영향이 없다. 🔴 소설 레인(`novel`)의 Claude 세트는 지우지 않는다(아래 SQL 의
+  `lane <> 'novel'`) — 그 레인의 Sonnet·Opus 체인은 소설 프롬프트 레인 리비전(`a7a87e3ba631`)이 심은 것이라 위 시드 4개
+  목록에 없고, 지우면 다시 올린 뒤 그 체인이 빈 채로 남아 상위 모델 화 생성이 실패·환불되고 어드민 「소설」 탭 초안 조회가
+  500 이 된다. 옛 코드는 레인으로 세트를 골라 소설 레인을 읽지 않는다:
 
   ```sh
   sudo /opt/ddona/backup.sh   # 먼저 백업
   sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
     psql -U postgres -d ai_character_chat -c \
-    "BEGIN; DELETE FROM prompt_sections WHERE prompt_set_id IN (SELECT id FROM prompt_sets WHERE model <> 'gemini' AND id NOT IN ('ba2a926c-e9ed-46e0-b42c-9c21c63552f6','f3237e56-5ff6-4b27-9135-98495c0094bb','b9c2f1ec-5e8c-48ce-8fc9-ffefdc6950d2','9b308ef1-bdb9-4f23-a2d8-fb6ae6ad778c')); DELETE FROM prompt_sets WHERE model <> 'gemini' AND id NOT IN ('ba2a926c-e9ed-46e0-b42c-9c21c63552f6','f3237e56-5ff6-4b27-9135-98495c0094bb','b9c2f1ec-5e8c-48ce-8fc9-ffefdc6950d2','9b308ef1-bdb9-4f23-a2d8-fb6ae6ad778c'); COMMIT;"
+    "BEGIN; DELETE FROM prompt_sections WHERE prompt_set_id IN (SELECT id FROM prompt_sets WHERE model <> 'gemini' AND lane <> 'novel' AND id NOT IN ('ba2a926c-e9ed-46e0-b42c-9c21c63552f6','f3237e56-5ff6-4b27-9135-98495c0094bb','b9c2f1ec-5e8c-48ce-8fc9-ffefdc6950d2','9b308ef1-bdb9-4f23-a2d8-fb6ae6ad778c')); DELETE FROM prompt_sets WHERE model <> 'gemini' AND lane <> 'novel' AND id NOT IN ('ba2a926c-e9ed-46e0-b42c-9c21c63552f6','f3237e56-5ff6-4b27-9135-98495c0094bb','b9c2f1ec-5e8c-48ce-8fc9-ffefdc6950d2','9b308ef1-bdb9-4f23-a2d8-fb6ae6ad778c'); COMMIT;"
   ```
 
-- 스키마까지 되돌리면(`alembic downgrade a966fc016bf1`, 순서는 위 절들과 같이 태그 롤백 먼저) downgrade 가 Gemini 가 아닌
+- 스키마까지 되돌리면(`alembic downgrade a966fc016bf1`, 순서는 위 절들과 같이 태그 롤백 먼저 — 묶음·화 구조 리비전이 위에
+  있으면 그것부터, 아래 「롤백 순서」 4단계) downgrade 가 Gemini 가 아닌
   세트 전부(시드 + 어드민이 만든 것)를 지우고 인덱스를 되돌린 뒤 열을 지운다. 그 위의 방 모델·장 작업 모델 리비전(`519329713933`·
   `2494aa0e607e`, 아래)이 먼저 내려가야 하므로 이 한 줄이 셋 다 내린다. 목표는 엔딩 우선 스탯 리비전(`a966fc016bf1`)이다 —
   이 배포의 세 리비전이 그 위에 쌓여 있어, 그보다 아래(`3bb2cc159b6d`)로 내리면 엔딩의 우선 스탯 열과 값까지 지워진다.
@@ -1576,15 +1637,18 @@ Gemini 와 따로 묶인다. 소설 장 실패는 공급자와 무관하게 지�
 **롤백 순서.** 1차는 스위치 끄기(위 「끄기」)다 — 재기동 한 번으로 모든 턴·장이 Gemini 로 돌고 방은 막히지 않는다. 코드까지
 되돌릴 때는 스위치를 끈 뒤 태그 롤백(옛 이미지)을 하고, 스키마는 그 뒤에 내린다:
 
-1. 스위치를 끄고 진행 중인 소설 장 작업이 0 인지 본다(3-11 절의 확인 SQL). 🔴 옛 이미지는 작업의 모델 칸을 모르므로, 진행
-   중인 상위 모델 장 작업이 남은 채 옛 이미지가 뜨면 그 작업은 상위 모델 값을 낸 채 Gemini 로 돈다.
+1. 스위치를 끄고 진행 중인 소설 작업이 0 인지 본다(연쇄 부모 포함, 3-11 절의 확인 SQL). 🔴 옛 이미지는 작업의 모델 칸을
+   모르므로, 진행 중인 상위 모델 화 작업이 남은 채 옛 이미지가 뜨면 그 작업은 상위 모델 값을 낸 채 Gemini 로 돈다.
 2. 어드민에서 Claude 세트를 저장·게시했다면 위의 Claude 행 삭제(시드 4개 제외)를 먼저 한다.
 3. 태그 롤백으로 옛 이미지를 띄운다. 옛 코드는 방 모델 열(`chat_rooms.chat_model`)을 모르고 읽지 않으며, 새 방도 그 열이 NULL 로
    들어가 그대로 돈다. 상위 모델 허용 행(`user_feature_grants` 의 새 기능 값)은 옛 코드가 소설화 행만 골라 읽어 영향이 없다.
    다만 어드민에서 상위 모델 허용을 켜고 끈 계정은 옛 코드에서 **어드민 유저 상세가 500** 이다 — 그 감사 로그의 조치
    종류(`user-chat-premium-models-on` 등)를 옛 응답 스키마가 모른다(3-11 절의 소설화 토글과 같은 성질). 장 작업의 모델 칸
    (`novel_jobs.model`)도 옛 코드가 읽지 않고, 새 작업은 그 칸이 NULL(Gemini)로 들어간다.
-4. 스키마까지 되돌리면 옛 이미지가 떠 있는 상태에서 새 코드 이미지로 내린다. 리비전은 위에서부터 장 작업 모델
+4. 스키마까지 되돌리면 옛 이미지가 떠 있는 상태에서 새 코드 이미지로 내린다. 🔴 **묶음·화 구조 리비전(`4a4af1ac1df8`·
+   `3af53088351c`·`a7a87e3ba631`)이 위에 있으면 먼저 3-11 절의 「묶음·화 구조만 내릴 때」로 `2494aa0e607e` 까지 내린다** —
+   아래 세 줄을 그 위에서 바로 돌리면 그 세 리비전도 함께 내리려다 거부 조건에 걸려 멈추거나, 통과하면 그 절의 묶음·화 구조 전용
+   데이터가 같이 사라진다. 그다음 리비전은 위에서부터 장 작업 모델
    (`2494aa0e607e`) → 방 모델(`519329713933`) → 모델 축(`e6aa289fea62`) 순서로 엔딩 우선 스탯 리비전(`a966fc016bf1`) 위에
    쌓여 있다. 장 작업 모델 리비전만 내리면 작업마다 적은 모델이 사라지고(차감액은 남는다), 방 모델 리비전까지 내리면 방마다
    고른 모델이 사라지고(전부 Gemini), 그 아래 모델 축 리비전까지 내리면 Claude 세트 전부(시드 포함) 삭제도 함께 일어난다.

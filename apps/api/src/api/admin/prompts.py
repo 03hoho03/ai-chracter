@@ -73,7 +73,7 @@ logger = logging.getLogger(__name__)
 # 채팅 레인(story·character Gemini 체인)에 얼려 둔 옛 소설화 세 채널 — 두 레인에 같은 행이 `scope="both"` 로 있다.
 # 소설 문안은 `novel` 레인으로 옮겼지만 이 행은 지우지 않는다: 옛 이미지로 되돌리면 옛 코드가 소설 문안을 여기서 읽기
 # 때문이다. 그래서 채팅 레인 게시는 이 행을 계속 요구하되 어드민이 바꾸지 못하게 서버가 직전 게시본의 값을 복사한다
-# (`_with_frozen_novel_rows`).
+# (`_active_frozen_novel_sections`).
 _FROZEN_NOVELIZE_ROWS: dict[str, frozenset[tuple[str, str, str]]] = {
     "novelize_boundary": frozenset(
         {("both", slot, "") for slot in ("instruction", "user_name", "max_turns", "turn_context")}

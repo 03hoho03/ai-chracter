@@ -54,7 +54,7 @@ class NovelizeReviseResult(BaseModel):
 
 
 class NovelizeBoundaryResult(BaseModel):
-    """장 경계 제안의 응답 스키마. 필드 설명은 모델에게 가는 스키마에 그대로 실린다."""
+    """묶음 경계 제안의 응답 스키마. 필드 설명은 모델에게 가는 스키마에 그대로 실린다."""
 
     end_turn: int = Field(
         description="다음 장이 끝나는 턴 번호. [원문 대화]의 [턴 n] 번호 중 하나이며 1 이상 [고를 수 있는 범위]의 끝 이하."
@@ -128,9 +128,9 @@ def build_novelize_boundary_prompt(
     하나를 고르는 판정이다. `sections` 는 소설 레인 세트, `chat_set` 은 라벨을 읽을 채팅 세트다.
 
     `max_turns` 는 이번 후보 구간의 턴 수(상한과 남은 턴 수 중 작은 값, 1 이상). `user_name` 은 소설의 주인공 이름
-    칸 값이고, 첫 장 이름을 받기 전이면 비어 그 섹션째 빠진다.
+    칸 값이고, 첫 화 이름을 받기 전이면 비어 그 섹션째 빠진다.
 
-    `turn_lines` 는 후보 구간의 원문 줄이고 장 생성과 **같은 형식**이다(아래 `build_novelize_chapter_prompt` 참고).
+    `turn_lines` 는 후보 구간의 원문 줄이고 화 생성과 **같은 형식**이다(아래 `build_novelize_chapter_prompt` 참고).
     턴 번호 n 은 구간 안 상대 번호(1부터)라, 모델이 고른 번호를 호출부가 메시지 id 로 바꾼다."""
     if max_turns < 1:
         raise PromptRenderError(f"channel='novelize_boundary' max_turns={max_turns} — 고를 턴이 없다")
@@ -170,13 +170,13 @@ def build_novelize_chapter_prompt(
     - `work_setting`: 작품 설정 원문. 캐릭터 방은 `이름: {캐릭터명}` 한 줄 + 캐릭터 프롬프트, 스토리 방은 세계관
       설정 + 빈 줄 + 규칙(빈 값은 뺀다). 이미지 태그를 지운 뒤 작가 글의 `{{user}}` 를 소설 주인공 이름으로 바꾼다.
     - `user_name`: 소설의 주인공 이름 칸 값(필수 — 비면 호출하지 않는다).
-    - `setting_notes`·`previous_excerpt`: 소설의 설정 노트, 직전 장 현재 본문의 끝 일부. 비면 섹션째 빠진다.
+    - `setting_notes`·`previous_excerpt`: 소설의 설정 노트, 직전 화 현재 본문의 끝 일부. 비면 섹션째 빠진다.
     - `turn_lines`: 구간 원문. 방 메시지를 `(created_at, id)` 순으로 읽고 모델 응답 하나를 한 턴으로 센다. 사용자
       메시지는 그 뒤 모델 응답과 같은 턴이고, 구간에 든 오프닝은 사용자 줄 없는 한 턴, 구간 끝의 응답 없는 사용자
       메시지는 넣지 않는다. 메시지마다 첫 줄 앞에 `"[턴 " + n + "] " + 라벨 + ": "` 를 붙이고 둘째 줄부터는 그대로
       둔다(같은 턴의 두 줄은 같은 n). 줄은 `"\\n"` 하나로 잇는다. 라벨은 이 함수가 `{user_label}`·`{assistant_label}`
       에 넣는 값과 같은 글자다. 본문은 이미지 태그를 지우고, 모델 응답 줄만 작가 글 이름 치환을 한다(사용자 줄은
-      사용자가 친 글자 그대로). 장 경계 제안도 같은 형식을 쓴다 — 두 호출의 n 이 같은 턴을 가리키게.
+      사용자가 친 글자 그대로). 묶음 경계 제안도 같은 형식을 쓴다 — 두 호출의 n 이 같은 턴을 가리키게.
 
       예: `[턴 1] 캐릭터: 왔어?` / `[턴 2] 사용자: 응, 늦어서 미안.` / `[턴 2] 캐릭터: 괜찮아.`
     - `character_notes`·`previous_summaries`: 메모를 적은 인물마다 한 줄, 앞 화 요약을 오래된 순으로 한 줄씩. 비면
@@ -219,9 +219,9 @@ def build_novelize_revise_prompt(
     """문단 수정(구조화, 과금). `sections` 는 소설 레인 세트이고, 지시문 뒤에 채팅 세트(`chat_sections`)의 등급 규칙을
     붙인다.
 
-    `paragraphs` 는 장 현재 개정 본문을 빈 줄로 나눈 문단 목록이고 `first_index`·`last_index` 는 고칠 범위(0부터,
+    `paragraphs` 는 화 현재 개정 본문을 빈 줄로 나눈 문단 목록이고 `first_index`·`last_index` 는 고칠 범위(0부터,
     양 끝 포함)다. 프롬프트에서는 문단마다 `[n] ` 을 붙여 빈 줄로 잇고 번호와 범위를 1부터 센다 — 사람이 읽는 번호라
-    모델이 헷갈리지 않게. `work_setting`·`setting_notes` 는 장 생성과 같다."""
+    모델이 헷갈리지 않게. `work_setting`·`setting_notes` 는 화 생성과 같다."""
     _require("novelize_revise", user_request=user_request)
     if not 0 <= first_index <= last_index < len(paragraphs):
         raise PromptRenderError(
