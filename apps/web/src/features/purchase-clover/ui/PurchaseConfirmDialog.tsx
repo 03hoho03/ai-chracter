@@ -306,7 +306,7 @@ function PurchaseNotice({ notice, onLeave }: { notice: DialogNotice; onLeave: ()
         <Link
           to={SUPPORT_DESTINATIONS["inquiry-new"].to}
           onClick={onLeave}
-          className="text-sm font-medium text-destructive-text underline underline-offset-4"
+          className="text-sm font-medium text-destructive-text underline underline-offset-4 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring"
         >
           {SUPPORT_DESTINATIONS["inquiry-new"].label}
         </Link>

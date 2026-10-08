@@ -41,6 +41,19 @@ export type PortOnePaymentInput = {
   redirectUrl: string;
 };
 
+/** 본인인증창에 넘기는 값. 상점·채널·인증 id 는 우리 서버의 시작 응답에서 온다. 인증 결과(CI·생년월일)는 브라우저에
+ * 오지 않고 서버가 포트원에 직접 묻는다. */
+export type PortOneIdentityVerificationInput = {
+  storeId: string;
+  channelKey: string;
+  identityVerificationId: string;
+  redirectUrl: string;
+};
+
+export function requestPortOneIdentityVerification(input: PortOneIdentityVerificationInput): Promise<PortOneOutcome> {
+  return callPortOne((sdk) => sdk.requestIdentityVerification(input));
+}
+
 export function requestPortOnePayment(input: PortOnePaymentInput): Promise<PortOneOutcome> {
   return callPortOne(async (sdk) => {
     const base = {
