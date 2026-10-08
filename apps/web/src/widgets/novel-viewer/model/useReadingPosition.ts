@@ -15,6 +15,7 @@ import {
   toCurrentParagraphIndex,
   toReadingBandRootMargin,
   toRestoreScrollTop,
+  toSavedParagraphIndex,
   toTrackingStart,
   type BandParagraph,
 } from "../lib/readingBand";
@@ -67,7 +68,8 @@ function positionKey(body: NovelReadingPositionRequest): string {
  *   그 화의 자리를 모르면 맨 위에서 재지 않고 이용자가 스크롤한 뒤부터 잰다.
  * - **지금 문단**: 화면 위쪽 띠에 충분히 걸친 문단 중 가장 앞 문단(`toCurrentParagraphIndex`). 띠 위쪽은 문단의
  *   `scroll-margin-top` 만큼 잘라 되돌린 자리 바로 위 틈의 앞 문단을 세지 않는다. 마지막 문단이 화면에 들어오면 다
- *   읽음이다.
+ *   읽음이다. 마지막 화면 안의 자리로 되돌려 창이 문서 끝에 막혔으면, 끝에 있는 동안은 띠에 걸린 더 앞 문단 대신
+ *   되돌린 문단을 지금 문단으로 둔다(`toSavedParagraphIndex`) — 스크롤하지 않았는데 자리가 앞당겨지지 않게.
  * - **저장**: 자리가 바뀌면 3초 뒤 저장한다(스크롤하는 동안 요청이 쏟아지지 않게). 페이지가 숨거나(탭 전환·앱
  *   전환·닫기) 이 화를 떠날 때(다른 화로 옮김 포함) 기다리던 저장을 `keepalive` 로 바로 보낸다 — 그때는 보통 요청이
  *   끊긴다.
@@ -173,7 +175,12 @@ export function useReadingPosition({
           // 띠가 문단 사이 틈에 걸려 셀 문단이 없으면 직전 문단을 그대로 둔다.
           const next = toCurrentParagraphIndex(visible.values());
           if (next === undefined) return;
-          currentIndex = next;
+          currentIndex = toSavedParagraphIndex({
+            measuredIndex: next,
+            restoredIndex,
+            scrollY: window.scrollY,
+            maxScrollY: maxScrollYOf(),
+          });
           record();
         },
         { rootMargin: toReadingBandRootMargin(scrollMarginTopOf(paragraphs.item(0))), threshold: READING_BAND_THRESHOLDS },
@@ -234,7 +241,7 @@ export function useReadingPosition({
         const isRestored = isScrollRestored({
           scrollY: window.scrollY,
           targetTop: restoreTop(element),
-          maxScrollY: document.documentElement.scrollHeight - window.innerHeight,
+          maxScrollY: maxScrollYOf(),
         });
         if (!isRestored && attempt + 1 < MAX_RESTORE_FRAMES) attemptRestore(element, attempt + 1);
         else startTrackingWhen(toTrackingStart(isRestored ? "restored" : "failed"));
@@ -275,6 +282,11 @@ export function useReadingPosition({
     // 화·개정이 바뀌면 읽기 화면이 새로 마운트된다(호출부가 화 id 로 key 를 준다). 저장된 자리는 열 때 한 번만 쓴다 —
     // 라우터가 이동을 끝낸 순간 한 번 돈다(`hasRouteSettled` 는 한 번 참이면 바뀌지 않는다).
   }, [hasRouteSettled]);
+}
+
+/** 창이 갈 수 있는 가장 아래 스크롤 위치. */
+function maxScrollYOf(): number {
+  return document.documentElement.scrollHeight - window.innerHeight;
 }
 
 /** 문단의 계산된 `scroll-margin-top`(px). 안전 영역이 더해진 값이라 CSS 에서 읽는다. */

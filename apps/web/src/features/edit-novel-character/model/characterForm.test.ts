@@ -13,6 +13,7 @@ describe("addAlias", () => {
     expect(addAlias([], "도희", "  ", 5)).toHaveProperty("error");
     expect(addAlias(["희"], "도희", "도희", 5)).toHaveProperty("error");
     expect(addAlias(["희"], "도희", "희", 5)).toHaveProperty("error");
+    expect(addAlias(["희"], "도희", "희", 5)).toEqual({ error: "‘희’는 이미 이 인물의 이름이에요" });
     expect(addAlias(["a", "b"], "도희", "c", 2)).toEqual({ error: "별칭은 2개까지 둘 수 있어요" });
   });
 });
@@ -35,7 +36,7 @@ describe("toCharacterSaveError", () => {
       detail: { code: "NOVEL_CHARACTER_NAME_TAKEN", name: "세빈" },
     });
     expect(toCharacterSaveError(error, "character")?.message).toBe(
-      "‘세빈’은(는) 다른 인물이 쓰고 있어요. 같은 인물이면 ‘다른 인물과 합치기’를 써주세요.",
+      "‘세빈’은 다른 인물이 쓰고 있어요. 같은 인물이면 ‘다른 인물과 합치기’를 써주세요.",
     );
   });
 
