@@ -32,7 +32,7 @@ from portone_server_sdk.payment import (
     PaymentOrigin,
     ReadyPayment,
 )
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from api.auth.withdrawal import erase_account
@@ -45,7 +45,12 @@ from api.legal.dependencies import _latest_published_legal_version
 from api.main import app
 from api.payments import router as payments_router
 from api.payments import service as payments_service
-from api.payments.errors import PaymentMismatchError, PortOneUnavailableError
+from api.payments.errors import (
+    PaymentMismatchError,
+    PaymentOwnerWithdrawnError,
+    PaymentWebhookConfigError,
+    PortOneUnavailableError,
+)
 from api.payments.methods import PAY_METHODS
 from api.payments.notify import get_payment_notifier
 from api.payments.portone import get_portone_gateway
@@ -440,6 +445,58 @@ async def test_existing_ledger_key_stops_a_second_grant(db_session: AsyncSession
     assert await db_session.scalar(select(User.clover_balance).where(User.id == user_id)) == 0
 
 
+async def test_bonus_key_collision_commits_nothing(db_session: AsyncSession, gateway: _FakeGateway) -> None:
+    """보너스 키에서만 충돌해도 앞서 flush 된 유료 지급까지 함께 되감긴다 — 유료·보너스가 한 SAVEPOINT 안에 있어서다.
+    깨지는 시나리오: 둘을 따로 묶으면 유료만 커밋된 반쪽 지급이 남고 주문은 pending 이라 재시도마다 같은 반쪽이 쌓인다."""
+    user = await _user(db_session)
+    order = await _make_payment(db_session, user_id=user.id, channel_key=_CHANNEL)
+    db_session.add(
+        CloverLedger(
+            user_id=user.id, amount=1, balance_after=0, kind="purchase_bonus", idempotency_key=f"purchase:{order.id}:bonus"
+        )
+    )
+    await db_session.flush()
+    gateway.payments[order.payment_id] = _paid(order)
+    user_id, order_id = user.id, order.id  # 되감긴 SAVEPOINT 가 세션의 객체를 만료시킨다
+
+    outcome = await sync_payment(db_session, gateway, order.payment_id)
+
+    assert (outcome.result, outcome.status) == ("already", "pending")
+    assert await _lots(db_session, user_id) == []
+    assert await _ledger(db_session, user_id) == [("purchase_bonus", 1, f"purchase:{order_id}:bonus")]
+    assert await db_session.scalar(select(User.clover_balance).where(User.id == user_id)) == 0
+    assert (await _order(db_session, order_id)).status == "pending"
+
+
+async def test_payment_confirmed_after_the_owner_withdrew_is_not_credited(
+    db_session: AsyncSession, gateway: _FakeGateway, captured: list[tuple[str, BaseException | None]]
+) -> None:
+    """결제창에서 돈이 나간 뒤 확정이 늦게 오는 사이에 탈퇴했으면 지급하지 않고 운영자 환불로 넘긴다. 깨지는 시나리오:
+    탈퇴 계정에 아무도 쓸 수 없는 잔액·로트가 생기고 주문은 paid 라 아무도 알아채지 못한다. 그 뒤 콘솔 환불의 취소
+    웹훅이 오면 회수할 것 없이 cancelled 로 맞는다."""
+    user = await _user(db_session)
+    order = await _make_payment(db_session, user_id=user.id, channel_key=_CHANNEL)
+    await db_session.execute(update(User).where(User.id == user.id).values(deleted_at=datetime.now(UTC)))
+    gateway.payments[order.payment_id] = _paid(order)
+
+    outcome = await sync_payment(db_session, gateway, order.payment_id)
+
+    assert (outcome.result, outcome.status, outcome.notification) == ("owner_withdrawn", "owner_withdrawn", None)
+    assert (await _order(db_session, order.id)).status == "owner_withdrawn"
+    assert await _lots(db_session, user.id) == []
+    assert await _ledger(db_session, user.id) == []
+    assert [(dep, type(exc)) for dep, exc in captured] == [("payment", PaymentOwnerWithdrawnError)]
+
+    gateway.payments[order.payment_id] = CancelledPayment(
+        **_common(order),
+        channel=_channel(_CHANNEL),
+        amount=_amount(order.amount_krw, cancelled=order.amount_krw),
+        cancellations=[],
+        cancelled_at=_PAID_AT,
+    )
+    assert (await sync_payment(db_session, gateway, order.payment_id)).result == "cancelled"
+
+
 async def test_complete_twice_grants_once(
     db_client: httpx.AsyncClient, db_session: AsyncSession, gateway: _FakeGateway, committing_request_session: None
 ) -> None:
@@ -638,6 +695,35 @@ async def test_webhook_secret_problem_is_retryable_and_reported(
 
     assert resp.status_code == 503
     assert [dep for dep, _ in captured] == ["payment"]
+
+
+async def test_webhook_secret_problem_with_payments_off_is_not_reported(
+    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, captured: list[Any]
+) -> None:
+    """결제가 꺼져 비밀이 빈 것이 정상인 동안에는 인증 없는 요청마다 Bugsink 이벤트를 만들지 않는다(응답은 그대로 503)."""
+    monkeypatch.setattr(settings, "payments_enabled", False)
+    monkeypatch.setattr(settings, "portone_webhook_secret", "")
+    payload = _event("Paid", "clvwhatever")
+
+    resp = await _post_webhook(db_client, payload, _signed(payload))
+
+    assert resp.status_code == 503
+    assert captured == []
+
+
+async def test_webhook_with_an_unrecognized_shape_is_reported(
+    db_client: httpx.AsyncClient, gateway: _FakeGateway, captured: list[tuple[str, BaseException | None]]
+) -> None:
+    """서명은 맞는데 SDK 가 모르는 모양(예: 옛 웹훅 버전)이면 SDK 가 원본 dict 를 돌려준다. 깨지는 시나리오: 모든 결제
+    웹훅이 흔적 없이 200 으로 사라지고, 창을 닫은 결제가 pending 으로 쌓인다."""
+    payload = json.dumps({"tx_id": "tx-old", "payment_id": "clvold", "status": "Paid"})
+
+    resp = await _post_webhook(db_client, payload, _signed(payload))
+
+    assert resp.status_code == 200
+    assert [(dep, type(exc)) for dep, exc in captured] == [("payment", PaymentWebhookConfigError)]
+    assert "clvold" not in str(captured[0][1])
+    assert gateway.calls == []
 
 
 async def test_webhook_portone_failure_asks_for_a_retry(

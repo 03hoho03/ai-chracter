@@ -30,21 +30,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.core.clover import grant, purchase_lot_expiry
 from api.core.config import settings
 from api.core.sentry import capture_dependency_failure
+from api.db.models.auth import User
 from api.db.models.payment import Payment, PaymentStatus
-from api.payments.errors import PaymentMismatchError, PaymentRefundStuckError
+from api.payments.errors import PaymentMismatchError, PaymentOwnerWithdrawnError, PaymentRefundStuckError
 from api.payments.portone import PortOneGateway
 
 logger = logging.getLogger(__name__)
 
 # - not_ours: 우리 주문이 아니다(다른 상점·테스트 잔재). already: 이미 끝난 주문이라 아무것도 하지 않았다.
 # - granted: 지금 클로버를 지급했다. mismatch: 결제 완료인데 주문과 맞지 않아 지급하지 않았다(수동 처리).
+# - owner_withdrawn: 결제 완료인데 주문자가 이미 탈퇴해 지급하지 않았다(수동 환불).
 # - failed / cancelled: 지급 전에 실패·전액 취소됐다. pending: 포트원이 아직 결제를 확정하지 않았다.
 # - unchanged: 맞출 것이 없거나 아직 맞추지 못하는 상태라 주문 행을 그대로 두었다.
-SyncResult = Literal["not_ours", "already", "granted", "mismatch", "failed", "cancelled", "pending", "unchanged"]
+SyncResult = Literal[
+    "not_ours", "already", "granted", "mismatch", "owner_withdrawn", "failed", "cancelled", "pending", "unchanged"
+]
 
 # 지급했거나 사람이 볼 건으로 넘겨 다시 지급 판단을 하지 않는 상태.
-_SETTLED: frozenset[PaymentStatus] = frozenset({"paid", "partially_cancelled", "cancelled", "mismatch"})
-_NOT_YET_PAID: frozenset[PaymentStatus] = frozenset({"pending", "failed"})
+_SETTLED: frozenset[PaymentStatus] = frozenset(
+    {"paid", "partially_cancelled", "cancelled", "mismatch", "owner_withdrawn"}
+)
+# 클로버를 주지 않은 상태. 여기서 전액 취소가 오면 회수할 것 없이 cancelled 로 맞춘다(탈퇴자 결제의 콘솔 환불 포함).
+_NOT_CREDITED: frozenset[PaymentStatus] = frozenset({"pending", "failed", "owner_withdrawn"})
 
 
 @dataclass(frozen=True)
@@ -83,6 +90,24 @@ async def _mark_mismatch(db: AsyncSession, order: Payment, field: str) -> SyncOu
     logger.warning("payment %s needs manual review: %s", order.id, field)
     capture_dependency_failure(PaymentMismatchError(field), dependency="payment")
     return SyncOutcome("mismatch", "mismatch")
+
+
+async def _owner_withdrawn(db: AsyncSession, order: Payment) -> bool:
+    """주문자가 탈퇴했는가. 사용자 행을 `FOR SHARE` 로 읽어, 지급을 커밋할 때까지 탈퇴(사용자 행 `FOR UPDATE`)가 끼어들지
+    못하게 한다 — 락 순서는 payments → users 그대로다."""
+    deleted_at = await db.scalar(select(User.deleted_at).where(User.id == order.user_id).with_for_update(read=True))
+    return deleted_at is not None
+
+
+async def _mark_owner_withdrawn(db: AsyncSession, order: Payment) -> SyncOutcome:
+    """탈퇴 계정에 지급하면 아무도 쓸 수 없는 잔액·로트가 남는다(탈퇴 소멸이 지키는 불변식이 깨진다). 지급하지 않고
+    운영자 환불로 넘긴다. 이상 건이라 디스코드 완료 알림이 아니라 Bugsink 에만 남긴다."""
+    order.status = "owner_withdrawn"
+    order.updated_at = datetime.now(UTC)
+    await db.commit()
+    logger.warning("payment %s was paid after its owner withdrew; refund it at the PortOne console", order.id)
+    capture_dependency_failure(PaymentOwnerWithdrawnError(), dependency="payment")
+    return SyncOutcome("owner_withdrawn", "owner_withdrawn")
 
 
 async def _grant_purchase(db: AsyncSession, order: Payment, remote: PaidPayment) -> SyncOutcome:
@@ -157,6 +182,8 @@ async def sync_payment(db: AsyncSession, gateway: PortOneGateway, payment_id: st
         field = _mismatch_field(order, remote)
         if field is not None:
             return await _mark_mismatch(db, order, field)
+        if await _owner_withdrawn(db, order):
+            return await _mark_owner_withdrawn(db, order)
         return await _grant_purchase(db, order, remote)
 
     if isinstance(remote, FailedPayment):
@@ -173,7 +200,7 @@ async def sync_payment(db: AsyncSession, gateway: PortOneGateway, payment_id: st
         return SyncOutcome("pending", status)
 
     if isinstance(remote, (CancelledPayment, PartialCancelledPayment)):
-        if status in _NOT_YET_PAID:
+        if status in _NOT_CREDITED:
             if isinstance(remote, PartialCancelledPayment):
                 # 지급 전에 일부만 취소된 결제는 지급할 양을 정할 규칙이 없다 — 사람이 본다.
                 return await _mark_mismatch(db, order, "partial_cancel")

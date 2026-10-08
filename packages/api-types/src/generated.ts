@@ -7137,7 +7137,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "pending" | "paid" | "failed" | "mismatch" | "cancelled" | "partially_cancelled";
+            status: "pending" | "paid" | "failed" | "mismatch" | "owner_withdrawn" | "cancelled" | "partially_cancelled";
             /** Balance */
             balance: number;
         };

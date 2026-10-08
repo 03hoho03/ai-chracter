@@ -24,7 +24,12 @@ Create Date: 2026-10-08 19:20:23.911050
 있는 행만 보므로 옛 쓰기를 거절하지 않는다.
 
 **downgrade** — 결제 행이 하나라도 있으면 멈춘다(`RuntimeError`). 결제 기록은 법정 보존 대상이라 스키마를 되돌리려고
-지우지 않는다. 옛 코드로 돌아가기만 하려면 downgrade 없이 이미지만 되돌린다(이 스키마에서 옛 코드가 그대로 돈다).
+지우지 않는다.
+
+**운영 메모 — 되돌리기**: "downgrade 없이 이미지만 되돌린다"는 **결제를 켜기 전까지만** 안전하다. 구매가 한 건이라도 생긴
+뒤 옛 이미지로 돌아가면, 옛 코드의 원장 범주 맵에 `purchase_*` 가 없어 구매자의 클로버 내역 API 가 500 이 되고, 옛
+어드민 회수는 kind 를 거르지 않아 구매 로트까지 깎는다(환불 견적의 바탕이 결제 기록 밖에서 줄어든다). 결제를 켠 뒤의
+되돌리기는 이미지가 아니라 `PAYMENTS_ENABLED=false` 로 한다.
 
 이 파일은 `api.*` 를 import 하지 않는다(저장소 관례).
 """
@@ -76,7 +81,7 @@ def upgrade() -> None:
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
         sa.CheckConstraint(
-            "status IN ('pending', 'paid', 'failed', 'mismatch', 'cancelled', 'partially_cancelled')",
+            "status IN ('pending', 'paid', 'failed', 'mismatch', 'owner_withdrawn', 'cancelled', 'partially_cancelled')",
             name='ck_payments_status',
         ),
         sa.CheckConstraint(

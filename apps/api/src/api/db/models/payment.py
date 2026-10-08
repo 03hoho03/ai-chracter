@@ -20,8 +20,12 @@ from api.db.base import Base
 # 주문 상태. 전이는 전부 주문 행을 `FOR UPDATE` 로 잠근 채 일어난다(`payments/service.py`).
 # - pending: 주문만 만들었다. failed: 포트원이 실패라고 했다(그 뒤 결제 완료가 오면 paid 로 간다 — 포트원 상태가 진실이다).
 # - paid: 대조를 통과해 클로버를 지급했다. mismatch: 포트원은 결제 완료인데 주문과 맞지 않아 지급하지 않았다(수동 처리).
+# - owner_withdrawn: 결제는 완료됐는데 확정 시점에 주문자가 이미 탈퇴해 지급하지 않았다(운영자가 포트원 콘솔에서 환불하고,
+#   그 취소 웹훅이 cancelled 로 맞춘다).
 # - cancelled / partially_cancelled: 포트원에서 전액·일부가 취소됐다.
-PaymentStatus = Literal["pending", "paid", "failed", "mismatch", "cancelled", "partially_cancelled"]
+PaymentStatus = Literal[
+    "pending", "paid", "failed", "mismatch", "owner_withdrawn", "cancelled", "partially_cancelled"
+]
 PaymentCancellationSource = Literal["admin", "console"]
 PaymentCancellationStatus = Literal["requested", "succeeded", "failed"]
 

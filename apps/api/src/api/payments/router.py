@@ -100,6 +100,14 @@ async def create_payment(
     )
 
 
+def _report_webhook_config(problem: str) -> None:
+    """웹훅 비밀 설정 사고를 Bugsink 에 남긴다. 결제가 꺼져 있으면 남기지 않는다 — 비밀이 빈 것이 정상인 상태에서 인증
+    없이 이 주소를 치는 요청마다 이벤트가 쌓이면 안 된다(응답은 그대로 503)."""
+    logger.warning("portone webhook cannot be verified: %s", problem)
+    if settings.payments_enabled:
+        capture_dependency_failure(PaymentWebhookConfigError(problem), dependency="payment")
+
+
 def _notify_after_response(outcome: SyncOutcome, background_tasks: BackgroundTasks, notifier: PaymentNotifier) -> None:
     if outcome.notification is not None:
         background_tasks.add_task(notifier, outcome.notification)
@@ -148,7 +156,7 @@ async def portone_webhook(
     """포트원 웹훅(Standard Webhooks 서명). 서버 간 호출이라 스키마에서 뺀다.
 
     응답 코드가 포트원의 재시도를 정한다(2xx 가 아니면 재시도한다): 서명이 틀리면 401(다시 보내도 같다), 웹훅 비밀이
-    비었거나 형식이 틀리면 503(설정 사고 — Bugsink 에 남기고 고친 뒤의 재시도를 받는다), 포트원 조회가 실패하면 503,
+    비었거나 형식이 틀리면 503(설정 사고 — 결제가 켜져 있으면 Bugsink 에 남기고, 고친 뒤의 재시도를 받는다), 포트원 조회가 실패하면 503,
     그 밖에는 처리했든 무관한 이벤트든 200. DB 오류는 그대로 500 이라 역시 재시도된다.
 
     결제 플래그가 꺼져 있어도 비밀이 있으면 처리한다 — 끄기 전에 시작한 결제와 콘솔 취소를 맞춰야 한다.
@@ -157,7 +165,7 @@ async def portone_webhook(
     payload = (await request.body()).decode("utf-8", errors="replace")
     secret = settings.portone_webhook_secret
     if not secret:
-        capture_dependency_failure(PaymentWebhookConfigError("webhook secret is empty"), dependency="payment")
+        _report_webhook_config("webhook secret is empty")
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
     try:
         event = webhook.verify(secret, payload, request.headers)
@@ -165,9 +173,15 @@ async def portone_webhook(
         logger.warning("portone webhook rejected: %s", exc.reason)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED) from None
     except webhook.InvalidInputError:
-        capture_dependency_failure(PaymentWebhookConfigError("webhook secret is malformed"), dependency="payment")
+        _report_webhook_config("webhook secret is malformed")
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE) from None
 
+    if isinstance(event, dict):
+        # 서명은 맞는데 SDK 가 아는 웹훅 모양이 아니다(콘솔의 웹훅 버전이 다르거나 포트원이 형식을 바꿨다). 그대로 두면 모든
+        # 결제 웹훅이 흔적 없이 사라지므로 남긴다 — 본문은 고객 정보를 담을 수 있어 싣지 않는다. 재시도해도 같으므로 200.
+        logger.warning("portone webhook has an unrecognized shape")
+        capture_dependency_failure(PaymentWebhookConfigError("unrecognized webhook shape"), dependency="payment")
+        return Response(status_code=status.HTTP_200_OK)
     if not isinstance(event, _SYNCED_WEBHOOKS) or event.data.store_id != settings.portone_store_id:
         return Response(status_code=status.HTTP_200_OK)
     try:

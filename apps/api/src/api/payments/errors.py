@@ -33,6 +33,10 @@ class PaymentMismatchError(Exception):
         self.field = field
 
 
+class PaymentOwnerWithdrawnError(Exception):
+    """결제가 확정됐는데 주문자가 이미 탈퇴했다 — 지급하지 않고 수동 환불로 넘긴 건을 Bugsink 에 남긴다."""
+
+
 class PaymentWebhookConfigError(Exception):
     """웹훅 비밀이 비었거나 형식이 틀려 서명을 검증할 수 없다. 모든 웹훅이 거절되는 설정 사고라 Bugsink 에 남긴다."""
 
