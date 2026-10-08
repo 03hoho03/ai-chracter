@@ -100,6 +100,7 @@ dependencies = [
     { name = "google-genai" },
     { name = "httpx" },
     { name = "pillow" },
+    { name = "portone-server-sdk" },
     { name = "pydantic-settings" },
     { name = "redis" },
     { name = "regex" },
@@ -134,6 +135,7 @@ requires-dist = [
     { name = "google-genai", specifier = ">=2.10.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "pillow", specifier = ">=12.3.0" },
+    { name = "portone-server-sdk", specifier = ">=0.21.0" },
     { name = "pydantic-settings", specifier = ">=2.14.2" },
     { name = "redis", specifier = ">=5.0.0" },
     { name = "regex", specifier = ">=2026.6.28" },
@@ -1920,6 +1922,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f9/e2/3e91f31a7d2b083fe6ef3fa267035b518369d9511ffab804f839851d2779/pluggy-1.6.0.tar.gz", hash = "sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3", size = 69412, upload-time = "2025-05-15T12:30:07.975Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl", hash = "sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746", size = 20538, upload-time = "2025-05-15T12:30:06.134Z" },
+]
+
+[[package]]
+name = "portone-server-sdk"
+version = "0.21.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/98/6a/d9345bdd14126c15490de38b99a7dccb57d14540d07f5a4de3f10fc20655/portone_server_sdk-0.21.0.tar.gz", hash = "sha256:10403fea66510df04247281981d7371427b21016509777adecd8a8b1b5431501", size = 463849, upload-time = "2026-05-04T08:26:18.221Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/22/dd/32d95ee359a9a5904b2994d6f326df5fa1b27b73bb99ef59fba01f239a63/portone_server_sdk-0.21.0-py3-none-any.whl", hash = "sha256:aaf55cebbad3deb67128c5e22a409214cc45add32b813dad7f08c52868f2a082", size = 1143442, upload-time = "2026-05-04T08:26:16.954Z" },
 ]
 
 [[package]]
