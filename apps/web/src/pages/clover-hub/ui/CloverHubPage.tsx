@@ -73,8 +73,9 @@ function BalanceSection() {
         {expiringMessage && <p className="text-sm text-primary">{expiringMessage}</p>}
       </div>
       {/* 내역 화면과 상품 안내 진입점. `pages/mypage/ui/MyPagePage.tsx`의 "내 작품" 링크와 같은
-          관용구(`font-medium ... text-primary hover:underline focus-visible:underline`). 상품 안내는
-          로그인 없이도 열리는 공개 페이지라 라벨·경로를 푸터와 같은 목적지 목록에서 가져온다. */}
+          관용구(`font-medium ... text-primary hover:underline focus-visible:underline`). 상품 안내의
+          라벨·경로는 목적지 목록에서 가져온다 — 도착 페이지 h1·푸터·이 링크가 한 문자열을 써야 한쪽만 고쳐져
+          같은 페이지가 자리마다 다른 이름으로 불리는 일이 없다. */}
       <div className="flex flex-wrap gap-x-4 gap-y-2">
         <Link to="/clover/history" className={SECTION_LINK_CLASS}>
           내역 보기
