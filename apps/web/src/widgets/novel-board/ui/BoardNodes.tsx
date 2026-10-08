@@ -16,14 +16,17 @@ import {
 import { CharacterCardBody, EpisodeCardBody, NotesCardBody, boardCardClassName } from "./BoardCardBodies";
 
 // 캔버스 노드 넷. 카드 크기는 배치 계산의 크기 상수와 같아야 묶음 테두리·인물 레인이 카드와 겹치지 않는다
-// (화 240×120, 인물 200×88, 노트 200×120). 키보드 포커스는 라이브러리가 카드를 감싼 노드 상자에 두므로 링은 그 상자의
-// `group` 을 따라 그린다(상자에 `group` 클래스를 캔버스가 붙인다). 카드 안에 버튼을 두지 않는다 — 카드 자체가 고르는
+// (화 240×120, 인물 200×88, 노트 200×120). 키보드 포커스는 라이브러리가 카드를 감싼 노드 상자에 두므로 표시는 그 상자의
+// `group` 을 따라 그린다(상자에 `group` 클래스를 캔버스가 붙인다). 포커스 표시는 하우스 레시피다 — 3:1 은 불투명
+// `border-ring` 1px 이 지고(반투명 링만으로는 바탕 대비 2.56:1), 바깥 반투명 링이 고른 카드(테두리 + 안쪽 링, 바깥 링
+// 없음)와 갈라 둘이 겹쳐도 각자 보인다. 카드 안에 버튼을 두지 않는다 — 카드 자체가 고르는
 // 단위이고, 동작은 전부 옆 패널에 있다.
 //
 // 선 끝점(`Handle`)은 연결용 손잡이가 아니라 선이 꽂히는 자리다. 화 카드에는 들어오는 선이 둘이라(위: 앞 화,
 // 오른쪽: 인물) 자리마다 id 를 나눈다.
 
-const FOCUS_RING = "group-focus-visible:ring-3 group-focus-visible:ring-ring/50";
+const FOCUS_RING =
+  "group-focus-visible:border-solid group-focus-visible:border-ring group-focus-visible:ring-3 group-focus-visible:ring-ring/50";
 
 const EpisodeCardNode = memo(function EpisodeCardNode({ data, selected }: NodeProps<EpisodeNode>) {
   return (
@@ -59,7 +62,7 @@ const NotesCardNode = memo(function NotesCardNode({ data, selected }: NodeProps<
  * 보이고, 바탕 위에 면을 한 겹 더 쌓지 않는다. 머리 줄은 테두리 위쪽 여백 안에 둔다. */
 const BatchFrameCardNode = memo(function BatchFrameCardNode({ data }: NodeProps<BatchFrameNode>) {
   return (
-    <div aria-hidden className="size-full rounded-2xl border border-border px-4 pt-1.5">
+    <div aria-hidden className="pointer-events-none size-full rounded-2xl border border-border px-4 pt-1.5">
       <p className="text-xs text-muted-foreground tabular-nums">
         묶음 {data.ordinal}
         {data.rangeLabel !== undefined && ` · ${data.rangeLabel}`}

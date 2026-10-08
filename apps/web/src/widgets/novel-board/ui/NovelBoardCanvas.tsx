@@ -17,13 +17,14 @@ import {
 } from "@xyflow/react";
 import { useAtomValue } from "jotai";
 import { Maximize, Minus, Plus } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type FocusEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
 
 import type { NovelBoardLayout } from "@/entities/novel";
 import { themeAtom } from "@/shared/model/theme";
 
 import type { BoardModel, BoardNode } from "../model/boardNode";
 import { nodeKeyToSelection } from "../model/boardSelection";
+import { pickSelectedNodeKey, toCardEscapeAction } from "../model/canvasSelection";
 import { isRectInView, toInitialFitNodeIds } from "../model/boardViewport";
 import { fitBatchFrames } from "../model/fitBatchFrames";
 import { buildCharacterEdges, layoutBoard } from "../model/layoutBoard";
@@ -36,6 +37,9 @@ import { BOARD_NODE_TYPES } from "./BoardNodes";
 const RENDER_VISIBLE_ONLY_EPISODE_COUNT = 100;
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 1.5;
+
+/** 선은 고를 것이 없다(정보는 카드에 있다) — 눌러도 고르기 변경을 내지 않게. */
+const DEFAULT_EDGE_OPTIONS = { selectable: false };
 
 const DIRECTION_LABEL: Record<string, string> = { up: "위로", down: "아래로", left: "왼쪽으로", right: "오른쪽으로" };
 
@@ -72,7 +76,8 @@ type NovelBoardCanvasProps = {
  *   계산하되 화면이 옮긴 자리를 잇는다(`mergeLocalNodes`). 카드를 놓을 때(끌기 끝과 키보드 이동 — 키보드 이동은 끌기
  *   끝 콜백을 부르지 않고 `dragging: false` 위치 변경만 보낸다)와 화면 이동이 끝날 때 1초 디바운스로 저장한다.
  * - **고르기**: 주소가 정한다. 라이브러리가 보내는 고르기 변경은 적용하지 않고 호출부에 넘겨 주소를 옮긴다 — 고치던
- *   글을 버릴지 확인을 거쳐야 하고, 고르기의 출처가 둘이 되지 않게. 끌기만으로는 고르지 않는다.
+ *   글을 버릴지 확인을 거쳐야 하고, 고르기의 출처가 둘이 되지 않게. 끌기만으로는 고르지 않고, 고르기를 푸는 길은 빈
+ *   곳 클릭과 고른 카드의 Esc 뿐이다.
  * - **인물 선**: 고르거나 키보드 포커스가 있는 인물 하나만 그린다(모든 인물의 선을 늘 그리면 읽을 수 없다). hover 로는
  *   그리지 않는다 — 포인터가 지날 때마다 선이 번쩍인다.
  * - 연결·선 바꾸기·지우기 키·여러 개 고르기는 끈다. 이야기 순서는 서버가 정하고 카드는 그 순서를 바꾸지 않는다.
@@ -128,7 +133,10 @@ function BoardFlow({ novelId, model, savedLayout, maxBytes, selectedNodeKey, onS
           selected: isSelected,
           className: "group outline-none",
           ariaLabel: toNodeAriaLabel(node),
-          domAttributes: isSelected ? { "aria-current": "true" } : undefined,
+          // 역할 설명은 라이브러리가 늘 영어 "node" 를 달아 한국어로 덮는다.
+          domAttributes: isSelected
+            ? { "aria-roledescription": "카드", "aria-current": "true" }
+            : { "aria-roledescription": "카드" },
         };
       }),
     [nodes, selectedNodeKey],
@@ -143,10 +151,9 @@ function BoardFlow({ novelId, model, savedLayout, maxBytes, selectedNodeKey, onS
     [computed.edges, edgeCharacterId, model],
   );
 
-  // 캔버스 밖에서 고른 카드(목록 링크·뒤로 가기·새 화 완성)가 화면 밖이면 그 카드로 순간 이동한다.
-  useEffect(() => {
-    if (selectedNodeKey === undefined || selectedNodeKey === canvasSelectedKeyRef.current) return;
-    const node = reactFlow.getNode(selectedNodeKey);
+  /** 카드가 화면 안에 통째로 보이지 않으면 그 카드로 순간 이동한다(배율은 그대로). */
+  function revealNode(nodeKey: string) {
+    const node = reactFlow.getNode(nodeKey);
     if (node === undefined) return;
     const width = node.measured?.width ?? 0;
     const height = node.measured?.height ?? 0;
@@ -156,6 +163,18 @@ function BoardFlow({ novelId, model, savedLayout, maxBytes, selectedNodeKey, onS
       zoom: viewport.zoom,
       duration: 0,
     });
+  }
+
+  // 캔버스 밖에서 고른 카드(목록 링크·뒤로 가기·새 화 완성)가 화면 밖이면 그 카드로 순간 이동한다. 캔버스 안에서 고른
+  // 카드는 이미 보이는 자리라 옮기지 않고, 그 표시는 한 번 쓰고 비운다 — 남겨 두면 나중에 밖에서 같은 카드를 다시
+  // 골랐을 때 옮기지 않는다.
+  useEffect(() => {
+    if (selectedNodeKey === undefined) return;
+    if (selectedNodeKey === canvasSelectedKeyRef.current) {
+      canvasSelectedKeyRef.current = undefined;
+      return;
+    }
+    revealNode(selectedNodeKey);
     // 옮길 시점은 고른 카드가 바뀐 순간이다.
   }, [selectedNodeKey]);
 
@@ -169,19 +188,24 @@ function BoardFlow({ novelId, model, savedLayout, maxBytes, selectedNodeKey, onS
     }
     if (changes.some((change) => change.type === "position" && change.dragging === false)) save.schedule();
 
-    const selection = changes.filter((change) => change.type === "select");
-    const picked = selection.find((change) => change.selected);
-    if (picked !== undefined) {
-      if (nodeKeyToSelection(picked.id) === undefined) return;
-      canvasSelectedKeyRef.current = picked.id;
-      onSelectNode(picked.id);
-      return;
-    }
-    // 빈 곳을 누르거나 고른 카드에서 Esc — 고르기를 푼다.
-    if (selection.some((change) => change.id === selectedNodeKey)) {
-      canvasSelectedKeyRef.current = undefined;
-      onSelectNode(undefined);
-    }
+    // 고르기만 따른다. 푸는 길은 빈 곳 클릭과 고른 카드의 Esc 뿐이다(`pickSelectedNodeKey`).
+    const picked = pickSelectedNodeKey(changes);
+    if (picked === undefined || picked === selectedNodeKey) return;
+    canvasSelectedKeyRef.current = picked;
+    onSelectNode(picked);
+  }
+
+  function handlePaneClick() {
+    if (selectedNodeKey !== undefined) onSelectNode(undefined);
+  }
+
+  // 카드의 Esc 는 라이브러리보다 먼저 받는다 — 라이브러리는 고르지 않은 카드의 Esc 를 "고르기"로 처리한다.
+  function handleKeyDownCapture(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Escape") return;
+    const nodeKey = nodeKeyOf(event.target);
+    if (nodeKey === undefined || !(event.target instanceof Element) || !event.target.matches(".react-flow__node")) return;
+    event.stopPropagation();
+    if (toCardEscapeAction(nodeKey, selectedNodeKey) === "deselect") onSelectNode(undefined);
   }
 
   // 화면 이동이 끝나면 저장한다. 이용자가 움직인 것만 — 처음 맞추기·고른 카드로 옮기기처럼 화면이 스스로 옮긴 것은
@@ -190,8 +214,14 @@ function BoardFlow({ novelId, model, savedLayout, maxBytes, selectedNodeKey, onS
     if (event !== null) save.schedule();
   };
 
+  // 키보드로 카드를 돌 때, 라이브러리는 카드가 조금이라도 보이면 화면을 옮기지 않아 상단 바 쪽에 걸린 카드의 포커스
+  // 링이 가려진다. 통째로 보이지 않으면 그 카드로 옮긴다(포인터로 누른 포커스는 옮기지 않는다).
   function handleFocus(event: FocusEvent<HTMLDivElement>) {
-    setFocusedNodeKey(nodeKeyOf(event.target));
+    const nodeKey = nodeKeyOf(event.target);
+    setFocusedNodeKey(nodeKey);
+    if (nodeKey !== undefined && event.target instanceof Element && event.target.matches(":focus-visible")) {
+      revealNode(nodeKey);
+    }
   }
 
   function zoomBy(direction: "in" | "out") {
@@ -206,6 +236,9 @@ function BoardFlow({ novelId, model, savedLayout, maxBytes, selectedNodeKey, onS
       edges={edges}
       nodeTypes={BOARD_NODE_TYPES}
       onNodesChange={handleNodesChange}
+      onPaneClick={handlePaneClick}
+      onKeyDownCapture={handleKeyDownCapture}
+      defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
       onMoveEnd={handleMoveEnd}
       onFocus={handleFocus}
       onBlur={() => setFocusedNodeKey(undefined)}

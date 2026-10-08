@@ -185,4 +185,16 @@ describe("buildCharacterEdges", () => {
     const edges = buildCharacterEdges("c-a", model);
     expect(edges.map((edge) => [edge.sourceHandle, edge.targetHandle])).toEqual([["appears-out", "appears-in"]]);
   });
+
+  it("names character lines in Korean (the library default is an English key dump)", () => {
+    expect(buildCharacterEdges("c-b", model).map((edge) => edge.ariaLabel)).toEqual(["인물 c-b · 2화", "인물 c-b · 1화"]);
+  });
+});
+
+describe("edge accessible names", () => {
+  it("names next-episode lines by episode numbers and describes every line's role in Korean", () => {
+    const { edges } = layoutBoard(model, null);
+    expect(edges.map((edge) => edge.ariaLabel)).toEqual(["1화 → 2화", "2화 → 3화"]);
+    expect(edges.every((edge) => edge.domAttributes?.["aria-roledescription"] === "선")).toBe(true);
+  });
 });

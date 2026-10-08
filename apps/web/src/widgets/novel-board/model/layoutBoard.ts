@@ -96,6 +96,10 @@ function resolvePosition(key: string, auto: BoardPosition, saved: NovelBoardLayo
   return stored ? { x: stored.x, y: stored.y } : auto;
 }
 
+// 선의 접근 이름과 역할 설명. 라이브러리는 이름이 없으면 영어(`Edge from <키> to <키>`)를, 역할 설명은 늘 영어
+// "edge" 를 단다 — 선마다 한국어로 덮는다.
+const EDGE_ROLE_DESCRIPTION = { "aria-roledescription": "선" };
+
 /** 화 → 다음 화 선. 화 순서를 보여 주는 고정 선이라 사용자가 잇거나 끊지 않는다. */
 function buildNextEpisodeEdges(episodes: BoardEpisode[]): Edge[] {
   return episodes.slice(1).flatMap((current, index) => {
@@ -108,6 +112,8 @@ function buildNextEpisodeEdges(episodes: BoardEpisode[]): Edge[] {
         target: episodeNodeKey(current.id),
         sourceHandle: NEXT_SOURCE_HANDLE,
         targetHandle: NEXT_TARGET_HANDLE,
+        ariaLabel: `${previous.ordinal}화 → ${current.ordinal}화`,
+        domAttributes: EDGE_ROLE_DESCRIPTION,
       },
     ];
   });
@@ -168,14 +174,16 @@ export function buildCharacterEdges(characterId: string | undefined, model: Boar
   if (characterId === undefined) return [];
   const character = model.characters.find((candidate) => candidate.id === characterId);
   if (!character) return [];
-  const liveEpisodeIds = new Set(model.episodes.map((episode) => episode.id));
+  const ordinalById = new Map(model.episodes.map((episode) => [episode.id, episode.ordinal]));
   return character.chapterIds
-    .filter((chapterId) => liveEpisodeIds.has(chapterId))
+    .filter((chapterId) => ordinalById.has(chapterId))
     .map((chapterId) => ({
       id: `appears:${character.id}:${chapterId}`,
       source: characterNodeKey(character.id),
       target: episodeNodeKey(chapterId),
       sourceHandle: APPEARS_SOURCE_HANDLE,
       targetHandle: APPEARS_TARGET_HANDLE,
+      ariaLabel: `인물 ${character.name} · ${ordinalById.get(chapterId)}화`,
+      domAttributes: EDGE_ROLE_DESCRIPTION,
     }));
 }

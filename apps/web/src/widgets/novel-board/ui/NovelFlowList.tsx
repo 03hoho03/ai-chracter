@@ -21,7 +21,9 @@ type NovelFlowListProps = {
   onSelect: (selection: BoardSelection) => void;
 };
 
-const ROW_CLASS = "w-full min-h-11 outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
+// 포커스는 하우스 레시피(불투명 `border-ring` 이 3:1 을 지고 바깥 반투명 링을 더한다).
+const ROW_CLASS =
+  "w-full min-h-11 outline-none focus-visible:border-solid focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 /**
  * 좁은 화면(lg 미만)의 편집 보드 — 캔버스 대신 같은 데이터를 세로 흐름 목록으로 보인다. 화(묶음마다 머리)·인물·설정

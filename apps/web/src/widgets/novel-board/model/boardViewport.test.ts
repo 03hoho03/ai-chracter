@@ -1,18 +1,48 @@
 import { describe, expect, it } from "vitest";
 
+import { EPISODE_NODE_HEIGHT } from "./boardNode";
 import { testBatch, testEpisode, testModel } from "./boardTestModel";
 import { isRectInView, toInitialFitNodeIds } from "./boardViewport";
 import { layoutBoard } from "./layoutBoard";
 
-describe("toInitialFitNodeIds", () => {
-  it("마지막 묶음 셋의 화와 노트에 맞춘다", () => {
-    const model = testModel({
-      batches: [1, 2, 3, 4].map((ordinal) => testBatch(`b${ordinal}`, ordinal)),
-      episodes: [1, 2, 3, 4].map((ordinal) => testEpisode(`e${ordinal}`, `b${ordinal}`, ordinal)),
-    });
-    const ids = toInitialFitNodeIds(layoutBoard(model, null).nodes, model).map((node) => node.id);
+function fitIds(model: ReturnType<typeof testModel>) {
+  return toInitialFitNodeIds(layoutBoard(model, null).nodes, model).map((node) => node.id);
+}
 
-    expect(ids).toEqual(["notes", "episode:e2", "episode:e3", "episode:e4"]);
+/** 맞춤 상자의 세로 길이 — 첫 화면이 이 높이를 담는다. */
+function fitHeight(model: ReturnType<typeof testModel>) {
+  const { nodes } = layoutBoard(model, null);
+  const ids = new Set(toInitialFitNodeIds(nodes, model).map((node) => node.id));
+  const ys = nodes.filter((node) => ids.has(node.id)).map((node) => node.position.y);
+  return Math.max(...ys) + EPISODE_NODE_HEIGHT - Math.min(...ys);
+}
+
+/** 묶음마다 화 `perBatch` 개인 소설. */
+function novelOf(batchCount: number, perBatch: number) {
+  const batches = Array.from({ length: batchCount }, (_, index) => testBatch(`b${index + 1}`, index + 1));
+  const episodes = batches.flatMap((batch, batchIndex) =>
+    Array.from({ length: perBatch }, (_, index) => {
+      const ordinal = batchIndex * perBatch + index + 1;
+      return testEpisode(`e${ordinal}`, batch.id, ordinal);
+    }),
+  );
+  return testModel({ batches, episodes });
+}
+
+describe("toInitialFitNodeIds", () => {
+  it("한 화짜리 묶음이면 마지막 묶음 셋의 화에 맞추고 노트는 넣지 않는다", () => {
+    expect(fitIds(novelOf(4, 1))).toEqual(["episode:e2", "episode:e3", "episode:e4"]);
+  });
+
+  it("화가 많은 소설도 맞춤 상자가 끝 쪽 몇 장뿐이다(노트가 맨 위라 넣으면 처음부터 끝까지가 된다)", () => {
+    const model = novelOf(8, 5);
+    expect(fitIds(model)).toEqual(["episode:e36", "episode:e37", "episode:e38", "episode:e39", "episode:e40"]);
+    // 900px 높이 캔버스에 배율 1 이하로 다 들어가는 높이다(5장 ≈ 696px).
+    expect(fitHeight(model)).toBeLessThan(900);
+  });
+
+  it("화 수 상한을 넘기 전까지만 앞 묶음을 더한다", () => {
+    expect(fitIds(novelOf(5, 2))).toEqual(["episode:e7", "episode:e8", "episode:e9", "episode:e10"]);
   });
 
   it("묶음 순서는 배열 순서가 아니라 번호다", () => {
@@ -20,14 +50,11 @@ describe("toInitialFitNodeIds", () => {
       batches: [testBatch("b4", 4), testBatch("b1", 1), testBatch("b3", 3), testBatch("b2", 2)],
       episodes: [testEpisode("e1", "b1", 1), testEpisode("e4", "b4", 4)],
     });
-    const ids = toInitialFitNodeIds(layoutBoard(model, null).nodes, model).map((node) => node.id);
-
-    expect(ids).toEqual(["notes", "episode:e4"]);
+    expect(fitIds(model)).toEqual(["episode:e1", "episode:e4"]);
   });
 
   it("화가 없으면 노트만이다", () => {
-    const model = testModel({});
-    expect(toInitialFitNodeIds(layoutBoard(model, null).nodes, model)).toEqual([{ id: "notes" }]);
+    expect(fitIds(testModel({}))).toEqual(["notes"]);
   });
 });
 
