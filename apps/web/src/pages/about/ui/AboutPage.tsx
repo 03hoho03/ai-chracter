@@ -38,7 +38,7 @@ const FEATURE_SECTIONS: { title: string; body: string; screenshot: AboutScreensh
   },
   {
     title: "클로버",
-    body: "무료 사용량 밖의 대화와 이미지 생성에는 클로버가 쓰여요. 본인인증을 마친 회원은 출석체크와 미션으로 클로버를 무료로 받을 수 있어요.",
+    body: "무료 사용량 밖의 대화와 이미지 생성에는 클로버가 쓰여요. 클로버는 출석체크와 미션 보상으로도 받을 수 있어요.",
     screenshot: ABOUT_SCREENSHOTS.cloverMissions,
   },
 ];

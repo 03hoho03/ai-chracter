@@ -6975,6 +6975,8 @@ export interface components {
             paymentsEnabled: boolean;
             /** Paymethods */
             payMethods: components["schemas"]["CloverPayMethodItem"][];
+            /** Identitygateenabled */
+            identityGateEnabled: boolean;
         };
         /** CloverProductItem */
         CloverProductItem: {

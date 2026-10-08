@@ -12,6 +12,8 @@ import {
 import { CONTACT_EMAIL } from "@/shared/config/site";
 import { SUPPORT_DESTINATIONS } from "@/shared/config/supportDestinations";
 
+import { formatTrialSentence } from "../model/trialSentence";
+
 const INLINE_LINK_CLASSNAME =
   "whitespace-nowrap font-medium text-primary underline-offset-4 hover:underline focus-visible:underline";
 
@@ -26,6 +28,9 @@ const INLINE_LINK_CLASSNAME =
  * 결제가 열려 있을 때(`paymentsEnabled`)만 둔다 — 열리지 않은 동안의 링크는 할 수 없는 동작을 약속한다.
  */
 export function CloverPricingPage() {
+  // 정책 문장 하나가 게이트 스위치로 갈린다(`formatTrialSentence`). 같은 가격 쿼리라 아래 상품 목록과 요청은 하나다.
+  const identityGateEnabled = useCloverPricingQuery().data?.identityGateEnabled ?? false;
+
   return (
     <main className="mx-auto flex max-w-md flex-col gap-10 px-4 sm:px-6 py-10">
       <div className="flex flex-col gap-1.5">
@@ -56,9 +61,7 @@ export function CloverPricingPage() {
             "결제일로부터 7일 안에는 쓰지 않은 유료 클로버를 전액 돌려받을 수 있어요. 이미 쓴 보너스 클로버만큼은 빼고 돌려드려요.",
             "7일이 지나도 남은 유료 클로버를 환불받을 수 있어요. 이때도 이미 쓴 보너스 클로버만큼은 빼고, 그 금액의 90%를 돌려드려요.",
             "이미 쓴 클로버는 청약철회할 수 없어요. 클로버는 쓰는 즉시 기능 이용에 제공되기 때문이에요.",
-            // 결제는 본인인증한 회원만 할 수 있고, 인증한 회원은 게이트와 무관하게 무료 대화·출석·미션을 받는다 — 그래서
-            // "인증한 회원은"으로 묶으면 게이트가 켜지든 꺼지든 참이다.
-            "본인인증을 마친 회원은 결제하기 전에 무료 대화와 무료 클로버로 서비스를 먼저 써 볼 수 있어요.",
+            formatTrialSentence(identityGateEnabled),
             "보너스 클로버는 따로 환불되지 않아요. 유료 클로버를 환불하면 그 구매로 받은 보너스 클로버 중 남은 것은 회수돼요.",
             "탈퇴하면 남은 클로버가 모두 사라져요. 남은 유료 클로버는 탈퇴하기 전에 환불을 신청해 주세요.",
             `이용이 정지된 동안에도 ${CONTACT_EMAIL}로 환불을 신청할 수 있어요.`,

@@ -115,3 +115,6 @@ class CloverPricingResponse(CamelModel):
     payments_enabled: bool
     # 구매 화면이 고를 수 있는 결제수단(`payments/methods.py` 가 유일한 목록).
     pay_methods: list[CloverPayMethodItem]
+    # 미인증 회원 게이트(무료 대화·출석·미션을 본인인증한 회원에게만)가 켜져 있는가. 로그인하지 않은 방문자도 읽는 정책
+    # 문장이 이 값으로 갈린다 — 꺼진 동안 "본인인증을 마친 회원은"이라고 쓰면 거짓이다. `GET /me` 와 같은 판정 함수다.
+    identity_gate_enabled: bool

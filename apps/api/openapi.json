@@ -17241,6 +17241,10 @@
             },
             "type": "array",
             "title": "Paymethods"
+          },
+          "identityGateEnabled": {
+            "type": "boolean",
+            "title": "Identitygateenabled"
           }
         },
         "type": "object",
@@ -17249,7 +17253,8 @@
           "chatTurnCost",
           "imageCost",
           "paymentsEnabled",
-          "payMethods"
+          "payMethods",
+          "identityGateEnabled"
         ],
         "title": "CloverPricingResponse",
         "description": "공개 가격 안내. 단가는 기본 모델 기준만 싣는다 — 상위 모델은 허용된 계정만 쓰고 소설은 허용 명단 전용이라\n공개 안내에 넣지 않는다."

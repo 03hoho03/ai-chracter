@@ -18,6 +18,7 @@ import httpx
 import pytest
 
 from api.clover import products
+from api.core.config import settings
 from api.clover.products import CloverProduct
 from api.core import clover
 
@@ -51,7 +52,7 @@ async def test_response_follows_products_and_cost_constants(
     assert resp.status_code == 200
     body = resp.json()
     # 결제 여부·결제수단은 결제 테스트(`test_payments_api.py`)가 본다.
-    del body["paymentsEnabled"], body["payMethods"]
+    del body["paymentsEnabled"], body["payMethods"], body["identityGateEnabled"]
     assert body == {
         "products": [
             {"key": "pro", "name": "가짜 상품 하나", "priceKrw": 1234, "paidAmount": 411, "bonusAmount": 7},
@@ -82,7 +83,7 @@ async def test_premium_and_novel_costs_are_not_exposed(
 
     assert resp.status_code == 200
     body = resp.json()
-    assert set(body) == {"products", "chatTurnCost", "imageCost", "paymentsEnabled", "payMethods"}
+    assert set(body) == {"products", "chatTurnCost", "imageCost", "paymentsEnabled", "payMethods", "identityGateEnabled"}
     raw = json.dumps(body)
     for value in hidden.values():
         assert str(value) not in raw
@@ -100,3 +101,17 @@ def test_products_follow_the_provisional_pricing_rule() -> None:
         assert product.price_krw < 50_000, product.key
         assert product.bonus_amount >= 0, product.key
         assert product.price_krw == product.paid_amount * 3, product.key
+
+
+@pytest.mark.parametrize("gate", [pytest.param(False, id="gate-off"), pytest.param(True, id="gate-on")])
+async def test_pricing_exposes_the_identity_gate_switch(
+    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, gate: bool
+) -> None:
+    """로그인하지 않은 방문자의 정책 문장이 이 값으로 갈린다 — `GET /me` 의 게이트 값과 같은 판정이다."""
+    monkeypatch.setattr(settings, "portone_store_id", "store-test-0001")
+    monkeypatch.setattr(settings, "portone_identity_channel_key", "identity-channel-test")
+    monkeypatch.setattr(settings, "portone_api_secret", "api-secret-test")
+    monkeypatch.setattr(settings, "identity_ci_hmac_key", "ci-key-test")
+    monkeypatch.setattr(settings, "identity_gate_enabled", gate)
+
+    assert (await db_client.get("/clover/pricing")).json()["identityGateEnabled"] is gate
