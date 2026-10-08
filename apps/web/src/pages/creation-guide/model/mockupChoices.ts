@@ -2,7 +2,6 @@ import {
   KEYWORD_NOTE_SCOPE_LABELS,
   LOGIC_OPERATOR_LABELS,
   PROMPT_TEMPLATE_LABELS,
-  STAT_CHANGE_DIRECTION_LABELS,
   STICKY_TURN_OPTIONS,
   TARGET_LABELS,
   VISIBILITY_LABELS,
@@ -32,7 +31,7 @@ export function choicesOf(key: StoryFieldKey, value: string | number | null): Mo
 }
 
 /**
- * 셀렉트 칸에 보이는 글. 유지 턴과 변화 방향은 빌더 선택지 글자로(원고 값은 시드 표기인 값 이름), 장르는 목록이 서버에서
+ * 셀렉트 칸에 보이는 글. 유지 턴은 빌더 선택지 글자로(원고 값은 시드 표기인 값 이름), 장르는 목록이 서버에서
  * 오므로 원고 값 그대로 보인다.
  */
 export function selectLabelOf(key: StoryFieldKey, value: string | number | null): string {
@@ -40,11 +39,6 @@ export function selectLabelOf(key: StoryFieldKey, value: string | number | null)
     const option = STICKY_TURN_OPTIONS.find((candidate) => candidate.value === String(value));
     if (!option) throw new Error(`유지 턴 선택지에 없는 값: ${String(value)}`);
     return option.label;
-  }
-  if (key === "startingSetups.*.stats.*.changeDirection") {
-    const label = Object.entries(STAT_CHANGE_DIRECTION_LABELS).find(([id]) => id === value)?.[1];
-    if (label === undefined) throw new Error(`변화 방향 선택지에 없는 값: ${String(value)}`);
-    return label;
   }
   return value === null ? "" : String(value);
 }

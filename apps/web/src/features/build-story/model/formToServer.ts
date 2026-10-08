@@ -3,7 +3,10 @@ import type { components } from "@ai-character-chat/api-types";
 import { defaultUserNameIssue } from "@/entities/persona";
 
 import {
+  hasPerTurnDelta,
+  MAX_STAT_RULES,
   mediaBookSchema,
+  statRuleSchema,
   type DevelopmentExampleValues,
   type EndingValues,
   type KeywordNoteValues,
@@ -21,6 +24,7 @@ type StoryDraftPayload = components["schemas"]["StoryDraftPayload"];
 type DevelopmentExampleItem = components["schemas"]["DevelopmentExampleItem"];
 type StartingSetupDraftItem = components["schemas"]["StartingSetupDraftItem"];
 type StatDefDraftItem = components["schemas"]["StatDefDraftItem"];
+type StatRuleDraftItem = components["schemas"]["StatRuleDraftItem"];
 type KeywordNoteDraftInput = components["schemas"]["KeywordNoteDraftInput"];
 type EndingDraftItem = components["schemas"]["EndingDraftItem"];
 type EndingRuleDraftItem = components["schemas"]["EndingRuleDraftItem"];
@@ -78,6 +82,44 @@ function toApiEnding(ending: EndingValues): EndingDraftItem {
   };
 }
 
+/**
+ * 변화 방향·한 턴 최대 폭. 이 폼은 두 칸을 다루지 않아 대개 보내지 않는다 — 서버는 빠진 옵션을 "기존 값 유지"로 읽고, 규칙이
+ * 없는 시작설정이 아직 쓰는 옛 판정 경로가 그 값을 읽으므로 기본값으로 덮지 않는다.
+ *
+ * 예외 둘은 서버가 발행을 막는 옛 값이다. 화면에 칸이 없어 작가가 고칠 길이 없으므로 여기서 지운다.
+ * - 턴당 자동 변화가 있는 스탯은 판정을 받지 않아 두 옵션이 아무 일도 하지 않는데, 서버는 그 스탯에 방향(양쪽 말고)이나 최대
+ *   폭이 걸려 있으면 발행을 막는다 — 늘 기본값("양쪽", 제한 없음)을 보낸다. 잃는 동작이 없다.
+ * - 옛 화면이 저장한 0 이하의 최대 폭(`legacyMaxChangePerTurn`)은 "제한 없음"으로 지운다. 서버는 최대 폭이 1 이상이어야 발행을
+ *   받으므로, 그대로 두면 이 화면에서는 발행을 풀 방법이 없다.
+ */
+function toApiChangeLimit(stat: StatDefValues): Pick<StatDefDraftItem, "changeDirection" | "maxChangePerTurn"> {
+  if (hasPerTurnDelta(stat)) return { changeDirection: "both", maxChangePerTurn: null };
+  if (stat.legacyMaxChangePerTurn !== undefined) return { maxChangePerTurn: null };
+  return {};
+}
+
+/**
+ * 규칙은 키가 있으면 서버가 그 목록으로 통째로 바꾼다. 늘 보내되 서버 초안 저장 검사를 통과하는 완성된 규칙만 앞에서부터 고른다
+ * (조건은 앞뒤 공백을 걷고 1~100자, 증감은 0 이 아닌 정수, 같은 id 는 처음 것만, 많아야 `MAX_STAT_RULES` 개) — 하나라도 거절될
+ * 값을 실으면 PATCH 전체가 422 가 돼 다른 칸의 수정까지 저장되지 않는다. 쓰다 만 규칙만 걸러 빠지고, 그 칸의 잘못된 값은 발행
+ * 때 폼 검증이 짚는다.
+ *
+ * 키를 빼지 않는 이유: 스탯을 지웠다가 되돌리면 그동안의 저장으로 서버에서 그 스탯이 지워져, 다음 저장이 스탯을 규칙 없이 새로
+ * 만든다 — 키가 없으면 되돌린 스탯의 규칙이 서버에서 사라진다. 대가로 이미 저장된 규칙의 조건을 다 지우는 동안에는 그 규칙이
+ * 서버에서 빠진다(다시 채우면 같은 id 로 돌아온다).
+ */
+function toApiStatRules(rules: StatDefValues["rules"]): StatRuleDraftItem[] {
+  const seen = new Set<string>();
+  const sent: StatRuleDraftItem[] = [];
+  for (const rule of rules) {
+    if (sent.length >= MAX_STAT_RULES) break;
+    if (seen.has(rule.id) || !statRuleSchema.safeParse(rule).success) continue;
+    seen.add(rule.id);
+    sent.push({ id: rule.id, condition: rule.condition.trim(), delta: rule.delta });
+  }
+  return sent;
+}
+
 function toApiStatDef(stat: StatDefValues): StatDefDraftItem {
   return {
     id: stat.id,
@@ -90,13 +132,8 @@ function toApiStatDef(stat: StatDefValues): StatDefDraftItem {
     unit: stat.unit ?? null,
     description: stat.description,
     perTurnDelta: stat.perTurnDelta ?? null,
-    // 두 옵션은 기본값이어도 늘 보낸다 — 서버는 빠진 옵션을 "기존 값 유지"로 읽어(옵션을 모르는 옛 화면용), 빼면 기본값으로
-    // 되돌린 것이 저장되지 않고 미리보기도 저장된 옵션 대신 기본값으로 돈다. 빈 폭 칸은 제한 없음(null)으로 보낸다.
-    // 정수로 읽지 못한 폭 칸(NaN — 소수 붙여 넣기 등)만은 키를 뺀다: 정수가 아닌 값은 서버가 초안 저장째 거절하고, null 로
-    // 보내면 작가가 걸어 둔 폭이 말없이 "제한 없음"으로 덮인다. 빼면 서버엔 마지막으로 저장된 폭이 남고, 칸의 잘못된 값은
-    // 발행 때 폼 검증이 짚는다.
-    changeDirection: stat.changeDirection,
-    ...(Number.isNaN(stat.maxChangePerTurn) ? {} : { maxChangePerTurn: stat.maxChangePerTurn }),
+    ...toApiChangeLimit(stat),
+    rules: toApiStatRules(stat.rules),
   };
 }
 

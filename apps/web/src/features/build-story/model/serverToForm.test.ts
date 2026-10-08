@@ -86,8 +86,7 @@ function baseDraftResponse(): StoryDraftResponse {
             unit: "pt",
             description: "생존에 필요한 신체 상태",
             perTurnDelta: -1,
-            changeDirection: "both",
-            maxChangePerTurn: null,
+            rules: [],
           },
         ],
         endings: [],
@@ -150,8 +149,7 @@ describe("serverToForm", () => {
               unit: "pt",
               description: "생존에 필요한 신체 상태",
               perTurnDelta: -1,
-              changeDirection: "both",
-              maxChangePerTurn: null,
+              rules: [],
             },
           ],
           endings: [],
@@ -316,27 +314,48 @@ describe("serverToForm", () => {
     ];
   }
 
-  it("reads a stat's change direction and max change per turn", () => {
+  it("reads a stat's rules in order and leaves the change direction and max change per turn out of the form", () => {
     const response = baseDraftResponse();
     const stat = requireFirst(requireFirst(response.startingSetups).statDefs);
-    stat.perTurnDelta = null;
     stat.changeDirection = "decrease";
     stat.maxChangePerTurn = 7;
+    stat.rules = [
+      { id: "rule-b", condition: "사용자가 약속에 늦었다", delta: -3 },
+      { id: "rule-a", condition: "사용자가 짐을 나눠 들었다", delta: 3 },
+    ];
 
     const formStat = requireFirst(requireFirst(serverToForm(response).startingSetups).stats);
 
-    expect(formStat).toMatchObject({ perTurnDelta: null, changeDirection: "decrease", maxChangePerTurn: 7 });
+    expect(formStat.rules).toEqual([
+      { id: "rule-b", condition: "사용자가 약속에 늦었다", delta: -3 },
+      { id: "rule-a", condition: "사용자가 짐을 나눠 들었다", delta: 3 },
+    ]);
+    expect(formStat).not.toHaveProperty("changeDirection");
+    expect(formStat).not.toHaveProperty("maxChangePerTurn");
   });
 
-  it("fills stat change options the response omits with a new stat's defaults (both directions, no limit)", () => {
+  it("keeps only a zero or negative max change per turn as a hidden form value", () => {
+    // 옛 화면이 저장한 0 이하 최대 폭은 서버가 발행을 막는데 이 화면에는 그 칸이 없다 — 숨은 값으로 들고 있다가 저장이 지운다.
     const response = baseDraftResponse();
     const stat = requireFirst(requireFirst(response.startingSetups).statDefs);
-    delete stat.changeDirection;
-    delete stat.maxChangePerTurn;
+    for (const [maxChangePerTurn, kept] of [
+      [0, 0],
+      [-2, -2],
+      [3, undefined],
+      [null, undefined],
+    ] as const) {
+      stat.maxChangePerTurn = maxChangePerTurn;
+      const formStat = requireFirst(requireFirst(serverToForm(response).startingSetups).stats);
+      expect(formStat.legacyMaxChangePerTurn).toBe(kept);
+    }
+  });
 
-    const formStat = requireFirst(requireFirst(serverToForm(response).startingSetups).stats);
+  it("reads a response without rules as an empty rule list", () => {
+    const response = baseDraftResponse();
+    const stat = requireFirst(requireFirst(response.startingSetups).statDefs);
+    delete stat.rules;
 
-    expect(formStat).toMatchObject({ changeDirection: "both", maxChangePerTurn: null });
+    expect(requireFirst(requireFirst(serverToForm(response).startingSetups).stats).rules).toEqual([]);
   });
 
   it("maps situation notes with their condition rule trees, and an omitted list to an empty one", () => {
@@ -380,13 +399,12 @@ describe("serverToForm", () => {
     expect(requireFirst(serverToForm(response).startingSetups).situationNotes).toEqual([]);
   });
 
-  it("round-trips stat change options and situation notes back to the same payload", () => {
+  it("round-trips stat rules and situation notes back to the same payload", () => {
     const response = baseDraftResponse();
     const setup = requireFirst(response.startingSetups);
     const stat = requireFirst(setup.statDefs);
     stat.perTurnDelta = null;
-    stat.changeDirection = "increase";
-    stat.maxChangePerTurn = 2;
+    stat.rules = [{ id: "rule-1", condition: "사용자가 약속을 지켰다", delta: 2 }];
     setup.situationNotes = [
       {
         id: "situation-1",
@@ -497,6 +515,11 @@ describe("serverToForm", () => {
   it("round-trips formToServer(serverToForm(response)) back to the same profile/storySetting/startingSetups (incl. endings/rule trees)/keywordNotes/shortcuts/registration fields", () => {
     const response = baseDraftResponse();
     requireFirst(response.startingSetups).endings = endingRuleTreeResponse();
+    // 기본 응답의 스탯은 턴당 자동 변화가 있어 저장이 두 옵션을 기본값으로 실어 보낸다 — 서버도 그 값을 돌려준다고 둔다.
+    Object.assign(requireFirst(requireFirst(response.startingSetups).statDefs), {
+      changeDirection: "both",
+      maxChangePerTurn: null,
+    });
 
     const payload = formToServer(serverToForm(response));
 

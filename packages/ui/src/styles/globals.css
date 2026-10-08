@@ -71,6 +71,11 @@
      네임스페이스라(`--aspect-video: 16/9`가 같은 자리) 이 한 줄로 `aspect-story` 유틸리티가 생긴다.
      캐릭터용 토큰은 만들지 않는다 — `aspect-square`가 이미 Tailwind 기본이다. */
   --aspect-story: 2 / 3;
+  /* 스토리 빌더의 스탯 규칙 한 줄(조건 · 증감)의 열. 조건이 남는 폭을 다 쓰고 증감 칸은 고정 폭이다. 빌더 규칙
+     줄과 작성 가이드의 같은 줄 그림이 함께 쓴다 — 임의값으로 두 곳에 적으면 한쪽만 바뀌어 가이드 그림이 빌더와
+     다른 열을 보인다. `--grid-template-columns-*` 는 Tailwind v4 가 `grid-cols-*` 에 쓰는 네임스페이스라 이 한
+     줄로 `grid-cols-stat-rule` 유틸리티가 생긴다. */
+  --grid-template-columns-stat-rule: minmax(0, 1fr) 6rem;
 }
 
 :root {

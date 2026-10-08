@@ -1,4 +1,3 @@
-import { STAT_CHANGE_DIRECTION_LABELS } from "./fieldOptions";
 import type { StatDefValues } from "./schema";
 
 /** 접힌 스탯 머리 줄 요약의 글 조각. 빌더 스탯 카드와 작성 가이드의 카드 모양 예시가 같이 쓴다. 비었거나 숫자가 아닌 칸의 조각은 없다. */
@@ -7,17 +6,14 @@ export type StatSummaryParts = {
   range?: string;
   initial?: string;
   perTurn?: string;
-  /** 변화 방향(오르내림이 아닐 때)과 한 턴 최대 폭(`내리기만 · 최대 7`). 폭에도 단위를 붙이지 않는다. */
-  limit?: string;
+  /** 규칙 수(`규칙 3개`). 규칙이 없으면 조각이 없다. */
+  rules?: string;
 };
 
 export function statSummaryParts(
-  stat: Pick<
-    StatDefValues,
-    "min" | "max" | "initial" | "unit" | "perTurnDelta" | "changeDirection" | "maxChangePerTurn"
-  >,
+  stat: Pick<StatDefValues, "min" | "max" | "initial" | "unit" | "perTurnDelta" | "rules">,
 ): StatSummaryParts {
-  const { min, max, initial, perTurnDelta, changeDirection, maxChangePerTurn } = stat;
+  const { min, max, initial, perTurnDelta } = stat;
   const unit = stat.unit?.trim() ?? "";
   const parts: StatSummaryParts = {};
   if (Number.isFinite(min) && Number.isFinite(max)) parts.range = `${min}~${max}${unit}`;
@@ -25,10 +21,6 @@ export function statSummaryParts(
   if (perTurnDelta !== null && Number.isFinite(perTurnDelta)) {
     parts.perTurn = `턴당 ${perTurnDelta > 0 ? "+" : ""}${perTurnDelta}`;
   }
-  const limit = [
-    changeDirection === "both" ? undefined : STAT_CHANGE_DIRECTION_LABELS[changeDirection],
-    maxChangePerTurn !== null && Number.isFinite(maxChangePerTurn) ? `최대 ${maxChangePerTurn}` : undefined,
-  ].filter((part) => part !== undefined);
-  if (limit.length > 0) parts.limit = limit.join(" · ");
+  if (stat.rules.length > 0) parts.rules = `규칙 ${stat.rules.length}개`;
   return parts;
 }
