@@ -27,7 +27,6 @@ os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "testing")
 os.environ.setdefault("S3_ENDPOINT_URL", "http://localhost:5001")
 
 from sqlalchemy import select
-from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.assets.image_processing import read_image_size
@@ -47,6 +46,7 @@ from api.db.models.content import (
 )
 from api.db.models.media import Asset, AssetKind, AssetStatus
 from api.db.session import async_session_factory
+from replay import local_db as replay_local_db
 from seed_content.ids import MIA_THUMBNAIL_ASSET_ID, SEED_AUTHOR_USER_ID
 from seed_content.images import ensure_asset, read_image
 from seed_content.loader import load_all_characters, load_all_stories
@@ -121,20 +121,11 @@ async def seed_content_files(session: AsyncSession) -> None:
         print(f"  ✓ 캐릭터 시드: {character.slug} — {character.payload.name}")
 
 
-# 운영 DB 호스트는 compose 서비스명(`postgres`)이지만, 거부 목록이 아니라 허용 목록으로 판정한다 — DB 를 다른 곳으로
-# 옮기면 거부 목록은 조용히 뚫린다.
-_LOCAL_DB_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
-
-
 def ensure_local_database(database_url: str) -> None:
     """로컬 DB 가 아니면 `SystemExit`. 운영에서 이 스크립트를 돌리면 테스트 계정을 만들고, 이미지가 없으면 목업이 실제
-    아트를 덮고, 어드민 조치와 빌더 편집을 시드 값으로 되돌린다 — 그걸 막는 장치가 사람의 기억뿐이었다."""
-    host = make_url(database_url).host
-    if host not in _LOCAL_DB_HOSTS:
-        raise SystemExit(
-            f"seed_dev.py 는 로컬 DB 에서만 돈다(DATABASE_URL 호스트: {host!r}). "
-            "운영 데이터를 시드 값으로 덮어쓰지 않도록 거부한다."
-        )
+    아트를 덮고, 어드민 조치와 빌더 편집을 시드 값으로 되돌린다 — 그걸 막는 장치가 사람의 기억뿐이었다. 허용 목록은
+    측정 도구와 같은 것을 쓴다."""
+    replay_local_db.ensure_local_database(database_url, tool="seed_dev.py")
 
 
 async def main() -> None:
