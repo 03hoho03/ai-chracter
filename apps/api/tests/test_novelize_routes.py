@@ -16,7 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.core import clover
 from api.core.config import settings
 from api.db.models import (
+    Asset,
+    AssetKind,
+    AssetStatus,
     ChatRoom,
+    Content,
+    ModerationStatus,
     Novel,
     NovelChapter,
     NovelChapterRevision,
@@ -25,12 +30,16 @@ from api.db.models import (
     UserFeatureGrant,
     UserPersona,
 )
+from api.db.models.novel import NovelReadingPosition
 from api.main import app
 from api.novelize import router as novelize_router
 from api.novelize.access import require_novelize_access
 from factories import (
+    _add_batch,
     _add_chapter,
+    _allow_novel_premium,
     _allow_novelize,
+    _make_asset,
     _login_as,
     _make_published,
     _make_user,
@@ -71,7 +80,8 @@ def test_every_novel_route_carries_the_novelize_gate() -> None:
 
 
 _DUMMY_PATH_IDS = {
-    name: str(uuid.uuid4()) for name in ("novel_id", "chapter_id", "revision_id", "job_id", "room_id")
+    name: str(uuid.uuid4())
+    for name in ("novel_id", "chapter_id", "revision_id", "job_id", "room_id", "batch_id", "character_id", "snapshot_id")
 }
 
 
@@ -231,8 +241,7 @@ async def test_detail_lists_chapters_with_their_current_revision_and_the_prices_
     second = await _add_chapter(db_session, novel_id, room, room.turns[2][0], room.turns[3][1])
     db_session.add(NovelChapterRevision(chapter_id=first.id, revision_no=2, body="고친 본문", source="manual_edit"))
     await db_session.commit()
-    monkeypatch.setattr(clover, "NOVELIZE_CHAPTER_GENERATE_COST", 31)
-    monkeypatch.setattr(clover, "NOVELIZE_CHAPTER_REGENERATE_COST", 32)
+    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_COST", 31)
     monkeypatch.setattr(clover, "NOVELIZE_AI_EDIT_COST", 7)
 
     resp = await db_client.get(f"/novels/{novel_id}")
@@ -243,7 +252,7 @@ async def test_detail_lists_chapters_with_their_current_revision_and_the_prices_
         (c["id"], c["ordinal"], c["assistantMessageCount"], c["currentRevisionNo"], c["currentRevisionSource"])
         for c in body["chapters"]
     ] == [(str(first.id), 1, 2, 2, "manual_edit"), (str(second.id), 2, 2, 1, "generate")]
-    assert body["prices"] == {"chapterGenerate": 31, "chapterRegenerate": 32, "aiEdit": 7}
+    assert body["prices"] == {"chapterGenerate": 31, "chapterRegenerate": 31, "aiEdit": 7}
     assert body["limits"]["settingNotesMaxLength"] == 2000
     assert body["activeJob"] is None
 
@@ -262,6 +271,9 @@ async def test_detail_shows_the_running_job_and_expires_a_dead_one_first(
         "kind": "chapter_generate",
         "status": "queued",
         "chapterId": None,
+        "batchId": None,
+        "completedBatches": None,
+        "plannedBatches": None,
     }
 
     await db_session.execute(
@@ -401,3 +413,298 @@ async def test_room_persona_name_is_read_from_the_room_not_the_default_profile(
 
     assert resp.status_code == 201, resp.text
     assert resp.json()["protagonistName"] == "방 프로필"
+
+
+# ── 묶음·화·읽은 자리·표지 ──────────────────────────────────────────────────
+async def test_detail_lists_batches_with_regenerate_prices_and_why_a_model_cannot_take_one(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """다시 만들기 금액은 묶음의 화 수 × 모델 화 단가다. 화 수나 턴 수를 담지 못하는 모델은 목록에 남되 이유가 붙는다
+    (화면은 그 모델을 비활성으로 보인다)."""
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    await _allow_novel_premium(db_session, monkeypatch, room.user_id)
+    monkeypatch.setattr(settings, "novelize_chapter_max_turns_opus", 1)
+    messages = await _room_messages(db_session, room.room_id)
+    (single,) = await _add_batch(db_session, novel_id, room, messages[0], room.turns[1][1])
+    pair = await _add_batch(db_session, novel_id, room, room.turns[2][0], room.turns[2][1], episodes=2)
+
+    body = (await db_client.get(f"/novels/{novel_id}")).json()
+
+    assert [(b["id"], b["ordinal"], b["chapterIds"]) for b in body["batches"]] == [
+        (str(single.batch_id), 1, [str(single.id)]),
+        (str(pair[0].batch_id), 2, [str(c.id) for c in pair]),
+    ]
+    options = {
+        b["ordinal"]: [(o["model"], o["cost"], o["eligible"], o["ineligibleReason"]) for o in b["regenerateOptions"]]
+        for b in body["batches"]
+    }
+    assert options == {
+        1: [("gemini", 40, True, None), ("sonnet", 105, True, None), ("opus", 170, False, "too_many_turns")],
+        2: [("gemini", 80, True, None), ("sonnet", 210, False, "too_many_episodes"), ("opus", 340, False, "too_many_episodes")],
+    }
+    assert [(c["batchId"], c["episodeIndex"]) for c in body["chapters"]] == [
+        (str(single.batch_id), 0),
+        (str(pair[0].batch_id), 0),
+        (str(pair[0].batch_id), 1),
+    ]
+
+
+async def test_detail_shows_episode_fields_finished_reading_and_the_last_read_place(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    messages = await _room_messages(db_session, room.room_id)
+    first, second = await _add_batch(db_session, novel_id, room, messages[0], room.turns[1][1], episodes=2, body="가나다")
+    await db_session.execute(
+        sa.update(NovelChapter).where(NovelChapter.id == first.id).values(title="첫 화", summary="만났다")
+    )
+    base = (await db_session.get_one(Novel, novel_id)).created_at
+    revision_id = uuid.uuid4()
+    db_session.add_all(
+        [
+            NovelReadingPosition(
+                chapter_id=first.id,
+                novel_id=novel_id,
+                paragraph_index=4,
+                paragraph_count=5,
+                revision_id=uuid.uuid4(),
+                finished_at=base,
+                updated_at=base,
+            ),
+            NovelReadingPosition(
+                chapter_id=second.id,
+                novel_id=novel_id,
+                paragraph_index=1,
+                paragraph_count=6,
+                revision_id=revision_id,
+                updated_at=base + timedelta(minutes=1),
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    body = (await db_client.get(f"/novels/{novel_id}")).json()
+
+    assert [
+        (c["title"], c["summary"], c["authorNote"], c["charCount"], c["finishedReading"]) for c in body["chapters"]
+    ] == [("첫 화", "만났다", "", 3, True), (None, None, "", 3, False)]
+    assert body["lastRead"] is not None
+    assert (body["lastRead"]["chapterId"], body["lastRead"]["paragraphIndex"], body["lastRead"]["paragraphCount"]) == (
+        str(second.id),
+        1,
+        6,
+    )
+    assert body["lastRead"]["revisionId"] == str(revision_id)
+
+
+async def test_detail_shows_the_chain_parent_as_the_active_job_with_its_progress(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """연쇄 중에는 부모와 자식이 함께 진행 중이다. 화면이 자식을 폴링하면 첫 묶음이 끝날 때 전체가 끝난 것으로 읽으므로
+    상세는 부모를 고른다 — 자식을 먼저 만든 것처럼 시각을 앞에 두어도 그렇다."""
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    base = (await db_session.get_one(Novel, novel_id)).created_at
+    parent = NovelJob(
+        novel_id=novel_id,
+        user_id=room.user_id,
+        kind="chain_generate",
+        status="running",
+        model="gemini",
+        charged_amount=240,
+        unit_price=40,
+        planned_batches=2,
+        batch_k_max=3,
+        created_at=base + timedelta(minutes=1),
+    )
+    db_session.add(parent)
+    await db_session.flush()
+    for status, minute in (("succeeded", -2), ("running", -1)):
+        db_session.add(
+            NovelJob(
+                novel_id=novel_id,
+                user_id=room.user_id,
+                kind="chapter_generate",
+                status=status,
+                model="gemini",
+                charged_amount=0,
+                parent_job_id=parent.id,
+                created_at=base + timedelta(minutes=minute),
+            )
+        )
+    await db_session.commit()
+
+    active = (await db_client.get(f"/novels/{novel_id}")).json()["activeJob"]
+    polled = (await db_client.get(f"/novels/{novel_id}/jobs/{parent.id}")).json()
+
+    assert active is not None
+    assert (active["id"], active["kind"], active["completedBatches"], active["plannedBatches"]) == (
+        str(parent.id),
+        "chain_generate",
+        1,
+        2,
+    )
+    assert (polled["completedBatches"], polled["plannedBatches"]) == (1, 2)
+
+
+async def test_job_polling_reports_the_amount_actually_refunded(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """목표보다 적은 화를 낸 성공도 일부를 돌려받는다 — 화면은 `refunded` 가 아니라 금액으로 안내한다. 금액 칸을 모르는
+    옛 코드가 환불한 실패는 낸 금액 전부다."""
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    rows = {
+        "partial": NovelJob(
+            status="succeeded", charged_amount=120, episode_count_target=3, refunded_amount=40, refunded_at=sa.func.now()
+        ),
+        "legacy": NovelJob(status="failed", charged_amount=40, refunded_at=sa.func.now(), failure_code="llm_error"),
+        "none": NovelJob(status="succeeded", charged_amount=40),
+    }
+    for job in rows.values():
+        job.novel_id, job.user_id, job.kind = novel_id, room.user_id, "chapter_generate"
+    db_session.add_all(rows.values())
+    await db_session.commit()
+
+    amounts = {
+        name: (await db_client.get(f"/novels/{novel_id}/jobs/{job.id}")).json()["refundedAmount"]
+        for name, job in rows.items()
+    }
+
+    assert amounts == {"partial": 40, "legacy": 40, "none": 0}
+
+
+async def test_title_edit_takes_the_title_from_the_ai_and_synopsis_is_saved_trimmed(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+
+    synopsis_only = await db_client.patch(f"/novels/{novel_id}", json={"synopsis": "  두 사람의 여름.  "})
+    titled = await db_client.patch(f"/novels/{novel_id}", json={"title": " 비 오는 저녁 "})
+    blank = await db_client.patch(f"/novels/{novel_id}", json={"title": "   "})
+
+    assert synopsis_only.status_code == 200, synopsis_only.text
+    assert (synopsis_only.json()["synopsis"], synopsis_only.json()["titleEdited"]) == ("두 사람의 여름.", False)
+    assert (titled.json()["title"], titled.json()["titleEdited"], titled.json()["synopsis"]) == (
+        "비 오는 저녁",
+        True,
+        "두 사람의 여름.",
+    )
+    assert blank.status_code == 422
+
+
+async def test_cover_must_be_my_ready_generated_image_and_falls_back_when_the_image_is_deleted(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """남의 이미지·업로드 이미지·준비 중 이미지는 같은 422 다. 고른 이미지를 지우면 표지만 비고 원작 썸네일로 돌아간다."""
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    stranger = _make_user()
+    db_session.add(stranger)
+    await db_session.flush()
+    generated, ready = AssetKind.GENERATED, AssetStatus.READY
+    foreign = await _make_asset(db_session, stranger.id, kind=generated, status=ready)
+    uploaded = await _make_asset(db_session, room.user_id, kind=AssetKind.ORIGINAL, status=ready)
+    pending = await _make_asset(db_session, room.user_id, kind=generated, status=AssetStatus.PENDING)
+    mine = await _make_asset(db_session, room.user_id, kind=generated, status=ready)
+    await db_session.commit()
+    work_cover = (await db_client.get(f"/novels/{novel_id}")).json()["cover"]
+
+    rejected = [
+        await db_client.patch(f"/novels/{novel_id}", json={"coverAssetId": str(asset.id)})
+        for asset in (foreign, uploaded, pending)
+    ]
+    chosen = await db_client.patch(f"/novels/{novel_id}", json={"coverAssetId": str(mine.id)})
+    await db_session.execute(sa.delete(Asset).where(Asset.id == mine.id))
+    await db_session.commit()
+    after_delete = await db_client.get(f"/novels/{novel_id}")
+
+    assert [(r.status_code, r.json()["detail"]) for r in rejected] == [(422, {"code": "NOVEL_COVER_INVALID"})] * 3
+    assert (work_cover["source"], work_cover["assetId"]) == ("work", None)
+    assert work_cover["url"] is not None
+    assert chosen.status_code == 200, chosen.text
+    assert (chosen.json()["cover"]["source"], chosen.json()["cover"]["assetId"]) == ("generated", str(mine.id))
+    assert "_display.webp" in chosen.json()["cover"]["url"]
+    assert after_delete.json()["cover"] == work_cover
+    stored = await db_session.scalar(
+        sa.select(Novel.cover_asset_id).where(Novel.id == novel_id).execution_options(populate_existing=True)
+    )
+    assert stored is None
+
+
+async def test_clearing_the_cover_goes_back_to_the_work_thumbnail(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    mine = await _make_asset(db_session, room.user_id, kind=AssetKind.GENERATED, status=AssetStatus.READY)
+    await db_session.commit()
+    await db_client.patch(f"/novels/{novel_id}", json={"coverAssetId": str(mine.id)})
+
+    untouched = await db_client.patch(f"/novels/{novel_id}", json={"synopsis": "소개"})
+    cleared = await db_client.patch(f"/novels/{novel_id}", json={"coverAssetId": None})
+
+    assert untouched.json()["cover"]["source"] == "generated"
+    assert (cleared.json()["cover"]["source"], cleared.json()["cover"]["assetId"]) == ("work", None)
+
+
+async def test_source_link_is_offered_only_while_the_work_is_viewable(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    content_id = (await db_session.get_one(Novel, novel_id)).content_id
+
+    open_work = (await db_client.get(f"/novels/{novel_id}")).json()["source"]
+    await db_session.execute(
+        sa.update(Content).where(Content.id == content_id).values(moderation_status=ModerationStatus.RESTRICTED)
+    )
+    await db_session.commit()
+    restricted = (await db_client.get(f"/novels/{novel_id}")).json()["source"]
+
+    assert open_work["linkable"] is True and open_work["thumbnailUrl"] is not None
+    assert restricted["linkable"] is False
+
+
+async def test_chapter_title_and_author_note_can_be_edited_only_in_my_novel(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    other_room, other_id = await _novel_setup(db_client, db_session, monkeypatch)
+    other = await _add_chapter(
+        db_session, other_id, other_room, (await _room_messages(db_session, other_room.room_id))[0], other_room.turns[1][1]
+    )
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    chapter = await _add_chapter(
+        db_session, novel_id, room, (await _room_messages(db_session, room.room_id))[0], room.turns[1][1]
+    )
+
+    note_only = await db_client.patch(f"/novels/{novel_id}/chapters/{chapter.id}", json={"authorNote": " 고마워요 "})
+    titled = await db_client.patch(f"/novels/{novel_id}/chapters/{chapter.id}", json={"title": "새 제목"})
+    note_again = await db_client.patch(f"/novels/{novel_id}/chapters/{chapter.id}", json={"authorNote": "또"})
+    edited_at = (await db_session.get_one(NovelChapter, chapter.id, populate_existing=True)).title_edited_at
+    cleared = await db_client.patch(f"/novels/{novel_id}/chapters/{chapter.id}", json={"title": None})
+    foreign = await db_client.patch(f"/novels/{novel_id}/chapters/{other.id}", json={"title": "남의 화"})
+
+    assert note_only.status_code == 200, note_only.text
+    assert (note_only.json()["chapters"][0]["title"], note_only.json()["chapters"][0]["titleEdited"]) == (None, False)
+    (summary,) = titled.json()["chapters"]
+    assert (summary["title"], summary["titleEdited"], summary["authorNote"]) == ("새 제목", True, "고마워요")
+    # 제목을 보내지 않은 수정은 제목도 고친 표시도 건드리지 않는다.
+    assert (note_again.json()["chapters"][0]["title"], note_again.json()["chapters"][0]["titleEdited"]) == (
+        "새 제목",
+        True,
+    )
+    assert edited_at is not None
+    # 제목을 비우면 고친 표시도 비워져 다음 다시 만들기가 AI 제목을 쓴다.
+    assert cleared.status_code == 200, cleared.text
+    assert (cleared.json()["chapters"][0]["title"], cleared.json()["chapters"][0]["titleEdited"]) == (None, False)
+    stored = await db_session.get_one(NovelChapter, chapter.id, populate_existing=True)
+    assert (stored.title, stored.title_edited_at) == (None, None)
+    assert foreign.status_code == 404 and foreign.json()["detail"] == {"code": "NOVEL_CHAPTER_NOT_FOUND"}
+
+
+async def test_list_items_carry_the_novel_title_and_cover(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    await db_client.patch(f"/novels/{novel_id}", json={"title": "여름"})
+
+    (item,) = (await db_client.get("/novels")).json()["items"]
+
+    assert (item["title"], item["cover"]["source"]) == ("여름", "work")
+    assert item["cover"]["url"] is not None

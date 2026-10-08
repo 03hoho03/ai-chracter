@@ -6,7 +6,7 @@ from api.llm.chat_models import (
     CHAT_MODELS,
     actual_model_id,
     chat_turn_cost,
-    novel_chapter_cost,
+    novel_episode_unit_price,
     parse_chat_model_id,
 )
 
@@ -51,13 +51,14 @@ def test_turn_costs_are_read_from_the_clover_constants_at_call_time(monkeypatch:
     assert [chat_turn_cost(m.id) for m in CHAT_MODELS] == [11, 41, 66]
 
 
-def test_chapter_costs_keep_geminis_two_constants_and_use_one_price_for_premium_models(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(clover, "NOVELIZE_CHAPTER_GENERATE_COST", 40)
-    monkeypatch.setattr(clover, "NOVELIZE_CHAPTER_REGENERATE_COST", 39)
-    monkeypatch.setattr(clover, "NOVELIZE_CHAPTER_COST_SONNET", 161)
-    monkeypatch.setattr(clover, "NOVELIZE_CHAPTER_COST_OPUS", 261)
+def test_episode_unit_prices_are_read_from_the_clover_constants_at_call_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_COST", 41)
+    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_COST_SONNET", 106)
+    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_COST_OPUS", 171)
 
-    assert [novel_chapter_cost(m.id, regenerate=False) for m in CHAT_MODELS] == [40, 161, 261]
-    assert [novel_chapter_cost(m.id, regenerate=True) for m in CHAT_MODELS] == [39, 161, 261]
+    assert [novel_episode_unit_price(m.id) for m in CHAT_MODELS] == [41, 106, 171]
+
+
+def test_default_episode_unit_prices_are_the_provisional_ones() -> None:
+    """Gemini 40·Sonnet 105·Opus 170 — 화 하나의 값이다(생성 한 번은 이 값 × 화 수)."""
+    assert [novel_episode_unit_price(m.id) for m in CHAT_MODELS] == [40, 105, 170]

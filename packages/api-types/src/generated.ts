@@ -2174,7 +2174,16 @@ export interface paths {
         delete: operations["delete_novel_novels__novel_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update Novel
+         * @description 소설 제목·소개·표지를 바꾼다(보낸 칸만). 제목을 바꾸면 그 뒤로 생성이 제목을 덮지 않는다 — 같은 문장에서 제목과
+         *     고친 시각을 함께 쓰므로, 겹친 생성 저장의 "고친 적 없을 때만 쓰기"와 엇갈리지 않는다.
+         *
+         *     표지는 내 생성 이미지 중 준비가 끝난 것만 된다(아니면 422 `NOVEL_COVER_INVALID` — 남의 것·없는 것·업로드 이미지·준비
+         *     중을 가르지 않는다). 그 이미지 행을 키 공유 잠금으로 확인한다 — 확인과 저장 사이에 이미지가 지워지면 저장이 FK 위반으로
+         *     500 이 되는데, 잠금을 쥐면 삭제가 이 저장이 끝나기를 기다렸다가 표지를 비운다(표지 FK 는 SET NULL).
+         */
+        patch: operations["update_novel_novels__novel_id__patch"];
         trace?: never;
     };
     "/novels/{novel_id}/notes": {
@@ -2217,6 +2226,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/novels/{novel_id}/chapters/{chapter_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Novel Chapter
+         * @description 장의 현재 개정 본문과 그 문단 배열. 문단 범위(AI 수정)는 이 배열의 인덱스다 — 화면이 본문을 다시 나누면 빈 줄
+         *     해석 차이로 범위가 어긋난다.
+         */
+        get: operations["get_novel_chapter_novels__novel_id__chapters__chapter_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Last Novel Chapter
+         * @description 화 하나를 골라 들어오는 옛 마지막 장 삭제 — 그 화가 마지막 묶음에 들어 있으면 그 묶음 전체를 지운다(묶음 삭제와
+         *     같은 규칙). 마지막 묶음의 화가 아니면 409 `NOVEL_CHAPTER_NOT_LAST`, 진행 중 작업이 있으면 409
+         *     `NOVEL_JOB_IN_PROGRESS`.
+         */
+        delete: operations["delete_last_novel_chapter_novels__novel_id__chapters__chapter_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Novel Chapter
+         * @description 화 제목·작가의 말을 바꾼다(보낸 칸만, 무과금). 본문은 개정 라우트로 고친다. 작가의 말은 프롬프트에 실리지 않는다.
+         *
+         *     제목을 보내면 고친 시각을 찍어 다시 만들기가 그 제목을 덮지 않게 하고, 제목에 null 을 보내면 제목과 고친 시각을 함께
+         *     비워 다음 다시 만들기가 AI 제목을 다시 쓰게 한다.
+         */
+        patch: operations["update_novel_chapter_novels__novel_id__chapters__chapter_id__patch"];
+        trace?: never;
+    };
     "/novels/{novel_id}/jobs/{job_id}": {
         parameters: {
             query?: never;
@@ -2250,12 +2293,16 @@ export interface paths {
         put?: never;
         /**
          * Propose Novel Chapter
-         * @description 다음 장의 후보 턴 목록과 모델이 고른 끝 턴(무과금, 동기).
+         * @description 다음 묶음의 후보 턴 목록과 모델이 고른 끝 턴(무과금, 동기). 본문이 없으면 기본 모델이다(이 본문을 모르는 옛 화면).
          *
-         *     후보는 서버가 정한 시작부터 응답을 장 턴 상한만큼 센 턴들이고, 화면은 이 목록에서 끝을 고른다 — 화면의 방
-         *     메시지 캐시는 최근 일부뿐이라 장 시작이 그보다 앞일 수 있다. 모델 제안이 실패해도 200 에 `suggestion: null`
-         *     이다: 경계는 사용자가 고르는 것이라 제안 실패가 장 생성을 막을 이유가 없다. 모델을 부르기 전에 커밋해 커넥션을
-         *     돌려준다(모델 호출 동안 쥐지 않는다).
+         *     후보는 서버가 정한 시작부터 응답을 요청한 모델의 턴 상한만큼 센 턴들이고, 후보마다 그 모델로 거기까지 만들 때의 화
+         *     수·금액이 붙는다 — 화면은 모델을 먼저 고르고 그 모델로 이 제안을 받는다. 화면의 방 메시지 캐시는 최근 일부뿐이라 묶음
+         *     시작이 그보다 앞일 수 있어 후보를 서버가 준다. 모델 제안은 그 후보 안에서 고르고, 실패해도 200 에 `suggestion: null`
+         *     이다: 경계는 사용자가 고르는 것이라 제안 실패가 생성을 막을 이유가 없다. 모델을 부르기 전에 커밋해 커넥션을 돌려준다
+         *     (모델 호출 동안 쥐지 않는다).
+         *
+         *     모델을 바꿔 다시 받는 호출도 시간당 제안 상한에 센다 — 호출마다 실제로 경계 제안 모델을 부른다. 상위 모델은 허용이
+         *     있어야 하고(없으면 403 `NOVEL_MODEL_NOT_ALLOWED`), 그 판정이 상한 검사보다 앞이라 거절된 요청은 상한을 깎지 않는다.
          */
         post: operations["propose_novel_chapter_novels__novel_id__chapter_proposal_post"];
         delete?: never;
@@ -2275,15 +2322,91 @@ export interface paths {
         put?: never;
         /**
          * Create Novel Chapter
-         * @description 다음 장을 만드는 작업(과금, 202). 시작은 서버가 정하고, 끝(`endMessageId`)은 경계 제안의 후보 턴 중 하나여야
-         *     한다 — 다음 장 시작부터 장 턴 상한 안의 AI 응답이 아니면 422 `NOVEL_CHAPTER_END_INVALID`.
+         * @description 다음 묶음을 만드는 작업(과금, 202). 시작은 서버가 정하고, 끝(`endMessageId`)은 경계 제안의 후보 턴 중 하나여야
+         *     한다 — 다음 묶음 시작부터 요청 모델의 턴 상한 안의 AI 응답이 아니면 422 `NOVEL_CHAPTER_END_INVALID`.
          *
-         *     `model` 은 이 장을 쓸 모델이다(기본 Gemini). 작업에 적혀 실행이 그대로 쓰고, 단가도 그 모델의 장 가격이다.
+         *     `model` 은 이 묶음을 쓸 모델이다(기본 Gemini). 작업에 적혀 실행이 그대로 쓴다. 화 수는 서버가 그 구간의 원문 분량과
+         *     모델로 다시 세어 작업에 싣고(경계 제안의 후보 화 수와 같은 계산), 금액은 그 화 수 × 모델의 화 단가다 — 확인한 금액과
+         *     다르면 409 `NOVELIZE_PRICE_CHANGED` + `currentCost`.
          *
-         *     순서: 작품 상태(403)·방(409)·주인공 이름(422)·모델 허용(403) → 죽은 작업 정리·커밋 → 구간 검사(409·422) → 차감·작업 생성(단가
-         *     409·진행 중 409·하루 상한 429·잔액 429) → 띄우기. 차감 앞의 거절은 원장에 아무것도 남기지 않는다.
+         *     순서: 작품 상태(403)·방(409)·주인공 이름(422)·모델 허용(403) → 죽은 작업 정리·묶음 보정·커밋 → 구간 검사(409·422) →
+         *     차감·작업 생성(금액 409·진행 중 409·하루 상한 429·잔액 429) → 띄우기. 차감 앞의 거절은 원장에 아무것도 남기지 않는다.
          */
         post: operations["create_novel_chapter_novels__novel_id__chapters_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/chain-estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Estimate Novel Chain
+         * @description "남은 대화 한 번에"의 모델별 견적. 이 계정이 고를 수 있는 모델마다 묶음 수·최대 화 수·금액이다. 작품 상태(403)·방
+         *     (409 `NOVEL_ROOM_GONE`)을 생성과 같이 보고, 만들 턴이 없으면 409 `NOVEL_NOTHING_NEW` 다.
+         */
+        get: operations["estimate_novel_chain_novels__novel_id__chain_estimate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/chain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Novel Chain
+         * @description "남은 대화 한 번에"(과금, 202 부모 작업). 모델은 연쇄 전체에 하나다. 묶음 수는 남은 대화를 그 모델의 턴 상한으로
+         *     나눈 수를 `maxBatches` 와 한 번의 상한으로 자른 값이고, 금액은 묶음 수 × 그 모델의 화 수 상한 × 화 단가다(견적의
+         *     `cost`). 확인한 금액과 다르면 409 `NOVELIZE_PRICE_CHANGED` + `currentCost`. 묶음마다 자동 경계로 하나씩 만들고, 끝나면
+         *     쓰지 않은 몫을 돌려준다. 폴링은 이 부모 작업으로 하고 진행은 `completedBatches`/`plannedBatches` 다.
+         *
+         *     순서: 작품 상태(403)·방(409)·주인공 이름(422)·모델 허용(403) → 죽은 작업 정리·묶음 보정·커밋 → 남은 턴(409
+         *     `NOVEL_NOTHING_NEW`) → 차감·작업 생성(금액 409·진행 중 409·잔액 429) → 띄우기. 같은 시작 메시지 하루 상한은 연쇄
+         *     부모에 걸지 않는다 — 부모는 한 구간이 아니라 남은 대화 전체를 맡는다.
+         */
+        post: operations["create_novel_chain_novels__novel_id__chain_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/batches/{batch_id}/regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Regenerate Novel Batch
+         * @description 묶음 하나를 같은 원문 구간으로 다시 만드는 작업(과금, 202). 마지막 묶음이 아니어도 된다. 화 수는 지금 그대로다 —
+         *     결과는 화마다 새 개정으로 쌓이고(화 제목·요약·등장 인물도 바뀐다) 읽은 위치·작가의 말·개정 이력은 남는다. 결과 화 수가
+         *     다르면 작업이 실패하고 전액 돌려준다.
+         *
+         *     금액은 묶음의 화 수 × 고른 모델의 화 단가(상세의 묶음 `regenerateOptions`)다. 고른 모델이 그 화 수나 묶음의 턴 수를
+         *     담지 못하면 차감 전에 409 `NOVEL_MODEL_INELIGIBLE` + `reason`. 원문이 묶음을 만든 때와 다르면(메시지 편집·응답
+         *     재생성·삭제) 차감 전에 409 `NOVEL_SOURCE_CHANGED`. 없는 묶음은 404 `NOVEL_BATCH_NOT_FOUND`.
+         */
+        post: operations["regenerate_novel_batch_novels__novel_id__batches__batch_id__regenerate_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2301,11 +2424,8 @@ export interface paths {
         put?: never;
         /**
          * Regenerate Novel Chapter
-         * @description 장 하나를 같은 원문 구간으로 다시 만드는 작업(과금, 202). 마지막 장이 아니어도 된다. 결과는 그 장의 새
-         *     개정으로 쌓이고, 그 사이의 직접 수정·되돌리기는 이력에 남는다.
-         *
-         *     원문이 장을 만든 때와 다르면(메시지 편집·응답 재생성·삭제) 차감 전에 409 `NOVEL_SOURCE_CHANGED` — 같은 입력으로
-         *     다시 만든다는 약속을 지킬 수 없다. `model` 은 장 생성과 같은 규칙이고, 처음 만든 모델과 달라도 된다.
+         * @description 화 하나를 골라 들어오는 옛 다시 만들기 — 그 화가 든 묶음 전체를 다시 만든다(묶음 다시 만들기와 같은 검사·금액).
+         *     작업 응답의 `chapterId` 는 고른 화이고, 끝나면 그 화의 새 개정이 `revisionId` 다.
          */
         post: operations["regenerate_novel_chapter_novels__novel_id__chapters__chapter_id__regenerate_post"];
         delete?: never;
@@ -2314,35 +2434,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/novels/{novel_id}/chapters/{chapter_id}": {
+    "/novels/{novel_id}/batches/{batch_id}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /**
-         * Get Novel Chapter
-         * @description 장의 현재 개정 본문과 그 문단 배열. 문단 범위(AI 수정)는 이 배열의 인덱스다 — 화면이 본문을 다시 나누면 빈 줄
-         *     해석 차이로 범위가 어긋난다.
-         */
-        get: operations["get_novel_chapter_novels__novel_id__chapters__chapter_id__get"];
+        get?: never;
         put?: never;
         post?: never;
         /**
-         * Delete Last Novel Chapter
-         * @description 마지막 장만 지운다(무과금). 지우면 다음 장 시작이 그 장 시작으로 돌아간다 — 경계를 잘못 골랐을 때 고치는 길이다.
-         *     마지막이 아니면 409 `NOVEL_CHAPTER_NOT_LAST`, 소설에 진행 중 작업이 있으면 409 `NOVEL_JOB_IN_PROGRESS`(끝난 뒤
-         *     다시).
+         * Delete Last Novel Batch
+         * @description 마지막 묶음만 지운다(무과금) — 그 묶음의 화 전부와 개정·등장 인물·읽은 위치가 함께 지워지고, 다음 묶음 시작이 그
+         *     묶음 시작으로 돌아간다. 경계를 잘못 골랐을 때 고치는 길이다. 인물 카드는 남고, 스냅샷은 남되 지운 화의 항목만
+         *     `{chapterId, deleted: true}` 로 줄어든다. 마지막이 아니면 409 `NOVEL_BATCH_NOT_LAST`, 소설에 진행 중 작업이 있으면
+         *     409 `NOVEL_JOB_IN_PROGRESS`(끝난 뒤 다시), 없는 묶음은 404 `NOVEL_BATCH_NOT_FOUND`.
          *
-         *     그 장을 가리키던 작업 행은 지우지 않고 장·개정 참조와 AI 수정 지시문·결과 본문만 비운다 — 같은 장의 하루 재시도
-         *     상한이 작업 행 수로 세므로, 지우면 장을 지웠다 다시 만드는 것으로 상한이 풀린다. 차감 기록의 작업 쪽 짝도 남는다.
-         *     지시문·결과 본문은 지운 장을 고치려던 것이라 더 쓸 데가 없다.
+         *     그 화들을 가리키던 작업 행은 지우지 않고 참조와 AI 수정 지시문·결과 본문만 비운다(`deletion.delete_batch`).
          *
-         *     잠금: 사용자 행(작업 생성과 줄 세우기 — 진행 중 확인과 삭제 사이에 새 작업이 끼지 않게) → 작업 행 → 장 행.
-         *     장을 잠근 뒤 개정을 지운다 — 직접 수정·되돌리기가 장을 잠근 채 넣는 개정을 기다렸다가 함께 지우려는 것이다.
+         *     잠금: 사용자 행(작업 생성과 줄 세우기 — 진행 중 확인과 삭제 사이에 새 작업이 끼지 않게) → 작업 행 → 화 행. 묶음 보정도
+         *     이 잠금 아래에서 먼저 한다 — 빈 묶음이 남아 있으면 그것이 "마지막"으로 보여 실제 마지막 묶음을 지울 수 없다.
          */
-        delete: operations["delete_last_novel_chapter_novels__novel_id__chapters__chapter_id__delete"];
+        delete: operations["delete_last_novel_batch_novels__novel_id__batches__batch_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2482,6 +2596,225 @@ export interface paths {
          *     적용과 같은 작업 행을 잠근다 — 같은 수정의 적용과 버리기가 겹치면 뒤 요청이 앞 요청의 결과를 보고 409 다.
          */
         post: operations["dismiss_novel_ai_edit_novels__novel_id__jobs__job_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/characters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Novel Characters
+         * @description 인물 카드(만든 순서)와 카드마다 나온 화.
+         */
+        get: operations["list_novel_characters_novels__novel_id__characters_get"];
+        /**
+         * Add Novel Character
+         * @description 생성 출력이 아직 내지 않은 인물의 카드를 직접 만든다(무과금). 같은 이름의 카드가 있으면 아무것도 바꾸지 않으므로
+         *     다시 보내도 결과가 같다. 다른 카드의 별칭이면 409 `NOVEL_CHARACTER_NAME_TAKEN` + `name`. 카드를 단독으로 지우는
+         *     길은 없다(합치기만) — 메모가 다음 묶음 입력에 실리는 카드를 실수로 잃지 않게.
+         *
+         *     인물 카드를 고치는 모든 경로처럼 사용자 행을 먼저 잠근다 — 생성 결과 저장이 같은 잠금 아래에서 이름을 카드에 붙이므로,
+         *     잠그지 않으면 둘이 같은 이름의 카드를 하나씩 만든다(`characters.py` 머리).
+         */
+        put: operations["add_novel_character_novels__novel_id__characters_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/characters/{character_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Novel Character
+         * @description 카드 이름·별칭·메모를 바꾼다(보낸 칸만, 무과금). 메모는 다음 묶음 생성 입력에 실린다(메모가 빈 인물은 빠진다).
+         *     이름이나 별칭이 다른 카드의 이름·별칭과 겹치면 409 `NOVEL_CHARACTER_NAME_TAKEN` + `name`(겹친 값). 없는 카드는 404
+         *     `NOVEL_CHARACTER_NOT_FOUND`. 잠금은 추가와 같다.
+         */
+        patch: operations["update_novel_character_novels__novel_id__characters__character_id__patch"];
+        trace?: never;
+    };
+    "/novels/{novel_id}/characters/{character_id}/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Merge Novel Character
+         * @description 같은 인물의 이름 표기가 갈려 생긴 카드를 합친다(무과금). 경로의 카드가 `intoCharacterId` 카드로 흡수된다 — 이름·별칭은
+         *     남는 카드의 별칭이 되고(그 뒤 생성 출력이 그 이름을 내면 남는 카드에 붙는다), 메모는 남는 카드 메모 뒤에 `[이름] 메모`
+         *     로 붙고, 나온 화가 옮겨진 뒤 경로 카드는 지워진다. 편집 보드에 저장된 그 카드의 자리는 다음 배치 조회부터 빠진다.
+         *     두 카드가 같으면 422 `NOVEL_CHARACTER_MERGE_SELF`, 어느 쪽이든 없으면 404 `NOVEL_CHARACTER_NOT_FOUND`.
+         *
+         *     사용자 행을 먼저 잠근다. 생성 결과 저장은 같은 잠금을 쥔 채 카드 목록을 읽고 이름을 붙이므로, 합치기가 잠그지 않으면
+         *     저장이 합치기 전 목록을 읽고 흡수될 카드에 연결을 넣는다(합치기가 그 카드를 지우는 것과 엇갈린다).
+         */
+        post: operations["merge_novel_character_novels__novel_id__characters__character_id__merge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/board-layout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Novel Board Layout
+         * @description 저장한 편집 보드 배치. 지금 없는 화·인물의 자리는 빼고 돌려준다 — 묶음 삭제·인물 합치기 뒤에도 저장값을 고치지
+         *     않으므로, 화면이 받은 키만 다음 저장에 다시 보내면 저절로 정리된다. 저장한 적이 없으면 `layout` 이 null 이다.
+         */
+        get: operations["get_novel_board_layout_novels__novel_id__board_layout_get"];
+        /**
+         * Save Novel Board Layout
+         * @description 편집 보드 배치를 통째로 저장한다. 끌기·화면 이동이 멈출 때마다 오므로 소설 수정 시각은 밀지 않는다(목록이 최근
+         *     수정 순이다). 직렬화한 크기가 `limits.boardLayoutMaxBytes` 를 넘으면 422 `NOVEL_BOARD_LAYOUT_TOO_LARGE`.
+         *
+         *     소설 행 하나만 고치고 다른 행을 잡지 않으므로 잠금 순서에 끼지 않는다.
+         */
+        put: operations["save_novel_board_layout_novels__novel_id__board_layout_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/chapters/{chapter_id}/reading-position": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Novel Reading Position
+         * @description 화를 읽던 자리를 저장한다. 화면을 떠날 때 응답을 기다리지 않는 요청으로도 오므로 본문이 작고 응답 본문이 없다.
+         *     같은 값을 다시 보내도 결과가 같고, 한 번 다 읽은 화(`finished`)는 앞부분을 다시 읽어 저장해도 다 읽은 화로 남는다.
+         *     문단 번호가 문단 수 밖이면 422 `NOVEL_PARAGRAPH_RANGE_INVALID`, 없는 화(지워진 화 포함)는 404
+         *     `NOVEL_CHAPTER_NOT_FOUND`. 읽기는 수정이 아니라 소설 수정 시각은 밀지 않는다.
+         *
+         *     화 행을 키 공유 잠금으로 확인한 뒤 저장한다. 묶음·소설 삭제는 화를 `FOR UPDATE` 로 잠근 뒤 읽은 위치를 지우므로, 이쪽이
+         *     먼저 잡으면 삭제가 이 저장을 기다렸다가 함께 지우고, 삭제가 먼저 잡았으면 이 확인이 기다렸다가 화가 없음을 보고 404
+         *     다. 확인 없이 저장하면 삭제가 커밋된 뒤 FK 위반(500)이 난다. 사용자 행은 잡지 않는다 — 이 저장은 사용자 행 아래의
+         *     행(작업·인물·스냅샷·클로버)을 고치지 않고 화 행 하나와 자기 행만 쥐므로, 사용자 → 작업 → 화 순서로 잡는 삭제와 서로를
+         *     기다리는 일이 없다.
+         */
+        put: operations["save_novel_reading_position_novels__novel_id__chapters__chapter_id__reading_position_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Novel Snapshots
+         * @description 스냅샷 목록(최근 것 먼저). 내용은 상세로 따로 읽는다.
+         */
+        get: operations["list_novel_snapshots_novels__novel_id__snapshots_get"];
+        put?: never;
+        /**
+         * Create Novel Snapshot
+         * @description 지금 상태를 이름 붙여 저장한다(무과금) — 소설 제목·소개·설정 노트, 인물 카드, 화마다 지금 개정·제목·요약·작가의
+         *     말. 상한에 닿으면 가장 오래된 복원 직전 자동 스냅샷부터 지우고, 이름 붙인 것만으로 차 있으면 409
+         *     `NOVEL_SNAPSHOT_LIMIT`(하나 지운 뒤 다시).
+         *
+         *     사용자 행을 먼저 잠근다 — 개수를 세고 지우고 넣는 사이에 같은 소설의 다른 저장·복원이 끼면 둘 다 자리가 있다고 보고
+         *     상한을 넘긴다. 인물 카드를 읽는 순간도 카드를 고치는 경로들과 같은 잠금 아래라 어중간한 상태를 뜨지 않는다.
+         */
+        post: operations["create_novel_snapshot_novels__novel_id__snapshots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/snapshots/{snapshot_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Novel Snapshot
+         * @description 스냅샷 내용. 화의 본문은 싣지 않는다 — 비교 화면은 화마다 `revisionId` 의 개정을 개정 조회로 읽는다(화가 지워졌으면
+         *     그 항목은 `deleted`).
+         */
+        get: operations["get_novel_snapshot_novels__novel_id__snapshots__snapshot_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Novel Snapshot
+         * @description 스냅샷 하나를 지운다(이름 붙인 것·자동 것 모두). 자기 데이터를 지우는 길이라 재동의 게이트를 걸지 않는다. 없으면 404
+         *     `NOVEL_SNAPSHOT_NOT_FOUND`. 개정은 스냅샷과 무관하게 남는다.
+         */
+        delete: operations["delete_novel_snapshot_novels__novel_id__snapshots__snapshot_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/novels/{novel_id}/snapshots/{snapshot_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Novel Snapshot
+         * @description 스냅샷 때의 내용으로 되돌린다(무과금). 구조는 그대로다 — 스냅샷 뒤에 생긴 화는 지우지 않고, 스냅샷의 화는 그때
+         *     본문을 새 개정으로 쌓고(이력은 남는다) 화 제목·요약·작가의 말을 그때 값으로 덮는다. 소설 제목·소개·설정 노트와 인물
+         *     카드도 그때 값이다. 화나 그때 개정이 지워진 화는 건너뛰고 `skippedChapters` 에 싣는다. 되돌리기 직전 상태는 자동
+         *     스냅샷(`autoSnapshotId`)으로 남는다(상한에 닿아도 한 장 더 둔다). 진행 중 작업이 있으면(연쇄 포함) 409
+         *     `NOVEL_JOB_IN_PROGRESS` — 생성 결과 저장이 같은 화·인물·제목을 고치기 때문이다. 없는 스냅샷은 404
+         *     `NOVEL_SNAPSHOT_NOT_FOUND`.
+         *
+         *     죽은 작업을 먼저 정리해 커밋한다(서버 재기동으로 남은 작업이 복원을 계속 막지 않게). 그다음 사용자 행을 잠근다 — 작업
+         *     생성도 사용자 행을 먼저 잡으므로, 진행 중 확인과 복원 사이에 새 작업이 끼지 못한다. 화 → 소설 순서는
+         *     `snapshots.restore_snapshot` 에 있다. 커밋한 뒤 새 개정을 쌓은 화마다 낡은 AI 수정 미리보기를 **별도 트랜잭션에서**
+         *     비운다 — 화를 쥔 채 작업 행을 고치면 작업 → 화 순서로 잡는 적용과 교착한다(직접 수정과 같은 이유).
+         */
+        post: operations["restore_novel_snapshot_novels__novel_id__snapshots__snapshot_id__restore_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5301,7 +5634,7 @@ export interface components {
              * Lane
              * @enum {string}
              */
-            lane: "story" | "character" | "publish_filter";
+            lane: "story" | "character" | "publish_filter" | "novel";
             /**
              * Model
              * @enum {string}
@@ -5353,7 +5686,7 @@ export interface components {
              * Lane
              * @enum {string}
              */
-            lane: "story" | "character" | "publish_filter";
+            lane: "story" | "character" | "publish_filter" | "novel";
             /**
              * Model
              * @enum {string}
@@ -7752,7 +8085,8 @@ export interface components {
         };
         /**
          * NovelActiveJob
-         * @description 진행 중(대기·실행) 작업. 화면을 새로 열어도 이 id 로 폴링을 이어 간다.
+         * @description 진행 중(대기·실행) 작업. 화면을 새로 열어도 이 id 로 폴링을 이어 간다. 연쇄 생성 중에는 부모 작업이다 — 화면이
+         *     묶음 하나를 맡은 자식을 폴링하면 첫 묶음이 끝날 때 전체가 끝난 것으로 읽는다.
          */
         NovelActiveJob: {
             /**
@@ -7764,7 +8098,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "chapter_generate" | "chapter_regenerate" | "ai_edit";
+            kind: "chapter_generate" | "chapter_regenerate" | "ai_edit" | "chain_generate";
             /**
              * Status
              * @enum {string}
@@ -7772,6 +8106,12 @@ export interface components {
             status: "queued" | "running" | "succeeded" | "failed";
             /** Chapterid */
             chapterId: string | null;
+            /** Batchid */
+            batchId: string | null;
+            /** Completedbatches */
+            completedBatches: number | null;
+            /** Plannedbatches */
+            plannedBatches: number | null;
         };
         /**
          * NovelAiEditPreview
@@ -7808,10 +8148,116 @@ export interface components {
             /** Expectedcost */
             expectedCost: number;
         };
+        /** NovelBatchRegenerateRequest */
+        NovelBatchRegenerateRequest: {
+            /**
+             * Model
+             * @enum {string}
+             */
+            model: "gemini" | "sonnet" | "opus";
+            /** Expectedcost */
+            expectedCost: number;
+        };
+        /**
+         * NovelBatchSummary
+         * @description 묶음 하나 = 생성 한 번이 옮긴 원문 구간. 다시 만들기·마지막 묶음 삭제의 단위다.
+         */
+        NovelBatchSummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Ordinal */
+            ordinal: number;
+            /** Chapterids */
+            chapterIds: string[];
+            /** Assistantmessagecount */
+            assistantMessageCount: number;
+            /** Regenerateoptions */
+            regenerateOptions: components["schemas"]["NovelRegenerateOption"][];
+        };
+        /**
+         * NovelBoardLayout
+         * @description 편집 보드의 노드 위치와 화면 위치. 서버는 형식만 보고 통째로 저장한다. 읽을 때는 지금 없는 화·인물의 키를 빼고
+         *     돌려주므로(묶음 삭제·인물 합치기 뒤), 화면은 받은 키만 다시 보내면 된다. 직렬화한 크기가 상세 `limits` 의
+         *     `board_layout_max_bytes` 를 넘으면 422 `NOVEL_BOARD_LAYOUT_TOO_LARGE`.
+         */
+        NovelBoardLayout: {
+            /**
+             * Version
+             * @constant
+             */
+            version: 1;
+            /** Positions */
+            positions: {
+                [key: string]: components["schemas"]["NovelBoardPosition"];
+            };
+            viewport: components["schemas"]["NovelBoardViewport"] | null;
+        };
+        /** NovelBoardLayoutResponse */
+        NovelBoardLayoutResponse: {
+            layout: components["schemas"]["NovelBoardLayout"] | null;
+        };
+        /** NovelBoardPosition */
+        NovelBoardPosition: {
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+        };
+        /** NovelBoardViewport */
+        NovelBoardViewport: {
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+            /** Zoom */
+            zoom: number;
+        };
+        /** NovelChainCreateRequest */
+        NovelChainCreateRequest: {
+            /**
+             * Model
+             * @enum {string}
+             */
+            model: "gemini" | "sonnet" | "opus";
+            /** Expectedcost */
+            expectedCost: number;
+            /** Maxbatches */
+            maxBatches: number;
+        };
+        /**
+         * NovelChainEstimate
+         * @description "남은 대화 한 번에"를 이 모델로 할 때. 묶음 경계는 돌면서 정하므로 금액은 묶음마다 이 모델의 화 수 상한만큼
+         *     미리 받는 값이고(`max_episode_count` × 화 단가), 끝나면 쓰지 않은 몫을 돌려준다. 같은 남은 대화라도 턴 상한이 작은
+         *     모델은 묶음이 더 많이 들고, 한 번에 만드는 묶음 수에는 상한이 있어 덜 진행할 수 있다.
+         */
+        NovelChainEstimate: {
+            /**
+             * Model
+             * @enum {string}
+             */
+            model: "gemini" | "sonnet" | "opus";
+            /** Name */
+            name: string;
+            /** Batchcount */
+            batchCount: number;
+            /** Maxepisodecount */
+            maxEpisodeCount: number;
+            /** Cost */
+            cost: number;
+        };
+        /** NovelChainEstimateResponse */
+        NovelChainEstimateResponse: {
+            /** Options */
+            options: components["schemas"]["NovelChainEstimate"][];
+        };
         /**
          * NovelChapterCandidate
-         * @description 다음 장의 끝으로 고를 수 있는 턴 하나. `message_id` 는 그 턴의 AI 응답이고, `ordinal` 은 다음 장 시작부터 센
-         *     턴 번호(1부터)다.
+         * @description 다음 묶음의 끝으로 고를 수 있는 턴 하나. `message_id` 는 그 턴의 AI 응답이고, `ordinal` 은 다음 묶음 시작부터 센
+         *     턴 번호(1부터)다. `episode_count`·`cost` 는 이 턴까지를 요청한 모델로 만들 때의 화 수와 금액이다 — 생성 요청의
+         *     `expectedCost` 는 고른 후보의 `cost` 다.
          */
         NovelChapterCandidate: {
             /**
@@ -7828,6 +8274,10 @@ export interface components {
             createdAt: string;
             /** Excerpt */
             excerpt: string;
+            /** Episodecount */
+            episodeCount: number;
+            /** Cost */
+            cost: number;
         };
         /** NovelChapterCreateRequest */
         NovelChapterCreateRequest: {
@@ -7847,7 +8297,8 @@ export interface components {
         };
         /**
          * NovelChapterModel
-         * @description 이 계정이 장 생성·재생성에 고를 수 있는 모델 하나와 그 모델의 장 가격. 요청의 `model` 과 `expectedCost` 로 싣는다.
+         * @description 이 계정이 장 생성·재생성에 고를 수 있는 모델 하나와 그 모델의 화 하나 가격. 생성 한 번은 여러 화를 쓸 수 있어
+         *     요청의 `expectedCost` 는 이 값 × 화 수다. 생성·재생성 두 칸은 같은 값이다(옛 화면이 읽는 칸 이름을 그대로 둔다).
          */
         NovelChapterModel: {
             /**
@@ -7861,6 +8312,15 @@ export interface components {
             chapterGenerate: number;
             /** Chapterregenerate */
             chapterRegenerate: number;
+        };
+        /** NovelChapterProposalRequest */
+        NovelChapterProposalRequest: {
+            /**
+             * Model
+             * @default gemini
+             * @enum {string}
+             */
+            model: "gemini" | "sonnet" | "opus";
         };
         /** NovelChapterProposalResponse */
         NovelChapterProposalResponse: {
@@ -7877,7 +8337,10 @@ export interface components {
             /** Chaptermodels */
             chapterModels?: components["schemas"]["NovelChapterModel"][];
         };
-        /** NovelChapterRegenerateRequest */
+        /**
+         * NovelChapterRegenerateRequest
+         * @description 화 하나를 골라 다시 만들기 — 그 화가 든 묶음 전체를 다시 만든다(묶음 다시 만들기 요청과 같다).
+         */
         NovelChapterRegenerateRequest: {
             /** Expectedcost */
             expectedCost: number;
@@ -7918,7 +8381,7 @@ export interface components {
         };
         /**
          * NovelChapterSummary
-         * @description 목차의 장 한 줄. 본문은 장 조회로 따로 읽는다.
+         * @description 목차의 화 한 줄. 본문은 화 조회로 따로 읽는다. `ordinal` 은 소설 전체의 화 번호다.
          */
         NovelChapterSummary: {
             /**
@@ -7952,6 +8415,121 @@ export interface components {
              * Format: date-time
              */
             createdAt: string;
+            /**
+             * Batchid
+             * Format: uuid
+             */
+            batchId: string;
+            /** Episodeindex */
+            episodeIndex: number;
+            /** Title */
+            title: string | null;
+            /** Titleedited */
+            titleEdited: boolean;
+            /** Summary */
+            summary: string | null;
+            /** Authornote */
+            authorNote: string;
+            /** Charcount */
+            charCount: number;
+            /** Finishedreading */
+            finishedReading: boolean;
+        };
+        /**
+         * NovelChapterUpdateRequest
+         * @description 보낸 칸만 바꾼다. 화 제목을 보내면 그 뒤 다시 만들기가 그 제목을 덮지 않는다(본문·요약·등장 인물은 새로 쓴다).
+         *     `title` 에 null 을 보내면 제목을 비우고, 다음 다시 만들기가 AI 제목을 다시 쓴다.
+         */
+        NovelChapterUpdateRequest: {
+            /** Title */
+            title?: string | null;
+            /** Authornote */
+            authorNote?: string | null;
+        };
+        /**
+         * NovelCharacterAddRequest
+         * @description 이 이름의 카드가 있게 한다. 같은 이름의 카드가 이미 있으면 아무것도 바꾸지 않는다(다시 보내도 같다). 다른 카드의
+         *     별칭이면 409 `NOVEL_CHARACTER_NAME_TAKEN` + `name`.
+         */
+        NovelCharacterAddRequest: {
+            /** Name */
+            name: string;
+        };
+        /** NovelCharacterListResponse */
+        NovelCharacterListResponse: {
+            /** Items */
+            items: components["schemas"]["NovelCharacterResponse"][];
+        };
+        /**
+         * NovelCharacterMergeRequest
+         * @description 경로의 카드를 이 카드로 합친다 — 경로 카드의 이름·별칭이 이 카드의 별칭이 되고, 메모는 이 카드 메모 뒤에
+         *     `[이름] 메모` 로 붙고, 등장 화가 옮겨진 뒤 경로 카드는 지워진다.
+         */
+        NovelCharacterMergeRequest: {
+            /**
+             * Intocharacterid
+             * Format: uuid
+             */
+            intoCharacterId: string;
+        };
+        /**
+         * NovelCharacterResponse
+         * @description 인물 카드 하나. 이름과 별칭을 모은 공간은 소설 안에서 겹치지 않는다 — 생성 출력의 등장 인물 이름이 이름이나 별칭에
+         *     맞는 카드에 붙는다. `chapter_ids` 는 이 인물이 나온 화(화 번호 순)다.
+         */
+        NovelCharacterResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Aliases */
+            aliases: string[];
+            /** Memo */
+            memo: string;
+            /** Chapterids */
+            chapterIds: string[];
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /**
+             * Updatedat
+             * Format: date-time
+             */
+            updatedAt: string;
+        };
+        /**
+         * NovelCharacterUpdateRequest
+         * @description 보낸 칸만 바꾼다. `aliases` 는 목록 통째다(앞뒤 공백·빈 값·중복·이름과 같은 값은 서버가 뺀다). 이름이나 별칭이 다른
+         *     카드의 이름·별칭과 겹치면 409 `NOVEL_CHARACTER_NAME_TAKEN` + `name`(겹친 값).
+         */
+        NovelCharacterUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Aliases */
+            aliases?: string[] | null;
+            /** Memo */
+            memo?: string | null;
+        };
+        /**
+         * NovelCover
+         * @description 표지. 사용자가 고른 생성 이미지(`generated`)가 있으면 그것이고, 없거나 그 이미지가 지워졌으면 원작 썸네일
+         *     (`work`)이다. 원작 썸네일도 없으면 `url` 이 null 이다.
+         */
+        NovelCover: {
+            /** Assetid */
+            assetId: string | null;
+            /** Url */
+            url: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "generated" | "work";
         };
         /** NovelDetailResponse */
         NovelDetailResponse: {
@@ -7980,8 +8558,19 @@ export interface components {
             protagonistName: string | null;
             /** Settingnotes */
             settingNotes: string;
+            /** Title */
+            title: string | null;
+            /** Titleedited */
+            titleEdited: boolean;
+            /** Synopsis */
+            synopsis: string;
+            cover: components["schemas"]["NovelCover"];
+            source: components["schemas"]["NovelSource"];
+            /** Batches */
+            batches: components["schemas"]["NovelBatchSummary"][];
             /** Chapters */
             chapters: components["schemas"]["NovelChapterSummary"][];
+            lastRead: components["schemas"]["NovelLastRead"] | null;
             activeJob: components["schemas"]["NovelActiveJob"] | null;
             /** Pendingaiedits */
             pendingAiEdits: components["schemas"]["NovelPendingAiEdit"][];
@@ -8016,7 +8605,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "chapter_generate" | "chapter_regenerate" | "ai_edit";
+            kind: "chapter_generate" | "chapter_regenerate" | "ai_edit" | "chain_generate";
             /**
              * Status
              * @enum {string}
@@ -8027,7 +8616,7 @@ export interface components {
             /** Refunded */
             refunded: boolean;
             /** Failurereason */
-            failureReason: ("llm_error" | "timeout" | "truncated" | "refused" | "blocked" | "empty" | "source_changed" | "expired" | "internal") | null;
+            failureReason: ("llm_error" | "timeout" | "truncated" | "refused" | "blocked" | "empty" | "source_changed" | "expired" | "internal" | "malformed" | "episode_count_mismatch") | null;
             /** Chapterid */
             chapterId: string | null;
             /** Revisionid */
@@ -8040,6 +8629,39 @@ export interface components {
             createdAt: string;
             /** Model */
             model?: string | null;
+            /** Refundedamount */
+            refundedAmount: number;
+            /** Batchid */
+            batchId: string | null;
+            /** Completedbatches */
+            completedBatches: number | null;
+            /** Plannedbatches */
+            plannedBatches: number | null;
+        };
+        /**
+         * NovelLastRead
+         * @description 이 소설에서 가장 최근에 읽은 자리. `paragraph_count` 는 그때의 문단 수라, 그 뒤 개정이 바뀌었으면 비율로 옮긴다.
+         */
+        NovelLastRead: {
+            /**
+             * Chapterid
+             * Format: uuid
+             */
+            chapterId: string;
+            /** Paragraphindex */
+            paragraphIndex: number;
+            /** Paragraphcount */
+            paragraphCount: number;
+            /**
+             * Revisionid
+             * Format: uuid
+             */
+            revisionId: string;
+            /**
+             * Updatedat
+             * Format: date-time
+             */
+            updatedAt: string;
         };
         /** NovelLimits */
         NovelLimits: {
@@ -8051,6 +8673,24 @@ export interface components {
             aiEditInstructionMaxLength: number;
             /** Protagonistnamemaxlength */
             protagonistNameMaxLength: number;
+            /** Titlemaxlength */
+            titleMaxLength: number;
+            /** Synopsismaxlength */
+            synopsisMaxLength: number;
+            /** Chaptertitlemaxlength */
+            chapterTitleMaxLength: number;
+            /** Authornotemaxlength */
+            authorNoteMaxLength: number;
+            /** Characternamemaxlength */
+            characterNameMaxLength: number;
+            /** Characteraliasesmaxcount */
+            characterAliasesMaxCount: number;
+            /** Charactermemomaxlength */
+            characterMemoMaxLength: number;
+            /** Snapshotnamemaxlength */
+            snapshotNameMaxLength: number;
+            /** Boardlayoutmaxbytes */
+            boardLayoutMaxBytes: number;
         };
         /** NovelListItem */
         NovelListItem: {
@@ -8072,6 +8712,9 @@ export interface components {
             characterName: string | null;
             /** Chaptercount */
             chapterCount: number;
+            /** Title */
+            title: string | null;
+            cover: components["schemas"]["NovelCover"];
             /**
              * Createdat
              * Format: date-time
@@ -8137,6 +8780,45 @@ export interface components {
         NovelProtagonistNameRequest: {
             /** Protagonistname */
             protagonistName: string;
+        };
+        /**
+         * NovelReadingPositionRequest
+         * @description 화를 읽던 자리. 같은 값을 다시 보내도 결과가 같다. `finished` 가 한 번 참이 되면 그 화는 그 뒤 앞부분으로 돌아가
+         *     저장해도 다 읽은 화로 남는다. `revision_id` 는 읽던 개정이다(그 뒤 개정이 바뀌면 문단 수 비율로 옮긴다).
+         */
+        NovelReadingPositionRequest: {
+            /** Paragraphindex */
+            paragraphIndex: number;
+            /** Paragraphcount */
+            paragraphCount: number;
+            /**
+             * Revisionid
+             * Format: uuid
+             */
+            revisionId: string;
+            /** Finished */
+            finished: boolean;
+        };
+        /**
+         * NovelRegenerateOption
+         * @description 묶음 하나를 이 모델로 다시 만들 때의 금액과 고를 수 있는지. 다시 만들기는 묶음의 화 수를 그대로 지키므로 금액은 그
+         *     화 수 × 이 모델의 화 단가이고, 그 화 수나 묶음의 턴 수가 이 모델의 상한을 넘으면 고를 수 없다(요청하면 409
+         *     `NOVEL_MODEL_INELIGIBLE`) — `ineligible_reason` 이 그 이유다(`too_many_episodes`·`too_many_turns`).
+         */
+        NovelRegenerateOption: {
+            /**
+             * Model
+             * @enum {string}
+             */
+            model: "gemini" | "sonnet" | "opus";
+            /** Name */
+            name: string;
+            /** Cost */
+            cost: number;
+            /** Eligible */
+            eligible: boolean;
+            /** Ineligiblereason */
+            ineligibleReason: ("too_many_episodes" | "too_many_turns") | null;
         };
         /**
          * NovelRevisionCreateRequest
@@ -8219,6 +8901,148 @@ export interface components {
         NovelSettingNotesRequest: {
             /** Settingnotes */
             settingNotes: string;
+        };
+        /**
+         * NovelSnapshotChapter
+         * @description 스냅샷의 화 하나. `deleted` 가 참이면 그 뒤 마지막 묶음 삭제로 화가 지워진 것이고, 나머지 칸은 null 이다(지운 화의
+         *     내용은 스냅샷에서도 함께 지워진다).
+         */
+        NovelSnapshotChapter: {
+            /**
+             * Chapterid
+             * Format: uuid
+             */
+            chapterId: string;
+            /** Deleted */
+            deleted: boolean;
+            /** Revisionid */
+            revisionId: string | null;
+            /** Title */
+            title: string | null;
+            /** Summary */
+            summary: string | null;
+            /** Authornote */
+            authorNote: string | null;
+        };
+        /** NovelSnapshotCharacter */
+        NovelSnapshotCharacter: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Aliases */
+            aliases: string[];
+            /** Memo */
+            memo: string;
+        };
+        /** NovelSnapshotCreateRequest */
+        NovelSnapshotCreateRequest: {
+            /** Name */
+            name: string;
+        };
+        /** NovelSnapshotDetail */
+        NovelSnapshotDetail: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "manual" | "auto_before_restore";
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Title */
+            title: string | null;
+            /** Titleedited */
+            titleEdited: boolean;
+            /** Synopsis */
+            synopsis: string;
+            /** Settingnotes */
+            settingNotes: string;
+            /** Characters */
+            characters: components["schemas"]["NovelSnapshotCharacter"][];
+            /** Chapters */
+            chapters: components["schemas"]["NovelSnapshotChapter"][];
+        };
+        /** NovelSnapshotListResponse */
+        NovelSnapshotListResponse: {
+            /** Items */
+            items: components["schemas"]["NovelSnapshotSummary"][];
+            /** Limit */
+            limit: number;
+        };
+        /**
+         * NovelSnapshotRestoreResponse
+         * @description 복원 결과. 스냅샷 뒤에 생긴 화는 그대로 두고, 스냅샷에 있던 화는 그때의 본문을 새 개정으로 쌓는다. 화나 그 개정이
+         *     지워져 되돌릴 수 없던 화는 `skipped_chapters` 에 있다. 복원 직전 상태는 `auto_snapshot_id` 스냅샷으로 남는다.
+         */
+        NovelSnapshotRestoreResponse: {
+            novel: components["schemas"]["NovelDetailResponse"];
+            /** Skippedchapters */
+            skippedChapters: string[];
+            /**
+             * Autosnapshotid
+             * Format: uuid
+             */
+            autoSnapshotId: string;
+        };
+        /**
+         * NovelSnapshotSummary
+         * @description `manual` 은 사용자가 이름 붙여 저장한 것, `auto_before_restore` 는 복원 직전 상태를 서버가 떠 둔 것이다.
+         */
+        NovelSnapshotSummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "manual" | "auto_before_restore";
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /**
+         * NovelSource
+         * @description 원작 표기. 작품명·캐릭터명은 상세의 `content_title`·`character_name` 이다. `linkable` 은 지금 이 사용자가 원작
+         *     상세를 볼 수 있는가(이용 제한·삭제·남의 비공개 작품이면 거짓 — 화면은 글자만 보인다).
+         */
+        NovelSource: {
+            /** Thumbnailurl */
+            thumbnailUrl: string | null;
+            /** Linkable */
+            linkable: boolean;
+        };
+        /**
+         * NovelUpdateRequest
+         * @description 보낸 칸만 바꾼다. 제목을 바꾸면 그 뒤로 AI 가 제목을 덮지 않는다. `coverAssetId` 는 null 을 보내면 원작 썸네일로
+         *     되돌리고, 값을 보내면 내 생성 이미지 중 준비가 끝난 것이어야 한다(아니면 422 `NOVEL_COVER_INVALID`).
+         */
+        NovelUpdateRequest: {
+            /** Title */
+            title?: string | null;
+            /** Synopsis */
+            synopsis?: string | null;
+            /** Coverassetid */
+            coverAssetId?: string | null;
         };
         /** PasswordResetConfirmRequest */
         PasswordResetConfirmRequest: {
@@ -10252,7 +11076,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                lane: "story" | "character" | "publish_filter";
+                lane: "story" | "character" | "publish_filter" | "novel";
             };
             cookie?: never;
         };
@@ -10286,7 +11110,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                lane: "story" | "character" | "publish_filter";
+                lane: "story" | "character" | "publish_filter" | "novel";
             };
             cookie?: never;
         };
@@ -10324,7 +11148,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                lane: "story" | "character" | "publish_filter";
+                lane: "story" | "character" | "publish_filter" | "novel";
             };
             cookie?: never;
         };
@@ -10358,7 +11182,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                lane: "story" | "character" | "publish_filter";
+                lane: "story" | "character" | "publish_filter" | "novel";
             };
             cookie?: never;
         };
@@ -12135,6 +12959,41 @@ export interface operations {
             };
         };
     };
+    update_novel_novels__novel_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_novel_notes_novels__novel_id__notes_put: {
         parameters: {
             query?: never;
@@ -12205,6 +13064,104 @@ export interface operations {
             };
         };
     };
+    get_novel_chapter_novels__novel_id__chapters__chapter_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chapter_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelChapterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_last_novel_chapter_novels__novel_id__chapters__chapter_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chapter_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_novel_chapter_novels__novel_id__chapters__chapter_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chapter_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelChapterUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_novel_job_novels__novel_id__jobs__job_id__get: {
         parameters: {
             query?: never;
@@ -12246,7 +13203,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["NovelChapterProposalRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -12280,6 +13241,108 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["NovelChapterCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    estimate_novel_chain_novels__novel_id__chain_estimate_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelChainEstimateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_novel_chain_novels__novel_id__chain_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelChainCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    regenerate_novel_batch_novels__novel_id__batches__batch_id__regenerate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelBatchRegenerateRequest"];
             };
         };
         responses: {
@@ -12339,44 +13402,12 @@ export interface operations {
             };
         };
     };
-    get_novel_chapter_novels__novel_id__chapters__chapter_id__get: {
+    delete_last_novel_batch_novels__novel_id__batches__batch_id__delete: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                chapter_id: string;
-                novel_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NovelChapterResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_last_novel_chapter_novels__novel_id__chapters__chapter_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                chapter_id: string;
+                batch_id: string;
                 novel_id: string;
             };
             cookie?: never;
@@ -12625,6 +13656,402 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_novel_characters_novels__novel_id__characters_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelCharacterListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_novel_character_novels__novel_id__characters_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelCharacterAddRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelCharacterListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_novel_character_novels__novel_id__characters__character_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                character_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelCharacterUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelCharacterListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    merge_novel_character_novels__novel_id__characters__character_id__merge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                character_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelCharacterMergeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelCharacterListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_novel_board_layout_novels__novel_id__board_layout_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelBoardLayoutResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_novel_board_layout_novels__novel_id__board_layout_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelBoardLayout"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_novel_reading_position_novels__novel_id__chapters__chapter_id__reading_position_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chapter_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelReadingPositionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_novel_snapshots_novels__novel_id__snapshots_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelSnapshotListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_novel_snapshot_novels__novel_id__snapshots_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelSnapshotCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelSnapshotSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_novel_snapshot_novels__novel_id__snapshots__snapshot_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                snapshot_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelSnapshotDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_novel_snapshot_novels__novel_id__snapshots__snapshot_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                snapshot_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_novel_snapshot_novels__novel_id__snapshots__snapshot_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                snapshot_id: string;
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelSnapshotRestoreResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

@@ -3,7 +3,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { cloverKeys } from "@/entities/clover";
 import { novelKeys, type NovelJobResponse } from "@/entities/novel";
 
-/** 장 작업이 202 로 시작된 뒤 언제나 일어나야 할 캐시 정리. 결과와 무관하게 항상 필요한 일이라 호출부가 아니라
+/** 화 작업이 202 로 시작된 뒤 언제나 일어나야 할 캐시 정리. 결과와 무관하게 항상 필요한 일이라 호출부가 아니라
  * 뮤테이션 정의에 둔다.
  *
  * - 202 응답으로 작업 캐시를 미리 채운다 — 폴링 첫 응답 전에도 "진행 중"을 그릴 수 있다.

@@ -1,5 +1,6 @@
 """소설화 프롬프트 빌더 세 개 — 지시문(system_instruction)과 본문을 나눠 렌더하고, 빈 프롬프트로 과금 호출이 나가지
-않게 막는 분기. 섹션은 세션 없이 생성자로만 채운다(DB 를 타지 않는 순수 함수)."""
+않게 막는 분기. 소설 문안(소설 레인 세트)과 라벨·등급 규칙(채팅 세트)을 따로 받는다. 섹션은 세션 없이 생성자로만
+채운다(DB 를 타지 않는 순수 함수)."""
 
 from collections.abc import Callable
 from typing import Any
@@ -7,6 +8,7 @@ from typing import Any
 import pytest
 
 from api.chat.prompt_builder import PromptRenderError
+from api.core.config import settings
 from api.db.models.prompt import PromptSection, PromptSet
 from api.novelize.prompts import (
     NovelizePrompt,
@@ -15,7 +17,7 @@ from api.novelize.prompts import (
     build_novelize_revise_prompt,
 )
 
-_PROMPT_SET = PromptSet(
+_CHAT_SET = PromptSet(
     user_label="사용자", story_assistant_label="진행자", story_example_label="서술자", character_assistant_label="캐릭터"
 )
 
@@ -41,8 +43,9 @@ _CHAPTER_ROWS = [
     _section("novelize_chapter", "work_setting", "설정:\n{work_setting}", 1),
     _section("novelize_chapter", "user_name", "이름: {user_name}", 2),
     _section("novelize_chapter", "setting_notes", "노트:\n{setting_notes}", 3, conditional=True),
-    _section("novelize_chapter", "previous_excerpt", "앞 장:\n{previous_excerpt}", 4, conditional=True),
-    _section("novelize_chapter", "turn_context", "'{user_label}'/'{assistant_label}'\n{turn_lines}", 5),
+    _section("novelize_chapter", "previous_excerpt", "앞 화:\n{previous_excerpt}", 4, conditional=True),
+    _section("novelize_chapter", "episode_plan", "{episode_count}화 {episode_chars}자\n{novel_title_rule}", 5),
+    _section("novelize_chapter", "turn_context", "'{user_label}'/'{assistant_label}'\n{turn_lines}", 6),
 ]
 _REVISE_ROWS = [
     _section("novelize_revise", "instruction", "수정 지시", 0),
@@ -52,13 +55,14 @@ _REVISE_ROWS = [
     _section("novelize_revise", "target_range", "{first_paragraph}~{last_paragraph}", 4),
     _section("novelize_revise", "user_request", "요청:\n{user_request}", 5),
 ]
-_ALL_ROWS = [*_RULE_ROWS, *_BOUNDARY_ROWS, *_CHAPTER_ROWS, *_REVISE_ROWS]
+# 소설 레인 세트 — 등급 규칙 행이 없다(채팅 세트 `_RULE_ROWS` 에서 읽는다).
+_ALL_ROWS = [*_BOUNDARY_ROWS, *_CHAPTER_ROWS, *_REVISE_ROWS]
 _TURN_LINES = "[턴 1] 캐릭터: 왔어?\n[턴 2] 사용자: 응.\n[턴 2] 캐릭터: 앉아."
 
 
 def _boundary(sections: list[PromptSection] = _ALL_ROWS, **overrides: Any) -> NovelizePrompt:
     kwargs: dict[str, Any] = {
-        "prompt_set": _PROMPT_SET,
+        "chat_set": _CHAT_SET,
         "sections": sections,
         "is_story_chat": False,
         "max_turns": 12,
@@ -71,7 +75,8 @@ def _boundary(sections: list[PromptSection] = _ALL_ROWS, **overrides: Any) -> No
 
 def _chapter(sections: list[PromptSection] = _ALL_ROWS, **overrides: Any) -> NovelizePrompt:
     kwargs: dict[str, Any] = {
-        "prompt_set": _PROMPT_SET,
+        "chat_set": _CHAT_SET,
+        "chat_sections": _RULE_ROWS,
         "sections": sections,
         "is_story_chat": True,
         "work_setting": "작품 설정 원문",
@@ -86,6 +91,7 @@ def _chapter(sections: list[PromptSection] = _ALL_ROWS, **overrides: Any) -> Nov
 
 def _revise(sections: list[PromptSection] = _ALL_ROWS, **overrides: Any) -> NovelizePrompt:
     kwargs: dict[str, Any] = {
+        "chat_sections": _RULE_ROWS,
         "sections": sections,
         "is_story_chat": False,
         "work_setting": "작품 설정 원문",
@@ -112,16 +118,34 @@ def test_boundary_sends_only_the_instruction_as_system_and_labels_follow_the_roo
     assert story.prompt == f"범위 12\n\n'사용자'/'진행자'\n{_TURN_LINES}"
 
 
-def test_chapter_appends_the_lane_rating_rule_to_the_instruction_and_drops_empty_optional_sections() -> None:
-    bare = _chapter()
+def test_chapter_appends_the_chat_sets_rating_rule_to_the_instruction_and_drops_empty_optional_sections() -> None:
+    bare = _chapter(episode_count=3, episode_chars=5000, novel_title_rule="제목도 쓴다.")
     assert bare.system_instruction == "장 지시\n\n[수위]\n등급 규칙"
-    assert bare.prompt == f"설정:\n작품 설정 원문\n\n이름: 서진\n\n'사용자'/'진행자'\n{_TURN_LINES}"
-
-    full = _chapter(setting_notes="서진은 스물셋", previous_excerpt="앞 장 마지막 문단", is_story_chat=False)
-    assert full.prompt == (
-        "설정:\n작품 설정 원문\n\n이름: 서진\n\n노트:\n서진은 스물셋\n\n앞 장:\n앞 장 마지막 문단\n\n"
-        f"'사용자'/'캐릭터'\n{_TURN_LINES}"
+    assert bare.prompt == (
+        f"설정:\n작품 설정 원문\n\n이름: 서진\n\n3화 5000자\n제목도 쓴다.\n\n'사용자'/'진행자'\n{_TURN_LINES}"
     )
+
+    full = _chapter(
+        setting_notes="서진은 스물셋",
+        previous_excerpt="앞 화 마지막 문단",
+        novel_title_rule="제목은 쓰지 않는다.",
+        is_story_chat=False,
+    )
+    assert full.prompt == (
+        "설정:\n작품 설정 원문\n\n이름: 서진\n\n노트:\n서진은 스물셋\n\n앞 화:\n앞 화 마지막 문단\n\n"
+        f"1화 {settings.novelize_episode_target_chars}자\n제목은 쓰지 않는다.\n\n'사용자'/'캐릭터'\n{_TURN_LINES}"
+    )
+
+
+def test_the_rating_rule_and_labels_come_from_the_chat_set_not_the_novel_set() -> None:
+    """소설 레인 세트에 등급 규칙 행이 끼어 있어도 채팅 세트의 것을 붙인다 — 등급 규칙의 소스는 채팅 세트 하나다."""
+    stray_rule = _section("system", "rule_rating", "소설 세트에 끼어든 수위", 3)
+    chat_set = PromptSet(
+        user_label="나", story_assistant_label="화자", story_example_label="예", character_assistant_label="그"
+    )
+    built = _chapter([stray_rule, *_CHAPTER_ROWS], chat_set=chat_set)
+    assert built.system_instruction == "장 지시\n\n[수위]\n등급 규칙"
+    assert "'나'/'화자'" in built.prompt
 
 
 def test_revise_numbers_paragraphs_from_one_and_shifts_the_zero_based_range() -> None:
@@ -140,9 +164,8 @@ def test_rating_rule_is_picked_by_the_rooms_scope() -> None:
         _section("system", "rule_rating", "스토리 수위", 3, scope="story"),
         _section("system", "rule_rating", "캐릭터 수위", 3, scope="character"),
     ]
-    sections = [*split_rule, *_CHAPTER_ROWS]
-    assert _chapter(sections, is_story_chat=True).system_instruction.endswith("스토리 수위")
-    assert _chapter(sections, is_story_chat=False).system_instruction.endswith("캐릭터 수위")
+    assert _chapter(chat_sections=split_rule, is_story_chat=True).system_instruction.endswith("스토리 수위")
+    assert _chapter(chat_sections=split_rule, is_story_chat=False).system_instruction.endswith("캐릭터 수위")
 
 
 # ---- 빈 프롬프트로 과금 호출을 내지 않는다 ---------------------------------------------------------
@@ -153,7 +176,7 @@ def test_rating_rule_is_picked_by_the_rooms_scope() -> None:
     [pytest.param(_boundary, id="boundary"), pytest.param(_chapter, id="chapter"), pytest.param(_revise, id="revise")],
 )
 def test_a_set_without_novelize_rows_raises_instead_of_rendering_empty(build: Callable[..., NovelizePrompt]) -> None:
-    """배포 직후 캐시에 남은 옛 세트에는 소설화 채널 행이 없다 — 렌더러는 빈 문자열을 낸다."""
+    """소설화 채널 행이 없는 세트(다른 레인 세트를 잘못 넘긴 경우)로는 렌더러가 빈 문자열을 낸다."""
     with pytest.raises(PromptRenderError, match="novelize_"):
         build(_RULE_ROWS)
 
@@ -163,6 +186,7 @@ def test_a_set_without_novelize_rows_raises_instead_of_rendering_empty(build: Ca
     [
         pytest.param(_boundary, _BOUNDARY_ROWS, "turn_context", id="boundary-turn_context"),
         pytest.param(_chapter, _CHAPTER_ROWS, "instruction", id="chapter-instruction"),
+        pytest.param(_chapter, _CHAPTER_ROWS, "episode_plan", id="chapter-episode_plan"),
         pytest.param(_revise, _REVISE_ROWS, "user_request", id="revise-user_request"),
     ],
 )
@@ -170,20 +194,20 @@ def test_a_missing_required_slot_raises(
     build: Callable[..., NovelizePrompt], rows: list[PromptSection], slot: str
 ) -> None:
     with pytest.raises(PromptRenderError, match=slot):
-        build([*_RULE_ROWS, *(s for s in rows if s.slot != slot)])
+        build([s for s in rows if s.slot != slot])
 
 
 @pytest.mark.parametrize(
     "build", [pytest.param(_chapter, id="chapter"), pytest.param(_revise, id="revise")]
 )
 def test_chapter_and_revise_raise_without_a_rating_rule(build: Callable[..., NovelizePrompt]) -> None:
-    without_rule = [s for s in _ALL_ROWS if s.slot != "rule_rating"]
+    without_rule = [s for s in _RULE_ROWS if s.slot != "rule_rating"]
     with pytest.raises(PromptRenderError, match="rule_rating"):
-        build(without_rule)
+        build(chat_sections=without_rule)
 
 
 def test_boundary_does_not_need_a_rating_rule() -> None:
-    assert _boundary([s for s in _ALL_ROWS if s.slot != "rule_rating"]).system_instruction == "경계 지시"
+    assert _boundary().system_instruction == "경계 지시"
 
 
 @pytest.mark.parametrize(

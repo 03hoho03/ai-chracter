@@ -108,7 +108,7 @@ function NovelListBody({ query }: { query: ReturnType<typeof useNovelListQuery> 
 function NovelListRow({ novel, onDeleted }: { novel: NovelListItem; onDeleted: () => void }) {
   const meta = [
     CONTENT_TYPE_LABEL[novel.contentType],
-    novel.chapterCount > 0 ? `${novel.chapterCount}장` : "아직 장이 없어요",
+    novel.chapterCount > 0 ? `${novel.chapterCount}화` : "아직 화가 없어요",
     formatDate(novel.updatedAt),
   ];
 

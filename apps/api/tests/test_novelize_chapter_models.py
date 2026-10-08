@@ -20,6 +20,7 @@ from factories import (
     _add_chapter,
     _allow_chat_premium,
     _allow_novel_premium,
+    _batch_output,
     _clear_llm_override,
     _novel_ledger,
     _novel_setup,
@@ -31,9 +32,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.core import clover
 from api.core.config import settings
+from api.chat.prompt_builder import PromptLane, load_active_prompt_set
 from api.db.models import Novel, NovelJob
+from api.db.models.prompt import PromptSection, PromptSet
 from api.llm import bedrock as bedrock_module
 from api.llm.bedrock import BedrockLLMClient
+from api.llm.chat_models import ChatModelId
 from api.llm.client import LLMCallContext, LLMClient, T
 from api.llm.routing import RoutingLLMClient
 from api.novelize import router as novelize_router
@@ -44,10 +48,12 @@ _BODY = "비가 내리는 저녁이었다. 서진은 가방을 내려놓고 창�
 
 
 class _ModelLLM(LLMClient):
-    """장 생성은 `_BODY` 를 흘리고 호출(프롬프트·지시문·사용량 귀속)을 적는다. 경계 제안은 마지막 후보 턴을 고른다."""
+    """장 생성은 `_BODY` 한 화짜리 출력을 흘리고 호출(프롬프트·지시문·사용량 귀속)을 적는다. 경계 제안은 마지막 후보
+    턴을 고른다."""
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, str | None, LLMCallContext]] = []
+        self.boundary_calls = 0
 
     async def generate(
         self,
@@ -58,7 +64,7 @@ class _ModelLLM(LLMClient):
         usage: LLMCallContext,
     ) -> AsyncIterator[str]:
         self.calls.append((prompt, system_instruction, usage))
-        yield _BODY
+        yield _batch_output(_BODY)
 
     async def generate_structured(
         self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
@@ -69,6 +75,7 @@ class _ModelLLM(LLMClient):
         self, prompt: str, response_schema: type[T], *, system_instruction: str, usage: LLMCallContext
     ) -> T:
         assert response_schema is NovelizeBoundaryResult
+        self.boundary_calls += 1
         return response_schema.model_validate({"end_turn": 1, "reason": "끝"})
 
 
@@ -149,15 +156,15 @@ async def test_a_premium_chapter_is_charged_at_its_model_price_and_the_job_recor
 ) -> None:
     room, novel_id, owner_id = await _novel(db_client, db_session, monkeypatch, premium=True)
 
-    resp = await _create(db_client, novel_id, room, cost=160, model="sonnet")
+    resp = await _create(db_client, novel_id, room, cost=105, model="sonnet")
 
     assert resp.status_code == 202, resp.text
     body = resp.json()
-    assert (body["model"], body["chargedAmount"]) == ("sonnet", 160)
+    assert (body["model"], body["chargedAmount"]) == ("sonnet", 105)
     (job,) = await _jobs(db_session, novel_id)
-    assert (job.model, job.charged_amount, job.status) == ("sonnet", 160, "queued")
+    assert (job.model, job.charged_amount, job.status) == ("sonnet", 105, "queued")
     assert enqueued == [job.id]
-    assert await _novel_ledger(db_session, owner_id) == [("novelize_spend", -160)]
+    assert await _novel_ledger(db_session, owner_id) == [("novelize_spend", -105)]
 
 
 async def test_a_premium_regenerate_is_charged_at_its_model_price(
@@ -173,16 +180,16 @@ async def test_a_premium_regenerate_is_charged_at_its_model_price(
     messages = await _room_messages(db_session, room.room_id)
     chapter = await _add_chapter(db_session, novel_id, room, messages[0], room.turns[1][1])
 
-    resp = await _regenerate(db_client, novel_id, chapter.id, cost=260, model="opus")
+    resp = await _regenerate(db_client, novel_id, chapter.id, cost=170, model="opus")
 
     assert resp.status_code == 202, resp.text
-    assert (resp.json()["model"], resp.json()["chargedAmount"]) == ("opus", 260)
+    assert (resp.json()["model"], resp.json()["chargedAmount"]) == ("opus", 170)
     (job,) = await _jobs(db_session, novel_id)
-    assert (job.kind, job.model, job.charged_amount) == ("chapter_regenerate", "opus", 260)
-    assert await _novel_ledger(db_session, owner_id) == [("novelize_spend", -260)]
+    assert (job.kind, job.model, job.charged_amount) == ("chapter_regenerate", "opus", 170)
+    assert await _novel_ledger(db_session, owner_id) == [("novelize_spend", -170)]
 
 
-async def test_a_request_without_a_model_is_a_gemini_chapter_at_the_old_price_and_needs_no_premium_access(
+async def test_a_request_without_a_model_is_a_gemini_chapter_at_the_gemini_price_and_needs_no_premium_access(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
@@ -192,12 +199,11 @@ async def test_a_request_without_a_model_is_a_gemini_chapter_at_the_old_price_an
     """옛 화면은 `model` 을 보내지 않는다 — 배포가 어긋나 있는 동안에도 지금처럼 Gemini 장이 돼야 한다. Gemini 를 직접
     고르는 것도 상위 모델 허용 없이 된다."""
     room, novel_id, owner_id = await _novel(db_client, db_session, monkeypatch, premium=False)
-    monkeypatch.setattr(clover, "NOVELIZE_CHAPTER_GENERATE_COST", 31)
-    monkeypatch.setattr(clover, "NOVELIZE_CHAPTER_REGENERATE_COST", 32)
+    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_COST", 31)
     messages = await _room_messages(db_session, room.room_id)
     chapter = await _add_chapter(db_session, novel_id, room, messages[0], room.turns[1][1])
 
-    regenerated = await _regenerate(db_client, novel_id, chapter.id, cost=32, model="gemini")
+    regenerated = await _regenerate(db_client, novel_id, chapter.id, cost=31, model="gemini")
     await db_session.execute(sa.update(NovelJob).values(status="succeeded"))
     await db_session.commit()
     created = await db_client.post(
@@ -208,9 +214,9 @@ async def test_a_request_without_a_model_is_a_gemini_chapter_at_the_old_price_an
     assert created.status_code == 202, created.text
     assert (regenerated.json()["model"], created.json()["model"]) == ("gemini", "gemini")
     jobs = {job.kind: job for job in await _jobs(db_session, novel_id)}
-    assert (jobs["chapter_regenerate"].model, jobs["chapter_regenerate"].charged_amount) == ("gemini", 32)
+    assert (jobs["chapter_regenerate"].model, jobs["chapter_regenerate"].charged_amount) == ("gemini", 31)
     assert (jobs["chapter_generate"].model, jobs["chapter_generate"].charged_amount) == ("gemini", 31)
-    assert await _novel_ledger(db_session, owner_id) == [("novelize_spend", -32), ("novelize_spend", -31)]
+    assert await _novel_ledger(db_session, owner_id) == [("novelize_spend", -31), ("novelize_spend", -31)]
 
 
 @pytest.mark.parametrize(
@@ -247,9 +253,9 @@ async def test_a_premium_model_without_novel_premium_access_is_403_before_chargi
 
     created = await db_client.post(
         f"/novels/{novel_id}/chapters",
-        json={"endMessageId": str(room.turns[3][1].id), "expectedCost": 160, "model": "sonnet"},
+        json={"endMessageId": str(room.turns[3][1].id), "expectedCost": 105, "model": "sonnet"},
     )
-    regenerated = await _regenerate(db_client, novel_id, chapter.id, cost=260, model="opus")
+    regenerated = await _regenerate(db_client, novel_id, chapter.id, cost=170, model="opus")
 
     for resp in (created, regenerated):
         assert resp.status_code == 403, resp.text
@@ -259,33 +265,44 @@ async def test_a_premium_model_without_novel_premium_access_is_403_before_chargi
     assert enqueued == []
 
 
+@pytest.mark.parametrize(
+    ("model", "current"), [pytest.param("opus", 170, id="opus"), pytest.param(None, 40, id="gemini-by-default")]
+)
 async def test_the_price_check_uses_the_chosen_models_price(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
     llm: _ModelLLM,
     enqueued: list[uuid.UUID],
+    model: str | None,
+    current: int,
 ) -> None:
     """Gemini 가격으로 확인한 화면이 상위 모델을 보내면(또는 그 반대) 확인한 금액과 차감액이 다르다 — 409 가 지금 그
-    모델의 가격을 알려 준다."""
+    모델의 가격을 알려 준다.
+
+    다시 만들기는 금액이 묶음의 화 수로 정해져 사용자 잠금 뒤에 판정하고, 그 거절은 요청 세션을 롤백한다. 이 시험의
+    요청 세션은 테스트 트랜잭션 자체라 그 롤백이 셋업까지 지우므로, 다시 만들기 요청을 맨 끝에 한 번만 보낸다(원장이
+    비는 것은 과금 시험이 따로 본다)."""
     room, novel_id, owner_id = await _novel(db_client, db_session, monkeypatch, premium=True)
     messages = await _room_messages(db_session, room.room_id)
-    chapter = await _add_chapter(db_session, novel_id, room, messages[0], room.turns[1][1])
+    chapter_id = (await _add_chapter(db_session, novel_id, room, messages[0], room.turns[1][1])).id
 
     created = await db_client.post(
         f"/novels/{novel_id}/chapters",
         json={"endMessageId": str(room.turns[3][1].id), "expectedCost": 40, "model": "sonnet"},
     )
-    regenerated = await _regenerate(db_client, novel_id, chapter.id, cost=160, model="opus")
-    gemini = await _regenerate(db_client, novel_id, chapter.id, cost=160, model=None)
-
     assert created.status_code == 409 and created.json()["detail"] == {
         "code": "NOVELIZE_PRICE_CHANGED",
-        "currentCost": 160,
+        "currentCost": 105,
     }
-    assert regenerated.status_code == 409 and regenerated.json()["detail"]["currentCost"] == 260
-    assert gemini.status_code == 409 and gemini.json()["detail"]["currentCost"] == 40
     assert await _novel_ledger(db_session, owner_id) == []
+
+    regenerated = await _regenerate(db_client, novel_id, chapter_id, cost=105, model=model)
+
+    assert regenerated.status_code == 409 and regenerated.json()["detail"] == {
+        "code": "NOVELIZE_PRICE_CHANGED",
+        "currentCost": current,
+    }
 
 
 async def test_a_model_outside_the_registry_is_422(
@@ -297,7 +314,7 @@ async def test_a_model_outside_the_registry_is_422(
 ) -> None:
     room, novel_id, _ = await _novel(db_client, db_session, monkeypatch, premium=True)
 
-    resp = await _create(db_client, novel_id, room, cost=160, model="gpt")
+    resp = await _create(db_client, novel_id, room, cost=105, model="gpt")
 
     assert resp.status_code == 422, resp.text
     assert await _jobs(db_session, novel_id) == []
@@ -305,25 +322,25 @@ async def test_a_model_outside_the_registry_is_422(
 
 # ── 금액·직전 모델 표시 ─────────────────────────────────────────────────────
 def _expected_models(*, premium: bool) -> list[dict[str, Any]]:
-    gemini = {"id": "gemini", "name": "Gemini", "chapterGenerate": 31, "chapterRegenerate": 32}
+    """두 금액 칸은 이제 화 하나의 값이고 생성·다시 만들기가 같다."""
+    gemini = {"id": "gemini", "name": "Gemini", "chapterGenerate": 31, "chapterRegenerate": 31}
     if not premium:
         return [gemini]
     return [
         gemini,
-        {"id": "sonnet", "name": "Claude Sonnet 4.6", "chapterGenerate": 161, "chapterRegenerate": 161},
-        {"id": "opus", "name": "Claude Opus 4.6", "chapterGenerate": 262, "chapterRegenerate": 262},
+        {"id": "sonnet", "name": "Claude Sonnet 4.6", "chapterGenerate": 106, "chapterRegenerate": 106},
+        {"id": "opus", "name": "Claude Opus 4.6", "chapterGenerate": 171, "chapterRegenerate": 171},
     ]
 
 
 def _distinct_prices(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(clover, "NOVELIZE_CHAPTER_GENERATE_COST", 31)
-    monkeypatch.setattr(clover, "NOVELIZE_CHAPTER_REGENERATE_COST", 32)
-    monkeypatch.setattr(clover, "NOVELIZE_CHAPTER_COST_SONNET", 161)
-    monkeypatch.setattr(clover, "NOVELIZE_CHAPTER_COST_OPUS", 262)
+    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_COST", 31)
+    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_COST_SONNET", 106)
+    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_COST_OPUS", 171)
 
 
 @pytest.mark.parametrize("premium", [pytest.param(True, id="premium"), pytest.param(False, id="gemini-only")])
-async def test_detail_and_proposal_list_chapter_prices_per_model_only_with_novel_premium_access(
+async def test_detail_and_proposal_list_episode_prices_per_model_only_with_novel_premium_access(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
@@ -427,7 +444,7 @@ async def test_the_runner_generates_with_the_charged_model_even_after_access_is_
     """값을 낸 뒤 허용이 회수돼도 그 값의 모델로 쓴다 — 실행 시점에 다시 판정해 Gemini 로 바꾸면 Opus 값을 내고 Gemini
     글을 받는다."""
     room, novel_id, owner_id = await _novel(db_client, db_session, monkeypatch, premium=True)
-    resp = await _create(db_client, novel_id, room, cost=260, model="opus")
+    resp = await _create(db_client, novel_id, room, cost=170, model="opus")
     assert resp.status_code == 202, resp.text
     monkeypatch.setattr(settings, "novelize_premium_models_enabled", False)
     monkeypatch.setattr(settings, "novelize_premium_model_allowlist", [])
@@ -438,7 +455,7 @@ async def test_the_runner_generates_with_the_charged_model_even_after_access_is_
     assert job.status == "succeeded"
     ((_, _, usage),) = llm.calls
     assert (usage.call_site, usage.model) == ("novelize_chapter", "opus")
-    assert await _novel_ledger(db_session, owner_id) == [("novelize_spend", -260)]
+    assert await _novel_ledger(db_session, owner_id) == [("novelize_spend", -170)]
 
 
 async def test_an_old_chapter_job_without_a_model_runs_on_gemini(
@@ -454,27 +471,77 @@ async def test_an_old_chapter_job_without_a_model_runs_on_gemini(
     assert usage.model == "gemini"
 
 
-async def test_a_premium_chapter_uses_the_gemini_prompt_set(
+async def _set_instruction(
+    db: AsyncSession, *, lane: PromptLane, model: ChatModelId, channel: str, slot: str, body: str
+) -> None:
+    """(lane, model) 활성 세트의 한 행 문안을 바꾼다 — 어느 세트에서 읽었는지 글자로 가르려는 것이다."""
+    _, sections = await load_active_prompt_set(db, lane=lane, model=model)
+    row = next(s for s in sections if s.channel == channel and s.slot == slot)
+    row.body = body
+    await db.commit()
+
+
+async def test_a_premium_chapter_uses_its_models_novel_chain_and_the_chat_gemini_rating_rule(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
     llm: _ModelLLM,
     enqueued: list[uuid.UUID],
 ) -> None:
-    """Claude 체인에는 소설 장 채널이 없다 — 상위 모델 장도 지시문·장 지시·등급 규칙을 Gemini 세트에서 읽고, 바뀌는
-    것은 생성 모델뿐이다. 같은 구간을 Gemini 로 만든 뒤 Sonnet 으로 재생성해 두 입력이 같은지 본다."""
+    """화 문안은 작업 모델의 소설 체인에서 읽는다 — Sonnet 다시 만들기는 (novel, sonnet) 세트의 지시문, Gemini 생성은
+    (novel, gemini) 세트의 지시문이다. 등급 규칙은 모델과 무관하게 원작 종류 채팅 레인의 Gemini 세트에서 붙인다(Claude
+    채팅 세트의 등급 규칙이 따로 손질돼 있어도). 세 세트의 문안을 서로 다른 글자로 바꿔 어느 세트를 읽었는지 가른다."""
     room, novel_id, _ = await _novel(db_client, db_session, monkeypatch, premium=True)
+    content = (await db_session.get_one(Novel, novel_id)).content_type
+    await _set_instruction(
+        db_session, lane="novel", model="gemini", channel="novelize_chapter", slot="instruction", body="제미나이 화 지시"
+    )
+    await _set_instruction(
+        db_session, lane="novel", model="sonnet", channel="novelize_chapter", slot="instruction", body="소네트 화 지시"
+    )
+    await _set_instruction(
+        db_session, lane=content, model="gemini", channel="system", slot="rule_rating", body="[수위] 채팅 제미나이"
+    )
+    await _set_instruction(
+        db_session, lane=content, model="sonnet", channel="system", slot="rule_rating", body="[수위] 채팅 소네트"
+    )
+
     first = await _create(db_client, novel_id, room, cost=40, model="gemini")
     await runner.run_job(_factory(db_session), llm, uuid.UUID(first.json()["id"]))
     chapter_id = uuid.UUID((await db_client.get(f"/novels/{novel_id}")).json()["chapters"][0]["id"])
-
-    again = await _regenerate(db_client, novel_id, chapter_id, cost=160, model="sonnet")
+    again = await _regenerate(db_client, novel_id, chapter_id, cost=105, model="sonnet")
     await runner.run_job(_factory(db_session), llm, uuid.UUID(again.json()["id"]))
 
-    (gemini_prompt, gemini_system, gemini_usage), (sonnet_prompt, sonnet_system, sonnet_usage) = llm.calls
+    (_, gemini_system, gemini_usage), (_, sonnet_system, sonnet_usage) = llm.calls
     assert (gemini_usage.model, sonnet_usage.model) == ("gemini", "sonnet")
-    assert sonnet_system == gemini_system and sonnet_prompt == gemini_prompt
+    assert gemini_system == "제미나이 화 지시\n\n[수위] 채팅 제미나이"
+    assert sonnet_system == "소네트 화 지시\n\n[수위] 채팅 제미나이"
     assert {job.status for job in await _jobs(db_session, novel_id)} == {"succeeded"}
+
+
+async def test_a_chapter_whose_model_has_no_novel_chain_fails_and_refunds_without_a_fallback(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    llm: _ModelLLM,
+    enqueued: list[uuid.UUID],
+) -> None:
+    """그 모델의 소설 체인이 없으면 Gemini 문안으로 대신 쓰지 않는다 — 값을 낸 모델에 다른 모델용 문안을 보내면 조용히
+    다른 글이 나온다. 모델을 부르지 않고 실패·환불한다."""
+    room, novel_id, owner_id = await _novel(db_client, db_session, monkeypatch, premium=True)
+    resp = await _create(db_client, novel_id, room, cost=170, model="opus")
+    assert resp.status_code == 202, resp.text
+    opus_sets = sa.select(PromptSet.id).where(PromptSet.lane == "novel", PromptSet.model == "opus")
+    await db_session.execute(sa.delete(PromptSection).where(PromptSection.prompt_set_id.in_(opus_sets)))
+    await db_session.execute(sa.delete(PromptSet).where(PromptSet.lane == "novel", PromptSet.model == "opus"))
+    await db_session.commit()
+
+    await runner.run_job(_factory(db_session), llm, enqueued[0])
+
+    (job,) = await _jobs(db_session, novel_id)
+    assert (job.status, job.failure_code) == ("failed", "internal")
+    assert llm.calls == []
+    assert await _novel_ledger(db_session, owner_id) == [("novelize_spend", -170), ("novelize_refund", 170)]
 
 
 # ── Bedrock 실패 → 실패 사유·환불 ──────────────────────────────────────────
@@ -522,7 +589,10 @@ class _UnusedGemini(_ModelLLM):
     [
         pytest.param([_start(), _text(_BODY), _stop("max_tokens")], "truncated", id="max-tokens"),
         pytest.param([_start(), _stop("end_turn")], "empty", id="empty-body"),
-        pytest.param([_start(), _text("짧다."), _stop("end_turn")], "empty", id="too-short"),
+        pytest.param([_start(), _text("짧다."), _stop("end_turn")], "malformed", id="too-short-old-style-body"),
+        pytest.param(
+            [_start(), _text(_batch_output("짧다.")), _stop("end_turn")], "malformed", id="too-short-episode"
+        ),
         pytest.param([_start(), _text("비가 왔다"), _stop("refusal")], "blocked", id="refusal-stop"),
         pytest.param(
             [_start(), _text("I'm sorry, but I can't continue this story."), _stop("end_turn")],
@@ -551,7 +621,8 @@ async def test_bedrock_failures_fail_the_chapter_and_refund_the_premium_price(
     사유로 떨어지고, 상위 모델 가격 그대로 한 번 환불되는지 본다. Gemini 로 대신 쓰지 않는다."""
     monkeypatch.setattr(settings, "bedrock_access_key_id", "AKIATEST")
     monkeypatch.setattr(settings, "bedrock_secret_access_key", "secret-test")
-    monkeypatch.setattr(settings, "novelize_job_timeout_seconds", 0.5)
+    # 작업 상한은 멈춘 스트림(5초)에서만 걸려야 한다 — 입력 조립 중에 걸리면 취소가 테스트 커넥션을 끊는다.
+    monkeypatch.setattr(settings, "novelize_job_timeout_seconds", 2)
 
     async def no_usage_recording(*_: Any) -> None:
         return None
@@ -574,14 +645,14 @@ async def test_bedrock_failures_fail_the_chapter_and_refund_the_premium_price(
     monkeypatch.setattr(bedrock, "_client", SimpleNamespace(messages=SimpleNamespace(create=create)))
     client = RoutingLLMClient(_UnusedGemini(), bedrock_factory=lambda: bedrock)
     room, novel_id, owner_id = await _novel(db_client, db_session, monkeypatch, premium=True)
-    resp = await _create(db_client, novel_id, room, cost=160, model="sonnet")
+    resp = await _create(db_client, novel_id, room, cost=105, model="sonnet")
     assert resp.status_code == 202, resp.text
 
     await runner.run_job(_factory(db_session), client, enqueued[0])
 
     (job,) = await _jobs(db_session, novel_id)
     assert (job.status, job.failure_code, job.refunded_at is not None) == ("failed", code, True)
-    assert await _novel_ledger(db_session, owner_id) == [("novelize_spend", -160), ("novelize_refund", 160)]
+    assert await _novel_ledger(db_session, owner_id) == [("novelize_spend", -105), ("novelize_refund", 105)]
 
 
 async def test_a_job_whose_model_left_the_registry_fails_and_is_refunded_instead_of_running_on_gemini(
@@ -593,7 +664,7 @@ async def test_a_job_whose_model_left_the_registry_fails_and_is_refunded_instead
 ) -> None:
     """값을 낸 뒤 배포로 그 모델이 레지스트리에서 빠졌다 — 기본 모델로 대신 쓰면 그 값을 내고 다른 모델의 글을 받는다."""
     room, novel_id, owner_id = await _novel(db_client, db_session, monkeypatch, premium=True)
-    resp = await _create(db_client, novel_id, room, cost=160, model="sonnet")
+    resp = await _create(db_client, novel_id, room, cost=105, model="sonnet")
     assert resp.status_code == 202, resp.text
     await db_session.execute(sa.update(NovelJob).values(model="retired-model"))
     await db_session.commit()
@@ -603,4 +674,81 @@ async def test_a_job_whose_model_left_the_registry_fails_and_is_refunded_instead
     (job,) = await _jobs(db_session, novel_id)
     assert (job.status, job.failure_code) == ("failed", "internal")
     assert llm.calls == []
-    assert await _novel_ledger(db_session, owner_id) == [("novelize_spend", -160), ("novelize_refund", 160)]
+    assert await _novel_ledger(db_session, owner_id) == [("novelize_spend", -105), ("novelize_refund", 105)]
+
+
+# ── 경계 제안·생성의 모델별 턴 상한 ─────────────────────────────────────────
+def _per_model_turn_limits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Gemini 는 3턴 방 전체(4턴)를 담고 Opus 는 2턴까지만 담게 한다."""
+    monkeypatch.setattr(settings, "novelize_chapter_max_turns", 45)
+    monkeypatch.setattr(settings, "novelize_chapter_max_turns_opus", 2)
+
+
+async def test_an_opus_proposal_has_no_candidate_beyond_the_opus_turn_limit(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ModelLLM
+) -> None:
+    """후보와 AI 제안이 요청한 모델의 턴 상한 안이다 — Gemini 상한으로 자르면 Opus 가 담지 못하는 끝을 고를 수 있다.
+    후보마다 화 수·금액도 그 모델 기준이다(Opus 는 화 수 상한 1이라 늘 1화)."""
+    room, novel_id, _ = await _novel(db_client, db_session, monkeypatch, premium=True)
+    _per_model_turn_limits(monkeypatch)
+    opening = (await _room_messages(db_session, room.room_id))[0]
+
+    opus = await db_client.post(f"/novels/{novel_id}/chapter-proposal", json={"model": "opus"})
+    gemini = await db_client.post(f"/novels/{novel_id}/chapter-proposal", json={"model": "gemini"})
+
+    assert opus.status_code == 200, opus.text
+    assert [(c["messageId"], c["episodeCount"], c["cost"]) for c in opus.json()["candidates"]] == [
+        (str(opening.id), 1, 170),
+        (str(room.turns[1][1].id), 1, 170),
+    ]
+    assert len(gemini.json()["candidates"]) == 4
+
+
+async def test_an_opus_chapter_ending_beyond_the_opus_turn_limit_is_422(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    llm: _ModelLLM,
+    enqueued: list[uuid.UUID],
+) -> None:
+    room, novel_id, owner_id = await _novel(db_client, db_session, monkeypatch, premium=True)
+    _per_model_turn_limits(monkeypatch)
+    end = {"endMessageId": str(room.turns[2][1].id)}
+
+    opus = await db_client.post(f"/novels/{novel_id}/chapters", json={**end, "model": "opus", "expectedCost": 170})
+    gemini = await db_client.post(f"/novels/{novel_id}/chapters", json={**end, "model": "gemini", "expectedCost": 40})
+
+    assert opus.status_code == 422 and opus.json()["detail"] == {"code": "NOVEL_CHAPTER_END_INVALID"}
+    assert gemini.status_code == 202, gemini.text
+    assert await _novel_ledger(db_session, owner_id) == [("novelize_spend", -40)]
+
+
+async def test_a_premium_proposal_without_novel_premium_access_is_403_before_the_model_or_the_limit(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ModelLLM
+) -> None:
+    """허용 없는 계정의 상위 모델 제안은 경계 제안 모델을 부르지 않고, 시간당 제안 상한도 깎지 않는다."""
+    monkeypatch.setattr(settings, "novelize_proposal_hourly_limit", 1)
+    _, novel_id, _ = await _novel(db_client, db_session, monkeypatch, premium=False)
+
+    denied = await db_client.post(f"/novels/{novel_id}/chapter-proposal", json={"model": "opus"})
+    allowed = await db_client.post(f"/novels/{novel_id}/chapter-proposal", json={"model": "gemini"})
+
+    assert denied.status_code == 403 and denied.json()["detail"] == {"code": "NOVEL_MODEL_NOT_ALLOWED"}
+    assert allowed.status_code == 200, allowed.text
+    assert llm.boundary_calls == 1
+
+
+async def test_asking_again_with_another_model_counts_toward_the_hourly_proposal_limit(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ModelLLM
+) -> None:
+    """모델을 바꿔 다시 받는 제안도 경계 제안 모델을 실제로 부르므로 같은 상한에 센다."""
+    monkeypatch.setattr(settings, "novelize_proposal_hourly_limit", 2)
+    _, novel_id, _ = await _novel(db_client, db_session, monkeypatch, premium=True)
+
+    statuses = [
+        (await db_client.post(f"/novels/{novel_id}/chapter-proposal", json={"model": model})).status_code
+        for model in ("gemini", "opus", "sonnet")
+    ]
+
+    assert statuses == [200, 200, 429]
+    assert llm.boundary_calls == 2

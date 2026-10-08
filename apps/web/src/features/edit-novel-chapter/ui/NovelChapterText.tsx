@@ -98,7 +98,9 @@ export function NovelChapterText({
     manualEdit !== null && manualEdit.draft !== joinParagraphRange(manualEdit.base.paragraphs, manualEdit.base.range);
   const pendingEdits = novel.pendingAiEdits.filter((edit) => edit.chapterId === chapter.id);
   const isSaving = saveMutation.isPending;
-  const isRegenerating = isChapterRegenerating(novel.activeJob, chapter.id);
+  // 다시 만들기는 묶음 단위라 이 화가 든 묶음을 상세 목차에서 찾는다(화 본문 응답에는 묶음이 없다).
+  const batchId = novel.chapters.find((item) => item.id === chapter.id)?.batchId;
+  const isRegenerating = isChapterRegenerating(novel.activeJob, chapter.id, batchId);
 
   useEffect(() => {
     onDraftDirtyChange(isDraftDirty);
@@ -167,11 +169,11 @@ export function NovelChapterText({
     const { baseRevisionId, body, isUnchanged } = toManualEditSave(manualEdit.base, manualEdit.draft);
     const length = countChapterChars(body);
     if (length === 0) {
-      setEditError("장 본문을 모두 비울 수는 없어요.");
+      setEditError("화 본문을 모두 비울 수는 없어요.");
       return;
     }
     if (length > novel.limits.chapterBodyMaxLength) {
-      setEditError(`장 본문은 ${novel.limits.chapterBodyMaxLength.toLocaleString()}자까지 쓸 수 있어요.`);
+      setEditError(`화 본문은 ${novel.limits.chapterBodyMaxLength.toLocaleString()}자까지 쓸 수 있어요.`);
       return;
     }
     if (isUnchanged) {
@@ -358,7 +360,7 @@ export function NovelChapterText({
 
 function toAiBlockedReason(aiEdit: NovelAiEditFlow): string | undefined {
   if (aiEdit.isRunning) return "AI로 고치는 중이에요. 끝나면 다시 고칠 수 있어요.";
-  if (aiEdit.isOtherJobRunning) return "장을 쓰는 중이에요. 끝나면 AI로 고칠 수 있어요.";
+  if (aiEdit.isOtherJobRunning) return "화를 쓰는 중이에요. 끝나면 AI로 고칠 수 있어요.";
   return undefined;
 }
 

@@ -3,6 +3,8 @@ import { CloudOff, History, PencilLine, Trash2 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 
 import {
+  chaptersInBatch,
+  toEpisodeRangeLabel,
   useNovelChapterQuery,
   type NovelChapterSummary,
   type NovelDetailResponse,
@@ -20,8 +22,9 @@ type NovelReaderProps = {
   /** 이 장 제목으로 포커스를 옮길 차례인가(새로 만든·다시 만든 장으로 옮겨 왔을 때). */
   shouldFocusHeading: boolean;
   onHeadingFocused: () => void;
-  /** 마지막 장을 지운 뒤. 화면이 새 마지막 장으로 옮기고 그 제목에 포커스를 둔다. */
-  onChapterDeleted: () => void;
+  /** 마지막 화들을 지운 뒤. 지운 화들 중 첫 화의 번호와 지운 화들을 넘긴다 — 화면이 그 앞 화(새 마지막 화)로 옮겨
+   * 그 제목에 포커스를 두고, 옮긴 뒤 지운 화들의 캐시를 버린다. */
+  onChapterDeleted: (firstDeletedOrdinal: number, deletedChapterIds: string[]) => void;
   /** 직접 고치던 글이 시작할 때와 달라졌는가. 화면이 장을 옮기기 전에 확인을 받는 데 쓴다. */
   onDraftDirtyChange: (isDirty: boolean) => void;
 };
@@ -47,8 +50,18 @@ export function NovelReader({
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [isFixMode, setIsFixMode] = useState(false);
   const chapterQuery = useNovelChapterQuery(novel.id, chapter.id, chapter.currentRevisionId);
-  const isLastChapter = chapter.ordinal === Math.max(...novel.chapters.map((item) => item.ordinal));
-  // 진행 중 작업이 있으면 서버가 마지막 장 지우기를 409 로 막는다 — 미리 막고 까닭을 말한다.
+  // 지우기는 마지막에 한 번에 만든 화들(마지막 묶음) 단위다 — 그 묶음의 어느 화에서든 지울 수 있고, 함께 지워지는
+  // 화들의 범위를 버튼이 말한다.
+  const lastChapter = novel.chapters.reduce<NovelChapterSummary | undefined>(
+    (latest, item) => (latest === undefined || item.ordinal > latest.ordinal ? item : latest),
+    undefined,
+  );
+  const isLastChapter = lastChapter !== undefined && chapter.batchId === lastChapter.batchId;
+  const batchChapters = chaptersInBatch(novel.chapters, chapter.batchId);
+  const firstInBatch = batchChapters[0] ?? chapter;
+  const lastInBatch = batchChapters.at(-1) ?? chapter;
+  const batchRangeLabel = toEpisodeRangeLabel(firstInBatch.ordinal, lastInBatch.ordinal);
+  // 진행 중 작업이 있으면 서버가 마지막 화 지우기를 409 로 막는다 — 미리 막고 까닭을 말한다.
   const isDeleteBlocked = novel.activeJob !== null || chapterFlow.isBusy || aiEdit.isRunning;
   const hasPendingAiEdits = novel.pendingAiEdits.some((edit) => edit.chapterId === chapter.id);
 
@@ -73,7 +86,7 @@ export function NovelReader({
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* 조작 대상이 아니라 포커스를 받아 두는 자리라 `tabIndex=-1` 이고 포커스 테두리를 그리지 않는다. */}
           <h2 id={headingId} ref={headingRef} tabIndex={-1} className="text-lg font-semibold text-foreground outline-none">
-            {chapter.ordinal}장
+            {chapter.title ? `${chapter.ordinal}화. ${chapter.title}` : `${chapter.ordinal}화`}
           </h2>
           <div className="flex flex-wrap gap-2">
             {/* 모드 버튼은 라벨이 상태를 말한다 — 눌린 토글(유채색 채움)로 그리면 이 화면의 솔리드 채움이 둘이 된다. */}
@@ -99,6 +112,7 @@ export function NovelReader({
             <RegenerateChapterButton
               flow={chapterFlow}
               chapter={chapter}
+              chapters={novel.chapters}
               isBlocked={aiEdit.isPreparing || aiEdit.isRunning}
               blockedReasonId={aiEdit.isRunning ? aiEdit.statusId : undefined}
             />
@@ -152,14 +166,16 @@ export function NovelReader({
                 if (isDeleteBlocked) return;
                 void DeleteLastChapterModal.call({
                   novelId: novel.id,
-                  chapterId: chapter.id,
-                  chapterOrdinal: chapter.ordinal,
+                  batchId: chapter.batchId,
+                  chapterIds: batchChapters.map((item) => item.id),
+                  rangeLabel: batchRangeLabel,
                 }).then((isDeleted) => {
-                  if (isDeleted) onChapterDeleted();
+                  if (isDeleted) onChapterDeleted(firstInBatch.ordinal, batchChapters.map((item) => item.id));
                 });
               }}
             >
-              <Trash2 aria-hidden />이 장 지우기
+              <Trash2 aria-hidden />
+              {batchChapters.length > 1 ? `${batchRangeLabel} 지우기` : "이 화 지우기"}
             </Button>
           )}
         </div>
@@ -201,7 +217,7 @@ function ChapterBody({ query, novel, isFixMode, aiEdit, onFocusFallback, onDraft
     return (
       <div className="flex flex-col items-start gap-3 py-6">
         <p className="flex items-center gap-2 text-sm break-keep text-muted-foreground">
-          <CloudOff aria-hidden className="size-4 shrink-0" />이 장을 불러오지 못했어요. 잠시 후 다시 시도해주세요.
+          <CloudOff aria-hidden className="size-4 shrink-0" />이 화를 불러오지 못했어요. 잠시 후 다시 시도해주세요.
         </p>
         <Button
           type="button"

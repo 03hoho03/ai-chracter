@@ -22,11 +22,11 @@ logger = logging.getLogger(__name__)
 
 # `"legacy"`를 이 유니온에 넣지 않는다 — 넣는
 # 순간 `list_prompt_sets`가 legacy를 걸러야 할 이유가 사라지고 FE가 4번째 탭을 만들게 된다.
-PromptLane = Literal["story", "character", "publish_filter"]
+PromptLane = Literal["story", "character", "publish_filter", "novel"]
 
 # mypy는 각 원소가 PromptLane인지는 보지만 "전부 들어 있는지"는 못 본다 — 그 한 칸은
 # tests가 typing.get_args로 메운다.
-_PROMPT_LANES: tuple[PromptLane, ...] = ("story", "character", "publish_filter")
+_PROMPT_LANES: tuple[PromptLane, ...] = ("story", "character", "publish_filter", "novel")
 
 
 def as_prompt_lane(value: str) -> PromptLane | None:
@@ -120,7 +120,8 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
     ("publish_filter", "image_list"): frozenset({"image_lines"}),
     ("publish_filter", "verdict_instruction"): frozenset(),
     # 소설화 세 채널 — `novelize/prompts.py` 의 빌더가 만드는 `values`. `instruction` 은 system_instruction 으로 따로
-    # 렌더되므로(`values={}`) 빈 집합이어야 한다.
+    # 렌더되므로(`values={}`) 빈 집합이어야 한다. 소설 레인과 채팅 레인에 얼려 둔 옛 소설 행이 같은 (channel, slot) 을
+    # 쓴다 — 인물 메모·지난 화 요약·화 수 지시 슬롯은 소설 레인에만 있다.
     ("novelize_boundary", "instruction"): frozenset(),
     ("novelize_boundary", "user_name"): frozenset({"user_name"}),
     ("novelize_boundary", "max_turns"): frozenset({"max_turns"}),
@@ -129,7 +130,10 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
     ("novelize_chapter", "work_setting"): frozenset({"work_setting"}),
     ("novelize_chapter", "user_name"): frozenset({"user_name"}),
     ("novelize_chapter", "setting_notes"): frozenset({"setting_notes"}),
+    ("novelize_chapter", "character_notes"): frozenset({"character_notes"}),
+    ("novelize_chapter", "previous_summaries"): frozenset({"previous_summaries"}),
     ("novelize_chapter", "previous_excerpt"): frozenset({"previous_excerpt"}),
+    ("novelize_chapter", "episode_plan"): frozenset({"episode_count", "episode_chars", "novel_title_rule"}),
     ("novelize_chapter", "turn_context"): frozenset({"user_label", "assistant_label", "turn_lines"}),
     ("novelize_revise", "instruction"): frozenset(),
     ("novelize_revise", "work_setting"): frozenset({"work_setting"}),
@@ -144,8 +148,8 @@ async def load_active_prompt_set(
     db: AsyncSession, *, lane: PromptLane, model: ChatModelId = "gemini"
 ) -> tuple[PromptSet, list[PromptSection]]:
     """`(lane, model)`의 활성 세트(published 중 `published_at`이 가장 최신인 것)와 그 섹션 전부를
-    읽는다. `model` 기본값이 Gemini 인 것은 판정·요약·심사·소설화처럼 고른 모델과 무관한 호출이 전부 Gemini 세트를
-    읽기 때문이고, 모델을 빠뜨린 호출부도 지금까지와 같은 세트로 간다(Claude 세트에는 판정·요약 채널이 없다). `legal_documents`의 `_get_latest_published`와 같은 모양이다. 활성 세트가 없으면
+    읽는다. `model` 기본값이 Gemini 인 것은 판정·요약·심사·소설 묶음 경계·문단 수정처럼 고른 모델과 무관한 호출이 전부
+    Gemini 세트를 읽기 때문이고(소설 화 생성만 작업의 모델 체인을 읽는다), 모델을 빠뜨린 호출부도 지금까지와 같은 세트로 간다(Claude 세트에는 판정·요약 채널이 없다). `legal_documents`의 `_get_latest_published`와 같은 모양이다. 활성 세트가 없으면
     `PromptSetNotFoundError` — downgrade 직후처럼 테이블 자체가 없는 게 아니라
     행만 없는 상태는 만들어지기 어렵지만, 그 경우에도 조용히 넘어가지 않는다.
 

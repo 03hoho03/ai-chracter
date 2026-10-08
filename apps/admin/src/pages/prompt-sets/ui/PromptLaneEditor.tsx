@@ -21,12 +21,13 @@ export function PromptLaneEditor({ lane, model, onDirtyChange }: PromptLaneEdito
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-4">
-        {/* Claude 세트에는 생성에 쓰는 두 채널만 있다 — 나머지 채널 탭이 왜 없는지, 이 세트를 고쳐도 무엇이 안 바뀌는지를
-         * 편집 전에 밝힌다. */}
+        {/* Claude 세트에는 그 모델이 실제로 쓰는 채널만 있다 — 나머지 채널 탭이 왜 없는지, 이 세트를 고쳐도 무엇이 안
+         * 바뀌는지를 편집 전에 밝힌다. 채팅 레인은 생성 두 채널, 소설 레인은 화 생성 한 채널이다. */}
         {model !== "gemini" && (
           <p className="max-w-prose break-keep text-xs text-muted-foreground">
-            {PROMPT_MODEL_LABELS[model]} 세트는 이 모델을 고른 방의 응답 생성(시스템 지침·생성)에만 쓰여요. 판정(스탯·엔딩·이미지),
-            기억 요약, 소설화는 고른 모델과 상관없이 Gemini 세트를 읽어요.
+            {lane === "novel"
+              ? `${PROMPT_MODEL_LABELS[model]} 세트는 이 모델로 쓰는 소설 화 생성에만 쓰여요. 경계 제안·문단 수정은 고른 모델과 상관없이 소설 Gemini 세트를, 화자 라벨·등급 규칙은 원작의 채팅 Gemini 세트를 읽어요.`
+              : `${PROMPT_MODEL_LABELS[model]} 세트는 이 모델을 고른 방의 응답 생성(시스템 지침·생성)에만 쓰여요. 판정(스탯·엔딩·이미지)과 기억 요약은 고른 모델과 상관없이 Gemini 세트를, 소설은 소설 레인 세트를 읽어요.`}
           </p>
         )}
         <ActiveVersionBadge lane={lane} model={model} />

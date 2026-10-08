@@ -18,7 +18,7 @@ export function toAiEditOutcome(job: Pick<NovelJobResponse, "revisionId" | "chap
     return { kind: "unavailable", message: "이 수정안은 다른 곳에서 이미 적용했어요." };
   }
   if (job.chapterId === null) {
-    return { kind: "unavailable", message: "장이 지워져 수정안을 쓸 수 없어요." };
+    return { kind: "unavailable", message: "화가 지워져 수정안을 쓸 수 없어요." };
   }
-  return { kind: "unavailable", message: "그사이 장이 바뀌어 이 수정안은 적용할 수 없어요." };
+  return { kind: "unavailable", message: "그사이 화가 바뀌어 이 수정안은 적용할 수 없어요." };
 }

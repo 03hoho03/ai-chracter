@@ -23,7 +23,7 @@ export function promptModelsFor(lane: PromptLane): readonly PromptModel[] {
   return lane === "publish_filter" ? ["gemini"] : PROMPT_MODELS;
 }
 
-/** 한 화면에 체인 7개(스토리·캐릭터 × 3 + 발행 심사)가 함께 있을 때 체인별 상태를 담는 키. */
+/** 한 화면에 체인 10개(스토리·캐릭터·소설 × 3 + 발행 심사)가 함께 있을 때 체인별 상태를 담는 키. */
 export type PromptChainKey = `${PromptLane}:${PromptModel}`;
 
 export function promptChainKey(lane: PromptLane, model: PromptModel): PromptChainKey {

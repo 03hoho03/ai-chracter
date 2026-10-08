@@ -18,16 +18,26 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.core import clover
 from api.core.config import settings
 from api.db.models import ChatMessage, ChatMessageRole, Content, ModerationStatus, Novel, NovelChapter, NovelJob
-from api.db.models.novel import NovelChapterRevision
+from api.db.models.novel import (
+    NovelBatch,
+    NovelChapterCharacter,
+    NovelChapterRevision,
+    NovelCharacter,
+    NovelReadingPosition,
+    NovelSnapshot,
+)
 from api.llm.client import LLMCallContext, LLMClient, LLMClientError, T
 from api.novelize import router as novelize_router
 from api.novelize import runner
 from api.novelize.prompts import NovelizeBoundaryResult
 from factories import (
     Room,
+    _add_batch,
     _add_chapter,
+    _batch_output,
     _clear_llm_override,
     _novel_ledger,
     _novel_setup,
@@ -42,7 +52,7 @@ _CHAPTER_BODY = "비가 내리는 저녁이었다. 서진은 가방을 내려놓
 
 class _NovelRouteLLM(LLMClient):
     """경계 제안은 `end_turn`·`reason` 을 돌려주거나 `error` 를 낸다. 장 생성(끝의 실제 띄우기 시험)은 `_CHAPTER_BODY`
-    를 흘린다. 경계 제안이 불릴 때 열린 DB 세션 수를 `open_at_call` 에 적는다."""
+    한 화짜리 출력을 흘린다. 경계 제안이 불릴 때 열린 DB 세션 수를 `open_at_call` 에 적는다."""
 
     def __init__(self, *, end_turn: int = 3, reason: str = "첫날 대화가 마무리된다.", error: Exception | None = None):
         self.end_turn = end_turn
@@ -60,7 +70,7 @@ class _NovelRouteLLM(LLMClient):
         *,
         usage: LLMCallContext,
     ) -> AsyncIterator[str]:
-        yield _CHAPTER_BODY
+        yield _batch_output(_CHAPTER_BODY)
 
     async def generate_structured(
         self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
@@ -438,6 +448,76 @@ async def test_chapter_with_a_stale_price_is_409_with_the_current_one(
     assert (enqueued, await _novel_ledger(db_session, room.user_id)) == ([], [])
 
 
+def _episodes_by_length(monkeypatch: pytest.MonkeyPatch) -> None:
+    """원문 40자마다 한 화. 3턴 방에서 첫 후보(오프닝만)는 1화, 마지막 후보는 Gemini 화 수 상한 3에 걸린다."""
+    monkeypatch.setattr(settings, "novelize_source_ratio", 1.0)
+    monkeypatch.setattr(settings, "novelize_episode_target_chars", 40)
+
+
+async def test_proposal_lists_each_candidates_episode_count_and_cost_for_the_requested_model(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _NovelRouteLLM
+) -> None:
+    """후보 금액은 거기까지의 화 수 × 화 단가다 — 화면은 고른 후보의 이 금액을 그대로 확인 금액으로 보낸다. 최상위
+    `cost` 는 옛 화면용 Gemini 화 단가 그대로다."""
+    _episodes_by_length(monkeypatch)
+    _room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+
+    body = (await db_client.post(f"/novels/{novel_id}/chapter-proposal", json={"model": "gemini"})).json()
+
+    counts = [c["episodeCount"] for c in body["candidates"]]
+    assert (counts[0], counts[-1]) == (1, 3)
+    assert counts == sorted(counts)
+    assert [c["cost"] for c in body["candidates"]] == [40 * count for count in counts]
+    assert body["cost"] == 40
+
+
+async def test_creating_a_batch_stores_the_episode_count_and_charges_count_times_unit(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    llm: _NovelRouteLLM,
+    enqueued: list[uuid.UUID],
+) -> None:
+    """생성이 화 수를 다시 세어 작업에 싣는다 — 실행이 그 화 수로 쓰고, 모자라면 그 몫을 돌려준다. 금액은 경계 제안의 같은
+    후보 금액과 같다."""
+    _episodes_by_length(monkeypatch)
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    await clover.grant(db_session, user_id=room.user_id, amount=100, kind="admin_grant")
+    await db_session.commit()
+    proposal = (await db_client.post(f"/novels/{novel_id}/chapter-proposal")).json()
+    last = proposal["candidates"][-1]
+
+    resp = await db_client.post(
+        f"/novels/{novel_id}/chapters", json={"endMessageId": last["messageId"], "expectedCost": last["cost"]}
+    )
+
+    assert resp.status_code == 202, resp.text
+    assert (last["cost"], resp.json()["chargedAmount"]) == (120, 120)
+    job = await _job_row(db_session, uuid.UUID(resp.json()["id"]))
+    assert job.episode_count_target == 3
+    assert await _novel_ledger(db_session, room.user_id) == [("novelize_spend", -120)]
+
+
+async def test_a_stale_price_is_409_with_the_episode_count_times_unit(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    llm: _NovelRouteLLM,
+    enqueued: list[uuid.UUID],
+) -> None:
+    """화 하나 값을 보내는 옛 화면은 여러 화 묶음에서 409 를 받고, 응답의 `currentCost` 가 그 묶음의 금액이다."""
+    _episodes_by_length(monkeypatch)
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+
+    resp = await db_client.post(
+        f"/novels/{novel_id}/chapters", json={"endMessageId": str(room.turns[3][1].id), "expectedCost": 40}
+    )
+
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == {"code": "NOVELIZE_PRICE_CHANGED", "currentCost": 120}
+    assert (enqueued, await _novel_ledger(db_session, room.user_id)) == ([], [])
+
+
 async def test_dead_job_is_expired_before_a_new_chapter_instead_of_blocking_it(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
@@ -625,3 +705,279 @@ async def test_only_the_last_chapter_can_be_deleted_and_not_while_a_job_runs(
         sa.select(sa.func.count()).select_from(NovelChapter).where(NovelChapter.novel_id == novel_id)
     )
     assert count == 2
+
+
+# ── 묶음 다시 만들기·삭제 ───────────────────────────────────────────────────
+async def test_regenerating_a_batch_queues_one_job_for_all_its_episodes_at_count_times_unit(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    llm: _NovelRouteLLM,
+    enqueued: list[uuid.UUID],
+    committing_request_session: None,
+) -> None:
+    """금액 409 는 사용자 잠금 뒤에 롤백하며 낸다 — 요청마다 SAVEPOINT 세션을 써 그 롤백이 셋업을 지우지 않게 한다."""
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    messages = await _room_messages(db_session, room.room_id)
+    chapters = await _add_batch(db_session, novel_id, room, messages[0], room.turns[2][1], episodes=2)
+    batch_id = chapters[0].batch_id
+
+    stale = await db_client.post(
+        f"/novels/{novel_id}/batches/{batch_id}/regenerate", json={"model": "gemini", "expectedCost": 40}
+    )
+    resp = await db_client.post(
+        f"/novels/{novel_id}/batches/{batch_id}/regenerate", json={"model": "gemini", "expectedCost": 80}
+    )
+    missing = await db_client.post(
+        f"/novels/{novel_id}/batches/{uuid.uuid4()}/regenerate", json={"model": "gemini", "expectedCost": 80}
+    )
+
+    assert stale.status_code == 409 and stale.json()["detail"] == {"code": "NOVELIZE_PRICE_CHANGED", "currentCost": 80}
+    assert resp.status_code == 202, resp.text
+    assert (resp.json()["batchId"], resp.json()["chapterId"]) == (str(batch_id), None)
+    job = await _job_row(db_session, uuid.UUID(resp.json()["id"]))
+    assert (job.kind, job.batch_id, job.episode_count_target, job.start_message_id, job.end_message_id) == (
+        "chapter_regenerate",
+        batch_id,
+        2,
+        messages[0].id,
+        room.turns[2][1].id,
+    )
+    assert missing.status_code == 404 and missing.json()["detail"] == {"code": "NOVEL_BATCH_NOT_FOUND"}
+    assert await _novel_ledger(db_session, room.user_id) == [("novelize_spend", -80)]
+
+
+async def test_regenerating_one_episode_by_the_old_route_regenerates_its_whole_batch(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    llm: _NovelRouteLLM,
+    enqueued: list[uuid.UUID],
+) -> None:
+    """화 하나를 고르는 옛 라우트는 그 화가 든 묶음 전체를 같은 금액으로 다시 만들고, 고른 화를 작업에 남긴다(끝나면 화면이
+    그 화로 간다)."""
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    messages = await _room_messages(db_session, room.room_id)
+    chapters = await _add_batch(db_session, novel_id, room, messages[0], room.turns[2][1], episodes=2)
+
+    resp = await db_client.post(f"/novels/{novel_id}/chapters/{chapters[1].id}/regenerate", json={"expectedCost": 80})
+
+    assert resp.status_code == 202, resp.text
+    job = await _job_row(db_session, uuid.UUID(resp.json()["id"]))
+    assert (job.batch_id, job.chapter_id, job.episode_count_target, job.charged_amount) == (
+        chapters[0].batch_id,
+        chapters[1].id,
+        2,
+        80,
+    )
+
+
+async def test_regenerating_a_chapter_old_code_left_without_a_batch_fills_the_batch_instead_of_failing(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    llm: _NovelRouteLLM,
+    enqueued: list[uuid.UUID],
+) -> None:
+    """옛 판 코드로 되돌린 동안 생긴 화(묶음 칸이 빔)도 다시 만들 수 있다 — 묶음을 찾지 못해 500 이 나면 그 화는 영영
+    다시 만들 수 없다."""
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    messages = await _room_messages(db_session, room.room_id)
+    chapter = await _add_chapter(db_session, novel_id, room, messages[0], room.turns[1][1])
+    await db_session.execute(sa.update(NovelChapter).where(NovelChapter.id == chapter.id).values(batch_id=None))
+    await db_session.execute(sa.delete(NovelBatch).where(NovelBatch.novel_id == novel_id))
+    await db_session.commit()
+
+    resp = await db_client.post(f"/novels/{novel_id}/chapters/{chapter.id}/regenerate", json={"expectedCost": 40})
+
+    assert resp.status_code == 202, resp.text
+    filled = await db_session.scalar(
+        sa.select(NovelChapter.batch_id).where(NovelChapter.id == chapter.id).execution_options(populate_existing=True)
+    )
+    assert filled is not None
+    assert (await _job_row(db_session, uuid.UUID(resp.json()["id"]))).batch_id == filled
+
+
+async def test_an_ineligible_model_for_the_batch_is_409_with_its_reason_before_charging(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    llm: _NovelRouteLLM,
+    enqueued: list[uuid.UUID],
+    committing_request_session: None,
+) -> None:
+    from factories import _allow_novel_premium
+
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    await _allow_novel_premium(db_session, monkeypatch, room.user_id)
+    messages = await _room_messages(db_session, room.room_id)
+    chapters = await _add_batch(db_session, novel_id, room, messages[0], room.turns[2][1], episodes=2)
+
+    resp = await db_client.post(
+        f"/novels/{novel_id}/batches/{chapters[0].batch_id}/regenerate", json={"model": "opus", "expectedCost": 340}
+    )
+
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == {"code": "NOVEL_MODEL_INELIGIBLE", "reason": "too_many_episodes"}
+    assert (enqueued, await _novel_ledger(db_session, room.user_id)) == ([], [])
+
+
+async def _plant_board_rows(db_session: AsyncSession, novel_id: uuid.UUID, chapters: list[NovelChapter]) -> None:
+    """화마다 읽은 위치·등장 인물을 붙이고, 모든 화를 담은 스냅샷 하나를 넣는다(커밋)."""
+    card = NovelCharacter(novel_id=novel_id, name="도윤")
+    db_session.add(card)
+    await db_session.flush()
+    for chapter in chapters:
+        db_session.add_all(
+            [
+                NovelChapterCharacter(chapter_id=chapter.id, character_id=card.id),
+                NovelReadingPosition(
+                    chapter_id=chapter.id,
+                    novel_id=novel_id,
+                    paragraph_index=0,
+                    paragraph_count=3,
+                    revision_id=uuid.uuid4(),
+                ),
+            ]
+        )
+    db_session.add(
+        NovelSnapshot(
+            novel_id=novel_id,
+            name="저장",
+            kind="manual",
+            payload={
+                "v": 1,
+                "title": "제목",
+                "chapters": [
+                    {
+                        "chapterId": str(c.id),
+                        "revisionId": str(uuid.uuid4()),
+                        "title": "화 제목",
+                        "summary": "요약",
+                        "authorNote": "말",
+                    }
+                    for c in chapters
+                ],
+            },
+        )
+    )
+    await db_session.commit()
+
+
+async def test_deleting_the_last_batch_removes_all_its_episodes_and_shrinks_their_snapshot_entries(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _NovelRouteLLM
+) -> None:
+    """지운 화의 제목·요약·작가의 말은 스냅샷에서도 지워지고 자리만 남는다. 앞 묶음의 화와 인물 카드는 남는다."""
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    messages = await _room_messages(db_session, room.room_id)
+    (first,) = await _add_batch(db_session, novel_id, room, messages[0], room.turns[1][1])
+    last = await _add_batch(db_session, novel_id, room, room.turns[2][0], room.turns[3][1], episodes=2)
+    await _plant_board_rows(db_session, novel_id, [first, *last])
+
+    resp = await db_client.delete(f"/novels/{novel_id}/batches/{last[0].batch_id}")
+
+    assert resp.status_code == 204, resp.text
+    remaining = (await db_session.scalars(sa.select(NovelChapter.id).where(NovelChapter.novel_id == novel_id))).all()
+    assert remaining == [first.id]
+    assert await db_session.get(NovelBatch, last[0].batch_id) is None
+    for column in (NovelReadingPosition.chapter_id, NovelChapterCharacter.chapter_id):
+        kept = set((await db_session.scalars(sa.select(column))).all())
+        assert first.id in kept and not {c.id for c in last} & kept, column
+    snapshot = await db_session.scalar(
+        sa.select(NovelSnapshot).where(NovelSnapshot.novel_id == novel_id).execution_options(populate_existing=True)
+    )
+    assert snapshot is not None
+    assert snapshot.payload["title"] == "제목"
+    assert snapshot.payload["chapters"][0]["title"] == "화 제목"
+    assert snapshot.payload["chapters"][1:] == [{"chapterId": str(c.id), "deleted": True} for c in last]
+    assert await db_session.scalar(sa.select(sa.func.count()).select_from(NovelCharacter)) == 1
+
+
+async def test_deleting_by_an_episode_of_the_last_batch_deletes_the_whole_batch_and_only_the_last_one(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _NovelRouteLLM
+) -> None:
+    """옛 마지막 장 삭제는 "마지막 묶음에 든 화"면 그 묶음 전체를 지운다(번호가 가장 큰 화만이 아니다)."""
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    messages = await _room_messages(db_session, room.room_id)
+    (first,) = await _add_batch(db_session, novel_id, room, messages[0], room.turns[1][1])
+    last = await _add_batch(db_session, novel_id, room, room.turns[2][0], room.turns[3][1], episodes=2)
+
+    old_not_last = await db_client.delete(f"/novels/{novel_id}/chapters/{first.id}")
+    new_not_last = await db_client.delete(f"/novels/{novel_id}/batches/{first.batch_id}")
+    by_episode = await db_client.delete(f"/novels/{novel_id}/chapters/{last[0].id}")
+
+    assert old_not_last.status_code == 409 and old_not_last.json()["detail"] == {"code": "NOVEL_CHAPTER_NOT_LAST"}
+    assert new_not_last.status_code == 409 and new_not_last.json()["detail"] == {"code": "NOVEL_BATCH_NOT_LAST"}
+    assert by_episode.status_code == 204, by_episode.text
+    remaining = (await db_session.scalars(sa.select(NovelChapter.id).where(NovelChapter.novel_id == novel_id))).all()
+    assert remaining == [first.id]
+
+
+async def test_an_empty_batch_left_by_old_code_does_not_block_deleting_the_real_last_batch(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _NovelRouteLLM
+) -> None:
+    """옛 판 코드의 마지막 장 삭제는 화만 지워 빈 묶음을 남긴다. 그 빈 묶음이 가장 큰 번호로 남아 있으면 실제 마지막
+    묶음이 "마지막이 아님"이 되어 지울 수 없다 — 삭제가 빈 묶음부터 정리한다."""
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    messages = await _room_messages(db_session, room.room_id)
+    (first,) = await _add_batch(db_session, novel_id, room, messages[0], room.turns[1][1])
+    (emptied,) = await _add_batch(db_session, novel_id, room, room.turns[2][0], room.turns[2][1])
+    await db_session.execute(sa.delete(NovelChapterRevision).where(NovelChapterRevision.chapter_id == emptied.id))
+    await db_session.execute(sa.delete(NovelChapter).where(NovelChapter.id == emptied.id))
+    await db_session.commit()
+
+    resp = await db_client.delete(f"/novels/{novel_id}/batches/{first.batch_id}")
+
+    assert resp.status_code == 204, resp.text
+    left = (await db_session.scalars(sa.select(NovelBatch.id).where(NovelBatch.novel_id == novel_id))).all()
+    assert left == []
+
+
+async def test_regenerating_a_batch_the_fill_dropped_as_empty_is_404_without_a_charge(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    llm: _NovelRouteLLM,
+    enqueued: list[uuid.UUID],
+    committing_request_session: None,
+) -> None:
+    """옛 화면이 들고 있던 묶음이 그 사이 빈 묶음이 되어 보정이 지우면, 다시 만들기는 지워진 묶음을 붙잡고 500 이 아니라
+    404 다(옛 판 코드의 마지막 장 삭제가 화만 지운 경우)."""
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    messages = await _room_messages(db_session, room.room_id)
+    (chapter,) = await _add_batch(db_session, novel_id, room, messages[0], room.turns[1][1])
+    await db_session.execute(sa.delete(NovelChapterRevision).where(NovelChapterRevision.chapter_id == chapter.id))
+    await db_session.execute(sa.delete(NovelChapter).where(NovelChapter.id == chapter.id))
+    await db_session.commit()
+
+    resp = await db_client.post(
+        f"/novels/{novel_id}/batches/{chapter.batch_id}/regenerate", json={"model": "gemini", "expectedCost": 40}
+    )
+
+    assert resp.status_code == 404 and resp.json()["detail"] == {"code": "NOVEL_BATCH_NOT_FOUND"}
+    assert (enqueued, await _novel_ledger(db_session, room.user_id)) == ([], [])
+
+
+async def test_a_batch_of_another_novel_is_404_for_regenerate_and_delete(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    llm: _NovelRouteLLM,
+    enqueued: list[uuid.UUID],
+) -> None:
+    other_room, other_id = await _novel_setup(db_client, db_session, monkeypatch)
+    (other,) = await _add_batch(
+        db_session, other_id, other_room, (await _room_messages(db_session, other_room.room_id))[0], other_room.turns[1][1]
+    )
+    _room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+
+    regenerate = await db_client.post(
+        f"/novels/{novel_id}/batches/{other.batch_id}/regenerate", json={"model": "gemini", "expectedCost": 40}
+    )
+    delete = await db_client.delete(f"/novels/{novel_id}/batches/{other.batch_id}")
+
+    assert [(r.status_code, r.json()["detail"]) for r in (regenerate, delete)] == [
+        (404, {"code": "NOVEL_BATCH_NOT_FOUND"})
+    ] * 2
+    assert await db_session.get(NovelBatch, other.batch_id, populate_existing=True) is not None
+    assert enqueued == []

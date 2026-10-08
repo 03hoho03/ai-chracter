@@ -23,10 +23,16 @@ from api.core import clover
 from api.core.config import settings
 from api.core.rate_limit import KST, seconds_until_kst_midnight
 from api.db.models import Novel, NovelChapter, NovelChapterRevision, NovelJob, User
+from api.db.models.novel import NovelBatch
 from api.db.models.novel import NovelJobKind, NovelJobStatus
 from api.db.models.clover import CloverLedger, CloverLot
-from api.novelize import billing
-from api.novelize.deletion import delete_novels
+from api.llm.chat_models import ChatModelId
+from api.novelize import billing, runner
+from api.novelize.inputs import ChapterInput
+from api.novelize.output import ParsedBatch, ParsedEpisode
+from api.novelize.prompts import NovelizePrompt
+from api.novelize.batches import ensure_batches
+from api.novelize.deletion import delete_batch, delete_novels
 from api.novelize.router import delete_last_novel_chapter, delete_novel
 from factories import _assert_blocked, _make_user_with_clover_lot
 
@@ -60,6 +66,38 @@ def _chapter_job(novel: Novel, *, kind: NovelJobKind = "chapter_generate", start
         end_message_id=uuid.uuid4(),
         end_message_created_at=now,
     )
+
+
+async def _batch(db: AsyncSession, novel: Novel, *, episodes: int, turns: int = 1) -> list[NovelChapter]:
+    """화 `episodes` 개짜리 묶음 하나(원문 턴 `turns` 개)를 flush 하고 그 화들을 돌려준다."""
+    now = datetime.now(UTC)
+    segment = {
+        "start_message_id": uuid.uuid4(),
+        "start_message_created_at": now,
+        "end_message_id": uuid.uuid4(),
+        "end_message_created_at": now,
+        "assistant_message_count": turns,
+        "source_hash": "0" * 64,
+    }
+    ordinal = int(await db.scalar(select(func.count()).select_from(NovelBatch).where(NovelBatch.novel_id == novel.id)) or 0)
+    batch = NovelBatch(novel_id=novel.id, ordinal=ordinal + 1, target_episode_count=episodes, **segment)
+    db.add(batch)
+    await db.flush()
+    first = int(await db.scalar(select(func.count()).select_from(NovelChapter).where(NovelChapter.novel_id == novel.id)) or 0)
+    chapters = [
+        NovelChapter(novel_id=novel.id, ordinal=first + i + 1, batch_id=batch.id, episode_index=i, **segment)
+        for i in range(episodes)
+    ]
+    db.add_all(chapters)
+    await db.flush()
+    return chapters
+
+
+def _regenerate_job(novel: Novel, chapter: NovelChapter, model: str = "gemini") -> NovelJob:
+    job = _chapter_job(novel, kind="chapter_regenerate", start_message_id=chapter.start_message_id)
+    job.chapter_id = chapter.id
+    job.model = model
+    return job
 
 
 def _ai_edit_job(novel: Novel) -> NovelJob:
@@ -103,8 +141,44 @@ def test_job_price_reads_the_constant_at_call_time(monkeypatch: pytest.MonkeyPat
     assert billing.job_price("chapter_generate") == 40
     assert billing.job_price("chapter_regenerate") == 40
     assert billing.job_price("ai_edit") == 20
-    monkeypatch.setattr(clover, "NOVELIZE_CHAPTER_REGENERATE_COST", 33)
+    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_COST", 33)
     assert billing.job_price("chapter_regenerate") == 33
+
+
+@pytest.mark.parametrize(
+    ("model", "unit"),
+    [pytest.param("gemini", 40, id="gemini"), pytest.param("sonnet", 105, id="sonnet"), pytest.param("opus", 170, id="opus")],
+)
+def test_job_price_is_the_models_episode_price_times_the_episode_count(model: ChatModelId, unit: int) -> None:
+    """생성·다시 만들기는 화 수만큼 낸다. AI 수정은 화 하나의 문단을 고치므로 화 수와 모델에 매이지 않는다."""
+    for kind in ("chapter_generate", "chapter_regenerate"):
+        assert [billing.job_price(kind, model, n) for n in (1, 3)] == [unit, 3 * unit]
+    assert billing.job_price("ai_edit", model, 3) == 20
+
+
+def test_chain_price_takes_the_models_episode_cap_for_every_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """묶음 경계를 아직 모르므로 묶음마다 그 모델이 낼 수 있는 가장 많은 화를 받는다."""
+    monkeypatch.setattr(settings, "novelize_k_max_gemini", 3)
+    monkeypatch.setattr(settings, "novelize_k_max_opus", 2)
+    assert [billing.chain_price("gemini", n) for n in (1, 5)] == [120, 600]
+    assert [billing.chain_price("opus", n) for n in (1, 5)] == [340, 1700]
+    with pytest.raises(ValueError):
+        billing.job_price("chain_generate")
+
+
+@pytest.mark.parametrize(
+    ("charged", "target", "delivered", "refund"),
+    [
+        pytest.param(120, 3, 3, 0, id="exactly-the-target"),
+        pytest.param(120, 3, 2, 40, id="one-short"),
+        pytest.param(120, 3, 1, 80, id="two-short"),
+        pytest.param(120, 3, 5, 0, id="more-is-accepted-free"),
+        pytest.param(340, 2, 1, 170, id="opus-one-short"),
+        pytest.param(0, 3, 1, 0, id="chain-child-charged-nothing"),
+    ],
+)
+def test_shortfall_refund_returns_only_the_missing_episodes(charged: int, target: int, delivered: int, refund: int) -> None:
+    assert billing.shortfall_refund(charged_amount=charged, target=target, delivered=delivered) == refund
 
 
 # ── 차감 + 작업 생성 ────────────────────────────────────────────────────────
@@ -143,7 +217,7 @@ async def test_create_rejects_a_stale_expected_cost_before_charging(
 ) -> None:
     owner = await _owner(db_session)
     novel = await _make_novel(db_session, owner.id)
-    monkeypatch.setattr(clover, "NOVELIZE_CHAPTER_GENERATE_COST", 25)
+    monkeypatch.setattr(clover, "NOVELIZE_EPISODE_COST", 25)
 
     async with _service_session(db_session) as s:
         with pytest.raises(HTTPException) as caught:
@@ -155,6 +229,106 @@ async def test_create_rejects_a_stale_expected_cost_before_charging(
     assert _detail(caught.value) == {"code": "NOVELIZE_PRICE_CHANGED", "currentCost": 25}
     assert await _job_count(db_session, novel.id) == 0
     assert await _ledger(db_session, owner.id) == []
+
+
+async def test_generate_is_charged_for_its_target_episode_count(db_session: AsyncSession) -> None:
+    owner = await _owner(db_session, balance=200)
+    novel = await _make_novel(db_session, owner.id)
+    job = _chapter_job(novel, start_message_id=uuid.uuid4())
+    job.episode_count_target = 3
+
+    async with _service_session(db_session) as s:
+        with pytest.raises(HTTPException) as caught:
+            await billing.create_charged_job(s, job=job, expected_cost=40, now=datetime.now(UTC))
+    async with _service_session(db_session) as s:
+        stored = await billing.create_charged_job(s, job=job, expected_cost=120, now=datetime.now(UTC))
+
+    assert _detail(caught.value) == {"code": "NOVELIZE_PRICE_CHANGED", "currentCost": 120}
+    assert (stored.charged_amount, stored.episode_count_target) == (120, 3)
+    assert await _ledger(db_session, owner.id) == [("novelize_spend", -120)]
+
+
+async def test_regenerate_is_charged_for_the_whole_batch_and_records_it(db_session: AsyncSession) -> None:
+    """화 하나를 골라 다시 만들어도 그 화가 든 묶음 전체를 다시 쓴다 — 금액은 묶음의 화 수 × 화 단가이고, 작업에 그
+    묶음과 화 수를 싣는다. 화면이 화 하나 값으로 확인했으면 409 가 묶음 금액을 알려 준다."""
+    owner = await _owner(db_session, balance=200)
+    novel = await _make_novel(db_session, owner.id)
+    chapters = await _batch(db_session, novel, episodes=3)
+
+    async with _service_session(db_session) as s:
+        with pytest.raises(HTTPException) as caught:
+            await billing.create_charged_job(
+                s, job=_regenerate_job(novel, chapters[1]), expected_cost=40, now=datetime.now(UTC)
+            )
+    async with _service_session(db_session) as s:
+        job = await billing.create_charged_job(
+            s, job=_regenerate_job(novel, chapters[1]), expected_cost=120, now=datetime.now(UTC)
+        )
+
+    assert _detail(caught.value) == {"code": "NOVELIZE_PRICE_CHANGED", "currentCost": 120}
+    stored = await db_session.get_one(NovelJob, job.id)
+    assert (stored.batch_id, stored.episode_count_target, stored.charged_amount) == (chapters[1].batch_id, 3, 120)
+    assert await _ledger(db_session, owner.id) == [("novelize_spend", -120)]
+
+
+@pytest.mark.parametrize(
+    ("model", "episodes", "turns", "reason"),
+    [
+        pytest.param("opus", 2, 10, "too_many_episodes", id="opus-two-episodes"),
+        pytest.param("sonnet", 1, 21, "too_many_turns", id="sonnet-21-turns"),
+        pytest.param("opus", 1, 21, "too_many_turns", id="opus-21-turns"),
+    ],
+)
+async def test_regenerating_with_a_model_that_cannot_hold_the_batch_is_409_before_charging(
+    db_session: AsyncSession, model: str, episodes: int, turns: int, reason: str
+) -> None:
+    """다시 만들기는 화 수를 바꿀 수 없으므로, 고른 모델의 화 수·턴 상한을 넘는 묶음은 차감 전에 거절한다."""
+    owner = await _owner(db_session, balance=1000)
+    novel = await _make_novel(db_session, owner.id)
+    chapters = await _batch(db_session, novel, episodes=episodes, turns=turns)
+
+    async with _service_session(db_session) as s:
+        with pytest.raises(HTTPException) as caught:
+            await billing.create_charged_job(
+                s, job=_regenerate_job(novel, chapters[0], model), expected_cost=170 * episodes, now=datetime.now(UTC)
+            )
+
+    assert caught.value.status_code == 409
+    assert _detail(caught.value) == {"code": "NOVEL_MODEL_INELIGIBLE", "reason": reason}
+    assert await _job_count(db_session, novel.id) == 0
+    assert await _ledger(db_session, owner.id) == []
+
+
+async def test_regenerating_a_batch_with_no_episodes_is_refused_before_charging(db_session: AsyncSession) -> None:
+    """화가 없는 묶음(옛 판 코드가 화만 지운 경우)을 다시 만들면 0 클로버 작업이 묶음 전체를 다시 쓰려 든다 — 없는
+    묶음과 같은 404 다."""
+    owner = await _owner(db_session)
+    novel = await _make_novel(db_session, owner.id)
+    (chapter,) = await _batch(db_session, novel, episodes=1)
+    batch_id = chapter.batch_id
+    await db_session.execute(delete(NovelChapter).where(NovelChapter.id == chapter.id))
+    job = _chapter_job(novel, kind="chapter_regenerate", start_message_id=uuid.uuid4())
+    job.batch_id = batch_id
+
+    async with _service_session(db_session) as s:
+        with pytest.raises(HTTPException) as caught:
+            await billing.create_charged_job(s, job=job, expected_cost=0, now=datetime.now(UTC))
+
+    assert (caught.value.status_code, _detail(caught.value)) == (404, {"code": "NOVEL_BATCH_NOT_FOUND"})
+    assert await _ledger(db_session, owner.id) == []
+
+
+async def test_a_model_at_both_caps_can_regenerate_the_batch(db_session: AsyncSession) -> None:
+    owner = await _owner(db_session, balance=1000)
+    novel = await _make_novel(db_session, owner.id)
+    (chapter,) = await _batch(db_session, novel, episodes=1, turns=20)
+
+    async with _service_session(db_session) as s:
+        await billing.create_charged_job(
+            s, job=_regenerate_job(novel, chapter, "opus"), expected_cost=170, now=datetime.now(UTC)
+        )
+
+    assert await _ledger(db_session, owner.id) == [("novelize_spend", -170)]
 
 
 async def test_create_without_enough_clover_is_429_and_leaves_nothing(db_session: AsyncSession) -> None:
@@ -228,11 +402,16 @@ async def test_daily_chapter_limit_counts_only_todays_live_attempts_at_the_same_
     )
     await db_session.flush()
 
+    (chapter,) = await _batch(db_session, novel, episodes=1)
+
+    def regenerate() -> NovelJob:
+        job = _chapter_job(novel, kind="chapter_regenerate", start_message_id=start)
+        job.chapter_id = chapter.id
+        return job
+
     async def attempt() -> None:
         async with _service_session(db_session) as s:
-            job = await billing.create_charged_job(
-                s, job=_chapter_job(novel, kind="chapter_regenerate", start_message_id=start), expected_cost=40, now=now
-            )
+            job = await billing.create_charged_job(s, job=regenerate(), expected_cost=40, now=now)
         await db_session.execute(update(NovelJob).where(NovelJob.id == job.id).values(status="succeeded"))
 
     await attempt()  # 1 건 있음 → 통과
@@ -240,9 +419,7 @@ async def test_daily_chapter_limit_counts_only_todays_live_attempts_at_the_same_
 
     async with _service_session(db_session) as s:
         with pytest.raises(HTTPException) as caught:
-            await billing.create_charged_job(
-                s, job=_chapter_job(novel, kind="chapter_regenerate", start_message_id=start), expected_cost=40, now=now
-            )
+            await billing.create_charged_job(s, job=regenerate(), expected_cost=40, now=now)
 
     assert caught.value.status_code == 429
     assert _detail(caught.value) == {
@@ -297,13 +474,54 @@ async def test_refund_fails_the_job_and_returns_the_charge_once(db_session: Asyn
     assert await _balance(db_session, owner.id) == 100 == await _lot_sum(db_session, owner.id)
 
 
+async def test_refund_returns_only_what_a_chain_parent_has_not_used(db_session: AsyncSession) -> None:
+    """연쇄 부모는 성공한 묶음 몫을 이미 썼다 — 실패하면 쓰지 않은 몫만 돌려주고 그 금액을 행에 적는다."""
+    owner, job = await _charged_job(db_session)
+    await db_session.execute(update(NovelJob).where(NovelJob.id == job.id).values(consumed_amount=15))
+    await db_session.commit()
+
+    async with _service_session(db_session) as s:
+        assert await billing.refund_job(s, job_id=job.id, failure_code="llm_error") == 25
+        await s.commit()
+
+    stored = await db_session.get_one(NovelJob, job.id, populate_existing=True)
+    assert (stored.status, stored.refunded_amount, stored.refunded_at is not None) == ("failed", 25, True)
+    assert await _ledger(db_session, owner.id) == [("novelize_spend", -40), ("novelize_refund", 25)]
+    assert await _balance(db_session, owner.id) == 85 == await _lot_sum(db_session, owner.id)
+
+
+async def test_refund_of_nothing_left_fails_the_job_without_a_refund_record(db_session: AsyncSession) -> None:
+    """돌려줄 몫이 0 이면(차감 0 인 연쇄 자식) 실패로만 끝낸다 — 환불 시각을 찍으면 화면이 "환불됨"으로 읽고, 0 원
+    원장 행은 내역을 어지럽힌다."""
+    owner = await _owner(db_session)
+    novel = await _make_novel(db_session, owner.id)
+    child = _chapter_job(novel, start_message_id=uuid.uuid4())
+    child.status = "running"
+    child.charged_amount = 0
+    child.parent_job_id = uuid.uuid4()
+    db_session.add(child)
+    await db_session.commit()
+
+    async with _service_session(db_session) as s:
+        assert await billing.refund_job(s, job_id=child.id, failure_code="llm_error") == 0
+        await s.commit()
+
+    stored = await db_session.get_one(NovelJob, child.id, populate_existing=True)
+    assert (stored.status, stored.failure_code, stored.refunded_at, stored.refunded_amount) == (
+        "failed",
+        "llm_error",
+        None,
+        None,
+    )
+    assert await _ledger(db_session, owner.id) == []
+
+
 async def test_refund_after_success_does_nothing(db_session: AsyncSession) -> None:
     owner, job = await _charged_job(db_session)
     async with _service_session(db_session) as s:
         await billing.transition_job(s, job_id=job.id, expected=("queued",), values={"status": "running"})
-        assert (
-            await billing.transition_job(s, job_id=job.id, expected=("running",), values={"status": "succeeded"}) == 40
-        )
+        moved = await billing.transition_job(s, job_id=job.id, expected=("running",), values={"status": "succeeded"})
+        assert moved is not None and moved.charged_amount == 40
         await s.commit()
 
     async with _service_session(db_session) as s:
@@ -412,9 +630,11 @@ async def independent_factory(db_engine: AsyncEngine) -> AsyncGenerator[async_se
         await cleanup.commit()
 
 
-async def _seed(factory: async_sessionmaker[AsyncSession]) -> tuple[uuid.UUID, uuid.UUID]:
+async def _seed(factory: async_sessionmaker[AsyncSession], balance: int = 100) -> tuple[uuid.UUID, uuid.UUID]:
     async with factory() as s:
-        owner = await _make_user_with_clover_lot(s, clover_balance=100, email=f"nv-{uuid.uuid4()}@{_MARKER_DOMAIN}")
+        owner = await _make_user_with_clover_lot(
+            s, clover_balance=balance, email=f"nv-{uuid.uuid4()}@{_MARKER_DOMAIN}"
+        )
         novel = await _make_novel(s, owner.id)
         await s.commit()
     return owner.id, novel.id
@@ -476,10 +696,10 @@ async def test_refund_racing_a_success_loses_and_does_not_refund(
 
     winner = independent_factory()
     try:
-        assert (
-            await billing.transition_job(winner, job_id=job.id, expected=("running",), values={"status": "succeeded"})
-            == 20
+        moved = await billing.transition_job(
+            winner, job_id=job.id, expected=("running",), values={"status": "succeeded"}
         )
+        assert moved is not None and moved.charged_amount == 20
 
         async def late_refund() -> int | None:
             async with independent_factory() as s:
@@ -559,6 +779,118 @@ async def test_refund_waits_for_a_withdrawal_holding_the_user_instead_of_deadloc
         await withdrawal.close()
 
     assert await _independent_ledger(independent_factory, user_id) == [("novelize_spend", -20)]
+
+
+async def _running_generate(
+    factory: async_sessionmaker[AsyncSession], novel_id: uuid.UUID, *, episodes: int
+) -> NovelJob:
+    async with factory() as s:
+        novel = await s.get_one(Novel, novel_id)
+        job = _chapter_job(novel, start_message_id=uuid.uuid4())
+        job.episode_count_target = episodes
+        job = await billing.create_charged_job(s, job=job, expected_cost=40 * episodes, now=datetime.now(UTC))
+        await billing.transition_job(s, job_id=job.id, expected=("queued",), values={"status": "running"})
+        await s.commit()
+    return job
+
+
+def _save_two_of_three(factory: async_sessionmaker[AsyncSession], job_id: uuid.UUID) -> "asyncio.Task[None]":
+    """목표 3화에 2화를 낸 결과 저장을 띄운다 — 모자란 1화를 돌려주므로 사용자 행을 고친다."""
+    chapter_input = ChapterInput(
+        prompt=NovelizePrompt(system_instruction="", prompt=""),
+        room_id=uuid.uuid4(),
+        assistant_count=1,
+        source_hash="0" * 64,
+        episode_count=3,
+        writes_novel_title=True,
+    )
+    episodes = tuple(
+        ParsedEpisode(title=f"제목 {n}", summary=f"요약 {n}", characters=("서진",), body=f"본문 {n}") for n in (1, 2)
+    )
+    return asyncio.create_task(
+        runner._save_batch(factory, job_id, chapter_input, ParsedBatch(novel_title="제목", episodes=episodes))
+    )
+
+
+async def _chapter_count(factory: async_sessionmaker[AsyncSession], novel_id: uuid.UUID) -> int:
+    async with factory() as s:
+        return int(
+            await s.scalar(select(func.count()).select_from(NovelChapter).where(NovelChapter.novel_id == novel_id))
+            or 0
+        )
+
+
+async def test_success_save_waits_for_a_withdrawal_holding_the_user_instead_of_deadlocking(
+    independent_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """모자란 화를 돌려주는 성공 저장은 사용자 행을 고친다. 작업 행부터 잡고 사용자 행을 나중에 잡으면, 사용자 행을 쥔
+    채 작업 행을 지우는 탈퇴와 서로를 기다려 한쪽이 교착 오류로 끊긴다. 사용자 행을 먼저 잡으면 저장이 줄을 서서
+    기다리고, 탈퇴가 지운 뒤에는 저장할 작업이 없어 아무것도 하지 않는다."""
+    user_id, novel_id = await _seed(independent_factory, balance=200)
+    job = await _running_generate(independent_factory, novel_id, episodes=3)
+
+    withdrawal = independent_factory()
+    try:
+        await withdrawal.execute(select(User.id).where(User.id == user_id).with_for_update(key_share=True))
+        task = _save_two_of_three(independent_factory, job.id)
+        await _assert_blocked(task)
+        await delete_novels(withdrawal, [novel_id])
+        await withdrawal.commit()
+        await task
+    finally:
+        await withdrawal.close()
+
+    assert await _independent_ledger(independent_factory, user_id) == [("novelize_spend", -120)]
+    assert await _chapter_count(independent_factory, novel_id) == 0
+
+
+async def test_success_save_after_expiry_already_refunded_the_job_saves_and_refunds_nothing(
+    independent_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """만료 정리가 사용자 행을 잡고 작업을 실패·환불하는 중이면 성공 저장은 사용자 행에서 기다린다. 정리가 커밋된 뒤
+    에는 작업이 이미 실패라 전이가 행을 받지 못하고, 화도 모자란 화 환불도 남기지 않는다 — 환불은 한 번이다."""
+    user_id, novel_id = await _seed(independent_factory, balance=200)
+    job = await _running_generate(independent_factory, novel_id, episodes=3)
+
+    cleanup = independent_factory()
+    try:
+        assert await billing.refund_job(cleanup, job_id=job.id, failure_code="expired") == 120
+        task = _save_two_of_three(independent_factory, job.id)
+        await _assert_blocked(task)
+        await cleanup.commit()
+        await task
+    finally:
+        await cleanup.close()
+
+    assert await _independent_ledger(independent_factory, user_id) == [
+        ("novelize_spend", -120),
+        ("novelize_refund", 120),
+    ]
+    assert await _chapter_count(independent_factory, novel_id) == 0
+    async with independent_factory() as s:
+        assert await _balance(s, user_id) == 200 == await _lot_sum(s, user_id)
+
+
+async def test_expiry_after_a_success_with_a_shortfall_refund_does_nothing_more(
+    independent_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """반대 순서: 모자란 화를 돌려준 성공이 커밋된 뒤의 만료 정리는 작업이 이미 성공이라 아무것도 하지 않는다. 원장은
+    차감 하나와 차액 환불 하나뿐이고 잔액과 로트 합이 같다."""
+    user_id, novel_id = await _seed(independent_factory, balance=200)
+    job = await _running_generate(independent_factory, novel_id, episodes=3)
+
+    await _save_two_of_three(independent_factory, job.id)
+    async with independent_factory() as s:
+        assert await billing.refund_job(s, job_id=job.id, failure_code="expired") is None
+        await s.commit()
+
+    assert await _independent_ledger(independent_factory, user_id) == [
+        ("novelize_spend", -120),
+        ("novelize_refund", 40),
+    ]
+    assert await _chapter_count(independent_factory, novel_id) == 2
+    async with independent_factory() as s:
+        assert await _balance(s, user_id) == 120 == await _lot_sum(s, user_id)
 
 
 async def test_novel_deletion_waits_for_an_edit_holding_the_chapter_and_removes_its_new_revision(
@@ -748,3 +1080,92 @@ async def test_chapter_whose_start_was_taken_by_a_chapter_saved_while_waiting_is
     assert isinstance(result, HTTPException)
     assert (result.status_code, _detail(result)) == (409, {"code": "NOVEL_NOTHING_NEW"})
     assert await _independent_ledger(independent_factory, user_id) == []
+
+
+async def test_last_batch_delete_lets_an_edit_holding_the_job_finish_instead_of_deadlocking(
+    independent_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """AI 수정 적용은 작업 행을 잠근 뒤 화 행을 잠근다. 묶음 삭제가 화를 먼저 잠그고 작업 행을 고치면 둘이 서로를 기다려
+    한쪽이 교착 오류로 끊긴다(삭제든 적용이든 500). 삭제도 작업 행 → 화 순서면 삭제가 적용 커밋을 기다린다."""
+    user_id, novel_id = await _seed(independent_factory)
+    async with independent_factory() as s:
+        novel = await s.get_one(Novel, novel_id)
+        (chapter,) = await _batch(s, novel, episodes=1)
+        revision = NovelChapterRevision(chapter_id=chapter.id, revision_no=1, body="본문", source="generate")
+        s.add(revision)
+        await s.flush()
+        edit = NovelJob(
+            novel_id=novel_id,
+            user_id=user_id,
+            kind="ai_edit",
+            status="succeeded",
+            chapter_id=chapter.id,
+            base_revision_id=revision.id,
+            instruction="고쳐",
+            result_text="고친 본문",
+            charged_amount=20,
+        )
+        s.add(edit)
+        await s.commit()
+        batch_id = chapter.batch_id
+        assert batch_id is not None
+
+    applier = independent_factory()
+    try:
+        # 적용이 하는 일 그대로: 작업 행 잠금 → (삭제가 끼어든 뒤) 화 행 잠금.
+        await applier.execute(select(NovelJob.id).where(NovelJob.id == edit.id).with_for_update(key_share=True))
+
+        async def delete_last_batch() -> None:
+            async with independent_factory() as s:
+                await billing._lock_user(s, user_id)
+                await delete_batch(s, novel_id=novel_id, batch_id=batch_id)
+                await s.commit()
+
+        task = asyncio.ensure_future(delete_last_batch())
+        await _assert_blocked(task)
+        async with asyncio.timeout(5):
+            await applier.execute(
+                select(NovelChapter.id).where(NovelChapter.id == chapter.id).with_for_update(key_share=True)
+            )
+        await applier.commit()
+        await task
+    finally:
+        await applier.close()
+
+    async with independent_factory() as s:
+        assert await s.get(NovelBatch, batch_id) is None
+        kept = await s.get_one(NovelJob, edit.id)
+        assert (kept.chapter_id, kept.result_text) == (None, None)
+
+
+async def test_two_concurrent_batch_fills_give_each_chapter_one_batch_without_a_duplicate_number(
+    independent_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """상세 두 개가 동시에 같은 묶음 없는 화를 채우면 같은 묶음 번호를 두 번 쓰려다 유니크 위반(500)이 날 수 있다. 사용자
+    행에서 줄을 서므로 뒤 요청은 앞 요청이 채운 결과를 보고 아무것도 하지 않는다."""
+    _user_id, novel_id = await _seed(independent_factory)
+    async with independent_factory() as s:
+        novel = await s.get_one(Novel, novel_id)
+        await _batch(s, novel, episodes=1)
+        await s.execute(update(NovelChapter).where(NovelChapter.novel_id == novel_id).values(batch_id=None))
+        await s.execute(delete(NovelBatch).where(NovelBatch.novel_id == novel_id))
+        await s.commit()
+
+    async def fill() -> bool:
+        async with independent_factory() as s:
+            changed = await ensure_batches(s, novel_id)
+            await asyncio.sleep(0.2)  # 커밋 전에 잠시 쥐고 있어 다른 요청이 같은 순간에 들어오게 한다
+            await s.commit()
+            return changed
+
+    results = await asyncio.gather(fill(), fill())
+
+    assert sorted(results) == [False, True]
+    async with independent_factory() as s:
+        ordinals = (await s.scalars(select(NovelBatch.ordinal).where(NovelBatch.novel_id == novel_id))).all()
+        unbatched = await s.scalar(
+            select(func.count())
+            .select_from(NovelChapter)
+            .where(NovelChapter.novel_id == novel_id, NovelChapter.batch_id.is_(None))
+        )
+    assert (list(ordinals), unbatched) == ([1], 0)

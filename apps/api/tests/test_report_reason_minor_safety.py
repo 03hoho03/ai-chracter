@@ -6,18 +6,15 @@
 
 import importlib.util
 import uuid
-from collections.abc import AsyncGenerator
 from pathlib import Path
 from types import ModuleType
 
 import httpx
-import pytest_asyncio
 import sqlalchemy as sa
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
-from sqlalchemy.pool import NullPool
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from api.db.models import (
     ChatMessage,
@@ -116,19 +113,6 @@ async def test_chat_response_report_accepts_minor_safety_and_admin_reads_it_back
     await _login_as_admin(db_client, admin)
     detail = (await db_client.get(f"/admin/chat-message-reports/{stored.id}")).json()
     assert detail["reason"] == "minor_safety"
-
-
-@pytest_asyncio.fixture
-async def ddl_engine(db_engine: AsyncEngine) -> AsyncGenerator[AsyncEngine, None]:
-    """타입을 다시 만드는 DDL 을 공용 풀 밖에서 돌린다 — 공용 풀 커넥션에 남은 준비된 문장 캐시가 롤백으로 사라진
-    타입 OID 를 가리키지 않게 하려고 풀 없는 엔진을 따로 만든다. 잠금을 기다리다 멈추지 않게 `lock_timeout` 을 건다."""
-    engine = create_async_engine(
-        db_engine.url.render_as_string(hide_password=False),
-        poolclass=NullPool,
-        connect_args={"server_settings": {"lock_timeout": "5s"}},
-    )
-    yield engine
-    await engine.dispose()
 
 
 async def test_downgrade_moves_minor_safety_reports_to_other_instead_of_failing(ddl_engine: AsyncEngine) -> None:

@@ -40,6 +40,6 @@ export function AiEditStatus({ aiEdit }: AiEditStatusProps) {
 function toProgressText(aiEdit: NovelAiEditFlow): string {
   if (!aiEdit.isRunning) return "";
   if (aiEdit.hasPollError) return "진행 상황을 확인하지 못하고 있어요. 잠시 뒤 다시 확인할게요.";
-  const where = aiEdit.runningChapterOrdinal === undefined ? "" : `${aiEdit.runningChapterOrdinal}장 `;
+  const where = aiEdit.runningChapterOrdinal === undefined ? "" : `${aiEdit.runningChapterOrdinal}화 `;
   return `${where}수정안을 만들고 있어요. 이 화면을 떠나도 계속 만들어요.`;
 }

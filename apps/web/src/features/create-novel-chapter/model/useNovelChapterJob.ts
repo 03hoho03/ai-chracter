@@ -8,16 +8,21 @@ import {
   isProtagonistNameRequiredError,
   isTerminalNovelJobStatus,
   novelKeys,
+  toBatchRangeLabel,
   toNovelActionError,
   toNovelJobFailureMessage,
+  toProposalModelOptions,
+  toRefundSentence,
+  toRegenerateModelOptions,
   useNovelJobQuery,
+  chaptersInBatch,
   initialChapterModelId,
   type NovelAction,
-  type NovelChapterModel,
   type NovelChapterModelId,
   type NovelChapterSummary,
   type NovelDetailResponse,
   type NovelJobResponse,
+  type PricedChapterModelOption,
 } from "@/entities/novel";
 
 import { useChapterProposalMutation } from "../api/useChapterProposalMutation";
@@ -28,25 +33,25 @@ import { ProtagonistNameModal } from "../ui/ProtagonistNameModal";
 
 import { toRegenerateConfirmDescription } from "./regenerateConfirm";
 
-/** 장 다시 만들기의 금액 확인. 이 기능 밖의 확인 모달을 호출부가 넣어 준다(기능끼리 서로 가져다 쓰지 않는다).
+/** 화 다시 만들기의 금액 확인. 이 기능 밖의 확인 모달을 호출부가 넣어 준다(기능끼리 서로 가져다 쓰지 않는다).
  * 소설 상위 모델 허용이 있으면 모달이 모델도 고르게 하므로, 확정하면 고른 모델과 이용자가 본 금액을 돌려준다.
  * 그만두면 `null` 이다. */
 export type ConfirmChapterSpend = (props: {
   title: string;
   description: string;
   confirmLabel: string;
-  kind: "generate" | "regenerate";
-  models: NovelChapterModel[];
+  /** 고를 수 있는 모델과 그 모델의 금액 — 상세의 묶음 다시 만들기 목록 그대로다. */
+  options: PricedChapterModelOption[];
   initialModelId: NovelChapterModelId;
-  /** 모델 목록이 없는 서버일 때의 금액 — 이 기능 전부터 서버가 주던 기본 모델 가격이다. */
-  fallbackCost: number;
 }) => Promise<{ model: NovelChapterModelId; cost: number } | null>;
 
-type ChapterJobKind = "chapter_generate" | "chapter_regenerate";
+/** 이 흐름이 지켜보는 작업 — AI 수정을 뺀 전부다. 남은 대화 한 번에(연쇄)는 이 화면이 시작하지 않지만, 다른 화면에서
+ * 시작했으면 진행 중으로 보이고 버튼을 잠근다. */
+type ChapterJobKind = Exclude<NovelJobResponse["kind"], "ai_edit">;
 
-type TrackedJob = { jobId: string; kind: ChapterJobKind; chapterId: string | null };
+type TrackedJob = { jobId: string; kind: ChapterJobKind; chapterId: string | null; batchId: string | null };
 
-type RetryTarget = { kind: "generate" } | { kind: "regenerate"; chapterId: string };
+type RetryTarget = { kind: "generate" } | { kind: "regenerate"; batchId: string };
 
 /** 화면에 남겨 두는 결과 문장. 작업이 끝나거나 요청이 거절된 **그 순간**에 기록하고 다음 동작에서만 지운다 —
  * 쿼리 상태에서 그때그때 파생하면 상세를 다시 받는 순간(진행 중 작업이 사라지는 순간) 안내도 함께 사라진다. */
@@ -83,7 +88,12 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
 
   const activeChapterJob: TrackedJob | undefined =
     novel.activeJob && novel.activeJob.kind !== "ai_edit"
-      ? { jobId: novel.activeJob.id, kind: novel.activeJob.kind, chapterId: novel.activeJob.chapterId }
+      ? {
+          jobId: novel.activeJob.id,
+          kind: novel.activeJob.kind,
+          chapterId: novel.activeJob.chapterId,
+          batchId: novel.activeJob.batchId,
+        }
       : undefined;
   // 서버가 진행 중이라고 알려 온 작업이 먼저다 — 이 화면이 지켜보던 작업이 끝난 뒤 다른 탭이 새 작업을 시작했으면
   // 그쪽을 지켜봐야 버튼이 다시 잠긴다. 202 직후 상세를 다시 받기 전에는 방금 만든 작업을 지켜본다.
@@ -97,7 +107,9 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
   const isAiEditRunning = novel.activeJob?.kind === "ai_edit";
   const isRoomGone = novel.chatRoomId === null;
   const isBusy = preparing !== undefined || isJobRunning || isAiEditRunning;
-  const runningChapterOrdinal = novel.chapters.find((chapter) => chapter.id === watched?.chapterId)?.ordinal;
+  // 다시 만드는 중인 화들의 이름(`3~5화`). 작업이 가리키는 묶음이 상세에 없으면(낡은 상세) 이름 없이 말한다.
+  const runningRangeLabel =
+    watched?.batchId === null || watched?.batchId === undefined ? undefined : toBatchRangeLabel(novel.chapters, watched.batchId);
 
   // 이 화면이 아직 떠 있나. 흐름의 모달은 루트에 마운트돼 라우트가 바뀌어도 남고, 기다리던 응답은 화면을 떠난 뒤에도
   // 돌아온다 — 각 기다림 뒤에 이 값을 보고, 떠났으면 과금 요청도 화면 이동도 하지 않는다(진행·결과를 알릴 화면이
@@ -127,7 +139,7 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     if (!isJobGone || watched === undefined || settledJobIdsRef.current.has(watched.jobId)) return;
     settledJobIdsRef.current.add(watched.jobId);
     // 현실적인 경로는 다른 탭에서 소설을 지운 경우다 — 상세를 다시 받으면 화면이 「찾을 수 없어요」로 간다.
-    setNotice({ tone: "error", message: "장 작업을 찾을 수 없어요. 소설을 다시 불러왔어요." });
+    setNotice({ tone: "error", message: "화 작업을 찾을 수 없어요. 소설을 다시 불러왔어요." });
     void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
     // 처리 시점은 404 를 받은 순간 하나다.
   }, [isJobGone]);
@@ -142,8 +154,8 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
       return;
     }
 
-    // 상세(목차·진행 중 작업)·목록, 그리고 장 본문처럼 이 소설에 딸린 캐시는 전부 낡았다. 끝난 작업 자신은 더
-    // 바뀌지 않으므로 다시 묻지 않는다. 상세를 받아 온 뒤에 이동해야 새 장이 목차에 있다.
+    // 상세(목차·진행 중 작업)·목록, 그리고 화 본문처럼 이 소설에 딸린 캐시는 전부 낡았다. 끝난 작업 자신은 더
+    // 바뀌지 않으므로 다시 묻지 않는다. 상세를 받아 온 뒤에 이동해야 새 화가 목차에 있다.
     await queryClient.invalidateQueries({
       queryKey: novelKeys.all,
       predicate: (query) => query.queryKey[1] !== "job",
@@ -151,10 +163,10 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     const fresh = queryClient.getQueryData<NovelDetailResponse>(novelKeys.detail(novel.id));
     // 기다리는 동안 이용자가 다른 화면으로 갔으면 소설 화면으로 끌고 오지 않는다.
     if (!isMountedRef.current) return;
+    // 작업이 가리키는 화는 그 묶음의 첫 화다(화를 골라 들어온 옛 다시 만들기는 고른 화). 그 화로 옮긴다.
     const chapter = fresh?.chapters.find((item) => item.id === finished.chapterId);
     const isRegenerated = finished.kind === "chapter_regenerate";
-    const verb = isRegenerated ? "다시 만들었어요" : "만들었어요";
-    setNotice({ tone: "done", message: chapter ? `${chapter.ordinal}장을 ${verb}.` : `장을 ${verb}.` });
+    setNotice({ tone: "done", message: toDoneMessage(finished, fresh?.chapters ?? []) });
     if (fresh && chapter) onChapterReady(chapter, fresh.chapters, isRegenerated);
   }
 
@@ -199,8 +211,9 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     }
   }
 
-  function track(started: NovelJobResponse, kind: ChapterJobKind) {
-    setTracked({ jobId: started.id, kind, chapterId: started.chapterId });
+  function track(started: NovelJobResponse) {
+    if (started.kind === "ai_edit") return;
+    setTracked({ jobId: started.id, kind: started.kind, chapterId: started.chapterId, batchId: started.batchId });
   }
 
   async function startCreate() {
@@ -210,18 +223,25 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     let action: NovelAction = "proposal";
     try {
       if (!(await ensureProtagonistName()) || !isMountedRef.current) return;
-      const proposal = await proposalMutation.mutateAsync(novel.id);
+      // 모델을 먼저 정하고 그 모델로 제안을 받는다 — 모델마다 담을 수 있는 턴 수가 달라 후보가 모델을 따라 바뀐다.
+      // 처음에는 직전에 쓴 모델로 받고, 모달에서 모델을 바꾸면 모달이 다시 받는다.
+      const modelOptions = toProposalModelOptions(novel.chapterModels ?? []);
+      const initialModelId = initialChapterModelId(modelOptions, novel.lastChapterModel);
+      const proposal = await proposalMutation.mutateAsync({ novelId: novel.id, model: initialModelId });
       if (!isMountedRef.current) return;
       if (proposal.candidates.length === 0) {
-        setNotice({ tone: "error", message: "장으로 묶을 새 대화가 없어요. 대화를 더 이어 간 뒤 만들어주세요." });
+        setNotice({ tone: "error", message: "화로 묶을 새 대화가 없어요. 대화를 더 이어 간 뒤 만들어주세요." });
         return;
       }
       if (hasActiveJobNow()) return;
-      const chapterOrdinal = Math.max(0, ...novel.chapters.map((chapter) => chapter.ordinal)) + 1;
+      const firstEpisodeOrdinal = Math.max(0, ...novel.chapters.map((chapter) => chapter.ordinal)) + 1;
       const choice = await ChapterBoundaryModal.call({
+        novelId: novel.id,
         proposal,
-        chapterOrdinal,
-        lastChapterModel: novel.lastChapterModel,
+        // 제안 응답의 목록이 그 순간의 허용이다. 없으면 상세의 목록으로 그린다.
+        modelOptions: proposal.chapterModels === undefined ? modelOptions : toProposalModelOptions(proposal.chapterModels),
+        initialModelId,
+        firstEpisodeOrdinal,
       });
       if (choice === null || !isMountedRef.current) return;
       action = "generate";
@@ -233,7 +253,7 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
           model: choice.model,
         }),
       );
-      if (started) track(started, "chapter_generate");
+      if (started) track(started);
     } catch (error) {
       handleRequestError(error, action);
     } finally {
@@ -241,34 +261,50 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     }
   }
 
-  async function startRegenerate(chapter: Pick<NovelChapterSummary, "id" | "ordinal">) {
+  /** 한 번에 만든 화들(묶음)을 함께 다시 만든다. 어느 화에서 눌러도 그 화가 든 묶음 전체다. 고를 수 있는 모델과
+   * 금액은 상세의 그 묶음 목록이 정한다 — 맞지 않는 모델은 확인 화면에서 비활성 + 이유로 보인다. */
+  async function startRegenerate(batchId: string) {
     if (isBusy || isRoomGone) return;
     setNotice(undefined);
+    const batch = novel.batches.find((item) => item.id === batchId);
+    const batchChapters = chaptersInBatch(novel.chapters, batchId);
+    const rangeLabel = toBatchRangeLabel(novel.chapters, batchId);
+    if (batch === undefined || rangeLabel === undefined) {
+      // 상세가 낡았다(다른 탭에서 지웠다) — 다시 받으면 목차와 버튼이 맞아진다.
+      setNotice({ tone: "error", message: "다시 만들 화를 찾을 수 없어요. 소설을 다시 불러왔어요." });
+      void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });
+      return;
+    }
+    const options = toRegenerateModelOptions(batch.regenerateOptions);
+    if (!options.some((option) => option.disabledReason === undefined)) {
+      setNotice({ tone: "error", message: `${rangeLabel}는 지금 고를 수 있는 모델로 다시 만들 수 없어요.` });
+      return;
+    }
     setPreparing("regenerate");
     try {
       if (!(await ensureProtagonistName()) || !isMountedRef.current || hasActiveJobNow()) return;
-      const models = novel.chapterModels ?? [];
+      const batchChapterIds = new Set(batchChapters.map((chapter) => chapter.id));
       const choice = await confirmSpend({
-        title: `${chapter.ordinal}장을 다시 만들까요?`,
-        description: toRegenerateConfirmDescription(
-          novel.pendingAiEdits.some((edit) => edit.chapterId === chapter.id),
-        ),
+        title: `${rangeLabel}를 다시 만들까요?`,
+        description: toRegenerateConfirmDescription({
+          rangeLabel,
+          episodeCount: batchChapters.length,
+          hasPendingAiEdits: novel.pendingAiEdits.some((edit) => batchChapterIds.has(edit.chapterId)),
+        }),
         confirmLabel: "다시 만들기",
-        kind: "regenerate",
-        models,
-        initialModelId: initialChapterModelId(models, novel.lastChapterModel),
-        fallbackCost: novel.prices.chapterRegenerate,
+        options,
+        initialModelId: initialChapterModelId(options, novel.lastChapterModel),
       });
       if (choice === null || !isMountedRef.current) return;
       const started = await requestJob(() =>
         regenerateMutation.mutateAsync({
           novelId: novel.id,
-          chapterId: chapter.id,
+          batchId,
           expectedCost: choice.cost,
           model: choice.model,
         }),
       );
-      if (started) track(started, "chapter_regenerate");
+      if (started) track(started);
     } catch (error) {
       handleRequestError(error, "regenerate");
     } finally {
@@ -281,8 +317,7 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
       void startCreate();
       return;
     }
-    const chapter = novel.chapters.find((item) => item.id === target.chapterId);
-    if (chapter) void startRegenerate(chapter);
+    void startRegenerate(target.batchId);
   }
 
   return {
@@ -294,7 +329,7 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
     isBusy,
     hasPollError,
     runningKind: isJobRunning ? watched?.kind : undefined,
-    runningChapterOrdinal,
+    runningRangeLabel,
     notice,
     startCreate,
     startRegenerate,
@@ -308,6 +343,17 @@ function toRetryTarget(job: NovelJobResponse): RetryTarget | undefined {
   // 원래 대화가 바뀌어 실패한 재생성은 다시 해도 같은 결과라 다시 시도를 내밀지 않는다.
   if (job.failureReason === "source_changed") return undefined;
   if (job.kind === "chapter_generate") return { kind: "generate" };
-  if (job.kind === "chapter_regenerate" && job.chapterId !== null) return { kind: "regenerate", chapterId: job.chapterId };
+  if (job.kind === "chapter_regenerate" && job.batchId !== null) return { kind: "regenerate", batchId: job.batchId };
+  // 남은 대화 한 번에는 이 화면이 시작하는 작업이 아니라 여기서 다시 시도를 내밀지 않는다.
   return undefined;
+}
+
+/** 성공한 작업의 결과 문장. 만든 화들을 범위로 말하고, 덜 나온 화의 몫을 서버가 돌려줬으면 그 금액을 덧붙인다(성공도
+ * 일부 환불일 수 있다). */
+function toDoneMessage(job: NovelJobResponse, chapters: readonly NovelChapterSummary[]): string {
+  const refund = toRefundSentence(job.refundedAmount);
+  if (job.kind === "chain_generate") return `남은 대화를 소설로 만들었어요.${refund}`;
+  const rangeLabel = job.batchId === null ? undefined : toBatchRangeLabel(chapters, job.batchId);
+  const verb = job.kind === "chapter_regenerate" ? "다시 만들었어요" : "만들었어요";
+  return `${rangeLabel === undefined ? "화를" : `${rangeLabel}를`} ${verb}.${refund}`;
 }

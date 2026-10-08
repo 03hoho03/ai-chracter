@@ -53,9 +53,14 @@ from api.db.models import (
     MediaBookScene,
     ModerationStatus,
     Novel,
+    NovelBatch,
     NovelChapter,
+    NovelChapterCharacter,
     NovelChapterRevision,
+    NovelCharacter,
     NovelJob,
+    NovelReadingPosition,
+    NovelSnapshot,
     StartingSetup,
     StatDef,
     StoryPromptTemplate,
@@ -238,6 +243,7 @@ async def _grant_feature(db_session: AsyncSession, user_id: uuid.UUID, feature: 
 @dataclass
 class NovelTree:
     novel: Novel
+    batch: NovelBatch
     chapter: NovelChapter
     first_revision: NovelChapterRevision
     reverting_revision: NovelChapterRevision
@@ -249,9 +255,9 @@ class NovelTree:
 async def _make_novel_tree(
     db_session: AsyncSession, user_id: uuid.UUID, *, chat_room_id: uuid.UUID | None = None
 ) -> NovelTree:
-    """소설 한 권과 그 아래 행을 FK 가 모두 이어지게 flush 한다(커밋은 호출자). 되돌리기 개정이 앞 개정을, 장 생성
-    작업이 자기가 만든 개정을, AI 수정 작업이 장·기준 개정을 가리키고 진행 중 작업도 하나 있어, 지우는 순서가 틀리면
-    FK 위반이 난다."""
+    """소설 한 권과 그 아래 행을 FK 가 모두 이어지게 flush 한다(커밋은 호출자). 화는 화 하나짜리 묶음에 들어 있다.
+    되돌리기 개정이 앞 개정을, 장 생성 작업이 자기가 만든 개정을, AI 수정 작업이 장·기준 개정을 가리키고 진행 중 작업도
+    하나 있어, 지우는 순서가 틀리면 FK 위반이 난다."""
     novel = Novel(
         user_id=user_id,
         chat_room_id=chat_room_id,
@@ -263,16 +269,18 @@ async def _make_novel_tree(
     db_session.add(novel)
     await db_session.flush()
     now = datetime.now(UTC)
-    chapter = NovelChapter(
-        novel_id=novel.id,
-        ordinal=1,
-        start_message_id=uuid.uuid4(),
-        start_message_created_at=now,
-        end_message_id=uuid.uuid4(),
-        end_message_created_at=now,
-        assistant_message_count=1,
-        source_hash="0" * 64,
-    )
+    segment: dict[str, Any] = {
+        "start_message_id": uuid.uuid4(),
+        "start_message_created_at": now,
+        "end_message_id": uuid.uuid4(),
+        "end_message_created_at": now,
+        "assistant_message_count": 1,
+        "source_hash": "0" * 64,
+    }
+    batch = NovelBatch(novel_id=novel.id, ordinal=1, target_episode_count=1, **segment)
+    db_session.add(batch)
+    await db_session.flush()
+    chapter = NovelChapter(novel_id=novel.id, ordinal=1, batch_id=batch.id, episode_index=0, **segment)
     db_session.add(chapter)
     await db_session.flush()
     first_revision = NovelChapterRevision(chapter_id=chapter.id, revision_no=1, body="첫 본문", source="generate")
@@ -308,7 +316,29 @@ async def _make_novel_tree(
     )
     db_session.add_all([reverting_revision, generate_job, finished_job, active_job])
     await db_session.flush()
-    return NovelTree(novel, chapter, first_revision, reverting_revision, generate_job, finished_job, active_job)
+    return NovelTree(novel, batch, chapter, first_revision, reverting_revision, generate_job, finished_job, active_job)
+
+
+async def _plant_novel_extras(db_session: AsyncSession, tree: NovelTree) -> None:
+    """`tree` 의 소설·화에 인물 카드·등장 인물·스냅샷·읽은 위치를 하나씩 붙인다(flush). 소설을 지우는 경로가 이 테이블들까지
+    지우는지 볼 때 쓴다."""
+    card = NovelCharacter(novel_id=tree.novel.id, name="인물")
+    db_session.add(card)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            NovelChapterCharacter(chapter_id=tree.chapter.id, character_id=card.id),
+            NovelSnapshot(novel_id=tree.novel.id, name="저장", kind="manual", payload={"v": 1, "chapters": []}),
+            NovelReadingPosition(
+                chapter_id=tree.chapter.id,
+                novel_id=tree.novel.id,
+                paragraph_index=0,
+                paragraph_count=1,
+                revision_id=tree.first_revision.id,
+            ),
+        ]
+    )
+    await db_session.flush()
 
 
 async def _make_asset(
@@ -1021,30 +1051,57 @@ async def _add_chapter(
     end: ChatMessage,
     body: str = "첫 문단이다.\n\n둘째 문단이다.\n\n셋째 문단이다.",
 ) -> NovelChapter:
-    """작업을 거치지 않고 장 하나와 첫 개정을 넣고 커밋한다. 장의 구간 모양(응답 수·해시)은 지금 방 원문으로 계산한다
-    — 재생성의 원문 변경 검사가 이 값과 비교한다."""
+    """작업을 거치지 않고 화 하나짜리 묶음과 그 화, 첫 개정을 넣고 커밋한다(`_add_batch` 의 화 하나)."""
+    (chapter,) = await _add_batch(db_session, novel_id, room, start, end, body=body)
+    return chapter
+
+
+async def _add_batch(
+    db_session: AsyncSession,
+    novel_id: uuid.UUID,
+    room: Room,
+    start: ChatMessage,
+    end: ChatMessage,
+    *,
+    episodes: int = 1,
+    body: str = "첫 문단이다.\n\n둘째 문단이다.\n\n셋째 문단이다.",
+) -> list[NovelChapter]:
+    """작업을 거치지 않고 묶음 하나와 그 화 `episodes` 개(화마다 첫 개정)를 넣고 커밋한다. 구간 모양(응답 수·해시)은 지금
+    방 원문으로 계산한다 — 다시 만들기의 원문 변경 검사가 이 값과 비교한다."""
     from api.novelize.source import segment_hash
 
     messages = await _room_messages(db_session, room.room_id)
     segment = messages[messages.index(start) : messages.index(end) + 1]
+    shape: dict[str, Any] = {
+        "start_message_id": start.id,
+        "start_message_created_at": start.created_at,
+        "end_message_id": end.id,
+        "end_message_created_at": end.created_at,
+        "assistant_message_count": sum(1 for m in segment if m.role == ChatMessageRole.ASSISTANT),
+        "source_hash": segment_hash(segment),
+    }
     ordinal = await db_session.scalar(
         sa.select(sa.func.coalesce(sa.func.max(NovelChapter.ordinal), 0)).where(NovelChapter.novel_id == novel_id)
     )
-    chapter = NovelChapter(
-        novel_id=novel_id,
-        ordinal=(ordinal or 0) + 1,
-        start_message_id=start.id,
-        start_message_created_at=start.created_at,
-        end_message_id=end.id,
-        end_message_created_at=end.created_at,
-        assistant_message_count=sum(1 for m in segment if m.role == ChatMessageRole.ASSISTANT),
-        source_hash=segment_hash(segment),
+    batch_ordinal = await db_session.scalar(
+        sa.select(sa.func.coalesce(sa.func.max(NovelBatch.ordinal), 0)).where(NovelBatch.novel_id == novel_id)
     )
-    db_session.add(chapter)
+    batch = NovelBatch(novel_id=novel_id, ordinal=(batch_ordinal or 0) + 1, target_episode_count=episodes, **shape)
+    db_session.add(batch)
     await db_session.flush()
-    db_session.add(NovelChapterRevision(chapter_id=chapter.id, revision_no=1, body=body, source="generate"))
+    chapters = [
+        NovelChapter(
+            novel_id=novel_id, ordinal=(ordinal or 0) + 1 + index, batch_id=batch.id, episode_index=index, **shape
+        )
+        for index in range(episodes)
+    ]
+    db_session.add_all(chapters)
+    await db_session.flush()
+    db_session.add_all(
+        NovelChapterRevision(chapter_id=chapter.id, revision_no=1, body=body, source="generate") for chapter in chapters
+    )
     await db_session.commit()
-    return chapter
+    return chapters
 
 
 async def _queue_job(
@@ -1064,6 +1121,24 @@ async def _queue_job(
         end_message_created_at=end.created_at,
     )
     return await create_charged_job(db_session, job=job, expected_cost=40, now=datetime.now(UTC))
+
+
+def _episode_text(
+    body: str,
+    *,
+    number: int = 1,
+    title: str = "비 오는 저녁",
+    summary: str = "서진이 도윤을 만났다.",
+    characters: str = "서진, 도윤",
+) -> str:
+    """생성 출력의 화 하나 — 머리 줄·필드 세 줄·구분 줄·본문(`novelize/output.py` 의 형식)."""
+    return f"==={number}화===\n제목: {title}\n요약: {summary}\n등장인물: {characters}\n---\n{body}"
+
+
+def _batch_output(*bodies: str, novel_title: str | None = None) -> str:
+    """본문마다 화 하나를 1화부터 차례로 이은 생성 출력. `novel_title` 이 있으면 맨 앞에 소설 제목 블록을 둔다."""
+    head = f"===소설 제목===\n{novel_title}\n" if novel_title is not None else ""
+    return head + "\n".join(_episode_text(body, number=n) for n, body in enumerate(bodies, start=1))
 
 
 async def _novel_ledger(db: AsyncSession, user_id: uuid.UUID) -> list[tuple[str, int]]:

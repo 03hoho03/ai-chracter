@@ -409,15 +409,43 @@ class Settings(BaseSettings):
     # 다음 장 생성에 싣는 직전 장 끝 발췌의 목표 길이(글자). 문단 단위로 잘라 이 길이에 가장 가까운 만큼 싣는다.
     # 앞 장을 되풀이하지 않고 이어 쓰게 하려는 것이다. 임시값.
     novelize_previous_excerpt_chars: int = 1000
-    # 장 하나가 담을 수 있는 원문 턴(AI 응답) 수의 상한. 다음 장 경계 제안은 이 수만큼의 후보 턴을 보여 주고, 장 생성은
-    # 끝 메시지가 이 범위 밖이면 거절한다. 장이 길수록 출력 상한·작업 상한에 가까워진다. 20턴 장으로 시험했을 때 기본
-    # 모델의 장 본문은 약 5천 자였고 지연·출력 토큰은 위 상한들 안에 넉넉히 들었다. 시험에서 경계 제안이 장 여섯 중
-    # 셋을 이 상한 끝에서 끊어, 장 길이는 이 값에 가까워지기 쉽다(마지막 장도 후보 끝에서 끝났지만 그건 방이 거기서
-    # 끝나서라 세지 않았다).
-    novelize_chapter_max_turns: int = 20
+    # 생성 한 번(묶음)이 담을 수 있는 원문 턴(AI 응답) 수의 상한 — 모델마다 따로다. 경계 제안은 이 수만큼의 후보 턴을
+    # 보여 주고, 생성은 끝 메시지가 이 범위 밖이면 거절한다. 원문은 빠짐없이 옮기므로 묶음의 출력 길이를 정하는 것은 화
+    # 수가 아니라 이 턴 수다. Gemini 는 화 여러 개를 한 번에 쓰므로 길게 두고, Claude 는 짧은 연결 시험에서 잰 Opus
+    # 출력 속도(초당 약 48토큰)로 보면 45턴 묶음이 작업 전체 상한(`novelize_job_timeout_seconds`)에 닿거나 넘고 20턴이면
+    # 원문이 길게 옮겨지는 경우에도 그 70% 안에 든다 — Sonnet 은 따로 재지 않고 Opus 와 같은 값을 쓴다. 모두 임시값이고,
+    # Gemini 키 이름은 한 모델뿐이던 때의 것을 그대로 둔다(운영 `.env` 에 같은 키가 있으면 그 값이 이긴다).
+    novelize_chapter_max_turns: int = Field(default=45, ge=1)
+    novelize_chapter_max_turns_sonnet: int = Field(default=20, ge=1)
+    novelize_chapter_max_turns_opus: int = Field(default=20, ge=1)
+    # 묶음 하나가 나뉘는 화 수의 상한(모델별). 화 수는 원문 분량으로 정하고 이 값에서 자른다(`novelize/episodes.py`).
+    # Gemini 는 출력 상한(`gemini_novelize_max_output_tokens`)에서 사고 토큰 최악치를 뺀 몫을 화 하나의 출력 토큰으로
+    # 나눈 값(약 4)에서, 형식이 어긋나면 묶음 전체를 환불하므로 한 칸 여유를 둔 값이다. Claude 는 위 Opus 속도로 화 둘을
+    # 쓰면 작업 상한의 70% 를 넘을 수 있어 하나다. 임시값.
+    novelize_k_max_gemini: int = Field(default=3, ge=1)
+    novelize_k_max_sonnet: int = Field(default=1, ge=1)
+    novelize_k_max_opus: int = Field(default=1, ge=1)
+    # 화 하나의 목표 길이(공백 포함 글자)와, 원문 글자 수를 본문 글자 수로 바꾸는 비율. 화 수 = 원문 글자 × 비율 ÷ 목표
+    # 길이를 반올림한 값이다. 비율은 지난 장들의 본문/원문 글자 비의 중앙값 근처다. 임시값.
+    novelize_episode_target_chars: int = Field(default=5000, ge=1)
+    novelize_source_ratio: float = Field(default=0.8, gt=0)
+    # 다음 묶음 생성에 싣는 지난 화 요약 전부의 글자 상한. 넘으면 오래된 화부터 뺀다 — 가까운 화가 이어 쓰기에 더 쓸모
+    # 있다. 요약은 화마다 두세 문장이라 이 값이면 수십 화를 싣는다. 임시값.
+    novelize_previous_summaries_max_chars: int = Field(default=8000, ge=1)
     # 장 경계 제안(무과금 모델 호출)을 한 사용자가 한 시간에 몇 번까지 부를 수 있는지. 과금이 없어 남용을 막는 것이
     # 이 상한뿐이다. 면제 계정도 똑같이 센다. 임시값.
     novelize_proposal_hourly_limit: int = 30
+    # "남은 대화 한 번에"(연쇄 생성)가 한 번에 만드는 묶음 수의 상한. 금액을 묶음마다 화 수 상한만큼 미리 받으므로 이
+    # 값이 한 번에 묶이는 클로버의 상한이기도 하다 — 남은 대화가 더 있으면 다시 누른다. 임시값.
+    novelize_chain_max_batches: int = Field(default=5, ge=1)
+    # 연쇄 부모 작업의 전체 시간 상한 = 계획한 묶음 수 × (작업 하나의 상한 `novelize_job_timeout_seconds` + 경계 제안
+    # 타임아웃 `gemini_novelize_boundary_timeout_ms`) + 이 여유(초). 묶음마다 경계 제안 한 번과 자식 작업 하나가 돌므로 둘은
+    # 묶음 수에 비례해 곱하고, 여유는 묶음 수와 무관한 몫(부모 시작·끝의 DB 일)만 담는다. heartbeat 가 살아 있어도 이
+    # 상한을 넘으면 실패·남은 몫 환불이다 — 걸린 부모가 소설을 영영 진행 중으로 잠그지 않게. 임시값.
+    novelize_chain_timeout_margin_seconds: float = Field(default=60, gt=0)
+    # 소설 하나의 스냅샷 개수 상한. 닿으면 가장 오래된 복원 직전 자동 스냅샷부터 지우고, 이름 붙인 것만 남았으면 새 저장을
+    # 거절한다. 복원 직전 자동 스냅샷은 복원이 막히지 않게 이 상한을 넘어 한 장 더 둘 수 있다. 임시값.
+    novelize_snapshot_limit: int = Field(default=50, ge=1)
 
     @field_validator(
         "novelize_grant_allowlist", "chat_premium_model_allowlist", "novelize_premium_model_allowlist", mode="before"

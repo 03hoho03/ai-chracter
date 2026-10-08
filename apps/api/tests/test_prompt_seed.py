@@ -42,7 +42,9 @@ from api.db.models.story import StoryPromptTemplate
 # publish_filter 레인을 이미지 전용으로 바꿔 작가 글 슬롯 13개를 빼고 이미지 목록 슬롯 `image_list` 1행을 더했다.
 # `2417f5829bb1`이 story generation 에 상황 노트 행 1개를 더해 story 37 이 됐고, `8e895c898730`이 사용자 이름 한 줄
 # `user_name`을 story 5행·character 3행 더해 story 42 / character 22 가 됐고, `3bb2cc159b6d`가 소설화 세 채널
-# (장 경계 제안 4·장 생성 6·문단 수정 6)을 두 레인에 16행씩 더해 story 58 / character 38 이다).
+# (장 경계 제안 4·장 생성 6·문단 수정 6)을 두 레인에 16행씩 더해 story 58 / character 38 이다). 그 16행은 지금 채팅
+# 레인에 얼려 둔 옛 문안이고, 소설 프롬프트 레인 리비전이 `novel` 레인에 경계 제안 4·화 생성 9·문단 수정 6 의 19행을
+# 심었다(화 생성에 인물 메모·지난 화 요약·화 수 지시 슬롯이 늘었다).
 # system/generation 채널의 `scope='both'` 행은 story·character 두 레인에 사본으로 들어간다.
 _NOVELIZE_SLOTS: dict[str, set[tuple[str, str, str]]] = {
     "novelize_boundary": {
@@ -166,6 +168,11 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
             ("both", "image_list", ""),
             ("both", "verdict_instruction", ""),
         },
+    },
+    "novel": {
+        **_NOVELIZE_SLOTS,
+        "novelize_chapter": _NOVELIZE_SLOTS["novelize_chapter"]
+        | {("both", "character_notes", ""), ("both", "previous_summaries", ""), ("both", "episode_plan", "")},
     },
 }
 

@@ -67,13 +67,12 @@ def chat_turn_cost(model_id: ChatModelId) -> int:
     assert_never(model_id)
 
 
-def novel_chapter_cost(model_id: ChatModelId, *, regenerate: bool) -> int:
-    """소설 장 생성·재생성 한 번의 클로버. Gemini 는 생성·재생성 상수를 따로 갖고(지금은 같은 값), 상위 모델은 같은
-    호출이라 값 하나다."""
+def novel_episode_unit_price(model_id: ChatModelId) -> int:
+    """소설 화 하나의 클로버. 생성 한 번은 이 값 × 화 수를 낸다. 다시 만들기도 같은 호출이라 같은 값이다."""
     if model_id == "gemini":
-        return clover.NOVELIZE_CHAPTER_REGENERATE_COST if regenerate else clover.NOVELIZE_CHAPTER_GENERATE_COST
+        return clover.NOVELIZE_EPISODE_COST
     if model_id == "sonnet":
-        return clover.NOVELIZE_CHAPTER_COST_SONNET
+        return clover.NOVELIZE_EPISODE_COST_SONNET
     if model_id == "opus":
-        return clover.NOVELIZE_CHAPTER_COST_OPUS
+        return clover.NOVELIZE_EPISODE_COST_OPUS
     assert_never(model_id)

@@ -16,17 +16,23 @@ export {
 export { useSetProtagonistNameMutation } from "./api/useSetProtagonistNameMutation";
 export { writeNovelChapterRevision } from "./api/writeNovelChapterRevision";
 export {
-  chapterModelCost,
+  hasChapterModelChoice,
   initialChapterModelId,
+  toProposalModelOptions,
+  toRegenerateModelOptions,
+  type ChapterModelOption,
   type NovelChapterModel,
   type NovelChapterModelId,
+  type PricedChapterModelOption,
 } from "./model/chapterModel";
 export { CHAPTER_REGENERATING_MESSAGE, isChapterRegenerating } from "./model/chapterRegenerationLock";
+export { chaptersInBatch, toBatchRangeLabel, toEpisodeRangeLabel } from "./model/episodeRange";
 export {
   isProtagonistNameRequiredError,
   NOVEL_ROOM_GONE_MESSAGE,
   toNovelActionError,
   toNovelJobFailureMessage,
+  toRefundSentence,
   type NovelAction,
   type NovelActionErrorNotice,
 } from "./model/novelActionError";
