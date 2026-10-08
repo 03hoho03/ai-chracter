@@ -32,6 +32,7 @@ function buildState(overrides: Partial<ChatRoomState> = {}): ChatRoomState {
     latestVersionAvailable: false,
     versionAutoUpgraded: false,
     contentRestricted: false,
+    novelCreationBlocked: false,
     effectiveChatModel: "gemini",
     turnCost: 10,
     hasMoreMessagesBefore: false,

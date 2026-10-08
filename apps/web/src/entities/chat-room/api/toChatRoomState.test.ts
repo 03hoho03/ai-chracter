@@ -34,9 +34,36 @@ describe("toChatRoomState", () => {
       latestVersionAvailable: true,
       versionAutoUpgraded: false,
       contentRestricted: false,
+      novelCreationBlocked: false,
       hasMoreMessagesBefore: false,
       effectiveChatModel: "gemini",
     });
+  });
+
+  // 「소설로 보기」를 막을지는 서버가 정해 보낸다. 칸이 없는 응답은 이 칸이 생기기 전의 서버라 막지 않는다.
+  it.each([
+    ["the server says new novels are blocked", { novelCreationBlocked: true }, true],
+    ["the server says they are not", { novelCreationBlocked: false }, false],
+    ["an older server sends no such field", {}, false],
+  ])("projects novelCreationBlocked when %s", (_, field, expected) => {
+    const state = toChatRoomState({
+      id: "room-1",
+      contentId: "content-1",
+      contentType: "story",
+      name: "대화 1",
+      turnCount: 0,
+      endingReached: false,
+      messages: [],
+      hasMoreMessagesBefore: false,
+      latestVersionAvailable: false,
+      versionAutoUpgraded: false,
+      contentRestricted: false,
+      createdAt: "2026-07-08T00:00:00Z",
+      updatedAt: "2026-07-08T00:00:00Z",
+      ...field,
+    });
+
+    expect(state.novelCreationBlocked).toBe(expected);
   });
 
   // 방의 글쓰기 모델과 턴 가격은 응답 값을 그대로 옮긴다 — 화면은 가격의 사본을 두지 않고 이 값으로 잔액 부족과 확인

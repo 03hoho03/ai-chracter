@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ApiErrorObject } from "@/shared/api/client";
 
-import { isNovelizeNotAllowedError, toNovelLoadFailure } from "./novelError";
+import { isContentNovelizeForbiddenError, isNovelizeNotAllowedError, toNovelLoadFailure } from "./novelError";
 
 function apiError(status: number, detail: string | Record<string, unknown> | undefined) {
   return new ApiErrorObject({ status, message: "x", detail });
@@ -22,6 +22,29 @@ describe("isNovelizeNotAllowedError", () => {
     ["ApiError 가 아님", new Error("x")],
   ])("%s 는 거짓이다", (_, error) => {
     expect(isNovelizeNotAllowedError(error)).toBe(false);
+  });
+});
+
+describe("isContentNovelizeForbiddenError", () => {
+  it("403 CONTENT_NOVELIZE_FORBIDDEN 만 참이다", () => {
+    expect(isContentNovelizeForbiddenError(apiError(403, { code: "CONTENT_NOVELIZE_FORBIDDEN" }))).toBe(true);
+  });
+
+  it.each([
+    // 계정의 기능 허용 거절과는 서로 섞이지 않는다 — 화면이 다른 문구를 말해야 한다.
+    ["계정의 기능 허용 거절", apiError(403, { code: "NOVELIZE_NOT_ALLOWED" })],
+    ["작품 이용제한 403", apiError(403, { code: "CONTENT_RESTRICTED" })],
+    ["재동의 403", apiError(403, { code: "LEGAL_RECONSENT_REQUIRED" })],
+    ["문자열 detail 의 남의 방 403", apiError(403, "Not the chat room owner")],
+    ["같은 코드여도 403 이 아님", apiError(409, { code: "CONTENT_NOVELIZE_FORBIDDEN" })],
+    ["detail 없음", apiError(403, undefined)],
+    ["ApiError 가 아님", new Error("x")],
+  ])("%s 는 거짓이다", (_, error) => {
+    expect(isContentNovelizeForbiddenError(error)).toBe(false);
+  });
+
+  it("작품의 거절은 계정의 기능 허용 판정에 잡히지 않는다", () => {
+    expect(isNovelizeNotAllowedError(apiError(403, { code: "CONTENT_NOVELIZE_FORBIDDEN" }))).toBe(false);
   });
 });
 

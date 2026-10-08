@@ -1,10 +1,18 @@
+import { cn } from "@ai-character-chat/ui/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useSetAtom } from "jotai";
 import { BookOpen, BookText, Cpu, History, IdCard, Images, Repeat, Sparkles } from "lucide-react";
+import { useId } from "react";
 import { toast } from "sonner";
 
+import { chatRoomKeys } from "@/entities/chat-room";
 import { isLegalReconsentRequiredError } from "@/entities/legal";
-import { isNovelizeNotAllowedError, useEnsureRoomNovelMutation } from "@/entities/novel";
+import {
+  isContentNovelizeForbiddenError,
+  isNovelizeNotAllowedError,
+  useEnsureRoomNovelMutation,
+} from "@/entities/novel";
 import { useSessionQuery } from "@/entities/session";
 import { ChangeStartingSetupModal } from "@/features/change-starting-setup";
 import { EndingCollectionModal } from "@/features/ending-collection";
@@ -74,15 +82,33 @@ export type ChatMoreNavProps = {
   storyId?: string;
   /** 이 방의 `{{user}}`·`{{char}}` 이름. 여기서 여는 모달은 방 밖(루트)에 마운트돼 방을 모르므로 이름을 넘겨받는다. */
   macroNames: AuthorMacroNames;
+  /** 원작자가 소설 만들기를 허용하지 않아 이 방에서 새 소설을 만들 수 없는지(방 응답이 계산해 준다). */
+  novelCreationBlocked: boolean;
 };
+
+/** 막힌 「소설로 보기」 아래에 적는 이유. 방을 연 뒤 원작자가 허락을 바꿔 생성 요청이 거절됐을 때의 토스트도 같은 문장이다 —
+ * 기다려도 풀리지 않는 거절이라 "다시 시도"를 말하지 않는다. "작가"가 아니라 "원작자"인 이유: 이 화면의 이용자는 자기 대화로
+ * 만들 소설의 작가이기도 해서, "작가"라고 쓰면 누구의 허락인지 흐려진다. */
+const NOVEL_CREATION_BLOCKED_REASON = "원작자가 소설 만들기를 허용하지 않은 작품이에요.";
 
 // 항목 목록 자체는 react-call을 쓰지 않는다
 // (열림/닫힘만 있는 목록일 뿐 "호출→결과 반환"이 필요 없다). 항목을 누르면 패널을 닫고 해당 기능
 // 전용 react-call 모달을 연다 — 데스크톱 인라인 사이드바(ChatMoreSidebar)와 모바일 Sheet
 // (ChatMorePanel)가 이 목록과 핸들러를 공유하므로 두 곳에서 그려져도 정의는 여기 한 곳뿐이다.
 // `소설로 보기`만 모달이 아니라 다른 화면으로 간다 — 그 방의 소설을 얻거나 만든 뒤 소설 주소로 옮긴다.
-export function ChatMoreNav({ roomId, contentType, startingSetupId, characterId, storyId, macroNames }: ChatMoreNavProps) {
+export function ChatMoreNav({
+  roomId,
+  contentType,
+  startingSetupId,
+  characterId,
+  storyId,
+  macroNames,
+  novelCreationBlocked,
+}: ChatMoreNavProps) {
   const setPanel = useSetAtom(chatSidePanelAtom);
+  const queryClient = useQueryClient();
+  const blockedLabelId = useId();
+  const blockedReasonId = useId();
   const navigate = useNavigate();
   const router = useRouter();
   const { data: me } = useSessionQuery();
@@ -103,6 +129,12 @@ export function ChatMoreNav({ roomId, contentType, startingSetupId, characterId,
     } catch (error) {
       // 재동의가 필요하면 전역 처리가 재동의 모달을 띄운다 — 토스트를 겹치지 않는다.
       if (isLegalReconsentRequiredError(error)) return;
+      // 방을 연 뒤 원작자가 허락을 거둔 경우다. 방을 다시 읽어 이 항목도 막힌 상태로 그린다.
+      if (isContentNovelizeForbiddenError(error)) {
+        void queryClient.invalidateQueries({ queryKey: chatRoomKeys.detail(roomId) });
+        toast.error(NOVEL_CREATION_BLOCKED_REASON);
+        return;
+      }
       // 허용을 회수한 직후라면 전역 처리가 세션을 다시 읽어 이 항목도 사라진다.
       toast.error(
         isNovelizeNotAllowedError(error)
@@ -112,8 +144,13 @@ export function ChatMoreNav({ roomId, contentType, startingSetupId, characterId,
     }
   }
 
+  function isBlocked(item: MorePanelItem) {
+    return item.key === "novel" && novelCreationBlocked;
+  }
+
   function handleItemClick(item: MorePanelItem) {
-    if (!item.isActive) return;
+    // 막힌 항목은 눌러도 패널을 닫지 않는다 — 이유 문장이 그 자리에 남아야 한다.
+    if (!item.isActive || isBlocked(item)) return;
     setPanel(undefined);
     if (item.key === "novel") void openRoomNovel();
     if (item.key === "play-guide") void PlayGuideModal.call({ roomId, macroNames });
@@ -135,19 +172,40 @@ export function ChatMoreNav({ roomId, contentType, startingSetupId, characterId,
 
   return (
     <nav className="flex flex-col gap-1 px-2">
-      {items.map((item) => (
-        <button
-          key={item.key}
-          type="button"
-          disabled={!item.isActive}
-          onClick={() => handleItemClick(item)}
-          className="flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-left text-sm text-foreground motion-safe:transition-colors enabled:hover:bg-secondary/50 disabled:cursor-not-allowed disabled:text-muted-foreground/60"
-        >
-          <item.icon aria-hidden className="size-4 shrink-0" />
-          <span className="flex-1">{item.label}</span>
-          {!item.isActive && <span className="text-xs text-muted-foreground/60">준비 중</span>}
-        </button>
-      ))}
+      {items.map((item) => {
+        // 막힌 「소설로 보기」는 숨기지 않고 이유와 함께 남긴다. `disabled` 가 아니라 `aria-disabled` 인 이유는 포커스 순회에
+        // 남아 이름과 이유가 함께 읽히게 하려는 것이다(`disabled` 버튼은 Tab 이 건너뛴다). 이름은 항목 글자만 가리키고 이유는
+        // 설명으로 따로 단다 — 버튼 안 글자 전부가 이름이 되면 이유가 이름과 설명으로 두 번 읽힌다.
+        const isItemBlocked = isBlocked(item);
+        return (
+          <button
+            key={item.key}
+            type="button"
+            disabled={!item.isActive}
+            aria-disabled={isItemBlocked || undefined}
+            aria-labelledby={isItemBlocked ? blockedLabelId : undefined}
+            aria-describedby={isItemBlocked ? blockedReasonId : undefined}
+            onClick={() => handleItemClick(item)}
+            className={cn(
+              "flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-left text-sm text-foreground motion-safe:transition-colors disabled:cursor-not-allowed disabled:text-muted-foreground/60",
+              isItemBlocked ? "cursor-not-allowed items-start text-muted-foreground" : "enabled:hover:bg-secondary/50",
+            )}
+          >
+            <item.icon aria-hidden className={cn("size-4 shrink-0", isItemBlocked && "mt-1")} />
+            {isItemBlocked ? (
+              <span className="flex flex-1 flex-col gap-0.5">
+                <span id={blockedLabelId}>{item.label}</span>
+                <span id={blockedReasonId} className="text-xs break-keep">
+                  {NOVEL_CREATION_BLOCKED_REASON}
+                </span>
+              </span>
+            ) : (
+              <span className="flex-1">{item.label}</span>
+            )}
+            {!item.isActive && <span className="text-xs text-muted-foreground/60">준비 중</span>}
+          </button>
+        );
+      })}
     </nav>
   );
 }

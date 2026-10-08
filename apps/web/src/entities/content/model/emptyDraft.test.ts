@@ -21,6 +21,7 @@ describe("createEmptyDraft", () => {
       target: null,
       hashtags: [],
       visibility: "private",
+      novelPermission: "private",
     });
   });
 
@@ -48,6 +49,7 @@ describe("createEmptyDraft", () => {
       target: null,
       hashtags: [],
       visibility: "private",
+      novelPermission: "private",
     });
   });
 

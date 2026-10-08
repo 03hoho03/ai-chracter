@@ -1,3 +1,5 @@
+import { NOVEL_PERMISSION_FIELD_LABEL } from "@/entities/content";
+
 import { MAX_DEVELOPMENT_EXAMPLES, MAX_STARTING_SETUPS, MAX_SUGGESTED_REPLIES } from "./schema";
 
 export type FieldLabel = {
@@ -112,6 +114,7 @@ export const STORY_FIELD_LABELS = {
   "registration.target": { label: "타겟", required: true },
   "registration.hashtags": { label: "해시태그", required: false },
   "registration.visibility": { label: "공개범위", required: true },
+  "registration.novelPermission": { label: NOVEL_PERMISSION_FIELD_LABEL, required: false },
 } as const satisfies Record<string, FieldLabel>;
 
 export type StoryFieldKey = keyof typeof STORY_FIELD_LABELS;

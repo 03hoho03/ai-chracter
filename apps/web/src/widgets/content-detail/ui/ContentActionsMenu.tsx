@@ -6,15 +6,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@ai-character-chat/ui/components/dropdown-menu";
-import { Flag, MoreHorizontal, Share2 } from "lucide-react";
+import { BookText, Flag, MoreHorizontal, Share2 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
   useReportContentMutation,
   type ContentVisibility,
   type ModerationStatus,
+  type NovelPermission,
 } from "@/entities/content";
 import { VisibilityTransitionMenuItems } from "@/features/change-content-visibility";
+import { ChangeNovelPermissionModal } from "@/features/change-novel-permission";
 import { ReportContentModal } from "@/features/report-content";
 import { isApiError } from "@/shared/api/client";
 
@@ -28,18 +30,21 @@ type ContentActionsMenuProps = {
    * (`ContentDetailView`가 `canViewDetailPage`로 restricted/deleted를 이미 걷어낸다) 값을 받아 넘긴다 —
    * 호출부가 그 근거를 눈에 보이게 적게 하려는 것이다. */
   moderationStatus: ModerationStatus;
+  /** 소설 만들기 허락의 지금 값. 이 칸을 모르는 서버의 응답에는 없고, 그런 서버에는 바꾸는 경로도 없어 항목을 그리지 않는다. */
+  novelPermission: NovelPermission | undefined;
   /** 모달 헤더에서는 옆의 닫기 X(32px)와 같은 크기로 맞춘다. 풀페이지는 기본 크기 그대로다. */
   triggerSize?: "icon" | "icon-sm";
 };
 
 /** 공유(클립보드 복사)와, 남의 작품이면 신고 / 본인 소유면
- * 공개범위 전환 진입점인 "⋯" 메뉴. */
+ * 공개범위 전환·소설 만들기 설정 진입점인 "⋯" 메뉴. */
 export function ContentActionsMenu({
   contentId,
   creatorUserId,
   isOwner,
   visibility,
   moderationStatus,
+  novelPermission,
   triggerSize = "icon",
 }: ContentActionsMenuProps) {
   const reportMutation = useReportContentMutation(contentId);
@@ -113,6 +118,15 @@ export function ContentActionsMenu({
               currentVisibility={visibility}
               moderationStatus={moderationStatus}
             />
+            {/* 이용제한 작품에서도 막지 않는다 — 허락을 낮추는 것은 작가를 보호하는 쪽이라 서버도 받는다. */}
+            {novelPermission !== undefined && (
+              <DropdownMenuItem
+                onSelect={() => void ChangeNovelPermissionModal.call({ contentId, currentPermission: novelPermission })}
+              >
+                <BookText aria-hidden />
+                소설 만들기 설정
+              </DropdownMenuItem>
+            )}
           </>
         )}
       </DropdownMenuContent>

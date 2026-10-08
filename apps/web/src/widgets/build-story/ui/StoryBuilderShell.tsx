@@ -150,7 +150,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
 
   const mediaBookThumbnails = useMediaBookThumbnailsStore(draft);
 
-  const { saveDraft } = useDraftPersistence({ type: "story", draftId });
+  const { saveDraft } = useDraftPersistence({ type: "story", draftId, initialNovelPermission: draft.novelPermission });
   const publishMutation = usePublishContentMutation();
 
   // 발행 실패 시 첫 에러 필드로 이동한다(탭이 다르면 먼저 전환). tabId는

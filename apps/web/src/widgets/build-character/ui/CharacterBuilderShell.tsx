@@ -147,7 +147,7 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
   const profileImageLocal = useProfileImageLocalUrl();
   const thumbnailUrl = resolveProfileImageUrl({ image: profileImage, local: profileImageLocal.local, draft });
 
-  const { saveDraft } = useDraftPersistence({ type: "character", draftId });
+  const { saveDraft } = useDraftPersistence({ type: "character", draftId, initialNovelPermission: draft.novelPermission });
   const publishMutation = usePublishContentMutation();
 
   // 발행 실패 시 첫 에러 필드로 이동한다(탭이 다르면 먼저 전환). tabId는

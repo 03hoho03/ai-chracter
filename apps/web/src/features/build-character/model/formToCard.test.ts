@@ -15,6 +15,7 @@ function baseFormValues(): CharacterBuilderFormValues {
       target: null,
       hashtags: [],
       visibility: "private",
+      novelPermission: "private",
     },
   };
 }

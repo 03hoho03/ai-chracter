@@ -113,6 +113,7 @@ function baseDraftResponse(): StoryDraftResponse {
     target: "all",
     hashtags: ["모험"],
     visibility: "public",
+    novelPermission: "forbidden",
   };
 }
 
@@ -178,6 +179,7 @@ describe("serverToForm", () => {
         target: "all",
         hashtags: ["모험"],
         visibility: "public",
+        novelPermission: "forbidden",
       },
     });
   });
@@ -559,6 +561,22 @@ describe("serverToForm", () => {
 
     expect(form.storySetting.defaultUserName).toBe("");
     expect(formToServer(form).defaultUserName).toBe("");
+  });
+
+  it.each(["forbidden", "private", "public"] as const)("round-trips the novel permission %s", (novelPermission) => {
+    const response = { ...baseDraftResponse(), novelPermission };
+
+    expect(formToServer(serverToForm(response)).novelPermission).toBe(novelPermission);
+  });
+
+  // 이 칸이 생기기 전 서버의 응답에는 키가 없다. 새 작품과 같은 기본값으로 채운다.
+  it("treats a response without the novel permission as the new-work default", () => {
+    const oldResponse: Partial<StoryDraftResponse> = baseDraftResponse();
+    delete oldResponse.novelPermission;
+
+    const form = serverToForm(oldResponse as StoryDraftResponse);
+
+    expect(form.registration.novelPermission).toBe("private");
   });
 
   it("round-trips up to 3 development example pairs losslessly", () => {

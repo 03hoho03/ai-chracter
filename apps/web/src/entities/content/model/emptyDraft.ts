@@ -3,6 +3,7 @@ import type { components } from "@ai-character-chat/api-types";
 import { assertNever } from "@/shared/lib/assertNever";
 
 import type { ContentType } from "./content";
+import { DEFAULT_NOVEL_PERMISSION } from "./novelPermission";
 
 type CharacterDraftResponse = components["schemas"]["CharacterDraftResponse"];
 type StoryDraftResponse = components["schemas"]["StoryDraftResponse"];
@@ -17,7 +18,7 @@ export type ContentDraftContent = CharacterDraftContent | StoryDraftContent;
 
 /**
  * `POST /contents`가 만드는 빈 초안과 같은 값을 로컬로 만든다(apps/api `create_content_draft` —
- * 텍스트는 빈 문자열, 이미지·장르·타겟은 미선택, 공개범위는 private, 스토리 템플릿은 basic).
+ * 텍스트는 빈 문자열, 이미지·장르·타겟은 미선택, 공개범위는 private, 소설 만들기 허락은 private, 스토리 템플릿은 basic).
  * 서버 왕복 없이 빌더를 바로 띄우기 위한 초기값이라, 서버 기본값이 바뀌면 여기도 함께 바뀌어야
  * 한다 — 어긋나면 첫 자동저장 직후 화면이 소리 없이 달라진다.
  *
@@ -47,6 +48,7 @@ export function createEmptyDraft(type: ContentType): ContentDraftContent {
         target: null,
         hashtags: [],
         visibility: "private",
+        novelPermission: DEFAULT_NOVEL_PERMISSION,
       };
     case "story":
       return {
@@ -72,6 +74,7 @@ export function createEmptyDraft(type: ContentType): ContentDraftContent {
         target: null,
         hashtags: [],
         visibility: "private",
+        novelPermission: DEFAULT_NOVEL_PERMISSION,
       };
     default:
       return assertNever(type);

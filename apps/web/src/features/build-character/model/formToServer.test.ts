@@ -23,6 +23,7 @@ function baseFormValues(): CharacterBuilderFormValues {
       target: "all",
       hashtags: ["판타지"],
       visibility: "public",
+      novelPermission: "forbidden",
     },
   };
 }
@@ -47,6 +48,7 @@ describe("formToServer", () => {
       target: "all",
       hashtags: ["판타지"],
       visibility: "public",
+      novelPermission: "forbidden",
     });
   });
 

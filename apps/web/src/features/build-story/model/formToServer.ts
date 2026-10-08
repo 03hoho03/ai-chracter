@@ -227,5 +227,6 @@ export function formToServer(values: StoryBuilderFormValues): StoryBuilderDraftP
     target: values.registration.target,
     hashtags: values.registration.hashtags,
     visibility: values.registration.visibility,
+    novelPermission: values.registration.novelPermission,
   };
 }

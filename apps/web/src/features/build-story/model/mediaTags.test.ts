@@ -68,6 +68,7 @@ describe("renameMediaTagsInFields", () => {
         target: null,
         hashtags: [],
         visibility: "private",
+        novelPermission: "private",
       },
     };
 

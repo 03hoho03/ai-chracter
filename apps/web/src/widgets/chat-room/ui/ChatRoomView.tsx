@@ -309,6 +309,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
             characterId={characterId}
             storyId={storyId}
             macroNames={macroNames}
+            novelCreationBlocked={room.novelCreationBlocked}
           />
         </div>
       </header>
@@ -523,6 +524,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
           characterId={characterId}
           storyId={storyId}
           macroNames={macroNames}
+          novelCreationBlocked={room.novelCreationBlocked}
         />
         <ChatMemorySidebar roomId={roomId} triggerRef={memoryTriggerRef} />
       </div>

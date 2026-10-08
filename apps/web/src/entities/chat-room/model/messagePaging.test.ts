@@ -32,6 +32,7 @@ function buildState(roomMessages: ChatMessage[], hasMoreMessagesBefore = true): 
     latestVersionAvailable: false,
     versionAutoUpgraded: false,
     contentRestricted: false,
+    novelCreationBlocked: false,
     effectiveChatModel: "gemini",
     turnCost: 10,
     hasMoreMessagesBefore,

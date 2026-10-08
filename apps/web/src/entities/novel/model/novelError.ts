@@ -14,6 +14,13 @@ export function isNovelizeNotAllowedError(error: unknown): boolean {
   return isApiError(error) && error.status === 403 && novelErrorCode(error) === "NOVELIZE_NOT_ALLOWED";
 }
 
+/** 원작자가 이 작품으로 다른 회원이 소설을 만드는 것을 허용하지 않았다는 403. 방 응답이 미리 알려 주면 메뉴가 막히므로 이 응답은
+ * 방을 연 뒤 작가가 허락을 바꾼 경합에서만 온다. 계정의 기능 허용(`NOVELIZE_NOT_ALLOWED`)과는 뜻이 달라 판정을 섞지 않는다 —
+ * 그 판정은 전역에서 세션을 다시 읽고 "아직 열리지 않은 기능"이라고 말하는데, 이 거절은 계정이 아니라 작품의 설정이다. */
+export function isContentNovelizeForbiddenError(error: unknown): boolean {
+  return isApiError(error) && error.status === 403 && novelErrorCode(error) === "CONTENT_NOVELIZE_FORBIDDEN";
+}
+
 export type NovelLoadFailure = "locked" | "missing" | "failed";
 
 /** 소설 상세를 못 읽었을 때 화면이 어느 안내를 그릴지. 없는 소설과 남의 소설은 이용자에게 같은 일이라("열 수 있는

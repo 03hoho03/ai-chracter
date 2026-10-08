@@ -127,6 +127,9 @@ export function toChatRoomState(dto: ChatRoomResponseDto): ChatRoomState {
     latestVersionAvailable: dto.latestVersionAvailable,
     versionAutoUpgraded: dto.versionAutoUpgraded,
     contentRestricted: dto.contentRestricted,
+    // 이 칸이 생기기 전의 서버 응답에는 없다. 그 서버는 막지도 않으므로 "막지 않음"으로 읽는다 — 반대로 읽으면 모든 방에서
+    // 「소설로 보기」가 막힌다.
+    novelCreationBlocked: dto.novelCreationBlocked ?? false,
     // 두 칸은 응답 스키마상 선택이다(서버 기본값이 있는 칸). 모델은 서버 기본값과 같은 기본 모델로 채우고, 가격은
     // 화면이 사본을 두지 않도록 비워 둔다.
     effectiveChatModel: dto.effectiveChatModel ?? DEFAULT_CHAT_MODEL,

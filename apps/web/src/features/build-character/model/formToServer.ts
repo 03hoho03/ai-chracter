@@ -39,5 +39,6 @@ export function formToServer(values: CharacterBuilderFormValues): CharacterDraft
     target: values.registration.target,
     hashtags: values.registration.hashtags,
     visibility: values.registration.visibility,
+    novelPermission: values.registration.novelPermission,
   };
 }
