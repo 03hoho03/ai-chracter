@@ -10,6 +10,7 @@ import {
 } from "@ai-character-chat/ui/components/dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, RotateCcw } from "lucide-react";
+import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { useId, useState } from "react";
 
 import {
@@ -22,9 +23,11 @@ import {
 } from "@/entities/novel";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 import { formatRelativeTime } from "@/shared/lib/time/formatRelativeTime";
+import { LazyDiffView } from "@/shared/ui/LazyDiffView";
 
 import { useNovelRevisionsQuery, type NovelRevisionSummary } from "../api/useNovelRevisionsQuery";
 import { useRestoreRevisionMutation } from "../api/useRestoreRevisionMutation";
+import { toInitialPreviewMode, type RevisionPreviewMode } from "../model/revisionPreviewMode";
 import { toRevisionSourceLabel } from "../model/revisionLabel";
 
 type NovelRevisionHistoryModalProps = {
@@ -186,6 +189,8 @@ function RevisionListBody({
           label={toRevisionSourceLabel(revision, query.data)}
           time={formatRelativeTime(revision.createdAt, now)}
           isCurrent={index === 0}
+          previous={query.data[index + 1]}
+          current={query.data[0]}
           isExpanded={expandedId === revision.id}
           isRestoring={isRestoring}
           isRegenerating={isRegenerating}
@@ -202,6 +207,10 @@ function RevisionListBody({
 
 type RevisionRowProps = {
   revision: NovelRevisionSummary;
+  /** 바로 앞 판(이 판이 무엇을 바꿨나의 기준). 첫 판이면 없다. */
+  previous: NovelRevisionSummary | undefined;
+  /** 지금 판. */
+  current: NovelRevisionSummary | undefined;
   label: string;
   time: string;
   isCurrent: boolean;
@@ -223,6 +232,8 @@ function RevisionRow({
   revision,
   label,
   time,
+  previous,
+  current,
   isCurrent,
   isExpanded,
   isRestoring,
@@ -262,7 +273,13 @@ function RevisionRow({
       </button>
       {isExpanded && (
         <div id={panelId} className="flex flex-col gap-3 pt-1 pb-3">
-          <RevisionBody novelId={novelId} chapterId={chapterId} revisionId={revision.id} />
+          <RevisionPreview
+            novelId={novelId}
+            chapterId={chapterId}
+            revision={revision}
+            previous={previous}
+            current={isCurrent ? undefined : current}
+          />
           {!isCurrent && isRegenerating && (
             <p id={regeneratingNoteId} className="text-sm break-keep text-muted-foreground">
               {CHAPTER_REGENERATING_MESSAGE}
@@ -296,9 +313,121 @@ function RevisionRow({
   );
 }
 
-function RevisionBody({ novelId, chapterId, revisionId }: { novelId: string; chapterId: string; revisionId: string }) {
-  const query = useNovelRevisionQuery(novelId, chapterId, revisionId);
+type RevisionPreviewProps = {
+  novelId: string;
+  chapterId: string;
+  revision: NovelRevisionSummary;
+  previous: NovelRevisionSummary | undefined;
+  /** 비교할 지금 판. 이 판이 지금 판이면 없다. */
+  current: NovelRevisionSummary | undefined;
+};
 
+/** 펼친 판의 미리보기 — 이 판 글, 바로 앞 판과 비교(이 판이 무엇을 바꿨나), 지금 글과 비교(되돌리면 무엇이 바뀌나)
+ * 셋 중 하나. 처음에는 앞 판과 비교다. 비교할 판이 없는 칸은 비활성이고 그 이유를 아래 한 줄로 말한다. 비교가
+ * 너무 커서 못 보이면 이 판 글로 넘어가는 버튼을 둔다. 판 본문은 바뀌지 않아 한 번 받은 것을 그대로 쓴다.
+ *
+ * 선택 칩은 `neutral` 이다 — 모달 위에서 고르는 즉시 결과가 바뀌는 보기 전환이라, `primary` 솔리드로 켜면 이 화면에
+ * 없던 밝은 채움이 생긴다. */
+function RevisionPreview({ novelId, chapterId, revision, previous, current }: RevisionPreviewProps) {
+  const [mode, setMode] = useState<RevisionPreviewMode>(() =>
+    toInitialPreviewMode({ hasPrevious: previous !== undefined, hasCurrent: current !== undefined }),
+  );
+  const labelId = useId();
+  const noteId = useId();
+  const compareTarget = { text: undefined, previous, current }[mode];
+  const thisQuery = useNovelRevisionQuery(novelId, chapterId, revision.id);
+  const otherQuery = useNovelRevisionQuery(novelId, chapterId, compareTarget?.id);
+  const unavailableNotes = [
+    previous === undefined && "첫 판이라 앞 판이 없어요.",
+    current === undefined && "이 판이 지금 글이에요.",
+  ].filter((note) => note !== false);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <span id={labelId} className="sr-only">
+        {revision.revisionNo}판 보기
+      </span>
+      <ToggleGroup
+        type="single"
+        variant="neutral"
+        size="sm"
+        aria-labelledby={labelId}
+        aria-describedby={unavailableNotes.length > 0 ? noteId : undefined}
+        value={mode}
+        onValueChange={(value) => {
+          // 단일 토글 그룹은 고른 칸을 다시 누르면 빈 값을 보낸다 — 보기는 늘 하나라 해제를 받지 않는다.
+          if (value === "text" || value === "previous" || value === "current") setMode(value);
+        }}
+        className="flex-wrap justify-start"
+      >
+        <ToggleGroupItem value="text">이 판 글</ToggleGroupItem>
+        <ToggleGroupItem value="previous" disabled={previous === undefined}>
+          앞 판과 비교
+        </ToggleGroupItem>
+        <ToggleGroupItem value="current" disabled={current === undefined}>
+          지금 글과 비교
+        </ToggleGroupItem>
+      </ToggleGroup>
+      {unavailableNotes.length > 0 && (
+        <p id={noteId} className="text-xs break-keep text-muted-foreground">
+          {unavailableNotes.join(" ")}
+        </p>
+      )}
+      {compareTarget === undefined ? (
+        <RevisionBody query={thisQuery} />
+      ) : (
+        <RevisionDiff
+          // 앞 판과 비교는 "앞 판 → 이 판"(이 판이 바꾼 것), 지금 글과 비교는 "지금 글 → 이 판"(되돌리면 바뀌는 것)이다.
+          beforeQuery={otherQuery}
+          afterQuery={thisQuery}
+          caption={
+            mode === "previous"
+              ? `${compareTarget.revisionNo}판에서 ${revision.revisionNo}판으로 바뀐 곳이에요.`
+              : "되돌리면 지금 글에서 이렇게 바뀌어요."
+          }
+          onShowText={() => setMode("text")}
+        />
+      )}
+    </div>
+  );
+}
+
+type RevisionQuery = ReturnType<typeof useNovelRevisionQuery>;
+
+function RevisionDiff({
+  beforeQuery,
+  afterQuery,
+  caption,
+  onShowText,
+}: {
+  beforeQuery: RevisionQuery;
+  afterQuery: RevisionQuery;
+  caption: string;
+  onShowText: () => void;
+}) {
+  if (beforeQuery.isPending || afterQuery.isPending) {
+    return <div className="h-24 animate-pulse rounded-lg bg-secondary" />;
+  }
+  if (beforeQuery.data === undefined || afterQuery.data === undefined) {
+    return <p className="text-sm break-keep text-destructive-text">비교할 판의 글을 불러오지 못했어요.</p>;
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-xs break-keep text-muted-foreground">{caption}</p>
+      <LazyDiffView
+        before={beforeQuery.data.body}
+        after={afterQuery.data.body}
+        tooLargeAction={
+          <Button type="button" variant="outline" size="sm" onClick={onShowText}>
+            이 판 글 보기
+          </Button>
+        }
+      />
+    </div>
+  );
+}
+
+function RevisionBody({ query }: { query: RevisionQuery }) {
   if (query.isPending) {
     return <div className="h-24 animate-pulse rounded-lg bg-secondary" />;
   }
