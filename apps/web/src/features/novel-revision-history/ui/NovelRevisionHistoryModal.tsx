@@ -18,11 +18,11 @@ import {
   novelKeys,
   toNovelActionError,
   useNovelQuery,
+  useNovelRevisionQuery,
 } from "@/entities/novel";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 import { formatRelativeTime } from "@/shared/lib/time/formatRelativeTime";
 
-import { useNovelRevisionQuery } from "../api/useNovelRevisionQuery";
 import { useNovelRevisionsQuery, type NovelRevisionSummary } from "../api/useNovelRevisionsQuery";
 import { useRestoreRevisionMutation } from "../api/useRestoreRevisionMutation";
 import { toRevisionSourceLabel } from "../model/revisionLabel";

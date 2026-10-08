@@ -1,4 +1,38 @@
-export { novelKeys } from "./api/keys";
+export { novelKeys, novelScoped } from "./api/keys";
+export {
+  useNovelBoardLayoutQuery,
+  useSaveNovelBoardLayoutMutation,
+  type NovelBoardLayout,
+  type NovelBoardPosition,
+  type NovelBoardViewport,
+} from "./api/useNovelBoardLayout";
+export { useNovelChainEstimateQuery, type NovelChainEstimate } from "./api/useNovelChainEstimateQuery";
+export {
+  useAddNovelCharacterMutation,
+  useMergeNovelCharacterMutation,
+  useUpdateNovelCharacterMutation,
+  type NovelCharacterUpdateRequest,
+} from "./api/useNovelCharacterMutations";
+export {
+  useNovelCharactersQuery,
+  type NovelCharacterListResponse,
+  type NovelCharacterResponse,
+} from "./api/useNovelCharactersQuery";
+export { useNovelRevisionQuery } from "./api/useNovelRevisionQuery";
+export {
+  useCreateNovelSnapshotMutation,
+  useDeleteNovelSnapshotMutation,
+  useNovelSnapshotQuery,
+  useNovelSnapshotsQuery,
+  useRestoreNovelSnapshotMutation,
+  type NovelSnapshotChapter,
+  type NovelSnapshotCharacter,
+  type NovelSnapshotDetail,
+  type NovelSnapshotListResponse,
+  type NovelSnapshotRestoreResponse,
+  type NovelSnapshotSummary,
+} from "./api/useNovelSnapshots";
+export { useUpdateNovelChapterMutation, type NovelChapterUpdateRequest } from "./api/useUpdateNovelChapterMutation";
 export { useEnsureRoomNovelMutation } from "./api/useEnsureRoomNovelMutation";
 export { useNovelJobQuery, type NovelJobResponse } from "./api/useNovelJobQuery";
 export { useNovelListQuery, type NovelListItem, type NovelListResponse } from "./api/useNovelListQuery";
@@ -9,6 +43,8 @@ export {
 } from "./api/useNovelChapterQuery";
 export {
   useNovelQuery,
+  type NovelBatchSummary,
+  type NovelChapterReadingPosition,
   type NovelChapterSummary,
   type NovelDetailResponse,
   type NovelPendingAiEdit,
