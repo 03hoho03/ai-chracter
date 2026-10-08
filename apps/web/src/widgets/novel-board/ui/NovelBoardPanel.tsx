@@ -128,10 +128,11 @@ function PanelContent({
           query={charactersQuery}
           headingRef={headingRef}
           onSelect={onSelect}
+          onDraftDirtyChange={onDraftDirtyChange}
         />
       );
     case "notes":
-      return <NovelNotesEditor novel={novel} headingRef={headingRef} />;
+      return <NovelNotesEditor novel={novel} headingRef={headingRef} onDraftDirtyChange={onDraftDirtyChange} />;
     case "versions":
       return (
         <NovelSnapshotsPanel
@@ -150,10 +151,11 @@ type CharacterPanelProps = {
   query: ReturnType<typeof useNovelCharactersQuery>;
   headingRef: RefObject<HTMLHeadingElement | null>;
   onSelect: (selection: BoardSelection | undefined) => void;
+  onDraftDirtyChange: (isDirty: boolean) => void;
 };
 
 /** 인물 카드. 인물 목록을 받는 중이면 막대, 못 받았으면 다시 시도. 고른 인물은 호출부가 목록으로 이미 걸렀다. */
-function CharacterPanel({ novel, characterId, query, headingRef, onSelect }: CharacterPanelProps) {
+function CharacterPanel({ novel, characterId, query, headingRef, onSelect, onDraftDirtyChange }: CharacterPanelProps) {
   if (query.data === undefined) {
     if (query.isError) {
       return (
@@ -194,6 +196,7 @@ function CharacterPanel({ novel, characterId, query, headingRef, onSelect }: Cha
       headingRef={headingRef}
       onSelectEpisode={(chapterId) => onSelect({ kind: "episode", id: chapterId })}
       onMerged={(intoCharacterId) => onSelect({ kind: "character", id: intoCharacterId })}
+      onDraftDirtyChange={onDraftDirtyChange}
     />
   );
 }

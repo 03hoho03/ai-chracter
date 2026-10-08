@@ -38,6 +38,8 @@ type CharacterCardEditorProps = {
   onSelectEpisode: (chapterId: string) => void;
   /** 다른 인물로 합친 뒤 — 이 카드는 사라졌으니 호출부가 남은 카드를 고른다. */
   onMerged: (intoCharacterId: string) => void;
+  /** 메모에 저장하지 않은 입력이 있는가가 바뀔 때마다(사라질 때는 `false`). */
+  onDraftDirtyChange?: (isDirty: boolean) => void;
 };
 
 /**
@@ -55,6 +57,7 @@ export function CharacterCardEditor({
   headingRef,
   onSelectEpisode,
   onMerged,
+  onDraftDirtyChange,
 }: CharacterCardEditorProps) {
   const queryClient = useQueryClient();
   const mutation = useUpdateNovelCharacterMutation();
@@ -108,6 +111,7 @@ export function CharacterCardEditor({
         memo={character.memo}
         maxLength={novel.limits.characterMemoMaxLength}
         onSave={(memo) => update({ memo }, "character")}
+        onDraftDirtyChange={onDraftDirtyChange}
       />
 
       <section className="flex flex-col gap-2">
@@ -393,11 +397,12 @@ type CharacterMemoFieldProps = {
   memo: string;
   maxLength: number;
   onSave: (memo: string) => Promise<string | undefined>;
+  onDraftDirtyChange?: (isDirty: boolean) => void;
 };
 
 /** 인물 메모. 다음 화를 만들 때 AI 에게 함께 보내므로 그 사실을 머리 아래에 적는다. 저장 버튼으로만 저장한다 — 쓰는
  * 도중의 값이 생성 입력에 실리면 안 된다. 기준값은 처음 한 번 굳히고 저장하면 저장한 값으로 다시 굳힌다. */
-function CharacterMemoField({ memo, maxLength, onSave }: CharacterMemoFieldProps) {
+function CharacterMemoField({ memo, maxLength, onSave, onDraftDirtyChange }: CharacterMemoFieldProps) {
   const headingId = useId();
   const descriptionId = useId();
   const countId = useId();
@@ -411,6 +416,14 @@ function CharacterMemoField({ memo, maxLength, onSave }: CharacterMemoFieldProps
   const value = useWatch({ control: form.control, name: "memo" });
   const fieldError = form.formState.errors.memo?.message;
   const { isDirty } = form.formState;
+  // 저장하지 않은 입력이 있는가를 호출부에 알린다 — 호출부가 다른 것을 고르거나 뒤로 가기 전에 버릴지 묻는다.
+  // 사라질 때는 거짓으로 돌려놓는다. 호출부 함수는 렌더마다 새로 만들어질 수 있어 ref 로 읽는다.
+  const onDraftDirtyChangeRef = useRef(onDraftDirtyChange);
+  onDraftDirtyChangeRef.current = onDraftDirtyChange;
+  useEffect(() => {
+    onDraftDirtyChangeRef.current?.(isDirty);
+  }, [isDirty]);
+  useEffect(() => () => onDraftDirtyChangeRef.current?.(false), []);
 
   async function handleValidSubmit(values: CharacterMemoFormValues) {
     const trimmed = values.memo.trim();

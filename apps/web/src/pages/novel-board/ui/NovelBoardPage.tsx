@@ -150,8 +150,8 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
   // 고치던 글이 있어 옮겨 가지 않고 미뤄 둔 새 화. 그 화로 가는 링크를 작업 줄에 둔다.
   const [heldChapterId, setHeldChapterId] = useState<string | undefined>(undefined);
   const [pendingFocus, setPendingFocus] = useState<PendingFocus | undefined>(undefined);
-  // 고른 화에서 직접 고치던 글이 시작할 때와 달라졌는가. 다른 것을 고르면 그 패널이 새로 마운트돼 글이 사라지므로
-  // 옮기기 전에 이 값을 본다. 작업이 끝난 뒤의 비동기 콜백에서도 읽어야 해서 렌더 값이 아니라 ref 다.
+  // 지금 패널에 저장하지 않은 입력이 있는가 — 화 본문 직접 고치기, 설정 노트, 인물 메모가 보고한다(패널은 한 번에
+  // 하나라 칸 하나로 족하다). 다른 것을 고르면 그 패널이 새로 마운트돼 입력이 사라지므로 옮기기 전에 이 값을 본다. 작업이 끝난 뒤의 비동기 콜백에서도 읽어야 해서 렌더 값이 아니라 ref 다.
   const isDraftDirtyRef = useRef(false);
   // 떠 있는 "고치던 글 버리기" 확인의 수. 뒤로가 떠 있는 확인을 닫고 새로 열 때 쓴다(아래 차단 함수).
   const openDiscardConfirmCountRef = useRef(0);
@@ -203,9 +203,9 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
       // 다시 만든 화는 본문이 통째로 바뀌어, 화 머리에 남은 지난 고치기 결과는 이제 옛 글의 이야기다. 본문을 바꾸는
       // 다른 동작이 시작할 때처럼 그 문장을 지운다. 새 화를 만든 것은 있던 화의 본문을 바꾸지 않아 그대로 둔다.
       if (isRegenerated) aiEdit.report({ type: "started" });
-      // 그 화로 끌고 가는 것은 고른 것이 없거나 화를 보고 있고 고치던 글이 없을 때뿐이다. 고치던 글이 있으면 옮기면
-      // 사라지고, 인물·노트·버전 패널은 저장하지 않은 입력을 이 화면이 알 수 없다 — 그때는 작업 줄의 링크로 알리고
-      // 옮길지는 이용자가 정한다.
+      // 그 화로 끌고 가는 것은 고른 것이 없거나 화를 보고 있고 저장하지 않은 입력이 없을 때뿐이다. 입력이 있으면
+      // 옮기면 사라지고, 인물·노트·버전 패널을 보던 이용자를 화로 끌고 가지도 않는다(인물 이름·별칭처럼 보고하지
+      // 않는 입력칸도 있다) — 그때는 작업 줄의 링크로 알리고 옮길지는 이용자가 정한다.
       const current = selectionRef.current;
       const isOnEpisodeOrNothing = current === undefined || current.kind === "episode";
       if (isDraftDirtyRef.current || !isOnEpisodeOrNothing) {

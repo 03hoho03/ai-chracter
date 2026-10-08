@@ -2,7 +2,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
-import { useId, useRef, useState, type RefObject } from "react";
+import { useEffect, useId, useRef, useState, type RefObject } from "react";
 import { useFieldArray, useForm, useWatch } from "react-hook-form";
 
 import { novelKeys, toNovelActionError, type NovelDetailResponse } from "@/entities/novel";
@@ -16,6 +16,8 @@ type NovelNotesEditorProps = {
   novel: NovelDetailResponse;
   /** 노트 제목(`h2`, `tabIndex=-1`). 호출부가 노트를 열 때 포커스를 보낼 자리다. */
   headingRef?: RefObject<HTMLHeadingElement | null>;
+  /** 저장하지 않은 입력이 있는가가 바뀔 때마다(사라질 때는 `false`). */
+  onDraftDirtyChange?: (isDirty: boolean) => void;
 };
 
 /** 설정 노트 — 소설 내내 지켜야 할 짧은 사실을 한 줄씩. 다음 화를 만들 때와 AI로 고칠 때 함께 전해진다.
@@ -25,7 +27,7 @@ type NovelNotesEditorProps = {
  * 입력을 덮지 않는다. 다른 소설로 옮기면 호출부가 `key` 로 새로 마운트한다.
  *
  * 저장 결과 문장과 실패 문장은 누른 순간 기록한 상태다. 저장 중에는 `aria-disabled` 로 막아 포커스를 지킨다. */
-export function NovelNotesEditor({ novel, headingRef }: NovelNotesEditorProps) {
+export function NovelNotesEditor({ novel, headingRef, onDraftDirtyChange }: NovelNotesEditorProps) {
   const queryClient = useQueryClient();
   const headingId = useId();
   const descriptionId = useId();
@@ -46,6 +48,14 @@ export function NovelNotesEditor({ novel, headingRef }: NovelNotesEditorProps) {
   // 배열 칸 오류는 폼이 그 배열을 어떻게 등록했느냐에 따라 배열 자리나 그 `root` 자리 둘 중 하나에 담긴다.
   const lengthError = errors.notes?.root?.message ?? errors.notes?.message;
   const isSaving = saveMutation.isPending;
+  // 저장하지 않은 입력이 있는가를 호출부에 알린다 — 호출부가 다른 것을 고르거나 뒤로 가기 전에 버릴지 묻는다.
+  // 사라질 때는 거짓으로 돌려놓는다. 호출부 함수는 렌더마다 새로 만들어질 수 있어 ref 로 읽는다.
+  const onDraftDirtyChangeRef = useRef(onDraftDirtyChange);
+  onDraftDirtyChangeRef.current = onDraftDirtyChange;
+  useEffect(() => {
+    onDraftDirtyChangeRef.current?.(isDirty);
+  }, [isDirty]);
+  useEffect(() => () => onDraftDirtyChangeRef.current?.(false), []);
 
   async function handleValidSubmit(values: NotesFormValues) {
     setResult(undefined);
