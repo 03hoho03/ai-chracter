@@ -41,6 +41,7 @@ from api.novelize.text import clean_chapter_body
 from factories import (
     Room,
     _batch_output,
+    _clover_lots,
     _episode_text,
     _grant_novelize,
     _login_as,
@@ -386,6 +387,8 @@ async def test_fewer_episodes_than_the_target_refund_the_missing_ones_in_the_sam
     assert (await _batches(db_session, novel.id))[0].target_episode_count == 3
     assert await _ledger(db_session, novel.user_id) == [("novelize_spend", -120), ("novelize_refund", 40)]
     assert await _assert_balance_matches_lots(db_session, novel.user_id) == 300 - 120 + 40
+    # 모자란 화의 몫은 깎은 그 로트로 돌아간다.
+    assert await _clover_lots(db_session, novel.user_id) == [("legacy_balance", 300 - 120 + 40)]
 
 
 async def test_more_episodes_than_the_target_up_to_the_models_cap_are_all_kept_at_no_extra_charge(

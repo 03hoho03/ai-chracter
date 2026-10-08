@@ -38,7 +38,7 @@ from api.llm.local_image import (
     ModelCapability,
 )
 from api.main import app
-from factories import _login_as, _make_user, _make_user_with_clover_lot, _patch_httpx
+from factories import _clover_lots, _login_as, _make_user, _make_user_with_clover_lot, _patch_httpx
 
 
 def _png_bytes(width: int = 64, height: int = 64) -> bytes:
@@ -1096,6 +1096,8 @@ async def test_partial_success_refunds_only_the_images_that_were_not_made(
     assert refunded == clover.IMAGE_UNIT_COST  # 못 만든 1장분만
     await db_session.refresh(user)
     assert user.clover_balance == 100 - clover.IMAGE_UNIT_COST
+    # 금액만 줄인 영수증으로 환급해도 같은 차감의 배분을 따라 깎은 로트로 돌아간다.
+    assert await _clover_lots(db_session, user.id) == [("legacy_balance", 100 - clover.IMAGE_UNIT_COST)]
 
 
 @pytest.mark.parametrize(

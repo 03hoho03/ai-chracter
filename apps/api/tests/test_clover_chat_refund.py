@@ -33,6 +33,7 @@ from api.main import app
 from api.llm.client import LLMClientError, LLMPolicyViolationError
 from factories import (
     _clear_llm_override,
+    _clover_lots,
     _FakeLLMClient,
     _get_genre,
     _login_as,
@@ -219,7 +220,7 @@ async def test_our_side_failure_refunds_clover(
     surface: str,
     failure: str,
 ) -> None:
-    """6지점 전부에서 차감이 되돌아가고 원장에 `chat_refund` 한 행이 남는다."""
+    """6지점 전부에서 차감이 되돌아가고 원장에 `chat_refund` 한 행이 남는다. 환급은 깎은 그 로트로 돌아간다."""
     user, resp = await _run_failing_turn(
         db_client, db_session, monkeypatch, surface=surface, failure=failure
     )
@@ -231,6 +232,7 @@ async def test_our_side_failure_refunds_clover(
     assert sorted(await _ledger_pairs(db_session, user.id)) == sorted(
         [("chat_spend", -_CHAT_COST), ("chat_refund", _CHAT_COST)]
     )
+    assert await _clover_lots(db_session, user.id) == [("legacy_balance", _START_BALANCE)]
 
 
 @pytest.mark.parametrize("surface", ["send", "edit", "regenerate", "preview"])
@@ -278,7 +280,7 @@ async def test_refund_failure_does_not_escape_the_generator(
     async def _boom(*args: Any, **kwargs: Any) -> int:
         raise RuntimeError("환불 트랜잭션 실패")
 
-    monkeypatch.setattr(clover, "grant", _boom)
+    monkeypatch.setattr(clover, "refund_spend", _boom)
 
     user, resp = await _run_failing_turn(
         db_client, db_session, monkeypatch, surface="send", failure="llm"

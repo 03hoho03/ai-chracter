@@ -1141,6 +1141,17 @@ def _batch_output(*bodies: str, novel_title: str | None = None) -> str:
     return head + "\n".join(_episode_text(body, number=n) for n, body in enumerate(bodies, start=1))
 
 
+async def _clover_lots(db: AsyncSession, user_id: uuid.UUID) -> list[tuple[str, int]]:
+    """사용자의 로트(종류, 잔여) — 종류·잔여 순. 환급이 깎은 원래 로트로 돌아갔는지 본다: 차감 id 를 잃은 환급은 잔액은
+    같게 맞추지만 원래 로트는 깎인 채로 두고 환급 종류의 무기한 새 로트를 만든다."""
+    rows = await db.execute(
+        sa.select(CloverLot.kind, CloverLot.remaining)
+        .where(CloverLot.user_id == user_id)
+        .order_by(CloverLot.kind, CloverLot.remaining)
+    )
+    return [(kind, remaining) for kind, remaining in rows.all()]
+
+
 async def _novel_ledger(db: AsyncSession, user_id: uuid.UUID) -> list[tuple[str, int]]:
     """사용자의 소설화 원장 행(종류, 금액) — 금액·종류 순."""
     rows = await db.execute(

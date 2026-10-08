@@ -129,7 +129,7 @@ from api.content.schemas import (
     count_rules,
 )
 from api.core.config import settings
-from api.core.clover import refund_in_new_transaction
+from api.core.clover import refund_spend_in_new_transaction
 from api.core.rate_limit_gate import ChatCharge, charge_chat_turn, enforce_chat_rate_limit
 from api.core.s3 import build_thumbnail_key, generate_presigned_get_url
 from api.core.sentry import capture_dependency_failure
@@ -1429,14 +1429,18 @@ async def _refund_clover(
     위해서다. `"free"`(무료 창으로 통과)와 `"skipped"`(예외 계정·Redis fail-open)는 애초에
     깎은 것이 없어 되돌릴 대상이 없다.
 
-    🔴 **`refund_in_new_transaction` 은 예외를 밖으로 내지 않는다**(그 docstring 참고) —
+    🔴 **`refund_spend_in_new_transaction` 은 예외를 밖으로 내지 않는다**(그 docstring 참고) —
     여기가 SSE 제너레이터 본문이라 예외가 새면 이미 시작된 스트림을 뚫고 나가 태스크가
     취소되고 망가진 asyncpg 커넥션이 풀로 반환된다(`core/rate_limit_gate.py` 모듈 docstring).
     """
     if charge.source != "clover":
         return
-    await refund_in_new_transaction(
-        session_factory, user_id=user_id, amount=charge.clover_amount, kind="chat_refund"
+    await refund_spend_in_new_transaction(
+        session_factory,
+        user_id=user_id,
+        spend_ledger_id=charge.spend_ledger_id,
+        amount=charge.clover_amount,
+        kind="chat_refund",
     )
 
 
@@ -1456,11 +1460,11 @@ async def _refund_clover_on_failure(
     🔴 **예외를 삼키지 않고 다시 올린다** — 6지점과 성격이 다르다. 거기는 스트림이 이미 열려
     있어 예외가 새면 커넥션이 깨지지만, 여기는 아직 첫 `yield` 전이라 깨끗한 500 이 정상
     경로다(`apps/api/CLAUDE.md` §SSE). 환불이 원래 예외를 가리면 안 되고,
-    `refund_in_new_transaction` 이 자체 예외를 밖으로 내지 않으므로 그 성질이 유지된다.
+    `refund_spend_in_new_transaction` 이 자체 예외를 밖으로 내지 않으므로 그 성질이 유지된다.
 
     `BaseException` 이 아니라 `Exception` 을 잡는다 — 클라이언트가 끊어 생긴
     `asyncio.CancelledError` 까지 여기서 처리하면 취소 전파가 바뀐다(`core/clover.py` 의
-    `refund_in_new_transaction` 과 같은 이유). 끊긴 요청의 차감은 그대로 남는다.
+    `refund_spend_in_new_transaction` 과 같은 이유). 끊긴 요청의 차감은 그대로 남는다.
     """
     try:
         yield

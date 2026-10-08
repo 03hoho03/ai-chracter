@@ -550,35 +550,6 @@ async def refund_spend_in_new_transaction(
         capture_dependency_failure(exc, dependency="clover")
 
 
-async def refund_in_new_transaction(
-    session_factory: async_sessionmaker[AsyncSession],
-    *,
-    user_id: uuid.UUID,
-    amount: int,
-    kind: CloverKind,
-) -> None:
-    """차감을 되돌린다. 🔴 **절대 예외를 밖으로 내지 않는다.**
-
-    호출 자리가 SSE 제너레이터 본문이라 예외가 새면 이미 시작된
-    스트림을 뚫고 나가 태스크가 취소되고, **망가진 asyncpg 커넥션이 풀로 반환돼 무관한 요청이
-    500**이 된다(`core/rate_limit_gate.py`의 모듈 docstring이 같은 이유로 `Depends`만 쓰라고
-    적는다).
-
-    실패는 `logger.warning` + `capture_dependency_failure(dependency="clover")`로만 남는다 —
-    자동 재시도를 만들지 않기로 했으므로 이게 유일한 발견
-    수단이다. 남는 결과는 "그 요청의 차감이 되돌아가지 않은 것"이고 보정은 어드민 지급이다.
-    """
-    try:
-        async with session_factory() as session:
-            await grant(session, user_id=user_id, amount=amount, kind=kind)
-            await session.commit()
-    # `BaseException`이 아니라 `Exception`인 것이 중요하다 — `asyncio.CancelledError`까지
-    # 삼키면 클라이언트가 끊은 스트림이 정리되지 않는다.
-    except Exception as exc:
-        logger.warning("클로버 환불 실패 — 그 요청의 차감이 남는다", exc_info=True)
-        capture_dependency_failure(exc, dependency="clover")
-
-
 def kst_today(now: datetime) -> date:
     """tz-aware `now`를 KST 날짜로 바꾼다. `core/rate_limit.py`의 `KST` 고정 오프셋을 쓴다.
 

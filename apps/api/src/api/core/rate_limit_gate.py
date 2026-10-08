@@ -246,6 +246,8 @@ class ChatCharge:
     # `source != "clover"`이면 0이다. 되돌릴 양을 라우트가 상수에서 다시 계산하지 않고
     # 영수증에서 읽게 한다 — 상수가 바뀌어도 진행 중이던 요청의 환불액이 어긋나지 않는다. 상위 모델 턴이면 그 모델 가격이다.
     clover_amount: int = 0
+    # 클로버 차감의 원장 행. 환급이 이 차감의 로트 배분을 찾아 깎은 로트로 되돌린다. `source != "clover"`이면 `None`.
+    spend_ledger_id: uuid.UUID | None = None
     # 이 턴을 생성할 글쓰기 모델. 값을 받은 모델이 곧 생성 모델이다 — 생성 직전에 방을 다시 읽으면, 게이트와 생성 사이에
     # 방의 모델이 바뀌었을 때 받은 값과 다른 모델로 생성한다.
     model: ChatModelId = DEFAULT_CHAT_MODEL
@@ -361,7 +363,7 @@ async def charge_chat_turn(
                     seconds_until_kst_midnight(now),
                     code=_CLOVER_CODE,
                 )
-            return ChatCharge(source="clover", clover_amount=price)
+            return ChatCharge(source="clover", clover_amount=price, spend_ledger_id=spent.ledger_id)
         return ChatCharge(source="free")
     except RedisError:
         if model != DEFAULT_CHAT_MODEL:
@@ -405,7 +407,7 @@ async def _charge_premium_turn(
     spent = await clover.spend_in_new_transaction(session_factory, user_id=user_id, amount=price, kind="chat_spend")
     if spent is None:
         raise _too_many_requests(user_id, _CLOVER_WINDOW, seconds_until_kst_midnight(now), code=_CLOVER_CODE)
-    return ChatCharge(source="clover", clover_amount=price, model=model)
+    return ChatCharge(source="clover", clover_amount=price, model=model, spend_ledger_id=spent.ledger_id)
 
 
 @dataclass(frozen=True)
@@ -425,6 +427,9 @@ class ImageCharge:
     source: Literal["token", "clover", "skipped"]
     # `source != "clover"`이면 0. 채팅의 `ChatCharge`와 같은 이유로 영수증에 담는다.
     clover_amount: int = 0
+    # 클로버 차감의 원장 행(`ChatCharge`와 같다). 부분 환급(못 만든 장수)이 `dataclasses.replace`로 금액만 바꾼 영수증을
+    # 넘겨도 이 값은 그대로 따라가, 같은 차감의 배분에서 되돌린다.
+    spend_ledger_id: uuid.UUID | None = None
 
 
 async def enforce_image_rate_limit(
@@ -504,7 +509,9 @@ async def enforce_image_rate_limit(
             raise _too_many_requests(
                 user_id, _IMAGE_WINDOW, retry_after, code=_CLOVER_CODE
             )
-        return ImageCharge(count=payload.count, source="clover", clover_amount=clover_amount)
+        return ImageCharge(
+            count=payload.count, source="clover", clover_amount=clover_amount, spend_ledger_id=spent.ledger_id
+        )
     return ImageCharge(count=payload.count, source="token")
 
 
@@ -564,14 +571,15 @@ async def refund_image_charge(
     `RedisError`를 여기서 삼키는 이유: 이 함수는 **이미 실패가 확정된 요청**(429/503/400)의
     정리 작업이라, 예외가 새어 나가면 사용자가 받아야 할 429가 원인과 무관한 500으로 바뀐다.
     환불 유실 자체는 조용히 사라지지 않는다 — `refund_tokens`도 여기도 로그를 남긴다.
-    클로버 환불도 같은 이유로 예외를 삼킨다(`clover.refund_in_new_transaction`이 자체적으로)."""
+    클로버 환불도 같은 이유로 예외를 삼킨다(`clover.refund_spend_in_new_transaction`이 자체적으로)."""
     match charge.source:
         case "skipped":
             return
         case "clover":
-            await clover.refund_in_new_transaction(
+            await clover.refund_spend_in_new_transaction(
                 session_factory,
                 user_id=user_id,
+                spend_ledger_id=charge.spend_ledger_id,
                 amount=charge.clover_amount,
                 kind="image_refund",
             )

@@ -15,7 +15,6 @@ from api.core.clover import (
     grant,
     is_same_kst_day,
     kst_today,
-    refund_in_new_transaction,
     refund_spend,
     refund_spend_in_new_transaction,
     revoke,
@@ -489,25 +488,6 @@ async def test_refund_spend_in_new_transaction_swallows_failures() -> None:
     try:
         await refund_spend_in_new_transaction(
             dead_factory, user_id=uuid.uuid4(), spend_ledger_id=uuid.uuid4(), amount=CHAT_TURN_COST, kind="chat_refund"
-        )
-    finally:
-        await dead_engine.dispose()
-
-
-# ── 환불 래퍼가 예외를 밖으로 내지 않는다 ────────────────────────────────────
-async def test_refund_in_new_transaction_swallows_failures() -> None:
-    """환불은 제너레이터 본문에서 불린다. 예외가 새면 이미 시작된
-    SSE 스트림을 뚫고 나가 태스크가 취소되고, 망가진 asyncpg 커넥션이 풀로 반환돼 **무관한
-    요청이 500**이 된다(`core/rate_limit_gate.py:11-14`).
-    """
-    # 붙을 수 없는 엔진이라 `async with`가 즉시 터진다 — 그 예외를 삼키는지만 본다.
-    dead_engine = create_async_engine(
-        "postgresql+asyncpg://invalid:invalid@127.0.0.1:1/nonexistent"
-    )
-    dead_factory = async_sessionmaker(dead_engine, expire_on_commit=False)
-    try:
-        await refund_in_new_transaction(
-            dead_factory, user_id=uuid.uuid4(), amount=CHAT_TURN_COST, kind="chat_refund"
         )
     finally:
         await dead_engine.dispose()
