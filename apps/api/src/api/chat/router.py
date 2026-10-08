@@ -129,7 +129,6 @@ from api.content.schemas import (
     count_rules,
 )
 from api.core.config import settings
-from api.core.clover import refund_spend_in_new_transaction
 from api.core.rate_limit_gate import ChatCharge, charge_chat_turn, enforce_chat_rate_limit
 from api.core.s3 import build_thumbnail_key, generate_presigned_get_url
 from api.core.sentry import capture_dependency_failure

@@ -307,11 +307,12 @@ async def _run_generation(
         # 집계가 끝났으므로 여기서 환불액이 확정된다(`_refund_unmade_images` 참조).
         # `refund_settled`를 세우는 것이 **이 지점 이후의 실패에서 아래 `except`가 두 번째
         # 환불을 하지 않게** 막는다 — 두 번 돌려주면 없던 돈이 생긴다. 돌려줄 것이 0장이어도
-        # "정산은 끝났다"가 참이므로 `if` 밖에서 세운다.
+        # "정산은 끝났다"가 참이므로 `if` 밖에서 세운다. 환급을 기다리기 **전에** 세운다 — 환급이 커밋된 뒤 이 `await` 가
+        # 돌아오기 전에 취소가 닿으면, 뒤에 세우는 쪽은 아래 `except` 가 같은 몫을 한 번 더 돌려준다.
+        refund_settled = True
         await _refund_unmade_images(
             owner_user_id, charge, charge.count - succeeded_count, session_factory, job_id
         )
-        refund_settled = True
 
         blocked_count = len(blocked_reasons)
         blocked_reason: ImageBlockedReason | None = None
