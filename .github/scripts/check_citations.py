@@ -68,6 +68,7 @@ RULE_CODE_PATHS = re.compile(
 SCHEMA_DOCSTRING_CLASSES: dict[str, set[str]] = {
     "apps/api/src/api/chat/prompt_builder.py": {
         "StatJudgmentResult",
+        "StatRuleJudgmentResult",
         "EndingJudgmentResult",
         "ImageMatchJudgmentResult",
     },

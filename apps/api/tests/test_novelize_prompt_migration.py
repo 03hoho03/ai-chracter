@@ -37,6 +37,9 @@ def _load(revision: str) -> ModuleType:
 
 
 _M = _load("3bb2cc159b6d")
+# story 레인 Gemini 체인에 스탯 규칙 판정 채널을 더하는 리비전 — 초안 게시 검사가 head 코드 표를 쓰므로 story 초안은
+# 이것도 거친다.
+_STAT_RULE_MIGRATION = _load("d9768bc0cfee")
 # 이 리비전이 복사한 원본 — 테스트 DB에서는 두 레인 모두 사용자 이름 한 줄 리비전의 세트다.
 _SOURCE_SET_IDS: dict[str, uuid.UUID] = _load("8e895c898730").NEW_SET_IDS
 _LANES: tuple[PromptLane, ...] = ("story", "character")
@@ -309,6 +312,9 @@ async def test_patch_draft_adds_the_rows_and_the_draft_then_publishes(db_session
     assert after == before
     assert added == _expected_new_rows()
 
+    # 코드 표는 지금 head 기준이라, 체인이 실제로 하듯 뒤 리비전(스탯 규칙 판정 채널)의 초안 패치도 거친 뒤 검사한다.
+    assert await connection.run_sync(_STAT_RULE_MIGRATION._patch_draft) is (lane == "story")
+    sections = await _sections_of(db_session, draft_id)
     draft = await db_session.get(PromptSet, draft_id)
     assert draft is not None
     _validate_prompt_draft_for_publish(draft, sections, lane=lane)

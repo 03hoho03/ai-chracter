@@ -2289,6 +2289,43 @@ def test_validate_story_publish_stat_change_options(
     assert missing == expected
 
 
+@pytest.mark.parametrize(
+    ("deltas", "expected"),
+    [
+        pytest.param([10, -10], [], id="range-width"),
+        pytest.param([11], ["stats.ruleDelta"], id="wider"),
+        pytest.param([-11], ["stats.ruleDelta"], id="negative-wider"),
+        pytest.param([11, -12, 3], ["stats.ruleDelta"], id="several-reported-once"),
+    ],
+)
+def test_validate_story_publish_stat_rule_delta(deltas: list[int], expected: list[str]) -> None:
+    """규칙 폭이 그 스탯의 범위 폭(최대 − 최소)을 넘으면 한 번 발동으로 반대쪽 끝을 넘는다 — 초안 저장은 받아 주므로
+    발행이 막는다. 폭은 규칙이 달린 스탯의 범위로 잰다(다른 스탯의 넓은 범위로 통과시키지 않는다)."""
+    content, version, detail, setups = _valid_story_rows()
+    narrow = StatDef(id=uuid.uuid4(), min_value=0, max_value=10, initial_value=5)
+    wide = StatDef(id=uuid.uuid4(), min_value=0, max_value=100, initial_value=5)
+
+    missing = validate_story_publish(
+        content,
+        version,
+        detail,
+        setups,
+        {},
+        media_book_people=[],
+        media_book_scenes=[],
+        media_book_cells=[],
+        keyword_notes=[],
+        dangling_stat_rule_paths=[],
+        stat_rules=[StatRule(stat_def_id=narrow.id, delta=delta) for delta in deltas]
+        + [StatRule(stat_def_id=wide.id, delta=50)],
+        situation_notes=[],
+        dangling_situation_note_paths=[],
+        stat_defs=[narrow, wide],
+    )
+
+    assert missing == expected
+
+
 def _stat_def_fields(stat_def: StatDef) -> tuple[object, ...]:
     return (
         stat_def.name,

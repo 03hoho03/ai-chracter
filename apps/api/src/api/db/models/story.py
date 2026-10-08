@@ -148,7 +148,8 @@ class StatRule(Base):
     삭제, 편집 취소), cascade 가 없으면 그 DELETE 가 FK 위반 500 이 된다. 새 코드는 형제 테이블처럼 규칙을 먼저 지운 뒤
     스탯을 지운다.
 
-    개수·글자 수·폭의 상한은 DB 제약이 아니라 저장 요청 검증(`StoryDraftPayload`)이 건다."""
+    개수·글자 수 상한은 DB 제약이 아니라 저장 요청 검증(`StoryDraftPayload`)이, 폭이 스탯 범위 폭을 넘는지는 발행
+    검증이 건다."""
 
     __tablename__ = "stat_rules"
     __table_args__ = (Index("ix_stat_rules_stat_def_id", "stat_def_id"),)

@@ -3670,6 +3670,9 @@ def _stat_rule(condition: str = "그를 감싸 준다", delta: int = 5) -> dict[
     return {"id": str(uuid.uuid4()), "condition": condition, "delta": delta}
 
 
+_DUPLICATED_RULE = _stat_rule()
+
+
 async def _saved_stat_rules(
     db_session: AsyncSession, version_id: uuid.UUID
 ) -> dict[str, list[tuple[uuid.UUID, str, str, int, int]]]:
@@ -3824,16 +3827,17 @@ async def test_draft_response_lists_stat_rules_in_order(
         pytest.param([_stat_rule(condition="가" * 101)], False, id="condition-101"),
         pytest.param([_stat_rule(condition="   ")], False, id="condition-blank"),
         pytest.param([_stat_rule(delta=0)], False, id="delta-zero"),
-        pytest.param([_stat_rule(delta=42), _stat_rule(delta=-42)], True, id="delta-range-width"),
-        pytest.param([_stat_rule(delta=43)], False, id="delta-wider-than-range"),
-        pytest.param([_stat_rule(delta=-43)], False, id="negative-delta-wider-than-range"),
+        pytest.param([_stat_rule(delta=43), _stat_rule(delta=-43)], True, id="delta-wider-than-range"),
+        pytest.param([{**_DUPLICATED_RULE, "delta": 1}, {**_DUPLICATED_RULE, "delta": 2}], False, id="repeated-id"),
     ],
 )
 async def test_patch_story_draft_enforces_stat_rule_limits(
     db_client: httpx.AsyncClient, db_session: AsyncSession, rules: list[dict[str, object]], accepted: bool
 ) -> None:
-    """스탯당 규칙 10개, 조건은 앞뒤 공백을 뗀 뒤 1~100자, 폭은 0 이 아니고 그 스탯 범위 폭(최대 − 최소, 여기서는 42)을
-    넘지 않아야 한다. 넘는 저장은 422 로 막고 아무것도 저장하지 않는다. 경계값은 받는다."""
+    """스탯당 규칙 10개, 조건은 앞뒤 공백을 뗀 뒤 1~100자, 폭은 0 이 아니어야 하고, 한 스탯 안의 규칙 id 는 겹치지 않아야
+    한다(겹치면 다음 저장이 id 로 두 행을 가를 수 없다). 어긋난 저장은 422 로 막고 아무것도 저장하지 않는다. 경계값은
+    받는다. 폭이 스탯 범위 폭(최대 − 최소, 여기서는 42)을 넘는 규칙은 받는다 — 범위를 좁힌 초안의 자동저장이 막히지 않게
+    발행이 막는다."""
     _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
 
     resp = await db_client.patch(

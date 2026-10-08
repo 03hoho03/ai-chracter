@@ -300,8 +300,9 @@ def _both_directions() -> StatChangeDirection:
 class StatRuleDraftItem(CamelModel):
     """스탯 하나의 「조건 → ±n」 규칙. 배열 순서가 `order` 라 순서 필드는 따로 없다. 조건은 앞뒤 공백을 떼어 저장한다.
 
-    개수·글자 수·폭의 상한은 요청에만 건다(`StoryDraftPayload` 의 검증) — 이 타입은 초안 응답에도 쓰이므로, 여기에
-    걸면 상한을 바꾸거나 스탯 범위를 좁힌 뒤 이미 저장된 규칙이 있는 초안을 열 수 없다(GET 500)."""
+    개수·글자 수 상한과 폭 0·id 중복 금지는 요청에만 건다(`StoryDraftPayload` 의 검증) — 이 타입은 초안 응답에도
+    쓰이므로, 여기에 걸면 상한을 바꾼 뒤 이미 저장된 규칙이 있는 초안을 열 수 없다(GET 500). 폭이 스탯 범위 폭을
+    넘는지는 발행이 본다."""
 
     id: uuid.UUID
     condition: Annotated[str, AfterValidator(str.strip)]
@@ -693,19 +694,23 @@ class StoryDraftPayload(CamelModel):
 
     @model_validator(mode="after")
     def _check_stat_rule_limits(self) -> Self:
-        # 상한을 여기(요청 전용 모델)에 두는 이유는 `StatRuleDraftItem` docstring. 폭 0 은 발동해도 아무 일도 하지 않고,
-        # 범위 폭보다 큰 폭은 한 번 발동으로 반대쪽 끝을 넘어 늘 경계에 붙는다.
+        # 상한을 여기(요청 전용 모델)에 두는 이유는 `StatRuleDraftItem` docstring. 폭 0 은 발동해도 아무 일도 하지 않는다.
+        # 폭이 스탯 범위 폭을 넘는지는 여기서 보지 않고 발행이 막는다(`validate_story_publish`) — 작가가 범위를 좁히면
+        # 이미 저장된 규칙이 넘게 되는데, 저장에서 막으면 그 초안의 자동저장이 편집마다 실패한다. 같은 스탯 안의 규칙 id
+        # 중복은 막는다 — 저장이 id 로 행을 맞추므로 두 행이 같은 id 를 가지면 다음 저장에서 둘을 가를 수 없다.
         for setup in self.starting_setups:
             for stat in setup.stat_defs:
                 if len(stat.rules) > MAX_STAT_RULES_PER_STAT:
                     raise ValueError(f"a stat holds at most {MAX_STAT_RULES_PER_STAT} rules")
+                if _first_repeated([rule.id for rule in stat.rules]) is not None:
+                    raise ValueError("stat rule ids must be unique within a stat")
                 for rule in stat.rules:
                     if not 1 <= len(rule.condition) <= STAT_RULE_MAX_CONDITION_LENGTH:
                         raise ValueError(
                             f"stat rule condition must be 1-{STAT_RULE_MAX_CONDITION_LENGTH} characters after trimming"
                         )
-                    if rule.delta == 0 or abs(rule.delta) > stat.max_value - stat.min_value:
-                        raise ValueError("stat rule delta must be a non-zero integer no wider than the stat range")
+                    if rule.delta == 0:
+                        raise ValueError("stat rule delta must be a non-zero integer")
         return self
 
 
