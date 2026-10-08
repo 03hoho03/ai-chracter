@@ -10,6 +10,8 @@ import {
   type EpisodeNode,
 } from "./boardNode";
 
+const BATCH_FRAME_DOM_ATTRIBUTES = { "aria-hidden": true, "aria-roledescription": undefined };
+
 type Bounds = { minX: number; minY: number; maxX: number; maxY: number };
 
 /** 화 카드가 차지하는 상자. 화면에 그려진 뒤에는 잰 크기를, 그 전에는 카드의 정해진 크기를 쓴다. */
@@ -76,6 +78,8 @@ export function fitBatchFrames(nodes: BoardNode[], model: BoardModel): BoardNode
         focusable: false,
         connectable: false,
         deletable: false,
+        // 장식이라 읽히지 않게 숨긴다 — 라이브러리가 모든 노드 상자에 다는 영어 역할 설명("node")도 지운다.
+        domAttributes: BATCH_FRAME_DOM_ATTRIBUTES,
       };
       const existing = existingFrames.get(frame.id);
       return [existing !== undefined && isSameFrame(existing, frame) ? existing : frame];

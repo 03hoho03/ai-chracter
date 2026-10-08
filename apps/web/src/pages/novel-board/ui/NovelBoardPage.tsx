@@ -2,7 +2,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useBlocker, useNavigate } from "@tanstack/react-router";
 import { BookX, CloudOff, NotebookPen } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import {
   NovelStatusState,
@@ -144,6 +144,7 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
   const blockedReasonId = useId();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const createButtonRef = useRef<HTMLButtonElement>(null);
+  const canvasRegionRef = useRef<HTMLElement>(null);
   // 지웠지만 아직 캐시를 버리지 않은 화들. 화면이 그 화를 떠난 렌더의 커밋 뒤에 버린다(아래 effect).
   const [deletedChapterIds, setDeletedChapterIds] = useState<string[]>([]);
   // 고치던 글이 있어 옮겨 가지 않고 미뤄 둔 새 화. 그 화로 가는 링크를 작업 줄에 둔다.
@@ -359,7 +360,8 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
           둘째 칸)라, 창 폭이 1024px 를 넘나들어도 패널이 다시 마운트되지 않아 쓰던 글이 남는다. */}
       <div className="flex h-below-header">
         {isCanvasLayout ? (
-          <main aria-label="편집 보드" className="relative min-w-0 flex-1">
+          // 실패 안내의 "다시 시도"가 성공하면 안내와 함께 사라지므로, 누를 때 포커스를 받아 둘 자리라 `tabIndex=-1`.
+          <main ref={canvasRegionRef} tabIndex={-1} aria-label="편집 보드" className="relative min-w-0 flex-1 outline-none">
             <Button
               type="button"
               variant="outline"
@@ -397,6 +399,7 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
                 <CanvasFailedNotice
                   message="카드 자리를 불러오지 못해 자동 배치로 보여요. 옮긴 자리는 다시 불러올 때까지 저장하지 않아요."
                   onRetry={() => void layoutQuery.refetch()}
+                  fallbackFocusRef={canvasRegionRef}
                   isRetrying={layoutQuery.isFetching}
                 />
               )}
@@ -405,6 +408,7 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
                   message="인물을 불러오지 못했어요."
                   onRetry={() => void charactersQuery.refetch()}
                   isRetrying={charactersQuery.isFetching}
+                  fallbackFocusRef={canvasRegionRef}
                 />
               )}
             </div>
@@ -507,7 +511,15 @@ function EmptyCanvas({ onWriteNotes }: { onWriteNotes: () => void }) {
 }
 
 /** 캔버스 위 실패 안내(배치·인물). 화 열은 그대로 쓸 수 있어 막지 않고 오른쪽 위에 둔다. */
-function CanvasFailedNotice({ message, onRetry, isRetrying }: { message: string; onRetry: () => void; isRetrying: boolean }) {
+type CanvasFailedNoticeProps = {
+  message: string;
+  onRetry: () => void;
+  isRetrying: boolean;
+  /** 다시 받기가 성공하면 이 안내와 버튼이 사라진다 — 포커스가 `<body>` 로 떨어지지 않게 누르기 전에 옮겨 둘 자리. */
+  fallbackFocusRef: RefObject<HTMLElement | null>;
+};
+
+function CanvasFailedNotice({ message, onRetry, isRetrying, fallbackFocusRef }: CanvasFailedNoticeProps) {
   return (
     <div className="flex max-w-80 items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm break-keep text-muted-foreground">
       <span>{message}</span>
@@ -519,6 +531,7 @@ function CanvasFailedNotice({ message, onRetry, isRetrying }: { message: string;
         className="shrink-0 aria-disabled:opacity-65"
         onClick={() => {
           if (isRetrying) return;
+          fallbackFocusRef.current?.focus();
           onRetry();
         }}
       >

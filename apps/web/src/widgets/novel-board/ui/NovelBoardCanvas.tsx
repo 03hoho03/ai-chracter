@@ -41,6 +41,12 @@ const MAX_ZOOM = 1.5;
 /** 선은 고를 것이 없다(정보는 카드에 있다) — 눌러도 고르기 변경을 내지 않게. */
 const DEFAULT_EDGE_OPTIONS = { selectable: false };
 
+/** 선 클릭은 아무것도 하지 않는다. 그래도 넘기는 이유: 라이브러리는 고를 수 없고 클릭 콜백도 없는 선에 `inactive`
+ * (`pointer-events: none`)를 걸어, 선 위 클릭이 그 아래 빈 곳 클릭이 되고 고르기가 풀린다(설치본 EdgeWrapper 의
+ * `inactive: !isSelectable && !onClick`). 콜백이 있으면 선이 포인터를 받아 빈 곳까지 내려가지 않는다. 클릭 지점이 선
+ * 근처인지 재는 것보다 단순하고, 선의 상호작용 폭도 라이브러리 기본 그대로 쓴다. */
+function ignoreEdgeClick() {}
+
 const DIRECTION_LABEL: Record<string, string> = { up: "위로", down: "아래로", left: "왼쪽으로", right: "오른쪽으로" };
 
 // 라이브러리 기본 안내는 영어이고 "지우기 키로 지운다"를 말한다 — 이 보드는 지우기 키를 꺼 두어 거짓 안내가 된다.
@@ -240,6 +246,7 @@ function BoardFlow({ novelId, model, savedLayout, maxBytes, canSave, selectedNod
       nodeTypes={BOARD_NODE_TYPES}
       onNodesChange={handleNodesChange}
       onPaneClick={handlePaneClick}
+      onEdgeClick={ignoreEdgeClick}
       onKeyDownCapture={handleKeyDownCapture}
       defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
       onMoveEnd={handleMoveEnd}

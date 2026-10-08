@@ -78,4 +78,11 @@ describe("fitBatchFrames", () => {
     expect(frameOf(moved)).not.toBe(measuredFrame);
     expect(frameOf(moved).position.x).toBe(50 - BATCH_FRAME_PADDING);
   });
+
+  it("묶음 테두리는 장식이라 보조기기에서 숨기고 라이브러리의 영어 역할 설명을 지운다", () => {
+    expect(frameOf(fitBatchFrames([episode("e1", 0, 0)], model)).domAttributes).toEqual({
+      "aria-hidden": true,
+      "aria-roledescription": undefined,
+    });
+  });
 });
