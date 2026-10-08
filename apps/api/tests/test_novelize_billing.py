@@ -25,7 +25,7 @@ from api.core.rate_limit import KST, seconds_until_kst_midnight
 from api.db.models import Novel, NovelChapter, NovelChapterRevision, NovelJob, User
 from api.db.models.novel import NovelBatch
 from api.db.models.novel import NovelJobKind, NovelJobStatus
-from api.db.models.clover import CloverLedger, CloverLot
+from api.db.models.clover import CloverLedger, CloverLot, CloverSpendAllocation
 from api.llm.chat_models import ChatModelId
 from api.novelize import billing, runner
 from api.novelize.inputs import ChapterInput
@@ -624,6 +624,15 @@ async def independent_factory(db_engine: AsyncEngine) -> AsyncGenerator[async_se
         if user_ids:
             novel_ids = (await cleanup.scalars(select(Novel.id).where(Novel.user_id.in_(user_ids)))).all()
             await delete_novels(cleanup, novel_ids)
+            # 배분이 원장·로트를 둘 다 FK 로 잡으므로 원장보다 먼저 지운다. 작업 행(원장을 가리키는 칸)은
+            # `delete_novels` 가 이미 지웠다.
+            await cleanup.execute(
+                delete(CloverSpendAllocation).where(
+                    CloverSpendAllocation.spend_ledger_id.in_(
+                        select(CloverLedger.id).where(CloverLedger.user_id.in_(user_ids))
+                    )
+                )
+            )
             await cleanup.execute(delete(CloverLedger).where(CloverLedger.user_id.in_(user_ids)))
             await cleanup.execute(delete(CloverLot).where(CloverLot.user_id.in_(user_ids)))
             await cleanup.execute(delete(User).where(User.id.in_(user_ids)))

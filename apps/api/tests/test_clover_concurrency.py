@@ -37,7 +37,7 @@ from api.core.clover import (
     spend_in_new_transaction,
 )
 from api.db.models.auth import User
-from api.db.models.clover import CloverLedger, CloverLot
+from api.db.models.clover import CloverLedger, CloverLot, CloverSpendAllocation
 from factories import _assert_blocked, _make_user_with_clover_lot
 
 # teardown이 지울 대상을 고르는 표지다. 이 파일이 만든 유저만 지우므로 다른 테스트의 행을
@@ -85,6 +85,14 @@ async def independent_session_factory(
             await cleanup.scalars(select(User.id).where(User.email.like(f"%@{_MARKER_DOMAIN}")))
         ).all()
         if user_ids:
+            # 배분이 원장·로트를 둘 다 FK 로 잡으므로 가장 먼저 지운다.
+            await cleanup.execute(
+                delete(CloverSpendAllocation).where(
+                    CloverSpendAllocation.spend_ledger_id.in_(
+                        select(CloverLedger.id).where(CloverLedger.user_id.in_(user_ids))
+                    )
+                )
+            )
             await cleanup.execute(delete(CloverLedger).where(CloverLedger.user_id.in_(user_ids)))
             await cleanup.execute(delete(CloverLot).where(CloverLot.user_id.in_(user_ids)))
             await cleanup.execute(delete(User).where(User.id.in_(user_ids)))

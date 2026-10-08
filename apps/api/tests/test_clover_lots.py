@@ -14,6 +14,8 @@
 3. `remaining >= 0`·`remaining <= granted_amount` CHECK 제약 — `alembic check`가 CHECK
    제약을 비교하지 않으므로(`apps/api/CLAUDE.md` "쓰기 전 관문") 이 행위 테스트가 유일한
    검증이다.
+4. 차감 배분(`clover_spend_allocations`)의 CHECK 둘 — `amount > 0`, `0 <= refunded_amount <= amount`. 뒤의 것이
+   이중 환급의 마지막 그물이라 같은 이유로 행위 테스트가 유일한 검증이다.
 
 백필 테스트는 마이그레이션의 실제 INSERT문(`_LEGACY_BACKFILL_SQL`)을 마이그레이션 파일에서
 동적으로 불러와 그대로 실행한다 — SQL을 테스트에 다시 타이핑하면 마이그레이션이 나중에
@@ -22,6 +24,7 @@
 """
 
 import importlib.util
+import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -30,7 +33,7 @@ import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.db.models.clover import CloverLot
+from api.db.models.clover import CloverLedger, CloverLot, CloverSpendAllocation
 from factories import _make_user, _make_user_with_clover_lot
 
 _MIGRATION_PATH = (
@@ -162,6 +165,52 @@ async def test_check_constraint_rejects_remaining_above_granted_amount(
 
     db_session.add(
         CloverLot(user_id=user.id, granted_amount=10, remaining=11, kind="legacy_balance")
+    )
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+
+
+# ── 차감 배분 CHECK 2개 ─────────────────────────────────────────────────────
+async def _spend_with_lot(db_session: AsyncSession) -> tuple[uuid.UUID, uuid.UUID]:
+    """배분이 가리킬 차감 원장 행과 로트를 만들고 둘의 id 를 돌려준다."""
+    user = _make_user(clover_balance=0)
+    db_session.add(user)
+    await db_session.flush()
+    lot = CloverLot(user_id=user.id, granted_amount=10, remaining=0, kind="admin_grant")
+    ledger = CloverLedger(user_id=user.id, amount=-10, balance_after=0, kind="chat_spend")
+    db_session.add_all([lot, ledger])
+    await db_session.flush()
+    return ledger.id, lot.id
+
+
+async def test_allocation_accepts_full_refund_boundary(db_session: AsyncSession) -> None:
+    """아래 거부 테스트들이 FK 같은 다른 이유로 실패하는 것이 아님을 보이는 대조군 — 깎은 양만큼 돌려준 행은 통과한다."""
+    ledger_id, lot_id = await _spend_with_lot(db_session)
+
+    db_session.add(
+        CloverSpendAllocation(spend_ledger_id=ledger_id, lot_id=lot_id, seq=0, amount=10, refunded_amount=10)
+    )
+    await db_session.flush()
+
+
+@pytest.mark.parametrize(
+    ("amount", "refunded_amount"),
+    [
+        pytest.param(0, 0, id="amount-zero"),
+        pytest.param(10, 11, id="refund-exceeds-amount"),
+        pytest.param(10, -1, id="refund-negative"),
+    ],
+)
+async def test_allocation_check_constraints_reject(
+    db_session: AsyncSession, amount: int, refunded_amount: int
+) -> None:
+    """깎은 양보다 많이 돌려주는 환급(이중 환급)과 0원 배분을 DB 가 거절한다."""
+    ledger_id, lot_id = await _spend_with_lot(db_session)
+
+    db_session.add(
+        CloverSpendAllocation(
+            spend_ledger_id=ledger_id, lot_id=lot_id, seq=0, amount=amount, refunded_amount=refunded_amount
+        )
     )
     with pytest.raises(IntegrityError):
         await db_session.flush()

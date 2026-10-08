@@ -288,6 +288,11 @@ class NovelJob(Base):
     # 고르지 않는 AI 수정이다. 값 제약을 두지 않는다 — 레지스트리에서 내린 모델의 옛 값이 남아도 행이 살아 있어야 한다.
     model: Mapped[str | None] = mapped_column(Text, nullable=True)
     charged_amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 선차감의 원장 행. 환급이 이 차감의 로트 배분을 그대로 되돌리려고 들고 있다. 차감 0 인 연쇄 자식과 이 칸이 생기기
+    # 전의 작업은 NULL 이고, 그 환급은 무기한 새 로트로 돌려준다.
+    spend_ledger_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("clover_ledger.id", name="fk_novel_jobs_spend_ledger_id"), nullable=True
+    )
     refunded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # 돌려준 클로버. NULL 인데 `refunded_at` 이 찍힌 실패 행은 이 칸을 모르는 옛 코드가 환불한 것이라 전액 환불로 읽는다.
     refunded_amount: Mapped[int | None] = mapped_column(Integer, nullable=True)
