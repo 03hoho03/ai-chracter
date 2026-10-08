@@ -135,6 +135,19 @@ const toggleVariants = cva(
          * `px-4`가 뒤에 있어 `px-4`가 이겨 버린다(2026-09-14 직접 재현, 프리미티브 충돌 전수 조사엔 없던 함정).
          * `compoundVariants`는 `size` 다음에 이어붙으므로 그 자리에서 주면 twMerge가 마지막
          * 값으로 인정한다. */
+        /** 고르는 즉시 결과가 화면에 보이는 설정 칩(소설 읽기 화면의 보기 설정). 칩 네 줄이 한꺼번에 선택돼 있어
+         * `primary` 솔리드로 켜면 한 화면에 솔리드 채움이 넷 생겨 밝기 예산 규칙("화면당 솔리드 하나")을 어긴다 —
+         * 그 화면의 솔리드는 화 끝의 "다음 화" 버튼 몫이다. 그래서 선택은 무채 표면(`secondary`) + `ring` 윤곽 +
+         * `foreground` 글자로만 가른다(비선택은 `border-input` + `muted-foreground`).
+         *
+         * 이 칩은 `popover` 패널 위에 놓이므로 hover 를 `muted` 가 아니라 `secondary` 로 올린다(`muted` 는 그 표면과
+         * 같은 값이라 사라진다 — DESIGN.md Colors 절 "표면 위 채움"). 선택 채움·글자·hover 는 베이스와 **같은
+         * modifier chain** 으로 다시 선언해야 twMerge 가 베이스의 `primary` 쪽을 지운다(`packages/ui/CLAUDE.md`).
+         * 선택된 칩은 보더가 이미 `ring` 이라 포커스 때 `focus-visible:border-ring` 이 바꾸는 것이 없어, 남는 50%
+         * 링만으로는 3:1 에 못 미친다 — 그래서 선택 칩의 포커스 링을 불투명하게 올린다(`default`·`outline` 과 같은
+         * 처방). */
+        neutral:
+          "border border-input bg-transparent hover:bg-secondary data-[state=on]:border-ring data-[state=on]:bg-secondary data-[state=on]:text-foreground data-[state=on]:hover:bg-secondary data-[state=on]:focus-visible:ring-ring aria-pressed:border-ring aria-pressed:bg-secondary aria-pressed:text-foreground aria-pressed:focus-visible:ring-ring",
         tab: "relative rounded-md border border-transparent hover:bg-transparent data-[state=on]:bg-transparent data-[state=on]:text-foreground data-[state=on]:hover:bg-transparent aria-pressed:bg-transparent aria-pressed:text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-foreground after:opacity-0 data-[state=on]:after:opacity-100 motion-safe:after:transition-opacity",
       },
       /** `button.tsx`의 size 표와 같은 값 — 장르 필터·헤더
