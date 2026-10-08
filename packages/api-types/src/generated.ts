@@ -4048,6 +4048,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/clover/pricing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Clover Pricing
+         * @description 공개 조회 — 인증 없음. 충전 상품과 기본 모델 기준 사용 단가를 한 응답에 싣는다. 웹 상품 안내는 숫자 사본 없이
+         *     이 값만 쓴다. DB 를 읽지 않아 비용이 없으므로 레이트리밋도 붙이지 않는다.
+         */
+        get: operations["get_clover_pricing_clover_pricing_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me/personas": {
         parameters: {
             query?: never;
@@ -6653,6 +6674,35 @@ export interface components {
         CloverMissionsResponse: {
             /** Missions */
             missions: components["schemas"]["CloverMissionItem"][];
+        };
+        /**
+         * CloverPricingResponse
+         * @description 공개 가격 안내. 단가는 기본 모델 기준만 싣는다 — 상위 모델은 허용된 계정만 쓰고 소설은 허용 명단 전용이라
+         *     공개 안내에 넣지 않는다.
+         */
+        CloverPricingResponse: {
+            /** Products */
+            products: components["schemas"]["CloverProductItem"][];
+            /** Chatturncost */
+            chatTurnCost: number;
+            /** Imagecost */
+            imageCost: number;
+        };
+        /** CloverProductItem */
+        CloverProductItem: {
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "starter" | "basic" | "plus" | "pro";
+            /** Name */
+            name: string;
+            /** Pricekrw */
+            priceKrw: number;
+            /** Paidamount */
+            paidAmount: number;
+            /** Bonusamount */
+            bonusAmount: number;
         };
         /** CommentAuthorResponse */
         CommentAuthorResponse: {
@@ -16323,6 +16373,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_clover_pricing_clover_pricing_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloverPricingResponse"];
                 };
             };
         };

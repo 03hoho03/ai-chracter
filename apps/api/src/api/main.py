@@ -32,7 +32,7 @@ from api.chat.router import (
     router as chat_router,
     stories_router,
 )
-from api.clover.router import me_router as clover_me_router
+from api.clover.router import me_router as clover_me_router, router as clover_router
 from api.comments.reports import router as comment_reports_router
 from api.comments.router import me_router as comments_me_router, router as comments_router
 from api.content.router import router as content_router
@@ -162,6 +162,7 @@ app.include_router(chat_reports_router)
 app.include_router(chat_me_router)
 app.include_router(chat_models_router)
 app.include_router(clover_me_router)
+app.include_router(clover_router)
 app.include_router(persona_me_router)
 app.include_router(stories_router)
 app.include_router(characters_router)

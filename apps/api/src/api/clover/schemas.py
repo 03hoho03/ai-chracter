@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
+from api.clover.products import ProductKey
 from api.core.schema import CamelModel
 
 # 원장 조회 쿼리 파라미터와 응답 `category` 필드가
@@ -81,3 +82,22 @@ class CloverLedgerListResponse(CamelModel):
 
     items: list[CloverLedgerItem]
     next_cursor: str | None
+
+
+class CloverProductItem(CamelModel):
+    key: ProductKey
+    name: str
+    # 부가세를 포함한 판매가(원).
+    price_krw: int
+    paid_amount: int
+    bonus_amount: int
+
+
+class CloverPricingResponse(CamelModel):
+    """공개 가격 안내. 단가는 기본 모델 기준만 싣는다 — 상위 모델은 허용된 계정만 쓰고 소설은 허용 명단 전용이라
+    공개 안내에 넣지 않는다."""
+
+    products: list[CloverProductItem]
+    # 기본 모델로 쓰는 채팅 턴 하나와 이미지 한 장의 클로버.
+    chat_turn_cost: int
+    image_cost: int

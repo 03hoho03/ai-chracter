@@ -10369,6 +10369,28 @@
         }
       }
     },
+    "/clover/pricing": {
+      "get": {
+        "tags": [
+          "clover"
+        ],
+        "summary": "Get Clover Pricing",
+        "description": "공개 조회 — 인증 없음. 충전 상품과 기본 모델 기준 사용 단가를 한 응답에 싣는다. 웹 상품 안내는 숫자 사본 없이\n이 값만 쓴다. DB 를 읽지 않아 비용이 없으므로 레이트리밋도 붙이지 않는다.",
+        "operationId": "get_clover_pricing_clover_pricing_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloverPricingResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/me/personas": {
       "get": {
         "tags": [
@@ -16635,6 +16657,72 @@
           "missions"
         ],
         "title": "CloverMissionsResponse"
+      },
+      "CloverPricingResponse": {
+        "properties": {
+          "products": {
+            "items": {
+              "$ref": "#/components/schemas/CloverProductItem"
+            },
+            "type": "array",
+            "title": "Products"
+          },
+          "chatTurnCost": {
+            "type": "integer",
+            "title": "Chatturncost"
+          },
+          "imageCost": {
+            "type": "integer",
+            "title": "Imagecost"
+          }
+        },
+        "type": "object",
+        "required": [
+          "products",
+          "chatTurnCost",
+          "imageCost"
+        ],
+        "title": "CloverPricingResponse",
+        "description": "공개 가격 안내. 단가는 기본 모델 기준만 싣는다 — 상위 모델은 허용된 계정만 쓰고 소설은 허용 명단 전용이라\n공개 안내에 넣지 않는다."
+      },
+      "CloverProductItem": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "starter",
+              "basic",
+              "plus",
+              "pro"
+            ],
+            "title": "Key"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "priceKrw": {
+            "type": "integer",
+            "title": "Pricekrw"
+          },
+          "paidAmount": {
+            "type": "integer",
+            "title": "Paidamount"
+          },
+          "bonusAmount": {
+            "type": "integer",
+            "title": "Bonusamount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "name",
+          "priceKrw",
+          "paidAmount",
+          "bonusAmount"
+        ],
+        "title": "CloverProductItem"
       },
       "CommentAuthorResponse": {
         "properties": {
