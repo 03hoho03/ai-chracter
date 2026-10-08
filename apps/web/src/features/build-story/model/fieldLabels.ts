@@ -1,4 +1,4 @@
-import { MAX_DEVELOPMENT_EXAMPLES, MAX_STARTING_SETUPS, MAX_STAT_RULES, MAX_SUGGESTED_REPLIES } from "./schema";
+import { MAX_DEVELOPMENT_EXAMPLES, MAX_STARTING_SETUPS, MAX_SUGGESTED_REPLIES } from "./schema";
 
 export type FieldLabel = {
   /** 별표 앞 글자 전부. 빌더가 별표 앞에 괄호를 그리는 칸(엔딩조건 (최소 턴수))은 괄호까지 여기에 둔다. */
@@ -63,7 +63,7 @@ export const STORY_FIELD_LABELS = {
   "startingSetups.*.stats.*.unit": { label: "단위", required: false },
   "startingSetups.*.stats.*.perTurnDelta": { label: "턴당 자동 변화", required: false },
   "startingSetups.*.stats.*.description": { label: "설명", required: true },
-  "startingSetups.*.stats.*.rules": { label: "규칙", required: false, note: `최대 ${MAX_STAT_RULES}개` },
+  "startingSetups.*.stats.*.rules": { label: "규칙", required: false },
   "startingSetups.*.stats.*.rules.*.condition": { label: "조건", required: true },
   "startingSetups.*.stats.*.rules.*.delta": { label: "증감", required: true },
 

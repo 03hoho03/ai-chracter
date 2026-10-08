@@ -116,8 +116,9 @@ export const statRuleSchema = z.object({
     .refine((value) => value !== 0, STAT_RULE_DELTA_MESSAGE),
 });
 
-/** 초안 저장이 받는 규칙 목록 — 서버가 422 로 막는 조건(개수·조건 길이·폭 0·같은 스탯 안 id 중복)을 그대로 건다.
- * `formToServer` 가 이 스키마를 통과하지 못한 목록을 자동저장에서 빼는 기준이다. 폭이 범위 폭을 넘는지는 발행만 본다. */
+/** 초안 저장이 받는 규칙 목록 — 서버가 422 로 막는 조건(개수·조건 길이·폭 0·같은 스탯 안 id 중복)을 그대로 건다. 발행 전
+ * 폼 검증이 이 스키마로 칸마다 오류를 붙인다. 자동저장은 목록째 거르지 않고 `formToServer` 가 규칙 하나씩 `statRuleSchema` 로
+ * 골라 보낸다. 폭이 범위 폭을 넘는지는 발행만 본다. */
 export const statRulesSchema = z
   .array(statRuleSchema)
   .max(MAX_STAT_RULES, STAT_RULE_LIMIT_MESSAGE)
@@ -170,8 +171,15 @@ export const statDefSchema = z
      */
     perTurnDelta: z.number().int(STAT_INTEGER_MESSAGE).nullable(),
     /** 「조건 → 증감」 규칙. 변화 방향·한 턴 최대 폭은 폼이 다루지 않는다 — 보내지 않으면 서버가 저장된 값을 그대로 둔다
-     * (규칙이 없는 시작설정이 아직 쓰는 옛 판정 경로가 그 값을 읽는다). */
+     * (규칙이 없는 시작설정이 아직 쓰는 옛 판정 경로가 그 값을 읽는다). 보내는 예외는 `formToServer` 의 스탯 변환이 적는다. */
     rules: statRulesSchema,
+    /**
+     * 옛 화면이 저장한 0 이하의 한 턴 최대 폭. 서버는 이 값이 있으면 발행을 막는데(1 이상이어야 한다) 지금 화면에는 그 칸이
+     * 없어 작가가 고칠 길이 없다. 그래서 불러올 때 이 값을 화면에 보이지 않는 채로 들고 있다가 `formToServer` 가 "제한
+     * 없음"(null)을 보내 지운다. 그 밖의 스탯(새 스탯 포함)에는 키가 없다. 입력칸에 등록하지 않는 값이라 RHF 가 옛
+     * `defaultValues` 로 다시 채우는 일이 없어 빈 값을 `undefined` 로 둔다.
+     */
+    legacyMaxChangePerTurn: z.number().optional(),
   })
   .superRefine((stat, ctx) => {
     // 오류는 턴당 자동 변화 칸에 붙인다 — 발행 때 이 스탯을 열고 그 칸으로 포커스가 가, 바로 아래 문장이 이유를 말한다.
@@ -189,7 +197,10 @@ export const statDefSchema = z
         message: `초기값은 ${stat.min}~${stat.max} 사이여야 해요`,
       });
     }
-    // 범위가 맞을 때만 잰다 — 뒤집힌 범위의 폭은 뜻이 없다. 폭 칸에 붙여 그 규칙 줄로 포커스가 간다.
+    // 최소 < 최대일 때만 잰다(뒤집힌 범위는 위에서 돌아간다). 초기값이 범위 밖이어도 폭은 최소·최대만으로 정해지므로 잰다.
+    // 서버 발행 검사는 뒤집힌 범위에서도 재어 `stats.range` 와 함께 `stats.ruleDelta` 를 내지만, 그때의 폭(0 이하)은 뜻이 없어
+    // 최대값 칸 오류 하나만 보인다 — 범위를 고치면 이 검사가 다시 돌아 서버와 같은 규칙을 짚는다. 폭 칸에 붙여 그 규칙 줄로
+    // 포커스가 간다.
     const rangeWidth = stat.max - stat.min;
     stat.rules.forEach((rule, index) => {
       if (Math.abs(rule.delta) > rangeWidth) {

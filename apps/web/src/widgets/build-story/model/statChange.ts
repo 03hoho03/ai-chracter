@@ -18,8 +18,8 @@ export function statChangeMode(stat: Pick<StatDefValues, "perTurnDelta" | "rules
 
 /**
  * 규칙 증감 입력칸의 글을 폼 값으로 바꾼다. 부호는 숫자 앞에 직접 적는다(`+3`·`-5`, 부호 없는 `3` 도 받는다). 빈 칸과 정수로
- * 읽히지 않는 글은 NaN 이다 — 폼 검증이 칸에 오류를 붙이고, 자동저장은 그 스탯의 규칙을 보내지 않아 서버에 저장된 규칙을
- * 그대로 둔다. 수학 기호 빼기(−)와 전각 부호도 받는다(한글 자판·붙여 넣기로 들어온다).
+ * 읽히지 않는 글은 NaN 이다 — 폼 검증이 칸에 오류를 붙이고, 자동저장은 그 규칙 하나만 빼고 같은 스탯의 나머지 규칙을 보낸다
+ * (이미 저장된 규칙이면 다시 읽히는 값이 될 때까지 서버에서 빠진다). 수학 기호 빼기(−)와 전각 부호도 받는다(한글 자판·붙여 넣기로 들어온다).
  */
 export function statRuleDeltaFromInput(text: string): number {
   const normalized = text.trim().replace(/[−－]/g, "-").replace(/＋/g, "+");

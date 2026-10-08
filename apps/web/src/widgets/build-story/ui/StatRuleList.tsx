@@ -23,7 +23,6 @@ import {
   MAX_STAT_RULE_CONDITION_LENGTH,
   MAX_STAT_RULES,
   STAT_RULE_LIMIT_MESSAGE,
-  stepMoveIndices,
   type StatDefValues,
   type StoryBuilderFormValues,
 } from "@/features/build-story";
@@ -34,6 +33,7 @@ import {
   statRuleDeltaFromInput,
   statRuleDeltaHint,
 } from "../model/statChange";
+import { stepStatRule } from "../model/statRuleOrder";
 
 /** 턴당 자동 변화가 있어 추가를 잠갔을 때의 사유. 이 상태에서는 목록이 비어 있다(둘 다 있으면 충돌 상태라 잠그지 않는다). */
 const COUNTER_LOCK_REASON = "턴당 자동 변화가 있는 스탯은 AI가 판정하지 않아 규칙을 쓰지 않아요. 규칙을 쓰려면 턴당 자동 변화를 비워 주세요.";
@@ -43,10 +43,6 @@ const COUNTER_LOCK_REASON = "턴당 자동 변화가 있는 스탯은 AI가 판�
 const SCREEN_READER_INSTRUCTIONS = {
   draggable: "위·아래 화살표 키로 규칙을 한 칸씩 옮길 수 있어요. 폭이 같으면 위에 있는 규칙이 적용돼요.",
 };
-
-function ruleHandleId(ruleId: string): string {
-  return `stat-rule-${ruleId}-handle`;
-}
 
 type StatRuleListProps = {
   /** 칸 id 접두어(스탯 행의 안정 id). */
@@ -70,6 +66,7 @@ export function StatRuleList({ id, startingSetupIndex, statIndex, stat }: StatRu
 
   const {
     control,
+    getValues,
     formState: { errors },
   } = form;
   const statPath = `startingSetups.${startingSetupIndex}.stats.${statIndex}` as const;
@@ -78,7 +75,7 @@ export function StatRuleList({ id, startingSetupIndex, statIndex, stat }: StatRu
   const sensors = useSensors(useSensor(PointerSensor));
   const [announcement, setAnnouncement] = useState("");
   const addButtonRef = useRef<HTMLButtonElement>(null);
-  // 재정렬 뒤 포커스를 둘 손잡이. 렌더가 끝난 뒤에야 그 요소가 제자리에 있으므로 effect 에서 옮긴다.
+  // 재정렬 뒤 포커스를 둘 손잡이(옮긴 규칙의 것). 렌더가 끝난 뒤에야 그 요소가 제자리에 있으므로 effect 에서 옮긴다.
   const pendingFocusIdRef = useRef<string | undefined>(undefined);
   const rulesErrors = errors.startingSetups?.[startingSetupIndex]?.stats?.[statIndex]?.rules;
   // 목록 자체에 걸린 오류(개수 상한). 배열 자리 오류는 `.message` 와 `.root.message` 로 갈릴 수 있어 둘 다 읽는다.
@@ -95,8 +92,11 @@ export function StatRuleList({ id, startingSetupIndex, statIndex, stat }: StatRu
     error: `stat-${id}-rules-error`,
     reason: `stat-${id}-rules-reason`,
   };
-  // 규칙 id 는 폼 값에서 읽는다 — `fields` 의 `id` 는 RHF 가 붙이는 렌더 키라 값의 id 와 다르다.
-  const ruleIds = stat.rules.map((rule) => rule.id);
+  // 손잡이 DOM id 를 만드는 규칙 id. `fields` 의 `id` 는 RHF 가 붙이는 렌더 키라 값의 id 와 다르므로 폼 값에서 읽는데, `stat`
+  // 이 아니라 폼 저장소에서 읽는다. `move` 는 저장소 값과 `fields` 를 함께 바꾸지만 `stat`(스탯 행의 구독)은 그다음 렌더에야
+  // 바뀐다 — `stat` 으로 짝지으면 이동 직후 한 번은 줄마다 옛 순서의 id 가 붙어, 아래 effect 가 옮긴 규칙이 아니라 그 자리로
+  // 밀려온 이웃 손잡이에 포커스를 둔다.
+  const ruleIds = getValues(rulesPath).map((rule) => rule.id);
 
   useEffect(() => {
     const targetId = pendingFocusIdRef.current;
@@ -107,7 +107,7 @@ export function StatRuleList({ id, startingSetupIndex, statIndex, stat }: StatRu
 
   function handleAdd() {
     if (lockReason !== undefined) return;
-    // 증감은 빈 칸(NaN)으로 둔다 — 부호를 작가가 직접 고르게 한다. 다 채우기 전까지 자동저장은 이 스탯의 규칙을 보내지 않는다.
+    // 증감은 빈 칸(NaN)으로 둔다 — 부호를 작가가 직접 고르게 한다. 다 채우기 전까지 자동저장은 이 규칙만 빼고 보낸다.
     append({ id: crypto.randomUUID(), condition: "", delta: Number.NaN }, { focusName: `${rulesPath}.${fields.length}.condition` });
   }
 
@@ -121,13 +121,13 @@ export function StatRuleList({ id, startingSetupIndex, statIndex, stat }: StatRu
     setAnnouncement("규칙을 지웠어요.");
   }
 
+  // 포커스는 옮긴 규칙의 손잡이를 따라간다 — 거듭 누른 화살표가 같은 규칙을 계속 옮기고, 안내도 그 규칙의 새 자리를 말한다.
   function handleStep(index: number, step: -1 | 1) {
-    const indices = stepMoveIndices(index, step, fields.length);
-    const ruleId = ruleIds[index];
-    if (!indices || ruleId === undefined) return;
-    move(indices.from, indices.to);
-    pendingFocusIdRef.current = ruleHandleId(ruleId);
-    setAnnouncement(`${indices.to + 1}번째로 옮겼어요.`);
+    const moved = stepStatRule(ruleIds, index, step);
+    if (!moved) return;
+    move(moved.from, moved.to);
+    pendingFocusIdRef.current = ruleHandleId(moved.focusRuleId);
+    setAnnouncement(`${moved.to + 1}번째로 옮겼어요.`);
   }
 
   function handleDragEnd({ active, over }: DragEndEvent) {
@@ -228,6 +228,10 @@ export function StatRuleList({ id, startingSetupIndex, statIndex, stat }: StatRu
   );
 }
 
+function ruleHandleId(ruleId: string): string {
+  return `stat-rule-${ruleId}-handle`;
+}
+
 type StatRuleRowProps = {
   /** dnd-kit 정렬 id(RHF 렌더 키). */
   sortableId: string;
@@ -284,7 +288,7 @@ function StatRuleRow({ sortableId, ruleId, rulePath, position, condition, range,
       />
 
       <div className="@container min-w-0 flex-1">
-        <div className="grid gap-3 @md:grid-cols-[minmax(0,1fr)_6rem]">
+        <div className="grid gap-3 @md:grid-cols-stat-rule">
           <div className="flex min-w-0 flex-col gap-1.5">
             <div className="flex items-baseline justify-between gap-2">
               <Label htmlFor={ids.condition}>

@@ -1,8 +1,8 @@
 import type { StatDefValues, StatRuleValues } from "@/features/build-story";
 
 /** 오류가 붙을 수 있는 스탯 칸. `Record` 로 적어 스탯에 칸이 늘면 여기도 늘리라고 타입이 알린다. 규칙 목록은 칸 하나가 아니라
- * 아래에서 따로 옮긴다. */
-type StatErrorField = Exclude<keyof StatDefValues, "id" | "rules">;
+ * 아래에서 따로 옮긴다. 옛 최대 폭(`legacyMaxChangePerTurn`)은 화면에 없고 검사하지 않는 숨은 값이라 오류가 붙지 않는다. */
+type StatErrorField = Exclude<keyof StatDefValues, "id" | "rules" | "legacyMaxChangePerTurn">;
 
 const STAT_ERROR_FIELDS: Record<StatErrorField, true> = {
   name: true,

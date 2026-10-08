@@ -334,6 +334,22 @@ describe("serverToForm", () => {
     expect(formStat).not.toHaveProperty("maxChangePerTurn");
   });
 
+  it("keeps only a zero or negative max change per turn as a hidden form value", () => {
+    // 옛 화면이 저장한 0 이하 최대 폭은 서버가 발행을 막는데 이 화면에는 그 칸이 없다 — 숨은 값으로 들고 있다가 저장이 지운다.
+    const response = baseDraftResponse();
+    const stat = requireFirst(requireFirst(response.startingSetups).statDefs);
+    for (const [maxChangePerTurn, kept] of [
+      [0, 0],
+      [-2, -2],
+      [3, undefined],
+      [null, undefined],
+    ] as const) {
+      stat.maxChangePerTurn = maxChangePerTurn;
+      const formStat = requireFirst(requireFirst(serverToForm(response).startingSetups).stats);
+      expect(formStat.legacyMaxChangePerTurn).toBe(kept);
+    }
+  });
+
   it("reads a response without rules as an empty rule list", () => {
     const response = baseDraftResponse();
     const stat = requireFirst(requireFirst(response.startingSetups).statDefs);
@@ -499,6 +515,11 @@ describe("serverToForm", () => {
   it("round-trips formToServer(serverToForm(response)) back to the same profile/storySetting/startingSetups (incl. endings/rule trees)/keywordNotes/shortcuts/registration fields", () => {
     const response = baseDraftResponse();
     requireFirst(response.startingSetups).endings = endingRuleTreeResponse();
+    // 기본 응답의 스탯은 턴당 자동 변화가 있어 저장이 두 옵션을 기본값으로 실어 보낸다 — 서버도 그 값을 돌려준다고 둔다.
+    Object.assign(requireFirst(requireFirst(response.startingSetups).statDefs), {
+      changeDirection: "both",
+      maxChangePerTurn: null,
+    });
 
     const payload = formToServer(serverToForm(response));
 

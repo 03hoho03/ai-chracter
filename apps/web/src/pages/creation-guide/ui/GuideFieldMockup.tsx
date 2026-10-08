@@ -259,7 +259,7 @@ function StatChangeRulesMockup({ rules }: { rules: readonly StatChangeRuleValue[
             <GripVertical aria-hidden className="size-4 text-muted-foreground" />
           </span>
           <div className="@container min-w-0 flex-1">
-            <div className="grid gap-3 @md:grid-cols-[minmax(0,1fr)_6rem]">
+            <div className="grid gap-3 @md:grid-cols-stat-rule">
               <div className="flex min-w-0 flex-col gap-1.5">
                 <div className="flex items-center justify-between gap-2">
                   <MockupLabel fieldKey="startingSetups.*.stats.*.rules.*.condition" />
