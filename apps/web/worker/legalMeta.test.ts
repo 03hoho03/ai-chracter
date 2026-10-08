@@ -37,12 +37,13 @@ function botRequest(path: string): Request {
 }
 
 describe("parseLegalPath", () => {
-  it("법적 문서 다섯 경로를 알아본다", () => {
+  it("법적 문서 여섯 경로를 알아본다", () => {
     expect(parseLegalPath("/terms")).toBe("terms");
     expect(parseLegalPath("/privacy")).toBe("privacy");
     expect(parseLegalPath("/operation-policy")).toBe("operation-policy");
     expect(parseLegalPath("/youth-policy")).toBe("youth-policy");
     expect(parseLegalPath("/refund-policy")).toBe("refund-policy");
+    expect(parseLegalPath("/creator-payout-policy")).toBe("creator-payout-policy");
   });
 
   it("그 밖의 경로는 undefined", () => {
@@ -69,6 +70,7 @@ describe("buildLegalHead", () => {
     const operation = buildLegalHead("operation-policy", "https://ddona.example");
     const youth = buildLegalHead("youth-policy", "https://ddona.example");
     const refund = buildLegalHead("refund-policy", "https://ddona.example");
+    const creatorPayout = buildLegalHead("creator-payout-policy", "https://ddona.example");
 
     expect(operation).toContain("<title>운영정책 — 또나</title>");
     expect(operation).toContain(
@@ -81,6 +83,10 @@ describe("buildLegalHead", () => {
     expect(refund).toContain("<title>환불정책 — 또나</title>");
     expect(refund).toContain(
       '<link rel="canonical" href="https://ddona.example/refund-policy" />',
+    );
+    expect(creatorPayout).toContain("<title>크리에이터 정산 정책 — 또나</title>");
+    expect(creatorPayout).toContain(
+      '<link rel="canonical" href="https://ddona.example/creator-payout-policy" />',
     );
   });
 });

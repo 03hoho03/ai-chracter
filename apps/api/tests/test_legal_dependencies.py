@@ -92,7 +92,7 @@ async def test_require_legal_consent_passes_when_both_consented(db_session: Asyn
     await require_legal_consent(user_id=user.id, db=db_session)  # 예외 없이 통과하면 성공
 
 
-@pytest.mark.parametrize("kind", ["operation-policy", "youth-policy", "refund-policy"])
+@pytest.mark.parametrize("kind", ["operation-policy", "youth-policy", "refund-policy", "creator-payout-policy"])
 async def test_require_legal_consent_ignores_policy_kind_marked_reconsent(
     db_session: AsyncSession, kind: str
 ) -> None:

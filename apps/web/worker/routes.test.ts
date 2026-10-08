@@ -49,6 +49,7 @@ describe("isKnownRoute", () => {
     expect(isKnownRoute("/operation-policy")).toBe(true);
     expect(isKnownRoute("/youth-policy")).toBe(true);
     expect(isKnownRoute("/refund-policy")).toBe(true);
+    expect(isKnownRoute("/creator-payout-policy")).toBe(true);
     expect(isKnownRoute("/clover/pricing")).toBe(true);
     expect(isKnownRoute("/guide/story")).toBe(true);
     expect(isKnownRoute("/guide/character")).toBe(true);

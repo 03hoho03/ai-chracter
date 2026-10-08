@@ -15,6 +15,7 @@ export const SUPPORT_DESTINATIONS = {
   "operation-policy": { label: "운영정책", to: "/operation-policy", isPublic: true },
   "youth-policy": { label: "청소년 보호정책", to: "/youth-policy", isPublic: true },
   "refund-policy": { label: "환불정책", to: "/refund-policy", isPublic: true },
+  "creator-payout-policy": { label: "크리에이터 정산 정책", to: "/creator-payout-policy", isPublic: true },
   "clover-pricing": { label: "클로버 상품 안내", to: "/clover/pricing", isPublic: true },
 } as const satisfies Record<string, { label: string; to: string; isPublic: boolean }>;
 
