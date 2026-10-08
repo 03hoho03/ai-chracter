@@ -651,12 +651,19 @@ async def create_room_novel(
 
     원작 제목·캐릭터 이름·레인은 방이 고정한 버전에서 사본으로 떠 둔다 — 방이 지워지거나 작품이 바뀌어도 소설은
     그대로 읽혀야 한다. 주인공 이름은 방에 건 대화 프로필 이름, 없으면 그 버전의 작품 기본 이름이고, 둘 다 없으면
-    비워 두었다가 첫 장을 만들기 전에 받는다. 이용 제한 작품이어도 만들 수 있다(모델을 부르지 않는다)."""
+    비워 두었다가 첫 장을 만들기 전에 받는다. 이용 제한 작품이어도 만들 수 있다(모델을 부르지 않는다).
+
+    작가가 소설화를 허용하지 않은 작품이면 작가 본인이 아닌 사람은 새로 만들 수 없다(403 `CONTENT_NOVELIZE_FORBIDDEN`).
+    이 판정은 이미 있는 소설을 돌려주는 분기 뒤에 둔다 — 허락을 낮춰도 이미 만든 소설은 계속 열리고 이어 쓸 수 있어야
+    한다. 같은 이유로 모델을 부르는 라우트(다음 화·연쇄·다시 만들기·AI 수정)는 허락을 보지 않는다. 허락 변경과 겹친
+    생성은 잠그지 않는다 — 놓치는 것은 금지로 바꾸는 순간과 겹친 생성 하나이고, 그 소설은 어차피 유지되는 대상이다."""
     existing = await _room_novel_id(db, room.id)
     if existing is not None:
         return await _expire_and_detail(db, existing)
 
     content = await db.get_one(Content, room.content_id)
+    if content.novel_permission == "forbidden" and content.creator_user_id != user_id:
+        raise _novel_error(status.HTTP_403_FORBIDDEN, "CONTENT_NOVELIZE_FORBIDDEN")
     persona = await db.get(UserPersona, room.persona_id) if room.persona_id is not None else None
     character_name: str | None
     if content.type == ContentType.STORY:

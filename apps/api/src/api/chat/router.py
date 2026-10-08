@@ -148,6 +148,7 @@ from api.db.models.chat import (
 )
 from api.db.models.content import Content, ContentType, ModerationStatus
 from api.db.models.media import Asset
+from api.db.models.novel import Novel
 from api.db.models.persona import UserPersona
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import (
@@ -1190,6 +1191,12 @@ async def _to_response(db: AsyncSession, room: ChatRoom, *, message_limit: int |
     image_urls, cell_images = await _sign_message_images(db, room, setup, messages)
     # 다음 턴이 실제로 쓸 모델. 기본 모델 방이거나 상위 모델 스위치가 꺼져 있으면 쿼리가 없다.
     effective_model = await effective_room_model(db, room.user_id, room.chat_model)
+    # 소설 유무는 허용 안 함 작품의 남의 방에서만 본다(방 하나에 소설 하나 — 방 유니크 인덱스로 찾는다).
+    novel_creation_blocked = (
+        content.novel_permission == "forbidden"
+        and room.user_id != content.creator_user_id
+        and await db.scalar(select(Novel.id).where(Novel.chat_room_id == room.id)) is None
+    )
 
     # 미디어 북 태그는 첫 메시지(작성자 글을 칸 id 형태로 복사한 것)에서만 해석하고, 그중에서도 방 버전의
     # 시작설정 첫 메시지가 실제로 가리키는 칸만 서명한다. 오프닝은 지울 수 있어 첫 자리에 사용자 메시지나
@@ -1243,6 +1250,7 @@ async def _to_response(db: AsyncSession, room: ChatRoom, *, message_limit: int |
         default_user_name=version_detail.default_user_name,
         content_name=version_detail.name,
         content_restricted=content.moderation_status != ModerationStatus.NORMAL,
+        novel_creation_blocked=novel_creation_blocked,
         chat_model=room.chat_model,
         effective_chat_model=effective_model,
         turn_cost=chat_turn_cost(effective_model),

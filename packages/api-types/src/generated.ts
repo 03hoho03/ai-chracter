@@ -2064,6 +2064,31 @@ export interface paths {
         patch: operations["update_content_visibility_contents__id__visibility_patch"];
         trace?: never;
     };
+    "/contents/{id}/novel-permission": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Content Novel Permission
+         * @description 발행 뒤 소설화 허락을 바꾼다(빌더에서는 초안 자동저장이 같은 칸을 쓴다). 헤더에 바로 쓰여 즉시 적용된다 — 낮춰도
+         *     이미 만든 소설은 그대로이고, 막히는 것은 다른 회원이 새 소설을 만드는 것뿐이다.
+         *
+         *     정지·탈퇴 회원은 바꿀 수 없다 — 세션 검사 뒤에 정지·탈퇴가 경합해도 회원 행을 잠가 다시 본다(401·403 문자열).
+         *     이용제한 작품은 막지 않는다: 허락을 낮추는 것은 작가 보호 쪽이라 제한 중에도 열어 둔다. 작품 404 → 소유자 아님 403
+         *     (공개 범위 변경과 같은 문자열).
+         */
+        put: operations["update_content_novel_permission_contents__id__novel_permission_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/home-curation": {
         parameters: {
             query?: never;
@@ -2909,6 +2934,11 @@ export interface paths {
          *     원작 제목·캐릭터 이름·레인은 방이 고정한 버전에서 사본으로 떠 둔다 — 방이 지워지거나 작품이 바뀌어도 소설은
          *     그대로 읽혀야 한다. 주인공 이름은 방에 건 대화 프로필 이름, 없으면 그 버전의 작품 기본 이름이고, 둘 다 없으면
          *     비워 두었다가 첫 장을 만들기 전에 받는다. 이용 제한 작품이어도 만들 수 있다(모델을 부르지 않는다).
+         *
+         *     작가가 소설화를 허용하지 않은 작품이면 작가 본인이 아닌 사람은 새로 만들 수 없다(403 `CONTENT_NOVELIZE_FORBIDDEN`).
+         *     이 판정은 이미 있는 소설을 돌려주는 분기 뒤에 둔다 — 허락을 낮춰도 이미 만든 소설은 계속 열리고 이어 쓸 수 있어야
+         *     한다. 같은 이유로 모델을 부르는 라우트(다음 화·연쇄·다시 만들기·AI 수정)는 허락을 보지 않는다. 허락 변경과 겹친
+         *     생성은 잠그지 않는다 — 놓치는 것은 금지로 바꾸는 순간과 겹친 생성 하나이고, 그 소설은 어차피 유지되는 대상이다.
          */
         post: operations["create_room_novel_chat_rooms__room_id__novel_post"];
         delete?: never;
@@ -6444,6 +6474,8 @@ export interface components {
             /** Hashtags */
             hashtags: string[];
             visibility: components["schemas"]["ContentVisibility"];
+            /** Novelpermission */
+            novelPermission?: ("forbidden" | "private" | "public") | null;
         };
         /** CharacterDraftResponse */
         CharacterDraftResponse: {
@@ -6491,6 +6523,11 @@ export interface components {
             /** Hashtags */
             hashtags: string[];
             visibility: components["schemas"]["ContentVisibility"];
+            /**
+             * Novelpermission
+             * @enum {string}
+             */
+            novelPermission?: "forbidden" | "private" | "public";
         };
         /**
          * CharacterSituationalImageDraftInput
@@ -6818,6 +6855,8 @@ export interface components {
             };
             /** Contentrestricted */
             contentRestricted: boolean;
+            /** Novelcreationblocked */
+            novelCreationBlocked?: boolean;
             /** Chatmodel */
             chatModel?: string | null;
             /**
@@ -7462,6 +7501,11 @@ export interface components {
             accessStatus: components["schemas"]["ContentAccessStatus"];
             /** Isowner */
             isOwner: boolean;
+            /**
+             * Novelpermission
+             * @enum {string}
+             */
+            novelPermission?: "forbidden" | "private" | "public";
         };
         /** ContentListItem */
         ContentListItem: {
@@ -7491,6 +7535,14 @@ export interface components {
             items: components["schemas"]["ContentListItem"][];
             /** Nextcursor */
             nextCursor: string | null;
+        };
+        /** ContentNovelPermissionUpdateRequest */
+        ContentNovelPermissionUpdateRequest: {
+            /**
+             * Novelpermission
+             * @enum {string}
+             */
+            novelPermission: "forbidden" | "private" | "public";
         };
         /** ContentPublishResponse */
         ContentPublishResponse: {
@@ -9932,6 +9984,8 @@ export interface components {
             /** Hashtags */
             hashtags: string[];
             visibility: components["schemas"]["ContentVisibility"];
+            /** Novelpermission */
+            novelPermission?: ("forbidden" | "private" | "public") | null;
             mediaBook?: components["schemas"]["MediaBookPayload"] | null;
         };
         /** StoryDraftResponse */
@@ -9984,6 +10038,11 @@ export interface components {
             /** Hashtags */
             hashtags: string[];
             visibility: components["schemas"]["ContentVisibility"];
+            /**
+             * Novelpermission
+             * @enum {string}
+             */
+            novelPermission?: "forbidden" | "private" | "public";
             mediaBook?: components["schemas"]["MediaBookDraft"];
         };
         /**
@@ -13164,6 +13223,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ContentVisibilityUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_content_novel_permission_contents__id__novel_permission_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContentNovelPermissionUpdateRequest"];
             };
         };
         responses: {

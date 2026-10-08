@@ -216,6 +216,11 @@ class ChatRoomResponse(CamelModel):
     # 작품이 이용제한·삭제돼 이 방에서 대화를 이어갈 수 없는가. 방을 여는 순간 입력창 대신 안내를 띄우려고 싣는다 —
     # 없으면 보내 본 뒤 403 을 받고서야 안다.
     content_restricted: bool
+    # 이 방에서 소설을 새로 만들 수 없는가 — 작가가 소설화를 허용하지 않았고, 내가 그 작가가 아니며, 이 방에 소설이 아직
+    # 없을 때 참이다(소설이 있으면 「소설로 보기」는 그 소설을 연다). 판정을 화면이 복제하지 않게 서버가 계산해 싣는다.
+    # 부정형인 이유: 이 칸을 모르는 옛 서버의 응답에서는 칸이 없어 "막지 않음"으로 읽혀야 한다(옛 서버는 막지도 않는다).
+    # 기본값을 `default_factory` 로 두는 이유는 `effective_chat_model` 과 같다.
+    novel_creation_blocked: bool = Field(default_factory=bool)
     # 방이 고른 글쓰기 모델 — 저장된 값 그대로다(None 이 기본 모델). 레지스트리에서 내린 모델의 옛 값일 수도 있어 문자열이다.
     chat_model: str | None = None
     # 다음 턴이 실제로 쓸 모델과 그 턴의 클로버. 허용을 거뒀거나 레지스트리에서 내린 모델이면 Gemini 와 Gemini 가격이다 —

@@ -1018,6 +1018,31 @@ async def test_patch_draft_keeps_default_user_name_when_key_omitted(
     assert cleared.json()["defaultUserName"] == ""
 
 
+@pytest.mark.parametrize(("make_draft", "make_payload"), _DEFAULT_USER_NAME_DRAFTS)
+async def test_patch_draft_keeps_novel_permission_when_key_omitted(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, make_draft: Any, make_payload: Any
+) -> None:
+    """소설화 허락 칸을 모르는 옛 화면의 자동저장은 이 키를 안 보낸다. 그 저장이 작가가 고른 "허용 안 함"을 기본값으로
+    되돌리면 안 된다. 보낸 값은 헤더에 바로 쓴다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await make_draft(db_session, creator_user_id=user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    saved = await db_client.patch(f"/contents/{content.id}/draft", json=make_payload(novelPermission="forbidden"))
+    assert saved.status_code == 200
+    assert saved.json()["novelPermission"] == "forbidden"
+
+    omitted = await db_client.patch(f"/contents/{content.id}/draft", json=make_payload(name="새 이름"))
+    assert omitted.status_code == 200
+    assert omitted.json()["novelPermission"] == "forbidden"
+    assert (await db_client.get(f"/contents/{content.id}/draft")).json()["novelPermission"] == "forbidden"
+    stored = await db_session.scalar(sa.select(Content.novel_permission).where(Content.id == content.id))
+    assert stored == "forbidden"
+
+
 @pytest.mark.parametrize(
     "name",
     [

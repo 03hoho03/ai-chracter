@@ -9,12 +9,18 @@ from pydantic import AfterValidator, Field, StringConstraints, TypeAdapter, mode
 from api.chat.keyword_notes import normalize_keyword_text
 from api.content.author_macros import default_user_name_error
 from api.core.schema import CamelModel
-from api.db.models.content import ContentTarget, ContentType, ContentVisibility, ModerationStatus
+from api.db.models.content import ContentTarget, ContentType, ContentVisibility, ModerationStatus, NovelPermission
 from api.db.models.moderation import ReportReasonCategory
 from api.db.models.story import EndingRuleOperator, LogicalOp, StoryPromptTemplate
 from api.persona.schemas import PERSONA_NAME_MAX_LENGTH
 
 VisibilityFilter = Literal["all", "public", "link", "private"]
+
+
+def _default_novel_permission() -> NovelPermission:
+    """응답의 소설화 허락 기본값. 서버는 언제나 작품 행의 값을 채워 보낸다 — 기본값은 이 칸을 모르는 생성 타입·화면과의
+    호환용이다(`default_factory` 여야 생성 타입에서 선택 칸이 된다)."""
+    return "private"
 
 
 def _reject_invalid_default_user_name(value: str) -> str:
@@ -187,6 +193,8 @@ class ContentDetailResponse(CamelModel):
     updated_at: datetime
     access_status: ContentAccessStatus
     is_owner: bool
+    # 소설화 허락. 작가의 "⋯" 메뉴가 지금 값을 보여 준다. 다른 사람에게 숨길 설정이 아니라 누구에게나 싣는다.
+    novel_permission: NovelPermission = Field(default_factory=_default_novel_permission)
 
 
 class ContentVersionSummary(CamelModel):
@@ -250,6 +258,10 @@ class CharacterDraftPayload(CamelModel):
     target: ContentTarget | None
     hashtags: list[str]
     visibility: ContentVisibility
+    # 소설화 허락. 안 보내면(또는 null 이면) 저장된 값을 그대로 둔다 — 이 칸을 모르는 화면(배포 전부터 열려 있던 탭의
+    # 옛 번들)의 자동저장이 모든 작품의 허락을 기본값으로 덮지 않게. 공개 범위처럼 헤더에 바로 쓰여 발행과 무관하게 즉시
+    # 적용된다.
+    novel_permission: NovelPermission | None = None
 
 
 class CharacterSituationalImageItem(CamelModel):
@@ -282,6 +294,7 @@ class CharacterDraftResponse(CamelModel):
     target: ContentTarget | None
     hashtags: list[str]
     visibility: ContentVisibility
+    novel_permission: NovelPermission = Field(default_factory=_default_novel_permission)
 
 
 class ContentPublishResponse(CamelModel):
@@ -291,6 +304,10 @@ class ContentPublishResponse(CamelModel):
 
 class ContentVisibilityUpdateRequest(CamelModel):
     visibility: ContentVisibility
+
+
+class ContentNovelPermissionUpdateRequest(CamelModel):
+    novel_permission: NovelPermission
 
 
 class StatRuleDraftItem(CamelModel):
@@ -651,6 +668,8 @@ class StoryDraftPayload(CamelModel):
     target: ContentTarget | None
     hashtags: list[str]
     visibility: ContentVisibility
+    # `CharacterDraftPayload.novel_permission` 과 같다.
+    novel_permission: NovelPermission | None = None
     # 안 보내면(또는 null 이면) 미디어 북을 건드리지 않는다. 미디어 북을 모르는 화면(배포 전부터 열려
     # 있던 탭의 옛 번들)·시드도 이 저장 경로를 쓰므로, 빈 목록을 기본값으로 두면 그 저장 한 번이 칸을
     # 전부 지운다. 보냈을 때만 칸·축을 페이로드에 맞춘다 — 빈 목록이면 전부 지운다.
@@ -726,5 +745,6 @@ class StoryDraftResponse(CamelModel):
     target: ContentTarget | None
     hashtags: list[str]
     visibility: ContentVisibility
+    novel_permission: NovelPermission = Field(default_factory=_default_novel_permission)
     # 기본값은 응답을 옛 화면·생성 타입과 호환시키려는 것이고, 서버는 항상 채워 보낸다.
     media_book: MediaBookDraft = Field(default_factory=lambda: MediaBookDraft(people=[], scenes=[], cells=[]))
