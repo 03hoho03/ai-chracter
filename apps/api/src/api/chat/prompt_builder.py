@@ -1,6 +1,6 @@
 import logging
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from string import Formatter
 from typing import Any, Literal
@@ -14,7 +14,7 @@ from api.content.media_tags import strip_media_tags
 from api.db.models.character import SituationalImage
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.prompt import PromptSection, PromptSet
-from api.db.models.story import StatDef, StoryPromptTemplate
+from api.db.models.story import StatDef, StatRule, StoryPromptTemplate
 from api.llm.chat_models import ChatModelId
 from api.llm.client import SegmentedPrompt
 
@@ -101,6 +101,13 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
     ),
     ("stat_judgment", "judgment_instruction"): frozenset(),
     ("stat_judgment", "user_name"): frozenset({"user_name"}),
+    # 규칙 판정 — 슬롯 구성은 `stat_judgment` 와 같고 `stat_lines` 의 모양만 다르다(`build_stat_rule_judgment_prompt`).
+    ("stat_rule_judgment", "stat_defs_intro"): frozenset({"stat_lines"}),
+    ("stat_rule_judgment", "turn_context"): frozenset(
+        {"user_label", "user_message", "assistant_label", "assistant_message"}
+    ),
+    ("stat_rule_judgment", "judgment_instruction"): frozenset(),
+    ("stat_rule_judgment", "user_name"): frozenset({"user_name"}),
     ("ending_judgment", "memory_summary"): frozenset({"memory_summary"}),
     ("ending_judgment", "history_header"): frozenset(),
     ("ending_judgment", "turn_context"): frozenset({"turn_lines"}),
@@ -666,6 +673,127 @@ class StatJudgmentResult(BaseModel):
     """techspec-backend-chat.md §3.1 판단용 response_schema — 스탯 변경."""
 
     stat_changes: list[StatChangeJudgment]
+
+
+def stat_rule_letters(index: int) -> str:
+    """판정 스탯 순번(0부터)의 글자 — a…z, 그다음 aa, ab… 스탯 수에 상한이 없어 26개를 넘어도 겹치지 않아야 한다. 규칙 id 가
+    글자 + 숫자라 글자 부분이 겹치지 않으면 id 전체가 겹치지 않는다."""
+    letters = ""
+    index += 1
+    while index:
+        index, remainder = divmod(index - 1, 26)
+        letters = chr(ord("a") + remainder) + letters
+    return letters
+
+
+def build_stat_rule_judgment_prompt(
+    *,
+    prompt_set: PromptSet,
+    sections: Sequence[PromptSection],
+    stat_defs: list[StatDef],
+    rules_by_stat_id: Mapping[uuid.UUID, Sequence[StatRule]],
+    user_message: str,
+    assistant_message: str,
+    names: PromptNames,
+) -> tuple[str, dict[str, tuple[str, StatRule]]]:
+    """규칙 판정 프롬프트를 조립한다 — 판정 LLM 이 이번 턴에 발동한 규칙의 짧은 id 만 고르게 한다(`StatRuleJudgmentResult`).
+    반환은 프롬프트와, 짧은 id → (스탯 entity_id, 규칙) 대응표다(`apply_rule_judgment` 가 받는다).
+
+    판정 스탯(카운터가 아닌 스탯)마다 `이름 / 범위 / 설명` 한 줄과 규칙 줄 `- <짧은 id>: <조건>` 을 싣는다. 짧은 id 는 스탯
+    글자(`stat_rule_letters`, `stat_defs` 순서) + 그 스탯 안의 규칙 순번(`order` 순, 1부터)이다. 카운터 스탯은 판정을 받지
+    않아 싣지 않는다.
+
+    **현재값과 폭은 싣지 않는다.** 폭이 규칙에 고정돼 있어 새 값을 계산하는 데 현재값이 필요 없고, 맥락에 놓인 점수는 판정을
+    끌어당긴다 — 절대값을 내던 판정에서 다른 스탯 줄의 현재값을 이 스탯의 기준으로 읽어 새 값을 낸 오독이 실제로 있었다.
+
+    히스토리를 싣지 않는 이유와 `{{user}}` 치환 범위는 `build_stat_judgment_prompt` 와 같다 — 스탯 이름·설명·규칙 조건(작가
+    글)과 이번 턴 모델 응답을 `names` 로 바꾸고, 사용자 메시지는 그대로 둔다."""
+    rule_ids: dict[str, tuple[str, StatRule]] = {}
+    blocks: list[str] = []
+    judged = [stat_def for stat_def in stat_defs if stat_def.per_turn_delta is None]
+    for stat_index, stat_def in enumerate(judged):
+        letters = stat_rule_letters(stat_index)
+        lines = [
+            f"{names.expand(stat_def.name)} / 범위 [{stat_def.min_value}, {stat_def.max_value}] / "
+            f"{names.expand(stat_def.description)}"
+        ]
+        rules = sorted(rules_by_stat_id.get(stat_def.entity_id, []), key=lambda rule: rule.order)
+        for rule_index, rule in enumerate(rules, start=1):
+            rule_id = f"{letters}{rule_index}"
+            rule_ids[rule_id] = (str(stat_def.entity_id), rule)
+            lines.append(f"- {rule_id}: {names.expand(rule.condition)}")
+        blocks.append("\n".join(lines))
+    values = {
+        "stat_lines": "\n\n".join(blocks),
+        "user_label": prompt_set.user_label,
+        "user_message": user_message,
+        "assistant_label": prompt_set.story_assistant_label,
+        "assistant_message": names.expand(assistant_message),
+        "user_name": names.judgment_user_name,
+    }
+    return render_prompt_channel(sections, channel="stat_rule_judgment", scope="story", values=values), rule_ids
+
+
+class StatRuleJudgmentResult(BaseModel):
+    """이번 턴에 실제로 일어난 일에 해당하는 규칙의 id 목록. 해당하는 규칙이 없으면 빈 목록."""
+
+    fired_rule_ids: list[str]
+
+
+@dataclass(frozen=True)
+class StatJudgmentRequest:
+    """한 턴의 스탯 판정 요청. `rule_ids` 가 None 이면 절대값 판정(`StatJudgmentResult`), 있으면 규칙 판정
+    (`StatRuleJudgmentResult`)이고 그 값이 짧은 id 대응표다."""
+
+    prompt: str
+    rule_ids: dict[str, tuple[str, StatRule]] | None
+
+
+def prepare_stat_judgment(
+    *,
+    prompt_set: PromptSet,
+    sections: Sequence[PromptSection],
+    stat_defs: list[StatDef],
+    rules_by_stat_id: Mapping[uuid.UUID, Sequence[StatRule]],
+    current_stats: dict[str, float],
+    user_message: str,
+    assistant_message: str,
+    names: PromptNames,
+) -> StatJudgmentRequest:
+    """이번 턴을 규칙 판정으로 할지 절대값 판정으로 할지 정하고 그 프롬프트를 만든다. 실채팅과 빌더 미리보기가 함께 쓴다.
+    `rules_by_stat_id` 는 스탯 entity_id → 그 스탯의 규칙이다.
+
+    판정 스탯(카운터가 아닌 스탯)이 하나 이상이고 **그 전부에** 규칙이 있을 때만 규칙 판정이다. 판정 스탯 하나라도 규칙이
+    없으면 그 시작설정 전체가 절대값 판정이다 — 한 턴을 두 판정으로 나눠 부르지 않는다. 판정 스탯이 없으면(스탯이 없거나
+    카운터뿐) 절대값 판정 그대로다 — 그때도 판정을 불러 왔고, 엔딩 판정이 그 결과가 있을 때만 이어진다.
+
+    규칙 판정 채널의 렌더가 빈 문자열이면(그 채널이 없는 세트 — 배포 직후 활성 세트 캐시에 남은 옛 세트) 절대값 판정으로
+    돌아간다. 빈 프롬프트로 판정을 부르지 않는다."""
+    judged = [stat_def for stat_def in stat_defs if stat_def.per_turn_delta is None]
+    if judged and all(rules_by_stat_id.get(stat_def.entity_id) for stat_def in judged):
+        prompt, rule_ids = build_stat_rule_judgment_prompt(
+            prompt_set=prompt_set,
+            sections=sections,
+            stat_defs=stat_defs,
+            rules_by_stat_id=rules_by_stat_id,
+            user_message=user_message,
+            assistant_message=assistant_message,
+            names=names,
+        )
+        if prompt:
+            return StatJudgmentRequest(prompt=prompt, rule_ids=rule_ids)
+    return StatJudgmentRequest(
+        prompt=build_stat_judgment_prompt(
+            prompt_set=prompt_set,
+            sections=sections,
+            stat_defs=stat_defs,
+            current_stats=current_stats,
+            user_message=user_message,
+            assistant_message=assistant_message,
+            names=names,
+        ),
+        rule_ids=None,
+    )
 
 
 def build_ending_judgment_prompt(

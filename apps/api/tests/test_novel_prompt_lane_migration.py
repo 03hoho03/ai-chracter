@@ -37,6 +37,9 @@ def _load(revision: str) -> ModuleType:
 
 _M = _load("a7a87e3ba631")
 _NOVELIZE = set(_M.CHANNELS)
+# 이 리비전 뒤에 story 레인 Gemini 체인에 스탯 규칙 판정 채널을 더한 세트를 게시하는 리비전 — head 상태에서는 그 세트가
+# story 활성 세트이고 버전도 이 리비전의 세트들보다 뒤다.
+_STAT_RULE_SET_ID: uuid.UUID = _load("d9768bc0cfee").NEW_SET_ID
 
 Row = tuple[str, str, str, str, str, bool, int]
 
@@ -125,7 +128,7 @@ async def test_versions_follow_the_global_sequence_and_the_copy_is_older(db_sess
     versions = [int(sets[key].version or 0) for key in ("gemini-copy", "gemini", "sonnet", "opus")]
     others = await db_session.scalar(
         sa.select(sa.func.max(sa.cast(PromptSet.version, sa.Integer))).where(
-            PromptSet.status == "published", PromptSet.lane != "novel"
+            PromptSet.status == "published", PromptSet.lane != "novel", PromptSet.id != _STAT_RULE_SET_ID
         )
     )
     assert others is not None
@@ -137,7 +140,7 @@ async def test_versions_follow_the_global_sequence_and_the_copy_is_older(db_sess
 async def test_chat_lanes_keep_their_active_sets_and_frozen_novelize_rows(db_session: AsyncSession) -> None:
     """옛 이미지로 되돌리면 옛 코드는 채팅 레인 Gemini 세트에서 소설 문안을 읽는다 — 그 세트와 행이 그대로여야 이미지만
     되돌리는 롤백이 된다."""
-    chat_sets = _load("3bb2cc159b6d").NEW_SET_IDS
+    chat_sets = {**_load("3bb2cc159b6d").NEW_SET_IDS, "story": _STAT_RULE_SET_ID}
     for lane in ("story", "character"):
         assert await _active_id(db_session, lane) == chat_sets[lane]
         assert len(await _novelize_rows_of_chat(db_session, lane)) == 16

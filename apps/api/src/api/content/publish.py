@@ -25,6 +25,7 @@ from api.db.models.story import (
     SituationNote,
     StartingSetup,
     StatDef,
+    StatRule,
     StoryPromptTemplate,
     StoryVersionDetail,
 )
@@ -120,6 +121,7 @@ def validate_story_publish(
     keyword_notes: Sequence[KeywordNote],
     dangling_stat_rule_paths: Sequence[str],
     stat_defs: Sequence[StatDef],
+    stat_rules: Sequence[StatRule],
     situation_notes: Sequence[SituationNote],
     dangling_situation_note_paths: Sequence[str],
 ) -> list[str]:
@@ -152,6 +154,13 @@ def validate_story_publish(
     `stats.changeLimitWithCounter` 를 알린다 — 그 스탯은 판정을 받지 않아 옵션이 아무 일도 하지 않는데, 작가는 걸었다고
     믿게 된다. 최대 폭이 0 이하이면 `stats.maxChangePerTurn` 을 알린다(빈 값이 "제한 없음"이다). 두 키 모두 어긋난
     스탯 수와 상관없이 한 번씩이다.
+
+    스탯 규칙(`stat_rules`, 모든 스탯의 것, `StatRule.stat_def_id` 가 `stat_defs` 의 `id` 를 가리킨다)이 턴당 변화가 있는
+    스탯에 달려 있으면 `stats.rulesWithCounter` 를 같은 결로 한 번 알린다 — 그 스탯은 판정을 받지 않아 규칙이 발동할 일이
+    없는데, 작가는 걸었다고 믿게 된다. 규칙의 폭이 그 스탯의 범위 폭(최대 − 최소)을 넘으면 `stats.ruleDelta` 를 한 번
+    알린다 — 한 번 발동으로 반대쪽 끝을 넘어 늘 경계에 붙는다. 초안 저장은 이 검사를 하지 않는다 — 작가가 범위를 좁히면
+    이미 저장된 규칙이 넘게 되는데, 저장에서 막으면 그 초안의 자동저장이 편집마다 실패한다. 규칙의 개수·조건 길이·폭 0
+    은 초안 저장이 막는다.
 
     상황 노트(`situation_notes`, 모든 시작설정의 것)는 자동저장이 빈 노트를 받아 주므로 여기서 막는다. 조건 규칙이
     하나도 없는 노트(빈 그룹만 있는 노트 포함)가 있으면 `situationNotes.emptyConditionRules` — 조건 없는 상시 지시는
@@ -196,6 +205,15 @@ def validate_story_publish(
         for stat in stat_defs
     ):
         missing.append("stats.changeLimitWithCounter")
+    counter_stat_ids = {stat.id for stat in stat_defs if stat.per_turn_delta is not None}
+    if any(rule.stat_def_id in counter_stat_ids for rule in stat_rules):
+        missing.append("stats.rulesWithCounter")
+    range_width_by_stat_id = {stat.id: stat.max_value - stat.min_value for stat in stat_defs}
+    if any(
+        rule.stat_def_id in range_width_by_stat_id and abs(rule.delta) > range_width_by_stat_id[rule.stat_def_id]
+        for rule in stat_rules
+    ):
+        missing.append("stats.ruleDelta")
     if any(stat.max_change_per_turn is not None and stat.max_change_per_turn <= 0 for stat in stat_defs):
         missing.append("stats.maxChangePerTurn")
 

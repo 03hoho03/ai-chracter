@@ -23540,6 +23540,13 @@
               }
             ],
             "title": "Maxchangeperturn"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/StatRuleDraftItem"
+            },
+            "type": "array",
+            "title": "Rules"
           }
         },
         "type": "object",
@@ -23617,6 +23624,31 @@
           "description"
         ],
         "title": "StatDefSnapshot"
+      },
+      "StatRuleDraftItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "condition": {
+            "type": "string",
+            "title": "Condition"
+          },
+          "delta": {
+            "type": "integer",
+            "title": "Delta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "condition",
+          "delta"
+        ],
+        "title": "StatRuleDraftItem",
+        "description": "스탯 하나의 「조건 → ±n」 규칙. 배열 순서가 `order` 라 순서 필드는 따로 없다. 조건은 앞뒤 공백을 떼어 저장한다.\n\n개수·글자 수 상한과 폭 0·id 중복 금지는 요청에만 건다(`StoryDraftPayload` 의 검증) — 이 타입은 초안 응답에도\n쓰이므로, 여기에 걸면 상한을 바꾼 뒤 이미 저장된 규칙이 있는 초안을 열 수 없다(GET 500). 폭이 스탯 범위 폭을\n넘는지는 발행이 본다."
       },
       "StoryDraftPayload": {
         "properties": {

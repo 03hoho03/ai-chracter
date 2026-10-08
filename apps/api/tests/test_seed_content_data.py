@@ -16,7 +16,11 @@ import uuid
 from api.chat.ending_rules import evaluate_rule_list
 from api.chat.router import _preview_ending_rule_list_item
 from api.content.publish import validate_character_publish
-from api.content.schemas import EndingRuleGroupDraftItem
+from api.content.schemas import (
+    MAX_STAT_RULES_PER_STAT,
+    STAT_RULE_MAX_CONDITION_LENGTH,
+    EndingRuleGroupDraftItem,
+)
 from api.db.models.character import CharacterVersionDetail
 from api.db.models.content import Content, ContentVersion
 from generate_seed_stories import NARRATOR_WORDS, stat_display_name
@@ -359,4 +363,34 @@ def test_seed_per_turn_counters_are_system_driven_not_llm_judged() -> None:
                     assert abs(stat.per_turn_delta) <= span, (
                         f"{story.slug} / {stat.name}: 델타 {stat.per_turn_delta} 가 "
                         f"범위 {span} 보다 커서 한 턴에 끝까지 간다"
+                    )
+
+
+def test_seed_judged_stats_carry_rules_and_counters_carry_none() -> None:
+    """시드의 판정 스탯은 전부 「조건 → 증감」 규칙을 갖고, 카운터 스탯은 규칙이 없어야 한다.
+
+    채팅은 시작설정의 판정 스탯 **전부에** 규칙이 있을 때만 규칙 판정으로 넘어간다(`prepare_stat_judgment`). 스탯 하나만
+    빠져도 그 시작설정 전체가 조용히 옛 절대값 판정으로 돌아가는데, 발행 검증은 규칙 없는 판정 스탯을 막지 않는다.
+    카운터는 판정을 받지 않아 규칙이 발동할 일이 없다.
+
+    규칙은 초안 저장이 받는 모양이어야 한다 — 스탯당 개수 상한, 앞뒤 공백을 뗀 조건 길이, 0 이 아닌 폭, 그 스탯 범위
+    폭을 넘지 않는 폭. 시드를 빌더에서 열어 다시 저장하거나 발행할 때 막히지 않게 한다.
+    """
+    for story in load_all_stories():
+        for setup in story.payload.starting_setups:
+            for stat in setup.stat_defs:
+                label = f"{story.slug} / {setup.name} / {stat.name}"
+                if stat.per_turn_delta is not None:
+                    assert stat.rules == [], f"{label}: 카운터 스탯에 규칙이 달려 있다"
+                    continue
+                assert stat.rules, f"{label}: 판정 스탯에 규칙이 없다 — 그 시작설정이 규칙 판정으로 넘어가지 못한다"
+                assert len(stat.rules) <= MAX_STAT_RULES_PER_STAT, f"{label}: 규칙이 {len(stat.rules)}개"
+                span = stat.max_value - stat.min_value
+                for rule in stat.rules:
+                    assert 1 <= len(rule.condition) <= STAT_RULE_MAX_CONDITION_LENGTH, (
+                        f"{label}: 조건 길이 {len(rule.condition)} — {rule.condition!r}"
+                    )
+                    assert rule.delta != 0, f"{label}: 폭 0 규칙 — {rule.condition!r}"
+                    assert abs(rule.delta) <= span, (
+                        f"{label}: 폭 {rule.delta} 가 범위 폭 {span} 보다 크다 — {rule.condition!r}"
                     )
