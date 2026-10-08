@@ -17,7 +17,9 @@ import { toEpisodeScrollProgress } from "../lib/readingProgress";
 import { toChapterSavedReadingPosition } from "../lib/savedReadingPosition";
 import { readerSettingsAtom } from "../model/readerSettings";
 import { useChromeVisibility } from "../model/useChromeVisibility";
+import type { PagedPosition } from "../model/usePagedReader";
 import { useReadingPosition } from "../model/useReadingPosition";
+import { PagedEpisodeBody } from "./PagedEpisodeBody";
 import { ScrollEpisodeBody } from "./ScrollEpisodeBody";
 import { ViewerBottomBar } from "./ViewerBottomBar";
 import { ViewerSettingsPanel } from "./ViewerSettingsPanel";
@@ -33,8 +35,12 @@ type NovelViewerProps = {
 };
 
 /**
- * 소설 화 읽기 화면(몰입 뷰어). 전역 헤더·사이트 푸터 없이 본문만 있는 문서 스크롤 화면이고, 본문을 탭하거나 "메뉴
- * 열기"를 누를 때만 위·아래 바가 본문 위에 겹쳐 나타난다(DESIGN.md Navigation 절의 화 읽기 예외).
+ * 소설 화 읽기 화면(몰입 뷰어). 전역 헤더·사이트 푸터 없이 본문만 있고, 본문을 탭하거나 "메뉴 열기"를 누를 때만
+ * 위·아래 바가 본문 위에 겹쳐 나타난다(DESIGN.md Navigation 절의 화 읽기 예외). 본문은 보기 설정의 넘김 방식에
+ * 따라 쪽을 좌우로 넘기는 고정 화면(페이지 모드)이거나 문서 스크롤(스크롤 모드)이다.
+ *
+ * 읽은 자리 저장·바·보기 설정은 여기(화 단위)에 있고 본문만 넘김 방식에 따라 바뀐다 — 같은 화 안에서 방식을 바꿔도
+ * 화를 떠나는 처리가 돌지 않고, 새 본문은 읽던 문단에서 이어 열리며, 설정 패널의 포커스도 남는다.
  *
  * 화를 옮기면 호출부가 화 id 로 key 를 바꿔 새로 마운트한다 — 바 숨김·읽은 자리 되돌리기·저장이 화마다 처음부터
  * 시작하고, 떠나는 화의 기다리던 저장이 그 화 id 로 나간다.
@@ -51,6 +57,7 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isTocOpen, setIsTocOpen] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [pagedPosition, setPagedPosition] = useState<PagedPosition>({ screen: 0, screenCount: 0 });
   const chrome = useChromeVisibility({ onHide: () => setIsSettingsOpen(false) });
   const { previous, next } = toAdjacentChapters(novel.chapters, summary.ordinal);
   const paragraphs = chapter.revision.paragraphs;
@@ -68,9 +75,10 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
     wasFinished: summary.finishedReading,
   });
 
-  // 화 안 진행률은 아래 바에만 보이므로 바가 보이는 동안만 스크롤을 따라 다시 잰다(읽는 동안 다시 그리지 않게).
+  // 스크롤 모드의 화 안 진행률은 아래 바에만 보이므로 바가 보이는 동안만 스크롤을 따라 다시 잰다(읽는 동안 다시
+  // 그리지 않게).
   useEffect(() => {
-    if (!chrome.isVisible) return;
+    if (!chrome.isVisible || settings.mode !== "scroll") return;
     let frame: number | undefined;
     function measure() {
       frame = undefined;
@@ -91,7 +99,7 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
       window.removeEventListener("scroll", handleScroll);
       if (frame !== undefined) cancelAnimationFrame(frame);
     };
-  }, [chrome.isVisible]);
+  }, [chrome.isVisible, settings.mode]);
 
   // 보기 설정을 열면 지금 고른 글자 크기 칩으로 포커스를 옮긴다(단일 선택 그룹은 고른 칩이 Tab 정지점이다).
   useEffect(() => {
@@ -172,19 +180,35 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
         onToggleSettings={() => (isSettingsOpen ? closeSettings() : setIsSettingsOpen(true))}
       />
 
-      <ScrollEpisodeBody
-        novel={novel}
-        summary={summary}
-        episodeLabel={episodeLabel}
-        paragraphs={paragraphs}
-        previous={previous}
-        next={next}
-        typographyClassName={readerTypographyClassName(settings)}
-        readingPosition={readingPosition}
-        onPointerDown={chrome.handlePointerDown}
-        onPointerUp={(event) => chrome.handlePointerUp(event, handleBodyTap)}
-        onOpenToc={openToc}
-      />
+      {settings.mode === "page" ? (
+        <PagedEpisodeBody
+          novel={novel}
+          summary={summary}
+          episodeLabel={episodeLabel}
+          paragraphs={paragraphs}
+          next={next}
+          typographyClassName={readerTypographyClassName(settings)}
+          readingPosition={readingPosition}
+          onPositionChange={setPagedPosition}
+          onPointerDown={chrome.handlePointerDown}
+          onPointerUp={(event) => chrome.handlePointerUp(event, handleBodyTap)}
+          onOpenToc={openToc}
+        />
+      ) : (
+        <ScrollEpisodeBody
+          novel={novel}
+          summary={summary}
+          episodeLabel={episodeLabel}
+          paragraphs={paragraphs}
+          previous={previous}
+          next={next}
+          typographyClassName={readerTypographyClassName(settings)}
+          readingPosition={readingPosition}
+          onPointerDown={chrome.handlePointerDown}
+          onPointerUp={(event) => chrome.handlePointerUp(event, handleBodyTap)}
+          onOpenToc={openToc}
+        />
+      )}
 
       <ViewerBottomBar
         ref={chrome.bottomBarRef}
@@ -192,7 +216,11 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
         novelId={novel.id}
         ordinal={summary.ordinal}
         totalCount={novel.chapters.length}
-        progress={progress}
+        position={
+          settings.mode === "scroll"
+            ? { mode: "scroll", progress }
+            : { mode: "page", screen: pagedPosition.screen, screenCount: pagedPosition.screenCount }
+        }
         previous={previous}
         next={next}
         isVisible={chrome.isVisible}

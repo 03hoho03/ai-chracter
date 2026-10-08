@@ -61,7 +61,7 @@ export function ScrollEpisodeBody({
           ))}
         </div>
 
-        <EpisodeEnd novelId={novel.id} authorNote={summary.authorNote} next={next} onOpenToc={onOpenToc} />
+        <EpisodeEnd novelId={novel.id} authorNote={summary.authorNote} next={next} hasDivider onOpenToc={onOpenToc} />
       </article>
     </main>
   );

@@ -1,4 +1,5 @@
 import { Button } from "@ai-character-chat/ui/components/button";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Link } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
 import { useId } from "react";
@@ -9,6 +10,8 @@ type EpisodeEndProps = {
   novelId: string;
   authorNote: string;
   next: NovelChapterSummary | undefined;
+  /** 본문 바로 뒤에 이어 붙을 때 위에 구분선을 둔다. 쪽으로 나눠 따로 한 화면에 놓일 때는 쪽 자체가 이미 갈라 둔다. */
+  hasDivider: boolean;
   onOpenToc: (opener: HTMLElement) => void;
 };
 
@@ -17,11 +20,11 @@ type EpisodeEndProps = {
  *
  * 작가의 말은 지금은 쓴 사람만 보는 메모다(공유 단계에서 독자에게 보일 자리). 여기서는 보여 주기만 하고 고치기는
  * 편집 화면이 맡는다. */
-export function EpisodeEnd({ novelId, authorNote, next, onOpenToc }: EpisodeEndProps) {
+export function EpisodeEnd({ novelId, authorNote, next, hasDivider, onOpenToc }: EpisodeEndProps) {
   const noteHeadingId = useId();
 
   return (
-    <footer className="flex flex-col gap-6 border-t border-border pt-8">
+    <footer className={cn("flex flex-col gap-6", hasDivider && "border-t border-border pt-8")}>
       {authorNote !== "" && (
         <section aria-labelledby={noteHeadingId} className="flex flex-col gap-2 rounded-xl border border-border p-4">
           <h2 id={noteHeadingId} className="text-xs font-medium text-muted-foreground">
