@@ -21,6 +21,10 @@
 - 출력 맨 앞·맨 뒤의 코드 펜스(```) 줄
 - 구조 줄(머리 줄·구분 줄·필드 줄) 앞뒤의 `*`·`#`(굵게·제목 마크다운), 머리 줄 `=` 개수와 안쪽 공백(`=== 1 화 ===`)
 - 필드 구분자 `:`·`：`, 필드 이름 앞뒤의 `**`
+- 필드 이름(`제목:` 등)을 빼고 값만 쓴 필드 줄. gemini-3.8-flash 가 같은 입력에서 이따금 세 필드 모두 이렇게 쓴다. 머리
+  줄과 구분 줄 사이의 세 줄이라 자리로 읽어도 경계는 그대로다. 다만 구조 줄이나 다른 필드 이름이 붙은 줄은 그 자리의
+  값으로 받지 않고(필드가 빠졌거나 순서가 바뀐 것이다), 이름 없는 제목이 화 제목 상한보다 길면 본문 문단이 올라온
+  것으로 본다
 - 본문 안의 `---`·`***` 단독 줄(장면 전환 — 빈 줄로 바꾼다)
 - 등장인물 목록이 빈 것(이름 없는 인물만 나온 화가 있다)
 
@@ -29,6 +33,8 @@
 
 import re
 from dataclasses import dataclass
+
+from api.novelize.schemas import CHAPTER_TITLE_MAX_LENGTH
 
 _NOVEL_TITLE_HEADER = re.compile(r"^=+\s*소설\s*제목\s*=+$")
 _EPISODE_HEADER = re.compile(r"^=+\s*(\d+)\s*화\s*=+$")
@@ -86,6 +92,25 @@ def _field(line: str, name: str) -> str | None:
     return value.strip().strip("*").strip()
 
 
+def _unlabeled_field(line: str, name: str) -> str | None:
+    """필드 이름 없이 값만 쓴 줄이면 그 값, 아니면 None(모듈 docstring 의 장식 목록 참고)."""
+    if _is_structural(line) or any(_field(line, other) is not None for other in _FIELDS):
+        return None
+    value = _bare(line)
+    if name == "제목" and len(value) > CHAPTER_TITLE_MAX_LENGTH:
+        return None
+    return value
+
+
+def _shape(line: str) -> str:
+    """어긋난 줄의 모양 — 로그에 싣는 값이라 줄의 글자는 담지 않는다."""
+    if _is_structural(line):
+        return "구조 줄"
+    if any(_field(line, other) is not None for other in _FIELDS):
+        return "다른 필드 줄"
+    return f"이름 없는 {len(_bare(line))}자 줄"
+
+
 def _split_names(raw: str) -> tuple[str, ...]:
     names: list[str] = []
     for part in raw.split(","):
@@ -140,9 +165,12 @@ def parse_batch_output(text: str) -> ParsedBatch:
         pos += 1
         values: list[str] = []
         for field in _FIELDS:
-            value = _field(take(field), field)
+            line = take(field)
+            value = _field(line, field)
             if value is None:
-                raise MalformedOutputError(f"{len(episodes) + 1}화의 {field} 줄이 아니다")
+                value = _unlabeled_field(line, field)
+            if value is None:
+                raise MalformedOutputError(f"{len(episodes) + 1}화의 {field} 줄이 아니다({_shape(line)})")
             values.append(value)
         title, summary, characters = values
         if not title or not summary:

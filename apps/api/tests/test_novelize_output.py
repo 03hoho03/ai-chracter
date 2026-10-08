@@ -72,6 +72,42 @@ def test_decorations_that_keep_the_boundaries_clear_are_accepted(text: str) -> N
     assert episode.body == _BODY_1
 
 
+def test_field_lines_written_without_their_names_are_read_by_position() -> None:
+    """gemini-3.8-flash 가 운영과 같은 입력에서 필드 이름(`제목:` 등)을 빼고 값만 쓴 실제 출력의 모양이다(소설 제목 블록
+    다음 모든 화가 이랬다). 머리 줄과 구분 줄 사이 세 줄이라 자리로 읽어도 화 경계는 그대로다."""
+    text = (
+        "===소설 제목===\n새벽의 잔상\n\n"
+        "===1화===\n첫차의 동선\n준호가 조감독을 맡고 정류장 동선을 맞췄다. 촬영 날이 정해졌다.\n도희, 세빈, 준호\n---\n"
+        f"{_BODY_1}\n\n"
+        "===2화===\n**비밀 폴더**\n세빈이 폴더를 보여 주었다.\n세빈, 준호\n---\n"
+        f"{_BODY_2}\n"
+    )
+
+    parsed = parse_batch_output(text)
+
+    assert parsed.novel_title == "새벽의 잔상"
+    assert parsed.episodes == (
+        ParsedEpisode(
+            title="첫차의 동선",
+            summary="준호가 조감독을 맡고 정류장 동선을 맞췄다. 촬영 날이 정해졌다.",
+            characters=("도희", "세빈", "준호"),
+            body=_BODY_1,
+        ),
+        ParsedEpisode(
+            title="비밀 폴더", summary="세빈이 폴더를 보여 주었다.", characters=("세빈", "준호"), body=_BODY_2
+        ),
+    )
+
+
+def test_a_malformed_field_line_is_described_without_its_text() -> None:
+    """실패 로그에는 출력 글자를 싣지 않는다 — 어긋난 줄의 모양(종류·길이)만 남겨 원인을 가린다."""
+    paragraph = "가" * 150
+    with pytest.raises(MalformedOutputError) as caught:
+        parse_batch_output(f"===1화===\n{paragraph}\n둘째 문단\n셋째 문단\n---\n넷째 문단")
+
+    assert str(caught.value) == "1화의 제목 줄이 아니다(이름 없는 150자 줄)"
+
+
 def test_scene_breaks_inside_a_body_become_blank_lines() -> None:
     text = "===소설 제목===\n**빗소리**\n" + _episode_text("첫 장면\n---\n둘째 장면\n***\n셋째 장면")
 
@@ -94,6 +130,9 @@ def test_scene_breaks_inside_a_body_become_blank_lines() -> None:
         pytest.param("===1화===\n요약: 비\n제목: 저녁\n등장인물: 서진\n---\n본문", id="fields-out-of-order"),
         pytest.param("===1화===\n제목: 저녁\n요약: 비\n---\n본문", id="missing-characters"),
         pytest.param("===1화===\n제목: 저녁\n요약: 비\n등장인물: 서진\n본문", id="missing-separator"),
+        pytest.param("===1화===\n---\n첫 문단\n둘째 문단\n---\n셋째 문단", id="no-field-lines-and-a-scene-break"),
+        pytest.param("===1화===\n저녁\n등장인물: 서진\n---\n본문", id="unlabeled-title-then-missing-summary"),
+        pytest.param(f"===1화===\n{'가' * 101}\n비\n서진\n---\n본문", id="unlabeled-title-longer-than-a-title"),
         pytest.param("===1화===\n제목:\n요약: 비\n등장인물: 서진\n---\n본문", id="empty-title"),
         pytest.param("===1화===\n제목: 저녁\n요약:  \n등장인물: 서진\n---\n본문", id="empty-summary"),
         pytest.param("===1화===\n제목: 저녁\n요약: 비\n등장인물: 서진\n", id="ends-before-separator"),
