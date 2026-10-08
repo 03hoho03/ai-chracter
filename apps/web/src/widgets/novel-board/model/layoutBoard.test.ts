@@ -9,26 +9,20 @@ import {
   type BoardModel,
   type BoardNode,
 } from "./boardNode";
+import { testBatch, testCharacter, testEpisode, testModel } from "./boardTestModel";
 import { buildCharacterEdges, layoutBoard } from "./layoutBoard";
 
-const model: BoardModel = {
-  batches: [
-    { id: "b2", ordinal: 2 },
-    { id: "b1", ordinal: 1 },
-  ],
-  episodes: [
-    { id: "e3", batchId: "b2", ordinal: 3 },
-    { id: "e1", batchId: "b1", ordinal: 1 },
-    { id: "e2", batchId: "b1", ordinal: 2 },
-  ],
+const model: BoardModel = testModel({
+  batches: [testBatch("b2", 2), testBatch("b1", 1)],
+  episodes: [testEpisode("e3", "b2", 3), testEpisode("e1", "b1", 1), testEpisode("e2", "b1", 2)],
   characters: [
-    { id: "c-late", episodeIds: ["e3"] },
-    { id: "c-b", episodeIds: ["e2", "e1"] },
-    { id: "c-a", episodeIds: ["e1"] },
-    { id: "c-gone", episodeIds: ["deleted-episode"] },
+    testCharacter("c-late", ["e3"]),
+    testCharacter("c-b", ["e2", "e1"]),
+    testCharacter("c-a", ["e1"]),
+    testCharacter("c-gone", ["deleted-episode"]),
   ],
-  hasNotes: true,
-};
+  notes: "편의점 야간 점원",
+});
 
 function positionOf(nodes: BoardNode[], id: string) {
   return nodes.find((node) => node.id === id)?.position;
@@ -55,12 +49,13 @@ describe("layoutBoard", () => {
     expect(e3).toEqual({ x: 0, y: 2 * EPISODE_NODE_HEIGHT + EPISODE_GAP + BATCH_GAP });
   });
 
-  it("links each episode to the next one in reading order", () => {
+  it("links each episode to the next one in reading order, bottom of one card to the top of the next", () => {
     const { edges } = layoutBoard(model, undefined);
     expect(edges.map((edge) => [edge.source, edge.target])).toEqual([
       ["episode:e1", "episode:e2"],
       ["episode:e2", "episode:e3"],
     ]);
+    expect(edges.every((edge) => edge.sourceHandle === "next-out" && edge.targetHandle === "next-in")).toBe(true);
   });
 
   it("puts characters in a lane right of the episodes at the height of their first appearance", () => {
@@ -95,14 +90,52 @@ describe("layoutBoard", () => {
     expect(notes.y).toBe(0);
   });
 
-  it("omits the notes card when the novel has no notes", () => {
-    const { nodes } = layoutBoard({ ...model, hasNotes: false }, undefined);
-    expect(nodes.some((node) => node.type === "notes")).toBe(false);
+  it("always draws the notes card, even when the notes are empty, since it is the canvas entry for writing them", () => {
+    const { nodes } = layoutBoard({ ...model, notes: "" }, undefined);
+    expect(nodes.find((node) => node.type === "notes")?.data).toEqual({ notes: "" });
+  });
+
+  it("orders nodes notes, episodes in reading order, then characters by first appearance (the canvas tab order)", () => {
+    const { nodes } = layoutBoard(model, null);
+    expect(nodes.filter((node) => node.type !== "batchFrame").map((node) => node.id)).toEqual([
+      "notes",
+      "episode:e1",
+      "episode:e2",
+      "episode:e3",
+      "character:c-a",
+      "character:c-b",
+      "character:c-late",
+      "character:c-gone",
+    ]);
+  });
+
+  it("carries the fields the cards draw in node data, so a memoized card redraws when one changes", () => {
+    const titled: BoardModel = {
+      ...model,
+      episodes: model.episodes.map((episode) =>
+        episode.id === "e1" ? { ...episode, title: "첫 손님", readState: { kind: "reading", percent: 42 } } : episode,
+      ),
+    };
+    const { nodes } = layoutBoard(titled, undefined);
+    expect(nodes.find((node) => node.id === "episode:e1")?.data).toMatchObject({
+      episodeId: "e1",
+      title: "첫 손님",
+      readState: { kind: "reading", percent: 42 },
+    });
+    expect(nodes.find((node) => node.id === "character:c-b")?.data).toEqual({
+      characterId: "c-b",
+      name: "c-b",
+      memo: "",
+      appearanceCount: 2,
+    });
+    expect(nodes.find((node) => node.id === "character:c-gone")?.data).toMatchObject({ appearanceCount: 0 });
+    expect(nodes.find((node) => node.id === "batch:b1")?.data).toEqual({ batchId: "b1", ordinal: 1, rangeLabel: "1화" });
   });
 
   it("lets saved positions override the automatic ones and ignores keys of nodes no longer on the board", () => {
     const { nodes } = layoutBoard(model, {
       version: 1,
+      viewport: null,
       positions: {
         "episode:e2": { x: 500, y: -40 },
         "character:c-a": { x: 900, y: 900 },
@@ -119,13 +152,13 @@ describe("layoutBoard", () => {
   });
 
   it("keeps automatic character heights tied to the automatic episode layout, not to moved episodes", () => {
-    const moved = layoutBoard(model, { version: 1, positions: { "episode:e3": { x: 0, y: 5000 } } });
+    const moved = layoutBoard(model, { version: 1, viewport: null, positions: { "episode:e3": { x: 0, y: 5000 } } });
     const fresh = layoutBoard(model, undefined);
     expect(positionOf(moved.nodes, "character:c-late")).toEqual(positionOf(fresh.nodes, "character:c-late"));
   });
 
   it("puts batch frames first so they draw behind the cards, and frames follow saved episode positions", () => {
-    const { nodes } = layoutBoard(model, { version: 1, positions: { "episode:e3": { x: 300, y: 2000 } } });
+    const { nodes } = layoutBoard(model, { version: 1, viewport: null, positions: { "episode:e3": { x: 300, y: 2000 } } });
     expect(nodes.slice(0, 2).map((node) => node.id)).toEqual(["batch:b1", "batch:b2"]);
     const frame = nodes.find((node) => node.id === "batch:b2");
     if (!frame) throw new Error("missing frame");
@@ -146,5 +179,10 @@ describe("buildCharacterEdges", () => {
       ["character:c-b", "episode:e1"],
     ]);
     expect(buildCharacterEdges("c-gone", model)).toEqual([]);
+  });
+
+  it("plugs character lines into the side handles so they do not land on the top of episode cards", () => {
+    const edges = buildCharacterEdges("c-a", model);
+    expect(edges.map((edge) => [edge.sourceHandle, edge.targetHandle])).toEqual([["appears-out", "appears-in"]]);
   });
 });

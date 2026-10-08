@@ -9,24 +9,18 @@ import {
   type BoardNode,
   type EpisodeNode,
 } from "./boardNode";
+import { testBatch, testEpisode, testModel } from "./boardTestModel";
 import { fitBatchFrames } from "./fitBatchFrames";
 
-const model: BoardModel = {
-  batches: [
-    { id: "b1", ordinal: 1 },
-    { id: "b-empty", ordinal: 2 },
-  ],
-  episodes: [],
-  characters: [],
-  hasNotes: false,
-};
+const model: BoardModel = testModel({ batches: [testBatch("b1", 1), testBatch("b-empty", 2)] });
 
 function episode(id: string, x: number, y: number, measured?: { width: number; height: number }): EpisodeNode {
+  const { id: episodeId, ...display } = testEpisode(id, "b1", 1);
   return {
     id: `episode:${id}`,
     type: "episode",
     position: { x, y },
-    data: { episodeId: id, batchId: "b1", ordinal: 1 },
+    data: { episodeId, ...display },
     ...(measured ? { measured } : {}),
   };
 }

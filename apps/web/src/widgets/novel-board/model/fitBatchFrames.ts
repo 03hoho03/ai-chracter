@@ -63,7 +63,7 @@ export function fitBatchFrames(nodes: BoardNode[], model: BoardModel): BoardNode
         position: { x: left, y: top },
         width: bounds.maxX + BATCH_FRAME_PADDING - left,
         height: bounds.maxY + BATCH_FRAME_PADDING - top,
-        data: { batchId: batch.id, ordinal: batch.ordinal },
+        data: { batchId: batch.id, ordinal: batch.ordinal, rangeLabel: batch.rangeLabel },
         draggable: false,
         selectable: false,
         focusable: false,
