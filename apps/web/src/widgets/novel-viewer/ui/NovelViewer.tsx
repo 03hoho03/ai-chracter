@@ -13,6 +13,7 @@ import {
   type NovelDetailResponse,
 } from "@/entities/novel";
 
+import { toEscapeTarget } from "../lib/escapeTarget";
 import { readerTypographyClassName } from "../lib/readerTypography";
 import { toEpisodeScrollProgress } from "../lib/readingProgress";
 import { readerSettingsAtom } from "../model/readerSettings";
@@ -100,18 +101,18 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
     settingsPanelRef.current?.querySelector<HTMLElement>('[data-state="on"]')?.focus();
   }, [isSettingsOpen]);
 
-  // Esc 는 가장 위의 것부터 닫는다 — 보기 설정, 그다음 바. 목차 시트가 열려 있으면 시트가 스스로 닫는다.
+  // Esc 는 가장 위의 것부터 하나만 닫는다(`toEscapeTarget`). 창의 캡처 단계에서 듣는 이유: 시트는 문서 캡처 단계에서 Esc 를 받아 닫히고, 그 렌더가 같은 키 입력 도중 커밋되면 문서에 다시
+  // 단 처리기가 "시트 닫힘"을 보고 바까지 숨겼다(포커스가 숨은 바와 함께 `<body>` 로 떨어졌다). 창 캡처는 시트보다
+  // 먼저 돌아 누른 순간의 열림 상태로 판단하고, 그 사이 다시 단 처리기는 이미 지난 단계라 같은 키에 불리지 않는다.
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Escape" || isTocOpen) return;
-      if (isSettingsOpen) {
-        closeSettings();
-        return;
-      }
-      if (chrome.isVisible) chrome.hide();
+      if (event.key !== "Escape") return;
+      const target = toEscapeTarget({ isTocOpen, isSettingsOpen, isChromeVisible: chrome.isVisible });
+      if (target === "settings") closeSettings();
+      else if (target === "chrome") chrome.hide();
     }
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
   });
 
   function closeSettings() {
@@ -137,20 +138,26 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
   return (
     <>
       {/* 문서의 첫 Tab 정지점. 평소에는 보이지 않고 키보드 포커스를 받을 때만 왼쪽 위에 나타난다 — 숨은 바는 `inert`
-          라 Tab 으로 닿지 않으므로 키보드 사용자는 이 버튼으로 바를 연다. */}
-      <div className="pointer-events-none fixed inset-x-0 top-0 z-40 pt-safe">
-        <Button
-          ref={chrome.menuButtonRef}
-          type="button"
-          variant="outline"
-          size="sm"
-          aria-expanded={chrome.isVisible}
-          aria-controls={`${topBarId} ${bottomBarId}`}
-          className="pointer-events-auto sr-only focus-visible:not-sr-only focus-visible:m-4"
-          onClick={() => (chrome.isVisible ? chrome.hide() : chrome.show({ focusTopBar: true }))}
-        >
-          {chrome.isVisible ? "메뉴 닫기" : "메뉴 열기"}
-        </Button>
+          라 Tab 으로 닿지 않으므로 키보드 사용자는 이 버튼으로 바를 연다.
+          포커스 때는 `sr-only` 를 아예 걸지 않는다(`not-focus-visible:`) — `not-sr-only` 로 풀면 그 높이·패딩 초기화가
+          버튼 크기를 덮어 납작해진다. 자리는 감싼 요소의 여백으로 잡고 버튼의 전환을 끈다 — 그대로 두면 `sr-only` 가
+          풀리는 순간 1px 에서 제 크기로, 여백이 제자리로 미끄러진다.
+          바가 열려 있으면 위 바 아래로 내려 뒤로 버튼·화 제목을 가리지 않는다. */}
+      <div className={cn("pointer-events-none fixed inset-x-0 top-0 z-40 pt-safe", chrome.isVisible && "mt-14")}>
+        <div className="p-4">
+          <Button
+            ref={chrome.menuButtonRef}
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-expanded={chrome.isVisible}
+            aria-controls={`${topBarId} ${bottomBarId}`}
+            className="pointer-events-auto not-focus-visible:sr-only motion-safe:transition-none"
+            onClick={() => (chrome.isVisible ? chrome.hide() : chrome.show({ focusTopBar: true }))}
+          >
+            {chrome.isVisible ? "메뉴 닫기" : "메뉴 열기"}
+          </Button>
+        </div>
       </div>
 
       <ViewerTopBar
