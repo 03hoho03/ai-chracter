@@ -24,10 +24,11 @@ export type PublicSupportDestinationKey = {
   [Key in SupportDestinationKey]: (typeof SUPPORT_DESTINATIONS)[Key]["isPublic"] extends true ? Key : never;
 }[SupportDestinationKey];
 
-/** 받은 키 유니언 안에서 좁힌다(`Extract`). 헤더 메뉴의 키 목록은 이 목록의 일부만 담으므로, 좁힌 결과가 이
- * 목록 전체의 공개 키면 그 목록 원소 타입의 부분집합이 아니게 되어 `Array.filter`가 좁히지 못한다. */
+/** 공개 키 중 받은 타입에 들어가는 것으로 좁힌다. 헤더 메뉴의 키 목록은 이 목록의 일부만 담으므로, 좁힌 결과가
+ * 이 목록 전체의 공개 키면 그 목록 원소 타입의 부분집합이 아니게 되어 `Array.filter`가 좁히지 못한다. 거꾸로
+ * 받은 타입 쪽을 걸러 내면(`Extract<Key, ...>`) 넓은 `string`은 어떤 공개 키에도 들어가지 않아 `never`가 된다. */
 export function isPublicSupportDestinationKey<Key extends string>(
   key: Key,
-): key is Extract<Key, PublicSupportDestinationKey> {
+): key is Extract<PublicSupportDestinationKey, Key> {
   return Object.entries(SUPPORT_DESTINATIONS).some(([candidate, destination]) => candidate === key && destination.isPublic);
 }
