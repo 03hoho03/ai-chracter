@@ -154,6 +154,16 @@ async def complete_identity_verification(
     if taken is not None:
         raise _error(status.HTTP_409_CONFLICT, "IDENTITY_ALREADY_USED")
 
+    # 포트원을 기다리는 동안 같은 계정의 다른 완료나 탈퇴가 커밋했을 수 있다. 행을 잠그고 다시 본다 — 잠그지 않으면 두
+    # 완료가 둘 다 "미인증"을 보고 뒤쪽이 앞 사람의 인증을 덮어쓰거나, 탈퇴가 비운 행에 CI 해시·생년월일을 다시 써 탈퇴
+    # 파기를 깨뜨린다(그 행은 보관 행이 아니라 1년 파기에도 걸리지 않는다). 탈퇴도 같은 행을 `FOR UPDATE` 로 잠근다.
+    user_or_none = await db.get(User, user_id, with_for_update=True, populate_existing=True)
+    if user_or_none is None or user_or_none.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    user = user_or_none
+    if user.identity_verified_at is not None:
+        raise _error(status.HTTP_409_CONFLICT, "IDENTITY_ALREADY_VERIFIED")
+
     verified_at = datetime.now(UTC)
     try:
         # 위 조회와 이 쓰기 사이에 다른 계정이 같은 CI 로 인증을 마치면 부분 유니크가 막는다. SAVEPOINT 라 그 경우에도 요청

@@ -483,7 +483,10 @@ async def onboarding_google(
         if user.suspended_at is not None:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account suspended")
         user.nickname = payload.nickname
-        user.birth_date = payload.birth_date
+        # 본인인증한 계정의 생년월일은 인증값이다 — 남아 있던 두 번째 가입 대기 토큰으로 자기 신고값을 다시 써서 결제의
+        # 만 19세 판정을 넘지 못하게 한다.
+        if user.identity_verified_at is None:
+            user.birth_date = payload.birth_date
     await db.commit()
     await delete_pending_google_signup(token)
     return await _start_onboarded_session(response, user, provider="google")
@@ -626,7 +629,9 @@ async def onboarding_kakao(
         if user.suspended_at is not None:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account suspended")
         user.nickname = payload.nickname
-        user.birth_date = payload.birth_date
+        # 구글 온보딩과 같다 — 본인인증한 생년월일을 자기 신고값으로 되돌리지 않는다.
+        if user.identity_verified_at is None:
+            user.birth_date = payload.birth_date
     await db.commit()
     if replaced_email_signup:
         # 대체된 이메일 가입에 발급했던 인증 코드를 지운다. 남아 있어도 이미 인증된 행이라 결과는

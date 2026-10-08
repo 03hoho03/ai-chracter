@@ -6,7 +6,7 @@
 """
 
 import uuid
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -21,7 +21,7 @@ from portone_server_sdk.identity_verification import (
     ReadyIdentityVerification,
     VerifiedIdentityVerification,
 )
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,7 +35,9 @@ from api.db.models.auth import User, WithdrawnIdentity
 from api.main import app
 from api.payments.errors import PortOneUnavailableError
 from api.payments.portone import get_portone_gateway
-from factories import _login_as, _make_user
+from api.auth.google_oauth import PendingGoogleSignup, store_pending_google_signup
+from api.auth.kakao_oauth import KakaoPendingSignup, store_pending_kakao_signup
+from factories import _login_as, _make_published, _make_user
 
 _IDENTITY_CHANNEL = "identity-channel-test"
 _CI = "ci-of-the-person-under-test=="
@@ -60,6 +62,8 @@ class _FakeGateway:
         self.verifications: dict[str, IdentityVerification] = {}
         self.calls: list[str] = []
         self.unavailable = False
+        # 포트원을 기다리는 사이에 다른 요청이 커밋한 것을 흉내 낸다(조회 직전에 한 번 부른다).
+        self.meanwhile: Callable[[], Awaitable[None]] | None = None
 
     async def get_payment(self, payment_id: str) -> Any:
         raise AssertionError("본인인증은 결제를 조회하지 않는다")
@@ -69,6 +73,8 @@ class _FakeGateway:
 
     async def get_identity_verification(self, identity_verification_id: str) -> IdentityVerification:
         self.calls.append(identity_verification_id)
+        if self.meanwhile is not None:
+            await self.meanwhile()
         if self.unavailable:
             raise PortOneUnavailableError("get_identity_verification", "ConnectError")
         return self.verifications[identity_verification_id]
@@ -548,3 +554,124 @@ async def test_me_reports_verification_and_gate(
 
     assert resp.status_code == 200
     assert (resp.json()["identityVerified"], resp.json()["identityGateEnabled"]) == (verified, gate)
+
+
+# ── 경쟁·되돌리기 ───────────────────────────────────────────────────────
+async def test_complete_does_not_write_onto_an_account_withdrawn_meanwhile(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, gateway: _FakeGateway
+) -> None:
+    """포트원을 기다리는 사이 탈퇴가 커밋되면, 탈퇴가 비운 행에 CI 해시·생년월일을 다시 쓰지 않는다(그 행은 보관 행이
+    아니라 1년 파기에도 걸리지 않는다)."""
+    user = await _user(db_session, db_client)
+    identity_verification_id = await _start(db_client)
+    gateway.verifications[identity_verification_id] = _verified(identity_verification_id)
+
+    async def withdraw() -> None:
+        await db_session.execute(
+            update(User).where(User.id == user.id).values(deleted_at=datetime.now(UTC), birth_date=None)
+        )
+
+    gateway.meanwhile = withdraw
+
+    resp = await db_client.post(f"/me/identity-verifications/{identity_verification_id}/complete")
+
+    assert resp.status_code == 401
+    user = await _refreshed(db_session, user)
+    assert (user.identity_ci_hmac, user.identity_verified_at, user.birth_date) == (None, None, None)
+
+
+async def test_complete_does_not_overwrite_a_verification_finished_meanwhile(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, gateway: _FakeGateway
+) -> None:
+    """같은 계정의 다른 완료가 먼저 커밋되면 뒤쪽은 409 다 — 다른 사람의 인증으로 계정의 주인을 바꾸지 못한다."""
+    user = await _user(db_session, db_client)
+    identity_verification_id = await _start(db_client)
+    gateway.verifications[identity_verification_id] = _verified(identity_verification_id, ci="someone-else")
+
+    async def other_completion() -> None:
+        await db_session.execute(
+            update(User)
+            .where(User.id == user.id)
+            .values(identity_ci_hmac=hash_identity_ci(_CI), identity_verified_at=datetime.now(UTC))
+        )
+
+    gateway.meanwhile = other_completion
+
+    resp = await db_client.post(f"/me/identity-verifications/{identity_verification_id}/complete")
+
+    assert (resp.status_code, resp.json()["detail"]) == (409, {"code": "IDENTITY_ALREADY_VERIFIED"})
+    assert (await _refreshed(db_session, user)).identity_ci_hmac == hash_identity_ci(_CI)
+
+
+async def test_complete_turns_a_lost_ci_race_into_409(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, gateway: _FakeGateway, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """사전 조회를 지난 뒤 다른 계정이 같은 CI 로 인증을 커밋하면 부분 유니크가 막는다 — 500 이 아니라 409 이고 이 계정에는
+    아무것도 남지 않는다. 경쟁 상대는 사전 조회 뒤, 행을 잠그는 순간에 끼워 넣는다."""
+    user = await _user(db_session, db_client, birth_date=date(2001, 2, 3))
+    identity_verification_id = await _start(db_client)
+    gateway.verifications[identity_verification_id] = _verified(identity_verification_id)
+    real_get = db_session.get
+
+    async def get_after_rival_commits(*args: Any, **kwargs: Any) -> Any:
+        if kwargs.get("with_for_update"):
+            db_session.add(
+                _make_user(identity_ci_hmac=hash_identity_ci(_CI), identity_verified_at=datetime.now(UTC))
+            )
+            await db_session.flush()
+        return await real_get(*args, **kwargs)
+
+    monkeypatch.setattr(db_session, "get", get_after_rival_commits)
+
+    resp = await db_client.post(f"/me/identity-verifications/{identity_verification_id}/complete")
+
+    assert (resp.status_code, resp.json()["detail"]) == (409, {"code": "IDENTITY_ALREADY_USED"})
+    user = await _refreshed(db_session, user)
+    assert (user.identity_ci_hmac, user.birth_date) == (None, date(2001, 2, 3))
+
+
+@pytest.mark.parametrize("provider", [pytest.param("google", id="google"), pytest.param("kakao", id="kakao")])
+async def test_leftover_onboarding_cannot_overwrite_a_verified_birth_date(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, provider: str
+) -> None:
+    """가입 대기를 두 브라우저에서 받아 두고, 한쪽으로 가입·본인인증(만 17세)한 뒤 남은 쪽으로 성인 생년월일을 제출해도
+    인증된 생년월일이 이긴다 — 결제의 만 19세 판정은 그대로 막는다."""
+    verified_birth = _born_years_ago(17)
+    sub_or_id = f"{provider}-{uuid.uuid4().hex}"
+    email = f"onboard-{uuid.uuid4().hex}@example.com"
+    identity: dict[str, object] = {"google_sub": sub_or_id} if provider == "google" else {"kakao_id": sub_or_id}
+    user = await _user(
+        db_session,
+        None,
+        email=email,
+        birth_date=verified_birth,
+        identity_ci_hmac=hash_identity_ci(_CI),
+        identity_verified_at=datetime.now(UTC),
+        **identity,
+    )
+    if provider == "google":
+        token = await store_pending_google_signup(PendingGoogleSignup(sub=sub_or_id, email=email))
+    else:
+        token = await store_pending_kakao_signup(KakaoPendingSignup(kakao_id=sub_or_id, email=email))
+    db_client.cookies.set(f"oauth_pending_{provider}", token)
+
+    resp = await db_client.post(
+        f"/auth/onboarding/{provider}",
+        json={
+            "nickname": "다시온사람",
+            "birthDate": "1990-01-01",
+            "termsAgreed": True,
+            "privacyAgreed": True,
+            "transferAgreed": True,
+        },
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert (await _refreshed(db_session, user)).birth_date == verified_birth
+
+    monkeypatch.setattr(settings, "payments_enabled", True)
+    monkeypatch.setattr(settings, "portone_webhook_secret", "whsec_dGVzdA==")
+    await _make_published(db_session, kind="refund-policy", version="2026-10-01")
+    await _login_as(db_client, user.id)
+    order = await db_client.post("/payments", json={"productKey": "basic", "agreed": True})
+    assert (order.status_code, order.json()["detail"]) == (403, {"code": "PAYMENT_AGE_RESTRICTED"})
