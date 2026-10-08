@@ -2,7 +2,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useBlocker, useNavigate } from "@tanstack/react-router";
-import { BookX, CloudOff, Trash2 } from "lucide-react";
+import { BookX, CloudOff } from "lucide-react";
 import { useEffect, useId, useRef, useState, type MouseEvent, type ReactNode } from "react";
 
 import { CONTENT_TYPE_LABEL, ContentListEmptyState } from "@/entities/content";
@@ -15,7 +15,7 @@ import {
 } from "@/entities/novel";
 import { ConfirmChapterSpendModal, ConfirmNovelSpendModal } from "@/features/confirm-novel-spend";
 import { NovelChapterMaker, useNovelChapterJob } from "@/features/create-novel-chapter";
-import { DeleteLastChapterModal, DeleteNovelModal, removeDeletedChapterCaches } from "@/features/delete-novel";
+import { DeleteLastChapterModal, removeDeletedChapterCaches } from "@/features/delete-novel";
 import { DiscardManualEditModal, useNovelAiEdit } from "@/features/edit-novel-chapter";
 import { NovelNotesEditor } from "@/features/edit-novel-notes";
 import { NovelReader } from "@/widgets/novel-reader";
@@ -38,8 +38,9 @@ type NovelPageProps = {
   chapter: number | undefined;
 };
 
-/** `/novels/$novelId` — 소설 하나. 장 하나씩 보이고 위에 목차가 있다. 장 안은 문서 스크롤이라 사이트 푸터가
- * 그대로 있다. */
+/** `/novels/$novelId/board` — 소설 편집 화면. 장 하나씩 보이고 위에 목차가 있으며, 화 만들기·고치기·설정 노트가
+ * 여기 있다. 장 안은 문서 스크롤이라 사이트 푸터가 그대로 있다. 소설 지우기는 작품 정보 화면(`/novels/$novelId`)
+ * 끝에 있다. */
 export function NovelPage({ novelId, chapter }: NovelPageProps) {
   const query = useNovelQuery(novelId);
 
@@ -161,7 +162,7 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
       }
       setFocusChapterId(readyChapter.id);
       void navigate({
-        to: "/novels/$novelId",
+        to: "/novels/$novelId/board",
         params: { novelId: novel.id },
         search: (prev) => ({ ...prev, chapter: toChapterSearchValue(chapters, readyChapter.ordinal) }),
       });
@@ -236,7 +237,7 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
     if (isDraftDirty) setFocusChapterId(target.id);
     setHeldChapterId(undefined);
     void navigate({
-      to: "/novels/$novelId",
+      to: "/novels/$novelId/board",
       params: { novelId: novel.id },
       search: (prev) => ({ ...prev, chapter: toChapterSearchValue(novel.chapters, target.ordinal) }),
     });
@@ -265,7 +266,7 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
     const previous = novel.chapters.find((item) => item.ordinal === firstDeletedOrdinal - 1);
     setFocusChapterId(previous?.id);
     void navigate({
-      to: "/novels/$novelId",
+      to: "/novels/$novelId/board",
       params: { novelId: novel.id },
       search: (prev) => ({ ...prev, chapter: undefined }),
     });
@@ -296,7 +297,7 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
             <p className="text-sm break-keep text-muted-foreground">
               {heldChapter.ordinal}화가 생겼어요.{" "}
               <Link
-                to="/novels/$novelId"
+                to="/novels/$novelId/board"
                 params={{ novelId: novel.id }}
                 search={(prev) => ({ ...prev, chapter: toChapterSearchValue(novel.chapters, heldChapter.ordinal) })}
                 className="font-medium text-foreground underline underline-offset-4 outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring"
@@ -330,7 +331,7 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
               });
               if (pinned === undefined) return;
               void navigate({
-                to: "/novels/$novelId",
+                to: "/novels/$novelId/board",
                 params: { novelId: novel.id },
                 search: (prev) => ({ ...prev, chapter: pinned }),
                 ...PIN_CHAPTER_NAVIGATE_OPTIONS,
@@ -343,41 +344,7 @@ function NovelContent({ novel, chapter }: { novel: NovelDetailResponse; chapter:
       <NovelChapterMaker flow={flow} hasChapters={novel.chapters.length > 0} />
 
       <NovelNotesEditor novel={novel} />
-
-      <NovelDeleteSection novel={novel} />
     </>
-  );
-}
-
-/** 소설 지우기. 문서 끝, 다른 모든 것 아래에 둔다 — 되돌릴 수 없는 일이라 지나다 누를 자리에 두지 않는다. 실행
- * 버튼은 빨강 틴트다(솔리드 빨강은 이 시스템에 없다). */
-function NovelDeleteSection({ novel }: { novel: NovelDetailResponse }) {
-  const headingId = useId();
-
-  return (
-    <section aria-labelledby={headingId} className="flex flex-col items-start gap-2 border-t border-border pt-6">
-      <h2 id={headingId} className="text-sm font-medium text-muted-foreground">
-        소설 관리
-      </h2>
-      <p className="text-sm break-keep text-muted-foreground">
-        지우면 모든 화와 판 이력, 설정 노트가 함께 사라져요. 원래 대화방은 그대로예요.
-      </p>
-      <Button
-        type="button"
-        variant="destructive"
-        size="sm"
-        onClick={() =>
-          void DeleteNovelModal.call({
-            novelId: novel.id,
-            title: novel.contentTitle,
-            hasActiveJob: novel.activeJob !== null,
-          })
-        }
-      >
-        <Trash2 aria-hidden />
-        소설 지우기
-      </Button>
-    </section>
   );
 }
 
@@ -409,7 +376,7 @@ function NovelChapterToc({
           return (
             <li key={item.id}>
               <Link
-                to="/novels/$novelId"
+                to="/novels/$novelId/board"
                 params={{ novelId }}
                 search={(prev) => ({ ...prev, chapter: toChapterSearchValue(chapters, item.ordinal) })}
                 aria-current={isCurrent ? "page" : undefined}
