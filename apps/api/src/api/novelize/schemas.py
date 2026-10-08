@@ -190,6 +190,16 @@ class NovelPendingAiEdit(CamelModel):
     created_at: datetime
 
 
+class NovelChapterReadingPosition(CamelModel):
+    """화 하나를 읽던 자리. `paragraph_count` 는 저장할 때의 문단 수라, 그 뒤 개정이 바뀌었으면 비율로 옮긴다.
+    `finished` 는 그 화를 끝까지 읽은 적이 있는가다(목차의 `finished_reading` 과 같은 값)."""
+
+    paragraph_index: int
+    paragraph_count: int
+    revision_id: uuid.UUID
+    finished: bool
+
+
 class NovelChapterSummary(CamelModel):
     """목차의 화 한 줄. 본문은 화 조회로 따로 읽는다. `ordinal` 은 소설 전체의 화 번호다."""
 
@@ -215,6 +225,8 @@ class NovelChapterSummary(CamelModel):
     char_count: int
     # 이 화를 끝까지 읽은 적이 있는가. 한 번 끝까지 읽으면 그 뒤 앞부분을 다시 읽어도 참이다.
     finished_reading: bool
+    # 이 화를 읽던 자리. 읽은 적 없으면 null 이다. 마지막으로 읽은 화가 아니어도 그 화를 다시 열면 이 자리로 돌아간다.
+    reading_position: NovelChapterReadingPosition | None
 
 
 class NovelRegenerateOption(CamelModel):

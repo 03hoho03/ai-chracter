@@ -87,16 +87,19 @@ describe("isScrollRestored", () => {
 });
 
 describe("toTrackingStart", () => {
-  it("되돌린 자리가 반영됐으면 바로 잰다", () => {
-    expect(toTrackingStart({ hasRestoreTarget: true, isRestored: true })).toBe("now");
+  it("되돌린 자리가 반영됐으면(맨 위가 그 자리인 경우 포함) 바로 잰다", () => {
+    expect(toTrackingStart("restored")).toBe("now");
   });
 
-  it("되돌리기를 반영하지 못했으면 이용자가 스크롤한 뒤부터", () => {
-    expect(toTrackingStart({ hasRestoreTarget: true, isRestored: false })).toBe("afterUserScroll");
+  it("되돌리기를 반영하지 못했으면 이용자가 스크롤한 뒤부터(맨 위에서 재면 저장된 자리를 덮는다)", () => {
+    expect(toTrackingStart("failed")).toBe("afterUserScroll");
   });
 
-  it("되돌릴 자리가 없는 화는 보기만 해서는 재지 않는다(그 화의 저장된 자리를 0 으로 덮지 않게)", () => {
-    expect(toTrackingStart({ hasRestoreTarget: false, isRestored: false })).toBe("afterUserScroll");
-    expect(toTrackingStart({ hasRestoreTarget: false, isRestored: true })).toBe("afterUserScroll");
+  it("저장된 자리가 없는 화는 덮을 자리가 없어 바로 잰다", () => {
+    expect(toTrackingStart("none")).toBe("now");
+  });
+
+  it("그 화의 자리를 응답에서 알 수 없으면(옛 API) 이용자가 스크롤한 뒤부터", () => {
+    expect(toTrackingStart("unknown")).toBe("afterUserScroll");
   });
 });

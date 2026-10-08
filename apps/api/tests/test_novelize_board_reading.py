@@ -19,6 +19,7 @@ from factories import (
     _NeverCalledLLMClient,
     _add_batch,
     _clear_llm_override,
+    _count_queries,
     _novel_setup,
     _override_llm_client,
     _room_messages,
@@ -206,3 +207,99 @@ async def test_reading_position_beyond_any_body_length_is_422_not_an_integer_ove
 
     assert resp.status_code == 422
     assert await _positions(db_session, novel_id) == []
+
+
+def _place(paragraph_index: int, paragraph_count: int, revision_id: uuid.UUID, *, finished: bool) -> dict[str, object]:
+    return {
+        "paragraphIndex": paragraph_index,
+        "paragraphCount": paragraph_count,
+        "revisionId": str(revision_id),
+        "finished": finished,
+    }
+
+
+async def test_detail_carries_each_episodes_own_reading_position_and_null_for_unread_ones(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """마지막으로 읽은 화가 아닌 화도 다시 열면 읽던 자리로 돌아가야 하므로, 목차의 화마다 그 화의 자리를 싣는다.
+    다 읽은 표시는 한 번 참이면 앞부분을 다시 저장해도 참이고, 옛 칸(`finishedReading`·`lastRead`)도 그대로 나온다."""
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    messages = await _room_messages(db_session, room.room_id)
+    first, second, third = await _add_batch(db_session, novel_id, room, messages[0], room.turns[1][1], episodes=3)
+    before = (await db_client.get(f"/novels/{novel_id}")).json()
+    first_revision, second_revision = uuid.uuid4(), uuid.uuid4()
+
+    await db_client.put(
+        f"/novels/{novel_id}/chapters/{first.id}/reading-position", json=_place(2, 3, first_revision, finished=True)
+    )
+    await db_client.put(
+        f"/novels/{novel_id}/chapters/{first.id}/reading-position", json=_place(0, 3, first_revision, finished=False)
+    )
+    saved = await db_client.put(
+        f"/novels/{novel_id}/chapters/{second.id}/reading-position",
+        json=_place(1, 4, second_revision, finished=False),
+    )
+    after = (await db_client.get(f"/novels/{novel_id}")).json()
+
+    assert saved.status_code == 204, saved.text
+    assert [c["readingPosition"] for c in before["chapters"]] == [None, None, None]
+    assert [c["id"] for c in after["chapters"]] == [str(first.id), str(second.id), str(third.id)]
+    assert [c["readingPosition"] for c in after["chapters"]] == [
+        _place(0, 3, first_revision, finished=True),
+        _place(1, 4, second_revision, finished=False),
+        None,
+    ]
+    assert [c["finishedReading"] for c in after["chapters"]] == [True, False, False]
+    assert after["lastRead"]["chapterId"] in {str(first.id), str(second.id)}
+
+
+async def test_deleting_the_last_batch_drops_its_episodes_and_keeps_the_positions_of_the_rest(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+    messages = await _room_messages(db_session, room.room_id)
+    (first,) = await _add_batch(db_session, novel_id, room, messages[0], room.turns[1][1])
+    (last,) = await _add_batch(db_session, novel_id, room, room.turns[2][0], room.turns[3][1])
+    revision = uuid.uuid4()
+    for chapter in (first, last):
+        await db_client.put(
+            f"/novels/{novel_id}/chapters/{chapter.id}/reading-position", json=_place(1, 3, revision, finished=False)
+        )
+
+    deleted = await db_client.delete(f"/novels/{novel_id}/batches/{last.batch_id}")
+    detail = (await db_client.get(f"/novels/{novel_id}")).json()
+
+    assert deleted.status_code == 204, deleted.text
+    assert [(c["id"], c["readingPosition"]) for c in detail["chapters"]] == [
+        (str(first.id), _place(1, 3, revision, finished=False))
+    ]
+
+
+async def _detail_query_count(db_client: httpx.AsyncClient, novel_id: uuid.UUID) -> int:
+    # 첫 조회는 묶음 채우기 같은 한 번뿐인 일을 할 수 있어 한 번 읽어 둔 뒤 센다.
+    assert (await db_client.get(f"/novels/{novel_id}")).status_code == 200
+    with _count_queries() as count:
+        resp = await db_client.get(f"/novels/{novel_id}")
+    assert resp.status_code == 200
+    return count()
+
+
+async def test_detail_reads_reading_positions_without_a_query_per_episode(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """화 수가 늘어도 상세의 쿼리 수는 같다 — 읽은 위치는 소설 단위로 한 번에 읽는다."""
+    counts: list[int] = []
+    for episodes in (1, 3):
+        room, novel_id = await _novel_setup(db_client, db_session, monkeypatch)
+        messages = await _room_messages(db_session, room.room_id)
+        chapters = await _add_batch(db_session, novel_id, room, messages[0], room.turns[1][1], episodes=episodes)
+        for chapter in chapters:
+            await db_client.put(
+                f"/novels/{novel_id}/chapters/{chapter.id}/reading-position",
+                json=_place(0, 3, uuid.uuid4(), finished=False),
+            )
+        detail = (await db_client.get(f"/novels/{novel_id}")).json()
+        assert sum(c["readingPosition"] is not None for c in detail["chapters"]) == episodes
+        counts.append(await _detail_query_count(db_client, novel_id))
+
+    assert counts[0] == counts[1]

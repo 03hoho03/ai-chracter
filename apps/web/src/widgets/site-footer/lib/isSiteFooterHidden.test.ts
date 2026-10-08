@@ -21,7 +21,11 @@ describe("isSiteFooterHidden", () => {
     expect(isSiteFooterHidden("/novels/a/episodes/b")).toBe(true);
   });
 
-  it.each(["/novels", "/novels/a", "/novels/a/episodes", "/novels/a/episodes/b/extra"])(
+  it("hides the footer on the viewport-filling novel edit board", () => {
+    expect(isSiteFooterHidden("/novels/a/board")).toBe(true);
+  });
+
+  it.each(["/novels", "/novels/a", "/novels/a/episodes", "/novels/a/episodes/b/extra", "/novels/a/boardx", "/novels/a/board/extra"])(
     "keeps the footer on the novel document screen %s",
     (pathname) => {
       expect(isSiteFooterHidden(pathname)).toBe(false);

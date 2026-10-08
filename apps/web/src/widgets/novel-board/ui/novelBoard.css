@@ -1,0 +1,35 @@
+/*
+ * 편집 보드 캔버스의 라이브러리 스타일. 동작에 필요한 `base.css` 만 가져온다 — 기본 테마 `style.css` 는 노드 hover·선택과
+ * 컨트롤 묶음에 그림자를 걸어 정지 시 평평 규칙과 부딪히고, 노드·컨트롤 모양은 이 화면이 Tailwind 로 직접 그린다.
+ * `base` 층에 넣어 아래 덮어쓰기와 앱 유틸리티가 늘 이긴다.
+ *
+ * 아래는 라이브러리가 실제로 읽는 변수만 덮는다(설치본 `base.css` 에서 확인한 이름). 이 파일은 캔버스 모듈만
+ * 가져오므로 캔버스를 쓰지 않는 화면(좁은 화면의 흐름 목록 포함)에는 실리지 않는다.
+ */
+@import "@xyflow/react/dist/base.css" layer(base);
+
+.react-flow {
+  /* 캔버스 바탕은 페이지 바탕과 같다 — 보드는 페이지 위의 다른 표면이 아니라 그 페이지 자체다. */
+  --xy-background-color: var(--background);
+  /* 점 격자는 팬·줌 할 때 화면이 움직였다는 위치 단서다. 테두리와 같은 무채색 한 단계. */
+  --xy-background-pattern-color: var(--border);
+  /* 화 → 다음 화 선. 아웃라인 버튼 테두리와 같은 값이라 바탕 위에서 비텍스트 대비 3:1 근처를 지킨다. */
+  --xy-edge-stroke: var(--input);
+  --xy-edge-stroke-width: 1.5;
+  /* 선 끝점은 연결용 손잡이가 아니라 선이 꽂히는 자리일 뿐이라 보이지 않게 둔다. */
+  --xy-handle-background-color: transparent;
+  /* 여러 개 고르기를 꺼 두어 그려질 일이 없지만, 기본값이 밝은 회색이라 혹시 그려져도 강조색 틴트로 둔다. */
+  --xy-selection-background-color: color-mix(in oklab, var(--ring) 10%, transparent);
+  --xy-selection-border: 1px solid var(--ring);
+  /* 라이브러리 표기는 남기되 기본 반투명 흰 바탕을 걷는다 — 어두운 방에 밝은 사각형 하나가 뜨지 않게. */
+  --xy-attribution-background-color: transparent;
+}
+
+.react-flow__attribution a {
+  color: var(--muted-foreground);
+}
+
+/* 고르거나 포커스한 인물이 나온 화로 가는 선. 지금 고른 것을 가리키므로 강조색이다. */
+.react-flow__edge.novel-board-appears-edge {
+  --xy-edge-stroke: var(--ring);
+}

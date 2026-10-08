@@ -20946,6 +20946,36 @@
         ],
         "title": "NovelChapterProposalResponse"
       },
+      "NovelChapterReadingPosition": {
+        "properties": {
+          "paragraphIndex": {
+            "type": "integer",
+            "title": "Paragraphindex"
+          },
+          "paragraphCount": {
+            "type": "integer",
+            "title": "Paragraphcount"
+          },
+          "revisionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Revisionid"
+          },
+          "finished": {
+            "type": "boolean",
+            "title": "Finished"
+          }
+        },
+        "type": "object",
+        "required": [
+          "paragraphIndex",
+          "paragraphCount",
+          "revisionId",
+          "finished"
+        ],
+        "title": "NovelChapterReadingPosition",
+        "description": "화 하나를 읽던 자리. `paragraph_count` 는 저장할 때의 문단 수라, 그 뒤 개정이 바뀌었으면 비율로 옮긴다.\n`finished` 는 그 화를 끝까지 읽은 적이 있는가다(목차의 `finished_reading` 과 같은 값)."
+      },
       "NovelChapterRegenerateRequest": {
         "properties": {
           "expectedCost": {
@@ -21114,6 +21144,16 @@
           "finishedReading": {
             "type": "boolean",
             "title": "Finishedreading"
+          },
+          "readingPosition": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NovelChapterReadingPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -21133,7 +21173,8 @@
           "summary",
           "authorNote",
           "charCount",
-          "finishedReading"
+          "finishedReading",
+          "readingPosition"
         ],
         "title": "NovelChapterSummary",
         "description": "목차의 화 한 줄. 본문은 화 조회로 따로 읽는다. `ordinal` 은 소설 전체의 화 번호다."
