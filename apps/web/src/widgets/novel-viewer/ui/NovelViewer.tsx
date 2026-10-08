@@ -57,7 +57,6 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
   const chrome = useChromeVisibility({ onHide: () => setIsSettingsOpen(false) });
   const { previous, next } = toAdjacentChapters(novel.chapters, summary.ordinal);
   const paragraphs = chapter.revision.paragraphs;
-  const lastRead = novel.lastRead;
   const episodeLabel = toEpisodeLabel(summary);
 
   useReadingPosition({
@@ -65,7 +64,8 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
     chapterId: chapter.id,
     revisionId: chapter.revision.id,
     paragraphCount: paragraphs.length,
-    saved: lastRead !== null && lastRead.chapterId === chapter.id ? lastRead : undefined,
+    // 화마다 읽던 자리가 상세에 실려 온다 — 마지막으로 읽은 화가 아니어도 그 화의 자리로 연다.
+    saved: summary.readingPosition ?? undefined,
     wasFinished: summary.finishedReading,
     containerRef: articleRef,
   });

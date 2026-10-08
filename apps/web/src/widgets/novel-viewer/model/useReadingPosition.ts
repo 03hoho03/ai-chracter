@@ -31,7 +31,7 @@ type UseReadingPositionOptions = {
   chapterId: string;
   revisionId: string;
   paragraphCount: number;
-  /** 이 화에 저장된 읽은 자리. 소설의 마지막 읽은 자리가 이 화일 때만 있다. */
+  /** 이 화에 저장된 읽은 자리(상세 `chapters[].readingPosition`). 이 화를 연 적이 없으면 없다. */
   saved: SavedReadingPosition | undefined;
   /** 이 화를 이미 다 읽었는가(그때는 다시 읽어도 다 읽은 화로 남는다 — 서버도 되돌리지 않는다). */
   wasFinished: boolean;
@@ -58,9 +58,8 @@ function positionKey(body: NovelReadingPositionRequest): string {
  *   옮겨, 되돌린 뒤 첫 Tab 이 "메뉴 열기"가 아니라 그 아래 첫 링크로 가며 화면이 튄다.
  * - **저장 가드**: 되돌린 자리가 화면에 반영된 것을 확인한 뒤에야 지금 문단을 재기 시작한다(`isScrollRestored`). 재지
  *   않으면 저장할 것도 없어 디바운스 저장·keepalive 모두 나가지 않는다 — 맨 위로 덮인 화면의 0번 문단이 저장된
- *   자리를 덮어쓰지 않게. 반영을 끝내 못 보면 이용자가 스스로 스크롤한 뒤부터 잰다. 되돌릴 자리가 없는 화도
- *   이용자가 스크롤한 뒤부터 잰다 — 지금은 소설의 마지막 읽은 자리 하나만 받아, 다른 화는 서버에 자리가 있어도 맨
- *   위에서 열리므로 보기만 하고 재면 그 화의 자리를 0 으로 덮는다(화마다 자리를 받아 되돌리게 되면 이 조건을 푼다).
+ *   자리를 덮어쓰지 않게. 반영을 끝내 못 보면 이용자가 스스로 스크롤한 뒤부터 잰다. 저장된 자리가 없는 화(처음 여는
+ *   화)와 저장된 자리가 맨 위인 화는 덮을 것이 없어 바로 잰다(`toTrackingStart`).
  * - **지금 문단**: 화면 위쪽 띠에 충분히 걸친 문단 중 가장 앞 문단(`toCurrentParagraphIndex`). 띠 위쪽은 문단의
  *   `scroll-margin-top` 만큼 잘라 되돌린 자리 바로 위 틈의 앞 문단을 세지 않는다. 마지막 문단이 화면에 들어오면 다
  *   읽음이다.
@@ -199,8 +198,7 @@ export function useReadingPosition({
       startTracking(container);
     }
 
-    // 이용자가 스스로 스크롤하면 그 자리는 이용자가 고른 자리라 재기 시작한다(되돌리기를 못 했거나 되돌릴 자리가 없는
-    // 화 — `toTrackingStart`).
+    // 이용자가 스스로 스크롤하면 그 자리는 이용자가 고른 자리라 재기 시작한다(되돌리기를 못 한 화 — `toTrackingStart`).
     function handleUserScroll() {
       startTrackingOnce();
     }
@@ -229,14 +227,20 @@ export function useReadingPosition({
           maxScrollY: document.documentElement.scrollHeight - window.innerHeight,
         });
         if (!isRestored && attempt + 1 < MAX_RESTORE_FRAMES) attemptRestore(element, attempt + 1);
-        else startTrackingWhen(toTrackingStart({ hasRestoreTarget: true, isRestored }));
+        else startTrackingWhen(toTrackingStart(isRestored ? "restored" : "failed"));
       });
     }
 
     frame = requestAnimationFrame(() => {
       frame = undefined;
-      if (target === null) startTrackingWhen(toTrackingStart({ hasRestoreTarget: false, isRestored: false }));
-      else attemptRestore(target, 0);
+      if (target !== null) {
+        attemptRestore(target, 0);
+        return;
+      }
+      // 되돌릴 문단을 찾지 못한 것은 반영하지 못한 것과 같다(맨 위에서 재면 저장된 자리를 덮는다). 저장된 자리가 맨
+      // 위면 라우터가 이미 맨 위로 올려 둔 그 자리다.
+      if (restoredIndex > 0) startTrackingWhen(toTrackingStart("failed"));
+      else startTrackingWhen(toTrackingStart(saved === undefined ? "none" : "restored"));
     });
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
