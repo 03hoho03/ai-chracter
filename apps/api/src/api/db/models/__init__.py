@@ -89,6 +89,7 @@ from api.db.models.story import (
     SituationNote,
     StartingSetup,
     StatDef,
+    StatRule,
     StoryPromptTemplate,
     StoryVersionDetail,
 )
@@ -179,6 +180,7 @@ __all__ = [
     "SituationalImage",
     "StartingSetup",
     "StatDef",
+    "StatRule",
     "StoryEndingUnlock",
     "StoryMediaExposure",
     "StoryPromptTemplate",

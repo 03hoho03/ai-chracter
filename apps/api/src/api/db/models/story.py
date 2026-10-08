@@ -9,6 +9,7 @@ from sqlalchemy import (
     CheckConstraint,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     Text,
@@ -135,6 +136,30 @@ class StatDef(Base):
     # 그 코드의 스탯 INSERT 가 NOT NULL 위반이 되지 않게 하려는 것이다.
     change_direction: Mapped[StatChangeDirection] = mapped_column(Text, server_default="both", nullable=False)
     max_change_per_turn: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    order: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class StatRule(Base):
+    """스탯 하나의 「조건 → ±n」 규칙. entity_id 패턴, 순서 있는 목록. 판정 LLM 은 조건이 발동한 규칙만 고르고, 폭(`delta`)은
+    코드가 더한다.
+
+    스탯을 가리키는 FK 에 `ON DELETE CASCADE` 를 건다 — 이 저장소의 "cascade 없음" 관례의 예외다. 배포 중 겹쳐 도는 옛 API
+    이미지와 되돌린 옛 이미지는 이 테이블을 모른 채 스탯·시작설정·초안을 지우므로(저장에서 스탯 제거, 시작설정 제거, 초안
+    삭제, 편집 취소), cascade 가 없으면 그 DELETE 가 FK 위반 500 이 된다. 새 코드는 형제 테이블처럼 규칙을 먼저 지운 뒤
+    스탯을 지운다.
+
+    개수·글자 수·폭의 상한은 DB 제약이 아니라 저장 요청 검증(`StoryDraftPayload`)이 건다."""
+
+    __tablename__ = "stat_rules"
+    __table_args__ = (Index("ix_stat_rules_stat_def_id", "stat_def_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    entity_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    stat_def_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("stat_defs.id", ondelete="CASCADE"), nullable=False
+    )
+    condition: Mapped[str] = mapped_column(Text, nullable=False)
+    delta: Mapped[int] = mapped_column(Integer, nullable=False)
     order: Mapped[int] = mapped_column(Integer, nullable=False)
 
 

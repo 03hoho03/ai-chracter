@@ -56,6 +56,7 @@ from api.db.models.story import (
     StartingSetup,
     StatChangeDirection,
     StatDef,
+    StatRule,
     StoryPromptTemplate,
     StoryVersionDetail,
 )
@@ -2227,6 +2228,7 @@ def test_validate_story_publish_media_book(
         media_book_cells=cells,
         keyword_notes=[],
         dangling_stat_rule_paths=[],
+        stat_rules=[],
         situation_notes=[],
         dangling_situation_note_paths=[],
         stat_defs=[],
@@ -2268,6 +2270,7 @@ def test_validate_story_publish_stat_change_options(
         media_book_cells=[],
         keyword_notes=[],
         dangling_stat_rule_paths=[],
+        stat_rules=[],
         situation_notes=[],
         dangling_situation_note_paths=[],
         stat_defs=[
@@ -2365,6 +2368,90 @@ async def test_publish_and_reset_clone_every_stat_def_field(
     reset_resp = await db_client.post(f"/contents/{content.id}/draft/reset")
     assert reset_resp.status_code == 204
     assert await _draft_copies() == expected
+
+
+async def test_publish_and_reset_clone_stat_rules_onto_the_new_stat(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """스탯 규칙은 스탯을 물리 FK 로 가리킨다. 발행과 편집 취소는 규칙을 entity_id·조건·폭·순서 그대로 옮기되 새 초안의
+    스탯 행에 달아야 한다 — 옛 스탯 id 를 그대로 쓰면 초안 규칙이 발행본 스탯에 붙고, 빠뜨리면 다음 초안에서 규칙이
+    사라진다. 판정 스탯에 단 규칙은 발행을 막지 않는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, _, _, _, _, stat_def = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    rules = [
+        StatRule(entity_id=uuid.uuid4(), stat_def_id=stat_def.id, condition="감싸 준다", delta=5, order=1),
+        StatRule(entity_id=uuid.uuid4(), stat_def_id=stat_def.id, condition="거짓말이 들킨다", delta=-3, order=0),
+    ]
+    db_session.add_all(rules)
+    expected = sorted((rule.entity_id, rule.condition, rule.delta, rule.order) for rule in rules)
+    stat_entity_id = stat_def.entity_id
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        publish_resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+    assert publish_resp.status_code == 200
+
+    content_id = content.id
+
+    async def _rules_by_version() -> dict[bool, list[tuple[object, ...]]]:
+        rows = (
+            await db_session.execute(
+                sa.select(ContentVersion.published_at.is_not(None), StatDef.entity_id, StatRule)
+                .join(StatDef, StatDef.id == StatRule.stat_def_id)
+                .join(StartingSetup, StartingSetup.id == StatDef.starting_setup_id)
+                .join(ContentVersion, ContentVersion.id == StartingSetup.content_version_id)
+                .where(ContentVersion.content_id == content_id)
+                .execution_options(populate_existing=True)
+            )
+        ).all()
+        result: dict[bool, list[tuple[object, ...]]] = {}
+        for published, owner_entity_id, rule in rows:
+            assert owner_entity_id == stat_entity_id
+            result.setdefault(published, []).append((rule.entity_id, rule.condition, rule.delta, rule.order))
+        return {published: sorted(items) for published, items in result.items()}
+
+    assert await _rules_by_version() == {True: expected, False: expected}
+
+    reset_resp = await db_client.post(f"/contents/{content.id}/draft/reset")
+    assert reset_resp.status_code == 204
+    assert await _rules_by_version() == {True: expected, False: expected}
+
+
+async def test_publish_story_rejects_stat_rules_on_counter_stat_before_filter(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """턴당 변화가 있는 스탯은 판정을 받지 않아 규칙이 발동할 일이 없는데 작가는 걸었다고 믿게 된다. 초안 저장은 받아
+    주므로 발행이 막는다 — 라우터가 그 버전의 규칙 행을 검증에 넘기는지 본다. 심사 모델은 부르지 않는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, _, _, _, _, stat_def = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    stat_def.per_turn_delta = -1
+    db_session.add(StatRule(entity_id=uuid.uuid4(), stat_def_id=stat_def.id, condition="쉰다", delta=1, order=0))
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == {"missingFields": ["stats.rulesWithCounter"]}
+    assert fake.received_prompt is None
 
 
 async def test_publish_and_reset_clone_ending_priority_stat(
@@ -2612,6 +2699,7 @@ def test_validate_story_publish_situation_notes(
         keyword_notes=[],
         dangling_stat_rule_paths=[],
         stat_defs=[],
+        stat_rules=[],
         situation_notes=[SituationNote(info_text=text, condition_rules=rules(count)) for text, count in notes],
         dangling_situation_note_paths=dangling,
     )
@@ -2812,6 +2900,7 @@ def test_validate_story_publish_keyword_notes(
             for info, keywords, always_on in notes
         ],
         dangling_stat_rule_paths=[],
+        stat_rules=[],
         situation_notes=[],
         dangling_situation_note_paths=[],
         stat_defs=[],
@@ -2849,6 +2938,7 @@ def test_validate_story_publish_stat_ranges(ranges: list[tuple[int, int, int]], 
         media_book_cells=[],
         keyword_notes=[],
         dangling_stat_rule_paths=[],
+        stat_rules=[],
         situation_notes=[],
         dangling_situation_note_paths=[],
         stat_defs=[

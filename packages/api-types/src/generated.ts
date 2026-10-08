@@ -9489,6 +9489,8 @@ export interface components {
             changeDirection?: "both" | "increase" | "decrease";
             /** Maxchangeperturn */
             maxChangePerTurn?: number | null;
+            /** Rules */
+            rules?: components["schemas"]["StatRuleDraftItem"][];
         };
         /** StatDefSnapshot */
         StatDefSnapshot: {
@@ -9513,6 +9515,24 @@ export interface components {
             unit: string | null;
             /** Description */
             description: string;
+        };
+        /**
+         * StatRuleDraftItem
+         * @description 스탯 하나의 「조건 → ±n」 규칙. 배열 순서가 `order` 라 순서 필드는 따로 없다. 조건은 앞뒤 공백을 떼어 저장한다.
+         *
+         *     개수·글자 수·폭의 상한은 요청에만 건다(`StoryDraftPayload` 의 검증) — 이 타입은 초안 응답에도 쓰이므로, 여기에
+         *     걸면 상한을 바꾸거나 스탯 범위를 좁힌 뒤 이미 저장된 규칙이 있는 초안을 열 수 없다(GET 500).
+         */
+        StatRuleDraftItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Condition */
+            condition: string;
+            /** Delta */
+            delta: number;
         };
         /** StoryDraftPayload */
         StoryDraftPayload: {

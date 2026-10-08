@@ -297,6 +297,17 @@ def _both_directions() -> StatChangeDirection:
     return "both"
 
 
+class StatRuleDraftItem(CamelModel):
+    """스탯 하나의 「조건 → ±n」 규칙. 배열 순서가 `order` 라 순서 필드는 따로 없다. 조건은 앞뒤 공백을 떼어 저장한다.
+
+    개수·글자 수·폭의 상한은 요청에만 건다(`StoryDraftPayload` 의 검증) — 이 타입은 초안 응답에도 쓰이므로, 여기에
+    걸면 상한을 바꾸거나 스탯 범위를 좁힌 뒤 이미 저장된 규칙이 있는 초안을 열 수 없다(GET 500)."""
+
+    id: uuid.UUID
+    condition: Annotated[str, AfterValidator(str.strip)]
+    delta: int
+
+
 class StatDefDraftItem(CamelModel):
     """스탯 하나. 저장 요청·초안 응답·미리보기 세션이 함께 쓴다.
 
@@ -322,6 +333,10 @@ class StatDefDraftItem(CamelModel):
     # 판정 LLM 이 낸 값을 코드가 자르는 두 옵션(`api.chat.stats.apply_stat_changes`). 폭은 턴 시작 값에서 잰다.
     change_direction: StatChangeDirection = Field(default_factory=_both_directions)
     max_change_per_turn: int | None = Field(default_factory=lambda: None)
+    # 안 보내면 기존 스탯의 규칙을 건드리지 않는다(router 가 `model_fields_set` 으로 가른다). 규칙을 모르는 화면(배포
+    # 전부터 열려 있던 탭의 옛 번들)·이 키를 적지 않은 시드는 보내지 않으므로, 빈 목록과 같게 다루면 그 저장 한 번이
+    # 작가가 쓴 규칙을 전부 지운다. 보냈을 때만 페이로드에 맞춘다 — 빈 목록이면 전부 지운다.
+    rules: list[StatRuleDraftItem] = Field(default_factory=list)
 
 
 # 생략하면 기존 스탯의 값을 그대로 두는 필드들(`StatDefDraftItem` docstring).
@@ -413,6 +428,12 @@ MAX_SITUATION_NOTES_PER_SETUP = 10
 SITUATION_NOTE_MAX_INFO_LENGTH = 800
 SITUATION_NOTE_MAX_NAME_LENGTH = 20
 SITUATION_NOTE_MAX_RULES = 10
+
+# 스탯 규칙 저장 상한(스탯마다). 빌더가 입력 단계에서 같은 상한을 지켜야 하는 이유는 아래 키워드북 상한 주석과 같다.
+# 규칙 목록은 판정 프롬프트에 스탯마다 실리므로 개수와 조건 길이를 함께 묶는다. 조건 길이는 앞뒤 공백을 뗀 뒤의 코드
+# 포인트 수다.
+MAX_STAT_RULES_PER_STAT = 10
+STAT_RULE_MAX_CONDITION_LENGTH = 100
 
 
 # 상황 노트의 조건은 JSONB 한 칸에 `model_dump(mode="json")` 꼴로 저장한다(UUID·enum 이 문자열이 된다). 읽는 쪽은 이것으로
@@ -668,6 +689,23 @@ class StoryDraftPayload(CamelModel):
                     raise ValueError(f"situation note text must be at most {SITUATION_NOTE_MAX_INFO_LENGTH} characters")
                 if count_rules(note.condition_rules) > SITUATION_NOTE_MAX_RULES:
                     raise ValueError(f"a situation note holds at most {SITUATION_NOTE_MAX_RULES} condition rules")
+        return self
+
+    @model_validator(mode="after")
+    def _check_stat_rule_limits(self) -> Self:
+        # 상한을 여기(요청 전용 모델)에 두는 이유는 `StatRuleDraftItem` docstring. 폭 0 은 발동해도 아무 일도 하지 않고,
+        # 범위 폭보다 큰 폭은 한 번 발동으로 반대쪽 끝을 넘어 늘 경계에 붙는다.
+        for setup in self.starting_setups:
+            for stat in setup.stat_defs:
+                if len(stat.rules) > MAX_STAT_RULES_PER_STAT:
+                    raise ValueError(f"a stat holds at most {MAX_STAT_RULES_PER_STAT} rules")
+                for rule in stat.rules:
+                    if not 1 <= len(rule.condition) <= STAT_RULE_MAX_CONDITION_LENGTH:
+                        raise ValueError(
+                            f"stat rule condition must be 1-{STAT_RULE_MAX_CONDITION_LENGTH} characters after trimming"
+                        )
+                    if rule.delta == 0 or abs(rule.delta) > stat.max_value - stat.min_value:
+                        raise ValueError("stat rule delta must be a non-zero integer no wider than the stat range")
         return self
 
 
