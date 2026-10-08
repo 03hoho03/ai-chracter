@@ -1,5 +1,5 @@
-"""AWS Bedrock 의 Claude 로 글을 쓰는 LLMClient. 채팅 턴 생성과 소설 장 생성(`generate`)만 받는다 — 구조화 호출은 라우팅
-클라이언트(`llm/routing.py`)가 언제나 Gemini 로 보내므로 여기서는 구현하지 않는다.
+"""AWS Bedrock 의 Claude 로 글을 쓰는 LLMClient. 채팅 턴 생성(지난 턴 다시 생성 포함)과 소설 장 생성(`generate`)만
+받는다 — 구조화 호출은 라우팅 클라이언트(`llm/routing.py`)가 언제나 Gemini 로 보내므로 여기서는 구현하지 않는다.
 
 실패 규칙은 `llm/gemini.py` 와 같다. SDK·네트워크 예외는 전부 `LLMClientError` 계열로 바꾼다(그대로 새면 SSE 제너레이터를
 뚫어 요청 스코프 DB 세션이 강제 종료된다). 사용량은 정상 종료한 스트림만 기록하고, 소설 장의 잘림·빈 본문은 기록한 **뒤**
@@ -82,8 +82,11 @@ def _user_content(prompt: str, call_site: LLMCallSite) -> str | list[TextBlockPa
 
     소설 장은 장마다 내용이 거의 다 바뀌어 캐시 쓰기 할증만 내므로 걸지 않는다. 경계가 없는 채팅 턴(보통 문자열)은 하나로
     보낸다 — 빌더는 대화 기록이 빈 턴에 일부러 보통 문자열을 내고, 기록이 있는데 나누지 못한 턴은 이유를 아는 빌더가 경고로
-    남긴다. 여기서는 경계가 있는데 셋이 아닌 경우(빌더와 이 구현이 어긋난 것)만 경고로 남긴다."""
-    if call_site == "chat_generate" and isinstance(prompt, SegmentedPrompt):
+    남긴다. 여기서는 경계가 있는데 셋이 아닌 경우(빌더와 이 구현이 어긋난 것)만 경고로 남긴다.
+
+    지난 턴을 다시 생성하는 측정 호출(`replay_generate`)도 같은 블록·체크포인트로 보낸다 — 실제 생성과 같은 요청 모양이라야
+    원가·지연 측정이 맞고, 같은 턴을 여러 번 돌릴 때 앞부분을 캐시로 싸게 읽는다."""
+    if call_site in ("chat_generate", "replay_generate") and isinstance(prompt, SegmentedPrompt):
         if len(prompt.segments) == 3:
             first, history_end, rest = prompt.segments
             return [

@@ -933,6 +933,7 @@ async def test_usage_persistence_failure_does_not_break_generation(monkeypatch: 
 _EXPECTED_TIMEOUT_MS: dict[str, int] = {
     "chat_generate": 45_000,
     "preview_generate": 45_000,
+    "replay_generate": 45_000,
     "chat_stat_judgment": 20_000,
     "chat_ending_judgment": 20_000,
     "chat_situational_image": 20_000,
@@ -1265,6 +1266,34 @@ async def test_novelize_chapter_uses_its_own_model_cap_and_thinking_while_chat_k
     assert chat["config"].max_output_tokens == 1_111
     assert chat["config"].thinking_config.thinking_budget == 222
     assert chat["config"].http_options.timeout == 45_000
+
+
+async def test_a_replayed_turn_is_sent_exactly_like_a_chat_turn_but_counted_under_its_own_label(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """지난 턴을 다시 생성해 비교하는 측정은 실제 대화와 같은 모델·출력 상한·사고·타임아웃으로 나가야 뜻이 있다. 사용량만
+    따로 쌓여야 실제 대화 원가에 섞이지 않는다. 소설화 값을 채팅과 다르게 둬서 엉뚱한 갈래로 새면 드러나게 한다."""
+    _novelize_settings(monkeypatch)
+    recorded = _recording(monkeypatch)
+    sent: list[dict[str, Any]] = []
+
+    async def generate_content_stream(**kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+        sent.append(kwargs)
+        return _chunks("본문")
+
+    client = _client_with(generate_content_stream=generate_content_stream)
+    replay = LLMCallContext(call_site="replay_generate", user_id=None, room_id=None)
+
+    [_ async for _ in client.generate("턴", usage=_USAGE)]
+    [_ async for _ in client.generate("턴", usage=replay)]
+
+    chat, replayed = sent
+    assert replayed["model"] == chat["model"] == "base-model"
+    assert replayed["config"].max_output_tokens == chat["config"].max_output_tokens == 1_111
+    assert replayed["config"].thinking_config == chat["config"].thinking_config
+    assert replayed["config"].thinking_config.thinking_budget == 222
+    assert replayed["config"].http_options.timeout == chat["config"].http_options.timeout == 45_000
+    assert [site for site, _ in recorded] == ["chat_generate", "replay_generate"]
 
 
 async def test_novelize_thinking_sends_only_what_is_set(monkeypatch: pytest.MonkeyPatch) -> None:

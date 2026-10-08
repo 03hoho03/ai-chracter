@@ -201,6 +201,58 @@ async def test_a_segmented_chat_prompt_goes_as_three_blocks_with_one_checkpoint_
     ]
 
 
+_REPLAY = LLMCallContext("replay_generate", None, None, model="sonnet")
+
+
+def _client_recording_each_request(monkeypatch: pytest.MonkeyPatch) -> tuple[BedrockLLMClient, list[dict[str, Any]]]:
+    """요청마다 새 정상 스트림을 돌려주는 가짜 SDK — 한 클라이언트로 여러 번 불러 요청끼리 비교할 때 쓴다."""
+    seen: list[dict[str, Any]] = []
+
+    async def create(**kwargs: Any) -> AsyncIterator[Any]:
+        seen.append(kwargs)
+
+        async def stream() -> AsyncIterator[Any]:
+            for event in (_start(input_tokens=1), _text("x"), _end()):
+                yield event
+
+        return stream()
+
+    client = BedrockLLMClient()
+    monkeypatch.setattr(client, "_client", SimpleNamespace(messages=SimpleNamespace(create=create)))
+    return client, seen
+
+
+async def test_a_replayed_turn_is_sent_exactly_like_a_chat_turn_but_counted_under_its_own_label(
+    monkeypatch: pytest.MonkeyPatch, recorded: list[Any]
+) -> None:
+    """지난 턴을 다시 생성해 비교하는 측정은 실제 대화와 같은 출력 상한·타임아웃·사고 설정으로 나가야 뜻이 있다. 사용량만
+    따로 쌓여야 실제 대화 원가에 섞이지 않는다."""
+    client, seen = _client_recording_each_request(monkeypatch)
+
+    await _collect(client, _CHAT, system_instruction="지시", stop_sequences=["\n나:"])
+    await _collect(client, _REPLAY, system_instruction="지시", stop_sequences=["\n나:"])
+
+    chat, replayed = seen
+    assert replayed == chat
+    assert (replayed["max_tokens"], replayed["timeout"], replayed["thinking"]) == (4096, 45.0, {"type": "disabled"})
+    assert [site for site, _, _ in recorded] == ["chat_generate", "replay_generate"]
+
+
+async def test_a_replayed_segmented_turn_carries_the_same_cache_checkpoint_as_a_chat_turn(
+    monkeypatch: pytest.MonkeyPatch, recorded: list[Any]
+) -> None:
+    """다시 생성하는 턴이 캐시 없이 나가면 원가·지연이 실제 대화와 달라 측정이 어긋나고, 같은 턴을 여러 번 돌릴 때 앞부분을
+    매번 제값에 낸다 — 실제 턴과 같은 블록 셋·같은 체크포인트로 가야 한다."""
+    client, seen = _client_recording_each_request(monkeypatch)
+
+    [_ async for _ in client.generate(_SEGMENTED, usage=_CHAT)]
+    [_ async for _ in client.generate(_SEGMENTED, usage=_REPLAY)]
+
+    chat, replayed = (kwargs["messages"][0]["content"] for kwargs in seen)
+    assert replayed == chat
+    assert [block.get("cache_control") for block in replayed] == [None, {"type": "ephemeral"}, None]
+
+
 @pytest.mark.parametrize(
     ("prompt", "usage", "warns"),
     [

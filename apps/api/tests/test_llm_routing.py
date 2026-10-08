@@ -67,7 +67,7 @@ def _router() -> tuple[RoutingLLMClient, _Recorder, list[_Recorder]]:
     return RoutingLLMClient(gemini, bedrock_factory=factory), gemini, built
 
 
-_MODEL_SELECTABLE: frozenset[LLMCallSite] = frozenset({"chat_generate", "novelize_chapter"})
+_MODEL_SELECTABLE: frozenset[LLMCallSite] = frozenset({"chat_generate", "novelize_chapter", "replay_generate"})
 
 
 @pytest.mark.parametrize("model", get_args(ChatModelId))
@@ -84,6 +84,18 @@ async def test_generate_goes_to_bedrock_only_for_a_premium_model_at_a_model_sele
     expected = "bedrock" if model != "gemini" and call_site in _MODEL_SELECTABLE else "gemini"
     assert tokens == [expected]
     assert len(gemini.calls) == (1 if expected == "gemini" else 0)
+
+
+@pytest.mark.parametrize("model", ["sonnet", "opus"])
+async def test_a_replayed_turn_with_a_premium_model_goes_to_bedrock(model: ChatModelId) -> None:
+    """Claude 로 쓴 턴도 다시 생성해 비교할 수 있어야 한다 — 다시 생성하는 호출이 Gemini 로 새면 다른 모델의 글을 비교한다."""
+    router, gemini, built = _router()
+
+    tokens = [t async for t in router.generate("p", usage=LLMCallContext("replay_generate", None, None, model=model))]
+
+    assert tokens == ["bedrock"]
+    assert gemini.calls == []
+    assert len(built) == 1
 
 
 async def test_generate_forwards_every_argument_unchanged() -> None:
