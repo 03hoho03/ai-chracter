@@ -1,2 +1,3 @@
-export { isIdentityGated, isIdentityVerificationRequiredError } from "./model/identityGate";
-export { IdentityRequiredNotice, type IdentityRequiredReason } from "./ui/IdentityRequiredNotice";
+export { isIdentityVerificationRequiredError } from "./model/identityGate";
+export { formatIdentityRequiredMessage, type IdentityRequiredReason } from "./model/identityRequiredMessage";
+export { IdentityRequiredNotice } from "./ui/IdentityRequiredNotice";

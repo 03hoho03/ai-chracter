@@ -349,6 +349,75 @@ async def test_paid_balance_counts_only_purchased_lots(db_client: httpx.AsyncCli
     assert (body["balance"], body["paidBalance"]) == (1_250, 1_150)
 
 
+# ── GET /me ──────────────────────────────────────────────────────────────
+@_GATE
+@pytest.mark.parametrize("verified", [pytest.param(False, id="unverified"), pytest.param(True, id="verified")])
+@pytest.mark.parametrize("exempt", [pytest.param(False, id="normal"), pytest.param(True, id="exempt")])
+async def test_me_identity_gated_matches_the_route_gate(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    gate: bool,
+    verified: bool,
+    exempt: bool,
+) -> None:
+    """화면이 미션 받기를 잠그는 값이다 — 스위치·인증·면제를 라우트 게이트와 같게 판정해야 면제 회원을 잘못 잠그지 않는다."""
+    _set_gate(monkeypatch, gate)
+    overrides: dict[str, object] = {"rate_limit_exempt": exempt, **(_verified() if verified else {})}
+    user = await _member(db_session, **overrides)
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.get("/me")
+
+    assert resp.status_code == 200
+    assert resp.json()["identityGated"] is (gate and not verified and not exempt)
+
+
+async def test_me_paid_clover_balance_equals_me_clover(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+    """탈퇴 경고가 재동의 게이트 밖에서 읽는 값이다 — `/me/clover` 의 `paidBalance` 와 같아야 한다(구매 로트만)."""
+    user = await _member(db_session, balance=0)
+    order = await _make_payment(db_session, user_id=user.id, status="paid", paid_at=datetime.now(UTC))
+    await clover.grant(db_session, user_id=user.id, amount=1_000, kind="purchase_paid", payment_id=order.id)
+    await clover.grant(db_session, user_id=user.id, amount=150, kind="purchase_bonus", payment_id=order.id)
+    await clover.grant(db_session, user_id=user.id, amount=100, kind="attendance_grant")
+    await db_session.flush()
+    await _login_as(db_client, user.id)
+
+    me = (await db_client.get("/me")).json()
+    me_clover = (await db_client.get("/me/clover")).json()
+
+    assert me["paidCloverBalance"] == me_clover["paidBalance"] == 1_150
+
+
+async def test_me_paid_clover_balance_is_readable_while_reconsent_is_pending(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """재동의가 남은 회원도 탈퇴할 수 있고(재동의 모달의 "동의하지 않고 탈퇴") 그때 환불 경고가 필요하다 — `/me/clover` 는
+    403 이어도 `/me` 는 유료 잔액을 준다."""
+    # 시드된 약관 게시본(재동의 필요)보다 옛 버전에 동의한 회원.
+    user = await _member(db_session, balance=0, terms_version="2000-01-01")
+    order = await _make_payment(db_session, user_id=user.id, status="paid", paid_at=datetime.now(UTC))
+    await clover.grant(db_session, user_id=user.id, amount=500, kind="purchase_paid", payment_id=order.id)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
+
+    assert (await db_client.get("/me/clover")).status_code == 403
+    me = await db_client.get("/me")
+    assert me.status_code == 200
+    assert me.json()["paidCloverBalance"] == 500
+
+
+async def test_me_daily_free_chat_turns_is_the_gate_constant(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """화면 문구의 무료 대화 수는 게이트가 쓰는 상수 그 자체다 — 상수를 바꾸면 문구도 따라간다."""
+    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 7)
+    user = await _member(db_session)
+    await _login_as(db_client, user.id)
+
+    assert (await db_client.get("/me")).json()["dailyFreeChatTurns"] == 7
+
+
 # ── 미션 ─────────────────────────────────────────────────────────────────
 async def _publisher(db: AsyncSession, client: httpx.AsyncClient, **overrides: object) -> User:
     """첫 발행 미션을 달성한 회원(발행된 작품 하나)."""

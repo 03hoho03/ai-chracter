@@ -11,14 +11,15 @@ import {
   AlertDialogTrigger,
 } from "@ai-character-chat/ui/components/alert-dialog";
 import { Button } from "@ai-character-chat/ui/components/button";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 
-import { useCloverBalanceQuery } from "@/entities/clover";
-import { useSessionQuery } from "@/entities/session";
+import { sessionKeys, useSessionQuery } from "@/entities/session";
 import { SUPPORT_DESTINATIONS } from "@/shared/config/supportDestinations";
 
 import { useWithdrawAccountMutation } from "../api/useWithdrawAccountMutation";
+import { getPaidBalanceWarning, type PaidBalanceWarning } from "../model/paidBalanceWarning";
 import { WITHDRAW_GENERIC_ERROR_MESSAGE } from "../model/withdrawError";
 import { WithdrawPasswordForm } from "./WithdrawPasswordForm";
 
@@ -38,12 +39,15 @@ export function WithdrawAccountDialog({ label = "회원탈퇴" }: WithdrawAccoun
   const { data: me } = useSessionQuery();
   const withdrawMutation = useWithdrawAccountMutation();
   const [isOpen, setIsOpen] = useState(false);
-  // 남은 유료 클로버(구매로 받은 유료·보너스)는 탈퇴하면 사라지고, 환불은 탈퇴하기 전에 신청해야 한다(상품 안내·환불정책의
-  // 같은 문장). 무료 클로버까지 센
-  // 전체 잔액으로 경고하면 결제한 적 없는 회원에게도 환불 안내가 뜨므로 유료 잔액만 본다. 재동의 모달 안의 같은
-  // 다이얼로그에도 그대로 보인다(거기서도 탈퇴하면 같은 일이 생긴다).
-  const { data: clover } = useCloverBalanceQuery();
-  const paidBalance = clover?.paidBalance ?? 0;
+  const queryClient = useQueryClient();
+  // 유료 잔액은 세션 값이다(재동의 게이트 밖이라 재동의 모달 안에서도 읽힌다). 기준은 `getPaidBalanceWarning`.
+  const paidBalanceWarning = getPaidBalanceWarning(me);
+
+  const handleOpenChange = (open: boolean) => {
+    // 세션은 `staleTime: Infinity` 라, 그사이 환불·구매로 바뀐 유료 잔액을 열 때 다시 읽는다.
+    if (open) void queryClient.invalidateQueries({ queryKey: sessionKeys.current() });
+    setIsOpen(open);
+  };
 
   const handleWithdrawn = () => {
     setIsOpen(false);
@@ -62,7 +66,7 @@ export function WithdrawAccountDialog({ label = "회원탈퇴" }: WithdrawAccoun
   };
 
   return (
-    <AlertDialog open={isOpen} onOpenChange={setIsOpen}>
+    <AlertDialog open={isOpen} onOpenChange={handleOpenChange}>
       <AlertDialogTrigger asChild>
         <Button variant="destructive">{label}</Button>
       </AlertDialogTrigger>
@@ -77,19 +81,7 @@ export function WithdrawAccountDialog({ label = "회원탈퇴" }: WithdrawAccoun
             탈퇴하면 발행한 캐릭터·스토리는 비공개로 전환되고, 대화기록과 만든 소설은 삭제돼요. 작성 중인 초안은
             보존되지만 탈퇴 후에는 접근할 수 없어요. 이 작업은 되돌릴 수 없어요.
           </AlertDialogDescription>
-          {paidBalance > 0 && (
-            <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm break-keep text-destructive-text">
-              남은 유료 클로버 {paidBalance.toLocaleString()}개도 함께 사라져요. 환불은 탈퇴하기 전에{" "}
-              <Link
-                to={SUPPORT_DESTINATIONS["inquiry-new"].to}
-                // 쉬는 상태에 이미 밑줄이 있어 포커스는 밑줄이 아니라 불투명 아웃라인으로 준다.
-                className="font-medium whitespace-nowrap underline underline-offset-4 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring"
-              >
-                {SUPPORT_DESTINATIONS["inquiry-new"].label}
-              </Link>
-              로 신청해 주세요.
-            </p>
-          )}
+          <PaidBalanceWarningMessage warning={paidBalanceWarning} />
         </AlertDialogHeader>
         {me?.hasPassword ? (
           <WithdrawPasswordForm onWithdrawn={handleWithdrawn} />
@@ -113,5 +105,27 @@ export function WithdrawAccountDialog({ label = "회원탈퇴" }: WithdrawAccoun
         )}
       </AlertDialogContent>
     </AlertDialog>
+  );
+}
+
+/** 남은 유료 클로버 경고. 수를 알면 수로, 모르면(세션을 못 읽었다) 숫자 없이 같은 행동을 안내한다. */
+function PaidBalanceWarningMessage({ warning }: { warning: PaidBalanceWarning }) {
+  if (warning.kind === "none") return null;
+  const lead =
+    warning.kind === "count"
+      ? `남은 유료 클로버 ${warning.paidBalance.toLocaleString()}개도 함께 사라져요.`
+      : "남은 유료 클로버가 있다면 함께 사라져요.";
+  return (
+    <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm break-keep text-destructive-text">
+      {lead} 환불은 탈퇴하기 전에{" "}
+      <Link
+        to={SUPPORT_DESTINATIONS["inquiry-new"].to}
+        // 쉬는 상태에 이미 밑줄이 있어 포커스는 밑줄이 아니라 불투명 아웃라인으로 준다.
+        className="font-medium whitespace-nowrap underline underline-offset-4 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring"
+      >
+        {SUPPORT_DESTINATIONS["inquiry-new"].label}
+      </Link>
+      로 신청해 주세요.
+    </p>
   );
 }

@@ -2,17 +2,12 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Link } from "@tanstack/react-router";
 
-/** 왜 본인인증이 필요한지는 자리마다 다르다. 무료 대화·출석·미션은 인증하면 **받는 것**이 생기고, 구매는 인증해야
- * **할 수 있는 것**이다 — 구매 자리에 "무료 대화를 받는다"를 쓰면 게이트가 꺼진 동안 거짓이 된다. */
-export type IdentityRequiredReason = "free-rewards" | "purchase";
-
-const MESSAGES: Record<IdentityRequiredReason, string> = {
-  "free-rewards": "본인인증을 하면 매일 무료 대화 30턴과 출석·미션 클로버를 받을 수 있어요.",
-  purchase: "클로버를 구매하려면 본인인증이 필요해요. 만 19세 이상만 구매할 수 있어요.",
-};
+import { formatIdentityRequiredMessage, type IdentityRequiredReason } from "../model/identityRequiredMessage";
 
 type IdentityRequiredNoticeProps = {
   reason: IdentityRequiredReason;
+  /** `GET /me` 의 `dailyFreeChatTurns`. 세션을 아직 못 읽었으면 비워 둔다(숫자 없이 말한다). */
+  dailyFreeChatTurns?: number;
   className?: string;
 };
 
@@ -21,7 +16,7 @@ type IdentityRequiredNoticeProps = {
  *
  * 인증하는 곳은 마이페이지 하나라 링크도 하나다. 링크가 outline 인 것은 이 안내가 놓이는 화면에 이미 그 화면의
  * 솔리드 채움(출석체크·전송)이 있기 때문이다. */
-export function IdentityRequiredNotice({ reason, className }: IdentityRequiredNoticeProps) {
+export function IdentityRequiredNotice({ reason, dailyFreeChatTurns, className }: IdentityRequiredNoticeProps) {
   return (
     <div
       role="status"
@@ -30,7 +25,9 @@ export function IdentityRequiredNotice({ reason, className }: IdentityRequiredNo
         className,
       )}
     >
-      <p className="min-w-0 flex-1 basis-48 text-xs break-keep text-muted-foreground">{MESSAGES[reason]}</p>
+      <p className="min-w-0 flex-1 basis-48 text-xs break-keep text-muted-foreground">
+        {formatIdentityRequiredMessage(reason, dailyFreeChatTurns)}
+      </p>
       <Button asChild variant="outline" size="sm">
         <Link to="/mypage">본인인증하기</Link>
       </Button>

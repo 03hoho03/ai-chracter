@@ -74,9 +74,10 @@ from api.auth.verification import (
     seconds_until_resend_allowed,
     store_verification_code,
 )
-from api.core import rate_limit
+from api.core import clover, rate_limit, rate_limit_gate
 from api.core.config import settings
 from api.core.constants import WITHDRAWN_EMAIL_BLOCK_PERIOD
+from api.core.identity_gate import is_identity_gated
 from api.core.email import EmailSender, get_email_sender
 from api.core.security import hash_password, hash_withdrawn_email, verify_password
 from api.core.sentry import capture_dependency_failure
@@ -913,6 +914,10 @@ async def get_me(
         enabled_features=await _enabled_features(db, user.id),
         identity_verified=user.identity_verified_at is not None,
         identity_gate_enabled=identity_gate_active(),
+        identity_gated=is_identity_gated(user),
+        # 모듈 속성으로 호출 시점에 읽는다(테스트의 `monkeypatch.setattr` 가 통하게 — 게이트 함수와 같은 관례).
+        daily_free_chat_turns=rate_limit_gate.CHAT_DAILY_LIMIT,
+        paid_clover_balance=await clover.paid_balance(db, user_id=user.id),
     )
 
 

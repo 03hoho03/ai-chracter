@@ -456,6 +456,18 @@ async def restore_purchase_lots(
     return int(balance_after)
 
 
+async def paid_balance(db: AsyncSession, *, user_id: uuid.UUID) -> int:
+    """구매로 받은 클로버(유료·보너스)의 남은 양. 탈퇴하면 사라지고 환불은 탈퇴 전에만 신청할 수 있어 탈퇴 경고가 이 값을
+    쓴다 — 무료 지급까지 센 전체 잔액으로 경고하면 결제한 적 없는 회원에게도 환불 안내가 뜬다. `GET /me`·`GET /me/clover`
+    가 함께 부른다."""
+    total = await db.scalar(
+        select(func.coalesce(func.sum(CloverLot.remaining), 0)).where(
+            CloverLot.user_id == user_id, CloverLot.kind.in_(PURCHASE_LOT_KINDS)
+        )
+    )
+    return int(total or 0)
+
+
 async def burn_all(db: AsyncSession, *, user_id: uuid.UUID) -> int:
     """탈퇴 시 남은 잔액 전부를 소멸시킨다. 소멸된 금액을 돌려준다.
 

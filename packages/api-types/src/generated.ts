@@ -8174,6 +8174,12 @@ export interface components {
             identityVerified: boolean;
             /** Identitygateenabled */
             identityGateEnabled: boolean;
+            /** Identitygated */
+            identityGated: boolean;
+            /** Dailyfreechatturns */
+            dailyFreeChatTurns: number;
+            /** Paidcloverbalance */
+            paidCloverBalance: number;
         };
         /** MediaBookAxisInput */
         MediaBookAxisInput: {

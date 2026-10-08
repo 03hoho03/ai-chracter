@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ApiErrorObject } from "@/shared/api/client";
 
-import { isIdentityGated, isIdentityVerificationRequiredError } from "./identityGate";
+import { isIdentityVerificationRequiredError } from "./identityGate";
 
 function apiError(status: number, detail: string | Record<string, unknown> | undefined) {
   return new ApiErrorObject({ status, message: "x", detail });
@@ -23,16 +23,5 @@ describe("isIdentityVerificationRequiredError", () => {
     ["ApiError 가 아님", new Error("x")],
   ])("%s 는 거짓이다", (_, error) => {
     expect(isIdentityVerificationRequiredError(error)).toBe(false);
-  });
-});
-
-describe("isIdentityGated", () => {
-  it.each([
-    [true, false, true],
-    [true, true, false],
-    [false, false, false],
-    [false, true, false],
-  ])("게이트 %s · 인증 %s → %s", (identityGateEnabled, identityVerified, expected) => {
-    expect(isIdentityGated({ identityGateEnabled, identityVerified })).toBe(expected);
   });
 });

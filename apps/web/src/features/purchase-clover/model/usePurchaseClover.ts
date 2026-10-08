@@ -1,12 +1,11 @@
 import type { CloverProductItem } from "@/entities/clover";
-import { isApiError } from "@/shared/api/client";
 import { requestPortOnePayment } from "@/shared/lib/portone/portoneSdk";
 
 import { useCompletePaymentMutation } from "../api/useCompletePaymentMutation";
 import { useCreatePaymentMutation, type CreatePaymentResponse } from "../api/useCreatePaymentMutation";
 import type { CloverPayMethodItem } from "./payMethod";
 import { toPortOneCustomer, type PurchaseFormValues } from "./purchaseForm";
-import { toPurchaseResult, type PurchaseResult } from "./purchaseResult";
+import { toCreatePaymentFailure, toPurchaseResult, type PurchaseResult } from "./purchaseResult";
 
 type PurchaseInput = {
   productKey: CloverProductItem["key"];
@@ -16,19 +15,6 @@ type PurchaseInput = {
    * 호출부가 여기서 다이얼로그를 내린다. */
   onCheckoutOpen: () => void;
 };
-
-function errorCode(error: unknown): unknown {
-  return isApiError(error) && error.detail && typeof error.detail === "object" ? error.detail.code : undefined;
-}
-
-/** 주문 생성 실패를 화면 갈래로. 본인인증 403 은 세션을 다시 읽는 것으로 화면이 바뀐다(전역 뮤테이션 처리). */
-function toCreateFailure(error: unknown): PurchaseResult {
-  const code = errorCode(error);
-  if (code === "PAYMENT_AGE_RESTRICTED") return "ageRestricted";
-  if (code === "IDENTITY_VERIFICATION_REQUIRED") return "identityRequired";
-  if (code === "PAYMENTS_UNAVAILABLE") return "unavailable";
-  return "failed";
-}
 
 /** 클로버 구매: 주문 생성 → 포트원 결제창 → 서버 확정. 끝난 모양만 돌려주고 던지지 않는다.
  *
@@ -43,7 +29,7 @@ export function usePurchaseClover() {
     try {
       order = await createPayment.mutateAsync({ productKey, agreed: true });
     } catch (error) {
-      return toCreateFailure(error);
+      return toCreatePaymentFailure(error);
     }
 
     onCheckoutOpen();

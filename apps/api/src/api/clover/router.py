@@ -212,17 +212,12 @@ async def get_clover_balance(
     """
     user = await _require_active_user(db, user_id)
     now = datetime.now(UTC)
-    paid_balance = await db.scalar(
-        select(func.coalesce(func.sum(CloverLot.remaining), 0)).where(
-            CloverLot.user_id == user_id, CloverLot.kind.in_(PURCHASE_LOT_KINDS)
-        )
-    )
     return CloverBalanceResponse(
         balance=user.clover_balance,
         spend_confirmed_today=is_same_kst_day(user.clover_spend_confirmed_on, now),
         # "누르면 지급된다"는 뜻이라 게이트에 걸린 회원에게는 거짓이다 — 참으로 두면 보이는 출석 버튼이 403 을 받는다.
         attendance_claimable=not is_same_kst_day(user.clover_attendance_granted_on, now) and not is_identity_gated(user),
-        paid_balance=paid_balance or 0,
+        paid_balance=await clover.paid_balance(db, user_id=user_id),
         expiring_soon=await _expiring_soon(db, user_id=user_id, now=now),
     )
 

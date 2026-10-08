@@ -89,8 +89,10 @@ export const PurchaseConfirmDialog = createCallable<PurchaseConfirmDialogProps, 
           announcePurchaseResult(result);
           call.end();
           return;
-        // 세션을 다시 읽어 허브가 본인인증 안내로 바뀐다(전역 뮤테이션 처리). 다이얼로그에 남을 이유가 없다.
+        // 세션을 다시 읽어 허브가 본인인증 안내로, 앱이 재동의 모달로 바뀐다(전역 뮤테이션 처리). 다이얼로그에 남을
+        // 이유가 없다.
         case "identityRequired":
+        case "reconsentRequired":
           call.end();
           return;
         // 결제창이 페이지를 떠난다. 돌아오면 허브가 쿼리로 이어받는다.

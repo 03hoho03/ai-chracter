@@ -20270,6 +20270,18 @@
           "identityGateEnabled": {
             "type": "boolean",
             "title": "Identitygateenabled"
+          },
+          "identityGated": {
+            "type": "boolean",
+            "title": "Identitygated"
+          },
+          "dailyFreeChatTurns": {
+            "type": "integer",
+            "title": "Dailyfreechatturns"
+          },
+          "paidCloverBalance": {
+            "type": "integer",
+            "title": "Paidcloverbalance"
           }
         },
         "type": "object",
@@ -20285,7 +20297,10 @@
           "socialProvider",
           "enabledFeatures",
           "identityVerified",
-          "identityGateEnabled"
+          "identityGateEnabled",
+          "identityGated",
+          "dailyFreeChatTurns",
+          "paidCloverBalance"
         ],
         "title": "MeResponse"
       },

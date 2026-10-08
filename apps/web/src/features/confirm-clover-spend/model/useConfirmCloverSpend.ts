@@ -6,7 +6,6 @@ import {
   useConfirmCloverSpendMutation,
 } from "@/entities/clover";
 import type { CloverSpendConfirmOutcome } from "@/entities/clover";
-import { isIdentityGated } from "@/entities/identity";
 import { sessionQueryOptions } from "@/entities/session";
 
 import { ConfirmCloverSpendModal } from "../ui/ConfirmCloverSpendModal";
@@ -45,10 +44,10 @@ export function useConfirmCloverSpend(): (
       .then((data) => data.balance)
       .catch(() => 0);
 
-    // 본인인증 게이트에 걸린 회원은 무료 대화가 없어 "오늘 무료 한도를 다 썼다"가 거짓이다. 판정은 이미 화면에 있는 세션
-    // 값으로 한다 — 세션은 포커스마다 다시 읽히고 본인인증 403 이 오면 다시 읽힌다. 세션이 없으면 예전 문구 그대로다.
-    const me = queryClient.getQueryData(sessionQueryOptions.queryKey);
-    const identityGated = me !== undefined && isIdentityGated(me);
+    // 본인인증 게이트에 걸린 회원은 무료 대화가 없어 "오늘 무료 한도를 다 썼다"가 거짓이다. 판정은 서버가 라우트 게이트와
+    // 같은 함수로 계산해 세션에 실은 값이다 — 세션은 포커스마다 다시 읽히고 본인인증 403 이 오면 다시 읽힌다. 세션이
+    // 없으면 예전 문구 그대로다.
+    const identityGated = queryClient.getQueryData(sessionQueryOptions.queryKey)?.identityGated ?? false;
 
     // 🔴 여기가 `declined`다 — 모달이 `false`를 돌려준 것은 **사용자의 선택**이지 실패가 아니다.
     if (!(await ConfirmCloverSpendModal.call({ balance, cost, surface, identityGated }))) return "declined";

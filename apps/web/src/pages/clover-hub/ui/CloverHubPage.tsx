@@ -16,7 +16,7 @@ import {
   useCloverPricingQuery,
   type CloverMissionItem,
 } from "@/entities/clover";
-import { IdentityRequiredNotice, isIdentityGated, isIdentityVerificationRequiredError } from "@/entities/identity";
+import { IdentityRequiredNotice, isIdentityVerificationRequiredError } from "@/entities/identity";
 import { useSessionQuery } from "@/entities/session";
 import { PurchaseConfirmDialog, usePaymentRedirect } from "@/features/purchase-clover";
 import { SUPPORT_DESTINATIONS } from "@/shared/config/supportDestinations";
@@ -36,10 +36,11 @@ function toastClaimError(error: unknown) {
   toast.error(GENERIC_ERROR_MESSAGE);
 }
 
-/** 이 회원이 본인인증 게이트에 걸려 있는가. 세션이 아직 없으면 걸리지 않은 것으로 본다(라우트가 세션을 보장한다). */
-function useIsIdentityGated(): boolean {
+/** 이 회원이 본인인증 게이트에 걸려 있는가와 안내에 쓸 하루 무료 대화 수. 판정은 서버가 라우트 게이트와 같은 함수(면제
+ * 회원 포함)로 계산한 세션 값이다. 세션이 아직 없으면 걸리지 않은 것으로 본다(라우트가 세션을 보장한다). */
+function useIdentityGate(): { isGated: boolean; dailyFreeChatTurns: number | undefined } {
   const { data: me } = useSessionQuery();
-  return me !== undefined && isIdentityGated(me);
+  return { isGated: me?.identityGated ?? false, dailyFreeChatTurns: me?.dailyFreeChatTurns };
 }
 
 const SECTION_LINK_CLASS =
@@ -177,7 +178,7 @@ function PurchaseBody() {
 function AttendanceSection() {
   const { data } = useCloverBalanceQuery();
   const claimAttendance = useClaimAttendanceMutation();
-  const isGated = useIsIdentityGated();
+  const { isGated, dailyFreeChatTurns } = useIdentityGate();
   const isAttendanceClaimable = data?.attendanceClaimable ?? false;
 
   const handleClaim = () => {
@@ -201,7 +202,7 @@ function AttendanceSection() {
     return (
       <section className="flex flex-col gap-4">
         <SectionHeading>출석체크</SectionHeading>
-        <IdentityRequiredNotice reason="free-rewards" />
+        <IdentityRequiredNotice reason="free-rewards" dailyFreeChatTurns={dailyFreeChatTurns} />
       </section>
     );
   }
@@ -227,7 +228,7 @@ function AttendanceSection() {
 function MissionSection() {
   const { data, isPending } = useCloverMissionsQuery();
   const claimMission = useClaimCloverMissionMutation();
-  const isGated = useIsIdentityGated();
+  const { isGated, dailyFreeChatTurns } = useIdentityGate();
 
   const handleClaim = (key: string) => {
     if (claimMission.isPending) return;
@@ -243,7 +244,7 @@ function MissionSection() {
     <section className="flex flex-col gap-4">
       <SectionHeading>미션</SectionHeading>
       {/* 안내는 섹션에 한 번만 둔다 — 행마다 두면 같은 문장이 세 번 읽힌다. 행의 "받기"는 아래에서 상태 표시로 바뀐다. */}
-      {isGated && <IdentityRequiredNotice reason="free-rewards" />}
+      {isGated && <IdentityRequiredNotice reason="free-rewards" dailyFreeChatTurns={dailyFreeChatTurns} />}
       {isPending ? (
         <span className="text-sm text-muted-foreground">불러오는 중…</span>
       ) : (
