@@ -27,6 +27,7 @@ from datetime import UTC, date, datetime, timedelta
 from portone_server_sdk.payment import (
     CancelledPayment,
     FailedPaymentCancellation,
+    PaidPayment,
     PartialCancelledPayment,
     Payment as PortOnePayment,
     PaymentCancellation as PortOneCancellation,
@@ -43,7 +44,13 @@ from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User
 from api.db.models.clover import CloverLot, CloverSpendAllocation
 from api.db.models.payment import Payment, PaymentCancellation, PaymentCancellationStatus
-from api.payments.errors import PaymentRefundStuckError, PortOneCancelRejectedError, PortOneUnavailableError
+from api.payments import portone
+from api.payments.errors import (
+    PaymentConsolePartialCancelError,
+    PaymentRefundStuckError,
+    PortOneCancelRejectedError,
+    PortOneUnavailableError,
+)
 from api.payments.portone import PortOneGateway
 
 logger = logging.getLogger(__name__)
@@ -52,6 +59,9 @@ logger = logging.getLogger(__name__)
 FULL_REFUND_DAYS = 7
 FULL_REFUND_PERCENT = 100
 REDUCED_REFUND_PERCENT = 90
+# 재시도가 같은 시도를 다시 보내지 않는 시간(초). 포트원 호출 하나의 상한보다 길어야 "첫 전송이 아직 응답을 기다린다"를
+# 덮는다 — 상한의 세 배로 둬 DB 왕복·커밋 시간까지 넉넉히 덮는다.
+SEND_CLAIM_SECONDS = portone.PORTONE_TIMEOUT_SECONDS * 3
 # 포트원에 넘기는 취소 사유. 어드민이 적은 사유는 내부 감사용이라 결제대행사로 보내지 않는다.
 PORTONE_CANCEL_REASON = "클로버 구매 환불"
 
@@ -230,50 +240,114 @@ async def _settle_totals(db: AsyncSession, order: Payment) -> None:
     order.updated_at = _utcnow()
 
 
-async def _apply_cancellation(db: AsyncSession, order: Payment, cancellation: PortOneCancellation) -> list[str]:
-    """포트원 취소 하나를 우리 취소 행에 반영한다. 잠근 주문 행에서만 부른다. 새로 성공한 취소의 알림 문구를 돌려준다.
+async def _match_row(
+    db: AsyncSession, order: Payment, cancellation: PortOneCancellation, attempt_id: uuid.UUID | None
+) -> PaymentCancellation | None:
+    """포트원 취소 하나에 맞는 우리 행.
 
-    맞추는 순서: 포트원 취소 id 가 같은 행 → 없으면 id 를 아직 모르는 `requested` 어드민 행 중 금액이 같은 것(포트원 응답을
-    받기 전에 웹훅이 먼저 온 경우). 성공인데 맞는 행이 없으면 포트원 콘솔에서 직접 한 취소다 — 그 시점 남은 구매 로트를
-    회수하고 `console` 행으로 남긴다(환불정책이 "남은 유료 전액 환불 + 보너스 회수" 하나뿐이라 부분 취소도 전부 회수한다).
+    1. 포트원 취소 id 가 같은 행.
+    2. `attempt_id` 가 주어지면(우리 취소 요청에 대한 직접 응답) 그 시도 행 — 아직 `requested` 이고 id 를 모를 때만. 어느
+       시도의 응답인지 이미 알므로 금액으로 찾지 않는다(포트원 금액이 요청액과 다르게 와도 그 시도가 남지 않는다).
+    3. 그 밖에는 성공·대기 취소만, id 를 아직 모르는 `requested` 어드민 행 중 금액이 같은 것(우리 응답보다 웹훅이 먼저 온
+       경우). **실패 취소는 금액으로 맞추지 않는다** — 앞서 거절된 시도의 실패 내역이 같은 금액의 새 시도를 실패로 닫아,
+       새 취소가 진행 중인데 클로버를 되돌려 주게 된다.
     """
-    if isinstance(cancellation, dict):
-        logger.warning("payment %s has a cancellation of unknown shape", order.id)
-        return []
-    row = await db.scalar(
+    assert not isinstance(cancellation, dict)
+    row: PaymentCancellation | None = await db.scalar(
         select(PaymentCancellation)
         .where(PaymentCancellation.portone_cancellation_id == cancellation.id)
         .execution_options(populate_existing=True)
     )
-    if row is None:
-        row = await db.scalar(
-            select(PaymentCancellation)
-            .where(
-                PaymentCancellation.payment_id == order.id,
-                PaymentCancellation.status == "requested",
-                PaymentCancellation.portone_cancellation_id.is_(None),
-                PaymentCancellation.amount_krw == cancellation.total_amount,
-            )
-            .execution_options(populate_existing=True)
+    if row is not None:
+        return row
+    if attempt_id is not None:
+        attempt = await db.get(PaymentCancellation, attempt_id, populate_existing=True)
+        assert attempt is not None
+        if attempt.status == "requested" and attempt.portone_cancellation_id is None:
+            return attempt
+        return None
+    if isinstance(cancellation, FailedPaymentCancellation):
+        return None
+    by_amount: PaymentCancellation | None = await db.scalar(
+        select(PaymentCancellation)
+        .where(
+            PaymentCancellation.payment_id == order.id,
+            PaymentCancellation.status == "requested",
+            PaymentCancellation.portone_cancellation_id.is_(None),
+            PaymentCancellation.amount_krw == cancellation.total_amount,
         )
+        .execution_options(populate_existing=True)
+    )
+    return by_amount
+
+
+async def _record_console_cancel(
+    db: AsyncSession, order: Payment, cancellation: SucceededPaymentCancellation
+) -> None:
+    """우리 쪽 시도와 맞지 않는 성공 취소 = 포트원 콘솔에서 직접 한 취소. 그 구매의 클로버를 회수해 `console` 행으로 남긴다.
+
+    - 이 취소로 결제가 전액 취소되면 남은 전부를 회수한다. 부분 취소면 취소 금액을 구매 단가로 나눈 만큼(올림)만,
+      유료 먼저·모자라면 같은 구매의 보너스에서 회수한다 — 돈을 돌려준 만큼만 가져간다. 부분 환불은 어드민 환불로 하는
+      것이 운영 규칙이라 Bugsink 에 남긴다.
+    - 진행 중인 어드민 시도가 클로버를 회수해 쥐고 있으면 그 몫에서 먼저 옮겨 온다(원장은 이미 회수로 적혀 있어 새 행을
+      쓰지 않는다). 그 시도가 뒤에 거절되면 복원은 남은 몫만 한다 — 옮기지 않으면 돈으로 돌려준 클로버까지 되돌려 준다.
+    """
+    already = int(
+        await db.scalar(
+            select(func.coalesce(func.sum(PaymentCancellation.amount_krw), 0)).where(
+                PaymentCancellation.payment_id == order.id, PaymentCancellation.status == "succeeded"
+            )
+        )
+        or 0
+    )
+    full = already + cancellation.total_amount >= order.amount_krw
+    # 남은 회수 수량. 전액 취소면 상한이 없다.
+    need: int | None = None if full else -(-cancellation.total_amount * order.paid_amount // order.amount_krw)
+    if not full:
+        logger.warning("payment %s was partially cancelled at the PortOne console", order.id)
+        capture_dependency_failure(PaymentConsolePartialCancelError(), dependency="payment")
+
+    paid = bonus = 0
+    holder = await _pending_attempt(db, order.id)
+    if holder is not None:
+        paid = holder.clawback_paid if need is None else min(holder.clawback_paid, need)
+        need = None if need is None else need - paid
+        bonus = holder.clawback_bonus if need is None else min(holder.clawback_bonus, need)
+        need = None if need is None else need - bonus
+        holder.clawback_paid -= paid
+        holder.clawback_bonus -= bonus
+    if need is None or need > 0:
+        lot_paid, lot_bonus = await revoke_purchase_lots(db, payment_id=order.id, limit=need)
+        paid, bonus = paid + lot_paid, bonus + lot_bonus
+    db.add(
+        PaymentCancellation(
+            payment_id=order.id,
+            source="console",
+            status="succeeded",
+            amount_krw=cancellation.total_amount,
+            clawback_paid=paid,
+            clawback_bonus=bonus,
+            portone_cancellation_id=cancellation.id,
+            completed_at=_utcnow(),
+        )
+    )
+    await db.flush()
+
+
+async def _apply_cancellation(
+    db: AsyncSession, order: Payment, cancellation: PortOneCancellation, *, attempt_id: uuid.UUID | None = None
+) -> list[str]:
+    """포트원 취소 하나를 우리 취소 행에 반영한다. 잠근 주문 행에서만 부른다. 새로 성공한 취소의 알림 문구를 돌려준다.
+    행 맞추기는 `_match_row`, 맞는 행이 없는 성공 취소는 `_record_console_cancel`."""
+    if isinstance(cancellation, dict):
+        logger.warning("payment %s has a cancellation of unknown shape", order.id)
+        return []
+    row = await _match_row(db, order, cancellation, attempt_id)
     now = _utcnow()
 
     if isinstance(cancellation, SucceededPaymentCancellation):
         if row is None:
-            paid, bonus = await revoke_purchase_lots(db, payment_id=order.id)
-            db.add(
-                PaymentCancellation(
-                    payment_id=order.id,
-                    source="console",
-                    status="succeeded",
-                    amount_krw=cancellation.total_amount,
-                    clawback_paid=paid,
-                    clawback_bonus=bonus,
-                    portone_cancellation_id=cancellation.id,
-                    completed_at=now,
-                )
-            )
-            await db.flush()
+            await _record_console_cancel(db, order, cancellation)
             return [payment_refunded_message(order, cancellation.total_amount)]
         if row.status == "requested":
             row.status = "succeeded"
@@ -318,7 +392,14 @@ async def apply_remote_cancellations(db: AsyncSession, order: Payment, remote: P
     if isinstance(remote, dict):
         logger.warning("payment %s: PortOne returned a payment of unknown shape", order.id)
         return []
-    cancellations = remote.cancellations if isinstance(remote, (CancelledPayment, PartialCancelledPayment)) else []
+    # 결제가 아직 `PAID` 여도 대기·실패 취소는 그 결제의 취소 내역에 보인다(성공한 취소가 생겨야 상태가 바뀐다). 이것을
+    # 버리면 PG 가 비동기 취소를 실패시킨 시도가 영영 `requested` 로 남고, 대기 중인 시도를 "포트원에 안 닿음"으로 보고
+    # 다시 보낸다.
+    cancellations: list[PortOneCancellation] = []
+    if isinstance(remote, (CancelledPayment, PartialCancelledPayment)):
+        cancellations = remote.cancellations
+    elif isinstance(remote, PaidPayment):
+        cancellations = remote.cancellations or []
     notifications: list[str] = []
     for cancellation in cancellations:
         notifications += await _apply_cancellation(db, order, cancellation)
@@ -333,8 +414,9 @@ async def reconcile_refund(db: AsyncSession, gateway: PortOneGateway, order_id: 
     """포트원을 다시 조회해 그 결제의 취소를 맞춘다. 커밋한다. 포트원 조회 실패는 `PortOneUnavailableError` 로 올린다.
 
     `resend` 는 어드민 재시도에서만 켠다: 대사 뒤에도 포트원 취소 id 를 모르는 `requested` 행이 남았으면 우리 취소가 PG 에
-    닿지 않은 것이라 같은 취소를 다시 보낸다(이중 취소는 취소 가능 잔액 가드가 포트원에서 막는다). 웹훅·결제 완료 알림은
-    다시 보내지 않는다 — 돈을 내보내는 호출은 어드민 조작에서만 나간다.
+    닿지 않은 것이라 같은 취소를 다시 보낸다(이중 취소는 취소 가능 잔액 가드가 포트원에서 막는다). 단 그 시도를 최근
+    `SEND_CLAIM_SECONDS` 안에 보내기 시작했으면 보내지 않는다 — 첫 전송이 아직 응답을 기다리는 중일 수 있다. 웹훅·결제 완료
+    알림은 다시 보내지 않는다 — 돈을 내보내는 호출은 어드민 조작에서만 나간다.
     """
     order = await db.get(Payment, order_id)
     assert order is not None
@@ -344,12 +426,19 @@ async def reconcile_refund(db: AsyncSession, gateway: PortOneGateway, order_id: 
     remote = await gateway.get_payment(portone_payment_id)
     order = await _lock_order(db, order_id)
     notifications = await apply_remote_cancellations(db, order, remote)
-    await db.commit()
+    to_send: uuid.UUID | None = None
     if resend:
         attempt = await _pending_attempt(db, order_id)
         if attempt is not None and attempt.source == "admin" and attempt.portone_cancellation_id is None:
-            outcome = await _send_cancel(db, gateway, order_id=order_id, attempt_id=attempt.id)
-            notifications += outcome.notifications
+            now = _utcnow()
+            if attempt.last_sent_at is None or now - attempt.last_sent_at > timedelta(seconds=SEND_CLAIM_SECONDS):
+                # 결제 행 잠금 아래에서 전송을 차지한다 — 같은 순간의 다른 재시도는 이 값을 보고 보내지 않는다.
+                attempt.last_sent_at = now
+                to_send = attempt.id
+    await db.commit()
+    if to_send is not None:
+        outcome = await _send_cancel(db, gateway, order_id=order_id, attempt_id=to_send)
+        notifications += outcome.notifications
     return notifications
 
 
@@ -397,7 +486,7 @@ async def _send_cancel(
         logger.warning("refund cancel returned a cancellation of unknown shape")
         return await _attempt_outcome(db, attempt_id)
     order = await _lock_order(db, order_id)
-    notifications = await _apply_cancellation(db, order, cancellation)
+    notifications = await _apply_cancellation(db, order, cancellation, attempt_id=attempt_id)
     await _settle_totals(db, order)
     await db.commit()
     return await _attempt_outcome(db, attempt_id, tuple(notifications))
@@ -459,6 +548,7 @@ async def execute_refund(
         clawback_bonus=bonus,
         admin_id=admin_id,
         reason=reason,
+        last_sent_at=_utcnow(),
     )
     db.add(attempt)
     await record_admin_action(

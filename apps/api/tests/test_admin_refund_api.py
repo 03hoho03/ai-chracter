@@ -8,7 +8,7 @@
 import asyncio
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -26,18 +26,18 @@ from portone_server_sdk.payment import (
     RequestedPaymentCancellation,
     SucceededPaymentCancellation,
 )
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core import clover
 from api.db.models.auth import User
-from api.db.models.clover import CloverLedger
+from api.db.models.clover import CloverLedger, CloverLot
 from api.db.models.moderation import AdminActionLog
 from api.db.models.payment import Payment, PaymentCancellation
 from api.main import app
 from api.payments import refund
 from api.payments import service as payments_service
-from api.payments.errors import PortOneCancelRejectedError, PortOneUnavailableError
+from api.payments.errors import PaymentConsolePartialCancelError, PortOneCancelRejectedError, PortOneUnavailableError
 from api.payments.notify import get_payment_notifier
 from api.payments.portone import get_portone_gateway
 from api.payments.service import sync_payment
@@ -53,6 +53,10 @@ _TODAY = date(2026, 10, 31)
 _PRICE, _PAID, _BONUS = 9_900, 3_300, 300
 _FULL_LOTS = [("purchase_bonus", _BONUS), ("purchase_paid", _PAID)]
 _EMPTY_LOTS = [("purchase_bonus", 0), ("purchase_paid", 0)]
+
+
+# 멈춘 취소 호출·그 호출을 기다리는 요청의 상한(초). 정상 경로는 1초 안에 풀린다.
+_HOLD_LIMIT_SECONDS = 10
 
 
 class _RefundGateway:
@@ -76,7 +80,8 @@ class _RefundGateway:
         self.cancel_calls.append((payment_id, amount, current_cancellable_amount))
         self.entered.set()
         if self.hold is not None:
-            await self.hold.wait()
+            # 시간 상한: 테스트가 풀어 주지 않는 경로(예: 두 번째 전송)에서 영원히 멈추지 않고 실패하게 한다.
+            await asyncio.wait_for(self.hold.wait(), timeout=_HOLD_LIMIT_SECONDS)
         result = self.cancel_results.pop(0)
         if isinstance(result, Exception):
             raise result
@@ -91,6 +96,8 @@ def gateway() -> Iterator[_RefundGateway]:
     fake = _RefundGateway()
     app.dependency_overrides[get_portone_gateway] = lambda: fake
     yield fake
+    if fake.hold is not None:
+        fake.hold.set()
     app.dependency_overrides.pop(get_portone_gateway, None)
 
 
@@ -121,6 +128,12 @@ def captured(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, BaseException |
 @pytest.fixture(autouse=True)
 def _processing_day(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(refund, "_utcnow", lambda: _NOW)
+
+
+def _later(monkeypatch: pytest.MonkeyPatch) -> None:
+    """같은 날 안에서 시계를 전송 차지 시간 너머로 옮긴다 — 앞선 전송이 끝났다고 볼 수 있는 재시도."""
+    later = _NOW + timedelta(seconds=refund.SEND_CLAIM_SECONDS + 1)
+    monkeypatch.setattr(refund, "_utcnow", lambda: later)
 
 
 # ── 셋업 ─────────────────────────────────────────────────────────────────
@@ -159,8 +172,11 @@ def _cancellation(cls: type[Any], cancellation_id: str, amount: int = _PRICE) ->
     return result
 
 
-def _remote(order: Payment, cancellations: list[PortOneCancellation], *, partial: bool = False) -> PortOnePayment:
-    """포트원 결제 조회 결과. 취소 내역이 없으면 아직 결제 완료 상태다."""
+def _remote(
+    order: Payment, cancellations: list[PortOneCancellation], *, partial: bool = False, still_paid: bool = False
+) -> PortOnePayment:
+    """포트원 결제 조회 결과. 취소 내역이 없거나 `still_paid` 면 아직 결제 완료 상태다 — 성공한 취소가 생기기 전의 대기·실패
+    취소는 결제 완료 상태의 취소 내역에 보인다."""
     cancelled = sum(c.total_amount for c in cancellations if isinstance(c, SucceededPaymentCancellation))
     fields: dict[str, Any] = {
         "id": order.payment_id,
@@ -180,8 +196,10 @@ def _remote(order: Payment, cancellations: list[PortOneCancellation], *, partial
         "customer": Customer(name="홍길동"),
         "origin": PaymentOrigin(platform_type="PC", ip_address="127.0.0.1"),
     }
-    if not cancellations:
-        return PaidPayment(**fields, paid_at="2026-10-01T03:00:00Z", disputes=[])
+    if still_paid or not cancellations:
+        return PaidPayment(
+            **fields, paid_at="2026-10-01T03:00:00Z", disputes=[], cancellations=cancellations or None
+        )
     cls = PartialCancelledPayment if partial else CancelledPayment
     return cls(**fields, cancellations=cancellations, cancelled_at="2026-10-31T03:00:00Z")
 
@@ -463,11 +481,13 @@ async def test_refund_takes_the_clovers_back_before_portone_answers(
     gateway.cancel_results = [_cancellation(SucceededPaymentCancellation, "c-1")]
 
     request = asyncio.ensure_future(_refund(db_client, order))
-    await asyncio.wait_for(gateway.entered.wait(), timeout=5)
-    lots_during_call = await _clover_lots(db_session, user.id)
-    spend_during_call = await clover.spend(db_session, user_id=user.id, amount=10, kind="chat_spend")
-    gateway.hold.set()
-    resp = await request
+    try:
+        await asyncio.wait_for(gateway.entered.wait(), timeout=5)
+        lots_during_call = await _clover_lots(db_session, user.id)
+        spend_during_call = await clover.spend(db_session, user_id=user.id, amount=10, kind="chat_spend")
+    finally:
+        gateway.hold.set()
+    resp = await asyncio.wait_for(request, timeout=_HOLD_LIMIT_SECONDS)
 
     assert lots_during_call == _EMPTY_LOTS
     assert spend_during_call is None
@@ -570,11 +590,13 @@ async def test_timeout_then_another_admin_retries_the_same_attempt(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
     gateway: _RefundGateway,
+    monkeypatch: pytest.MonkeyPatch,
     portone_processed: bool,
     calls: int,
 ) -> None:
-    """시간 초과는 결과 모름이라 202 로 회수한 채 둔다. 다른 어드민이 다시 눌러도 새 시도를 만들지 않고 그 시도를
-    잇는다 — 포트원이 처리했으면 재조회로 끝내고(취소 호출 1회), 안 닿았으면 같은 가드 금액으로 다시 보낸다."""
+    """시간 초과는 결과 모름이라 202 로 회수한 채 둔다. 다른 어드민이 (전송 차지 시간이 지난 뒤) 다시 눌러도 새 시도를
+    만들지 않고 그 시도를 잇는다 — 포트원이 처리했으면 재조회로 끝내고(취소 호출 1회), 안 닿았으면 같은 가드 금액으로
+    다시 보낸다."""
     await _admin(db_client, db_session)
     user, order = await _paid_order(db_session)
     gateway.cancel_results = [PortOneUnavailableError("cancel_payment", "TimeoutError")]
@@ -585,6 +607,7 @@ async def test_timeout_then_another_admin_retries_the_same_attempt(
     assert await _attempts(db_session, order) == [("admin", "requested", _PRICE, None)]
 
     await _admin(db_client, db_session)
+    _later(monkeypatch)
     if portone_processed:
         gateway.payments[order.payment_id] = _remote(order, [_cancellation(SucceededPaymentCancellation, "c-1")])
     else:
@@ -610,11 +633,13 @@ async def test_webhook_arriving_before_our_portone_answer_is_counted_once(
     gateway.cancel_results = [_cancellation(SucceededPaymentCancellation, "c-1")]
 
     request = asyncio.ensure_future(_refund(db_client, order))
-    await asyncio.wait_for(gateway.entered.wait(), timeout=5)
-    gateway.payments[order.payment_id] = _remote(order, [_cancellation(SucceededPaymentCancellation, "c-1")])
-    webhook = await sync_payment(db_session, gateway, order.payment_id)
-    gateway.hold.set()
-    resp = await request
+    try:
+        await asyncio.wait_for(gateway.entered.wait(), timeout=5)
+        gateway.payments[order.payment_id] = _remote(order, [_cancellation(SucceededPaymentCancellation, "c-1")])
+        webhook = await sync_payment(db_session, gateway, order.payment_id)
+    finally:
+        gateway.hold.set()
+    resp = await asyncio.wait_for(request, timeout=_HOLD_LIMIT_SECONDS)
 
     assert webhook.notification == "클로버 베이직 9,900원 환불 완료"
     assert (resp.status_code, resp.json()["status"]) == (200, "succeeded")
@@ -624,26 +649,231 @@ async def test_webhook_arriving_before_our_portone_answer_is_counted_once(
 
 
 # ── 콘솔 취소(웹훅) ──────────────────────────────────────────────────────
-async def test_console_partial_cancel_webhook_twice_claws_back_once(
+async def _clawbacks(db: AsyncSession, order: Payment) -> dict[str, tuple[str, int, int]]:
+    """취소 행의 출처별 (상태, 회수 유료, 회수 보너스)."""
+    rows = await db.execute(
+        select(
+            PaymentCancellation.source,
+            PaymentCancellation.status,
+            PaymentCancellation.clawback_paid,
+            PaymentCancellation.clawback_bonus,
+        )
+        .where(PaymentCancellation.payment_id == order.id)
+        .execution_options(populate_existing=True)
+    )
+    return {source: (status, paid, bonus) for source, status, paid, bonus in rows.all()}
+
+
+def _partial_console_captures(captured: list[tuple[str, BaseException | None]]) -> int:
+    return sum(isinstance(exc, PaymentConsolePartialCancelError) for _, exc in captured)
+
+
+async def test_console_partial_cancel_claws_back_only_what_was_refunded_once(
     db_session: AsyncSession, gateway: _RefundGateway, captured: list[tuple[str, BaseException | None]]
 ) -> None:
-    """포트원 콘솔에서 직접 한 취소는 웹훅이 그 구매의 남은 로트를 회수하고 콘솔 행으로 남긴다. 환불정책이 "남은 유료
-    전액 환불 + 보너스 회수" 하나뿐이라 부분 취소에도 전부 회수한다. 일부 취소라 같은 웹훅이 다시 오면 대사를 한 번 더
-    거치는데(전액 취소는 상태가 끝나 대사까지 가지 않는다), 취소 id 로 맞아 행·회수·취소액·알림이 늘지 않는다."""
+    """콘솔 부분 취소는 취소 금액 ÷ 구매 단가(올림)만큼만 유료에서 회수한다 — 3,001원 ÷ 3원 = 1,000.3 → 1,001. 나머지
+    클로버는 돈을 돌려받지 않았으니 사용자에게 남는다. 운영 규칙(부분 환불은 어드민 버튼) 위반이라 Bugsink 에 남긴다.
+    일부 취소라 같은 웹훅이 다시 오면 대사를 한 번 더 거치는데, 취소 id 로 맞아 행·회수·취소액·알림·캡처가 늘지 않는다."""
     user, order = await _paid_order(db_session)
     gateway.payments[order.payment_id] = _remote(
-        order, [_cancellation(SucceededPaymentCancellation, "console-1", 3_000)], partial=True
+        order, [_cancellation(SucceededPaymentCancellation, "console-1", 3_001)], partial=True
     )
 
     first = await sync_payment(db_session, gateway, order.payment_id)
     second = await sync_payment(db_session, gateway, order.payment_id)
 
-    assert (first.result, first.notification) == ("reconciled", "클로버 베이직 3,000원 환불 완료")
+    assert (first.result, first.notification) == ("reconciled", "클로버 베이직 3,001원 환불 완료")
     assert (second.result, second.notification) == ("reconciled", None)
-    assert await _attempts(db_session, order) == [("console", "succeeded", 3_000, "console-1")]
-    row = await db_session.scalar(select(PaymentCancellation).where(PaymentCancellation.payment_id == order.id))
-    assert row is not None and (row.clawback_paid, row.clawback_bonus) == (_PAID, _BONUS)
-    assert await _order(db_session, order) == ("partially_cancelled", 3_000)
+    assert await _attempts(db_session, order) == [("console", "succeeded", 3_001, "console-1")]
+    assert await _clawbacks(db_session, order) == {"console": ("succeeded", 1_001, 0)}
+    assert await _order(db_session, order) == ("partially_cancelled", 3_001)
+    assert await _clover_lots(db_session, user.id) == [("purchase_bonus", _BONUS), ("purchase_paid", _PAID - 1_001)]
+    assert await _ledger(db_session, user) == [
+        ("purchase_bonus", _BONUS),
+        ("purchase_paid", _PAID),
+        ("purchase_revoke", -1_001),
+    ]
+    assert _partial_console_captures(captured) == 1
+
+
+async def test_console_partial_cancel_takes_the_bonus_when_paid_runs_short(
+    db_session: AsyncSession, gateway: _RefundGateway
+) -> None:
+    """유료가 모자라면 같은 구매의 보너스에서 마저 회수한다: 1,800원 → 600개, 남은 유료 500 + 보너스 100."""
+    user, order = await _paid_order(db_session)
+    await db_session.execute(
+        update(CloverLot)
+        .where(CloverLot.payment_id == order.id, CloverLot.kind == "purchase_paid")
+        .values(remaining=500)
+    )
+    await db_session.execute(
+        update(User).where(User.id == user.id).values(clover_balance=User.clover_balance - (_PAID - 500))
+    )
+    gateway.payments[order.payment_id] = _remote(
+        order, [_cancellation(SucceededPaymentCancellation, "console-1", 1_800)], partial=True
+    )
+
+    await sync_payment(db_session, gateway, order.payment_id)
+
+    assert await _clawbacks(db_session, order) == {"console": ("succeeded", 500, 100)}
+    assert await _clover_lots(db_session, user.id) == [("purchase_bonus", 200), ("purchase_paid", 0)]
+
+
+async def test_console_full_cancel_claws_back_everything_left(
+    db_session: AsyncSession, gateway: _RefundGateway, captured: list[tuple[str, BaseException | None]]
+) -> None:
+    """앞선 부분 취소 뒤 나머지를 콘솔에서 모두 취소하면 전액 취소다 — 금액 비례가 아니라 남은 전부를 회수한다."""
+    user, order = await _paid_order(db_session)
+    first = _cancellation(SucceededPaymentCancellation, "console-1", 3_000)
+    gateway.payments[order.payment_id] = _remote(order, [first], partial=True)
+    await sync_payment(db_session, gateway, order.payment_id)
+    gateway.payments[order.payment_id] = _remote(
+        order, [first, _cancellation(SucceededPaymentCancellation, "console-2", 6_900)]
+    )
+
+    await sync_payment(db_session, gateway, order.payment_id)
+
+    assert await _order(db_session, order) == ("cancelled", _PRICE)
     assert await _clover_lots(db_session, user.id) == _EMPTY_LOTS
-    assert [kind for kind, _ in await _ledger(db_session, user)].count("purchase_revoke") == 1
-    assert captured == []
+    assert _partial_console_captures(captured) == 1
+
+
+# ── 리뷰 재현: 결제 완료 상태의 대기·실패 취소, 동시 재전송, 금액 맞춤, 겹친 콘솔 취소 ─────────────
+async def test_async_cancel_failure_on_a_still_paid_payment_ends_the_attempt(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, gateway: _RefundGateway
+) -> None:
+    """PG 가 비동기 취소를 나중에 실패시키면 포트원 결제는 `PAID` 그대로이고 실패 취소는 그 취소 내역에만 보인다. 재시도가
+    그것을 읽어 시도를 실패로 닫고 클로버를 돌려준다. 깨지는 시나리오: 영원히 202 — 돈도 클로버도 없다."""
+    await _admin(db_client, db_session)
+    user, order = await _paid_order(db_session)
+    gateway.cancel_results = [_cancellation(RequestedPaymentCancellation, "c-r")]
+    assert (await _refund(db_client, order)).status_code == 202
+    gateway.payments[order.payment_id] = _remote(
+        order, [_cancellation(FailedPaymentCancellation, "c-r")], still_paid=True
+    )
+
+    retry = await _refund(db_client, order)
+
+    assert (retry.status_code, retry.json()["detail"]) == (422, {"code": "REFUND_REJECTED"})
+    assert await _attempts(db_session, order) == [("admin", "failed", _PRICE, "c-r")]
+    assert await _clover_lots(db_session, user.id) == _FULL_LOTS
+    assert len(gateway.cancel_calls) == 1
+
+
+async def test_pending_cancel_on_a_still_paid_payment_is_not_resent(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, gateway: _RefundGateway, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """첫 전송이 시간 초과였지만 포트원은 받아서 PG 가 처리 중이다(결제는 `PAID`, 취소 내역에 대기 취소). 재시도는 그 대기
+    취소를 우리 시도에 붙이고 다시 보내지 않는다. 깨지는 시나리오: 같은 환불이 두 번 PG 로 간다."""
+    await _admin(db_client, db_session)
+    _, order = await _paid_order(db_session)
+    gateway.cancel_results = [PortOneUnavailableError("cancel_payment", "TimeoutError")]
+    assert (await _refund(db_client, order)).status_code == 202
+    gateway.payments[order.payment_id] = _remote(
+        order, [_cancellation(RequestedPaymentCancellation, "c-1")], still_paid=True
+    )
+    _later(monkeypatch)
+
+    retry = await _refund(db_client, order)
+
+    assert (retry.status_code, retry.json()["status"]) == (202, "requested")
+    assert len(gateway.cancel_calls) == 1
+    assert await _attempts(db_session, order) == [("admin", "requested", _PRICE, "c-1")]
+
+
+async def test_second_click_while_the_first_send_waits_does_not_send_again(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, gateway: _RefundGateway
+) -> None:
+    """첫 요청이 포트원 응답을 기다리는 동안 같은 시도를 다시 누르면(더블클릭·다른 어드민) 지금 상태(202)만 돌려준다.
+    포트원 조회에는 아직 아무것도 없어 "닿지 않음"처럼 보이지만, 결제 행 잠금 아래 적힌 전송 시각이 재전송을 막는다."""
+    await _admin(db_client, db_session)
+    _, order = await _paid_order(db_session)
+    gateway.hold = asyncio.Event()
+    gateway.cancel_results = [_cancellation(SucceededPaymentCancellation, "c-1")]
+    gateway.payments[order.payment_id] = _remote(order, [])
+
+    first = asyncio.ensure_future(_refund(db_client, order))
+    try:
+        await asyncio.wait_for(gateway.entered.wait(), timeout=5)
+        # 둘째 요청이 다시 보내면 그 전송도 멈춘 취소에 걸린다 — 상한을 둬 멈추지 않고 실패하게 한다.
+        second = await asyncio.wait_for(_refund(db_client, order), timeout=_HOLD_LIMIT_SECONDS / 2)
+    finally:
+        gateway.hold.set()
+    first_resp = await asyncio.wait_for(first, timeout=_HOLD_LIMIT_SECONDS)
+
+    assert (second.status_code, second.json()["status"]) == (202, "requested")
+    assert (first_resp.status_code, first_resp.json()["status"]) == (200, "succeeded")
+    assert len(gateway.cancel_calls) == 1
+
+
+async def test_an_old_failed_cancellation_does_not_close_a_new_attempt(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, gateway: _RefundGateway, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """앞선 시도가 PG 에서 거절돼 포트원 내역에 같은 금액의 실패 취소가 남아 있다. 새 시도의 재시도가 그 실패를 금액으로
+    자기 것으로 보면 진행 중인 새 취소를 두고 클로버를 돌려준다. 실패는 id 로만 맞춰, 새 시도는 다시 보내져 성공한다."""
+    await _admin(db_client, db_session)
+    user, order = await _paid_order(db_session)
+    gateway.cancel_results = [PortOneCancelRejectedError("PgProviderError")]
+    assert (await _refund(db_client, order)).status_code == 422
+    gateway.cancel_results = [PortOneUnavailableError("cancel_payment", "TimeoutError")]
+    assert (await _refund(db_client, order)).status_code == 202
+    gateway.payments[order.payment_id] = _remote(
+        order, [_cancellation(FailedPaymentCancellation, "f-old")], still_paid=True
+    )
+    gateway.cancel_results = [_cancellation(SucceededPaymentCancellation, "c-new")]
+    _later(monkeypatch)
+
+    retry = await _refund(db_client, order)
+
+    assert (retry.status_code, retry.json()["status"]) == (200, "succeeded")
+    assert await _attempts(db_session, order) == [
+        ("admin", "failed", _PRICE, None),
+        ("admin", "succeeded", _PRICE, "c-new"),
+    ]
+    assert await _clover_lots(db_session, user.id) == _EMPTY_LOTS
+
+
+async def test_direct_answer_binds_to_its_own_attempt_even_with_another_amount(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, gateway: _RefundGateway
+) -> None:
+    """우리 취소 요청의 응답은 어느 시도의 것인지 이미 안다 — 금액이 요청과 달라도 그 시도를 닫는다. 깨지는 시나리오:
+    응답이 콘솔 취소로 기록되고 시도는 `requested` 로 남아 재시도가 또 보낸다."""
+    await _admin(db_client, db_session)
+    _, order = await _paid_order(db_session)
+    gateway.cancel_results = [_cancellation(SucceededPaymentCancellation, "c-1", 9_000)]
+
+    resp = await _refund(db_client, order)
+
+    assert (resp.status_code, resp.json()["status"]) == (200, "succeeded")
+    assert await _attempts(db_session, order) == [("admin", "succeeded", _PRICE, "c-1")]
+
+
+async def test_console_cancel_during_an_attempt_takes_its_clawback(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, gateway: _RefundGateway
+) -> None:
+    """어드민 시도가 클로버를 회수해 쥔 채 응답을 기다리는 동안 콘솔 부분 취소 3,000원이 대사되고, 그 시도는 낡은 가드로
+    거절된다. 콘솔 취소가 시도의 회수분에서 1,000 을 옮겨 갔으므로 거절의 복원은 나머지만 돌려준다. 깨지는 시나리오:
+    3,000원을 돌려받고 클로버도 전부 되찾는다."""
+    await _admin(db_client, db_session)
+    user, order = await _paid_order(db_session)
+    gateway.hold = asyncio.Event()
+    gateway.cancel_results = [PortOneCancelRejectedError("CancellableAmountConsistencyBrokenError")]
+
+    request = asyncio.ensure_future(_refund(db_client, order))
+    try:
+        await asyncio.wait_for(gateway.entered.wait(), timeout=5)
+        gateway.payments[order.payment_id] = _remote(
+            order, [_cancellation(SucceededPaymentCancellation, "console-1", 3_000)], partial=True
+        )
+        await sync_payment(db_session, gateway, order.payment_id)
+    finally:
+        gateway.hold.set()
+    resp = await asyncio.wait_for(request, timeout=_HOLD_LIMIT_SECONDS)
+
+    assert resp.status_code == 422
+    assert await _clawbacks(db_session, order) == {
+        "admin": ("failed", _PAID - 1_000, _BONUS),
+        "console": ("succeeded", 1_000, 0),
+    }
+    assert await _order(db_session, order) == ("partially_cancelled", 3_000)
+    assert await _clover_lots(db_session, user.id) == [("purchase_bonus", _BONUS), ("purchase_paid", _PAID - 1_000)]

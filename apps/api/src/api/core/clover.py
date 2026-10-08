@@ -358,9 +358,14 @@ async def revoke(
     return None if ledger is None else ledger.balance_after
 
 
-async def revoke_purchase_lots(db: AsyncSession, *, payment_id: uuid.UUID) -> tuple[int, int]:
-    """결제 하나로 생긴 유료·보너스 로트의 남은 양을 전부 회수한다. 회수한 `(유료, 보너스)` 를 돌려준다. **커밋은 호출자가
+async def revoke_purchase_lots(
+    db: AsyncSession, *, payment_id: uuid.UUID, limit: int | None = None
+) -> tuple[int, int]:
+    """결제 하나로 생긴 유료·보너스 로트의 남은 양을 회수한다. 회수한 `(유료, 보너스)` 를 돌려준다. **커밋은 호출자가
     한다.** 결제 취소(어드민 환불·포트원 콘솔 취소)만 부른다 — 어드민 수동 회수(`revoke`)는 구매 로트를 건드리지 않는다.
+
+    `limit` 이 없으면 남은 전부, 있으면 그 수량까지만 유료 먼저·모자라면 보너스에서 회수한다(콘솔 부분 취소 — 취소한
+    금액만큼만 가져간다). 둘 다 모자라면 있는 만큼만이다.
 
     남은 것이 없으면 아무것도 쓰지 않고 `(0, 0)` 이다(원장에 0 행을 남기지 않는다). 회수는 환급 대상이 아니라 배분을
     남기지 않는다.
@@ -377,9 +382,14 @@ async def revoke_purchase_lots(db: AsyncSession, *, payment_id: uuid.UUID) -> tu
         )
     ).all()
     taken = {kind: 0 for kind in PURCHASE_LOT_KINDS}
-    for lot in lots:
-        taken[lot.kind] += lot.remaining
-        lot.remaining = 0
+    left = limit
+    # 유료 먼저. 잠금은 위에서 id 순으로 잡았고, 여기 순서는 깎는 순서일 뿐이다.
+    for lot in sorted(lots, key=lambda lot: lot.kind != "purchase_paid"):
+        take = lot.remaining if left is None else min(lot.remaining, left)
+        taken[lot.kind] += take
+        lot.remaining -= take
+        if left is not None:
+            left -= take
     total = sum(taken.values())
     if total == 0:
         return 0, 0

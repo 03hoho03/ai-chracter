@@ -122,6 +122,9 @@ class PaymentCancellation(Base):
         Uuid, ForeignKey("admin_users.id", name="fk_payment_cancellations_admin_id"), nullable=True
     )
     reason: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    # 어드민 행만: 이 시도의 취소를 포트원에 마지막으로 보내기 시작한 시각. 결제 행 잠금 아래에서 적고, 그 뒤 포트원 호출
+    # 상한보다 짧은 동안은 재시도가 다시 보내지 않는다(같은 취소가 동시에 두 번 나가지 않게).
+    last_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

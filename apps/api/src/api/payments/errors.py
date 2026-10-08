@@ -41,5 +41,10 @@ class PaymentWebhookConfigError(Exception):
     """웹훅 비밀이 비었거나 형식이 틀려 서명을 검증할 수 없다. 모든 웹훅이 거절되는 설정 사고라 Bugsink 에 남긴다."""
 
 
+class PaymentConsolePartialCancelError(Exception):
+    """포트원 콘솔에서 직접 부분 취소했다. 취소 금액만큼만 회수했지만, 부분 환불은 견적·접수일·감사 기록이 남는 어드민
+    환불로 하는 것이 운영 규칙이라 Bugsink 에 남긴다."""
+
+
 class PaymentRefundStuckError(Exception):
     """우리 취소 기록의 합이 포트원이 말하는 취소액과 다르다 — 맞추지 못한 취소가 남아 있다는 신호다."""
