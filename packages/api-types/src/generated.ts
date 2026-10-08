@@ -721,7 +721,7 @@ export interface paths {
          *     오타 하나만 고쳐 재게시). 지우는 쪽을 골랐다면 매번 원고를 통째로 다시 붙여넣게
          *     되어 더 불편해질 뿐, 더 안전해지는 지점이 없다.
          *
-         *     동의를 기록하지 않는 문서(운영정책·청소년 보호정책)는 `requires_reconsent=true` 로
+         *     동의를 기록하지 않는 문서(운영정책·청소년 보호정책·환불정책)는 `requires_reconsent=true` 로
          *     게시할 수 없다. 재동의 게이트와 `GET /me` 는 약관·처리방침만 보므로 그 플래그는 아무
          *     효과가 없는데, 게시 이력·감사 로그에는 "재동의 필요"로 남아 운영자가 회원 재동의를
          *     받은 것으로 믿게 된다.
@@ -4048,6 +4048,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/clover/pricing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Clover Pricing
+         * @description 공개 조회 — 인증 없음. 충전 상품과 기본 모델 기준 사용 단가를 한 응답에 싣는다. 웹 상품 안내는 숫자 사본 없이
+         *     이 값만 쓴다. DB 를 읽지 않아 비용이 없으므로 레이트리밋도 붙이지 않는다.
+         */
+        get: operations["get_clover_pricing_clover_pricing_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me/personas": {
         parameters: {
             query?: never;
@@ -5297,7 +5318,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "terms" | "privacy" | "operation-policy" | "youth-policy";
+            kind: "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy";
             draft: components["schemas"]["AdminLegalDraftItem"] | null;
             published: components["schemas"]["AdminLegalPublishedItem"] | null;
         };
@@ -6654,6 +6675,35 @@ export interface components {
             /** Missions */
             missions: components["schemas"]["CloverMissionItem"][];
         };
+        /**
+         * CloverPricingResponse
+         * @description 공개 가격 안내. 단가는 기본 모델 기준만 싣는다 — 상위 모델은 허용된 계정만 쓰고 소설은 허용 명단 전용이라
+         *     공개 안내에 넣지 않는다.
+         */
+        CloverPricingResponse: {
+            /** Products */
+            products: components["schemas"]["CloverProductItem"][];
+            /** Chatturncost */
+            chatTurnCost: number;
+            /** Imagecost */
+            imageCost: number;
+        };
+        /** CloverProductItem */
+        CloverProductItem: {
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "starter" | "basic" | "plus" | "pro";
+            /** Name */
+            name: string;
+            /** Pricekrw */
+            priceKrw: number;
+            /** Paidamount */
+            paidAmount: number;
+            /** Bonusamount */
+            bonusAmount: number;
+        };
         /** CommentAuthorResponse */
         CommentAuthorResponse: {
             /**
@@ -7726,7 +7776,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "terms" | "privacy" | "operation-policy" | "youth-policy";
+            kind: "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy";
             /** Version */
             version: string;
             /** Bodymarkdown */
@@ -10476,7 +10526,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                kind: "terms" | "privacy" | "operation-policy" | "youth-policy";
+                kind: "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy";
             };
             cookie?: never;
         };
@@ -10507,7 +10557,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                kind: "terms" | "privacy" | "operation-policy" | "youth-policy";
+                kind: "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy";
             };
             cookie?: never;
         };
@@ -10542,7 +10592,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                kind: "terms" | "privacy" | "operation-policy" | "youth-policy";
+                kind: "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy";
             };
             cookie?: never;
         };
@@ -10577,7 +10627,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                kind: "terms" | "privacy" | "operation-policy" | "youth-policy";
+                kind: "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy";
             };
             cookie?: never;
         };
@@ -11994,7 +12044,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                kind: "terms" | "privacy" | "operation-policy" | "youth-policy";
+                kind: "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy";
             };
             cookie?: never;
         };
@@ -16323,6 +16373,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_clover_pricing_clover_pricing_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloverPricingResponse"];
                 };
             };
         };

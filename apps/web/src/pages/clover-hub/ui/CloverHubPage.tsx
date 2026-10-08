@@ -14,8 +14,12 @@ import {
   useCloverMissionsQuery,
   type CloverMissionItem,
 } from "@/entities/clover";
+import { SUPPORT_DESTINATIONS } from "@/shared/config/supportDestinations";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
+
+const SECTION_LINK_CLASS =
+  "w-fit text-sm font-medium whitespace-nowrap text-primary hover:underline focus-visible:underline";
 
 /** 클로버 허브 페이지.
  *
@@ -68,15 +72,18 @@ function BalanceSection() {
             같은 처방). */}
         {expiringMessage && <p className="text-sm text-primary">{expiringMessage}</p>}
       </div>
-      {/* 내역 화면 진입점. `pages/mypage/ui/MyPagePage.tsx`의
-          "내 작품" 링크와 같은 관용구(`font-medium ... text-primary hover:underline
-          focus-visible:underline`). */}
-      <Link
-        to="/clover/history"
-        className="w-fit text-sm font-medium whitespace-nowrap text-primary hover:underline focus-visible:underline"
-      >
-        내역 보기
-      </Link>
+      {/* 내역 화면과 상품 안내 진입점. `pages/mypage/ui/MyPagePage.tsx`의 "내 작품" 링크와 같은
+          관용구(`font-medium ... text-primary hover:underline focus-visible:underline`). 상품 안내의
+          라벨·경로는 목적지 목록에서 가져온다 — 도착 페이지 h1·푸터·이 링크가 한 문자열을 써야 한쪽만 고쳐져
+          같은 페이지가 자리마다 다른 이름으로 불리는 일이 없다. */}
+      <div className="flex flex-wrap gap-x-4 gap-y-2">
+        <Link to="/clover/history" className={SECTION_LINK_CLASS}>
+          내역 보기
+        </Link>
+        <Link to={SUPPORT_DESTINATIONS["clover-pricing"].to} className={SECTION_LINK_CLASS}>
+          {SUPPORT_DESTINATIONS["clover-pricing"].label}
+        </Link>
+      </div>
     </section>
   );
 }

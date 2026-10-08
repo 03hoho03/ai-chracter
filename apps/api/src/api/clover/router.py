@@ -1,6 +1,8 @@
 """클로버의 HTTP 표면.
 
-`core/clover.py`가 잔액 판정과 원장을 갖고, 이 파일은 그 위의 `/me` 라우트 셋뿐이다.
+`core/clover.py`가 잔액 판정과 원장을 갖고, 이 파일은 그 위의 `/me` 라우트들(`me_router`)과 로그인 없이 읽는
+공개 가격 안내(`router`, prefix `/clover`)다. 공개 라우트에는 세션도 재동의 게이트도 붙이지 않는다 — 비로그인
+방문자가 결제 전에 상품을 볼 수 있어야 한다.
 
 🔴 **`auth`의 `me_router`에 얹지 않는다** — 그러면 auth 패키지가 재화를 알게 된다. `/me`
 prefix를 실제로 가진 본보기는 `inquiry/router.py:22`·`chat/router.py:122`·`assets/router.py:46`
@@ -20,6 +22,7 @@ from sqlalchemy import select, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.clover import products
 from api.clover.missions import (
     MISSION_KEYS,
     MISSION_REWARDS,
@@ -38,7 +41,10 @@ from api.clover.schemas import (
     CloverMissionClaimResponse,
     CloverMissionItem,
     CloverMissionsResponse,
+    CloverPricingResponse,
+    CloverProductItem,
 )
+from api.core import clover
 from api.core.clover import (
     ATTENDANCE_GRANT_AMOUNT,
     earned_lot_expiry,
@@ -50,9 +56,11 @@ from api.db.models.auth import User
 from api.db.models.clover import CloverLedger, CloverLot
 from api.db.session import get_db_session
 from api.legal.dependencies import require_legal_consent
+from api.llm.chat_models import DEFAULT_CHAT_MODEL, chat_turn_cost
 from api.session.dependencies import get_current_user_id
 
 me_router = APIRouter(prefix="/me", tags=["clover"])
+router = APIRouter(prefix="/clover", tags=["clover"])
 
 # 유저 대면 목록의 저장소 표준(커서 페이징), 페이지 크기는
 # 서버 상수로 고정한다(클라이언트가 못 바꾼다). `content/router.py`의 `CONTENT_LIST_PAGE_SIZE`와
@@ -152,6 +160,28 @@ async def _expiring_soon(db: AsyncSession, *, user_id: uuid.UUID, now: datetime)
     assert soonest is not None  # 위 `.is_not(None)` 필터가 보장한다
     amount = sum(lot.remaining for lot in lots if lot.expires_at == soonest)
     return CloverExpiringSoon(amount=amount, expires_at=soonest)
+
+
+@router.get("/pricing")
+async def get_clover_pricing() -> CloverPricingResponse:
+    """공개 조회 — 인증 없음. 충전 상품과 기본 모델 기준 사용 단가를 한 응답에 싣는다. 웹 상품 안내는 숫자 사본 없이
+    이 값만 쓴다. DB 를 읽지 않아 비용이 없으므로 레이트리밋도 붙이지 않는다."""
+    # 상품과 단가는 요청마다 모듈 속성으로 다시 읽는다 — import 로 값을 묶어 두면 상수를 바꿔도(테스트의 monkeypatch 포함)
+    # 응답이 따라오지 않는다.
+    return CloverPricingResponse(
+        products=[
+            CloverProductItem(
+                key=p.key,
+                name=p.name,
+                price_krw=p.price_krw,
+                paid_amount=p.paid_amount,
+                bonus_amount=p.bonus_amount,
+            )
+            for p in products.CLOVER_PRODUCTS
+        ],
+        chat_turn_cost=chat_turn_cost(DEFAULT_CHAT_MODEL),
+        image_cost=clover.IMAGE_UNIT_COST,
+    )
 
 
 @me_router.get("/clover", dependencies=[Depends(require_legal_consent)])

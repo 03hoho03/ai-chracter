@@ -7,6 +7,8 @@ export type { CloverAttendanceResponse } from "./api/useClaimAttendanceMutation"
 export { useConfirmCloverSpendMutation } from "./api/useConfirmCloverSpendMutation";
 export { useCloverMissionsQuery } from "./api/useCloverMissionsQuery";
 export type { CloverMissionItem } from "./api/useCloverMissionsQuery";
+export { useCloverPricingQuery } from "./api/useCloverPricingQuery";
+export type { CloverProductItem } from "./api/useCloverPricingQuery";
 export { useClaimCloverMissionMutation } from "./api/useClaimCloverMissionMutation";
 export { useCloverLedgerQuery } from "./api/useCloverLedgerQuery";
 export type {

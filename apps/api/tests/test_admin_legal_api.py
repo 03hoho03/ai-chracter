@@ -393,7 +393,7 @@ async def test_publish_after_duplicate_conflict_can_retry_with_new_version(
     assert retry_resp.json()["published"]["version"] == "2024-02-01"
 
 
-@pytest.mark.parametrize("kind", ["operation-policy", "youth-policy"])
+@pytest.mark.parametrize("kind", ["operation-policy", "youth-policy", "refund-policy"])
 async def test_policy_kind_draft_publish_and_versions_round_trip(
     db_client: httpx.AsyncClient, db_session: AsyncSession, kind: str
 ) -> None:
@@ -425,7 +425,7 @@ async def test_policy_kind_draft_publish_and_versions_round_trip(
     assert public_resp.json()["bodyMarkdown"] == "정책 초안"
 
 
-@pytest.mark.parametrize("kind", ["operation-policy", "youth-policy"])
+@pytest.mark.parametrize("kind", ["operation-policy", "youth-policy", "refund-policy"])
 async def test_publish_policy_kind_with_reconsent_returns_422_and_writes_nothing(
     db_client: httpx.AsyncClient, db_session: AsyncSession, kind: str
 ) -> None:

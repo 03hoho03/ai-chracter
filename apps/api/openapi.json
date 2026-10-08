@@ -1269,7 +1269,8 @@
                 "terms",
                 "privacy",
                 "operation-policy",
-                "youth-policy"
+                "youth-policy",
+                "refund-policy"
               ],
               "type": "string",
               "title": "Kind"
@@ -1318,7 +1319,8 @@
                 "terms",
                 "privacy",
                 "operation-policy",
-                "youth-policy"
+                "youth-policy",
+                "refund-policy"
               ],
               "type": "string",
               "title": "Kind"
@@ -1365,7 +1367,7 @@
           "admin"
         ],
         "summary": "Publish Legal Document",
-        "description": "게시는 현재 초안의 `body_markdown`을 그대로 복제해 새 published 행을 만든다 —\n초안 행 자체를 published로 전환하는 게 아니라 내용을 새 행으로 하나 더 만든다\n(버전마다 별도 행으로 남아야 `GET .../versions` 이력 조회가 가능하기 때문).\n\n**게시 후에도 초안 행은 지우지 않고 그대로 둔다.** \"초안 저장 → 게시 → 다시 초안\n저장\"은 지우든 남기든 둘 다 성립한다(부분 유니크 인덱스는 draft 행의 개수만\n제한할 뿐 내용과 무관하다) — 그래도 남기는 쪽을 골랐다. 남기면 게시 직후에도 방금\n편집하던 내용이 초안 조회에 그대로 남아 관리자가 바로 이어서 다듬을 수 있다(예:\n오타 하나만 고쳐 재게시). 지우는 쪽을 골랐다면 매번 원고를 통째로 다시 붙여넣게\n되어 더 불편해질 뿐, 더 안전해지는 지점이 없다.\n\n동의를 기록하지 않는 문서(운영정책·청소년 보호정책)는 `requires_reconsent=true` 로\n게시할 수 없다. 재동의 게이트와 `GET /me` 는 약관·처리방침만 보므로 그 플래그는 아무\n효과가 없는데, 게시 이력·감사 로그에는 \"재동의 필요\"로 남아 운영자가 회원 재동의를\n받은 것으로 믿게 된다.",
+        "description": "게시는 현재 초안의 `body_markdown`을 그대로 복제해 새 published 행을 만든다 —\n초안 행 자체를 published로 전환하는 게 아니라 내용을 새 행으로 하나 더 만든다\n(버전마다 별도 행으로 남아야 `GET .../versions` 이력 조회가 가능하기 때문).\n\n**게시 후에도 초안 행은 지우지 않고 그대로 둔다.** \"초안 저장 → 게시 → 다시 초안\n저장\"은 지우든 남기든 둘 다 성립한다(부분 유니크 인덱스는 draft 행의 개수만\n제한할 뿐 내용과 무관하다) — 그래도 남기는 쪽을 골랐다. 남기면 게시 직후에도 방금\n편집하던 내용이 초안 조회에 그대로 남아 관리자가 바로 이어서 다듬을 수 있다(예:\n오타 하나만 고쳐 재게시). 지우는 쪽을 골랐다면 매번 원고를 통째로 다시 붙여넣게\n되어 더 불편해질 뿐, 더 안전해지는 지점이 없다.\n\n동의를 기록하지 않는 문서(운영정책·청소년 보호정책·환불정책)는 `requires_reconsent=true` 로\n게시할 수 없다. 재동의 게이트와 `GET /me` 는 약관·처리방침만 보므로 그 플래그는 아무\n효과가 없는데, 게시 이력·감사 로그에는 \"재동의 필요\"로 남아 운영자가 회원 재동의를\n받은 것으로 믿게 된다.",
         "operationId": "publish_legal_document_admin_legal__kind__publish_post",
         "parameters": [
           {
@@ -1377,7 +1379,8 @@
                 "terms",
                 "privacy",
                 "operation-policy",
-                "youth-policy"
+                "youth-policy",
+                "refund-policy"
               ],
               "type": "string",
               "title": "Kind"
@@ -1435,7 +1438,8 @@
                 "terms",
                 "privacy",
                 "operation-policy",
-                "youth-policy"
+                "youth-policy",
+                "refund-policy"
               ],
               "type": "string",
               "title": "Kind"
@@ -3641,7 +3645,8 @@
                 "terms",
                 "privacy",
                 "operation-policy",
-                "youth-policy"
+                "youth-policy",
+                "refund-policy"
               ],
               "type": "string",
               "title": "Kind"
@@ -10364,6 +10369,28 @@
         }
       }
     },
+    "/clover/pricing": {
+      "get": {
+        "tags": [
+          "clover"
+        ],
+        "summary": "Get Clover Pricing",
+        "description": "공개 조회 — 인증 없음. 충전 상품과 기본 모델 기준 사용 단가를 한 응답에 싣는다. 웹 상품 안내는 숫자 사본 없이\n이 값만 쓴다. DB 를 읽지 않아 비용이 없으므로 레이트리밋도 붙이지 않는다.",
+        "operationId": "get_clover_pricing_clover_pricing_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloverPricingResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/me/personas": {
       "get": {
         "tags": [
@@ -13254,7 +13281,8 @@
               "terms",
               "privacy",
               "operation-policy",
-              "youth-policy"
+              "youth-policy",
+              "refund-policy"
             ],
             "title": "Kind"
           },
@@ -16630,6 +16658,72 @@
         ],
         "title": "CloverMissionsResponse"
       },
+      "CloverPricingResponse": {
+        "properties": {
+          "products": {
+            "items": {
+              "$ref": "#/components/schemas/CloverProductItem"
+            },
+            "type": "array",
+            "title": "Products"
+          },
+          "chatTurnCost": {
+            "type": "integer",
+            "title": "Chatturncost"
+          },
+          "imageCost": {
+            "type": "integer",
+            "title": "Imagecost"
+          }
+        },
+        "type": "object",
+        "required": [
+          "products",
+          "chatTurnCost",
+          "imageCost"
+        ],
+        "title": "CloverPricingResponse",
+        "description": "공개 가격 안내. 단가는 기본 모델 기준만 싣는다 — 상위 모델은 허용된 계정만 쓰고 소설은 허용 명단 전용이라\n공개 안내에 넣지 않는다."
+      },
+      "CloverProductItem": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "starter",
+              "basic",
+              "plus",
+              "pro"
+            ],
+            "title": "Key"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "priceKrw": {
+            "type": "integer",
+            "title": "Pricekrw"
+          },
+          "paidAmount": {
+            "type": "integer",
+            "title": "Paidamount"
+          },
+          "bonusAmount": {
+            "type": "integer",
+            "title": "Bonusamount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "name",
+          "priceKrw",
+          "paidAmount",
+          "bonusAmount"
+        ],
+        "title": "CloverProductItem"
+      },
       "CommentAuthorResponse": {
         "properties": {
           "id": {
@@ -19361,7 +19455,8 @@
               "terms",
               "privacy",
               "operation-policy",
-              "youth-policy"
+              "youth-policy",
+              "refund-policy"
             ],
             "title": "Kind"
           },

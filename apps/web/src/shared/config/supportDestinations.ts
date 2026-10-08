@@ -14,6 +14,8 @@ export const SUPPORT_DESTINATIONS = {
   privacy: { label: "개인정보처리방침", to: "/privacy", isPublic: true },
   "operation-policy": { label: "운영정책", to: "/operation-policy", isPublic: true },
   "youth-policy": { label: "청소년 보호정책", to: "/youth-policy", isPublic: true },
+  "refund-policy": { label: "환불정책", to: "/refund-policy", isPublic: true },
+  "clover-pricing": { label: "클로버 상품 안내", to: "/clover/pricing", isPublic: true },
 } as const satisfies Record<string, { label: string; to: string; isPublic: boolean }>;
 
 export type SupportDestinationKey = keyof typeof SUPPORT_DESTINATIONS;
@@ -22,6 +24,11 @@ export type PublicSupportDestinationKey = {
   [Key in SupportDestinationKey]: (typeof SUPPORT_DESTINATIONS)[Key]["isPublic"] extends true ? Key : never;
 }[SupportDestinationKey];
 
-export function isPublicSupportDestinationKey(key: string): key is PublicSupportDestinationKey {
+/** 공개 키 중 받은 타입에 들어가는 것으로 좁힌다. 헤더 메뉴의 키 목록은 이 목록의 일부만 담으므로, 좁힌 결과가
+ * 이 목록 전체의 공개 키면 그 목록 원소 타입의 부분집합이 아니게 되어 `Array.filter`가 좁히지 못한다. 거꾸로
+ * 받은 타입 쪽을 걸러 내면(`Extract<Key, ...>`) 넓은 `string`은 어떤 공개 키에도 들어가지 않아 `never`가 된다. */
+export function isPublicSupportDestinationKey<Key extends string>(
+  key: Key,
+): key is Extract<PublicSupportDestinationKey, Key> {
   return Object.entries(SUPPORT_DESTINATIONS).some(([candidate, destination]) => candidate === key && destination.isPublic);
 }

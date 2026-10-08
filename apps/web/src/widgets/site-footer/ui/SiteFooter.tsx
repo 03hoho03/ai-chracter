@@ -1,7 +1,9 @@
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Link, useRouterState } from "@tanstack/react-router";
+import type { ReactNode } from "react";
 
-import { CONTACT_EMAIL, SITE_NAME } from "@/shared/config/site";
+import { BUSINESS_INFO, describeMailOrderReport } from "@/shared/config/businessInfo";
+import { SITE_NAME } from "@/shared/config/site";
 import { SUPPORT_DESTINATIONS, type SupportDestinationKey } from "@/shared/config/supportDestinations";
 
 const FOOTER_LINK_KEYS = [
@@ -10,6 +12,8 @@ const FOOTER_LINK_KEYS = [
   "privacy",
   "operation-policy",
   "youth-policy",
+  "refund-policy",
+  "clover-pricing",
   "notices",
   "inquiry-new",
 ] as const satisfies readonly SupportDestinationKey[];
@@ -20,6 +24,10 @@ const LINK_CLASS =
 /**
  * 문서 끝에 놓이는 정보 푸터. 고정하지 않는다 — 루트 레이아웃이 페이지 영역을 늘려 짧은 페이지에서는 뷰포트
  * 바닥에, 긴 페이지에서는 끝까지 스크롤해야 만난다.
+ *
+ * 링크 아래에 운영자 정보(상호·대표자·사업자등록번호·통신판매업·주소·전화·이메일·호스팅 제공자)를 항목 이름과
+ * 값으로 나눠(`<dl>`) 싣는다. 이름과 값은 같은 `muted` 잉크다 — 이름을 굵게 하거나 밝히면 처리방침 링크의 강조가
+ * 더는 하나가 아니게 된다.
  *
  * 강조는 `개인정보처리방침` 하나뿐이다 — 처리방침은 첫 화면에서 다른 링크와 구별돼 찾을 수 있어야 한다. 색은
  * `primary`가 아니라 밝기 천장(`text-foreground`)과 굵기로 올린다 — `primary`는 이 시스템의 유일한 강조색이다.
@@ -54,13 +62,51 @@ export function SiteFooter() {
             ))}
           </ul>
         </nav>
-        <p className="text-xs text-muted-foreground">
-          {SITE_NAME} · {CONTACT_EMAIL}
-        </p>
+        <BusinessInfoList />
         <p className="text-xs text-muted-foreground">
           © {new Date().getFullYear()} {SITE_NAME}
         </p>
       </div>
     </footer>
+  );
+}
+
+const MAIL_ORDER_REPORT = describeMailOrderReport(BUSINESS_INFO.mailOrderReportNumber, BUSINESS_INFO.registrationNumber);
+
+/** 값이 길어도(주소) 어절 단위로 접혀 390px에서 가로 스크롤을 만들지 않는다 — 그래서 값에 `whitespace-nowrap`을
+ * 걸지 않는다. */
+function BusinessInfoList() {
+  return (
+    <dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs break-keep text-muted-foreground">
+      <BusinessInfoItem term="상호">{BUSINESS_INFO.name}</BusinessInfoItem>
+      <BusinessInfoItem term="대표자">{BUSINESS_INFO.representative}</BusinessInfoItem>
+      <BusinessInfoItem term="사업자등록번호">{BUSINESS_INFO.registrationNumber}</BusinessInfoItem>
+      <BusinessInfoItem term="통신판매업">
+        {MAIL_ORDER_REPORT.label}
+        {MAIL_ORDER_REPORT.verifyUrl !== null && (
+          <>
+            {" "}
+            <a href={MAIL_ORDER_REPORT.verifyUrl} target="_blank" rel="noopener noreferrer" className={LINK_CLASS}>
+              사업자정보 확인
+            </a>
+          </>
+        )}
+      </BusinessInfoItem>
+      <BusinessInfoItem term="주소">{BUSINESS_INFO.address}</BusinessInfoItem>
+      <BusinessInfoItem term="전화">{BUSINESS_INFO.phone}</BusinessInfoItem>
+      <BusinessInfoItem term="이메일">{BUSINESS_INFO.email}</BusinessInfoItem>
+      <BusinessInfoItem term="호스팅 제공자">
+        {BUSINESS_INFO.hostingProviders.map(({ name, role }) => `${name}(${role})`).join(", ")}
+      </BusinessInfoItem>
+    </dl>
+  );
+}
+
+function BusinessInfoItem({ term, children }: { term: string; children: ReactNode }) {
+  return (
+    <div className="flex gap-1.5">
+      <dt className="whitespace-nowrap">{term}</dt>
+      <dd>{children}</dd>
+    </div>
   );
 }

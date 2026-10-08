@@ -10,6 +10,7 @@ import {
   Megaphone,
   MessagesSquare,
   Plus,
+  ReceiptText,
   ScrollText,
   Settings2,
   Shield,
@@ -35,13 +36,17 @@ export const PROFILE_DESTINATION_GROUPS = [
   { label: "창작", keys: ["builder", "my-works", "studio-images"] },
   { label: "활동", keys: ["chats", "novels", "favorites"] },
   { label: "계정", keys: ["profile", "personas", "clover", "mypage"] },
-  { label: "고객센터", keys: ["about", "notices", "inquiry-new", "terms", "privacy", "operation-policy", "youth-policy"] },
+  { label: "고객센터", keys: ["about", "notices", "inquiry-new", "terms", "privacy", "operation-policy", "youth-policy", "refund-policy"] },
 ] as const satisfies readonly { label: string; keys: readonly string[] }[];
 
 export type ProfileDestinationKey = (typeof PROFILE_DESTINATION_GROUPS)[number]["keys"][number];
 
+/** 메뉴에 나오는 고객센터 목적지. `SUPPORT_DESTINATIONS`에는 푸터에만 걸리는 목적지(클로버 상품 안내)도 있어
+ * 그 전체가 아니라 그룹 배열에 든 키로 좁힌다 — 전체로 두면 메뉴에 없는 목적지에도 쓰이지 않을 아이콘을 요구한다. */
+type MenuSupportDestinationKey = Extract<ProfileDestinationKey, SupportDestinationKey>;
+
 /** 고객센터 목적지의 라벨·경로는 푸터와 함께 쓰는 `SUPPORT_DESTINATIONS`에서 오고, 아이콘만 헤더가 정한다. */
-const SUPPORT_DESTINATION_ICON: Record<SupportDestinationKey, LucideIcon> = {
+const SUPPORT_DESTINATION_ICON: Record<MenuSupportDestinationKey, LucideIcon> = {
   about: Info,
   notices: Megaphone,
   "inquiry-new": LifeBuoy,
@@ -49,6 +54,7 @@ const SUPPORT_DESTINATION_ICON: Record<SupportDestinationKey, LucideIcon> = {
   privacy: Shield,
   "operation-policy": ScrollText,
   "youth-policy": Sprout,
+  "refund-policy": ReceiptText,
 };
 
 /** `me`는 `내 프로필`만 쓴다. 그 키에서만 필수로 두어, 비로그인 드로어가 공개 목적지를 `me` 없이 그릴 수 있게 한다. */
@@ -154,7 +160,8 @@ export const ProfileDestinationLink = forwardRef<HTMLAnchorElement, ProfileDesti
     case "terms":
     case "privacy":
     case "operation-policy":
-    case "youth-policy": {
+    case "youth-policy":
+    case "refund-policy": {
       const { label, to } = SUPPORT_DESTINATIONS[destinationKey];
       const Icon = SUPPORT_DESTINATION_ICON[destinationKey];
       return (

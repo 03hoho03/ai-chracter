@@ -208,6 +208,8 @@ export function LegalConsentFields() {
                   <dt className="font-semibold text-foreground">이전받는 자 / 연락처</dt>
                   <dd className="mt-0.5 break-keep">
                     · Google LLC — 1600 Amphitheatre Parkway, Mountain View, CA 94043, USA
+                    <br />· Amazon Web Services, Inc. — 410 Terry Avenue North, Seattle, WA
+                    98109-5210, USA / aws-korea-privacy@amazon.com
                     <br />· Cloudflare, Inc. — 101 Townsend St., San Francisco, CA 94107, USA /
                     privacyquestions@cloudflare.com
                   </dd>
@@ -215,8 +217,13 @@ export function LegalConsentFields() {
                 <div>
                   <dt className="font-semibold text-foreground">이전되는 항목</dt>
                   <dd className="mt-0.5 break-keep">
-                    · Google LLC: 대화 메시지 전문, 캐릭터·스토리 프롬프트, 발행 심사 시 업로드한
-                    이미지
+                    · Google LLC: 대화 메시지 전문, 대화방별 기억(요약·기억 노트), 대화 프로필,
+                    캐릭터·스토리 프롬프트, 대화 소설의 대화 원문·본문·지난 화들의 요약·설정
+                    노트·주인공 이름·인물 메모·AI 수정 요청, 발행 심사 시 업로드한 이미지
+                    <br />· Amazon Web Services, Inc.(상위 AI 모델을 고른 경우에만): 대화 메시지
+                    전문, 대화방별 기억(요약·기억 노트), 대화 프로필, 캐릭터·스토리 프롬프트,
+                    소설로 옮길 대화 원문, 직전 화 본문 끝 일부, 지난 화들의 요약, 설정 노트·주인공
+                    이름·인물 메모
                     <br />· Cloudflare, Inc.: 이미지 생성 프롬프트와 생성 이미지, 업로드 파일,
                     데이터베이스 백업, 웹사이트 접속 시 통신 정보
                   </dd>
@@ -224,16 +231,21 @@ export function LegalConsentFields() {
                 <div>
                   <dt className="font-semibold text-foreground">이전 국가 / 시기 / 방법</dt>
                   <dd className="mt-0.5 break-keep">
-                    미국. 대화 전송·이미지 생성·파일 업로드·웹사이트 접속 시점에 수시로, HTTPS 등
-                    암호화된 통신으로 전송합니다. 데이터베이스 백업은 매일 정해진 시각에 전송합니다.
+                    미국(Google LLC·Cloudflare, Inc.), 전 세계 AWS 상용 리전(Amazon Web Services,
+                    Inc. — 요청마다 AWS가 처리 리전을 정합니다). 대화 전송·콘텐츠 발행·대화 소설
+                    요청·이미지 생성·파일 업로드·웹사이트 접속 시점에 수시로, HTTPS 등 암호화된 통신으로
+                    전송합니다. 데이터베이스 백업은 매일 정해진 시각에 전송합니다.
                   </dd>
                 </div>
                 <div>
                   <dt className="font-semibold text-foreground">이용 목적 / 보유·이용기간</dt>
                   <dd className="mt-0.5 break-keep">
-                    AI 응답 생성과 콘텐츠 자동 심사(Google LLC), 파일 저장·백업·웹사이트 전송
-                    (Cloudflare, Inc.). 국내 원본이 삭제되면 재전송을 중단하며, 백업은 일간 7일·주간
-                    4주 순환 보관합니다. 이전받는 자의 자체 보유기간은 각 사업자의 정책을 따릅니다.
+                    AI 응답 생성, 스탯·엔딩 판정, 대화 요약, 대화 상황에 맞는 이미지 선택, 대화 소설의
+                    대화 구간 제안·화 생성·AI 수정과 콘텐츠 자동 심사(Google LLC), 상위 AI 모델을 고른 대화의 응답
+                    생성과 대화 소설 화 생성(Amazon Web Services, Inc.), 운영자의 이미지 생성
+                    설비로의 요청·결과 전송, 파일 저장·백업, 웹사이트 전송·이용 분석(Cloudflare, Inc.). 국내
+                    원본이 삭제되면 재전송을 중단하며, 백업은 일간 7일·주간 4주 순환 보관합니다. 이용
+                    분석 원본 데이터는 7일간 보관되고, 집계 지표는 최근 6개월까지 조회할 수 있습니다. 이전받는 자의 자체 보유기간은 각 사업자의 정책을 따릅니다.
                   </dd>
                 </div>
                 <div>
@@ -242,6 +254,7 @@ export function LegalConsentFields() {
                     동의를 거부할 수 있습니다. 다만 위 이전은 AI 대화, 이미지 생성, 파일 저장,
                     웹사이트 전송 등 서비스의 핵심 기능 전반에 필요하므로, 동의하지 않으면 서비스를
                     이용할 수 없습니다. 가입 이후 동의를 철회하려는 경우 회원 탈퇴로 처리됩니다.
+                    Amazon Web Services, Inc.로의 이전은 상위 AI 모델을 고른 경우에만 일어납니다.
                   </dd>
                 </div>
               </dl>

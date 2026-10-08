@@ -14,6 +14,7 @@ import { Route as UiDemoRouteImport } from './routes/ui-demo'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as RefundPolicyRouteImport } from './routes/refund-policy'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as PersonasRouteImport } from './routes/personas'
 import { Route as OperationPolicyRouteImport } from './routes/operation-policy'
@@ -37,6 +38,7 @@ import { Route as OnboardingGoogleRouteImport } from './routes/onboarding.google
 import { Route as NoticesNoticeIdRouteImport } from './routes/notices.$noticeId'
 import { Route as InquiriesNewRouteImport } from './routes/inquiries.new'
 import { Route as InquiriesInquiryIdRouteImport } from './routes/inquiries.$inquiryId'
+import { Route as CloverPricingRouteImport } from './routes/clover.pricing'
 import { Route as CloverHistoryRouteImport } from './routes/clover.history'
 import { Route as ChatRoomIdRouteImport } from './routes/chat.$roomId'
 import { Route as NovelsNovelIdIndexRouteImport } from './routes/novels.$novelId.index'
@@ -72,6 +74,11 @@ const SignupRoute = SignupRouteImport.update({
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RefundPolicyRoute = RefundPolicyRouteImport.update({
+  id: '/refund-policy',
+  path: '/refund-policy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrivacyRoute = PrivacyRouteImport.update({
@@ -189,6 +196,11 @@ const InquiriesInquiryIdRoute = InquiriesInquiryIdRouteImport.update({
   path: '/inquiries/$inquiryId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CloverPricingRoute = CloverPricingRouteImport.update({
+  id: '/clover/pricing',
+  path: '/clover/pricing',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CloverHistoryRoute = CloverHistoryRouteImport.update({
   id: '/clover/history',
   path: '/clover/history',
@@ -258,6 +270,7 @@ export interface FileRoutesByFullPath {
   '/operation-policy': typeof OperationPolicyRoute
   '/personas': typeof PersonasRoute
   '/privacy': typeof PrivacyRoute
+  '/refund-policy': typeof RefundPolicyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/terms': typeof TermsRoute
@@ -265,6 +278,7 @@ export interface FileRoutesByFullPath {
   '/youth-policy': typeof YouthPolicyRoute
   '/chat/$roomId': typeof ChatRoomIdRoute
   '/clover/history': typeof CloverHistoryRoute
+  '/clover/pricing': typeof CloverPricingRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/inquiries/new': typeof InquiriesNewRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
@@ -299,6 +313,7 @@ export interface FileRoutesByTo {
   '/operation-policy': typeof OperationPolicyRoute
   '/personas': typeof PersonasRoute
   '/privacy': typeof PrivacyRoute
+  '/refund-policy': typeof RefundPolicyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/terms': typeof TermsRoute
@@ -306,6 +321,7 @@ export interface FileRoutesByTo {
   '/youth-policy': typeof YouthPolicyRoute
   '/chat/$roomId': typeof ChatRoomIdRoute
   '/clover/history': typeof CloverHistoryRoute
+  '/clover/pricing': typeof CloverPricingRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/inquiries/new': typeof InquiriesNewRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
@@ -341,6 +357,7 @@ export interface FileRoutesById {
   '/operation-policy': typeof OperationPolicyRoute
   '/personas': typeof PersonasRoute
   '/privacy': typeof PrivacyRoute
+  '/refund-policy': typeof RefundPolicyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/terms': typeof TermsRoute
@@ -348,6 +365,7 @@ export interface FileRoutesById {
   '/youth-policy': typeof YouthPolicyRoute
   '/chat/$roomId': typeof ChatRoomIdRoute
   '/clover/history': typeof CloverHistoryRoute
+  '/clover/pricing': typeof CloverPricingRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/inquiries/new': typeof InquiriesNewRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
@@ -384,6 +402,7 @@ export interface FileRouteTypes {
     | '/operation-policy'
     | '/personas'
     | '/privacy'
+    | '/refund-policy'
     | '/reset-password'
     | '/signup'
     | '/terms'
@@ -391,6 +410,7 @@ export interface FileRouteTypes {
     | '/youth-policy'
     | '/chat/$roomId'
     | '/clover/history'
+    | '/clover/pricing'
     | '/inquiries/$inquiryId'
     | '/inquiries/new'
     | '/notices/$noticeId'
@@ -425,6 +445,7 @@ export interface FileRouteTypes {
     | '/operation-policy'
     | '/personas'
     | '/privacy'
+    | '/refund-policy'
     | '/reset-password'
     | '/signup'
     | '/terms'
@@ -432,6 +453,7 @@ export interface FileRouteTypes {
     | '/youth-policy'
     | '/chat/$roomId'
     | '/clover/history'
+    | '/clover/pricing'
     | '/inquiries/$inquiryId'
     | '/inquiries/new'
     | '/notices/$noticeId'
@@ -466,6 +488,7 @@ export interface FileRouteTypes {
     | '/operation-policy'
     | '/personas'
     | '/privacy'
+    | '/refund-policy'
     | '/reset-password'
     | '/signup'
     | '/terms'
@@ -473,6 +496,7 @@ export interface FileRouteTypes {
     | '/youth-policy'
     | '/chat/$roomId'
     | '/clover/history'
+    | '/clover/pricing'
     | '/inquiries/$inquiryId'
     | '/inquiries/new'
     | '/notices/$noticeId'
@@ -508,6 +532,7 @@ export interface RootRouteChildren {
   OperationPolicyRoute: typeof OperationPolicyRoute
   PersonasRoute: typeof PersonasRoute
   PrivacyRoute: typeof PrivacyRoute
+  RefundPolicyRoute: typeof RefundPolicyRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignupRoute: typeof SignupRoute
   TermsRoute: typeof TermsRoute
@@ -515,6 +540,7 @@ export interface RootRouteChildren {
   YouthPolicyRoute: typeof YouthPolicyRoute
   ChatRoomIdRoute: typeof ChatRoomIdRoute
   CloverHistoryRoute: typeof CloverHistoryRoute
+  CloverPricingRoute: typeof CloverPricingRoute
   InquiriesInquiryIdRoute: typeof InquiriesInquiryIdRoute
   InquiriesNewRoute: typeof InquiriesNewRoute
   NoticesNoticeIdRoute: typeof NoticesNoticeIdRoute
@@ -573,6 +599,13 @@ declare module '@tanstack/react-router' {
       path: '/reset-password'
       fullPath: '/reset-password'
       preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/refund-policy': {
+      id: '/refund-policy'
+      path: '/refund-policy'
+      fullPath: '/refund-policy'
+      preLoaderRoute: typeof RefundPolicyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/privacy': {
@@ -736,6 +769,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InquiriesInquiryIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/clover/pricing': {
+      id: '/clover/pricing'
+      path: '/clover/pricing'
+      fullPath: '/clover/pricing'
+      preLoaderRoute: typeof CloverPricingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/clover/history': {
       id: '/clover/history'
       path: '/clover/history'
@@ -828,6 +868,7 @@ const rootRouteChildren: RootRouteChildren = {
   OperationPolicyRoute: OperationPolicyRoute,
   PersonasRoute: PersonasRoute,
   PrivacyRoute: PrivacyRoute,
+  RefundPolicyRoute: RefundPolicyRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SignupRoute: SignupRoute,
   TermsRoute: TermsRoute,
@@ -835,6 +876,7 @@ const rootRouteChildren: RootRouteChildren = {
   YouthPolicyRoute: YouthPolicyRoute,
   ChatRoomIdRoute: ChatRoomIdRoute,
   CloverHistoryRoute: CloverHistoryRoute,
+  CloverPricingRoute: CloverPricingRoute,
   InquiriesInquiryIdRoute: InquiriesInquiryIdRoute,
   InquiriesNewRoute: InquiriesNewRoute,
   NoticesNoticeIdRoute: NoticesNoticeIdRoute,

@@ -73,11 +73,11 @@ async def test_get_public_document_returns_404_when_no_published_document(
     assert resp.status_code == 404
 
 
-@pytest.mark.parametrize("kind", ["operation-policy", "youth-policy"])
+@pytest.mark.parametrize("kind", ["operation-policy", "youth-policy", "refund-policy"])
 async def test_get_public_document_serves_policy_kinds(
     db_client: httpx.AsyncClient, db_session: AsyncSession, kind: str
 ) -> None:
-    """운영정책·청소년 보호정책도 약관과 같은 공개 조회 경로로 최신 게시본을 낸다."""
+    """운영정책·청소년 보호정책·환불정책도 약관과 같은 공개 조회 경로로 최신 게시본을 낸다."""
     await _make_published(db_session, kind=kind, version="2024-06-01", body_markdown="정책 본문")
     await db_session.commit()
 
@@ -89,7 +89,7 @@ async def test_get_public_document_serves_policy_kinds(
     assert body["bodyMarkdown"] == "정책 본문"
 
 
-@pytest.mark.parametrize("kind", ["operation-policy", "youth-policy"])
+@pytest.mark.parametrize("kind", ["operation-policy", "youth-policy", "refund-policy"])
 async def test_get_public_document_returns_404_for_policy_kind_without_published(
     db_client: httpx.AsyncClient, kind: str
 ) -> None:
@@ -305,7 +305,7 @@ async def test_consent_privacy_updates_privacy_and_transfer_pair(
     assert user.transfer_agreed_at != before_transfer_agreed_at
 
 
-@pytest.mark.parametrize("kind", ["operation-policy", "youth-policy"])
+@pytest.mark.parametrize("kind", ["operation-policy", "youth-policy", "refund-policy"])
 async def test_consent_rejects_policy_kind_and_leaves_consent_versions_untouched(
     db_client: httpx.AsyncClient, db_session: AsyncSession, kind: str
 ) -> None:
@@ -343,7 +343,7 @@ async def test_consent_rejects_policy_kind_and_leaves_consent_versions_untouched
     assert me.json()["privacyReconsentRequired"] is True
 
 
-@pytest.mark.parametrize("kind", ["operation-policy", "youth-policy"])
+@pytest.mark.parametrize("kind", ["operation-policy", "youth-policy", "refund-policy"])
 async def test_me_reconsent_flags_ignore_policy_kind_marked_reconsent(
     db_client: httpx.AsyncClient, db_session: AsyncSession, kind: str
 ) -> None:
