@@ -167,7 +167,7 @@ components:
 | `card` / `popover` / `muted` | oklch(0.210) | oklch(0.970) | 배경 위 첫 레이어 — 카드, 팝오버, 썸네일 우물 |
 | `secondary` / `accent` | oklch(0.260) | oklch(0.930) | 두 번째 레이어 — hover/선택 배경, 배지, 필터 칩 |
 | `border` | oklch(0.300) | oklch(0.890) | **구조 구분선** — 카드 테두리, 헤더 밑줄, 섹션 구분, 점선 빈 상태 |
-| `input` | oklch(0.520) | oklch(0.620) | **컨트롤 식별 보더** — 인풋·텍스트에어리어·셀렉트·체크박스·outline 버튼·선택 안 된 토글, 그리고 스위치의 off 트랙(`bg-input`) |
+| `input` | oklch(0.520) | oklch(0.620) | **컨트롤 식별 보더** — 인풋·텍스트에어리어·셀렉트·체크박스·outline 버튼·선택 안 된 토글, 그리고 스위치의 off 트랙(`bg-input`). 보더가 아닌 쓰임은 하나 — 소설 화 읽기 화면 페이지 모드의 넘김 버튼 아이콘 정지 색(`text-input`, 같은 3:1 하한으로 컨트롤임을 알리되 본문보다 어둡게. Navigation 절) |
 | `muted-foreground` | oklch(0.680) | oklch(0.530) | 보조 텍스트 — 캡션, 타임스탬프, 조회수, 채팅 지문(Chat Notation 절) |
 | `foreground` | oklch(0.930) | oklch(0.220) | 본문 텍스트 |
 

@@ -1,5 +1,5 @@
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { useEffect, useImperativeHandle, type Ref, type RefObject } from "react";
+import { useEffect, useImperativeHandle, useRef, type Ref, type RefObject } from "react";
 
 import type { NovelChapterSummary, NovelDetailResponse } from "@/entities/novel";
 
@@ -72,8 +72,10 @@ export function PagedEpisodeBody({
     typographyClassName,
   });
 
+  const wheelRootRef = useRef<HTMLDivElement>(null);
   const input = usePageInput({
     viewportRef: reader.viewportRef,
+    wheelRootRef,
     handle: reader.handle,
     directMove: reader.directMove,
     pageWidth: reader.frame?.width ?? 0,
@@ -91,7 +93,36 @@ export function PagedEpisodeBody({
   }, [reader.position]);
 
   return (
-    <>
+    // 휠은 본문 상자와 거터 넘김 버튼을 함께 담은 이 범위에서 받는다. 상자를 만들지 않는 감싸개라 배치에는 영향이 없다.
+    <div ref={wheelRootRef} className="contents">
+      {/* 넘김 버튼은 DOM 에서 본문보다 앞에 둔다(고정 위치라 화면 자리는 같다). Tab 순서가 "메뉴 열기 → 이전 쪽 → 다음 쪽
+          → 화 머리 링크 → …" 가 되게 — 뒤에 두면 보이는 "다음 쪽" 으로 가려던 Tab 이 화 끝의 "다음 화" 링크를 먼저
+          거치고, 브라우저가 그 링크를 보이려고 화 끝 화면으로 옮겨 화가 다 읽음으로 저장된다. */}
+      {isFinePointer && reader.frame !== undefined && screenCount > 0 && (
+        <>
+          <PageTurnButton
+            direction="previous"
+            isBlocked={screen === 0}
+            onTurn={reader.handle.previous}
+            className="fixed z-20 text-input focus-visible:text-foreground"
+            style={{
+              left: reader.frame.left - PAGE_BUTTON_GAP_PX - PAGE_BUTTON_SIZE_PX,
+              top: reader.frame.top + reader.frame.height / 2 - PAGE_BUTTON_SIZE_PX / 2,
+            }}
+          />
+          <PageTurnButton
+            direction="next"
+            isBlocked={screen === screenCount - 1}
+            onTurn={reader.handle.next}
+            className="fixed z-20 text-input focus-visible:text-foreground"
+            style={{
+              left: reader.frame.left + reader.frame.width + PAGE_BUTTON_GAP_PX,
+              top: reader.frame.top + reader.frame.height / 2 - PAGE_BUTTON_SIZE_PX / 2,
+            }}
+          />
+        </>
+      )}
+
       <main
         ref={reader.viewportRef}
         className="fixed inset-0 touch-pinch-zoom overflow-hidden data-dragging:cursor-grabbing"
@@ -154,31 +185,6 @@ export function PagedEpisodeBody({
           </article>
         </div>
       </main>
-
-      {isFinePointer && reader.frame !== undefined && screenCount > 0 && (
-        <>
-          <PageTurnButton
-            direction="previous"
-            isBlocked={screen === 0}
-            onTurn={reader.handle.previous}
-            className="fixed z-20 text-input focus-visible:text-foreground"
-            style={{
-              left: reader.frame.left - PAGE_BUTTON_GAP_PX - PAGE_BUTTON_SIZE_PX,
-              top: reader.frame.top + reader.frame.height / 2 - PAGE_BUTTON_SIZE_PX / 2,
-            }}
-          />
-          <PageTurnButton
-            direction="next"
-            isBlocked={screen === screenCount - 1}
-            onTurn={reader.handle.next}
-            className="fixed z-20 text-input focus-visible:text-foreground"
-            style={{
-              left: reader.frame.left + reader.frame.width + PAGE_BUTTON_GAP_PX,
-              top: reader.frame.top + reader.frame.height / 2 - PAGE_BUTTON_SIZE_PX / 2,
-            }}
-          />
-        </>
-      )}
-    </>
+    </div>
   );
 }

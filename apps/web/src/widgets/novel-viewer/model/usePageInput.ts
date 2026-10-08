@@ -24,8 +24,10 @@ type PointerStart = {
 };
 
 type UsePageInputOptions = {
-  /** 손짓·휠을 받는 본문 상자. */
+  /** 손짓을 받는 본문 상자. */
   viewportRef: RefObject<HTMLElement | null>;
+  /** 휠·가장자리 터치를 받는 범위 — 본문 상자와 그 옆 거터 넘김 버튼을 함께 담는다. */
+  wheelRootRef: RefObject<HTMLElement | null>;
   handle: PagedReaderHandle;
   directMove: PagedDirectMove;
   /** 한 화면 폭(px). 아직 재지 못했으면 0 이고, 그동안의 손짓은 넘기지 않는다. */
@@ -50,8 +52,8 @@ type UsePageInputOptions = {
  *   놓아 본문이 뗌을 받지 못했으면, 다음 움직임에서 버튼이 놓인 것을 보고 취소로 친다 — 그러지 않으면 버튼 없이
  *   움직이는 마우스를 쪽이 따라간다.
  * - **확대**: 핀치로 확대한 동안의 손짓은 확대한 화면을 둘러보는 것이라 넘기지 않는다(가운데 탭의 바 토글은 둔다).
- * - **휠**: 한 번 굴리거나 밀면 한 쪽(`reduceWheel`). 확대 단축(Ctrl+휠·트랙패드 핀치)은 브라우저에 맡기고, 본문 위의
- *   그 밖의 휠은 기본 동작을 막는다. 트랙패드 가로 밀기가 브라우저의 뒤로 가기 손짓으로 새는 것은 페이지 모드 동안
+ * - **휠**: 한 번 굴리거나 밀면 한 쪽(`reduceWheel`). 확대 단축(Ctrl+휠·트랙패드 핀치)은 브라우저에 맡기고, 본문과
+ *   거터 넘김 버튼 위의 그 밖의 휠은 기본 동작을 막는다. 트랙패드 가로 밀기가 브라우저의 뒤로 가기 손짓으로 새는 것은 페이지 모드 동안
  *   문서 루트의 가로 오버스크롤을 꺼서 막는다 — 본문 위뿐 아니라 거터 넘김 버튼·열린 바 위에서 밀어도 같고, 보기 설정
  *   패널·목차 시트 안의 스크롤은 그대로다(오버스크롤 설정은 그 요소의 끝에서 이어지는 동작만 바꾼다).
  * - **키**: 창에서 버블 단계로 듣고(다른 처리기가 이미 쓴 키는 건너뛴다), 포커스 자리를 가려 `toPageKeyAction` 에
@@ -60,7 +62,7 @@ type UsePageInputOptions = {
  *   막아 본다(`shouldGuardEdgeTouch` — 링크·버튼 위는 제외). 웹에서는 확실히 막을 수 없어 실기기에서 확인할 일이다.
  */
 export function usePageInput(options: UsePageInputOptions) {
-  const { viewportRef, handle, directMove, pageWidth, isSettingsOpen, onBodyTap } = options;
+  const { viewportRef, wheelRootRef, handle, directMove, pageWidth, isSettingsOpen, onBodyTap } = options;
   const optionsRef = useRef(options);
   const startRef = useRef<PointerStart | undefined>(undefined);
   const samplesRef = useRef<PointerSample[]>([]);
@@ -190,9 +192,11 @@ export function usePageInput(options: UsePageInputOptions) {
     };
   }, []);
 
-  // 휠과 화면 가장자리 터치. 둘 다 기본 동작을 막아야 해서 수동적이지 않은 처리기로 직접 단다.
+  // 휠과 화면 가장자리 터치. 둘 다 기본 동작을 막아야 해서 수동적이지 않은 처리기로 직접 단다. 거터 넘김 버튼 위에서
+  // 굴려도 넘어가게 본문 상자가 아니라 버튼까지 담은 범위에 단다(바·설정 패널·목차 시트는 이 범위 밖이라 그 안의
+  // 스크롤은 그대로다).
   useEffect(() => {
-    const viewport = viewportRef.current;
+    const viewport = wheelRootRef.current;
     if (!viewport) return;
 
     function handleWheel(event: WheelEvent) {

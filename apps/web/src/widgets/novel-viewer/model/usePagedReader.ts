@@ -237,8 +237,12 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
     finishAnimation();
     const layout = measure();
     layoutRef.current = layout;
-    const nextFrame = layout === undefined ? undefined : toFrame(layout.geometry);
-    setFrame((current) => (isSameFrame(current, nextFrame) ? current : nextFrame));
+    // 다시 재기에 실패하면(아주 작은 창·극단적 확대) 마지막 자리를 그대로 둔다 — 비우면 거터 넘김 버튼이 사라지면서
+    // 그 버튼의 포커스가 `<body>` 로 떨어진다. 그동안 넘김은 잰 배치가 없어 아무것도 하지 않는다.
+    if (layout !== undefined) {
+      const nextFrame = toFrame(layout.geometry);
+      setFrame((current) => (isSameFrame(current, nextFrame) ? current : nextFrame));
+    }
     const anchor = anchorRef.current;
     if (layout === undefined || anchor === undefined) return;
     const offsetScreen = anchor.charOffset > 0 ? layout.screenOfOffset(anchor.paragraphIndex, anchor.charOffset) : undefined;
