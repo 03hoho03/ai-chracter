@@ -15,9 +15,10 @@ import { toEscapeTarget } from "../lib/escapeTarget";
 import { readerTypographyClassName } from "../lib/readerTypography";
 import { toEpisodeScrollProgress } from "../lib/readingProgress";
 import { toChapterSavedReadingPosition } from "../lib/savedReadingPosition";
+import { useIsFinePointer } from "../lib/useIsFinePointer";
 import { readerSettingsAtom } from "../model/readerSettings";
 import { useChromeVisibility } from "../model/useChromeVisibility";
-import type { PagedPosition } from "../model/usePagedReader";
+import type { PagedPosition, PagedReaderHandle } from "../model/usePagedReader";
 import { useReadingPosition } from "../model/useReadingPosition";
 import { PagedEpisodeBody } from "./PagedEpisodeBody";
 import { ScrollEpisodeBody } from "./ScrollEpisodeBody";
@@ -54,6 +55,8 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const tocButtonRef = useRef<HTMLButtonElement>(null);
   const tocOpenerRef = useRef<HTMLElement | null>(null);
+  const pagedReaderRef = useRef<PagedReaderHandle>(null);
+  const isFinePointer = useIsFinePointer();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isTocOpen, setIsTocOpen] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -148,8 +151,9 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
           포커스 때는 `sr-only` 를 아예 걸지 않는다(`not-focus-visible:`) — `not-sr-only` 로 풀면 그 높이·패딩 초기화가
           버튼 크기를 덮어 납작해진다. 자리는 감싼 요소의 여백으로 잡고 버튼의 전환을 끈다 — 그대로 두면 `sr-only` 가
           풀리는 순간 1px 에서 제 크기로, 여백이 제자리로 미끄러진다.
-          바가 열려 있으면 위 바 아래로 내려 뒤로 버튼·화 제목을 가리지 않는다. */}
-      <div className={cn("pointer-events-none fixed inset-x-0 top-0 z-40 pt-safe", chrome.isVisible && "mt-14")}>
+          바가 열려 있으면 위 바 아래로 내려 뒤로 버튼·화 제목을 가리지 않는다. 바와 같이 좌우 safe-area 도 더해 가로로
+          눕힌 노치 폰에서 버튼이 노치 밑에 깔리지 않게 한다. */}
+      <div className={cn("pointer-events-none fixed inset-x-0 top-0 z-40 px-safe pt-safe", chrome.isVisible && "mt-14")}>
         <div className="p-4">
           <Button
             ref={chrome.menuButtonRef}
@@ -182,6 +186,7 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
 
       {settings.mode === "page" ? (
         <PagedEpisodeBody
+          ref={pagedReaderRef}
           novel={novel}
           summary={summary}
           episodeLabel={episodeLabel}
@@ -190,8 +195,9 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
           typographyClassName={readerTypographyClassName(settings)}
           readingPosition={readingPosition}
           onPositionChange={setPagedPosition}
-          onPointerDown={chrome.handlePointerDown}
-          onPointerUp={(event) => chrome.handlePointerUp(event, handleBodyTap)}
+          isSettingsOpen={isSettingsOpen}
+          settingsPanelRef={settingsPanelRef}
+          onBodyTap={handleBodyTap}
           onOpenToc={openToc}
         />
       ) : (
@@ -219,7 +225,15 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
         position={
           settings.mode === "scroll"
             ? { mode: "scroll", progress }
-            : { mode: "page", screen: pagedPosition.screen, screenCount: pagedPosition.screenCount }
+            : {
+                mode: "page",
+                screen: pagedPosition.screen,
+                screenCount: pagedPosition.screenCount,
+                onSeek: (screen) => pagedReaderRef.current?.goTo(screen),
+                onPrevious: () => pagedReaderRef.current?.previous(),
+                onNext: () => pagedReaderRef.current?.next(),
+                showsPageButtons: !isFinePointer,
+              }
         }
         previous={previous}
         next={next}

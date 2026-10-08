@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { isFinishedScreen, toAnchorParagraphIndex, toRestoreScreen, type PageAnchor } from "../lib/pageAnchor";
+import { toSettleDurationMs } from "../lib/pageGesture";
 import {
   clampScreen,
   toNearestScreen,
@@ -38,6 +39,19 @@ export type PagedPosition = {
   screenCount: number;
 };
 
+/** 쪽 상자가 놓인 자리(뷰포트 기준 px). 넘김 버튼을 그 옆에 붙인다. */
+export type PageFrame = { left: number; top: number; width: number; height: number };
+
+/** 손가락·마우스를 따라 쪽을 움직이는 끌기. */
+export type PagedDirectMove = {
+  /** 끌기를 시작한다. 쪽을 아직 재지 못했으면 거짓이고 끌지 않는다. */
+  begin: () => boolean;
+  /** 누른 자리에서 가로로 `dx` 만큼 움직였다(오른쪽이 +). 첫 화면 앞·화 끝 화면 뒤로는 끌려가지 않는다. */
+  follow: (dx: number) => void;
+  /** 놓았다 — 다음(+1)·이전(-1) 화면으로 넘기거나(0) 지금 화면으로 돌아간다. */
+  release: (direction: -1 | 0 | 1) => void;
+};
+
 /** 넘김 입력(버튼·탭·손짓·휠·키·쪽 이동 슬라이더)이 부르는 이동. 셋 다 사용자 이동이라 읽은 자리를 옮긴다. */
 export type PagedReaderHandle = {
   /** 그 화면으로 바로 옮긴다(위치 표시라 전환 없음). */
@@ -73,7 +87,7 @@ type UsePagedReaderOptions = {
  *   두면 본문 글꼴 조각을 기다리지 않고 풀린다). 재기 시작은 스크롤 모드와 같은 분류(`toTrackingStart`)를 따른다.
  * - **다 읽음**: 마지막 문단이 시작하는 화면에 왔거나 지나왔다(`isFinishedScreen`).
  * - **브라우저가 옮긴 스크롤**: 포커스 이동·보조기기·찾기가 스크롤러를 화면 사이에 놓으면, 멈춘 뒤 화면에 맞추고
- *   사용자 이동으로 친다. 넘김 전환 중의 스크롤은 우리가 움직인 것이라 건드리지 않는다.
+ *   사용자 이동으로 친다. 넘김 전환과 끌기 중의 스크롤은 우리가 움직인 것이라 건드리지 않는다.
  */
 export function usePagedReader({ session, paragraphCount, isFinePointer, typographyClassName }: UsePagedReaderOptions) {
   const viewportRef = useRef<HTMLElement>(null);
@@ -91,7 +105,10 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
   const trackingRef = useRef<"restoring" | "waiting" | "tracking">("restoring");
   const animationRef = useRef<{ frame: number; to: number } | undefined>(undefined);
   const isFinePointerRef = useRef(isFinePointer);
+  const isDirectMoveRef = useRef(false);
+  const directMoveStartRef = useRef(0);
   const [position, setPosition] = useState<PagedPosition>({ screen: 0, screenCount: 0 });
+  const [frame, setFrame] = useState<PageFrame | undefined>(undefined);
   const { hasRouteSettled } = session;
 
   function measure(): PagedLayout | undefined {
@@ -185,7 +202,8 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
     if (scrollerRef.current) scrollerRef.current.scrollLeft = animation.to;
   }
 
-  function moveTo(layout: PagedLayout, screen: number, { animate }: { animate: boolean }) {
+  /** 그 화면으로 옮긴다. `durationMs` 가 0 이거나 움직임 줄이기 설정이면 바로 옮긴다. */
+  function moveTo(layout: PagedLayout, screen: number, { durationMs }: { durationMs: number }) {
     const scroller = scrollerRef.current;
     if (!scroller) return;
     finishAnimation();
@@ -193,13 +211,13 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
     showPosition(screen, layout.screenCount);
     const to = toScrollLeft(screen, layout.geometry.step);
     const from = scroller.scrollLeft;
-    if (!animate || from === to || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (durationMs <= 0 || from === to || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       scroller.scrollLeft = to;
       return;
     }
     const startedAt = performance.now();
     const tick = (now: number) => {
-      const progress = (now - startedAt) / PAGE_TURN_MS;
+      const progress = (now - startedAt) / durationMs;
       scroller.scrollLeft = from + (to - from) * easeOut(progress);
       if (progress < 1) animationRef.current = { frame: requestAnimationFrame(tick), to };
       else animationRef.current = undefined;
@@ -212,11 +230,13 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
     finishAnimation();
     const layout = measure();
     layoutRef.current = layout;
+    const nextFrame = layout === undefined ? undefined : toFrame(layout.geometry);
+    setFrame((current) => (isSameFrame(current, nextFrame) ? current : nextFrame));
     const anchor = anchorRef.current;
     if (layout === undefined || anchor === undefined) return;
     const offsetScreen = anchor.charOffset > 0 ? layout.screenOfOffset(anchor.paragraphIndex, anchor.charOffset) : undefined;
     const screen = toRestoreScreen({ anchor, startScreens: layout.startScreens, endScreen: layout.screenCount - 1, offsetScreen });
-    moveTo(layout, screen, { animate: false });
+    moveTo(layout, screen, { durationMs: 0 });
   }
 
   function anchorAt(layout: PagedLayout, screen: number): PageAnchor {
@@ -260,12 +280,12 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
   }
 
   /** 사용자가 옮긴 화면. 화면이 바뀌었을 때만 앵커를 다시 정하고 알린다 — 기다리던 중이면 이때부터 잰다. */
-  function moveByUser(target: number, { animate }: { animate: boolean }) {
+  function moveByUser(target: number, { durationMs }: { durationMs: number }) {
     const layout = layoutRef.current;
     if (layout === undefined) return;
     const screen = clampScreen(target, layout.screenCount);
     const isSameScreen = screen === screenRef.current;
-    moveTo(layout, screen, { animate });
+    moveTo(layout, screen, { durationMs });
     if (isSameScreen) return;
     anchorRef.current = anchorAt(layout, screen);
     if (trackingRef.current === "tracking") reportCurrent();
@@ -362,7 +382,7 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
     function align() {
       timer = undefined;
       const layout = layoutRef.current;
-      if (animationRef.current !== undefined || layout === undefined || !scroller) return;
+      if (animationRef.current !== undefined || isDirectMoveRef.current || layout === undefined || !scroller) return;
       const { step } = layout.geometry;
       if (Math.abs(scroller.scrollLeft - toScrollLeft(screenRef.current, step)) <= 1) return;
       // 포커스가 옮겨 간 요소가 보이면 그 요소의 화면으로 — 가장 가까운 화면이 그 요소를 다시 가릴 수 있다.
@@ -371,7 +391,7 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
         focused === undefined
           ? toNearestScreen({ scrollLeft: scroller.scrollLeft, step, screenCount: layout.screenCount })
           : layout.screenOfRect(focused);
-      moveByUser(screen, { animate: false });
+      moveByUser(screen, { durationMs: 0 });
     }
 
     function handleScroll() {
@@ -393,14 +413,47 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
   useEffect(() => () => finishAnimation(), []);
 
   const handle: PagedReaderHandle = {
-    goTo: (screen) => moveByUser(screen, { animate: false }),
-    next: () => moveByUser(screenRef.current + 1, { animate: true }),
-    previous: () => moveByUser(screenRef.current - 1, { animate: true }),
+    goTo: (screen) => moveByUser(screen, { durationMs: 0 }),
+    next: () => moveByUser(screenRef.current + 1, { durationMs: PAGE_TURN_MS }),
+    previous: () => moveByUser(screenRef.current - 1, { durationMs: PAGE_TURN_MS }),
+  };
+
+  // 끄는 동안은 손을 그대로 따라가는 직접 조작이라 움직임 줄이기 설정과 무관하게 따라간다. 놓은 뒤 맞춰 들어가는
+  // 이동은 전환이라 남은 거리에 비례한 시간으로 움직이고, 움직임 줄이기 설정이면 바로 맞춘다.
+  const directMove: PagedDirectMove = {
+    begin() {
+      const scroller = scrollerRef.current;
+      if (layoutRef.current === undefined || !scroller) return false;
+      finishAnimation();
+      isDirectMoveRef.current = true;
+      directMoveStartRef.current = scroller.scrollLeft;
+      return true;
+    },
+    follow(dx) {
+      const layout = layoutRef.current;
+      const scroller = scrollerRef.current;
+      if (!isDirectMoveRef.current || layout === undefined || !scroller) return;
+      const maxScrollLeft = toScrollLeft(layout.screenCount - 1, layout.geometry.step);
+      scroller.scrollLeft = Math.min(Math.max(directMoveStartRef.current - dx, 0), maxScrollLeft);
+    },
+    release(direction) {
+      const layout = layoutRef.current;
+      const scroller = scrollerRef.current;
+      if (!isDirectMoveRef.current) return;
+      isDirectMoveRef.current = false;
+      if (layout === undefined || !scroller) return;
+      const { step } = layout.geometry;
+      const target = clampScreen(screenRef.current + direction, layout.screenCount);
+      const remainingPx = scroller.scrollLeft - toScrollLeft(target, step);
+      moveByUser(target, { durationMs: toSettleDurationMs({ remainingPx, pageWidth: step }) });
+    },
   };
 
   return {
     position,
+    frame,
     handle,
+    directMove,
     viewportRef,
     scrollerRef,
     columnsRef,
@@ -409,6 +462,15 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
     probeRef,
     safeAreaProbeRef,
   };
+}
+
+function toFrame({ left, top, step, columnHeight }: PageGeometry): PageFrame {
+  return { left, top, width: step, height: columnHeight };
+}
+
+function isSameFrame(a: PageFrame | undefined, b: PageFrame | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return a.left === b.left && a.top === b.top && a.width === b.width && a.height === b.height;
 }
 
 function pxOf(value: string): number {

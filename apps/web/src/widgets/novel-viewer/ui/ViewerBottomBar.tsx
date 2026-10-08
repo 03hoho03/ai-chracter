@@ -1,4 +1,5 @@
 import { Button } from "@ai-character-chat/ui/components/button";
+import { Slider } from "@ai-character-chat/ui/components/slider";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Link } from "@tanstack/react-router";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -6,14 +7,30 @@ import type { ReactNode, Ref } from "react";
 
 import type { NovelChapterSummary } from "@/entities/novel";
 
+import { PageTurnButton } from "./PageTurnButton";
+
+/** 페이지 모드의 화 안 위치와 쪽 이동. */
+export type ViewerPagePosition = {
+  mode: "page";
+  /** 지금 화면(0부터)과 화 끝 화면을 포함한 화면 수(아직 재지 못했으면 0). */
+  screen: number;
+  screenCount: number;
+  /** 그 화면으로 바로 옮긴다. */
+  onSeek: (screen: number) => void;
+  onPrevious: () => void;
+  onNext: () => void;
+  /** 슬라이더 양옆에 쪽 넘김 버튼을 둘지 — 터치 기기만. 마우스 기기는 본문 옆 거터에 이미 있다. */
+  showsPageButtons: boolean;
+};
+
 type ViewerBottomBarProps = {
   ref: Ref<HTMLDivElement>;
   id: string;
   novelId: string;
   ordinal: number;
   totalCount: number;
-  /** 화 안의 위치 — 스크롤 모드는 진행률(0 … 1), 페이지 모드는 화면 번호(0부터)와 화면 수(아직 재지 못했으면 0). */
-  position: { mode: "scroll"; progress: number } | { mode: "page"; screen: number; screenCount: number };
+  /** 화 안의 위치 — 스크롤 모드는 진행률(0 … 1), 페이지 모드는 화면 번호와 쪽 이동. */
+  position: { mode: "scroll"; progress: number } | ViewerPagePosition;
   previous: NovelChapterSummary | undefined;
   next: NovelChapterSummary | undefined;
   isVisible: boolean;
@@ -23,7 +40,10 @@ type ViewerBottomBarProps = {
 
 /** 읽기 화면의 아래 바 — 이전 화 · 화 안의 위치 · 다음 화. 위치는 스크롤 모드면 진행률, 페이지 모드면 쪽 번호다
  * ('쪽' 은 한 화면 — 펼침이면 두 쪽이 하나다). 스크롤 모드 위 가장자리의 얇은 막대는 화 안에서 어디쯤인지 보이는 위치
- * 표시라 길이 변화에 전환을 두지 않는다(수치는 가운데 글자가 진다). 보기 설정 패널은 이 바 위에 붙어 함께
+ * 표시라 길이 변화에 전환을 두지 않는다(수치는 가운데 글자가 진다). 페이지 모드는 그 자리에 쪽 이동 슬라이더를 둔다 —
+ * 한 칸이 한 화면이고, 옮기면 전환 없이 바로 그 화면이 된다(위치 표시라서). 슬라이더의 채운 구간과 썸 윤곽은
+ * `primary` 대신 `foreground` 로 덮는다 — 이 화면의 솔리드 채움은 화 끝 "다음 화" 하나여야 해서다(포커스 윤곽은
+ * `ring` 그대로). 보기 설정 패널은 이 바 위에 붙어 함께
  * 오르내린다. 첫 화·마지막 화에서 막힌 쪽 버튼은 `aria-disabled` 다 — `disabled` 는 포커스를 빼앗아 키보드 사용자가
  * 자리를 잃는다. 이유는 화 번호가 말하므로 문구를 붙이지 않는다. */
 export function ViewerBottomBar({
@@ -58,7 +78,13 @@ export function ViewerBottomBar({
             <div className="h-full bg-foreground" style={{ width: `${percent}%` }} />
           </div>
         )}
-        <div className="flex items-center justify-between gap-2 px-4 pt-3 sm:px-6">
+        {position.mode === "page" && position.screenCount > 0 && <PageSeekRow position={position} />}
+        <div
+          className={cn(
+            "flex items-center justify-between gap-2 px-4 sm:px-6",
+            position.mode === "page" && position.screenCount > 0 ? "pt-0" : "pt-3",
+          )}
+        >
           <EpisodeStepButton novelId={novelId} target={previous} direction="previous" />
           <p className="text-xs text-muted-foreground tabular-nums">
             {ordinal}/{totalCount}화{location !== undefined && ` · ${location}`}
@@ -66,6 +92,29 @@ export function ViewerBottomBar({
           <EpisodeStepButton novelId={novelId} target={next} direction="next" />
         </div>
       </nav>
+    </div>
+  );
+}
+
+function PageSeekRow({ position }: { position: ViewerPagePosition }) {
+  const { screen, screenCount, onSeek, onPrevious, onNext, showsPageButtons } = position;
+
+  return (
+    <div className="flex items-center gap-1 px-4 pt-2 sm:px-6">
+      {showsPageButtons && <PageTurnButton direction="previous" isBlocked={screen === 0} onTurn={onPrevious} />}
+      <Slider
+        value={[screen + 1]}
+        min={1}
+        max={screenCount}
+        step={1}
+        thumbLabel="쪽 이동"
+        thumbValueText={`${screen + 1} / ${screenCount}쪽`}
+        onValueChange={([value]) => {
+          if (value !== undefined) onSeek(value - 1);
+        }}
+        className="h-10 [&_[data-slot=slider-range]]:bg-foreground [&_[data-slot=slider-thumb]]:size-4 [&_[data-slot=slider-thumb]]:border-foreground [&_[data-slot=slider-thumb]:focus-visible]:border-ring"
+      />
+      {showsPageButtons && <PageTurnButton direction="next" isBlocked={screen === screenCount - 1} onTurn={onNext} />}
     </div>
   );
 }

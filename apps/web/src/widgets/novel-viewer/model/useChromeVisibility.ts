@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { shouldToggleChrome } from "../lib/shouldToggleChrome";
 
 // 누르면 그 요소 자신의 동작이 일어나는 것들. 그 위의 탭은 바를 여닫지 않는다.
-const INTERACTIVE_SELECTOR = "a, button, summary, input, textarea, select, label, [role='button']";
+export const INTERACTIVE_SELECTOR = "a, button, summary, input, textarea, select, label, [role='button']";
 
 type PointerStart = { x: number; y: number; time: number };
 
