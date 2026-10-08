@@ -24,7 +24,7 @@
 - 필드 이름(`제목:` 등)을 빼고 값만 쓴 필드 줄. gemini-3.8-flash 가 같은 입력에서 이따금 세 필드 모두 이렇게 쓴다. 머리
   줄과 구분 줄 사이의 세 줄이라 자리로 읽어도 경계는 그대로다. 다만 구조 줄이나 다른 필드 이름이 붙은 줄은 그 자리의
   값으로 받지 않고(필드가 빠졌거나 순서가 바뀐 것이다), 이름 없는 제목이 화 제목 상한보다 길면 본문 문단이 올라온
-  것으로 본다
+  것으로, 이름 없는 등장인물 줄이 문장이면 필드 줄 수가 어긋난 것으로 본다. 쌍점 없이 붙인 제 이름은 걷는다
 - 본문 안의 `---`·`***` 단독 줄(장면 전환 — 빈 줄로 바꾼다)
 - 등장인물 목록이 빈 것(이름 없는 인물만 나온 화가 있다)
 
@@ -34,7 +34,7 @@
 import re
 from dataclasses import dataclass
 
-from api.novelize.schemas import CHAPTER_TITLE_MAX_LENGTH
+from api.novelize.schemas import CHAPTER_TITLE_MAX_LENGTH, CHARACTER_NAME_MAX_LENGTH
 
 _NOVEL_TITLE_HEADER = re.compile(r"^=+\s*소설\s*제목\s*=+$")
 _EPISODE_HEADER = re.compile(r"^=+\s*(\d+)\s*화\s*=+$")
@@ -44,6 +44,8 @@ _SCENE_BREAK = re.compile(r"^(?:-{3,}|\*{3,})$")
 _FENCE = "```"
 _DECORATION = "*# \t"
 _FIELDS = ("제목", "요약", "등장인물")
+# 인물 이름에는 없고 문장 끝에는 있는 부호 — 이름표 없는 등장인물 줄이 문장인지 가른다.
+_SENTENCE_MARKS = ".!?。"
 
 
 class MalformedOutputError(Exception):
@@ -97,7 +99,21 @@ def _unlabeled_field(line: str, name: str) -> str | None:
     if _is_structural(line) or any(_field(line, other) is not None for other in _FIELDS):
         return None
     value = _bare(line)
+    # 쌍점 없이 이름만 붙인 줄(`제목 첫차`). 제 이름이면 걷어 값만 받고, 다른 필드 이름이면 자리가 어긋난 것이라 받지
+    # 않는다 — 값에 이름이 섞여 저장되거나, 필드 하나가 빠진 출력을 자리로 밀어 읽게 되므로.
+    for other in _FIELDS:
+        if value.startswith(f"{other} "):
+            if other != name:
+                return None
+            value = value.removeprefix(other).strip()
     if name == "제목" and len(value) > CHAPTER_TITLE_MAX_LENGTH:
+        return None
+    # 이름표 없는 등장인물 자리에 문장이 오면 필드 줄 수가 어긋난 채 구분 줄 앞에서 맞아떨어진 것이다(요약이 두 줄로
+    # 나뉘는 등). 그대로 받으면 문장이 인물 이름으로 저장되어 인물 카드가 생긴다.
+    if name == "등장인물" and any(
+        len(person) > CHARACTER_NAME_MAX_LENGTH or any(mark in person for mark in _SENTENCE_MARKS)
+        for person in _split_names(value)
+    ):
         return None
     return value
 

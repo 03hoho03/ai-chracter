@@ -99,6 +99,11 @@ def test_field_lines_written_without_their_names_are_read_by_position() -> None:
     )
 
 
+def test_a_field_name_written_without_a_colon_is_dropped_from_the_value() -> None:
+    (episode,) = parse_batch_output(f"===1화===\n제목 저녁\n요약 비가 왔다.\n등장인물 서진\n---\n{_BODY_1}").episodes
+    assert (episode.title, episode.summary, episode.characters) == ("저녁", "비가 왔다.", ("서진",))
+
+
 def test_a_malformed_field_line_is_described_without_its_text() -> None:
     """실패 로그에는 출력 글자를 싣지 않는다 — 어긋난 줄의 모양(종류·길이)만 남겨 원인을 가린다."""
     paragraph = "가" * 150
@@ -133,6 +138,13 @@ def test_scene_breaks_inside_a_body_become_blank_lines() -> None:
         pytest.param("===1화===\n---\n첫 문단\n둘째 문단\n---\n셋째 문단", id="no-field-lines-and-a-scene-break"),
         pytest.param("===1화===\n저녁\n등장인물: 서진\n---\n본문", id="unlabeled-title-then-missing-summary"),
         pytest.param(f"===1화===\n{'가' * 101}\n비\n서진\n---\n본문", id="unlabeled-title-longer-than-a-title"),
+        pytest.param(
+            "===1화===\n첫차\n준호가 동선을 맞췄다.\n촬영 날이 정해졌다.\n---\n본문", id="unlabeled-summary-split-into-two-lines"
+        ),
+        pytest.param(f"===1화===\n첫차\n비\n{'가' * 51}\n---\n본문", id="unlabeled-name-longer-than-a-name"),
+        pytest.param(
+            "===1화===\n제목 저녁\n등장인물 서진\n요약 비가 왔다\n---\n본문", id="colonless-fields-out-of-order"
+        ),
         pytest.param("===1화===\n제목:\n요약: 비\n등장인물: 서진\n---\n본문", id="empty-title"),
         pytest.param("===1화===\n제목: 저녁\n요약:  \n등장인물: 서진\n---\n본문", id="empty-summary"),
         pytest.param("===1화===\n제목: 저녁\n요약: 비\n등장인물: 서진\n", id="ends-before-separator"),
