@@ -6,6 +6,7 @@ import {
   MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH,
   MAX_SITUATION_NOTE_CONTENT_LENGTH,
   MAX_SITUATION_NOTE_NAME_LENGTH,
+  MAX_STAT_RULE_CONDITION_LENGTH,
   MAX_TRIGGER_KEYWORD_LENGTH,
   type StoryFieldKey,
 } from "@/features/build-story";
@@ -51,6 +52,7 @@ export type MockupKind =
   | "number"
   | "switch"
   | "statRules"
+  | "statChangeRules"
   | "icon"
   | "color"
   | "image"
@@ -133,20 +135,27 @@ export const STORY_FIELD_MOCKUPS = {
   "startingSetups.*.stats.*.unit": { kind: "text", seedPath: null, readTiming: null },
   // 튜토리얼 시드의 스탯은 턴당 자동 변화를 쓰지 않는다 — 시계도 판정을 받는 스탯이다.
   "startingSetups.*.stats.*.perTurnDelta": { kind: "number", seedPath: null, readTiming: null },
-  "startingSetups.*.stats.*.changeDirection": {
-    kind: "select",
-    seedPath: "startingSetups.*.statDefs.*.changeDirection",
-    readTiming: null,
-  },
-  "startingSetups.*.stats.*.maxChangePerTurn": {
-    kind: "number",
-    seedPath: "startingSetups.*.statDefs.*.maxChangePerTurn",
-    readTiming: null,
-  },
   "startingSetups.*.stats.*.description": {
     kind: "textarea",
     seedPath: "startingSetups.*.statDefs.*.description",
     readTiming: "judge",
+  },
+  "startingSetups.*.stats.*.rules": {
+    kind: "statChangeRules",
+    seedPath: "startingSetups.*.statDefs.*.rules",
+    readTiming: "judge",
+  },
+  "startingSetups.*.stats.*.rules.*.condition": {
+    kind: "textarea",
+    seedPath: "startingSetups.*.statDefs.*.rules.*.condition",
+    readTiming: null,
+    limit: MAX_STAT_RULE_CONDITION_LENGTH,
+    counter: true,
+  },
+  "startingSetups.*.stats.*.rules.*.delta": {
+    kind: "number",
+    seedPath: "startingSetups.*.statDefs.*.rules.*.delta",
+    readTiming: null,
   },
 
   "startingSetups.*.situationNotes": { kind: "cardList", seedPath: "startingSetups.*.situationNotes", readTiming: null },

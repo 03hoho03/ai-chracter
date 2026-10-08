@@ -28,8 +28,7 @@ const STAT: StatDefValues = {
   initial: 42,
   description: "d",
   perTurnDelta: null,
-  changeDirection: "both",
-  maxChangePerTurn: null,
+  rules: [],
 };
 
 function rule(id: string, statId = "days"): SingleRuleValues {

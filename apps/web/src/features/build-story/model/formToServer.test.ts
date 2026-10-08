@@ -43,8 +43,7 @@ function baseFormValues(): StoryBuilderFormValues {
             unit: "pt",
             description: "생존에 필요한 신체 상태",
             perTurnDelta: -1,
-            changeDirection: "both",
-            maxChangePerTurn: null,
+            rules: [],
           },
         ],
         endings: [],
@@ -127,8 +126,7 @@ describe("formToServer", () => {
               unit: "pt",
               description: "생존에 필요한 신체 상태",
               perTurnDelta: -1,
-              changeDirection: "both",
-              maxChangePerTurn: null,
+              rules: [],
             },
           ],
           endings: [],
@@ -268,31 +266,59 @@ describe("formToServer", () => {
     expect(requireFirst(payload.startingSetups).statDefs.map((stat) => stat.id)).toEqual(["stat-b", "stat-a"]);
   });
 
-  it("always sends a stat's change direction and max change per turn, even at their defaults", () => {
-    // 서버는 빠진 두 옵션을 "기존 값 유지"로 읽는다 — 빼면 기본값으로 되돌린 것이 저장되지 않고, 미리보기도 저장된 옵션을
-    // 쓰지 못한다.
-    const values = baseFormValues();
-    const stat = requireFirst(requireFirst(values.startingSetups).stats);
-    const defaultStat = requireFirst(requireFirst(formToServer(values).startingSetups).statDefs);
-    expect(defaultStat).toHaveProperty("changeDirection", "both");
-    expect(defaultStat).toHaveProperty("maxChangePerTurn", null);
-
-    stat.perTurnDelta = null;
-    stat.changeDirection = "decrease";
-    stat.maxChangePerTurn = 7;
-    const limitedStat = requireFirst(requireFirst(formToServer(values).startingSetups).statDefs);
-    expect(limitedStat).toMatchObject({ perTurnDelta: null, changeDirection: "decrease", maxChangePerTurn: 7 });
+  it("never sends a stat's change direction or max change per turn so the saved values stay", () => {
+    // 서버는 빠진 두 옵션을 "기존 값 유지"로 읽는다 — 이 폼은 두 칸을 다루지 않고, 규칙이 없는 시작설정이 쓰는 옛 판정 경로가
+    // 저장된 값을 읽으므로 기본값으로 덮지 않는다.
+    const stat = requireFirst(requireFirst(formToServer(baseFormValues()).startingSetups).statDefs);
+    expect(stat).not.toHaveProperty("changeDirection");
+    expect(stat).not.toHaveProperty("maxChangePerTurn");
   });
 
-  it("leaves out a max change per turn the input could not read as a whole number so the saved limit stays", () => {
-    // 정수가 아닌 값은 서버가 초안 저장째 거절하고, null 로 보내면 저장된 폭이 "제한 없음"으로 덮인다 — 서버는 빠진 키를
-    // "기존 값 유지"로 읽는다.
+  it("sends a stat's rules in order with trimmed conditions, and an empty list when there are none", () => {
     const values = baseFormValues();
-    requireFirst(requireFirst(values.startingSetups).stats).maxChangePerTurn = Number.NaN;
+    const stat = requireFirst(requireFirst(values.startingSetups).stats);
+    expect(requireFirst(requireFirst(formToServer(values).startingSetups).statDefs)).toHaveProperty("rules", []);
 
-    expect(requireFirst(requireFirst(formToServer(values).startingSetups).statDefs)).not.toHaveProperty(
-      "maxChangePerTurn",
-    );
+    stat.rules = [
+      { id: "rule-b", condition: "  사용자가 약속에 늦었다 ", delta: -3 },
+      { id: "rule-a", condition: "사용자가 짐을 나눠 들었다", delta: 3 },
+    ];
+    expect(requireFirst(requireFirst(formToServer(values).startingSetups).statDefs).rules).toEqual([
+      { id: "rule-b", condition: "사용자가 약속에 늦었다", delta: -3 },
+      { id: "rule-a", condition: "사용자가 짐을 나눠 들었다", delta: 3 },
+    ]);
+  });
+
+  it("leaves out only that stat's rules while one is half written so the saved rules stay and the rest still saves", () => {
+    // 서버는 빈 조건·빈 증감·0·상한 초과를 초안 저장째 거절한다 — 실으면 다른 칸의 수정까지 저장되지 않는다. 서버는 빠진
+    // 키를 "기존 값 유지"로 읽는다.
+    const valid = { id: "rule-1", condition: "사용자가 약속을 지켰다", delta: 2 };
+    const halfWritten = [
+      [{ ...valid, condition: "   " }],
+      [{ ...valid, delta: Number.NaN }],
+      [{ ...valid, delta: 0 }],
+      [{ ...valid, condition: "가".repeat(101) }],
+      Array.from({ length: 11 }, (_, index) => ({ ...valid, id: `rule-${index}` })),
+      [valid, valid],
+    ];
+    for (const rules of halfWritten) {
+      const values = baseFormValues();
+      const setup = requireFirst(values.startingSetups);
+      const stat = requireFirst(setup.stats);
+      setup.stats = [{ ...stat, rules }, { ...stat, id: "stat-other", rules: [valid] }];
+      const [broken, other] = requireFirst(formToServer(values).startingSetups).statDefs;
+      expect(broken).not.toHaveProperty("rules");
+      expect(other).toHaveProperty("rules", [valid]);
+    }
+  });
+
+  it("still sends a rule whose delta is wider than the stat range — only publishing checks that", () => {
+    const values = baseFormValues();
+    const stat = requireFirst(requireFirst(values.startingSetups).stats);
+    stat.min = 0;
+    stat.max = 5;
+    stat.rules = [{ id: "rule-1", condition: "사용자가 크게 다쳤다", delta: -9 }];
+    expect(requireFirst(requireFirst(formToServer(values).startingSetups).statDefs).rules).toEqual(stat.rules);
   });
 
   it("always sends each starting setup's situation notes, even an empty list", () => {

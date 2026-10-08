@@ -16,10 +16,14 @@ export type MockupValue =
   | { kind: "number"; value: number }
   | { kind: "switch"; value: boolean }
   | { kind: "statRules"; rules: Record<string, unknown>[] }
+  | { kind: "statChangeRules"; rules: StatChangeRuleValue[] }
   | { kind: "icon" | "color"; value: string }
   | { kind: "image"; token: string }
   | { kind: "cardList"; cards: Record<string, unknown>[]; more: number }
   | { kind: "mediaGrid"; cells: MediaGridCell[]; selected: MediaGridPosition };
+
+/** 스탯 규칙 한 줄 — 시드 표기 그대로(`id` 는 로더가 붙여 시드·원고에 없다). */
+export type StatChangeRuleValue = { condition: string; delta: number };
 
 /** 배치표 칸 위치 — `[인물 번호, 장면 번호]`(같은 단계의 인물·장면 칩 값에서 0부터). */
 export type MediaGridPosition = { person: number; scene: number };
@@ -69,6 +73,8 @@ export function parseMockupValue(kind: MockupKind, body: string): MockupValue {
       if (!Array.isArray(rules) || !rules.every(isRecord)) throw new Error(`규칙 배열이 아니다: ${body}`);
       return { kind, rules };
     }
+    case "statChangeRules":
+      return parseStatChangeRules(body);
     case "cardList":
       return parseCardList(body);
     case "mediaGrid":
@@ -78,6 +84,22 @@ export function parseMockupValue(kind: MockupKind, body: string): MockupValue {
     default:
       return assertNever(kind);
   }
+}
+
+function parseStatChangeRules(body: string): MockupValue {
+  const value = parseJson(body);
+  if (!Array.isArray(value) || value.length === 0) throw new Error(`규칙은 하나 이상인 배열이어야 한다: ${body}`);
+  const rules = value.map((rule): StatChangeRuleValue => {
+    if (!isRecord(rule)) throw new Error(`규칙은 객체다: ${JSON.stringify(rule)}`);
+    const { condition, delta, ...rest } = rule;
+    if (Object.keys(rest).length > 0) throw new Error(`규칙에 모르는 키: ${Object.keys(rest).join(", ")}`);
+    if (typeof condition !== "string" || condition.trim() === "") throw new Error(`조건은 빈 글이 아니어야 한다: ${JSON.stringify(rule)}`);
+    if (typeof delta !== "number" || !Number.isInteger(delta) || delta === 0) {
+      throw new Error(`증감은 0이 아닌 정수다: ${JSON.stringify(rule)}`);
+    }
+    return { condition, delta };
+  });
+  return { kind: "statChangeRules", rules };
 }
 
 function parseCardList(body: string): MockupValue {

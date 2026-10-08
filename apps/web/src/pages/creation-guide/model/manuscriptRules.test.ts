@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { matchTabForPath } from "@/features/build-common";
 import {
   type FieldLabel,
+  MAX_STAT_RULES,
   PROMPT_TEMPLATE_LABELS,
-  STAT_CHANGE_DIRECTIONS,
   STICKY_TURN_OPTIONS,
   STORY_FIELD_LABELS,
   STORY_TABS,
@@ -248,7 +248,6 @@ const OPTION_VALUES: Partial<Record<string, readonly unknown[]>> = {
   "registration.target": Object.keys(TARGET_LABELS),
   "registration.visibility": Object.keys(VISIBILITY_LABELS),
   "keywordNotes.*.stickyTurns": STICKY_TURN_OPTIONS.map((option) => Number(option.value)),
-  "startingSetups.*.stats.*.changeDirection": STAT_CHANGE_DIRECTIONS,
 };
 
 /**
@@ -415,6 +414,15 @@ function valueProblems(key: string, value: ReturnType<typeof parseMockupValue>, 
     case "chips":
       if (value.items.some(tooLong)) problems.push(`${limit}자를 넘는 칩`);
       break;
+    case "statChangeRules": {
+      // 규칙 줄은 빌더 조건 칸의 상한을 지켜야 그림이 빌더에서 쓸 수 없는 글을 보이지 않는다.
+      const conditionLimit = STORY_FIELD_MOCKUPS["startingSetups.*.stats.*.rules.*.condition"].limit;
+      if (value.rules.some((rule) => [...rule.condition.trim()].length > conditionLimit)) {
+        problems.push(`${conditionLimit}자를 넘는 조건`);
+      }
+      if (value.rules.length > MAX_STAT_RULES) problems.push(`규칙이 ${MAX_STAT_RULES}개를 넘는다`);
+      break;
+    }
     case "toggle":
     case "select": {
       const options = OPTION_VALUES[key];

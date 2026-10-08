@@ -63,6 +63,14 @@ describe("STORY_MISSING_FIELD_FORM_PATH", () => {
     }
   });
 
+  it("스탯 규칙의 두 키는 라벨이 있고 스탯 탭으로 간다", () => {
+    expect(STORY_MISSING_FIELD_LABELS["stats.ruleDelta"]).toMatch(/규칙.*범위 폭/);
+    expect(STORY_MISSING_FIELD_LABELS["stats.rulesWithCounter"]).toMatch(/규칙.*턴당 자동 변화/);
+    for (const key of ["stats.ruleDelta", "stats.rulesWithCounter"] as const) {
+      expectUnderTabPrefix(STORY_MISSING_FIELD_FORM_PATH[key] ?? "", "stat");
+    }
+  });
+
   it("엔딩 조건이 지워진 스탯을 가리킨다는 키는 라벨이 있고 엔딩 탭 프리픽스 아래로 간다", () => {
     expect(STORY_MISSING_FIELD_LABELS["endings.statRules"]).toMatch(/엔딩.*스탯/);
     // 서버는 지워진 우선순위 스탯도 이 키로 알린다 — 라벨이 조건만 말하면 작가가 우선순위 스탯 칸을 찾지 못한다.
