@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouterState } from "@tanstack/react-router";
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   novelKeys,
@@ -10,24 +10,10 @@ import {
   type NovelReadingPositionRequest,
 } from "@/entities/novel";
 
-import {
-  isScrollRestored,
-  toCurrentParagraphIndex,
-  toReadingBandRootMargin,
-  toRestoreScrollTop,
-  toSavedParagraphIndex,
-  toTrackingStart,
-  type BandParagraph,
-} from "../lib/readingBand";
 import { withChapterReadingPosition } from "../lib/readingPositionCache";
 import { toRestoreParagraphIndex, type SavedReadingPosition } from "../lib/toRestoreParagraphIndex";
 
 const SAVE_DEBOUNCE_MS = 3000;
-/** 띠에 걸친 높이가 자라는 것도 따라가도록 겹침 비율 몇 단계마다 다시 알림을 받는다(0 하나면 들고 날 때만 온다). */
-const READING_BAND_THRESHOLDS = [0, 0.05, 0.1, 0.25, 0.5, 0.75, 1];
-/** 되돌리기가 반영됐는지 다시 보는 프레임 수(약 0.5초). 그 안에 반영되지 않으면 이용자가 스스로 스크롤할 때까지 재지
- * 않는다. */
-const MAX_RESTORE_FRAMES = 30;
 
 type UseReadingPositionOptions = {
   novelId: string;
@@ -40,8 +26,31 @@ type UseReadingPositionOptions = {
   isAbsenceKnown: boolean;
   /** 이 화를 이미 다 읽었는가(그때는 다시 읽어도 다 읽은 화로 남는다 — 서버도 되돌리지 않는다). */
   wasFinished: boolean;
-  /** `data-paragraph-index` 문단들을 담은 요소. */
-  containerRef: RefObject<HTMLElement | null>;
+};
+
+/**
+ * 되돌릴 자리의 출처. `saved` 는 되돌릴 자리를 아는 경우(서버에 저장된 자리, 또는 같은 화에서 이미 재고 있던 자리)이고,
+ * 나머지 둘은 `toTrackingStart` 의 분류 그대로다 — `none` 은 처음 여는 화, `unknown` 은 그 화의 자리를 싣기 전의
+ * API 응답이다.
+ */
+export type RestoreBasis = "saved" | "none" | "unknown";
+
+/** 지금 문단을 재는 쪽(본문)이 이 화의 읽은 자리와 주고받는 것. */
+export type ReadingPositionSession = {
+  /** 라우터가 이 화로 오는 이동을 끝냈는가. 한 번 참이면 참으로 남는다 — 되돌리기는 이 뒤에만 한다. */
+  hasRouteSettled: boolean;
+  /**
+   * 본문이 붙을 때 되돌릴 문단과 그 출처. effect 안에서 부른다. 이 화에서 이미 재기 시작했으면(같은 화 안에서 본문을
+   * 바꿔 끼운 경우) 마지막으로 잰 문단을 저장된 자리처럼 주고, 아직이면 열 때의 분류를 그대로 준다 — 되돌리기를 못 해
+   * 첫 이동을 기다리던 화는 새 본문에서도 계속 기다려 서버의 자리를 덮지 않게.
+   */
+  toRestoreTarget: () => { index: number; basis: RestoreBasis };
+  /** 되돌리기가 반영됐거나 이용자가 스스로 움직여 지금 문단을 재기 시작했다. */
+  reportTrackingStarted: () => void;
+  /** 지금 문단이 바뀌었다. */
+  reportParagraph: (index: number) => void;
+  /** 마지막 문단에 닿았다. 이미 다 읽은 화면 아무것도 하지 않는다 — 한 번 다 읽은 화는 다시 거짓이 되지 않는다. */
+  reportFinished: () => void;
 };
 
 function positionKey(body: NovelReadingPositionRequest): string {
@@ -49,27 +58,19 @@ function positionKey(body: NovelReadingPositionRequest): string {
 }
 
 /**
- * 화를 읽는 자리를 서버에 남기고, 열 때 한 번 그 자리로 되돌린다.
+ * 화를 읽는 자리를 서버에 남긴다. 화(읽기 화면 마운트) 동안 한 번만 돌고, 지금 문단은 본문 쪽이 재서
+ * `ReadingPositionSession` 으로 알려 준다 — 그래서 같은 화 안에서 재는 본문을 바꿔 끼워도 아래 '떠날 때' 처리가
+ * 돌지 않고 저장도 끊기지 않는다.
  *
- * - **되돌리기**: 한 번만, 저장된 자리(그 뒤 화가 고쳐졌으면 문단 수 비율로 옮긴 자리)의 문단을 화면 맨 위로
- *   스크롤한다. **라우터가 이 이동을 다 끝낸 뒤에** 한다 — 라우터는 경로가 바뀐 이동 뒤 창을 맨 위로 올리는데, 그
- *   시점은 새 화면이 마운트된 커밋이 아니라 그 뒤 라우터가 이동을 "해결됨"으로 적는 커밋(`resolvedLocation` 갱신 →
- *   `onRendered`)이다. 데이터가 캐시에 있으면 읽기 화면이 그보다 먼저 마운트돼, 마운트 직후(다음 프레임)에 되돌리면
- *   곧이어 맨 위로 덮였다(작품 정보 → 이어 읽기에서 실측). 그래서 이동이 해결된 커밋 뒤 다음 프레임에 되돌리고,
- *   그래도 덮일 수 있으니 반영됐는지 몇 프레임 다시 보며 다시 놓는다. 링크마다 `resetScroll: false` 를 다는 길도
- *   있지만, 그러면 읽기 화면으로 오는 모든 길(목차·이전/다음 화·이어 읽기, 그리고 다음에 생길 길)이 그 옵션을
- *   기억해야 하고 브라우저 뒤로 가기에는 달 자리가 없다 — 한 곳(여기)에서 순서를 지키는 쪽이 빠짐이 없다.
- *   `scrollIntoView` 가 아니라 창 스크롤 위치를 직접 준다 — Chrome 은 `scrollIntoView` 대상으로 순차 포커스 시작점을
- *   옮겨, 되돌린 뒤 첫 Tab 이 "메뉴 열기"가 아니라 그 아래 첫 링크로 가며 화면이 튄다.
- * - **저장 가드**: 되돌린 자리가 화면에 반영된 것을 확인한 뒤에야 지금 문단을 재기 시작한다(`isScrollRestored`). 재지
- *   않으면 저장할 것도 없어 디바운스 저장·keepalive 모두 나가지 않는다 — 맨 위로 덮인 화면의 0번 문단이 저장된
- *   자리를 덮어쓰지 않게. 반영을 끝내 못 보면 이용자가 스스로 스크롤한 뒤부터 잰다. 저장된 자리가 없는 화(처음 여는
- *   화)와 저장된 자리가 맨 위인 화는 덮을 것이 없어 바로 잰다(`toTrackingStart`). 화별 자리를 싣기 전의 API 응답이라
- *   그 화의 자리를 모르면 맨 위에서 재지 않고 이용자가 스크롤한 뒤부터 잰다.
- * - **지금 문단**: 화면 위쪽 띠에 충분히 걸친 문단 중 가장 앞 문단(`toCurrentParagraphIndex`). 띠 위쪽은 문단의
- *   `scroll-margin-top` 만큼 잘라 되돌린 자리 바로 위 틈의 앞 문단을 세지 않는다. 마지막 문단이 화면에 들어오면 다
- *   읽음이다. 마지막 화면 안의 자리로 되돌려 창이 문서 끝에 막혔으면, 끝에 있는 동안은 띠에 걸린 더 앞 문단 대신
- *   되돌린 문단을 지금 문단으로 둔다(`toSavedParagraphIndex`) — 스크롤하지 않았는데 자리가 앞당겨지지 않게.
+ * - **라우터 대기**: 라우터는 경로가 바뀐 이동 뒤 창을 맨 위로 올리는데, 그 시점은 새 화면이 마운트된 커밋이 아니라
+ *   그 뒤 라우터가 이동을 "해결됨"으로 적는 커밋(`resolvedLocation` 갱신 → `onRendered`)이다. 데이터가 캐시에 있으면
+ *   읽기 화면이 그보다 먼저 마운트돼, 마운트 직후(다음 프레임)에 되돌리면 곧이어 맨 위로 덮였다(작품 정보 → 이어
+ *   읽기에서 실측). 그래서 이동이 해결된 뒤(`hasRouteSettled`)에 본문이 되돌리고 재기 시작한다. 링크마다
+ *   `resetScroll: false` 를 다는 길도 있지만, 그러면 읽기 화면으로 오는 모든 길(목차·이전/다음 화·이어 읽기, 그리고
+ *   다음에 생길 길)이 그 옵션을 기억해야 하고 브라우저 뒤로 가기에는 달 자리가 없다 — 한 곳(여기)에서 순서를 지키는
+ *   쪽이 빠짐이 없다.
+ * - **저장 가드**: 본문이 재기 시작하기 전에는 알려 오는 문단이 없어 저장할 것도 없다 — 디바운스 저장·keepalive 모두
+ *   나가지 않는다. 저장된 자리와 같은 값은 다시 보내지 않는다.
  * - **저장**: 자리가 바뀌면 3초 뒤 저장한다(스크롤하는 동안 요청이 쏟아지지 않게). 페이지가 숨거나(탭 전환·앱
  *   전환·닫기) 이 화를 떠날 때(다른 화로 옮김 포함) 기다리던 저장을 `keepalive` 로 바로 보낸다 — 그때는 보통 요청이
  *   끊긴다.
@@ -86,8 +87,7 @@ export function useReadingPosition({
   saved,
   isAbsenceKnown,
   wasFinished,
-  containerRef,
-}: UseReadingPositionOptions) {
+}: UseReadingPositionOptions): ReadingPositionSession {
   const queryClient = useQueryClient();
   const pendingRef = useRef<NovelReadingPositionRequest | undefined>(undefined);
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -95,6 +95,9 @@ export function useReadingPosition({
   // 이번에 열어 둔 동안 마지막으로 잰 자리. 떠날 때 상세 캐시에 먼저 써 둔다.
   const lastRecordedRef = useRef<NovelReadingPositionRequest | undefined>(undefined);
   const inflightRef = useRef<Promise<void>>(Promise.resolve());
+  const currentIndexRef = useRef<number | undefined>(undefined);
+  const isFinishedRef = useRef(wasFinished);
+  const hasTrackingStartedRef = useRef(false);
   // 라우터가 이 이동을 끝냈는가(지금 주소가 해결된 주소이고 진행 중인 이동이 없다). 한 번 참이 되면 참으로 남긴다 —
   // 이 화면을 떠나는 다음 이동이 시작돼 거짓이 돼도 되돌리기·재기를 다시 하지 않게.
   const isRouteResolved = useRouterState({
@@ -103,49 +106,55 @@ export function useReadingPosition({
   const [hasRouteSettled, setHasRouteSettled] = useState(isRouteResolved);
   if (isRouteResolved && !hasRouteSettled) setHasRouteSettled(true);
 
+  const restoredIndex = saved === undefined ? 0 : toRestoreParagraphIndex(saved, paragraphCount);
+
+  function cancelTimer() {
+    if (timerRef.current === undefined) return;
+    clearTimeout(timerRef.current);
+    timerRef.current = undefined;
+  }
+
+  function takePending(): NovelReadingPositionRequest | undefined {
+    cancelTimer();
+    const body = pendingRef.current;
+    pendingRef.current = undefined;
+    return body;
+  }
+
+  function record() {
+    // 문단이 없는 화는 서버가 자리를 받지 않는다(문단 번호는 문단 수보다 작아야 한다).
+    if (paragraphCount === 0) return;
+    const currentIndex = currentIndexRef.current;
+    if (currentIndex === undefined) return;
+    const body = { paragraphIndex: currentIndex, paragraphCount, revisionId, finished: isFinishedRef.current };
+    const key = positionKey(body);
+    if (key === lastKeyRef.current) return;
+    lastKeyRef.current = key;
+    lastRecordedRef.current = body;
+    pendingRef.current = body;
+    cancelTimer();
+    timerRef.current = setTimeout(() => {
+      const pending = takePending();
+      if (pending !== undefined) inflightRef.current = saveReadingPosition(novelId, chapterId, pending);
+    }, SAVE_DEBOUNCE_MS);
+  }
+
+  function flushKeepalive(): Promise<void> {
+    const pending = takePending();
+    return pending === undefined ? Promise.resolve() : sendReadingPositionKeepalive(novelId, chapterId, pending);
+  }
+
   useEffect(() => {
     if (!hasRouteSettled) return;
-    const root = containerRef.current;
-    // 문단이 없는 화는 서버가 자리를 받지 않는다(문단 번호는 문단 수보다 작아야 한다).
-    if (root === null || paragraphCount === 0) return;
-    const container: HTMLElement = root;
+    // 문단이 없는 화는 잴 것도 보낼 것도 없다(`record` 와 같은 이유).
+    if (paragraphCount === 0) return;
 
-    let currentIndex: number | undefined;
-    let isFinished = wasFinished;
-    const visible = new Map<number, BandParagraph>();
-    const observers: IntersectionObserver[] = [];
-
-    function cancelTimer() {
-      if (timerRef.current === undefined) return;
-      clearTimeout(timerRef.current);
-      timerRef.current = undefined;
-    }
-
-    function takePending(): NovelReadingPositionRequest | undefined {
-      cancelTimer();
-      const body = pendingRef.current;
-      pendingRef.current = undefined;
-      return body;
-    }
-
-    function record() {
-      if (currentIndex === undefined) return;
-      const body = { paragraphIndex: currentIndex, paragraphCount, revisionId, finished: isFinished };
-      const key = positionKey(body);
-      if (key === lastKeyRef.current) return;
-      lastKeyRef.current = key;
-      lastRecordedRef.current = body;
-      pendingRef.current = body;
-      cancelTimer();
-      timerRef.current = setTimeout(() => {
-        const pending = takePending();
-        if (pending !== undefined) inflightRef.current = saveReadingPosition(novelId, chapterId, pending);
-      }, SAVE_DEBOUNCE_MS);
-    }
-
-    function flushKeepalive(): Promise<void> {
-      const pending = takePending();
-      return pending === undefined ? Promise.resolve() : sendReadingPositionKeepalive(novelId, chapterId, pending);
+    // 본문의 같은 effect(자식이라 이보다 먼저 돈다)는 되돌리기를 다음 프레임에 시작하고 문단은 그 뒤에야 알려 온다 —
+    // 그래서 아래 초기화와 리스너는 첫 보고보다 앞선다.
+    isFinishedRef.current = wasFinished;
+    // 저장된 자리와 같은 값은 다시 보내지 않는다.
+    if (saved !== undefined) {
+      lastKeyRef.current = positionKey({ paragraphIndex: restoredIndex, paragraphCount, revisionId, finished: wasFinished });
     }
 
     function handleVisibilityChange() {
@@ -156,117 +165,9 @@ export function useReadingPosition({
       void flushKeepalive();
     }
 
-    function startTracking(root: HTMLElement) {
-      const paragraphs = root.querySelectorAll<HTMLElement>("[data-paragraph-index]");
-      const bandObserver = new IntersectionObserver(
-        (entries) => {
-          for (const entry of entries) {
-            const index = Number(entry.target.getAttribute("data-paragraph-index"));
-            if (entry.isIntersecting) {
-              visible.set(index, {
-                index,
-                visibleHeight: entry.intersectionRect.height,
-                height: entry.boundingClientRect.height,
-              });
-            } else {
-              visible.delete(index);
-            }
-          }
-          // 띠가 문단 사이 틈에 걸려 셀 문단이 없으면 직전 문단을 그대로 둔다.
-          const next = toCurrentParagraphIndex(visible.values());
-          if (next === undefined) return;
-          currentIndex = toSavedParagraphIndex({
-            measuredIndex: next,
-            restoredIndex,
-            scrollY: window.scrollY,
-            maxScrollY: maxScrollYOf(),
-          });
-          record();
-        },
-        { rootMargin: toReadingBandRootMargin(scrollMarginTopOf(paragraphs.item(0))), threshold: READING_BAND_THRESHOLDS },
-      );
-      for (const paragraph of paragraphs) bandObserver.observe(paragraph);
-      observers.push(bandObserver);
-
-      const lastParagraph = paragraphs.item(paragraphs.length - 1);
-      const endObserver = new IntersectionObserver((entries) => {
-        if (isFinished || !entries.some((entry) => entry.isIntersecting)) return;
-        isFinished = true;
-        record();
-      });
-      endObserver.observe(lastParagraph);
-      observers.push(endObserver);
-    }
-
-    const restoredIndex = saved === undefined ? 0 : toRestoreParagraphIndex(saved, paragraphCount);
-    // 저장된 자리와 같은 값은 다시 보내지 않는다.
-    if (saved !== undefined) {
-      lastKeyRef.current = positionKey({ paragraphIndex: restoredIndex, paragraphCount, revisionId, finished: wasFinished });
-    }
-
-    const target = restoredIndex > 0 ? container.querySelector<HTMLElement>(`[data-paragraph-index="${restoredIndex}"]`) : null;
-    let frame: number | undefined;
-    let isTracking = false;
-
-    function startTrackingOnce() {
-      if (isTracking) return;
-      isTracking = true;
-      window.removeEventListener("scroll", handleUserScroll);
-      startTracking(container);
-    }
-
-    // 이용자가 스스로 스크롤하면 그 자리는 이용자가 고른 자리라 재기 시작한다(되돌리기를 못 한 화 — `toTrackingStart`).
-    function handleUserScroll() {
-      startTrackingOnce();
-    }
-
-    function startTrackingWhen(start: "now" | "afterUserScroll") {
-      if (start === "now") startTrackingOnce();
-      else window.addEventListener("scroll", handleUserScroll, { passive: true, once: true });
-    }
-
-    function restoreTop(element: HTMLElement): number {
-      return toRestoreScrollTop({
-        scrollY: window.scrollY,
-        elementTop: element.getBoundingClientRect().top,
-        scrollMarginTop: scrollMarginTopOf(element),
-      });
-    }
-
-    function attemptRestore(element: HTMLElement, attempt: number) {
-      const top = restoreTop(element);
-      window.scrollTo({ top, behavior: "instant" });
-      frame = requestAnimationFrame(() => {
-        frame = undefined;
-        const isRestored = isScrollRestored({
-          scrollY: window.scrollY,
-          targetTop: restoreTop(element),
-          maxScrollY: maxScrollYOf(),
-        });
-        if (!isRestored && attempt + 1 < MAX_RESTORE_FRAMES) attemptRestore(element, attempt + 1);
-        else startTrackingWhen(toTrackingStart(isRestored ? "restored" : "failed"));
-      });
-    }
-
-    frame = requestAnimationFrame(() => {
-      frame = undefined;
-      if (target !== null) {
-        attemptRestore(target, 0);
-        return;
-      }
-      // 되돌릴 문단을 찾지 못한 것은 반영하지 못한 것과 같다(맨 위에서 재면 저장된 자리를 덮는다). 저장된 자리가 맨
-      // 위면 라우터가 이미 맨 위로 올려 둔 그 자리다.
-      if (restoredIndex > 0) startTrackingWhen(toTrackingStart("failed"));
-      else if (saved !== undefined) startTrackingWhen(toTrackingStart("restored"));
-      else startTrackingWhen(toTrackingStart(isAbsenceKnown ? "none" : "unknown"));
-    });
-
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("pagehide", handlePageHide);
     return () => {
-      if (frame !== undefined) cancelAnimationFrame(frame);
-      window.removeEventListener("scroll", handleUserScroll);
-      for (const observer of observers) observer.disconnect();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("pagehide", handlePageHide);
       const lastRecorded = lastRecordedRef.current;
@@ -282,14 +183,25 @@ export function useReadingPosition({
     // 화·개정이 바뀌면 읽기 화면이 새로 마운트된다(호출부가 화 id 로 key 를 준다). 저장된 자리는 열 때 한 번만 쓴다 —
     // 라우터가 이동을 끝낸 순간 한 번 돈다(`hasRouteSettled` 는 한 번 참이면 바뀌지 않는다).
   }, [hasRouteSettled]);
-}
 
-/** 창이 갈 수 있는 가장 아래 스크롤 위치. */
-function maxScrollYOf(): number {
-  return document.documentElement.scrollHeight - window.innerHeight;
-}
-
-/** 문단의 계산된 `scroll-margin-top`(px). 안전 영역이 더해진 값이라 CSS 에서 읽는다. */
-function scrollMarginTopOf(element: Element): number {
-  return Number.parseFloat(getComputedStyle(element).scrollMarginTop) || 0;
+  return {
+    hasRouteSettled,
+    toRestoreTarget() {
+      if (hasTrackingStartedRef.current) return { index: currentIndexRef.current ?? restoredIndex, basis: "saved" };
+      if (saved !== undefined) return { index: restoredIndex, basis: "saved" };
+      return { index: restoredIndex, basis: isAbsenceKnown ? "none" : "unknown" };
+    },
+    reportTrackingStarted() {
+      hasTrackingStartedRef.current = true;
+    },
+    reportParagraph(index) {
+      currentIndexRef.current = index;
+      record();
+    },
+    reportFinished() {
+      if (isFinishedRef.current) return;
+      isFinishedRef.current = true;
+      record();
+    },
+  };
 }

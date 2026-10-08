@@ -1,8 +1,6 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { Link } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
-import { ChevronLeft } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 
 import {
@@ -20,8 +18,7 @@ import { toChapterSavedReadingPosition } from "../lib/savedReadingPosition";
 import { readerSettingsAtom } from "../model/readerSettings";
 import { useChromeVisibility } from "../model/useChromeVisibility";
 import { useReadingPosition } from "../model/useReadingPosition";
-import { EpisodeEnd } from "./EpisodeEnd";
-import { PreviousSummary } from "./PreviousSummary";
+import { ScrollEpisodeBody } from "./ScrollEpisodeBody";
 import { ViewerBottomBar } from "./ViewerBottomBar";
 import { ViewerSettingsPanel } from "./ViewerSettingsPanel";
 import { ViewerTocSheet } from "./ViewerTocSheet";
@@ -47,7 +44,6 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
   const topBarId = useId();
   const bottomBarId = useId();
   const settingsPanelId = useId();
-  const articleRef = useRef<HTMLElement>(null);
   const settingsPanelRef = useRef<HTMLDivElement>(null);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const tocButtonRef = useRef<HTMLButtonElement>(null);
@@ -61,7 +57,7 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
   const episodeLabel = toEpisodeLabel(summary);
   const { saved, isAbsenceKnown } = toChapterSavedReadingPosition(summary, novel.lastRead);
 
-  useReadingPosition({
+  const readingPosition = useReadingPosition({
     novelId: novel.id,
     chapterId: chapter.id,
     revisionId: chapter.revision.id,
@@ -70,7 +66,6 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
     saved,
     isAbsenceKnown,
     wasFinished: summary.finishedReading,
-    containerRef: articleRef,
   });
 
   // 화 안 진행률은 아래 바에만 보이므로 바가 보이는 동안만 스크롤을 따라 다시 잰다(읽는 동안 다시 그리지 않게).
@@ -177,43 +172,19 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
         onToggleSettings={() => (isSettingsOpen ? closeSettings() : setIsSettingsOpen(true))}
       />
 
-      <main
-        className="min-h-dvh pt-10-safe pb-28"
+      <ScrollEpisodeBody
+        novel={novel}
+        summary={summary}
+        episodeLabel={episodeLabel}
+        paragraphs={paragraphs}
+        previous={previous}
+        next={next}
+        typographyClassName={readerTypographyClassName(settings)}
+        readingPosition={readingPosition}
         onPointerDown={chrome.handlePointerDown}
         onPointerUp={(event) => chrome.handlePointerUp(event, handleBodyTap)}
-      >
-        <article ref={articleRef} className={cn("mx-auto flex max-w-prose flex-col gap-8", readerTypographyClassName(settings))}>
-          <header className="flex flex-col gap-2">
-            {/* 바가 숨어 있어도 늘 있는 출구. */}
-            <Link
-              to="/novels/$novelId"
-              params={{ novelId: novel.id }}
-              className="flex w-fit items-center gap-1 rounded-sm text-sm text-muted-foreground hover:text-foreground focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-            >
-              <ChevronLeft aria-hidden className="size-4 shrink-0" />
-              <span className="min-w-0 truncate">{novel.title ?? "제목 미정"}</span>
-            </Link>
-            <h1 className="text-2xl font-bold tracking-tight text-balance break-keep text-foreground">{episodeLabel}</h1>
-            <p className="text-xs text-muted-foreground tabular-nums">{summary.charCount.toLocaleString()}자</p>
-          </header>
-
-          {previous !== undefined && previous.summary !== null && previous.summary !== "" && (
-            <PreviousSummary ordinal={previous.ordinal} summary={previous.summary} />
-          )}
-
-          <div className="flex flex-col gap-4 text-foreground">
-            {paragraphs.map((paragraph, index) => (
-              // 문단은 서버가 나눈 순서 그대로이고 이 목록은 다시 정렬되지 않아 순번이 곧 문단의 정체다(읽은 자리도
-              // 이 순번으로 저장한다).
-              <p key={index} data-paragraph-index={index} className="scroll-mt-4-safe whitespace-pre-line text-pretty break-keep">
-                {paragraph}
-              </p>
-            ))}
-          </div>
-
-          <EpisodeEnd novelId={novel.id} authorNote={summary.authorNote} next={next} onOpenToc={openToc} />
-        </article>
-      </main>
+        onOpenToc={openToc}
+      />
 
       <ViewerBottomBar
         ref={chrome.bottomBarRef}
