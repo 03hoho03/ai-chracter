@@ -107,6 +107,7 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
   const isFinePointerRef = useRef(isFinePointer);
   const isDirectMoveRef = useRef(false);
   const directMoveStartRef = useRef(0);
+  const isRelayoutPendingRef = useRef(false);
   const [position, setPosition] = useState<PagedPosition>({ screen: 0, screenCount: 0 });
   const [frame, setFrame] = useState<PageFrame | undefined>(undefined);
   const { hasRouteSettled } = session;
@@ -225,8 +226,14 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
     animationRef.current = { frame: requestAnimationFrame(tick), to };
   }
 
-  /** 다시 재고 앵커가 든 화면으로 돌아간다. 앵커는 바꾸지 않고 읽은 자리도 알리지 않는다. */
+  /** 다시 재고 앵커가 든 화면으로 돌아간다. 앵커는 바꾸지 않고 읽은 자리도 알리지 않는다. 끄는 중이면 놓을 때까지
+   * 미룬다 — 손 밑의 쪽이 다시 잰 화면으로 튀고, 끌기는 옛 화면 폭으로 계속 계산된다. */
   function relayout() {
+    if (isDirectMoveRef.current) {
+      isRelayoutPendingRef.current = true;
+      return;
+    }
+    isRelayoutPendingRef.current = false;
     finishAnimation();
     const layout = measure();
     layoutRef.current = layout;
@@ -343,6 +350,11 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
       frame = requestAnimationFrame(() => {
         frame = undefined;
         if (trackingRef.current !== "restoring") return;
+        // 끄는 동안에는 되돌린 자리로 다시 놓지 않는다(손 밑의 쪽과 싸운다) — 놓은 뒤에 이어서 확인한다.
+        if (isDirectMoveRef.current) {
+          confirm(attempt);
+          return;
+        }
         const layout = layoutRef.current;
         const scroller = scrollerRef.current;
         if (layout === undefined || !scroller) {
@@ -437,10 +449,12 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
       scroller.scrollLeft = Math.min(Math.max(directMoveStartRef.current - dx, 0), maxScrollLeft);
     },
     release(direction) {
-      const layout = layoutRef.current;
-      const scroller = scrollerRef.current;
       if (!isDirectMoveRef.current) return;
       isDirectMoveRef.current = false;
+      // 끄는 동안 미룬 다시 재기는 놓은 지금 한다 — 끌던 화면으로 돌아간 뒤 그 화면에서 넘기거나 머문다.
+      if (isRelayoutPendingRef.current) relayout();
+      const layout = layoutRef.current;
+      const scroller = scrollerRef.current;
       if (layout === undefined || !scroller) return;
       const { step } = layout.geometry;
       const target = clampScreen(screenRef.current + direction, layout.screenCount);
