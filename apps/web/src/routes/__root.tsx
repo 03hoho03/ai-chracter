@@ -11,6 +11,7 @@ import { ConfirmChatRoomActionModal } from "@/features/manage-chat-room";
 import { DeletePersonaModal } from "@/features/manage-persona";
 import { DeleteContentDraftModal, ResetContentDraftModal } from "@/features/manage-content-draft";
 import { PlayGuideModal } from "@/features/play-guide";
+import { PurchaseConfirmDialog } from "@/features/purchase-clover";
 import { ReportChatMessageModal } from "@/features/report-chat-message";
 import { ReportContentModal } from "@/features/report-content";
 import { GeneratedImagePickerModal } from "@/features/select-generated-image";
@@ -74,6 +75,7 @@ function RootComponent() {
       <ReportContentModal />
       <ReportChatMessageModal />
       <ConfirmChatRoomActionModal />
+      <PurchaseConfirmDialog />
       <PlayGuideModal />
       <EndingCollectionModal />
       <ImageArchiveModal />

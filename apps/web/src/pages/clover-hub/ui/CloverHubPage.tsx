@@ -6,17 +6,22 @@ import {
   CLOVER_EXPIRY_NOTICE_MESSAGE,
   CLOVER_MISSION_LABELS,
   CloverBalance,
+  CloverProductLine,
   formatCloverExpiringSoonMessage,
   projectCloverMissionState,
   useClaimAttendanceMutation,
   useClaimCloverMissionMutation,
   useCloverBalanceQuery,
   useCloverMissionsQuery,
+  useCloverPricingQuery,
   type CloverMissionItem,
 } from "@/entities/clover";
 import { IdentityRequiredNotice, isIdentityGated, isIdentityVerificationRequiredError } from "@/entities/identity";
 import { useSessionQuery } from "@/entities/session";
+import { PurchaseConfirmDialog, usePaymentRedirect } from "@/features/purchase-clover";
 import { SUPPORT_DESTINATIONS } from "@/shared/config/supportDestinations";
+
+import type { CloverHubSearch } from "../model/cloverHubSearch";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 const IDENTITY_REQUIRED_MESSAGE = "본인인증을 하면 받을 수 있어요.";
@@ -43,12 +48,16 @@ const SECTION_LINK_CLASS =
 /** 클로버 허브 페이지.
  *
  * 컨테이너 폭은 `max-w-md`다. `DESIGN.md` Layout containers 절은 폭을 콘텐츠 밀도로 고르고 텍스트
- * 위주의 한 열인 설정 화면에 `max-w-md`를 준다 — 이 화면도 잔액·출석·미션 세 섹션이 텍스트 몇 줄과
+ * 위주의 한 열인 설정 화면에 `max-w-md`를 준다 — 이 화면도 잔액·구매·출석·미션 네 섹션이 텍스트 몇 줄과
  * 짧은 행뿐이라 그리드도 표도 없는 같은 밀도다. 미션 행은 라벨과 버튼·배지를 양 끝으로 벌리므로
  * (`justify-between`) 컬럼을 넓혀도 그 사이 빈자리만 늘어난다. 이 화면에서만 들어가는 내역 화면도
  * 같은 `max-w-md`라 둘 사이를 오갈 때 컬럼 폭이 바뀌지 않는다.
+ *
+ * 결제창이 페이지를 떠났다가(모바일) 돌아오는 곳도 여기다 — 라우트가 넘긴 결과 쿼리로 확정을 이어받고 쿼리를 지운다.
  */
-export function CloverHubPage() {
+export function CloverHubPage({ search, onSearchClear }: { search: CloverHubSearch; onSearchClear: () => void }) {
+  usePaymentRedirect(search, onSearchClear);
+
   return (
     <main className="mx-auto flex max-w-md flex-col gap-10 px-4 sm:px-6 py-10">
       <div className="flex flex-col gap-1.5">
@@ -61,6 +70,7 @@ export function CloverHubPage() {
       </div>
 
       <BalanceSection />
+      <PurchaseSection />
       <AttendanceSection />
       <MissionSection />
     </main>
@@ -104,6 +114,63 @@ function BalanceSection() {
         </Link>
       </div>
     </section>
+  );
+}
+
+/** 클로버 구매. 상품·가격·결제수단·결제 스위치는 전부 `GET /clover/pricing` 응답에서 온다(웹에 가격 사본이 없다).
+ *
+ * 상품 카드는 outline 이다 — 이 화면의 솔리드 채움은 출석체크가 쓰고, 돈이 나가는 확정의 채움은 구매 확인 다이얼로그
+ * 안의 "결제하기" 하나다. 카드는 고르기만 하고 결제는 다이얼로그에서 한다. */
+function PurchaseSection() {
+  return (
+    <section className="flex flex-col gap-4">
+      <SectionHeading>클로버 구매</SectionHeading>
+      <PurchaseBody />
+    </section>
+  );
+}
+
+function PurchaseBody() {
+  const pricingQuery = useCloverPricingQuery();
+  const { data: me } = useSessionQuery();
+
+  if (pricingQuery.isPending) {
+    return <span className="text-sm text-muted-foreground">불러오는 중…</span>;
+  }
+  if (pricingQuery.isError) {
+    return (
+      <p className="text-sm break-keep text-destructive-text">
+        클로버 상품을 불러오지 못했어요. 잠시 후 다시 시도해주세요.
+      </p>
+    );
+  }
+
+  const { products, payMethods, paymentsEnabled } = pricingQuery.data;
+  if (!paymentsEnabled) {
+    return <p className="text-sm break-keep text-muted-foreground">클로버 결제는 아직 준비 중이에요.</p>;
+  }
+  // 결제는 게이트 스위치와 무관하게 본인인증(만 19세 확인)을 건다 — 게이트 판정이 아니라 인증 여부를 본다.
+  if (!me?.identityVerified) {
+    return <IdentityRequiredNotice reason="purchase" />;
+  }
+
+  return (
+    <ul className="flex flex-col gap-3">
+      {products.map((product) => (
+        <li key={product.key}>
+          {/* 카드 자체가 이 섹션의 인터랙션이라 button-outline 레시피를 카드 크기로 쓴다(`bg-background` +
+              `hover:bg-muted` + 하우스 포커스 링 + 눌림). */}
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            onClick={() => void PurchaseConfirmDialog.call({ product, payMethods, email: me.email })}
+            className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-background px-4 py-3 text-left outline-none hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-px motion-safe:transition-colors"
+          >
+            <CloverProductLine product={product} />
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 

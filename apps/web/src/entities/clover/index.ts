@@ -8,7 +8,7 @@ export { useConfirmCloverSpendMutation } from "./api/useConfirmCloverSpendMutati
 export { useCloverMissionsQuery } from "./api/useCloverMissionsQuery";
 export type { CloverMissionItem } from "./api/useCloverMissionsQuery";
 export { useCloverPricingQuery } from "./api/useCloverPricingQuery";
-export type { CloverProductItem } from "./api/useCloverPricingQuery";
+export type { CloverPricingResponse, CloverProductItem } from "./api/useCloverPricingQuery";
 export { useClaimCloverMissionMutation } from "./api/useClaimCloverMissionMutation";
 export { useCloverLedgerQuery } from "./api/useCloverLedgerQuery";
 export type {
@@ -30,3 +30,4 @@ export { formatCloverLedgerAmount } from "./model/cloverLedgerAmountDisplay";
 export { CloverBalance } from "./ui/CloverBalance";
 export { CloverSpendSummary } from "./ui/CloverSpendSummary";
 export { CloverIcon } from "./ui/CloverIcon";
+export { CloverProductLine } from "./ui/CloverProductLine";

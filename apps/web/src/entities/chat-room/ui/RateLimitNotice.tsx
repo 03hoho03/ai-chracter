@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
+import { Link } from "@tanstack/react-router";
 import { RotateCw } from "lucide-react";
 
 import {
@@ -62,6 +63,13 @@ export function RateLimitNotice({ rateLimit, surface, onRetry }: RateLimitNotice
       <span role="alert" className="sr-only">
         {formatChatRateLimitAnnouncement(rateLimit, surface)}
       </span>
+      {/* 클로버가 모자라면 채울 곳(출석·미션·구매가 있는 허브)으로 잇는다. 빌더 미리보기에는 두지 않는다 — 누르면
+          만들던 화면을 떠난다. */}
+      {rateLimit.window === "clover" && surface !== "preview" && (
+        <Button asChild variant="destructive" size="sm" className="shrink-0">
+          <Link to="/clover">클로버 채우기</Link>
+        </Button>
+      )}
       {/* day 창에는 재시도를 두지 않는다 — 자정까지 눌러도 같은 429가 돌아온다. */}
       {!!onRetry && rateLimit.window === "minute" && (
         <Button
