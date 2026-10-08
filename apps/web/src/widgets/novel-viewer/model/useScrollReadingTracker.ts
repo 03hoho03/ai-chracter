@@ -162,8 +162,8 @@ export function useScrollReadingTracker({ session, paragraphCount, containerRef 
       window.removeEventListener("scroll", handleUserScroll);
       for (const observer of observers) observer.disconnect();
     };
-    // 이 본문이 붙어 있는 동안 한 번만 되돌리고 잰다 — 라우터가 이동을 끝낸 순간 한 번 돈다(`hasRouteSettled` 는 한 번
-    // 참이면 바뀌지 않는다).
+    // 이 본문이 붙어 있는 동안 한 번만 되돌리고 잰다(`hasRouteSettled` 는 한 번 참이면 바뀌지 않는다). 화를 열 때는
+    // 라우터가 이동을 끝낸 순간, 같은 화 안에서 본문을 바꿔 끼울 때는 붙는 순간 돈다.
   }, [hasRouteSettled]);
 }
 

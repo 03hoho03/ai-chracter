@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouterState } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   novelKeys,
@@ -41,8 +41,9 @@ export type ReadingPositionSession = {
   hasRouteSettled: boolean;
   /**
    * 본문이 붙을 때 되돌릴 문단과 그 출처. effect 안에서 부른다. 이 화에서 이미 재기 시작했으면(같은 화 안에서 본문을
-   * 바꿔 끼운 경우) 마지막으로 잰 문단을 저장된 자리처럼 주고, 아직이면 열 때의 분류를 그대로 준다 — 되돌리기를 못 해
-   * 첫 이동을 기다리던 화는 새 본문에서도 계속 기다려 서버의 자리를 덮지 않게.
+   * 바꿔 끼운 경우) 마지막으로 잰 문단을 저장된 자리처럼 주고, 아직이면 열 때의 분류를 그대로 준다 — 자리를 모르는
+   * 화는 새 본문에서도 계속 첫 이동을 기다리고, 저장된 자리가 있는데 되돌리기를 못 했던 화는 새 본문이 그 자리로 다시
+   * 되돌려 본다. 어느 쪽도 서버의 자리를 덮지 않는다 — 다시 되돌리는 자리가 곧 서버의 자리다.
    */
   toRestoreTarget: () => { index: number; basis: RestoreBasis };
   /** 되돌리기가 반영됐거나 이용자가 스스로 움직여 지금 문단을 재기 시작했다. */
@@ -184,24 +185,37 @@ export function useReadingPosition({
     // 라우터가 이동을 끝낸 순간 한 번 돈다(`hasRouteSettled` 는 한 번 참이면 바뀌지 않는다).
   }, [hasRouteSettled]);
 
-  return {
-    hasRouteSettled,
-    toRestoreTarget() {
-      if (hasTrackingStartedRef.current) return { index: currentIndexRef.current ?? restoredIndex, basis: "saved" };
-      if (saved !== undefined) return { index: restoredIndex, basis: "saved" };
-      return { index: restoredIndex, basis: isAbsenceKnown ? "none" : "unknown" };
-    },
-    reportTrackingStarted() {
-      hasTrackingStartedRef.current = true;
-    },
-    reportParagraph(index) {
-      currentIndexRef.current = index;
-      record();
-    },
-    reportFinished() {
-      if (isFinishedRef.current) return;
-      isFinishedRef.current = true;
-      record();
-    },
-  };
+  const openingBasis = toOpeningBasis(saved, isAbsenceKnown);
+
+  // 렌더마다 같은 객체를 준다 — 본문 쪽 훅이 이것을 effect 의존에 넣어도 렌더마다 다시 돌지 않게. 메서드가 읽는 값은
+  // ref 이거나 화를 연 동안 바뀌지 않는 값(화·개정이 바뀌면 읽기 화면이 새로 마운트된다)이고, 되돌릴 자리를 정하는
+  // 값만 의존으로 둔다.
+  return useMemo<ReadingPositionSession>(
+    () => ({
+      hasRouteSettled,
+      toRestoreTarget() {
+        if (hasTrackingStartedRef.current) return { index: currentIndexRef.current ?? restoredIndex, basis: "saved" };
+        return { index: restoredIndex, basis: openingBasis };
+      },
+      reportTrackingStarted() {
+        hasTrackingStartedRef.current = true;
+      },
+      reportParagraph(index) {
+        currentIndexRef.current = index;
+        record();
+      },
+      reportFinished() {
+        if (isFinishedRef.current) return;
+        isFinishedRef.current = true;
+        record();
+      },
+    }),
+    [hasRouteSettled, restoredIndex, openingBasis],
+  );
+}
+
+/** 화를 열 때의 되돌릴 자리 출처 — 저장된 자리가 있는가, 없다면 없다고 확신하는가. */
+function toOpeningBasis(saved: SavedReadingPosition | undefined, isAbsenceKnown: boolean): RestoreBasis {
+  if (saved !== undefined) return "saved";
+  return isAbsenceKnown ? "none" : "unknown";
 }
