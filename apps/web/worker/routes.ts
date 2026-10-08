@@ -39,6 +39,7 @@ export const KNOWN_ROUTES = [
   "/personas",
   "/privacy",
   "/profile/$userId",
+  "/refund-policy",
   "/reset-password",
   "/signup",
   "/studio/images",
