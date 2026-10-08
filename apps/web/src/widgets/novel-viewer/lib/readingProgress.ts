@@ -20,9 +20,3 @@ export function toEpisodeScrollProgress({
   if (scrollable <= 0) return 1;
   return clampRatio(scrollTop / scrollable);
 }
-
-/** 작품 전체 진행률(목차). 다 읽은 화 수 ÷ 전체 화 수, 화가 없으면 0. */
-export function toNovelReadProgress(finishedCount: number, totalCount: number): number {
-  if (totalCount <= 0) return 0;
-  return clampRatio(finishedCount / totalCount);
-}

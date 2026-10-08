@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { toEpisodeScrollProgress, toNovelReadProgress } from "./readingProgress";
+import { toEpisodeScrollProgress } from "./readingProgress";
 
 describe("toEpisodeScrollProgress", () => {
   it("스크롤 위치를 스크롤할 수 있는 거리로 나눈다", () => {
@@ -17,18 +17,5 @@ describe("toEpisodeScrollProgress", () => {
   it("본문이 화면 안에 다 들어오면 1", () => {
     expect(toEpisodeScrollProgress({ scrollTop: 0, scrollHeight: 800, clientHeight: 1000 })).toBe(1);
     expect(toEpisodeScrollProgress({ scrollTop: 0, scrollHeight: 1000, clientHeight: 1000 })).toBe(1);
-  });
-});
-
-describe("toNovelReadProgress", () => {
-  it("다 읽은 화 수를 전체 화 수로 나눈다", () => {
-    expect(toNovelReadProgress(0, 4)).toBe(0);
-    expect(toNovelReadProgress(1, 4)).toBe(0.25);
-    expect(toNovelReadProgress(4, 4)).toBe(1);
-  });
-
-  it("화가 없으면 0, 넘치는 값은 1 로 자른다", () => {
-    expect(toNovelReadProgress(0, 0)).toBe(0);
-    expect(toNovelReadProgress(5, 4)).toBe(1);
   });
 });
