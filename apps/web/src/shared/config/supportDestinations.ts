@@ -14,6 +14,7 @@ export const SUPPORT_DESTINATIONS = {
   privacy: { label: "개인정보처리방침", to: "/privacy", isPublic: true },
   "operation-policy": { label: "운영정책", to: "/operation-policy", isPublic: true },
   "youth-policy": { label: "청소년 보호정책", to: "/youth-policy", isPublic: true },
+  "refund-policy": { label: "환불정책", to: "/refund-policy", isPublic: true },
 } as const satisfies Record<string, { label: string; to: string; isPublic: boolean }>;
 
 export type SupportDestinationKey = keyof typeof SUPPORT_DESTINATIONS;

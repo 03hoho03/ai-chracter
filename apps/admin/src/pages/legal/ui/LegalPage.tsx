@@ -23,12 +23,14 @@ export function LegalPage() {
   const privacyQuery = useLegalDocumentQuery("privacy");
   const operationPolicyQuery = useLegalDocumentQuery("operation-policy");
   const youthPolicyQuery = useLegalDocumentQuery("youth-policy");
+  const refundPolicyQuery = useLegalDocumentQuery("refund-policy");
   // `Record`로 두어 종류가 늘면 여기서 컴파일 에러가 난다 — 훅을 하나 더 부르는 것을 잊으면 그 탭이 빈다.
   const queryByKind: Record<LegalKind, typeof termsQuery> = {
     terms: termsQuery,
     privacy: privacyQuery,
     "operation-policy": operationPolicyQuery,
     "youth-policy": youthPolicyQuery,
+    "refund-policy": refundPolicyQuery,
   };
   const savedDraftBodyOf = (kind: LegalKind) => queryByKind[kind].data?.draft?.bodyMarkdown ?? "";
   const draftBodyOf = (kind: LegalKind) => draftBodyByKind[kind] ?? savedDraftBodyOf(kind);

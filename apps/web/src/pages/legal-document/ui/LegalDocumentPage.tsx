@@ -4,7 +4,7 @@ import { FileQuestion } from "lucide-react";
 import { LEGAL_DOCUMENT_LABEL, type LegalDocumentKind, useLegalDocumentQuery } from "@/entities/legal";
 import { formatDate } from "@/shared/lib/time/formatDate";
 
-/** `/terms`·`/privacy`·`/operation-policy`·`/youth-policy` 공용 페이지 — 라우트들이 `kind`만 다를 뿐
+/** 법적 문서(`LegalDocumentKind` 전부 — `/terms`·`/privacy` 등) 공용 페이지 — 라우트들이 `kind`만 다를 뿐
  * 조회·렌더 로직이 완전히 같아 페이지를 하나로 두고 라우트 파일에서 kind만 주입한다(routes/terms.tsx 등). */
 export function LegalDocumentPage({ kind }: { kind: LegalDocumentKind }) {
   return (

@@ -14,6 +14,7 @@ import { Route as UiDemoRouteImport } from './routes/ui-demo'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as RefundPolicyRouteImport } from './routes/refund-policy'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as PersonasRouteImport } from './routes/personas'
 import { Route as OperationPolicyRouteImport } from './routes/operation-policy'
@@ -72,6 +73,11 @@ const SignupRoute = SignupRouteImport.update({
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RefundPolicyRoute = RefundPolicyRouteImport.update({
+  id: '/refund-policy',
+  path: '/refund-policy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrivacyRoute = PrivacyRouteImport.update({
@@ -258,6 +264,7 @@ export interface FileRoutesByFullPath {
   '/operation-policy': typeof OperationPolicyRoute
   '/personas': typeof PersonasRoute
   '/privacy': typeof PrivacyRoute
+  '/refund-policy': typeof RefundPolicyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/terms': typeof TermsRoute
@@ -299,6 +306,7 @@ export interface FileRoutesByTo {
   '/operation-policy': typeof OperationPolicyRoute
   '/personas': typeof PersonasRoute
   '/privacy': typeof PrivacyRoute
+  '/refund-policy': typeof RefundPolicyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/terms': typeof TermsRoute
@@ -341,6 +349,7 @@ export interface FileRoutesById {
   '/operation-policy': typeof OperationPolicyRoute
   '/personas': typeof PersonasRoute
   '/privacy': typeof PrivacyRoute
+  '/refund-policy': typeof RefundPolicyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/terms': typeof TermsRoute
@@ -384,6 +393,7 @@ export interface FileRouteTypes {
     | '/operation-policy'
     | '/personas'
     | '/privacy'
+    | '/refund-policy'
     | '/reset-password'
     | '/signup'
     | '/terms'
@@ -425,6 +435,7 @@ export interface FileRouteTypes {
     | '/operation-policy'
     | '/personas'
     | '/privacy'
+    | '/refund-policy'
     | '/reset-password'
     | '/signup'
     | '/terms'
@@ -466,6 +477,7 @@ export interface FileRouteTypes {
     | '/operation-policy'
     | '/personas'
     | '/privacy'
+    | '/refund-policy'
     | '/reset-password'
     | '/signup'
     | '/terms'
@@ -508,6 +520,7 @@ export interface RootRouteChildren {
   OperationPolicyRoute: typeof OperationPolicyRoute
   PersonasRoute: typeof PersonasRoute
   PrivacyRoute: typeof PrivacyRoute
+  RefundPolicyRoute: typeof RefundPolicyRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignupRoute: typeof SignupRoute
   TermsRoute: typeof TermsRoute
@@ -573,6 +586,13 @@ declare module '@tanstack/react-router' {
       path: '/reset-password'
       fullPath: '/reset-password'
       preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/refund-policy': {
+      id: '/refund-policy'
+      path: '/refund-policy'
+      fullPath: '/refund-policy'
+      preLoaderRoute: typeof RefundPolicyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/privacy': {
@@ -828,6 +848,7 @@ const rootRouteChildren: RootRouteChildren = {
   OperationPolicyRoute: OperationPolicyRoute,
   PersonasRoute: PersonasRoute,
   PrivacyRoute: PrivacyRoute,
+  RefundPolicyRoute: RefundPolicyRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SignupRoute: SignupRoute,
   TermsRoute: TermsRoute,

@@ -15,6 +15,7 @@ export const LEGAL_DOCUMENT_LABEL: Record<LegalDocumentKind, string> = {
   privacy: SUPPORT_DESTINATIONS.privacy.label,
   "operation-policy": SUPPORT_DESTINATIONS["operation-policy"].label,
   "youth-policy": SUPPORT_DESTINATIONS["youth-policy"].label,
+  "refund-policy": SUPPORT_DESTINATIONS["refund-policy"].label,
 };
 
 /** 동의 종류가 늘면 이 Record가 컴파일 에러로 잡는다 — 목록을 손으로 또 적으면 그 강제가 목록에는 걸리지 않아
