@@ -173,6 +173,7 @@ async def test_balance_reports_flags_for_a_fresh_user(
         "balance": 30,
         "spendConfirmedToday": False,
         "attendanceClaimable": True,
+        "paidBalance": 0,
         "expiringSoon": None,
     }
 
@@ -196,6 +197,7 @@ async def test_balance_flags_flip_once_today_is_recorded(
         "balance": 30,
         "spendConfirmedToday": True,
         "attendanceClaimable": False,
+        "paidBalance": 0,
         "expiringSoon": None,
     }
 

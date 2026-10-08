@@ -13,7 +13,7 @@ import logging
 import time
 import uuid
 from collections.abc import AsyncGenerator, Iterator
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -176,6 +176,13 @@ async def _user(db: AsyncSession, client: httpx.AsyncClient | None = None, **ove
     return user
 
 
+async def _buyer(db: AsyncSession, client: httpx.AsyncClient, **overrides: object) -> User:
+    """주문을 만들 수 있는 회원: 본인인증을 마쳤고 만 19세 이상이다(기본 생년월일 2000-01-01)."""
+    return await _user(
+        db, client, identity_ci_hmac=f"ci-{uuid.uuid4().hex}", identity_verified_at=datetime.now(UTC), **overrides
+    )
+
+
 async def _ledger(db: AsyncSession, user_id: uuid.UUID) -> list[tuple[str, int, str | None]]:
     rows = await db.execute(
         select(CloverLedger.kind, CloverLedger.amount, CloverLedger.idempotency_key)
@@ -222,7 +229,7 @@ async def test_create_payment_fixes_the_amount_on_the_server(
     """금액·수량·채널키·동의 시점 문서 버전을 서버가 정해 주문에 복사한다. 깨지는 시나리오: 브라우저가 보낸 값을 믿거나
     상품 정의가 바뀐 뒤 대조 기준이 흔들린다."""
     await _make_published(db_session, kind="refund-policy", version="2026-10-01")
-    user = await _user(db_session, db_client)
+    user = await _buyer(db_session, db_client)
 
     resp = await db_client.post("/payments", json={"productKey": "plus", "agreed": True})
 
@@ -293,11 +300,55 @@ async def test_create_payment_needs_a_published_refund_policy(
 ) -> None:
     """동의를 기록할 환불정책 게시본이 없으면 유료 조건 동의가 성립하지 않는다."""
     assert await _latest_published_legal_version(db_session, "refund-policy") is None
-    await _user(db_session, db_client)
+    await _buyer(db_session, db_client)
 
     resp = await db_client.post("/payments", json={"productKey": "basic", "agreed": True})
 
     assert (resp.status_code, resp.json()["detail"]) == (503, {"code": "PAYMENTS_UNAVAILABLE"})
+
+
+@pytest.mark.parametrize("gate", [pytest.param(False, id="gate-off"), pytest.param(True, id="gate-on")])
+@pytest.mark.parametrize("exempt", [pytest.param(False, id="member"), pytest.param(True, id="exempt")])
+async def test_create_payment_requires_identity_verification(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    gate: bool,
+    exempt: bool,
+) -> None:
+    """결제의 본인인증은 만 19세를 확인하는 유일한 수단이라 미인증 회원 게이트 스위치와도, 레이트리밋 면제와도 무관하게
+    걸린다. 주문 행은 만들지 않는다."""
+    await _make_published(db_session, kind="refund-policy", version="2026-10-01")
+    monkeypatch.setattr(settings, "identity_gate_enabled", gate)
+    user = await _user(db_session, db_client, rate_limit_exempt=exempt)
+
+    resp = await db_client.post("/payments", json={"productKey": "basic", "agreed": True})
+
+    assert (resp.status_code, resp.json()["detail"]) == (403, {"code": "IDENTITY_VERIFICATION_REQUIRED"})
+    assert await db_session.scalar(select(Payment).where(Payment.user_id == user.id)) is None
+
+
+@pytest.mark.parametrize(
+    ("age", "status_code"),
+    [pytest.param(18, 403, id="eighteen-refused"), pytest.param(19, 201, id="nineteen-allowed")],
+)
+async def test_create_payment_requires_the_verified_age_of_nineteen(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, age: int, status_code: int
+) -> None:
+    """미성년자의 결제는 막는다. 경계(만 19세)는 통과한다 — 1월 1일생이라 올해 생일이 이미 지났다."""
+    await _make_published(db_session, kind="refund-policy", version="2026-10-01")
+    born = date(datetime.now(UTC).date().year - age, 1, 1)
+    user = await _buyer(db_session, db_client, birth_date=born)
+
+    resp = await db_client.post("/payments", json={"productKey": "basic", "agreed": True})
+
+    assert resp.status_code == status_code
+    orders = (await db_session.scalars(select(Payment).where(Payment.user_id == user.id))).all()
+    if status_code == 403:
+        assert resp.json()["detail"] == {"code": "PAYMENT_AGE_RESTRICTED"}
+        assert orders == []
+    else:
+        assert len(orders) == 1
 
 
 async def test_pricing_exposes_the_payment_switch_and_methods(

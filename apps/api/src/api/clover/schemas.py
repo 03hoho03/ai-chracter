@@ -24,8 +24,10 @@ class CloverBalanceResponse(CamelModel):
     balance: int
     # 오늘(KST) 이미 확인했는가 — false면 FE가 소진 시 확인 모달을 띄운다.
     spend_confirmed_today: bool
-    # 오늘(KST) 출석을 아직 안 받았는가 — true면 FE가 attendance를 POST한다.
+    # 지금 출석을 누르면 지급되는가 — 오늘(KST) 아직 안 받았고 본인인증 게이트에 걸리지 않았다.
     attendance_claimable: bool
+    # 구매로 받은 클로버(유료+보너스) 중 남은 양. 탈퇴하면 이 몫도 사라지므로 탈퇴 화면이 경고에 쓴다.
+    paid_balance: int
     # `expires_at > now()`인 로트만 본다(이미 만료됐지만
     # 배치가 아직 못 지운 로트는 제외). 이건 표시 전용 필터라 "차감·잔액 판정 경로에는
     # 만료 필터를 걸지 않는다"는 원칙과 충돌하지 않는다 — 표시와 판정은 다른 경로다. **만료까지 3일

@@ -10,11 +10,14 @@ DB 테이블·어드민 관리 화면을 두지 않는다(3종 고정). 달성 �
 """
 
 import uuid
+from datetime import datetime
 from typing import Literal, assert_never
 
-from sqlalchemy import select
+from sqlalchemy import any_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.core.constants import WITHDRAWN_IDENTITY_RETENTION_PERIOD
+from api.db.models.auth import WithdrawnIdentity
 from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom
 from api.db.models.clover import CloverLedger
 from api.db.models.content import Content
@@ -89,6 +92,28 @@ async def mission_claimed(db: AsyncSession, *, user_id: uuid.UUID, key: MissionK
     condition = (
         select(CloverLedger.id)
         .where(CloverLedger.idempotency_key == mission_idempotency_key(user_id=user_id, key=key))
+        .exists()
+    )
+    return bool(await db.scalar(select(condition)))
+
+
+async def mission_claimed_before_withdrawal(
+    db: AsyncSession, *, ci_hmac: str | None, key: MissionKey, now: datetime
+) -> bool:
+    """같은 사람(본인인증 CI 해시)이 탈퇴한 계정에서 이 미션 보상을 이미 받았는가. 1회성 보상은 사람 기준 한 번이라 새
+    계정의 원장만 보면 탈퇴 → 재가입으로 다시 받을 수 있다. 살아 있는 계정 사이에서는 CI 가 유일해 이 기록이 필요 없다.
+
+    탈퇴한 지 보관 기간(1년)이 지난 기록은 무시한다(크론이 아직 못 지운 행도 마찬가지). 인증하지 않은 회원은 대조할
+    것이 없어 거짓이다."""
+    if ci_hmac is None:
+        return False
+    condition = (
+        select(WithdrawnIdentity.ci_hmac)
+        .where(
+            WithdrawnIdentity.ci_hmac == ci_hmac,
+            WithdrawnIdentity.withdrawn_at > now - WITHDRAWN_IDENTITY_RETENTION_PERIOD,
+            any_(WithdrawnIdentity.claimed_mission_keys) == key,
+        )
         .exists()
     )
     return bool(await db.scalar(select(condition)))

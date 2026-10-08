@@ -4086,8 +4086,10 @@ export interface paths {
          * @description 주문을 만든다. 금액은 서버가 상품 키로 정하고 주문 행에 복사해 둔다 — 브라우저가 금액을 바꿔 결제해도 동기화의
          *     금액 대조가 지급을 막는다. 포트원 사전 등록은 하지 않는다(주문마다 외부 호출 실패 지점이 하나 늘 뿐, 막는 것은 같다).
          *
-         *     결제가 꺼져 있으면 503 `PAYMENTS_UNAVAILABLE`. 결제는 본인인증과 만 19세 확인을 거쳐야 하므로, 그 판정을 이 플래그
-         *     판정 바로 뒤(주문 행을 만들기 전)에 둔다.
+         *     결제가 꺼져 있으면 503 `PAYMENTS_UNAVAILABLE`. 그다음 본인인증(아니면 403 `IDENTITY_VERIFICATION_REQUIRED`)과 만 19세
+         *     확인(아니면 403 `PAYMENT_AGE_RESTRICTED`)이다. 이 인증은 미인증 회원 게이트가 아니라 나이를 확인하는 유일한 수단이라,
+         *     게이트 스위치가 꺼져 있어도, 레이트리밋 면제 회원이어도 늘 건다. 나이는 인증으로 덮어쓴 생년월일을 로그인의 연령
+         *     확인과 같은 기준(UTC 날짜)으로 잰다.
          */
         post: operations["create_payment_payments_post"];
         delete?: never;
@@ -6704,6 +6706,8 @@ export interface components {
             spendConfirmedToday: boolean;
             /** Attendanceclaimable */
             attendanceClaimable: boolean;
+            /** Paidbalance */
+            paidBalance: number;
             expiringSoon: components["schemas"]["CloverExpiringSoon"] | null;
         };
         /**

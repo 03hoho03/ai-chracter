@@ -18,7 +18,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, tuple_
+from sqlalchemy import func, select, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +29,7 @@ from api.clover.missions import (
     MissionKey,
     mission_achieved,
     mission_claimed,
+    mission_claimed_before_withdrawal,
     mission_idempotency_key,
 )
 from api.clover.schemas import (
@@ -48,11 +49,13 @@ from api.clover.schemas import (
 from api.core import clover
 from api.core.clover import (
     ATTENDANCE_GRANT_AMOUNT,
+    PURCHASE_LOT_KINDS,
     earned_lot_expiry,
     grant,
     is_same_kst_day,
     kst_today,
 )
+from api.core.identity_gate import identity_verification_required, is_identity_gated
 from api.db.models.auth import User
 from api.db.models.clover import CloverLedger, CloverLot
 from api.db.session import get_db_session
@@ -209,10 +212,17 @@ async def get_clover_balance(
     """
     user = await _require_active_user(db, user_id)
     now = datetime.now(UTC)
+    paid_balance = await db.scalar(
+        select(func.coalesce(func.sum(CloverLot.remaining), 0)).where(
+            CloverLot.user_id == user_id, CloverLot.kind.in_(PURCHASE_LOT_KINDS)
+        )
+    )
     return CloverBalanceResponse(
         balance=user.clover_balance,
         spend_confirmed_today=is_same_kst_day(user.clover_spend_confirmed_on, now),
-        attendance_claimable=not is_same_kst_day(user.clover_attendance_granted_on, now),
+        # "누르면 지급된다"는 뜻이라 게이트에 걸린 회원에게는 거짓이다 — 참으로 두면 보이는 출석 버튼이 403 을 받는다.
+        attendance_claimable=not is_same_kst_day(user.clover_attendance_granted_on, now) and not is_identity_gated(user),
+        paid_balance=paid_balance or 0,
         expiring_soon=await _expiring_soon(db, user_id=user_id, now=now),
     )
 
@@ -236,6 +246,9 @@ async def claim_clover_attendance(
     ⚠️ 그건 **원자성** 논증이고 **격리**는 논증하지 않는다 — 격리는 위의 멱등키가 맡는다.
     """
     user = await _require_active_user(db, user_id)
+    # 같은 날 검사보다 앞이다 — 이미 받은 날이어도 403 이다(미인증 회원에게 "받음" 상태를 보일 이유가 없다).
+    if is_identity_gated(user):
+        raise identity_verification_required()
     now = datetime.now(UTC)
     today = kst_today(now)
     if is_same_kst_day(user.clover_attendance_granted_on, now):
@@ -305,13 +318,15 @@ async def get_clover_missions(
     달성·청구 여부를 매 조회마다 다시 계산한다. 상태를 저장하지 않으므로 이 응답은
     캐시된 값이 아니라 그 순간의 진실이다.
     """
-    await _require_active_user(db, user_id)
+    user = await _require_active_user(db, user_id)
+    now = datetime.now(UTC)
     missions = [
         CloverMissionItem(
             key=key,
             reward=MISSION_REWARDS[key],
             achieved=await mission_achieved(db, user_id=user_id, key=key),
-            claimed=await mission_claimed(db, user_id=user_id, key=key),
+            claimed=await mission_claimed(db, user_id=user_id, key=key)
+            or await mission_claimed_before_withdrawal(db, ci_hmac=user.identity_ci_hmac, key=key, now=now),
         )
         for key in MISSION_KEYS
     ]
@@ -331,13 +346,18 @@ async def claim_clover_mission(
     달성 신호가 사라져 있으면(방·메시지 삭제 등) 422로 막힌다. 영구 손실은 아니다: 다시
     달성하면 다시 청구할 수 있다.
     """
-    await _require_active_user(db, user_id)
+    user = await _require_active_user(db, user_id)
+    if is_identity_gated(user):
+        raise identity_verification_required()
     if not await mission_achieved(db, user_id=user_id, key=key):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="mission not achieved"
         )
 
     now = datetime.now(UTC)
+    # 같은 사람이 탈퇴 전 계정에서 이미 받은 1회성 보상이면 이미 받은 것과 같은 응답이다(보관 기간 안).
+    if await mission_claimed_before_withdrawal(db, ci_hmac=user.identity_ci_hmac, key=key, now=now):
+        return CloverMissionClaimResponse(granted=False, balance=user.clover_balance)
     try:
         # 출석과 같은 패턴(SAVEPOINT + IntegrityError) — 선례는 위 `claim_clover_attendance`.
         async with db.begin_nested():
