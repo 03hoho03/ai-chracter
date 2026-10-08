@@ -7,8 +7,8 @@ type EpisodeHeaderProps = {
   episodeLabel: string;
 };
 
-/** 화 머리 — 작품 정보로 가는 링크와 화 제목. 글자 수는 고를 때 보는 정보라 작품 정보의 화 목록에만 두고, 읽는
- * 화면에는 두지 않는다. */
+/** 화 머리 — 작품 정보로 가는 링크와 화 제목. 글자 수는 화를 다듬을 때 보는 정보라 편집 보드의 화 카드·패널에만
+ * 두고, 읽는 화면에는 두지 않는다. */
 export function EpisodeHeader({ novelId, novelTitle, episodeLabel }: EpisodeHeaderProps) {
   return (
     <header className="flex flex-col gap-2">
