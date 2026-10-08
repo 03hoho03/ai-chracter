@@ -43,3 +43,20 @@ export function toRestoreScrollTop({
 }): number {
   return Math.max(0, scrollY + elementTop - scrollMarginTop);
 }
+
+/** 되돌리기가 화면에 반영됐는가 — 창 스크롤 위치가 목표(문서가 그보다 짧으면 갈 수 있는 끝)와 1px 안이다. 반영된
+ * 것을 보기 전에는 읽는 자리를 재지 않는다: 그 사이 라우터가 창을 맨 위로 올리면 0번 문단을 지금 자리로 세어 저장된
+ * 자리를 덮어쓴다. */
+export function isScrollRestored({
+  scrollY,
+  targetTop,
+  maxScrollY,
+}: {
+  scrollY: number;
+  targetTop: number;
+  /** `scrollHeight - innerHeight` — 창이 갈 수 있는 가장 아래. */
+  maxScrollY: number;
+}): boolean {
+  const reachable = Math.max(0, Math.min(targetTop, maxScrollY));
+  return Math.abs(scrollY - reachable) <= 1;
+}
