@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import {
   contentKeys,
@@ -36,7 +36,11 @@ export function useDraftPersistence({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const createDraftMutation = useCreateContentDraftMutation();
-  const updateDraftMutation = useUpdateContentDraftMutation();
+  // 저장 큐 이름은 마운트할 때 한 번 정한다. 이어쓰기는 초안 id 라 같은 초안을 다시 열어도 같은 줄에 선다. 아직 없는 초안은
+  // 이 마운트만의 이름을 쓴다 — 첫 저장이 초안을 만들어 id 가 생겨도 리마운트가 없으므로, 이름을 그때 바꾸면 앞 저장과 뒤
+  // 저장이 다른 줄로 갈려 다시 겹친다.
+  const [draftSaveKey] = useState(() => draftId ?? `new-${crypto.randomUUID()}`);
+  const updateDraftMutation = useUpdateContentDraftMutation(draftSaveKey);
 
   // 이 래퍼가 마운트 동안 하나여야 "초안은 정확히 한 번만 만들어진다"가 성립한다(연속 자동저장이
   // 겹쳐 들어온다) → ref에 담아 첫 렌더의 것을 계속 쓴다. 첫 렌더의 `mutateAsync`를 붙잡는 건

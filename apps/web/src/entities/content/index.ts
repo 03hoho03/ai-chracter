@@ -7,6 +7,7 @@ export type { ContentDraftResponse } from "./api/useContentDraftQuery";
 export { useCreateContentDraftMutation } from "./api/useCreateContentDraftMutation";
 export type { ContentCreateRequest, ContentCreateResponse } from "./api/useCreateContentDraftMutation";
 export { useUpdateContentDraftMutation } from "./api/useUpdateContentDraftMutation";
+export { CONTENT_DRAFT_SAVE_TIMEOUT_MS, contentDraftSaveOptions } from "./api/contentDraftSaveOptions";
 export type { ContentDraftPayload } from "./api/useUpdateContentDraftMutation";
 export { useDeleteContentDraftMutation } from "./api/useDeleteContentDraftMutation";
 export { useResetContentDraftMutation } from "./api/useResetContentDraftMutation";
