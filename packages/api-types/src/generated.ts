@@ -1168,6 +1168,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/users/{user_id}/payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List User Payments
+         * @description 그 회원의 최근 주문(모든 상태). 진행 중 환불 시도가 있는 주문은 `refundPending` 이 참이다.
+         */
+        get: operations["list_user_payments_admin_users__user_id__payments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/{payment_id}/refund-quote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Refund Quote
+         * @description 환불 견적. 신청 접수일(KST)이 결제일 전이거나 오늘 뒤면 422 `REFUND_RECEIVED_ON_INVALID`, 환불할 수 있는 상태가
+         *     아니면 422 `PAYMENT_NOT_REFUNDABLE`. 아무것도 쓰지 않는다.
+         */
+        get: operations["get_refund_quote_admin_payments__payment_id__refund_quote_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/{payment_id}/refund": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refund Payment
+         * @description 환불을 실행하거나, 진행 중 시도가 있으면 그 시도를 마무리한다.
+         *
+         *     - 200 `succeeded`: 포트원 취소 확인. 디스코드에 알린다.
+         *     - 202 `requested`: 클로버는 회수했고 포트원 결과가 확정되지 않았다(응답 없음·시간 초과·PG 비동기 처리). 같은 경로로
+         *       다시 부르면 포트원을 재조회해 마무리한다.
+         *     - 422 `REFUND_REJECTED`: 포트원이 취소를 거절해 회수한 클로버를 되돌렸다.
+         *     - 409 `REFUND_QUOTE_CHANGED`: 실행 시점 견적이 다이얼로그의 견적과 다르다. 422 `REFUND_AMOUNT_ZERO`·
+         *       `REFUND_RECEIVED_ON_INVALID`·`PAYMENT_NOT_REFUNDABLE`: 시작하지 않았다.
+         */
+        post: operations["refund_payment_admin_payments__payment_id__refund_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/assets/presigned-upload": {
         parameters: {
             query?: never;
@@ -5828,6 +5896,63 @@ export interface components {
             /** Isactive */
             isActive: boolean;
         };
+        /** AdminRefundQuoteResponse */
+        AdminRefundQuoteResponse: {
+            /** Refundkrw */
+            refundKrw: number;
+            /** Ratiopercent */
+            ratioPercent: number;
+            /** Paidremaining */
+            paidRemaining: number;
+            /** Bonusused */
+            bonusUsed: number;
+            /** Clawbackpaid */
+            clawbackPaid: number;
+            /** Clawbackbonus */
+            clawbackBonus: number;
+            /** Cancellablekrw */
+            cancellableKrw: number;
+            /**
+             * Paidat
+             * Format: date-time
+             */
+            paidAt: string;
+        };
+        /**
+         * AdminRefundRequest
+         * @description 멱등키를 받지 않는다 — 그 결제의 진행 중 환불 시도(서버의 `requested` 행)가 시도 단위다. 진행 중 시도가 있으면
+         *     `expected_refund_krw`·`received_on`·`company_fault` 는 쓰이지 않고 그 시도를 마무리한다.
+         */
+        AdminRefundRequest: {
+            /** Reason */
+            reason: string;
+            /** Expectedrefundkrw */
+            expectedRefundKrw: number;
+            /**
+             * Receivedon
+             * Format: date
+             */
+            receivedOn: string;
+            /**
+             * Companyfault
+             * @default false
+             */
+            companyFault: boolean;
+        };
+        /** AdminRefundResponse */
+        AdminRefundResponse: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "succeeded" | "requested";
+            /** Amountkrw */
+            amountKrw: number;
+            /** Clawbackpaid */
+            clawbackPaid: number;
+            /** Clawbackbonus */
+            clawbackBonus: number;
+        };
         /** AdminReportContentDetail */
         AdminReportContentDetail: {
             /**
@@ -5918,7 +6043,7 @@ export interface components {
              * Actiontype
              * @enum {string}
              */
-            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "notice-publish" | "notice-unpublish" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
+            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "notice-publish" | "notice-unpublish" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-payment-refund" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
             /** Targetcontentid */
             targetContentId: string | null;
             /** Contentname */
@@ -6113,6 +6238,38 @@ export interface components {
             granted: boolean;
             /** Admincomment */
             adminComment?: string | null;
+        };
+        /** AdminUserPaymentItem */
+        AdminUserPaymentItem: {
+            /** Paymentid */
+            paymentId: string;
+            /** Productkey */
+            productKey: string;
+            /** Ordername */
+            orderName: string;
+            /** Amountkrw */
+            amountKrw: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "paid" | "failed" | "mismatch" | "owner_withdrawn" | "cancelled" | "partially_cancelled";
+            /** Paidat */
+            paidAt: string | null;
+            /** Cancelledamountkrw */
+            cancelledAmountKrw: number;
+            /** Refundpending */
+            refundPending: boolean;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** AdminUserPaymentListResponse */
+        AdminUserPaymentListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminUserPaymentItem"][];
         };
         /**
          * AdminUserRateLimitExemptRequest
@@ -11565,6 +11722,115 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminLlmUsageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_user_payments_admin_users__user_id__payments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserPaymentListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_refund_quote_admin_payments__payment_id__refund_quote_get: {
+        parameters: {
+            query: {
+                receivedOn: string;
+                companyFault?: boolean;
+            };
+            header?: never;
+            path: {
+                payment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRefundQuoteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refund_payment_admin_payments__payment_id__refund_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                payment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminRefundRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRefundResponse"];
+                };
+            };
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRefundResponse"];
                 };
             };
             /** @description Validation Error */

@@ -31,6 +31,7 @@ from portone_server_sdk.payment import (
     PaymentFailure,
     PaymentOrigin,
     ReadyPayment,
+    SucceededPaymentCancellation,
 )
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -40,7 +41,7 @@ from api.core.clover import purchase_lot_expiry
 from api.core.config import settings
 from api.db.models.auth import User
 from api.db.models.clover import CloverLedger, CloverLot
-from api.db.models.payment import Payment
+from api.db.models.payment import Payment, PaymentCancellation as CancellationRow
 from api.legal.dependencies import _latest_published_legal_version
 from api.main import app
 from api.payments import router as payments_router
@@ -524,7 +525,7 @@ async def test_payment_confirmed_after_the_owner_withdrew_is_not_credited(
 ) -> None:
     """결제창에서 돈이 나간 뒤 확정이 늦게 오는 사이에 탈퇴했으면 지급하지 않고 운영자 환불로 넘긴다. 깨지는 시나리오:
     탈퇴 계정에 아무도 쓸 수 없는 잔액·로트가 생기고 주문은 paid 라 아무도 알아채지 못한다. 그 뒤 콘솔 환불의 취소
-    웹훅이 오면 회수할 것 없이 cancelled 로 맞는다."""
+    웹훅이 오면 회수할 것 없이 cancelled 로 맞고, 돌려준 돈은 콘솔 취소 기록으로 남는다."""
     user = await _user(db_session)
     order = await _make_payment(db_session, user_id=user.id, channel_key=_CHANNEL)
     await db_session.execute(update(User).where(User.id == user.id).values(deleted_at=datetime.now(UTC)))
@@ -542,10 +543,31 @@ async def test_payment_confirmed_after_the_owner_withdrew_is_not_credited(
         **_common(order),
         channel=_channel(_CHANNEL),
         amount=_amount(order.amount_krw, cancelled=order.amount_krw),
-        cancellations=[],
+        cancellations=[
+            SucceededPaymentCancellation(
+                id="console-cancel",
+                total_amount=order.amount_krw,
+                tax_free_amount=0,
+                vat_amount=0,
+                reason="탈퇴 회원 환불",
+                requested_at=_PAID_AT,
+            )
+        ],
         cancelled_at=_PAID_AT,
     )
     assert (await sync_payment(db_session, gateway, order.payment_id)).result == "cancelled"
+    refunded = await _order(db_session, order.id)
+    assert (refunded.status, refunded.cancelled_amount_krw) == ("cancelled", order.amount_krw)
+    assert await _lots(db_session, user.id) == []
+    assert await _ledger(db_session, user.id) == []
+    rows = (
+        await db_session.execute(
+            select(CancellationRow.source, CancellationRow.status).where(
+                CancellationRow.payment_id == order.id
+            )
+        )
+    ).all()
+    assert [tuple(row) for row in rows] == [("console", "succeeded")]
 
 
 async def test_complete_twice_grants_once(

@@ -15,6 +15,7 @@ from api.db.models.moderation import (
     ReportReasonCategory,
     ReportStatus,
 )
+from api.db.models.payment import PaymentStatus
 from api.legal.schemas import LegalDocumentKind
 from api.llm.chat_models import ChatModelId
 
@@ -643,3 +644,53 @@ class AdminLlmUsageResponse(CamelModel):
     unpriced_calls: int
     prices_as_of: date
     prices: list[AdminLlmModelPrice]
+
+
+class AdminUserPaymentItem(CamelModel):
+    # 포트원 결제 id. 환불 견적·실행 경로가 이 값으로 결제를 가리킨다.
+    payment_id: str
+    product_key: str
+    order_name: str
+    amount_krw: int
+    status: PaymentStatus
+    paid_at: datetime | None
+    cancelled_amount_krw: int
+    # 클로버는 회수했고 포트원 결과가 확정되지 않은 환불 시도가 있다 — 화면이 "확인 필요"로 보이고 같은 실행 경로로
+    # 재시도한다.
+    refund_pending: bool
+    created_at: datetime
+
+
+class AdminUserPaymentListResponse(CamelModel):
+    items: list[AdminUserPaymentItem]
+
+
+class AdminRefundQuoteResponse(CamelModel):
+    refund_krw: int
+    ratio_percent: int
+    paid_remaining: int
+    bonus_used: int
+    clawback_paid: int
+    clawback_bonus: int
+    cancellable_krw: int
+    paid_at: datetime
+
+
+class AdminRefundRequest(CamelModel):
+    """멱등키를 받지 않는다 — 그 결제의 진행 중 환불 시도(서버의 `requested` 행)가 시도 단위다. 진행 중 시도가 있으면
+    `expected_refund_krw`·`received_on`·`company_fault` 는 쓰이지 않고 그 시도를 마무리한다."""
+
+    reason: str = Field(max_length=1000)
+    # 다이얼로그가 보여 준 견적. 실행 시점 견적과 다르면 409 — 그사이 사용자가 클로버를 써 금액이 바뀌었다.
+    expected_refund_krw: int = Field(ge=0)
+    # 환불 신청을 받은 날(KST). 비율의 7일 판정을 처리일이 아니라 이 날로 한다.
+    received_on: date
+    company_fault: bool = False
+
+
+class AdminRefundResponse(CamelModel):
+    # succeeded: 포트원 취소 확인(200). requested: 클로버는 회수했고 포트원 결과를 기다린다(202).
+    status: Literal["succeeded", "requested"]
+    amount_krw: int
+    clawback_paid: int
+    clawback_bonus: int

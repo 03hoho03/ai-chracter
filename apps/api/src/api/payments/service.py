@@ -32,8 +32,9 @@ from api.core.config import settings
 from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User
 from api.db.models.payment import Payment, PaymentStatus
-from api.payments.errors import PaymentMismatchError, PaymentOwnerWithdrawnError, PaymentRefundStuckError
+from api.payments.errors import PaymentMismatchError, PaymentOwnerWithdrawnError
 from api.payments.portone import PortOneGateway
+from api.payments.refund import apply_remote_cancellations
 
 logger = logging.getLogger(__name__)
 
@@ -41,17 +42,27 @@ logger = logging.getLogger(__name__)
 # - granted: 지금 클로버를 지급했다. mismatch: 결제 완료인데 주문과 맞지 않아 지급하지 않았다(수동 처리).
 # - owner_withdrawn: 결제 완료인데 주문자가 이미 탈퇴해 지급하지 않았다(수동 환불).
 # - failed / cancelled: 지급 전에 실패·전액 취소됐다. pending: 포트원이 아직 결제를 확정하지 않았다.
+# - reconciled: 지급 뒤의 취소를 취소 기록에 맞췄다(일부 취소이거나 이미 맞춰져 있었다).
 # - unchanged: 맞출 것이 없거나 아직 맞추지 못하는 상태라 주문 행을 그대로 두었다.
 SyncResult = Literal[
-    "not_ours", "already", "granted", "mismatch", "owner_withdrawn", "failed", "cancelled", "pending", "unchanged"
+    "not_ours",
+    "already",
+    "granted",
+    "mismatch",
+    "owner_withdrawn",
+    "failed",
+    "cancelled",
+    "reconciled",
+    "pending",
+    "unchanged",
 ]
 
 # 지급했거나 사람이 볼 건으로 넘겨 다시 지급 판단을 하지 않는 상태.
 _SETTLED: frozenset[PaymentStatus] = frozenset(
     {"paid", "partially_cancelled", "cancelled", "mismatch", "owner_withdrawn"}
 )
-# 클로버를 주지 않은 상태. 여기서 전액 취소가 오면 회수할 것 없이 cancelled 로 맞춘다(탈퇴자 결제의 콘솔 환불 포함).
-_NOT_CREDITED: frozenset[PaymentStatus] = frozenset({"pending", "failed", "owner_withdrawn"})
+# 지급 전 상태. 여기서 전액 취소가 오면 회수할 것 없이 cancelled 로 맞춘다.
+_NOT_CREDITED: frozenset[PaymentStatus] = frozenset({"pending", "failed"})
 
 
 @dataclass(frozen=True)
@@ -200,6 +211,15 @@ async def sync_payment(db: AsyncSession, gateway: PortOneGateway, payment_id: st
         return SyncOutcome("pending", status)
 
     if isinstance(remote, (CancelledPayment, PartialCancelledPayment)):
+        if status in ("paid", "partially_cancelled", "owner_withdrawn"):
+            # 지급 뒤(또는 탈퇴로 지급하지 않은 결제)의 취소: 취소 행을 맞추고, 콘솔에서 직접 한 취소면 남은 구매 로트를
+            # 회수한다(어드민 환불과 같은 대사 경로).
+            notifications = await apply_remote_cancellations(db, order, remote)
+            if status == "owner_withdrawn" and isinstance(remote, CancelledPayment):
+                order.status = "cancelled"
+            await db.commit()
+            result: SyncResult = "cancelled" if order.status == "cancelled" else "reconciled"
+            return SyncOutcome(result, order.status, "\n".join(notifications) or None)
         if status in _NOT_CREDITED:
             if isinstance(remote, PartialCancelledPayment):
                 # 지급 전에 일부만 취소된 결제는 지급할 양을 정할 규칙이 없다 — 사람이 본다.
@@ -209,12 +229,6 @@ async def sync_payment(db: AsyncSession, gateway: PortOneGateway, payment_id: st
             await db.commit()
             return SyncOutcome("cancelled", "cancelled")
         await db.commit()
-        if status in ("paid", "partially_cancelled"):
-            # 지급 뒤의 취소는 그 구매의 남은 로트 회수와 취소 기록 대사가 필요하다. 그 대사를 붙이기 전까지는 주문 행을
-            # 바꾸지 않고, 맞추지 못한 취소로 Bugsink 에 남긴다.
-            logger.warning("payment %s was cancelled at PortOne after the grant and is not reconciled", order_id)
-            capture_dependency_failure(PaymentRefundStuckError(), dependency="payment")
-            return SyncOutcome("unchanged", status)
         return SyncOutcome("already", status)
 
     await db.commit()
