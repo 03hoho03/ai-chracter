@@ -6,6 +6,19 @@ import { toChapterEndAfterModelChange } from "./chapterBoundarySelection";
 export const CHAIN_CHOICE_VALUE = "chain";
 
 /**
+ * 이 확인 화면이 열린 뒤 새로 받은 견적만 쓴다. 캐시에 남은 지난번 견적은 그사이 대화가 이어졌으면 묶음 수·금액이
+ * 틀린데, 다시 받는 동안 그 값으로 칸을 그리면 낡은 금액으로 고를 수 있다. 다시 받기가 실패했으면 낡은 값도 쓰지
+ * 않는다(칸이 없는 것과 같다).
+ */
+export function toFreshChainEstimates(query: {
+  data: readonly NovelChainEstimate[] | undefined;
+  isFetchedAfterMount: boolean;
+  isError: boolean;
+}): readonly NovelChainEstimate[] | undefined {
+  return query.isFetchedAfterMount && !query.isError ? query.data : undefined;
+}
+
+/**
  * 고른 모델로 "남은 대화 전부"를 보일 견적. 남은 대화가 그 모델의 한 묶음 안에 다 들어가면(묶음 1개 이하) 보이지
  * 않는다 — 그때는 마지막 턴을 고르는 평범한 후보와 같은 일이고, 같은 결정의 칸이 둘이 된다. 견적을 아직 못 받았거나
  * 받지 못했어도(만들 턴이 없음 등) 보이지 않는다.

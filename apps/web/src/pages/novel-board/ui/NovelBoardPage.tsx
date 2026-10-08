@@ -44,7 +44,6 @@ import {
   type BoardSelection,
 } from "@/widgets/novel-board";
 
-import { novelBoardSearchSchema } from "../model/boardSearch";
 import { canRemoveDeletedChapterCaches } from "../model/deletedChapterCaches";
 import { shouldConfirmDraftDiscardOnHistory } from "../model/draftHistoryBlock";
 
@@ -255,7 +254,9 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
       });
       if (!shouldConfirm) return false;
       const target = resolveBoardSelection(
-        parseBoardSelection(novelBoardSearchSchema.parse(next.search).select),
+        // 차단 함수가 받는 다음 주소의 서치는 라우트 스키마를 거치지 않은 값이라 칸이 있고 문자열인지만 보고, 꼴은
+        // `parseBoardSelection` 이 판정한다(어긋나면 고른 것 없음). 스키마 사본을 따로 두지 않는다.
+        parseBoardSelection("select" in next.search && typeof next.search.select === "string" ? next.search.select : undefined),
         novel.chapters.map((chapter) => chapter.id),
         charactersQuery.data?.map((character) => character.id),
       );

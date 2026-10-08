@@ -34,7 +34,12 @@ import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { useChapterProposalMutation, type NovelChapterProposal } from "../api/useChapterProposalMutation";
 import { useIsChapterBoundaryDialogLayout } from "../lib/useIsChapterBoundaryDialogLayout";
-import { CHAIN_CHOICE_VALUE, toChainChoice, toSelectionAfterModelChange } from "../model/chainChoice";
+import {
+  CHAIN_CHOICE_VALUE,
+  toChainChoice,
+  toFreshChainEstimates,
+  toSelectionAfterModelChange,
+} from "../model/chainChoice";
 import { toInitialChapterEnd } from "../model/chapterBoundarySelection";
 
 type ChapterBoundaryModalProps = {
@@ -99,7 +104,8 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, Ch
     const errorId = useId();
     const statusId = useId();
 
-    const chainChoice = toChainChoice(chainEstimateQuery.data, modelId);
+    const chainEstimates = toFreshChainEstimates(chainEstimateQuery);
+    const chainChoice = toChainChoice(chainEstimates, modelId);
     const isChainSelected = selectedId === CHAIN_CHOICE_VALUE && chainChoice !== undefined;
     const selected = proposal.candidates.find((candidate) => candidate.messageId === selectedId);
     const toRange = (episodeCount: number) =>
@@ -126,7 +132,7 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, Ch
         if (requestNo !== latestRequestRef.current) return;
         setProposal(fresh);
         setSelectedId((current) =>
-          toSelectionAfterModelChange(current, fresh, toChainChoice(chainEstimateQuery.data, next) !== undefined),
+          toSelectionAfterModelChange(current, fresh, toChainChoice(chainEstimates, next) !== undefined),
         );
         setIsSelectionMissing(false);
       } catch (error) {

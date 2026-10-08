@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { NovelChainEstimate } from "@/entities/novel";
 
-import { CHAIN_CHOICE_VALUE, toChainChoice, toSelectionAfterModelChange } from "./chainChoice";
+import { CHAIN_CHOICE_VALUE, toChainChoice, toFreshChainEstimates, toSelectionAfterModelChange } from "./chainChoice";
 
 const estimates: NovelChainEstimate[] = [
   { model: "gemini", name: "기본", batchCount: 3, maxEpisodeCount: 9, cost: 270 },
@@ -35,5 +35,18 @@ describe("toSelectionAfterModelChange", () => {
   it("follows the turn rules for a picked turn", () => {
     expect(toSelectionAfterModelChange("a", proposal, true)).toBe("a");
     expect(toSelectionAfterModelChange("z", proposal, true)).toBe("b");
+  });
+});
+
+describe("toFreshChainEstimates", () => {
+  const data = estimates;
+
+  it("열린 뒤 새로 받은 견적만 쓴다 — 캐시에 남은 지난 견적은 쓰지 않는다", () => {
+    expect(toFreshChainEstimates({ data, isFetchedAfterMount: false, isError: false })).toBeUndefined();
+    expect(toFreshChainEstimates({ data, isFetchedAfterMount: true, isError: false })).toBe(data);
+  });
+
+  it("다시 받기가 실패했으면 남은 값도 쓰지 않는다", () => {
+    expect(toFreshChainEstimates({ data, isFetchedAfterMount: true, isError: true })).toBeUndefined();
   });
 });
