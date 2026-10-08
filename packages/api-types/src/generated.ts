@@ -721,7 +721,7 @@ export interface paths {
          *     오타 하나만 고쳐 재게시). 지우는 쪽을 골랐다면 매번 원고를 통째로 다시 붙여넣게
          *     되어 더 불편해질 뿐, 더 안전해지는 지점이 없다.
          *
-         *     동의를 기록하지 않는 문서(운영정책·청소년 보호정책)는 `requires_reconsent=true` 로
+         *     동의를 기록하지 않는 문서(운영정책·청소년 보호정책·환불정책)는 `requires_reconsent=true` 로
          *     게시할 수 없다. 재동의 게이트와 `GET /me` 는 약관·처리방침만 보므로 그 플래그는 아무
          *     효과가 없는데, 게시 이력·감사 로그에는 "재동의 필요"로 남아 운영자가 회원 재동의를
          *     받은 것으로 믿게 된다.
@@ -5297,7 +5297,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "terms" | "privacy" | "operation-policy" | "youth-policy";
+            kind: "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy";
             draft: components["schemas"]["AdminLegalDraftItem"] | null;
             published: components["schemas"]["AdminLegalPublishedItem"] | null;
         };
@@ -7726,7 +7726,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "terms" | "privacy" | "operation-policy" | "youth-policy";
+            kind: "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy";
             /** Version */
             version: string;
             /** Bodymarkdown */
@@ -10476,7 +10476,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                kind: "terms" | "privacy" | "operation-policy" | "youth-policy";
+                kind: "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy";
             };
             cookie?: never;
         };
@@ -10507,7 +10507,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                kind: "terms" | "privacy" | "operation-policy" | "youth-policy";
+                kind: "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy";
             };
             cookie?: never;
         };
@@ -10542,7 +10542,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                kind: "terms" | "privacy" | "operation-policy" | "youth-policy";
+                kind: "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy";
             };
             cookie?: never;
         };
@@ -10577,7 +10577,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                kind: "terms" | "privacy" | "operation-policy" | "youth-policy";
+                kind: "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy";
             };
             cookie?: never;
         };
@@ -11994,7 +11994,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                kind: "terms" | "privacy" | "operation-policy" | "youth-policy";
+                kind: "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy";
             };
             cookie?: never;
         };
