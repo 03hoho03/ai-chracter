@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 from sqlalchemy.orm import Session, SessionTransaction
 
 from api.chat.prompt_builder import ImageMatchJudgmentResult
+from api.content.schemas import RULE_LIST_ADAPTER, EndingRuleListDraftItem
 from api.core.config import settings
 from api.core.security import hash_password
 from api.db.models import (
@@ -61,6 +62,7 @@ from api.db.models import (
     NovelJob,
     NovelReadingPosition,
     NovelSnapshot,
+    SituationNote,
     StartingSetup,
     StatDef,
     StoryPromptTemplate,
@@ -582,6 +584,27 @@ async def _story_with_setup(
     db_session.add(setup)
     await db_session.flush()
     return user.id, content, setup
+
+
+def _add_situation_note(
+    db_session: AsyncSession,
+    setup: StartingSetup,
+    info_text: str,
+    rules: list[EndingRuleListDraftItem],
+    *,
+    order: int = 0,
+) -> None:
+    """저장 경로와 같은 JSON 꼴(`model_dump(mode="json")`)로 넣는다."""
+    db_session.add(
+        SituationNote(
+            entity_id=uuid.uuid4(),
+            starting_setup_id=setup.id,
+            name="노트",
+            info_text=info_text,
+            order=order,
+            condition_rules=RULE_LIST_ADAPTER.dump_python(rules, mode="json"),
+        )
+    )
 
 
 async def _make_default_persona(db_session: AsyncSession, user_id: uuid.UUID, name: str) -> UserPersona:
