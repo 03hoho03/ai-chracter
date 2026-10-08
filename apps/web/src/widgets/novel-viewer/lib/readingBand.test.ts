@@ -6,6 +6,7 @@ import {
   toCurrentParagraphIndex,
   toReadingBandRootMargin,
   toRestoreScrollTop,
+  toTrackingStart,
 } from "./readingBand";
 
 describe("toCurrentParagraphIndex", () => {
@@ -82,5 +83,20 @@ describe("isScrollRestored", () => {
   it("문서가 목표보다 짧으면 갈 수 있는 끝에 닿은 것으로 반영됐다", () => {
     expect(isScrollRestored({ scrollY: 1200, targetTop: 1500, maxScrollY: 1200 })).toBe(true);
     expect(isScrollRestored({ scrollY: 0, targetTop: 1500, maxScrollY: 1200 })).toBe(false);
+  });
+});
+
+describe("toTrackingStart", () => {
+  it("되돌린 자리가 반영됐으면 바로 잰다", () => {
+    expect(toTrackingStart({ hasRestoreTarget: true, isRestored: true })).toBe("now");
+  });
+
+  it("되돌리기를 반영하지 못했으면 이용자가 스크롤한 뒤부터", () => {
+    expect(toTrackingStart({ hasRestoreTarget: true, isRestored: false })).toBe("afterUserScroll");
+  });
+
+  it("되돌릴 자리가 없는 화는 보기만 해서는 재지 않는다(그 화의 저장된 자리를 0 으로 덮지 않게)", () => {
+    expect(toTrackingStart({ hasRestoreTarget: false, isRestored: false })).toBe("afterUserScroll");
+    expect(toTrackingStart({ hasRestoreTarget: false, isRestored: true })).toBe("afterUserScroll");
   });
 });
