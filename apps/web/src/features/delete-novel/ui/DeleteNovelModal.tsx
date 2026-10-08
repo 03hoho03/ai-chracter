@@ -50,7 +50,10 @@ export const DeleteNovelModal = createCallable<DeleteNovelModalProps, boolean>((
         return;
       }
     }
-    if (router.state.location.pathname === `/novels/${novelId}`) await navigate({ to: "/novels" });
+    // 지운 소설의 화면(작품 정보·편집 보드·읽기) 위에서 지웠으면 목록으로 옮긴다 — 남으면 그 화면이 곧 「찾을 수
+    // 없어요」가 된다. 같은 접두사의 다른 소설(`/novels/abc` 와 `/novels/abcd`)은 경로 구분자로 가른다.
+    const pathname = router.state.location.pathname;
+    if (pathname === `/novels/${novelId}` || pathname.startsWith(`/novels/${novelId}/`)) await navigate({ to: "/novels" });
     // 이 소설의 상세·작업·장 본문·판 캐시는 키의 세 번째 자리가 소설 id 다(목록은 그 자리가 없다).
     queryClient.removeQueries({ predicate: (query) => query.queryKey[0] === "novel" && query.queryKey[2] === novelId });
     toast.success("소설을 지웠어요.");
