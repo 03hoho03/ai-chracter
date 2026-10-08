@@ -1101,6 +1101,40 @@ async def test_partial_success_refunds_only_the_images_that_were_not_made(
     assert await _clover_lots(db_session, user.id) == [("legacy_balance", 100 - clover.IMAGE_UNIT_COST)]
 
 
+async def test_partial_refund_uses_the_receipt_even_if_the_unit_cost_changes_mid_job(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """판정 기준: 차감 뒤 잡이 도는 사이 단가가 바뀌어도 못 만든 1장의 환급은 차감 당시 단가(영수증)다. 지금 단가로 다시
+    곱하면 바뀐 단가만큼 돌려준다."""
+    _stub_capabilities_ready(monkeypatch)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+    charged_unit = clover.IMAGE_UNIT_COST
+    call_count = {"n": 0}
+
+    def generate() -> tuple[bytes, str]:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            # 차감은 이미 끝났다 — 여기서 단가를 올린다.
+            monkeypatch.setattr(clover, "IMAGE_UNIT_COST", charged_unit + 15)
+            raise LocalImageBlockedError(reason="image")
+        return _png_bytes(), "image/png"
+
+    _override_image_client(generate)
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=2))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+    assert job.completed_count == 1
+
+    spent, refunded = _spent_and_refunded(await _clover_ledger(db_session, user.id))
+    assert spent == -2 * charged_unit
+    assert refunded == charged_unit
+    assert await _clover_lots(db_session, user.id) == [("legacy_balance", 100 - charged_unit)]
+
+
 @pytest.mark.parametrize(
     ("failure", "raiser"),
     [

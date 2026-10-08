@@ -30,6 +30,7 @@ from api.llm.client import LLMClientError, LLMPolicyViolationError
 from factories import (
     _allow_chat_premium,
     _clear_llm_override,
+    _clover_lots,
     _FakeLLMClient,
     _get_genre,
     _login_as,
@@ -337,6 +338,8 @@ async def test_our_side_failure_refunds_the_premium_price(
     assert [e["type"] for e in _parse_sse_events(resp.text)] == ["error"]
     assert await _balance(db_session, user) == _START
     assert await _ledger(db_session, user.id) == [("chat_refund", _SONNET), ("chat_spend", -_SONNET)]
+    # 상위 모델 차감도 차감 id 를 들고 가 깎은 그 로트로 돌아간다(새 환급 로트가 생기지 않는다).
+    assert await _clover_lots(db_session, user.id) == [("legacy_balance", _START)]
 
 
 @pytest.mark.parametrize("surface", ["send", "edit", "regenerate"])

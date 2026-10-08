@@ -224,13 +224,13 @@ async def _refund_unmade_images(
     try:
         await refund_image_charge(
             owner_user_id,
-            # `clover_amount`는 장수에 비례하므로(게이트가 `count * IMAGE_UNIT_COST`로 만든다)
-            # 못 만든 장수만큼 다시 계산한다. 나눗셈이 아니라 곱셈인 이유는 게이트의 생성식과
-            # 같은 형태라 어긋날 여지가 없어서다. `source="token"`·`"skipped"`면 안 쓰인다.
+            # 영수증에서 못 만든 장수의 몫을 나눈다. 게이트가 `count * IMAGE_UNIT_COST`로 만들어 나눗셈이 정확히
+            # 떨어진다. 지금 단가로 다시 곱하지 않는 이유: 차감과 환급 사이에 단가가 바뀌면 환급액이 그 차감의 배분을
+            # 넘어 환급이 통째로 거부되거나(오른 경우) 덜 돌려준다(내린 경우). `source="token"`·`"skipped"`면 0이다.
             dataclasses.replace(
                 charge,
                 count=unmade_count,
-                clover_amount=(unmade_count * clover.IMAGE_UNIT_COST if charge.source == "clover" else 0),
+                clover_amount=charge.clover_amount * unmade_count // charge.count,
             ),
             session_factory,
         )
