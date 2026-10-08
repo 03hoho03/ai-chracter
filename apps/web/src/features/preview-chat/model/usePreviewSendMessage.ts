@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { getChatRateLimit, type ChatRateLimit } from "@/entities/chat-room";
 import { cloverKeys } from "@/entities/clover";
 import type { CloverSpendConfirmOutcome } from "@/entities/clover";
+import { isIdentityVerificationRequiredError } from "@/entities/identity";
 import { isLegalReconsentRequiredError } from "@/entities/legal";
 import {
   applyPreviewStreamEvent,
@@ -24,7 +25,7 @@ import { expandAuthorMacros, type AuthorMacroNames } from "@/shared/lib/text/aut
 type PreviewSendStatus =
   | { kind: "idle" }
   | { kind: "sending" }
-  | { kind: "error"; rateLimit?: ChatRateLimit; declined?: boolean };
+  | { kind: "error"; rateLimit?: ChatRateLimit; declined?: boolean; identityRequired?: boolean };
 
 /**
  * features/send-message의 useSendMessage와 동일한 낙관적 업데이트+SSE
@@ -93,6 +94,8 @@ export function usePreviewSendMessage(
     let handedOffToRetry = false;
     // 그만두기를 실패와 구분한다(`finally`가 상태를 세우므로 바깥에 둔다).
     let declined = false;
+    // 본인인증 전이라 막힌 것도 실패와 구분한다(같은 이유로 바깥에 둔다).
+    let identityRequired = false;
 
     try {
       for await (const event of openChatStream(
@@ -118,7 +121,9 @@ export function usePreviewSendMessage(
     } catch (error) {
       hasErrored = true;
       // useSendMessage와 같은 이유로 여기서도 재동의 403을 잡는다(SSE는 MutationCache가 못 본다).
-      if (isLegalReconsentRequiredError(error)) {
+      // 본인인증 403 도 같은 이유로 여기서 세션을 다시 읽는다(빌더 미리보기도 미인증 회원의 무료 대화가 없다).
+      identityRequired = isIdentityVerificationRequiredError(error);
+      if (isLegalReconsentRequiredError(error) || identityRequired) {
         void queryClient.invalidateQueries({ queryKey: sessionKeys.current() });
       }
       // 같은 이유로 세션 소실 401·정지 403도 여기서 세션을 비운다.
@@ -145,7 +150,7 @@ export function usePreviewSendMessage(
     } finally {
       if (!handedOffToRetry) {
         setStreamingText("");
-        setStatus(hasErrored ? { kind: "error", rateLimit, declined } : { kind: "idle" });
+        setStatus(hasErrored ? { kind: "error", rateLimit, declined, identityRequired } : { kind: "idle" });
       }
       // 미리보기도 채팅 4경로의 같은 게이트를 지나므로 무료 일일분을
       // 넘기면 클로버가 깎인다(미리보기 문구가 "같은 한도를 쓴다"고 먼저 말하는 이유).

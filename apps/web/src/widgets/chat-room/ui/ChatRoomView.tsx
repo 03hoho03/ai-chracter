@@ -38,6 +38,7 @@ import {
   useCloverBalanceQuery,
 } from "@/entities/clover";
 import { useContentDetailQuery } from "@/entities/content";
+import { IdentityRequiredNotice } from "@/entities/identity";
 import { useConfirmCloverSpend } from "@/features/confirm-clover-spend";
 import { NarrationMarkerButton } from "@/features/insert-narration-marker";
 import { ReportChatMessageModal } from "@/features/report-chat-message";
@@ -234,6 +235,9 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
       errorNotice = (
         <RateLimitNotice rateLimit={status.rateLimit} surface={isPremiumRoom ? "premiumChat" : "chat"} onRetry={retry} />
       );
+    } else if (status.identityRequired) {
+      // 다시 보내도 같은 403 이라 재시도 버튼을 두지 않고, 실패가 아니라 경고 틴트도 쓰지 않는다.
+      errorNotice = <IdentityRequiredNotice reason="free-rewards" />;
     } else if (status.busy) {
       // 앞 턴이 끝나지 않아 시작도 안 한 요청이다. 실패가 아니라 빨간 alert를 쓰지 않고, 아래 거절 배너와 같은
       // 중립 표면에 사실과 다음 행동만 둔다.

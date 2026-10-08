@@ -14,9 +14,28 @@ import {
   useCloverMissionsQuery,
   type CloverMissionItem,
 } from "@/entities/clover";
+import { IdentityRequiredNotice, isIdentityGated, isIdentityVerificationRequiredError } from "@/entities/identity";
+import { useSessionQuery } from "@/entities/session";
 import { SUPPORT_DESTINATIONS } from "@/shared/config/supportDestinations";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
+const IDENTITY_REQUIRED_MESSAGE = "본인인증을 하면 받을 수 있어요.";
+
+/** 출석·미션 수령 실패 토스트. 본인인증 403 은 실패가 아니라 "아직 받을 수 없다"라 오류 토스트가 아니고, 세션은 전역
+ * 뮤테이션 처리가 다시 읽어 이 화면이 본인인증 안내로 바뀐다. */
+function toastClaimError(error: unknown) {
+  if (isIdentityVerificationRequiredError(error)) {
+    toast(IDENTITY_REQUIRED_MESSAGE);
+    return;
+  }
+  toast.error(GENERIC_ERROR_MESSAGE);
+}
+
+/** 이 회원이 본인인증 게이트에 걸려 있는가. 세션이 아직 없으면 걸리지 않은 것으로 본다(라우트가 세션을 보장한다). */
+function useIsIdentityGated(): boolean {
+  const { data: me } = useSessionQuery();
+  return me !== undefined && isIdentityGated(me);
+}
 
 const SECTION_LINK_CLASS =
   "w-fit text-sm font-medium whitespace-nowrap text-primary hover:underline focus-visible:underline";
@@ -91,6 +110,7 @@ function BalanceSection() {
 function AttendanceSection() {
   const { data } = useCloverBalanceQuery();
   const claimAttendance = useClaimAttendanceMutation();
+  const isGated = useIsIdentityGated();
   const isAttendanceClaimable = data?.attendanceClaimable ?? false;
 
   const handleClaim = () => {
@@ -104,11 +124,20 @@ function AttendanceSection() {
         // 응답이다(useClaimAttendanceMutation 주석과 같은 규칙).
         toast.success(res.granted ? "출석체크를 완료했어요." : "오늘은 이미 출석을 확인했어요.");
       },
-      onError: () => {
-        toast.error(GENERIC_ERROR_MESSAGE);
-      },
+      onError: toastClaimError,
     });
   };
+
+  // 누를 수 있는지는 서버의 `attendanceClaimable`이 먼저다(게이트에 걸리면 서버가 거짓을 준다). 거짓일 때 이유가 둘이라
+  // 문장을 가른다 — 게이트에 걸린 회원에게 "오늘 이미 확인했어요"는 거짓이다.
+  if (!isAttendanceClaimable && isGated) {
+    return (
+      <section className="flex flex-col gap-4">
+        <SectionHeading>출석체크</SectionHeading>
+        <IdentityRequiredNotice reason="free-rewards" />
+      </section>
+    );
+  }
 
   return (
     <section className="flex flex-col gap-4">
@@ -131,6 +160,7 @@ function AttendanceSection() {
 function MissionSection() {
   const { data, isPending } = useCloverMissionsQuery();
   const claimMission = useClaimCloverMissionMutation();
+  const isGated = useIsIdentityGated();
 
   const handleClaim = (key: string) => {
     if (claimMission.isPending) return;
@@ -138,15 +168,15 @@ function MissionSection() {
       onSuccess: (res) => {
         toast.success(res.granted ? "미션 보상을 받았어요." : "이미 받은 미션이에요.");
       },
-      onError: () => {
-        toast.error(GENERIC_ERROR_MESSAGE);
-      },
+      onError: toastClaimError,
     });
   };
 
   return (
     <section className="flex flex-col gap-4">
       <SectionHeading>미션</SectionHeading>
+      {/* 안내는 섹션에 한 번만 둔다 — 행마다 두면 같은 문장이 세 번 읽힌다. 행의 "받기"는 아래에서 상태 표시로 바뀐다. */}
+      {isGated && <IdentityRequiredNotice reason="free-rewards" />}
       {isPending ? (
         <span className="text-sm text-muted-foreground">불러오는 중…</span>
       ) : (
@@ -158,6 +188,7 @@ function MissionSection() {
               // 셋 중 지금 청구 중인 것만 로딩 문구를 보여준다 — `variables`는 마지막으로
               // 호출된 인자를 들고 있다(tanstack-query 관례).
               isClaiming={claimMission.isPending && claimMission.variables === mission.key}
+              isClaimLocked={isGated}
               onClaim={() => handleClaim(mission.key)}
             />
           ))}
@@ -170,10 +201,12 @@ function MissionSection() {
 type MissionRowProps = {
   mission: CloverMissionItem;
   isClaiming: boolean;
+  /** 본인인증 전이라 달성한 미션도 받을 수 없다. 누르면 403 이 올 버튼 대신 상태 배지를 둔다. */
+  isClaimLocked: boolean;
   onClaim: () => void;
 };
 
-function MissionRow({ mission, isClaiming, onClaim }: MissionRowProps) {
+function MissionRow({ mission, isClaiming, isClaimLocked, onClaim }: MissionRowProps) {
   const state = projectCloverMissionState(mission);
   const label = CLOVER_MISSION_LABELS[mission.key] ?? mission.key;
 
@@ -186,7 +219,12 @@ function MissionRow({ mission, isClaiming, onClaim }: MissionRowProps) {
       {/* DESIGN.md The Brightness Budget Rule — primary 솔리드 채움은 화면당 하나다. 출석체크
           버튼이 이미 그 자리를 쓰므로(둘 다 solid면 미션이 여러 개 달성됐을 때 솔리드 핑크가
           동시에 여러 개 뜬다), 여기는 outline이다. */}
-      {state === "claimable" && (
+      {state === "claimable" && isClaimLocked && (
+        <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-badge font-medium text-muted-foreground">
+          본인인증 후 받기
+        </span>
+      )}
+      {state === "claimable" && !isClaimLocked && (
         <Button
           variant="outline"
           size="sm"

@@ -142,6 +142,21 @@ describe("createQueryClient — 세션 소실 전역 처리", () => {
     expect(qc.getQueryData(sessionKeys.current())).toEqual(ME);
   });
 
+  it("본인인증 403 뮤테이션은 세션을 invalidate한다(인증 여부·게이트 여부를 다시 읽는다)", async () => {
+    const qc = makeClient();
+    qc.setQueryData(sessionKeys.current(), ME);
+    const identityRequired = new ApiErrorObject({
+      status: 403,
+      message: "x",
+      detail: { code: "IDENTITY_VERIFICATION_REQUIRED" },
+    });
+
+    await expect(runMutation(qc, identityRequired)).rejects.toBe(identityRequired);
+
+    expect(qc.getQueryState(sessionKeys.current())?.isInvalidated).toBe(true);
+    expect(qc.getQueryData(sessionKeys.current())).toEqual(ME);
+  });
+
   const NOVELIZE_NOT_ALLOWED = new ApiErrorObject({
     status: 403,
     message: "x",

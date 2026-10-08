@@ -18,6 +18,7 @@ import {
   TypingIndicator,
   shouldShowSuggestedReplies,
 } from "@/entities/chat-room";
+import { IdentityRequiredNotice } from "@/entities/identity";
 import type { MediaTagImages } from "@/entities/media-book";
 import { usePersonasQuery } from "@/entities/persona";
 import { buildPreviewStartState, usePreviewSessionQuery, useStartPreviewMutation } from "@/entities/preview-session";
@@ -154,6 +155,8 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
   if (status.kind === "error") {
     if (status.rateLimit) {
       errorNotice = <RateLimitNotice rateLimit={status.rateLimit} surface="preview" />;
+    } else if (status.identityRequired) {
+      errorNotice = <IdentityRequiredNotice reason="free-rewards" />;
     } else if (status.declined) {
       // 확인 모달에서 그만둔 것은 실패가 아니라 사용자의 선택이라
       // `destructive`도 `role="alert"`도 쓰지 않는다(경고할 일이 없다).
