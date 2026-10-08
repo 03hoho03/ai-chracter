@@ -1,8 +1,6 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { Link } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
-import { ChevronLeft } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 
 import {
@@ -17,11 +15,14 @@ import { toEscapeTarget } from "../lib/escapeTarget";
 import { readerTypographyClassName } from "../lib/readerTypography";
 import { toEpisodeScrollProgress } from "../lib/readingProgress";
 import { toChapterSavedReadingPosition } from "../lib/savedReadingPosition";
+import { useIsFinePointer } from "../lib/useIsFinePointer";
+import { useScreenWakeLock } from "../lib/useScreenWakeLock";
 import { readerSettingsAtom } from "../model/readerSettings";
 import { useChromeVisibility } from "../model/useChromeVisibility";
+import type { PagedPosition, PagedReaderHandle } from "../model/usePagedReader";
 import { useReadingPosition } from "../model/useReadingPosition";
-import { EpisodeEnd } from "./EpisodeEnd";
-import { PreviousSummary } from "./PreviousSummary";
+import { PagedEpisodeBody } from "./PagedEpisodeBody";
+import { ScrollEpisodeBody } from "./ScrollEpisodeBody";
 import { ViewerBottomBar } from "./ViewerBottomBar";
 import { ViewerSettingsPanel } from "./ViewerSettingsPanel";
 import { ViewerTocSheet } from "./ViewerTocSheet";
@@ -36,8 +37,12 @@ type NovelViewerProps = {
 };
 
 /**
- * 소설 화 읽기 화면(몰입 뷰어). 전역 헤더·사이트 푸터 없이 본문만 있는 문서 스크롤 화면이고, 본문을 탭하거나 "메뉴
- * 열기"를 누를 때만 위·아래 바가 본문 위에 겹쳐 나타난다(DESIGN.md Navigation 절의 화 읽기 예외).
+ * 소설 화 읽기 화면(몰입 뷰어). 전역 헤더·사이트 푸터 없이 본문만 있고, 본문을 탭하거나 "메뉴 열기"를 누를 때만
+ * 위·아래 바가 본문 위에 겹쳐 나타난다(DESIGN.md Navigation 절의 화 읽기 예외). 본문은 보기 설정의 넘김 방식에
+ * 따라 쪽을 좌우로 넘기는 고정 화면(페이지 모드)이거나 문서 스크롤(스크롤 모드)이다.
+ *
+ * 읽은 자리 저장·바·보기 설정은 여기(화 단위)에 있고 본문만 넘김 방식에 따라 바뀐다 — 같은 화 안에서 방식을 바꿔도
+ * 화를 떠나는 처리가 돌지 않고, 새 본문은 읽던 문단에서 이어 열리며, 설정 패널의 포커스도 남는다.
  *
  * 화를 옮기면 호출부가 화 id 로 key 를 바꿔 새로 마운트한다 — 바 숨김·읽은 자리 되돌리기·저장이 화마다 처음부터
  * 시작하고, 떠나는 화의 기다리던 저장이 그 화 id 로 나간다.
@@ -47,21 +52,26 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
   const topBarId = useId();
   const bottomBarId = useId();
   const settingsPanelId = useId();
-  const articleRef = useRef<HTMLElement>(null);
   const settingsPanelRef = useRef<HTMLDivElement>(null);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const tocButtonRef = useRef<HTMLButtonElement>(null);
   const tocOpenerRef = useRef<HTMLElement | null>(null);
+  const pagedReaderRef = useRef<PagedReaderHandle>(null);
+  const isFinePointer = useIsFinePointer();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isTocOpen, setIsTocOpen] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [pagedPosition, setPagedPosition] = useState<PagedPosition>({ screen: 0, screenCount: 0 });
   const chrome = useChromeVisibility({ onHide: () => setIsSettingsOpen(false) });
   const { previous, next } = toAdjacentChapters(novel.chapters, summary.ordinal);
   const paragraphs = chapter.revision.paragraphs;
   const episodeLabel = toEpisodeLabel(summary);
   const { saved, isAbsenceKnown } = toChapterSavedReadingPosition(summary, novel.lastRead);
 
-  useReadingPosition({
+  // 두 넘김 방식 모두 읽는 동안이라 본문이 아니라 여기서 잡는다 — 방식을 바꿔도 놓았다 다시 잡지 않는다.
+  useScreenWakeLock(settings.keepScreenOn);
+
+  const readingPosition = useReadingPosition({
     novelId: novel.id,
     chapterId: chapter.id,
     revisionId: chapter.revision.id,
@@ -70,12 +80,12 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
     saved,
     isAbsenceKnown,
     wasFinished: summary.finishedReading,
-    containerRef: articleRef,
   });
 
-  // 화 안 진행률은 아래 바에만 보이므로 바가 보이는 동안만 스크롤을 따라 다시 잰다(읽는 동안 다시 그리지 않게).
+  // 스크롤 모드의 화 안 진행률은 아래 바에만 보이므로 바가 보이는 동안만 스크롤을 따라 다시 잰다(읽는 동안 다시
+  // 그리지 않게).
   useEffect(() => {
-    if (!chrome.isVisible) return;
+    if (!chrome.isVisible || settings.mode !== "scroll") return;
     let frame: number | undefined;
     function measure() {
       frame = undefined;
@@ -96,9 +106,9 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
       window.removeEventListener("scroll", handleScroll);
       if (frame !== undefined) cancelAnimationFrame(frame);
     };
-  }, [chrome.isVisible]);
+  }, [chrome.isVisible, settings.mode]);
 
-  // 보기 설정을 열면 지금 고른 글자 크기 칩으로 포커스를 옮긴다(단일 선택 그룹은 고른 칩이 Tab 정지점이다).
+  // 보기 설정을 열면 첫 줄(넘김 방식)의 고른 칩으로 포커스를 옮긴다(단일 선택 그룹은 고른 칩이 Tab 정지점이다).
   useEffect(() => {
     if (!isSettingsOpen) return;
     settingsPanelRef.current?.querySelector<HTMLElement>('[data-state="on"]')?.focus();
@@ -145,8 +155,9 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
           포커스 때는 `sr-only` 를 아예 걸지 않는다(`not-focus-visible:`) — `not-sr-only` 로 풀면 그 높이·패딩 초기화가
           버튼 크기를 덮어 납작해진다. 자리는 감싼 요소의 여백으로 잡고 버튼의 전환을 끈다 — 그대로 두면 `sr-only` 가
           풀리는 순간 1px 에서 제 크기로, 여백이 제자리로 미끄러진다.
-          바가 열려 있으면 위 바 아래로 내려 뒤로 버튼·화 제목을 가리지 않는다. */}
-      <div className={cn("pointer-events-none fixed inset-x-0 top-0 z-40 pt-safe", chrome.isVisible && "mt-14")}>
+          바가 열려 있으면 위 바 아래로 내려 뒤로 버튼·화 제목을 가리지 않는다. 바와 같이 좌우 safe-area 도 더해 가로로
+          눕힌 노치 폰에서 버튼이 노치 밑에 깔리지 않게 한다. */}
+      <div className={cn("pointer-events-none fixed inset-x-0 top-0 z-40 px-safe pt-safe", chrome.isVisible && "mt-14")}>
         <div className="p-4">
           <Button
             ref={chrome.menuButtonRef}
@@ -177,43 +188,36 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
         onToggleSettings={() => (isSettingsOpen ? closeSettings() : setIsSettingsOpen(true))}
       />
 
-      <main
-        className="min-h-dvh pt-10-safe pb-28"
-        onPointerDown={chrome.handlePointerDown}
-        onPointerUp={(event) => chrome.handlePointerUp(event, handleBodyTap)}
-      >
-        <article ref={articleRef} className={cn("mx-auto flex max-w-prose flex-col gap-8", readerTypographyClassName(settings))}>
-          <header className="flex flex-col gap-2">
-            {/* 바가 숨어 있어도 늘 있는 출구. */}
-            <Link
-              to="/novels/$novelId"
-              params={{ novelId: novel.id }}
-              className="flex w-fit items-center gap-1 rounded-sm text-sm text-muted-foreground hover:text-foreground focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-            >
-              <ChevronLeft aria-hidden className="size-4 shrink-0" />
-              <span className="min-w-0 truncate">{novel.title ?? "제목 미정"}</span>
-            </Link>
-            <h1 className="text-2xl font-bold tracking-tight text-balance break-keep text-foreground">{episodeLabel}</h1>
-            <p className="text-xs text-muted-foreground tabular-nums">{summary.charCount.toLocaleString()}자</p>
-          </header>
-
-          {previous !== undefined && previous.summary !== null && previous.summary !== "" && (
-            <PreviousSummary ordinal={previous.ordinal} summary={previous.summary} />
-          )}
-
-          <div className="flex flex-col gap-4 text-foreground">
-            {paragraphs.map((paragraph, index) => (
-              // 문단은 서버가 나눈 순서 그대로이고 이 목록은 다시 정렬되지 않아 순번이 곧 문단의 정체다(읽은 자리도
-              // 이 순번으로 저장한다).
-              <p key={index} data-paragraph-index={index} className="scroll-mt-4-safe whitespace-pre-line text-pretty break-keep">
-                {paragraph}
-              </p>
-            ))}
-          </div>
-
-          <EpisodeEnd novelId={novel.id} authorNote={summary.authorNote} next={next} onOpenToc={openToc} />
-        </article>
-      </main>
+      {settings.mode === "page" ? (
+        <PagedEpisodeBody
+          ref={pagedReaderRef}
+          novel={novel}
+          summary={summary}
+          episodeLabel={episodeLabel}
+          paragraphs={paragraphs}
+          next={next}
+          typographyClassName={readerTypographyClassName(settings)}
+          readingPosition={readingPosition}
+          onPositionChange={setPagedPosition}
+          isSettingsOpen={isSettingsOpen}
+          settingsPanelRef={settingsPanelRef}
+          onBodyTap={handleBodyTap}
+          onOpenToc={openToc}
+        />
+      ) : (
+        <ScrollEpisodeBody
+          novel={novel}
+          summary={summary}
+          episodeLabel={episodeLabel}
+          paragraphs={paragraphs}
+          next={next}
+          typographyClassName={readerTypographyClassName(settings)}
+          readingPosition={readingPosition}
+          onPointerDown={chrome.handlePointerDown}
+          onPointerUp={(event) => chrome.handlePointerUp(event, handleBodyTap)}
+          onOpenToc={openToc}
+        />
+      )}
 
       <ViewerBottomBar
         ref={chrome.bottomBarRef}
@@ -221,7 +225,19 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
         novelId={novel.id}
         ordinal={summary.ordinal}
         totalCount={novel.chapters.length}
-        progress={progress}
+        position={
+          settings.mode === "scroll"
+            ? { mode: "scroll", progress }
+            : {
+                mode: "page",
+                screen: pagedPosition.screen,
+                screenCount: pagedPosition.screenCount,
+                onSeek: (screen) => pagedReaderRef.current?.goTo(screen),
+                onPrevious: () => pagedReaderRef.current?.previous(),
+                onNext: () => pagedReaderRef.current?.next(),
+                showsPageButtons: !isFinePointer,
+              }
+        }
         previous={previous}
         next={next}
         isVisible={chrome.isVisible}

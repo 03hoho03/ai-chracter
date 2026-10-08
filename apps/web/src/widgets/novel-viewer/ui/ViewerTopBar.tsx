@@ -43,7 +43,7 @@ export function ViewerTopBar({
       aria-label="읽기 메뉴"
       inert={!isVisible}
       className={cn(
-        "fixed inset-x-0 top-0 z-30 border-b border-border bg-background pt-safe ease-out motion-safe:transition-[transform,opacity] motion-safe:duration-200",
+        "fixed inset-x-0 top-0 z-30 border-b border-border bg-background px-safe pt-safe ease-out motion-safe:transition-[transform,opacity] motion-safe:duration-200",
         !isVisible && "-translate-y-full opacity-0",
       )}
     >

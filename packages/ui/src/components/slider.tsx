@@ -3,14 +3,23 @@ import { Slider as SliderPrimitive } from "radix-ui"
 
 import { cn } from "@ai-character-chat/ui/lib/utils"
 
+type SliderProps = React.ComponentProps<typeof SliderPrimitive.Root> & {
+  /** 썸(`role="slider"`)의 접근 이름. 루트에 단 `aria-label` 은 썸에 닿지 않아, 이름이 필요하면 이것으로 준다. */
+  thumbLabel?: string
+  /** 썸이 값을 숫자 대신 읽어 줄 문장(`aria-valuetext`) — 예: "2 / 4쪽". */
+  thumbValueText?: string
+}
+
 function Slider({
   className,
   defaultValue,
   value,
   min = 0,
   max = 100,
+  thumbLabel,
+  thumbValueText,
   ...props
-}: React.ComponentProps<typeof SliderPrimitive.Root>) {
+}: SliderProps) {
   const _values = React.useMemo(() => {
     if (Array.isArray(value)) return value
     if (Array.isArray(defaultValue)) return defaultValue
@@ -47,6 +56,8 @@ function Slider({
         <SliderPrimitive.Thumb
           data-slot="slider-thumb"
           key={index}
+          aria-label={thumbLabel}
+          aria-valuetext={thumbValueText}
           className="relative block size-3 shrink-0 rounded-full border border-ring bg-background ring-ring/50 motion-safe:transition-[color,box-shadow] select-none after:absolute after:-inset-2 hover:ring-3 focus-visible:ring-3 focus-visible:outline-hidden active:ring-3 data-disabled:pointer-events-none"
         />
       ))}
