@@ -4119,6 +4119,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/identity-verifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Identity Verification
+         * @description 인증 id 를 발급하고 이 사용자에게 묶는다.
+         *
+         *     인증 설정이 없거나, 인증을 요구하는 기능(결제·게이트)이 둘 다 꺼져 있으면 503 `IDENTITY_VERIFICATION_UNAVAILABLE` —
+         *     쓰일 곳이 없는 인증으로 개인정보를 받지 않는다. 이미 인증한 계정은 409 `IDENTITY_ALREADY_VERIFIED`.
+         */
+        post: operations["start_identity_verification_me_identity_verifications_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/identity-verifications/{identity_verification_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete Identity Verification
+         * @description 포트원에 인증 건을 다시 물어 결과를 저장한다.
+         *
+         *     거절은 모두 아무것도 저장하지 않는다:
+         *     - 이 사용자에게 묶인 인증 id 가 아니면 404 `IDENTITY_VERIFICATION_NOT_FOUND`.
+         *     - 이미 인증한 계정이면 409 `IDENTITY_ALREADY_VERIFIED` — 묶음이 남은 두 번째 인증 창으로 다른 사람의 인증을 덮어써 계정의
+         *       주인을 바꾸지 못하게 한다.
+         *     - 포트원 조회 실패 502 `PORTONE_UNAVAILABLE`(다시 시도하면 된다).
+         *     - 인증 완료가 아니거나 우리 본인인증 채널이 아니면 422 `IDENTITY_VERIFICATION_NOT_VERIFIED`.
+         *     - CI 가 없으면 422 `IDENTITY_CI_MISSING` — 한 사람 한 계정을 지킬 수 없다.
+         *     - 생년월일이 없거나 읽을 수 없으면 422 `IDENTITY_BIRTH_DATE_MISSING` — 생년월일 없이 덮어쓰면 로그인의 연령 확인이 그
+         *       계정을 매번 실패시킨다.
+         *     - 만 14세 미만이면 403 `IDENTITY_UNDER_MINIMUM_AGE`. CI 도 생년월일도 저장하지 않는다(14세 미만의 개인정보를 받지
+         *       않는다).
+         *     - 같은 사람이 다른 살아 있는 계정으로 이미 인증했으면 409 `IDENTITY_ALREADY_USED`.
+         *
+         *     통과하면 CI 해시·인증 시각을 저장하고 생년월일을 인증값으로 덮어쓴다. 나이 판정은 로그인의 연령 확인과 같은 기준(UTC
+         *     날짜)이다. 만 19세 미만으로 인증되면 베타 참가 자격을 같은 트랜잭션에서 거둔다 — 베타는 성인만 받는데 지정 때의 자기
+         *     신고 생년월일만 확인했다.
+         */
+        post: operations["complete_identity_verification_me_identity_verifications__identity_verification_id__complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me/personas": {
         parameters: {
             query?: never;
@@ -7128,6 +7188,14 @@ export interface components {
             /** Mentionuserids */
             mentionUserIds: string[];
         };
+        /** CompleteIdentityVerificationResponse */
+        CompleteIdentityVerificationResponse: {
+            /**
+             * Verifiedat
+             * Format: date-time
+             */
+            verifiedAt: string;
+        };
         /**
          * CompletePaymentResponse
          * @description `pending` 이면 포트원이 아직 결제를 확정하지 않았다 — 화면은 "확인 중"을 안내하고 잔액을 다시 읽는다.
@@ -7941,6 +8009,10 @@ export interface components {
             socialProvider: ("google" | "kakao") | null;
             /** Enabledfeatures */
             enabledFeatures: ("novelize" | "chat_premium_models" | "novelize_premium_models")[];
+            /** Identityverified */
+            identityVerified: boolean;
+            /** Identitygateenabled */
+            identityGateEnabled: boolean;
         };
         /** MediaBookAxisInput */
         MediaBookAxisInput: {
@@ -9500,6 +9572,18 @@ export interface components {
         SocialOnboardingResponse: {
             /** Email */
             email: string;
+        };
+        /**
+         * StartIdentityVerificationResponse
+         * @description 브라우저가 포트원 본인인증 창에 그대로 넘기는 값. 상점 id·채널키는 웹 빌드에 넣지 않고 이 응답으로만 내린다.
+         */
+        StartIdentityVerificationResponse: {
+            /** Identityverificationid */
+            identityVerificationId: string;
+            /** Storeid */
+            storeId: string;
+            /** Channelkey */
+            channelKey: string;
         };
         /**
          * StartingSetupDraftItem
@@ -16562,6 +16646,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CompletePaymentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_identity_verification_me_identity_verifications_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StartIdentityVerificationResponse"];
+                };
+            };
+        };
+    };
+    complete_identity_verification_me_identity_verifications__identity_verification_id__complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identity_verification_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompleteIdentityVerificationResponse"];
                 };
             };
             /** @description Validation Error */

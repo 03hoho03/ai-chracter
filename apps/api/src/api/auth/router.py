@@ -86,6 +86,7 @@ from api.db.session import get_db_session
 from api.legal.dependencies import _latest_published_legal_version, _reconsent_required
 from api.llm.model_access import has_chat_premium_access, has_novel_premium_access
 from api.novelize.access import has_novelize_access
+from api.payments.config import identity_gate_active
 from api.session.cookies import clear_session_cookie, get_session_id_from_request, set_session_cookie
 from api.session.dependencies import get_current_user_id
 from api.session.store import create_session, delete_session, revoke_user_sessions
@@ -905,6 +906,8 @@ async def get_me(
         has_password=user.password_hash is not None,
         social_provider=None if method == "email" else method,
         enabled_features=await _enabled_features(db, user.id),
+        identity_verified=user.identity_verified_at is not None,
+        identity_gate_enabled=identity_gate_active(),
     )
 
 

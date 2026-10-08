@@ -123,3 +123,8 @@ class MeResponse(CamelModel):
     # 이 계정이 지금 쓸 수 있는 기능. 서버가 라우트 게이트와 같은 판정으로 계산하고 FE 는 이것으로 진입점만
     # 숨긴다(막는 것은 서버 게이트다).
     enabled_features: list[FeatureName]
+    # 휴대폰 본인인증을 마쳤는가.
+    identity_verified: bool
+    # 미인증 회원의 무료 대화·출석·미션을 막는 게이트가 켜져 있는가. 라우트 게이트와 같은 판정 함수의 값이다 — 꺼져 있으면
+    # 화면이 미인증 회원에게 인증 안내를 띄울 이유가 없다.
+    identity_gate_enabled: bool

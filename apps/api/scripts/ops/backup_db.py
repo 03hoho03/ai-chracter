@@ -27,7 +27,8 @@
 보관하고 그 기간이 지나면 파기합니다"를 실제로 수행하는 유일한 코드다 — `auth/router.py`의
 `_reregistration_blocked`는 조회 시 만료를 무시할 뿐 행을 지우지 않는다. 삭제를 백업 뒤에
 두는 이유는 지우기 전 상태를 그날 백업에 남기기 위해서다. `--no-upload`(로컬 전용 덤프)
-경로에는 얹지 않는다 — 그 경로는 durable 백업을 남기지 않는다.
+경로에는 얹지 않는다 — 그 경로는 durable 백업을 남기지 않는다. 같은 자리에서 1년이 지난
+`withdrawn_identities`(탈퇴한 인증 회원의 CI 해시) 행도 지운다.
 
 ⚠️ **이 파일은 SQLAlchemy/asyncpg/`api.*`를 import 하면 안 된다.** 프로덕션 크론은
 `/opt/ddona/backup.sh`(VM 실측)가 `PYTHONPATH=/opt/ddona/scripts` 아래 시스템
@@ -224,6 +225,24 @@ def delete_expired_withdrawn_emails(url: str, *, now: datetime) -> int:
     return len([line for line in result.stdout.decode().splitlines() if line.strip()])
 
 
+def delete_expired_withdrawn_identities(url: str, *, now: datetime) -> int:
+    """`withdrawn_at`에서 1년이 지난 `withdrawn_identities` 행(탈퇴한 인증 회원의 CI 해시와 받은 1회성 미션 키)을 지우고
+    지운 개수를 돌려준다. 보관 기간은 이메일 해시와 같은 1년이라 같은 상수를 쓴다(API 쪽 원본은
+    `api.core.constants.WITHDRAWN_IDENTITY_RETENTION_PERIOD`, 같은 테스트 파일이 둘이 같은지 본다).
+
+    방식과 `-Atq` 의 이유는 위 `delete_expired_withdrawn_emails` 와 같다 — 이 파일은 SQLAlchemy 를 import 할 수 없다.
+    """
+    cutoff = now - WITHDRAWN_EMAIL_BLOCK_PERIOD
+    sql = (
+        f"DELETE FROM withdrawn_identities WHERE withdrawn_at < '{cutoff.isoformat()}' "
+        "RETURNING ci_hmac;"
+    )
+    result = run_sh(f'psql "$PGURL" -Atq -c {shell_quote(sql)}', url=url, stdout=subprocess.PIPE)
+    if result.returncode != 0:
+        raise RuntimeError(f"만료 삭제 실패:\n{result.stderr.decode().strip()}")
+    return len([line for line in result.stdout.decode().splitlines() if line.strip()])
+
+
 def _healthcheck(suffix: str = "") -> None:
     """healthchecks.io check-in.
 
@@ -287,6 +306,9 @@ def main() -> int:
     expired_count = delete_expired_withdrawn_emails(url, now=datetime.now(UTC))
     if expired_count:
         print(f"🗑 withdrawn_emails 만료 정리: {expired_count}개 삭제")
+    expired_identities = delete_expired_withdrawn_identities(url, now=datetime.now(UTC))
+    if expired_identities:
+        print(f"🗑 withdrawn_identities 만료 정리: {expired_identities}개 삭제")
 
     if not args.keep_local:
         target.unlink()

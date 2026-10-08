@@ -10476,6 +10476,71 @@
         }
       }
     },
+    "/me/identity-verifications": {
+      "post": {
+        "tags": [
+          "identity"
+        ],
+        "summary": "Start Identity Verification",
+        "description": "인증 id 를 발급하고 이 사용자에게 묶는다.\n\n인증 설정이 없거나, 인증을 요구하는 기능(결제·게이트)이 둘 다 꺼져 있으면 503 `IDENTITY_VERIFICATION_UNAVAILABLE` —\n쓰일 곳이 없는 인증으로 개인정보를 받지 않는다. 이미 인증한 계정은 409 `IDENTITY_ALREADY_VERIFIED`.",
+        "operationId": "start_identity_verification_me_identity_verifications_post",
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartIdentityVerificationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/identity-verifications/{identity_verification_id}/complete": {
+      "post": {
+        "tags": [
+          "identity"
+        ],
+        "summary": "Complete Identity Verification",
+        "description": "포트원에 인증 건을 다시 물어 결과를 저장한다.\n\n거절은 모두 아무것도 저장하지 않는다:\n- 이 사용자에게 묶인 인증 id 가 아니면 404 `IDENTITY_VERIFICATION_NOT_FOUND`.\n- 이미 인증한 계정이면 409 `IDENTITY_ALREADY_VERIFIED` — 묶음이 남은 두 번째 인증 창으로 다른 사람의 인증을 덮어써 계정의\n  주인을 바꾸지 못하게 한다.\n- 포트원 조회 실패 502 `PORTONE_UNAVAILABLE`(다시 시도하면 된다).\n- 인증 완료가 아니거나 우리 본인인증 채널이 아니면 422 `IDENTITY_VERIFICATION_NOT_VERIFIED`.\n- CI 가 없으면 422 `IDENTITY_CI_MISSING` — 한 사람 한 계정을 지킬 수 없다.\n- 생년월일이 없거나 읽을 수 없으면 422 `IDENTITY_BIRTH_DATE_MISSING` — 생년월일 없이 덮어쓰면 로그인의 연령 확인이 그\n  계정을 매번 실패시킨다.\n- 만 14세 미만이면 403 `IDENTITY_UNDER_MINIMUM_AGE`. CI 도 생년월일도 저장하지 않는다(14세 미만의 개인정보를 받지\n  않는다).\n- 같은 사람이 다른 살아 있는 계정으로 이미 인증했으면 409 `IDENTITY_ALREADY_USED`.\n\n통과하면 CI 해시·인증 시각을 저장하고 생년월일을 인증값으로 덮어쓴다. 나이 판정은 로그인의 연령 확인과 같은 기준(UTC\n날짜)이다. 만 19세 미만으로 인증되면 베타 참가 자격을 같은 트랜잭션에서 거둔다 — 베타는 성인만 받는데 지정 때의 자기\n신고 생년월일만 확인했다.",
+        "operationId": "complete_identity_verification_me_identity_verifications__identity_verification_id__complete_post",
+        "parameters": [
+          {
+            "name": "identity_verification_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identity Verification Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompleteIdentityVerificationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/me/personas": {
       "get": {
         "tags": [
@@ -17898,6 +17963,20 @@
         ],
         "title": "CommentUpdateRequest"
       },
+      "CompleteIdentityVerificationResponse": {
+        "properties": {
+          "verifiedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Verifiedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "verifiedAt"
+        ],
+        "title": "CompleteIdentityVerificationResponse"
+      },
       "CompletePaymentResponse": {
         "properties": {
           "status": {
@@ -19807,6 +19886,14 @@
             },
             "type": "array",
             "title": "Enabledfeatures"
+          },
+          "identityVerified": {
+            "type": "boolean",
+            "title": "Identityverified"
+          },
+          "identityGateEnabled": {
+            "type": "boolean",
+            "title": "Identitygateenabled"
           }
         },
         "type": "object",
@@ -19820,7 +19907,9 @@
           "privacyReconsentRequired",
           "hasPassword",
           "socialProvider",
-          "enabledFeatures"
+          "enabledFeatures",
+          "identityVerified",
+          "identityGateEnabled"
         ],
         "title": "MeResponse"
       },
@@ -23539,6 +23628,30 @@
           "email"
         ],
         "title": "SocialOnboardingResponse"
+      },
+      "StartIdentityVerificationResponse": {
+        "properties": {
+          "identityVerificationId": {
+            "type": "string",
+            "title": "Identityverificationid"
+          },
+          "storeId": {
+            "type": "string",
+            "title": "Storeid"
+          },
+          "channelKey": {
+            "type": "string",
+            "title": "Channelkey"
+          }
+        },
+        "type": "object",
+        "required": [
+          "identityVerificationId",
+          "storeId",
+          "channelKey"
+        ],
+        "title": "StartIdentityVerificationResponse",
+        "description": "브라우저가 포트원 본인인증 창에 그대로 넘기는 값. 상점 id·채널키는 웹 빌드에 넣지 않고 이 응답으로만 내린다."
       },
       "StartingSetupDraftItem": {
         "properties": {

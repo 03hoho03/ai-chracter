@@ -40,6 +40,7 @@ from api.core.config import settings
 from api.core.redis import redis_client
 from api.core.sentry import build_sentry_options
 from api.db.session import engine, get_session_factory
+from api.identity.router import me_router as identity_me_router
 from api.images.router import router as images_router
 from api.inquiry.router import me_router as inquiry_me_router, router as inquiry_router
 from api.legal.router import router as legal_router
@@ -165,6 +166,7 @@ app.include_router(chat_models_router)
 app.include_router(clover_me_router)
 app.include_router(clover_router)
 app.include_router(payments_router)
+app.include_router(identity_me_router)
 app.include_router(persona_me_router)
 app.include_router(stories_router)
 app.include_router(characters_router)

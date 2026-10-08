@@ -31,3 +31,9 @@ def hash_withdrawn_email(email: str) -> str:
     return hmac.new(
         settings.withdrawn_email_hmac_key.encode("utf-8"), email.encode("utf-8"), hashlib.sha256
     ).hexdigest()
+
+
+def hash_identity_ci(ci: str) -> str:
+    """본인인증 CI 를 저장·대조용 HMAC-SHA256 으로 바꾼다. 이메일 해시와 같은 이유(조회가 되어야 하고, 서버 비밀키 없이는
+    되돌리거나 다른 곳의 CI 와 맞춰 볼 수 없어야 한다)지만 키는 따로 쓴다(`core/config.py` 의 `identity_ci_hmac_key` 설명)."""
+    return hmac.new(settings.identity_ci_hmac_key.encode("utf-8"), ci.encode("utf-8"), hashlib.sha256).hexdigest()
