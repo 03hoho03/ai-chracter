@@ -51,6 +51,7 @@ from api.novelize.router import (
     router as novelize_router,
 )
 from api.novelize.runner import expire_stale_jobs_after_startup
+from api.payments.router import router as payments_router
 from api.persona.router import me_router as persona_me_router
 from api.session.suspension import rebuild_suspended_user_markers
 
@@ -163,6 +164,7 @@ app.include_router(chat_me_router)
 app.include_router(chat_models_router)
 app.include_router(clover_me_router)
 app.include_router(clover_router)
+app.include_router(payments_router)
 app.include_router(persona_me_router)
 app.include_router(stories_router)
 app.include_router(characters_router)

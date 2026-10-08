@@ -3446,6 +3446,9 @@ export interface paths {
          * Send Message
          * @description text/event-stream SSE 응답. 실제 생성+판단 파이프라인은
          *     `_stream_new_turn`(이 방의 새 사용자 메시지를 커밋한 뒤 호출)이 담당한다.
+         *
+         *     본문 전체가 정산 가드 안이다 — 첫 `yield` 전 실패, 생성 중 끊김, 예상하지 못한 예외 어느 것으로 끝나도 응답이
+         *     저장되지 않았으면 차감을 되돌리고 원래 예외를 다시 올린다(`chat/turn_settlement.py`).
          */
         post: operations["send_message_chat_rooms__room_id__messages_post"];
         delete?: never;
@@ -4063,6 +4066,53 @@ export interface paths {
         get: operations["get_clover_pricing_clover_pricing_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Payment
+         * @description 주문을 만든다. 금액은 서버가 상품 키로 정하고 주문 행에 복사해 둔다 — 브라우저가 금액을 바꿔 결제해도 동기화의
+         *     금액 대조가 지급을 막는다. 포트원 사전 등록은 하지 않는다(주문마다 외부 호출 실패 지점이 하나 늘 뿐, 막는 것은 같다).
+         *
+         *     결제가 꺼져 있으면 503 `PAYMENTS_UNAVAILABLE`. 결제는 본인인증과 만 19세 확인을 거쳐야 하므로, 그 판정을 이 플래그
+         *     판정 바로 뒤(주문 행을 만들기 전)에 둔다.
+         */
+        post: operations["create_payment_payments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payments/{payment_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete Payment
+         * @description 브라우저가 결제창이 끝났다고 알린다. 자기 주문만(아니면 404 `PAYMENT_NOT_FOUND`).
+         *
+         *     재동의·결제 플래그 게이트를 걸지 않는다 — 이미 돈이 나간 결제의 동기화를 막으면 안 된다. 포트원 조회가 실패하면
+         *     502 `PORTONE_UNAVAILABLE`(다시 시도하면 되고, 웹훅도 같은 결제를 맞춘다).
+         */
+        post: operations["complete_payment_payments__payment_id__complete_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6676,6 +6726,19 @@ export interface components {
             missions: components["schemas"]["CloverMissionItem"][];
         };
         /**
+         * CloverPayMethodItem
+         * @description 포트원 브라우저 SDK 의 `payMethod` 와, 간편결제일 때 `easyPay.easyPayProvider` 값 그대로.
+         */
+        CloverPayMethodItem: {
+            /**
+             * Paymethod
+             * @enum {string}
+             */
+            payMethod: "CARD" | "EASY_PAY";
+            /** Easypayprovider */
+            easyPayProvider: string | null;
+        };
+        /**
          * CloverPricingResponse
          * @description 공개 가격 안내. 단가는 기본 모델 기준만 싣는다 — 상위 모델은 허용된 계정만 쓰고 소설은 허용 명단 전용이라
          *     공개 안내에 넣지 않는다.
@@ -6687,6 +6750,10 @@ export interface components {
             chatTurnCost: number;
             /** Imagecost */
             imageCost: number;
+            /** Paymentsenabled */
+            paymentsEnabled: boolean;
+            /** Paymethods */
+            payMethods: components["schemas"]["CloverPayMethodItem"][];
         };
         /** CloverProductItem */
         CloverProductItem: {
@@ -7062,6 +7129,19 @@ export interface components {
             mentionUserIds: string[];
         };
         /**
+         * CompletePaymentResponse
+         * @description `pending` 이면 포트원이 아직 결제를 확정하지 않았다 — 화면은 "확인 중"을 안내하고 잔액을 다시 읽는다.
+         */
+        CompletePaymentResponse: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "paid" | "failed" | "mismatch" | "cancelled" | "partially_cancelled";
+            /** Balance */
+            balance: number;
+        };
+        /**
          * ContentAccessStatus
          * @description Mirrors the FE `resolveAccessStatus` union (`entities/content`):
          *     `visibility` is only meaningful when `kind == "accessible"`.
@@ -7270,6 +7350,40 @@ export interface components {
         /** ContentVisibilityUpdateRequest */
         ContentVisibilityUpdateRequest: {
             visibility: components["schemas"]["ContentVisibility"];
+        };
+        /** CreatePaymentRequest */
+        CreatePaymentRequest: {
+            /**
+             * Productkey
+             * @enum {string}
+             */
+            productKey: "starter" | "basic" | "plus" | "pro";
+            /**
+             * Agreed
+             * @constant
+             */
+            agreed: true;
+        };
+        /**
+         * CreatePaymentResponse
+         * @description 브라우저가 포트원 결제창에 그대로 넘기는 값. 상점 id·채널키는 웹 빌드에 넣지 않고 이 응답으로만 내린다.
+         */
+        CreatePaymentResponse: {
+            /** Paymentid */
+            paymentId: string;
+            /** Storeid */
+            storeId: string;
+            /** Channelkey */
+            channelKey: string;
+            /** Ordername */
+            orderName: string;
+            /** Totalamount */
+            totalAmount: number;
+            /**
+             * Currency
+             * @constant
+             */
+            currency: "KRW";
         };
         /**
          * DevelopmentExampleItem
@@ -16393,6 +16507,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CloverPricingResponse"];
+                };
+            };
+        };
+    };
+    create_payment_payments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePaymentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatePaymentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_payment_payments__payment_id__complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                payment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompletePaymentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

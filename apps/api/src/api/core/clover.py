@@ -703,3 +703,22 @@ def earned_lot_expiry(now: datetime) -> datetime:
     """
     midnight_kst = datetime.combine(kst_today(now), time.min, tzinfo=KST)
     return midnight_kst + timedelta(days=8)
+
+
+# 구매로 받은 유료·보너스 클로버의 유효기간(년). 환불정책이 "구매일로부터 5년"이라 고지한다.
+PURCHASE_LOT_YEARS = 5
+
+
+def purchase_lot_expiry(paid_at: datetime) -> datetime:
+    """구매 로트의 만료 시각 — 결제일(KST)의 5년 뒤 같은 날 KST 자정 + 1일. 2월 29일 결제는 그해에 같은 날이 없으면
+    3월 1일을 그날로 본다.
+
+    +1일은 `earned_lot_expiry` 의 +8일과 같은 이유다: 자정으로 정규화하면 늦게 결제할수록 보유 기간이 5년보다 짧아지는데,
+    하루를 더하면 누구도 5년보다 적게 갖지 않는다.
+    """
+    paid_on = kst_today(paid_at)
+    try:
+        anniversary = paid_on.replace(year=paid_on.year + PURCHASE_LOT_YEARS)
+    except ValueError:
+        anniversary = date(paid_on.year + PURCHASE_LOT_YEARS, 3, 1)
+    return datetime.combine(anniversary, time.min, tzinfo=KST) + timedelta(days=1)

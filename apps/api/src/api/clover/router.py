@@ -41,6 +41,7 @@ from api.clover.schemas import (
     CloverMissionClaimResponse,
     CloverMissionItem,
     CloverMissionsResponse,
+    CloverPayMethodItem,
     CloverPricingResponse,
     CloverProductItem,
 )
@@ -57,6 +58,8 @@ from api.db.models.clover import CloverLedger, CloverLot
 from api.db.session import get_db_session
 from api.legal.dependencies import require_legal_consent
 from api.llm.chat_models import DEFAULT_CHAT_MODEL, chat_turn_cost
+from api.payments.config import payments_active
+from api.payments.methods import PAY_METHODS
 from api.session.dependencies import get_current_user_id
 
 me_router = APIRouter(prefix="/me", tags=["clover"])
@@ -187,6 +190,10 @@ async def get_clover_pricing() -> CloverPricingResponse:
         ],
         chat_turn_cost=chat_turn_cost(DEFAULT_CHAT_MODEL),
         image_cost=clover.IMAGE_UNIT_COST,
+        payments_enabled=payments_active(),
+        pay_methods=[
+            CloverPayMethodItem(pay_method=m.pay_method, easy_pay_provider=m.easy_pay_provider) for m in PAY_METHODS
+        ],
     )
 
 

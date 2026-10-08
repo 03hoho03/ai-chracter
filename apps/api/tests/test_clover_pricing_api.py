@@ -49,7 +49,10 @@ async def test_response_follows_products_and_cost_constants(
     resp = await db_client.get("/clover/pricing")
 
     assert resp.status_code == 200
-    assert resp.json() == {
+    body = resp.json()
+    # 결제 여부·결제수단은 결제 테스트(`test_payments_api.py`)가 본다.
+    del body["paymentsEnabled"], body["payMethods"]
+    assert body == {
         "products": [
             {"key": "pro", "name": "가짜 상품 하나", "priceKrw": 1234, "paidAmount": 411, "bonusAmount": 7},
             {"key": "starter", "name": "가짜 상품 둘", "priceKrw": 5678, "paidAmount": 1892, "bonusAmount": 0},
@@ -79,7 +82,7 @@ async def test_premium_and_novel_costs_are_not_exposed(
 
     assert resp.status_code == 200
     body = resp.json()
-    assert set(body) == {"products", "chatTurnCost", "imageCost"}
+    assert set(body) == {"products", "chatTurnCost", "imageCost", "paymentsEnabled", "payMethods"}
     raw = json.dumps(body)
     for value in hidden.values():
         assert str(value) not in raw

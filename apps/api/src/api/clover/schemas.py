@@ -4,6 +4,7 @@ from typing import Literal
 
 from api.clover.products import ProductKey
 from api.core.schema import CamelModel
+from api.payments.methods import PayMethod
 
 # 원장 조회 쿼리 파라미터와 응답 `category` 필드가
 # 같은 타입을 공유한다.
@@ -93,6 +94,13 @@ class CloverProductItem(CamelModel):
     bonus_amount: int
 
 
+class CloverPayMethodItem(CamelModel):
+    """포트원 브라우저 SDK 의 `payMethod` 와, 간편결제일 때 `easyPay.easyPayProvider` 값 그대로."""
+
+    pay_method: PayMethod
+    easy_pay_provider: str | None
+
+
 class CloverPricingResponse(CamelModel):
     """공개 가격 안내. 단가는 기본 모델 기준만 싣는다 — 상위 모델은 허용된 계정만 쓰고 소설은 허용 명단 전용이라
     공개 안내에 넣지 않는다."""
@@ -101,3 +109,7 @@ class CloverPricingResponse(CamelModel):
     # 기본 모델로 쓰는 채팅 턴 하나와 이미지 한 장의 클로버.
     chat_turn_cost: int
     image_cost: int
+    # 지금 결제를 받는가. 거짓이면 구매 화면이 "준비 중"을 보인다.
+    payments_enabled: bool
+    # 구매 화면이 고를 수 있는 결제수단(`payments/methods.py` 가 유일한 목록).
+    pay_methods: list[CloverPayMethodItem]
