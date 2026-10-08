@@ -91,16 +91,21 @@ export const RefundPaymentModal = createCallable<RefundPaymentModalProps, void>(
   const companyFault = useWatch({ control, name: "companyFault" });
   // 같은 `YYYY-MM-DD` 형식이라 문자열 비교가 날짜 비교다. 빈 칸("")은 결제일보다 앞이라 범위 밖으로 떨어진다.
   const isReceivedOnInRange = receivedOn >= paidOn && receivedOn <= today;
+  const isRefundable = isRefundableStatus((livePayment ?? payment).status);
 
   const quoteQuery = useRefundQuoteQuery({
     paymentId: payment.paymentId,
     receivedOn,
     companyFault,
-    enabled: !isAttemptPending && isReceivedOnInRange,
+    // 닫히는 중이거나 살아 있는 목록이 더는 환불할 수 없는 상태(전액 취소 등)라고 하면 묻지 않는다 — 서버가 422로 답할
+    // 뿐이고 닫히는 화면에 그 오류가 비친다.
+    enabled: !call.ended && !isAttemptPending && isReceivedOnInRange && isRefundable,
   });
   // 접수일·귀책을 바꾸는 동안 옛 견적으로 확정하지 않게, 지금 입력의 견적이 도착했을 때만 연다.
   const confirmableQuote =
-    !isAttemptPending && isReceivedOnInRange && quoteQuery.isSuccess && !quoteQuery.isFetching ? quoteQuery.data : null;
+    !isAttemptPending && isReceivedOnInRange && isRefundable && quoteQuery.isSuccess && !quoteQuery.isFetching
+      ? quoteQuery.data
+      : null;
   const confirmLabel = isAttemptPending ? "확인·재시도" : "환불 확정";
 
   const onSubmit = async (values: RefundFormValues) => {
@@ -254,6 +259,7 @@ export const RefundPaymentModal = createCallable<RefundPaymentModalProps, void>(
                 <RefundQuoteBody
                   quoteQuery={quoteQuery}
                   isReceivedOnInRange={isReceivedOnInRange}
+                  isRefundable={isRefundable}
                   companyFault={companyFault}
                 />
               </>
@@ -314,24 +320,30 @@ export const RefundPaymentModal = createCallable<RefundPaymentModalProps, void>(
 type RefundQuoteBodyProps = {
   quoteQuery: ReturnType<typeof useRefundQuoteQuery>;
   isReceivedOnInRange: boolean;
+  /** 살아 있는 구매 내역의 상태가 환불할 수 있는가. 아니면 견적을 묻지 않으므로(쿼리가 꺼져 대기 상태로 남는다) 문장으로 받는다. */
+  isRefundable: boolean;
   companyFault: boolean;
 };
 
 /** 견적 영역. 접수일·귀책이 바뀔 때마다 다시 읽으므로 스크린리더에도 바뀐 결과가 읽히게 `aria-live`다. */
-function RefundQuoteBody({ quoteQuery, isReceivedOnInRange, companyFault }: RefundQuoteBodyProps) {
+function RefundQuoteBody(props: RefundQuoteBodyProps) {
   return (
     <section aria-label="환불 견적" aria-live="polite" className="flex flex-col gap-2">
       <h3 className="text-sm font-semibold text-foreground">견적</h3>
-      <RefundQuoteContent
-        quoteQuery={quoteQuery}
-        isReceivedOnInRange={isReceivedOnInRange}
-        companyFault={companyFault}
-      />
+      <RefundQuoteContent {...props} />
     </section>
   );
 }
 
-function RefundQuoteContent({ quoteQuery, isReceivedOnInRange, companyFault }: RefundQuoteBodyProps) {
+function RefundQuoteContent({ quoteQuery, isReceivedOnInRange, isRefundable, companyFault }: RefundQuoteBodyProps) {
+  if (!isRefundable) {
+    return (
+      <p className="text-sm break-keep text-foreground">
+        이 결제는 이제 환불할 수 없는 상태예요. 이미 취소됐을 수 있어요 — 구매 내역에서 상태를 확인해주세요.
+      </p>
+    );
+  }
+
   if (!isReceivedOnInRange) {
     return <p className="text-sm text-muted-foreground">접수일을 고르면 견적을 보여 드려요.</p>;
   }
@@ -452,6 +464,11 @@ function unknownResultMessage(isAttemptPending: boolean, isPaymentsRefetchFailed
     return "응답을 받지 못했고 구매 내역도 다시 읽지 못했어요. 잠시 뒤 창을 닫고 구매 내역에서 상태를 확인해주세요.";
   }
   return "응답을 받지 못했지만 진행 중인 환불 시도는 없어요. 견적을 확인하고 다시 확정해주세요.";
+}
+
+/** 서버 견적이 받는 상태와 같다(그 밖은 422 `PAYMENT_NOT_REFUNDABLE`). */
+function isRefundableStatus(status: AdminUserPaymentItem["status"]) {
+  return status === "paid" || status === "partially_cancelled";
 }
 
 function receivedOnRangeMessage(paidOn: string, today: string) {

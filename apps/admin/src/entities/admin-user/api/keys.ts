@@ -23,9 +23,12 @@ export const adminUserKeys = {
    * 싣고 있다). `all` 하위라 지급·회수 뮤테이션의 `invalidateQueries({ queryKey: all })` 한 줄이
    * 잔액(상세)과 원장을 함께 끊는다. */
   cloverLedger: (id: string, page: number) => [...adminUserKeys.all, "clover-ledger", id, page] as const,
-  /** 구매 내역·환불 견적도 `all` 하위다 — 환불 실행이 잔액·원장·구매 상태·견적을 함께 바꾸므로 같은 한 줄로 끊긴다. */
+  /** 구매 내역·환불 견적도 `all` 하위다 — 환불 실행이 잔액·원장·구매 상태를 함께 바꾸므로 같은 한 줄로 끊긴다(견적은
+   * 실행이 실패했을 때만 끊는다 — `useRefundPaymentMutation`). */
   payments: (id: string) => [...adminUserKeys.all, "payments", id] as const,
   /** 견적 요청에 실리는 접수일·회사 귀책을 전부 키에 넣는다(위 `list` 와 같은 이유). */
   refundQuote: (paymentId: string, receivedOn: string, companyFault: boolean) =>
-    [...adminUserKeys.all, "refund-quote", paymentId, receivedOn, companyFault] as const,
+    [...adminUserKeys.refundQuotes(paymentId), receivedOn, companyFault] as const,
+  /** 한 결제의 견적 전부(접수일·귀책 무관) — 환불 실행이 실패했을 때만 이 접두로 끊는다. */
+  refundQuotes: (paymentId: string) => [...adminUserKeys.all, "refund-quote", paymentId] as const,
 };
