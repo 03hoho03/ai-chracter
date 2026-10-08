@@ -429,19 +429,19 @@ async def _run_generation(
             )
         else:
             await update_job(job_id, status=ImageGenerationJobStatus.FAILED, error="이미지 생성에 모두 실패했습니다")
-    except Exception:
+    except BaseException:
         # 차감(게이트) 이후 · 정산(`refund_settled`) 이전에 터지는
         # 구간. `update_job(RUNNING)`의 Redis 순단과 집계 루프의 `assert`가 여기 들어온다 —
         # 그동안 이 구간에는 환불할 자리가 아예 없어서 사용자가 이미지를 한 장도 못 받고
-        # 클로버만 잃었다. 채팅은 같은 구간을 이미 닫았으므로(`chat/router.py`의
-        # `_refund_clover_on_failure`) 이미지만 열어 두면 같은 사고에 두 경로가 다르게 동작한다.
+        # 클로버만 잃었다. 채팅은 같은 구간을 이미 닫았으므로(`chat/turn_settlement.py` 의 정산 가드)
+        # 이미지만 열어 두면 같은 사고에 두 경로가 다르게 동작한다.
         #
         # 되돌리는 양은 정상 경로와 같은 **"진행된 만큼"**이다 — `succeeded_count`가 루프에서
         # 증가하므로 집계 도중 터져도 그 시점까지 성공한 장수는 사용자가 실제로 받았다.
         #
-        # `Exception`이지 `BaseException`이 아니다 — `CancelledError`까지 삼키면 취소 전파가
-        # 바뀐다(`core/clover.py`의 같은 판단과 일관). bare `raise`라 원래 예외를 가리지 않고,
-        # `finally`가 그 뒤에 돌아 admission 반납도 그대로다.
+        # `BaseException` 이다 — 재배포·종료로 잡 태스크가 취소(`CancelledError`)돼도 못 만든 장수는 돌려준다. 취소를
+        # 삼키지는 않는다: bare `raise`라 원래 예외(취소 포함)가 그대로 올라가고, `finally`가 그 뒤에 돌아 admission
+        # 반납도 그대로다. 잡은 asyncio 태스크라 취소가 한 번 전달되고 끝나므로, 이 블록의 `await` 는 다시 취소되지 않는다.
         if not refund_settled:
             await _refund_unmade_images(
                 owner_user_id, charge, charge.count - succeeded_count, session_factory, job_id

@@ -14,6 +14,7 @@ LLM 을 실제로 태웠다. **이 비대칭이 의도라는 것을 테스트가
 일어나 테스트 세션의 인스턴스는 낡아 있다.
 """
 
+import asyncio
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -28,13 +29,15 @@ from api.chat.prompt_builder import PromptRenderError
 from api.core import clover, rate_limit_gate
 from api.db.models import User
 from api.db.models.chat import ChatMessage, ChatMessageRole
-from api.db.models.clover import CloverLedger
+from api.db.models.clover import CloverLedger, CloverSpendAllocation
 from api.main import app
 from api.llm.client import LLMClientError, LLMPolicyViolationError
 from factories import (
+    _call_until_disconnect,
     _clear_llm_override,
     _clover_lots,
     _FakeLLMClient,
+    _HangingLLMClient,
     _get_genre,
     _login_as,
     _make_published_character,
@@ -114,15 +117,15 @@ def _patch_render_failure(monkeypatch: pytest.MonkeyPatch, surface: str) -> None
     monkeypatch.setattr(chat_router, "_build_prompt", _raise)
 
 
-async def _run_failing_turn(
+async def _prepare_paid_turn(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
     *,
     surface: str,
-    failure: str,
-) -> tuple[User, httpx.Response]:
-    """`surface`(전송/재생성/미리보기)에서 `failure` 종류의 실패를 일으키고 응답을 돌려준다.
+) -> tuple[User, str, str, dict[str, object] | None]:
+    """`surface`(전송/편집/재생성/미리보기)의 턴 하나를 클로버로 낼 수밖에 없는 상태를 만들고 `(유저, 메서드, 경로, 본문)`을
+    돌려준다.
 
     상한 패치는 **셋업이 끝난 뒤** 건다 — 방 생성과 첫 전송은 무료분으로 통과해야 원장에
     셋업 잡음이 안 남는다.
@@ -183,25 +186,31 @@ async def _run_failing_turn(
 
     # 여기서부터 클로버로 낸다.
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
+    if surface == "preview":
+        return user, "POST", f"/preview-sessions/{session_id}/messages", {"content": "안녕"}
+    if surface == "regenerate":
+        return user, "POST", f"/chat-rooms/{room_id}/regenerate", None
+    if surface == "edit":
+        return user, "PATCH", f"/chat-rooms/{room_id}/messages/{message_id}", {"content": "고친 내용"}
+    return user, "POST", f"/chat-rooms/{room_id}/messages", {"content": "안녕"}
+
+
+async def _run_failing_turn(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    surface: str,
+    failure: str,
+) -> tuple[User, httpx.Response]:
+    """`surface`(전송/재생성/미리보기)에서 `failure` 종류의 실패를 일으키고 응답을 돌려준다."""
+    user, method, path, body = await _prepare_paid_turn(db_client, db_session, monkeypatch, surface=surface)
     if failure == "render":
         _patch_render_failure(monkeypatch, surface)
 
     _override_llm_client(_failing_llm(failure))
     try:
-        if surface == "preview":
-            resp = await db_client.post(
-                f"/preview-sessions/{session_id}/messages", json={"content": "안녕"}
-            )
-        elif surface == "regenerate":
-            resp = await db_client.post(f"/chat-rooms/{room_id}/regenerate")
-        elif surface == "edit":
-            resp = await db_client.patch(
-                f"/chat-rooms/{room_id}/messages/{message_id}", json={"content": "고친 내용"}
-            )
-        else:
-            resp = await db_client.post(
-                f"/chat-rooms/{room_id}/messages", json={"content": "안녕"}
-            )
+        resp = await db_client.request(method, path, json=body)
     finally:
         _clear_llm_override()
 
@@ -293,6 +302,52 @@ async def test_refund_failure_does_not_escape_the_generator(
     assert user.clover_balance == _START_BALANCE - _CHAT_COST
     assert await _ledger_pairs(db_session, user.id) == [("chat_spend", -_CHAT_COST)]
     assert captured == ["clover"]
+
+
+# ── 생성 도중 끊김: 응답이 저장되지 않은 채 클라이언트가 떠나면 되돌린다 ─────────────────────
+#
+# 끊김은 제너레이터 밖에서 오는 취소라 위의 6지점 어디에도 닿지 않는다. 라우트 본문 전체를 감싼 정산 가드가 되돌린다.
+# 여기서 만드는 것은 LLM 스트림을 기다리는 중의 끊김(`CancelledError` 갈래)이고, `yield` 에 멈춘 중의 끊김(`GeneratorExit`
+# 갈래)은 `test_chat_turn_settlement.py` 가 실제 uvicorn 으로 본다.
+
+
+async def _allocations(db_session: AsyncSession, user_id: uuid.UUID) -> list[tuple[int, int]]:
+    """사용자 차감들의 배분 `(amount, refunded_amount)`."""
+    rows = await db_session.execute(
+        select(CloverSpendAllocation.amount, CloverSpendAllocation.refunded_amount)
+        .join(CloverLedger, CloverLedger.id == CloverSpendAllocation.spend_ledger_id)
+        .where(CloverLedger.user_id == user_id)
+    )
+    return [(amount, refunded) for amount, refunded in rows.all()]
+
+
+@pytest.mark.parametrize("surface", ["send", "edit", "regenerate", "preview"])
+async def test_disconnect_mid_generation_refunds_to_the_original_lot(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    surface: str,
+) -> None:
+    """판정 기준: 첫 토큰 뒤 LLM 을 기다리는 중 끊기면 원장에 `chat_spend`·`chat_refund` 한 쌍이 남고, 깎은 로트가 원래
+    잔여로 돌아오며, 그 차감의 배분이 전부 환급된 것으로 표시된다. 가드가 없으면 원장에 `chat_spend` 만 남는다."""
+    user, method, path, body = await _prepare_paid_turn(db_client, db_session, monkeypatch, surface=surface)
+    started = asyncio.Event()
+
+    _override_llm_client(_HangingLLMClient(started))
+    try:
+        sent = await _call_until_disconnect(db_client, method, path, body, started)
+    finally:
+        _clear_llm_override()
+
+    assert started.is_set()
+    assert sent[0]["status"] == 200
+    await db_session.refresh(user)
+    assert user.clover_balance == _START_BALANCE
+    assert sorted(await _ledger_pairs(db_session, user.id)) == sorted(
+        [("chat_spend", -_CHAT_COST), ("chat_refund", _CHAT_COST)]
+    )
+    assert await _clover_lots(db_session, user.id) == [("legacy_balance", _START_BALANCE)]
+    assert await _allocations(db_session, user.id) == [(_CHAT_COST, _CHAT_COST)]
 
 
 # ── 본문 창: 차감 이후 · 첫 환불 지점 이전의 라우트 본문 실패 ────────────────────────────

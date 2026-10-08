@@ -1,11 +1,15 @@
+import asyncio
 import uuid
 from datetime import UTC, date, datetime, timedelta, timezone
+from typing import Any
 
+import anyio
 import pytest
 from sqlalchemy import select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from api.core import clover
 from api.core.clover import (
     ATTENDANCE_GRANT_AMOUNT,
     CHAT_TURN_COST,
@@ -491,6 +495,42 @@ async def test_refund_spend_in_new_transaction_swallows_failures() -> None:
         )
     finally:
         await dead_engine.dispose()
+
+
+async def test_refund_spend_in_new_transaction_finishes_inside_a_cancelled_scope(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """판정 기준: 끊긴 SSE 요청의 정리처럼 이미 취소된 범위에서 불려도 환급이 `await` 다섯 번을 거쳐 끝까지 가고, 그 뒤
+    호출자의 취소는 그대로 이어진다(래퍼 다음 줄에 닿지 않는다). 차폐가 없으면 환급이 첫 `await` 에서 다시 취소된다."""
+    started = asyncio.Event()
+    refunded: list[int] = []
+    reached_after: list[bool] = []
+
+    async def _slow_refund_spend(db: AsyncSession, **kwargs: Any) -> int:
+        started.set()
+        for _ in range(5):
+            await asyncio.sleep(0)
+        refunded.append(kwargs["amount"])
+        return 0
+
+    monkeypatch.setattr(clover, "refund_spend", _slow_refund_spend)
+    factory = async_sessionmaker(bind=db_session.bind, expire_on_commit=False)
+
+    async def _caller() -> None:
+        await refund_spend_in_new_transaction(
+            factory, user_id=uuid.uuid4(), spend_ledger_id=uuid.uuid4(), amount=CHAT_TURN_COST, kind="chat_refund"
+        )
+        await asyncio.sleep(1)
+        reached_after.append(True)
+
+    async with asyncio.timeout(5):
+        async with anyio.create_task_group() as group:
+            group.start_soon(_caller)
+            await started.wait()
+            group.cancel_scope.cancel()
+
+    assert refunded == [CHAT_TURN_COST]
+    assert reached_after == []
 
 
 # ── KST 순수 함수 ──────────────────────────────────────────────────────

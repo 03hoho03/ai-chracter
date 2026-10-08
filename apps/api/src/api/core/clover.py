@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from typing import Literal
 
+import anyio
 from sqlalchemy import Integer, case, func, literal_column, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -522,6 +523,10 @@ async def refund_spend(
     return int(balance_after)
 
 
+# 환급 트랜잭션 하나에 주는 시간(아래 래퍼). 정상이면 수십 밀리초다.
+REFUND_TIMEOUT_SECONDS = 10.0
+
+
 async def refund_spend_in_new_transaction(
     session_factory: async_sessionmaker[AsyncSession],
     *,
@@ -538,16 +543,26 @@ async def refund_spend_in_new_transaction(
 
     실패는 `logger.warning` + `capture_dependency_failure(dependency="clover")`로만 남는다 — 자동 재시도가 없어 이게
     유일한 발견 수단이다. 남는 결과는 "그 요청의 차감이 되돌아가지 않은 것"이고 보정은 어드민 지급이다.
+
+    본문은 취소에서 차폐(shield)된다. 끊긴 SSE 요청의 정리 중에 불리면 그 범위는 이미 취소돼 있고, anyio 취소는 한 번
+    전달되고 끝나지 않아 차폐 없이는 환급 트랜잭션의 첫 `await` 에서 다시 취소된다. 명시적 환급 자리도 그 `await` 도중
+    끊김이 오면 같은 일을 겪으므로 래퍼가 모든 호출자를 함께 보호한다. 차폐는 취소를 삼키지 않는다 — 범위를 나가면
+    호출자의 취소가 그대로 이어진다. 시간 상한은 종료 중인 프로세스가 환급 하나로 멈추지 않게 한다.
     """
-    try:
-        async with session_factory() as session:
-            await refund_spend(session, user_id=user_id, spend_ledger_id=spend_ledger_id, amount=amount, kind=kind)
-            await session.commit()
-    # `BaseException`이 아니라 `Exception`인 것이 중요하다 — `asyncio.CancelledError`까지
-    # 삼키면 클라이언트가 끊은 스트림이 정리되지 않는다.
-    except Exception as exc:
-        logger.warning("클로버 환불 실패 — 그 요청의 차감이 남는다", exc_info=True)
-        capture_dependency_failure(exc, dependency="clover")
+    with anyio.move_on_after(REFUND_TIMEOUT_SECONDS, shield=True) as scope:
+        try:
+            async with session_factory() as session:
+                await refund_spend(
+                    session, user_id=user_id, spend_ledger_id=spend_ledger_id, amount=amount, kind=kind
+                )
+                await session.commit()
+        # `BaseException`이 아니라 `Exception`이다 — 취소는 삼키지 않고 호출자에게 그대로 간다.
+        except Exception as exc:
+            logger.warning("클로버 환불 실패 — 그 요청의 차감이 남는다", exc_info=True)
+            capture_dependency_failure(exc, dependency="clover")
+    if scope.cancelled_caught:
+        logger.warning("클로버 환불이 시간 안에 끝나지 않았다 — 그 요청의 차감이 남는다")
+        capture_dependency_failure(TimeoutError("clover refund timed out"), dependency="clover")
 
 
 def kst_today(now: datetime) -> date:
