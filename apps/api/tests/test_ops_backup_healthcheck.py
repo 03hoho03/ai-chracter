@@ -27,15 +27,26 @@ def _recording_ping(calls: list[str]) -> Callable[[str], bool]:
     return _fake
 
 
-def _stub_successful_backup(monkeypatch: pytest.MonkeyPatch) -> None:
-    """dump/upload/prune/R2 용량/파기를 전부 성공으로 스텁해 ping 배선만 남긴다."""
+def _stub_successful_backup(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """dump/upload/prune/R2 용량/파기를 전부 성공으로 스텁해 ping 배선만 남긴다. 돌아간 파기의 표 이름을 순서대로
+    돌려준다 — 파기 단계가 새로 생기면 여기서도 스텁해야 테스트가 진짜 psql 을 부르지 않는다."""
+    purged: list[str] = []
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@localhost/db")
     monkeypatch.setenv("S3_BUCKET_NAME", "test-bucket")
     monkeypatch.setattr(backup_db, "dump", lambda url, target: target.write_bytes(b"dump"))
     monkeypatch.setattr(backup_db, "upload", lambda local, bucket, key: None)
     monkeypatch.setattr(backup_db, "prune", lambda bucket, prefix, keep: [])
     monkeypatch.setattr(backup_db, "check_r2_capacity", lambda bucket: None)
-    monkeypatch.setattr(backup_db, "delete_expired_withdrawn_emails", lambda url, *, now: 0)
+    def _purge(table: str) -> Callable[..., int]:
+        def purge(url: str, *, now: object) -> int:
+            purged.append(table)
+            return 0
+
+        return purge
+
+    monkeypatch.setattr(backup_db, "delete_expired_withdrawn_emails", _purge("withdrawn_emails"))
+    monkeypatch.setattr(backup_db, "delete_expired_withdrawn_identities", _purge("withdrawn_identities"))
+    return purged
 
 
 def test_healthcheck_skips_ping_when_url_not_configured(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -62,7 +73,7 @@ def test_main_pings_start_then_success_on_full_backup(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("HEALTHCHECKS_BACKUP_PING_URL", "https://hc-ping.com/abc123")
-    _stub_successful_backup(monkeypatch)
+    purged = _stub_successful_backup(monkeypatch)
     called: list[str] = []
     monkeypatch.setattr(backup_db, "ping", _recording_ping(called))
     monkeypatch.setattr("sys.argv", ["backup_db.py", "--out-dir", str(tmp_path)])
@@ -73,6 +84,29 @@ def test_main_pings_start_then_success_on_full_backup(
         "https://hc-ping.com/abc123/start",
         "https://hc-ping.com/abc123",
     ]
+    assert purged == ["withdrawn_emails", "withdrawn_identities"]
+
+
+def test_main_does_not_ping_success_when_identity_purge_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """CI 해시 파기가 실패하면 이메일 해시 파기 실패와 같다 — `RuntimeError` 가 `__main__` 으로 나가 실패 ping 경로를
+    타고, 성공 ping 은 나가지 않는다."""
+    monkeypatch.setenv("HEALTHCHECKS_BACKUP_PING_URL", "https://hc-ping.com/abc123")
+    _stub_successful_backup(monkeypatch)
+
+    def failing(url: str, *, now: object) -> int:
+        raise RuntimeError("만료 삭제 실패")
+
+    monkeypatch.setattr(backup_db, "delete_expired_withdrawn_identities", failing)
+    called: list[str] = []
+    monkeypatch.setattr(backup_db, "ping", _recording_ping(called))
+    monkeypatch.setattr("sys.argv", ["backup_db.py", "--out-dir", str(tmp_path)])
+
+    with pytest.raises(RuntimeError, match="만료 삭제 실패"):
+        backup_db.main()
+
+    assert called == ["https://hc-ping.com/abc123/start"]
 
 
 def test_main_with_no_upload_pings_start_but_not_success(
