@@ -126,9 +126,6 @@ describe("formToServer", () => {
               unit: "pt",
               description: "생존에 필요한 신체 상태",
               perTurnDelta: -1,
-              // 턴당 자동 변화가 있는 스탯이라 두 옵션을 기본값으로 실어 보낸다(아래 전용 테스트).
-              changeDirection: "both",
-              maxChangePerTurn: null,
               rules: [],
             },
           ],
@@ -269,31 +266,15 @@ describe("formToServer", () => {
     expect(requireFirst(payload.startingSetups).statDefs.map((stat) => stat.id)).toEqual(["stat-b", "stat-a"]);
   });
 
-  it("never sends a stat's change direction or max change per turn when it has no counter, so the saved values stay", () => {
-    // 서버는 빠진 두 옵션을 "기존 값 유지"로 읽는다 — 이 폼은 두 칸을 다루지 않고, 규칙이 없는 시작설정이 쓰는 옛 판정 경로가
-    // 저장된 값을 읽으므로 기본값으로 덮지 않는다.
-    const values = baseFormValues();
-    requireFirst(requireFirst(values.startingSetups).stats).perTurnDelta = null;
-    const stat = requireFirst(requireFirst(formToServer(values).startingSetups).statDefs);
-    expect(stat).not.toHaveProperty("changeDirection");
-    expect(stat).not.toHaveProperty("maxChangePerTurn");
-  });
-
-  it("resets the change direction and max change per turn to their defaults on a stat with a counter", () => {
-    // 서버는 턴당 자동 변화가 있는 스탯에 두 옵션이 걸려 있으면 발행을 막는데, 이 화면에는 두 칸이 없어 고칠 수 없다. 카운터
-    // 스탯은 판정을 받지 않아 두 옵션이 아무 일도 하지 않으므로 기본값으로 덮어도 잃는 것이 없다.
-    const stat = requireFirst(requireFirst(formToServer(baseFormValues()).startingSetups).statDefs);
-    expect(stat).toMatchObject({ perTurnDelta: -1, changeDirection: "both", maxChangePerTurn: null });
-  });
-
-  it("clears a zero or negative max change per turn kept from an old screen, without touching the direction", () => {
-    const values = baseFormValues();
-    const formStat = requireFirst(requireFirst(values.startingSetups).stats);
-    formStat.perTurnDelta = null;
-    formStat.legacyMaxChangePerTurn = 0;
-    const stat = requireFirst(requireFirst(formToServer(values).startingSetups).statDefs);
-    expect(stat).toHaveProperty("maxChangePerTurn", null);
-    expect(stat).not.toHaveProperty("changeDirection");
+  it("never sends the removed change direction or max change per turn keys, with or without a counter", () => {
+    // 서버는 두 키를 더는 받지 않는다(와도 무시한다). 이 폼이 다시 싣기 시작하면 옛 계약으로 되돌아간 것이다.
+    for (const perTurnDelta of [-1, null]) {
+      const values = baseFormValues();
+      requireFirst(requireFirst(values.startingSetups).stats).perTurnDelta = perTurnDelta;
+      const stat = requireFirst(requireFirst(formToServer(values).startingSetups).statDefs);
+      expect(stat).not.toHaveProperty("changeDirection");
+      expect(stat).not.toHaveProperty("maxChangePerTurn");
+    }
   });
 
   it("sends a stat's rules in order with trimmed conditions, and an empty list when there are none", () => {

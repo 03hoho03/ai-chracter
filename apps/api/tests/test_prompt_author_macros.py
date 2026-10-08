@@ -18,7 +18,7 @@ from api.chat.prompt_builder import (
     build_generation_prompt,
     build_image_judgment_prompt,
     build_memory_summary_prompt,
-    build_stat_judgment_prompt,
+    build_stat_rule_judgment_prompt,
     build_story_generation_prompt,
     media_cell_image_lines,
     situational_image_lines,
@@ -26,7 +26,7 @@ from api.chat.prompt_builder import (
 from api.db.models.character import SituationalImage
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.prompt import PromptSection, PromptSet
-from api.db.models.story import KeywordNote, StatDef, StoryPromptTemplate
+from api.db.models.story import KeywordNote, StatDef, StatRule, StoryPromptTemplate
 
 _STORY = PromptNames(persona_name="지훈", default_user_name="모험가", char_name=None)
 _CHARACTER = PromptNames(persona_name="지훈", default_user_name="", char_name="하늘")
@@ -192,7 +192,7 @@ def test_character_generation_expands_prompt_examples_and_assistant_history() ->
 # ---- 판정·요약 -----------------------------------------------------------------------------
 
 
-def test_stat_judgment_expands_stat_name_description_and_this_turn_response() -> None:
+def test_stat_judgment_expands_stat_name_description_rule_conditions_and_this_turn_response() -> None:
     stat = StatDef(
         entity_id=uuid.UUID(int=1),
         name="{{user}}의 용기",
@@ -201,19 +201,20 @@ def test_stat_judgment_expands_stat_name_description_and_this_turn_response() ->
         max_value=10,
         initial_value=5,
     )
+    rule = StatRule(entity_id=uuid.UUID(int=4), condition="{{user}}가 물러선다", delta=-1, order=0)
 
-    prompt = build_stat_judgment_prompt(
+    prompt, _ = build_stat_rule_judgment_prompt(
         prompt_set=_prompt_set(),
-        sections=[_section("stat_judgment", "story", "{stat_lines}|{user_message}|{assistant_message}|{user_name}")],
+        sections=[_section("stat_rule_judgment", "story", "{stat_lines}|{user_message}|{assistant_message}|{user_name}")],
         stat_defs=[stat],
-        current_stats={},
+        rules_by_stat_id={stat.entity_id: [rule]},
         user_message="{{user}} 그대로",
         assistant_message="{{user}}는 버틴다",
         names=_STORY,
     )
 
     assert prompt.split("|") == [
-        f"- statId={stat.entity_id}, 이름=지훈의 용기, 현재값=5, 범위=[0, 10], 설명=지훈이 겁먹으면 내려간다",
+        "지훈의 용기 / 범위 [0, 10] / 지훈이 겁먹으면 내려간다\n- a1: 지훈이 물러선다",
         "{{user}} 그대로",
         "지훈은 버틴다",
         "지훈",
@@ -296,18 +297,19 @@ def test_judgment_name_line_section_drops_without_an_actual_name() -> None:
     당신" 같은 줄이 나가지 않는다."""
     sections = [
         PromptSection(
-            channel="stat_judgment", scope="story", slot="user_name", variant="", body="사용자의 이름: {user_name}",
-            conditional=True, order=1,
+            channel="stat_rule_judgment", scope="story", slot="user_name", variant="",
+            body="사용자의 이름: {user_name}", conditional=True, order=1,
         ),
-        _section("stat_judgment", "story", "{user_message}"),
+        _section("stat_rule_judgment", "story", "{user_message}"),
     ]
     sections[1].order = 2
 
     def render(names: PromptNames) -> str:
-        return build_stat_judgment_prompt(
-            prompt_set=_prompt_set(), sections=sections, stat_defs=[], current_stats={},
+        prompt, _ = build_stat_rule_judgment_prompt(
+            prompt_set=_prompt_set(), sections=sections, stat_defs=[], rules_by_stat_id={},
             user_message="메시지", assistant_message="응답", names=names,
         )
+        return prompt
 
     assert render(PromptNames(persona_name=None, default_user_name="", char_name=None)) == "메시지"
     assert render(_STORY) == "사용자의 이름: 지훈\n\n메시지"

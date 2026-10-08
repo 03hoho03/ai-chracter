@@ -9,7 +9,7 @@ import httpx
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat.prompt_builder import StatChangeJudgment, StatJudgmentResult
+from api.chat.prompt_builder import StatRuleJudgmentResult
 from api.db.models import (
     CharacterVersionDetail,
     ChatRoom,
@@ -25,6 +25,7 @@ from api.db.models import (
     SituationalImage,
     StartingSetup,
     StatDef,
+    StatRule,
     StoryPromptTemplate,
     StoryVersionDetail,
     UserPersona,
@@ -100,7 +101,10 @@ async def _add_starting_setup(db_session: AsyncSession, content: Content) -> Sta
     return setup
 
 
-async def _add_stat_def(db_session: AsyncSession, setup: StartingSetup, **overrides: object) -> StatDef:
+async def _add_stat_def(
+    db_session: AsyncSession, setup: StartingSetup, *, rule_delta: int = 20, **overrides: object
+) -> StatDef:
+    """스탯 하나와 그 규칙 하나(짧은 id a1, 폭 `rule_delta`). 규칙이 있어야 스탯 판정이 불린다."""
     defaults: dict[str, object] = {
         "entity_id": uuid.uuid4(),
         "starting_setup_id": setup.id,
@@ -118,6 +122,10 @@ async def _add_stat_def(db_session: AsyncSession, setup: StartingSetup, **overri
     stat_def = StatDef(**defaults)
     db_session.add(stat_def)
     await db_session.flush()
+    db_session.add(
+        StatRule(entity_id=uuid.uuid4(), stat_def_id=stat_def.id, condition="칭찬받는다", delta=rule_delta, order=0)
+    )
+    await db_session.flush()
     return stat_def
 
 
@@ -134,7 +142,7 @@ class _FakeLLMClient(LLMClient):
     def __init__(
         self,
         tokens: list[str] | None = None,
-        structured_result: StatJudgmentResult | None = None,
+        structured_result: StatRuleJudgmentResult | None = None,
     ) -> None:
         self.tokens = tokens or []
         self.structured_result = structured_result
@@ -184,9 +192,7 @@ async def test_send_message_story_room_emits_stat_change_and_persists_it(
 
     fake = _FakeLLMClient(
         tokens=["안", "녕"],
-        structured_result=StatJudgmentResult(
-            stat_changes=[StatChangeJudgment(stat_id=str(stat_def.entity_id), new_value=70)]
-        ),
+        structured_result=StatRuleJudgmentResult(fired_rule_ids=["a1"]),
     )
     _override_llm_client(fake)
     try:
@@ -203,9 +209,9 @@ async def test_send_message_story_room_emits_stat_change_and_persists_it(
     assert stat_event["statId"] == str(stat_def.entity_id)
     assert stat_event["newValue"] == 70
 
-    # 판단용 프롬프트에는 스탯 정의와 이번 턴의 사용자/응답 메시지가 담긴다.
+    # 판단용 프롬프트에는 스탯 정의·규칙과 이번 턴의 사용자/응답 메시지가 담긴다.
     assert fake.received_judgment_prompt is not None
-    assert str(stat_def.entity_id) in fake.received_judgment_prompt
+    assert "- a1: 칭찬받는다" in fake.received_judgment_prompt
     assert "칭찬했다" in fake.received_judgment_prompt
     assert "안녕" in fake.received_judgment_prompt
 
@@ -223,18 +229,13 @@ async def test_send_message_story_room_clamps_stat_value_to_range(
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
     setup = await _add_starting_setup(db_session, content)
-    stat_def = await _add_stat_def(db_session, setup, min_value=0, max_value=100, initial_value=50)
+    stat_def = await _add_stat_def(db_session, setup, min_value=0, max_value=100, initial_value=50, rule_delta=9999)
     await db_session.commit()
 
     await _login_as(db_client, user.id)
     room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
 
-    fake = _FakeLLMClient(
-        tokens=["안녕"],
-        structured_result=StatJudgmentResult(
-            stat_changes=[StatChangeJudgment(stat_id=str(stat_def.entity_id), new_value=9999)]
-        ),
-    )
+    fake = _FakeLLMClient(tokens=["안녕"], structured_result=StatRuleJudgmentResult(fired_rule_ids=["a1"]))
     _override_llm_client(fake)
     try:
         resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "메시지"})
@@ -267,9 +268,7 @@ async def test_send_message_story_room_unchanged_stat_emits_no_stat_change_event
 
     fake = _FakeLLMClient(
         tokens=["안녕"],
-        structured_result=StatJudgmentResult(
-            stat_changes=[StatChangeJudgment(stat_id=str(stat_def.entity_id), new_value=50)]
-        ),
+        structured_result=StatRuleJudgmentResult(fired_rule_ids=[]),
     )
     _override_llm_client(fake)
     try:
@@ -281,7 +280,7 @@ async def test_send_message_story_room_unchanged_stat_emits_no_stat_change_event
     assert [e["type"] for e in events] == ["token", "done"]
 
 
-async def test_send_message_story_room_ignores_unknown_stat_id(
+async def test_send_message_story_room_ignores_unknown_rule_id(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     user = _make_user()
@@ -298,9 +297,7 @@ async def test_send_message_story_room_ignores_unknown_stat_id(
 
     fake = _FakeLLMClient(
         tokens=["안녕"],
-        structured_result=StatJudgmentResult(
-            stat_changes=[StatChangeJudgment(stat_id=str(uuid.uuid4()), new_value=10)]
-        ),
+        structured_result=StatRuleJudgmentResult(fired_rule_ids=["zz9"]),
     )
     _override_llm_client(fake)
     try:
@@ -328,7 +325,7 @@ async def test_send_message_story_room_builds_generation_prompt_from_story_setti
     await _login_as(db_client, user.id)
     room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
 
-    fake = _FakeLLMClient(tokens=["안녕"], structured_result=StatJudgmentResult(stat_changes=[]))
+    fake = _FakeLLMClient(tokens=["안녕"], structured_result=StatRuleJudgmentResult(fired_rule_ids=[]))
     _override_llm_client(fake)
     try:
         resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "모험을 시작한다"})
@@ -365,7 +362,7 @@ async def test_send_message_story_room_injects_room_persona_into_generation_prom
     await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room_id).values(persona_id=persona.id))
     await db_session.commit()
 
-    fake = _FakeLLMClient(tokens=["안녕"], structured_result=StatJudgmentResult(stat_changes=[]))
+    fake = _FakeLLMClient(tokens=["안녕"], structured_result=StatRuleJudgmentResult(fired_rule_ids=[]))
     _override_llm_client(fake)
     try:
         resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "모험을 시작한다"})
@@ -400,7 +397,7 @@ async def test_send_message_story_room_selects_template_instruction(
     await _login_as(db_client, user.id)
     room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
 
-    fake = _FakeLLMClient(tokens=["안녕"], structured_result=StatJudgmentResult(stat_changes=[]))
+    fake = _FakeLLMClient(tokens=["안녕"], structured_result=StatRuleJudgmentResult(fired_rule_ids=[]))
     _override_llm_client(fake)
     try:
         resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "메시지"})
@@ -437,7 +434,7 @@ async def test_send_message_story_room_injects_matched_keyword_note_hidden_from_
     await _login_as(db_client, user.id)
     room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
 
-    fake = _FakeLLMClient(tokens=["안녕"], structured_result=StatJudgmentResult(stat_changes=[]))
+    fake = _FakeLLMClient(tokens=["안녕"], structured_result=StatRuleJudgmentResult(fired_rule_ids=[]))
     _override_llm_client(fake)
     try:
         resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "저 마법사는 누구야?"})
@@ -477,7 +474,7 @@ async def test_send_message_story_room_ignores_keyword_note_scoped_to_other_star
     await _login_as(db_client, user.id)
     room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
 
-    fake = _FakeLLMClient(tokens=["안녕"], structured_result=StatJudgmentResult(stat_changes=[]))
+    fake = _FakeLLMClient(tokens=["안녕"], structured_result=StatRuleJudgmentResult(fired_rule_ids=[]))
     _override_llm_client(fake)
     try:
         resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "저 마법사는 누구야?"})
@@ -511,7 +508,7 @@ async def test_send_message_story_room_with_valid_shortcut_id_injects_shortcut_p
     await _login_as(db_client, user.id)
     room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
 
-    fake = _FakeLLMClient(tokens=["안녕"], structured_result=StatJudgmentResult(stat_changes=[]))
+    fake = _FakeLLMClient(tokens=["안녕"], structured_result=StatRuleJudgmentResult(fired_rule_ids=[]))
     _override_llm_client(fake)
     try:
         resp = await db_client.post(
@@ -684,7 +681,7 @@ async def test_send_message_story_room_ignores_situational_images(
     await _login_as(db_client, user.id)
     room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
 
-    fake = _FakeLLMClient(tokens=["안녕"], structured_result=StatJudgmentResult(stat_changes=[]))
+    fake = _FakeLLMClient(tokens=["안녕"], structured_result=StatRuleJudgmentResult(fired_rule_ids=[]))
     _override_llm_client(fake)
     try:
         resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
@@ -693,7 +690,7 @@ async def test_send_message_story_room_ignores_situational_images(
 
     assert resp.status_code == 200
     # 스탯 판단 한 번만 호출되고, 이미지 매칭 판단은 추가로 호출되지 않는다.
-    assert fake.generate_structured_calls == [StatJudgmentResult]
+    assert fake.generate_structured_calls == [StatRuleJudgmentResult]
 
     done_event = _parse_sse_events(resp.text)[-1]
     assert done_event["finalMessage"]["imageId"] is None
@@ -731,7 +728,7 @@ async def test_get_story_room_messages_never_carry_image_id_or_url(
     await _login_as(db_client, user.id)
     room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
 
-    fake = _FakeLLMClient(tokens=["안녕"], structured_result=StatJudgmentResult(stat_changes=[]))
+    fake = _FakeLLMClient(tokens=["안녕"], structured_result=StatRuleJudgmentResult(fired_rule_ids=[]))
     _override_llm_client(fake)
     try:
         resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})

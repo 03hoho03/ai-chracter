@@ -39,7 +39,6 @@ from api.content.publish_filter_memo import PASSED_KEY_PREFIX, has_passed, remem
 from api.content.schemas import (
     KEYWORD_NOTE_OPTION_FIELDS,
     RULE_LIST_ADAPTER,
-    STAT_DEF_OPTION_FIELDS,
     CharacterDraftPayload,
     CharacterDraftResponse,
     CharacterSituationalImageItem,
@@ -864,8 +863,6 @@ async def _story_draft_response(
                         unit=stat_def.unit,
                         description=stat_def.description,
                         per_turn_delta=stat_def.per_turn_delta,
-                        change_direction=stat_def.change_direction,
-                        max_change_per_turn=stat_def.max_change_per_turn,
                         rules=[
                             StatRuleDraftItem(id=rule.entity_id, condition=rule.condition, delta=rule.delta)
                             for rule in (
@@ -1538,11 +1535,6 @@ async def _update_story_draft(
             if stat_def is None:
                 stat_def = StatDef(entity_id=stat_item.id, starting_setup_id=setup.id)
                 db.add(stat_def)
-                # 새 스탯은 안 보낸 옵션도 페이로드의 기본값으로 채운다.
-                provided_stat_options = STAT_DEF_OPTION_FIELDS
-            else:
-                # 기존 스탯에서 안 보낸 옵션은 그대로 둔다(`StatDefDraftItem` docstring).
-                provided_stat_options = STAT_DEF_OPTION_FIELDS & stat_item.model_fields_set
             stat_def.name = stat_item.name
             stat_def.icon = stat_item.icon
             stat_def.color = stat_item.color
@@ -1553,8 +1545,6 @@ async def _update_story_draft(
             stat_def.description = stat_item.description
             stat_def.per_turn_delta = stat_item.per_turn_delta
             stat_def.order = stat_order
-            for option in provided_stat_options:
-                setattr(stat_def, option, getattr(stat_item, option))
             if "rules" in stat_item.model_fields_set:
                 # 새 스탯의 물리 id 는 파이썬 쪽 기본값이라 flush 해야 채워진다.
                 await db.flush()

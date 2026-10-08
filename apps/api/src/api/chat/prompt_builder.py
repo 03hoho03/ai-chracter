@@ -95,13 +95,15 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
     ("generation", "situation_notes"): frozenset({"situation_note_lines"}),
     ("generation", "shortcut_prompt"): frozenset({"shortcut_prompt"}),
     ("generation", "final_frame"): frozenset({"user_label", "user_message", "assistant_label"}),
+    # 옛 절대값 판정 채널. 더 이상 렌더하지 않지만 운영 프롬프트 세트에 행이 남아 있어, 게시 검증(플레이스홀더 허용 목록)이
+    # 그 행을 통과시키도록 둔다.
     ("stat_judgment", "stat_defs_intro"): frozenset({"stat_lines"}),
     ("stat_judgment", "turn_context"): frozenset(
         {"user_label", "user_message", "assistant_label", "assistant_message"}
     ),
     ("stat_judgment", "judgment_instruction"): frozenset(),
     ("stat_judgment", "user_name"): frozenset({"user_name"}),
-    # 규칙 판정 — 슬롯 구성은 `stat_judgment` 와 같고 `stat_lines` 의 모양만 다르다(`build_stat_rule_judgment_prompt`).
+    # 규칙 판정 — `build_stat_rule_judgment_prompt` 가 만드는 `values`.
     ("stat_rule_judgment", "stat_defs_intro"): frozenset({"stat_lines"}),
     ("stat_rule_judgment", "turn_context"): frozenset(
         {"user_label", "user_message", "assistant_label", "assistant_message"}
@@ -598,83 +600,6 @@ def build_story_generation_prompt(
     )
 
 
-def _stat_line_tail(stat_def: StatDef) -> str:
-    """판정 프롬프트 스탯 줄 끝의 안내. 방향·폭 제약은 `apply_stat_changes` 가 어차피 잘라 내므로 정확성과는 무관하고,
-    판정이 처음부터 자를 값을 내지 않게 돕는 보조다. 제약 없는 스탯 줄은 꼬리 없이 그대로 둔다. 카운터 줄은 초안·미리보기에
-    옵션이 함께 남아 있어도 판정을 받지 않으므로 제약 꼬리를 달지 않는다."""
-    if stat_def.per_turn_delta is not None:
-        return "  ※ 시스템이 매 턴 자동 조정하는 값이다. statChanges에 넣지 마라."
-    notes: list[str] = []
-    if stat_def.change_direction == "increase":
-        notes.append("증가만 할 수 있다.")
-    elif stat_def.change_direction == "decrease":
-        notes.append("감소만 할 수 있다.")
-    step = stat_def.max_change_per_turn
-    if step is not None and step > 0:
-        notes.append(f"한 턴에 최대 {step}까지 바뀐다.")
-    return f"  ※ {' '.join(notes)}" if notes else ""
-
-
-def build_stat_judgment_prompt(
-    *,
-    prompt_set: PromptSet,
-    sections: Sequence[PromptSection],
-    stat_defs: list[StatDef],
-    current_stats: dict[str, float],
-    user_message: str,
-    assistant_message: str,
-    names: PromptNames,
-) -> str:
-    """판단 프롬프트를 조립한다 — 스탯 변경 판단(스토리 챗 전용).
-
-    스탯 정의(현재값/범위/설명)와 **이번 턴만**을 근거로 LLMClient.generateStructured()가
-    StatJudgmentResult(구조화 출력)로 각 스탯의 변경 여부를 판단하게 한다.
-
-    히스토리 전체를 안 싣는다. 스탯
-    변화는 "이번 턴에" 무엇이 일어났는지의 함수이지 누적 서사가 아니다 — 아래 지시
-    문구가 이미 "마지막 사용자 행동과 그에 대한 응답"만 근거로 명시하고 있었으니 실제
-    입력도 거기 맞춘다. `build_ending_judgment_prompt`는 반대로 히스토리를 싣는다 —
-    엔딩은 "지금까지의 대화가 기준을 충족하는지"를 묻는 누적 판단이라 이번 턴만으로는
-    판정할 수 없다. 이 비대칭이 이 변경의 핵심이다.
-
-    스탯 이름·설명(작가 글)과 이번 턴 모델 응답은 `names` 로 `{{user}}` 를 바꾸고, 이름 한 줄에 실제 이름을 싣는다.
-
-    스탯 줄은 이름 바로 뒤에 현재값·범위를 두고 설명을 그 뒤에 둔다 — 설명이 길면 현재값이 이름에서 멀어져, 판정 모델이
-    다른 스탯 줄의 현재값을 이 스탯의 기준으로 읽고 새 값을 내는 일이 있었다. 제약 꼬리는 그대로 줄 끝(설명 뒤)에 붙는다.
-    """
-    # `per_turn_delta`가 있는 스탯은 `apply_stat_changes`가 매 턴 결정적으로 굴리고 LLM 판단은
-    # 무시된다. 그래도 현재값은 서사 판단의 근거이므로 목록에는 남기고, 판단 대상이 아니라는
-    # 것만 표시해 불필요한 출력을 줄인다.
-    stat_lines = "\n".join(
-        f"- statId={stat_def.entity_id}, 이름={names.expand(stat_def.name)}, "
-        f"현재값={current_stats.get(str(stat_def.entity_id), stat_def.initial_value)}, "
-        f"범위=[{stat_def.min_value}, {stat_def.max_value}], "
-        f"설명={names.expand(stat_def.description)}"
-        + _stat_line_tail(stat_def)
-        for stat_def in stat_defs
-    )
-    values = {
-        "stat_lines": stat_lines,
-        "user_label": prompt_set.user_label,
-        "user_message": user_message,
-        "assistant_label": prompt_set.story_assistant_label,
-        "assistant_message": names.expand(assistant_message),
-        "user_name": names.judgment_user_name,
-    }
-    return render_prompt_channel(sections, channel="stat_judgment", scope="story", values=values)
-
-
-class StatChangeJudgment(BaseModel):
-    stat_id: str
-    new_value: float
-
-
-class StatJudgmentResult(BaseModel):
-    """techspec-backend-chat.md §3.1 판단용 response_schema — 스탯 변경."""
-
-    stat_changes: list[StatChangeJudgment]
-
-
 def stat_rule_letters(index: int) -> str:
     """판정 스탯 순번(0부터)의 글자 — a…z, 그다음 aa, ab… 스탯 수에 상한이 없어 26개를 넘어도 겹치지 않아야 한다. 규칙 id 가
     글자 + 숫자라 글자 부분이 겹치지 않으면 id 전체가 겹치지 않는다."""
@@ -699,25 +624,33 @@ def build_stat_rule_judgment_prompt(
     """규칙 판정 프롬프트를 조립한다 — 판정 LLM 이 이번 턴에 발동한 규칙의 짧은 id 만 고르게 한다(`StatRuleJudgmentResult`).
     반환은 프롬프트와, 짧은 id → (스탯 entity_id, 규칙) 대응표다(`apply_rule_judgment` 가 받는다).
 
-    판정 스탯(카운터가 아닌 스탯)마다 `이름 / 범위 / 설명` 한 줄과 규칙 줄 `- <짧은 id>: <조건>` 을 싣는다. 짧은 id 는 스탯
-    글자(`stat_rule_letters`, `stat_defs` 순서) + 그 스탯 안의 규칙 순번(`order` 순, 1부터)이다. 카운터 스탯은 판정을 받지
-    않아 싣지 않는다.
+    규칙이 있는 판정 스탯(카운터가 아닌 스탯)마다 `이름 / 범위 / 설명` 한 줄과 규칙 줄 `- <짧은 id>: <조건>` 을 싣는다. 짧은
+    id 는 스탯 글자(`stat_rule_letters`, 실린 스탯의 `stat_defs` 순서) + 그 스탯 안의 규칙 순번(`order` 순, 1부터)이다. 카운터
+    스탯은 판정을 받지 않아 싣지 않는다. 규칙이 없는 판정 스탯도 싣지 않는다 — 고를 규칙이 없으니 판정할 것이 없고, 그 값은
+    그대로 남는다(발행은 그런 스탯을 막으므로 초안 미리보기에서만 생긴다).
 
     **현재값과 폭은 싣지 않는다.** 폭이 규칙에 고정돼 있어 새 값을 계산하는 데 현재값이 필요 없고, 맥락에 놓인 점수는 판정을
-    끌어당긴다 — 절대값을 내던 판정에서 다른 스탯 줄의 현재값을 이 스탯의 기준으로 읽어 새 값을 낸 오독이 실제로 있었다.
+    끌어당긴다 — 절대값을 내던 옛 판정에서 다른 스탯 줄의 현재값을 이 스탯의 기준으로 읽어 새 값을 낸 오독이 실제로 있었다.
 
-    히스토리를 싣지 않는 이유와 `{{user}}` 치환 범위는 `build_stat_judgment_prompt` 와 같다 — 스탯 이름·설명·규칙 조건(작가
-    글)과 이번 턴 모델 응답을 `names` 로 바꾸고, 사용자 메시지는 그대로 둔다."""
+    히스토리 전체는 싣지 않고 이번 턴만 싣는다. 스탯 변화는 "이번 턴에" 무엇이 일어났는지의 함수이지 누적 서사가 아니다 —
+    `build_ending_judgment_prompt` 는 반대로 히스토리를 싣는다(엔딩은 지금까지의 대화가 기준을 충족하는지 묻는 누적 판단이다).
+
+    스탯 이름·설명·규칙 조건(작가 글)과 이번 턴 모델 응답은 `names` 로 `{{user}}` 를 바꾸고, 사용자 메시지는 그대로 둔다. 이름
+    한 줄에 실제 이름을 싣는다."""
     rule_ids: dict[str, tuple[str, StatRule]] = {}
     blocks: list[str] = []
-    judged = [stat_def for stat_def in stat_defs if stat_def.per_turn_delta is None]
+    judged = [
+        stat_def
+        for stat_def in stat_defs
+        if stat_def.per_turn_delta is None and rules_by_stat_id.get(stat_def.entity_id)
+    ]
     for stat_index, stat_def in enumerate(judged):
         letters = stat_rule_letters(stat_index)
         lines = [
             f"{names.expand(stat_def.name)} / 범위 [{stat_def.min_value}, {stat_def.max_value}] / "
             f"{names.expand(stat_def.description)}"
         ]
-        rules = sorted(rules_by_stat_id.get(stat_def.entity_id, []), key=lambda rule: rule.order)
+        rules = sorted(rules_by_stat_id[stat_def.entity_id], key=lambda rule: rule.order)
         for rule_index, rule in enumerate(rules, start=1):
             rule_id = f"{letters}{rule_index}"
             rule_ids[rule_id] = (str(stat_def.entity_id), rule)
@@ -742,11 +675,11 @@ class StatRuleJudgmentResult(BaseModel):
 
 @dataclass(frozen=True)
 class StatJudgmentRequest:
-    """한 턴의 스탯 판정 요청. `rule_ids` 가 None 이면 절대값 판정(`StatJudgmentResult`), 있으면 규칙 판정
-    (`StatRuleJudgmentResult`)이고 그 값이 짧은 id 대응표다."""
+    """한 턴의 스탯 판정 요청. `prompt` 가 None 이면 판정 LLM 을 부르지 않고 "발동한 규칙 없음"으로 반영한다(카운터는 굴린다).
+    `rule_ids` 는 짧은 id 대응표다(`build_stat_rule_judgment_prompt`)."""
 
-    prompt: str
-    rule_ids: dict[str, tuple[str, StatRule]] | None
+    prompt: str | None
+    rule_ids: dict[str, tuple[str, StatRule]]
 
 
 def prepare_stat_judgment(
@@ -755,45 +688,34 @@ def prepare_stat_judgment(
     sections: Sequence[PromptSection],
     stat_defs: list[StatDef],
     rules_by_stat_id: Mapping[uuid.UUID, Sequence[StatRule]],
-    current_stats: dict[str, float],
     user_message: str,
     assistant_message: str,
     names: PromptNames,
 ) -> StatJudgmentRequest:
-    """이번 턴을 규칙 판정으로 할지 절대값 판정으로 할지 정하고 그 프롬프트를 만든다. 실채팅과 빌더 미리보기가 함께 쓴다.
-    `rules_by_stat_id` 는 스탯 entity_id → 그 스탯의 규칙이다.
+    """이번 턴의 스탯 판정 요청을 만든다. 실채팅과 빌더 미리보기가 함께 쓴다. `rules_by_stat_id` 는 스탯 entity_id → 그 스탯의
+    규칙이다.
 
-    판정 스탯(카운터가 아닌 스탯)이 하나 이상이고 **그 전부에** 규칙이 있을 때만 규칙 판정이다. 판정 스탯 하나라도 규칙이
-    없으면 그 시작설정 전체가 절대값 판정이다 — 한 턴을 두 판정으로 나눠 부르지 않는다. 판정 스탯이 없으면(스탯이 없거나
-    카운터뿐) 절대값 판정 그대로다 — 그때도 판정을 불러 왔고, 엔딩 판정이 그 결과가 있을 때만 이어진다.
+    규칙이 있는 판정 스탯이 하나도 없으면(스탯이 없거나, 카운터뿐이거나, 초안의 판정 스탯에 아직 규칙이 없으면) 판정을 부르지
+    않는 요청(`prompt=None`)을 돌려준다. 실패가 아니라 "변화 없음"이다 — 호출부는 카운터를 굴리고 엔딩 판정도 그대로 이어 간다.
+    엔딩 판정은 스탯 반영 결과가 있을 때만 돌기 때문에, 이것을 실패로 돌리면 스탯 판정이 필요 없는 작품의 엔딩이 멈춘다.
 
-    규칙 판정 채널의 렌더가 빈 문자열이면(그 채널이 없는 세트 — 배포 직후 활성 세트 캐시에 남은 옛 세트) 절대값 판정으로
-    돌아간다. 빈 프롬프트로 판정을 부르지 않는다."""
-    judged = [stat_def for stat_def in stat_defs if stat_def.per_turn_delta is None]
-    if judged and all(rules_by_stat_id.get(stat_def.entity_id) for stat_def in judged):
-        prompt, rule_ids = build_stat_rule_judgment_prompt(
-            prompt_set=prompt_set,
-            sections=sections,
-            stat_defs=stat_defs,
-            rules_by_stat_id=rules_by_stat_id,
-            user_message=user_message,
-            assistant_message=assistant_message,
-            names=names,
-        )
-        if prompt:
-            return StatJudgmentRequest(prompt=prompt, rule_ids=rule_ids)
-    return StatJudgmentRequest(
-        prompt=build_stat_judgment_prompt(
-            prompt_set=prompt_set,
-            sections=sections,
-            stat_defs=stat_defs,
-            current_stats=current_stats,
-            user_message=user_message,
-            assistant_message=assistant_message,
-            names=names,
-        ),
-        rule_ids=None,
+    규칙 판정 채널의 렌더가 빈 문자열이어도(그 채널 행이 없는 프롬프트 세트) 빈 프롬프트로 판정을 부르지 않고 같은 "변화 없음"
+    요청을 돌려주며 경고를 남긴다 — 세트 설정 문제라 스탯은 멈추지만 대화와 엔딩은 이어진다."""
+    prompt, rule_ids = build_stat_rule_judgment_prompt(
+        prompt_set=prompt_set,
+        sections=sections,
+        stat_defs=stat_defs,
+        rules_by_stat_id=rules_by_stat_id,
+        user_message=user_message,
+        assistant_message=assistant_message,
+        names=names,
     )
+    if not rule_ids:
+        return StatJudgmentRequest(prompt=None, rule_ids={})
+    if not prompt:
+        logger.warning("스탯 규칙 판정 채널 렌더가 비었다(프롬프트 세트에 행이 없다) — 이번 턴 스탯은 바꾸지 않는다")
+        return StatJudgmentRequest(prompt=None, rule_ids={})
+    return StatJudgmentRequest(prompt=prompt, rule_ids=rule_ids)
 
 
 def build_ending_judgment_prompt(
@@ -813,7 +735,7 @@ def build_ending_judgment_prompt(
     LLMClient.generateStructured()가 EndingJudgmentResult(구조화 출력)로 그 엔딩의
     발동 조건 충족 여부를 판단하게 한다. 여러 엔딩이 있으면 이 함수를 엔딩별로 호출한다.
 
-    여긴 `history`를 싣는다 — `build_stat_judgment_prompt`는 뺐다.
+    여긴 `history`를 싣는다 — `build_stat_rule_judgment_prompt`는 뺐다.
     엔딩은 "지금까지의 대화가 기준을 충족하는지"를 묻는 누적 판단이라 이번 턴
     만으로는 판정할 수 없지만, 스탯 변화는 이번 턴에 무엇이 일어났는지의 함수라 히스토리가
     필요 없다. 이 비대칭이 그 변경의 핵심이다.

@@ -17,14 +17,14 @@ import sqlalchemy as sa
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat.prompt_builder import ImageMatchJudgmentResult, StatChangeJudgment, StatJudgmentResult
+from api.chat.prompt_builder import ImageMatchJudgmentResult, StatRuleJudgmentResult
 from api.chat.router import _load_room_stats, _situation_note_texts
 from api.content.schemas import (
     EndingRuleDraftItem,
     EndingRuleGroupDraftItem,
     EndingRuleListDraftItem,
 )
-from api.db.models import ChatRoom, ChatRoomStat, Content, KeywordNote, SituationNote, StartingSetup, StatDef
+from api.db.models import ChatRoom, ChatRoomStat, Content, KeywordNote, SituationNote, StartingSetup, StatDef, StatRule
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.story import EndingRuleOperator, LogicalOp
 from api.db.session import engine
@@ -117,10 +117,11 @@ def test_true_notes_keep_the_given_order() -> None:
 
 
 class _RecordingLLMClient(LLMClient):
-    """생성 프롬프트를 남긴다. 스탯 판정은 `stat_changes` 를 차례로 꺼내 답하고(다 쓰면 "바뀐 것 없음"), 칸 판정은 없음."""
+    """생성 프롬프트를 남긴다. 스탯 판정은 `fired` 의 규칙 id 목록을 차례로 꺼내 답하고(다 쓰면 "발동한 규칙 없음"), 칸
+    판정은 없음."""
 
-    def __init__(self, stat_changes: list[list[StatChangeJudgment]] | None = None) -> None:
-        self.stat_changes = list(stat_changes or [])
+    def __init__(self, fired: list[list[str]] | None = None) -> None:
+        self.fired = list(fired or [])
         self.generation_prompts: list[str] = []
         self.judgment_schemas: list[Any] = []
 
@@ -139,17 +140,20 @@ class _RecordingLLMClient(LLMClient):
         self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
     ) -> Any:
         self.judgment_schemas.append(response_schema)
-        if response_schema is StatJudgmentResult:
-            return StatJudgmentResult(stat_changes=self.stat_changes.pop(0) if self.stat_changes else [])
+        if response_schema is StatRuleJudgmentResult:
+            return StatRuleJudgmentResult(fired_rule_ids=self.fired.pop(0) if self.fired else [])
         if response_schema is ImageMatchJudgmentResult:
             return ImageMatchJudgmentResult(matched_image_entity_id=None)
         raise AssertionError(f"예상하지 못한 판정 호출: {response_schema.__name__}")
 
 
 def _add_stat(db_session: AsyncSession, setup: StartingSetup, name: str, initial_value: int) -> uuid.UUID:
+    """스탯 하나와 그 규칙 하나(폭 +30). 규칙이 있어야 스탯 판정이 불린다."""
     entity_id = uuid.uuid4()
+    stat_def_id = uuid.uuid4()
     db_session.add(
         StatDef(
+            id=stat_def_id,
             entity_id=entity_id,
             starting_setup_id=setup.id,
             name=name,
@@ -163,6 +167,7 @@ def _add_stat(db_session: AsyncSession, setup: StartingSetup, name: str, initial
             order=1,
         )
     )
+    db_session.add(StatRule(entity_id=uuid.uuid4(), stat_def_id=stat_def_id, condition=f"{name} 조건", delta=30, order=0))
     return entity_id
 
 
@@ -282,7 +287,7 @@ async def test_send_evaluates_before_judgment_and_regenerate_reevaluates_with_cu
     trust = _add_stat(db_session, setup, "신뢰", 50)
     _add_situation_note(db_session, setup, "표지-가까워짐", [_rule(trust, "gte", 70)])
     room_id = await _logged_in_room(db_client, db_session, user_id, content, setup)
-    fake = _RecordingLLMClient([[StatChangeJudgment(stat_id=str(trust), new_value=80)]])
+    fake = _RecordingLLMClient([["a1"]])
 
     await _post(db_client, fake, f"/chat-rooms/{room_id}/messages", {"content": "손을 잡는다"})
     await _post(db_client, fake, f"/chat-rooms/{room_id}/regenerate")
@@ -291,7 +296,7 @@ async def test_send_evaluates_before_judgment_and_regenerate_reevaluates_with_cu
     assert _section(original) is None
     assert _section(regenerated) == "표지-가까워짐"
     # 재생성은 판정을 다시 부르지 않는다 — 판정은 원 턴의 한 번뿐이다.
-    assert fake.judgment_schemas == [StatJudgmentResult]
+    assert fake.judgment_schemas == [StatRuleJudgmentResult]
 
 
 async def test_edit_evaluates_notes_with_current_values(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
@@ -354,7 +359,7 @@ async def test_notes_keep_loading_after_ending_reached(db_client: httpx.AsyncCli
     await _post(db_client, fake, f"/chat-rooms/{room_id}/messages", {"content": "그 뒤로"})
 
     assert _section(fake.generation_prompts[0]) == "표지-당일"
-    assert StatJudgmentResult not in fake.judgment_schemas
+    assert StatRuleJudgmentResult not in fake.judgment_schemas
 
 
 async def test_broken_condition_json_skips_only_that_note_and_completes_the_turn(
@@ -469,6 +474,7 @@ async def test_preview_evaluates_notes_with_session_stats(
                 "initialValue": 50,
                 "unit": None,
                 "description": "신뢰",
+                "rules": [{"id": str(uuid.uuid4()), "condition": "가까워진다", "delta": 40}],
             }
         ],
         "endings": [],
@@ -498,7 +504,7 @@ async def test_preview_evaluates_notes_with_session_stats(
     created = await db_client.post("/preview-sessions", json=payload)
     assert created.status_code == 201, created.text
     session_id = created.json()["previewSessionId"]
-    fake = _RecordingLLMClient([[StatChangeJudgment(stat_id=stat_id, new_value=90)]])
+    fake = _RecordingLLMClient([["a1"]])
 
     for text in ["안녕", "그래서"]:
         await _post(db_client, fake, f"/preview-sessions/{session_id}/messages", {"content": text})

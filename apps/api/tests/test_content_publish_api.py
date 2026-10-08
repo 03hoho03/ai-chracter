@@ -54,7 +54,6 @@ from api.db.models.story import (
     Shortcut,
     SituationNote,
     StartingSetup,
-    StatChangeDirection,
     StatDef,
     StatRule,
     StoryPromptTemplate,
@@ -283,6 +282,9 @@ async def _make_publishable_story_draft(
         order=0,
     )
     db_session.add(stat_def)
+    await db_session.flush()
+    # 판정 스탯에는 규칙이 하나 이상 있어야 발행된다.
+    db_session.add(StatRule(entity_id=uuid.uuid4(), stat_def_id=stat_def.id, condition="쉰다", delta=5, order=0))
     await db_session.flush()
 
     ending = Ending(
@@ -2238,26 +2240,25 @@ def test_validate_story_publish_media_book(
 
 
 @pytest.mark.parametrize(
-    ("options", "expected"),
+    ("stats", "expected"),
     [
-        pytest.param([(None, None, None)], [], id="unset"),
-        pytest.param([(None, "decrease", 3), (None, "increase", 1)], [], id="judged-with-options"),
-        pytest.param([(-1, None, None), (-1, "both", None)], [], id="counter-without-options"),
-        pytest.param([(-1, "decrease", None)], ["stats.changeLimitWithCounter"], id="counter-with-direction"),
-        pytest.param([(-1, "both", 3)], ["stats.changeLimitWithCounter"], id="counter-with-step"),
-        pytest.param([(None, "both", 0)], ["stats.maxChangePerTurn"], id="zero-step"),
-        pytest.param([(None, "both", -2), (None, "both", 0)], ["stats.maxChangePerTurn"], id="several-reported-once"),
-        pytest.param(
-            [(2, "increase", 0)], ["stats.changeLimitWithCounter", "stats.maxChangePerTurn"], id="both-problems"
-        ),
+        pytest.param([(None, 1)], [], id="judged-with-a-rule"),
+        pytest.param([(None, 3), (-1, 0)], [], id="counter-needs-no-rule"),
+        pytest.param([(None, 0)], ["stats.rules"], id="judged-without-rules"),
+        pytest.param([(None, 2), (None, 0)], ["stats.rules"], id="one-of-two-without-rules"),
+        pytest.param([(None, 0), (None, 0)], ["stats.rules"], id="several-reported-once"),
     ],
 )
-def test_validate_story_publish_stat_change_options(
-    options: list[tuple[int | None, StatChangeDirection | None, int | None]], expected: list[str]
+def test_validate_story_publish_requires_rules_on_judged_stats(
+    stats: list[tuple[int | None, int]], expected: list[str]
 ) -> None:
-    """턴당 변화가 있는 스탯은 판정을 받지 않아 방향·폭이 아무 일도 하지 않는다 — 걸려 있으면 발행이 막는다. 폭은 양의
-    정수만(빈 값이 제한 없음). 어긋난 스탯이 몇 개든 키는 한 번만 알린다."""
+    """판정은 작가 규칙 가운데 발동한 것을 고르는 일이라, 규칙 없는 판정 스탯(턴당 변화 없음)은 대화 내내 움직이지 않는다
+    — 발행이 막는다. 카운터는 판정을 받지 않아 규칙이 필요 없다. 어긋난 스탯이 몇 개든 키는 한 번만 알린다. 스탯마다
+    `(턴당 변화, 규칙 수)`."""
     content, version, detail, setups = _valid_story_rows()
+    stat_defs = [
+        StatDef(id=uuid.uuid4(), min_value=0, max_value=10, initial_value=5, per_turn_delta=delta) for delta, _ in stats
+    ]
 
     missing = validate_story_publish(
         content,
@@ -2270,23 +2271,47 @@ def test_validate_story_publish_stat_change_options(
         media_book_cells=[],
         keyword_notes=[],
         dangling_stat_rule_paths=[],
-        stat_rules=[],
+        stat_rules=[
+            StatRule(stat_def_id=stat_def.id, delta=1)
+            for stat_def, (_, rule_count) in zip(stat_defs, stats, strict=True)
+            for _ in range(rule_count)
+        ],
         situation_notes=[],
         dangling_situation_note_paths=[],
-        stat_defs=[
-            StatDef(
-                min_value=0,
-                max_value=10,
-                initial_value=5,
-                per_turn_delta=delta,
-                change_direction=direction,
-                max_change_per_turn=step,
-            )
-            for delta, direction, step in options
-        ],
+        stat_defs=stat_defs,
     )
 
     assert missing == expected
+
+
+def test_validate_story_publish_ignores_the_old_direction_and_step_options() -> None:
+    """변화 방향·한 턴 최대 폭은 판정이 규칙 고르기로 바뀌며 아무 일도 하지 않게 됐다 — 카운터에 걸려 있거나 폭이 0 이하로
+    남은 옛 값이 발행을 막지 않는다(그 두 검사 키는 없어졌다)."""
+    content, version, detail, setups = _valid_story_rows()
+    counter = StatDef(
+        id=uuid.uuid4(), min_value=0, max_value=10, initial_value=5, per_turn_delta=-1,
+        change_direction="decrease", max_change_per_turn=3,
+    )
+    judged = StatDef(id=uuid.uuid4(), min_value=0, max_value=10, initial_value=5, max_change_per_turn=0)
+
+    missing = validate_story_publish(
+        content,
+        version,
+        detail,
+        setups,
+        {},
+        media_book_people=[],
+        media_book_scenes=[],
+        media_book_cells=[],
+        keyword_notes=[],
+        dangling_stat_rule_paths=[],
+        stat_rules=[StatRule(stat_def_id=judged.id, delta=1)],
+        situation_notes=[],
+        dangling_situation_note_paths=[],
+        stat_defs=[counter, judged],
+    )
+
+    assert missing == []
 
 
 @pytest.mark.parametrize(
@@ -2348,7 +2373,8 @@ async def test_publish_and_reset_clone_every_stat_def_field(
 ) -> None:
     """발행과 편집 취소는 스탯을 생성자에 필드를 하나씩 나열해 복사한다. 하나를 빠뜨리면 그 필드가 조용히 기본값으로
     돌아가므로(방향은 양방향, 폭·턴당 변화는 없음으로), 모든 필드를 기본값이 아닌 값으로 채워 두고 복사본과 맞춰 본다.
-    턴당 변화와 방향·폭은 발행에서 함께 쓸 수 없으므로 스탯 둘로 나눠 싣는다."""
+    방향·폭은 더 이상 읽지 않지만 옛 이미지로 되돌렸을 때를 위해 값 그대로 옮긴다. 턴당 변화가 있는 스탯에는 규칙을 달 수
+    없고(발행이 막는다) 판정 스탯에는 규칙이 있어야 하므로 스탯 둘로 나눠 싣는다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -2425,7 +2451,10 @@ async def test_publish_and_reset_clone_stat_rules_onto_the_new_stat(
         StatRule(entity_id=uuid.uuid4(), stat_def_id=stat_def.id, condition="거짓말이 들킨다", delta=-3, order=0),
     ]
     db_session.add_all(rules)
-    expected = sorted((rule.entity_id, rule.condition, rule.delta, rule.order) for rule in rules)
+    await db_session.flush()
+    # 발행 가능한 초안이 원래 단 규칙도 함께 옮겨진다.
+    all_rules = (await db_session.scalars(sa.select(StatRule).where(StatRule.stat_def_id == stat_def.id))).all()
+    expected = sorted((rule.entity_id, rule.condition, rule.delta, rule.order) for rule in all_rules)
     stat_entity_id = stat_def.entity_id
     await db_session.commit()
     await _login_as(db_client, user.id)
@@ -2567,24 +2596,11 @@ async def test_publish_story_rejects_ending_priority_stat_missing_from_its_setup
     assert fake.received_prompt is None
 
 
-@pytest.mark.parametrize(
-    ("per_turn_delta", "change_direction", "max_change_per_turn", "expected"),
-    [
-        pytest.param(-1, "decrease", None, ["stats.changeLimitWithCounter"], id="counter-with-direction"),
-        pytest.param(None, "both", 0, ["stats.maxChangePerTurn"], id="zero-step"),
-    ],
-)
-async def test_publish_story_rejects_stat_change_options_before_filter(
-    db_client: httpx.AsyncClient,
-    db_session: AsyncSession,
-    s3_bucket: None,
-    per_turn_delta: int | None,
-    change_direction: StatChangeDirection,
-    max_change_per_turn: int | None,
-    expected: list[str],
+async def test_publish_story_rejects_judged_stat_without_rules_before_filter(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
-    """초안 저장은 방향·폭이 어긋난 스탯도 받아 주므로(자동저장이 멈추면 안 된다) 발행이 막는다. 라우터가 그 버전의
-    스탯 행(새 컬럼 포함)을 검증에 넘기는지 본다 — 심사 모델은 부르지 않는다."""
+    """초안 저장은 규칙 없는 판정 스탯도 받아 주므로(스탯을 막 만든 초안의 자동저장이 멈추면 안 된다) 발행이 막는다.
+    라우터가 그 버전의 스탯·규칙 행을 검증에 넘기는지 본다 — 심사 모델은 부르지 않는다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -2592,9 +2608,7 @@ async def test_publish_story_rejects_stat_change_options_before_filter(
     content, _version, _thumbnail, _setup, _ending, stat_def = await _make_publishable_story_draft(
         db_session, creator_user_id=user.id, genre_id=genre.id
     )
-    stat_def.per_turn_delta = per_turn_delta
-    stat_def.change_direction = change_direction
-    stat_def.max_change_per_turn = max_change_per_turn
+    await db_session.execute(sa.delete(StatRule).where(StatRule.stat_def_id == stat_def.id))
     await db_session.commit()
     await _login_as(db_client, user.id)
 
@@ -2605,7 +2619,7 @@ async def test_publish_story_rejects_stat_change_options_before_filter(
     finally:
         _clear_llm_override()
     assert resp.status_code == 400
-    assert resp.json()["detail"] == {"missingFields": expected}
+    assert resp.json()["detail"] == {"missingFields": ["stats.rules"]}
     assert fake.received_prompt is None
 
 
@@ -2979,7 +2993,9 @@ def test_validate_story_publish_stat_ranges(ranges: list[tuple[int, int, int]], 
         situation_notes=[],
         dangling_situation_note_paths=[],
         stat_defs=[
-            StatDef(min_value=low, max_value=high, initial_value=initial) for low, high, initial in ranges
+            # 카운터로 둬 규칙 검사(판정 스탯에는 규칙이 있어야 한다)와 섞이지 않게 한다.
+            StatDef(min_value=low, max_value=high, initial_value=initial, per_turn_delta=-1)
+            for low, high, initial in ranges
         ],
     )
 

@@ -14,8 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.chat import router as chat_router
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
-    StatChangeJudgment,
-    StatJudgmentResult,
+    StatRuleJudgmentResult,
 )
 from api.chat.preview_session import get_preview_session
 from api.chat.schemas import PreviewSessionState
@@ -33,6 +32,7 @@ from factories import (
     _parse_sse_events,
     _read_golden_prompt,
     ending_priority_marker,
+    ending_priority_stat_rules,
     judged_ending_names,
 )
 
@@ -105,6 +105,8 @@ def _stat_def_item(**overrides: object) -> dict[str, object]:
         "initialValue": 50,
         "unit": None,
         "description": "체력 스탯",
+        # 규칙 하나(a1, +30). 규칙이 있어야 스탯 판정이 불린다 — 발동시키면 초기값 50 이 80 이 된다.
+        "rules": [{"id": str(uuid.uuid4()), "condition": "체력이 오르는 일이 일어난다", "delta": 30}],
     }
     item.update(overrides)
     return item
@@ -324,7 +326,7 @@ async def test_send_preview_message_story_stat_change(db_client: httpx.AsyncClie
 
     fake = _FakeLLMClient(
         tokens=["이야기"],
-        structured_results=[StatJudgmentResult(stat_changes=[StatChangeJudgment(stat_id=stat_id, new_value=80)])],
+        structured_results=[StatRuleJudgmentResult(fired_rule_ids=["a1"])],
     )
     _override_llm_client(fake)
     try:
@@ -338,42 +340,29 @@ async def test_send_preview_message_story_stat_change(db_client: httpx.AsyncClie
     assert events[1]["statId"] == stat_id
     assert events[1]["newValue"] == 80
     # No endings registered, so only the stat judgment is called.
-    assert fake.generate_structured_calls == [StatJudgmentResult]
+    assert fake.generate_structured_calls == [StatRuleJudgmentResult]
 
     state = await get_preview_session(session_id)
     assert state is not None
     assert state.stats == {stat_id: 80.0}
 
 
-async def test_send_preview_message_clips_judged_stat_by_direction_and_max_change(
+async def test_send_preview_message_ignores_old_direction_and_step_keys_on_stats(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """미리보기도 실채팅과 같이 판정값을 방향·폭으로 자른다. 미리보기 스탯 행 조립이 두 옵션을 빠뜨리면 미리보기에서만
-    자르기가 조용히 꺼진다."""
+    """옛 빌더 번들은 없어진 변화 방향·한 턴 최대 폭 키를 보낼 수 있다. 미리보기 시작은 그 키를 무시하고 받아 주고, 판정은
+    그 두 옵션 없이 규칙 폭만큼 움직인다(감소만·최대 3 이었어도 +30)."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
     await _login_as(db_client, user.id)
-    step_id, days_id = str(uuid.uuid4()), str(uuid.uuid4())
-    stats = [
-        _stat_def_item(id=step_id, changeDirection="increase", maxChangePerTurn=3),
-        _stat_def_item(id=days_id, name="남은 날", changeDirection="decrease"),
-    ]
+    stat_id = str(uuid.uuid4())
+    stat = _stat_def_item(id=stat_id, changeDirection="decrease", maxChangePerTurn=3)
     session_id = await _start_session(
-        db_client, _story_payload(startingSetups=[_starting_setup_item(statDefs=stats)])
+        db_client, _story_payload(startingSetups=[_starting_setup_item(statDefs=[stat])])
     )
 
-    fake = _FakeLLMClient(
-        tokens=["이야기"],
-        structured_results=[
-            StatJudgmentResult(
-                stat_changes=[
-                    StatChangeJudgment(stat_id=step_id, new_value=80),
-                    StatChangeJudgment(stat_id=days_id, new_value=51),
-                ]
-            )
-        ],
-    )
+    fake = _FakeLLMClient(tokens=["이야기"], structured_results=[StatRuleJudgmentResult(fired_rule_ids=["a1"])])
     _override_llm_client(fake)
     try:
         resp = await db_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "달려간다"})
@@ -383,7 +372,7 @@ async def test_send_preview_message_clips_judged_stat_by_direction_and_max_chang
     assert resp.status_code == 200
     state = await get_preview_session(session_id)
     assert state is not None
-    assert state.stats == {step_id: 53.0, days_id: 50.0}
+    assert state.stats == {stat_id: 80.0}
 
 
 @pytest.mark.parametrize(
@@ -549,7 +538,7 @@ async def test_send_preview_message_keyword_note_injected_into_prompt(db_client:
         ),
     )
 
-    fake = _FakeLLMClient(tokens=["응답"], structured_results=[StatJudgmentResult(stat_changes=[])])
+    fake = _FakeLLMClient(tokens=["응답"])
     _override_llm_client(fake)
     try:
         resp = await db_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "통로를 찾는다"})
@@ -574,7 +563,7 @@ async def _preview_prompts(
     await db_session.flush()
     await _login_as(client, user.id)
     session_id = await _start_session(client, payload)
-    fake = _FakeLLMClient(tokens=[], structured_results=[StatJudgmentResult(stat_changes=[]) for _ in turns])
+    fake = _FakeLLMClient(tokens=[])
     prompts: list[str] = []
     _override_llm_client(fake)
     try:
@@ -660,7 +649,7 @@ async def test_send_preview_message_shortcut_prompt_injected(db_client: httpx.As
         ),
     )
 
-    fake = _FakeLLMClient(tokens=["응답"], structured_results=[StatJudgmentResult(stat_changes=[])])
+    fake = _FakeLLMClient(tokens=["응답"])
     _override_llm_client(fake)
     try:
         resp = await db_client.post(
@@ -698,13 +687,14 @@ async def test_send_preview_message_reaches_ending(db_client: httpx.AsyncClient,
     await db_session.flush()
     await _login_as(db_client, user.id)
     ending = _ending_item(turnCountGate=1)
+    # 규칙 있는 스탯을 둬 스탯 판정 호출도 일어나게 한다 — 호출부 귀속(아래)을 두 판정 모두에서 본다.
     session_id = await _start_session(
-        db_client, _story_payload(startingSetups=[_starting_setup_item(endings=[ending])])
+        db_client, _story_payload(startingSetups=[_starting_setup_item(statDefs=[_stat_def_item()], endings=[ending])])
     )
 
     fake = _FakeLLMClient(
         tokens=["결말"],
-        structured_results=[StatJudgmentResult(stat_changes=[]), EndingJudgmentResult(triggered=True)],
+        structured_results=[StatRuleJudgmentResult(fired_rule_ids=[]), EndingJudgmentResult(triggered=True)],
     )
     _override_llm_client(fake)
     try:
@@ -761,7 +751,7 @@ async def test_send_preview_message_does_not_call_ending_judgment_when_stat_rule
         ),
     )
 
-    fake = _FakeLLMClient(tokens=["안녕"], structured_results=[StatJudgmentResult(stat_changes=[])])
+    fake = _FakeLLMClient(tokens=["안녕"], structured_results=[StatRuleJudgmentResult(fired_rule_ids=[])])
     events = await _send_preview(db_client, session_id, fake)
 
     assert [e["type"] for e in events] == ["token", "done"]
@@ -790,7 +780,7 @@ async def test_send_preview_message_judges_endings_in_order_and_stops_at_first_r
     fake = _FakeLLMClient(
         tokens=["안녕"],
         structured_results=[
-            StatJudgmentResult(stat_changes=[]),
+            StatRuleJudgmentResult(fired_rule_ids=[]),
             EndingJudgmentResult(triggered=False),
             EndingJudgmentResult(triggered=True),
         ],
@@ -799,7 +789,7 @@ async def test_send_preview_message_judges_endings_in_order_and_stops_at_first_r
 
     assert [e["type"] for e in events] == ["token", "endingReached", "done"]
     assert events[1]["endingId"] == endings[2]["id"]
-    assert fake.generate_structured_calls == [StatJudgmentResult, EndingJudgmentResult, EndingJudgmentResult]
+    assert fake.generate_structured_calls == [StatRuleJudgmentResult, EndingJudgmentResult, EndingJudgmentResult]
 
 
 async def test_send_preview_message_treats_rule_on_missing_stat_as_false_and_completes_the_turn(
@@ -818,12 +808,12 @@ async def test_send_preview_message_treats_rule_on_missing_stat_as_false_and_com
         _story_payload(startingSetups=[_starting_setup_item(statDefs=[_stat_def_item()], endings=[ending])]),
     )
 
-    fake = _FakeLLMClient(tokens=["안녕"], structured_results=[StatJudgmentResult(stat_changes=[])])
+    fake = _FakeLLMClient(tokens=["안녕"], structured_results=[StatRuleJudgmentResult(fired_rule_ids=[])])
     with caplog.at_level(logging.WARNING, logger="api.chat.router"):
         events = await _send_preview(db_client, session_id, fake)
 
     assert [e["type"] for e in events] == ["token", "done"]
-    assert fake.generate_structured_calls == [StatJudgmentResult]
+    assert fake.generate_structured_calls == [StatRuleJudgmentResult]
     state = await get_preview_session(session_id)
     assert state is not None
     assert (state.turn_count, state.ending_reached) == (1, False)
@@ -841,7 +831,15 @@ async def test_send_preview_message_judges_priority_stat_group_by_highest_value(
     db_session.add(user)
     await db_session.flush()
     await _login_as(db_client, user.id)
-    stats = {name: _stat_def_item(name=name, initialValue=value) for name, value in scenario.stats.items()}
+    rule_deltas, fired_rule_ids = ending_priority_stat_rules(scenario)
+    stats = {
+        name: _stat_def_item(
+            name=name,
+            initialValue=value,
+            rules=[{"id": str(uuid.uuid4()), "condition": f"{name} 조건", "delta": rule_deltas[name]}],
+        )
+        for name, value in scenario.stats.items()
+    }
     endings = {
         name: _ending_item(
             name=name,
@@ -858,12 +856,7 @@ async def test_send_preview_message_judges_priority_stat_group_by_highest_value(
         ),
     )
 
-    stat_judgment = StatJudgmentResult(
-        stat_changes=[
-            StatChangeJudgment(stat_id=str(stats[name]["id"]), new_value=value)
-            for name, value in scenario.stat_changes.items()
-        ]
-    )
+    stat_judgment = StatRuleJudgmentResult(fired_rule_ids=fired_rule_ids)
     fake = _FakeLLMClient(
         tokens=["안녕"],
         structured_results=[stat_judgment, *(EndingJudgmentResult(triggered=v) for v in scenario.verdicts)],
@@ -894,7 +887,7 @@ async def test_send_preview_message_judges_ending_with_valueless_priority_stat_a
 
     fake = _FakeLLMClient(
         tokens=["안녕"],
-        structured_results=[StatJudgmentResult(stat_changes=[]), EndingJudgmentResult(triggered=True)],
+        structured_results=[StatRuleJudgmentResult(fired_rule_ids=[]), EndingJudgmentResult(triggered=True)],
     )
     with caplog.at_level(logging.WARNING, logger="api.chat.router"):
         events = await _send_preview(db_client, session_id, fake)
@@ -915,10 +908,7 @@ async def test_send_preview_message_skips_judgment_after_ending_reached(db_clien
         db_client, _story_payload(startingSetups=[_starting_setup_item(endings=[ending])])
     )
 
-    fake = _FakeLLMClient(
-        tokens=["결말"],
-        structured_results=[StatJudgmentResult(stat_changes=[]), EndingJudgmentResult(triggered=True)],
-    )
+    fake = _FakeLLMClient(tokens=["결말"], structured_results=[EndingJudgmentResult(triggered=True)])
     _override_llm_client(fake)
     try:
         first = await db_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "결말로 향한다"})
@@ -1006,7 +996,7 @@ async def test_send_preview_message_story_injects_the_authors_default_persona(
     await _login_as(db_client, user.id)
     session_id = await _start_session(db_client, _story_payload(startingSetups=[_starting_setup_item()]))
 
-    fake = _FakeLLMClient(tokens=["이야기"], structured_results=[StatJudgmentResult(stat_changes=[])])
+    fake = _FakeLLMClient(tokens=["이야기"])
     _override_llm_client(fake)
     try:
         resp = await db_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "안녕!"})
@@ -1079,7 +1069,7 @@ async def test_send_preview_message_names_the_user_like_a_real_room(
         ),
     )
 
-    fake = _FakeLLMClient(tokens=["이야기"], structured_results=[StatJudgmentResult(stat_changes=[])])
+    fake = _FakeLLMClient(tokens=["이야기"])
     _override_llm_client(fake)
     try:
         resp = await db_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "{{user}}라고 쳤다"})

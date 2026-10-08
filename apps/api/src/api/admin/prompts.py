@@ -35,7 +35,6 @@ from api.chat.prompt_builder import (
     as_prompt_lane,
     build_generation_prompt,
     build_memory_summary_prompt,
-    build_stat_judgment_prompt,
     build_stat_rule_judgment_prompt,
     build_story_generation_prompt,
     format_user_persona,
@@ -180,6 +179,8 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
                 ("both", "final_frame", ""),
             }
         ),
+        # 옛 절대값 판정 채널. 더 이상 렌더하지 않지만 운영 프롬프트 세트에 행이 남아 있어, 여기서 빼면 그 행이 "잉여"로
+        # 잡혀 story 레인 게시가 막힌다 — 게시 검증용으로만 둔다.
         "stat_judgment": frozenset(
             {
                 ("story", "stat_defs_intro", ""),
@@ -1289,22 +1290,6 @@ def _story_preview_items(
     if generation_only:
         return items
 
-    items.append(
-        AdminPromptPreviewItem(
-            channel="stat_judgment",
-            label="stat_judgment",
-            text=build_stat_judgment_prompt(
-                prompt_set=prompt_set,
-                sections=sections,
-                stat_defs=_SAMPLE_STAT_DEFS,
-                current_stats={},
-                user_message="[샘플] 사용자 메시지",
-                assistant_message="[샘플] 진행자 응답",
-                names=_SAMPLE_STORY_NAMES,
-            ),
-        )
-    )
-    # 규칙 판정은 시작설정의 판정 스탯 전부에 규칙이 있을 때 실제로 쓰인다 — 미리보기는 두 판정을 다 보여 준다.
     rule_judgment_text, _ = build_stat_rule_judgment_prompt(
         prompt_set=prompt_set,
         sections=sections,

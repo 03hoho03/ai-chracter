@@ -92,6 +92,13 @@ export const STAT_RULE_DELTA_MESSAGE = "0이 아닌 정수로 입력해주세요
  */
 export const STAT_RULES_WITH_COUNTER_MESSAGE = "턴당 자동 변화와 규칙은 함께 쓸 수 없어요. 한쪽을 비워 주세요.";
 
+/**
+ * 판정을 받는 스탯(턴당 자동 변화가 없는 스탯)에 규칙이 하나도 없을 때의 문장. 판정은 작가가 쓴 규칙 가운데 이번 턴에 맞은 것을
+ * 고르는 일이라, 규칙 없는 스탯은 대화 내내 초기값에서 움직이지 않는다 — 서버는 그런 스탯이 있으면 발행을 거절한다. 저장은
+ * 막지 않는다(스탯을 막 만든 초안은 규칙이 비어 있다).
+ */
+export const STAT_RULES_REQUIRED_MESSAGE = "규칙이 없으면 이 스탯은 변하지 않아서 발행할 수 없어요. 규칙을 하나 이상 추가해 주세요.";
+
 /** 규칙 폭이 스탯 범위 폭을 넘을 때의 문장. 서버는 저장은 받고 발행만 막는다(범위를 좁힌 뒤에도 자동저장이 돌게). */
 export function statRuleDeltaTooWideMessage(rangeWidth: number): string {
   return `폭은 이 스탯의 범위 폭(${rangeWidth}) 이하여야 해요. 그보다 크면 한 번에 반대쪽 끝을 넘어가요.`;
@@ -163,28 +170,26 @@ export const statDefSchema = z
     unit: z.string().optional(),
     description: z.string().min(1, "스탯에 대한 설명을 입력해주세요"),
     /**
-     * 매 턴 자동으로 더해지는 값(감소는 음수). 비우면 판정 LLM이 이 스탯을 판단한다(규칙이 있으면 규칙으로).
+     * 매 턴 자동으로 더해지는 값(감소는 음수). 비우면 판정 LLM이 작가가 쓴 규칙 가운데 맞은 것을 골라 이 스탯을 바꾼다(규칙이
+     * 없으면 변하지 않는다).
      *
      * 빈 값은 `undefined` 가 아니라 `null` 이고 키를 빼지 못하게 둔다. RHF 는 폼 값이 `undefined` 인 칸이 마운트될 때 같은
      * 경로의 `defaultValues`(초안을 불러올 때의 값, 지우거나 추가해도 인덱스가 밀리지 않는다)로 채운다. 그래서 새 스탯이
      * 같은 자리에 있던 옛 스탯의 값을 물려받고, 비운 칸이 탭을 오갈 때 옛 값으로 되살아난다.
      */
     perTurnDelta: z.number().int(STAT_INTEGER_MESSAGE).nullable(),
-    /** 「조건 → 증감」 규칙. 변화 방향·한 턴 최대 폭은 폼이 다루지 않는다 — 보내지 않으면 서버가 저장된 값을 그대로 둔다
-     * (규칙이 없는 시작설정이 아직 쓰는 옛 판정 경로가 그 값을 읽는다). 보내는 예외는 `formToServer` 의 스탯 변환이 적는다. */
+    /** 「조건 → 증감」 규칙. 판정을 받는 스탯(턴당 자동 변화가 없는 스탯)에는 하나 이상 있어야 발행된다(아래 검사). */
     rules: statRulesSchema,
-    /**
-     * 옛 화면이 저장한 0 이하의 한 턴 최대 폭. 서버는 이 값이 있으면 발행을 막는데(1 이상이어야 한다) 지금 화면에는 그 칸이
-     * 없어 작가가 고칠 길이 없다. 그래서 불러올 때 이 값을 화면에 보이지 않는 채로 들고 있다가 `formToServer` 가 "제한
-     * 없음"(null)을 보내 지운다. 그 밖의 스탯(새 스탯 포함)에는 키가 없다. 입력칸에 등록하지 않는 값이라 RHF 가 옛
-     * `defaultValues` 로 다시 채우는 일이 없어 빈 값을 `undefined` 로 둔다.
-     */
-    legacyMaxChangePerTurn: z.number().optional(),
   })
   .superRefine((stat, ctx) => {
     // 오류는 턴당 자동 변화 칸에 붙인다 — 발행 때 이 스탯을 열고 그 칸으로 포커스가 가, 바로 아래 문장이 이유를 말한다.
     if (hasPerTurnDelta(stat) && stat.rules.length > 0) {
       ctx.addIssue({ code: "custom", path: ["perTurnDelta"], message: STAT_RULES_WITH_COUNTER_MESSAGE });
+    }
+    // 규칙 목록 자리에 붙인다 — 목록 아래 오류 문장으로 보이고, 발행 때 포커스가 그 목록의 추가 버튼으로 간다. 서버 발행 검사와
+    // 같은 조건(턴당 자동 변화가 없고 규칙이 0개)이다.
+    if (!hasPerTurnDelta(stat) && stat.rules.length === 0) {
+      ctx.addIssue({ code: "custom", path: ["rules"], message: STAT_RULES_REQUIRED_MESSAGE });
     }
     if (stat.max <= stat.min) {
       ctx.addIssue({ code: "custom", path: ["max"], message: "최대값은 최소값보다 커야 해요" });

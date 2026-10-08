@@ -11,6 +11,7 @@ import {
   normalizeKeyword,
   ruleListItemSchema,
   shortcutSchema,
+  STAT_RULES_REQUIRED_MESSAGE,
   startingSetupSchema,
   statDefSchema,
   storyBuilderSchema,
@@ -148,7 +149,8 @@ function validStatDef() {
     unit: "pt",
     description: "생존에 필요한 신체 상태",
     perTurnDelta: null,
-    rules: [],
+    // 턴당 자동 변화가 없는 스탯은 규칙이 하나 이상 있어야 발행 검증을 통과한다.
+    rules: [{ id: "stat-1-rule-1", condition: "사용자가 물을 나눠 마셨다", delta: 3 }],
   };
 }
 
@@ -246,9 +248,14 @@ describe("statDefSchema 규칙", () => {
 
   const rule = { id: "rule-1", condition: "사용자가 약속을 지켰다", delta: 3 };
 
-  it("빈 목록과 0이 아닌 정수 폭의 규칙을 받는다", () => {
-    expect(issuesOf({ rules: [] })).toEqual([]);
+  it("0이 아닌 정수 폭의 규칙을 받는다", () => {
     expect(issuesOf({ rules: [rule, { ...rule, id: "rule-2", delta: -100 }] })).toEqual([]);
+  });
+
+  it("턴당 자동 변화가 없는 스탯에 규칙이 없으면 규칙 목록 자리에 붙인다(서버 발행 검사와 같은 조건)", () => {
+    expect(issuesOf({ rules: [] })).toEqual([{ path: "rules", message: STAT_RULES_REQUIRED_MESSAGE }]);
+    // 턴당 자동 변화가 있는 스탯은 판정을 받지 않아 빈 목록이 정상이다.
+    expect(issuesOf({ perTurnDelta: -1, rules: [] })).toEqual([]);
   });
 
   it("조건이 공백뿐이거나 공백을 뗀 뒤 100자를 넘으면 조건 칸에 붙인다(앞뒤 공백은 세지 않는다)", () => {

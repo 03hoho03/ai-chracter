@@ -55,7 +55,8 @@ type StatRuleListProps = {
 
 /**
  * 스탯의 「조건 → 증감」 규칙 목록. 판정 AI 는 이번 턴에 맞은 규칙만 고르고, 코드가 그중 폭의 절댓값이 가장 큰 하나(같으면 목록
- * 앞)를 더한다 — 그래서 순서가 동점의 우선순위라 손잡이로 끌거나 화살표 키로 재정렬한다. 빈 목록도 저장된다.
+ * 앞)를 더한다 — 그래서 순서가 동점의 우선순위라 손잡이로 끌거나 화살표 키로 재정렬한다. 빈 목록도 저장되지만, 턴당 자동 변화가
+ * 없는 스탯이면 발행 검증이 목록 자리에 오류를 붙인다(규칙 없는 판정 스탯은 변하지 않는다).
  *
  * 상한(`MAX_STAT_RULES`)이나 턴당 자동 변화 잠금에서는 추가 버튼을 지우지 않고 `aria-disabled` 로 잠근 채 사유를 잇는다 —
  * `disabled` 는 누른 버튼의 포커스를 body 로 떨어뜨린다. 자동저장은 폼 검증을 거치지 않아 상한을 넘은 목록이 폼에 들어가면 서버가
@@ -78,7 +79,8 @@ export function StatRuleList({ id, startingSetupIndex, statIndex, stat }: StatRu
   // 재정렬 뒤 포커스를 둘 손잡이(옮긴 규칙의 것). 렌더가 끝난 뒤에야 그 요소가 제자리에 있으므로 effect 에서 옮긴다.
   const pendingFocusIdRef = useRef<string | undefined>(undefined);
   const rulesErrors = errors.startingSetups?.[startingSetupIndex]?.stats?.[statIndex]?.rules;
-  // 목록 자체에 걸린 오류(개수 상한). 배열 자리 오류는 `.message` 와 `.root.message` 로 갈릴 수 있어 둘 다 읽는다.
+  // 목록 자체에 걸린 오류(개수 상한·판정 스탯의 규칙 없음). 배열 자리 오류는 `.message` 와 `.root.message` 로 갈릴 수 있어
+  // 둘 다 읽는다.
   const listError = rulesErrors?.message ?? rulesErrors?.root?.message;
   const isFull = fields.length >= MAX_STAT_RULES;
   const isCounterLocked = statChangeMode(stat) === "perTurn";
@@ -165,7 +167,10 @@ export function StatRuleList({ id, startingSetupIndex, statIndex, stat }: StatRu
       </p>
 
       {fields.length === 0 ? (
-        <p className="text-sm break-keep text-muted-foreground">아직 규칙이 없어요.</p>
+        <p className="text-sm break-keep text-muted-foreground">
+          {/* 턴당 자동 변화가 있는 스탯은 규칙을 쓰지 않으므로 빈 목록이 정상이다 — 그때는 잠금 사유가 아래에 따로 보인다. */}
+          {isCounterLocked ? "아직 규칙이 없어요." : "아직 규칙이 없어요. 규칙이 없으면 이 스탯은 변하지 않고, 발행할 수 없어요."}
+        </p>
       ) : (
         <DndContext
           sensors={sensors}
@@ -208,7 +213,7 @@ export function StatRuleList({ id, startingSetupIndex, statIndex, stat }: StatRu
           className="w-fit aria-disabled:pointer-events-none aria-disabled:opacity-65"
           aria-disabled={lockReason !== undefined || undefined}
           aria-describedby={lockReason === undefined ? undefined : ids.reason}
-          // 발행 실패가 목록 자리(개수 상한)를 가리키면 셸이 이 버튼을 찾아 포커스한다.
+          // 발행 실패가 목록 자리(개수 상한·규칙 없음)를 가리키면 셸이 이 버튼을 찾아 포커스한다.
           data-field-path={rulesPath}
           onClick={handleAdd}
         >
