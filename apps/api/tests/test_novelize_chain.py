@@ -116,8 +116,10 @@ def enqueued(monkeypatch: pytest.MonkeyPatch) -> list[uuid.UUID]:
     return seen
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def llm() -> Iterator[_ChainLLM]:
+    """라우트가 받는 LLM 클라이언트. 연쇄 생성 라우트는 부모를 띄울 클라이언트를 의존성으로 받으므로, 바꿔 끼우지 않으면
+    진짜 클라이언트를 만들다가 API 키가 없는 환경(CI)에서 의존성 해석이 실패한다. 실행 시험은 페이크를 직접 넘긴다."""
     fake = _ChainLLM()
     _override_llm_client(fake)
     yield fake
