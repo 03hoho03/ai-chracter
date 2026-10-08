@@ -20,7 +20,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.chat.prompt_builder import ImageMatchJudgmentResult, StatChangeJudgment, StatJudgmentResult
 from api.chat.router import _load_room_stats, _situation_note_texts
 from api.content.schemas import (
-    RULE_LIST_ADAPTER,
     EndingRuleDraftItem,
     EndingRuleGroupDraftItem,
     EndingRuleListDraftItem,
@@ -31,6 +30,7 @@ from api.db.models.story import EndingRuleOperator, LogicalOp
 from api.db.session import engine
 from api.llm.client import LLMCallContext, LLMClient
 from factories import (
+    _add_situation_note,
     _clear_llm_override,
     _login_as,
     _make_user,
@@ -164,27 +164,6 @@ def _add_stat(db_session: AsyncSession, setup: StartingSetup, name: str, initial
         )
     )
     return entity_id
-
-
-def _add_situation_note(
-    db_session: AsyncSession,
-    setup: StartingSetup,
-    info_text: str,
-    rules: list[EndingRuleListDraftItem],
-    *,
-    order: int = 0,
-) -> None:
-    """저장 경로와 같은 JSON 꼴(`model_dump(mode="json")`)로 넣는다."""
-    db_session.add(
-        SituationNote(
-            entity_id=uuid.uuid4(),
-            starting_setup_id=setup.id,
-            name="노트",
-            info_text=info_text,
-            order=order,
-            condition_rules=RULE_LIST_ADAPTER.dump_python(rules, mode="json"),
-        )
-    )
 
 
 async def _logged_in_room(

@@ -1517,6 +1517,30 @@ async def _lock_room_for_turn_write(db: AsyncSession, room: ChatRoom) -> uuid.UU
     return room_id
 
 
+@dataclass(frozen=True)
+class InjectedPersona:
+    """턴 상태 묶음의 대화 프로필 — 조립에 쓰이는 칸 전부(`format_user_persona` 의 인자와 같다)."""
+
+    name: str
+    gender: str | None
+    description: str
+
+
+@dataclass(frozen=True)
+class InjectedTurnState:
+    """`_build_prompt` 가 방의 지금 값 대신 쓸 한 턴의 상태. 지난 턴을 그때 상태로 다시 조립하는 측정 도구가 넘긴다 —
+    요약·기억 노트·스탯·대화 프로필은 DB 에 지금 값만 남기 때문이다.
+
+    네 칸을 한꺼번에 준다(일부만 주고 나머지를 DB 에서 읽으면 서로 다른 시점의 값이 섞인다). `summary` 가 None 이면
+    "요약 없음", `memory_note` 가 `""` 이면 "노트 없음", `persona` 가 None 이면 "프로필 없음"이다. `stats` 의 키는
+    스탯 entity_id 문자열이고, 빠진 스탯은 상황 노트 조건에서 거짓이다."""
+
+    summary: CurrentSummary | None
+    memory_note: str
+    stats: dict[str, float]
+    persona: InjectedPersona | None
+
+
 def _format_persona(persona: UserPersona | None) -> str:
     """실채팅(`_build_prompt`)과 미리보기(`send_preview_message`)가 공유한다 — 프로필이
     없으면 `""`라 생성 프롬프트가 프로필 기능 이전과 바이트까지 같다."""
@@ -1534,6 +1558,8 @@ async def _build_prompt(
     shortcut: Shortcut | None,
     prompt_set: PromptSet,
     prompt_sections: list[PromptSection],
+    *,
+    turn_state: InjectedTurnState | None = None,
 ) -> tuple[str, str, bool, bool, PromptNames]:
     """캐릭터 챗은 character_prompt+exampleDialogues로, 스토리 챗은 스토리 설정 템플릿+시작설정
     프롤로그로 생성 프롬프트를 조립한다. `send_message`/`edit_message`
@@ -1564,16 +1590,31 @@ async def _build_prompt(
 
     상황 노트 조건은 지금 DB 의 스탯 값(사용자가 보낸 순간 화면의 게이지, 이번 턴 판정 반영 전)으로 본다. 재생성은
     이번 턴 판정이 이미 반영된 값을 보므로 원 생성과 다른 노트가 실릴 수 있다 — 그때도 화면 게이지와는 맞다. 엔딩
-    뒤에는 스탯이 멈춰 있어 같은 노트가 계속 실린다."""
+    뒤에는 스탯이 멈춰 있어 같은 노트가 계속 실린다.
+
+    `turn_state` 를 주면 요약·기억 노트·스탯·대화 프로필을 DB 대신 그 묶음에서 읽는다(지난 턴을 그때 상태로 다시
+    조립하는 측정 도구가 쓴다 — 실제 대화의 호출부는 주지 않는다). 주입 요약에도 생성 윈도우 설정이 똑같이 걸리고,
+    주입 프로필은 프로필 섹션·이름(`{{user}}` 치환·키워드 매칭·이름 한 줄)·프로필 렌더 여부가 모두 함께 본다."""
     memory_summary = ""
     if settings.memory_window_generation:
-        current_summary = await load_current_summary(db, room.id)
+        current_summary = await load_current_summary(db, room.id) if turn_state is None else turn_state.summary
         if current_summary is not None:
             history = prompt_window(history, current_summary.cursor)
             memory_summary = current_summary.text
-    memory_note = room.memory_note
-    persona = await db.get(UserPersona, room.persona_id) if room.persona_id is not None else None
-    user_persona = _format_persona(persona)
+    if turn_state is None:
+        memory_note = room.memory_note
+        persona = await db.get(UserPersona, room.persona_id) if room.persona_id is not None else None
+        persona_name = persona.name if persona is not None else None
+        user_persona = _format_persona(persona)
+    else:
+        memory_note = turn_state.memory_note
+        injected = turn_state.persona
+        persona_name = injected.name if injected is not None else None
+        user_persona = (
+            ""
+            if injected is None
+            else format_user_persona(name=injected.name, gender=injected.gender, description=injected.description)
+        )
 
     if setup is not None:
         story_detail = await db.get(StoryVersionDetail, room.content_version_id)
@@ -1589,7 +1630,7 @@ async def _build_prompt(
             )
         ).all()
         names = PromptNames(
-            persona_name=persona.name if persona is not None else None,
+            persona_name=persona_name,
             default_user_name=story_detail.default_user_name,
             char_name=None,
         )
@@ -1604,7 +1645,9 @@ async def _build_prompt(
         situation_note_texts: list[str] = []
         # 스탯은 노트가 있을 때만 읽는다 — 노트 없는 시작설정의 턴에는 스탯 쿼리를 더하지 않는다.
         if situation_notes:
-            _, _, current_stats = await _load_room_stats(db, room.id, setup.id)
+            current_stats = (
+                (await _load_room_stats(db, room.id, setup.id))[2] if turn_state is None else turn_state.stats
+            )
             situation_note_texts = _situation_note_texts(
                 [(_situation_note_rules(note, room.id), note.info_text) for note in situation_notes], current_stats
             )
@@ -1643,7 +1686,7 @@ async def _build_prompt(
     detail = await db.get(CharacterVersionDetail, room.content_version_id)
     assert detail is not None
     names = PromptNames(
-        persona_name=persona.name if persona is not None else None,
+        persona_name=persona_name,
         default_user_name=detail.default_user_name,
         char_name=detail.name,
     )

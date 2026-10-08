@@ -33,6 +33,10 @@ LLMCallSite = Literal[
     "novelize_chapter",
     "novelize_revise",
     "novelize_boundary",
+    # 지난 턴을 같은 입력으로 다시 생성해 비교하는 측정 도구의 생성 호출. 사용량이 실제 대화(`chat_generate`)와 섞이지
+    # 않게 따로 집계하고, Claude 로 쓴 턴도 다시 생성할 수 있게 모델 선택 허용 목록(`llm/routing.py`)에 넣는다. 설정은
+    # 채팅 생성과 같은 기본 갈래를 따라 타임아웃·출력 상한·사고 설정이 같다. 판정·심사 집합에는 넣지 않는다.
+    "replay_generate",
 ]
 
 # 아래 집합들은 로그 라벨이면서 **모델 선택도 겸한다** — `llm/gemini.py` 의 `generate_structured` 가 아래
@@ -134,8 +138,9 @@ class LLMCallContext:
     빠뜨리면 mypy가 잡는다. `room_id`는 DB 방이 없는 호출(미리보기·발행 심사·스크립트)에서 None.
 
     `model` 은 사용자가 고른 글쓰기 모델이다. 앞의 셋과 달리 기본값(Gemini)이 있다 — 모델을 고를 수 있는 호출은 채팅 턴
-    생성과 소설 장 생성뿐이고, 나머지 호출부가 빠뜨려도 Gemini 로 가는 것이 맞는 동작이라서다. 빠뜨리는 실수가 비싼
-    모델로 새는 방향이 아니다. 이 값을 보고 공급자를 고르는 것은 `llm/routing.py` 이고, 거기서도 그 두 호출만 따른다."""
+    생성, 지난 턴 다시 생성(측정용 리플레이), 소설 장 생성뿐이고, 나머지 호출부가 빠뜨려도 Gemini 로 가는 것이 맞는 동작이라서다.
+    빠뜨리는 실수가 비싼 모델로 새는 방향이 아니다. 이 값을 보고 공급자를 고르는 것은 `llm/routing.py` 이고, 거기서도 그 호출들만
+    따른다."""
 
     call_site: LLMCallSite
     user_id: uuid.UUID | None
