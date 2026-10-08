@@ -152,7 +152,6 @@ function EpisodeSkeleton({ novelId }: { novelId: string }) {
     <EpisodeStatusShell novelId={novelId}>
       <div aria-hidden className="flex flex-col gap-4">
         <div className="h-8 w-2/3 animate-pulse rounded-lg bg-muted" />
-        <div className="h-4 w-16 animate-pulse rounded-lg bg-muted" />
         {["w-full", "w-11/12", "w-full", "w-4/5", "w-full", "w-2/3"].map((width, index) => (
           <div key={index} className={`h-5 ${width} animate-pulse rounded-lg bg-muted`} />
         ))}

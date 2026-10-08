@@ -7,14 +7,12 @@ import type { ReadingPositionSession } from "../model/useReadingPosition";
 import { useScrollReadingTracker } from "../model/useScrollReadingTracker";
 import { EpisodeEnd } from "./EpisodeEnd";
 import { EpisodeHeader } from "./EpisodeHeader";
-import { PreviousSummary } from "./PreviousSummary";
 
 type ScrollEpisodeBodyProps = {
   novel: NovelDetailResponse;
   summary: NovelChapterSummary;
   episodeLabel: string;
   paragraphs: readonly string[];
-  previous: NovelChapterSummary | undefined;
   next: NovelChapterSummary | undefined;
   /** 보기 설정(글자 크기·줄 간격·여백)에서 나온 본문 조판 클래스. */
   typographyClassName: string;
@@ -30,7 +28,6 @@ export function ScrollEpisodeBody({
   summary,
   episodeLabel,
   paragraphs,
-  previous,
   next,
   typographyClassName,
   readingPosition,
@@ -45,11 +42,7 @@ export function ScrollEpisodeBody({
   return (
     <main className="min-h-dvh pt-10-safe pb-28" onPointerDown={onPointerDown} onPointerUp={onPointerUp}>
       <article ref={articleRef} className={cn("mx-auto flex max-w-prose flex-col gap-8", typographyClassName)}>
-        <EpisodeHeader novelId={novel.id} novelTitle={novel.title} episodeLabel={episodeLabel} charCount={summary.charCount} />
-
-        {previous !== undefined && previous.summary !== null && previous.summary !== "" && (
-          <PreviousSummary ordinal={previous.ordinal} summary={previous.summary} />
-        )}
+        <EpisodeHeader novelId={novel.id} novelTitle={novel.title} episodeLabel={episodeLabel} />
 
         <div className="flex flex-col gap-4 text-foreground">
           {paragraphs.map((paragraph, index) => (

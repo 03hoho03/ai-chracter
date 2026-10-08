@@ -125,12 +125,7 @@ export function PagedEpisodeBody({
           {/* 다단은 블록 요소에 건다 — flex 요소에는 단이 걸리지 않는다. */}
           <article ref={reader.columnsRef} className={typographyClassName}>
             <div className="mb-8 break-inside-avoid">
-              <EpisodeHeader
-                novelId={novel.id}
-                novelTitle={novel.title}
-                episodeLabel={episodeLabel}
-                charCount={summary.charCount}
-              />
+              <EpisodeHeader novelId={novel.id} novelTitle={novel.title} episodeLabel={episodeLabel} />
             </div>
 
             <div className="flex flex-col gap-4 text-foreground">

@@ -206,7 +206,6 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
           summary={summary}
           episodeLabel={episodeLabel}
           paragraphs={paragraphs}
-          previous={previous}
           next={next}
           typographyClassName={readerTypographyClassName(settings)}
           readingPosition={readingPosition}

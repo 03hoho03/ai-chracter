@@ -5,11 +5,11 @@ type EpisodeHeaderProps = {
   novelId: string;
   novelTitle: string | null;
   episodeLabel: string;
-  charCount: number;
 };
 
-/** 화 머리 — 작품 정보로 가는 링크, 화 제목, 글자 수. */
-export function EpisodeHeader({ novelId, novelTitle, episodeLabel, charCount }: EpisodeHeaderProps) {
+/** 화 머리 — 작품 정보로 가는 링크와 화 제목. 글자 수는 고를 때 보는 정보라 작품 정보의 화 목록에만 두고, 읽는
+ * 화면에는 두지 않는다. */
+export function EpisodeHeader({ novelId, novelTitle, episodeLabel }: EpisodeHeaderProps) {
   return (
     <header className="flex flex-col gap-2">
       {/* 바가 숨어 있어도 늘 있는 출구. */}
@@ -22,7 +22,6 @@ export function EpisodeHeader({ novelId, novelTitle, episodeLabel, charCount }: 
         <span className="min-w-0 truncate">{novelTitle ?? "제목 미정"}</span>
       </Link>
       <h1 className="text-2xl font-bold tracking-tight text-balance break-keep text-foreground">{episodeLabel}</h1>
-      <p className="text-xs text-muted-foreground tabular-nums">{charCount.toLocaleString()}자</p>
     </header>
   );
 }
