@@ -20,6 +20,30 @@ export function toCurrentParagraphIndex(paragraphs: Iterable<BandParagraph>): nu
 }
 
 /**
+ * 띠로 잰 문단을 저장할 자리로 바꾼다. 마지막 화면 안의 문단은 화면 맨 위로 올 수 없어, 그 자리로 되돌리면 창이
+ * 문서 끝에 막히고 띠에는 더 앞 문단이 걸린다. 그 값을 그대로 저장하면 스크롤하지 않았는데 자리가 몇 문단 앞당겨진다.
+ * 그래서 창이 문서 끝(1px 안)에 있고 잰 문단이 되돌린 문단보다 앞이면 되돌린 문단을 그대로 둔다 — 어느 쪽으로
+ * 되돌려도 문서 끝 화면이라 잃는 것이 없다. 이용자가 위로 스크롤해 끝에서 벗어나면 잰 문단을 쓴다.
+ */
+export function toSavedParagraphIndex({
+  measuredIndex,
+  restoredIndex,
+  scrollY,
+  maxScrollY,
+}: {
+  /** 띠로 잰 지금 문단(`toCurrentParagraphIndex`). */
+  measuredIndex: number;
+  /** 열 때 되돌린 문단(저장된 자리가 없으면 0). */
+  restoredIndex: number;
+  scrollY: number;
+  /** `scrollHeight - innerHeight` — 창이 갈 수 있는 가장 아래. */
+  maxScrollY: number;
+}): number {
+  const isAtBottom = scrollY >= maxScrollY - 1;
+  return isAtBottom && measuredIndex < restoredIndex ? restoredIndex : measuredIndex;
+}
+
+/**
  * 읽는 자리를 재는 띠(IntersectionObserver `rootMargin`). 아래쪽은 화면의 60% 를 잘라 위쪽 40% 만 남긴다. 위쪽은
  * 문단의 `scroll-margin-top`(+1px)만큼 잘라 낸다 — 저장된 자리로 되돌릴 때 그 문단 윗변이 화면 위에서 그만큼 아래에
  * 놓이는데, 띠가 화면 맨 위에서 시작하면 그 위 틈에 앞 문단 아랫변이 걸쳐 앞 문단을 지금 문단으로 세었다(열 때마다

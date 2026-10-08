@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { hasNovelErrorCode, toNovelActionError, type NovelAction, type NovelActionErrorNotice } from "@/entities/novel";
 import { isApiError } from "@/shared/api/client";
+import { koreanParticle } from "@/shared/lib/text/koreanParticle";
 
 /** 서버가 세는 방식의 글자 수 — 앞뒤 공백을 걷은 뒤 코드 포인트 수. */
 export function countCharacterChars(value: string): number {
@@ -43,7 +44,7 @@ export function addAlias(
 ): { aliases: string[] } | { error: string } {
   const trimmed = alias.trim();
   if (trimmed === "") return { error: "별칭을 입력해주세요" };
-  if (trimmed === name || aliases.includes(trimmed)) return { error: `‘${trimmed}’은(는) 이미 이 인물의 이름이에요` };
+  if (trimmed === name || aliases.includes(trimmed)) return { error: `‘${trimmed}’${koreanParticle(trimmed, "은/는")} 이미 이 인물의 이름이에요` };
   if (aliases.length >= maxCount) return { error: `별칭은 ${maxCount}개까지 둘 수 있어요` };
   return { aliases: [...aliases, trimmed] };
 }
@@ -61,7 +62,7 @@ export function toCharacterSaveError(error: unknown, action: NovelAction): Novel
     const taken = takenNameOf(error);
     if (taken !== undefined) {
       return {
-        message: `‘${taken}’은(는) 다른 인물이 쓰고 있어요. 같은 인물이면 ‘다른 인물과 합치기’를 써주세요.`,
+        message: `‘${taken}’${koreanParticle(taken, "은/는")} 다른 인물이 쓰고 있어요. 같은 인물이면 ‘다른 인물과 합치기’를 써주세요.`,
         shouldRefetchNovel: false,
       };
     }

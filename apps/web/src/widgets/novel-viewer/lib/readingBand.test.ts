@@ -6,6 +6,7 @@ import {
   toCurrentParagraphIndex,
   toReadingBandRootMargin,
   toRestoreScrollTop,
+  toSavedParagraphIndex,
   toTrackingStart,
 } from "./readingBand";
 
@@ -101,5 +102,25 @@ describe("toTrackingStart", () => {
 
   it("그 화의 자리를 응답에서 알 수 없으면(옛 API) 이용자가 스크롤한 뒤부터", () => {
     expect(toTrackingStart("unknown")).toBe("afterUserScroll");
+  });
+});
+
+describe("toSavedParagraphIndex", () => {
+  it("마지막 화면 안의 자리로 되돌려 문서 끝에 막히면 띠에 걸린 앞 문단 대신 되돌린 문단을 둔다", () => {
+    expect(toSavedParagraphIndex({ measuredIndex: 55, restoredIndex: 58, scrollY: 4340, maxScrollY: 4340 })).toBe(58);
+    expect(toSavedParagraphIndex({ measuredIndex: 55, restoredIndex: 58, scrollY: 4339.2, maxScrollY: 4340 })).toBe(58);
+  });
+
+  it("되돌린 문단이 맨 위에 온 보통 경우는 잰 문단 그대로", () => {
+    expect(toSavedParagraphIndex({ measuredIndex: 26, restoredIndex: 26, scrollY: 2096, maxScrollY: 5000 })).toBe(26);
+  });
+
+  it("막힌 뒤 이용자가 위로 스크롤해 끝에서 벗어나면 잰 문단을 쓴다", () => {
+    expect(toSavedParagraphIndex({ measuredIndex: 52, restoredIndex: 58, scrollY: 4200, maxScrollY: 4340 })).toBe(52);
+  });
+
+  it("끝에서도 되돌린 문단보다 뒤를 잰 값은 그대로, 저장된 자리가 없는 화(0)는 영향이 없다", () => {
+    expect(toSavedParagraphIndex({ measuredIndex: 60, restoredIndex: 58, scrollY: 4340, maxScrollY: 4340 })).toBe(60);
+    expect(toSavedParagraphIndex({ measuredIndex: 55, restoredIndex: 0, scrollY: 4340, maxScrollY: 4340 })).toBe(55);
   });
 });

@@ -18,6 +18,7 @@ import {
   useNovelSnapshotQuery,
 } from "@/entities/novel";
 import { createCallable } from "@/shared/lib/callable/createCallable";
+import { koreanParticle } from "@/shared/lib/text/koreanParticle";
 import { LazyDiffView } from "@/shared/ui/LazyDiffView";
 
 import {
@@ -54,7 +55,7 @@ export const SnapshotDiffModal = createCallable<SnapshotDiffModalProps, void>(
       <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end()}>
         <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle className="break-keep">‘{snapshotName}’과 지금 비교</DialogTitle>
+            <DialogTitle className="break-keep">‘{snapshotName}’{koreanParticle(snapshotName, "과/와")} 지금 비교</DialogTitle>
             <DialogDescription className="break-keep">
               이 버전을 저장한 뒤 바뀐 곳이에요. 밑줄은 그 뒤에 더한 글, 취소선은 그 뒤에 지운 글이에요.
             </DialogDescription>
