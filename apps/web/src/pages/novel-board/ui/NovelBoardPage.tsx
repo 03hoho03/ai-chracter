@@ -32,6 +32,7 @@ import {
   NovelBoardPanel,
   NovelBoardTopBar,
   NovelFlowList,
+  canSaveBoardLayout,
   hasChapterBlockedReason,
   nodeKeyToSelection,
   parseBoardSelection,
@@ -332,6 +333,8 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
   }
 
   const isEmpty = novel.chapters.length === 0;
+  // 배치를 한 번도 받지 못했다(받은 뒤 다시 받기만 실패했으면 받은 배치로 그리고 저장해도 된다).
+  const isLayoutFailed = layoutQuery.isError && layoutQuery.data === undefined;
   const showPanel = isCanvasLayout || selection !== undefined;
 
   return (
@@ -369,10 +372,17 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
             {!isEmpty && layoutQuery.isPending && <NovelBoardCanvasSkeleton />}
             {!isEmpty && !layoutQuery.isPending && (
               <LazyNovelBoardCanvas
+                // 배치를 받지 못해 자동 배치로 그리던 캔버스는, 다시 받는 데 성공하면 새로 마운트한다 — 그대로 두면
+                // 화면의 자동 배치 자리가 받은 자리를 이긴다.
+                key={layoutQuery.data === undefined ? "auto-layout" : "saved-layout"}
                 novelId={novel.id}
                 model={model}
                 savedLayout={layoutQuery.data ?? null}
                 maxBytes={novel.limits.boardLayoutMaxBytes}
+                canSave={canSaveBoardLayout({
+                  isLayoutFailed,
+                  hasCharacters: charactersQuery.data !== undefined,
+                })}
                 selectedNodeKey={toSelectedNodeKey(selection)}
                 onSelectNode={(nodeKey) => {
                   const next = nodeKey === undefined ? undefined : nodeKeyToSelection(nodeKey);
@@ -381,9 +391,22 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
                 }}
               />
             )}
-            {charactersQuery.isError && charactersQuery.data === undefined && (
-              <CharactersFailedNotice onRetry={() => void charactersQuery.refetch()} isRetrying={charactersQuery.isFetching} />
-            )}
+            <div className="absolute top-3 right-3 z-10 flex flex-col items-end gap-2">
+              {!isEmpty && isLayoutFailed && (
+                <CanvasFailedNotice
+                  message="카드 자리를 불러오지 못해 자동 배치로 보여요. 옮긴 자리는 다시 불러올 때까지 저장하지 않아요."
+                  onRetry={() => void layoutQuery.refetch()}
+                  isRetrying={layoutQuery.isFetching}
+                />
+              )}
+              {charactersQuery.isError && charactersQuery.data === undefined && (
+                <CanvasFailedNotice
+                  message="인물을 불러오지 못했어요."
+                  onRetry={() => void charactersQuery.refetch()}
+                  isRetrying={charactersQuery.isFetching}
+                />
+              )}
+            </div>
           </main>
         ) : null}
         <div
@@ -482,16 +505,17 @@ function EmptyCanvas({ onWriteNotes }: { onWriteNotes: () => void }) {
   );
 }
 
-function CharactersFailedNotice({ onRetry, isRetrying }: { onRetry: () => void; isRetrying: boolean }) {
+/** 캔버스 위 실패 안내(배치·인물). 화 열은 그대로 쓸 수 있어 막지 않고 오른쪽 위에 둔다. */
+function CanvasFailedNotice({ message, onRetry, isRetrying }: { message: string; onRetry: () => void; isRetrying: boolean }) {
   return (
-    <div className="absolute top-3 right-3 z-10 flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm text-muted-foreground">
-      인물을 불러오지 못했어요.
+    <div className="flex max-w-80 items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm break-keep text-muted-foreground">
+      <span>{message}</span>
       <Button
         type="button"
         variant="outline"
         size="xs"
         aria-disabled={isRetrying}
-        className="aria-disabled:opacity-65"
+        className="shrink-0 aria-disabled:opacity-65"
         onClick={() => {
           if (isRetrying) return;
           onRetry();

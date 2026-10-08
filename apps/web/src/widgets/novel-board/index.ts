@@ -7,6 +7,7 @@ export {
   toSelectedNodeKey,
   type BoardSelection,
 } from "./model/boardSelection";
+export { canSaveBoardLayout } from "./model/boardLayoutSaveGate";
 export { toBoardModel } from "./model/toBoardModel";
 export { LazyNovelBoardCanvas, NovelBoardCanvasSkeleton } from "./ui/LazyNovelBoardCanvas";
 export { NovelBoardJobLine, hasChapterBlockedReason } from "./ui/NovelBoardJobLine";

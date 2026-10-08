@@ -61,6 +61,8 @@ type NovelBoardCanvasProps = {
   savedLayout: NovelBoardLayout | null;
   /** 상세 `limits.boardLayoutMaxBytes`. */
   maxBytes: number;
+  /** 지금 자리를 저장해도 되는가(`canSaveBoardLayout`). */
+  canSave: boolean;
   /** 주소가 고른 노드. 캔버스는 고른 것을 들고 있지 않고 이 값을 그린다. */
   selectedNodeKey: string | undefined;
   /** 카드를 고르거나(노드 키) 고르기를 풀 때(`undefined`). 호출부가 주소를 옮긴다 — 고치던 글이 있으면 확인을 거쳐
@@ -91,7 +93,7 @@ export function NovelBoardCanvas(props: NovelBoardCanvasProps) {
   );
 }
 
-function BoardFlow({ novelId, model, savedLayout, maxBytes, selectedNodeKey, onSelectNode }: NovelBoardCanvasProps) {
+function BoardFlow({ novelId, model, savedLayout, maxBytes, canSave, selectedNodeKey, onSelectNode }: NovelBoardCanvasProps) {
   const theme = useAtomValue(themeAtom);
   const reactFlow = useReactFlow<BoardNode, Edge>();
   const canvasWidth = useStore((state) => state.width);
@@ -120,6 +122,7 @@ function BoardFlow({ novelId, model, savedLayout, maxBytes, selectedNodeKey, onS
   const save = useBoardLayoutSave({
     novelId,
     maxBytes,
+    canSave,
     read: () => ({ nodes: nodesRef.current, viewport: reactFlow.getViewport() }),
   });
 
