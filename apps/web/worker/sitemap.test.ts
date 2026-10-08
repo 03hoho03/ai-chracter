@@ -112,8 +112,9 @@ describe("handleSitemap", () => {
     expect(response.headers.get("cache-control")).toBe(
       "public, max-age=3600",
     );
-    // 홈 1 + 정적 6(서비스 소개·약관·개인정보처리방침·운영정책·청소년 보호정책·환불정책) + 캐릭터 3 + 스토리 1.
-    expect(xml.match(/<loc>/g)).toHaveLength(11);
+    // 홈 1 + 정적 7(서비스 소개·클로버 상품 안내·약관·개인정보처리방침·운영정책·청소년 보호정책·환불정책)
+    // + 캐릭터 3 + 스토리 1.
+    expect(xml.match(/<loc>/g)).toHaveLength(12);
     expect(xml).toContain("<loc>https://ddona.example/</loc>");
     expect(xml).toContain("<loc>https://ddona.example/about</loc>");
     expect(xml).toContain("<loc>https://ddona.example/terms</loc>");
@@ -121,6 +122,7 @@ describe("handleSitemap", () => {
     expect(xml).toContain("<loc>https://ddona.example/operation-policy</loc>");
     expect(xml).toContain("<loc>https://ddona.example/youth-policy</loc>");
     expect(xml).toContain("<loc>https://ddona.example/refund-policy</loc>");
+    expect(xml).toContain("<loc>https://ddona.example/clover/pricing</loc>");
     expect(xml).toContain(
       "<loc>https://ddona.example/content/character/c3</loc>",
     );
@@ -152,8 +154,8 @@ describe("handleSitemap", () => {
     });
     const xml = await response.text();
 
-    // 홈 1 + 정적 6 + 캐릭터 50페이지 × 1건.
-    expect(xml.match(/<loc>/g)).toHaveLength(57);
+    // 홈 1 + 정적 7 + 캐릭터 50페이지 × 1건.
+    expect(xml.match(/<loc>/g)).toHaveLength(58);
     expect(xml).toContain("/content/character/c49");
     expect(xml).not.toContain("/content/character/c50");
     expect(console.warn).toHaveBeenCalledWith(

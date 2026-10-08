@@ -102,10 +102,11 @@ async function collectLocations(
   apiBaseUrl: string,
   origin: string,
 ): Promise<string[]> {
-  // 서비스 소개·법적 문서 다섯 종류는 조회 없이 정해지는 정적 경로다.
+  // 서비스 소개·클로버 상품 안내·법적 문서 다섯 종류는 조회 없이 정해지는 정적 경로다.
   const locations = [
     `${origin}/`,
     `${origin}/about`,
+    `${origin}/clover/pricing`,
     `${origin}/terms`,
     `${origin}/privacy`,
     `${origin}/operation-policy`,

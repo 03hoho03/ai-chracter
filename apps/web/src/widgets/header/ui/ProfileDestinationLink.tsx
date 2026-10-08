@@ -41,8 +41,12 @@ export const PROFILE_DESTINATION_GROUPS = [
 
 export type ProfileDestinationKey = (typeof PROFILE_DESTINATION_GROUPS)[number]["keys"][number];
 
+/** 메뉴에 나오는 고객센터 목적지. `SUPPORT_DESTINATIONS`에는 푸터에만 걸리는 목적지(클로버 상품 안내)도 있어
+ * 그 전체가 아니라 그룹 배열에 든 키로 좁힌다 — 전체로 두면 메뉴에 없는 목적지에도 쓰이지 않을 아이콘을 요구한다. */
+type MenuSupportDestinationKey = Extract<ProfileDestinationKey, SupportDestinationKey>;
+
 /** 고객센터 목적지의 라벨·경로는 푸터와 함께 쓰는 `SUPPORT_DESTINATIONS`에서 오고, 아이콘만 헤더가 정한다. */
-const SUPPORT_DESTINATION_ICON: Record<SupportDestinationKey, LucideIcon> = {
+const SUPPORT_DESTINATION_ICON: Record<MenuSupportDestinationKey, LucideIcon> = {
   about: Info,
   notices: Megaphone,
   "inquiry-new": LifeBuoy,

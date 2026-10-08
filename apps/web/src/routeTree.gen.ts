@@ -38,6 +38,7 @@ import { Route as OnboardingGoogleRouteImport } from './routes/onboarding.google
 import { Route as NoticesNoticeIdRouteImport } from './routes/notices.$noticeId'
 import { Route as InquiriesNewRouteImport } from './routes/inquiries.new'
 import { Route as InquiriesInquiryIdRouteImport } from './routes/inquiries.$inquiryId'
+import { Route as CloverPricingRouteImport } from './routes/clover.pricing'
 import { Route as CloverHistoryRouteImport } from './routes/clover.history'
 import { Route as ChatRoomIdRouteImport } from './routes/chat.$roomId'
 import { Route as NovelsNovelIdIndexRouteImport } from './routes/novels.$novelId.index'
@@ -195,6 +196,11 @@ const InquiriesInquiryIdRoute = InquiriesInquiryIdRouteImport.update({
   path: '/inquiries/$inquiryId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CloverPricingRoute = CloverPricingRouteImport.update({
+  id: '/clover/pricing',
+  path: '/clover/pricing',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CloverHistoryRoute = CloverHistoryRouteImport.update({
   id: '/clover/history',
   path: '/clover/history',
@@ -272,6 +278,7 @@ export interface FileRoutesByFullPath {
   '/youth-policy': typeof YouthPolicyRoute
   '/chat/$roomId': typeof ChatRoomIdRoute
   '/clover/history': typeof CloverHistoryRoute
+  '/clover/pricing': typeof CloverPricingRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/inquiries/new': typeof InquiriesNewRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
@@ -314,6 +321,7 @@ export interface FileRoutesByTo {
   '/youth-policy': typeof YouthPolicyRoute
   '/chat/$roomId': typeof ChatRoomIdRoute
   '/clover/history': typeof CloverHistoryRoute
+  '/clover/pricing': typeof CloverPricingRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/inquiries/new': typeof InquiriesNewRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
@@ -357,6 +365,7 @@ export interface FileRoutesById {
   '/youth-policy': typeof YouthPolicyRoute
   '/chat/$roomId': typeof ChatRoomIdRoute
   '/clover/history': typeof CloverHistoryRoute
+  '/clover/pricing': typeof CloverPricingRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/inquiries/new': typeof InquiriesNewRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
@@ -401,6 +410,7 @@ export interface FileRouteTypes {
     | '/youth-policy'
     | '/chat/$roomId'
     | '/clover/history'
+    | '/clover/pricing'
     | '/inquiries/$inquiryId'
     | '/inquiries/new'
     | '/notices/$noticeId'
@@ -443,6 +453,7 @@ export interface FileRouteTypes {
     | '/youth-policy'
     | '/chat/$roomId'
     | '/clover/history'
+    | '/clover/pricing'
     | '/inquiries/$inquiryId'
     | '/inquiries/new'
     | '/notices/$noticeId'
@@ -485,6 +496,7 @@ export interface FileRouteTypes {
     | '/youth-policy'
     | '/chat/$roomId'
     | '/clover/history'
+    | '/clover/pricing'
     | '/inquiries/$inquiryId'
     | '/inquiries/new'
     | '/notices/$noticeId'
@@ -528,6 +540,7 @@ export interface RootRouteChildren {
   YouthPolicyRoute: typeof YouthPolicyRoute
   ChatRoomIdRoute: typeof ChatRoomIdRoute
   CloverHistoryRoute: typeof CloverHistoryRoute
+  CloverPricingRoute: typeof CloverPricingRoute
   InquiriesInquiryIdRoute: typeof InquiriesInquiryIdRoute
   InquiriesNewRoute: typeof InquiriesNewRoute
   NoticesNoticeIdRoute: typeof NoticesNoticeIdRoute
@@ -756,6 +769,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InquiriesInquiryIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/clover/pricing': {
+      id: '/clover/pricing'
+      path: '/clover/pricing'
+      fullPath: '/clover/pricing'
+      preLoaderRoute: typeof CloverPricingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/clover/history': {
       id: '/clover/history'
       path: '/clover/history'
@@ -856,6 +876,7 @@ const rootRouteChildren: RootRouteChildren = {
   YouthPolicyRoute: YouthPolicyRoute,
   ChatRoomIdRoute: ChatRoomIdRoute,
   CloverHistoryRoute: CloverHistoryRoute,
+  CloverPricingRoute: CloverPricingRoute,
   InquiriesInquiryIdRoute: InquiriesInquiryIdRoute,
   InquiriesNewRoute: InquiriesNewRoute,
   NoticesNoticeIdRoute: NoticesNoticeIdRoute,
