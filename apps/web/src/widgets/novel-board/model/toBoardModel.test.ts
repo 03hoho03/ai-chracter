@@ -74,6 +74,8 @@ describe("toEpisodeReadState", () => {
 
   it("no position (or an empty chapter) is unread", () => {
     expect(toEpisodeReadState({ finishedReading: false, readingPosition: null })).toEqual({ kind: "unread" });
+    // 화별 읽은 자리를 싣기 전의 API 응답에는 칸이 없다 — 보드를 죽이지 않고 읽지 않은 화로 그린다.
+    expect(toEpisodeReadState({ finishedReading: false })).toEqual({ kind: "unread" });
     expect(
       toEpisodeReadState({ finishedReading: false, readingPosition: { ...position, paragraphIndex: 0, paragraphCount: 0 } }),
     ).toEqual({ kind: "unread" });

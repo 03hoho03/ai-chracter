@@ -68,6 +68,7 @@ export {
 } from "./model/chapterModel";
 export { CHAPTER_REGENERATING_MESSAGE, isChapterRegenerating } from "./model/chapterRegenerationLock";
 export { toAdjacentChapters } from "./model/adjacentChapters";
+export { readChapterReadingPosition } from "./model/chapterReadingPosition";
 export { toEpisodeLabel } from "./model/episodeLabel";
 export { chaptersInBatch, toBatchRangeLabel, toEpisodeRangeLabel } from "./model/episodeRange";
 export {

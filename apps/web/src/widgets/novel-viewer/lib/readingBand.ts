@@ -62,17 +62,19 @@ export function isScrollRestored({
 }
 
 /** 열 때 읽던 자리로 되돌리기가 어떻게 됐나. `none` 은 그 화에 저장된 자리가 없다(처음 여는 화), `restored` 는
- * 저장된 자리가 화면에 반영됐다(맨 위가 그 자리인 경우 포함), `failed` 는 몇 프레임을 다시 놓아도 반영되지 않았다. */
-export type RestoreOutcome = "none" | "restored" | "failed";
+ * 저장된 자리가 화면에 반영됐다(맨 위가 그 자리인 경우 포함), `failed` 는 몇 프레임을 다시 놓아도 반영되지 않았다.
+ * `unknown` 은 그 화의 자리를 응답에서 알 수 없었다(화별 자리를 싣기 전의 API — 서버에는 있을 수 있다). */
+export type RestoreOutcome = "none" | "restored" | "failed" | "unknown";
 
 /**
- * 읽는 자리를 언제부터 잴까. 되돌리기를 반영하지 못했을 때만 이용자가 스스로 스크롤한 뒤부터이고, 나머지는 바로다.
+ * 읽는 자리를 언제부터 잴까. 되돌리기를 반영하지 못했거나 그 화의 자리를 알 수 없었을 때만 이용자가 스스로 스크롤한
+ * 뒤부터이고, 나머지는 바로다.
  *
  * 못 했을 때 기다리는 이유: 화면이 저장된 자리가 아니라 맨 위에 있어, 보기만 하고 재면 0번 문단이 그 화의 저장된
- * 자리를 덮어쓴다. 저장된 자리가 없는 화는 덮을 자리가 없어 바로 잰다 — 그래서 열기만 하고 떠나도 그 화의 0번 자리가
+ * 자리를 덮어쓴다. 자리를 알 수 없을 때도 서버에 있을지 모르는 자리를 같은 식으로 덮을 수 있다. 저장된 자리가 없는 화는 덮을 자리가 없어 바로 잰다 — 그래서 열기만 하고 떠나도 그 화의 0번 자리가
  * 남고 이어 읽기가 그 화를 가리킨다(화를 연 것을 읽기 시작으로 본다). 화가 짧아 마지막 문단이 처음부터 보이면 바로 다
  * 읽은 화가 되는 것도 같은 규칙이다.
  */
 export function toTrackingStart(restore: RestoreOutcome): "now" | "afterUserScroll" {
-  return restore === "failed" ? "afterUserScroll" : "now";
+  return restore === "failed" || restore === "unknown" ? "afterUserScroll" : "now";
 }

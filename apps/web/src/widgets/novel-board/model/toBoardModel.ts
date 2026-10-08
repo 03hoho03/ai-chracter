@@ -1,5 +1,6 @@
 import {
   isChapterRegenerating,
+  readChapterReadingPosition,
   toBatchRangeLabel,
   type NovelChapterSummary,
   type NovelCharacterResponse,
@@ -11,10 +12,11 @@ import type { BoardModel, EpisodeReadState } from "./boardNode";
 /** 화 카드의 읽은 진행. 다 읽은 화가 먼저다 — 다 읽은 뒤 앞부분을 다시 읽어도 서버가 다 읽음으로 남긴다. 읽던 자리의
  * 비율은 그 자리 문단까지 앞에 있는 문단의 몫이라 다 읽지 않은 화는 100% 가 되지 않는다(99 로 자른다). */
 export function toEpisodeReadState(
-  chapter: Pick<NovelChapterSummary, "finishedReading" | "readingPosition">,
+  chapter: Pick<NovelChapterSummary, "finishedReading"> & Partial<Pick<NovelChapterSummary, "readingPosition">>,
 ): EpisodeReadState {
   if (chapter.finishedReading) return { kind: "finished" };
-  const position = chapter.readingPosition;
+  // 화별 자리를 싣기 전의 API 응답이면 칸이 없다 — 읽는 중 비율을 모르니 읽지 않은 화로 그린다.
+  const position = readChapterReadingPosition(chapter) ?? null;
   if (position === null || position.paragraphCount <= 0) return { kind: "unread" };
   const percent = Math.round((position.paragraphIndex / position.paragraphCount) * 100);
   return { kind: "reading", percent: Math.min(Math.max(percent, 0), 99) };

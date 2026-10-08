@@ -98,4 +98,8 @@ describe("toTrackingStart", () => {
   it("저장된 자리가 없는 화는 덮을 자리가 없어 바로 잰다", () => {
     expect(toTrackingStart("none")).toBe("now");
   });
+
+  it("그 화의 자리를 응답에서 알 수 없으면(옛 API) 이용자가 스크롤한 뒤부터", () => {
+    expect(toTrackingStart("unknown")).toBe("afterUserScroll");
+  });
 });

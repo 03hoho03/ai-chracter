@@ -33,8 +33,10 @@ type UseReadingPositionOptions = {
   chapterId: string;
   revisionId: string;
   paragraphCount: number;
-  /** 이 화에 저장된 읽은 자리(상세 `chapters[].readingPosition`). 이 화를 연 적이 없으면 없다. */
+  /** 이 화에 저장된 읽은 자리(`toChapterSavedReadingPosition`). 이 화를 연 적이 없거나 알 수 없으면 없다. */
   saved: SavedReadingPosition | undefined;
+  /** `saved` 가 없을 때 서버에도 자리가 없다고 확신하는가. 거짓이면(옛 API 응답) 이용자가 스크롤한 뒤부터 잰다. */
+  isAbsenceKnown: boolean;
   /** 이 화를 이미 다 읽었는가(그때는 다시 읽어도 다 읽은 화로 남는다 — 서버도 되돌리지 않는다). */
   wasFinished: boolean;
   /** `data-paragraph-index` 문단들을 담은 요소. */
@@ -61,7 +63,8 @@ function positionKey(body: NovelReadingPositionRequest): string {
  * - **저장 가드**: 되돌린 자리가 화면에 반영된 것을 확인한 뒤에야 지금 문단을 재기 시작한다(`isScrollRestored`). 재지
  *   않으면 저장할 것도 없어 디바운스 저장·keepalive 모두 나가지 않는다 — 맨 위로 덮인 화면의 0번 문단이 저장된
  *   자리를 덮어쓰지 않게. 반영을 끝내 못 보면 이용자가 스스로 스크롤한 뒤부터 잰다. 저장된 자리가 없는 화(처음 여는
- *   화)와 저장된 자리가 맨 위인 화는 덮을 것이 없어 바로 잰다(`toTrackingStart`).
+ *   화)와 저장된 자리가 맨 위인 화는 덮을 것이 없어 바로 잰다(`toTrackingStart`). 화별 자리를 싣기 전의 API 응답이라
+ *   그 화의 자리를 모르면 맨 위에서 재지 않고 이용자가 스크롤한 뒤부터 잰다.
  * - **지금 문단**: 화면 위쪽 띠에 충분히 걸친 문단 중 가장 앞 문단(`toCurrentParagraphIndex`). 띠 위쪽은 문단의
  *   `scroll-margin-top` 만큼 잘라 되돌린 자리 바로 위 틈의 앞 문단을 세지 않는다. 마지막 문단이 화면에 들어오면 다
  *   읽음이다.
@@ -79,6 +82,7 @@ export function useReadingPosition({
   revisionId,
   paragraphCount,
   saved,
+  isAbsenceKnown,
   wasFinished,
   containerRef,
 }: UseReadingPositionOptions) {
@@ -246,7 +250,8 @@ export function useReadingPosition({
       // 되돌릴 문단을 찾지 못한 것은 반영하지 못한 것과 같다(맨 위에서 재면 저장된 자리를 덮는다). 저장된 자리가 맨
       // 위면 라우터가 이미 맨 위로 올려 둔 그 자리다.
       if (restoredIndex > 0) startTrackingWhen(toTrackingStart("failed"));
-      else startTrackingWhen(toTrackingStart(saved === undefined ? "none" : "restored"));
+      else if (saved !== undefined) startTrackingWhen(toTrackingStart("restored"));
+      else startTrackingWhen(toTrackingStart(isAbsenceKnown ? "none" : "unknown"));
     });
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
