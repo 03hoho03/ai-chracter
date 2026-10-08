@@ -1,6 +1,7 @@
-"""스탯 규칙 판정이 실채팅·빌더 미리보기의 한 턴에 붙는지 — 판정 스탯 전부에 규칙이 있는 시작설정에서 판정 LLM 이 규칙
-id 를 내면 그 규칙의 폭만큼 `statChange` 가 나가고 엔딩 판정이 이어진다. 판정 실패는 현행처럼 그 턴의 스탯·엔딩 판정을
-건너뛴다. 규칙 판정 채널이 없는 세트(배포 직후 캐시)는 현행 판정으로 돈다."""
+"""스탯 규칙 판정이 실채팅·빌더 미리보기의 한 턴에 붙는지 — 판정 LLM 이 규칙 id 를 내면 그 규칙의 폭만큼 `statChange` 가
+나가고 엔딩 판정이 이어진다. 판정 실패는 그 턴의 스탯·엔딩 판정을 건너뛴다. 규칙 없는 판정 스탯은 판정에 싣지 않아 값이
+그대로이고, 규칙 있는 판정 스탯이 하나도 없거나 규칙 판정 채널이 렌더되지 않으면 판정 LLM 을 부르지 않고 엔딩 판정으로
+넘어간다."""
 
 import uuid
 from collections.abc import AsyncIterator
@@ -13,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.chat.preview_session import get_preview_session
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
-    StatJudgmentResult,
     StatRuleJudgmentResult,
     load_active_prompt_set,
 )
@@ -211,41 +211,73 @@ async def test_room_turn_skips_stats_and_endings_when_rule_judgment_fails(
     assert await _room_stat(db_session, room_id, affection) == 37
 
 
-async def test_room_turn_uses_current_judgment_while_the_cached_set_lacks_the_channel(
+async def _lower_ending_threshold(db_session: AsyncSession, ending: Ending) -> None:
+    """엔딩 규칙(호감 ≥ 40)을 초기값(37)으로도 통과하게 낮춘다 — 스탯이 움직이지 않는 턴에도 엔딩 판정이 도는지 보려고."""
+    await db_session.execute(sa.update(EndingRule).where(EndingRule.ending_id == ending.id).values(threshold=0))
+    await db_session.commit()
+
+
+async def test_room_turn_skips_the_stat_call_but_judges_endings_while_the_set_lacks_the_channel(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """배포 직후 캐시에 남은 옛 세트에는 규칙 판정 채널이 없다 — 렌더가 비어 현행 절대값 판정으로 돈다."""
-    room_id, affection, _, _ = await _story_room_with_rules(db_client, db_session)
+    """활성 세트에 규칙 판정 채널이 없으면 렌더가 비어 판정 LLM 을 부르지 않는다. 실패가 아니라 "변화 없음"이라 엔딩 판정은
+    그대로 이어진다."""
+    room_id, affection, _, ending = await _story_room_with_rules(db_client, db_session)
+    await _lower_ending_threshold(db_session, ending)
     prompt_set, sections = await load_active_prompt_set(db_session, lane="story")
     old_sections = [section for section in sections if section.channel != "stat_rule_judgment"]
     await set_cached_active_prompt_set("story", prompt_set, old_sections, model="gemini")
-    fake = _FakeLLMClient([StatJudgmentResult(stat_changes=[]), EndingJudgmentResult(triggered=False)])
+    fake = _FakeLLMClient([EndingJudgmentResult(triggered=True)])
 
     events = await _send(db_client, room_id, fake)
 
-    assert [e["type"] for e in events] == ["token", "done"]
-    assert fake.schemas[0] is StatJudgmentResult
+    assert [e["type"] for e in events] == ["token", "endingReached", "done"]
+    assert fake.schemas == [EndingJudgmentResult]
     assert await _room_stat(db_session, room_id, affection) == 37
 
 
-async def test_room_turn_without_rules_on_every_judged_stat_stays_on_current_judgment(
+async def test_room_turn_leaves_a_judged_stat_without_rules_out_of_the_judgment(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """판정 스탯 하나라도 규칙이 없으면 그 시작설정은 통째로 현행 판정이다."""
-    room_id, _, trust, _ = await _story_room_with_rules(db_client, db_session)
+    """규칙 없는 판정 스탯(신뢰)은 판정 프롬프트에 싣지 않고 값이 그대로다. 규칙 있는 스탯(호감)은 그대로 판정을 받는다 —
+    실린 스탯만 글자를 받으므로 호감이 a 다."""
+    room_id, affection, trust, _ = await _story_room_with_rules(db_client, db_session)
     await db_session.execute(sa.delete(StatRule).where(StatRule.stat_def_id == trust.id))
     await db_session.commit()
-    fake = _FakeLLMClient([StatJudgmentResult(stat_changes=[]), EndingJudgmentResult(triggered=False)])
+    fake = _FakeLLMClient([StatRuleJudgmentResult(fired_rule_ids=["a1", "b1"]), EndingJudgmentResult(triggered=False)])
 
-    await _send(db_client, room_id, fake)
+    events = await _send(db_client, room_id, fake)
 
-    assert fake.schemas[0] is StatJudgmentResult
+    assert [(e["statId"], e["newValue"]) for e in events if e["type"] == "statChange"] == [
+        (str(affection.entity_id), 40)
+    ]
+    assert fake.schemas == [StatRuleJudgmentResult, EndingJudgmentResult]
+    assert "신뢰" not in fake.prompts[0]
+    assert await _room_stat(db_session, room_id, trust) == 37
+
+
+async def test_room_turn_without_any_rules_skips_the_stat_call_and_judges_endings(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """판정 스탯 어디에도 규칙이 없으면 판정 LLM 을 부르지 않고 스탯은 그대로다. 엔딩 판정은 스탯 반영 결과가 있을 때만
+    돌기 때문에, 이 턴을 실패로 다루면 엔딩이 멈춘다 — 엔딩 판정이 그대로 이어져야 한다."""
+    room_id, affection, trust, ending = await _story_room_with_rules(db_client, db_session)
+    await db_session.execute(sa.delete(StatRule).where(StatRule.stat_def_id.in_([affection.id, trust.id])))
+    await _lower_ending_threshold(db_session, ending)
+    fake = _FakeLLMClient([EndingJudgmentResult(triggered=True)])
+
+    events = await _send(db_client, room_id, fake)
+
+    assert [e["type"] for e in events] == ["token", "endingReached", "done"]
+    assert fake.schemas == [EndingJudgmentResult]
+    assert fake.call_sites == ["chat_generate", "chat_ending_judgment"]
+    assert await _room_stat(db_session, room_id, affection) == 37
 
 
 # ---- 빌더 미리보기 ------------------------------------------------------------------------------
 
 
-def _preview_payload(stat_id: str, ending_id: str) -> dict[str, object]:
+def _preview_payload(stat_id: str, ending_id: str, *, with_rules: bool = True) -> dict[str, object]:
     stat = {
         "id": stat_id,
         "name": "호감",
@@ -259,7 +291,9 @@ def _preview_payload(stat_id: str, ending_id: str) -> dict[str, object]:
         "rules": [
             {"id": str(uuid.uuid4()), "condition": "감싸 준다", "delta": 10},
             {"id": str(uuid.uuid4()), "condition": "모른 척한다", "delta": -3},
-        ],
+        ]
+        if with_rules
+        else [],
     }
     ending = {
         "id": ending_id,
@@ -352,3 +386,34 @@ async def test_preview_turn_skips_stats_and_endings_when_rule_judgment_fails(
     state = await get_preview_session(session_id)
     assert state is not None and state.stats == {stat_id: 95.0} and state.ending_reached is False
 
+
+
+async def test_preview_turn_without_rules_skips_the_stat_call_and_judges_endings(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """초안 스탯에 아직 규칙이 없으면(발행은 막지만 미리보기는 돈다) 판정 LLM 을 부르지 않고 값이 그대로다. 그래도 카운터는
+    굴러가고 엔딩 판정은 이어진다."""
+    user_id, _, _ = await _story_with_setup(db_session, opening_message=None)
+    await db_session.commit()
+    await _login_as(db_client, user_id)
+    stat_id, counter_id = str(uuid.uuid4()), str(uuid.uuid4())
+    payload = _preview_payload(stat_id, str(uuid.uuid4()), with_rules=False)
+    setup = payload["startingSetups"][0]  # type: ignore[index]
+    counter = {**setup["statDefs"][0], "id": counter_id, "name": "남은 날", "initialValue": 10, "perTurnDelta": -1}
+    setup["statDefs"].append(counter)
+    started = await db_client.post("/preview-sessions", json=payload)
+    session_id = started.json()["previewSessionId"]
+    fake = _FakeLLMClient([EndingJudgmentResult(triggered=True)])
+
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "감싼다"})
+    finally:
+        _clear_llm_override()
+
+    events = _parse_sse_events(resp.text)
+    assert [e["type"] for e in events] == ["token", "statChange", "endingReached", "done"]
+    assert (events[1]["statId"], events[1]["newValue"]) == (counter_id, 9)
+    assert fake.call_sites == ["preview_generate", "preview_ending_judgment"]
+    state = await get_preview_session(session_id)
+    assert state is not None and state.stats == {stat_id: 95.0, counter_id: 9.0} and state.ending_reached is True

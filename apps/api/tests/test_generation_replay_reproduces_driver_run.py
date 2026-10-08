@@ -34,15 +34,14 @@ from api.chat import memory_fold
 from api.chat.prompt_builder import (
     ImageMatchJudgmentResult,
     MemorySummaryResult,
-    StatChangeJudgment,
-    StatJudgmentResult,
+    StatRuleJudgmentResult,
 )
 from api.chat.memory_window import load_current_summary
 from api.chat.router import _load_room_stats
 from api.content.schemas import EndingRuleDraftItem
 from api.core import rate_limit_gate
 from api.core.config import settings
-from api.db.models import ChatRoom, ChatRoomMemorySnapshot, KeywordNote, Shortcut, StatDef
+from api.db.models import ChatRoom, ChatRoomMemorySnapshot, KeywordNote, Shortcut, StatDef, StatRule
 from api.db.models.persona import UserPersona
 from api.db.models.prompt import PromptSet
 from api.db.models.story import EndingRuleOperator
@@ -92,16 +91,19 @@ SCRIPT: list[tuple[str, str, str | None]] = [
 ]
 TURNS = list(range(1, 13))
 FAILING_GENERATION = 7
-# 생성 호출 순번 → 그 턴 판정이 내는 신뢰 새 값. 3번째(턴 3)에 문턱 위로, 10번째(실패한 호출 뒤라 턴 9)에 아래로.
-STAT_VERDICTS = {3: 80.0, 10: 40.0}
+# 신뢰 규칙 둘(짧은 id 는 판정 프롬프트가 매기는 대로 스탯 글자 + 순번). 초기값 50 에서 올리는 규칙은 문턱 위로, 내리는
+# 규칙은 다시 아래로 보낸다.
+RAISE_RULE, RAISE_DELTA = "a1", 30
+LOWER_RULE, LOWER_DELTA = "a2", -40
+# 생성 호출 순번 → 그 턴 판정이 고르는 규칙. 3번째(턴 3)에 문턱 위로(80), 10번째(실패한 호출 뒤라 턴 9)에 아래로(40).
+STAT_VERDICTS = {3: RAISE_RULE, 10: LOWER_RULE}
 
 
 class _ScriptedLLM(LLMClient):
     """생성은 호출 순번이 붙은 짧은 응답(정해진 순번은 실패), 판정은 순번별 표, 요약은 접을 때마다 본문이 다른 글을 낸다
     — 요약 본문이 같으면 리플레이가 해시로 스냅숏 행을 하나로 가려낼 수 없다."""
 
-    def __init__(self, stat_id: uuid.UUID) -> None:
-        self.stat_id = str(stat_id)
+    def __init__(self) -> None:
         self.generations = 0
         self.summaries = 0
 
@@ -122,10 +124,9 @@ class _ScriptedLLM(LLMClient):
     async def generate_structured(
         self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
     ) -> Any:
-        if response_schema is StatJudgmentResult:
-            value = STAT_VERDICTS.get(self.generations)
-            changes = [] if value is None else [StatChangeJudgment(stat_id=self.stat_id, new_value=value)]
-            return StatJudgmentResult(stat_changes=changes)
+        if response_schema is StatRuleJudgmentResult:
+            fired = STAT_VERDICTS.get(self.generations)
+            return StatRuleJudgmentResult(fired_rule_ids=[] if fired is None else [fired])
         if response_schema is MemorySummaryResult:
             self.summaries += 1
             return MemorySummaryResult(summary=f"[요약 {self.summaries}] 생성 {self.generations}번째까지 접었다")
@@ -181,9 +182,10 @@ async def _story(db_session: AsyncSession) -> tuple[uuid.UUID, uuid.UUID, uuid.U
     """스탯 하나(문턱 조건 상황 노트), 상시·키워드 노트, 단축어, 기본 대화 프로필을 갖춘 스토리 작품. (사용자 id, 작품
     id, 스탯 entity_id, 시작 설정 행 id)를 돌려준다."""
     user_id, content, setup = await _story_with_setup(db_session, opening_message="{{user}}, 문이 열린다.")
-    trust = uuid.uuid4()
+    trust, trust_row = uuid.uuid4(), uuid.uuid4()
     db_session.add(
         StatDef(
+            id=trust_row,
             entity_id=trust,
             starting_setup_id=setup.id,
             name=STAT_NAME,
@@ -196,6 +198,12 @@ async def _story(db_session: AsyncSession) -> tuple[uuid.UUID, uuid.UUID, uuid.U
             description="신뢰",
             order=1,
         )
+    )
+    db_session.add_all(
+        [
+            StatRule(entity_id=uuid.uuid4(), stat_def_id=trust_row, condition="믿음을 얻는다", delta=RAISE_DELTA, order=0),
+            StatRule(entity_id=uuid.uuid4(), stat_def_id=trust_row, condition="믿음을 잃는다", delta=LOWER_DELTA, order=1),
+        ]
     )
     rule = EndingRuleDraftItem(
         id=uuid.uuid4(), stat_id=trust, operator=EndingRuleOperator("gte"), threshold=GATE, next_op=None
@@ -271,7 +279,7 @@ async def driven(
     # 4턴째부터 2턴마다 접는다 — 12턴에 다섯 번.
     monkeypatch.setattr(memory_fold, "FOLD_AT_TURNS", 4)
     monkeypatch.setattr(memory_fold, "FOLD_TURNS", 2)
-    llm = _ScriptedLLM(trust)
+    llm = _ScriptedLLM()
     _override_llm_client(llm)
     loop = asyncio.get_running_loop()
     bridge = _AsgiBridge(loop)

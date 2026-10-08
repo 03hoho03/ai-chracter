@@ -130,10 +130,10 @@ class StatDef(Base):
     # 건너뛰거나 거꾸로 올리는 일이 실제로 있었고(2026-08-07 실측), 그 카운터에 걸린 엔딩은
     # 도달 가능성이 통째로 흔들린다 — 그래서 카운터는 판단 대상이 아니라 시스템이 굴린다.
     per_turn_delta: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # 판정 LLM 이 낸 값을 코드가 자르는 두 옵션(`api.chat.stats.apply_stat_changes`). `per_turn_delta` 가 있는 스탯은
-    # 판정을 받지 않으므로 두 옵션도 쓰지 않는다(발행이 막는다). 세션 없이 생성자로만 만든 행은 둘 다 `None` 이고,
-    # 읽는 쪽은 그것을 "양방향·제한 없음"으로 본다. `server_default` 는 이 컬럼을 모르는 이전 API 이미지로 되돌렸을 때
-    # 그 코드의 스탯 INSERT 가 NOT NULL 위반이 되지 않게 하려는 것이다.
+    # 옛 절대값 판정이 낸 값을 자르던 두 옵션(변화 방향·한 턴 최대 폭). 판정이 작가 규칙 고르기로 바뀌어 더 이상 읽지 않고,
+    # API 로도 주고받지 않는다 — 버전 간 복제(`_clone_story_children`)만 값을 그대로 옮긴다. 컬럼을 남기는 것은 롤백 호환 때문이다:
+    # 이 컬럼을 SELECT·INSERT 하는 이전 API 이미지로 되돌려도 깨지지 않게 한다. `server_default` 는 이 컬럼을 모르는 코드(지금
+    # 코드의 새 스탯 INSERT 포함)가 NOT NULL 위반을 내지 않게 하려는 것이다.
     change_direction: Mapped[StatChangeDirection] = mapped_column(Text, server_default="both", nullable=False)
     max_change_per_turn: Mapped[int | None] = mapped_column(Integer, nullable=True)
     order: Mapped[int] = mapped_column(Integer, nullable=False)

@@ -25,6 +25,7 @@ from generate_seed_stories import (
     GeneratedShortcut,
     GeneratedStartingSetup,
     GeneratedStatDef,
+    GeneratedStatRule,
     GeneratedStory,
     SimilarityOverlap,
     SimilarityReview,
@@ -75,6 +76,10 @@ def _story(slot: MatrixSlot, **overrides: Any) -> GeneratedStory:
                     unit="",
                     description=f"{name} 은 근거를 댈 때 오르고 말을 바꾸면 내려간다.",
                     per_turn_delta=0,  # 행동에 반응하는 스탯 — 시스템 카운터가 아니다
+                    rules=[
+                        GeneratedStatRule(condition="사용자가 근거를 댄다", delta=5),
+                        GeneratedStatRule(condition="사용자가 말을 바꾼다", delta=-5),
+                    ],
                 )
                 for name in names
             ],
@@ -181,6 +186,20 @@ def test_assemble_resolves_color_names_and_keeps_json_uuid_free(slot: MatrixSlot
     assert stat["unit"] is None  # 빈 문자열은 null 로
     assert "id" not in stat
     assert raw["keywordNotes"][0]["startingSetupId"] is None
+
+
+def test_assemble_keeps_rules_on_judged_stats_and_drops_them_on_counters(slot: MatrixSlot) -> None:
+    """판정 스탯의 규칙은 그대로 옮기고, 카운터에 모델이 단 규칙은 버린다 — 카운터에 규칙이 있으면 발행 검증이 막는다."""
+    story = _story(slot)
+    story.starting_setups[0].stat_defs[1].per_turn_delta = -1
+
+    judged, counter = assemble_story(slot, story)["startingSetups"][0]["statDefs"][:2]
+
+    assert judged["rules"] == [
+        {"condition": "사용자가 근거를 댄다", "delta": 5},
+        {"condition": "사용자가 말을 바꾼다", "delta": -5},
+    ]
+    assert counter["rules"] == []
 
 
 def test_assemble_links_multiple_rules_with_one_logic(slot: MatrixSlot) -> None:

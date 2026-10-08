@@ -39,7 +39,7 @@ def validate_character_publish(
 ) -> list[str]:
     """Pure required-field check for
     character publish — DB I/O happens in the router, this only inspects already-loaded
-    rows (same split as api/chat/stats.py's apply_stat_changes). Returns the camelCase
+    rows (same split as api/chat/stats.py's apply_rule_judgment). Returns the camelCase
     field names FE would recognize as missing; empty list means the draft is publishable.
 
     `situationalImages` is reported once when any row still has no image: autosave creates
@@ -150,13 +150,11 @@ def validate_story_publish(
     초기값은 첫 변화에서 경계로 튀고, 뒤집힌 범위에서는 어떤 변화든 최대값 하나로 붙는다. 초안 저장은 이 검사를 하지 않는다 — 이미 그렇게 저장된 초안이 있어 저장에서 막으면 그 초안의
     자동저장이 편집마다 실패한다. 빌더 폼 검증이 어느 칸인지를 먼저 보여 주므로 여기는 API 직접 호출을 막는 관문이다.
 
-    변화 방향·한 턴 최대 폭도 같은 이유로 발행만 검사한다. 턴당 변화가 있는 스탯에 둘 중 하나라도 걸려 있으면
-    `stats.changeLimitWithCounter` 를 알린다 — 그 스탯은 판정을 받지 않아 옵션이 아무 일도 하지 않는데, 작가는 걸었다고
-    믿게 된다. 최대 폭이 0 이하이면 `stats.maxChangePerTurn` 을 알린다(빈 값이 "제한 없음"이다). 두 키 모두 어긋난
-    스탯 수와 상관없이 한 번씩이다.
-
-    스탯 규칙(`stat_rules`, 모든 스탯의 것, `StatRule.stat_def_id` 가 `stat_defs` 의 `id` 를 가리킨다)이 턴당 변화가 있는
-    스탯에 달려 있으면 `stats.rulesWithCounter` 를 같은 결로 한 번 알린다 — 그 스탯은 판정을 받지 않아 규칙이 발동할 일이
+    스탯 규칙(`stat_rules`, 모든 스탯의 것, `StatRule.stat_def_id` 가 `stat_defs` 의 `id` 를 가리킨다)은 판정 스탯(턴당
+    변화가 없는 스탯)마다 하나 이상 있어야 하고, 규칙이 없는 판정 스탯이 있으면 `stats.rules` 를 한 번 알린다 — 판정은
+    작가가 쓴 규칙 가운데 발동한 것을 고르는 일이라, 규칙 없는 스탯은 대화 내내 초기값에서 움직이지 않는다. 초안 저장은 이
+    검사를 하지 않는다 — 스탯을 막 만든 초안은 규칙이 비어 있고, 저장에서 막으면 자동저장이 편집마다 실패한다. 규칙이 턴당
+    변화가 있는 스탯에 달려 있으면 `stats.rulesWithCounter` 를 한 번 알린다 — 그 스탯은 판정을 받지 않아 규칙이 발동할 일이
     없는데, 작가는 걸었다고 믿게 된다. 규칙의 폭이 그 스탯의 범위 폭(최대 − 최소)을 넘으면 `stats.ruleDelta` 를 한 번
     알린다 — 한 번 발동으로 반대쪽 끝을 넘어 늘 경계에 붙는다. 초안 저장은 이 검사를 하지 않는다 — 작가가 범위를 좁히면
     이미 저장된 규칙이 넘게 되는데, 저장에서 막으면 그 초안의 자동저장이 편집마다 실패한다. 규칙의 개수·조건 길이·폭 0
@@ -199,12 +197,9 @@ def validate_story_publish(
         for stat in stat_defs
     ):
         missing.append("stats.range")
-    if any(
-        stat.per_turn_delta is not None
-        and (stat.change_direction not in (None, "both") or stat.max_change_per_turn is not None)
-        for stat in stat_defs
-    ):
-        missing.append("stats.changeLimitWithCounter")
+    ruled_stat_ids = {rule.stat_def_id for rule in stat_rules}
+    if any(stat.per_turn_delta is None and stat.id not in ruled_stat_ids for stat in stat_defs):
+        missing.append("stats.rules")
     counter_stat_ids = {stat.id for stat in stat_defs if stat.per_turn_delta is not None}
     if any(rule.stat_def_id in counter_stat_ids for rule in stat_rules):
         missing.append("stats.rulesWithCounter")
@@ -214,8 +209,6 @@ def validate_story_publish(
         for rule in stat_rules
     ):
         missing.append("stats.ruleDelta")
-    if any(stat.max_change_per_turn is not None and stat.max_change_per_turn <= 0 for stat in stat_defs):
-        missing.append("stats.maxChangePerTurn")
 
     if len(media_book_cells) > MEDIA_BOOK_MAX_CELLS:
         missing.append("mediaBook.cells")

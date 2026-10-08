@@ -64,7 +64,7 @@ CASES = [
         "F26 응답 스키마 파일이어도 목록 밖 클래스·클래스 안 주석은 잡는다",
         "apps/api/src/api/chat/prompt_builder.py",
         "",
-        'class StatJudgmentResult:\n    """D-1."""\n    # D-2\n    x: int\n\n\nclass Other:\n    """D-3."""\n',
+        'class StatRuleJudgmentResult:\n    """D-1."""\n    # D-2\n    x: int\n\n\nclass Other:\n    """D-3."""\n',
         2,
     ),
     (

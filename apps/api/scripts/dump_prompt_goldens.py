@@ -34,7 +34,6 @@ from api.chat.prompt_builder import (
     build_ending_judgment_prompt,
     build_generation_prompt,
     build_image_judgment_prompt,
-    build_stat_judgment_prompt,
     build_stat_rule_judgment_prompt,
     build_story_generation_prompt,
     load_active_prompt_set,
@@ -168,8 +167,7 @@ def _stat_defs() -> list[StatDef]:
             initial_value=50,
             per_turn_delta=None,
         ),
-        # per_turn_delta가 있는 스탯은 current_stats에 값을 안 넣어 initial_value 폴백과
-        # "시스템이 매 턴 자동 조정" 문구가 동시에 골든에 찍히게 한다.
+        # per_turn_delta가 있는 스탯(카운터)은 판정을 받지 않아 규칙 판정 프롬프트에서 블록째 빠지는 것이 골든에 찍힌다.
         StatDef(
             entity_id=_STAMINA_ENTITY_ID,
             name="체력",
@@ -466,33 +464,7 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
         ),
     ),
     # -- 판단 프롬프트: 스탯/엔딩/이미지 × filled/empty --
-    (
-        "judgment_stat_filled.txt",
-        "story",
-        lambda ps, sections: build_stat_judgment_prompt(
-            prompt_set=ps,
-            sections=sections,
-            stat_defs=_stat_defs(),
-            current_stats={str(_AFFECTION_ENTITY_ID): 62.0},
-            user_message=USER_MESSAGE,
-            assistant_message=ASSISTANT_MESSAGE,
-            names=_NO_NAMES,
-        ),
-    ),
-    (
-        "judgment_stat_empty.txt",
-        "story",
-        lambda ps, sections: build_stat_judgment_prompt(
-            prompt_set=ps,
-            sections=sections,
-            stat_defs=[],
-            current_stats={},
-            user_message=USER_MESSAGE,
-            assistant_message=ASSISTANT_MESSAGE,
-            names=_NO_NAMES,
-        ),
-    ),
-    # 스탯 규칙 판정 — 판정 경로를 둘로 나눈 뒤에 더한 케이스라 기대 텍스트를 손으로 적었다. 현재값과 규칙 폭(-10·5)은
+    # 스탯 규칙 판정 — 스탯 판정 프롬프트는 이것 하나다. 기대 텍스트를 손으로 적었다. 현재값과 규칙 폭(-10·5)은
     # 싣지 않는다. 이름은 프로필 이름이 있는 방이다(작가 글의 `{{user}}` 치환과 이름 한 줄).
     (
         "judgment_stat_rule_filled.txt",

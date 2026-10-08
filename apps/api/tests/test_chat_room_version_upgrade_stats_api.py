@@ -15,7 +15,7 @@ import pytest
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat.prompt_builder import EndingJudgmentResult, StatChangeJudgment, StatJudgmentResult
+from api.chat.prompt_builder import EndingJudgmentResult, StatRuleJudgmentResult
 from api.db.models import (
     ChatRoom,
     ChatRoomStat,
@@ -26,6 +26,7 @@ from api.db.models import (
     EndingRuleOperator,
     StartingSetup,
     StatDef,
+    StatRule,
     StoryPromptTemplate,
     StoryVersionDetail,
 )
@@ -77,6 +78,7 @@ async def _setup(db_session: AsyncSession, version_id: uuid.UUID, entity_id: uui
 
 def _stat(setup: StartingSetup, entity_id: uuid.UUID, *, order: int, per_turn_delta: int | None = None) -> StatDef:
     return StatDef(
+        id=uuid.uuid4(),
         entity_id=entity_id,
         starting_setup_id=setup.id,
         name=f"스탯{order}",
@@ -90,6 +92,15 @@ def _stat(setup: StartingSetup, entity_id: uuid.UUID, *, order: int, per_turn_de
         order=order,
         per_turn_delta=per_turn_delta,
     )
+
+
+def _rules(*stats: StatDef) -> list[StatRule]:
+    """판정 스탯마다 규칙 하나(폭 +20). 규칙이 있어야 스탯 판정이 불린다. 실린 순서대로 a1, b1 … 이다."""
+    return [
+        StatRule(entity_id=uuid.uuid4(), stat_def_id=stat.id, condition=f"{stat.name} 조건", delta=20, order=0)
+        for stat in stats
+        if stat.per_turn_delta is None
+    ]
 
 
 async def _publish_v2(db_session: AsyncSession, content: Content) -> ContentVersion:
@@ -155,7 +166,10 @@ async def _upgraded_room(
 
     v2 = await _publish_v2(db_session, content)
     v2_setup = await _setup(db_session, v2.id, setup_entity)
-    db_session.add_all([_stat(v2_setup, kept, order=1), _stat(v2_setup, added, order=2, per_turn_delta=added_delta)])
+    v2_stats = [_stat(v2_setup, kept, order=1), _stat(v2_setup, added, order=2, per_turn_delta=added_delta)]
+    db_session.add_all(v2_stats)
+    await db_session.flush()
+    db_session.add_all(_rules(*v2_stats))
     if rule_on_added:
         ending = Ending(
             entity_id=uuid.uuid4(),
@@ -225,11 +239,11 @@ async def test_upgrade_seeds_stats_added_in_new_version_and_keeps_existing_value
 
 
 @pytest.mark.parametrize(
-    ("via", "added_delta", "judged_value", "expected"),
+    ("via", "added_delta", "judged", "expected"),
     [
-        pytest.param("pin", None, 70, 70.0, id="pin-judged-stat"),
-        pytest.param("pin", -1, None, 49.0, id="pin-counter-stat"),
-        pytest.param("auto", -1, None, 49.0, id="auto-upgrade-counter-stat"),
+        pytest.param("pin", None, True, 70.0, id="pin-judged-stat"),
+        pytest.param("pin", -1, False, 49.0, id="pin-counter-stat"),
+        pytest.param("auto", -1, False, 49.0, id="auto-upgrade-counter-stat"),
     ],
 )
 async def test_turn_after_upgrade_updates_stat_added_in_new_version(
@@ -237,15 +251,14 @@ async def test_turn_after_upgrade_updates_stat_added_in_new_version(
     db_session: AsyncSession,
     via: str,
     added_delta: int | None,
-    judged_value: int | None,
+    judged: bool,
     expected: float,
 ) -> None:
     upgraded, _ = await _upgraded_room(db_client, db_session, via=via, added_delta=added_delta)
-    changes = (
-        [StatChangeJudgment(stat_id=str(upgraded.added), new_value=judged_value)] if judged_value is not None else []
-    )
+    # 판정 스탯이면 새 스탯의 규칙(b1, +20)을 발동시킨다. 카운터면 판정할 것은 유지 스탯의 규칙뿐이고 발동시키지 않는다.
+    fired = ["b1"] if judged else []
 
-    events = await _send(db_client, upgraded.room_id, _QueueLLM([StatJudgmentResult(stat_changes=changes)]))
+    events = await _send(db_client, upgraded.room_id, _QueueLLM([StatRuleJudgmentResult(fired_rule_ids=fired)]))
 
     assert events == ["token", "statChange", "done"]
     values = await _stat_values(db_session, upgraded.room_id)
@@ -272,7 +285,7 @@ async def test_turn_creates_missing_row_for_counter_stat_of_room_upgraded_withou
     upgraded, _ = await _upgraded_room(db_client, db_session, via="pin", added_delta=-1)
     await _drop_added_row(db_session, upgraded)
 
-    events = await _send(db_client, upgraded.room_id, _QueueLLM([StatJudgmentResult(stat_changes=[])]))
+    events = await _send(db_client, upgraded.room_id, _QueueLLM([StatRuleJudgmentResult(fired_rule_ids=[])]))
 
     assert events == ["token", "statChange", "done"]
     assert (await _stat_values(db_session, upgraded.room_id))[upgraded.added] == 49.0
@@ -284,7 +297,7 @@ async def test_ending_rule_reads_missing_stat_row_as_its_initial_value(
     """행이 없는 새 스탯은 시작값(50)으로 본다 — 승격이 채웠을 값과 같다. 그래서 `>= 40` 규칙이 참이 되어 판정한다."""
     upgraded, _ = await _upgraded_room(db_client, db_session, via="pin", rule_on_added=True)
     await _drop_added_row(db_session, upgraded)
-    fake = _QueueLLM([StatJudgmentResult(stat_changes=[]), EndingJudgmentResult(triggered=True)])
+    fake = _QueueLLM([StatRuleJudgmentResult(fired_rule_ids=[]), EndingJudgmentResult(triggered=True)])
 
     events = await _send(db_client, upgraded.room_id, fake)
 

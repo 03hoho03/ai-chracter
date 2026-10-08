@@ -1,5 +1,5 @@
-"""스탯 규칙 판정 — 반영 함수(`apply_rule_judgment`), 판정 프롬프트 빌더(`build_stat_rule_judgment_prompt`), 현행
-판정과 가르는 함수(`prepare_stat_judgment`). 전부 DB 없이 생성자로 채운 ORM 객체로 돈다."""
+"""스탯 규칙 판정 — 반영 함수(`apply_rule_judgment`), 판정 프롬프트 빌더(`build_stat_rule_judgment_prompt`), 판정을
+부를지 정하는 함수(`prepare_stat_judgment`). 전부 DB 없이 생성자로 채운 ORM 객체로 돈다."""
 
 import logging
 import uuid
@@ -221,73 +221,77 @@ def test_stat_rule_letters_are_unique_for_many_stats() -> None:
     assert len({stat_rule_letters(index) for index in range(2000)}) == 2000
 
 
-# ---- 현행 판정과 가르기 ------------------------------------------------------------------------
-
-
-def _legacy_sections() -> list[PromptSection]:
-    return [
-        PromptSection(
-            channel="stat_judgment", scope="story", slot="stat_defs_intro", variant="", body="[현행]\n{stat_lines}",
-            conditional=False, order=1,
-        )
-    ]
+# ---- 판정을 부를지 정하기 ------------------------------------------------------------------------
 
 
 def _prepare(
     stat_defs: list[StatDef], rules_by_stat_id: dict[uuid.UUID, list[StatRule]], sections: list[PromptSection]
-) -> tuple[str, bool]:
+) -> tuple[str | None, dict[str, tuple[str, StatRule]]]:
     request = prepare_stat_judgment(
         prompt_set=_prompt_set(),
         sections=sections,
         stat_defs=stat_defs,
         rules_by_stat_id=rules_by_stat_id,
-        current_stats={},
         user_message="메시지",
         assistant_message="응답",
         names=_NAMES,
     )
-    return request.prompt, request.rule_ids is not None
+    return request.prompt, request.rule_ids
 
 
-def test_prepare_stat_judgment_uses_rules_when_every_judged_stat_has_one() -> None:
-    """판정 스탯 전부에 규칙이 있으면 규칙 판정이다. 카운터 스탯은 규칙이 없어도 상관없다(판정을 받지 않는다)."""
-    judged, counter = _stat(), _stat(name="남은 날", per_turn_delta=-1)
+def test_prepare_stat_judgment_judges_only_stats_with_rules() -> None:
+    """규칙이 있는 판정 스탯만 싣는다. 규칙 없는 판정 스탯(초안에만 생긴다)과 카운터는 빠져 값이 그대로 남는다."""
+    judged, unruled = _stat(), _stat(name="신뢰")
+    counter = _stat(name="남은 날", per_turn_delta=-1)
+    rule = _rule(1, 0)
 
-    prompt, uses_rules = _prepare(
-        [judged, counter], {judged.entity_id: [_rule(1, 0)]}, [*_legacy_sections(), *_sections()]
-    )
+    prompt, rule_ids = _prepare([unruled, judged, counter], {judged.entity_id: [rule], unruled.entity_id: []}, _sections())
 
-    assert uses_rules
-    assert prompt.startswith("[스탯]")
+    assert prompt is not None
+    assert prompt.startswith("[스탯]\n호감도 / ")
+    assert "신뢰" not in prompt and "남은 날" not in prompt
+    assert rule_ids == {"a1": (str(judged.entity_id), rule)}
 
 
 @pytest.mark.parametrize(
     "case",
     [
-        pytest.param("some-without-rules", id="some-judged-stat-without-rules"),
-        pytest.param("no-judged-stats", id="no-judged-stats"),
+        pytest.param("judged-stats-without-rules", id="judged-stats-without-rules"),
+        pytest.param("counters-only", id="counters-only"),
         pytest.param("no-stats", id="no-stats"),
-        pytest.param("channel-missing", id="new-channel-renders-empty"),
     ],
 )
-def test_prepare_stat_judgment_falls_back_to_the_current_judgment(case: str) -> None:
-    """판정 스탯 하나라도 규칙이 없으면, 판정 스탯이 없으면(현행도 그때 판정을 불러 엔딩 판정이 이어진다), 활성 세트에
-    새 채널이 없어 렌더가 빈 문자열이면(배포 직후 캐시된 옛 세트) 현행 판정 그대로다."""
-    first, second = _stat(), _stat(name="신뢰")
+def test_prepare_stat_judgment_skips_the_call_without_any_ruled_judged_stat(
+    case: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """규칙 있는 판정 스탯이 없으면 판정을 부르지 않는 요청이다(호출부가 "변화 없음"으로 반영하고 엔딩 판정을 잇는다).
+    세트 설정 문제가 아니므로 경고를 남기지 않는다."""
+    judged = _stat()
     counter = _stat(name="남은 날", per_turn_delta=-1)
-    sections = [*_legacy_sections(), *_sections()]
-    stat_defs: list[StatDef] = [first, second]
-    rules: dict[uuid.UUID, list[StatRule]] = {first.entity_id: [_rule(1, 0)], second.entity_id: [_rule(2, 0)]}
-    if case == "some-without-rules":
-        rules[second.entity_id] = []
-    elif case == "no-judged-stats":
+    stat_defs: list[StatDef] = [judged, counter]
+    rules: dict[uuid.UUID, list[StatRule]] = {judged.entity_id: []}
+    if case == "counters-only":
         stat_defs, rules = [counter], {counter.entity_id: [_rule(1, 0)]}
     elif case == "no-stats":
         stat_defs, rules = [], {}
-    else:
-        sections = _legacy_sections()
 
-    prompt, uses_rules = _prepare(stat_defs, rules, sections)
+    with caplog.at_level(logging.WARNING):
+        prompt, rule_ids = _prepare(stat_defs, rules, _sections())
 
-    assert not uses_rules
-    assert prompt.startswith("[현행]")
+    assert prompt is None
+    assert rule_ids == {}
+    assert not caplog.records
+
+
+def test_prepare_stat_judgment_skips_the_call_and_warns_when_the_channel_renders_empty(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """활성 세트에 규칙 판정 채널 행이 없어 렌더가 빈 문자열이면, 빈 프롬프트로 판정을 부르지 않고 경고를 남긴다."""
+    judged = _stat()
+
+    with caplog.at_level(logging.WARNING):
+        prompt, rule_ids = _prepare([judged], {judged.entity_id: [_rule(1, 0)]}, _sections(channel="stat_judgment"))
+
+    assert prompt is None
+    assert rule_ids == {}
+    assert any("렌더가 비었다" in record.getMessage() for record in caplog.records)

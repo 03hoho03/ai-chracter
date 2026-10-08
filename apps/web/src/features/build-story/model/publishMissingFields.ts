@@ -33,13 +33,9 @@ export const STORY_MISSING_FIELD_LABELS = {
   // 스탯의 최소·최대·초기값이 어긋나면(최소 < 최대, 최소 ≤ 초기 ≤ 최대가 아니면) 스탯 수와 상관없이 한 번 온다. 폼 검증이 그
   // 칸에서 먼저 막고 초안 저장은 이 검사를 하지 않으므로, API 직접 호출이나 폼 검증 전에 저장된 초안처럼 서버만 아는 상태에서만 닿는다.
   "stats.range": "스탯 범위(최소값 < 최대값, 초기값은 그 사이)",
-  // 아래 둘도 스탯 수와 상관없이 한 번씩 온다. 스탯 탭에는 변화 방향·한 턴 최대 폭 칸이 없어 작가가 고칠 수 없으므로, 저장할 때
-  // `formToServer` 가 서버에 남은 옛 값을 지운다(턴당 자동 변화가 있는 스탯은 두 옵션을 기본값으로, 0 이하 최대 폭은 "제한 없음"으로).
-  // 발행은 그 저장 바로 뒤에 돌므로, 그 사이에 옛 화면이 같은 초안에 옛 값을 다시 저장했거나 API 를 직접 부른 경우에만 닿는다.
-  "stats.changeLimitWithCounter": "스탯 변화 방향·최대 폭(턴당 자동 변화와 함께 쓸 수 없어요)",
-  "stats.maxChangePerTurn": "스탯 한 턴 최대 폭(1 이상의 정수)",
-  // 규칙 두 키도 스탯 수와 상관없이 한 번씩 온다. 폼 검증이 그 규칙 칸·턴당 칸에서 먼저 막고 스탯 탭이 턴당 자동 변화와 규칙을
-  // 서로 잠그므로, 다른 기기에서 편집된 초안처럼 서버만 아는 상태에서만 닿는다.
+  // 규칙 세 키도 스탯 수와 상관없이 한 번씩 온다. 폼 검증이 그 스탯의 규칙 목록·규칙 칸·턴당 칸에서 먼저 막고 스탯 탭이 턴당
+  // 자동 변화와 규칙을 서로 잠그므로, 다른 기기에서 편집된 초안처럼 서버만 아는 상태에서만 닿는다.
+  "stats.rules": "규칙이 없는 스탯(턴당 자동 변화가 없는 스탯마다 규칙 1개 이상)",
   "stats.ruleDelta": "스탯 규칙의 증감(스탯 범위 폭 이하)",
   "stats.rulesWithCounter": "스탯 규칙(턴당 자동 변화와 함께 쓸 수 없어요)",
   // 상황 노트 세 키도 노트 수와 상관없이 한 번씩 온다. 발행 전 폼 검증이 앞의 둘을 그 노트 칸에서 먼저 막고, 지워진 스탯 조건은
@@ -81,8 +77,7 @@ export const STORY_MISSING_FIELD_FORM_PATH: Partial<Record<string, Path<StoryBui
   "endings.statRules": "startingSetups.0.endings",
   // 위와 같은 이유로 첫 시작설정의 스탯 목록을 가리킨다 — 스탯 탭으로 이동시키는 데만 쓴다.
   "stats.range": "startingSetups.0.stats",
-  "stats.changeLimitWithCounter": "startingSetups.0.stats",
-  "stats.maxChangePerTurn": "startingSetups.0.stats",
+  "stats.rules": "startingSetups.0.stats",
   "stats.ruleDelta": "startingSetups.0.stats",
   "stats.rulesWithCounter": "startingSetups.0.stats",
   // 셋 다 서버가 어느 노트인지 알려 주지 않는다. 폼에서 그 노트를 찾을 수 있으면 셸이 그 칸을 짚고(situationNoteErrors.ts),

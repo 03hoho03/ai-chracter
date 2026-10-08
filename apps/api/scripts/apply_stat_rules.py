@@ -40,6 +40,13 @@
 되돌리기는 `--out` 의 목록으로 한다 — `DELETE FROM stat_rules WHERE id IN (inserted_rule_ids)` 와
 `UPDATE stat_defs SET per_turn_delta = NULL WHERE id IN (counter_stat_def_ids)`. 운영에서 돌리는 방법은 다른 컨테이너 안
 스크립트와 같다(`DEPLOY.md` 의 "BE → GCE VM" 절, 서빙 중인 색의 api 컨테이너에서 `python scripts/apply_stat_rules.py …`).
+운영에서는 파일 두 개를 컨테이너 밖과 주고받아야 한다.
+
+- 이름 대응 파일은 api 이미지에 들어 있지 않다. 실행 전에 `docker cp map.json <api 컨테이너>:/tmp/map.json` 으로 넣고
+  `--name-map /tmp/map.json` 으로 가리킨다.
+- `--out` 파일은 컨테이너 안에 생긴다. 실행 직후 `docker cp <api 컨테이너>:/tmp/applied.json .` 으로 VM 호스트에 빼고,
+  거기서 다시 로컬로 내려받아 둔다. 다음 배포로 컨테이너가 바뀌면 그 안의 파일은 사라지는데, 넣은 규칙 행의 물리 id
+  (`inserted_rule_ids`)는 실행 때마다 새로 뽑혀 나중에 다시 만들 수 없다 — 되돌리기 목록이 이 파일 하나뿐이다.
 """
 
 import argparse
@@ -288,8 +295,9 @@ async def _blocked_setups(
 ) -> list[BlockedSetup]:
     """대상 작품의 모든 버전·시작설정에서, 적용 뒤 규칙 없는 판정 스탯이 남는 곳을 찾는다.
 
-    채팅이 새 판정을 고르는 조건(판정 스탯이 하나 이상이고 그 전부에 규칙이 있다 — `prepare_stat_judgment`)을 적용 뒤
-    상태에 그대로 건다. 판정 스탯이 하나도 없는 시작설정은 새 판정과 상관이 없어 보고하지 않는다.
+    이 스크립트를 처음 돌릴 때의 채팅은 판정 스탯이 하나 이상이고 그 전부에 규칙이 있어야 새 판정으로 넘어갔고, 그 조건을
+    적용 뒤 상태에 그대로 건다(지금 채팅은 규칙 없는 판정 스탯을 판정에서 빼 그 값이 움직이지 않는다). 판정 스탯이 하나도
+    없는 시작설정은 새 판정과 상관이 없어 보고하지 않는다.
     """
     if not content_ids:
         return []

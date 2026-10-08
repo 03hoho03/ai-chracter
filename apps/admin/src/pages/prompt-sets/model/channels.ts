@@ -6,7 +6,9 @@ import type { PromptLane } from "./lane";
 export const PROMPT_CHANNEL_LABELS = {
   system: "시스템 지침",
   generation: "생성",
-  stat_judgment: "스탯 판정",
+  // 옛 절대값 판정 채널. 채팅은 더 이상 이 문안을 읽지 않지만 운영 세트에 행이 남아 있어 탭이 보인다 — 고쳐도 아무 일이 없다는
+  // 것을 라벨로 알린다(서버는 게시 검증용으로만 이 행을 받는다).
+  stat_judgment: "스탯 판정(사용 안 함)",
   stat_rule_judgment: "스탯 규칙 판정",
   ending_judgment: "엔딩 판정",
   image_judgment: "이미지 판정",

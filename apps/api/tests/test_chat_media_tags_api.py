@@ -14,7 +14,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat.prompt_builder import EndingJudgmentResult, ImageMatchJudgmentResult, StatJudgmentResult
+from api.chat.prompt_builder import EndingJudgmentResult, ImageMatchJudgmentResult
 from api.db.models import (
     Asset,
     AssetKind,
@@ -463,7 +463,7 @@ async def test_ending_reached_event_carries_cell_id_epilogue_and_url_map(
 
     fake = _RecordingLLMClient(
         tokens=["떠났다"],
-        structured_results=[StatJudgmentResult(stat_changes=[]), EndingJudgmentResult(triggered=True)],
+        structured_results=[EndingJudgmentResult(triggered=True)],
     )
     _override_llm_client(fake)
     try:
@@ -582,7 +582,7 @@ async def test_story_generation_prompt_excludes_media_tags_from_prologue_and_his
     await _login_as(db_client, user_id)
     room = await _create_room(db_client, content, setup)
 
-    fake = _RecordingLLMClient(tokens=["응답"], structured_results=[StatJudgmentResult(stat_changes=[])])
+    fake = _RecordingLLMClient(tokens=["응답"], structured_results=[])
     _override_llm_client(fake)
     try:
         # 이번 턴 사용자 입력은 사용자 글이라 원문 그대로 모델에 간다.
@@ -611,7 +611,7 @@ async def test_ending_judgment_turn_lines_exclude_media_tags(
 
     fake = _RecordingLLMClient(
         tokens=["응답"],
-        structured_results=[StatJudgmentResult(stat_changes=[]), EndingJudgmentResult(triggered=False)],
+        structured_results=[EndingJudgmentResult(triggered=False)],
     )
     _override_llm_client(fake)
     try:
@@ -663,7 +663,7 @@ async def test_preview_prompt_excludes_name_form_media_tags(
     session_resp = await db_client.post("/preview-sessions", json=payload)
     session_id = session_resp.json()["previewSessionId"]
 
-    fake = _RecordingLLMClient(tokens=["응답"], structured_results=[StatJudgmentResult(stat_changes=[])])
+    fake = _RecordingLLMClient(tokens=["응답"], structured_results=[])
     _override_llm_client(fake)
     try:
         resp = await db_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "안녕"})

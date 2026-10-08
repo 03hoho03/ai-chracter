@@ -25,7 +25,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 from sqlalchemy.orm import Session, SessionTransaction
 
-from api.chat.prompt_builder import ImageMatchJudgmentResult
+from api.chat.prompt_builder import ImageMatchJudgmentResult, stat_rule_letters
 from api.content.schemas import RULE_LIST_ADAPTER, EndingRuleListDraftItem
 from api.core.config import settings
 from api.core.security import hash_password
@@ -66,6 +66,7 @@ from api.db.models import (
     SituationNote,
     StartingSetup,
     StatDef,
+    StatRule,
     StoryPromptTemplate,
     StoryVersionDetail,
     User,
@@ -791,8 +792,11 @@ async def _open_room(
         )
         db_session.add(setup)
         await db_session.flush()
+        # 스탯 하나와 그 규칙 하나 — 규칙이 있어야 새 턴마다 스탯 판정이 구조화 호출로 나간다.
+        stat_def_id = uuid.uuid4()
         db_session.add(
             StatDef(
+                id=stat_def_id,
                 entity_id=uuid.uuid4(),
                 starting_setup_id=setup.id,
                 name="[STAT]신뢰",
@@ -805,6 +809,9 @@ async def _open_room(
                 description="신뢰 스탯",
                 order=1,
             )
+        )
+        db_session.add(
+            StatRule(entity_id=uuid.uuid4(), stat_def_id=stat_def_id, condition="[RULE]약속을 지킨다", delta=5, order=0)
         )
         body = {"contentId": str(content.id), "contentType": "story", "startingSetupId": str(setup.id)}
     await db_session.commit()
@@ -1184,7 +1191,8 @@ async def _novel_ledger(db: AsyncSession, user_id: uuid.UUID) -> list[tuple[str,
 class EndingPriorityScenario:
     """엔딩 우선 스탯 판정 순서를 실채팅·빌더 미리보기에 같은 입력으로 넣어 같은 결과가 나오는지 보는 시나리오.
 
-    `stats` 는 스탯 이름 → 초기값, `stat_changes` 는 이번 턴 스탯 판정이 내는 새 값이다. `endings` 는 목록 순서대로
+    `stats` 는 스탯 이름 → 초기값, `stat_changes` 는 이번 턴 스탯 판정이 고른 규칙이 만드는 새 값이다
+    (`ending_priority_stat_rules`). `endings` 는 목록 순서대로
     (이름, 우선 스탯 이름 또는 None, `스탯 >= 문턱` 규칙 하나 또는 None). `verdicts` 는 엔딩 판정 모델이 차례로 낼
     답이고, `judged` 는 판정 모델을 부른 엔딩 이름 순서, `reached` 는 발동한 엔딩 이름이다. 판정한 엔딩은 판정 문안에
     `ending_priority_marker(이름)` 을 넣어 판정 프롬프트에서 찾는다."""
@@ -1199,6 +1207,18 @@ class EndingPriorityScenario:
 
 def ending_priority_marker(name: str) -> str:
     return f"판정표지-{name}"
+
+
+def ending_priority_stat_rules(scenario: EndingPriorityScenario) -> tuple[dict[str, int], list[str]]:
+    """시나리오 스탯마다 둘 규칙 하나의 폭(스탯 이름 → 폭)과, 이번 턴 판정이 고를 규칙의 짧은 id 목록. 새 값이 있는 스탯은
+    폭이 새 값 − 초기값이고 그 규칙이 발동한다. 나머지는 발동하지 않는 +1 규칙이다 — 모든 스탯에 규칙이 있어야 스탯 판정이
+    매 턴 불리고(판정 프롬프트 하나 + 엔딩 판정 프롬프트들), 짧은 id 의 글자가 스탯 순서(`stats` 의 순서)를 따른다."""
+    deltas = {
+        name: scenario.stat_changes[name] - initial if name in scenario.stat_changes else 1
+        for name, initial in scenario.stats.items()
+    }
+    fired = [f"{stat_rule_letters(index)}1" for index, name in enumerate(scenario.stats) if name in scenario.stat_changes]
+    return deltas, fired
 
 
 def judged_ending_names(prompts: list[str], scenario: EndingPriorityScenario) -> list[str]:

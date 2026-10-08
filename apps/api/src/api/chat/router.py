@@ -42,7 +42,6 @@ from api.chat.prompt_builder import (
     PromptRenderError,
     PromptSetNotFoundError,
     StatJudgmentRequest,
-    StatJudgmentResult,
     StatRuleJudgmentResult,
     build_ending_judgment_prompt,
     build_generation_prompt,
@@ -108,7 +107,7 @@ from api.chat.schemas import (
     StatDefSnapshot,
     StoryImageArchiveItem,
 )
-from api.chat.stats import StatChange, apply_rule_judgment, apply_stat_changes
+from api.chat.stats import apply_rule_judgment
 from api.content.access import detail_model_for, is_open_to, is_open_to_participant
 from api.content.author_macros import expand_author_macros, resolve_user_name
 from api.content.media_book import (
@@ -1008,17 +1007,15 @@ async def _await_stat_judgment(
     current_stats: dict[str, float],
     stat_defs: list[StatDef],
 ) -> dict[str, float] | None:
-    """스탯 판정 LLM 호출과 반영. 반영한 스탯 값(키 → 값, 바뀌지 않은 스탯 포함)을 돌려준다. 규칙 판정이면 고른 규칙을
-    `apply_rule_judgment` 로, 절대값 판정이면 낸 값을 `apply_stat_changes` 로 반영한다 — 어느 쪽인지는
-    `prepare_stat_judgment` 가 정했다. 두 판정은 call_site 가 같아 같은 판정 모델로 간다.
+    """스탯 판정 LLM 호출과 반영. 반영한 스탯 값(키 → 값, 바뀌지 않은 스탯 포함)을 돌려준다. 판정 LLM 이 고른 규칙을
+    `apply_rule_judgment` 로 반영한다. 요청에 프롬프트가 없으면(`prepare_stat_judgment` 가 판정할 규칙이 없다고 정했다)
+    LLM 을 부르지 않고 발동 규칙 없이 반영한다 — 카운터는 굴러가고, 결과가 `None` 이 아니라 엔딩 판정도 이어진다.
 
-    실패는 흡수해 `None` — 칸 판정과 동시에 돌 때 이 실패가 칸 결과를 지우지 않게 한다. `None` 이면 호출부는 지금처럼
+    LLM 실패는 흡수해 `None` — 칸 판정과 동시에 돌 때 이 실패가 칸 결과를 지우지 않게 한다. `None` 이면 호출부는 지금처럼
     스탯·엔딩 판정을 함께 건너뛴다."""
+    if request.prompt is None:
+        return apply_rule_judgment(current_stats, [], request.rule_ids, stat_defs)
     try:
-        if request.rule_ids is None:
-            judgment = await llm_client.generate_structured(request.prompt, StatJudgmentResult, usage=usage)
-            changes = [StatChange(stat_id=c.stat_id, new_value=c.new_value) for c in judgment.stat_changes]
-            return apply_stat_changes(current_stats, changes, stat_defs)
         rule_judgment = await llm_client.generate_structured(request.prompt, StatRuleJudgmentResult, usage=usage)
         return apply_rule_judgment(current_stats, rule_judgment.fired_rule_ids, request.rule_ids, stat_defs)
     except LLMClientError as exc:
@@ -1898,7 +1895,6 @@ async def _stream_new_turn(
                     sections=prompt_sections,
                     stat_defs=stat_defs,
                     rules_by_stat_id=await _load_stat_rules(db, stat_defs),
-                    current_stats=current_stats,
                     user_message=user_content,
                     assistant_message=assistant_content,
                     names=names,
@@ -3568,8 +3564,6 @@ def _preview_stat_def(item: StatDefDraftItem) -> StatDef:
         max_value=item.max_value,
         initial_value=item.initial_value,
         per_turn_delta=item.per_turn_delta,
-        change_direction=item.change_direction,
-        max_change_per_turn=item.max_change_per_turn,
     )
 
 
@@ -3801,7 +3795,7 @@ async def _stream_preview_turn(
 ) -> AsyncIterator[ChatStreamEvent]:
     """`_stream_new_turn`과 같은 순서(생성 스트리밍 → 스탯 판단 → 엔딩 판정)를 따르되
     `ChatRoom`/DB 대신 `PreviewSessionState`(Redis, 호출부가 커밋)를 직접 갱신한다. 스탯
-    클램핑(`apply_stat_changes`)/엔딩 규칙 평가(`evaluate_rule_list`)/턴게이트
+    반영(`apply_rule_judgment`)/엔딩 규칙 평가(`evaluate_rule_list`)/턴게이트
     (`is_ending_check_due`)/엔딩 판정 순서(`_endings_to_judge`)/키워드 매칭(`match_keyword_notes`) 엔진과 SSE 이벤트 스키마는
     실제 채팅과 완전히 동일하게 재사용한다 — `ChatRoom`/`chat_room_stats` 등 방
     상태는 DB 대신 Redis 상태 갱신으로 대체했다. 프롬프트 세트(`prompt_set`/`prompt_sections`)는
@@ -3894,7 +3888,6 @@ async def _stream_preview_turn(
                     sections=prompt_sections,
                     stat_defs=stat_defs,
                     rules_by_stat_id={stat_def.id: _preview_stat_rules(stat_def) for stat_def in setup.stat_defs},
-                    current_stats=current_stats,
                     user_message=user_content,
                     assistant_message=assistant_content,
                     names=names,

@@ -19,7 +19,7 @@ from api.chat.prompt_builder import (
     EndingJudgmentResult,
     ImageMatchJudgmentResult,
     MemorySummaryResult,
-    StatJudgmentResult,
+    StatRuleJudgmentResult,
 )
 from api.db.models import (
     CharacterVersionDetail,
@@ -30,6 +30,7 @@ from api.db.models import (
     Shortcut,
     StartingSetup,
     StatDef,
+    StatRule,
     StoryVersionDetail,
 )
 from api.llm.client import LLMCallContext, LLMClient
@@ -70,8 +71,8 @@ class _RecordingLLMClient(LLMClient):
         self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
     ) -> Any:
         self.structured.append((response_schema, prompt))
-        if response_schema is StatJudgmentResult:
-            return StatJudgmentResult(stat_changes=[])
+        if response_schema is StatRuleJudgmentResult:
+            return StatRuleJudgmentResult(fired_rule_ids=[])
         if response_schema is EndingJudgmentResult:
             return EndingJudgmentResult(triggered=False)
         if response_schema is MemorySummaryResult:
@@ -104,8 +105,11 @@ async def _story_detail(db_session: AsyncSession, content: Content) -> StoryVers
 
 
 def _add_stat(db_session: AsyncSession, setup: StartingSetup, description: str) -> None:
+    """스탯 하나와 그 규칙 하나. 규칙이 있어야 스탯 판정이 불린다."""
+    stat_def_id = uuid.uuid4()
     db_session.add(
         StatDef(
+            id=stat_def_id,
             entity_id=uuid.uuid4(),
             starting_setup_id=setup.id,
             name="용기",
@@ -119,6 +123,7 @@ def _add_stat(db_session: AsyncSession, setup: StartingSetup, description: str) 
             order=1,
         )
     )
+    db_session.add(StatRule(entity_id=uuid.uuid4(), stat_def_id=stat_def_id, condition="웃는다", delta=1, order=0))
 
 
 async def _create_room(client: httpx.AsyncClient, content: Content, setup: StartingSetup | None) -> uuid.UUID:
@@ -174,7 +179,7 @@ async def test_story_turn_names_the_user_in_author_text_and_judgment_but_leaves_
     assert prompt.count("{{user}}") == 1  # 이번 턴 사용자 메시지만 남는다
     assert "{{user}}라고 쳤다" in prompt
     assert "[사용자 이름]" not in prompt
-    stat_prompt = fake.judgment(StatJudgmentResult)
+    stat_prompt = fake.judgment(StatRuleJudgmentResult)
     assert "지훈이 웃으면 오른다" in stat_prompt
     assert "대화 속 사용자의 이름: 지훈" in stat_prompt
     assert "{{user}}라고 쳤다" in stat_prompt
@@ -206,7 +211,7 @@ async def test_story_room_without_persona_uses_the_pinned_default_name(
     fake = await _post(db_client, f"/chat-rooms/{room_id}/messages", {"content": "안녕"})
 
     [prompt] = fake.prompts
-    stat_prompt = fake.judgment(StatJudgmentResult)
+    stat_prompt = fake.judgment(StatRuleJudgmentResult)
     assert expected_opening in prompt
     if expected_line is None:
         assert "대화 속 사용자의 이름" not in prompt + stat_prompt

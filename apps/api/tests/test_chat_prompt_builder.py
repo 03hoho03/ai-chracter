@@ -21,7 +21,7 @@ from api.chat.prompt_builder import (
     build_ending_judgment_prompt,
     build_generation_prompt,
     build_image_judgment_prompt,
-    build_stat_judgment_prompt,
+    build_stat_rule_judgment_prompt,
     build_story_generation_prompt,
     format_user_persona,
     render_prompt_channel,
@@ -311,17 +311,17 @@ def test_build_story_generation_prompt_uses_example_label_only_for_development_e
     assert prompt_set.character_assistant_label not in prompt
 
 
-def test_build_stat_judgment_prompt_uses_story_assistant_label() -> None:
+def test_build_stat_rule_judgment_prompt_uses_story_assistant_label() -> None:
     prompt_set = _prompt_set()
     sections = [
         _section(
-            channel="stat_judgment", scope="story", slot="turn_context",
+            channel="stat_rule_judgment", scope="story", slot="turn_context",
             body="[대화 기록]\n{user_label}: {user_message}\n{assistant_label}: {assistant_message}",
             conditional=False, order=2,
         ),
     ]
-    prompt = build_stat_judgment_prompt(
-        prompt_set=prompt_set, sections=sections, stat_defs=[], current_stats={},
+    prompt, _ = build_stat_rule_judgment_prompt(
+        prompt_set=prompt_set, sections=sections, stat_defs=[], rules_by_stat_id={},
         user_message="메시지", assistant_message="응답",
         names=_NO_NAMES,
     )
@@ -329,61 +329,6 @@ def test_build_stat_judgment_prompt_uses_story_assistant_label() -> None:
     assert f"{prompt_set.story_assistant_label}: 응답" in prompt
     assert prompt_set.character_assistant_label not in prompt
     assert prompt_set.story_example_label not in prompt
-
-
-def _stat_lines_of(stat_defs: list[StatDef]) -> list[str]:
-    sections = [
-        _section(channel="stat_judgment", scope="story", slot="stats", body="{stat_lines}", conditional=False, order=1)
-    ]
-    prompt = build_stat_judgment_prompt(
-        prompt_set=_prompt_set(), sections=sections, stat_defs=stat_defs, current_stats={},
-        user_message="메시지", assistant_message="응답",
-        names=_NO_NAMES,
-    )
-    return prompt.split("\n")
-
-
-def test_build_stat_judgment_prompt_marks_only_constrained_judged_stats() -> None:
-    """방향·폭 제약이 있는 판정 스탯 줄에만 꼬리를 붙인다. 제약 없는 줄(옵션이 `None`·양방향)은 지금과 바이트가 같아야
-    하고(골든이 그 줄을 고정한다), 카운터 줄은 옵션이 남아 있어도 카운터 꼬리만 단다 — 카운터는 판정을 받지 않는다.
-    0 이하 폭은 자르기에서도 제한 없음이라 꼬리를 달지 않는다."""
-    def _stat(name: str, **options: object) -> StatDef:
-        return StatDef(entity_id=uuid.uuid4(), name=name, description="설명", min_value=0, max_value=10, initial_value=5, **options)
-
-    lines = _stat_lines_of(
-        [
-            _stat("없음"),
-            _stat("양방향", change_direction="both"),
-            _stat("감소", change_direction="decrease"),
-            _stat("증가폭", change_direction="increase", max_change_per_turn=3),
-            _stat("폭", change_direction="both", max_change_per_turn=2),
-            _stat("카운터", per_turn_delta=-1, change_direction="decrease", max_change_per_turn=1),
-            _stat("0폭", max_change_per_turn=0),
-        ]
-    )
-
-    assert lines[0].endswith("현재값=5, 범위=[0, 10], 설명=설명")
-    assert lines[1].endswith("설명=설명")
-    assert lines[2].endswith("설명=설명  ※ 감소만 할 수 있다.")
-    assert lines[3].endswith("설명=설명  ※ 증가만 할 수 있다. 한 턴에 최대 3까지 바뀐다.")
-    assert lines[4].endswith("설명=설명  ※ 한 턴에 최대 2까지 바뀐다.")
-    assert lines[5].endswith("설명=설명  ※ 시스템이 매 턴 자동 조정하는 값이다. statChanges에 넣지 마라.")
-    assert lines[6].endswith("설명=설명")
-
-
-def test_build_stat_judgment_prompt_puts_current_value_and_range_before_long_description() -> None:
-    """스탯 줄에서 현재값은 이름 바로 뒤, 범위는 그다음, 설명은 그 뒤에 온다. 설명이 길면 현재값이 이름에서 멀어져
-    판정 모델이 다른 스탯 줄의 현재값을 이 스탯의 기준으로 읽고 새 값을 내는 일이 있었다."""
-    long_description = " ".join(["도희가 감독을 얼마나 믿고 따르는지."] * 8)
-    stat = StatDef(
-        entity_id=uuid.uuid4(), name="도희 호감", description=long_description,
-        min_value=0, max_value=100, initial_value=52.5,
-    )
-
-    (line,) = _stat_lines_of([stat])
-
-    assert f"이름=도희 호감, 현재값=52.5, 범위=[0, 100], 설명={long_description}" in line
-    assert line.index("현재값=") < line.index("범위=") < line.index("설명=")
 
 
 def test_build_ending_judgment_prompt_uses_story_assistant_label_for_history_and_this_turn() -> None:

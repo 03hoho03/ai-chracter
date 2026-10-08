@@ -552,7 +552,6 @@ async def test_preview_reuses_the_real_renderer(
     assert channels == {
         "system",
         "generation",
-        "stat_judgment",
         "stat_rule_judgment",
         "ending_judgment",
         "memory_summary",
@@ -608,7 +607,7 @@ async def test_novel_preview_without_chapter_rows_shows_a_notice_instead_of_fail
 @pytest.mark.parametrize(
     ("lane", "expected_count"),
     [
-        pytest.param("story", 11, id="story"),
+        pytest.param("story", 10, id="story"),
         pytest.param("character", 4, id="character"),
         pytest.param("publish_filter", 2, id="publish_filter"),
         pytest.param("novel", 6, id="novel"),
@@ -620,7 +619,7 @@ async def test_preview_item_count_per_lane(
     """리뷰가 찾은 공백 — `_character_preview_items`/`_publish_filter_preview_items`가
     story 레인 미리보기 테스트에만 가려져 미커버였다. R-7의 `StopIteration` → 500이
     `publish_filter` 레인에서만 터지던 결함이었던 선례를 생각하면 같은 부류가 숨어 있을 수
-    있어 레인 전부 200 + 항목 수(story 11 / character 4 / publish_filter 2 / novel 6 — 소설은 경계 제안·화 생성·문단
+    있어 레인 전부 200 + 항목 수(story 10 / character 4 / publish_filter 2 / novel 6 — 소설은 경계 제안·화 생성·문단
     수정 × 스토리·캐릭터 원작)를 직접 고정한다."""
     await _login_new_admin(db_client, db_session)
 

@@ -12,6 +12,10 @@
   설정을 끄면 생성 호출도 그대로다.
 - 판정 윈도우 설정을 켜도 스냅샷이 없는 방은 그대로다.
 
+스탯 판정 호출(`chat_stat_judgment`)은 비교에서 뺀다. 판정이 스탯 절대값을 내던 것에서 작가 규칙을 고르는 것으로
+바뀌어 프롬프트 자체가 다른 것이 되었고, 기대값 파일의 그 항목은 옛 판정의 프롬프트라 더는 아무것도 증명하지 못한다.
+새 판정 프롬프트의 바이트는 프롬프트 골든(`judgment_stat_rule_filled.txt`)이 고정한다. 나머지 호출은 그대로 비교한다.
+
 같은 시나리오 장치로 윈도우 자체도 본다 — 요약 커서 이하 메시지는 생성 프롬프트에서 빠지고,
 오프닝은 맨 앞에 남고, 커서 뒤 메시지는 하나도 빠지지 않는다(요약이 늦거나 실패해도 대화가
 사라지지 않는다는 약속). 윈도우 경계 규칙은 순수 함수 테스트가 따로 본다.
@@ -19,7 +23,6 @@
 
 import hashlib
 import json
-import re
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -37,7 +40,7 @@ from api.chat.prompt_builder import (
     EndingJudgmentResult,
     ImageMatchJudgmentResult,
     MemorySummaryResult,
-    StatJudgmentResult,
+    StatRuleJudgmentResult,
 )
 from api.db.models import (
     ChatMessage,
@@ -49,6 +52,7 @@ from api.db.models import (
     SituationalImage,
     StartingSetup,
     StatDef,
+    StatRule,
 )
 from api.core.config import settings
 from api.llm.client import LLMCallContext, LLMClient
@@ -67,7 +71,8 @@ from factories import (
 
 BASELINE_PATH = Path(__file__).parent / "fixtures" / "chat_prompt_baseline.json"
 
-# 프롬프트에 id가 실리는 행(스탯·이미지 판정)은 id를 고정해야 해시가 실행마다 같다.
+# 프롬프트에 id가 실리는 행(이미지 판정)은 id를 고정해야 해시가 실행마다 같다. 스탯 id 는 기대값을 뜰 때 옛 스탯 판정
+# 프롬프트에 실리던 값이라 같이 고정해 두었다.
 _STAT_ENTITY_ID = uuid.UUID("5a1e0000-0000-4000-8000-000000000001")
 _IMAGE_ENTITY_ID = uuid.UUID("5a1e0000-0000-4000-8000-000000000002")
 
@@ -118,8 +123,8 @@ class RecordingLLMClient(LLMClient):
         if response_schema is MemorySummaryResult:
             return MemorySummaryResult(summary="요약")
         self.calls.append(RecordedCall(usage.call_site, prompt, None))
-        if response_schema is StatJudgmentResult:
-            return StatJudgmentResult(stat_changes=[])
+        if response_schema is StatRuleJudgmentResult:
+            return StatRuleJudgmentResult(fired_rule_ids=[])
         if response_schema is EndingJudgmentResult:
             return EndingJudgmentResult(triggered=False)
         if response_schema is ImageMatchJudgmentResult:
@@ -171,8 +176,10 @@ async def _make_story_content(db_session: AsyncSession, user_id: uuid.UUID) -> t
     )
     db_session.add(setup)
     await db_session.flush()
+    stat_def_id = uuid.uuid4()
     db_session.add(
         StatDef(
+            id=stat_def_id,
             entity_id=_STAT_ENTITY_ID,
             starting_setup_id=setup.id,
             name="호감도",
@@ -186,6 +193,8 @@ async def _make_story_content(db_session: AsyncSession, user_id: uuid.UUID) -> t
             order=1,
         )
     )
+    # 운영의 발행 스탯처럼 규칙을 둬 스탯 판정이 지금처럼 엔딩 판정 앞에서 돈다(비교에서는 빠진다 — 파일 docstring).
+    db_session.add(StatRule(entity_id=uuid.uuid4(), stat_def_id=stat_def_id, condition="반긴다", delta=5, order=0))
     # 게이트 1·2 두 개라 send(턴 37)와 edit(턴 36) 둘 다 엔딩 판정이 돈다.
     for order, gate in ((1, 1), (2, 2)):
         db_session.add(
@@ -304,18 +313,8 @@ ACTIONS = ("send", "regenerate", "edit")
 CASES = [f"{lane}-{shape}-{action}" for lane in LANES for shape in SHAPES for action in ACTIONS]
 
 
-_VALUE_FIRST_STAT_LINE = re.compile(
-    r"^(- statId=[^,]+, 이름=.*?), 현재값=([^,]+), 범위=(\[[^\]]*\]), 설명=(.*?)((?:  ※ .*)?)$", re.MULTILINE
-)
-
-
-def _as_recorded_stat_line_order(call: RecordedCall) -> str:
-    """스탯 판정 프롬프트의 스탯 줄을 기대값 파일을 뜰 때의 순서(설명 → 범위 → 현재값)로 되돌린다. 그 뒤 스탯 줄은
-    현재값·범위를 설명 앞에 두도록 바뀌었는데, 이 파일은 다시 뜨지 않으므로 줄 순서만 되돌려 비교한다 — 나머지
-    바이트(히스토리·이번 턴·지시문)는 여전히 기대값 파일과 그대로 맞아야 한다. 새 순서 자체는 골든이 고정한다."""
-    if call.call_site != "chat_stat_judgment":
-        return call.prompt
-    return _VALUE_FIRST_STAT_LINE.sub(r"\1, 설명=\4, 범위=\3, 현재값=\2\5", call.prompt)
+# 판정이 규칙 고르기로 바뀌어 기대값이 의미를 잃은 호출(파일 docstring). 양쪽에서 빼고 비교한다.
+_UNCOMPARED_CALL_SITE = "chat_stat_judgment"
 
 
 def fingerprint(calls: list[RecordedCall]) -> list[dict[str, object]]:
@@ -323,7 +322,7 @@ def fingerprint(calls: list[RecordedCall]) -> list[dict[str, object]]:
         {
             "callSite": call.call_site,
             "chars": len(call.prompt),
-            "sha256": hashlib.sha256(_as_recorded_stat_line_order(call).encode("utf-8")).hexdigest(),
+            "sha256": hashlib.sha256(call.prompt.encode("utf-8")).hexdigest(),
             "systemSha256": (
                 hashlib.sha256(call.system_instruction.encode("utf-8")).hexdigest()
                 if call.system_instruction is not None
@@ -331,6 +330,7 @@ def fingerprint(calls: list[RecordedCall]) -> list[dict[str, object]]:
             ),
         }
         for call in calls
+        if call.call_site != _UNCOMPARED_CALL_SITE
     ]
 
 
@@ -344,7 +344,9 @@ async def run_case(db_client: httpx.AsyncClient, db_session: AsyncSession, case:
 
 def _load_baseline() -> dict[str, list[dict[str, object]]]:
     data: dict[str, list[dict[str, object]]] = json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
-    return data
+    return {
+        case: [call for call in calls if call["callSite"] != _UNCOMPARED_CALL_SITE] for case, calls in data.items()
+    }
 
 
 @pytest.mark.parametrize("case", [c for c in CASES if "-summarized-" not in c])
