@@ -6,7 +6,7 @@ import { ContentActionConfirmModal, HomeCurationConfirmModal } from "../pages/co
 import { PublishDialog } from "../pages/legal";
 import { PublishNoticeDialog } from "../pages/notice-detail";
 import { PublishPromptSetDialog, RestorePromptSetDialog } from "../pages/prompt-sets";
-import { UserActionConfirmModal } from "../pages/user-detail";
+import { RefundPaymentModal, UserActionConfirmModal } from "../pages/user-detail";
 import { AdminShell } from "../widgets/admin-shell";
 
 export type RouterContext = {
@@ -37,6 +37,7 @@ function RootComponent() {
       <ContentActionConfirmModal />
       <HomeCurationConfirmModal />
       <UserActionConfirmModal />
+      <RefundPaymentModal />
       <PublishDialog />
       <PublishNoticeDialog />
       <PublishPromptSetDialog />

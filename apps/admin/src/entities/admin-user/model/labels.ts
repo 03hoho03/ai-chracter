@@ -87,6 +87,21 @@ export const CLOVER_KIND_LABELS: Record<string, string> = {
   purchase_restore: "구매 회수 복원",
 };
 
+type PaymentStatus = components["schemas"]["AdminUserPaymentItem"]["status"];
+
+/** 주문 상태 — BE `PaymentStatus` 유니언이라 `satisfies`가 빠진 키·데드 키를 컴파일에서 잡는다(ACTION_TYPE_LABELS와
+ * 같은 관례). 취소는 어드민 환불과 포트원 콘솔 취소를 가리지 않고 같은 말이다 — 경로는 조치 이력이 보여 준다.
+ * `owner_withdrawn`은 지급 뒤 주문자가 탈퇴한 결제라 환불 버튼을 두지 않는다(콘솔 취소만 서버가 맞춘다). */
+export const PAYMENT_STATUS_LABELS = {
+  pending: "결제 대기",
+  paid: "결제 완료",
+  failed: "결제 실패",
+  mismatch: "검증 불일치",
+  owner_withdrawn: "주문자 탈퇴",
+  cancelled: "전액 취소",
+  partially_cancelled: "부분 취소",
+} satisfies Record<PaymentStatus, string>;
+
 export type ChatViewReasonCategory = components["schemas"]["ChatViewReasonCategory"];
 
 /** 신고 사유(5종, entities/report의 REPORT_REASON_LABELS)와는 다른 enum이다 — 채팅 열람은

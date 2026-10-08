@@ -7,10 +7,13 @@ import {
   ACTION_TYPE_LABELS,
   CHAT_VIEW_REASON_CATEGORY_LABELS,
   CLOVER_KIND_LABELS,
+  PAYMENT_STATUS_LABELS,
   SIGNUP_METHOD_LABELS,
   useCloverLedgerQuery,
   useUserDetailQuery,
+  useUserPaymentsQuery,
   type AdminUserDetailResponse,
+  type AdminUserPaymentItem,
 } from "@/entities/admin-user";
 import { CHAT_MESSAGE_REPORT_REASON_LABELS, REPORT_REASON_LABELS, REPORT_STATUS_LABELS } from "@/entities/report";
 import { formatCount } from "@/shared/lib/format/formatCount";
@@ -23,6 +26,7 @@ import { PageContainer } from "@/shared/ui/PageContainer";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { QueryState } from "@/shared/ui/QueryState";
 
+import { RefundPaymentModal } from "./RefundPaymentModal";
 import { UserActionPanel } from "./UserActionPanel";
 
 type UserDetailPageProps = {
@@ -307,6 +311,8 @@ function UserDetailSections({ userId, user }: UserDetailSectionsProps) {
 
       <CloverLedgerSection userId={userId} />
 
+      <PaymentsSection userId={userId} />
+
       <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 @xl:p-6">
         <h2 className="text-lg font-semibold text-foreground">채팅방</h2>
         {user.chatRooms.length === 0 ? (
@@ -459,6 +465,108 @@ function CloverLedgerBody({ ledgerQuery }: CloverLedgerBodyProps) {
  * 손으로 붙인다. 0은 원장에 들어오지 않는다(BE가 `amount=0`을 거부한다). */
 function formatSignedCount(amount: number) {
   return amount > 0 ? `+${formatCount(amount)}` : formatCount(amount);
+}
+
+type PaymentsSectionProps = {
+  userId: string;
+};
+
+/** 구매 내역도 원장처럼 별도 라우트(최근 20건, 페이지 없음)라 로딩·에러를 이 섹션이 따로 진다. 환불은 구매 한 건 단위라
+ * 조치 패널이 아니라 그 행에 둔다. */
+function PaymentsSection({ userId }: PaymentsSectionProps) {
+  const paymentsQuery = useUserPaymentsQuery(userId);
+
+  return (
+    <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 @xl:p-6">
+      <h2 className="text-lg font-semibold text-foreground">구매 내역</h2>
+      <PaymentsBody paymentsQuery={paymentsQuery} />
+    </section>
+  );
+}
+
+type PaymentsBodyProps = {
+  paymentsQuery: ReturnType<typeof useUserPaymentsQuery>;
+};
+
+function PaymentsBody({ paymentsQuery }: PaymentsBodyProps) {
+  if (paymentsQuery.isPending) {
+    return <div className="h-24 animate-pulse rounded-lg bg-secondary" />;
+  }
+
+  if (paymentsQuery.isError) {
+    return <p className="text-sm text-destructive-text">구매 내역을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>;
+  }
+
+  if (paymentsQuery.data.items.length === 0) {
+    return <p className="text-sm text-muted-foreground">클로버를 산 기록이 없어요.</p>;
+  }
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-border">
+      <DenseTable surface="card">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>상품</TableHead>
+              <TableHead className="text-right">결제 금액</TableHead>
+              <TableHead className="text-right">취소 금액</TableHead>
+              <TableHead>상태</TableHead>
+              <TableHead>주문일시</TableHead>
+              <TableHead>결제일시</TableHead>
+              <TableHead>
+                <span className="sr-only">환불</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {paymentsQuery.data.items.map((payment) => (
+              <TableRow key={payment.paymentId}>
+                <TableCell>{payment.orderName}</TableCell>
+                <TableCell className="text-right tabular-nums">{formatCount(payment.amountKrw)}원</TableCell>
+                <TableCell className="text-right tabular-nums text-muted-foreground">
+                  {payment.cancelledAmountKrw > 0 ? `${formatCount(payment.cancelledAmountKrw)}원` : "-"}
+                </TableCell>
+                <TableCell>
+                  {PAYMENT_STATUS_LABELS[payment.status]}
+                  {/* 상태는 무채색 글자로만 가른다 — 확인이 필요한 행은 굵기로 올린다(색을 상태에 쓰지 않는다). */}
+                  {payment.refundPending && <p className="font-semibold text-foreground">환불 확인 필요</p>}
+                </TableCell>
+                <DateTimeCell value={payment.createdAt} />
+                <DateTimeCell value={payment.paidAt} />
+                <TableCell>
+                  <RefundAction payment={payment} />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </DenseTable>
+    </div>
+  );
+}
+
+type RefundActionProps = {
+  payment: AdminUserPaymentItem;
+};
+
+/** 결과를 모르는 시도가 있으면 같은 실행 경로로 마무리하는 "확인·재시도", 없고 환불할 수 있는 상태면 "환불"이다. 그 밖
+ * (대기·실패·불일치·주문자 탈퇴·전액 취소)은 서버가 견적부터 거부하므로 버튼을 두지 않는다. 카드 위라 outline 의
+ * 기본 hover(`muted`)가 사라져 `secondary`로 덮는다. */
+function RefundAction({ payment }: RefundActionProps) {
+  if (!payment.refundPending && payment.status !== "paid" && payment.status !== "partially_cancelled") return null;
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="hover:bg-secondary"
+      aria-label={`${payment.orderName} ${payment.refundPending ? "환불 확인·재시도" : "환불"}`}
+      onClick={() => void RefundPaymentModal.call({ payment })}
+    >
+      {payment.refundPending ? "확인·재시도" : "환불"}
+    </Button>
+  );
 }
 
 /** 하단 바 한 줄 요약 — 조치가 바꾸는 상태(정지·면제·베타·소설화·상위 모델)만. 기본값(아님)은 붙이지 않는다. */
