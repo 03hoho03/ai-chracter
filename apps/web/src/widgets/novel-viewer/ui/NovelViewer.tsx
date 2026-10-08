@@ -16,6 +16,7 @@ import { readerTypographyClassName } from "../lib/readerTypography";
 import { toEpisodeScrollProgress } from "../lib/readingProgress";
 import { toChapterSavedReadingPosition } from "../lib/savedReadingPosition";
 import { useIsFinePointer } from "../lib/useIsFinePointer";
+import { useScreenWakeLock } from "../lib/useScreenWakeLock";
 import { readerSettingsAtom } from "../model/readerSettings";
 import { useChromeVisibility } from "../model/useChromeVisibility";
 import type { PagedPosition, PagedReaderHandle } from "../model/usePagedReader";
@@ -67,6 +68,9 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
   const episodeLabel = toEpisodeLabel(summary);
   const { saved, isAbsenceKnown } = toChapterSavedReadingPosition(summary, novel.lastRead);
 
+  // 두 넘김 방식 모두 읽는 동안이라 본문이 아니라 여기서 잡는다 — 방식을 바꿔도 놓았다 다시 잡지 않는다.
+  useScreenWakeLock(settings.keepScreenOn);
+
   const readingPosition = useReadingPosition({
     novelId: novel.id,
     chapterId: chapter.id,
@@ -104,7 +108,7 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
     };
   }, [chrome.isVisible, settings.mode]);
 
-  // 보기 설정을 열면 지금 고른 글자 크기 칩으로 포커스를 옮긴다(단일 선택 그룹은 고른 칩이 Tab 정지점이다).
+  // 보기 설정을 열면 첫 줄(넘김 방식)의 고른 칩으로 포커스를 옮긴다(단일 선택 그룹은 고른 칩이 Tab 정지점이다).
   useEffect(() => {
     if (!isSettingsOpen) return;
     settingsPanelRef.current?.querySelector<HTMLElement>('[data-state="on"]')?.focus();
