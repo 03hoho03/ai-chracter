@@ -116,6 +116,24 @@ class Settings(BaseSettings):
     kakao_oauth_state_ttl_seconds: int = 60 * 10
     kakao_pending_signup_ttl_seconds: int = 60 * 15
 
+    # 포트원(결제·휴대폰 본인인증). 상점 id 와 두 채널키는 브라우저 SDK 에도 실리는 공개 식별자라 비밀이 아니다 — 웹은
+    # 이 값을 따로 갖지 않고 주문·인증 시작 응답으로 받는다. API 비밀(조회·취소 호출)과 웹훅 비밀(서명 검증)은 비밀이다.
+    # 값이 비면 기동을 막지 않고 그 기능이 꺼진다(`payments/config.py` 의 판정 함수들).
+    portone_store_id: str = ""
+    portone_payment_channel_key: str = ""
+    portone_identity_channel_key: str = ""
+    portone_api_secret: str = Field(default="", repr=False)
+    portone_webhook_secret: str = Field(default="", repr=False)
+    # 본인인증 CI 를 HMAC 으로 바꿔 저장할 때 쓰는 키. 탈퇴 이메일 키와 따로 둔다 — 이 해시는 살아 있는 계정끼리 같은
+    # 사람인지를 인증 때마다 대조하는 데 쓰여, 키가 바뀌면 기존 인증자 전원과 대조가 어긋나 같은 사람의 중복 인증이
+    # 열린다. 이메일 키를 (유출 등으로) 바꿀 때 그 사고가 이쪽으로 번지지 않게 가른다. **한번 정하면 바꾸지 않는다.**
+    identity_ci_hmac_key: str = Field(default="", repr=False)
+    # 결제와 본인인증 게이트의 스위치. 코드 기본값이 닫힘이라 env 없이 배포하면 닫힌 채 뜬다.
+    payments_enabled: bool = False
+    identity_gate_enabled: bool = False
+    # 결제·환불 완료를 알리는 디스코드 웹훅 주소. 비면 알림을 건너뛴다. 주소 자체가 그 채널에 글을 쓸 권한이라 비밀이다.
+    payment_discord_webhook_url: str = Field(default="", repr=False)
+
     # Password reset tokens expire 1 hour after issuance.
     password_reset_token_ttl_seconds: int = 60 * 60
 
