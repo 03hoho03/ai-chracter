@@ -36,23 +36,28 @@ from ops.pg import run_sh, shell_quote
 #      `JOIN users`로 다시 읽으면 CTE는 문장 시작 시점 스냅샷이라 차감 **전** 잔액이 찍힌다.
 #   3. 락 순서는 `users`(1단계) 먼저, `clover_lots`(2단계) 나중 — `core/clover.py` 차감 경로와 같은
 #      순서다. 반대로 잡으면 배치와 동시 차감이 겹칠 때 재현 가능한 데드락이다.
-# `{cutoff}`는 스크립트가 시작 시각에 한 번 계산한 고정값이고, 두 문장에 같은 값이 들어간다 —
-# 문장 사이에 로트가 새로 만료로 넘어가 1단계에서 안 잠긴 유저가 2단계에 끼어드는 것을 막는다.
+#   4. 2단계는 1단계가 잠근 유저(`expiring_users`)의 로트만 태운다. 환급은 이미 만료된 원래 로트에도 돌아가므로
+#      (`core/clover.py`의 `refund_spend`) 두 문장 사이에 커밋된 환급이 만료 로트의 `remaining`을 0보다 크게 만들 수
+#      있다. 2단계가 조건을 다시 평가해 그 유저를 끌어들이면 그 유저에 대해서는 lots → users 순서가 되어 같은 유저의
+#      환급(users → 배분 → lots)과 교착할 수 있다. 끼어든 유저의 로트는 다음 배치 실행이 태운다.
+# `{cutoff}`는 스크립트가 시작 시각에 한 번 계산한 고정값이고, 두 문장에 같은 값이 들어간다.
 _EXPIRE_SQL_TEMPLATE = """
 BEGIN;
 
+CREATE TEMP TABLE expiring_users ON COMMIT DROP AS
+SELECT DISTINCT l.user_id FROM clover_lots l
+ WHERE l.remaining > 0 AND l.expires_at IS NOT NULL AND l.expires_at <= '{cutoff}';
+
 SELECT u.id
   FROM users u
- WHERE u.id IN (
-   SELECT DISTINCT l.user_id FROM clover_lots l
-    WHERE l.remaining > 0 AND l.expires_at IS NOT NULL AND l.expires_at <= '{cutoff}'
- )
+ WHERE u.id IN (SELECT user_id FROM expiring_users)
  ORDER BY u.id
    FOR UPDATE;
 
 WITH expired AS (
   UPDATE clover_lots SET remaining = 0
    WHERE remaining > 0 AND expires_at IS NOT NULL AND expires_at <= '{cutoff}'
+     AND user_id IN (SELECT user_id FROM expiring_users)
    RETURNING user_id, OLD.remaining AS burned
 ), by_user AS (
   SELECT user_id, sum(burned)::int AS total FROM expired GROUP BY user_id
@@ -72,9 +77,10 @@ COMMIT;
 def expire_clover_lots(url: str, *, cutoff: datetime) -> int:
     """`cutoff`(tz-aware)를 지난 로트를 소멸시키고, 영향받은 유저 수를 돌려준다.
 
-    카운트는 1단계(잠금) `SELECT`가 찍는 줄 수로 센다 — 2단계(`WITH...INSERT`)는
+    카운트는 1단계(잠금) `SELECT`가 찍는 줄 수로 센다 — 임시 테이블 생성과 2단계(`WITH...INSERT`)는
     top-level `RETURNING`이 없어 출력을 안 낸다(`-q`가 명령 태그도 지운다).
-    두 문장의 대상 유저 집합은 같은 `cutoff`로 같은 조건을 보므로 1단계 출력이 곧 그 수다.
+    2단계는 1단계가 잠근 유저로 묶여 있으므로 1단계 출력이 그 수의 상한이다. 임시 테이블을 만든 뒤 잠그기 전에 차감이
+    그 유저의 만료 로트를 다 써 버렸다면 잠긴 유저가 태울 것이 없어 한 명 많게 센다 — 보고용 숫자일 뿐이라 그대로 둔다.
 
     `purge_image_requests.py`와 같은 이유로 `-Atq`를 쓴다 — RETURNING 뒤 psql이 찍는 명령
     태그(`INSERT 0 n`)가 `-q` 없이는 결과 줄과 섞인다.

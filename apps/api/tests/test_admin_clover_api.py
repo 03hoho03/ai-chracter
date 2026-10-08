@@ -179,10 +179,10 @@ async def test_different_idempotency_keys_grant_twice_on_purpose(
 async def test_revoke_more_than_balance_returns_422_and_leaves_balance_untouched(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """`revoke`의 `guard=True`(`WHERE clover_balance >= -delta`)가 이 자리다. 오지급
-    회수가 이미 쓴 만큼을 빚으로 남기지 않는다.
+    """`revoke`의 무료 로트 합 판정이 이 자리다. 오지급 회수가 이미 쓴 만큼을 빚으로 남기지 않는다.
 
-    **빨개지는 조건**: `revoke`를 `guard=False`로 바꾸면 잔액이 -20이 되고 원장 행이 생긴다."""
+    **빨개지는 조건**: 무료 로트 합 판정과 총액 CAS(`guard=True`)를 둘 다 빼면 잔액이 -20이 되고 원장 행이 생긴다.
+    하나만 빼면 남은 쪽이 막는다."""
     user_id = await _seed_user(db_session, clover_balance=30)
     await _admin_login(db_client, db_session)
 
@@ -196,23 +196,17 @@ async def test_revoke_more_than_balance_returns_422_and_leaves_balance_untouched
     assert await _ledger_rows(db_session, user_id) == []
 
 
-async def test_revoke_rolls_back_the_balance_cas_when_lots_are_insufficient(
+async def test_revoke_returns_422_when_lots_are_insufficient_despite_the_balance(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """로트 없이 잔액만 있는 비정상 상태(Σ 불변식이 이미
-    깨진 상태, 예: 백필 누락)에서 회수하면 `CloverLotShortfallError`가 나고, 그 예외가
-    `admin/users.py`의 `db.begin_nested()` SAVEPOINT를 되감아 총액 CAS까지 롤백돼야 한다.
+    """로트 없이 잔액만 있는 비정상 상태(Σ 불변식이 이미 깨진 상태, 예: 백필 누락)에서도 회수는 422 다. 회수는 총액이
+    아니라 회수할 수 있는 무료 로트 합으로 판정하므로, 총액 CAS 를 통과한 뒤 로트가 모자라 500 이 나는 길이 없다.
+    구매 로트만 있는 사용자도 같은 갈래다.
 
     `_seed_user`(매칭 로트를 항상 만드는 헬퍼)를 일부러 쓰지 않는다 — 로트가 0행인 상태를
     직접 만들어야 하기 때문이다(`_make_user`는 DB를 안 건드리는 순수 팩토리라 로트가 안 생긴다).
 
-    🔴 **`user.id`를 요청 뒤에 다시 읽지 않는다** — `db.begin_nested()`가 예외로 되감기면
-    (`_seed_user`의 docstring과 같은 이유) 세션의 그 인스턴스가 만료 상태로 남아, 이후
-    `user.id` 접근 한 번이 지연 로드를 일으켜 `MissingGreenlet`으로 터진다(실측). 그래서
-    요청 **전에** `user_id`를 파이썬 값으로 미리 뽑아 둔다.
-
-    빨개지는 조건: SAVEPOINT 롤백이 안 되면 잔액만 30만큼 줄고 로트는 그대로라 Σ 불변식이
-    깨진 채로 커밋된다 — 이 테스트는 잔액이 회수 시도 **전과 같은 값**으로 남는지를 본다.
+    빨개지는 조건: 무료 로트 합 판정을 빼면 총액 CAS 가 통과하고 로트가 모자라 `CloverLotShortfallError` 가 난다.
     """
     user = _make_user(clover_balance=100)
     db_session.add(user)
@@ -220,16 +214,17 @@ async def test_revoke_rolls_back_the_balance_cas_when_lots_are_insufficient(
     user_id = user.id
     await _admin_login(db_client, db_session)
 
-    with pytest.raises(CloverLotShortfallError):
-        await db_client.post(
-            f"/admin/users/{user_id}/clover",
-            json={
-                "amount": -30,
-                "adminComment": "로트 없는 유저 회수",
-                "idempotencyKey": str(uuid.uuid4()),
-            },
-        )
+    resp = await db_client.post(
+        f"/admin/users/{user_id}/clover",
+        json={
+            "amount": -30,
+            "adminComment": "로트 없는 유저 회수",
+            "idempotencyKey": str(uuid.uuid4()),
+        },
+    )
 
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "amount exceeds the revocable balance"
     assert await _balance(db_session, user_id) == 100
     assert await _ledger_rows(db_session, user_id) == []
 
