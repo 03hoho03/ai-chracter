@@ -1,8 +1,8 @@
 """클로버의 HTTP 표면.
 
-`core/clover.py`가 잔액 판정과 원장을 갖고, 이 파일은 그 위의 `/me` 라우트 셋과 로그인 없이 읽는 공개 가격 안내
-(`router`, prefix `/clover`) 하나다. 공개 라우트에는 세션도 재동의 게이트도 붙이지 않는다 — 비로그인 방문자가 결제
-전에 상품을 볼 수 있어야 한다.
+`core/clover.py`가 잔액 판정과 원장을 갖고, 이 파일은 그 위의 `/me` 라우트들(`me_router`)과 로그인 없이 읽는
+공개 가격 안내(`router`, prefix `/clover`)다. 공개 라우트에는 세션도 재동의 게이트도 붙이지 않는다 — 비로그인
+방문자가 결제 전에 상품을 볼 수 있어야 한다.
 
 🔴 **`auth`의 `me_router`에 얹지 않는다** — 그러면 auth 패키지가 재화를 알게 된다. `/me`
 prefix를 실제로 가진 본보기는 `inquiry/router.py:22`·`chat/router.py:122`·`assets/router.py:46`
