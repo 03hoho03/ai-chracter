@@ -171,6 +171,19 @@ def test_room_static_refuses_records_that_disagree_or_duplicate_stat_names() -> 
         replay_logs.room_static(_logs([], []))
 
 
+def test_room_static_names_the_cause_when_old_and_new_records_are_mixed() -> None:
+    # 고정값 기록이 없는 옛 로그를 기준을 다시 잡아 이어 친 방 — 기록이 "없음/있음"으로 섞여 방 전체를 거부한다.
+    fixed = _static(contentVersionId=str(uuid.uuid4()), defaultUserName="나")
+    for records in ([_static(), fixed], [fixed, _static()]):
+        with pytest.raises(ReplayRefusedError, match="고정값이 있는 기록과 없는 기록이 섞였다"):
+            replay_logs.room_static(_logs([], records))
+    # 고정값끼리 다르면 섞였다고 하지 않는다.
+    other = _static(contentVersionId=str(uuid.uuid4()), defaultUserName="나")
+    with pytest.raises(ReplayRefusedError, match="기록마다 다르다") as refused:
+        replay_logs.room_static(_logs([], [fixed, other]))
+    assert "섞였다" not in str(refused.value)
+
+
 # ---- 치환 표 ----------------------------------------------------------------------------------
 
 
@@ -337,3 +350,13 @@ def test_swap_axis_loads_the_table_and_labels_it_with_the_arm(tmp_path: Path) ->
     table.write_text(json.dumps({"slots": [{"key": "a", "before": "x", "after": "y"}]}), encoding="utf-8")
     _, arm = parse_args([*_BASE, "--swap-table", str(table), "--arm", "W"])
     assert arm is not None and (arm.variant, arm.arm, arm.swap) == ("swap", "W", (SwapSlot("a", "x", "y"),))
+
+
+def test_window_set_and_room_take_only_ids_as_argument_errors() -> None:
+    args, _ = parse_args([*_BASE, "--window-set", str(ROOM)])
+    assert args.window_set == ROOM
+    room_at = _BASE.index("--room") + 1
+    for argv in ([*_BASE, "--window-set", "not-a-uuid"], [*_BASE[:room_at], "room-1", *_BASE[room_at + 1 :]]):
+        with pytest.raises(SystemExit) as exited:
+            parse_args(argv)
+        assert exited.value.code == 2

@@ -2,7 +2,8 @@
 
 - 현행(window) 갈래는 그 턴의 실제를 다시 만든다. 그래서 (레인, 그 턴에 생성한 모델)의 게시본 중 **턴 N 사용자 메시지
   시각보다 먼저 게시된 것 가운데 가장 최신**을 쓴다. 지금 활성 세트를 쓰면 측정 뒤 마이그레이션·어드민 게시가 새로
-  만든 세트로 조립하게 된다.
+  만든 세트로 조립하게 된다. 게시 시각이 턴보다 늦게 찍힌 세트는 이 규칙으로 고를 수 없어, 사용자가 id 로 지정할 수
+  있다(그 세트의 레인·모델이 그 턴과 같아야 한다).
 - 모델 축은 지금 바꿀 후보를 시험하는 것이라 그 모델의 **지금** 활성 세트를 쓴다(`load_active_prompt_set` 그대로).
 - 세트 축은 id 로 고른 게시본·초안, 또는 (레인, 모델)의 초안이다.
 
@@ -11,7 +12,7 @@
 """
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from sqlalchemy import select
@@ -65,6 +66,17 @@ async def window_set(db: AsyncSession, *, lane: PromptLane, model: ChatModelId, 
     if prompt_set is None:
         raise ReplayRefusedError(f"{before.isoformat()} 이전에 게시된 (레인 {lane}, 모델 {model}) 세트가 없다")
     return ChosenSet(prompt_set, await load_sections(db, prompt_set.id), "publishedBeforeTurn")
+
+
+async def window_set_by_id(db: AsyncSession, set_id: uuid.UUID, *, lane: PromptLane, model: ChatModelId) -> ChosenSet:
+    """사용자가 지정한 현행 갈래의 세트. 현행 갈래는 그 턴에 실제로 생성한 모델로 부르므로, 다른 모델의 세트면 덤프와
+    맞더라도 그때와 다른 조건이 되어 거부한다."""
+    chosen = await set_by_id(db, set_id, lane=lane)
+    if chosen.prompt_set.model != model:
+        raise ReplayRefusedError(
+            f"세트 {set_id} 는 모델 {chosen.prompt_set.model} 의 세트다(그 턴의 생성 모델은 {model})"
+        )
+    return replace(chosen, rule="window-set")
 
 
 async def active_set(db: AsyncSession, *, lane: PromptLane, model: ChatModelId) -> ChosenSet:

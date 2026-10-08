@@ -135,6 +135,12 @@ def room_static(logs: DriverLogs) -> RoomStatic:
             fixed.as_record() if fixed is not None else None,
         )
 
+    recorded = {RoomFixed.from_record(record) is not None for record in records}
+    if len(recorded) > 1:
+        raise ReplayRefusedError(
+            "roomStatic 에 방 고정값이 있는 기록과 없는 기록이 섞였다 — 고정값을 남기기 전의 옛 로그를 기준을 다시 잡아"
+            " 이어 친 방이라, 앞 턴들이 어느 조건으로 조립됐는지 가릴 수 없다. 리플레이할 측정은 새 방으로 한다"
+        )
     if any(key(record) != key(records[0]) for record in records):
         raise ReplayRefusedError("roomStatic 의 스탯·단축어·방 고정값이 기록마다 다르다")
     last = records[-1]

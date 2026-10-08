@@ -11,6 +11,8 @@
     ... --model sonnet --arm sonnet ...
     ... --version <content_version_id> --arm v7 ...
     ... --swap-table <표.json> --arm W ...
+    # 현행 갈래의 세트를 시각 규칙 대신 지정(축이 아니다 — 변형 갈래와 함께 줄 수 있다)
+    ... --window-set <세트 id> ...
     # 실제 호출(비용이 든다)
     ... --reps 2 --limit-calls 40 --limit-usd 5 --ledger '<run>/replay/**/*.jsonl' --execute
     # 같은 접두에 두 번째 변형 갈래부터는 현행을 다시 부르지 않는다(이미 부른 (턴, 반복, 갈래)가 있으면 거부한다)
@@ -24,14 +26,17 @@
 
 현행 갈래가 덤프와 프롬프트·지시문 둘 다 바이트까지 같아야 어느 갈래든 부른다. 모든 턴이 그 단언을 통과해야 호출을
 시작한다. 현행 갈래의 세트는 그 턴 사용자 메시지보다 먼저 게시된 것 중 가장 최신이라, 측정 뒤 게시된 세트 때문에 덤프가
-안 맞을 일은 없다. 그래도 안 맞으면 `--set <id>` 로 그 턴의 세트를 지정해 확인할 수 있다.
+안 맞을 일은 없다. 다만 게시 시각이 턴보다 늦게 찍힌 세트(원본 게시 직후 복사한 마이그레이션 등)는 고르지 못해 그 턴이
+거부되거나 덤프와 안 맞는다. 그때는 `--window-set <세트 id>` 로 현행 갈래의 세트를 지정한다 — 그 세트의 레인·모델이 그
+턴의 생성 모델과 다르면 거부하고, plan 의 `setRule` 이 `window-set` 이 된다. `--set` 은 변형 갈래의 세트만 바꾼다.
 
 출력: `<접두>.window.jsonl` 에 현행 갈래, `<접두>.<갈래 이름>.jsonl` 에 변형 갈래의 plan·call 기록을 붙여 쓴다(쌍 판정이
 갈래별 파일을 읽는다). 이번에 부를 갈래 파일에 같은 (턴, 반복, 갈래) 호출이 이미 있으면 부르지 않고 종료 2 다. `--execute`
 없으면 호출하지 않고, 호출 수는 `--limit-calls` 하드 상한을, 실제 원가 누적(`--ledger` 의 앞 묶음 포함, 원가를 모르는
 호출은 그 모델의 상한 추정)은 `--limit-usd` 를 넘지 않는다(원가 상한은 마지막 한 호출만큼 넘을 수 있다).
 
-종료 코드: 0 정상 · 1 방·파일 없음 · 2 단언 실패·거부된 턴·이미 부른 호출(호출 0), 인자 오류도 argparse 가 2 · 3 장부가 이미 원가 상한 이상.
+종료 코드: 0 정상 · 1 입력 파일 없음 · 2 단언 실패·거부된 턴(방이 없는 것도 거부다)·이미 부른 호출(호출 0), 인자 오류
+(`--room`·`--window-set` 이 UUID 가 아닌 것 포함)도 argparse 가 2 · 3 장부가 이미 원가 상한 이상.
 """
 
 import argparse
@@ -63,11 +68,16 @@ _ARM_NAME = re.compile(r"[\w.-]+")
 
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description="측정한 방의 지난 턴을 같은 입력으로 다시 생성한다")
-    ap.add_argument("--room", required=True)
+    ap.add_argument("--room", type=uuid.UUID, required=True)
     ap.add_argument("--turn", type=int, action="append", required=True, help="턴 번호(서버 턴 수 +1, 여럿 가능)")
     ap.add_argument("--dump", required=True, help="서버 프롬프트 덤프(PROMPT_DUMP_PATH)")
     ap.add_argument("--log", required=True, help="드라이버 --log")
     ap.add_argument("--snapshot-log", required=True, help="드라이버 --snapshot-log")
+    ap.add_argument(
+        "--window-set",
+        type=uuid.UUID,
+        help="현행 갈래의 세트 id — 시각 규칙(턴 이전 게시 최신) 대신 쓴다. 레인·모델이 그 턴과 같아야 한다",
+    )
     ap.add_argument("--set", help="세트 축: 세트 id 또는 draft((레인, 모델)의 초안)")
     ap.add_argument("--model", choices=list(get_args(ChatModelId)), help="모델 축(그 모델의 지금 활성 세트)")
     ap.add_argument("--version", help="작품 버전 축: 같은 작품의 content_version_id")
@@ -163,7 +173,7 @@ async def run(
 ) -> int:
     """CLI 본체. 세션은 부른 쪽이 연 것을 받고 그 세션에 commit·rollback 을 하지 않는다. LLM 클라이언트는 실제로 부를 때만
     만든다 — 시험 실행에서는 만들지도 않는다."""
-    room_id = uuid.UUID(args.room)
+    room_id: uuid.UUID = args.room
     for name in ("dump", "log", "snapshot_log"):
         if not Path(getattr(args, name)).is_file():  # noqa: ASYNC240 — 한 번 쓰는 CLI
             print(f"파일이 없다: --{name.replace('_', '-')} {getattr(args, name)}")
@@ -194,7 +204,15 @@ async def run(
     failed: list[int] = []
     for turn in args.turn:
         try:
-            assembly = await assemble_turn(db, room_id=room_id, turn=turn, logs=logs, dump=Path(args.dump), arm=arm)
+            assembly = await assemble_turn(
+                db,
+                room_id=room_id,
+                turn=turn,
+                logs=logs,
+                dump=Path(args.dump),
+                arm=arm,
+                window_set_id=args.window_set,
+            )
         except ReplayRefusedError as refused:
             sink(
                 {"kind": "plan", "roomId": str(room_id), "turn": turn, "execute": args.execute, "refused": str(refused)}

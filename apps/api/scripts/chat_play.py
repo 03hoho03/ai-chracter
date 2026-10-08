@@ -41,7 +41,7 @@
 종료 코드: 0 정상(생성 오류·정책 경고로 유실된 턴 포함 — 출력에 이유가 나간다) · 1 그 밖의 HTTP 오류·턴 도중 연결
 오류(턴 줄은 남고 다음 실행이 조회로 기준을 다시 잡는다) · 2 인증(401 재로그인 실패·403·자격 파일 거부·로그인 429·
 상한 창 안 두 번째 로그인)·운영 DB·드라이버 DB 와 서버 불일치·스토리가 아닌 작품·방 고정값 기록이 없는 옛 로그
-(`--rebase` 로 다시 기록), 인자 오류도 argparse 가 2 · 3 엔딩 도달 · 4 앱 버스트 429(같은 명령을 다시 실행하면
+(`--rebase` 로 다시 기록하면 이어 칠 수는 있지만 그 방은 리플레이할 수 없게 된다), 인자 오류도 argparse 가 2 · 3 엔딩 도달 · 4 앱 버스트 429(같은 명령을 다시 실행하면
 retryAfterSeconds 만큼 기다린다) · 5 Gemini 한도(`--server-log` 를 줬을 때, 그 로그에 이 방의 429) · 6 턴 진행 중
 409 · 7 클로버 429 · 8 누적값과 조회값 불일치 · 9 노트가 길이 상한을 넘음 · 10 일시 정지(정지 파일 · `--pause-at`).
 """
@@ -726,7 +726,7 @@ def rebase(
     session: Session, read_db: DbRoomReader, log: Path, snapshot_log: Path, room_id: str, reason: str
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """전체 조회로 누적 기준을 다시 잡는다. 방 고정값도 다시 읽어 남긴다 — 사람 구간에 화면에서 프로필이나 모델을
-    바꿨다면 그 뒤 턴의 리플레이 대조가 이 기록을 본다."""
+    바꿨다면 이 기록이 앞 기록과 달라지고, 리플레이는 어느 턴에 어느 값이 걸렸는지 가릴 수 없어 그 방 전체를 거부한다."""
     room = fetch_room(session, room_id)
     _require_story(room.get("contentType"))
     db = check_same_database(room, read_db(room_id))
@@ -761,7 +761,11 @@ def play_turn(
     static = last_static(snapshot_log, room_id)
     if static is not None and RoomFixed.from_record(static) is None:
         # 방 고정값을 기록하기 전의 옛 로그다. 이어 치면 이름 치환에 쓸 `{{user}}` 이름도, 리플레이가 대조할 값도 없다.
-        raise DriverExitError(2, "이 방의 고정값 기록이 없다 — --rebase 를 먼저 실행해 다시 기록한 뒤 이어 친다")
+        raise DriverExitError(
+            2,
+            "이 방의 고정값 기록이 없다 — --rebase 로 다시 기록하면 이어 칠 수는 있지만, 고정값이 없는 기록과 섞여 그 방은"
+            " 리플레이할 수 없게 된다. 리플레이할 측정은 새 방으로 한다",
+        )
 
     session: Session = session_factory()
     if state.after is None or state.lost_turn or static is None:

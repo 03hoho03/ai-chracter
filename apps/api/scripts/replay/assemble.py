@@ -51,7 +51,7 @@ from replay.logs import (
     room_static,
     sha256,
 )
-from replay.prompt_sets import ChosenSet, active_set, draft_set, set_by_id, window_set
+from replay.prompt_sets import ChosenSet, active_set, draft_set, set_by_id, window_set, window_set_by_id
 from replay.room_fixed import diff_fixed, load_room_fixed
 from replay.state import RestoredTurn, find_shortcut, restore_turn, stats_for_setup
 from replay.swap import SwapSlot, check_swap, first_difference, replace_in_value
@@ -390,17 +390,18 @@ async def assemble_turn(
     logs: DriverLogs,
     dump: Path,
     arm: ArmSpec | None = None,
+    window_set_id: uuid.UUID | None = None,
 ) -> TurnAssembly:
     """턴 하나의 현행 갈래(그리고 현행이 덤프와 같으면 변형 갈래 `arm`)를 조립한다. 받은 세션에는 아무것도 남기지 않는다
     (저장점만 되돌린다). 되살린 상태를 믿을 수 없으면 `ReplayRefusedError`, 현행이 덤프와 다르면 `passed` 가 거짓인 결과를
-    돌려준다."""
+    돌려준다. `window_set_id` 를 주면 현행 갈래의 세트를 시각 규칙 대신 그 세트로 한다."""
     dumped, dump_count = dump_record(dump, room_id, turn)
     static = room_static(logs)
     savepoint = await db.begin_nested()
     try:
         # 읽기 전용은 이 저장점 안에서만 걸린다 — 저장점을 되돌리면 바깥 트랜잭션은 다시 쓸 수 있다.
         await db.execute(sql_text("SET TRANSACTION READ ONLY"))
-        return await _assemble_turn(db, room_id, turn, logs, static, dumped, dump_count, arm)
+        return await _assemble_turn(db, room_id, turn, logs, static, dumped, dump_count, arm, window_set_id)
     finally:
         await savepoint.rollback()
 
@@ -414,6 +415,7 @@ async def _assemble_turn(
     dumped: dict[str, Any],
     dump_count: int,
     arm: ArmSpec | None,
+    window_set_id: uuid.UUID | None,
 ) -> TurnAssembly:
     stored = await db.scalar(select(ChatRoom).where(ChatRoom.id == room_id))
     if stored is None:
@@ -442,7 +444,10 @@ async def _assemble_turn(
         else None
     )
     window_model, model_source = await _window_model(db, room, dumped, static.effective_chat_model)
-    chosen = await window_set(db, lane=LANE, model=window_model, before=restored.user_message.created_at)
+    if window_set_id is None:
+        chosen = await window_set(db, lane=LANE, model=window_model, before=restored.user_message.created_at)
+    else:
+        chosen = await window_set_by_id(db, window_set_id, lane=LANE, model=window_model)
     ctx = _Context(
         room=room,
         setup=setup,

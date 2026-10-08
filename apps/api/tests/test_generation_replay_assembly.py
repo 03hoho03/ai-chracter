@@ -8,12 +8,10 @@
 
 import json
 import uuid
-from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -35,13 +33,16 @@ from api.db.models.content import ContentVersion
 from api.db.models.persona import UserPersona
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import EndingRuleOperator, Shortcut, SituationNote
-from api.llm import bedrock as bedrock_module
-from api.llm import gemini as gemini_module
-from api.llm.bedrock import BedrockLLMClient
-from api.llm.gemini import GeminiLLMClient
 from api.llm.pricing import estimate_cost_usd
-from api.llm.routing import RoutingLLMClient
-from factories import Room, _add_situation_note, _make_default_persona, _make_user, _open_room, _story_with_setup
+from factories import (
+    Room,
+    _add_situation_note,
+    _FakeProviderSdks,
+    _make_default_persona,
+    _make_user,
+    _open_room,
+    _story_with_setup,
+)
 from replay.assemble import ArmSpec, assemble_turn
 from replay.budget import ledger_paths, sum_ledger
 from replay.logs import ReplayRefusedError, load_driver_logs, sha256
@@ -478,6 +479,51 @@ async def test_set_axis_takes_a_draft_or_a_set_by_id_with_that_sets_model(
         )
 
 
+async def test_window_set_argument_assembles_a_turn_the_time_rule_refuses(
+    db_session: AsyncSession, scenario: Scenario, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 세트 게시 시각이 모두 턴보다 늦게 찍힌 경우(원본 게시 직후 복사한 마이그레이션) — 시각 규칙으로는 고를 세트가 없다.
+    await db_session.execute(
+        sa.update(PromptSet)
+        .where(PromptSet.status == "published", PromptSet.lane == "story", PromptSet.model == "gemini")
+        .values(published_at=datetime.now(UTC))
+    )
+    await db_session.commit()
+    with pytest.raises(ReplayRefusedError, match="이전에 게시된"):
+        await _assemble(db_session, scenario, 4)
+    logs = load_driver_logs(scenario.log, scenario.snapshot_log, scenario.room.room_id)
+    assembly = await assemble_turn(
+        db_session,
+        room_id=scenario.room.room_id,
+        turn=4,
+        logs=logs,
+        dump=scenario.dump,
+        window_set_id=scenario.measured_set_id,
+    )
+    assert assembly.window_identical and assembly.passed, assembly.checks
+    chosen = assembly.inputs[0].chosen_set
+    assert (chosen["setId"], chosen["setRule"]) == (str(scenario.measured_set_id), "window-set")
+    # CLI 로도 같다 — 지정한 세트가 plan 기록에 남는다.
+    fake = _FakeProviderSdks(monkeypatch)
+    argv = _args(scenario, tmp_path, "--window-set", str(scenario.measured_set_id), "--limit-calls", "0")
+    assert await _run(db_session, argv, fake) == 0
+    (plan,) = _records(tmp_path / "out" / "gen.window.jsonl")
+    assert plan["passed"] and plan["arms"][0]["setRule"] == "window-set"
+
+
+async def test_window_set_argument_refuses_a_set_of_another_model_or_lane(
+    db_session: AsyncSession, scenario: Scenario
+) -> None:
+    logs = load_driver_logs(scenario.log, scenario.snapshot_log, scenario.room.room_id)
+    sonnet, _ = await load_active_prompt_set(db_session, lane="story", model="sonnet")
+    character, _ = await load_active_prompt_set(db_session, lane="character", model="gemini")
+    for set_id, refusal in ((sonnet.id, "모델 sonnet"), (character.id, "레인 character")):
+        with pytest.raises(ReplayRefusedError, match=refusal):
+            await assemble_turn(
+                db_session, room_id=scenario.room.room_id, turn=4, logs=logs, dump=scenario.dump, window_set_id=set_id
+            )
+
+
 async def _clone_version(db_session: AsyncSession, scenario: Scenario, setting_text: str) -> uuid.UUID:
     """방 작품의 새 버전 — 상세·시작 설정·스탯·상황 노트·단축어를 entity_id 그대로 옮기고 세계관 글만 바꾼다."""
     room = await db_session.get(ChatRoom, scenario.room.room_id)
@@ -582,84 +628,7 @@ def _records(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
 
-class _Fake:
-    """두 공급자 SDK 경계(Gemini `aio.models.generate_content_stream`, Bedrock `messages.create`)만 가짜로 둔 라우팅
-    클라이언트. 실제로 보낸 요청 인자를 모은다."""
-
-    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        self.gemini_sent: list[dict[str, Any]] = []
-        self.bedrock_sent: list[dict[str, Any]] = []
-        self.built = 0
-        self.recorded: list[tuple[str, str]] = []
-        # 주면 Bedrock 호출이 사용량 기록 없이 이 예외로 끝난다(정책 거절·연결 오류처럼).
-        self.bedrock_error: Exception | None = None
-
-        async def record_usage(call_site: str, model: str, usage_metadata: object | None) -> None:
-            self.recorded.append((call_site, model))
-
-        # 사용량 기록의 원래 자리(Redis)는 쓰지 않는다 — 리플레이는 이 이름을 감싸 보낸 값을 잡는다.
-        monkeypatch.setattr(gemini_module, "record_usage", record_usage)
-        monkeypatch.setattr(bedrock_module, "record_usage", record_usage)
-        self.gemini = GeminiLLMClient(api_key="test-key")
-        monkeypatch.setattr(
-            self.gemini,
-            "_client",
-            SimpleNamespace(aio=SimpleNamespace(models=SimpleNamespace(generate_content_stream=self._gemini_stream))),
-        )
-        self.bedrock = BedrockLLMClient()
-        monkeypatch.setattr(
-            self.bedrock, "_client", SimpleNamespace(messages=SimpleNamespace(create=self._bedrock_create))
-        )
-
-    async def _gemini_stream(self, **kwargs: Any) -> AsyncIterator[SimpleNamespace]:
-        self.gemini_sent.append(kwargs)
-
-        async def chunks() -> AsyncIterator[SimpleNamespace]:
-            yield SimpleNamespace(text="제미나이 ", candidates=[], usage_metadata=None, prompt_feedback=None)
-            yield SimpleNamespace(
-                text="응답",
-                candidates=[SimpleNamespace(finish_reason="STOP")],
-                usage_metadata=SimpleNamespace(
-                    prompt_token_count=100,
-                    cached_content_token_count=10,
-                    candidates_token_count=7,
-                    thoughts_token_count=3,
-                    total_token_count=110,
-                ),
-                prompt_feedback=None,
-            )
-
-        return chunks()
-
-    async def _bedrock_create(self, **kwargs: Any) -> AsyncIterator[SimpleNamespace]:
-        self.bedrock_sent.append(kwargs)
-        if self.bedrock_error is not None:
-            raise self.bedrock_error
-
-        async def stream() -> AsyncIterator[SimpleNamespace]:
-            usage = SimpleNamespace(
-                input_tokens=50, cache_read_input_tokens=20, cache_creation_input_tokens=30, output_tokens=0
-            )
-            yield SimpleNamespace(type="message_start", message=SimpleNamespace(usage=usage))
-            yield SimpleNamespace(
-                type="content_block_delta", delta=SimpleNamespace(type="text_delta", text="클로드 응답")
-            )
-            yield SimpleNamespace(
-                type="message_delta",
-                delta=SimpleNamespace(stop_reason="end_turn"),
-                usage=SimpleNamespace(
-                    output_tokens=9, input_tokens=None, cache_read_input_tokens=None, cache_creation_input_tokens=None
-                ),
-            )
-
-        return stream()
-
-    def client(self) -> RoutingLLMClient:
-        self.built += 1
-        return RoutingLLMClient(self.gemini, bedrock_factory=lambda: self.bedrock)
-
-
-async def _run(db_session: AsyncSession, argv: list[str], fake: _Fake) -> int:
+async def _run(db_session: AsyncSession, argv: list[str], fake: _FakeProviderSdks) -> int:
     args, arm = generation_replay.parse_args(argv)
     return await generation_replay.run(args, arm, db_session, client_factory=fake.client)
 
@@ -667,7 +636,7 @@ async def _run(db_session: AsyncSession, argv: list[str], fake: _Fake) -> int:
 async def test_execute_records_calls_through_gemini_and_bedrock_with_the_replay_label(
     db_session: AsyncSession, scenario: Scenario, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    fake = _Fake(monkeypatch)
+    fake = _FakeProviderSdks(monkeypatch)
     argv = _args(scenario, tmp_path, "--model", "sonnet", "--arm", "sonnet", "--limit-calls", "10", "--execute")
     assert await _run(db_session, argv, fake) == 0
     window_file, arm_file = tmp_path / "out" / "gen.window.jsonl", tmp_path / "out" / "gen.sonnet.jsonl"
@@ -756,7 +725,7 @@ async def test_stop_sequence_comes_from_each_arms_set_label(
         sa.update(PromptSet).where(PromptSet.id == scenario.later_set_id).values(user_label="다른라벨")
     )
     await db_session.commit()
-    fake = _Fake(monkeypatch)
+    fake = _FakeProviderSdks(monkeypatch)
     argv = _args(
         scenario,
         tmp_path,
@@ -780,7 +749,7 @@ async def test_dump_mismatch_refuses_every_arm_and_makes_no_calls(
     records = _records(scenario.dump)
     records[3]["prompt"] += " "  # 턴 4
     scenario.dump.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records), encoding="utf-8")
-    fake = _Fake(monkeypatch)
+    fake = _FakeProviderSdks(monkeypatch)
     argv = _args(
         scenario, tmp_path, "--model", "sonnet", "--arm", "sonnet", "--limit-calls", "10", "--execute", turns=(3, 4)
     )
@@ -805,7 +774,7 @@ async def test_dump_mismatch_refuses_every_arm_and_makes_no_calls(
 async def test_dry_run_builds_no_client_and_refused_turns_are_written(
     db_session: AsyncSession, scenario: Scenario, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    fake = _Fake(monkeypatch)
+    fake = _FakeProviderSdks(monkeypatch)
     assert await _run(db_session, _args(scenario, tmp_path, "--limit-calls", "10", turns=(1, 6)), fake) == 0
     assert fake.built == 0
     assert await _run(db_session, _args(scenario, tmp_path, "--limit-calls", "10", "--execute", turns=(7,)), fake) == 2
@@ -817,7 +786,7 @@ async def test_dry_run_builds_no_client_and_refused_turns_are_written(
 async def test_call_limit_and_cost_limit_stop_the_calls(
     db_session: AsyncSession, scenario: Scenario, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    fake = _Fake(monkeypatch)
+    fake = _FakeProviderSdks(monkeypatch)
     argv = _args(scenario, tmp_path, "--model", "sonnet", "--arm", "s", "--limit-calls", "3", "--execute")
     assert await _run(db_session, argv, fake) == 0
     window = _records(tmp_path / "out" / "gen.window.jsonl")
@@ -828,7 +797,7 @@ async def test_call_limit_and_cost_limit_stop_the_calls(
     assert window[-1]["used"] == 3
 
     first_cost = next(c for c in calls if c["arm"] == "window")["costUsd"]
-    fake = _Fake(monkeypatch)
+    fake = _FakeProviderSdks(monkeypatch)
     out = tmp_path / "usd"
     argv = _args(scenario, out, "--limit-calls", "10", "--limit-usd", str(first_cost / 2), "--execute")
     assert await _run(db_session, argv, fake) == 0
@@ -842,7 +811,7 @@ async def test_a_ledger_already_over_the_cost_limit_ends_without_calls(
     ledger = tmp_path / "ledger" / "old.jsonl"
     ledger.parent.mkdir()
     ledger.write_text(json.dumps({"kind": "call", "costUsd": 0.5}) + "\n", encoding="utf-8")
-    fake = _Fake(monkeypatch)
+    fake = _FakeProviderSdks(monkeypatch)
     argv = _args(
         scenario,
         tmp_path,
@@ -867,7 +836,7 @@ def test_a_database_outside_this_machine_is_refused_before_anything_else(monkeyp
 async def test_a_claude_call_without_usage_is_charged_at_its_models_ceiling_and_stops_the_cost_limit(
     db_session: AsyncSession, scenario: Scenario, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    fake = _Fake(monkeypatch)
+    fake = _FakeProviderSdks(monkeypatch)
     fake.bedrock_error = RuntimeError("정책 거절")
     argv = _args(
         scenario,
@@ -910,7 +879,7 @@ async def test_a_claude_call_without_usage_is_charged_at_its_models_ceiling_and_
 async def test_running_the_same_turns_and_arm_again_into_the_same_output_is_refused(
     db_session: AsyncSession, scenario: Scenario, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    fake = _Fake(monkeypatch)
+    fake = _FakeProviderSdks(monkeypatch)
     argv = _args(scenario, tmp_path, "--reps", "1", "--limit-calls", "10", "--execute")
     assert await _run(db_session, argv, fake) == 0
     before = (tmp_path / "out" / "gen.window.jsonl").read_text(encoding="utf-8")
@@ -963,7 +932,7 @@ async def test_a_missing_active_set_refuses_the_turn_without_calls(
         sa.update(PromptSet).where(PromptSet.lane == "story", PromptSet.model == "opus").values(lane="legacy")
     )
     await db_session.commit()
-    fake = _Fake(monkeypatch)
+    fake = _FakeProviderSdks(monkeypatch)
     argv = _args(scenario, tmp_path, "--model", "opus", "--arm", "opus", "--limit-calls", "10", "--execute")
     assert await _run(db_session, argv, fake) == 2
     assert fake.built == 0
