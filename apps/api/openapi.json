@@ -20282,6 +20282,21 @@
           "paidCloverBalance": {
             "type": "integer",
             "title": "Paidcloverbalance"
+          },
+          "purchaseBlockReason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "identity_required",
+                  "age_restricted"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchaseblockreason"
           }
         },
         "type": "object",
@@ -20300,7 +20315,8 @@
           "identityGateEnabled",
           "identityGated",
           "dailyFreeChatTurns",
-          "paidCloverBalance"
+          "paidCloverBalance",
+          "purchaseBlockReason"
         ],
         "title": "MeResponse"
       },

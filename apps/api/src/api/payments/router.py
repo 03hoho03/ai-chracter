@@ -13,7 +13,7 @@ from portone_server_sdk import webhook
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.auth.age import is_under_payment_minimum_age
+from api.payments.eligibility import purchase_block_reason
 from api.clover import products
 from api.core.config import settings
 from api.core.identity_gate import identity_verification_required
@@ -67,9 +67,11 @@ async def create_payment(
     user = await db.get(User, user_id)
     if user is None or user.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-    if user.identity_verified_at is None:
+    # 허브가 `GET /me` 로 미리 보는 판정과 같은 함수다.
+    block_reason = purchase_block_reason(user)
+    if block_reason == "identity_required":
         raise identity_verification_required()
-    if user.birth_date is None or is_under_payment_minimum_age(user.birth_date, datetime.now(UTC).date()):
+    if block_reason == "age_restricted":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"code": "PAYMENT_AGE_RESTRICTED"})
 
     # 상품은 요청 시점에 모듈 속성으로 읽는다(테스트의 monkeypatch 가 통하게).

@@ -2,11 +2,26 @@ import { describe, expect, it } from "vitest";
 
 import { ApiErrorObject } from "@/shared/api/client";
 
-import { toCreatePaymentFailure } from "./purchaseResult";
+import { toCreatePaymentFailure, toPurchaseResult } from "./purchaseResult";
 
 function apiError(status: number, code: string) {
   return new ApiErrorObject({ status, message: "x", detail: { code } });
 }
+
+describe("toPurchaseResult", () => {
+  it.each([
+    ["paid", "paid"],
+    ["pending", "checking"],
+    // 결제사 실패는 돈이 나가지 않았다 — 문의 안내가 아니라 "완료되지 않았어요"다.
+    ["failed", "notCompleted"],
+    ["mismatch", "problem"],
+    ["owner_withdrawn", "problem"],
+    ["cancelled", "problem"],
+    ["partially_cancelled", "problem"],
+  ] as const)("%s → %s", (status, expected) => {
+    expect(toPurchaseResult(status)).toBe(expected);
+  });
+});
 
 describe("toCreatePaymentFailure", () => {
   it.each([

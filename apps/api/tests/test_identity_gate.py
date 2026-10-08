@@ -11,7 +11,7 @@
 
 import uuid
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import httpx
 import pytest
@@ -416,6 +416,32 @@ async def test_me_daily_free_chat_turns_is_the_gate_constant(
     await _login_as(db_client, user.id)
 
     assert (await db_client.get("/me")).json()["dailyFreeChatTurns"] == 7
+
+
+@pytest.mark.parametrize(
+    ("verified", "age", "expected"),
+    [
+        pytest.param(False, 30, "identity_required", id="unverified"),
+        pytest.param(True, 18, "age_restricted", id="verified-eighteen"),
+        pytest.param(True, 19, None, id="verified-nineteen"),
+    ],
+)
+async def test_me_purchase_block_reason_matches_order_creation(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    verified: bool,
+    age: int,
+    expected: str | None,
+) -> None:
+    """허브가 다이얼로그를 열기 전에 보는 구매 가능 여부 — 주문 생성과 같은 판정이다(인증 먼저, 그다음 만 19세). 게이트
+    스위치와 무관하다(꺼진 채로 본다). 1월 1일생이라 올해 생일이 이미 지났다."""
+    _set_gate(monkeypatch, False)
+    born = date(datetime.now(UTC).date().year - age, 1, 1)
+    user = await _member(db_session, birth_date=born, **(_verified() if verified else {}))
+    await _login_as(db_client, user.id)
+
+    assert (await db_client.get("/me")).json()["purchaseBlockReason"] == expected
 
 
 # ── 미션 ─────────────────────────────────────────────────────────────────

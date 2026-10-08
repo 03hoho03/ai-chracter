@@ -8,7 +8,8 @@ import type { CompletePaymentStatus } from "../api/useCompletePaymentMutation";
  * - `checking` — 결제사가 아직 확정하지 않았거나 확인 요청이 실패했다. 돈이 나갔을 수 있으므로 실패라고 말하지 않는다 —
  *   웹훅이 같은 결제를 맞춰 지급하면 잔액에 보인다.
  * - `problem` — 서버가 지급하지 않기로 했다(금액 불일치 등). 이용자가 할 수 있는 일은 문의뿐이다.
- * - `notCompleted` — 결제창이 실패 코드로 닫혔다(취소 포함). 오류가 아니다.
+ * - `notCompleted` — 결제창이 실패 코드로 닫혔거나(취소 포함) 결제사가 결제를 실패로 확정했다. 돈이 나가지 않았으므로
+ *   오류도 문의 안내도 아니다.
  * - `redirecting` — 결제창이 페이지를 떠난다. 돌아오면 리다이렉트 처리가 이어받는다.
  * - `ageRestricted`·`identityRequired`·`reconsentRequired`·`unavailable` — 주문을 만들기 전에 서버가 막았다.
  * - `failed` — 주문이나 결제창 요청이 실패했다.
@@ -32,7 +33,9 @@ export function toPurchaseResult(status: CompletePaymentStatus): PurchaseResult 
       return "paid";
     case "pending":
       return "checking";
+    // 결제사 실패 — 돈이 나가지 않았다. "확인하지 못했어요 · 문의"는 돈이 나갔는데 지급하지 않은 경우의 문장이다.
     case "failed":
+      return "notCompleted";
     case "mismatch":
     case "owner_withdrawn":
     case "cancelled":

@@ -88,6 +88,7 @@ from api.legal.dependencies import _latest_published_legal_version, _reconsent_r
 from api.llm.model_access import has_chat_premium_access, has_novel_premium_access
 from api.novelize.access import has_novelize_access
 from api.payments.config import identity_gate_active
+from api.payments.eligibility import purchase_block_reason
 from api.session.cookies import clear_session_cookie, get_session_id_from_request, set_session_cookie
 from api.session.dependencies import get_current_user_id
 from api.session.store import create_session, delete_session, revoke_user_sessions
@@ -918,6 +919,7 @@ async def get_me(
         # 모듈 속성으로 호출 시점에 읽는다(테스트의 `monkeypatch.setattr` 가 통하게 — 게이트 함수와 같은 관례).
         daily_free_chat_turns=rate_limit_gate.CHAT_DAILY_LIMIT,
         paid_clover_balance=await clover.paid_balance(db, user_id=user.id),
+        purchase_block_reason=purchase_block_reason(user),
     )
 
 

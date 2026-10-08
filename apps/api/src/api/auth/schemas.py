@@ -7,6 +7,7 @@ from api.auth.age import is_under_minimum_age
 from api.auth.oauth_common import OAuthProvider
 from api.core.schema import CamelModel
 from api.db.models.feature_grant import FeatureName
+from api.payments.eligibility import PurchaseBlockReason
 
 
 class SignupRequest(CamelModel):
@@ -136,3 +137,6 @@ class MeResponse(CamelModel):
     # 구매로 받은 클로버의 남은 양(`/me/clover` 의 `paidBalance` 와 같은 함수). 재동의 게이트 밖인 이 응답에 둬야 재동의
     # 모달 안의 탈퇴 확인도 환불 경고를 띄울 수 있다(`/me/clover` 는 재동의 전까지 403 이다).
     paid_clover_balance: int
+    # 지금 클로버를 살 수 없는 이유(살 수 있으면 null). 주문 생성과 같은 판정 함수라, 허브가 구매 다이얼로그를 열기 전에
+    # 나이 제한을 알린다. 결제 스위치는 여기 없다(가격 응답의 `paymentsEnabled`).
+    purchase_block_reason: PurchaseBlockReason | None

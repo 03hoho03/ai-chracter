@@ -22,9 +22,11 @@ import { PurchaseConfirmDialog, usePaymentRedirect } from "@/features/purchase-c
 import { SUPPORT_DESTINATIONS } from "@/shared/config/supportDestinations";
 
 import type { CloverHubSearch } from "../model/cloverHubSearch";
+import { getPurchaseSection } from "../model/purchaseSection";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 const IDENTITY_REQUIRED_MESSAGE = "본인인증을 하면 받을 수 있어요.";
+const AGE_RESTRICTED_MESSAGE = "클로버는 만 19세 이상만 구매할 수 있어요.";
 
 /** 출석·미션 수령 실패 토스트. 본인인증 403 은 실패가 아니라 "아직 받을 수 없다"라 오류 토스트가 아니고, 세션은 전역
  * 뮤테이션 처리가 다시 읽어 이 화면이 본인인증 안내로 바뀐다. */
@@ -147,12 +149,16 @@ function PurchaseBody() {
   }
 
   const { products, payMethods, paymentsEnabled } = pricingQuery.data;
-  if (!paymentsEnabled) {
+  const section = getPurchaseSection(paymentsEnabled, me);
+  if (section === "disabled") {
     return <p className="text-sm break-keep text-muted-foreground">클로버 결제는 아직 준비 중이에요.</p>;
   }
-  // 결제는 게이트 스위치와 무관하게 본인인증(만 19세 확인)을 건다 — 게이트 판정이 아니라 인증 여부를 본다.
-  if (!me?.identityVerified) {
+  if (section === "identityRequired" || !me) {
     return <IdentityRequiredNotice reason="purchase" />;
+  }
+  // 잘못한 것이 없으므로 경고 틴트가 아니라 중립 문장이다. 상품 카드는 눌러도 살 수 없어 두지 않는다.
+  if (section === "ageRestricted") {
+    return <p className="text-sm break-keep text-muted-foreground">{AGE_RESTRICTED_MESSAGE}</p>;
   }
 
   return (

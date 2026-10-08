@@ -8180,6 +8180,8 @@ export interface components {
             dailyFreeChatTurns: number;
             /** Paidcloverbalance */
             paidCloverBalance: number;
+            /** Purchaseblockreason */
+            purchaseBlockReason: ("identity_required" | "age_restricted") | null;
         };
         /** MediaBookAxisInput */
         MediaBookAxisInput: {

@@ -12,11 +12,11 @@ import {
 } from "@ai-character-chat/ui/components/alert-dialog";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 
 import { sessionKeys, useSessionQuery } from "@/entities/session";
-import { SUPPORT_DESTINATIONS } from "@/shared/config/supportDestinations";
+import { CONTACT_EMAIL } from "@/shared/config/site";
 
 import { useWithdrawAccountMutation } from "../api/useWithdrawAccountMutation";
 import { getPaidBalanceWarning, type PaidBalanceWarning } from "../model/paidBalanceWarning";
@@ -108,7 +108,11 @@ export function WithdrawAccountDialog({ label = "회원탈퇴" }: WithdrawAccoun
   );
 }
 
-/** 남은 유료 클로버 경고. 수를 알면 수로, 모르면(세션을 못 읽었다) 숫자 없이 같은 행동을 안내한다. */
+/** 남은 유료 클로버 경고. 수를 알면 수로, 모르면(세션을 못 읽었다) 숫자 없이 같은 행동을 안내한다.
+ *
+ * 환불 신청 창구는 문의 화면이 아니라 이메일이다. 이 다이얼로그는 재동의 모달 안에서도 열리는데, 그 모달은 닫을 수
+ * 없고 앱 위에 남아 있어 문의 화면으로 이동해도 그 화면을 가린다. 메일 주소는 모달과
+ * 무관하게 쓸 수 있고 환불정책이 정한 신청 창구이기도 하다. 주소를 글자로 보여 메일 앱이 없어도 옮겨 적을 수 있다. */
 function PaidBalanceWarningMessage({ warning }: { warning: PaidBalanceWarning }) {
   if (warning.kind === "none") return null;
   const lead =
@@ -118,13 +122,13 @@ function PaidBalanceWarningMessage({ warning }: { warning: PaidBalanceWarning })
   return (
     <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm break-keep text-destructive-text">
       {lead} 환불은 탈퇴하기 전에{" "}
-      <Link
-        to={SUPPORT_DESTINATIONS["inquiry-new"].to}
+      <a
+        href={`mailto:${CONTACT_EMAIL}`}
         // 쉬는 상태에 이미 밑줄이 있어 포커스는 밑줄이 아니라 불투명 아웃라인으로 준다.
         className="font-medium whitespace-nowrap underline underline-offset-4 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring"
       >
-        {SUPPORT_DESTINATIONS["inquiry-new"].label}
-      </Link>
+        {CONTACT_EMAIL}
+      </a>
       로 신청해 주세요.
     </p>
   );
