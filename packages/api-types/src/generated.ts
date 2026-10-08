@@ -8388,6 +8388,24 @@ export interface components {
             chapterModels?: components["schemas"]["NovelChapterModel"][];
         };
         /**
+         * NovelChapterReadingPosition
+         * @description 화 하나를 읽던 자리. `paragraph_count` 는 저장할 때의 문단 수라, 그 뒤 개정이 바뀌었으면 비율로 옮긴다.
+         *     `finished` 는 그 화를 끝까지 읽은 적이 있는가다(목차의 `finished_reading` 과 같은 값).
+         */
+        NovelChapterReadingPosition: {
+            /** Paragraphindex */
+            paragraphIndex: number;
+            /** Paragraphcount */
+            paragraphCount: number;
+            /**
+             * Revisionid
+             * Format: uuid
+             */
+            revisionId: string;
+            /** Finished */
+            finished: boolean;
+        };
+        /**
          * NovelChapterRegenerateRequest
          * @description 화 하나를 골라 다시 만들기 — 그 화가 든 묶음 전체를 다시 만든다(묶음 다시 만들기 요청과 같다).
          */
@@ -8484,6 +8502,7 @@ export interface components {
             charCount: number;
             /** Finishedreading */
             finishedReading: boolean;
+            readingPosition: components["schemas"]["NovelChapterReadingPosition"] | null;
         };
         /**
          * NovelChapterUpdateRequest
