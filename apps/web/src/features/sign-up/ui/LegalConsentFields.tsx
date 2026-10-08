@@ -232,19 +232,20 @@ export function LegalConsentFields() {
                   <dt className="font-semibold text-foreground">이전 국가 / 시기 / 방법</dt>
                   <dd className="mt-0.5 break-keep">
                     미국(Google LLC·Cloudflare, Inc.), 전 세계 AWS 상용 리전(Amazon Web Services,
-                    Inc. — 요청마다 AWS가 처리 리전을 정합니다). 대화 전송·대화 소설 요청·이미지
-                    생성·파일 업로드·웹사이트 접속 시점에 수시로, HTTPS 등 암호화된 통신으로
+                    Inc. — 요청마다 AWS가 처리 리전을 정합니다). 대화 전송·콘텐츠 발행·대화 소설
+                    요청·이미지 생성·파일 업로드·웹사이트 접속 시점에 수시로, HTTPS 등 암호화된 통신으로
                     전송합니다. 데이터베이스 백업은 매일 정해진 시각에 전송합니다.
                   </dd>
                 </div>
                 <div>
                   <dt className="font-semibold text-foreground">이용 목적 / 보유·이용기간</dt>
                   <dd className="mt-0.5 break-keep">
-                    AI 응답 생성, 스탯·엔딩 판정, 대화 요약, 대화 상황에 맞는 이미지 선택, 대화 소설
-                    화 생성·AI 수정과 콘텐츠 자동 심사(Google LLC), 상위 AI 모델을 고른 대화의 응답
-                    생성과 대화 소설 화 생성(Amazon Web Services, Inc.), 파일 저장·백업·웹사이트
-                    전송·이용 분석(Cloudflare, Inc.). 국내 원본이 삭제되면 재전송을 중단하며, 백업은 일간 7일·주간
-                    4주 순환 보관합니다. 이전받는 자의 자체 보유기간은 각 사업자의 정책을 따릅니다.
+                    AI 응답 생성, 스탯·엔딩 판정, 대화 요약, 대화 상황에 맞는 이미지 선택, 대화 소설의
+                    대화 구간 제안·화 생성·AI 수정과 콘텐츠 자동 심사(Google LLC), 상위 AI 모델을 고른 대화의 응답
+                    생성과 대화 소설 화 생성(Amazon Web Services, Inc.), 운영자의 이미지 생성
+                    설비로의 요청·결과 전송, 파일 저장·백업, 웹사이트 전송·이용 분석(Cloudflare, Inc.). 국내
+                    원본이 삭제되면 재전송을 중단하며, 백업은 일간 7일·주간 4주 순환 보관합니다. 이용
+                    분석 원본 데이터는 7일간 보관되고, 집계 지표는 최근 6개월까지 조회할 수 있습니다. 이전받는 자의 자체 보유기간은 각 사업자의 정책을 따릅니다.
                   </dd>
                 </div>
                 <div>
