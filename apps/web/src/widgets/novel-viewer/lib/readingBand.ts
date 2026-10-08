@@ -43,3 +43,37 @@ export function toRestoreScrollTop({
 }): number {
   return Math.max(0, scrollY + elementTop - scrollMarginTop);
 }
+
+/** 되돌리기가 화면에 반영됐는가 — 창 스크롤 위치가 목표(문서가 그보다 짧으면 갈 수 있는 끝)와 1px 안이다. 반영된
+ * 것을 보기 전에는 읽는 자리를 재지 않는다: 그 사이 라우터가 창을 맨 위로 올리면 0번 문단을 지금 자리로 세어 저장된
+ * 자리를 덮어쓴다. */
+export function isScrollRestored({
+  scrollY,
+  targetTop,
+  maxScrollY,
+}: {
+  scrollY: number;
+  targetTop: number;
+  /** `scrollHeight - innerHeight` — 창이 갈 수 있는 가장 아래. */
+  maxScrollY: number;
+}): boolean {
+  const reachable = Math.max(0, Math.min(targetTop, maxScrollY));
+  return Math.abs(scrollY - reachable) <= 1;
+}
+
+/**
+ * 읽는 자리를 언제부터 잴까. 되돌린 자리가 화면에 반영됐으면 바로, 아니면 이용자가 스스로 스크롤한 뒤부터다.
+ *
+ * 되돌릴 자리가 없는 화도 스크롤을 기다린다: 지금 화면은 소설의 마지막 읽은 자리 하나만 받아, 그 밖의 화는 서버에
+ * 읽던 자리가 있어도 모른 채 맨 위에서 연다. 보기만 하고 재면 0번 문단이 그 화의 저장된 자리를 덮어쓰고 이어 읽기도
+ * 그 화로 바뀐다. 화마다 저장된 자리를 받아 되돌리게 되면 이 화들도 되돌린 뒤 바로 재면 된다(그때 이 조건을 푼다).
+ */
+export function toTrackingStart({
+  hasRestoreTarget,
+  isRestored,
+}: {
+  hasRestoreTarget: boolean;
+  isRestored: boolean;
+}): "now" | "afterUserScroll" {
+  return hasRestoreTarget && isRestored ? "now" : "afterUserScroll";
+}

@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { MIN_VISIBLE_PX, toCurrentParagraphIndex, toReadingBandRootMargin, toRestoreScrollTop } from "./readingBand";
+import {
+  isScrollRestored,
+  MIN_VISIBLE_PX,
+  toCurrentParagraphIndex,
+  toReadingBandRootMargin,
+  toRestoreScrollTop,
+  toTrackingStart,
+} from "./readingBand";
 
 describe("toCurrentParagraphIndex", () => {
   it("띠에 걸친 문단 중 가장 앞 문단", () => {
@@ -56,5 +63,40 @@ describe("toRestoreScrollTop", () => {
 
   it("문서 위로는 넘어가지 않는다", () => {
     expect(toRestoreScrollTop({ scrollY: 0, elementTop: 4, scrollMarginTop: 16 })).toBe(0);
+  });
+});
+
+describe("isScrollRestored", () => {
+  it("창이 목표 자리(1px 안)에 있으면 반영됐다", () => {
+    expect(isScrollRestored({ scrollY: 2228, targetTop: 2228, maxScrollY: 5000 })).toBe(true);
+    expect(isScrollRestored({ scrollY: 2227.4, targetTop: 2228, maxScrollY: 5000 })).toBe(true);
+  });
+
+  it("라우터가 맨 위로 올려 0 이면 반영되지 않았다", () => {
+    expect(isScrollRestored({ scrollY: 0, targetTop: 2228, maxScrollY: 5000 })).toBe(false);
+  });
+
+  it("1px 를 넘게 어긋나면 반영되지 않았다", () => {
+    expect(isScrollRestored({ scrollY: 2226, targetTop: 2228, maxScrollY: 5000 })).toBe(false);
+  });
+
+  it("문서가 목표보다 짧으면 갈 수 있는 끝에 닿은 것으로 반영됐다", () => {
+    expect(isScrollRestored({ scrollY: 1200, targetTop: 1500, maxScrollY: 1200 })).toBe(true);
+    expect(isScrollRestored({ scrollY: 0, targetTop: 1500, maxScrollY: 1200 })).toBe(false);
+  });
+});
+
+describe("toTrackingStart", () => {
+  it("되돌린 자리가 반영됐으면 바로 잰다", () => {
+    expect(toTrackingStart({ hasRestoreTarget: true, isRestored: true })).toBe("now");
+  });
+
+  it("되돌리기를 반영하지 못했으면 이용자가 스크롤한 뒤부터", () => {
+    expect(toTrackingStart({ hasRestoreTarget: true, isRestored: false })).toBe("afterUserScroll");
+  });
+
+  it("되돌릴 자리가 없는 화는 보기만 해서는 재지 않는다(그 화의 저장된 자리를 0 으로 덮지 않게)", () => {
+    expect(toTrackingStart({ hasRestoreTarget: false, isRestored: false })).toBe("afterUserScroll");
+    expect(toTrackingStart({ hasRestoreTarget: false, isRestored: true })).toBe("afterUserScroll");
   });
 });
