@@ -21,6 +21,7 @@ import { z } from "zod";
 import {
   useRefundPaymentMutation,
   useRefundQuoteQuery,
+  useUserPaymentsQuery,
   type AdminRefundQuoteResponse,
   type AdminRefundRequest,
   type AdminUserPaymentItem,
@@ -33,8 +34,13 @@ import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 import { toKstDateString } from "@/shared/lib/format/kstDate";
 
 type RefundPaymentModalProps = {
+  /** 모드를 연 순간의 행이 아니라 살아 있는 구매 내역 쿼리로 정하려고 받는다(같은 키라 캐시를 그대로 쓴다). */
+  userId: string;
   payment: AdminUserPaymentItem;
 };
+
+/** 확정 뒤 다이얼로그에 남기는 한 줄. `unknown`·`waiting`은 문장이 지금 모드에 따라 갈려 렌더 때 고른다. */
+type SubmitFeedback = { kind: "error"; message: string } | { kind: "unknown" } | { kind: "waiting" };
 
 const refundSchema = z.object({
   receivedOn: z.string(),
@@ -45,24 +51,30 @@ const refundSchema = z.object({
 
 type RefundFormValues = z.infer<typeof refundSchema>;
 
-const UNKNOWN_RESULT_MESSAGE =
-  "응답을 받지 못했어요. 다시 눌러도 서버가 같은 환불 시도를 이어받아 두 번 환불되지 않아요.";
-
 /** 구매 한 건의 환불 다이얼로그. 두 모드다.
  *
  * - **견적 모드**: 신청 접수일(KST, 기본 오늘)과 회사 귀책을 고르면 그때마다 견적을 다시 읽고, 그 견적 금액을 실어
  *   확정한다. 실행 시점 견적이 다르면 서버가 409로 막는다(그사이 회원이 클로버를 썼다).
- * - **확인·재시도 모드**: 그 결제에 결과를 모르는 시도가 있을 때(목록의 `refundPending`, 또는 방금 받은 202). 같은
- *   실행 경로를 다시 부르면 서버가 포트원을 재조회해 마무리하고, 포트원에 닿지 않았던 요청이면 같은 금액으로 다시
- *   보낸다. 이때 요청의 견적 금액·접수일·귀책은 서버가 쓰지 않는다.
+ * - **확인·재시도 모드**: 그 결제에 결과를 모르는 시도가 있을 때(살아 있는 구매 내역의 `refundPending`, 또는 방금 받은
+ *   202). 같은 실행 경로를 다시 부르면 서버가 포트원을 재조회해 마무리하고, 포트원에 닿지 않았던 요청이면 같은 금액으로
+ *   다시 보낸다. 이때 요청의 견적 금액·접수일·귀책은 서버가 쓰지 않는다.
+ *
+ * 모드를 연 순간의 행으로 정하지 않는 이유: 그 뒤 다른 어드민이 시도를 만들었거나 이 창의 요청이 응답 없이 시도를 남겼으면,
+ * 견적은 회수된 클로버 때문에 0원으로 오고 확정이 막혀 마무리할 길이 없다. 실행은 끝날 때마다 구매 내역을 다시 읽으므로
+ * (뮤테이션의 `onSettled`) 응답을 못 받은 경우도 그 목록이 모드를 정한다 — 요청이 서버에 닿지도 않았는데 확인·재시도로
+ * 넘기면 0원 재시도가 409로 막혀 "이미 마무리됐다"고 잘못 말하게 된다.
  *
  * 확정 버튼만 `primary`다 — 이 다이얼로그에서 지금 누를 것은 그 하나다. */
-export const RefundPaymentModal = createCallable<RefundPaymentModalProps, void>(({ call, payment }) => {
+export const RefundPaymentModal = createCallable<RefundPaymentModalProps, void>(({ call, userId, payment }) => {
   // 다이얼로그를 연 순간의 날짜로 고정한다 — 자정을 넘겨도 입력 범위가 열린 화면 안에서 바뀌지 않는다(서버가 다시 검사한다).
   const [today] = useState(() => toKstDateString());
   const paidOn = payment.paidAt ? toKstDateString(payment.paidAt) : today;
-  const [isAttemptPending, setIsAttemptPending] = useState(payment.refundPending);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const paymentsQuery = useUserPaymentsQuery(userId);
+  const livePayment = paymentsQuery.data?.items.find((item) => item.paymentId === payment.paymentId);
+  // 방금 받은 202는 목록이 다시 읽히기 전에도 바로 확인·재시도로 넘긴다(목록도 곧 같은 답을 준다).
+  const [hasAccepted, setHasAccepted] = useState(false);
+  const isAttemptPending = hasAccepted || (livePayment ?? payment).refundPending;
+  const [feedback, setFeedback] = useState<SubmitFeedback | null>(null);
   const refundMutation = useRefundPaymentMutation(payment.paymentId);
 
   const {
@@ -94,13 +106,15 @@ export const RefundPaymentModal = createCallable<RefundPaymentModalProps, void>(
   const onSubmit = async (values: RefundFormValues) => {
     // 견적 모드에서 견적이 아직 없으면 확정 버튼이 막혀 있어 여기 닿지 않는다(막힌 기본 버튼은 Enter 제출도 막는다).
     if (!isAttemptPending && !confirmableQuote) return;
-    setSubmitError(null);
+    setFeedback(null);
     try {
       const result = await refundMutation.mutateAsync(
         buildRefundRequest(values, isAttemptPending ? null : confirmableQuote, today),
       );
       if (result.status === "requested") {
-        setIsAttemptPending(true);
+        // 첫 202든 재시도의 202든 같은 줄을 남긴다 — 재시도의 202는 화면이 그대로라 이 줄이 없으면 눌린 흔적이 없다.
+        setHasAccepted(true);
+        setFeedback({ kind: "waiting" });
         return;
       }
       toast.success(
@@ -109,7 +123,7 @@ export const RefundPaymentModal = createCallable<RefundPaymentModalProps, void>(
       call.end();
     } catch (error) {
       if (!isApiError(error)) {
-        setSubmitError(UNKNOWN_RESULT_MESSAGE);
+        setFeedback({ kind: "unknown" });
         return;
       }
       const code = detailCode(error.detail);
@@ -137,22 +151,26 @@ export const RefundPaymentModal = createCallable<RefundPaymentModalProps, void>(
       }
       if (code === "REFUND_QUOTE_CHANGED") {
         // 뮤테이션이 견적 쿼리까지 끊어 새 견적이 곧 다시 그려진다.
-        setSubmitError("그사이 회원이 클로버를 써 견적이 바뀌었어요. 새 견적을 확인하고 다시 확정해주세요.");
+        setFeedback({
+          kind: "error",
+          message: "그사이 회원이 클로버를 써 견적이 바뀌었어요. 새 견적을 확인하고 다시 확정해주세요.",
+        });
         return;
       }
       if (code === "REFUND_AMOUNT_ZERO") {
-        setSubmitError("환불할 금액이 0원이라 환불하지 않았어요.");
+        setFeedback({ kind: "error", message: "환불할 금액이 0원이라 환불하지 않았어요." });
         return;
       }
       if (code === "REFUND_RECEIVED_ON_INVALID") {
         setError("receivedOn", { message: receivedOnRangeMessage(paidOn, today) });
         return;
       }
-      // 5xx·네트워크 실패(status 0)는 서버가 시도를 만들었는지 모른다. 그 밖은 화면이 미리 막는 검증 실패라 일반 문장으로 받는다.
-      setSubmitError(
+      // 5xx·네트워크 실패(status 0)는 서버가 시도를 만들었는지 모른다 — 모드를 넘기지 않고, 뮤테이션이 이미 다시 읽은
+      // 구매 내역이 정하게 둔다. 그 밖은 화면이 미리 막는 검증 실패라 일반 문장으로 받는다.
+      setFeedback(
         error.status >= 500 || error.status === 0
-          ? UNKNOWN_RESULT_MESSAGE
-          : "환불을 처리하지 못했어요. 잠시 후 다시 시도해주세요.",
+          ? { kind: "unknown" }
+          : { kind: "error", message: "환불을 처리하지 못했어요. 잠시 후 다시 시도해주세요." },
       );
     }
   };
@@ -258,9 +276,20 @@ export const RefundPaymentModal = createCallable<RefundPaymentModalProps, void>(
               )}
             </div>
 
-            {submitError && (
+            {feedback?.kind === "error" && (
               <p role="alert" className="text-sm break-keep text-destructive-text">
-                {submitError}
+                {feedback.message}
+              </p>
+            )}
+            {feedback?.kind === "unknown" && (
+              <p role="alert" className="text-sm break-keep text-destructive-text">
+                {unknownResultMessage(isAttemptPending, paymentsQuery.isError)}
+              </p>
+            )}
+            {feedback?.kind === "waiting" && (
+              <p role="status" className="text-sm break-keep text-foreground">
+                포트원 결과를 아직 기다리는 중이에요. 잠시 뒤 다시 확인·재시도를 눌러주세요 — 마지막으로 보낸 지 30초가 안
+                됐으면 다시 보내지 않고 결과만 확인해요.
               </p>
             )}
           </DialogBody>
@@ -349,7 +378,7 @@ function RefundQuoteContent({ quoteQuery, isReceivedOnInRange, companyFault }: R
       </p>
       {quote.refundKrw === 0 && (
         <p className="text-sm break-keep text-foreground">
-          환불할 금액이 0원이에요 — 남은 유료 클로버보다 이 구매에서 쓴 보너스가 같거나 많아요.
+          환불할 금액이 0원이에요 — 환불 대상 클로버(남은 유료 − 쓴 보너스)가 없어요.
         </p>
       )}
     </>
@@ -410,6 +439,19 @@ function buildRefundRequest(
     receivedOn: quote ? values.receivedOn : today,
     companyFault: quote ? values.companyFault : false,
   };
+}
+
+/** 응답을 못 받은 뒤의 문장. 실행이 끝날 때 구매 내역을 다시 읽으므로 지금 모드가 곧 서버의 답이다 — 다시 읽기마저
+ * 실패했으면 아무것도 단정하지 않는다. 견적 모드의 재확정은 앞 요청이 늦게 닿아 시도가 생겼어도 서버가 그 시도를
+ * 이어받아 두 번 환불되지 않는다. */
+function unknownResultMessage(isAttemptPending: boolean, isPaymentsRefetchFailed: boolean) {
+  if (isAttemptPending) {
+    return "응답을 받지 못했어요. 결과를 기다리는 환불 시도가 남아 있어요 — 확인·재시도로 마무리해주세요.";
+  }
+  if (isPaymentsRefetchFailed) {
+    return "응답을 받지 못했고 구매 내역도 다시 읽지 못했어요. 잠시 뒤 창을 닫고 구매 내역에서 상태를 확인해주세요.";
+  }
+  return "응답을 받지 못했지만 진행 중인 환불 시도는 없어요. 견적을 확인하고 다시 확정해주세요.";
 }
 
 function receivedOnRangeMessage(paidOn: string, today: string) {

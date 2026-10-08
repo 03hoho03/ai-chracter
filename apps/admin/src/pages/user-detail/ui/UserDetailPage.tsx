@@ -479,16 +479,17 @@ function PaymentsSection({ userId }: PaymentsSectionProps) {
   return (
     <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 @xl:p-6">
       <h2 className="text-lg font-semibold text-foreground">구매 내역</h2>
-      <PaymentsBody paymentsQuery={paymentsQuery} />
+      <PaymentsBody userId={userId} paymentsQuery={paymentsQuery} />
     </section>
   );
 }
 
 type PaymentsBodyProps = {
+  userId: string;
   paymentsQuery: ReturnType<typeof useUserPaymentsQuery>;
 };
 
-function PaymentsBody({ paymentsQuery }: PaymentsBodyProps) {
+function PaymentsBody({ userId, paymentsQuery }: PaymentsBodyProps) {
   if (paymentsQuery.isPending) {
     return <div className="h-24 animate-pulse rounded-lg bg-secondary" />;
   }
@@ -534,7 +535,7 @@ function PaymentsBody({ paymentsQuery }: PaymentsBodyProps) {
                 <DateTimeCell value={payment.createdAt} />
                 <DateTimeCell value={payment.paidAt} />
                 <TableCell>
-                  <RefundAction payment={payment} />
+                  <RefundAction userId={userId} payment={payment} />
                 </TableCell>
               </TableRow>
             ))}
@@ -546,13 +547,14 @@ function PaymentsBody({ paymentsQuery }: PaymentsBodyProps) {
 }
 
 type RefundActionProps = {
+  userId: string;
   payment: AdminUserPaymentItem;
 };
 
 /** 결과를 모르는 시도가 있으면 같은 실행 경로로 마무리하는 "확인·재시도", 없고 환불할 수 있는 상태면 "환불"이다. 그 밖
  * (대기·실패·불일치·주문자 탈퇴·전액 취소)은 서버가 견적부터 거부하므로 버튼을 두지 않는다. 카드 위라 outline 의
  * 기본 hover(`muted`)가 사라져 `secondary`로 덮는다. */
-function RefundAction({ payment }: RefundActionProps) {
+function RefundAction({ userId, payment }: RefundActionProps) {
   if (!payment.refundPending && payment.status !== "paid" && payment.status !== "partially_cancelled") return null;
 
   return (
@@ -562,7 +564,7 @@ function RefundAction({ payment }: RefundActionProps) {
       size="sm"
       className="hover:bg-secondary"
       aria-label={`${payment.orderName} ${payment.refundPending ? "환불 확인·재시도" : "환불"}`}
-      onClick={() => void RefundPaymentModal.call({ payment })}
+      onClick={() => void RefundPaymentModal.call({ userId, payment })}
     >
       {payment.refundPending ? "확인·재시도" : "환불"}
     </Button>
