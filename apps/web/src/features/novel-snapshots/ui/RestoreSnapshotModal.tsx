@@ -67,7 +67,7 @@ export const RestoreSnapshotModal = createCallable<RestoreSnapshotModalProps, No
             <DialogTitle className="break-keep">‘{snapshotName}’ 때로 되돌릴까요?</DialogTitle>
             <DialogDescription className="break-keep">
               그때 있던 화의 글·제목·작가의 말, 소설 제목·소개, 설정 노트, 인물 메모가 그때 값으로 바뀌어요. 그 뒤에 생긴
-              화는 그대로 남아요. 지금 상태는 ‘복원 전 자동 저장’으로 남겨 둬요.
+              화는 그대로 남아요. 지금 상태는 ‘「{snapshotName}」 복원 직전’으로 남겨 둬요.
             </DialogDescription>
           </DialogHeader>
 

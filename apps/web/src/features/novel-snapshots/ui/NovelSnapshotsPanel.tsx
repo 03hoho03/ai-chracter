@@ -15,6 +15,7 @@ import {
   type NovelDetailResponse,
   type NovelSnapshotSummary,
 } from "@/entities/novel";
+import { koreanParticle } from "@/shared/lib/text/koreanParticle";
 
 import { toSkippedChaptersNotice } from "../model/snapshotCompare";
 import { toDefaultSnapshotName } from "../model/snapshotName";
@@ -28,6 +29,8 @@ type NovelSnapshotsPanelProps = {
   novel: NovelDetailResponse;
   /** 패널 제목(`h2`, `tabIndex=-1`). 호출부가 패널을 열 때 포커스를 보낼 자리다. 주지 않으면 패널이 자기 것을 쓴다. */
   headingRef?: RefObject<HTMLHeadingElement | null>;
+  /** 되돌리기가 끝난 뒤. 화 본문이 그때 판으로 바뀌어, 호출부가 들고 있는 낡은 안내(지난 고치기 결과)를 지운다. */
+  onRestored?: () => void;
 };
 
 const RESTORE_BLOCKED_REASON = "만들고 있는 화가 끝나면 되돌릴 수 있어요.";
@@ -40,12 +43,12 @@ const RESTORE_BLOCKED_REASON = "만들고 있는 화가 끝나면 되돌릴 수 
  *   고친다). 지우기는 화 작업과 부딪히지 않아 막지 않는다.
  * - 되돌린 결과는 늘 마운트된 `role="status"` 줄에 남긴다(조건부로 붙이면 붙는 순간을 화면 낭독기가 놓친다). 건너뛴
  *   화가 있으면 함께 말한다. 다음 저장·되돌리기·지우기에서 지운다.
- * - 지우면 그 행과 메뉴가 사라져 돌아갈 자리가 없으므로 포커스를 패널 제목으로 옮긴다.
+ * - 지우면 그 행과 메뉴가 사라져 돌아갈 자리가 없으므로, 모달이 닫힌 뒤 포커스를 패널 제목으로 옮긴다.
  *
  * 이 패널이 여는 모달 넷(`SaveSnapshotModal`·`RestoreSnapshotModal`·`DeleteSnapshotModal`·`SnapshotDiffModal`)은 이
  * 패널을 그리는 라우트가 마운트하고, 그 라우트를 떠날 때 닫는다.
  */
-export function NovelSnapshotsPanel({ novel, headingRef }: NovelSnapshotsPanelProps) {
+export function NovelSnapshotsPanel({ novel, headingRef, onRestored }: NovelSnapshotsPanelProps) {
   const localHeadingRef = useRef<HTMLHeadingElement>(null);
   const titleRef = headingRef ?? localHeadingRef;
   const headingId = useId();
@@ -60,7 +63,7 @@ export function NovelSnapshotsPanel({ novel, headingRef }: NovelSnapshotsPanelPr
       maxLength: novel.limits.snapshotNameMaxLength,
       defaultName: toDefaultSnapshotName(novel.chapters.map((chapter) => chapter.ordinal)),
     });
-    if (saved !== null) setResult(`‘${saved.name}’으로 저장했어요.`);
+    if (saved !== null) setResult(`‘${saved.name}’${koreanParticle(saved.name, "으로/로")} 저장했어요.`);
   }
 
   async function restore(snapshot: NovelSnapshotSummary) {
@@ -72,6 +75,7 @@ export function NovelSnapshotsPanel({ novel, headingRef }: NovelSnapshotsPanelPr
       snapshotName: snapshot.name,
     });
     if (restored === null) return;
+    onRestored?.();
     const skipped = toSkippedChaptersNotice(restored.skippedChapters, restored.novel.chapters);
     setResult([`‘${snapshot.name}’ 때로 되돌렸어요.`, skipped].filter((part) => part !== undefined).join(" "));
   }
@@ -82,10 +86,11 @@ export function NovelSnapshotsPanel({ novel, headingRef }: NovelSnapshotsPanelPr
       novelId: novel.id,
       snapshotId: snapshot.id,
       snapshotName: snapshot.name,
+      // 지운 행과 그 메뉴가 사라지므로 패널 제목으로 보낸다.
+      onRestoreFocusAfterDelete: () => titleRef.current?.focus(),
     });
     if (!isDeleted) return;
-    setResult(`‘${snapshot.name}’을 지웠어요.`);
-    titleRef.current?.focus();
+    setResult(`‘${snapshot.name}’${koreanParticle(snapshot.name, "을/를")} 지웠어요.`);
   }
 
   return (

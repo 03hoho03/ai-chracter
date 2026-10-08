@@ -14,6 +14,7 @@ import { useId, useState } from "react";
 
 import { novelKeys, useMergeNovelCharacterMutation, type NovelCharacterResponse } from "@/entities/novel";
 import { createCallable } from "@/shared/lib/callable/createCallable";
+import { koreanParticle } from "@/shared/lib/text/koreanParticle";
 
 import { toCharacterSaveError } from "../model/characterForm";
 
@@ -67,7 +68,7 @@ export const MergeCharacterModal = createCallable<MergeCharacterModalProps, stri
       <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end(null)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="break-keep">‘{character.name}’을 다른 인물과 합칠까요?</DialogTitle>
+            <DialogTitle className="break-keep">‘{character.name}’{koreanParticle(character.name, "을/를")} 다른 인물과 합칠까요?</DialogTitle>
             <DialogDescription className="break-keep">
               {into === undefined
                 ? "같은 인물인데 이름이 다르게 나와 카드가 둘이 됐을 때 써요. 남길 인물을 골라주세요."

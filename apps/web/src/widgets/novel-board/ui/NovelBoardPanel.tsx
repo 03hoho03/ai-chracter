@@ -133,7 +133,14 @@ function PanelContent({
     case "notes":
       return <NovelNotesEditor novel={novel} headingRef={headingRef} />;
     case "versions":
-      return <NovelSnapshotsPanel novel={novel} headingRef={headingRef} />;
+      return (
+        <NovelSnapshotsPanel
+          novel={novel}
+          headingRef={headingRef}
+          // 되돌리면 화 본문이 바뀌어 화 머리에 남은 지난 고치기 결과는 옛 글의 이야기가 된다.
+          onRestored={() => aiEdit.report({ type: "started" })}
+        />
+      );
   }
 }
 
