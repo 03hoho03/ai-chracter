@@ -68,9 +68,14 @@ class CloverLot(Base):
 
     `kind`는 원장의 `CloverKind`(core/clover.py)와 값 범위가 다르다 — 로트는 지급에만
     생기므로(소모·회수·소멸류는 로트를 새로 만들지 않는다) `attendance_grant`·`mission_grant`·
-    `admin_grant`·`chat_refund`·`image_refund`·`novelize_refund`, 그리고 백필 전용 값 `legacy_balance`
+    `admin_grant`·`chat_refund`·`image_refund`·`novelize_refund`, 구매로 생기는 `purchase_paid`·
+    `purchase_bonus`, 그리고 백필 전용 값 `legacy_balance`
     (마이그레이션이 기존 `clover_balance`를 로트로 편입할 때만 쓴다)로 값이 갈린다. 같은
     타입을 재사용하지 않는다.
+
+    구매 로트(`purchase_paid`·`purchase_bonus`)는 그 결제(`payment_id`)를 가리키고, 다른 로트는 가리키지 않는다(CHECK).
+    한 결제에 유료·보너스 로트는 각각 하나뿐이다(부분 유니크) — 결제 확인이 겹쳐 두 번 지급되는 것을 막는 마지막 방어선이고,
+    환불이 그 구매의 로트를 집는 조회 인덱스를 겸한다.
     """
 
     __tablename__ = "clover_lots"
@@ -91,6 +96,9 @@ class CloverLot(Base):
     kind: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    payment_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("payments.id", name="fk_clover_lots_payment_id"), nullable=True
     )
 
     # CHECK 제약 두 개(`remaining >= 0`·`remaining <= granted_amount`)는 alembic
@@ -122,6 +130,17 @@ class CloverLot(Base):
             "expires_at",
             "created_at",
             postgresql_where=remaining > 0,
+        ),
+        CheckConstraint(
+            "(kind IN ('purchase_paid', 'purchase_bonus')) = (payment_id IS NOT NULL)",
+            name="ck_clover_lots_purchase_has_payment",
+        ),
+        Index(
+            "ux_clover_lots_payment_id_kind",
+            "payment_id",
+            "kind",
+            unique=True,
+            postgresql_where=payment_id.is_not(None),
         ),
     )
 

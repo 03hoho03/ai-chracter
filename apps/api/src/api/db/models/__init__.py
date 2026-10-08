@@ -73,6 +73,13 @@ from api.db.models.novel import (
     NovelSnapshot,
     NovelSnapshotKind,
 )
+from api.db.models.payment import (
+    Payment,
+    PaymentCancellation,
+    PaymentCancellationSource,
+    PaymentCancellationStatus,
+    PaymentStatus,
+)
 from api.db.models.persona import UserPersona
 from api.db.models.prompt import PromptSection, PromptSet, PublishFilterTextSectionBackup
 from api.db.models.story import (
@@ -169,6 +176,11 @@ __all__ = [
     "NovelRevisionSource",
     "NovelSnapshot",
     "NovelSnapshotKind",
+    "Payment",
+    "PaymentCancellation",
+    "PaymentCancellationSource",
+    "PaymentCancellationStatus",
+    "PaymentStatus",
     "PromptSection",
     "PromptSet",
     "PublishFilterTextSectionBackup",

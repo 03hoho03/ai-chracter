@@ -81,12 +81,18 @@ CLOVER_KIND_CATEGORY: dict[str, CloverLedgerCategory] = {
     "chat_refund": "earn",
     "image_refund": "earn",
     "novelize_refund": "earn",
+    "purchase_paid": "earn",
+    "purchase_bonus": "earn",
+    # 포트원이 환불을 거절해 회수를 되돌린 것 — 되돌려받은 것이라 환불과 같은 획득이다.
+    "purchase_restore": "earn",
     "chat_spend": "use",
     "image_spend": "use",
     "novelize_spend": "use",
     "expire_burn": "expire",
     "admin_revoke": "expire",
     "withdrawal_burn": "expire",
+    # 결제 취소에 따른 회수 — 유저가 쓴 것이 아니라 어드민 회수와 같은 범주다.
+    "purchase_revoke": "expire",
 }
 
 _CATEGORY_KINDS: dict[CloverLedgerCategory, list[str]] = {

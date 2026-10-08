@@ -60,8 +60,8 @@ export const ACTION_TYPE_LABELS = {
   "prompt-set-publish": "프롬프트 세트 게시",
 } satisfies Record<AdminActionType, string>;
 
-/** 원장 행의 `kind` — `core/clover.py`의 `CloverKind` 12종이다(`mission_grant`·`expire_burn`
- * 2종과 소설화의 `novelize_spend`·`novelize_refund` 2종은 나중에 더해졌다). `AdminCloverLedgerItem.kind`가 `Literal`이 아니라
+/** 원장 행의 `kind` — `core/clover.py`의 `CloverKind` 16종이다(`mission_grant`·`expire_burn`
+ * 2종과 소설화의 `novelize_spend`·`novelize_refund` 2종, 결제의 `purchase_*` 4종은 나중에 더해졌다). `AdminCloverLedgerItem.kind`가 `Literal`이 아니라
  * `string`인 것은 의도다(모델이 `Text`라 값을 늘릴 때 마이그레이션도 FE 코드젠도 깨지지 않게 한
  * 것). 그래서 여기는 `Record<string, string>`이고, 모르는 값은 호출부가 원문 그대로 보여준다 —
  * 키를 빠뜨려도 컴파일이 못 잡는다(유니언으로 좁혀 강제하는 ACTION_TYPE_LABELS와 다르다).
@@ -80,6 +80,10 @@ export const CLOVER_KIND_LABELS: Record<string, string> = {
   novelize_refund: "소설 환불",
   expire_burn: "유효기간 소멸",
   withdrawal_burn: "탈퇴 소멸",
+  purchase_paid: "클로버 구매",
+  purchase_bonus: "구매 보너스",
+  purchase_revoke: "구매 취소 회수",
+  purchase_restore: "구매 회수 복원",
 };
 
 export type ChatViewReasonCategory = components["schemas"]["ChatViewReasonCategory"];

@@ -14,6 +14,7 @@ from api.core.clover import (
     ATTENDANCE_GRANT_AMOUNT,
     CHAT_TURN_COST,
     IMAGE_UNIT_COST,
+    PURCHASE_LOT_KINDS,
     CloverRefundExceedsSpendError,
     earned_lot_expiry,
     grant,
@@ -21,12 +22,14 @@ from api.core.clover import (
     kst_today,
     refund_spend,
     refund_spend_in_new_transaction,
+    restore_purchase_lots,
     revoke,
+    revoke_purchase_lots,
     spend,
 )
 from api.db.models.auth import User
 from api.db.models.clover import CloverLedger, CloverLot, CloverSpendAllocation
-from factories import _make_user, _make_user_with_clover_lot
+from factories import _make_payment, _make_user, _make_user_with_clover_lot
 
 
 async def _ledger_rows(db: AsyncSession, user_id: uuid.UUID) -> list[CloverLedger]:
@@ -303,12 +306,23 @@ async def test_revoke_consumes_the_most_recent_lot_first(db_session: AsyncSessio
 
 # ── 차감 등급: 무료 → 보너스 → 유료 ─────────────────────────────────────────
 async def _user_with_lots(db: AsyncSession, *lots: tuple[str, int, datetime | None]) -> tuple[User, list[CloverLot]]:
-    """`(kind, amount, expires_at)` 로트들과 그 합을 잔액으로 갖는 사용자를 만든다."""
+    """`(kind, amount, expires_at)` 로트들과 그 합을 잔액으로 갖는 사용자를 만든다. 구매 로트는 결제 하나를 가리킨다
+    (로트 CHECK — 한 결제에 유료·보너스 로트가 하나씩이라 kind 마다 하나까지만 받는다)."""
     user = _make_user(clover_balance=sum(amount for _, amount, _ in lots))
     db.add(user)
     await db.flush()
+    payment_id = None
+    if any(kind in PURCHASE_LOT_KINDS for kind, _, _ in lots):
+        payment_id = (await _make_payment(db, user_id=user.id, status="paid")).id
     rows = [
-        CloverLot(user_id=user.id, granted_amount=amount, remaining=amount, kind=kind, expires_at=expires_at)
+        CloverLot(
+            user_id=user.id,
+            granted_amount=amount,
+            remaining=amount,
+            kind=kind,
+            expires_at=expires_at,
+            payment_id=payment_id if kind in PURCHASE_LOT_KINDS else None,
+        )
         for kind, amount, expires_at in lots
     ]
     db.add_all(rows)
@@ -451,6 +465,7 @@ async def test_revoke_skips_purchase_lots(db_session: AsyncSession) -> None:
         remaining=30,
         kind="purchase_paid",
         created_at=datetime(2026, 9, 10, tzinfo=UTC),
+        payment_id=(await _make_payment(db_session, user_id=user.id, status="paid")).id,
     )
     db_session.add_all([free, paid])
     await db_session.flush()
@@ -483,6 +498,104 @@ async def test_revoke_returns_none_when_free_lots_are_short_even_if_balance_suff
     assert (free.remaining, paid.remaining) == (5, 30)
     assert await _balance(db_session, user.id) == 35
     assert await _ledger_rows(db_session, user.id) == []
+
+
+# ── 구매 로트 회수·복원 ─────────────────────────────────────────────────
+async def _user_with_purchase(db: AsyncSession) -> tuple[User, uuid.UUID, uuid.UUID]:
+    """무료 50 + 결제 A(유료 100·보너스 10) + 결제 B(유료 30). 결제 A 의 id 와 B 의 id 를 돌려준다."""
+    user = await _make_user_with_clover_lot(db, clover_balance=50)
+    payment_a = await _make_payment(db, user_id=user.id, status="paid")
+    payment_b = await _make_payment(db, user_id=user.id, status="paid")
+    await grant(db, user_id=user.id, amount=100, kind="purchase_paid", payment_id=payment_a.id)
+    await grant(db, user_id=user.id, amount=10, kind="purchase_bonus", payment_id=payment_a.id)
+    await grant(db, user_id=user.id, amount=30, kind="purchase_paid", payment_id=payment_b.id)
+    return user, payment_a.id, payment_b.id
+
+
+async def _lots_by_payment(db: AsyncSession, user_id: uuid.UUID) -> dict[tuple[uuid.UUID | None, str], int]:
+    rows = (await db.scalars(select(CloverLot).where(CloverLot.user_id == user_id))).all()
+    for row in rows:
+        await db.refresh(row)
+    return {(row.payment_id, row.kind): row.remaining for row in rows}
+
+
+async def test_purchase_grant_makes_lots_that_point_to_the_payment(db_session: AsyncSession) -> None:
+    """환불이 그 구매의 로트를 집으려면 로트가 결제를 가리켜야 한다. 깨지는 시나리오: 결제 참조를 로트에 싣지 않아 구매
+    지급이 로트 CHECK 에 걸리거나, 환불이 회수할 로트를 찾지 못한다."""
+    user, payment_a, payment_b = await _user_with_purchase(db_session)
+
+    assert await _lots_by_payment(db_session, user.id) == {
+        (None, "legacy_balance"): 50,
+        (payment_a, "purchase_paid"): 100,
+        (payment_a, "purchase_bonus"): 10,
+        (payment_b, "purchase_paid"): 30,
+    }
+    assert await _balance(db_session, user.id) == 190
+
+
+async def test_revoke_purchase_lots_takes_only_what_is_left_of_that_payment(db_session: AsyncSession) -> None:
+    """회수는 그 결제의 남은 유료·보너스만 가져간다. 깨지는 시나리오: 다른 결제나 무료 로트까지 깎거나, 이미 쓴 양까지
+    회수하려다 잔액이 음수가 된다."""
+    user, payment_a, payment_b = await _user_with_purchase(db_session)
+    # 무료 50 → 보너스 6 순으로 쓴다(유료는 그대로).
+    assert await spend(db_session, user_id=user.id, amount=56, kind="chat_spend") is not None
+
+    assert await revoke_purchase_lots(db_session, payment_id=payment_a) == (100, 4)
+
+    assert await _lots_by_payment(db_session, user.id) == {
+        (None, "legacy_balance"): 0,
+        (payment_a, "purchase_paid"): 0,
+        (payment_a, "purchase_bonus"): 0,
+        (payment_b, "purchase_paid"): 30,
+    }
+    assert await _balance(db_session, user.id) == 30
+    rows = await _ledger_rows(db_session, user.id)
+    assert [(r.kind, r.amount, r.balance_after) for r in rows if r.kind == "purchase_revoke"] == [
+        ("purchase_revoke", -104, 30)
+    ]
+
+
+async def test_revoke_purchase_lots_with_nothing_left_writes_nothing(db_session: AsyncSession) -> None:
+    user, payment_a, _ = await _user_with_purchase(db_session)
+    await revoke_purchase_lots(db_session, payment_id=payment_a)
+    ledger_before = len(await _ledger_rows(db_session, user.id))
+
+    assert await revoke_purchase_lots(db_session, payment_id=payment_a) == (0, 0)
+
+    assert len(await _ledger_rows(db_session, user.id)) == ledger_before
+
+
+async def test_restore_purchase_lots_puts_the_clawback_back(db_session: AsyncSession) -> None:
+    """포트원이 환불을 거절하면 회수분을 그 결제의 로트로 되돌린다. 깨지는 시나리오: 돈은 돌려받지 못했는데 클로버도 없는
+    채로 남는다."""
+    user, payment_a, payment_b = await _user_with_purchase(db_session)
+    paid, bonus = await revoke_purchase_lots(db_session, payment_id=payment_a)
+
+    assert await restore_purchase_lots(db_session, payment_id=payment_a, paid=paid, bonus=bonus) == 190
+
+    assert await _lots_by_payment(db_session, user.id) == {
+        (None, "legacy_balance"): 50,
+        (payment_a, "purchase_paid"): 100,
+        (payment_a, "purchase_bonus"): 10,
+        (payment_b, "purchase_paid"): 30,
+    }
+    rows = await _ledger_rows(db_session, user.id)
+    assert [(r.kind, r.amount, r.balance_after) for r in rows if r.kind == "purchase_restore"] == [
+        ("purchase_restore", 110, 190)
+    ]
+
+
+async def test_restore_purchase_lots_to_a_withdrawn_user_changes_nothing(db_session: AsyncSession) -> None:
+    """탈퇴가 소멸시킨 잔액을 늦게 도착한 복원이 되살리지 않는다(환급과 같은 규칙)."""
+    user, payment_a, _ = await _user_with_purchase(db_session)
+    paid, bonus = await revoke_purchase_lots(db_session, payment_id=payment_a)
+    await db_session.execute(update(User).where(User.id == user.id).values(deleted_at=datetime.now(UTC)))
+    ledger_before = len(await _ledger_rows(db_session, user.id))
+
+    assert await restore_purchase_lots(db_session, payment_id=payment_a, paid=paid, bonus=bonus) is None
+
+    assert await _balance(db_session, user.id) == 80
+    assert len(await _ledger_rows(db_session, user.id)) == ledger_before
 
 
 async def test_refund_spend_in_new_transaction_swallows_failures() -> None:

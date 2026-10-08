@@ -62,6 +62,7 @@ from api.db.models import (
     NovelJob,
     NovelReadingPosition,
     NovelSnapshot,
+    Payment,
     StartingSetup,
     StatDef,
     StoryPromptTemplate,
@@ -133,6 +134,30 @@ async def _make_user_with_clover_lot(
         )
         await db_session.flush()
     return user
+
+
+async def _make_payment(db_session: AsyncSession, *, user_id: uuid.UUID, **overrides: object) -> Payment:
+    """주문 행 하나(기본: 베이직 상품 값, `pending`). 구매 로트(`purchase_paid`·`purchase_bonus`)는 결제를 가리켜야 하므로
+    (로트 CHECK) 그런 로트를 만드는 셋업이 먼저 부른다."""
+    defaults: dict[str, object] = {
+        "payment_id": f"clv{uuid.uuid4().hex}",
+        "user_id": user_id,
+        "product_key": "basic",
+        "order_name": "클로버 베이직",
+        "amount_krw": 9_900,
+        "paid_amount": 3_300,
+        "bonus_amount": 300,
+        "channel_key": "test-channel-key",
+        "status": "pending",
+        "consented_at": datetime.now(UTC),
+        "terms_version": "2026-09-06",
+        "refund_policy_version": "2026-09-06",
+    }
+    defaults.update(overrides)
+    payment = Payment(**defaults)
+    db_session.add(payment)
+    await db_session.flush()
+    return payment
 
 
 def _patch_httpx(

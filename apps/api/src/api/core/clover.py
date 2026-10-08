@@ -22,6 +22,7 @@ from api.core.rate_limit import KST
 from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User
 from api.db.models.clover import CloverLedger, CloverLot, CloverSpendAllocation
+from api.db.models.payment import Payment
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,12 @@ CloverKind = Literal[
     # 소설화 작업 생성 때의 선차감과, 실패 확정 때의 환불·목표보다 적은 화를 낸 성공의 차액 환불(`novelize/billing.py`).
     "novelize_spend",
     "novelize_refund",
+    # 결제(`payments/service.py`): 구매로 받은 유료·보너스, 결제 취소에 따른 남은 구매분 회수, 포트원이 환불을 확정
+    # 거절해 그 회수를 되돌린 것.
+    "purchase_paid",
+    "purchase_bonus",
+    "purchase_revoke",
+    "purchase_restore",
 ]
 
 # 구매로 생기는 로트 kind. 차감 정렬은 이 둘만 이름으로 집고 나머지 kind 는 전부 무료로 본다 — 무료 kind 를 나열하면
@@ -172,6 +179,7 @@ async def _apply(
     expires_at: datetime | None = None,
     lot_order: _LotOrder = "expiry_first",
     record_allocations: bool = False,
+    payment_id: uuid.UUID | None = None,
 ) -> CloverLedger | None:
     """잔액 UPDATE + 원장 INSERT를 한 트랜잭션에 넣는다. **커밋하지 않는다.** 원장 행을 돌려준다(유저가 없거나 가드에
     걸리면 `None`).
@@ -232,6 +240,7 @@ async def _apply(
                 remaining=delta,
                 expires_at=expires_at,
                 kind=kind,
+                payment_id=payment_id,
             )
         )
     await db.flush()
@@ -274,9 +283,13 @@ async def grant(
     kind: CloverKind,
     idempotency_key: str | None = None,
     expires_at: datetime | None = None,
+    payment_id: uuid.UUID | None = None,
 ) -> int:
     """가드 없는 증가 + 원장 INSERT + 로트 1행 생성. 증가 후 잔액을 돌려준다. **커밋은
     호출자가 한다.**
+
+    `payment_id` 는 구매 지급(`purchase_paid`·`purchase_bonus`)만 넘긴다 — 로트가 그 결제를 가리켜야 환불이 그 구매의
+    로트를 집는다. 구매 kind 와 결제 참조는 함께 있거나 함께 없어야 한다(로트 CHECK).
 
     `idempotency_key`가 중복이면 `IntegrityError`가 그대로 올라온다 — 라우트가 409로 번역한다.
     유니크 인덱스가 그걸 막는 유일한 수단이고, 더블클릭·재시도가
@@ -295,6 +308,7 @@ async def grant(
         idempotency_key=idempotency_key,
         guard=False,
         expires_at=expires_at,
+        payment_id=payment_id,
     )
     # 가드가 없으므로 `None`은 "유저가 없다"는 뜻뿐이다. 호출부는 전부 인증·조회를 이미 마친
     # 뒤라 도달할 수 없고, 도달했다면 그건 500이 맞다.
@@ -342,6 +356,94 @@ async def revoke(
         lot_order="recency_first",
     )
     return None if ledger is None else ledger.balance_after
+
+
+async def revoke_purchase_lots(db: AsyncSession, *, payment_id: uuid.UUID) -> tuple[int, int]:
+    """결제 하나로 생긴 유료·보너스 로트의 남은 양을 전부 회수한다. 회수한 `(유료, 보너스)` 를 돌려준다. **커밋은 호출자가
+    한다.** 결제 취소(어드민 환불·포트원 콘솔 취소)만 부른다 — 어드민 수동 회수(`revoke`)는 구매 로트를 건드리지 않는다.
+
+    남은 것이 없으면 아무것도 쓰지 않고 `(0, 0)` 이다(원장에 0 행을 남기지 않는다). 회수는 환급 대상이 아니라 배분을
+    남기지 않는다.
+
+    락 순서는 users → clover_lots(`_apply` 와 같다). 호출자는 그 앞에서 결제 행을 잠근다(payments → users → clover_lots).
+    """
+    user_id = await db.scalar(select(Payment.user_id).where(Payment.id == payment_id))
+    if user_id is None:
+        raise ValueError(f"회수할 결제를 찾지 못했다: {payment_id}")
+    await db.execute(select(User.id).where(User.id == user_id).with_for_update())
+    lots = (
+        await db.scalars(
+            select(CloverLot).where(CloverLot.payment_id == payment_id).order_by(CloverLot.id).with_for_update()
+        )
+    ).all()
+    taken = {kind: 0 for kind in PURCHASE_LOT_KINDS}
+    for lot in lots:
+        taken[lot.kind] += lot.remaining
+        lot.remaining = 0
+    total = sum(taken.values())
+    if total == 0:
+        return 0, 0
+    balance_after = await db.scalar(
+        update(User)
+        .where(User.id == user_id)
+        .values(clover_balance=User.clover_balance - total)
+        .returning(User.clover_balance)
+    )
+    assert balance_after is not None  # 위에서 잠근 행이다
+    db.add(
+        CloverLedger(user_id=user_id, amount=-total, balance_after=balance_after, kind="purchase_revoke")
+    )
+    await db.flush()
+    return taken["purchase_paid"], taken["purchase_bonus"]
+
+
+async def restore_purchase_lots(
+    db: AsyncSession, *, payment_id: uuid.UUID, paid: int, bonus: int
+) -> int | None:
+    """`revoke_purchase_lots` 로 회수한 양을 그 결제의 로트로 되돌린다(포트원이 환불을 확정 거절했을 때). 되돌린 뒤
+    잔액을 돌려준다. **커밋은 호출자가 한다.**
+
+    **탈퇴한 회원이면 아무것도 하지 않고 `None`** — `refund_spend` 와 같은 이유(탈퇴가 소멸시킨 잔액을 되살리지 않는다)이고
+    판정도 같은 잔액 UPDATE 조건(`deleted_at IS NULL`)이다.
+
+    되돌린 양이 로트의 `granted_amount` 를 넘지 않는다: 회수량은 회수 시점의 `remaining` 이고, 그 뒤 같은 로트로 돌아올 수
+    있는 환급은 그 로트에서 이미 깎인 몫뿐이라 합이 지급량 이하다(넘으면 로트 CHECK 가 롤백시킨다).
+    """
+    total = paid + bonus
+    if total == 0:
+        return None
+    user_id = await db.scalar(select(Payment.user_id).where(Payment.id == payment_id))
+    if user_id is None:
+        raise ValueError(f"복원할 결제를 찾지 못했다: {payment_id}")
+    balance_after = await db.scalar(
+        update(User)
+        .where(User.id == user_id, User.deleted_at.is_(None))
+        .values(clover_balance=User.clover_balance + total)
+        .returning(User.clover_balance)
+    )
+    if balance_after is None:
+        logger.info("탈퇴한 회원(%s)의 구매 회수 복원은 적용하지 않는다", user_id)
+        return None
+    lots = {
+        lot.kind: lot
+        for lot in (
+            await db.scalars(
+                select(CloverLot).where(CloverLot.payment_id == payment_id).order_by(CloverLot.id).with_for_update()
+            )
+        ).all()
+    }
+    for kind, amount in (("purchase_paid", paid), ("purchase_bonus", bonus)):
+        if amount == 0:
+            continue
+        lot = lots.get(kind)
+        if lot is None:
+            raise ValueError(f"결제 {payment_id} 에 {kind} 로트가 없다")
+        lot.remaining += amount
+    db.add(
+        CloverLedger(user_id=user_id, amount=total, balance_after=balance_after, kind="purchase_restore")
+    )
+    await db.flush()
+    return int(balance_after)
 
 
 async def burn_all(db: AsyncSession, *, user_id: uuid.UUID) -> int:
