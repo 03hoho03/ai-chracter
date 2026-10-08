@@ -62,6 +62,10 @@ describe("isKnownRoute", () => {
     // 작성 가이드 단계 페이지. 모르는 단계 id 도 셸을 받고, 화면이 개요로 돌려보낸다.
     expect(isKnownRoute("/guide/story/setting")).toBe(true);
     expect(isKnownRoute("/guide/character/intro")).toBe(true);
+    // 소설 작품 정보 · 편집 · 화 읽기.
+    expect(isKnownRoute("/novels/n1")).toBe(true);
+    expect(isKnownRoute("/novels/n1/board")).toBe(true);
+    expect(isKnownRoute("/novels/n1/episodes/c1")).toBe(true);
   });
 
   it("목록에 없는 경로는 false", () => {
@@ -77,6 +81,9 @@ describe("isKnownRoute", () => {
     expect(isKnownRoute("/builder/character")).toBe(false);
     // `/my`와 `/mypage`는 접두사가 겹칠 뿐 다른 경로다.
     expect(isKnownRoute("/my/works")).toBe(false);
+    // 화 읽기는 화 id 까지 있어야 하고 그 아래 경로는 없다.
+    expect(isKnownRoute("/novels/n1/episodes")).toBe(false);
+    expect(isKnownRoute("/novels/n1/episodes/c1/extra")).toBe(false);
   });
 
   it("빈 파라미터 세그먼트는 라우트가 아니다", () => {

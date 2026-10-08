@@ -31,6 +31,8 @@ export const KNOWN_ROUTES = [
   "/notices/$noticeId",
   "/novels",
   "/novels/$novelId",
+  "/novels/$novelId/board",
+  "/novels/$novelId/episodes/$chapterId",
   "/onboarding/google",
   "/onboarding/kakao",
   "/operation-policy",

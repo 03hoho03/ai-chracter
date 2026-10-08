@@ -17,7 +17,10 @@ export type NovelAction =
   | "notes"
   | "deleteChapter"
   | "deleteNovel"
-  | "protagonistName";
+  | "protagonistName"
+  | "title"
+  | "synopsis"
+  | "cover";
 
 export type NovelActionErrorNotice = {
   message: string;
@@ -39,6 +42,9 @@ const ACTION_OBJECT: Record<NovelAction, string> = {
   deleteChapter: "화를 지우지",
   deleteNovel: "소설을 지우지",
   protagonistName: "주인공 이름을 저장하지",
+  title: "제목을 저장하지",
+  synopsis: "소개를 저장하지",
+  cover: "표지를 바꾸지",
 };
 
 /** 원래 대화방이 지워져 화를 만들 수도 다시 만들 수도 없을 때의 문장. 만들기 버튼 아래 사유 문장과 두 요청의 409 가

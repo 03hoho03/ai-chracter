@@ -13,6 +13,11 @@ export {
   type NovelDetailResponse,
   type NovelPendingAiEdit,
 } from "./api/useNovelQuery";
+export {
+  saveReadingPosition,
+  sendReadingPositionKeepalive,
+  type NovelReadingPositionRequest,
+} from "./api/saveReadingPosition";
 export { useSetProtagonistNameMutation } from "./api/useSetProtagonistNameMutation";
 export { writeNovelChapterRevision } from "./api/writeNovelChapterRevision";
 export {
@@ -26,6 +31,8 @@ export {
   type PricedChapterModelOption,
 } from "./model/chapterModel";
 export { CHAPTER_REGENERATING_MESSAGE, isChapterRegenerating } from "./model/chapterRegenerationLock";
+export { toAdjacentChapters } from "./model/adjacentChapters";
+export { toEpisodeLabel } from "./model/episodeLabel";
 export { chaptersInBatch, toBatchRangeLabel, toEpisodeRangeLabel } from "./model/episodeRange";
 export {
   isProtagonistNameRequiredError,
@@ -48,5 +55,10 @@ export {
   isTerminalNovelJobStatus,
   type NovelJobStatus,
 } from "./model/novelJobPolling";
+export { toNovelReadProgress, type NovelReadProgress } from "./model/novelReadProgress";
+export { toResumeTarget, type ResumeTarget } from "./model/resumeTarget";
 export { ChapterModelSelect } from "./ui/ChapterModelSelect";
+export { EpisodeTocList } from "./ui/EpisodeTocList";
+export { NovelReadProgressSummary } from "./ui/NovelReadProgressSummary";
+export { NovelStatusState } from "./ui/NovelStatusState";
 export { NovelizeLockedState } from "./ui/NovelizeLockedState";

@@ -40,8 +40,13 @@
     />
 
     <script>
-      // 첫 페인트 전에 테마 적용 (FOUC 방지) — 규칙은 shared/model/theme.ts와 동일
-      if (localStorage.getItem("theme") !== "light") {
+      // 첫 페인트 전에 테마 적용 (FOUC 방지) — 규칙은 shared/model/theme.ts와 동일. 저장소 접근이 막힌
+      // 브라우저(사이트 데이터 차단)에서는 읽기가 던지므로 기본값(다크)으로 둔다.
+      var storedTheme = null;
+      try {
+        storedTheme = localStorage.getItem("theme");
+      } catch (error) {}
+      if (storedTheme !== "light") {
         document.documentElement.classList.add("dark");
       }
     </script>
