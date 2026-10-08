@@ -93,6 +93,35 @@ describe("toPageGeometry", () => {
     expect(Number.isInteger(geometry.columnWidth)).toBe(true);
     expect(Number.isInteger(geometry.step)).toBe(true);
     expect(geometry.step).toBe(2 * (geometry.columnWidth + geometry.columnGap));
+    expect(geometry.left).toBe(56); // 0.3 + 56 + 0.05 를 내림
+  });
+
+  it("잰 여백이 소수여도 단 간격·단 폭·화면 폭은 정수다", () => {
+    const geometry = toPageGeometry({ ...BASE, pagePaddingPx: 23.25 }); // 1.5rem 을 15.5px 루트에서 잰 값
+
+    expect(geometry.columnGap).toBe(46);
+    expect(geometry.columnWidth).toBe(390 - 46);
+    expect(geometry.step).toBe(390);
+  });
+
+  it("레이아웃 전 입력(0)에서도 NaN 이 없고 단 폭은 음수가 아니다", () => {
+    const geometry = toPageGeometry({
+      width: 0,
+      height: 0,
+      safeArea: NO_SAFE_AREA,
+      isFinePointer: false,
+      pagePaddingPx: 24,
+      proseWidthPx: 0,
+      lineHeightPx: 0,
+    });
+
+    for (const value of Object.values(geometry)) expect(Number.isNaN(value)).toBe(false);
+    expect(geometry.columnWidth).toBe(0);
+    expect(geometry.columnHeight).toBe(0);
+  });
+
+  it("창 높이는 쟀지만 줄 높이를 아직 모르면 단 높이는 NaN 이 아니라 0 이다", () => {
+    expect(toPageGeometry({ ...BASE, lineHeightPx: 0 }).columnHeight).toBe(0);
   });
 
   it("가로 safe-area 는 쓸 폭에서 빠지고 위·아래 safe-area 는 여백에 더해진다", () => {
@@ -136,6 +165,11 @@ describe("clampScreen", () => {
     expect(clampScreen(4, 5)).toBe(4);
     expect(clampScreen(5, 5)).toBe(4);
   });
+
+  it("화면 수가 0 이어도 0 이다", () => {
+    expect(clampScreen(0, 0)).toBe(0);
+    expect(clampScreen(3, 0)).toBe(0);
+  });
 });
 
 describe("toScrollLeft", () => {
@@ -150,6 +184,11 @@ describe("toNearestScreen", () => {
     expect(toNearestScreen({ scrollLeft: 194, step: 390, screenCount: 5 })).toBe(0);
     expect(toNearestScreen({ scrollLeft: 195, step: 390, screenCount: 5 })).toBe(1);
     expect(toNearestScreen({ scrollLeft: 780, step: 390, screenCount: 5 })).toBe(2);
+  });
+
+  it("레이아웃 전(폭 0·화면 0)에는 첫 화면이다", () => {
+    expect(toNearestScreen({ scrollLeft: 0, step: 0, screenCount: 0 })).toBe(0);
+    expect(toNearestScreen({ scrollLeft: 120, step: 0, screenCount: 5 })).toBe(0);
   });
 
   it("범위를 벗어난 위치는 첫·끝 화면으로 자른다", () => {

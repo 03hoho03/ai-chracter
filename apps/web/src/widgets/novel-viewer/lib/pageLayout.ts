@@ -49,6 +49,9 @@ export type PageGeometry = {
  * 것은 스크롤 모드 본문 상자와 같은 꼴이라, 넓은 화면에서 모드를 바꿔도 한 줄 글자 수가 같게 하려는 것이다. 단
  * 높이를 줄 높이의 배수로 내리는 것은 단 아래에 반 줄이 잘려 보이는 엔진(WebKit 보고)을 대비해서다. 아주 낮은
  * 창에서도 한 줄은 남긴다 — 높이 0 인 단에는 글자가 놓일 자리가 없다.
+ *
+ * 잰 여백은 루트 글자 크기에 따라 소수 px 일 수 있어 반올림해 정수 간격을 만든다. 쪽 상자 위치도 내려 정수로 두는데,
+ * 서브픽셀에 놓인 쪽은 글자가 흐려질 수 있다. 아직 재지 못한 값(0)이 들어와도 음수 폭이나 NaN 을 내지 않는다.
  */
 export function toPageGeometry({
   width,
@@ -61,13 +64,13 @@ export function toPageGeometry({
 }: PageLayoutInput): PageGeometry {
   const columnCount = toColumnCount({ width, height });
   const gutter = isFinePointer ? PAGE_BUTTON_GUTTER_PX : 0;
-  const columnGap = 2 * pagePaddingPx;
+  const columnGap = 2 * Math.round(pagePaddingPx);
   const available = width - safeArea.left - safeArea.right - 2 * gutter;
-  const columnWidth = Math.min(Math.floor(available / columnCount), Math.floor(proseWidthPx)) - columnGap;
+  const columnWidth = Math.max(0, Math.min(Math.floor(available / columnCount), Math.floor(proseWidthPx)) - columnGap);
   const step = columnCount * (columnWidth + columnGap);
   const top = PAGE_VERTICAL_PADDING_PX + safeArea.top;
   const bottom = PAGE_VERTICAL_PADDING_PX + safeArea.bottom;
-  const lineCount = Math.max(1, Math.floor((height - top - bottom) / lineHeightPx));
+  const lineCount = lineHeightPx > 0 ? Math.max(1, Math.floor((height - top - bottom) / lineHeightPx)) : 1;
 
   return {
     columnCount,
@@ -75,7 +78,7 @@ export function toPageGeometry({
     columnGap,
     step,
     columnHeight: lineCount * lineHeightPx,
-    left: safeArea.left + gutter + Math.floor((available - step) / 2),
+    left: Math.floor(safeArea.left + gutter + (available - step) / 2),
     top,
   };
 }
@@ -92,9 +95,9 @@ export function toScreenCount({
 }
 
 /** 화면 번호를 `0 … 화면 수 - 1` 로 자른다. 첫 화면 앞이나 화 끝 화면 뒤로는 넘어가지 않는다(다른 화로 가는 것은
- * 바의 버튼만 한다). */
+ * 바의 버튼만 한다). 화면 수를 아직 모르면(0) 첫 화면이다. */
 export function clampScreen(screen: number, screenCount: number): number {
-  return Math.min(Math.max(screen, 0), screenCount - 1);
+  return Math.max(Math.min(screen, screenCount - 1), 0);
 }
 
 /** 화면 `screen` 을 보일 때의 `scrollLeft`. */
@@ -102,7 +105,8 @@ export function toScrollLeft(screen: number, step: number): number {
   return screen * step;
 }
 
-/** 브라우저가 포커스·찾기 등으로 스크롤러를 화면 사이에 옮겨 놓았을 때 맞출 가장 가까운 화면. */
+/** 브라우저가 포커스·찾기 등으로 스크롤러를 화면 사이에 옮겨 놓았을 때 맞출 가장 가까운 화면. 화면 폭을 아직 모르면
+ * (0) 첫 화면이다. */
 export function toNearestScreen({
   scrollLeft,
   step,
@@ -112,5 +116,6 @@ export function toNearestScreen({
   step: number;
   screenCount: number;
 }): number {
+  if (step <= 0) return 0;
   return clampScreen(Math.round(scrollLeft / step), screenCount);
 }

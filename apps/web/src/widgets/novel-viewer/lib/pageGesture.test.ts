@@ -44,7 +44,7 @@ describe("toPageGesture — 탭", () => {
 
   it("탭 거리·시간 경계는 바 토글 판정과 같다", () => {
     expect(toPageGesture({ ...TAP, dx: -10, dt: 20, velocityX: -0.5 })).toBe("next");
-    expect(toPageGesture({ ...TAP, dt: 300 })).toBe("settle");
+    expect(toPageGesture({ ...TAP, dx: 3, dt: 300 })).toBe("settle");
   });
 
   it("보기 설정이 열려 있으면 어느 영역의 탭이든 설정만 닫는다", () => {
@@ -83,6 +83,23 @@ describe("toPageGesture — 스와이프·끌기", () => {
     expect(toPageGesture({ ...DRAG, dx: -20, velocityX: 0.5 })).toBe("settle");
   });
 
+  it("많이 끈 뒤 반대로 튕기면 제자리로 돌아간다", () => {
+    expect(toPageGesture({ ...DRAG, dx: -100, velocityX: 0.5 })).toBe("settle");
+    expect(toPageGesture({ ...DRAG, dx: -100, velocityX: 0.3 })).toBe("settle");
+    expect(toPageGesture({ ...DRAG, dx: -100, velocityX: 0.29 })).toBe("next");
+    expect(toPageGesture({ ...DRAG, dx: 100, velocityX: -0.5 })).toBe("settle");
+  });
+
+  it("움직이지 않고 오래 누르면 아무것도 하지 않는다", () => {
+    expect(toPageGesture(DRAG)).toBe("none");
+    expect(toPageGesture({ ...DRAG, clientX: 50 })).toBe("none");
+  });
+
+  it("쪽 폭을 아직 모르면 넘기지 않는다", () => {
+    expect(toPageGesture({ ...DRAG, dx: -30, pageWidth: 0 })).toBe("none");
+    expect(toPageGesture({ ...DRAG, dx: -30, velocityX: -1, pageWidth: 0 })).toBe("none");
+  });
+
   it("세로 이동이 더 크면 넘기지 않고 제자리로 돌아간다", () => {
     expect(toPageGesture({ ...DRAG, dx: -100, dy: 101, velocityX: -1 })).toBe("settle");
     expect(toPageGesture({ ...DRAG, dx: -100, dy: 100 })).toBe("next");
@@ -107,5 +124,10 @@ describe("toSettleDurationMs", () => {
   it("80ms 아래로 줄지 않고 250ms 를 넘지 않는다", () => {
     expect(toSettleDurationMs({ remainingPx: 10, pageWidth: 400 })).toBe(80);
     expect(toSettleDurationMs({ remainingPx: 800, pageWidth: 400 })).toBe(250);
+  });
+
+  it("쪽 폭을 모르면 0 이다", () => {
+    expect(toSettleDurationMs({ remainingPx: 0, pageWidth: 0 })).toBe(0);
+    expect(toSettleDurationMs({ remainingPx: 30, pageWidth: 0 })).toBe(0);
   });
 });
