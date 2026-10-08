@@ -62,4 +62,20 @@ describe("fitBatchFrames", () => {
     expect(frameOf(refitted).position.x).toBe(1000 - BATCH_FRAME_PADDING);
     expect(refitted.some((node) => node.id === "batch:b-empty")).toBe(false);
   });
+
+  it("자리·크기가 그대로인 테두리는 같은 객체를 돌려줘 라이브러리가 다시 재지 않게 한다", () => {
+    const first = fitBatchFrames([episode("e1", 0, 0)], model);
+    const measuredFrame = { ...frameOf(first), measured: { width: 272, height: 176 } };
+    const withMeasured = first.map((node) => (node.type === "batchFrame" ? measuredFrame : node));
+
+    const same = fitBatchFrames(withMeasured, model);
+    const moved = fitBatchFrames(
+      withMeasured.map((node) => (node.type === "episode" ? episode("e1", 50, 0) : node)),
+      model,
+    );
+
+    expect(frameOf(same)).toBe(measuredFrame);
+    expect(frameOf(moved)).not.toBe(measuredFrame);
+    expect(frameOf(moved).position.x).toBe(50 - BATCH_FRAME_PADDING);
+  });
 });

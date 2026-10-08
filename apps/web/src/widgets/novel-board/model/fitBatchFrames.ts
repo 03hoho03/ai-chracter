@@ -37,12 +37,19 @@ function union(a: Bounds | undefined, b: Bounds): Bounds {
  * 상자를 둘러싼, 끌거나 고를 수 없는 배경 노드로 두고 노드 배열 맨 앞에 놓는다 — 배열 순서가 그리는 순서라 화 카드
  * 뒤에 깔린다.
  * 화가 하나도 없는 묶음은 테두리를 그리지 않는다.
+ *
+ * 입력에 같은 자리·크기·머리 줄의 테두리가 이미 있으면 그 객체를 그대로 돌려준다. 라이브러리는 노드 객체가 바뀌면
+ * 그 노드를 다시 재는데, 다시 계산할 때마다 새 테두리를 주면 잰 크기가 사라져 재기 → 다시 계산 → 재기가 끝없이 돈다.
  */
 export function fitBatchFrames(nodes: BoardNode[], model: BoardModel): BoardNode[] {
   const boundsByBatch = new Map<string, Bounds>();
+  const existingFrames = new Map<string, BatchFrameNode>();
   const rest: BoardNode[] = [];
   for (const node of nodes) {
-    if (node.type === "batchFrame") continue;
+    if (node.type === "batchFrame") {
+      existingFrames.set(node.id, node);
+      continue;
+    }
     rest.push(node);
     if (node.type === "episode") {
       const { batchId } = node.data;
@@ -70,8 +77,20 @@ export function fitBatchFrames(nodes: BoardNode[], model: BoardModel): BoardNode
         connectable: false,
         deletable: false,
       };
-      return [frame];
+      const existing = existingFrames.get(frame.id);
+      return [existing !== undefined && isSameFrame(existing, frame) ? existing : frame];
     });
 
   return [...frames, ...rest];
+}
+
+function isSameFrame(a: BatchFrameNode, b: BatchFrameNode): boolean {
+  return (
+    a.position.x === b.position.x &&
+    a.position.y === b.position.y &&
+    a.width === b.width &&
+    a.height === b.height &&
+    a.data.ordinal === b.data.ordinal &&
+    a.data.rangeLabel === b.data.rangeLabel
+  );
 }

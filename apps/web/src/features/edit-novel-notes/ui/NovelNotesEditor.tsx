@@ -2,7 +2,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
-import { useId, useRef, useState } from "react";
+import { useId, useRef, useState, type RefObject } from "react";
 import { useFieldArray, useForm, useWatch } from "react-hook-form";
 
 import { novelKeys, toNovelActionError, type NovelDetailResponse } from "@/entities/novel";
@@ -14,6 +14,8 @@ import { serverToForm } from "../model/serverToForm";
 
 type NovelNotesEditorProps = {
   novel: NovelDetailResponse;
+  /** 노트 제목(`h2`, `tabIndex=-1`). 호출부가 노트를 열 때 포커스를 보낼 자리다. */
+  headingRef?: RefObject<HTMLHeadingElement | null>;
 };
 
 /** 설정 노트 — 소설 내내 지켜야 할 짧은 사실을 한 줄씩. 다음 화를 만들 때와 AI로 고칠 때 함께 전해진다.
@@ -23,7 +25,7 @@ type NovelNotesEditorProps = {
  * 입력을 덮지 않는다. 다른 소설로 옮기면 호출부가 `key` 로 새로 마운트한다.
  *
  * 저장 결과 문장과 실패 문장은 누른 순간 기록한 상태다. 저장 중에는 `aria-disabled` 로 막아 포커스를 지킨다. */
-export function NovelNotesEditor({ novel }: NovelNotesEditorProps) {
+export function NovelNotesEditor({ novel, headingRef }: NovelNotesEditorProps) {
   const queryClient = useQueryClient();
   const headingId = useId();
   const descriptionId = useId();
@@ -73,7 +75,8 @@ export function NovelNotesEditor({ novel }: NovelNotesEditorProps) {
   return (
     <section aria-labelledby={headingId} aria-describedby={descriptionId} className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
-        <h2 id={headingId} className="text-lg font-semibold text-foreground">
+        {/* 조작 대상이 아니라 포커스를 받아 두는 자리라 `tabIndex=-1` 이고 포커스 테두리를 그리지 않는다. */}
+        <h2 ref={headingRef} id={headingId} tabIndex={-1} className="text-lg font-semibold text-foreground outline-none">
           설정 노트
         </h2>
         <p id={descriptionId} className="text-sm break-keep text-muted-foreground">
