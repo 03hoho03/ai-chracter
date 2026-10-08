@@ -5,6 +5,7 @@ import { useId, useRef } from "react";
 
 import { NOVEL_ROOM_GONE_MESSAGE } from "@/entities/novel";
 
+import { toChainRunningText } from "../model/chainProgress";
 import type { NovelChapterJobFlow } from "../model/useNovelChapterJob";
 
 type NovelChapterMakerProps = {
@@ -117,14 +118,13 @@ function toStatusText(flow: NovelChapterJobFlow): string {
   return flow.notice?.tone === "done" ? flow.notice.message : "";
 }
 
-/** 진행 중인 작업이 무엇을 쓰고 있나. 남은 대화 한 번에(연쇄)는 이 화면이 시작하지 않지만 다른 화면에서 시작했으면
- * 여기서도 진행 중으로 보인다 — 몇 번째 묶음인지까지는 말하지 않고 쓰고 있다는 것만 말한다. */
+/** 진행 중인 작업이 무엇을 쓰고 있나. 남은 대화 한 번에(연쇄)는 만든 묶음 / 만들 묶음까지 말한다. */
 function toRunningSubject(flow: NovelChapterJobFlow): string {
   switch (flow.runningKind) {
     case "chapter_regenerate":
       return `${flow.runningRangeLabel ?? "화"}를 다시 쓰고 있어요.`;
     case "chain_generate":
-      return "남은 대화를 소설로 쓰고 있어요.";
+      return toChainRunningText(flow.chainProgress);
     default:
       return "새 화를 쓰고 있어요.";
   }
