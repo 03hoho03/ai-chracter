@@ -6,6 +6,7 @@ import {
   novelKeys,
   saveReadingPosition,
   sendReadingPositionKeepalive,
+  type NovelDetailResponse,
   type NovelReadingPositionRequest,
 } from "@/entities/novel";
 
@@ -17,6 +18,7 @@ import {
   toTrackingStart,
   type BandParagraph,
 } from "../lib/readingBand";
+import { withChapterReadingPosition } from "../lib/readingPositionCache";
 import { toRestoreParagraphIndex, type SavedReadingPosition } from "../lib/toRestoreParagraphIndex";
 
 const SAVE_DEBOUNCE_MS = 3000;
@@ -68,7 +70,8 @@ function positionKey(body: NovelReadingPositionRequest): string {
  *   끊긴다.
  * - **떠날 때**: 저장 응답에 본문이 없어 상세 캐시의 이어 읽기·읽음 표시가 낡는다 — 날아가던 저장과 마지막 저장이
  *   모두 끝난 뒤 상세를 다시 받게 표시해 작품 정보 화면이 돌아왔을 때 맞는 표시를 보게 한다(먼저 다시 받으면 저장
- *   전 값을 받아 낡은 채 남는다).
+ *   전 값을 받아 낡은 채 남는다). 그 다시 받기가 오기 전에 같은 화로 돌아와도 방금 자리로 열리게, 마지막으로 잰 자리는
+ *   떠나는 순간 상세 캐시의 그 화에 먼저 써 둔다(`withChapterReadingPosition`).
  */
 export function useReadingPosition({
   novelId,
@@ -83,6 +86,8 @@ export function useReadingPosition({
   const pendingRef = useRef<NovelReadingPositionRequest | undefined>(undefined);
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const lastKeyRef = useRef<string | undefined>(undefined);
+  // 이번에 열어 둔 동안 마지막으로 잰 자리. 떠날 때 상세 캐시에 먼저 써 둔다.
+  const lastRecordedRef = useRef<NovelReadingPositionRequest | undefined>(undefined);
   const inflightRef = useRef<Promise<void>>(Promise.resolve());
   // 라우터가 이 이동을 끝냈는가(지금 주소가 해결된 주소이고 진행 중인 이동이 없다). 한 번 참이 되면 참으로 남긴다 —
   // 이 화면을 떠나는 다음 이동이 시작돼 거짓이 돼도 되돌리기·재기를 다시 하지 않게.
@@ -123,6 +128,7 @@ export function useReadingPosition({
       const key = positionKey(body);
       if (key === lastKeyRef.current) return;
       lastKeyRef.current = key;
+      lastRecordedRef.current = body;
       pendingRef.current = body;
       cancelTimer();
       timerRef.current = setTimeout(() => {
@@ -251,6 +257,12 @@ export function useReadingPosition({
       for (const observer of observers) observer.disconnect();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("pagehide", handlePageHide);
+      const lastRecorded = lastRecordedRef.current;
+      if (lastRecorded !== undefined) {
+        queryClient.setQueryData<NovelDetailResponse>(novelKeys.detail(novelId), (detail) =>
+          withChapterReadingPosition(detail, chapterId, lastRecorded),
+        );
+      }
       void Promise.all([inflightRef.current, flushKeepalive()]).then(() =>
         queryClient.invalidateQueries({ queryKey: novelKeys.detail(novelId) }),
       );
