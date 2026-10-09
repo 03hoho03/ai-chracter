@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 from pydantic import Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-# 둘 다 다른 `api` 모듈을 import 하지 않는 잎 모듈이다 — 아래 `settings = Settings()` 가 이 모듈을 import 하는 도중에 돌므로,
+# 둘 다 `settings` 를 찾지 않는 모듈이다(`backends` 는 `call_policy` 만, `call_policy` 는 아무 `api` 모듈도 import 하지 않는다) — 아래 `settings = Settings()` 가 이 모듈을 import 하는 도중에 돌므로,
 # 기동 검증이 읽는 표는 `settings` 를 찾지 않는 모듈에 있어야 한다.
 from api.llm import backends
 from api.llm.call_policy import BackendId, LLMCallSite

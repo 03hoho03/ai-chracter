@@ -7,11 +7,10 @@ from typing import TypeVar
 from pydantic import BaseModel
 
 from api.core.config import settings
-from api.llm.call_policy import CALL_POLICIES
+from api.llm.call_policy import CALL_POLICIES, BackendId
 
 # `as LLMCallSite` 는 mypy strict 의 명시적 재export 요구 때문이다 — 이 이름을 `api.llm.client` 에서 가져오는 모듈이
 # 많아, 정의를 호출 정책 표 옆으로 옮겨도 기존 import 경로를 그대로 쓰게 둔다.
-from api.llm.call_policy import BackendId
 from api.llm.call_policy import LLMCallSite as LLMCallSite
 from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId
 
