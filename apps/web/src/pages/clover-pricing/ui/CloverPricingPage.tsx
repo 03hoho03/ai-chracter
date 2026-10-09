@@ -37,9 +37,9 @@ type DeployedPricingResponse = Omit<CloverPricingResponse, AddedPricingKey> &
 
 type ModelPricing = CloverPricingResponse["models"][number];
 
-/** 아직 허용된 계정만 쓰는 사용처의 단가 칸에 붙이는 표시. 지금 쓸 수 없다는 상태만 짧게 말하고, 일부 계정에 먼저
- * 열어 두었다는 뜻은 표 아래 각주가 풀어 준다. */
-const RESTRICTED_LABEL = "준비 중";
+/** 아직 허용된 계정만 쓰는 사용처의 단가 칸에 붙이는 표시. 누가 쓸 수 있는지를 짧게 말하고 표 아래 각주가 풀어 준다.
+ * "준비 중"이라 하지 않는다 — 결제가 닫혀 있을 때 같은 화면에 "결제는 아직 준비 중"이 함께 떠 한 말이 두 뜻이 된다. */
+const RESTRICTED_LABEL = "일부 계정";
 
 /** `/clover/pricing` — 로그인 없이 보는 클로버 상품 안내.
  *
@@ -63,7 +63,12 @@ export function CloverPricingPage() {
         <h1 className="text-2xl font-bold tracking-tight text-foreground">
           {SUPPORT_DESTINATIONS["clover-pricing"].label}
         </h1>
-        <p className="text-sm break-keep text-muted-foreground">클로버는 대화, 소설, 이미지 생성에 쓰여요.</p>
+        {/* 소설이 일부 계정에만 열려 있는 동안 소설을 모든 회원의 사용처처럼 소개하지 않는다. */}
+        <p className="text-sm break-keep text-muted-foreground">
+          {pricing?.novelRestricted
+            ? "클로버는 대화와 이미지 생성에 쓰여요. 소설은 지금은 일부 계정만 쓸 수 있어요."
+            : "클로버는 대화, 소설, 이미지 생성에 쓰여요."}
+        </p>
       </div>
 
       <PricingBody />
@@ -102,7 +107,7 @@ export function CloverPricingPage() {
 
       <Section title="미성년자 결제">
         <p className="text-sm break-keep text-foreground">
-          클로버는 만 19세 이상만 살 수 있어요. 그래도 미성년자가 법정대리인의 동의 없이 결제했다면 본인이나 법정대리인이 취소할 수 있어요. 다만 성년자이거나
+          클로버는 <span className="whitespace-nowrap">만 19세</span> 이상만 살 수 있어요. 그래도 미성년자가 법정대리인의 동의 없이 결제했다면 본인이나 법정대리인이 취소할 수 있어요. 다만 성년자이거나
           법정대리인이 동의한 것처럼 속였거나, 용돈처럼 법정대리인이 쓰도록 허락한 돈의 범위에서 결제했다면 취소할 수
           없어요.
         </p>
@@ -161,6 +166,14 @@ function PricingBody() {
   return (
     <>
       <Section title="충전 상품" headingRef={productsHeadingRef}>
+        {/* 구매 자격은 상품을 고르기 전에 읽혀야 해 제목 바로 아래에 둔다. 서버의 주문 생성 판정 그대로다 — 본인인증은
+            나이를 확인하는 유일한 수단이라 미인증 회원 게이트 스위치와 무관하게 늘 필요하고, 그 뒤 만 19세 미만을
+            막는다. 그래서 게이트 값으로 가르지 않는다. 결제가 닫혀 있으면 살 수 없다는 말이 먼저라 싣지 않는다. */}
+        {pricing?.paymentsEnabled && (
+          <p className="text-sm break-keep text-foreground">
+            휴대폰 본인인증을 마친 <span className="whitespace-nowrap">만 19세</span> 이상 회원만 살 수 있어요.
+          </p>
+        )}
         {pricingQuery.isPending && <ProductListSkeleton />}
         {pricingQuery.isError && (
           <PricingErrorState
@@ -221,11 +234,9 @@ function ProductList({
           ))}
         </ul>
       )}
-      {/* 구매 자격은 서버의 주문 생성 판정 그대로다 — 본인인증은 나이를 확인하는 유일한 수단이라 미인증 회원 게이트
-          스위치와 무관하게 늘 필요하고, 그 뒤 만 19세 미만을 막는다. 그래서 게이트 값으로 가르지 않는다. */}
       <p className="text-xs break-keep text-muted-foreground">
         {paymentsEnabled
-          ? "가격은 부가세 포함이에요. 클로버는 휴대폰 본인인증을 마친 만 19세 이상 회원만 살 수 있어요. 상품을 누르면 클로버 화면에서 구매를 이어 가요. 로그인 전이라면 로그인한 뒤에 이어져요."
+          ? "가격은 부가세 포함이에요. 상품을 누르면 클로버 화면에서 구매를 이어 가요. 로그인 전이라면 로그인한 뒤에 이어져요."
           : "가격은 부가세 포함이에요. 클로버 결제는 아직 준비 중이에요."}
       </p>
     </>
@@ -284,8 +295,7 @@ function UsageCosts({ pricing }: { pricing: DeployedPricingResponse }) {
       </dl>
       {hasRestricted && (
         <p className="text-xs break-keep text-muted-foreground">
-          ‘{RESTRICTED_LABEL}’이 붙은 단가는 일부 계정에서 먼저 열어 둔 기능의 가격이에요. 아직 모든 회원이 쓸 수는
-          없어요.
+          ‘{RESTRICTED_LABEL}’이 붙은 단가는 지금은 일부 계정만 쓸 수 있는 기능의 가격이에요.
         </p>
       )}
       {/* 단가가 0이면 나눗셈이 무한대가 된다 — 그때는 예시를 싣지 않는다. */}
@@ -305,7 +315,7 @@ function UsageCosts({ pricing }: { pricing: DeployedPricingResponse }) {
  * 읽는다. 값 칸은 클로버 개수이고, 단위는 칸마다 아이콘을 되풀이하지 않고 열 머리에 한 번 적는다. 오른쪽 정렬
  * `tabular-nums` 로 자릿수를 세로로 맞춘다. 정보 표라 행 hover 를 끈다.
  *
- * ‘준비 중’ 표시는 모델이나 열이 아니라 지금 쓸 수 없는 값 칸에 붙는다 — 상위 모델(`restricted`)이면 그 행의 두 칸,
+ * ‘일부 계정’ 표시는 모델이나 열이 아니라 지금 쓸 수 없는 값 칸에 붙는다 — 상위 모델(`restricted`)이면 그 행의 두 칸,
  * 소설이 막혀 있으면(`novelRestricted`) 소설 열의 모든 칸이다. 기본 모델 대화처럼 열린 칸에는 붙지 않는다. */
 function ModelCostTable({ models, isNovelRestricted }: { models: readonly ModelPricing[]; isNovelRestricted: boolean }) {
   return (
@@ -357,7 +367,7 @@ function ColumnHeading({ label }: { label: string }) {
   );
 }
 
-/** 단가 값 하나와, 지금 쓸 수 없는 값이면 그 아래 ‘준비 중’. 값 자체는 흐리지 않는다 — 공개한 가격이라 읽혀야 하고,
+/** 단가 값 하나와, 모든 회원이 쓸 수 있는 값이 아니면 그 아래 ‘일부 계정’. 값 자체는 흐리지 않는다 — 공개한 가격이라 읽혀야 하고,
  * 상태는 표시 글자가 말한다. */
 function CostValue({ isRestricted, children }: { isRestricted: boolean; children: ReactNode }) {
   return (

@@ -27,7 +27,6 @@ import { findRequestedProduct } from "../model/requestedProduct";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 const IDENTITY_REQUIRED_MESSAGE = "본인인증을 하면 받을 수 있어요.";
-const AGE_RESTRICTED_MESSAGE = "클로버는 만 19세 이상만 구매할 수 있어요.";
 
 /** 미션 수령 실패 토스트. 본인인증 403 은 실패가 아니라 "아직 받을 수 없다"라 오류 토스트가 아니고, 세션은 전역
  * 뮤테이션 처리가 다시 읽어 이 화면이 본인인증 안내로 바뀐다. */
@@ -170,25 +169,30 @@ function PurchaseBody({ requestedProductKey, onRequestedProductHandled }: Purcha
     return <p className="text-sm break-keep text-muted-foreground">클로버 결제는 아직 준비 중이에요.</p>;
   }
   if (section === "identityRequired" || !me) {
-    // 상품 안내에서 상품을 고르고 왔는데 구매 확인이 열리지 않은 이유를 안내가 말하지만, 인증 뒤에 고른 상품이
-    // 이어지는지는 말하지 않는다 — 인증은 마이페이지에서 하고, 뒤로가기로 이 주소에 돌아오면 `?product=` 가 남아 구매
-    // 확인이 열리지만 다른 길로 오면 열리지 않는다. 그래서 덧붙이는 줄은 조건으로 말한다. 인증 뒤 상품이 보이는 것도
-    // 만 19세 이상뿐이라(미만은 나이 제한 문장만 보인다) 그 조건을 넣는다. 나이 제한 갈래 자체는 어떤 상품도 살 수
-    // 없다고 이미 말해 덧붙일 것이 없다.
+    // 상품 안내에서 상품을 고르고 왔는데 구매 확인이 열리지 않은 이유는 안내가 말하고, 덧붙이는 줄은 고른 상품을 어디서
+    // 사는지만 말한다. 구매 확인이 저절로 다시 열린다고는 하지 않는다 — 인증은 마이페이지에서 하고, 이 주소로 돌아오는
+    // 길에 따라 `?product=` 가 남지 않을 수 있다. 나이 조건(만 19세 이상)은 위 안내가 이미 말해 되풀이하지 않는다.
+    // 가격 응답에 없는 키(옛 링크, 손으로 고친 주소)면 상품 이름 없이 말한다.
     if (requestedProductKey === undefined) return <IdentityRequiredNotice reason="purchase" />;
+    const requestedProduct = products.find((product) => product.key === requestedProductKey);
     return (
       <div className="flex flex-col gap-2">
         <IdentityRequiredNotice reason="purchase" />
         <p className="text-xs break-keep text-muted-foreground">
-          만 19세 이상이면 본인인증을 마친 뒤 이 자리에 상품이 보여요. 상품 안내에서 고른 상품의 구매 확인이 이어서
-          열리지 않으면 여기서 다시 골라주세요.
+          {requestedProduct
+            ? `본인인증을 마치면 상품 안내에서 고른 상품(${requestedProduct.name})을 여기서 살 수 있어요.`
+            : "본인인증을 마치면 여기서 상품을 살 수 있어요."}
         </p>
       </div>
     );
   }
   // 잘못한 것이 없으므로 경고 틴트가 아니라 중립 문장이다. 상품 카드는 눌러도 살 수 없어 두지 않는다.
   if (section === "ageRestricted") {
-    return <p className="text-sm break-keep text-muted-foreground">{AGE_RESTRICTED_MESSAGE}</p>;
+    return (
+      <p className="text-sm break-keep text-muted-foreground">
+        클로버는 <span className="whitespace-nowrap">만 19세</span> 이상만 구매할 수 있어요.
+      </p>
+    );
   }
 
   return (
