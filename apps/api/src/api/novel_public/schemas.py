@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import Field
 
 from api.core.schema import CamelModel
+from api.db.models.moderation import ReportReasonCategory, ReportStatus
 from api.db.models.novel import (
     NovelContentType,
     NovelPublicationModerationStatus,
@@ -229,3 +230,49 @@ class PublicNovelHomeResponse(CamelModel):
     인기순으로 채우지 않는다."""
 
     items: list[PublicNovelHomeItem]
+
+
+class PublicNovelCommentCreateRequest(CamelModel):
+    """화 댓글 본문. 빈 글·1,000자(화면에 보이는 글자 수) 초과는 라우트가 422 로 거른다."""
+
+    body: str
+
+
+class PublicNovelCommentItem(CamelModel):
+    """화 댓글 하나와 보는 사람이 그 댓글에 할 수 있는 일. `is_publisher` 는 작성자가 이 노벨의 게시자인가(화면의 "게시자"
+    표식)이고, `can_delete` 는 작성자 본인이거나 보는 사람이 게시자일 때, `can_report` 는 남의 댓글일 때 참이다."""
+
+    id: uuid.UUID
+    author_nickname: str | None
+    is_publisher: bool
+    is_mine: bool
+    can_delete: bool
+    can_report: bool
+    body: str
+    created_at: datetime
+
+
+class PublicNovelCommentListResponse(CamelModel):
+    """최신순 한 페이지. `total_count` 는 그 화에 보이는 댓글 수다(지운 댓글·운영자가 숨긴 댓글은 빠진다)."""
+
+    items: list[PublicNovelCommentItem]
+    next_cursor: str | None
+    total_count: int
+
+
+class PublicNovelReportRequest(CamelModel):
+    """노벨 신고. `chapter_id` 를 주면 그 공개 화를, 비우면 소설 전체를 신고한다."""
+
+    reason_category: ReportReasonCategory
+    chapter_id: uuid.UUID | None = None
+
+
+class PublicNovelCommentReportRequest(CamelModel):
+    reason_category: ReportReasonCategory
+
+
+class PublicNovelReportResponse(CamelModel):
+    """같은 대상을 다시 신고하면 처음 신고를 그대로 돌려준다(사유·증거를 바꾸지 않는다)."""
+
+    report_id: uuid.UUID
+    status: ReportStatus

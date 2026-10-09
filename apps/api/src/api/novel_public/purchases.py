@@ -43,7 +43,7 @@ from api.db.models.novel import Novel, NovelBatch, NovelChapter, NovelChapterPub
 from api.db.session import get_db_session
 from api.legal.dependencies import require_legal_consent
 from api.moderation.notifications import NOVEL_REFUND_NOTIFICATION_TYPE
-from api.novel_public.access import readable_publication_conditions, require_novel_public_enabled
+from api.novel_public.access import readable_publication_conditions, require_novel_public_readable
 from api.novelize.schemas import NovelPurchaseRefundPreview
 from api.payments.refund import fully_cancelled_purchase_lot
 from api.session.dependencies import get_current_user_id
@@ -51,10 +51,11 @@ from api.session.dependencies import get_current_user_id
 # 잔액 부족 429 의 `window`. 소설화 차감과 같은 바디 모양(`CLOVER_REQUIRED`)이고 이 값으로 어느 기능인지 가른다.
 NOVEL_READ_WINDOW = "novel_read"
 
+# 노벨 스위치가 꺼져 있으면 404 다 — 독자에게는 노벨이 없는 것과 같다(읽기 라우트와 같은 응답).
 reader_router = APIRouter(
     prefix="/webnovels",
     tags=["webnovels"],
-    dependencies=[Depends(require_novel_public_enabled)],
+    dependencies=[Depends(require_novel_public_readable)],
 )
 
 
@@ -212,7 +213,7 @@ async def purchase_novel_chapter(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> NovelChapterPurchaseResponse:
-    """노벨 화 하나를 소장한다(`purchase_chapter`). 공개 스위치가 꺼져 있으면 403 `NOVEL_PUBLIC_DISABLED`."""
+    """노벨 화 하나를 소장한다(`purchase_chapter`). 노벨 스위치가 꺼져 있으면 404 `NOVEL_PUBLIC_DISABLED`."""
     response = await purchase_chapter(
         db, buyer_id=user_id, novel_id=novel_id, chapter_id=chapter_id, expected_price=body.expected_price
     )

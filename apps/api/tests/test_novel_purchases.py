@@ -207,7 +207,8 @@ async def test_a_stale_price_is_409_and_writes_nothing(
 async def test_unreadable_novels_cannot_be_bought(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """운영자 이용제한·정지된 게시자의 소설은 사지 못한다(이유를 가르지 않는 404). 공개 스위치가 꺼지면 403 이다."""
+    """운영자 이용제한·정지된 게시자의 소설은 사지 못한다(이유를 가르지 않는 404). 공개 스위치가 꺼져도 404 다 — 독자에게는
+    노벨이 없는 것과 같다(읽기 라우트와 같은 응답)."""
     restricted = await _setup(db_session)
     suspended = await _setup(db_session)
     buyer = await _buyer(db_session)
@@ -223,7 +224,7 @@ async def test_unreadable_novels_cannot_be_bought(
     assert (await _buy(db_client, suspended, 6, as_user=buyer)).status_code == 404
     monkeypatch.setattr(settings, "novel_public_enabled", False)
     off = await _buy(db_client, restricted, 6, as_user=buyer)
-    assert (off.status_code, off.json()["detail"]) == (403, {"code": "NOVEL_PUBLIC_DISABLED"})
+    assert (off.status_code, off.json()["detail"]) == (404, {"code": "NOVEL_PUBLIC_DISABLED"})
     assert await _ledger(db_session, buyer) == []
 
 
