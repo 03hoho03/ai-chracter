@@ -31,6 +31,7 @@ import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMess
 import { firstLine } from "@/shared/lib/text/firstLine";
 import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
 
+import { situationalImageAfterRelink, situationalImageRelinkAction } from "../model/situationalImageRelink";
 import { situationalImageThumbUrl, type SavedSituationalImage } from "../model/situationalImageThumbUrl";
 
 const SITUATIONAL_IMAGE_LIST: CharacterCollapsibleList = "situationalImage";
@@ -68,33 +69,72 @@ export function AdvancedTab({ ensureContentVersionId, savedImages }: AdvancedTab
   });
   const uiState = useBuilderUiState();
   const addButtonRef = useRef<HTMLButtonElement>(null);
+  // 상황이 비어 다시 등록하지 못한 되살린 그림 — 행 id 별 자산. 상황을 채우고 칸을 떠날 때 등록한다.
+  const awaitingDescriptionRef = useRef(new Map<string, string>());
+
+  // 상황을 채우지 않고 탭을 떠나면 서버 행에 그림이 없는 채로 남으므로 폼도 '이미지 없음'으로 맞춘다 — 남겨 두면 화면은
+  // 등록됨인데 다시 열면 이미지 없음이 되고 발행이 거절된다.
+  useEffect(() => {
+    const awaiting = awaitingDescriptionRef.current;
+    return () => {
+      for (const [itemId, assetId] of awaiting) clearImageIfStill(itemId, assetId);
+      awaiting.clear();
+    };
+  }, []);
+
+  function clearImageIfStill(itemId: string, assetId: string) {
+    const index = getValues("situationalImages").findIndex((item) => item.id === itemId);
+    if (index !== -1 && getValues(`situationalImages.${index}.image`)?.assetId === assetId) {
+      setValue(`situationalImages.${index}.image`, null, { shouldDirty: true });
+    }
+  }
 
   /**
    * 되살린 항목의 그림을 서버 행에 다시 잇는다. 서버는 저장 요청에 없는 행을 지우고, 같은 id 로 다시 오면 그림 없이 만든다 —
    * 그래서 지운 뒤 자동저장이 한 번 지나갔다면 폼만 되살려서는 그림이 사라진다. 등록은 같은 행에 덮어쓰므로 저장이 안 지나간
    * 경우에도 그대로 불러도 된다. 자산은 지워도 남아 있다.
+   *
+   * 등록 뒤에는 저장을 한 번 더 일으킨다. 되살린 뒤의 자동저장 응답이 등록보다 먼저 오면 초안 캐시에 그 행이 그림 없이
+   * 남는다 — 썸네일이 글자로 머물고, 캐시가 살아 있는 동안 빌더를 다시 열면 폼이 그 캐시로 '이미지 없음'을 갖고 시작한다.
    */
   async function relinkImage(itemId: string, assetId: string) {
+    awaitingDescriptionRef.current.delete(itemId);
     try {
       const contentVersionId = await ensureContentVersionId();
       const items = getValues("situationalImages");
       const index = items.findIndex((item) => item.id === itemId);
       const item = items[index];
-      if (item === undefined) return;
+      const action = situationalImageRelinkAction(assetId, item);
+      if (action === "skip" || item === undefined) return;
+      if (action === "wait-description") {
+        awaitingDescriptionRef.current.set(itemId, assetId);
+        toast("노출할 상황을 쓰면 되돌린 이미지가 다시 연결돼요.", { id: `situational-image-relink-${itemId}` });
+        return;
+      }
       await registerSituationalImage(assetId, {
         entityId: itemId,
         contentVersionId,
         triggerCondition: item.situationDescription,
         order: index,
       });
+      const savedIndex = getValues("situationalImages").findIndex((row) => row.id === itemId);
+      const currentImage = savedIndex === -1 ? undefined : getValues(`situationalImages.${savedIndex}.image`);
+      const next = situationalImageAfterRelink(assetId, currentImage);
+      // 폼 값은 그대로라(같은 값을 다시 넣으면 RHF 가 변경을 알리지 않아 자동저장이 안 돈다) 저장을 직접 부른다. 이 저장이
+      // 실패해도 그림은 서버 행에 이어졌다 — 캐시만 다음 저장까지 낡으므로 등록 실패로 다루지 않는다.
+      if (next === "save") void ensureContentVersionId().catch(() => undefined);
+      if (next === "register-current" && currentImage) void relinkImage(itemId, currentImage.assetId);
     } catch {
       // 서버 행에 그림이 없으니 폼도 '이미지 없음'으로 맞춘다 — 남겨 두면 화면은 등록됨인데 발행이 거절된다.
-      const index = getValues("situationalImages").findIndex((item) => item.id === itemId);
-      if (index !== -1 && getValues(`situationalImages.${index}.image`)?.assetId === assetId) {
-        setValue(`situationalImages.${index}.image`, null, { shouldDirty: true });
-      }
+      clearImageIfStill(itemId, assetId);
       toast.error("되돌린 상황별 이미지의 그림을 다시 붙이지 못했어요. 이미지를 다시 올려주세요.");
     }
+  }
+
+  /** 상황 칸을 떠날 때 — 상황이 비어 미뤄 둔 등록이 있으면 지금 한다. */
+  function handleDescriptionBlur(itemId: string) {
+    const assetId = awaitingDescriptionRef.current.get(itemId);
+    if (assetId !== undefined) void relinkImage(itemId, assetId);
   }
 
   function handleAppend() {
@@ -146,6 +186,7 @@ export function AdvancedTab({ ensureContentVersionId, savedImages }: AdvancedTab
                   savedImages={savedImages}
                   handleProps={sortable.handleProps(index)}
                   ensureContentVersionId={ensureContentVersionId}
+                  onDescriptionBlur={handleDescriptionBlur}
                   onRemove={() => handleRemove(index)}
                 />
               ))}
@@ -183,6 +224,8 @@ type SituationalImageRowProps = {
   /** 손잡이의 id·화살표 키 재정렬(`useSortableList`). */
   handleProps: SortableHandleProps;
   ensureContentVersionId: () => Promise<string>;
+  /** 상황 칸을 떠날 때(인자는 폼 값의 행 id). */
+  onDescriptionBlur: (itemId: string) => void;
   onRemove: () => void;
 };
 
@@ -207,6 +250,7 @@ function SituationalImageRow({
   savedImages,
   handleProps,
   ensureContentVersionId,
+  onDescriptionBlur,
   onRemove,
 }: SituationalImageRowProps) {
   const form = useFormContext<CharacterBuilderFormValues>();
@@ -320,6 +364,10 @@ function SituationalImageRow({
               : situationDescriptionCountId
           }
           {...situation.registration}
+          onBlur={(event) => {
+            void situation.registration.onBlur(event);
+            onDescriptionBlur(situationalImage.id);
+          }}
         />
         <FieldCharacterCount
           id={situationDescriptionCountId}
