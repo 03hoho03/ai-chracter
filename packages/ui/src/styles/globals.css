@@ -217,6 +217,11 @@
      같은 요소에 h-14 와 함께 걸면 border-box 라 바 안쪽이 그만큼 줄어든다 */
   padding-top: env(safe-area-inset-top);
 }
+@utility pb-safe {
+  /* 뷰포트 하단에 고정되는 바 아래쪽에 iOS safe-area(홈 표시줄)를 더한다 — pt-safe 의 아래 짝. 바 줄 높이를 정한
+     안쪽 요소가 아니라 바깥 요소에 건다(pt-safe 와 같은 이유) */
+  padding-bottom: env(safe-area-inset-bottom);
+}
 @utility px-safe {
   /* 뷰포트 좌우에 닿는 고정 바의 좌우에 iOS safe-area 를 더한다 — 가로로 눕힌 노치 폰에서 바 양끝 버튼이 노치·둥근
      모서리 밑에 깔리지 않게. 안쪽 px-* 는 그대로 두고 바깥 요소에 건다(pt-safe 와 같은 이유) */
