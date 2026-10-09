@@ -37,6 +37,7 @@ from api.novelize import billing, runner
 from api.novelize import inputs
 from api.novelize.deletion import delete_novels
 from api.novelize.source import segment_hash
+from api.novelize.paragraphs import resplit_long_paragraphs
 from api.novelize.text import clean_chapter_body
 from factories import (
     Room,
@@ -239,7 +240,7 @@ async def test_chapter_job_saves_the_chapter_and_its_first_revision_after_the_st
     assert chapter.source_hash == segment_hash(segment)
     revisions = await _revisions(db_session, chapter.id)
     assert [(r.revision_no, r.source) for r in revisions] == [(1, "generate")]
-    assert revisions[0].body == "비가 내리는 저녁이었다.\n\n" + ("도윤이 잔을 밀어 주었다. " * 20).strip()
+    assert revisions[0].body == resplit_long_paragraphs("비가 내리는 저녁이었다.\n\n" + ("도윤이 잔을 밀어 주었다. " * 20).strip())
     assert (stored.status, stored.chapter_id, stored.result_revision_id) == ("succeeded", chapter.id, revisions[0].id)
     assert stored.finished_at is not None and stored.refunded_at is None
     assert await _ledger(db_session, novel.user_id) == [("novelize_spend", -40)]
@@ -354,7 +355,7 @@ async def test_a_batch_of_three_episodes_saves_one_batch_three_episodes_their_ch
         (batch.start_message_id, batch.end_message_id, batch.source_hash)
     }
     bodies = [(await _revisions(db_session, c.id))[0].body for c in chapters]
-    assert bodies == [body.strip() for body in _BODIES]
+    assert bodies == [resplit_long_paragraphs(body.strip()) for body in _BODIES]
     assert [await _links(db_session, c.id) for c in chapters] == [["도윤", "서진"], ["도윤"], ["서진", "하늘"]]
     assert await db_session.scalar(
         sa.select(sa.func.count()).select_from(NovelCharacter).where(NovelCharacter.novel_id == novel.id)
@@ -549,7 +550,7 @@ async def test_regenerating_keeps_an_episode_title_the_user_edited_and_replaces_
         ("내 화 제목", True, "새 요약 2"),
         ("새 제목 3", False, "새 요약 3"),
     ]
-    assert (await _revisions(db_session, after[1].id))[-1].body == ("다시 쓴 화. " * 30).strip()
+    assert (await _revisions(db_session, after[1].id))[-1].body == resplit_long_paragraphs(("다시 쓴 화. " * 30).strip())
     assert await _links(db_session, after[1].id) == ["하늘"]
 
 
@@ -804,7 +805,7 @@ async def test_an_old_style_body_for_a_one_episode_target_is_kept_as_one_episode
     stored = await _job(db_session, job.id)
     (chapter,) = await _chapters(db_session, novel.id)
     assert (stored.status, chapter.title, chapter.summary, chapter.episode_index) == ("succeeded", None, None, 0)
-    assert (await _revisions(db_session, chapter.id))[0].body == clean_chapter_body(_BODY)
+    assert (await _revisions(db_session, chapter.id))[0].body == resplit_long_paragraphs(clean_chapter_body(_BODY))
     assert await _links(db_session, chapter.id) == []
     assert await _ledger(db_session, novel.user_id) == [("novelize_spend", -40)]
 
@@ -1349,7 +1350,7 @@ async def test_poll_reports_a_finished_chapter_job(
 async def test_poll_reports_an_ai_edit_preview(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    novel, chapter = await _chapter_with_body(db_client, db_session, "\n\n".join(["문단이다. " * 40, "둘째."]))
+    novel, chapter = await _chapter_with_body(db_client, db_session, "\n\n".join(["문단이다. " * 33, "둘째."]))
     await _allow(db_session, monkeypatch, novel.user_id)
     job = await _ai_edit_job(db_session, novel, chapter, start=1, end=1)
     await runner.run_job(_factory(db_session), _NovelLLM(paragraphs=["고친 둘째."]), job.id)
@@ -1371,7 +1372,7 @@ async def test_poll_reports_an_ai_edit_preview(
         "paragraphStart": 1,
         "paragraphEnd": 1,
         "instruction": "더 쓸쓸하게",
-        "resultText": ("문단이다. " * 40).strip() + "\n\n고친 둘째.",
+        "resultText": ("문단이다. " * 33).strip() + "\n\n고친 둘째.",
     }
 
 
