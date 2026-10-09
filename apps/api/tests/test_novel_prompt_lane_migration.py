@@ -128,7 +128,9 @@ async def test_versions_follow_the_global_sequence_and_the_copy_is_older(db_sess
     versions = [int(sets[key].version or 0) for key in ("gemini-copy", "gemini", "sonnet", "opus")]
     others = await db_session.scalar(
         sa.select(sa.func.max(sa.cast(PromptSet.version, sa.Integer))).where(
-            PromptSet.status == "published", PromptSet.lane != "novel", PromptSet.id != _STAT_RULE_SET_ID
+            PromptSet.status == "published",
+            PromptSet.lane.not_in(("novel", "novel_screen")),
+            PromptSet.id != _STAT_RULE_SET_ID,
         )
     )
     assert others is not None

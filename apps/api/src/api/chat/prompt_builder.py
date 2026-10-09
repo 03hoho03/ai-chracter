@@ -22,11 +22,11 @@ logger = logging.getLogger(__name__)
 
 # `"legacy"`를 이 유니온에 넣지 않는다 — 넣는
 # 순간 `list_prompt_sets`가 legacy를 걸러야 할 이유가 사라지고 FE가 4번째 탭을 만들게 된다.
-PromptLane = Literal["story", "character", "publish_filter", "novel"]
+PromptLane = Literal["story", "character", "publish_filter", "novel", "novel_screen"]
 
 # mypy는 각 원소가 PromptLane인지는 보지만 "전부 들어 있는지"는 못 본다 — 그 한 칸은
 # tests가 typing.get_args로 메운다.
-_PROMPT_LANES: tuple[PromptLane, ...] = ("story", "character", "publish_filter", "novel")
+_PROMPT_LANES: tuple[PromptLane, ...] = ("story", "character", "publish_filter", "novel", "novel_screen")
 
 
 def as_prompt_lane(value: str) -> PromptLane | None:
@@ -150,6 +150,11 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
     ("novelize_revise", "paragraphs"): frozenset({"paragraph_lines"}),
     ("novelize_revise", "target_range"): frozenset({"first_paragraph", "last_paragraph"}),
     ("novelize_revise", "user_request"): frozenset({"user_request"}),
+    # 노벨 공개 전 텍스트 심사 — `novel_public/screening.py` 의 빌더가 만드는 `values`. `instruction` 은
+    # system_instruction 으로 따로 렌더되므로(`values={}`) 빈 집합이어야 한다. 심사할 글은 게시자가 쓴 글이라 지시문과 다른
+    # 통로(본문)에 싣는다.
+    ("novel_screen", "instruction"): frozenset(),
+    ("novel_screen", "screened_text"): frozenset({"screened_text"}),
 }
 
 

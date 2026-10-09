@@ -35,6 +35,9 @@ LLMCallSite = Literal[
     "novelize_chapter",
     "novelize_revise",
     "novelize_boundary",
+    # 노벨 공개 전 텍스트 심사(구조화). 발행 심사처럼 실패하면 공개하지 않는(fail-closed) 심사라 발행 심사와 같은 모델·
+    # 타임아웃 스위치를 따른다(아래 표의 `publish_filter`) — 심사 모델을 바꿀 때 두 심사가 함께 움직인다.
+    "novel_publish_screen",
     # 지난 턴을 같은 입력으로 다시 생성해 비교하는 측정 도구의 생성 호출. 사용량이 실제 대화(`chat_generate`)와 섞이지
     # 않게 따로 집계하고, Claude 로 쓴 턴도 다시 생성할 수 있게 모델 선택을 허용한다(아래 표의 `model_selectable`). 설정은
     # 채팅 생성과 같아 타임아웃·출력 상한·사고 설정이 같다. 판정·심사에는 넣지 않는다.
@@ -115,6 +118,7 @@ CALL_POLICIES: dict[LLMCallSite, CallPolicy] = {
     ),
     "novelize_revise": CallPolicy(gemini_timeout="gemini_novelize_revise_timeout_ms", novelize="prose"),
     "novelize_boundary": CallPolicy(gemini_timeout="gemini_novelize_boundary_timeout_ms", novelize="boundary"),
+    "novel_publish_screen": CallPolicy(gemini_timeout="gemini_publish_filter_timeout_ms", publish_filter=True),
     "replay_generate": CallPolicy(
         gemini_timeout="gemini_generate_timeout_ms", model_selectable=True, claude_cache_checkpoint=True
     ),
