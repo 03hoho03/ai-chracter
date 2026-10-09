@@ -298,6 +298,8 @@ function FilledCellFields({ cell, imageButtonsProps, onPatch, onClear }: FilledC
           placeholder="예) 리딩 중 웃음이 터져 대본으로 얼굴을 가린 유나"
           value={cell.situationDescription}
           aria-describedby={`${fieldId}-situation-help`}
+          // 조합 중에는 넘친 값도 그대로 쓴다. 제어 입력이라 쓰지 않으면 React 가 칸을 옛 값으로 되돌려 조합이 깨지고,
+          // 상한을 넘은 미디어 북은 저장 요청에서 통째로 빠져(`formToServer`) 서버 거절로 이어지지 않는다.
           onChange={(event) => {
             if (!isComposingChange(event)) {
               const isTruncated = clampFieldAtCaret(event.target, MAX_MEDIA_BOOK_SITUATION_LENGTH);

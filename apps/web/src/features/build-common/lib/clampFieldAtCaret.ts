@@ -1,4 +1,4 @@
-import { clampAtCaret } from "@/shared/lib/text/characterCount";
+import { clampAtCaret, countCharacters } from "@/shared/lib/text/characterCount";
 
 type TextField = HTMLInputElement | HTMLTextAreaElement;
 
@@ -21,4 +21,13 @@ export function clampFieldAtCaret(field: TextField, max: number): boolean {
  */
 export function isComposingChange(event: { nativeEvent: Event }): boolean {
   return event.nativeEvent instanceof InputEvent && event.nativeEvent.isComposing;
+}
+
+/**
+ * IME 조합 중인 값을 폼에 알려도 되는가. 조합 중에는 자르지 않으므로 꽉 찬 칸에서는 값이 잠깐 상한을 넘는데, 그 값을 폼에
+ * 알리면 조합을 멈춘 채 두는 사이 자동저장이 보내 서버가 거절한다. 넘을 때는 알리지 않고(폼은 직전 값을 지킨다) 조합이
+ * 끝날 때 자른 값으로 한 번 알린다.
+ */
+export function canReportComposingValue(value: string, max: number): boolean {
+  return countCharacters(value) <= max;
 }

@@ -23,7 +23,7 @@ export { useFocusFirstError } from "./lib/useFocusFirstError";
 export { clampFieldAtCaret, isComposingChange } from "./lib/clampFieldAtCaret";
 export { useLimitedTextField } from "./lib/useLimitedTextField";
 export { focusNeighborToggle } from "./lib/focusNeighborToggle";
-export { focusItemToggle, focusRestoredToggle, revealItemToggle } from "./lib/focusItemToggle";
+export { focusItemToggle, focusRestoredToggle } from "./lib/focusItemToggle";
 export { sortableHandleId, useSortableList, type SortableHandleProps } from "./lib/useSortableList";
 export { insertionIndex, orderWithPendingRemovals, type RemovalPlace } from "./model/removalOrder";
 export { restoreUnderLimit, type RestoreDecision } from "./model/restoreDecision";

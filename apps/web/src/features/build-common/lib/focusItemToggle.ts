@@ -17,7 +17,7 @@ export function focusItemToggle(openKey: string, options?: FocusOptions): boolea
 }
 
 /** 열림 키로 그 항목의 머리 줄 토글이 스크롤 영역 안에 보이게 한다. 이미 보이면 움직이지 않는다(`block: "nearest"`). */
-export function revealItemToggle(openKey: string): void {
+function revealItemToggle(openKey: string): void {
   findItemToggle(openKey)?.scrollIntoView({ block: "nearest" });
 }
 

@@ -94,7 +94,6 @@ export { NovelPermissionPicker } from "./ui/NovelPermissionPicker";
 export {
   BUILDER_SAVE_LIMIT_MESSAGE,
   HASHTAG_LIMIT_MESSAGE,
-  HASHTAG_TOO_LONG_MESSAGE,
   MAX_CHARACTER_PROMPT_LENGTH,
   MAX_DESCRIPTION_LENGTH,
   MAX_DEVELOPMENT_EXAMPLES,
@@ -110,7 +109,6 @@ export {
   MAX_STARTING_SETUPS,
   MAX_SUGGESTED_REPLIES,
   characterLimit,
-  characterLimitMessage,
   hashtagsSchema,
 } from "./model/builderLimits";
-export { HASHTAG_DUPLICATE_MESSAGE, hashtagRefusal, normalizeHashtag } from "./model/hashtag";
+export { hashtagRefusal, normalizeHashtag } from "./model/hashtag";
