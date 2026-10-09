@@ -86,6 +86,7 @@ export function IntroTab() {
           id="character-intro-first-message"
           placeholder="사용자와의 첫 대화에서 캐릭터가 건넬 말을 입력해주세요"
           rows={4}
+          className="min-h-32"
           aria-invalid={!!errors.intro?.firstMessage}
           aria-describedby={errors.intro?.firstMessage ? "character-intro-first-message-count character-intro-first-message-error" : "character-intro-first-message-count"}
           {...firstMessage.registration}

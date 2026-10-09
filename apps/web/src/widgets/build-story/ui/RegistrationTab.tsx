@@ -63,6 +63,7 @@ export function RegistrationTab() {
           id="story-registration-description"
           placeholder="스토리를 목록에서 소개할 설명을 입력해주세요"
           rows={4}
+          className="min-h-32"
           aria-invalid={!!errors.registration?.description}
           aria-describedby={
             errors.registration?.description

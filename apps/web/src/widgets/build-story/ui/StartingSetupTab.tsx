@@ -300,6 +300,7 @@ function StartingSetupRow({
           id={`starting-setup-${id}-prologue`}
           placeholder="이 시작설정의 도입부를 입력해주세요"
           rows={3}
+          className="min-h-32"
           aria-invalid={!!rowErrors?.prologue}
           aria-describedby={rowErrors?.prologue ? `starting-setup-${id}-prologue-error` : undefined}
           {...prologueField}
@@ -330,6 +331,7 @@ function StartingSetupRow({
           id={`starting-setup-${id}-opening-situation`}
           placeholder="채팅 시작 시 상황을 입력해주세요"
           rows={2}
+          className="min-h-32"
           aria-invalid={!!rowErrors?.openingSituation}
           aria-describedby={rowErrors?.openingSituation ? `starting-setup-${id}-opening-situation-error` : undefined}
           {...openingSituationField}

@@ -29,6 +29,7 @@ export function PromptTab() {
           id="character-prompt"
           placeholder="캐릭터의 성격, 말투, 배경 등을 자유롭게 서술해주세요"
           rows={12}
+          className="min-h-64"
           aria-invalid={!!errors.prompt?.characterPrompt}
           aria-describedby={errors.prompt?.characterPrompt ? "character-prompt-count character-prompt-error" : "character-prompt-count"}
           {...characterPrompt.registration}
