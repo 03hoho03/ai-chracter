@@ -24,24 +24,33 @@ _SENTENCE_END = ".!?…~"
 _CLOSER = {"“": "”", "「": "」", "『": "』", "‘": "’"}
 _DIALOGUE_OPENERS = {"“", "「", "『", '"'}
 # 닫는 따옴표 뒤 다음 어절이 이것으로 시작하면 대사와 한 문장이다("…" 하고 말했다). 여기서 자르면 화법 동사가 주어 없이
-# 홀로 남는다. 따옴표에 붙여 쓴 조사("…"라며)는 공백이 없어 애초에 자를 자리가 아니다.
+# 홀로 남는다. 띄워 쓰는 꼬리는 동사 '하다'의 활용형과 인용 조사라 활용 어미까지 낱말로 다 열거할 수 없어, 어간 '하' 뒤
+# 첫 음절 수준의 접두로 잡는다. '하' 하나로 넓히지 않는 것은 '하지만'·'하늘'·'하루'처럼 대사 뒤에 새 문장을 여는 흔한
+# 말까지 막기 때문이다. 따옴표에 붙여 쓴 조사("…"라며)는 공백이 없어 애초에 자를 자리가 아니다.
 _ATTRIBUTION = (
     "하고",
     "하며",
-    "하면서",
+    "하면",
     "하자",
     "하는",
     "하던",
     "하듯",
-    "했다",
+    "하더",
+    "하길",
+    "하니",
+    "하여",
+    "하기",
+    "했",
+    "해서",
+    "해도",
     "라고",
     "라며",
+    "라면서",
     "라는",
     "라던",
-    "이라고",
-    "이라며",
-    "이라는",
-    "이라던",
+    "라니",
+    "이라",
+    "이란",
 )
 _WHITESPACE_RUN = re.compile(r"\s+")
 
@@ -52,7 +61,8 @@ def resplit_long_paragraphs(body: str) -> str:
     - 따옴표 대사 문장은 홀로 한 문단이 된다. 닫는 따옴표 뒤에 화법 동사·조사가 이어지면 대사와 그 꼬리를 떼지 않는다.
     - 대사 사이 서술이 여전히 문턱보다 길면 문장 끝에서 나눠 조각이 문턱을 넘지 않게 하되, 조각 길이를 고르게 한다.
     - 따옴표 안에서는 자르지 않는다. 짝이 안 맞는 따옴표가 있으면 그 뒤로는 자르지 않는다(대사 한가운데를 자를 수
-      있어서다). 문장 끝이 없는 긴 문장·긴 대사는 문턱을 넘은 채 남는다.
+      있어서다). 곧은 큰따옴표(`"`)는 여닫는 모양이 같아 어느 것이 짝 없는 것인지 알 수 없으므로, 문단 안 개수가
+      홀수이면 첫 `"` 뒤로 자르지 않는다. 문장 끝이 없는 긴 문장·긴 대사는 문턱을 넘은 채 남는다.
     - 문턱 이하 문단과 문단 경계(장면 전환 포함)는 그대로다. 문단 사이를 합치는 일은 없다."""
     paragraphs = split_paragraphs(body)
     if all(len(paragraph) <= LONG_PARAGRAPH_CHARS for paragraph in paragraphs):
@@ -82,6 +92,8 @@ def _sentence_units(paragraph: str) -> list[tuple[int, int]]:
     """문단을 자를 수 있는 자리(따옴표 밖 공백 중 문장 끝 뒤·줄바꿈)에서 나눈 (시작, 끝) 구간들. 구간은 공백으로 시작하거나
     끝나지 않고, 구간 사이에는 공백만 있다."""
     units: list[tuple[int, int]] = []
+    # 곧은 큰따옴표 하나가 짝 없이 끼면 그 뒤의 여닫음이 모두 뒤집혀 대사 안을 밖으로 읽는다. 그 자리부터는 자르지 않는다.
+    cut_limit = paragraph.index('"') if paragraph.count('"') % 2 else len(paragraph)
     start = 0
     open_quotes: list[str] = []
     position = 0
@@ -89,7 +101,11 @@ def _sentence_units(paragraph: str) -> list[tuple[int, int]]:
         for char in paragraph[position : match.start()]:
             _track_quote(open_quotes, char)
         position = match.start()
-        if not open_quotes and _can_cut(paragraph, match.start(), match.group(), paragraph[match.end() :]):
+        if (
+            match.start() < cut_limit
+            and not open_quotes
+            and _can_cut(paragraph, match.start(), match.group(), paragraph[match.end() :])
+        ):
             units.append((start, match.start()))
             start = match.end()
     units.append((start, len(paragraph)))

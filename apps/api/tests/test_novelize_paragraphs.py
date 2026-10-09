@@ -107,6 +107,36 @@ def test_a_quote_followed_by_a_speech_verb_or_particle_stays_with_it() -> None:
     assert not any(piece.startswith(("하고", "라며", "하는", "라고")) for piece in pieces)
 
 
+def test_conjugated_speech_tails_stay_with_their_quote() -> None:
+    lines = [
+        '"그만해!" 하더니 그는 문을 쾅 닫았다.',
+        '"가자." 했지만 아무도 움직이지 않았다.',
+        '"배고파." 하길래 라면을 끓였다.',
+        '"정말?" 하니 그가 웃었다.',
+        '"사랑." 이란 말이 그렇게 무거운 줄 몰랐다.',
+        '"괜찮아." 라면서 그는 고개를 돌렸다.',
+    ]
+    filler = "서진은 창밖을 오래 바라보았다. " * 7
+    for line in lines:
+        paragraph = filler + line + " " + filler.strip()
+        assert len(paragraph) > LONG_PARAGRAPH_CHARS
+
+        pieces = _paragraphs(resplit_long_paragraphs(paragraph))
+
+        assert any(line in piece for piece in pieces), line
+
+
+def test_a_new_sentence_after_a_quote_is_still_cut_even_if_it_starts_like_a_tail() -> None:
+    """'하지만'·'하늘'처럼 '하'로 시작하지만 화법 꼬리가 아닌 말 앞에서는 대사를 떼어 낸다."""
+    filler = "서진은 창밖을 오래 바라보았다. " * 7
+    for after in ("하지만 아무도 대답하지 않았다.", "하늘은 여전히 흐렸다.", "한참 뒤에야 문이 열렸다."):
+        paragraph = filler + '"가자." ' + after + " " + filler.strip()
+
+        pieces = _paragraphs(resplit_long_paragraphs(paragraph))
+
+        assert '"가자."' in pieces, after
+
+
 def test_a_curly_quote_or_corner_bracket_line_is_dialogue_too() -> None:
     paragraph = (
         "서진은 편지를 다시 읽었다. " * 10 + "“돌아오지 마.” 그 한 줄이 마지막이었다. 「잘 지내.」 서명은 없었다."
@@ -142,6 +172,20 @@ def test_nothing_after_an_unclosed_quote_is_cut() -> None:
     assert _paragraphs(result)[-1].endswith(paragraph[paragraph.index('"잠깐만.') :])
 
 
+def test_a_stray_straight_quote_does_not_flip_the_later_dialogue_inside_out() -> None:
+    """인치 표기처럼 짝 없는 곧은 큰따옴표 하나가 앞에 있으면, 뒤의 대사를 여닫음이 뒤집힌 채 읽어 대사 한가운데를
+    자르게 된다. 그 따옴표 뒤로는 자르지 않는다."""
+    filler = "서진은 창밖을 오래 바라보았다. " * 7
+    dialogue = '"안녕. 오랜만이야. 잘 지냈어?"'
+    paragraph = '그는 27" 모니터를 켰다. ' + filler + dialogue + " 그가 물었다. " + filler.strip()
+    assert len(paragraph) > LONG_PARAGRAPH_CHARS
+
+    pieces = _paragraphs(resplit_long_paragraphs(paragraph))
+
+    assert any(dialogue in piece for piece in pieces)
+    assert _strip_whitespace("".join(pieces)) == _strip_whitespace(paragraph)
+
+
 def test_a_line_break_inside_a_long_paragraph_is_a_place_to_cut() -> None:
     paragraph = "서진은 쪽지를 읽었다\n" + ("도윤은 대답하지 않았다 " * 16).strip()
     assert len(paragraph) > LONG_PARAGRAPH_CHARS
@@ -172,6 +216,9 @@ def test_the_threshold_is_inclusive_a_paragraph_at_it_stays_and_one_over_it_spli
 
     assert resplit_long_paragraphs(at_threshold) == at_threshold
     assert len(_paragraphs(resplit_long_paragraphs(over_threshold))) > 1
+    # 긴 문단이 함께 있어 본문 전체가 다시 나뉠 때도 문턱 길이 문단은 그대로 남는다.
+    beside_long = resplit_long_paragraphs(at_threshold + "\n\n" + _NARRATION)
+    assert _paragraphs(beside_long)[0] == at_threshold
 
 
 def test_short_paragraphs_and_scene_breaks_around_a_long_one_keep_their_places() -> None:
