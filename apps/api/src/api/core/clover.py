@@ -15,13 +15,21 @@ from datetime import date, datetime, time, timedelta
 from typing import Literal
 
 import anyio
-from sqlalchemy import Integer, case, func, literal_column, select, update
+from sqlalchemy import Integer, Uuid, case, func, insert, literal, literal_column, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.core.rate_limit import KST
 from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User
-from api.db.models.clover import CloverLedger, CloverLot, CloverSpendAllocation
+from api.db.models.clover import (
+    CloverLedger,
+    CloverLot,
+    CloverSpendAllocation,
+    CloverSpendRefund,
+    CloverSpendUsage,
+    CloverSpendUsageKind,
+)
+from api.db.models.content import Content
 from api.db.models.payment import Payment
 
 logger = logging.getLogger(__name__)
@@ -100,6 +108,20 @@ class CloverSpend:
 
     balance_after: int
     ledger_id: uuid.UUID
+
+
+@dataclass(frozen=True)
+class SpendUsage:
+    """차감이 쓰인 곳. `spend` 가 받으면 차감과 같은 트랜잭션에 사용처 행(`CloverSpendUsage`)을 하나 더한다.
+
+    채팅은 `content_id`·`chat_room_id`, 소설화는 `content_id`·`novel_id`(대화방이 남아 있으면 `chat_room_id` 도), 빌더
+    미리보기는 아무것도 넘기지 않는다. 작품 소유자는 넘기지 않는다 — `spend` 가 차감 트랜잭션 안에서 작품 행에서 읽는다.
+    """
+
+    kind: CloverSpendUsageKind
+    content_id: uuid.UUID | None = None
+    chat_room_id: uuid.UUID | None = None
+    novel_id: uuid.UUID | None = None
 
 
 class CloverRefundExceedsSpendError(Exception):
@@ -248,7 +270,7 @@ async def _apply(
 
 
 async def spend(
-    db: AsyncSession, *, user_id: uuid.UUID, amount: int, kind: CloverKind
+    db: AsyncSession, *, user_id: uuid.UUID, amount: int, kind: CloverKind, usage: SpendUsage | None = None
 ) -> CloverSpend | None:
     """조건부 UPDATE + 원장 INSERT. 잔액이 모자라면 **아무것도 하지 않고 `None`**.
 
@@ -259,6 +281,8 @@ async def spend(
     총액 CAS가 통과한 뒤 로트를 만료 임박 우선
     순서로 잠가 깎는다. 만료 필터는 걸지 않는다 — 만료의 진실은 배치뿐이다. 로트
     합계가 모자라면 `CloverLotShortfallError`가 나 총액 CAS까지 롤백된다.
+
+    `usage` 를 주면 같은 트랜잭션에 사용처 행을 더한다(`_record_usage`). 이미지 차감처럼 작품 맥락이 없는 차감은 주지 않는다.
     """
     ledger = await _apply(
         db,
@@ -272,7 +296,65 @@ async def spend(
     )
     if ledger is None:
         return None
+    if usage is not None:
+        await _record_usage(db, ledger_id=ledger.id, user_id=user_id, usage=usage)
     return CloverSpend(balance_after=ledger.balance_after, ledger_id=ledger.id)
+
+
+async def _record_usage(db: AsyncSession, *, ledger_id: uuid.UUID, user_id: uuid.UUID, usage: SpendUsage) -> None:
+    """차감 원장 행 하나에 사용처 행 하나를 더한다. **커밋하지 않는다.**
+
+    작품 소유자는 같은 INSERT 문장 안에서 작품 행에서 읽는다(`INSERT … SELECT`). 게이트가 미리 읽어 넘기면 차감이 없는
+    무료 턴에도 작품 조회가 하나 늘고, 여기서 읽으면 실제로 클로버를 쓰는 차감에만 왕복 없이 붙는다. 작품 행이 없으면
+    `ValueError` 로 트랜잭션을 롤백시킨다 — 채팅·소설 경로는 차감 전에 그 작품을 이미 읽었으므로 도달하면 버그다.
+
+    미리보기는 작품을 가리키지 않아 읽을 것이 없으므로 받은 값을 그대로 넣는다. 작품 id 를 버리지 않고 넣는 것은, 종류를
+    잘못 넘긴 호출(작품이 있는데 `preview`)이 정산에서 조용히 빠지지 않고 CHECK 에 걸려 실패하게 하려는 것이다.
+
+    작품 행이 있으면 사용처 INSERT 의 FK 검사가 그 행에 `FOR KEY SHARE` 를 잡으므로, 같은 작품을 `FOR UPDATE` 로 잡은
+    트랜잭션(댓글 쓰기·발행·소설화 허락 변경)이 끝날 때까지 차감이 기다릴 수 있다. 순환은 없다 — 그 경로들은 작품을 잡은
+    뒤 사용자 행을 쓰기 잠그거나 클로버 로트를 잠그지 않고(사용자 행은 작품보다 먼저 `KEY SHARE` 로만 잡는다), 탈퇴의 작품
+    UPDATE 는 키를 바꾸지 않아 `KEY SHARE` 와 충돌하지 않는다.
+    """
+    if usage.kind == "preview":
+        db.add(
+            CloverSpendUsage(
+                spend_ledger_id=ledger_id,
+                usage_kind=usage.kind,
+                spender_user_id=user_id,
+                content_id=usage.content_id,
+                chat_room_id=usage.chat_room_id,
+                novel_id=usage.novel_id,
+            )
+        )
+        await db.flush()
+        return
+    inserted = await db.scalar(
+        insert(CloverSpendUsage)
+        .from_select(
+            [
+                CloverSpendUsage.spend_ledger_id,
+                CloverSpendUsage.usage_kind,
+                CloverSpendUsage.spender_user_id,
+                CloverSpendUsage.content_id,
+                CloverSpendUsage.content_owner_user_id,
+                CloverSpendUsage.chat_room_id,
+                CloverSpendUsage.novel_id,
+            ],
+            select(
+                literal(ledger_id, Uuid),
+                literal(usage.kind),
+                literal(user_id, Uuid),
+                Content.id,
+                Content.creator_user_id,
+                literal(usage.chat_room_id, Uuid),
+                literal(usage.novel_id, Uuid),
+            ).where(Content.id == usage.content_id),
+        )
+        .returning(CloverSpendUsage.spend_ledger_id)
+    )
+    if inserted is None:
+        raise ValueError(f"차감 {ledger_id} 의 사용처 작품 {usage.content_id} 이 없다")
 
 
 async def grant(
@@ -533,6 +615,7 @@ async def spend_in_new_transaction(
     user_id: uuid.UUID,
     amount: int,
     kind: CloverKind,
+    usage: SpendUsage | None = None,
 ) -> CloverSpend | None:
     """**게이트 전용**. 요청 스코프 세션의 커밋 타이밍과 무관하게
     즉시 커밋한다.
@@ -544,9 +627,11 @@ async def spend_in_new_transaction(
     🔴 `session_factory`는 반드시 `Depends(get_session_factory)`로 받은 것이어야 한다.
     모듈에서 `async_session_factory`를 직접 import하면 `tests/conftest.py`의 오버라이드를 안
     타서 **테스트가 공유 DB를 건드린다.**
+
+    `usage` 는 `spend` 에 그대로 넘긴다 — 사용처 행이 차감과 같은 커밋에 들어간다.
     """
     async with session_factory() as session:
-        spent = await spend(session, user_id=user_id, amount=amount, kind=kind)
+        spent = await spend(session, user_id=user_id, amount=amount, kind=kind, usage=usage)
         if spent is None:
             return None
         await session.commit()
@@ -583,6 +668,11 @@ async def refund_spend(
 
     락 순서는 users → clover_spend_allocations → clover_lots 다. 차감은 users → clover_lots 이고 배분은 INSERT 만
     하므로 순환이 없다.
+
+    배분에서 돌려준 몫마다 환급 행(`CloverSpendRefund`)을 하나씩 남긴다 — 배분에는 시각이 없어, 정산이 "언제 돌려줬는가"를
+    아는 곳이 이 행뿐이다. 돌려준 양이 0 인 배분(이미 다 돌려받았다)은 남기지 않는다. 차감 id 가 없는 환급과 탈퇴 회원
+    환급은 배분을 건드리지 않으므로 남기지 않는다. 환급 행은 이미 잠근 배분과 방금 넣은 원장 행을 FK 로 가리킬 뿐이라
+    락 순서를 바꾸지 않는다.
     """
     balance_after = await db.scalar(
         update(User)
@@ -594,6 +684,7 @@ async def refund_spend(
         logger.info("탈퇴한 회원(%s)의 클로버 환급은 적용하지 않는다", user_id)
         return None
 
+    returned: list[tuple[uuid.UUID, int]] = []
     if spend_ledger_id is None:
         db.add(CloverLot(user_id=user_id, granted_amount=amount, remaining=amount, expires_at=None, kind=kind))
     else:
@@ -629,21 +720,29 @@ async def refund_spend(
             allocation.refunded_amount += take
             lot.remaining += take
             left -= take
+            if take > 0:
+                returned.append((allocation.id, take))
         if left > 0:
             raise CloverRefundExceedsSpendError(
                 f"user {user_id}: 차감 {spend_ledger_id} 의 남은 환급 가능량보다 {left} 많이 돌려달라고 했다"
             )
 
-    db.add(
-        CloverLedger(
-            user_id=user_id,
-            amount=amount,
-            balance_after=balance_after,
-            kind=kind,
-            idempotency_key=None,
-        )
+    ledger = CloverLedger(
+        user_id=user_id,
+        amount=amount,
+        balance_after=balance_after,
+        kind=kind,
+        idempotency_key=None,
     )
+    db.add(ledger)
+    # 환급 행이 원장 id 를 FK 로 잡으므로 원장을 먼저 넣는다(`_apply` 와 같은 이유 — 단위작업 INSERT 정렬에 기대지 않는다).
     await db.flush()
+    if returned:
+        db.add_all(
+            CloverSpendRefund(allocation_id=allocation_id, refund_ledger_id=ledger.id, amount=take)
+            for allocation_id, take in returned
+        )
+        await db.flush()
     return int(balance_after)
 
 

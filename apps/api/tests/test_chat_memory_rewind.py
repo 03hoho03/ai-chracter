@@ -38,6 +38,8 @@ from api.db.models import (
     CloverLedger,
     CloverLot,
     CloverSpendAllocation,
+    CloverSpendRefund,
+    CloverSpendUsage,
     Content,
     ContentVersion,
     User,
@@ -344,6 +346,20 @@ async def committed_engine(db_engine: AsyncEngine) -> AsyncGenerator[AsyncEngine
         if user_ids:
             room_ids = (await cleanup.scalars(sa.select(ChatRoom.id).where(ChatRoom.user_id.in_(user_ids)))).all()
             await delete_chat_rooms(cleanup, room_ids)
+            # 사용처가 작품·원장을, 환급 행이 배분·원장을 FK 로 잡으므로 작품·배분·원장보다 먼저 지운다.
+            spend_ledger_ids = sa.select(CloverLedger.id).where(CloverLedger.user_id.in_(user_ids))
+            await cleanup.execute(
+                sa.delete(CloverSpendRefund).where(
+                    CloverSpendRefund.allocation_id.in_(
+                        sa.select(CloverSpendAllocation.id).where(
+                            CloverSpendAllocation.spend_ledger_id.in_(spend_ledger_ids)
+                        )
+                    )
+                )
+            )
+            await cleanup.execute(
+                sa.delete(CloverSpendUsage).where(CloverSpendUsage.spend_ledger_id.in_(spend_ledger_ids))
+            )
             content_ids = (
                 await cleanup.scalars(sa.select(Content.id).where(Content.creator_user_id.in_(user_ids)))
             ).all()

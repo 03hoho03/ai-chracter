@@ -14,7 +14,13 @@ from api.db.models.chat import (
     StoryEndingUnlock,
     StoryMediaExposure,
 )
-from api.db.models.clover import CloverLedger, CloverLot, CloverSpendAllocation
+from api.db.models.clover import (
+    CloverLedger,
+    CloverLot,
+    CloverSpendAllocation,
+    CloverSpendRefund,
+    CloverSpendUsage,
+)
 from api.db.models.comments import (
     Comment,
     CommentLike,
@@ -122,6 +128,8 @@ __all__ = [
     "CloverLedger",
     "CloverLot",
     "CloverSpendAllocation",
+    "CloverSpendRefund",
+    "CloverSpendUsage",
     "Comment",
     "CommentLike",
     "CommentMention",

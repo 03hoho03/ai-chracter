@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from sqlalchemy import (
     CheckConstraint,
@@ -16,6 +17,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base
+from api.db.models.payment import _sql_in_list
 
 
 class CloverLedger(Base):
@@ -194,4 +196,115 @@ class CloverSpendAllocation(Base):
             unique=True,
         ),
         Index("ix_clover_spend_allocations_lot_id", "lot_id"),
+    )
+
+
+# 사용처 종류. 대화방 채팅 턴(`chat`), 소설화 작업(`novel`), 빌더 미리보기 채팅(`preview` — 작품이 아직 없거나 작가 자신의
+# 시험이라 작품을 가리키지 않는다).
+CloverSpendUsageKind = Literal["chat", "novel", "preview"]
+
+
+class CloverSpendUsage(Base):
+    """채팅·소설화 차감 한 번(`clover_ledger` 음수 행 하나)이 어느 작품·대화방·소설에서 쓰였는지. 차감과 같은 트랜잭션에
+    한 행을 더하고(1:1, 원장 id 가 PK), 크리에이터 정산이 여기서 출발한다. 원장에 칸을 더하지 않은 것은 지급·회수까지
+    지나는 원장 기록 함수를 바꾸지 않으려는 것이다. 이미지 차감은 작품 맥락이 없어 행을 남기지 않는다.
+
+    판단 근거(지불자·작품 소유자)만 저장하고 "정산 대상인가"는 저장하지 않는다 — 자기 플레이·미리보기 같은 판정은 정산
+    계산 한 곳에 둔다. 지불자는 원장 `user_id`, 소유자는 차감 시점의 `contents.creator_user_id` 사본이다(원장을 조인하지
+    않고 크리에이터별로 바로 고르려고).
+
+    `chat_room_id`·`novel_id` 에는 FK 가 없다 — 대화방 삭제와 소설 삭제·탈퇴가 그 행을 실제로 지우는데, 사용처는 정산
+    근거라 남아야 한다. 작품은 소프트 삭제라 FK 를 건다.
+
+    CHECK 다섯은 alembic 1.18.5 의 `alembic check` 가 비교하지 않아 `pytest.raises(IntegrityError)` 행위 테스트가 유일한
+    검증이다(`CloverLot` 과 같은 함정).
+    """
+
+    __tablename__ = "clover_spend_usages"
+
+    spend_ledger_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("clover_ledger.id", name="fk_clover_spend_usages_spend_ledger_id"),
+        primary_key=True,
+    )
+    usage_kind: Mapped[str] = mapped_column(Text, nullable=False)
+    spender_user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", name="fk_clover_spend_usages_spender_user_id"), nullable=False
+    )
+    content_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("contents.id", name="fk_clover_spend_usages_content_id"), nullable=True
+    )
+    content_owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", name="fk_clover_spend_usages_content_owner_user_id"), nullable=True
+    )
+    chat_room_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    novel_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    # 차감과 같은 트랜잭션이라 `now()`(트랜잭션 시작 시각)가 원장 `created_at` 과 같은 값이다.
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            f"usage_kind IN ({_sql_in_list(CloverSpendUsageKind)})", name="ck_clover_spend_usages_kind"
+        ),
+        CheckConstraint(
+            "(usage_kind = 'preview') = (content_id IS NULL)", name="ck_clover_spend_usages_preview_has_no_content"
+        ),
+        CheckConstraint(
+            "(content_id IS NULL) = (content_owner_user_id IS NULL)",
+            name="ck_clover_spend_usages_owner_with_content",
+        ),
+        CheckConstraint(
+            "usage_kind <> 'chat' OR chat_room_id IS NOT NULL", name="ck_clover_spend_usages_chat_has_room"
+        ),
+        CheckConstraint(
+            "(usage_kind = 'novel') = (novel_id IS NOT NULL)", name="ck_clover_spend_usages_novel_has_novel"
+        ),
+        # 크리에이터별 소급·월 확정·조회. 미리보기 행은 소유자가 없어 뺀다.
+        Index(
+            "ix_clover_spend_usages_owner_created_at",
+            "content_owner_user_id",
+            "created_at",
+            postgresql_where=content_owner_user_id.is_not(None),
+        ),
+        # 기간 단위 전체 집계와 사용처 누락 감시.
+        Index("ix_clover_spend_usages_created_at", "created_at"),
+    )
+
+
+class CloverSpendRefund(Base):
+    """환급 한 번이 차감 배분 하나에서 돌려준 양. 환급(`refund_spend`)이 배분의 `refunded_amount` 를 올릴 때 돌려준
+    배분마다 한 행을 더한다. 배분에는 시각이 없어 "언제 돌려줬는가"를 알 수 없으므로, 정산은 이 행의 환급 시각으로
+    기간을 가른다 — 이미 확정한 달의 차감이 뒤에 환급되면 환급한 달에서 뺀다.
+
+    이 테이블이 생긴 뒤의 차감에서는 배분마다 `Σ amount = refunded_amount` 다. `refund_ledger_id` 는 그 환급의 원장
+    행이다. 차감 id 없이 하는 환급(새 로트로 돌려주는 옛 경로)과 탈퇴 회원 환급(아무것도 하지 않는다)은 행이 없다.
+
+    CHECK 는 alembic 1.18.5 의 `alembic check` 가 비교하지 않아 `pytest.raises(IntegrityError)` 행위 테스트가 유일한
+    검증이다.
+    """
+
+    __tablename__ = "clover_spend_refunds"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    allocation_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("clover_spend_allocations.id", name="fk_clover_spend_refunds_allocation_id"),
+        nullable=False,
+    )
+    refund_ledger_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("clover_ledger.id", name="fk_clover_spend_refunds_refund_ledger_id"), nullable=False
+    )
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_clover_spend_refunds_amount_positive"),
+        Index("ix_clover_spend_refunds_allocation_id", "allocation_id"),
+        Index("ix_clover_spend_refunds_created_at", "created_at"),
     )
