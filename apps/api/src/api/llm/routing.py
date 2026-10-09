@@ -12,6 +12,7 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
+from api.llm.call_policy import CALL_POLICIES
 from api.llm.chat_models import CHAT_MODELS_BY_ID
 from api.llm.client import LLMCallContext, LLMCallSite, LLMClient
 
@@ -19,10 +20,10 @@ T = TypeVar("T", bound=BaseModel)
 
 logger = logging.getLogger(__name__)
 
-# 사용자가 고른 모델을 따르는 호출. 재생성·수정은 같은 call_site 로 온다. 지난 턴을 다시 생성하는 측정 호출도 그 턴의
-# 모델(Claude 포함)로 다시 써야 비교가 맞아 함께 둔다.
+# 사용자가 고른 모델을 따르는 호출(호출 정책 표의 `model_selectable`). 재생성·수정은 같은 call_site 로 온다. 지난 턴을
+# 다시 생성하는 측정 호출도 그 턴의 모델(Claude 포함)로 다시 써야 비교가 맞아 함께 둔다.
 MODEL_SELECTABLE_CALL_SITES: frozenset[LLMCallSite] = frozenset(
-    {"chat_generate", "novelize_chapter", "replay_generate"}
+    cs for cs, p in CALL_POLICIES.items() if p.model_selectable
 )
 
 

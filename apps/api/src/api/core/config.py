@@ -161,7 +161,7 @@ class Settings(BaseSettings):
     # 0 을 주면 생성이 실패할 수 있다.
     gemini_thinking_budget: int | None = None
     # 구조화 호출 중 판정(스탯·엔딩·그림 매칭)과 발행 심사만 다른 모델로 돌리는 스위치. 판정은 종류마다 따로
-    # 옮길 수 있게 셋으로 나눈다. 어느 호출이 어느 종류인지는 `llm/client.py` 의 call_site 집합이 정한다.
+    # 옮길 수 있게 셋으로 나눈다. 어느 호출이 어느 종류인지는 `llm/call_policy.py` 의 호출 정책 표가 정한다.
     # None(또는 빈 문자열)이면 `gemini_model_name` 을 그대로 쓴다 — 넷 다 기본값이면 지금 동작과 같고, 되돌리려면
     # env 줄을 지우고 재기동한다. 사고 설정은 이 호출들에 넘기지 않는다(`llm/gemini.py` 의 `generate_structured`).
     gemini_stat_judgment_model_name: str | None = None
@@ -188,8 +188,8 @@ class Settings(BaseSettings):
     gemini_client_timeout_ms: int = 60_000
 
     # 소설화(대화를 장편 소설의 장으로 옮겨 쓰기). 장 생성과 문단 수정만 이 모델·출력 상한·사고 설정을 쓰고, 장 경계
-    # 제안은 턴 번호 몇 개를 고르는 판정이라 `gemini_model_name` 으로 간다 — 어느 호출이 어느 쪽인지는 `llm/client.py`
-    # 의 소설화 call_site 집합이 정한다. 모델명이 비면 `gemini_model_name` 으로 돈다.
+    # 제안은 턴 번호 몇 개를 고르는 판정이라 `gemini_model_name` 으로 간다 — 어느 호출이 어느 쪽인지는 `llm/call_policy.py`
+    # 의 호출 정책 표가 정한다. 모델명이 비면 `gemini_model_name` 으로 돈다.
     # 기본 모델은 같은 장을 세 후보 모델로 써 본 비교에서 골랐다. 모델 이름을 가리고 매긴 1위 횟수는 가장 많이 받은
     # 후보와 비슷했고(장만 보면 2 대 2, 문단 AI 수정까지 8건이면 3 대 4), 장당 원가는 다음으로 싼 후보의 약 절반,
     # 지연도 가장 짧았으며, 원문 응답 끝의 상태 표를 장 본문에 옮겨 적은 일이 없었다. 시험한 장이 다섯 개뿐이라
