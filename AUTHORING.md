@@ -13,6 +13,8 @@
 
 생성 프롬프트는 `api/chat/prompt_builder.py`가 조립한다. 섹션의 문안과 순서는 코드가 아니라 DB의 프롬프트 세트에 있고(어드민 `/prompt-sets`), 코드는 어느 값이 어느 자리(`slot`)로 흘러가는지만 정한다. 호출부는 `api/chat/turn_prompt.py`의 `build_room_prompt`(실제 방)와 `build_preview_prompt`(빌더 미리보기)다. 프롬프트 세트는 레인 × 글쓰기 모델마다 따로 있다 — Claude(Sonnet·Opus) 세트는 생성에 쓰는 `system`·`generation` 채널과 라벨만 갖고, 판정·요약은 언제나 그 레인의 Gemini 세트를 읽는다. 아래 표의 자리는 두 세트에서 같다. 소설화(대화를 소설로 옮겨 쓰기) 문안은 이 두 레인이 아니라 따로 둔 `novel` 레인(어드민 프롬프트 화면의 「소설」 탭)에 있고, 등급 규칙(`system` 채널 `rule_rating`)과 원문 줄의 화자 라벨만 원작 종류(스토리·캐릭터) 레인의 Gemini 세트에서 읽는다. 스토리·캐릭터 레인 Gemini 세트에 남아 있는 소설화 행(`novelize_*`)은 옛 이미지로 되돌렸을 때만 읽히는 값이라 채팅 탭에 보이지 않고 바뀌지 않는다.
 
+칸마다 글자 수·개수 한도가 있다. 작품 이름·한줄소개·등록 설명·해시태그, 캐릭터 칸들, 시작설정·추천 답변·전개 예시 개수의 숫자는 공유 표 `apps/api/src/api/content/builder_limits.json` 한 곳에만 있고, 서버 요청 모델(`api/content/schemas.py`)과 web 빌더(`entities/content/model/builderLimits.ts`)가 같은 파일을 읽는다. 시드도 같은 요청 모델로 읽히므로(`scripts/seed_content/loader.py`) 한도를 넘는 시드는 로드에서 멈춘다. 해시태그 앞의 `#`을 지우고 대소문자만 다른 태그를 거절하는 것은 빌더 입력칸뿐이고 서버는 길이·개수만 보므로, 시드 해시태그는 `#` 없이, 대소문자만 다른 중복 없이 쓴다.
+
 ### 스토리 — 생성 호출 (`build_story_generation_prompt`, 매 턴)
 
 괄호 안은 시드 JSON 키다.
@@ -67,7 +69,7 @@
 ### 캐릭터 — 생성 호출 (`build_generation_prompt`, 매 턴)
 
 - 캐릭터 프롬프트(`characterPrompt`) → `character_prompt` 자리.
-- 예시 대화(`exampleDialogues`, 개수 상한 없음) → `example_dialogues` 자리(값 `example_lines`), 매 턴 전부.
+- 예시 대화(`exampleDialogues`, 쌍 개수와 줄 길이 상한은 이 절 머리의 공유 한도 표) → `example_dialogues` 자리(값 `example_lines`), 매 턴 전부.
 - 인트로(`intro`) → 전용 자리가 없고, 방을 만들 때 첫 어시스턴트 메시지로 들어가 대화 기록으로 실린다(`_insert_opening_message`).
 - 생성 프롬프트에 없는 것: 이름·한줄소개, 플레이가이드, 상황별 이미지, 등록 설명.
 
