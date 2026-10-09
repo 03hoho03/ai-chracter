@@ -37,7 +37,7 @@ from api.chat.prompt_builder import (
     StatRuleJudgmentResult,
 )
 from api.chat.memory_window import load_current_summary
-from api.chat.router import _load_room_stats
+from api.chat.room_stats import load_room_stats
 from api.content.schemas import EndingRuleDraftItem
 from api.core import rate_limit_gate
 from api.core.config import settings
@@ -411,7 +411,7 @@ async def test_replay_reassembles_every_turn_of_a_real_driver_run_byte_identical
 
     # 신호 — 스탯: 주입한 값이 지금 DB 값과 다른 턴이 있고, 문턱 위·아래 턴이 모두 대상이며, 덤프에 상황 노트가 실린
     # 턴이 정확히 문턱 위인 턴이다.
-    _, _, final_stats = await _load_room_stats(db_session, driven.room_id, driven.setup_id)
+    _, _, final_stats = await load_room_stats(db_session, driven.room_id, driven.setup_id)
     final_trust = final_stats[str(driven.trust_id)]
     injected = {turn: assemblies[turn].stats_before[STAT_NAME] for turn in TURNS}
     above = [turn for turn in TURNS if injected[turn] >= GATE]

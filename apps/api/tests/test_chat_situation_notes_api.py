@@ -18,7 +18,8 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.prompt_builder import ImageMatchJudgmentResult, StatRuleJudgmentResult
-from api.chat.router import _load_room_stats, _situation_note_texts
+from api.chat.room_stats import load_room_stats
+from api.chat.turn_prompt import pick_situation_note_texts
 from api.content.schemas import (
     EndingRuleDraftItem,
     EndingRuleGroupDraftItem,
@@ -91,7 +92,7 @@ _STATS = {str(_A): 50.0, str(_B): 10.0}
     ],
 )
 def test_situation_note_condition_evaluation(rules: list[EndingRuleListDraftItem], expected: bool) -> None:
-    assert _situation_note_texts([(rules, "본문")], _STATS) == (["본문"] if expected else [])
+    assert pick_situation_note_texts([(rules, "본문")], _STATS) == (["본문"] if expected else [])
 
 
 @pytest.mark.parametrize(
@@ -100,7 +101,7 @@ def test_situation_note_condition_evaluation(rules: list[EndingRuleListDraftItem
 )
 def test_note_without_any_rule_is_never_loaded(rules: list[EndingRuleListDraftItem]) -> None:
     """평가기는 빈 목록을 참으로 보지만, 조건 없는 노트가 매 턴 실리면 안 된다 — 발행이 거절하는 노트와 같은 기준."""
-    assert _situation_note_texts([(rules, "조건 없음")], _STATS) == []
+    assert pick_situation_note_texts([(rules, "조건 없음")], _STATS) == []
 
 
 def test_true_notes_keep_the_given_order() -> None:
@@ -110,7 +111,7 @@ def test_true_notes_keep_the_given_order() -> None:
         ([], "조건 없음"),
         ([_rule(_B, "lte", 10)], "셋째"),
     ]
-    assert _situation_note_texts(notes, _STATS) == ["첫째", "셋째"]
+    assert pick_situation_note_texts(notes, _STATS) == ["첫째", "셋째"]
 
 
 # ── 실채팅 ─────────────────────────────────────────────────────────────────────────────────────
@@ -335,11 +336,11 @@ async def test_second_stat_read_in_a_request_sees_value_committed_by_another_req
     _add_situation_note(db_session, setup, "표지-노트", [_rule(trust, "gte", 0)])
     room_id = await _logged_in_room(db_client, db_session, user_id, content, setup)
 
-    _, first_rows, first_stats = await _load_room_stats(db_session, room_id, setup.id)
+    _, first_rows, first_stats = await load_room_stats(db_session, room_id, setup.id)
     assert first_stats[str(trust)] == 50.0
     async with AsyncSession(bind=db_session.bind, expire_on_commit=False) as other_request:
         await _set_room_stat(other_request, room_id, trust, 55)
-    _, second_rows, second_stats = await _load_room_stats(db_session, room_id, setup.id)
+    _, second_rows, second_stats = await load_room_stats(db_session, room_id, setup.id)
 
     assert second_stats[str(trust)] == 55.0
     assert second_rows[str(trust)] is first_rows[str(trust)]
@@ -381,7 +382,7 @@ async def test_broken_condition_json_skips_only_that_note_and_completes_the_turn
     room_id = await _logged_in_room(db_client, db_session, user_id, content, setup)
     fake = _RecordingLLMClient()
 
-    with caplog.at_level(logging.WARNING, logger="api.chat.router"):
+    with caplog.at_level(logging.WARNING, logger="api.chat.turn_prompt"):
         await _post(db_client, fake, f"/chat-rooms/{room_id}/messages", {"content": "안녕"})
 
     assert _section(fake.generation_prompts[0]) == "표지-멀쩡한 노트"

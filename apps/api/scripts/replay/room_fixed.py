@@ -12,7 +12,7 @@ from typing import Any, ClassVar
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat.router import InjectedPersona
+from api.chat.turn_prompt import InjectedPersona
 from api.content.author_macros import resolve_user_name
 from api.db.models.chat import ChatRoom
 from api.db.models.persona import UserPersona

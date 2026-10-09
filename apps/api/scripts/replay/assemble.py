@@ -1,6 +1,6 @@
 """한 턴의 생성 입력 조립 — 현행(window) 갈래와 변형 갈래 하나.
 
-현행 갈래는 그 턴에 서버가 실제로 조립한 프롬프트를 다시 만든다. 서버의 조립 함수(`_build_prompt`)를 그대로 부르고, 지난
+현행 갈래는 그 턴에 서버가 실제로 조립한 프롬프트를 다시 만든다. 서버의 조립 함수(`build_room_prompt`)를 그대로 부르고, 지난
 턴의 상태(요약·기억 노트·스탯·대화 프로필)는 그 함수의 주입 자리로만 넣는다. 그 결과가 서버 덤프와 프롬프트·지시문 둘 다
 바이트까지 같을 때만 변형 갈래를 만든다 — 다르면 되살린 조립이 틀린 것이라 변형 갈래도 믿을 수 없다.
 
@@ -32,7 +32,8 @@ from sqlalchemy.orm.attributes import set_committed_value
 
 from api.chat.memory_window import prompt_window
 from api.chat.prompt_builder import PromptLane, PromptNames
-from api.chat.router import InjectedTurnState, _build_prompt, _require_starting_setup
+from api.chat.router import _require_starting_setup
+from api.chat.turn_prompt import InjectedTurnState, build_room_prompt
 from api.content.media_tags import strip_media_tags
 from api.core.config import settings
 from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom
@@ -245,7 +246,7 @@ async def _assemble(
     room = room or ctx.room
     turn_state = turn_state or ctx.turn_state
     history = ctx.restored.history
-    prompt, system_instruction, _, _, names = await _build_prompt(
+    prompt, system_instruction, _, _, names = await build_room_prompt(
         db,
         room,
         setup or ctx.setup,

@@ -24,7 +24,8 @@ import chat_play
 import generation_replay
 from api.chat import router
 from api.chat.prompt_builder import load_active_prompt_set
-from api.chat.router import _build_prompt, _resolve_starting_setup
+from api.chat.router import _resolve_starting_setup
+from api.chat.turn_prompt import build_room_prompt
 from api.content.schemas import EndingRuleDraftItem
 from api.core.config import settings
 from api.db.models import ChatRoom, ChatRoomStat, StartingSetup, StatDef, StoryVersionDetail
@@ -193,7 +194,7 @@ async def _scenario(
         messages = await _messages(db_session, room.room_id)
         user_message = room.turns[turn][0]
         index = next(i for i, m in enumerate(messages) if m.id == user_message.id)
-        prompt, system_instruction, _, _, _ = await _build_prompt(
+        prompt, system_instruction, _, _, _ = await build_room_prompt(
             db_session,
             chat_room,
             setup,
