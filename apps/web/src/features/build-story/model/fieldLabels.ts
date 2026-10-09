@@ -37,7 +37,6 @@ export const STORY_FIELD_LABELS = {
   "storySetting.worldSetting": { label: "스토리 설정/정보", required: true },
   "storySetting.rules": { label: "규칙", required: false },
   "storySetting.userGoal": { label: "사용자의 역할과 목표", required: false },
-  "storySetting.defaultUserName": { label: "사용자 기본 이름", required: false },
   "storySetting.developmentExamples": {
     label: "전개 예시",
     required: false,

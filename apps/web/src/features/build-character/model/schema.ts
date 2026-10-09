@@ -15,7 +15,6 @@ import {
   MAX_SITUATIONAL_IMAGE_TRIGGER_LENGTH,
   NOVEL_PERMISSION_VALUES,
 } from "@/entities/content";
-import { defaultUserNameIssue } from "@/entities/persona";
 
 // 목록과 유니온 타입은 한쪽에서 도출한다. 값 목록을 스키마 옆의 단일 소스로 두고
 // widgets/build-character/ui/DetailTab.tsx가 이 배열을 map해 라벨만 매핑한다(손복사 금지).
@@ -83,14 +82,9 @@ export const characterBuilderSchema = z.object({
       .max(MAX_EXAMPLE_DIALOGUES, `예시 대화는 최대 ${MAX_EXAMPLE_DIALOGUES}개까지만 추가할 수 있습니다`)
       .default([]),
     playGuide: z.string().refine(...characterLimit(MAX_PLAY_GUIDE_LENGTH, "플레이가이드")).optional(),
-    // 인트로·예시 대화와 한 화면에 두는 작품 기본 이름. 대화 프로필이 없는 사람의 `{{user}}` 가 된다. 비우면 대체어를 쓴다.
-    defaultUserName: z
-      .string()
-      .superRefine((value, ctx) => {
-      const issue = defaultUserNameIssue(value);
-      if (issue !== null) ctx.addIssue({ code: "custom", message: issue });
-    })
-      .default(""),
+    // 입력칸은 없다. 저장된 작품 기본 이름을 미리보기 시작 요청에 그대로 실으려고 폼에 둔다. 보이지 않는 값이라
+    // 발행을 막지 않도록 검사하지 않고, 규칙에 어긋난 옛 값은 서버로 보낼 때 빠진다.
+    defaultUserName: z.string().default(""),
   }),
   prompt: z.object({
     characterPrompt: z

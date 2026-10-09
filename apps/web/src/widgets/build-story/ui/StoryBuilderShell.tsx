@@ -28,7 +28,6 @@ import {
   STARTING_SETUP_SCOPE,
   storyAutosaveErrorMessage,
   STORY_COLLAPSIBLE_LISTS,
-  STORY_FIELD_LABELS,
   STORY_MISSING_FIELD_FORM_PATH,
   STORY_MISSING_FIELD_LABELS,
   STORY_STARTING_SETUP_LIST_LABELS,
@@ -312,8 +311,6 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
           ...MISSING_FIELD_LABEL_BY_FORM_PATH,
           ...STORY_STARTING_SETUP_LIST_LABELS,
           [MEDIA_BOOK_PATH]: MEDIA_BOOK_LABEL,
-          // 서버는 이 칸을 누락 필드로 보내지 않아(형식이 틀리면 요청 단계에서 거절한다) 위 서버 맵에 자리가 없다.
-          "storySetting.defaultUserName": STORY_FIELD_LABELS["storySetting.defaultUserName"].label,
         },
       ),
     );

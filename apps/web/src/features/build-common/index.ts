@@ -37,7 +37,6 @@ export { CharacterCount } from "./ui/CharacterCount";
 export { FieldCharacterCount } from "./ui/FieldCharacterCount";
 export { CollapsibleItemCard } from "./ui/CollapsibleItemCard";
 export { CollapsibleSection } from "./ui/CollapsibleSection";
-export { DefaultUserNameField } from "./ui/DefaultUserNameField";
 export { HashtagField } from "./ui/HashtagField";
 export { ItemDragHandle } from "./ui/ItemDragHandle";
 export { ItemRemoveButton } from "./ui/ItemRemoveButton";

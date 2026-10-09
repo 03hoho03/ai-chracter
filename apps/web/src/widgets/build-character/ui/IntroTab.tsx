@@ -15,7 +15,6 @@ import type { CharacterBuilderFormValues, CharacterCollapsibleList } from "@/fea
 import {
   FieldCharacterCount,
   CollapsibleItemCard,
-  DefaultUserNameField,
   focusNeighborToggle,
   ItemRemoveButton,
   itemOpenKey,
@@ -37,7 +36,6 @@ export function IntroTab() {
   const form = useFormContext<CharacterBuilderFormValues>();
 
   const {
-    register,
     control,
     getValues,
     formState: { errors },
@@ -46,7 +44,6 @@ export function IntroTab() {
   const uiState = useBuilderUiState();
   const addButtonRef = useRef<HTMLButtonElement>(null);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(() => fields.length > 0);
-  const defaultUserName = useWatch({ control, name: "intro.defaultUserName" });
   const firstMessage = useLimitedTextField<CharacterBuilderFormValues>("intro.firstMessage", MAX_INTRO_LENGTH);
   const playGuide = useLimitedTextField<CharacterBuilderFormValues>("intro.playGuide", MAX_PLAY_GUIDE_LENGTH);
   const isExampleDialogueFull = fields.length >= MAX_EXAMPLE_DIALOGUES;
@@ -118,15 +115,6 @@ export function IntroTab() {
           </p>
         )}
       </div>
-
-      <DefaultUserNameField
-        id="character-intro-default-user-name"
-        label="사용자 기본 이름"
-        contentType="character"
-        value={defaultUserName}
-        publishError={errors.intro?.defaultUserName?.message}
-        registration={register("intro.defaultUserName")}
-      />
 
       <div className="flex items-center justify-between gap-4 rounded-xl border border-border px-4 py-3">
         <div className="flex flex-col gap-0.5">
