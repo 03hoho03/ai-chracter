@@ -341,7 +341,9 @@ export interface paths {
          *     옮긴다(한 노벨은 한 자리에만). 같은 노벨을 같은 자리에 다시 걸어도 막지 않고 감사 로그에 한 행 더 남긴다.
          *
          *     404 `NOVEL_NOT_FOUND` 는 공개한 적이 없는 소설, 400 `NOT_PUBLICLY_LISTED` 는 지금 독자가 읽을 수 없는 노벨이다(걸었는데
-         *     홈에 안 보이는 혼란을 거는 시점에 막는다).
+         *     홈에 안 보이는 혼란을 거는 시점에 막는다). 409 `HOME_NOVEL_CURATION_CONFLICT` 는 판정 뒤 쓰기 전에 상황이 바뀐 경우다 —
+         *     다른 운영자가 같은 노벨을 다른 자리에 동시에 걸었거나(한 노벨 한 자리 유니크) 그 사이 게시자가 소설을 지웠다. 목록을
+         *     새로 읽고 다시 걸면 된다.
          */
         put: operations["set_home_novel_curation_admin_home_novel_curations__position__put"];
         post?: never;
@@ -3136,7 +3138,8 @@ export interface paths {
         };
         /**
          * Get Webnovel Chapter
-         * @description 노벨 화 하나. 무료 화·소장한 화·게시자 본인이면 공개본 본문을 문단 배열로 싣고 조회 수를 센다. 아니면 본문 없이
+         * @description 노벨 화 하나. 무료 화·소장한 화·게시자 본인이면 공개본 본문을 문단 배열로 싣고, 게시자 본인이 아니면 조회 수를 센다
+         *     (자기 글을 다시 열어 본 것은 독자의 조회가 아니다). 아니면 본문 없이
          *     `access: locked` 와 가격만 싣는다(소장 화면용). 읽을 수 없으면 소장했던 사람에게 410 `NOVEL_READING_ENDED`, 아니면 404
          *     `NOVEL_CHAPTER_NOT_FOUND`(모듈 docstring).
          */
@@ -3195,8 +3198,9 @@ export interface paths {
         post: operations["like_webnovel_webnovels__novel_id__like_post"];
         /**
          * Unlike Webnovel
-         * @description 좋아요 취소. 안 했으면 아무것도 바뀌지 않는다. 지금 읽을 수 없는 노벨이어도 취소는 된다 — 내 표시를 거두는 일이라
-         *     노벨의 상태와 무관하다. 행을 지운 요청만 수를 내린다(좋아요와 같은 이유).
+         * @description 좋아요 취소. 안 했으면 아무것도 바뀌지 않는다. 노벨 스위치가 꺼져 있으면 다른 독자 라우트처럼 404
+         *     `NOVEL_PUBLIC_DISABLED` 다(꺼진 동안 화면이 노벨 탭을 숨긴다). 스위치가 켜져 있으면 지금 읽을 수 없는 노벨이어도 취소는
+         *     된다 — 내 표시를 거두는 일이라 노벨의 상태와 무관하다. 행을 지운 요청만 수를 내린다(좋아요와 같은 이유).
          */
         delete: operations["unlike_webnovel_webnovels__novel_id__like_delete"];
         options?: never;
