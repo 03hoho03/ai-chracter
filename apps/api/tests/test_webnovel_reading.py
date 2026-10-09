@@ -327,6 +327,37 @@ async def test_only_a_buyer_learns_why_reading_ended(
         assert "reason" not in as_stranger.json()["detail"], path
 
 
+async def test_every_reader_response_including_errors_tells_the_browser_not_to_store_it(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """독자 라우트의 404·410 은 다시 공개하거나 스위치를 켜면 풀리는 상태다. 브라우저가 붙잡아 두지 않도록 성공·오류·요청 검증
+    오류·스위치 꺼짐 모두 `Cache-Control: no-store` 로 나간다(읽기·구매·댓글·신고 라우터 모두)."""
+    novel = await _novel(db_session)
+    buyer = await _member(db_session)
+    await _buy_sixth(db_client, novel, buyer)
+    missing = uuid.uuid4()
+    chapter = _chapter_path(novel, 1)
+
+    served = [
+        await db_client.get(f"/webnovels/{novel.novel_id}"),
+        await db_client.get(chapter),
+        await db_client.get(f"/webnovels/{missing}"),
+        await db_client.get("/webnovels", params={"cursor": "not-a-cursor"}),
+        await db_client.get(f"{chapter}/comments"),
+        await db_client.post(f"/webnovels/{missing}/reports", json={"reasonCategory": "spam"}),
+        await db_client.post(f"{_chapter_path(novel, 1)}/purchase", json={"expectedPrice": 30}),
+    ]
+    await _withdraw(db_session, novel)
+    await db_session.commit()
+    served.append(await db_client.get(chapter))
+    monkeypatch.setattr(settings, "novel_public_enabled", False)
+    served.append(await db_client.get("/webnovels"))
+    served.append(await db_client.post(f"{_chapter_path(novel, 7)}/purchase", json={"expectedPrice": 30}))
+
+    assert [r.status_code for r in served] == [200, 200, 404, 422, 200, 404, 409, 410, 404, 404]
+    assert [r.headers.get("cache-control") for r in served] == ["no-store"] * len(served)
+
+
 async def test_a_buyer_of_a_deleted_chapter_is_told_it_was_refunded(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

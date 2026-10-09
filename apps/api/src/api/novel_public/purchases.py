@@ -44,6 +44,7 @@ from api.db.session import get_db_session
 from api.legal.dependencies import require_legal_consent
 from api.moderation.notifications import NOVEL_REFUND_NOTIFICATION_TYPE
 from api.novel_public.access import readable_publication_conditions, require_novel_public_readable
+from api.novel_public.no_store import NoStoreRoute
 from api.novelize.schemas import NovelPurchaseRefundPreview
 from api.payments.refund import fully_cancelled_purchase_lot
 from api.session.dependencies import get_current_user_id
@@ -56,6 +57,7 @@ reader_router = APIRouter(
     prefix="/webnovels",
     tags=["webnovels"],
     dependencies=[Depends(require_novel_public_readable)],
+    route_class=NoStoreRoute,
 )
 
 

@@ -36,6 +36,7 @@ from api.db.models.novel import (
 from api.db.session import get_db_session
 from api.novel_public.access import require_novel_public_readable, select_readable_publications
 from api.novel_public.comments import require_chapter_reader
+from api.novel_public.no_store import NoStoreRoute
 from api.novel_public.schemas import (
     PublicNovelCommentReportRequest,
     PublicNovelReportRequest,
@@ -48,7 +49,7 @@ from api.session.dependencies import get_current_user_id
 NOVEL_REPORT_EVIDENCE_BODY_CHARS = 2000
 NOVEL_REPORT_EVIDENCE_DAYS = 90
 
-reports_router = APIRouter(prefix="/webnovels", tags=["webnovels"])
+reports_router = APIRouter(prefix="/webnovels", tags=["webnovels"], route_class=NoStoreRoute)
 
 
 def _error(status_code: int, code: str) -> HTTPException:

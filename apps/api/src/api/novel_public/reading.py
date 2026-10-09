@@ -50,6 +50,7 @@ from api.db.models.novel import (
 from api.db.session import get_db_session, get_session_factory
 from api.legal.dependencies import require_legal_consent
 from api.novel_public.access import require_novel_public_readable, select_readable_publications
+from api.novel_public.no_store import NoStoreRoute
 from api.novel_public.purchases import is_free_chapter
 from api.novel_public.schemas import (
     PublicNovelChapterAccess,
@@ -75,7 +76,7 @@ from api.session.dependencies import get_current_user_id
 
 PUBLIC_NOVEL_LIST_PAGE_SIZE = 20
 
-reading_router = APIRouter(prefix="/webnovels", tags=["webnovels"])
+reading_router = APIRouter(prefix="/webnovels", tags=["webnovels"], route_class=NoStoreRoute)
 
 _source_creator = aliased(User)
 

@@ -27,6 +27,7 @@ from api.db.models.novel import Novel, NovelChapter, NovelChapterPublication, No
 from api.db.session import get_db_session
 from api.legal.dependencies import require_legal_consent
 from api.novel_public.access import require_novel_public_readable, select_readable_publications
+from api.novel_public.no_store import NoStoreRoute
 from api.novel_public.reading import _chapter_access, _decode_cursor, _encode_cursor, _owned_chapter_ids
 from api.novel_public.schemas import (
     PublicNovelCommentCreateRequest,
@@ -39,7 +40,7 @@ NOVEL_COMMENT_PAGE_SIZE = 20
 # 화면에 보이는 글자(자소 묶음) 기준 — 작품 댓글과 같은 상한이다.
 NOVEL_COMMENT_MAX_CHARS = 1000
 
-comments_router = APIRouter(prefix="/webnovels", tags=["webnovels"])
+comments_router = APIRouter(prefix="/webnovels", tags=["webnovels"], route_class=NoStoreRoute)
 
 
 def _error(status_code: int, code: str, **extra: object) -> HTTPException:
