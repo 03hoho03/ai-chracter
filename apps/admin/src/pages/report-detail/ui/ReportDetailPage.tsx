@@ -15,6 +15,8 @@ import { QueryState } from "@/shared/ui/QueryState";
 
 import { ChatMessageReportDetailBody } from "./ChatMessageReportDetailBody";
 import { CommentReportDetailBody } from "./CommentReportDetailBody";
+import { NovelCommentReportDetailBody } from "./NovelCommentReportDetailBody";
+import { NovelReportDetailBody } from "./NovelReportDetailBody";
 
 type ReportDetailPageProps = {
   reportId: string;
@@ -59,6 +61,10 @@ function TargetReportDetailBody({ target, reportId }: { target: ReportTarget; re
       return <CommentReportDetailBody reportId={reportId} />;
     case "chat-message":
       return <ChatMessageReportDetailBody reportId={reportId} />;
+    case "novel":
+      return <NovelReportDetailBody reportId={reportId} />;
+    case "novel-comment":
+      return <NovelCommentReportDetailBody reportId={reportId} />;
     default:
       return assertNever(target);
   }

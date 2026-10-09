@@ -47,7 +47,7 @@ export const CHAT_MESSAGE_REPORT_REASON_LABELS: Record<ChatMessageReportReason, 
 
 /** 신고 목록·상세 라우트의 `?target=` 값. 두 라우트의 search 스키마와 화면 분기가 모두 이 목록을 본다 —
  * 한쪽 라우트에만 값을 더하면 `.catch(undefined)`가 새 값을 조용히 삼켜 기본값(작품 신고)으로 열린다. */
-export const REPORT_TARGETS = ["content", "comment", "chat-message"] as const;
+export const REPORT_TARGETS = ["content", "comment", "chat-message", "novel", "novel-comment"] as const;
 
 export type ReportTarget = (typeof REPORT_TARGETS)[number];
 
@@ -55,6 +55,8 @@ export const REPORT_TARGET_LABELS: Record<ReportTarget, string> = {
   content: "작품 신고",
   comment: "댓글 신고",
   "chat-message": "채팅 응답 신고",
+  novel: "노벨 신고",
+  "novel-comment": "노벨 댓글 신고",
 };
 
 export function isReportTarget(value: string): value is ReportTarget {

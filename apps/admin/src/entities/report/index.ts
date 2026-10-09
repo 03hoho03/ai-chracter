@@ -10,6 +10,22 @@ export { useChatMessageReportListQuery } from "./api/useChatMessageReportListQue
 export { useChatMessageReportDetailQuery } from "./api/useChatMessageReportDetailQuery";
 export { useChatMessageReportActionMutation } from "./api/useChatMessageReportActionMutation";
 export type { ChatMessageReportDetail, ChatMessageReportAction, ChatMessageReportList } from "./api/chatMessageReport";
+export { useNovelReportListQuery } from "./api/useNovelReportListQuery";
+export { useNovelReportDetailQuery } from "./api/useNovelReportDetailQuery";
+export { useNovelReportActionMutation } from "./api/useNovelReportActionMutation";
+export { useNovelCommentReportListQuery } from "./api/useNovelCommentReportListQuery";
+export { useNovelCommentReportDetailQuery } from "./api/useNovelCommentReportDetailQuery";
+export { useNovelCommentReportActionMutation } from "./api/useNovelCommentReportActionMutation";
+export type {
+  NovelCommentCurrent,
+  NovelCommentReportAction,
+  NovelCommentReportDetail,
+  NovelCommentReportList,
+  NovelReportAction,
+  NovelReportDetail,
+  NovelReportList,
+  NovelReportListItem,
+} from "./api/novelReport";
 export {
   isReportReasonCategory,
   isReportTarget,

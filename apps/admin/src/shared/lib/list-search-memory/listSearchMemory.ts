@@ -3,7 +3,14 @@ import { atom, useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useEffect } from "react";
 
 /** "목록으로"가 돌아갈 목록들. 키는 라우트 id 다(목록을 `.index.tsx` 로 두는 규약이라 끝에 슬래시가 붙는다). */
-export type ListRouteId = "/contents/" | "/users/" | "/reports/" | "/inquiries/" | "/notices/" | "/image-generations/";
+export type ListRouteId =
+  | "/contents/"
+  | "/novels/"
+  | "/users/"
+  | "/reports/"
+  | "/inquiries/"
+  | "/notices/"
+  | "/image-generations/";
 
 /** 그 목록 라우트가 검증한 search 타입. 라우터 등록(`Register`)에서 읽는 타입이라 shared 가 app 을 import 하지 않는다. */
 export type ListSearch<Id extends ListRouteId> = RouteById<RegisteredRouter["routeTree"], Id>["types"]["fullSearchSchema"];

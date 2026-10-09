@@ -24,6 +24,8 @@ import { QueryState } from "@/shared/ui/QueryState";
 
 import { ChatMessageReportsTable } from "./ChatMessageReportsTable";
 import { CommentReportsTable } from "./CommentReportsTable";
+import { NovelCommentReportsTable } from "./NovelCommentReportsTable";
+import { NovelReportsTable } from "./NovelReportsTable";
 import { reportListEmpty } from "./reportListEmpty";
 
 const STATUS_OPTIONS: { value: ReportStatusFilter; label: string }[] = [
@@ -94,6 +96,10 @@ function TargetReportsTable({ target, ...tableProps }: ReportsTableProps & { tar
       return <CommentReportsTable {...tableProps} />;
     case "chat-message":
       return <ChatMessageReportsTable {...tableProps} />;
+    case "novel":
+      return <NovelReportsTable {...tableProps} />;
+    case "novel-comment":
+      return <NovelCommentReportsTable {...tableProps} />;
     default:
       return assertNever(target);
   }
