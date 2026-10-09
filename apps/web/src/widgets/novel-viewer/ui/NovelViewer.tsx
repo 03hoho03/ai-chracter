@@ -2,6 +2,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useAtomValue } from "jotai";
 import { useEffect, useId, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import {
   toAdjacentChapters,
@@ -29,6 +30,9 @@ import { ViewerBottomBar } from "./ViewerBottomBar";
 import { ViewerSettingsPanel } from "./ViewerSettingsPanel";
 import { ViewerTocSheet } from "./ViewerTocSheet";
 import { ViewerTopBar } from "./ViewerTopBar";
+
+/** 배율이 하한 밑이라 스크롤 모드로 보일 때의 안내. 같은 id 라 창을 여러 번 돌려도 하나만 뜬다. */
+const SCROLL_FORCED_TOAST_ID = "novel-viewer-scroll-forced";
 
 type NovelViewerProps = {
   novel: NovelDetailResponse;
@@ -76,9 +80,16 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
   const episodeLabel = toEpisodeLabel(summary);
   const { saved, isAbsenceKnown } = toChapterSavedReadingPosition(summary, novel.lastRead);
   const { fit } = pageFit;
-  const { mode } = settings;
+  // 판형 배율이 하한 밑인 화면(가로로 눕힌 폰, 아주 낮은 창)은 글자가 너무 작아 이 기기에서만 스크롤 모드로 보인다.
+  // 저장된 넘김 방식은 바꾸지 않는다 — 세로로 돌리거나 창을 키우면 페이지 모드로 돌아온다.
+  const isScrollForced = settings.mode === "page" && fit?.isBelowMinimum === true;
+  const mode = isScrollForced ? "scroll" : settings.mode;
   const inEpisodeLocation = mode === "scroll" ? `${Math.round(progress * 100)}%` : pagedPosition.pageLabel;
   const location = `${summary.ordinal}/${novel.chapters.length}화${inEpisodeLocation === undefined ? "" : ` · ${inEpisodeLocation}`}`;
+
+  useEffect(() => {
+    if (isScrollForced) toast("화면이 낮아 이 기기에서는 스크롤로 보여요. 세로로 돌리면 페이지로 돌아가요.", { id: SCROLL_FORCED_TOAST_ID });
+  }, [isScrollForced]);
 
   // 두 넘김 방식 모두 읽는 동안이라 본문이 아니라 여기서 잡는다 — 방식을 바꿔도 놓았다 다시 잡지 않는다.
   useScreenWakeLock(settings.keepScreenOn);
@@ -263,7 +274,7 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
         previous={previous}
         next={next}
         isVisible={chrome.isVisible}
-        settingsPanel={isSettingsOpen ? <ViewerSettingsPanel ref={settingsPanelRef} id={settingsPanelId} /> : null}
+        settingsPanel={isSettingsOpen ? <ViewerSettingsPanel ref={settingsPanelRef} id={settingsPanelId} isScrollForced={isScrollForced} /> : null}
       />
 
       <ViewerTocSheet
