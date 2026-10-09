@@ -1,11 +1,13 @@
 """LLM 호출 위치(`LLMCallSite`)마다 어떤 정책으로 부르는지 적은 표. 판정 모델 스위치, 발행 심사, 소설화의 모델·실패 구분,
 Gemini 요청 타임아웃, 상위 모델 선택 허용, Claude 의 타임아웃·출력 상한 프로필과 캐시 체크포인트를 한 행에서 정한다.
 `llm/client.py`·`llm/routing.py`·`llm/bedrock.py` 의 call_site 집합과 판별 함수는 전부 이 표에서 나온다 — 새 call_site 는
-여기 한 행을 더하면 모든 갈래를 따라간다.
+여기 한 행을 더하면 이 세 파일의 갈래를 따라간다. 예외로 어드민 판정 비율의 분모(미리보기 생성인가 채팅 생성인가)는 이 표가
+아니라 `admin/llm_usage.py` 가 call_site 이름의 `preview_` 접두로 따로 정하므로, 새 판정 call_site 는 이름도 그 규칙에 맞춘다.
 
 표에는 설정 값이 아니라 설정 **이름**(또는 설정이 아닌 고정값)만 담는다. 값은 쓰는 쪽이 호출마다 `settings` 에서 읽는다 —
-import 때 값을 붙잡으면 테스트가 바꾼 설정이 호출에 실리지 않는다. 그래서 이 모듈은 다른 `api` 모듈을 import 하지 않는
-잎 모듈이고, `llm/client.py` 가 이 모듈을 import 해 집합을 만들어도 순환이 생기지 않는다.
+import 때 값을 붙잡으면 테스트가 바꾼 설정이 호출에 실리지 않는다. 이와 별개로, 이름만 담으니 이 모듈은 `settings` 를 비롯한
+다른 `api` 모듈을 import 할 필요가 없어 잎 모듈로 둔다. 그래서 `llm/client.py`·`llm/routing.py`·`llm/bedrock.py` 가 이 모듈을
+import 해 집합을 만들어도 순환을 따질 일이 없다.
 """
 
 from dataclasses import dataclass
@@ -80,8 +82,9 @@ class CallPolicy:
     # 고르는 판정이라 실패 구분만 받고 모델·상한·사고는 기본을 따른다.
     novelize: Literal["prose", "boundary"] | None = None
     # Claude 의 타임아웃·출력 상한 프로필. `chapter` 는 소설 장 생성용 긴 상한(`bedrock_chapter_*`), `chat` 은 채팅 상한
-    # (`bedrock_chat_*`). 소설화 갈래에서 파생하지 않는 것은 문단 수정처럼 Gemini 쪽은 소설화 프로필인데 Claude 쪽은
-    # 채팅 상한인 행이 있어서다.
+    # (`bedrock_chat_*`). 소설화 갈래에서 파생하지 않는 것은 Claude 로 가는 소설화 호출이 지금 장 생성 하나뿐이어서다 —
+    # 문단 수정·장 경계 제안은 구조화 호출이고 모델 선택 대상이 아니라 언제나 Gemini 로 가므로 이 값이 운영에서 쓰이지
+    # 않는다. 이들을 Claude 로 보내게 되면 그때 상한을 따로 정해야 하므로 갈래와 묶지 않고 행마다 적는다.
     claude_limits: Literal["chat", "chapter"] = "chat"
     # Claude 에 빌더가 나눈 프롬프트 블록을 캐시 체크포인트와 함께 보내는가(채팅 턴 생성과 그 측정용 다시 생성).
     claude_cache_checkpoint: bool = False
