@@ -43,9 +43,19 @@ def _build_bedrock_client() -> LLMClient:
     return BedrockLLMClient()
 
 
+def _build_anthropic_client() -> LLMClient:
+    # Bedrock 과 같은 이유로 지연 import 로 아끼는 것은 거의 없다 — 배정이 없으면 불리지 않는다는 것만 드러낸다.
+    from api.llm.anthropic_api import AnthropicLLMClient
+
+    return AnthropicLLMClient()
+
+
 # Gemini 를 뺀 구현의 팩토리. Gemini 는 `get_llm_client` 가 바로 만들어 넘긴다 — 키가 없을 때의 `ValueError` 가 의존성
 # 해석 시점에 나야 한다. 나머지는 처음 필요할 때 한 번 만든다.
-_FACTORIES: Mapping[BackendId, Callable[[], LLMClient]] = {"bedrock": _build_bedrock_client}
+_FACTORIES: Mapping[BackendId, Callable[[], LLMClient]] = {
+    "bedrock": _build_bedrock_client,
+    "anthropic": _build_anthropic_client,
+}
 
 
 class RoutingLLMClient(LLMClient):

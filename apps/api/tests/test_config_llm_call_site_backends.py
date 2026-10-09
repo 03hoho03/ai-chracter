@@ -67,8 +67,6 @@ def test_the_same_call_site_twice_refuses_to_start(monkeypatch: pytest.MonkeyPat
         pytest.param("Chat_generate:gemini", id="call-site-case"),
         pytest.param("chat_generate:Gemini", id="backend-case"),
         pytest.param("chat_generate:openai", id="unknown-backend"),
-        # 아직 구현이 등록되지 않은 공급자다. 이 이미지가 받아들이면 배정이 조용히 무시된 채 뜬다.
-        pytest.param("chat_generate:anthropic", id="unregistered-backend"),
     ],
 )
 def test_an_unknown_call_site_or_backend_refuses_to_start(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
@@ -107,6 +105,104 @@ def test_assigning_a_backend_that_serves_no_model_of_that_call_refuses_to_start(
 )
 def test_assignments_that_some_model_of_the_call_can_use_start(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
     assert _load(monkeypatch, value).llm_call_site_backends != {}
+
+
+# ── Anthropic API 직접 구현으로 옮기는 배정 ─────────────────────────────────────────────────
+
+_ANTHROPIC_KEY = "ANTHROPIC_DIRECT_API_KEY"
+_SWITCHES = ("CHAT_PREMIUM_MODELS_ENABLED", "NOVELIZE_PREMIUM_MODELS_ENABLED")
+# 상위 모델을 Anthropic 으로 운영에서 켤 때의 배정. 상위 모델 스위치가 쓰는 호출 위치 셋을 모두 옮긴다.
+_ALL_PREMIUM_CALLS_TO_ANTHROPIC = "chat_generate:anthropic,replay_generate:anthropic,novelize_chapter:anthropic"
+
+
+def _load_env(monkeypatch: pytest.MonkeyPatch, **env: str) -> Settings:
+    """Bedrock 자격 셋(리전 포함)·Anthropic 키·스위치·배정을 모두 지운 뒤 `env` 만 심는다."""
+    for key in (_ENV, *_BEDROCK_CREDENTIALS, "BEDROCK_REGION", _ANTHROPIC_KEY, *_SWITCHES):
+        monkeypatch.delenv(key, raising=False)
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    return Settings(_env_file=None)  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize("key", [None, "", "  "])
+def test_moving_a_call_to_anthropic_without_its_key_refuses_to_start(
+    monkeypatch: pytest.MonkeyPatch, key: str | None
+) -> None:
+    env = {_ENV: "chat_generate:anthropic"} if key is None else {_ENV: "chat_generate:anthropic", _ANTHROPIC_KEY: key}
+
+    with pytest.raises(ValidationError, match=_ANTHROPIC_KEY):
+        _load_env(monkeypatch, **env)
+
+
+def test_moving_a_call_to_anthropic_with_its_key_starts(monkeypatch: pytest.MonkeyPatch) -> None:
+    loaded = _load_env(monkeypatch, **{_ENV: "chat_generate:anthropic", _ANTHROPIC_KEY: "sk-ant-test"})
+
+    assert loaded.llm_call_site_backends == {"chat_generate": "anthropic"}
+
+
+@pytest.mark.parametrize("call_site", ["chat_stat_judgment", "chat_memory_summary", "preview_generate"])
+def test_assigning_anthropic_to_a_call_that_cannot_pick_a_premium_model_refuses_to_start(
+    monkeypatch: pytest.MonkeyPatch, call_site: str
+) -> None:
+    """이 호출들은 기본 모델만 받는데 Anthropic 구현은 그 모델을 서비스하지 않는다 — 키가 있어도 배정이 아무 일도 하지 않는다."""
+    with pytest.raises(ValidationError, match=call_site):
+        _load_env(monkeypatch, **{_ENV: f"{call_site}:anthropic", _ANTHROPIC_KEY: "sk-ant-test"})
+
+
+def test_premium_switches_with_every_premium_call_on_anthropic_start_without_bedrock_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """상위 모델 스위치의 기동 검증은 스위치가 쓰는 호출이 실제로 갈 구현의 자격을 본다 — 모두 Anthropic 으로 옮겼으면
+    Bedrock 키가 없어도 뜬다."""
+    loaded = _load_env(
+        monkeypatch,
+        **{_ENV: _ALL_PREMIUM_CALLS_TO_ANTHROPIC, _ANTHROPIC_KEY: "sk-ant-test"},
+        **dict.fromkeys(_SWITCHES, "true"),
+    )
+
+    assert loaded.chat_premium_models_enabled and loaded.novelize_premium_models_enabled
+    assert set(loaded.llm_call_site_backends.values()) == {"anthropic"}
+    assert loaded.bedrock_access_key_id == ""
+
+
+@pytest.mark.parametrize(
+    ("assignment", "switch"),
+    [
+        # 측정용 다시 생성도 채팅 스위치가 여는 호출이다 — 남겨 두면 그 호출은 Bedrock 으로 간다.
+        pytest.param("chat_generate:anthropic,novelize_chapter:anthropic", "CHAT_PREMIUM_MODELS_ENABLED", id="replay"),
+        pytest.param("replay_generate:anthropic,novelize_chapter:anthropic", "CHAT_PREMIUM_MODELS_ENABLED", id="chat"),
+        pytest.param(
+            "chat_generate:anthropic,replay_generate:anthropic", "NOVELIZE_PREMIUM_MODELS_ENABLED", id="chapter"
+        ),
+    ],
+)
+def test_a_premium_call_left_on_bedrock_still_needs_bedrock_credentials(
+    monkeypatch: pytest.MonkeyPatch, assignment: str, switch: str
+) -> None:
+    with pytest.raises(ValidationError, match="BEDROCK_ACCESS_KEY_ID"):
+        _load_env(monkeypatch, **{_ENV: assignment, _ANTHROPIC_KEY: "sk-ant-test", switch: "true"})
+
+
+def test_the_chat_switch_alone_needs_only_the_chat_calls_moved(monkeypatch: pytest.MonkeyPatch) -> None:
+    loaded = _load_env(
+        monkeypatch,
+        **{
+            _ENV: "chat_generate:anthropic,replay_generate:anthropic",
+            _ANTHROPIC_KEY: "sk-ant-test",
+            "CHAT_PREMIUM_MODELS_ENABLED": "true",
+        },
+    )
+
+    assert loaded.chat_premium_models_enabled
+
+
+@pytest.mark.parametrize("switch", _SWITCHES)
+def test_premium_switches_without_an_assignment_still_need_bedrock_credentials_even_with_an_anthropic_key(
+    monkeypatch: pytest.MonkeyPatch, switch: str
+) -> None:
+    """배정이 없으면 상위 모델은 지금처럼 Bedrock 으로 간다 — Anthropic 키는 그 자격을 대신하지 못한다."""
+    with pytest.raises(ValidationError, match="BEDROCK_ACCESS_KEY_ID"):
+        _load_env(monkeypatch, **{_ANTHROPIC_KEY: "sk-ant-test", switch: "true"})
 
 
 # 운영 API 컨테이너가 받는 env 키 이름(값 없이). 컨테이너는 `.env` 를 통째로 받으므로 compose·다른 서비스 키도 섞여 있다.

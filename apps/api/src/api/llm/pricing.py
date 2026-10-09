@@ -12,6 +12,10 @@ Claude 의 출처는 Anthropic 가격 문서(platform.claude.com/docs/en/about-c
 Bedrock 모델 id 다. Bedrock 의 global 교차 리전 프로필이 이 정가와 같다고 보고 넣었다 — Bedrock 가격 페이지에서 서울 값을 직접
 읽은 것은 아니라서, 청구서가 나오면 대조한다. 지역 프로필은 global 보다 10% 비싸다고 Anthropic 문서에 적혀 있어, 호출 프로필을
 바꾸면 이 값도 바꾼다. 캐시 쓰기는 5분 수명 캐시의 단가다. Gemini 는 캐시 쓰기를 따로 과금하지 않아 그 단가가 0 이다.
+Anthropic API 로 직접 부르는 id(`claude-` 로 시작)는 같은 문서의 정가 그대로다. 그중 Opus 5.5·Sonnet 5.5 는 캐시 읽기가 입력의
+0.05 배라(다른 모델은 0.1 배) 관례로 짐작하지 않고 표 값을 옮겼다. 이 두 줄은 2026-10-10 에 확인했다 — `PRICES_AS_OF` 는
+표 전체를 다시 확인한 날이라 다른 줄과 함께 다시 볼 때 고친다. 요청에 처리 지역을 싣지 않으므로 워크스페이스 기본값이 미국
+지정이면 실제 단가는 이 값의 1.1 배다.
 
 3.8 Flash 는 2026-12-31 까지 할인가가 붙어 있는데, 할인가를 넣으면 날짜가 지나 조용히 틀린 값이 된다. 그래서 2027-01-01
 부터의 정가로 넣었다 — 연말까지는 원가를 실제의 두 배로 높게 보인다(낮게 보이는 쪽보다 안전하다). 할인가가 붙은 다른
@@ -42,6 +46,8 @@ MODEL_PRICES: dict[str, ModelPrice] = {
     "gemini-2.5-flash-lite": ModelPrice(0.10, 0.01, 0.40),
     "global.anthropic.claude-sonnet-4-6": ModelPrice(3.00, 0.30, 15.00, cache_write_usd_per_million=3.75),
     "global.anthropic.claude-opus-4-6-v1": ModelPrice(5.00, 0.50, 25.00, cache_write_usd_per_million=6.25),
+    "claude-opus-5-5": ModelPrice(4.00, 0.20, 20.00, cache_write_usd_per_million=5.00),
+    "claude-sonnet-5-5": ModelPrice(2.00, 0.10, 10.00, cache_write_usd_per_million=2.50),
 }
 
 

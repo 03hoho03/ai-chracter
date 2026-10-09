@@ -35,7 +35,7 @@ JUDGMENT_CALL_SITES: frozenset[LLMCallSite] = (
     STAT_JUDGMENT_CALL_SITES | ENDING_JUDGMENT_CALL_SITES | IMAGE_JUDGMENT_CALL_SITES
 )
 PUBLISH_FILTER_CALL_SITES: frozenset[LLMCallSite] = frozenset(cs for cs, p in CALL_POLICIES.items() if p.publish_filter)
-# 소설화 호출 전체 — `llm/gemini.py`·`llm/bedrock.py` 가 잘림·빈 본문을 구분된 실패로 올리는 호출.
+# 소설화 호출 전체 — 공급자 구현들이 잘림·빈 본문을 구분된 실패로 올리는 호출.
 NOVELIZE_CALL_SITES: frozenset[LLMCallSite] = frozenset(cs for cs, p in CALL_POLICIES.items() if p.novelize is not None)
 # 그중 소설화 모델·출력 상한·사고 설정(`gemini_novelize_*`)을 쓰는 호출 — 본문을 쓰는 장 생성과 문단 수정이다.
 NOVELIZE_MODEL_CALL_SITES: frozenset[LLMCallSite] = frozenset(
@@ -78,7 +78,7 @@ def request_timeout_ms(call_site: LLMCallSite) -> int:
 
 class SegmentedPrompt(str):
     """블록 경계를 함께 싣는 프롬프트 문자열. 값은 `segments` 를 이은 것 그대로라, 문자열로만 다루는 쪽(프롬프트 덤프, 응답
-    모델, 테스트 가짜)에는 보통의 `str` 과 똑같다. 경계를 읽는 것은 Bedrock 구현뿐이다(Claude 프롬프트 캐시의 블록).
+    모델, 테스트 가짜)에는 보통의 `str` 과 똑같다. 경계를 읽는 것은 Claude 구현뿐이다(프롬프트 캐시의 블록).
     예외는 타입을 정확히 `str` 로 따지는 외부 라이브러리다 — Gemini SDK 는 하위 클래스를 빈 내용으로 바꿔 보내므로, Gemini
     구현이 SDK 에 넘기기 직전에 보통의 `str` 로 바꾼다.
 
@@ -112,8 +112,9 @@ class LLMCallContext:
 class LLMClientError(Exception):
     """Raised when an LLM provider call fails or returns an unusable response.
 
-    `provider` 는 실패한 호출의 공급자다. 클래스 기본값이 Gemini 라 Gemini 클라이언트와 기존 호출부는 그대로이고, Bedrock
-    클라이언트만 자기가 올리는 예외에 `bedrock` 을 적는다. Bugsink 태그(`dependency_tag`)가 이 값으로 갈린다."""
+    `provider` 는 실패한 호출의 공급자다. 클래스 기본값이 Gemini 라 Gemini 클라이언트와 기존 호출부는 그대로이고, Claude
+    클라이언트들만 자기가 올리는 예외에 자기 이름(`bedrock`·`anthropic`)을 적는다. Bugsink 태그(`dependency_tag`)가 이 값으로
+    갈린다."""
 
     provider: BackendId = "gemini"
 
@@ -137,15 +138,19 @@ class LLMTruncatedError(LLMClientError):
 
 
 class LLMEmptyResponseError(LLMClientError):
-    """소설화 호출이 정상 종료했는데 본문이 비었다(공백뿐인 것 포함). 종료 사유는 STOP 이라 그것만 보면 성공으로
-    보인다. 채팅 호출에서는 올라오지 않는다. 사용량은 이 예외를 올리기 전에 이미 기록됐다. 비지는 않았지만 너무 짧은
-    본문을 실패로 볼 기준은 호출부가 정한다."""
+    """소설화 호출이 끝났는데 본문이 비었다(공백뿐인 것 포함). 대개 종료 사유가 정상(STOP)이라 그것만 보면 성공으로
+    보인다. 사용량은 이 예외를 올리기 전에 이미 기록됐다. 비지는 않았지만 너무 짧은 본문을 실패로 볼 기준은 호출부가
+    정한다.
+
+    사고를 끌 수 없는 Anthropic API 직접 구현에서는 사고가 출력 상한을 다 써 본문 없이 끝난 경우(종료 사유 `max_tokens`)도
+    이 예외다 — 소설 장에서는 출력 상한에 닿았어도 `LLMTruncatedError` 가 아니라 이것이고, 채팅 호출에서는 이 경우에만
+    올라온다(빈 턴을 저장·과금하지 않고 환불 경로를 태운다)."""
 
 
 def dependency_tag(exc: LLMClientError) -> str:
     """흡수한 LLM 실패를 Bugsink 로 승격할 때의 `dependency` 태그. 공급자마다 이름이 따로다(`gemini`·`gemini_rate_limit`,
-    `bedrock`·`bedrock_rate_limit`) — 한 이름으로 합치면 기존 Gemini 이벤트 묶음과 로그 검색이 끊긴다. 쿼터 소진(429)을
-    다른 실패와 갈라 붙여야 승격된 이벤트로 행동할 수 있다."""
+    `bedrock`·`bedrock_rate_limit`, `anthropic`·`anthropic_rate_limit`) — 한 이름으로 합치면 기존 Gemini 이벤트 묶음과 로그
+    검색이 끊긴다. 쿼터 소진(429)을 다른 실패와 갈라 붙여야 승격된 이벤트로 행동할 수 있다."""
     if isinstance(exc, LLMRateLimitError):
         return f"{exc.provider}_rate_limit"
     return exc.provider

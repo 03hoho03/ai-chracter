@@ -2,12 +2,13 @@
 
 호출 하나가 어느 구현으로 가는지는 세 단계로 정한다. 모델을 고를 수 없는 호출에 실려 온 상위 모델은 기본 모델로 읽고,
 배정(env 가 정책 표의 행보다 앞선다)이 있으면 그 구현이 그 모델을 서비스할 때만 따르고, 아니면 모델의 기본 구현이다.
-지금 등록된 두 구현으로는 기동 검증의 능력·자격 규칙이 걸리는 배정을 만들 수 없어, 그 규칙과 구조화 호출이 배정을 타는
-경로는 테스트에서만 등록하는 가짜 구현 행으로 본다.
+지금 등록된 구현으로는 기동 검증의 능력 규칙이 걸리는 배정을 만들 수 없어(구조화를 받지 못하는 구현은 구조화 호출의
+모델도 서비스하지 않는다), 그 규칙과 구조화 호출이 배정을 타는 경로는 테스트에서만 등록하는 가짜 구현 행으로 본다.
 """
 
 import dataclasses
 import json
+import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, Literal, cast, get_args
@@ -17,6 +18,8 @@ from pydantic import BaseModel
 
 from api.chat import router as chat_router
 from api.core.config import Settings, settings
+from api.llm import routing
+from api.llm.anthropic_api import AnthropicLLMClient
 from api.llm.backends import (
     BACKENDS,
     DEFAULT_CHAT_MODEL,
@@ -30,9 +33,9 @@ from api.llm.backends import (
 from api.llm.call_policy import CALL_POLICIES, BackendId, LLMCallSite
 from api.llm.chat_models import backend_model_id
 from api.llm.client import LLMCallContext, LLMClient
-from api.llm.pricing import MODEL_PRICES
+from api.llm.pricing import MODEL_PRICES, estimate_cost_usd
 from api.llm.routing import RoutingLLMClient, resolve_backend
-from replay.assemble import sent_model_id
+from replay.assemble import GenerationInput, sent_model_id
 
 _FAKE = cast(BackendId, "fake")
 _FAKE_SENT_ID = "fake-backend-model-id"
@@ -300,3 +303,86 @@ def test_the_replay_compares_against_the_id_its_own_call_site_resolves_to(monkey
     _assign(monkeypatch, {"replay_generate": _FAKE})
     assert sent_model_id("gemini") == _FAKE_SENT_ID
     assert sent_model_id("opus") == backend_model_id("bedrock", "opus")
+
+
+# ── Anthropic API 직접 구현 ─────────────────────────────────────────────────────────────────
+
+
+def test_premium_models_resolve_to_bedrock_unless_assigned_to_anthropic(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Anthropic 구현은 상위 모델의 두 번째 구현이다 — 배정이 없으면 지금처럼 Bedrock 으로 간다."""
+    _assign(monkeypatch, {})
+    assert resolve_backend("chat_generate", "opus") == ("bedrock", settings.bedrock_opus_model_id)
+
+    _assign(monkeypatch, {"chat_generate": "anthropic", "novelize_chapter": "anthropic"})
+    assert resolve_backend("chat_generate", "opus") == ("anthropic", settings.anthropic_opus_model_id)
+    assert resolve_backend("chat_generate", "sonnet") == ("anthropic", settings.anthropic_sonnet_model_id)
+    assert resolve_backend("novelize_chapter", "opus") == ("anthropic", settings.anthropic_opus_model_id)
+    # 기본 모델은 Anthropic 이 서비스하지 않아 배정을 두고도 Gemini 다.
+    assert resolve_backend("chat_generate", "gemini") == ("gemini", settings.gemini_model_name)
+    # 배정하지 않은 호출은 그대로다.
+    assert resolve_backend("replay_generate", "opus") == ("bedrock", settings.bedrock_opus_model_id)
+
+
+async def test_the_router_builds_the_anthropic_client_only_when_a_call_is_assigned_to_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """키가 없을 때의 실패가 의존성 해석이 아니라 그 호출의 `LLMClientError` 로 나야 채팅이 환불 경로를 탄다 — 구현을
+    만드는 것만으로는 SDK 를 만들지 않는다."""
+    monkeypatch.setattr(settings, "anthropic_direct_api_key", "")
+    built = routing._FACTORIES["anthropic"]()
+    assert isinstance(built, AnthropicLLMClient)
+
+    reached: list[str] = []
+    router = RoutingLLMClient(
+        _Named("gemini", reached),
+        factories={"bedrock": lambda: _Named("bedrock", reached), "anthropic": lambda: _Named("anthropic", reached)},
+    )
+    _assign(monkeypatch, {"chat_generate": "anthropic"})
+
+    [_ async for _ in router.generate("p", usage=LLMCallContext("chat_generate", None, None, model="opus"))]
+    [_ async for _ in router.generate("p", usage=LLMCallContext("novelize_chapter", None, None, model="opus"))]
+
+    assert reached == ["anthropic", "bedrock"]
+
+
+def _replayed(chat_model: ChatModelId) -> GenerationInput:
+    return GenerationInput(
+        turn=1,
+        variant="model",
+        arm="a",
+        swap_label=None,
+        prompt="가" * 1600,
+        system_instruction="",
+        user_label="나",
+        chat_model=chat_model,
+        history_messages=0,
+        content_version_id=uuid.uuid4(),
+        chosen_set={},
+    )
+
+
+@pytest.mark.parametrize(
+    ("assignments", "model_setting", "cap_setting"),
+    [
+        pytest.param({}, "bedrock_opus_model_id", "bedrock_chat_max_tokens", id="bedrock"),
+        pytest.param(
+            {"replay_generate": "anthropic"}, "anthropic_opus_model_id", "anthropic_chat_max_tokens", id="anthropic"
+        ),
+    ],
+)
+def test_the_replay_cost_ceiling_uses_the_output_cap_of_the_backend_the_call_resolves_to(
+    monkeypatch: pytest.MonkeyPatch, assignments: dict[LLMCallSite, BackendId], model_setting: str, cap_setting: str
+) -> None:
+    """원가를 모르고 끝난 호출은 출력 상한을 다 쓴 것으로 센다 — 상한은 그 호출이 실제로 간 구현의 것이어야 한다."""
+    _assign(monkeypatch, assignments)
+    replayed = _replayed("opus")
+
+    expected = estimate_cost_usd(
+        getattr(settings, model_setting),
+        input_tokens=replayed.estimated_input_tokens(),
+        cached_tokens=0,
+        output_tokens=getattr(settings, cap_setting),
+        thoughts_tokens=0,
+    )
+    assert expected is not None
+    assert replayed.cost_ceiling_usd() == pytest.approx(expected)
