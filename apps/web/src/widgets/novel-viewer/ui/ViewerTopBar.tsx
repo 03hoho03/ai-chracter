@@ -1,14 +1,16 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { Link } from "@tanstack/react-router";
 import { ChevronLeft, ListOrdered, Type } from "lucide-react";
 import type { Ref } from "react";
 
 import { VIEWER_BAR_ROW_PX } from "../lib/pageFit";
+import type { ViewerRoute } from "../model/viewerSource";
+import { NovelInfoLink } from "./ViewerLinks";
 
 type ViewerTopBarProps = {
   ref: Ref<HTMLElement>;
   id: string;
+  route: ViewerRoute;
   novelId: string;
   episodeLabel: string;
   /** 화 제목 밑 한 줄 — 화 번호와 화 안 위치("3/12화 · 3–4 / 16쪽", 스크롤 모드는 "3/12화 · 40%"). */
@@ -32,6 +34,7 @@ type ViewerTopBarProps = {
 export function ViewerTopBar({
   ref,
   id,
+  route,
   novelId,
   episodeLabel,
   location,
@@ -56,9 +59,9 @@ export function ViewerTopBar({
     >
       <div className="flex items-center gap-1 px-4 sm:px-6" style={{ height: VIEWER_BAR_ROW_PX }}>
         <Button asChild variant="ghost" size="icon" className="-ml-2 shrink-0">
-          <Link to="/novels/$novelId" params={{ novelId }} aria-label="작품 정보">
+          <NovelInfoLink route={route} novelId={novelId} aria-label="작품 정보">
             <ChevronLeft aria-hidden />
-          </Link>
+          </NovelInfoLink>
         </Button>
         <div className="flex min-w-0 flex-1 flex-col">
           <p className="truncate text-sm font-semibold text-foreground">{episodeLabel}</p>

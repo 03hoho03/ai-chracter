@@ -1,19 +1,18 @@
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useRef, type PointerEventHandler } from "react";
 
-import type { NovelChapterSummary, NovelDetailResponse } from "@/entities/novel";
-
 import type { ReadingPositionSession } from "../model/useReadingPosition";
 import { useScrollReadingTracker } from "../model/useScrollReadingTracker";
+import type { ViewerChapter, ViewerEpisode, ViewerNovel, ViewerRoute } from "../model/viewerSource";
 import { EpisodeEnd } from "./EpisodeEnd";
 import { EpisodeHeader } from "./EpisodeHeader";
 
 type ScrollEpisodeBodyProps = {
-  novel: NovelDetailResponse;
-  summary: NovelChapterSummary;
+  route: ViewerRoute;
+  novel: ViewerNovel;
+  episode: ViewerEpisode;
   episodeLabel: string;
-  paragraphs: readonly string[];
-  next: NovelChapterSummary | undefined;
+  next: ViewerChapter | undefined;
   /** 보기 설정(글자 크기·줄 간격)에서 나온 본문 조판 클래스. */
   typographyClassName: string;
   readingPosition: ReadingPositionSession;
@@ -24,10 +23,10 @@ type ScrollEpisodeBodyProps = {
 
 /** 창 세로 스크롤로 읽는 화 본문. 붙어 있는 동안 읽던 자리로 되돌리고 지금 문단을 잰다(`useScrollReadingTracker`). */
 export function ScrollEpisodeBody({
+  route,
   novel,
-  summary,
+  episode,
   episodeLabel,
-  paragraphs,
   next,
   typographyClassName,
   readingPosition,
@@ -35,6 +34,7 @@ export function ScrollEpisodeBody({
   onPointerUp,
   onOpenToc,
 }: ScrollEpisodeBodyProps) {
+  const { paragraphs } = episode;
   const articleRef = useRef<HTMLElement>(null);
 
   useScrollReadingTracker({ session: readingPosition, paragraphCount: paragraphs.length, containerRef: articleRef });
@@ -43,6 +43,7 @@ export function ScrollEpisodeBody({
     <main className="min-h-dvh pt-10-safe pb-28" onPointerDown={onPointerDown} onPointerUp={onPointerUp}>
       <article ref={articleRef} className={cn("mx-auto flex max-w-prose flex-col gap-8 px-6", typographyClassName)}>
         <EpisodeHeader
+          route={route}
           novelId={novel.id}
           novelTitle={novel.title}
           episodeLabel={episodeLabel}
@@ -60,8 +61,9 @@ export function ScrollEpisodeBody({
         </div>
 
         <EpisodeEnd
+          route={route}
           novelId={novel.id}
-          authorNote={summary.authorNote}
+          authorNote={episode.authorNote}
           next={next}
           isInPageFormat={false}
           onOpenToc={onOpenToc}

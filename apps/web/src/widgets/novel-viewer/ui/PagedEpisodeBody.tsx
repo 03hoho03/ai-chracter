@@ -1,13 +1,12 @@
 import { useEffect, useImperativeHandle, useRef, type Ref, type RefObject } from "react";
 
-import type { NovelChapterSummary, NovelDetailResponse } from "@/entities/novel";
-
 import type { PageFit } from "../lib/pageFit";
 import { PAGE_FORMAT_HEIGHT_PX, PAGE_FORMAT_PADDING_PX, PAGE_FORMAT_WIDTH_PX, type PageTypography } from "../lib/pageFormat";
 import { useIsFinePointer } from "../lib/useIsFinePointer";
 import { usePagedReader, type PagedPosition, type PagedReaderHandle } from "../model/usePagedReader";
 import { usePageInput } from "../model/usePageInput";
 import type { ReadingPositionSession } from "../model/useReadingPosition";
+import type { ViewerChapter, ViewerEpisode, ViewerNovel, ViewerRoute } from "../model/viewerSource";
 import { EpisodeEnd } from "./EpisodeEnd";
 import { EpisodeHeader } from "./EpisodeHeader";
 import { PageTurnButton } from "./PageTurnButton";
@@ -20,11 +19,11 @@ const HEADER_GAP_PX = 32;
 
 type PagedEpisodeBodyProps = {
   ref?: Ref<PagedReaderHandle>;
-  novel: NovelDetailResponse;
-  summary: NovelChapterSummary;
+  route: ViewerRoute;
+  novel: ViewerNovel;
+  episode: ViewerEpisode;
   episodeLabel: string;
-  paragraphs: readonly string[];
-  next: NovelChapterSummary | undefined;
+  next: ViewerChapter | undefined;
   /** 창에 판형을 맞춘 배치 — 배율·한 장/펼침·화면 위치. */
   fit: PageFit;
   /** 보기 설정(글자 크기·줄 간격)에서 나온 판형 안 조판값(px). */
@@ -58,10 +57,10 @@ type PagedEpisodeBodyProps = {
  */
 export function PagedEpisodeBody({
   ref,
+  route,
   novel,
-  summary,
+  episode,
   episodeLabel,
-  paragraphs,
   next,
   fit,
   typography,
@@ -72,6 +71,7 @@ export function PagedEpisodeBody({
   onBodyTap,
   onOpenToc,
 }: PagedEpisodeBodyProps) {
+  const { paragraphs } = episode;
   const isFinePointer = useIsFinePointer();
   const reader = usePagedReader({
     session: readingPosition,
@@ -155,7 +155,7 @@ export function PagedEpisodeBody({
             {/* 다단은 블록 요소에 건다 — flex 요소에는 단이 걸리지 않는다. 단 크기는 훅이 요소 스타일에 직접 쓴다. */}
             <article ref={reader.columnsRef}>
               <div className="break-inside-avoid" style={{ marginBottom: HEADER_GAP_PX }}>
-                <EpisodeHeader novelId={novel.id} novelTitle={novel.title} episodeLabel={episodeLabel} isInPageFormat />
+                <EpisodeHeader route={route} novelId={novel.id} novelTitle={novel.title} episodeLabel={episodeLabel} isInPageFormat />
               </div>
 
               {/* 문단 상자는 flex 가 아니라 블록 흐름이고 문단 간격은 아래 여백이다(마지막 문단은 0 — 화 끝은 따로 한
@@ -186,8 +186,9 @@ export function PagedEpisodeBody({
               {/* 화 끝은 따로 한 쪽이다. 한 쪽에 이것뿐이라 위에 붙이면 아래가 휑해 세로 가운데에 둔다. */}
               <div ref={reader.endRef} className="flex break-before-column break-inside-avoid flex-col justify-center">
                 <EpisodeEnd
+                  route={route}
                   novelId={novel.id}
-                  authorNote={summary.authorNote}
+                  authorNote={episode.authorNote}
                   next={next}
                   isInPageFormat
                   onOpenToc={onOpenToc}
