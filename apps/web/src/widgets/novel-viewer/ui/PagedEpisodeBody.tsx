@@ -158,18 +158,23 @@ export function PagedEpisodeBody({
                 <EpisodeHeader novelId={novel.id} novelTitle={novel.title} episodeLabel={episodeLabel} isInPageFormat />
               </div>
 
+              {/* 문단 상자는 flex 가 아니라 블록 흐름이고 문단 간격은 아래 여백이다(마지막 문단은 0 — 화 끝은 따로 한
+                  쪽이라 뒤에 간격이 필요 없다). WebKit 은 다단 안의 flex 항목을 줄 경계가 아니라 단 높이에서 잘라 나눠
+                  단 위·아래에 줄이 반쯤 잘려 그려지고, 다단 폭을 바꿀 때 쪽 나눔도 달라진다. 블록 문단은 줄 단위로
+                  나뉜다(엔진 둘 다 실측). */}
               <div
-                className="flex flex-col text-foreground"
-                style={{
-                  gap: typography.paragraphGapPx,
-                  fontSize: typography.fontSizePx,
-                  lineHeight: typography.lineHeight,
-                }}
+                className="text-foreground"
+                style={{ fontSize: typography.fontSizePx, lineHeight: typography.lineHeight }}
               >
                 {paragraphs.map((paragraph, index) => (
                   // 문단은 서버가 나눈 순서 그대로이고 이 목록은 다시 정렬되지 않아 순번이 곧 문단의 정체다(읽은 자리도
                   // 이 순번으로 저장한다).
-                  <p key={index} data-paragraph-index={index} className="whitespace-pre-line text-pretty break-keep">
+                  <p
+                    key={index}
+                    data-paragraph-index={index}
+                    className="whitespace-pre-line text-pretty break-keep"
+                    style={{ marginBottom: index === paragraphs.length - 1 ? 0 : typography.paragraphGapPx }}
+                  >
                     {paragraph}
                   </p>
                 ))}

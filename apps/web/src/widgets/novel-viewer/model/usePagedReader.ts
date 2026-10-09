@@ -86,8 +86,9 @@ type UsePagedReaderOptions = {
  * - **재기**: 다단 요소를 판형 크기로 놓은 뒤, 화 끝 블록이 끝나는 단으로 화면 수를 세고 다단 요소 폭을 `화면 수 ×
  *   한 화면 폭` 으로 다시 놓는다 — 그러지 않으면 브라우저가 다단 요소의 끝 쪽 안쪽 여백을 스크롤 영역에 넣지 않아
  *   마지막 화면에 닿지 못한다. 펼침에서 화 끝 블록이 오른쪽 단에 떨어지면 빈 단 하나를 켜서 새 펼침의 왼쪽으로
- *   민다(CSS 의 쪽 나눔 값은 다단에서 단 하나만 넘긴다). 재기 직전과 빈 단을 켠 직후마다 다단 요소를 처음부터 다시
- *   배치시킨다 — WebKit 은 다단을 고쳐 흘릴 때 결과가 직전 배치에 따라 달라져, 같은 판형·같은 설정인데 쪽 수가 바뀐다.
+ *   민다(CSS 의 쪽 나눔 값은 다단에서 단 하나만 넘긴다). 재기 직전, 빈 단을 켠 직후, 폭을 넓힌 직후마다 다단 요소를
+ *   처음부터 다시 배치시키고, 쪽 수는 마지막 배치(화면에 그려지는 배치)에서 다시 센다 — WebKit 은 다단을 고쳐 흘릴 때
+ *   결과가 직전 배치에 따라 달라져, 같은 판형·같은 설정인데 쪽 수가 바뀌거나 잰 쪽과 그려진 쪽이 어긋난다.
  * - **좌표**: 포인터·사각형은 화면 px 이고 `scrollLeft`·단 폭은 판형 px 다. 화면 거리를 배율로 나눠 판형 px 로 바꾸고,
  *   배율은 계산한 값을 반올림하지 않고 쓴다(반올림하면 단 경계 근처 글자가 앞 단으로 잘못 분류된다).
  * - **다시 재기**: 한 장·펼침 변경, 보기 설정 변경, 글꼴 도착 때. 배율·위치만 바뀌면 다시 재지 않는다. 다시 잰
@@ -154,19 +155,39 @@ export function usePagedReader({ session, paragraphCount, fit, typographyKey }: 
     };
     const screenOfRect = (rect: DOMRect): number => Math.floor(columnOf(rect.left) / columnCount);
 
-    let spacerColumnIndex: number | undefined;
+    // 지금 놓인 배치에서 화 끝 블록이 끝나는 단과 켜 둔 빈 단을 센다.
+    const readSpan = (): ColumnSpan | undefined => {
+      const endRects = Array.from(end.getClientRects());
+      if (endRects.length === 0) return undefined;
+      const endStart = firstRectOf(end);
+      return {
+        lastColumnIndex: Math.max(...endRects.map((rect) => columnOf(rect.right - 1))),
+        spacerColumnIndex:
+          spacer.style.display === "block" && endStart !== undefined ? columnOf(endStart.left) - 1 : undefined,
+      };
+    };
+
     const endStart = firstRectOf(end);
     if (columnCount === 2 && endStart !== undefined && columnOf(endStart.left) % 2 === 1) {
       spacer.style.display = "block";
       layOutFromScratch(columns);
-      const movedStart = firstRectOf(end);
-      if (movedStart !== undefined) spacerColumnIndex = columnOf(movedStart.left) - 1;
     }
-    const endRects = Array.from(end.getClientRects());
-    if (endRects.length === 0) return undefined;
-    const lastColumnIndex = Math.max(...endRects.map((rect) => columnOf(rect.right - 1)));
-    const screenCount = toScreenCount({ lastColumnIndex, columnCount });
-    columns.style.width = `${screenCount * step}px`;
+    let span = readSpan();
+    if (span === undefined) return undefined;
+    let screenCount = toScreenCount({ lastColumnIndex: span.lastColumnIndex, columnCount });
+    // 폭을 넓힌 뒤에도 처음부터 다시 배치하고 다시 센다 — WebKit 은 폭 변경을 고쳐 흘려 잰 배치와 다른 배치를 그린다.
+    // 다시 센 화면 수가 넓힌 폭보다 크면 한 번 더 넓힌다(작으면 남는 폭은 넘김이 닿지 않아 그대로 둔다).
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      columns.style.width = `${screenCount * step}px`;
+      layOutFromScratch(columns);
+      const settled = readSpan();
+      if (settled === undefined) return undefined;
+      const settledCount = toScreenCount({ lastColumnIndex: settled.lastColumnIndex, columnCount });
+      const needsWider = settledCount > screenCount;
+      span = settled;
+      screenCount = settledCount;
+      if (!needsWider) break;
+    }
 
     const paragraphs = Array.from(columns.querySelectorAll<HTMLElement>("[data-paragraph-index]"));
     const screenOfOffset = (paragraphIndex: number, offset: number): number | undefined => {
@@ -180,7 +201,7 @@ export function usePagedReader({ session, paragraphCount, fit, typographyKey }: 
     return {
       columnCount,
       step,
-      span: { lastColumnIndex, spacerColumnIndex },
+      span,
       screenCount,
       startScreens,
       screenOfOffset,
@@ -496,7 +517,7 @@ export function usePagedReader({ session, paragraphCount, fit, typographyKey }: 
 }
 
 /** 다단 요소를 처음부터 다시 배치시킨다(`display: none` 왕복). WebKit 은 이미 배치된 다단을 고쳐 흘리면(빈 단을
- * 켰다 끄거나 글자 크기를 바꿨다 되돌리면) 처음 배치와 다른 쪽 나눔을 낸다. 스크롤 위치가 0 으로 돌아가지만 재기 뒤
+ * 켰다 끄거나, 글자 크기를 바꿨다 되돌리거나, 폭을 바꾸면) 처음 배치와 다른 쪽 나눔을 낸다. 스크롤 위치가 0 으로 돌아가지만 재기 뒤
  * 곧바로 앵커 화면으로 다시 옮기고, 한 작업 안에서 끝나 그 사이가 칠해지지 않는다. 숨는 순간 브라우저가 안의 포커스를
  * 놓을 수 있어(화 끝 링크에 포커스가 있는 채 글꼴 조각이 도착하는 경우) 놓았으면 제자리로 돌려준다. */
 function layOutFromScratch(element: HTMLElement) {
