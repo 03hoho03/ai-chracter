@@ -14,7 +14,7 @@ type ScrollEpisodeBodyProps = {
   episodeLabel: string;
   paragraphs: readonly string[];
   next: NovelChapterSummary | undefined;
-  /** 보기 설정(글자 크기·줄 간격·여백)에서 나온 본문 조판 클래스. */
+  /** 보기 설정(글자 크기·줄 간격)에서 나온 본문 조판 클래스. */
   typographyClassName: string;
   readingPosition: ReadingPositionSession;
   onPointerDown: PointerEventHandler<HTMLElement>;
@@ -41,8 +41,13 @@ export function ScrollEpisodeBody({
 
   return (
     <main className="min-h-dvh pt-10-safe pb-28" onPointerDown={onPointerDown} onPointerUp={onPointerUp}>
-      <article ref={articleRef} className={cn("mx-auto flex max-w-prose flex-col gap-8", typographyClassName)}>
-        <EpisodeHeader novelId={novel.id} novelTitle={novel.title} episodeLabel={episodeLabel} />
+      <article ref={articleRef} className={cn("mx-auto flex max-w-prose flex-col gap-8 px-6", typographyClassName)}>
+        <EpisodeHeader
+          novelId={novel.id}
+          novelTitle={novel.title}
+          episodeLabel={episodeLabel}
+          isInPageFormat={false}
+        />
 
         <div className="flex flex-col gap-4 text-foreground">
           {paragraphs.map((paragraph, index) => (
@@ -54,7 +59,13 @@ export function ScrollEpisodeBody({
           ))}
         </div>
 
-        <EpisodeEnd novelId={novel.id} authorNote={summary.authorNote} next={next} hasDivider onOpenToc={onOpenToc} />
+        <EpisodeEnd
+          novelId={novel.id}
+          authorNote={summary.authorNote}
+          next={next}
+          isInPageFormat={false}
+          onOpenToc={onOpenToc}
+        />
       </article>
     </main>
   );

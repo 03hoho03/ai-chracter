@@ -126,7 +126,7 @@ class MeResponse(CamelModel):
     enabled_features: list[FeatureName]
     # 휴대폰 본인인증을 마쳤는가.
     identity_verified: bool
-    # 미인증 회원의 무료 대화·출석·미션을 막는 게이트가 켜져 있는가. 라우트 게이트와 같은 판정 함수의 값이다 — 꺼져 있으면
+    # 미인증 회원의 무료 대화·미션을 막는 게이트가 켜져 있는가. 라우트 게이트와 같은 판정 함수의 값이다 — 꺼져 있으면
     # 화면이 미인증 회원에게 인증 안내를 띄울 이유가 없다.
     identity_gate_enabled: bool
     # 이 회원이 지금 게이트에 걸리는가 — 스위치·인증 여부·레이트리밋 면제를 라우트 게이트와 같은 함수로 판정한 값이다.

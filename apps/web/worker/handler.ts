@@ -26,6 +26,30 @@ function isStaticAssetPath(pathname: string): boolean {
 }
 
 /**
+ * 정적 자산을 ASSETS에서 꺼내되, 없는 파일이면 캐시 금지 404로 바꾼다.
+ *
+ * Pages 자산 서버는 없는 파일에도 SPA 처리로 index.html을 200으로 주고, 그 응답에 요청 경로의
+ * 확장자를 따라 자산과 같은 `max-age=14400`을 붙인다. 그러면 배포 직후 옛 번들 이름을 요청한
+ * 브라우저가 JS·CSS 자리에 HTML을 받아 4시간 동안 스타일 없는 화면·라우트 코드 로드 실패를
+ * 겪는다. 자산 경로에 HTML이 200으로 왔다는 것 자체가 파일이 없다는 신호다 — 진짜 `.html`
+ * 파일은 Pages가 확장자를 떼는 308로 주므로 여기서 200 HTML이 될 일이 없다.
+ */
+async function serveStaticAsset(request: Request, env: WorkerEnv): Promise<Response> {
+  const response = await env.ASSETS.fetch(request);
+  const isHtml = response.headers.get("content-type")?.startsWith("text/html") ?? false;
+  if (response.status !== 200 || !isHtml) return response;
+
+  // no-store: 다음 요청에서 파일이 생겼으면 바로 받아야 하므로 브라우저·엣지 어디에도 남기지 않는다.
+  return new Response("Not Found", {
+    status: 404,
+    headers: {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "no-store",
+    },
+  });
+}
+
+/**
  * Worker 진입 핸들러. 런타임 전용 자원(Cache API)은 전부 `deps`로 주입받으므로
  * 이 함수는 vitest(`environment: "node"`)에서 그냥 호출해 테스트할 수 있다.
  *
@@ -83,7 +107,7 @@ async function routeRequest(
   }
 
   if (isStaticAssetPath(url.pathname)) {
-    return env.ASSETS.fetch(request);
+    return serveStaticAsset(request, env);
   }
 
   // 앱에 없는 경로는 셸 본문 그대로 404다 — 사용자는 앱의 NotFound 화면을 보고 봇만

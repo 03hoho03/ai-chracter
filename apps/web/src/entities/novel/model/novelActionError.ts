@@ -167,7 +167,7 @@ export function toNovelActionError(error: unknown, action: NovelAction): NovelAc
   const rateLimit = getRateLimitDetail(error);
   if (rateLimit?.window === "novelize") {
     if (rateLimit.code === "CLOVER_REQUIRED") {
-      return { message: "클로버가 부족해요. 클로버를 모은 뒤 다시 해주세요.", shouldRefetchNovel: false };
+      return { message: "클로버가 부족해요. 클로버를 채운 뒤 다시 해주세요.", shouldRefetchNovel: false };
     }
     if (rateLimit.code === "USER_LIMIT") {
       return action === "proposal"

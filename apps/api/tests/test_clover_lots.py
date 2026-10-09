@@ -93,7 +93,7 @@ def test_legacy_lot_expiry_guarantees_at_least_seven_days_even_at_end_of_day() -
 
 
 def test_legacy_lot_expiry_matches_the_runtime_copy_in_core_clover() -> None:
-    """`core/clover.py`의 `earned_lot_expiry`(출석·미션
+    """`core/clover.py`의 `earned_lot_expiry`(미션
     지급용)가 이 마이그레이션의 `_legacy_lot_expiry`(백필 전용)와 값이 같아야 한다는 것이 두
     docstring이 각각 적어 둔 불변식이다. 사본이 둘인 것은 의도(마이그레이션은 `api.*`를
     import하지 않는 관례)이지만, **의도가 갈라져도 되는 것은 아니다** — 이

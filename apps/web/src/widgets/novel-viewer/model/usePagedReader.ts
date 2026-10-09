@@ -1,14 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { isFinishedScreen, toAnchorParagraphIndex, toRestoreScreen, type PageAnchor } from "../lib/pageAnchor";
+import type { PageFit } from "../lib/pageFit";
+import { PAGE_FORMAT_PADDING_PX, PAGE_FORMAT_WIDTH_PX, PAGE_TEXT_HEIGHT_PX, PAGE_TEXT_WIDTH_PX } from "../lib/pageFormat";
 import { toSettleDurationMs } from "../lib/pageGesture";
 import {
   clampScreen,
   toNearestScreen,
-  toPageGeometry,
+  toPageLabel,
   toScreenCount,
   toScrollLeft,
-  type PageGeometry,
+  type ColumnSpan,
 } from "../lib/pageLayout";
 import { easeOut, PAGE_TURN_MS } from "../lib/pageTransition";
 import { toTrackingStart, type RestoreOutcome } from "../lib/readingBand";
@@ -19,9 +21,14 @@ const MAX_RESTORE_FRAMES = 30;
 /** `scrollend` 가 없는 브라우저에서 브라우저가 옮긴 스크롤이 멈췄다고 볼 조용한 간격. */
 const SCROLL_SETTLE_FALLBACK_MS = 100;
 
-/** 한 번 잰 쪽 배치. 창 크기·보기 설정·글꼴이 바뀌면 통째로 다시 잰다. */
+/** 한 번 잰 쪽 배치. 한 장·펼침이 바뀌거나 보기 설정·글꼴이 바뀌면 통째로 다시 잰다(배율만 바뀌면 다시 재지 않는다
+ * — 판형 안 조판은 배율과 무관하다). */
 type PagedLayout = {
-  geometry: PageGeometry;
+  columnCount: 1 | 2;
+  /** 한 화면 폭 = 한 번 넘길 때 움직이는 `scrollLeft`(판형 px). */
+  step: number;
+  /** 화 끝 블록이 끝나는 단과 펼침의 빈 단 — 논리 쪽 표시를 이것으로 센다. */
+  span: ColumnSpan;
   /** 화 끝 화면을 포함한 화면 수. */
   screenCount: number;
   /** 문단마다 시작하는 화면. */
@@ -33,14 +40,14 @@ type PagedLayout = {
 };
 
 export type PagedPosition = {
-  /** 지금 화면(0부터). */
+  /** 지금 화면(0부터). 펼침이면 두 쪽이 한 화면이다. */
   screen: number;
   /** 화 끝 화면을 포함한 화면 수. 아직 재지 못했으면 0 이다. */
   screenCount: number;
+  /** 지금 화면의 논리 쪽 표시("3–4 / 16쪽"). 본문 글꼴이 도착하기 전에는 없다 — 대체 글꼴로 잰 쪽 수는 도착 뒤와
+   * 다를 수 있어, 기기와 무관하게 같아야 하는 숫자를 그때는 보이지 않는다. */
+  pageLabel: string | undefined;
 };
-
-/** 쪽 상자가 놓인 자리(뷰포트 기준 px). 넘김 버튼을 그 옆에 붙인다. */
-export type PageFrame = { left: number; top: number; width: number; height: number };
 
 /** 손가락·마우스를 따라 쪽을 움직이는 끌기. */
 export type PagedDirectMove = {
@@ -64,22 +71,29 @@ export type PagedReaderHandle = {
 type UsePagedReaderOptions = {
   session: ReadingPositionSession;
   paragraphCount: number;
-  isFinePointer: boolean;
-  /** 보기 설정(글자 크기·줄 간격·여백)에서 나온 조판 클래스. 바뀌면 쪽을 다시 잰다. */
-  typographyClassName: string;
+  /** 창에 판형을 맞춘 배치. 한 장·펼침이 바뀌면 다시 재고, 배율이 바뀌면 좌표 환산에만 쓴다. */
+  fit: PageFit;
+  /** 판형 안 조판값(글자 크기·줄 간격)을 나타내는 값. 바뀌면 쪽을 다시 잰다. */
+  typographyKey: string;
 };
 
 /**
- * 페이지 모드 본문의 쪽 나누기와 읽은 자리. 본문은 다단 블록 하나로 흐르고, 한 화면 폭의 스크롤러를 `scrollLeft` 로
- * 옮겨 넘긴다 — 브라우저가 줄 나눔을 그대로 하므로 쪽에 걸친 문단도 한 문단으로 조판되고 보조기기·찾기가 그대로 읽는다.
+ * 페이지 모드 본문의 쪽 나누기와 읽은 자리. 본문은 고정 판형(논리 360×540px) 크기의 다단 블록 하나로 흐르고, 한 화면
+ * 폭의 스크롤러를 `scrollLeft` 로 옮겨 넘긴다 — 브라우저가 줄 나눔을 그대로 하므로 쪽에 걸친 문단도 한 문단으로
+ * 조판되고 보조기기·찾기가 그대로 읽는다. 스크롤러는 판형 크기 그대로 조판하고 `transform: scale` 로만 화면에 맞춘다
+ * — `zoom` 은 배율마다 다시 조판해 쪽 수가 바뀌고, `transform` 은 바뀌지 않는다(엔진 둘 다 실측).
  *
- * - **재기**: 창 크기와 보기 설정에서 쪽 기하(`toPageGeometry`)를 구해 놓은 뒤, 화 끝 블록이 끝나는 단으로 화면 수를
- *   세고 다단 요소 폭을 `화면 수 × 한 화면 폭` 으로 다시 놓는다 — 그러지 않으면 브라우저가 다단 요소의 끝 쪽 안쪽
- *   여백을 스크롤 영역에 넣지 않아 마지막 화면에 닿지 못한다. 펼침에서 화 끝 블록이 오른쪽 단에 떨어지면 빈 단 하나를
- *   켜서 새 펼침의 왼쪽으로 민다(CSS 의 쪽 나눔 값은 다단에서 단 하나만 넘긴다).
- * - **다시 재기**: 본문 상자 크기 변화, 보기 설정 변경, 글꼴 도착 때. 글꼴이 도착하면 상자 크기는 그대로여도 쪽 폭
- *   상한(`max-w-prose`, 글자 폭 단위)과 줄 나눔이 바뀐다. 다시 잰 뒤에는 읽던 자리(앵커)가 든 화면으로 돌아가기만
- *   하고 앵커를 다시 정하지 않는다 — 연달아 바뀌어도 자리가 미끄러지지 않게.
+ * - **재기**: 다단 요소를 판형 크기로 놓은 뒤, 화 끝 블록이 끝나는 단으로 화면 수를 세고 다단 요소 폭을 `화면 수 ×
+ *   한 화면 폭` 으로 다시 놓는다 — 그러지 않으면 브라우저가 다단 요소의 끝 쪽 안쪽 여백을 스크롤 영역에 넣지 않아
+ *   마지막 화면에 닿지 못한다. 펼침에서 화 끝 블록이 오른쪽 단에 떨어지면 빈 단 하나를 켜서 새 펼침의 왼쪽으로
+ *   민다(CSS 의 쪽 나눔 값은 다단에서 단 하나만 넘긴다). 재기 직전, 빈 단을 켠 직후, 폭을 넓힌 직후마다 다단 요소를
+ *   처음부터 다시 배치시키고, 쪽 수는 마지막 배치(화면에 그려지는 배치)에서 다시 센다 — WebKit 은 다단을 고쳐 흘릴 때
+ *   결과가 직전 배치에 따라 달라져, 같은 판형·같은 설정인데 쪽 수가 바뀌거나 잰 쪽과 그려진 쪽이 어긋난다.
+ * - **좌표**: 포인터·사각형은 화면 px 이고 `scrollLeft`·단 폭은 판형 px 다. 화면 거리를 배율로 나눠 판형 px 로 바꾸고,
+ *   배율은 계산한 값을 반올림하지 않고 쓴다(반올림하면 단 경계 근처 글자가 앞 단으로 잘못 분류된다).
+ * - **다시 재기**: 한 장·펼침 변경, 보기 설정 변경, 글꼴 도착 때. 배율·위치만 바뀌면 다시 재지 않는다. 다시 잰
+ *   뒤에는 읽던 자리(앵커)가 든 화면으로 돌아가기만 하고 앵커를 다시 정하지 않는다 — 연달아 바뀌어도 자리가 미끄러지지
+ *   않게.
  * - **앵커**: 문단, 문단 안 글자 위치, 화 끝 화면 표시. 사용자가 화면을 옮길 때만 그 화면으로 다시 정하고
  *   (`toAnchorParagraphIndex`), 그때만 문단을 `session` 에 알린다. 서버에는 문단 번호만 가지만, 긴 문단 하나가 덮은
  *   화면과 화 끝 화면은 문단 번호만으로는 다시 잰 뒤 한 화면 앞으로 되돌아가 글자 위치와 화 끝 표시를 함께 든다.
@@ -89,14 +103,12 @@ type UsePagedReaderOptions = {
  * - **브라우저가 옮긴 스크롤**: 포커스 이동·보조기기·찾기가 스크롤러를 화면 사이에 놓으면, 멈춘 뒤 화면에 맞추고
  *   사용자 이동으로 친다. 넘김 전환과 끌기 중의 스크롤은 우리가 움직인 것이라 건드리지 않는다.
  */
-export function usePagedReader({ session, paragraphCount, isFinePointer, typographyClassName }: UsePagedReaderOptions) {
+export function usePagedReader({ session, paragraphCount, fit, typographyKey }: UsePagedReaderOptions) {
   const viewportRef = useRef<HTMLElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const columnsRef = useRef<HTMLDivElement>(null);
   const spacerRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
-  const probeRef = useRef<HTMLDivElement>(null);
-  const safeAreaProbeRef = useRef<HTMLDivElement>(null);
 
   const layoutRef = useRef<PagedLayout | undefined>(undefined);
   const screenRef = useRef(0);
@@ -104,77 +116,78 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
   // 되돌리는 중 → (되돌리기를 못 했거나 자리를 몰라) 첫 사용자 이동을 기다림 → 재는 중.
   const trackingRef = useRef<"restoring" | "waiting" | "tracking">("restoring");
   const animationRef = useRef<{ frame: number; to: number } | undefined>(undefined);
-  const isFinePointerRef = useRef(isFinePointer);
+  const fitRef = useRef(fit);
+  const isFontReadyRef = useRef(false);
   const isDirectMoveRef = useRef(false);
   const directMoveStartRef = useRef(0);
   const isRelayoutPendingRef = useRef(false);
-  const [position, setPosition] = useState<PagedPosition>({ screen: 0, screenCount: 0 });
-  const [frame, setFrame] = useState<PageFrame | undefined>(undefined);
+  const [position, setPosition] = useState<PagedPosition>({ screen: 0, screenCount: 0, pageLabel: undefined });
   const { hasRouteSettled } = session;
 
   function measure(): PagedLayout | undefined {
-    const viewport = viewportRef.current;
-    const scroller = scrollerRef.current;
     const columns = columnsRef.current;
     const spacer = spacerRef.current;
     const end = endRef.current;
-    const probe = probeRef.current;
-    const safeAreaProbe = safeAreaProbeRef.current;
-    if (!viewport || !scroller || !columns || !spacer || !end || !probe || !safeAreaProbe) return undefined;
+    if (!columns || !spacer || !end) return undefined;
 
-    const probeStyle = getComputedStyle(probe);
-    const safeAreaStyle = getComputedStyle(safeAreaProbe);
-    const geometry = toPageGeometry({
-      width: viewport.clientWidth,
-      height: viewport.clientHeight,
-      safeArea: {
-        left: pxOf(safeAreaStyle.paddingLeft),
-        right: pxOf(safeAreaStyle.paddingRight),
-        top: pxOf(safeAreaStyle.paddingTop),
-        bottom: pxOf(safeAreaStyle.paddingBottom),
-      },
-      isFinePointer: isFinePointerRef.current,
-      pagePaddingPx: pxOf(probeStyle.paddingLeft),
-      proseWidthPx: probe.getBoundingClientRect().width,
-      lineHeightPx: lineHeightOf(probeStyle),
-    });
-    const { columnCount, columnWidth, columnGap, step, columnHeight } = geometry;
-    if (columnWidth <= 0 || columnHeight <= 0) return undefined;
-
-    // 잰 값이라 클래스로 줄 수 없어 요소 스타일에 직접 쓴다. 렌더는 이 속성들을 건드리지 않는다.
-    Object.assign(scroller.style, {
-      left: `${geometry.left}px`,
-      top: `${geometry.top}px`,
-      width: `${step}px`,
-      height: `${columnHeight}px`,
-    });
+    const { columnCount } = fitRef.current;
+    const step = columnCount * PAGE_FORMAT_WIDTH_PX;
+    // 판형 상수라 클래스로도 줄 수 있지만, 폭은 잰 뒤 다시 쓰므로 같은 자리(요소 스타일)에 둔다. 렌더는 이 속성들을
+    // 건드리지 않는다.
     Object.assign(columns.style, {
       width: `${step}px`,
-      height: `${columnHeight}px`,
-      columnWidth: `${columnWidth}px`,
-      columnGap: `${columnGap}px`,
+      height: `${PAGE_TEXT_HEIGHT_PX}px`,
+      columnWidth: `${PAGE_TEXT_WIDTH_PX}px`,
+      columnGap: `${2 * PAGE_FORMAT_PADDING_PX}px`,
       columnFill: "auto",
-      paddingInline: `${columnGap / 2}px`,
+      paddingInline: `${PAGE_FORMAT_PADDING_PX}px`,
     });
-    // 단 높이가 소수일 수 있어 내려 둔다 — 조금이라도 넘치면 화 끝 블록이 빈 단을 하나 더 만든다.
-    end.style.minHeight = `${Math.floor(columnHeight)}px`;
+    end.style.minHeight = `${PAGE_TEXT_HEIGHT_PX}px`;
     spacer.style.display = "";
-    spacer.style.height = `${columnHeight}px`;
+    spacer.style.height = `${PAGE_TEXT_HEIGHT_PX}px`;
+    layOutFromScratch(columns);
 
-    // 단 번호는 다단 요소의 지금 왼쪽(넘긴 만큼 옮겨 간)에서 센다. 단 사이 틈에 든 점은 앞 단으로 친다.
+    // 단 번호는 다단 요소의 지금 왼쪽(넘긴 만큼 옮겨 간)에서 판형 px 로 센다. 단 사이 틈에 든 점은 앞 단으로 친다.
+    // 배율은 지금 값을 읽는다 — 재고 난 뒤 배율만 바뀌어도 이 함수들을 다시 쓴다.
     const columnOf = (x: number): number => {
-      const contentLeft = columns.getBoundingClientRect().left + columnGap / 2;
-      return Math.floor((x - contentLeft + 0.01) / (columnWidth + columnGap));
+      const offset = (x - columns.getBoundingClientRect().left) / fitRef.current.scale - PAGE_FORMAT_PADDING_PX;
+      return Math.floor((offset + 0.01) / PAGE_FORMAT_WIDTH_PX);
     };
     const screenOfRect = (rect: DOMRect): number => Math.floor(columnOf(rect.left) / columnCount);
 
+    // 지금 놓인 배치에서 화 끝 블록이 끝나는 단과 켜 둔 빈 단을 센다.
+    const readSpan = (): ColumnSpan | undefined => {
+      const endRects = Array.from(end.getClientRects());
+      if (endRects.length === 0) return undefined;
+      const endStart = firstRectOf(end);
+      return {
+        lastColumnIndex: Math.max(...endRects.map((rect) => columnOf(rect.right - 1))),
+        spacerColumnIndex:
+          spacer.style.display === "block" && endStart !== undefined ? columnOf(endStart.left) - 1 : undefined,
+      };
+    };
+
     const endStart = firstRectOf(end);
-    if (columnCount === 2 && endStart !== undefined && columnOf(endStart.left) % 2 === 1) spacer.style.display = "block";
-    const endRects = Array.from(end.getClientRects());
-    if (endRects.length === 0) return undefined;
-    const lastColumnIndex = Math.max(...endRects.map((rect) => columnOf(rect.right - 1)));
-    const screenCount = toScreenCount({ lastColumnIndex, columnCount });
-    columns.style.width = `${screenCount * step}px`;
+    if (columnCount === 2 && endStart !== undefined && columnOf(endStart.left) % 2 === 1) {
+      spacer.style.display = "block";
+      layOutFromScratch(columns);
+    }
+    let span = readSpan();
+    if (span === undefined) return undefined;
+    let screenCount = toScreenCount({ lastColumnIndex: span.lastColumnIndex, columnCount });
+    // 폭을 넓힌 뒤에도 처음부터 다시 배치하고 다시 센다 — WebKit 은 폭 변경을 고쳐 흘려 잰 배치와 다른 배치를 그린다.
+    // 다시 센 화면 수가 넓힌 폭보다 크면 한 번 더 넓힌다(작으면 남는 폭은 넘김이 닿지 않아 그대로 둔다).
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      columns.style.width = `${screenCount * step}px`;
+      layOutFromScratch(columns);
+      const settled = readSpan();
+      if (settled === undefined) return undefined;
+      const settledCount = toScreenCount({ lastColumnIndex: settled.lastColumnIndex, columnCount });
+      const needsWider = settledCount > screenCount;
+      span = settled;
+      screenCount = settledCount;
+      if (!needsWider) break;
+    }
 
     const paragraphs = Array.from(columns.querySelectorAll<HTMLElement>("[data-paragraph-index]"));
     const screenOfOffset = (paragraphIndex: number, offset: number): number | undefined => {
@@ -185,12 +198,26 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
     };
     const startScreens = paragraphs.map((_, index) => screenOfOffset(index, 0) ?? 0);
 
-    return { geometry, screenCount, startScreens, screenOfOffset, screenOfRect };
+    return {
+      columnCount,
+      step,
+      span,
+      screenCount,
+      startScreens,
+      screenOfOffset,
+      screenOfRect,
+    };
   }
 
-  function showPosition(screen: number, screenCount: number) {
+  function showPosition(layout: PagedLayout, screen: number) {
+    const { screenCount } = layout;
+    const pageLabel = isFontReadyRef.current
+      ? toPageLabel({ ...layout.span, screen, columnCount: layout.columnCount })
+      : undefined;
     setPosition((current) =>
-      current.screen === screen && current.screenCount === screenCount ? current : { screen, screenCount },
+      current.screen === screen && current.screenCount === screenCount && current.pageLabel === pageLabel
+        ? current
+        : { screen, screenCount, pageLabel },
     );
   }
 
@@ -209,8 +236,8 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
     if (!scroller) return;
     finishAnimation();
     screenRef.current = screen;
-    showPosition(screen, layout.screenCount);
-    const to = toScrollLeft(screen, layout.geometry.step);
+    showPosition(layout, screen);
+    const to = toScrollLeft(screen, layout.step);
     const from = scroller.scrollLeft;
     if (durationMs <= 0 || from === to || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       scroller.scrollLeft = to;
@@ -237,12 +264,6 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
     finishAnimation();
     const layout = measure();
     layoutRef.current = layout;
-    // 다시 재기에 실패하면(아주 작은 창·극단적 확대) 마지막 자리를 그대로 둔다 — 비우면 거터 넘김 버튼이 사라지면서
-    // 그 버튼의 포커스가 `<body>` 로 떨어진다. 그동안 넘김은 잰 배치가 없어 아무것도 하지 않는다.
-    if (layout !== undefined) {
-      const nextFrame = toFrame(layout.geometry);
-      setFrame((current) => (isSameFrame(current, nextFrame) ? current : nextFrame));
-    }
     const anchor = anchorRef.current;
     if (layout === undefined || anchor === undefined) return;
     const offsetScreen = anchor.charOffset > 0 ? layout.screenOfOffset(anchor.paragraphIndex, anchor.charOffset) : undefined;
@@ -303,17 +324,34 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
     else startTracking();
   }
 
-  // 처음 그릴 때와 보기 설정이 바뀔 때는 칠하기 전에 잰다 — 다단이 걸리기 전 본문이 한 번 비치지 않게.
+  // 좌표 환산과 다시 재기가 지금 배치를 읽게 한다. 아래 재기보다 먼저 돈다(같은 커밋의 레이아웃 효과는 선언 순서).
   useLayoutEffect(() => {
-    isFinePointerRef.current = isFinePointer;
+    fitRef.current = fit;
+  }, [fit]);
+
+  // 처음 그릴 때, 보기 설정이 바뀔 때, 한 장·펼침이 바뀔 때는 칠하기 전에 잰다 — 다단이 걸리기 전 본문이 한 번 비치지
+  // 않게.
+  useLayoutEffect(() => {
     anchorRef.current ??= { paragraphIndex: session.toRestoreTarget().index, charOffset: 0, isAtEnd: false };
     relayout();
-  }, [typographyClassName, isFinePointer]);
+  }, [typographyKey, fit.columnCount]);
 
-  // 본문 상자 크기 변화와 글꼴 도착. 한 프레임에 한 번만 다시 잰다.
+  // 본문 글꼴이 처음 다 오면 그때부터 쪽 숫자를 보인다. 본문을 그린 뒤에 읽어야 본문이 쓰는 글꼴 조각까지 기다린다.
+  // WebKit 의 `document.fonts.check` 는 조각 하나만 와도 참을 내 판정에 쓰지 않는다.
   useEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
+    let isCancelled = false;
+    void document.fonts.ready.then(() => {
+      if (isCancelled) return;
+      isFontReadyRef.current = true;
+      relayout();
+    });
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  // 글꼴 조각이 더 오면(화마다 쓰는 글자가 달라 조각이 늦게 더 온다) 줄 나눔이 바뀌어 다시 잰다. 한 프레임에 한 번만.
+  useEffect(() => {
     let frame: number | undefined;
     function schedule() {
       if (frame === undefined) {
@@ -323,11 +361,8 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
         });
       }
     }
-    const observer = new ResizeObserver(schedule);
-    observer.observe(viewport);
     document.fonts.addEventListener("loadingdone", schedule);
     return () => {
-      observer.disconnect();
       document.fonts.removeEventListener("loadingdone", schedule);
       if (frame !== undefined) cancelAnimationFrame(frame);
     };
@@ -365,7 +400,7 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
           finish("failed");
           return;
         }
-        const target = toScrollLeft(screenRef.current, layout.geometry.step);
+        const target = toScrollLeft(screenRef.current, layout.step);
         const isRestored = Math.abs(scroller.scrollLeft - target) <= 1;
         if (isRestored || attempt + 1 >= MAX_RESTORE_FRAMES) {
           finish(isRestored ? "restored" : "failed");
@@ -399,7 +434,7 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
       timer = undefined;
       const layout = layoutRef.current;
       if (animationRef.current !== undefined || isDirectMoveRef.current || layout === undefined || !scroller) return;
-      const { step } = layout.geometry;
+      const { step } = layout;
       if (Math.abs(scroller.scrollLeft - toScrollLeft(screenRef.current, step)) <= 1) return;
       // 포커스가 옮겨 간 요소가 보이면 그 요소의 화면으로 — 가장 가까운 화면이 그 요소를 다시 가릴 수 있다.
       const focused = visibleFocusedRect(scroller);
@@ -449,8 +484,10 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
       const layout = layoutRef.current;
       const scroller = scrollerRef.current;
       if (!isDirectMoveRef.current || layout === undefined || !scroller) return;
-      const maxScrollLeft = toScrollLeft(layout.screenCount - 1, layout.geometry.step);
-      scroller.scrollLeft = Math.min(Math.max(directMoveStartRef.current - dx, 0), maxScrollLeft);
+      const maxScrollLeft = toScrollLeft(layout.screenCount - 1, layout.step);
+      // 손은 화면 px 로 움직이고 `scrollLeft` 는 판형 px 라 배율로 나눈다 — 그래야 쪽이 손가락 밑에 붙어 따라온다.
+      const logicalDx = dx / fitRef.current.scale;
+      scroller.scrollLeft = Math.min(Math.max(directMoveStartRef.current - logicalDx, 0), maxScrollLeft);
     },
     release(direction) {
       if (!isDirectMoveRef.current) return;
@@ -460,7 +497,7 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
       const layout = layoutRef.current;
       const scroller = scrollerRef.current;
       if (layout === undefined || !scroller) return;
-      const { step } = layout.geometry;
+      const { step } = layout;
       const target = clampScreen(screenRef.current + direction, layout.screenCount);
       const remainingPx = scroller.scrollLeft - toScrollLeft(target, step);
       moveByUser(target, { durationMs: toSettleDurationMs({ remainingPx, pageWidth: step }) });
@@ -469,7 +506,6 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
 
   return {
     position,
-    frame,
     handle,
     directMove,
     viewportRef,
@@ -477,28 +513,21 @@ export function usePagedReader({ session, paragraphCount, isFinePointer, typogra
     columnsRef,
     spacerRef,
     endRef,
-    probeRef,
-    safeAreaProbeRef,
   };
 }
 
-function toFrame({ left, top, step, columnHeight }: PageGeometry): PageFrame {
-  return { left, top, width: step, height: columnHeight };
-}
-
-function isSameFrame(a: PageFrame | undefined, b: PageFrame | undefined): boolean {
-  if (a === undefined || b === undefined) return a === b;
-  return a.left === b.left && a.top === b.top && a.width === b.width && a.height === b.height;
-}
-
-function pxOf(value: string): number {
-  return Number.parseFloat(value) || 0;
-}
-
-/** 계산된 줄 높이(px). 브라우저가 `normal` 로 주면 글자 크기의 1.2배로 친다(읽기 설정은 늘 수치를 준다). */
-function lineHeightOf(style: CSSStyleDeclaration): number {
-  const lineHeight = Number.parseFloat(style.lineHeight);
-  return Number.isFinite(lineHeight) ? lineHeight : pxOf(style.fontSize) * 1.2;
+/** 다단 요소를 처음부터 다시 배치시킨다(`display: none` 왕복). WebKit 은 이미 배치된 다단을 고쳐 흘리면(빈 단을
+ * 켰다 끄거나, 글자 크기를 바꿨다 되돌리거나, 폭을 바꾸면) 처음 배치와 다른 쪽 나눔을 낸다. 스크롤 위치가 0 으로 돌아가지만 재기 뒤
+ * 곧바로 앵커 화면으로 다시 옮기고, 한 작업 안에서 끝나 그 사이가 칠해지지 않는다. 숨는 순간 브라우저가 안의 포커스를
+ * 놓을 수 있어(화 끝 링크에 포커스가 있는 채 글꼴 조각이 도착하는 경우) 놓았으면 제자리로 돌려준다. */
+function layOutFromScratch(element: HTMLElement) {
+  const focused = document.activeElement;
+  element.style.display = "none";
+  void element.offsetHeight;
+  element.style.display = "";
+  if (focused instanceof HTMLElement && focused !== document.activeElement && element.contains(focused)) {
+    focused.focus({ preventScroll: true });
+  }
 }
 
 function firstRectOf(element: Element): DOMRect | undefined {

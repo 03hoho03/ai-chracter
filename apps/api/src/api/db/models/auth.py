@@ -80,6 +80,7 @@ class User(Base):
     # KST 날짜 두 개. NULL은
     # "한 번도 없었다"다. 게이트가 이미 이 행을 들고 있어(`is_rate_limit_exempt`) 추가 왕복이
     # 0이고, Redis와 달리 매일 pg_dump 백업을 탄다.
+    # 더 이상 쓰지 않는다 — 없어진 일일 무료 지급의 마지막 날짜다. 컬럼을 지우면 되돌리기만 어려워져 과거 값과 함께 남긴다.
     clover_attendance_granted_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     clover_spend_confirmed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     # 유저의 기본 대화 프로필 — 새 방이 이 값으로

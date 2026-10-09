@@ -18,7 +18,6 @@ import asyncio
 import re
 import uuid
 from collections.abc import AsyncGenerator
-from datetime import UTC, datetime
 
 import pytest
 import pytest_asyncio
@@ -26,13 +25,12 @@ from sqlalchemy import delete, event, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from api.clover.missions import MISSION_REWARDS, mission_idempotency_key
 from api.core.clover import (
-    ATTENDANCE_GRANT_AMOUNT,
     CHAT_TURN_COST,
     CloverLotShortfallError,
     burn_all,
     grant,
-    kst_today,
     spend,
     spend_in_new_transaction,
 )
@@ -344,24 +342,23 @@ async def test_spend_rolls_back_everything_when_lots_are_insufficient(
     assert rows == []
 
 
-# ── 진짜 동시 출석 ──────────────────────────────────────────────────────────
-async def test_concurrent_attendance_grants_only_once(
+# ── 진짜 동시 미션 청구 ──────────────────────────────────────────────────────
+async def test_concurrent_mission_grants_only_once(
     independent_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """🔴 같은 날 동시 출석 둘 중 **하나만** 지급된다. 막는 것은 원장 멱등키다.
+    """🔴 같은 미션의 동시 청구 둘 중 **하나만** 지급된다. 막는 것은 원장 멱등키다.
 
-    `clover/router.py`의 `is_same_kst_day` 검사는 **순차 재호출**만 막는다 — 둘째는 첫째가
-    커밋하기 전에 표지를 읽어 못 보고 통과하고, `grant`는 `guard=False`라 조건 없는
-    `WHERE users.id = :u`만 내므로 락이 풀린 뒤 재평가에서도 그대로 통과한다.
+    미션 청구에는 사전 컬럼 검사가 없고, `grant`는 `guard=False`라 조건 없는 `WHERE users.id = :u`만
+    내므로 둘째도 락이 풀린 뒤 재평가에서 그대로 통과한다.
     ⇒ 격리를 맡는 것은 `ux_clover_ledger_idempotency_key`다.
 
     빨개지는 조건: `idempotency_key`를 `None`으로 넘기면 유니크 인덱스가 걸리지 않아 둘 다
-    성공하고 **잔액 200 · 원장 2행**이 된다. 세션이 같은 커넥션이면 `_assert_blocked`가
+    성공하고 **잔액 600 · 원장 2행**이 된다. 세션이 같은 커넥션이면 `_assert_blocked`가
     타임아웃하지 않아 빨개진다.
     """
     user_id = await _seed_user(independent_session_factory, clover_balance=0)
-    today = kst_today(datetime.now(UTC))
-    key = f"attendance:{user_id}:{today}"
+    key = mission_idempotency_key(user_id=user_id, key="first_publish")
+    reward = MISSION_REWARDS["first_publish"]
 
     first = independent_session_factory()
     second = independent_session_factory()
@@ -369,19 +366,19 @@ async def test_concurrent_attendance_grants_only_once(
         first_balance = await grant(
             first,
             user_id=user_id,
-            amount=ATTENDANCE_GRANT_AMOUNT,
-            kind="attendance_grant",
+            amount=reward,
+            kind="mission_grant",
             idempotency_key=key,
         )
-        assert first_balance == ATTENDANCE_GRANT_AMOUNT
+        assert first_balance == reward
 
         # B의 원장 INSERT가 같은 유니크 키에 막힌다 — A가 커밋할 때까지 대기한다.
         task = asyncio.create_task(
             grant(
                 second,
                 user_id=user_id,
-                amount=ATTENDANCE_GRANT_AMOUNT,
-                kind="attendance_grant",
+                amount=reward,
+                kind="mission_grant",
                 idempotency_key=key,
             )
         )
@@ -398,8 +395,8 @@ async def test_concurrent_attendance_grants_only_once(
         await second.close()
 
     balance, rows = await _read(independent_session_factory, user_id)
-    assert balance == ATTENDANCE_GRANT_AMOUNT
-    assert [(row.kind, row.amount) for row in rows] == [("attendance_grant", 100)]
+    assert balance == reward
+    assert [(row.kind, row.amount) for row in rows] == [("mission_grant", reward)]
 
 
 # ── `burn_all`은 호출자가 읽어 둔 잔액에 기대지 않는다 ────────────────

@@ -16,9 +16,9 @@
 
 FE·BE가 같은 등록가능 도메인(`ddona.site`)에 있다 — 그래서 세션 쿠키가 `SameSite=lax`다("BE 런타임" 절).
 옛 `*.pages.dev` 주소는 계속 살아 있고 web은 Worker가 301로 넘긴다
-(`apps/web/worker/legacyRedirect.ts`). **admin의 옛 주소는 넘기지 않는다** — admin은 `_worker.js`가
-없는 정적 SPA라 host 조건을 걸 자리가 없고(`_redirects`는 경로만 본다), `lax` 쿠키라 거기서는
-로그인도 안 된다. 의도된 결과이며 `admin.ddona.site`를 쓴다.
+(`apps/web/worker/legacyRedirect.ts`). **admin의 옛 주소는 넘기지 않는다** — `lax` 쿠키라 거기서는
+로그인도 안 된다. 의도된 결과이며 `admin.ddona.site`를 쓴다. admin의 `public/_worker.js`는 없는 자산
+파일 요청을 404로 바꾸는 일만 한다.
 
 ### 0-1. 실제 값
 
@@ -238,7 +238,7 @@ compose 가 읽는 이미지 키는 `API_IMAGE_BLUE`·`API_IMAGE_GREEN` 둘이�
 | `PORTONE_API_SECRET` | 포트원 V2 API 시크릿 | 결제·본인인증 조회와 환불(취소) 호출. 비면 결제·본인인증이 꺼진다(기동은 막지 않는다) |
 | `PORTONE_WEBHOOK_SECRET` | 포트원 콘솔의 웹훅 시크릿(`whsec_…`) | 결제 웹훅 서명 검증. 비거나 형식이 틀리면 모든 웹훅이 503 으로 돌아가 포트원이 재시도한다(Bugsink 에 남는다). 서명 시각 허용 오차가 5분이라 VM 시계(NTP)가 맞아야 한다 |
 | `IDENTITY_CI_HMAC_KEY` | `openssl rand -hex 32` 등으로 발급한 무작위 값 | 본인인증 CI 를 저장하기 전에 HMAC 으로 바꾸는 키. **한번 정하면 바꾸지 말 것** — 바뀌면 이미 인증한 사람과 대조가 어긋나 같은 사람이 다른 계정으로 다시 인증할 수 있게 된다. `WITHDRAWN_EMAIL_HMAC_KEY` 와 다른 값을 쓴다. 비면 본인인증이 꺼진다 |
-| `PAYMENTS_ENABLED` / `IDENTITY_GATE_ENABLED` | 켤 때 `true`(코드 기본값은 둘 다 `false`) | 결제 스위치 / 미인증 회원의 무료 대화·출석·미션을 막는 본인인증 게이트 스위치. 결제는 스위치와 위 포트원 키 넷, 그리고 본인인증 설정(상점 id·본인인증 채널키·API 시크릿·`IDENTITY_CI_HMAC_KEY`)이 모두 있어야 열린다 — 결제는 늘 본인인증을 요구해서다. 꺼져 있어도 웹훅 시크릿이 있으면 웹훅은 처리한다(진행 중 결제와 콘솔 취소를 맞춘다) |
+| `PAYMENTS_ENABLED` / `IDENTITY_GATE_ENABLED` | 켤 때 `true`(코드 기본값은 둘 다 `false`) | 결제 스위치 / 미인증 회원의 무료 대화·미션을 막는 본인인증 게이트 스위치. 결제는 스위치와 위 포트원 키 넷, 그리고 본인인증 설정(상점 id·본인인증 채널키·API 시크릿·`IDENTITY_CI_HMAC_KEY`)이 모두 있어야 열린다 — 결제는 늘 본인인증을 요구해서다. 꺼져 있어도 웹훅 시크릿이 있으면 웹훅은 처리한다(진행 중 결제와 콘솔 취소를 맞춘다) |
 | `PAYMENT_DISCORD_WEBHOOK_URL` | 결제 알림용 디스코드 채널 웹훅 주소 | 결제·환불 완료 알림(상품·금액·상태만, 회원·주문을 알아볼 단서는 싣지 않는다). 비면 건너뛴다. 크론 알림의 `DISCORD_WEBHOOK_URL` 과 다른 키다 |
 | `LOCAL_IMAGE_BASE_URL` | 집 PC 서버를 가리키는 터널 origin | **이미지 생성 필수** — 비어 있으면 capabilities가 전부 불가로 내려가 생성이 사전 차단된다. "이미지 생성" 절 |
 | `LOCAL_IMAGE_ACCESS_CLIENT_ID` / `LOCAL_IMAGE_ACCESS_CLIENT_SECRET` | Cloudflare Access 서비스 토큰 | **이미지 생성 필수**. "이미지 생성" 절 |
@@ -738,6 +738,9 @@ Pages 프로젝트 2개, 각각 Git 연동으로 `main` push 시 자동 빌드:
 - **Build watch paths**: `apps/{web|admin}/*, packages/*, pnpm-lock.yaml, pnpm-workspace.yaml`
   (기본값 `*`는 전체 감시라 BE만 바뀌어도 FE가 재배포된다)
 - SPA fallback은 `apps/{web,admin}/public/_redirects`(`/* /index.html 200`)로 이미 되어 있다.
+  단 Pages 자산 서버는 이 폴백을 없는 자산 파일(`/assets/옛-해시.js`)에도 200 HTML로 주고 확장자를 따라
+  4시간 캐시시키므로, 자산 경로의 200 HTML은 Worker가 캐시 금지 404로 바꾼다 —
+  web은 `apps/web/worker/handler.ts`의 `serveStaticAsset`, admin은 `apps/admin/public/_worker.js`.
 - 보안 헤더(HSTS `max-age=31536000`·nosniff·X-Frame-Options·Referrer-Policy)는 저장소 코드가 내보낸다 —
   web은 Worker(`apps/web/worker/securityHeaders.ts`), admin은 `apps/admin/public/_headers`, API는
   저장소 루트 `Caddyfile`. **Cloudflare 대시보드의 HSTS 설정(SSL/TLS → Edge Certificates)은 켜지
@@ -1203,7 +1206,7 @@ API 가상환경·SQLAlchemy를 import하지 않으며 Discord·메일·공지�
 
 ### 3-9. 클로버 만료 — expire cron
 
-출석·미션(과 백필) 클로버는 지급일(KST) 자정 + 8일에
+미션(과 백필) 클로버는 지급일(KST) 자정 + 8일에
 만료된다. 차감·잔액 판정 경로(`core/clover.py`)는 만료 필터를 걸지 않는다 — **만료의
 진실은 이 크론뿐이다.** 이 크론이 며칠 죽어도 Σ 불변식은 깨지지 않지만(배치 실행 전에 쓰인
 만료분은 이미 `remaining`이 줄어 있다), 만료분이 계속 쓰이는 유저에게 유리한 방향의 오차가
@@ -1592,8 +1595,9 @@ sudo bash ops/swap-api.sh
 2. 어드민 유저 상세에서 허용을 켠다 — API 로는 `POST /admin/users/{id}/chat-premium-models-grant`·
    `POST /admin/users/{id}/novelize-premium-models-grant` 에 `{"granted": true, "adminComment": "…"}`. 스위치가 꺼져 있어도 미리 줄
    수 있다. 소설 상위 모델은 그 계정에 소설화 허용(3-11 절)도 있어야 보인다.
-3. 클로버를 지급한다. 상위 모델 턴·소설 화는 레이트리밋 면제 계정도 값을 내고(턴 Sonnet 40·Opus 65, 소설은 화 하나당
-   Sonnet 105·Opus 170 이라 생성 한 번이 화 수 × 화 단가다 — `api/core/clover.py`), 하루 무료분은 Gemini 턴에만 쓰인다.
+3. 클로버를 지급한다. 상위 모델 턴·소설 화는 레이트리밋 면제 계정도 값을 내고(턴 단가는 `CHAT_TURN_COST_SONNET`·
+   `CHAT_TURN_COST_OPUS`, 소설은 화 하나당 `NOVELIZE_EPISODE_COST_SONNET`·`NOVELIZE_EPISODE_COST_OPUS` 이고 생성 한 번이
+   화 수 × 화 단가다 — 값은 `api/core/clover.py` 에서 확인한다), 하루 무료분은 Gemini 턴에만 쓰인다.
 4. 그 계정의 web 을 새로고침하면(세션 정보를 다시 받는다) 채팅 더보기에 모델 선택이 보인다. 고른 모델은 방마다 저장되고 다음
    턴부터 그 모델·그 가격으로 돈다.
 5. 소설 상위 모델은 장 생성·재생성 요청마다 고른다(방처럼 저장하지 않는다). 허용이 들어갔는지는 그 계정으로 소설 상세

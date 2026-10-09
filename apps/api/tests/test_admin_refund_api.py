@@ -49,7 +49,7 @@ _NOW = datetime(2026, 10, 31, 3, tzinfo=UTC)
 _DAY_7 = date(2026, 10, 8)
 _DAY_8 = date(2026, 10, 9)
 _TODAY = date(2026, 10, 31)
-# 베이직 상품(`_make_payment` 기본값): 9,900원에 유료 3,300 + 보너스 300 — 유료 1개 = 3원.
+# 예전 베이직 상품(`_make_payment` 기본값, 지금은 팔지 않는 키): 9,900원에 유료 3,300 + 보너스 300 — 유료 1개 = 3원.
 _PRICE, _PAID, _BONUS = 9_900, 3_300, 300
 _FULL_LOTS = [("purchase_bonus", _BONUS), ("purchase_paid", _PAID)]
 _EMPTY_LOTS = [("purchase_bonus", 0), ("purchase_paid", 0)]

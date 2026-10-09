@@ -18,7 +18,7 @@ from api.auth.verification import (
     get_verification_code,
     store_verification_code,
 )
-from api.core import rate_limit
+from api.core import rate_limit, rate_limit_gate
 from api.core.config import settings
 from api.core.email import EmailSendError, get_email_sender
 from api.core.redis import redis_client
@@ -595,7 +595,7 @@ async def test_login_adult_issues_session_and_me_returns_user(
         "identityVerified": False,
         "identityGateEnabled": False,
         "identityGated": False,
-        "dailyFreeChatTurns": 30,
+        "dailyFreeChatTurns": rate_limit_gate.CHAT_DAILY_LIMIT,
         "paidCloverBalance": 0,
         "purchaseBlockReason": "identity_required",
     }

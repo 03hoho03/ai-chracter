@@ -156,7 +156,7 @@ async def test_different_idempotency_keys_grant_twice_on_purpose(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """같은 어드민이 같은 유저에게 같은 금액을 **의도적으로 두 번** 줄 수 있어야 한다 — 그래서
-    키를 서버가 결정적으로 만들지 않고 클라이언트가 요청마다 보낸다(출석과 다른 점이다).
+    키를 서버가 결정적으로 만들지 않고 클라이언트가 요청마다 보낸다(유저+미션으로 키를 파생하는 미션 청구와 다른 점이다).
 
     **빨개지는 조건**: 키를 `(user, amount)`처럼 서버가 파생하면 두 번째가 409로 막힌다."""
     user_id = await _seed_user(db_session, clover_balance=0)

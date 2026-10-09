@@ -170,8 +170,8 @@ async def test_insufficient_clover_returns_clover_required_body(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`retryAfterSeconds`가 자정까지 초인 이유는 그때 무료
-    30턴이 돌아오기 때문이다 — 값이 거짓이 아니다."""
+    """`retryAfterSeconds`가 자정까지 초인 이유는 그때 하루
+    무료분이 돌아오기 때문이다 — 값이 거짓이 아니다."""
     user = await _consented_user(
         db_client, db_session, clover_balance=clover.CHAT_TURN_COST - 1, **_confirmed_today()
     )
@@ -340,8 +340,8 @@ async def test_within_daily_limit_does_not_spend_clover(
     잔액 0인 유저는 대량 실패로 잡히지만 **잔액이 있는 유저는 조용히 매 턴 깎이고 스위트는
     초록이다.** 이 테스트만이 그 경우에 빨개진다.
 
-    셋업의 핵심은 **상한을 패치하지 않는 것**이다(`CHAT_BURST_LIMIT` 10 · `CHAT_DAILY_LIMIT`
-    30 에 요청 1건이라 둘 다 여유가 있다). *"무료 한도
+    셋업의 핵심은 **상한을 패치하지 않는 것**이다(요청 1건이라 `CHAT_BURST_LIMIT`·`CHAT_DAILY_LIMIT`
+    둘 다 여유가 있다). *"무료 한도
     **초과분**만 클로버"*가 지켜지면 잔액도 원장도 그대로여야 한다.
 
     🔴 **방이 실존해야 한다.** 더미 방이면 게이트가 실행되지 않아(게이트가 조회 뒤에
@@ -371,7 +371,7 @@ async def test_unconfirmed_spend_is_blocked_before_charging(
 ) -> None:
     """"소진 시 하루 1회 확인 **후** 자동 차감"의 *후*가 이 테스트다.
 
-    🔴 **FE는 이 판정을 할 수 없다.** `GET /me/clover`는 잔액·확인여부·출석가능만 주고 "이번
+    🔴 **FE는 이 판정을 할 수 없다.** `GET /me/clover`는 잔액·확인여부·유료 잔액·만료 임박만 주고 "이번
     전송이 무료분을 넘는가"는 모른다 — 미확인인 모든 첫 전송에 모달을 띄우면 무료분을 안 쓴
     사용자까지 매일 붙잡는다. 그래서 **BE가 단일 판정자**가 되고, 그 판정이 곧 이 429다.
 

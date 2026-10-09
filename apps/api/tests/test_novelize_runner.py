@@ -51,6 +51,8 @@ from factories import (
     _open_transaction_probe,
 )
 
+pytestmark = pytest.mark.usefixtures("novel_prices_for_flow_tests")
+
 _BODY = "비가 내리는 저녁이었다. 서진은 가방을 내려놓고 창가에 섰다.\n\n" + "도윤이 잔을 밀어 주었다. " * 20
 
 

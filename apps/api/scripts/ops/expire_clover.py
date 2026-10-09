@@ -1,4 +1,4 @@
-"""출석·미션 클로버의 만료를 배치로 정리한다.
+"""미션 클로버의 만료를 배치로 정리한다.
 
     # VM 크론 (매일, ops/cron.d/ddona-clover-expire 로 설치)
     cd /opt/ddona/app/apps/api && PYTHONPATH=/opt/ddona/scripts /usr/bin/python3 -m ops.expire_clover

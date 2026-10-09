@@ -60,6 +60,6 @@ export const ABOUT_SCREENSHOTS = {
     src: cloverMissions,
     width: 780,
     height: 870,
-    alt: "클로버 화면 — 출석체크 버튼과 미션 목록(첫 작품 발행 300, 첫 대화 100, 첫 이미지 생성 200)",
+    alt: "클로버 화면 — 미션 목록(첫 작품 발행 300, 첫 대화 100, 첫 이미지 생성 200)",
   },
 } satisfies Record<string, AboutScreenshot>;

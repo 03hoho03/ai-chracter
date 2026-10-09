@@ -3998,45 +3998,14 @@ export interface paths {
         };
         /**
          * Get Clover Balance
-         * @description 🔴 **부작용이 없다** — 출석 지급은 전용 POST다.
+         * @description 🔴 **부작용이 없다** — 클로버 지급은 전용 POST(미션 청구)다.
          *
-         *     GET이 지급까지 하면 프리페치·재조회가 곧 지급이 되고, 그때 멱등을 보장하는 것은
-         *     `clover_attendance_granted_on` 하나뿐이라 실패 모드가 조용해진다.
+         *     GET이 지급까지 하면 프리페치·재조회가 곧 지급이 되어, 화면이 다시 그려질 때마다 돈이 움직일 수 있는
+         *     경로가 생긴다.
          */
         get: operations["get_clover_balance_me_clover_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/me/clover/attendance": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Claim Clover Attendance
-         * @description 일일 출석 지급. 오늘(KST) 이미 받았으면 `granted=false`이고 **에러가 아니다.**
-         *
-         *     멱등이 **두 겹**이다. 둘이 막는 것이 다르다:
-         *
-         *     - `clover_attendance_granted_on` 검사 — **순차 재호출**을 막는다(FE가 여러 번 부르는 경우).
-         *       빠른 길이고, 이것만으로는 동시 요청을 못 막는다.
-         *     - 원장 **멱등키의 유니크 인덱스** — **동시 요청**을 막는다. 아래 `except` 참조.
-         *
-         *     🔴 **지급과 멱등 표지가 한 트랜잭션이다.** 둘을 갈라 커밋하면 그 사이에서 실패할 때
-         *     "돈은 나갔는데 표지가 없는" 상태가 남고, 재시도가 곧 이중 지급이 된다 — 채팅·이미지 차감
-         *     경로가 겪은 "자원을 커밋한 뒤 되돌릴 수 있는 첫 지점까지의 구간"이 여기서는 **아예 생기지 않는다.**
-         *     ⚠️ 그건 **원자성** 논증이고 **격리**는 논증하지 않는다 — 격리는 위의 멱등키가 맡는다.
-         */
-        post: operations["claim_clover_attendance_me_clover_attendance_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4058,9 +4027,9 @@ export interface paths {
          *
          *     잔액 변동이 아니라 원장에 자리가 없다. 같은 날 다시 불러도 같은 날짜를 덮어쓸 뿐이라
          *     멱등이고, 그래서 이미 확인했는지 미리 보지 않는다(조회 한 번을 아끼는 것이 아니라
-         *     분기를 하나 없애는 것이다). 🔴 돈이 움직이지 않으므로 위 출석의 멱등키가 여기엔 필요 없다.
+         *     분기를 하나 없애는 것이다). 🔴 돈이 움직이지 않으므로 아래 미션 청구의 원장 멱등키가 여기엔 필요 없다.
          *
-         *     ⚠️ `_consent`를 데코레이터의 `dependencies=`가 아니라 **파라미터로** 받는 것은 위 둘과
+         *     ⚠️ `_consent`를 데코레이터의 `dependencies=`가 아니라 **파라미터로** 받는 것은 다른 `/me` 라우트와
          *     형태가 다르다. 반환형·상태코드와는 무관하고(`dependencies=`는 그것들을 안 건드린다),
          *     이유는 이 라우트만 반환할 값이 없어서다 — 본문이 두 줄뿐이라 의존성이 시그니처에 보이는
          *     쪽이 "무엇을 거쳐 왔는지"를 읽기 쉽다. 한 파일에 두 형태가 섞인 것은 의도다.
@@ -4106,7 +4075,11 @@ export interface paths {
         /**
          * Claim Clover Mission
          * @description 미션 청구. 달성하지 못했으면 422. 이미 청구했으면(멱등키 중복) `granted=false`이고
-         *     **에러가 아니다** — 위 출석과 같은 패턴이다.
+         *     **에러가 아니다.**
+         *
+         *     🔴 **멱등은 원장 멱등키의 유니크 인덱스 하나가 맡는다**(키는 유저+미션이라 결정적이다). 사전 컬럼 검사가 없으므로
+         *     순차 재호출도 동시 요청도 같은 `IntegrityError` 경로로 막힌다. 지급과 로트·원장 행이 한 트랜잭션이라 "돈은
+         *     나갔는데 기록이 없는" 구간도 생기지 않는다.
          *
          *     🔴 달성 여부를 **저장하지 않으므로** 이 판정도 매 요청 EXISTS다 — 청구 직전에
          *     달성 신호가 사라져 있으면(방·메시지 삭제 등) 422로 막힌다. 영구 손실은 아니다: 다시
@@ -4158,8 +4131,12 @@ export interface paths {
         };
         /**
          * Get Clover Pricing
-         * @description 공개 조회 — 인증 없음. 충전 상품과 기본 모델 기준 사용 단가를 한 응답에 싣는다. 웹 상품 안내는 숫자 사본 없이
-         *     이 값만 쓴다. DB 를 읽지 않아 비용이 없으므로 레이트리밋도 붙이지 않는다.
+         * @description 공개 조회 — 인증 없음. 충전 상품과 모든 사용처·모델의 사용 단가, 하루 무료 대화 수를 한 응답에 싣는다. 웹 상품
+         *     안내는 숫자 사본 없이 이 값만 쓴다. DB 를 읽지 않아 비용이 없으므로 레이트리밋도 붙이지 않는다.
+         *
+         *     허용 전용 표시는 설정이 아니라 허용 판정의 구조에서 온다 — 상위 모델(`llm/model_access.py`)과 소설
+         *     (`novelize/access.py`)은 스위치가 켜져 있어도 env 명단과 어드민 허용 행이 있는 계정만 쓴다. 판정이 명단 없이 모두에게
+         *     열리도록 바뀌면 여기 값도 함께 바꾼다.
          */
         get: operations["get_clover_pricing_clover_pricing_get"];
         put?: never;
@@ -6135,13 +6112,13 @@ export interface components {
          *     인용할 자리가 없고 대신 "왜 줬나"가 감사 로그에 남아야 한다.
          *
          *     `±100,000` 상한의 근거(`images/schemas.py`의 `count` 상한이 "왜 2인가"를 적은 관례):
-         *     현행 단가(채팅 1턴 10, 출석 1회 100) 기준 100,000클로버 = 채팅 10,000턴 = 출석 1,000일치다.
+         *     현행 단가(기본 모델 채팅 1턴 10) 기준 100,000클로버 = 채팅 10,000턴이다.
          *     운영자가 한 번에 줄 만한 어떤 보상보다도 크고, **자릿수를 잘못 눌렀을 때 걸리는 그물**이
          *     이 상한의 목적이다. 더 큰 금액이 필요하면 여러 번 나눠 주면 되고 그 편이 감사 로그에도
          *     낫다.
          *
          *     🔴 `idempotency_key`는 **클라이언트가 요청마다 새로 만든다**.
-         *     출석처럼 서버가 `(user, 날짜)`로 파생할 수 없다 — 같은 어드민이 같은 유저에게 같은 금액을
+         *     미션 청구처럼 서버가 `(user, 미션)`으로 파생할 수 없다 — 같은 어드민이 같은 유저에게 같은 금액을
          *     **의도적으로 두 번** 줄 수 있어야 하기 때문이다. 막으려는 것은 "두 번 주는 것"이 아니라
          *     **한 번 누른 것이 두 번 도착하는 것**(더블클릭·네트워크 재시도)이다.
          */
@@ -6884,13 +6861,6 @@ export interface components {
          * @enum {string}
          */
         ChatViewReasonCategory: "report-investigation" | "appeal-review" | "legal-request" | "other";
-        /** CloverAttendanceResponse */
-        CloverAttendanceResponse: {
-            /** Granted */
-            granted: boolean;
-            /** Balance */
-            balance: number;
-        };
         /**
          * CloverBalanceResponse
          * @description Python은 snake_case, JSON은 camelCase다.
@@ -6900,8 +6870,6 @@ export interface components {
             balance: number;
             /** Spendconfirmedtoday */
             spendConfirmedToday: boolean;
-            /** Attendanceclaimable */
-            attendanceClaimable: boolean;
             /** Paidbalance */
             paidBalance: number;
             expiringSoon: components["schemas"]["CloverExpiringSoon"] | null;
@@ -6986,6 +6954,27 @@ export interface components {
             missions: components["schemas"]["CloverMissionItem"][];
         };
         /**
+         * CloverModelPricingItem
+         * @description 글쓰기 모델 하나의 사용 단가. 모델 레지스트리(`llm/chat_models.py`)의 모든 모델이 레지스트리 순서대로 실린다.
+         */
+        CloverModelPricingItem: {
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "gemini" | "sonnet" | "opus";
+            /** Name */
+            name: string;
+            /** Isdefault */
+            isDefault: boolean;
+            /** Restricted */
+            restricted: boolean;
+            /** Chatturncost */
+            chatTurnCost: number;
+            /** Novelepisodecost */
+            novelEpisodeCost: number;
+        };
+        /**
          * CloverPayMethodItem
          * @description 포트원 브라우저 SDK 의 `payMethod` 와, 간편결제일 때 `easyPay.easyPayProvider` 값 그대로.
          */
@@ -7000,8 +6989,8 @@ export interface components {
         };
         /**
          * CloverPricingResponse
-         * @description 공개 가격 안내. 단가는 기본 모델 기준만 싣는다 — 상위 모델은 허용된 계정만 쓰고 소설은 허용 명단 전용이라
-         *     공개 안내에 넣지 않는다.
+         * @description 공개 가격 안내. 구매 전 안내에 없는 사용처 가격은 숨은 가격으로 읽히므로 상위 모델과 소설(화·AI 수정)까지 모든
+         *     사용처의 단가를 싣고, 허용된 계정만 쓰는 사용처는 그 사실(`restricted`·`novel_restricted`)을 함께 싣는다.
          */
         CloverPricingResponse: {
             /** Products */
@@ -7010,6 +6999,14 @@ export interface components {
             chatTurnCost: number;
             /** Imagecost */
             imageCost: number;
+            /** Models */
+            models: components["schemas"]["CloverModelPricingItem"][];
+            /** Novelaieditcost */
+            novelAiEditCost: number;
+            /** Novelrestricted */
+            novelRestricted: boolean;
+            /** Dailyfreechatturns */
+            dailyFreeChatTurns: number;
             /** Paymentsenabled */
             paymentsEnabled: boolean;
             /** Paymethods */
@@ -7023,7 +7020,7 @@ export interface components {
              * Key
              * @enum {string}
              */
-            key: "starter" | "basic" | "plus" | "pro";
+            key: "mini" | "lite" | "basic_v2" | "plus_v2" | "max";
             /** Name */
             name: string;
             /** Pricekrw */
@@ -7640,7 +7637,7 @@ export interface components {
              * Productkey
              * @enum {string}
              */
-            productKey: "starter" | "basic" | "plus" | "pro";
+            productKey: "mini" | "lite" | "basic_v2" | "plus_v2" | "max";
             /**
              * Agreed
              * @constant
@@ -16853,26 +16850,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CloverBalanceResponse"];
-                };
-            };
-        };
-    };
-    claim_clover_attendance_me_clover_attendance_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CloverAttendanceResponse"];
                 };
             };
         };
