@@ -232,8 +232,8 @@ async def _clear_backoff(room_id: uuid.UUID) -> None:
 
 
 def _dependency_tag(exc: Exception) -> str:
-    """`chat/router.py`의 `_llm_dependency_tag`와 같은 분류에 DB를 더한다(그 함수는 라우터에 있어
-    이 모듈이 import할 수 없다 — 라우터가 이 모듈을 import한다)."""
+    """요약 접기 실패의 승격 태그. `chat/turn_judgments.py`의 `_llm_dependency_tag`와 렌더 실패(`prompt_render`)는
+    같지만, LLM 실패를 공급자로 가르지 않고 `gemini`/`gemini_rate_limit` 로 붙이며, DB 실패(`db`)와 그 밖의 접기 실패(`memory_fold`)를 따로 묶는다."""
     if isinstance(exc, PromptRenderError):
         return "prompt_render"
     if isinstance(exc, LLMRateLimitError):

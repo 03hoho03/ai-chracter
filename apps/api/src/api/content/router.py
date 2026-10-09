@@ -694,11 +694,11 @@ async def _character_draft_response(
 
 
 async def _ending_rule_draft_items(db: AsyncSession, ending_id: uuid.UUID) -> list[EndingRuleListDraftItem]:
-    """Mirrors `chat/router.py`'s `_ending_rule_items` — `ending_rules`(top-level) and
+    """Mirrors `chat/turn_judgments.py`'s `_ending_rule_items` — `ending_rules`(top-level) and
     `ending_rule_groups` share one `order` sequence, reconstructed
     here as the same `kind`-discriminated tree so the draft response round-trips through
-    `PATCH` unchanged. Not imported from `chat/schemas.py`/`chat/router.py` directly — same
-    "duplicate the small helper, don't cross-import router files" convention as the
+    `PATCH` unchanged. Not imported from `chat/schemas.py`/`chat/turn_judgments.py` directly — same
+    "duplicate the small helper, don't cross-import another domain's module" convention as the
     `_resolve_asset_url` copies in the moderation/admin/inquiry routers."""
     top_rules = (await db.scalars(select(EndingRule).where(EndingRule.ending_id == ending_id))).all()
     groups = (await db.scalars(select(EndingRuleGroup).where(EndingRuleGroup.ending_id == ending_id))).all()

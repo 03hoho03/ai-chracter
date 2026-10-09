@@ -9,6 +9,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat import router as chat_router
+from api.chat import turn_judgments
 from api.chat.prompt_builder import ImageMatchJudgmentResult
 from api.core.config import settings
 from api.db.models import (
@@ -719,9 +720,10 @@ async def test_send_message_situational_image_candidate_query_failure_still_comp
 ) -> None:
     """`_load_situational_candidates`의 후보 조회
     (`db.scalars(select(SituationalImage)...)`)가 실패해도 이번 턴의 이미지 매칭만 포기하고
-    스트림은 done까지 정상 종료된다. 이 호출은 presign·자산 조회를 감싸는 본문 가드(`:873~907`) 밖에 있고,
+    스트림은 done까지 정상 종료된다. 이 호출은 커밋 뒤 presign·자산 조회를 감싸는 가드 밖에 있고,
     호출부(`_stream_new_turn`)의 기존 `except (LLMClientError, PromptRenderError)`는 DB
-    예외를 잡지 않는다 — 함수 자신이 흡수해야 한다.
+    예외를 잡지 않는다 — 함수 자신이 흡수해야 한다. 그 함수는 `chat/turn_judgments.py` 에 있어 Bugsink 승격도
+    그 모듈의 이름으로 잡는다.
 
     ⚠️ **이 테스트가 재는 것과 못 재는 것**:
     `AsyncSession.scalars`를 몽키패치해 순수 파이썬에서 `SQLAlchemyError`를 던진다 —
@@ -733,7 +735,7 @@ async def test_send_message_situational_image_candidate_query_failure_still_comp
     `SELECT 1/0`으로 실제 SQL을 태워 재는 별도 테스트다."""
     captured: list[tuple[BaseException, str]] = []
     monkeypatch.setattr(
-        chat_router,
+        turn_judgments,
         "capture_dependency_failure",
         lambda exc, *, dependency: captured.append((exc, dependency)),
     )
@@ -865,7 +867,7 @@ async def test_send_message_situational_image_candidate_query_real_sql_failure_i
     감시(방 재조회)가 턴이 그대로 저장됐다는 증거다."""
     captured: list[tuple[BaseException, str]] = []
     monkeypatch.setattr(
-        chat_router,
+        turn_judgments,
         "capture_dependency_failure",
         lambda exc, *, dependency: captured.append((exc, dependency)),
     )

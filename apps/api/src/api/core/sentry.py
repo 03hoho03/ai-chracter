@@ -88,8 +88,8 @@ def capture_dependency_failure(exc: BaseException | None = None, *, dependency: 
 
     이 목록은 호출부 실사용과 대조해 다시 썼다. ⚠️ 리터럴
     `dependency="..."`만 grep하면 **`gemini`/`gemini_rate_limit`/`bedrock`/`bedrock_rate_limit`/`prompt_render`를
-    놓친다** — 그것들은 `chat/router.py`의 `_llm_dependency_tag(exc)`가 계산해서 넘기므로 호출부 9곳에
-    문자열로 나타나지 않는다(LLM 공급자 이름은 `llm/client.py` 의 `dependency_tag` 가 예외의 `provider` 로 만든다).
+    놓친다** — 그것들은 `chat/turn_judgments.py`의 `_llm_dependency_tag(exc)`가 계산해서 넘기므로 그 호출부(채팅
+    라우터와 판정 모듈)에 문자열로 나타나지 않는다(LLM 공급자 이름은 `llm/client.py` 의 `dependency_tag` 가 예외의 `provider` 로 만든다).
 
     `exc`를 생략하면 `sentry_sdk.capture_exception`이 `sys.exc_info()`를 쓴다 — 호출부의
     `except` 절이 예외를 `as exc`로 바인딩하지 않은 경우(`prompt_set_cache.py`·
