@@ -14,8 +14,14 @@
 
 실패는 될 수 있으면 데이터·경계에서 만든다: 프롬프트 렌더 실패는 활성 세트의 그 채널 문안에 없는 자리표시자를 넣어서, DB
 읽기 실패는 그 문장 대신 `SELECT 1/0` 을 요청 세션에서 실제로 보내 트랜잭션을 진짜 aborted 로 만들어서, 쓰기 실패는 쓰기
-구간 커밋에 외래 키 위반 행을 얹어서, 끊김은 앱을 직접 불러 `http.disconnect` 를 보내서 만든다. 요청 세션의 커밋이 진짜
-경계가 되도록 `committing_request_session` 위에서 돈다.
+구간 커밋에 외래 키 위반 행을 얹어서, 끊김은 앱을 직접 불러 `http.disconnect` 를 보내서 만든다. 끊김은 클라이언트가 그
+앞에 나간 이벤트를 실제로 받은 뒤에 보낸다 — 운영에서 끊김은 마지막 송신보다 한참 뒤에 오므로, 같은 틱의 끊김이 송신 중인
+이벤트를 지우는 하네스 산물을 기록하지 않게.
+
+요청 세션의 커밋이 진짜 경계가 되도록 `committing_request_session` 위에서 돈다. 그 하네스는 요청 세션과 환급 세션이 커넥션
+하나를 SAVEPOINT 로 나눠 써서, 요청 세션의 트랜잭션이 열린 채 환급하면 환급이 그 SAVEPOINT 안에 들어가 요청 세션이 닫힐 때
+함께 되돌려진다. 운영의 환급은 다른 커넥션의 독립 트랜잭션이라 요청 세션과 무관하게 남고 커밋된 상태만 본다 — 그래서
+요청 세션 트랜잭션이 열린 동안 불린 환급은 그 세션이 닫힌 뒤에 돌린다(`_refunds_outlive_the_request_session`).
 
 실패를 만드는 장치가 실제로 그 자리에 닿았는지는 칸마다 따로 확인한다 — 닿지 않은 채 성공한 턴이 기대값으로 굳지 않게.
 
@@ -71,6 +77,7 @@ from api.db.models import (
 )
 from api.db.models.chat import DiscardedResponse
 from api.db.models.clover import CloverLedger
+from api.db.session import get_db_session
 from api.llm.client import (
     LLMCallContext,
     LLMClient,
@@ -79,10 +86,12 @@ from api.llm.client import (
     LLMRateLimitError,
 )
 from api.llm.gemini import GeminiLLMClient
+from api.main import app
 from factories import (
     _add_room_cell_and_endings,
     _add_room_situational_image,
     _assert_characterization,
+    _assert_recorded_cases,
     _call_until_disconnect,
     _clear_llm_override,
     _login_as,
@@ -286,6 +295,18 @@ _SURFACES: dict[str, Callable[[httpx.AsyncClient, AsyncSession], Awaitable[_Targ
 # ── 실패 만들기 ─────────────────────────────────────────────────────────────────────────
 
 
+class _Outbox(list[Message]):
+    """앱이 클라이언트로 보낸 ASGI 메시지. 하나 쌓일 때마다 `grew` 를 세워 받은 것을 기다리는 쪽을 깨운다."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.grew = asyncio.Event()
+
+    def append(self, message: Message) -> None:
+        super().append(message)
+        self.grew.set()
+
+
 @dataclass
 class _Ctx:
     db_client: httpx.AsyncClient
@@ -295,6 +316,8 @@ class _Ctx:
     script: _Script
     disconnect: asyncio.Event
     sentry: list[list[str | None]]
+    # 앱이 클라이언트로 보낸 ASGI 메시지 — 요청 도중에도 "클라이언트가 무엇을 받았는가"를 읽는다.
+    sent: _Outbox = field(default_factory=_Outbox)
     # (설명, 실패 장치가 그 자리에 닿았는가) — 요청 뒤에 전부 참이어야 한다.
     witnesses: list[tuple[str, Callable[[], bool]]] = field(default_factory=list)
     # 요청 뒤에 걷어낼 이벤트 리스너.
@@ -390,9 +413,9 @@ async def _delete_room_during_generation(ctx: _Ctx) -> None:
 async def _abort_stat_rule_read(ctx: _Ctx) -> None:
     """스탯 규칙을 읽는 첫 문장 대신 요청 세션에서 `SELECT 1/0` 을 보내 트랜잭션을 진짜 aborted 로 만든다.
 
-    이 하네스는 요청 세션과 환급 세션이 커넥션 하나를 나눠 쓴다(운영은 다른 커넥션이다). 그대로 두면 환급 세션이 요청
-    세션의 aborted 트랜잭션 위에서 시작해 실패하므로, 환급 직전에 요청 세션만 되감는다 — 요청 세션은 그 뒤 쓰지 않고
-    닫히므로 운영에서 보이는 결과와 같다."""
+    환급은 따로 손대지 않는다 — aborted 트랜잭션이 열린 채 불린 환급은 모든 칸에 걸린
+    `_refunds_outlive_the_request_session` 이 요청 세션이 닫힌(SAVEPOINT 로 되감긴) 뒤에 돌리므로, aborted 트랜잭션 위에서
+    환급 세션이 시작해 실패하는 하네스 산물이 생기지 않는다."""
     aborted: list[AsyncSession] = []
     original_execute = AsyncSession.execute
 
@@ -407,15 +430,7 @@ async def _abort_stat_rule_read(ctx: _Ctx) -> None:
             return await original_execute(self, sa.text("SELECT 1/0"))
         return await original_execute(self, statement, *args, **kwargs)
 
-    original_refund = clover.refund_spend_in_new_transaction
-
-    async def refund_after_rewinding_the_request_session(*args: Any, **kwargs: Any) -> None:
-        for session in aborted:
-            await session.rollback()
-        await original_refund(*args, **kwargs)
-
     ctx.monkeypatch.setattr(AsyncSession, "execute", execute)
-    ctx.monkeypatch.setattr(clover, "refund_spend_in_new_transaction", refund_after_rewinding_the_request_session)
     ctx.witnesses.append(("스탯 규칙 읽기에 닿지 않았다", lambda: bool(aborted)))
 
 
@@ -471,9 +486,23 @@ async def _cancel_after_write_commit(ctx: _Ctx) -> None:
     ctx.witnesses.append(("쓰기 구간 커밋 뒤에 끊지 않았다", lambda: bool(fired)))
 
 
+def _client_received(ctx: _Ctx, kind: str) -> bool:
+    body = b"".join(message.get("body", b"") for message in ctx.sent if message["type"] == "http.response.body")
+    return any(event["type"] == kind for event in _parse_sse_events(body.decode("utf-8")))
+
+
+# 저장이 `done` 을 기다리는 상한. `done` 이 저장 뒤로 밀린 코드에서는 이만큼 기다린 뒤 그대로 끊어, 기록에서 `done` 이 빠진다.
+_DONE_WAIT_SECONDS = 2
+
+
 def _preview_save(behavior: str) -> _Arm:
-    """미리보기 세션 저장(Redis SET)을 바꾼다 — `hang` 은 끊김을 알리고 멈추고, `fail` 은 Redis 오류로 끝난다. 미리보기
-    세션 키에만 걸고, 저장 함수가 아니라 그 클라이언트의 SET 을 바꿔 저장 호출이 어디로 옮겨 가도 빗나가지 않게 한다."""
+    """미리보기 세션 저장(Redis SET)을 바꾼다 — `hang` 은 클라이언트가 `done` 을 실제로 받을 때까지 저장을 붙잡아 둔 뒤
+    끊김을 알리고 멈추고, `fail` 은 Redis 오류로 끝난다. 미리보기 세션 키에만 걸고, 저장 함수가 아니라 그 클라이언트의
+    SET 을 바꿔 저장 호출이 어디로 옮겨 가도 빗나가지 않게 한다.
+
+    `hang` 이 `done` 수신을 기다리는 이유: 끊김을 저장과 같은 틱에 보내면 송신 쪽이 `done` 을 내보내기 전에 응답이 취소돼,
+    `done` 을 저장 앞에서 낸 지금 코드와 저장을 `done` 앞으로 옮긴 코드가 같은 기록(`done` 없음)을 낸다. 받은 뒤에 끊으면
+    지금 코드는 `done` 을 남기고, 저장이 `done` 앞으로 옮겨 가면 `done` 이 오지 않아 상한 뒤 끊긴 기록이 달라진다."""
 
     async def arm(ctx: _Ctx) -> None:
         original_set = redis_client.set
@@ -484,6 +513,13 @@ def _preview_save(behavior: str) -> _Arm:
                 reached.append(True)
                 if behavior == "fail":
                     raise RedisError("미리보기 세션 저장 실패")
+                try:
+                    async with asyncio.timeout(_DONE_WAIT_SECONDS):
+                        while not _client_received(ctx, "done"):
+                            ctx.sent.grew.clear()
+                            await ctx.sent.grew.wait()
+                except TimeoutError:
+                    pass
                 ctx.disconnect.set()
                 await asyncio.sleep(_HANG_SECONDS)
             return await original_set(name, value, *args, **kwargs)
@@ -593,6 +629,24 @@ def _event(event: dict[str, Any], ids: dict[str, str]) -> dict[str, Any]:
     return {"type": kind}
 
 
+_TERMINAL_EVENTS = frozenset({"done", "error", "policyWarning"})
+
+
+def _tokens_of_a_cut_stream(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """끝 이벤트(`done`·`error`·`policyWarning`) 없이 끊긴 스트림에서는 이어진 토큰들을 `{"type": "tokens"}` 하나로 접는다.
+    그런 스트림에서 클라이언트에 닿은 토큰 개수는 마지막 송신과 끊김 사이에 `await` 가 몇 개 끼었느냐에 달려 있어, 동작이
+    같은 리팩터에서도 바뀐다. 토큰이 하나도 안 닿은 것과 닿은 것은 접은 뒤에도 갈린다."""
+    if any(event["type"] in _TERMINAL_EVENTS for event in events):
+        return events
+    folded: list[dict[str, Any]] = []
+    for event in events:
+        if event["type"] != "token":
+            folded.append(event)
+        elif not folded or folded[-1] != {"type": "tokens"}:
+            folded.append({"type": "tokens"})
+    return folded
+
+
 def _exception_names(exc: BaseException) -> list[str]:
     if isinstance(exc, BaseExceptionGroup):
         return sorted({name for inner in exc.exceptions for name in _exception_names(inner)})
@@ -602,7 +656,7 @@ def _exception_names(exc: BaseException) -> list[str]:
 async def _drive(ctx: _Ctx) -> dict[str, Any]:
     """앱을 직접 불러 상태 줄과 SSE 이벤트, 앱 밖으로 샌 예외를 모은다. httpx 는 앱 예외가 나면 그 앞에 나간 이벤트를
     돌려주지 않아 직접 부른다."""
-    sent: list[Message] = []
+    sent = ctx.sent
     escaped: list[str] = []
     target = ctx.target
     try:
@@ -679,11 +733,59 @@ def _record_sentry(monkeypatch: pytest.MonkeyPatch, sentry: list[list[str | None
     monkeypatch.setattr(sentry_sdk, "capture_exception", capture_exception)
 
 
+def _refunds_outlive_the_request_session(monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession) -> None:
+    """요청 세션의 트랜잭션이 열린 동안 불린 환급을 그 요청 세션이 닫힌 뒤에 돌린다.
+
+    `committing_request_session` 에서 요청 세션과 환급 세션은 한 커넥션의 SAVEPOINT 다. 요청 세션이 SAVEPOINT 를 연 채
+    환급하면 환급의 SAVEPOINT 가 그 안에 들어가고, 요청 세션이 커밋 없이 닫히며 바깥 SAVEPOINT 로 되감을 때 환급도 사라진다.
+    운영의 환급은 다른 커넥션에서 커밋돼 요청 세션이 어떻게 끝나든 남고, 요청 세션이 커밋하지 않은 쓰기는 보지 않는다.
+    요청 세션이 닫힌 뒤(되감기든 커밋이든 끝난 뒤) 같은 인자로 환급하면 그 둘이 그대로 성립한다. 열린 트랜잭션이 없을 때
+    불린 환급은 그 자리에서 돈다 — 환급이 바깥 SAVEPOINT 에 들어가 요청과 무관하게 남는 것이 이미 운영과 같다.
+
+    환급 함수 자리를 바꿔 끼우므로, 환급을 부르지 않는 코드는 미뤄 둘 것도 없어 그대로 "환급 없음"으로 기록된다."""
+    connection = db_session.bind
+    open_sessions: list[AsyncSession] = []
+    deferred: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+    original_refund = clover.refund_spend_in_new_transaction
+
+    async def request_session() -> AsyncIterator[AsyncSession]:
+        try:
+            async with AsyncSession(
+                bind=connection, join_transaction_mode="create_savepoint", expire_on_commit=False
+            ) as session:
+                open_sessions.append(session)
+                try:
+                    yield session
+                finally:
+                    open_sessions.remove(session)
+        finally:
+            if not any(session.in_transaction() for session in open_sessions):
+                while deferred:
+                    args, kwargs = deferred.pop(0)
+                    await original_refund(*args, **kwargs)
+
+    async def refund(*args: Any, **kwargs: Any) -> None:
+        if any(session.in_transaction() for session in open_sessions):
+            deferred.append((args, kwargs))
+            return
+        await original_refund(*args, **kwargs)
+
+    # `committing_request_session` 이 건 요청 세션을 같은 모양으로 갈아 끼운다 — `db_client` 가 끝나며 키를 지운다.
+    app.dependency_overrides[get_db_session] = request_session
+    monkeypatch.setattr(clover, "refund_spend_in_new_transaction", refund)
+
+
 _PARAMS = [
     pytest.param(cell, surface, id=f"{cell}/{surface}")
     for cell, (surfaces, _) in _CELLS.items()
     for surface in surfaces
 ]
+
+
+def test_recorded_cells_are_exactly_the_parametrized_cells() -> None:
+    _assert_recorded_cases(
+        FIXTURE_PATH, [f"{cell}/{surface}" for cell, (surfaces, _) in _CELLS.items() for surface in surfaces]
+    )
 
 
 @pytest.mark.usefixtures("committing_request_session")
@@ -698,6 +800,7 @@ async def test_failure_cell_matches_the_recorded_behavior(
     target = await _SURFACES[surface](db_client, db_session)
     # 셋업이 끝난 뒤 상한을 낮춘다 — 이 턴은 클로버로 낸다.
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
+    _refunds_outlive_the_request_session(monkeypatch, db_session)
     sentry: list[list[str | None]] = []
     ctx = _Ctx(db_client, db_session, monkeypatch, target, _Script(), asyncio.Event(), sentry)
     _surfaces, arm = _CELLS[cell]
@@ -728,7 +831,7 @@ async def test_failure_cell_matches_the_recorded_behavior(
         f"{cell}/{surface}",
         {
             "status": outcome["status"],
-            "events": [_event(event, ids) for event in outcome["events"]],
+            "events": _tokens_of_a_cut_stream([_event(event, ids) for event in outcome["events"]]),
             "escaped": outcome["escaped"],
             "state": state,
             "clover": await _clover(db_session, target.user_id),
@@ -789,7 +892,15 @@ async def test_background_work_starts_with_no_request_transaction_open(
             _clear_llm_override()
 
     assert response.status_code == 200, response.text
-    assert [event["type"] for event in _parse_sse_events(response.text)][-1] == "done"
+    events = _parse_sse_events(response.text)
+    assert events[-1]["type"] == "done"
+    # 턴이 커밋 뒤 조회를 실제로 지났다 — 그림 URL(칸 서명·상황 이미지 URL)과, 스토리 방은 엔딩 에필로그. 건너뛰었다면
+    # "열린 트랜잭션 0" 은 그 조회가 연 트랜잭션을 반납하는지를 재지 않은 것이다.
+    final = events[-1]["finalMessage"]
+    assert final["imageId"] == target.match_id
+    assert final["imageUrl"]
+    if case.endswith("-story"):
+        assert any(event["type"] == "endingReached" and event.get("epilogue") for event in events)
     # 접기가 실제로 요약 LLM 을 불렀다 — 안 불렀다면 "열린 트랜잭션 0" 이 아무것도 재지 않은 것이다.
     assert ["generate_structured", "chat_memory_summary"] in fake.calls
     assert seen == [("fold_memory", 0)]

@@ -38,7 +38,7 @@ from api.llm.client import (
 from api.llm.gemini import GeminiLLMClient
 from api.llm.routing import RoutingLLMClient
 from api.llm.usage_store import USAGE_KEY_PREFIX
-from factories import _assert_characterization
+from factories import _assert_characterization, _assert_recorded_cases
 from replay.calls import capture_usage
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "llm_call_policy.json"
@@ -75,13 +75,16 @@ _INT_SETTINGS = (
     "bedrock_chat_max_tokens",
     "bedrock_chapter_max_tokens",
 )
-# 사고 수준은 고를 수 있는 값이 정해져 있어 표지로 하나를 쓴다.
+# 사고 수준은 고를 수 있는 값이 넷뿐이라 표지로 그중 하나를 쓴다. 같은 값을 코드에 박아도 표지 채우기에서는 설정 이름으로
+# 되읽히므로, 둘을 가르는 것은 선언 기본값 채우기다 — 선언 기본값이 None 이라 설정을 읽는 코드는 수준을 싣지 않고, 박힌
+# 값은 거기서도 실린다.
 _LEVEL_SETTING = "gemini_novelize_thinking_level"
 _LEVEL_MARKER = "LOW"
 _INT_MARKERS = {name: 70_001 + index for index, name in enumerate(_INT_SETTINGS)}
 _MARKER_NAMES: dict[object, str] = {
     **{f"<{name}>": name for name in _TEXT_SETTINGS},
     **{value: name for name, value in _INT_MARKERS.items()},
+    _LEVEL_MARKER: _LEVEL_SETTING,
 }
 
 
@@ -235,8 +238,16 @@ def _thinking(config: genai_types.GenerateContentConfig) -> dict[str, str | None
     level = thinking.thinking_level
     return {
         "budget": _source(thinking.thinking_budget),
-        "level": _MARKER_NAMES.get(level.value, f"literal:{level.value}") if level is not None else None,
+        "level": _source(level.value) if level is not None else None,
     }
+
+
+def _declared_thinking(config: genai_types.GenerateContentConfig) -> dict[str, object] | None:
+    thinking = config.thinking_config
+    if thinking is None:
+        return None
+    level = thinking.thinking_level
+    return {"budget": thinking.thinking_budget, "level": level.value if level is not None else None}
 
 
 def _gemini_request(sent: dict[str, Any]) -> dict[str, Any]:
@@ -379,10 +390,18 @@ async def _declared_default_row(monkeypatch: pytest.MonkeyPatch, call_site: LLMC
     for method, sent in zip(("generate", "structured"), gemini_sdk.sent, strict=True):
         config: genai_types.GenerateContentConfig = sent["config"]
         assert config.http_options is not None
-        row[method] = {"timeoutMs": config.http_options.timeout, "maxOutputTokens": config.max_output_tokens}
+        row[method] = {
+            "timeoutMs": config.http_options.timeout,
+            "maxOutputTokens": config.max_output_tokens,
+            "thinking": _declared_thinking(config),
+        }
     (bedrock_sent,) = bedrock_sdk.sent
     row["bedrock"] = {"timeoutMs": round(bedrock_sent["timeout"] * 1000), "maxTokens": bedrock_sent["max_tokens"]}
     return row
+
+
+def test_recorded_call_sites_are_exactly_the_parametrized_call_sites() -> None:
+    _assert_recorded_cases(FIXTURE_PATH, _CALL_SITES)
 
 
 @pytest.mark.parametrize("call_site", _CALL_SITES)

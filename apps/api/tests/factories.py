@@ -11,7 +11,7 @@ import asyncio
 import json
 import os
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable, Generator
+from collections.abc import AsyncIterator, Awaitable, Callable, Generator, Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, UTC
@@ -870,6 +870,24 @@ def _assert_characterization(path: Path, case: str, actual: object) -> None:
     expected: dict[str, object] = json.loads(path.read_text(encoding="utf-8"))
     assert case in expected, f"{path.name} 에 {case!r} 의 기대값이 없다 — {CHARACTERIZATION_UPDATE_ENV}=1 로 떠야 한다"
     assert actual == expected[case]
+
+
+def _assert_recorded_cases(path: Path, cases: Iterable[str]) -> None:
+    """기대값 파일의 경우 집합이 지금 파라미터의 경우 집합(`cases`)과 같아야 한다. `_assert_characterization` 은 경우
+    하나씩만 보므로, 지우거나 이름을 바꾼 경우의 옛 값이 파일에 남아도 아무 테스트도 실패하지 않는다 — 그 값은 아무것도
+    지키지 않으면서 지키는 것처럼 보인다. 갱신 모드에서는 남은 옛 값을 지운다(빠진 경우는 그 경우의 테스트가 써 넣는다)."""
+    expected = set(cases)
+    if os.environ.get(CHARACTERIZATION_UPDATE_ENV) == "1":
+        if not path.exists():
+            return
+        recorded: dict[str, object] = json.loads(path.read_text(encoding="utf-8"))
+        kept = {case: value for case, value in recorded.items() if case in expected}
+        path.write_text(json.dumps(kept, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        return
+    assert path.exists(), f"기대값 파일 {path.name} 이 없다 — {CHARACTERIZATION_UPDATE_ENV}=1 로 한 번 떠야 한다"
+    recorded_cases = set(json.loads(path.read_text(encoding="utf-8")))
+    assert recorded_cases - expected == set(), f"{path.name} 에 지금 파라미터에 없는 경우가 남았다"
+    assert expected - recorded_cases == set(), f"{path.name} 에 기대값이 없는 경우가 있다"
 
 
 # --- 긴 대화방(요약 접기·되감기 테스트) ---------------------------------------------

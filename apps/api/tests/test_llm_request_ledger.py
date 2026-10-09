@@ -38,8 +38,10 @@ from api.chat.prompt_builder import (
     MemorySummaryResult,
     StatRuleJudgmentResult,
 )
+from api.chat.prompt_set_cache import ACTIVE_PROMPT_SET_KEY_PREFIX
 from api.core.config import settings
-from api.db.models import AssetStatus, ChatRoom
+from api.core.redis import redis_client
+from api.db.models import AssetStatus, ChatRoom, PromptSection, PromptSet
 from api.llm.client import LLMCallContext, LLMCallSite, LLMClient, SegmentedPrompt
 from api.llm.routing import RoutingLLMClient
 from factories import (
@@ -47,6 +49,7 @@ from factories import (
     _add_room_situational_image,
     _allow_chat_premium,
     _assert_characterization,
+    _assert_recorded_cases,
     _clear_llm_override,
     _login_as,
     _make_asset,
@@ -247,7 +250,22 @@ async def _send_story_sonnet(
     room = await _open_room(db_client, db_session, turns=_ROOM_TURNS, lane="story", user=user)
     cell_id = await _add_room_cell_and_endings(db_session, room.room_id, _ENDING_GATES)
     await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room.room_id).values(chat_model="sonnet"))
+    # 테스트 DB 의 상위 모델 세트 생성 문안은 Gemini 세트와 같아, 그대로면 어느 세트로 조립했는지가 sha 에 드러나지 않는다.
+    # 상위 모델 세트의 생성 문안에만 표지를 붙여 "생성은 모델 세트, 판정·요약은 Gemini 세트"가 뒤바뀌면 장부가 바뀌게 한다.
+    marked = await db_session.scalars(
+        sa.update(PromptSection)
+        .where(
+            PromptSection.prompt_set_id.in_(sa.select(PromptSet.id).where(PromptSet.model == "sonnet")),
+            PromptSection.channel == "generation",
+        )
+        .values(body=PromptSection.body + " (상위 모델 세트)")
+        .returning(PromptSection.id)
+    )
+    assert marked.all(), "상위 모델 세트에 생성 문안이 없다"
     await db_session.commit()
+    keys = await redis_client.keys(f"{ACTIVE_PROMPT_SET_KEY_PREFIX}*")
+    if keys:
+        await redis_client.delete(*keys)
     return _Case("POST", f"/chat-rooms/{room.room_id}/messages", {"content": "마을을 떠나자"}, str(cell_id))
 
 
@@ -311,6 +329,10 @@ def _dump_lines(path: Path) -> list[dict[str, Any]]:
             {"hasRoomId": record["roomId"] is not None, "turn": record["turn"], "chatModel": record["chatModel"]}
         )
     return lines
+
+
+def test_recorded_cases_are_exactly_the_parametrized_cases() -> None:
+    _assert_recorded_cases(FIXTURE_PATH, _CASES)
 
 
 @pytest.mark.parametrize("case", list(_CASES))
