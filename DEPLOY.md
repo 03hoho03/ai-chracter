@@ -1736,7 +1736,10 @@ sudo bash ops/swap-api.sh
 ```
 
 공개 상태·화 공개본·심사 기록과 구매(소장) 기록은 남아 다시 켜면 그대로 돌아온다. 꺼진 동안 화 구매
-(`POST /webnovels/{id}/chapters/{id}/purchase`)도 403 이다. 줄을 지웠으니 키 개수 문장을 다시 센다.
+(`POST /webnovels/{id}/chapters/{id}/purchase`)도 403 이고, 독자 라우트(`/webnovels` 목록·홈 노벨·좋아요·읽은 자리)는 404
+`NOVEL_PUBLIC_DISABLED` 다. 작품 정보·화 읽기는 그 소설을 소장한 회원에게 410 `NOVEL_READING_ENDED`(`reason: "service_off"`),
+나머지에게 404 다. 화면은 인증 없는 `GET /clover/pricing` 의 `novelPublicEnabled` 로 노벨 탭을 숨긴다. 줄을 지웠으니 키 개수
+문장을 다시 센다.
 
 **구매·삭제 환급** — 화 가격(30)과 소설마다 무료인 앞 화 수(5)는 env 가 아니라 `core/clover.py` 의 상수다(바꾸려면 배포).
 게시자가 산 화가 든 소설·마지막 묶음을 지우면 같은 트랜잭션에서 구매자에게 환급한다(원장 `novel_read_refund`, 이미 결제

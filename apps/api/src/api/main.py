@@ -49,6 +49,7 @@ from api.moderation.router import router as moderation_router
 from api.notice.router import router as notice_router
 from api.novel_public.router import owner_router as novel_public_owner_router
 from api.novel_public.purchases import reader_router as novel_public_reader_router
+from api.novel_public.reading import reading_router as novel_public_reading_router
 from api.novel_public.router import router as novel_public_router
 from api.novelize.router import (
     owner_router as novelize_owner_router,
@@ -163,6 +164,7 @@ app.include_router(novelize_owner_router)
 app.include_router(novel_public_router)
 app.include_router(novel_public_owner_router)
 app.include_router(novel_public_reader_router)
+app.include_router(novel_public_reading_router)
 app.include_router(comments_router)
 app.include_router(comments_me_router)
 app.include_router(comment_reports_router)

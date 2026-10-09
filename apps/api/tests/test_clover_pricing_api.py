@@ -60,9 +60,11 @@ async def test_response_follows_products_and_cost_constants(
 
     assert resp.status_code == 200
     body = resp.json()
-    # 결제 여부·결제수단은 결제 테스트(`test_payments_api.py`)가, 모델별·소설 단가와 무료 대화 수는 아래 테스트가 본다.
+    # 결제 여부·결제수단은 결제 테스트(`test_payments_api.py`)가, 모델별·소설 단가와 무료 대화 수는 아래 테스트가, 노벨 켜짐
+    # 여부는 노벨 독자 테스트(`test_webnovel_reading.py`)가 본다.
     for key in (
         "paymentsEnabled",
+        "novelPublicEnabled",
         "payMethods",
         "identityGateEnabled",
         "models",

@@ -1,4 +1,4 @@
-"""노벨 구매와 게시자 삭제가 실제로 겹칠 때(독립 커넥션).
+"""노벨 구매와 게시자 삭제, 좋아요가 실제로 겹칠 때(독립 커넥션).
 
 같은 커넥션의 테스트로는 두 요청이 순서대로 돌아 경쟁이 드러나지 않는다. 그래서 상대 트랜잭션이 잠금을 쥔 채 커밋하지
 않은 상태에서 라우트 함수를 띄우고, 그 라우트가 정말 막혀 있는 것(`_assert_blocked`)을 먼저 확인한 뒤 상대를 놓는다. 막힘
@@ -11,15 +11,16 @@ from dataclasses import dataclass
 
 import pytest_asyncio
 from fastapi import HTTPException
-from sqlalchemy import delete, or_, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from api.db.models import User
 from api.db.models.clover import CloverLedger, CloverLot, CloverSpendAllocation, CloverSpendRefund, CloverSpendUsage
 from api.db.models.content import Content
 from api.db.models.moderation import Notification
-from api.db.models.novel import Novel, NovelPublication, NovelPurchase
+from api.db.models.novel import Novel, NovelLike, NovelPublication, NovelPurchase
 from api.novel_public.purchases import NovelChapterPurchaseResponse, purchase_chapter
+from api.novel_public.reading import like_webnovel
 from api.novelize import router as novelize_router
 from api.novelize.deletion import delete_novels
 from factories import PublicNovel, _assert_blocked, _make_public_novel, _make_user_with_clover_lot
@@ -203,3 +204,41 @@ async def test_the_same_buyer_buying_one_chapter_twice_at_once_pays_once(
 
     assert result.charged == 0
     assert await _balance(independent_factory, buyer) == 70
+
+
+async def test_the_same_member_liking_twice_at_once_counts_once(
+    independent_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """같은 사람의 좋아요 둘이 겹친다. 공개 행을 붙든 트랜잭션이 앞의 좋아요를 "행은 넣었고 수는 아직" 자리에 세워 두면, 뒤의
+    좋아요는 그 넣은 행의 커밋을 기다린다(둘 다 막힘을 먼저 확인). 놓으면 뒤의 것은 충돌로 아무것도 넣지 않아 수를 올리지
+    않는다 — 행 수와 좋아요 수가 함께 1 이다."""
+    novel = await _publish(independent_factory, await _member(independent_factory))
+    member = await _member(independent_factory)
+
+    def like_in_own_session() -> "asyncio.Task[None]":
+        async def run() -> None:
+            async with independent_factory() as s:
+                await like_webnovel(novel_id=novel.novel_id, user_id=member, db=s)
+
+        return asyncio.create_task(run())
+
+    holder = independent_factory()
+    try:
+        await holder.execute(
+            select(NovelPublication.novel_id).where(NovelPublication.novel_id == novel.novel_id).with_for_update()
+        )
+        first = like_in_own_session()
+        await _assert_blocked(first)
+        second = like_in_own_session()
+        await _assert_blocked(second)
+        await holder.rollback()
+        await asyncio.wait_for(asyncio.gather(first, second), 10)
+    finally:
+        await holder.close()
+
+    async with independent_factory() as s:
+        likes = await s.scalar(select(func.count()).select_from(NovelLike).where(NovelLike.novel_id == novel.novel_id))
+        count = await s.scalar(
+            select(NovelPublication.like_count).where(NovelPublication.novel_id == novel.novel_id)
+        )
+    assert (likes, count) == (1, 1)

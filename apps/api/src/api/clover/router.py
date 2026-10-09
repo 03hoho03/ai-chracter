@@ -54,6 +54,7 @@ from api.core.clover import (
     is_same_kst_day,
     kst_today,
 )
+from api.core.config import settings
 from api.core.identity_gate import identity_verification_required, is_identity_gated
 from api.db.models.auth import User
 from api.db.models.clover import CloverLedger, CloverLot
@@ -215,6 +216,7 @@ async def get_clover_pricing() -> CloverPricingResponse:
         daily_free_chat_turns=rate_limit_gate.CHAT_DAILY_LIMIT,
         novel_read_cost=clover.NOVEL_READ_COST,
         novel_free_chapter_count=clover.NOVEL_FREE_CHAPTER_COUNT,
+        novel_public_enabled=settings.novel_public_enabled,
         payments_enabled=payments_active(),
         identity_gate_enabled=identity_gate_active(),
         pay_methods=[
