@@ -10,7 +10,7 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useFormContext, useWatch } from "react-hook-form";
 
 import {
-  CharacterCount,
+  FieldCharacterCount,
   CollapsibleItemCard,
   ItemDragHandle,
   ItemRemoveButton,
@@ -190,10 +190,10 @@ export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onR
             aria-invalid={!!noteErrors?.name}
             {...nameField.registration}
           />
-          <CharacterCount
+          <FieldCharacterCount
             id={ids.nameCount}
             help="목록에서만 보여요. AI에게는 보내지 않아요."
-            count={nameField.count}
+            name={nameField.registration.name}
             max={MAX_KEYWORD_NOTE_NAME_LENGTH}
             isTruncated={nameField.isTruncated}
           />
@@ -214,9 +214,9 @@ export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onR
             aria-describedby={noteErrors?.content ? `${ids.contentCount} ${ids.contentError}` : ids.contentCount}
             {...contentField.registration}
           />
-          <CharacterCount
+          <FieldCharacterCount
             id={ids.contentCount}
-            count={contentField.count}
+            name={contentField.registration.name}
             max={MAX_KEYWORD_NOTE_CONTENT_LENGTH}
             isTruncated={contentField.isTruncated}
           />

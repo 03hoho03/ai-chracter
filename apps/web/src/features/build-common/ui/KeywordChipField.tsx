@@ -52,8 +52,8 @@ const CHIP_STYLE_CLASS: Record<ChipStyle, string> = {
 
 /**
  * 칩 입력 — 입력칸 + 추가 + 칩 목록 + 개수. 키워드 노트의 트리거·금지 키워드와 두 빌더의 해시태그가 같은 규칙(개수
- * 상한, 항목 글자 수 상한, 대소문자만 다른 중복 거절)이라 함께 쓴다. 넣을 때 검사하는 칸이라 글자를 자르지 않고,
- * 상한을 넘긴 글은 카운터가 오류 색으로 보이고 넣을 때 이유와 함께 거절한다.
+ * 상한, 항목 글자 수 상한, 대소문자만 다른 중복 거절)이라 함께 쓴다. 넣을 때 검사하는 칸이다(카운터 규칙은 `DESIGN.md`
+ * Inputs / Fields 절의 Character count).
  */
 export function KeywordChipField({
   idPrefix,

@@ -13,7 +13,7 @@ import {
 } from "@/entities/content";
 import type { CharacterBuilderFormValues, CharacterCollapsibleList } from "@/features/build-character";
 import {
-  CharacterCount,
+  FieldCharacterCount,
   CollapsibleItemCard,
   DefaultUserNameField,
   focusNeighborToggle,
@@ -53,6 +53,8 @@ export function IntroTab() {
   // 대화에 새 오류 묶음을 내면 그때 한 번 스위치를 켠다. 오류가 남은 채 사용자가 다시 끄는 것은 막지 않는다 — 오류 객체가
   // 새로 바뀔 때만 켠다. 다른 탭에서 발행해 이 탭으로 넘어올 때는 탭이 다시 마운트되며 항목이 있으면 켜진 채 시작한다.
   const exampleDialogueErrors = errors.intro?.exampleDialogues;
+  // 목록 자체에 걸린 오류(개수 상한). 배열 자리 오류는 `.message` 와 `.root.message` 로 갈릴 수 있어 둘 다 읽는다.
+  const exampleDialogueListError = exampleDialogueErrors?.message ?? exampleDialogueErrors?.root?.message;
   const [seenExampleDialogueErrors, setSeenExampleDialogueErrors] = useState(exampleDialogueErrors);
   if (exampleDialogueErrors !== seenExampleDialogueErrors) {
     setSeenExampleDialogueErrors(exampleDialogueErrors);
@@ -88,7 +90,12 @@ export function IntroTab() {
           aria-describedby={errors.intro?.firstMessage ? "character-intro-first-message-count character-intro-first-message-error" : "character-intro-first-message-count"}
           {...firstMessage.registration}
         />
-        <CharacterCount id="character-intro-first-message-count" count={firstMessage.count} max={MAX_INTRO_LENGTH} isTruncated={firstMessage.isTruncated} />
+        <FieldCharacterCount
+          id="character-intro-first-message-count"
+          name={firstMessage.registration.name}
+          max={MAX_INTRO_LENGTH}
+          isTruncated={firstMessage.isTruncated}
+        />
         <CharacterMacroNotice name="intro.firstMessage" />
         {errors.intro?.firstMessage && (
           <p id="character-intro-first-message-error" role="alert" className="text-xs text-destructive-text">
@@ -142,6 +149,11 @@ export function IntroTab() {
               예시 대화는 최대 {MAX_EXAMPLE_DIALOGUES}개예요. 더 넣으려면 하나를 지워 주세요.
             </p>
           )}
+          {!!exampleDialogueListError && (
+            <p role="alert" className="text-xs break-keep text-destructive-text">
+              {exampleDialogueListError}
+            </p>
+          )}
         </div>
       )}
 
@@ -154,9 +166,9 @@ export function IntroTab() {
           aria-describedby="character-intro-play-guide-count"
           {...playGuide.registration}
         />
-        <CharacterCount
+        <FieldCharacterCount
           id="character-intro-play-guide-count"
-          count={playGuide.count}
+          name={playGuide.registration.name}
           max={MAX_PLAY_GUIDE_LENGTH}
           isTruncated={playGuide.isTruncated}
         />
@@ -213,9 +225,9 @@ function ExampleDialogueItem({ index, onRemove }: ExampleDialogueItemProps) {
           aria-describedby={userLineError ? `${userLineCountId} ${userLineErrorId}` : userLineCountId}
           {...userLine.registration}
         />
-        <CharacterCount
+        <FieldCharacterCount
           id={userLineCountId}
-          count={userLine.count}
+          name={userLine.registration.name}
           max={MAX_EXAMPLE_DIALOGUE_LINE_LENGTH}
           isTruncated={userLine.isTruncated}
         />
@@ -234,9 +246,9 @@ function ExampleDialogueItem({ index, onRemove }: ExampleDialogueItemProps) {
           aria-describedby={characterLineError ? `${characterLineCountId} ${characterLineErrorId}` : characterLineCountId}
           {...characterLine.registration}
         />
-        <CharacterCount
+        <FieldCharacterCount
           id={characterLineCountId}
-          count={characterLine.count}
+          name={characterLine.registration.name}
           max={MAX_EXAMPLE_DIALOGUE_LINE_LENGTH}
           isTruncated={characterLine.isTruncated}
         />

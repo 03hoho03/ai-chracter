@@ -2,10 +2,13 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { ImagePlus } from "lucide-react";
 import type { RefObject } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
+import { toast } from "sonner";
 
 import { toMediaNameTag } from "@/entities/media-book";
 import { insertMediaTag, type MediaTagFieldPath, type StoryBuilderFormValues } from "@/features/build-story";
 import { MediaTagPickerModal, type MediaTagPickerGroup } from "@/features/edit-media-book";
+import { countCharacters } from "@/shared/lib/text/characterCount";
+import { koreanParticle } from "@/shared/lib/text/koreanParticle";
 
 import { useMediaBookThumbnails } from "../model/useMediaBookThumbnails";
 
@@ -14,13 +17,15 @@ type MediaTagInsertButtonProps = {
   /** 어느 입력칸의 버튼인지 스크린리더가 가를 이름(예: "프롤로그"). 한 화면에 이 버튼이 여럿이다. */
   fieldLabel: string;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
+  /** 칸의 글자 수 상한(코드 포인트). 표기를 넣으면 넘는 경우 넣지 않고 알린다 — 이 길은 입력칸의 자르기를 거치지 않는다. */
+  maxLength?: number;
 };
 
 /**
  * 태그가 그림이 되는 글 옆의 "이미지 넣기". 미디어 북에서 칸을 고르면 입력창의 커서 자리에 그 칸의 이름 형태
  * 태그를 넣는다. 입력창은 `register` 로 묶여 있어 `setValue` 가 화면 값과 자동저장을 함께 움직인다.
  */
-export function MediaTagInsertButton({ name, fieldLabel, textareaRef }: MediaTagInsertButtonProps) {
+export function MediaTagInsertButton({ name, fieldLabel, textareaRef, maxLength }: MediaTagInsertButtonProps) {
   const { control, getValues, setValue } = useFormContext<StoryBuilderFormValues>();
   const mediaBook = useWatch({ control, name: "mediaBook" });
   const thumbnails = useMediaBookThumbnails();
@@ -37,6 +42,11 @@ export function MediaTagInsertButton({ name, fieldLabel, textareaRef }: MediaTag
     const picked = await MediaTagPickerModal.call({ groups: toPickerGroups(mediaBook, thumbnails.resolveUrl) });
     if (!picked) return;
     const next = insertMediaTag(selection, toMediaNameTag(picked.personName, picked.sceneName));
+    if (maxLength !== undefined && countCharacters(next.text) > maxLength) {
+      toast(`${fieldLabel}${koreanParticle(fieldLabel, "은/는")} ${maxLength}자까지라 이미지 표기를 넣지 않았어요. 글을 줄인 뒤 다시 넣어 주세요.`);
+      requestAnimationFrame(() => textarea?.focus());
+      return;
+    }
     setValue(name, next.text, { shouldDirty: true });
     requestAnimationFrame(() => {
       textarea?.focus();

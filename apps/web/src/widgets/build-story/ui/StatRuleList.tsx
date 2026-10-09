@@ -16,7 +16,7 @@ import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { useEffect, useId, useRef, useState, type Ref } from "react";
 import { Controller, useFieldArray, useFormContext } from "react-hook-form";
 
-import { CharacterCount, ItemDragHandle, ItemRemoveButton, useLimitedTextField } from "@/features/build-common";
+import { FieldCharacterCount, ItemDragHandle, ItemRemoveButton, useLimitedTextField } from "@/features/build-common";
 import {
   dragMoveIndices,
   FieldLabelText,
@@ -308,9 +308,9 @@ function StatRuleRow({ sortableId, ruleId, rulePath, position, range, onRemove, 
                 .join(" ")}
               {...conditionField.registration}
             />
-            <CharacterCount
+            <FieldCharacterCount
               id={ids.conditionCount}
-              count={conditionField.count}
+              name={conditionField.registration.name}
               max={MAX_STAT_RULE_CONDITION_LENGTH}
               isTruncated={conditionField.isTruncated}
             />

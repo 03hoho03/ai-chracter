@@ -8,7 +8,7 @@ import {
   toThumbnailAspect,
   toThumbnailAspectRatio,
 } from "@/entities/content";
-import { CharacterCount, useLimitedTextField } from "@/features/build-common";
+import { FieldCharacterCount, useLimitedTextField } from "@/features/build-common";
 import { FieldLabelText, type StoryBuilderFormValues } from "@/features/build-story";
 import { ImageCropModal } from "@/features/crop-image";
 import { GeneratedImageField } from "@/features/select-generated-image";
@@ -76,7 +76,12 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
           aria-describedby={errors.profile?.name ? "story-profile-name-count story-profile-name-error" : "story-profile-name-count"}
           {...name.registration}
         />
-        <CharacterCount id="story-profile-name-count" count={name.count} max={MAX_NAME_LENGTH} isTruncated={name.isTruncated} />
+        <FieldCharacterCount
+          id="story-profile-name-count"
+          name={name.registration.name}
+          max={MAX_NAME_LENGTH}
+          isTruncated={name.isTruncated}
+        />
         {errors.profile?.name && (
           <p id="story-profile-name-error" role="alert" className="text-xs text-destructive-text">
             {errors.profile.name.message}
@@ -93,7 +98,12 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
           aria-describedby={errors.profile?.oneLiner ? "story-profile-oneliner-count story-profile-oneliner-error" : "story-profile-oneliner-count"}
           {...oneLiner.registration}
         />
-        <CharacterCount id="story-profile-oneliner-count" count={oneLiner.count} max={MAX_ONE_LINER_LENGTH} isTruncated={oneLiner.isTruncated} />
+        <FieldCharacterCount
+          id="story-profile-oneliner-count"
+          name={oneLiner.registration.name}
+          max={MAX_ONE_LINER_LENGTH}
+          isTruncated={oneLiner.isTruncated}
+        />
         <MediaTagOutsideNotice name="profile.oneLiner" />
         <StoryMacroNotice name="profile.oneLiner" />
         {errors.profile?.oneLiner && (

@@ -15,7 +15,7 @@ import { Controller, useFormContext } from "react-hook-form";
 import { MAX_DESCRIPTION_LENGTH, NovelPermissionPicker, useGenreListQuery } from "@/entities/content";
 import { useCreatorPayoutRate } from "@/entities/creator-payout";
 import { hasEnabledFeature, useSessionQuery } from "@/entities/session";
-import { CharacterCount, HashtagField, useLimitedTextField } from "@/features/build-common";
+import { FieldCharacterCount, HashtagField, useLimitedTextField } from "@/features/build-common";
 import {
   FieldLabelText,
   TARGET_LABELS,
@@ -52,7 +52,12 @@ export function RegistrationTab() {
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between gap-2">
           <Label htmlFor="story-registration-description"><FieldLabelText field="registration.description" /></Label>
-          <MediaTagInsertButton name="registration.description" fieldLabel="등록 설명" textareaRef={descriptionRef} />
+          <MediaTagInsertButton
+            name="registration.description"
+            fieldLabel="등록 설명"
+            textareaRef={descriptionRef}
+            maxLength={MAX_DESCRIPTION_LENGTH}
+          />
         </div>
         <Textarea
           id="story-registration-description"
@@ -70,9 +75,9 @@ export function RegistrationTab() {
             descriptionRef.current = element;
           }}
         />
-        <CharacterCount
+        <FieldCharacterCount
           id="story-registration-description-count"
-          count={description.count}
+          name={description.registration.name}
           max={MAX_DESCRIPTION_LENGTH}
           isTruncated={description.isTruncated}
         />

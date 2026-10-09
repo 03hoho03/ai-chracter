@@ -4,7 +4,7 @@ import { useFormContext } from "react-hook-form";
 
 import { MAX_CHARACTER_PROMPT_LENGTH } from "@/entities/content";
 import type { CharacterBuilderFormValues } from "@/features/build-character";
-import { CharacterCount, useLimitedTextField } from "@/features/build-common";
+import { FieldCharacterCount, useLimitedTextField } from "@/features/build-common";
 import { RequiredText } from "@/shared/ui/RequiredText";
 
 import { CharacterMacroNotice } from "./CharacterMacroNotice";
@@ -33,7 +33,12 @@ export function PromptTab() {
           aria-describedby={errors.prompt?.characterPrompt ? "character-prompt-count character-prompt-error" : "character-prompt-count"}
           {...characterPrompt.registration}
         />
-        <CharacterCount id="character-prompt-count" count={characterPrompt.count} max={MAX_CHARACTER_PROMPT_LENGTH} isTruncated={characterPrompt.isTruncated} />
+        <FieldCharacterCount
+          id="character-prompt-count"
+          name={characterPrompt.registration.name}
+          max={MAX_CHARACTER_PROMPT_LENGTH}
+          isTruncated={characterPrompt.isTruncated}
+        />
         <CharacterMacroNotice name="prompt.characterPrompt" />
         {errors.prompt?.characterPrompt && (
           <p id="character-prompt-error" role="alert" className="text-xs text-destructive-text">

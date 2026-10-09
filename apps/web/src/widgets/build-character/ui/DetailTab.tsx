@@ -26,7 +26,7 @@ import {
   type Target,
   type Visibility,
 } from "@/features/build-character";
-import { CharacterCount, HashtagField, useLimitedTextField } from "@/features/build-common";
+import { FieldCharacterCount, HashtagField, useLimitedTextField } from "@/features/build-common";
 import { RequiredText } from "@/shared/ui/RequiredText";
 
 import { CharacterMacroNotice } from "./CharacterMacroNotice";
@@ -75,9 +75,9 @@ export function DetailTab() {
           }
           {...description.registration}
         />
-        <CharacterCount
+        <FieldCharacterCount
           id="character-detail-description-count"
-          count={description.count}
+          name={description.registration.name}
           max={MAX_DESCRIPTION_LENGTH}
           isTruncated={description.isTruncated}
         />

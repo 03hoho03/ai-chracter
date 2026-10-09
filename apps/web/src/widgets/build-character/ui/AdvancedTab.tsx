@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import { MAX_SITUATIONAL_IMAGE_TRIGGER_LENGTH, registerSituationalImage } from "@/entities/content";
 import type { CharacterBuilderFormValues, CharacterCollapsibleList } from "@/features/build-character";
 import {
-  CharacterCount,
+  FieldCharacterCount,
   CollapsibleItemCard,
   focusNeighborToggle,
   ItemDragHandle,
@@ -255,9 +255,9 @@ function SituationalImageRow({
             }
             {...situation.registration}
           />
-          <CharacterCount
+          <FieldCharacterCount
             id={situationDescriptionCountId}
-            count={situation.count}
+            name={situation.registration.name}
             max={MAX_SITUATIONAL_IMAGE_TRIGGER_LENGTH}
             isTruncated={situation.isTruncated}
           />

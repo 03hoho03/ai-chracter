@@ -8,7 +8,7 @@ import { Camera, ChevronLeft, ChevronRight, Copy, ImageOff, Images, Loader2, X }
 import { useId, useState, type ChangeEvent } from "react";
 
 import { toMediaNameTag } from "@/entities/media-book";
-import { CharacterCount } from "@/features/build-common";
+import { CharacterCount, clampFieldAtCaret, isComposingChange } from "@/features/build-common";
 import {
   FieldLabelText,
   findCell,
@@ -25,7 +25,7 @@ import {
 } from "@/features/build-story";
 import { MediaBookConfirmModal } from "@/features/edit-media-book";
 import { GeneratedImagePickerModal } from "@/features/select-generated-image";
-import { clampCharacters, countCharacters } from "@/shared/lib/text/characterCount";
+import { countCharacters } from "@/shared/lib/text/characterCount";
 import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
 
 import { toCellKey, type MediaBookPosition } from "./MediaBookGrid";
@@ -299,9 +299,16 @@ function FilledCellFields({ cell, imageButtonsProps, onPatch, onClear }: FilledC
           value={cell.situationDescription}
           aria-describedby={`${fieldId}-situation-help`}
           onChange={(event) => {
-            const clamped = clampCharacters(event.target.value, MAX_MEDIA_BOOK_SITUATION_LENGTH);
-            setTruncatedField(clamped.isTruncated ? "situation" : undefined);
-            onPatch({ situationDescription: clamped.value });
+            if (!isComposingChange(event)) {
+              const isTruncated = clampFieldAtCaret(event.target, MAX_MEDIA_BOOK_SITUATION_LENGTH);
+              setTruncatedField(isTruncated ? "situation" : undefined);
+            }
+            onPatch({ situationDescription: event.target.value });
+          }}
+          onCompositionEnd={(event) => {
+            if (!clampFieldAtCaret(event.currentTarget, MAX_MEDIA_BOOK_SITUATION_LENGTH)) return;
+            setTruncatedField("situation");
+            onPatch({ situationDescription: event.currentTarget.value });
           }}
         />
         <CharacterCount
@@ -321,9 +328,16 @@ function FilledCellFields({ cell, imageButtonsProps, onPatch, onClear }: FilledC
           value={cell.unlockHint}
           aria-describedby={`${fieldId}-hint-help`}
           onChange={(event) => {
-            const clamped = clampCharacters(event.target.value, MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH);
-            setTruncatedField(clamped.isTruncated ? "hint" : undefined);
-            onPatch({ unlockHint: clamped.value });
+            if (!isComposingChange(event)) {
+              const isTruncated = clampFieldAtCaret(event.target, MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH);
+              setTruncatedField(isTruncated ? "hint" : undefined);
+            }
+            onPatch({ unlockHint: event.target.value });
+          }}
+          onCompositionEnd={(event) => {
+            if (!clampFieldAtCaret(event.currentTarget, MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH)) return;
+            setTruncatedField("hint");
+            onPatch({ unlockHint: event.currentTarget.value });
           }}
         />
         <CharacterCount

@@ -5,7 +5,7 @@ import { useId } from "react";
 import { useFormContext } from "react-hook-form";
 
 import {
-  CharacterCount,
+  FieldCharacterCount,
   CollapsibleItemCard,
   ItemRemoveButton,
   itemOpenKey,
@@ -110,9 +110,9 @@ export function SituationNoteCard({ startingSetupIndex, noteIndex, note, stats, 
           aria-describedby={noteErrors?.name ? `${ids.nameCount} ${ids.nameError}` : ids.nameCount}
           {...nameField.registration}
         />
-        <CharacterCount
+        <FieldCharacterCount
           id={ids.nameCount}
-          count={nameField.count}
+          name={nameField.registration.name}
           max={MAX_SITUATION_NOTE_NAME_LENGTH}
           isTruncated={nameField.isTruncated}
         />
@@ -164,10 +164,10 @@ export function SituationNoteCard({ startingSetupIndex, noteIndex, note, stats, 
           aria-describedby={noteErrors?.content ? `${ids.contentCount} ${ids.contentError}` : ids.contentCount}
           {...contentField.registration}
         />
-        <CharacterCount
+        <FieldCharacterCount
           id={ids.contentCount}
           help="조건이 맞는 턴에 ‘지금 이야기 속 사실’로 전해져요. ‘~해라’ 같은 지시 대신 사실로 적어 주세요."
-          count={contentField.count}
+          name={contentField.registration.name}
           max={MAX_SITUATION_NOTE_CONTENT_LENGTH}
           isTruncated={contentField.isTruncated}
         />

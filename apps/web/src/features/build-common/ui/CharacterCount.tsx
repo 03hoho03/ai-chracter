@@ -14,10 +14,9 @@ type CharacterCountProps = {
 };
 
 /**
- * 글자 수 상한이 있는 빌더 입력칸 바로 아래 줄 — 왼쪽은 도움말, 오른쪽은 `n/최대`. 상한에 닿으면 글자 수를 굵게
- * 올리고(오류가 아니라 꽉 찬 상태라 경고색을 쓰지 않는다), 상한을 넘은 값(확정할 때 검사하는 칸에 쓰는 중이거나
- * 다른 경로로 들어온 값)은 오류 글자색으로 보인다. 잘렸다는 알림 자리는 늘 있어야 스크린리더가 바뀐 글을 읽으므로
- * 비워 둔 채 둔다.
+ * 글자 수 상한이 있는 빌더 입력칸 바로 아래 줄 — 왼쪽은 도움말, 오른쪽은 `n/최대`. 상한에 닿을 때·넘을 때의 모양은
+ * `DESIGN.md` Inputs / Fields 절의 Character count 가 정한다. 잘렸다는 알림 자리는 늘 있어야 스크린리더가 바뀐 글을
+ * 읽으므로 비워 둔 채 둔다.
  */
 export function CharacterCount({ id, count, max, isTruncated = false, help }: CharacterCountProps) {
   return (

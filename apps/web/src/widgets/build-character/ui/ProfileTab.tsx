@@ -8,7 +8,7 @@ import {
   toThumbnailAspect,
   toThumbnailAspectRatio,
 } from "@/entities/content";
-import { CharacterCount, useLimitedTextField } from "@/features/build-common";
+import { FieldCharacterCount, useLimitedTextField } from "@/features/build-common";
 import type { CharacterBuilderFormValues } from "@/features/build-character";
 import { ImageCropModal } from "@/features/crop-image";
 import { GeneratedImageField } from "@/features/select-generated-image";
@@ -74,7 +74,12 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
           aria-describedby={errors.profile?.name ? "character-profile-name-count character-profile-name-error" : "character-profile-name-count"}
           {...name.registration}
         />
-        <CharacterCount id="character-profile-name-count" count={name.count} max={MAX_NAME_LENGTH} isTruncated={name.isTruncated} />
+        <FieldCharacterCount
+          id="character-profile-name-count"
+          name={name.registration.name}
+          max={MAX_NAME_LENGTH}
+          isTruncated={name.isTruncated}
+        />
         {errors.profile?.name && (
           <p id="character-profile-name-error" role="alert" className="text-xs text-destructive-text">
             {errors.profile.name.message}
@@ -91,7 +96,12 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
           aria-describedby={errors.profile?.oneLiner ? "character-profile-oneliner-count character-profile-oneliner-error" : "character-profile-oneliner-count"}
           {...oneLiner.registration}
         />
-        <CharacterCount id="character-profile-oneliner-count" count={oneLiner.count} max={MAX_ONE_LINER_LENGTH} isTruncated={oneLiner.isTruncated} />
+        <FieldCharacterCount
+          id="character-profile-oneliner-count"
+          name={oneLiner.registration.name}
+          max={MAX_ONE_LINER_LENGTH}
+          isTruncated={oneLiner.isTruncated}
+        />
         <CharacterMacroNotice name="profile.oneLiner" />
         {errors.profile?.oneLiner && (
           <p id="character-profile-oneliner-error" role="alert" className="text-xs text-destructive-text">
