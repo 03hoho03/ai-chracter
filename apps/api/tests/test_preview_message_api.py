@@ -809,7 +809,7 @@ async def test_send_preview_message_treats_rule_on_missing_stat_as_false_and_com
     )
 
     fake = _FakeLLMClient(tokens=["안녕"], structured_results=[StatRuleJudgmentResult(fired_rule_ids=[])])
-    with caplog.at_level(logging.WARNING, logger="api.chat.router"):
+    with caplog.at_level(logging.WARNING, logger="api.chat.turn_judgments"):
         events = await _send_preview(db_client, session_id, fake)
 
     assert [e["type"] for e in events] == ["token", "done"]
@@ -889,7 +889,7 @@ async def test_send_preview_message_judges_ending_with_valueless_priority_stat_a
         tokens=["안녕"],
         structured_results=[StatRuleJudgmentResult(fired_rule_ids=[]), EndingJudgmentResult(triggered=True)],
     )
-    with caplog.at_level(logging.WARNING, logger="api.chat.router"):
+    with caplog.at_level(logging.WARNING, logger="api.chat.turn_judgments"):
         events = await _send_preview(db_client, session_id, fake)
 
     assert [e["type"] for e in events] == ["token", "endingReached", "done"]

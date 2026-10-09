@@ -1,8 +1,9 @@
 """라우터 네임스페이스를 패치하는 테스트가 조용히 빗나가지 않게 고정한다.
 
-라우터와 `chat/turn_prompt.py`·`chat/room_stats.py` 는 같은 함수를 각자 `from ... import 이름` 으로 가져와
-부른다. 테스트가 `monkeypatch.setattr(chat_router, "이름", ...)` 로 감싸면 라우터에 남은 호출부만 바뀌고, 옮겨 간
-호출부(생성 프롬프트 조립·생성 세트 고르기·상황 노트 평가)는 원래 함수를 그대로 부른다. 라우터에서 이름이 아예
+라우터와 `chat/turn_prompt.py`·`chat/room_stats.py`·`chat/turn_judgments.py` 는 같은 함수를 각자
+`from ... import 이름` 으로 가져와 부른다. 테스트가 `monkeypatch.setattr(chat_router, "이름", ...)` 로 감싸면 라우터에
+남은 호출부만 바뀌고, 옮겨 간 호출부(생성 프롬프트 조립·생성 세트 고르기·상황 노트 평가·새 턴 판정)는 원래 함수를
+그대로 부른다. 라우터에서 이름이 아예
 사라졌다면 `AttributeError` 로 시끄럽게 깨지지만, 이름이 남아 있으면 패치가 성공하고 단언만 헛돈다.
 
 그래서 "라우터에 남아 있으면서 호출부 일부가 옮겨 간 이름"을 지키는 목록에 두고, 테스트 파일들을 `ast` 로 훑어
@@ -30,33 +31,83 @@ ROUTER_MODULE = "api.chat.router"
 GUARDED = frozenset(
     {
         "PromptNames",
-        "EndingRuleItem",
-        "EndingRuleGroupItem",
         "select",
         "and_",
         "pg_insert",
-        "load_room_stats",
         "format_persona",
         "preview_ending_rule_list_item",
         "get_cached_active_prompt_set",
         "set_cached_active_prompt_set",
         "load_active_prompt_set",
-        "load_current_summary",
-        "prompt_window",
-        "evaluate_rule_list",
+        # 새 턴 판정이 부르는 것. 판정 헬퍼는 재생성·미리보기가 라우터에서 이름으로 부르고, 나머지는 미리보기 판정이
+        # 라우터에서 함께 부른다.
+        "capture_dependency_failure",
+        "LLMCallContext",
+        "ChatStatChangeEvent",
+        "ChatEndingReachedEvent",
+        "MediaCellCandidate",
+        "prepare_stat_judgment",
+        "build_ending_judgment_prompt",
+        "build_image_judgment_prompt",
+        "media_cell_image_lines",
+        "is_ending_check_due",
+        "_llm_dependency_tag",
+        "_ending_rule_items",
+        "_await_stat_judgment",
+        "_endings_to_judge",
+        "_judge_media_cell",
+        "_judge_situational_image",
+        "_prepare_media_cell_judgment",
+        "_prepare_situational_image_judgment",
+        "_MediaCellJudgment",
     }
 )
-MOVED_CALLER_MODULES = ("turn_prompt.py", "room_stats.py")
+MOVED_CALLER_MODULES = ("turn_prompt.py", "room_stats.py", "turn_judgments.py")
 # 위 조건에 맞지만 지키지 않는 이름 → 이유.
-EXCLUDED = {
-    "dataclass": "클래스를 정의할 때 부르는 데코레이터라, 테스트가 패치할 때는 두 모듈 모두 이미 부른 뒤다.",
-}
+EXCLUDED: dict[str, str] = {}
+
+# `capture_dependency_failure` 를 라우터에 패치해 그 자리의 Bugsink 태그를 재는 테스트들의 공통 이유. 재는 흡수 자리가
+# 라우터에 남아 있어(생성·커밋 뒤 조회·쓰기 구간·재생성·미리보기 저장), 판정 모듈의 흡수 자리는 이 패치와 무관하다.
+_ROUTER_CAPTURE_SITE = "라우터에 남은 흡수 자리({site})의 Bugsink 태그를 잰다 — 판정 모듈의 흡수 자리는 재지 않는다."
 
 # `파일::함수`(클래스 안이면 `파일::클래스::함수`) → 라우터 쪽 패치가 맞는 이유.
 ALLOWLIST = {
     "test_chat_model_prompt_sets.py::test_gemini_room_does_not_read_any_model_set": (
         "판정용 Gemini 세트 의존성(`_active_prompt_set_dependency`)의 조회를 센다. 생성 세트 조회는 같은 테스트가 "
         "`turn_prompt` 를 함께 감싸서 센다."
+    ),
+    "test_chat_message_send_api.py::test_send_message_llm_error_emits_error_event_and_keeps_user_message": (
+        _ROUTER_CAPTURE_SITE.format(site="새 턴 생성 LLM 실패")
+    ),
+    "test_chat_message_send_api.py::test_send_message_presigned_url_failure_still_completes_the_turn_without_image": (
+        _ROUTER_CAPTURE_SITE.format(site="커밋 뒤 상황 이미지 URL 서명")
+    ),
+    "test_chat_message_send_api.py::test_send_message_asset_lookup_failure_still_completes_the_turn_without_image": (
+        _ROUTER_CAPTURE_SITE.format(site="커밋 뒤 상황 이미지 자산 조회")
+    ),
+    "test_chat_message_send_api.py::test_send_message_image_exposure_lookup_failure_still_completes_the_turn_without_image": (
+        _ROUTER_CAPTURE_SITE.format(site="쓰기 구간의 상황 이미지 노출 기록")
+    ),
+    "test_chat_message_send_api.py::test_send_message_image_exposure_lookup_real_sql_failure_is_isolated_by_savepoint": (
+        _ROUTER_CAPTURE_SITE.format(site="쓰기 구간의 상황 이미지 노출 기록")
+    ),
+    "test_chat_message_edit_regenerate_delete_api.py::test_regenerate_llm_error_keeps_original_message": (
+        _ROUTER_CAPTURE_SITE.format(site="재생성 생성 LLM 실패")
+    ),
+    "test_chat_message_edit_regenerate_delete_api.py::test_regenerate_image_matching_failure_replaces_message_without_image": (
+        _ROUTER_CAPTURE_SITE.format(site="재생성의 이미지 매칭 except — 판정 헬퍼는 올리기만 한다")
+    ),
+    "test_chat_message_edit_regenerate_delete_api.py::test_regenerate_presigned_url_failure_still_completes_the_turn_without_image": (
+        _ROUTER_CAPTURE_SITE.format(site="재생성 커밋 뒤 URL 서명")
+    ),
+    "test_preview_message_api.py::test_send_preview_message_redis_save_failure_still_completes_the_turn": (
+        _ROUTER_CAPTURE_SITE.format(site="미리보기 세션 저장")
+    ),
+    "test_preview_message_api.py::test_send_preview_message_serialization_failure_at_save_still_completes_the_turn": (
+        _ROUTER_CAPTURE_SITE.format(site="미리보기 세션 저장")
+    ),
+    "test_prompt_render_failure_api.py::test_send_message_with_broken_section_body_ends_the_stream_with_an_error_event": (
+        _ROUTER_CAPTURE_SITE.format(site="새 턴 생성 프롬프트 렌더 실패")
     ),
 }
 
@@ -132,7 +183,7 @@ def test_no_test_patches_a_router_name_whose_callers_partly_moved_out() -> None:
         if name in GUARDED and node_id not in ALLOWLIST
     )
     assert offending == [], (
-        "라우터에 패치해도 옮겨 간 호출부(turn_prompt·room_stats)에는 닿지 않는 이름이다. 그 모듈도 함께 패치하거나, "
+        "라우터에 패치해도 옮겨 간 호출부(turn_prompt·room_stats·turn_judgments)에는 닿지 않는 이름이다. 그 모듈도 함께 패치하거나, "
         "라우터 쪽 호출부만 바꾸는 것이 의도라면 허용 목록에 이유를 적어라: " + ", ".join(offending)
     )
 

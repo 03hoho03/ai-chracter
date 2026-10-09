@@ -15,7 +15,7 @@ import httpx2
 import pytest
 from pydantic import BaseModel
 
-from api.chat.router import _llm_dependency_tag
+from api.chat.turn_judgments import _llm_dependency_tag
 from api.core.config import settings
 from api.llm import bedrock as bedrock_module
 from api.llm.bedrock import BedrockLLMClient

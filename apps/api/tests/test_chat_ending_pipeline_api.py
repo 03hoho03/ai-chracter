@@ -383,7 +383,7 @@ async def test_send_message_treats_rule_on_missing_stat_as_false_and_completes_t
     fake = _FakeLLMClient(tokens=["안녕"], structured_results=[])
     _override_llm_client(fake)
     try:
-        with caplog.at_level(logging.WARNING, logger="api.chat.router"):
+        with caplog.at_level(logging.WARNING, logger="api.chat.turn_judgments"):
             resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "메시지"})
     finally:
         _clear_llm_override()

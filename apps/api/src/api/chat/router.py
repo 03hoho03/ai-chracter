@@ -3,10 +3,8 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncIterator, Sequence
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import TypeVar
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.sse import EventSourceResponse
@@ -20,36 +18,29 @@ from starlette.concurrency import run_in_threadpool
 
 from api.chat.chat_count import record_chat_participant
 from api.chat.ending_rules import (
-    EndingCandidate,
-    ending_judgment_order,
-    evaluate_rule_list,
     is_ending_check_due,
-    referenced_stat_ids,
 )
 from api.chat.memory_fold import SUMMARY_MAX_LENGTH, fold_memory
 from api.chat.memory_rewind import rewind_memory
-from api.chat.memory_window import CurrentSummary, load_current_summary, prompt_window, select_current_snapshot
+from api.chat.memory_window import select_current_snapshot
 from api.chat.preview_session import create_preview_session, get_preview_session, update_preview_session
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
-    ImageMatchJudgmentResult,
     MediaCellCandidate,
     PromptLane,
     PromptNames,
     PromptRenderError,
     PromptSetNotFoundError,
     StatJudgmentRequest,
-    StatRuleJudgmentResult,
     build_ending_judgment_prompt,
     build_image_judgment_prompt,
     load_active_prompt_set,
     media_cell_image_lines,
     prepare_stat_judgment,
-    situational_image_lines,
 )
 from api.chat.prompt_set_cache import get_cached_active_prompt_set, set_cached_active_prompt_set
 from api.chat.room_deletion import delete_chat_rooms
-from api.chat.room_stats import load_room_stats, seed_missing_room_stats
+from api.chat.room_stats import seed_missing_room_stats
 from api.chat.turn_lock import (
     RoomTurnLock,
     acquire_room_turn_lock,
@@ -62,6 +53,24 @@ from api.chat.turn_prompt import (
     format_persona,
     generation_prompt_set,
     preview_ending_rule_list_item,
+)
+from api.chat.turn_judgments import (
+    EndingJudgment,
+    JudgmentContext,
+    MediaCellJudgment,
+    SituationalImageJudgment,
+    StatJudgment,
+    TurnJudgmentResult,
+    _await_stat_judgment,
+    _ending_rule_items,
+    _endings_to_judge,
+    _judge_media_cell,
+    _judge_situational_image,
+    _llm_dependency_tag,
+    _MediaCellJudgment,
+    _no_judgment,
+    _prepare_media_cell_judgment,
+    _prepare_situational_image_judgment,
 )
 from api.chat.turn_settlement import TurnSettlement
 from api.chat.schemas import (
@@ -92,9 +101,6 @@ from api.chat.schemas import (
     ChatStreamEvent,
     ChatTokenEvent,
     EndingCollectionItem,
-    EndingRuleGroupItem,
-    EndingRuleItem,
-    EndingRuleListItem,
     EndingSnapshot,
     ImageArchiveItem,
     MyChatRoomListItem,
@@ -106,7 +112,6 @@ from api.chat.schemas import (
     StatDefSnapshot,
     StoryImageArchiveItem,
 )
-from api.chat.stats import apply_rule_judgment
 from api.content.access import detail_model_for, is_open_to, is_open_to_participant
 from api.content.author_macros import expand_author_macros, resolve_user_name
 from api.content.media_book import (
@@ -147,8 +152,6 @@ from api.db.models.persona import UserPersona
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import (
     Ending,
-    EndingRule,
-    EndingRuleGroup,
     MediaBookCell,
     MediaBookPerson,
     MediaBookScene,
@@ -166,7 +169,6 @@ from api.llm.client import (
     LLMClient,
     LLMClientError,
     LLMPolicyViolationError,
-    dependency_tag,
 )
 from api.llm.dependencies import get_llm_client
 from api.llm.model_access import effective_room_model, has_chat_premium_access
@@ -417,127 +419,6 @@ async def _seed_initial_stats(db: AsyncSession, room: ChatRoom, setup: StartingS
     await db.flush()
 
 
-def _ending_rule_item(rule: EndingRule) -> EndingRuleItem:
-    return EndingRuleItem(
-        id=rule.entity_id,
-        stat_id=rule.stat_def_entity_id,
-        operator=rule.operator,
-        threshold=float(rule.threshold),
-        next_op=rule.next_op,
-    )
-
-
-async def _ending_rule_items(db: AsyncSession, ending: Ending) -> list[EndingRuleListItem]:
-    """`ending_rules`(top-level)와 `ending_rule_groups`(1단계 중첩) 두 테이블을 하나의
-    `order` 공유 시퀀스로 합쳐 재구성한다 — 엔딩 규칙 평가 엔진(`evaluate_rule_list`)과
-    contentSnapshot 응답 양쪽이 이 결과를 그대로 재사용한다."""
-    top_rules = (await db.scalars(select(EndingRule).where(EndingRule.ending_id == ending.id))).all()
-    top_groups = (await db.scalars(select(EndingRuleGroup).where(EndingRuleGroup.ending_id == ending.id))).all()
-
-    items: list[tuple[int, EndingRuleListItem]] = [(rule.order, _ending_rule_item(rule)) for rule in top_rules]
-    for group in top_groups:
-        nested = (
-            await db.scalars(
-                select(EndingRule).where(EndingRule.rule_group_id == group.id).order_by(EndingRule.order)
-            )
-        ).all()
-        items.append(
-            (
-                group.order,
-                EndingRuleGroupItem(
-                    id=group.entity_id, rules=[_ending_rule_item(r) for r in nested], next_op=group.next_op
-                ),
-            )
-        )
-    items.sort(key=lambda pair: pair[0])
-    return [item for _, item in items]
-
-
-def _ending_rules_pass(
-    rule_items: list[EndingRuleListItem], stats: dict[str, float], *, log_subject: str, ending_id: uuid.UUID
-) -> bool:
-    """실채팅·미리보기 엔딩 루프가 판정 모델 앞에서 부른다. 값이 없는 스탯을 가리키는 항목은 `evaluate_rule_list`
-    가 거짓으로 보고, 여기서 어느 엔딩의 어느 스탯인지 경고로 남긴다 — 그 엔딩이 영영 안 열리는 이유를 찾을 단서다."""
-    missing_stat_ids = referenced_stat_ids(rule_items) - stats.keys()
-    if missing_stat_ids:
-        logger.warning(
-            "%s 엔딩 %s 의 규칙이 값이 없는 스탯 %s 을 가리킨다 — 그 항목은 거짓으로 본다",
-            log_subject,
-            ending_id,
-            ", ".join(sorted(missing_stat_ids)),
-        )
-    return evaluate_rule_list(rule_items, stats)
-
-
-_JudgedEndingT = TypeVar("_JudgedEndingT")
-
-
-def _endings_to_judge(
-    due: Sequence[tuple[_JudgedEndingT, uuid.UUID, uuid.UUID | None, list[EndingRuleListItem]]],
-    stats: dict[str, float],
-    *,
-    log_subject: str,
-) -> list[_JudgedEndingT]:
-    """판정 차례인 엔딩(목록 순서, `(엔딩, entity_id, 우선 스탯, 규칙)`)에서 이번 턴에 판정 모델을 부를 엔딩과 그 순서.
-    실채팅·미리보기 엔딩 루프가 함께 쓴다 — 호출부는 이 순서로 판정하다 처음 발동한 엔딩에서 멈추고, 끝까지 발동이
-    없으면 그 턴은 엔딩 없이 끝난다(우선 스탯 무리가 선 턴은 무리 1등까지만 판정한다).
-
-    규칙을 먼저 전부 본 뒤 순서를 정한다(`ending_judgment_order`). 규칙은 이번 턴 반영 뒤 스탯만으로 정해지고 발동은
-    규칙과 판정의 논리곱이라, 판정 모델 앞에서 미리 봐도 결과는 같고 규칙이 거짓인 엔딩의 호출만 준다. 우선 스탯 값이
-    없어 무리에서 빠진 엔딩은 경고로 남긴다 — 무리 비교에서 빠진 이유를 찾을 단서다."""
-    candidates = [
-        EndingCandidate(ending=ending, ending_id=ending_id, priority_stat_id=priority_stat_id)
-        for ending, ending_id, priority_stat_id, rule_items in due
-        if _ending_rules_pass(rule_items, stats, log_subject=log_subject, ending_id=ending_id)
-    ]
-    order = ending_judgment_order(candidates, stats)
-    for candidate in order.missing_priority:
-        logger.warning(
-            "%s 엔딩 %s 의 우선 스탯 %s 에 값이 없다 — 우선 스탯 비교에서 빼고 우선 스탯이 없는 엔딩처럼 다룬다",
-            log_subject,
-            candidate.ending_id,
-            candidate.priority_stat_id,
-        )
-    return order.endings
-
-
-@dataclass(frozen=True)
-class _DueEndings:
-    """이번 턴 엔딩 판정의 DB 읽기 결과 — 판정할 때가 된 엔딩(목록 순서)과 그 스탯 규칙, 판정 프롬프트에 실을
-    히스토리·요약."""
-
-    endings: list[tuple[Ending, list[EndingRuleListItem]]]
-    history: list[ChatMessage]
-    summary: str
-
-
-async def _load_due_endings(
-    db: AsyncSession, room: ChatRoom, setup: StartingSetup, history: list[ChatMessage], turn: int
-) -> _DueEndings:
-    """엔딩 판정에 필요한 것을 판정 LLM **앞에서** 읽는다 — 엔딩 판정은 엔딩마다 LLM 을 차례로 부르므로, 규칙을
-    루프 안에서 읽으면 DB 읽기와 LLM 대기가 번갈아 트랜잭션을 쥔 채 LLM 을 기다린다. 판정할 때가 아닌 엔딩의 규칙은
-    읽지 않는다(때는 이번 턴 번호와 엔딩의 게이트만으로 정해진다).
-
-    판정 윈도우를 켜면 요약이 덮은 원문을 빼고 그 자리에 현재 요약을 싣는다 — 엔딩은 지금까지의 대화 전체를 보는 누적
-    판단이라 원문만 줄이면 앞부분을 잃는다. 끄면 전체 히스토리 그대로다."""
-    endings = list(
-        (await db.scalars(select(Ending).where(Ending.starting_setup_id == setup.id).order_by(Ending.order))).all()
-    )
-    due = [
-        (ending, await _ending_rule_items(db, ending))
-        for ending in endings
-        if is_ending_check_due(turn, ending.turn_count_gate)
-    ]
-    ending_history = history
-    ending_summary = ""
-    if settings.memory_window_generation and settings.memory_window_ending_judgment:
-        current_summary = await load_current_summary(db, room.id)
-        if current_summary is not None:
-            ending_history = prompt_window(history, current_summary.cursor)
-            ending_summary = current_summary.text
-    return _DueEndings(endings=due, history=ending_history, summary=ending_summary)
-
-
 def _write_room_stat(
     db: AsyncSession, room_id: uuid.UUID, stat_rows: dict[str, ChatRoomStat], stat_id: str, value: float
 ) -> None:
@@ -610,70 +491,6 @@ async def _build_content_snapshot(
     )
 
 
-async def _load_situational_candidates(
-    db: AsyncSession, room: ChatRoom
-) -> tuple[list[SituationalImage], CurrentSummary | None]:
-    """캐릭터 상황별 이미지 판정의 DB 읽기 — 후보 이미지(order 순)와, 판정 윈도우를 켰으면 현재 요약.
-
-    조회 실패(`SQLAlchemyError`)는 여기서 흡수하고 후보 없음으로 돌려준다 — 호출부의
-    `except (LLMClientError, PromptRenderError)` 는 DB 예외를 잡지 않아 그대로 두면 제너레이터를 뚫는다.
-
-    `db.begin_nested()`(SAVEPOINT)로 국소화한다 — SAVEPOINT 없이 여기서 진짜 Postgres 실행 오류(`DBAPIError` 계열)가
-    나면 트랜잭션이 aborted 상태가 되고, 이 `except`가 예외를 삼켜도 같은 트랜잭션에서 이어지는 문장은 전부
-    `DBAPIError`로 부딪힌다 — 이 함수가 막으려는 파열이 한 자리 뒤로 미뤄질 뿐이다. 지금 호출부는 이 읽기 뒤에
-    판정 앞 반납 커밋을 하고(aborted 트랜잭션의 커밋은 오류 없이 롤백으로 끝난다) 쓰기는 새 트랜잭션에서 하지만,
-    가드가 그 커밋 위치에 기대지 않게 한다(테스트의 요청 세션은 바깥 트랜잭션에 묶여 그 커밋이 트랜잭션을 끝내지
-    못하므로 실제 SQL 실패 테스트가 이 SAVEPOINT 를 직접 잰다). SAVEPOINT로 감싸면 실패가 그 SAVEPOINT에만
-    갇히고 바깥 트랜잭션은 그대로 유효하게 남는다(SQLAlchemy 2.0.51 `AsyncSessionTransaction.__aexit__`이 예외 시
-    SAVEPOINT까지만 rollback하고 재전파함을 소스로 확인, 격리 재현으로 실측 검증도 마쳤다)."""
-    try:
-        async with db.begin_nested():
-            situational_images = list(
-                (
-                    await db.scalars(
-                        select(SituationalImage)
-                        .where(
-                            SituationalImage.content_version_id == room.content_version_id,
-                            # `PATCH /contents/{id}/draft`가
-                            # 이미지 파일 업로드 전에 image_asset_id=NULL인 행을 먼저 만들 수 있다
-                            # (character.py의 SituationalImage docstring). 지금은 발행 검증이 그런
-                            # 행을 거부하지만, 그 검증이 생기기 전에 발행된 버전에는 NULL 행이 남아
-                            # 있을 수 있다. 그런 후보를 판단 프롬프트에
-                            # 싣지 않는다 — LLM이 존재하지 않는 이미지를 매칭할 원인을 여기서 끊는다.
-                            SituationalImage.image_asset_id.is_not(None),
-                        )
-                        .order_by(SituationalImage.order)
-                    )
-                ).all()
-            )
-            current_summary = await _image_judgment_summary(db, room) if situational_images else None
-    except SQLAlchemyError as exc:
-        logger.warning("대화방 %s 상황이미지 후보 조회 실패 — 이번 턴은 매칭을 건너뛴다: %s", room.id, exc)
-        capture_dependency_failure(exc, dependency="db")
-        return [], None
-    return situational_images, current_summary
-
-
-async def _image_judgment_summary(db: AsyncSession, room: ChatRoom) -> CurrentSummary | None:
-    """판정 윈도우를 켜면 요약이 덮은 원문을 뺀다 — 장면 매칭은 최근 원문이면 충분해 요약은 싣지 않는다.
-    캐릭터 상황별 이미지와 스토리 칸 판정이 같은 스위치를 따른다. 후보가 있을 때만 부른다."""
-    if settings.memory_window_generation and settings.memory_window_image_judgment:
-        return await load_current_summary(db, room.id)
-    return None
-
-
-async def _judge_image_entity(
-    llm_client: LLMClient, prompt: str, candidate_ids: set[uuid.UUID], usage: LLMCallContext
-) -> uuid.UUID | None:
-    """그림 고르기 판정 LLM 호출 — DB 에 닿지 않는다(스토리 턴은 이것만 스탯 판정과 동시에 부른다). 응답
-    id 가 후보 안에 있을 때만 돌려준다: 응답은 문자열이라 형식이 틀리거나 후보 밖(노출 제외 칸 등)일 수 있다.
-    `LLMClientError` 는 그대로 올린다 — 흡수 범위는 호출부가 정한다."""
-    judgment = await llm_client.generate_structured(prompt, ImageMatchJudgmentResult, usage=usage)
-    return next(
-        (entity_id for entity_id in candidate_ids if str(entity_id) == judgment.matched_image_entity_id), None
-    )
-
-
 async def _record_character_image_exposure(db: AsyncSession, room: ChatRoom, image_entity_id: uuid.UUID) -> bool:
     """첫 노출만 기록한다(멱등). 실패는 SAVEPOINT 안에 가두고 `False` — 그 턴은 이미지를 붙이지 않는다(판정은
     성공했는데 노출 기록만 실패한 경우도 매칭을 절반만 살려두지 않는다)."""
@@ -699,169 +516,6 @@ async def _record_character_image_exposure(db: AsyncSession, room: ChatRoom, ima
         capture_dependency_failure(exc, dependency="db")
         return False
     return True
-
-
-@dataclass(frozen=True)
-class _SituationalImageJudgment:
-    """캐릭터 상황별 이미지 판정 한 번에 필요한 것 — DB 읽기·프롬프트 조립을 끝낸 상태라 LLM 호출만 남았다."""
-
-    prompt: str
-    candidates: list[SituationalImage]
-
-
-async def _prepare_situational_image_judgment(
-    db: AsyncSession,
-    room: ChatRoom,
-    *,
-    prompt_set: PromptSet,
-    prompt_sections: list[PromptSection],
-    history: list[ChatMessage],
-    user_message: str,
-    assistant_message: str,
-    names: PromptNames,
-) -> _SituationalImageJudgment | None:
-    """캐릭터 챗 상황별 이미지 판정의 DB 읽기와 프롬프트 조립. 등록된 이미지가 없으면 `None` — 판정 호출 자체를
-    생략한다. 판정(`_judge_situational_image`)과 노출 기록(`_record_character_image_exposure`)을 따로 두는 이유는 그
-    사이에 요청 세션을 커밋으로 반납하기 위해서다 — 판정 LLM 을 기다리는 동안 커넥션을 쥐지 않는다.
-
-    조회 실패는 `_load_situational_candidates` 가 흡수한다. 렌더 실패(`PromptRenderError`)는 호출부가 흡수한다."""
-    situational_images, current_summary = await _load_situational_candidates(db, room)
-    if not situational_images:
-        return None
-    if current_summary is not None:
-        history = prompt_window(history, current_summary.cursor)
-
-    prompt = build_image_judgment_prompt(
-        prompt_set=prompt_set,
-        sections=prompt_sections,
-        scope="character",
-        assistant_label=prompt_set.character_assistant_label,
-        image_lines=situational_image_lines(situational_images, names=names),
-        history=history,
-        user_message=user_message,
-        assistant_message=assistant_message,
-        names=names,
-    )
-    return _SituationalImageJudgment(prompt=prompt, candidates=situational_images)
-
-
-async def _judge_situational_image(
-    llm_client: LLMClient, judgment: _SituationalImageJudgment, room: ChatRoom
-) -> SituationalImage | None:
-    """상황별 이미지 판정 LLM 호출 — DB 에 닿지 않는다. 응답(matchedImageEntityId)은 항상 단수라 "동시 매칭 시
-    order 최상위만 발동"은 프롬프트 지시로 처리하고, 그 반환값이 실제 후보 목록에 있는지만 방어적으로 재확인한다.
-    매칭된 이미지 자체(entity_id 뿐 아니라 image_asset_id 도 필요, 인라인 렌더링 URL 조회용)를 돌려준다.
-    `LLMClientError` 는 그대로 올린다 — 흡수 범위는 호출부가 정한다."""
-    matched_id = await _judge_image_entity(
-        llm_client,
-        judgment.prompt,
-        {image.entity_id for image in judgment.candidates},
-        LLMCallContext(call_site="chat_situational_image", user_id=room.user_id, room_id=room.id),
-    )
-    return next((image for image in judgment.candidates if image.entity_id == matched_id), None)
-
-
-@dataclass(frozen=True)
-class _MediaCellJudgment:
-    """스토리 칸 판정 한 번에 필요한 것 — DB 읽기·프롬프트 조립을 끝낸 상태라 LLM 호출만 남았다."""
-
-    prompt: str
-    candidate_ids: set[uuid.UUID]
-
-
-async def _prepare_media_cell_judgment(
-    db: AsyncSession,
-    room: ChatRoom,
-    *,
-    prompt_set: PromptSet,
-    prompt_sections: list[PromptSection],
-    history: list[ChatMessage],
-    user_message: str,
-    assistant_message: str,
-    names: PromptNames,
-) -> _MediaCellJudgment | None:
-    """스토리 미디어 북 칸 판정의 DB 읽기와 프롬프트 조립. 후보는 방이 고정한 버전의 칸 중 대화 중 노출
-    제외가 아닌 것이고, 빌더 축 순서(인물 → 장면)로 싣는다. 후보가 없으면(미디어 북 없음·전부 노출 제외)
-    `None` — 판정을 부르지 않는다.
-
-    판정 쪽 실패는 전부 여기서 흡수하고 `None` 이다 — 조회 실패는 캐릭터 후보 조회와 같은 SAVEPOINT 규칙,
-    렌더 실패(배포 직후 캐시에 남은 옛 세트의 빈 프롬프트 포함)는 그 턴의 그림만 포기한다. 스탯·엔딩 판정은
-    이 실패와 무관하게 돈다."""
-    try:
-        async with db.begin_nested():
-            rows = (
-                await db.execute(
-                    select(
-                        MediaBookCell.entity_id,
-                        MediaBookPerson.name,
-                        MediaBookScene.name,
-                        MediaBookCell.situation_description,
-                    )
-                    .select_from(MediaBookCell)
-                    .join(
-                        MediaBookPerson,
-                        and_(
-                            MediaBookPerson.content_version_id == MediaBookCell.content_version_id,
-                            MediaBookPerson.entity_id == MediaBookCell.person_entity_id,
-                        ),
-                    )
-                    .join(
-                        MediaBookScene,
-                        and_(
-                            MediaBookScene.content_version_id == MediaBookCell.content_version_id,
-                            MediaBookScene.entity_id == MediaBookCell.scene_entity_id,
-                        ),
-                    )
-                    .where(
-                        MediaBookCell.content_version_id == room.content_version_id,
-                        MediaBookCell.exclude_from_chat.is_(False),
-                    )
-                    .order_by(MediaBookPerson.order, MediaBookScene.order)
-                )
-            ).tuples().all()
-            candidates = [
-                MediaCellCandidate(entity_id=cell_id, person=person, scene=scene, situation_description=situation)
-                for cell_id, person, scene, situation in rows
-            ]
-            current_summary = await _image_judgment_summary(db, room) if candidates else None
-    except SQLAlchemyError as exc:
-        logger.warning("대화방 %s 미디어 북 칸 후보 조회 실패 — 이번 턴은 칸 판정을 건너뛴다: %s", room.id, exc)
-        capture_dependency_failure(exc, dependency="db")
-        return None
-    if not candidates:
-        return None
-    if current_summary is not None:
-        history = prompt_window(history, current_summary.cursor)
-    try:
-        prompt = build_image_judgment_prompt(
-            prompt_set=prompt_set,
-            sections=prompt_sections,
-            scope="story",
-            assistant_label=prompt_set.story_assistant_label,
-            image_lines=media_cell_image_lines(candidates, names=names),
-            history=history,
-            user_message=user_message,
-            assistant_message=assistant_message,
-            names=names,
-        )
-    except PromptRenderError as exc:
-        logger.warning("대화방 %s 미디어 북 칸 판정 프롬프트 렌더 실패 — 이번 턴은 그림 없이 진행한다: %s", room.id, exc)
-        capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
-        return None
-    return _MediaCellJudgment(prompt=prompt, candidate_ids={cell.entity_id for cell in candidates})
-
-
-async def _judge_media_cell(
-    llm_client: LLMClient, judgment: _MediaCellJudgment, usage: LLMCallContext, *, log_subject: str
-) -> uuid.UUID | None:
-    """스토리 칸 판정 LLM 호출. 실패(`LLMClientError`)는 여기서 흡수해 그림만 포기한다 — 스탯 판정과 동시에
-    돌 때 한쪽 예외가 다른 쪽 결과를 지우지 않게 한다. DB 에 닿지 않는다."""
-    try:
-        return await _judge_image_entity(llm_client, judgment.prompt, judgment.candidate_ids, usage)
-    except LLMClientError as exc:
-        logger.warning("%s 미디어 북 칸 판정 실패 — 이번 턴은 그림 없이 진행한다: %s", log_subject, exc)
-        capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
-        return None
 
 
 async def _record_story_media_exposure(db: AsyncSession, room: ChatRoom, cell_entity_id: uuid.UUID) -> bool:
@@ -926,52 +580,6 @@ async def _sign_judged_cell(db: AsyncSession, room: ChatRoom, cell_entity_id: uu
         capture_dependency_failure(exc, dependency="s3")
         return None
     return images.get(cell_entity_id)
-
-
-async def _await_stat_judgment(
-    llm_client: LLMClient,
-    request: StatJudgmentRequest,
-    usage: LLMCallContext,
-    *,
-    log_subject: str,
-    current_stats: dict[str, float],
-    stat_defs: list[StatDef],
-) -> dict[str, float] | None:
-    """스탯 판정 LLM 호출과 반영. 반영한 스탯 값(키 → 값, 바뀌지 않은 스탯 포함)을 돌려준다. 판정 LLM 이 고른 규칙을
-    `apply_rule_judgment` 로 반영한다. 요청에 프롬프트가 없으면(`prepare_stat_judgment` 가 판정할 규칙이 없다고 정했다)
-    LLM 을 부르지 않고 발동 규칙 없이 반영한다 — 카운터는 굴러가고, 결과가 `None` 이 아니라 엔딩 판정도 이어진다.
-
-    LLM 실패는 흡수해 `None` — 칸 판정과 동시에 돌 때 이 실패가 칸 결과를 지우지 않게 한다. `None` 이면 호출부는 지금처럼
-    스탯·엔딩 판정을 함께 건너뛴다."""
-    if request.prompt is None:
-        return apply_rule_judgment(current_stats, [], request.rule_ids, stat_defs)
-    try:
-        rule_judgment = await llm_client.generate_structured(request.prompt, StatRuleJudgmentResult, usage=usage)
-        return apply_rule_judgment(current_stats, rule_judgment.fired_rule_ids, request.rule_ids, stat_defs)
-    except LLMClientError as exc:
-        logger.warning("%s 스탯 판정 실패 — 이번 턴의 스탯·엔딩 판정을 건너뛴다: %s", log_subject, exc)
-        capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
-        return None
-
-
-async def _load_stat_rules(db: AsyncSession, stat_defs: Sequence[StatDef]) -> dict[uuid.UUID, list[StatRule]]:
-    """스탯들의 규칙을 스탯 entity_id → 규칙 목록(`order` 순)으로 읽는다. 규칙은 스탯을 물리 FK 로 가리키므로 방이 고정한
-    버전의 스탯 행에 달린 규칙만 나온다."""
-    entity_id_by_stat_def_id = {stat_def.id: stat_def.entity_id for stat_def in stat_defs}
-    rules_by_stat_id: dict[uuid.UUID, list[StatRule]] = {}
-    for rule in (
-        await db.scalars(
-            select(StatRule)
-            .where(StatRule.stat_def_id.in_(list(entity_id_by_stat_def_id)))
-            .order_by(StatRule.order)
-        )
-    ).all():
-        rules_by_stat_id.setdefault(entity_id_by_stat_def_id[rule.stat_def_id], []).append(rule)
-    return rules_by_stat_id
-
-
-async def _no_judgment() -> None:
-    return None
 
 
 def _turn_message_response(
@@ -1373,16 +981,6 @@ def _policy_warning_message(persona_rendered: bool, note_rendered: bool) -> str:
     return _POLICY_WARNING_MESSAGE
 
 
-def _llm_dependency_tag(exc: LLMClientError | PromptRenderError | PromptSetNotFoundError) -> str:
-    """이 파일의 생성/판정 흡수 지점 8곳이 공유하는 승격 태그
-    분류다. `PromptRenderError`는 외부 의존이 아니라 우리 템플릿 결함이라 별도 태그로 갈라
-    묶어 본다. 생성 세트가 없는 것(`PromptSetNotFoundError`)도 같은 묶음이다 — 둘 다 어드민 문안 쪽을 고쳐야 한다. LLM 실패는 공급자와 쿼터 소진(429) 여부로 가른다(`llm/client.py` 의 `dependency_tag`) —
-    안 갈라 붙이면 승격된 이벤트가 행동 가능하지 않다."""
-    if isinstance(exc, (PromptRenderError, PromptSetNotFoundError)):
-        return "prompt_render"
-    return dependency_tag(exc)
-
-
 async def _lock_room_for_turn_write(db: AsyncSession, room: ChatRoom) -> uuid.UUID | None:
     """턴 쓰기 구간의 첫 문장 — 방 행을 잠그고 아직 있는지 본다. 없으면(LLM 을 기다리는 사이 사용자가 방을 지웠다)
     경고를 남기고 트랜잭션을 반납한 뒤 `None` 이다. 호출부는 아무것도 쓰지 않고 오류 이벤트로 끝낸다 — 환불하지
@@ -1557,14 +1155,21 @@ async def _stream_new_turn(
 
     assistant_content = "".join(chunks)
 
-    stat_change_events: list[ChatStatChangeEvent] = []
-    ending_reached_event: ChatEndingReachedEvent | None = None
-    matched_image: SituationalImage | None = None
-    judged_cell_id: uuid.UUID | None = None
-    # 판정 결과는 쓰기 구간에서 한꺼번에 쓴다 — 스탯 행(키 → 행), 바뀐 스탯 값, 도달한 엔딩.
-    stat_rows: dict[str, ChatRoomStat] = {}
-    stat_writes: dict[str, float] = {}
-    reached_ending: Ending | None = None
+    # 판정이 채우는 결과 — 쓰기 구간이 한꺼번에 쓴다(스탯 행·바뀐 스탯 값·도달한 엔딩·그림). `try` 앞에서 만들어, 판정
+    # 도중 예외가 나도 그때까지 채운 결과는 쓰기 구간으로 간다.
+    result = TurnJudgmentResult()
+    ctx = JudgmentContext(
+        db=db,
+        room=room,
+        prompt_set=prompt_set,
+        prompt_sections=prompt_sections,
+        history=history,
+        user_message=user_content,
+        assistant_message=assistant_content,
+        names=names,
+        turn=next_turn,
+        log_subject=f"대화방 {room.id}",
+    )
     # 판정 단계의 LLM 실패는 반드시 이 안에서 흡수한다 — 예외가 SSE 제너레이터 밖으로 새면
     # ASGI 태스크가 취소되면서 요청 스코프 DB 세션이 강제 종료되고, 망가진 asyncpg 커넥션이
     # 풀로 돌아가 그걸 집어간 **무관한 다른 요청**이 InterfaceError로 500이 난다(부하 실측).
@@ -1574,113 +1179,37 @@ async def _stream_new_turn(
         if setup is not None:
             # 스토리: 스탯 판정(최초 엔딩 전만)과 미디어 북 칸 판정(엔딩 뒤에도)을 동시에 부른다. DB 읽기는 전부
             # gather 앞(그리고 반납 커밋 앞), 쓰기는 전부 쓰기 구간이다 — gather 안의 두 코루틴은 LLM 만 부른다. 둘 다
-            # 자기 LLM 실패를 흡수해 한쪽이 실패해도 다른 쪽 결과가 남는다.
-            stat_request: StatJudgmentRequest | None = None
-            stat_defs: list[StatDef] = []
-            current_stats: dict[str, float] = {}
-            due_endings: _DueEndings | None = None
-            if not room.ending_reached:
-                stat_defs, stat_rows, current_stats = await load_room_stats(db, room.id, setup.id)
-                stat_request = prepare_stat_judgment(
-                    prompt_set=prompt_set,
-                    sections=prompt_sections,
-                    stat_defs=stat_defs,
-                    rules_by_stat_id=await _load_stat_rules(db, stat_defs),
-                    user_message=user_content,
-                    assistant_message=assistant_content,
-                    names=names,
-                )
-                due_endings = await _load_due_endings(db, room, setup, history, next_turn)
-            media_judgment = await _prepare_media_cell_judgment(
-                db,
-                room,
-                prompt_set=prompt_set,
-                prompt_sections=prompt_sections,
-                history=history,
-                user_message=user_content,
-                assistant_message=assistant_content,
-                names=names,
-            )
+            # 자기 LLM 실패를 흡수해 한쪽이 실패해도 다른 쪽 결과가 남는다. 준비 순서는 스탯 → 엔딩 → 칸이다.
+            stat, ending, media = StatJudgment(setup), EndingJudgment(setup), MediaCellJudgment()
+            await stat.prepare(ctx)
+            await ending.prepare(ctx)
+            await media.prepare(ctx)
             await db.commit()
 
-            log_subject = f"대화방 {room.id}"
-            updated_stats, judged_cell_id = await asyncio.gather(
-                _await_stat_judgment(
-                    llm_client,
-                    stat_request,
-                    LLMCallContext(call_site="chat_stat_judgment", user_id=room.user_id, room_id=room.id),
-                    log_subject=log_subject,
-                    current_stats=current_stats,
-                    stat_defs=stat_defs,
-                )
-                if stat_request is not None
-                else _no_judgment(),
-                _judge_media_cell(
-                    llm_client,
-                    media_judgment,
-                    LLMCallContext(call_site="chat_media_book_image", user_id=room.user_id, room_id=room.id),
-                    log_subject=log_subject,
-                )
-                if media_judgment is not None
-                else _no_judgment(),
-            )
-
-            if updated_stats is not None:
-                for stat_id, new_value in updated_stats.items():
-                    if new_value != current_stats.get(stat_id):
-                        stat_writes[stat_id] = new_value
-                        stat_change_events.append(ChatStatChangeEvent(stat_id=stat_id, new_value=new_value))
-
-                # 엔딩 판정: 엔딩별 turn_count_gate를 넘긴 시점부터 5턴마다만 호출하고, 그 외 턴은 스킵한다.
-                # 스탯 규칙을 통과한 엔딩만, `_endings_to_judge` 가 정한 순서(목록 순서, 우선 스탯을 채운 엔딩끼리는
-                # 그 값이 가장 높은 것만, 그 뒤는 없음)로 판정해 첫 충족 엔딩에서 멈춘다(동시 충족 시 하나만 발동).
-                # 스탯 반영 뒤라 순차다.
-                assert due_endings is not None  # 스탯 판정은 엔딩 전에만 돌고, 그때 엔딩도 함께 읽었다.
-                for ending in _endings_to_judge(
-                    [
-                        (ending, ending.entity_id, ending.priority_stat_def_entity_id, rule_items)
-                        for ending, rule_items in due_endings.endings
-                    ],
-                    updated_stats,
-                    log_subject=log_subject,
-                ):
-                    ending_judgment_prompt = build_ending_judgment_prompt(
-                        prompt_set=prompt_set,
-                        sections=prompt_sections,
-                        judgment_prompt=ending.judgment_prompt,
-                        history=due_endings.history,
-                        user_message=user_content,
-                        assistant_message=assistant_content,
-                        memory_summary=due_endings.summary,
-                        names=names,
-                    )
-                    ending_judgment = await llm_client.generate_structured(
-                        ending_judgment_prompt,
-                        EndingJudgmentResult,
-                        usage=LLMCallContext(call_site="chat_ending_judgment", user_id=room.user_id, room_id=room.id),
-                    )
-                    if not ending_judgment.triggered:
-                        continue
-                    reached_ending = ending
-                    ending_reached_event = ChatEndingReachedEvent(ending_id=ending.entity_id, epilogue=ending.epilogue)
-                    break
+            await asyncio.gather(stat.judge(llm_client, ctx), media.judge(llm_client, ctx))
+            # 엔딩 판정 **앞**에서 반영한다 — 엔딩 판정이 실패해도 스탯 변화·칸 그림은 남는다.
+            stat.apply(ctx, result)
+            media.apply(ctx, result)
+            await ending.judge(llm_client, ctx)
+            ending.apply(ctx, result)
         else:
-            situational_judgment = await _prepare_situational_image_judgment(
-                db,
-                room,
-                prompt_set=prompt_set,
-                prompt_sections=prompt_sections,
-                history=history,
-                user_message=user_content,
-                assistant_message=assistant_content,
-                names=names,
-            )
+            situational = SituationalImageJudgment()
+            await situational.prepare(ctx)
             await db.commit()
-            if situational_judgment is not None:
-                matched_image = await _judge_situational_image(llm_client, situational_judgment, room)
+            await situational.judge(llm_client, ctx)
+            situational.apply(ctx, result)
     except (LLMClientError, PromptRenderError) as exc:
         logger.warning("대화방 %s 판정 실패 — 이번 턴의 판정을 건너뛴다: %s", room.id, exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+
+    # 쓰기 구간 이하는 판정 결과를 지역 이름으로 읽는다(노출 기록·URL 조립 실패 때 그림을 `None` 으로 덮는다).
+    stat_change_events = result.stat_change_events
+    ending_reached_event = result.ending_reached_event
+    matched_image = result.matched_image
+    judged_cell_id = result.judged_cell_id
+    stat_rows = result.stat_rows
+    stat_writes = result.stat_writes
+    reached_ending = result.reached_ending
 
     # 쓰기 구간. 방 행을 먼저 잠그며 존재를 확인한다 — 쓰기 구간끼리(요약 접기의 버전 갱신 포함) 줄을 서고, LLM 을
     # 기다리는 사이 방이 지워졌으면 응답 INSERT 가 외래 키 위반으로 제너레이터를 뚫기 전에 갈라진다.
