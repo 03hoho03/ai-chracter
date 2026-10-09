@@ -1,6 +1,6 @@
 """Import every model module so `Base.metadata` is fully populated for Alembic autogenerate."""
 
-from api.db.models.auth import AdminUser, GuardianConsent, User, WithdrawnEmail
+from api.db.models.auth import AdminUser, GuardianConsent, User, WithdrawnEmail, WithdrawnIdentity
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.chat import (
     CharacterImageExposure,
@@ -14,7 +14,7 @@ from api.db.models.chat import (
     StoryEndingUnlock,
     StoryMediaExposure,
 )
-from api.db.models.clover import CloverLedger, CloverLot
+from api.db.models.clover import CloverLedger, CloverLot, CloverSpendAllocation
 from api.db.models.comments import (
     Comment,
     CommentLike,
@@ -73,6 +73,13 @@ from api.db.models.novel import (
     NovelSnapshot,
     NovelSnapshotKind,
 )
+from api.db.models.payment import (
+    Payment,
+    PaymentCancellation,
+    PaymentCancellationSource,
+    PaymentCancellationStatus,
+    PaymentStatus,
+)
 from api.db.models.persona import UserPersona
 from api.db.models.prompt import PromptSection, PromptSet, PublishFilterTextSectionBackup
 from api.db.models.story import (
@@ -114,6 +121,7 @@ __all__ = [
     "ChatRoomStat",
     "CloverLedger",
     "CloverLot",
+    "CloverSpendAllocation",
     "Comment",
     "CommentLike",
     "CommentMention",
@@ -169,6 +177,11 @@ __all__ = [
     "NovelRevisionSource",
     "NovelSnapshot",
     "NovelSnapshotKind",
+    "Payment",
+    "PaymentCancellation",
+    "PaymentCancellationSource",
+    "PaymentCancellationStatus",
+    "PaymentStatus",
     "PromptSection",
     "PromptSet",
     "PublishFilterTextSectionBackup",
@@ -189,4 +202,5 @@ __all__ = [
     "UserFeatureGrant",
     "UserPersona",
     "WithdrawnEmail",
+    "WithdrawnIdentity",
 ]

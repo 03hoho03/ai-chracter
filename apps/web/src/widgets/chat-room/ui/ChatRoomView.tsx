@@ -38,6 +38,8 @@ import {
   useCloverBalanceQuery,
 } from "@/entities/clover";
 import { useContentDetailQuery } from "@/entities/content";
+import { IdentityRequiredNotice } from "@/entities/identity";
+import { useSessionQuery } from "@/entities/session";
 import { useConfirmCloverSpend } from "@/features/confirm-clover-spend";
 import { NarrationMarkerButton } from "@/features/insert-narration-marker";
 import { ReportChatMessageModal } from "@/features/report-chat-message";
@@ -91,6 +93,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   // 기본 모델 방은 무료 일일분을 쓴 뒤에만, 상위 모델 방은 첫 턴부터 턴마다 깎이므로 언제나 나타난다.
   // 단가는 그 방 모델의 한 턴 가격이다. 서버가 가격을 주지 않았으면(이 칸이 생기기 전의 서버) 부족을 판정하지 않는다.
   const { data: clover } = useCloverBalanceQuery();
+  const { data: me } = useSessionQuery();
   const cloverBalance = clover?.balance ?? 0;
   const isPremiumRoom = room !== undefined && isPremiumChatModel(room.effectiveChatModel);
   const isCloverShort = room?.turnCost !== undefined && isCloverInsufficient(cloverBalance, room.turnCost);
@@ -234,6 +237,9 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
       errorNotice = (
         <RateLimitNotice rateLimit={status.rateLimit} surface={isPremiumRoom ? "premiumChat" : "chat"} onRetry={retry} />
       );
+    } else if (status.identityRequired) {
+      // 다시 보내도 같은 403 이라 재시도 버튼을 두지 않고, 실패가 아니라 경고 틴트도 쓰지 않는다.
+      errorNotice = <IdentityRequiredNotice reason="free-rewards" dailyFreeChatTurns={me?.dailyFreeChatTurns} />;
     } else if (status.busy) {
       // 앞 턴이 끝나지 않아 시작도 안 한 요청이다. 실패가 아니라 빨간 alert를 쓰지 않고, 아래 거절 배너와 같은
       // 중립 표면에 사실과 다음 행동만 둔다.

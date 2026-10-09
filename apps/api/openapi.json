@@ -2737,6 +2737,176 @@
         }
       }
     },
+    "/admin/users/{user_id}/payments": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List User Payments",
+        "description": "그 회원의 최근 주문(모든 상태). 진행 중 환불 시도가 있는 주문은 `refundPending` 이 참이다.",
+        "operationId": "list_user_payments_admin_users__user_id__payments_get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserPaymentListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/payments/{payment_id}/refund-quote": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Refund Quote",
+        "description": "환불 견적. 신청 접수일(KST)이 결제일 전이거나 오늘 뒤면 422 `REFUND_RECEIVED_ON_INVALID`, 환불할 수 있는 상태가\n아니면 422 `PAYMENT_NOT_REFUNDABLE`. 아무것도 쓰지 않는다.",
+        "operationId": "get_refund_quote_admin_payments__payment_id__refund_quote_get",
+        "parameters": [
+          {
+            "name": "payment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Payment Id"
+            }
+          },
+          {
+            "name": "receivedOn",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "Receivedon"
+            }
+          },
+          {
+            "name": "companyFault",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Companyfault"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRefundQuoteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/payments/{payment_id}/refund": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Refund Payment",
+        "description": "환불을 실행하거나, 진행 중 시도가 있으면 그 시도를 마무리한다.\n\n- 200 `succeeded`: 포트원 취소 확인. 디스코드에 알린다.\n- 202 `requested`: 클로버는 회수했고 포트원 결과가 확정되지 않았다(응답 없음·시간 초과·PG 비동기 처리). 같은 경로로\n  다시 부르면 포트원을 재조회해 마무리한다.\n- 422 `REFUND_REJECTED`: 포트원이 취소를 거절해 회수한 클로버를 되돌렸다.\n- 409 `REFUND_QUOTE_CHANGED`: 실행 시점 견적이 다이얼로그의 견적과 다르다. 422 `REFUND_AMOUNT_ZERO`·\n  `REFUND_RECEIVED_ON_INVALID`·`PAYMENT_NOT_REFUNDABLE`: 시작하지 않았다.",
+        "operationId": "refund_payment_admin_payments__payment_id__refund_post",
+        "parameters": [
+          {
+            "name": "payment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Payment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminRefundRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRefundResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRefundResponse"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/assets/presigned-upload": {
       "post": {
         "tags": [
@@ -9055,7 +9225,7 @@
           "chat"
         ],
         "summary": "Send Message",
-        "description": "text/event-stream SSE 응답. 실제 생성+판단 파이프라인은\n`_stream_new_turn`(이 방의 새 사용자 메시지를 커밋한 뒤 호출)이 담당한다.",
+        "description": "text/event-stream SSE 응답. 실제 생성+판단 파이프라인은\n`_stream_new_turn`(이 방의 새 사용자 메시지를 커밋한 뒤 호출)이 담당한다.\n\n본문 전체가 정산 가드 안이다 — 첫 `yield` 전 실패, 생성 중 끊김, 예상하지 못한 예외 어느 것으로 끝나도 응답이\n저장되지 않았으면 차감을 되돌리고 원래 예외를 다시 올린다(`chat/turn_settlement.py`).",
         "operationId": "send_message_chat_rooms__room_id__messages_post",
         "parameters": [
           {
@@ -10384,6 +10554,156 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CloverPricingResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/payments": {
+      "post": {
+        "tags": [
+          "payments"
+        ],
+        "summary": "Create Payment",
+        "description": "주문을 만든다. 금액은 서버가 상품 키로 정하고 주문 행에 복사해 둔다 — 브라우저가 금액을 바꿔 결제해도 동기화의\n금액 대조가 지급을 막는다. 포트원 사전 등록은 하지 않는다(주문마다 외부 호출 실패 지점이 하나 늘 뿐, 막는 것은 같다).\n\n결제가 꺼져 있으면 503 `PAYMENTS_UNAVAILABLE`. 그다음 본인인증(아니면 403 `IDENTITY_VERIFICATION_REQUIRED`)과 만 19세\n확인(아니면 403 `PAYMENT_AGE_RESTRICTED`)이다. 이 인증은 미인증 회원 게이트가 아니라 나이를 확인하는 유일한 수단이라,\n게이트 스위치가 꺼져 있어도, 레이트리밋 면제 회원이어도 늘 건다. 나이는 인증으로 덮어쓴 생년월일을 로그인의 연령\n확인과 같은 기준(UTC 날짜)으로 잰다.",
+        "operationId": "create_payment_payments_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePaymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatePaymentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/payments/{payment_id}/complete": {
+      "post": {
+        "tags": [
+          "payments"
+        ],
+        "summary": "Complete Payment",
+        "description": "브라우저가 결제창이 끝났다고 알린다. 자기 주문만(아니면 404 `PAYMENT_NOT_FOUND`).\n\n재동의·결제 플래그 게이트를 걸지 않는다 — 이미 돈이 나간 결제의 동기화를 막으면 안 된다. 포트원 조회가 실패하면\n502 `PORTONE_UNAVAILABLE`(다시 시도하면 되고, 웹훅도 같은 결제를 맞춘다).",
+        "operationId": "complete_payment_payments__payment_id__complete_post",
+        "parameters": [
+          {
+            "name": "payment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Payment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompletePaymentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/identity-verifications": {
+      "post": {
+        "tags": [
+          "identity"
+        ],
+        "summary": "Start Identity Verification",
+        "description": "인증 id 를 발급하고 이 사용자에게 묶는다.\n\n인증 설정이 없거나, 인증을 요구하는 기능(결제·게이트)이 둘 다 꺼져 있으면 503 `IDENTITY_VERIFICATION_UNAVAILABLE` —\n쓰일 곳이 없는 인증으로 개인정보를 받지 않는다. 이미 인증한 계정은 409 `IDENTITY_ALREADY_VERIFIED`.",
+        "operationId": "start_identity_verification_me_identity_verifications_post",
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartIdentityVerificationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/identity-verifications/{identity_verification_id}/complete": {
+      "post": {
+        "tags": [
+          "identity"
+        ],
+        "summary": "Complete Identity Verification",
+        "description": "포트원에 인증 건을 다시 물어 결과를 저장한다.\n\n거절은 모두 아무것도 저장하지 않는다:\n- 이 사용자에게 묶인 인증 id 가 아니면 404 `IDENTITY_VERIFICATION_NOT_FOUND`.\n- 이미 인증한 계정이면 409 `IDENTITY_ALREADY_VERIFIED` — 묶음이 남은 두 번째 인증 창으로 다른 사람의 인증을 덮어써 계정의\n  주인을 바꾸지 못하게 한다.\n- 포트원 조회 실패 502 `PORTONE_UNAVAILABLE`(다시 시도하면 된다).\n- 인증 완료가 아니거나 우리 본인인증 채널이 아니면 422 `IDENTITY_VERIFICATION_NOT_VERIFIED`.\n- CI 가 없으면 422 `IDENTITY_CI_MISSING` — 한 사람 한 계정을 지킬 수 없다.\n- 생년월일이 없거나 읽을 수 없으면 422 `IDENTITY_BIRTH_DATE_MISSING` — 생년월일 없이 덮어쓰면 로그인의 연령 확인이 그\n  계정을 매번 실패시킨다.\n- 만 14세 미만이면 403 `IDENTITY_UNDER_MINIMUM_AGE`. CI 도 생년월일도 저장하지 않는다(14세 미만의 개인정보를 받지\n  않는다).\n- 같은 사람이 다른 살아 있는 계정으로 이미 인증했으면 409 `IDENTITY_ALREADY_USED`.\n\n통과하면 CI 해시·인증 시각을 저장하고 생년월일을 인증값으로 덮어쓴다. 나이 판정은 로그인의 연령 확인과 같은 기준(UTC\n날짜)이다. 만 19세 미만으로 인증되면 베타 참가 자격을 같은 트랜잭션에서 거둔다 — 베타는 성인만 받는데 지정 때의 자기\n신고 생년월일만 확인했다.",
+        "operationId": "complete_identity_verification_me_identity_verifications__identity_verification_id__complete_post",
+        "parameters": [
+          {
+            "name": "identity_verification_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identity Verification Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompleteIdentityVerificationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -14254,6 +14574,119 @@
         "title": "AdminPromptSetSummary",
         "description": "이력 목록은 메타만. 섹션 전문은\n`GET /admin/prompt-sets/{id}`로 뺀다."
       },
+      "AdminRefundQuoteResponse": {
+        "properties": {
+          "refundKrw": {
+            "type": "integer",
+            "title": "Refundkrw"
+          },
+          "ratioPercent": {
+            "type": "integer",
+            "title": "Ratiopercent"
+          },
+          "paidRemaining": {
+            "type": "integer",
+            "title": "Paidremaining"
+          },
+          "bonusUsed": {
+            "type": "integer",
+            "title": "Bonusused"
+          },
+          "clawbackPaid": {
+            "type": "integer",
+            "title": "Clawbackpaid"
+          },
+          "clawbackBonus": {
+            "type": "integer",
+            "title": "Clawbackbonus"
+          },
+          "cancellableKrw": {
+            "type": "integer",
+            "title": "Cancellablekrw"
+          },
+          "paidAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Paidat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "refundKrw",
+          "ratioPercent",
+          "paidRemaining",
+          "bonusUsed",
+          "clawbackPaid",
+          "clawbackBonus",
+          "cancellableKrw",
+          "paidAt"
+        ],
+        "title": "AdminRefundQuoteResponse"
+      },
+      "AdminRefundRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Reason"
+          },
+          "expectedRefundKrw": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Expectedrefundkrw"
+          },
+          "receivedOn": {
+            "type": "string",
+            "format": "date",
+            "title": "Receivedon"
+          },
+          "companyFault": {
+            "type": "boolean",
+            "title": "Companyfault",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason",
+          "expectedRefundKrw",
+          "receivedOn"
+        ],
+        "title": "AdminRefundRequest",
+        "description": "멱등키를 받지 않는다 — 그 결제의 진행 중 환불 시도(서버의 `requested` 행)가 시도 단위다. 진행 중 시도가 있으면\n`expected_refund_krw`·`received_on`·`company_fault` 는 쓰이지 않고 그 시도를 마무리한다."
+      },
+      "AdminRefundResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "succeeded",
+              "requested"
+            ],
+            "title": "Status"
+          },
+          "amountKrw": {
+            "type": "integer",
+            "title": "Amountkrw"
+          },
+          "clawbackPaid": {
+            "type": "integer",
+            "title": "Clawbackpaid"
+          },
+          "clawbackBonus": {
+            "type": "integer",
+            "title": "Clawbackbonus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "amountKrw",
+          "clawbackPaid",
+          "clawbackBonus"
+        ],
+        "title": "AdminRefundResponse"
+      },
       "AdminReportContentDetail": {
         "properties": {
           "id": {
@@ -14499,6 +14932,7 @@
               "user-novelize-on",
               "user-novelize-premium-models-off",
               "user-novelize-premium-models-on",
+              "user-payment-refund",
               "user-rate-limit-exempt-off",
               "user-rate-limit-exempt-on",
               "user-suspend",
@@ -15035,6 +15469,93 @@
         ],
         "title": "AdminUserNovelizeGrantRequest",
         "description": "소설화 허용 경로의 요청. 모양은 `AdminUserFeatureGrantRequest` 와 같고, 이 이름은 그 경로의 생성 타입 이름을 지키려고\n남긴다."
+      },
+      "AdminUserPaymentItem": {
+        "properties": {
+          "paymentId": {
+            "type": "string",
+            "title": "Paymentid"
+          },
+          "productKey": {
+            "type": "string",
+            "title": "Productkey"
+          },
+          "orderName": {
+            "type": "string",
+            "title": "Ordername"
+          },
+          "amountKrw": {
+            "type": "integer",
+            "title": "Amountkrw"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "paid",
+              "failed",
+              "mismatch",
+              "owner_withdrawn",
+              "cancelled",
+              "partially_cancelled"
+            ],
+            "title": "Status"
+          },
+          "paidAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paidat"
+          },
+          "cancelledAmountKrw": {
+            "type": "integer",
+            "title": "Cancelledamountkrw"
+          },
+          "refundPending": {
+            "type": "boolean",
+            "title": "Refundpending"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "paymentId",
+          "productKey",
+          "orderName",
+          "amountKrw",
+          "status",
+          "paidAt",
+          "cancelledAmountKrw",
+          "refundPending",
+          "createdAt"
+        ],
+        "title": "AdminUserPaymentItem"
+      },
+      "AdminUserPaymentListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminUserPaymentItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "AdminUserPaymentListResponse"
       },
       "AdminUserRateLimitExemptRequest": {
         "properties": {
@@ -16479,6 +17000,10 @@
             "type": "boolean",
             "title": "Attendanceclaimable"
           },
+          "paidBalance": {
+            "type": "integer",
+            "title": "Paidbalance"
+          },
           "expiringSoon": {
             "anyOf": [
               {
@@ -16495,6 +17020,7 @@
           "balance",
           "spendConfirmedToday",
           "attendanceClaimable",
+          "paidBalance",
           "expiringSoon"
         ],
         "title": "CloverBalanceResponse",
@@ -16658,6 +17184,36 @@
         ],
         "title": "CloverMissionsResponse"
       },
+      "CloverPayMethodItem": {
+        "properties": {
+          "payMethod": {
+            "type": "string",
+            "enum": [
+              "CARD",
+              "EASY_PAY"
+            ],
+            "title": "Paymethod"
+          },
+          "easyPayProvider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Easypayprovider"
+          }
+        },
+        "type": "object",
+        "required": [
+          "payMethod",
+          "easyPayProvider"
+        ],
+        "title": "CloverPayMethodItem",
+        "description": "포트원 브라우저 SDK 의 `payMethod` 와, 간편결제일 때 `easyPay.easyPayProvider` 값 그대로."
+      },
       "CloverPricingResponse": {
         "properties": {
           "products": {
@@ -16674,13 +17230,31 @@
           "imageCost": {
             "type": "integer",
             "title": "Imagecost"
+          },
+          "paymentsEnabled": {
+            "type": "boolean",
+            "title": "Paymentsenabled"
+          },
+          "payMethods": {
+            "items": {
+              "$ref": "#/components/schemas/CloverPayMethodItem"
+            },
+            "type": "array",
+            "title": "Paymethods"
+          },
+          "identityGateEnabled": {
+            "type": "boolean",
+            "title": "Identitygateenabled"
           }
         },
         "type": "object",
         "required": [
           "products",
           "chatTurnCost",
-          "imageCost"
+          "imageCost",
+          "paymentsEnabled",
+          "payMethods",
+          "identityGateEnabled"
         ],
         "title": "CloverPricingResponse",
         "description": "공개 가격 안내. 단가는 기본 모델 기준만 싣는다 — 상위 모델은 허용된 계정만 쓰고 소설은 허용 명단 전용이라\n공개 안내에 넣지 않는다."
@@ -17770,6 +18344,48 @@
         ],
         "title": "CommentUpdateRequest"
       },
+      "CompleteIdentityVerificationResponse": {
+        "properties": {
+          "verifiedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Verifiedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "verifiedAt"
+        ],
+        "title": "CompleteIdentityVerificationResponse"
+      },
+      "CompletePaymentResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "paid",
+              "failed",
+              "mismatch",
+              "owner_withdrawn",
+              "cancelled",
+              "partially_cancelled"
+            ],
+            "title": "Status"
+          },
+          "balance": {
+            "type": "integer",
+            "title": "Balance"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "balance"
+        ],
+        "title": "CompletePaymentResponse",
+        "description": "`pending` 이면 포트원이 아직 결제를 확정하지 않았다 — 화면은 \"확인 중\"을 안내하고 잔액을 다시 읽는다."
+      },
       "ContentAccessStatus": {
         "properties": {
           "kind": {
@@ -18234,6 +18850,71 @@
           "visibility"
         ],
         "title": "ContentVisibilityUpdateRequest"
+      },
+      "CreatePaymentRequest": {
+        "properties": {
+          "productKey": {
+            "type": "string",
+            "enum": [
+              "starter",
+              "basic",
+              "plus",
+              "pro"
+            ],
+            "title": "Productkey"
+          },
+          "agreed": {
+            "type": "boolean",
+            "const": true,
+            "title": "Agreed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "productKey",
+          "agreed"
+        ],
+        "title": "CreatePaymentRequest"
+      },
+      "CreatePaymentResponse": {
+        "properties": {
+          "paymentId": {
+            "type": "string",
+            "title": "Paymentid"
+          },
+          "storeId": {
+            "type": "string",
+            "title": "Storeid"
+          },
+          "channelKey": {
+            "type": "string",
+            "title": "Channelkey"
+          },
+          "orderName": {
+            "type": "string",
+            "title": "Ordername"
+          },
+          "totalAmount": {
+            "type": "integer",
+            "title": "Totalamount"
+          },
+          "currency": {
+            "type": "string",
+            "const": "KRW",
+            "title": "Currency"
+          }
+        },
+        "type": "object",
+        "required": [
+          "paymentId",
+          "storeId",
+          "channelKey",
+          "orderName",
+          "totalAmount",
+          "currency"
+        ],
+        "title": "CreatePaymentResponse",
+        "description": "브라우저가 포트원 결제창에 그대로 넘기는 값. 상점 id·채널키는 웹 빌드에 넣지 않고 이 응답으로만 내린다."
       },
       "DevelopmentExampleItem": {
         "properties": {
@@ -19586,6 +20267,41 @@
             },
             "type": "array",
             "title": "Enabledfeatures"
+          },
+          "identityVerified": {
+            "type": "boolean",
+            "title": "Identityverified"
+          },
+          "identityGateEnabled": {
+            "type": "boolean",
+            "title": "Identitygateenabled"
+          },
+          "identityGated": {
+            "type": "boolean",
+            "title": "Identitygated"
+          },
+          "dailyFreeChatTurns": {
+            "type": "integer",
+            "title": "Dailyfreechatturns"
+          },
+          "paidCloverBalance": {
+            "type": "integer",
+            "title": "Paidcloverbalance"
+          },
+          "purchaseBlockReason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "identity_required",
+                  "age_restricted"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchaseblockreason"
           }
         },
         "type": "object",
@@ -19599,7 +20315,13 @@
           "privacyReconsentRequired",
           "hasPassword",
           "socialProvider",
-          "enabledFeatures"
+          "enabledFeatures",
+          "identityVerified",
+          "identityGateEnabled",
+          "identityGated",
+          "dailyFreeChatTurns",
+          "paidCloverBalance",
+          "purchaseBlockReason"
         ],
         "title": "MeResponse"
       },
@@ -23359,6 +24081,30 @@
           "email"
         ],
         "title": "SocialOnboardingResponse"
+      },
+      "StartIdentityVerificationResponse": {
+        "properties": {
+          "identityVerificationId": {
+            "type": "string",
+            "title": "Identityverificationid"
+          },
+          "storeId": {
+            "type": "string",
+            "title": "Storeid"
+          },
+          "channelKey": {
+            "type": "string",
+            "title": "Channelkey"
+          }
+        },
+        "type": "object",
+        "required": [
+          "identityVerificationId",
+          "storeId",
+          "channelKey"
+        ],
+        "title": "StartIdentityVerificationResponse",
+        "description": "브라우저가 포트원 본인인증 창에 그대로 넘기는 값. 상점 id·채널키는 웹 빌드에 넣지 않고 이 응답으로만 내린다."
       },
       "StartingSetupDraftItem": {
         "properties": {

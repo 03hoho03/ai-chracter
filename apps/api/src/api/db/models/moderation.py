@@ -221,6 +221,7 @@ AdminActionType = Literal[
     "user-novelize-on",
     "user-novelize-premium-models-off",
     "user-novelize-premium-models-on",
+    "user-payment-refund",
     "user-rate-limit-exempt-off",
     "user-rate-limit-exempt-on",
     "user-suspend",

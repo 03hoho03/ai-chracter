@@ -199,8 +199,8 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**52개 키다**(2026-10-06 VM 실측, 키 이름만 셈): 아래 표 92개 중 38개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
-`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 7개·소설화 조정용 `NOVELIZE_*` 19개, 실측 때 넣지 않은 상위 모델 키 13개(`BEDROCK_*` 9개·`CHAT_PREMIUM_*` 2개·`NOVELIZE_PREMIUM_*` 2개), 모두 54개 제외 —
+**52개 키다**(2026-10-06 VM 실측, 키 이름만 셈): 아래 표 101개 중 38개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 7개·소설화 조정용 `NOVELIZE_*` 19개, 실측 때 넣지 않은 상위 모델 키 13개(`BEDROCK_*` 9개·`CHAT_PREMIUM_*` 2개·`NOVELIZE_PREMIUM_*` 2개), 실측 때 넣지 않은 결제·본인인증 키 9개(`PORTONE_*` 5개·`IDENTITY_CI_HMAC_KEY`·`PAYMENTS_ENABLED`·`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 모두 63개 제외 —
 소설화를 켤 때 넣는 `NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST` 2개는 운영에서 켜 두었으므로 셈에 들어간다) + compose용
 5개(그때는 `API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE` — api 가 blue/green 두 색으로 나뉜 뒤
 compose 가 읽는 이미지 키는 `API_IMAGE_BLUE`·`API_IMAGE_GREEN` 둘이고 `API_IMAGE` 는 읽지 않는다. 두 키가 생기고 옛 줄이 지워지면
@@ -233,6 +233,13 @@ compose 가 읽는 이미지 키는 `API_IMAGE_BLUE`·`API_IMAGE_GREEN` 둘이�
 | `KAKAO_REST_API_KEY` / `KAKAO_CLIENT_SECRET` | 카카오 로그인 자격증명 | "카카오 로그인" 절. 둘 중 하나라도 비면 카카오 로그인 시작이 `?error=kakao_failed` 로 돌아온다 |
 | `KAKAO_ADMIN_KEY` | 카카오 **Primary(대표)** 어드민 키 | "카카오 로그인" 절. 탈퇴 시 연결 끊기 + 연결 해제 웹훅 인증. 비면 웹훅은 전부 401, 연결 끊기는 경고 로그만 |
 | `WITHDRAWN_EMAIL_HMAC_KEY` | `openssl rand -hex 32` 등으로 발급한 무작위 값 | 탈퇴 재가입 차단용 HMAC 키. **한번 정하면 바꾸지 말 것** — 바뀌면 과거에 적립한 해시와 새 조회의 해시가 어긋나 재가입 차단이 조용히 멈춘다(모든 조회가 미스가 된다. 에러가 나지 않아 알아채기 어렵다) |
+| `PORTONE_STORE_ID` | 포트원 콘솔의 상점 id | 결제·본인인증 공통. 공개 식별자라 브라우저로도 내려간다(웹 빌드에는 넣지 않고 주문·인증 시작 응답으로 받는다). 결제 대조가 포트원 응답의 상점 id 를 이 값과 비교한다 |
+| `PORTONE_PAYMENT_CHANNEL_KEY` / `PORTONE_IDENTITY_CHANNEL_KEY` | 포트원 콘솔의 결제 채널키(KG이니시스) / 본인인증 채널키(NHN KCP) | 공개 식별자. 주문마다 그때의 결제 채널키를 기록하고 결제 대조가 그 값과 비교한다 — 바꾸면 바꾸기 전에 만든 주문은 옛 키로 대조된다 |
+| `PORTONE_API_SECRET` | 포트원 V2 API 시크릿 | 결제·본인인증 조회와 환불(취소) 호출. 비면 결제·본인인증이 꺼진다(기동은 막지 않는다) |
+| `PORTONE_WEBHOOK_SECRET` | 포트원 콘솔의 웹훅 시크릿(`whsec_…`) | 결제 웹훅 서명 검증. 비거나 형식이 틀리면 모든 웹훅이 503 으로 돌아가 포트원이 재시도한다(Bugsink 에 남는다). 서명 시각 허용 오차가 5분이라 VM 시계(NTP)가 맞아야 한다 |
+| `IDENTITY_CI_HMAC_KEY` | `openssl rand -hex 32` 등으로 발급한 무작위 값 | 본인인증 CI 를 저장하기 전에 HMAC 으로 바꾸는 키. **한번 정하면 바꾸지 말 것** — 바뀌면 이미 인증한 사람과 대조가 어긋나 같은 사람이 다른 계정으로 다시 인증할 수 있게 된다. `WITHDRAWN_EMAIL_HMAC_KEY` 와 다른 값을 쓴다. 비면 본인인증이 꺼진다 |
+| `PAYMENTS_ENABLED` / `IDENTITY_GATE_ENABLED` | 켤 때 `true`(코드 기본값은 둘 다 `false`) | 결제 스위치 / 미인증 회원의 무료 대화·출석·미션을 막는 본인인증 게이트 스위치. 결제는 스위치와 위 포트원 키 넷, 그리고 본인인증 설정(상점 id·본인인증 채널키·API 시크릿·`IDENTITY_CI_HMAC_KEY`)이 모두 있어야 열린다 — 결제는 늘 본인인증을 요구해서다. 꺼져 있어도 웹훅 시크릿이 있으면 웹훅은 처리한다(진행 중 결제와 콘솔 취소를 맞춘다) |
+| `PAYMENT_DISCORD_WEBHOOK_URL` | 결제 알림용 디스코드 채널 웹훅 주소 | 결제·환불 완료 알림(상품·금액·상태만, 회원·주문을 알아볼 단서는 싣지 않는다). 비면 건너뛴다. 크론 알림의 `DISCORD_WEBHOOK_URL` 과 다른 키다 |
 | `LOCAL_IMAGE_BASE_URL` | 집 PC 서버를 가리키는 터널 origin | **이미지 생성 필수** — 비어 있으면 capabilities가 전부 불가로 내려가 생성이 사전 차단된다. "이미지 생성" 절 |
 | `LOCAL_IMAGE_ACCESS_CLIENT_ID` / `LOCAL_IMAGE_ACCESS_CLIENT_SECRET` | Cloudflare Access 서비스 토큰 | **이미지 생성 필수**. "이미지 생성" 절 |
 | `LOCAL_IMAGE_MODEL_WIRE_ID` | 집 PC가 보고하는 **실제** 모델 id | **이미지 생성 필수.** 기본값은 공개 id(`v1`)와 같아 로컬·테스트는 설정 없이 돌지만, 운영에서 집 PC의 값과 다르면 교차 검증에서 전부 걸러져 생성이 사전 차단된다. **이 값을 소스에 두지 않는 것이 요점이다**("이미지 생성" 절) |

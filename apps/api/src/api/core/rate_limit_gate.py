@@ -9,7 +9,9 @@
 **모델에 따라 갈래가 둘이다.** Gemini 턴은 면제 통과·하루 무료분·하루 1회 확인·Redis 장애 통과를 그대로 따른다.
 상위 모델(Gemini 밖의 글쓰기 모델) 턴은 그 넷을 타지 않는다 — 면제 계정도 그 모델 가격을 내고, 무료분을 쓰지도
 깎지도 않고, 확인을 묻지 않고(모델을 고를 때 본 턴당 가격이 확인이다), Redis 장애면 거절한다(분당 상한을 못 센 채
-비싼 호출을 열지 않는다). 분당 버스트는 두 갈래 모두 받는다.
+비싼 호출을 열지 않는다). 분당 버스트는 두 갈래 모두 받는다. 본인인증 게이트(`core/identity_gate.py`)에 걸린
+미인증 회원의 Gemini 턴은 무료분이 0 이고, Redis 장애에도 통과하지 않고 클로버를 쓴다(원래 무료 턴이 없는 사람에게
+장애가 무료 턴을 주지 않게).
 
 **단일 버킷이다.** 세는 단위는 "LLM을 태우는 요청 1건"이라 재생성도 편집도 1로 센다 —
 방의 `turn_count`는 재생성에서 늘지 않고 편집에서는 되감겼다가 다시 늘지만, 그 회계는 대화의
@@ -44,6 +46,7 @@ from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.core import clover
+from api.core.identity_gate import identity_verification_required, is_identity_gated
 from api.core.rate_limit import (
     KST,
     check_rate_limit,
@@ -208,8 +211,9 @@ async def _needs_clover_spend_confirmation(
 ) -> bool:
     """오늘(KST) 동의가 없고, **동의하면 실제로 쓸 수 있을 때만** True.
 
-    `is_rate_limit_exempt`와 같은 행을 다시 `db.get`한다 — 같은 세션이어도 SELECT가 한 번 더
-    나간다(identity map은 약참조라 앞 호출이 읽은 `User`는 이미 수거됐다).
+    면제 판정과 같은 행을 다시 `db.get`한다. 이미지 게이트에서는 SELECT가 한 번 더 나가고(identity map은
+    약참조라 `is_rate_limit_exempt`가 읽은 `User`는 이미 수거됐다), 채팅 게이트에서는 면제·본인인증 판정이 읽은
+    행을 함수가 끝날 때까지 쥐고 있어 identity map에서 그대로 꺼낸다.
 
     🔴 **잔액이 모자라면 묻지 않는다.** 0원인 사용자에게 *"지금부터 클로버를 써요"*를 물어 놓고
     동의 직후 *"부족해요"*를 내는 것은 두 단계를 헛되이 쓰는 것이다. 그 경우는 그대로 아래
@@ -246,6 +250,8 @@ class ChatCharge:
     # `source != "clover"`이면 0이다. 되돌릴 양을 라우트가 상수에서 다시 계산하지 않고
     # 영수증에서 읽게 한다 — 상수가 바뀌어도 진행 중이던 요청의 환불액이 어긋나지 않는다. 상위 모델 턴이면 그 모델 가격이다.
     clover_amount: int = 0
+    # 클로버 차감의 원장 행. 환급이 이 차감의 로트 배분을 찾아 깎은 로트로 되돌린다. `source != "clover"`이면 `None`.
+    spend_ledger_id: uuid.UUID | None = None
     # 이 턴을 생성할 글쓰기 모델. 값을 받은 모델이 곧 생성 모델이다 — 생성 직전에 방을 다시 읽으면, 게이트와 생성 사이에
     # 방의 모델이 바뀌었을 때 받은 값과 다른 모델로 생성한다.
     model: ChatModelId = DEFAULT_CHAT_MODEL
@@ -278,11 +284,12 @@ async def charge_chat_turn(
 
     `db`도 같은 요청 스코프 캐시로 받는다 — 채팅 4경로 모두 라우트 본문·`require_legal_consent`와 같은
     세션이다(미리보기 본문은 그 세션을 첫머리에서 커밋해 반납하기만 한다) — 의존성 캐시라 커넥션이
-    더 열리지는 않는다. ⚠️ 같은 세션이어도 `is_rate_limit_exempt`의 `db.get(User, user_id)`는
+    더 열리지는 않는다. ⚠️ 같은 세션이어도 면제 판정의 `db.get(User, user_id)`는
     identity map 히트가 **아니다** — 앞 의존성들이 읽은 `User`는 아무도 붙잡지 않아 이미
     수거됐으므로(약참조) SELECT가 따로 나간다.
 
-    Gemini 턴의 순서는 **버스트 → 면제 → 일일 → 클로버**다. 짧은
+    Gemini 턴의 순서는 **버스트 → 면제 → 본인인증 게이트 → 일일 → 클로버**다. 게이트에 걸린 미인증 회원은
+    무료분이 0 이라 일일 창을 건너뛰고 클로버로 간다(`_charge_unverified_turn`). 짧은
     창이 먼저 걸리는 게 사용자에게 유용한 `retryAfterSeconds`(몇 초 뒤 재시도)를 주기 때문이고,
     일일 창이 먼저면 몇 시간짜리 값이 앞서 나간다. 면제가 그 사이에 있는 이유는 면제 대상도
     버스트는 받기 때문이다. 클로버가 맨 뒤인 이유는 두 가지다 — 분당 버스트는 **폭주 방어라
@@ -305,8 +312,14 @@ async def charge_chat_turn(
         # 면제 대상은 버스트를 그대로 받고 일일만 건너뛴다. 건너뛰는 것이라 일일
         # 카운터도 올라가지 않는다 — 어드민이 도중에 면제를 거두면 그날 그때까지의 요청은
         # 일일 창에 세어져 있지 않다.
-        if await is_rate_limit_exempt(user_id, db):
+        # 사용자 행 한 번 읽기로 면제와 본인인증 게이트를 같이 본다(`is_rate_limit_exempt` 와 같은 판정).
+        user = await db.get(User, user_id)
+        if user is not None and user.rate_limit_exempt is True:
             return ChatCharge(source="skipped")
+        # 미인증 회원은 무료분이 0 이다. 일일 창보다 **앞**이라 그 카운터를 올리지 않고(인증한 날도 0/30 에서 시작한다),
+        # Redis 를 쓰지 않는 차감으로 바로 간다.
+        if user is not None and is_identity_gated(user):
+            return await _charge_unverified_turn(user_id, db, session_factory, now, price=price)
 
         # 일일 창은 KST 자정에 끊긴다. 기구에는 "자정"이라는 개념이 없으므로 호출자가
         # 키에 KST 날짜를 섞고(날짜가 바뀌면 키 자체가 바뀐다) TTL로 남은 초를 넘긴다 —
@@ -361,7 +374,7 @@ async def charge_chat_turn(
                     seconds_until_kst_midnight(now),
                     code=_CLOVER_CODE,
                 )
-            return ChatCharge(source="clover", clover_amount=price)
+            return ChatCharge(source="clover", clover_amount=price, spend_ledger_id=spent.ledger_id)
         return ChatCharge(source="free")
     except RedisError:
         if model != DEFAULT_CHAT_MODEL:
@@ -383,8 +396,36 @@ async def charge_chat_turn(
         # "Redis가 죽어도 채팅은 산다"는 뜻이 아니다.
         logger.warning("채팅 레이트리밋 검사 실패 — fail-open으로 통과시킨다", exc_info=True)
         _report_redis_failure()
+        # 🔴 미인증 회원은 통과시키지 않는다. 그들에게 원래 무료 턴이 없으므로, 여기서 통과시키면 버스트 검사가 깨진 동안만
+        # 무료 턴이 샌다. 차감은 Redis 를 쓰지 않아 장애 중에도 그대로 할 수 있다(이 예외는 버스트 검사에서만 난다 —
+        # 게이트에 걸린 회원은 일일 창에 닿지 않는다).
+        user = await db.get(User, user_id)
+        if user is not None and is_identity_gated(user):
+            return await _charge_unverified_turn(user_id, db, session_factory, now, price=price)
         # 차감이 없었으므로 환불 대상도 아니다 — 이미지 쪽 `:279`와 같은 결론이다.
         return ChatCharge(source="skipped")
+
+
+async def _charge_unverified_turn(
+    user_id: uuid.UUID,
+    db: AsyncSession,
+    session_factory: async_sessionmaker[AsyncSession],
+    now: datetime,
+    *,
+    price: int,
+) -> ChatCharge:
+    """본인인증 게이트에 걸린 회원의 Gemini 턴. 무료분이 0 이라 처음부터 무료분을 다 쓴 사람과 같은 길(하루 1회 확인 →
+    차감)을 가되, 클로버가 모자라면 `CLOVER_REQUIRED` 가 아니라 403 `IDENTITY_VERIFICATION_REQUIRED` 다 — 그 429 의 "자정에
+    무료분이 돌아온다"는 이 회원에게 거짓이고, 풀 길은 인증이다.
+
+    확인 429 는 지금 모양 그대로다(`retryAfterSeconds` 는 자정까지). 화면이 이 회원에게 "오늘 무료 한도를 다 썼어요"를
+    보이지 않게 하는 분기는 화면 몫이다."""
+    if await _needs_clover_spend_confirmation(user_id, db, now, price):
+        raise _too_many_requests(user_id, _CLOVER_WINDOW, seconds_until_kst_midnight(now), code=_CLOVER_CONFIRM_CODE)
+    spent = await clover.spend_in_new_transaction(session_factory, user_id=user_id, amount=price, kind="chat_spend")
+    if spent is None:
+        raise identity_verification_required()
+    return ChatCharge(source="clover", clover_amount=price, spend_ledger_id=spent.ledger_id)
 
 
 async def _charge_premium_turn(
@@ -405,7 +446,7 @@ async def _charge_premium_turn(
     spent = await clover.spend_in_new_transaction(session_factory, user_id=user_id, amount=price, kind="chat_spend")
     if spent is None:
         raise _too_many_requests(user_id, _CLOVER_WINDOW, seconds_until_kst_midnight(now), code=_CLOVER_CODE)
-    return ChatCharge(source="clover", clover_amount=price, model=model)
+    return ChatCharge(source="clover", clover_amount=price, model=model, spend_ledger_id=spent.ledger_id)
 
 
 @dataclass(frozen=True)
@@ -425,6 +466,9 @@ class ImageCharge:
     source: Literal["token", "clover", "skipped"]
     # `source != "clover"`이면 0. 채팅의 `ChatCharge`와 같은 이유로 영수증에 담는다.
     clover_amount: int = 0
+    # 클로버 차감의 원장 행(`ChatCharge`와 같다). 부분 환급(못 만든 장수)이 `dataclasses.replace`로 금액만 바꾼 영수증을
+    # 넘겨도 이 값은 그대로 따라가, 같은 차감의 배분에서 되돌린다.
+    spend_ledger_id: uuid.UUID | None = None
 
 
 async def enforce_image_rate_limit(
@@ -504,7 +548,9 @@ async def enforce_image_rate_limit(
             raise _too_many_requests(
                 user_id, _IMAGE_WINDOW, retry_after, code=_CLOVER_CODE
             )
-        return ImageCharge(count=payload.count, source="clover", clover_amount=clover_amount)
+        return ImageCharge(
+            count=payload.count, source="clover", clover_amount=clover_amount, spend_ledger_id=spent.ledger_id
+        )
     return ImageCharge(count=payload.count, source="token")
 
 
@@ -564,14 +610,15 @@ async def refund_image_charge(
     `RedisError`를 여기서 삼키는 이유: 이 함수는 **이미 실패가 확정된 요청**(429/503/400)의
     정리 작업이라, 예외가 새어 나가면 사용자가 받아야 할 429가 원인과 무관한 500으로 바뀐다.
     환불 유실 자체는 조용히 사라지지 않는다 — `refund_tokens`도 여기도 로그를 남긴다.
-    클로버 환불도 같은 이유로 예외를 삼킨다(`clover.refund_in_new_transaction`이 자체적으로)."""
+    클로버 환불도 같은 이유로 예외를 삼킨다(`clover.refund_spend_in_new_transaction`이 자체적으로)."""
     match charge.source:
         case "skipped":
             return
         case "clover":
-            await clover.refund_in_new_transaction(
+            await clover.refund_spend_in_new_transaction(
                 session_factory,
                 user_id=user_id,
+                spend_ledger_id=charge.spend_ledger_id,
                 amount=charge.clover_amount,
                 kind="image_refund",
             )

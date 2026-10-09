@@ -22,6 +22,7 @@ from factories import (
     _allow_novel_premium,
     _batch_output,
     _clear_llm_override,
+    _clover_lots,
     _novel_ledger,
     _novel_setup,
     _override_llm_client,
@@ -375,6 +376,8 @@ async def test_chain_makes_each_batch_and_refunds_the_unused_share(
     assert (parent.batch_id, parent.chapter_id) == (batches[0].id, first_chapter)
     assert await _novel_ledger(db_session, owner_id) == [("novelize_spend", -240), ("novelize_refund", 160)]
     await _assert_lots_match_balance(db_session, owner_id)
+    # 연쇄 부모가 쓰지 않은 몫은 부모의 차감 배분을 따라 깎은 로트로 돌아간다(자식은 차감 0 이라 환급도 없다).
+    assert "novelize_refund" not in [kind for kind, _ in await _clover_lots(db_session, owner_id)]
     polled = (await db_client.get(f"/novels/{novel_id}/jobs/{parent_id}")).json()
     assert (polled["completedBatches"], polled["plannedBatches"], polled["refundedAmount"]) == (2, 2, 160)
 

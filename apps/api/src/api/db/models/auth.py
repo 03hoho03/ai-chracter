@@ -2,11 +2,13 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import (
+    ARRAY,
     Boolean,
     CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Text,
     Uuid,
@@ -88,6 +90,11 @@ class User(Base):
         ForeignKey("user_personas.id", use_alter=True, name="fk_users_default_persona_id"),
         nullable=True,
     )
+    # 휴대폰 본인인증 결과. CI 원문이 아니라 서버 비밀키(`identity_ci_hmac_key`)를 붙인 HMAC 만 남긴다 — 같은 사람인지
+    # 대조하는 데는 해시면 충분하고, 원문은 다른 서비스에서도 같은 값이라 새면 그 사람을 서비스 밖에서 다시 알아볼 수
+    # 있다. 둘은 함께 있거나 함께 없다(CHECK). 탈퇴하면 둘 다 비우고 해시는 `withdrawn_identities` 로 옮긴다.
+    identity_ci_hmac: Mapped[str | None] = mapped_column(Text, nullable=True)
+    identity_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # 정상 경로는 조건부 UPDATE(`clover_balance >= :amount`)가 이미
     # 막으므로 이 제약이 발동할 일이 없다 — 갈리는 것은 우회 경로(어드민 회수 버그·수동 SQL·
@@ -97,6 +104,17 @@ class User(Base):
     # `db/models/story.py`의 `EndingRule` docstring 참고). 검증은 행위 테스트가 유일하다.
     __table_args__ = (
         CheckConstraint("clover_balance >= 0", name="ck_users_clover_balance_non_negative"),
+        # 🔴 이 CHECK 와 아래 부분 인덱스의 WHERE 도 `alembic check` 가 비교하지 않는다 — 행위 테스트가 유일한 검증이다.
+        CheckConstraint(
+            "(identity_ci_hmac IS NULL) = (identity_verified_at IS NULL)", name="ck_users_identity_pair"
+        ),
+        # 한 사람 한 계정은 살아 있는 계정 사이에서만이다. 탈퇴한 사람이 다시 가입해 인증하는 것은 막지 않는다.
+        Index(
+            "ux_users_identity_ci_hmac",
+            "identity_ci_hmac",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
     )
 
 
@@ -113,6 +131,24 @@ class WithdrawnEmail(Base):
 
     email_hmac: Mapped[str] = mapped_column(Text, primary_key=True)
     withdrawn_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class WithdrawnIdentity(Base):
+    """탈퇴한 인증 회원의 CI 해시(`users.identity_ci_hmac` 와 같은 키의 HMAC). 탈퇴로 `users` 의 두 칸을 비울 때 같은
+    트랜잭션에서 여기로 옮긴다.
+
+    다시 가입해 인증하는 것은 막지 않는다. 막는 것은 1회성 미션 보상의 재수령 하나다 — `claimed_mission_keys` 에 그 사람이
+    받은 미션 키가 남아, 같은 사람이 새 계정으로 같은 보상을 다시 받지 못한다. `withdrawn_at` 에서 1년이 지난 행은 조회
+    시점에 무시하고, 행 자체는 매일 도는 백업 크론이 지운다(`scripts/ops/backup_db.py`) — `WithdrawnEmail` 과 같은 규칙이다.
+    """
+
+    __tablename__ = "withdrawn_identities"
+
+    ci_hmac: Mapped[str] = mapped_column(Text, primary_key=True)
+    withdrawn_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    claimed_mission_keys: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'"), nullable=False
+    )
 
 
 class GuardianConsent(Base):

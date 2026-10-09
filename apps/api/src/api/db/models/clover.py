@@ -1,7 +1,18 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, Text, Uuid, func, text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    SmallInteger,
+    Text,
+    Uuid,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base
@@ -57,9 +68,14 @@ class CloverLot(Base):
 
     `kind`는 원장의 `CloverKind`(core/clover.py)와 값 범위가 다르다 — 로트는 지급에만
     생기므로(소모·회수·소멸류는 로트를 새로 만들지 않는다) `attendance_grant`·`mission_grant`·
-    `admin_grant`·`chat_refund`·`image_refund`·`novelize_refund`, 그리고 백필 전용 값 `legacy_balance`
+    `admin_grant`·`chat_refund`·`image_refund`·`novelize_refund`, 구매로 생기는 `purchase_paid`·
+    `purchase_bonus`, 그리고 백필 전용 값 `legacy_balance`
     (마이그레이션이 기존 `clover_balance`를 로트로 편입할 때만 쓴다)로 값이 갈린다. 같은
     타입을 재사용하지 않는다.
+
+    구매 로트(`purchase_paid`·`purchase_bonus`)는 그 결제(`payment_id`)를 가리키고, 다른 로트는 가리키지 않는다(CHECK).
+    한 결제에 유료·보너스 로트는 각각 하나뿐이다(부분 유니크) — 결제 확인이 겹쳐 두 번 지급되는 것을 막는 마지막 방어선이고,
+    환불이 그 구매의 로트를 집는 조회 인덱스를 겸한다.
     """
 
     __tablename__ = "clover_lots"
@@ -80,6 +96,9 @@ class CloverLot(Base):
     kind: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    payment_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("payments.id", name="fk_clover_lots_payment_id"), nullable=True
     )
 
     # CHECK 제약 두 개(`remaining >= 0`·`remaining <= granted_amount`)는 alembic
@@ -112,4 +131,67 @@ class CloverLot(Base):
             "created_at",
             postgresql_where=remaining > 0,
         ),
+        CheckConstraint(
+            "(kind IN ('purchase_paid', 'purchase_bonus')) = (payment_id IS NOT NULL)",
+            name="ck_clover_lots_purchase_has_payment",
+        ),
+        Index(
+            "ux_clover_lots_payment_id_kind",
+            "payment_id",
+            "kind",
+            unique=True,
+            postgresql_where=payment_id.is_not(None),
+        ),
+    )
+
+
+class CloverSpendAllocation(Base):
+    """차감 한 번(`clover_ledger` 음수 행 하나)이 어느 로트에서 얼마를 깎았는지. 차감 1회 = 원장 1행은 그대로 두고
+    로트별 몫을 여기 따로 남긴다 — 원장을 로트별로 쪼개면 내역 화면의 "한 번 쓴 것 = 한 줄"이 깨진다.
+
+    환급은 이 행들을 `seq` 역순으로 읽어 깎은 그 로트에 되돌린다(유료로 산 몫을 무료 로트로 돌려주지 않게).
+    `refunded_amount` 가 누적 환급이고, CHECK(`refunded_amount <= amount`)가 이중 환급의 마지막 그물이다 — 환급
+    경로가 실수로 두 번 불려도 깎은 양을 넘는 환급은 `IntegrityError` 로 롤백된다. JSON 칸이었다면 DB 가 이 누적을
+    막지 못한다.
+
+    회수(`revoke`)·소멸은 이 행을 남기지 않는다 — 환급 대상이 아니다. 이 테이블이 생기기 전의 차감에는 행이 없고,
+    그 차감의 환급은 무기한 새 로트로 돌려준다.
+
+    CHECK 둘은 alembic 1.18.5 의 `alembic check` 가 비교하지 않아 `pytest.raises(IntegrityError)` 행위 테스트가
+    유일한 검증이다(`CloverLot` 과 같은 함정).
+    """
+
+    __tablename__ = "clover_spend_allocations"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    spend_ledger_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("clover_ledger.id", name="fk_clover_spend_allocations_spend_ledger_id"),
+        nullable=False,
+    )
+    lot_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("clover_lots.id", name="fk_clover_spend_allocations_lot_id"), nullable=False
+    )
+    # 그 차감 안에서 로트를 깎은 순서(0부터). 환급이 이 역순으로 되돌린다.
+    seq: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    refunded_amount: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+
+    # `(spend_ledger_id, seq)` 유니크가 환급의 조회 인덱스를 겸한다. `lot_id` 인덱스는 한 로트에서 쓴 양을 모으는
+    # 조회(구매 보너스 사용량)와 로트 쪽 FK 검사용이다.
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_clover_spend_allocations_amount_positive"),
+        CheckConstraint(
+            "refunded_amount >= 0 AND refunded_amount <= amount",
+            name="ck_clover_spend_allocations_refunded_in_range",
+        ),
+        Index(
+            "ux_clover_spend_allocations_spend_ledger_id_seq",
+            "spend_ledger_id",
+            "seq",
+            unique=True,
+        ),
+        Index("ix_clover_spend_allocations_lot_id", "lot_id"),
     )

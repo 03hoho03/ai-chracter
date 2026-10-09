@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { isPremiumChatModel, type ChatModel, type ChatModelId } from "@/entities/chat-model";
 import { CloverBalance, useCloverBalanceQuery } from "@/entities/clover";
+import { useSessionQuery } from "@/entities/session";
 
 import { useSetRoomChatModelMutation } from "../api/useSetRoomChatModelMutation";
 import { isChatModelNotAllowedError } from "../model/chatModelError";
@@ -37,6 +38,7 @@ const SECONDARY_TEXT_CLASS =
 export function ChatModelPicker({ roomId, currentModelId, models, onChanged }: ChatModelPickerProps) {
   const setRoomChatModelMutation = useSetRoomChatModelMutation(roomId);
   const { data: clover } = useCloverBalanceQuery();
+  const { data: me } = useSessionQuery();
   const [pendingModelId, setPendingModelId] = useState<ChatModelId | undefined>(undefined);
   const confirmId = useId();
   const pendingModel = models.find((model) => model.id === pendingModelId);
@@ -114,7 +116,7 @@ export function ChatModelPicker({ roomId, currentModelId, models, onChanged }: C
                   </span>
                 )}
               </span>
-              <span className={cn("text-xs break-keep", SECONDARY_TEXT_CLASS)}>{formatChatModelPrice(model)}</span>
+              <span className={cn("text-xs break-keep", SECONDARY_TEXT_CLASS)}>{formatChatModelPrice(model, me?.identityGated ?? false)}</span>
             </span>
           </ToggleGroupItem>
         ))}

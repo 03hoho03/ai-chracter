@@ -36,7 +36,9 @@ from api.main import app
 from factories import (
     Room,
     _clear_llm_override,
+    _call_until_disconnect,
     _FakeLLMClient,
+    _HangingLLMClient,
     _make_user_with_clover_lot,
     _NeverCalledLLMClient,
     _open_room,
@@ -350,79 +352,19 @@ async def test_redis_failure_lets_the_request_through_without_a_lock(
         assert [event["type"] for event in _parse_sse_events(resp.text)][-1] == "done"
 
 
-class _HangingLLMClient(LLMClient):
-    """토큰 하나를 내보낸 뒤 신호를 주고 멈춘다 — 그동안 클라이언트가 연결을 끊는다."""
-
-    def __init__(self, started: asyncio.Event) -> None:
-        self._started = started
-
-    async def generate(
-        self,
-        prompt: str,
-        system_instruction: str | None = None,
-        stop_sequences: list[str] | None = None,
-        *,
-        usage: LLMCallContext,
-    ) -> AsyncIterator[str]:
-        yield "첫"
-        self._started.set()
-        await asyncio.sleep(30)
-        yield "끝나지 않는다"
-
-    async def generate_structured(
-        self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
-    ) -> Any:
-        raise AssertionError("이 시나리오에는 판정 호출이 없다")
-
-
 async def test_client_disconnect_mid_stream_frees_the_room(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """생성 도중 연결이 끊기면 스트림이 취소된다 — 그래도 락이 남지 않는다(남으면 그 사용자는 TTL 동안 409 를 본다).
-    httpx 는 스트림 중간 끊김을 만들 수 없어 ASGI 앱을 직접 부른다(서버가 알리는 ASGI spec 버전이 없으면 Starlette 는
-    끊김을 감시하다 스트림을 취소하는 쪽으로 간다 — 지금 운영 uvicorn 과 같은 길이다)."""
+    끊김은 `_call_until_disconnect` 가 만든다."""
     _, room = await _clover_room(db_client, db_session)
     started = asyncio.Event()
-    body = json.dumps({"content": "다음 말"}).encode()
-    received_body = False
-    sent: list[Message] = []
-
-    async def receive() -> Message:
-        nonlocal received_body
-        if not received_body:
-            received_body = True
-            return {"type": "http.request", "body": body, "more_body": False}
-        await started.wait()
-        return {"type": "http.disconnect"}
-
-    async def send(message: Message) -> None:
-        sent.append(message)
-
-    path = f"/chat-rooms/{room.room_id}/messages"
-    cookie = f"{settings.session_cookie_name}={db_client.cookies[settings.session_cookie_name]}"
-    scope: dict[str, Any] = {
-        "type": "http",
-        "asgi": {"version": "3.0"},
-        "http_version": "1.1",
-        "method": "POST",
-        "scheme": "http",
-        "path": path,
-        "raw_path": path.encode(),
-        "query_string": b"",
-        "root_path": "",
-        "headers": [
-            (b"host", b"testserver"),
-            (b"content-type", b"application/json"),
-            (b"cookie", cookie.encode()),
-        ],
-        "client": ("127.0.0.1", 50000),
-        "server": ("testserver", 80),
-    }
 
     _override_llm_client(_HangingLLMClient(started))
     try:
-        async with asyncio.timeout(10):
-            await app(scope, receive, send)
+        sent = await _call_until_disconnect(
+            db_client, "POST", f"/chat-rooms/{room.room_id}/messages", {"content": "다음 말"}, started
+        )
     finally:
         _clear_llm_override()
 

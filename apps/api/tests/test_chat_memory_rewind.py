@@ -37,6 +37,7 @@ from api.db.models import (
     ChatRoomMemorySnapshot,
     CloverLedger,
     CloverLot,
+    CloverSpendAllocation,
     Content,
     ContentVersion,
     User,
@@ -358,6 +359,14 @@ async def committed_engine(db_engine: AsyncEngine) -> AsyncGenerator[AsyncEngine
             await cleanup.execute(sa.delete(ContentVersion).where(ContentVersion.id.in_(version_ids)))
             await cleanup.execute(sa.delete(Content).where(Content.id.in_(content_ids)))
             await cleanup.execute(sa.delete(Asset).where(Asset.owner_user_id.in_(user_ids)))
+            # 배분이 원장·로트를 둘 다 FK 로 잡으므로 원장보다 먼저 지운다.
+            await cleanup.execute(
+                sa.delete(CloverSpendAllocation).where(
+                    CloverSpendAllocation.spend_ledger_id.in_(
+                        sa.select(CloverLedger.id).where(CloverLedger.user_id.in_(user_ids))
+                    )
+                )
+            )
             await cleanup.execute(sa.delete(CloverLedger).where(CloverLedger.user_id.in_(user_ids)))
             await cleanup.execute(sa.delete(CloverLot).where(CloverLot.user_id.in_(user_ids)))
             await cleanup.execute(sa.delete(User).where(User.id.in_(user_ids)))

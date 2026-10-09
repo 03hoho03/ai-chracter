@@ -123,6 +123,9 @@ importers:
       '@hookform/resolvers':
         specifier: ^5.4.0
         version: 5.4.0(react-hook-form@7.81.0(react@19.2.7))
+      '@portone/browser-sdk':
+        specifier: ^0.1.13
+        version: 0.1.13
       '@sentry/react':
         specifier: ^10.74.0
         version: 10.74.0(react@19.2.7)
@@ -1129,6 +1132,9 @@ packages:
 
   '@poppinss/exception@1.2.3':
     resolution: {integrity: sha512-dCED+QRChTVatE9ibtoaxc+WkdzOSjYTKi/+uacHWIsfodVfpsueo3+DKpgU5Px8qXjgmXkSvhXvSCz3fnP9lw==}
+
+  '@portone/browser-sdk@0.1.13':
+    resolution: {integrity: sha512-zC94/gmMeh5O44iRx/SiIyt8p+1YXxEVRQu+Fhi7WKMlzbERBViwCxY6B6MVO2QprGJS5iQG2bf6e7KoXln5Kg==}
 
   '@radix-ui/number@1.1.2':
     resolution: {integrity: sha512-ceTwaxc4I5IOi97DgCotl3pqiyRGvffcc0oOsE2dQYaJOFIDsDt4VWG6xEbg1QePv9QWausCEIppud/tJ1wNig==}
@@ -6064,6 +6070,8 @@ snapshots:
       supports-color: 10.2.2
 
   '@poppinss/exception@1.2.3': {}
+
+  '@portone/browser-sdk@0.1.13': {}
 
   '@radix-ui/number@1.1.2': {}
 

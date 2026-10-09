@@ -405,7 +405,13 @@ async def _finish_chain(session_factory: SessionFactory, job_id: uuid.UUID) -> N
             await db.rollback()
             return
         if moved.refunded_amount:
-            await clover.grant(db, user_id=user_id, amount=moved.refunded_amount, kind="novelize_refund")
+            await clover.refund_spend(
+                db,
+                user_id=user_id,
+                spend_ledger_id=moved.spend_ledger_id,
+                amount=moved.refunded_amount,
+                kind="novelize_refund",
+            )
         await db.commit()
 
 
@@ -614,7 +620,9 @@ async def _save_batch(
             await db.execute(
                 update(NovelJob).where(NovelJob.id == job_id).values(refunded_at=func.now(), refunded_amount=refund)
             )
-            await clover.grant(db, user_id=user_id, amount=refund, kind="novelize_refund")
+            await clover.refund_spend(
+                db, user_id=user_id, spend_ledger_id=moved.spend_ledger_id, amount=refund, kind="novelize_refund"
+            )
         await db.execute(update(Novel).where(Novel.id == job.novel_id).values(updated_at=func.now()))
         await db.commit()
         if job.kind == "chapter_regenerate":

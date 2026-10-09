@@ -7,6 +7,7 @@ from api.auth.age import is_under_minimum_age
 from api.auth.oauth_common import OAuthProvider
 from api.core.schema import CamelModel
 from api.db.models.feature_grant import FeatureName
+from api.payments.eligibility import PurchaseBlockReason
 
 
 class SignupRequest(CamelModel):
@@ -123,3 +124,19 @@ class MeResponse(CamelModel):
     # 이 계정이 지금 쓸 수 있는 기능. 서버가 라우트 게이트와 같은 판정으로 계산하고 FE 는 이것으로 진입점만
     # 숨긴다(막는 것은 서버 게이트다).
     enabled_features: list[FeatureName]
+    # 휴대폰 본인인증을 마쳤는가.
+    identity_verified: bool
+    # 미인증 회원의 무료 대화·출석·미션을 막는 게이트가 켜져 있는가. 라우트 게이트와 같은 판정 함수의 값이다 — 꺼져 있으면
+    # 화면이 미인증 회원에게 인증 안내를 띄울 이유가 없다.
+    identity_gate_enabled: bool
+    # 이 회원이 지금 게이트에 걸리는가 — 스위치·인증 여부·레이트리밋 면제를 라우트 게이트와 같은 함수로 판정한 값이다.
+    # 화면이 스위치와 인증 여부로 따로 판정하면 면제 회원의 미션 받기를 잘못 잠근다.
+    identity_gated: bool
+    # 인증 회원(과 게이트가 꺼진 동안 모든 회원)의 하루 무료 대화 수. 화면 문구가 숫자 사본을 갖지 않게 서버 상수를 싣는다.
+    daily_free_chat_turns: int
+    # 구매로 받은 클로버의 남은 양(`/me/clover` 의 `paidBalance` 와 같은 함수). 재동의 게이트 밖인 이 응답에 둬야 재동의
+    # 모달 안의 탈퇴 확인도 환불 경고를 띄울 수 있다(`/me/clover` 는 재동의 전까지 403 이다).
+    paid_clover_balance: int
+    # 지금 클로버를 살 수 없는 이유(살 수 있으면 null). 주문 생성과 같은 판정 함수라, 허브가 구매 다이얼로그를 열기 전에
+    # 나이 제한을 알린다. 결제 스위치는 여기 없다(가격 응답의 `paymentsEnabled`).
+    purchase_block_reason: PurchaseBlockReason | None

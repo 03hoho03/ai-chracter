@@ -592,6 +592,12 @@ async def test_login_adult_issues_session_and_me_returns_user(
         "hasPassword": True,
         "socialProvider": None,
         "enabledFeatures": [],
+        "identityVerified": False,
+        "identityGateEnabled": False,
+        "identityGated": False,
+        "dailyFreeChatTurns": 30,
+        "paidCloverBalance": 0,
+        "purchaseBlockReason": "identity_required",
     }
 
 

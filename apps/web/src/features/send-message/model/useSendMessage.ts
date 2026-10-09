@@ -16,6 +16,7 @@ import { chatStreamEventSchema } from "@/entities/chat-room";
 import type { ChatMessage, ChatRateLimit, ChatRoomState, ChatStreamRequest } from "@/entities/chat-room";
 import { cloverKeys } from "@/entities/clover";
 import type { CloverSpendConfirmOutcome } from "@/entities/clover";
+import { isIdentityVerificationRequiredError } from "@/entities/identity";
 import { isLegalReconsentRequiredError } from "@/entities/legal";
 import { resetSessionIfLost, sessionKeys } from "@/entities/session";
 import { openChatStream } from "@/shared/api/sse/openChatStream";
@@ -45,6 +46,8 @@ type PendingRequest = {
 // 입력창 자리에 안내를 띄운다(방을 열 때 이미 제한이었다면 응답의 `contentRestricted`가 같은 일을 한다).
 // `busy`는 같은 방의 앞 턴이 아직 끝나지 않아 서버가 시작 전에 거절한 것이다. 기다리면 풀리므로 실패 배너가 아니라
 // 중립 배너와 다시 보내기를 띄운다.
+// `identityRequired`는 본인인증 전이라 무료 대화가 없고 가진 클로버도 모자라 서버가 막은 것이다. 다시 보내도 안 풀리고
+// 실패도 아니라 재시도 대신 본인인증 안내를 띄운다.
 type SendMessageStatus =
   | { kind: "idle" }
   | { kind: "sending" }
@@ -55,6 +58,7 @@ type SendMessageStatus =
       declined?: boolean;
       restricted?: boolean;
       busy?: boolean;
+      identityRequired?: boolean;
     };
 
 /** 낙관적 업데이트가 핵심: 사용자 메시지는 스트림 성공 여부와
@@ -166,6 +170,13 @@ export function useSendMessage(
       if (isContentRestrictedError(error)) {
         void queryClient.invalidateQueries({ queryKey: chatRoomKeys.detail(roomId) });
         setStatus({ kind: "error", retryPayload: pending, restricted: true });
+        return;
+      }
+      // 본인인증 전이라 막혔다. 세션을 다시 읽어(SSE 라 전역 MutationCache 가 못 본다) 게이트 상태를 화면과 맞추고,
+      // 확인 모달은 띄우지 않는다 — 동의해도 쓸 클로버가 없다.
+      if (isIdentityVerificationRequiredError(error)) {
+        void queryClient.invalidateQueries({ queryKey: sessionKeys.current() });
+        setStatus({ kind: "error", retryPayload: pending, identityRequired: true });
         return;
       }
       // 앞 턴이 아직 돌고 있다. 클로버와 무관하므로 확인 모달도 띄우지 않는다.

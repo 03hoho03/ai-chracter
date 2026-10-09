@@ -34,7 +34,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from api.chat import router as chat_router
+from api.chat import turn_settlement
 from api.chat.preview_session import get_preview_session
+from api.chat.turn_settlement import TurnSettlement
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
     ImageMatchJudgmentResult,
@@ -42,6 +44,7 @@ from api.chat.prompt_builder import (
     StatRuleJudgmentResult,
 )
 from api.core import clover, rate_limit_gate
+from api.core.rate_limit_gate import ChatCharge
 from api.core.config import settings
 from api.db.models import (
     Asset,
@@ -716,8 +719,8 @@ async def test_send_write_failure_after_the_stat_write_saves_nothing_of_the_turn
     올라간 `turn_count`, 바뀐 스탯 값 중 **하나라도** 저장돼 있으면 실패다. 보내기 전에 커밋한 사용자 메시지는 남는 것이
     맞다.
 
-    함께 고정하는 기존 동작: 예외가 제너레이터 밖으로 나가 스트림이 done·error 이벤트 없이 끊기고, 클로버는 환불되지
-    않는다 — 환불은 우리 쪽 실패 중 생성·렌더 실패 자리에만 있다."""
+    함께 고정하는 동작: 예외가 제너레이터 밖으로 나가 스트림이 done·error 이벤트 없이 끊기고, 응답이 저장되지 않았으므로
+    정산 가드가 클로버를 되돌린다(원래 예외는 그대로 올라간다)."""
     user = await _make_user_with_clover_lot(
         db_session, clover_balance=100, clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC))
     )
@@ -747,9 +750,9 @@ async def test_send_write_failure_after_the_stat_write_saves_nothing_of_the_turn
     assert after["turnCount"] == before["turnCount"]
     assert after["stats"] == before["stats"]
     await db_session.refresh(user)
-    assert user.clover_balance == 100 - clover.CHAT_TURN_COST
+    assert user.clover_balance == 100
     kinds = (await db_session.scalars(sa.select(CloverLedger.kind).where(CloverLedger.user_id == user.id))).all()
-    assert list(kinds) == ["chat_spend"]
+    assert sorted(kinds) == ["chat_refund", "chat_spend"]
 
 
 @pytest.mark.usefixtures("committing_request_session")
@@ -760,8 +763,8 @@ async def test_regenerate_write_failure_keeps_the_old_response(
     그대로 있어야 하고, 새 응답과 폐기 기록은 없어야 한다 — 옛 응답이 지워져 있거나 새 응답·폐기 기록이 하나라도 저장돼
     있으면 실패다.
 
-    함께 고정하는 기존 동작: 예외가 제너레이터 밖으로 나가 스트림이 done·error 이벤트 없이 끊기고, 클로버는 환불되지
-    않는다."""
+    함께 고정하는 동작: 예외가 제너레이터 밖으로 나가 스트림이 done·error 이벤트 없이 끊기고, 새 응답이 저장되지
+    않았으므로 정산 가드가 클로버를 되돌린다."""
     user = await _make_user_with_clover_lot(
         db_session, clover_balance=100, clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC))
     )
@@ -789,6 +792,59 @@ async def test_regenerate_write_failure_keeps_the_old_response(
     )
     assert discarded == 0
     await db_session.refresh(user)
-    assert user.clover_balance == 100 - clover.CHAT_TURN_COST
+    assert user.clover_balance == 100
     kinds = (await db_session.scalars(sa.select(CloverLedger.kind).where(CloverLedger.user_id == user.id))).all()
-    assert list(kinds) == ["chat_spend"]
+    assert sorted(kinds) == ["chat_refund", "chat_spend"]
+
+
+async def test_settlement_of_a_failed_write_releases_the_requests_room_lock_before_checking(
+    independent_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """판정 기준(결과를 보기 전에 적었다): 쓰기 구간이 방 행을 `FOR NO KEY UPDATE` 로 잠그고 응답을 올린 채(커밋 전) 끝나면,
+    정산이 상한(여기서는 2초) 안에 응답이 없음을 확인하고 한 번 환급해야 한다. 정산의 `FOR SHARE` 가 자기 요청의 잠금을
+    기다리면 상한을 다 쓰고 0번이다. 독립 커넥션이라야 두 세션이 잠금을 다툰다.
+
+    요청 세션의 트랜잭션이 아직 열려 있는 경우다 — DB 오류는 SQLAlchemy 가 이미 되감지만, 쓰기 구간의 파이썬 예외는
+    트랜잭션을 연 채 정산에 닿는다."""
+    async with independent_session_factory() as session:
+        user = _make_user(email=f"{uuid.uuid4()}@{_MARKER_DOMAIN}")
+        session.add(user)
+        await session.flush()
+        genre = await _get_genre(session)
+        content = await _make_published_character(session, creator_user_id=user.id, genre_id=genre.id)
+        assert content.current_published_version_id is not None
+        room = ChatRoom(user_id=user.id, content_id=content.id, content_version_id=content.current_published_version_id)
+        session.add(room)
+        await session.commit()
+        user_id, room_id = user.id, room.id
+
+    refunds: list[int] = []
+
+    async def _fake_refund(*_args: Any, amount: int, **_kwargs: Any) -> None:
+        refunds.append(amount)
+
+    monkeypatch.setattr(clover, "refund_spend_in_new_transaction", _fake_refund)
+    monkeypatch.setattr(turn_settlement, "SETTLE_TIMEOUT_SECONDS", 2.0)
+    settlement = TurnSettlement(
+        charge=ChatCharge(source="clover", clover_amount=clover.CHAT_TURN_COST, spend_ledger_id=uuid.uuid4()),
+        user_id=user_id,
+        session_factory=independent_session_factory,
+    )
+    reply_id = uuid.uuid4()
+
+    async with independent_session_factory() as request_session:
+        locked = await request_session.scalar(
+            sa.select(ChatRoom.id).where(ChatRoom.id == room_id).with_for_update(key_share=True)
+        )
+        assert locked == room_id
+        request_session.add(
+            ChatMessage(id=reply_id, chat_room_id=room_id, role=ChatMessageRole.ASSISTANT, content="응답")
+        )
+        await request_session.flush()
+        settlement.set_pending_message(request_session, room_id, reply_id)
+
+        await settlement.refund_if_unsettled()
+
+    assert refunds == [clover.CHAT_TURN_COST]
+    async with independent_session_factory() as check:
+        assert await check.get(ChatMessage, reply_id) is None

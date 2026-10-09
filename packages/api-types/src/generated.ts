@@ -1168,6 +1168,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/users/{user_id}/payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List User Payments
+         * @description 그 회원의 최근 주문(모든 상태). 진행 중 환불 시도가 있는 주문은 `refundPending` 이 참이다.
+         */
+        get: operations["list_user_payments_admin_users__user_id__payments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/{payment_id}/refund-quote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Refund Quote
+         * @description 환불 견적. 신청 접수일(KST)이 결제일 전이거나 오늘 뒤면 422 `REFUND_RECEIVED_ON_INVALID`, 환불할 수 있는 상태가
+         *     아니면 422 `PAYMENT_NOT_REFUNDABLE`. 아무것도 쓰지 않는다.
+         */
+        get: operations["get_refund_quote_admin_payments__payment_id__refund_quote_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/{payment_id}/refund": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refund Payment
+         * @description 환불을 실행하거나, 진행 중 시도가 있으면 그 시도를 마무리한다.
+         *
+         *     - 200 `succeeded`: 포트원 취소 확인. 디스코드에 알린다.
+         *     - 202 `requested`: 클로버는 회수했고 포트원 결과가 확정되지 않았다(응답 없음·시간 초과·PG 비동기 처리). 같은 경로로
+         *       다시 부르면 포트원을 재조회해 마무리한다.
+         *     - 422 `REFUND_REJECTED`: 포트원이 취소를 거절해 회수한 클로버를 되돌렸다.
+         *     - 409 `REFUND_QUOTE_CHANGED`: 실행 시점 견적이 다이얼로그의 견적과 다르다. 422 `REFUND_AMOUNT_ZERO`·
+         *       `REFUND_RECEIVED_ON_INVALID`·`PAYMENT_NOT_REFUNDABLE`: 시작하지 않았다.
+         */
+        post: operations["refund_payment_admin_payments__payment_id__refund_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/assets/presigned-upload": {
         parameters: {
             query?: never;
@@ -3446,6 +3514,9 @@ export interface paths {
          * Send Message
          * @description text/event-stream SSE 응답. 실제 생성+판단 파이프라인은
          *     `_stream_new_turn`(이 방의 새 사용자 메시지를 커밋한 뒤 호출)이 담당한다.
+         *
+         *     본문 전체가 정산 가드 안이다 — 첫 `yield` 전 실패, 생성 중 끊김, 예상하지 못한 예외 어느 것으로 끝나도 응답이
+         *     저장되지 않았으면 차감을 되돌리고 원래 예외를 다시 올린다(`chat/turn_settlement.py`).
          */
         post: operations["send_message_chat_rooms__room_id__messages_post"];
         delete?: never;
@@ -4063,6 +4134,115 @@ export interface paths {
         get: operations["get_clover_pricing_clover_pricing_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Payment
+         * @description 주문을 만든다. 금액은 서버가 상품 키로 정하고 주문 행에 복사해 둔다 — 브라우저가 금액을 바꿔 결제해도 동기화의
+         *     금액 대조가 지급을 막는다. 포트원 사전 등록은 하지 않는다(주문마다 외부 호출 실패 지점이 하나 늘 뿐, 막는 것은 같다).
+         *
+         *     결제가 꺼져 있으면 503 `PAYMENTS_UNAVAILABLE`. 그다음 본인인증(아니면 403 `IDENTITY_VERIFICATION_REQUIRED`)과 만 19세
+         *     확인(아니면 403 `PAYMENT_AGE_RESTRICTED`)이다. 이 인증은 미인증 회원 게이트가 아니라 나이를 확인하는 유일한 수단이라,
+         *     게이트 스위치가 꺼져 있어도, 레이트리밋 면제 회원이어도 늘 건다. 나이는 인증으로 덮어쓴 생년월일을 로그인의 연령
+         *     확인과 같은 기준(UTC 날짜)으로 잰다.
+         */
+        post: operations["create_payment_payments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payments/{payment_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete Payment
+         * @description 브라우저가 결제창이 끝났다고 알린다. 자기 주문만(아니면 404 `PAYMENT_NOT_FOUND`).
+         *
+         *     재동의·결제 플래그 게이트를 걸지 않는다 — 이미 돈이 나간 결제의 동기화를 막으면 안 된다. 포트원 조회가 실패하면
+         *     502 `PORTONE_UNAVAILABLE`(다시 시도하면 되고, 웹훅도 같은 결제를 맞춘다).
+         */
+        post: operations["complete_payment_payments__payment_id__complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/identity-verifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Identity Verification
+         * @description 인증 id 를 발급하고 이 사용자에게 묶는다.
+         *
+         *     인증 설정이 없거나, 인증을 요구하는 기능(결제·게이트)이 둘 다 꺼져 있으면 503 `IDENTITY_VERIFICATION_UNAVAILABLE` —
+         *     쓰일 곳이 없는 인증으로 개인정보를 받지 않는다. 이미 인증한 계정은 409 `IDENTITY_ALREADY_VERIFIED`.
+         */
+        post: operations["start_identity_verification_me_identity_verifications_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/identity-verifications/{identity_verification_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete Identity Verification
+         * @description 포트원에 인증 건을 다시 물어 결과를 저장한다.
+         *
+         *     거절은 모두 아무것도 저장하지 않는다:
+         *     - 이 사용자에게 묶인 인증 id 가 아니면 404 `IDENTITY_VERIFICATION_NOT_FOUND`.
+         *     - 이미 인증한 계정이면 409 `IDENTITY_ALREADY_VERIFIED` — 묶음이 남은 두 번째 인증 창으로 다른 사람의 인증을 덮어써 계정의
+         *       주인을 바꾸지 못하게 한다.
+         *     - 포트원 조회 실패 502 `PORTONE_UNAVAILABLE`(다시 시도하면 된다).
+         *     - 인증 완료가 아니거나 우리 본인인증 채널이 아니면 422 `IDENTITY_VERIFICATION_NOT_VERIFIED`.
+         *     - CI 가 없으면 422 `IDENTITY_CI_MISSING` — 한 사람 한 계정을 지킬 수 없다.
+         *     - 생년월일이 없거나 읽을 수 없으면 422 `IDENTITY_BIRTH_DATE_MISSING` — 생년월일 없이 덮어쓰면 로그인의 연령 확인이 그
+         *       계정을 매번 실패시킨다.
+         *     - 만 14세 미만이면 403 `IDENTITY_UNDER_MINIMUM_AGE`. CI 도 생년월일도 저장하지 않는다(14세 미만의 개인정보를 받지
+         *       않는다).
+         *     - 같은 사람이 다른 살아 있는 계정으로 이미 인증했으면 409 `IDENTITY_ALREADY_USED`.
+         *
+         *     통과하면 CI 해시·인증 시각을 저장하고 생년월일을 인증값으로 덮어쓴다. 나이 판정은 로그인의 연령 확인과 같은 기준(UTC
+         *     날짜)이다. 만 19세 미만으로 인증되면 베타 참가 자격을 같은 트랜잭션에서 거둔다 — 베타는 성인만 받는데 지정 때의 자기
+         *     신고 생년월일만 확인했다.
+         */
+        post: operations["complete_identity_verification_me_identity_verifications__identity_verification_id__complete_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5716,6 +5896,63 @@ export interface components {
             /** Isactive */
             isActive: boolean;
         };
+        /** AdminRefundQuoteResponse */
+        AdminRefundQuoteResponse: {
+            /** Refundkrw */
+            refundKrw: number;
+            /** Ratiopercent */
+            ratioPercent: number;
+            /** Paidremaining */
+            paidRemaining: number;
+            /** Bonusused */
+            bonusUsed: number;
+            /** Clawbackpaid */
+            clawbackPaid: number;
+            /** Clawbackbonus */
+            clawbackBonus: number;
+            /** Cancellablekrw */
+            cancellableKrw: number;
+            /**
+             * Paidat
+             * Format: date-time
+             */
+            paidAt: string;
+        };
+        /**
+         * AdminRefundRequest
+         * @description 멱등키를 받지 않는다 — 그 결제의 진행 중 환불 시도(서버의 `requested` 행)가 시도 단위다. 진행 중 시도가 있으면
+         *     `expected_refund_krw`·`received_on`·`company_fault` 는 쓰이지 않고 그 시도를 마무리한다.
+         */
+        AdminRefundRequest: {
+            /** Reason */
+            reason: string;
+            /** Expectedrefundkrw */
+            expectedRefundKrw: number;
+            /**
+             * Receivedon
+             * Format: date
+             */
+            receivedOn: string;
+            /**
+             * Companyfault
+             * @default false
+             */
+            companyFault: boolean;
+        };
+        /** AdminRefundResponse */
+        AdminRefundResponse: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "succeeded" | "requested";
+            /** Amountkrw */
+            amountKrw: number;
+            /** Clawbackpaid */
+            clawbackPaid: number;
+            /** Clawbackbonus */
+            clawbackBonus: number;
+        };
         /** AdminReportContentDetail */
         AdminReportContentDetail: {
             /**
@@ -5806,7 +6043,7 @@ export interface components {
              * Actiontype
              * @enum {string}
              */
-            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "notice-publish" | "notice-unpublish" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
+            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "notice-publish" | "notice-unpublish" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-payment-refund" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
             /** Targetcontentid */
             targetContentId: string | null;
             /** Contentname */
@@ -6001,6 +6238,38 @@ export interface components {
             granted: boolean;
             /** Admincomment */
             adminComment?: string | null;
+        };
+        /** AdminUserPaymentItem */
+        AdminUserPaymentItem: {
+            /** Paymentid */
+            paymentId: string;
+            /** Productkey */
+            productKey: string;
+            /** Ordername */
+            orderName: string;
+            /** Amountkrw */
+            amountKrw: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "paid" | "failed" | "mismatch" | "owner_withdrawn" | "cancelled" | "partially_cancelled";
+            /** Paidat */
+            paidAt: string | null;
+            /** Cancelledamountkrw */
+            cancelledAmountKrw: number;
+            /** Refundpending */
+            refundPending: boolean;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** AdminUserPaymentListResponse */
+        AdminUserPaymentListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminUserPaymentItem"][];
         };
         /**
          * AdminUserRateLimitExemptRequest
@@ -6594,6 +6863,8 @@ export interface components {
             spendConfirmedToday: boolean;
             /** Attendanceclaimable */
             attendanceClaimable: boolean;
+            /** Paidbalance */
+            paidBalance: number;
             expiringSoon: components["schemas"]["CloverExpiringSoon"] | null;
         };
         /**
@@ -6676,6 +6947,19 @@ export interface components {
             missions: components["schemas"]["CloverMissionItem"][];
         };
         /**
+         * CloverPayMethodItem
+         * @description 포트원 브라우저 SDK 의 `payMethod` 와, 간편결제일 때 `easyPay.easyPayProvider` 값 그대로.
+         */
+        CloverPayMethodItem: {
+            /**
+             * Paymethod
+             * @enum {string}
+             */
+            payMethod: "CARD" | "EASY_PAY";
+            /** Easypayprovider */
+            easyPayProvider: string | null;
+        };
+        /**
          * CloverPricingResponse
          * @description 공개 가격 안내. 단가는 기본 모델 기준만 싣는다 — 상위 모델은 허용된 계정만 쓰고 소설은 허용 명단 전용이라
          *     공개 안내에 넣지 않는다.
@@ -6687,6 +6971,12 @@ export interface components {
             chatTurnCost: number;
             /** Imagecost */
             imageCost: number;
+            /** Paymentsenabled */
+            paymentsEnabled: boolean;
+            /** Paymethods */
+            payMethods: components["schemas"]["CloverPayMethodItem"][];
+            /** Identitygateenabled */
+            identityGateEnabled: boolean;
         };
         /** CloverProductItem */
         CloverProductItem: {
@@ -7061,6 +7351,27 @@ export interface components {
             /** Mentionuserids */
             mentionUserIds: string[];
         };
+        /** CompleteIdentityVerificationResponse */
+        CompleteIdentityVerificationResponse: {
+            /**
+             * Verifiedat
+             * Format: date-time
+             */
+            verifiedAt: string;
+        };
+        /**
+         * CompletePaymentResponse
+         * @description `pending` 이면 포트원이 아직 결제를 확정하지 않았다 — 화면은 "확인 중"을 안내하고 잔액을 다시 읽는다.
+         */
+        CompletePaymentResponse: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "paid" | "failed" | "mismatch" | "owner_withdrawn" | "cancelled" | "partially_cancelled";
+            /** Balance */
+            balance: number;
+        };
         /**
          * ContentAccessStatus
          * @description Mirrors the FE `resolveAccessStatus` union (`entities/content`):
@@ -7270,6 +7581,40 @@ export interface components {
         /** ContentVisibilityUpdateRequest */
         ContentVisibilityUpdateRequest: {
             visibility: components["schemas"]["ContentVisibility"];
+        };
+        /** CreatePaymentRequest */
+        CreatePaymentRequest: {
+            /**
+             * Productkey
+             * @enum {string}
+             */
+            productKey: "starter" | "basic" | "plus" | "pro";
+            /**
+             * Agreed
+             * @constant
+             */
+            agreed: true;
+        };
+        /**
+         * CreatePaymentResponse
+         * @description 브라우저가 포트원 결제창에 그대로 넘기는 값. 상점 id·채널키는 웹 빌드에 넣지 않고 이 응답으로만 내린다.
+         */
+        CreatePaymentResponse: {
+            /** Paymentid */
+            paymentId: string;
+            /** Storeid */
+            storeId: string;
+            /** Channelkey */
+            channelKey: string;
+            /** Ordername */
+            orderName: string;
+            /** Totalamount */
+            totalAmount: number;
+            /**
+             * Currency
+             * @constant
+             */
+            currency: "KRW";
         };
         /**
          * DevelopmentExampleItem
@@ -7827,6 +8172,18 @@ export interface components {
             socialProvider: ("google" | "kakao") | null;
             /** Enabledfeatures */
             enabledFeatures: ("novelize" | "chat_premium_models" | "novelize_premium_models")[];
+            /** Identityverified */
+            identityVerified: boolean;
+            /** Identitygateenabled */
+            identityGateEnabled: boolean;
+            /** Identitygated */
+            identityGated: boolean;
+            /** Dailyfreechatturns */
+            dailyFreeChatTurns: number;
+            /** Paidcloverbalance */
+            paidCloverBalance: number;
+            /** Purchaseblockreason */
+            purchaseBlockReason: ("identity_required" | "age_restricted") | null;
         };
         /** MediaBookAxisInput */
         MediaBookAxisInput: {
@@ -9405,6 +9762,18 @@ export interface components {
         SocialOnboardingResponse: {
             /** Email */
             email: string;
+        };
+        /**
+         * StartIdentityVerificationResponse
+         * @description 브라우저가 포트원 본인인증 창에 그대로 넘기는 값. 상점 id·채널키는 웹 빌드에 넣지 않고 이 응답으로만 내린다.
+         */
+        StartIdentityVerificationResponse: {
+            /** Identityverificationid */
+            identityVerificationId: string;
+            /** Storeid */
+            storeId: string;
+            /** Channelkey */
+            channelKey: string;
         };
         /**
          * StartingSetupDraftItem
@@ -11394,6 +11763,115 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminLlmUsageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_user_payments_admin_users__user_id__payments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserPaymentListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_refund_quote_admin_payments__payment_id__refund_quote_get: {
+        parameters: {
+            query: {
+                receivedOn: string;
+                companyFault?: boolean;
+            };
+            header?: never;
+            path: {
+                payment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRefundQuoteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refund_payment_admin_payments__payment_id__refund_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                payment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminRefundRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRefundResponse"];
+                };
+            };
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRefundResponse"];
                 };
             };
             /** @description Validation Error */
@@ -16424,6 +16902,121 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CloverPricingResponse"];
+                };
+            };
+        };
+    };
+    create_payment_payments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePaymentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatePaymentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_payment_payments__payment_id__complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                payment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompletePaymentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_identity_verification_me_identity_verifications_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StartIdentityVerificationResponse"];
+                };
+            };
+        };
+    };
+    complete_identity_verification_me_identity_verifications__identity_verification_id__complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identity_verification_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompleteIdentityVerificationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

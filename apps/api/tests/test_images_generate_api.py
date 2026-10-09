@@ -24,6 +24,7 @@ from api.core.s3 import build_variant_keys
 from api.db.models.auth import User
 from api.db.models.clover import CloverLedger
 from api.db.models.media import Asset, AssetKind, AssetStatus, ImageGenerationRequest
+from api.images import jobs as image_jobs
 from api.images import router as images_router
 from api.images.jobs import ImageGenerationJob, ImageGenerationJobStatus, get_job
 from api.llm.client import LLMClientError
@@ -38,7 +39,7 @@ from api.llm.local_image import (
     ModelCapability,
 )
 from api.main import app
-from factories import _login_as, _make_user, _make_user_with_clover_lot, _patch_httpx
+from factories import _clover_lots, _login_as, _make_user, _make_user_with_clover_lot, _patch_httpx
 
 
 def _png_bytes(width: int = 64, height: int = 64) -> bytes:
@@ -1096,6 +1097,87 @@ async def test_partial_success_refunds_only_the_images_that_were_not_made(
     assert refunded == clover.IMAGE_UNIT_COST  # 못 만든 1장분만
     await db_session.refresh(user)
     assert user.clover_balance == 100 - clover.IMAGE_UNIT_COST
+    # 금액만 줄인 영수증으로 환급해도 같은 차감의 배분을 따라 깎은 로트로 돌아간다.
+    assert await _clover_lots(db_session, user.id) == [("legacy_balance", 100 - clover.IMAGE_UNIT_COST)]
+
+
+async def test_cancel_right_after_the_partial_refund_commits_does_not_refund_again(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """판정 기준: 정상 경로의 부분 환급(못 만든 1장)이 커밋된 뒤 그 `await` 가 돌아오기 전에 잡이 취소되면, 예외 경로가 같은
+    몫을 다시 돌려주면 안 된다 — 환급 합이 1장분이어야 한다. 정산 표시를 환급 뒤에 세우면 2장분이 된다."""
+    _stub_capabilities_ready(monkeypatch)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+    refund_committed = asyncio.Event()
+    real_refund = rate_limit_gate.refund_image_charge
+
+    async def refund_then_hang(*args: Any, **kwargs: Any) -> None:
+        await real_refund(*args, **kwargs)
+        if not refund_committed.is_set():
+            refund_committed.set()
+            await asyncio.Event().wait()
+
+    monkeypatch.setattr(images_router, "refund_image_charge", refund_then_hang)
+    call_count = {"n": 0}
+
+    def generate() -> tuple[bytes, str]:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise LocalImageBlockedError(reason="image")
+        return _png_bytes(), "image/png"
+
+    before = set(image_jobs._background_tasks)
+    _override_image_client(generate)
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=2))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+
+    await asyncio.wait_for(refund_committed.wait(), timeout=5)
+    [task] = set(image_jobs._background_tasks) - before
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=5)
+
+    spent, refunded = _spent_and_refunded(await _clover_ledger(db_session, user.id))
+    assert spent == -2 * clover.IMAGE_UNIT_COST
+    assert refunded == clover.IMAGE_UNIT_COST
+    assert await _clover_lots(db_session, user.id) == [("legacy_balance", 100 - clover.IMAGE_UNIT_COST)]
+
+
+async def test_partial_refund_uses_the_receipt_even_if_the_unit_cost_changes_mid_job(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """판정 기준: 차감 뒤 잡이 도는 사이 단가가 바뀌어도 못 만든 1장의 환급은 차감 당시 단가(영수증)다. 지금 단가로 다시
+    곱하면 바뀐 단가만큼 돌려준다."""
+    _stub_capabilities_ready(monkeypatch)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+    charged_unit = clover.IMAGE_UNIT_COST
+    call_count = {"n": 0}
+
+    def generate() -> tuple[bytes, str]:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            # 차감은 이미 끝났다 — 여기서 단가를 올린다.
+            monkeypatch.setattr(clover, "IMAGE_UNIT_COST", charged_unit + 15)
+            raise LocalImageBlockedError(reason="image")
+        return _png_bytes(), "image/png"
+
+    _override_image_client(generate)
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=2))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+    assert job.completed_count == 1
+
+    spent, refunded = _spent_and_refunded(await _clover_ledger(db_session, user.id))
+    assert spent == -2 * charged_unit
+    assert refunded == charged_unit
+    assert await _clover_lots(db_session, user.id) == [("legacy_balance", 100 - charged_unit)]
 
 
 @pytest.mark.parametrize(
@@ -1269,7 +1351,7 @@ async def test_a_running_job_keeps_its_queue_slot_past_the_lease_and_returns_it_
 
 
 # 차감 뒤 **되돌릴 수 있는 첫 지점 앞**의 구간. 채팅은 이미
-# 같은 구간을 닫았으므로(`_refund_clover_on_failure`) 이미지만 열어 두면 같은 사고에 두 경로가
+# 같은 구간을 닫았으므로(`chat/turn_settlement.py` 의 정산 가드) 이미지만 열어 두면 같은 사고에 두 경로가
 # 다르게 동작한다. `_run_generation`의 `try`에는 `except`가 없고 `finally: release_admission`만
 # 있어서, 집계에 닿기 전에 터지면 환불할 자리가 아예 없었다.
 
@@ -1375,6 +1457,42 @@ async def test_failure_after_aggregation_does_not_refund_twice(
     assert refunded == clover.IMAGE_UNIT_COST  # 못 만든 1장분만, 두 번이 아니라 한 번
     await db_session.refresh(user)
     assert user.clover_balance == 100 - clover.IMAGE_UNIT_COST
+
+
+async def test_cancelled_job_refunds_the_whole_charge_and_stays_cancelled(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """판정 기준: 재배포·종료로 잡 태스크가 집계 전에 취소되면 0장 성공이므로 전량이 깎은 로트로 돌아오고, 태스크는
+    취소된 채로 끝난다(취소를 삼키지 않는다). `Exception` 만 잡으면 환급 0이다."""
+    _stub_capabilities_ready(monkeypatch)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+    running = asyncio.Event()
+
+    async def hanging_update_job(job_id: str, **kwargs: Any) -> None:
+        if kwargs.get("status") is ImageGenerationJobStatus.RUNNING:
+            running.set()
+            await asyncio.Event().wait()
+
+    monkeypatch.setattr(images_router, "update_job", hanging_update_job)
+    before = set(image_jobs._background_tasks)
+
+    _override_image_client(lambda: (_png_bytes(), "image/png"))
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=2))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+
+    await asyncio.wait_for(running.wait(), timeout=5)
+    [task] = set(image_jobs._background_tasks) - before
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=5)
+
+    spent, refunded = _spent_and_refunded(await _clover_ledger(db_session, user.id))
+    assert spent == -2 * clover.IMAGE_UNIT_COST
+    assert refunded == 2 * clover.IMAGE_UNIT_COST
+    assert await _clover_lots(db_session, user.id) == [("legacy_balance", 100)]
 
 
 # ---- 참조 이미지 ------------------------------------------------------------

@@ -845,11 +845,11 @@ async def adjust_user_clover(
                     db, user_id=user_id, amount=-body.amount, idempotency_key=body.idempotency_key
                 )
                 if balance_after is None:
-                    # `revoke`의 `guard=True`가 막은 것이다 — 오지급 회수가 이미 쓴 만큼을 빚으로
-                    # 남기지 않는다(잔액은 정수이고 음수 잔액은 없다).
+                    # 회수할 수 있는 무료 로트 합이 모자라다 — 오지급 회수가 이미 쓴 만큼을 빚으로 남기지
+                    # 않고(음수 잔액은 없다), 구매로 생긴 로트는 결제 환불로만 회수한다.
                     raise HTTPException(
                         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                        detail="amount exceeds the current balance",
+                        detail="amount exceeds the revocable balance",
                     )
     except IntegrityError:
         # 409는 "재시도가 안전하다"는 신호다 — 같은 키로 다시 보내도 잔액이 더 늘지 않는다.

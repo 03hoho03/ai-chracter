@@ -4,6 +4,7 @@ from typing import Literal
 
 from api.clover.products import ProductKey
 from api.core.schema import CamelModel
+from api.payments.methods import PayMethod
 
 # 원장 조회 쿼리 파라미터와 응답 `category` 필드가
 # 같은 타입을 공유한다.
@@ -23,8 +24,10 @@ class CloverBalanceResponse(CamelModel):
     balance: int
     # 오늘(KST) 이미 확인했는가 — false면 FE가 소진 시 확인 모달을 띄운다.
     spend_confirmed_today: bool
-    # 오늘(KST) 출석을 아직 안 받았는가 — true면 FE가 attendance를 POST한다.
+    # 지금 출석을 누르면 지급되는가 — 오늘(KST) 아직 안 받았고 본인인증 게이트에 걸리지 않았다.
     attendance_claimable: bool
+    # 구매로 받은 클로버(유료+보너스) 중 남은 양. 탈퇴하면 이 몫도 사라지므로 탈퇴 화면이 경고에 쓴다.
+    paid_balance: int
     # `expires_at > now()`인 로트만 본다(이미 만료됐지만
     # 배치가 아직 못 지운 로트는 제외). 이건 표시 전용 필터라 "차감·잔액 판정 경로에는
     # 만료 필터를 걸지 않는다"는 원칙과 충돌하지 않는다 — 표시와 판정은 다른 경로다. **만료까지 3일
@@ -93,6 +96,13 @@ class CloverProductItem(CamelModel):
     bonus_amount: int
 
 
+class CloverPayMethodItem(CamelModel):
+    """포트원 브라우저 SDK 의 `payMethod` 와, 간편결제일 때 `easyPay.easyPayProvider` 값 그대로."""
+
+    pay_method: PayMethod
+    easy_pay_provider: str | None
+
+
 class CloverPricingResponse(CamelModel):
     """공개 가격 안내. 단가는 기본 모델 기준만 싣는다 — 상위 모델은 허용된 계정만 쓰고 소설은 허용 명단 전용이라
     공개 안내에 넣지 않는다."""
@@ -101,3 +111,10 @@ class CloverPricingResponse(CamelModel):
     # 기본 모델로 쓰는 채팅 턴 하나와 이미지 한 장의 클로버.
     chat_turn_cost: int
     image_cost: int
+    # 지금 결제를 받는가. 거짓이면 구매 화면이 "준비 중"을 보인다.
+    payments_enabled: bool
+    # 구매 화면이 고를 수 있는 결제수단(`payments/methods.py` 가 유일한 목록).
+    pay_methods: list[CloverPayMethodItem]
+    # 미인증 회원 게이트(무료 대화·출석·미션을 본인인증한 회원에게만)가 켜져 있는가. 로그인하지 않은 방문자도 읽는 정책
+    # 문장이 이 값으로 갈린다 — 꺼진 동안 "본인인증을 마친 회원은"이라고 쓰면 거짓이다. `GET /me` 와 같은 판정 함수다.
+    identity_gate_enabled: bool

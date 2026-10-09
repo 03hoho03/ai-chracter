@@ -24,6 +24,7 @@ import sqlalchemy as sa
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 from sqlalchemy.orm import Session, SessionTransaction
+from starlette.types import Message
 
 from api.chat.prompt_builder import ImageMatchJudgmentResult, stat_rule_letters
 from api.content.schemas import RULE_LIST_ADAPTER, EndingRuleListDraftItem
@@ -63,6 +64,7 @@ from api.db.models import (
     NovelJob,
     NovelReadingPosition,
     NovelSnapshot,
+    Payment,
     SituationNote,
     StartingSetup,
     StatDef,
@@ -141,6 +143,30 @@ async def _make_user_with_clover_lot(
         )
         await db_session.flush()
     return user
+
+
+async def _make_payment(db_session: AsyncSession, *, user_id: uuid.UUID, **overrides: object) -> Payment:
+    """주문 행 하나(기본: 베이직 상품 값, `pending`). 구매 로트(`purchase_paid`·`purchase_bonus`)는 결제를 가리켜야 하므로
+    (로트 CHECK) 그런 로트를 만드는 셋업이 먼저 부른다."""
+    defaults: dict[str, object] = {
+        "payment_id": f"clv{uuid.uuid4().hex}",
+        "user_id": user_id,
+        "product_key": "basic",
+        "order_name": "클로버 베이직",
+        "amount_krw": 9_900,
+        "paid_amount": 3_300,
+        "bonus_amount": 300,
+        "channel_key": "test-channel-key",
+        "status": "pending",
+        "consented_at": datetime.now(UTC),
+        "terms_version": "2026-09-06",
+        "refund_policy_version": "2026-09-06",
+    }
+    defaults.update(overrides)
+    payment = Payment(**defaults)
+    db_session.add(payment)
+    await db_session.flush()
+    return payment
 
 
 def _patch_httpx(
@@ -730,6 +756,79 @@ def _parse_sse_events(body: str) -> list[dict[str, Any]]:
     return events
 
 
+class _HangingLLMClient(LLMClient):
+    """토큰 하나를 내보낸 뒤 신호를 주고 멈춘다 — 그동안 클라이언트가 연결을 끊는다."""
+
+    def __init__(self, started: asyncio.Event) -> None:
+        self._started = started
+
+    async def generate(
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+        stop_sequences: list[str] | None = None,
+        *,
+        usage: LLMCallContext,
+    ) -> AsyncIterator[str]:
+        yield "첫"
+        self._started.set()
+        await asyncio.sleep(30)
+        yield "끝나지 않는다"
+
+    async def generate_structured(
+        self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
+    ) -> Any:
+        raise AssertionError("이 시나리오에는 판정 호출이 없다")
+
+
+async def _call_until_disconnect(
+    client: httpx.AsyncClient, method: str, path: str, body: dict[str, object] | None, disconnect: asyncio.Event
+) -> list[Message]:
+    """로그인된 `client` 의 세션 쿠키로 ASGI 앱을 직접 부르고, `disconnect` 가 서는 순간 클라이언트가 끊은 것으로 알린다.
+    보낸 ASGI 메시지들을 돌려준다.
+
+    httpx 는 스트림 중간 끊김을 만들 수 없어 앱을 직접 부른다. 서버가 알리는 ASGI spec 버전이 없으면 Starlette 는 끊김을
+    감시하다 스트림을 취소하는 쪽으로 간다 — 지금 운영 uvicorn 과 같은 길이다. 그 취소는 제너레이터가 `await` 중일 때
+    닿는다(`CancelledError` 갈래)."""
+    raw_body = json.dumps(body).encode() if body is not None else b""
+    received_body = False
+    sent: list[Message] = []
+
+    async def receive() -> Message:
+        nonlocal received_body
+        if not received_body:
+            received_body = True
+            return {"type": "http.request", "body": raw_body, "more_body": False}
+        await disconnect.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message: Message) -> None:
+        sent.append(message)
+
+    cookie = f"{settings.session_cookie_name}={client.cookies[settings.session_cookie_name]}"
+    scope: dict[str, Any] = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": method,
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "root_path": "",
+        "headers": [
+            (b"host", b"testserver"),
+            (b"content-type", b"application/json"),
+            (b"cookie", cookie.encode()),
+        ],
+        "client": ("127.0.0.1", 50000),
+        "server": ("testserver", 80),
+    }
+    async with asyncio.timeout(10):
+        await app(scope, receive, send)
+    return sent
+
+
 _GOLDEN_PROMPTS_DIR = Path(__file__).parent / "golden" / "prompts"
 
 
@@ -1175,6 +1274,17 @@ def _batch_output(*bodies: str, novel_title: str | None = None) -> str:
     """본문마다 화 하나를 1화부터 차례로 이은 생성 출력. `novel_title` 이 있으면 맨 앞에 소설 제목 블록을 둔다."""
     head = f"===소설 제목===\n{novel_title}\n" if novel_title is not None else ""
     return head + "\n".join(_episode_text(body, number=n) for n, body in enumerate(bodies, start=1))
+
+
+async def _clover_lots(db: AsyncSession, user_id: uuid.UUID) -> list[tuple[str, int]]:
+    """사용자의 로트(종류, 잔여) — 종류·잔여 순. 환급이 깎은 원래 로트로 돌아갔는지 본다: 차감 id 를 잃은 환급은 잔액은
+    같게 맞추지만 원래 로트는 깎인 채로 두고 환급 종류의 무기한 새 로트를 만든다."""
+    rows = await db.execute(
+        sa.select(CloverLot.kind, CloverLot.remaining)
+        .where(CloverLot.user_id == user_id)
+        .order_by(CloverLot.kind, CloverLot.remaining)
+    )
+    return [(kind, remaining) for kind, remaining in rows.all()]
 
 
 async def _novel_ledger(db: AsyncSession, user_id: uuid.UUID) -> list[tuple[str, int]]:

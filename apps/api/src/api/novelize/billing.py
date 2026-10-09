@@ -204,9 +204,12 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
     db.add(job)
     await db.flush()
 
-    if await clover.spend(db, user_id=job.user_id, amount=price, kind="novelize_spend") is None:
+    spent = await clover.spend(db, user_id=job.user_id, amount=price, kind="novelize_spend")
+    if spent is None:
         await db.rollback()
         raise _too_many_requests(job.user_id, _NOVELIZE_WINDOW, seconds_until_kst_midnight(now), code="CLOVER_REQUIRED")
+    # 환급이 이 차감의 로트 배분을 찾아 깎은 로트로 되돌리도록 같은 트랜잭션에서 적어 둔다.
+    job.spend_ledger_id = spent.ledger_id
 
     await db.commit()
     return job
@@ -271,6 +274,8 @@ class TransitionedJob:
     charged_amount: int
     refunded_amount: int | None
     episode_count_target: int | None
+    # 선차감의 원장 행. 환급은 이 id 로 배분을 찾는다. 연쇄 자식과 이 칸이 생기기 전의 작업은 `None` 이다.
+    spend_ledger_id: uuid.UUID | None
 
 
 async def transition_job(
@@ -287,12 +292,19 @@ async def transition_job(
             update(NovelJob)
             .where(NovelJob.id == job_id, NovelJob.status.in_(expected))
             .values(**values)
-            .returning(NovelJob.charged_amount, NovelJob.refunded_amount, NovelJob.episode_count_target)
+            .returning(
+                NovelJob.charged_amount,
+                NovelJob.refunded_amount,
+                NovelJob.episode_count_target,
+                NovelJob.spend_ledger_id,
+            )
         )
     ).first()
     if row is None:
         return None
-    return TransitionedJob(charged_amount=row[0], refunded_amount=row[1], episode_count_target=row[2])
+    return TransitionedJob(
+        charged_amount=row[0], refunded_amount=row[1], episode_count_target=row[2], spend_ledger_id=row[3]
+    )
 
 
 async def refund_job(db: AsyncSession, *, job_id: uuid.UUID, failure_code: NovelJobFailureCode) -> int | None:
@@ -307,7 +319,7 @@ async def refund_job(db: AsyncSession, *, job_id: uuid.UUID, failure_code: Novel
     실행 경로의 실패 처리·만료 정리·소설 삭제가 모두 이 함수 하나를 쓴다. 순서: 작업의 사용자를 락 없이 읽고 → 사용자
     행 잠금 → 조건부 전이(실패·사유·`refunded_at`) → 행을 받았을 때만 지급. 전이·지급·`refunded_at` 이 한 트랜잭션이라
     커밋이 실패하면 셋 다 없던 일이 되고 작업은 진행 중으로 남는다 — heartbeat 가 멈춘 그 작업을 만료 정리가 다시 이
-    함수로 환불한다. 그래서 채팅의 `refund_in_new_transaction`(실패를 삼키고 재시도가 없다)을 쓰지 않는다.
+    함수로 환불한다. 그래서 채팅의 `refund_spend_in_new_transaction`(실패를 삼키고 재시도가 없다)을 쓰지 않는다.
 
     같은 전이에서 AI 수정의 지시문·결과 본문을 비운다. 실패한 수정은 적용할 결과가 없어 사용자가 쓴 지시문을 보관할
     이유가 없다. 행은 남긴다(차감 기록의 짝). 장 생성·재생성 작업은 두 칸을 쓰지 않아 늘 NULL 이라 종류를 가리지 않는다.
@@ -347,7 +359,9 @@ async def refund_job(db: AsyncSession, *, job_id: uuid.UUID, failure_code: Novel
     )
     refunded = moved.refunded_amount or 0
     if refunded > 0:
-        await clover.grant(db, user_id=user_id, amount=refunded, kind="novelize_refund")
+        await clover.refund_spend(
+            db, user_id=user_id, spend_ledger_id=moved.spend_ledger_id, amount=refunded, kind="novelize_refund"
+        )
     return refunded
 
 

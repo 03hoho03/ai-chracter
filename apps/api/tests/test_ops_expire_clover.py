@@ -6,9 +6,9 @@
 박을 수 없다(`test_ops_backup_withdrawn_emails.py`와 같은 이유). 실 DB 검증은
 별도의 로컬 실측(배치 SQL을 로컬 DB에서 실제로 돌려 Σ 불변식이 실행 전후로 성립하는지
 본다)이 맡는다.
-이 파일은 (1) cutoff가 두 SQL 문장에 같은 값으로 들어가는지 (2) 구현이 바꾸면 안 되는 세 지점(`OLD.
-remaining`·`deducted` CTE에서 잔액 직접 수신·락 순서 users→clover_lots)이 SQL 텍스트에 실제로
-있는지 (3) `RETURNING` 출력 줄 수 세기 (4) 실패 시 예외 전파·Discord 알림 배선만 확인한다.
+이 파일은 (1) cutoff가 두 SQL 문장에 같은 값으로 들어가는지 (2) 구현이 바꾸면 안 되는 네 지점(`OLD.
+remaining`·`deducted` CTE에서 잔액 직접 수신·락 순서 users→clover_lots·태우는 문장을 잠근 유저로 제한)이 SQL
+텍스트에 실제로 있는지 (3) `RETURNING` 출력 줄 수 세기 (4) 실패 시 예외 전파·Discord 알림 배선만 확인한다.
 """
 
 import subprocess
@@ -165,6 +165,36 @@ def test_lock_order_is_users_first_then_clover_lots(monkeypatch: pytest.MonkeyPa
     users_lock_index = script.index("FOR UPDATE")
     lots_update_index = script.index("UPDATE clover_lots")
     assert users_lock_index < lots_update_index
+
+
+def test_burn_statement_is_limited_to_the_users_the_first_statement_locked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """🔴 바꾸면 안 되는 지점 4 — 2단계는 1단계가 잠근 유저 집합(`expiring_users`)의 로트만 태운다. 환급이 이미 만료된
+    원래 로트로 돌아오므로 두 문장 사이에 커밋된 환급이 1단계에서 안 잠긴 유저를 만료 대상으로 만들 수 있다.
+
+    깨지는 시나리오: 2단계가 조건을 다시 평가하면 그 유저에 대해 lots → users 순서로 잠가, 같은 유저의 환급
+    (users → 배분 → lots)과 교착한다.
+    """
+    captured: dict[str, str] = {}
+
+    def _fake(
+        script: str, *, url: str, stdin: object = None, stdout: object = None
+    ) -> subprocess.CompletedProcess[bytes]:
+        captured["script"] = script
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(expire_clover, "run_sh", _fake)
+
+    expire_clover.expire_clover_lots("postgresql://unused", cutoff=datetime.now(UTC))
+
+    script = captured["script"]
+    create_index = script.index("CREATE TEMP TABLE expiring_users ON COMMIT DROP AS")
+    lock_index = script.index("WHERE u.id IN (SELECT user_id FROM expiring_users)")
+    update_index = script.index("UPDATE clover_lots")
+    assert create_index < lock_index < update_index
+    burn_statement = script[update_index : script.index("RETURNING user_id, OLD.remaining")]
+    assert "AND user_id IN (SELECT user_id FROM expiring_users)" in burn_statement
 
 
 # ── RETURNING 출력 줄 수 세기 ────────────────────────────────────────────────────

@@ -6,17 +6,44 @@ import {
   CLOVER_EXPIRY_NOTICE_MESSAGE,
   CLOVER_MISSION_LABELS,
   CloverBalance,
+  CloverProductLine,
   formatCloverExpiringSoonMessage,
   projectCloverMissionState,
   useClaimAttendanceMutation,
   useClaimCloverMissionMutation,
   useCloverBalanceQuery,
   useCloverMissionsQuery,
+  useCloverPricingQuery,
   type CloverMissionItem,
 } from "@/entities/clover";
+import { IdentityRequiredNotice, isIdentityVerificationRequiredError } from "@/entities/identity";
+import { useSessionQuery } from "@/entities/session";
+import { PurchaseConfirmDialog, usePaymentRedirect } from "@/features/purchase-clover";
 import { SUPPORT_DESTINATIONS } from "@/shared/config/supportDestinations";
 
+import type { CloverHubSearch } from "../model/cloverHubSearch";
+import { getPurchaseSection } from "../model/purchaseSection";
+
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
+const IDENTITY_REQUIRED_MESSAGE = "본인인증을 하면 받을 수 있어요.";
+const AGE_RESTRICTED_MESSAGE = "클로버는 만 19세 이상만 구매할 수 있어요.";
+
+/** 출석·미션 수령 실패 토스트. 본인인증 403 은 실패가 아니라 "아직 받을 수 없다"라 오류 토스트가 아니고, 세션은 전역
+ * 뮤테이션 처리가 다시 읽어 이 화면이 본인인증 안내로 바뀐다. */
+function toastClaimError(error: unknown) {
+  if (isIdentityVerificationRequiredError(error)) {
+    toast(IDENTITY_REQUIRED_MESSAGE);
+    return;
+  }
+  toast.error(GENERIC_ERROR_MESSAGE);
+}
+
+/** 이 회원이 본인인증 게이트에 걸려 있는가와 안내에 쓸 하루 무료 대화 수. 판정은 서버가 라우트 게이트와 같은 함수(면제
+ * 회원 포함)로 계산한 세션 값이다. 세션이 아직 없으면 걸리지 않은 것으로 본다(라우트가 세션을 보장한다). */
+function useIdentityGate(): { isGated: boolean; dailyFreeChatTurns: number | undefined } {
+  const { data: me } = useSessionQuery();
+  return { isGated: me?.identityGated ?? false, dailyFreeChatTurns: me?.dailyFreeChatTurns };
+}
 
 const SECTION_LINK_CLASS =
   "w-fit text-sm font-medium whitespace-nowrap text-primary hover:underline focus-visible:underline";
@@ -24,12 +51,16 @@ const SECTION_LINK_CLASS =
 /** 클로버 허브 페이지.
  *
  * 컨테이너 폭은 `max-w-md`다. `DESIGN.md` Layout containers 절은 폭을 콘텐츠 밀도로 고르고 텍스트
- * 위주의 한 열인 설정 화면에 `max-w-md`를 준다 — 이 화면도 잔액·출석·미션 세 섹션이 텍스트 몇 줄과
+ * 위주의 한 열인 설정 화면에 `max-w-md`를 준다 — 이 화면도 잔액·구매·출석·미션 네 섹션이 텍스트 몇 줄과
  * 짧은 행뿐이라 그리드도 표도 없는 같은 밀도다. 미션 행은 라벨과 버튼·배지를 양 끝으로 벌리므로
  * (`justify-between`) 컬럼을 넓혀도 그 사이 빈자리만 늘어난다. 이 화면에서만 들어가는 내역 화면도
  * 같은 `max-w-md`라 둘 사이를 오갈 때 컬럼 폭이 바뀌지 않는다.
+ *
+ * 결제창이 페이지를 떠났다가(모바일) 돌아오는 곳도 여기다 — 라우트가 넘긴 결과 쿼리로 확정을 이어받고 쿼리를 지운다.
  */
-export function CloverHubPage() {
+export function CloverHubPage({ search, onSearchClear }: { search: CloverHubSearch; onSearchClear: () => void }) {
+  usePaymentRedirect(search, onSearchClear);
+
   return (
     <main className="mx-auto flex max-w-md flex-col gap-10 px-4 sm:px-6 py-10">
       <div className="flex flex-col gap-1.5">
@@ -42,6 +73,7 @@ export function CloverHubPage() {
       </div>
 
       <BalanceSection />
+      <PurchaseSection />
       <AttendanceSection />
       <MissionSection />
     </main>
@@ -88,9 +120,71 @@ function BalanceSection() {
   );
 }
 
+/** 클로버 구매. 상품·가격·결제수단·결제 스위치는 전부 `GET /clover/pricing` 응답에서 온다(웹에 가격 사본이 없다).
+ *
+ * 상품 카드는 outline 이다 — 이 화면의 솔리드 채움은 출석체크가 쓰고, 돈이 나가는 확정의 채움은 구매 확인 다이얼로그
+ * 안의 "결제하기" 하나다. 카드는 고르기만 하고 결제는 다이얼로그에서 한다. */
+function PurchaseSection() {
+  return (
+    <section className="flex flex-col gap-4">
+      <SectionHeading>클로버 구매</SectionHeading>
+      <PurchaseBody />
+    </section>
+  );
+}
+
+function PurchaseBody() {
+  const pricingQuery = useCloverPricingQuery();
+  const { data: me } = useSessionQuery();
+
+  if (pricingQuery.isPending) {
+    return <span className="text-sm text-muted-foreground">불러오는 중…</span>;
+  }
+  if (pricingQuery.isError) {
+    return (
+      <p className="text-sm break-keep text-destructive-text">
+        클로버 상품을 불러오지 못했어요. 잠시 후 다시 시도해주세요.
+      </p>
+    );
+  }
+
+  const { products, payMethods, paymentsEnabled } = pricingQuery.data;
+  const section = getPurchaseSection(paymentsEnabled, me);
+  if (section === "disabled") {
+    return <p className="text-sm break-keep text-muted-foreground">클로버 결제는 아직 준비 중이에요.</p>;
+  }
+  if (section === "identityRequired" || !me) {
+    return <IdentityRequiredNotice reason="purchase" />;
+  }
+  // 잘못한 것이 없으므로 경고 틴트가 아니라 중립 문장이다. 상품 카드는 눌러도 살 수 없어 두지 않는다.
+  if (section === "ageRestricted") {
+    return <p className="text-sm break-keep text-muted-foreground">{AGE_RESTRICTED_MESSAGE}</p>;
+  }
+
+  return (
+    <ul className="flex flex-col gap-3">
+      {products.map((product) => (
+        <li key={product.key}>
+          {/* 카드 자체가 이 섹션의 인터랙션이라 button-outline 레시피를 카드 크기로 쓴다(`bg-background` +
+              `hover:bg-muted` + 하우스 포커스 링 + 눌림). */}
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            onClick={() => void PurchaseConfirmDialog.call({ product, payMethods, email: me.email })}
+            className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-background px-4 py-3 text-left outline-none hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-px motion-safe:transition-colors"
+          >
+            <CloverProductLine product={product} />
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function AttendanceSection() {
   const { data } = useCloverBalanceQuery();
   const claimAttendance = useClaimAttendanceMutation();
+  const { isGated, dailyFreeChatTurns } = useIdentityGate();
   const isAttendanceClaimable = data?.attendanceClaimable ?? false;
 
   const handleClaim = () => {
@@ -104,11 +198,20 @@ function AttendanceSection() {
         // 응답이다(useClaimAttendanceMutation 주석과 같은 규칙).
         toast.success(res.granted ? "출석체크를 완료했어요." : "오늘은 이미 출석을 확인했어요.");
       },
-      onError: () => {
-        toast.error(GENERIC_ERROR_MESSAGE);
-      },
+      onError: toastClaimError,
     });
   };
+
+  // 누를 수 있는지는 서버의 `attendanceClaimable`이 먼저다(게이트에 걸리면 서버가 거짓을 준다). 거짓일 때 이유가 둘이라
+  // 문장을 가른다 — 게이트에 걸린 회원에게 "오늘 이미 확인했어요"는 거짓이다.
+  if (!isAttendanceClaimable && isGated) {
+    return (
+      <section className="flex flex-col gap-4">
+        <SectionHeading>출석체크</SectionHeading>
+        <IdentityRequiredNotice reason="free-rewards" dailyFreeChatTurns={dailyFreeChatTurns} />
+      </section>
+    );
+  }
 
   return (
     <section className="flex flex-col gap-4">
@@ -131,6 +234,7 @@ function AttendanceSection() {
 function MissionSection() {
   const { data, isPending } = useCloverMissionsQuery();
   const claimMission = useClaimCloverMissionMutation();
+  const { isGated, dailyFreeChatTurns } = useIdentityGate();
 
   const handleClaim = (key: string) => {
     if (claimMission.isPending) return;
@@ -138,15 +242,15 @@ function MissionSection() {
       onSuccess: (res) => {
         toast.success(res.granted ? "미션 보상을 받았어요." : "이미 받은 미션이에요.");
       },
-      onError: () => {
-        toast.error(GENERIC_ERROR_MESSAGE);
-      },
+      onError: toastClaimError,
     });
   };
 
   return (
     <section className="flex flex-col gap-4">
       <SectionHeading>미션</SectionHeading>
+      {/* 안내는 섹션에 한 번만 둔다 — 행마다 두면 같은 문장이 세 번 읽힌다. 행의 "받기"는 아래에서 상태 표시로 바뀐다. */}
+      {isGated && <IdentityRequiredNotice reason="free-rewards" dailyFreeChatTurns={dailyFreeChatTurns} />}
       {isPending ? (
         <span className="text-sm text-muted-foreground">불러오는 중…</span>
       ) : (
@@ -158,6 +262,7 @@ function MissionSection() {
               // 셋 중 지금 청구 중인 것만 로딩 문구를 보여준다 — `variables`는 마지막으로
               // 호출된 인자를 들고 있다(tanstack-query 관례).
               isClaiming={claimMission.isPending && claimMission.variables === mission.key}
+              isClaimLocked={isGated}
               onClaim={() => handleClaim(mission.key)}
             />
           ))}
@@ -170,10 +275,12 @@ function MissionSection() {
 type MissionRowProps = {
   mission: CloverMissionItem;
   isClaiming: boolean;
+  /** 본인인증 전이라 달성한 미션도 받을 수 없다. 누르면 403 이 올 버튼 대신 상태 배지를 둔다. */
+  isClaimLocked: boolean;
   onClaim: () => void;
 };
 
-function MissionRow({ mission, isClaiming, onClaim }: MissionRowProps) {
+function MissionRow({ mission, isClaiming, isClaimLocked, onClaim }: MissionRowProps) {
   const state = projectCloverMissionState(mission);
   const label = CLOVER_MISSION_LABELS[mission.key] ?? mission.key;
 
@@ -186,7 +293,12 @@ function MissionRow({ mission, isClaiming, onClaim }: MissionRowProps) {
       {/* DESIGN.md The Brightness Budget Rule — primary 솔리드 채움은 화면당 하나다. 출석체크
           버튼이 이미 그 자리를 쓰므로(둘 다 solid면 미션이 여러 개 달성됐을 때 솔리드 핑크가
           동시에 여러 개 뜬다), 여기는 outline이다. */}
-      {state === "claimable" && (
+      {state === "claimable" && isClaimLocked && (
+        <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-badge font-medium text-muted-foreground">
+          본인인증 후 받기
+        </span>
+      )}
+      {state === "claimable" && !isClaimLocked && (
         <Button
           variant="outline"
           size="sm"

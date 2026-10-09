@@ -74,9 +74,10 @@ from api.auth.verification import (
     seconds_until_resend_allowed,
     store_verification_code,
 )
-from api.core import rate_limit
+from api.core import clover, rate_limit, rate_limit_gate
 from api.core.config import settings
 from api.core.constants import WITHDRAWN_EMAIL_BLOCK_PERIOD
+from api.core.identity_gate import is_identity_gated
 from api.core.email import EmailSender, get_email_sender
 from api.core.security import hash_password, hash_withdrawn_email, verify_password
 from api.core.sentry import capture_dependency_failure
@@ -86,6 +87,8 @@ from api.db.session import get_db_session
 from api.legal.dependencies import _latest_published_legal_version, _reconsent_required
 from api.llm.model_access import has_chat_premium_access, has_novel_premium_access
 from api.novelize.access import has_novelize_access
+from api.payments.config import identity_gate_active
+from api.payments.eligibility import purchase_block_reason
 from api.session.cookies import clear_session_cookie, get_session_id_from_request, set_session_cookie
 from api.session.dependencies import get_current_user_id
 from api.session.store import create_session, delete_session, revoke_user_sessions
@@ -482,7 +485,10 @@ async def onboarding_google(
         if user.suspended_at is not None:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account suspended")
         user.nickname = payload.nickname
-        user.birth_date = payload.birth_date
+        # 본인인증한 계정의 생년월일은 인증값이다 — 남아 있던 두 번째 가입 대기 토큰으로 자기 신고값을 다시 써서 결제의
+        # 만 19세 판정을 넘지 못하게 한다.
+        if user.identity_verified_at is None:
+            user.birth_date = payload.birth_date
     await db.commit()
     await delete_pending_google_signup(token)
     return await _start_onboarded_session(response, user, provider="google")
@@ -625,7 +631,9 @@ async def onboarding_kakao(
         if user.suspended_at is not None:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account suspended")
         user.nickname = payload.nickname
-        user.birth_date = payload.birth_date
+        # 구글 온보딩과 같다 — 본인인증한 생년월일을 자기 신고값으로 되돌리지 않는다.
+        if user.identity_verified_at is None:
+            user.birth_date = payload.birth_date
     await db.commit()
     if replaced_email_signup:
         # 대체된 이메일 가입에 발급했던 인증 코드를 지운다. 남아 있어도 이미 인증된 행이라 결과는
@@ -905,6 +913,13 @@ async def get_me(
         has_password=user.password_hash is not None,
         social_provider=None if method == "email" else method,
         enabled_features=await _enabled_features(db, user.id),
+        identity_verified=user.identity_verified_at is not None,
+        identity_gate_enabled=identity_gate_active(),
+        identity_gated=is_identity_gated(user),
+        # 모듈 속성으로 호출 시점에 읽는다(테스트의 `monkeypatch.setattr` 가 통하게 — 게이트 함수와 같은 관례).
+        daily_free_chat_turns=rate_limit_gate.CHAT_DAILY_LIMIT,
+        paid_clover_balance=await clover.paid_balance(db, user_id=user.id),
+        purchase_block_reason=purchase_block_reason(user),
     )
 
 

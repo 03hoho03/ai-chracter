@@ -3,15 +3,25 @@ import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/t
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useAtom } from "jotai";
 import { Moon, Sun } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 
+import { useCloverPricingQuery } from "@/entities/clover";
 import { useSessionQuery, type MeResponse } from "@/entities/session";
 import { CommentSettings } from "@/features/work-comments";
 import { ChangePasswordForm } from "@/features/change-password";
 import { useLogoutMutation } from "@/features/logout";
+import {
+  IDENTITY_VERIFIED_MESSAGE,
+  useIdentityRedirect,
+  useVerifyIdentity,
+  type IdentityResult,
+} from "@/features/verify-identity";
 import { WithdrawAccountDialog } from "@/features/withdraw-account";
 import { isTheme, themeAtom } from "@/shared/model/theme";
 
+import { getIdentitySection } from "../model/identitySection";
+import type { MypageSearch } from "../model/mypageSearch";
 import { getPasswordSection } from "../model/passwordSection";
 
 /** 설정 전용 페이지(테마 · 비밀번호 변경 또는 로그인 방법 · 계정).
@@ -35,9 +45,12 @@ import { getPasswordSection } from "../model/passwordSection";
  * 양쪽 모두 **정확히 1개**다(`a[href]` 중 `closest('[aria-hidden="true"]')`가 없는 것만 카운트한 실측).
  * 그래서 이 불변식은 **토스터를 포털로 옮기듯 `main` 바깥으로 무언가를 꺼내는 순간 조용히 깨진다.** 사이트 푸터는
  * 포털이 아니라 같은 트리 안에 렌더돼 함께 가려지지만, 푸터에 `내 작품` 링크를 더하면 닫힘 상태에서 2개가 된다.
+ *
+ * 본인인증창이 페이지를 떠났다가(모바일) 돌아오는 곳도 여기다 — 라우트가 넘긴 결과 쿼리로 저장을 이어받고 쿼리를 지운다.
  */
-export function MyPagePage() {
+export function MyPagePage({ search, onSearchClear }: { search: MypageSearch; onSearchClear: () => void }) {
   const { data: me } = useSessionQuery();
+  useIdentityRedirect(search, onSearchClear);
   return (
     // 컬럼은 `max-w-2xl`(672px)이 아니라 `max-w-md`(448px)다. DESIGN.md Layout containers는 폼 화면을 `max-w-2xl`로,
     // 설정(`/mypage`)은 따로 `max-w-md`로 적어 뒀다. 이 화면이 `max-w-2xl`이던 근거는 초안 그리드였고, 그 그리드가
@@ -100,6 +113,8 @@ export function MyPagePage() {
 
       <PasswordSection me={me} />
 
+      {!!me && <IdentitySection me={me} />}
+
       <AccountSection />
     </main>
   );
@@ -133,6 +148,83 @@ function PasswordSection({ me }: { me: MeResponse | undefined }) {
       <SectionHeading>비밀번호 변경</SectionHeading>
       <ChangePasswordForm />
     </section>
+  );
+}
+
+type IdentityNotice = Extract<IdentityResult, { kind: "notice" }>;
+
+/** 휴대폰 본인인증. 보일지·무엇을 말할지는 `getIdentitySection`이 정한다.
+ *
+ * 인증하기 버튼은 outline 이다 — 이 화면의 솔리드 채움은 비밀번호 변경 제출이 쓴다. 결과 중 고쳐서 다시 할 수 있는 것
+ * (창을 닫음·거절 사유)은 버튼 아래 문장으로 남기고, 성공은 토스트 + 세션 재조회로 섹션이 "인증됨"으로 바뀐다. */
+function IdentitySection({ me }: { me: MeResponse }) {
+  const pricingQuery = useCloverPricingQuery();
+  const { verify, isVerifying } = useVerifyIdentity();
+  const [notice, setNotice] = useState<IdentityNotice | null>(null);
+  const section = getIdentitySection(me, pricingQuery.data?.paymentsEnabled ?? false);
+
+  if (section.kind === "hidden") return null;
+
+  if (section.kind === "verified") {
+    return (
+      <section className="flex flex-col gap-4">
+        <SectionHeading>본인인증</SectionHeading>
+        <p className="text-sm break-keep text-muted-foreground">휴대폰 본인인증을 마쳤어요.</p>
+      </section>
+    );
+  }
+
+  const handleVerify = async () => {
+    if (isVerifying) return;
+    setNotice(null);
+    const result = await verify();
+    if (result.kind === "verified") {
+      toast.success(IDENTITY_VERIFIED_MESSAGE);
+      return;
+    }
+    if (result.kind === "notice") setNotice(result);
+  };
+
+  return (
+    <section className="flex flex-col items-start gap-4">
+      <SectionHeading>본인인증</SectionHeading>
+      <div className="flex flex-col gap-1.5">
+        <p className="text-sm break-keep text-muted-foreground">{section.message}</p>
+        {/* 무엇이 저장되는지를 누르기 전에 말한다 — 생년월일은 인증값으로 바뀌고, 이름·휴대폰 번호는 남지 않는다. */}
+        <p className="text-xs break-keep text-muted-foreground">
+          만 14세 이상만 인증할 수 있어요. 인증한 생년월일이 계정의 생년월일이 되고, 이름과 휴대폰 번호는 저장하지 않아요.
+        </p>
+      </div>
+      <Button
+        variant="outline"
+        aria-disabled={isVerifying}
+        className="aria-disabled:opacity-65"
+        onClick={() => void handleVerify()}
+      >
+        {isVerifying ? "인증 진행 중…" : "휴대폰 본인인증"}
+      </Button>
+      {notice && <IdentityNoticeMessage notice={notice} />}
+    </section>
+  );
+}
+
+function IdentityNoticeMessage({ notice }: { notice: IdentityNotice }) {
+  if (notice.tone === "neutral") {
+    return (
+      <p role="status" className="text-sm break-keep text-muted-foreground">
+        {notice.message}
+      </p>
+    );
+  }
+  return (
+    <div role="alert" className="flex flex-col items-start gap-2 rounded-lg bg-destructive/10 p-3">
+      <p className="text-sm break-keep text-destructive-text">{notice.message}</p>
+      {notice.reload && (
+        <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+          새로고침
+        </Button>
+      )}
+    </div>
   );
 }
 

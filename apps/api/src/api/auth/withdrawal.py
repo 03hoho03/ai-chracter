@@ -5,6 +5,7 @@
 """
 
 import logging
+import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
@@ -16,13 +17,16 @@ from starlette.concurrency import run_in_threadpool
 
 from api.assets.router import collect_asset_usages
 from api.chat.room_deletion import delete_chat_rooms
+from api.clover.missions import MISSION_KEYS, mission_idempotency_key
 from api.comments.actions import erase_user_comments, lock_withdrawal_contents
 from api.core import clover
+from api.core.constants import WITHDRAWN_IDENTITY_RETENTION_PERIOD
 from api.core.s3 import build_variant_keys, delete_object
 from api.core.security import hash_withdrawn_email
 from api.core.sentry import capture_dependency_failure
-from api.db.models.auth import User, WithdrawnEmail
+from api.db.models.auth import User, WithdrawnEmail, WithdrawnIdentity
 from api.db.models.chat import ChatMessageReport, ChatRoom
+from api.db.models.clover import CloverLedger
 from api.db.models.content import Content, ContentChatParticipant, ContentVisibility
 from api.db.models.feature_grant import UserFeatureGrant
 from api.db.models.inquiry import Inquiry
@@ -50,6 +54,36 @@ async def delete_storage_objects_later(storage_keys: list[str]) -> None:
         except (BotoCoreError, ClientError) as exc:
             logger.warning("storage delete after account erase failed: %s", type(exc).__name__)
             capture_dependency_failure(exc, dependency="s3")
+
+
+async def _retain_withdrawn_identity(
+    db: AsyncSession, *, user_id: uuid.UUID, ci_hmac: str, now: datetime
+) -> None:
+    """탈퇴하는 인증 회원의 CI 해시와 그가 받은 1회성 미션 키를 `withdrawn_identities` 에 남긴다. 같은 사람이 새 계정으로
+    인증해도 보관 기간 안에는 같은 미션 보상을 다시 받지 못하게 하려는 것이다.
+
+    같은 사람이 탈퇴 → 재가입 → 다시 탈퇴하면 행이 이미 있다. 보관 기간 안의 행이면 받은 키를 합치고, 지난 행이면(크론이
+    아직 못 지운 것) 새로 쓴다 — 기간이 지난 기록은 조회에서 이미 무시되므로 되살리지 않는다."""
+    keys_by_ledger_key = {mission_idempotency_key(user_id=user_id, key=key): key for key in MISSION_KEYS}
+    claimed = set(
+        (
+            await db.scalars(
+                select(CloverLedger.idempotency_key).where(
+                    CloverLedger.user_id == user_id,
+                    CloverLedger.idempotency_key.in_(keys_by_ledger_key),
+                )
+            )
+        ).all()
+    )
+    keys: list[str] = [key for ledger_key, key in keys_by_ledger_key.items() if ledger_key in claimed]
+    row = await db.get(WithdrawnIdentity, ci_hmac, with_for_update=True)
+    if row is None:
+        db.add(WithdrawnIdentity(ci_hmac=ci_hmac, withdrawn_at=now, claimed_mission_keys=keys))
+        return
+    if now - row.withdrawn_at < WITHDRAWN_IDENTITY_RETENTION_PERIOD:
+        keys = sorted(set(row.claimed_mission_keys) | set(keys))
+    row.claimed_mission_keys = keys
+    row.withdrawn_at = now
 
 
 async def erase_account(
@@ -113,6 +147,13 @@ async def erase_account(
         withdrawn_row.withdrawn_at = now
     else:
         db.add(WithdrawnEmail(email_hmac=email_hmac, withdrawn_at=now))
+
+    if user.identity_ci_hmac is not None:
+        await _retain_withdrawn_identity(db, user_id=user_id, ci_hmac=user.identity_ci_hmac, now=now)
+    # 두 칸을 함께 비운다(짝 CHECK). 살아 있는 계정 사이의 유일성은 부분 인덱스가 `deleted_at` 으로 이미 거르지만, 탈퇴한
+    # 사람의 CI 해시를 사용자 행에 남겨 두면 보관 기간(1년)이 지나도 지워지지 않는다.
+    user.identity_ci_hmac = None
+    user.identity_verified_at = None
 
     await db.execute(
         update(Content)

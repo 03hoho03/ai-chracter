@@ -17,6 +17,12 @@ const ME: MeResponse = {
   hasPassword: true,
   socialProvider: null,
   enabledFeatures: [],
+  identityVerified: false,
+  identityGateEnabled: false,
+  identityGated: false,
+  dailyFreeChatTurns: 30,
+  paidCloverBalance: 0,
+  purchaseBlockReason: "identity_required",
 };
 const SESSION_LOST = new ApiErrorObject({ status: 401, message: "x", detail: "Not authenticated" });
 
@@ -135,6 +141,21 @@ describe("createQueryClient — 세션 소실 전역 처리", () => {
     });
 
     await expect(runMutation(qc, reconsent)).rejects.toBe(reconsent);
+
+    expect(qc.getQueryState(sessionKeys.current())?.isInvalidated).toBe(true);
+    expect(qc.getQueryData(sessionKeys.current())).toEqual(ME);
+  });
+
+  it("본인인증 403 뮤테이션은 세션을 invalidate한다(인증 여부·게이트 여부를 다시 읽는다)", async () => {
+    const qc = makeClient();
+    qc.setQueryData(sessionKeys.current(), ME);
+    const identityRequired = new ApiErrorObject({
+      status: 403,
+      message: "x",
+      detail: { code: "IDENTITY_VERIFICATION_REQUIRED" },
+    });
+
+    await expect(runMutation(qc, identityRequired)).rejects.toBe(identityRequired);
 
     expect(qc.getQueryState(sessionKeys.current())?.isInvalidated).toBe(true);
     expect(qc.getQueryData(sessionKeys.current())).toEqual(ME);

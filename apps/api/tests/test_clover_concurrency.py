@@ -37,7 +37,7 @@ from api.core.clover import (
     spend_in_new_transaction,
 )
 from api.db.models.auth import User
-from api.db.models.clover import CloverLedger, CloverLot
+from api.db.models.clover import CloverLedger, CloverLot, CloverSpendAllocation
 from factories import _assert_blocked, _make_user_with_clover_lot
 
 # teardown이 지울 대상을 고르는 표지다. 이 파일이 만든 유저만 지우므로 다른 테스트의 행을
@@ -85,6 +85,14 @@ async def independent_session_factory(
             await cleanup.scalars(select(User.id).where(User.email.like(f"%@{_MARKER_DOMAIN}")))
         ).all()
         if user_ids:
+            # 배분이 원장·로트를 둘 다 FK 로 잡으므로 가장 먼저 지운다.
+            await cleanup.execute(
+                delete(CloverSpendAllocation).where(
+                    CloverSpendAllocation.spend_ledger_id.in_(
+                        select(CloverLedger.id).where(CloverLedger.user_id.in_(user_ids))
+                    )
+                )
+            )
             await cleanup.execute(delete(CloverLedger).where(CloverLedger.user_id.in_(user_ids)))
             await cleanup.execute(delete(CloverLot).where(CloverLot.user_id.in_(user_ids)))
             await cleanup.execute(delete(User).where(User.id.in_(user_ids)))
@@ -144,7 +152,7 @@ async def test_spend_in_new_transaction_commits_without_the_caller(
         independent_session_factory, user_id=user_id, amount=CHAT_TURN_COST, kind="chat_spend"
     )
 
-    assert charged == 90
+    assert charged is not None and charged.balance_after == 90
     balance, rows = await _read(independent_session_factory, user_id)
     assert balance == 90
     assert [(row.kind, row.amount, row.balance_after) for row in rows] == [("chat_spend", -10, 90)]
@@ -201,7 +209,7 @@ async def test_charge_survives_the_callers_rollback(
         charged = await spend_in_new_transaction(
             independent_session_factory, user_id=user_id, amount=CHAT_TURN_COST, kind="chat_spend"
         )
-        assert charged == 90
+        assert charged is not None and charged.balance_after == 90
         await outer.rollback()
     finally:
         await outer.close()
@@ -265,7 +273,7 @@ async def test_concurrent_spend_cannot_overdraw(
             )
         finally:
             event.remove(db_engine.sync_engine, "before_cursor_execute", _record)
-        assert first_result == 0
+        assert first_result is not None and first_result.balance_after == 0
         assert statements.index("users") < statements.index("clover_lots")
 
         # B: 같은 행에 같은 UPDATE를 낸다 → A가 커밋할 때까지 막힌다.
@@ -429,7 +437,7 @@ async def test_burn_all_burns_the_balance_the_row_actually_holds(
 
         # ② 그 사이 다른 트랜잭션이 차감하고 **커밋한다** — 실제 잔액은 이제 90이다.
         spent = await spend(spender, user_id=user_id, amount=CHAT_TURN_COST, kind="chat_spend")
-        assert spent == 90
+        assert spent is not None and spent.balance_after == 90
         await spender.commit()
 
         # ③ 소멸. 낡은 `loaded`(100)가 아니라 행이 실제로 가진 90이 소멸돼야 한다.

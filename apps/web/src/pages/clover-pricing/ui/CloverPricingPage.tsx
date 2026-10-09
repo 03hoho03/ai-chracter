@@ -1,14 +1,18 @@
+import { Button } from "@ai-character-chat/ui/components/button";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import {
   CLOVER_EXPIRY_NOTICE_MESSAGE,
   CloverIcon,
+  CloverProductLine,
   useCloverPricingQuery,
   type CloverProductItem,
 } from "@/entities/clover";
 import { CONTACT_EMAIL } from "@/shared/config/site";
 import { SUPPORT_DESTINATIONS } from "@/shared/config/supportDestinations";
+
+import { formatTrialSentence } from "../model/trialSentence";
 
 const INLINE_LINK_CLASSNAME =
   "whitespace-nowrap font-medium text-primary underline-offset-4 hover:underline focus-visible:underline";
@@ -20,9 +24,13 @@ const INLINE_LINK_CLASSNAME =
  * 이용약관과 환불정책(둘 다 DB 게시본)에도 있다 — 셋 중 하나를 고치면 나머지와 함께 맞춘다.
  *
  * 컨테이너는 클로버 허브와 같은 `max-w-md` 한 열이다. 텍스트 몇 줄과 짧은 행뿐이라 넓혀도 행 가운데 빈자리만
- * 는다. 결제는 아직 열리지 않아 버튼을 두지 않는다 — 누를 수 없는 결제 버튼은 할 수 없는 동작을 약속한다.
+ * 는다. 구매는 로그인한 클로버 허브에서 하므로 여기에는 결제 버튼 대신 허브로 가는 "충전하기" 링크만 둔다. 그 링크도
+ * 결제가 열려 있을 때(`paymentsEnabled`)만 둔다 — 열리지 않은 동안의 링크는 할 수 없는 동작을 약속한다.
  */
 export function CloverPricingPage() {
+  // 정책 문장 하나가 게이트 스위치로 갈린다(`formatTrialSentence`). 같은 가격 쿼리라 아래 상품 목록과 요청은 하나다.
+  const identityGateEnabled = useCloverPricingQuery().data?.identityGateEnabled ?? false;
+
   return (
     <main className="mx-auto flex max-w-md flex-col gap-10 px-4 sm:px-6 py-10">
       <div className="flex flex-col gap-1.5">
@@ -30,7 +38,7 @@ export function CloverPricingPage() {
           {SUPPORT_DESTINATIONS["clover-pricing"].label}
         </h1>
         <p className="text-sm break-keep text-muted-foreground">
-          클로버는 대화와 이미지 생성에 쓰여요. 클로버 결제는 아직 준비 중이에요.
+          클로버는 대화와 이미지 생성에 쓰여요.
         </p>
       </div>
 
@@ -53,7 +61,7 @@ export function CloverPricingPage() {
             "결제일로부터 7일 안에는 쓰지 않은 유료 클로버를 전액 돌려받을 수 있어요. 이미 쓴 보너스 클로버만큼은 빼고 돌려드려요.",
             "7일이 지나도 남은 유료 클로버를 환불받을 수 있어요. 이때도 이미 쓴 보너스 클로버만큼은 빼고, 그 금액의 90%를 돌려드려요.",
             "이미 쓴 클로버는 청약철회할 수 없어요. 클로버는 쓰는 즉시 기능 이용에 제공되기 때문이에요.",
-            "결제하기 전에 무료 클로버로 대화와 이미지 생성을 먼저 써 볼 수 있어요.",
+            formatTrialSentence(identityGateEnabled),
             "보너스 클로버는 따로 환불되지 않아요. 유료 클로버를 환불하면 그 구매로 받은 보너스 클로버 중 남은 것은 회수돼요.",
             "탈퇴하면 남은 클로버가 모두 사라져요. 남은 유료 클로버는 탈퇴하기 전에 환불을 신청해 주세요.",
             `이용이 정지된 동안에도 ${CONTACT_EMAIL}로 환불을 신청할 수 있어요.`,
@@ -115,7 +123,7 @@ function PricingBody() {
     );
   }
 
-  const { products, chatTurnCost, imageCost } = pricingQuery.data;
+  const { products, chatTurnCost, imageCost, paymentsEnabled } = pricingQuery.data;
   const [exampleProduct] = products;
 
   return (
@@ -127,6 +135,14 @@ function PricingBody() {
           ))}
         </ul>
         <p className="text-xs break-keep text-muted-foreground">가격은 부가세 포함이에요.</p>
+        {paymentsEnabled ? (
+          // 솔리드가 아니라 outline 이다 — 이 화면은 안내라 지금 눌러야 할 단 하나의 행동이 없다.
+          <Button asChild variant="outline" className="w-fit">
+            <Link to="/clover">충전하기</Link>
+          </Button>
+        ) : (
+          <p className="text-sm break-keep text-muted-foreground">클로버 결제는 아직 준비 중이에요.</p>
+        )}
       </Section>
 
       <Section title="쓰임새">
@@ -156,17 +172,7 @@ function totalAmount(product: CloverProductItem) {
 function ProductRow({ product }: { product: CloverProductItem }) {
   return (
     <li className="flex items-center justify-between gap-3 rounded-xl border border-border px-4 py-3">
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-sm font-medium text-foreground">{product.name}</span>
-        <span className="inline-flex flex-wrap items-center gap-x-1 text-xs break-keep text-muted-foreground">
-          <CloverIcon />
-          클로버 {totalAmount(product).toLocaleString()}개
-          {product.bonusAmount > 0 && <span>(보너스 {product.bonusAmount.toLocaleString()} 포함)</span>}
-        </span>
-      </div>
-      <span className="shrink-0 text-sm font-semibold whitespace-nowrap tabular-nums text-foreground">
-        {product.priceKrw.toLocaleString()}원
-      </span>
+      <CloverProductLine product={product} />
     </li>
   );
 }

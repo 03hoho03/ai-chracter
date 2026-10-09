@@ -25,7 +25,7 @@ from api.core.rate_limit import KST, seconds_until_kst_midnight
 from api.db.models import Novel, NovelChapter, NovelChapterRevision, NovelJob, User
 from api.db.models.novel import NovelBatch
 from api.db.models.novel import NovelJobKind, NovelJobStatus
-from api.db.models.clover import CloverLedger, CloverLot
+from api.db.models.clover import CloverLedger, CloverLot, CloverSpendAllocation
 from api.llm.chat_models import ChatModelId
 from api.novelize import billing, runner
 from api.novelize.inputs import ChapterInput
@@ -34,7 +34,7 @@ from api.novelize.prompts import NovelizePrompt
 from api.novelize.batches import ensure_batches
 from api.novelize.deletion import delete_batch, delete_novels
 from api.novelize.router import delete_last_novel_chapter, delete_novel
-from factories import _assert_blocked, _make_user_with_clover_lot
+from factories import _assert_blocked, _clover_lots, _make_user_with_clover_lot
 
 
 def _detail(exc: HTTPException) -> object:
@@ -488,6 +488,8 @@ async def test_refund_returns_only_what_a_chain_parent_has_not_used(db_session: 
     assert (stored.status, stored.refunded_amount, stored.refunded_at is not None) == ("failed", 25, True)
     assert await _ledger(db_session, owner.id) == [("novelize_spend", -40), ("novelize_refund", 25)]
     assert await _balance(db_session, owner.id) == 85 == await _lot_sum(db_session, owner.id)
+    # 쓰지 않은 몫은 깎은 그 로트로 돌아간다(환급 종류의 새 로트가 생기지 않는다).
+    assert await _clover_lots(db_session, owner.id) == [("legacy_balance", 85)]
 
 
 async def test_refund_of_nothing_left_fails_the_job_without_a_refund_record(db_session: AsyncSession) -> None:
@@ -624,6 +626,15 @@ async def independent_factory(db_engine: AsyncEngine) -> AsyncGenerator[async_se
         if user_ids:
             novel_ids = (await cleanup.scalars(select(Novel.id).where(Novel.user_id.in_(user_ids)))).all()
             await delete_novels(cleanup, novel_ids)
+            # 배분이 원장·로트를 둘 다 FK 로 잡으므로 원장보다 먼저 지운다. 작업 행(원장을 가리키는 칸)은
+            # `delete_novels` 가 이미 지웠다.
+            await cleanup.execute(
+                delete(CloverSpendAllocation).where(
+                    CloverSpendAllocation.spend_ledger_id.in_(
+                        select(CloverLedger.id).where(CloverLedger.user_id.in_(user_ids))
+                    )
+                )
+            )
             await cleanup.execute(delete(CloverLedger).where(CloverLedger.user_id.in_(user_ids)))
             await cleanup.execute(delete(CloverLot).where(CloverLot.user_id.in_(user_ids)))
             await cleanup.execute(delete(User).where(User.id.in_(user_ids)))

@@ -224,13 +224,13 @@ async def _refund_unmade_images(
     try:
         await refund_image_charge(
             owner_user_id,
-            # `clover_amount`는 장수에 비례하므로(게이트가 `count * IMAGE_UNIT_COST`로 만든다)
-            # 못 만든 장수만큼 다시 계산한다. 나눗셈이 아니라 곱셈인 이유는 게이트의 생성식과
-            # 같은 형태라 어긋날 여지가 없어서다. `source="token"`·`"skipped"`면 안 쓰인다.
+            # 영수증에서 못 만든 장수의 몫을 나눈다. 게이트가 `count * IMAGE_UNIT_COST`로 만들어 나눗셈이 정확히
+            # 떨어진다. 지금 단가로 다시 곱하지 않는 이유: 차감과 환급 사이에 단가가 바뀌면 환급액이 그 차감의 배분을
+            # 넘어 환급이 통째로 거부되거나(오른 경우) 덜 돌려준다(내린 경우). `source="token"`·`"skipped"`면 0이다.
             dataclasses.replace(
                 charge,
                 count=unmade_count,
-                clover_amount=(unmade_count * clover.IMAGE_UNIT_COST if charge.source == "clover" else 0),
+                clover_amount=charge.clover_amount * unmade_count // charge.count,
             ),
             session_factory,
         )
@@ -307,11 +307,12 @@ async def _run_generation(
         # 집계가 끝났으므로 여기서 환불액이 확정된다(`_refund_unmade_images` 참조).
         # `refund_settled`를 세우는 것이 **이 지점 이후의 실패에서 아래 `except`가 두 번째
         # 환불을 하지 않게** 막는다 — 두 번 돌려주면 없던 돈이 생긴다. 돌려줄 것이 0장이어도
-        # "정산은 끝났다"가 참이므로 `if` 밖에서 세운다.
+        # "정산은 끝났다"가 참이므로 `if` 밖에서 세운다. 환급을 기다리기 **전에** 세운다 — 환급이 커밋된 뒤 이 `await` 가
+        # 돌아오기 전에 취소가 닿으면, 뒤에 세우는 쪽은 아래 `except` 가 같은 몫을 한 번 더 돌려준다.
+        refund_settled = True
         await _refund_unmade_images(
             owner_user_id, charge, charge.count - succeeded_count, session_factory, job_id
         )
-        refund_settled = True
 
         blocked_count = len(blocked_reasons)
         blocked_reason: ImageBlockedReason | None = None
@@ -429,19 +430,19 @@ async def _run_generation(
             )
         else:
             await update_job(job_id, status=ImageGenerationJobStatus.FAILED, error="이미지 생성에 모두 실패했습니다")
-    except Exception:
+    except BaseException:
         # 차감(게이트) 이후 · 정산(`refund_settled`) 이전에 터지는
         # 구간. `update_job(RUNNING)`의 Redis 순단과 집계 루프의 `assert`가 여기 들어온다 —
         # 그동안 이 구간에는 환불할 자리가 아예 없어서 사용자가 이미지를 한 장도 못 받고
-        # 클로버만 잃었다. 채팅은 같은 구간을 이미 닫았으므로(`chat/router.py`의
-        # `_refund_clover_on_failure`) 이미지만 열어 두면 같은 사고에 두 경로가 다르게 동작한다.
+        # 클로버만 잃었다. 채팅은 같은 구간을 이미 닫았으므로(`chat/turn_settlement.py` 의 정산 가드)
+        # 이미지만 열어 두면 같은 사고에 두 경로가 다르게 동작한다.
         #
         # 되돌리는 양은 정상 경로와 같은 **"진행된 만큼"**이다 — `succeeded_count`가 루프에서
         # 증가하므로 집계 도중 터져도 그 시점까지 성공한 장수는 사용자가 실제로 받았다.
         #
-        # `Exception`이지 `BaseException`이 아니다 — `CancelledError`까지 삼키면 취소 전파가
-        # 바뀐다(`core/clover.py`의 같은 판단과 일관). bare `raise`라 원래 예외를 가리지 않고,
-        # `finally`가 그 뒤에 돌아 admission 반납도 그대로다.
+        # `BaseException` 이다 — 재배포·종료로 잡 태스크가 취소(`CancelledError`)돼도 못 만든 장수는 돌려준다. 취소를
+        # 삼키지는 않는다: bare `raise`라 원래 예외(취소 포함)가 그대로 올라가고, `finally`가 그 뒤에 돌아 admission
+        # 반납도 그대로다. 잡은 asyncio 태스크라 취소가 한 번 전달되고 끝나므로, 이 블록의 `await` 는 다시 취소되지 않는다.
         if not refund_settled:
             await _refund_unmade_images(
                 owner_user_id, charge, charge.count - succeeded_count, session_factory, job_id

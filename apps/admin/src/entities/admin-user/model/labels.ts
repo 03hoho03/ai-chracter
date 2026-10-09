@@ -27,6 +27,7 @@ export const ACTION_TYPE_LABELS = {
   // `admin/users.py`가 `body.amount > 0`으로 두 리터럴을 가른다.
   "user-clover-grant": "클로버 지급",
   "user-clover-revoke": "클로버 회수",
+  "user-payment-refund": "결제 환불",
   "user-novelize-on": "소설화 허용",
   "user-novelize-off": "소설화 회수",
   "user-chat-premium-models-on": "채팅 상위 모델 허용",
@@ -60,8 +61,8 @@ export const ACTION_TYPE_LABELS = {
   "prompt-set-publish": "프롬프트 세트 게시",
 } satisfies Record<AdminActionType, string>;
 
-/** 원장 행의 `kind` — `core/clover.py`의 `CloverKind` 12종이다(`mission_grant`·`expire_burn`
- * 2종과 소설화의 `novelize_spend`·`novelize_refund` 2종은 나중에 더해졌다). `AdminCloverLedgerItem.kind`가 `Literal`이 아니라
+/** 원장 행의 `kind` — `core/clover.py`의 `CloverKind` 16종이다(`mission_grant`·`expire_burn`
+ * 2종과 소설화의 `novelize_spend`·`novelize_refund` 2종, 결제의 `purchase_*` 4종은 나중에 더해졌다). `AdminCloverLedgerItem.kind`가 `Literal`이 아니라
  * `string`인 것은 의도다(모델이 `Text`라 값을 늘릴 때 마이그레이션도 FE 코드젠도 깨지지 않게 한
  * 것). 그래서 여기는 `Record<string, string>`이고, 모르는 값은 호출부가 원문 그대로 보여준다 —
  * 키를 빠뜨려도 컴파일이 못 잡는다(유니언으로 좁혀 강제하는 ACTION_TYPE_LABELS와 다르다).
@@ -80,7 +81,26 @@ export const CLOVER_KIND_LABELS: Record<string, string> = {
   novelize_refund: "소설 환불",
   expire_burn: "유효기간 소멸",
   withdrawal_burn: "탈퇴 소멸",
+  purchase_paid: "클로버 구매",
+  purchase_bonus: "구매 보너스",
+  purchase_revoke: "구매 취소 회수",
+  purchase_restore: "구매 회수 복원",
 };
+
+type PaymentStatus = components["schemas"]["AdminUserPaymentItem"]["status"];
+
+/** 주문 상태 — BE `PaymentStatus` 유니언이라 `satisfies`가 빠진 키·데드 키를 컴파일에서 잡는다(ACTION_TYPE_LABELS와
+ * 같은 관례). 취소는 어드민 환불과 포트원 콘솔 취소를 가리지 않고 같은 말이다 — 경로는 조치 이력이 보여 준다.
+ * `owner_withdrawn`은 지급 뒤 주문자가 탈퇴한 결제라 환불 버튼을 두지 않는다(콘솔 취소만 서버가 맞춘다). */
+export const PAYMENT_STATUS_LABELS = {
+  pending: "결제 대기",
+  paid: "결제 완료",
+  failed: "결제 실패",
+  mismatch: "검증 불일치",
+  owner_withdrawn: "주문자 탈퇴",
+  cancelled: "전액 취소",
+  partially_cancelled: "부분 취소",
+} satisfies Record<PaymentStatus, string>;
 
 export type ChatViewReasonCategory = components["schemas"]["ChatViewReasonCategory"];
 

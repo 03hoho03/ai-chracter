@@ -3,7 +3,6 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncIterator, Sequence
-from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -65,6 +64,7 @@ from api.chat.turn_lock import (
     hold_room_turn_lock,
     release_room_turn_lock,
 )
+from api.chat.turn_settlement import TurnSettlement
 from api.chat.schemas import (
     ChangeStartingSetupRequest,
     ChatDoneEvent,
@@ -130,7 +130,6 @@ from api.content.schemas import (
     count_rules,
 )
 from api.core.config import settings
-from api.core.clover import refund_in_new_transaction
 from api.core.rate_limit_gate import ChatCharge, charge_chat_turn, enforce_chat_rate_limit
 from api.core.s3 import build_thumbnail_key, generate_presigned_get_url
 from api.core.sentry import capture_dependency_failure
@@ -1446,60 +1445,6 @@ def _llm_dependency_tag(exc: LLMClientError | PromptRenderError | PromptSetNotFo
     return dependency_tag(exc)
 
 
-async def _refund_clover(
-    charge: ChatCharge,
-    session_factory: async_sessionmaker[AsyncSession],
-    user_id: uuid.UUID,
-) -> None:
-    """우리 쪽 실패로 턴이 0 이 됐을 때 차감을 되돌린다.
-
-    6 지점이 공유한다(프롬프트 렌더 실패 3 + LLM 호출 실패 3). **정책 위반 3 지점은 부르지
-    않는다** — 사용자 입력이 원인이고 LLM 을 실제로 태웠다.
-
-    `source` 가드가 여기 있는 이유는 호출부 6곳이 같은 `if` 를 여섯 벌 갖지 않게 하기
-    위해서다. `"free"`(무료 창으로 통과)와 `"skipped"`(예외 계정·Redis fail-open)는 애초에
-    깎은 것이 없어 되돌릴 대상이 없다.
-
-    🔴 **`refund_in_new_transaction` 은 예외를 밖으로 내지 않는다**(그 docstring 참고) —
-    여기가 SSE 제너레이터 본문이라 예외가 새면 이미 시작된 스트림을 뚫고 나가 태스크가
-    취소되고 망가진 asyncpg 커넥션이 풀로 반환된다(`core/rate_limit_gate.py` 모듈 docstring).
-    """
-    if charge.source != "clover":
-        return
-    await refund_in_new_transaction(
-        session_factory, user_id=user_id, amount=charge.clover_amount, kind="chat_refund"
-    )
-
-
-@asynccontextmanager
-async def _refund_clover_on_failure(
-    charge: ChatCharge,
-    session_factory: async_sessionmaker[AsyncSession],
-    user_id: uuid.UUID,
-) -> AsyncIterator[None]:
-    """차감은 커밋됐는데 라우트 본문이 **첫 `yield` 전에** 터지는
-    창을 닫는다.
-
-    게이트가 `Depends` 단계에서 클로버를 별도 트랜잭션으로 커밋하므로, 본문이 제너레이터
-    안의 환불 6지점에 닿기 전에 실패하면 차감만 남는다. "우리 쪽
-    실패만 환불한다"는 원칙을 일관되게 적용하려면 이 창도 되돌려야 한다.
-
-    🔴 **예외를 삼키지 않고 다시 올린다** — 6지점과 성격이 다르다. 거기는 스트림이 이미 열려
-    있어 예외가 새면 커넥션이 깨지지만, 여기는 아직 첫 `yield` 전이라 깨끗한 500 이 정상
-    경로다(`apps/api/CLAUDE.md` §SSE). 환불이 원래 예외를 가리면 안 되고,
-    `refund_in_new_transaction` 이 자체 예외를 밖으로 내지 않으므로 그 성질이 유지된다.
-
-    `BaseException` 이 아니라 `Exception` 을 잡는다 — 클라이언트가 끊어 생긴
-    `asyncio.CancelledError` 까지 여기서 처리하면 취소 전파가 바뀐다(`core/clover.py` 의
-    `refund_in_new_transaction` 과 같은 이유). 끊긴 요청의 차감은 그대로 남는다.
-    """
-    try:
-        yield
-    except Exception:
-        await _refund_clover(charge, session_factory, user_id)
-        raise
-
-
 async def _lock_room_for_turn_write(db: AsyncSession, room: ChatRoom) -> uuid.UUID | None:
     """턴 쓰기 구간의 첫 문장 — 방 행을 잠그고 아직 있는지 본다. 없으면(LLM 을 기다리는 사이 사용자가 방을 지웠다)
     경고를 남기고 트랜잭션을 반납한 뒤 `None` 이다. 호출부는 아무것도 쓰지 않고 오류 이벤트로 끝낸다 — 환불하지
@@ -1784,6 +1729,7 @@ async def _stream_new_turn(
     charge: ChatCharge,
     session_factory: async_sessionmaker[AsyncSession],
     background_tasks: BackgroundTasks,
+    settlement: TurnSettlement,
 ) -> AsyncIterator[ChatStreamEvent]:
     """생성 + 판단(buildJudgmentPrompt+generateStructured) + turn_count 증가까지 "새 턴
     하나"를 전부 실행한다. `send_message`(새 사용자 메시지)와 `edit_message`(수정된 메시지부터
@@ -1831,7 +1777,7 @@ async def _stream_new_turn(
         logger.warning("대화방 %s 프롬프트 렌더 실패: %s", room.id, exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
         # 환불은 `yield` **앞**이다 — 뒤에 두면 클라이언트가 이미 끊었을 때 실행되지 않는다.
-        await _refund_clover(charge, session_factory, room.user_id)
+        await settlement.refund()
         yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
         return
     # 생성 프롬프트에 필요한 읽기는 끝났다 — 생성 스트림을 기다리는 동안 커넥션을 쥐지 않게 반납한다.
@@ -1855,12 +1801,13 @@ async def _stream_new_turn(
     except LLMPolicyViolationError:
         # 환불하지 않는다 — 사용자 입력이 원인이고 LLM 을 실제로
         # 태웠다. 이미지 가드 차단이 환불되는 것과 결론이 갈리는 자리다.
+        settlement.mark_settled()
         yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_rendered, note_rendered))
         return
     except LLMClientError as exc:
         logger.warning("대화방 %s 메시지 생성 실패: %s", room.id, exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
-        await _refund_clover(charge, session_factory, room.user_id)
+        await settlement.refund()
         yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
         return
 
@@ -1994,6 +1941,7 @@ async def _stream_new_turn(
     # 쓰기 구간. 방 행을 먼저 잠그며 존재를 확인한다 — 쓰기 구간끼리(요약 접기의 버전 갱신 포함) 줄을 서고, LLM 을
     # 기다리는 사이 방이 지워졌으면 응답 INSERT 가 외래 키 위반으로 제너레이터를 뚫기 전에 갈라진다.
     if await _lock_room_for_turn_write(db, room) is None:
+        settlement.mark_settled()
         yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
         return
 
@@ -2002,6 +1950,8 @@ async def _stream_new_turn(
     )
     db.add(assistant_message)
     await db.flush()
+    # 여기부터 아래 커밋이 돌아올 때까지 끊기면 응답이 저장됐는지 알 수 없다 — 정산이 응답 행을 직접 확인한다.
+    settlement.set_pending_message(db, room.id, assistant_message.id)
     room.turn_count = next_turn
 
     if judged_cell_id is not None and not await _record_story_media_exposure(db, room, judged_cell_id):
@@ -2041,6 +1991,8 @@ async def _stream_new_turn(
         assistant_message.image_id = judged_cell_id
 
     await db.commit()
+    # 응답이 저장됐다 — 이 뒤로 끊겨도 차감은 소모다.
+    settlement.mark_settled()
 
     matched_image_url: str | None = None
     if matched_image is not None:
@@ -2149,12 +2101,15 @@ async def send_message(
     charge: ChatCharge = Depends(enforce_room_chat_charge),
 ) -> AsyncIterator[ChatStreamEvent]:
     """text/event-stream SSE 응답. 실제 생성+판단 파이프라인은
-    `_stream_new_turn`(이 방의 새 사용자 메시지를 커밋한 뒤 호출)이 담당한다."""
-    try:
-        prompt_set, prompt_sections = prompt_set_data
+    `_stream_new_turn`(이 방의 새 사용자 메시지를 커밋한 뒤 호출)이 담당한다.
 
-        # 이 블록은 첫 `yield` 전이라 실패하면 차감만 남는다 — 되돌린다.
-        async with _refund_clover_on_failure(charge, session_factory, room.user_id):
+    본문 전체가 정산 가드 안이다 — 첫 `yield` 전 실패, 생성 중 끊김, 예상하지 못한 예외 어느 것으로 끝나도 응답이
+    저장되지 않았으면 차감을 되돌리고 원래 예외를 다시 올린다(`chat/turn_settlement.py`)."""
+    settlement = TurnSettlement(charge=charge, user_id=room.user_id, session_factory=session_factory)
+    try:
+        async with settlement.guard():
+            prompt_set, prompt_sections = prompt_set_data
+
             history = list(
                 (
                     await db.scalars(
@@ -2173,21 +2128,22 @@ async def send_message(
             db.add(user_message)
             await db.commit()
 
-        async for event in _stream_new_turn(
-            db,
-            room,
-            llm_client,
-            setup,
-            history,
-            payload.content,
-            shortcut,
-            prompt_set,
-            prompt_sections,
-            charge,
-            session_factory,
-            background_tasks,
-        ):
-            yield event
+            async for event in _stream_new_turn(
+                db,
+                room,
+                llm_client,
+                setup,
+                history,
+                payload.content,
+                shortcut,
+                prompt_set,
+                prompt_sections,
+                charge,
+                session_factory,
+                background_tasks,
+                settlement,
+            ):
+                yield event
     finally:
         # 방 락 해제의 첫 자리(`_room_turn_lock_dependency`). 의존성 정리는 요약 접기 background 뒤에야 돌므로
         # 여기서 먼저 풀어야 접는 동안 다음 턴이 409 를 받지 않는다.
@@ -2249,13 +2205,14 @@ async def regenerate_message(
 
     트랜잭션 구간은 `_stream_new_turn` 과 같다 — 생성·판정 LLM 앞에서 요청 세션을 커밋으로 반납하고, 옛 응답 삭제와
     새 응답·노출 기록은 판정 뒤 한 트랜잭션으로 쓴다(방이 그사이 지워졌으면 쓰지 않고 오류 이벤트로 끝낸다)."""
+    # 정산 가드는 `send_message` 와 같다.
+    settlement = TurnSettlement(charge=charge, user_id=room.user_id, session_factory=session_factory)
     try:
-        prompt_set, prompt_sections = prompt_set_data
+        async with settlement.guard():
+            prompt_set, prompt_sections = prompt_set_data
 
-        # 이 블록은 첫 `yield` 전이라 실패하면 차감만 남는다 — 되돌린다.
-        # `history[-1]`은 의존성이 "마지막 앞에 사용자 메시지가 있어야 한다"로 막고 있어 현재는
-        # 도달 불가지만, 그 가드가 느슨해지면 여기서 IndexError 가 난다.
-        async with _refund_clover_on_failure(charge, session_factory, room.user_id):
+            # `history[-1]`은 의존성이 "마지막 앞에 사용자 메시지가 있어야 한다"로 막고 있어 현재는
+            # 도달 불가지만, 그 가드가 느슨해지면 여기서 IndexError 가 난다.
             # 바꿀 응답이 요약 커서 메시지 자신이면(커서 뒤를 전부 지운 방) 그 요약을 되감는다 — 안 그러면
             # 옛 응답이 요약에 남고 윈도우는 오프닝만 남긴다. 되감기는 생성보다 먼저 커밋한다: 방 행 락을
             # 생성 내내 쥐지 않고, 윈도우가 되감긴 커서로 계산된다. 생성이 실패해도 되돌리지 않는다.
@@ -2271,59 +2228,79 @@ async def regenerate_message(
                 ).all()
             )
             user_content = history[-1].content
-        try:
-            # 생성 세트는 `_stream_new_turn` 의 같은 자리와 같다(판정은 Gemini 세트).
-            generation_set, generation_sections = await _generation_prompt_set(
-                db, lane=_lane_for_setup(setup), model=charge.model, gemini_set=(prompt_set, prompt_sections)
-            )
-            prompt, system_instruction, persona_rendered, note_rendered, names = await _build_prompt(
-                db, room, setup, history[:-1], user_content, None, generation_set, generation_sections
-            )
-        except (PromptRenderError, PromptSetNotFoundError) as exc:
-            logger.warning("대화방 %s 재생성 프롬프트 렌더 실패: %s", room.id, exc)
-            capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
-            # 환불은 `yield` 앞이다(`_stream_new_turn`의 같은 자리 주석 참조).
-            await _refund_clover(charge, session_factory, room.user_id)
-            yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
-            return
-        # 생성 스트림을 기다리는 동안 커넥션을 쥐지 않게 반납한다(`_stream_new_turn` 의 같은 자리).
-        await db.commit()
-
-        chunks: list[str] = []
-        try:
-            async for token_event in _stream_generated_tokens(
-                llm_client,
-                prompt,
-                chunks,
-                system_instruction,
-                generation_set.user_label,
-                usage=LLMCallContext(
-                    call_site="chat_generate", user_id=room.user_id, room_id=room.id, model=charge.model
-                ),
-                # 재생성은 turn_count 를 올리지 않는다 — 같은 턴의 응답을 교체하는 것이다.
-                turn=room.turn_count,
-            ):
-                yield token_event
-        except LLMPolicyViolationError:
-            # 환불하지 않는다.
-            yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_rendered, note_rendered))
-            return
-        except LLMClientError as exc:
-            logger.warning("대화방 %s 응답 재생성 실패: %s", room.id, exc)
-            capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
-            await _refund_clover(charge, session_factory, room.user_id)
-            yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
-            return
-
-        assistant_content = "".join(chunks)
-
-        matched_image: SituationalImage | None = None
-        judged_cell_id: uuid.UUID | None = None
-        # send_message와 같은 이유(§SSE)로 판정 실패를 흡수한다 — 이미 생성된 응답까지 버리지
-        # 않고 그 턴의 이미지 매칭만 포기한다. 판정 입력 읽기 뒤, LLM 앞에서 요청 세션을 반납한다.
-        if setup is None:
             try:
-                situational_judgment = await _prepare_situational_image_judgment(
+                # 생성 세트는 `_stream_new_turn` 의 같은 자리와 같다(판정은 Gemini 세트).
+                generation_set, generation_sections = await _generation_prompt_set(
+                    db, lane=_lane_for_setup(setup), model=charge.model, gemini_set=(prompt_set, prompt_sections)
+                )
+                prompt, system_instruction, persona_rendered, note_rendered, names = await _build_prompt(
+                    db, room, setup, history[:-1], user_content, None, generation_set, generation_sections
+                )
+            except (PromptRenderError, PromptSetNotFoundError) as exc:
+                logger.warning("대화방 %s 재생성 프롬프트 렌더 실패: %s", room.id, exc)
+                capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+                # 환불은 `yield` 앞이다(`_stream_new_turn`의 같은 자리 주석 참조).
+                await settlement.refund()
+                yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
+                return
+            # 생성 스트림을 기다리는 동안 커넥션을 쥐지 않게 반납한다(`_stream_new_turn` 의 같은 자리).
+            await db.commit()
+
+            chunks: list[str] = []
+            try:
+                async for token_event in _stream_generated_tokens(
+                    llm_client,
+                    prompt,
+                    chunks,
+                    system_instruction,
+                    generation_set.user_label,
+                    usage=LLMCallContext(
+                        call_site="chat_generate", user_id=room.user_id, room_id=room.id, model=charge.model
+                    ),
+                    # 재생성은 turn_count 를 올리지 않는다 — 같은 턴의 응답을 교체하는 것이다.
+                    turn=room.turn_count,
+                ):
+                    yield token_event
+            except LLMPolicyViolationError:
+                # 환불하지 않는다.
+                settlement.mark_settled()
+                yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_rendered, note_rendered))
+                return
+            except LLMClientError as exc:
+                logger.warning("대화방 %s 응답 재생성 실패: %s", room.id, exc)
+                capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+                await settlement.refund()
+                yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
+                return
+
+            assistant_content = "".join(chunks)
+
+            matched_image: SituationalImage | None = None
+            judged_cell_id: uuid.UUID | None = None
+            # send_message와 같은 이유(§SSE)로 판정 실패를 흡수한다 — 이미 생성된 응답까지 버리지
+            # 않고 그 턴의 이미지 매칭만 포기한다. 판정 입력 읽기 뒤, LLM 앞에서 요청 세션을 반납한다.
+            if setup is None:
+                try:
+                    situational_judgment = await _prepare_situational_image_judgment(
+                        db,
+                        room,
+                        prompt_set=prompt_set,
+                        prompt_sections=prompt_sections,
+                        history=history[:-1],
+                        user_message=user_content,
+                        assistant_message=assistant_content,
+                        names=names,
+                    )
+                    await db.commit()
+                    if situational_judgment is not None:
+                        matched_image = await _judge_situational_image(llm_client, situational_judgment, room)
+                except (LLMClientError, PromptRenderError) as exc:
+                    logger.warning("대화방 %s 재생성 이미지 매칭 실패 — 이번 재생성의 매칭을 건너뛴다: %s", room.id, exc)
+                    capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+            else:
+                # 스토리: `_stream_new_turn` 의 칸 판정과 같은 헬퍼·같은 규칙(엔딩 여부와 무관, 노출 제외 칸은 후보 밖,
+                # 실패는 그림만 포기). 스탯·엔딩 판정은 재생성에서 하지 않으므로 동시에 부를 짝이 없다.
+                media_judgment = await _prepare_media_cell_judgment(
                     db,
                     room,
                     prompt_set=prompt_set,
@@ -2334,88 +2311,76 @@ async def regenerate_message(
                     names=names,
                 )
                 await db.commit()
-                if situational_judgment is not None:
-                    matched_image = await _judge_situational_image(llm_client, situational_judgment, room)
-            except (LLMClientError, PromptRenderError) as exc:
-                logger.warning("대화방 %s 재생성 이미지 매칭 실패 — 이번 재생성의 매칭을 건너뛴다: %s", room.id, exc)
-                capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
-        else:
-            # 스토리: `_stream_new_turn` 의 칸 판정과 같은 헬퍼·같은 규칙(엔딩 여부와 무관, 노출 제외 칸은 후보 밖,
-            # 실패는 그림만 포기). 스탯·엔딩 판정은 재생성에서 하지 않으므로 동시에 부를 짝이 없다.
-            media_judgment = await _prepare_media_cell_judgment(
-                db,
-                room,
-                prompt_set=prompt_set,
-                prompt_sections=prompt_sections,
-                history=history[:-1],
-                user_message=user_content,
-                assistant_message=assistant_content,
-                names=names,
+                if media_judgment is not None:
+                    judged_cell_id = await _judge_media_cell(
+                        llm_client,
+                        media_judgment,
+                        LLMCallContext(call_site="chat_media_book_image", user_id=room.user_id, room_id=room.id),
+                        log_subject=f"대화방 {room.id} 재생성",
+                    )
+
+            # 쓰기 구간(`_stream_new_turn` 의 같은 자리 주석 참조).
+            if await _lock_room_for_turn_write(db, room) is None:
+                settlement.mark_settled()
+                yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
+                return
+            await db.execute(delete(ChatMessage).where(ChatMessage.id == last_message.id))
+            # 옛 응답 DELETE 와 같은 트랜잭션이라 응답이 실제로 지워진 재생성만 센다 — 렌더 실패·정책
+            # 위반·LLM 오류는 위에서 옛 응답을 남긴 채 끝나므로 기록되지 않는다.
+            db.add(DiscardedResponse(user_id=room.user_id, chat_room_id=room.id, kind="regenerate", discarded_count=1))
+            # id 를 여기서 정한다 — 컬럼 기본값(`uuid4`)은 flush 때에야 채워지는데, 정산은 커밋 전에 이 id 를 알아야 한다.
+            new_message = ChatMessage(
+                id=uuid.uuid4(), chat_room_id=room.id, role=ChatMessageRole.ASSISTANT, content=assistant_content
             )
-            await db.commit()
-            if media_judgment is not None:
-                judged_cell_id = await _judge_media_cell(
-                    llm_client,
-                    media_judgment,
-                    LLMCallContext(call_site="chat_media_book_image", user_id=room.user_id, room_id=room.id),
-                    log_subject=f"대화방 {room.id} 재생성",
-                )
+            db.add(new_message)
+            # 여기부터 아래 커밋이 돌아올 때까지 끊기면 응답이 저장됐는지 알 수 없다(`_stream_new_turn` 의 같은 자리).
+            settlement.set_pending_message(db, room.id, new_message.id)
 
-        # 쓰기 구간(`_stream_new_turn` 의 같은 자리 주석 참조).
-        if await _lock_room_for_turn_write(db, room) is None:
-            yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
-            return
-        await db.execute(delete(ChatMessage).where(ChatMessage.id == last_message.id))
-        # 옛 응답 DELETE 와 같은 트랜잭션이라 응답이 실제로 지워진 재생성만 센다 — 렌더 실패·정책
-        # 위반·LLM 오류는 위에서 옛 응답을 남긴 채 끝나므로 기록되지 않는다.
-        db.add(DiscardedResponse(user_id=room.user_id, chat_room_id=room.id, kind="regenerate", discarded_count=1))
-        new_message = ChatMessage(chat_room_id=room.id, role=ChatMessageRole.ASSISTANT, content=assistant_content)
-        db.add(new_message)
-
-        if matched_image is not None and not await _record_character_image_exposure(
-            db, room, matched_image.entity_id
-        ):
-            matched_image = None
-        if judged_cell_id is not None and not await _record_story_media_exposure(db, room, judged_cell_id):
-            judged_cell_id = None
-
-        if matched_image is not None:
-            new_message.image_id = matched_image.entity_id
-        elif judged_cell_id is not None:
-            new_message.image_id = judged_cell_id
-
-        await db.commit()
-
-        matched_image_url: str | None = None
-        if matched_image is not None:
-            # send_message(_stream_new_turn)와 같은 이유로
-            # 미러링한다 — 매칭 필터가 image_asset_id가 NULL인 후보를 판단 프롬프트에서
-            # 걸러내지만, 그 필터를 통과한 뒤에도 `db.get(Asset, ...)` 실패와 S3 presign 실패는
-            # 남는다 — 이미 db.commit() 뒤라 예외가 여기서 새면 §SSE의 폭발 반경(커넥션
-            # 강제종료 → 무관한 다른 요청 500)이 그대로 열린다. 실패하면 이번 재생성의 이미지
-            # 매칭만 포기하고 이미지 없이 done 이벤트로 마무리한다.
-            try:
-                assert matched_image.image_asset_id is not None
-                image_asset = await db.get(Asset, matched_image.image_asset_id)
-                assert image_asset is not None
-                matched_image_url = await run_in_threadpool(generate_presigned_get_url, image_asset.storage_key)
-            except Exception as exc:
-                logger.warning("대화방 %s 재생성 상황이미지 URL 조립 실패 — 이미지 없이 진행한다: %s", room.id, exc)
-                capture_dependency_failure(exc, dependency="s3")
+            if matched_image is not None and not await _record_character_image_exposure(
+                db, room, matched_image.entity_id
+            ):
                 matched_image = None
-                matched_image_url = None
+            if judged_cell_id is not None and not await _record_story_media_exposure(db, room, judged_cell_id):
+                judged_cell_id = None
 
-        judged_cell_image = (
-            await _sign_judged_cell(db, room, judged_cell_id) if judged_cell_id is not None else None
-        )
-        # 커밋 뒤 조회가 다시 연 트랜잭션을 반납한다.
-        await db.commit()
+            if matched_image is not None:
+                new_message.image_id = matched_image.entity_id
+            elif judged_cell_id is not None:
+                new_message.image_id = judged_cell_id
 
-        yield ChatDoneEvent(
-            final_message=_turn_message_response(
-                new_message, matched_image, matched_image_url, judged_cell_id, judged_cell_image
+            await db.commit()
+            settlement.mark_settled()
+
+            matched_image_url: str | None = None
+            if matched_image is not None:
+                # send_message(_stream_new_turn)와 같은 이유로
+                # 미러링한다 — 매칭 필터가 image_asset_id가 NULL인 후보를 판단 프롬프트에서
+                # 걸러내지만, 그 필터를 통과한 뒤에도 `db.get(Asset, ...)` 실패와 S3 presign 실패는
+                # 남는다 — 이미 db.commit() 뒤라 예외가 여기서 새면 §SSE의 폭발 반경(커넥션
+                # 강제종료 → 무관한 다른 요청 500)이 그대로 열린다. 실패하면 이번 재생성의 이미지
+                # 매칭만 포기하고 이미지 없이 done 이벤트로 마무리한다.
+                try:
+                    assert matched_image.image_asset_id is not None
+                    image_asset = await db.get(Asset, matched_image.image_asset_id)
+                    assert image_asset is not None
+                    matched_image_url = await run_in_threadpool(generate_presigned_get_url, image_asset.storage_key)
+                except Exception as exc:
+                    logger.warning("대화방 %s 재생성 상황이미지 URL 조립 실패 — 이미지 없이 진행한다: %s", room.id, exc)
+                    capture_dependency_failure(exc, dependency="s3")
+                    matched_image = None
+                    matched_image_url = None
+
+            judged_cell_image = (
+                await _sign_judged_cell(db, room, judged_cell_id) if judged_cell_id is not None else None
             )
-        )
+            # 커밋 뒤 조회가 다시 연 트랜잭션을 반납한다.
+            await db.commit()
+
+            yield ChatDoneEvent(
+                final_message=_turn_message_response(
+                    new_message, matched_image, matched_image_url, judged_cell_id, judged_cell_image
+                )
+            )
     finally:
         # 방 락 해제의 첫 자리(`_room_turn_lock_dependency`). 의존성 정리보다 먼저 풀어야 다음 요청이 기다리지 않는다.
         await release_room_turn_lock(turn_lock)
@@ -2470,12 +2435,12 @@ async def edit_message(
     건 하지 않는다 — 되돌릴 근거가 되는 턴별 변경 이력 자체가 저장되어 있지 않고
     (알려진 한계), 요구사항에도 이 롤백은 없다.
     """
+    # 정산 가드는 `send_message` 와 같다. 첫 `yield` 전 구간은 조회·DELETE·커밋이 다 들어 있어 세 라우트 중 위험이 가장 크다.
+    settlement = TurnSettlement(charge=charge, user_id=room.user_id, session_factory=session_factory)
     try:
-        prompt_set, prompt_sections = prompt_set_data
+        async with settlement.guard():
+            prompt_set, prompt_sections = prompt_set_data
 
-        # 이 블록은 첫 `yield` 전이라 실패하면 차감만 남는다 — 되돌린다.
-        # 세 라우트 중 위험이 가장 큰 자리다: 조회·DELETE·커밋이 다 들어 있다.
-        async with _refund_clover_on_failure(charge, session_factory, room.user_id):
             # 요약 되감기가 먼저다 — 편집 지점이 요약된 구간이면 커서가 그 앞으로 물러나야, 아래에서 자른
             # 히스토리가 생성 프롬프트에서 복귀한 커서 기준으로 실린다. 절단·편집과 한 트랜잭션이다.
             await rewind_memory(db, room.id, (message.created_at, message.id))
@@ -2510,21 +2475,22 @@ async def edit_message(
             message.content = payload.content
             await db.commit()
 
-        async for event in _stream_new_turn(
-            db,
-            room,
-            llm_client,
-            setup,
-            history,
-            payload.content,
-            None,
-            prompt_set,
-            prompt_sections,
-            charge,
-            session_factory,
-            background_tasks,
-        ):
-            yield event
+            async for event in _stream_new_turn(
+                db,
+                room,
+                llm_client,
+                setup,
+                history,
+                payload.content,
+                None,
+                prompt_set,
+                prompt_sections,
+                charge,
+                session_factory,
+                background_tasks,
+                settlement,
+            ):
+                yield event
     finally:
         # 방 락 해제의 첫 자리(`send_message` 의 같은 자리 주석 참조).
         await release_room_turn_lock(turn_lock)
@@ -3785,13 +3751,12 @@ async def _stream_preview_turn(
     prompt_sections: list[PromptSection],
     user_persona: str,
     names: PromptNames,
-    charge: ChatCharge,
-    session_factory: async_sessionmaker[AsyncSession],
     # `_stream_new_turn`은 `room.user_id`를 쓰지만 `PreviewSessionState`에는 user_id가 없다
     # (`_owned_preview_session_dependency` docstring) — 그래서 여기만 인자로 받는다.
     user_id: uuid.UUID,
     # 페이로드 칸 id → 서명된 그림(`_preview_media_book_dependency`). 이 함수는 세션을 열지 않는다.
     media_images: dict[uuid.UUID, MediaTagImage],
+    settlement: TurnSettlement,
 ) -> AsyncIterator[ChatStreamEvent]:
     """`_stream_new_turn`과 같은 순서(생성 스트리밍 → 스탯 판단 → 엔딩 판정)를 따르되
     `ChatRoom`/DB 대신 `PreviewSessionState`(Redis, 호출부가 커밋)를 직접 갱신한다. 스탯
@@ -3832,7 +3797,7 @@ async def _stream_preview_turn(
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
         # 🔴 처음 설계가 빠뜨렸던 환불 자리다 — 미리보기도
         # 같은 게이트를 지나므로 클로버가 깎인다. 환불은 `yield` 앞이다.
-        await _refund_clover(charge, session_factory, user_id)
+        await settlement.refund()
         yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
         return
 
@@ -3851,13 +3816,14 @@ async def _stream_preview_turn(
             yield token_event
     except LLMPolicyViolationError:
         # 환불하지 않는다.
+        settlement.mark_settled()
         yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_rendered, note_rendered=False))
         return
     except LLMClientError as exc:
         logger.warning("미리보기 메시지 생성 실패: %s", exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
         # 🔴 처음 설계가 빠뜨렸던 환불 자리다.
-        await _refund_clover(charge, session_factory, user_id)
+        await settlement.refund()
         yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
         return
 
@@ -3984,6 +3950,9 @@ async def _stream_preview_turn(
     if ending_reached_event is not None:
         yield ending_reached_event
 
+    # 미리보기는 DB 에 남기는 것이 없어 done 을 내보내는 순간이 응답 확정이다. done 뒤로 두면 done 을 받고 끊은
+    # 사용자까지 환급된다.
+    settlement.mark_settled()
     yield ChatDoneEvent(final_message=assistant_message)
 
 
@@ -4021,41 +3990,41 @@ async def send_preview_message(
     이 경로에서는 전혀 건드리지 않는다(Redis의 `PreviewSessionState` 하나만 갱신). 프롬프트
     세트만은 예외다 — `_preview_prompt_set_dependency`가 캐시 히트면 DB에 닿지 않고, 미스일
     때만 짧게 연 세션으로 활성 세트를 읽는다."""
-    # 의존성들이 연 요청 세션 트랜잭션을 반납한다(위 `db` 자리 주석). 첫 `yield` 전이라 실패하면 차감만 남으므로
-    # 되돌린다. 게이트 뒤의 별도 의존성으로 커밋하지 않는 이유가 이것이다 — 거기서 실패하면 환불할 자리가 없다.
-    async with _refund_clover_on_failure(charge, session_factory, user_id):
+    # 정산 가드는 `send_message` 와 같다. 미리보기는 턴 락이 없어 가드 하나로 감싼다.
+    settlement = TurnSettlement(charge=charge, user_id=user_id, session_factory=session_factory)
+    async with settlement.guard():
+        # 의존성들이 연 요청 세션 트랜잭션을 반납한다(위 `db` 자리 주석).
         await db.commit()
 
-    prompt_set, prompt_sections = prompt_set_data
-    # 실제 방과 같은 규칙으로 고른 이름 — 프로필은 작가의 기본 프로필, 작품 기본 이름은 초안 값이다.
-    names = PromptNames(
-        persona_name=persona.name if persona is not None else None,
-        default_user_name=state.payload.default_user_name,
-        char_name=state.payload.name if isinstance(state.payload, CharacterDraftPayload) else None,
-    )
-    history = [_preview_chat_message(message) for message in state.messages]
-    state.messages.append(
-        ChatMessageResponse(
-            id=uuid.uuid4(), role=ChatMessageRole.USER, content=payload.content, created_at=datetime.now(UTC)
+        prompt_set, prompt_sections = prompt_set_data
+        # 실제 방과 같은 규칙으로 고른 이름 — 프로필은 작가의 기본 프로필, 작품 기본 이름은 초안 값이다.
+        names = PromptNames(
+            persona_name=persona.name if persona is not None else None,
+            default_user_name=state.payload.default_user_name,
+            char_name=state.payload.name if isinstance(state.payload, CharacterDraftPayload) else None,
         )
-    )
+        history = [_preview_chat_message(message) for message in state.messages]
+        state.messages.append(
+            ChatMessageResponse(
+                id=uuid.uuid4(), role=ChatMessageRole.USER, content=payload.content, created_at=datetime.now(UTC)
+            )
+        )
 
-    async for event in _stream_preview_turn(
-        state,
-        llm_client,
-        history,
-        payload.content,
-        shortcut,
-        prompt_set,
-        prompt_sections,
-        _format_persona(persona),
-        names,
-        charge,
-        session_factory,
-        user_id,
-        media_images,
-    ):
-        yield event
+        async for event in _stream_preview_turn(
+            state,
+            llm_client,
+            history,
+            payload.content,
+            shortcut,
+            prompt_set,
+            prompt_sections,
+            _format_persona(persona),
+            names,
+            user_id,
+            media_images,
+            settlement,
+        ):
+            yield event
 
     # 미리보기도 `require_legal_consent`가
     # `get_db_session`을 쥐고 있어 실채팅과 같은 폭발 반경을 갖는다 — 이 SET이 실패해도
