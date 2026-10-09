@@ -4,6 +4,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models import (
+    HomeNovelCuration,
     Novel,
     NovelBatch,
     NovelChapter,
@@ -12,7 +13,9 @@ from api.db.models import (
     NovelChapterRevision,
     NovelCharacter,
     NovelJob,
+    NovelLike,
     NovelPublication,
+    NovelReaderPosition,
     NovelReadingPosition,
     NovelScreening,
     NovelSnapshot,
@@ -54,6 +57,13 @@ async def _row_counts(db_session: AsyncSession, novel_id: uuid.UUID) -> dict[str
         .select_from(NovelChapterPublication)
         .where(NovelChapterPublication.novel_id == novel_id),
         "screenings": sa.select(sa.func.count()).select_from(NovelScreening).where(NovelScreening.novel_id == novel_id),
+        "reader_positions": sa.select(sa.func.count())
+        .select_from(NovelReaderPosition)
+        .where(NovelReaderPosition.novel_id == novel_id),
+        "likes": sa.select(sa.func.count()).select_from(NovelLike).where(NovelLike.novel_id == novel_id),
+        "home_curations": sa.select(sa.func.count())
+        .select_from(HomeNovelCuration)
+        .where(HomeNovelCuration.novel_id == novel_id),
     }
     return {name: (await db_session.scalar(query)) or 0 for name, query in queries.items()}
 
@@ -71,6 +81,9 @@ _GONE = {
     "publications": 0,
     "chapter_publications": 0,
     "screenings": 0,
+    "reader_positions": 0,
+    "likes": 0,
+    "home_curations": 0,
 }
 
 
@@ -124,4 +137,7 @@ async def test_delete_novels_leaves_other_novels_untouched(db_session: AsyncSess
         "publications": 1,
         "chapter_publications": 1,
         "screenings": 1,
+        "reader_positions": 1,
+        "likes": 1,
+        "home_curations": 1,
     }

@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Text, Uuid, false, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Text, Uuid, false, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base
@@ -205,6 +205,8 @@ AdminActionType = Literal[
     "content-restrict",
     "home-curation-clear",
     "home-curation-set",
+    "home-novel-curation-clear",
+    "home-novel-curation-set",
     "image-view",
     "inquiry-reply",
     "legal-publish",
@@ -263,6 +265,11 @@ class AdminActionLog(Base):
     target_comment_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("comments.id", name="fk_admin_action_logs_target_comment_id"), nullable=True
     )
+    # 노벨(공개 소설)에 한 조치. 게시자는 소설을 지우거나 탈퇴로 소설을 파기할 수 있다 — 로그는 남기고 사라진 소설을
+    # 가리키던 칸만 비운다(작품·방 칸과 같은 이유).
+    target_novel_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("novels.id", ondelete="SET NULL", name="fk_admin_action_logs_target_novel_id"), nullable=True
+    )
     reason_category: Mapped[str | None] = mapped_column(Text, nullable=True)
     reason_text: Mapped[str] = mapped_column(Text, server_default="", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -275,4 +282,10 @@ class AdminActionLog(Base):
         Index("ix_admin_action_logs_created_at", created_at.desc()),
         Index("ix_admin_action_logs_target_user_id", "target_user_id"),
         Index("ix_admin_action_logs_target_content_id", "target_content_id"),
+        # 소설 DELETE 때 SET NULL 이 이 소설을 가리키는 행을 찾는 조회용. 노벨 조치 행만 담는다.
+        Index(
+            "ix_admin_action_logs_target_novel_id",
+            "target_novel_id",
+            postgresql_where=text("target_novel_id IS NOT NULL"),
+        ),
     )

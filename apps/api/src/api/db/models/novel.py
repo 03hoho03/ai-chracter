@@ -1,6 +1,6 @@
 """대화를 소설로 옮긴 결과물. 소설 → 묶음 → 화(장) → 화 개정, 그리고 화를 만들거나 고치는 작업 행이 뼈대이고, 그
 옆에 인물 카드·화별 등장 인물·스냅샷·읽은 위치가 붙는다. 소유자가 소설을 노벨(공개 소설)로 내놓으면 공개 상태·화 공개본·
-텍스트 심사 기록이 더 붙는다.
+텍스트 심사 기록이 더 붙고, 독자가 읽으면 독자의 읽은 자리·좋아요가, 운영자가 홈에 걸면 홈 노벨 지정이 붙는다.
 
 소설은 원래 대화방과 떨어진 문서다. 방을 지워도 소설은 남고(`novels.chat_room_id` 만 비워진다), 원작 작품을
 가리키는 칸은 FK 없는 사본이라 작품이 사라져도 영향이 없다. 탈퇴하면 소설 아래 테이블을 모두 파기한다.
@@ -8,7 +8,8 @@
 `relationship()` 이 없고 뼈대 테이블(소설·화·개정·작업)에는 `ON DELETE CASCADE` 도 없으므로, 지울 때는 작업 → 개정 →
 화 → 소설 순서를 직접 지킨다(`novelize/deletion.py` 의 `delete_novels` 한 곳).
 
-🔴 예외: 묶음·인물·등장 인물·스냅샷·읽은 위치와 노벨 공개 상태·화 공개본·텍스트 심사 기록은 부모(소설·화·개정)를 지우면
+🔴 예외: 묶음·인물·등장 인물·스냅샷·읽은 위치와 노벨 공개 상태·화 공개본·텍스트 심사 기록·독자 읽은 자리·좋아요·홈 노벨
+지정은 부모(소설·화·개정)를 지우면
 함께 지워지는 `ON DELETE CASCADE` 다. 이 저장소의 "cascade 없음" 관례를 일부러 어긴 것이다 — 이미지만 옛 판으로
 되돌렸을 때 옛 코드의 화 삭제·소설 삭제·탈퇴는 이 테이블들을 모르고 위 순서대로만 지우는데, cascade 가 없으면 그
 DELETE 가 FK 위반으로 500 이 된다. 같은 이유로 `novel_chapters.batch_id` 는 nullable 이다(옛 코드의 화 INSERT 는 이
@@ -505,6 +506,10 @@ class NovelPublication(Base):
     )
     title: Mapped[str | None] = mapped_column(Text, nullable=True)
     synopsis: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    # 좋아요 수(`novel_likes` 행 수)와 조회 수. 둘 다 SQL 상대 UPDATE 로만 바꾼다 — 읽고 더해 쓰면 동시 요청이 서로를
+    # 덮어 수가 빠진다. 좋아요 수를 행 수로 그때그때 세지 않는 것은 인기순 목록이 이 칸으로 정렬하고 커서를 만들기 때문이다.
+    like_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    view_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     first_published_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -513,10 +518,14 @@ class NovelPublication(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
+    # 최신순 목록은 마지막 공개 시각으로, 인기순 목록은 좋아요 수 → 마지막 공개 시각으로 줄 세운다.
     __table_args__ = (
         CheckConstraint(
             f"visibility IN ({_sql_in_list(NovelPublicationVisibility)})", name="ck_novel_publications_visibility"
         ),
+        CheckConstraint("like_count >= 0 AND view_count >= 0", name="ck_novel_publications_counts_nonnegative"),
+        Index("ix_novel_publications_published_at", published_at.desc(), novel_id.desc()),
+        Index("ix_novel_publications_like_count", like_count.desc(), published_at.desc(), novel_id.desc()),
         CheckConstraint(
             f"moderation_status IN ({_sql_in_list(NovelPublicationModerationStatus)})",
             name="ck_novel_publications_moderation_status",
@@ -672,4 +681,101 @@ class NovelPurchase(Base):
         Index("ix_novel_purchases_buyer_user_id", "buyer_user_id"),
         Index("ux_novel_purchases_spend_ledger_id", "spend_ledger_id", unique=True),
         Index("ix_novel_purchases_refund_notification_id", "refund_notification_id"),
+    )
+
+
+class NovelReaderPosition(Base):
+    """노벨 독자가 화마다 마지막으로 읽은 문단. 소유자의 읽은 위치(`NovelReadingPosition` — 소설 주인 한 사람 것이라 사용자
+    칸이 없다)와 따로 둔다. 독자는 여럿이라 (사용자, 화) 하나에 행 하나다. 게시자 본인이 노벨 화면으로 읽어도 이 테이블이다.
+
+    `edition` 은 저장할 때 읽던 화 공개본의 판이다. 다시 공개로 판이 오르면 문단 수가 달라질 수 있어, 화면은 옛 위치를 새
+    문단 수에 비례해 옮긴다(`paragraph_count` 는 그때의 문단 수). `finished_at` 은 끝까지 읽은 시각이고 한 번 찍히면 되돌리지
+    않는다. 소설의 이어 읽기 자리는 그 사람의 그 소설 행 가운데 `updated_at` 이 가장 큰 것이다.
+
+    소설·화를 지우면 함께 지워지는 `ON DELETE CASCADE` 다(모듈 docstring 의 예외). 새 코드는 삭제 함수가 직접 지우고,
+    독자가 탈퇴하면 그 사람의 행을 지운다(`auth/withdrawal.py`). 복합 PK 는 `alembic check` 가 비교하지 않아
+    `pytest.raises(IntegrityError)` 행위 테스트가 검증한다."""
+
+    __tablename__ = "novel_reader_positions"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", name="fk_novel_reader_positions_user_id"), primary_key=True
+    )
+    chapter_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("novel_chapters.id", ondelete="CASCADE"), primary_key=True
+    )
+    novel_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("novels.id", ondelete="CASCADE"), nullable=False)
+    paragraph_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    paragraph_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    edition: Mapped[int] = mapped_column(Integer, nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # 이어 읽기 자리 조회용. 소설·화 인덱스는 소설·화 DELETE 때 FK 검사용이다(PK 가 사용자 칸으로 시작해 화 칸만으로는 못
+    # 찾는다).
+    __table_args__ = (
+        CheckConstraint(
+            "paragraph_index >= 0 AND paragraph_index < paragraph_count AND edition >= 1",
+            name="ck_novel_reader_positions_range",
+        ),
+        Index("ix_novel_reader_positions_user_id_novel_id_updated_at", "user_id", "novel_id", updated_at.desc()),
+        Index("ix_novel_reader_positions_novel_id", "novel_id"),
+        Index("ix_novel_reader_positions_chapter_id", "chapter_id"),
+    )
+
+
+class NovelLike(Base):
+    """노벨 좋아요. 소설 단위이고 (사용자, 소설) 하나에 행 하나다. 수는 `novel_publications.like_count` 에 따로 센다 — 행을
+    넣은 요청만 수를 올리고 행을 지운 요청만 내린다.
+
+    좋아요한 회원이 탈퇴해도 행을 지우지 않는다 — 작품 좋아요와 같다(지우면 탈퇴가 남의 소설 순위를 움직인다). 소설을
+    지우면 함께 지워지는 `ON DELETE CASCADE` 다(모듈 docstring 의 예외)."""
+
+    __tablename__ = "novel_likes"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", name="fk_novel_likes_user_id"), primary_key=True
+    )
+    novel_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("novels.id", ondelete="CASCADE"), primary_key=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # 소설 DELETE 때 FK 검사용(PK 가 사용자 칸으로 시작한다).
+    __table_args__ = (Index("ix_novel_likes_novel_id", "novel_id"),)
+
+
+# 홈 노벨 섹션에 거는 자리 수. 자리 번호가 곧 홈의 순서다.
+HOME_NOVEL_CURATION_SLOTS = 10
+
+
+class HomeNovelCuration(Base):
+    """홈 첫 화면의 노벨 섹션에 운영자가 거는 노벨. 자리(`position`, 1부터)마다 한 편이고, 한 노벨은 한 자리에만 걸린다.
+
+    작품 홈 지정(`home_curations`)과 표를 나눈 것은 그 표의 PK 가 작품 유형 native enum 이라서다 — 노벨 칸을 더하려고
+    enum 을 넓히면 그 값을 모르는 옛 코드가 행을 읽다 500 이 된다.
+
+    걸린 노벨이 나중에 거둬지거나 이용제한돼도 행은 그대로 둔다 — 홈은 읽을 때 노벨 목록과 같은 조건으로 걸러 안 보이게
+    하고, 다시 보일 수 있게 되면 그대로 다시 나온다(작품 지정과 같은 원칙). 작품 지정과 달리 소설은 게시자 삭제·탈퇴로
+    실제로 지워지므로 소설 FK 는 `ON DELETE CASCADE` 이고, 새 코드는 삭제 함수가 직접 지운다.
+
+    자리 범위 CHECK 는 `alembic check` 가 비교하지 않아 `pytest.raises(IntegrityError)` 행위 테스트가 검증한다."""
+
+    __tablename__ = "home_novel_curations"
+
+    position: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    novel_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("novels.id", ondelete="CASCADE"), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            f"position BETWEEN 1 AND {HOME_NOVEL_CURATION_SLOTS}", name="ck_home_novel_curations_position_range"
+        ),
+        Index("ux_home_novel_curations_novel_id", "novel_id", unique=True),
     )
