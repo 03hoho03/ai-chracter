@@ -20,8 +20,8 @@ from api.db.models.clover import (
     CloverSpendRefund,
     CloverSpendUsage,
 )
-from api.db.models.content import Content, ContentType, ContentVisibility, ModerationStatus
-from factories import _make_user, _make_user_with_clover_lot
+from api.db.models.content import Content
+from factories import _make_draft_content, _make_user, _make_user_with_clover_lot
 
 
 async def _content(db: AsyncSession) -> Content:
@@ -29,16 +29,7 @@ async def _content(db: AsyncSession) -> Content:
     creator = _make_user()
     db.add(creator)
     await db.flush()
-    content = Content(
-        creator_user_id=creator.id,
-        type=ContentType.CHARACTER,
-        hashtags=[],
-        visibility=ContentVisibility.PUBLIC,
-        moderation_status=ModerationStatus.NORMAL,
-    )
-    db.add(content)
-    await db.flush()
-    return content
+    return await _make_draft_content(db, creator_user_id=creator.id)
 
 
 async def _usage_rows(db: AsyncSession, user_id: uuid.UUID) -> list[CloverSpendUsage]:

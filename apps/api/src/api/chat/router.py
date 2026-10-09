@@ -123,6 +123,7 @@ from api.content.schemas import (
     StatDefDraftItem,
     StoryDraftPayload,
 )
+from api.core.clover import SpendUsage
 from api.core.config import settings
 from api.core.rate_limit_gate import ChatCharge, charge_chat_turn, enforce_chat_rate_limit
 from api.core.s3 import build_thumbnail_key, generate_presigned_get_url
@@ -281,9 +282,19 @@ async def enforce_room_chat_charge(
     영수증의 `model` 이 이 턴의 생성 모델이다 — 생성 쪽은 방을 다시 읽지 않는다. 이 게이트와 생성 사이에 방의 모델이
     바뀌어도(모델 지정 라우트는 턴 락을 잡지 않는다) 값을 낸 모델로 생성한다.
 
-    라우트 시그니처의 맨 뒤에 둔다(`send_message` 의 같은 자리 주석) — 조회·검증이 실패한 요청은 차감하지 않는다."""
+    라우트 시그니처의 맨 뒤에 둔다(`send_message` 의 같은 자리 주석) — 조회·검증이 실패한 요청은 차감하지 않는다.
+
+    사용처는 이 방과 그 작품이다. 작품 소유자는 여기서 읽지 않는다 — 클로버를 실제로 깎는 턴에만 차감의 사용처 INSERT 가
+    같은 문장에서 읽으므로, 대부분인 무료 턴에 작품 조회가 늘지 않는다."""
     model = await effective_room_model(db, user_id, room.chat_model)
-    return await charge_chat_turn(user_id, db, session_factory, model=model, price=chat_turn_cost(model))
+    return await charge_chat_turn(
+        user_id,
+        db,
+        session_factory,
+        model=model,
+        price=chat_turn_cost(model),
+        usage=SpendUsage("chat", content_id=room.content_id, chat_room_id=room.id),
+    )
 
 
 async def _validate_shortcut(

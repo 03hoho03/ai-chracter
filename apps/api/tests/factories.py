@@ -653,6 +653,21 @@ async def _make_published(
     return document
 
 
+async def _make_draft_content(db_session: AsyncSession, *, creator_user_id: uuid.UUID) -> Content:
+    """버전 없는 초안 작품 하나를 flush 한다. 행이 있어야 하는 참조(차감 사용처의 작품·소유자)만 채울 때 쓴다 — 채팅
+    경로처럼 발행본을 읽는 곳에는 `_make_published_character` 를 쓴다."""
+    content = Content(
+        creator_user_id=creator_user_id,
+        type=ContentType.CHARACTER,
+        hashtags=[],
+        visibility=ContentVisibility.PUBLIC,
+        moderation_status=ModerationStatus.NORMAL,
+    )
+    db_session.add(content)
+    await db_session.flush()
+    return content
+
+
 async def _make_published_character(
     db_session: AsyncSession, *, creator_user_id: uuid.UUID, genre_id: uuid.UUID, intro: str = "인트로"
 ) -> Content:

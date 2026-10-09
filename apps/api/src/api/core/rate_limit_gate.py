@@ -265,8 +265,18 @@ async def enforce_chat_rate_limit(
 ) -> ChatCharge:
     """빌더 미리보기의 게이트. 미리보기는 방이 없고 모델을 고르지 않아 언제나 Gemini 가격의 Gemini 턴이다.
 
-    가격은 부를 때마다 `clover` 모듈에서 읽는다(기본 인자로 잡으면 `monkeypatch` 가 통하지 않는다)."""
-    return await charge_chat_turn(user_id, db, session_factory, model=DEFAULT_CHAT_MODEL, price=clover.CHAT_TURN_COST)
+    가격은 부를 때마다 `clover` 모듈에서 읽는다(기본 인자로 잡으면 `monkeypatch` 가 통하지 않는다).
+
+    사용처는 작품을 가리키지 않는 `preview` 다 — 작가가 자기 초안을 시험하는 차감이라 정산 대상이 아니다. 그래도
+    `preview` 로 기록하는 것은 "사용처 없는 채팅 차감"을 배포 겹침 같은 이상 신호로만 남기려는 것이다."""
+    return await charge_chat_turn(
+        user_id,
+        db,
+        session_factory,
+        model=DEFAULT_CHAT_MODEL,
+        price=clover.CHAT_TURN_COST,
+        usage=clover.SpendUsage("preview"),
+    )
 
 
 async def charge_chat_turn(
@@ -276,9 +286,14 @@ async def charge_chat_turn(
     *,
     model: ChatModelId,
     price: int,
+    usage: clover.SpendUsage,
 ) -> ChatCharge:
     """채팅 턴 하나의 상한 검사와 차감. 키는 `user_id`다 — IP가 아니라 계정이 비용의 단위다. `model` 은 이 턴을 생성할
     모델이고 `price` 는 그 모델의 턴 가격이다(호출부가 레지스트리에서 정한다).
+
+    `usage` 는 클로버를 깎는 세 갈래(무료분 소진 뒤·미인증·상위 모델)가 차감과 같은 커밋에 남길 사용처다. 크리에이터
+    정산이 사용처에서 출발하므로 빠뜨리면 그 차감이 정산에서 조용히 빠진다 — 그래서 기본값 없이 받는다. 무료·면제
+    턴은 원장 행이 없어 쓰지 않고, 작품 소유자도 차감할 때만 사용처 INSERT 안에서 읽으므로 무료 턴에 조회가 늘지 않는다.
 
     두 게이트는 `user_id` 를 `get_current_user_id` 로 받는다. 재동의 게이트(`require_legal_consent`)도 이미 그 `Depends` 를
     쓰고 있어 FastAPI의 요청 스코프 캐시가 한 번만 해석한다 — Redis 왕복이 더 늘지 않는다.
@@ -308,7 +323,7 @@ async def charge_chat_turn(
             raise _too_many_requests(user_id, "minute", burst_retry_after)
 
         if model != DEFAULT_CHAT_MODEL:
-            return await _charge_premium_turn(user_id, session_factory, now, model=model, price=price)
+            return await _charge_premium_turn(user_id, session_factory, now, model=model, price=price, usage=usage)
 
         # 면제 대상은 버스트를 그대로 받고 일일만 건너뛴다. 건너뛰는 것이라 일일
         # 카운터도 올라가지 않는다 — 어드민이 도중에 면제를 거두면 그날 그때까지의 요청은
@@ -320,7 +335,7 @@ async def charge_chat_turn(
         # 미인증 회원은 무료분이 0 이다. 일일 창보다 **앞**이라 그 카운터를 올리지 않고(인증한 날도 하루 무료분 0 에서 시작한다),
         # Redis 를 쓰지 않는 차감으로 바로 간다.
         if user is not None and is_identity_gated(user):
-            return await _charge_unverified_turn(user_id, db, session_factory, now, price=price)
+            return await _charge_unverified_turn(user_id, db, session_factory, now, price=price, usage=usage)
 
         # 일일 창은 KST 자정에 끊긴다. 기구에는 "자정"이라는 개념이 없으므로 호출자가
         # 키에 KST 날짜를 섞고(날짜가 바뀌면 키 자체가 바뀐다) TTL로 남은 초를 넘긴다 —
@@ -365,6 +380,7 @@ async def charge_chat_turn(
                 user_id=user_id,
                 amount=price,
                 kind="chat_spend",
+                usage=usage,
             )
             if spent is None:
                 # 클로버 부족 429(채팅): 자정까지 남은 초는 거짓이 아니다 — 그때 무료 일일분이
@@ -402,7 +418,7 @@ async def charge_chat_turn(
         # 게이트에 걸린 회원은 일일 창에 닿지 않는다).
         user = await db.get(User, user_id)
         if user is not None and is_identity_gated(user):
-            return await _charge_unverified_turn(user_id, db, session_factory, now, price=price)
+            return await _charge_unverified_turn(user_id, db, session_factory, now, price=price, usage=usage)
         # 차감이 없었으므로 환불 대상도 아니다 — 이미지 쪽 `:279`와 같은 결론이다.
         return ChatCharge(source="skipped")
 
@@ -414,6 +430,7 @@ async def _charge_unverified_turn(
     now: datetime,
     *,
     price: int,
+    usage: clover.SpendUsage,
 ) -> ChatCharge:
     """본인인증 게이트에 걸린 회원의 Gemini 턴. 무료분이 0 이라 처음부터 무료분을 다 쓴 사람과 같은 길(하루 1회 확인 →
     차감)을 가되, 클로버가 모자라면 `CLOVER_REQUIRED` 가 아니라 403 `IDENTITY_VERIFICATION_REQUIRED` 다 — 그 429 의 "자정에
@@ -423,7 +440,9 @@ async def _charge_unverified_turn(
     보이지 않게 하는 분기는 화면 몫이다."""
     if await _needs_clover_spend_confirmation(user_id, db, now, price):
         raise _too_many_requests(user_id, _CLOVER_WINDOW, seconds_until_kst_midnight(now), code=_CLOVER_CONFIRM_CODE)
-    spent = await clover.spend_in_new_transaction(session_factory, user_id=user_id, amount=price, kind="chat_spend")
+    spent = await clover.spend_in_new_transaction(
+        session_factory, user_id=user_id, amount=price, kind="chat_spend", usage=usage
+    )
     if spent is None:
         raise identity_verification_required()
     return ChatCharge(source="clover", clover_amount=price, spend_ledger_id=spent.ledger_id)
@@ -436,6 +455,7 @@ async def _charge_premium_turn(
     *,
     model: ChatModelId,
     price: int,
+    usage: clover.SpendUsage,
 ) -> ChatCharge:
     """상위 모델 턴의 차감. 면제·일일 무료분·하루 1회 확인을 보지 않는다 — 면제는 횟수 상한만 비켜 가고(소설화의 상위
     모델 장도 면제 계정이 낸다), 무료분은 Gemini 턴의 것이라 상위 모델 턴이 쓰지도 깎지도 않고, 확인은 모델을 고를 때
@@ -444,7 +464,9 @@ async def _charge_premium_turn(
     부족이면 Gemini 와 같은 `CLOVER_REQUIRED` 429 다. 그 `retryAfterSeconds`(자정까지)는 이 갈래에서는 약속이 아니다 —
     자정에 돌아오는 무료분은 Gemini 턴에만 쓰인다. 값은 계약 모양을 지키려고 그대로 싣고, 상위 모델 방의 화면은 이 값으로
     "자정에 다시"를 안내하지 않는다."""
-    spent = await clover.spend_in_new_transaction(session_factory, user_id=user_id, amount=price, kind="chat_spend")
+    spent = await clover.spend_in_new_transaction(
+        session_factory, user_id=user_id, amount=price, kind="chat_spend", usage=usage
+    )
     if spent is None:
         raise _too_many_requests(user_id, _CLOVER_WINDOW, seconds_until_kst_midnight(now), code=_CLOVER_CODE)
     return ChatCharge(source="clover", clover_amount=price, model=model, spend_ledger_id=spent.ledger_id)

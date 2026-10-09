@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from api.core import clover
 from api.core.config import settings
 from api.core.rate_limit import KST, seconds_until_kst_midnight
-from api.db.models import Novel, NovelChapter, NovelChapterRevision, NovelJob, User
+from api.db.models import Content, Novel, NovelChapter, NovelChapterRevision, NovelJob, User
 from api.db.models.novel import NovelBatch
 from api.db.models.novel import NovelJobKind, NovelJobStatus
 from api.db.models.clover import (
@@ -40,7 +40,7 @@ from api.novelize.prompts import NovelizePrompt
 from api.novelize.batches import ensure_batches
 from api.novelize.deletion import delete_batch, delete_novels
 from api.novelize.router import delete_last_novel_chapter, delete_novel
-from factories import _assert_blocked, _clover_lots, _make_user_with_clover_lot
+from factories import _assert_blocked, _clover_lots, _make_draft_content, _make_user_with_clover_lot
 
 pytestmark = pytest.mark.usefixtures("novel_prices_for_flow_tests")
 
@@ -55,8 +55,10 @@ def _service_session(db_session: AsyncSession) -> AsyncSession:
 
 
 async def _make_novel(db: AsyncSession, user_id: uuid.UUID) -> Novel:
+    """`user_id` 의 소설 한 권. 원작은 그 사람의 초안이다 — 차감이 사용처에 원작 소유자를 적으므로 작품 행이 있어야 한다."""
+    content = await _make_draft_content(db, creator_user_id=user_id)
     novel = Novel(
-        user_id=user_id, content_id=uuid.uuid4(), content_type="character", content_title="원작", character_name="인물"
+        user_id=user_id, content_id=content.id, content_type="character", content_title="원작", character_name="인물"
     )
     db.add(novel)
     await db.flush()
@@ -658,6 +660,8 @@ async def independent_factory(db_engine: AsyncEngine) -> AsyncGenerator[async_se
             )
             await cleanup.execute(delete(CloverLedger).where(CloverLedger.user_id.in_(user_ids)))
             await cleanup.execute(delete(CloverLot).where(CloverLot.user_id.in_(user_ids)))
+            # 소설의 원작 초안. 사용처가 FK 로 잡으므로 사용처보다 뒤, 작가보다 앞이다.
+            await cleanup.execute(delete(Content).where(Content.creator_user_id.in_(user_ids)))
             await cleanup.execute(delete(User).where(User.id.in_(user_ids)))
         await cleanup.commit()
 
