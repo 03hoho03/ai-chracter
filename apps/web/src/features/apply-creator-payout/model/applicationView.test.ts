@@ -7,7 +7,13 @@ import { getApplicationView } from "./applicationView";
 const ELIGIBLE: CreatorPayoutEligibility = { identityVerified: true, adult: true, hasPublishedWork: true, suspended: false };
 
 function application(status: CreatorPayoutApplication["status"]): CreatorPayoutApplication {
-  return { status, appliedAt: "2026-10-01T00:00:00Z", decidedAt: "2026-10-02T00:00:00Z", decisionReason: "사유" };
+  return {
+    status,
+    appliedAt: "2026-10-01T00:00:00Z",
+    decidedAt: "2026-10-02T00:00:00Z",
+    decisionReason: "사유",
+    revokedAt: status === "revoked" ? "2026-10-05T00:00:00Z" : null,
+  };
 }
 
 describe("getApplicationView", () => {
@@ -27,6 +33,17 @@ describe("getApplicationView", () => {
   it.each(["rejected", "revoked"] as const)("%s 로 끝난 신청은 사유를 보이고 다시 신청할 수 있다", (status) => {
     const view = getApplicationView({ application: application(status), eligibility: ELIGIBLE });
     expect(view).toMatchObject({ kind: "open", previous: { status, reason: "사유" }, canApply: true });
+  });
+
+  it("반려된 신청은 반려한 날을 끝난 날로 보인다", () => {
+    const view = getApplicationView({ application: application("rejected"), eligibility: ELIGIBLE });
+    expect(view.kind === "open" && view.previous?.endedAt).toBe("2026-10-02T00:00:00Z");
+  });
+
+  // 승인 취소된 신청의 decidedAt 은 승인한 날이다 — 그것을 보이면 승인일이 취소일 행세를 한다.
+  it("승인 취소된 신청은 승인한 날이 아니라 취소한 날을 끝난 날로 보인다", () => {
+    const view = getApplicationView({ application: application("revoked"), eligibility: ELIGIBLE });
+    expect(view.kind === "open" && view.previous?.endedAt).toBe("2026-10-05T00:00:00Z");
   });
 
   // 나이는 인증한 생년월일로만 판정한다 — 인증 전에 "만 19세 미만"이라고 하면 거짓일 수 있다.

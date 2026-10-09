@@ -15,10 +15,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 
-import { sessionKeys, useSessionQuery } from "@/entities/session";
+import { creatorPayoutKeys, useCreatorPayoutQuery } from "@/entities/creator-payout";
+import { hasEnabledFeature, sessionKeys, useSessionQuery } from "@/entities/session";
 import { CONTACT_EMAIL } from "@/shared/config/site";
+import { formatKrw } from "@/shared/lib/number/formatKrw";
 
 import { useWithdrawAccountMutation } from "../api/useWithdrawAccountMutation";
+import { getCreatorEarningsWarning, type CreatorEarningsWarning } from "../model/creatorEarningsWarning";
 import { getPaidBalanceWarning, type PaidBalanceWarning } from "../model/paidBalanceWarning";
 import { WITHDRAW_GENERIC_ERROR_MESSAGE } from "../model/withdrawError";
 import { WithdrawPasswordForm } from "./WithdrawPasswordForm";
@@ -42,10 +45,24 @@ export function WithdrawAccountDialog({ label = "회원탈퇴" }: WithdrawAccoun
   const queryClient = useQueryClient();
   // 유료 잔액은 세션 값이다(재동의 게이트 밖이라 재동의 모달 안에서도 읽힌다). 기준은 `getPaidBalanceWarning`.
   const paidBalanceWarning = getPaidBalanceWarning(me);
+  // 크리에이터 적립금은 정산 조회 값이다(이것도 재동의 게이트 밖이다). 정산이 켜진 계정만 묻는다 — 탈퇴 버튼이 있는
+  // 화면에 들어올 때 미리 읽어 다이얼로그를 열 때 경고가 늦게 끼어들지 않게 한다. 기준은 `getCreatorEarningsWarning`.
+  const isPayoutEnabled = hasEnabledFeature(me?.enabledFeatures, "creator_payout");
+  const payoutQuery = useCreatorPayoutQuery({ enabled: isPayoutEnabled });
+  const creatorEarningsWarning = getCreatorEarningsWarning({
+    isPayoutEnabled,
+    payout: payoutQuery.data,
+    error: payoutQuery.error,
+    now: new Date(),
+  });
 
   const handleOpenChange = (open: boolean) => {
-    // 세션은 `staleTime: Infinity` 라, 그사이 환불·구매로 바뀐 유료 잔액을 열 때 다시 읽는다.
-    if (open) void queryClient.invalidateQueries({ queryKey: sessionKeys.current() });
+    // 세션은 `staleTime: Infinity` 라, 그사이 환불·구매로 바뀐 유료 잔액을 열 때 다시 읽는다. 적립금도 그사이 월 확정이
+    // 돌았을 수 있어 함께 다시 읽는다.
+    if (open) {
+      void queryClient.invalidateQueries({ queryKey: sessionKeys.current() });
+      void queryClient.invalidateQueries({ queryKey: creatorPayoutKeys.summary() });
+    }
     setIsOpen(open);
   };
 
@@ -82,6 +99,7 @@ export function WithdrawAccountDialog({ label = "회원탈퇴" }: WithdrawAccoun
             보존되지만 탈퇴 후에는 접근할 수 없어요. 이 작업은 되돌릴 수 없어요.
           </AlertDialogDescription>
           <PaidBalanceWarningMessage warning={paidBalanceWarning} />
+          <CreatorEarningsWarningMessage warning={creatorEarningsWarning} />
         </AlertDialogHeader>
         {me?.hasPassword ? (
           <WithdrawPasswordForm onWithdrawn={handleWithdrawn} />
@@ -132,4 +150,29 @@ function PaidBalanceWarningMessage({ warning }: { warning: PaidBalanceWarning })
       로 신청해 주세요.
     </p>
   );
+}
+
+/** 크리에이터 적립금 경고. 유료 클로버 경고와 같은 모양이되 행동 안내가 없다 — 지급 신청 기능이 아직 없어 탈퇴 전에
+ * 받을 방법이 없다는 사실만 말한다. 재동의 모달 안에서 열려도 같은 문장이다(그 모달은 앱을 가려 정산 화면으로 갈 수
+ * 없다). 문장마다 아는 만큼만 말한다 — 금액은 확정 잔액이 0 보다 클 때만, 모르면 "있다면"·"있었다면" 조건으로. */
+function CreatorEarningsWarningMessage({ warning }: { warning: CreatorEarningsWarning }) {
+  if (warning.kind === "none") return null;
+  return (
+    <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm break-keep text-destructive-text">
+      {creatorEarningsLead(warning)} 지급 신청 기능은 아직 준비 중이라, 지금 탈퇴하면 받을 수 없어요.
+    </p>
+  );
+}
+
+function creatorEarningsLead(warning: Exclude<CreatorEarningsWarning, { kind: "none" }>): string {
+  switch (warning.kind) {
+    case "confirmed":
+      return `크리에이터 정산의 확정된 적립금 ${formatKrw(warning.balanceKrw)}과 아직 확정되지 않은 적립이 모두 사라져요.`;
+    case "unconfirmed":
+      return "크리에이터 정산에서 아직 확정되지 않은 적립이 있다면 함께 사라져요.";
+    case "unavailable":
+      return "크리에이터 정산 적립금이 있었다면 탈퇴할 때 함께 사라져요.";
+    case "unknown":
+      return "크리에이터 정산 적립금이 있다면 확정된 적립금과 아직 확정되지 않은 적립이 모두 사라져요.";
+  }
 }

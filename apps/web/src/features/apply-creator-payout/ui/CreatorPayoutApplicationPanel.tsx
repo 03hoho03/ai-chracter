@@ -1,8 +1,8 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Checkbox } from "@ai-character-chat/ui/components/checkbox";
 import { Link } from "@tanstack/react-router";
-import { Check, Circle, CircleDashed, type LucideIcon } from "lucide-react";
-import { useId, useState } from "react";
+import { Check, ChevronDown, Circle, CircleDashed, type LucideIcon } from "lucide-react";
+import { useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import type { CreatorPayoutResponse } from "@/entities/creator-payout";
@@ -18,8 +18,11 @@ import {
   type RequirementState,
 } from "../model/applicationView";
 import { APPLY_MESSAGES, toApplyFailure, type ApplyResult } from "../model/applyResult";
+import { APPLY_CONSENT_LABEL, APPLY_CONSENT_NOTICE } from "../model/consentNotice";
 
 const INLINE_LINK_CLASS = "font-medium whitespace-nowrap text-primary underline-offset-4 hover:underline focus-visible:underline";
+const DETAIL_SUMMARY_CLASS =
+  "flex w-fit cursor-pointer list-none items-center gap-1 text-xs font-medium text-primary underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-none [&::-webkit-details-marker]:hidden";
 const STATUS_BLOCK_CLASS = "flex flex-col gap-1 rounded-xl border border-border px-4 py-3";
 
 type CreatorPayoutApplicationPanelProps = {
@@ -29,14 +32,24 @@ type CreatorPayoutApplicationPanelProps = {
 /** 정산 신청 영역. 상태(검토 중·승인·신청 가능)는 `getApplicationView`가 정하고, 여기서는 그 모양대로 그린다.
  *
  * 신청은 모달 없이 이 자리에서 받는다 — 받을 것이 동의 하나뿐이라 화면을 덮을 이유가 없다. "정산 신청하기"가 이 화면의
- * 유일한 솔리드 채움이다(내역의 "더 보기"는 outline). */
+ * 유일한 솔리드 채움이다(내역의 "더 보기"는 outline).
+ *
+ * 신청이 성공하면 누른 버튼째 폼이 "검토 중" 블록으로 바뀌어 사라진다. 그대로 두면 포커스가 문서 처음으로 떨어져
+ * 키보드 사용자가 제자리를 잃으므로, 이 화면에서 신청한 직후에만 그 블록으로 포커스를 옮긴다. 신청 응답보다 상태
+ * 재조회가 먼저 끝나 폼이 먼저 사라질 수 있어 표시는 요청을 보내기 전에 남기고, 실패하면 지운다. */
 export function CreatorPayoutApplicationPanel({ payout }: CreatorPayoutApplicationPanelProps) {
   const view = getApplicationView(payout);
+  const shouldFocusStatusRef = useRef(false);
+  const focusStatusIfJustApplied = (element: HTMLElement | null) => {
+    if (!element || !shouldFocusStatusRef.current) return;
+    shouldFocusStatusRef.current = false;
+    element.focus();
+  };
 
   switch (view.kind) {
     case "pending":
       return (
-        <div role="status" className={STATUS_BLOCK_CLASS}>
+        <div ref={focusStatusIfJustApplied} tabIndex={-1} role="status" className={`${STATUS_BLOCK_CLASS} outline-none`}>
           <p className="text-sm font-medium text-foreground">신청을 검토하고 있어요</p>
           <p className="text-xs break-keep text-muted-foreground">
             {formatDate(view.appliedAt)}에 신청했어요. 검토 결과는 이 화면에서 확인할 수 있어요.
@@ -54,11 +67,24 @@ export function CreatorPayoutApplicationPanel({ payout }: CreatorPayoutApplicati
         </div>
       );
     case "open":
-      return <OpenApplication view={view} />;
+      return (
+        <OpenApplication
+          view={view}
+          onApplying={(isApplying) => {
+            shouldFocusStatusRef.current = isApplying;
+          }}
+        />
+      );
   }
 }
 
-function OpenApplication({ view }: { view: Extract<ApplicationView, { kind: "open" }> }) {
+type OpenApplicationProps = {
+  view: Extract<ApplicationView, { kind: "open" }>;
+  /** 신청을 보내기 직전 `true`, 실패하면 `false` — 성공 뒤 포커스를 어디로 옮길지 패널이 정한다. */
+  onApplying: (isApplying: boolean) => void;
+};
+
+function OpenApplication({ view, onApplying }: OpenApplicationProps) {
   return (
     <div className="flex flex-col gap-4">
       {view.previous && <PreviousApplication previous={view.previous} />}
@@ -66,7 +92,7 @@ function OpenApplication({ view }: { view: Extract<ApplicationView, { kind: "ope
         <p className="text-sm break-keep text-muted-foreground">이용정지 중에는 정산을 신청할 수 없어요.</p>
       )}
       {!view.suspended && !view.canApply && <RequirementList requirements={view.requirements} />}
-      {view.canApply && <ApplyForm />}
+      {view.canApply && <ApplyForm onApplying={onApplying} />}
     </div>
   );
 }
@@ -76,17 +102,20 @@ function PreviousApplication({
 }: {
   previous: NonNullable<Extract<ApplicationView, { kind: "open" }>["previous"]>;
 }) {
-  const decidedOn = previous.decidedAt ? `${formatDate(previous.decidedAt)} · ` : "";
+  const endedOn = previous.endedAt ? formatDate(previous.endedAt) : null;
   return (
     <div className={STATUS_BLOCK_CLASS}>
       <p className="text-sm font-medium text-foreground">
         {previous.status === "rejected" ? "지난 신청이 반려됐어요" : "정산 승인이 취소됐어요"}
       </p>
-      {previous.reason && (
+      {/* 사유 없이 끝난 신청(사유를 신청자에게 보이기 전의 승인 취소)도 끝난 날은 보인다. */}
+      {previous.reason ? (
         <p className="text-sm break-keep whitespace-pre-line text-foreground">
-          <span className="text-muted-foreground">{decidedOn}사유: </span>
+          <span className="text-muted-foreground">{endedOn && `${endedOn} · `}사유: </span>
           {previous.reason}
         </p>
+      ) : (
+        endedOn && <p className="text-sm text-muted-foreground">{endedOn}</p>
       )}
       <p className="text-xs break-keep text-muted-foreground">
         {previous.status === "revoked"
@@ -162,8 +191,9 @@ function RequirementStatus({ requirement }: { requirement: Requirement }) {
 
 /** 수집·이용 동의 하나와 신청 버튼. 동의는 이 신청에만 걸리는 개별 동의라 체크박스를 미리 켜 두지 않는다.
  *
- * 신청 중에는 `disabled` 대신 `aria-disabled` 로 막는다 — `disabled` 는 누른 버튼의 포커스를 날린다. */
-function ApplyForm() {
+ * 법정 고지 네 가지는 가입 화면의 수집·이용 동의와 같은 모양으로 체크박스 아래 "자세히"에 접어 둔다(네이티브
+ * `<details>`). 신청 중에는 `disabled` 대신 `aria-disabled` 로 막는다 — `disabled` 는 누른 버튼의 포커스를 날린다. */
+function ApplyForm({ onApplying }: { onApplying: (isApplying: boolean) => void }) {
   const fieldId = useId();
   const [agreed, setAgreed] = useState(false);
   const [showsAgreeError, setShowsAgreeError] = useState(false);
@@ -178,11 +208,13 @@ function ApplyForm() {
       return;
     }
     setResult(null);
+    onApplying(true);
     try {
       await mutation.mutateAsync();
       // 성공하면 신청 상태를 다시 읽어 이 폼이 "검토 중"으로 바뀐다 — 폼 안에 남길 문장이 없어 토스트로 알린다.
       toast.success(APPLY_MESSAGES.applied);
     } catch (error) {
+      onApplying(false);
       const failure = toApplyFailure(error);
       // 재동의 모달이 대신 말한다(전역 뮤테이션 처리가 세션을 다시 읽어 띄운다).
       if (failure !== "reconsentRequired") setResult(failure);
@@ -204,8 +236,7 @@ function ApplyForm() {
             aria-describedby={showsAgreeError ? agreeErrorId : undefined}
           />
           <span>
-            크리에이터 정산 심사와 적립금 정산에 필요한 개인정보를 수집·이용하는 데 동의해요.{" "}
-            <span className="text-muted-foreground">(필수)</span>
+            <span className="text-muted-foreground">(필수)</span> {APPLY_CONSENT_LABEL}
           </span>
         </label>
         {showsAgreeError && (
@@ -213,6 +244,24 @@ function ApplyForm() {
             동의해야 신청할 수 있어요.
           </p>
         )}
+        <details className="group pl-6">
+          <summary className={DETAIL_SUMMARY_CLASS}>
+            <span className="group-open:hidden">자세히</span>
+            <span className="hidden group-open:inline">접기</span>
+            <ChevronDown
+              aria-hidden
+              className="size-3.5 motion-safe:transition-transform motion-safe:duration-200 group-open:rotate-180"
+            />
+          </summary>
+          <dl className="mt-2 flex flex-col gap-3 rounded-lg border border-border p-3 text-xs text-muted-foreground motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
+            {APPLY_CONSENT_NOTICE.map((item) => (
+              <div key={item.term}>
+                <dt className="font-semibold text-foreground">{item.term}</dt>
+                <dd className="mt-0.5 break-keep">{item.detail}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
         <p className="pl-6 text-xs break-keep text-muted-foreground">
           자세한 내용은{" "}
           <Link to={SUPPORT_DESTINATIONS.privacy.to} target="_blank" rel="noopener" className={INLINE_LINK_CLASS}>

@@ -12,8 +12,9 @@ export type Requirement = { key: RequirementKey; state: RequirementState };
  *
  * - `pending` — 검토 중이다. 다시 신청할 수 없다.
  * - `approved` — 적립 중이다.
- * - `open` — 신청할 수 있는 자리다. 앞선 신청이 반려·승인 취소로 끝났으면(`previous`) 그 사유를 함께 보이고, 다시 신청할
- *   수 있다. 정지 중이거나(`suspended`) 조건이 모자라면(`requirements`) 신청 버튼을 두지 않는다.
+ * - `open` — 신청할 수 있는 자리다. 앞선 신청이 반려·승인 취소로 끝났으면(`previous`) 그 사유와 끝난 날을 함께 보이고,
+ *   다시 신청할 수 있다. 끝난 날(`endedAt`)은 반려면 반려한 시각, 승인 취소면 취소한 시각이다 — 승인 취소된 신청의
+ *   `decidedAt` 은 승인한 시각이라 그대로 쓰면 승인일이 취소일로 보인다. 정지 중이거나(`suspended`) 조건이 모자라면(`requirements`) 신청 버튼을 두지 않는다.
  *
  * 자격은 서버가 신청과 같은 판정으로 계산한 값이다. 여기서는 보여 줄 모양만 정한다. */
 export type ApplicationView =
@@ -21,7 +22,7 @@ export type ApplicationView =
   | { kind: "approved"; decidedAt: string | null }
   | {
       kind: "open";
-      previous: { status: "rejected" | "revoked"; reason: string; decidedAt: string | null } | null;
+      previous: { status: "rejected" | "revoked"; reason: string; endedAt: string | null } | null;
       suspended: boolean;
       requirements: Requirement[];
       canApply: boolean;
@@ -45,7 +46,11 @@ export function getApplicationView(payout: Pick<CreatorPayoutResponse, "applicat
   return {
     kind: "open",
     previous: application
-      ? { status: application.status, reason: application.decisionReason, decidedAt: application.decidedAt }
+      ? {
+          status: application.status,
+          reason: application.decisionReason,
+          endedAt: application.status === "revoked" ? application.revokedAt : application.decidedAt,
+        }
       : null,
     suspended: eligibility.suspended,
     requirements,

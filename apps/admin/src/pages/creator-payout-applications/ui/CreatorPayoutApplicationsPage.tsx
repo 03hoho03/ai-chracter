@@ -98,10 +98,25 @@ function EligibilitySummary({ item }: { item: AdminCreatorPayoutApplicationItem 
   return <span className="font-medium text-destructive-text">{CREATOR_PAYOUT_BLOCK_REASON_LABELS[blockReason]}</span>;
 }
 
-const COLUMNS: readonly DataListColumn<AdminCreatorPayoutApplicationItem>[] = [
+/** 반려·승인 취소 사유는 둘 다 신청자 화면에 그대로 보이는 글이라 목록에서도 훑을 수 있게 둔다. */
+function hasDecisionReason(status: CreatorPayoutApplicationStatus) {
+  return status === "rejected" || status === "revoked";
+}
+
+/** 표 칸은 줄바꿈하지 않아 긴 사유가 표를 넓히지 않게 한 줄로 자른다. 전문은 고른 신청의 처리 이력에 있다. */
+function DecisionReasonSummary({ item }: { item: AdminCreatorPayoutApplicationItem }) {
+  return <span className="block max-w-64 truncate">{item.decisionReason || "-"}</span>;
+}
+
+const BASE_COLUMNS: readonly DataListColumn<AdminCreatorPayoutApplicationItem>[] = [
   { id: "applicant", header: "신청자", isPrimary: true, cell: (item) => <ApplicantTitle item={item} /> },
   { id: "eligibility", header: "지금 자격", cell: (item) => <EligibilitySummary item={item} /> },
   { id: "applied", header: "신청일시", cell: (item) => formatDateTime(item.appliedAt) },
+];
+
+const COLUMNS_WITH_REASON: readonly DataListColumn<AdminCreatorPayoutApplicationItem>[] = [
+  ...BASE_COLUMNS,
+  { id: "reason", header: "사유", cell: (item) => <DecisionReasonSummary item={item} /> },
 ];
 
 const EMPTY_TITLES: Record<CreatorPayoutApplicationStatus, string> = {
@@ -162,7 +177,7 @@ function ApplicationsTable({ page, status, onPageChange, onReset }: Applications
               caption="정산 신청 목록"
               rows={data.items}
               getRowKey={(item) => item.id}
-              columns={COLUMNS}
+              columns={hasDecisionReason(status) ? COLUMNS_WITH_REASON : BASE_COLUMNS}
               isRowSelected={(item) => item.id === selectedId}
               renderRowTarget={(item, props) => (
                 <button
@@ -177,7 +192,14 @@ function ApplicationsTable({ page, status, onPageChange, onReset }: Applications
               )}
               card={{
                 title: (item) => <ApplicantTitle item={item} />,
-                meta: (item) => <EligibilitySummary item={item} />,
+                meta: (item) => (
+                  <>
+                    <EligibilitySummary item={item} />
+                    {hasDecisionReason(item.status) && (
+                      <span className="min-w-0 basis-full truncate">사유: {item.decisionReason || "-"}</span>
+                    )}
+                  </>
+                ),
                 trailing: (item) => formatDateTime(item.appliedAt),
               }}
             />
@@ -293,7 +315,7 @@ function EligibilityChecklist({ application }: { application: AdminCreatorPayout
   );
 }
 
-/** 처리 이력. 승인 메모·승인 취소 사유는 감사 기록에만 있어 응답에 없다 — 신청자에게 보인 거절 사유만 여기 보인다. */
+/** 처리 이력. 승인 메모는 감사 기록에만 있어 응답에 없다 — 신청자에게 보이는 거절·승인 취소 사유만 여기 보인다. */
 function DecisionHistory({ application }: { application: AdminCreatorPayoutApplicationItem }) {
   if (application.status === "pending" || !application.decidedAt) return null;
 
@@ -310,9 +332,11 @@ function DecisionHistory({ application }: { application: AdminCreatorPayoutAppli
           <dd className="text-foreground tabular-nums">{formatDateTime(application.revokedAt)}</dd>
         </div>
       )}
-      {application.status === "rejected" && (
+      {hasDecisionReason(application.status) && (
         <div className="flex flex-col gap-0.5 @xl:col-span-2">
-          <dt className="text-muted-foreground">거절 사유 (신청자에게 보임)</dt>
+          <dt className="text-muted-foreground">
+            {application.status === "rejected" ? "거절 사유" : "승인 취소 사유"} (신청자에게 보임)
+          </dt>
           <dd className="whitespace-pre-wrap break-keep text-foreground wrap-anywhere">
             {application.decisionReason || "-"}
           </dd>

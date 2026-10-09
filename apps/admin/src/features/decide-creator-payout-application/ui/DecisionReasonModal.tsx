@@ -58,14 +58,17 @@ const COPY: Record<
     title: "정산 승인 취소",
     effect:
       "의 정산 승인을 취소합니다. 지금부터 적립이 멈추고, 이미 확정된 적립은 그대로 남아요.",
-    reasonHint: "감사 기록에만 남고 신청자에게는 보이지 않아요.",
-    placeholder: "취소 사유",
+    reasonHint: "이 사유는 신청자 정산 화면에 그대로 보여요. 내부 메모는 적지 말고 신청자가 알아야 할 이유만 적어주세요.",
+    placeholder: "신청자에게 보일 승인 취소 사유",
     confirm: "승인 취소 확정",
     done: "승인을 취소했어요.",
   },
 };
 
-/** 거절·승인 취소 확인. 둘 다 사유가 필수인 한 번짜리 처리라 한 모달이 문구만 바꿔 맡는다. */
+/** 거절·승인 취소 확인. 둘 다 사유가 필수인 한 번짜리 처리라 한 모달이 문구만 바꿔 맡는다.
+ *
+ * 요청 중에는 Esc·바깥 누르기·닫기(X)·취소로 닫지 않는다(승인 모달과 같다) — 닫은 뒤 실패하면 그 오류를 보일 자리가
+ * 없고, 닫힌 모달을 보고 처리가 안 됐다고 여겨 다시 누르게 된다. */
 export const DecisionReasonModal = createCallable<DecisionReasonModalProps, void>(
   ({ call, kind, application, applicantName }) => {
     const rejectMutation = useRejectCreatorPayoutApplicationMutation(application.id);
@@ -101,7 +104,7 @@ export const DecisionReasonModal = createCallable<DecisionReasonModalProps, void
       .join(" ");
 
     return (
-      <Dialog open={!call.ended} onOpenChange={(open) => !open && call.end()}>
+      <Dialog open={!call.ended} onOpenChange={(open) => !open && !isSubmitting && call.end()}>
         <DialogContent className="sm:max-w-md" onOpenAutoFocus={focusInitialElement}>
           <DialogHeader>
             <DialogTitle>{copy.title}</DialogTitle>
@@ -149,7 +152,14 @@ export const DecisionReasonModal = createCallable<DecisionReasonModalProps, void
             </DialogBody>
 
             <DialogFooter>
-              <Button type="button" variant="outline" autoFocus data-initial-focus onClick={() => call.end()}>
+              <Button
+                type="button"
+                variant="outline"
+                autoFocus
+                data-initial-focus
+                disabled={isSubmitting}
+                onClick={() => call.end()}
+              >
                 취소
               </Button>
               <Button type="submit" disabled={isSubmitting}>

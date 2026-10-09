@@ -41,7 +41,7 @@ export function useRejectCreatorPayoutApplicationMutation(applicationId: string)
   });
 }
 
-/** 승인 취소. 그 시각부터 적립이 멈추고 확정된 적립은 남는다. 사유는 감사 기록에만 남는다. */
+/** 승인 취소. 그 시각부터 적립이 멈추고 확정된 적립은 남는다. 사유는 거절 사유처럼 신청자 정산 화면에 보인다. */
 export function useRevokeCreatorPayoutApplicationMutation(applicationId: string) {
   const invalidate = useInvalidateApplications();
   return useMutation<void, ApiError, { reasonText: string }>({

@@ -42,12 +42,17 @@ export function CreatorPayoutPage() {
 
 /** 화면 머리 설명. 적립은 승인된 동안의 사용에만 쌓이므로(신청 전·반려·승인 취소 뒤에는 쌓이지 않는다) 조건절로
  * 말한다. 적립 비율은 서버 설정값(`rateBps`)이라 응답이 오기 전·실패하면 비율 문장을 빼고 정책 안내만 둔다 — 숫자를
- * 지어내지 않는다. 같은 쿼리를 본문과 함께 쓰므로 요청은 한 번이다. */
+ * 지어내지 않는다. 같은 쿼리를 본문과 함께 쓰므로 요청은 한 번이다.
+ *
+ * 화면을 연 채 정산이 꺼지면(503) 실패 뒤에도 앞서 받은 `data` 가 남는다. 본문이 "이용할 수 없어요"로 바뀌는데 머리가
+ * 적립 비율을 말하면 서로 어긋나므로 그때는 비율 문장을 뺀다. */
 function CreatorPayoutIntro() {
-  const { data } = useCreatorPayoutQuery();
+  const { data, error } = useCreatorPayoutQuery();
+  const isUnavailable = isCreatorPayoutUnavailableError(error);
   return (
     <p className="text-sm break-keep text-muted-foreground">
       {data &&
+        !isUnavailable &&
         `정산 승인을 받으면 다른 회원이 내 작품으로 대화하거나 소설을 만들 때 쓴 유료 클로버의 ${formatPayoutRate(data.rateBps)}가 적립돼요. `}
       정산 기준은{" "}
       <Link to={SUPPORT_DESTINATIONS["creator-payout-policy"].to} className={INLINE_LINK_CLASS}>
