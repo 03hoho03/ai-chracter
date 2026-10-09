@@ -1,6 +1,6 @@
 import * as React from "react"
 import { Select as SelectPrimitive } from "radix-ui"
-import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
+import { ChevronDownIcon, CheckIcon } from "lucide-react"
 
 import { cn } from "@ai-character-chat/ui/lib/utils"
 
@@ -71,7 +71,21 @@ function SelectTrigger({
  * 더 어긋났다(실측) — 여백을 맞춰도 접두어가 있는 한 고칠 수 없는 구조다.
  *
  * `collisionPadding` 8·`sideOffset` 4도 드롭다운 메뉴와 같은 값이다(뷰포트 끝 0px 밀착 방지). 안쪽
- * 여백은 `Viewport`의 `p-1`이 진다 — 없으면 첫·끝 항목과 포커스 inset 링이 목록 테두리에 맞닿는다. */
+ * 여백은 `Viewport`의 `p-1`이 진다 — 없으면 첫·끝 항목과 포커스 inset 링이 목록 테두리에 맞닿는다.
+ *
+ * **상류의 위·아래 스크롤 버튼(`SelectScrollUpButton`/`DownButton`)은 두지 않는다.** Radix는 그 버튼을 더
+ * 스크롤할 수 있을 때만 마운트하는데, 버튼이 Viewport의 flex 형제(24px)라 경계를 넘는 순간 목록이 휠과
+ * 반대 방향으로 24px 튀고, 끝에서는 아래 버튼이 빠지며 최대 스크롤이 줄어 scrollTop이 되감겼다. 포인터가
+ * 그 24px 띠에 머물기만 해도 50ms마다 한 항목씩 저절로 스크롤됐다(낮은 창의 장르 목록 실측).
+ * 잘림 신호는 대신 `DropdownMenuContent`와 같은 하단 페이드(`data-clipped-below`, `h-8`·`from-popover`)가
+ * 진다 — 32px이 대비가 정한 값인 근거와 위쪽에 신호를 안 두는 이유는 그 컴포넌트의 주석에 있다.
+ * 차이는 하나다: 여기서는 Radix `Viewport`가 스크롤러다(Content는 flex 컬럼이고 Viewport가 `flex:1`로
+ * 줄어든다). 그래서 측정과 `::after` 둘 다 Content가 아니라 Viewport에 건다.
+ *
+ * Viewport의 `scroll-pb-8`은 키보드 이동을 위한 것이다. Radix는 ↓·타입어헤드로 옮긴 포커스 항목을
+ * `scrollIntoView({ block: "nearest" })`로 따라가는데, 그대로 두면 항목이 바닥에 붙어 페이드 띠 한가운데서
+ * 멈춘다(실측: 글자 하단이 바닥에서 4px). scroll-padding이 그 정렬선을 32px 위로 올려 포커스 항목은 늘
+ * 띠 밖에 선다. 마지막 항목에 닿으면 더 스크롤할 것이 없어 페이드가 사라지므로 거기서는 바닥에 붙어도 된다. */
 function SelectContent({
   className,
   children,
@@ -81,6 +95,31 @@ function SelectContent({
   collisionPadding = 8,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
+  const [isClippedBelow, setIsClippedBelow] = React.useState(false)
+
+  // 콜백 ref인 이유는 `DropdownMenuContent`와 같다 — Portal이 열릴 때만 노드를 만든다.
+  // Radix가 이 ref를 자기 `onViewportChange`와 합성하므로 의존성 없는 안정된 함수여야 한다.
+  const viewportRef = React.useCallback((viewport: HTMLDivElement | null) => {
+    if (!viewport) return
+
+    const update = () =>
+      setIsClippedBelow(
+        viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight > 1
+      )
+    // 열린 뒤 항목이 늘거나 줄어도(비동기로 오는 옵션) Viewport 자신의 크기는 `max-h`에 묶여 그대로일
+    // 수 있어 ResizeObserver만으로는 놓친다 — 자식 목록 변화도 함께 본다.
+    const resizeObserver = new ResizeObserver(update)
+    resizeObserver.observe(viewport)
+    const mutationObserver = new MutationObserver(update)
+    mutationObserver.observe(viewport, { childList: true, subtree: true })
+    viewport.addEventListener("scroll", update)
+    return () => {
+      resizeObserver.disconnect()
+      mutationObserver.disconnect()
+      viewport.removeEventListener("scroll", update)
+    }
+  }, [])
+
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Content
@@ -96,16 +135,16 @@ function SelectContent({
         collisionPadding={collisionPadding}
         {...props}
       >
-        <SelectScrollUpButton />
         <SelectPrimitive.Viewport
+          ref={viewportRef}
           data-position={position}
+          data-clipped-below={isClippedBelow}
           className={cn(
-            "p-1 data-[position=popper]:h-(--radix-select-trigger-height) data-[position=popper]:w-full data-[position=popper]:min-w-(--radix-select-trigger-width)"
+            "scroll-pb-8 p-1 data-[position=popper]:h-(--radix-select-trigger-height) data-[position=popper]:w-full data-[position=popper]:min-w-(--radix-select-trigger-width) data-[clipped-below=true]:after:pointer-events-none data-[clipped-below=true]:after:sticky data-[clipped-below=true]:after:bottom-0 data-[clipped-below=true]:after:-mt-8 data-[clipped-below=true]:after:block data-[clipped-below=true]:after:h-8 data-[clipped-below=true]:after:bg-linear-to-t data-[clipped-below=true]:after:from-popover"
           )}
         >
           {children}
         </SelectPrimitive.Viewport>
-        <SelectScrollDownButton />
       </SelectPrimitive.Content>
     </SelectPrimitive.Portal>
   )
@@ -161,50 +200,12 @@ function SelectSeparator({
   )
 }
 
-function SelectScrollUpButton({
-  className,
-  ...props
-}: React.ComponentProps<typeof SelectPrimitive.ScrollUpButton>) {
-  return (
-    <SelectPrimitive.ScrollUpButton
-      data-slot="select-scroll-up-button"
-      className={cn(
-        "z-10 flex cursor-default items-center justify-center bg-popover py-1 [&_svg:not([class*='size-'])]:size-4",
-        className
-      )}
-      {...props}
-    >
-      <ChevronUpIcon />
-    </SelectPrimitive.ScrollUpButton>
-  )
-}
-
-function SelectScrollDownButton({
-  className,
-  ...props
-}: React.ComponentProps<typeof SelectPrimitive.ScrollDownButton>) {
-  return (
-    <SelectPrimitive.ScrollDownButton
-      data-slot="select-scroll-down-button"
-      className={cn(
-        "z-10 flex cursor-default items-center justify-center bg-popover py-1 [&_svg:not([class*='size-'])]:size-4",
-        className
-      )}
-      {...props}
-    >
-      <ChevronDownIcon />
-    </SelectPrimitive.ScrollDownButton>
-  )
-}
-
 export {
   Select,
   SelectContent,
   SelectGroup,
   SelectItem,
   SelectLabel,
-  SelectScrollDownButton,
-  SelectScrollUpButton,
   SelectSeparator,
   SelectTrigger,
   SelectValue,
