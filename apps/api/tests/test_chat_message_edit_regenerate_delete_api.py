@@ -395,7 +395,7 @@ async def test_regenerate_replaces_last_assistant_message_without_new_turn(
 async def test_regenerate_story_room_selects_template_instruction(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """`regenerate_message`(`_build_prompt` 경유) 호출부도 `_stream_new_turn`과
+    """`regenerate_message`(`build_room_prompt` 경유) 호출부도 `_stream_new_turn`과
     같은 `story_detail.prompt_template`을 골라야 한다."""
     user = _make_user()
     db_session.add(user)

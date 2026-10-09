@@ -11,7 +11,7 @@
 
 ## 1. 필드가 프롬프트의 어디에 실리는가
 
-생성 프롬프트는 `api/chat/prompt_builder.py`가 조립한다. 섹션의 문안과 순서는 코드가 아니라 DB의 프롬프트 세트에 있고(어드민 `/prompt-sets`), 코드는 어느 값이 어느 자리(`slot`)로 흘러가는지만 정한다. 호출부는 `api/chat/router.py`의 `_build_prompt`(실제 방)와 `_build_preview_prompt`(빌더 미리보기)다. 프롬프트 세트는 레인 × 글쓰기 모델마다 따로 있다 — Claude(Sonnet·Opus) 세트는 생성에 쓰는 `system`·`generation` 채널과 라벨만 갖고, 판정·요약은 언제나 그 레인의 Gemini 세트를 읽는다. 아래 표의 자리는 두 세트에서 같다. 소설화(대화를 소설로 옮겨 쓰기) 문안은 이 두 레인이 아니라 따로 둔 `novel` 레인(어드민 프롬프트 화면의 「소설」 탭)에 있고, 등급 규칙(`system` 채널 `rule_rating`)과 원문 줄의 화자 라벨만 원작 종류(스토리·캐릭터) 레인의 Gemini 세트에서 읽는다. 스토리·캐릭터 레인 Gemini 세트에 남아 있는 소설화 행(`novelize_*`)은 옛 이미지로 되돌렸을 때만 읽히는 값이라 채팅 탭에 보이지 않고 바뀌지 않는다.
+생성 프롬프트는 `api/chat/prompt_builder.py`가 조립한다. 섹션의 문안과 순서는 코드가 아니라 DB의 프롬프트 세트에 있고(어드민 `/prompt-sets`), 코드는 어느 값이 어느 자리(`slot`)로 흘러가는지만 정한다. 호출부는 `api/chat/turn_prompt.py`의 `build_room_prompt`(실제 방)와 `build_preview_prompt`(빌더 미리보기)다. 프롬프트 세트는 레인 × 글쓰기 모델마다 따로 있다 — Claude(Sonnet·Opus) 세트는 생성에 쓰는 `system`·`generation` 채널과 라벨만 갖고, 판정·요약은 언제나 그 레인의 Gemini 세트를 읽는다. 아래 표의 자리는 두 세트에서 같다. 소설화(대화를 소설로 옮겨 쓰기) 문안은 이 두 레인이 아니라 따로 둔 `novel` 레인(어드민 프롬프트 화면의 「소설」 탭)에 있고, 등급 규칙(`system` 채널 `rule_rating`)과 원문 줄의 화자 라벨만 원작 종류(스토리·캐릭터) 레인의 Gemini 세트에서 읽는다. 스토리·캐릭터 레인 Gemini 세트에 남아 있는 소설화 행(`novelize_*`)은 옛 이미지로 되돌렸을 때만 읽히는 값이라 채팅 탭에 보이지 않고 바뀌지 않는다.
 
 ### 스토리 — 생성 호출 (`build_story_generation_prompt`, 매 턴)
 
@@ -33,7 +33,7 @@
   - **자기 강화 반복**: 실린 노트 때문에 AI가 응답에서 키워드를 말하면 그 응답이 다음 턴의 스캔 글이라 노트가 다시 열린다. 의도된 동작이고, 끊으려면 금지 키워드를 쓴다.
   - 저장(자동저장 PATCH) 검증은 `api/content/schemas.py`의 `KeywordNoteDraftInput`·`StoryDraftPayload`: 정보 800자, 트리거·금지 키워드 각 노트당 10개 × 20자, 이름 20자, 유지 0~5, 노트 50개, 상시 3개를 넘으면 422, 공백뿐인 키워드와 대소문자·유니코드 조합만 다른 중복 키워드도 422. 같은 저장 페이로드에 없는 시작설정을 가리키는 노트는 400(`KEYWORD_NOTE_STARTING_SETUP_NOT_FOUND`, `_update_story_draft`). 키워드가 없는 노트(상시 제외)와 정보가 빈 노트는 저장은 받고 발행이 막는다(`validate_story_publish`).
 - 상황 노트(`startingSetups[].situationNotes[].infoText`) → `situation_notes` 자리(값 `situation_note_lines`, 섹션 머리 `[현재 상황]`). 키워드북 **바로 뒤**, 단축어 앞에 실린다. 조건(`conditionRules`)이 참인 노트의 본문만 노트 순서(`order`, 빌더 목록 위가 먼저)대로 **전부** 싣고, 참인 노트가 없으면 섹션째 빠진다(조건부 섹션이라 노트 없는 방의 프롬프트는 이 섹션이 없던 때와 같다). 섹션 문안은 노트를 "지금 이야기 세계에서 사실인 상황"으로 전하는 틀이다 — 키워드북의 "참고용" 틀도, "이번 응답은 …" 같은 지시 틀도 아니다. 운영 문안은 다른 섹션처럼 어드민 `/prompt-sets`가 정본이다.
-  - 평가는 `api/chat/router.py`의 `_situation_note_texts`이고, 엔딩 스탯 규칙과 같은 규칙 타입·같은 엔진(`evaluate_rule_list`, 왼쪽부터 순차 누적, 없는 스탯은 거짓)이다. 실방(`_build_prompt`)과 빌더 미리보기(`_build_preview_prompt`)가 이 함수를 같이 쓴다.
+  - 평가는 `api/chat/turn_prompt.py`의 `pick_situation_note_texts`이고, 엔딩 스탯 규칙과 같은 규칙 타입·같은 엔진(`evaluate_rule_list`, 왼쪽부터 순차 누적, 없는 스탯은 거짓)이다. 실방(`build_room_prompt`)과 빌더 미리보기(`build_preview_prompt`)가 이 함수를 같이 쓴다.
   - 값은 **생성 시점의 현재값**이다 — 사용자가 메시지를 보낸 순간 화면 게이지에 보이던 값, 즉 이번 턴 스탯 판정이 반영되기 **전**이다(방에 행이 없는 스탯은 `initial_value`). 엔딩 규칙은 판정 반영 **뒤** 값을 보므로 둘은 한 판정만큼 어긋난다. 편집·재생성도 그 시점의 값으로 다시 평가해서, 재생성 응답은 원 생성과 다른 노트를 받을 수 있다(그때의 화면 게이지와는 맞다). 최초 엔딩 도달 뒤에도 계속 평가한다.
   - 조건 규칙이 하나도 없는 노트(빈 그룹만 있는 노트 포함)는 싣지 않는다 — 조건 없는 상시 글은 스토리 설정의 자리이고, 발행도 그런 노트를 막는다. DB의 조건 JSON이 깨진 노트는 그 노트만 빠지고 경고 로그가 남는다(`_situation_note_rules`). 스탯은 그 시작설정에 노트가 하나라도 있을 때만 읽는다.
   - 이름(`name`)은 빌더 목록용이라 모델에 보내지 않는다. 이야기를 쓰는 모델이 받는 것은 참인 노트의 본문뿐이고 스탯 이름·값·조건은 받지 않는다.
@@ -117,7 +117,7 @@
 - 판정 모델의 입력: 엔딩의 판단 프롬프트와 대화 기록, 이번 턴. 스탯 값·스탯 정의·스토리 설정은 싣지 않는다. 긴 대화에서는 판정 윈도우 설정(`memory_window_ending_judgment`, 기본 켜짐)에 따라 요약이 덮은 원문 대신 현재 요약을 싣는다 — 끄면 대화 기록 전체를 싣는다.
 - 그래서 판단 프롬프트는 규칙이 잴 수 없는 서사적 사건만 묻는다. 규칙의 임계값을 판단 프롬프트가 되물으면 모델이 그 숫자를 서사로 재해석해 발동을 거부한 실측이 있다(`test_seed_ending_judgment_prompts_do_not_restate_rule_thresholds` docstring).
 - 목록 순서는 **같은 판정 턴 안의** 우선순위일 뿐이다. 노말·배드가 루트와 같은 게이트에서 판단 프롬프트만으로 참이 되면 첫 판정 턴에 방이 끝나 뒤의 루트 기회가 사라진다. 예시 작품은 노말·배드의 게이트를 늦추고, 초기값에서 거짓인 시계 스탯(`상영회까지 ≤ 0`) 조건을 엔딩 다섯 개 모두에 넣어 이것을 막는다. 게이트는 턴 수로 판정되므로 메시지 수정으로 시계 값이 대화보다 앞서 줄어 있는 방에서도 이른 발동을 막는다. 우선 스탯 무리도 같은 판정 턴 안에서만 비교한다 — 엔딩마다 게이트가 달라 판정 시점이 엇갈리면, 값이 가장 높은 루트가 판정 시점이 아닌 턴에 더 낮은 루트가 혼자 무리가 되어 판정될 수 있다. 무리로 비교할 엔딩은 게이트를 같게 둔다.
-- 빌더 미리보기(`_stream_preview_turn`)는 같은 순서(생성 → 스탯 판정 → 엔딩별 규칙 → 엔딩 판정)와 같은 엔진(`apply_rule_judgment`·`evaluate_rule_list`·`is_ending_check_due`·`_endings_to_judge`·`match_keyword_notes`·`_situation_note_texts`)을 쓰고, 방 상태만 DB 대신 Redis(`api/chat/preview_session.py`)에 둔다. 미리보기는 페이로드의 첫 시작설정으로만 시작한다(`_build_preview_start_state`). 상황별 이미지 매칭은 미리보기에서 돌지 않는다. 미디어 북 칸 판정은 돌고, 후보는 페이로드의 칸 중 노출 제외가 아니고 요청자 소유의 준비된 이미지가 붙은 칸이다(`_prepare_preview_media_cell_judgment`).
+- 빌더 미리보기(`_stream_preview_turn`)는 같은 순서(생성 → 스탯 판정 → 엔딩별 규칙 → 엔딩 판정)와 같은 엔진(`apply_rule_judgment`·`evaluate_rule_list`·`is_ending_check_due`·`_endings_to_judge`·`match_keyword_notes`·`pick_situation_note_texts`)을 쓰고, 방 상태만 DB 대신 Redis(`api/chat/preview_session.py`)에 둔다. 미리보기는 페이로드의 첫 시작설정으로만 시작한다(`_build_preview_start_state`). 상황별 이미지 매칭은 미리보기에서 돌지 않는다. 미디어 북 칸 판정은 돌고, 후보는 페이로드의 칸 중 노출 제외가 아니고 요청자 소유의 준비된 이미지가 붙은 칸이다(`_prepare_preview_media_cell_judgment`).
 
 ## 4. 요약 접기와 첫 메시지 고정
 

@@ -14,7 +14,7 @@ import re
 import uuid
 
 from api.chat.ending_rules import evaluate_rule_list
-from api.chat.router import _preview_ending_rule_list_item
+from api.chat.turn_prompt import preview_ending_rule_list_item
 from api.content.publish import validate_character_publish
 from api.content.schemas import (
     MAX_STAT_RULES_PER_STAT,
@@ -175,7 +175,7 @@ def test_seed_story_ending_thresholds_are_reachable_but_not_free() -> None:
                             f"{story.slug} / {ending.name}: "
                             f"{stat.name} 임계값 {rule.threshold} 이 범위 밖이다"
                         )
-                rule_items = [_preview_ending_rule_list_item(item) for item in ending.stat_rules]
+                rule_items = [preview_ending_rule_list_item(item) for item in ending.stat_rules]
                 assert not evaluate_rule_list(rule_items, initial_values), (
                     f"{story.slug} / {ending.name}: 스탯이 하나도 안 움직여도 규칙이 만족된다"
                 )

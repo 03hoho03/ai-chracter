@@ -33,7 +33,7 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 from api.chat.ending_rules import evaluate_rule_list
-from api.chat.router import _preview_ending_rule_list_item
+from api.chat.turn_prompt import preview_ending_rule_list_item
 from api.content.schemas import (
     EndingDraftItem,
     EndingRuleGroupDraftItem,
@@ -520,7 +520,7 @@ def _ending_rule_errors(
                         f"{label}: '{stat.name}' 임계값 {rule.threshold} 이 "
                         f"[{stat.min_value}, {stat.max_value}] 밖이라 영영 도달할 수 없다"
                     )
-        rule_items = [_preview_ending_rule_list_item(item) for item in ending.stat_rules]
+        rule_items = [preview_ending_rule_list_item(item) for item in ending.stat_rules]
         if evaluate_rule_list(rule_items, initial_values):
             errors.append(
                 f"{label}: 스탯이 하나도 안 움직여도 규칙이 만족된다 — 임계값을 초기값에서 떨어뜨려라"

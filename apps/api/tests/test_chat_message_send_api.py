@@ -174,7 +174,7 @@ async def test_send_message_streams_tokens_and_saves_final_message(
 async def test_send_message_character_room_injects_room_persona_into_generation_prompt(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """`_build_prompt`의 **캐릭터** 분기도 방의 대화
+    """`build_room_prompt`의 **캐릭터** 분기도 방의 대화
     프로필을 생성 프롬프트에 싣는다(스토리 분기는 `test_chat_story_message_send_api.py`).
     방의 `persona_id`는 DB에 직접 넣는다 — 이 테스트의 관심은 읽기 경로다."""
     user = _make_user()

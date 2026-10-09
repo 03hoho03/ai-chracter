@@ -983,7 +983,7 @@ async def test_send_preview_message_injects_the_authors_default_persona(
 async def test_send_preview_message_story_injects_the_authors_default_persona(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """`_build_preview_prompt`의 **스토리** 분기도 기본 프로필을 싣는다(위 테스트는 캐릭터
+    """`build_preview_prompt`의 **스토리** 분기도 기본 프로필을 싣는다(위 테스트는 캐릭터
     payload라 캐릭터 분기만 탄다)."""
     user = _make_user()
     db_session.add(user)

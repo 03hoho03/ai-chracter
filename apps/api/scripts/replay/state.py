@@ -1,4 +1,4 @@
-"""턴 N 직전 상태 되살리기 — 드라이버 로그(스탯·기억)와 DB(메시지·요약 커서·단축어 행)를 합쳐 `_build_prompt` 주입
+"""턴 N 직전 상태 되살리기 — 드라이버 로그(스탯·기억)와 DB(메시지·요약 커서·단축어 행)를 합쳐 `build_room_prompt` 주입
 자리에 넣을 묶음과 히스토리·사용자 발화를 만든다.
 
 값이 하나라도 확실하지 않으면 그 턴을 거부한다(`ReplayRefusedError`). 비슷한 값으로 채우면 현행 갈래가 덤프와 우연히 맞아도
@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.memory_window import CurrentSummary
-from api.chat.router import InjectedPersona, InjectedTurnState
+from api.chat.turn_prompt import InjectedPersona, InjectedTurnState
 from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom, ChatRoomMemorySnapshot
 from api.db.models.story import Shortcut, StatDef
 from replay.logs import DriverLogs, ReplayRefusedError, RoomStatic, memory_snapshot, sha256, stats_line, turn_line

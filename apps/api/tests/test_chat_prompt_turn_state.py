@@ -1,4 +1,4 @@
-"""생성 프롬프트 조립(`_build_prompt`)에 턴 상태 묶음을 넘기면 방의 지금 값 대신 그 값으로 조립하는지.
+"""생성 프롬프트 조립(`build_room_prompt`)에 턴 상태 묶음을 넘기면 방의 지금 값 대신 그 값으로 조립하는지.
 
 지난 턴을 그때 상태로 다시 조립하는 측정 도구가 이 자리를 쓴다. 방의 요약·기억 노트·스탯·대화 프로필은 지금 값만
 남으므로, 묶음의 값이 어느 한 자리에서라도 DB 값과 섞이면 다시 만든 프롬프트가 그 턴의 실제 프롬프트와 어긋난다.
@@ -15,7 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.memory_window import CurrentSummary
 from api.chat.prompt_builder import load_active_prompt_set
-from api.chat.router import InjectedPersona, InjectedTurnState, _build_prompt, _resolve_starting_setup
+from api.chat.router import _resolve_starting_setup
+from api.chat.turn_prompt import InjectedPersona, InjectedTurnState, build_room_prompt
 from api.content.schemas import EndingRuleDraftItem
 from api.core.config import settings
 from api.db.models import ChatRoom, ChatRoomStat, StartingSetup, StatDef, StoryVersionDetail
@@ -89,7 +90,7 @@ async def _build(
         ).all()
     )
     prompt_set, sections = await load_active_prompt_set(db_session, lane="story")
-    prompt, _, persona_rendered, _, names = await _build_prompt(
+    prompt, _, persona_rendered, _, names = await build_room_prompt(
         db_session, chat_room, setup, history, "이번 메시지", None, prompt_set, sections, turn_state=turn_state
     )
     return prompt, persona_rendered, names.persona_name

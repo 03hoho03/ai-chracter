@@ -3,7 +3,7 @@
 방 선택(`PUT /chat-rooms/{id}/persona`)과 방 생성 두 경로의 `persona_id`는 `chat/router.py`에
 있고, 여기의 `lock_user_default_persona`·`get_owned_persona`를 같이 쓴다.
 
-🔴 **쓰기 경로의 소유권 검사가 이 기능의 유일한 방어선이다.** 읽기 경로(`_build_prompt`,
+🔴 **쓰기 경로의 소유권 검사가 이 기능의 유일한 방어선이다.** 읽기 경로(`build_room_prompt`,
 `_preview_persona_dependency`)는 프로필 소유자를 다시 보지 않는다. 그래서 프로필 id를
 `users.default_persona_id`나 `chat_rooms.persona_id`에 싣는 모든 경로는 `get_owned_persona`를
 거친다. 예외는 `change_starting_setup`의 승계뿐이다 — 같은 유저의 방에서 복사한다.

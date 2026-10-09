@@ -102,19 +102,19 @@ def _failing_llm(failure: str) -> _FakeLLMClient:
 
 
 def _patch_render_failure(monkeypatch: pytest.MonkeyPatch, surface: str) -> None:
-    """프롬프트 렌더 실패를 만든다. 미리보기만 별도 빌더(`_build_preview_prompt`)를 쓴다."""
+    """프롬프트 렌더 실패를 만든다. 미리보기만 별도 빌더(`build_preview_prompt`)를 쓴다."""
     if surface == "preview":
 
         def _raise_preview(*args: Any, **kwargs: Any) -> Any:
             raise PromptRenderError("렌더 실패")
 
-        monkeypatch.setattr(chat_router, "_build_preview_prompt", _raise_preview)
+        monkeypatch.setattr(chat_router, "build_preview_prompt", _raise_preview)
         return
 
     async def _raise(*args: Any, **kwargs: Any) -> Any:
         raise PromptRenderError("렌더 실패")
 
-    monkeypatch.setattr(chat_router, "_build_prompt", _raise)
+    monkeypatch.setattr(chat_router, "build_room_prompt", _raise)
 
 
 async def _prepare_paid_turn(

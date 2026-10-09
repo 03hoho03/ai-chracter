@@ -15,7 +15,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import chat_play
-from api.chat.router import InjectedPersona
+from api.chat.turn_prompt import InjectedPersona
 from api.core.config import settings
 from api.db.models.chat import ChatRoom
 from factories import _add_named_media_cell, _story_with_setup

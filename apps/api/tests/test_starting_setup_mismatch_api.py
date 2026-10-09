@@ -216,7 +216,7 @@ async def test_send_message_on_mismatched_story_room_returns_400(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """SSE 3진입점 중 하나 — 수정 전에는
-    `_starting_setup_dependency`가 조용히 돌려준 `None`을 `_build_prompt`가 "캐릭터
+    `_starting_setup_dependency`가 조용히 돌려준 `None`을 `build_room_prompt`가 "캐릭터
     챗"으로 읽어 그 캐릭터 분기의 `assert detail is not None`에서 `ExceptionGroup`을
     뚫었다. `_require_starting_setup`이 그 자리를 `Depends` 단계에서 400으로 정규화한
     뒤엔 제너레이터 본문이 아예 시작되지 않는다 — SSE 라우트라도 응답은 스트림이 아니라 평범한 JSON이어야 하고
@@ -254,7 +254,7 @@ async def test_regenerate_message_on_mismatched_story_room_returns_400(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """SSE 3진입점 중 하나 — `regenerate_message`도 같은 `_starting_setup_
-    dependency`를 거치므로(`_active_prompt_set_dependency` 경유) `_build_prompt`
+    dependency`를 거치므로(`_active_prompt_set_dependency` 경유) `build_room_prompt`
     본문에 닿기 전에 400으로 막힌다."""
     user = _make_user()
     db_session.add(user)

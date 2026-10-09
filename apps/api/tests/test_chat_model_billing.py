@@ -297,7 +297,7 @@ async def _failing_premium_turn(
         async def _raise(*args: Any, **kwargs: Any) -> Any:
             raise PromptRenderError("렌더 실패")
 
-        monkeypatch.setattr(chat_router, "_build_prompt", _raise)
+        monkeypatch.setattr(chat_router, "build_room_prompt", _raise)
         fake = _FakeLLMClient(tokens=["응"])
     elif failure == "llm":
         fake = _FakeLLMClient(error=LLMClientError("bedrock down"))

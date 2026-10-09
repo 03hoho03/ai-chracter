@@ -14,6 +14,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat import router as chat_router
+from api.chat import turn_prompt
 from api.chat.prompt_builder import StatRuleJudgmentResult, load_active_prompt_set
 from api.chat.prompt_set_cache import get_cached_active_prompt_set
 from api.core import clover
@@ -207,8 +208,11 @@ async def test_gemini_room_does_not_read_any_model_set(
         looked_up.append(model)
         return await real_load(db, lane=lane, model=model)  # type: ignore[arg-type]
 
+    # 판정용 Gemini 세트 의존성은 라우터가, 생성 세트 고르기는 `turn_prompt` 가 각자 이름을 가져와 부르므로 둘 다 감싼다.
     monkeypatch.setattr(chat_router, "get_cached_active_prompt_set", _cached)
     monkeypatch.setattr(chat_router, "load_active_prompt_set", _load)
+    monkeypatch.setattr(turn_prompt, "get_cached_active_prompt_set", _cached)
+    monkeypatch.setattr(turn_prompt, "load_active_prompt_set", _load)
     fake = _RecordingLLM()
 
     resp = await _post(db_client, fake, "POST", f"/chat-rooms/{room.room_id}/messages", json={"content": "안녕"})

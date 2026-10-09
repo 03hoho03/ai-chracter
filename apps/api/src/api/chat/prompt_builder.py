@@ -286,7 +286,7 @@ _PERSONA_GENDER_LABEL = "성별"
 _PERSONA_DESCRIPTION_LABEL = "설명"
 # 키가 `str | None`인 이유: `UserPersona.gender`(`Mapped[str | None]`)를 그대로 `.get`에 넣는다.
 # 허용값은 요청 스키마가 강제하고, 맵에 없는 값은 None과 같이
-# 줄을 생략한다 — 이 함수는 SSE 제너레이터 본문(`_build_prompt`)에서 불려서 예외를 내면
+# 줄을 생략한다 — 이 함수는 SSE 제너레이터 본문이 부르는 `build_room_prompt`(`chat/turn_prompt.py`)에서 불려서 예외를 내면
 # 안 된다(apps/api/CLAUDE.md "SSE 스트리밍" 절).
 _PERSONA_GENDER_TEXT: dict[str | None, str] = {"male": "남성", "female": "여성"}
 

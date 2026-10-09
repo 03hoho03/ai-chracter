@@ -382,7 +382,7 @@ async def test_send_message_story_room_injects_room_persona_into_generation_prom
 async def test_send_message_story_room_selects_template_instruction(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """`_stream_new_turn`(`_build_prompt` 경유) 호출부는
+    """`_stream_new_turn`(`build_room_prompt` 경유) 호출부는
     `story_detail.prompt_template`을 골라 시스템 지시문(L0.5)에 잇는다."""
     user = _make_user()
     db_session.add(user)

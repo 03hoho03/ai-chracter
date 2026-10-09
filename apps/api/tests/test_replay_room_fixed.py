@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat.router import InjectedPersona
+from api.chat.turn_prompt import InjectedPersona
 from api.db.models.chat import ChatRoom
 from api.db.models.persona import UserPersona
 from api.db.models.story import StoryVersionDetail
