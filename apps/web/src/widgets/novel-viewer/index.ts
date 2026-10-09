@@ -3,4 +3,5 @@ export type { EpisodeEndFormat, ReadingPositionStore, ViewerChapter } from "./mo
 export { EpisodeReader } from "./ui/EpisodeReader";
 export { NovelViewer } from "./ui/NovelViewer";
 export { NovelInfoLink } from "./ui/ViewerLinks";
+export { ViewerSettingsPanel } from "./ui/ViewerSettingsPanel";
 export { ViewerTocSheet } from "./ui/ViewerTocSheet";

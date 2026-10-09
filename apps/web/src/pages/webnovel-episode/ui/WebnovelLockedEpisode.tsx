@@ -1,7 +1,7 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { SheetTitle } from "@ai-character-chat/ui/components/sheet";
-import { ChevronLeft, ListOrdered, Lock } from "lucide-react";
-import { useRef, useState } from "react";
+import { ChevronLeft, ListOrdered, Lock, Type } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { CloverIcon } from "@/entities/clover";
 import { toEpisodeLabel } from "@/entities/novel";
@@ -12,7 +12,7 @@ import {
   type WebnovelDetailResponse,
 } from "@/entities/webnovel";
 import { PurchaseWebnovelChapterModal } from "@/features/purchase-webnovel-chapter";
-import { NovelInfoLink, VIEWER_BAR_ROW_PX, ViewerTocSheet } from "@/widgets/novel-viewer";
+import { NovelInfoLink, VIEWER_BAR_ROW_PX, ViewerSettingsPanel, ViewerTocSheet } from "@/widgets/novel-viewer";
 
 type WebnovelLockedEpisodeProps = {
   novel: WebnovelDetailResponse;
@@ -24,25 +24,63 @@ type WebnovelLockedEpisodeProps = {
  * 주소 — 모든 길이 이 화면을 지난다. 들어오자마자 확인 모달을 띄우지 않는다 — 화면이 바뀐 직후의 모달은 어두운
  * 방에서 놀람이고, 이 화면은 주소로 공유돼도 뜻이 선다.
  *
- * 위 바는 늘 보인다(뒤로·화 제목·목차) — 읽을 본문이 없어 바를 숨길 까닭이 없고, 보기 설정도 둘 자리가 없다. 화 댓글도
- * 없다(못 읽는 화의 댓글은 보이지 않는다). 솔리드는 "소장하고 읽기" 하나다. 사면 같은 주소에서 본문을 다시 받아
- * 읽기 화면으로 바뀐다.
+ * 위 바는 늘 보인다(뒤로·화 제목·목차·보기 설정) — 읽을 본문이 없어 바를 숨길 까닭이 없다. 보기 설정은 읽기 화면과
+ * 같은 패널을 위 바 밑에 펼친다(이 화면에는 아래 바가 없다). 넘김 방식·글자·줄 간격은 다음에 화를 읽을 때 쓰이고 테마는
+ * 바로 바뀐다 — 사기 전에 읽을 모양을 맞춰 둘 수 있게. 화 댓글은 없다(못 읽는 화의 댓글은 보이지 않는다). 솔리드는
+ * "소장하고 읽기" 하나다. 사면 같은 주소에서 본문을 다시 받아 읽기 화면으로 바뀐다.
  *
  * 소장 확인 모달은 여기 마운트한다 — 루트에 두면 노벨 코드가 첫 화면 번들로 끌려온다. 모달을 여는 곳은 이 화면뿐이다. */
 export function WebnovelLockedEpisode({ novel, chapter }: WebnovelLockedEpisodeProps) {
   const [isTocOpen, setIsTocOpen] = useState(false);
   const tocOpenerRef = useRef<HTMLElement | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const settingsPanelId = useId();
+  const barRef = useRef<HTMLElement>(null);
+  const settingsPanelRef = useRef<HTMLDivElement>(null);
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const episodeLabel = toEpisodeLabel(chapter);
   const price = chapter.price ?? novel.chapterPrice;
 
+  // 보기 설정은 읽기 화면과 같이 연 순간 고른 칩으로 포커스를 옮기고, Esc 나 바 밖을 누르면 닫는다(비모달 패널).
+  // Esc 는 다른 레이어(소장 모달 등)가 먼저 받아 닫았으면 넘어간다 — 한 번에 하나만 닫는다.
+  useEffect(() => {
+    if (!isSettingsOpen) return;
+    settingsPanelRef.current?.querySelector<HTMLElement>('[data-state="on"]')?.focus();
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      closeSettings();
+    }
+    function handlePointerDown(event: PointerEvent) {
+      if (event.target instanceof Node && barRef.current?.contains(event.target) === true) return;
+      setIsSettingsOpen(false);
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [isSettingsOpen]);
+
+  function closeSettings() {
+    const active = document.activeElement;
+    if (active !== null && settingsPanelRef.current?.contains(active) === true) settingsButtonRef.current?.focus();
+    setIsSettingsOpen(false);
+  }
+
   function openToc(opener: HTMLElement) {
+    setIsSettingsOpen(false);
     tocOpenerRef.current = opener;
     setIsTocOpen(true);
   }
 
   return (
     <>
-      <nav aria-label="읽기 메뉴" className="fixed inset-x-0 top-0 z-30 border-b border-border bg-background px-safe pt-safe">
+      <nav
+        ref={barRef}
+        aria-label="읽기 메뉴"
+        className="fixed inset-x-0 top-0 z-30 border-b border-border bg-background px-safe pt-safe"
+      >
         <div className="flex items-center gap-1 px-4 sm:px-6" style={{ height: VIEWER_BAR_ROW_PX }}>
           <Button asChild variant="ghost" size="icon" className="-ml-2 shrink-0">
             <NovelInfoLink route="public" novelId={novel.id} aria-label="작품 정보">
@@ -55,12 +93,33 @@ export function WebnovelLockedEpisode({ novel, chapter }: WebnovelLockedEpisodeP
             variant="ghost"
             size="icon"
             aria-label="목차"
-            className="-mr-2 shrink-0"
+            className="shrink-0"
             onClick={(event) => openToc(event.currentTarget)}
           >
             <ListOrdered aria-hidden />
           </Button>
+          <Button
+            ref={settingsButtonRef}
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="보기 설정"
+            aria-expanded={isSettingsOpen}
+            aria-controls={isSettingsOpen ? settingsPanelId : undefined}
+            className="-mr-2 shrink-0"
+            onClick={() => (isSettingsOpen ? closeSettings() : setIsSettingsOpen(true))}
+          >
+            <Type aria-hidden />
+          </Button>
         </div>
+        {isSettingsOpen && (
+          <>
+            <ViewerSettingsPanel ref={settingsPanelRef} id={settingsPanelId} isScrollForced={false} />
+            <p className="bg-popover px-4 pb-4 text-xs break-keep text-muted-foreground sm:px-6">
+              넘김 방식·글자 크기·줄 간격은 화를 읽을 때 적용돼요.
+            </p>
+          </>
+        )}
       </nav>
 
       {/* 위 바(고정) 밑에서 시작한다 — 바 높이와 같은 px 상수 + 여백 + 노치. */}
