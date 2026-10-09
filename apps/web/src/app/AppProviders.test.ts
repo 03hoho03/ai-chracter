@@ -23,6 +23,7 @@ const ME: MeResponse = {
   dailyFreeChatTurns: 30,
   paidCloverBalance: 0,
   purchaseBlockReason: "identity_required",
+  novelPublicEnabled: false,
 };
 const SESSION_LOST = new ApiErrorObject({ status: 401, message: "x", detail: "Not authenticated" });
 

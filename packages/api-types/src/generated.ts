@@ -9790,6 +9790,8 @@ export interface components {
             paidCloverBalance: number;
             /** Purchaseblockreason */
             purchaseBlockReason: ("identity_required" | "age_restricted") | null;
+            /** Novelpublicenabled */
+            novelPublicEnabled: boolean;
         };
         /** MediaBookAxisInput */
         MediaBookAxisInput: {

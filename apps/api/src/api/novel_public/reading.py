@@ -1,8 +1,8 @@
 """노벨 독자 라우트 — 목록, 작품 정보, 화 읽기, 읽은 자리, 좋아요, 홈 노벨.
 
 전부 로그인 회원만 부른다. 소설화 접근 게이트는 걸지 않는다 — 노벨을 읽는 것은 소설화 기능 허용과 무관하다. 노벨 스위치가
-꺼져 있으면 404 `NOVEL_PUBLIC_DISABLED` 다(`require_novel_public_readable`). 화 읽기와 작품 정보만은 스위치를 직접 판정한다 —
-소장한 사람에게는 "잠시 쉬는 중"을 알려야 해서다.
+꺼져 있거나 미리보기 명단 밖이면 404 `NOVEL_PUBLIC_DISABLED` 다(`require_novel_public_readable`). 화 읽기와 작품 정보만은
+같은 판정(`novel_public_open_to`)을 직접 부른다 — 소장한 사람에게는 "잠시 쉬는 중"을 알려야 해서다.
 
 **무엇을 읽을 수 있는가**는 `select_readable_publications` 한 곳이 정한다(공개 중 ∧ 운영 이용제한 없음 ∧ 게시자 탈퇴·정지
 아님 ∧ 원작 이용제한·삭제 아님 ∧ 공개 화 하나 이상). 화면에 나가는 글은 공개 시점에 얼려 심사를 거친 사본뿐이다 — 화 제목·
@@ -30,7 +30,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
 from api.core import clover
-from api.core.config import settings
 from api.core.s3 import build_thumbnail_key, generate_presigned_get_url
 from api.content.access import publicly_listed_conditions
 from api.db.models.auth import User
@@ -49,7 +48,11 @@ from api.db.models.novel import (
 )
 from api.db.session import get_db_session, get_session_factory
 from api.legal.dependencies import require_legal_consent
-from api.novel_public.access import require_novel_public_readable, select_readable_publications
+from api.novel_public.access import (
+    novel_public_open_to,
+    require_novel_public_readable,
+    select_readable_publications,
+)
 from api.novel_public.no_store import NoStoreRoute
 from api.novel_public.purchases import is_free_chapter
 from api.novel_public.schemas import (
@@ -228,7 +231,7 @@ async def _ended_or_not_found(
         return ended("deleted")
     if chapter_id is None and novel is None and refunded:
         return ended("deleted")
-    if not settings.novel_public_enabled:
+    if not novel_public_open_to(user_id):
         return ended("service_off")
     if novel is None:
         publisher = await db.get(User, purchases[0].publisher_user_id)
@@ -369,7 +372,7 @@ async def get_webnovel(
             )
         )
     ).one_or_none()
-    if row is None or not settings.novel_public_enabled:
+    if row is None or not novel_public_open_to(user_id):
         raise await _ended_or_not_found(db, user_id=user_id, novel_id=novel_id, chapter_id=None)
     publication, novel, nickname = row
     is_publisher = novel.user_id == user_id
@@ -461,7 +464,7 @@ async def get_webnovel_chapter(
             .where(NovelPublication.novel_id == novel_id, NovelChapterPublication.chapter_id == chapter_id)
         )
     ).one_or_none()
-    if row is None or not settings.novel_public_enabled:
+    if row is None or not novel_public_open_to(user_id):
         raise await _ended_or_not_found(db, user_id=user_id, novel_id=novel_id, chapter_id=chapter_id)
     publication, novel, chapter, body = row
     is_publisher = novel.user_id == user_id

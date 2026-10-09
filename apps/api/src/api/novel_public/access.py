@@ -13,7 +13,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from fastapi import HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import Select, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -24,6 +24,8 @@ from api.core.config import settings
 from api.db.models.auth import User
 from api.db.models.content import Content, ModerationStatus
 from api.db.models.novel import Novel, NovelChapterPublication, NovelPublication
+from api.db.session import get_db_session
+from api.session.dependencies import get_current_user_id, get_current_user_id_optional
 
 _any_chapter = aliased(NovelChapterPublication)
 
@@ -34,10 +36,23 @@ NewPublishBlock = Literal["source_unavailable", "source_permission", "source_not
 RepublishBlock = Literal["source_unavailable", "restricted"]
 
 
-def require_novel_public_enabled() -> None:
-    """노벨 스위치(`novel_public_enabled`)가 꺼져 있으면 403 `NOVEL_PUBLIC_DISABLED`. 공개·다시 공개·게시자 공개 상태 조회
-    라우터 수준 게이트다. 공개 거두기는 이 게이트 밖이다(자기 글을 내리는 일이라)."""
+def novel_public_open_to(user_id: uuid.UUID | None) -> bool:
+    """노벨이 이 사람에게 열려 있는가. 스위치(`novel_public_enabled`)가 꺼져 있으면 아무에게도 아니고, 미리보기 명단
+    (`novel_public_preview_allowlist`)이 비어 있지 않으면 그 명단의 회원에게만이다. `user_id` 가 None 이면 비로그인이거나,
+    인증 없는 공개 응답처럼 누가 보는지 모르는 경우다 — 명단이 있는 동안은 닫힘이다.
+
+    독자·게시 게이트, 작품 정보·화 읽기의 직접 판정, 가격 응답과 `GET /me` 의 켜짐 표시가 모두 이 함수를 부른다 — 따로
+    판정하면 화면에 보이는 탭이 404 를 받거나, 열린 사람에게 탭이 숨는다."""
     if not settings.novel_public_enabled:
+        return False
+    allowlist = settings.novel_public_preview_allowlist
+    return not allowlist or (user_id is not None and user_id in allowlist)
+
+
+def require_novel_public_enabled(user_id: uuid.UUID = Depends(get_current_user_id)) -> None:
+    """노벨이 이 게시자에게 닫혀 있으면(`novel_public_open_to`) 403 `NOVEL_PUBLIC_DISABLED`. 공개·다시 공개·게시자 공개
+    상태 조회 라우터 수준 게이트다. 공개 거두기는 이 게이트 밖이다(자기 글을 내리는 일이라)."""
+    if not novel_public_open_to(user_id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"code": "NOVEL_PUBLIC_DISABLED"})
 
 
@@ -59,11 +74,15 @@ async def judge_source(db: AsyncSession, content_id: uuid.UUID, publisher_id: uu
     return SourceGate(new_publish_block=None if listed is not None else "source_not_listed", source_available=True)
 
 
-def require_novel_public_readable() -> None:
-    """노벨 읽기 라우트의 스위치 게이트. 꺼져 있으면 404 `NOVEL_PUBLIC_DISABLED` 다 — 독자에게는 노벨이 없는 것과 같고(공개
-    응답의 켜짐 여부로 화면이 탭을 숨긴다), 게시자 쪽 403 과 달리 무엇이 막혔는지 알릴 상대가 아니다. 화 읽기는 이 게이트를
-    걸지 않고 직접 판정한다(소장한 사람에게는 "잠시 쉬는 중"을 알려야 해서)."""
-    if not settings.novel_public_enabled:
+async def require_novel_public_readable(request: Request, db: AsyncSession = Depends(get_db_session)) -> None:
+    """노벨 읽기 라우트의 스위치 게이트. 노벨이 이 사람에게 닫혀 있으면(`novel_public_open_to`) 404 `NOVEL_PUBLIC_DISABLED`
+    다 — 독자에게는 노벨이 없는 것과 같고(켜짐 표시로 화면이 탭을 숨긴다), 게시자 쪽 403 과 달리 무엇이 막혔는지 알릴 상대가
+    아니다. 화 읽기는 이 게이트를 걸지 않고 직접 판정한다(소장한 사람에게는 "잠시 쉬는 중"을 알려야 해서).
+
+    누구인지는 로그인 필수 의존성이 아니라 선택 의존성으로 본다 — 명단이 있는 동안 비로그인도 로그인 요구(401)가 아니라 꺼진
+    노벨의 404 를 받아야 한다. 명단이 비어 있으면 누구인지 볼 필요가 없어 세션을 읽지 않는다."""
+    viewer = await get_current_user_id_optional(request, db) if settings.novel_public_preview_allowlist else None
+    if not novel_public_open_to(viewer):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "NOVEL_PUBLIC_DISABLED"})
 
 

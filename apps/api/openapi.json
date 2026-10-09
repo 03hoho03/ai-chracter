@@ -24291,6 +24291,10 @@
               }
             ],
             "title": "Purchaseblockreason"
+          },
+          "novelPublicEnabled": {
+            "type": "boolean",
+            "title": "Novelpublicenabled"
           }
         },
         "type": "object",
@@ -24310,7 +24314,8 @@
           "identityGated",
           "dailyFreeChatTurns",
           "paidCloverBalance",
-          "purchaseBlockReason"
+          "purchaseBlockReason",
+          "novelPublicEnabled"
         ],
         "title": "MeResponse"
       },
