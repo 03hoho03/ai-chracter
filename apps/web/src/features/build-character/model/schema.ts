@@ -52,11 +52,8 @@ export const situationalImageSchema = z.object({
 
 export const characterBuilderSchema = z.object({
   profile: z.object({
-    name: z.string().min(1, "캐릭터 이름을 입력해주세요").refine(...characterLimit(MAX_NAME_LENGTH, "이름")),
-    oneLiner: z
-      .string()
-      .min(1, "캐릭터를 한 줄로 소개해주세요")
-      .refine(...characterLimit(MAX_ONE_LINER_LENGTH, "한줄소개")),
+    // 대표 이미지가 맨 앞인 이유: 발행 실패 때 포커스가 가는 "첫 오류"는 같은 탭 안에서 이 키 순서를 따른다. 화면에서 맨 위 칸이
+    // 대표 이미지라 순서가 다르면 둘째 칸(이름)으로 먼저 간다.
     // 타입은 초안(아직 비어 있는 상태)을 담기 위해 nullable로 두고, 발행 필수는 superRefine이 상시
     // 검증한다. **`.refine((v) => v !== null)`으로 줄이지
     // 말 것** — TS 5.5+가 그 콜백을 타입 술어로 추론하고 zod의 refine 선언이 그 경우에만 출력 타입을
@@ -70,6 +67,11 @@ export const characterBuilderSchema = z.object({
           ctx.addIssue({ code: z.ZodIssueCode.custom, message: "대표 이미지를 등록해주세요" });
         }
       }),
+    name: z.string().min(1, "캐릭터 이름을 입력해주세요").refine(...characterLimit(MAX_NAME_LENGTH, "이름")),
+    oneLiner: z
+      .string()
+      .min(1, "캐릭터를 한 줄로 소개해주세요")
+      .refine(...characterLimit(MAX_ONE_LINER_LENGTH, "한줄소개")),
   }),
   intro: z.object({
     firstMessage: z

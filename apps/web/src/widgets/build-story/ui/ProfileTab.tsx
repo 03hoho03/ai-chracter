@@ -52,6 +52,7 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
                 previewUrl={thumbnailUrl ?? undefined}
                 onUploadComplete={onUploadComplete}
                 onPick={onPick}
+              inputRef={field.ref}
                 previewAspect={toThumbnailAspect("story")}
                 beforeUpload={(file) =>
                   ImageCropModal.call({ file, aspect: toThumbnailAspectRatio(toThumbnailAspect("story")) })
