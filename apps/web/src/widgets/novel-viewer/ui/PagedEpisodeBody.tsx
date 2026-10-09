@@ -24,7 +24,7 @@ type PagedEpisodeBodyProps = {
   episodeLabel: string;
   paragraphs: readonly string[];
   next: NovelChapterSummary | undefined;
-  /** 보기 설정(글자 크기·줄 간격·여백)에서 나온 본문 조판 클래스. 좌우 여백은 쪽 안쪽 여백으로 잰다. */
+  /** 보기 설정(글자 크기·줄 간격)에서 나온 본문 조판 클래스. 좌우 여백은 탐침의 고정 패딩을 잰다. */
   typographyClassName: string;
   readingPosition: ReadingPositionSession;
   onPositionChange: (position: PagedPosition) => void;
@@ -138,7 +138,7 @@ export function PagedEpisodeBody({
         <div
           ref={reader.probeRef}
           aria-hidden
-          className={cn("pointer-events-none invisible absolute top-0 left-0 max-w-prose", typographyClassName)}
+          className={cn("pointer-events-none invisible absolute top-0 left-0 max-w-prose px-6", typographyClassName)}
           style={{ width: PROSE_PROBE_WIDTH_PX }}
         />
         {/* safe-area 값은 스크립트로 바로 읽을 수 없어 `env()` 를 패딩으로 받은 요소의 계산값으로 읽는다. */}

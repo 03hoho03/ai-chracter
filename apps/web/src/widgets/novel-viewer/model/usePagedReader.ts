@@ -65,7 +65,7 @@ type UsePagedReaderOptions = {
   session: ReadingPositionSession;
   paragraphCount: number;
   isFinePointer: boolean;
-  /** 보기 설정(글자 크기·줄 간격·여백)에서 나온 조판 클래스. 바뀌면 쪽을 다시 잰다. */
+  /** 보기 설정(글자 크기·줄 간격)에서 나온 조판 클래스. 바뀌면 쪽을 다시 잰다. */
   typographyClassName: string;
 };
 

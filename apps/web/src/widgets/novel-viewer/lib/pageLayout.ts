@@ -21,7 +21,7 @@ export type PageLayoutInput = {
   height: number;
   safeArea: { left: number; right: number; top: number; bottom: number };
   isFinePointer: boolean;
-  /** 쪽 안쪽 좌우 여백 한쪽(px) — 보기 설정의 여백 단계가 만든 패딩을 잰 값. */
+  /** 쪽 안쪽 좌우 여백 한쪽(px) — 탐침의 고정 패딩을 잰 값. */
   pagePaddingPx: number;
   /** 지금 글자 크기에서 잰 `max-w-prose`(65ch)의 px 폭. 글꼴이 도착하면 달라지므로 그때도 다시 잰다. */
   proseWidthPx: number;
