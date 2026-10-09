@@ -151,7 +151,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
 
   const mediaBookThumbnails = useMediaBookThumbnailsStore(draft);
 
-  const { saveDraft } = useDraftPersistence({ type: "story", draftId, initialNovelPermission: draft.novelPermission });
+  const { saveDraft, saveStatus } = useDraftPersistence({ type: "story", draftId, initialNovelPermission: draft.novelPermission });
   const publishMutation = usePublishContentMutation();
 
   // 발행 실패 시 첫 에러 필드로 이동한다(탭이 다르면 먼저 전환). tabId는
@@ -191,6 +191,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
     },
     formToServer,
     save: saveDraft,
+    onSchedule: saveStatus.markPending,
     flushOnUnmount: () => draftId !== undefined,
     errorMessage: storyAutosaveErrorMessage,
   });
@@ -357,6 +358,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
             // 미디어 북 탭에서는 이 버튼이 여는 화면이 배치표라 그 화면의 머리와 같은 이름을 단다.
             previewLabel={activeTab === "mediaBook" ? "배치표" : undefined}
             previewIcon={activeTab === "mediaBook" ? <Grid3x3 aria-hidden className="size-3.5" /> : undefined}
+            saveStatus={saveStatus}
             onPreview={() => setIsPreviewOpen((prev) => !prev)}
             onSaveNow={() => void handleSaveNow()}
             onPublish={() => void form.handleSubmit(handlePublish, handlePublishInvalid)()}

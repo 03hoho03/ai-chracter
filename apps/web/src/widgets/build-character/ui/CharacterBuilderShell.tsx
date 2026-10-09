@@ -149,7 +149,7 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
   const profileImageLocal = useProfileImageLocalUrl();
   const thumbnailUrl = resolveProfileImageUrl({ image: profileImage, local: profileImageLocal.local, draft });
 
-  const { saveDraft } = useDraftPersistence({ type: "character", draftId, initialNovelPermission: draft.novelPermission });
+  const { saveDraft, saveStatus } = useDraftPersistence({ type: "character", draftId, initialNovelPermission: draft.novelPermission });
   const publishMutation = usePublishContentMutation();
 
   // 발행 실패 시 첫 에러 필드로 이동한다(탭이 다르면 먼저 전환). tabId는
@@ -172,6 +172,7 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
     },
     formToServer,
     save: saveDraft,
+    onSchedule: saveStatus.markPending,
     flushOnUnmount: () => draftId !== undefined,
     errorMessage: characterSaveErrorMessage,
   });
@@ -294,6 +295,7 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
               guidePath={creationGuidePath("character", activeTab)}
               isPublishing={isPublishing}
               isPreviewOpen={isPreviewOpen}
+              saveStatus={saveStatus}
               onPreview={() => setIsPreviewOpen((prev) => !prev)}
               onSaveNow={() => void handleSaveNow()}
               onPublish={() => void form.handleSubmit(handlePublish, handlePublishInvalid)()}

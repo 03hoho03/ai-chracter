@@ -1,8 +1,12 @@
 import { Button } from "@ai-character-chat/ui/components/button";
-import { BookOpen, Eye, Save, X } from "lucide-react";
-import type { ReactNode } from "react";
+import { cn } from "@ai-character-chat/ui/lib/utils";
+import { onlineManager } from "@tanstack/react-query";
+import { BookOpen, Check, CloudOff, Eye, Loader2, Save, TriangleAlert, X } from "lucide-react";
+import { useSyncExternalStore, type ReactNode } from "react";
 
 import type { CreationGuidePath } from "@/shared/config/creationGuide";
+
+import type { AutosaveStatus, AutosaveStatusStore } from "../model/autosaveStatus";
 
 type BuilderTopBarActionsProps = {
   /** 이 빌더의 작성 가이드 경로. 스토리·캐릭터 빌더가 각자 자기 가이드를 가리킨다. */
@@ -21,6 +25,8 @@ type BuilderTopBarActionsProps = {
   previewLabel?: string;
   /** 닫힌 [미리보기] 버튼의 아이콘(`size-3.5`, `aria-hidden`). 이름을 바꿀 때 함께 넘긴다. */
   previewIcon?: ReactNode;
+  /** 저장 상태(`useDraftPersistence` 의 `saveStatus`). 임시저장 버튼이 아이콘과 접근 이름으로 그린다. */
+  saveStatus: AutosaveStatusStore;
   onPreview: () => void;
   onSaveNow: () => void;
   onPublish: () => void;
@@ -41,6 +47,7 @@ export function BuilderTopBarActions({
   isPreviewOpen,
   previewLabel = "미리보기",
   previewIcon = <Eye aria-hidden className="size-3.5" />,
+  saveStatus,
   onPreview,
   onSaveNow,
   onPublish,
@@ -50,7 +57,7 @@ export function BuilderTopBarActions({
       {/* 작성 가이드는 새 탭으로 연다 — 같은 탭에서 이동하면 쓰던 폼을 떠나게 된다. 라우터 `Link` 가 아니라
           평범한 `<a>` 인 이유도 그것이다(새 탭은 앱을 처음부터 다시 띄운다). 폼 액션이 아니라 이동이라
           보더 없는 ghost 로 두어 옆의 임시저장·미리보기와 형태로 가른다. */}
-      <Button asChild variant="ghost" size="sm">
+      <Button asChild variant="ghost" size="sm" className={TOUCH_TARGET_CLASSNAME}>
         <a href={guidePath} target="_blank" rel="noopener noreferrer" aria-label="작성 가이드 (새 탭에서 열림)">
           <BookOpen aria-hidden className="size-3.5" />
           <span className="hidden sm:inline">작성 가이드</span>
@@ -65,19 +72,78 @@ export function BuilderTopBarActions({
         size="sm"
         aria-label={isPreviewOpen ? `${previewLabel} 닫기` : previewLabel}
         aria-expanded={isPreviewOpen}
-        className="lg:hidden"
+        className={cn("lg:hidden", TOUCH_TARGET_CLASSNAME)}
         onClick={onPreview}
       >
         {isPreviewOpen ? <X aria-hidden className="size-3.5" /> : previewIcon}
         <span className="hidden sm:inline">{isPreviewOpen ? "닫기" : previewLabel}</span>
       </Button>
-      <Button type="button" variant="outline" size="sm" aria-label="임시저장" onClick={onSaveNow}>
-        <Save aria-hidden className="size-3.5" />
-        <span className="hidden sm:inline">임시저장</span>
-      </Button>
-      <Button size="sm" disabled={isPublishing} onClick={onPublish}>
+      <SaveNowButton saveStatus={saveStatus} onSaveNow={onSaveNow} />
+      <Button size="sm" disabled={isPublishing} className={TOUCH_TARGET_CLASSNAME} onClick={onPublish}>
         {isPublishing ? "발행 중..." : "발행"}
       </Button>
+    </>
+  );
+}
+
+/** 손가락 포인터에서 상단바 버튼을 40px 로 올린다. 좁은 화면에서는 라벨이 숨어 아이콘만 남으므로 폭도 40px 를 채운다. 상단바(56px)
+ * 안에 들어가고, 마우스 포인터의 32px 는 그대로다. */
+const TOUCH_TARGET_CLASSNAME = "pointer-coarse:h-10 pointer-coarse:min-w-10";
+
+/** 상태별 아이콘과 접근 이름 뒤에 붙는 말. 오프라인은 저장 상태가 아니라 연결 상태라 여기 없고 `SaveNowButton` 이 덮어쓴다. */
+const SAVE_STATUS_VIEW: Record<AutosaveStatus, { icon: ReactNode; text?: string }> = {
+  idle: { icon: <Save aria-hidden className="size-3.5" /> },
+  // 회전은 진행 표시라 `motion-safe:` 로 가두지 않는다 — 멈추면 저장이 멈춘 것으로 읽힌다.
+  pending: { icon: <Loader2 aria-hidden className="size-3.5 animate-spin" />, text: "저장 대기 중" },
+  saving: { icon: <Loader2 aria-hidden className="size-3.5 animate-spin" />, text: "저장 중" },
+  saved: { icon: <Check aria-hidden className="size-3.5" />, text: "저장됨" },
+  failed: {
+    icon: <TriangleAlert aria-hidden className="size-3.5 text-destructive-text" />,
+    text: "저장 실패, 눌러서 다시 시도",
+  },
+};
+
+function subscribeOnline(listener: () => void) {
+  return onlineManager.subscribe(listener);
+}
+
+const OFFLINE_VIEW = {
+  icon: <CloudOff aria-hidden className="size-3.5" />,
+  text: "연결 끊김, 연결되면 저장돼요",
+};
+
+/**
+ * 임시저장 버튼이 자동저장 상태도 보인다 — 아이콘과 접근 이름("임시저장 · 저장됨")만 바뀌고 폭은 그대로다. 390px 상단바에는 상태
+ * 글자를 더 놓을 폭이 없다. 실패면 이 버튼이 곧 다시 시도다(누르면 임시저장이 지금 값을 보낸다).
+ *
+ * 저장 상태는 이 버튼만 구독한다(셸은 다시 그리지 않는다). 오프라인은 TanStack 의 `onlineManager` 를 따른다 — 그 판단으로
+ * 저장 요청이 멈추고 연결이 돌아오면 다시 나가므로, 같은 판단을 보여야 버튼이 실제 저장과 어긋나지 않는다.
+ *
+ * 보조기기에는 연결이 끊겼을 때만 상태 영역으로 알린다. 입력을 멈출 때마다 "저장됨"을 읽으면 소음이고, 저장 실패는 실패 토스트가
+ * 이미 알린다(자동저장 실패 토스트는 닫을 때까지 남는다).
+ */
+function SaveNowButton({ saveStatus, onSaveNow }: { saveStatus: AutosaveStatusStore; onSaveNow: () => void }) {
+  const status = useSyncExternalStore(saveStatus.subscribe, saveStatus.getSnapshot, saveStatus.getSnapshot);
+  const isOnline = useSyncExternalStore(subscribeOnline, () => onlineManager.isOnline(), () => true);
+  const view = isOnline ? SAVE_STATUS_VIEW[status] : OFFLINE_VIEW;
+  const label = view.text ? `임시저장 · ${view.text}` : "임시저장";
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        aria-label={label}
+        className={TOUCH_TARGET_CLASSNAME}
+        onClick={onSaveNow}
+      >
+        {view.icon}
+        <span className="hidden sm:inline">임시저장</span>
+      </Button>
+      <span role="status" className="sr-only">
+        {isOnline ? "" : "연결이 끊겼어요. 연결되면 저장돼요."}
+      </span>
     </>
   );
 }

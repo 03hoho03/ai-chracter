@@ -75,6 +75,11 @@ export function useAutosave<TForm, TPayload>(opts: {
    * `save` 와 같은 이유로 렌더마다 같은 함수여야 한다.
    */
   errorMessage?: (error: unknown) => string | undefined;
+  /**
+   * 편집이 들어와 디바운스 저장이 예약될 때마다 부른다(저장 상태를 "저장 대기"로 바꾸는 자리). 호출 시점의 최신 함수를 읽으므로
+   * 렌더마다 달라도 디바운스를 다시 만들지 않는다.
+   */
+  onSchedule?: () => void;
   debounceMs?: number;
 }) {
   const debouncedSave = useMemo(
@@ -105,8 +110,17 @@ export function useAutosave<TForm, TPayload>(opts: {
   // `subscribe`는 ref로 최신 것을 읽는다.
   const subscribeRef = useRef(opts.subscribe);
   subscribeRef.current = opts.subscribe;
+  const onScheduleRef = useRef(opts.onSchedule);
+  onScheduleRef.current = opts.onSchedule;
 
-  useEffect(() => subscribeRef.current(debouncedSave), [debouncedSave]);
+  useEffect(
+    () =>
+      subscribeRef.current((values) => {
+        onScheduleRef.current?.();
+        debouncedSave(values);
+      }),
+    [debouncedSave],
+  );
 
   // `debouncedSave`는 마운트 내내 같은 인스턴스라(위 `save` 계약) 이 정리는 사실상 언마운트에서만 돈다.
   const flushOnUnmountRef = useRef(opts.flushOnUnmount);
@@ -123,9 +137,13 @@ export function useAutosave<TForm, TPayload>(opts: {
   );
 
   return {
-    saveNow: (values: TForm) => {
+    // 성공하면 자동저장 실패 토스트도 걷는다 — 임시저장 버튼이 실패 뒤의 다시 시도 역할도 하므로, 다시 시도가 성공한 뒤에도 "마지막
+    // 편집이 서버에 없다"는 토스트가 남으면 버튼의 "저장됨"과 서로 다른 말을 한다.
+    saveNow: async (values: TForm) => {
       debouncedSave.cancel();
-      return opts.save(opts.formToServer(values));
+      const result = await opts.save(opts.formToServer(values));
+      toast.dismiss(AUTOSAVE_ERROR_TOAST_ID);
+      return result;
     },
   };
 }
