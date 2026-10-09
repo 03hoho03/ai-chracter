@@ -103,3 +103,10 @@ apiClient.interceptors.response.use(
 export function isApiError(error: unknown): error is ApiError {
   return typeof error === "object" && error !== null && "status" in error && "message" in error;
 }
+
+/** 서버가 `detail` 에 `{ code }` 를 실어 보낸 거부의 code. 그런 code 는 OpenAPI 에 노출되지 않아 생성 타입이 없어 여기서
+ * 직접 읽는다. ApiError 가 아니거나 code 가 없으면 `null`. */
+export function apiErrorCode(error: unknown): string | null {
+  if (!isApiError(error) || typeof error.detail !== "object" || error.detail === null || !("code" in error.detail)) return null;
+  return typeof error.detail.code === "string" ? error.detail.code : null;
+}

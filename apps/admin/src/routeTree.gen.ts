@@ -17,11 +17,13 @@ import { Route as AppealsRouteImport } from './routes/appeals'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as UsersIndexRouteImport } from './routes/users.index'
 import { Route as ReportsIndexRouteImport } from './routes/reports.index'
+import { Route as NovelsIndexRouteImport } from './routes/novels.index'
 import { Route as NoticesIndexRouteImport } from './routes/notices.index'
 import { Route as InquiriesIndexRouteImport } from './routes/inquiries.index'
 import { Route as ImageGenerationsIndexRouteImport } from './routes/image-generations.index'
 import { Route as ContentsIndexRouteImport } from './routes/contents.index'
 import { Route as ReportsReportIdRouteImport } from './routes/reports.$reportId'
+import { Route as NovelsNovelIdRouteImport } from './routes/novels.$novelId'
 import { Route as NoticesNoticeIdRouteImport } from './routes/notices.$noticeId'
 import { Route as InquiriesInquiryIdRouteImport } from './routes/inquiries.$inquiryId'
 import { Route as ContentsContentIdRouteImport } from './routes/contents.$contentId'
@@ -69,6 +71,11 @@ const ReportsIndexRoute = ReportsIndexRouteImport.update({
   path: '/reports/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const NovelsIndexRoute = NovelsIndexRouteImport.update({
+  id: '/novels/',
+  path: '/novels/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const NoticesIndexRoute = NoticesIndexRouteImport.update({
   id: '/notices/',
   path: '/notices/',
@@ -92,6 +99,11 @@ const ContentsIndexRoute = ContentsIndexRouteImport.update({
 const ReportsReportIdRoute = ReportsReportIdRouteImport.update({
   id: '/reports/$reportId',
   path: '/reports/$reportId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NovelsNovelIdRoute = NovelsNovelIdRouteImport.update({
+  id: '/novels/$novelId',
+  path: '/novels/$novelId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NoticesNoticeIdRoute = NoticesNoticeIdRouteImport.update({
@@ -136,11 +148,13 @@ export interface FileRoutesByFullPath {
   '/contents/$contentId': typeof ContentsContentIdRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
+  '/novels/$novelId': typeof NovelsNovelIdRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
   '/contents/': typeof ContentsIndexRoute
   '/image-generations/': typeof ImageGenerationsIndexRoute
   '/inquiries/': typeof InquiriesIndexRoute
   '/notices/': typeof NoticesIndexRoute
+  '/novels/': typeof NovelsIndexRoute
   '/reports/': typeof ReportsIndexRoute
   '/users/': typeof UsersIndexRoute
   '/users/$userId/image-generations': typeof UsersUserIdImageGenerationsRoute
@@ -157,11 +171,13 @@ export interface FileRoutesByTo {
   '/contents/$contentId': typeof ContentsContentIdRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
+  '/novels/$novelId': typeof NovelsNovelIdRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
   '/contents': typeof ContentsIndexRoute
   '/image-generations': typeof ImageGenerationsIndexRoute
   '/inquiries': typeof InquiriesIndexRoute
   '/notices': typeof NoticesIndexRoute
+  '/novels': typeof NovelsIndexRoute
   '/reports': typeof ReportsIndexRoute
   '/users': typeof UsersIndexRoute
   '/users/$userId/image-generations': typeof UsersUserIdImageGenerationsRoute
@@ -179,11 +195,13 @@ export interface FileRoutesById {
   '/contents/$contentId': typeof ContentsContentIdRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
+  '/novels/$novelId': typeof NovelsNovelIdRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
   '/contents/': typeof ContentsIndexRoute
   '/image-generations/': typeof ImageGenerationsIndexRoute
   '/inquiries/': typeof InquiriesIndexRoute
   '/notices/': typeof NoticesIndexRoute
+  '/novels/': typeof NovelsIndexRoute
   '/reports/': typeof ReportsIndexRoute
   '/users/': typeof UsersIndexRoute
   '/users/$userId/image-generations': typeof UsersUserIdImageGenerationsRoute
@@ -202,11 +220,13 @@ export interface FileRouteTypes {
     | '/contents/$contentId'
     | '/inquiries/$inquiryId'
     | '/notices/$noticeId'
+    | '/novels/$novelId'
     | '/reports/$reportId'
     | '/contents/'
     | '/image-generations/'
     | '/inquiries/'
     | '/notices/'
+    | '/novels/'
     | '/reports/'
     | '/users/'
     | '/users/$userId/image-generations'
@@ -223,11 +243,13 @@ export interface FileRouteTypes {
     | '/contents/$contentId'
     | '/inquiries/$inquiryId'
     | '/notices/$noticeId'
+    | '/novels/$novelId'
     | '/reports/$reportId'
     | '/contents'
     | '/image-generations'
     | '/inquiries'
     | '/notices'
+    | '/novels'
     | '/reports'
     | '/users'
     | '/users/$userId/image-generations'
@@ -244,11 +266,13 @@ export interface FileRouteTypes {
     | '/contents/$contentId'
     | '/inquiries/$inquiryId'
     | '/notices/$noticeId'
+    | '/novels/$novelId'
     | '/reports/$reportId'
     | '/contents/'
     | '/image-generations/'
     | '/inquiries/'
     | '/notices/'
+    | '/novels/'
     | '/reports/'
     | '/users/'
     | '/users/$userId/image-generations'
@@ -266,11 +290,13 @@ export interface RootRouteChildren {
   ContentsContentIdRoute: typeof ContentsContentIdRoute
   InquiriesInquiryIdRoute: typeof InquiriesInquiryIdRoute
   NoticesNoticeIdRoute: typeof NoticesNoticeIdRoute
+  NovelsNovelIdRoute: typeof NovelsNovelIdRoute
   ReportsReportIdRoute: typeof ReportsReportIdRoute
   ContentsIndexRoute: typeof ContentsIndexRoute
   ImageGenerationsIndexRoute: typeof ImageGenerationsIndexRoute
   InquiriesIndexRoute: typeof InquiriesIndexRoute
   NoticesIndexRoute: typeof NoticesIndexRoute
+  NovelsIndexRoute: typeof NovelsIndexRoute
   ReportsIndexRoute: typeof ReportsIndexRoute
   UsersIndexRoute: typeof UsersIndexRoute
   UsersUserIdImageGenerationsRoute: typeof UsersUserIdImageGenerationsRoute
@@ -336,6 +362,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ReportsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/novels/': {
+      id: '/novels/'
+      path: '/novels'
+      fullPath: '/novels/'
+      preLoaderRoute: typeof NovelsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/notices/': {
       id: '/notices/'
       path: '/notices'
@@ -369,6 +402,13 @@ declare module '@tanstack/react-router' {
       path: '/reports/$reportId'
       fullPath: '/reports/$reportId'
       preLoaderRoute: typeof ReportsReportIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/novels/$novelId': {
+      id: '/novels/$novelId'
+      path: '/novels/$novelId'
+      fullPath: '/novels/$novelId'
+      preLoaderRoute: typeof NovelsNovelIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/notices/$noticeId': {
@@ -426,11 +466,13 @@ const rootRouteChildren: RootRouteChildren = {
   ContentsContentIdRoute: ContentsContentIdRoute,
   InquiriesInquiryIdRoute: InquiriesInquiryIdRoute,
   NoticesNoticeIdRoute: NoticesNoticeIdRoute,
+  NovelsNovelIdRoute: NovelsNovelIdRoute,
   ReportsReportIdRoute: ReportsReportIdRoute,
   ContentsIndexRoute: ContentsIndexRoute,
   ImageGenerationsIndexRoute: ImageGenerationsIndexRoute,
   InquiriesIndexRoute: InquiriesIndexRoute,
   NoticesIndexRoute: NoticesIndexRoute,
+  NovelsIndexRoute: NovelsIndexRoute,
   ReportsIndexRoute: ReportsIndexRoute,
   UsersIndexRoute: UsersIndexRoute,
   UsersUserIdImageGenerationsRoute: UsersUserIdImageGenerationsRoute,

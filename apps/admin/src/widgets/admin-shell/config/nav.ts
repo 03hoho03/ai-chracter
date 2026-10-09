@@ -1,5 +1,6 @@
 import {
   BookOpen,
+  BookOpenText,
   ChartLine,
   Flag,
   Images,
@@ -34,6 +35,7 @@ export const ADMIN_NAV_GROUPS = [
     label: "콘텐츠·유저",
     items: [
       { label: "작품 관리", to: "/contents", icon: BookOpen },
+      { label: "노벨 관리", to: "/novels", icon: BookOpenText },
       { label: "유저 관리", to: "/users", icon: Users },
       { label: "이미지 생성 관리", to: "/image-generations", icon: Images },
     ],

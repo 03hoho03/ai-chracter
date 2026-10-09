@@ -13,4 +13,10 @@ export const reportKeys = {
   chatMessageList: (params: { page: number; status?: ReportStatusFilter }) =>
     [...reportKeys.all, "chat-message-list", params.page, params.status ?? "all"] as const,
   chatMessageDetail: (id: string) => [...reportKeys.all, "chat-message-detail", id] as const,
+  novelList: (params: { page: number; status?: ReportStatusFilter }) =>
+    [...reportKeys.all, "novel-list", params.page, params.status ?? "all"] as const,
+  novelDetail: (id: string) => [...reportKeys.all, "novel-detail", id] as const,
+  novelCommentList: (params: { page: number; status?: ReportStatusFilter }) =>
+    [...reportKeys.all, "novel-comment-list", params.page, params.status ?? "all"] as const,
+  novelCommentDetail: (id: string) => [...reportKeys.all, "novel-comment-detail", id] as const,
 };
