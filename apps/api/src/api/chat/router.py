@@ -577,7 +577,10 @@ async def _load_room_stats(
     두 자리가 같은 값을 보도록 한 곳에서 읽는다.
 
     행이 없는 스탯(버전을 옮긴 방에서 새 버전에 생긴 스탯)은 시작값으로 본다 — 승격이 채우는 값과 같다."""
-    stat_defs = list((await db.scalars(select(StatDef).where(StatDef.starting_setup_id == setup_id))).all())
+    # 판정 프롬프트가 이 순서로 규칙 글자를 붙인다 — 정렬이 없으면 행이 놓인 순서를 따라 실행마다 달라진다.
+    stat_defs = list(
+        (await db.scalars(select(StatDef).where(StatDef.starting_setup_id == setup_id).order_by(StatDef.order))).all()
+    )
     # 같은 요청 안에서 두 번째로 읽을 때(생성 프롬프트 조립 뒤의 판정 단계) 세션에 남아 있는 행 객체는 SELECT 만으로는
     # 값이 갱신되지 않는다. 스트리밍 동안 같은 방의 다른 요청이 커밋한 값을 판정이 보도록 매번 DB 값으로 덮어쓴다 —
     # 객체 자체는 같은 것이 돌아오므로 `_write_room_stat` 가 고치는 행은 그대로 세션이 추적하는 행이다.
