@@ -26,6 +26,7 @@ from pydantic import BaseModel
 
 from api.core.config import Settings, settings
 from api.core.redis import redis_client
+from api.llm.anthropic_api import AnthropicLLMClient
 from api.llm.bedrock import BedrockLLMClient
 from api.llm.chat_models import backend_model_id
 from api.llm.client import (
@@ -419,21 +420,28 @@ async def test_call_policy_per_call_site_matches_the_recorded_table(
 
 # ── 리플레이의 사용량 잡기 ──────────────────────────────────────────────────────────────────
 #
-# 리플레이(`scripts/replay/calls.py` 의 `capture_usage`)는 두 공급자 모듈의 `record_usage` 이름을 바꿔 끼워 실제로 보낸 모델과
+# 리플레이(`scripts/replay/calls.py` 의 `capture_usage`)는 공급자 모듈마다의 `record_usage` 이름을 바꿔 끼워 실제로 보낸 모델과
 # 토큰을 잡는다. 공급자가 그 이름이 아닌 다른 경로(예: 사용량 저장 모듈의 속성)로 기록하게 바뀌면 그 공급자의 줄만 비게 된다.
 
 
-@pytest.mark.parametrize("provider", ["gemini", "bedrock"])
+@pytest.mark.parametrize("provider", ["gemini", "bedrock", "anthropic"])
 async def test_replay_usage_capture_sees_a_call_from_each_provider(
     monkeypatch: pytest.MonkeyPatch, provider: str
 ) -> None:
     _fill_with_markers(monkeypatch)
-    client: LLMClient = (
-        _gemini_client(monkeypatch, _GeminiSdk("ok"))
-        if provider == "gemini"
-        else _bedrock_client(monkeypatch, _BedrockSdk("ok"))
-    )
-    expected_model = settings.gemini_model_name if provider == "gemini" else backend_model_id("bedrock", "sonnet")
+    client: LLMClient
+    if provider == "gemini":
+        client = _gemini_client(monkeypatch, _GeminiSdk("ok"))
+        expected_model = settings.gemini_model_name
+    elif provider == "bedrock":
+        client = _bedrock_client(monkeypatch, _BedrockSdk("ok"))
+        expected_model = backend_model_id("bedrock", "sonnet")
+    else:
+        # 같은 Messages API 스트림이라 Bedrock 자리의 가짜를 그대로 쓴다.
+        anthropic_client = AnthropicLLMClient()
+        monkeypatch.setattr(anthropic_client, "_client", SimpleNamespace(messages=_BedrockSdk("ok")))
+        client = anthropic_client
+        expected_model = backend_model_id("anthropic", "sonnet")
 
     with capture_usage() as sent:
         assert await _run_generate(client, "replay_generate") is None
