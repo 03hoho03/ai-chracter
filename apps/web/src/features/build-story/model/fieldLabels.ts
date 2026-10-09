@@ -62,9 +62,10 @@ export const STORY_FIELD_LABELS = {
   "startingSetups.*.stats.*.initial": { label: "초기값", required: true },
   "startingSetups.*.stats.*.unit": { label: "단위", required: false },
   "startingSetups.*.stats.*.perTurnDelta": { label: "턴당 자동 변화", required: false },
-  "startingSetups.*.stats.*.changeDirection": { label: "변화 방향", required: false },
-  "startingSetups.*.stats.*.maxChangePerTurn": { label: "한 턴 최대 폭", required: false },
   "startingSetups.*.stats.*.description": { label: "설명", required: true },
+  "startingSetups.*.stats.*.rules": { label: "규칙", required: false },
+  "startingSetups.*.stats.*.rules.*.condition": { label: "조건", required: true },
+  "startingSetups.*.stats.*.rules.*.delta": { label: "증감", required: true },
 
   "startingSetups.*.situationNotes": { label: "상황 노트", required: false },
   "startingSetups.*.situationNotes.*.name": { label: "이름", required: false },

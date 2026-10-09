@@ -86,8 +86,7 @@ function baseDraftResponse(): StoryDraftResponse {
             unit: "pt",
             description: "생존에 필요한 신체 상태",
             perTurnDelta: -1,
-            changeDirection: "both",
-            maxChangePerTurn: null,
+            rules: [],
           },
         ],
         endings: [],
@@ -150,8 +149,7 @@ describe("serverToForm", () => {
               unit: "pt",
               description: "생존에 필요한 신체 상태",
               perTurnDelta: -1,
-              changeDirection: "both",
-              maxChangePerTurn: null,
+              rules: [],
             },
           ],
           endings: [],
@@ -316,27 +314,28 @@ describe("serverToForm", () => {
     ];
   }
 
-  it("reads a stat's change direction and max change per turn", () => {
+  it("reads a stat's rules in order", () => {
     const response = baseDraftResponse();
     const stat = requireFirst(requireFirst(response.startingSetups).statDefs);
-    stat.perTurnDelta = null;
-    stat.changeDirection = "decrease";
-    stat.maxChangePerTurn = 7;
+    stat.rules = [
+      { id: "rule-b", condition: "사용자가 약속에 늦었다", delta: -3 },
+      { id: "rule-a", condition: "사용자가 짐을 나눠 들었다", delta: 3 },
+    ];
 
     const formStat = requireFirst(requireFirst(serverToForm(response).startingSetups).stats);
 
-    expect(formStat).toMatchObject({ perTurnDelta: null, changeDirection: "decrease", maxChangePerTurn: 7 });
+    expect(formStat.rules).toEqual([
+      { id: "rule-b", condition: "사용자가 약속에 늦었다", delta: -3 },
+      { id: "rule-a", condition: "사용자가 짐을 나눠 들었다", delta: 3 },
+    ]);
   });
 
-  it("fills stat change options the response omits with a new stat's defaults (both directions, no limit)", () => {
+  it("reads a response without rules as an empty rule list", () => {
     const response = baseDraftResponse();
     const stat = requireFirst(requireFirst(response.startingSetups).statDefs);
-    delete stat.changeDirection;
-    delete stat.maxChangePerTurn;
+    delete stat.rules;
 
-    const formStat = requireFirst(requireFirst(serverToForm(response).startingSetups).stats);
-
-    expect(formStat).toMatchObject({ changeDirection: "both", maxChangePerTurn: null });
+    expect(requireFirst(requireFirst(serverToForm(response).startingSetups).stats).rules).toEqual([]);
   });
 
   it("maps situation notes with their condition rule trees, and an omitted list to an empty one", () => {
@@ -380,13 +379,12 @@ describe("serverToForm", () => {
     expect(requireFirst(serverToForm(response).startingSetups).situationNotes).toEqual([]);
   });
 
-  it("round-trips stat change options and situation notes back to the same payload", () => {
+  it("round-trips stat rules and situation notes back to the same payload", () => {
     const response = baseDraftResponse();
     const setup = requireFirst(response.startingSetups);
     const stat = requireFirst(setup.statDefs);
     stat.perTurnDelta = null;
-    stat.changeDirection = "increase";
-    stat.maxChangePerTurn = 2;
+    stat.rules = [{ id: "rule-1", condition: "사용자가 약속을 지켰다", delta: 2 }];
     setup.situationNotes = [
       {
         id: "situation-1",

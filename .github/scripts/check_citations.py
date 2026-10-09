@@ -67,7 +67,7 @@ RULE_CODE_PATHS = re.compile(
 # 줄은 보지 않는다. 바꾸려면 판정 품질을 따로 비교하면서 바꾼다.
 SCHEMA_DOCSTRING_CLASSES: dict[str, set[str]] = {
     "apps/api/src/api/chat/prompt_builder.py": {
-        "StatJudgmentResult",
+        "StatRuleJudgmentResult",
         "EndingJudgmentResult",
         "ImageMatchJudgmentResult",
     },

@@ -1,8 +1,9 @@
 """고른 모델에 따라 생성 호출을 Gemini 와 Bedrock 구현으로 나눠 보내는 클라이언트. `get_llm_client` 가 이것을 돌려준다.
 
 호출부는 지금처럼 `LLMCallContext` 만 넘긴다 — 그 안의 `model` 이 상위 모델이고 호출이 모델을 고를 수 있는 종류(채팅 턴 생성·
-소설 장 생성)일 때만 Bedrock 으로 간다. 판정·요약·심사·문단 수정 같은 구조화 호출은 언제나 Gemini 다(Bedrock 의 Claude 는
-네이티브 구조화 출력을 받지 않는다). 레지스트리 밖 id 나 허용되지 않은 모델은 여기 닿기 전에 API 가 거부한다.
+소설 장 생성·지난 턴 다시 생성)일 때만 Bedrock 으로 간다. 판정·요약·심사·문단 수정 같은 구조화 호출은 언제나 Gemini 다
+(Bedrock 의 Claude 는 네이티브 구조화 출력을 받지 않는다). 레지스트리 밖 id 나 허용되지 않은 모델은 여기 닿기 전에 API 가
+거부한다.
 """
 
 import logging
@@ -18,8 +19,11 @@ T = TypeVar("T", bound=BaseModel)
 
 logger = logging.getLogger(__name__)
 
-# 사용자가 고른 모델을 따르는 호출. 재생성·수정은 같은 call_site 로 온다.
-MODEL_SELECTABLE_CALL_SITES: frozenset[LLMCallSite] = frozenset({"chat_generate", "novelize_chapter"})
+# 사용자가 고른 모델을 따르는 호출. 재생성·수정은 같은 call_site 로 온다. 지난 턴을 다시 생성하는 측정 호출도 그 턴의
+# 모델(Claude 포함)로 다시 써야 비교가 맞아 함께 둔다.
+MODEL_SELECTABLE_CALL_SITES: frozenset[LLMCallSite] = frozenset(
+    {"chat_generate", "novelize_chapter", "replay_generate"}
+)
 
 
 def _build_bedrock_client() -> LLMClient:

@@ -3,7 +3,6 @@ import {
   MAX_KEYWORD_NOTE_STICKY_TURNS,
   type KeywordNoteValues,
   type PromptTemplate,
-  type StatChangeDirection,
   type Target,
   type Visibility,
 } from "./schema";
@@ -47,13 +46,6 @@ export const VISIBILITY_LABELS: Record<Visibility, string> = {
 export const KEYWORD_NOTE_SCOPE_LABELS: Record<KeywordNoteValues["scope"]["kind"], string> = {
   global: "스토리 전체",
   startingSetup: "특정 시작설정",
-};
-
-/** 변화 방향 셀렉트 항목과 접힌 스탯 요약이 함께 쓰는 작가 말. "양방향/증가만/감소만"은 개발 용어라 쓰지 않는다. */
-export const STAT_CHANGE_DIRECTION_LABELS: Record<StatChangeDirection, string> = {
-  both: "오르내림",
-  increase: "오르기만",
-  decrease: "내리기만",
 };
 
 /** 스탯 기반 규칙 목록에서 이웃한 두 항목을 잇는 접속사. 빌더의 관계 토글과 작성 가이드의 규칙 그림이 같은 말을 쓴다. */

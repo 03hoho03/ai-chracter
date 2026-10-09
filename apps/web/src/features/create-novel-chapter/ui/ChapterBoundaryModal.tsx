@@ -26,6 +26,7 @@ import {
   hasChapterModelChoice,
   toEpisodeRangeLabel,
   toNovelActionError,
+  useNovelChainEstimateQuery,
   type ChapterModelOption,
   type NovelChapterModelId,
 } from "@/entities/novel";
@@ -33,7 +34,13 @@ import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { useChapterProposalMutation, type NovelChapterProposal } from "../api/useChapterProposalMutation";
 import { useIsChapterBoundaryDialogLayout } from "../lib/useIsChapterBoundaryDialogLayout";
-import { toChapterEndAfterModelChange, toInitialChapterEnd } from "../model/chapterBoundarySelection";
+import {
+  CHAIN_CHOICE_VALUE,
+  toChainChoice,
+  toFreshChainEstimates,
+  toSelectionAfterModelChange,
+} from "../model/chainChoice";
+import { toInitialChapterEnd } from "../model/chapterBoundarySelection";
 
 type ChapterBoundaryModalProps = {
   novelId: string;
@@ -46,9 +53,12 @@ type ChapterBoundaryModalProps = {
   firstEpisodeOrdinal: number;
 };
 
-/** 확정한 끝 턴, 그 화들을 쓸 모델, 이용자가 본 금액. 모델 선택이 보이지 않는 계정도 요청에는 늘 모델을 싣는다(기본
- * 모델). 금액을 함께 돌려주는 이유는 요청의 `expectedCost` 가 화면에 보인 숫자와 같은 값이어야 해서다. */
-export type ChapterBoundaryChoice = { endMessageId: string; model: NovelChapterModelId; cost: number };
+/** 확정한 것 — 끝 턴 하나(`batch`) 또는 남은 대화 전부(`chain`), 그 화들을 쓸 모델, 이용자가 본 금액. 모델 선택이
+ * 보이지 않는 계정도 요청에는 늘 모델을 싣는다(기본 모델). 금액을 함께 돌려주는 이유는 요청의 `expectedCost` 가 화면에
+ * 보인 숫자와 같은 값이어야 해서다. 남은 대화 전부는 견적의 묶음 수를 상한으로 함께 돌려준다. */
+export type ChapterBoundaryChoice =
+  | { kind: "batch"; endMessageId: string; model: NovelChapterModelId; cost: number }
+  | { kind: "chain"; model: NovelChapterModelId; cost: number; maxBatches: number };
 
 const LIST_LABEL = "고를 수 있는 턴";
 
@@ -64,6 +74,11 @@ const LIST_LABEL = "고를 수 있는 턴";
  * 고른 후보에 서버가 붙인 값 그대로다(화면에서 화 수와 단가를 곱하지 않는다). 소설 상위 모델 허용이 없으면 모델이
  * 하나뿐이라 선택이 그려지지 않는다.
  *
+ * "남은 대화 전부"(연쇄)는 같은 목록 맨 위 칸이다 — 어디까지 소설로 만들지라는 같은 질문의 답이고, 모델 → 금액
+ * 순서도 같다. 견적은 모델마다 한 번에 받아 두고 고른 모델의 행을 보인다. 남은 대화가 그 모델의 한 묶음 안에 다
+ * 들어가면 보이지 않는다(마지막 턴 후보와 같은 일이다). 금액은 견적 그대로이고, 다 만들지 못하면 쓰지 않은 몫을
+ * 돌려준다는 것을 칸 안에 말한다.
+ *
  * 좁은 화면은 아래 시트, 넓은 화면은 가운데 다이얼로그다 — 둘 중 하나만 마운트한다(포털·포커스 가둠 때문에 공존할
  * 수 없다). 고른 값은 이 컴포넌트가 쥐므로 열린 채 화면 폭이 바뀌어도 남는다. */
 export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, ChapterBoundaryChoice | null>(
@@ -71,6 +86,8 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, Ch
     const isDialogLayout = useIsChapterBoundaryDialogLayout();
     const { data: clover } = useCloverBalanceQuery();
     const proposalMutation = useChapterProposalMutation();
+    // 열 때마다 새로 받는다 — 대화가 이어지면 남은 대화의 견적이 바뀐다.
+    const chainEstimateQuery = useNovelChainEstimateQuery(novelId, true);
     const [proposal, setProposal] = useState(initialProposal);
     const [selectedId, setSelectedId] = useState(() => toInitialChapterEnd(initialProposal));
     const [modelId, setModelId] = useState(initialModelId);
@@ -87,6 +104,9 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, Ch
     const errorId = useId();
     const statusId = useId();
 
+    const chainEstimates = toFreshChainEstimates(chainEstimateQuery);
+    const chainChoice = toChainChoice(chainEstimates, modelId);
+    const isChainSelected = selectedId === CHAIN_CHOICE_VALUE && chainChoice !== undefined;
     const selected = proposal.candidates.find((candidate) => candidate.messageId === selectedId);
     const toRange = (episodeCount: number) =>
       toEpisodeRangeLabel(firstEpisodeOrdinal, firstEpisodeOrdinal + episodeCount - 1);
@@ -111,7 +131,9 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, Ch
         const fresh = await proposalMutation.mutateAsync({ novelId, model: next });
         if (requestNo !== latestRequestRef.current) return;
         setProposal(fresh);
-        setSelectedId((current) => toChapterEndAfterModelChange(current, fresh));
+        setSelectedId((current) =>
+          toSelectionAfterModelChange(current, fresh, toChainChoice(chainEstimates, next) !== undefined),
+        );
         setIsSelectionMissing(false);
       } catch (error) {
         if (requestNo !== latestRequestRef.current) return;
@@ -135,11 +157,15 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, Ch
 
     function handleConfirm() {
       if (isReloading) return;
+      if (isChainSelected) {
+        call.end({ kind: "chain", model: modelId, cost: chainChoice.cost, maxBatches: chainChoice.batchCount });
+        return;
+      }
       if (selected === undefined) {
         setIsSelectionMissing(true);
         return;
       }
-      call.end({ endMessageId: selected.messageId, model: modelId, cost: selected.cost });
+      call.end({ kind: "batch", endMessageId: selected.messageId, model: modelId, cost: selected.cost });
     }
 
     // 열리면 골라 둔 턴(없으면 첫 턴)으로 포커스를 보낸다 — 기본 동작은 닫기 X 로 가고, 제안 턴이 목록 아래쪽이면
@@ -166,6 +192,24 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, Ch
           aria-describedby={isSelectionMissing ? errorId : undefined}
           className="w-full"
         >
+          {chainChoice !== undefined && (
+            <ToggleGroupItem
+              value={CHAIN_CHOICE_VALUE}
+              className="h-auto w-full flex-col items-start justify-start gap-1 px-3 py-2.5 text-left whitespace-normal hover:bg-secondary"
+            >
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <span className="font-semibold">남은 대화 전부</span>
+                <span className="text-xs font-normal text-muted-foreground tabular-nums">
+                  묶음 {chainChoice.batchCount}개 · 최대 {chainChoice.maxEpisodeCount}화 · 최대 클로버{" "}
+                  {chainChoice.cost.toLocaleString()}개
+                </span>
+              </span>
+              <span className="text-sm font-normal break-keep text-muted-foreground">
+                묶음마다 끝을 AI가 정해요. 묶음 {chainChoice.batchCount}개까지 이어 만들고, 쓰지 않은 클로버는 끝나면
+                돌려줘요.
+              </span>
+            </ToggleGroupItem>
+          )}
           {proposal.candidates.map((candidate) => {
             const isSuggested = candidate.messageId === proposal.suggestion?.endMessageId;
             return (
@@ -228,13 +272,17 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, Ch
         </p>
       </div>
     ) : null;
+    // 금액 줄과 실행 버튼은 고른 칸을 따른다 — 남은 대화 전부면 견적 금액, 턴이면 그 후보의 금액이다.
+    const spendCost = isChainSelected ? chainChoice.cost : selected?.cost;
     const summary =
-      selected === undefined ? (
+      spendCost === undefined ? (
         <p className="text-sm break-keep text-muted-foreground">끝낼 턴을 고르면 몇 화가 되는지와 금액이 보여요.</p>
       ) : (
-        <CloverSpendSummary cost={selected.cost} balance={clover?.balance} />
+        <CloverSpendSummary cost={spendCost} balance={clover?.balance} />
       );
-    const confirmLabel = selected === undefined ? "만들기" : `${toRange(selected.episodeCount)} 만들기`;
+    let confirmLabel = "만들기";
+    if (isChainSelected) confirmLabel = "남은 대화 전부 만들기";
+    else if (selected !== undefined) confirmLabel = `${toRange(selected.episodeCount)} 만들기`;
     const confirmButtonProps = {
       "aria-disabled": isReloading,
       "aria-describedby": isReloading ? statusId : undefined,

@@ -56,9 +56,11 @@ describe("STORY_MISSING_FIELD_FORM_PATH", () => {
     expectUnderTabPrefix(STORY_MISSING_FIELD_FORM_PATH["stats.range"] ?? "", "stat");
   });
 
-  it("스탯 변화 방향·최대 폭의 두 키는 라벨이 있고 스탯 탭으로 간다", () => {
-    for (const key of ["stats.changeLimitWithCounter", "stats.maxChangePerTurn"] as const) {
-      expect(STORY_MISSING_FIELD_LABELS[key]).toMatch(/최대 폭/);
+  it("스탯 규칙의 세 키는 라벨이 있고 스탯 탭으로 간다", () => {
+    expect(STORY_MISSING_FIELD_LABELS["stats.rules"]).toMatch(/규칙이 없는 스탯/);
+    expect(STORY_MISSING_FIELD_LABELS["stats.ruleDelta"]).toMatch(/규칙.*범위 폭/);
+    expect(STORY_MISSING_FIELD_LABELS["stats.rulesWithCounter"]).toMatch(/규칙.*턴당 자동 변화/);
+    for (const key of ["stats.rules", "stats.ruleDelta", "stats.rulesWithCounter"] as const) {
       expectUnderTabPrefix(STORY_MISSING_FIELD_FORM_PATH[key] ?? "", "stat");
     }
   });

@@ -11,6 +11,7 @@ import {
   normalizeKeyword,
   ruleListItemSchema,
   shortcutSchema,
+  STAT_RULES_REQUIRED_MESSAGE,
   startingSetupSchema,
   statDefSchema,
   storyBuilderSchema,
@@ -148,8 +149,8 @@ function validStatDef() {
     unit: "pt",
     description: "생존에 필요한 신체 상태",
     perTurnDelta: null,
-    changeDirection: "both",
-    maxChangePerTurn: null,
+    // 턴당 자동 변화가 없는 스탯은 규칙이 하나 이상 있어야 발행 검증을 통과한다.
+    rules: [{ id: "stat-1-rule-1", condition: "사용자가 물을 나눠 마셨다", delta: 3 }],
   };
 }
 
@@ -239,37 +240,57 @@ describe("statDefSchema", () => {
   });
 });
 
-describe("statDefSchema 변화 방향·한 턴 최대 폭", () => {
+describe("statDefSchema 규칙", () => {
   function issuesOf(overrides: Record<string, unknown>) {
     const result = statDefSchema.safeParse({ ...validStatDef(), ...overrides });
     return (result.error?.issues ?? []).map((issue) => ({ path: issue.path.join("."), message: issue.message }));
   }
 
-  it("방향 셋과 빈 폭(제한 없음)·양의 정수 폭을 받는다", () => {
-    for (const changeDirection of ["both", "increase", "decrease"]) {
-      expect(issuesOf({ changeDirection })).toEqual([]);
+  const rule = { id: "rule-1", condition: "사용자가 약속을 지켰다", delta: 3 };
+
+  it("0이 아닌 정수 폭의 규칙을 받는다", () => {
+    expect(issuesOf({ rules: [rule, { ...rule, id: "rule-2", delta: -100 }] })).toEqual([]);
+  });
+
+  it("턴당 자동 변화가 없는 스탯에 규칙이 없으면 규칙 목록 자리에 붙인다(서버 발행 검사와 같은 조건)", () => {
+    expect(issuesOf({ rules: [] })).toEqual([{ path: "rules", message: STAT_RULES_REQUIRED_MESSAGE }]);
+    // 턴당 자동 변화가 있는 스탯은 판정을 받지 않아 빈 목록이 정상이다.
+    expect(issuesOf({ perTurnDelta: -1, rules: [] })).toEqual([]);
+  });
+
+  it("조건이 공백뿐이거나 공백을 뗀 뒤 100자를 넘으면 조건 칸에 붙인다(앞뒤 공백은 세지 않는다)", () => {
+    expect(issuesOf({ rules: [{ ...rule, condition: "   " }] })).toEqual([
+      { path: "rules.0.condition", message: "조건을 입력해주세요" },
+    ]);
+    expect(issuesOf({ rules: [{ ...rule, condition: "가".repeat(101) }] })).toEqual([
+      { path: "rules.0.condition", message: "조건은 100자 이하로 입력해주세요" },
+    ]);
+    expect(issuesOf({ rules: [{ ...rule, condition: `  ${"가".repeat(100)}  ` }] })).toEqual([]);
+  });
+
+  it("폭이 0·소수·빈 칸(NaN)이면 폭 칸에 같은 문구를 붙인다", () => {
+    const message = "0이 아닌 정수로 입력해주세요(예: +3, -5)";
+    for (const delta of [0, 1.5, Number.NaN]) {
+      expect(issuesOf({ rules: [{ ...rule, delta }] })).toEqual([{ path: "rules.0.delta", message }]);
     }
-    expect(issuesOf({ maxChangePerTurn: 1 })).toEqual([]);
-    expect(issuesOf({ changeDirection: "decrease", maxChangePerTurn: 7 })).toEqual([]);
   });
 
-  it("세 방향 밖의 값은 받지 않는다", () => {
-    expect(issuesOf({ changeDirection: "sideways" }).map((issue) => issue.path)).toEqual(["changeDirection"]);
+  it("스탯마다 10개까지, 같은 id 는 두 번 받지 않는다", () => {
+    const eleven = Array.from({ length: 11 }, (_, index) => ({ ...rule, id: `rule-${index}` }));
+    expect(issuesOf({ rules: eleven }).map((issue) => issue.path)).toContain("rules");
+    expect(issuesOf({ rules: eleven.slice(0, 10) })).toEqual([]);
+    expect(issuesOf({ rules: [rule, rule] }).map((issue) => issue.path)).toEqual(["rules.1.id"]);
   });
 
-  it("폭이 0·음수·소수이거나 읽지 못한 칸(NaN)이면 폭 칸에 같은 한국어 문구를 붙인다", () => {
-    const message = "1 이상의 정수로 입력해주세요";
-    for (const maxChangePerTurn of [0, -3, 1.5, Number.NaN]) {
-      expect(issuesOf({ maxChangePerTurn })).toEqual([{ path: "maxChangePerTurn", message }]);
-    }
+  it("폭이 스탯 범위 폭(최대 − 최소)을 넘으면 그 규칙의 폭 칸에 붙인다", () => {
+    const issues = issuesOf({ min: 0, max: 46, initial: 46, rules: [{ ...rule, delta: -46 }, { ...rule, id: "rule-2", delta: -47 }] });
+    expect(issues).toEqual([{ path: "rules.1.delta", message: expect.stringContaining("범위 폭(46)") }]);
   });
 
-  it("턴당 자동 변화와 방향·폭을 함께 건 스탯은 턴당 칸에 함께 쓸 수 없다는 문구를 붙인다", () => {
-    const message = "턴당 자동 변화와 변화 방향·최대 폭은 함께 쓸 수 없어요. 한쪽을 비워 주세요.";
-    expect(issuesOf({ perTurnDelta: -1, changeDirection: "decrease" })).toEqual([{ path: "perTurnDelta", message }]);
-    expect(issuesOf({ perTurnDelta: -1, maxChangePerTurn: 3 })).toEqual([{ path: "perTurnDelta", message }]);
-    // 기본값(오르내림·제한 없음)은 제한을 건 것이 아니다 — 기존 카운터 스탯이 그대로 통과해야 한다.
-    expect(issuesOf({ perTurnDelta: -1 })).toEqual([]);
+  it("턴당 자동 변화와 규칙을 함께 건 스탯은 턴당 칸에 함께 쓸 수 없다는 문구를 붙인다", () => {
+    const message = "턴당 자동 변화와 규칙은 함께 쓸 수 없어요. 한쪽을 비워 주세요.";
+    expect(issuesOf({ perTurnDelta: -1, rules: [rule] })).toEqual([{ path: "perTurnDelta", message }]);
+    expect(issuesOf({ perTurnDelta: -1, rules: [] })).toEqual([]);
   });
 });
 

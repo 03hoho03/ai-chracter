@@ -16,8 +16,7 @@ const KEPT: StatDefValues = {
   initial: 0,
   description: "d",
   perTurnDelta: null,
-  changeDirection: "both",
-  maxChangePerTurn: null,
+  rules: [],
 };
 
 function rule(id: string, statId: string): SingleRuleValues {

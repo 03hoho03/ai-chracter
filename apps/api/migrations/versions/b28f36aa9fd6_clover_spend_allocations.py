@@ -1,7 +1,7 @@
 """clover spend allocations
 
 Revision ID: b28f36aa9fd6
-Revises: a7a87e3ba631
+Revises: d9768bc0cfee
 Create Date: 2026-10-08 12:00:00.000000
 
 차감 한 번이 어느 로트에서 얼마를 깎았는지 남기는 `clover_spend_allocations` 를 만들고, 소설화 작업 행에 선차감의 원장
@@ -33,7 +33,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'b28f36aa9fd6'
-down_revision: str | Sequence[str] | None = 'a7a87e3ba631'
+down_revision: str | Sequence[str] | None = 'd9768bc0cfee'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -41,8 +41,7 @@ from api.chat.prompt_builder import (
     EndingJudgmentResult,
     ImageMatchJudgmentResult,
     MemorySummaryResult,
-    StatChangeJudgment,
-    StatJudgmentResult,
+    StatRuleJudgmentResult,
 )
 from api.core import clover, rate_limit_gate
 from api.core.rate_limit_gate import ChatCharge
@@ -63,6 +62,7 @@ from api.db.models import (
     SituationalImage,
     StartingSetup,
     StatDef,
+    StatRule,
     User,
 )
 from api.db.models.chat import DiscardedResponse, StoryEndingUnlock, StoryMediaExposure
@@ -199,8 +199,8 @@ async def _add_situational_image(db_session: AsyncSession, room_id: uuid.UUID, u
     return image.entity_id
 
 
-async def _story_extras(db_session: AsyncSession, room_id: uuid.UUID, user_id: uuid.UUID) -> tuple[str, str]:
-    """스토리 방에 칸 하나와 엔딩 둘(게이트 1, 규칙 없음)을 더한다. (스탯 id, 칸 id)."""
+async def _story_extras(db_session: AsyncSession, room_id: uuid.UUID, user_id: uuid.UUID) -> str:
+    """스토리 방에 칸 하나와 엔딩 둘(게이트 1, 규칙 없음), 스탯 규칙 하나를 더한다. 칸 id 를 돌려준다."""
     version_id, setup_entity_id = (
         await db_session.execute(
             sa.select(ChatRoom.content_version_id, ChatRoom.starting_setup_entity_id).where(ChatRoom.id == room_id)
@@ -212,7 +212,10 @@ async def _story_extras(db_session: AsyncSession, room_id: uuid.UUID, user_id: u
         )
     )
     assert setup is not None
-    stat_id = await db_session.scalar(sa.select(StatDef.entity_id).where(StatDef.starting_setup_id == setup.id))
+    stat_def = await db_session.scalar(sa.select(StatDef).where(StatDef.starting_setup_id == setup.id))
+    assert stat_def is not None
+    # 기대값(73 → 80)을 만드는 둘째 규칙 a2(+7). 방 팩토리의 규칙 a1(+5)은 발동시키지 않는다.
+    db_session.add(StatRule(entity_id=uuid.uuid4(), stat_def_id=stat_def.id, condition="떠나자고 한다", delta=7, order=1))
     cell, _ = await _add_named_media_cell(
         db_session, version_id, user_id, "민아", "교실", situation_description="창가에서 웃는다"
     )
@@ -229,17 +232,15 @@ async def _story_extras(db_session: AsyncSession, room_id: uuid.UUID, user_id: u
             )
         )
     await db_session.commit()
-    return str(stat_id), str(cell.entity_id)
+    return str(cell.entity_id)
 
 
-def _story_judgments(stat_id: str, cell_id: str, *, with_stats: bool) -> dict[str, list[Any]]:
+def _story_judgments(cell_id: str, *, with_stats: bool) -> dict[str, list[Any]]:
     structured: dict[str, list[Any]] = {
         "chat_media_book_image": [ImageMatchJudgmentResult(matched_image_entity_id=cell_id)]
     }
     if with_stats:
-        structured["chat_stat_judgment"] = [
-            StatJudgmentResult(stat_changes=[StatChangeJudgment(stat_id=stat_id, new_value=80)])
-        ]
+        structured["chat_stat_judgment"] = [StatRuleJudgmentResult(fired_rule_ids=["a2"])]
         structured["chat_ending_judgment"] = [
             EndingJudgmentResult(triggered=False),
             EndingJudgmentResult(triggered=True),
@@ -262,24 +263,24 @@ async def _send_character(db_client: httpx.AsyncClient, db_session: AsyncSession
 
 async def _send_story(db_client: httpx.AsyncClient, db_session: AsyncSession) -> _Turn:
     room = await _open_room(db_client, db_session, turns=0, lane="story")
-    stat_id, cell_id = await _story_extras(db_session, room.room_id, room.user_id)
+    cell_id = await _story_extras(db_session, room.room_id, room.user_id)
     return _Turn(
         "POST",
         f"/chat-rooms/{room.room_id}/messages",
         {"content": "마을을 떠나자"},
-        _story_judgments(stat_id, cell_id, with_stats=True),
+        _story_judgments(cell_id, with_stats=True),
         lambda: _room_state(db_session, room.room_id),
     )
 
 
 async def _edit_story(db_client: httpx.AsyncClient, db_session: AsyncSession) -> _Turn:
     room = await _open_room(db_client, db_session, turns=1, lane="story")
-    stat_id, cell_id = await _story_extras(db_session, room.room_id, room.user_id)
+    cell_id = await _story_extras(db_session, room.room_id, room.user_id)
     return _Turn(
         "PATCH",
         f"/chat-rooms/{room.room_id}/messages/{room.turns[1][0].id}",
         {"content": "고쳐 말하면, 마을을 떠나자"},
-        _story_judgments(stat_id, cell_id, with_stats=True),
+        _story_judgments(cell_id, with_stats=True),
         lambda: _room_state(db_session, room.room_id),
     )
 
@@ -298,12 +299,12 @@ async def _regenerate_character(db_client: httpx.AsyncClient, db_session: AsyncS
 
 async def _regenerate_story(db_client: httpx.AsyncClient, db_session: AsyncSession) -> _Turn:
     room = await _open_room(db_client, db_session, turns=1, lane="story")
-    stat_id, cell_id = await _story_extras(db_session, room.room_id, room.user_id)
+    cell_id = await _story_extras(db_session, room.room_id, room.user_id)
     return _Turn(
         "POST",
         f"/chat-rooms/{room.room_id}/regenerate",
         None,
-        _story_judgments(stat_id, cell_id, with_stats=False),
+        _story_judgments(cell_id, with_stats=False),
         lambda: _room_state(db_session, room.room_id),
     )
 
@@ -341,6 +342,8 @@ async def _preview_story(db_client: httpx.AsyncClient, db_session: AsyncSession)
                         "initialValue": 50,
                         "unit": None,
                         "description": "체력 스탯",
+                        # 기대값(50 → 90)을 만드는 규칙 a1(+40).
+                        "rules": [{"id": str(uuid.uuid4()), "condition": "행복해진다", "delta": 40}],
                     }
                 ],
                 "endings": [
@@ -386,9 +389,7 @@ async def _preview_story(db_client: httpx.AsyncClient, db_session: AsyncSession)
         f"/preview-sessions/{session_id}/messages",
         {"content": "행복해지자"},
         {
-            "preview_stat_judgment": [
-                StatJudgmentResult(stat_changes=[StatChangeJudgment(stat_id=stat_id, new_value=90)])
-            ],
+            "preview_stat_judgment": [StatRuleJudgmentResult(fired_rule_ids=["a1"])],
             "preview_ending_judgment": [EndingJudgmentResult(triggered=True)],
         },
         _read_state,
@@ -669,10 +670,7 @@ async def test_room_deleted_during_generation_ends_with_an_error_and_no_refund(
 
 
 class _AnswerAllLLMClient(LLMClient):
-    """생성은 고정 응답, 판정은 스탯만 바꾸고 엔딩·그림은 없다고 답한다."""
-
-    def __init__(self, stat_id: str | None = None) -> None:
-        self._stat_id = stat_id
+    """생성은 고정 응답, 판정은 스탯만 바꾸고(방 팩토리 스탯의 규칙 a1) 엔딩·그림은 없다고 답한다."""
 
     async def generate(
         self,
@@ -687,9 +685,8 @@ class _AnswerAllLLMClient(LLMClient):
     async def generate_structured(
         self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
     ) -> Any:
-        if response_schema is StatJudgmentResult:
-            assert self._stat_id is not None
-            return StatJudgmentResult(stat_changes=[StatChangeJudgment(stat_id=self._stat_id, new_value=10)])
+        if response_schema is StatRuleJudgmentResult:
+            return StatRuleJudgmentResult(fired_rule_ids=["a1"])
         if response_schema is EndingJudgmentResult:
             return EndingJudgmentResult(triggered=False)
         if response_schema is ImageMatchJudgmentResult:
@@ -729,9 +726,6 @@ async def test_send_write_failure_after_the_stat_write_saves_nothing_of_the_turn
     )
     room = await _open_room(db_client, db_session, turns=1, lane="story", user=user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
-    stat_id = await db_session.scalar(
-        sa.select(ChatRoomStat.stat_entity_id).where(ChatRoomStat.chat_room_id == room.room_id)
-    )
     before = await _room_state(db_session, room.room_id)
 
     write_room_stat = chat_router._write_room_stat
@@ -744,7 +738,7 @@ async def test_send_write_failure_after_the_stat_write_saves_nothing_of_the_turn
         db.add(ChatRoomStat(chat_room_id=uuid.uuid4(), stat_entity_id=uuid.uuid4(), current_value=Decimal(0)))
 
     monkeypatch.setattr(chat_router, "_write_room_stat", _write_then_break)
-    _override_llm_client(_AnswerAllLLMClient(str(stat_id)))
+    _override_llm_client(_AnswerAllLLMClient())
     try:
         exc = await _request_failure(db_client, f"/chat-rooms/{room.room_id}/messages", {"content": "마을을 떠나자"})
     finally:

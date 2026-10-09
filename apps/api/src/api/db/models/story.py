@@ -9,6 +9,7 @@ from sqlalchemy import (
     CheckConstraint,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     Text,
@@ -129,12 +130,37 @@ class StatDef(Base):
     # 건너뛰거나 거꾸로 올리는 일이 실제로 있었고(2026-08-07 실측), 그 카운터에 걸린 엔딩은
     # 도달 가능성이 통째로 흔들린다 — 그래서 카운터는 판단 대상이 아니라 시스템이 굴린다.
     per_turn_delta: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # 판정 LLM 이 낸 값을 코드가 자르는 두 옵션(`api.chat.stats.apply_stat_changes`). `per_turn_delta` 가 있는 스탯은
-    # 판정을 받지 않으므로 두 옵션도 쓰지 않는다(발행이 막는다). 세션 없이 생성자로만 만든 행은 둘 다 `None` 이고,
-    # 읽는 쪽은 그것을 "양방향·제한 없음"으로 본다. `server_default` 는 이 컬럼을 모르는 이전 API 이미지로 되돌렸을 때
-    # 그 코드의 스탯 INSERT 가 NOT NULL 위반이 되지 않게 하려는 것이다.
+    # 옛 절대값 판정이 낸 값을 자르던 두 옵션(변화 방향·한 턴 최대 폭). 판정이 작가 규칙 고르기로 바뀌어 더 이상 읽지 않고,
+    # API 로도 주고받지 않는다 — 버전 간 복제(`_clone_story_children`)만 값을 그대로 옮긴다. 컬럼을 남기는 것은 롤백 호환 때문이다:
+    # 이 컬럼을 SELECT·INSERT 하는 이전 API 이미지로 되돌려도 깨지지 않게 한다. `server_default` 는 이 컬럼을 모르는 코드(지금
+    # 코드의 새 스탯 INSERT 포함)가 NOT NULL 위반을 내지 않게 하려는 것이다.
     change_direction: Mapped[StatChangeDirection] = mapped_column(Text, server_default="both", nullable=False)
     max_change_per_turn: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    order: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class StatRule(Base):
+    """스탯 하나의 「조건 → ±n」 규칙. entity_id 패턴, 순서 있는 목록. 판정 LLM 은 조건이 발동한 규칙만 고르고, 폭(`delta`)은
+    코드가 더한다.
+
+    스탯을 가리키는 FK 에 `ON DELETE CASCADE` 를 건다 — 이 저장소의 "cascade 없음" 관례의 예외다. 배포 중 겹쳐 도는 옛 API
+    이미지와 되돌린 옛 이미지는 이 테이블을 모른 채 스탯·시작설정·초안을 지우므로(저장에서 스탯 제거, 시작설정 제거, 초안
+    삭제, 편집 취소), cascade 가 없으면 그 DELETE 가 FK 위반 500 이 된다. 새 코드는 형제 테이블처럼 규칙을 먼저 지운 뒤
+    스탯을 지운다.
+
+    개수·글자 수 상한은 DB 제약이 아니라 저장 요청 검증(`StoryDraftPayload`)이, 폭이 스탯 범위 폭을 넘는지는 발행
+    검증이 건다."""
+
+    __tablename__ = "stat_rules"
+    __table_args__ = (Index("ix_stat_rules_stat_def_id", "stat_def_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    entity_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    stat_def_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("stat_defs.id", ondelete="CASCADE"), nullable=False
+    )
+    condition: Mapped[str] = mapped_column(Text, nullable=False)
+    delta: Mapped[int] = mapped_column(Integer, nullable=False)
     order: Mapped[int] = mapped_column(Integer, nullable=False)
 
 

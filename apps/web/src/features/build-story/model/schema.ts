@@ -78,22 +78,66 @@ export const storySettingSchema = z
     }
   });
 
-/** 판정 AI 가 정한 값을 코드가 자르는 방향. 순서가 스탯 탭 셀렉트의 항목 순서다(첫 값이 기본값). */
-export const STAT_CHANGE_DIRECTIONS = ["both", "increase", "decrease"] as const;
-export type StatChangeDirection = (typeof STAT_CHANGE_DIRECTIONS)[number];
-
-const MAX_CHANGE_PER_TURN_MESSAGE = "1 이상의 정수로 입력해주세요";
+/** 스탯 규칙 상한의 단일 소스(서버 상한과 같은 값). 스키마의 검사·메시지와 스탯 탭의 입력 가드가 전부 여기를 읽는다. 자동저장은
+ * 이 스키마를 거치지 않으므로 개수 상한은 입력 단계에서 막는다 — 넘는 목록이 폼에 들어가면 서버가 그 초안의 저장을 통째로
+ * 거절한다. 조건 길이는 서버처럼 앞뒤 공백을 뗀 뒤 코드 포인트로 센다. */
+export const MAX_STAT_RULES = 10;
+export const MAX_STAT_RULE_CONDITION_LENGTH = 100;
+export const STAT_RULE_LIMIT_MESSAGE = `규칙은 스탯마다 ${MAX_STAT_RULES}개까지예요. 더 넣으려면 쓰지 않는 규칙을 지워 주세요.`;
+export const STAT_RULE_DELTA_MESSAGE = "0이 아닌 정수로 입력해주세요(예: +3, -5)";
 
 /**
- * 턴당 자동 변화가 있는 스탯은 판정 AI 가 값을 정하지 않아 방향·최대 폭을 쓸 곳이 없다 — 서버는 둘을 함께 건 스탯의 발행을
- * 거절한다. 스탯 탭은 한쪽을 채우면 다른 쪽을 잠그므로 이 상태는 다른 기기·옛 데이터에서만 들어온다.
+ * 턴당 자동 변화가 있는 스탯은 판정 AI 가 보지 않아 규칙이 발동할 일이 없다 — 서버는 둘을 함께 건 스탯의 발행을 거절한다. 스탯
+ * 탭은 한쪽을 채우면 다른 쪽을 잠그므로 이 상태는 다른 기기·옛 데이터에서만 들어온다.
  */
-export const STAT_CHANGE_CONFLICT_MESSAGE = "턴당 자동 변화와 변화 방향·최대 폭은 함께 쓸 수 없어요. 한쪽을 비워 주세요.";
+export const STAT_RULES_WITH_COUNTER_MESSAGE = "턴당 자동 변화와 규칙은 함께 쓸 수 없어요. 한쪽을 비워 주세요.";
 
-/** 방향이 "오르내림"이 아니거나 최대 폭 칸이 비어 있지 않으면 변화 제한을 건 스탯이다(값이 잘못 들어간 칸도 비어 있지 않다). */
-export function hasStatChangeLimit(stat: Pick<StatDefValues, "changeDirection" | "maxChangePerTurn">): boolean {
-  return stat.changeDirection !== "both" || stat.maxChangePerTurn !== null;
+/**
+ * 판정을 받는 스탯(턴당 자동 변화가 없는 스탯)에 규칙이 하나도 없을 때의 문장. 판정은 작가가 쓴 규칙 가운데 이번 턴에 맞은 것을
+ * 고르는 일이라, 규칙 없는 스탯은 대화 내내 초기값에서 움직이지 않는다 — 서버는 그런 스탯이 있으면 발행을 거절한다. 저장은
+ * 막지 않는다(스탯을 막 만든 초안은 규칙이 비어 있다).
+ */
+export const STAT_RULES_REQUIRED_MESSAGE = "규칙이 없으면 이 스탯은 변하지 않아서 발행할 수 없어요. 규칙을 하나 이상 추가해 주세요.";
+
+/** 규칙 폭이 스탯 범위 폭을 넘을 때의 문장. 서버는 저장은 받고 발행만 막는다(범위를 좁힌 뒤에도 자동저장이 돌게). */
+export function statRuleDeltaTooWideMessage(rangeWidth: number): string {
+  return `폭은 이 스탯의 범위 폭(${rangeWidth}) 이하여야 해요. 그보다 크면 한 번에 반대쪽 끝을 넘어가요.`;
 }
+
+/**
+ * 스탯 하나의 「조건 → 증감」 규칙. 판정 AI 가 이번 턴에 맞은 규칙을 고르면 코드가 폭의 절댓값이 가장 큰 하나(같으면 목록
+ * 앞)만 더한다 — 순서가 동점의 우선순위라 배열 위치가 곧 순서다. 증감 칸이 비었거나 정수로 읽히지 않으면 NaN 이다.
+ */
+export const statRuleSchema = z.object({
+  id: z.string(),
+  condition: z
+    .string()
+    .refine((value) => value.trim().length > 0, "조건을 입력해주세요")
+    .refine(
+      (value) => countCharacters(value.trim()) <= MAX_STAT_RULE_CONDITION_LENGTH,
+      `조건은 ${MAX_STAT_RULE_CONDITION_LENGTH}자 이하로 입력해주세요`,
+    ),
+  delta: z
+    .number({ error: STAT_RULE_DELTA_MESSAGE })
+    .int(STAT_RULE_DELTA_MESSAGE)
+    .refine((value) => value !== 0, STAT_RULE_DELTA_MESSAGE),
+});
+
+/** 초안 저장이 받는 규칙 목록 — 서버가 422 로 막는 조건(개수·조건 길이·폭 0·같은 스탯 안 id 중복)을 그대로 건다. 발행 전
+ * 폼 검증이 이 스키마로 칸마다 오류를 붙인다. 자동저장은 목록째 거르지 않고 `formToServer` 가 규칙 하나씩 `statRuleSchema` 로
+ * 골라 보낸다. 폭이 범위 폭을 넘는지는 발행만 본다. */
+export const statRulesSchema = z
+  .array(statRuleSchema)
+  .max(MAX_STAT_RULES, STAT_RULE_LIMIT_MESSAGE)
+  .superRefine((rules, ctx) => {
+    const seen = new Set<string>();
+    rules.forEach((rule, index) => {
+      if (seen.has(rule.id)) {
+        ctx.addIssue({ code: "custom", path: [index, "id"], message: "같은 id 의 규칙이 두 번 들어 있습니다" });
+      }
+      seen.add(rule.id);
+    });
+  });
 
 /** 턴당 자동 변화 칸에 숫자가 들어 있는가(빈 칸은 null, 다 지우지 못한 칸은 NaN). */
 export function hasPerTurnDelta(stat: Pick<StatDefValues, "perTurnDelta">): boolean {
@@ -126,26 +170,26 @@ export const statDefSchema = z
     unit: z.string().optional(),
     description: z.string().min(1, "스탯에 대한 설명을 입력해주세요"),
     /**
-     * 매 턴 자동으로 더해지는 값(감소는 음수). 비우면 판정 LLM이 이 스탯을 판단한다.
+     * 매 턴 자동으로 더해지는 값(감소는 음수). 비우면 판정 LLM이 작가가 쓴 규칙 가운데 맞은 것을 골라 이 스탯을 바꾼다(규칙이
+     * 없으면 변하지 않는다).
      *
      * 빈 값은 `undefined` 가 아니라 `null` 이고 키를 빼지 못하게 둔다. RHF 는 폼 값이 `undefined` 인 칸이 마운트될 때 같은
      * 경로의 `defaultValues`(초안을 불러올 때의 값, 지우거나 추가해도 인덱스가 밀리지 않는다)로 채운다. 그래서 새 스탯이
      * 같은 자리에 있던 옛 스탯의 값을 물려받고, 비운 칸이 탭을 오갈 때 옛 값으로 되살아난다.
      */
     perTurnDelta: z.number().int(STAT_INTEGER_MESSAGE).nullable(),
-    /** 판정 AI 가 낸 값 중 이 방향을 거스르는 변화는 시스템이 버린다. 서버는 빠진 값을 "기존 값 유지"로 읽어 늘 보낸다. */
-    changeDirection: z.enum(STAT_CHANGE_DIRECTIONS),
-    /** 한 턴에 바뀔 수 있는 최대 폭. 빈 값(null)은 제한 없음이고, 빈 값을 null 로 두는 이유는 `perTurnDelta` 와 같다. */
-    maxChangePerTurn: z
-      .number({ error: MAX_CHANGE_PER_TURN_MESSAGE })
-      .int(MAX_CHANGE_PER_TURN_MESSAGE)
-      .min(1, MAX_CHANGE_PER_TURN_MESSAGE)
-      .nullable(),
+    /** 「조건 → 증감」 규칙. 판정을 받는 스탯(턴당 자동 변화가 없는 스탯)에는 하나 이상 있어야 발행된다(아래 검사). */
+    rules: statRulesSchema,
   })
   .superRefine((stat, ctx) => {
     // 오류는 턴당 자동 변화 칸에 붙인다 — 발행 때 이 스탯을 열고 그 칸으로 포커스가 가, 바로 아래 문장이 이유를 말한다.
-    if (hasPerTurnDelta(stat) && hasStatChangeLimit(stat)) {
-      ctx.addIssue({ code: "custom", path: ["perTurnDelta"], message: STAT_CHANGE_CONFLICT_MESSAGE });
+    if (hasPerTurnDelta(stat) && stat.rules.length > 0) {
+      ctx.addIssue({ code: "custom", path: ["perTurnDelta"], message: STAT_RULES_WITH_COUNTER_MESSAGE });
+    }
+    // 규칙 목록 자리에 붙인다 — 목록 아래 오류 문장으로 보이고, 발행 때 포커스가 그 목록의 추가 버튼으로 간다. 서버 발행 검사와
+    // 같은 조건(턴당 자동 변화가 없고 규칙이 0개)이다.
+    if (!hasPerTurnDelta(stat) && stat.rules.length === 0) {
+      ctx.addIssue({ code: "custom", path: ["rules"], message: STAT_RULES_REQUIRED_MESSAGE });
     }
     if (stat.max <= stat.min) {
       ctx.addIssue({ code: "custom", path: ["max"], message: "최대값은 최소값보다 커야 해요" });
@@ -158,6 +202,16 @@ export const statDefSchema = z
         message: `초기값은 ${stat.min}~${stat.max} 사이여야 해요`,
       });
     }
+    // 최소 < 최대일 때만 잰다(뒤집힌 범위는 위에서 돌아간다). 초기값이 범위 밖이어도 폭은 최소·최대만으로 정해지므로 잰다.
+    // 서버 발행 검사는 뒤집힌 범위에서도 재어 `stats.range` 와 함께 `stats.ruleDelta` 를 내지만, 그때의 폭(0 이하)은 뜻이 없어
+    // 최대값 칸 오류 하나만 보인다 — 범위를 고치면 이 검사가 다시 돌아 서버와 같은 규칙을 짚는다. 폭 칸에 붙여 그 규칙 줄로
+    // 포커스가 간다.
+    const rangeWidth = stat.max - stat.min;
+    stat.rules.forEach((rule, index) => {
+      if (Math.abs(rule.delta) > rangeWidth) {
+        ctx.addIssue({ code: "custom", path: ["rules", index, "delta"], message: statRuleDeltaTooWideMessage(rangeWidth) });
+      }
+    });
   });
 
 /**
@@ -582,6 +636,7 @@ export const storyBuilderSchema = z.object({
 export type StorySettingValues = z.infer<typeof storySettingSchema>;
 export type DevelopmentExampleValues = z.infer<typeof developmentExampleSchema>;
 export type StatDefValues = z.infer<typeof statDefSchema>;
+export type StatRuleValues = z.infer<typeof statRuleSchema>;
 export type RuleListItemValues = z.infer<typeof ruleListItemSchema>;
 export type SingleRuleValues = Extract<RuleListItemValues, { kind: "rule" }>;
 export type EndingValues = z.infer<typeof endingSchema>;

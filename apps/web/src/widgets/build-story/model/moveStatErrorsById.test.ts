@@ -23,11 +23,32 @@ describe("moveStatErrorsById", () => {
     ]);
   });
 
-  it("한 턴 최대 폭 칸의 오류도 스탯 id 를 따라 옮긴다", () => {
-    const maxChangeError = { type: "too_small", message: "1 이상의 정수로 입력해주세요" };
-    const errors = [{ maxChangePerTurn: maxChangeError }];
+  it("턴당 자동 변화 칸의 오류도 스탯 id 를 따라 옮긴다", () => {
+    const perTurnError = { type: "custom", message: "턴당 자동 변화와 규칙은 함께 쓸 수 없어요. 한쪽을 비워 주세요." };
+    const errors = [{ perTurnDelta: perTurnError }];
     const moved = moveStatErrorsById(["a"], (index) => errors[index], ["b", "a"]);
-    expect(moved).toEqual([{ statIndex: 1, field: "maxChangePerTurn", error: maxChangeError }]);
+    expect(moved).toEqual([{ statIndex: 1, field: "perTurnDelta", error: perTurnError }]);
+  });
+
+  it("규칙 줄마다의 칸 오류는 규칙 인덱스를 그대로 두고 스탯 자리만 옮긴다", () => {
+    const conditionError = { type: "custom", message: "조건을 입력해주세요" };
+    const deltaError = { type: "custom", message: "0이 아닌 정수로 입력해주세요(예: +3, -5)" };
+    const errors = [{ rules: [undefined, { condition: conditionError }, { delta: { ...deltaError, ref: { name: "x" } } }] }];
+    const moved = moveStatErrorsById(["a"], (index) => errors[index], ["b", "a"]);
+    expect(moved).toEqual([
+      { statIndex: 1, field: "rules.1.condition", error: conditionError },
+      { statIndex: 1, field: "rules.2.delta", error: deltaError },
+    ]);
+  });
+
+  it("규칙 목록 자체의 오류는 목록 자리(.root 로 온 것 포함)로 옮긴다", () => {
+    const limitError = { type: "too_big", message: "규칙은 스탯마다 10개까지예요." };
+    expect(moveStatErrorsById(["a"], () => ({ rules: limitError }), ["b", "a"])).toEqual([
+      { statIndex: 1, field: "rules", error: limitError },
+    ]);
+    expect(moveStatErrorsById(["a"], () => ({ rules: { root: limitError } }), ["b", "a"])).toEqual([
+      { statIndex: 1, field: "rules", error: limitError },
+    ]);
   });
 
   it("오류 객체의 칸 이름이 아닌 키와 FieldError 모양이 아닌 값은 옮기지 않는다", () => {

@@ -20,8 +20,7 @@ function stat(id: string): StatDefValues {
     initial: 0,
     description: "d",
     perTurnDelta: null,
-    changeDirection: "both",
-    maxChangePerTurn: null,
+    rules: [],
   };
 }
 

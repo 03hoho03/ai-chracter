@@ -76,8 +76,7 @@ const STAT: StatDefValues = {
   initial: 42,
   description: "d",
   perTurnDelta: null,
-  changeDirection: "both",
-  maxChangePerTurn: null,
+  rules: [],
 };
 
 function setup(situationNotes: StartingSetupValues["situationNotes"]): StartingSetupValues {

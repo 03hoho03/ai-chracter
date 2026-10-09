@@ -25,7 +25,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat import router as chat_router
-from api.chat.prompt_builder import PromptLane, PromptRenderError, PromptSetNotFoundError, StatJudgmentResult
+from api.chat.prompt_builder import PromptLane, PromptRenderError, PromptSetNotFoundError, StatRuleJudgmentResult
 from api.chat.prompt_set_cache import invalidate_active_prompt_set
 from api.db.models import (
     CharacterVersionDetail,
@@ -39,6 +39,7 @@ from api.db.models import (
     ModerationStatus,
     StartingSetup,
     StatDef,
+    StatRule,
     StoryPromptTemplate,
     StoryVersionDetail,
 )
@@ -157,6 +158,9 @@ async def _add_stat_def(db_session: AsyncSession, setup: StartingSetup) -> StatD
     )
     db_session.add(stat_def)
     await db_session.flush()
+    # 규칙이 있어야 스탯 판정 프롬프트를 렌더한다.
+    db_session.add(StatRule(entity_id=uuid.uuid4(), stat_def_id=stat_def.id, condition="반긴다", delta=5, order=0))
+    await db_session.flush()
     return stat_def
 
 
@@ -196,8 +200,8 @@ class _FakeLLMClient(LLMClient):
 
     async def generate_structured(self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext) -> Any:
         self.generate_structured_calls += 1
-        if response_schema is StatJudgmentResult:
-            return StatJudgmentResult(stat_changes=[])
+        if response_schema is StatRuleJudgmentResult:
+            return StatRuleJudgmentResult(fired_rule_ids=[])
         raise NotImplementedError
 
 
@@ -370,7 +374,7 @@ async def test_send_preview_message_with_broken_section_body_ends_the_stream_wit
 async def test_story_chat_judgment_render_failure_is_absorbed_and_the_turn_still_completes(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """생성 채널은 멀쩡하고 `stat_judgment` 채널만 깨지면 — 판정 단계 실패는 여전히
+    """생성 채널은 멀쩡하고 `stat_rule_judgment` 채널만 깨지면 — 판정 단계 실패는 여전히
     "이번 턴의 판정만 건너뛴다"는 기존 관용대로 흡수돼야 한다(`LLMClientError`와 같은
     취급). 생성된 응답은 그대로 커밋되고 `done` 이벤트가 정상적으로 나가야 한다."""
     user = _make_user()
@@ -380,7 +384,7 @@ async def test_story_chat_judgment_render_failure_is_absorbed_and_the_turn_still
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
     setup = await _add_starting_setup(db_session, content)
     await _add_stat_def(db_session, setup)
-    await _corrupt_section_body(db_session, channel="stat_judgment", slot="turn_context", lane="story")
+    await _corrupt_section_body(db_session, channel="stat_rule_judgment", slot="turn_context", lane="story")
 
     await _login_as(db_client, user.id)
     room_id = (
@@ -401,7 +405,7 @@ async def test_story_chat_judgment_render_failure_is_absorbed_and_the_turn_still
     events = _parse_sse_events(resp.text)
     assert [e["type"] for e in events] == ["token", "done"]
     assert events[-1]["finalMessage"]["content"] == "이야기가 이어진다"
-    # 렌더 실패가 build_stat_judgment_prompt 안에서 나서 generate_structured 는 불리지 않았다.
+    # 렌더 실패가 build_stat_rule_judgment_prompt 안에서 나서 generate_structured 는 불리지 않았다.
     assert fake.generate_structured_calls == 0
 
 

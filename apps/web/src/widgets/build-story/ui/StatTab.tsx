@@ -34,6 +34,7 @@ import { ColorPicker, IconPicker } from "@/shared/ui/color-icon-picker";
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
 import { StartingSetupPicker } from "./StartingSetupPicker";
 import { StatChangeFields } from "./StatChangeFields";
+import { StatRuleList } from "./StatRuleList";
 import { StoryMacroNotice } from "./StoryMacroNotice";
 import { UNDO_TOAST_DURATION_MS, UndoToastButton } from "./UndoToastButton";
 import { moveStatErrorsById } from "../model/moveStatErrorsById";
@@ -119,7 +120,7 @@ type StatRowProps = {
   onRemove: () => void;
 };
 
-/** 스탯 하나(이름/아이콘/색상/최소·최대·초기값/단위/설명). 순서 우선순위가 없어 dnd-kit 없이
+/** 스탯 하나(이름/아이콘/색상/최소·최대·초기값/단위/턴당 변화/설명/규칙). 순서 우선순위가 없어 dnd-kit 없이
  * add/remove만 지원한다(IntroTab의 예시 대화와 동일한 판단).
  *
  * 머리 줄은 이름(읽기 전용 제목)·요약·삭제 버튼이고 본문은 접힌다. 본문 줄은 모두 카드 안쪽 좌우 끝을 함께 쓴다 — 삭제
@@ -320,12 +321,12 @@ function StatRow({
             .join(" ")}
           {...register(`${statPath}.description`)}
         />
-        {/* 판정 AI 는 매 턴 이 설명과 이번 턴 대화만 보고 값을 정한다. 턴당 변화가 있는 스탯은 시스템이 그 값만큼 굴리고
-            AI 가 낸 판단은 버린다 — 그때 "올리고 내리는 기준"을 써 달라고 하면 효과 없는 일을 시키는 셈이라 문장을 바꾼다. */}
+        {/* 판정 AI 는 이 설명을 규칙을 고를 때의 맥락으로 읽는다 — 값을 바꾸는 조건과 폭은 규칙이 맡는다. 턴당 변화가 있는
+            스탯은 시스템이 그 값만큼 굴리고 판정을 받지 않아, 그때는 이 스탯이 무엇을 뜻하는지만 써 달라고 문장을 바꾼다. */}
         <p id={`stat-${id}-description-hint`} className="text-xs break-keep text-muted-foreground">
           {hasPerTurnDelta(stat)
             ? "턴당 자동 변화가 있어서 AI는 이 스탯을 바꾸지 않고, 매 턴 정해진 만큼만 변해요. 이 스탯이 이야기에서 무엇을 뜻하는지 적어 주세요."
-            : "AI가 매 턴 이 설명을 읽고 값을 바꿔요. 무엇이 올리고 무엇이 내리는지, 한 번에 얼마나 움직이는지 적어 주세요."}
+            : "이 스탯이 누구의 무엇을 재는지 적어 주세요. AI가 규칙을 고를 때 함께 읽어요. 값을 바꾸는 조건과 폭은 아래 규칙에 적어요."}
         </p>
         <MediaTagOutsideNotice name={`${statPath}.description`} />
         <StoryMacroNotice name={`${statPath}.description`} />
@@ -335,6 +336,8 @@ function StatRow({
           </p>
         )}
       </div>
+
+      <StatRuleList id={id} startingSetupIndex={startingSetupIndex} statIndex={statIndex} stat={stat} />
     </CollapsibleItemCard>
   );
 }
@@ -524,8 +527,7 @@ function StatSection({
         unit: "",
         description: "",
         perTurnDelta: null,
-        changeDirection: "both",
-        maxChangePerTurn: null,
+        rules: [],
       },
       { focusName: `${statsPath}.${fields.length}.name` },
     );

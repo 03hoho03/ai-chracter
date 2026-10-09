@@ -8745,6 +8745,24 @@ export interface components {
             chapterModels?: components["schemas"]["NovelChapterModel"][];
         };
         /**
+         * NovelChapterReadingPosition
+         * @description 화 하나를 읽던 자리. `paragraph_count` 는 저장할 때의 문단 수라, 그 뒤 개정이 바뀌었으면 비율로 옮긴다.
+         *     `finished` 는 그 화를 끝까지 읽은 적이 있는가다(목차의 `finished_reading` 과 같은 값).
+         */
+        NovelChapterReadingPosition: {
+            /** Paragraphindex */
+            paragraphIndex: number;
+            /** Paragraphcount */
+            paragraphCount: number;
+            /**
+             * Revisionid
+             * Format: uuid
+             */
+            revisionId: string;
+            /** Finished */
+            finished: boolean;
+        };
+        /**
          * NovelChapterRegenerateRequest
          * @description 화 하나를 골라 다시 만들기 — 그 화가 든 묶음 전체를 다시 만든다(묶음 다시 만들기 요청과 같다).
          */
@@ -8841,6 +8859,7 @@ export interface components {
             charCount: number;
             /** Finishedreading */
             finishedReading: boolean;
+            readingPosition: components["schemas"]["NovelChapterReadingPosition"] | null;
         };
         /**
          * NovelChapterUpdateRequest
@@ -9802,11 +9821,9 @@ export interface components {
          * StatDefDraftItem
          * @description 스탯 하나. 저장 요청·초안 응답·미리보기 세션이 함께 쓴다.
          *
-         *     `change_direction`·`max_change_per_turn` 은 안 보내면 기존 스탯의 값을 그대로 둔다(router 가 `model_fields_set`
-         *     으로 가른다). 이 옵션을 모르는 화면(배포 전부터 열려 있던 탭의 옛 번들)의 자동저장이 작가가 건 제약을 지우지 않게
-         *     하려는 것이다. 새 스탯은 기본값(양방향·제한 없음)으로 들어간다. 기본값을 `default_factory` 로 두는 이유는
-         *     `KeywordNoteDraftInput` 의 같은 주석과 같다. 턴당 변화와 함께 쓰거나 폭을 0 이하로 둔 값도 저장은 받는다 —
-         *     여기서 막으면 그 초안의 자동저장이 편집마다 실패하므로 발행(`validate_story_publish`)이 막는다.
+         *     옛 화면(배포 전부터 열려 있던 탭의 옛 번들)은 이제 없는 변화 방향·한 턴 최대 폭 키(`changeDirection`·
+         *     `maxChangePerTurn`)를 보낼 수 있다. 모르는 키는 무시하는 pydantic 기본 동작(`extra="ignore"`)으로 받아 넘겨 그 탭의
+         *     자동저장이 422 로 막히지 않게 한다.
          */
         StatDefDraftItem: {
             /**
@@ -9832,13 +9849,8 @@ export interface components {
             description: string;
             /** Perturndelta */
             perTurnDelta?: number | null;
-            /**
-             * Changedirection
-             * @enum {string}
-             */
-            changeDirection?: "both" | "increase" | "decrease";
-            /** Maxchangeperturn */
-            maxChangePerTurn?: number | null;
+            /** Rules */
+            rules?: components["schemas"]["StatRuleDraftItem"][];
         };
         /** StatDefSnapshot */
         StatDefSnapshot: {
@@ -9863,6 +9875,25 @@ export interface components {
             unit: string | null;
             /** Description */
             description: string;
+        };
+        /**
+         * StatRuleDraftItem
+         * @description 스탯 하나의 「조건 → ±n」 규칙. 배열 순서가 `order` 라 순서 필드는 따로 없다. 조건은 앞뒤 공백을 떼어 저장한다.
+         *
+         *     개수·글자 수 상한과 폭 0·id 중복 금지는 요청에만 건다(`StoryDraftPayload` 의 검증) — 이 타입은 초안 응답에도
+         *     쓰이므로, 여기에 걸면 상한을 바꾼 뒤 이미 저장된 규칙이 있는 초안을 열 수 없다(GET 500). 폭이 스탯 범위 폭을
+         *     넘는지는 발행이 본다.
+         */
+        StatRuleDraftItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Condition */
+            condition: string;
+            /** Delta */
+            delta: number;
         };
         /** StoryDraftPayload */
         StoryDraftPayload: {

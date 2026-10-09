@@ -10,7 +10,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { hasNovelErrorCode, novelKeys, toNovelActionError } from "@/entities/novel";
+import { hasNovelErrorCode, novelKeys, novelScoped, toNovelActionError } from "@/entities/novel";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { useDeleteLastChapterMutation } from "../api/useDeleteLastChapterMutation";
@@ -56,6 +56,11 @@ export const DeleteLastChapterModal = createCallable<DeleteLastChapterModalProps
       }
       await queryClient.invalidateQueries({ queryKey: novelKeys.detail(novelId) });
       void queryClient.invalidateQueries({ queryKey: novelKeys.list() });
+      // 지운 화가 빠지며 인물의 나온 화·버전 안 그 화 항목(지워진 화가 된다)·남은 대화 견적도 바뀌었다.
+      void queryClient.invalidateQueries({
+        queryKey: novelKeys.all,
+        predicate: novelScoped(novelId, ["characters", "snapshots", "snapshot", "chainEstimate"]),
+      });
       call.end(true);
     }
 

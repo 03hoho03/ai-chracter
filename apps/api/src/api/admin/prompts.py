@@ -35,7 +35,7 @@ from api.chat.prompt_builder import (
     as_prompt_lane,
     build_generation_prompt,
     build_memory_summary_prompt,
-    build_stat_judgment_prompt,
+    build_stat_rule_judgment_prompt,
     build_story_generation_prompt,
     format_user_persona,
     load_active_prompt_set,
@@ -56,7 +56,7 @@ from api.core.sentry import capture_dependency_failure
 from api.db.models.character import SituationalImage
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.prompt import PromptSection, PromptSet
-from api.db.models.story import StatDef, StoryPromptTemplate
+from api.db.models.story import StatDef, StatRule, StoryPromptTemplate
 from api.db.session import get_db_session
 from api.llm.chat_models import ChatModelId, parse_chat_model_id
 from api.novelize.prompts import (
@@ -179,7 +179,18 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
                 ("both", "final_frame", ""),
             }
         ),
+        # 옛 절대값 판정 채널. 더 이상 렌더하지 않지만 운영 프롬프트 세트에 행이 남아 있어, 여기서 빼면 그 행이 "잉여"로
+        # 잡혀 story 레인 게시가 막힌다 — 게시 검증용으로만 둔다.
         "stat_judgment": frozenset(
+            {
+                ("story", "stat_defs_intro", ""),
+                ("story", "user_name", ""),
+                ("story", "turn_context", ""),
+                ("story", "judgment_instruction", ""),
+            }
+        ),
+        # 마이그레이션 `d9768bc0cfee`가 DB에 넣는 행과 같이 간다(위 user_persona와 같은 이유).
+        "stat_rule_judgment": frozenset(
             {
                 ("story", "stat_defs_intro", ""),
                 ("story", "user_name", ""),
@@ -1067,6 +1078,13 @@ _SAMPLE_STAT_DEFS = [
         order=1,
     )
 ]
+# 규칙 판정 미리보기의 샘플 규칙 — 오르는 규칙과 내리는 규칙 하나씩(폭은 프롬프트에 실리지 않는다).
+_SAMPLE_STAT_RULES = {
+    _SAMPLE_STAT_DEFS[0].entity_id: [
+        StatRule(entity_id=uuid.uuid4(), condition="[샘플] 사용자가 캐릭터를 감싸 준다", delta=5, order=0),
+        StatRule(entity_id=uuid.uuid4(), condition="[샘플] 사용자의 거짓말이 들킨다", delta=-10, order=1),
+    ]
+}
 _SAMPLE_SITUATIONAL_IMAGES = [
     SituationalImage(
         entity_id=uuid.uuid4(),
@@ -1272,20 +1290,17 @@ def _story_preview_items(
     if generation_only:
         return items
 
+    rule_judgment_text, _ = build_stat_rule_judgment_prompt(
+        prompt_set=prompt_set,
+        sections=sections,
+        stat_defs=_SAMPLE_STAT_DEFS,
+        rules_by_stat_id=_SAMPLE_STAT_RULES,
+        user_message="[샘플] 사용자 메시지",
+        assistant_message="[샘플] 진행자 응답",
+        names=_SAMPLE_STORY_NAMES,
+    )
     items.append(
-        AdminPromptPreviewItem(
-            channel="stat_judgment",
-            label="stat_judgment",
-            text=build_stat_judgment_prompt(
-                prompt_set=prompt_set,
-                sections=sections,
-                stat_defs=_SAMPLE_STAT_DEFS,
-                current_stats={},
-                user_message="[샘플] 사용자 메시지",
-                assistant_message="[샘플] 진행자 응답",
-                names=_SAMPLE_STORY_NAMES,
-            ),
-        )
+        AdminPromptPreviewItem(channel="stat_rule_judgment", label="stat_rule_judgment", text=rule_judgment_text)
     )
     items.append(
         AdminPromptPreviewItem(

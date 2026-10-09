@@ -40,16 +40,17 @@ from api.chat.prompt_builder import (
     PromptNames,
     PromptRenderError,
     PromptSetNotFoundError,
-    StatJudgmentResult,
+    StatJudgmentRequest,
+    StatRuleJudgmentResult,
     build_ending_judgment_prompt,
     build_generation_prompt,
     build_image_judgment_prompt,
-    build_stat_judgment_prompt,
     build_story_generation_prompt,
     format_user_persona,
     load_active_prompt_set,
     media_cell_image_lines,
     memory_note_rendered,
+    prepare_stat_judgment,
     situational_image_lines,
     system_instruction_for,
     user_persona_rendered,
@@ -106,7 +107,7 @@ from api.chat.schemas import (
     StatDefSnapshot,
     StoryImageArchiveItem,
 )
-from api.chat.stats import StatChange, apply_stat_changes
+from api.chat.stats import apply_rule_judgment
 from api.content.access import detail_model_for, is_open_to, is_open_to_participant
 from api.content.author_macros import expand_author_macros, resolve_user_name
 from api.content.media_book import (
@@ -161,6 +162,7 @@ from api.db.models.story import (
     SituationNote,
     StartingSetup,
     StatDef,
+    StatRule,
     StoryVersionDetail,
 )
 from api.db.session import get_db_session, get_session_factory
@@ -996,16 +998,45 @@ async def _sign_judged_cell(db: AsyncSession, room: ChatRoom, cell_entity_id: uu
 
 
 async def _await_stat_judgment(
-    llm_client: LLMClient, prompt: str, usage: LLMCallContext, *, log_subject: str
-) -> StatJudgmentResult | None:
-    """스탯 판정 LLM 호출. 실패는 흡수해 `None` — 칸 판정과 동시에 돌 때 이 실패가 칸 결과를 지우지 않게 한다.
-    `None` 이면 호출부는 지금처럼 스탯·엔딩 판정을 함께 건너뛴다."""
+    llm_client: LLMClient,
+    request: StatJudgmentRequest,
+    usage: LLMCallContext,
+    *,
+    log_subject: str,
+    current_stats: dict[str, float],
+    stat_defs: list[StatDef],
+) -> dict[str, float] | None:
+    """스탯 판정 LLM 호출과 반영. 반영한 스탯 값(키 → 값, 바뀌지 않은 스탯 포함)을 돌려준다. 판정 LLM 이 고른 규칙을
+    `apply_rule_judgment` 로 반영한다. 요청에 프롬프트가 없으면(`prepare_stat_judgment` 가 판정할 규칙이 없다고 정했다)
+    LLM 을 부르지 않고 발동 규칙 없이 반영한다 — 카운터는 굴러가고, 결과가 `None` 이 아니라 엔딩 판정도 이어진다.
+
+    LLM 실패는 흡수해 `None` — 칸 판정과 동시에 돌 때 이 실패가 칸 결과를 지우지 않게 한다. `None` 이면 호출부는 지금처럼
+    스탯·엔딩 판정을 함께 건너뛴다."""
+    if request.prompt is None:
+        return apply_rule_judgment(current_stats, [], request.rule_ids, stat_defs)
     try:
-        return await llm_client.generate_structured(prompt, StatJudgmentResult, usage=usage)
+        rule_judgment = await llm_client.generate_structured(request.prompt, StatRuleJudgmentResult, usage=usage)
+        return apply_rule_judgment(current_stats, rule_judgment.fired_rule_ids, request.rule_ids, stat_defs)
     except LLMClientError as exc:
         logger.warning("%s 스탯 판정 실패 — 이번 턴의 스탯·엔딩 판정을 건너뛴다: %s", log_subject, exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
         return None
+
+
+async def _load_stat_rules(db: AsyncSession, stat_defs: Sequence[StatDef]) -> dict[uuid.UUID, list[StatRule]]:
+    """스탯들의 규칙을 스탯 entity_id → 규칙 목록(`order` 순)으로 읽는다. 규칙은 스탯을 물리 FK 로 가리키므로 방이 고정한
+    버전의 스탯 행에 달린 규칙만 나온다."""
+    entity_id_by_stat_def_id = {stat_def.id: stat_def.entity_id for stat_def in stat_defs}
+    rules_by_stat_id: dict[uuid.UUID, list[StatRule]] = {}
+    for rule in (
+        await db.scalars(
+            select(StatRule)
+            .where(StatRule.stat_def_id.in_(list(entity_id_by_stat_def_id)))
+            .order_by(StatRule.order)
+        )
+    ).all():
+        rules_by_stat_id.setdefault(entity_id_by_stat_def_id[rule.stat_def_id], []).append(rule)
+    return rules_by_stat_id
 
 
 async def _no_judgment() -> None:
@@ -1428,6 +1459,30 @@ async def _lock_room_for_turn_write(db: AsyncSession, room: ChatRoom) -> uuid.UU
     return room_id
 
 
+@dataclass(frozen=True)
+class InjectedPersona:
+    """턴 상태 묶음의 대화 프로필 — 조립에 쓰이는 칸 전부(`format_user_persona` 의 인자와 같다)."""
+
+    name: str
+    gender: str | None
+    description: str
+
+
+@dataclass(frozen=True)
+class InjectedTurnState:
+    """`_build_prompt` 가 방의 지금 값 대신 쓸 한 턴의 상태. 지난 턴을 그때 상태로 다시 조립하는 측정 도구가 넘긴다 —
+    요약·기억 노트·스탯·대화 프로필은 DB 에 지금 값만 남기 때문이다.
+
+    네 칸을 한꺼번에 준다(일부만 주고 나머지를 DB 에서 읽으면 서로 다른 시점의 값이 섞인다). `summary` 가 None 이면
+    "요약 없음", `memory_note` 가 `""` 이면 "노트 없음", `persona` 가 None 이면 "프로필 없음"이다. `stats` 의 키는
+    스탯 entity_id 문자열이고, 빠진 스탯은 상황 노트 조건에서 거짓이다."""
+
+    summary: CurrentSummary | None
+    memory_note: str
+    stats: dict[str, float]
+    persona: InjectedPersona | None
+
+
 def _format_persona(persona: UserPersona | None) -> str:
     """실채팅(`_build_prompt`)과 미리보기(`send_preview_message`)가 공유한다 — 프로필이
     없으면 `""`라 생성 프롬프트가 프로필 기능 이전과 바이트까지 같다."""
@@ -1445,6 +1500,8 @@ async def _build_prompt(
     shortcut: Shortcut | None,
     prompt_set: PromptSet,
     prompt_sections: list[PromptSection],
+    *,
+    turn_state: InjectedTurnState | None = None,
 ) -> tuple[str, str, bool, bool, PromptNames]:
     """캐릭터 챗은 character_prompt+exampleDialogues로, 스토리 챗은 스토리 설정 템플릿+시작설정
     프롤로그로 생성 프롬프트를 조립한다. `send_message`/`edit_message`
@@ -1475,16 +1532,31 @@ async def _build_prompt(
 
     상황 노트 조건은 지금 DB 의 스탯 값(사용자가 보낸 순간 화면의 게이지, 이번 턴 판정 반영 전)으로 본다. 재생성은
     이번 턴 판정이 이미 반영된 값을 보므로 원 생성과 다른 노트가 실릴 수 있다 — 그때도 화면 게이지와는 맞다. 엔딩
-    뒤에는 스탯이 멈춰 있어 같은 노트가 계속 실린다."""
+    뒤에는 스탯이 멈춰 있어 같은 노트가 계속 실린다.
+
+    `turn_state` 를 주면 요약·기억 노트·스탯·대화 프로필을 DB 대신 그 묶음에서 읽는다(지난 턴을 그때 상태로 다시
+    조립하는 측정 도구가 쓴다 — 실제 대화의 호출부는 주지 않는다). 주입 요약에도 생성 윈도우 설정이 똑같이 걸리고,
+    주입 프로필은 프로필 섹션·이름(`{{user}}` 치환·키워드 매칭·이름 한 줄)·프로필 렌더 여부가 모두 함께 본다."""
     memory_summary = ""
     if settings.memory_window_generation:
-        current_summary = await load_current_summary(db, room.id)
+        current_summary = await load_current_summary(db, room.id) if turn_state is None else turn_state.summary
         if current_summary is not None:
             history = prompt_window(history, current_summary.cursor)
             memory_summary = current_summary.text
-    memory_note = room.memory_note
-    persona = await db.get(UserPersona, room.persona_id) if room.persona_id is not None else None
-    user_persona = _format_persona(persona)
+    if turn_state is None:
+        memory_note = room.memory_note
+        persona = await db.get(UserPersona, room.persona_id) if room.persona_id is not None else None
+        persona_name = persona.name if persona is not None else None
+        user_persona = _format_persona(persona)
+    else:
+        memory_note = turn_state.memory_note
+        injected = turn_state.persona
+        persona_name = injected.name if injected is not None else None
+        user_persona = (
+            ""
+            if injected is None
+            else format_user_persona(name=injected.name, gender=injected.gender, description=injected.description)
+        )
 
     if setup is not None:
         story_detail = await db.get(StoryVersionDetail, room.content_version_id)
@@ -1500,7 +1572,7 @@ async def _build_prompt(
             )
         ).all()
         names = PromptNames(
-            persona_name=persona.name if persona is not None else None,
+            persona_name=persona_name,
             default_user_name=story_detail.default_user_name,
             char_name=None,
         )
@@ -1515,7 +1587,9 @@ async def _build_prompt(
         situation_note_texts: list[str] = []
         # 스탯은 노트가 있을 때만 읽는다 — 노트 없는 시작설정의 턴에는 스탯 쿼리를 더하지 않는다.
         if situation_notes:
-            _, _, current_stats = await _load_room_stats(db, room.id, setup.id)
+            current_stats = (
+                (await _load_room_stats(db, room.id, setup.id))[2] if turn_state is None else turn_state.stats
+            )
             situation_note_texts = _situation_note_texts(
                 [(_situation_note_rules(note, room.id), note.info_text) for note in situation_notes], current_stats
             )
@@ -1554,7 +1628,7 @@ async def _build_prompt(
     detail = await db.get(CharacterVersionDetail, room.content_version_id)
     assert detail is not None
     names = PromptNames(
-        persona_name=persona.name if persona is not None else None,
+        persona_name=persona_name,
         default_user_name=detail.default_user_name,
         char_name=detail.name,
     )
@@ -1757,17 +1831,17 @@ async def _stream_new_turn(
             # 스토리: 스탯 판정(최초 엔딩 전만)과 미디어 북 칸 판정(엔딩 뒤에도)을 동시에 부른다. DB 읽기는 전부
             # gather 앞(그리고 반납 커밋 앞), 쓰기는 전부 쓰기 구간이다 — gather 안의 두 코루틴은 LLM 만 부른다. 둘 다
             # 자기 LLM 실패를 흡수해 한쪽이 실패해도 다른 쪽 결과가 남는다.
-            stat_prompt: str | None = None
+            stat_request: StatJudgmentRequest | None = None
             stat_defs: list[StatDef] = []
             current_stats: dict[str, float] = {}
             due_endings: _DueEndings | None = None
             if not room.ending_reached:
                 stat_defs, stat_rows, current_stats = await _load_room_stats(db, room.id, setup.id)
-                stat_prompt = build_stat_judgment_prompt(
+                stat_request = prepare_stat_judgment(
                     prompt_set=prompt_set,
                     sections=prompt_sections,
                     stat_defs=stat_defs,
-                    current_stats=current_stats,
+                    rules_by_stat_id=await _load_stat_rules(db, stat_defs),
                     user_message=user_content,
                     assistant_message=assistant_content,
                     names=names,
@@ -1786,14 +1860,16 @@ async def _stream_new_turn(
             await db.commit()
 
             log_subject = f"대화방 {room.id}"
-            judgment, judged_cell_id = await asyncio.gather(
+            updated_stats, judged_cell_id = await asyncio.gather(
                 _await_stat_judgment(
                     llm_client,
-                    stat_prompt,
+                    stat_request,
                     LLMCallContext(call_site="chat_stat_judgment", user_id=room.user_id, room_id=room.id),
                     log_subject=log_subject,
+                    current_stats=current_stats,
+                    stat_defs=stat_defs,
                 )
-                if stat_prompt is not None
+                if stat_request is not None
                 else _no_judgment(),
                 _judge_media_cell(
                     llm_client,
@@ -1805,10 +1881,7 @@ async def _stream_new_turn(
                 else _no_judgment(),
             )
 
-            if judgment is not None:
-                changes = [StatChange(stat_id=c.stat_id, new_value=c.new_value) for c in judgment.stat_changes]
-                updated_stats = apply_stat_changes(current_stats, changes, stat_defs)
-
+            if updated_stats is not None:
                 for stat_id, new_value in updated_stats.items():
                     if new_value != current_stats.get(stat_id):
                         stat_writes[stat_id] = new_value
@@ -3457,9 +3530,15 @@ def _preview_stat_def(item: StatDefDraftItem) -> StatDef:
         max_value=item.max_value,
         initial_value=item.initial_value,
         per_turn_delta=item.per_turn_delta,
-        change_direction=item.change_direction,
-        max_change_per_turn=item.max_change_per_turn,
     )
+
+
+def _preview_stat_rules(item: StatDefDraftItem) -> list[StatRule]:
+    """초안 스탯의 규칙을 판정 빌더가 읽는 인메모리 `StatRule` 로. 배열 순서가 순서다(저장과 같다)."""
+    return [
+        StatRule(entity_id=rule.id, condition=rule.condition, delta=rule.delta, order=order)
+        for order, rule in enumerate(item.rules)
+    ]
 
 
 def _preview_ending_rule_item(item: EndingRuleDraftItem) -> EndingRuleItem:
@@ -3681,7 +3760,7 @@ async def _stream_preview_turn(
 ) -> AsyncIterator[ChatStreamEvent]:
     """`_stream_new_turn`과 같은 순서(생성 스트리밍 → 스탯 판단 → 엔딩 판정)를 따르되
     `ChatRoom`/DB 대신 `PreviewSessionState`(Redis, 호출부가 커밋)를 직접 갱신한다. 스탯
-    클램핑(`apply_stat_changes`)/엔딩 규칙 평가(`evaluate_rule_list`)/턴게이트
+    반영(`apply_rule_judgment`)/엔딩 규칙 평가(`evaluate_rule_list`)/턴게이트
     (`is_ending_check_due`)/엔딩 판정 순서(`_endings_to_judge`)/키워드 매칭(`match_keyword_notes`) 엔진과 SSE 이벤트 스키마는
     실제 채팅과 완전히 동일하게 재사용한다 — `ChatRoom`/`chat_room_stats` 등 방
     상태는 DB 대신 Redis 상태 갱신으로 대체했다. 프롬프트 세트(`prompt_set`/`prompt_sections`)는
@@ -3765,16 +3844,16 @@ async def _stream_preview_turn(
     try:
         if isinstance(state.payload, StoryDraftPayload):
             setup = state.payload.starting_setups[0] if state.payload.starting_setups else None
-            stat_prompt: str | None = None
+            stat_request: StatJudgmentRequest | None = None
             stat_defs: list[StatDef] = []
             current_stats = dict(state.stats)
             if setup is not None and not state.ending_reached:
                 stat_defs = [_preview_stat_def(stat_def) for stat_def in setup.stat_defs]
-                stat_prompt = build_stat_judgment_prompt(
+                stat_request = prepare_stat_judgment(
                     prompt_set=prompt_set,
                     sections=prompt_sections,
                     stat_defs=stat_defs,
-                    current_stats=current_stats,
+                    rules_by_stat_id={stat_def.id: _preview_stat_rules(stat_def) for stat_def in setup.stat_defs},
                     user_message=user_content,
                     assistant_message=assistant_content,
                     names=names,
@@ -3790,14 +3869,16 @@ async def _stream_preview_turn(
                 names=names,
             )
 
-            judgment, judged_cell_id = await asyncio.gather(
+            updated_stats, judged_cell_id = await asyncio.gather(
                 _await_stat_judgment(
                     llm_client,
-                    stat_prompt,
+                    stat_request,
                     LLMCallContext(call_site="preview_stat_judgment", user_id=user_id, room_id=None),
                     log_subject="미리보기",
+                    current_stats=current_stats,
+                    stat_defs=stat_defs,
                 )
-                if stat_prompt is not None
+                if stat_request is not None
                 else _no_judgment(),
                 _judge_media_cell(
                     llm_client,
@@ -3816,10 +3897,7 @@ async def _stream_preview_turn(
                 assistant_message.image_width = judged_image.width
                 assistant_message.image_height = judged_image.height
 
-            if setup is not None and judgment is not None:
-                changes = [StatChange(stat_id=c.stat_id, new_value=c.new_value) for c in judgment.stat_changes]
-                updated_stats = apply_stat_changes(current_stats, changes, stat_defs)
-
+            if setup is not None and updated_stats is not None:
                 for stat_id, new_value in updated_stats.items():
                     if new_value != current_stats.get(stat_id):
                         stat_change_events.append(ChatStatChangeEvent(stat_id=stat_id, new_value=new_value))

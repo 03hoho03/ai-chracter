@@ -110,6 +110,13 @@ CONTENT_RATING_RULES = (
 )
 
 
+class GeneratedStatRule(BaseModel):
+    """판정 스탯의 「조건 → 증감」 규칙 하나. 판정 LLM 은 이번 턴에 조건이 일어났는지만 고르고 폭은 코드가 더한다."""
+
+    condition: str
+    delta: int
+
+
 class GeneratedStatDef(BaseModel):
     """스탯 하나. `name` 은 주어진 스탯 축 이름을 그대로 되풀이해야 한다(검증에서 대조)."""
 
@@ -124,6 +131,9 @@ class GeneratedStatDef(BaseModel):
     # 매 턴 조건 없이 같은 값만큼 변하는 카운터면 그 값(감소는 음수), 아니면 0.
     # 0이 아니면 시스템이 매 턴 결정적으로 굴리고 판정 LLM은 그 스탯을 건드리지 않는다.
     per_turn_delta: int
+    # 판정 스탯(per_turn_delta 0)의 규칙. 판정은 규칙 가운데 발동한 것을 고르는 일이라 규칙이 없으면 그 스탯은 움직이지
+    # 않고 발행 검증도 막는다. 카운터는 규칙을 달 수 없어 조립이 버린다.
+    rules: list[GeneratedStatRule]
 
 
 class GeneratedEndingRule(BaseModel):
@@ -284,11 +294,14 @@ def _structure_section(slot: MatrixSlot) -> str:
         "playguide(무엇을 노려야 하는지 1~2문장), suggestedReplies 3개. 시작 상황이 여러 개면 "
         "초기 스탯 값과 엔딩 구성이 서로 달라야 한다 — 한쪽을 복사해 오지 않는다.\n"
         f"- statDefs: 시작 상황마다 {len(slot.stats)}개이고 이름은 정확히 [{stat_names}] 여야 한다. "
-        "description 에는 **언제 오르고 언제 내리는지**를 반드시 적는다(판단 LLM 은 이 설명만 본다). "
+        "description 에는 **언제 오르고 언제 내리는지**를 반드시 적는다(판단 LLM 은 이 설명과 rules 만 본다). "
         "시간·자원 스탯은 '한 대목마다 반드시 1 줄고 절대 늘지 않는다'처럼 감소 방향을 못 박고, "
         "**perTurnDelta 에 그 값을 적는다**(감소는 음수). 그러면 시스템이 매 턴 직접 굴리므로 "
         "판단 LLM 이 건너뛰거나 거꾸로 올릴 수 없다. 조건 없이 매 턴 같은 값만큼 변하는 스탯만 "
         "해당하고, 행동에 따라 오르내리기도 하는 스탯은 perTurnDelta 를 0 으로 둔다. "
+        "perTurnDelta 가 0 인 스탯은 rules 를 2~4개 단다 — condition 은 이번 턴 대화만 보고 일어났는지 가릴 수 있는 "
+        "구체적 사건 한 문장, delta 는 0 이 아닌 정수(감소는 음수)이고 그 스탯 범위 폭(maxValue − minValue)을 넘지 "
+        "않는다. 오르는 규칙과 내리는 규칙을 함께 둔다. perTurnDelta 가 0 이 아닌 스탯은 rules 를 빈 목록으로 둔다. "
         "unit 은 필요 없으면 빈 문자열로 둔다.\n"
         f"- endings: 시작 상황마다 {MIN_ENDINGS_PER_SETUP}~3개. turnCountGate 는 10 이상. "
         "judgmentPrompt 는 대화 로그만 보고 예/아니오를 가릴 수 있는 구체적 문장이어야 한다"
@@ -377,6 +390,11 @@ def _setup_json(setup: GeneratedStartingSetup) -> dict[str, Any]:
                 "unit": stat.unit or None,
                 "description": stat.description,
                 "perTurnDelta": stat.per_turn_delta or None,
+                "rules": (
+                    [{"condition": rule.condition, "delta": rule.delta} for rule in stat.rules]
+                    if not stat.per_turn_delta
+                    else []
+                ),
             }
             for stat in setup.stat_defs
         ],

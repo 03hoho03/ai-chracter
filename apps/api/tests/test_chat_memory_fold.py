@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from api.chat import memory_fold
 from api.chat import router as chat_router
 from api.chat.memory_fold import backoff_allows, plan_fold
-from api.chat.prompt_builder import MemorySummaryResult, StatChangeJudgment, StatJudgmentResult
+from api.chat.prompt_builder import MemorySummaryResult, StatRuleJudgmentResult
 from api.chat.schemas import ChatStreamEvent
 from api.core import clover, rate_limit_gate
 from api.core.config import settings
@@ -91,8 +91,8 @@ class SummaryLLMClient(LLMClient):
     async def generate_structured(
         self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
     ) -> Any:
-        if response_schema is StatJudgmentResult:
-            return StatJudgmentResult(stat_changes=[])
+        if response_schema is StatRuleJudgmentResult:
+            return StatRuleJudgmentResult(fired_rule_ids=[])
         assert response_schema is MemorySummaryResult, response_schema
         self.summary_prompts.append(prompt)
         self.summary_usages.append(usage)
@@ -296,17 +296,13 @@ async def test_next_fold_summarizes_the_previous_summary_with_the_next_ten_turns
 
 
 class _StatChangingLLMClient(SummaryLLMClient):
-    """스탯 판정에 변화 하나를 준다 — 턴 커밋 뒤 첫 이벤트가 `statChange`가 되게."""
-
-    def __init__(self, stat_id: str) -> None:
-        super().__init__()
-        self.stat_id = stat_id
+    """스탯 판정에서 그 방 스탯의 규칙(a1)을 발동시킨다 — 턴 커밋 뒤 첫 이벤트가 `statChange`가 되게."""
 
     async def generate_structured(
         self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
     ) -> Any:
-        if response_schema is StatJudgmentResult:
-            return StatJudgmentResult(stat_changes=[StatChangeJudgment(stat_id=self.stat_id, new_value=80)])
+        if response_schema is StatRuleJudgmentResult:
+            return StatRuleJudgmentResult(fired_rule_ids=["a1"])
         return await super().generate_structured(prompt, response_schema, images, usage=usage)
 
 
@@ -337,10 +333,7 @@ async def test_fold_is_scheduled_before_the_first_event_after_the_turn_commits(
     monkeypatch.setattr(chat_router, "_stream_new_turn", _recording_turn)
 
     room = await _open_room(db_client, db_session, turns=1, lane="story")
-    stat_id = await db_session.scalar(
-        sa.select(ChatRoomStat.stat_entity_id).where(ChatRoomStat.chat_room_id == room.room_id)
-    )
-    events = await _request(db_client, room, "send", _StatChangingLLMClient(str(stat_id)))
+    events = await _request(db_client, room, "send", _StatChangingLLMClient())
 
     assert events == ["token", "statChange", "done"]
     assert log == ["token", "schedule:fold_memory", "statChange", "done"]

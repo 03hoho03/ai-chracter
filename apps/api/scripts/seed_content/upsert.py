@@ -46,7 +46,15 @@ from api.db.models.content import (
     ModerationStatus,
 )
 from api.db.models.media import AssetKind
-from api.db.models.story import Ending, KeywordNote, SituationNote, StartingSetup, StatDef, StoryVersionDetail
+from api.db.models.story import (
+    Ending,
+    KeywordNote,
+    SituationNote,
+    StartingSetup,
+    StatDef,
+    StatRule,
+    StoryVersionDetail,
+)
 
 from .ids import SEED_AUTHOR_USER_ID, seed_uuid
 from .images import ensure_asset, read_image, situational_image_slug
@@ -330,15 +338,21 @@ def _validate_payload(payload: StoryDraftPayload) -> list[str]:
         dangling_stat_rule_paths=dangling_stat_rule_paths,
         stat_defs=[
             StatDef(
+                id=stat_item.id,
                 min_value=stat_item.min_value,
                 max_value=stat_item.max_value,
                 initial_value=stat_item.initial_value,
                 per_turn_delta=stat_item.per_turn_delta,
-                change_direction=stat_item.change_direction,
-                max_change_per_turn=stat_item.max_change_per_turn,
             )
             for setup_item in payload.starting_setups
             for stat_item in setup_item.stat_defs
+        ],
+        # 스탯의 물리 id 자리에는 시작설정처럼 entity_id 를 쓴다 — 규칙이 어느 스탯에 달렸는지 잇는 데만 쓰인다.
+        stat_rules=[
+            StatRule(stat_def_id=stat_item.id, delta=rule_item.delta)
+            for setup_item in payload.starting_setups
+            for stat_item in setup_item.stat_defs
+            for rule_item in stat_item.rules
         ],
         # 조건은 DB 경로와 같은 JSON 꼴로 넣어야 검증 함수가 두 경로에서 같은 값을 본다.
         situation_notes=[

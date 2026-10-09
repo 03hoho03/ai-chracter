@@ -42,6 +42,7 @@ from api.db.models.story import (
     SituationNote,
     StartingSetup,
     StatDef,
+    StatRule,
     StoryPromptTemplate,
     StoryVersionDetail,
 )
@@ -2984,72 +2985,26 @@ async def _saved_stat_options(db_session: AsyncSession, version_id: uuid.UUID) -
     return [(s.name, s.per_turn_delta, s.change_direction, s.max_change_per_turn) for s in saved]
 
 
-async def test_patch_story_draft_round_trips_stat_change_direction_and_max_change(
+async def test_patch_story_draft_accepts_and_ignores_old_stat_change_option_keys(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """방향·폭을 저장하고 초안 응답이 그대로 돌려준다. 턴당 변화와 함께 건 옵션, 0 이하 폭도 저장은 받는다 — 발행만
-    막는다(저장에서 막으면 그 초안의 자동저장이 편집마다 실패한다)."""
+    """옛 화면 번들(배포 전부터 열려 있던 탭)은 없어진 변화 방향·한 턴 최대 폭 키(`changeDirection`·`maxChangePerTurn`)를
+    보낼 수 있다. 그 자동저장은 422 없이 받고 두 키는 무시한다 — 컬럼에는 DB 기본값(양방향·제한 없음)이 들어가고, 초안
+    응답에도 두 키가 없다."""
     _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
-    judged = _limited_stat_item(name="남은 날", changeDirection="decrease", maxChangePerTurn=7)
-    counter = _limited_stat_item(name="카운터", perTurnDelta=-1, changeDirection="increase", maxChangePerTurn=0)
-    setup = _starting_setup_item(statDefs=[judged, counter])
+    stat = _limited_stat_item(name="남은 날", changeDirection="decrease", maxChangePerTurn=7)
 
-    resp = await db_client.patch(f"/contents/{content.id}/draft", json=_story_draft_payload(startingSetups=[setup]))
-
-    assert resp.status_code == 200
-    assert await _saved_stat_options(db_session, version.id) == [
-        ("남은 날", None, "decrease", 7),
-        ("카운터", -1, "increase", 0),
-    ]
-    got = await db_client.get(f"/contents/{content.id}/draft")
-    assert got.status_code == 200
-    stat_defs = got.json()["startingSetups"][0]["statDefs"]
-    assert [(s["perTurnDelta"], s["changeDirection"], s["maxChangePerTurn"]) for s in stat_defs] == [
-        (None, "decrease", 7),
-        (-1, "increase", 0),
-    ]
-
-
-async def test_patch_story_draft_keeps_stat_change_options_when_fields_omitted(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    """옵션을 모르는 화면(배포 전부터 열려 있던 탭의 옛 번들)의 자동저장이 작가가 건 방향·폭을 기본값으로 되돌리면 안
-    된다. 새 스탯은 기본값(양방향·제한 없음)으로 들어가고, 명시적으로 보낸 기본값은 지운다."""
-    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
-    setup_id = str(uuid.uuid4())
-    kept = _limited_stat_item(name="남은 날", changeDirection="decrease", maxChangePerTurn=7)
-    first = await db_client.patch(
-        f"/contents/{content.id}/draft",
-        json=_story_draft_payload(startingSetups=[_starting_setup_item(id=setup_id, statDefs=[kept])]),
-    )
-    assert first.status_code == 200
-
-    old_bundle_kept = {key: value for key, value in kept.items() if key not in ("changeDirection", "maxChangePerTurn")}
-    old_bundle_kept["description"] = "고친 설명"
-    old_bundle_new = _limited_stat_item(name="새 스탯")
     resp = await db_client.patch(
         f"/contents/{content.id}/draft",
-        json=_story_draft_payload(
-            startingSetups=[_starting_setup_item(id=setup_id, statDefs=[old_bundle_kept, old_bundle_new])]
-        ),
+        json=_story_draft_payload(startingSetups=[_starting_setup_item(statDefs=[stat])]),
     )
 
-    assert resp.status_code == 200
-    assert await _saved_stat_options(db_session, version.id) == [
-        ("남은 날", None, "decrease", 7),
-        ("새 스탯", None, "both", None),
-    ]
-
-    cleared = await db_client.patch(
-        f"/contents/{content.id}/draft",
-        json=_story_draft_payload(
-            startingSetups=[
-                _starting_setup_item(id=setup_id, statDefs=[{**kept, "changeDirection": "both", "maxChangePerTurn": None}])
-            ]
-        ),
-    )
-    assert cleared.status_code == 200
+    assert resp.status_code == 200, resp.text
     assert await _saved_stat_options(db_session, version.id) == [("남은 날", None, "both", None)]
+    got = await db_client.get(f"/contents/{content.id}/draft")
+    assert got.status_code == 200
+    (saved,) = got.json()["startingSetups"][0]["statDefs"]
+    assert "changeDirection" not in saved and "maxChangePerTurn" not in saved
 
 
 def _priority_ending_item(**overrides: object) -> dict[str, object]:
@@ -3663,3 +3618,227 @@ async def test_removing_starting_setup_deletes_its_situation_notes(
     deleted = await db_client.delete(f"/contents/{content.id}/draft")
     assert deleted.status_code == 204
     assert (await db_session.scalars(sa.select(SituationNote).execution_options(populate_existing=True))).all() == []
+
+
+def _stat_rule(condition: str = "그를 감싸 준다", delta: int = 5) -> dict[str, object]:
+    return {"id": str(uuid.uuid4()), "condition": condition, "delta": delta}
+
+
+_DUPLICATED_RULE = _stat_rule()
+
+
+async def _saved_stat_rules(
+    db_session: AsyncSession, version_id: uuid.UUID
+) -> dict[str, list[tuple[uuid.UUID, str, str, int, int]]]:
+    """스탯 entity_id 마다 (물리 id, 규칙 entity_id, 조건, 폭, 순서)를 순서대로."""
+    rows = (
+        await db_session.execute(
+            sa.select(StatDef.entity_id, StatRule)
+            .join(StatDef, StatDef.id == StatRule.stat_def_id)
+            .join(StartingSetup, StartingSetup.id == StatDef.starting_setup_id)
+            .where(StartingSetup.content_version_id == version_id)
+            .order_by(StatDef.order, StatRule.order)
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    result: dict[str, list[tuple[uuid.UUID, str, str, int, int]]] = {}
+    for stat_entity_id, rule in rows:
+        result.setdefault(str(stat_entity_id), []).append(
+            (rule.id, str(rule.entity_id), rule.condition, rule.delta, rule.order)
+        )
+    return result
+
+
+async def test_patch_story_draft_reconciles_stat_rules_by_entity_id(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """규칙은 스탯마다 entity_id 로 맞춘다 — 남는 규칙은 같은 행을 고치고(물리 id 그대로), 빠진 규칙은 지우고, 배열
+    순서가 순서 칸이 된다. 저장 응답과 초안 응답은 같은 순서로 돌려준다. 조건의 앞뒤 공백은 떼어 저장한다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    setup_id = str(uuid.uuid4())
+    first, second, third = _stat_rule("하나", 1), _stat_rule("둘", -2), _stat_rule("셋", 3)
+    stat = _limited_stat_item(rules=[first, second, third])
+
+    def payload(*rules: dict[str, object]) -> dict[str, object]:
+        return _story_draft_payload(
+            startingSetups=[_starting_setup_item(id=setup_id, statDefs=[{**stat, "rules": list(rules)}])]
+        )
+
+    created = await db_client.patch(f"/contents/{content.id}/draft", json=payload(first, second, third))
+    assert created.status_code == 200
+    saved = (await _saved_stat_rules(db_session, version.id))[str(stat["id"])]
+    assert [(entity_id, condition, delta, order) for _, entity_id, condition, delta, order in saved] == [
+        (first["id"], "하나", 1, 0),
+        (second["id"], "둘", -2, 1),
+        (third["id"], "셋", 3, 2),
+    ]
+    physical_ids = {entity_id: physical_id for physical_id, entity_id, *_ in saved}
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft", json=payload({**third, "condition": "  셋 고침  ", "delta": -4}, first)
+    )
+
+    assert resp.status_code == 200
+    expected_rules = [
+        {"id": third["id"], "condition": "셋 고침", "delta": -4},
+        {"id": first["id"], "condition": "하나", "delta": 1},
+    ]
+    assert resp.json()["startingSetups"][0]["statDefs"][0]["rules"] == expected_rules
+    assert (await _saved_stat_rules(db_session, version.id))[str(stat["id"])] == [
+        (physical_ids[str(third["id"])], third["id"], "셋 고침", -4, 0),
+        (physical_ids[str(first["id"])], first["id"], "하나", 1, 1),
+    ]
+    got = await db_client.get(f"/contents/{content.id}/draft")
+    assert got.json()["startingSetups"][0]["statDefs"][0]["rules"] == expected_rules
+
+
+async def test_patch_story_draft_keeps_stat_rules_when_key_omitted_and_clears_on_empty_list(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """규칙을 모르는 화면(배포 전부터 열려 있던 탭의 옛 번들)의 자동저장은 `rules` 키를 보내지 않는다. 그 저장이 작가가
+    쓴 규칙을 지우면 안 된다. 키 없이 들어온 새 스탯은 규칙 없이 생기고, 명시적으로 보낸 빈 목록은 그 스탯의 규칙을 지운다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    setup_id = str(uuid.uuid4())
+    rule = _stat_rule()
+    stat = _limited_stat_item(rules=[rule])
+    created = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(startingSetups=[_starting_setup_item(id=setup_id, statDefs=[stat])]),
+    )
+    assert created.status_code == 200
+    before = await _saved_stat_rules(db_session, version.id)
+
+    old_bundle_stat = {key: value for key, value in stat.items() if key != "rules"}
+    old_bundle_new = _limited_stat_item(name="새 스탯")
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            startingSetups=[
+                _starting_setup_item(id=setup_id, statDefs=[{**old_bundle_stat, "description": "고친 설명"}, old_bundle_new])
+            ]
+        ),
+    )
+
+    assert resp.status_code == 200
+    assert await _saved_stat_rules(db_session, version.id) == before
+    assert [s["rules"] for s in resp.json()["startingSetups"][0]["statDefs"]] == [
+        [{"id": rule["id"], "condition": rule["condition"], "delta": rule["delta"]}],
+        [],
+    ]
+
+    cleared = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(startingSetups=[_starting_setup_item(id=setup_id, statDefs=[{**stat, "rules": []}])]),
+    )
+    assert cleared.status_code == 200
+    assert await _saved_stat_rules(db_session, version.id) == {}
+
+
+async def test_draft_response_lists_stat_rules_in_order(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """규칙 순서는 순서 칸이 정한다(행이 들어간 순서가 아니다). 응답 순서가 어긋나면 빌더가 그 순서로 다시 저장해 작가가
+    정한 순서가 뒤섞인다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    setup = StartingSetup(entity_id=uuid.uuid4(), content_version_id=version.id, name="시작", prologue="프롤로그", order=0)
+    db_session.add(setup)
+    await db_session.flush()
+    stat = StatDef(
+        entity_id=uuid.uuid4(),
+        starting_setup_id=setup.id,
+        name="신뢰",
+        icon="heart",
+        color="rose",
+        min_value=0,
+        max_value=100,
+        initial_value=50,
+        description="신뢰",
+        order=0,
+    )
+    db_session.add(stat)
+    await db_session.flush()
+    for order, condition in ((2, "셋째"), (0, "첫째"), (1, "둘째")):
+        db_session.add(StatRule(entity_id=uuid.uuid4(), stat_def_id=stat.id, condition=condition, delta=1, order=order))
+    await db_session.commit()
+
+    got = await db_client.get(f"/contents/{content.id}/draft")
+
+    assert got.status_code == 200
+    assert [rule["condition"] for rule in got.json()["startingSetups"][0]["statDefs"][0]["rules"]] == [
+        "첫째",
+        "둘째",
+        "셋째",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("rules", "accepted"),
+    [
+        pytest.param([_stat_rule() for _ in range(10)], True, id="ten-rules"),
+        pytest.param([_stat_rule() for _ in range(11)], False, id="eleven-rules"),
+        pytest.param([_stat_rule(condition="가" * 100)], True, id="condition-100"),
+        pytest.param([_stat_rule(condition="  " + "가" * 100 + "  ")], True, id="condition-100-padded"),
+        pytest.param([_stat_rule(condition="가" * 101)], False, id="condition-101"),
+        pytest.param([_stat_rule(condition="   ")], False, id="condition-blank"),
+        pytest.param([_stat_rule(delta=0)], False, id="delta-zero"),
+        pytest.param([_stat_rule(delta=43), _stat_rule(delta=-43)], True, id="delta-wider-than-range"),
+        pytest.param([{**_DUPLICATED_RULE, "delta": 1}, {**_DUPLICATED_RULE, "delta": 2}], False, id="repeated-id"),
+    ],
+)
+async def test_patch_story_draft_enforces_stat_rule_limits(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, rules: list[dict[str, object]], accepted: bool
+) -> None:
+    """스탯당 규칙 10개, 조건은 앞뒤 공백을 뗀 뒤 1~100자, 폭은 0 이 아니어야 하고, 한 스탯 안의 규칙 id 는 겹치지 않아야
+    한다(겹치면 다음 저장이 id 로 두 행을 가를 수 없다). 어긋난 저장은 422 로 막고 아무것도 저장하지 않는다. 경계값은
+    받는다. 폭이 스탯 범위 폭(최대 − 최소, 여기서는 42)을 넘는 규칙은 받는다 — 범위를 좁힌 초안의 자동저장이 막히지 않게
+    발행이 막는다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(startingSetups=[_starting_setup_item(statDefs=[_limited_stat_item(rules=rules)])]),
+    )
+
+    assert resp.status_code == (200 if accepted else 422)
+    saved = await _saved_stat_rules(db_session, version.id)
+    assert sum(len(items) for items in saved.values()) == (len(rules) if accepted else 0)
+
+
+async def test_removing_stat_starting_setup_or_draft_leaves_no_stat_rules(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """규칙은 스탯을 물리 FK 로 가리킨다. 스탯을 빼는 저장, 시작설정을 빼는 저장, 초안 삭제가 모두 그 규칙을 함께
+    지워야 한다. 남는 스탯의 규칙은 그대로다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    kept_setup, removed_setup = str(uuid.uuid4()), str(uuid.uuid4())
+    kept_stat = _limited_stat_item(name="남는 스탯", rules=[_stat_rule()])
+    removed_stat = _limited_stat_item(name="빠질 스탯", rules=[_stat_rule(), _stat_rule()])
+    other_setup_stat = _limited_stat_item(name="다른 시작설정", rules=[_stat_rule()])
+
+    created = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            startingSetups=[
+                _starting_setup_item(id=kept_setup, statDefs=[kept_stat, removed_stat]),
+                _starting_setup_item(id=removed_setup, statDefs=[other_setup_stat]),
+            ]
+        ),
+    )
+    assert created.status_code == 200
+    assert set(await _saved_stat_rules(db_session, version.id)) == {
+        str(kept_stat["id"]),
+        str(removed_stat["id"]),
+        str(other_setup_stat["id"]),
+    }
+
+    removed = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(startingSetups=[_starting_setup_item(id=kept_setup, statDefs=[kept_stat])]),
+    )
+
+    assert removed.status_code == 200
+    assert set(await _saved_stat_rules(db_session, version.id)) == {str(kept_stat["id"])}
+
+    deleted = await db_client.delete(f"/contents/{content.id}/draft")
+    assert deleted.status_code == 204
+    assert (await db_session.scalars(sa.select(StatRule).execution_options(populate_existing=True))).all() == []

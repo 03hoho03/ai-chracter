@@ -5,16 +5,30 @@ import { DEFAULT_READER_SETTINGS, readerSettingsAtom, readerSettingsSchema } fro
 
 describe("readerSettingsSchema", () => {
   it("올바른 값을 그대로 통과시킨다", () => {
-    const value = { fontSize: "large", lineHeight: "loose", margin: "wide" };
+    const value = { fontSize: "large", lineHeight: "loose", margin: "wide", mode: "scroll", keepScreenOn: true };
 
     expect(readerSettingsSchema.parse(value)).toEqual(value);
   });
 
   it("깨진 칸만 기본값으로 돌리고 나머지 고른 값은 지킨다", () => {
-    expect(readerSettingsSchema.parse({ fontSize: "huge", lineHeight: "loose" })).toEqual({
+    expect(
+      readerSettingsSchema.parse({ fontSize: "huge", lineHeight: "loose", mode: "book", keepScreenOn: "yes" }),
+    ).toEqual({
       fontSize: DEFAULT_READER_SETTINGS.fontSize,
       lineHeight: "loose",
       margin: DEFAULT_READER_SETTINGS.margin,
+      mode: DEFAULT_READER_SETTINGS.mode,
+      keepScreenOn: DEFAULT_READER_SETTINGS.keepScreenOn,
+    });
+  });
+
+  it("넘김 방식·화면 유지 칸이 없던 옛 저장값은 고른 세 칸을 지키고 새 칸만 기본값(페이지·끔)으로 채운다", () => {
+    expect(readerSettingsSchema.parse({ fontSize: "large", lineHeight: "loose", margin: "wide" })).toEqual({
+      fontSize: "large",
+      lineHeight: "loose",
+      margin: "wide",
+      mode: "page",
+      keepScreenOn: false,
     });
   });
 

@@ -11,7 +11,7 @@ from api.content.author_macros import default_user_name_error
 from api.core.schema import CamelModel
 from api.db.models.content import ContentTarget, ContentType, ContentVisibility, ModerationStatus
 from api.db.models.moderation import ReportReasonCategory
-from api.db.models.story import EndingRuleOperator, LogicalOp, StatChangeDirection, StoryPromptTemplate
+from api.db.models.story import EndingRuleOperator, LogicalOp, StoryPromptTemplate
 from api.persona.schemas import PERSONA_NAME_MAX_LENGTH
 
 VisibilityFilter = Literal["all", "public", "link", "private"]
@@ -293,18 +293,24 @@ class ContentVisibilityUpdateRequest(CamelModel):
     visibility: ContentVisibility
 
 
-def _both_directions() -> StatChangeDirection:
-    return "both"
+class StatRuleDraftItem(CamelModel):
+    """스탯 하나의 「조건 → ±n」 규칙. 배열 순서가 `order` 라 순서 필드는 따로 없다. 조건은 앞뒤 공백을 떼어 저장한다.
+
+    개수·글자 수 상한과 폭 0·id 중복 금지는 요청에만 건다(`StoryDraftPayload` 의 검증) — 이 타입은 초안 응답에도
+    쓰이므로, 여기에 걸면 상한을 바꾼 뒤 이미 저장된 규칙이 있는 초안을 열 수 없다(GET 500). 폭이 스탯 범위 폭을
+    넘는지는 발행이 본다."""
+
+    id: uuid.UUID
+    condition: Annotated[str, AfterValidator(str.strip)]
+    delta: int
 
 
 class StatDefDraftItem(CamelModel):
     """스탯 하나. 저장 요청·초안 응답·미리보기 세션이 함께 쓴다.
 
-    `change_direction`·`max_change_per_turn` 은 안 보내면 기존 스탯의 값을 그대로 둔다(router 가 `model_fields_set`
-    으로 가른다). 이 옵션을 모르는 화면(배포 전부터 열려 있던 탭의 옛 번들)의 자동저장이 작가가 건 제약을 지우지 않게
-    하려는 것이다. 새 스탯은 기본값(양방향·제한 없음)으로 들어간다. 기본값을 `default_factory` 로 두는 이유는
-    `KeywordNoteDraftInput` 의 같은 주석과 같다. 턴당 변화와 함께 쓰거나 폭을 0 이하로 둔 값도 저장은 받는다 —
-    여기서 막으면 그 초안의 자동저장이 편집마다 실패하므로 발행(`validate_story_publish`)이 막는다."""
+    옛 화면(배포 전부터 열려 있던 탭의 옛 번들)은 이제 없는 변화 방향·한 턴 최대 폭 키(`changeDirection`·
+    `maxChangePerTurn`)를 보낼 수 있다. 모르는 키는 무시하는 pydantic 기본 동작(`extra="ignore"`)으로 받아 넘겨 그 탭의
+    자동저장이 422 로 막히지 않게 한다."""
 
     id: uuid.UUID
     name: str
@@ -316,16 +322,13 @@ class StatDefDraftItem(CamelModel):
     unit: str | None
     description: str
     # 매 턴 결정적으로 더해지는 값(감소는 음수). 채우면 그 스탯은 판정 LLM 대신 시스템이
-    # 굴린다(`api.chat.stats.apply_stat_changes`) — "매 턴 반드시 1씩 줄어든다" 같은 카운터용.
+    # 굴린다(`api.chat.stats.apply_rule_judgment`) — "매 턴 반드시 1씩 줄어든다" 같은 카운터용.
     # 턴당 변화와 행동 반응이 섞인 스탯에는 쓰지 말 것(쓰면 LLM이 영영 못 건드린다).
     per_turn_delta: int | None = None
-    # 판정 LLM 이 낸 값을 코드가 자르는 두 옵션(`api.chat.stats.apply_stat_changes`). 폭은 턴 시작 값에서 잰다.
-    change_direction: StatChangeDirection = Field(default_factory=_both_directions)
-    max_change_per_turn: int | None = Field(default_factory=lambda: None)
-
-
-# 생략하면 기존 스탯의 값을 그대로 두는 필드들(`StatDefDraftItem` docstring).
-STAT_DEF_OPTION_FIELDS = frozenset({"change_direction", "max_change_per_turn"})
+    # 안 보내면 기존 스탯의 규칙을 건드리지 않는다(router 가 `model_fields_set` 으로 가른다). 규칙을 모르는 화면(배포
+    # 전부터 열려 있던 탭의 옛 번들)·이 키를 적지 않은 시드는 보내지 않으므로, 빈 목록과 같게 다루면 그 저장 한 번이
+    # 작가가 쓴 규칙을 전부 지운다. 보냈을 때만 페이로드에 맞춘다 — 빈 목록이면 전부 지운다.
+    rules: list[StatRuleDraftItem] = Field(default_factory=list)
 
 
 class EndingRuleDraftItem(CamelModel):
@@ -413,6 +416,12 @@ MAX_SITUATION_NOTES_PER_SETUP = 10
 SITUATION_NOTE_MAX_INFO_LENGTH = 800
 SITUATION_NOTE_MAX_NAME_LENGTH = 20
 SITUATION_NOTE_MAX_RULES = 10
+
+# 스탯 규칙 저장 상한(스탯마다). 빌더가 입력 단계에서 같은 상한을 지켜야 하는 이유는 아래 키워드북 상한 주석과 같다.
+# 규칙 목록은 판정 프롬프트에 스탯마다 실리므로 개수와 조건 길이를 함께 묶는다. 조건 길이는 앞뒤 공백을 뗀 뒤의 코드
+# 포인트 수다.
+MAX_STAT_RULES_PER_STAT = 10
+STAT_RULE_MAX_CONDITION_LENGTH = 100
 
 
 # 상황 노트의 조건은 JSONB 한 칸에 `model_dump(mode="json")` 꼴로 저장한다(UUID·enum 이 문자열이 된다). 읽는 쪽은 이것으로
@@ -668,6 +677,27 @@ class StoryDraftPayload(CamelModel):
                     raise ValueError(f"situation note text must be at most {SITUATION_NOTE_MAX_INFO_LENGTH} characters")
                 if count_rules(note.condition_rules) > SITUATION_NOTE_MAX_RULES:
                     raise ValueError(f"a situation note holds at most {SITUATION_NOTE_MAX_RULES} condition rules")
+        return self
+
+    @model_validator(mode="after")
+    def _check_stat_rule_limits(self) -> Self:
+        # 상한을 여기(요청 전용 모델)에 두는 이유는 `StatRuleDraftItem` docstring. 폭 0 은 발동해도 아무 일도 하지 않는다.
+        # 폭이 스탯 범위 폭을 넘는지는 여기서 보지 않고 발행이 막는다(`validate_story_publish`) — 작가가 범위를 좁히면
+        # 이미 저장된 규칙이 넘게 되는데, 저장에서 막으면 그 초안의 자동저장이 편집마다 실패한다. 같은 스탯 안의 규칙 id
+        # 중복은 막는다 — 저장이 id 로 행을 맞추므로 두 행이 같은 id 를 가지면 다음 저장에서 둘을 가를 수 없다.
+        for setup in self.starting_setups:
+            for stat in setup.stat_defs:
+                if len(stat.rules) > MAX_STAT_RULES_PER_STAT:
+                    raise ValueError(f"a stat holds at most {MAX_STAT_RULES_PER_STAT} rules")
+                if _first_repeated([rule.id for rule in stat.rules]) is not None:
+                    raise ValueError("stat rule ids must be unique within a stat")
+                for rule in stat.rules:
+                    if not 1 <= len(rule.condition) <= STAT_RULE_MAX_CONDITION_LENGTH:
+                        raise ValueError(
+                            f"stat rule condition must be 1-{STAT_RULE_MAX_CONDITION_LENGTH} characters after trimming"
+                        )
+                    if rule.delta == 0:
+                        raise ValueError("stat rule delta must be a non-zero integer")
         return self
 
 

@@ -13,7 +13,7 @@ import httpx
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat.prompt_builder import EndingJudgmentResult, ImageMatchJudgmentResult, StatJudgmentResult
+from api.chat.prompt_builder import EndingJudgmentResult, ImageMatchJudgmentResult, StatRuleJudgmentResult
 from api.core.s3 import build_thumbnail_key
 from api.db.models import (
     Asset,
@@ -109,7 +109,7 @@ class _EndingLLMClient(LLMClient):
         self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
     ) -> Any:
         results: dict[Any, Any] = {
-            StatJudgmentResult: StatJudgmentResult(stat_changes=[]),
+            StatRuleJudgmentResult: StatRuleJudgmentResult(fired_rule_ids=[]),
             EndingJudgmentResult: EndingJudgmentResult(triggered=True),
             ImageMatchJudgmentResult: ImageMatchJudgmentResult(matched_image_entity_id=None),
         }

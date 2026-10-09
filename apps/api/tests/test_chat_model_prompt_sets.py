@@ -14,7 +14,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat import router as chat_router
-from api.chat.prompt_builder import StatJudgmentResult, load_active_prompt_set
+from api.chat.prompt_builder import StatRuleJudgmentResult, load_active_prompt_set
 from api.chat.prompt_set_cache import get_cached_active_prompt_set
 from api.core import clover
 from api.db.models.prompt import PromptSection, PromptSet
@@ -54,7 +54,7 @@ class _RecordingLLM(LLMClient):
         self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
     ) -> Any:
         self.structured_prompts.append(prompt)
-        return StatJudgmentResult(stat_changes=[])
+        return StatRuleJudgmentResult(fired_rule_ids=[])
 
 
 async def _sonnet_story_room(

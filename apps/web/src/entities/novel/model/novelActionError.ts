@@ -20,7 +20,15 @@ export type NovelAction =
   | "protagonistName"
   | "title"
   | "synopsis"
-  | "cover";
+  | "cover"
+  | "chain"
+  | "chapterTitle"
+  | "authorNote"
+  | "character"
+  | "mergeCharacter"
+  | "saveSnapshot"
+  | "restoreSnapshot"
+  | "deleteSnapshot";
 
 export type NovelActionErrorNotice = {
   message: string;
@@ -45,6 +53,14 @@ const ACTION_OBJECT: Record<NovelAction, string> = {
   title: "제목을 저장하지",
   synopsis: "소개를 저장하지",
   cover: "표지를 바꾸지",
+  chain: "남은 대화를 소설로 만들지",
+  chapterTitle: "화 제목을 저장하지",
+  authorNote: "작가의 말을 저장하지",
+  character: "인물 카드를 저장하지",
+  mergeCharacter: "인물 카드를 합치지",
+  saveSnapshot: "버전을 저장하지",
+  restoreSnapshot: "이 버전으로 되돌리지",
+  deleteSnapshot: "버전을 지우지",
 };
 
 /** 원래 대화방이 지워져 화를 만들 수도 다시 만들 수도 없을 때의 문장. 만들기 버튼 아래 사유 문장과 두 요청의 409 가

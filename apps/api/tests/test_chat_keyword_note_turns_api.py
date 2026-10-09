@@ -12,8 +12,8 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat.prompt_builder import ImageMatchJudgmentResult, StatJudgmentResult
-from api.db.models import ChatMessage, Content, KeywordNote, Shortcut, StartingSetup, StatDef
+from api.chat.prompt_builder import ImageMatchJudgmentResult, StatRuleJudgmentResult
+from api.db.models import ChatMessage, Content, KeywordNote, Shortcut, StartingSetup, StatDef, StatRule
 from api.db.models.chat import ChatMessageRole
 from api.llm.client import LLMCallContext, LLMClient
 from factories import (
@@ -50,8 +50,8 @@ class _RecordingLLMClient(LLMClient):
         self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
     ) -> Any:
         self.judgment_prompts.append(prompt)
-        if response_schema is StatJudgmentResult:
-            return StatJudgmentResult(stat_changes=[])
+        if response_schema is StatRuleJudgmentResult:
+            return StatRuleJudgmentResult(fired_rule_ids=[])
         if response_schema is ImageMatchJudgmentResult:
             return ImageMatchJudgmentResult(matched_image_entity_id=None)
         raise AssertionError(f"예상하지 못한 판정 호출: {response_schema.__name__}")
@@ -131,9 +131,11 @@ async def test_send_loads_note_whose_keyword_is_in_previous_ai_response_but_not_
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     user_id, content, setup = await _story_with_setup(db_session, opening_message="문이 열린다.")
-    # 스탯이 있어야 이 턴에 스탯 판정 호출이 난다.
+    # 규칙 있는 스탯이 있어야 이 턴에 스탯 판정 호출이 난다.
+    stat_def_id = uuid.uuid4()
     db_session.add(
         StatDef(
+            id=stat_def_id,
             entity_id=uuid.uuid4(),
             starting_setup_id=setup.id,
             name="호감도",
@@ -147,6 +149,7 @@ async def test_send_loads_note_whose_keyword_is_in_previous_ai_response_but_not_
             order=1,
         )
     )
+    db_session.add(StatRule(entity_id=uuid.uuid4(), stat_def_id=stat_def_id, condition="반긴다", delta=1, order=0))
     _add_note(db_session, content, "표지-은빛열쇠 노트", ["은빛열쇠"])
     room_id = await _logged_in_room(db_client, db_session, user_id, content, setup)
     fake = _RecordingLLMClient(["바닥에 은빛열쇠가 떨어져 있다.", "응답"])

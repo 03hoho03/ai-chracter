@@ -215,7 +215,7 @@ class Settings(BaseSettings):
     gemini_novelize_revise_timeout_ms: int = 120_000
     gemini_novelize_boundary_timeout_ms: int = 30_000
 
-    # 상위 모델(AWS Bedrock 의 Claude). 채팅 턴 생성과 소설 장 생성만 이 모델로 갈 수 있고 나머지 호출은 Gemini 다.
+    # 상위 모델(AWS Bedrock 의 Claude). 채팅 턴 생성(측정용 리플레이 포함)과 소설 장 생성만 이 모델로 갈 수 있고 나머지 호출은 Gemini 다.
     # 🔴 env 이름을 `AWS_` 로 시작하지 않는다 — 그 이름들은 R2 용이고 boto3 가 프로세스 env 에서 직접 읽는다. 자격은 Bedrock
     # 호출만 허용한 전용 IAM 사용자 키를 여기서 SDK 에 명시로 넘긴다(`llm/bedrock.py`). 키나 리전이 빈 채로 SDK 에 가면 기본
     # 자격 체인이 R2 키로 서명하거나 R2 리전(`auto`)으로 엔드포인트를 만들어서, 아래 스위치가 켜져 있으면 셋이 다 있어야 기동한다.

@@ -15,6 +15,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, UTC
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, ParamSpec, TypeVar
 
 import httpx
@@ -25,7 +26,8 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 from sqlalchemy.orm import Session, SessionTransaction
 from starlette.types import Message
 
-from api.chat.prompt_builder import ImageMatchJudgmentResult
+from api.chat.prompt_builder import ImageMatchJudgmentResult, stat_rule_letters
+from api.content.schemas import RULE_LIST_ADAPTER, EndingRuleListDraftItem
 from api.core.config import settings
 from api.core.security import hash_password
 from api.db.models import (
@@ -63,8 +65,10 @@ from api.db.models import (
     NovelReadingPosition,
     NovelSnapshot,
     Payment,
+    SituationNote,
     StartingSetup,
     StatDef,
+    StatRule,
     StoryPromptTemplate,
     StoryVersionDetail,
     User,
@@ -72,8 +76,13 @@ from api.db.models import (
     UserPersona,
 )
 from api.db.session import engine
+from api.llm import bedrock as bedrock_module
+from api.llm import gemini as gemini_module
+from api.llm.bedrock import BedrockLLMClient
 from api.llm.client import LLMCallContext, LLMClient
 from api.llm.dependencies import get_llm_client
+from api.llm.gemini import GeminiLLMClient
+from api.llm.routing import RoutingLLMClient
 from api.main import app
 from api.session.store import create_session
 
@@ -610,6 +619,27 @@ async def _story_with_setup(
     return user.id, content, setup
 
 
+def _add_situation_note(
+    db_session: AsyncSession,
+    setup: StartingSetup,
+    info_text: str,
+    rules: list[EndingRuleListDraftItem],
+    *,
+    order: int = 0,
+) -> None:
+    """저장 경로와 같은 JSON 꼴(`model_dump(mode="json")`)로 넣는다."""
+    db_session.add(
+        SituationNote(
+            entity_id=uuid.uuid4(),
+            starting_setup_id=setup.id,
+            name="노트",
+            info_text=info_text,
+            order=order,
+            condition_rules=RULE_LIST_ADAPTER.dump_python(rules, mode="json"),
+        )
+    )
+
+
 async def _make_default_persona(db_session: AsyncSession, user_id: uuid.UUID, name: str) -> UserPersona:
     """대화 프로필을 만들어 사용자의 기본 프로필로 둔다 — 그 뒤 만드는 방은 이 프로필을 고른 채 시작한다."""
     persona = UserPersona(user_id=user_id, name=name)
@@ -861,8 +891,11 @@ async def _open_room(
         )
         db_session.add(setup)
         await db_session.flush()
+        # 스탯 하나와 그 규칙 하나 — 규칙이 있어야 새 턴마다 스탯 판정이 구조화 호출로 나간다.
+        stat_def_id = uuid.uuid4()
         db_session.add(
             StatDef(
+                id=stat_def_id,
                 entity_id=uuid.uuid4(),
                 starting_setup_id=setup.id,
                 name="[STAT]신뢰",
@@ -875,6 +908,9 @@ async def _open_room(
                 description="신뢰 스탯",
                 order=1,
             )
+        )
+        db_session.add(
+            StatRule(entity_id=uuid.uuid4(), stat_def_id=stat_def_id, condition="[RULE]약속을 지킨다", delta=5, order=0)
         )
         body = {"contentId": str(content.id), "contentType": "story", "startingSetupId": str(setup.id)}
     await db_session.commit()
@@ -1265,7 +1301,8 @@ async def _novel_ledger(db: AsyncSession, user_id: uuid.UUID) -> list[tuple[str,
 class EndingPriorityScenario:
     """엔딩 우선 스탯 판정 순서를 실채팅·빌더 미리보기에 같은 입력으로 넣어 같은 결과가 나오는지 보는 시나리오.
 
-    `stats` 는 스탯 이름 → 초기값, `stat_changes` 는 이번 턴 스탯 판정이 내는 새 값이다. `endings` 는 목록 순서대로
+    `stats` 는 스탯 이름 → 초기값, `stat_changes` 는 이번 턴 스탯 판정이 고른 규칙이 만드는 새 값이다
+    (`ending_priority_stat_rules`). `endings` 는 목록 순서대로
     (이름, 우선 스탯 이름 또는 None, `스탯 >= 문턱` 규칙 하나 또는 None). `verdicts` 는 엔딩 판정 모델이 차례로 낼
     답이고, `judged` 는 판정 모델을 부른 엔딩 이름 순서, `reached` 는 발동한 엔딩 이름이다. 판정한 엔딩은 판정 문안에
     `ending_priority_marker(이름)` 을 넣어 판정 프롬프트에서 찾는다."""
@@ -1280,6 +1317,18 @@ class EndingPriorityScenario:
 
 def ending_priority_marker(name: str) -> str:
     return f"판정표지-{name}"
+
+
+def ending_priority_stat_rules(scenario: EndingPriorityScenario) -> tuple[dict[str, int], list[str]]:
+    """시나리오 스탯마다 둘 규칙 하나의 폭(스탯 이름 → 폭)과, 이번 턴 판정이 고를 규칙의 짧은 id 목록. 새 값이 있는 스탯은
+    폭이 새 값 − 초기값이고 그 규칙이 발동한다. 나머지는 발동하지 않는 +1 규칙이다 — 모든 스탯에 규칙이 있어야 스탯 판정이
+    매 턴 불리고(판정 프롬프트 하나 + 엔딩 판정 프롬프트들), 짧은 id 의 글자가 스탯 순서(`stats` 의 순서)를 따른다."""
+    deltas = {
+        name: scenario.stat_changes[name] - initial if name in scenario.stat_changes else 1
+        for name, initial in scenario.stats.items()
+    }
+    fired = [f"{stat_rule_letters(index)}1" for index, name in enumerate(scenario.stats) if name in scenario.stat_changes]
+    return deltas, fired
 
 
 def judged_ending_names(prompts: list[str], scenario: EndingPriorityScenario) -> list[str]:
@@ -1366,3 +1415,80 @@ ENDING_PRIORITY_SCENARIOS = [
         id="no-group-keeps-list-order",
     ),
 ]
+
+
+class _FakeProviderSdks:
+    """두 공급자 SDK 경계(Gemini `aio.models.generate_content_stream`, Bedrock `messages.create`)만 가짜로 둔 라우팅
+    클라이언트. 실제로 보낸 요청 인자를 모은다."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.gemini_sent: list[dict[str, Any]] = []
+        self.bedrock_sent: list[dict[str, Any]] = []
+        self.built = 0
+        self.recorded: list[tuple[str, str]] = []
+        # 주면 Bedrock 호출이 사용량 기록 없이 이 예외로 끝난다(정책 거절·연결 오류처럼).
+        self.bedrock_error: Exception | None = None
+
+        async def record_usage(call_site: str, model: str, usage_metadata: object | None) -> None:
+            self.recorded.append((call_site, model))
+
+        # 사용량 기록의 원래 자리(Redis)는 쓰지 않는다 — 리플레이는 이 이름을 감싸 보낸 값을 잡는다.
+        monkeypatch.setattr(gemini_module, "record_usage", record_usage)
+        monkeypatch.setattr(bedrock_module, "record_usage", record_usage)
+        self.gemini = GeminiLLMClient(api_key="test-key")
+        monkeypatch.setattr(
+            self.gemini,
+            "_client",
+            SimpleNamespace(aio=SimpleNamespace(models=SimpleNamespace(generate_content_stream=self._gemini_stream))),
+        )
+        self.bedrock = BedrockLLMClient()
+        monkeypatch.setattr(
+            self.bedrock, "_client", SimpleNamespace(messages=SimpleNamespace(create=self._bedrock_create))
+        )
+
+    async def _gemini_stream(self, **kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+        self.gemini_sent.append(kwargs)
+
+        async def chunks() -> AsyncIterator[SimpleNamespace]:
+            yield SimpleNamespace(text="제미나이 ", candidates=[], usage_metadata=None, prompt_feedback=None)
+            yield SimpleNamespace(
+                text="응답",
+                candidates=[SimpleNamespace(finish_reason="STOP")],
+                usage_metadata=SimpleNamespace(
+                    prompt_token_count=100,
+                    cached_content_token_count=10,
+                    candidates_token_count=7,
+                    thoughts_token_count=3,
+                    total_token_count=110,
+                ),
+                prompt_feedback=None,
+            )
+
+        return chunks()
+
+    async def _bedrock_create(self, **kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+        self.bedrock_sent.append(kwargs)
+        if self.bedrock_error is not None:
+            raise self.bedrock_error
+
+        async def stream() -> AsyncIterator[SimpleNamespace]:
+            usage = SimpleNamespace(
+                input_tokens=50, cache_read_input_tokens=20, cache_creation_input_tokens=30, output_tokens=0
+            )
+            yield SimpleNamespace(type="message_start", message=SimpleNamespace(usage=usage))
+            yield SimpleNamespace(
+                type="content_block_delta", delta=SimpleNamespace(type="text_delta", text="클로드 응답")
+            )
+            yield SimpleNamespace(
+                type="message_delta",
+                delta=SimpleNamespace(stop_reason="end_turn"),
+                usage=SimpleNamespace(
+                    output_tokens=9, input_tokens=None, cache_read_input_tokens=None, cache_creation_input_tokens=None
+                ),
+            )
+
+        return stream()
+
+    def client(self) -> RoutingLLMClient:
+        self.built += 1
+        return RoutingLLMClient(self.gemini, bedrock_factory=lambda: self.bedrock)

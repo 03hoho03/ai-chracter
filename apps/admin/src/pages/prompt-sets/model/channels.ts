@@ -1,12 +1,15 @@
 import type { PromptLane } from "./lane";
 
-/** 코드가 아는 10채널(어드민은 이 집합을 늘리거나 줄이지
+/** 코드가 아는 11채널(어드민은 이 집합을 늘리거나 줄이지
  * 못한다). 목록·라벨·술어를 손으로 따로 적지 않고 `PROMPT_CHANNEL_LABELS`에서 도출해야 셋이
  * 어긋날 수 없다(legal의 `LEGAL_KIND_LABELS`와 같은 패턴). */
 export const PROMPT_CHANNEL_LABELS = {
   system: "시스템 지침",
   generation: "생성",
-  stat_judgment: "스탯 판정",
+  // 옛 절대값 판정 채널. 채팅은 더 이상 이 문안을 읽지 않지만 운영 세트에 행이 남아 있어 탭이 보인다 — 고쳐도 아무 일이 없다는
+  // 것을 라벨로 알린다(서버는 게시 검증용으로만 이 행을 받는다).
+  stat_judgment: "스탯 판정(사용 안 함)",
+  stat_rule_judgment: "스탯 규칙 판정",
   ending_judgment: "엔딩 판정",
   image_judgment: "이미지 판정",
   memory_summary: "기억 요약",

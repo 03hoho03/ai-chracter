@@ -260,6 +260,7 @@ describe.each(BLOCK_CASES.map((entry) => [`${entry.topic.id} ${entry.block.id}`,
             expect(parsed.items).toEqual(seed);
             return;
           case "statRules":
+          case "statChangeRules":
             expect(parsed.rules).toEqual(seed);
             return;
           case "toggle":

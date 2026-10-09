@@ -16,7 +16,11 @@ import uuid
 from api.chat.ending_rules import evaluate_rule_list
 from api.chat.router import _preview_ending_rule_list_item
 from api.content.publish import validate_character_publish
-from api.content.schemas import EndingRuleGroupDraftItem
+from api.content.schemas import (
+    MAX_STAT_RULES_PER_STAT,
+    STAT_RULE_MAX_CONDITION_LENGTH,
+    EndingRuleGroupDraftItem,
+)
 from api.db.models.character import CharacterVersionDetail
 from api.db.models.content import Content, ContentVersion
 from generate_seed_stories import NARRATOR_WORDS, stat_display_name
@@ -249,7 +253,7 @@ def test_seed_story_development_examples_are_label_free_pairs() -> None:
 def test_seed_story_setting_text_does_not_quote_stat_names() -> None:
     """스탯 증감·엔딩 조건은 `settingText` 가 아니라 스탯 `description` 의 몫이다.
 
-    별도 판정 호출(`build_stat_judgment_prompt`)이 `description` 만 보고 판단하므로,
+    별도 판정 호출(`build_stat_rule_judgment_prompt`)이 `description`·규칙만 보고 판단하므로,
     `settingText` 에 적힌 규칙은 판정에 반영되지도 않으면서 서술자 지시문만 오염시킨다
     (healing-walkinglog 가 실제로 이랬다). 규칙은 스탯 이름을 따옴표로 인용하는 형태로
     나타나므로 그 패턴을 금지선으로 삼는다 — 개념을 산문으로 언급하는 것은 막지 않는다.
@@ -359,4 +363,33 @@ def test_seed_per_turn_counters_are_system_driven_not_llm_judged() -> None:
                     assert abs(stat.per_turn_delta) <= span, (
                         f"{story.slug} / {stat.name}: 델타 {stat.per_turn_delta} 가 "
                         f"범위 {span} 보다 커서 한 턴에 끝까지 간다"
+                    )
+
+
+def test_seed_judged_stats_carry_rules_and_counters_carry_none() -> None:
+    """시드의 판정 스탯은 전부 「조건 → 증감」 규칙을 갖고, 카운터 스탯은 규칙이 없어야 한다.
+
+    채팅은 규칙 없는 판정 스탯을 판정에서 빼므로(`prepare_stat_judgment`) 그 스탯은 대화 내내 움직이지 않는다. 시드 로더도
+    발행 검증(`stats.rules`)을 타지만, 여기서 먼저 어느 스탯인지 짚는다. 카운터는 판정을 받지 않아 규칙이 발동할 일이 없다.
+
+    규칙은 초안 저장이 받는 모양이어야 한다 — 스탯당 개수 상한, 앞뒤 공백을 뗀 조건 길이, 0 이 아닌 폭, 그 스탯 범위
+    폭을 넘지 않는 폭. 시드를 빌더에서 열어 다시 저장하거나 발행할 때 막히지 않게 한다.
+    """
+    for story in load_all_stories():
+        for setup in story.payload.starting_setups:
+            for stat in setup.stat_defs:
+                label = f"{story.slug} / {setup.name} / {stat.name}"
+                if stat.per_turn_delta is not None:
+                    assert stat.rules == [], f"{label}: 카운터 스탯에 규칙이 달려 있다"
+                    continue
+                assert stat.rules, f"{label}: 판정 스탯에 규칙이 없다 — 그 스탯은 판정을 받지 못한다"
+                assert len(stat.rules) <= MAX_STAT_RULES_PER_STAT, f"{label}: 규칙이 {len(stat.rules)}개"
+                span = stat.max_value - stat.min_value
+                for rule in stat.rules:
+                    assert 1 <= len(rule.condition) <= STAT_RULE_MAX_CONDITION_LENGTH, (
+                        f"{label}: 조건 길이 {len(rule.condition)} — {rule.condition!r}"
+                    )
+                    assert rule.delta != 0, f"{label}: 폭 0 규칙 — {rule.condition!r}"
+                    assert abs(rule.delta) <= span, (
+                        f"{label}: 폭 {rule.delta} 가 범위 폭 {span} 보다 크다 — {rule.condition!r}"
                     )

@@ -24,8 +24,7 @@ from api.chat import router as chat_router
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
     ImageMatchJudgmentResult,
-    StatChangeJudgment,
-    StatJudgmentResult,
+    StatRuleJudgmentResult,
     load_active_prompt_set,
 )
 from api.chat.prompt_set_cache import set_cached_active_prompt_set
@@ -42,6 +41,7 @@ from api.db.models import (
     SituationalImage,
     StartingSetup,
     StatDef,
+    StatRule,
     StoryMediaExposure,
     User,
 )
@@ -77,7 +77,7 @@ class _JudgingLLMClient(LLMClient):
         rendezvous: bool = False,
     ) -> None:
         self._results: dict[type, Any] = {
-            StatJudgmentResult: stat if stat is not None else StatJudgmentResult(stat_changes=[]),
+            StatRuleJudgmentResult: stat if stat is not None else StatRuleJudgmentResult(fired_rule_ids=[]),
             EndingJudgmentResult: ending if ending is not None else EndingJudgmentResult(triggered=False),
             ImageMatchJudgmentResult: image
             if image is not None
@@ -86,7 +86,7 @@ class _JudgingLLMClient(LLMClient):
         self.calls: list[tuple[str, type, str]] = []
         self._rendezvous = rendezvous
         self._arrived: dict[type, asyncio.Event] = {
-            StatJudgmentResult: asyncio.Event(),
+            StatRuleJudgmentResult: asyncio.Event(),
             ImageMatchJudgmentResult: asyncio.Event(),
         }
 
@@ -106,7 +106,7 @@ class _JudgingLLMClient(LLMClient):
         self.calls.append((usage.call_site, response_schema, prompt))
         if self._rendezvous and response_schema in self._arrived:
             self._arrived[response_schema].set()
-            other = ImageMatchJudgmentResult if response_schema is StatJudgmentResult else StatJudgmentResult
+            other = ImageMatchJudgmentResult if response_schema is StatRuleJudgmentResult else StatRuleJudgmentResult
             try:
                 await asyncio.wait_for(self._arrived[other].wait(), timeout=2)
             except TimeoutError as exc:
@@ -158,6 +158,9 @@ async def _story(
         order=1,
     )
     db_session.add(stat_def)
+    await db_session.flush()
+    # 규칙 하나(a1, +10) — 규칙이 있어야 스탯 판정이 불린다. 발동하면 50 이 60 이 된다.
+    db_session.add(StatRule(entity_id=uuid.uuid4(), stat_def_id=stat_def.id, condition="반긴다", delta=10, order=0))
     await db_session.flush()
     return user, content, setup, stat_def
 
@@ -233,7 +236,7 @@ async def test_story_turn_attaches_media_cell_image_and_records_exposure(
     assert final["imageId"] == str(cell.entity_id)
     assert final["imageUrl"]
     assert (final["imageWidth"], final["imageHeight"]) == (300, 400)
-    assert sorted(fake.schemas(), key=str) == sorted([StatJudgmentResult, ImageMatchJudgmentResult], key=str)
+    assert sorted(fake.schemas(), key=str) == sorted([StatRuleJudgmentResult, ImageMatchJudgmentResult], key=str)
     assert ("chat_media_book_image", ImageMatchJudgmentResult) in [(site, schema) for site, schema, _ in fake.calls]
     assert await _exposed_cells(db_session, user.id) == [cell.entity_id]
     stored = await db_session.scalar(sa.select(ChatMessage.image_id).where(ChatMessage.id == uuid.UUID(final["id"])))
@@ -278,7 +281,7 @@ async def test_story_turn_skips_media_judgment_when_all_cells_excluded(
 
     events = await _send(db_client, room_id, fake)
 
-    assert fake.schemas() == [StatJudgmentResult]
+    assert fake.schemas() == [StatRuleJudgmentResult]
     assert events[-1]["finalMessage"]["imageId"] is None
 
 
@@ -311,12 +314,12 @@ async def test_story_turn_ignores_judged_cell_id_not_in_candidates(
 async def test_story_turn_keeps_stat_changes_when_media_judgment_fails(
     db_client: httpx.AsyncClient, db_session: AsyncSession, judgment_error: LLMClientError
 ) -> None:
-    user, content, setup, stat_def = await _story(db_session)
+    user, content, setup, _ = await _story(db_session)
     assert content.current_published_version_id is not None
     await _add_named_media_cell(db_session, content.current_published_version_id, user.id, "민아", "창가")
     room_id = await _open_story_room(db_client, db_session, user, content, setup)
     fake = _JudgingLLMClient(
-        stat=StatJudgmentResult(stat_changes=[StatChangeJudgment(stat_id=str(stat_def.entity_id), new_value=60)]),
+        stat=StatRuleJudgmentResult(fired_rule_ids=["a1"]),
         image=judgment_error,
     )
 
@@ -372,7 +375,7 @@ def _fail_once_with_real_sql(monkeypatch: pytest.MonkeyPatch, matches: Callable[
 async def test_story_turn_media_candidate_query_failure_keeps_stat_changes(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    user, content, setup, stat_def = await _story(db_session)
+    user, content, setup, _ = await _story(db_session)
     assert content.current_published_version_id is not None
     await _add_named_media_cell(db_session, content.current_published_version_id, user.id, "민아", "창가")
     room_id = await _open_story_room(db_client, db_session, user, content, setup)
@@ -383,12 +386,12 @@ async def test_story_turn_media_candidate_query_failure_keeps_stat_changes(
         and statement.column_descriptions[0]["entity"] is MediaBookCell,
     )
     fake = _JudgingLLMClient(
-        stat=StatJudgmentResult(stat_changes=[StatChangeJudgment(stat_id=str(stat_def.entity_id), new_value=60)])
+        stat=StatRuleJudgmentResult(fired_rule_ids=["a1"])
     )
 
     events = await _send(db_client, room_id, fake)
 
-    assert fake.schemas() == [StatJudgmentResult]
+    assert fake.schemas() == [StatRuleJudgmentResult]
     assert [e["type"] for e in events if e["type"] != "token"] == ["statChange", "done"]
     stat_value = await db_session.scalar(
         sa.select(ChatRoomStat.current_value).where(ChatRoomStat.chat_room_id == room_id)
@@ -399,7 +402,7 @@ async def test_story_turn_media_candidate_query_failure_keeps_stat_changes(
 async def test_story_turn_exposure_record_failure_drops_the_image_but_keeps_the_turn(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    user, content, setup, stat_def = await _story(db_session)
+    user, content, setup, _ = await _story(db_session)
     assert content.current_published_version_id is not None
     cell, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user.id, "민아", "창가")
     room_id = await _open_story_room(db_client, db_session, user, content, setup)
@@ -408,7 +411,7 @@ async def test_story_turn_exposure_record_failure_drops_the_image_but_keeps_the_
         lambda statement: isinstance(statement, sa.Insert) and statement.table.name == "story_media_exposures",
     )
     fake = _JudgingLLMClient(
-        stat=StatJudgmentResult(stat_changes=[StatChangeJudgment(stat_id=str(stat_def.entity_id), new_value=60)]),
+        stat=StatRuleJudgmentResult(fired_rule_ids=["a1"]),
         image=_judged(cell.entity_id),
     )
 
@@ -447,12 +450,12 @@ async def test_story_turn_runs_stat_and_media_judgments_concurrently(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """두 판정이 서로를 기다리는 페이크 — 차례로 부르면 먼저 불린 쪽이 시간 초과로 실패해 그 결과가 빠진다."""
-    user, content, setup, stat_def = await _story(db_session)
+    user, content, setup, _ = await _story(db_session)
     assert content.current_published_version_id is not None
     cell, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user.id, "민아", "창가")
     room_id = await _open_story_room(db_client, db_session, user, content, setup)
     fake = _JudgingLLMClient(
-        stat=StatJudgmentResult(stat_changes=[StatChangeJudgment(stat_id=str(stat_def.entity_id), new_value=60)]),
+        stat=StatRuleJudgmentResult(fired_rule_ids=["a1"]),
         image=_judged(cell.entity_id),
         rendezvous=True,
     )
@@ -561,7 +564,7 @@ async def test_story_turn_skips_media_judgment_when_prompt_renders_empty(
 
     events = await _send(db_client, room_id, fake)
 
-    assert fake.schemas() == [StatJudgmentResult]
+    assert fake.schemas() == [StatRuleJudgmentResult]
     assert events[-1]["type"] == "done"
     assert events[-1]["finalMessage"]["imageId"] is None
 
@@ -813,7 +816,8 @@ async def test_preview_turn_skips_media_judgment_when_all_cells_excluded(
     resp = await _send_preview(db_client, session_id, fake)
 
     assert resp.status_code == 200, resp.text
-    assert fake.schemas() == [StatJudgmentResult]
+    # 페이로드에 스탯이 없어 스탯 판정도 불리지 않는다 — 판정 호출이 하나도 없어야 한다.
+    assert fake.schemas() == []
 
 
 async def test_preview_turn_after_ending_judges_media_cell(

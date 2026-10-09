@@ -2,14 +2,20 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
 import { GripVertical, ImageIcon } from "lucide-react";
 
 import { ENDING_RULE_OPERATOR_SYMBOLS, STAT_ICON_OPTIONS } from "@/entities/chat-room";
-import { countCharacters, STORY_FIELD_LABELS, type FieldLabel, type StoryFieldKey } from "@/features/build-story";
+import {
+  countCharacters,
+  MAX_STAT_RULE_CONDITION_LENGTH,
+  STORY_FIELD_LABELS,
+  type FieldLabel,
+  type StoryFieldKey,
+} from "@/features/build-story";
 import { assertNever } from "@/shared/lib/assertNever";
 
 import { findGuideImage } from "../config/guideImages";
 import type { GuideMockupContext } from "../model/guideMockupContext";
 import { isStoryFieldKey } from "../model/mockupCaption";
 import { choicesOf, logicOpChoices, selectLabelOf } from "../model/mockupChoices";
-import { isRecord, parseMockupValue, type MockupValue } from "../model/mockupValue";
+import { isRecord, parseMockupValue, type MockupValue, type StatChangeRuleValue } from "../model/mockupValue";
 import type { FieldValue } from "../model/parseManuscript";
 import { GuideCardListMockup } from "./GuideCardListMockup";
 import { GuideMediaGridMockup } from "./GuideMediaGridMockup";
@@ -126,6 +132,8 @@ function MockupControl({ fieldKey, parsed, context, clampsLongText }: MockupCont
       return <CoverWell token={parsed.token} />;
     case "statRules":
       return <StatRulesMockup rules={parsed.rules} />;
+    case "statChangeRules":
+      return <StatChangeRulesMockup rules={parsed.rules} />;
     case "cardList":
       return <GuideCardListMockup listKey={fieldKey} cards={parsed.cards} more={parsed.more} />;
     case "mediaGrid":
@@ -236,6 +244,40 @@ function StatRulesMockup({ rules }: { rules: readonly Record<string, unknown>[] 
         </li>
       ))}
     </ul>
+  );
+}
+
+/** 스탯의 「조건 → 증감」 규칙 줄. 빌더처럼 줄마다 손잡이·조건(글자 수)·증감을 그리고, 증감은 빌더 칸처럼 양수에도 부호를
+ * 붙인다. 넓으면 조건과 증감이 나란히, 좁으면 위아래로 선다(빌더와 같은 컨테이너 폭 기준). 삭제 버튼은 그리지 않는다. */
+function StatChangeRulesMockup({ rules }: { rules: readonly StatChangeRuleValue[] }) {
+  return (
+    <ol className="flex flex-col gap-2">
+      {rules.map((rule, index) => (
+        // 원고에서 온 고정 목록이라 순서가 바뀌지 않는다.
+        <li key={index} className="flex items-start gap-2 rounded-lg border border-border p-3">
+          <span className="flex size-9 shrink-0 items-center justify-center">
+            <GripVertical aria-hidden className="size-4 text-muted-foreground" />
+          </span>
+          <div className="@container min-w-0 flex-1">
+            <div className="grid gap-3 @md:grid-cols-stat-rule">
+              <div className="flex min-w-0 flex-col gap-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <MockupLabel fieldKey="startingSetups.*.stats.*.rules.*.condition" />
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {`${countCharacters(rule.condition)}/${MAX_STAT_RULE_CONDITION_LENGTH}`}
+                  </span>
+                </div>
+                <MockupTextarea text={rule.condition} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <MockupLabel fieldKey="startingSetups.*.stats.*.rules.*.delta" />
+                <MockupInput value={rule.delta > 0 ? `+${rule.delta}` : String(rule.delta)} className="w-28 @md:w-full" />
+              </div>
+            </div>
+          </div>
+        </li>
+      ))}
+    </ol>
   );
 }
 

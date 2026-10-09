@@ -47,6 +47,12 @@ const ALLOWLIST: Record<string, { reason: string; tokens: string[] }> = {
       "(background) 위에 있다.",
     tokens: ["bg-muted"],
   },
+  "../../../features/novel-snapshots/ui/NovelSnapshotsPanel.tsx": {
+    reason:
+      "표식은 버전 행 ⋯ 메뉴의 DropdownMenuContent뿐이다. bg-muted 목록 자리 표시는 편집 보드 옆 패널(넓은 " +
+      "화면)·목록 자리 화면(좁은 화면) 위에 있고, 둘 다 bg-background다.",
+    tokens: ["bg-muted"],
+  },
   "../../../widgets/content-detail/ui/ContentDetailView.tsx": {
     reason:
       "SURFACE_FILL_CLASS가 variant로 채움을 가른다 — modal(DialogContent 위)은 bg-secondary, page(background " +

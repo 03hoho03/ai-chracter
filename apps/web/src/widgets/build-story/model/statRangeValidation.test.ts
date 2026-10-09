@@ -14,7 +14,7 @@ import { revalidateStatRange, revalidateStatRangeIfInvalid } from "./statRangeVa
 
 function stat(id: string, overrides: Partial<StatDefValues> = {}): StatDefValues {
   // 설명을 비워 둔다 — 범위 밖 칸의 오류가 이 검사로 새어 나오지 않는지 보려고.
-  return { id, name: id, icon: "", color: "", min: 0, max: 100, initial: 0, description: "", perTurnDelta: null, changeDirection: "both", maxChangePerTurn: null, ...overrides };
+  return { id, name: id, icon: "", color: "", min: 0, max: 100, initial: 0, description: "", perTurnDelta: null, rules: [], ...overrides };
 }
 
 /** 셸과 같은 리졸버를 단 폼. 초안은 이름·시작설정 도입부 등이 비어 폼 전체로는 오류투성이다. */

@@ -81,9 +81,8 @@ function fromApiStatDef(stat: StatDefDraftItem): StatDefValues {
     unit: stat.unit ?? undefined,
     description: stat.description,
     perTurnDelta: stat.perTurnDelta ?? null,
-    // 생성 타입에서 선택 필드라(서버는 늘 채워 보낸다) 빠지면 새 스탯과 같은 기본값 — 양방향·제한 없음.
-    changeDirection: stat.changeDirection ?? "both",
-    maxChangePerTurn: stat.maxChangePerTurn ?? null,
+    // 생성 타입에서 선택 필드라(서버는 늘 채워 보낸다) 빠지면 빈 목록. 서버가 순서대로 준다.
+    rules: (stat.rules ?? []).map(({ id, condition, delta }) => ({ id, condition, delta })),
   };
 }
 

@@ -8,7 +8,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat.prompt_builder import ImageMatchJudgmentResult, StatJudgmentResult
+from api.chat.prompt_builder import ImageMatchJudgmentResult, StatRuleJudgmentResult
 from api.db.models import (
     CharacterImageExposure,
     CharacterVersionDetail,
@@ -25,6 +25,7 @@ from api.db.models import (
     SituationalImage,
     StartingSetup,
     StatDef,
+    StatRule,
     StoryPromptTemplate,
 )
 from api.chat import router as chat_router
@@ -98,6 +99,7 @@ async def _add_starting_setup(db_session: AsyncSession, content: Content) -> Sta
 
 
 async def _add_stat_def(db_session: AsyncSession, setup: StartingSetup, **overrides: object) -> StatDef:
+    """스탯 하나와 그 규칙 하나. 규칙이 있어야 스탯 판정이 불린다."""
     defaults: dict[str, object] = {
         "entity_id": uuid.uuid4(),
         "starting_setup_id": setup.id,
@@ -114,6 +116,8 @@ async def _add_stat_def(db_session: AsyncSession, setup: StartingSetup, **overri
     defaults.update(overrides)
     stat_def = StatDef(**defaults)
     db_session.add(stat_def)
+    await db_session.flush()
+    db_session.add(StatRule(entity_id=uuid.uuid4(), stat_def_id=stat_def.id, condition="반긴다", delta=1, order=0))
     await db_session.flush()
     return stat_def
 
@@ -407,7 +411,7 @@ async def test_regenerate_story_room_selects_template_instruction(
     room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
 
     _override_llm_client(
-        _QueuedFakeLLMClient(tokens=["원래", "응답"], structured_results=[StatJudgmentResult(stat_changes=[])])
+        _QueuedFakeLLMClient(tokens=["원래", "응답"], structured_results=[])
     )
     try:
         resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "반가워"})
@@ -446,7 +450,7 @@ async def test_regenerate_story_room_logs_only_chat_generate_call_site(
     room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
 
     _override_llm_client(
-        _QueuedFakeLLMClient(tokens=["원래"], structured_results=[StatJudgmentResult(stat_changes=[])])
+        _QueuedFakeLLMClient(tokens=["원래"], structured_results=[])
     )
     try:
         resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "반가워"})
@@ -1027,7 +1031,7 @@ async def test_edit_message_on_story_room_reruns_stat_judgment_and_keeps_turn_co
     room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
 
     for turn_text in ["행동1", "행동2"]:
-        fake = _QueuedFakeLLMClient(tokens=["진행"], structured_results=[StatJudgmentResult(stat_changes=[])])
+        fake = _QueuedFakeLLMClient(tokens=["진행"], structured_results=[StatRuleJudgmentResult(fired_rule_ids=[])])
         _override_llm_client(fake)
         try:
             resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": turn_text})
@@ -1039,7 +1043,7 @@ async def test_edit_message_on_story_room_reruns_stat_judgment_and_keeps_turn_co
     assert len(messages_before) == 5
     first_user_message_id = next(m.id for m in messages_before if m.content == "행동1")
 
-    fake = _QueuedFakeLLMClient(tokens=["수정후진행"], structured_results=[StatJudgmentResult(stat_changes=[])])
+    fake = _QueuedFakeLLMClient(tokens=["수정후진행"], structured_results=[StatRuleJudgmentResult(fired_rule_ids=[])])
     _override_llm_client(fake)
     try:
         resp = await db_client.patch(
@@ -1049,7 +1053,7 @@ async def test_edit_message_on_story_room_reruns_stat_judgment_and_keeps_turn_co
         _clear_llm_override()
 
     assert resp.status_code == 200
-    assert fake.generate_structured_calls == [StatJudgmentResult]  # 판단 단계가 새 턴에서 재실행됨
+    assert fake.generate_structured_calls == [StatRuleJudgmentResult]  # 판단 단계가 새 턴에서 재실행됨
 
     room = await db_session.get(ChatRoom, room_id)
     assert room is not None

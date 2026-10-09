@@ -39,7 +39,6 @@ from api.content.publish_filter_memo import PASSED_KEY_PREFIX, has_passed, remem
 from api.content.schemas import (
     KEYWORD_NOTE_OPTION_FIELDS,
     RULE_LIST_ADAPTER,
-    STAT_DEF_OPTION_FIELDS,
     CharacterDraftPayload,
     CharacterDraftResponse,
     CharacterSituationalImageItem,
@@ -78,6 +77,7 @@ from api.content.schemas import (
     StartingSetupDraftItem,
     StartingSetupSummary,
     StatDefDraftItem,
+    StatRuleDraftItem,
     StoryDraftPayload,
     StoryDraftResponse,
     UpdateProfileRequest,
@@ -118,6 +118,7 @@ from api.db.models.story import (
     SituationNote,
     StartingSetup,
     StatDef,
+    StatRule,
     StoryPromptTemplate,
     StoryVersionDetail,
 )
@@ -862,8 +863,14 @@ async def _story_draft_response(
                         unit=stat_def.unit,
                         description=stat_def.description,
                         per_turn_delta=stat_def.per_turn_delta,
-                        change_direction=stat_def.change_direction,
-                        max_change_per_turn=stat_def.max_change_per_turn,
+                        rules=[
+                            StatRuleDraftItem(id=rule.entity_id, condition=rule.condition, delta=rule.delta)
+                            for rule in (
+                                await db.scalars(
+                                    select(StatRule).where(StatRule.stat_def_id == stat_def.id).order_by(StatRule.order)
+                                )
+                            ).all()
+                        ],
                     )
                     for stat_def in stat_defs
                 ],
@@ -1073,10 +1080,19 @@ async def _delete_ending_subtree(db: AsyncSession, ending: Ending) -> None:
     await db.delete(ending)
 
 
+async def _delete_stat_def(db: AsyncSession, stat_def: StatDef) -> None:
+    """규칙을 먼저 지우고 스탯을 지운다. 규칙 FK 의 `ON DELETE CASCADE` 는 이 테이블을 모르는 옛 이미지를 위한 것이라
+    (`StatRule` docstring) 새 코드는 형제 테이블처럼 자식을 직접 지운다."""
+    for rule in (await db.scalars(select(StatRule).where(StatRule.stat_def_id == stat_def.id))).all():
+        await db.delete(rule)
+    await db.flush()
+    await db.delete(stat_def)
+
+
 async def _delete_starting_setup_subtree(db: AsyncSession, setup: StartingSetup) -> None:
     stat_defs = (await db.scalars(select(StatDef).where(StatDef.starting_setup_id == setup.id))).all()
     for stat_def in stat_defs:
-        await db.delete(stat_def)
+        await _delete_stat_def(db, stat_def)
     endings = (await db.scalars(select(Ending).where(Ending.starting_setup_id == setup.id))).all()
     for ending in endings:
         await _delete_ending_subtree(db, ending)
@@ -1159,6 +1175,26 @@ async def _reconcile_ending_rules(
             nested_rule.threshold = Decimal(str(rule_item.threshold))
             nested_rule.next_op = rule_item.next_op
             nested_rule.order = nested_order
+
+
+async def _reconcile_stat_rules(db: AsyncSession, stat_def_id: uuid.UUID, items: list[StatRuleDraftItem]) -> None:
+    """entity_id 기준 업서트, `order` 는 `items` 의 배열 인덱스. 빠진 규칙은 지운다."""
+    existing_rules = {
+        rule.entity_id: rule
+        for rule in (await db.scalars(select(StatRule).where(StatRule.stat_def_id == stat_def_id))).all()
+    }
+    incoming_rule_ids = {item.id for item in items}
+    for rule_entity_id, existing_rule in existing_rules.items():
+        if rule_entity_id not in incoming_rule_ids:
+            await db.delete(existing_rule)
+    for order, item in enumerate(items):
+        rule = existing_rules.get(item.id)
+        if rule is None:
+            rule = StatRule(entity_id=item.id, stat_def_id=stat_def_id)
+            db.add(rule)
+        rule.condition = item.condition
+        rule.delta = item.delta
+        rule.order = order
 
 
 # 두 탭이 서로 다른 새 칸으로 같은 빈 자리를 채운 경우의 409 code. 화면은 새로고침을 안내한다.
@@ -1454,7 +1490,7 @@ async def _update_story_draft(
         incoming_stat_def_ids = {sd.id for sd in setup_item.stat_defs}
         for stat_entity_id, stat_def_to_prune in existing_stat_defs_for_prune.items():
             if stat_entity_id not in incoming_stat_def_ids:
-                await db.delete(stat_def_to_prune)
+                await _delete_stat_def(db, stat_def_to_prune)
 
         existing_endings_for_prune = {
             e.entity_id: e
@@ -1499,11 +1535,6 @@ async def _update_story_draft(
             if stat_def is None:
                 stat_def = StatDef(entity_id=stat_item.id, starting_setup_id=setup.id)
                 db.add(stat_def)
-                # 새 스탯은 안 보낸 옵션도 페이로드의 기본값으로 채운다.
-                provided_stat_options = STAT_DEF_OPTION_FIELDS
-            else:
-                # 기존 스탯에서 안 보낸 옵션은 그대로 둔다(`StatDefDraftItem` docstring).
-                provided_stat_options = STAT_DEF_OPTION_FIELDS & stat_item.model_fields_set
             stat_def.name = stat_item.name
             stat_def.icon = stat_item.icon
             stat_def.color = stat_item.color
@@ -1514,8 +1545,10 @@ async def _update_story_draft(
             stat_def.description = stat_item.description
             stat_def.per_turn_delta = stat_item.per_turn_delta
             stat_def.order = stat_order
-            for option in provided_stat_options:
-                setattr(stat_def, option, getattr(stat_item, option))
+            if "rules" in stat_item.model_fields_set:
+                # 새 스탯의 물리 id 는 파이썬 쪽 기본값이라 flush 해야 채워진다.
+                await db.flush()
+                await _reconcile_stat_rules(db, stat_def.id, stat_item.rules)
 
         existing_endings = {
             e.entity_id: e
@@ -2284,7 +2317,8 @@ async def _clone_story_children(
 
     The one column that can't be copied as-is is `keyword_notes.starting_setup_id`: it's a
     physical FK, not an entity_id reference, so it goes through an `old -> entity_id -> new`
-    remap. `ending_rules.stat_def_entity_id` is an entity_id reference and needs none. 상황 노트도 시작설정을 물리
+    remap. `ending_rules.stat_def_entity_id` is an entity_id reference and needs none. 스탯 규칙은 스탯을 물리 FK 로
+    가리키므로 스탯마다 새 스탯 id 로 바로 복제한다. 상황 노트도 시작설정을 물리
     FK 로 가리키지만 시작설정 루프 안에서 새 시작설정 id 로 바로 복제한다. 그 조건(JSONB)의 스탯 참조는 entity_id 라
     값째 옮긴다."""
     setups = (
@@ -2316,24 +2350,34 @@ async def _clone_story_children(
             await db.scalars(select(StatDef).where(StatDef.starting_setup_id == setup.id))
         ).all()
         for stat_def in stat_defs:
-            db.add(
-                StatDef(
-                    entity_id=stat_def.entity_id,
-                    starting_setup_id=new_setup.id,
-                    name=stat_def.name,
-                    icon=stat_def.icon,
-                    color=stat_def.color,
-                    min_value=stat_def.min_value,
-                    max_value=stat_def.max_value,
-                    initial_value=stat_def.initial_value,
-                    unit=stat_def.unit,
-                    description=stat_def.description,
-                    per_turn_delta=stat_def.per_turn_delta,
-                    change_direction=stat_def.change_direction,
-                    max_change_per_turn=stat_def.max_change_per_turn,
-                    order=stat_def.order,
-                )
+            new_stat_def = StatDef(
+                entity_id=stat_def.entity_id,
+                starting_setup_id=new_setup.id,
+                name=stat_def.name,
+                icon=stat_def.icon,
+                color=stat_def.color,
+                min_value=stat_def.min_value,
+                max_value=stat_def.max_value,
+                initial_value=stat_def.initial_value,
+                unit=stat_def.unit,
+                description=stat_def.description,
+                per_turn_delta=stat_def.per_turn_delta,
+                change_direction=stat_def.change_direction,
+                max_change_per_turn=stat_def.max_change_per_turn,
+                order=stat_def.order,
             )
+            db.add(new_stat_def)
+            await db.flush()
+            for rule in (await db.scalars(select(StatRule).where(StatRule.stat_def_id == stat_def.id))).all():
+                db.add(
+                    StatRule(
+                        entity_id=rule.entity_id,
+                        stat_def_id=new_stat_def.id,
+                        condition=rule.condition,
+                        delta=rule.delta,
+                        order=rule.order,
+                    )
+                )
 
         endings = (await db.scalars(select(Ending).where(Ending.starting_setup_id == setup.id))).all()
         for ending in endings:
@@ -2563,10 +2607,14 @@ async def _load_story_publish_draft(
     dangling_stat_rule_paths: list[str] = []
     dangling_situation_note_paths: list[str] = []
     stat_defs: list[StatDef] = []
+    stat_rules: list[StatRule] = []
     situation_notes: list[SituationNote] = []
     for setup_index, setup in enumerate(starting_setups):
         setup_stat_defs = (await db.scalars(select(StatDef).where(StatDef.starting_setup_id == setup.id))).all()
         stat_defs += setup_stat_defs
+        stat_rules += (
+            await db.scalars(select(StatRule).where(StatRule.stat_def_id.in_([sd.id for sd in setup_stat_defs])))
+        ).all()
         stat_ids = {stat_def.entity_id for stat_def in setup_stat_defs}
         endings_rules = [await _ending_rule_draft_items(db, ending.id) for ending in endings_by_setup_id[setup.id]]
         dangling_stat_rule_paths += setup_dangling_stat_rule_paths(setup_index, stat_ids, endings_rules)
@@ -2599,6 +2647,7 @@ async def _load_story_publish_draft(
         keyword_notes=keyword_notes,
         dangling_stat_rule_paths=dangling_stat_rule_paths,
         stat_defs=stat_defs,
+        stat_rules=stat_rules,
         situation_notes=situation_notes,
         dangling_situation_note_paths=dangling_situation_note_paths,
     )

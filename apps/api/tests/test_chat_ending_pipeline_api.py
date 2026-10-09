@@ -9,7 +9,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat.prompt_builder import EndingJudgmentResult, StatChangeJudgment, StatJudgmentResult
+from api.chat.prompt_builder import EndingJudgmentResult, StatRuleJudgmentResult
 from api.db.models import (
     ChatMessage,
     ChatMessageRole,
@@ -21,6 +21,7 @@ from api.db.models import (
     EndingRuleOperator,
     StartingSetup,
     StatDef,
+    StatRule,
     StoryEndingUnlock,
 )
 from api.llm.client import LLMCallContext, LLMClient, LLMClientError, LLMPolicyViolationError
@@ -35,6 +36,7 @@ from factories import (
     _override_llm_client,
     _parse_sse_events,
     ending_priority_marker,
+    ending_priority_stat_rules,
     judged_ending_names,
 )
 
@@ -73,6 +75,14 @@ async def _add_stat_def(db_session: AsyncSession, setup: StartingSetup, **overri
     db_session.add(stat_def)
     await db_session.flush()
     return stat_def
+
+
+async def _add_stat_rule(db_session: AsyncSession, stat_def: StatDef, delta: int, order: int = 0) -> None:
+    """스탯에 「조건 → delta」 규칙 하나. 스탯 하나에 규칙 하나면 그 규칙의 짧은 id 는 a1 이다."""
+    db_session.add(
+        StatRule(entity_id=uuid.uuid4(), stat_def_id=stat_def.id, condition=f"조건 {order}", delta=delta, order=order)
+    )
+    await db_session.flush()
 
 
 async def _add_ending(db_session: AsyncSession, setup: StartingSetup, **overrides: object) -> Ending:
@@ -117,7 +127,7 @@ async def _create_story_room_via_api(
 
 
 class _FakeLLMClient(LLMClient):
-    """`StatJudgmentResult`(스탯 판단)와 `EndingJudgmentResult`(엔딩 판정)가 한 턴 안에서
+    """`StatRuleJudgmentResult`(스탯 판단)와 `EndingJudgmentResult`(엔딩 판정)가 한 턴 안에서
     순서대로 여러 번 호출될 수 있으므로, 고정된 단일 응답이 아니라 호출 순서대로 소비되는
     큐를 쓴다(test_chat_story_message_send_api.py의 단일-응답 `_FakeLLMClient`와 다른 점)."""
 
@@ -161,6 +171,8 @@ async def test_send_message_reaches_ending_when_judgment_triggers_with_no_stat_r
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
     setup = await _add_starting_setup(db_session, content)
+    # 규칙 있는 스탯을 둬 스탯 판정 호출도 일어나게 한다 — 호출부 귀속(아래)을 두 판정 모두에서 본다.
+    await _add_stat_rule(db_session, await _add_stat_def(db_session, setup), 3)
     ending = await _add_ending(db_session, setup, turn_count_gate=1)
     await db_session.commit()
 
@@ -169,7 +181,7 @@ async def test_send_message_reaches_ending_when_judgment_triggers_with_no_stat_r
 
     fake = _FakeLLMClient(
         tokens=["안", "녕"],
-        structured_results=[StatJudgmentResult(stat_changes=[]), EndingJudgmentResult(triggered=True)],
+        structured_results=[StatRuleJudgmentResult(fired_rule_ids=[]), EndingJudgmentResult(triggered=True)],
     )
     _override_llm_client(fake)
     try:
@@ -213,7 +225,7 @@ async def test_send_message_skips_ending_judgment_before_turn_gate(
     await _login_as(db_client, user.id)
     room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
 
-    fake = _FakeLLMClient(tokens=["안녕"], structured_results=[StatJudgmentResult(stat_changes=[])])
+    fake = _FakeLLMClient(tokens=["안녕"], structured_results=[])
     _override_llm_client(fake)
     try:
         resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "메시지"})
@@ -223,8 +235,8 @@ async def test_send_message_skips_ending_judgment_before_turn_gate(
     assert resp.status_code == 200
     events = _parse_sse_events(resp.text)
     assert [e["type"] for e in events] == ["token", "done"]
-    # 스탯 판단 1회만 호출되고, 엔딩 판정(턴게이트 미통과)은 호출조차 되지 않는다.
-    assert fake.generate_structured_calls == [StatJudgmentResult]
+    # 스탯이 없어 스탯 판정 호출이 없고, 엔딩 판정(턴게이트 미통과)도 호출조차 되지 않는다.
+    assert fake.generate_structured_calls == []
 
     room = await db_session.get(ChatRoom, room_id)
     assert room is not None
@@ -250,7 +262,7 @@ async def test_send_message_does_not_call_ending_judgment_when_stat_rule_is_fals
     await _login_as(db_client, user.id)
     room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
 
-    fake = _FakeLLMClient(tokens=["안녕"], structured_results=[StatJudgmentResult(stat_changes=[])])
+    fake = _FakeLLMClient(tokens=["안녕"], structured_results=[])
     _override_llm_client(fake)
     try:
         resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "메시지"})
@@ -260,7 +272,7 @@ async def test_send_message_does_not_call_ending_judgment_when_stat_rule_is_fals
     assert resp.status_code == 200
     events = _parse_sse_events(resp.text)
     assert [e["type"] for e in events] == ["token", "done"]
-    assert fake.generate_structured_calls == [StatJudgmentResult]
+    assert fake.generate_structured_calls == []
 
     room = await db_session.get(ChatRoom, room_id)
     assert room is not None
@@ -287,7 +299,7 @@ async def test_send_message_does_not_reach_ending_when_stat_rule_passes_but_judg
 
     fake = _FakeLLMClient(
         tokens=["안녕"],
-        structured_results=[StatJudgmentResult(stat_changes=[]), EndingJudgmentResult(triggered=False)],
+        structured_results=[EndingJudgmentResult(triggered=False)],
     )
     _override_llm_client(fake)
     try:
@@ -297,7 +309,7 @@ async def test_send_message_does_not_reach_ending_when_stat_rule_passes_but_judg
 
     events = _parse_sse_events(resp.text)
     assert [e["type"] for e in events] == ["token", "done"]
-    assert fake.generate_structured_calls == [StatJudgmentResult, EndingJudgmentResult]
+    assert fake.generate_structured_calls == [EndingJudgmentResult]
     room = await db_session.get(ChatRoom, room_id)
     assert room is not None
     assert room.ending_reached is False
@@ -330,7 +342,6 @@ async def test_send_message_judges_due_endings_in_order_and_stops_at_first_reach
     fake = _FakeLLMClient(
         tokens=["안녕"],
         structured_results=[
-            StatJudgmentResult(stat_changes=[]),
             EndingJudgmentResult(triggered=False),
             EndingJudgmentResult(triggered=True),
         ],
@@ -344,7 +355,7 @@ async def test_send_message_judges_due_endings_in_order_and_stops_at_first_reach
     events = _parse_sse_events(resp.text)
     assert [e["type"] for e in events] == ["token", "endingReached", "done"]
     assert events[1]["endingId"] == str(third.entity_id)
-    assert fake.generate_structured_calls == [StatJudgmentResult, EndingJudgmentResult, EndingJudgmentResult]
+    assert fake.generate_structured_calls == [EndingJudgmentResult, EndingJudgmentResult]
 
 
 async def test_send_message_treats_rule_on_missing_stat_as_false_and_completes_the_turn(
@@ -369,7 +380,7 @@ async def test_send_message_treats_rule_on_missing_stat_as_false_and_completes_t
     await _login_as(db_client, user.id)
     room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
 
-    fake = _FakeLLMClient(tokens=["안녕"], structured_results=[StatJudgmentResult(stat_changes=[])])
+    fake = _FakeLLMClient(tokens=["안녕"], structured_results=[])
     _override_llm_client(fake)
     try:
         with caplog.at_level(logging.WARNING, logger="api.chat.router"):
@@ -379,7 +390,7 @@ async def test_send_message_treats_rule_on_missing_stat_as_false_and_completes_t
 
     events = _parse_sse_events(resp.text)
     assert [e["type"] for e in events] == ["token", "done"]
-    assert fake.generate_structured_calls == [StatJudgmentResult]
+    assert fake.generate_structured_calls == []
     room = await db_session.get(ChatRoom, room_id)
     assert room is not None
     assert (room.turn_count, room.ending_reached) == (1, False)
@@ -400,10 +411,12 @@ async def test_send_message_judges_priority_stat_group_by_highest_value(
     genre = await _get_genre(db_session)
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
     setup = await _add_starting_setup(db_session, content)
-    stat_ids = {
-        name: (await _add_stat_def(db_session, setup, name=name, initial_value=value, order=index)).entity_id
-        for index, (name, value) in enumerate(scenario.stats.items())
-    }
+    rule_deltas, fired_rule_ids = ending_priority_stat_rules(scenario)
+    stat_ids: dict[str, uuid.UUID] = {}
+    for index, (name, value) in enumerate(scenario.stats.items()):
+        stat_def = await _add_stat_def(db_session, setup, name=name, initial_value=value, order=index)
+        await _add_stat_rule(db_session, stat_def, rule_deltas[name])
+        stat_ids[name] = stat_def.entity_id
     for order, (name, priority, rule) in enumerate(scenario.endings):
         ending = await _add_ending(
             db_session,
@@ -420,12 +433,7 @@ async def test_send_message_judges_priority_stat_group_by_highest_value(
     await _login_as(db_client, user.id)
     room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
 
-    stat_judgment = StatJudgmentResult(
-        stat_changes=[
-            StatChangeJudgment(stat_id=str(stat_ids[name]), new_value=value)
-            for name, value in scenario.stat_changes.items()
-        ]
-    )
+    stat_judgment = StatRuleJudgmentResult(fired_rule_ids=fired_rule_ids)
     fake = _FakeLLMClient(
         tokens=["안녕"],
         structured_results=[stat_judgment, *(EndingJudgmentResult(triggered=v) for v in scenario.verdicts)],
@@ -465,7 +473,7 @@ async def test_send_message_only_top_priority_ending_reached_when_multiple_due(
 
     fake = _FakeLLMClient(
         tokens=["안녕"],
-        structured_results=[StatJudgmentResult(stat_changes=[]), EndingJudgmentResult(triggered=True)],
+        structured_results=[EndingJudgmentResult(triggered=True)],
     )
     _override_llm_client(fake)
     try:
@@ -479,7 +487,7 @@ async def test_send_message_only_top_priority_ending_reached_when_multiple_due(
     assert len(ending_events) == 1
     assert ending_events[0]["endingId"] == str(top_ending.entity_id)
     # 1순위 엔딩에서 이미 발동했으므로 2순위 엔딩은 판정 자체를 호출하지 않는다(불필요한 LLM 호출 방지).
-    assert fake.generate_structured_calls == [StatJudgmentResult, EndingJudgmentResult]
+    assert fake.generate_structured_calls == [EndingJudgmentResult]
 
     unlocks = (
         await db_session.execute(sa.select(StoryEndingUnlock).where(StoryEndingUnlock.user_id == user.id))
@@ -510,7 +518,7 @@ async def test_send_message_skips_stat_and_ending_judgment_once_room_already_end
 
     fake = _FakeLLMClient(
         tokens=["안녕"],
-        structured_results=[StatJudgmentResult(stat_changes=[]), EndingJudgmentResult(triggered=True)],
+        structured_results=[EndingJudgmentResult(triggered=True)],
     )
     _override_llm_client(fake)
     try:
@@ -541,7 +549,7 @@ async def test_send_message_reaches_ending_without_epilogue_emits_null_epilogue(
 
     fake = _FakeLLMClient(
         tokens=["안녕"],
-        structured_results=[StatJudgmentResult(stat_changes=[]), EndingJudgmentResult(triggered=True)],
+        structured_results=[EndingJudgmentResult(triggered=True)],
     )
     _override_llm_client(fake)
     try:
@@ -581,7 +589,7 @@ async def test_send_message_does_not_duplicate_existing_story_ending_unlock(
 
     fake = _FakeLLMClient(
         tokens=["안녕"],
-        structured_results=[StatJudgmentResult(stat_changes=[]), EndingJudgmentResult(triggered=True)],
+        structured_results=[EndingJudgmentResult(triggered=True)],
     )
     _override_llm_client(fake)
     try:
@@ -607,6 +615,7 @@ async def test_send_message_ending_judgment_uses_stat_values_updated_this_turn(
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
     setup = await _add_starting_setup(db_session, content)
     stat_def = await _add_stat_def(db_session, setup, min_value=0, max_value=100, initial_value=50)
+    await _add_stat_rule(db_session, stat_def, 40)
     ending = await _add_ending(db_session, setup, turn_count_gate=1)
     db_session.add(
         EndingRule(
@@ -627,7 +636,7 @@ async def test_send_message_ending_judgment_uses_stat_values_updated_this_turn(
     fake = _FakeLLMClient(
         tokens=["안녕"],
         structured_results=[
-            StatJudgmentResult(stat_changes=[StatChangeJudgment(stat_id=str(stat_def.entity_id), new_value=90)]),
+            StatRuleJudgmentResult(fired_rule_ids=["a1"]),
             EndingJudgmentResult(triggered=True),
         ],
     )
@@ -666,6 +675,7 @@ async def test_send_message_stat_judgment_llm_failure_still_completes_the_turn(
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
     setup = await _add_starting_setup(db_session, content)
     stat_def = await _add_stat_def(db_session, setup, initial_value=50)
+    await _add_stat_rule(db_session, stat_def, 20)
     await _add_ending(db_session, setup, turn_count_gate=1)
     await db_session.commit()
 
@@ -685,7 +695,7 @@ async def test_send_message_stat_judgment_llm_failure_still_completes_the_turn(
     assert events[-1]["finalMessage"]["content"] == "안녕"
 
     # 스탯 판단이 실패했으니 엔딩 판정까지 통째로 건너뛴다.
-    assert fake.generate_structured_calls == [StatJudgmentResult]
+    assert fake.generate_structured_calls == [StatRuleJudgmentResult]
 
     assistant_messages = (
         await db_session.execute(
@@ -719,6 +729,7 @@ async def test_send_message_ending_judgment_llm_failure_keeps_stat_changes(
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
     setup = await _add_starting_setup(db_session, content)
     stat_def = await _add_stat_def(db_session, setup, initial_value=50)
+    await _add_stat_rule(db_session, stat_def, 20)
     await _add_ending(db_session, setup, turn_count_gate=1)
     await db_session.commit()
 
@@ -728,7 +739,7 @@ async def test_send_message_ending_judgment_llm_failure_keeps_stat_changes(
     fake = _FakeLLMClient(
         tokens=["안녕"],
         structured_results=[
-            StatJudgmentResult(stat_changes=[StatChangeJudgment(stat_id=str(stat_def.entity_id), new_value=70)]),
+            StatRuleJudgmentResult(fired_rule_ids=["a1"]),
             LLMClientError("429 RESOURCE_EXHAUSTED"),
         ],
     )
@@ -741,7 +752,7 @@ async def test_send_message_ending_judgment_llm_failure_keeps_stat_changes(
     assert resp.status_code == 200
     events = _parse_sse_events(resp.text)
     assert [e["type"] for e in events] == ["token", "statChange", "done"]
-    assert fake.generate_structured_calls == [StatJudgmentResult, EndingJudgmentResult]
+    assert fake.generate_structured_calls == [StatRuleJudgmentResult, EndingJudgmentResult]
 
     stat_row = await db_session.get(ChatRoomStat, (room_id, stat_def.entity_id))
     assert stat_row is not None

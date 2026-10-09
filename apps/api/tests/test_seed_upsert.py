@@ -30,6 +30,7 @@ from api.db.models.story import (
     SituationNote,
     StartingSetup,
     StatDef,
+    StatRule,
     StoryVersionDetail,
 )
 from seed_content.ids import SEED_AUTHOR_USER_ID, seed_uuid
@@ -83,6 +84,7 @@ def _story_json() -> dict[str, Any]:
                         "initialValue": 50,
                         "unit": None,
                         "description": "신뢰도",
+                        "rules": [{"condition": "약속을 지킨다", "delta": 5}],
                     },
                     {
                         "name": "의심",
@@ -93,6 +95,7 @@ def _story_json() -> dict[str, Any]:
                         "initialValue": 10,
                         "unit": None,
                         "description": "의심도",
+                        "rules": [{"condition": "거짓말이 들킨다", "delta": 5}],
                     },
                 ],
                 "endings": [
@@ -149,6 +152,7 @@ def _story_json() -> dict[str, Any]:
                         "initialValue": 70,
                         "unit": None,
                         "description": "체력",
+                        "rules": [{"condition": "쉰다", "delta": 5}],
                     }
                 ],
                 "endings": [
@@ -559,23 +563,70 @@ async def test_upsert_story_rejects_stat_whose_initial_value_is_outside_its_rang
     assert await db_session.get(Content, story_content_id(SLUG)) is None
 
 
-async def test_upsert_story_rejects_counter_stat_with_change_direction(
-    db_session: AsyncSession, tmp_path: Path
-) -> None:
-    """시드도 발행과 같은 방향·폭 검사를 받는다. 턴당 변화가 있는 스탯에 방향을 걸면 그 옵션은 아무 일도 하지 않는다."""
+async def test_upsert_story_rejects_judged_stat_without_rules(db_session: AsyncSession, tmp_path: Path) -> None:
+    """시드도 발행과 같은 규칙 검사를 받는다. 규칙 없는 판정 스탯은 판정이 고를 것이 없어 대화 내내 움직이지 않는다."""
     await _seed_author(db_session)
 
-    def _counter_with_direction(raw: dict[str, Any]) -> None:
+    def _without_rules(raw: dict[str, Any]) -> None:
         stat = raw["startingSetups"][1]["statDefs"][0]
-        stat["perTurnDelta"] = -1
-        stat["changeDirection"] = "decrease"
+        stat["perTurnDelta"] = None
+        stat["rules"] = []
 
-    payload = await _load_seed_payload(db_session, tmp_path, _counter_with_direction)
+    payload = await _load_seed_payload(db_session, tmp_path, _without_rules)
 
     with pytest.raises(SeedPublishError) as exc_info:
         await upsert_story(db_session, SLUG, payload)
 
-    assert "stats.changeLimitWithCounter" in str(exc_info.value)
+    assert "stats.rules" in str(exc_info.value)
+    assert await db_session.get(Content, story_content_id(SLUG)) is None
+
+
+def _add_stat_rules(raw: dict[str, Any]) -> None:
+    raw["startingSetups"][0]["statDefs"][0]["rules"] = [
+        {"condition": "그를 감싸 준다", "delta": 10},
+        {"condition": "거짓말이 들킨다", "delta": -20},
+    ]
+
+
+async def test_upsert_story_writes_stat_rules_to_both_versions(db_session: AsyncSession, tmp_path: Path) -> None:
+    """시드 JSON 의 스탯 `rules` 는 빌더 저장 경로를 그대로 지나 발행본과 초안 양쪽의 그 스탯 밑에 들어간다. 규칙의
+    entity_id 는 loader 가 파일 안의 위치로 파생한 값이고, 배열 순서가 순서 칸이 된다."""
+    await _seed_author(db_session)
+    payload = await _load_seed_payload(db_session, tmp_path, _add_stat_rules)
+
+    await upsert_story(db_session, SLUG, payload)
+
+    stat_path = f"story:{SLUG}:startingSetups[0]:statDefs[0]"
+    for version_id in (story_version_id(SLUG), story_draft_version_id(SLUG)):
+        rows = (
+            await db_session.execute(
+                select(StatDef.entity_id, StatRule)
+                .join(StatDef, StatDef.id == StatRule.stat_def_id)
+                .join(StartingSetup, StartingSetup.id == StatDef.starting_setup_id)
+                .where(StartingSetup.content_version_id == version_id, StatDef.entity_id == _stat_entity_id(0, 0))
+                .order_by(StatRule.order)
+            )
+        ).all()
+        assert [(stat_id, rule.entity_id, rule.condition, rule.delta, rule.order) for stat_id, rule in rows] == [
+            (_stat_entity_id(0, 0), seed_uuid(f"{stat_path}:rules[0]"), "그를 감싸 준다", 10, 0),
+            (_stat_entity_id(0, 0), seed_uuid(f"{stat_path}:rules[1]"), "거짓말이 들킨다", -20, 1),
+        ]
+
+
+async def test_upsert_story_rejects_stat_rules_on_counter_stat(db_session: AsyncSession, tmp_path: Path) -> None:
+    """시드도 발행과 같은 검사를 받는다. 턴당 변화가 있는 스탯은 판정을 받지 않아 규칙이 발동할 일이 없다."""
+    await _seed_author(db_session)
+
+    def _counter_with_rules(raw: dict[str, Any]) -> None:
+        _add_stat_rules(raw)
+        raw["startingSetups"][0]["statDefs"][0]["perTurnDelta"] = -1
+
+    payload = await _load_seed_payload(db_session, tmp_path, _counter_with_rules)
+
+    with pytest.raises(SeedPublishError) as exc_info:
+        await upsert_story(db_session, SLUG, payload)
+
+    assert "stats.rulesWithCounter" in str(exc_info.value)
     assert await db_session.get(Content, story_content_id(SLUG)) is None
 
 

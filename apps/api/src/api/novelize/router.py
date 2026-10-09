@@ -120,6 +120,7 @@ from api.novelize.schemas import (
     NovelChapterProposalRequest,
     NovelChapterProposalResponse,
     NovelChapterRegenerateRequest,
+    NovelChapterReadingPosition,
     NovelChapterResponse,
     NovelChapterSuggestion,
     NovelChapterSummary,
@@ -279,15 +280,13 @@ async def _chapter_summaries(db: AsyncSession, novel_id: uuid.UUID) -> list[Nove
         .order_by(NovelChapterRevision.chapter_id, NovelChapterRevision.revision_no.desc())
     )
     revisions = {revision.chapter_id: revision for revision in (await db.scalars(latest)).all()}
-    finished = set(
-        (
-            await db.scalars(
-                select(NovelReadingPosition.chapter_id).where(
-                    NovelReadingPosition.novel_id == novel_id, NovelReadingPosition.finished_at.is_not(None)
-                )
-            )
+    # 읽은 위치는 소설 단위로 한 번에 읽어 화마다 나눠 준다 — 화마다 따로 읽으면 화 수만큼 쿼리가 는다.
+    positions = {
+        position.chapter_id: position
+        for position in (
+            await db.scalars(select(NovelReadingPosition).where(NovelReadingPosition.novel_id == novel_id))
         ).all()
-    )
+    }
     chapters = (
         await db.scalars(
             select(NovelChapter)
@@ -302,6 +301,7 @@ async def _chapter_summaries(db: AsyncSession, novel_id: uuid.UUID) -> list[Nove
         if revision is None or chapter.batch_id is None:
             # 화 행과 첫 개정은 한 트랜잭션에서 함께 들어가므로 개정 없는 화는 없다.
             continue
+        position = positions.get(chapter.id)
         summaries.append(
             NovelChapterSummary(
                 id=chapter.id,
@@ -319,7 +319,15 @@ async def _chapter_summaries(db: AsyncSession, novel_id: uuid.UUID) -> list[Nove
                 summary=chapter.summary,
                 author_note=chapter.author_note,
                 char_count=len(revision.body),
-                finished_reading=chapter.id in finished,
+                finished_reading=position is not None and position.finished_at is not None,
+                reading_position=None
+                if position is None
+                else NovelChapterReadingPosition(
+                    paragraph_index=position.paragraph_index,
+                    paragraph_count=position.paragraph_count,
+                    revision_id=position.revision_id,
+                    finished=position.finished_at is not None,
+                ),
             )
         )
     return summaries

@@ -34,7 +34,7 @@ from api.chat.prompt_builder import (
     build_ending_judgment_prompt,
     build_generation_prompt,
     build_image_judgment_prompt,
-    build_stat_judgment_prompt,
+    build_stat_rule_judgment_prompt,
     build_story_generation_prompt,
     load_active_prompt_set,
     media_cell_image_lines,
@@ -49,7 +49,7 @@ from api.content.publish import (
 from api.db.models.character import SituationalImage
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.prompt import PromptSection, PromptSet
-from api.db.models.story import StatDef, StoryPromptTemplate
+from api.db.models.story import StatDef, StatRule, StoryPromptTemplate
 from api.db.session import async_session_factory
 
 GOLDEN_DIR = Path(__file__).resolve().parent.parent / "tests" / "golden" / "prompts"
@@ -66,6 +66,8 @@ _IMAGE_ENTITY_ID_SMILE = UUID("33333333-3333-3333-3333-333333333333")
 _IMAGE_ENTITY_ID_ANGRY = UUID("44444444-4444-4444-4444-444444444444")
 _MEDIA_CELL_ENTITY_ID_ROOFTOP = UUID("55555555-5555-5555-5555-555555555555")
 _MEDIA_CELL_ENTITY_ID_CLASSROOM = UUID("66666666-6666-6666-6666-666666666666")
+_RULE_ENTITY_ID_SHELTER = UUID("77777777-7777-7777-7777-777777777777")
+_RULE_ENTITY_ID_LIE = UUID("88888888-8888-8888-8888-888888888888")
 
 CHARACTER_PROMPT = "너는 밤늦게 옥상에서 마주친 낯선 사람이다. 말수는 적지만 관찰력이 좋다."
 
@@ -165,8 +167,7 @@ def _stat_defs() -> list[StatDef]:
             initial_value=50,
             per_turn_delta=None,
         ),
-        # per_turn_delta가 있는 스탯은 current_stats에 값을 안 넣어 initial_value 폴백과
-        # "시스템이 매 턴 자동 조정" 문구가 동시에 골든에 찍히게 한다.
+        # per_turn_delta가 있는 스탯(카운터)은 판정을 받지 않아 규칙 판정 프롬프트에서 블록째 빠지는 것이 골든에 찍힌다.
         StatDef(
             entity_id=_STAMINA_ENTITY_ID,
             name="체력",
@@ -177,6 +178,17 @@ def _stat_defs() -> list[StatDef]:
             per_turn_delta=-5,
         ),
     ]
+
+
+def _stat_rules() -> dict[UUID, list[StatRule]]:
+    """호감도(판정 스탯)의 규칙 둘. 순서 칸을 목록 순서와 거꾸로 둬 짧은 id 가 순서 칸을 따르는 것이 골든에 찍히게 한다.
+    조건의 `{{user}}` 는 이름으로 바뀐다. 체력(카운터)에는 규칙이 없다 — 판정을 받지 않아 블록째 빠진다."""
+    return {
+        _AFFECTION_ENTITY_ID: [
+            StatRule(entity_id=_RULE_ENTITY_ID_LIE, condition="{{user}}의 거짓말이 들킨다", delta=-10, order=1),
+            StatRule(entity_id=_RULE_ENTITY_ID_SHELTER, condition="{{user}}가 인물을 감싸 준다", delta=5, order=0),
+        ]
+    }
 
 
 def _situational_images() -> list[SituationalImage]:
@@ -452,31 +464,20 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
         ),
     ),
     # -- 판단 프롬프트: 스탯/엔딩/이미지 × filled/empty --
+    # 스탯 규칙 판정 — 스탯 판정 프롬프트는 이것 하나다. 기대 텍스트를 손으로 적었다. 현재값과 규칙 폭(-10·5)은
+    # 싣지 않는다. 이름은 프로필 이름이 있는 방이다(작가 글의 `{{user}}` 치환과 이름 한 줄).
     (
-        "judgment_stat_filled.txt",
+        "judgment_stat_rule_filled.txt",
         "story",
-        lambda ps, sections: build_stat_judgment_prompt(
+        lambda ps, sections: build_stat_rule_judgment_prompt(
             prompt_set=ps,
             sections=sections,
             stat_defs=_stat_defs(),
-            current_stats={str(_AFFECTION_ENTITY_ID): 62.0},
+            rules_by_stat_id=_stat_rules(),
             user_message=USER_MESSAGE,
             assistant_message=ASSISTANT_MESSAGE,
-            names=_NO_NAMES,
-        ),
-    ),
-    (
-        "judgment_stat_empty.txt",
-        "story",
-        lambda ps, sections: build_stat_judgment_prompt(
-            prompt_set=ps,
-            sections=sections,
-            stat_defs=[],
-            current_stats={},
-            user_message=USER_MESSAGE,
-            assistant_message=ASSISTANT_MESSAGE,
-            names=_NO_NAMES,
-        ),
+            names=_PERSONA_NAME,
+        )[0],
     ),
     (
         "judgment_ending_filled.txt",
