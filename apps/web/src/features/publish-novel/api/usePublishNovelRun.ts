@@ -1,4 +1,5 @@
-import { useQueryClient } from "@tanstack/react-query";
+import type { ApiError } from "@ai-character-chat/api-types";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
 import { novelKeys, type NovelPublicationStatus } from "@/entities/novel";
@@ -20,12 +21,19 @@ export type PublishRunState =
  * 화면을 떠나도 보내던 요청은 끝까지 간다(서버가 그 화까지 공개한다). 다만 다음 요청은 이 훅을 쓰는 화면이 남아 있을
  * 때만 이어 간다 — 떠난 화면이 남은 화를 몰래 계속 공개하지 않게. 진행 중에 다시 부르면 무시한다.
  *
+ * 요청 하나하나는 뮤테이션으로 보낸다 — 약관 재동의 403·세션 소실 같은 실패를 다른 쓰기와 같은 전역 처리(재동의
+ * 모달·세션 비우기)가 받게.
+ *
  * 공개한 글은 노벨 화면의 캐시(목록·작품 정보·화)를 낡게 하므로 끝나면 함께 버린다. */
 export function usePublishNovelRun(novelId: string) {
   const queryClient = useQueryClient();
   const [state, setState] = useState<PublishRunState>({ kind: "idle" });
   const isRunningRef = useRef(false);
   const isMountedRef = useRef(true);
+  const publishChapter = useMutation<NovelPublicationStatus, ApiError, string | null>({
+    mutationFn: async (chapterId) =>
+      (await apiClient.post<NovelPublicationStatus>(`/novels/${novelId}/publication`, { chapterId })).data,
+  });
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -42,7 +50,7 @@ export function usePublishNovelRun(novelId: string) {
         if (index > 0 && !isMountedRef.current) return false;
         setState({ kind: "checking", current: index + 1, total: requests.length });
         try {
-          const { data } = await apiClient.post<NovelPublicationStatus>(`/novels/${novelId}/publication`, { chapterId });
+          const data = await publishChapter.mutateAsync(chapterId);
           queryClient.setQueryData(novelKeys.publication(novelId), data);
         } catch (error) {
           setState({ kind: "failed", failure: toPublishFailure(error) });
