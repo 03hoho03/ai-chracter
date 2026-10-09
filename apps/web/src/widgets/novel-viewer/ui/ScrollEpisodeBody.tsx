@@ -42,7 +42,12 @@ export function ScrollEpisodeBody({
   return (
     <main className="min-h-dvh pt-10-safe pb-28" onPointerDown={onPointerDown} onPointerUp={onPointerUp}>
       <article ref={articleRef} className={cn("mx-auto flex max-w-prose flex-col gap-8 px-6", typographyClassName)}>
-        <EpisodeHeader novelId={novel.id} novelTitle={novel.title} episodeLabel={episodeLabel} />
+        <EpisodeHeader
+          novelId={novel.id}
+          novelTitle={novel.title}
+          episodeLabel={episodeLabel}
+          isInPageFormat={false}
+        />
 
         <div className="flex flex-col gap-4 text-foreground">
           {paragraphs.map((paragraph, index) => (
@@ -54,7 +59,13 @@ export function ScrollEpisodeBody({
           ))}
         </div>
 
-        <EpisodeEnd novelId={novel.id} authorNote={summary.authorNote} next={next} hasDivider onOpenToc={onOpenToc} />
+        <EpisodeEnd
+          novelId={novel.id}
+          authorNote={summary.authorNote}
+          next={next}
+          isInPageFormat={false}
+          onOpenToc={onOpenToc}
+        />
       </article>
     </main>
   );
