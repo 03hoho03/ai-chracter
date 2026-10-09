@@ -55,6 +55,8 @@ export function WebnovelViewer({ novel, summary, chapter, paragraphs }: Webnovel
   const queryClient = useQueryClient();
   const progressId = useId();
   const [isCommentsOpen, setIsCommentsOpen] = useState(false);
+  // 신고 모달은 루트에 마운트돼 읽기 화면이 모르므로 열린 동안을 여기서 센다 — 그동안 Esc 는 모달만 닫는다.
+  const [isReportOpen, setIsReportOpen] = useState(false);
   const commentsOpenerRef = useRef<HTMLElement | null>(null);
   // 화 끝 "댓글 12" 의 수 — 시트가 같은 쿼리의 첫 페이지를 읽는다.
   const commentCount = useWebnovelCommentsQuery(novel.id, chapter.id).data?.pages[0]?.totalCount;
@@ -68,19 +70,24 @@ export function WebnovelViewer({ novel, summary, chapter, paragraphs }: Webnovel
   }
 
   /** 이 화 또는 그 화의 댓글 하나를 신고한다 — 사유 모달은 작품 신고와 같은 것이다. */
-  function openReport(title: string, send: (reasonCategory: ReportReasonCategory) => Promise<void>) {
-    void ReportContentModal.call({
-      title,
-      mutationFn: async (call, reasonCategory) => {
-        try {
-          await send(reasonCategory);
-          toast.success("신고가 접수되었어요.");
-          call.end();
-        } catch (error) {
-          toast.error(toWebnovelReportErrorMessage(error));
-        }
-      },
-    });
+  async function openReport(title: string, send: (reasonCategory: ReportReasonCategory) => Promise<void>) {
+    setIsReportOpen(true);
+    try {
+      await ReportContentModal.call({
+        title,
+        mutationFn: async (call, reasonCategory) => {
+          try {
+            await send(reasonCategory);
+            toast.success("신고가 접수되었어요.");
+            call.end();
+          } catch (error) {
+            toast.error(toWebnovelReportErrorMessage(error));
+          }
+        },
+      });
+    } finally {
+      setIsReportOpen(false);
+    }
   }
   const { edition } = chapter;
   const position = summary.readingPosition;
@@ -107,7 +114,7 @@ export function WebnovelViewer({ novel, summary, chapter, paragraphs }: Webnovel
     <>
       <EpisodeReader
         route="public"
-        isExtraSheetOpen={isCommentsOpen}
+        isExtraSheetOpen={isCommentsOpen || isReportOpen}
         topBarAction={
           <Button
             type="button"
@@ -152,7 +159,7 @@ export function WebnovelViewer({ novel, summary, chapter, paragraphs }: Webnovel
                   format.isInPageFormat && "h-[32px] px-[12px] text-[14px]",
                 )}
                 onClick={() =>
-                  openReport("노벨 신고하기", (reasonCategory) => reportNovel.mutateAsync({ reasonCategory, chapterId: chapter.id }))
+                  void openReport("노벨 신고하기", (reasonCategory) => reportNovel.mutateAsync({ reasonCategory, chapterId: chapter.id }))
                 }
               >
                 이 화 신고하기
@@ -201,7 +208,7 @@ export function WebnovelViewer({ novel, summary, chapter, paragraphs }: Webnovel
         onOpenChange={setIsCommentsOpen}
         returnFocusTo={() => commentsOpenerRef.current}
         onReport={(commentId) =>
-          openReport("댓글 신고하기", (reasonCategory) => reportComment.mutateAsync({ commentId, reasonCategory }))
+          void openReport("댓글 신고하기", (reasonCategory) => reportComment.mutateAsync({ commentId, reasonCategory }))
         }
       />
     </>

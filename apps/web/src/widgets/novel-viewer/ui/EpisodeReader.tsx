@@ -47,7 +47,8 @@ type EpisodeReaderProps = {
   topBarAction?: ReactNode;
   /** 화 끝 블록에 더할 자리(노벨의 좋아요·댓글·신고). */
   endExtras?: EpisodeEndExtras;
-  /** 호출부가 띄운 시트(노벨 댓글)가 열려 있는가 — 열려 있으면 Esc 를 그 시트에 맡긴다(목차 시트와 같은 이유). */
+  /** 호출부가 띄운 시트·모달(노벨 댓글 시트, 신고 모달)이 열려 있는가 — 열려 있으면 Esc 를 그쪽에 맡긴다(목차 시트와
+   * 같은 이유). */
   isExtraSheetOpen?: boolean;
 };
 
