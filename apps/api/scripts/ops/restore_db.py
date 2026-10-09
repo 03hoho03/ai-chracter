@@ -22,6 +22,7 @@ from ops.db_url import describe, to_libpq_url
 from ops.pg import run_sh, scalar
 from ops.purge_chat_report_evidence import purge_expired_chat_report_evidence
 from ops.purge_comment_evidence import purge_expired_comment_evidence
+from ops.purge_novel_report_evidence import purge_expired_novel_report_evidence
 
 
 def restore(dump_path: Path, url: str) -> None:
@@ -39,6 +40,8 @@ def restore(dump_path: Path, url: str) -> None:
     print(f"댓글 신고 만료 증거 파기: {removed}건")
     removed_chat = purge_expired_chat_report_evidence(url, now=now)
     print(f"채팅 신고 만료 증거 파기: {removed_chat}건")
+    removed_novel = purge_expired_novel_report_evidence(url, now=now)
+    print(f"노벨·노벨 댓글 신고 만료 증거 파기: {removed_novel}건")
 
 
 def main() -> int:

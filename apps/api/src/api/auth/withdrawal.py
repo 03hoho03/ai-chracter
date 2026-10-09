@@ -31,7 +31,7 @@ from api.db.models.content import Content, ContentChatParticipant, ContentVisibi
 from api.db.models.feature_grant import UserFeatureGrant
 from api.db.models.inquiry import Inquiry
 from api.db.models.media import Asset, AssetKind, ImageGenerationRequest
-from api.db.models.novel import Novel, NovelPurchase, NovelReaderPosition
+from api.db.models.novel import Novel, NovelComment, NovelPurchase, NovelReaderPosition
 from api.db.models.persona import UserPersona
 from api.novelize.deletion import delete_novels
 
@@ -184,6 +184,9 @@ async def erase_account(
     # 남의 노벨을 읽은 자리도 "무엇을 어디까지 읽었는가"의 기록이라 같이 지운다. 노벨 좋아요는 남긴다 — 작품 좋아요와
     # 같이, 지우면 탈퇴가 남의 소설 순위를 움직인다.
     await db.execute(delete(NovelReaderPosition).where(NovelReaderPosition.user_id == user_id))
+    # 남의 노벨에 단 댓글도 지운다 — 답글이 없어 자리를 남길 까닭이 없다. 신고된 댓글이면 신고 행의 댓글 칸만 비고(`SET
+    # NULL`) 증거 사본은 보유 기간 동안 남는다(작품 댓글 신고와 같다).
+    await db.execute(delete(NovelComment).where(NovelComment.author_user_id == user_id))
     room_ids = (await db.scalars(select(ChatRoom.id).where(ChatRoom.user_id == user_id))).all()
     await delete_chat_rooms(db, room_ids)
     # "이 사람이 어느 작품과 대화했는가" 의 기록도 대화와 함께 파기한다. 작품의 대화수는 이미 공개된 집계라 내리지

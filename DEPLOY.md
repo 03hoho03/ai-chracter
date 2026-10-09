@@ -1186,7 +1186,8 @@ tail -f /var/log/ddona-image-request-purge.log
 같은 크론이 채팅 응답 신고의 만료 증거(신고된 응답·직전 사용자 메시지 사본과 신고자 메모)도 함께 비운다
 (`apps/api/scripts/ops/purge_chat_report_evidence.py`). 채팅 신고용 크론 파일은 따로 없으므로
 이 크론이 이미 설치돼 있으면 추가 설치 없이 배포만으로 적용된다. 로그도 아래 댓글 증거 로그 파일에
-한 줄씩 함께 남는다.
+한 줄씩 함께 남는다. 노벨·노벨 댓글 신고의 만료 증거(신고 시점 공개본·댓글 본문 사본)도 같은 방식으로
+이 크론이 비운다(`apps/api/scripts/ops/purge_novel_report_evidence.py`).
 
 아래는 신규 댓글 기능을 운영에 배포할 때 수행할 설치 절차이며, 저장소에 파일이 있다는
 사실만으로 VM에 설치됐다고 보지 않는다. 기존 `/opt/ddona/scripts` 심볼릭 링크가

@@ -1,6 +1,7 @@
 """대화를 소설로 옮긴 결과물. 소설 → 묶음 → 화(장) → 화 개정, 그리고 화를 만들거나 고치는 작업 행이 뼈대이고, 그
 옆에 인물 카드·화별 등장 인물·스냅샷·읽은 위치가 붙는다. 소유자가 소설을 노벨(공개 소설)로 내놓으면 공개 상태·화 공개본·
-텍스트 심사 기록이 더 붙고, 독자가 읽으면 독자의 읽은 자리·좋아요가, 운영자가 홈에 걸면 홈 노벨 지정이 붙는다.
+텍스트 심사 기록이 더 붙고, 독자가 읽으면 독자의 읽은 자리·좋아요·화 댓글이, 운영자가 홈에 걸면 홈 노벨 지정이 붙는다.
+노벨·노벨 댓글 신고는 소설이 지워져도 남도록 소설·화·댓글 칸이 `SET NULL` 이다.
 
 소설은 원래 대화방과 떨어진 문서다. 방을 지워도 소설은 남고(`novels.chat_room_id` 만 비워진다), 원작 작품을
 가리키는 칸은 FK 없는 사본이라 작품이 사라져도 영향이 없다. 탈퇴하면 소설 아래 테이블을 모두 파기한다.
@@ -9,7 +10,7 @@
 화 → 소설 순서를 직접 지킨다(`novelize/deletion.py` 의 `delete_novels` 한 곳).
 
 🔴 예외: 묶음·인물·등장 인물·스냅샷·읽은 위치와 노벨 공개 상태·화 공개본·텍스트 심사 기록·독자 읽은 자리·좋아요·홈 노벨
-지정은 부모(소설·화·개정)를 지우면
+지정·화 댓글은 부모(소설·화·개정)를 지우면
 함께 지워지는 `ON DELETE CASCADE` 다. 이 저장소의 "cascade 없음" 관례를 일부러 어긴 것이다 — 이미지만 옛 판으로
 되돌렸을 때 옛 코드의 화 삭제·소설 삭제·탈퇴는 이 테이블들을 모르고 위 순서대로만 지우는데, cascade 가 없으면 그
 DELETE 가 FK 위반으로 500 이 된다. 같은 이유로 `novel_chapters.batch_id` 는 nullable 이다(옛 코드의 화 INSERT 는 이
@@ -24,11 +25,27 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal, get_args
 
-from sqlalchemy import ARRAY, CheckConstraint, DateTime, ForeignKey, Index, Integer, Text, Uuid, func, text
+from sqlalchemy import (
+    ARRAY,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    Text,
+    UniqueConstraint,
+    Uuid,
+    false,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base
+from api.db.models.moderation import ReportReasonCategory, ReportStatus
 
 # 소설이 어느 레인(story·character)의 문안으로 고쳐지는지. 방이 사라진 뒤에도 AI 수정은 할 수 있으므로 방에서
 # 읽지 않고 소설 행에 사본으로 둔다.
@@ -778,4 +795,166 @@ class HomeNovelCuration(Base):
             f"position BETWEEN 1 AND {HOME_NOVEL_CURATION_SLOTS}", name="ck_home_novel_curations_position_range"
         ),
         Index("ux_home_novel_curations_novel_id", "novel_id", unique=True),
+    )
+
+
+# 댓글을 지운 사람. 운영자 삭제는 숨김과 달리 되돌리지 않는다.
+NovelCommentDeletedBy = Literal["author", "publisher", "moderator"]
+
+
+class NovelComment(Base):
+    """노벨 화 하나에 달린 댓글. 답글·멘션·스티커·좋아요는 없다 — 화마다 최신순으로 쌓이는 글뿐이다.
+
+    지우면(작성자 본인·게시자·운영자) 행은 남기고 본문을 비운 뒤 지운 사람과 시각을 적는다. 신고된 댓글이면 신고 행이 이
+    댓글을 계속 가리켜 어느 댓글을 처리했는지 운영자가 찾아갈 수 있게 하려는 것이다. 원문은 신고 행의 증거 사본에만 남고 그
+    보유 기간을 따른다. 운영자 숨김(`moderator_hidden`)은 본문을 남긴 채 독자에게만 감추는 것이라 되돌릴 수 있다.
+
+    소설·화를 지우면 함께 지워지는 `ON DELETE CASCADE` 다(모듈 docstring 의 예외와 같은 이유). 새 코드는 삭제 함수가 직접
+    지운다. 작성자가 탈퇴하면 그 사람의 댓글 행을 지운다(`auth/withdrawal.py`) — 답글이 없어 남겨 둘 까닭이 없다.
+
+    CHECK 는 `alembic check` 가 비교하지 않아 `pytest.raises(IntegrityError)` 행위 테스트가 유일한 검증이다."""
+
+    __tablename__ = "novel_comments"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    novel_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("novels.id", ondelete="CASCADE"), nullable=False)
+    chapter_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("novel_chapters.id", ondelete="CASCADE"), nullable=False
+    )
+    author_user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", name="fk_novel_comments_author_user_id"), nullable=False
+    )
+    body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    moderator_hidden: Mapped[bool] = mapped_column(Boolean, server_default=false(), nullable=False)
+    deleted_by: Mapped[NovelCommentDeletedBy | None] = mapped_column(Text, nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # 화의 최신순 목록과 화 DELETE 때 FK 검사는 화 인덱스가, 소설 DELETE 와 운영자의 소설별 댓글 목록은 소설 인덱스가,
+    # 탈퇴 정리는 작성자 인덱스가 맡는다.
+    __table_args__ = (
+        CheckConstraint(
+            f"deleted_by IS NULL OR deleted_by IN ({_sql_in_list(NovelCommentDeletedBy)})",
+            name="ck_novel_comments_deleted_by",
+        ),
+        CheckConstraint("(deleted_at IS NULL) = (deleted_by IS NULL)", name="ck_novel_comments_deleted_pair"),
+        CheckConstraint("(deleted_at IS NULL) = (body IS NOT NULL)", name="ck_novel_comments_body_until_deleted"),
+        Index("ix_novel_comments_chapter_id_created_at", "chapter_id", created_at.desc(), id.desc()),
+        Index("ix_novel_comments_novel_id_created_at", "novel_id", created_at.desc()),
+        Index("ix_novel_comments_author_user_id", "author_user_id"),
+    )
+
+
+class NovelReport(Base):
+    """노벨(공개 소설) 신고 — 소설 전체(`chapter_id` 없음) 또는 공개 화 하나. 신고 처리 기록과 신고 시점 공개본 사본(증거)의
+    수명을 나눈 댓글 신고·채팅 응답 신고와 같은 구조다. 증거는 접수 때 복사해 두고 90일이 지나면 조회에서 빠지며 파기 작업이
+    칸을 비운다(`scripts/ops/purge_novel_report_evidence.py`).
+
+    소설·화 칸은 `SET NULL` 이다. 게시자는 소설이나 마지막 묶음을 지우고 탈퇴로 소설을 파기할 수 있는데, 그래도 신고와 증거
+    사본은 보유 기간 동안 남아야 하고 지우는 쪽이 이 표를 몰라도 FK 위반으로 실패하지 않아야 한다. 그래서 무엇이 신고됐는지는
+    증거 칸과 `publisher_user_id`·`chapter_ordinal` 로 읽힌다. `chapter_ordinal` 이 있으면 화 신고다(화가 지워져 `chapter_id`
+    가 비어도 그렇다).
+
+    같은 회원이 같은 화를 두 번 신고하는 것은 접수 코드가 신고자 행을 잠근 채 확인해 막고, 유니크 제약은 그물이다. 이 제약은
+    NULLS DISTINCT 여야 한다 — 화·소설이 지워져 칸이 NULL 이 된 행끼리 겹쳐 그 DELETE 가 실패하면 안 된다(채팅 응답 신고와 같은
+    이유). 소설 전체 신고는 `chapter_id` 가 NULL 이라 이 제약이 막지 못하고 접수 코드만 막는다.
+
+    사유·상태는 작품·댓글 신고와 같은 native enum 타입을 값 추가 없이 그대로 쓴다. CHECK 는 `alembic check` 가 비교하지 않아
+    `pytest.raises(IntegrityError)` 행위 테스트가 유일한 검증이다."""
+
+    __tablename__ = "novel_reports"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    reporter_user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", name="fk_novel_reports_reporter_user_id"), nullable=False
+    )
+    publisher_user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", name="fk_novel_reports_publisher_user_id"), nullable=False
+    )
+    novel_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("novels.id", ondelete="SET NULL"), nullable=True
+    )
+    chapter_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("novel_chapters.id", ondelete="SET NULL"), nullable=True
+    )
+    chapter_ordinal: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reason_category: Mapped[ReportReasonCategory] = mapped_column(
+        Enum(ReportReasonCategory, name="report_reason_category"), nullable=False
+    )
+    status: Mapped[ReportStatus] = mapped_column(Enum(ReportStatus, name="report_status"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    resolved_by_admin_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("admin_users.id", name="fk_novel_reports_resolved_by_admin_id"), nullable=True
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 신고 시점의 공개본 사본 — 소설 제목·소개, 화 신고면 그 화 제목과 본문 앞부분(`NOVEL_REPORT_EVIDENCE_BODY_CHARS`).
+    evidence_title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_synopsis: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_chapter_title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now() + interval '90 days'"), nullable=False
+    )
+    evidence_purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # 유니크의 첫 열이 소설인 것은 이 인덱스가 소설 DELETE 의 `SET NULL` 조회도 받게 하려는 것이다. 화 DELETE 의 조회는
+    # 화 인덱스가 받는다.
+    __table_args__ = (
+        CheckConstraint("chapter_id IS NULL OR chapter_ordinal IS NOT NULL", name="ck_novel_reports_chapter_ordinal"),
+        UniqueConstraint("novel_id", "chapter_id", "reporter_user_id", name="ux_novel_reports_novel_chapter_reporter"),
+        Index("ix_novel_reports_chapter_id", "chapter_id", postgresql_where=text("chapter_id IS NOT NULL")),
+        Index("ix_novel_reports_status_created", "status", "created_at", "id"),
+        Index("ix_novel_reports_evidence_expires", "evidence_expires_at"),
+    )
+
+
+class NovelCommentReport(Base):
+    """노벨 댓글 신고. `NovelReport` 와 같은 구조다 — 신고 시점의 댓글 본문을 증거로 복사해 두고 90일이 지나면 조회에서 빠지며
+    파기 작업이 칸을 비운다.
+
+    댓글·소설 칸은 `SET NULL` 이다. 작성자 탈퇴와 소설·묶음 삭제는 댓글 행을 지우는데, 신고와 증거 사본은 보유 기간 동안
+    남아야 한다. 그래서 누가 쓴 댓글이었는지는 `comment_author_user_id` 가 따로 들고 있다. 유니크 제약(댓글, 신고자)은
+    `NovelReport` 와 같은 이유로 NULLS DISTINCT 이고, 첫 열이 댓글인 것은 댓글 DELETE 의 `SET NULL` 조회를 받게 하려는 것이다."""
+
+    __tablename__ = "novel_comment_reports"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    reporter_user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", name="fk_novel_comment_reports_reporter_user_id"), nullable=False
+    )
+    comment_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("novel_comments.id", ondelete="SET NULL"), nullable=True
+    )
+    novel_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("novels.id", ondelete="SET NULL"), nullable=True
+    )
+    comment_author_user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", name="fk_novel_comment_reports_comment_author_user_id"), nullable=False
+    )
+    reason_category: Mapped[ReportReasonCategory] = mapped_column(
+        Enum(ReportReasonCategory, name="report_reason_category"), nullable=False
+    )
+    status: Mapped[ReportStatus] = mapped_column(Enum(ReportStatus, name="report_status"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    resolved_by_admin_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("admin_users.id", name="fk_novel_comment_reports_resolved_by_admin_id"), nullable=True
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    evidence_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now() + interval '90 days'"), nullable=False
+    )
+    evidence_purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("comment_id", "reporter_user_id", name="ux_novel_comment_reports_comment_reporter"),
+        Index("ix_novel_comment_reports_novel_id", "novel_id", postgresql_where=text("novel_id IS NOT NULL")),
+        Index("ix_novel_comment_reports_status_created", "status", "created_at", "id"),
+        Index("ix_novel_comment_reports_evidence_expires", "evidence_expires_at"),
     )

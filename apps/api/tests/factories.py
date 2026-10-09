@@ -56,6 +56,8 @@ from api.db.models import (
     MediaBookPerson,
     MediaBookScene,
     ModerationStatus,
+    ReportReasonCategory,
+    ReportStatus,
     HomeNovelCuration,
     Novel,
     NovelBatch,
@@ -64,11 +66,14 @@ from api.db.models import (
     NovelChapterPublication,
     NovelChapterRevision,
     NovelCharacter,
+    NovelComment,
+    NovelCommentReport,
     NovelJob,
     NovelLike,
     NovelPublication,
     NovelReaderPosition,
     NovelReadingPosition,
+    NovelReport,
     NovelScreening,
     NovelSnapshot,
     Payment,
@@ -365,7 +370,8 @@ async def _make_novel_tree(
 
 async def _plant_novel_extras(db_session: AsyncSession, tree: NovelTree) -> None:
     """`tree` 의 소설·화에 인물 카드·등장 인물·스냅샷·읽은 위치와 노벨 공개 상태·화 공개본·텍스트 심사 기록·독자 읽은 자리·
-    좋아요·홈 노벨 자리를 하나씩 붙인다(flush). 소설을 지우는 경로가 이 테이블들까지 지우는지 볼 때 쓴다."""
+    좋아요·홈 노벨 자리·화 댓글을 하나씩 붙이고, 그 화와 댓글에 신고를 하나씩 단다(flush). 소설을 지우는 경로가 이 테이블들까지
+    지우는지, 신고는 남기는지 볼 때 쓴다."""
     card = NovelCharacter(novel_id=tree.novel.id, name="인물")
     db_session.add(card)
     await db_session.flush()
@@ -407,6 +413,34 @@ async def _plant_novel_extras(db_session: AsyncSession, tree: NovelTree) -> None
     # 홈 노벨 자리는 소설마다 비어 있는 다음 자리에 건다(같은 테스트에서 여러 소설에 붙여도 자리가 겹치지 않게).
     taken = await db_session.scalar(sa.select(sa.func.coalesce(sa.func.max(HomeNovelCuration.position), 0)))
     db_session.add(HomeNovelCuration(position=(taken or 0) + 1, novel_id=tree.novel.id))
+    comment = NovelComment(
+        novel_id=tree.novel.id, chapter_id=tree.chapter.id, author_user_id=tree.novel.user_id, body="댓글"
+    )
+    db_session.add(comment)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            NovelReport(
+                reporter_user_id=tree.novel.user_id,
+                publisher_user_id=tree.novel.user_id,
+                novel_id=tree.novel.id,
+                chapter_id=tree.chapter.id,
+                chapter_ordinal=1,
+                reason_category=ReportReasonCategory.SPAM,
+                status=ReportStatus.PENDING,
+                evidence_body="신고된 화 본문",
+            ),
+            NovelCommentReport(
+                reporter_user_id=tree.novel.user_id,
+                comment_id=comment.id,
+                novel_id=tree.novel.id,
+                comment_author_user_id=tree.novel.user_id,
+                reason_category=ReportReasonCategory.SPAM,
+                status=ReportStatus.PENDING,
+                evidence_body="댓글",
+            ),
+        ]
+    )
     await db_session.flush()
 
 
