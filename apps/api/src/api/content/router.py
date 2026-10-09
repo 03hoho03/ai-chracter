@@ -697,9 +697,9 @@ async def _ending_rule_draft_items(db: AsyncSession, ending_id: uuid.UUID) -> li
     """Mirrors `chat/turn_judgments.py`'s `_ending_rule_items` — `ending_rules`(top-level) and
     `ending_rule_groups` share one `order` sequence, reconstructed
     here as the same `kind`-discriminated tree so the draft response round-trips through
-    `PATCH` unchanged. Not imported from `chat/schemas.py`/`chat/turn_judgments.py` directly — same
-    "duplicate the small helper, don't cross-import another domain's module" convention as the
-    `_resolve_asset_url` copies in the moderation/admin/inquiry routers."""
+    `PATCH` unchanged. It builds the draft models from `content/schemas.py`
+    (`EndingRuleDraftItem`/`EndingRuleGroupDraftItem`), not the chat snapshot models
+    (`EndingRuleItem`/`EndingRuleGroupItem`) that `_ending_rule_items` returns."""
     top_rules = (await db.scalars(select(EndingRule).where(EndingRule.ending_id == ending_id))).all()
     groups = (await db.scalars(select(EndingRuleGroup).where(EndingRuleGroup.ending_id == ending_id))).all()
 
