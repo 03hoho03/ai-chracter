@@ -19,8 +19,18 @@ from api.db.models.clover import CloverLedger, CloverLot, CloverSpendUsage
 from api.db.models.content import Content
 from api.db.models.moderation import Notification
 from api.db.models.novel import Novel, NovelChapter, NovelPublication, NovelPurchase
-from api.db.models.payment import PaymentCancellation
-from factories import PublicNovel, _allow_novelize, _login_as, _make_payment, _make_public_novel, _make_user, _make_user_with_clover_lot
+from api.db.models.payment import Payment, PaymentCancellation
+from api.payments.refund import kst_today
+from factories import (
+    PublicNovel,
+    _allow_novelize,
+    _create_admin,
+    _login_as,
+    _make_payment,
+    _make_public_novel,
+    _make_user,
+    _make_user_with_clover_lot,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -366,10 +376,10 @@ async def test_deleting_the_last_batch_refunds_only_its_chapters(
     assert await _balance(db_session, buyer) == 70
 
 
-async def test_delete_refund_skips_what_came_from_a_refunded_payment(
+async def test_delete_refund_skips_what_came_from_a_fully_cancelled_payment(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """무료 10 + 결제 유료 로트로 30 을 산 뒤 그 결제가 환불(취소 성공)됐다. 삭제는 무료 10 만 돌려준다 — 결제 로트로
+    """무료 10 + 결제 유료 로트로 30 을 산 뒤 그 결제가 전액 취소로 성공 확정됐다. 삭제는 무료 10 만 돌려준다 — 결제 로트로
     20 을 되돌리면 돈과 클로버를 함께 돌려받는다. 알림·구매 행도 실제로 돌려준 10 이다."""
     novel = await _setup(db_session)
     buyer = await _buyer(db_session, balance=10)
@@ -381,35 +391,29 @@ async def test_delete_refund_skips_what_came_from_a_refunded_payment(
     await db_session.execute(sa.update(User).where(User.id == buyer).values(clover_balance=110))
     await db_session.commit()
     assert (await _buy(db_client, novel, 6, as_user=buyer)).status_code == 200
-    # 결제 환불: 남은 유료(80)를 회수하고 취소가 성공했다.
-    await db_session.execute(sa.update(CloverLot).where(CloverLot.id == paid_lot.id).values(remaining=0))
-    await db_session.execute(sa.update(User).where(User.id == buyer).values(clover_balance=0))
-    db_session.add(
-        PaymentCancellation(
-            payment_id=payment.id, source="console", status="succeeded", amount_krw=9_900, clawback_paid=80
-        )
-    )
-    await db_session.commit()
+    await _settle_cancellation(db_session, payment.id, paid_lot.id, "full")
 
     await _login_as(db_client, novel.publisher_id)
     assert (await db_client.delete(f"/novels/{novel.novel_id}")).status_code == 204
 
     assert await _balance(db_session, buyer) == 10
     assert (await _ledger(db_session, buyer))[-1] == ("novel_read_refund", 10)
-    assert await db_session.scalar(
-        sa.select(CloverLot.remaining).where(CloverLot.id == paid_lot.id).execution_options(populate_existing=True)
-    ) == 0
+    assert (
+        await db_session.scalar(
+            sa.select(CloverLot.remaining).where(CloverLot.id == paid_lot.id).execution_options(populate_existing=True)
+        )
+        == 0
+    )
     [purchase] = await _purchases(db_session, buyer)
     assert purchase.refunded_amount == 10
     [notice] = await _notifications(db_client, buyer)
     assert notice["novelRefund"] == {"chapterCount": 1, "cloverAmount": 10}
 
 
-async def test_a_purchase_paid_wholly_from_a_refunded_payment_gets_nothing_and_no_notice(
+async def test_a_purchase_paid_wholly_from_a_fully_cancelled_payment_gets_nothing_and_no_notice(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """전부 건너뛰면 원장 행도 알림도 없고, 구매 행에는 돌려준 0 이 적힌다(다시 환급하지 않는다). 취소가 진행 중(회수는 했고
-    포트원 결과를 기다림)이어도 환불된 것으로 본다."""
+    """전부 건너뛰면 원장 행도 알림도 없고, 구매 행에는 돌려준 0 이 적힌다(다시 환급하지 않는다)."""
     novel = await _setup(db_session)
     buyer = await _buyer(db_session, balance=0)
     payment = await _make_payment(db_session, user_id=buyer, status="paid")
@@ -420,8 +424,7 @@ async def test_a_purchase_paid_wholly_from_a_refunded_payment_gets_nothing_and_n
     await db_session.execute(sa.update(User).where(User.id == buyer).values(clover_balance=30))
     await db_session.commit()
     assert (await _buy(db_client, novel, 6, as_user=buyer)).status_code == 200
-    db_session.add(PaymentCancellation(payment_id=payment.id, source="console", status="requested", amount_krw=9_900))
-    await db_session.commit()
+    await _settle_cancellation(db_session, payment.id, paid_lot.id, "full")
 
     await _login_as(db_client, novel.publisher_id)
     assert (await db_client.delete(f"/novels/{novel.novel_id}")).status_code == 204
@@ -431,6 +434,74 @@ async def test_a_purchase_paid_wholly_from_a_refunded_payment_gets_nothing_and_n
     [purchase] = await _purchases(db_session, buyer)
     assert (purchase.refunded_amount, purchase.refund_notification_id) == (0, None)
     assert await _notifications(db_client, buyer) == []
+
+
+@pytest.mark.parametrize("outcome", ["partial", "requested", "failed"])
+async def test_delete_refund_returns_what_came_from_a_payment_not_fully_refunded(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, outcome: str
+) -> None:
+    """결제 로트로 30 을 산 뒤 그 결제에 전액 취소 성공이 아닌 취소가 있다 — 남은 유료분만 돈으로 돌려준 부분 환불, 회수만
+    하고 포트원 결과를 기다리는 취소, 거절로 확정돼 회수분을 되돌린 취소. 어느 쪽이든 소설 구매에 쓴 30 은 돈으로 돌려받지
+    않았으니 삭제가 결제 로트로 30 을 돌려준다."""
+    novel = await _setup(db_session)
+    buyer = await _buyer(db_session, balance=0)
+    payment = await _make_payment(db_session, user_id=buyer, status="paid")
+    paid_lot = CloverLot(
+        user_id=buyer, granted_amount=100, remaining=100, expires_at=None, kind="purchase_paid", payment_id=payment.id
+    )
+    db_session.add(paid_lot)
+    await db_session.execute(sa.update(User).where(User.id == buyer).values(clover_balance=100))
+    await db_session.commit()
+    assert (await _buy(db_client, novel, 6, as_user=buyer)).status_code == 200
+    await _settle_cancellation(db_session, payment.id, paid_lot.id, outcome)
+    left = 70 if outcome == "failed" else 0
+
+    await _login_as(db_client, novel.publisher_id)
+    assert (await db_client.delete(f"/novels/{novel.novel_id}")).status_code == 204
+
+    assert await _balance(db_session, buyer) == left + 30
+    assert (await _ledger(db_session, buyer))[-1] == ("novel_read_refund", 30)
+    [purchase] = await _purchases(db_session, buyer)
+    assert purchase.refunded_amount == 30
+
+
+async def _settle_cancellation(
+    db_session: AsyncSession, payment_id: uuid.UUID, lot_id: uuid.UUID, outcome: str
+) -> None:
+    """그 결제(9,900원)의 취소 하나를 결과별로 적는다. 회수는 결제 로트의 남은 양 전부다.
+
+    - full: 전액 취소 성공 — 남은 유료를 회수했고 결제의 취소액이 결제액과 같다.
+    - partial: 어드민 부분 환불 성공 — 남은 유료만 돈으로 돌려줬다(취소액 < 결제액).
+    - requested: 어드민 환불이 남은 유료를 회수하고 포트원 결과를 기다린다(취소액 0).
+    - failed: 포트원이 거절해 회수분을 로트로 되돌렸다(로트·잔액·취소액 그대로)."""
+    lot = await db_session.get_one(CloverLot, lot_id, populate_existing=True)
+    revoked = 0 if outcome == "failed" else lot.remaining
+    admin = await _create_admin(db_session)
+    db_session.add(
+        PaymentCancellation(
+            payment_id=payment_id,
+            source="admin",
+            admin_id=admin["id"],
+            request_received_on=kst_today(),
+            status={"full": "succeeded", "partial": "succeeded"}.get(outcome, outcome),
+            amount_krw=9_900 if outcome == "full" else 6_930,
+            clawback_paid=revoked,
+        )
+    )
+    if outcome in ("full", "partial"):
+        cancelled = 9_900 if outcome == "full" else 6_930
+        await db_session.execute(
+            sa.update(Payment)
+            .where(Payment.id == payment_id)
+            .values(status="cancelled" if outcome == "full" else "partially_cancelled", cancelled_amount_krw=cancelled)
+        )
+    await db_session.execute(
+        sa.update(CloverLot).where(CloverLot.id == lot_id).values(remaining=lot.remaining - revoked)
+    )
+    await db_session.execute(
+        sa.update(User).where(User.id == lot.user_id).values(clover_balance=User.clover_balance - revoked)
+    )
+    await db_session.commit()
 
 
 # ── 탈퇴 ────────────────────────────────────────────────────────────────────

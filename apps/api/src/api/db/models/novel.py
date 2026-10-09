@@ -617,7 +617,7 @@ class NovelPurchase(Base):
     - `edition`: 산 시점의 화 공개본 판 번호(어느 판을 보고 샀는가).
     - `spend_ledger_id`: 이 구매의 차감 원장 행. 삭제 환급이 이 id 로 차감 배분을 찾아 깎은 로트로 되돌리고, 정산이 붙을 키다.
     - `price`: 산 시점의 가격 사본 — 가격 설정이 바뀌어도 환급액은 낸 값이다.
-    - `refunded_at`·`refunded_amount`: 게시자 삭제로 환급한 시각과 실제로 돌려준 양. 이미 결제 환불된 구매분에서 나간 몫은
+    - `refunded_at`·`refunded_amount`: 게시자 삭제로 환급한 시각과 실제로 돌려준 양. 결제가 전액 취소된 구매분에서 나간 몫은
       돌려주지 않으므로 `price` 보다 작을 수 있다. `refund_notification_id` 는 그때 구매자에게 보낸 알림이다(알림 문구의 화
       수·클로버 수가 이 행들에서 나온다).
 

@@ -6,8 +6,8 @@
 클로버로도 산다 — 차감 순서는 다른 차감과 같다.
 
 **삭제 환급** — 게시자가 산 화가 든 소설이나 마지막 묶음을 지우면, 그 화를 산 구매마다 차감을 깎은 로트로 되돌린다(유료는
-유료로, 무료·보너스는 그대로). 이미 결제 환불(취소)이 걸린 구매에서 나온 로트의 몫은 돌려주지 않는다 — 그 로트로 되돌리면
-돈과 클로버를 함께 돌려받는다. 돌려준 양이 있으면 구매자에게 알림을 하나 보낸다. 공개 철회·게시자 탈퇴는 환급하지 않는다
+유료로, 무료·보너스는 그대로). 전액 취소가 성공으로 확정된 결제에서 나온 로트의 몫은 돌려주지 않는다 — 그
+로트로 되돌리면 돈과 클로버를 함께 돌려받는다. 부분 환불·진행 중이거나 실패한 취소의 결제는 정상 환급한다. 돌려준 양이 있으면 구매자에게 알림을 하나 보낸다. 공개 철회·게시자 탈퇴는 환급하지 않는다
 (열람만 끝난다). 탈퇴한 구매자의 구매 행은 탈퇴 때 지워지므로 환급 대상에 없다.
 
 **잠금 순서는 사용자 행(관련된 모든 사람, id 순) → 공개 상태 행 → 구매 행 → 클로버(배분 → 로트)다.** 구매는 구매자와
@@ -44,7 +44,7 @@ from api.legal.dependencies import require_legal_consent
 from api.moderation.notifications import NOVEL_REFUND_NOTIFICATION_TYPE
 from api.novel_public.access import readable_publication_conditions, require_novel_public_enabled
 from api.novelize.schemas import NovelPurchaseRefundPreview
-from api.payments.refund import refunded_purchase_lot
+from api.payments.refund import fully_cancelled_purchase_lot
 from api.session.dependencies import get_current_user_id
 
 # 잔액 부족 429 의 `window`. 소설화 차감과 같은 바디 모양(`CLOVER_REQUIRED`)이고 이 값으로 어느 기능인지 가른다.
@@ -287,7 +287,7 @@ async def refund_deleted_purchases(
                 spend_ledger_id=purchase.spend_ledger_id,
                 amount=purchase.price,
                 kind="novel_read_refund",
-                skip_lot=refunded_purchase_lot(),
+                skip_lot=fully_cancelled_purchase_lot(),
             )
             purchase.refunded_amount = await _refunded_amount(db, purchase.spend_ledger_id)
             purchase.refunded_at = now
