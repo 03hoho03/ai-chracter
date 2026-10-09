@@ -28,7 +28,7 @@ const INLINE_LINK_CLASSNAME =
   "whitespace-nowrap font-medium text-primary underline-offset-4 hover:underline focus-visible:underline";
 
 /** 사용처 단가 목록과 무료 대화 수는 가격 응답에 나중에 더한 필드다. */
-type AddedPricingKey = "models" | "novelAiEditCost" | "novelRestricted" | "dailyFreeChatTurns";
+type AddedPricingKey = "models" | "novelAiEditCost" | "dailyFreeChatTurns";
 
 /** 이 화면이 읽는 가격 응답. web 과 API 는 따로 배포돼 새 화면이 옛 API 의 응답(위 필드가 없다)을 받는 구간이 있다.
  * 타입은 그 필드를 필수로 적지만 그 구간에는 런타임에 비어 있으므로, 화면은 이 모양으로 읽고 빈 필드를 건너뛴다. */
@@ -37,18 +37,17 @@ type DeployedPricingResponse = Omit<CloverPricingResponse, AddedPricingKey> &
 
 type ModelPricing = CloverPricingResponse["models"][number];
 
-/** 아직 허용된 계정만 쓰는 사용처의 단가 칸에 붙이는 표시. 누가 쓸 수 있는지를 짧게 말하고 표 아래 각주가 풀어 준다.
- * "준비 중"이라 하지 않는다 — 결제가 닫혀 있을 때 같은 화면에 "결제는 아직 준비 중"이 함께 떠 한 말이 두 뜻이 된다. */
-const RESTRICTED_LABEL = "일부 계정";
-
 /** `/clover/pricing` — 로그인 없이 보는 클로버 상품 안내.
  *
  * 가격·수량·단가 숫자는 전부 `GET /clover/pricing` 응답에서 온다. 이 파일에 숫자를 적으면 상품을 바꿀 때
  * 서버와 화면이 갈린다. 반면 유효기간·7일·환불 비율·사용 순서는 정책 문장이라 여기 적고, 같은 문장이
  * 이용약관과 환불정책(둘 다 DB 게시본)에도 있다 — 셋 중 하나를 고치면 나머지와 함께 맞춘다.
  *
- * 컨테이너는 클로버 허브와 같은 `max-w-md` 한 열이다. 텍스트 몇 줄과 짧은 행뿐이라 넓혀도 행 가운데 빈자리만
- * 는다. 구매는 로그인한 클로버 허브에서 하므로, 결제가 열려 있으면(`paymentsEnabled`) 상품 행 자체가 허브로 가는
+ * 컨테이너는 이 화면이 가리키는 환불정책(법적 문서 화면)·공지와 같은 문서 폭 `max-w-2xl` 한 열이고, `lg` 이상에서만
+ * `max-w-4xl`로 넓혀 상품과 쓰임새를 두 열로 나란히 둔다 — 상품의 클로버 수와 사용처 단가를 한눈에 견줄 수 있다.
+ * 그 아래 정책 문장은 넓어진 폭을 따라 늘이지 않고 `max-w-prose`(65ch)에 묶어 한 줄 길이를 문서 화면과 같게 둔다.
+ *
+ * 구매는 로그인한 클로버 허브에서 하므로, 결제가 열려 있으면(`paymentsEnabled`) 상품 행 자체가 허브로 가는
  * 링크이고 허브가 그 상품의 구매 확인을 바로 연다. 열리지 않은 동안은 행이 정보일 뿐이다 — 할 수 없는 동작을
  * 약속하지 않는다.
  */
@@ -58,60 +57,57 @@ export function CloverPricingPage() {
   const pricing: DeployedPricingResponse | undefined = useCloverPricingQuery().data;
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-10 px-4 sm:px-6 py-10">
+    <main className="mx-auto flex max-w-2xl flex-col gap-10 px-4 sm:px-6 py-10 lg:max-w-4xl">
       <div className="flex flex-col gap-1.5">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">
           {SUPPORT_DESTINATIONS["clover-pricing"].label}
         </h1>
-        {/* 소설이 일부 계정에만 열려 있는 동안 소설을 모든 회원의 사용처처럼 소개하지 않는다. */}
-        <p className="text-sm break-keep text-muted-foreground">
-          {pricing?.novelRestricted
-            ? "클로버는 대화와 이미지 생성에 쓰여요. 소설은 지금은 일부 계정만 쓸 수 있어요."
-            : "클로버는 대화, 소설, 이미지 생성에 쓰여요."}
-        </p>
+        <p className="text-sm break-keep text-muted-foreground">클로버는 대화, 소설, 이미지 생성에 쓰여요.</p>
       </div>
 
       <PricingBody />
 
-      <Section title="유효기간과 사용 순서">
-        <PolicyList
-          items={[
-            "유료 클로버와 보너스 클로버는 구매일로부터 5년 동안 쓸 수 있어요.",
-            CLOVER_EXPIRY_NOTICE_MESSAGE,
-            "클로버는 무료, 보너스, 유료 순서로 쓰여요. 무료 클로버는 환불되지 않아요.",
-            "본인인증 기능이 열리면, 미션 클로버는 휴대폰 본인인증을 마친 회원에게만 지급돼요.",
-          ]}
-        />
-      </Section>
+      <div className="flex max-w-prose flex-col gap-10">
+        <Section title="유효기간과 사용 순서">
+          <PolicyList
+            items={[
+              "유료 클로버와 보너스 클로버는 구매일로부터 5년 동안 쓸 수 있어요.",
+              CLOVER_EXPIRY_NOTICE_MESSAGE,
+              "클로버는 무료, 보너스, 유료 순서로 쓰여요. 무료 클로버는 환불되지 않아요.",
+              "본인인증 기능이 열리면, 미션 클로버는 휴대폰 본인인증을 마친 회원에게만 지급돼요.",
+            ]}
+          />
+        </Section>
 
-      <Section title="청약철회와 환불">
-        <PolicyList
-          items={[
-            "결제일로부터 7일 안에는 쓰지 않은 유료 클로버를 전액 돌려받을 수 있어요. 이미 쓴 보너스 클로버만큼은 빼고 돌려드려요.",
-            "7일이 지나도 남은 유료 클로버를 환불받을 수 있어요. 이때도 이미 쓴 보너스 클로버만큼은 빼고, 그 금액의 90%를 돌려드려요.",
-            "이미 쓴 클로버는 청약철회할 수 없어요. 클로버는 쓰는 즉시 기능 이용에 제공되기 때문이에요.",
-            formatTrialSentence(pricing?.identityGateEnabled ?? false, pricing?.dailyFreeChatTurns),
-            "보너스 클로버는 따로 환불되지 않아요. 유료 클로버를 환불하면 그 구매로 받은 보너스 클로버 중 남은 것은 회수돼요.",
-            "탈퇴하면 남은 클로버가 모두 사라져요. 남은 유료 클로버는 탈퇴하기 전에 환불을 신청해주세요.",
-            `이용이 정지된 동안에도 ${CONTACT_EMAIL}로 환불을 신청할 수 있어요.`,
-          ]}
-        />
-        <p className="text-sm break-keep text-foreground">
-          자세한 기준은{" "}
-          <Link to={SUPPORT_DESTINATIONS["refund-policy"].to} className={INLINE_LINK_CLASSNAME}>
-            {SUPPORT_DESTINATIONS["refund-policy"].label}
-          </Link>
-          에서 볼 수 있어요.
-        </p>
-      </Section>
+        <Section title="청약철회와 환불">
+          <PolicyList
+            items={[
+              "결제일로부터 7일 안에는 쓰지 않은 유료 클로버를 전액 돌려받을 수 있어요. 이미 쓴 보너스 클로버만큼은 빼고 돌려드려요.",
+              "7일이 지나도 남은 유료 클로버를 환불받을 수 있어요. 이때도 이미 쓴 보너스 클로버만큼은 빼고, 그 금액의 90%를 돌려드려요.",
+              "이미 쓴 클로버는 청약철회할 수 없어요. 클로버는 쓰는 즉시 기능 이용에 제공되기 때문이에요.",
+              formatTrialSentence(pricing?.identityGateEnabled ?? false, pricing?.dailyFreeChatTurns),
+              "보너스 클로버는 따로 환불되지 않아요. 유료 클로버를 환불하면 그 구매로 받은 보너스 클로버 중 남은 것은 회수돼요.",
+              "탈퇴하면 남은 클로버가 모두 사라져요. 남은 유료 클로버는 탈퇴하기 전에 환불을 신청해주세요.",
+              `이용이 정지된 동안에도 ${CONTACT_EMAIL}로 환불을 신청할 수 있어요.`,
+            ]}
+          />
+          <p className="text-sm break-keep text-foreground">
+            자세한 기준은{" "}
+            <Link to={SUPPORT_DESTINATIONS["refund-policy"].to} className={INLINE_LINK_CLASSNAME}>
+              {SUPPORT_DESTINATIONS["refund-policy"].label}
+            </Link>
+            에서 볼 수 있어요.
+          </p>
+        </Section>
 
-      <Section title="미성년자 결제">
-        <p className="text-sm break-keep text-foreground">
-          클로버는 <span className="whitespace-nowrap">만 19세</span> 이상만 살 수 있어요. 그래도 미성년자가 법정대리인의 동의 없이 결제했다면 본인이나 법정대리인이 취소할 수 있어요. 다만 성년자이거나
-          법정대리인이 동의한 것처럼 속였거나, 용돈처럼 법정대리인이 쓰도록 허락한 돈의 범위에서 결제했다면 취소할 수
-          없어요.
-        </p>
-      </Section>
+        <Section title="미성년자 결제">
+          <p className="text-sm break-keep text-foreground">
+            클로버는 <span className="whitespace-nowrap">만 19세</span> 이상만 살 수 있어요. 그래도 미성년자가 법정대리인의 동의 없이 결제했다면 본인이나 법정대리인이 취소할 수 있어요. 다만 성년자이거나
+            법정대리인이 동의한 것처럼 속였거나, 용돈처럼 법정대리인이 쓰도록 허락한 돈의 범위에서 결제했다면 취소할 수
+            없어요.
+          </p>
+        </Section>
+      </div>
     </main>
   );
 }
@@ -154,17 +150,20 @@ function PolicyList({ items }: { items: readonly string[] }) {
  * 바깥에 둔다(`pages/legal-document`의 관용구 — 실패해도 환불 조건은 읽힌다).
  *
  * "충전 상품"·"쓰임새" 두 제목은 로딩·실패·성공 어느 상태에서나 같은 자리에 남는다 — 실패할 때 제목까지 사라지면 이
- * 화면에 상품과 단가 안내가 있다는 사실이 함께 사라진다. 쓰임새는 다시 시도 버튼을 따로 두지 않고 위 패널의 버튼을
- * 가리킨다(같은 요청 하나다). 다시 시도를 누르면 쿼리가 로딩 상태로 돌아가 실패 패널(과 그 버튼)이 언마운트되므로,
+ * 화면에 상품과 단가 안내가 있다는 사실이 함께 사라진다. 쓰임새는 다시 시도 버튼을 따로 두지 않고 충전 상품 섹션의
+ * 버튼을 가리킨다(같은 요청 하나다. 그 섹션은 좁은 화면에서는 위, `lg` 이상에서는 왼쪽이라 문구에 방향을 적지 않는다). 다시 시도를 누르면 쿼리가 로딩 상태로 돌아가 실패 패널(과 그 버튼)이 언마운트되므로,
  * 누르는 즉시 포커스를 남아 있는 제목으로 옮긴다(안 그러면 포커스가 `<body>`로 떨어진다). 세 상태가 같은 트리
- * 모양이라(첫 자식이 이 섹션) 제목은 다시 마운트되지 않는다. */
+ * 모양이라(첫 자식이 이 섹션) 제목은 다시 마운트되지 않는다.
+ *
+ * `lg` 이상에서는 두 섹션이 두 열로 선다. 각 열은 위에서부터 채우고(`items-start`) 서로 높이를 맞추지 않는다 — 늘어난
+ * 쪽에 빈 바닥이 생겨도 그리는 상자가 없어 보이지 않는다. 좁은 화면에서는 지금처럼 상품 → 쓰임새 순서의 한 열이다. */
 function PricingBody() {
   const pricingQuery = useCloverPricingQuery();
   const productsHeadingRef = useRef<HTMLHeadingElement>(null);
   const pricing: DeployedPricingResponse | undefined = pricingQuery.isSuccess ? pricingQuery.data : undefined;
 
   return (
-    <>
+    <div className="grid items-start gap-10 lg:grid-cols-2 lg:gap-12">
       <Section title="충전 상품" headingRef={productsHeadingRef}>
         {/* 구매 자격은 상품을 고르기 전에 읽혀야 해 제목 바로 아래에 둔다. 서버의 주문 생성 판정 그대로다 — 본인인증은
             나이를 확인하는 유일한 수단이라 미인증 회원 게이트 스위치와 무관하게 늘 필요하고, 그 뒤 만 19세 미만을
@@ -189,12 +188,12 @@ function PricingBody() {
         {pricingQuery.isPending && <div className="h-40 animate-pulse rounded-xl bg-muted" />}
         {pricingQuery.isError && (
           <p className="text-sm break-keep text-muted-foreground">
-            사용처별 단가는 상품 정보와 함께 불러와요. 위에서 다시 시도해주세요.
+            사용처별 단가는 상품 정보와 함께 불러와요. 충전 상품에서 다시 시도해주세요.
           </p>
         )}
         {pricing && <UsageCosts pricing={pricing} />}
       </Section>
-    </>
+    </div>
   );
 }
 
@@ -265,14 +264,11 @@ function ProductLink({ product }: { product: CloverProductItem }) {
 }
 
 /** 사용처별 단가. 대화와 소설은 모델마다 값이 달라 모델 × 사용처 표로, 이미지와 AI 수정은 모델과 무관해 한 줄씩 둔다.
- * 허용된 계정만 쓰는 사용처(상위 모델, 소설)는 숨기지 않고 표시를 붙여 싣는다 — 구매 전 안내에 없는 사용처 가격은
- * 숨은 가격으로 읽힌다. 행을 상자로 감싸지 않고 선으로만 가른다(누르는 것이 아니다).
+ * 응답에 실린 사용처는 전부 같은 모양으로 싣는다. 행을 상자로 감싸지 않고 선으로만 가른다(누르는 것이 아니다).
  *
  * 모델 목록이 없는 응답(사용처 단가를 싣기 전의 옛 API)이면 기본 모델 대화 단가 한 줄로 돌아간다. */
 function UsageCosts({ pricing }: { pricing: DeployedPricingResponse }) {
   const models = pricing.models ?? [];
-  const isNovelRestricted = pricing.novelRestricted ?? false;
-  const hasRestricted = isNovelRestricted || models.some((model) => model.restricted);
   const [exampleProduct] = pricing.products;
   const exampleAmount = exampleProduct ? exampleProduct.paidAmount + exampleProduct.bonusAmount : 0;
   const freeChatSentence = formatFreeChatSentence(
@@ -285,19 +281,14 @@ function UsageCosts({ pricing }: { pricing: DeployedPricingResponse }) {
     <>
       {/* 클로버 없이 쓸 수 있는 부분을 단가보다 먼저 말한다 — 표만 보면 첫 턴부터 클로버가 드는 것으로 읽힌다. */}
       {freeChatSentence && <p className="text-sm break-keep text-foreground">{freeChatSentence}</p>}
-      {models.length > 0 && <ModelCostTable models={models} isNovelRestricted={isNovelRestricted} />}
+      {models.length > 0 && <ModelCostTable models={models} />}
       <dl className="flex flex-col divide-y divide-border border-y border-border">
         {models.length === 0 && <UsageRow label="대화 1턴" cost={pricing.chatTurnCost} />}
         <UsageRow label="이미지 1장" cost={pricing.imageCost} />
         {pricing.novelAiEditCost !== undefined && (
-          <UsageRow label="소설 AI 수정 1회" cost={pricing.novelAiEditCost} isRestricted={isNovelRestricted} />
+          <UsageRow label="소설 AI 수정 1회" cost={pricing.novelAiEditCost} />
         )}
       </dl>
-      {hasRestricted && (
-        <p className="text-xs break-keep text-muted-foreground">
-          ‘{RESTRICTED_LABEL}’이 붙은 단가는 지금은 일부 계정만 쓸 수 있는 기능의 가격이에요.
-        </p>
-      )}
       {/* 단가가 0이면 나눗셈이 무한대가 된다 — 그때는 예시를 싣지 않는다. */}
       {exampleAmount > 0 && pricing.chatTurnCost > 0 && pricing.imageCost > 0 && (
         <p className="text-sm break-keep text-foreground">
@@ -313,11 +304,8 @@ function UsageCosts({ pricing }: { pricing: DeployedPricingResponse }) {
 
 /** 모델 × 사용처(대화 1턴, 소설 1화) 단가 표. 두 사용처가 같은 모델 목록을 공유하므로 표로 묶으면 모델 이름을 한 번만
  * 읽는다. 값 칸은 클로버 개수이고, 단위는 칸마다 아이콘을 되풀이하지 않고 열 머리에 한 번 적는다. 오른쪽 정렬
- * `tabular-nums` 로 자릿수를 세로로 맞춘다. 정보 표라 행 hover 를 끈다.
- *
- * ‘일부 계정’ 표시는 모델이나 열이 아니라 지금 쓸 수 없는 값 칸에 붙는다 — 상위 모델(`restricted`)이면 그 행의 두 칸,
- * 소설이 막혀 있으면(`novelRestricted`) 소설 열의 모든 칸이다. 기본 모델 대화처럼 열린 칸에는 붙지 않는다. */
-function ModelCostTable({ models, isNovelRestricted }: { models: readonly ModelPricing[]; isNovelRestricted: boolean }) {
+ * `tabular-nums` 로 자릿수를 세로로 맞춘다. 정보 표라 행 hover 를 끈다. */
+function ModelCostTable({ models }: { models: readonly ModelPricing[] }) {
   return (
     <Table>
       <caption className="sr-only">모델별 클로버 단가</caption>
@@ -344,12 +332,10 @@ function ModelCostTable({ models, isNovelRestricted }: { models: readonly ModelP
               </span>
             </TableHead>
             <TableCell className="py-3 text-right align-top">
-              <CostValue isRestricted={model.restricted}>{model.chatTurnCost.toLocaleString()}</CostValue>
+              <CostValue>{model.chatTurnCost.toLocaleString()}</CostValue>
             </TableCell>
             <TableCell className="py-3 pr-0 text-right align-top">
-              <CostValue isRestricted={model.restricted || isNovelRestricted}>
-                {model.novelEpisodeCost.toLocaleString()}
-              </CostValue>
+              <CostValue>{model.novelEpisodeCost.toLocaleString()}</CostValue>
             </TableCell>
           </TableRow>
         ))}
@@ -367,23 +353,16 @@ function ColumnHeading({ label }: { label: string }) {
   );
 }
 
-/** 단가 값 하나와, 모든 회원이 쓸 수 있는 값이 아니면 그 아래 ‘일부 계정’. 값 자체는 흐리지 않는다 — 공개한 가격이라 읽혀야 하고,
- * 상태는 표시 글자가 말한다. */
-function CostValue({ isRestricted, children }: { isRestricted: boolean; children: ReactNode }) {
-  return (
-    <span className="inline-flex flex-col items-end">
-      <span className="text-sm whitespace-nowrap tabular-nums text-foreground">{children}</span>
-      {isRestricted && <span className="text-xs whitespace-nowrap text-muted-foreground">{RESTRICTED_LABEL}</span>}
-    </span>
-  );
+function CostValue({ children }: { children: ReactNode }) {
+  return <span className="text-sm whitespace-nowrap tabular-nums text-foreground">{children}</span>;
 }
 
-function UsageRow({ label, cost, isRestricted = false }: { label: string; cost: number; isRestricted?: boolean }) {
+function UsageRow({ label, cost }: { label: string; cost: number }) {
   return (
     <div className="flex items-start justify-between gap-3 py-3">
       <dt className="text-sm font-medium text-foreground">{label}</dt>
       <dd>
-        <CostValue isRestricted={isRestricted}>클로버 {cost.toLocaleString()}개</CostValue>
+        <CostValue>클로버 {cost.toLocaleString()}개</CostValue>
       </dd>
     </div>
   );
