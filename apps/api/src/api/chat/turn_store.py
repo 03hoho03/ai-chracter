@@ -5,7 +5,8 @@
 삽입도 라우터에서 그대로 부른다. 이 모듈은 라우터를 import 하지 않는다(라우터가 이 모듈을 import 한다).
 
 경고는 전부 부르는 쪽이 넘긴 로거(`log`)로 남긴다 — 이 경고들은 원래 라우터 안에 있던 것이라, 로거 이름으로 거르는
-쪽(운영 로그 검색, Bugsink breadcrumb 범주)이 옮긴 뒤에도 같은 이름(`api.chat.router`)으로 읽는다."""
+쪽(경고의 로거 이름까지 기록한 테스트, Bugsink breadcrumb 범주)이 옮긴 뒤에도 같은 이름(`api.chat.router`)으로
+읽는다. 운영 stderr 로그 줄에는 로거 이름이 찍히지 않는다(앱에 로깅 설정이 없어 `logging.lastResort` 가 메시지만 낸다)."""
 
 import logging
 import uuid
