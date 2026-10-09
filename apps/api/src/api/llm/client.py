@@ -138,10 +138,13 @@ class LLMTruncatedError(LLMClientError):
 
 
 class LLMEmptyResponseError(LLMClientError):
-    """소설화 호출이 정상 종료했는데 본문이 비었다(공백뿐인 것 포함). 종료 사유는 STOP 이라 그것만 보면 성공으로
+    """소설화 호출이 끝났는데 본문이 비었다(공백뿐인 것 포함). 대개 종료 사유가 정상(STOP)이라 그것만 보면 성공으로
     보인다. 사용량은 이 예외를 올리기 전에 이미 기록됐다. 비지는 않았지만 너무 짧은 본문을 실패로 볼 기준은 호출부가
-    정한다. 채팅 호출에서는 한 경우에만 올라온다 — 사고를 끌 수 없는 Anthropic API 직접 구현에서 사고가 출력 상한을 다 써
-    본문 없이 끝난 경우다(빈 턴을 저장·과금하지 않고 환불 경로를 태운다)."""
+    정한다.
+
+    사고를 끌 수 없는 Anthropic API 직접 구현에서는 사고가 출력 상한을 다 써 본문 없이 끝난 경우(종료 사유 `max_tokens`)도
+    이 예외다 — 소설 장에서는 출력 상한에 닿았어도 `LLMTruncatedError` 가 아니라 이것이고, 채팅 호출에서는 이 경우에만
+    올라온다(빈 턴을 저장·과금하지 않고 환불 경로를 태운다)."""
 
 
 def dependency_tag(exc: LLMClientError) -> str:

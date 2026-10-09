@@ -301,7 +301,8 @@ async def test_a_chat_cut_off_at_the_cap_is_logged_and_returned(
     with caplog.at_level(logging.WARNING, logger="api.llm.bedrock"):
         assert await _collect(client) == ["말을 하다"]
 
-    assert "max_tokens(4096)" in caplog.text
+    # 로거 이름까지 본다 — 공용 모듈의 로거로 남기면 문구는 같아도 `api.llm.bedrock` 로 거르던 검색에서 빠진다.
+    assert any(r.name == "api.llm.bedrock" and "max_tokens(4096)" in r.getMessage() for r in caplog.records)
     assert len(recorded) == 1
 
 
@@ -497,6 +498,26 @@ async def test_other_failures_are_plain_client_errors(
     assert exc_info.value.provider == "bedrock"
     assert _llm_dependency_tag(exc_info.value) == "bedrock"
     assert recorded == []
+
+
+@pytest.mark.parametrize(
+    ("exc", "mapped"),
+    [
+        pytest.param(_status_error(anthropic.RateLimitError, 429, None), LLMRateLimitError, id="throttled"),
+        pytest.param(botocore.exceptions.ProfileNotFound(profile="missing"), LLMClientError, id="botocore-signing"),
+    ],
+)
+async def test_a_mapped_failure_keeps_the_original_exception_as_its_cause(
+    monkeypatch: pytest.MonkeyPatch, recorded: list[Any], exc: BaseException, mapped: type[LLMClientError]
+) -> None:
+    """바꾼 예외는 원래 SDK·botocore 예외를 직접 원인(`__cause__`)으로 쥔다(Anthropic 구현과 같은 규칙) — 추적이 "처리
+    중에 또 다른 오류가 났다"가 아니라 "이 예외에서 바꿨다"로 읽힌다."""
+    client = _client_failing_on_create(monkeypatch, exc)
+
+    with pytest.raises(mapped) as exc_info:
+        await _collect(client)
+
+    assert exc_info.value.__cause__ is exc
 
 
 async def test_generate_structured_is_not_supported() -> None:

@@ -152,6 +152,26 @@ async def test_only_text_deltas_are_relayed_even_with_thinking_blocks_in_the_str
     assert await _collect(client) == ["안", "녕"]
 
 
+async def test_thinking_text_never_reaches_the_user_even_when_the_stream_carries_it(
+    monkeypatch: pytest.MonkeyPatch, recorded: list[Any]
+) -> None:
+    """사고 표시를 요약으로 바꾸면 `thinking_delta` 에 사고 글이 실려 온다. 그 글은 모델의 속생각이라 화면에 나가면
+    안 된다 — 본문(`text_delta`)만 내보낸다."""
+    thinking_with_text = (
+        SimpleNamespace(
+            type="content_block_start", index=0, content_block=SimpleNamespace(type="thinking", thinking="")
+        ),
+        SimpleNamespace(type="content_block_delta", delta=SimpleNamespace(type="thinking_delta", thinking="속생각")),
+        SimpleNamespace(type="content_block_delta", delta=SimpleNamespace(type="signature_delta", signature="sig")),
+        SimpleNamespace(type="content_block_stop", index=0),
+    )
+    client, _ = _client_streaming(
+        monkeypatch, _start(input_tokens=10), *thinking_with_text, _text("안녕"), _end(thinking=3)
+    )
+
+    assert await _collect(client) == ["안녕"]
+
+
 @pytest.mark.parametrize(
     ("usage", "model_setting", "max_tokens", "timeout_seconds", "effort"),
     [
@@ -640,7 +660,8 @@ _STREAM_HEADERS = {"content-type": "text/event-stream"}
 async def test_a_successful_stream_through_the_real_sdk_relays_only_text_and_splits_thinking_usage(
     monkeypatch: pytest.MonkeyPatch, recorded: list[Any]
 ) -> None:
-    """사용량의 사고 내역(`output_tokens_details`)을 SDK 가 실제로 어떤 모양으로 옮기는지 본다."""
+    """사용량의 사고 내역(`output_tokens_details`)을 SDK 가 실제로 어떤 모양으로 옮기는지 본다. 사고 글이 실린
+    `thinking_delta`(사고 표시가 요약일 때의 모양)도 넣어, SDK 가 옮긴 그 이벤트가 화면에 나가지 않는지 함께 본다."""
     body = _sse(
         _MESSAGE_START,
         {
@@ -648,6 +669,7 @@ async def test_a_successful_stream_through_the_real_sdk_relays_only_text_and_spl
             "index": 0,
             "content_block": {"type": "thinking", "thinking": "", "signature": ""},
         },
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "속생각"}},
         {"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": "sig"}},
         {"type": "content_block_stop", "index": 0},
         {"type": "content_block_start", "index": 1, "content_block": {"type": "text", "text": ""}},

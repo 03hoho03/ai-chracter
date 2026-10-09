@@ -508,12 +508,14 @@ class Settings(BaseSettings):
     novelize_heartbeat_interval_seconds: float = 10
     novelize_heartbeat_expiry_seconds: int = 60
     # 소설화 작업 하나의 전체 상한(초). heartbeat 가 살아 있어도 작업이 무한히 늘어지지 않게 한다. 지금 SDK 경로(httpx)
-    # 에서 장 생성 호출의 타임아웃(Gemini `gemini_novelize_chapter_timeout_ms`, 상위 모델 `bedrock_chapter_timeout_ms`)은
-    # 스트리밍의 청크 사이 읽기 상한이라, 꾸준히 흘러나오는 긴 장의 전체 시간을 끊는 것은 이 작업 상한 하나뿐이다. 그 호출
+    # 에서 장 생성 호출의 타임아웃(Gemini `gemini_novelize_chapter_timeout_ms`, 상위 모델은 Bedrock 이면
+    # `bedrock_chapter_timeout_ms`, Anthropic API 로 직접 보내면 `anthropic_chapter_timeout_ms`)은 스트리밍의 청크 사이 읽기
+    # 상한이라, 꾸준히 흘러나오는 긴 장의 전체 시간을 끊는 것은 이 작업 상한 하나뿐이다. 그 호출
     # 타임아웃은 첫 청크 전(또는 청크 사이)에 오래 멈춘 경우에만 먼저 난다. 넘기면 실패·환불하고(상위 모델도 그 모델 값
     # 그대로 환불), 취소된 호출의 토큰 사용량은 기록되지 않는다 — 원가는 나갔는데 집계에 안 잡힌다. 상위 모델, 특히 Opus
     # 의 긴 장이 이 상한 안에 드는지는 아직 재지 않았다. 상위 모델을 켜기 전에 가장 긴 장(턴 상한 끝까지)을 Opus 로 한 번
-    # 돌려 걸린 시간을 보고, 넘으면 이 값을 올린다. 임시값.
+    # 돌려 걸린 시간을 보고, 넘으면 이 값을 올린다. Anthropic API 직접 경로의 모델은 사고를 끌 수 없어 본문 앞에 사고가
+    # 붙으므로, 장을 그 경로로 보낼 때는 그 경로로 따로 잰다. 임시값.
     novelize_job_timeout_seconds: float = 360
     # 장 본문이 이보다 짧으면(글자 수, 앞뒤 공백 제외) 정상 종료였어도 실패·환불한다. 출력 토큰 1개로 끝난 장이 실제로
     # 나왔다. 200자는 측정으로 정한 값이 아니라 그런 몇 글자짜리 장을 거르려고 넉넉히 낮게 잡은 임시 하한이다 — 짧은
