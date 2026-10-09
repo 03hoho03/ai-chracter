@@ -58,8 +58,10 @@ NOVEL_SCREEN_DAILY_REJECTION_LIMIT = 3
 # 호출 시점에 모듈 전역으로 읽는다(테스트가 바꿔 끼울 수 있게).
 NOVEL_SCREEN_HOURLY_CALL_LIMIT = 10
 _CALL_SCOPE = "novel_screen_calls"
-# 두 상한의 429 `window`. 다른 429 와 같은 바디 모양을 쓰고 이 값으로 어느 기능의 상한인지 가른다.
-NOVEL_SCREEN_LIMIT_WINDOW = "novel_screen"
+# 두 상한의 429 `window`. 다른 429 와 같은 바디 모양을 쓰고 이 값으로 어느 상한인지 가른다 — 둘은 풀리는 시각(다음 정시
+# 대 KST 자정)과 게시자에게 할 말(잠시 뒤 다시 대 오늘은 그만)이 달라 값을 나눈다.
+NOVEL_SCREEN_HOURLY_WINDOW = "novel_screen_hourly"
+NOVEL_SCREEN_DAILY_REJECT_WINDOW = "novel_screen_daily_reject"
 # `rate_limit:` 으로 시작해야 테스트의 자동 정리(`conftest.py` 의 `_flush_rate_limit_keys`)에 함께 지워진다.
 _REJECTION_KEY_PREFIX = "rate_limit:novel_screen_rejections"
 
@@ -185,14 +187,14 @@ async def enforce_rejection_limit(db: AsyncSession, user_id: uuid.UUID, now: dat
     """심사 LLM 을 부르기 직전에 본다. 오늘 상한만큼 걸렸으면 KST 자정까지 429."""
     left = await rejections_left(db, user_id, now)
     if left == 0:
-        raise _too_many_requests(user_id, NOVEL_SCREEN_LIMIT_WINDOW, seconds_until_kst_midnight(now))
+        raise _too_many_requests(user_id, NOVEL_SCREEN_DAILY_REJECT_WINDOW, seconds_until_kst_midnight(now))
 
 
 async def enforce_call_limit(db: AsyncSession, user_id: uuid.UUID) -> None:
     """심사 LLM 을 부르기 직전에 한 번 센다 — 세는 단위가 요청이 아니라 심사 호출이라 심사할 글이 없는 요청(바뀐 것이
     없는 다시 공개)은 세지 않는다. 상한을 넘었으면 창이 끝날 때까지 429."""
     await _enforce_hourly_limit(
-        user_id, db, scope=_CALL_SCOPE, limit=NOVEL_SCREEN_HOURLY_CALL_LIMIT, window=NOVEL_SCREEN_LIMIT_WINDOW
+        user_id, db, scope=_CALL_SCOPE, limit=NOVEL_SCREEN_HOURLY_CALL_LIMIT, window=NOVEL_SCREEN_HOURLY_WINDOW
     )
 
 

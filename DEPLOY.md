@@ -1708,8 +1708,8 @@ Gemini 와 따로 묶인다. 소설 장 실패는 공급자와 무관하게 지�
 `GEMINI_PUBLISH_FILTER_MODEL_NAME`, 없으면 `GEMINI_MODEL_NAME`). 심사 문안은 프롬프트 세트의 `novel_screen` 레인(Gemini 세트
 하나)에 있고 캐시 없이 호출마다 DB 에서 읽는다. 심사 호출이 실패하면 공개하지 않고 503 `NOVEL_SCREENING_UNAVAILABLE` 이다
 (Bugsink 태그는 발행 심사와 같은 `gemini`·`gemini_rate_limit`). 심사에 걸린 횟수는 게시자마다 KST 하루 상한이 있고, 심사
-호출 자체도 통과·거부·장애를 가리지 않고 게시자당 시간당 10회까지다(둘 다 429 `window: "novel_screen"`, 레이트리밋 면제
-계정 제외).
+호출 자체도 통과·거부·장애를 가리지 않고 게시자당 시간당 10회까지다(429 `window` 는 하루 거절 상한이 `"novel_screen_daily_reject"`,
+시간당 호출 상한이 `"novel_screen_hourly"` 이고, 레이트리밋 면제 계정 제외).
 
 **켜기** — 약관·처리방침의 공개 소설 조항이 시행된 뒤에 켠다. `.env` 에 한 줄을 더한다(파일을 통째로 덮거나 백업본으로
 복원하지 않는다 — 교체 스크립트가 같은 파일의 `API_IMAGE_BLUE`·`API_IMAGE_GREEN` 을 고친다):

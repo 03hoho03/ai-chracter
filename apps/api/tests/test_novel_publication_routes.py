@@ -306,7 +306,7 @@ async def test_daily_rejection_limit_stops_before_calling_the_llm(
 
     assert (first.status_code, second.status_code) == (400, 400)
     assert third.status_code == 429
-    assert third.json()["detail"]["window"] == "novel_screen"
+    assert third.json()["detail"]["window"] == "novel_screen_daily_reject"
     assert len(llm.calls) == 2
 
 
@@ -327,7 +327,7 @@ async def test_hourly_call_limit_counts_passing_screens_too(
 
     assert (first.status_code, unchanged.status_code, second.status_code) == (200, 200, 200)
     assert third.status_code == 429
-    assert third.json()["detail"]["window"] == "novel_screen"
+    assert third.json()["detail"]["window"] == "novel_screen_hourly"
     assert len(llm.calls) == 2
 
 
