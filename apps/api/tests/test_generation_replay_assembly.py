@@ -205,7 +205,12 @@ async def _scenario(
             measured_sections,
         )
         router._dump_prompt(
-            room_id=room.room_id, model="gemini", turn=turn, prompt=prompt, system_instruction=system_instruction
+            room_id=room.room_id,
+            call_site="chat_generate",
+            model="gemini",
+            turn=turn,
+            prompt=prompt,
+            system_instruction=system_instruction,
         )
         memory = (NOTE_AT[turn], SUMMARY_AT[turn])
         if memory != previous:

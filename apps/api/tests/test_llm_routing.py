@@ -64,7 +64,7 @@ def _router() -> tuple[RoutingLLMClient, _Recorder, list[_Recorder]]:
         built.append(bedrock)
         return bedrock
 
-    return RoutingLLMClient(gemini, bedrock_factory=factory), gemini, built
+    return RoutingLLMClient(gemini, factories={"bedrock": factory}), gemini, built
 
 
 _MODEL_SELECTABLE: frozenset[LLMCallSite] = frozenset({"chat_generate", "novelize_chapter", "replay_generate"})

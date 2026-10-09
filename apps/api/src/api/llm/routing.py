@@ -1,30 +1,36 @@
-"""고른 모델에 따라 생성 호출을 Gemini 와 Bedrock 구현으로 나눠 보내는 클라이언트. `get_llm_client` 가 이것을 돌려준다.
+"""호출마다 공급자 구현을 골라 보내는 클라이언트. `get_llm_client` 가 이것을 돌려준다.
 
-호출부는 지금처럼 `LLMCallContext` 만 넘긴다 — 그 안의 `model` 이 상위 모델이고 호출이 모델을 고를 수 있는 종류(채팅 턴 생성·
-소설 장 생성·지난 턴 다시 생성)일 때만 Bedrock 으로 간다. 판정·요약·심사·문단 수정 같은 구조화 호출은 언제나 Gemini 다
-(Bedrock 의 Claude 는 네이티브 구조화 출력을 받지 않는다). 레지스트리 밖 id 나 허용되지 않은 모델은 여기 닿기 전에 API 가
-거부한다.
+호출부는 지금처럼 `LLMCallContext` 만 넘긴다. 구현은 `llm/backends.py` 의 `pick_backend` 가 호출 위치·모델·배정(env
+`LLM_CALL_SITE_BACKENDS`, 정책 표의 `backend`)으로 정한다. 배정이 없으면 생성 호출은 `model` 이 상위 모델이고 호출이 모델을
+고를 수 있는 종류(채팅 턴 생성·소설 장 생성·지난 턴 다시 생성)일 때만 Bedrock 으로 가고, 나머지는 Gemini 다. 판정·요약·
+심사·문단 수정 같은 구조화 호출은 방의 모델이 아니라 기본 모델로 구현을 고른다 — 배정이 없으면 Gemini 다(Bedrock 의
+Claude 는 네이티브 구조화 출력을 받지 않는다). 레지스트리 밖 id 나 허용되지 않은 모델은 여기 닿기 전에 API 가 거부한다.
 """
 
 import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Mapping
 from typing import TypeVar
 
 from pydantic import BaseModel
 
-from api.llm.call_policy import CALL_POLICIES
-from api.llm.chat_models import CHAT_MODELS_BY_ID
+from api.core.config import settings
+from api.llm.backends import pick_backend
+from api.llm.call_policy import BackendId
+from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, backend_model_id
 from api.llm.client import LLMCallContext, LLMCallSite, LLMClient
 
 T = TypeVar("T", bound=BaseModel)
 
 logger = logging.getLogger(__name__)
 
-# 사용자가 고른 모델을 따르는 호출(호출 정책 표의 `model_selectable`). 재생성·수정은 같은 call_site 로 온다. 지난 턴을
-# 다시 생성하는 측정 호출도 그 턴의 모델(Claude 포함)로 다시 써야 비교가 맞아 함께 둔다.
-MODEL_SELECTABLE_CALL_SITES: frozenset[LLMCallSite] = frozenset(
-    cs for cs, p in CALL_POLICIES.items() if p.model_selectable
-)
+
+def resolve_backend(call_site: LLMCallSite, model: ChatModelId) -> tuple[BackendId, str]:
+    """그 호출이 가는 구현과 그 구현이 보내는 실제 모델 id. 배정은 호출마다 설정에서 읽는다(호출 정책 표의 설정 값과 같은
+    규칙 — import 때 붙잡으면 테스트가 바꾼 배정이 실리지 않는다). 프롬프트 덤프·리플레이의 비교·원가가 이것을 부른다 —
+    라우터와 같은 규칙이라야 덤프에 적힌 id 가 실제로 보낸 id 다. Gemini 의 판정·심사·소설화 호출은 클라이언트가 모델을
+    따로 고르므로, 그 호출들의 실제 id 는 이 값과 다를 수 있다."""
+    resolved_model, backend = pick_backend(call_site, model, settings.llm_call_site_backends)
+    return backend, backend_model_id(backend, resolved_model)
 
 
 def _build_bedrock_client() -> LLMClient:
@@ -37,27 +43,33 @@ def _build_bedrock_client() -> LLMClient:
     return BedrockLLMClient()
 
 
-class RoutingLLMClient(LLMClient):
-    def __init__(self, gemini: LLMClient, *, bedrock_factory: Callable[[], LLMClient] = _build_bedrock_client) -> None:
-        self._gemini = gemini
-        self._bedrock_factory = bedrock_factory
-        self._bedrock: LLMClient | None = None
+# Gemini 를 뺀 구현의 팩토리. Gemini 는 `get_llm_client` 가 바로 만들어 넘긴다 — 키가 없을 때의 `ValueError` 가 의존성
+# 해석 시점에 나야 한다. 나머지는 처음 필요할 때 한 번 만든다.
+_FACTORIES: Mapping[BackendId, Callable[[], LLMClient]] = {"bedrock": _build_bedrock_client}
 
-    def _for_generation(self, usage: LLMCallContext) -> LLMClient:
-        if CHAT_MODELS_BY_ID[usage.model].provider == "gemini":
-            return self._gemini
-        if usage.call_site not in MODEL_SELECTABLE_CALL_SITES:
+
+class RoutingLLMClient(LLMClient):
+    def __init__(
+        self, gemini: LLMClient, *, factories: Mapping[BackendId, Callable[[], LLMClient]] | None = None
+    ) -> None:
+        self._factories = _FACTORIES if factories is None else factories
+        self._clients: dict[BackendId, LLMClient] = {"gemini": gemini}
+
+    def _client_for(self, call_site: LLMCallSite, model: ChatModelId) -> LLMClient:
+        resolved_model, backend = pick_backend(call_site, model, settings.llm_call_site_backends)
+        if resolved_model != model:
             # 호출부가 방의 모델을 판정 같은 호출에까지 실어 보낸 실수다. 사용자가 고른 적 없는 호출에 비싼 모델 원가가
-            # 붙지 않게 Gemini 로 돌리고, 실수가 드러나게 남긴다.
+            # 붙지 않게 기본 모델로 돌리고, 실수가 드러나게 남긴다.
             logger.warning(
                 "모델을 고를 수 없는 호출에 상위 모델이 실려 와 Gemini 로 보낸다 call_site=%s model=%s",
-                usage.call_site,
-                usage.model,
+                call_site,
+                model,
             )
-            return self._gemini
-        if self._bedrock is None:
-            self._bedrock = self._bedrock_factory()
-        return self._bedrock
+        client = self._clients.get(backend)
+        if client is None:
+            client = self._factories[backend]()
+            self._clients[backend] = client
+        return client
 
     def generate(
         self,
@@ -69,7 +81,8 @@ class RoutingLLMClient(LLMClient):
     ) -> AsyncIterator[str]:
         # 제너레이터로 감싸지 않고 고른 구현의 스트림을 그대로 돌려준다 — 소비자가 중간에 끊을 때(aclose) 그 신호가 구현의
         # 스트림에 바로 닿아야 사용량을 기록하지 않는 규칙과 HTTP 스트림 정리가 지금과 같게 돈다.
-        return self._for_generation(usage).generate(prompt, system_instruction, stop_sequences, usage=usage)
+        client = self._client_for(usage.call_site, usage.model)
+        return client.generate(prompt, system_instruction, stop_sequences, usage=usage)
 
     async def generate_structured(
         self,
@@ -79,7 +92,8 @@ class RoutingLLMClient(LLMClient):
         *,
         usage: LLMCallContext,
     ) -> T:
-        return await self._gemini.generate_structured(prompt, response_schema, images, usage=usage)
+        client = self._client_for(usage.call_site, DEFAULT_CHAT_MODEL)
+        return await client.generate_structured(prompt, response_schema, images, usage=usage)
 
     async def generate_structured_with_instruction(
         self,
@@ -89,6 +103,7 @@ class RoutingLLMClient(LLMClient):
         system_instruction: str,
         usage: LLMCallContext,
     ) -> T:
-        return await self._gemini.generate_structured_with_instruction(
+        client = self._client_for(usage.call_site, DEFAULT_CHAT_MODEL)
+        return await client.generate_structured_with_instruction(
             prompt, response_schema, system_instruction=system_instruction, usage=usage
         )

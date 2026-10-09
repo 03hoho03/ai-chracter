@@ -1981,4 +1981,4 @@ class _FakeProviderSdks:
 
     def client(self) -> RoutingLLMClient:
         self.built += 1
-        return RoutingLLMClient(self.gemini, bedrock_factory=lambda: self.bedrock)
+        return RoutingLLMClient(self.gemini, factories={"bedrock": lambda: self.bedrock})

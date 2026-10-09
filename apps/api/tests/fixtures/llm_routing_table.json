@@ -1,0 +1,838 @@
+{
+  "chat_ending_judgment": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  },
+  "chat_generate": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "bedrock",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "bedrock",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  },
+  "chat_media_book_image": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  },
+  "chat_memory_summary": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  },
+  "chat_situational_image": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  },
+  "chat_stat_judgment": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  },
+  "novel_publish_screen": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  },
+  "novelize_boundary": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  },
+  "novelize_chapter": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "bedrock",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "bedrock",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  },
+  "novelize_revise": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  },
+  "preview_ending_judgment": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  },
+  "preview_generate": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  },
+  "preview_media_book_image": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  },
+  "preview_stat_judgment": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  },
+  "publish_filter_character": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  },
+  "publish_filter_story": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  },
+  "replay_generate": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "bedrock",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "bedrock",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  },
+  "seed_similarity_review": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  },
+  "seed_story_generate": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  }
+}

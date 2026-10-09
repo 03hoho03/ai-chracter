@@ -4,7 +4,7 @@ from api.core import clover
 from api.core.config import settings
 from api.llm.chat_models import (
     CHAT_MODELS,
-    actual_model_id,
+    backend_model_id,
     chat_turn_cost,
     novel_episode_unit_price,
     parse_chat_model_id,
@@ -32,14 +32,14 @@ def test_actual_model_ids_follow_the_settings(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(settings, "bedrock_sonnet_model_id", "global.anthropic.sonnet-next")
     monkeypatch.setattr(settings, "bedrock_opus_model_id", "global.anthropic.opus-next")
 
-    assert actual_model_id("gemini") == "gemini-x"
-    assert actual_model_id("sonnet") == "global.anthropic.sonnet-next"
-    assert actual_model_id("opus") == "global.anthropic.opus-next"
+    assert backend_model_id("gemini", "gemini") == "gemini-x"
+    assert backend_model_id("bedrock", "sonnet") == "global.anthropic.sonnet-next"
+    assert backend_model_id("bedrock", "opus") == "global.anthropic.opus-next"
 
 
 def test_default_actual_model_ids_are_the_seoul_global_profiles() -> None:
-    assert actual_model_id("sonnet") == "global.anthropic.claude-sonnet-4-6"
-    assert actual_model_id("opus") == "global.anthropic.claude-opus-4-6-v1"
+    assert backend_model_id("bedrock", "sonnet") == "global.anthropic.claude-sonnet-4-6"
+    assert backend_model_id("bedrock", "opus") == "global.anthropic.claude-opus-4-6-v1"
 
 
 def test_turn_costs_are_read_from_the_clover_constants_at_call_time(monkeypatch: pytest.MonkeyPatch) -> None:

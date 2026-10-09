@@ -1,5 +1,6 @@
 """LLM 호출 위치(`LLMCallSite`)마다 어떤 정책으로 부르는지 적은 표. 판정 모델 스위치, 발행 심사, 소설화의 모델·실패 구분,
-Gemini 요청 타임아웃, 상위 모델 선택 허용, Claude 의 타임아웃·출력 상한 프로필과 캐시 체크포인트를 한 행에서 정한다.
+Gemini 요청 타임아웃, 상위 모델 선택 허용, Claude 의 타임아웃·출력 상한 프로필과 캐시 체크포인트, 호출 방식과 공급자
+구현 배정을 한 행에서 정한다.
 `llm/client.py`·`llm/routing.py`·`llm/bedrock.py` 의 call_site 집합과 판별 함수는 전부 이 표에서 나온다 — 새 call_site 는
 여기 한 행을 더하면 이 세 파일의 갈래를 따라간다. 예외로 어드민 판정 비율의 분모(미리보기 생성인가 채팅 생성인가)는 이 표가
 아니라 `admin/llm_usage.py` 가 call_site 이름의 `preview_` 접두로 따로 정하므로, 새 판정 call_site 는 이름도 그 규칙에 맞춘다.
@@ -7,7 +8,8 @@ Gemini 요청 타임아웃, 상위 모델 선택 허용, Claude 의 타임아웃
 표에는 설정 값이 아니라 설정 **이름**(또는 설정이 아닌 고정값)만 담는다. 값은 쓰는 쪽이 호출마다 `settings` 에서 읽는다 —
 import 때 값을 붙잡으면 테스트가 바꾼 설정이 호출에 실리지 않는다. 이와 별개로, 이름만 담으니 이 모듈은 `settings` 를 비롯한
 다른 `api` 모듈을 import 할 필요가 없어 잎 모듈로 둔다. 그래서 `llm/client.py`·`llm/routing.py`·`llm/bedrock.py` 가 이 모듈을
-import 해 집합을 만들어도 순환을 따질 일이 없다.
+import 해 집합을 만들어도 순환을 따질 일이 없다. 같은 이유로 `core/config.py` 의 기동 검증도 이 모듈을 import 한다 — 이
+모듈이 `settings` 를 import 하게 되면 설정을 만드는 도중에 설정을 찾다 기동이 `ImportError` 로 깨진다.
 """
 
 from dataclasses import dataclass
@@ -46,6 +48,14 @@ LLMCallSite = Literal[
 
 JudgmentKind = Literal["stat", "ending", "image"]
 
+# 공급자 구현의 id. 구현마다의 능력·서비스하는 모델·자격은 `llm/backends.py` 의 등록부 한 행이 정한다.
+BackendId = Literal["gemini", "bedrock"]
+
+# 호출 위치가 클라이언트의 어느 메서드로 부르는가. 기동 검증이 이 값을 배정된 구현의 능력과 견준다 — 구조화 출력을 받지
+# 못하는 구현에 판정을 배정한 채 뜨면 첫 판정에서야 실패한다. `structured_images` 는 그림을 함께 싣는 구조화,
+# `structured_with_instruction` 은 지시문을 따로 싣는 구조화다.
+CallKind = Literal["stream", "structured", "structured_images", "structured_with_instruction"]
+
 # `core/config.py` 의 Gemini 요청 타임아웃 설정 이름. 값은 `request_timeout_ms` 가 호출마다 읽는다.
 GeminiTimeoutSetting = Literal[
     "gemini_generate_timeout_ms",
@@ -68,6 +78,13 @@ class CallPolicy:
     # 나간 호출이 한 번이라도 있으면 SDK 가 클라이언트 헤더에 전역값의 서버 기한 헤더를 써 넣어, 뒤따르는 호출이 자기
     # 값을 헤더에 싣지 못한다. 새 call_site 가 타임아웃을 정하지 않고 생기지 않게 한다.
     gemini_timeout: GeminiTimeoutSetting | int
+    # 이 호출 위치가 부르는 메서드. 기본값이 없는 것은 위 타임아웃과 같은 까닭이다 — 새 call_site 가 이 값을 적지 않고
+    # 생기면 기동 검증이 그 호출을 잘못된 능력과 견준다. 코드가 이 값을 실제 호출부와 맞춰 보지는 않으므로, 호출부가 부르는
+    # 메서드를 바꾸면 이 값도 함께 고친다.
+    call_kind: CallKind
+    # 이 호출 위치의 구현 배정. None 이면 모델의 기본 구현이다. env `LLM_CALL_SITE_BACKENDS` 의 배정이 이 값보다 앞서고,
+    # 어느 배정이든 그 구현이 그 모델을 서비스할 때만 따른다(`llm/backends.py` 의 `pick_backend`).
+    backend: BackendId | None = None
     # 사용자가 고른 모델(상위 모델이면 Bedrock)을 따르는 호출인가. 아니면 상위 모델이 실려 와도 경고 후 Gemini 로 간다.
     model_selectable: bool = False
     # 판정 종류. 구조화 호출의 모델을 `gemini_<종류>_judgment_model_name` 스위치로 고르고, 어드민 판정 비율의 대상이 된다.
@@ -95,31 +112,66 @@ class CallPolicy:
 
 CALL_POLICIES: dict[LLMCallSite, CallPolicy] = {
     "chat_generate": CallPolicy(
-        gemini_timeout="gemini_generate_timeout_ms", model_selectable=True, claude_cache_checkpoint=True
+        gemini_timeout="gemini_generate_timeout_ms",
+        call_kind="stream",
+        model_selectable=True,
+        claude_cache_checkpoint=True,
     ),
-    "chat_stat_judgment": CallPolicy(gemini_timeout="gemini_judgment_timeout_ms", judgment_kind="stat"),
-    "chat_ending_judgment": CallPolicy(gemini_timeout="gemini_judgment_timeout_ms", judgment_kind="ending"),
-    "chat_situational_image": CallPolicy(gemini_timeout="gemini_judgment_timeout_ms", judgment_kind="image"),
-    "chat_media_book_image": CallPolicy(gemini_timeout="gemini_judgment_timeout_ms", judgment_kind="image"),
-    "chat_memory_summary": CallPolicy(gemini_timeout="gemini_memory_summary_timeout_ms"),
-    "preview_generate": CallPolicy(gemini_timeout="gemini_generate_timeout_ms"),
-    "preview_stat_judgment": CallPolicy(gemini_timeout="gemini_judgment_timeout_ms", judgment_kind="stat"),
-    "preview_ending_judgment": CallPolicy(gemini_timeout="gemini_judgment_timeout_ms", judgment_kind="ending"),
-    "preview_media_book_image": CallPolicy(gemini_timeout="gemini_judgment_timeout_ms", judgment_kind="image"),
-    "publish_filter_character": CallPolicy(gemini_timeout="gemini_publish_filter_timeout_ms", publish_filter=True),
-    "publish_filter_story": CallPolicy(gemini_timeout="gemini_publish_filter_timeout_ms", publish_filter=True),
-    "seed_story_generate": CallPolicy(gemini_timeout=_SEED_TIMEOUT_MS),
-    "seed_similarity_review": CallPolicy(gemini_timeout=_SEED_TIMEOUT_MS),
+    "chat_stat_judgment": CallPolicy(
+        gemini_timeout="gemini_judgment_timeout_ms", call_kind="structured", judgment_kind="stat"
+    ),
+    "chat_ending_judgment": CallPolicy(
+        gemini_timeout="gemini_judgment_timeout_ms", call_kind="structured", judgment_kind="ending"
+    ),
+    "chat_situational_image": CallPolicy(
+        gemini_timeout="gemini_judgment_timeout_ms", call_kind="structured", judgment_kind="image"
+    ),
+    "chat_media_book_image": CallPolicy(
+        gemini_timeout="gemini_judgment_timeout_ms", call_kind="structured", judgment_kind="image"
+    ),
+    "chat_memory_summary": CallPolicy(gemini_timeout="gemini_memory_summary_timeout_ms", call_kind="structured"),
+    "preview_generate": CallPolicy(gemini_timeout="gemini_generate_timeout_ms", call_kind="stream"),
+    "preview_stat_judgment": CallPolicy(
+        gemini_timeout="gemini_judgment_timeout_ms", call_kind="structured", judgment_kind="stat"
+    ),
+    "preview_ending_judgment": CallPolicy(
+        gemini_timeout="gemini_judgment_timeout_ms", call_kind="structured", judgment_kind="ending"
+    ),
+    "preview_media_book_image": CallPolicy(
+        gemini_timeout="gemini_judgment_timeout_ms", call_kind="structured", judgment_kind="image"
+    ),
+    "publish_filter_character": CallPolicy(
+        gemini_timeout="gemini_publish_filter_timeout_ms", call_kind="structured_images", publish_filter=True
+    ),
+    "publish_filter_story": CallPolicy(
+        gemini_timeout="gemini_publish_filter_timeout_ms", call_kind="structured_images", publish_filter=True
+    ),
+    "seed_story_generate": CallPolicy(gemini_timeout=_SEED_TIMEOUT_MS, call_kind="structured"),
+    "seed_similarity_review": CallPolicy(gemini_timeout=_SEED_TIMEOUT_MS, call_kind="structured"),
     "novelize_chapter": CallPolicy(
         gemini_timeout="gemini_novelize_chapter_timeout_ms",
+        call_kind="stream",
         model_selectable=True,
         novelize="prose",
         claude_limits="chapter",
     ),
-    "novelize_revise": CallPolicy(gemini_timeout="gemini_novelize_revise_timeout_ms", novelize="prose"),
-    "novelize_boundary": CallPolicy(gemini_timeout="gemini_novelize_boundary_timeout_ms", novelize="boundary"),
-    "novel_publish_screen": CallPolicy(gemini_timeout="gemini_publish_filter_timeout_ms", publish_filter=True),
+    "novelize_revise": CallPolicy(
+        gemini_timeout="gemini_novelize_revise_timeout_ms", call_kind="structured_with_instruction", novelize="prose"
+    ),
+    "novelize_boundary": CallPolicy(
+        gemini_timeout="gemini_novelize_boundary_timeout_ms",
+        call_kind="structured_with_instruction",
+        novelize="boundary",
+    ),
+    "novel_publish_screen": CallPolicy(
+        gemini_timeout="gemini_publish_filter_timeout_ms",
+        call_kind="structured_with_instruction",
+        publish_filter=True,
+    ),
     "replay_generate": CallPolicy(
-        gemini_timeout="gemini_generate_timeout_ms", model_selectable=True, claude_cache_checkpoint=True
+        gemini_timeout="gemini_generate_timeout_ms",
+        call_kind="stream",
+        model_selectable=True,
+        claude_cache_checkpoint=True,
     ),
 }
