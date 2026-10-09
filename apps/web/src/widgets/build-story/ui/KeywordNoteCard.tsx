@@ -9,7 +9,15 @@ import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/t
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useFormContext, useWatch } from "react-hook-form";
 
-import { CollapsibleItemCard, ItemDragHandle, ItemRemoveButton, itemOpenKey } from "@/features/build-common";
+import {
+  CharacterCount,
+  CollapsibleItemCard,
+  ItemDragHandle,
+  ItemRemoveButton,
+  itemOpenKey,
+  KeywordChipField,
+  useLimitedTextField,
+} from "@/features/build-common";
 import {
   excludeKeywordError,
   FieldLabelText,
@@ -20,6 +28,7 @@ import {
   MAX_EXCLUDE_KEYWORDS,
   MAX_KEYWORD_NOTE_CONTENT_LENGTH,
   MAX_KEYWORD_NOTE_NAME_LENGTH,
+  MAX_TRIGGER_KEYWORD_LENGTH,
   MAX_TRIGGER_KEYWORDS,
   STICKY_TURN_OPTIONS,
   STORY_FIELD_LABELS,
@@ -29,7 +38,6 @@ import {
   type StoryCollapsibleList,
 } from "@/features/build-story";
 
-import { KeywordChipField } from "./KeywordChipField";
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
 import { StoryMacroNotice } from "./StoryMacroNotice";
 
@@ -58,19 +66,22 @@ export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onR
   const form = useFormContext<StoryBuilderFormValues>();
 
   const {
-    register,
     control,
     setValue,
     getValues,
     formState: { errors },
   } = form;
+  const nameField = useLimitedTextField<StoryBuilderFormValues>(`keywordNotes.${index}.name`, MAX_KEYWORD_NOTE_NAME_LENGTH);
+  const contentField = useLimitedTextField<StoryBuilderFormValues>(
+    `keywordNotes.${index}.content`,
+    MAX_KEYWORD_NOTE_CONTENT_LENGTH,
+  );
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
-  const [noteId, name, content, triggerKeywords, excludeKeywords, stickyTurns, isAlwaysOn, scope] = useWatch({
+  const [noteId, name, triggerKeywords, excludeKeywords, stickyTurns, isAlwaysOn, scope] = useWatch({
     control,
     name: [
       `keywordNotes.${index}.id`,
       `keywordNotes.${index}.name`,
-      `keywordNotes.${index}.content`,
       `keywordNotes.${index}.triggerKeywords`,
       `keywordNotes.${index}.excludeKeywords`,
       `keywordNotes.${index}.stickyTurns`,
@@ -86,7 +97,6 @@ export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onR
   const ids = {
     title: `keyword-note-${id}-title`,
     name: `keyword-note-${id}-name`,
-    nameHint: `keyword-note-${id}-name-hint`,
     nameCount: `keyword-note-${id}-name-count`,
     content: `keyword-note-${id}-content`,
     contentCount: `keyword-note-${id}-content-count`,
@@ -172,26 +182,21 @@ export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onR
         trailing={<ItemRemoveButton label={`${position}번째 노트 삭제`} onClick={onRemove} />}
       >
         <div className="flex flex-col gap-1.5">
-          <div className="flex items-baseline justify-between gap-2">
-            <Label htmlFor={ids.name}><FieldLabelText field="keywordNotes.*.name" /></Label>
-            <span id={ids.nameCount} className="text-xs tabular-nums text-muted-foreground">
-              <span className="sr-only">이름 </span>
-              {name.length}/{MAX_KEYWORD_NOTE_NAME_LENGTH}
-            </span>
-          </div>
-          {/* `maxLength` 는 UTF-16 단위로 세어 서버(코드 포인트)와 같거나 더 엄격하다 — 상한을 넘는 이름이 폼에 생기지
-            않는다. 카운터도 같은 단위로 센다. */}
+          <Label htmlFor={ids.name}><FieldLabelText field="keywordNotes.*.name" /></Label>
           <Input
             id={ids.name}
             placeholder="목록에서 알아볼 이름(선택)"
-            maxLength={MAX_KEYWORD_NOTE_NAME_LENGTH}
-            aria-describedby={`${ids.nameHint} ${ids.nameCount}`}
+            aria-describedby={ids.nameCount}
             aria-invalid={!!noteErrors?.name}
-            {...register(`keywordNotes.${index}.name`)}
+            {...nameField.registration}
           />
-          <p id={ids.nameHint} className="text-xs text-muted-foreground">
-            목록에서만 보여요. AI에게는 보내지 않아요.
-          </p>
+          <CharacterCount
+            id={ids.nameCount}
+            help="목록에서만 보여요. AI에게는 보내지 않아요."
+            count={nameField.count}
+            max={MAX_KEYWORD_NOTE_NAME_LENGTH}
+            isTruncated={nameField.isTruncated}
+          />
           {!!noteErrors?.name && (
             <p role="alert" className="text-xs text-destructive-text">
               {noteErrors.name.message}
@@ -200,23 +205,20 @@ export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onR
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <div className="flex items-baseline justify-between gap-2">
-            <Label htmlFor={ids.content}><FieldLabelText field="keywordNotes.*.content" /></Label>
-            <span id={ids.contentCount} className="text-xs tabular-nums text-muted-foreground">
-              <span className="sr-only">정보 </span>
-              {content.length}/{MAX_KEYWORD_NOTE_CONTENT_LENGTH}
-            </span>
-          </div>
-          {/* 브라우저의 `maxLength` 는 UTF-16 단위로 세어 서버(코드 포인트)와 같거나 더 엄격하다 — 상한을 넘는 정보가
-            폼에 생기지 않는다. 카운터도 같은 단위로 센다. */}
+          <Label htmlFor={ids.content}><FieldLabelText field="keywordNotes.*.content" /></Label>
           <Textarea
             id={ids.content}
             placeholder="키워드가 나오면 AI가 참고할 정보를 적어 주세요. 대상의 이름도 함께 적어 주세요."
             rows={3}
-            maxLength={MAX_KEYWORD_NOTE_CONTENT_LENGTH}
             aria-invalid={!!noteErrors?.content}
             aria-describedby={noteErrors?.content ? `${ids.contentCount} ${ids.contentError}` : ids.contentCount}
-            {...register(`keywordNotes.${index}.content`)}
+            {...contentField.registration}
+          />
+          <CharacterCount
+            id={ids.contentCount}
+            count={contentField.count}
+            max={MAX_KEYWORD_NOTE_CONTENT_LENGTH}
+            isTruncated={contentField.isTruncated}
           />
           <MediaTagOutsideNotice name={`keywordNotes.${index}.content`} />
           <StoryMacroNotice name={`keywordNotes.${index}.content`} />
@@ -237,6 +239,7 @@ export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onR
             keywords={triggerKeywords}
             limit={MAX_TRIGGER_KEYWORDS}
             limitReason={`트리거 키워드는 최대 ${MAX_TRIGGER_KEYWORDS}개예요. 더 넣으려면 하나를 지워 주세요.`}
+            itemMaxLength={MAX_TRIGGER_KEYWORD_LENGTH}
             validate={(keyword) => triggerKeywordError(keyword, triggerKeywords)}
             onAdd={(keyword) => setKeywords("triggerKeywords", [...triggerKeywords, keyword])}
             onRemove={(keyword) =>
@@ -268,6 +271,7 @@ export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onR
           keywords={excludeKeywords}
           limit={MAX_EXCLUDE_KEYWORDS}
           limitReason={`금지 키워드는 최대 ${MAX_EXCLUDE_KEYWORDS}개예요. 더 넣으려면 하나를 지워 주세요.`}
+          itemMaxLength={MAX_TRIGGER_KEYWORD_LENGTH}
           validate={(keyword) => excludeKeywordError(keyword, excludeKeywords)}
           onAdd={(keyword) => setKeywords("excludeKeywords", [...excludeKeywords, keyword])}
           onRemove={(keyword) =>

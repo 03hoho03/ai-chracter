@@ -8,7 +8,6 @@ import {
   mediaBookAxisSchema,
   mediaBookCellSchema,
   mediaBookSchema,
-  normalizeKeyword,
   ruleListItemSchema,
   shortcutSchema,
   STAT_RULES_REQUIRED_MESSAGE,
@@ -502,16 +501,6 @@ describe("keywordNoteSchema", () => {
 
   it.each([-1, 6, 1.5])("rejects stickyTurns %s", (stickyTurns) => {
     expect(keywordNoteSchema.safeParse({ ...validKeywordNote(), stickyTurns }).success).toBe(false);
-  });
-});
-
-describe("normalizeKeyword", () => {
-  it("folds letter case and Unicode composition the way the server compares keywords", () => {
-    expect(normalizeKeyword("USB")).toBe("usb");
-    expect(normalizeKeyword("한밤".normalize("NFD"))).toBe("한밤");
-    // 파이썬 casefold 는 ß·ẞ 를 ss 로 접는다 — 소문자화만으로는 이 둘이 서버보다 느슨해진다.
-    expect(normalizeKeyword("ẞ")).toBe(normalizeKeyword("ss"));
-    expect(normalizeKeyword("ß")).toBe(normalizeKeyword("SS"));
   });
 });
 

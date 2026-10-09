@@ -1,6 +1,9 @@
-import { NOVEL_PERMISSION_FIELD_LABEL } from "@/entities/content";
-
-import { MAX_DEVELOPMENT_EXAMPLES, MAX_STARTING_SETUPS, MAX_SUGGESTED_REPLIES } from "./schema";
+import {
+  MAX_DEVELOPMENT_EXAMPLES,
+  MAX_STARTING_SETUPS,
+  MAX_SUGGESTED_REPLIES,
+  NOVEL_PERMISSION_FIELD_LABEL,
+} from "@/entities/content";
 
 export type FieldLabel = {
   /** 별표 앞 글자 전부. 빌더가 별표 앞에 괄호를 그리는 칸(엔딩조건 (최소 턴수))은 괄호까지 여기에 둔다. */

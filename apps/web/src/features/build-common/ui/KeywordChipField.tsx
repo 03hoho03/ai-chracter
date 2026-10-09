@@ -5,6 +5,10 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
+import { countCharacters } from "@/shared/lib/text/characterCount";
+
+import { CharacterCount } from "./CharacterCount";
+
 type ChipStyle = "filled" | "outlined";
 
 type KeywordChipFieldProps = {
@@ -20,12 +24,19 @@ type KeywordChipFieldProps = {
   keywords: readonly string[];
   limit: number;
   limitReason: string;
-  /** 넣어도 되면 undefined, 아니면 거절 이유(길이·빈 값·정규화 중복). 개수 상한은 이 컴포넌트가 먼저 막는다. */
+  /** 항목 하나의 글자 수 상한. 입력칸 아래 카운터에 쓴다 — 넘는 글은 넣을 때 `validate` 가 거절한다. */
+  itemMaxLength: number;
+  /** 입력칸 글을 넣을 값으로 편다. 기본은 앞뒤 공백 제거이고, 카운터도 편 값을 센다. */
+  normalize?: (input: string) => string;
+  /** 넣어도 되면 undefined, 아니면 거절 이유(길이·빈 값·정규화 중복). 받는 값은 `normalize` 를 거친 값이다. 개수
+   * 상한은 이 컴포넌트가 먼저 막는다. */
   validate: (keyword: string) => string | undefined;
   onAdd: (keyword: string) => void;
   onRemove: (keyword: string) => void;
   /** 칩 모양 — 트리거는 채움, 금지는 윤곽으로 갈라 두 목록이 훑을 때 섞이지 않게 한다. */
   chipStyle: ChipStyle;
+  /** 칩 글자 앞에 그리는 표지(해시태그의 `#`). 값에는 넣지 않는다. */
+  chipPrefix?: string;
   /** 칸 전체를 잠근다(상시 노트의 트리거 키워드). 사유 문장은 호출부가 `disabledReasonId` 로 가리킨다. */
   disabled?: boolean;
   disabledReasonId?: string;
@@ -39,7 +50,11 @@ const CHIP_STYLE_CLASS: Record<ChipStyle, string> = {
   outlined: "border border-border text-foreground",
 };
 
-/** 키워드 칩 입력 — 입력칸 + 추가 + 칩 목록 + 개수. 트리거 키워드와 금지 키워드가 같은 규칙이라 함께 쓴다. */
+/**
+ * 칩 입력 — 입력칸 + 추가 + 칩 목록 + 개수. 키워드 노트의 트리거·금지 키워드와 두 빌더의 해시태그가 같은 규칙(개수
+ * 상한, 항목 글자 수 상한, 대소문자만 다른 중복 거절)이라 함께 쓴다. 넣을 때 검사하는 칸이라 글자를 자르지 않고,
+ * 상한을 넘긴 글은 카운터가 오류 색으로 보이고 넣을 때 이유와 함께 거절한다.
+ */
 export function KeywordChipField({
   idPrefix,
   label,
@@ -49,10 +64,13 @@ export function KeywordChipField({
   keywords,
   limit,
   limitReason,
+  itemMaxLength,
+  normalize = (input) => input.trim(),
   validate,
   onAdd,
   onRemove,
   chipStyle,
+  chipPrefix = "",
   disabled = false,
   disabledReasonId,
   error,
@@ -63,6 +81,7 @@ export function KeywordChipField({
   const isFull = keywords.length >= limit;
   const inputId = `${idPrefix}-input`;
   const countId = `${idPrefix}-count`;
+  const lengthId = `${idPrefix}-length`;
   const limitId = `${idPrefix}-limit`;
   const refusalId = `${idPrefix}-refusal`;
   const errorId = `${idPrefix}-error`;
@@ -72,6 +91,7 @@ export function KeywordChipField({
   const describedBy =
     [
       countId,
+      lengthId,
       disabled ? disabledReasonId : undefined,
       !disabled && isFull ? limitId : undefined,
       refusal ? refusalId : undefined,
@@ -100,20 +120,20 @@ export function KeywordChipField({
   function handleAdd() {
     // 꽉 찬 상태의 이유는 이미 입력칸 아래 문장이 늘 보여 주므로 같은 말을 오류로 한 번 더 띄우지 않는다.
     if (disabled || isFull) return;
-    const trimmed = input.trim();
-    if (!trimmed) {
+    const value = normalize(input);
+    if (!value) {
       setInput("");
       return;
     }
     // 서버가 거절할 키워드(길이·개수·대소문자만 다른 중복)는 폼에 넣지 않는다 — 자동저장은 발행 검사를 거치지 않아
     // 한 번 들어가면 그 초안 저장 전체가 멈춘다. 거절할 때는 쓴 글을 지우지 않고 이유를 보여 준다.
-    const reason = validate(trimmed);
+    const reason = validate(value);
     if (reason) {
       setRefusal(reason);
       return;
     }
     setInput("");
-    onAdd(trimmed);
+    onAdd(value);
   }
 
   return (
@@ -158,6 +178,7 @@ export function KeywordChipField({
           추가
         </Button>
       </div>
+      <CharacterCount id={lengthId} count={countCharacters(normalize(input))} max={itemMaxLength} />
       {!disabled && isFull && (
         <p id={limitId} className="text-xs text-muted-foreground">
           {limitReason}
@@ -169,27 +190,36 @@ export function KeywordChipField({
         </p>
       )}
       {keywords.length > 0 && (
-        <ul className={cn("flex flex-wrap gap-2", disabled && "opacity-65")} aria-label={`${label} 목록`}>
+        // 터치 화면에서는 × 의 누르는 영역이 40px 로 커져 칩 위아래로 8px 씩 나간다. 줄 간격을 16px 로 벌려 윗줄 칩은
+        // 물론 윗줄 × 의 영역과도 겹치지 않게 한다.
+        <ul
+          className={cn("flex flex-wrap gap-2 pointer-coarse:gap-y-4", disabled && "opacity-65")}
+          aria-label={`${label} 목록`}
+        >
           {keywords.map((keyword, index) => (
             <li
               key={keyword}
+              // 긴 칩은 줄 폭에서 글자만 말줄임으로 잘리고 × 는 늘 칩 안에 남는다. 잘린 이름 전체는 × 의 접근 이름에 있다.
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs",
+                "inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs",
                 CHIP_STYLE_CLASS[chipStyle],
               )}
             >
-              {keyword}
-              {/* 보이는 크기는 칩 안의 16px 그대로 두고 `after` 로 누르는 영역만 30×30 으로 넓힌다(공용 체크박스·스위치와
-                  같은 방식. `after` 는 버튼의 투명 보더 1px 안쪽에서 8px 씩 나가므로 32 가 아니라 30 이다). 오른쪽은 칩
-                  패딩 안에 머물고, 위아래는 칩 밖으로 2px 이하만 나가 줄 간격(8px) 안에서 윗줄·아랫줄 칩과 겹치지 않는다. */}
+              <span className="min-w-0 truncate">
+                {chipPrefix}
+                {keyword}
+              </span>
+              {/* 보이는 크기는 칩 안의 16px 그대로 두고 `after` 로 누르는 영역만 넓힌다(공용 체크박스·스위치와 같은 방식).
+                  `after` 는 버튼의 투명 보더 1px 안쪽에서 나가므로 8px 씩이면 30×30, 터치 화면의 13px 씩이면 40×40 이다.
+                  오른쪽은 칩 패딩(12px) 안팎에 머물러 옆 칩(8px 떨어짐)에 닿지 않고, 위아래는 줄 간격 안에 머문다. */}
               <Button
                 id={removeButtonId(index)}
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="relative size-4 after:absolute after:-inset-2"
+                className="relative size-4 shrink-0 after:absolute after:-inset-2 pointer-coarse:after:-inset-[13px]"
                 disabled={disabled}
-                aria-label={`${keyword} ${chipNoun} 삭제`}
+                aria-label={`${chipPrefix}${keyword} ${chipNoun} 삭제`}
                 onClick={() => handleRemove(keyword, index)}
               >
                 <X aria-hidden className="size-3" />

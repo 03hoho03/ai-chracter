@@ -17,6 +17,7 @@ import { X } from "lucide-react";
 import { useRef, useState } from "react";
 import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
+import { MAX_STARTING_SETUPS, MAX_SUGGESTED_REPLIES } from "@/entities/content";
 import {
   CollapsibleItemCard,
   focusNeighborToggle,
@@ -27,8 +28,6 @@ import {
 } from "@/features/build-common";
 import {
   FieldLabelText,
-  MAX_STARTING_SETUPS,
-  MAX_SUGGESTED_REPLIES,
   reconcileKeywordNotesOnStartingSetupRemoval,
   startingSetupSummary,
   type StoryBuilderFormValues,

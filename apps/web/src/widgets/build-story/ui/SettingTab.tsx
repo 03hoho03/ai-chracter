@@ -6,6 +6,7 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useRef } from "react";
 import { Controller, useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
+import { MAX_DEVELOPMENT_EXAMPLES } from "@/entities/content";
 import {
   CollapsibleItemCard,
   DefaultUserNameField,
@@ -16,7 +17,6 @@ import {
 } from "@/features/build-common";
 import {
   FieldLabelText,
-  MAX_DEVELOPMENT_EXAMPLES,
   PROMPT_TEMPLATE_LABELS,
   PROMPT_TEMPLATE_VALUES,
   STORY_FIELD_LABELS,

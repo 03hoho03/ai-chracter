@@ -3,13 +3,13 @@ import { GripVertical, ImageIcon } from "lucide-react";
 
 import { ENDING_RULE_OPERATOR_SYMBOLS, STAT_ICON_OPTIONS } from "@/entities/chat-room";
 import {
-  countCharacters,
   MAX_STAT_RULE_CONDITION_LENGTH,
   STORY_FIELD_LABELS,
   type FieldLabel,
   type StoryFieldKey,
 } from "@/features/build-story";
 import { assertNever } from "@/shared/lib/assertNever";
+import { countCharacters } from "@/shared/lib/text/characterCount";
 
 import { findGuideImage } from "../config/guideImages";
 import type { GuideMockupContext } from "../model/guideMockupContext";
