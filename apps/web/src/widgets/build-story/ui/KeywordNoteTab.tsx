@@ -14,6 +14,7 @@ import {
 import {
   createKeywordNote,
   FieldLabelText,
+  keywordNoteRestoreDecision,
   keywordNoteTitle,
   MAX_ALWAYS_ON_KEYWORD_NOTES,
   MAX_KEYWORD_NOTES,
@@ -60,6 +61,7 @@ export function KeywordNoteTab() {
       const title = keywordNoteTitle(note);
       return title ? `‘${title}’ 노트를` : "이름 없는 노트를";
     },
+    decideRestore: keywordNoteRestoreDecision,
   });
   // 배열 자체의 위반(노트 수·상시 수 상한)이 담기는 자리는 탭 마운트 상태에 따라 `.message` 와 `.root.message` 로
   // 갈린다(StartingSetupTab 의 같은 자리 주석 참고). 둘 다 읽는다.
@@ -72,8 +74,8 @@ export function KeywordNoteTab() {
     // 있으므로 지우기 전에 옮긴다.
     const keys = getValues("keywordNotes").map((note) => itemOpenKey(KEYWORD_NOTE_LIST, note.id));
     focusNeighborToggle(keys, index, document.getElementById(ADD_BUTTON_ID));
+    // 지웠다는 사실은 되돌리기 토스트가 읽힌다 — 안내 영역에도 넣으면 두 번 읽힌다.
     removeWithUndo(index);
-    sortable.announce("노트를 삭제했어요.");
   }
 
   function handleAdd() {

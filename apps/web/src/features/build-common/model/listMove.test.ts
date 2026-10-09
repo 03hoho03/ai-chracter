@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { dragMoveIndices, stepMove } from "./listMove";
+import { dragMoveIndices, nextAnnouncement, orderAfterMove, stepMove } from "./listMove";
 
 describe("dragMoveIndices", () => {
   const ids = ["a", "b", "c"];
@@ -54,5 +54,27 @@ describe("stepMove", () => {
     expect(stepMove(["a", "b"], 0, -1)).toBeUndefined();
     expect(stepMove(["a", "b"], 1, 1)).toBeUndefined();
     expect(stepMove(["a", "b"], 5, -1)).toBeUndefined();
+  });
+});
+
+describe("orderAfterMove", () => {
+  it("옮긴 뒤의 순서를 돌려주고 원래 배열은 그대로 둔다", () => {
+    const ids = ["a", "b", "c"];
+    expect(orderAfterMove(ids, { from: 0, to: 2 })).toEqual(["b", "c", "a"]);
+    expect(orderAfterMove(ids, { from: 2, to: 0 })).toEqual(["c", "a", "b"]);
+    expect(ids).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("nextAnnouncement", () => {
+  it("새 문장은 그대로 넣는다", () => {
+    expect(nextAnnouncement("1번째로 옮겼어요.", "2번째로 옮겼어요.")).toBe("2번째로 옮겼어요.");
+  });
+
+  it("같은 문장이 연달아 오면 값을 바꿔 다시 읽히게 하고, 세 번째도 다시 바뀐다", () => {
+    const second = nextAnnouncement("규칙을 지웠어요.", "규칙을 지웠어요.");
+    expect(second).not.toBe("규칙을 지웠어요.");
+    expect(second.trim()).toBe("규칙을 지웠어요.");
+    expect(nextAnnouncement(second, "규칙을 지웠어요.")).not.toBe(second);
   });
 });

@@ -71,6 +71,7 @@ export {
   storyAutosaveErrorMessage,
 } from "./model/mediaBookSaveError";
 export { excludeKeywordError, triggerKeywordError } from "./model/keywordNoteEdit";
+export { keywordNoteRestoreDecision } from "./model/keywordNoteRestore";
 export { mediaBookPublishErrorMessage } from "./model/mediaBookPublishErrorMessage";
 export {
   findNextIncompleteCell,

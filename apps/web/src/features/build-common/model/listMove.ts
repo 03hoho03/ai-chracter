@@ -28,3 +28,19 @@ export function stepMove(ids: readonly string[], index: number, step: -1 | 1): S
   if (movedId === undefined || to < 0 || to >= ids.length) return undefined;
   return { from: index, to, movedId };
 }
+
+/** `ids` 에 이동 하나를 적용한 뒤의 순서(옮긴 뒤의 자리를 안내 문장에 쓴다). */
+export function orderAfterMove(ids: readonly string[], { from, to }: MoveIndices): string[] {
+  const next = [...ids];
+  const [moved] = next.splice(from, 1);
+  if (moved !== undefined) next.splice(to, 0, moved);
+  return next;
+}
+
+/**
+ * 화면 읽기 안내 영역에 넣을 다음 값. 같은 문장이 연달아 오면(같은 칸으로 다시 옮기기, 연달아 지우기) 영역의 글자가 바뀌지
+ * 않아 다시 읽히지 않으므로, 그때는 끝에 줄바꿈 없는 공백을 붙여 값을 바꾼다 — 읽는 소리는 같다.
+ */
+export function nextAnnouncement(previous: string, message: string): string {
+  return previous === message ? `${message} ` : message;
+}

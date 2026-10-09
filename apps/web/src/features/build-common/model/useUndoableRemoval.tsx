@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { focusRestoredToggle } from "../lib/focusItemToggle";
 import { UNDO_TOAST_DURATION_MS, UndoToastButton } from "../ui/UndoToastButton";
 import { orderWithPendingRemovals, restoreIndex, type RemovalPlace } from "./removalOrder";
+import type { RestoreDecision } from "./restoreDecision";
 
 type UndoableRemovalOptions<T extends { id: string }> = {
   /** 지금 목록(폼 값). 열림 키·되돌릴 자리를 이 값의 `id` 로 정한다. */
@@ -22,6 +23,11 @@ type UndoableRemovalOptions<T extends { id: string }> = {
   objectPhrase: (item: T) => string;
   /** 되살린 항목이 보이게 하는 준비(예: 꺼진 '고급 설정' 스위치 켜기). 항목을 넣는 커밋과 같은 동기 구간에서 부른다. */
   beforeRestore?: () => void;
+  /**
+   * 되돌리기 직전에 지금 목록으로 다시 판정한다(개수 상한 등, `RestoreDecision`). 거절하면 되살리지 않고 이유를 토스트로 알리고,
+   * 고친 값을 주면 그 값으로 되살리며 `note` 를 덧붙인다. 없으면 언제나 그대로 되살린다.
+   */
+  decideRestore?: (items: readonly T[], item: T) => RestoreDecision<T>;
 };
 
 /**
@@ -44,6 +50,7 @@ export function useUndoableRemoval<T extends { id: string }>({
   openKey,
   objectPhrase,
   beforeRestore,
+  decideRestore,
 }: UndoableRemovalOptions<T>) {
   /** 아직 되돌릴 수 있는 삭제 — 토스트 id 별로, 지운 차례대로. 토스트가 닫히면(시간이 다 됐거나 되돌렸거나) 빠진다. */
   const pendingRef = useRef(new Map<string, RemovalPlace & { item: T }>());
@@ -57,21 +64,31 @@ export function useUndoableRemoval<T extends { id: string }>({
   }, []);
 
   function restore(removed: RemovalPlace & { item: T }) {
+    const items = getItems();
     const index = restoreIndex(
-      getItems().map((item) => item.id),
+      items.map((item) => item.id),
       removed,
     );
     if (index === undefined) {
       toast("그 사이 목록이 바뀌어서 되돌리지 않았어요.");
       return;
     }
+    const decision = decideRestore?.(items, removed.item) ?? { kind: "restore", item: removed.item };
+    if (decision.kind === "refuse") {
+      toast(`${objectPhrase(removed.item)} 되돌리지 않았어요. ${decision.reason}`);
+      return;
+    }
     // 머리 줄 토글이 생기도록 동기로 커밋한 뒤 포커스한다.
     flushSync(() => {
       beforeRestore?.();
-      insert(index, removed.item);
+      insert(index, decision.item);
     });
     focusRestoredToggle(openKey(removed.id));
-    toast.success(`${objectPhrase(removed.item)} 되돌렸어요.`);
+    toast.success(
+      decision.note === undefined
+        ? `${objectPhrase(removed.item)} 되돌렸어요.`
+        : `${objectPhrase(removed.item)} 되돌렸어요. ${decision.note}`,
+    );
   }
 
   function removeWithUndo(index: number) {

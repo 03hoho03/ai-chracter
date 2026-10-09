@@ -117,6 +117,13 @@ export function RuleListEditor({
     move: (from, to) => onChange(arrayMove(items, from, to)),
     itemObject: "규칙을",
     orderMeaning: "위에서부터 차례로 이어 판정해요.",
+    // 손잡이 이름이 종류별 순번(N번째 규칙·N번째 규칙 그룹)이라 옮긴 뒤의 안내도 같은 순번으로 말한다.
+    movedMessage: (orderAfter, movedId) => {
+      const kindOf = (id: string) => items.find((item) => item.id === id)?.kind;
+      const kind = kindOf(movedId);
+      const ordinal = orderAfter.slice(0, orderAfter.indexOf(movedId) + 1).filter((id) => kindOf(id) === kind).length;
+      return `${ordinal}번째 ${kind === "group" ? "규칙 그룹" : "규칙"}으로 옮겼어요.`;
+    },
   });
   const uiState = useBuilderUiState();
   const addRuleButtonRef = useRef<HTMLButtonElement>(null);

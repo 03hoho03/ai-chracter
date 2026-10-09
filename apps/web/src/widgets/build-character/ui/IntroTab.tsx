@@ -19,6 +19,7 @@ import {
   focusNeighborToggle,
   ItemRemoveButton,
   itemOpenKey,
+  restoreUnderLimit,
   useBuilderUiState,
   useLimitedTextField,
   useUndoableRemoval,
@@ -57,6 +58,9 @@ export function IntroTab() {
     objectPhrase: exampleDialogueObjectPhrase,
     // 스위치를 끈 채 되돌리면 무엇이 돌아왔는지 보이지 않고 포커스할 머리 줄도 없다 — 켜서 보인다.
     beforeRestore: () => setIsAdvancedOpen(true),
+    // 그 사이 추가해 상한이 찼으면 되살리지 않는다 — 넘은 목록은 서버가 초안 저장을 통째로 거절한다.
+    decideRestore: (items, dialogue) =>
+      restoreUnderLimit(items.length, dialogue, MAX_EXAMPLE_DIALOGUES, `예시 대화는 최대 ${MAX_EXAMPLE_DIALOGUES}개까지예요.`),
   });
 
   // 스위치를 끈 채 이 탭에서 발행하면 예시 대화 오류가 화면에 없는 입력칸에 걸려 아무것도 보이지 않는다. 그래서 발행이 예시
