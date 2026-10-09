@@ -5,8 +5,11 @@ import {
   type PageLayoutInput,
   toColumnCount,
   toNearestScreen,
+  toPageCount,
   toPageGeometry,
+  toPageLabel,
   toScreenCount,
+  toVisiblePages,
   toScrollLeft,
 } from "./pageLayout";
 
@@ -194,5 +197,43 @@ describe("toNearestScreen", () => {
   it("범위를 벗어난 위치는 첫·끝 화면으로 자른다", () => {
     expect(toNearestScreen({ scrollLeft: -50, step: 390, screenCount: 5 })).toBe(0);
     expect(toNearestScreen({ scrollLeft: 9999, step: 390, screenCount: 5 })).toBe(4);
+  });
+});
+
+describe("논리 쪽", () => {
+  // 한 장: 화 끝까지 18단. 펼침: 본문 0~14단, 15단이 화 끝을 새 펼침 왼쪽으로 민 빈 단, 화 끝 16단.
+  const SINGLE = { lastColumnIndex: 17, spacerColumnIndex: undefined };
+  const SPREAD_WITH_SPACER = { lastColumnIndex: 16, spacerColumnIndex: 15 };
+  const SPREAD_WITHOUT_SPACER = { lastColumnIndex: 16, spacerColumnIndex: undefined };
+
+  it("쪽 수는 단 수이고, 펼침의 빈 단은 세지 않는다", () => {
+    expect(toPageCount(SINGLE)).toBe(18);
+    expect(toPageCount(SPREAD_WITH_SPACER)).toBe(16);
+    expect(toPageCount(SPREAD_WITHOUT_SPACER)).toBe(17);
+  });
+
+  it("한 장은 화면마다 한 쪽이다", () => {
+    expect(toPageLabel({ ...SINGLE, screen: 2, columnCount: 1 })).toBe("3 / 18쪽");
+    expect(toPageLabel({ ...SINGLE, screen: 17, columnCount: 1 })).toBe("18 / 18쪽");
+  });
+
+  it("펼침은 두 쪽을 en dash 로 잇는다", () => {
+    expect(toVisiblePages({ ...SPREAD_WITH_SPACER, screen: 1, columnCount: 2 })).toEqual([3, 4]);
+    expect(toPageLabel({ ...SPREAD_WITH_SPACER, screen: 1, columnCount: 2 })).toBe("3–4 / 16쪽");
+  });
+
+  it("본문 마지막 쪽 옆이 빈 단이면 그 쪽 하나만, 화 끝 펼침은 화 끝 쪽 하나만 보인다", () => {
+    expect(toPageLabel({ ...SPREAD_WITH_SPACER, screen: 7, columnCount: 2 })).toBe("15 / 16쪽");
+    expect(toPageLabel({ ...SPREAD_WITH_SPACER, screen: 8, columnCount: 2 })).toBe("16 / 16쪽");
+    expect(toPageLabel({ ...SPREAD_WITHOUT_SPACER, screen: 8, columnCount: 2 })).toBe("17 / 17쪽");
+  });
+
+  it("빈 단을 켠 펼침도 화 끝 쪽 번호가 한 장으로 볼 때와 같다", () => {
+    // 같은 화를 한 장으로 재면 화 끝이 16번째 단(15)에 온다.
+    const single = { lastColumnIndex: 15, spacerColumnIndex: undefined };
+    const lastSingle = toVisiblePages({ ...single, screen: 15, columnCount: 1 });
+    const lastSpread = toVisiblePages({ ...SPREAD_WITH_SPACER, screen: 8, columnCount: 2 });
+
+    expect(lastSpread).toEqual(lastSingle);
   });
 });
