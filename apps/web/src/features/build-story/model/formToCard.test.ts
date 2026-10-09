@@ -25,6 +25,7 @@ function baseFormValues(): StoryBuilderFormValues {
       target: null,
       hashtags: [],
       visibility: "private",
+      novelPermission: "private",
     },
   };
 }

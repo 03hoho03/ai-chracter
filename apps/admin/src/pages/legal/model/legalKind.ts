@@ -10,6 +10,7 @@ export const LEGAL_KIND_LABELS: Record<LegalKind, string> = {
   "operation-policy": "운영정책",
   "youth-policy": "청소년 보호정책",
   "refund-policy": "환불정책",
+  "creator-payout-policy": "크리에이터 정산 정책",
 };
 
 /** 게시할 때 회원 재동의를 요구할 수 있는 문서인지. 회원 동의를 기록하는 문서는 약관·처리방침뿐이라 나머지에
@@ -21,6 +22,7 @@ const CAN_REQUIRE_RECONSENT: Record<LegalKind, boolean> = {
   "operation-policy": false,
   "youth-policy": false,
   "refund-policy": false,
+  "creator-payout-policy": false,
 };
 
 export function canRequireReconsent(kind: LegalKind): boolean {

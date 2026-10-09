@@ -15,7 +15,7 @@ import { X } from "lucide-react";
 import { useState } from "react";
 import { Controller, useFormContext, useWatch } from "react-hook-form";
 
-import { useGenreListQuery } from "@/entities/content";
+import { NOVEL_PERMISSION_FIELD_LABEL, NovelPermissionPicker, useGenreListQuery } from "@/entities/content";
 import {
   TARGET_VALUES,
   VISIBILITY_VALUES,
@@ -41,7 +41,7 @@ const VISIBILITY_LABELS: Record<Visibility, string> = {
   private: "비공개",
 };
 
-/** 등록 설명/장르/타겟/해시태그/공개범위 메타데이터. 장르 목록은
+/** 등록 설명/장르/타겟/해시태그/공개범위/소설 만들기 허락 메타데이터. 장르 목록은
  * 하드코딩 enum이 아니라 GET /genres 서버 조회 결과로 select 옵션을 구성한다. */
 export function DetailTab() {
   const form = useFormContext<CharacterBuilderFormValues>();
@@ -236,6 +236,24 @@ export function DetailTab() {
             {errors.registration.visibility.message}
           </p>
         )}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <span id="character-detail-novel-permission-label" className="text-sm leading-none font-medium">
+          {NOVEL_PERMISSION_FIELD_LABEL}
+        </span>
+        <Controller
+          control={control}
+          name="registration.novelPermission"
+          render={({ field }) => (
+            <NovelPermissionPicker
+              ref={field.ref}
+              value={field.value}
+              onValueChange={field.onChange}
+              labelledBy="character-detail-novel-permission-label"
+            />
+          )}
+        />
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { DEFAULT_NOVEL_PERMISSION, NOVEL_PERMISSION_VALUES } from "@/entities/content";
 import { normalizeMediaBookName } from "@/entities/media-book";
 import { defaultUserNameIssue } from "@/entities/persona";
 
@@ -630,6 +631,7 @@ export const storyBuilderSchema = z.object({
       }),
     hashtags: z.array(z.string()).default([]),
     visibility: z.enum(VISIBILITY_VALUES).default("private"),
+    novelPermission: z.enum(NOVEL_PERMISSION_VALUES).default(DEFAULT_NOVEL_PERMISSION),
   }),
 });
 

@@ -1270,7 +1270,8 @@
                 "privacy",
                 "operation-policy",
                 "youth-policy",
-                "refund-policy"
+                "refund-policy",
+                "creator-payout-policy"
               ],
               "type": "string",
               "title": "Kind"
@@ -1320,7 +1321,8 @@
                 "privacy",
                 "operation-policy",
                 "youth-policy",
-                "refund-policy"
+                "refund-policy",
+                "creator-payout-policy"
               ],
               "type": "string",
               "title": "Kind"
@@ -1367,7 +1369,7 @@
           "admin"
         ],
         "summary": "Publish Legal Document",
-        "description": "게시는 현재 초안의 `body_markdown`을 그대로 복제해 새 published 행을 만든다 —\n초안 행 자체를 published로 전환하는 게 아니라 내용을 새 행으로 하나 더 만든다\n(버전마다 별도 행으로 남아야 `GET .../versions` 이력 조회가 가능하기 때문).\n\n**게시 후에도 초안 행은 지우지 않고 그대로 둔다.** \"초안 저장 → 게시 → 다시 초안\n저장\"은 지우든 남기든 둘 다 성립한다(부분 유니크 인덱스는 draft 행의 개수만\n제한할 뿐 내용과 무관하다) — 그래도 남기는 쪽을 골랐다. 남기면 게시 직후에도 방금\n편집하던 내용이 초안 조회에 그대로 남아 관리자가 바로 이어서 다듬을 수 있다(예:\n오타 하나만 고쳐 재게시). 지우는 쪽을 골랐다면 매번 원고를 통째로 다시 붙여넣게\n되어 더 불편해질 뿐, 더 안전해지는 지점이 없다.\n\n동의를 기록하지 않는 문서(운영정책·청소년 보호정책·환불정책)는 `requires_reconsent=true` 로\n게시할 수 없다. 재동의 게이트와 `GET /me` 는 약관·처리방침만 보므로 그 플래그는 아무\n효과가 없는데, 게시 이력·감사 로그에는 \"재동의 필요\"로 남아 운영자가 회원 재동의를\n받은 것으로 믿게 된다.",
+        "description": "게시는 현재 초안의 `body_markdown`을 그대로 복제해 새 published 행을 만든다 —\n초안 행 자체를 published로 전환하는 게 아니라 내용을 새 행으로 하나 더 만든다\n(버전마다 별도 행으로 남아야 `GET .../versions` 이력 조회가 가능하기 때문).\n\n**게시 후에도 초안 행은 지우지 않고 그대로 둔다.** \"초안 저장 → 게시 → 다시 초안\n저장\"은 지우든 남기든 둘 다 성립한다(부분 유니크 인덱스는 draft 행의 개수만\n제한할 뿐 내용과 무관하다) — 그래도 남기는 쪽을 골랐다. 남기면 게시 직후에도 방금\n편집하던 내용이 초안 조회에 그대로 남아 관리자가 바로 이어서 다듬을 수 있다(예:\n오타 하나만 고쳐 재게시). 지우는 쪽을 골랐다면 매번 원고를 통째로 다시 붙여넣게\n되어 더 불편해질 뿐, 더 안전해지는 지점이 없다.\n\n동의를 기록하지 않는 문서(운영정책·청소년 보호정책·환불정책·크리에이터 정산 정책)는 `requires_reconsent=true` 로\n게시할 수 없다. 재동의 게이트와 `GET /me` 는 약관·처리방침만 보므로 그 플래그는 아무\n효과가 없는데, 게시 이력·감사 로그에는 \"재동의 필요\"로 남아 운영자가 회원 재동의를\n받은 것으로 믿게 된다.",
         "operationId": "publish_legal_document_admin_legal__kind__publish_post",
         "parameters": [
           {
@@ -1380,7 +1382,8 @@
                 "privacy",
                 "operation-policy",
                 "youth-policy",
-                "refund-policy"
+                "refund-policy",
+                "creator-payout-policy"
               ],
               "type": "string",
               "title": "Kind"
@@ -1439,7 +1442,8 @@
                 "privacy",
                 "operation-policy",
                 "youth-policy",
-                "refund-policy"
+                "refund-policy",
+                "creator-payout-policy"
               ],
               "type": "string",
               "title": "Kind"
@@ -3816,7 +3820,8 @@
                 "privacy",
                 "operation-policy",
                 "youth-policy",
-                "refund-policy"
+                "refund-policy",
+                "creator-payout-policy"
               ],
               "type": "string",
               "title": "Kind"
@@ -4809,6 +4814,53 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ContentVisibilityUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contents/{id}/novel-permission": {
+      "put": {
+        "tags": [
+          "content"
+        ],
+        "summary": "Update Content Novel Permission",
+        "description": "발행 뒤 소설화 허락을 바꾼다(빌더에서는 초안 자동저장이 같은 칸을 쓴다). 헤더에 바로 쓰여 즉시 적용된다 — 낮춰도\n이미 만든 소설은 그대로이고, 막히는 것은 다른 회원이 새 소설을 만드는 것뿐이다.\n\n정지·탈퇴 회원은 바꿀 수 없다 — 세션 검사 뒤에 정지·탈퇴가 경합해도 회원 행을 잠가 다시 본다(401·403 문자열).\n이용제한 작품은 막지 않는다: 허락을 낮추는 것은 작가 보호 쪽이라 제한 중에도 열어 둔다. 작품 404 → 소유자 아님 403\n(공개 범위 변경과 같은 문자열).",
+        "operationId": "update_content_novel_permission_contents__id__novel_permission_put",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContentNovelPermissionUpdateRequest"
               }
             }
           }
@@ -7129,7 +7181,7 @@
           "novels"
         ],
         "summary": "Create Room Novel",
-        "description": "방의 소설을 만들거나, 이미 있으면 그대로 돌려준다(201 / 200). 무과금이다.\n\n원작 제목·캐릭터 이름·레인은 방이 고정한 버전에서 사본으로 떠 둔다 — 방이 지워지거나 작품이 바뀌어도 소설은\n그대로 읽혀야 한다. 주인공 이름은 방에 건 대화 프로필 이름, 없으면 그 버전의 작품 기본 이름이고, 둘 다 없으면\n비워 두었다가 첫 장을 만들기 전에 받는다. 이용 제한 작품이어도 만들 수 있다(모델을 부르지 않는다).",
+        "description": "방의 소설을 만들거나, 이미 있으면 그대로 돌려준다(201 / 200). 무과금이다.\n\n원작 제목·캐릭터 이름·레인은 방이 고정한 버전에서 사본으로 떠 둔다 — 방이 지워지거나 작품이 바뀌어도 소설은\n그대로 읽혀야 한다. 주인공 이름은 방에 건 대화 프로필 이름, 없으면 그 버전의 작품 기본 이름이고, 둘 다 없으면\n비워 두었다가 첫 장을 만들기 전에 받는다. 이용 제한 작품이어도 만들 수 있다(모델을 부르지 않는다).\n\n작가가 소설화를 허용하지 않은 작품이면 작가 본인이 아닌 사람은 새로 만들 수 없다(403 `CONTENT_NOVELIZE_FORBIDDEN`).\n이 판정은 이미 있는 소설을 돌려주는 분기 뒤에 둔다 — 허락을 낮춰도 이미 만든 소설은 계속 열리고 이어 쓸 수 있어야\n한다. 같은 이유로 모델을 부르는 라우트(다음 화·연쇄·다시 만들기·AI 수정)는 허락을 보지 않는다. 허락 변경과 겹친\n생성은 잠그지 않는다 — 놓치는 것은 금지로 바꾸는 순간과 겹친 생성 하나이고, 그 소설은 어차피 유지되는 대상이다.",
         "operationId": "create_room_novel_chat_rooms__room_id__novel_post",
         "parameters": [
           {
@@ -13602,7 +13654,8 @@
               "privacy",
               "operation-policy",
               "youth-policy",
-              "refund-policy"
+              "refund-policy",
+              "creator-payout-policy"
             ],
             "title": "Kind"
           },
@@ -15955,6 +16008,22 @@
           },
           "visibility": {
             "$ref": "#/components/schemas/ContentVisibility"
+          },
+          "novelPermission": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "forbidden",
+                  "private",
+                  "public"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Novelpermission"
           }
         },
         "type": "object",
@@ -16096,6 +16165,15 @@
           },
           "visibility": {
             "$ref": "#/components/schemas/ContentVisibility"
+          },
+          "novelPermission": {
+            "type": "string",
+            "enum": [
+              "forbidden",
+              "private",
+              "public"
+            ],
+            "title": "Novelpermission"
           }
         },
         "type": "object",
@@ -16903,6 +16981,10 @@
           "contentRestricted": {
             "type": "boolean",
             "title": "Contentrestricted"
+          },
+          "novelCreationBlocked": {
+            "type": "boolean",
+            "title": "Novelcreationblocked"
           },
           "chatModel": {
             "anyOf": [
@@ -18564,6 +18646,15 @@
           "isOwner": {
             "type": "boolean",
             "title": "Isowner"
+          },
+          "novelPermission": {
+            "type": "string",
+            "enum": [
+              "forbidden",
+              "private",
+              "public"
+            ],
+            "title": "Novelpermission"
           }
         },
         "type": "object",
@@ -18669,6 +18760,24 @@
           "nextCursor"
         ],
         "title": "ContentListResponse"
+      },
+      "ContentNovelPermissionUpdateRequest": {
+        "properties": {
+          "novelPermission": {
+            "type": "string",
+            "enum": [
+              "forbidden",
+              "private",
+              "public"
+            ],
+            "title": "Novelpermission"
+          }
+        },
+        "type": "object",
+        "required": [
+          "novelPermission"
+        ],
+        "title": "ContentNovelPermissionUpdateRequest"
       },
       "ContentPublishResponse": {
         "properties": {
@@ -20137,7 +20246,8 @@
               "privacy",
               "operation-policy",
               "youth-policy",
-              "refund-policy"
+              "refund-policy",
+              "creator-payout-policy"
             ],
             "title": "Kind"
           },
@@ -24526,6 +24636,22 @@
           "visibility": {
             "$ref": "#/components/schemas/ContentVisibility"
           },
+          "novelPermission": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "forbidden",
+                  "private",
+                  "public"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Novelpermission"
+          },
           "mediaBook": {
             "anyOf": [
               {
@@ -24725,6 +24851,15 @@
           },
           "visibility": {
             "$ref": "#/components/schemas/ContentVisibility"
+          },
+          "novelPermission": {
+            "type": "string",
+            "enum": [
+              "forbidden",
+              "private",
+              "public"
+            ],
+            "title": "Novelpermission"
           },
           "mediaBook": {
             "$ref": "#/components/schemas/MediaBookDraft"

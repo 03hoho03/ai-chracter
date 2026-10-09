@@ -82,6 +82,7 @@ export {
 } from "./model/novelActionError";
 export {
   hasNovelErrorCode,
+  isContentNovelizeForbiddenError,
   isNovelizeNotAllowedError,
   toNovelLoadFailure,
   type NovelLoadFailure,

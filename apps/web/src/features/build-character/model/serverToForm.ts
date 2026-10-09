@@ -1,4 +1,4 @@
-import type { CharacterDraftContent } from "@/entities/content";
+import { DEFAULT_NOVEL_PERMISSION, type CharacterDraftContent } from "@/entities/content";
 
 import type { CharacterBuilderFormValues } from "./schema";
 
@@ -40,6 +40,8 @@ export function serverToForm(data: CharacterDraftContent): CharacterBuilderFormV
       target: data.target,
       hashtags: data.hashtags,
       visibility: data.visibility,
+      // 이 칸이 생기기 전 서버의 응답에는 키가 없다. 그때 채우는 기본값은 서버가 모르는 칸이라 저장돼도 무해하다.
+      novelPermission: data.novelPermission ?? DEFAULT_NOVEL_PERMISSION,
     },
   };
 }

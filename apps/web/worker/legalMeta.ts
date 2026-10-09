@@ -6,7 +6,7 @@ import type { WorkerEnv } from "./workerRuntime";
 
 /** `/legal/{kind}` API와 값이 같은 법적 문서 종류. 값이 곧 웹 경로라(`/operation-policy` 등) 경로 해석과
  * canonical 이 따로 표를 두지 않는다. */
-export type LegalKind = "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy";
+export type LegalKind = "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy" | "creator-payout-policy";
 
 const LEGAL_LABEL: Record<LegalKind, string> = {
   terms: "이용약관",
@@ -14,6 +14,7 @@ const LEGAL_LABEL: Record<LegalKind, string> = {
   "operation-policy": "운영정책",
   "youth-policy": "청소년 보호정책",
   "refund-policy": "환불정책",
+  "creator-payout-policy": "크리에이터 정산 정책",
 };
 
 function isLegalKind(value: string): value is LegalKind {

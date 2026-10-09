@@ -23,6 +23,7 @@ import { Route as MyRouteImport } from './routes/my'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as FavoritesRouteImport } from './routes/favorites'
+import { Route as CreatorPayoutPolicyRouteImport } from './routes/creator-payout-policy'
 import { Route as ChatsRouteImport } from './routes/chats'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
@@ -119,6 +120,11 @@ const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
 const FavoritesRoute = FavoritesRouteImport.update({
   id: '/favorites',
   path: '/favorites',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CreatorPayoutPolicyRoute = CreatorPayoutPolicyRouteImport.update({
+  id: '/creator-payout-policy',
+  path: '/creator-payout-policy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ChatsRoute = ChatsRouteImport.update({
@@ -262,6 +268,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/chats': typeof ChatsRoute
+  '/creator-payout-policy': typeof CreatorPayoutPolicyRoute
   '/favorites': typeof FavoritesRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
@@ -305,6 +312,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/chats': typeof ChatsRoute
+  '/creator-payout-policy': typeof CreatorPayoutPolicyRoute
   '/favorites': typeof FavoritesRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
@@ -349,6 +357,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/chats': typeof ChatsRoute
+  '/creator-payout-policy': typeof CreatorPayoutPolicyRoute
   '/favorites': typeof FavoritesRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
@@ -394,6 +403,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/chats'
+    | '/creator-payout-policy'
     | '/favorites'
     | '/forgot-password'
     | '/login'
@@ -437,6 +447,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/chats'
+    | '/creator-payout-policy'
     | '/favorites'
     | '/forgot-password'
     | '/login'
@@ -480,6 +491,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/chats'
+    | '/creator-payout-policy'
     | '/favorites'
     | '/forgot-password'
     | '/login'
@@ -524,6 +536,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   ChatsRoute: typeof ChatsRoute
+  CreatorPayoutPolicyRoute: typeof CreatorPayoutPolicyRoute
   FavoritesRoute: typeof FavoritesRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
@@ -662,6 +675,13 @@ declare module '@tanstack/react-router' {
       path: '/favorites'
       fullPath: '/favorites'
       preLoaderRoute: typeof FavoritesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/creator-payout-policy': {
+      id: '/creator-payout-policy'
+      path: '/creator-payout-policy'
+      fullPath: '/creator-payout-policy'
+      preLoaderRoute: typeof CreatorPayoutPolicyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/chats': {
@@ -860,6 +880,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   ChatsRoute: ChatsRoute,
+  CreatorPayoutPolicyRoute: CreatorPayoutPolicyRoute,
   FavoritesRoute: FavoritesRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,

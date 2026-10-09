@@ -314,6 +314,7 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
       isOwner={content.isOwner}
       visibility={access.visibility}
       moderationStatus="normal"
+      novelPermission={content.novelPermission}
       triggerSize={variant === "modal" ? "icon-sm" : "icon"}
     />
   );

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { DEFAULT_NOVEL_PERMISSION, NOVEL_PERMISSION_VALUES } from "@/entities/content";
 import { defaultUserNameIssue } from "@/entities/persona";
 
 // 목록과 유니온 타입은 한쪽에서 도출한다. 값 목록을 스키마 옆의 단일 소스로 두고
@@ -87,6 +88,7 @@ export const characterBuilderSchema = z.object({
       }),
     hashtags: z.array(z.string()).default([]),
     visibility: z.enum(VISIBILITY_VALUES).default("private"),
+    novelPermission: z.enum(NOVEL_PERMISSION_VALUES).default(DEFAULT_NOVEL_PERMISSION),
   }),
 });
 

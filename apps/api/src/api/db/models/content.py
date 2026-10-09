@@ -53,6 +53,13 @@ class ModerationStatus(str, enum.Enum):
 # 함께 넓힌다.
 ContentRating = Literal["all"]
 
+# 다른 회원이 이 작품의 대화로 소설을 만들 수 있는가 — 허용 안 함 / 나만 보는 소설 / 공개 소설까지. 공개 소설은 아직 없어
+# 지금은 값만 저장하고 판정은 "허용 안 함"만 본다. 값이 늘 수 있어 네이티브 enum 대신 Text + CHECK 다 — 모르는 값을 읽는
+# 것만으로 옛 이미지가 `LookupError` 500 을 내지는 않는다. 다만 응답 스키마가 이 `Literal` 이라 옛 이미지가 그 값을 응답에
+# 실으면 응답 검증에서 여전히 500 이다. 그래서 값을 늘릴 때는 새 값을 읽고 내보낼 수 있는 코드를 먼저 배포하고, 그 값을 쓰는
+# 코드는 다음 배포에 넣는다.
+NovelPermission = Literal["forbidden", "private", "public"]
+
 
 class Genre(Base):
     """Master data, seeded via migration."""
@@ -101,6 +108,10 @@ class Content(Base):
     # 바뀌면 이미 공유된 링크·목록의 노출 기준이 버전 게시 때마다 바뀐다. API 요청·응답·어드민·빌더 어디에도 싣지
     # 않는다: 값이 하나뿐이라 보여 줄 것이 없고, 노출 경로를 미리 만들어 두면 성인 값이 새어 나갈 길이 하나 더 생긴다.
     rating: Mapped[ContentRating] = mapped_column(Text, server_default="all", nullable=False)
+    # 소설화 허락(`NovelPermission`). 등급처럼 버전이 아니라 헤더에 둔다 — 허락은 작가의 지금 의사이고, 버전에 두면 발행할
+    # 때마다 기존 방의 판정이 바뀐다. 기본값이 "나만 보는 소설"인 것은 이 칸 전부터 있던 작품의 동작(누구나 자기 대화를
+    # 소설로 만들 수 있었다)을 그대로 두려는 것이다.
+    novel_permission: Mapped[NovelPermission] = mapped_column(Text, server_default="private", nullable=False)
     current_published_version_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid,
         ForeignKey(
@@ -140,6 +151,9 @@ class Content(Base):
             name="ck_contents_suspension_flag_only_when_restricted",
         ),
         CheckConstraint("rating = 'all'", name="ck_contents_rating_all_only"),
+        CheckConstraint(
+            "novel_permission IN ('forbidden', 'private', 'public')", name="ck_contents_novel_permission"
+        ),
     )
 
 

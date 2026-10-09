@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import {
   contentKeys,
@@ -9,10 +9,12 @@ import {
   type ContentDraftPayload,
   type ContentDraftResponse,
   type ContentType,
+  type NovelPermission,
 } from "@/entities/content";
 import { draftKeys } from "@/entities/draft";
 
 import { runOnce } from "../lib/runOnce";
+import { createNovelPermissionSync } from "./novelPermissionSync";
 
 /**
  * 빌더의 저장 경로 하나 — 초안이 아직 서버에 없으면 만들고(지연 생성), 저장하고, URL을 초안
@@ -21,11 +23,24 @@ import { runOnce } from "../lib/runOnce";
  * 만들기와 이어쓰기가 한 라우트라 이 URL 교체는 파라미터만 바꾼다 — 리마운트가 없으므로 입력 중이던
  * 폼 상태와 포커스가 그대로 남는다(이유는 `pages/builder`의 `NEW_DRAFT_SEGMENT` 주석).
  */
-export function useDraftPersistence({ type, draftId }: { type: ContentType; draftId: string | undefined }) {
+export function useDraftPersistence({
+  type,
+  draftId,
+  initialNovelPermission,
+}: {
+  type: ContentType;
+  draftId: string | undefined;
+  /** 폼을 채운 초안의 소설 만들기 허락 값. 이 화면이 바꾸지 않은 저장에서는 그 칸을 빼고 보내는 기준이다(`novelPermissionSync`). */
+  initialNovelPermission: NovelPermission | undefined;
+}) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const createDraftMutation = useCreateContentDraftMutation();
-  const updateDraftMutation = useUpdateContentDraftMutation();
+  // 저장 큐 이름은 마운트할 때 한 번 정한다. 이어쓰기는 초안 id 라 같은 초안을 다시 열어도 같은 줄에 선다. 아직 없는 초안은
+  // 이 마운트만의 이름을 쓴다 — 첫 저장이 초안을 만들어 id 가 생겨도 리마운트가 없으므로, 이름을 그때 바꾸면 앞 저장과 뒤
+  // 저장이 다른 줄로 갈려 다시 겹친다.
+  const [draftSaveKey] = useState(() => draftId ?? `new-${crypto.randomUUID()}`);
+  const updateDraftMutation = useUpdateContentDraftMutation(draftSaveKey);
 
   // 이 래퍼가 마운트 동안 하나여야 "초안은 정확히 한 번만 만들어진다"가 성립한다(연속 자동저장이
   // 겹쳐 들어온다) → ref에 담아 첫 렌더의 것을 계속 쓴다. 첫 렌더의 `mutateAsync`를 붙잡는 건
@@ -42,11 +57,22 @@ export function useDraftPersistence({ type, draftId }: { type: ContentType; draf
   const draftIdRef = useRef(draftId);
   draftIdRef.current = draftId;
 
+  // 마운트 동안 하나여야 기준이 저장 사이에 이어진다 — 첫 렌더의 값으로 한 번 만든다(`saveDraft`가 같은 함수로 남는 데도 필요하다).
+  const novelPermissionSyncRef = useRef<ReturnType<typeof createNovelPermissionSync>>(undefined);
+  const novelPermissionSync = (novelPermissionSyncRef.current ??= createNovelPermissionSync(initialNovelPermission));
+
   const saveDraft = useCallback(
     async (payload: ContentDraftPayload): Promise<ContentDraftResponse> => {
       const knownId = draftIdRef.current;
       const id = knownId ?? (await createDraftOnce());
-      const draft = await updateDraftMutation.mutateAsync({ id, payload });
+      const sent = novelPermissionSync.prepare(payload);
+      let draft: ContentDraftResponse;
+      try {
+        draft = await updateDraftMutation.mutateAsync({ id, payload: sent });
+      } catch (error) {
+        novelPermissionSync.fail(sent);
+        throw error;
+      }
 
       // 저장할 때마다 캐시를 응답으로 덮는다(`invalidateQueries`가 아니다 — 1.5초마다 리페치가 돈다).
       // 두 가지를 동시에 막는다:
@@ -65,7 +91,7 @@ export function useDraftPersistence({ type, draftId }: { type: ContentType; draf
       }
       return draft;
     },
-    [createDraftOnce, navigate, queryClient, type, updateDraftMutation.mutateAsync],
+    [createDraftOnce, navigate, novelPermissionSync, queryClient, type, updateDraftMutation.mutateAsync],
   );
 
   // 진행 상태(`isPending`)는 일부러 내보내지 않는다 — 이 훅은 자동저장·임시저장·발행 직전 저장이

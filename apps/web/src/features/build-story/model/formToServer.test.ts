@@ -89,6 +89,7 @@ function baseFormValues(): StoryBuilderFormValues {
       target: "all",
       hashtags: ["모험"],
       visibility: "public",
+      novelPermission: "forbidden",
     },
   };
 }
@@ -168,6 +169,7 @@ describe("formToServer", () => {
       target: "all",
       hashtags: ["모험"],
       visibility: "public",
+      novelPermission: "forbidden",
     });
   });
 

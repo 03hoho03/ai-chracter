@@ -83,6 +83,9 @@ export type ChatRoomState = {
   latestVersionAvailable: boolean; // 원작에 이 방보다 최신 버전이 있는지
   versionAutoUpgraded: boolean; // 이번 조회에서 서버가 자동 마이그레이션했는지
   contentRestricted: boolean; // 작품이 이용제한·삭제돼 이 방에서 대화를 이어갈 수 없는지(읽기·삭제·초기화는 된다)
+  // 이 방에서 새 소설을 만들 수 없는지 — 원작자가 소설 만들기를 허용하지 않았고, 내가 작가가 아니고, 이 방에 소설이 아직 없을 때만
+  // 참이다(서버가 셋을 함께 따진다). 이미 소설이 있는 방은 언제나 열 수 있다.
+  novelCreationBlocked: boolean;
   // 다음 턴을 실제로 쓸 모델. 방에 저장한 모델을 지금 쓸 수 없으면(허용 회수·기능 꺼짐) 서버가 기본 모델로 바꿔 준 값이다.
   effectiveChatModel: ChatModelId;
   // 다음 턴 하나의 클로버(그 모델의 가격). undefined 는 서버가 값을 주지 않았다는 뜻이다 — 이 칸이 생기기 전의 서버가

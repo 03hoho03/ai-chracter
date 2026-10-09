@@ -273,6 +273,7 @@ export const STORY_FIELD_MOCKUPS = {
   "registration.target": { kind: "toggle", seedPath: "target", readTiming: "notRead" },
   "registration.hashtags": { kind: "chips", seedPath: "hashtags", readTiming: "notRead" },
   "registration.visibility": { kind: "toggle", seedPath: "visibility", readTiming: "notRead" },
+  "registration.novelPermission": { kind: "toggle", seedPath: null, readTiming: null },
 } as const satisfies Record<StoryFieldKey, FieldMockup>;
 
 export type StoryFieldMockups = Readonly<Record<StoryFieldKey, FieldMockup>>;

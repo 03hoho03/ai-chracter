@@ -7,6 +7,7 @@ export type { ContentDraftResponse } from "./api/useContentDraftQuery";
 export { useCreateContentDraftMutation } from "./api/useCreateContentDraftMutation";
 export type { ContentCreateRequest, ContentCreateResponse } from "./api/useCreateContentDraftMutation";
 export { useUpdateContentDraftMutation } from "./api/useUpdateContentDraftMutation";
+export { CONTENT_DRAFT_SAVE_TIMEOUT_MS, contentDraftSaveOptions } from "./api/contentDraftSaveOptions";
 export type { ContentDraftPayload } from "./api/useUpdateContentDraftMutation";
 export { useDeleteContentDraftMutation } from "./api/useDeleteContentDraftMutation";
 export { useResetContentDraftMutation } from "./api/useResetContentDraftMutation";
@@ -26,6 +27,7 @@ export type { ContentSummary } from "./api/useProfileContentListQuery";
 export { useToggleLikeMutation } from "./api/useToggleLikeMutation";
 export { useToggleFavoriteMutation } from "./api/useToggleFavoriteMutation";
 export { useUpdateContentVisibilityMutation } from "./api/useUpdateContentVisibilityMutation";
+export { useUpdateNovelPermissionMutation } from "./api/useUpdateNovelPermissionMutation";
 export { useReportContentMutation } from "./api/useReportContentMutation";
 export type { ReportReasonCategory } from "./api/useReportContentMutation";
 export { registerSituationalImage } from "./api/registerSituationalImage";
@@ -39,6 +41,14 @@ export {
 } from "./model/visibilityFilter";
 export type { VisibilityFilter } from "./model/visibilityFilter";
 export { createEmptyDraft } from "./model/emptyDraft";
+export {
+  DEFAULT_NOVEL_PERMISSION,
+  NOVEL_PERMISSION_COPY,
+  NOVEL_PERMISSION_FIELD_LABEL,
+  NOVEL_PERMISSION_VALUES,
+  isNovelPermission,
+} from "./model/novelPermission";
+export type { NovelPermission } from "./model/novelPermission";
 export type {
   CharacterDraftContent,
   ContentDraftContent,
@@ -80,3 +90,4 @@ export { ContentCardSkeleton } from "./ui/ContentCardSkeleton";
 export type { ContentCardSkeletonProps } from "./ui/ContentCardSkeleton";
 export { ContentListEmptyState } from "./ui/ContentListEmptyState";
 export { ContentListLoadMore } from "./ui/ContentListLoadMore";
+export { NovelPermissionPicker } from "./ui/NovelPermissionPicker";

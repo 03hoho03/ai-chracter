@@ -1,9 +1,15 @@
+import importlib.util
 from datetime import datetime, timezone, UTC
+from pathlib import Path
+from types import ModuleType
 
 import pytest
 import sqlalchemy as sa
+from alembic.operations import Operations
+from alembic.runtime.migration import MigrationContext
+from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from api.db.models import (
     Content,
@@ -18,6 +24,18 @@ from api.db.models import (
     User,
 )
 from factories import _get_genre, _make_user
+
+
+def _load_revision(revision: str) -> ModuleType:
+    (path,) = (Path(__file__).resolve().parents[1] / "migrations" / "versions").glob(f"{revision}_*.py")
+    spec = importlib.util.spec_from_file_location(f"_migration_{revision}", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_NOVEL_PERMISSION_REVISION = _load_revision("92f51f19de16")
 
 
 def _make_content(user: User, genre: Genre, **overrides: object) -> Content:
@@ -159,3 +177,50 @@ async def test_adult_rating_is_rejected_by_the_database(db_session: AsyncSession
 
     with pytest.raises(IntegrityError):
         await db_session.execute(sa.text("UPDATE contents SET rating = 'adult' WHERE id = :id"), {"id": content.id})
+
+
+async def test_new_content_may_be_novelized_privately_without_naming_it(db_session: AsyncSession) -> None:
+    """작품을 만드는 코드(초안 생성·시드)는 소설화 허락을 넘기지 않는다 — DB 기본값 "나만 보는 소설"이 채운다. 기본값이
+    빠지면 모든 작품 생성이 NOT NULL 위반으로 실패한다. `alembic check` 는 `server_default` 를 비교하지 않아 이 테스트가
+    유일한 신호다."""
+    _, content = await _make_user_and_content(db_session)
+
+    permission = await db_session.scalar(sa.select(Content.novel_permission).where(Content.id == content.id))
+
+    assert permission == "private"
+
+
+async def test_unknown_novel_permission_is_rejected_by_the_database(db_session: AsyncSession) -> None:
+    """허락은 세 값뿐이다(CHECK). `alembic check` 가 CHECK 를 비교하지 않아 이 테스트가 유일한 검증이다."""
+    _, content = await _make_user_and_content(db_session)
+
+    with pytest.raises(IntegrityError):
+        await db_session.execute(
+            sa.text("UPDATE contents SET novel_permission = 'open' WHERE id = :id"), {"id": content.id}
+        )
+
+
+async def test_a_chosen_novel_permission_blocks_the_downgrade_before_any_change(ddl_engine: AsyncEngine) -> None:
+    """작가가 고른 허락(기본값이 아닌 값)이 있으면 칸을 지우지 않고 멈춘다 — 내리면 그 선택이 조용히 사라진다."""
+
+    def downgrade(sync_connection: Connection) -> None:
+        with Operations.context(MigrationContext.configure(sync_connection)):
+            _NOVEL_PERMISSION_REVISION.downgrade()
+
+    async with ddl_engine.connect() as connection:
+        transaction = await connection.begin()
+        try:
+            _, content = await _make_user_and_content(AsyncSession(bind=connection))
+            await connection.execute(
+                sa.text("UPDATE contents SET novel_permission = 'forbidden' WHERE id = :id"), {"id": content.id}
+            )
+
+            with pytest.raises(RuntimeError, match="작가가 고른 소설화 허락"):
+                await connection.run_sync(downgrade)
+            still_there = await connection.scalar(
+                sa.text("SELECT novel_permission FROM contents WHERE id = :id"), {"id": content.id}
+            )
+        finally:
+            await transaction.rollback()
+
+    assert still_there == "forbidden"

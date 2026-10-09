@@ -15,7 +15,7 @@ import { X } from "lucide-react";
 import { useRef, useState } from "react";
 import { Controller, useFormContext, useWatch } from "react-hook-form";
 
-import { useGenreListQuery } from "@/entities/content";
+import { NovelPermissionPicker, useGenreListQuery } from "@/entities/content";
 import {
   FieldLabelText,
   TARGET_LABELS,
@@ -29,7 +29,7 @@ import { MediaTagInsertButton } from "./MediaTagInsertButton";
 import { StoryMacroNotice } from "./StoryMacroNotice";
 import { UnknownMediaTagNotice } from "./UnknownMediaTagNotice";
 
-/** 등록 설명/장르/타겟/해시태그/공개범위 메타데이터. 캐릭터 빌더
+/** 등록 설명/장르/타겟/해시태그/공개범위/소설 만들기 허락 메타데이터. 캐릭터 빌더
  * `DetailTab`과 동일한 필드/UI 구성(`registration` 스키마가 이미 공유 모양으로
  * 구현돼 있다) — 장르 목록은 하드코딩 enum이 아니라 GET /genres 서버 조회 결과로 select 옵션을 구성한다. */
 export function RegistrationTab() {
@@ -236,6 +236,24 @@ export function RegistrationTab() {
             {errors.registration.visibility.message}
           </p>
         )}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <span id="story-registration-novel-permission-label" className="text-sm leading-none font-medium">
+          <FieldLabelText field="registration.novelPermission" />
+        </span>
+        <Controller
+          control={control}
+          name="registration.novelPermission"
+          render={({ field }) => (
+            <NovelPermissionPicker
+              ref={field.ref}
+              value={field.value}
+              onValueChange={field.onChange}
+              labelledBy="story-registration-novel-permission-label"
+            />
+          )}
+        />
       </div>
     </div>
   );

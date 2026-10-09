@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { createRootRouteWithContext, ErrorComponent, Outlet, useRouterState } from "@tanstack/react-router";
 
 import { ChangeContentVisibilityModal } from "@/features/change-content-visibility";
+import { ChangeNovelPermissionModal } from "@/features/change-novel-permission";
 import { ChangeStartingSetupModal, ConfirmStartingSetupChangeModal } from "@/features/change-starting-setup";
 import { ImageCropModal } from "@/features/crop-image";
 import { MediaBookConfirmModal, MediaBookOverwriteModal, MediaTagPickerModal } from "@/features/edit-media-book";
@@ -90,6 +91,7 @@ function RootComponent() {
       <MediaTagPickerModal />
       <AppealModal />
       <ChangeContentVisibilityModal />
+      <ChangeNovelPermissionModal />
       <DeleteContentDraftModal />
       <ResetContentDraftModal />
       <ReconsentModal />

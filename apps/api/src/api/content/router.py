@@ -20,6 +20,7 @@ from starlette.concurrency import run_in_threadpool
 from api.assets.blur import BlurredUpload, blurred_asset_row, upload_blurred_copy
 from api.assets.image_processing import THUMBNAIL_CONTENT_TYPE, read_image_content_type
 from api.chat.prompt_builder import load_active_prompt_set
+from api.comments.access import lock_active_user
 from api.content.access import detail_model_for as _detail_model, is_open_to, select_publicly_listed
 from api.content.media_book import MEDIA_BOOK_CELL_IMAGE_KINDS, normalize_texts, resolve_media_tag_images
 from api.content.publish import (
@@ -48,6 +49,7 @@ from api.content.schemas import (
     ContentDetailResponse,
     ContentListItem,
     ContentListResponse,
+    ContentNovelPermissionUpdateRequest,
     ContentPublishResponse,
     ContentSummary,
     ContentSummaryListResponse,
@@ -687,6 +689,7 @@ async def _character_draft_response(
         target=content.target,
         hashtags=content.hashtags,
         visibility=content.visibility,
+        novel_permission=content.novel_permission,
     )
 
 
@@ -955,6 +958,7 @@ async def _story_draft_response(
         target=content.target,
         hashtags=content.hashtags,
         visibility=content.visibility,
+        novel_permission=content.novel_permission,
     )
 
 
@@ -1022,6 +1026,9 @@ async def _update_character_draft(
     content.target = payload.target
     content.hashtags = payload.hashtags
     content.visibility = payload.visibility
+    # 안 보냈으면 저장된 값을 둔다 — 이 칸을 모르는 옛 화면의 자동저장이 작가가 고른 허락을 기본값으로 덮지 않게.
+    if payload.novel_permission is not None:
+        content.novel_permission = payload.novel_permission
 
     existing_images = {
         image.entity_id: image
@@ -1442,6 +1449,9 @@ async def _update_story_draft(
     content.target = payload.target
     content.hashtags = payload.hashtags
     content.visibility = payload.visibility
+    # 안 보냈으면 저장된 값을 둔다 — 이 칸을 모르는 옛 화면의 자동저장이 작가가 고른 허락을 기본값으로 덮지 않게.
+    if payload.novel_permission is not None:
+        content.novel_permission = payload.novel_permission
 
     existing_setups = {
         s.entity_id: s
@@ -2774,6 +2784,36 @@ async def update_content_visibility(
     await db.commit()
 
 
+@router.put(
+    "/contents/{id}/novel-permission",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_legal_consent)],
+)
+async def update_content_novel_permission(
+    id: uuid.UUID,
+    body: ContentNovelPermissionUpdateRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    """발행 뒤 소설화 허락을 바꾼다(빌더에서는 초안 자동저장이 같은 칸을 쓴다). 헤더에 바로 쓰여 즉시 적용된다 — 낮춰도
+    이미 만든 소설은 그대로이고, 막히는 것은 다른 회원이 새 소설을 만드는 것뿐이다.
+
+    정지·탈퇴 회원은 바꿀 수 없다 — 세션 검사 뒤에 정지·탈퇴가 경합해도 회원 행을 잠가 다시 본다(401·403 문자열).
+    이용제한 작품은 막지 않는다: 허락을 낮추는 것은 작가 보호 쪽이라 제한 중에도 열어 둔다. 작품 404 → 소유자 아님 403
+    (공개 범위 변경과 같은 문자열)."""
+    await lock_active_user(db, user_id)
+    content = await db.scalar(
+        select(Content).where(Content.id == id).with_for_update().execution_options(populate_existing=True)
+    )
+    if content is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
+    if content.creator_user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not the content owner")
+
+    content.novel_permission = body.novel_permission
+    await db.commit()
+
+
 def _encode_cursor(parts: list[str]) -> str:
     return base64.urlsafe_b64encode(json.dumps(parts).encode()).decode()
 
@@ -3084,6 +3124,7 @@ async def get_content_detail(
         updated_at=version.published_at,
         access_status=access_status,
         is_owner=is_owner,
+        novel_permission=content.novel_permission,
     )
 
 
