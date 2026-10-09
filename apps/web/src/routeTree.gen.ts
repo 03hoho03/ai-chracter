@@ -27,6 +27,7 @@ import { Route as CreatorPayoutPolicyRouteImport } from './routes/creator-payout
 import { Route as ChatsRouteImport } from './routes/chats'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as WebnovelsIndexRouteImport } from './routes/webnovels.index'
 import { Route as NovelsIndexRouteImport } from './routes/novels.index'
 import { Route as NoticesIndexRouteImport } from './routes/notices.index'
 import { Route as InquiriesIndexRouteImport } from './routes/inquiries.index'
@@ -42,6 +43,7 @@ import { Route as InquiriesInquiryIdRouteImport } from './routes/inquiries.$inqu
 import { Route as CloverPricingRouteImport } from './routes/clover.pricing'
 import { Route as CloverHistoryRouteImport } from './routes/clover.history'
 import { Route as ChatRoomIdRouteImport } from './routes/chat.$roomId'
+import { Route as WebnovelsNovelIdIndexRouteImport } from './routes/webnovels.$novelId.index'
 import { Route as NovelsNovelIdIndexRouteImport } from './routes/novels.$novelId.index'
 import { Route as GuideStoryIndexRouteImport } from './routes/guide.story.index'
 import { Route as GuideCharacterIndexRouteImport } from './routes/guide.character.index'
@@ -50,6 +52,7 @@ import { Route as GuideStoryStepRouteImport } from './routes/guide.story.$step'
 import { Route as GuideCharacterStepRouteImport } from './routes/guide.character.$step'
 import { Route as ContentTypeIdRouteImport } from './routes/content.$type.$id'
 import { Route as BuilderTypeDraftIdRouteImport } from './routes/builder.$type.$draftId'
+import { Route as WebnovelsNovelIdEpisodesChapterIdRouteImport } from './routes/webnovels.$novelId.episodes.$chapterId'
 import { Route as NovelsNovelIdEpisodesChapterIdRouteImport } from './routes/novels.$novelId.episodes.$chapterId'
 
 const YouthPolicyRoute = YouthPolicyRouteImport.update({
@@ -142,6 +145,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WebnovelsIndexRoute = WebnovelsIndexRouteImport.update({
+  id: '/webnovels/',
+  path: '/webnovels/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const NovelsIndexRoute = NovelsIndexRouteImport.update({
   id: '/novels/',
   path: '/novels/',
@@ -217,6 +225,11 @@ const ChatRoomIdRoute = ChatRoomIdRouteImport.update({
   path: '/chat/$roomId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WebnovelsNovelIdIndexRoute = WebnovelsNovelIdIndexRouteImport.update({
+  id: '/webnovels/$novelId/',
+  path: '/webnovels/$novelId/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const NovelsNovelIdIndexRoute = NovelsNovelIdIndexRouteImport.update({
   id: '/novels/$novelId/',
   path: '/novels/$novelId/',
@@ -257,6 +270,12 @@ const BuilderTypeDraftIdRoute = BuilderTypeDraftIdRouteImport.update({
   path: '/builder/$type/$draftId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WebnovelsNovelIdEpisodesChapterIdRoute =
+  WebnovelsNovelIdEpisodesChapterIdRouteImport.update({
+    id: '/webnovels/$novelId/episodes/$chapterId',
+    path: '/webnovels/$novelId/episodes/$chapterId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const NovelsNovelIdEpisodesChapterIdRoute =
   NovelsNovelIdEpisodesChapterIdRouteImport.update({
     id: '/novels/$novelId/episodes/$chapterId',
@@ -298,6 +317,7 @@ export interface FileRoutesByFullPath {
   '/inquiries/': typeof InquiriesIndexRoute
   '/notices/': typeof NoticesIndexRoute
   '/novels/': typeof NovelsIndexRoute
+  '/webnovels/': typeof WebnovelsIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
   '/guide/character/$step': typeof GuideCharacterStepRoute
@@ -306,7 +326,9 @@ export interface FileRoutesByFullPath {
   '/guide/character/': typeof GuideCharacterIndexRoute
   '/guide/story/': typeof GuideStoryIndexRoute
   '/novels/$novelId/': typeof NovelsNovelIdIndexRoute
+  '/webnovels/$novelId/': typeof WebnovelsNovelIdIndexRoute
   '/novels/$novelId/episodes/$chapterId': typeof NovelsNovelIdEpisodesChapterIdRoute
+  '/webnovels/$novelId/episodes/$chapterId': typeof WebnovelsNovelIdEpisodesChapterIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -342,6 +364,7 @@ export interface FileRoutesByTo {
   '/inquiries': typeof InquiriesIndexRoute
   '/notices': typeof NoticesIndexRoute
   '/novels': typeof NovelsIndexRoute
+  '/webnovels': typeof WebnovelsIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
   '/guide/character/$step': typeof GuideCharacterStepRoute
@@ -350,7 +373,9 @@ export interface FileRoutesByTo {
   '/guide/character': typeof GuideCharacterIndexRoute
   '/guide/story': typeof GuideStoryIndexRoute
   '/novels/$novelId': typeof NovelsNovelIdIndexRoute
+  '/webnovels/$novelId': typeof WebnovelsNovelIdIndexRoute
   '/novels/$novelId/episodes/$chapterId': typeof NovelsNovelIdEpisodesChapterIdRoute
+  '/webnovels/$novelId/episodes/$chapterId': typeof WebnovelsNovelIdEpisodesChapterIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -387,6 +412,7 @@ export interface FileRoutesById {
   '/inquiries/': typeof InquiriesIndexRoute
   '/notices/': typeof NoticesIndexRoute
   '/novels/': typeof NovelsIndexRoute
+  '/webnovels/': typeof WebnovelsIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
   '/guide/character/$step': typeof GuideCharacterStepRoute
@@ -395,7 +421,9 @@ export interface FileRoutesById {
   '/guide/character/': typeof GuideCharacterIndexRoute
   '/guide/story/': typeof GuideStoryIndexRoute
   '/novels/$novelId/': typeof NovelsNovelIdIndexRoute
+  '/webnovels/$novelId/': typeof WebnovelsNovelIdIndexRoute
   '/novels/$novelId/episodes/$chapterId': typeof NovelsNovelIdEpisodesChapterIdRoute
+  '/webnovels/$novelId/episodes/$chapterId': typeof WebnovelsNovelIdEpisodesChapterIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -433,6 +461,7 @@ export interface FileRouteTypes {
     | '/inquiries/'
     | '/notices/'
     | '/novels/'
+    | '/webnovels/'
     | '/builder/$type/$draftId'
     | '/content/$type/$id'
     | '/guide/character/$step'
@@ -441,7 +470,9 @@ export interface FileRouteTypes {
     | '/guide/character/'
     | '/guide/story/'
     | '/novels/$novelId/'
+    | '/webnovels/$novelId/'
     | '/novels/$novelId/episodes/$chapterId'
+    | '/webnovels/$novelId/episodes/$chapterId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -477,6 +508,7 @@ export interface FileRouteTypes {
     | '/inquiries'
     | '/notices'
     | '/novels'
+    | '/webnovels'
     | '/builder/$type/$draftId'
     | '/content/$type/$id'
     | '/guide/character/$step'
@@ -485,7 +517,9 @@ export interface FileRouteTypes {
     | '/guide/character'
     | '/guide/story'
     | '/novels/$novelId'
+    | '/webnovels/$novelId'
     | '/novels/$novelId/episodes/$chapterId'
+    | '/webnovels/$novelId/episodes/$chapterId'
   id:
     | '__root__'
     | '/'
@@ -521,6 +555,7 @@ export interface FileRouteTypes {
     | '/inquiries/'
     | '/notices/'
     | '/novels/'
+    | '/webnovels/'
     | '/builder/$type/$draftId'
     | '/content/$type/$id'
     | '/guide/character/$step'
@@ -529,7 +564,9 @@ export interface FileRouteTypes {
     | '/guide/character/'
     | '/guide/story/'
     | '/novels/$novelId/'
+    | '/webnovels/$novelId/'
     | '/novels/$novelId/episodes/$chapterId'
+    | '/webnovels/$novelId/episodes/$chapterId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -566,6 +603,7 @@ export interface RootRouteChildren {
   InquiriesIndexRoute: typeof InquiriesIndexRoute
   NoticesIndexRoute: typeof NoticesIndexRoute
   NovelsIndexRoute: typeof NovelsIndexRoute
+  WebnovelsIndexRoute: typeof WebnovelsIndexRoute
   BuilderTypeDraftIdRoute: typeof BuilderTypeDraftIdRoute
   ContentTypeIdRoute: typeof ContentTypeIdRoute
   GuideCharacterStepRoute: typeof GuideCharacterStepRoute
@@ -574,7 +612,9 @@ export interface RootRouteChildren {
   GuideCharacterIndexRoute: typeof GuideCharacterIndexRoute
   GuideStoryIndexRoute: typeof GuideStoryIndexRoute
   NovelsNovelIdIndexRoute: typeof NovelsNovelIdIndexRoute
+  WebnovelsNovelIdIndexRoute: typeof WebnovelsNovelIdIndexRoute
   NovelsNovelIdEpisodesChapterIdRoute: typeof NovelsNovelIdEpisodesChapterIdRoute
+  WebnovelsNovelIdEpisodesChapterIdRoute: typeof WebnovelsNovelIdEpisodesChapterIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -705,6 +745,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/webnovels/': {
+      id: '/webnovels/'
+      path: '/webnovels'
+      fullPath: '/webnovels/'
+      preLoaderRoute: typeof WebnovelsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/novels/': {
       id: '/novels/'
       path: '/novels'
@@ -810,6 +857,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatRoomIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/webnovels/$novelId/': {
+      id: '/webnovels/$novelId/'
+      path: '/webnovels/$novelId'
+      fullPath: '/webnovels/$novelId/'
+      preLoaderRoute: typeof WebnovelsNovelIdIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/novels/$novelId/': {
       id: '/novels/$novelId/'
       path: '/novels/$novelId'
@@ -866,6 +920,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BuilderTypeDraftIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/webnovels/$novelId/episodes/$chapterId': {
+      id: '/webnovels/$novelId/episodes/$chapterId'
+      path: '/webnovels/$novelId/episodes/$chapterId'
+      fullPath: '/webnovels/$novelId/episodes/$chapterId'
+      preLoaderRoute: typeof WebnovelsNovelIdEpisodesChapterIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/novels/$novelId/episodes/$chapterId': {
       id: '/novels/$novelId/episodes/$chapterId'
       path: '/novels/$novelId/episodes/$chapterId'
@@ -910,6 +971,7 @@ const rootRouteChildren: RootRouteChildren = {
   InquiriesIndexRoute: InquiriesIndexRoute,
   NoticesIndexRoute: NoticesIndexRoute,
   NovelsIndexRoute: NovelsIndexRoute,
+  WebnovelsIndexRoute: WebnovelsIndexRoute,
   BuilderTypeDraftIdRoute: BuilderTypeDraftIdRoute,
   ContentTypeIdRoute: ContentTypeIdRoute,
   GuideCharacterStepRoute: GuideCharacterStepRoute,
@@ -918,7 +980,10 @@ const rootRouteChildren: RootRouteChildren = {
   GuideCharacterIndexRoute: GuideCharacterIndexRoute,
   GuideStoryIndexRoute: GuideStoryIndexRoute,
   NovelsNovelIdIndexRoute: NovelsNovelIdIndexRoute,
+  WebnovelsNovelIdIndexRoute: WebnovelsNovelIdIndexRoute,
   NovelsNovelIdEpisodesChapterIdRoute: NovelsNovelIdEpisodesChapterIdRoute,
+  WebnovelsNovelIdEpisodesChapterIdRoute:
+    WebnovelsNovelIdEpisodesChapterIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

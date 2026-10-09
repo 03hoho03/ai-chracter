@@ -12,6 +12,8 @@ export function NovelInfoLink({ route, novelId, ...props }: { route: ViewerRoute
   switch (route) {
     case "owner":
       return <Link to="/novels/$novelId" params={{ novelId }} {...props} />;
+    case "public":
+      return <Link to="/webnovels/$novelId" params={{ novelId }} {...props} />;
   }
 }
 
@@ -25,5 +27,7 @@ export function EpisodeLink({
   switch (route) {
     case "owner":
       return <Link to="/novels/$novelId/episodes/$chapterId" params={{ novelId, chapterId }} {...props} />;
+    case "public":
+      return <Link to="/webnovels/$novelId/episodes/$chapterId" params={{ novelId, chapterId }} {...props} />;
   }
 }

@@ -69,6 +69,10 @@ describe("isKnownRoute", () => {
     expect(isKnownRoute("/novels/n1")).toBe(true);
     expect(isKnownRoute("/novels/n1/board")).toBe(true);
     expect(isKnownRoute("/novels/n1/episodes/c1")).toBe(true);
+    // 노벨 목록 · 작품 정보 · 화 읽기.
+    expect(isKnownRoute("/webnovels")).toBe(true);
+    expect(isKnownRoute("/webnovels/n1")).toBe(true);
+    expect(isKnownRoute("/webnovels/n1/episodes/c1")).toBe(true);
   });
 
   it("목록에 없는 경로는 false", () => {
@@ -87,6 +91,8 @@ describe("isKnownRoute", () => {
     // 화 읽기는 화 id 까지 있어야 하고 그 아래 경로는 없다.
     expect(isKnownRoute("/novels/n1/episodes")).toBe(false);
     expect(isKnownRoute("/novels/n1/episodes/c1/extra")).toBe(false);
+    expect(isKnownRoute("/webnovels/n1/episodes")).toBe(false);
+    expect(isKnownRoute("/webnovels/n1/board")).toBe(false);
   });
 
   it("빈 파라미터 세그먼트는 라우트가 아니다", () => {

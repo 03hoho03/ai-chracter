@@ -3,7 +3,7 @@ import type { SavedReadingPosition } from "../lib/toRestoreParagraphIndex";
 /** 읽기 화면이 놓인 경로 — 내 소설(`/novels/…`)과 노벨(`/webnovels/…`). 링크 목적지와 화 끝의 몇 자리가 이것으로
  * 갈린다. 경로가 둘뿐이고 늘지 않아 목적지를 문자열로 주입하지 않고 이 값 하나로 고른다(라우터 `Link` 의 `to` 는
  * 리터럴 타입이라 문자열 주입은 경로 검사를 잃는다). */
-export type ViewerRoute = "owner";
+export type ViewerRoute = "owner" | "public";
 
 /** 이웃 화·화 끝·아래 바가 쓰는 화 하나. */
 export type ViewerChapter = {
