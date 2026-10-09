@@ -16,9 +16,9 @@
 
 FE·BE가 같은 등록가능 도메인(`ddona.site`)에 있다 — 그래서 세션 쿠키가 `SameSite=lax`다("BE 런타임" 절).
 옛 `*.pages.dev` 주소는 계속 살아 있고 web은 Worker가 301로 넘긴다
-(`apps/web/worker/legacyRedirect.ts`). **admin의 옛 주소는 넘기지 않는다** — admin은 `_worker.js`가
-없는 정적 SPA라 host 조건을 걸 자리가 없고(`_redirects`는 경로만 본다), `lax` 쿠키라 거기서는
-로그인도 안 된다. 의도된 결과이며 `admin.ddona.site`를 쓴다.
+(`apps/web/worker/legacyRedirect.ts`). **admin의 옛 주소는 넘기지 않는다** — `lax` 쿠키라 거기서는
+로그인도 안 된다. 의도된 결과이며 `admin.ddona.site`를 쓴다. admin의 `public/_worker.js`는 없는 자산
+파일 요청을 404로 바꾸는 일만 한다.
 
 ### 0-1. 실제 값
 
@@ -738,6 +738,9 @@ Pages 프로젝트 2개, 각각 Git 연동으로 `main` push 시 자동 빌드:
 - **Build watch paths**: `apps/{web|admin}/*, packages/*, pnpm-lock.yaml, pnpm-workspace.yaml`
   (기본값 `*`는 전체 감시라 BE만 바뀌어도 FE가 재배포된다)
 - SPA fallback은 `apps/{web,admin}/public/_redirects`(`/* /index.html 200`)로 이미 되어 있다.
+  단 Pages 자산 서버는 이 폴백을 없는 자산 파일(`/assets/옛-해시.js`)에도 200 HTML로 주고 확장자를 따라
+  4시간 캐시시키므로, 자산 경로의 200 HTML은 Worker가 캐시 금지 404로 바꾼다 —
+  web은 `apps/web/worker/handler.ts`의 `serveStaticAsset`, admin은 `apps/admin/public/_worker.js`.
 - 보안 헤더(HSTS `max-age=31536000`·nosniff·X-Frame-Options·Referrer-Policy)는 저장소 코드가 내보낸다 —
   web은 Worker(`apps/web/worker/securityHeaders.ts`), admin은 `apps/admin/public/_headers`, API는
   저장소 루트 `Caddyfile`. **Cloudflare 대시보드의 HSTS 설정(SSL/TLS → Edge Certificates)은 켜지
