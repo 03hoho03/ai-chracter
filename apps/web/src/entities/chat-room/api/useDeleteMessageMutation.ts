@@ -21,6 +21,8 @@ export function useDeleteMessageMutation(roomId: string) {
       );
       // 요약이 덮는 메시지를 지우면 서버가 요약을 이전 판으로 되돌린다.
       void queryClient.invalidateQueries({ queryKey: chatRoomKeys.memory(roomId) });
+      // 마지막 메시지를 지웠으면 내 방 목록의 미리보기·시각이 바뀐다.
+      void queryClient.invalidateQueries({ queryKey: chatRoomKeys.myLists() });
     },
   });
 }

@@ -214,6 +214,9 @@ export function useSendMessage(
       // 백그라운드로 시작하므로, 이 시점의 리페치는 접기 이전 값을 받는다. 열린 패널의 늦은 갱신은 채팅 위젯이
       // 몇 초 뒤 한 번 더 무효화해 메운다. 패널이 닫혀 있으면 리페치 자체가 없고 열 때 다시 받는다.
       void queryClient.invalidateQueries({ queryKey: chatRoomKeys.memory(roomId) });
+      // 내 방 목록의 미리보기·최근 활동 순서도 턴이 끝난 뒤에만 갱신한다 — 스트리밍 중에 다시 받으면 답 없는
+      // 미리보기만 보인다. 실패로 끝나도 서버가 사용자 메시지를 이미 커밋했을 수 있어 성공 분기가 아니라 여기서 한다.
+      void queryClient.invalidateQueries({ queryKey: chatRoomKeys.myLists() });
     }
   }
 

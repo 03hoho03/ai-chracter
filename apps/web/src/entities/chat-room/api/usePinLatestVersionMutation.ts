@@ -31,6 +31,8 @@ export function usePinLatestVersionMutation(roomId: string) {
     mutationFn: () => postPinLatestVersion(queryClient, roomId),
     onSuccess: (room) => {
       queryClient.setQueryData(chatRoomKeys.detail(roomId), room);
+      // 내 방 목록의 작품명·썸네일은 방이 고정한 버전 기준이라 함께 바뀐다.
+      void queryClient.invalidateQueries({ queryKey: chatRoomKeys.myLists() });
     },
   });
 }

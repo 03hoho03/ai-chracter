@@ -28,6 +28,7 @@ export { useChatRoomPlayGuideQuery } from "./api/useChatRoomPlayGuideQuery";
 export { useEndingCollectionQuery, type EndingCollectionItem } from "./api/useEndingCollectionQuery";
 export { useChatRoomListQuery, type ChatRoomListItem } from "./api/useChatRoomListQuery";
 export { useMyChatRoomListQuery, type MyChatRoomListItem } from "./api/useMyChatRoomListQuery";
+export { useRecentChatRoomListQuery } from "./api/useRecentChatRoomListQuery";
 export { useAcknowledgeVersionUpgradeMutation } from "./api/useAcknowledgeVersionUpgradeMutation";
 export { useChangeStartingSetupMutation } from "./api/useChangeStartingSetupMutation";
 export { useDeleteChatRoomMutation } from "./api/useDeleteChatRoomMutation";
