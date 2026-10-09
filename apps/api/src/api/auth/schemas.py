@@ -1,5 +1,6 @@
 import uuid
 from datetime import UTC, date, datetime
+from typing import Literal
 
 from pydantic import EmailStr, Field, field_validator
 
@@ -8,6 +9,10 @@ from api.auth.oauth_common import OAuthProvider
 from api.core.schema import CamelModel
 from api.db.models.feature_grant import FeatureName
 from api.payments.eligibility import PurchaseBlockReason
+
+# 화면이 진입점을 보이고 숨기는 기능 이름. 계정별 허용 행이 있는 기능(`FeatureName`)에 전역 스위치뿐인 크리에이터 정산을
+# 더한다 — `FeatureName` 자체를 넓히면 정산이 계정별 허용 행을 만들 수 있는 값으로 타입 검사를 통과한다.
+EnabledFeature = FeatureName | Literal["creator_payout"]
 
 
 class SignupRequest(CamelModel):
@@ -123,7 +128,7 @@ class MeResponse(CamelModel):
     social_provider: OAuthProvider | None
     # 이 계정이 지금 쓸 수 있는 기능. 서버가 라우트 게이트와 같은 판정으로 계산하고 FE 는 이것으로 진입점만
     # 숨긴다(막는 것은 서버 게이트다).
-    enabled_features: list[FeatureName]
+    enabled_features: list[EnabledFeature]
     # 휴대폰 본인인증을 마쳤는가.
     identity_verified: bool
     # 미인증 회원의 무료 대화·미션을 막는 게이트가 켜져 있는가. 라우트 게이트와 같은 판정 함수의 값이다 — 꺼져 있으면

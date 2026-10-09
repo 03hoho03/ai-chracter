@@ -9,6 +9,7 @@ from api.chat.prompt_builder import PromptLane
 from api.core.schema import CamelModel
 from api.db.models.chat import ChatMessageRole
 from api.db.models.content import ContentType, ContentVisibility, ModerationStatus
+from api.db.models.creator_payout import CreatorPayoutApplicationStatus
 from api.db.models.moderation import (
     AdminActionType,
     ModerationActionType,
@@ -727,3 +728,50 @@ class AdminRefundResponse(CamelModel):
     amount_krw: int
     clawback_paid: int
     clawback_bonus: int
+
+
+class AdminCreatorPayoutEligibility(CamelModel):
+    """신청자의 지금 자격. 회원의 신청·승인 재확인과 같은 판정 함수의 값이다."""
+
+    identity_verified: bool
+    adult: bool
+    published_count: int
+    suspended: bool
+    withdrawn: bool
+
+
+class AdminCreatorPayoutApplicationItem(CamelModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    # 탈퇴 회원은 닉네임이 파기돼 null 이다.
+    nickname: str | None
+    status: CreatorPayoutApplicationStatus
+    applied_at: datetime
+    decided_at: datetime | None
+    decision_reason: str
+    revoked_at: datetime | None
+    eligibility: AdminCreatorPayoutEligibility
+
+
+class AdminCreatorPayoutApplicationListResponse(CamelModel):
+    items: list[AdminCreatorPayoutApplicationItem]
+    page: int
+    total_pages: int
+    total_count: int
+
+
+class AdminCreatorPayoutApproveRequest(CamelModel):
+    # 승인 메모. 감사 로그에만 남고 신청자에게는 보이지 않는다.
+    reason_text: str = Field(default="", max_length=1000)
+
+
+class AdminCreatorPayoutApproveResponse(CamelModel):
+    # 첫 승인 때 확정한 소급 적립액(원). 승인 취소 뒤 다시 승인하면 소급하지 않아 null 이다.
+    retro_amount_krw: int | None
+
+
+class AdminCreatorPayoutDecisionRequest(CamelModel):
+    """거절·승인 취소 사유. 공백만이면 422(라우터가 확인한다). 거절 사유는 신청자에게 보이고, 승인 취소 사유는 감사
+    로그에만 남는다."""
+
+    reason_text: str = Field(max_length=1000)

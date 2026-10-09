@@ -11,7 +11,6 @@ CHECK·부분 유니크·복합 PK 는 alembic 1.18.5 의 `alembic check` 가 �
 """
 
 import uuid
-from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
@@ -21,12 +20,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core import config
-from api.core.clover import CloverKind, SpendUsage, refund_spend, revoke_purchase_lots, spend
+from api.core.clover import SpendUsage, refund_spend, revoke_purchase_lots
 from api.core.rate_limit import KST
 from api.creator_payout import settlement
 from api.creator_payout.settlement import confirm_window
 from api.db.models.auth import User
-from api.db.models.clover import CloverLot, CloverSpendAllocation, CloverSpendRefund, CloverSpendUsage
+from api.db.models.clover import CloverSpendAllocation, CloverSpendRefund, CloverSpendUsage
 from api.db.models.content import Content
 from api.db.models.creator_payout import (
     CreatorPayoutApplication,
@@ -34,7 +33,7 @@ from api.db.models.creator_payout import (
     CreatorPayoutConfirmationLine,
 )
 from api.db.models.payment import Payment, PaymentCancellation
-from factories import _create_admin, _make_draft_content, _make_payment, _make_user
+from factories import Player, _create_admin, _make_draft_content, _make_payment, _make_player, _make_user, _use
 
 
 def kst(month: int, day: int, hour: int = 0, minute: int = 0, second: int = 0, *, year: int = 2026) -> datetime:
@@ -88,66 +87,6 @@ async def _application(
     db.add(application)
     await db.flush()
     return application
-
-
-@dataclass
-class Player:
-    user: User
-    payment: Payment
-
-
-async def _player(db: AsyncSession, *, amount_krw: int, paid: int, bonus: int = 0, free: int = 0) -> Player:
-    """결제 하나로 유료(·보너스) 로트를 받은 플레이어. 무료 로트(`free`)는 결제와 무관한 출석 지급이다."""
-    user = _make_user(clover_balance=free + bonus + paid)
-    db.add(user)
-    await db.flush()
-    payment = await _make_payment(
-        db, user_id=user.id, amount_krw=amount_krw, paid_amount=paid, bonus_amount=bonus, status="paid"
-    )
-    lots = [
-        ("attendance_grant", free, None),
-        ("purchase_bonus", bonus, payment.id),
-        ("purchase_paid", paid, payment.id),
-    ]
-    for kind, amount, payment_id in lots:
-        if amount:
-            db.add(
-                CloverLot(user_id=user.id, granted_amount=amount, remaining=amount, kind=kind, payment_id=payment_id)
-            )
-    await db.flush()
-    return Player(user=user, payment=payment)
-
-
-async def _use(
-    db: AsyncSession,
-    player: Player,
-    content: Content | None,
-    amount: int,
-    at: datetime,
-    *,
-    usage: str = "chat",
-) -> uuid.UUID:
-    """플레이어가 `at` 에 `content` 에서 `amount` 를 쓴다. `usage` 가 `image` 면 사용처 없는 이미지 차감, `preview` 면
-    빌더 미리보기다."""
-    if usage == "image":
-        spent = await spend(db, user_id=player.user.id, amount=amount, kind="image_spend")
-    else:
-        if usage == "chat":
-            assert content is not None
-            spend_usage = SpendUsage("chat", content_id=content.id, chat_room_id=uuid.uuid4())
-        elif usage == "novel":
-            assert content is not None
-            spend_usage = SpendUsage("novel", content_id=content.id, novel_id=uuid.uuid4())
-        else:
-            spend_usage = SpendUsage("preview")
-        kind: CloverKind = "novelize_spend" if usage == "novel" else "chat_spend"
-        spent = await spend(db, user_id=player.user.id, amount=amount, kind=kind, usage=spend_usage)
-        assert spent is not None
-        await db.execute(
-            update(CloverSpendUsage).where(CloverSpendUsage.spend_ledger_id == spent.ledger_id).values(created_at=at)
-        )
-    assert spent is not None
-    return spent.ledger_id
 
 
 async def _refund(db: AsyncSession, player: Player, ledger_id: uuid.UUID, amount: int, at: datetime) -> None:
@@ -256,7 +195,7 @@ async def test_counts_only_paid_allocations_of_others_play_on_own_content(db_ses
     250 + 유료 90) → 90, A 작품 방 40 → 40, B 자기 작품 10·미리보기 10·이미지 30 → A 에게 0. A = 130 × 3/22 = 17.7… →
     17원. B 자신의 정산(자기 작품에서 자기가 쓴 10)도 0원이다."""
     a, a_content = await _creator(db_session)
-    b = await _player(db_session, amount_krw=9_900, paid=3_300, bonus=300, free=15)
+    b = await _make_player(db_session, amount_krw=9_900, paid=3_300, bonus=300, free=15)
     await _application(db_session, b.user.id, accrual_start_at=kst(9, 1))
     b_content = await _make_draft_content(db_session, creator_user_id=b.user.id)
 
@@ -285,7 +224,7 @@ async def test_refunds_count_in_the_month_they_happen_and_negative_month_truncat
     """D(3,300원·유료 1,100). 10월: 채팅 120, AI 수정 20 을 2분 뒤 전액 환급, 10-31 23:50 연쇄 240 선차감을 11-01 00:30
     에 80 환급. 10월 순 360 → 49.09 → 49원, 11월 −80 → −10.909 → −10원(0 쪽으로 버림). 합 39원."""
     c, content = await _creator(db_session)
-    d = await _player(db_session, amount_krw=3_300, paid=1_100)
+    d = await _make_player(db_session, amount_krw=3_300, paid=1_100)
 
     for turn in range(12):
         await _use(db_session, d, content, 10, kst(10, 12, 9, turn))
@@ -320,7 +259,7 @@ async def test_payment_cap_scales_creator_share_by_remaining_payment(
     """E(9,900원·유료 3,300·보너스 300)가 F 작품에서 10월에 900(보너스 300 + 유료 600)을 쓰고 11-02 에 결제가 취소된 뒤
     11-03 에 10월을 확정한다. 상한 = (9,900 − 취소액) × 3,300 / 9,900, 계수 = min(1, 상한 / 600)."""
     f, content = await _creator(db_session)
-    e = await _player(db_session, amount_krw=9_900, paid=3_300, bonus=300)
+    e = await _make_player(db_session, amount_krw=9_900, paid=3_300, bonus=300)
     await _use(db_session, e, content, 900, kst(10, 10))
 
     source, amount = cancel
@@ -338,7 +277,7 @@ async def test_payment_cap_scales_creator_share_by_remaining_payment(
 async def test_exactly_integer_share_is_not_lost_to_division(db_session: AsyncSession) -> None:
     """무료 8 + 유료 2 로 10, 이어 유료 10 두 번 → 유료 22 → 22 × 3/22 = 정확히 3원."""
     creator, content = await _creator(db_session)
-    player = await _player(db_session, amount_krw=9_900, paid=3_300, free=8)
+    player = await _make_player(db_session, amount_krw=9_900, paid=3_300, free=8)
     for day in (1, 2, 3):
         await _use(db_session, player, content, 10, kst(10, day))
 
@@ -352,7 +291,7 @@ async def test_integer_share_through_repeating_factor_is_not_truncated_below(db_
     20자리에서 끊겨 나눗셈 결과는 29.999…97 이므로 10자리 반올림이 없으면 29원이 된다."""
     creator, content = await _creator(db_session)
     _, other_content = await _creator(db_session)
-    player = await _player(db_session, amount_krw=9_900, paid=3_300)
+    player = await _make_player(db_session, amount_krw=9_900, paid=3_300)
     await _use(db_session, player, content, 660, kst(10, 1))
     await _use(db_session, player, other_content, 330, kst(10, 2))
     await _console_cancel(db_session, player.payment, 8_910, kst(10, 20))
@@ -370,7 +309,7 @@ async def test_retro_and_first_monthly_split_at_cut_without_overlap(db_session: 
     assert retro_start == kst(9, 11, 11, 55)
     creator, content = await _creator(db_session, accrual_start_at=None)
     await _application(db_session, creator.id, accrual_start_at=retro_start, monthly_from_at=cut)
-    player = await _player(db_session, amount_krw=9_900, paid=3_300)
+    player = await _make_player(db_session, amount_krw=9_900, paid=3_300)
     await _use(db_session, player, content, 22, retro_start - timedelta(seconds=1))
     await _use(db_session, player, content, 22, retro_start)
     await _use(db_session, player, content, 22, kst(12, 5))
@@ -398,7 +337,7 @@ async def test_retro_and_first_monthly_split_at_cut_without_overlap(db_session: 
 async def _october_confirmed_before_cancel(db: AsyncSession) -> tuple[User, Content, Player]:
     """E(9,900원·유료 3,300·보너스 300)가 F 작품에서 10월에 유료 600(보너스 300 먼저)을 쓰고, 10월을 계수 1 로 확정."""
     f, content = await _creator(db)
-    e = await _player(db, amount_krw=9_900, paid=3_300, bonus=300)
+    e = await _make_player(db, amount_krw=9_900, paid=3_300, bonus=300)
     await _use(db, e, content, 900, kst(10, 10))
     october = await _confirmed(db, f, OCT)
     assert (october.amount_krw, october.exact_krw) == (81, _d("81.8181818182"))
@@ -413,7 +352,7 @@ async def test_cancel_after_confirmation_readjusts_prior_share_every_month(db_se
     6원 = G 몫의 버림."""
     f, content, e = await _october_confirmed_before_cancel(db_session)
     await _console_cancel(db_session, e.payment, 8_910, kst(11, 10))
-    g = await _player(db_session, amount_krw=900, paid=300)
+    g = await _make_player(db_session, amount_krw=900, paid=300)
     await _use(db_session, g, content, 50, kst(11, 15))
 
     november = await _confirmed(db_session, f, NOV)
@@ -432,7 +371,7 @@ async def test_cancel_succeeding_after_month_end_adjusts_older_lines_next_month(
     """위와 같은 10월에서 8,910원 취소가 12-02(11월이 끝난 뒤, 11월 확정 전)에 성공하고 나머지 취소는 없다. 11월 확정은 그 결제의
     10월 줄을 건드리지 않아 G 몫만 → 6원. 12월 확정이 10월 줄을 맞춘다: 45 − 81.818… → −36원. 누계 81 + 6 − 36 = 51원."""
     f, content, e = await _october_confirmed_before_cancel(db_session)
-    g = await _player(db_session, amount_krw=900, paid=300)
+    g = await _make_player(db_session, amount_krw=900, paid=300)
     await _use(db_session, g, content, 50, kst(11, 15))
     await _console_cancel(db_session, e.payment, 8_910, kst(12, 2))
 
@@ -482,7 +421,7 @@ async def test_factor_rising_after_capped_confirmation_never_adds_positive_adjus
     """10-20 콘솔 취소 8,910원 뒤 10월 확정 → 계수 0.55 로 45원. 11-20 에 그 사용 100 이 환급돼 계수 0.66. 11월 = 환급 몫
     −100 × 0.66 × 3/22 = −9.0, 조정은 54 − 45 = +9 지만 양수는 반영하지 않아 0 → −9원."""
     f, content = await _creator(db_session)
-    e = await _player(db_session, amount_krw=9_900, paid=3_300, bonus=300)
+    e = await _make_player(db_session, amount_krw=9_900, paid=3_300, bonus=300)
     ledger_id = await _use(db_session, e, content, 900, kst(10, 10))
     await _console_cancel(db_session, e.payment, 8_910, kst(10, 20))
     october = await _confirmed(db_session, f, OCT)
@@ -499,7 +438,7 @@ async def test_factor_rising_after_capped_confirmation_never_adds_positive_adjus
 async def test_owner_withdrawn_before_use_is_excluded_after_use_is_kept(db_session: AsyncSession) -> None:
     """소유자가 10-20 에 탈퇴했다. 10-15 사용(22)은 들어가고 10-25 사용(22)은 빠진다."""
     creator, content = await _creator(db_session)
-    player = await _player(db_session, amount_krw=9_900, paid=3_300)
+    player = await _make_player(db_session, amount_krw=9_900, paid=3_300)
     await _use(db_session, player, content, 22, kst(10, 15))
     await _use(db_session, player, content, 22, kst(10, 25))
     creator.deleted_at = kst(10, 20)
@@ -512,7 +451,7 @@ async def test_owner_withdrawn_before_use_is_excluded_after_use_is_kept(db_sessi
 async def test_refund_of_spend_before_accrual_is_not_subtracted(db_session: AsyncSession) -> None:
     """적립은 10-10 부터다. 10-05 사용(적립 전)의 10-15 환급은 더한 적이 없으므로 빼지 않는다. 10-12 사용 44 → 6원."""
     creator, content = await _creator(db_session, accrual_start_at=kst(10, 10))
-    player = await _player(db_session, amount_krw=9_900, paid=3_300)
+    player = await _make_player(db_session, amount_krw=9_900, paid=3_300)
     before = await _use(db_session, player, content, 44, kst(10, 5))
     await _use(db_session, player, content, 44, kst(10, 12))
     await _refund(db_session, player, before, 44, kst(10, 15))
@@ -528,7 +467,7 @@ async def test_two_windows_in_a_month_skip_the_gap_and_insert_one_row(db_session
     creator, content = await _creator(db_session, accrual_start_at=None)
     await _application(db_session, creator.id, accrual_start_at=kst(9, 1), revoked_at=kst(12, 5))
     await _application(db_session, creator.id, accrual_start_at=kst(12, 20))
-    player = await _player(db_session, amount_krw=9_900, paid=3_300)
+    player = await _make_player(db_session, amount_krw=9_900, paid=3_300)
     early = await _use(db_session, player, content, 44, kst(12, 3))
     await _use(db_session, player, content, 22, kst(12, 10))
     await _refund(db_session, player, early, 22, kst(12, 10))
@@ -547,7 +486,7 @@ async def test_integer_total_over_several_lines_is_not_lost_to_per_line_rounding
     맞추면 2.4545454545 + 2.4545454545 + 1.0909090909 = 5.9999999999 → 5원이 되므로, 합계는 반올림 전 값에서 낸다."""
     creator, content = await _creator(db_session)
     for amount in (18, 18, 8):
-        player = await _player(db_session, amount_krw=9_900, paid=3_300)
+        player = await _make_player(db_session, amount_krw=9_900, paid=3_300)
         await _use(db_session, player, content, amount, kst(10, 5))
 
     october = await _confirmed(db_session, creator, OCT)
@@ -565,14 +504,14 @@ async def test_adjustment_against_several_rounded_prior_lines_keeps_integer_tota
     9원 — 저장값의 반올림 오차가 조정 줄 둘에 넘어와도 8원이 되지 않는다. 누계 13원 = G 몫 13.09… 의 버림."""
     f, x = await _creator(db_session)
     y = await _make_draft_content(db_session, creator_user_id=f.id)
-    e = await _player(db_session, amount_krw=9_900, paid=3_300)
+    e = await _make_player(db_session, amount_krw=9_900, paid=3_300)
     await _use(db_session, e, x, 15, kst(10, 5))
     await _use(db_session, e, y, 15, kst(10, 6))
     october = await _confirmed(db_session, f, OCT)
     assert october.amount_krw == 4
 
     await _console_cancel(db_session, e.payment, 9_900, kst(11, 10))
-    g = await _player(db_session, amount_krw=9_900, paid=3_300)
+    g = await _make_player(db_session, amount_krw=9_900, paid=3_300)
     await _use(db_session, g, x, 96, kst(11, 15))
     november = await _confirmed(db_session, f, NOV)
     assert november.amount_krw == 9
@@ -586,7 +525,7 @@ async def test_true_fraction_just_below_an_integer_is_still_truncated(
     0원(정수에서 1/11000 떨어져 있어, 버리기 전 맞추는 자리가 이보다 거칠면 1원으로 올라간다)."""
     monkeypatch.setattr(config.settings, "creator_payout_rate_bps", 1)
     creator, content = await _creator(db_session)
-    player = await _player(db_session, amount_krw=11_001, paid=3_667)
+    player = await _make_player(db_session, amount_krw=11_001, paid=3_667)
     await _use(db_session, player, content, 3_666, kst(10, 5))
 
     october = await _confirmed(db_session, creator, OCT)
@@ -604,8 +543,8 @@ async def test_fully_refunded_payment_leaves_no_line_but_counts_on_the_row(db_se
     """P 가 22 를 쓰고, Q 가 20 을 써 같은 달에 전액 돌려받았다. Q 결제의 (작품, 결제)는 순사용도 금액도 0 이라 줄을 넣지
     않지만, 확정 행의 차감·환급 합에는 들어간다: gross 42, refunded 20, 3원, 줄은 P 결제 하나."""
     creator, content = await _creator(db_session)
-    p = await _player(db_session, amount_krw=9_900, paid=3_300)
-    q = await _player(db_session, amount_krw=9_900, paid=3_300)
+    p = await _make_player(db_session, amount_krw=9_900, paid=3_300)
+    q = await _make_player(db_session, amount_krw=9_900, paid=3_300)
     await _use(db_session, p, content, 22, kst(10, 5))
     refunded = await _use(db_session, q, content, 20, kst(10, 6))
     await _refund(db_session, q, refunded, 20, kst(10, 6, 0, 1))
@@ -618,7 +557,7 @@ async def test_fully_refunded_payment_leaves_no_line_but_counts_on_the_row(db_se
 async def test_overlapping_windows_count_a_spend_once(db_session: AsyncSession) -> None:
     """재승인 컷이 직전 취소보다 앞서 구간 [12-01, 12-15)·[12-10, 01-01) 이 겹친다. 12-12 사용 22 는 한 번만 → 3원."""
     creator, content = await _creator(db_session)
-    player = await _player(db_session, amount_krw=9_900, paid=3_300)
+    player = await _make_player(db_session, amount_krw=9_900, paid=3_300)
     await _use(db_session, player, content, 22, kst(12, 12))
 
     december = await _monthly(db_session, creator, DEC, windows=[(DEC[0], kst(12, 15)), (kst(12, 10), DEC[1])])
@@ -678,7 +617,7 @@ async def test_refund_follows_usage_kind_filter_not_the_lot(
     assert settlement.SETTLED_USAGE_KINDS == ("chat", "novel")
     monkeypatch.setattr(settlement, "SETTLED_USAGE_KINDS", ("chat",))
     creator, content = await _creator(db_session)
-    player = await _player(db_session, amount_krw=9_900, paid=3_300)
+    player = await _make_player(db_session, amount_krw=9_900, paid=3_300)
     await _use(db_session, player, content, 44, kst(10, 5))
     novel = await _use(db_session, player, content, 44, kst(10, 6), usage="novel")
     await _refund(db_session, player, novel, 22, kst(10, 7))
@@ -690,7 +629,7 @@ async def test_refund_follows_usage_kind_filter_not_the_lot(
 async def test_refund_of_spend_without_usage_from_same_lot_is_ignored(db_session: AsyncSession) -> None:
     """같은 유료 로트에서 나간 이미지 차감(사용처 없음)의 환급은 작가 정산을 바꾸지 않는다. 채팅 44 → 6원."""
     creator, content = await _creator(db_session)
-    player = await _player(db_session, amount_krw=9_900, paid=3_300)
+    player = await _make_player(db_session, amount_krw=9_900, paid=3_300)
     await _use(db_session, player, content, 44, kst(10, 5))
     image = await _use(db_session, player, None, 30, kst(10, 6), usage="image")
     await _refund(db_session, player, image, 30, kst(10, 7))
@@ -703,7 +642,7 @@ async def test_rate_comes_from_settings_at_call_time(db_session: AsyncSession, m
     """비율을 1,000bps 로 바꾸면 유료 22 → 6원이고, 확정 행에 그 비율이 남는다."""
     monkeypatch.setattr(config.settings, "creator_payout_rate_bps", 1_000)
     creator, content = await _creator(db_session)
-    player = await _player(db_session, amount_krw=9_900, paid=3_300)
+    player = await _make_player(db_session, amount_krw=9_900, paid=3_300)
     await _use(db_session, player, content, 22, kst(10, 5))
 
     october = await _confirmed(db_session, creator, OCT)

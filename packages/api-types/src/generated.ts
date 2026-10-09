@@ -1286,6 +1286,95 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/creator-payout/applications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Creator Payout Applications
+         * @description 그 상태의 신청(기본 대기), 오래된 신청부터. 신청자 자격은 지금 값이다(신청 때가 아니라).
+         */
+        get: operations["list_creator_payout_applications_admin_creator_payout_applications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/creator-payout/applications/{application_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Creator Payout Application
+         * @description 승인한다. 대기 중이 아니면 409 `CREATOR_PAYOUT_APPLICATION_NOT_PENDING`. 신청 뒤 자격이 바뀌었으면(탈퇴·정지·인증·
+         *     나이·발행 작품) 409 `CREATOR_PAYOUT_NOT_ELIGIBLE` + `reason` — 회원의 신청과 같은 판정이다.
+         *
+         *     컷 C = 이 트랜잭션 시작 − 5분. 월 확정은 C 부터 센다. 이 크리에이터의 소급 확정 행이 아직 없으면(첫 승인) 적립 시작을
+         *     C − 소급 일수로 두고 [C − 소급 일수, C) 를 같은 트랜잭션에서 소급 확정한다(0원이어도 행을 남긴다 — 소급을 했다는 표식).
+         *     소급 확정 행이 이미 있으면(승인 취소 뒤 재승인) 소급하지 않고 적립도 C 부터다.
+         */
+        post: operations["approve_creator_payout_application_admin_creator_payout_applications__application_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/creator-payout/applications/{application_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject Creator Payout Application
+         * @description 거절한다. 사유는 신청자에게 보인다. 대기 중이 아니면 409 `CREATOR_PAYOUT_APPLICATION_NOT_PENDING`. 거절된 회원은
+         *     다시 신청할 수 있다(새 행).
+         */
+        post: operations["reject_creator_payout_application_admin_creator_payout_applications__application_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/creator-payout/applications/{application_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke Creator Payout Application
+         * @description 승인을 취소한다. 승인 중이 아니면 409 `CREATOR_PAYOUT_APPLICATION_NOT_APPROVED`.
+         *
+         *     효과는 "이 시각 이후 적립 중단" 하나다. 그 전까지의 사용은 그대로 적립되고(취소한 달의 앞부분도 다음 월 확정이 센다),
+         *     이미 확정된 적립과 소급 확정 행은 그대로 남는다. 다시 신청해 승인받으면 소급 없이 그 승인부터 적립한다.
+         */
+        post: operations["revoke_creator_payout_application_admin_creator_payout_applications__application_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/assets/presigned-upload": {
         parameters: {
             query?: never;
@@ -4788,6 +4877,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/creator-payout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Creator Payout
+         * @description 신청 상태와 신청 자격. 인증·나이·발행 작품이 모자라도 거절하지 않고 `eligibility` 로 보여 준다(신청과 같은 판정).
+         */
+        get: operations["get_creator_payout_me_creator_payout_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/creator-payout/application": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Creator Payout
+         * @description 정산을 신청한다. 순서: 스위치(503 `CREATOR_PAYOUT_UNAVAILABLE`) → 회원 행 잠금(탈퇴 401·정지 403 — 세션 확인 뒤에
+         *     탈퇴·정지가 커밋됐어도 여기서 막힌다) → 자격(미인증 403 `IDENTITY_VERIFICATION_REQUIRED`, 만 19세 미만 403
+         *     `CREATOR_PAYOUT_AGE_RESTRICTED`, 발행 작품 없음 422 `CREATOR_PAYOUT_NO_PUBLISHED_WORK`) → 대기·승인 중인 신청이 이미
+         *     있으면 409 `CREATOR_PAYOUT_ALREADY_APPLIED`.
+         *
+         *     승인 취소·거절된 회원은 다시 신청할 수 있다(새 행). 동의 기록에 남길 처리방침 게시본이 없으면 503 이다.
+         */
+        post: operations["apply_creator_payout_me_creator_payout_application_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me/identity-verifications": {
         parameters: {
             query?: never;
@@ -4801,8 +4935,9 @@ export interface paths {
          * Start Identity Verification
          * @description 인증 id 를 발급하고 이 사용자에게 묶는다.
          *
-         *     인증 설정이 없거나, 인증을 요구하는 기능(결제·게이트)이 둘 다 꺼져 있으면 503 `IDENTITY_VERIFICATION_UNAVAILABLE` —
-         *     쓰일 곳이 없는 인증으로 개인정보를 받지 않는다. 이미 인증한 계정은 409 `IDENTITY_ALREADY_VERIFIED`.
+         *     인증 설정이 없거나, 인증을 요구하는 기능(결제·게이트·크리에이터 정산)이 모두 꺼져 있으면 503
+         *     `IDENTITY_VERIFICATION_UNAVAILABLE` — 쓰일 곳이 없는 인증으로 개인정보를 받지 않는다. 이미 인증한 계정은 409
+         *     `IDENTITY_ALREADY_VERIFIED`.
          */
         post: operations["start_identity_verification_me_identity_verifications_post"];
         delete?: never;
@@ -5687,6 +5822,87 @@ export interface components {
             isDraft: boolean;
             /** Name */
             name: string;
+        };
+        /** AdminCreatorPayoutApplicationItem */
+        AdminCreatorPayoutApplicationItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Userid
+             * Format: uuid
+             */
+            userId: string;
+            /** Nickname */
+            nickname: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "approved" | "rejected" | "revoked";
+            /**
+             * Appliedat
+             * Format: date-time
+             */
+            appliedAt: string;
+            /** Decidedat */
+            decidedAt: string | null;
+            /** Decisionreason */
+            decisionReason: string;
+            /** Revokedat */
+            revokedAt: string | null;
+            eligibility: components["schemas"]["AdminCreatorPayoutEligibility"];
+        };
+        /** AdminCreatorPayoutApplicationListResponse */
+        AdminCreatorPayoutApplicationListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminCreatorPayoutApplicationItem"][];
+            /** Page */
+            page: number;
+            /** Totalpages */
+            totalPages: number;
+            /** Totalcount */
+            totalCount: number;
+        };
+        /** AdminCreatorPayoutApproveRequest */
+        AdminCreatorPayoutApproveRequest: {
+            /**
+             * Reasontext
+             * @default
+             */
+            reasonText: string;
+        };
+        /** AdminCreatorPayoutApproveResponse */
+        AdminCreatorPayoutApproveResponse: {
+            /** Retroamountkrw */
+            retroAmountKrw: number | null;
+        };
+        /**
+         * AdminCreatorPayoutDecisionRequest
+         * @description 거절·승인 취소 사유. 공백만이면 422(라우터가 확인한다). 거절 사유는 신청자에게 보이고, 승인 취소 사유는 감사
+         *     로그에만 남는다.
+         */
+        AdminCreatorPayoutDecisionRequest: {
+            /** Reasontext */
+            reasonText: string;
+        };
+        /**
+         * AdminCreatorPayoutEligibility
+         * @description 신청자의 지금 자격. 회원의 신청·승인 재확인과 같은 판정 함수의 값이다.
+         */
+        AdminCreatorPayoutEligibility: {
+            /** Identityverified */
+            identityVerified: boolean;
+            /** Adult */
+            adult: boolean;
+            /** Publishedcount */
+            publishedCount: number;
+            /** Suspended */
+            suspended: boolean;
+            /** Withdrawn */
+            withdrawn: boolean;
         };
         /** AdminDashboardActivityResponse */
         AdminDashboardActivityResponse: {
@@ -7242,7 +7458,7 @@ export interface components {
              * Actiontype
              * @enum {string}
              */
-            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "home-novel-curation-clear" | "home-novel-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "notice-publish" | "notice-unpublish" | "novel-comment-delete" | "novel-comment-hide" | "novel-comment-report-reject" | "novel-comment-restore" | "novel-lift" | "novel-report-reject" | "novel-restrict" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-payment-refund" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
+            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "home-novel-curation-clear" | "home-novel-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "notice-publish" | "notice-unpublish" | "novel-comment-delete" | "novel-comment-hide" | "novel-comment-report-reject" | "novel-comment-restore" | "novel-lift" | "novel-report-reject" | "novel-restrict" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-creator-payout-approve" | "user-creator-payout-reject" | "user-creator-payout-revoke" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-payment-refund" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
             /** Targetcontentid */
             targetContentId: string | null;
             /** Contentname */
@@ -7577,6 +7793,22 @@ export interface components {
          * @enum {string}
          */
         AppealVerdict: "accepted" | "rejected";
+        /** ApplyCreatorPayoutRequest */
+        ApplyCreatorPayoutRequest: {
+            /**
+             * Agreed
+             * @constant
+             */
+            agreed: true;
+        };
+        /** ApplyCreatorPayoutResponse */
+        ApplyCreatorPayoutResponse: {
+            /**
+             * Status
+             * @constant
+             */
+            status: "pending";
+        };
         /** AssetCompleteResponse */
         AssetCompleteResponse: {
             /**
@@ -8864,6 +9096,47 @@ export interface components {
             currency: "KRW";
         };
         /**
+         * CreatorPayoutApplicationView
+         * @description 가장 최근 신청. 거절 사유(`decisionReason`)는 신청자에게 보이는 글이다.
+         */
+        CreatorPayoutApplicationView: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "approved" | "rejected" | "revoked";
+            /**
+             * Appliedat
+             * Format: date-time
+             */
+            appliedAt: string;
+            /** Decidedat */
+            decidedAt: string | null;
+            /** Decisionreason */
+            decisionReason: string;
+        };
+        /**
+         * CreatorPayoutEligibilityView
+         * @description 신청 자격. 신청과 같은 판정 함수의 값이라 화면이 미리 보여 주는 자격과 신청의 거절이 갈리지 않는다.
+         */
+        CreatorPayoutEligibilityView: {
+            /** Identityverified */
+            identityVerified: boolean;
+            /** Adult */
+            adult: boolean;
+            /** Haspublishedwork */
+            hasPublishedWork: boolean;
+            /** Suspended */
+            suspended: boolean;
+        };
+        /** CreatorPayoutResponse */
+        CreatorPayoutResponse: {
+            application: components["schemas"]["CreatorPayoutApplicationView"] | null;
+            eligibility: components["schemas"]["CreatorPayoutEligibilityView"];
+            /** Everapproved */
+            everApproved: boolean;
+        };
+        /**
          * DevelopmentExampleItem
          * @description `ExampleDialogueItem`의
          *     입출력 쌍 모양을 따르되 `id`는 두지 않는다 — 다른 레코드가 참조하는 대상이 아니고
@@ -9418,7 +9691,7 @@ export interface components {
             /** Socialprovider */
             socialProvider: ("google" | "kakao") | null;
             /** Enabledfeatures */
-            enabledFeatures: ("novelize" | "chat_premium_models" | "novelize_premium_models")[];
+            enabledFeatures: (("novelize" | "chat_premium_models" | "novelize_premium_models") | "creator_payout")[];
             /** Identityverified */
             identityVerified: boolean;
             /** Identitygateenabled */
@@ -13702,6 +13975,139 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AdminRefundResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_creator_payout_applications_admin_creator_payout_applications_get: {
+        parameters: {
+            query?: {
+                status?: "pending" | "approved" | "rejected" | "revoked";
+                page?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCreatorPayoutApplicationListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_creator_payout_application_admin_creator_payout_applications__application_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminCreatorPayoutApproveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCreatorPayoutApproveResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_creator_payout_application_admin_creator_payout_applications__application_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminCreatorPayoutDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_creator_payout_application_admin_creator_payout_applications__application_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminCreatorPayoutDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -19700,6 +20106,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CompletePaymentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_creator_payout_me_creator_payout_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatorPayoutResponse"];
+                };
+            };
+        };
+    };
+    apply_creator_payout_me_creator_payout_application_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyCreatorPayoutRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplyCreatorPayoutResponse"];
                 };
             };
             /** @description Validation Error */

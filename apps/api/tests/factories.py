@@ -29,8 +29,10 @@ from starlette.types import Message
 
 from api.chat.prompt_builder import ImageMatchJudgmentResult, stat_rule_letters
 from api.content.schemas import RULE_LIST_ADAPTER, EndingRuleListDraftItem
+from api.core.clover import CloverKind, SpendUsage, spend
 from api.core.config import settings
 from api.core.security import hash_password
+from api.db.models.clover import CloverSpendUsage
 from api.db.models import (
     AdminUser,
     Asset,
@@ -181,6 +183,66 @@ async def _make_payment(db_session: AsyncSession, *, user_id: uuid.UUID, **overr
     db_session.add(payment)
     await db_session.flush()
     return payment
+
+
+@dataclass
+class Player:
+    user: User
+    payment: Payment
+
+
+async def _make_player(db: AsyncSession, *, amount_krw: int, paid: int, bonus: int = 0, free: int = 0) -> Player:
+    """결제 하나로 유료(·보너스) 로트를 받은 플레이어. 무료 로트(`free`)는 결제와 무관한 출석 지급이다."""
+    user = _make_user(clover_balance=free + bonus + paid)
+    db.add(user)
+    await db.flush()
+    payment = await _make_payment(
+        db, user_id=user.id, amount_krw=amount_krw, paid_amount=paid, bonus_amount=bonus, status="paid"
+    )
+    lots = [
+        ("attendance_grant", free, None),
+        ("purchase_bonus", bonus, payment.id),
+        ("purchase_paid", paid, payment.id),
+    ]
+    for kind, amount, payment_id in lots:
+        if amount:
+            db.add(
+                CloverLot(user_id=user.id, granted_amount=amount, remaining=amount, kind=kind, payment_id=payment_id)
+            )
+    await db.flush()
+    return Player(user=user, payment=payment)
+
+
+async def _use(
+    db: AsyncSession,
+    player: Player,
+    content: Content | None,
+    amount: int,
+    at: datetime,
+    *,
+    usage: str = "chat",
+) -> uuid.UUID:
+    """플레이어가 `at` 에 `content` 에서 `amount` 를 쓴다. `usage` 가 `image` 면 사용처 없는 이미지 차감, `preview` 면
+    빌더 미리보기다."""
+    if usage == "image":
+        spent = await spend(db, user_id=player.user.id, amount=amount, kind="image_spend")
+    else:
+        if usage == "chat":
+            assert content is not None
+            spend_usage = SpendUsage("chat", content_id=content.id, chat_room_id=uuid.uuid4())
+        elif usage == "novel":
+            assert content is not None
+            spend_usage = SpendUsage("novel", content_id=content.id, novel_id=uuid.uuid4())
+        else:
+            spend_usage = SpendUsage("preview")
+        kind: CloverKind = "novelize_spend" if usage == "novel" else "chat_spend"
+        spent = await spend(db, user_id=player.user.id, amount=amount, kind=kind, usage=spend_usage)
+        assert spent is not None
+        await db.execute(
+            sa.update(CloverSpendUsage).where(CloverSpendUsage.spend_ledger_id == spent.ledger_id).values(created_at=at)
+        )
+    assert spent is not None
+    return spent.ledger_id
 
 
 def _patch_httpx(

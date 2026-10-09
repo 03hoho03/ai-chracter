@@ -23,6 +23,7 @@ from api.core.config import settings
 from api.core.redis import redis_client
 from api.core.security import hash_identity_ci
 from api.core.sentry import capture_dependency_failure
+from api.creator_payout.config import creator_payout_active
 from api.db.models.auth import User
 from api.db.session import get_db_session
 from api.identity.schemas import CompleteIdentityVerificationResponse, StartIdentityVerificationResponse
@@ -63,10 +64,11 @@ async def start_identity_verification(
 ) -> StartIdentityVerificationResponse:
     """인증 id 를 발급하고 이 사용자에게 묶는다.
 
-    인증 설정이 없거나, 인증을 요구하는 기능(결제·게이트)이 둘 다 꺼져 있으면 503 `IDENTITY_VERIFICATION_UNAVAILABLE` —
-    쓰일 곳이 없는 인증으로 개인정보를 받지 않는다. 이미 인증한 계정은 409 `IDENTITY_ALREADY_VERIFIED`.
+    인증 설정이 없거나, 인증을 요구하는 기능(결제·게이트·크리에이터 정산)이 모두 꺼져 있으면 503
+    `IDENTITY_VERIFICATION_UNAVAILABLE` — 쓰일 곳이 없는 인증으로 개인정보를 받지 않는다. 이미 인증한 계정은 409
+    `IDENTITY_ALREADY_VERIFIED`.
     """
-    if not (identity_configured() and (payments_active() or identity_gate_active())):
+    if not (identity_configured() and (payments_active() or identity_gate_active() or creator_payout_active())):
         raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "IDENTITY_VERIFICATION_UNAVAILABLE")
     user = await _require_active_user(db, user_id)
     if user.identity_verified_at is not None:
