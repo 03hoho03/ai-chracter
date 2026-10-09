@@ -291,6 +291,23 @@ function NotificationDrawerItem({
     );
   }
 
+  if (destination.kind === "cloverHistory") {
+    return (
+      <SheetClose asChild>
+        <Link
+          to="/clover/history"
+          search={{ tab: "earn" }}
+          onClick={() => {
+            if (!notification.read) onRead(notification.id);
+          }}
+          className={ROW_CLASS}
+        >
+          <NotificationItemContent notification={notification} />
+        </Link>
+      </SheetClose>
+    );
+  }
+
   if (destination.kind === "none") {
     return (
       <button

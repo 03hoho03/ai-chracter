@@ -126,6 +126,22 @@ function NotificationListItem({
     );
   }
 
+  if (destination.kind === "cloverHistory") {
+    return (
+      <DropdownMenuItem
+        asChild
+        className="py-2"
+        onSelect={() => {
+          if (!notification.read) onRead(notification.id);
+        }}
+      >
+        <Link to="/clover/history" search={{ tab: "earn" }}>
+          <NotificationItemContent notification={notification} />
+        </Link>
+      </DropdownMenuItem>
+    );
+  }
+
   if (destination.kind === "none") {
     return (
       <DropdownMenuItem
