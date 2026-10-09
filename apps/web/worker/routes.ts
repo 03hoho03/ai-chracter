@@ -47,6 +47,9 @@ export const KNOWN_ROUTES = [
   "/studio/images",
   "/terms",
   "/ui-demo",
+  "/webnovels",
+  "/webnovels/$novelId",
+  "/webnovels/$novelId/episodes/$chapterId",
   "/youth-policy",
 ];
 

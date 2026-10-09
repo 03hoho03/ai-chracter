@@ -46,7 +46,7 @@ const PUBLIC_DESTINATION_KEYS = PROFILE_DESTINATION_GROUPS.flatMap((group) => gr
 const NOTIFICATION_ACTION_ROW_CLASS = cn(ROW_CLASS, "flex-col items-start gap-0.5");
 
 /**
- * `sm` 미만 헤더가 숨긴 텍스트 탭(이미지 링크 포함)·클로버·알림·프로필을 담는 좌측 시트. 이 저장소의 첫
+ * `sm` 미만 헤더가 숨긴 텍스트 탭(노벨·이미지 링크 포함)·클로버·알림·프로필을 담는 좌측 시트. 이 저장소의 첫
  * `Sheet side="left"`다(기존 3곳은 전부 `side="bottom"`). **자기완결 위젯**(`apps/web/CLAUDE.md`
  * §레이아웃·이미지)이라 트리거(버거)와 열림 상태를 이 컴포넌트가 소유하고, `Header`는
  * `<MobileNavDrawer />` 하나만 배치한다.
@@ -83,10 +83,10 @@ export function MobileNavDrawer({ className }: { className?: string }) {
 
         <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pb-3">
           <div className="px-0.5 py-1">
-            {/* 가로 pill 줄(`variant="outline"`) — 캐릭터·스토리 토글 쌍과 그 옆 "이미지" 링크. 헤더는 라벨만
+            {/* 가로 pill 줄(`variant="outline"`) — 캐릭터·스토리 토글 쌍과 그 옆 "노벨"·"이미지" 링크. 헤더는 라벨만
                 있는 텍스트 탭(`"tab"`, 기본값), 드로어는 버튼 크기 항목이라 감사 테스트대로 기본 채움을 쓴다
                 (`DESIGN.md` §Toggles). 이 줄은 로그인과 무관하게 나오므로 비로그인도 여기서 이미지 화면으로
-                갈 수 있다(라우트의 `requireSession`이 로그인으로 보낸다). 링크를 누르면 `onSelected`로 닫힌다.
+                갈 수 있다(라우트의 `requireSession`이 로그인으로 보낸다 — 노벨도 같다). 링크를 누르면 `onSelected`로 닫힌다.
 
                 드로어가 열린 채 남으면 홈으로 이동한 결과(그리드가 캐릭터/스토리로
                 바뀐 것)를 사용자가 볼 수 없으므로 닫아야 한다. 이전엔 atom을 `useAtomValue`로 관찰하고
@@ -280,6 +280,23 @@ function NotificationDrawerItem({
         <Link
           to="/inquiries/$inquiryId"
           params={{ inquiryId: destination.inquiryId }}
+          onClick={() => {
+            if (!notification.read) onRead(notification.id);
+          }}
+          className={ROW_CLASS}
+        >
+          <NotificationItemContent notification={notification} />
+        </Link>
+      </SheetClose>
+    );
+  }
+
+  if (destination.kind === "cloverHistory") {
+    return (
+      <SheetClose asChild>
+        <Link
+          to="/clover/history"
+          search={{ tab: "earn" }}
           onClick={() => {
             if (!notification.read) onRead(notification.id);
           }}

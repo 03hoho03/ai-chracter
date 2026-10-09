@@ -24,6 +24,8 @@ import {
 
 type ReportContentModalProps = {
   mutationFn: MutationFn<void, ReportReasonCategory>;
+  /** 무엇을 신고하는지 드러내야 할 때의 제목(예: "노벨 신고하기"). 없으면 "신고하기". */
+  title?: string;
 };
 
 /** 이 프로젝트 첫 react-call 액션형 모달.
@@ -33,7 +35,7 @@ type ReportContentModalProps = {
  * Radix 단일선택 토글은 선택된 항목을 다시 누르면 **빈 문자열**을 흘려보내고 `ToggleGroupItem`의
  * value도 `string`이라 폼에 그대로 넣을 수 없다 — `Controller`가 되받아 목록에 있는 값만 통과시키고,
  * 미선택 제출은 `as` 단언이나 버튼 비활성이 아니라 zod가 막고 사유를 화면에 남긴다. */
-export const ReportContentModal = createCallable<ReportContentModalProps, void>(({ call, mutationFn }) => {
+export const ReportContentModal = createCallable<ReportContentModalProps, void>(({ call, mutationFn, title = "신고하기" }) => {
   const {
     control,
     handleSubmit,
@@ -53,7 +55,7 @@ export const ReportContentModal = createCallable<ReportContentModalProps, void>(
     <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end()}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>신고하기</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription>신고 사유를 선택해주세요.</DialogDescription>
         </DialogHeader>
 

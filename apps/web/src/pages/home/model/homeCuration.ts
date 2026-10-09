@@ -29,6 +29,28 @@ export function toHomeCurationView({
   return { kind: "shown", item };
 }
 
+/** 홈 노벨 섹션의 응답을 아직 기다리는가 — 큐레이션과 같은 대기 묶음에 넣어 그리드를 붙잡을지 정한다. 섹션이 있을지
+ * 모르는 동안(세션 확인 중, 로그인했는데 노벨이 열렸는지 확인 중)도 기다린다. 비로그인이거나 노벨이 닫혀 있으면
+ * 기다리지 않는다(조회를 하지 않으니 `isPending` 이 늘 참이라 그대로 쓰면 영영 붙잡는다). */
+export function isHomeWebnovelPending({
+  isSessionPending,
+  isLoggedIn,
+  isPricingPending,
+  isOpen,
+  isPending,
+}: {
+  isSessionPending: boolean;
+  isLoggedIn: boolean;
+  isPricingPending: boolean;
+  isOpen: boolean;
+  isPending: boolean;
+}): boolean {
+  if (isSessionPending) return true;
+  if (!isLoggedIn) return false;
+  if (isPricingPending) return true;
+  return isOpen && isPending;
+}
+
 /** 큐레이션 섹션 + 결과 영역 덩어리의 React `key`. 큐레이션이 정해지기 전(`waiting`)과 정해진 뒤가 서로 다른 값이라,
  * 정해지는 순간 덩어리가 통째로 새 노드가 된다 — 기다리며 그려 둔 스켈레톤이 섹션에 밀려 내려가는 대신 사라지고
  * 새로 생기므로 브라우저가 레이아웃 이동으로 세지 않는다. 정해진 뒤(보임·숨김·포기)끼리는 같은 값이라, 필터를 걸고

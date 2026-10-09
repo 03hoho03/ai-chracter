@@ -10,7 +10,10 @@
  * - `boardLayout`: 배치 저장뿐. 묶음 삭제·인물 합치기 뒤에는 서버가 없는 키를 빼고 주므로 고칠 필요가 없다.
  * - `snapshots`·`snapshot`: 버전 저장·지우기·되돌리기(자동 저장이 하나 생긴다), 마지막 묶음 삭제(그 화 항목이 지워진
  *   화가 된다).
- * - `chainEstimate`: 남은 대화가 바뀌는 모든 일(화 생성·삭제). 확인 화면을 열 때마다 새로 받는다. */
+ * - `chainEstimate`: 남은 대화가 바뀌는 모든 일(화 생성·삭제). 확인 화면을 열 때마다 새로 받는다.
+ * - `publication`: 노벨 공개·다시 공개·거두기(응답이 상태면 `setQueryData`), 그리고 공개본과 견주는 모든 쓰기(화 고치기·
+ *   제목·소개·화 생성·삭제). 편집 보드는 상세 객체가 바뀔 때마다 함께 다시 받고, 작품 정보의
+ *   제목·소개 수정은 그 뮤테이션이 직접 무효화한다. */
 export const novelKeys = {
   all: ["novel"] as const,
   list: () => [...novelKeys.all, "list"] as const,
@@ -30,6 +33,7 @@ export const novelKeys = {
   snapshots: (novelId: string) => [...novelKeys.all, "snapshots", novelId] as const,
   snapshot: (novelId: string, snapshotId: string) => [...novelKeys.all, "snapshot", novelId, snapshotId] as const,
   chainEstimate: (novelId: string) => [...novelKeys.all, "chainEstimate", novelId] as const,
+  publication: (novelId: string) => [...novelKeys.all, "publication", novelId] as const,
 };
 
 /** 한 소설의 캐시 중 `kinds` 종류만 고르는 술어. `invalidateQueries({ queryKey: novelKeys.all, predicate })` 로

@@ -96,6 +96,12 @@ const MESSAGE_BY_CODE: Record<string, NovelActionErrorNotice> = {
   },
   NOVEL_CHAPTER_NOT_LAST: { message: "마지막 화만 지울 수 있어요.", shouldRefetchNovel: true },
   NOVEL_BATCH_NOT_LAST: { message: "마지막에 함께 만든 화들만 지울 수 있어요.", shouldRefetchNovel: true },
+  // 지우는 동안 노벨에서 새로 소장한 회원이 계속 생겼다(한 번은 저절로 다시 보낸 뒤다). 환급 고지의 수가 바뀌었으니
+  // 상세를 다시 받는다.
+  NOVEL_DELETE_CONFLICT: {
+    message: "그사이 노벨에서 소장한 회원이 생겼어요. 바뀐 환급 안내를 확인하고 다시 지워 주세요.",
+    shouldRefetchNovel: true,
+  },
   NOVEL_PARAGRAPH_RANGE_INVALID: { message: "고른 문단이 바뀌었어요. 다시 골라주세요.", shouldRefetchNovel: true },
   NOVEL_JOB_NOT_APPLICABLE: { message: "이 수정안은 더 이상 적용할 수 없어요.", shouldRefetchNovel: true },
   NOVEL_REVISION_CONFLICT: {

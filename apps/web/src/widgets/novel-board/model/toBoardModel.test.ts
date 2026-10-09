@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { NovelChapterSummary, NovelDetailResponse } from "@/entities/novel";
 
-import { toBoardModel, toEpisodeReadState } from "./toBoardModel";
+import { toBoardModel, toEpisodeReadState, toPublicMark } from "./toBoardModel";
 
 function chapter(id: string, batchId: string, ordinal: number, extra: Partial<NovelChapterSummary> = {}): NovelChapterSummary {
   return {
@@ -110,5 +110,20 @@ describe("toBoardModel", () => {
       },
     ]);
     expect(model.characters).toEqual([{ id: "c1", name: "도희", aliases: ["도희 씨"], memo: "야간 점원", chapterIds: ["e1"] }]);
+  });
+});
+
+describe("toPublicMark", () => {
+  const publication = { visibility: "public" as const, publishedChapterCount: 3, changedChapterOrdinals: [2] };
+
+  it("공개 중인 소설의 공개한 화만 표시하고, 공개한 뒤 고친 화를 가른다", () => {
+    expect(toPublicMark(publication, 1)).toBe("published");
+    expect(toPublicMark(publication, 2)).toBe("changed");
+    expect(toPublicMark(publication, 4)).toBeUndefined();
+  });
+
+  it("거둔 공개나 모르는 상태는 표시하지 않는다", () => {
+    expect(toPublicMark({ ...publication, visibility: "withdrawn" }, 1)).toBeUndefined();
+    expect(toPublicMark(undefined, 1)).toBeUndefined();
   });
 });

@@ -1,13 +1,12 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Slider } from "@ai-character-chat/ui/components/slider";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { Link } from "@tanstack/react-router";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { ReactNode, Ref } from "react";
 
-import type { NovelChapterSummary } from "@/entities/novel";
-
 import { VIEWER_BAR_ROW_PX } from "../lib/pageFit";
+import type { ViewerChapter, ViewerRoute } from "../model/viewerSource";
+import { EpisodeLink } from "./ViewerLinks";
 
 /** 페이지 모드의 쪽 이동. */
 export type ViewerPagePosition = {
@@ -24,11 +23,12 @@ export type ViewerPagePosition = {
 type ViewerBottomBarProps = {
   ref: Ref<HTMLDivElement>;
   id: string;
+  route: ViewerRoute;
   novelId: string;
   /** 화 안의 위치 — 스크롤 모드는 진행률(0 … 1), 페이지 모드는 화면 번호와 쪽 이동. */
   position: { mode: "scroll"; progress: number } | ViewerPagePosition;
-  previous: NovelChapterSummary | undefined;
-  next: NovelChapterSummary | undefined;
+  previous: ViewerChapter | undefined;
+  next: ViewerChapter | undefined;
   isVisible: boolean;
   /** 열려 있으면 아래 바 위에 붙여 그리는 보기 설정 패널. */
   settingsPanel: ReactNode;
@@ -47,7 +47,7 @@ type ViewerBottomBarProps = {
  * 길이 변화에 전환을 두지 않는다. 보기 설정 패널은 이 바 위에 붙어 함께 오르내린다. 첫 화·마지막 화에서 막힌 버튼은
  * `aria-disabled` 다 — `disabled` 는 포커스를 빼앗아 키보드 사용자가 자리를 잃는다. 이유는 화 번호가 말하므로 문구를
  * 붙이지 않는다. */
-export function ViewerBottomBar({ ref, id, novelId, position, previous, next, isVisible, settingsPanel }: ViewerBottomBarProps) {
+export function ViewerBottomBar({ ref, id, route, novelId, position, previous, next, isVisible, settingsPanel }: ViewerBottomBarProps) {
   return (
     <div
       ref={ref}
@@ -62,11 +62,11 @@ export function ViewerBottomBar({ ref, id, novelId, position, previous, next, is
       {position.mode === "page" ? (
         <nav aria-label="화 이동" className="border-t border-border pb-safe">
           <div className="flex items-center gap-2 px-4 sm:px-6" style={{ height: VIEWER_BAR_ROW_PX }}>
-            <EpisodeStepButton novelId={novelId} target={previous} direction="previous" />
+            <EpisodeStepButton route={route} novelId={novelId} target={previous} direction="previous" />
             <div className="min-w-0 flex-1">
               <PageSeekSlider position={position} />
             </div>
-            <EpisodeStepButton novelId={novelId} target={next} direction="next" />
+            <EpisodeStepButton route={route} novelId={novelId} target={next} direction="next" />
           </div>
         </nav>
       ) : (
@@ -75,8 +75,8 @@ export function ViewerBottomBar({ ref, id, novelId, position, previous, next, is
             <div className="h-full bg-foreground" style={{ width: `${Math.round(position.progress * 100)}%` }} />
           </div>
           <div className="flex items-center justify-between gap-2 px-4 pt-3 sm:px-6">
-            <EpisodeStepButton novelId={novelId} target={previous} direction="previous" />
-            <EpisodeStepButton novelId={novelId} target={next} direction="next" />
+            <EpisodeStepButton route={route} novelId={novelId} target={previous} direction="previous" />
+            <EpisodeStepButton route={route} novelId={novelId} target={next} direction="next" />
           </div>
         </nav>
       )}
@@ -112,12 +112,14 @@ function PageSeekSlider({ position }: { position: ViewerPagePosition }) {
 }
 
 function EpisodeStepButton({
+  route,
   novelId,
   target,
   direction,
 }: {
+  route: ViewerRoute;
   novelId: string;
-  target: NovelChapterSummary | undefined;
+  target: ViewerChapter | undefined;
   direction: "previous" | "next";
 }) {
   const label = direction === "previous" ? "이전 화" : "다음 화";
@@ -143,9 +145,9 @@ function EpisodeStepButton({
   }
   return (
     <Button asChild variant="ghost" size="sm">
-      <Link to="/novels/$novelId/episodes/$chapterId" params={{ novelId, chapterId: target.id }}>
+      <EpisodeLink route={route} novelId={novelId} chapterId={target.id}>
         {content}
-      </Link>
+      </EpisodeLink>
     </Button>
   );
 }

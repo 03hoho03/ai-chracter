@@ -3,7 +3,7 @@ import { ChevronRight } from "lucide-react";
 
 import { assertNever } from "@/shared/lib/assertNever";
 
-import type { NotificationResponse, ReportReasonCategory } from "../model/notification";
+import { toNovelRefundNotificationText, type NotificationResponse, type ReportReasonCategory } from "../model/notification";
 import { resolveNotificationDestination } from "../model/notificationDestination";
 
 /** 알림의 사유는 서버가 작품·댓글 신고 사유 값을 그대로 복사해 둔 것이다(응답 스키마에서는 문자열). 생성된
@@ -59,6 +59,20 @@ export function NotificationItemContent({ notification }: { notification: Notifi
         {notification.type === "comment-moderated" && <span className="line-clamp-2 text-xs text-muted-foreground">{notification.adminComment}</span>}
       </span><ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
     </span>;
+  }
+
+  // 노벨 삭제 환급 — 제목과 돌려준 화·클로버 한 줄. 모르는 type 의 폴백(이용제한 제목)에 걸리지 않게 먼저 가른다.
+  if (destination.kind === "cloverHistory") {
+    const text = toNovelRefundNotificationText(notification.novelRefund);
+    return (
+      <span className="flex min-w-0 w-full items-center justify-between gap-2">
+        <span className="flex min-w-0 flex-col gap-0.5">
+          <span className={cn("break-keep text-sm", !notification.read && "font-semibold text-foreground")}>{text.title}</span>
+          <span className="line-clamp-2 text-xs break-keep text-muted-foreground">{text.body}</span>
+        </span>
+        <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+      </span>
+    );
   }
 
   if (destination.kind !== "none") {

@@ -12,10 +12,12 @@ import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { hasNovelErrorCode, toNovelActionError } from "@/entities/novel";
+import { hasNovelErrorCode, novelKeys, toNovelActionError, useNovelQuery } from "@/entities/novel";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { useDeleteNovelMutation } from "../api/useDeleteNovelMutation";
+import { withDeleteConflictRetry } from "../lib/deleteConflictRetry";
+import { RefundNoticeBox } from "./RefundNoticeBox";
 
 type DeleteNovelModalProps = {
   novelId: string;
@@ -30,26 +32,39 @@ type DeleteNovelModalProps = {
  *
  * 진행 중이던 작업은 멈추고 환불된다는 것을 확정 전에 말한다(서버가 같은 트랜잭션에서 환불한다). 실행 버튼은
  * 솔리드 빨강이 아니라 `destructive` 틴트이고, 버튼 순서는 `취소` 먼저다. 실패 문장은 누른 순간 기록한 상태다.
- * 돌려주는 값은 지웠는가다 — 연 버튼이 그 소설과 함께 사라지므로 호출부가 포커스를 둘 곳을 정한다. */
+ * 돌려주는 값은 지웠는가다 — 연 버튼이 그 소설과 함께 사라지므로 호출부가 포커스를 둘 곳을 정한다.
+ *
+ * 노벨에서 이 소설의 화를 소장한 회원이 있으면 몇 명에게 클로버 몇 개를 돌려주는지 확정 전에 말한다(소설 상세의
+ * 삭제 전 확인 값 — 목록에서 열었으면 여기서 받는다). 그 값을 받는 동안은 지우기를 막는다. 그사이 새 소장자가 생겨
+ * 서버가 돌려보내면 한 번은 저절로 다시 보낸다. */
 export const DeleteNovelModal = createCallable<DeleteNovelModalProps, boolean>(({ call, novelId, title, hasActiveJob }) => {
   const queryClient = useQueryClient();
   const router = useRouter();
   const navigate = useNavigate();
   const deleteMutation = useDeleteNovelMutation();
+  // 지운 뒤에는 묻지 않는다 — 캐시를 버린 다음 모달이 닫히며 한 번 더 그려질 때(닫힘 상태로 그린 뒤 내린다) 이 조회가
+  // 비워진 캐시를 보고 지운 소설을 다시 받아 404 가 났다.
+  const [isDeleted, setIsDeleted] = useState(false);
+  const detail = useNovelQuery(novelId, { enabled: !isDeleted });
   const [error, setError] = useState<string | undefined>(undefined);
   const isDeleting = deleteMutation.isPending;
+  const isPreviewPending = detail.isPending;
 
   async function handleDelete() {
-    if (isDeleting) return;
+    if (isDeleting || isPreviewPending) return;
     setError(undefined);
     try {
-      await deleteMutation.mutateAsync(novelId);
+      await withDeleteConflictRetry(() => deleteMutation.mutateAsync(novelId));
     } catch (deleteError) {
       if (!hasNovelErrorCode(deleteError, "NOVEL_NOT_FOUND")) {
-        setError(toNovelActionError(deleteError, "deleteNovel")?.message ?? "소설을 지우지 못했어요. 잠시 후 다시 시도해주세요.");
+        const notice = toNovelActionError(deleteError, "deleteNovel");
+        setError(notice?.message ?? "소설을 지우지 못했어요. 잠시 후 다시 시도해주세요.");
+        // 새 소장자 경합이 이어진 409 면 환급 고지의 수가 낡았다 — 상세를 다시 받아 고지를 맞춘다.
+        if (notice?.shouldRefetchNovel) void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novelId) });
         return;
       }
     }
+    setIsDeleted(true);
     // 지운 소설의 화면(작품 정보·편집 보드·읽기) 위에서 지웠으면 목록으로 옮긴다 — 남으면 그 화면이 곧 「찾을 수
     // 없어요」가 된다. 같은 접두사의 다른 소설(`/novels/abc` 와 `/novels/abcd`)은 경로 구분자로 가른다.
     const pathname = router.state.location.pathname;
@@ -72,6 +87,14 @@ export const DeleteNovelModal = createCallable<DeleteNovelModalProps, boolean>((
           </DialogDescription>
         </DialogHeader>
 
+        {detail.data === undefined ? (
+          <RefundNoticeBox preview={isPreviewPending ? "pending" : "unknown"} scope="novel" subject="이 소설의 화" />
+        ) : (
+          detail.data.purchaseRefunds !== undefined && (
+            <RefundNoticeBox preview={detail.data.purchaseRefunds} scope="novel" subject="이 소설의 화" />
+          )
+        )}
+
         {error !== undefined && (
           <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm break-keep text-destructive-text">
             {error}
@@ -85,7 +108,7 @@ export const DeleteNovelModal = createCallable<DeleteNovelModalProps, boolean>((
           <Button
             type="button"
             variant="destructive"
-            aria-disabled={isDeleting}
+            aria-disabled={isDeleting || isPreviewPending}
             className="aria-disabled:opacity-65"
             onClick={() => void handleDelete()}
           >

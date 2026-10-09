@@ -9,7 +9,9 @@ import {
   NovelizeLockedState,
   toNovelLoadFailure,
   useNovelBoardLayoutQuery,
+  novelKeys,
   useNovelCharactersQuery,
+  useNovelPublicationQuery,
   useNovelQuery,
   type NovelChapterSummary,
   type NovelDetailResponse,
@@ -19,6 +21,7 @@ import { useNovelChapterJob } from "@/features/create-novel-chapter";
 import { DeleteLastChapterModal, removeDeletedChapterCaches } from "@/features/delete-novel";
 import { DiscardManualEditModal, useNovelAiEdit } from "@/features/edit-novel-chapter";
 import { MergeCharacterModal } from "@/features/edit-novel-character";
+import { NovelPublishBoardButton } from "@/features/publish-novel";
 import {
   DeleteSnapshotModal,
   RestoreSnapshotModal,
@@ -189,7 +192,19 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
   // 값을 ref 로 읽는다.
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
-  const model = useMemo(() => toBoardModel(novel, charactersQuery.data), [novel, charactersQuery.data]);
+  // 화 카드의 노벨 공개 표시. 공개본과 견주는 값이라 상세가 바뀌면(화를 고치거나 만들거나 지움) 함께 다시 받는다.
+  // 상세 객체는 새 값을 받을 때만 바뀐다(같은 값이면 구조 공유로 그대로다).
+  const publicationQuery = useNovelPublicationQuery(novel.id);
+  const seenNovelRef = useRef(novel);
+  useEffect(() => {
+    if (seenNovelRef.current === novel) return;
+    seenNovelRef.current = novel;
+    void queryClient.invalidateQueries({ queryKey: novelKeys.publication(novel.id) });
+  }, [queryClient, novel]);
+  const model = useMemo(
+    () => toBoardModel(novel, charactersQuery.data, publicationQuery.data),
+    [novel, charactersQuery.data, publicationQuery.data],
+  );
 
   // 금액 확인은 다른 기능의 모달이라 이 화면이 넣어 준다(기능끼리 서로 가져다 쓰지 않는다). 다시 만들기는 모델도 고르는
   // 확인을, AI 수정은 금액만 묻는 확인을 받는다 — AI 수정은 모델을 고르지 않는다.
@@ -355,6 +370,7 @@ function BoardContent({ novel, select }: { novel: NovelDetailResponse; select: s
           blockedReasonId: hasChapterBlockedReason(flow) ? blockedReasonId : undefined,
           buttonRef: createButtonRef,
         }}
+        publishAction={<NovelPublishBoardButton novel={novel} />}
       />
       {/* 넓은 화면: 캔버스 + 옆 패널. 좁은 화면: 목록 ↔ 패널 화면. 패널 자리는 두 배치에서 같은 트리 자리(같은 부모의
           둘째 칸)라, 창 폭이 1024px 를 넘나들어도 패널이 다시 마운트되지 않아 쓰던 글이 남는다. */}

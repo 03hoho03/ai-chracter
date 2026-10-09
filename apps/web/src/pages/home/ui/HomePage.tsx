@@ -25,17 +25,25 @@ import {
   type ContentType,
   type ThumbnailAspect,
 } from "@/entities/content";
+import { useCloverPricingQuery } from "@/entities/clover";
 import { useViewerPersonaName } from "@/entities/persona";
 import { useSessionQuery } from "@/entities/session";
+import { useHomeWebnovelsQuery } from "@/entities/webnovel";
 import { SITE_INTRO } from "@/shared/config/site";
 import { useInfiniteScrollSentinel } from "@/shared/lib/infinite-scroll/useInfiniteScrollSentinel";
 import { useHorizontalScrollClip } from "@/shared/lib/scroll/useHorizontalScrollClip";
 
 import { useCurationWaitCap } from "../model/curationWaitCap";
-import { shouldRestoreResultsFocus, toHomeCurationLayoutKey, toHomeCurationView } from "../model/homeCuration";
+import {
+  isHomeWebnovelPending,
+  shouldRestoreResultsFocus,
+  toHomeCurationLayoutKey,
+  toHomeCurationView,
+} from "../model/homeCuration";
 import { HOME_EMPTY_MESSAGE, toHomeListEndMessage, toHomeListStatus } from "../model/homeListStatus";
 import { HOME_FILTER_RESET, hasHomeFilter, type HomeSearch } from "../model/homeSearch";
 import { HomeCurationSection } from "./HomeCurationSection";
+import { HomeWebnovelSection } from "./HomeWebnovelSection";
 
 const SORT_LABEL: Record<ContentListSort, string> = {
   latest: "최신순",
@@ -97,14 +105,32 @@ export function HomePage({
   const homeCurationQuery = useHomeCurationQuery(contentType);
   // 큐레이션 응답은 보는 사람과 무관하다 — 한줄소개 속 `{{user}}` 에 넣을 보는 사람의 이름은 여기서 붙인다.
   const viewerPersonaName = useViewerPersonaName(sessionQuery.data !== undefined);
-  const isHoldingGrid = !isFiltered && homeCurationQuery.isPending && !contentListQuery.isPending;
+  // 노벨 섹션은 로그인 회원에게, 노벨이 열려 있을 때만 있다(노벨 API 가 로그인 필수다). 큐레이션과 같은 대기 묶음에
+  // 넣어, 결과 그리드가 그려진 뒤 섹션이 위에서 밀고 들어오지 않게 한다.
+  const isLoggedIn = sessionQuery.data !== undefined;
+  const pricingQuery = useCloverPricingQuery();
+  const isWebnovelOpen = isLoggedIn && pricingQuery.data?.novelPublicEnabled === true;
+  const homeWebnovelsQuery = useHomeWebnovelsQuery({ enabled: isWebnovelOpen });
+  const isWebnovelPending = isHomeWebnovelPending({
+    isSessionPending: sessionQuery.isPending,
+    isLoggedIn,
+    isPricingPending: pricingQuery.isPending,
+    isOpen: isWebnovelOpen,
+    isPending: homeWebnovelsQuery.isPending,
+  });
+  const isCurationPending = homeCurationQuery.isPending || isWebnovelPending;
+  const isHoldingGrid = !isFiltered && isCurationPending && !contentListQuery.isPending;
   const hasGivenUpCuration = useCurationWaitCap(isHoldingGrid);
   const curationView = toHomeCurationView({
     isFiltered,
     hasGivenUp: hasGivenUpCuration,
-    isPending: homeCurationQuery.isPending,
+    isPending: isCurationPending,
     item: homeCurationQuery.data ?? null,
   });
+  const homeWebnovels =
+    isWebnovelOpen && curationView.kind !== "waiting" && !isFiltered && !hasGivenUpCuration
+      ? (homeWebnovelsQuery.data ?? [])
+      : [];
   const isListPending = contentListQuery.isPending || curationView.kind === "waiting";
   const curationLayoutKey = toHomeCurationLayoutKey(curationView);
 
@@ -307,6 +333,7 @@ export function HomePage({
         }}
       >
         {curationView.kind === "shown" && <HomeCurationSection item={curationView.item} viewerPersonaName={viewerPersonaName} onOpen={openDetail} />}
+        {homeWebnovels.length > 0 && <HomeWebnovelSection items={homeWebnovels} />}
 
         {/* 필터를 바꾼 뒤의 포커스 착지점(`changeFilter`). 로딩·빈·실패·목록 어느 분기에서도 마운트돼 있다.
             스크립트로만 포커스를 받는 영역이라 링을 그리지 않는다 — 다음 Tab이 첫 카드로 간다. */}

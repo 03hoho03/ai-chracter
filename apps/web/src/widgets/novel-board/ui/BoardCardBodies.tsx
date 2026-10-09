@@ -1,5 +1,5 @@
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { CircleCheck, Loader2, NotebookPen, Sparkles, UserRound } from "lucide-react";
+import { CircleCheck, Globe, Loader2, NotebookPen, Sparkles, UserRound } from "lucide-react";
 
 import type { CharacterNodeData, EpisodeNodeData, NotesNodeData } from "../model/boardNode";
 
@@ -27,6 +27,13 @@ export function EpisodeCardBody({ data }: { data: EpisodeNodeData }) {
       <span className="flex items-center justify-between gap-2 text-xs font-medium text-muted-foreground">
         <span className="tabular-nums">{data.ordinal}화</span>
         <span className="flex shrink-0 items-center gap-1.5">
+          {data.publicMark !== undefined && (
+            // 중립 표시 — 색 없이 아이콘과 글자로만.
+            <span className="flex items-center gap-1">
+              <Globe aria-hidden className="size-3.5" />
+              {data.publicMark === "published" ? "노벨 공개" : "공개본과 달라요"}
+            </span>
+          )}
           {data.hasPendingAiEdit && (
             <span className="flex items-center">
               <Sparkles aria-hidden className="size-3.5" />
