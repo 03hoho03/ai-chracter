@@ -5,7 +5,7 @@ from typing import Any
 
 import anyio
 import pytest
-from sqlalchemy import select, text, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -28,7 +28,7 @@ from api.core.clover import (
     spend,
 )
 from api.db.models.auth import User
-from api.db.models.clover import CloverLedger, CloverLot, CloverSpendAllocation
+from api.db.models.clover import CloverLedger, CloverLot, CloverSpendAllocation, CloverSpendRefund
 from factories import _make_payment, _make_user, _make_user_with_clover_lot
 
 
@@ -404,6 +404,52 @@ async def test_partial_refund_returns_paid_before_bonus_before_free(db_session: 
     assert await _balance(db_session, user.id) == 13
 
 
+async def _refund_events(db: AsyncSession, spend_ledger_id: uuid.UUID) -> list[CloverSpendRefund]:
+    return list(
+        (
+            await db.scalars(
+                select(CloverSpendRefund)
+                .join(CloverSpendAllocation, CloverSpendAllocation.id == CloverSpendRefund.allocation_id)
+                .where(CloverSpendAllocation.spend_ledger_id == spend_ledger_id)
+            )
+        ).all()
+    )
+
+
+async def test_partial_refunds_leave_one_event_per_returned_allocation(db_session: AsyncSession) -> None:
+    """부분 환급 두 번이 배분마다 돌려준 몫을 그 환급의 원장 행과 함께 남기고, 배분별 합이 `refunded_amount` 와 같다.
+    정산은 이 행의 시각으로 환급을 그 달에 빼므로, 몫이 틀리면 크리에이터 몫이 틀린다. 두 번째 환급은 첫 환급이 다
+    돌려준 유료 배분을 지나는데(돌려줄 양 0) 그 배분에는 행을 남기지 않는다 — 남기면 0 행이 CHECK 에 걸려 환급 전체가
+    실패한다."""
+    user, (free, bonus, paid) = await _user_with_lots(
+        db_session,
+        ("attendance_grant", 10, datetime(2026, 10, 12, tzinfo=UTC)),
+        ("purchase_bonus", 10, None),
+        ("purchase_paid", 10, None),
+    )
+    spent = await spend(db_session, user_id=user.id, amount=25, kind="chat_spend")
+    assert spent is not None
+
+    await refund_spend(db_session, user_id=user.id, spend_ledger_id=spent.ledger_id, amount=8, kind="chat_refund")
+    await refund_spend(db_session, user_id=user.id, spend_ledger_id=spent.ledger_id, amount=4, kind="chat_refund")
+
+    allocations = {a.lot_id: a for a in await _allocations(db_session, spent.ledger_id)}
+    # 원장 정렬은 삽입 순서가 아니라서 두 환급의 원장 행을 금액으로 가른다.
+    refund_ledgers = {r.amount: r.id for r in await _ledger_rows(db_session, user.id) if r.kind == "chat_refund"}
+    first, second = refund_ledgers[8], refund_ledgers[4]
+    events = await _refund_events(db_session, spent.ledger_id)
+    assert sorted((e.allocation_id, e.refund_ledger_id, e.amount) for e in events) == sorted(
+        [
+            (allocations[paid.id].id, first, 5),
+            (allocations[bonus.id].id, first, 3),
+            (allocations[bonus.id].id, second, 4),
+        ]
+    )
+    for allocation in allocations.values():
+        assert sum(e.amount for e in events if e.allocation_id == allocation.id) == allocation.refunded_amount
+    assert allocations[free.id].refunded_amount == 0
+
+
 async def test_refund_beyond_the_unrefunded_spend_raises(db_session: AsyncSession) -> None:
     """같은 차감을 두 번 환급하면 두 번째가 남은 환급 가능량을 넘어 예외로 롤백된다(이중 환급 방지)."""
     user = await _make_user_with_clover_lot(db_session, clover_balance=50)
@@ -434,6 +480,7 @@ async def test_refund_to_a_withdrawn_user_changes_nothing(db_session: AsyncSessi
     assert await _balance(db_session, user.id) == 20
     assert len(await _ledger_rows(db_session, user.id)) == ledger_before
     assert [a.refunded_amount for a in await _allocations(db_session, spent.ledger_id)] == [0]
+    assert await _refund_events(db_session, spent.ledger_id) == []
 
 
 async def test_refund_without_a_spend_id_grants_a_permanent_lot(db_session: AsyncSession) -> None:
@@ -447,6 +494,16 @@ async def test_refund_without_a_spend_id_grants_a_permanent_lot(db_session: Asyn
     lot = await db_session.scalar(select(CloverLot).where(CloverLot.user_id == user.id))
     assert lot is not None
     assert (lot.kind, lot.remaining, lot.expires_at) == ("novelize_refund", 40, None)
+    # 돌려줄 배분이 없으므로 환급 행도 없다.
+    refund_ledger_ids = [r.id for r in await _ledger_rows(db_session, user.id)]
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(CloverSpendRefund)
+            .where(CloverSpendRefund.refund_ledger_id.in_(refund_ledger_ids))
+        )
+        == 0
+    )
 
 
 # ── 어드민 회수는 무료 로트만 ───────────────────────────────────────────────
