@@ -75,8 +75,9 @@ async def independent_session_factory(
        `clover_lots` 테이블이 생긴 뒤로 로트도 이 순서에 들어왔다).
     3. **teardown이 실패하면 다음 테스트가 오염된 상태를 본다.** finalizer는 테스트 실패
        시에도 돌지만 teardown 자체가 예외를 내면 막을 방법이 없다.
-    4. 🔴 **`pytest-xdist`를 도입하면 이 픽스처가 먼저 깨진다** — 워커 둘이 같은 테스트 DB를
-       공유하면 한쪽 teardown이 다른 쪽이 쓰는 중인 유저를 지운다. 표지가 워커별로 갈려야 한다.
+    4. **`pytest-xdist`(`-n`) 아래서도 표지가 워커끼리 섞이지 않는다** — `conftest.py`가 워커마다
+       테스트 DB를 따로 주므로 한쪽 teardown이 다른 워커가 쓰는 중인 유저를 볼 수 없다. 워커들이
+       DB 하나를 공유하게 바꾸면 이 teardown이 먼저 깨진다.
     """
     factory = async_sessionmaker(db_engine, expire_on_commit=False)
     yield factory

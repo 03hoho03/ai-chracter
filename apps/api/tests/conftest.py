@@ -68,6 +68,21 @@ os.environ["DATABASE_URL"] = os.environ.get(
 )
 os.environ["REDIS_URL"] = os.environ.get("TEST_REDIS_URL", "redis://localhost:6379/1")
 
+# pytest-xdist (`-n`) workers are separate processes that each run the session fixtures —
+# sharing one database, every worker's `alembic downgrade base` would drop tables under the
+# others, and the Redis flush fixtures below delete by key pattern, which would wipe keys
+# another worker's test is using. So each worker gets its own database (`…_gw0_test`, still
+# ending in `_test` for the guard below) and its own Redis index (base index + worker number;
+# Redis ships 16 indexes, so this holds up to `-n 15` on the default `/1`).
+_xdist_worker = os.environ.get("PYTEST_XDIST_WORKER")
+if _xdist_worker is not None:
+    _db_url = make_url(os.environ["DATABASE_URL"])
+    _db_name = _db_url.database or ""
+    _db_name = f"{_db_name.removesuffix('_test')}_{_xdist_worker}_test"
+    os.environ["DATABASE_URL"] = _db_url.set(database=_db_name).render_as_string(hide_password=False)
+    _redis_base, _, _redis_index = os.environ["REDIS_URL"].rpartition("/")
+    os.environ["REDIS_URL"] = f"{_redis_base}/{int(_redis_index) + int(_xdist_worker.removeprefix('gw'))}"
+
 from api.chat.prompt_set_cache import ACTIVE_PROMPT_SET_KEY_PREFIX
 from api.content.publish_filter_memo import PASSED_KEY_PREFIX
 from api.core.config import settings

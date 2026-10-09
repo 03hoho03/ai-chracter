@@ -231,6 +231,9 @@ export TEST_REDIS_URL=redis://localhost:6379/<인덱스>
 - **DB 이름은 `_test`로 끝날 것** — 아니면 `conftest`가 `RuntimeError`로 거부한다(오설정 시 실패 모드가 "dev DB 전체 삭제"라 방어함).
   DB 자체는 없으면 자동 생성되므로 미리 만들 필요 없다.
 - **Redis 인덱스 배분**: `0` = dev, `1` = 기본 pytest, `2`~`15` = 병렬 체크아웃용. 1번을 재사용하면 기본 실행과 부딪힌다.
+- **`-n N`(pytest-xdist)으로 돌리면 인덱스를 N개 연달아 쓴다** — 워커마다 `<인덱스>`, `<인덱스>+1`, … 이고 DB도
+  `…_gw0_test`, `…_gw1_test` 처럼 워커마다 따로 생긴다. 기본값(1번)으로 `-n 4`를 돌리면 1~4번을 쓰므로, 같은
+  Redis 를 쓰는 다른 체크아웃의 인덱스와 겹치지 않게 범위째 나눠 준다.
 - dev DB(`ai_character_chat`)와 S3는 신경 쓸 것 없다 — pytest는 dev DB를 건드리지 않고, S3는 `conftest`가
   인프로세스 moto를 랜덤 포트로 띄워 이미 프로세스마다 격리돼 있다.
 
