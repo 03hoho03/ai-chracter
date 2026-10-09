@@ -30,6 +30,7 @@ import { AiEditInstructionModal, DiscardManualEditModal } from "@/features/edit-
 import { NovelRevisionHistoryModal } from "@/features/novel-revision-history";
 import { CommentActionModal, CommentLoginModal, CommentReportModal } from "@/features/work-comments";
 import { ContentComments } from "@/widgets/content-comments";
+import { NotFoundPage } from "@/pages/not-found";
 
 export type RouterContext = {
   queryClient: QueryClient;
@@ -47,6 +48,9 @@ export const Route = createRootRouteWithContext<RouterContext>()({
   // 루트에만 걸어 하위 라우트는 여전히 `SafeFragment`이므로 에러가 루트까지 버블링돼
   // 오늘과 동일하게 헤더 포함 전체가 교체된다(블라스트 반경 불변).
   errorComponent: ErrorComponent,
+  // 지정하지 않으면 라우터 기본값인 영문 "Not Found" 한 줄이 나간다. Worker는 모르는 경로에 셸 본문을 404로
+  // 주므로(`worker/routes.ts`) 사용자가 보는 건 이 화면이다.
+  notFoundComponent: NotFoundPage,
 });
 
 function RootComponent() {
