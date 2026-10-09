@@ -60,7 +60,7 @@ export function ViewerBottomBar({ ref, id, novelId, position, previous, next, is
     >
       {settingsPanel}
       {position.mode === "page" ? (
-        <nav aria-label="화 이동" className="border-t border-border pb-[env(safe-area-inset-bottom)]">
+        <nav aria-label="화 이동" className="border-t border-border pb-safe">
           <div className="flex items-center gap-2 px-4 sm:px-6" style={{ height: VIEWER_BAR_ROW_PX }}>
             <EpisodeStepButton novelId={novelId} target={previous} direction="previous" />
             <div className="min-w-0 flex-1">

@@ -1,5 +1,4 @@
 import { Button } from "@ai-character-chat/ui/components/button";
-import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useAtomValue } from "jotai";
 import { useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -13,6 +12,7 @@ import {
 } from "@/entities/novel";
 
 import { toEscapeTarget } from "../lib/escapeTarget";
+import { VIEWER_BAR_SPACE_PX } from "../lib/pageFit";
 import { toPageTypography } from "../lib/pageFormat";
 import { readerTypographyClassName } from "../lib/readerTypography";
 import { toEpisodeScrollProgress } from "../lib/readingProgress";
@@ -81,14 +81,15 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
   const { saved, isAbsenceKnown } = toChapterSavedReadingPosition(summary, novel.lastRead);
   const { fit } = pageFit;
   // 판형 배율이 하한 밑인 화면(가로로 눕힌 폰, 아주 낮은 창)은 글자가 너무 작아 이 기기에서만 스크롤 모드로 보인다.
-  // 저장된 넘김 방식은 바꾸지 않는다 — 세로로 돌리거나 창을 키우면 페이지 모드로 돌아온다.
+  // 저장된 넘김 방식은 바꾸지 않는다 — 세로로 돌리거나 창을 키우면 페이지 모드로 돌아온다. 안내 문구는 기기 종류와
+  // 무관하게 쓴다(마우스 기기의 낮은 창에는 돌릴 화면이 없다).
   const isScrollForced = settings.mode === "page" && fit?.isBelowMinimum === true;
   const mode = isScrollForced ? "scroll" : settings.mode;
   const inEpisodeLocation = mode === "scroll" ? `${Math.round(progress * 100)}%` : pagedPosition.pageLabel;
   const location = `${summary.ordinal}/${novel.chapters.length}화${inEpisodeLocation === undefined ? "" : ` · ${inEpisodeLocation}`}`;
 
   useEffect(() => {
-    if (isScrollForced) toast("화면이 낮아 이 기기에서는 스크롤로 보여요. 세로로 돌리면 페이지로 돌아가요.", { id: SCROLL_FORCED_TOAST_ID });
+    if (isScrollForced) toast("화면이 작아 이 기기에서는 스크롤로 보여요. 화면이 넉넉해지면 페이지로 돌아가요.", { id: SCROLL_FORCED_TOAST_ID });
   }, [isScrollForced]);
 
   // 두 넘김 방식 모두 읽는 동안이라 본문이 아니라 여기서 잡는다 — 방식을 바꿔도 놓았다 다시 잡지 않는다.
@@ -188,9 +189,13 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
           포커스 때는 `sr-only` 를 아예 걸지 않는다(`not-focus-visible:`) — `not-sr-only` 로 풀면 그 높이·패딩 초기화가
           버튼 크기를 덮어 납작해진다. 자리는 감싼 요소의 여백으로 잡고 버튼의 전환을 끈다 — 그대로 두면 `sr-only` 가
           풀리는 순간 1px 에서 제 크기로, 여백이 제자리로 미끄러진다.
-          바가 열려 있으면 위 바 아래로 내려 뒤로 버튼·화 제목을 가리지 않는다. 바와 같이 좌우 safe-area 도 더해 가로로
+          바가 열려 있으면 위 바 아래로 내려 뒤로 버튼·화 제목을 가리지 않는다 — 내리는 거리는 바와 같은 px 상수다(rem
+          이면 브라우저 기본 글자 크기에 따라 바와 겹치거나 떨어진다). 바와 같이 좌우 safe-area 도 더해 가로로
           눕힌 노치 폰에서 버튼이 노치 밑에 깔리지 않게 한다. */}
-      <div className={cn("pointer-events-none fixed inset-x-0 top-0 z-40 px-safe pt-safe", chrome.isVisible && "mt-14")}>
+      <div
+        className="pointer-events-none fixed inset-x-0 top-0 z-40 px-safe pt-safe"
+        style={chrome.isVisible ? { marginTop: VIEWER_BAR_SPACE_PX } : undefined}
+      >
         <div className="p-4">
           <Button
             ref={chrome.menuButtonRef}
@@ -220,6 +225,30 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
         settingsButtonRef={settingsButtonRef}
         onOpenToc={() => openToc(tocButtonRef.current)}
         onToggleSettings={() => (isSettingsOpen ? closeSettings() : setIsSettingsOpen(true))}
+      />
+
+      {/* 아래 바는 DOM 에서 본문보다 앞에 둔다(고정 위치라 화면 자리는 같고 쌓임은 z 값이 정한다). 바를 연 키보드
+          사용자가 위 바에서 Tab 으로 쪽 이동 슬라이더에 가는 길에 화 끝 링크를 거치지 않게 — 거치면 브라우저가 그
+          링크를 보이려고 화 끝 화면으로 옮겨 화가 다 읽음으로 저장된다. */}
+      <ViewerBottomBar
+        ref={chrome.bottomBarRef}
+        id={bottomBarId}
+        novelId={novel.id}
+        position={
+          mode === "scroll"
+            ? { mode: "scroll", progress }
+            : {
+                mode: "page",
+                screen: pagedPosition.screen,
+                screenCount: pagedPosition.screenCount,
+                pageLabel: pagedPosition.pageLabel,
+                onSeek: (screen) => pagedReaderRef.current?.goTo(screen),
+              }
+        }
+        previous={previous}
+        next={next}
+        isVisible={chrome.isVisible}
+        settingsPanel={isSettingsOpen ? <ViewerSettingsPanel ref={settingsPanelRef} id={settingsPanelId} isScrollForced={isScrollForced} /> : null}
       />
 
       {/* 판형을 창에 맞추기 전에는 본문을 그리지 않는다 — 칠하기 전에 정해지므로 빈 화면이 보이지는 않는다. */}
@@ -255,27 +284,6 @@ export function NovelViewer({ novel, summary, chapter }: NovelViewerProps) {
           onOpenToc={openToc}
         />
       )}
-
-      <ViewerBottomBar
-        ref={chrome.bottomBarRef}
-        id={bottomBarId}
-        novelId={novel.id}
-        position={
-          mode === "scroll"
-            ? { mode: "scroll", progress }
-            : {
-                mode: "page",
-                screen: pagedPosition.screen,
-                screenCount: pagedPosition.screenCount,
-                pageLabel: pagedPosition.pageLabel,
-                onSeek: (screen) => pagedReaderRef.current?.goTo(screen),
-              }
-        }
-        previous={previous}
-        next={next}
-        isVisible={chrome.isVisible}
-        settingsPanel={isSettingsOpen ? <ViewerSettingsPanel ref={settingsPanelRef} id={settingsPanelId} isScrollForced={isScrollForced} /> : null}
-      />
 
       <ViewerTocSheet
         novel={novel}

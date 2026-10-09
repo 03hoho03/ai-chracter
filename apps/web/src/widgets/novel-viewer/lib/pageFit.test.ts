@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { PAGE_SCALE_MAX, PAGE_SCALE_MIN, toPageFit, type PageFitInput } from "./pageFit";
+import { PAGE_SCALE_MAX, PAGE_SCALE_MIN, PAGE_SCALE_RESUME, toPageFit, type PageFitInput } from "./pageFit";
 
 const NO_SAFE_AREA = { top: 0, right: 0, bottom: 0, left: 0 };
 
 function fitOf(viewportWidth: number, viewportHeight: number, overrides: Partial<PageFitInput> = {}) {
-  return toPageFit({ viewportWidth, viewportHeight, safeArea: NO_SAFE_AREA, isFinePointer: false, ...overrides });
+  return toPageFit({ viewportWidth, viewportHeight, safeArea: NO_SAFE_AREA, isFinePointer: false, wasBelowMinimum: false, ...overrides });
 }
 
 // 위·아래 바 자리는 한쪽 57px(줄 56 + 경계선 1)이라 판형이 쓸 수 있는 높이는 창 높이 − 114 다.
@@ -75,6 +75,19 @@ describe("toPageFit", () => {
 
   it("하한에 딱 맞는 배율은 하한 밑이 아니다", () => {
     expect(fitOf(360 * PAGE_SCALE_MIN, 2000).isBelowMinimum).toBe(false);
+  });
+
+  it("직전이 하한 밑이었으면 하한을 넘어도 돌아오는 배율에 닿을 때까지 하한 밑으로 둔다", () => {
+    // 한 장이고 폭이 배율을 정하는 창 — 폭 / 360 이 곧 배율이다.
+    const between = 360 * ((PAGE_SCALE_MIN + PAGE_SCALE_RESUME) / 2);
+
+    expect(fitOf(between, 2000).isBelowMinimum).toBe(false);
+    expect(fitOf(between, 2000, { wasBelowMinimum: true }).isBelowMinimum).toBe(true);
+    expect(fitOf(360 * PAGE_SCALE_RESUME, 2000, { wasBelowMinimum: true }).isBelowMinimum).toBe(false);
+  });
+
+  it("돌아오는 배율은 iPhone SE 의 Safari 세로보다 낮다 — 가로로 눕혔다 세우면 페이지로 돌아온다", () => {
+    expect(fitOf(375, 553, { wasBelowMinimum: true }).isBelowMinimum).toBe(false);
   });
 
   it("아직 재지 못한 0 크기 창에서도 음수나 NaN 을 내지 않는다", () => {
