@@ -1,0 +1,1465 @@
+{
+  "chat_ending_judgment": {
+    "bedrock": {
+      "cacheBlocks": null,
+      "failures": {
+        "empty": null,
+        "ok": null,
+        "truncated": null
+      },
+      "maxTokens": "bedrock_chat_max_tokens",
+      "model": "bedrock_sonnet_model_id",
+      "timeout": "bedrock_chat_timeout_ms"
+    },
+    "declaredDefaults": {
+      "bedrock": {
+        "maxTokens": 4096,
+        "timeoutMs": 45000
+      },
+      "generate": {
+        "maxOutputTokens": 8192,
+        "thinking": null,
+        "timeoutMs": 20000
+      },
+      "structured": {
+        "maxOutputTokens": null,
+        "thinking": null,
+        "timeoutMs": 20000
+      }
+    },
+    "gemini": {
+      "generate": {
+        "failures": {
+          "empty": null,
+          "ok": null,
+          "truncated": null
+        },
+        "maxOutputTokens": "gemini_max_output_tokens",
+        "model": "gemini_model_name",
+        "seed": true,
+        "thinking": {
+          "budget": "gemini_thinking_budget",
+          "level": null
+        },
+        "timeout": "gemini_judgment_timeout_ms"
+      },
+      "structured": {
+        "failures": {
+          "empty": "LLMClientError",
+          "ok": null,
+          "truncated": "LLMClientError"
+        },
+        "maxOutputTokens": null,
+        "model": "gemini_ending_judgment_model_name",
+        "seed": false,
+        "thinking": null,
+        "timeout": "gemini_judgment_timeout_ms"
+      }
+    },
+    "inJudgmentRatio": true,
+    "metricKeys": [
+      "chat_ending_judgment|bedrock_sonnet_model_id|calls",
+      "chat_ending_judgment|bedrock_sonnet_model_id|candidates",
+      "chat_ending_judgment|bedrock_sonnet_model_id|prompt",
+      "chat_ending_judgment|bedrock_sonnet_model_id|total",
+      "chat_ending_judgment|gemini_ending_judgment_model_name|calls",
+      "chat_ending_judgment|gemini_ending_judgment_model_name|candidates",
+      "chat_ending_judgment|gemini_ending_judgment_model_name|prompt",
+      "chat_ending_judgment|gemini_ending_judgment_model_name|total",
+      "chat_ending_judgment|gemini_model_name|calls",
+      "chat_ending_judgment|gemini_model_name|candidates",
+      "chat_ending_judgment|gemini_model_name|prompt",
+      "chat_ending_judgment|gemini_model_name|total"
+    ],
+    "routingWhenSonnet": {
+      "generate": "gemini",
+      "structured": "gemini",
+      "warned": true
+    },
+    "usageLogLines": [
+      "gemini_usage call_site=chat_ending_judgment model=gemini_model_name",
+      "gemini_usage call_site=chat_ending_judgment model=gemini_ending_judgment_model_name",
+      "bedrock_usage call_site=chat_ending_judgment model=bedrock_sonnet_model_id"
+    ]
+  },
+  "chat_generate": {
+    "bedrock": {
+      "cacheBlocks": [
+        false,
+        true,
+        false
+      ],
+      "failures": {
+        "empty": null,
+        "ok": null,
+        "truncated": null
+      },
+      "maxTokens": "bedrock_chat_max_tokens",
+      "model": "bedrock_sonnet_model_id",
+      "timeout": "bedrock_chat_timeout_ms"
+    },
+    "declaredDefaults": {
+      "bedrock": {
+        "maxTokens": 4096,
+        "timeoutMs": 45000
+      },
+      "generate": {
+        "maxOutputTokens": 8192,
+        "thinking": null,
+        "timeoutMs": 45000
+      },
+      "structured": {
+        "maxOutputTokens": null,
+        "thinking": null,
+        "timeoutMs": 45000
+      }
+    },
+    "gemini": {
+      "generate": {
+        "failures": {
+          "empty": null,
+          "ok": null,
+          "truncated": null
+        },
+        "maxOutputTokens": "gemini_max_output_tokens",
+        "model": "gemini_model_name",
+        "seed": true,
+        "thinking": {
+          "budget": "gemini_thinking_budget",
+          "level": null
+        },
+        "timeout": "gemini_generate_timeout_ms"
+      },
+      "structured": {
+        "failures": {
+          "empty": "LLMClientError",
+          "ok": null,
+          "truncated": "LLMClientError"
+        },
+        "maxOutputTokens": null,
+        "model": "gemini_model_name",
+        "seed": false,
+        "thinking": null,
+        "timeout": "gemini_generate_timeout_ms"
+      }
+    },
+    "inJudgmentRatio": false,
+    "metricKeys": [
+      "chat_generate|bedrock_sonnet_model_id|calls",
+      "chat_generate|bedrock_sonnet_model_id|candidates",
+      "chat_generate|bedrock_sonnet_model_id|prompt",
+      "chat_generate|bedrock_sonnet_model_id|total",
+      "chat_generate|gemini_model_name|calls",
+      "chat_generate|gemini_model_name|candidates",
+      "chat_generate|gemini_model_name|prompt",
+      "chat_generate|gemini_model_name|total"
+    ],
+    "routingWhenSonnet": {
+      "generate": "bedrock",
+      "structured": "gemini",
+      "warned": false
+    },
+    "usageLogLines": [
+      "gemini_usage call_site=chat_generate model=gemini_model_name",
+      "bedrock_usage call_site=chat_generate model=bedrock_sonnet_model_id"
+    ]
+  },
+  "chat_media_book_image": {
+    "bedrock": {
+      "cacheBlocks": null,
+      "failures": {
+        "empty": null,
+        "ok": null,
+        "truncated": null
+      },
+      "maxTokens": "bedrock_chat_max_tokens",
+      "model": "bedrock_sonnet_model_id",
+      "timeout": "bedrock_chat_timeout_ms"
+    },
+    "declaredDefaults": {
+      "bedrock": {
+        "maxTokens": 4096,
+        "timeoutMs": 45000
+      },
+      "generate": {
+        "maxOutputTokens": 8192,
+        "thinking": null,
+        "timeoutMs": 20000
+      },
+      "structured": {
+        "maxOutputTokens": null,
+        "thinking": null,
+        "timeoutMs": 20000
+      }
+    },
+    "gemini": {
+      "generate": {
+        "failures": {
+          "empty": null,
+          "ok": null,
+          "truncated": null
+        },
+        "maxOutputTokens": "gemini_max_output_tokens",
+        "model": "gemini_model_name",
+        "seed": true,
+        "thinking": {
+          "budget": "gemini_thinking_budget",
+          "level": null
+        },
+        "timeout": "gemini_judgment_timeout_ms"
+      },
+      "structured": {
+        "failures": {
+          "empty": "LLMClientError",
+          "ok": null,
+          "truncated": "LLMClientError"
+        },
+        "maxOutputTokens": null,
+        "model": "gemini_image_judgment_model_name",
+        "seed": false,
+        "thinking": null,
+        "timeout": "gemini_judgment_timeout_ms"
+      }
+    },
+    "inJudgmentRatio": true,
+    "metricKeys": [
+      "chat_media_book_image|bedrock_sonnet_model_id|calls",
+      "chat_media_book_image|bedrock_sonnet_model_id|candidates",
+      "chat_media_book_image|bedrock_sonnet_model_id|prompt",
+      "chat_media_book_image|bedrock_sonnet_model_id|total",
+      "chat_media_book_image|gemini_image_judgment_model_name|calls",
+      "chat_media_book_image|gemini_image_judgment_model_name|candidates",
+      "chat_media_book_image|gemini_image_judgment_model_name|prompt",
+      "chat_media_book_image|gemini_image_judgment_model_name|total",
+      "chat_media_book_image|gemini_model_name|calls",
+      "chat_media_book_image|gemini_model_name|candidates",
+      "chat_media_book_image|gemini_model_name|prompt",
+      "chat_media_book_image|gemini_model_name|total"
+    ],
+    "routingWhenSonnet": {
+      "generate": "gemini",
+      "structured": "gemini",
+      "warned": true
+    },
+    "usageLogLines": [
+      "gemini_usage call_site=chat_media_book_image model=gemini_model_name",
+      "gemini_usage call_site=chat_media_book_image model=gemini_image_judgment_model_name",
+      "bedrock_usage call_site=chat_media_book_image model=bedrock_sonnet_model_id"
+    ]
+  },
+  "chat_memory_summary": {
+    "bedrock": {
+      "cacheBlocks": null,
+      "failures": {
+        "empty": null,
+        "ok": null,
+        "truncated": null
+      },
+      "maxTokens": "bedrock_chat_max_tokens",
+      "model": "bedrock_sonnet_model_id",
+      "timeout": "bedrock_chat_timeout_ms"
+    },
+    "declaredDefaults": {
+      "bedrock": {
+        "maxTokens": 4096,
+        "timeoutMs": 45000
+      },
+      "generate": {
+        "maxOutputTokens": 8192,
+        "thinking": null,
+        "timeoutMs": 60000
+      },
+      "structured": {
+        "maxOutputTokens": null,
+        "thinking": null,
+        "timeoutMs": 60000
+      }
+    },
+    "gemini": {
+      "generate": {
+        "failures": {
+          "empty": null,
+          "ok": null,
+          "truncated": null
+        },
+        "maxOutputTokens": "gemini_max_output_tokens",
+        "model": "gemini_model_name",
+        "seed": true,
+        "thinking": {
+          "budget": "gemini_thinking_budget",
+          "level": null
+        },
+        "timeout": "gemini_memory_summary_timeout_ms"
+      },
+      "structured": {
+        "failures": {
+          "empty": "LLMClientError",
+          "ok": null,
+          "truncated": "LLMClientError"
+        },
+        "maxOutputTokens": null,
+        "model": "gemini_model_name",
+        "seed": false,
+        "thinking": null,
+        "timeout": "gemini_memory_summary_timeout_ms"
+      }
+    },
+    "inJudgmentRatio": false,
+    "metricKeys": [
+      "chat_memory_summary|bedrock_sonnet_model_id|calls",
+      "chat_memory_summary|bedrock_sonnet_model_id|candidates",
+      "chat_memory_summary|bedrock_sonnet_model_id|prompt",
+      "chat_memory_summary|bedrock_sonnet_model_id|total",
+      "chat_memory_summary|gemini_model_name|calls",
+      "chat_memory_summary|gemini_model_name|candidates",
+      "chat_memory_summary|gemini_model_name|prompt",
+      "chat_memory_summary|gemini_model_name|total"
+    ],
+    "routingWhenSonnet": {
+      "generate": "gemini",
+      "structured": "gemini",
+      "warned": true
+    },
+    "usageLogLines": [
+      "gemini_usage call_site=chat_memory_summary model=gemini_model_name",
+      "bedrock_usage call_site=chat_memory_summary model=bedrock_sonnet_model_id"
+    ]
+  },
+  "chat_situational_image": {
+    "bedrock": {
+      "cacheBlocks": null,
+      "failures": {
+        "empty": null,
+        "ok": null,
+        "truncated": null
+      },
+      "maxTokens": "bedrock_chat_max_tokens",
+      "model": "bedrock_sonnet_model_id",
+      "timeout": "bedrock_chat_timeout_ms"
+    },
+    "declaredDefaults": {
+      "bedrock": {
+        "maxTokens": 4096,
+        "timeoutMs": 45000
+      },
+      "generate": {
+        "maxOutputTokens": 8192,
+        "thinking": null,
+        "timeoutMs": 20000
+      },
+      "structured": {
+        "maxOutputTokens": null,
+        "thinking": null,
+        "timeoutMs": 20000
+      }
+    },
+    "gemini": {
+      "generate": {
+        "failures": {
+          "empty": null,
+          "ok": null,
+          "truncated": null
+        },
+        "maxOutputTokens": "gemini_max_output_tokens",
+        "model": "gemini_model_name",
+        "seed": true,
+        "thinking": {
+          "budget": "gemini_thinking_budget",
+          "level": null
+        },
+        "timeout": "gemini_judgment_timeout_ms"
+      },
+      "structured": {
+        "failures": {
+          "empty": "LLMClientError",
+          "ok": null,
+          "truncated": "LLMClientError"
+        },
+        "maxOutputTokens": null,
+        "model": "gemini_image_judgment_model_name",
+        "seed": false,
+        "thinking": null,
+        "timeout": "gemini_judgment_timeout_ms"
+      }
+    },
+    "inJudgmentRatio": true,
+    "metricKeys": [
+      "chat_situational_image|bedrock_sonnet_model_id|calls",
+      "chat_situational_image|bedrock_sonnet_model_id|candidates",
+      "chat_situational_image|bedrock_sonnet_model_id|prompt",
+      "chat_situational_image|bedrock_sonnet_model_id|total",
+      "chat_situational_image|gemini_image_judgment_model_name|calls",
+      "chat_situational_image|gemini_image_judgment_model_name|candidates",
+      "chat_situational_image|gemini_image_judgment_model_name|prompt",
+      "chat_situational_image|gemini_image_judgment_model_name|total",
+      "chat_situational_image|gemini_model_name|calls",
+      "chat_situational_image|gemini_model_name|candidates",
+      "chat_situational_image|gemini_model_name|prompt",
+      "chat_situational_image|gemini_model_name|total"
+    ],
+    "routingWhenSonnet": {
+      "generate": "gemini",
+      "structured": "gemini",
+      "warned": true
+    },
+    "usageLogLines": [
+      "gemini_usage call_site=chat_situational_image model=gemini_model_name",
+      "gemini_usage call_site=chat_situational_image model=gemini_image_judgment_model_name",
+      "bedrock_usage call_site=chat_situational_image model=bedrock_sonnet_model_id"
+    ]
+  },
+  "chat_stat_judgment": {
+    "bedrock": {
+      "cacheBlocks": null,
+      "failures": {
+        "empty": null,
+        "ok": null,
+        "truncated": null
+      },
+      "maxTokens": "bedrock_chat_max_tokens",
+      "model": "bedrock_sonnet_model_id",
+      "timeout": "bedrock_chat_timeout_ms"
+    },
+    "declaredDefaults": {
+      "bedrock": {
+        "maxTokens": 4096,
+        "timeoutMs": 45000
+      },
+      "generate": {
+        "maxOutputTokens": 8192,
+        "thinking": null,
+        "timeoutMs": 20000
+      },
+      "structured": {
+        "maxOutputTokens": null,
+        "thinking": null,
+        "timeoutMs": 20000
+      }
+    },
+    "gemini": {
+      "generate": {
+        "failures": {
+          "empty": null,
+          "ok": null,
+          "truncated": null
+        },
+        "maxOutputTokens": "gemini_max_output_tokens",
+        "model": "gemini_model_name",
+        "seed": true,
+        "thinking": {
+          "budget": "gemini_thinking_budget",
+          "level": null
+        },
+        "timeout": "gemini_judgment_timeout_ms"
+      },
+      "structured": {
+        "failures": {
+          "empty": "LLMClientError",
+          "ok": null,
+          "truncated": "LLMClientError"
+        },
+        "maxOutputTokens": null,
+        "model": "gemini_stat_judgment_model_name",
+        "seed": false,
+        "thinking": null,
+        "timeout": "gemini_judgment_timeout_ms"
+      }
+    },
+    "inJudgmentRatio": true,
+    "metricKeys": [
+      "chat_stat_judgment|bedrock_sonnet_model_id|calls",
+      "chat_stat_judgment|bedrock_sonnet_model_id|candidates",
+      "chat_stat_judgment|bedrock_sonnet_model_id|prompt",
+      "chat_stat_judgment|bedrock_sonnet_model_id|total",
+      "chat_stat_judgment|gemini_model_name|calls",
+      "chat_stat_judgment|gemini_model_name|candidates",
+      "chat_stat_judgment|gemini_model_name|prompt",
+      "chat_stat_judgment|gemini_model_name|total",
+      "chat_stat_judgment|gemini_stat_judgment_model_name|calls",
+      "chat_stat_judgment|gemini_stat_judgment_model_name|candidates",
+      "chat_stat_judgment|gemini_stat_judgment_model_name|prompt",
+      "chat_stat_judgment|gemini_stat_judgment_model_name|total"
+    ],
+    "routingWhenSonnet": {
+      "generate": "gemini",
+      "structured": "gemini",
+      "warned": true
+    },
+    "usageLogLines": [
+      "gemini_usage call_site=chat_stat_judgment model=gemini_model_name",
+      "gemini_usage call_site=chat_stat_judgment model=gemini_stat_judgment_model_name",
+      "bedrock_usage call_site=chat_stat_judgment model=bedrock_sonnet_model_id"
+    ]
+  },
+  "novelize_boundary": {
+    "bedrock": {
+      "cacheBlocks": null,
+      "failures": {
+        "empty": "LLMEmptyResponseError",
+        "ok": null,
+        "truncated": "LLMTruncatedError"
+      },
+      "maxTokens": "bedrock_chat_max_tokens",
+      "model": "bedrock_sonnet_model_id",
+      "timeout": "bedrock_chat_timeout_ms"
+    },
+    "declaredDefaults": {
+      "bedrock": {
+        "maxTokens": 4096,
+        "timeoutMs": 45000
+      },
+      "generate": {
+        "maxOutputTokens": 8192,
+        "thinking": null,
+        "timeoutMs": 30000
+      },
+      "structured": {
+        "maxOutputTokens": null,
+        "thinking": null,
+        "timeoutMs": 30000
+      }
+    },
+    "gemini": {
+      "generate": {
+        "failures": {
+          "empty": "LLMEmptyResponseError",
+          "ok": null,
+          "truncated": "LLMTruncatedError"
+        },
+        "maxOutputTokens": "gemini_max_output_tokens",
+        "model": "gemini_model_name",
+        "seed": true,
+        "thinking": {
+          "budget": "gemini_thinking_budget",
+          "level": null
+        },
+        "timeout": "gemini_novelize_boundary_timeout_ms"
+      },
+      "structured": {
+        "failures": {
+          "empty": "LLMEmptyResponseError",
+          "ok": null,
+          "truncated": "LLMTruncatedError"
+        },
+        "maxOutputTokens": null,
+        "model": "gemini_model_name",
+        "seed": false,
+        "thinking": null,
+        "timeout": "gemini_novelize_boundary_timeout_ms"
+      }
+    },
+    "inJudgmentRatio": false,
+    "metricKeys": [
+      "novelize_boundary|bedrock_sonnet_model_id|calls",
+      "novelize_boundary|bedrock_sonnet_model_id|candidates",
+      "novelize_boundary|bedrock_sonnet_model_id|prompt",
+      "novelize_boundary|bedrock_sonnet_model_id|total",
+      "novelize_boundary|gemini_model_name|calls",
+      "novelize_boundary|gemini_model_name|candidates",
+      "novelize_boundary|gemini_model_name|prompt",
+      "novelize_boundary|gemini_model_name|total"
+    ],
+    "routingWhenSonnet": {
+      "generate": "gemini",
+      "structured": "gemini",
+      "warned": true
+    },
+    "usageLogLines": [
+      "gemini_usage call_site=novelize_boundary model=gemini_model_name",
+      "bedrock_usage call_site=novelize_boundary model=bedrock_sonnet_model_id"
+    ]
+  },
+  "novelize_chapter": {
+    "bedrock": {
+      "cacheBlocks": null,
+      "failures": {
+        "empty": "LLMEmptyResponseError",
+        "ok": null,
+        "truncated": "LLMTruncatedError"
+      },
+      "maxTokens": "bedrock_chapter_max_tokens",
+      "model": "bedrock_sonnet_model_id",
+      "timeout": "bedrock_chapter_timeout_ms"
+    },
+    "declaredDefaults": {
+      "bedrock": {
+        "maxTokens": 32768,
+        "timeoutMs": 300000
+      },
+      "generate": {
+        "maxOutputTokens": 32768,
+        "thinking": null,
+        "timeoutMs": 300000
+      },
+      "structured": {
+        "maxOutputTokens": 32768,
+        "thinking": null,
+        "timeoutMs": 300000
+      }
+    },
+    "gemini": {
+      "generate": {
+        "failures": {
+          "empty": "LLMEmptyResponseError",
+          "ok": null,
+          "truncated": "LLMTruncatedError"
+        },
+        "maxOutputTokens": "gemini_novelize_max_output_tokens",
+        "model": "gemini_novelize_model_name",
+        "seed": true,
+        "thinking": {
+          "budget": "gemini_novelize_thinking_budget",
+          "level": "gemini_novelize_thinking_level"
+        },
+        "timeout": "gemini_novelize_chapter_timeout_ms"
+      },
+      "structured": {
+        "failures": {
+          "empty": "LLMEmptyResponseError",
+          "ok": null,
+          "truncated": "LLMTruncatedError"
+        },
+        "maxOutputTokens": "gemini_novelize_max_output_tokens",
+        "model": "gemini_novelize_model_name",
+        "seed": false,
+        "thinking": {
+          "budget": "gemini_novelize_thinking_budget",
+          "level": "gemini_novelize_thinking_level"
+        },
+        "timeout": "gemini_novelize_chapter_timeout_ms"
+      }
+    },
+    "inJudgmentRatio": false,
+    "metricKeys": [
+      "novelize_chapter|bedrock_sonnet_model_id|calls",
+      "novelize_chapter|bedrock_sonnet_model_id|candidates",
+      "novelize_chapter|bedrock_sonnet_model_id|prompt",
+      "novelize_chapter|bedrock_sonnet_model_id|total",
+      "novelize_chapter|gemini_novelize_model_name|calls",
+      "novelize_chapter|gemini_novelize_model_name|candidates",
+      "novelize_chapter|gemini_novelize_model_name|prompt",
+      "novelize_chapter|gemini_novelize_model_name|total"
+    ],
+    "routingWhenSonnet": {
+      "generate": "bedrock",
+      "structured": "gemini",
+      "warned": false
+    },
+    "usageLogLines": [
+      "gemini_usage call_site=novelize_chapter model=gemini_novelize_model_name",
+      "bedrock_usage call_site=novelize_chapter model=bedrock_sonnet_model_id"
+    ]
+  },
+  "novelize_revise": {
+    "bedrock": {
+      "cacheBlocks": null,
+      "failures": {
+        "empty": "LLMEmptyResponseError",
+        "ok": null,
+        "truncated": "LLMTruncatedError"
+      },
+      "maxTokens": "bedrock_chat_max_tokens",
+      "model": "bedrock_sonnet_model_id",
+      "timeout": "bedrock_chat_timeout_ms"
+    },
+    "declaredDefaults": {
+      "bedrock": {
+        "maxTokens": 4096,
+        "timeoutMs": 45000
+      },
+      "generate": {
+        "maxOutputTokens": 32768,
+        "thinking": null,
+        "timeoutMs": 120000
+      },
+      "structured": {
+        "maxOutputTokens": 32768,
+        "thinking": null,
+        "timeoutMs": 120000
+      }
+    },
+    "gemini": {
+      "generate": {
+        "failures": {
+          "empty": "LLMEmptyResponseError",
+          "ok": null,
+          "truncated": "LLMTruncatedError"
+        },
+        "maxOutputTokens": "gemini_novelize_max_output_tokens",
+        "model": "gemini_novelize_model_name",
+        "seed": true,
+        "thinking": {
+          "budget": "gemini_novelize_thinking_budget",
+          "level": "gemini_novelize_thinking_level"
+        },
+        "timeout": "gemini_novelize_revise_timeout_ms"
+      },
+      "structured": {
+        "failures": {
+          "empty": "LLMEmptyResponseError",
+          "ok": null,
+          "truncated": "LLMTruncatedError"
+        },
+        "maxOutputTokens": "gemini_novelize_max_output_tokens",
+        "model": "gemini_novelize_model_name",
+        "seed": false,
+        "thinking": {
+          "budget": "gemini_novelize_thinking_budget",
+          "level": "gemini_novelize_thinking_level"
+        },
+        "timeout": "gemini_novelize_revise_timeout_ms"
+      }
+    },
+    "inJudgmentRatio": false,
+    "metricKeys": [
+      "novelize_revise|bedrock_sonnet_model_id|calls",
+      "novelize_revise|bedrock_sonnet_model_id|candidates",
+      "novelize_revise|bedrock_sonnet_model_id|prompt",
+      "novelize_revise|bedrock_sonnet_model_id|total",
+      "novelize_revise|gemini_novelize_model_name|calls",
+      "novelize_revise|gemini_novelize_model_name|candidates",
+      "novelize_revise|gemini_novelize_model_name|prompt",
+      "novelize_revise|gemini_novelize_model_name|total"
+    ],
+    "routingWhenSonnet": {
+      "generate": "gemini",
+      "structured": "gemini",
+      "warned": true
+    },
+    "usageLogLines": [
+      "gemini_usage call_site=novelize_revise model=gemini_novelize_model_name",
+      "bedrock_usage call_site=novelize_revise model=bedrock_sonnet_model_id"
+    ]
+  },
+  "preview_ending_judgment": {
+    "bedrock": {
+      "cacheBlocks": null,
+      "failures": {
+        "empty": null,
+        "ok": null,
+        "truncated": null
+      },
+      "maxTokens": "bedrock_chat_max_tokens",
+      "model": "bedrock_sonnet_model_id",
+      "timeout": "bedrock_chat_timeout_ms"
+    },
+    "declaredDefaults": {
+      "bedrock": {
+        "maxTokens": 4096,
+        "timeoutMs": 45000
+      },
+      "generate": {
+        "maxOutputTokens": 8192,
+        "thinking": null,
+        "timeoutMs": 20000
+      },
+      "structured": {
+        "maxOutputTokens": null,
+        "thinking": null,
+        "timeoutMs": 20000
+      }
+    },
+    "gemini": {
+      "generate": {
+        "failures": {
+          "empty": null,
+          "ok": null,
+          "truncated": null
+        },
+        "maxOutputTokens": "gemini_max_output_tokens",
+        "model": "gemini_model_name",
+        "seed": true,
+        "thinking": {
+          "budget": "gemini_thinking_budget",
+          "level": null
+        },
+        "timeout": "gemini_judgment_timeout_ms"
+      },
+      "structured": {
+        "failures": {
+          "empty": "LLMClientError",
+          "ok": null,
+          "truncated": "LLMClientError"
+        },
+        "maxOutputTokens": null,
+        "model": "gemini_ending_judgment_model_name",
+        "seed": false,
+        "thinking": null,
+        "timeout": "gemini_judgment_timeout_ms"
+      }
+    },
+    "inJudgmentRatio": true,
+    "metricKeys": [
+      "preview_ending_judgment|bedrock_sonnet_model_id|calls",
+      "preview_ending_judgment|bedrock_sonnet_model_id|candidates",
+      "preview_ending_judgment|bedrock_sonnet_model_id|prompt",
+      "preview_ending_judgment|bedrock_sonnet_model_id|total",
+      "preview_ending_judgment|gemini_ending_judgment_model_name|calls",
+      "preview_ending_judgment|gemini_ending_judgment_model_name|candidates",
+      "preview_ending_judgment|gemini_ending_judgment_model_name|prompt",
+      "preview_ending_judgment|gemini_ending_judgment_model_name|total",
+      "preview_ending_judgment|gemini_model_name|calls",
+      "preview_ending_judgment|gemini_model_name|candidates",
+      "preview_ending_judgment|gemini_model_name|prompt",
+      "preview_ending_judgment|gemini_model_name|total"
+    ],
+    "routingWhenSonnet": {
+      "generate": "gemini",
+      "structured": "gemini",
+      "warned": true
+    },
+    "usageLogLines": [
+      "gemini_usage call_site=preview_ending_judgment model=gemini_model_name",
+      "gemini_usage call_site=preview_ending_judgment model=gemini_ending_judgment_model_name",
+      "bedrock_usage call_site=preview_ending_judgment model=bedrock_sonnet_model_id"
+    ]
+  },
+  "preview_generate": {
+    "bedrock": {
+      "cacheBlocks": null,
+      "failures": {
+        "empty": null,
+        "ok": null,
+        "truncated": null
+      },
+      "maxTokens": "bedrock_chat_max_tokens",
+      "model": "bedrock_sonnet_model_id",
+      "timeout": "bedrock_chat_timeout_ms"
+    },
+    "declaredDefaults": {
+      "bedrock": {
+        "maxTokens": 4096,
+        "timeoutMs": 45000
+      },
+      "generate": {
+        "maxOutputTokens": 8192,
+        "thinking": null,
+        "timeoutMs": 45000
+      },
+      "structured": {
+        "maxOutputTokens": null,
+        "thinking": null,
+        "timeoutMs": 45000
+      }
+    },
+    "gemini": {
+      "generate": {
+        "failures": {
+          "empty": null,
+          "ok": null,
+          "truncated": null
+        },
+        "maxOutputTokens": "gemini_max_output_tokens",
+        "model": "gemini_model_name",
+        "seed": true,
+        "thinking": {
+          "budget": "gemini_thinking_budget",
+          "level": null
+        },
+        "timeout": "gemini_generate_timeout_ms"
+      },
+      "structured": {
+        "failures": {
+          "empty": "LLMClientError",
+          "ok": null,
+          "truncated": "LLMClientError"
+        },
+        "maxOutputTokens": null,
+        "model": "gemini_model_name",
+        "seed": false,
+        "thinking": null,
+        "timeout": "gemini_generate_timeout_ms"
+      }
+    },
+    "inJudgmentRatio": false,
+    "metricKeys": [
+      "preview_generate|bedrock_sonnet_model_id|calls",
+      "preview_generate|bedrock_sonnet_model_id|candidates",
+      "preview_generate|bedrock_sonnet_model_id|prompt",
+      "preview_generate|bedrock_sonnet_model_id|total",
+      "preview_generate|gemini_model_name|calls",
+      "preview_generate|gemini_model_name|candidates",
+      "preview_generate|gemini_model_name|prompt",
+      "preview_generate|gemini_model_name|total"
+    ],
+    "routingWhenSonnet": {
+      "generate": "gemini",
+      "structured": "gemini",
+      "warned": true
+    },
+    "usageLogLines": [
+      "gemini_usage call_site=preview_generate model=gemini_model_name",
+      "bedrock_usage call_site=preview_generate model=bedrock_sonnet_model_id"
+    ]
+  },
+  "preview_media_book_image": {
+    "bedrock": {
+      "cacheBlocks": null,
+      "failures": {
+        "empty": null,
+        "ok": null,
+        "truncated": null
+      },
+      "maxTokens": "bedrock_chat_max_tokens",
+      "model": "bedrock_sonnet_model_id",
+      "timeout": "bedrock_chat_timeout_ms"
+    },
+    "declaredDefaults": {
+      "bedrock": {
+        "maxTokens": 4096,
+        "timeoutMs": 45000
+      },
+      "generate": {
+        "maxOutputTokens": 8192,
+        "thinking": null,
+        "timeoutMs": 20000
+      },
+      "structured": {
+        "maxOutputTokens": null,
+        "thinking": null,
+        "timeoutMs": 20000
+      }
+    },
+    "gemini": {
+      "generate": {
+        "failures": {
+          "empty": null,
+          "ok": null,
+          "truncated": null
+        },
+        "maxOutputTokens": "gemini_max_output_tokens",
+        "model": "gemini_model_name",
+        "seed": true,
+        "thinking": {
+          "budget": "gemini_thinking_budget",
+          "level": null
+        },
+        "timeout": "gemini_judgment_timeout_ms"
+      },
+      "structured": {
+        "failures": {
+          "empty": "LLMClientError",
+          "ok": null,
+          "truncated": "LLMClientError"
+        },
+        "maxOutputTokens": null,
+        "model": "gemini_image_judgment_model_name",
+        "seed": false,
+        "thinking": null,
+        "timeout": "gemini_judgment_timeout_ms"
+      }
+    },
+    "inJudgmentRatio": true,
+    "metricKeys": [
+      "preview_media_book_image|bedrock_sonnet_model_id|calls",
+      "preview_media_book_image|bedrock_sonnet_model_id|candidates",
+      "preview_media_book_image|bedrock_sonnet_model_id|prompt",
+      "preview_media_book_image|bedrock_sonnet_model_id|total",
+      "preview_media_book_image|gemini_image_judgment_model_name|calls",
+      "preview_media_book_image|gemini_image_judgment_model_name|candidates",
+      "preview_media_book_image|gemini_image_judgment_model_name|prompt",
+      "preview_media_book_image|gemini_image_judgment_model_name|total",
+      "preview_media_book_image|gemini_model_name|calls",
+      "preview_media_book_image|gemini_model_name|candidates",
+      "preview_media_book_image|gemini_model_name|prompt",
+      "preview_media_book_image|gemini_model_name|total"
+    ],
+    "routingWhenSonnet": {
+      "generate": "gemini",
+      "structured": "gemini",
+      "warned": true
+    },
+    "usageLogLines": [
+      "gemini_usage call_site=preview_media_book_image model=gemini_model_name",
+      "gemini_usage call_site=preview_media_book_image model=gemini_image_judgment_model_name",
+      "bedrock_usage call_site=preview_media_book_image model=bedrock_sonnet_model_id"
+    ]
+  },
+  "preview_stat_judgment": {
+    "bedrock": {
+      "cacheBlocks": null,
+      "failures": {
+        "empty": null,
+        "ok": null,
+        "truncated": null
+      },
+      "maxTokens": "bedrock_chat_max_tokens",
+      "model": "bedrock_sonnet_model_id",
+      "timeout": "bedrock_chat_timeout_ms"
+    },
+    "declaredDefaults": {
+      "bedrock": {
+        "maxTokens": 4096,
+        "timeoutMs": 45000
+      },
+      "generate": {
+        "maxOutputTokens": 8192,
+        "thinking": null,
+        "timeoutMs": 20000
+      },
+      "structured": {
+        "maxOutputTokens": null,
+        "thinking": null,
+        "timeoutMs": 20000
+      }
+    },
+    "gemini": {
+      "generate": {
+        "failures": {
+          "empty": null,
+          "ok": null,
+          "truncated": null
+        },
+        "maxOutputTokens": "gemini_max_output_tokens",
+        "model": "gemini_model_name",
+        "seed": true,
+        "thinking": {
+          "budget": "gemini_thinking_budget",
+          "level": null
+        },
+        "timeout": "gemini_judgment_timeout_ms"
+      },
+      "structured": {
+        "failures": {
+          "empty": "LLMClientError",
+          "ok": null,
+          "truncated": "LLMClientError"
+        },
+        "maxOutputTokens": null,
+        "model": "gemini_stat_judgment_model_name",
+        "seed": false,
+        "thinking": null,
+        "timeout": "gemini_judgment_timeout_ms"
+      }
+    },
+    "inJudgmentRatio": true,
+    "metricKeys": [
+      "preview_stat_judgment|bedrock_sonnet_model_id|calls",
+      "preview_stat_judgment|bedrock_sonnet_model_id|candidates",
+      "preview_stat_judgment|bedrock_sonnet_model_id|prompt",
+      "preview_stat_judgment|bedrock_sonnet_model_id|total",
+      "preview_stat_judgment|gemini_model_name|calls",
+      "preview_stat_judgment|gemini_model_name|candidates",
+      "preview_stat_judgment|gemini_model_name|prompt",
+      "preview_stat_judgment|gemini_model_name|total",
+      "preview_stat_judgment|gemini_stat_judgment_model_name|calls",
+      "preview_stat_judgment|gemini_stat_judgment_model_name|candidates",
+      "preview_stat_judgment|gemini_stat_judgment_model_name|prompt",
+      "preview_stat_judgment|gemini_stat_judgment_model_name|total"
+    ],
+    "routingWhenSonnet": {
+      "generate": "gemini",
+      "structured": "gemini",
+      "warned": true
+    },
+    "usageLogLines": [
+      "gemini_usage call_site=preview_stat_judgment model=gemini_model_name",
+      "gemini_usage call_site=preview_stat_judgment model=gemini_stat_judgment_model_name",
+      "bedrock_usage call_site=preview_stat_judgment model=bedrock_sonnet_model_id"
+    ]
+  },
+  "publish_filter_character": {
+    "bedrock": {
+      "cacheBlocks": null,
+      "failures": {
+        "empty": null,
+        "ok": null,
+        "truncated": null
+      },
+      "maxTokens": "bedrock_chat_max_tokens",
+      "model": "bedrock_sonnet_model_id",
+      "timeout": "bedrock_chat_timeout_ms"
+    },
+    "declaredDefaults": {
+      "bedrock": {
+        "maxTokens": 4096,
+        "timeoutMs": 45000
+      },
+      "generate": {
+        "maxOutputTokens": 8192,
+        "thinking": null,
+        "timeoutMs": 60000
+      },
+      "structured": {
+        "maxOutputTokens": null,
+        "thinking": null,
+        "timeoutMs": 60000
+      }
+    },
+    "gemini": {
+      "generate": {
+        "failures": {
+          "empty": null,
+          "ok": null,
+          "truncated": null
+        },
+        "maxOutputTokens": "gemini_max_output_tokens",
+        "model": "gemini_model_name",
+        "seed": true,
+        "thinking": {
+          "budget": "gemini_thinking_budget",
+          "level": null
+        },
+        "timeout": "gemini_publish_filter_timeout_ms"
+      },
+      "structured": {
+        "failures": {
+          "empty": "LLMClientError",
+          "ok": null,
+          "truncated": "LLMClientError"
+        },
+        "maxOutputTokens": null,
+        "model": "gemini_publish_filter_model_name",
+        "seed": false,
+        "thinking": null,
+        "timeout": "gemini_publish_filter_timeout_ms"
+      }
+    },
+    "inJudgmentRatio": false,
+    "metricKeys": [
+      "publish_filter_character|bedrock_sonnet_model_id|calls",
+      "publish_filter_character|bedrock_sonnet_model_id|candidates",
+      "publish_filter_character|bedrock_sonnet_model_id|prompt",
+      "publish_filter_character|bedrock_sonnet_model_id|total",
+      "publish_filter_character|gemini_model_name|calls",
+      "publish_filter_character|gemini_model_name|candidates",
+      "publish_filter_character|gemini_model_name|prompt",
+      "publish_filter_character|gemini_model_name|total",
+      "publish_filter_character|gemini_publish_filter_model_name|calls",
+      "publish_filter_character|gemini_publish_filter_model_name|candidates",
+      "publish_filter_character|gemini_publish_filter_model_name|prompt",
+      "publish_filter_character|gemini_publish_filter_model_name|total"
+    ],
+    "routingWhenSonnet": {
+      "generate": "gemini",
+      "structured": "gemini",
+      "warned": true
+    },
+    "usageLogLines": [
+      "gemini_usage call_site=publish_filter_character model=gemini_model_name",
+      "gemini_usage call_site=publish_filter_character model=gemini_publish_filter_model_name",
+      "bedrock_usage call_site=publish_filter_character model=bedrock_sonnet_model_id"
+    ]
+  },
+  "publish_filter_story": {
+    "bedrock": {
+      "cacheBlocks": null,
+      "failures": {
+        "empty": null,
+        "ok": null,
+        "truncated": null
+      },
+      "maxTokens": "bedrock_chat_max_tokens",
+      "model": "bedrock_sonnet_model_id",
+      "timeout": "bedrock_chat_timeout_ms"
+    },
+    "declaredDefaults": {
+      "bedrock": {
+        "maxTokens": 4096,
+        "timeoutMs": 45000
+      },
+      "generate": {
+        "maxOutputTokens": 8192,
+        "thinking": null,
+        "timeoutMs": 60000
+      },
+      "structured": {
+        "maxOutputTokens": null,
+        "thinking": null,
+        "timeoutMs": 60000
+      }
+    },
+    "gemini": {
+      "generate": {
+        "failures": {
+          "empty": null,
+          "ok": null,
+          "truncated": null
+        },
+        "maxOutputTokens": "gemini_max_output_tokens",
+        "model": "gemini_model_name",
+        "seed": true,
+        "thinking": {
+          "budget": "gemini_thinking_budget",
+          "level": null
+        },
+        "timeout": "gemini_publish_filter_timeout_ms"
+      },
+      "structured": {
+        "failures": {
+          "empty": "LLMClientError",
+          "ok": null,
+          "truncated": "LLMClientError"
+        },
+        "maxOutputTokens": null,
+        "model": "gemini_publish_filter_model_name",
+        "seed": false,
+        "thinking": null,
+        "timeout": "gemini_publish_filter_timeout_ms"
+      }
+    },
+    "inJudgmentRatio": false,
+    "metricKeys": [
+      "publish_filter_story|bedrock_sonnet_model_id|calls",
+      "publish_filter_story|bedrock_sonnet_model_id|candidates",
+      "publish_filter_story|bedrock_sonnet_model_id|prompt",
+      "publish_filter_story|bedrock_sonnet_model_id|total",
+      "publish_filter_story|gemini_model_name|calls",
+      "publish_filter_story|gemini_model_name|candidates",
+      "publish_filter_story|gemini_model_name|prompt",
+      "publish_filter_story|gemini_model_name|total",
+      "publish_filter_story|gemini_publish_filter_model_name|calls",
+      "publish_filter_story|gemini_publish_filter_model_name|candidates",
+      "publish_filter_story|gemini_publish_filter_model_name|prompt",
+      "publish_filter_story|gemini_publish_filter_model_name|total"
+    ],
+    "routingWhenSonnet": {
+      "generate": "gemini",
+      "structured": "gemini",
+      "warned": true
+    },
+    "usageLogLines": [
+      "gemini_usage call_site=publish_filter_story model=gemini_model_name",
+      "gemini_usage call_site=publish_filter_story model=gemini_publish_filter_model_name",
+      "bedrock_usage call_site=publish_filter_story model=bedrock_sonnet_model_id"
+    ]
+  },
+  "replay_generate": {
+    "bedrock": {
+      "cacheBlocks": [
+        false,
+        true,
+        false
+      ],
+      "failures": {
+        "empty": null,
+        "ok": null,
+        "truncated": null
+      },
+      "maxTokens": "bedrock_chat_max_tokens",
+      "model": "bedrock_sonnet_model_id",
+      "timeout": "bedrock_chat_timeout_ms"
+    },
+    "declaredDefaults": {
+      "bedrock": {
+        "maxTokens": 4096,
+        "timeoutMs": 45000
+      },
+      "generate": {
+        "maxOutputTokens": 8192,
+        "thinking": null,
+        "timeoutMs": 45000
+      },
+      "structured": {
+        "maxOutputTokens": null,
+        "thinking": null,
+        "timeoutMs": 45000
+      }
+    },
+    "gemini": {
+      "generate": {
+        "failures": {
+          "empty": null,
+          "ok": null,
+          "truncated": null
+        },
+        "maxOutputTokens": "gemini_max_output_tokens",
+        "model": "gemini_model_name",
+        "seed": true,
+        "thinking": {
+          "budget": "gemini_thinking_budget",
+          "level": null
+        },
+        "timeout": "gemini_generate_timeout_ms"
+      },
+      "structured": {
+        "failures": {
+          "empty": "LLMClientError",
+          "ok": null,
+          "truncated": "LLMClientError"
+        },
+        "maxOutputTokens": null,
+        "model": "gemini_model_name",
+        "seed": false,
+        "thinking": null,
+        "timeout": "gemini_generate_timeout_ms"
+      }
+    },
+    "inJudgmentRatio": false,
+    "metricKeys": [
+      "replay_generate|bedrock_sonnet_model_id|calls",
+      "replay_generate|bedrock_sonnet_model_id|candidates",
+      "replay_generate|bedrock_sonnet_model_id|prompt",
+      "replay_generate|bedrock_sonnet_model_id|total",
+      "replay_generate|gemini_model_name|calls",
+      "replay_generate|gemini_model_name|candidates",
+      "replay_generate|gemini_model_name|prompt",
+      "replay_generate|gemini_model_name|total"
+    ],
+    "routingWhenSonnet": {
+      "generate": "bedrock",
+      "structured": "gemini",
+      "warned": false
+    },
+    "usageLogLines": [
+      "gemini_usage call_site=replay_generate model=gemini_model_name",
+      "bedrock_usage call_site=replay_generate model=bedrock_sonnet_model_id"
+    ]
+  },
+  "seed_similarity_review": {
+    "bedrock": {
+      "cacheBlocks": null,
+      "failures": {
+        "empty": null,
+        "ok": null,
+        "truncated": null
+      },
+      "maxTokens": "bedrock_chat_max_tokens",
+      "model": "bedrock_sonnet_model_id",
+      "timeout": "bedrock_chat_timeout_ms"
+    },
+    "declaredDefaults": {
+      "bedrock": {
+        "maxTokens": 4096,
+        "timeoutMs": 45000
+      },
+      "generate": {
+        "maxOutputTokens": 8192,
+        "thinking": null,
+        "timeoutMs": 300000
+      },
+      "structured": {
+        "maxOutputTokens": null,
+        "thinking": null,
+        "timeoutMs": 300000
+      }
+    },
+    "gemini": {
+      "generate": {
+        "failures": {
+          "empty": null,
+          "ok": null,
+          "truncated": null
+        },
+        "maxOutputTokens": "gemini_max_output_tokens",
+        "model": "gemini_model_name",
+        "seed": true,
+        "thinking": {
+          "budget": "gemini_thinking_budget",
+          "level": null
+        },
+        "timeout": "literal:300000"
+      },
+      "structured": {
+        "failures": {
+          "empty": "LLMClientError",
+          "ok": null,
+          "truncated": "LLMClientError"
+        },
+        "maxOutputTokens": null,
+        "model": "gemini_model_name",
+        "seed": false,
+        "thinking": null,
+        "timeout": "literal:300000"
+      }
+    },
+    "inJudgmentRatio": false,
+    "metricKeys": [
+      "seed_similarity_review|bedrock_sonnet_model_id|calls",
+      "seed_similarity_review|bedrock_sonnet_model_id|candidates",
+      "seed_similarity_review|bedrock_sonnet_model_id|prompt",
+      "seed_similarity_review|bedrock_sonnet_model_id|total",
+      "seed_similarity_review|gemini_model_name|calls",
+      "seed_similarity_review|gemini_model_name|candidates",
+      "seed_similarity_review|gemini_model_name|prompt",
+      "seed_similarity_review|gemini_model_name|total"
+    ],
+    "routingWhenSonnet": {
+      "generate": "gemini",
+      "structured": "gemini",
+      "warned": true
+    },
+    "usageLogLines": [
+      "gemini_usage call_site=seed_similarity_review model=gemini_model_name",
+      "bedrock_usage call_site=seed_similarity_review model=bedrock_sonnet_model_id"
+    ]
+  },
+  "seed_story_generate": {
+    "bedrock": {
+      "cacheBlocks": null,
+      "failures": {
+        "empty": null,
+        "ok": null,
+        "truncated": null
+      },
+      "maxTokens": "bedrock_chat_max_tokens",
+      "model": "bedrock_sonnet_model_id",
+      "timeout": "bedrock_chat_timeout_ms"
+    },
+    "declaredDefaults": {
+      "bedrock": {
+        "maxTokens": 4096,
+        "timeoutMs": 45000
+      },
+      "generate": {
+        "maxOutputTokens": 8192,
+        "thinking": null,
+        "timeoutMs": 300000
+      },
+      "structured": {
+        "maxOutputTokens": null,
+        "thinking": null,
+        "timeoutMs": 300000
+      }
+    },
+    "gemini": {
+      "generate": {
+        "failures": {
+          "empty": null,
+          "ok": null,
+          "truncated": null
+        },
+        "maxOutputTokens": "gemini_max_output_tokens",
+        "model": "gemini_model_name",
+        "seed": true,
+        "thinking": {
+          "budget": "gemini_thinking_budget",
+          "level": null
+        },
+        "timeout": "literal:300000"
+      },
+      "structured": {
+        "failures": {
+          "empty": "LLMClientError",
+          "ok": null,
+          "truncated": "LLMClientError"
+        },
+        "maxOutputTokens": null,
+        "model": "gemini_model_name",
+        "seed": false,
+        "thinking": null,
+        "timeout": "literal:300000"
+      }
+    },
+    "inJudgmentRatio": false,
+    "metricKeys": [
+      "seed_story_generate|bedrock_sonnet_model_id|calls",
+      "seed_story_generate|bedrock_sonnet_model_id|candidates",
+      "seed_story_generate|bedrock_sonnet_model_id|prompt",
+      "seed_story_generate|bedrock_sonnet_model_id|total",
+      "seed_story_generate|gemini_model_name|calls",
+      "seed_story_generate|gemini_model_name|candidates",
+      "seed_story_generate|gemini_model_name|prompt",
+      "seed_story_generate|gemini_model_name|total"
+    ],
+    "routingWhenSonnet": {
+      "generate": "gemini",
+      "structured": "gemini",
+      "warned": true
+    },
+    "usageLogLines": [
+      "gemini_usage call_site=seed_story_generate model=gemini_model_name",
+      "bedrock_usage call_site=seed_story_generate model=bedrock_sonnet_model_id"
+    ]
+  }
+}

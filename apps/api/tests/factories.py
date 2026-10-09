@@ -9,8 +9,9 @@ LLM 페이크 주입(`_override_llm_client`/`_clear_llm_override`)·SSE 파싱(`
 
 import asyncio
 import json
+import os
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable, Generator
+from collections.abc import AsyncIterator, Awaitable, Callable, Generator, Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, UTC
@@ -65,6 +66,7 @@ from api.db.models import (
     NovelReadingPosition,
     NovelSnapshot,
     Payment,
+    SituationalImage,
     SituationNote,
     StartingSetup,
     StatDef,
@@ -782,17 +784,25 @@ class _HangingLLMClient(LLMClient):
 
 
 async def _call_until_disconnect(
-    client: httpx.AsyncClient, method: str, path: str, body: dict[str, object] | None, disconnect: asyncio.Event
+    client: httpx.AsyncClient,
+    method: str,
+    path: str,
+    body: dict[str, object] | None,
+    disconnect: asyncio.Event,
+    sent: list[Message] | None = None,
 ) -> list[Message]:
     """로그인된 `client` 의 세션 쿠키로 ASGI 앱을 직접 부르고, `disconnect` 가 서는 순간 클라이언트가 끊은 것으로 알린다.
     보낸 ASGI 메시지들을 돌려준다.
 
     httpx 는 스트림 중간 끊김을 만들 수 없어 앱을 직접 부른다. 서버가 알리는 ASGI spec 버전이 없으면 Starlette 는 끊김을
     감시하다 스트림을 취소하는 쪽으로 간다 — 지금 운영 uvicorn 과 같은 길이다. 그 취소는 제너레이터가 `await` 중일 때
-    닿는다(`CancelledError` 갈래)."""
+    닿는다(`CancelledError` 갈래).
+
+    `sent` 를 넘기면 그 목록에 쌓는다 — 앱 예외가 올라와 반환값을 받지 못해도 예외 앞에 나간 메시지(상태 줄·이벤트)를
+    호출부가 읽을 수 있다."""
     raw_body = json.dumps(body).encode() if body is not None else b""
     received_body = False
-    sent: list[Message] = []
+    messages: list[Message] = [] if sent is None else sent
 
     async def receive() -> Message:
         nonlocal received_body
@@ -803,7 +813,7 @@ async def _call_until_disconnect(
         return {"type": "http.disconnect"}
 
     async def send(message: Message) -> None:
-        sent.append(message)
+        messages.append(message)
 
     cookie = f"{settings.session_cookie_name}={client.cookies[settings.session_cookie_name]}"
     scope: dict[str, Any] = {
@@ -826,7 +836,7 @@ async def _call_until_disconnect(
     }
     async with asyncio.timeout(10):
         await app(scope, receive, send)
-    return sent
+    return messages
 
 
 _GOLDEN_PROMPTS_DIR = Path(__file__).parent / "golden" / "prompts"
@@ -837,6 +847,47 @@ def _read_golden_prompt(filename: str) -> str:
     문안과 바이트 단위로 같음이 이미 증명된 골든 파일에서 기대값을 읽는다
     (tests/test_prompt_goldens.py)."""
     return (_GOLDEN_PROMPTS_DIR / filename).read_text(encoding="utf-8")
+
+
+# 이 변수를 "1" 로 두고 돌리면 지금 동작 고정 테스트가 기대값을 비교하지 않고 파일에 새로 쓴다.
+CHARACTERIZATION_UPDATE_ENV = "UPDATE_CHAT_CHARACTERIZATION"
+
+
+def _assert_characterization(path: Path, case: str, actual: object) -> None:
+    """지금 동작을 기록한 기대값 파일(`{경우: 값}` JSON)과 `actual` 을 비교한다. 기대값은 손으로 쓰지 않는다 — 환경 변수
+    `UPDATE_CHAT_CHARACTERIZATION=1` 로 돌리면 이 경우의 값을 파일에 써 넣고 통과한다(다른 경우의 값은 그대로 둔다).
+    새로 뜬 값은 사람이 미리 적어 둔 예측과 대조한 뒤에 고정한다 — 같은 코드로 다시 뜨면 같은 값이 나와 아무것도
+    증명하지 못하므로, 고정한 뒤에는 동작을 일부러 바꾼 커밋에서만 다시 뜬다.
+
+    `actual` 은 JSON 으로 한 번 왕복시켜 비교한다(튜플·리스트 차이를 없앤다)."""
+    actual = json.loads(json.dumps(actual, ensure_ascii=False))
+    if os.environ.get(CHARACTERIZATION_UPDATE_ENV) == "1":
+        recorded: dict[str, object] = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        recorded[case] = actual
+        path.write_text(json.dumps(recorded, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        return
+    assert path.exists(), f"기대값 파일 {path.name} 이 없다 — {CHARACTERIZATION_UPDATE_ENV}=1 로 한 번 떠야 한다"
+    expected: dict[str, object] = json.loads(path.read_text(encoding="utf-8"))
+    assert case in expected, f"{path.name} 에 {case!r} 의 기대값이 없다 — {CHARACTERIZATION_UPDATE_ENV}=1 로 떠야 한다"
+    assert actual == expected[case]
+
+
+def _assert_recorded_cases(path: Path, cases: Iterable[str]) -> None:
+    """기대값 파일의 경우 집합이 지금 파라미터의 경우 집합(`cases`)과 같아야 한다. `_assert_characterization` 은 경우
+    하나씩만 보므로, 지우거나 이름을 바꾼 경우의 옛 값이 파일에 남아도 아무 테스트도 실패하지 않는다 — 그 값은 아무것도
+    지키지 않으면서 지키는 것처럼 보인다. 갱신 모드에서는 남은 옛 값을 지운다(빠진 경우는 그 경우의 테스트가 써 넣는다)."""
+    expected = set(cases)
+    if os.environ.get(CHARACTERIZATION_UPDATE_ENV) == "1":
+        if not path.exists():
+            return
+        recorded: dict[str, object] = json.loads(path.read_text(encoding="utf-8"))
+        kept = {case: value for case, value in recorded.items() if case in expected}
+        path.write_text(json.dumps(kept, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        return
+    assert path.exists(), f"기대값 파일 {path.name} 이 없다 — {CHARACTERIZATION_UPDATE_ENV}=1 로 한 번 떠야 한다"
+    recorded_cases = set(json.loads(path.read_text(encoding="utf-8")))
+    assert recorded_cases - expected == set(), f"{path.name} 에 지금 파라미터에 없는 경우가 남았다"
+    assert expected - recorded_cases == set(), f"{path.name} 에 기대값이 없는 경우가 있다"
 
 
 # --- 긴 대화방(요약 접기·되감기 테스트) ---------------------------------------------
@@ -946,6 +997,157 @@ async def _open_room(
     await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room_id).values(turn_count=turns))
     await db_session.commit()
     return Room(room_id=room_id, user_id=user.id, base=base, turns=seeded)
+
+
+async def _add_room_situational_image(db_session: AsyncSession, room_id: uuid.UUID) -> uuid.UUID:
+    """캐릭터 방이 고정한 버전에 상황 이미지 하나(방 주인 소유의 준비된 원본)를 더하고 커밋한다. entity_id 를 돌려준다."""
+    owner_id, version_id = (
+        await db_session.execute(sa.select(ChatRoom.user_id, ChatRoom.content_version_id).where(ChatRoom.id == room_id))
+    ).one()
+    asset = Asset(
+        owner_user_id=owner_id,
+        storage_key=f"assets/situational-image/{uuid.uuid4()}.webp",
+        kind=AssetKind.ORIGINAL,
+        status=AssetStatus.READY,
+    )
+    db_session.add(asset)
+    await db_session.flush()
+    image = SituationalImage(
+        entity_id=uuid.uuid4(),
+        content_version_id=version_id,
+        image_asset_id=asset.id,
+        trigger_condition="둘이 골목에서 마주칠 때",
+        order=0,
+    )
+    db_session.add(image)
+    await db_session.commit()
+    return image.entity_id
+
+
+async def _add_room_cell_and_endings(db_session: AsyncSession, room_id: uuid.UUID, gates: tuple[int, ...]) -> uuid.UUID:
+    """스토리 방(`_open_room(lane="story")`)이 고정한 버전에 미디어 북 칸 하나와, `gates` 의 게이트마다 스탯 규칙 없는
+    엔딩 하나를 넣은 순서대로 더하고 커밋한다. 칸 entity_id 를 돌려준다. 엔딩 판정 차례는 턴 번호와 게이트로만 정해지므로
+    (게이트부터 5턴마다) 게이트를 골라 어느 턴에 어느 엔딩이 판정될지를 정한다."""
+    owner_id, version_id, setup_entity_id = (
+        await db_session.execute(
+            sa.select(ChatRoom.user_id, ChatRoom.content_version_id, ChatRoom.starting_setup_entity_id).where(
+                ChatRoom.id == room_id
+            )
+        )
+    ).one()
+    setup_id = await db_session.scalar(
+        sa.select(StartingSetup.id).where(
+            StartingSetup.content_version_id == version_id, StartingSetup.entity_id == setup_entity_id
+        )
+    )
+    assert setup_id is not None
+    cell, _ = await _add_named_media_cell(
+        db_session, version_id, owner_id, "민아", "교실", situation_description="창가에서 웃는다"
+    )
+    for order, gate in enumerate(gates, start=1):
+        db_session.add(
+            Ending(
+                entity_id=uuid.uuid4(),
+                starting_setup_id=setup_id,
+                name=f"엔딩{order}",
+                turn_count_gate=gate,
+                judgment_prompt=f"마을을 떠났는가? ({order})",
+                epilogue=f"그렇게 마을을 떠났다. ({order})",
+                order=order,
+            )
+        )
+    await db_session.commit()
+    return cell.entity_id
+
+
+def _preview_story_payload(cell_asset_id: uuid.UUID) -> tuple[uuid.UUID, dict[str, object]]:
+    """스탯 하나(규칙 a1, +40), 게이트 1 엔딩 하나, `cell_asset_id` 그림을 쓴 미디어 북 칸 하나를 가진 스토리 초안과 그
+    칸 id. 칸 그림은 요청자 소유의 준비된 자산이어야 판정 후보에 든다."""
+    person_id, scene_id, cell_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    return cell_id, {
+        "name": "잃어버린 도시",
+        "oneLiner": "한 줄 소개",
+        "thumbnailAssetId": None,
+        "promptTemplate": "basic",
+        "settingText": "세계관 설명",
+        "developmentExample": None,
+        "customPrompt": None,
+        "startingSetups": [
+            {
+                "id": str(uuid.uuid4()),
+                "name": "시작설정1",
+                "prologue": "프롤로그",
+                "openingMessage": "어서 와.",
+                "playguide": None,
+                "suggestedReplies": [],
+                "statDefs": [
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "체력",
+                        "icon": "heart",
+                        "color": "rose",
+                        "minValue": 0,
+                        "maxValue": 100,
+                        "initialValue": 50,
+                        "unit": None,
+                        "description": "체력 스탯",
+                        "rules": [{"id": str(uuid.uuid4()), "condition": "행복해진다", "delta": 40}],
+                    }
+                ],
+                "endings": [
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "해피엔딩",
+                        "turnCountGate": 1,
+                        "judgmentPrompt": "행복한 결말에 도달했는가",
+                        "epilogue": "모두가 행복하게 살았다.",
+                        "hint": None,
+                        "statRules": [],
+                    }
+                ],
+            }
+        ],
+        "keywordNotes": [],
+        "shortcuts": [],
+        "description": "상세 설명",
+        "genreId": None,
+        "target": None,
+        "hashtags": [],
+        "visibility": "private",
+        "mediaBook": {
+            "people": [{"id": str(person_id), "name": "민아"}],
+            "scenes": [{"id": str(scene_id), "name": "창가"}],
+            "cells": [
+                {
+                    "id": str(cell_id),
+                    "personId": str(person_id),
+                    "sceneId": str(scene_id),
+                    "imageAssetId": str(cell_asset_id),
+                    "situationDescription": "창가에서 웃는다",
+                    "unlockHint": "",
+                    "excludeFromChat": False,
+                }
+            ],
+        },
+    }
+
+
+def _preview_character_payload() -> dict[str, object]:
+    return {
+        "name": "아리아",
+        "oneLiner": "한 줄 소개",
+        "thumbnailAssetId": None,
+        "intro": "안녕하세요, 아리아예요",
+        "exampleDialogues": [],
+        "characterPrompt": "너는 아리아다.",
+        "playguide": None,
+        "situationalImages": [],
+        "description": "상세 설명",
+        "genreId": None,
+        "target": None,
+        "hashtags": [],
+        "visibility": "private",
+    }
 
 
 async def _plant_snapshot(db_session: AsyncSession, room: Room, *, turn: int, text: str) -> None:

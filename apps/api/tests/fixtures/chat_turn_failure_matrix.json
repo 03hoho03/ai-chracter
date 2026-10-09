@@ -1,0 +1,4643 @@
+{
+  "cancel-after-done-before-the-preview-save/preview-story": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "newValue": 90.0,
+        "statId": "<id2>",
+        "type": "statChange"
+      },
+      {
+        "endingId": "<id3>",
+        "epilogue": "모두가 행복하게 살았다.",
+        "mediaTagImages": [],
+        "type": "endingReached"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": true,
+        "imageId": "<candidate>",
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "preview_generate"
+      ],
+      [
+        "generate_structured",
+        "preview_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "preview_media_book_image"
+      ],
+      [
+        "generate_structured",
+        "preview_ending_judgment"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "endingReached": false,
+      "messages": [
+        [
+          "assistant",
+          "어서 와.",
+          null
+        ]
+      ],
+      "stats": [
+        50.0
+      ],
+      "turnCount": 0
+    },
+    "status": 200
+  },
+  "cancel-after-the-write-commit/edit": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "type": "tokens"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ],
+      [
+        "generate_structured",
+        "chat_ending_judgment"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "discarded": [
+        "edit"
+      ],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "고쳐 말하면, 마을을 떠나자",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          "<candidate>"
+        ]
+      ],
+      "room": {
+        "endingReached": true,
+        "turnCount": 1
+      },
+      "stats": [
+        "78.0"
+      ]
+    },
+    "status": 200
+  },
+  "cancel-after-the-write-commit/regenerate": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "type": "tokens"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "discarded": [
+        "regenerate"
+      ],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          "<candidate>"
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "cancel-after-the-write-commit/send": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "type": "tokens"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ],
+      [
+        "generate_structured",
+        "chat_ending_judgment"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ],
+        [
+          "user",
+          "마을을 떠나자",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          "<candidate>"
+        ]
+      ],
+      "room": {
+        "endingReached": true,
+        "turnCount": 2
+      },
+      "stats": [
+        "78.0"
+      ]
+    },
+    "status": 200
+  },
+  "disconnect-during-generation/edit": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "type": "tokens"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "discarded": [
+        "edit"
+      ],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "고쳐 말하면, 마을을 떠나자",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 0
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "disconnect-during-generation/preview-story": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "type": "tokens"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "preview_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "endingReached": false,
+      "messages": [
+        [
+          "assistant",
+          "어서 와.",
+          null
+        ]
+      ],
+      "stats": [
+        50.0
+      ],
+      "turnCount": 0
+    },
+    "status": 200
+  },
+  "disconnect-during-generation/regenerate": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "type": "tokens"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "disconnect-during-generation/send": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "type": "tokens"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ],
+        [
+          "user",
+          "마을을 떠나자",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "disconnect-during-judgment/edit": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "type": "tokens"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "discarded": [
+        "edit"
+      ],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "고쳐 말하면, 마을을 떠나자",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 0
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "disconnect-during-judgment/preview-story": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "type": "tokens"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "preview_generate"
+      ],
+      [
+        "generate_structured",
+        "preview_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "preview_media_book_image"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "endingReached": false,
+      "messages": [
+        [
+          "assistant",
+          "어서 와.",
+          null
+        ]
+      ],
+      "stats": [
+        50.0
+      ],
+      "turnCount": 0
+    },
+    "status": 200
+  },
+  "disconnect-during-judgment/regenerate": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "type": "tokens"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "disconnect-during-judgment/send": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "type": "tokens"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ],
+        [
+          "user",
+          "마을을 떠나자",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "empty-generation/edit": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "newValue": 78.0,
+        "statId": "<id2>",
+        "type": "statChange"
+      },
+      {
+        "endingId": "<id3>",
+        "epilogue": "그렇게 마을을 떠났다. (1)",
+        "mediaTagImages": [],
+        "type": "endingReached"
+      },
+      {
+        "content": "",
+        "hasImageUrl": true,
+        "imageId": "<candidate>",
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ],
+      [
+        "generate_structured",
+        "chat_ending_judgment"
+      ]
+    ],
+    "scheduled": [
+      "fold_memory"
+    ],
+    "sentry": [],
+    "state": {
+      "discarded": [
+        "edit"
+      ],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "고쳐 말하면, 마을을 떠나자",
+          null
+        ],
+        [
+          "assistant",
+          "",
+          "<candidate>"
+        ]
+      ],
+      "room": {
+        "endingReached": true,
+        "turnCount": 1
+      },
+      "stats": [
+        "78.0"
+      ]
+    },
+    "status": 200
+  },
+  "empty-generation/preview-story": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "newValue": 90.0,
+        "statId": "<id2>",
+        "type": "statChange"
+      },
+      {
+        "endingId": "<id3>",
+        "epilogue": "모두가 행복하게 살았다.",
+        "mediaTagImages": [],
+        "type": "endingReached"
+      },
+      {
+        "content": "",
+        "hasImageUrl": true,
+        "imageId": "<candidate>",
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "preview_generate"
+      ],
+      [
+        "generate_structured",
+        "preview_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "preview_media_book_image"
+      ],
+      [
+        "generate_structured",
+        "preview_ending_judgment"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "endingReached": true,
+      "messages": [
+        [
+          "assistant",
+          "어서 와.",
+          null
+        ],
+        [
+          "user",
+          "행복해지자",
+          null
+        ],
+        [
+          "assistant",
+          "",
+          "<candidate>"
+        ]
+      ],
+      "stats": [
+        90.0
+      ],
+      "turnCount": 1
+    },
+    "status": 200
+  },
+  "empty-generation/regenerate": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "content": "",
+        "hasImageUrl": true,
+        "imageId": "<candidate>",
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "discarded": [
+        "regenerate"
+      ],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "",
+          "<candidate>"
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "empty-generation/send": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "newValue": 78.0,
+        "statId": "<id2>",
+        "type": "statChange"
+      },
+      {
+        "endingId": "<id3>",
+        "epilogue": "그렇게 마을을 떠났다. (2)",
+        "mediaTagImages": [],
+        "type": "endingReached"
+      },
+      {
+        "content": "",
+        "hasImageUrl": true,
+        "imageId": "<candidate>",
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ],
+      [
+        "generate_structured",
+        "chat_ending_judgment"
+      ]
+    ],
+    "scheduled": [
+      "fold_memory"
+    ],
+    "sentry": [],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ],
+        [
+          "user",
+          "마을을 떠나자",
+          null
+        ],
+        [
+          "assistant",
+          "",
+          "<candidate>"
+        ]
+      ],
+      "room": {
+        "endingReached": true,
+        "turnCount": 2
+      },
+      "stats": [
+        "78.0"
+      ]
+    },
+    "status": 200
+  },
+  "ending-judgment-error/edit": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "newValue": 78.0,
+        "statId": "<id2>",
+        "type": "statChange"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": true,
+        "imageId": "<candidate>",
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ],
+      [
+        "generate_structured",
+        "chat_ending_judgment"
+      ]
+    ],
+    "scheduled": [
+      "fold_memory"
+    ],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "discarded": [
+        "edit"
+      ],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "고쳐 말하면, 마을을 떠나자",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          "<candidate>"
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "78.0"
+      ]
+    },
+    "status": 200
+  },
+  "ending-judgment-error/preview-story": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "newValue": 90.0,
+        "statId": "<id2>",
+        "type": "statChange"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": true,
+        "imageId": "<candidate>",
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "preview_generate"
+      ],
+      [
+        "generate_structured",
+        "preview_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "preview_media_book_image"
+      ],
+      [
+        "generate_structured",
+        "preview_ending_judgment"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "endingReached": false,
+      "messages": [
+        [
+          "assistant",
+          "어서 와.",
+          null
+        ],
+        [
+          "user",
+          "행복해지자",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          "<candidate>"
+        ]
+      ],
+      "stats": [
+        90.0
+      ],
+      "turnCount": 1
+    },
+    "status": 200
+  },
+  "ending-judgment-error/send": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "newValue": 78.0,
+        "statId": "<id2>",
+        "type": "statChange"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": true,
+        "imageId": "<candidate>",
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ],
+      [
+        "generate_structured",
+        "chat_ending_judgment"
+      ]
+    ],
+    "scheduled": [
+      "fold_memory"
+    ],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ],
+        [
+          "user",
+          "마을을 떠나자",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          "<candidate>"
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 2
+      },
+      "stats": [
+        "78.0"
+      ]
+    },
+    "status": 200
+  },
+  "ending-judgment-prompt-render-failure/preview-story": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "newValue": 90.0,
+        "statId": "<id2>",
+        "type": "statChange"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": true,
+        "imageId": "<candidate>",
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "preview_generate"
+      ],
+      [
+        "generate_structured",
+        "preview_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "preview_media_book_image"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "PromptRenderError",
+        "prompt_render"
+      ]
+    ],
+    "state": {
+      "endingReached": false,
+      "messages": [
+        [
+          "assistant",
+          "어서 와.",
+          null
+        ],
+        [
+          "user",
+          "행복해지자",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          "<candidate>"
+        ]
+      ],
+      "stats": [
+        90.0
+      ],
+      "turnCount": 1
+    },
+    "status": 200
+  },
+  "ending-judgment-prompt-render-failure/send": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "newValue": 78.0,
+        "statId": "<id2>",
+        "type": "statChange"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": true,
+        "imageId": "<candidate>",
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ]
+    ],
+    "scheduled": [
+      "fold_memory"
+    ],
+    "sentry": [
+      [
+        "PromptRenderError",
+        "prompt_render"
+      ]
+    ],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ],
+        [
+          "user",
+          "마을을 떠나자",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          "<candidate>"
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 2
+      },
+      "stats": [
+        "78.0"
+      ]
+    },
+    "status": 200
+  },
+  "generation-error-after-tokens/edit": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "message": "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "type": "error"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "discarded": [
+        "edit"
+      ],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "고쳐 말하면, 마을을 떠나자",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 0
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "generation-error-after-tokens/preview-story": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "message": "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "type": "error"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "preview_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "endingReached": false,
+      "messages": [
+        [
+          "assistant",
+          "어서 와.",
+          null
+        ],
+        [
+          "user",
+          "행복해지자",
+          null
+        ]
+      ],
+      "stats": [
+        50.0
+      ],
+      "turnCount": 0
+    },
+    "status": 200
+  },
+  "generation-error-after-tokens/regenerate": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "message": "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "type": "error"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "generation-error-after-tokens/send": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "message": "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "type": "error"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ],
+        [
+          "user",
+          "마을을 떠나자",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "generation-error-before-first-token/edit": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "message": "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "type": "error"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "discarded": [
+        "edit"
+      ],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "고쳐 말하면, 마을을 떠나자",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 0
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "generation-error-before-first-token/preview-character": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "message": "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "type": "error"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "preview_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "endingReached": false,
+      "messages": [
+        [
+          "assistant",
+          "안녕하세요, 아리아예요",
+          null
+        ],
+        [
+          "user",
+          "행복해지자",
+          null
+        ]
+      ],
+      "stats": [],
+      "turnCount": 0
+    },
+    "status": 200
+  },
+  "generation-error-before-first-token/preview-story": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "message": "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "type": "error"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "preview_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "endingReached": false,
+      "messages": [
+        [
+          "assistant",
+          "어서 와.",
+          null
+        ],
+        [
+          "user",
+          "행복해지자",
+          null
+        ]
+      ],
+      "stats": [
+        50.0
+      ],
+      "turnCount": 0
+    },
+    "status": 200
+  },
+  "generation-error-before-first-token/regenerate": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "message": "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "type": "error"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "generation-error-before-first-token/send": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "message": "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "type": "error"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ],
+        [
+          "user",
+          "마을을 떠나자",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "generation-policy-violation-after-tokens/edit": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "message": "메시지 생성이 콘텐츠 정책에 의해 중단되었습니다.",
+        "type": "policyWarning"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "discarded": [
+        "edit"
+      ],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "고쳐 말하면, 마을을 떠나자",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 0
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "generation-policy-violation-after-tokens/preview-character": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "message": "메시지 생성이 콘텐츠 정책에 의해 중단되었습니다.",
+        "type": "policyWarning"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "preview_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "endingReached": false,
+      "messages": [
+        [
+          "assistant",
+          "안녕하세요, 아리아예요",
+          null
+        ],
+        [
+          "user",
+          "행복해지자",
+          null
+        ]
+      ],
+      "stats": [],
+      "turnCount": 0
+    },
+    "status": 200
+  },
+  "generation-policy-violation-after-tokens/preview-story": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "message": "메시지 생성이 콘텐츠 정책에 의해 중단되었습니다.",
+        "type": "policyWarning"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "preview_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "endingReached": false,
+      "messages": [
+        [
+          "assistant",
+          "어서 와.",
+          null
+        ],
+        [
+          "user",
+          "행복해지자",
+          null
+        ]
+      ],
+      "stats": [
+        50.0
+      ],
+      "turnCount": 0
+    },
+    "status": 200
+  },
+  "generation-policy-violation-after-tokens/regenerate": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "message": "메시지 생성이 콘텐츠 정책에 의해 중단되었습니다.",
+        "type": "policyWarning"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "generation-policy-violation-after-tokens/send": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "message": "메시지 생성이 콘텐츠 정책에 의해 중단되었습니다.",
+        "type": "policyWarning"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ],
+        [
+          "user",
+          "마을을 떠나자",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "generation-prompt-render-failure/edit": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "message": "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "type": "error"
+      }
+    ],
+    "llm": [],
+    "scheduled": [],
+    "sentry": [
+      [
+        "PromptRenderError",
+        "prompt_render"
+      ]
+    ],
+    "state": {
+      "discarded": [
+        "edit"
+      ],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "고쳐 말하면, 마을을 떠나자",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 0
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "generation-prompt-render-failure/preview-character": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "message": "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "type": "error"
+      }
+    ],
+    "llm": [],
+    "scheduled": [],
+    "sentry": [
+      [
+        "PromptRenderError",
+        "prompt_render"
+      ]
+    ],
+    "state": {
+      "endingReached": false,
+      "messages": [
+        [
+          "assistant",
+          "안녕하세요, 아리아예요",
+          null
+        ],
+        [
+          "user",
+          "행복해지자",
+          null
+        ]
+      ],
+      "stats": [],
+      "turnCount": 0
+    },
+    "status": 200
+  },
+  "generation-prompt-render-failure/preview-story": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "message": "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "type": "error"
+      }
+    ],
+    "llm": [],
+    "scheduled": [],
+    "sentry": [
+      [
+        "PromptRenderError",
+        "prompt_render"
+      ]
+    ],
+    "state": {
+      "endingReached": false,
+      "messages": [
+        [
+          "assistant",
+          "어서 와.",
+          null
+        ],
+        [
+          "user",
+          "행복해지자",
+          null
+        ]
+      ],
+      "stats": [
+        50.0
+      ],
+      "turnCount": 0
+    },
+    "status": 200
+  },
+  "generation-prompt-render-failure/regenerate": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "message": "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "type": "error"
+      }
+    ],
+    "llm": [],
+    "scheduled": [],
+    "sentry": [
+      [
+        "PromptRenderError",
+        "prompt_render"
+      ]
+    ],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "generation-prompt-render-failure/send": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "message": "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "type": "error"
+      }
+    ],
+    "llm": [],
+    "scheduled": [],
+    "sentry": [
+      [
+        "PromptRenderError",
+        "prompt_render"
+      ]
+    ],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ],
+        [
+          "user",
+          "마을을 떠나자",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "generation-rate-limit/edit": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "message": "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "type": "error"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "LLMRateLimitError",
+        "gemini_rate_limit"
+      ]
+    ],
+    "state": {
+      "discarded": [
+        "edit"
+      ],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "고쳐 말하면, 마을을 떠나자",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 0
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "generation-rate-limit/preview-story": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "message": "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "type": "error"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "preview_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "LLMRateLimitError",
+        "gemini_rate_limit"
+      ]
+    ],
+    "state": {
+      "endingReached": false,
+      "messages": [
+        [
+          "assistant",
+          "어서 와.",
+          null
+        ],
+        [
+          "user",
+          "행복해지자",
+          null
+        ]
+      ],
+      "stats": [
+        50.0
+      ],
+      "turnCount": 0
+    },
+    "status": 200
+  },
+  "generation-rate-limit/regenerate": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "message": "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "type": "error"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "LLMRateLimitError",
+        "gemini_rate_limit"
+      ]
+    ],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "generation-rate-limit/send": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "message": "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "type": "error"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "LLMRateLimitError",
+        "gemini_rate_limit"
+      ]
+    ],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ],
+        [
+          "user",
+          "마을을 떠나자",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "generation-timeout/send": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "message": "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "type": "error"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ],
+        [
+          "user",
+          "마을을 떠나자",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "media-judgment-error/edit": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "newValue": 78.0,
+        "statId": "<id2>",
+        "type": "statChange"
+      },
+      {
+        "endingId": "<id3>",
+        "epilogue": "그렇게 마을을 떠났다. (1)",
+        "mediaTagImages": [],
+        "type": "endingReached"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": false,
+        "imageId": null,
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ],
+      [
+        "generate_structured",
+        "chat_ending_judgment"
+      ]
+    ],
+    "scheduled": [
+      "fold_memory"
+    ],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "discarded": [
+        "edit"
+      ],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "고쳐 말하면, 마을을 떠나자",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": true,
+        "turnCount": 1
+      },
+      "stats": [
+        "78.0"
+      ]
+    },
+    "status": 200
+  },
+  "media-judgment-error/preview-story": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "newValue": 90.0,
+        "statId": "<id2>",
+        "type": "statChange"
+      },
+      {
+        "endingId": "<id3>",
+        "epilogue": "모두가 행복하게 살았다.",
+        "mediaTagImages": [],
+        "type": "endingReached"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": false,
+        "imageId": null,
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "preview_generate"
+      ],
+      [
+        "generate_structured",
+        "preview_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "preview_media_book_image"
+      ],
+      [
+        "generate_structured",
+        "preview_ending_judgment"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "endingReached": true,
+      "messages": [
+        [
+          "assistant",
+          "어서 와.",
+          null
+        ],
+        [
+          "user",
+          "행복해지자",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          null
+        ]
+      ],
+      "stats": [
+        90.0
+      ],
+      "turnCount": 1
+    },
+    "status": 200
+  },
+  "media-judgment-error/regenerate": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": false,
+        "imageId": null,
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "discarded": [
+        "regenerate"
+      ],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "media-judgment-error/send": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "newValue": 78.0,
+        "statId": "<id2>",
+        "type": "statChange"
+      },
+      {
+        "endingId": "<id3>",
+        "epilogue": "그렇게 마을을 떠났다. (2)",
+        "mediaTagImages": [],
+        "type": "endingReached"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": false,
+        "imageId": null,
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ],
+      [
+        "generate_structured",
+        "chat_ending_judgment"
+      ]
+    ],
+    "scheduled": [
+      "fold_memory"
+    ],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ],
+        [
+          "user",
+          "마을을 떠나자",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": true,
+        "turnCount": 2
+      },
+      "stats": [
+        "78.0"
+      ]
+    },
+    "status": 200
+  },
+  "media-judgment-prompt-render-failure/preview-story": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "newValue": 90.0,
+        "statId": "<id2>",
+        "type": "statChange"
+      },
+      {
+        "endingId": "<id3>",
+        "epilogue": "모두가 행복하게 살았다.",
+        "mediaTagImages": [],
+        "type": "endingReached"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": false,
+        "imageId": null,
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "preview_generate"
+      ],
+      [
+        "generate_structured",
+        "preview_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "preview_ending_judgment"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "PromptRenderError",
+        "prompt_render"
+      ]
+    ],
+    "state": {
+      "endingReached": true,
+      "messages": [
+        [
+          "assistant",
+          "어서 와.",
+          null
+        ],
+        [
+          "user",
+          "행복해지자",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          null
+        ]
+      ],
+      "stats": [
+        90.0
+      ],
+      "turnCount": 1
+    },
+    "status": 200
+  },
+  "media-judgment-prompt-render-failure/regenerate": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": false,
+        "imageId": null,
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "PromptRenderError",
+        "prompt_render"
+      ]
+    ],
+    "state": {
+      "discarded": [
+        "regenerate"
+      ],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "media-judgment-prompt-render-failure/send": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "newValue": 78.0,
+        "statId": "<id2>",
+        "type": "statChange"
+      },
+      {
+        "endingId": "<id3>",
+        "epilogue": "그렇게 마을을 떠났다. (2)",
+        "mediaTagImages": [],
+        "type": "endingReached"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": false,
+        "imageId": null,
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "chat_ending_judgment"
+      ]
+    ],
+    "scheduled": [
+      "fold_memory"
+    ],
+    "sentry": [
+      [
+        "PromptRenderError",
+        "prompt_render"
+      ]
+    ],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ],
+        [
+          "user",
+          "마을을 떠나자",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": true,
+        "turnCount": 2
+      },
+      "stats": [
+        "78.0"
+      ]
+    },
+    "status": 200
+  },
+  "post-commit-signing-failure/regenerate": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": false,
+        "imageId": null,
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "RuntimeError",
+        "s3"
+      ]
+    ],
+    "state": {
+      "discarded": [
+        "regenerate"
+      ],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          "<candidate>"
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "post-commit-signing-failure/send": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "newValue": 78.0,
+        "statId": "<id2>",
+        "type": "statChange"
+      },
+      {
+        "endingId": "<id3>",
+        "epilogue": "그렇게 마을을 떠났다. (2)",
+        "mediaTagImages": [],
+        "type": "endingReached"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": false,
+        "imageId": null,
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ],
+      [
+        "generate_structured",
+        "chat_ending_judgment"
+      ]
+    ],
+    "scheduled": [
+      "fold_memory"
+    ],
+    "sentry": [
+      [
+        "RuntimeError",
+        "s3"
+      ]
+    ],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ],
+        [
+          "user",
+          "마을을 떠나자",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          "<candidate>"
+        ]
+      ],
+      "room": {
+        "endingReached": true,
+        "turnCount": 2
+      },
+      "stats": [
+        "78.0"
+      ]
+    },
+    "status": 200
+  },
+  "preview-save-fails/preview-story": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "newValue": 90.0,
+        "statId": "<id2>",
+        "type": "statChange"
+      },
+      {
+        "endingId": "<id3>",
+        "epilogue": "모두가 행복하게 살았다.",
+        "mediaTagImages": [],
+        "type": "endingReached"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": true,
+        "imageId": "<candidate>",
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "preview_generate"
+      ],
+      [
+        "generate_structured",
+        "preview_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "preview_media_book_image"
+      ],
+      [
+        "generate_structured",
+        "preview_ending_judgment"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "RedisError",
+        "redis"
+      ]
+    ],
+    "state": {
+      "endingReached": false,
+      "messages": [
+        [
+          "assistant",
+          "어서 와.",
+          null
+        ]
+      ],
+      "stats": [
+        50.0
+      ],
+      "turnCount": 0
+    },
+    "status": 200
+  },
+  "room-deleted-before-the-write/regenerate": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "message": "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "type": "error"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "discarded": [],
+      "messages": [],
+      "room": null,
+      "stats": []
+    },
+    "status": 200
+  },
+  "room-deleted-before-the-write/send": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "message": "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "type": "error"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ],
+      [
+        "generate_structured",
+        "chat_ending_judgment"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "discarded": [],
+      "messages": [],
+      "room": null,
+      "stats": []
+    },
+    "status": 200
+  },
+  "situational-image-judgment-error/edit-character": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": false,
+        "imageId": null,
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_situational_image"
+      ]
+    ],
+    "scheduled": [
+      "fold_memory"
+    ],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "discarded": [
+        "edit"
+      ],
+      "messages": [
+        [
+          "assistant",
+          "인트로",
+          null
+        ],
+        [
+          "user",
+          "고쳐 말하면, 마을을 떠나자",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": []
+    },
+    "status": 200
+  },
+  "situational-image-judgment-error/regenerate-character": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": false,
+        "imageId": null,
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_situational_image"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "discarded": [
+        "regenerate"
+      ],
+      "messages": [
+        [
+          "assistant",
+          "인트로",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": []
+    },
+    "status": 200
+  },
+  "situational-image-judgment-error/send-character": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": false,
+        "imageId": null,
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_situational_image"
+      ]
+    ],
+    "scheduled": [
+      "fold_memory"
+    ],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "인트로",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ],
+        [
+          "user",
+          "마을을 떠나자",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 2
+      },
+      "stats": []
+    },
+    "status": 200
+  },
+  "stat-judgment-error/edit": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": true,
+        "imageId": "<candidate>",
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ]
+    ],
+    "scheduled": [
+      "fold_memory"
+    ],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "discarded": [
+        "edit"
+      ],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "고쳐 말하면, 마을을 떠나자",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          "<candidate>"
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "stat-judgment-error/preview-story": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": true,
+        "imageId": "<candidate>",
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "preview_generate"
+      ],
+      [
+        "generate_structured",
+        "preview_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "preview_media_book_image"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "endingReached": false,
+      "messages": [
+        [
+          "assistant",
+          "어서 와.",
+          null
+        ],
+        [
+          "user",
+          "행복해지자",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          "<candidate>"
+        ]
+      ],
+      "stats": [
+        50.0
+      ],
+      "turnCount": 1
+    },
+    "status": 200
+  },
+  "stat-judgment-error/send": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": true,
+        "imageId": "<candidate>",
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ]
+    ],
+    "scheduled": [
+      "fold_memory"
+    ],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ],
+        [
+          "user",
+          "마을을 떠나자",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          "<candidate>"
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 2
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "stat-judgment-prompt-render-failure/edit": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": false,
+        "imageId": null,
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ]
+    ],
+    "scheduled": [
+      "fold_memory"
+    ],
+    "sentry": [
+      [
+        "PromptRenderError",
+        "prompt_render"
+      ]
+    ],
+    "state": {
+      "discarded": [
+        "edit"
+      ],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "고쳐 말하면, 마을을 떠나자",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "stat-judgment-prompt-render-failure/preview-story": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": false,
+        "imageId": null,
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "preview_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "PromptRenderError",
+        "prompt_render"
+      ]
+    ],
+    "state": {
+      "endingReached": false,
+      "messages": [
+        [
+          "assistant",
+          "어서 와.",
+          null
+        ],
+        [
+          "user",
+          "행복해지자",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          null
+        ]
+      ],
+      "stats": [
+        50.0
+      ],
+      "turnCount": 1
+    },
+    "status": 200
+  },
+  "stat-judgment-prompt-render-failure/send": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": false,
+        "imageId": null,
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ]
+    ],
+    "scheduled": [
+      "fold_memory"
+    ],
+    "sentry": [
+      [
+        "PromptRenderError",
+        "prompt_render"
+      ]
+    ],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ],
+        [
+          "user",
+          "마을을 떠나자",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 2
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "stat-rule-read-aborts-the-transaction/edit": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [
+      "DBAPIError"
+    ],
+    "events": [
+      {
+        "type": "tokens"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "discarded": [
+        "edit"
+      ],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "고쳐 말하면, 마을을 떠나자",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 0
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "stat-rule-read-aborts-the-transaction/send": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [
+      "DBAPIError"
+    ],
+    "events": [
+      {
+        "type": "tokens"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ],
+        [
+          "user",
+          "마을을 떠나자",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "write-commit-fails/edit": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [
+      "IntegrityError"
+    ],
+    "events": [
+      {
+        "type": "tokens"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ],
+      [
+        "generate_structured",
+        "chat_ending_judgment"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "discarded": [
+        "edit"
+      ],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "고쳐 말하면, 마을을 떠나자",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 0
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "write-commit-fails/regenerate": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [
+      "IntegrityError"
+    ],
+    "events": [
+      {
+        "type": "tokens"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  },
+  "write-commit-fails/send": {
+    "clover": {
+      "balanceDelta": 0,
+      "ledger": [
+        "chat_refund",
+        "chat_spend"
+      ]
+    },
+    "escaped": [
+      "IntegrityError"
+    ],
+    "events": [
+      {
+        "type": "tokens"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ],
+      [
+        "generate_structured",
+        "chat_ending_judgment"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ],
+        [
+          "user",
+          "마을을 떠나자",
+          null
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "73"
+      ]
+    },
+    "status": 200
+  }
+}
