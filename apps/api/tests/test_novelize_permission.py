@@ -31,6 +31,8 @@ from factories import (
     _room_messages,
 )
 
+pytestmark = pytest.mark.usefixtures("novel_prices_for_flow_tests")
+
 _PERMISSIONS = ("forbidden", "private", "public")
 _ACTORS = ("owner", "other")
 
