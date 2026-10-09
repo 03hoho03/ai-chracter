@@ -42,6 +42,8 @@ class CreatorPayoutResponse(CamelModel):
     # 적립 잔액(원) = 확정 행 금액의 합. 저장하지 않고 매번 더한다. 확정 뒤 결제 취소 조정이 크면 음수일 수 있고, 음수는
     # 다음 적립과 상계된다.
     balance_krw: int
+    # 적립 비율(만분율, 500 = 5%). 서버 설정값이라 웹이 사본을 두지 않고 이 값으로 비율을 말한다.
+    rate_bps: int
 
 
 class CreatorPayoutStatementLineView(CamelModel):

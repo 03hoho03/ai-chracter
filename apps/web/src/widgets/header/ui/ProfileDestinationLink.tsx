@@ -17,6 +17,7 @@ import {
   Sprout,
   Star,
   User,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 import { forwardRef, type ComponentPropsWithoutRef } from "react";
@@ -33,7 +34,7 @@ import { assertNever } from "@/shared/lib/assertNever";
  * 키 유니언도 이 배열에서 도출한다. 유니언을 따로 적으면 키를 유니언과 `switch`에만 더하고 배열에서
  * 빠뜨려도 컴파일이 통과해, 그 목적지가 메뉴와 드로어 어디에도 나타나지 않는다. */
 export const PROFILE_DESTINATION_GROUPS = [
-  { label: "창작", keys: ["builder", "my-works", "studio-images"] },
+  { label: "창작", keys: ["builder", "my-works", "studio-images", "creator-payout"] },
   { label: "활동", keys: ["chats", "novels", "favorites"] },
   { label: "계정", keys: ["profile", "personas", "clover", "mypage"] },
   { label: "고객센터", keys: ["about", "notices", "inquiry-new", "terms", "privacy", "operation-policy", "youth-policy", "refund-policy"] },
@@ -98,6 +99,14 @@ export const ProfileDestinationLink = forwardRef<HTMLAnchorElement, ProfileDesti
         <Link ref={ref} to="/studio/images" className={className} {...rest}>
           <ImagePlus aria-hidden />
           이미지 생성
+        </Link>
+      );
+    case "creator-payout":
+      // 라벨은 페이지 h1(`크리에이터 정산`)과 같은 문자열이다. 정산이 열린 계정에만 보인다(`isProfileDestinationVisible`).
+      return (
+        <Link ref={ref} to="/creator-payout" className={className} {...rest}>
+          <Wallet aria-hidden />
+          크리에이터 정산
         </Link>
       );
     case "chats":

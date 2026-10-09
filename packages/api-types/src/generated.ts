@@ -9155,6 +9155,8 @@ export interface components {
             everApproved: boolean;
             /** Balancekrw */
             balanceKrw: number;
+            /** Ratebps */
+            rateBps: number;
         };
         /**
          * CreatorPayoutStatementLineView

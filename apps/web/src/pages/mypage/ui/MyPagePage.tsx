@@ -7,7 +7,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { useCloverPricingQuery } from "@/entities/clover";
-import { useSessionQuery, type MeResponse } from "@/entities/session";
+import { hasEnabledFeature, useSessionQuery, type MeResponse } from "@/entities/session";
 import { CommentSettings } from "@/features/work-comments";
 import { ChangePasswordForm } from "@/features/change-password";
 import { useLogoutMutation } from "@/features/logout";
@@ -161,7 +161,10 @@ function IdentitySection({ me }: { me: MeResponse }) {
   const pricingQuery = useCloverPricingQuery();
   const { verify, isVerifying } = useVerifyIdentity();
   const [notice, setNotice] = useState<IdentityNotice | null>(null);
-  const section = getIdentitySection(me, pricingQuery.data?.paymentsEnabled ?? false);
+  const section = getIdentitySection(me, {
+    payments: pricingQuery.data?.paymentsEnabled ?? false,
+    creatorPayout: hasEnabledFeature(me.enabledFeatures, "creator_payout"),
+  });
 
   if (section.kind === "hidden") return null;
 

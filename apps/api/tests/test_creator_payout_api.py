@@ -248,7 +248,24 @@ async def test_get_shows_eligibility_without_refusing(db_client: httpx.AsyncClie
         "eligibility": {"identityVerified": False, "adult": False, "hasPublishedWork": False, "suspended": False},
         "everApproved": False,
         "balanceKrw": 0,
+        "rateBps": 500,
     }
+
+
+async def test_get_carries_the_configured_rate(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """적립 비율은 서버 설정값 그대로 실린다 — 웹은 이 값으로 비율을 말하므로 설정을 바꾸면 문구도 따라 바뀐다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
+    monkeypatch.setattr(settings, "creator_payout_rate_bps", 750)
+
+    resp = await db_client.get("/me/creator-payout")
+
+    assert resp.status_code == 200
+    assert resp.json()["rateBps"] == 750
 
 
 # ── 승인과 소급 ────────────────────────────────────────────────────────────

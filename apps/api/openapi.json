@@ -22738,6 +22738,10 @@
           "balanceKrw": {
             "type": "integer",
             "title": "Balancekrw"
+          },
+          "rateBps": {
+            "type": "integer",
+            "title": "Ratebps"
           }
         },
         "type": "object",
@@ -22745,7 +22749,8 @@
           "application",
           "eligibility",
           "everApproved",
-          "balanceKrw"
+          "balanceKrw",
+          "rateBps"
         ],
         "title": "CreatorPayoutResponse"
       },

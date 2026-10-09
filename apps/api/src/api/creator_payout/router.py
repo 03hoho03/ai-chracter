@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.comments.access import lock_active_user
+from api.core.config import settings
 from api.core.identity_gate import identity_verification_required
 from api.creator_payout.config import creator_payout_active
 from api.creator_payout.eligibility import CreatorPayoutBlockReason, load_creator_payout_eligibility
@@ -127,6 +128,7 @@ async def get_creator_payout(
         ),
         ever_approved=bool(ever_approved),
         balance_krw=await _balance_krw(db, user_id),
+        rate_bps=settings.creator_payout_rate_bps,
     )
 
 

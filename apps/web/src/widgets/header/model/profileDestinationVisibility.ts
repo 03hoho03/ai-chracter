@@ -5,6 +5,7 @@ import type { ProfileDestinationKey } from "../ui/ProfileDestinationLink";
 /** 계정별로 열리는 기능에 딸린 목적지. 여기 없는 목적지는 로그인한 누구에게나 보인다. */
 const REQUIRED_FEATURE: Partial<Record<ProfileDestinationKey, EnabledFeature>> = {
   novels: "novelize",
+  "creator-payout": "creator_payout",
 };
 
 /** 프로필 메뉴와 모바일 드로어가 목적지 배열을 그리기 전에 함께 부른다. 숨김은 항목을 그리지 않는 것으로

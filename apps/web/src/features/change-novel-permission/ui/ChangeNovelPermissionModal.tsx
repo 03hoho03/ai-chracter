@@ -19,7 +19,9 @@ import {
   useUpdateNovelPermissionMutation,
   type NovelPermission,
 } from "@/entities/content";
+import { useCreatorPayoutRate } from "@/entities/creator-payout";
 import { isLegalReconsentRequiredError } from "@/entities/legal";
+import { hasEnabledFeature, useSessionQuery } from "@/entities/session";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 type ChangeNovelPermissionModalProps = {
@@ -36,6 +38,8 @@ export const ChangeNovelPermissionModal = createCallable<ChangeNovelPermissionMo
     const queryClient = useQueryClient();
     const mutation = useUpdateNovelPermissionMutation(contentId);
     const [selected, setSelected] = useState(currentPermission);
+    const { data: me } = useSessionQuery();
+    const payoutRate = useCreatorPayoutRate(hasEnabledFeature(me?.enabledFeatures, "creator_payout"));
 
     function handleSave() {
       if (mutation.isPending) return;
@@ -69,8 +73,13 @@ export const ChangeNovelPermissionModal = createCallable<ChangeNovelPermissionMo
             </DialogDescription>
           </DialogHeader>
 
-          <DialogBody>
-            <NovelPermissionPicker value={selected} onValueChange={setSelected} label={NOVEL_PERMISSION_FIELD_LABEL} />
+          <DialogBody className="flex flex-col gap-2">
+            <NovelPermissionPicker
+              value={selected}
+              onValueChange={setSelected}
+              label={NOVEL_PERMISSION_FIELD_LABEL}
+              earningRate={payoutRate}
+            />
           </DialogBody>
 
           {/* 저장 중에는 `disabled` 대신 `aria-disabled` 로 막아 누른 버튼에서 포커스가 빠지지 않게 한다. */}
