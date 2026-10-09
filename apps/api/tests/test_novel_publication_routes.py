@@ -284,7 +284,7 @@ async def test_screening_failure_publishes_nothing_and_does_not_use_a_retry(
 
     resp = await _publish(db_client, novel_id, chapters[0])
 
-    assert (resp.status_code, resp.json()["detail"]) == (400, {"code": "NOVEL_SCREENING_UNAVAILABLE"})
+    assert (resp.status_code, resp.json()["detail"]) == (503, {"code": "NOVEL_SCREENING_UNAVAILABLE"})
     assert await _count(db_session, NovelPublication, novel_id) == 0
     assert await _count(db_session, NovelScreening, novel_id) == 0
     status_body = (await db_client.get(f"/novels/{novel_id}/publication")).json()
@@ -305,6 +305,27 @@ async def test_daily_rejection_limit_stops_before_calling_the_llm(
     third = await _publish(db_client, novel_id, chapters[0])
 
     assert (first.status_code, second.status_code) == (400, 400)
+    assert third.status_code == 429
+    assert third.json()["detail"]["window"] == "novel_screen"
+    assert len(llm.calls) == 2
+
+
+async def test_hourly_call_limit_counts_passing_screens_too(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """통과만 거듭해도 시간당 호출 상한에 닿는다 — 하루 상한은 거부만 세므로 통과를 세는 것은 이 상한뿐이다. 바뀐 것이 없는
+    다시 공개는 심사를 부르지 않아 세지 않는다(상한 2 에서 그 요청이 끼어도 두 번째 심사가 막히지 않는다)."""
+    monkeypatch.setattr(screening, "NOVEL_SCREEN_HOURLY_CALL_LIMIT", 2)
+    novel_id, chapters = await _novel_with_chapters(db_client, db_session, monkeypatch)
+
+    first = await _publish(db_client, novel_id, chapters[0])
+    unchanged = await _publish(db_client, novel_id, chapters[0])
+    second = await _publish(db_client, novel_id, chapters[1])
+    await db_session.execute(sa.update(Novel).where(Novel.id == novel_id).values(synopsis="고친 소개."))
+    await db_session.commit()
+    third = await _publish(db_client, novel_id, None)
+
+    assert (first.status_code, unchanged.status_code, second.status_code) == (200, 200, 200)
     assert third.status_code == 429
     assert third.json()["detail"]["window"] == "novel_screen"
     assert len(llm.calls) == 2

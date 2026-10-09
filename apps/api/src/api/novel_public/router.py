@@ -19,7 +19,8 @@
 화 행만 잠그므로 쓰기 구간과 겹칠 수 있는데, 그러면 심사한 개정을 얼린다 — 공개본은 늘 심사를 거친 글이다.
 
 **심사 실패는 공개하지 않는다**(fail-closed). 걸리면 400 `NOVEL_SCREENING_REJECTED`(어느 화의 어느 글인지 — 사유 문구는
-화면이 가진다), 심사 호출이 실패하면 400 `NOVEL_SCREENING_UNAVAILABLE`(다시 시도 안내), 오늘 거부 상한에 닿았으면 429.
+화면이 가진다), 심사 호출이 실패하면 503 `NOVEL_SCREENING_UNAVAILABLE`(작품 발행 심사의 장애와 같은 코드 — 기다렸다 다시
+시도하면 되는 일이라), 오늘 거부 상한이나 시간당 심사 호출 상한에 닿았으면 429.
 
 공개 화면에 내보내는 표지는 원작 썸네일뿐이라 공개본에 표지 사본을 두지 않는다(소설 생성 표지는 심사를 거친 적이 없다)."""
 
@@ -60,6 +61,7 @@ from api.novel_public.screening import (
     NOVEL_SCREEN_LANE,
     NovelScreenItem,
     count_rejection,
+    enforce_call_limit,
     enforce_rejection_limit,
     rejections_left,
     screen_novel_text,
@@ -389,7 +391,7 @@ def _screening_unavailable(exc: Exception) -> HTTPException:
         )
     else:
         capture_dependency_failure(exc, dependency="prompt_render")
-    return _error(status.HTTP_400_BAD_REQUEST, "NOVEL_SCREENING_UNAVAILABLE")
+    return _error(status.HTTP_503_SERVICE_UNAVAILABLE, "NOVEL_SCREENING_UNAVAILABLE")
 
 
 # ── 라우트 ──────────────────────────────────────────────────────────────────
@@ -426,6 +428,7 @@ async def publish_novel(
                 _prompt_set, sections = await load_active_prompt_set(read_db, lane=NOVEL_SCREEN_LANE)
             except PromptSetNotFoundError as exc:
                 raise _screening_unavailable(exc) from exc
+            await enforce_call_limit(read_db, user_id)
         await read_db.commit()
 
     verdict = None

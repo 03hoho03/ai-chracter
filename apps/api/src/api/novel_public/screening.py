@@ -11,8 +11,10 @@
 모델은 발행 심사와 같은 스위치를 따른다(call_site 가 `PUBLISH_FILTER_CALL_SITES` 에 있다). 사고 설정은 넘기지 않는다 —
 판정·심사 호출의 공통 규칙이다(`llm/gemini.py` 의 `generate_structured` 주석).
 
-심사에 걸린 횟수는 게시자마다 KST 하루 상한이 있다. 걸린 글을 조금씩 고쳐 끝없이 다시 내는 것을 막는 상한이라 통과·장애는
-세지 않는다. 레이트리밋 면제 계정은 세지 않고, Redis 가 실패하면 다른 상한들처럼 통과시킨다."""
+상한은 둘이다. 심사에 걸린 횟수는 게시자마다 KST 하루 상한이 있다 — 걸린 글을 조금씩 고쳐 끝없이 다시 내는 것을 막는
+상한이라 통과·장애는 세지 않는다. 그와 별개로 심사 호출 자체를 게시자당 시간당 고정 창으로 센다(통과·거부·장애 모두) —
+통과한 화의 제목을 한 글자씩 고쳐 다시 내면 매번 그 화 전체가 다시 심사되므로, 거부만 세면 호출 수에 끝이 없다. 레이트리밋
+면제 계정은 두 상한 모두 적용하지 않고, Redis 가 실패하면 다른 상한들처럼 통과시킨다."""
 
 import logging
 import uuid
@@ -28,7 +30,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.chat.prompt_builder import PromptLane, PromptRenderError, render_prompt_channel, select_sections_for_render
 from api.core.config import settings
 from api.core.rate_limit import KST, seconds_until_kst_midnight
-from api.core.rate_limit_gate import _report_redis_failure, _too_many_requests, is_rate_limit_exempt
+from api.core.rate_limit_gate import (
+    _enforce_hourly_limit,
+    _report_redis_failure,
+    _too_many_requests,
+    is_rate_limit_exempt,
+)
 from api.core.redis import redis_client
 from api.db.models.novel import NovelScreeningPart
 from api.db.models.prompt import PromptSection
@@ -46,7 +53,12 @@ _REQUIRED_SLOTS = frozenset({_INSTRUCTION_SLOT, "screened_text"})
 # 게시자 한 명이 KST 하루에 심사에 걸릴 수 있는 횟수. 정책값이지 실측값이 아니다 — 걸린 화를 고쳐 다시 내는 정상 게시자는
 # 하루 몇 번이면 충분하다고 보고 고른 수다. 게이트는 호출 시점에 모듈 전역으로 읽는다(테스트가 바꿔 끼울 수 있게).
 NOVEL_SCREEN_DAILY_REJECTION_LIMIT = 3
-# 하루 상한 429 의 `window`. 다른 429 와 같은 바디 모양을 쓰고 이 값으로 어느 기능의 상한인지 가른다.
+# 게시자 한 명이 한 시간(고정 창)에 부를 수 있는 심사 호출 수. 작품 발행 심사의 시간당 상한과 같은 값·같은 꼴이다 — 정상
+# 게시자는 한 요청에 한 화씩 공개하므로 한 시간에 열 화를 넘게 새로 공개하거나 고쳐 다시 낼 일이 드물다고 보고 고른 정책값이다.
+# 호출 시점에 모듈 전역으로 읽는다(테스트가 바꿔 끼울 수 있게).
+NOVEL_SCREEN_HOURLY_CALL_LIMIT = 10
+_CALL_SCOPE = "novel_screen_calls"
+# 두 상한의 429 `window`. 다른 429 와 같은 바디 모양을 쓰고 이 값으로 어느 기능의 상한인지 가른다.
 NOVEL_SCREEN_LIMIT_WINDOW = "novel_screen"
 # `rate_limit:` 으로 시작해야 테스트의 자동 정리(`conftest.py` 의 `_flush_rate_limit_keys`)에 함께 지워진다.
 _REJECTION_KEY_PREFIX = "rate_limit:novel_screen_rejections"
@@ -174,6 +186,14 @@ async def enforce_rejection_limit(db: AsyncSession, user_id: uuid.UUID, now: dat
     left = await rejections_left(db, user_id, now)
     if left == 0:
         raise _too_many_requests(user_id, NOVEL_SCREEN_LIMIT_WINDOW, seconds_until_kst_midnight(now))
+
+
+async def enforce_call_limit(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """심사 LLM 을 부르기 직전에 한 번 센다 — 세는 단위가 요청이 아니라 심사 호출이라 심사할 글이 없는 요청(바뀐 것이
+    없는 다시 공개)은 세지 않는다. 상한을 넘었으면 창이 끝날 때까지 429."""
+    await _enforce_hourly_limit(
+        user_id, db, scope=_CALL_SCOPE, limit=NOVEL_SCREEN_HOURLY_CALL_LIMIT, window=NOVEL_SCREEN_LIMIT_WINDOW
+    )
 
 
 async def count_rejection(user_id: uuid.UUID, now: datetime) -> None:

@@ -22,8 +22,9 @@ FK 를 걸 때 그 테이블에 짧은 `SHARE ROW EXCLUSIVE` 가 잡히는데, �
 
 **배포 겹침** — 옛 코드는 세 테이블을 모르고 읽지도 쓰지도 않는다. 옛 코드의 소설·화 삭제는 위 cascade 로 이 행들까지 지운다.
 
-**downgrade** — 공개 상태 테이블에 행이 하나라도 있으면 아무것도 바꾸기 전에 `RuntimeError` 로 멈춘다. 지우면 공개 중인
-소설이 말없이 내려가고, 다시 올려도 돌아오지 않는다. 옛 코드로 돌아가기만 하려면 downgrade 없이 이미지만 되돌린다(이
+**downgrade** — 세 테이블 중 어디에라도 행이 있으면 아무것도 바꾸기 전에 `RuntimeError` 로 멈춘다. 공개 두 테이블을
+지우면 공개 중인 소설이 말없이 내려가고 다시 올려도 돌아오지 않는다. 심사 기록은 공개가 하나도 없어도(전부 거부됐거나 거둔
+뒤 지운 소설) 운영자가 거부 사유를 확인하는 근거라 말없이 버리지 않는다. 옛 코드로 돌아가기만 하려면 downgrade 없이 이미지만 되돌린다(이
 스키마에서 옛 코드가 그대로 돈다).
 
 이 파일은 `api.*` 를 import 하지 않는다(저장소 관례).
@@ -44,12 +45,12 @@ depends_on: str | Sequence[str] | None = None
 
 
 def _assert_downgradable(conn: Connection) -> None:
-    for table in ("novel_publications", "novel_chapter_publications"):
+    for table in ("novel_publications", "novel_chapter_publications", "novel_screenings"):
         count = conn.execute(sa.text(f"SELECT count(*) FROM {table}")).scalar_one()
         if count:
             raise RuntimeError(
-                f"{table} 에 {count}행이 있다 — 지우면 공개 중인 소설이 말없이 내려간다. 옛 코드로 돌아가기만 하려면"
-                " downgrade 없이 이미지만 되돌린다(이 스키마에서 옛 코드가 그대로 돈다)."
+                f"{table} 에 {count}행이 있다 — 지우면 공개 소설이나 심사 기록이 말없이 사라진다. 옛 코드로 돌아가기만"
+                " 하려면 downgrade 없이 이미지만 되돌린다(이 스키마에서 옛 코드가 그대로 돈다)."
             )
 
 
