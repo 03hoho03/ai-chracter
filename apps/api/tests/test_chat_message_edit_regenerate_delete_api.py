@@ -395,7 +395,7 @@ async def test_regenerate_replaces_last_assistant_message_without_new_turn(
 async def test_regenerate_story_room_selects_template_instruction(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """`regenerate_message`(`build_room_prompt` 경유) 호출부도 `_stream_new_turn`과
+    """`regenerate_message`(`build_room_prompt` 경유) 호출부도 새 턴(보내기·수정)과
     같은 `story_detail.prompt_template`을 골라야 한다."""
     user = _make_user()
     db_session.add(user)
@@ -558,7 +558,7 @@ async def test_regenerate_llm_error_keeps_original_message(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """이 흡수(원래 응답 유지)는 그대로 두되, `regenerate_message`도
-    `_stream_new_turn`과 같은 `gemini` 태그로 Bugsink 이벤트에 승격돼야 한다 — 형제 경로지만
+    새 턴(`run_turn`)과 같은 `gemini` 태그로 Bugsink 이벤트에 승격돼야 한다 — 형제 경로지만
     사용자 흐름이 달라 아직 검증되지 않았다."""
     captured: list[tuple[BaseException, str]] = []
     monkeypatch.setattr(
@@ -754,7 +754,7 @@ async def test_regenerate_presigned_url_failure_still_completes_the_turn_without
     — 매칭 필터를 통과한 뒤의 S3 presign 실패를
     흡수해 스트림은 정상 종료된다. `new_message.image_id`는 `db.commit()` 전에 대입되고
     presign 실패는 그 뒤에 일어나므로, DB에는 매칭된 entity_id가 그대로 남고 done
-    이벤트의 imageId만 null이 된다 — send_message(`_stream_new_turn`)와 정확히 같은
+    이벤트의 imageId만 null이 된다 — send_message(`RoomTurnStore`)와 정확히 같은
     성질이다(재조회 시 `_to_response`가 다시 서명을 시도한다)."""
     captured: list[tuple[BaseException, str]] = []
     monkeypatch.setattr(
@@ -950,8 +950,8 @@ async def test_edit_message_truncates_and_regenerates_from_edit_point(
 async def test_edit_message_reruns_image_matching_with_new_value(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """`edit_message`는 코드 변경 없이(`_stream_new_turn`
-    을 그대로 재사용해) 편집된 사용자 메시지에 맞춰 이미지 매칭을 다시 돈다."""
+    """`edit_message`는 코드 변경 없이(보내기와 같은 턴 골격
+    `run_turn` 을 그대로 재사용해) 편집된 사용자 메시지에 맞춰 이미지 매칭을 다시 돈다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()

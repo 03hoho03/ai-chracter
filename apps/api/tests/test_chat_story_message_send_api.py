@@ -382,7 +382,7 @@ async def test_send_message_story_room_injects_room_persona_into_generation_prom
 async def test_send_message_story_room_selects_template_instruction(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """`_stream_new_turn`(`build_room_prompt` 경유) 호출부는
+    """새 턴(`build_room_prompt` 경유) 호출부는
     `story_detail.prompt_template`을 골라 시스템 지시문(L0.5)에 잇는다."""
     user = _make_user()
     db_session.add(user)
@@ -701,7 +701,7 @@ async def test_get_story_room_messages_never_carry_image_id_or_url(
 ) -> None:
     """스토리 챗 방을 GET으로 재조회해도 모든 메시지의 imageId/imageUrl은 항상 None이어야
     한다 — 같은 content_version_id에 SituationalImage(캐릭터 전용)가 등록돼 있어도 스토리
-    메시지의 image_id는 애초에 채워지지 않으므로(_stream_new_turn) `_to_response`도
+    메시지의 image_id는 애초에 채워지지 않으므로(`RoomTurnStore.write`) `_to_response`도
     imageUrl을 서명해 내려보내면 안 된다."""
     user = _make_user()
     db_session.add(user)

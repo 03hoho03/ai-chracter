@@ -2,7 +2,9 @@
 
 판정 하나는 세 단계로 나뉜다 — `prepare`(DB 읽기와, 엔딩을 뺀 판정의 프롬프트 조립, 요청 세션의 트랜잭션 안), `judge`(DB 에 닿지 않는다 —
 LLM 호출, 엔딩은 엔딩마다 프롬프트 렌더도 여기서 한다), `apply`(결과를 `TurnJudgmentResult` 에 옮긴다). 단계 사이의
-순서와 반납 커밋, 바깥 `try`/`except` 는 부르는 쪽 (`chat/router.py` 의 `_stream_new_turn`)이 정한다 — 이 모듈은 라우터를 import 하지 않는다(라우터가 이 모듈을 import 한다).
+순서와 반납 커밋, 바깥 `try`/`except` 는 부르는 쪽(`chat/turn_engine.py` 의 `run_turn`)이 정한다 — 판정마다 목록 순서와
+`wave`(같은 물결의 판정은 함께 부르고, 두 번째 물결은 첫 물결을 반영한 뒤 차례로 부른다)만 알려 준다. 이 모듈은 라우터를
+import 하지 않는다(라우터가 이 모듈을 import 한다).
 
 흡수 범위는 헬퍼마다 다르고 클래스는 그대로 따른다. 스탯·칸 판정은 자기 LLM 실패를 흡수하고, 칸 준비는 자기 DB·렌더 실패를,
 상황 이미지 후보 조회는 자기 DB 실패를 흡수한다. 스탯 준비의 DB 읽기·렌더, 엔딩 준비의 DB 읽기, 엔딩 판정의 렌더·LLM, 상황 이미지
@@ -14,7 +16,7 @@ import logging
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import TypeVar
+from typing import Protocol, TypeVar
 
 from sqlalchemy import and_, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -511,10 +513,27 @@ class TurnJudgmentResult:
     ending_reached_event: ChatEndingReachedEvent | None = None
 
 
+class TurnJudgment(Protocol):
+    """새 턴 판정 하나. `prepare` 는 요청 세션으로 읽고, `judge` 는 LLM 만 부르고, `apply` 는 결과를 옮긴다.
+
+    `wave` 는 부르는 차례다 — 1 은 반납 뒤 함께 부르고(하나뿐이면 바로 기다린다) 곧바로 반영하며, 2 는 그 반영을 읽어야
+    하는 판정이라 그 뒤에 목록 순서대로 하나씩 부르고 반영한다."""
+
+    wave: int
+
+    async def prepare(self, ctx: JudgmentContext) -> None: ...
+
+    async def judge(self, llm_client: LLMClient, ctx: JudgmentContext) -> None: ...
+
+    def apply(self, ctx: JudgmentContext, result: TurnJudgmentResult) -> None: ...
+
+
 class StatJudgment:
     """스토리 스탯 규칙 판정. 최초 엔딩 전에만 돈다. 준비의 DB 읽기·렌더 실패는 흡수하지 않는다(DB 예외는 부르는 쪽의
     판정 `except` 도 지나 스트림을 끊고, 렌더 실패는 그 `except` 가 받는다). LLM 실패는 `_await_stat_judgment` 가 흡수해
     결과가 `None` 이고, 그러면 엔딩 판정도 건너뛴다."""
+
+    wave = 1
 
     def __init__(self, setup: StartingSetup) -> None:
         self._setup = setup
@@ -569,6 +588,8 @@ class EndingJudgment:
     동안 트랜잭션을 쥐지 않게).
 
     엔딩 판정의 렌더·LLM 실패는 흡수하지 않는다 — 첫 실패에서 남은 엔딩을 보지 않고 부르는 쪽 `except` 로 간다."""
+
+    wave = 2
 
     def __init__(self, setup: StartingSetup) -> None:
         self._setup = setup
@@ -629,6 +650,8 @@ class MediaCellJudgment:
     """스토리 미디어 북 칸 판정. 엔딩 여부와 무관하게 돈다. 준비(`_prepare_media_cell_judgment`)와 판정
     (`_judge_media_cell`)이 자기 실패를 전부 흡수해 그림만 포기한다."""
 
+    wave = 1
+
     def __init__(self) -> None:
         self._judgment: _MediaCellJudgment | None = None
         self._cell_id: uuid.UUID | None = None
@@ -663,6 +686,8 @@ class SituationalImageJudgment:
     """캐릭터 상황별 이미지 판정. 후보 조회 실패는 `_load_situational_candidates` 가 흡수하고, 준비의 렌더 실패와 판정
     LLM 실패는 흡수하지 않는다(부르는 쪽 `except` 가 받는다)."""
 
+    wave = 1
+
     def __init__(self) -> None:
         self._judgment: _SituationalImageJudgment | None = None
         self._matched: SituationalImage | None = None
@@ -686,3 +711,11 @@ class SituationalImageJudgment:
 
     def apply(self, ctx: JudgmentContext, result: TurnJudgmentResult) -> None:
         result.matched_image = self._matched
+
+
+def new_turn_judgments(setup: StartingSetup | None) -> list[TurnJudgment]:
+    """새 턴이 할 판정과 그 준비 순서. 스토리는 스탯 → 엔딩 → 칸 순으로 준비하고 스탯·칸을 함께 부른 뒤 엔딩을
+    부른다(함께 부르는 순서도 이 목록 순서다). 캐릭터는 상황 이미지 하나다."""
+    if setup is not None:
+        return [StatJudgment(setup), EndingJudgment(setup), MediaCellJudgment()]
+    return [SituationalImageJudgment()]

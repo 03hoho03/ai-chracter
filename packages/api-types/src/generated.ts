@@ -4224,8 +4224,8 @@ export interface paths {
         put?: never;
         /**
          * Send Message
-         * @description text/event-stream SSE 응답. 실제 생성+판단 파이프라인은
-         *     `_stream_new_turn`(이 방의 새 사용자 메시지를 커밋한 뒤 호출)이 담당한다.
+         * @description text/event-stream SSE 응답. 이 방의 새 사용자 메시지를 커밋하고 생성 프롬프트를 조립한 뒤, 실제 생성+판단
+         *     파이프라인은 턴 골격(`chat/turn_engine.py` 의 `run_turn`)이 담당한다.
          *
          *     본문 전체가 정산 가드 안이다 — 첫 `yield` 전 실패, 생성 중 끊김, 예상하지 못한 예외 어느 것으로 끝나도 응답이
          *     저장되지 않았으면 차감을 되돌리고 원래 예외를 다시 올린다(`chat/turn_settlement.py`).
@@ -4271,7 +4271,7 @@ export interface paths {
          * Regenerate Message
          * @description 마지막 AI 응답만 새로 생성해 교체한다(기존 메시지 전송과 동일한 SSE 이벤트
          *     스키마). `send_message`/`edit_message`와 달리 새 턴이 아니라 같은 턴의 응답을 바꾸는
-         *     것이므로 `_stream_new_turn`을 재사용하지 않는다 — turn_count는 증가시키지 않고, 스탯/엔딩
+         *     것이므로 새 턴 골격(`run_turn`)을 쓰지 않는다 — turn_count는 증가시키지 않고, 스탯/엔딩
          *     판단은 재실행하지 않는다(원 응답 생성 시 이미 한 번 반영됐고, 그 반영분을 되돌릴 턴별
          *     이력이 없어 재실행하면 오히려 중복 적용되어 부정확해진다). 그림 판정(캐릭터 상황별 이미지·스토리 미디어
          *     북 칸 — 스토리는 엔딩 뒤에도)은 재실행한다 — 노출 기록(`CharacterImageExposure`·`StoryMediaExposure`)은
@@ -4279,7 +4279,7 @@ export interface paths {
          *     응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 메시지를 건드리지 않는다. 바꿀 응답을
          *     덮던 요약은 생성 전에 되감겨 커밋되므로 생성이 실패해도 되돌아오지 않는다.
          *
-         *     트랜잭션 구간은 `_stream_new_turn` 과 같다 — 생성·판정 LLM 앞에서 요청 세션을 커밋으로 반납하고, 옛 응답 삭제와
+         *     트랜잭션 구간은 새 턴(`run_turn`)과 같다 — 생성·판정 LLM 앞에서 요청 세션을 커밋으로 반납하고, 옛 응답 삭제와
          *     새 응답·노출 기록은 판정 뒤 한 트랜잭션으로 쓴다(방이 그사이 지워졌으면 쓰지 않고 오류 이벤트로 끝낸다).
          */
         post: operations["regenerate_message_chat_rooms__room_id__regenerate_post"];
@@ -4310,12 +4310,12 @@ export interface paths {
         /**
          * Edit Message
          * @description 수정된 메시지 이후의 모든 메시지를 삭제하고 수정된 내용부터 새 AI 응답을 이어서
-         *     생성한다. `send_message`와 마찬가지로 완전히 새로운 턴이라 `_stream_new_turn`
+         *     생성한다. `send_message`와 마찬가지로 완전히 새로운 턴이라 같은 턴 골격 `run_turn`
          *     (판단 단계 + turn_count 증가 포함)을 그대로 재사용한다 — 차이는 새 사용자 메시지를
          *     추가하는 대신 기존 메시지를 갱신하고, history가 그 메시지 이전까지로 잘린다는 점뿐이다.
          *
-         *     삭제되는 메시지 중 AI 응답 개수만큼 turn_count를 미리 되돌려둔다(그래야 `_stream_new_turn`의
-         *     +=1과 합쳐 실제 남은 대화 길이와 일치하고, 이후 엔딩 턴게이트 판정이 어긋나지 않는다).
+         *     삭제되는 메시지 중 AI 응답 개수만큼 turn_count를 미리 되돌려둔다(그래야 턴 골격이 쓰는
+         *     turn_count+1과 합쳐 실제 남은 대화 길이와 일치하고, 이후 엔딩 턴게이트 판정이 어긋나지 않는다).
          *     다만 삭제된 턴들이 이미 반영해 둔 chat_room_stats/ending_reached 등의 상태까지 되돌리는
          *     건 하지 않는다 — 되돌릴 근거가 되는 턴별 변경 이력 자체가 저장되어 있지 않고
          *     (알려진 한계), 요구사항에도 이 롤백은 없다.

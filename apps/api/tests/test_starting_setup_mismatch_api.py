@@ -13,7 +13,7 @@ raise되고 처방 후에는 `resp.status_code == 400`이라는, 전후에 실�
 
 템플릿은 test_prompt_render_failure_api.py다 — 같은 결함 계열(정규화 안 된 예외가
 SSE를 뚫음)을 다루고, `test_send_message_without_an_active_prompt_set_fails_before_
-streaming_starts`의 단언 중 **상태 코드 / 커넥션 비오염** 둘을 이 파일이 따른다. **`message_count` 불변은 여기서 재지 않는다** — `send_message`는 `_stream_new_turn`
+streaming_starts`의 단언 중 **상태 코드 / 커넥션 비오염** 둘을 이 파일이 따른다. **`message_count` 불변은 여기서 재지 않는다** — `send_message`는 턴 골격(`run_turn`)
 *전에* 이미 사용자 메시지를 커밋하므로(`send_message`의 사용자 메시지 선커밋 블록) 수정 전의 깨진 상태에서 그
 불변은 애초에 참이 아니었고, 그 판정은 수정 뒤의 전송 테스트(사용자 메시지 미커밋 단언)로 올바르게
 미뤄져 있다(적대적 리뷰 발견, 2026-09-18). 다른 파일명을 쓰는 이유는 템플릿이 이미
@@ -289,7 +289,7 @@ async def test_edit_message_on_mismatched_story_room_returns_400(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """SSE 3진입점 중 하나 — `edit_message`도 `_starting_setup_dependency`
-    를 거치므로 `_stream_new_turn` 본문에 닿기 전에 400으로 막힌다.
+    를 거치므로 라우트 본문에 닿기 전에 400으로 막힌다.
     `_editable_user_message_dependency`가 USER 메시지를 요구해(오프닝은 ASSISTANT)
     수정 대상 메시지를 하나 직접 추가한다."""
     user = _make_user()

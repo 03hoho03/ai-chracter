@@ -20,7 +20,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat import router as chat_router
+from api.chat import turn_store
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
     ImageMatchJudgmentResult,
@@ -436,7 +436,7 @@ async def test_story_turn_cell_signing_failure_finishes_without_image(
     async def _boom(*_args: Any, **_kwargs: Any) -> Any:
         raise RuntimeError("서명 실패")
 
-    monkeypatch.setattr(chat_router, "resolve_media_tag_images", _boom)
+    monkeypatch.setattr(turn_store, "resolve_media_tag_images", _boom)
     fake = _JudgingLLMClient(image=_judged(cell.entity_id))
 
     events = await _send(db_client, room_id, fake)

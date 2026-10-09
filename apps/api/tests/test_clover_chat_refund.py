@@ -219,7 +219,7 @@ async def _run_failing_turn(
 
 
 # 환불되는 6지점. 제너레이터 3개 × 실패 2종이고, 전송·편집이 같은
-# `_stream_new_turn`을 공유하므로 전송으로 대표한다(편집은 같은 6지점을 다시 태운다).
+# 턴 골격(`run_turn`)을 공유하므로 전송으로 대표한다(편집은 같은 6지점을 다시 태운다).
 @pytest.mark.parametrize("surface", ["send", "edit", "regenerate", "preview"])
 @pytest.mark.parametrize("failure", ["render", "llm"])
 async def test_our_side_failure_refunds_clover(

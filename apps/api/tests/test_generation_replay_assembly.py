@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import chat_play
 import generation_replay
-from api.chat import router
+from api.chat import turn_engine
 from api.chat.prompt_builder import load_active_prompt_set
 from api.chat.router import _resolve_starting_setup
 from api.chat.turn_prompt import build_room_prompt
@@ -204,7 +204,7 @@ async def _scenario(
             measured_set,
             measured_sections,
         )
-        router._dump_prompt(
+        turn_engine._dump_prompt(
             room_id=room.room_id,
             call_site="chat_generate",
             model="gemini",

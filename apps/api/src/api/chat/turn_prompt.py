@@ -176,7 +176,7 @@ async def build_room_prompt(
 ) -> GenerationPrompt:
     """캐릭터 챗은 character_prompt+exampleDialogues로, 스토리 챗은 스토리 설정 템플릿+시작설정
     프롤로그로 생성 프롬프트를 조립한다. `send_message`/`edit_message`
-    (`_stream_new_turn` 경유)와 `regenerate_message`가 공유한다.
+    (라우터의 `_room_generation_prompt` 경유)와 `regenerate_message`가 공유한다.
 
     프롬프트와 함께 바닥 지시문(`system_instruction`)도 돌려준다 — 스토리 챗의 템플릿별 지시
     (`system_instruction_for`)를 고르려면 `story_detail.prompt_template`이 필요한데, 그 조회가

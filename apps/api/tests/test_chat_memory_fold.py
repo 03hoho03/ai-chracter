@@ -26,7 +26,7 @@ from fastapi import BackgroundTasks
 from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from api.chat import memory_fold
+from api.chat import memory_fold, turn_engine
 from api.chat import router as chat_router
 from api.chat.memory_fold import backoff_allows, plan_fold
 from api.chat.prompt_builder import MemorySummaryResult, StatRuleJudgmentResult
@@ -321,7 +321,8 @@ async def test_fold_is_scheduled_before_the_first_event_after_the_turn_commits(
         log.append(f"schedule:{func.__name__}")
         original_add_task(self, func, *args, **kwargs)
 
-    original_turn = chat_router._stream_new_turn
+    # 보내기 라우트는 턴 골격을 라우터에 import 된 이름으로 부른다 — 그 자리를 감싼 것으로 바꾼다.
+    original_turn = turn_engine.run_turn
 
     async def _recording_turn(*args: Any, **kwargs: Any) -> AsyncIterator[ChatStreamEvent]:
         # 안쪽 제너레이터는 이 줄이 도는 동안 자기 `yield`에 멈춰 있다 — 기록 순서가 곧 실행 순서다.
@@ -330,7 +331,7 @@ async def test_fold_is_scheduled_before_the_first_event_after_the_turn_commits(
             yield event
 
     monkeypatch.setattr(BackgroundTasks, "add_task", _recording_add_task)
-    monkeypatch.setattr(chat_router, "_stream_new_turn", _recording_turn)
+    monkeypatch.setattr(chat_router, "run_turn", _recording_turn)
 
     room = await _open_room(db_client, db_session, turns=1, lane="story")
     events = await _request(db_client, room, "send", _StatChangingLLMClient())

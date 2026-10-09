@@ -34,7 +34,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from api.chat import router as chat_router
-from api.chat import turn_settlement
+from api.chat import turn_settlement, turn_store
 from api.chat.preview_session import get_preview_session
 from api.chat.turn_settlement import TurnSettlement
 from api.chat.prompt_builder import (
@@ -643,7 +643,7 @@ async def test_room_deleted_during_generation_ends_with_an_error_and_no_refund(
     fake = _RoomDeletingLLMClient(db_client, room.room_id)
     _override_llm_client(fake)
     try:
-        with caplog.at_level(logging.WARNING, logger=chat_router.__name__):
+        with caplog.at_level(logging.WARNING, logger=turn_store.__name__):
             if action == "send":
                 resp = await db_client.post(f"/chat-rooms/{room.room_id}/messages", json={"content": "안녕"})
             else:
@@ -728,7 +728,7 @@ async def test_send_write_failure_after_the_stat_write_saves_nothing_of_the_turn
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
     before = await _room_state(db_session, room.room_id)
 
-    write_room_stat = chat_router._write_room_stat
+    write_room_stat = turn_store._write_room_stat
 
     def _write_then_break(
         db: AsyncSession, room_id: uuid.UUID, stat_rows: dict[str, ChatRoomStat], stat_id: str, value: float
@@ -737,7 +737,7 @@ async def test_send_write_failure_after_the_stat_write_saves_nothing_of_the_turn
         # 없는 방을 가리키는 스탯 행 — 쓰기 구간의 커밋에서 외래 키 위반으로 터진다.
         db.add(ChatRoomStat(chat_room_id=uuid.uuid4(), stat_entity_id=uuid.uuid4(), current_value=Decimal(0)))
 
-    monkeypatch.setattr(chat_router, "_write_room_stat", _write_then_break)
+    monkeypatch.setattr(turn_store, "_write_room_stat", _write_then_break)
     _override_llm_client(_AnswerAllLLMClient())
     try:
         exc = await _request_failure(db_client, f"/chat-rooms/{room.room_id}/messages", {"content": "마을을 떠나자"})

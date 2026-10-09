@@ -295,7 +295,7 @@ def test_seed_story_setting_text_does_not_hand_the_narrator_a_named_stat() -> No
 
 
 def test_seed_ending_judgment_prompts_do_not_restate_rule_thresholds() -> None:
-    """판정 프롬프트와 스탯 규칙은 AND 로 결합된다(`_stream_new_turn`) — 규칙이 이미 재는
+    """판정 프롬프트와 스탯 규칙은 AND 로 결합된다(`chat/turn_judgments.py` 의 `EndingJudgment`) — 규칙이 이미 재는
     숫자를 판정문이 다시 물으면 LLM 이 그 숫자를 서사적으로 재해석해 룰 엔진을 거부한다.
 
     실측(2026-08-07, wuxia-oneform 「몸이 허물어진 파멸」): 규칙 `몸 손상>=90` 에 실제

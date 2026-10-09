@@ -1,9 +1,9 @@
 """라우터 네임스페이스를 패치하는 테스트가 조용히 빗나가지 않게 고정한다.
 
-라우터와 `chat/turn_prompt.py`·`chat/room_stats.py`·`chat/turn_judgments.py` 는 같은 함수를 각자
-`from ... import 이름` 으로 가져와 부른다. 테스트가 `monkeypatch.setattr(chat_router, "이름", ...)` 로 감싸면 라우터에
-남은 호출부만 바뀌고, 옮겨 간 호출부(생성 프롬프트 조립·생성 세트 고르기·상황 노트 평가·새 턴 판정)는 원래 함수를
-그대로 부른다. 라우터에서 이름이 아예
+라우터와 `chat/turn_prompt.py`·`chat/room_stats.py`·`chat/turn_judgments.py`·`chat/turn_engine.py`·`chat/turn_store.py`
+는 같은 함수를 각자 `from ... import 이름` 으로 가져와 부른다. 테스트가 `monkeypatch.setattr(chat_router, "이름", ...)` 로
+감싸면 라우터에 남은 호출부만 바뀌고, 옮겨 간 호출부(생성 프롬프트 조립·생성 세트 고르기·상황 노트 평가·새 턴 판정·새 턴
+골격·턴 쓰기와 커밋 뒤 조회)는 원래 함수를 그대로 부른다. 라우터에서 이름이 아예
 사라졌다면 `AttributeError` 로 시끄럽게 깨지지만, 이름이 남아 있으면 패치가 성공하고 단언만 헛돈다.
 
 그래서 "라우터에 남아 있으면서 호출부 일부가 옮겨 간 이름"을 지키는 목록에 두고, 테스트 파일들을 `ast` 로 훑어
@@ -31,9 +31,9 @@ ROUTER_MODULE = "api.chat.router"
 GUARDED = frozenset(
     {
         "PromptNames",
+        "GenerationPrompt",
         "select",
         "and_",
-        "pg_insert",
         "format_persona",
         "preview_ending_rule_list_item",
         "get_cached_active_prompt_set",
@@ -60,15 +60,47 @@ GUARDED = frozenset(
         "_prepare_media_cell_judgment",
         "_prepare_situational_image_judgment",
         "_MediaCellJudgment",
+        # 새 턴 골격(`turn_engine`)과 턴 저장소(`turn_store`)가 부르는 것. 생성 스트림·문구·`done` 메시지 조립·쓰기 구간
+        # 잠금·노출 기록·칸 서명은 재생성·미리보기가 라우터에서 이름으로 부르고, 나머지는 라우터의 다른 라우트가 쓴다.
+        "TurnResult",
+        "ChatMessage",
+        "ChatMessageResponse",
+        "ChatRoomStat",
+        "CharacterImageExposure",
+        "StoryEndingUnlock",
+        "ChatErrorEvent",
+        "ChatPolicyWarningEvent",
+        "ChatDoneEvent",
+        "run_in_threadpool",
+        "resolve_media_tag_images",
+        "normalize_texts",
+        "normalize_texts_for_display",
+        "strip_media_tags",
+        "_stream_generated_tokens",
+        "_policy_warning_message",
+        "_turn_message_response",
+        "_lock_room_for_turn_write",
+        "_record_character_image_exposure",
+        "_record_story_media_exposure",
+        "_record_story_media_unlocks",
+        "_sign_judged_cell",
     }
 )
-MOVED_CALLER_MODULES = ("turn_prompt.py", "room_stats.py", "turn_judgments.py")
+MOVED_CALLER_MODULES = ("turn_prompt.py", "room_stats.py", "turn_judgments.py", "turn_engine.py", "turn_store.py")
 # 위 조건에 맞지만 지키지 않는 이름 → 이유.
 EXCLUDED: dict[str, str] = {}
 
 # `capture_dependency_failure` 를 라우터에 패치해 그 자리의 Bugsink 태그를 재는 테스트들의 공통 이유. 재는 흡수 자리가
-# 라우터에 남아 있어(생성·커밋 뒤 조회·쓰기 구간·재생성·미리보기 저장), 판정 모듈의 흡수 자리는 이 패치와 무관하다.
-_ROUTER_CAPTURE_SITE = "라우터에 남은 흡수 자리({site})의 Bugsink 태그를 잰다 — 판정 모듈의 흡수 자리는 재지 않는다."
+# 라우터에 남아 있어(새 턴 생성 프롬프트 렌더·재생성·미리보기 저장), 판정·턴 골격·턴 저장소 모듈의 흡수 자리는 이
+# 패치와 무관하다.
+_ROUTER_CAPTURE_SITE = (
+    "라우터에 남은 흡수 자리({site})의 Bugsink 태그를 잰다 — 판정·턴 골격·턴 저장소 모듈의 흡수 자리는 재지 않는다."
+)
+# 보내기 라우트 본문의 첫 문장(라우터에 남은 선행 작업)을 깨는 테스트들의 공통 이유.
+_ROUTER_BODY_FIRST_READ = (
+    "보내기 라우트 본문의 첫 히스토리 읽기(`select(ChatMessage)`)를 깨 첫 이벤트 전 실패의 환급을 잰다 — 그 읽기는 "
+    "라우터에 남은 선행 작업이고, 턴 저장소의 응답 메시지 생성은 재지 않는다."
+)
 
 # `파일::함수`(클래스 안이면 `파일::클래스::함수`) → 라우터 쪽 패치가 맞는 이유.
 ALLOWLIST = {
@@ -76,21 +108,10 @@ ALLOWLIST = {
         "판정용 Gemini 세트 의존성(`_active_prompt_set_dependency`)의 조회를 센다. 생성 세트 조회는 같은 테스트가 "
         "`turn_prompt` 를 함께 감싸서 센다."
     ),
-    "test_chat_message_send_api.py::test_send_message_llm_error_emits_error_event_and_keeps_user_message": (
-        _ROUTER_CAPTURE_SITE.format(site="새 턴 생성 LLM 실패")
+    "test_chat_model_billing.py::test_route_body_failure_before_the_first_event_refunds_the_premium_price": (
+        _ROUTER_BODY_FIRST_READ
     ),
-    "test_chat_message_send_api.py::test_send_message_presigned_url_failure_still_completes_the_turn_without_image": (
-        _ROUTER_CAPTURE_SITE.format(site="커밋 뒤 상황 이미지 URL 서명")
-    ),
-    "test_chat_message_send_api.py::test_send_message_asset_lookup_failure_still_completes_the_turn_without_image": (
-        _ROUTER_CAPTURE_SITE.format(site="커밋 뒤 상황 이미지 자산 조회")
-    ),
-    "test_chat_message_send_api.py::test_send_message_image_exposure_lookup_failure_still_completes_the_turn_without_image": (
-        _ROUTER_CAPTURE_SITE.format(site="쓰기 구간의 상황 이미지 노출 기록")
-    ),
-    "test_chat_message_send_api.py::test_send_message_image_exposure_lookup_real_sql_failure_is_isolated_by_savepoint": (
-        _ROUTER_CAPTURE_SITE.format(site="쓰기 구간의 상황 이미지 노출 기록")
-    ),
+    "test_clover_chat_refund.py::_run_body_failure": _ROUTER_BODY_FIRST_READ,
     "test_chat_message_edit_regenerate_delete_api.py::test_regenerate_llm_error_keeps_original_message": (
         _ROUTER_CAPTURE_SITE.format(site="재생성 생성 LLM 실패")
     ),
@@ -183,7 +204,7 @@ def test_no_test_patches_a_router_name_whose_callers_partly_moved_out() -> None:
         if name in GUARDED and node_id not in ALLOWLIST
     )
     assert offending == [], (
-        "라우터에 패치해도 옮겨 간 호출부(turn_prompt·room_stats·turn_judgments)에는 닿지 않는 이름이다. 그 모듈도 함께 패치하거나, "
+        "라우터에 패치해도 옮겨 간 호출부(turn_prompt·room_stats·turn_judgments·turn_engine·turn_store)에는 닿지 않는 이름이다. 그 모듈도 함께 패치하거나, "
         "라우터 쪽 호출부만 바꾸는 것이 의도라면 허용 목록에 이유를 적어라: " + ", ".join(offending)
     )
 

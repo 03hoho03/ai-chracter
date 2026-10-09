@@ -16,7 +16,7 @@ from typing import Any, Literal, cast, get_args
 import pytest
 from pydantic import BaseModel
 
-from api.chat import router as chat_router
+from api.chat import turn_engine
 from api.core.config import Settings, settings
 from api.llm import routing
 from api.llm.anthropic_api import AnthropicLLMClient
@@ -282,10 +282,10 @@ def test_the_prompt_dump_names_the_id_of_the_resolved_backend(monkeypatch: pytes
     _register_fake(monkeypatch)
     _assign(monkeypatch, {"chat_generate": _FAKE})
 
-    chat_router._dump_prompt(
+    turn_engine._dump_prompt(
         room_id=None, call_site="chat_generate", model="gemini", turn=1, prompt="p", system_instruction="s"
     )
-    chat_router._dump_prompt(
+    turn_engine._dump_prompt(
         room_id=None, call_site="preview_generate", model="gemini", turn=1, prompt="p", system_instruction="s"
     )
 
