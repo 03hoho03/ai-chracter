@@ -376,8 +376,9 @@ async def test_reapproval_after_revoke_starts_at_the_cut_without_retro(
 async def test_revoke_stops_accrual_and_keeps_confirmed_rows(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """승인 취소는 그 시각 이후의 적립만 멈춘다 — 소급 행은 남고, 취소 전 차감은 세고 취소 뒤 차감은 세지 않는다. 승인된 적이
-    있다는 사실(`everApproved`)은 다시 신청해 대기 중이어도 남는다(확정분 지급 영역을 보일지)."""
+    """승인 취소는 그 시각 이후의 적립만 멈춘다 — 소급 행은 남고, 취소 전 차감은 세고 취소 뒤 차감은 세지 않는다. 취소 사유와
+    취소 시각은 신청자의 정산 화면 응답에 실리고(승인 시각과 따로), 사유는 감사 로그에도 남는다. 승인된 적이 있다는
+    사실(`everApproved`)은 다시 신청해 대기 중이어도 남는다(확정분 지급 영역을 보일지)."""
     creator, content = await _creator(db_session)
     player = await _make_player(db_session, amount_krw=3_300, paid=1_100)
     await _apply(db_client, creator)
@@ -388,6 +389,13 @@ async def test_revoke_stops_accrual_and_keeps_confirmed_rows(
     assert (await _approve(db_client, application_id)).json() == {"retroAmountKrw": 3}
     await _use(db_session, player, content, 44, now - timedelta(minutes=1))
     await _use(db_session, player, content, 88, now + timedelta(minutes=1))
+    # 한 테스트 안의 `now()` 는 하나라 승인과 취소 시각이 같아지므로, 승인을 이틀 전으로 옮겨 응답의 두 시각을 가른다.
+    approved_at = now - timedelta(days=2)
+    await db_session.execute(
+        update(CreatorPayoutApplication)
+        .where(CreatorPayoutApplication.id == application_id)
+        .values(decided_at=approved_at)
+    )
 
     resp = await db_client.post(
         f"/admin/creator-payout/applications/{application_id}/revoke", json={"reasonText": "운영 정책 위반"}
@@ -412,8 +420,22 @@ async def test_revoke_stops_accrual_and_keeps_confirmed_rows(
     )
     assert monthly is not None and monthly.gross_units == 44
 
+    reasons = (
+        await db_session.execute(
+            select(AdminActionLog.action_type, AdminActionLog.reason_text).where(
+                AdminActionLog.target_user_id == creator.id
+            )
+        )
+    ).tuples().all()
+    assert ("user-creator-payout-revoke", "운영 정책 위반") in reasons
+
     await _login_as(db_client, creator.id)
-    assert (await db_client.get("/me/creator-payout")).json()["application"]["status"] == "revoked"
+    revoked = (await db_client.get("/me/creator-payout")).json()["application"]
+    assert (revoked["status"], revoked["decisionReason"]) == ("revoked", "운영 정책 위반")
+    assert (datetime.fromisoformat(revoked["revokedAt"]), datetime.fromisoformat(revoked["decidedAt"])) == (
+        now,
+        approved_at,
+    )
     await _apply(db_client, creator)
     body = (await db_client.get("/me/creator-payout")).json()
     assert (body["application"]["status"], body["everApproved"]) == ("pending", True)

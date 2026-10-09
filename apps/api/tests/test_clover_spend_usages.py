@@ -7,11 +7,11 @@ CHECK 는 alembic 1.18.5 의 `alembic check` 가 비교하지 않아 아래 `Int
 import uuid
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, insert, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from api.core.clover import SpendUsage, spend, spend_in_new_transaction
+from api.core.clover import CloverKind, SpendUsage, spend, spend_in_new_transaction
 from api.db.models.auth import User
 from api.db.models.clover import (
     CloverLedger,
@@ -19,6 +19,7 @@ from api.db.models.clover import (
     CloverSpendAllocation,
     CloverSpendRefund,
     CloverSpendUsage,
+    CloverSpendUsageKind,
 )
 from api.db.models.content import Content
 from factories import _make_draft_content, _make_user, _make_user_with_clover_lot
@@ -55,6 +56,7 @@ async def _insert_usage(db: AsyncSession, ledger: CloverLedger, content: Content
         "spend_ledger_id": ledger.id,
         "usage_kind": "chat",
         "spender_user_id": ledger.user_id,
+        "is_self_play": False,
         "content_id": content.id,
         "content_owner_user_id": content.creator_user_id,
         "chat_room_id": uuid.uuid4(),
@@ -83,12 +85,36 @@ async def _insert_usage(db: AsyncSession, ledger: CloverLedger, content: Content
             {"usage_kind": "preview", "content_id": None, "content_owner_user_id": None, "chat_room_id": None},
             id="preview",
         ),
+        pytest.param({"is_self_play": True}, id="self-play"),
+        pytest.param({"spender_user_id": None}, id="spender-erased"),
     ],
 )
 async def test_valid_usage_is_accepted(db_session: AsyncSession, overrides: dict[str, object]) -> None:
     """대조군 — 아래 거부들이 셋업 탓이 아니라 그 값 탓임을 보인다. 방이 지워진 소설(방 id 없음)도 정상이다."""
     content = await _content(db_session)
     await _insert_usage(db_session, await _spend_ledger(db_session), content, **overrides)
+
+
+async def test_insert_without_self_play_defaults_to_false(db_session: AsyncSession) -> None:
+    """무중단 배포가 겹치는 동안 자기 플레이 칸을 모르는 옛 색의 노벨 구매 INSERT 가 칸을 빼고 보내도 거짓으로 들어간다."""
+    content = await _content(db_session)
+    ledger = await _spend_ledger(db_session)
+    await db_session.execute(
+        insert(CloverSpendUsage).values(
+            spend_ledger_id=ledger.id,
+            usage_kind="novel_read",
+            spender_user_id=ledger.user_id,
+            content_id=content.id,
+            content_owner_user_id=content.creator_user_id,
+            novel_id=uuid.uuid4(),
+            publisher_user_id=ledger.user_id,
+        )
+    )
+
+    stored = await db_session.scalar(
+        select(CloverSpendUsage.is_self_play).where(CloverSpendUsage.spend_ledger_id == ledger.id)
+    )
+    assert stored is False
 
 
 @pytest.mark.parametrize(
@@ -127,6 +153,17 @@ async def test_valid_usage_is_accepted(db_session: AsyncSession, overrides: dict
             {"usage_kind": "novel", "novel_id": uuid.uuid4(), "publisher_user_id": "spender"},
             "ck_clover_spend_usages_publisher_for_novel_read",
             id="novelize-with-publisher",
+        ),
+        pytest.param(
+            {
+                "usage_kind": "preview",
+                "content_id": None,
+                "content_owner_user_id": None,
+                "chat_room_id": None,
+                "is_self_play": True,
+            },
+            "ck_clover_spend_usages_self_play_has_owner",
+            id="self-play-without-owner",
         ),
     ],
 )
@@ -195,6 +232,7 @@ async def test_spend_with_a_chat_usage_records_the_content_owner(db_session: Asy
         None,
     )
     assert usage.content_owner_user_id == content.creator_user_id != player.id
+    assert usage.is_self_play is False
 
 
 async def test_spend_with_a_novel_usage_records_the_novel(db_session: AsyncSession) -> None:
@@ -212,12 +250,46 @@ async def test_spend_with_a_novel_usage_records_the_novel(db_session: AsyncSessi
 
     assert spent is not None
     [usage] = await _usage_rows(db_session, player.id)
-    assert (usage.usage_kind, usage.content_owner_user_id, usage.chat_room_id, usage.novel_id) == (
+    assert (usage.usage_kind, usage.content_owner_user_id, usage.chat_room_id, usage.novel_id, usage.is_self_play) == (
         "novel",
         content.creator_user_id,
         None,
         novel_id,
+        False,
     )
+
+
+@pytest.mark.parametrize(
+    ("kind", "usage"),
+    [
+        pytest.param("chat_spend", "chat", id="chat"),
+        pytest.param("novelize_spend", "novel", id="novel"),
+    ],
+)
+async def test_spend_on_ones_own_content_is_recorded_as_self_play(
+    db_session: AsyncSession, kind: CloverKind, usage: CloverSpendUsageKind
+) -> None:
+    """작가가 자기 작품에서 쓴 차감은 자기 플레이로 남는다. 깨지는 시나리오: 기록이 이 칸을 거짓으로 채우면 탈퇴로 지불자가
+    끊긴 뒤 정산이 작가 자신의 사용을 매출로 센다."""
+    owner = await _make_user_with_clover_lot(db_session, clover_balance=50)
+    content = await _make_draft_content(db_session, creator_user_id=owner.id)
+
+    spent = await spend(
+        db_session,
+        user_id=owner.id,
+        amount=40,
+        kind=kind,
+        usage=SpendUsage(
+            usage,
+            content_id=content.id,
+            chat_room_id=uuid.uuid4() if usage == "chat" else None,
+            novel_id=uuid.uuid4() if usage == "novel" else None,
+        ),
+    )
+
+    assert spent is not None
+    [row] = await _usage_rows(db_session, owner.id)
+    assert (row.content_owner_user_id, row.is_self_play) == (owner.id, True)
 
 
 async def test_spend_with_a_preview_usage_points_to_no_content(db_session: AsyncSession) -> None:
@@ -227,12 +299,13 @@ async def test_spend_with_a_preview_usage_points_to_no_content(db_session: Async
 
     assert spent is not None
     [usage] = await _usage_rows(db_session, player.id)
-    assert (usage.spend_ledger_id, usage.usage_kind, usage.content_id, usage.content_owner_user_id) == (
-        spent.ledger_id,
-        "preview",
-        None,
-        None,
-    )
+    assert (
+        usage.spend_ledger_id,
+        usage.usage_kind,
+        usage.content_id,
+        usage.content_owner_user_id,
+        usage.is_self_play,
+    ) == (spent.ledger_id, "preview", None, None, False)
 
 
 async def test_preview_usage_with_a_content_is_rejected(db_session: AsyncSession) -> None:

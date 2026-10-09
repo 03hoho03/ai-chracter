@@ -26,7 +26,7 @@ from api.core.security import hash_withdrawn_email
 from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User, WithdrawnEmail, WithdrawnIdentity
 from api.db.models.chat import ChatMessageReport, ChatRoom
-from api.db.models.clover import CloverLedger
+from api.db.models.clover import CloverLedger, CloverSpendUsage
 from api.db.models.content import Content, ContentChatParticipant, ContentVisibility
 from api.db.models.feature_grant import UserFeatureGrant
 from api.db.models.inquiry import Inquiry
@@ -192,6 +192,15 @@ async def erase_account(
     # "이 사람이 어느 작품과 대화했는가" 의 기록도 대화와 함께 파기한다. 작품의 대화수는 이미 공개된 집계라 내리지
     # 않는다 — 내리면 탈퇴가 남의 작품 순위를 움직인다.
     await db.execute(delete(ContentChatParticipant).where(ContentChatParticipant.user_id == user_id))
+    # 클로버 사용처도 같은 사실(이 사람이 어느 작품에서 썼는가)이라 지불자를 끊는다. 행은 작품 소유자의 정산 근거라 남기고,
+    # 자기 플레이 여부는 행에 따로 있어 정산은 그대로다. 지불자 칸에는 인덱스가 없어 원장의 회원별 인덱스로 이 회원의 차감
+    # 행을 고른다(사용처 PK = 차감 원장 id). 사용처 행은 그 지불자의 사용자 행을 잠근 차감만 더하므로, 그 행을 잠근 지금은
+    # 새 행이 끼어들지 않는다.
+    await db.execute(
+        update(CloverSpendUsage)
+        .where(CloverSpendUsage.spend_ledger_id.in_(select(CloverLedger.id).where(CloverLedger.user_id == user_id)))
+        .values(spender_user_id=None)
+    )
     # 기능 허용은 계정에 딸린 설정이라 계정과 함께 지운다. 누가 언제 허용했는지는 감사 로그에 남는다.
     await db.execute(delete(UserFeatureGrant).where(UserFeatureGrant.user_id == user_id))
 

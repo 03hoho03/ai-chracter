@@ -50,7 +50,7 @@ class CreatorPayoutApplication(Base):
     decided_by_admin_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("admin_users.id", name="fk_creator_payout_applications_decided_by_admin_id"), nullable=True
     )
-    # 거절 사유는 신청자에게 보인다.
+    # 거절·승인 취소 사유. 신청자에게 보인다(승인은 쓰지 않는다).
     decision_reason: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     accrual_start_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     monthly_from_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

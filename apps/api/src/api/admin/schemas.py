@@ -771,7 +771,7 @@ class AdminCreatorPayoutApproveResponse(CamelModel):
 
 
 class AdminCreatorPayoutDecisionRequest(CamelModel):
-    """거절·승인 취소 사유. 공백만이면 422(라우터가 확인한다). 거절 사유는 신청자에게 보이고, 승인 취소 사유는 감사
-    로그에만 남는다."""
+    """거절·승인 취소 사유. 공백만이면 422(라우터가 확인한다). 두 사유 모두 신청자의 크리에이터 정산 화면에 그대로
+    보이므로(감사 로그에도 남는다) 신청자에게 보여도 되는 글만 적고 내부 판단 근거는 적지 않는다."""
 
     reason_text: str = Field(max_length=1000)

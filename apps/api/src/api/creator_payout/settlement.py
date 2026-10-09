@@ -72,7 +72,7 @@ eligible AS (
     JOIN users owner ON owner.id = u.content_owner_user_id
    WHERE u.content_owner_user_id = :creator_id
      AND u.usage_kind = ANY(CAST(:usage_kinds AS text[]))
-     AND u.spender_user_id <> u.content_owner_user_id
+     AND NOT u.is_self_play
      AND (owner.deleted_at IS NULL OR owner.deleted_at > u.created_at)
      AND EXISTS (SELECT 1 FROM creator_payout_applications ap
                   WHERE ap.user_id = :creator_id

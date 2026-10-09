@@ -584,3 +584,41 @@ def test_every_chat_and_novel_spend_in_src_passes_a_usage() -> None:
     assert missing == []
     assert unknown == []
     assert seen == _USAGE_REQUIRED_KINDS | _NO_USAGE_KINDS
+
+
+def _names_self_play(node: ast.expr) -> bool:
+    return isinstance(node, ast.Attribute) and node.attr == "is_self_play"
+
+
+def test_every_usage_write_in_src_names_self_play() -> None:
+    """`src/` 에서 사용처 행을 쓰는 곳(`CloverSpendUsage(…)` 생성, `insert(CloverSpendUsage).from_select([…])`)은 모두
+    자기 플레이 칸을 명시한다. 칸에는 배포 겹침용 기본값 거짓이 걸려 있어, 빠뜨려도 실패하지 않고 자기 플레이가 거짓으로
+    들어가 작가 본인의 사용이 정산에 섞인다. 두 형태가 실제로 한 번 이상 나와야 한다 — 훑는 대상이 사라져 아무것도
+    검사하지 않게 되는 것을 막는다."""
+    missing: list[str] = []
+    constructors = from_selects = 0
+    for path in sorted(_SRC.rglob("*.py")):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            where = f"{path.relative_to(_SRC)}:{node.lineno}"
+            if isinstance(node.func, ast.Name) and node.func.id == "CloverSpendUsage":
+                constructors += 1
+                if "is_self_play" not in {k.arg for k in node.keywords}:
+                    missing.append(where)
+            elif (
+                isinstance(node.func, ast.Attribute)
+                and node.func.attr == "from_select"
+                and "insert(CloverSpendUsage)" in ast.unparse(node.func.value)
+            ):
+                from_selects += 1
+                columns = node.args[0] if node.args else None
+                if not (isinstance(columns, ast.List) and any(_names_self_play(c) for c in columns.elts)):
+                    missing.append(where)
+
+    assert missing == []
+    assert constructors >= 1
+    assert from_selects >= 1

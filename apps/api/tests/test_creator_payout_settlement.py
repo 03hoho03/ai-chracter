@@ -19,6 +19,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.auth.withdrawal import erase_account
 from api.core import config
 from api.core.clover import SpendUsage, refund_spend, revoke_purchase_lots
 from api.core.rate_limit import KST
@@ -55,6 +56,7 @@ def month_of(year: int, month: int) -> tuple[datetime, datetime]:
 
 
 APPROVED_BEFORE_OCTOBER = datetime(2026, 9, 1, tzinfo=KST)
+SEP = month_of(2026, 9)
 OCT = month_of(2026, 10)
 NOV = month_of(2026, 11)
 DEC = month_of(2026, 12)
@@ -160,6 +162,71 @@ async def test_counts_only_paid_allocations_of_others_play_on_own_content(db_ses
 
     b_row = await _confirmed(db_session, b.user, OCT)
     assert (b_row.gross_units, b_row.amount_krw) == (0, 0)
+
+
+async def test_self_play_stays_excluded_after_the_spender_is_erased(db_session: AsyncSession) -> None:
+    """자기 플레이는 지불자 칸이 아니라 기록 때 저장한 칸으로 가른다. B 가 A 작품에 22, 자기 작품에 22 를 쓰고 지불자가
+    끊겼다. A 는 22 × 3/22 = 3원, B 는 0원. 깨지는 시나리오: 지불자를 비교하면 끊긴 행의 비교가 NULL 이라 A 몫이 빠지고,
+    끊긴 행을 남의 플레이로 보면 B 자신의 사용이 B 의 적립으로 잡힌다."""
+    a, a_content = await _creator(db_session)
+    b = await _make_player(db_session, amount_krw=9_900, paid=3_300)
+    await _application(db_session, b.user.id, accrual_start_at=APPROVED_BEFORE_OCTOBER)
+    b_content = await _make_draft_content(db_session, creator_user_id=b.user.id)
+    await _use(db_session, b, a_content, 22, kst(10, 2))
+    await _use(db_session, b, b_content, 22, kst(10, 3))
+    await db_session.execute(
+        update(CloverSpendUsage).where(CloverSpendUsage.spender_user_id == b.user.id).values(spender_user_id=None)
+    )
+
+    assert (await _confirmed(db_session, a, OCT)).amount_krw == 3
+    assert (await _confirmed(db_session, b.user, OCT)).gross_units == 0
+
+
+async def test_withdrawal_erases_the_spender_but_keeps_every_settlement(db_session: AsyncSession) -> None:
+    """탈퇴는 그 회원이 지불자인 사용처의 지불자만 끊는다 — 작품 소유자·자기 플레이 칸과 다른 회원의 행은 그대로이고,
+    탈퇴 회원의 작품에서 다른 회원(C)이 쓴 행의 지불자도 남는다. 같은 달 확정 값은 탈퇴 전후가 같다: A 는 B·C 가 쓴
+    44 × 3/22 = 6원, B 는 C 가 B 작품에 쓴 22 × 3/22 = 3원(자기 사용은 빠진다).
+
+    사용은 9월이다 — 탈퇴 시각이 실제 지금이라, 그보다 앞서야 B 의 작품 사용이 "소유자 탈퇴 뒤"로 빠지지 않고 자기 플레이
+    판정까지 간다."""
+    a, a_content = await _creator(db_session)
+    b = await _make_player(db_session, amount_krw=9_900, paid=3_300)
+    c = await _make_player(db_session, amount_krw=9_900, paid=3_300)
+    await _application(db_session, b.user.id, accrual_start_at=APPROVED_BEFORE_OCTOBER)
+    b_content = await _make_draft_content(db_session, creator_user_id=b.user.id)
+    await _use(db_session, b, a_content, 22, kst(9, 10))
+    await _use(db_session, b, b_content, 22, kst(9, 11))
+    await _use(db_session, c, a_content, 22, kst(9, 12))
+    await _use(db_session, c, b_content, 22, kst(9, 13))
+
+    async def september() -> tuple[int, int]:
+        return (
+            (await _confirmed(db_session, a, SEP)).amount_krw,
+            (await _confirmed(db_session, b.user, SEP)).amount_krw,
+        )
+
+    async with db_session.begin_nested() as before_withdrawal:
+        before = await september()
+        await before_withdrawal.rollback()
+
+    async def keep(storage_key: str) -> None:
+        return None
+
+    await erase_account(db_session, b.user, delete_storage_object=keep)
+
+    rows = (
+        await db_session.execute(
+            select(
+                CloverSpendUsage.spender_user_id, CloverSpendUsage.content_owner_user_id, CloverSpendUsage.is_self_play
+            )
+        )
+    ).tuples()
+    assert sorted(rows, key=str) == sorted(
+        [(None, a.id, False), (None, b.user.id, True), (c.user.id, a.id, False), (c.user.id, b.user.id, False)],
+        key=str,
+    )
+    assert before == (6, 3)
+    assert await september() == before
 
 
 # ── 부분 환급, 월을 넘는 환급, 음수 달 ────────────────────────────────────────

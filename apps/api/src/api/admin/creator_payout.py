@@ -249,7 +249,8 @@ async def revoke_creator_payout_application(
     admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
-    """승인을 취소한다. 승인 중이 아니면 409 `CREATOR_PAYOUT_APPLICATION_NOT_APPROVED`.
+    """승인을 취소한다. 사유는 거절 사유와 같은 칸에 남아 신청자에게 보인다. 승인 중이 아니면 409
+    `CREATOR_PAYOUT_APPLICATION_NOT_APPROVED`.
 
     효과는 "이 시각 이후 적립 중단" 하나다. 그 전까지의 사용은 그대로 적립되고(취소한 달의 앞부분도 다음 월 확정이 센다),
     이미 확정된 적립과 소급 확정 행은 그대로 남는다. 다시 신청해 승인받으면 소급 없이 그 승인부터 적립한다.
@@ -261,6 +262,7 @@ async def revoke_creator_payout_application(
     application.status = "revoked"
     application.revoked_at = await _transaction_now(db)
     application.revoked_by_admin_id = admin_id
+    application.decision_reason = body.reason_text
     await record_admin_action(
         db,
         admin_id=admin_id,

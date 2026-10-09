@@ -1363,7 +1363,8 @@ export interface paths {
         put?: never;
         /**
          * Revoke Creator Payout Application
-         * @description 승인을 취소한다. 승인 중이 아니면 409 `CREATOR_PAYOUT_APPLICATION_NOT_APPROVED`.
+         * @description 승인을 취소한다. 사유는 거절 사유와 같은 칸에 남아 신청자에게 보인다. 승인 중이 아니면 409
+         *     `CREATOR_PAYOUT_APPLICATION_NOT_APPROVED`.
          *
          *     효과는 "이 시각 이후 적립 중단" 하나다. 그 전까지의 사용은 그대로 적립되고(취소한 달의 앞부분도 다음 월 확정이 센다),
          *     이미 확정된 적립과 소급 확정 행은 그대로 남는다. 다시 신청해 승인받으면 소급 없이 그 승인부터 적립한다.
@@ -5899,8 +5900,8 @@ export interface components {
         };
         /**
          * AdminCreatorPayoutDecisionRequest
-         * @description 거절·승인 취소 사유. 공백만이면 422(라우터가 확인한다). 거절 사유는 신청자에게 보이고, 승인 취소 사유는 감사
-         *     로그에만 남는다.
+         * @description 거절·승인 취소 사유. 공백만이면 422(라우터가 확인한다). 두 사유 모두 신청자의 크리에이터 정산 화면에 그대로
+         *     보이므로(감사 로그에도 남는다) 신청자에게 보여도 되는 글만 적고 내부 판단 근거는 적지 않는다.
          */
         AdminCreatorPayoutDecisionRequest: {
             /** Reasontext */
@@ -9115,7 +9116,8 @@ export interface components {
         };
         /**
          * CreatorPayoutApplicationView
-         * @description 가장 최근 신청. 거절 사유(`decisionReason`)는 신청자에게 보이는 글이다.
+         * @description 가장 최근 신청. `decisionReason` 은 거절·승인 취소 사유로 신청자에게 보이는 글이다. `decidedAt` 은 승인·거절한
+         *     시각이고, 승인 취소된 신청의 취소 시각은 `revokedAt` 이다.
          */
         CreatorPayoutApplicationView: {
             /**
@@ -9132,6 +9134,8 @@ export interface components {
             decidedAt: string | null;
             /** Decisionreason */
             decisionReason: string;
+            /** Revokedat */
+            revokedAt: string | null;
         };
         /**
          * CreatorPayoutEligibilityView

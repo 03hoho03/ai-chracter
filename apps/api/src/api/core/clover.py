@@ -322,6 +322,8 @@ async def _record_usage(db: AsyncSession, *, ledger_id: uuid.UUID, user_id: uuid
     무료 턴에도 작품 조회가 하나 늘고, 여기서 읽으면 실제로 클로버를 쓰는 차감에만 왕복 없이 붙는다. 작품 행이 없으면
     `ValueError` 로 트랜잭션을 롤백시킨다 — 채팅·소설 경로는 차감 전에 그 작품을 이미 읽었으므로 도달하면 버그다.
 
+    자기 플레이 여부(지불자 = 작품 소유자)도 같은 문장에서 그 작품 행으로 정한다. 미리보기는 비교할 소유자가 없어 거짓이다.
+
     미리보기는 작품을 가리키지 않아 읽을 것이 없으므로 받은 값을 그대로 넣는다. 작품 id 를 버리지 않고 넣는 것은, 종류를
     잘못 넘긴 호출(작품이 있는데 `preview`)이 정산에서 조용히 빠지지 않고 CHECK 에 걸려 실패하게 하려는 것이다.
 
@@ -336,6 +338,7 @@ async def _record_usage(db: AsyncSession, *, ledger_id: uuid.UUID, user_id: uuid
                 spend_ledger_id=ledger_id,
                 usage_kind=usage.kind,
                 spender_user_id=user_id,
+                is_self_play=False,
                 content_id=usage.content_id,
                 chat_room_id=usage.chat_room_id,
                 novel_id=usage.novel_id,
@@ -351,6 +354,7 @@ async def _record_usage(db: AsyncSession, *, ledger_id: uuid.UUID, user_id: uuid
                 CloverSpendUsage.spend_ledger_id,
                 CloverSpendUsage.usage_kind,
                 CloverSpendUsage.spender_user_id,
+                CloverSpendUsage.is_self_play,
                 CloverSpendUsage.content_id,
                 CloverSpendUsage.content_owner_user_id,
                 CloverSpendUsage.chat_room_id,
@@ -361,6 +365,7 @@ async def _record_usage(db: AsyncSession, *, ledger_id: uuid.UUID, user_id: uuid
                 literal(ledger_id, Uuid),
                 literal(usage.kind),
                 literal(user_id, Uuid),
+                Content.creator_user_id == literal(user_id, Uuid),
                 Content.id,
                 Content.creator_user_id,
                 literal(usage.chat_room_id, Uuid),

@@ -16,12 +16,14 @@ class ApplyCreatorPayoutResponse(CamelModel):
 
 
 class CreatorPayoutApplicationView(CamelModel):
-    """가장 최근 신청. 거절 사유(`decisionReason`)는 신청자에게 보이는 글이다."""
+    """가장 최근 신청. `decisionReason` 은 거절·승인 취소 사유로 신청자에게 보이는 글이다. `decidedAt` 은 승인·거절한
+    시각이고, 승인 취소된 신청의 취소 시각은 `revokedAt` 이다."""
 
     status: CreatorPayoutApplicationStatus
     applied_at: datetime
     decided_at: datetime | None
     decision_reason: str
+    revoked_at: datetime | None
 
 
 class CreatorPayoutEligibilityView(CamelModel):

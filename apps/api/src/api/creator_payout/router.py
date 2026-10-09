@@ -119,6 +119,7 @@ async def get_creator_payout(
             applied_at=latest.applied_at,
             decided_at=latest.decided_at,
             decision_reason=latest.decision_reason,
+            revoked_at=latest.revoked_at,
         ),
         eligibility=CreatorPayoutEligibilityView(
             identity_verified=eligibility.identity_verified,
