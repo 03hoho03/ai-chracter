@@ -2263,6 +2263,10 @@ export interface paths {
          *
          *     사용자 행을 먼저 잠근다. 같은 사용자의 작업 생성이 이 사이에 끼어들면 지울 소설에 새 작업 행이 붙어 소설 DELETE
          *     가 FK 위반이 되는데, 작업 생성도 사용자 행을 먼저 잡으므로 둘이 줄을 선다. 소설 행은 잠그지 않는다(모듈 머리).
+         *
+         *     노벨에서 이 소설의 화를 산 구매자가 있으면 같은 트랜잭션에서 그 구매를 환급한다 — 그래서 게시자 행과 함께 그 구매자들의
+         *     행도 id 순으로 잠근다(`novel_public/purchases.py` 모듈 docstring). 잠근 뒤 새 구매가 보이면 409
+         *     `NOVEL_DELETE_CONFLICT` 이고 지우지 않는다(다시 누르면 된다).
          */
         delete: operations["delete_novel_novels__novel_id__delete"];
         options?: never;
@@ -2548,6 +2552,8 @@ export interface paths {
          *
          *     잠금: 사용자 행(작업 생성과 줄 세우기 — 진행 중 확인과 삭제 사이에 새 작업이 끼지 않게) → 작업 행 → 화 행. 묶음 보정도
          *     이 잠금 아래에서 먼저 한다 — 빈 묶음이 남아 있으면 그것이 "마지막"으로 보여 실제 마지막 묶음을 지울 수 없다.
+         *
+         *     노벨에서 그 묶음의 화를 산 구매는 같은 트랜잭션에서 환급한다(소설 삭제와 같은 잠금·409 규칙).
          */
         delete: operations["delete_last_novel_batch_novels__novel_id__batches__batch_id__delete"];
         options?: never;
@@ -2984,6 +2990,26 @@ export interface paths {
          *     이미 거둔 공개면 그대로 204 다. 재동의 게이트를 걸지 않는다(자기 글을 내리는 일이라).
          */
         post: operations["withdraw_novel_publication_novels__novel_id__publication_withdraw_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/webnovels/{novel_id}/chapters/{chapter_id}/purchase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Purchase Novel Chapter
+         * @description 노벨 화 하나를 소장한다(`purchase_chapter`). 공개 스위치가 꺼져 있으면 403 `NOVEL_PUBLIC_DISABLED`.
+         */
+        post: operations["purchase_novel_chapter_webnovels__novel_id__chapters__chapter_id__purchase_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7050,6 +7076,10 @@ export interface components {
             novelRestricted: boolean;
             /** Dailyfreechatturns */
             dailyFreeChatTurns: number;
+            /** Novelreadcost */
+            novelReadCost: number;
+            /** Novelfreechaptercount */
+            novelFreeChapterCount: number;
             /** Paymentsenabled */
             paymentsEnabled: boolean;
             /** Paymethods */
@@ -8546,6 +8576,7 @@ export interface components {
         /** NotificationResponse */
         NotificationResponse: {
             comment?: components["schemas"]["CommentNotificationTargetResponse"] | null;
+            novelRefund?: components["schemas"]["NovelRefundNotificationResponse"] | null;
             /** Commentactionid */
             commentActionId?: string | null;
             /**
@@ -8837,6 +8868,30 @@ export interface components {
             chapterModels?: components["schemas"]["NovelChapterModel"][];
         };
         /**
+         * NovelChapterPurchaseRequest
+         * @description `expected_price` 는 구매 확인 화면에 보인 가격이다. 지금 가격과 다르면 사지 않는다 — 배포로 가격이 바뀌는 사이 열어 둔
+         *     화면의 금액으로 차감하지 않으려는 것이다(소설화의 `expected_cost` 와 같은 규칙).
+         */
+        NovelChapterPurchaseRequest: {
+            /** Expectedprice */
+            expectedPrice: number;
+        };
+        /**
+         * NovelChapterPurchaseResponse
+         * @description `charged` 는 이번 요청이 쓴 클로버다 — 이미 소장한 화면 0 이고 아무것도 쓰지 않는다. `balance` 는 요청 뒤 잔액이다.
+         */
+        NovelChapterPurchaseResponse: {
+            /**
+             * Chapterid
+             * Format: uuid
+             */
+            chapterId: string;
+            /** Charged */
+            charged: number;
+            /** Balance */
+            balance: number;
+        };
+        /**
          * NovelChapterReadingPosition
          * @description 화 하나를 읽던 자리. `paragraph_count` 는 저장할 때의 문단 수라, 그 뒤 개정이 바뀌었으면 비율로 옮긴다.
          *     `finished` 는 그 화를 끝까지 읽은 적이 있는가다(목차의 `finished_reading` 과 같은 값).
@@ -9111,6 +9166,7 @@ export interface components {
              * @enum {string}
              */
             lastChapterModel?: "gemini" | "sonnet" | "opus";
+            purchaseRefunds?: components["schemas"]["NovelPurchaseRefundPreview"];
         };
         /** NovelJobResponse */
         NovelJobResponse: {
@@ -9377,6 +9433,33 @@ export interface components {
             chapterId?: string | null;
         };
         /**
+         * NovelPurchaseRefundPreview
+         * @description 지우면 돌려줄 구매. 소설 삭제 확인에는 소설 전체를, 마지막 묶음(화) 삭제 확인에는 마지막 묶음을 본다. 금액은 산 값
+         *     그대로다(이미 결제 환불된 구매분은 실제 환급에서 빠질 수 있다).
+         */
+        NovelPurchaseRefundPreview: {
+            /**
+             * Novelbuyercount
+             * @default 0
+             */
+            novelBuyerCount: number;
+            /**
+             * Novelrefundamount
+             * @default 0
+             */
+            novelRefundAmount: number;
+            /**
+             * Lastbatchbuyercount
+             * @default 0
+             */
+            lastBatchBuyerCount: number;
+            /**
+             * Lastbatchrefundamount
+             * @default 0
+             */
+            lastBatchRefundAmount: number;
+        };
+        /**
          * NovelReadingPositionRequest
          * @description 화를 읽던 자리. 같은 값을 다시 보내도 결과가 같다. `finished` 가 한 번 참이 되면 그 화는 그 뒤 앞부분으로 돌아가
          *     저장해도 다 읽은 화로 남는다. `revision_id` 는 읽던 개정이다(그 뒤 개정이 바뀌면 문단 수 비율로 옮긴다).
@@ -9393,6 +9476,17 @@ export interface components {
             revisionId: string;
             /** Finished */
             finished: boolean;
+        };
+        /**
+         * NovelRefundNotificationResponse
+         * @description 노벨 삭제 환급 알림의 내용 — 게시자가 지운 소장 화 수와 실제로 돌려준 클로버. 소설 제목은 없다(지운 글의 사본을
+         *     남기지 않는다).
+         */
+        NovelRefundNotificationResponse: {
+            /** Chaptercount */
+            chapterCount: number;
+            /** Cloveramount */
+            cloverAmount: number;
         };
         /**
          * NovelRegenerateOption
@@ -14977,6 +15071,42 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    purchase_novel_chapter_webnovels__novel_id__chapters__chapter_id__purchase_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+                chapter_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NovelChapterPurchaseRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelChapterPurchaseResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

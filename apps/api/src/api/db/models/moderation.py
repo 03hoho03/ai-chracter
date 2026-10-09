@@ -89,7 +89,8 @@ class Notification(Base):
     """`type`은 운영·공지·문의·댓글 사건을 구분한다 — `moderation-action`(기본값, `moderation/router.py`의 신고
     처리에서 INSERT), `user-warned`(`admin/users.py`의 경고), `user-suspended`
     (`admin/users.py`의 정지), `notice`(`admin/notices.py`의 공지 게시 fan-out),
-    `inquiry-reply`(`admin/inquiries.py`의 문의 답변), 댓글 생성·답글·멘션·운영 조치 알림이다.
+    `inquiry-reply`(`admin/inquiries.py`의 문의 답변), 댓글 생성·답글·멘션·운영 조치 알림,
+    `novel-purchase-refund`(`novel_public/purchases.py`의 노벨 삭제 환급)이다.
     `type`이 Postgres enum이 아니라 `Text`인 이유가
     그것이다 — 값이 늘어날 여지가 있어 새 값을 추가해도 마이그레이션이 필요 없다.
 

@@ -1735,7 +1735,21 @@ sudo python3 ops/check_env.py --format /opt/ddona/.env
 sudo bash ops/swap-api.sh
 ```
 
-공개 상태·화 공개본·심사 기록은 남아 다시 켜면 그대로 돌아온다. 줄을 지웠으니 키 개수 문장을 다시 센다.
+공개 상태·화 공개본·심사 기록과 구매(소장) 기록은 남아 다시 켜면 그대로 돌아온다. 꺼진 동안 화 구매
+(`POST /webnovels/{id}/chapters/{id}/purchase`)도 403 이다. 줄을 지웠으니 키 개수 문장을 다시 센다.
+
+**구매·삭제 환급** — 화 가격(30)과 소설마다 무료인 앞 화 수(5)는 env 가 아니라 `core/clover.py` 의 상수다(바꾸려면 배포).
+게시자가 산 화가 든 소설·마지막 묶음을 지우면 같은 트랜잭션에서 구매자에게 환급한다(원장 `novel_read_refund`, 이미 결제
+환불된 구매분은 건너뜀). 🔴 **구매가 생긴 뒤 이 판보다 옛 이미지로 되돌리면** 옛 코드의 소설·묶음 삭제는 구매를 몰라 환급
+없이 지운다 — 되돌리기 전에 먼저 스위치를 끄고(위 "끄기"), 되돌린 동안 지워진 구매는 아래로 찾아 어드민 지급으로 보정한다.
+`novel_purchases` 에 행이 있으면 그 리비전의 downgrade 는 거부되므로 스키마는 그대로 두고 이미지만 되돌린다.
+
+```sql
+SELECT p.buyer_user_id, p.price, p.created_at FROM novel_purchases p
+LEFT JOIN novel_chapters c ON c.id = p.chapter_id
+JOIN users u ON u.id = p.publisher_user_id
+WHERE c.id IS NULL AND p.refunded_at IS NULL AND u.deleted_at IS NULL;
+```
 
 ---
 

@@ -88,11 +88,94 @@ async def _bought_and_committed(factory: async_sessionmaker[AsyncSession], novel
         await s.commit()
 
 
+def _delete_in_own_session(factory: async_sessionmaker[AsyncSession], novel_id: uuid.UUID) -> "asyncio.Task[object]":
+    """소설 삭제 라우트를 자기 세션으로 띄운다. 거절(`HTTPException`)은 결과로 돌려주고 성공은 None 이다 — 교착 오류 같은
+    500 감은 그대로 터져 테스트를 실패시킨다."""
+
+    async def run() -> object:
+        async with factory() as s:
+            novel = await s.get_one(Novel, novel_id)
+            try:
+                await novelize_router.delete_novel(novel=novel, db=s)
+            except HTTPException as exc:
+                return exc
+            return None
+
+    return asyncio.create_task(run())
+
+
 async def _balance(factory: async_sessionmaker[AsyncSession], user_id: uuid.UUID) -> int:
     async with factory() as s:
         balance = await s.scalar(select(User.clover_balance).where(User.id == user_id))
     assert balance is not None
     return balance
+
+
+@dataclass(frozen=True)
+class _CrossBuyers:
+    first: PublicNovel
+    second: PublicNovel
+
+
+async def _publishers_who_bought_each_other(factory: async_sessionmaker[AsyncSession]) -> _CrossBuyers:
+    first = await _publish(factory, await _member(factory))
+    second = await _publish(factory, await _member(factory))
+    await _bought_and_committed(factory, second, first.publisher_id)
+    await _bought_and_committed(factory, first, second.publisher_id)
+    return _CrossBuyers(first, second)
+
+
+async def test_two_publishers_who_bought_each_others_chapter_can_delete_at_once(
+    independent_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """서로의 6화를 산 두 게시자가 동시에 소설을 지운다. 게시자 행을 먼저 쥐고 구매자(상대) 행을 나중에 잡으면, 둘이 각자
+    자기 행을 쥔 채 상대를 기다려 교착한다. 두 공개 행을 붙든 트랜잭션으로 두 삭제를 같은 지점에 세워 그 겹침을 만든다 —
+    관련 회원을 id 순으로 먼저 잡으면 한쪽이 다른 쪽 뒤에 줄을 설 뿐 둘 다 끝나고, 둘 다 환급받는다."""
+    pair = await _publishers_who_bought_each_other(independent_factory)
+    holder = independent_factory()
+    try:
+        await holder.execute(
+            select(NovelPublication.novel_id)
+            .where(NovelPublication.novel_id.in_([pair.first.novel_id, pair.second.novel_id]))
+            .with_for_update(read=True)
+        )
+        first = _delete_in_own_session(independent_factory, pair.first.novel_id)
+        second = _delete_in_own_session(independent_factory, pair.second.novel_id)
+        await _assert_blocked(first)
+        await _assert_blocked(second)
+        await holder.rollback()
+        results = await asyncio.wait_for(asyncio.gather(first, second), 10)
+    finally:
+        await holder.close()
+
+    assert list(results) == [None, None]
+    assert await _balance(independent_factory, pair.first.publisher_id) == 100
+    assert await _balance(independent_factory, pair.second.publisher_id) == 100
+
+
+async def test_a_delete_that_waited_for_a_new_purchase_refuses_and_the_retry_refunds_it(
+    independent_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """삭제가 구매자를 고른 뒤 아직 커밋되지 않은 구매가 게시자 행을 쥐고 있다. 삭제는 그 구매를 기다렸다가 잠그지 않은 새
+    구매자를 보고 409 로 아무것도 지우지 않는다(환급 없이 지우면 그 구매가 버려진다). 다시 지우면 새 구매자까지 환급한다."""
+    novel = await _publish(independent_factory, await _member(independent_factory))
+    buyer = await _member(independent_factory)
+    purchase = independent_factory()
+    try:
+        await _buy(purchase, novel, buyer)
+        deleting = _delete_in_own_session(independent_factory, novel.novel_id)
+        await _assert_blocked(deleting)
+        await purchase.commit()
+        refused = await asyncio.wait_for(deleting, 10)
+    finally:
+        await purchase.close()
+
+    assert isinstance(refused, HTTPException)
+    detail: object = refused.detail  # 실제로는 dict 를 싣는다(선언은 str)
+    assert (refused.status_code, detail) == (409, {"code": "NOVEL_DELETE_CONFLICT"})
+    assert await _balance(independent_factory, buyer) == 70
+    assert await _delete_in_own_session(independent_factory, novel.novel_id) is None
+    assert await _balance(independent_factory, buyer) == 100
 
 
 async def test_the_same_buyer_buying_one_chapter_twice_at_once_pays_once(

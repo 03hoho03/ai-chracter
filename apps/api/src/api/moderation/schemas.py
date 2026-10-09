@@ -16,8 +16,18 @@ from api.db.models.moderation import (
 )
 
 
+class NovelRefundNotificationResponse(CamelModel):
+    """노벨 삭제 환급 알림의 내용 — 게시자가 지운 소장 화 수와 실제로 돌려준 클로버. 소설 제목은 없다(지운 글의 사본을
+    남기지 않는다)."""
+
+    chapter_count: int
+    clover_amount: int
+
+
 class NotificationResponse(CamelModel):
     comment: CommentNotificationTargetResponse | None = None
+    # `novel-purchase-refund` 알림만 채운다. 그 구매자가 탈퇴해 구매 행이 지워졌으면 비어 있다.
+    novel_refund: NovelRefundNotificationResponse | None = None
     comment_action_id: uuid.UUID | None = None
     id: uuid.UUID
     type: str

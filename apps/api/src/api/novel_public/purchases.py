@@ -1,14 +1,23 @@
-"""노벨 화 소장 구매.
+"""노벨 화 소장 구매와, 게시자가 산 화를 지울 때의 자동 환급.
 
 **구매**는 화 하나를 클로버로 소장하는 것이다. 소설마다 앞 화들(`NOVEL_FREE_CHAPTER_COUNT`)과 게시자 본인의 열람은 무료라
 살 것이 없다(원작자도 무료가 아니다 — 원작자는 이 소설을 쓴 사람이 아니다). 같은 화는 다시 사지 않는다. 다시 공개로 본문이
 바뀌어도 같은 화이고, 거뒀다 다시 공개하면 소장이 그대로 살아난다(구매 행은 공개 상태를 따라 지워지지 않는다). 무료·보너스
 클로버로도 산다 — 차감 순서는 다른 차감과 같다.
 
+**삭제 환급** — 게시자가 산 화가 든 소설이나 마지막 묶음을 지우면, 그 화를 산 구매마다 차감을 깎은 로트로 되돌린다(유료는
+유료로, 무료·보너스는 그대로). 이미 결제 환불(취소)이 걸린 구매에서 나온 로트의 몫은 돌려주지 않는다 — 그 로트로 되돌리면
+돈과 클로버를 함께 돌려받는다. 돌려준 양이 있으면 구매자에게 알림을 하나 보낸다. 공개 철회·게시자 탈퇴는 환급하지 않는다
+(열람만 끝난다). 탈퇴한 구매자의 구매 행은 탈퇴 때 지워지므로 환급 대상에 없다.
+
 **잠금 순서는 사용자 행(관련된 모든 사람, id 순) → 공개 상태 행 → 구매 행 → 클로버(배분 → 로트)다.** 구매는 구매자와
 게시자를, 삭제는 게시자와 그 소설의 구매자 전부를 같은 규칙으로 잡는다. 사용자 행을 사람마다 따로 잡으면 서로의 소설을
 산 두 게시자가 동시에 지울 때, 각자 자기 행을 쥐고 상대(자기 소설의 구매자) 행을 기다려 교착한다. 공개 상태 행을 사용자 행
 보다 먼저 잡아도 같다 — 삭제는 소설 경로 규칙상 게시자 행을 맨 먼저 잡기 때문이다(`novelize/router.py` 모듈 docstring).
+
+삭제는 구매자를 잠그기 전에 잠금 없이 고른다. 그 사이 새 구매가 커밋되면(그 구매는 게시자 행을 쥐었다 놓았다) 잠근 뒤 다시
+고른 목록에 잠그지 않은 구매자가 생긴다. 그 사람을 그 자리에서 더 잡으면 id 순서가 깨지므로 409 `NOVEL_DELETE_CONFLICT` 로
+아무것도 지우지 않고 돌려보낸다 — 다시 누르면 새 구매자까지 잠그고 지운다.
 
 이 모듈은 라우터를 import 하지 않는다 — 소설 라우터와 탈퇴가 import 해도 순환이 생기지 않게."""
 
@@ -208,3 +217,117 @@ async def purchase_novel_chapter(
     )
     await db.commit()
     return response
+
+
+# ── 삭제 환급 ────────────────────────────────────────────────────────────────
+async def lock_publisher_and_buyers(
+    db: AsyncSession, *, publisher_id: uuid.UUID, novel_id: uuid.UUID
+) -> frozenset[uuid.UUID]:
+    """소설을 지우거나 그 마지막 묶음을 지우기 전에, 게시자와 그 소설의 아직 환급하지 않은 구매자 전부를 id 순으로 잠근다.
+    잠근 사람들을 돌려준다(`refund_deleted_purchases` 가 받는다). 소설 경로에서 게시자 행을 잡던 첫 잠금을 이것이 대신한다.
+
+    묶음 삭제도 소설 전체의 구매자를 잡는다 — 어느 묶음이 지워질지는 잠근 뒤에 정해지는데, 그때 모자란 사람을 더 잡을 수
+    없다(모듈 docstring)."""
+    buyers = (
+        await db.scalars(
+            select(distinct(NovelPurchase.buyer_user_id)).where(
+                NovelPurchase.novel_id == novel_id, NovelPurchase.refunded_at.is_(None)
+            )
+        )
+    ).all()
+    user_ids = frozenset({publisher_id, *buyers})
+    await lock_users_in_order(db, user_ids)
+    return user_ids
+
+
+async def _refunded_amount(db: AsyncSession, spend_ledger_id: uuid.UUID) -> int:
+    """그 차감에서 실제로 돌려준 양. 건너뛴 몫은 환급 행이 없어 빠진다."""
+    total = await db.scalar(
+        select(func.coalesce(func.sum(CloverSpendRefund.amount), 0))
+        .join(CloverSpendAllocation, CloverSpendAllocation.id == CloverSpendRefund.allocation_id)
+        .where(CloverSpendAllocation.spend_ledger_id == spend_ledger_id)
+    )
+    return int(total or 0)
+
+
+async def refund_deleted_purchases(
+    db: AsyncSession,
+    *,
+    novel_id: uuid.UUID,
+    locked_user_ids: frozenset[uuid.UUID],
+    chapter_ids: Sequence[uuid.UUID] | None = None,
+) -> None:
+    """지울 화(`chapter_ids`, None 이면 소설 전체)를 산 구매마다 환급하고 구매 행에 환급을 적고, 돌려준 양이 있는 구매자에게
+    알림을 하나씩 보낸다. **커밋하지 않는다** — 지우기와 같은 트랜잭션이어야 "지웠는데 환급이 없다"가 생기지 않는다.
+    `lock_publisher_and_buyers` 뒤에 부른다. 잠그지 않은 구매자가 보이면 409 `NOVEL_DELETE_CONFLICT`(모듈 docstring)."""
+    await db.execute(select(NovelPublication.novel_id).where(NovelPublication.novel_id == novel_id).with_for_update())
+    statement = select(NovelPurchase).where(NovelPurchase.novel_id == novel_id, NovelPurchase.refunded_at.is_(None))
+    if chapter_ids is not None:
+        statement = statement.where(NovelPurchase.chapter_id.in_(chapter_ids))
+    purchases = (
+        await db.scalars(
+            statement.order_by(NovelPurchase.buyer_user_id, NovelPurchase.chapter_ordinal)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    if any(purchase.buyer_user_id not in locked_user_ids for purchase in purchases):
+        raise _error(status.HTTP_409_CONFLICT, "NOVEL_DELETE_CONFLICT")
+
+    by_buyer: dict[uuid.UUID, list[NovelPurchase]] = {}
+    for purchase in purchases:
+        by_buyer.setdefault(purchase.buyer_user_id, []).append(purchase)
+    now = await db.scalar(select(func.now()))
+    for buyer_id, owned in by_buyer.items():
+        total = 0
+        for purchase in owned:
+            await clover.refund_spend(
+                db,
+                user_id=buyer_id,
+                spend_ledger_id=purchase.spend_ledger_id,
+                amount=purchase.price,
+                kind="novel_read_refund",
+                skip_lot=refunded_purchase_lot(),
+            )
+            purchase.refunded_amount = await _refunded_amount(db, purchase.spend_ledger_id)
+            purchase.refunded_at = now
+            total += purchase.refunded_amount
+        if total > 0:
+            notification = Notification(user_id=buyer_id, type=NOVEL_REFUND_NOTIFICATION_TYPE)
+            db.add(notification)
+            await db.flush()
+            for purchase in owned:
+                purchase.refund_notification_id = notification.id
+    await db.flush()
+
+
+# ── 소유자 화면의 삭제 전 고지 ──────────────────────────────────────────────
+async def _buyers_and_amount(
+    db: AsyncSession, novel_id: uuid.UUID, chapter_ids: Select[tuple[uuid.UUID]] | None = None
+) -> tuple[int, int]:
+    statement = select(
+        func.count(distinct(NovelPurchase.buyer_user_id)), func.coalesce(func.sum(NovelPurchase.price), 0)
+    ).where(NovelPurchase.novel_id == novel_id, NovelPurchase.refunded_at.is_(None))
+    if chapter_ids is not None:
+        statement = statement.where(NovelPurchase.chapter_id.in_(chapter_ids))
+    buyers, amount = (await db.execute(statement)).one()
+    return int(buyers), int(amount)
+
+
+async def purchase_refund_preview(db: AsyncSession, novel_id: uuid.UUID) -> NovelPurchaseRefundPreview:
+    last_batch = (
+        select(NovelBatch.id)
+        .where(NovelBatch.novel_id == novel_id)
+        .order_by(NovelBatch.ordinal.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
+    last_batch_chapters = select(NovelChapter.id).where(NovelChapter.batch_id == last_batch)
+    novel_buyers, novel_amount = await _buyers_and_amount(db, novel_id)
+    batch_buyers, batch_amount = await _buyers_and_amount(db, novel_id, last_batch_chapters)
+    return NovelPurchaseRefundPreview(
+        novel_buyer_count=novel_buyers,
+        novel_refund_amount=novel_amount,
+        last_batch_buyer_count=batch_buyers,
+        last_batch_refund_amount=batch_amount,
+    )

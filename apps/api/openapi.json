@@ -5358,7 +5358,7 @@
           "novels"
         ],
         "summary": "Delete Novel",
-        "description": "소설과 그 아래 행을 지운다. 진행 중 작업은 같은 트랜잭션에서 먼저 환불한다 — 지우고 나면 실행 경로가 실패해도\n환불할 행이 없다. 원래 방은 그대로다. 소설화 허용이 없어도(기능 꺼짐·허용 회수) 자기 소설이면 지운다.\n\n사용자 행을 먼저 잠근다. 같은 사용자의 작업 생성이 이 사이에 끼어들면 지울 소설에 새 작업 행이 붙어 소설 DELETE\n가 FK 위반이 되는데, 작업 생성도 사용자 행을 먼저 잡으므로 둘이 줄을 선다. 소설 행은 잠그지 않는다(모듈 머리).",
+        "description": "소설과 그 아래 행을 지운다. 진행 중 작업은 같은 트랜잭션에서 먼저 환불한다 — 지우고 나면 실행 경로가 실패해도\n환불할 행이 없다. 원래 방은 그대로다. 소설화 허용이 없어도(기능 꺼짐·허용 회수) 자기 소설이면 지운다.\n\n사용자 행을 먼저 잠근다. 같은 사용자의 작업 생성이 이 사이에 끼어들면 지울 소설에 새 작업 행이 붙어 소설 DELETE\n가 FK 위반이 되는데, 작업 생성도 사용자 행을 먼저 잡으므로 둘이 줄을 선다. 소설 행은 잠그지 않는다(모듈 머리).\n\n노벨에서 이 소설의 화를 산 구매자가 있으면 같은 트랜잭션에서 그 구매를 환급한다 — 그래서 게시자 행과 함께 그 구매자들의\n행도 id 순으로 잠근다(`novel_public/purchases.py` 모듈 docstring). 잠근 뒤 새 구매가 보이면 409\n`NOVEL_DELETE_CONFLICT` 이고 지우지 않는다(다시 누르면 된다).",
         "operationId": "delete_novel_novels__novel_id__delete",
         "parameters": [
           {
@@ -6059,7 +6059,7 @@
           "novels"
         ],
         "summary": "Delete Last Novel Batch",
-        "description": "마지막 묶음만 지운다(무과금) — 그 묶음의 화 전부와 개정·등장 인물·읽은 위치가 함께 지워지고, 다음 묶음 시작이 그\n묶음 시작으로 돌아간다. 경계를 잘못 골랐을 때 고치는 길이다. 인물 카드는 남고, 스냅샷은 남되 지운 화의 항목만\n`{chapterId, deleted: true}` 로 줄어든다. 마지막이 아니면 409 `NOVEL_BATCH_NOT_LAST`, 소설에 진행 중 작업이 있으면\n409 `NOVEL_JOB_IN_PROGRESS`(끝난 뒤 다시), 없는 묶음은 404 `NOVEL_BATCH_NOT_FOUND`.\n\n그 화들을 가리키던 작업 행은 지우지 않고 참조와 AI 수정 지시문·결과 본문만 비운다(`deletion.delete_batch`).\n\n잠금: 사용자 행(작업 생성과 줄 세우기 — 진행 중 확인과 삭제 사이에 새 작업이 끼지 않게) → 작업 행 → 화 행. 묶음 보정도\n이 잠금 아래에서 먼저 한다 — 빈 묶음이 남아 있으면 그것이 \"마지막\"으로 보여 실제 마지막 묶음을 지울 수 없다.",
+        "description": "마지막 묶음만 지운다(무과금) — 그 묶음의 화 전부와 개정·등장 인물·읽은 위치가 함께 지워지고, 다음 묶음 시작이 그\n묶음 시작으로 돌아간다. 경계를 잘못 골랐을 때 고치는 길이다. 인물 카드는 남고, 스냅샷은 남되 지운 화의 항목만\n`{chapterId, deleted: true}` 로 줄어든다. 마지막이 아니면 409 `NOVEL_BATCH_NOT_LAST`, 소설에 진행 중 작업이 있으면\n409 `NOVEL_JOB_IN_PROGRESS`(끝난 뒤 다시), 없는 묶음은 404 `NOVEL_BATCH_NOT_FOUND`.\n\n그 화들을 가리키던 작업 행은 지우지 않고 참조와 AI 수정 지시문·결과 본문만 비운다(`deletion.delete_batch`).\n\n잠금: 사용자 행(작업 생성과 줄 세우기 — 진행 중 확인과 삭제 사이에 새 작업이 끼지 않게) → 작업 행 → 화 행. 묶음 보정도\n이 잠금 아래에서 먼저 한다 — 빈 묶음이 남아 있으면 그것이 \"마지막\"으로 보여 실제 마지막 묶음을 지울 수 없다.\n\n노벨에서 그 묶음의 화를 산 구매는 같은 트랜잭션에서 환급한다(소설 삭제와 같은 잠금·409 규칙).",
         "operationId": "delete_last_novel_batch_novels__novel_id__batches__batch_id__delete",
         "parameters": [
           {
@@ -7341,6 +7341,70 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webnovels/{novel_id}/chapters/{chapter_id}/purchase": {
+      "post": {
+        "tags": [
+          "webnovels"
+        ],
+        "summary": "Purchase Novel Chapter",
+        "description": "노벨 화 하나를 소장한다(`purchase_chapter`). 공개 스위치가 꺼져 있으면 403 `NOVEL_PUBLIC_DISABLED`.",
+        "operationId": "purchase_novel_chapter_webnovels__novel_id__chapters__chapter_id__purchase_post",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          },
+          {
+            "name": "chapter_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chapter Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NovelChapterPurchaseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelChapterPurchaseResponse"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -17469,6 +17533,14 @@
             "type": "integer",
             "title": "Dailyfreechatturns"
           },
+          "novelReadCost": {
+            "type": "integer",
+            "title": "Novelreadcost"
+          },
+          "novelFreeChapterCount": {
+            "type": "integer",
+            "title": "Novelfreechaptercount"
+          },
           "paymentsEnabled": {
             "type": "boolean",
             "title": "Paymentsenabled"
@@ -17494,6 +17566,8 @@
           "novelAiEditCost",
           "novelRestricted",
           "dailyFreeChatTurns",
+          "novelReadCost",
+          "novelFreeChapterCount",
           "paymentsEnabled",
           "payMethods",
           "identityGateEnabled"
@@ -21193,6 +21267,16 @@
               }
             ]
           },
+          "novelRefund": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NovelRefundNotificationResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "commentActionId": {
             "anyOf": [
               {
@@ -21940,6 +22024,45 @@
         ],
         "title": "NovelChapterProposalResponse"
       },
+      "NovelChapterPurchaseRequest": {
+        "properties": {
+          "expectedPrice": {
+            "type": "integer",
+            "title": "Expectedprice"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expectedPrice"
+        ],
+        "title": "NovelChapterPurchaseRequest",
+        "description": "`expected_price` 는 구매 확인 화면에 보인 가격이다. 지금 가격과 다르면 사지 않는다 — 배포로 가격이 바뀌는 사이 열어 둔\n화면의 금액으로 차감하지 않으려는 것이다(소설화의 `expected_cost` 와 같은 규칙)."
+      },
+      "NovelChapterPurchaseResponse": {
+        "properties": {
+          "chapterId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Chapterid"
+          },
+          "charged": {
+            "type": "integer",
+            "title": "Charged"
+          },
+          "balance": {
+            "type": "integer",
+            "title": "Balance"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chapterId",
+          "charged",
+          "balance"
+        ],
+        "title": "NovelChapterPurchaseResponse",
+        "description": "`charged` 는 이번 요청이 쓴 클로버다 — 이미 소장한 화면 0 이고 아무것도 쓰지 않는다. `balance` 는 요청 뒤 잔액이다."
+      },
       "NovelChapterReadingPosition": {
         "properties": {
           "paragraphIndex": {
@@ -22557,6 +22680,9 @@
               "opus"
             ],
             "title": "Lastchaptermodel"
+          },
+          "purchaseRefunds": {
+            "$ref": "#/components/schemas/NovelPurchaseRefundPreview"
           }
         },
         "type": "object",
@@ -23289,6 +23415,33 @@
         "title": "NovelPublishRequest",
         "description": "공개 요청 하나 = 화 하나(또는 소설 제목·소개만). `chapter_id` 가 다음 화(공개한 화 수 + 1번째)면 그 화를 새로\n공개하고, 이미 공개한 화면 바뀐 경우 다시 공개한다. 비우면 소설 제목·소개만 다시 공개한다(처음 공개에는 1화가 있어야\n한다). 어느 경우든 소설 제목·소개가 공개본과 다르면 같은 요청에서 함께 심사해 다시 공개하고, 거둔 공개는 다시 연다.\n\n여러 화를 한 요청에 받지 않는 것은 심사 호출이 화마다 수 초 걸려 요청 하나가 그만큼 붙잡히기 때문이다 — 화면이 1화부터\n한 화씩 부르면 앞 화까지는 공개된 채로 남고 이어짐도 요청마다 지켜진다."
       },
+      "NovelPurchaseRefundPreview": {
+        "properties": {
+          "novelBuyerCount": {
+            "type": "integer",
+            "title": "Novelbuyercount",
+            "default": 0
+          },
+          "novelRefundAmount": {
+            "type": "integer",
+            "title": "Novelrefundamount",
+            "default": 0
+          },
+          "lastBatchBuyerCount": {
+            "type": "integer",
+            "title": "Lastbatchbuyercount",
+            "default": 0
+          },
+          "lastBatchRefundAmount": {
+            "type": "integer",
+            "title": "Lastbatchrefundamount",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "NovelPurchaseRefundPreview",
+        "description": "지우면 돌려줄 구매. 소설 삭제 확인에는 소설 전체를, 마지막 묶음(화) 삭제 확인에는 마지막 묶음을 본다. 금액은 산 값\n그대로다(이미 결제 환불된 구매분은 실제 환급에서 빠질 수 있다)."
+      },
       "NovelReadingPositionRequest": {
         "properties": {
           "paragraphIndex": {
@@ -23322,6 +23475,25 @@
         ],
         "title": "NovelReadingPositionRequest",
         "description": "화를 읽던 자리. 같은 값을 다시 보내도 결과가 같다. `finished` 가 한 번 참이 되면 그 화는 그 뒤 앞부분으로 돌아가\n저장해도 다 읽은 화로 남는다. `revision_id` 는 읽던 개정이다(그 뒤 개정이 바뀌면 문단 수 비율로 옮긴다)."
+      },
+      "NovelRefundNotificationResponse": {
+        "properties": {
+          "chapterCount": {
+            "type": "integer",
+            "title": "Chaptercount"
+          },
+          "cloverAmount": {
+            "type": "integer",
+            "title": "Cloveramount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chapterCount",
+          "cloverAmount"
+        ],
+        "title": "NovelRefundNotificationResponse",
+        "description": "노벨 삭제 환급 알림의 내용 — 게시자가 지운 소장 화 수와 실제로 돌려준 클로버. 소설 제목은 없다(지운 글의 사본을\n남기지 않는다)."
       },
       "NovelRegenerateOption": {
         "properties": {

@@ -1,4 +1,4 @@
-"""노벨 화 소장 구매.
+"""노벨 화 소장 구매, 게시자 삭제 환급, 탈퇴가 구매 행에 하는 일.
 
 공개 소설은 `_make_public_novel`(원작 = 다른 회원의 공개 작품, 6화 + 2화 묶음, 전부 공개)로 만든다. 앞 5화가 무료라 6화가 첫
 유료 화이고, 마지막 묶음은 7·8화다. 같은 `db_client` 로 회원을 바꿔 가며 부른다(`_login_as`)."""
@@ -284,3 +284,191 @@ async def test_refund_notification_needs_a_refund(db_session: AsyncSession) -> N
 
     with pytest.raises(IntegrityError, match="ck_novel_purchases_notification_after_refund"):
         await _purchase_row(db_session, refund_notification_id=notification.id)
+
+
+# ── 삭제 환급 ───────────────────────────────────────────────────────────────
+async def _notifications(client: httpx.AsyncClient, user_id: uuid.UUID) -> list[dict[str, object]]:
+    await _login_as(client, user_id)
+    resp = await client.get("/notifications")
+    assert resp.status_code == 200
+    items: list[dict[str, object]] = resp.json()["items"]
+    return items
+
+
+async def test_deleting_a_novel_refunds_every_purchase_and_tells_each_buyer_once(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """두 구매자(한 명은 두 화)의 구매가 모두 그 로트로 돌아가고, 구매자마다 알림 하나에 화 수·클로버 수가 실린다. 삭제
+    전 소유자 상세의 고지 수와도 맞는다."""
+    novel = await _setup(db_session)
+    first, second = await _buyer(db_session), await _buyer(db_session)
+    for ordinal in (6, 7):
+        assert (await _buy(db_client, novel, ordinal, as_user=first)).status_code == 200
+    assert (await _buy(db_client, novel, 8, as_user=second)).status_code == 200
+
+    await _login_as(db_client, novel.publisher_id)
+    resp = await db_client.delete(f"/novels/{novel.novel_id}")
+
+    assert resp.status_code == 204
+    assert await _balance(db_session, first) == 100 and await _balance(db_session, second) == 100
+    assert await _ledger(db_session, first) == [
+        ("novel_read_spend", -30),
+        ("novel_read_spend", -30),
+        ("novel_read_refund", 30),
+        ("novel_read_refund", 30),
+    ]
+    assert [(p.chapter_ordinal, p.refunded_amount) for p in await _purchases(db_session, first)] == [(6, 30), (7, 30)]
+    [notice] = await _notifications(db_client, first)
+    assert (notice["type"], notice["novelRefund"]) == ("novel-purchase-refund", {"chapterCount": 2, "cloverAmount": 60})
+    [notice] = await _notifications(db_client, second)
+    assert notice["novelRefund"] == {"chapterCount": 1, "cloverAmount": 30}
+
+
+async def test_owner_detail_tells_how_many_buyers_a_delete_will_refund(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """소설 전체는 6·7·8화 구매(두 사람, 90), 마지막 묶음은 7·8화(두 사람, 60)."""
+    novel = await _setup(db_session)
+    first, second = await _buyer(db_session), await _buyer(db_session)
+    for buyer, ordinal in ((first, 6), (first, 7), (second, 8)):
+        assert (await _buy(db_client, novel, ordinal, as_user=buyer)).status_code == 200
+    await _allow_novelize(db_session, monkeypatch, novel.publisher_id)
+    await _login_as(db_client, novel.publisher_id)
+
+    resp = await db_client.get(f"/novels/{novel.novel_id}")
+
+    assert resp.status_code == 200
+    assert resp.json()["purchaseRefunds"] == {
+        "novelBuyerCount": 2,
+        "novelRefundAmount": 90,
+        "lastBatchBuyerCount": 2,
+        "lastBatchRefundAmount": 60,
+    }
+
+
+@pytest.mark.parametrize("route", ["batches", "chapters"])
+async def test_deleting_the_last_batch_refunds_only_its_chapters(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, route: str
+) -> None:
+    """마지막 묶음(7·8화) 삭제는 그 화들의 구매만 돌려준다 — 6화 구매는 그대로다. 옛 이름의 마지막 화 삭제도 같다."""
+    novel = await _setup(db_session)
+    buyer = await _buyer(db_session)
+    for ordinal in (6, 7):
+        assert (await _buy(db_client, novel, ordinal, as_user=buyer)).status_code == 200
+    await _allow_novelize(db_session, monkeypatch, novel.publisher_id)
+    await _login_as(db_client, novel.publisher_id)
+    target = novel.batch_ids[1] if route == "batches" else novel.chapter_ids[7]
+
+    resp = await db_client.delete(f"/novels/{novel.novel_id}/{route}/{target}")
+
+    assert resp.status_code == 204
+    assert [(p.chapter_ordinal, p.refunded_amount) for p in await _purchases(db_session, buyer)] == [(6, None), (7, 30)]
+    assert await _balance(db_session, buyer) == 70
+
+
+async def test_delete_refund_skips_what_came_from_a_refunded_payment(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """무료 10 + 결제 유료 로트로 30 을 산 뒤 그 결제가 환불(취소 성공)됐다. 삭제는 무료 10 만 돌려준다 — 결제 로트로
+    20 을 되돌리면 돈과 클로버를 함께 돌려받는다. 알림·구매 행도 실제로 돌려준 10 이다."""
+    novel = await _setup(db_session)
+    buyer = await _buyer(db_session, balance=10)
+    payment = await _make_payment(db_session, user_id=buyer, status="paid")
+    paid_lot = CloverLot(
+        user_id=buyer, granted_amount=100, remaining=100, expires_at=None, kind="purchase_paid", payment_id=payment.id
+    )
+    db_session.add(paid_lot)
+    await db_session.execute(sa.update(User).where(User.id == buyer).values(clover_balance=110))
+    await db_session.commit()
+    assert (await _buy(db_client, novel, 6, as_user=buyer)).status_code == 200
+    # 결제 환불: 남은 유료(80)를 회수하고 취소가 성공했다.
+    await db_session.execute(sa.update(CloverLot).where(CloverLot.id == paid_lot.id).values(remaining=0))
+    await db_session.execute(sa.update(User).where(User.id == buyer).values(clover_balance=0))
+    db_session.add(
+        PaymentCancellation(
+            payment_id=payment.id, source="console", status="succeeded", amount_krw=9_900, clawback_paid=80
+        )
+    )
+    await db_session.commit()
+
+    await _login_as(db_client, novel.publisher_id)
+    assert (await db_client.delete(f"/novels/{novel.novel_id}")).status_code == 204
+
+    assert await _balance(db_session, buyer) == 10
+    assert (await _ledger(db_session, buyer))[-1] == ("novel_read_refund", 10)
+    assert await db_session.scalar(
+        sa.select(CloverLot.remaining).where(CloverLot.id == paid_lot.id).execution_options(populate_existing=True)
+    ) == 0
+    [purchase] = await _purchases(db_session, buyer)
+    assert purchase.refunded_amount == 10
+    [notice] = await _notifications(db_client, buyer)
+    assert notice["novelRefund"] == {"chapterCount": 1, "cloverAmount": 10}
+
+
+async def test_a_purchase_paid_wholly_from_a_refunded_payment_gets_nothing_and_no_notice(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """전부 건너뛰면 원장 행도 알림도 없고, 구매 행에는 돌려준 0 이 적힌다(다시 환급하지 않는다). 취소가 진행 중(회수는 했고
+    포트원 결과를 기다림)이어도 환불된 것으로 본다."""
+    novel = await _setup(db_session)
+    buyer = await _buyer(db_session, balance=0)
+    payment = await _make_payment(db_session, user_id=buyer, status="paid")
+    paid_lot = CloverLot(
+        user_id=buyer, granted_amount=30, remaining=30, expires_at=None, kind="purchase_paid", payment_id=payment.id
+    )
+    db_session.add(paid_lot)
+    await db_session.execute(sa.update(User).where(User.id == buyer).values(clover_balance=30))
+    await db_session.commit()
+    assert (await _buy(db_client, novel, 6, as_user=buyer)).status_code == 200
+    db_session.add(PaymentCancellation(payment_id=payment.id, source="console", status="requested", amount_krw=9_900))
+    await db_session.commit()
+
+    await _login_as(db_client, novel.publisher_id)
+    assert (await db_client.delete(f"/novels/{novel.novel_id}")).status_code == 204
+
+    assert await _balance(db_session, buyer) == 0
+    assert await _ledger(db_session, buyer) == [("novel_read_spend", -30)]
+    [purchase] = await _purchases(db_session, buyer)
+    assert (purchase.refunded_amount, purchase.refund_notification_id) == (0, None)
+    assert await _notifications(db_client, buyer) == []
+
+
+# ── 탈퇴 ────────────────────────────────────────────────────────────────────
+async def test_a_withdrawn_buyer_is_left_out_of_the_delete_refund(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """구매자 탈퇴는 204 이고 그 사람의 구매 행을 지운다. 그 뒤 게시자가 소설을 지우면 탈퇴한 구매자에게는 아무것도 돌려주지
+    않고(잔액은 탈퇴로 소멸했다) 남은 구매자만 돌려받는다."""
+    novel = await _setup(db_session)
+    leaving, staying = await _buyer(db_session), await _buyer(db_session)
+    for buyer in (leaving, staying):
+        assert (await _buy(db_client, novel, 6, as_user=buyer)).status_code == 200
+
+    await _login_as(db_client, leaving)
+    assert (await db_client.delete("/me")).status_code == 204
+    assert await _purchases(db_session, leaving) == []
+    await _login_as(db_client, novel.publisher_id)
+    assert (await db_client.delete(f"/novels/{novel.novel_id}")).status_code == 204
+
+    assert await _balance(db_session, leaving) == 0
+    assert sorted(kind for kind, _ in await _ledger(db_session, leaving)) == ["novel_read_spend", "withdrawal_burn"]
+    assert await _balance(db_session, staying) == 100
+
+
+async def test_a_withdrawing_publisher_ends_reading_without_refunds(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """게시자 탈퇴는 204 이고 소설은 지워지지만 환급하지 않는다 — 구매 행은 남아 "게시자가 탈퇴했다"의 근거가 된다."""
+    novel = await _setup(db_session)
+    buyer = await _buyer(db_session)
+    assert (await _buy(db_client, novel, 6, as_user=buyer)).status_code == 200
+
+    await _login_as(db_client, novel.publisher_id)
+    assert (await db_client.delete("/me")).status_code == 204
+
+    assert await db_session.scalar(sa.select(Novel.id).where(Novel.id == novel.novel_id)) is None
+    assert await db_session.scalar(sa.select(NovelChapter.id).where(NovelChapter.novel_id == novel.novel_id)) is None
+    [purchase] = await _purchases(db_session, buyer)
+    assert purchase.refunded_at is None
+    assert await _ledger(db_session, buyer) == [("novel_read_spend", -30)]
+    assert await _notifications(db_client, buyer) == []
