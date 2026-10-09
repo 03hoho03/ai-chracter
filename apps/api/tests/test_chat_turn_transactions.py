@@ -643,7 +643,7 @@ async def test_room_deleted_during_generation_ends_with_an_error_and_no_refund(
     fake = _RoomDeletingLLMClient(db_client, room.room_id)
     _override_llm_client(fake)
     try:
-        with caplog.at_level(logging.WARNING, logger=turn_store.__name__):
+        with caplog.at_level(logging.WARNING, logger=chat_router.__name__):
             if action == "send":
                 resp = await db_client.post(f"/chat-rooms/{room.room_id}/messages", json={"content": "안녕"})
             else:

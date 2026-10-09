@@ -998,7 +998,7 @@ async def send_message(
                 ),
                 llm=llm_client,
                 judgments=new_turn_judgments(setup),
-                store=RoomTurnStore(db, room, setup, mode="append"),
+                store=RoomTurnStore(db, room, setup, mode="append", log=logger),
                 settlement=settlement,
                 after_commit=_fold_after_commit(
                     background_tasks,
@@ -1128,6 +1128,7 @@ async def regenerate_message(
                     ),
                     # 재생성은 turn_count 를 올리지 않는다 — 같은 턴의 응답을 교체하는 것이다.
                     turn=room.turn_count,
+                    log=logger,
                 ):
                     yield token_event
             except LLMPolicyViolationError:
@@ -1189,7 +1190,7 @@ async def regenerate_message(
                     )
 
             # 쓰기 구간(`RoomTurnStore.write` 의 docstring 참조).
-            if await _lock_room_for_turn_write(db, room) is None:
+            if await _lock_room_for_turn_write(db, room, log=logger) is None:
                 settlement.mark_settled()
                 yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
                 return
@@ -1206,10 +1207,12 @@ async def regenerate_message(
             settlement.set_pending_message(db, room.id, new_message.id)
 
             if matched_image is not None and not await _record_character_image_exposure(
-                db, room, matched_image.entity_id
+                db, room, matched_image.entity_id, log=logger
             ):
                 matched_image = None
-            if judged_cell_id is not None and not await _record_story_media_exposure(db, room, judged_cell_id):
+            if judged_cell_id is not None and not await _record_story_media_exposure(
+                db, room, judged_cell_id, log=logger
+            ):
                 judged_cell_id = None
 
             if matched_image is not None:
@@ -1240,7 +1243,7 @@ async def regenerate_message(
                     matched_image_url = None
 
             judged_cell_image = (
-                await _sign_judged_cell(db, room, judged_cell_id) if judged_cell_id is not None else None
+                await _sign_judged_cell(db, room, judged_cell_id, log=logger) if judged_cell_id is not None else None
             )
             # 커밋 뒤 조회가 다시 연 트랜잭션을 반납한다.
             await db.commit()
@@ -1366,7 +1369,7 @@ async def edit_message(
                 ),
                 llm=llm_client,
                 judgments=new_turn_judgments(setup),
-                store=RoomTurnStore(db, room, setup, mode="append"),
+                store=RoomTurnStore(db, room, setup, mode="append", log=logger),
                 settlement=settlement,
                 after_commit=_fold_after_commit(
                     background_tasks,
@@ -2575,6 +2578,7 @@ async def _stream_preview_turn(
             # 미리보기는 DB 방이 없다(Redis 세션).
             usage=LLMCallContext(call_site="preview_generate", user_id=user_id, room_id=None),
             turn=state.turn_count + 1,
+            log=logger,
         ):
             yield token_event
     except LLMPolicyViolationError:

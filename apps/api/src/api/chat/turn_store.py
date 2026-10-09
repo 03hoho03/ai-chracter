@@ -2,7 +2,10 @@
 
 턴 골격(`chat/turn_engine.py` 의 `run_turn`)이 단계의 순서를 정하고, 이 모듈은 각 단계에서 방에 무엇을 어떤 트랜잭션으로
 쓰는지를 정한다. 헬퍼 중 쓰기 구간 잠금·노출 기록·칸 서명은 재생성(`regenerate_message`)도, 칸 해금 기록은 방의 첫 메시지
-삽입도 라우터에서 그대로 부른다. 이 모듈은 라우터를 import 하지 않는다(라우터가 이 모듈을 import 한다)."""
+삽입도 라우터에서 그대로 부른다. 이 모듈은 라우터를 import 하지 않는다(라우터가 이 모듈을 import 한다).
+
+경고는 전부 부르는 쪽이 넘긴 로거(`log`)로 남긴다 — 이 경고들은 원래 라우터 안에 있던 것이라, 로거 이름으로 거르는
+쪽(운영 로그 검색, Bugsink breadcrumb 범주)이 옮긴 뒤에도 같은 이름(`api.chat.router`)으로 읽는다."""
 
 import logging
 import uuid
@@ -34,11 +37,8 @@ from api.db.models.chat import (
 from api.db.models.media import Asset
 from api.db.models.story import StartingSetup
 
-# 흡수한 실패도 서버 로그에 남긴다 — 라우터와 같은 이유로 이 모듈의 로그도 전부 warning 이상이다.
-logger = logging.getLogger(__name__)
 
-
-async def _lock_room_for_turn_write(db: AsyncSession, room: ChatRoom) -> uuid.UUID | None:
+async def _lock_room_for_turn_write(db: AsyncSession, room: ChatRoom, *, log: logging.Logger) -> uuid.UUID | None:
     """턴 쓰기 구간의 첫 문장 — 방 행을 잠그고 아직 있는지 본다. 없으면(LLM 을 기다리는 사이 사용자가 방을 지웠다)
     경고를 남기고 트랜잭션을 반납한 뒤 `None` 이다. 호출부는 아무것도 쓰지 않고 오류 이벤트로 끝낸다 — 환불하지
     않는다(사용자가 지웠고 LLM 은 이미 탔다).
@@ -47,7 +47,7 @@ async def _lock_room_for_turn_write(db: AsyncSession, room: ChatRoom) -> uuid.UU
     버전 갱신, 방 삭제의 첫 UPDATE)와는 줄을 선다 — 쓰기 구간은 짧다."""
     room_id = await db.scalar(select(ChatRoom.id).where(ChatRoom.id == room.id).with_for_update(key_share=True))
     if room_id is None:
-        logger.warning("대화방 %s 이 응답을 만드는 사이 지워졌다 — 이번 턴은 저장하지 않는다", room.id)
+        log.warning("대화방 %s 이 응답을 만드는 사이 지워졌다 — 이번 턴은 저장하지 않는다", room.id)
         await db.commit()
     return room_id
 
@@ -65,7 +65,9 @@ def _write_room_stat(
         row.current_value = Decimal(str(value))
 
 
-async def _record_character_image_exposure(db: AsyncSession, room: ChatRoom, image_entity_id: uuid.UUID) -> bool:
+async def _record_character_image_exposure(
+    db: AsyncSession, room: ChatRoom, image_entity_id: uuid.UUID, *, log: logging.Logger
+) -> bool:
     """첫 노출만 기록한다(멱등). 실패는 SAVEPOINT 안에 가두고 `False` — 그 턴은 이미지를 붙이지 않는다(판정은
     성공했는데 노출 기록만 실패한 경우도 매칭을 절반만 살려두지 않는다)."""
     try:
@@ -86,13 +88,15 @@ async def _record_character_image_exposure(db: AsyncSession, room: ChatRoom, ima
                     )
                 )
     except SQLAlchemyError as exc:
-        logger.warning("대화방 %s 이미지 노출 기록 실패 — 이번 턴은 매칭을 건너뛴다: %s", room.id, exc)
+        log.warning("대화방 %s 이미지 노출 기록 실패 — 이번 턴은 매칭을 건너뛴다: %s", room.id, exc)
         capture_dependency_failure(exc, dependency="db")
         return False
     return True
 
 
-async def _record_story_media_exposure(db: AsyncSession, room: ChatRoom, cell_entity_id: uuid.UUID) -> bool:
+async def _record_story_media_exposure(
+    db: AsyncSession, room: ChatRoom, cell_entity_id: uuid.UUID, *, log: logging.Logger
+) -> bool:
     """보관함 해금 기록 — 사용자·스토리별로 처음 본 칸만 남는다(멱등, 겹친 두 턴도 복합 PK 충돌 없이). 실패는
     SAVEPOINT 안에 가두고 `False` — 그 턴은 칸을 붙이지 않는다(캐릭터 노출 기록과 같은 규칙)."""
     try:
@@ -103,7 +107,7 @@ async def _record_story_media_exposure(db: AsyncSession, room: ChatRoom, cell_en
                 .on_conflict_do_nothing()
             )
     except SQLAlchemyError as exc:
-        logger.warning("대화방 %s 미디어 북 칸 노출 기록 실패 — 이번 턴은 그림 없이 진행한다: %s", room.id, exc)
+        log.warning("대화방 %s 미디어 북 칸 노출 기록 실패 — 이번 턴은 그림 없이 진행한다: %s", room.id, exc)
         capture_dependency_failure(exc, dependency="db")
         return False
     return True
@@ -126,7 +130,9 @@ async def _record_story_media_unlocks(db: AsyncSession, room: ChatRoom, cell_ent
     )
 
 
-async def _unlock_epilogue_cells(db: AsyncSession, room: ChatRoom, epilogue: str | None) -> None:
+async def _unlock_epilogue_cells(
+    db: AsyncSession, room: ChatRoom, epilogue: str | None, *, log: logging.Logger
+) -> None:
     """도달한 엔딩의 에필로그에 나온 칸을 해금한다. 스트림 본문에서 불리므로 실패는 SAVEPOINT 안에 가두고 기록만
     포기한다 — 엔딩 도달 자체는 그대로 남는다."""
     if not epilogue:
@@ -139,18 +145,20 @@ async def _unlock_epilogue_cells(db: AsyncSession, room: ChatRoom, epilogue: str
             _, refs = await normalize_texts(db, room.content_version_id, [epilogue])
             await _record_story_media_unlocks(db, room, refs)
     except SQLAlchemyError as exc:
-        logger.warning("대화방 %s 에필로그 칸 해금 기록 실패 — 엔딩은 그대로 진행한다: %s", room.id, exc)
+        log.warning("대화방 %s 에필로그 칸 해금 기록 실패 — 엔딩은 그대로 진행한다: %s", room.id, exc)
         capture_dependency_failure(exc, dependency="db")
 
 
-async def _sign_judged_cell(db: AsyncSession, room: ChatRoom, cell_entity_id: uuid.UUID) -> MediaTagImage | None:
+async def _sign_judged_cell(
+    db: AsyncSession, room: ChatRoom, cell_entity_id: uuid.UUID, *, log: logging.Logger
+) -> MediaTagImage | None:
     """커밋 뒤 판정 칸의 그림을 서명한다(원본, 너비·높이). 방 버전에서 칸·자산을 못 찾거나 서명이 실패하면
     `None` — 커밋 뒤라 예외가 새면 SSE 제너레이터를 뚫으므로 전부 흡수하고 그림 없이 마무리한다.
     `fold_memory` 예약 **앞**에서 부른다(예약 뒤에는 요청 세션 쿼리를 더하지 않는다)."""
     try:
         images = await resolve_media_tag_images(db, room.content_version_id, [cell_entity_id])
     except Exception as exc:
-        logger.warning("대화방 %s 미디어 북 칸 URL 조립 실패 — 그림 없이 진행한다: %s", room.id, exc)
+        log.warning("대화방 %s 미디어 북 칸 URL 조립 실패 — 그림 없이 진행한다: %s", room.id, exc)
         capture_dependency_failure(exc, dependency="s3")
         return None
     return images.get(cell_entity_id)
@@ -164,9 +172,16 @@ class RoomTurnStore:
     그대로 쓴다(`rollback()` 은 객체를 만료시켜 다음 속성 접근이 실패한다)."""
 
     def __init__(
-        self, db: AsyncSession, room: ChatRoom, setup: StartingSetup | None, *, mode: Literal["append"]
+        self,
+        db: AsyncSession,
+        room: ChatRoom,
+        setup: StartingSetup | None,
+        *,
+        mode: Literal["append"],
+        log: logging.Logger,
     ) -> None:
         self.db = db
+        self._log = log
         self._room = room
         self._setup = setup
         self._mode = mode
@@ -187,7 +202,7 @@ class RoomTurnStore:
         matched_image = result.matched_image
         judged_cell_id = result.judged_cell_id
 
-        if await _lock_room_for_turn_write(db, room) is None:
+        if await _lock_room_for_turn_write(db, room, log=self._log) is None:
             settlement.mark_settled()
             return None
 
@@ -200,10 +215,12 @@ class RoomTurnStore:
         settlement.set_pending_message(db, room.id, assistant_message.id)
         room.turn_count = turn.turn_number
 
-        if judged_cell_id is not None and not await _record_story_media_exposure(db, room, judged_cell_id):
+        if judged_cell_id is not None and not await _record_story_media_exposure(
+            db, room, judged_cell_id, log=self._log
+        ):
             judged_cell_id = None
         if matched_image is not None and not await _record_character_image_exposure(
-            db, room, matched_image.entity_id
+            db, room, matched_image.entity_id, log=self._log
         ):
             matched_image = None
 
@@ -232,7 +249,7 @@ class RoomTurnStore:
                         ending_entity_id=reached_ending.entity_id,
                     )
                 )
-            await _unlock_epilogue_cells(db, room, reached_ending.epilogue)
+            await _unlock_epilogue_cells(db, room, reached_ending.epilogue, log=self._log)
 
         if matched_image is not None:
             assistant_message.image_id = matched_image.entity_id
@@ -263,13 +280,15 @@ class RoomTurnStore:
                 assert image_asset is not None
                 matched_image_url = await run_in_threadpool(generate_presigned_get_url, image_asset.storage_key)
             except Exception as exc:
-                logger.warning("대화방 %s 상황이미지 URL 조립 실패 — 이미지 없이 진행한다: %s", room.id, exc)
+                self._log.warning("대화방 %s 상황이미지 URL 조립 실패 — 이미지 없이 진행한다: %s", room.id, exc)
                 capture_dependency_failure(exc, dependency="s3")
                 matched_image = None
                 matched_image_url = None
 
         judged_cell_id = written.judged_cell_id
-        judged_cell_image = await _sign_judged_cell(db, room, judged_cell_id) if judged_cell_id is not None else None
+        judged_cell_image = (
+            await _sign_judged_cell(db, room, judged_cell_id, log=self._log) if judged_cell_id is not None else None
+        )
 
         ending_reached_event = turn.judgments.ending_reached_event
         if ending_reached_event is not None and ending_reached_event.epilogue:
@@ -282,7 +301,7 @@ class RoomTurnStore:
                     db, room.content_version_id, [epilogue]
                 )
             except Exception as exc:
-                logger.warning("대화방 %s 에필로그 그림 해석 실패 — 태그 없이 보낸다: %s", room.id, exc)
+                self._log.warning("대화방 %s 에필로그 그림 해석 실패 — 태그 없이 보낸다: %s", room.id, exc)
                 capture_dependency_failure(exc, dependency="db")
                 epilogue_text, epilogue_images = strip_media_tags(epilogue), {}
             ending_reached_event = ending_reached_event.model_copy(

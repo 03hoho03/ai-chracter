@@ -18,6 +18,7 @@ failure` 자체가 실제로 불리는지·태그가 맞는지는 `tests/test_pr
 """
 
 import json
+import logging
 import sys
 from collections.abc import AsyncIterator, Callable
 from typing import Any
@@ -206,6 +207,7 @@ async def test_chat_generation_prompt_local_variables_are_not_captured() -> None
             "user_label",
             usage=LLMCallContext(call_site="chat_generate", user_id=None, room_id=None),
             turn=1,
+            log=logging.getLogger("api.chat.router"),
         ):
             pass
     except LLMClientError as exc:

@@ -50,14 +50,13 @@ from api.llm.client import (
 )
 from api.llm.routing import resolve_backend
 
-# 이 모듈의 헬퍼(프롬프트 덤프)가 남기는 경고용. `run_turn` 자신의 경고는 부르는 쪽 로거로 남긴다(`run_turn` 참고).
-logger = logging.getLogger(__name__)
-
 _POLICY_WARNING_MESSAGE = "메시지 생성이 콘텐츠 정책에 의해 중단되었습니다."
 # 문구의 유일한 자리. 3곳은 `_policy_warning_message`로만 고른다.
 _PERSONA_POLICY_WARNING_MESSAGE = f"{_POLICY_WARNING_MESSAGE} 대화 프로필 내용이 원인일 수 있어요."
 _NOTE_POLICY_WARNING_MESSAGE = f"{_POLICY_WARNING_MESSAGE} 기억 노트 내용이 원인일 수 있어요."
-_PERSONA_AND_NOTE_POLICY_WARNING_MESSAGE = f"{_POLICY_WARNING_MESSAGE} 대화 프로필이나 기억 노트 내용이 원인일 수 있어요."
+_PERSONA_AND_NOTE_POLICY_WARNING_MESSAGE = (
+    f"{_POLICY_WARNING_MESSAGE} 대화 프로필이나 기억 노트 내용이 원인일 수 있어요."
+)
 _GENERATION_ERROR_MESSAGE = "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
 
 
@@ -114,6 +113,7 @@ async def _stream_generated_tokens(
     *,
     usage: LLMCallContext,
     turn: int,
+    log: logging.Logger,
 ) -> AsyncIterator[ChatTokenEvent]:
     """`llm_client.generate()`의 각 델타를 그대로 relay하며 호출부가 넘긴 빈 리스트 `chunks`에
     누적한다 — 제너레이터는 반환값과 yield를 동시에 쓸 수 없어, 스트림 종료 후 조립할 전체
@@ -126,7 +126,8 @@ async def _stream_generated_tokens(
     진입부에서 `settings.prompt_dump_path`가 설정돼 있으면(기본값 None, 프로덕션 방어) 조립된
     프롬프트와 그때 실린 지시문을 그 파일에 덤프한다. **덤프 실패는 절대 스트림을
     막지 않는다** — SSE 제너레이터 본문에서 새 예외가 새면 요청 스코프 DB 세션이 강제 종료돼
-    무관한 다른 요청까지 500이 된다(apps/api/CLAUDE.md 의 SSE 스트리밍 절)."""
+    무관한 다른 요청까지 500이 된다(apps/api/CLAUDE.md 의 SSE 스트리밍 절). 덤프 실패 경고는 부르는 쪽 로거(`log`)로
+    남긴다(`run_turn` 의 같은 이유)."""
     if settings.prompt_dump_path is not None:
         try:
             _dump_prompt(
@@ -138,7 +139,7 @@ async def _stream_generated_tokens(
                 system_instruction=system_instruction,
             )
         except Exception:
-            logger.warning("프롬프트 덤프 실패 (room=%s, turn=%s)", usage.room_id, turn, exc_info=True)
+            log.warning("프롬프트 덤프 실패 (room=%s, turn=%s)", usage.room_id, turn, exc_info=True)
     async for delta in llm_client.generate(
         prompt, system_instruction, stop_sequences=[f"\n{user_label}:"], usage=usage
     ):
@@ -303,6 +304,7 @@ async def run_turn(
                 call_site="chat_generate", user_id=room.user_id, room_id=room.id, model=inp.charge.model
             ),
             turn=next_turn,
+            log=log,
         ):
             yield token_event
     except LLMPolicyViolationError:
@@ -367,9 +369,7 @@ async def run_turn(
         log.warning("대화방 %s 판정 실패 — 이번 턴의 판정을 건너뛴다: %s", room.id, exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
 
-    turn = TurnResult(
-        kind=inp.kind, turn_number=next_turn, assistant_content=assistant_content, judgments=result
-    )
+    turn = TurnResult(kind=inp.kind, turn_number=next_turn, assistant_content=assistant_content, judgments=result)
     # 쓰기 구간은 예외를 흡수하지 않는다 — 쓰기·커밋 실패는 제너레이터를 뚫고 정산 가드가 응답 행을 확인해 정산한다.
     written = await store.write(turn, settlement)
     if written is None:
