@@ -3,6 +3,7 @@ import { createRootRouteWithContext, Outlet, useRouterState } from "@tanstack/re
 
 import { NovelCommentDeleteConfirmModal } from "../features/act-on-novel-comment-report";
 import { DeleteConfirmModal, LiftRestrictionConfirmModal } from "../features/act-on-report";
+import { ApproveApplicationModal, DecisionReasonModal } from "../features/decide-creator-payout-application";
 import { ContentActionConfirmModal, HomeCurationConfirmModal } from "../pages/content-detail";
 import { PublishDialog } from "../pages/legal";
 import {
@@ -52,6 +53,8 @@ function RootComponent() {
       <PublishNoticeDialog />
       <PublishPromptSetDialog />
       <RestorePromptSetDialog />
+      <ApproveApplicationModal />
+      <DecisionReasonModal />
     </>
   );
 }
