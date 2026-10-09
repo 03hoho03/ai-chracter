@@ -13,6 +13,7 @@ from api.admin.chat_view import router as admin_chat_view_router
 from api.admin.contents import router as admin_contents_router
 from api.admin.dashboard import router as admin_dashboard_router
 from api.admin.home_curation import router as admin_home_curation_router
+from api.admin.home_novel_curation import router as admin_home_novel_curation_router
 from api.admin.image_generations import router as admin_image_generations_router
 from api.admin.inquiries import router as admin_inquiries_router
 from api.admin.legal import router as admin_legal_router
@@ -47,6 +48,13 @@ from api.inquiry.router import me_router as inquiry_me_router, router as inquiry
 from api.legal.router import router as legal_router
 from api.moderation.router import router as moderation_router
 from api.notice.router import router as notice_router
+from api.novel_public.admin import router as novel_public_admin_router
+from api.novel_public.comments import comments_router as novel_public_comments_router
+from api.novel_public.router import owner_router as novel_public_owner_router
+from api.novel_public.purchases import reader_router as novel_public_reader_router
+from api.novel_public.reading import reading_router as novel_public_reading_router
+from api.novel_public.reports import reports_router as novel_public_reports_router
+from api.novel_public.router import router as novel_public_router
 from api.novelize.router import (
     owner_router as novelize_owner_router,
     room_router as novelize_room_router,
@@ -136,6 +144,7 @@ app.include_router(admin_me_router)
 app.include_router(admin_dashboard_router)
 app.include_router(admin_contents_router)
 app.include_router(admin_home_curation_router)
+app.include_router(admin_home_novel_curation_router)
 app.include_router(admin_users_router)
 app.include_router(admin_legal_router)
 app.include_router(admin_notices_router)
@@ -157,6 +166,13 @@ app.include_router(content_router)
 app.include_router(novelize_router)
 app.include_router(novelize_room_router)
 app.include_router(novelize_owner_router)
+app.include_router(novel_public_router)
+app.include_router(novel_public_owner_router)
+app.include_router(novel_public_reader_router)
+app.include_router(novel_public_reading_router)
+app.include_router(novel_public_comments_router)
+app.include_router(novel_public_reports_router)
+app.include_router(novel_public_admin_router)
 app.include_router(comments_router)
 app.include_router(comments_me_router)
 app.include_router(comment_reports_router)

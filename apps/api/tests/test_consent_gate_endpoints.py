@@ -1,12 +1,15 @@
-"""`require_legal_consent`가 "막는다" 52개에
-붙어 있고 "연다" 22개에는 안 붙어 있는지 3층으로 검증한다.
+"""`require_legal_consent`가 "막는다" 53개에
+붙어 있고 "연다" 23개에는 안 붙어 있는지 3층으로 검증한다.
 개수에는 대화 프로필 차단 4·개방 1과 방 기억 차단 3·개방 1이 들어 있다(그 전에는 21+15였다). 채팅 응답 신고 개방 1을 더해 18이다.
 소설 쓰기 차단 11(방의 소설 만들기·설정 노트·주인공 이름·장 경계 제안·장 생성·재생성·직접 수정·되돌리기·AI 수정·
 수정 적용·수정 버리기)과 자기 데이터 삭제 개방 2(소설·마지막 장)를 더해 39+20이었고, 방의 글쓰기 모델 지정 차단 1을 더해
 40+20이었다. 소설 묶음 구조의 쓰기 차단 3(소설 제목·소개·표지 바꾸기, 화 제목·작가의 말 바꾸기, 묶음 다시 만들기)과
 자기 데이터 삭제 개방 1(마지막 묶음)을 더해 43+21이었고, 남은 대화 한 번에(연쇄 생성) 차단 1을 더해 44+21이었다. 인물 카드
 쓰기 차단 3(추가·고치기·합치기), 편집 보드 배치 저장 차단 1, 읽은 위치 저장 차단 1, 스냅샷 저장·복원 차단 2와 스냅샷 삭제
-개방 1을 더해 51+22였고, 작품의 소설화 허락 바꾸기 차단 1을 더해 52+22다. 읽은 위치 저장은 화면을 떠날 때 응답을
+개방 1을 더해 51+22였고, 작품의 소설화 허락 바꾸기 차단 1을 더해 52+22였고, 노벨 공개 차단 1과 공개 거두기 개방 1을 더해
+53+23이었다. 공개 노벨 독자 쪽 차단 3(화 구매, 독자 읽은 자리 저장, 화 댓글 쓰기)과 개방 5(좋아요·좋아요 취소, 내 댓글 지우기,
+노벨·화 신고, 댓글 신고)를 더해 56+28이다. 클로버를 쓰거나 남이 보는 글을 새로 남기는 일은 막고, 내 표시를 거두거나
+지우는 일과 신고(안전 경로)는 연다 — 작품 쪽의 같은 일과 같은 편이다. 다시 공개는 공개와 같은 라우트라 따로 세지 않는다. 읽은 위치 저장은 화면을 떠날 때 응답을
 기다리지 않고 보내는 요청이지만 쓰기라 막는다 — 막혀도 위치가 남지 않을 뿐 읽기는 된다. 소설 라우트는 소설화 허용 게이트가 재동의 게이트보다 먼저 돌아 (b)는 사용자에게 소설화를 허용해 둔 채 요청한다.
 
 (a) 라우트 테이블 내성검사 — `app.routes`를 순회해 52개/22개의 실제 데코레이터를 대조한다.
@@ -37,9 +40,10 @@ from fastapi.routing import APIRoute
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.core.config import settings
 from api.core.security import hash_password
 from api.db.models import AssetKind, ChatMessage, ChatMessageRole, ChatRoom, Notification, Novel, User, UserPersona
-from api.db.models.novel import NovelSnapshot
+from api.db.models.novel import NovelComment, NovelPublication, NovelSnapshot
 from api.legal.dependencies import require_legal_consent
 from api.main import app
 from factories import (
@@ -47,6 +51,7 @@ from factories import (
     _get_genre,
     _login_as,
     _make_asset,
+    _make_public_novel,
     _make_published,
     _make_published_story,
     _make_novel_tree,
@@ -143,6 +148,15 @@ _BLOCKED_REQUESTS: list[tuple[str, str, dict[str, object] | None]] = [
     ),
     ("POST", "/novels/{novel_id}/snapshots", {"name": "저장"}),
     ("POST", "/novels/{novel_id}/snapshots/{snapshot_id}/restore", None),
+    ("POST", "/novels/{novel_id}/publication", {"chapterId": str(uuid.uuid4())}),
+    # 공개 노벨 독자 쓰기 3개(좋아요·댓글 지우기·신고는 아래 "연다")
+    ("POST", "/webnovels/{novel_id}/chapters/{chapter_id}/purchase", {"expectedPrice": 10}),
+    (
+        "PUT",
+        "/webnovels/{novel_id}/chapters/{chapter_id}/reading-position",
+        {"paragraphIndex": 0, "paragraphCount": 1, "edition": 1, "finished": False},
+    ),
+    ("POST", "/webnovels/{novel_id}/chapters/{chapter_id}/comments", {"body": "댓글"}),
 ]
 
 # ---- (a)/(c) 공통: "연다" 22개 ----
@@ -170,6 +184,12 @@ _OPEN_PATHS: list[tuple[str, str]] = [
     ("DELETE", "/novels/{novel_id}/chapters/{chapter_id}"),
     ("DELETE", "/novels/{novel_id}/batches/{batch_id}"),
     ("DELETE", "/novels/{novel_id}/snapshots/{snapshot_id}"),
+    ("POST", "/novels/{novel_id}/publication/withdraw"),  # 자기 글을 내리는 일
+    ("POST", "/webnovels/{novel_id}/like"),
+    ("DELETE", "/webnovels/{novel_id}/like"),
+    ("DELETE", "/webnovels/{novel_id}/comments/{comment_id}"),
+    ("POST", "/webnovels/{novel_id}/reports"),
+    ("POST", "/webnovels/{novel_id}/comments/{comment_id}/reports"),
 ]
 
 
@@ -220,6 +240,7 @@ _DUMMY_IDS = {
     "batch_id": str(uuid.uuid4()),
     "character_id": str(uuid.uuid4()),
     "snapshot_id": str(uuid.uuid4()),
+    "comment_id": str(uuid.uuid4()),
 }
 
 
@@ -241,6 +262,8 @@ async def test_blocked_endpoint_returns_403_without_consent(
     await db_session.flush()
     await _make_published(db_session, kind="terms", version="2099-01-01", requires_reconsent=True)
     await _allow_novelize(db_session, monkeypatch, user.id)
+    # 노벨 공개는 스위치 게이트가 재동의 게이트보다 먼저 돈다(소설화 게이트와 같은 이유로 켜 둔다).
+    monkeypatch.setattr(settings, "novel_public_enabled", True)
     await _login_as(db_client, user.id)
 
     resp = await db_client.request(method, path_template.format(**_DUMMY_IDS), json=body)
@@ -531,3 +554,44 @@ async def test_delete_novel_snapshot_still_open_without_consent(
     resp = await db_client.delete(f"/novels/{tree.novel.id}/snapshots/{snapshot.id}")
 
     assert resp.status_code == 204
+
+
+async def test_withdraw_novel_publication_still_open_without_consent(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """공개 거두기는 새 문안에 동의하기 전에도 된다 — 소설화 허용·노벨 스위치도 보지 않는다(자기 글을 내리는 일)."""
+    user = await _unconsented_user(db_client, db_session)
+    tree = await _make_novel_tree(db_session, user.id)
+    db_session.add(NovelPublication(novel_id=tree.novel.id, visibility="public"))
+    await db_session.commit()
+
+    resp = await db_client.post(f"/novels/{tree.novel.id}/publication/withdraw")
+
+    assert resp.status_code == 204
+
+
+async def test_webnovel_like_comment_delete_and_reports_still_open_without_consent(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """공개 노벨 독자는 새 문안에 동의하기 전에도 좋아요를 누르고 거두고, 내 댓글을 지우고, 노벨·화·댓글을 신고할 수 있다."""
+    monkeypatch.setattr(settings, "novel_public_enabled", True)
+    publisher = _make_user()
+    db_session.add(publisher)
+    await db_session.flush()
+    novel = await _make_public_novel(db_session, publisher.id)
+    user = await _unconsented_user(db_client, db_session)
+    own = NovelComment(novel_id=novel.novel_id, chapter_id=novel.chapter_ids[0], author_user_id=user.id, body="내 댓글")
+    others = NovelComment(
+        novel_id=novel.novel_id, chapter_id=novel.chapter_ids[0], author_user_id=publisher.id, body="남의 댓글"
+    )
+    db_session.add_all([own, others])
+    await db_session.commit()
+    base = f"/webnovels/{novel.novel_id}"
+
+    liked = await db_client.post(f"{base}/like")
+    unliked = await db_client.delete(f"{base}/like")
+    deleted = await db_client.delete(f"{base}/comments/{own.id}")
+    reported = await db_client.post(f"{base}/reports", json={"reasonCategory": "spam"})
+    comment_reported = await db_client.post(f"{base}/comments/{others.id}/reports", json={"reasonCategory": "spam"})
+
+    assert [r.status_code for r in (liked, unliked, deleted, reported, comment_reported)] == [204, 204, 204, 200, 200]

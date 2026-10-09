@@ -944,6 +944,7 @@ _EXPECTED_TIMEOUT_MS: dict[str, int] = {
     "chat_memory_summary": 60_000,
     "publish_filter_character": 60_000,
     "publish_filter_story": 60_000,
+    "novel_publish_screen": 60_000,
     "seed_story_generate": 300_000,
     "seed_similarity_review": 300_000,
     # 소설화 장 생성은 수천 자를 한 번에 쓰고 사고 토큰도 많아 가장 길게, 경계 제안은 사용자가 화면에서 기다리는

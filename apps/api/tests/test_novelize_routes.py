@@ -54,8 +54,9 @@ pytestmark = pytest.mark.usefixtures("novel_prices_for_flow_tests")
 
 _NOVEL_PATH_PREFIXES = ("/novels", "/chat-rooms/{room_id}/novel")
 # 게이트 밖에 두는 라우트. 소설 삭제는 자기 데이터를 지울 권리라 기능 허용과 무관하다 — 허용을 거두거나 기능을
-# 끄면 게이트가 닫히는데, 그때도 이용자가 자기 소설을 지울 수 있어야 한다(로그인·소유권만 본다).
-_GATE_EXEMPT_ROUTES = {"DELETE /novels/{novel_id}"}
+# 끄면 게이트가 닫히는데, 그때도 이용자가 자기 소설을 지울 수 있어야 한다(로그인·소유권만 본다). 노벨 공개 거두기도
+# 자기 글을 내리는 일이라 같은 원칙이다.
+_GATE_EXEMPT_ROUTES = {"DELETE /novels/{novel_id}", "POST /novels/{novel_id}/publication/withdraw"}
 
 
 def _novel_routes() -> list[tuple[str, APIRoute]]:

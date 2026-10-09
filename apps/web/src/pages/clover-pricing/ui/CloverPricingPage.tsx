@@ -27,8 +27,8 @@ import { formatTrialSentence } from "../model/trialSentence";
 const INLINE_LINK_CLASSNAME =
   "whitespace-nowrap font-medium text-primary underline-offset-4 hover:underline focus-visible:underline";
 
-/** 사용처 단가 목록과 무료 대화 수는 가격 응답에 나중에 더한 필드다. */
-type AddedPricingKey = "models" | "novelAiEditCost" | "dailyFreeChatTurns";
+/** 사용처 단가 목록과 무료 대화 수, 노벨 열람가·무료 화 수는 가격 응답에 나중에 더한 필드다. */
+type AddedPricingKey = "models" | "novelAiEditCost" | "dailyFreeChatTurns" | "novelReadCost" | "novelFreeChapterCount";
 
 /** 이 화면이 읽는 가격 응답. web 과 API 는 따로 배포돼 새 화면이 옛 API 의 응답(위 필드가 없다)을 받는 구간이 있다.
  * 타입은 그 필드를 필수로 적지만 그 구간에는 런타임에 비어 있으므로, 화면은 이 모양으로 읽고 빈 필드를 건너뛴다. */
@@ -287,6 +287,18 @@ function UsageCosts({ pricing }: { pricing: DeployedPricingResponse }) {
         <UsageRow label="이미지 1장" cost={pricing.imageCost} />
         {pricing.novelAiEditCost !== undefined && (
           <UsageRow label="소설 AI 수정 1회" cost={pricing.novelAiEditCost} />
+        )}
+        {/* 노벨(회원이 공개한 소설)은 화마다 소장한다. 앞 몇 화는 무료라 그 수를 함께 적는다 — 단가만 보면 1화부터 드는
+            것으로 읽힌다. */}
+        {pricing.novelReadCost !== undefined && (
+          <UsageRow
+            label={
+              pricing.novelFreeChapterCount
+                ? `노벨 1화 열람 (앞 ${pricing.novelFreeChapterCount}화 무료)`
+                : "노벨 1화 열람"
+            }
+            cost={pricing.novelReadCost}
+          />
         )}
       </dl>
       {/* 단가가 0이면 나눗셈이 무한대가 된다 — 그때는 예시를 싣지 않는다. */}

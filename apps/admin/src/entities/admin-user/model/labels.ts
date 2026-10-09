@@ -54,6 +54,16 @@ export const ACTION_TYPE_LABELS = {
   // 둔다. 문구는 작품 상세의 지정·해제 버튼과 같은 말이다.
   "home-curation-set": "홈 큐레이션 지정",
   "home-curation-clear": "홈 큐레이션 해제",
+  "home-novel-curation-set": "홈 노벨 지정",
+  "home-novel-curation-clear": "홈 노벨 해제",
+  // 노벨 조치의 대상 유저는 게시자, 노벨 댓글 조치의 대상 유저는 댓글 작성자다(그 회원의 조치 이력 표에 뜬다).
+  "novel-restrict": "노벨 이용제한",
+  "novel-lift": "노벨 이용제한 해제",
+  "novel-report-reject": "노벨 신고 반려",
+  "novel-comment-hide": "노벨 댓글 운영 숨김",
+  "novel-comment-restore": "노벨 댓글 운영 숨김 해제",
+  "novel-comment-delete": "노벨 댓글 운영 삭제",
+  "novel-comment-report-reject": "노벨 댓글 신고 반려",
   "inquiry-reply": "문의 답변",
   "legal-publish": "약관·정책 게시",
   "notice-publish": "공지 게시",
@@ -61,8 +71,8 @@ export const ACTION_TYPE_LABELS = {
   "prompt-set-publish": "프롬프트 세트 게시",
 } satisfies Record<AdminActionType, string>;
 
-/** 원장 행의 `kind` — `core/clover.py`의 `CloverKind` 16종이다(`mission_grant`·`expire_burn`
- * 2종과 소설화의 `novelize_spend`·`novelize_refund` 2종, 결제의 `purchase_*` 4종은 나중에 더해졌다). `AdminCloverLedgerItem.kind`가 `Literal`이 아니라
+/** 원장 행의 `kind` — `core/clover.py`의 `CloverKind` 18종이다(`mission_grant`·`expire_burn`
+ * 2종과 소설화의 `novelize_spend`·`novelize_refund` 2종, 결제의 `purchase_*` 4종, 노벨의 `novel_read_spend`·`novel_read_refund` 2종은 나중에 더해졌다). `AdminCloverLedgerItem.kind`가 `Literal`이 아니라
  * `string`인 것은 의도다(모델이 `Text`라 값을 늘릴 때 마이그레이션도 FE 코드젠도 깨지지 않게 한
  * 것). 그래서 여기는 `Record<string, string>`이고, 모르는 값은 호출부가 원문 그대로 보여준다 —
  * 키를 빠뜨려도 컴파일이 못 잡는다(유니언으로 좁혀 강제하는 ACTION_TYPE_LABELS와 다르다).
@@ -85,6 +95,8 @@ export const CLOVER_KIND_LABELS: Record<string, string> = {
   purchase_bonus: "구매 보너스",
   purchase_revoke: "구매 취소 회수",
   purchase_restore: "구매 회수 복원",
+  novel_read_spend: "노벨 소장",
+  novel_read_refund: "노벨 삭제 환급",
 };
 
 type PaymentStatus = components["schemas"]["AdminUserPaymentItem"]["status"];

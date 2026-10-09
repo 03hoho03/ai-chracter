@@ -283,6 +283,16 @@ class NovelLastRead(CamelModel):
     updated_at: datetime
 
 
+class NovelPurchaseRefundPreview(CamelModel):
+    """지우면 돌려줄 구매. 소설 삭제 확인에는 소설 전체를, 마지막 묶음(화) 삭제 확인에는 마지막 묶음을 본다. 금액은 산 값
+    그대로다(결제가 전액 취소된 구매분은 실제 환급에서 빠질 수 있다)."""
+
+    novel_buyer_count: int = 0
+    novel_refund_amount: int = 0
+    last_batch_buyer_count: int = 0
+    last_batch_refund_amount: int = 0
+
+
 class NovelDetailResponse(CamelModel):
     id: uuid.UUID
     # 원래 대화방. 방이 지워졌으면 null 이고, 그때는 새 장을 만들 수 없다(읽기·수정은 된다).
@@ -318,6 +328,9 @@ class NovelDetailResponse(CamelModel):
     # 확인 화면의 기본 선택 — 이 소설에서 가장 최근에 성공한 장 작업의 모델이다. 그런 작업이 없거나 그 모델을 지금 쓸 수
     # 없으면(허용 회수·레지스트리에서 내림) 기본 모델이다.
     last_chapter_model: ChatModelId = Field(default_factory=lambda: DEFAULT_CHAT_MODEL)
+    # 노벨에서 이 소설의 화를 산 구매자 수와 지우면 돌려줄 클로버 — 삭제 확인 화면의 환급 고지에 쓴다. 기본값은 위 둘과 같은
+    # 호환용이다.
+    purchase_refunds: NovelPurchaseRefundPreview = Field(default_factory=NovelPurchaseRefundPreview)
 
 
 class NovelListItem(CamelModel):

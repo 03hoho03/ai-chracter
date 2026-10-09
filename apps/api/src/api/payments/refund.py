@@ -34,8 +34,9 @@ from portone_server_sdk.payment import (
     RequestedPaymentCancellation,
     SucceededPaymentCancellation,
 )
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from api.admin.action_log import record_admin_action
 from api.core.clover import restore_purchase_lots, revoke_purchase_lots
@@ -74,6 +75,27 @@ _MAYBE_ALREADY_CANCELLED = frozenset(
         "PaymentAlreadyCancelledError",
     }
 )
+
+
+def fully_cancelled_purchase_lot() -> ColumnElement[bool]:
+    """`CloverLot` 이 전액 취소가 성공으로 확정된 결제에서 나온 로트인가 — SQL 조건. 판정은 그 결제의
+    `cancelled_amount_krw >= amount_krw` 다: `cancelled_amount_krw` 는 포트원이 성공을 확인한(`succeeded`) 취소 행의 금액
+    합으로만 정해지므로(`_settle_totals`), 이 비교가 참이면 산 돈 전부가 확정적으로 돌아간 결제다.
+
+    노벨 삭제 환급이 `refund_spend(skip_lot=…)` 로 넘겨, 돈을 전부 돌려받은 구매분에서 나간 몫을 클로버로 또 돌려주지 않게
+    한다. 그 밖의 결제는 정상 환급한다.
+    - 부분 환불(어드민 환불)은 그때 남아 있던 유료분만 돈으로 돌려준다 — 이미 소설 구매에 쓴 몫은 환불받지 않았으니
+      돌려줘야 한다.
+    - 진행 중(`requested`) 취소는 아직 돈이 나가지 않았고 거절로 끝날 수 있다. 확정 전에 건너뛰면 거절됐을 때 그 몫을 영영
+      못 받는다.
+    - 실패(`failed`) 취소는 환불되지 않은 결제다.
+    무료 지급 로트는 결제가 없어 늘 거짓이다."""
+    return exists(
+        select(Payment.id).where(
+            Payment.id == CloverLot.payment_id,
+            Payment.cancelled_amount_krw >= Payment.amount_krw,
+        )
+    )
 
 
 def _utcnow() -> datetime:

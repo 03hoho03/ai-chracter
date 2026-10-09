@@ -202,7 +202,8 @@ class CloverSpendAllocation(Base):
 
 # 사용처 종류. 대화방 채팅 턴(`chat`), 소설화 작업(`novel`), 빌더 미리보기 채팅(`preview` — 작품이 아직 없거나 작가 자신의
 # 시험이라 작품을 가리키지 않는다).
-CloverSpendUsageKind = Literal["chat", "novel", "preview"]
+# `novel` 은 소설화(소설을 만드는 차감), `novel_read` 는 노벨 화 소장 구매(남이 공개한 소설을 읽는 차감)다.
+CloverSpendUsageKind = Literal["chat", "novel", "novel_read", "preview"]
 
 
 class CloverSpendUsage(Base):
@@ -214,10 +215,14 @@ class CloverSpendUsage(Base):
     계산 한 곳에 둔다. 지불자는 원장 `user_id`, 소유자는 차감 시점의 `contents.creator_user_id` 사본이다(원장을 조인하지
     않고 크리에이터별로 바로 고르려고).
 
+    노벨 구매(`novel_read`)는 작품 = 그 소설의 원작, 소유자 = 원작자이고, 그 소설을 공개한 게시자를 `publisher_user_id` 에
+    따로 둔다 — 원작자와 게시자가 다른 사람일 수 있고, 둘의 몫을 가르는 것은 정산이 정한다. 게시자 칸은 `novel_read` 에만
+    있다.
+
     `chat_room_id`·`novel_id` 에는 FK 가 없다 — 대화방 삭제와 소설 삭제·탈퇴가 그 행을 실제로 지우는데, 사용처는 정산
     근거라 남아야 한다. 작품은 소프트 삭제라 FK 를 건다.
 
-    CHECK 다섯은 alembic 1.18.5 의 `alembic check` 가 비교하지 않아 `pytest.raises(IntegrityError)` 행위 테스트가 유일한
+    CHECK 여섯은 alembic 1.18.5 의 `alembic check` 가 비교하지 않아 `pytest.raises(IntegrityError)` 행위 테스트가 유일한
     검증이다(`CloverLot` 과 같은 함정).
     """
 
@@ -240,6 +245,9 @@ class CloverSpendUsage(Base):
     )
     chat_room_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     novel_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    publisher_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", name="fk_clover_spend_usages_publisher_user_id"), nullable=True
+    )
     # 차감과 같은 트랜잭션이라 `now()`(트랜잭션 시작 시각)가 원장 `created_at` 과 같은 값이다.
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -260,7 +268,12 @@ class CloverSpendUsage(Base):
             "usage_kind <> 'chat' OR chat_room_id IS NOT NULL", name="ck_clover_spend_usages_chat_has_room"
         ),
         CheckConstraint(
-            "(usage_kind = 'novel') = (novel_id IS NOT NULL)", name="ck_clover_spend_usages_novel_has_novel"
+            "(usage_kind IN ('novel', 'novel_read')) = (novel_id IS NOT NULL)",
+            name="ck_clover_spend_usages_novel_has_novel",
+        ),
+        CheckConstraint(
+            "(usage_kind = 'novel_read') = (publisher_user_id IS NOT NULL)",
+            name="ck_clover_spend_usages_publisher_for_novel_read",
         ),
         # 크리에이터별 소급·월 확정·조회. 미리보기 행은 소유자가 없어 뺀다.
         Index(

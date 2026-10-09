@@ -15,9 +15,17 @@ from api.db.models.comments import Comment, CommentMute
 from api.db.models.inquiry import Inquiry
 from api.db.models.moderation import Notification
 from api.db.models.notice import Notice
-from api.moderation.schemas import NotificationListResponse, NotificationResponse
+from api.db.models.novel import NovelPurchase
+from api.moderation.schemas import (
+    NotificationListResponse,
+    NotificationResponse,
+    NovelRefundNotificationResponse,
+)
 
 COMMENT_NOTIFICATION_TYPES = ("comment-created", "comment-reply", "comment-mention")
+# 노벨 삭제 환급 알림(`novel_public/purchases.py` 가 만든다). 문구는 화면이 이 값과 응답의 `novelRefund`(화 수·클로버 수)로
+# 만든다 — 소설 제목은 싣지 않는다(지운 글의 사본을 남기지 않는다).
+NOVEL_REFUND_NOTIFICATION_TYPE = "novel-purchase-refund"
 
 
 def visible_notification_filter(user_id: uuid.UUID) -> ColumnElement[bool]:
@@ -71,6 +79,26 @@ async def serialize_notifications(
         else {}
     )
     targets = await notification_targets(db, list(comments.values()), user_id)
+    refund_ids = [item.id for item in notifications if item.type == NOVEL_REFUND_NOTIFICATION_TYPE]
+    refunds: dict[uuid.UUID, NovelRefundNotificationResponse] = (
+        {
+            notification_id: NovelRefundNotificationResponse(chapter_count=chapter_count, clover_amount=amount or 0)
+            for notification_id, chapter_count, amount in (
+                await db.execute(
+                    select(
+                        NovelPurchase.refund_notification_id,
+                        func.count(),
+                        func.coalesce(func.sum(NovelPurchase.refunded_amount), 0),
+                    )
+                    .where(NovelPurchase.refund_notification_id.in_(refund_ids))
+                    .group_by(NovelPurchase.refund_notification_id)
+                )
+            ).tuples()
+            if notification_id is not None
+        }
+        if refund_ids
+        else {}
+    )
     items = []
     for notification in notifications:
         target = None
@@ -103,6 +131,7 @@ async def serialize_notifications(
                 created_at=notification.created_at,
                 read=notification.read,
                 comment=target,
+                novel_refund=refunds.get(notification.id),
             )
         )
     return items

@@ -7,6 +7,7 @@
    응답을 오늘의 상수 값과 비교만 하면 라우트가 숫자 사본을 들고 있어도 통과하므로 그렇게 쓰지 않는다.
 3. 상위 모델 단가와 소설 단가(화·AI 수정)도 응답에 실린다 — 구매 전 안내에 없는 사용처 가격은 숨은 가격으로 읽힌다.
    모델 레지스트리의 모든 모델이 실리고, 허용된 계정만 쓰는 사용처는 그 사실이 함께 실린다.
+   노벨 화 소장 가격과 무료 화 수도 싣는다.
 4. 상품 정의가 지금의 가격 규칙을 지킨다(아래 테스트 docstring).
 
 `db_client` 를 쓰는 이유는 DB 가 아니라 쿠키다 — 세션 스코프 `api_client` 는 앞 테스트의 세션 쿠키를 들고 있을 수
@@ -52,14 +53,18 @@ async def test_response_follows_products_and_cost_constants(
     )
     monkeypatch.setattr(clover, "CHAT_TURN_COST", 997)
     monkeypatch.setattr(clover, "IMAGE_UNIT_COST", 998)
+    monkeypatch.setattr(clover, "NOVEL_READ_COST", 996)
+    monkeypatch.setattr(clover, "NOVEL_FREE_CHAPTER_COUNT", 995)
 
     resp = await db_client.get("/clover/pricing")
 
     assert resp.status_code == 200
     body = resp.json()
-    # 결제 여부·결제수단은 결제 테스트(`test_payments_api.py`)가, 모델별·소설 단가와 무료 대화 수는 아래 테스트가 본다.
+    # 결제 여부·결제수단은 결제 테스트(`test_payments_api.py`)가, 모델별·소설 단가와 무료 대화 수는 아래 테스트가, 노벨 켜짐
+    # 여부는 노벨 독자 테스트(`test_webnovel_reading.py`)가 본다.
     for key in (
         "paymentsEnabled",
+        "novelPublicEnabled",
         "payMethods",
         "identityGateEnabled",
         "models",
@@ -75,6 +80,8 @@ async def test_response_follows_products_and_cost_constants(
         ],
         "chatTurnCost": 997,
         "imageCost": 998,
+        "novelReadCost": 996,
+        "novelFreeChapterCount": 995,
     }
 
 

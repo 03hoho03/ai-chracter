@@ -127,6 +127,12 @@ class CloverPricingResponse(CamelModel):
     # 하루에 클로버 없이 쓸 수 있는 대화 턴 수. 로그인한 화면은 `GET /me` 의 같은 값을 읽지만 공개 안내는 그 응답을
     # 못 읽는다.
     daily_free_chat_turns: int
+    # 노벨 화 하나의 소장 가격과, 소설마다 앞에서부터 무료로 읽는 화 수. 노벨이 꺼져 있어도 싣는다(가격표는 정책 안내다).
+    novel_read_cost: int
+    novel_free_chapter_count: int
+    # 노벨 스위치가 켜져 있는가. 로그인하지 않은 방문자에게도 노벨 탭을 보이려면(누르면 로그인 유도) 인증 없는 응답에 이
+    # 값이 있어야 한다 — `GET /me` 는 로그인한 사람만 읽는다. 꺼져 있으면 화면이 탭과 노벨 화면을 숨긴다.
+    novel_public_enabled: bool
     # 지금 결제를 받는가. 거짓이면 구매 화면이 "준비 중"을 보인다.
     payments_enabled: bool
     # 구매 화면이 고를 수 있는 결제수단(`payments/methods.py` 가 유일한 목록).

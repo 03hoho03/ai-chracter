@@ -38,6 +38,7 @@ const PUBLISH_EFFECT_COPY: Record<PromptLane, string> = {
   character: "다음 채팅 턴부터 전 서비스에 즉시 반영되고(화자 라벨과 등급 규칙은 다음 소설 작업에도 쓰여요)",
   publish_filter: "다음 발행 심사부터 즉시 반영되고",
   novel: "다음 소설 경계 제안·문단 수정과 Gemini 로 쓰는 다음 화 생성부터 즉시 반영되고",
+  novel_screen: "다음 노벨 공개 심사부터 즉시 반영되고",
 };
 
 /** Claude 세트는 레인마다 읽히는 자리가 하나뿐이라 문구가 레인을 따른다. 채팅 레인은 그 모델을 고른 방의 응답 생성에만

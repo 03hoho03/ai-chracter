@@ -15,6 +15,7 @@ from api.db.models.moderation import (
     ReportReasonCategory,
     ReportStatus,
 )
+from api.db.models.novel import NovelPublicationModerationStatus, NovelPublicationVisibility
 from api.db.models.payment import PaymentStatus
 from api.legal.schemas import LegalDocumentKind
 from api.llm.chat_models import ChatModelId
@@ -221,6 +222,38 @@ class AdminHomeCurationSetRequest(CamelModel):
 
 
 class AdminHomeCurationClearRequest(CamelModel):
+    admin_comment: str | None = None
+
+
+class AdminHomeNovelCurationNovel(CamelModel):
+    """홈 노벨 자리에 걸린 노벨. `title` 은 공개본 제목(비어 있으면 원작 제목), `cover_url` 은 원작 썸네일이다."""
+
+    id: uuid.UUID
+    title: str
+    source_title: str
+    cover_url: str | None
+    publisher_nickname: str | None
+    visibility: NovelPublicationVisibility
+    moderation_status: NovelPublicationModerationStatus
+
+
+class AdminHomeNovelCurationSlot(CamelModel):
+    """`is_listed` 는 걸린 노벨이 지금 홈에 보이는가다 — 노벨 목록과 같은 판정이라, 건 뒤 거둬지거나 이용제한되면 지정은
+    남은 채 거짓이 된다. 비어 있는 자리면 `novel` 이 비고 거짓이다."""
+
+    position: int
+    novel: AdminHomeNovelCurationNovel | None
+    is_listed: bool
+
+
+class AdminHomeNovelCurationListResponse(CamelModel):
+    items: list[AdminHomeNovelCurationSlot]
+
+
+class AdminHomeNovelCurationSetRequest(CamelModel):
+    """코멘트는 선택이다(작품 홈 지정과 같은 이유 — 되돌릴 수 있고 게시자에게 불이익이 없다)."""
+
+    novel_id: uuid.UUID
     admin_comment: str | None = None
 
 

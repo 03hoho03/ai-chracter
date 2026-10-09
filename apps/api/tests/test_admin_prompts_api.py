@@ -22,7 +22,8 @@ published는 레인별로 story v1·v2·v4·v6·v9·v10·v12, character v1·v3·
 story v12·character v13·publish_filter v8이다. 마이그레이션 `e6aa289fea62`가 Claude 세트 4개(story sonnet v14·opus v15,
 character sonnet v16·opus v17)를 더하고, 소설 프롬프트 레인 마이그레이션이 `novel` 레인 세트 4개(gemini 옛 문안 v18·
 새 문안 v19, sonnet v20, opus v21)를 더하고, 마이그레이션 `d9768bc0cfee`가 story 레인에 스탯 규칙 판정 행을 더한 Gemini
-세트 v22를 만들어 story 활성이 v22가 되므로 다음 게시 버전은 "23"부터다(전 레인·전 모델 대상 자동 증가).
+세트 v22를 만들어 story 활성이 v22가 되고, 노벨 텍스트 심사 레인 마이그레이션이 `novel_screen` 레인 Gemini 세트 v23을
+심으므로 다음 게시 버전은 "24"부터다(전 레인·전 모델 대상 자동 증가).
 채팅 레인 Gemini 초안 응답은 얼린 소설화 행을 싣지 않는다(`_visible_section_count`).
 섹션 수는 `_expected_section_count`로 코드 표에서 도출한다 — DB 행은 마이그레이션이
 만드므로 동어반복이 아니다.
@@ -449,8 +450,8 @@ async def test_list_returns_metadata_only_and_marks_active(
     draft = [item for item in items if item["status"] == "draft"]
     # Gemini: story v1·v2·v4·v6·v9·v10·v12, character v1·v3·v5·v11·v13, publish_filter v1·v7·v8 (모듈 docstring — 세트를
     # 만든 여덟 마이그레이션이 v2·v3, v4·v5, v6, v7, v8, v9, v10·v11, v12·v13을 만든다). Claude: v14~v17. 소설: v18~v21.
-    # 스탯 규칙 판정: story v22.
-    assert len(published) == 24
+    # 스탯 규칙 판정: story v22. 노벨 텍스트 심사: v23.
+    assert len(published) == 25
     assert len(draft) == 1
     active = [item for item in published if item["isActive"]]
     # (레인, 모델)마다 하나 — Claude 세트는 원본 Gemini 세트보다 published_at 이 과거지만 모델이 달라 각자 활성이다.
@@ -465,6 +466,7 @@ async def test_list_returns_metadata_only_and_marks_active(
         ("novel", "gemini", "19"),
         ("novel", "sonnet", "20"),
         ("novel", "opus", "21"),
+        ("novel_screen", "gemini", "23"),
     }
     # 레인별 마지막 마이그레이션 이전 세트 열은 비활성이다(소설 레인은 옛 문안을 옮긴 첫 판).
     assert {(item["lane"], item["version"]) for item in published if not item["isActive"]} == {
@@ -484,7 +486,7 @@ async def test_list_returns_metadata_only_and_marks_active(
         ("novel", "18"),
     }
     assert draft[0]["isActive"] is False
-    assert {item["version"] for item in published} == {str(n) for n in range(1, 23)}
+    assert {item["version"] for item in published} == {str(n) for n in range(1, 24)}
 
 
 async def test_get_by_id_returns_full_sections(
@@ -667,7 +669,7 @@ async def test_publish_valid_unmodified_draft_succeeds_with_next_version(
     resp = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "정기 점검 후 재게시"})
     assert resp.status_code == 200
     body = resp.json()
-    assert body["version"] == "23"
+    assert body["version"] == "24"
     assert body["status"] == "published"
     assert body["lane"] == "story"
     assert body["note"] == "정기 점검 후 재게시"
@@ -694,12 +696,12 @@ async def test_publish_assigns_sequential_integer_versions(
 ) -> None:
     await _login_new_admin(db_client, db_session)
     await _make_valid_draft(db_client, "story")
-    first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v23"})
-    assert first.json()["version"] == "23"
+    first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v24"})
+    assert first.json()["version"] == "24"
 
     await _make_valid_draft(db_client, "story")
-    second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v24"})
-    assert second.json()["version"] == "24"
+    second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v25"})
+    assert second.json()["version"] == "25"
 
 
 async def test_next_version_is_global_monotonic_not_per_lane(
@@ -707,23 +709,23 @@ async def test_next_version_is_global_monotonic_not_per_lane(
 ) -> None:
     """`_next_published_version`에 레인 필터가 없다("안 넣는 것"이 결정이다).
     세트를 만든 마이그레이션들이 story v2·v4·v6·v9·v10·v12·character v3·v5·v11·v13·publish_filter v7·v8을 만든 테스트
-    DB(+ Claude 세트 v14~v17, 소설 세트 v18~v21, 스탯 규칙 판정 story 세트 v22)에서, story가 v23·v24를 게시한 뒤 character
-    게시가 v25를 받아야 한다(레인별
+    DB(+ Claude 세트 v14~v17, 소설 세트 v18~v21, 스탯 규칙 판정 story 세트 v22, 노벨 텍스트 심사 세트 v23)에서, story가
+    v24·v25를 게시한 뒤 character 게시가 v26을 받아야 한다(레인별
     독립 증가라면 character의 다음 게시는 v18일 것이다) —
     이 테스트는 그 레인 필터의 **부재**를 고정한다."""
     await _login_new_admin(db_client, db_session)
 
     await _make_valid_draft(db_client, "story")
-    first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v23"})
-    assert first.json()["version"] == "23"
+    first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v24"})
+    assert first.json()["version"] == "24"
 
     await _make_valid_draft(db_client, "story")
-    second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v24"})
-    assert second.json()["version"] == "24"
+    second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v25"})
+    assert second.json()["version"] == "25"
 
     await _make_valid_draft(db_client, "character")
-    third = await db_client.post("/admin/prompt-sets/character/publish", json={"note": "character v25"})
-    assert third.json()["version"] == "25"
+    third = await db_client.post("/admin/prompt-sets/character/publish", json={"note": "character v26"})
+    assert third.json()["version"] == "26"
 
 
 async def test_publishing_one_lane_does_not_affect_other_lanes_active_set(
@@ -807,7 +809,7 @@ async def test_publish_succeeds_even_when_cache_invalidation_fails(
         resp = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "캐시 실패해도 성공"})
 
     assert resp.status_code == 200
-    assert resp.json()["version"] == "23"
+    assert resp.json()["version"] == "24"
     assert any(record.levelno >= logging.WARNING for record in caplog.records)
     assert captured == ["redis"]
 
@@ -933,10 +935,10 @@ async def test_list_excludes_legacy_and_marks_exactly_one_active_per_lane_and_mo
 
     lanes = {item["lane"] for item in items}
     assert "legacy" not in lanes
-    assert lanes == {"story", "character", "publish_filter", "novel"}
+    assert lanes == {"story", "character", "publish_filter", "novel", "novel_screen"}
 
     active_items = [item for item in items if item["isActive"]]
-    assert len(active_items) == 10
+    assert len(active_items) == 11
     assert sorted((item["lane"], item["model"]) for item in active_items) == [
         ("character", "gemini"),
         ("character", "opus"),
@@ -944,6 +946,7 @@ async def test_list_excludes_legacy_and_marks_exactly_one_active_per_lane_and_mo
         ("novel", "gemini"),
         ("novel", "opus"),
         ("novel", "sonnet"),
+        ("novel_screen", "gemini"),
         ("publish_filter", "gemini"),
         ("story", "gemini"),
         ("story", "opus"),
@@ -1326,7 +1329,7 @@ async def test_claude_publish_becomes_that_models_active_set_and_invalidates_onl
     assert resp.status_code == 200
     body = resp.json()
     assert body["model"] == "sonnet"
-    assert body["version"] == "23"
+    assert body["version"] == "24"
     assert len(body["sections"]) == _claude_section_count("story")
     # 얼린 소설화 행은 채팅 Gemini 체인에만 있다 — Claude 채팅 체인 게시에 끼워 넣지 않는다.
     assert {s["channel"] for s in body["sections"]} == _CLAUDE_CHANNELS
@@ -1571,3 +1574,23 @@ async def _sections_of_set(db_session: AsyncSession, set_id: uuid.UUID) -> list[
             )
         ).all()
     )
+
+
+async def test_novel_screen_lane_publishes_its_seed_and_previews_with_sample_text(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """노벨 텍스트 심사 레인은 시드 그대로 게시 검증을 통과하고, 미리보기는 지시문 뒤에 샘플 글을 심사할 글 자리에 싣는다.
+    심사는 모델을 고르지 않아 Claude 체인은 422 다."""
+    await _login_new_admin(db_client, db_session)
+    await _make_valid_draft(db_client, "novel_screen")
+
+    preview = await db_client.post("/admin/prompt-sets/novel_screen/draft/preview")
+    published = await db_client.post("/admin/prompt-sets/novel_screen/publish", json={"note": "재게시"})
+    claude = await db_client.get("/admin/prompt-sets/novel_screen/draft", params={"model": "sonnet"})
+
+    assert preview.status_code == 200
+    (item,) = preview.json()["items"]
+    assert item["channel"] == "novel_screen"
+    assert "[판정 방법]" in item["text"] and "=== chapter_body: 본문 ===\n[샘플] 첫 문단이다." in item["text"]
+    assert (published.status_code, published.json()["version"]) == (200, "24")
+    assert (claude.status_code, claude.json()["detail"]["rule"]) == (422, "lane-model")

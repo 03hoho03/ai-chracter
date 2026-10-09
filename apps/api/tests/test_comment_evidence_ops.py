@@ -81,8 +81,15 @@ def test_restore_purges_before_returning_success(tmp_path: Path, monkeypatch: py
         return 1
 
     monkeypatch.setattr(restore_db, "purge_expired_chat_report_evidence", purge_chat)
+
+    def purge_novel(url: str, *, now: datetime) -> int:
+        order.append("purge-novel")
+        assert url == "postgresql://unused"
+        return 1
+
+    monkeypatch.setattr(restore_db, "purge_expired_novel_report_evidence", purge_novel)
     restore_db.restore(dump, "postgresql://unused")
-    assert order == ["restore", "purge", "purge-chat"]
+    assert order == ["restore", "purge", "purge-chat", "purge-novel"]
 
 
 def test_restore_scrub_failure_is_not_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -95,6 +102,7 @@ def test_restore_scrub_failure_is_not_success(tmp_path: Path, monkeypatch: pytes
 
     monkeypatch.setattr(restore_db, "purge_expired_comment_evidence", purge)
     monkeypatch.setattr(restore_db, "purge_expired_chat_report_evidence", lambda url, *, now: 0)
+    monkeypatch.setattr(restore_db, "purge_expired_novel_report_evidence", lambda url, *, now: 0)
     with pytest.raises(RuntimeError, match="scrub failed"):
         restore_db.restore(dump, "postgresql://unused")
 
@@ -109,12 +117,13 @@ def test_restore_chat_report_scrub_failure_is_not_success(tmp_path: Path, monkey
         raise RuntimeError("chat scrub failed")
 
     monkeypatch.setattr(restore_db, "purge_expired_chat_report_evidence", purge_chat)
+    monkeypatch.setattr(restore_db, "purge_expired_novel_report_evidence", lambda url, *, now: 0)
     with pytest.raises(RuntimeError, match="chat scrub failed"):
         restore_db.restore(dump, "postgresql://unused")
 
 
-def test_hourly_comment_cron_also_purges_chat_report_evidence(monkeypatch: pytest.MonkeyPatch) -> None:
-    """채팅 신고 증거는 자체 크론이 없다 — 이미 설치된 댓글 증거 크론의 `main()`이 부르지 않으면
+def test_hourly_comment_cron_also_purges_chat_and_novel_report_evidence(monkeypatch: pytest.MonkeyPatch) -> None:
+    """채팅·노벨 신고 증거는 자체 크론이 없다 — 이미 설치된 댓글 증거 크론의 `main()`이 부르지 않으면
     90일 파기가 운영에서 한 번도 돌지 않는다."""
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@h:5432/db")
     monkeypatch.setattr("sys.argv", ["purge_comment_evidence"])
@@ -129,9 +138,10 @@ def test_hourly_comment_cron_also_purges_chat_report_evidence(monkeypatch: pytes
 
     monkeypatch.setattr(purge_comment_evidence, "purge_expired_comment_evidence", recorder("comment"))
     monkeypatch.setattr(purge_comment_evidence, "purge_expired_chat_report_evidence", recorder("chat"))
+    monkeypatch.setattr(purge_comment_evidence, "purge_expired_novel_report_evidence", recorder("novel"))
     assert purge_comment_evidence.main() == 0
-    assert [kind for kind, _, _ in calls] == ["comment", "chat"]
-    assert calls[0][1:] == calls[1][1:]
+    assert [kind for kind, _, _ in calls] == ["comment", "chat", "novel"]
+    assert calls[0][1:] == calls[1][1:] == calls[2][1:]
 
 
 def test_missing_chat_report_table_in_old_backup_is_noop(monkeypatch: pytest.MonkeyPatch) -> None:

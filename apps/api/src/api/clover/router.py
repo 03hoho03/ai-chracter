@@ -54,6 +54,7 @@ from api.core.clover import (
     is_same_kst_day,
     kst_today,
 )
+from api.core.config import settings
 from api.core.identity_gate import identity_verification_required, is_identity_gated
 from api.db.models.auth import User
 from api.db.models.clover import CloverLedger, CloverLot
@@ -90,9 +91,12 @@ CLOVER_KIND_CATEGORY: dict[str, CloverLedgerCategory] = {
     "purchase_bonus": "earn",
     # 포트원이 환불을 거절해 회수를 되돌린 것 — 되돌려받은 것이라 환불과 같은 획득이다.
     "purchase_restore": "earn",
+    # 게시자가 산 화를 지워 돌려받은 것 — 되돌려받은 것이라 다른 환불과 같은 획득이다.
+    "novel_read_refund": "earn",
     "chat_spend": "use",
     "image_spend": "use",
     "novelize_spend": "use",
+    "novel_read_spend": "use",
     "expire_burn": "expire",
     "admin_revoke": "expire",
     "withdrawal_burn": "expire",
@@ -210,6 +214,9 @@ async def get_clover_pricing() -> CloverPricingResponse:
         novel_ai_edit_cost=clover.NOVELIZE_AI_EDIT_COST,
         novel_restricted=True,
         daily_free_chat_turns=rate_limit_gate.CHAT_DAILY_LIMIT,
+        novel_read_cost=clover.NOVEL_READ_COST,
+        novel_free_chapter_count=clover.NOVEL_FREE_CHAPTER_COUNT,
+        novel_public_enabled=settings.novel_public_enabled,
         payments_enabled=payments_active(),
         identity_gate_enabled=identity_gate_active(),
         pay_methods=[

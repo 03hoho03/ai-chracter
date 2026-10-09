@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Text, Uuid, false, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Text, Uuid, false, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base
@@ -89,7 +89,8 @@ class Notification(Base):
     """`type`은 운영·공지·문의·댓글 사건을 구분한다 — `moderation-action`(기본값, `moderation/router.py`의 신고
     처리에서 INSERT), `user-warned`(`admin/users.py`의 경고), `user-suspended`
     (`admin/users.py`의 정지), `notice`(`admin/notices.py`의 공지 게시 fan-out),
-    `inquiry-reply`(`admin/inquiries.py`의 문의 답변), 댓글 생성·답글·멘션·운영 조치 알림이다.
+    `inquiry-reply`(`admin/inquiries.py`의 문의 답변), 댓글 생성·답글·멘션·운영 조치 알림,
+    `novel-purchase-refund`(`novel_public/purchases.py`의 노벨 삭제 환급)이다.
     `type`이 Postgres enum이 아니라 `Text`인 이유가
     그것이다 — 값이 늘어날 여지가 있어 새 값을 추가해도 마이그레이션이 필요 없다.
 
@@ -191,6 +192,8 @@ class Appeal(Base):
 # mypy가 막고 응답은 OpenAPI 유니언으로 FE에 내려간다. 처음 계획은 `admin/action_log.py`였지만
 # 그 모듈이 이 파일을 import하므로 여기 둔다(순환 import 회피).
 # 값을 추가할 때 마이그레이션은 필요 없다(컬럼은 Text) — 이 목록과 FE 라벨만 늘린다.
+# 🔴 다만 이 Literal 은 응답 칸이기도 하다(회원 상세의 조치 이력). 새 값으로 쓴 행이 생긴 뒤 이미지를 그 값을 모르는 옛 판으로
+# 되돌리면 그 행이 걸리는 회원 상세가 응답 검증에서 500 이 된다 — 값을 쓰는 코드를 되돌릴 때는 그 행이 있는지 먼저 본다.
 AdminActionType = Literal[
     "appeal-accept",
     "chat-report-reject",
@@ -204,11 +207,20 @@ AdminActionType = Literal[
     "content-restrict",
     "home-curation-clear",
     "home-curation-set",
+    "home-novel-curation-clear",
+    "home-novel-curation-set",
     "image-view",
     "inquiry-reply",
     "legal-publish",
     "notice-publish",
     "notice-unpublish",
+    "novel-comment-delete",
+    "novel-comment-hide",
+    "novel-comment-report-reject",
+    "novel-comment-restore",
+    "novel-lift",
+    "novel-report-reject",
+    "novel-restrict",
     "prompt-set-publish",
     "report-reject",
     "user-beta-off",
@@ -262,6 +274,11 @@ class AdminActionLog(Base):
     target_comment_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("comments.id", name="fk_admin_action_logs_target_comment_id"), nullable=True
     )
+    # 노벨(공개 소설)에 한 조치. 게시자는 소설을 지우거나 탈퇴로 소설을 파기할 수 있다 — 로그는 남기고 사라진 소설을
+    # 가리키던 칸만 비운다(작품·방 칸과 같은 이유).
+    target_novel_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("novels.id", ondelete="SET NULL", name="fk_admin_action_logs_target_novel_id"), nullable=True
+    )
     reason_category: Mapped[str | None] = mapped_column(Text, nullable=True)
     reason_text: Mapped[str] = mapped_column(Text, server_default="", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -274,4 +291,10 @@ class AdminActionLog(Base):
         Index("ix_admin_action_logs_created_at", created_at.desc()),
         Index("ix_admin_action_logs_target_user_id", "target_user_id"),
         Index("ix_admin_action_logs_target_content_id", "target_content_id"),
+        # 소설 DELETE 때 SET NULL 이 이 소설을 가리키는 행을 찾는 조회용. 노벨 조치 행만 담는다.
+        Index(
+            "ix_admin_action_logs_target_novel_id",
+            "target_novel_id",
+            postgresql_where=text("target_novel_id IS NOT NULL"),
+        ),
     )

@@ -4,15 +4,26 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models import (
+    HomeNovelCuration,
     Novel,
     NovelBatch,
     NovelChapter,
     NovelChapterCharacter,
+    NovelChapterPublication,
     NovelChapterRevision,
     NovelCharacter,
+    NovelComment,
+    NovelCommentReport,
     NovelJob,
+    NovelLike,
+    NovelPublication,
+    NovelReaderPosition,
     NovelReadingPosition,
+    NovelReport,
+    NovelScreening,
     NovelSnapshot,
+    ReportReasonCategory,
+    ReportStatus,
     User,
 )
 from api.novelize.deletion import delete_novels
@@ -44,6 +55,21 @@ async def _row_counts(db_session: AsyncSession, novel_id: uuid.UUID) -> dict[str
         "positions": sa.select(sa.func.count())
         .select_from(NovelReadingPosition)
         .where(NovelReadingPosition.novel_id == novel_id),
+        "publications": sa.select(sa.func.count())
+        .select_from(NovelPublication)
+        .where(NovelPublication.novel_id == novel_id),
+        "chapter_publications": sa.select(sa.func.count())
+        .select_from(NovelChapterPublication)
+        .where(NovelChapterPublication.novel_id == novel_id),
+        "screenings": sa.select(sa.func.count()).select_from(NovelScreening).where(NovelScreening.novel_id == novel_id),
+        "reader_positions": sa.select(sa.func.count())
+        .select_from(NovelReaderPosition)
+        .where(NovelReaderPosition.novel_id == novel_id),
+        "likes": sa.select(sa.func.count()).select_from(NovelLike).where(NovelLike.novel_id == novel_id),
+        "home_curations": sa.select(sa.func.count())
+        .select_from(HomeNovelCuration)
+        .where(HomeNovelCuration.novel_id == novel_id),
+        "comments": sa.select(sa.func.count()).select_from(NovelComment).where(NovelComment.novel_id == novel_id),
     }
     return {name: (await db_session.scalar(query)) or 0 for name, query in queries.items()}
 
@@ -58,6 +84,13 @@ _GONE = {
     "appearances": 0,
     "snapshots": 0,
     "positions": 0,
+    "publications": 0,
+    "chapter_publications": 0,
+    "screenings": 0,
+    "reader_positions": 0,
+    "likes": 0,
+    "home_curations": 0,
+    "comments": 0,
 }
 
 
@@ -108,4 +141,49 @@ async def test_delete_novels_leaves_other_novels_untouched(db_session: AsyncSess
         "appearances": 1,
         "snapshots": 1,
         "positions": 1,
+        "publications": 1,
+        "chapter_publications": 1,
+        "screenings": 1,
+        "reader_positions": 1,
+        "likes": 1,
+        "home_curations": 1,
+        "comments": 1,
     }
+
+
+async def test_reports_outlive_the_novel_with_their_evidence(db_session: AsyncSession) -> None:
+    """소설을 지워도 노벨·노벨 댓글 신고는 남는다 — 대상 칸만 비고 증거 사본은 보유 기간 동안 그대로다. 같은 신고자가 같은
+    소설의 화 둘을 신고했어도 지우는 문장이 유니크에 걸리지 않는다(두 행 모두 (NULL, NULL, 신고자) 가 된다)."""
+    owner = await _make_owner(db_session)
+    tree = await _make_novel_tree(db_session, owner.id)
+    await _plant_novel_extras(db_session, tree)
+    db_session.add(
+        NovelReport(
+            reporter_user_id=owner.id,
+            publisher_user_id=owner.id,
+            novel_id=tree.novel.id,
+            reason_category=ReportReasonCategory.OTHER,
+            status=ReportStatus.PENDING,
+            evidence_title="소설 전체 신고",
+        )
+    )
+    await db_session.flush()
+
+    await delete_novels(db_session, [tree.novel.id])
+
+    reports = (
+        await db_session.execute(
+            sa.select(NovelReport.novel_id, NovelReport.chapter_id, NovelReport.chapter_ordinal, NovelReport.evidence_body)
+            .where(NovelReport.publisher_user_id == owner.id)
+            .order_by(NovelReport.chapter_ordinal.nulls_last())
+        )
+    ).all()
+    assert [tuple(row) for row in reports] == [(None, None, 1, "신고된 화 본문"), (None, None, None, None)]
+    comment_report = (
+        await db_session.execute(
+            sa.select(NovelCommentReport.comment_id, NovelCommentReport.novel_id, NovelCommentReport.evidence_body).where(
+                NovelCommentReport.comment_author_user_id == owner.id
+            )
+        )
+    ).one()
+    assert tuple(comment_report) == (None, None, "댓글")

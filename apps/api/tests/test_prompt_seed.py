@@ -181,6 +181,10 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
         "novelize_chapter": _NOVELIZE_SLOTS["novelize_chapter"]
         | {("both", "character_notes", ""), ("both", "previous_summaries", ""), ("both", "episode_plan", "")},
     },
+    # 노벨 텍스트 심사 레인 시드 리비전이 심은 지시문·심사할 글 두 행.
+    "novel_screen": {
+        "novel_screen": {("both", "instruction", ""), ("both", "screened_text", "")},
+    },
 }
 
 

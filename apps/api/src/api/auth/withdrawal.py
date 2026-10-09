@@ -31,7 +31,7 @@ from api.db.models.content import Content, ContentChatParticipant, ContentVisibi
 from api.db.models.feature_grant import UserFeatureGrant
 from api.db.models.inquiry import Inquiry
 from api.db.models.media import Asset, AssetKind, ImageGenerationRequest
-from api.db.models.novel import Novel
+from api.db.models.novel import Novel, NovelComment, NovelPurchase, NovelReaderPosition
 from api.db.models.persona import UserPersona
 from api.novelize.deletion import delete_novels
 
@@ -176,6 +176,17 @@ async def erase_account(
     # 지운다 — 잔액은 아래 `burn_all` 이 통째로 소멸시킨다.
     novel_ids = (await db.scalars(select(Novel.id).where(Novel.user_id == user_id))).all()
     await delete_novels(db, novel_ids)
+    # 노벨: 이 사람이 게시자면 위에서 소설이 지워지고 남의 구매 행은 그대로 남는다 — 환급 없이 열람만 끝나고, 구매 행이
+    # 구매자에게 "게시자가 탈퇴했다"를 알려 줄 근거다. 이 사람이 산 구매 행은 지운다 — "이 사람이 어느 소설을 읽었는가"의
+    # 기록이라 대화 참여 기록(아래)과 같이 파기하고, 거래 기록은 원장과 사용처 행에 남는다. 지워진 구매는 그 뒤 게시자가
+    # 소설을 지워도 환급 대상이 아니다(탈퇴로 잔액이 이미 소멸했다).
+    await db.execute(delete(NovelPurchase).where(NovelPurchase.buyer_user_id == user_id))
+    # 남의 노벨을 읽은 자리도 "무엇을 어디까지 읽었는가"의 기록이라 같이 지운다. 노벨 좋아요는 남긴다 — 작품 좋아요와
+    # 같이, 지우면 탈퇴가 남의 소설 순위를 움직인다.
+    await db.execute(delete(NovelReaderPosition).where(NovelReaderPosition.user_id == user_id))
+    # 남의 노벨에 단 댓글도 지운다 — 답글이 없어 자리를 남길 까닭이 없다. 신고된 댓글이면 신고 행의 댓글 칸만 비고(`SET
+    # NULL`) 증거 사본은 보유 기간 동안 남는다(작품 댓글 신고와 같다).
+    await db.execute(delete(NovelComment).where(NovelComment.author_user_id == user_id))
     room_ids = (await db.scalars(select(ChatRoom.id).where(ChatRoom.user_id == user_id))).all()
     await delete_chat_rooms(db, room_ids)
     # "이 사람이 어느 작품과 대화했는가" 의 기록도 대화와 함께 파기한다. 작품의 대화수는 이미 공개된 집계라 내리지

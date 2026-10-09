@@ -69,6 +69,8 @@ const ALLOWED_PLACEHOLDERS: Record<string, readonly string[]> = {
   "novelize_revise:paragraphs": ["paragraph_lines"],
   "novelize_revise:target_range": ["first_paragraph", "last_paragraph"],
   "novelize_revise:user_request": ["user_request"],
+  "novel_screen:instruction": [],
+  "novel_screen:screened_text": ["screened_text"],
 };
 
 export function allowedPlaceholdersFor(channel: string, slot: string): readonly string[] {

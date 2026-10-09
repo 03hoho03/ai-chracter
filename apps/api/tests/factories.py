@@ -56,14 +56,25 @@ from api.db.models import (
     MediaBookPerson,
     MediaBookScene,
     ModerationStatus,
+    ReportReasonCategory,
+    ReportStatus,
+    HomeNovelCuration,
     Novel,
     NovelBatch,
     NovelChapter,
     NovelChapterCharacter,
+    NovelChapterPublication,
     NovelChapterRevision,
     NovelCharacter,
+    NovelComment,
+    NovelCommentReport,
     NovelJob,
+    NovelLike,
+    NovelPublication,
+    NovelReaderPosition,
     NovelReadingPosition,
+    NovelReport,
+    NovelScreening,
     NovelSnapshot,
     Payment,
     SituationalImage,
@@ -358,8 +369,9 @@ async def _make_novel_tree(
 
 
 async def _plant_novel_extras(db_session: AsyncSession, tree: NovelTree) -> None:
-    """`tree` 의 소설·화에 인물 카드·등장 인물·스냅샷·읽은 위치를 하나씩 붙인다(flush). 소설을 지우는 경로가 이 테이블들까지
-    지우는지 볼 때 쓴다."""
+    """`tree` 의 소설·화에 인물 카드·등장 인물·스냅샷·읽은 위치와 노벨 공개 상태·화 공개본·텍스트 심사 기록·독자 읽은 자리·
+    좋아요·홈 노벨 자리·화 댓글을 하나씩 붙이고, 그 화와 댓글에 신고를 하나씩 단다(flush). 소설을 지우는 경로가 이 테이블들까지
+    지우는지, 신고는 남기는지 볼 때 쓴다."""
     card = NovelCharacter(novel_id=tree.novel.id, name="인물")
     db_session.add(card)
     await db_session.flush()
@@ -374,9 +386,136 @@ async def _plant_novel_extras(db_session: AsyncSession, tree: NovelTree) -> None
                 paragraph_count=1,
                 revision_id=tree.first_revision.id,
             ),
+            NovelPublication(novel_id=tree.novel.id, visibility="public"),
+            NovelChapterPublication(
+                chapter_id=tree.chapter.id, novel_id=tree.novel.id, ordinal=1, revision_id=tree.first_revision.id
+            ),
+            NovelScreening(
+                novel_id=tree.novel.id,
+                chapter_id=tree.chapter.id,
+                chapter_ordinal=1,
+                user_id=tree.novel.user_id,
+                outcome="passed",
+                model="gemini-test",
+            ),
+            NovelReaderPosition(
+                user_id=tree.novel.user_id,
+                chapter_id=tree.chapter.id,
+                novel_id=tree.novel.id,
+                paragraph_index=0,
+                paragraph_count=1,
+                edition=1,
+            ),
+            NovelLike(user_id=tree.novel.user_id, novel_id=tree.novel.id),
         ]
     )
     await db_session.flush()
+    # 홈 노벨 자리는 소설마다 비어 있는 다음 자리에 건다(같은 테스트에서 여러 소설에 붙여도 자리가 겹치지 않게).
+    taken = await db_session.scalar(sa.select(sa.func.coalesce(sa.func.max(HomeNovelCuration.position), 0)))
+    db_session.add(HomeNovelCuration(position=(taken or 0) + 1, novel_id=tree.novel.id))
+    comment = NovelComment(
+        novel_id=tree.novel.id, chapter_id=tree.chapter.id, author_user_id=tree.novel.user_id, body="댓글"
+    )
+    db_session.add(comment)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            NovelReport(
+                reporter_user_id=tree.novel.user_id,
+                publisher_user_id=tree.novel.user_id,
+                novel_id=tree.novel.id,
+                chapter_id=tree.chapter.id,
+                chapter_ordinal=1,
+                reason_category=ReportReasonCategory.SPAM,
+                status=ReportStatus.PENDING,
+                evidence_body="신고된 화 본문",
+            ),
+            NovelCommentReport(
+                reporter_user_id=tree.novel.user_id,
+                comment_id=comment.id,
+                novel_id=tree.novel.id,
+                comment_author_user_id=tree.novel.user_id,
+                reason_category=ReportReasonCategory.SPAM,
+                status=ReportStatus.PENDING,
+                evidence_body="댓글",
+            ),
+        ]
+    )
+    await db_session.flush()
+
+
+@dataclass(frozen=True)
+class PublicNovel:
+    novel_id: uuid.UUID
+    publisher_id: uuid.UUID
+    content_id: uuid.UUID
+    # 화 번호 순. `batch_ids` 는 묶음 번호 순이다.
+    chapter_ids: list[uuid.UUID]
+    batch_ids: list[uuid.UUID]
+
+
+async def _make_public_novel(
+    db_session: AsyncSession, publisher_id: uuid.UUID, *, batches: tuple[int, ...] = (6, 2)
+) -> PublicNovel:
+    """노벨에 공개된 소설 하나(flush, 커밋은 호출자). 원작은 다른 회원이 만든 공개 작품이고, 묶음마다 `batches` 의 화 수만큼
+    화가 있으며 모든 화가 1화부터 공개돼 있다(기본: 6화 + 2화 — 앞 5화 무료, 6~8화 유료, 마지막 묶음 = 7·8화)."""
+    creator = _make_user()
+    db_session.add(creator)
+    await db_session.flush()
+    source = Content(
+        creator_user_id=creator.id,
+        type=ContentType.CHARACTER,
+        hashtags=[],
+        visibility=ContentVisibility.PUBLIC,
+        moderation_status=ModerationStatus.NORMAL,
+    )
+    db_session.add(source)
+    await db_session.flush()
+    novel = Novel(
+        user_id=publisher_id,
+        content_id=source.id,
+        content_type="character",
+        content_title="원작",
+        character_name="인물",
+    )
+    db_session.add(novel)
+    await db_session.flush()
+    db_session.add(NovelPublication(novel_id=novel.id, visibility="public", title="공개 제목", synopsis="소개"))
+    now = datetime.now(UTC)
+    chapter_ids: list[uuid.UUID] = []
+    batch_ids: list[uuid.UUID] = []
+    ordinal = 0
+    for batch_ordinal, size in enumerate(batches, start=1):
+        segment: dict[str, Any] = {
+            "start_message_id": uuid.uuid4(),
+            "start_message_created_at": now + timedelta(minutes=batch_ordinal),
+            "end_message_id": uuid.uuid4(),
+            "end_message_created_at": now + timedelta(minutes=batch_ordinal, seconds=30),
+            "assistant_message_count": 1,
+            "source_hash": "0" * 64,
+        }
+        batch = NovelBatch(novel_id=novel.id, ordinal=batch_ordinal, target_episode_count=size, **segment)
+        db_session.add(batch)
+        await db_session.flush()
+        batch_ids.append(batch.id)
+        for episode_index in range(size):
+            ordinal += 1
+            chapter = NovelChapter(
+                novel_id=novel.id, ordinal=ordinal, batch_id=batch.id, episode_index=episode_index, **segment
+            )
+            db_session.add(chapter)
+            await db_session.flush()
+            revision = NovelChapterRevision(chapter_id=chapter.id, revision_no=1, body=f"{ordinal}화 본문", source="generate")
+            db_session.add(revision)
+            await db_session.flush()
+            db_session.add(
+                NovelChapterPublication(
+                    chapter_id=chapter.id, novel_id=novel.id, ordinal=ordinal, revision_id=revision.id
+                )
+            )
+            chapter_ids.append(chapter.id)
+    await db_session.flush()
+    return PublicNovel(novel.id, publisher_id, source.id, chapter_ids, batch_ids)
 
 
 async def _make_asset(

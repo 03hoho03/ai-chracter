@@ -59,6 +59,7 @@ from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StatDef, StatRule, StoryPromptTemplate
 from api.db.session import get_db_session
 from api.llm.chat_models import ChatModelId, parse_chat_model_id
+from api.novel_public.screening import NovelScreenItem, build_novel_screen_prompt
 from api.novelize.prompts import (
     NovelizePrompt,
     build_novelize_boundary_prompt,
@@ -279,6 +280,10 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
         ),
     },
     "novel": _NOVEL_LANE_ROWS,
+    # 노벨 텍스트 심사 레인 시드 리비전이 DB에 넣는 행과 같이 간다(위 user_persona와 같은 이유).
+    "novel_screen": {
+        "novel_screen": frozenset({("both", "instruction", ""), ("both", "screened_text", "")}),
+    },
 }
 
 # R-1이 실제로 보는 것 — 위 표에서 `variant`를 뗀 (scope, slot) 집합. 새 목록을 손으로
@@ -303,6 +308,7 @@ _CLAUDE_SET_CHANNELS_BY_LANE: dict[PromptLane, frozenset[str]] = {
     "character": frozenset({"system", "generation"}),
     "publish_filter": frozenset(),
     "novel": frozenset({"novelize_chapter"}),
+    "novel_screen": frozenset(),
 }
 
 
@@ -320,11 +326,11 @@ def _freezes_novel_rows(lane: PromptLane, model: ChatModelId) -> bool:
 
 
 def _require_lane_model(lane: PromptLane, model: ChatModelId) -> None:
-    """publish_filter 레인은 Gemini 세트뿐이다 — 발행 심사는 모델을 고르지 않는다."""
-    if lane == "publish_filter" and model != "gemini":
+    """심사 레인(발행 심사·노벨 텍스트 심사)은 Gemini 세트뿐이다 — 심사는 모델을 고르지 않는다."""
+    if lane in ("publish_filter", "novel_screen") and model != "gemini":
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail={"rule": "lane-model", "message": "발행 심사 레인에는 Gemini 세트만 있습니다."},
+            detail={"rule": "lane-model", "message": "심사 레인에는 Gemini 세트만 있습니다."},
         )
 
 
@@ -355,12 +361,14 @@ _REQUIRED_VARIANT_SLOTS_BY_LANE: dict[PromptLane, dict[tuple[str, str, str], fro
     "character": {},
     "publish_filter": {},
     "novel": {},
+    "novel_screen": {},
 }
 
 # 레인마다 실제로 읽는 라벨만 검사한다. `ast`로 함수별
 # 라벨 사용을 전수 추출해 도출했다: story={user,story_assistant,story_example} /
 # character={user,character_assistant} / publish_filter=없음(발행 심사는 이미지 목록만 싣고 대화 줄을
-# 조립하지 않는다) / novel=없음(소설 호출은 원문 줄 라벨을 원작 종류의 채팅 Gemini 세트에서 읽는다). 헤더 컬럼 4개는
+# 조립하지 않는다) / novel=없음(소설 호출은 원문 줄 라벨을 원작 종류의 채팅 Gemini 세트에서 읽는다) / novel_screen=없음
+# (텍스트 심사는 공개할 글만 싣고 대화 줄을 조립하지 않는다). 헤더 컬럼 4개는
 # 레인과 무관하게 그대로 남는다.
 _LABEL_FIELDS_BY_LANE: dict[PromptLane, tuple[tuple[str, str], ...]] = {
     "story": (
@@ -374,6 +382,7 @@ _LABEL_FIELDS_BY_LANE: dict[PromptLane, tuple[tuple[str, str], ...]] = {
     ),
     "publish_filter": (),
     "novel": (),
+    "novel_screen": (),
 }
 
 
@@ -1423,6 +1432,28 @@ def _publish_filter_preview_items(sections: list[PromptSection]) -> list[AdminPr
     return items
 
 
+# 텍스트 심사 미리보기의 샘플 — 처음 공개(소설 제목·소개)와 1화 하나를 함께 심사하는 꼴이다.
+_SAMPLE_NOVEL_SCREEN_ITEMS: tuple[NovelScreenItem, ...] = (
+    NovelScreenItem(part="novel_title", text="[샘플] 소설 제목"),
+    NovelScreenItem(part="synopsis", text="[샘플] 소설 소개"),
+    NovelScreenItem(part="chapter_title", text="[샘플] 1화 제목"),
+    NovelScreenItem(part="author_note", text="[샘플] 작가의 말"),
+    NovelScreenItem(part="chapter_body", text="[샘플] 첫 문단이다.\n\n[샘플] 둘째 문단이다."),
+)
+
+
+def _novel_screen_preview_items(sections: list[PromptSection]) -> list[AdminPromptPreviewItem]:
+    """지시문(system_instruction)과 본문을 한 항목으로 잇는다 — 소설화 미리보기와 같은 꼴. 심사 채널 행이 빠진 초안이면
+    빌더가 렌더를 거부하므로 안내로 바꾼다(그런 초안의 게시는 슬롯 검사가 따로 막는다)."""
+    try:
+        built = build_novel_screen_prompt(sections, _SAMPLE_NOVEL_SCREEN_ITEMS)
+    except PromptRenderError as exc:
+        text = f"이 초안으로는 텍스트 심사를 미리 볼 수 없습니다 — 심사 문안이 없거나 렌더에 필요한 행이 비어 있습니다.\n({exc})"
+    else:
+        text = f"{built.system_instruction}\n\n{built.prompt}"
+    return [AdminPromptPreviewItem(channel="novel_screen", label="novel_screen · 텍스트 심사", text=text)]
+
+
 def _build_preview_items(
     prompt_set: PromptSet,
     sections: list[PromptSection],
@@ -1440,4 +1471,6 @@ def _build_preview_items(
     if lane == "novel":
         assert chat_sets is not None  # 호출부(`preview_prompt_draft`)가 novel 레인이면 읽어 넘긴다
         return _novel_preview_items(sections, model=model, chat_sets=chat_sets)
+    if lane == "novel_screen":
+        return _novel_screen_preview_items(sections)
     return _publish_filter_preview_items(sections)
