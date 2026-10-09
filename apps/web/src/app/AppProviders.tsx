@@ -26,7 +26,7 @@ export function createQueryClient(): QueryClient {
      * (staleTime: Infinity지만 활성 구독자가 있으면 invalidate로 즉시 refetch된다). */
     mutationCache: new MutationCache({
       onError: (error) => {
-        // 본인인증 403 은 출석·미션·주문 쓰기가 받는다. 탭을 띄워 둔 사이 게이트가 켜졌거나 다른 탭에서 인증을 마쳤을 수
+        // 본인인증 403 은 미션·주문 쓰기가 받는다. 탭을 띄워 둔 사이 게이트가 켜졌거나 다른 탭에서 인증을 마쳤을 수
         // 있으므로 세션을 다시 읽어 `GET /me` 의 인증 여부·게이트 여부로 화면을 맞춘다(소설화 403 과 같은 처방).
         if (isLegalReconsentRequiredError(error) || isIdentityVerificationRequiredError(error)) {
           void client.invalidateQueries({ queryKey: sessionKeys.current() });

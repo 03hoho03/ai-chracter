@@ -10,7 +10,7 @@ describe("getIdentitySection", () => {
   it("결제만 켜져 있으면 보이고 구매만 말한다", () => {
     const section = getIdentitySection({ identityVerified: false, identityGateEnabled: false }, true);
     expect(section.kind).toBe("unverified");
-    // 게이트가 꺼져 있으면 무료 대화·출석·미션은 인증 없이도 된다 — 그걸 인증 사유로 말하면 거짓이다.
+    // 게이트가 꺼져 있으면 무료 대화·미션은 인증 없이도 된다 — 그걸 인증 사유로 말하면 거짓이다.
     expect(section.kind === "unverified" && section.message).not.toContain("무료");
   });
 
