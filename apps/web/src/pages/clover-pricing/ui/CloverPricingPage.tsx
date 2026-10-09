@@ -13,7 +13,6 @@ import { useRef, type ReactNode, type Ref } from "react";
 
 import {
   CLOVER_EXPIRY_NOTICE_MESSAGE,
-  CloverIcon,
   CloverProductLine,
   useCloverPricingQuery,
   type CloverPricingResponse,
@@ -22,6 +21,7 @@ import {
 import { CONTACT_EMAIL } from "@/shared/config/site";
 import { SUPPORT_DESTINATIONS } from "@/shared/config/supportDestinations";
 
+import { formatFreeChatSentence } from "../model/freeChatSentence";
 import { formatTrialSentence } from "../model/trialSentence";
 
 const INLINE_LINK_CLASSNAME =
@@ -37,8 +37,9 @@ type DeployedPricingResponse = Omit<CloverPricingResponse, AddedPricingKey> &
 
 type ModelPricing = CloverPricingResponse["models"][number];
 
-/** 허용된 계정만 쓰는 사용처에 붙이는 표시. 아래 각주가 뜻을 풀어 준다. */
-const RESTRICTED_LABEL = "일부 계정만";
+/** 아직 허용된 계정만 쓰는 사용처의 단가 칸에 붙이는 표시. 지금 쓸 수 없다는 상태만 짧게 말하고, 일부 계정에 먼저
+ * 열어 두었다는 뜻은 표 아래 각주가 풀어 준다. */
+const RESTRICTED_LABEL = "준비 중";
 
 /** `/clover/pricing` — 로그인 없이 보는 클로버 상품 안내.
  *
@@ -101,7 +102,7 @@ export function CloverPricingPage() {
 
       <Section title="미성년자 결제">
         <p className="text-sm break-keep text-foreground">
-          미성년자가 법정대리인의 동의 없이 결제했다면 본인이나 법정대리인이 취소할 수 있어요. 다만 성년자이거나
+          클로버는 만 19세 이상만 살 수 있어요. 그래도 미성년자가 법정대리인의 동의 없이 결제했다면 본인이나 법정대리인이 취소할 수 있어요. 다만 성년자이거나
           법정대리인이 동의한 것처럼 속였거나, 용돈처럼 법정대리인이 쓰도록 허락한 돈의 범위에서 결제했다면 취소할 수
           없어요.
         </p>
@@ -147,8 +148,9 @@ function PolicyList({ items }: { items: readonly string[] }) {
 /** 상품과 쓰임새는 응답이 있어야 그릴 수 있어 여기서만 로딩·에러를 가른다. 제목과 정책 문장은 응답과 무관해
  * 바깥에 둔다(`pages/legal-document`의 관용구 — 실패해도 환불 조건은 읽힌다).
  *
- * "충전 상품" 제목은 로딩·실패·성공 어느 상태에서나 같은 자리에 남는다 — 실패할 때 제목까지 사라지면 이 화면에 상품
- * 안내가 있다는 사실이 함께 사라진다. 다시 시도를 누르면 쿼리가 로딩 상태로 돌아가 실패 패널(과 그 버튼)이 언마운트되므로,
+ * "충전 상품"·"쓰임새" 두 제목은 로딩·실패·성공 어느 상태에서나 같은 자리에 남는다 — 실패할 때 제목까지 사라지면 이
+ * 화면에 상품과 단가 안내가 있다는 사실이 함께 사라진다. 쓰임새는 다시 시도 버튼을 따로 두지 않고 위 패널의 버튼을
+ * 가리킨다(같은 요청 하나다). 다시 시도를 누르면 쿼리가 로딩 상태로 돌아가 실패 패널(과 그 버튼)이 언마운트되므로,
  * 누르는 즉시 포커스를 남아 있는 제목으로 옮긴다(안 그러면 포커스가 `<body>`로 떨어진다). 세 상태가 같은 트리
  * 모양이라(첫 자식이 이 섹션) 제목은 다시 마운트되지 않는다. */
 function PricingBody() {
@@ -170,11 +172,15 @@ function PricingBody() {
         )}
         {pricing && <ProductList products={pricing.products} paymentsEnabled={pricing.paymentsEnabled} />}
       </Section>
-      {pricing && (
-        <Section title="쓰임새">
-          <UsageCosts pricing={pricing} />
-        </Section>
-      )}
+      <Section title="쓰임새">
+        {pricingQuery.isPending && <div className="h-40 animate-pulse rounded-xl bg-muted" />}
+        {pricingQuery.isError && (
+          <p className="text-sm break-keep text-muted-foreground">
+            사용처별 단가는 상품 정보와 함께 불러와요. 위에서 다시 시도해주세요.
+          </p>
+        )}
+        {pricing && <UsageCosts pricing={pricing} />}
+      </Section>
     </>
   );
 }
@@ -215,9 +221,11 @@ function ProductList({
           ))}
         </ul>
       )}
+      {/* 구매 자격은 서버의 주문 생성 판정 그대로다 — 본인인증은 나이를 확인하는 유일한 수단이라 미인증 회원 게이트
+          스위치와 무관하게 늘 필요하고, 그 뒤 만 19세 미만을 막는다. 그래서 게이트 값으로 가르지 않는다. */}
       <p className="text-xs break-keep text-muted-foreground">
         {paymentsEnabled
-          ? "가격은 부가세 포함이에요. 상품을 누르면 클로버 화면에서 바로 구매를 이어 갈 수 있어요."
+          ? "가격은 부가세 포함이에요. 클로버는 휴대폰 본인인증을 마친 만 19세 이상 회원만 살 수 있어요. 상품을 누르면 클로버 화면에서 구매를 이어 가요. 로그인 전이라면 로그인한 뒤에 이어져요."
           : "가격은 부가세 포함이에요. 클로버 결제는 아직 준비 중이에요."}
       </p>
     </>
@@ -237,6 +245,9 @@ function ProductLink({ product }: { product: CloverProductItem }) {
       <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
         <CloverProductLine product={product} />
       </span>
+      {/* 보이는 내용만으로는 접근 이름이 상품 정보뿐이라 누르면 어디로 가는지 모른다. 보이는 글자를 이름에 그대로 두고
+          목적지만 덧붙인다(`aria-label` 로 덮으면 보이는 글자와 읽는 이름이 갈린다). */}
+      <span className="sr-only">구매하러 가기</span>
       <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
     </Link>
   );
@@ -253,9 +264,16 @@ function UsageCosts({ pricing }: { pricing: DeployedPricingResponse }) {
   const hasRestricted = isNovelRestricted || models.some((model) => model.restricted);
   const [exampleProduct] = pricing.products;
   const exampleAmount = exampleProduct ? exampleProduct.paidAmount + exampleProduct.bonusAmount : 0;
+  const freeChatSentence = formatFreeChatSentence(
+    pricing.identityGateEnabled,
+    pricing.dailyFreeChatTurns,
+    pricing.chatTurnCost,
+  );
 
   return (
     <>
+      {/* 클로버 없이 쓸 수 있는 부분을 단가보다 먼저 말한다 — 표만 보면 첫 턴부터 클로버가 드는 것으로 읽힌다. */}
+      {freeChatSentence && <p className="text-sm break-keep text-foreground">{freeChatSentence}</p>}
       {models.length > 0 && <ModelCostTable models={models} isNovelRestricted={isNovelRestricted} />}
       <dl className="flex flex-col divide-y divide-border border-y border-border">
         {models.length === 0 && <UsageRow label="대화 1턴" cost={pricing.chatTurnCost} />}
@@ -266,7 +284,8 @@ function UsageCosts({ pricing }: { pricing: DeployedPricingResponse }) {
       </dl>
       {hasRestricted && (
         <p className="text-xs break-keep text-muted-foreground">
-          ‘{RESTRICTED_LABEL}’ 기능은 아직 열어 둔 계정에서만 쓸 수 있어요.
+          ‘{RESTRICTED_LABEL}’이 붙은 단가는 일부 계정에서 먼저 열어 둔 기능의 가격이에요. 아직 모든 회원이 쓸 수는
+          없어요.
         </p>
       )}
       {/* 단가가 0이면 나눗셈이 무한대가 된다 — 그때는 예시를 싣지 않는다. */}
@@ -283,7 +302,11 @@ function UsageCosts({ pricing }: { pricing: DeployedPricingResponse }) {
 }
 
 /** 모델 × 사용처(대화 1턴, 소설 1화) 단가 표. 두 사용처가 같은 모델 목록을 공유하므로 표로 묶으면 모델 이름을 한 번만
- * 읽는다. 값 칸은 클로버 개수이고 오른쪽 정렬 `tabular-nums` 로 자릿수를 세로로 맞춘다. 정보 표라 행 hover 를 끈다. */
+ * 읽는다. 값 칸은 클로버 개수이고, 단위는 칸마다 아이콘을 되풀이하지 않고 열 머리에 한 번 적는다. 오른쪽 정렬
+ * `tabular-nums` 로 자릿수를 세로로 맞춘다. 정보 표라 행 hover 를 끈다.
+ *
+ * ‘준비 중’ 표시는 모델이나 열이 아니라 지금 쓸 수 없는 값 칸에 붙는다 — 상위 모델(`restricted`)이면 그 행의 두 칸,
+ * 소설이 막혀 있으면(`novelRestricted`) 소설 열의 모든 칸이다. 기본 모델 대화처럼 열린 칸에는 붙지 않는다. */
 function ModelCostTable({ models, isNovelRestricted }: { models: readonly ModelPricing[]; isNovelRestricted: boolean }) {
   return (
     <Table>
@@ -293,35 +316,30 @@ function ModelCostTable({ models, isNovelRestricted }: { models: readonly ModelP
           <TableHead scope="col" className="pl-0 align-bottom">
             모델
           </TableHead>
-          <TableHead scope="col" className="text-right align-bottom">
-            대화 1턴
+          <TableHead scope="col" className="h-auto py-2 text-right align-bottom">
+            <ColumnHeading label="대화 1턴" />
           </TableHead>
           <TableHead scope="col" className="h-auto py-2 pr-0 text-right align-bottom">
-            <span className="flex flex-col items-end">
-              소설 1화
-              {isNovelRestricted && <RestrictedNote />}
-            </span>
+            <ColumnHeading label="소설 1화" />
           </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {models.map((model) => (
           <TableRow key={model.id} className="hover:bg-transparent">
-            <TableHead scope="row" className="h-auto py-3 pl-0 font-medium">
+            <TableHead scope="row" className="h-auto py-3 pl-0 align-top font-medium">
               <span className="flex flex-col">
                 {model.name}
-                {model.restricted ? (
-                  <RestrictedNote />
-                ) : (
-                  model.isDefault && <span className="text-xs font-normal text-muted-foreground">기본 모델</span>
-                )}
+                {model.isDefault && <span className="text-xs font-normal text-muted-foreground">기본 모델</span>}
               </span>
             </TableHead>
-            <TableCell className="text-right">
-              <CloverCost cost={model.chatTurnCost} />
+            <TableCell className="py-3 text-right align-top">
+              <CostValue isRestricted={model.restricted}>{model.chatTurnCost.toLocaleString()}</CostValue>
             </TableCell>
-            <TableCell className="pr-0 text-right">
-              <CloverCost cost={model.novelEpisodeCost} />
+            <TableCell className="py-3 pr-0 text-right align-top">
+              <CostValue isRestricted={model.restricted || isNovelRestricted}>
+                {model.novelEpisodeCost.toLocaleString()}
+              </CostValue>
             </TableCell>
           </TableRow>
         ))}
@@ -330,28 +348,32 @@ function ModelCostTable({ models, isNovelRestricted }: { models: readonly ModelP
   );
 }
 
-function RestrictedNote() {
-  return <span className="text-xs font-normal text-muted-foreground">{RESTRICTED_LABEL}</span>;
+function ColumnHeading({ label }: { label: string }) {
+  return (
+    <span className="flex flex-col items-end">
+      {label}
+      <span className="text-xs font-normal text-muted-foreground">클로버</span>
+    </span>
+  );
 }
 
-function CloverCost({ cost }: { cost: number }) {
+/** 단가 값 하나와, 지금 쓸 수 없는 값이면 그 아래 ‘준비 중’. 값 자체는 흐리지 않는다 — 공개한 가격이라 읽혀야 하고,
+ * 상태는 표시 글자가 말한다. */
+function CostValue({ isRestricted, children }: { isRestricted: boolean; children: ReactNode }) {
   return (
-    <span className="inline-flex items-center gap-1 text-sm whitespace-nowrap tabular-nums text-foreground">
-      <CloverIcon />
-      {cost.toLocaleString()}개
+    <span className="inline-flex flex-col items-end">
+      <span className="text-sm whitespace-nowrap tabular-nums text-foreground">{children}</span>
+      {isRestricted && <span className="text-xs whitespace-nowrap text-muted-foreground">{RESTRICTED_LABEL}</span>}
     </span>
   );
 }
 
 function UsageRow({ label, cost, isRestricted = false }: { label: string; cost: number; isRestricted?: boolean }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-3">
-      <dt className="flex flex-col text-sm font-medium text-foreground">
-        {label}
-        {isRestricted && <RestrictedNote />}
-      </dt>
+    <div className="flex items-start justify-between gap-3 py-3">
+      <dt className="text-sm font-medium text-foreground">{label}</dt>
       <dd>
-        <CloverCost cost={cost} />
+        <CostValue isRestricted={isRestricted}>클로버 {cost.toLocaleString()}개</CostValue>
       </dd>
     </div>
   );

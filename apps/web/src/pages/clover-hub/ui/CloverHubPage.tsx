@@ -170,7 +170,21 @@ function PurchaseBody({ requestedProductKey, onRequestedProductHandled }: Purcha
     return <p className="text-sm break-keep text-muted-foreground">클로버 결제는 아직 준비 중이에요.</p>;
   }
   if (section === "identityRequired" || !me) {
-    return <IdentityRequiredNotice reason="purchase" />;
+    // 상품 안내에서 상품을 고르고 왔는데 구매 확인이 열리지 않은 이유를 안내가 말하지만, 인증 뒤에 고른 상품이
+    // 이어지는지는 말하지 않는다 — 인증은 마이페이지에서 하고, 뒤로가기로 이 주소에 돌아오면 `?product=` 가 남아 구매
+    // 확인이 열리지만 다른 길로 오면 열리지 않는다. 그래서 덧붙이는 줄은 조건으로 말한다. 인증 뒤 상품이 보이는 것도
+    // 만 19세 이상뿐이라(미만은 나이 제한 문장만 보인다) 그 조건을 넣는다. 나이 제한 갈래 자체는 어떤 상품도 살 수
+    // 없다고 이미 말해 덧붙일 것이 없다.
+    if (requestedProductKey === undefined) return <IdentityRequiredNotice reason="purchase" />;
+    return (
+      <div className="flex flex-col gap-2">
+        <IdentityRequiredNotice reason="purchase" />
+        <p className="text-xs break-keep text-muted-foreground">
+          만 19세 이상이면 본인인증을 마친 뒤 이 자리에 상품이 보여요. 상품 안내에서 고른 상품의 구매 확인이 이어서
+          열리지 않으면 여기서 다시 골라주세요.
+        </p>
+      </div>
+    );
   }
   // 잘못한 것이 없으므로 경고 틴트가 아니라 중립 문장이다. 상품 카드는 눌러도 살 수 없어 두지 않는다.
   if (section === "ageRestricted") {
