@@ -1,7 +1,7 @@
 """novel purchases keep withdrawn buyers
 
 Revision ID: 3554549a4ea2
-Revises: b09b766254c6
+Revises: 10d8d3ed6e0f
 Create Date: 2026-10-10 00:34:51.817753
 
 구매자가 탈퇴해도 노벨 구매 행을 지우지 않고 구매자 칸만 비워 남긴다. 그래서 `novel_purchases.buyer_user_id` 의 NOT NULL 을
@@ -34,7 +34,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '3554549a4ea2'
-down_revision: str | Sequence[str] | None = 'b09b766254c6'
+down_revision: str | Sequence[str] | None = '10d8d3ed6e0f'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
