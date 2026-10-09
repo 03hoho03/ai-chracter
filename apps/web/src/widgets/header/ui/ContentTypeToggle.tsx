@@ -3,9 +3,10 @@ import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/t
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Link, useNavigate, useRouterState, useSearch } from "@tanstack/react-router";
 
+import { useCloverPricingQuery } from "@/entities/clover";
 import { isContentType, resolveHomeContentType, toHomeTypeSwitchSearch } from "@/entities/content";
 
-/** 캐릭터/스토리 유형 토글과 그 옆 "이미지" 링크를 한 줄로 내보낸다. 토글을 누르면 홈의 그 유형으로
+/** 캐릭터/스토리 유형 토글과 그 옆 "노벨"·"이미지" 링크를 한 줄로 내보낸다. 토글을 누르면 홈의 그 유형으로
  * 이동한다 — 유형의 진실은 홈 URL의 `?type=` 하나뿐이다(스토리는 파라미터 없음).
  *
  * `variant` — 헤더는 기본값 `"tab"`(라벨만 있는 라우트 전환 탭), 좌측 드로어는 `"outline"`
@@ -14,10 +15,16 @@ import { isContentType, resolveHomeContentType, toHomeTypeSwitchSearch } from "@
  * 복제하면 한쪽이 조용히 새는 게 이 저장소의 실패 모드다("17곳 중 2곳만 맞았다"). 이동할 search는
  * 홈 첫 행의 유형 전환과 같은 `toHomeTypeSwitchSearch`가 만든다(정렬만 유지).
  *
- * "이미지"는 `/studio/images`로 가는 내비 링크라 `ToggleGroup` **밖** 형제로 둔다 — 그룹은 radio 성격
+ * "노벨"(`/webnovels`)과 "이미지"(`/studio/images`)는 내비 링크라 `ToggleGroup` **밖** 형제로 둔다 — 그룹은 radio 성격
  * (`role="radiogroup"`, roving focus)이라 링크를 넣으면 화살표 키 이동과 선택 의미에 섞인다. 시각은
  * `toggleVariants({ variant })`를 그대로 빌리고 선택 표시는 `data-state="on"`으로 켠다(밑줄·채움 셀렉터가
  * `data-[state=on]`에 걸려 있다). `aria-current="page"`는 TanStack `Link`가 활성일 때 스스로 붙인다.
+ *
+ * "노벨"은 즐기는 목적지라 만드는 도구(이미지)보다 캐릭터·스토리 쪽에 둔다. 비로그인에게도 보인다 — 누르면 라우트의
+ * `requireSession`이 로그인으로 보냈다가 돌려보낸다(이미지 링크와 같다). 노벨이 꺼져 있으면(공개 가격 응답의 켜짐
+ * 표시) 링크를 그리지 않는다. 응답을 받기 전에도 그리지 않는다 — 꺼진 서비스의 탭이 잠깐 보였다 사라지는 것보다
+ * 켜진 서비스의 탭이 잠깐 늦게 나타나는 편이 낫다. 헤더는 노벨 코드를 import 하지 않는다(경로 문자열과 플래그만) —
+ * 노벨 화면이 첫 화면 번들로 끌려오지 않게.
  *
  * **선택 표시는 홈에서만 켠다.** 홈이면 토글 값이 URL 유형이고, 홈 밖(이미지 화면 포함 전부)에서는 `""`
  * (선택 없음)라 캐릭터/스토리 어느 쪽에도 밑줄이 없다 — 홈 밖 화면은 어느 유형에도 속하지 않는데 밑줄을
@@ -42,6 +49,8 @@ export function ContentTypeToggle({
   // 빌더 판정(`routes/__root.tsx`)과 같은 pathname 접두사 방식 — search(`?tab=`)와 무관하게 이미지 화면 전체가 대상이다.
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const isImageStudio = pathname === "/studio/images" || pathname.startsWith("/studio/images/");
+  const isWebnovels = pathname === "/webnovels" || pathname.startsWith("/webnovels/");
+  const isWebnovelOpen = useCloverPricingQuery().data?.novelPublicEnabled === true;
 
   const handleValueChange = (value: string) => {
     // Radix ToggleGroup(type="single")은 이미 선택된 항목을 다시 누르면 빈 문자열을 emit한다 — 그 경우 무시해
@@ -53,8 +62,9 @@ export function ContentTypeToggle({
   };
 
   return (
-    // gap-2 — `ToggleGroup` 기본 간격(spacing 2)과 같게 해 링크가 그룹의 세 번째 항목처럼 놓이게 한다.
-    <div className="flex items-center gap-2">
+    // gap-2 — `ToggleGroup` 기본 간격(spacing 2)과 같게 해 링크가 그룹의 세 번째 항목처럼 놓이게 한다. 드로어(`outline`)
+    // 에서는 줄을 넘긴다 — 시트 폭(390 화면에서 약 290px)에 pill 넷이 한 줄로 들어가지 않아 마지막 pill 이 잘렸다.
+    <div className={cn("flex items-center gap-2", variant === "outline" && "flex-wrap")}>
       <ToggleGroup
         type="single"
         variant={variant}
@@ -69,6 +79,16 @@ export function ContentTypeToggle({
         <ToggleGroupItem value="story">스토리</ToggleGroupItem>
       </ToggleGroup>
       {/* `shrink-0`은 `toggleVariants`가 아니라 `ToggleGroupItem`이 붙이는 클래스라 여기 직접 준다. */}
+      {isWebnovelOpen && (
+        <Link
+          to="/webnovels"
+          data-state={isWebnovels ? "on" : "off"}
+          onClick={() => onSelected?.()}
+          className={cn(toggleVariants({ variant }), "shrink-0")}
+        >
+          노벨
+        </Link>
+      )}
       <Link
         to="/studio/images"
         data-state={isImageStudio ? "on" : "off"}

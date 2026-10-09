@@ -14,7 +14,7 @@ import { ProfileMenu } from "./ProfileMenu";
 import { SearchInlineExpand } from "./SearchInlineExpand";
 
 /**
- * 로고 · 캐릭터/스토리 토글 · 이미지 · 클로버 · 검색 · 알림 벨 · 프로필로 고정 구성되며(클로버·알림·프로필은
+ * 로고 · 캐릭터/스토리 토글 · 노벨(노벨이 열려 있을 때) · 이미지 · 클로버 · 검색 · 알림 벨 · 프로필로 고정 구성되며(클로버·알림·프로필은
  * 로그인 시에만, 비로그인은 그 자리에 로그인 버튼) 모든 화면에서 동일하게 노출된다(`routes/__root.tsx`에 마운트). 크롬은 항상 얇게 유지한다(DESIGN.md Overview 절).
  * 내부 바는 full-bleed다 — 전역 헤더는 뷰포트에 속하고 본문은 컬럼(`max-w-5xl`)에 속한다는 결정이며, 그 대가로
  * 로고 left와 본문 콘텐츠 left가 어긋난다(의도다).
@@ -24,7 +24,7 @@ import { SearchInlineExpand } from "./SearchInlineExpand";
  * 검색이 두 벌이면 상태가 갈린다. `display:none` 자식은 grid 아이템을 만들지 않으므로 모바일에서
  * 버거=1열·로고=2열·우측 그룹=3열이 되고, `1fr auto 1fr`이라 버거와 검색의 폭이 달라도 로고가 정확히
  * 중앙이다. `sm:flex`에서는 `grid-template-columns`가 무효라 되돌리는 클래스가 필요 없다.
- * 텍스트 탭(이미지 링크 포함)·클로버·알림·프로필(비로그인은 로그인 버튼)은 `sm` 미만에서 `hidden`이지만 마운트는
+ * 텍스트 탭(노벨·이미지 링크 포함)·클로버·알림·프로필(비로그인은 로그인 버튼)은 `sm` 미만에서 `hidden`이지만 마운트는
  * 유지된다(알림 쿼리는 키가 같아 중복 요청이 안 난다) — 좌측 드로어(`MobileNavDrawer`)가 그 자리를 대신한다.
  */
 export function Header() {
@@ -55,7 +55,7 @@ export function Header() {
           <BrandLogo className="h-5 w-auto" />
         </Link>
 
-        {/* 유형 토글과 "이미지" 링크는 `ContentTypeToggle`이 자기 flex 줄 하나로 묶어 내보낸다 — 이 래퍼는
+        {/* 유형 토글과 "노벨"·"이미지" 링크는 `ContentTypeToggle`이 자기 flex 줄 하나로 묶어 내보낸다 — 이 래퍼는
             `sm` 미만 숨김만 맡는다. */}
         <div className="hidden sm:inline-flex">
           <ContentTypeToggle />
