@@ -10,10 +10,12 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { hasNovelErrorCode, novelKeys, novelScoped, toNovelActionError } from "@/entities/novel";
+import { hasNovelErrorCode, novelKeys, novelScoped, toNovelActionError, useNovelQuery } from "@/entities/novel";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { useDeleteLastChapterMutation } from "../api/useDeleteLastChapterMutation";
+import { withDeleteConflictRetry } from "../lib/deleteConflictRetry";
+import { RefundNoticeBox } from "./RefundNoticeBox";
 
 type DeleteLastChapterModalProps = {
   novelId: string;
@@ -32,19 +34,24 @@ type DeleteLastChapterModalProps = {
  * 지운 뒤에는 상세를 다시 받고 지웠다고 돌려준다. 그 화들의 본문·판 캐시는 여기서 버리지 않는다 — 이 모달이 닫히는
  * 순간에는 화면이 아직 지운 화를 그리고 있어, 그 쿼리를 지우면 관찰자가 곧바로 다시 받아 404 가 난다. 호출부가 화면을
  * 그 화에서 옮긴 뒤 `removeDeletedChapterCaches` 로 버린다. 돌려주는 값은 지웠는가다(연 버튼이 그 화와 함께 사라져
- * 호출부가 포커스를 옮긴다). 실패 문장은 누른 순간 기록한 상태다. */
+ * 호출부가 포커스를 옮긴다). 실패 문장은 누른 순간 기록한 상태다.
+ *
+ * 노벨에서 그 화들을 소장한 회원이 있으면 소설 지우기와 같은 환급 고지를 보이고, 새 소장자 경합으로 서버가 돌려보내면
+ * 한 번은 저절로 다시 보낸다. */
 export const DeleteLastChapterModal = createCallable<DeleteLastChapterModalProps, boolean>(
   ({ call, novelId, batchId, chapterIds, rangeLabel }) => {
     const queryClient = useQueryClient();
     const deleteMutation = useDeleteLastChapterMutation();
+    const detail = useNovelQuery(novelId);
     const [error, setError] = useState<string | undefined>(undefined);
     const isDeleting = deleteMutation.isPending;
+    const isPreviewPending = detail.isPending;
 
     async function handleDelete() {
-      if (isDeleting) return;
+      if (isDeleting || isPreviewPending) return;
       setError(undefined);
       try {
-        await deleteMutation.mutateAsync({ novelId, batchId });
+        await withDeleteConflictRetry(() => deleteMutation.mutateAsync({ novelId, batchId }));
       } catch (deleteError) {
         if (!hasNovelErrorCode(deleteError, "NOVEL_BATCH_NOT_FOUND")) {
           const notice = toNovelActionError(deleteError, "deleteChapter");
@@ -78,6 +85,14 @@ export const DeleteLastChapterModal = createCallable<DeleteLastChapterModalProps
             </DialogDescription>
           </DialogHeader>
 
+          {detail.data === undefined ? (
+            <RefundNoticeBox preview={isPreviewPending ? "pending" : "unknown"} scope="lastBatch" subject={rangeLabel} />
+          ) : (
+            detail.data.purchaseRefunds !== undefined && (
+              <RefundNoticeBox preview={detail.data.purchaseRefunds} scope="lastBatch" subject={rangeLabel} />
+            )
+          )}
+
           {error !== undefined && (
             <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm break-keep text-destructive-text">
               {error}
@@ -91,7 +106,7 @@ export const DeleteLastChapterModal = createCallable<DeleteLastChapterModalProps
             <Button
               type="button"
               variant="destructive"
-              aria-disabled={isDeleting}
+              aria-disabled={isDeleting || isPreviewPending}
               className="aria-disabled:opacity-65"
               onClick={() => void handleDelete()}
             >
