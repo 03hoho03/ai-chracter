@@ -1,6 +1,6 @@
 import asyncio
 import logging
-import time
+import threading
 import uuid
 from collections.abc import Callable, Coroutine
 from datetime import UTC, date, datetime, timedelta
@@ -607,29 +607,33 @@ async def _health_finishes_while_bcrypt_runs(
     bcrypt_name: str,
     request: Callable[[], Coroutine[Any, Any, httpx.Response]],
 ) -> httpx.Response:
-    """`bcrypt.<bcrypt_name>` 을 0.5초 늦추고, 그 계산이 시작된 뒤 `/health` 를 부른다. 계산이
-    이벤트 루프 위에서 돌면 루프가 그동안 멈춰 health 는 계산이 끝난 뒤에야 끝난다. 시각은 늦춘
-    함수 안(워커 스레드든 루프든)에서 찍으므로 판정이 요청의 다른 await 순서에 흔들리지 않는다."""
+    """`bcrypt.<bcrypt_name>` 이 시작되면 `/health` 를 부르고, 늦춘 bcrypt 함수는 health 가
+    끝났다는 신호를 최대 5초 기다린다. 계산이 워커 스레드에서 돌면 루프가 풀려 있어 health 가
+    끝나고 신호가 온다. 계산이 이벤트 루프 위에서 돌면 이 함수가 돌아올 때까지 health 가 시작조차
+    못 하므로 신호는 원리상 올 수 없어 대기가 타임아웃으로 끝난다. 두 스레드가 찍은 시각을 비교하지
+    않으므로 GC·부하로 루프가 잠깐 멈춰도 판정이 뒤집히지 않는다."""
     real = getattr(bcrypt, bcrypt_name)
     loop = asyncio.get_running_loop()
     started = asyncio.Event()
-    finished_at: list[float] = []
+    health_done = threading.Event()
+    got_health_signal: list[bool] = []
 
     def slow(*args: bytes) -> object:
         loop.call_soon_threadsafe(started.set)
-        time.sleep(0.5)
-        finished_at.append(time.monotonic())
+        got_health_signal.append(health_done.wait(timeout=5))
         return real(*args)
 
     monkeypatch.setattr(bcrypt, bcrypt_name, slow)
     task = asyncio.create_task(request())
     await started.wait()
-    health = await db_client.get("/health")
-    health_done_at = time.monotonic()
+    try:
+        health = await db_client.get("/health")
+    finally:
+        health_done.set()
     resp = await task
 
     assert health.status_code == 200
-    assert finished_at and health_done_at < finished_at[0]
+    assert got_health_signal == [True]
     return resp
 
 
