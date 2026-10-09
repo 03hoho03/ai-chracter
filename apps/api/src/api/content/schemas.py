@@ -1,7 +1,9 @@
+import json
 import unicodedata
 import uuid
 from collections.abc import Hashable, Iterable
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated, Literal, Self
 
 from pydantic import AfterValidator, Field, StringConstraints, TypeAdapter, model_validator
@@ -15,6 +17,24 @@ from api.db.models.story import EndingRuleOperator, LogicalOp, StoryPromptTempla
 from api.persona.schemas import PERSONA_NAME_MAX_LENGTH
 
 VisibilityFilter = Literal["all", "public", "link", "private"]
+
+# 빌더 글자·개수 한도 표. web 빌더도 같은 파일을 읽어 입력 단계에서 같은 숫자를 쓴다 — 숫자를 두 곳에 적으면 한쪽만
+# 고쳐 화면과 서버가 어긋난다. 글자 수는 보낸 글자 그대로(앞뒤 공백 포함)의 코드 포인트 수이고, 파이썬 `len` 이 그
+# 단위다. 상한은 요청 모델에만 건다 — 응답에도 쓰이는 타입에 걸면 상한을 낮춘 뒤 이미 저장된 초안을 열 수 없다.
+_BUILDER_LIMITS: dict[str, dict[str, int]] = json.loads(
+    Path(__file__).with_name("builder_limits.json").read_text(encoding="utf-8")
+)
+_COMMON_LIMITS = _BUILDER_LIMITS["common"]
+_CHARACTER_LIMITS = _BUILDER_LIMITS["character"]
+_STORY_LIMITS = _BUILDER_LIMITS["story"]
+
+WorkName = Annotated[str, StringConstraints(max_length=_COMMON_LIMITS["nameMaxLength"])]
+WorkOneLiner = Annotated[str, StringConstraints(max_length=_COMMON_LIMITS["oneLinerMaxLength"])]
+WorkDescription = Annotated[str, StringConstraints(max_length=_COMMON_LIMITS["descriptionMaxLength"])]
+WorkHashtags = Annotated[
+    list[Annotated[str, StringConstraints(max_length=_COMMON_LIMITS["hashtagMaxLength"])]],
+    Field(max_length=_COMMON_LIMITS["hashtagMaxCount"]),
+]
 
 
 def _default_novel_permission() -> NovelPermission:
@@ -237,36 +257,48 @@ class CharacterSituationalImageDraftInput(CamelModel):
     `POST /assets/{id}/register-situational-image`."""
 
     id: uuid.UUID
-    trigger_condition: str
+    trigger_condition: str = Field(max_length=_CHARACTER_LIMITS["situationalImageTriggerMaxLength"])
 
 
 class CharacterDraftPayload(CamelModel):
-    name: str
-    one_liner: str
+    name: WorkName
+    one_liner: WorkOneLiner
     thumbnail_asset_id: uuid.UUID | None
-    intro: str
-    example_dialogues: list[ExampleDialogueItem]
-    character_prompt: str
-    playguide: str | None
+    intro: str = Field(max_length=_CHARACTER_LIMITS["introMaxLength"])
+    example_dialogues: list[ExampleDialogueItem] = Field(max_length=_CHARACTER_LIMITS["exampleDialogueMaxCount"])
+    character_prompt: str = Field(max_length=_CHARACTER_LIMITS["characterPromptMaxLength"])
+    playguide: Annotated[str, StringConstraints(max_length=_CHARACTER_LIMITS["playguideMaxLength"])] | None
     # 안 보내면 저장된 값을 그대로 둔다(router 가 `model_fields_set` 으로 가른다) — 이 칸을 모르는 화면(배포 전부터
     # 열려 있던 탭의 옛 번들)의 자동저장이 작가가 넣은 이름을 지우지 않게. `default_factory` 인 이유는
     # `KeywordNoteDraftInput` 의 같은 주석과 같다.
     default_user_name: DefaultUserName = Field(default_factory=str)
     situational_images: list[CharacterSituationalImageDraftInput]
-    description: str
+    description: WorkDescription
     genre_id: uuid.UUID | None
     target: ContentTarget | None
-    hashtags: list[str]
+    hashtags: WorkHashtags
     visibility: ContentVisibility
     # 소설화 허락. 안 보내면(또는 null 이면) 저장된 값을 그대로 둔다 — 이 칸을 모르는 화면(배포 전부터 열려 있던 탭의
     # 옛 번들)의 자동저장이 모든 작품의 허락을 기본값으로 덮지 않게. 공개 범위처럼 헤더에 바로 쓰여 발행과 무관하게 즉시
     # 적용된다.
     novel_permission: NovelPermission | None = None
 
+    @model_validator(mode="after")
+    def _check_example_dialogue_line_length(self) -> Self:
+        # 줄 길이를 여기 두는 이유: `ExampleDialogueItem` 은 초안 응답에도 쓰여 거기에 걸 수 없다(위 한도 표 주석).
+        limit = _CHARACTER_LIMITS["exampleDialogueLineMaxLength"]
+        for dialogue in self.example_dialogues:
+            if len(dialogue.user_line) > limit or len(dialogue.character_line) > limit:
+                raise ValueError(f"example dialogue lines must be at most {limit} characters")
+        return self
+
 
 class CharacterSituationalImageItem(CamelModel):
     id: uuid.UUID
     image_asset_id: uuid.UUID | None
+    # 빌더가 다시 열 때 그림을 보여 주는 주소. 대표 이미지처럼 썸네일 변형을 구간 서명해 자동저장 응답마다 주소가 같다.
+    # 그림을 아직 안 붙인 행은 null 이다.
+    image_url: str | None
     trigger_condition: str
 
 
@@ -643,8 +675,8 @@ class MediaBookDraft(CamelModel):
 
 
 class StoryDraftPayload(CamelModel):
-    name: str
-    one_liner: str
+    name: WorkName
+    one_liner: WorkOneLiner
     thumbnail_asset_id: uuid.UUID | None
     prompt_template: StoryPromptTemplate
     setting_text: str | None
@@ -655,18 +687,20 @@ class StoryDraftPayload(CamelModel):
     custom_prompt: str | None
     # 필수화하지 않는다 — 기존 33건이 비어 있는 채로
     # 발행돼 있다. 시드도 이 기본값 덕에 JSON에 새 키를 추가하지 않고 통과한다.
-    development_examples: list[DevelopmentExampleItem] = Field(default_factory=list)
+    development_examples: list[DevelopmentExampleItem] = Field(
+        default_factory=list, max_length=_STORY_LIMITS["developmentExampleMaxCount"]
+    )
     user_goal: str | None = None
     rules: str | None = None
     # `CharacterDraftPayload.default_user_name` 과 같다.
     default_user_name: DefaultUserName = Field(default_factory=str)
-    starting_setups: list[StartingSetupDraftItem]
+    starting_setups: list[StartingSetupDraftItem] = Field(max_length=_STORY_LIMITS["startingSetupMaxCount"])
     keyword_notes: list[KeywordNoteDraftInput] = Field(max_length=MAX_KEYWORD_NOTES)
     shortcuts: list[ShortcutDraftItem]
-    description: str
+    description: WorkDescription
     genre_id: uuid.UUID | None
     target: ContentTarget | None
-    hashtags: list[str]
+    hashtags: WorkHashtags
     visibility: ContentVisibility
     # `CharacterDraftPayload.novel_permission` 과 같다.
     novel_permission: NovelPermission | None = None
@@ -680,6 +714,14 @@ class StoryDraftPayload(CamelModel):
         # 상시 노트는 매 턴 키워드 발동 노트와 따로 실린다. 개수를 저장에서 막아 두면 대화 중에는 자르지 않아도 된다.
         if sum(note.always_on for note in self.keyword_notes) > MAX_ALWAYS_ON_KEYWORD_NOTES:
             raise ValueError(f"at most {MAX_ALWAYS_ON_KEYWORD_NOTES} keyword notes can be always on")
+        return self
+
+    @model_validator(mode="after")
+    def _check_suggested_reply_count(self) -> Self:
+        # 개수를 여기 두는 이유: `StartingSetupDraftItem` 은 초안 응답에도 쓰여 거기에 걸 수 없다(위 한도 표 주석).
+        limit = _STORY_LIMITS["suggestedReplyMaxCount"]
+        if any(len(setup.suggested_replies) > limit for setup in self.starting_setups):
+            raise ValueError(f"a starting setup holds at most {limit} suggested replies")
         return self
 
     @model_validator(mode="after")

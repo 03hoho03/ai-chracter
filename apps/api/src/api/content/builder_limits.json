@@ -1,0 +1,22 @@
+{
+  "common": {
+    "nameMaxLength": 30,
+    "oneLinerMaxLength": 50,
+    "descriptionMaxLength": 1000,
+    "hashtagMaxCount": 10,
+    "hashtagMaxLength": 20
+  },
+  "character": {
+    "introMaxLength": 3000,
+    "characterPromptMaxLength": 5000,
+    "playguideMaxLength": 2000,
+    "exampleDialogueLineMaxLength": 500,
+    "exampleDialogueMaxCount": 5,
+    "situationalImageTriggerMaxLength": 100
+  },
+  "story": {
+    "startingSetupMaxCount": 4,
+    "suggestedReplyMaxCount": 4,
+    "developmentExampleMaxCount": 3
+  }
+}

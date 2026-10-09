@@ -21,8 +21,8 @@ function baseDraftResponse(): CharacterDraftResponse {
     playguide: "존댓말을 쓰지 않아도 돼요.",
     defaultUserName: "",
     situationalImages: [
-      { id: "img-1", imageAssetId: "asset-1", triggerCondition: "웃을 때" },
-      { id: "img-2", imageAssetId: null, triggerCondition: "화날 때" },
+      { id: "img-1", imageAssetId: "asset-1", imageUrl: "https://example.test/asset-1_thumb.webp", triggerCondition: "웃을 때" },
+      { id: "img-2", imageAssetId: null, imageUrl: null, triggerCondition: "화날 때" },
     ],
     description: "달빛 마법사 루나 이야기",
     genreId: "genre-fantasy",
@@ -84,9 +84,9 @@ describe("serverToForm", () => {
   it("keeps situationalImages in the response's order when restoring the array (no explicit order field on the wire)", () => {
     const data = baseDraftResponse();
     data.situationalImages = [
-      { id: "third", imageAssetId: null, triggerCondition: "third" },
-      { id: "first", imageAssetId: null, triggerCondition: "first" },
-      { id: "second", imageAssetId: null, triggerCondition: "second" },
+      { id: "third", imageAssetId: null, imageUrl: null, triggerCondition: "third" },
+      { id: "first", imageAssetId: null, imageUrl: null, triggerCondition: "first" },
+      { id: "second", imageAssetId: null, imageUrl: null, triggerCondition: "second" },
     ];
 
     const form = serverToForm(data);

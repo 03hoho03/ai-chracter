@@ -661,6 +661,20 @@ async def _character_draft_response(
             .order_by(SituationalImage.order)
         )
     ).all()
+    # 자동저장 응답마다 도는 경로라 자산은 한 번에 읽는다(미디어 북 칸과 같은 방식).
+    image_asset_ids = {image.entity_id: image.image_asset_id for image in images if image.image_asset_id is not None}
+    assets = (
+        {
+            asset.id: asset
+            for asset in await db.scalars(select(Asset).where(Asset.id.in_(set(image_asset_ids.values()))))
+        }
+        if image_asset_ids
+        else {}
+    )
+    signed_urls = await run_in_threadpool(
+        _sign_thumbnail_urls, [assets[asset_id].storage_key for asset_id in image_asset_ids.values()]
+    )
+    image_urls = dict(zip(image_asset_ids, signed_urls, strict=True))
 
     return CharacterDraftResponse(
         id=content.id,
@@ -680,6 +694,7 @@ async def _character_draft_response(
             CharacterSituationalImageItem(
                 id=image.entity_id,
                 image_asset_id=image.image_asset_id,
+                image_url=image_urls.get(image.entity_id),
                 trigger_condition=image.trigger_condition,
             )
             for image in images
