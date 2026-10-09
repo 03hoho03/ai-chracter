@@ -127,6 +127,9 @@ class CloverPricingResponse(CamelModel):
     # 하루에 클로버 없이 쓸 수 있는 대화 턴 수. 로그인한 화면은 `GET /me` 의 같은 값을 읽지만 공개 안내는 그 응답을
     # 못 읽는다.
     daily_free_chat_turns: int
+    # 노벨 화 하나의 소장 가격과, 소설마다 앞에서부터 무료로 읽는 화 수. 노벨이 꺼져 있어도 싣는다(가격표는 정책 안내다).
+    novel_read_cost: int
+    novel_free_chapter_count: int
     # 지금 결제를 받는가. 거짓이면 구매 화면이 "준비 중"을 보인다.
     payments_enabled: bool
     # 구매 화면이 고를 수 있는 결제수단(`payments/methods.py` 가 유일한 목록).

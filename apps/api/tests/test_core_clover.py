@@ -451,6 +451,37 @@ async def test_partial_refunds_leave_one_event_per_returned_allocation(db_sessio
     assert allocations[free.id].refunded_amount == 0
 
 
+async def test_refund_skips_allocations_from_lots_the_caller_excludes(db_session: AsyncSession) -> None:
+    """`skip_lot` 에 맞는 로트(여기선 보너스)에서 나간 몫은 돌려주지 않고 건너뛴다 — 그 몫은 채울 대상이 아니라 전액(25)을
+    청해도 부족 예외 없이 나머지(유료 5 + 무료 10)만 돌아가고, 잔액·원장·환급 행 모두 15 다. 건너뛴 배분은 그대로다."""
+    user, (free, bonus, paid) = await _user_with_lots(
+        db_session,
+        ("attendance_grant", 10, datetime(2026, 10, 12, tzinfo=UTC)),
+        ("purchase_bonus", 10, None),
+        ("purchase_paid", 10, None),
+    )
+    spent = await spend(db_session, user_id=user.id, amount=25, kind="novel_read_spend")
+    assert spent is not None
+
+    balance = await refund_spend(
+        db_session,
+        user_id=user.id,
+        spend_ledger_id=spent.ledger_id,
+        amount=25,
+        kind="novel_read_refund",
+        skip_lot=CloverLot.kind == "purchase_bonus",
+    )
+
+    assert balance == 20 == await _balance(db_session, user.id)
+    for lot in (free, bonus, paid):
+        await db_session.refresh(lot)
+    assert (free.remaining, bonus.remaining, paid.remaining) == (10, 0, 10)
+    assert [a.refunded_amount for a in await _allocations(db_session, spent.ledger_id)] == [10, 0, 5]
+    rows = await _ledger_rows(db_session, user.id)
+    assert [(r.amount, r.balance_after) for r in rows if r.kind == "novel_read_refund"] == [(15, 20)]
+    assert sorted(e.amount for e in await _refund_events(db_session, spent.ledger_id)) == [5, 10]
+
+
 async def test_refund_beyond_the_unrefunded_spend_raises(db_session: AsyncSession) -> None:
     """같은 차감을 두 번 환급하면 두 번째가 남은 환급 가능량을 넘어 예외로 롤백된다(이중 환급 방지)."""
     user = await _make_user_with_clover_lot(db_session, clover_balance=50)

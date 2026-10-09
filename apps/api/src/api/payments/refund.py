@@ -34,8 +34,9 @@ from portone_server_sdk.payment import (
     RequestedPaymentCancellation,
     SucceededPaymentCancellation,
 )
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from api.admin.action_log import record_admin_action
 from api.core.clover import restore_purchase_lots, revoke_purchase_lots
@@ -74,6 +75,21 @@ _MAYBE_ALREADY_CANCELLED = frozenset(
         "PaymentAlreadyCancelledError",
     }
 )
+
+
+def refunded_purchase_lot() -> ColumnElement[bool]:
+    """`CloverLot` 이 이미 결제 환불(취소)이 걸린 구매에서 나온 로트인가 — SQL 조건. 그 결제에 진행 중(`requested`)이거나
+    성공한(`succeeded`) 취소 행이 하나라도 있으면 참이다. 진행 중도 넣는 이유: 그 시도는 이미 남은 클로버를 회수했고 포트원
+    결과만 기다리는 중이라, 이 사이에 로트로 클로버를 되돌리면 취소가 성공했을 때 돈과 클로버를 함께 돌려받는다. 실패로
+    확정된 취소(`failed`)만 있는 결제는 환불되지 않은 결제다. 무료 지급 로트는 결제가 없어 늘 거짓이다.
+
+    노벨 삭제 환급이 `refund_spend(skip_lot=…)` 로 넘겨, 결제 환불된 구매분에서 나간 몫을 다시 돌려주지 않게 한다."""
+    return exists(
+        select(PaymentCancellation.id).where(
+            PaymentCancellation.payment_id == CloverLot.payment_id,
+            PaymentCancellation.status.in_(("requested", "succeeded")),
+        )
+    )
 
 
 def _utcnow() -> datetime:

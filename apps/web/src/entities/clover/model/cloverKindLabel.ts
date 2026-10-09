@@ -5,7 +5,7 @@
  * `CloverLedgerItem.kind`가 `Literal`이 아니라 `string`인 것과 같은 이유로(모델이 `Text`라 값이
  * 늘어도 마이그레이션·코드젠이 안 깨지게 한 것) 여기도 `Record<string, string>`이고, 모르는 키는
  * 호출부가 원문 그대로 보여준다(`?? kind` 폴백, admin `CLOVER_KIND_LABELS`와 같은 관례). BE
- * `CLOVER_KIND_CATEGORY`(`clover/router.py`)의 16종과 글자 단위로 대조했다. */
+ * `CLOVER_KIND_CATEGORY`(`clover/router.py`)의 18종과 글자 단위로 대조했다. */
 export const CLOVER_KIND_LABELS: Record<string, string> = {
   attendance_grant: "출석 지급",
   mission_grant: "미션 보상",
@@ -23,4 +23,6 @@ export const CLOVER_KIND_LABELS: Record<string, string> = {
   purchase_bonus: "구매 보너스",
   purchase_revoke: "구매 취소 회수",
   purchase_restore: "구매 회수 복원",
+  novel_read_spend: "노벨 소장",
+  novel_read_refund: "노벨 삭제 환급",
 };

@@ -603,3 +603,73 @@ class NovelScreening(Base):
         Index("ix_novel_screenings_novel_id_created_at", "novel_id", created_at.desc()),
         Index("ix_novel_screenings_chapter_id", "chapter_id"),
     )
+
+
+class NovelPurchase(Base):
+    """노벨 화 하나의 소장 구매. 구매자가 클로버로 산 화마다 한 행이고, 같은 화는 다시 사지 않는다(`(chapter_id,
+    buyer_user_id)` 유니크 — 다시 공개로 본문이 바뀌어도 같은 화다). 무료 화와 게시자 본인의 열람은 행을 만들지 않는다.
+
+    소설·화를 가리키는 칸은 **FK 없는 사본**이다. 게시자가 소설이나 마지막 묶음을 지우거나 탈퇴해도 이 행은 남아, 구매자에게
+    "지워져 환급했다"·"게시자가 탈퇴했다"를 알려 줄 근거가 된다. 그래서 화 제목 같은 게시자 글의 사본은 두지 않는다 — 지운
+    글이 여기 남으면 안 된다. 철회·운영 조치·원작 숨김은 이 행을 건드리지 않고 공개 상태로 판정하므로, 다시 공개되면 소장이
+    그대로 살아난다.
+
+    - `edition`: 산 시점의 화 공개본 판 번호(어느 판을 보고 샀는가).
+    - `spend_ledger_id`: 이 구매의 차감 원장 행. 삭제 환급이 이 id 로 차감 배분을 찾아 깎은 로트로 되돌리고, 정산이 붙을 키다.
+    - `price`: 산 시점의 가격 사본 — 가격 설정이 바뀌어도 환급액은 낸 값이다.
+    - `refunded_at`·`refunded_amount`: 게시자 삭제로 환급한 시각과 실제로 돌려준 양. 이미 결제 환불된 구매분에서 나간 몫은
+      돌려주지 않으므로 `price` 보다 작을 수 있다. `refund_notification_id` 는 그때 구매자에게 보낸 알림이다(알림 문구의 화
+      수·클로버 수가 이 행들에서 나온다).
+
+    구매자가 탈퇴하면 그 구매자의 행을 지운다(`auth/withdrawal.py`). 거래 기록은 원장과 사용처 행에 남는다.
+
+    CHECK 는 `alembic check` 가 비교하지 않아 `pytest.raises(IntegrityError)` 행위 테스트가 유일한 검증이다."""
+
+    __tablename__ = "novel_purchases"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    buyer_user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", name="fk_novel_purchases_buyer_user_id"), nullable=False
+    )
+    publisher_user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", name="fk_novel_purchases_publisher_user_id"), nullable=False
+    )
+    novel_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    chapter_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    chapter_ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    edition: Mapped[int] = mapped_column(Integer, nullable=False)
+    spend_ledger_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("clover_ledger.id", name="fk_novel_purchases_spend_ledger_id"), nullable=False
+    )
+    price: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    refunded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    refunded_amount: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    refund_notification_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("notifications.id", name="fk_novel_purchases_refund_notification_id"), nullable=True
+    )
+
+    # 화 단위 조회(구매했는가·삭제 환급)는 유니크 인덱스가, 소설 삭제 환급은 소설 인덱스가, 탈퇴 정리와 내 구매 목록은 구매자
+    # 인덱스가 맡는다. 원장 유니크는 차감 하나가 구매 둘로 쓰이지 않게 하는 그물이다.
+    __table_args__ = (
+        CheckConstraint("price > 0", name="ck_novel_purchases_price_positive"),
+        CheckConstraint("chapter_ordinal >= 1 AND edition >= 1", name="ck_novel_purchases_ordinal_edition_positive"),
+        CheckConstraint(
+            "(refunded_at IS NULL) = (refunded_amount IS NULL)", name="ck_novel_purchases_refund_pair"
+        ),
+        CheckConstraint(
+            "refunded_amount IS NULL OR (refunded_amount >= 0 AND refunded_amount <= price)",
+            name="ck_novel_purchases_refunded_amount_range",
+        ),
+        CheckConstraint(
+            "refund_notification_id IS NULL OR refunded_at IS NOT NULL",
+            name="ck_novel_purchases_notification_after_refund",
+        ),
+        Index("ux_novel_purchases_chapter_id_buyer_user_id", "chapter_id", "buyer_user_id", unique=True),
+        Index("ix_novel_purchases_novel_id", "novel_id"),
+        Index("ix_novel_purchases_buyer_user_id", "buyer_user_id"),
+        Index("ux_novel_purchases_spend_ledger_id", "spend_ledger_id", unique=True),
+        Index("ix_novel_purchases_refund_notification_id", "refund_notification_id"),
+    )

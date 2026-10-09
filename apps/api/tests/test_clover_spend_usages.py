@@ -68,8 +68,12 @@ async def _insert_usage(db: AsyncSession, ledger: CloverLedger, content: Content
         "content_owner_user_id": content.creator_user_id,
         "chat_room_id": uuid.uuid4(),
         "novel_id": None,
+        "publisher_user_id": None,
     }
     values.update(overrides)
+    # 게시자 칸은 FK 라 실제 회원이어야 한다 — 표지 값 "spender" 를 지불자 id 로 바꾼다.
+    if values.get("publisher_user_id") == "spender":
+        values["publisher_user_id"] = ledger.user_id
     db.add(CloverSpendUsage(**values))
     await db.flush()
 
@@ -80,6 +84,10 @@ async def _insert_usage(db: AsyncSession, ledger: CloverLedger, content: Content
         pytest.param({}, id="chat"),
         pytest.param({"usage_kind": "novel", "novel_id": uuid.uuid4()}, id="novel-with-room"),
         pytest.param({"usage_kind": "novel", "novel_id": uuid.uuid4(), "chat_room_id": None}, id="novel-room-gone"),
+        pytest.param(
+            {"usage_kind": "novel_read", "novel_id": uuid.uuid4(), "chat_room_id": None, "publisher_user_id": "spender"},
+            id="novel-read",
+        ),
         pytest.param(
             {"usage_kind": "preview", "content_id": None, "content_owner_user_id": None, "chat_room_id": None},
             id="preview",
@@ -114,6 +122,21 @@ async def test_valid_usage_is_accepted(db_session: AsyncSession, overrides: dict
         pytest.param({"chat_room_id": None}, "ck_clover_spend_usages_chat_has_room", id="chat-without-room"),
         pytest.param({"usage_kind": "novel"}, "ck_clover_spend_usages_novel_has_novel", id="novel-without-novel"),
         pytest.param({"novel_id": uuid.uuid4()}, "ck_clover_spend_usages_novel_has_novel", id="chat-with-novel"),
+        pytest.param(
+            {"usage_kind": "novel_read", "chat_room_id": None, "publisher_user_id": "spender"},
+            "ck_clover_spend_usages_novel_has_novel",
+            id="novel-read-without-novel",
+        ),
+        pytest.param(
+            {"usage_kind": "novel_read", "novel_id": uuid.uuid4(), "chat_room_id": None},
+            "ck_clover_spend_usages_publisher_for_novel_read",
+            id="novel-read-without-publisher",
+        ),
+        pytest.param(
+            {"usage_kind": "novel", "novel_id": uuid.uuid4(), "publisher_user_id": "spender"},
+            "ck_clover_spend_usages_publisher_for_novel_read",
+            id="novelize-with-publisher",
+        ),
     ],
 )
 async def test_usage_check_constraints_reject(

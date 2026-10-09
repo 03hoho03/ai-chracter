@@ -15,7 +15,8 @@ from datetime import date, datetime, time, timedelta
 from typing import Literal
 
 import anyio
-from sqlalchemy import Integer, Uuid, case, func, insert, literal, literal_column, select, update
+from sqlalchemy import Integer, Uuid, case, false, func, insert, literal, literal_column, select, update
+from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.core.rate_limit import KST
@@ -52,6 +53,10 @@ IMAGE_UNIT_COST = 30
 # 화면의 금액이 어긋나지 않게).
 NOVELIZE_EPISODE_COST = 80
 NOVELIZE_AI_EDIT_COST = 30
+# 노벨(회원이 공개한 소설) 화 하나의 소장 가격과, 소설마다 앞에서부터 무료로 읽는 화 수. 1클로버 3원 기준 화당 90원으로,
+# 공개 소설 열람 가격 검토에서 고른 값이다(원가가 아니라 정책값). 가격 안내 응답과 구매 라우트가 호출 때마다 여기서 읽는다.
+NOVEL_READ_COST = 30
+NOVEL_FREE_CHAPTER_COUNT = 5
 # 상위 모델(Bedrock 의 Claude)로 쓰는 채팅 턴 하나와 소설 화 하나의 클로버. 위 Gemini 값과 짝이고 모델 레지스트리
 # (`llm/chat_models.py`)가 호출 때마다 여기서 읽는다. Sonnet 턴 60: 조감독 작품 긴 방에서 잰 Sonnet 턴 원가는 캐시
 # 적중 $0.018(약 25원)·미적중 $0.0796(약 111원)이라 미적중 턴도 쓸 수 있는 돈(약 149원) 안에 든다. Opus 턴 110 은 실측
@@ -87,6 +92,9 @@ CloverKind = Literal[
     "purchase_bonus",
     "purchase_revoke",
     "purchase_restore",
+    # 노벨 화 소장 구매의 차감과, 게시자가 산 화를 지워 돌려준 환급(`novel_public/purchases.py`).
+    "novel_read_spend",
+    "novel_read_refund",
 ]
 
 # 구매로 생기는 로트 kind. 차감 정렬은 이 둘만 이름으로 집고 나머지 kind 는 전부 무료로 본다 — 무료 kind 를 나열하면
@@ -118,14 +126,16 @@ class CloverSpend:
 class SpendUsage:
     """차감이 쓰인 곳. `spend` 가 받으면 차감과 같은 트랜잭션에 사용처 행(`CloverSpendUsage`)을 하나 더한다.
 
-    채팅은 `content_id`·`chat_room_id`, 소설화는 `content_id`·`novel_id`(대화방이 남아 있으면 `chat_room_id` 도), 빌더
-    미리보기는 아무것도 넘기지 않는다. 작품 소유자는 넘기지 않는다 — `spend` 가 차감 트랜잭션 안에서 작품 행에서 읽는다.
+    채팅은 `content_id`·`chat_room_id`, 소설화는 `content_id`·`novel_id`(대화방이 남아 있으면 `chat_room_id` 도), 노벨
+    구매는 `content_id`(원작)·`novel_id`·`publisher_user_id`, 빌더 미리보기는 아무것도 넘기지 않는다. 작품 소유자는 넘기지
+    않는다 — `spend` 가 차감 트랜잭션 안에서 작품 행에서 읽는다.
     """
 
     kind: CloverSpendUsageKind
     content_id: uuid.UUID | None = None
     chat_room_id: uuid.UUID | None = None
     novel_id: uuid.UUID | None = None
+    publisher_user_id: uuid.UUID | None = None
 
 
 class CloverRefundExceedsSpendError(Exception):
@@ -329,6 +339,7 @@ async def _record_usage(db: AsyncSession, *, ledger_id: uuid.UUID, user_id: uuid
                 content_id=usage.content_id,
                 chat_room_id=usage.chat_room_id,
                 novel_id=usage.novel_id,
+                publisher_user_id=usage.publisher_user_id,
             )
         )
         await db.flush()
@@ -344,6 +355,7 @@ async def _record_usage(db: AsyncSession, *, ledger_id: uuid.UUID, user_id: uuid
                 CloverSpendUsage.content_owner_user_id,
                 CloverSpendUsage.chat_room_id,
                 CloverSpendUsage.novel_id,
+                CloverSpendUsage.publisher_user_id,
             ],
             select(
                 literal(ledger_id, Uuid),
@@ -353,6 +365,7 @@ async def _record_usage(db: AsyncSession, *, ledger_id: uuid.UUID, user_id: uuid
                 Content.creator_user_id,
                 literal(usage.chat_room_id, Uuid),
                 literal(usage.novel_id, Uuid),
+                literal(usage.publisher_user_id, Uuid),
             ).where(Content.id == usage.content_id),
         )
         .returning(CloverSpendUsage.spend_ledger_id)
@@ -649,6 +662,7 @@ async def refund_spend(
     spend_ledger_id: uuid.UUID | None,
     amount: int,
     kind: CloverKind,
+    skip_lot: ColumnElement[bool] | None = None,
 ) -> int | None:
     """차감을 되돌린다. 환급 후 잔액을 돌려준다. **커밋은 호출자가 한다.**
 
@@ -673,6 +687,12 @@ async def refund_spend(
     락 순서는 users → clover_spend_allocations → clover_lots 다. 차감은 users → clover_lots 이고 배분은 INSERT 만
     하므로 순환이 없다.
 
+    `skip_lot` 은 `CloverLot` 에 대한 SQL 조건이다. 주면 그 조건에 맞는 로트에서 나간 배분은 **돌려주지 않고 건너뛴다** —
+    건너뛴 몫은 채울 대상이 아니라서 `amount` 에서 빠지고(부족 예외도 나지 않는다), 배분의 `refunded_amount`·환급 행·잔액
+    어디에도 나타나지 않으며 원장 금액도 실제로 돌려준 양이다. 전부 건너뛰면 원장 행도 남기지 않는다. 노벨 삭제 환급이 이미
+    결제 환불된 구매의 로트를 건너뛸 때 쓴다(그 로트로 되돌리면 돈과 클로버를 함께 돌려받게 된다). 주지 않으면 지금처럼 전부
+    되돌린다.
+
     배분에서 돌려준 몫마다 환급 행(`CloverSpendRefund`)을 하나씩 남긴다 — 배분에는 시각이 없어, 정산이 "언제 돌려줬는가"를
     아는 곳이 이 행뿐이다. 돌려준 양이 0 인 배분(이미 다 돌려받았다)은 남기지 않는다. 차감 id 가 없는 환급과 탈퇴 회원
     환급은 배분을 건드리지 않으므로 남기지 않는다. 환급 행은 이미 잠근 배분과 방금 넣은 원장 행을 FK 로 가리킬 뿐이라
@@ -689,6 +709,7 @@ async def refund_spend(
         return None
 
     returned: list[tuple[uuid.UUID, int]] = []
+    skipped_amount = 0
     if spend_ledger_id is None:
         db.add(CloverLot(user_id=user_id, granted_amount=amount, remaining=amount, expires_at=None, kind=kind))
     else:
@@ -702,25 +723,30 @@ async def refund_spend(
         ).all()
         # 남의 로트로는 돌려주지 않는다 — 사용자 조건에 걸러진 배분은 환급 가능량에서 빠져 아래 부족 예외로 떨어진다.
         lots = {
-            lot.id: lot
-            for lot in (
-                await db.scalars(
-                    select(CloverLot)
+            lot.id: (lot, bool(skipped))
+            for lot, skipped in (
+                await db.execute(
+                    select(CloverLot, skip_lot if skip_lot is not None else false())
                     .where(
                         CloverLot.id.in_([allocation.lot_id for allocation in allocations]),
                         CloverLot.user_id == user_id,
                     )
                     .order_by(CloverLot.id)
-                    .with_for_update()
+                    .with_for_update(of=CloverLot)
                 )
-            ).all()
+            ).tuples()
         }
         left = amount
         for allocation in allocations:
-            lot = lots.get(allocation.lot_id)
-            if left <= 0 or lot is None:
+            entry = lots.get(allocation.lot_id)
+            if left <= 0 or entry is None:
                 continue
+            lot, skipped = entry
             take = min(allocation.amount - allocation.refunded_amount, left)
+            if skipped:
+                left -= take
+                skipped_amount += take
+                continue
             allocation.refunded_amount += take
             lot.remaining += take
             left -= take
@@ -730,10 +756,21 @@ async def refund_spend(
             raise CloverRefundExceedsSpendError(
                 f"user {user_id}: 차감 {spend_ledger_id} 의 남은 환급 가능량보다 {left} 많이 돌려달라고 했다"
             )
+    if skipped_amount:
+        # 잔액은 맨 앞에서 `amount` 만큼 올렸다(그 UPDATE 가 사용자 행 잠금과 탈퇴 판정을 겸한다). 건너뛴 몫을 되돌린다.
+        balance_after = await db.scalar(
+            update(User)
+            .where(User.id == user_id)
+            .values(clover_balance=User.clover_balance - skipped_amount)
+            .returning(User.clover_balance)
+        )
+        assert balance_after is not None  # 위에서 잠근 행이다
+        if skipped_amount == amount:
+            return int(balance_after)
 
     ledger = CloverLedger(
         user_id=user_id,
-        amount=amount,
+        amount=amount - skipped_amount,
         balance_after=balance_after,
         kind=kind,
         idempotency_key=None,
