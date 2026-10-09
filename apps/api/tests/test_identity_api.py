@@ -45,8 +45,8 @@ _CI = "ci-of-the-person-under-test=="
 
 @pytest.fixture(autouse=True)
 def _portone_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    """로컬 `.env` 에 실제 포트원 키가 있다 — 키 유무로 갈리는 분기를 환경이 아니라 테스트가 정한다. 인증 시작은 결제나
-    게이트 중 하나가 켜져 있어야 열리므로 게이트를 켠다."""
+    """로컬 `.env` 에 실제 포트원 키가 있다 — 키 유무로 갈리는 분기를 환경이 아니라 테스트가 정한다. 인증 시작은 결제·
+    게이트·크리에이터 정산 중 하나가 켜져 있어야 열리므로 게이트를 켠다."""
     monkeypatch.setattr(settings, "portone_store_id", "store-test-0001")
     monkeypatch.setattr(settings, "portone_payment_channel_key", "channel-key-test-inicis")
     monkeypatch.setattr(settings, "portone_identity_channel_key", _IDENTITY_CHANNEL)
@@ -55,6 +55,7 @@ def _portone_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "identity_ci_hmac_key", "ci-key-test")
     monkeypatch.setattr(settings, "payments_enabled", False)
     monkeypatch.setattr(settings, "identity_gate_enabled", True)
+    monkeypatch.setattr(settings, "creator_payout_enabled", False)
 
 
 class _FakeGateway:
@@ -191,6 +192,20 @@ async def test_start_is_open_when_only_payments_need_it(
     monkeypatch.setattr(settings, "identity_gate_enabled", False)
     monkeypatch.setattr(settings, "payments_enabled", True)
     monkeypatch.setattr(settings, "portone_webhook_secret", "whsec_dGVzdA==")
+
+    resp = await db_client.post("/me/identity-verifications")
+
+    assert resp.status_code == 201
+
+
+async def test_start_is_open_when_only_creator_payout_needs_it(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """결제·게이트가 꺼져 있어도 크리에이터 정산이 켜져 있으면 신청 자격(본인인증·만 19세)을 갖추려고 인증할 수 있어야
+    한다 — 막으면 정산만 켠 환경에서 아무도 신청할 수 없다."""
+    await _user(db_session, db_client)
+    monkeypatch.setattr(settings, "identity_gate_enabled", False)
+    monkeypatch.setattr(settings, "creator_payout_enabled", True)
 
     resp = await db_client.post("/me/identity-verifications")
 

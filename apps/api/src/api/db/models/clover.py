@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Literal
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -11,6 +12,7 @@ from sqlalchemy import (
     SmallInteger,
     Text,
     Uuid,
+    false,
     func,
     text,
 )
@@ -211,9 +213,13 @@ class CloverSpendUsage(Base):
     한 행을 더하고(1:1, 원장 id 가 PK), 크리에이터 정산이 여기서 출발한다. 원장에 칸을 더하지 않은 것은 지급·회수까지
     지나는 원장 기록 함수를 바꾸지 않으려는 것이다. 이미지 차감은 작품 맥락이 없어 행을 남기지 않는다.
 
-    판단 근거(지불자·작품 소유자)만 저장하고 "정산 대상인가"는 저장하지 않는다 — 자기 플레이·미리보기 같은 판정은 정산
-    계산 한 곳에 둔다. 지불자는 원장 `user_id`, 소유자는 차감 시점의 `contents.creator_user_id` 사본이다(원장을 조인하지
-    않고 크리에이터별로 바로 고르려고).
+    "정산 대상인가"는 저장하지 않고 판단 근거만 저장한다 — 미리보기·적립 구간·소유자 탈퇴 같은 판정은 정산 계산 한 곳에
+    둔다. 지불자는 원장 `user_id`, 소유자는 차감 시점의 `contents.creator_user_id` 사본이다(원장을 조인하지 않고
+    크리에이터별로 바로 고르려고).
+
+    자기 플레이(`is_self_play` = 지불자가 그 작품의 소유자)만은 기록 때 접어 둔다. 탈퇴가 그 회원이 지불자인 행의
+    `spender_user_id` 를 NULL 로 끊는데(어느 작품과 대화했는가를 대화와 함께 파기), 정산은 그 뒤에도 자기 플레이를 빼야
+    하기 때문이다. 작품이 없는 미리보기는 비교할 소유자가 없어 거짓이다.
 
     노벨 구매(`novel_read`)는 작품 = 그 소설의 원작, 소유자 = 원작자이고, 그 소설을 공개한 게시자를 `publisher_user_id` 에
     따로 둔다 — 원작자와 게시자가 다른 사람일 수 있고, 둘의 몫을 가르는 것은 정산이 정한다. 게시자 칸은 `novel_read` 에만
@@ -234,9 +240,13 @@ class CloverSpendUsage(Base):
         primary_key=True,
     )
     usage_kind: Mapped[str] = mapped_column(Text, nullable=False)
-    spender_user_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, ForeignKey("users.id", name="fk_clover_spend_usages_spender_user_id"), nullable=False
+    # 탈퇴하면 NULL 이다.
+    spender_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", name="fk_clover_spend_usages_spender_user_id"), nullable=True
     )
+    # 기본값 거짓은 무중단 배포가 겹치는 동안 이 칸을 모르는 옛 색의 노벨 구매 INSERT 를 살리려는 것이다. 노벨 구매는 정산
+    # 대상이 아니라 거짓이 들어가도 금액이 바뀌지 않고, 이 판의 기록 코드는 언제나 값을 명시한다.
+    is_self_play: Mapped[bool] = mapped_column(Boolean, server_default=false(), nullable=False)
     content_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("contents.id", name="fk_clover_spend_usages_content_id"), nullable=True
     )
@@ -274,6 +284,10 @@ class CloverSpendUsage(Base):
         CheckConstraint(
             "(usage_kind = 'novel_read') = (publisher_user_id IS NOT NULL)",
             name="ck_clover_spend_usages_publisher_for_novel_read",
+        ),
+        CheckConstraint(
+            "NOT is_self_play OR content_owner_user_id IS NOT NULL",
+            name="ck_clover_spend_usages_self_play_has_owner",
         ),
         # 크리에이터별 소급·월 확정·조회. 미리보기 행은 소유자가 없어 뺀다.
         Index(

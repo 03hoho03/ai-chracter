@@ -134,6 +134,25 @@ class Settings(BaseSettings):
     # 결제·환불 완료를 알리는 디스코드 웹훅 주소. 비면 알림을 건너뛴다. 주소 자체가 그 채널에 글을 쓸 권한이라 비밀이다.
     payment_discord_webhook_url: str = Field(default="", repr=False)
 
+    # 크리에이터 정산 스위치. 켜도 본인인증 설정이 없으면 꺼진 것으로 본다(`creator_payout/config.py`) — 신청 자격이 본인인증과
+    # 만 19세라 인증할 수 없는 환경에서는 아무도 신청할 수 없다. 어드민 신청 처리는 이 값과 무관하게 열려 있다.
+    creator_payout_enabled: bool = False
+    # 크리에이터 정산. 비율은 다른 회원이 작품에서 쓴 유료 클로버의 공급가 중 작가 몫(bps, 500 = 5%)이고, 확정할 때마다
+    # 확정 행에 그 값을 남긴다. 소급 일수는 첫 승인 때 거슬러 세는 기간이다 — 0 이면 소급 구간이 비어 확정 행의 구간 CHECK
+    # 에 걸리므로 1 이상만 받는다. 범위 밖이면 기동하지 않는다(잘못된 비율로 돈을 계산하는 것보다 뜨지 않는 편이 낫다).
+    creator_payout_rate_bps: int = Field(default=500, ge=1, le=10_000)
+    creator_payout_retro_days: int = Field(default=90, ge=1)
+
+    @field_validator("creator_payout_enabled", "creator_payout_rate_bps", "creator_payout_retro_days", mode="before")
+    @classmethod
+    def _empty_creator_payout_value_is_default(cls, value: object, info: ValidationInfo) -> object:
+        """env 에 값만 비운 줄(`KEY=`)이 남아도 기동하게 빈 값은 코드 기본값으로 읽는다 — 정수·불리언 파싱은 빈
+        문자열에서 실패한다."""
+        if isinstance(value, str) and not value.strip():
+            assert info.field_name is not None
+            return cls.model_fields[info.field_name].default
+        return value
+
     # Password reset tokens expire 1 hour after issuance.
     password_reset_token_ttl_seconds: int = 60 * 60
 

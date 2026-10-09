@@ -13,6 +13,7 @@ import { Route as UsageMetricsRouteImport } from './routes/usage-metrics'
 import { Route as PromptSetsRouteImport } from './routes/prompt-sets'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LegalRouteImport } from './routes/legal'
+import { Route as CreatorPayoutApplicationsRouteImport } from './routes/creator-payout-applications'
 import { Route as AppealsRouteImport } from './routes/appeals'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as UsersIndexRouteImport } from './routes/users.index'
@@ -51,6 +52,12 @@ const LegalRoute = LegalRouteImport.update({
   path: '/legal',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CreatorPayoutApplicationsRoute =
+  CreatorPayoutApplicationsRouteImport.update({
+    id: '/creator-payout-applications',
+    path: '/creator-payout-applications',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AppealsRoute = AppealsRouteImport.update({
   id: '/appeals',
   path: '/appeals',
@@ -141,6 +148,7 @@ const UsersUserIdChatsRoomIdRoute = UsersUserIdChatsRoomIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/appeals': typeof AppealsRoute
+  '/creator-payout-applications': typeof CreatorPayoutApplicationsRoute
   '/legal': typeof LegalRoute
   '/login': typeof LoginRoute
   '/prompt-sets': typeof PromptSetsRoute
@@ -164,6 +172,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/appeals': typeof AppealsRoute
+  '/creator-payout-applications': typeof CreatorPayoutApplicationsRoute
   '/legal': typeof LegalRoute
   '/login': typeof LoginRoute
   '/prompt-sets': typeof PromptSetsRoute
@@ -188,6 +197,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/appeals': typeof AppealsRoute
+  '/creator-payout-applications': typeof CreatorPayoutApplicationsRoute
   '/legal': typeof LegalRoute
   '/login': typeof LoginRoute
   '/prompt-sets': typeof PromptSetsRoute
@@ -213,6 +223,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/appeals'
+    | '/creator-payout-applications'
     | '/legal'
     | '/login'
     | '/prompt-sets'
@@ -236,6 +247,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/appeals'
+    | '/creator-payout-applications'
     | '/legal'
     | '/login'
     | '/prompt-sets'
@@ -259,6 +271,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/appeals'
+    | '/creator-payout-applications'
     | '/legal'
     | '/login'
     | '/prompt-sets'
@@ -283,6 +296,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppealsRoute: typeof AppealsRoute
+  CreatorPayoutApplicationsRoute: typeof CreatorPayoutApplicationsRoute
   LegalRoute: typeof LegalRoute
   LoginRoute: typeof LoginRoute
   PromptSetsRoute: typeof PromptSetsRoute
@@ -332,6 +346,13 @@ declare module '@tanstack/react-router' {
       path: '/legal'
       fullPath: '/legal'
       preLoaderRoute: typeof LegalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/creator-payout-applications': {
+      id: '/creator-payout-applications'
+      path: '/creator-payout-applications'
+      fullPath: '/creator-payout-applications'
+      preLoaderRoute: typeof CreatorPayoutApplicationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/appeals': {
@@ -459,6 +480,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppealsRoute: AppealsRoute,
+  CreatorPayoutApplicationsRoute: CreatorPayoutApplicationsRoute,
   LegalRoute: LegalRoute,
   LoginRoute: LoginRoute,
   PromptSetsRoute: PromptSetsRoute,

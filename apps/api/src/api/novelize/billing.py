@@ -154,7 +154,11 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
     # 여기서 기다리던 요청이 지워진 행을 가리키는 작업을 넣다가 FK 위반(500)이 난다. 지우는 경로가 모두 사용자 행을
     # 먼저 잡으므로 잠금을 얻은 뒤의 조회는 커밋된 삭제를 보고, 잠금을 쥔 동안에는 새 삭제가 끼어들 수 없다. AI 수정의
     # 기준 개정은 장과 함께만 지워지므로 장 확인 하나로 덮인다.
-    if await db.scalar(select(Novel.id).where(Novel.id == job.novel_id)) is None:
+    # 같은 조회에서 사용처에 남길 원작·방도 받는다. 방은 지금 값이다 — 방이 지워진 소설의 AI 수정이면 비어 있다.
+    novel_row = (
+        await db.execute(select(Novel.content_id, Novel.chat_room_id).where(Novel.id == job.novel_id))
+    ).first()
+    if novel_row is None:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "NOVEL_NOT_FOUND"})
     if (
@@ -205,7 +209,16 @@ async def create_charged_job(db: AsyncSession, *, job: NovelJob, expected_cost: 
     db.add(job)
     await db.flush()
 
-    spent = await clover.spend(db, user_id=job.user_id, amount=price, kind="novelize_spend")
+    # 연쇄 자식은 이 함수를 거치지 않아(차감 0) 사용처가 없다 — 연쇄의 순사용은 부모 차감의 배분이 그대로 맞춘다.
+    spent = await clover.spend(
+        db,
+        user_id=job.user_id,
+        amount=price,
+        kind="novelize_spend",
+        usage=clover.SpendUsage(
+            "novel", content_id=novel_row.content_id, chat_room_id=novel_row.chat_room_id, novel_id=job.novel_id
+        ),
+    )
     if spent is None:
         await db.rollback()
         raise _too_many_requests(job.user_id, _NOVELIZE_WINDOW, seconds_until_kst_midnight(now), code="CLOVER_REQUIRED")

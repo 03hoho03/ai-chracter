@@ -29,8 +29,13 @@ from starlette.types import Message
 
 from api.chat.prompt_builder import ImageMatchJudgmentResult, stat_rule_letters
 from api.content.schemas import RULE_LIST_ADAPTER, EndingRuleListDraftItem
+from api.core.clover import CloverKind, SpendUsage, refund_spend, revoke_purchase_lots, spend
 from api.core.config import settings
+from api.core.rate_limit import KST
 from api.core.security import hash_password
+from api.db.models.clover import CloverSpendAllocation, CloverSpendRefund, CloverSpendUsage
+from api.db.models.creator_payout import CreatorPayoutApplication
+from api.db.models.payment import PaymentCancellation
 from api.db.models import (
     AdminUser,
     Asset,
@@ -181,6 +186,134 @@ async def _make_payment(db_session: AsyncSession, *, user_id: uuid.UUID, **overr
     db_session.add(payment)
     await db_session.flush()
     return payment
+
+
+@dataclass
+class Player:
+    user: User
+    payment: Payment
+
+
+async def _make_player(db: AsyncSession, *, amount_krw: int, paid: int, bonus: int = 0, free: int = 0) -> Player:
+    """결제 하나로 유료(·보너스) 로트를 받은 플레이어. 무료 로트(`free`)는 결제와 무관한 출석 지급이다."""
+    user = _make_user(clover_balance=free + bonus + paid)
+    db.add(user)
+    await db.flush()
+    payment = await _make_payment(
+        db, user_id=user.id, amount_krw=amount_krw, paid_amount=paid, bonus_amount=bonus, status="paid"
+    )
+    lots = [
+        ("attendance_grant", free, None),
+        ("purchase_bonus", bonus, payment.id),
+        ("purchase_paid", paid, payment.id),
+    ]
+    for kind, amount, payment_id in lots:
+        if amount:
+            db.add(
+                CloverLot(user_id=user.id, granted_amount=amount, remaining=amount, kind=kind, payment_id=payment_id)
+            )
+    await db.flush()
+    return Player(user=user, payment=payment)
+
+
+async def _use(
+    db: AsyncSession,
+    player: Player,
+    content: Content | None,
+    amount: int,
+    at: datetime,
+    *,
+    usage: str = "chat",
+) -> uuid.UUID:
+    """플레이어가 `at` 에 `content` 에서 `amount` 를 쓴다. `usage` 가 `image` 면 사용처 없는 이미지 차감, `preview` 면
+    빌더 미리보기다."""
+    if usage == "image":
+        spent = await spend(db, user_id=player.user.id, amount=amount, kind="image_spend")
+    else:
+        if usage == "chat":
+            assert content is not None
+            spend_usage = SpendUsage("chat", content_id=content.id, chat_room_id=uuid.uuid4())
+        elif usage == "novel":
+            assert content is not None
+            spend_usage = SpendUsage("novel", content_id=content.id, novel_id=uuid.uuid4())
+        else:
+            spend_usage = SpendUsage("preview")
+        kind: CloverKind = "novelize_spend" if usage == "novel" else "chat_spend"
+        spent = await spend(db, user_id=player.user.id, amount=amount, kind=kind, usage=spend_usage)
+        assert spent is not None
+        await db.execute(
+            sa.update(CloverSpendUsage).where(CloverSpendUsage.spend_ledger_id == spent.ledger_id).values(created_at=at)
+        )
+    assert spent is not None
+    return spent.ledger_id
+
+
+# ── 크리에이터 정산 셋업 ──
+def kst(month: int, day: int, hour: int = 0, minute: int = 0, second: int = 0, *, year: int = 2026) -> datetime:
+    return datetime(year, month, day, hour, minute, second, tzinfo=KST)
+
+
+async def _application(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    *,
+    accrual_start_at: datetime,
+    monthly_from_at: datetime | None = None,
+    revoked_at: datetime | None = None,
+) -> CreatorPayoutApplication:
+    application = CreatorPayoutApplication(
+        user_id=user_id,
+        status="approved" if revoked_at is None else "revoked",
+        consented_at=accrual_start_at,
+        privacy_version="2026-10-01",
+        decided_at=accrual_start_at,
+        accrual_start_at=accrual_start_at,
+        monthly_from_at=monthly_from_at or accrual_start_at,
+        revoked_at=revoked_at,
+    )
+    db.add(application)
+    await db.flush()
+    return application
+
+
+async def _refund(db: AsyncSession, player: Player, ledger_id: uuid.UUID, amount: int, at: datetime) -> None:
+    """그 차감에서 `amount` 를 `at` 에 돌려준다(실제 환급 경로 — 배분 역순, 환급 행)."""
+    allocation_ids = sa.select(CloverSpendAllocation.id).where(CloverSpendAllocation.spend_ledger_id == ledger_id)
+    before = set((await db.scalars(sa.select(CloverSpendRefund.id))).all())
+    balance = await refund_spend(
+        db, user_id=player.user.id, spend_ledger_id=ledger_id, amount=amount, kind="chat_refund"
+    )
+    assert balance is not None
+    new = [
+        refund_id
+        for refund_id in (
+            await db.scalars(sa.select(CloverSpendRefund.id).where(CloverSpendRefund.allocation_id.in_(allocation_ids)))
+        ).all()
+        if refund_id not in before
+    ]
+    assert new
+    await db.execute(sa.update(CloverSpendRefund).where(CloverSpendRefund.id.in_(new)).values(created_at=at))
+
+
+async def _console_cancel(db: AsyncSession, payment: Payment, amount_krw: int, at: datetime) -> None:
+    """포트원 콘솔 취소가 `at` 에 성공한 상태를 결제 쪽 기록 방식대로 만든다 — 전액이면 남은 전부, 부분이면 취소액을
+    단가로 나눈 수량(올림)까지 유료 먼저 회수하고, 성공 취소 행을 남기고, 결제의 취소 합계를 올린다."""
+    full = payment.cancelled_amount_krw + amount_krw >= payment.amount_krw
+    need = None if full else -(-amount_krw * payment.paid_amount // payment.amount_krw)
+    paid, bonus = await revoke_purchase_lots(db, payment_id=payment.id, limit=need)
+    db.add(
+        PaymentCancellation(
+            payment_id=payment.id,
+            source="console",
+            status="succeeded",
+            amount_krw=amount_krw,
+            clawback_paid=paid,
+            clawback_bonus=bonus,
+            completed_at=at,
+        )
+    )
+    payment.cancelled_amount_krw += amount_krw
+    await db.flush()
 
 
 def _patch_httpx(
@@ -651,6 +784,21 @@ async def _make_published(
     db_session.add(document)
     await db_session.flush()
     return document
+
+
+async def _make_draft_content(db_session: AsyncSession, *, creator_user_id: uuid.UUID) -> Content:
+    """버전 없는 초안 작품 하나를 flush 한다. 행이 있어야 하는 참조(차감 사용처의 작품·소유자)만 채울 때 쓴다 — 채팅
+    경로처럼 발행본을 읽는 곳에는 `_make_published_character` 를 쓴다."""
+    content = Content(
+        creator_user_id=creator_user_id,
+        type=ContentType.CHARACTER,
+        hashtags=[],
+        visibility=ContentVisibility.PUBLIC,
+        moderation_status=ModerationStatus.NORMAL,
+    )
+    db_session.add(content)
+    await db_session.flush()
+    return content
 
 
 async def _make_published_character(

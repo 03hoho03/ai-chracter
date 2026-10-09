@@ -50,6 +50,7 @@ from api.auth.oauth_common import (
 from api.auth.password_reset import delete_reset_token, get_reset_token, store_reset_token
 from api.auth.schemas import (
     ChangePasswordRequest,
+    EnabledFeature,
     LoginRequest,
     MeResponse,
     PasswordResetConfirmRequest,
@@ -81,8 +82,8 @@ from api.core.identity_gate import is_identity_gated
 from api.core.email import EmailSender, get_email_sender
 from api.core.security import hash_password, hash_withdrawn_email, verify_password
 from api.core.sentry import capture_dependency_failure
+from api.creator_payout.config import creator_payout_active
 from api.db.models.auth import User, WithdrawnEmail
-from api.db.models.feature_grant import FeatureName
 from api.db.session import get_db_session
 from api.legal.dependencies import _latest_published_legal_version, _reconsent_required
 from api.llm.model_access import has_chat_premium_access, has_novel_premium_access
@@ -923,16 +924,18 @@ async def get_me(
     )
 
 
-async def _enabled_features(db: AsyncSession, user_id: uuid.UUID) -> list[FeatureName]:
+async def _enabled_features(db: AsyncSession, user_id: uuid.UUID) -> list[EnabledFeature]:
     """화면이 진입점을 보이고 숨기는 허용 기능 목록. 라우트 게이트와 같은 판정 함수를 부른다 — 따로 판정하면 보이는 진입점이
     403 을 받는다. 스위치가 꺼진 기능은 쿼리 없이 빠진다."""
-    features: list[FeatureName] = []
+    features: list[EnabledFeature] = []
     if await has_novelize_access(db, user_id):
         features.append("novelize")
     if await has_chat_premium_access(db, user_id):
         features.append("chat_premium_models")
     if await has_novel_premium_access(db, user_id):
         features.append("novelize_premium_models")
+    if creator_payout_active():
+        features.append("creator_payout")
     return features
 
 

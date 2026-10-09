@@ -29,6 +29,11 @@ export const NOVEL_PERMISSION_COPY: Record<NovelPermission, { label: string; des
   },
 };
 
+/** 허락한 두 단계(나만 보는 소설·공개 소설까지)에 함께 붙는 적립 안내. 비율 표기(`"5%"`)는 서버 설정값에서 온다. */
+export function formatNovelPermissionEarningNote(rate: string): string {
+  return `두 경우 모두 소설 생성에 쓴 유료 클로버의 ${rate}가 크리에이터 정산으로 적립돼요.`;
+}
+
 export function isNovelPermission(value: string): value is NovelPermission {
   return NOVEL_PERMISSION_VALUES.some((permission) => permission === value);
 }

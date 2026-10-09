@@ -16,6 +16,8 @@ import { useState } from "react";
 import { Controller, useFormContext, useWatch } from "react-hook-form";
 
 import { NOVEL_PERMISSION_FIELD_LABEL, NovelPermissionPicker, useGenreListQuery } from "@/entities/content";
+import { useCreatorPayoutRate } from "@/entities/creator-payout";
+import { hasEnabledFeature, useSessionQuery } from "@/entities/session";
 import {
   TARGET_VALUES,
   VISIBILITY_VALUES,
@@ -53,6 +55,8 @@ export function DetailTab() {
     formState: { errors },
   } = form;
   const genreListQuery = useGenreListQuery();
+  const { data: me } = useSessionQuery();
+  const payoutRate = useCreatorPayoutRate(hasEnabledFeature(me?.enabledFeatures, "creator_payout"));
   const hashtags = useWatch({ control, name: "registration.hashtags" });
   const [hashtagInput, setHashtagInput] = useState("");
 
@@ -251,6 +255,7 @@ export function DetailTab() {
               value={field.value}
               onValueChange={field.onChange}
               labelledBy="character-detail-novel-permission-label"
+              earningRate={payoutRate}
             />
           )}
         />

@@ -44,6 +44,12 @@ from api.db.models.content import (
     Like,
     ModerationStatus,
 )
+from api.db.models.creator_payout import (
+    CreatorPayoutApplication,
+    CreatorPayoutBatchRun,
+    CreatorPayoutConfirmation,
+    CreatorPayoutConfirmationLine,
+)
 from api.db.models.feature_grant import FeatureName, UserFeatureGrant
 from api.db.models.inquiry import Inquiry, InquiryCategory, InquiryStatus
 from api.db.models.legal import LegalDocument
@@ -158,6 +164,10 @@ __all__ = [
     "ContentType",
     "ContentVersion",
     "ContentVisibility",
+    "CreatorPayoutApplication",
+    "CreatorPayoutBatchRun",
+    "CreatorPayoutConfirmation",
+    "CreatorPayoutConfirmationLine",
     "DiscardedResponse",
     "Ending",
     "EndingRule",

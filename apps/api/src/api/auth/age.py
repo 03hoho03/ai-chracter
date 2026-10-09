@@ -6,6 +6,9 @@ BETA_MINIMUM_AGE = 19
 # 결제는 성인만 한다 — 미성년자의 결제는 법정대리인이 취소할 수 있어, 본인인증한 생년월일로 만 19세를 확인한다. 베타
 # 하한과 값이 같아도 근거가 달라 따로 둔다.
 PAYMENT_MINIMUM_AGE = 19
+# 크리에이터 정산 신청은 성인만 한다 — 정산은 지급 약정이고 미성년자의 약정은 법정대리인이 취소할 수 있어, 본인인증한
+# 생년월일로 만 19세를 확인한다. 결제 하한과 값이 같아도 근거가 달라 따로 둔다.
+CREATOR_PAYOUT_MINIMUM_AGE = 19
 
 
 def calculate_age(birth_date: date, today: date) -> int:
@@ -28,3 +31,8 @@ def is_under_beta_minimum_age(birth_date: date, today: date) -> bool:
 def is_under_payment_minimum_age(birth_date: date, today: date) -> bool:
     """만 19세 미만은 결제할 수 없다."""
     return calculate_age(birth_date, today) < PAYMENT_MINIMUM_AGE
+
+
+def is_under_creator_payout_minimum_age(birth_date: date, today: date) -> bool:
+    """만 19세 미만은 크리에이터 정산을 신청할 수 없다."""
+    return calculate_age(birth_date, today) < CREATOR_PAYOUT_MINIMUM_AGE

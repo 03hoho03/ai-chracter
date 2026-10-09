@@ -81,8 +81,14 @@ def _factory(db: AsyncSession) -> async_sessionmaker[AsyncSession]:
 
 
 async def _charge(db: AsyncSession, user: User) -> ChatCharge:
+    # 게이트 판정만 보므로 작품이 필요 없는 미리보기 사용처를 넘긴다(사용처 기록은 `test_clover_spend_usage_sites.py`).
     return await charge_chat_turn(
-        user.id, db, _factory(db), model=DEFAULT_CHAT_MODEL, price=clover.CHAT_TURN_COST
+        user.id,
+        db,
+        _factory(db),
+        model=DEFAULT_CHAT_MODEL,
+        price=clover.CHAT_TURN_COST,
+        usage=clover.SpendUsage("preview"),
     )
 
 

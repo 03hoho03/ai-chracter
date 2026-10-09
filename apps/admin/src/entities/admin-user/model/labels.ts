@@ -27,6 +27,9 @@ export const ACTION_TYPE_LABELS = {
   // `admin/users.py`가 `body.amount > 0`으로 두 리터럴을 가른다.
   "user-clover-grant": "클로버 지급",
   "user-clover-revoke": "클로버 회수",
+  "user-creator-payout-approve": "크리에이터 정산 승인",
+  "user-creator-payout-reject": "크리에이터 정산 거절",
+  "user-creator-payout-revoke": "크리에이터 정산 승인 취소",
   "user-payment-refund": "결제 환불",
   "user-novelize-on": "소설화 허용",
   "user-novelize-off": "소설화 회수",

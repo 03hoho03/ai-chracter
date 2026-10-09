@@ -199,8 +199,8 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**52개 키다**(2026-10-06 VM 실측, 키 이름만 셈): 아래 표 102개 중 38개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
-`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 7개·소설화 조정용 `NOVELIZE_*` 19개, 실측 때 넣지 않은 상위 모델 키 13개(`BEDROCK_*` 9개·`CHAT_PREMIUM_*` 2개·`NOVELIZE_PREMIUM_*` 2개), 실측 때 넣지 않은 결제·본인인증 키 9개(`PORTONE_*` 5개·`IDENTITY_CI_HMAC_KEY`·`PAYMENTS_ENABLED`·`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 실측 때 넣지 않은 노벨 스위치 `NOVEL_PUBLIC_ENABLED`, 모두 64개 제외 —
+**52개 키다**(2026-10-06 VM 실측, 키 이름만 셈): 아래 표 105개 중 38개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 7개·소설화 조정용 `NOVELIZE_*` 19개, 실측 때 넣지 않은 상위 모델 키 13개(`BEDROCK_*` 9개·`CHAT_PREMIUM_*` 2개·`NOVELIZE_PREMIUM_*` 2개), 실측 때 넣지 않은 결제·본인인증 키 9개(`PORTONE_*` 5개·`IDENTITY_CI_HMAC_KEY`·`PAYMENTS_ENABLED`·`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 실측 때 넣지 않은 노벨 스위치 `NOVEL_PUBLIC_ENABLED`, 실측 뒤에 생긴 크리에이터 정산 키 3개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`), 모두 67개 제외 —
 소설화를 켤 때 넣는 `NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST` 2개는 운영에서 켜 두었으므로 셈에 들어간다) + compose용
 5개(그때는 `API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE` — api 가 blue/green 두 색으로 나뉜 뒤
 compose 가 읽는 이미지 키는 `API_IMAGE_BLUE`·`API_IMAGE_GREEN` 둘이고 `API_IMAGE` 는 읽지 않는다. 두 키가 생기고 옛 줄이 지워지면
@@ -240,6 +240,8 @@ compose 가 읽는 이미지 키는 `API_IMAGE_BLUE`·`API_IMAGE_GREEN` 둘이�
 | `IDENTITY_CI_HMAC_KEY` | `openssl rand -hex 32` 등으로 발급한 무작위 값 | 본인인증 CI 를 저장하기 전에 HMAC 으로 바꾸는 키. **한번 정하면 바꾸지 말 것** — 바뀌면 이미 인증한 사람과 대조가 어긋나 같은 사람이 다른 계정으로 다시 인증할 수 있게 된다. `WITHDRAWN_EMAIL_HMAC_KEY` 와 다른 값을 쓴다. 비면 본인인증이 꺼진다 |
 | `PAYMENTS_ENABLED` / `IDENTITY_GATE_ENABLED` | 켤 때 `true`(코드 기본값은 둘 다 `false`) | 결제 스위치 / 미인증 회원의 무료 대화·미션을 막는 본인인증 게이트 스위치. 결제는 스위치와 위 포트원 키 넷, 그리고 본인인증 설정(상점 id·본인인증 채널키·API 시크릿·`IDENTITY_CI_HMAC_KEY`)이 모두 있어야 열린다 — 결제는 늘 본인인증을 요구해서다. 꺼져 있어도 웹훅 시크릿이 있으면 웹훅은 처리한다(진행 중 결제와 콘솔 취소를 맞춘다) |
 | `PAYMENT_DISCORD_WEBHOOK_URL` | 결제 알림용 디스코드 채널 웹훅 주소 | 결제·환불 완료 알림(상품·금액·상태만, 회원·주문을 알아볼 단서는 싣지 않는다). 비면 건너뛴다. 크론 알림의 `DISCORD_WEBHOOK_URL` 과 다른 키다 |
+| `CREATOR_PAYOUT_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 크리에이터 정산 스위치. 스위치와 본인인증 설정(상점 id·본인인증 채널키·API 시크릿·`IDENTITY_CI_HMAC_KEY`)이 모두 있어야 열린다 — 신청 자격이 본인인증한 만 19세 이상(나이는 코드 상수라 env 가 없다)이라서다. 켜면 결제·게이트가 꺼져 있어도 본인인증 시작이 열린다. 꺼져 있으면 회원의 정산 조회·신청이 503 이고, 어드민의 신청 처리(승인·거절·승인 취소)는 스위치와 무관하게 열려 있다. 신청 접수 알림은 `PAYMENT_DISCORD_WEBHOOK_URL` 채널을 같이 쓴다(건수만, 회원을 알아볼 단서는 싣지 않는다) |
+| `CREATOR_PAYOUT_RATE_BPS` / `CREATOR_PAYOUT_RETRO_DAYS` | 설정 안 함(기본 `500` / `90`) | 정산 비율(bps, 500 = 공급가의 5%, 1~10000) / 첫 승인 때 거슬러 확정하는 소급 일수(1 이상). 범위 밖이면 api 가 뜨지 않는다. 비율은 확정할 때마다 확정 행에 남아, 바꿔도 이미 확정한 금액은 그대로다 |
 | `LOCAL_IMAGE_BASE_URL` | 집 PC 서버를 가리키는 터널 origin | **이미지 생성 필수** — 비어 있으면 capabilities가 전부 불가로 내려가 생성이 사전 차단된다. "이미지 생성" 절 |
 | `LOCAL_IMAGE_ACCESS_CLIENT_ID` / `LOCAL_IMAGE_ACCESS_CLIENT_SECRET` | Cloudflare Access 서비스 토큰 | **이미지 생성 필수**. "이미지 생성" 절 |
 | `LOCAL_IMAGE_MODEL_WIRE_ID` | 집 PC가 보고하는 **실제** 모델 id | **이미지 생성 필수.** 기본값은 공개 id(`v1`)와 같아 로컬·테스트는 설정 없이 돌지만, 운영에서 집 PC의 값과 다르면 교차 검증에서 전부 걸러져 생성이 사전 차단된다. **이 값을 소스에 두지 않는 것이 요점이다**("이미지 생성" 절) |
@@ -1755,6 +1757,62 @@ LEFT JOIN novel_chapters c ON c.id = p.chapter_id
 JOIN users u ON u.id = p.publisher_user_id
 WHERE c.id IS NULL AND p.refunded_at IS NULL AND u.deleted_at IS NULL;
 ```
+
+### 3-14. 크리에이터 정산 월 확정 — settle cron
+
+승인된 크리에이터의 전월 적립을 매월 3일 00:00(KST)부터 확정한다(달이 끝나고 이틀 뒤 — 달 끝 무렵에 시작해 늦게 커밋된
+차감·환급을 놓치지 않으려는 여유). 크론은 **매일** 돌고 할 일이 있을 때만 확정한다. 실패한 날은 다음 날 저절로 다시 돌고,
+확정한 달은 달별 실행 기록(`creator_payout_batch_runs`)에 남아 다시 확정되지 않는다. 정산 스위치(`CREATOR_PAYOUT_ENABLED`)가
+꺼져 있으면 아무것도 하지 않고, 켠 뒤 첫 실행이 꺼 둔 동안 밀린 달을 한 번에 확정한다.
+
+다른 DB 크론과 달리 **psql 로 직접 붙지 않고 서빙 중인 api 컨테이너 안에서** `python -m api.creator_payout.monthly` 를
+돌린다. 승인 때의 소급 확정과 같은 계산 코드(`api/creator_payout/settlement.py`)와 같은 비율 설정(`CREATOR_PAYOUT_RATE_BPS`)을
+써야 해서다 — psql 사본을 두면 계산식과 설정을 읽는 곳이 둘이 된다. 래퍼 `ops/creator-payout-settle.sh` 는
+`ops/active-color.sh` 로 색을 고르고 `compose exec -T api_<색>` 으로 들어간다. 교체 중이라 색을 하나로 못 고르면 그날은
+실패로 끝난다(다음 날 다시 돈다). 래퍼가 `.env` 에서 읽는 것은 알림 주소 `DISCORD_WEBHOOK_URL` 하나다.
+
+알림(Discord, `ops/notify.py` 채널): 실패(색을 못 고름·배치 실패, 고정 문구)와 확정한 달이 있는 날의 요약 —
+"크리에이터 정산 확정: 2026-11 3명 1,234원 (사용처 없는 차감 0, 환급 기록 불일치 누적 0)" — 만 보낸다. 회원을 알아볼 단서는
+싣지 않는다. 배치 실패는 Bugsink 에도 `dependency=creator_payout` 태그로 남는다.
+
+요약의 감시 수 둘은 정산을 멈추지 않고 세기만 한다.
+- **사용처 없는 차감**: 그 달의 채팅·소설 차감 중 어느 작품에서 썼는지 기록이 없는 것 — 정산에서 빠졌다. 배포 겹침에
+  옛 이미지가 받은 요청이 남긴다(이 기능 이후 배포에서는 0 이어야 한다). 0 이 아닌 달이 이어지면 사용처를 남기지 않는
+  새 차감 경로를 의심한다.
+- **환급 기록 불일치(누적)**: 그 달 끝 전에 일어난 **모든** 차감의 유료 배분 중 환급 합과 환급 행 합이 다른 것 — 그
+  차이는 정산에서 빠지지 않고 사용으로 남는다. 위의 사용처 없는 차감(그 달 값)과 달리 **누적값이라 줄지 않는다** — 한 번
+  생긴 불일치는 뒤의 모든 달 요약에 다시 나온다. 이번 달에 새로 생겼는지는 전달 값보다 늘었는지로 본다.
+
+**최초 1회 — 심볼릭 링크 설치**("클로버 만료 — expire cron" 절과 같은 이유 — `/opt/ddona/app` 은 배포마다
+`git reset --hard` 되므로 링크해 두면 재설치 없이 다음 배포부터 반영된다):
+
+```sh
+sudo ln -sf /opt/ddona/app/ops/creator-payout-settle.sh /opt/ddona/creator-payout-settle.sh
+sudo ln -sf /opt/ddona/app/ops/cron.d/ddona-creator-payout-settle /etc/cron.d/ddona-creator-payout-settle
+```
+
+래퍼는 링크를 따라가 저장소 `ops/` 의 `lib/bluegreen.sh`·`active-color.sh` 를 쓴다. 알림 모듈은 다른 크론과 같은
+`/opt/ddona/scripts`(저장소 `apps/api/scripts` 링크)의 `ops.creator_payout_notify` 다.
+
+**검증**:
+
+```sh
+# 1. 수동 1회 실행 — 정상 종료와 마지막 줄 확인. 스위치가 꺼져 있으면 "크리에이터 정산 꺼짐 — 확정하지 않음",
+#    켜져 있고 할 일이 없으면 "크리에이터 정산 확정할 달 없음", 확정했으면 "크리에이터 정산 확정: …",
+#    크론과 겹쳐 다른 배치가 돌고 있으면 "크리에이터 정산 다른 실행 중 — 이번 실행은 확정하지 않음"(정상 종료, 알림 없음)
+sudo -u root /opt/ddona/creator-payout-settle.sh
+tail /var/log/ddona-creator-payout-settle.log
+
+# 2. 확정한 달과 감시 수
+sudo docker exec ddona-postgres-1 psql -U postgres -d ai_character_chat \
+  -c "SELECT * FROM creator_payout_batch_runs ORDER BY period_month"
+
+# 3. 다음 16:35 UTC(KST 01:35)에 크론이 실제로 도는지
+tail -f /var/log/ddona-creator-payout-settle.log
+```
+
+⚠️ 16:35 UTC — 다른 크론(05:00·06:00·15:05·18:00 UTC, 매시 17분, 5분마다)과 겹치지 않는다. 배포 교체와 겹치면 그날은
+실패 알림이 오고 다음 날 따라잡는다. 배치끼리는 advisory 잠금으로 하나만 돌고, 겹친 쪽은 아무것도 하지 않고 정상 종료한다.
 
 ---
 

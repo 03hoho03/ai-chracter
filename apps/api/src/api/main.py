@@ -11,6 +11,7 @@ from sqlalchemy import text
 
 from api.admin.chat_view import router as admin_chat_view_router
 from api.admin.contents import router as admin_contents_router
+from api.admin.creator_payout import router as admin_creator_payout_router
 from api.admin.dashboard import router as admin_dashboard_router
 from api.admin.home_curation import router as admin_home_curation_router
 from api.admin.home_novel_curation import router as admin_home_novel_curation_router
@@ -38,6 +39,7 @@ from api.clover.router import me_router as clover_me_router, router as clover_ro
 from api.comments.reports import router as comment_reports_router
 from api.comments.router import me_router as comments_me_router, router as comments_router
 from api.content.router import router as content_router
+from api.creator_payout.router import me_router as creator_payout_me_router
 from api.core.config import settings
 from api.core.redis import redis_client
 from api.core.sentry import build_sentry_options
@@ -154,6 +156,7 @@ app.include_router(admin_chat_view_router)
 app.include_router(admin_prompts_router)
 app.include_router(admin_llm_usage_router)
 app.include_router(admin_payments_router)
+app.include_router(admin_creator_payout_router)
 app.include_router(assets_router)
 app.include_router(assets_me_router)
 app.include_router(auth_router)
@@ -184,6 +187,7 @@ app.include_router(chat_models_router)
 app.include_router(clover_me_router)
 app.include_router(clover_router)
 app.include_router(payments_router)
+app.include_router(creator_payout_me_router)
 app.include_router(identity_me_router)
 app.include_router(persona_me_router)
 app.include_router(stories_router)

@@ -123,3 +123,20 @@ def test_ping_swallows_url_with_control_characters_without_raising() -> None:
     (`ValueError`/`URLError`/`OSError` 어느 것도 아니다) — 웹훅 URL을 env var 에 옮겨 적다가
     줄바꿈이 섞여도 이 경로를 탄다."""
     assert notify_module.ping("https://hc-ping.com/abc123\n/start") is False
+
+
+def test_creator_payout_notify_sends_the_wrappers_words_as_one_message(monkeypatch: pytest.MonkeyPatch) -> None:
+    """정산 월 확정 래퍼가 넘긴 문구를 그대로 한 통으로 보내고, 빈 문구는 보내지 않는다. 알림이 안 가도 종료 코드는 0 이다."""
+    from ops import creator_payout_notify
+
+    sent: list[str] = []
+
+    def _record(message: str) -> bool:
+        sent.append(message)
+        return False
+
+    monkeypatch.setattr(creator_payout_notify, "notify", _record)
+
+    assert creator_payout_notify.main(["💰 크리에이터 정산 확정:", "2026-11 1명 3원"]) == 0
+    assert creator_payout_notify.main(["  "]) == 0
+    assert sent == ["💰 크리에이터 정산 확정: 2026-11 1명 3원"]
