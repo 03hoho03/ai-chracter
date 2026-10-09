@@ -125,7 +125,7 @@ export const PurchaseWebnovelChapterModal = createCallable<PurchaseWebnovelChapt
             <div className="flex flex-col gap-1.5 rounded-lg border border-border p-3 text-xs text-pretty break-keep text-muted-foreground">
               <p className="text-foreground">구매한 화는 공개가 유지되는 동안 볼 수 있어요.</p>
               <p>
-                보기 시작한 뒤에는 구매를 취소할 수 없고, 게시자의 공개 철회·탈퇴나 원작 제한·운영 조치로 공개가 끝나도
+                소장하면 바로 열려 구매를 취소할 수 없고, 게시자의 공개 철회·탈퇴나 원작 제한·운영 조치로 공개가 끝나도
                 열람에 쓴 클로버는 돌려드리지 않아요(운영자의 잘못으로 끝난 경우는 제외). 게시자가 소설을 삭제하면 클로버가
                 자동으로 돌아와요.
                 {freeChapterCount > 0 && ` 앞 ${freeChapterCount}화는 무료로 미리 볼 수 있어요.`}

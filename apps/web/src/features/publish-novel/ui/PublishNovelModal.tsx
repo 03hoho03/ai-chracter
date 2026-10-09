@@ -84,6 +84,7 @@ export const PublishNovelModal = createCallable<PublishNovelModalProps, number |
                     ? undefined
                     : { freeChapterCount: pricing.novelFreeChapterCount, chapterPrice: pricing.novelReadCost },
                 )} 나는 언제나 무료로 읽어요.`,
+                "지금은 열람 수익을 게시자에게 나누지 않아요.",
                 "표지는 원작 그림으로 보여요.",
               ].map((line) => (
                 <li key={line} className="flex gap-2">
