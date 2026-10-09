@@ -1,5 +1,7 @@
 """AWS Bedrock 의 Claude 로 글을 쓰는 LLMClient. 채팅 턴 생성(지난 턴 다시 생성 포함)과 소설 장 생성(`generate`)만
-받는다 — 구조화 호출은 라우팅 클라이언트(`llm/routing.py`)가 언제나 Gemini 로 보내므로 여기서는 구현하지 않는다.
+받는다 — 라우팅 클라이언트(`llm/routing.py`)는 구조화 호출의 구현을 기본 모델로 고르는데 이 구현은 기본 모델을
+서비스하지 않고, 등록부(`llm/backends.py`)가 이 구현을 구조화 출력을 받지 못하는 구현으로 적어 기동 검증이 그런 배정을
+거부하므로 여기서는 구현하지 않는다.
 
 실패 규칙은 `llm/gemini.py` 와 같다. SDK·네트워크 예외는 전부 `LLMClientError` 계열로 바꾼다(그대로 새면 SSE 제너레이터를
 뚫어 요청 스코프 DB 세션이 강제 종료된다). 사용량은 정상 종료한 스트림만 기록하고, 소설 장의 잘림·빈 본문은 기록한 **뒤**
@@ -24,7 +26,7 @@ from pydantic import BaseModel
 
 from api.core.config import settings
 from api.llm.call_policy import CALL_POLICIES
-from api.llm.chat_models import actual_model_id
+from api.llm.chat_models import backend_model_id
 from api.llm.client import (
     NOVELIZE_CALL_SITES,
     LLMCallContext,
@@ -193,7 +195,9 @@ class BedrockLLMClient(LLMClient):
         # 정지 시퀀스는 Gemini 와 같이 호출부가 대본의 화자 라벨에서 만들어 넘긴다. 대본은 user 메시지 하나로 싣는다
         # (채팅 턴은 그 안을 캐시 블록으로 나눈다, `_user_content`).
         # 사고는 끈다 — 채팅은 첫 글자 지연이 체감이고, 두 모델 모두 끌 수 있다.
-        model = actual_model_id(usage.model)
+        # 모델 id 는 이 구현의 표에서 바로 읽는다. 어느 구현으로 갈지는 라우터가 이미 정했고, 여기서 다시 해석하면 모델을
+        # 고를 수 없는 호출 위치에서 모델이 기본 모델로 바뀌어 이 구현이 모르는 id 를 찾는다.
+        model = backend_model_id("bedrock", usage.model)
         max_tokens = _max_tokens(usage.call_site)
         input_tokens: int | None = None
         cache_read = 0

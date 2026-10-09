@@ -645,7 +645,7 @@ async def test_bedrock_failures_fail_the_chapter_and_refund_the_premium_price(
 
     bedrock = BedrockLLMClient()
     monkeypatch.setattr(bedrock, "_client", SimpleNamespace(messages=SimpleNamespace(create=create)))
-    client = RoutingLLMClient(_UnusedGemini(), bedrock_factory=lambda: bedrock)
+    client = RoutingLLMClient(_UnusedGemini(), factories={"bedrock": lambda: bedrock})
     room, novel_id, owner_id = await _novel(db_client, db_session, monkeypatch, premium=True)
     resp = await _create(db_client, novel_id, room, cost=105, model="sonnet")
     assert resp.status_code == 202, resp.text

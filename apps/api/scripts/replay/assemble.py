@@ -39,10 +39,11 @@ from api.core.config import settings
 from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom
 from api.db.models.content import ContentVersion
 from api.db.models.story import KeywordNote, Shortcut, SituationNote, StartingSetup, StoryVersionDetail
-from api.llm.chat_models import ChatModelId, actual_model_id, parse_chat_model_id
+from api.llm.chat_models import ChatModelId, parse_chat_model_id
 from api.llm.client import LLMCallSite
 from api.llm.model_access import effective_room_model
 from api.llm.pricing import MODEL_PRICES, estimate_cost_usd
+from api.llm.routing import resolve_backend
 from replay.logs import (
     NO_FIXED_RECORD,
     DriverLogs,
@@ -68,6 +69,12 @@ Variant = Literal["window", "set", "model", "version", "swap"]
 
 # 그 턴에 읽힌 작품 행 중 치환 표가 바꿀 수 있는 글 칸 — 생성 프롬프트에 실리는 작가 글 전부다.
 _DETAIL_TEXT_FIELDS = ("setting_text", "development_examples", "user_goal", "rules", "custom_prompt")
+
+
+def sent_model_id(chat_model: ChatModelId) -> str:
+    """다시 생성하는 호출이 이 모델로 보낼 실제 id. 라우터와 같은 해석을 리플레이의 호출 위치로 부른다 — 원가 추정과 덤프
+    비교가 실제로 보낼 구현의 id 를 봐야 한다."""
+    return resolve_backend(REPLAY_CALL_SITE, chat_model)[1]
 
 
 @dataclass(frozen=True)
@@ -110,7 +117,7 @@ class GenerationInput:
     def estimated_usd(self) -> float:
         return (
             estimate_cost_usd(
-                actual_model_id(self.chat_model),
+                sent_model_id(self.chat_model),
                 input_tokens=self.estimated_input_tokens(),
                 cached_tokens=0,
                 output_tokens=OUTPUT_TOKENS,
@@ -125,7 +132,7 @@ class GenerationInput:
         tokens = self.estimated_input_tokens()
         output = settings.gemini_max_output_tokens if self.chat_model == "gemini" else settings.bedrock_chat_max_tokens
         cost = estimate_cost_usd(
-            actual_model_id(self.chat_model),
+            sent_model_id(self.chat_model),
             input_tokens=tokens,
             cached_tokens=0,
             output_tokens=output,
@@ -470,8 +477,8 @@ async def _assemble_turn(
         # 덤프의 실제 모델 id(그때 보낸 것)와 지금 현행 갈래가 보낼 id. 모델 설정이 바뀌었으면 응답 분포가 측정 때와
         # 다를 수 있어 표시한다. 두 갈래가 같은 모델로 생성하므로 쌍은 공정해 거부하지는 않는다.
         "dumpModel": dumped.get("model"),
-        "windowSentModel": actual_model_id(window_model),
-        "windowModelDiffers": None if not dumped.get("model") else dumped["model"] != actual_model_id(window_model),
+        "windowSentModel": sent_model_id(window_model),
+        "windowModelDiffers": None if not dumped.get("model") else dumped["model"] != sent_model_id(window_model),
         "windowPromptIdentical": prompt_identical,
         "windowSystemInstructionIdentical": system_identical,
         "firstDifferenceAt": None if prompt_identical else first_difference(window.prompt, dumped["prompt"]),

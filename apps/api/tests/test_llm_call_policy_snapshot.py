@@ -27,7 +27,7 @@ from pydantic import BaseModel
 from api.core.config import Settings, settings
 from api.core.redis import redis_client
 from api.llm.bedrock import BedrockLLMClient
-from api.llm.chat_models import actual_model_id
+from api.llm.chat_models import backend_model_id
 from api.llm.client import (
     JUDGMENT_CALL_SITES,
     LLMCallContext,
@@ -297,7 +297,7 @@ async def _routed_provider(call_site: LLMCallSite, method: str) -> str:
             reached.append(self.name)
             return _Parsed(ok=True)
 
-    router = RoutingLLMClient(_Named("gemini"), bedrock_factory=lambda: _Named("bedrock"))
+    router = RoutingLLMClient(_Named("gemini"), factories={"bedrock": lambda: _Named("bedrock")})
     if method == "generate":
         await _run_generate(router, call_site)
     else:
@@ -433,7 +433,7 @@ async def test_replay_usage_capture_sees_a_call_from_each_provider(
         if provider == "gemini"
         else _bedrock_client(monkeypatch, _BedrockSdk("ok"))
     )
-    expected_model = settings.gemini_model_name if provider == "gemini" else actual_model_id("sonnet")
+    expected_model = settings.gemini_model_name if provider == "gemini" else backend_model_id("bedrock", "sonnet")
 
     with capture_usage() as sent:
         assert await _run_generate(client, "replay_generate") is None

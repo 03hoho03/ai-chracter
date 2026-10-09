@@ -164,15 +164,17 @@ from api.db.models.story import (
 )
 from api.db.session import get_db_session, get_session_factory
 from api.legal.dependencies import require_legal_consent
-from api.llm.chat_models import CHAT_MODELS, DEFAULT_CHAT_MODEL, ChatModelId, actual_model_id, chat_turn_cost
+from api.llm.chat_models import CHAT_MODELS, DEFAULT_CHAT_MODEL, ChatModelId, chat_turn_cost
 from api.llm.client import (
     LLMCallContext,
+    LLMCallSite,
     LLMClient,
     LLMClientError,
     LLMPolicyViolationError,
 )
 from api.llm.dependencies import get_llm_client
 from api.llm.model_access import effective_room_model, has_chat_premium_access
+from api.llm.routing import resolve_backend
 from api.persona.router import get_owned_persona, lock_user_default_persona
 from api.persona.schemas import PersonaSelectRequest, RoomPersonaResponse
 from api.session.dependencies import get_current_user_id
@@ -1007,19 +1009,26 @@ async def _lock_room_for_turn_write(db: AsyncSession, room: ChatRoom) -> uuid.UU
 
 
 def _dump_prompt(
-    *, room_id: uuid.UUID | None, model: ChatModelId, turn: int, prompt: str, system_instruction: str
+    *,
+    room_id: uuid.UUID | None,
+    call_site: LLMCallSite,
+    model: ChatModelId,
+    turn: int,
+    prompt: str,
+    system_instruction: str,
 ) -> None:
     """회차 재현용으로 조립된 프롬프트를 JSONL 한
     줄로 남긴다. 호출부는 `settings.prompt_dump_path is not None`일 때만 부른다.
 
     바닥 지시문도 함께 남긴다 — 실험에서 바꿔 가며 비교하는 것이 바로 그것이라, 대화록만 남고 그때
     어떤 지시문이 실렸는지 모르면 회차를 나중에 설명할 수 없다. 모델은 고른 모델(`chatModel`)과 실제로 보낸 모델 id
-    (`model`)를 함께 남기고, 시드는 Gemini 만 받는 설정이라 Gemini 턴에만 적는다."""
+    (`model`)를 함께 남기고, 시드는 Gemini 만 받는 설정이라 Gemini 턴에만 적는다. 보낸 id 는 라우터와 같은 해석
+    (`resolve_backend`)으로 얻는다 — 호출 위치의 배정으로 구현이 바뀌면 그 구현의 id 다."""
     record = {
         "roomId": str(room_id) if room_id is not None else None,
         "turn": turn,
         "chatModel": model,
-        "model": actual_model_id(model),
+        "model": resolve_backend(call_site, model)[1],
         "seed": settings.gemini_seed if model == "gemini" else None,
         "systemInstruction": system_instruction,
         "prompt": prompt,
@@ -1055,6 +1064,7 @@ async def _stream_generated_tokens(
         try:
             _dump_prompt(
                 room_id=usage.room_id,
+                call_site=usage.call_site,
                 model=usage.model,
                 turn=turn,
                 prompt=prompt,

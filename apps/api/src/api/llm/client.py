@@ -11,8 +11,9 @@ from api.llm.call_policy import CALL_POLICIES
 
 # `as LLMCallSite` 는 mypy strict 의 명시적 재export 요구 때문이다 — 이 이름을 `api.llm.client` 에서 가져오는 모듈이
 # 많아, 정의를 호출 정책 표 옆으로 옮겨도 기존 import 경로를 그대로 쓰게 둔다.
+from api.llm.call_policy import BackendId
 from api.llm.call_policy import LLMCallSite as LLMCallSite
-from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, ChatModelProvider
+from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -115,7 +116,7 @@ class LLMClientError(Exception):
     `provider` 는 실패한 호출의 공급자다. 클래스 기본값이 Gemini 라 Gemini 클라이언트와 기존 호출부는 그대로이고, Bedrock
     클라이언트만 자기가 올리는 예외에 `bedrock` 을 적는다. Bugsink 태그(`dependency_tag`)가 이 값으로 갈린다."""
 
-    provider: ChatModelProvider = "gemini"
+    provider: BackendId = "gemini"
 
 
 class LLMPolicyViolationError(LLMClientError):

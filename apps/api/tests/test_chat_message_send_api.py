@@ -1284,7 +1284,9 @@ def test_prompt_dump_names_the_chat_model_and_its_actual_id(monkeypatch: pytest.
     monkeypatch.setattr(settings, "bedrock_sonnet_model_id", "sonnet-actual")
 
     for model in ("gemini", "sonnet"):
-        chat_router._dump_prompt(room_id=None, model=model, turn=1, prompt="p", system_instruction="s")
+        chat_router._dump_prompt(
+            room_id=None, call_site="chat_generate", model=model, turn=1, prompt="p", system_instruction="s"
+        )
 
     records = [json.loads(line) for line in dump_path.read_text(encoding="utf-8").splitlines()]
     assert [(r["chatModel"], r["model"], r["seed"]) for r in records] == [

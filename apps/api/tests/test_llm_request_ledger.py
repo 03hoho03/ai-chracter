@@ -350,7 +350,7 @@ async def test_llm_requests_of_a_turn_match_the_recorded_ledger(
     ids: dict[str, str] = {}
     gemini = _LedgerLLM("gemini", ledger, ids, turn.match_id)
     bedrock = _LedgerLLM("bedrock", ledger, ids, turn.match_id)
-    _override_llm_client(RoutingLLMClient(gemini, bedrock_factory=lambda: bedrock))
+    _override_llm_client(RoutingLLMClient(gemini, factories={"bedrock": lambda: bedrock}))
     try:
         response = await db_client.request(turn.method, turn.path, json=turn.body)
     finally:

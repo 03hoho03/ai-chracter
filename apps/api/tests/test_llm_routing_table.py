@@ -8,6 +8,7 @@
 표는 지금 동작을 기록한 것이다(`fixtures/llm_routing_table.json`). 다시 뜨는 법은 `factories._assert_characterization`.
 """
 
+import json
 import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -16,9 +17,11 @@ from typing import Any, get_args
 import pytest
 from pydantic import BaseModel
 
-from api.llm.chat_models import ChatModelId
+from api.core.config import settings
+from api.llm.backends import BACKENDS
+from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, backend_model_id
 from api.llm.client import LLMCallContext, LLMCallSite, LLMClient
-from api.llm.routing import RoutingLLMClient
+from api.llm.routing import RoutingLLMClient, resolve_backend
 from factories import _assert_characterization, _assert_recorded_cases
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "llm_routing_table.json"
@@ -74,7 +77,7 @@ class _Named(LLMClient):
 
 
 def _router(reached: list[str]) -> RoutingLLMClient:
-    return RoutingLLMClient(_Named("gemini", reached), bedrock_factory=lambda: _Named("bedrock", reached))
+    return RoutingLLMClient(_Named("gemini", reached), factories={"bedrock": lambda: _Named("bedrock", reached)})
 
 
 async def _call(router: RoutingLLMClient, method: str, usage: LLMCallContext) -> None:
@@ -110,3 +113,20 @@ async def test_routing_per_call_site_model_and_method_matches_the_recorded_table
     caplog: pytest.LogCaptureFixture, call_site: LLMCallSite
 ) -> None:
     _assert_characterization(FIXTURE_PATH, call_site, await _routing_row(caplog, call_site))
+
+
+@pytest.mark.parametrize("call_site", _CALL_SITES)
+def test_the_resolver_names_the_backend_the_router_reaches(
+    monkeypatch: pytest.MonkeyPatch, call_site: LLMCallSite
+) -> None:
+    """프롬프트 덤프·리플레이 비교·원가는 라우터를 거치지 않고 해석 함수로 구현과 id 를 얻는다 — 둘이 어긋나면 덤프에
+    실제로 보내지 않은 id 가 적힌다. 생성은 방의 모델로, 구조화는 기본 모델로 해석한 것이 위 표와 같아야 한다."""
+    monkeypatch.setattr(settings, "llm_call_site_backends", {})
+    recorded = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))[call_site]
+    for model in _MODELS:
+        backend, sent_id = resolve_backend(call_site, model)
+        assert backend == recorded[model]["generate"]["reached"], model
+        served = model if model in BACKENDS[backend].model_id_settings else DEFAULT_CHAT_MODEL
+        assert sent_id == backend_model_id(backend, served)
+        for method in _METHODS[1:]:
+            assert resolve_backend(call_site, DEFAULT_CHAT_MODEL)[0] == recorded[model][method]["reached"], method

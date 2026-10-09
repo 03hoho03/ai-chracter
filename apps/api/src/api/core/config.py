@@ -5,6 +5,11 @@ from typing import Annotated, Literal
 from pydantic import Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+# 둘 다 다른 `api` 모듈을 import 하지 않는 잎 모듈이다 — 아래 `settings = Settings()` 가 이 모듈을 import 하는 도중에 돌므로,
+# 기동 검증이 읽는 표는 `settings` 를 찾지 않는 모듈에 있어야 한다.
+from api.llm import backends
+from api.llm.call_policy import BackendId, LLMCallSite
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -262,6 +267,32 @@ class Settings(BaseSettings):
     chat_premium_model_allowlist: Annotated[list[uuid.UUID], NoDecode] = []
     novelize_premium_models_enabled: bool = False
     novelize_premium_model_allowlist: Annotated[list[uuid.UUID], NoDecode] = []
+    # 호출 위치마다 공급자 구현을 배정한다(`call_site:backend` 를 쉼표로 이은 목록, 따옴표 없이). 비면 배정 없음 — 모델의
+    # 기본 구현으로 간다. 배정은 그 구현이 그 모델을 서비스할 때만 따르고(`llm/backends.py` 의 `pick_backend`), 따를 수 없는
+    # 배정은 아래 기동 검증이 거부한다. 호출 위치·구현 이름은 대소문자까지 정확해야 한다.
+    llm_call_site_backends: Annotated[dict[LLMCallSite, BackendId], NoDecode] = {}
+
+    @field_validator("llm_call_site_backends", mode="before")
+    @classmethod
+    def _split_call_site_backends(cls, value: object) -> object:
+        """env 문자열을 `{call_site: backend}` 로 나눈다. 항목은 쉼표로 나누고 앞뒤 공백은 지우며 빈 항목은 버린다 — 허용
+        명단처럼 남는 항목이 없으면 빈 값(배정 없음)이다. 항목마다 콜론이 정확히 하나이고 양쪽이 비지 않아야 한다. 같은
+        호출 위치가 두 번 나오면 거부한다 — 사전으로 바로 만들면 뒤의 값이 조용히 이기는데 어느 쪽이 의도였는지 모른다.
+        모르는 호출 위치·구현 이름은 pydantic 이 거부한다."""
+        if not isinstance(value, str):
+            return value
+        assignments: dict[str, str] = {}
+        for item in value.split(","):
+            if not item.strip():
+                continue
+            parts = [part.strip() for part in item.split(":")]
+            if len(parts) != 2 or not all(parts):
+                raise ValueError(f"LLM_CALL_SITE_BACKENDS 의 항목 {item.strip()!r} 은 call_site:backend 모양이 아니다")
+            call_site, backend = parts
+            if call_site in assignments:
+                raise ValueError(f"LLM_CALL_SITE_BACKENDS 에 {call_site} 가 두 번 있다")
+            assignments[call_site] = backend
+        return assignments
 
     @field_validator(
         "bedrock_sonnet_model_id",
@@ -301,6 +332,15 @@ class Settings(BaseSettings):
         ]
         if missing:
             raise ValueError(f"상위 모델 스위치가 켜져 있는데 {', '.join(missing)} 가 비어 있다")
+        return self
+
+    @model_validator(mode="after")
+    def _call_site_backends_can_be_followed(self) -> "Settings":
+        """배정이 틀린 채 뜨면 그 호출이 첫 호출에서야 실패하거나 배정이 조용히 무시된다. 규칙은 등록부 쪽에 있다
+        (`llm/backends.py` 의 `assignment_errors`) — 구현 행이 늘어도 여기는 그대로다."""
+        errors = backends.assignment_errors(self.llm_call_site_backends, lambda name: str(getattr(self, name)))
+        if errors:
+            raise ValueError("; ".join(errors))
         return self
 
     @field_validator(
