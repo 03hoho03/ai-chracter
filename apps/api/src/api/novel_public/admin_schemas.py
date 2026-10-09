@@ -23,8 +23,8 @@ AdminNovelCommentReportAction = Literal["hide", "delete", "reject"]
 
 class AdminNovelListItem(CamelModel):
     """공개 상태 행이 있는 소설 하나(거둔 것·이용제한된 것 포함). `readable` 은 지금 독자에게 보이는가(거둠·이용제한·게시자
-    정지·원작 숨김·공개 화 없음이면 거짓). `purchase_count` 는 환급되지 않은 구매 수, `pending_report_count` 는 처리 전 노벨
-    신고 수다."""
+    정지·원작 숨김·공개 화 없음이면 거짓). `purchase_count` 는 환급되지 않은 구매 수(탈퇴한 구매자의 구매도 거래 기록이라
+    센다), `pending_report_count` 는 처리 전 노벨 신고 수다."""
 
     id: uuid.UUID
     title: str
@@ -87,7 +87,9 @@ class AdminNovelReportListItem(CamelModel):
 
 class AdminNovelDetailResponse(AdminNovelListItem):
     """공개본 글과 운영 판단 재료. `source_moderation_status` 는 원작의 지금 상태(원작이 없으면 비어 있다), `publisher_suspended`
-    는 게시자 정지 여부다 — 둘 다 `readable` 이 거짓인 이유를 가른다. `reports` 는 최근 노벨 신고 20개다."""
+    는 게시자 정지 여부다 — 둘 다 `readable` 이 거짓인 이유를 가른다. `reports` 는 최근 노벨 신고 20개다.
+    `purchase_amount` 는 환급되지 않은 구매의 가격 합(탈퇴한 구매자의 구매 포함), `purchase_buyer_count` 는 그 구매를 한 사람
+    수다 — 탈퇴한 구매자는 누구인지 남지 않아 사람 수에 들지 않는다."""
 
     synopsis: str
     content_id: uuid.UUID

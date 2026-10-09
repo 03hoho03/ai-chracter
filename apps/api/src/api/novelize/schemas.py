@@ -285,7 +285,8 @@ class NovelLastRead(CamelModel):
 
 class NovelPurchaseRefundPreview(CamelModel):
     """지우면 돌려줄 구매. 소설 삭제 확인에는 소설 전체를, 마지막 묶음(화) 삭제 확인에는 마지막 묶음을 본다. 금액은 산 값
-    그대로다(결제가 전액 취소된 구매분은 실제 환급에서 빠질 수 있다)."""
+    그대로다(결제가 전액 취소된 구매분은 실제 환급에서 빠질 수 있다). 탈퇴한 구매자의 구매는 돌려주지 않으므로 사람 수에도
+    금액에도 들지 않는다."""
 
     novel_buyer_count: int = 0
     novel_refund_amount: int = 0

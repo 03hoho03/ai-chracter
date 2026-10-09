@@ -149,6 +149,26 @@ async def test_admin_lists_public_novels_with_purchases_and_pending_reports(
     assert [item["id"] for item in only_restricted["items"]] == [str(restricted.novel_id)]
 
 
+async def test_admin_purchase_totals_keep_a_withdrawn_buyers_purchase(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """두 사람이 6화를 사고 한 사람이 탈퇴했다 — 구매 수·금액에는 탈퇴한 구매자의 구매가 남고(거래 기록), 산 사람 수에는
+    남은 구매자만 든다."""
+    novel = await _novel(db_session)
+    leaving, staying = await _member(db_session), await _member(db_session)
+    for buyer in (leaving, staying):
+        await _buy_sixth(db_client, novel, buyer)
+    await _login_as(db_client, leaving)
+    assert (await db_client.delete("/me")).status_code == 204
+    await _as_admin(db_client, db_session)
+
+    listed = (await db_client.get("/admin/novels")).json()
+    detail = (await db_client.get(f"/admin/novels/{novel.novel_id}")).json()
+
+    assert [item["purchaseCount"] for item in listed["items"]] == [2]
+    assert (detail["purchaseBuyerCount"], detail["purchaseAmount"]) == (1, 60)
+
+
 async def test_admin_detail_shows_the_public_copy_screenings_and_reports(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

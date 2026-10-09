@@ -647,15 +647,18 @@ class NovelPurchase(Base):
       돌려주지 않으므로 `price` 보다 작을 수 있다. `refund_notification_id` 는 그때 구매자에게 보낸 알림이다(알림 문구의 화
       수·클로버 수가 이 행들에서 나온다).
 
-    구매자가 탈퇴하면 그 구매자의 행을 지운다(`auth/withdrawal.py`). 거래 기록은 원장과 사용처 행에 남는다.
+    구매자가 탈퇴하면 행을 지우지 않고 `buyer_user_id` 만 비운다(`auth/withdrawal.py`). 화·가격·차감 원장·판·시각은 거래
+    기록으로 남고 누가 샀는지만 사라진다. 구매자 칸이 빈 행은 삭제 환급에서 빠지고(탈퇴로 잔액이 이미 소멸했다) 독자 화면에는
+    나타나지 않으며, 어드민의 구매 수·합계에는 들어간다(산 사람 수에는 들지 않는다). 유니크 `(chapter_id, buyer_user_id)` 는
+    NULL 끼리 겹치지 않으므로 같은 화를 산 탈퇴 구매자가 여럿이어도 행이 함께 남는다.
 
     CHECK 는 `alembic check` 가 비교하지 않아 `pytest.raises(IntegrityError)` 행위 테스트가 유일한 검증이다."""
 
     __tablename__ = "novel_purchases"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    buyer_user_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, ForeignKey("users.id", name="fk_novel_purchases_buyer_user_id"), nullable=False
+    buyer_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", name="fk_novel_purchases_buyer_user_id"), nullable=True
     )
     publisher_user_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("users.id", name="fk_novel_purchases_publisher_user_id"), nullable=False

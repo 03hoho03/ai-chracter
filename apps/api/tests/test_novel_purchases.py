@@ -297,6 +297,21 @@ async def test_refund_notification_needs_a_refund(db_session: AsyncSession) -> N
         await _purchase_row(db_session, refund_notification_id=notification.id)
 
 
+async def test_withdrawn_buyers_of_the_same_chapter_all_keep_their_rows(db_session: AsyncSession) -> None:
+    """구매자 칸이 빈 행은 같은 화에 여럿 남는다(유니크가 NULL 끼리 겹치지 않는다). 대조군 — 구매자가 있으면 같은 화 두 번째
+    행은 유니크에 걸린다."""
+    chapter_id = uuid.uuid4()
+    await _purchase_row(db_session, chapter_id=chapter_id, buyer_user_id=None)
+    await _purchase_row(db_session, chapter_id=chapter_id, buyer_user_id=None)
+
+    buyer = _make_user()
+    db_session.add(buyer)
+    await db_session.flush()
+    await _purchase_row(db_session, chapter_id=chapter_id, buyer_user_id=buyer.id)
+    with pytest.raises(IntegrityError, match="ux_novel_purchases_chapter_id_buyer_user_id"):
+        await _purchase_row(db_session, chapter_id=chapter_id, buyer_user_id=buyer.id)
+
+
 # ── 삭제 환급 ───────────────────────────────────────────────────────────────
 async def _notifications(client: httpx.AsyncClient, user_id: uuid.UUID) -> list[dict[str, object]]:
     await _login_as(client, user_id)
@@ -507,24 +522,38 @@ async def _settle_cancellation(
 
 # ── 탈퇴 ────────────────────────────────────────────────────────────────────
 async def test_a_withdrawn_buyer_is_left_out_of_the_delete_refund(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """구매자 탈퇴는 204 이고 그 사람의 구매 행을 지운다. 그 뒤 게시자가 소설을 지우면 탈퇴한 구매자에게는 아무것도 돌려주지
-    않고(잔액은 탈퇴로 소멸했다) 남은 구매자만 돌려받는다."""
+    """구매자 탈퇴는 204 이고 그 사람의 구매 행은 구매자 칸만 비운 채 화·판·가격·차감 원장·시각을 그대로 남긴다. 삭제 전
+    고지는 탈퇴한 구매자를 세지 않고, 게시자가 소설을 지우면 탈퇴한 구매자에게는 아무것도 돌려주지 않으며(잔액은 탈퇴로
+    소멸했다) 그 행도 환급으로 적지 않는다. 남은 구매자만 돌려받는다."""
     novel = await _setup(db_session)
     leaving, staying = await _buyer(db_session), await _buyer(db_session)
     for buyer in (leaving, staying):
         assert (await _buy(db_client, novel, 6, as_user=buyer)).status_code == 200
+    [bought] = await _purchases(db_session, leaving)
+    kept = (bought.id, bought.chapter_id, bought.edition, bought.price, bought.spend_ledger_id, bought.created_at)
 
     await _login_as(db_client, leaving)
     assert (await db_client.delete("/me")).status_code == 204
+
     assert await _purchases(db_session, leaving) == []
+    row = await db_session.get_one(NovelPurchase, bought.id, populate_existing=True)
+    assert row.buyer_user_id is None
+    assert (row.id, row.chapter_id, row.edition, row.price, row.spend_ledger_id, row.created_at) == kept
+    await _allow_novelize(db_session, monkeypatch, novel.publisher_id)
     await _login_as(db_client, novel.publisher_id)
+    preview = (await db_client.get(f"/novels/{novel.novel_id}")).json()["purchaseRefunds"]
+    assert (preview["novelBuyerCount"], preview["novelRefundAmount"]) == (1, 30)
     assert (await db_client.delete(f"/novels/{novel.novel_id}")).status_code == 204
 
     assert await _balance(db_session, leaving) == 0
     assert sorted(kind for kind, _ in await _ledger(db_session, leaving)) == ["novel_read_spend", "withdrawal_burn"]
+    row = await db_session.get_one(NovelPurchase, bought.id, populate_existing=True)
+    assert (row.refunded_at, row.refunded_amount, row.refund_notification_id) == (None, None, None)
     assert await _balance(db_session, staying) == 100
+    [refunded] = await _purchases(db_session, staying)
+    assert refunded.refunded_amount == 30
 
 
 async def test_a_withdrawing_publisher_ends_reading_without_refunds(
