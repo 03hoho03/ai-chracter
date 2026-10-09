@@ -583,7 +583,7 @@ class NovelScreening(Base):
     chapter_ordinal: Mapped[int | None] = mapped_column(Integer, nullable=True)
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
     outcome: Mapped[NovelScreeningOutcome] = mapped_column(Text, nullable=False)
-    flagged_parts: Mapped[list[str]] = mapped_column(
+    flagged_parts: Mapped[list[NovelScreeningPart]] = mapped_column(
         ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
     )
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)

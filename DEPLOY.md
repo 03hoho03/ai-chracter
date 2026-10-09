@@ -199,8 +199,8 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**52개 키다**(2026-10-06 VM 실측, 키 이름만 셈): 아래 표 101개 중 38개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
-`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 7개·소설화 조정용 `NOVELIZE_*` 19개, 실측 때 넣지 않은 상위 모델 키 13개(`BEDROCK_*` 9개·`CHAT_PREMIUM_*` 2개·`NOVELIZE_PREMIUM_*` 2개), 실측 때 넣지 않은 결제·본인인증 키 9개(`PORTONE_*` 5개·`IDENTITY_CI_HMAC_KEY`·`PAYMENTS_ENABLED`·`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 모두 63개 제외 —
+**52개 키다**(2026-10-06 VM 실측, 키 이름만 셈): 아래 표 102개 중 38개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 7개·소설화 조정용 `NOVELIZE_*` 19개, 실측 때 넣지 않은 상위 모델 키 13개(`BEDROCK_*` 9개·`CHAT_PREMIUM_*` 2개·`NOVELIZE_PREMIUM_*` 2개), 실측 때 넣지 않은 결제·본인인증 키 9개(`PORTONE_*` 5개·`IDENTITY_CI_HMAC_KEY`·`PAYMENTS_ENABLED`·`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 실측 때 넣지 않은 노벨 스위치 `NOVEL_PUBLIC_ENABLED`, 모두 64개 제외 —
 소설화를 켤 때 넣는 `NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST` 2개는 운영에서 켜 두었으므로 셈에 들어간다) + compose용
 5개(그때는 `API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE` — api 가 blue/green 두 색으로 나뉜 뒤
 compose 가 읽는 이미지 키는 `API_IMAGE_BLUE`·`API_IMAGE_GREEN` 둘이고 `API_IMAGE` 는 읽지 않는다. 두 키가 생기고 옛 줄이 지워지면
@@ -285,6 +285,7 @@ compose 가 읽는 이미지 키는 `API_IMAGE_BLUE`·`API_IMAGE_GREEN` 둘이�
 | `BEDROCK_CHAT_MAX_TOKENS` / `BEDROCK_CHAPTER_MAX_TOKENS` | 설정 안 함(기본 `4096` / `32768`) | 출력 상한. Bedrock 은 요청의 출력 상한만큼 분당 토큰 쿼터를 먼저 잡으므로 올리면 동시 요청이 스로틀되기 쉽다. 장이 잘리면 실패·환불이다 |
 | `CHAT_PREMIUM_MODELS_ENABLED` / `CHAT_PREMIUM_MODEL_ALLOWLIST` | 켤 때 `true` / 계정 id **쉼표 구분**(코드 기본값은 꺼짐·빈 명단) | 채팅 상위 모델 스위치와 허용 가능 계정 명단. 뜻은 소설화 스위치·명단과 같다. 켜고 끄는 법은 "상위 모델(Bedrock) — 꺼진 채 배포 · 켜기 · 끄기" 절 |
 | `NOVELIZE_PREMIUM_MODELS_ENABLED` / `NOVELIZE_PREMIUM_MODEL_ALLOWLIST` | 켤 때 `true` / 계정 id **쉼표 구분**(코드 기본값은 꺼짐·빈 명단) | 소설 장 상위 모델의 같은 한 벌. 소설화 자체(`NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`)도 열려 있어야 쓸 수 있다 |
+| `NOVEL_PUBLIC_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 노벨(공개 소설) 스위치. 소설화(`NOVELIZE_ENABLED`·명단·계정별 허용)와 별개로 이 스위치도 켜져 있어야 소설을 노벨에 공개·다시 공개할 수 있다 — 코드 기본값이 닫힘이라 이 줄 없이 배포하면 닫힌 채 뜬다. 끄면 재기동 뒤 공개·다시 공개·게시자의 공개 상태 조회가 403 `NOVEL_PUBLIC_DISABLED` 이고, 공개 상태 행은 남아 다시 켜면 그대로 돌아온다. 켜기·끄기는 "노벨(공개 소설) 켜기 · 끄기" 절 |
 
 > **`CORS_ALLOW_ORIGINS`**: `config.py` 가 쉼표 구분과 JSON 배열을 둘 다 받는다(`[` 로 시작하면 JSON). 항목 앞뒤 공백은
 > 지우고 빈 항목은 버리며, 남는 오리진이 없으면 기동에 실패한다. 새로 쓸 때는 쉼표 구분으로 쓴다.
@@ -1694,6 +1695,46 @@ Gemini 와 따로 묶인다. 소설 장 실패는 공급자와 무관하게 지�
    # 모델 축까지(Claude 세트 삭제 포함)
    sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env <IMAGE>:<새 코드 TAG> alembic downgrade a966fc016bf1
    ```
+
+### 3-13. 노벨(공개 소설) 켜기 · 끄기
+
+노벨은 소설화를 쓸 수 있는 계정이 자기 소설을 공개하는 기능이라 두 겹으로 닫혀 있다 — 소설화 세 겹("소설화 켜기 · 끄기 ·
+회수 · 롤백" 절)과 노벨 스위치 `NOVEL_PUBLIC_ENABLED`. 코드 기본값이 꺼짐이라 **배포만으로는 닫힌 채 뜬다.** 꺼진 동안
+공개(`POST /novels/{id}/publication`)·게시자의 공개 상태 조회(`GET /novels/{id}/publication`)는 403
+`NOVEL_PUBLIC_DISABLED` 다. 공개 거두기(`POST /novels/{id}/publication/withdraw`)는 스위치·소설화 허용과 무관하게 소유자면
+된다 — 자기 글을 내리는 일이라 소설 삭제와 같은 원칙이다.
+
+공개·다시 공개는 Gemini 텍스트 심사를 부른다(호출 위치 `novel_publish_screen`, 모델은 발행 심사와 같은
+`GEMINI_PUBLISH_FILTER_MODEL_NAME`, 없으면 `GEMINI_MODEL_NAME`). 심사 문안은 프롬프트 세트의 `novel_screen` 레인(Gemini 세트
+하나)에 있고 캐시 없이 호출마다 DB 에서 읽는다. 심사 호출이 실패하면 공개하지 않고 400 `NOVEL_SCREENING_UNAVAILABLE` 이다
+(Bugsink 태그는 발행 심사와 같은 `gemini`·`gemini_rate_limit`). 심사에 걸린 횟수는 게시자마다 KST 하루 상한이 있다(레이트리밋
+면제 계정 제외).
+
+**켜기** — 약관·처리방침의 공개 소설 조항이 시행된 뒤에 켠다. `.env` 에 한 줄을 더한다(파일을 통째로 덮거나 백업본으로
+복원하지 않는다 — 교체 스크립트가 같은 파일의 `API_IMAGE_BLUE`·`API_IMAGE_GREEN` 을 고친다):
+
+```sh
+cd /opt/ddona/app
+sudo sh -c 'printf "\nNOVEL_PUBLIC_ENABLED=true\n" >> /opt/ddona/.env'
+sudo python3 ops/check_env.py --format /opt/ddona/.env
+sudo bash ops/swap-api.sh
+sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -T api_$(sudo bash ops/active-color.sh) \
+  python -c "from api.core.config import settings; print(settings.novel_public_enabled)"
+```
+
+`restart` 는 env 를 다시 읽지 않으므로 교체 스크립트를 태그 없이 불러 새 env 로 다시 띄운다("env 반영 재기동" 절). 그다음
+"BE 런타임" 절의 키 개수 문장을 VM 에서 다시 세어 고친다.
+
+**끄기** — 스위치 줄을 지우고 다시 올린다:
+
+```sh
+cd /opt/ddona/app
+sudo sed -i '/^NOVEL_PUBLIC_ENABLED=/d' /opt/ddona/.env
+sudo python3 ops/check_env.py --format /opt/ddona/.env
+sudo bash ops/swap-api.sh
+```
+
+공개 상태·화 공개본·심사 기록은 남아 다시 켜면 그대로 돌아온다. 줄을 지웠으니 키 개수 문장을 다시 센다.
 
 ---
 

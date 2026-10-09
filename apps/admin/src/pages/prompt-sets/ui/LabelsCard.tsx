@@ -48,6 +48,8 @@ const UNUSED_LABELS_BY_LANE: Record<PromptLane, readonly LabelFieldKey[]> = {
   // 소설 호출은 원문 줄의 화자 라벨을 원작 종류(스토리·캐릭터)의 채팅 Gemini 세트에서 읽는다 — 이 레인의 라벨은 어디에도
   // 쓰이지 않는다.
   novel: ["userLabel", "storyAssistantLabel", "storyExampleLabel", "characterAssistantLabel"],
+  // 노벨 텍스트 심사는 공개할 글만 싣고 대화 줄을 조립하지 않아 라벨을 하나도 읽지 않는다.
+  novel_screen: ["userLabel", "storyAssistantLabel", "storyExampleLabel", "characterAssistantLabel"],
 };
 
 type LabelsCardProps = {

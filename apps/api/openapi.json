@@ -2317,7 +2317,8 @@
                 "story",
                 "character",
                 "publish_filter",
-                "novel"
+                "novel",
+                "novel_screen"
               ],
               "type": "string",
               "title": "Lane"
@@ -2380,7 +2381,8 @@
                 "story",
                 "character",
                 "publish_filter",
-                "novel"
+                "novel",
+                "novel_screen"
               ],
               "type": "string",
               "title": "Lane"
@@ -2456,7 +2458,8 @@
                 "story",
                 "character",
                 "publish_filter",
-                "novel"
+                "novel",
+                "novel_screen"
               ],
               "type": "string",
               "title": "Lane"
@@ -2521,7 +2524,8 @@
                 "story",
                 "character",
                 "publish_filter",
-                "novel"
+                "novel",
+                "novel_screen"
               ],
               "type": "string",
               "title": "Lane"
@@ -7205,6 +7209,138 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/publication": {
+      "get": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Get Novel Publication",
+        "operationId": "get_novel_publication_novels__novel_id__publication_get",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelPublicationStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Publish Novel",
+        "description": "소설을 노벨에 공개하거나 다시 공개한다(요청 하나 = 화 하나 — `NovelPublishRequest`). 세 구간은 모듈 docstring.\n바뀐 것이 없으면 아무것도 쓰지 않고 지금 상태를 돌려준다.",
+        "operationId": "publish_novel_novels__novel_id__publication_post",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NovelPublishRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelPublicationStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/novels/{novel_id}/publication/withdraw": {
+      "post": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Withdraw Novel Publication",
+        "description": "공개를 거둔다. 공개 상태 행과 공개본은 지우지 않고 공개 범위만 바꾼다 — 다시 공개하면 공개본이 그대로 살아난다.\n이미 거둔 공개면 그대로 204 다. 재동의 게이트를 걸지 않는다(자기 글을 내리는 일이라).",
+        "operationId": "withdraw_novel_publication_novels__novel_id__publication_withdraw_post",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",
@@ -14446,7 +14582,8 @@
               "story",
               "character",
               "publish_filter",
-              "novel"
+              "novel",
+              "novel_screen"
             ],
             "title": "Lane"
           },
@@ -14572,7 +14709,8 @@
               "story",
               "character",
               "publish_filter",
-              "novel"
+              "novel",
+              "novel_screen"
             ],
             "title": "Lane"
           },
@@ -22924,6 +23062,232 @@
           "protagonistName"
         ],
         "title": "NovelProtagonistNameRequest"
+      },
+      "NovelPublicationScreening": {
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "rejected"
+            ],
+            "title": "Outcome"
+          },
+          "chapterOrdinal": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapterordinal"
+          },
+          "flaggedParts": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "novel_title",
+                "synopsis",
+                "chapter_title",
+                "author_note",
+                "chapter_body"
+              ]
+            },
+            "type": "array",
+            "title": "Flaggedparts"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "outcome",
+          "chapterOrdinal",
+          "flaggedParts",
+          "createdAt"
+        ],
+        "title": "NovelPublicationScreening",
+        "description": "가장 최근 텍스트 심사의 판정. 게시자에게는 어느 화의 어느 글이 걸렸는지만 보이고 심사 모델이 쓴 사유는 싣지 않는다."
+      },
+      "NovelPublicationStatusResponse": {
+        "properties": {
+          "published": {
+            "type": "boolean",
+            "title": "Published"
+          },
+          "visibility": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "public",
+                  "withdrawn"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visibility"
+          },
+          "moderationStatus": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "normal",
+                  "restricted"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moderationstatus"
+          },
+          "publishedChapterCount": {
+            "type": "integer",
+            "title": "Publishedchaptercount"
+          },
+          "chapterCount": {
+            "type": "integer",
+            "title": "Chaptercount"
+          },
+          "changedChapterOrdinals": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Changedchapterordinals"
+          },
+          "metadataChanged": {
+            "type": "boolean",
+            "title": "Metadatachanged"
+          },
+          "newPublishBlock": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "source_unavailable",
+                  "source_permission",
+                  "source_not_listed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newpublishblock"
+          },
+          "republishBlock": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "source_unavailable",
+                  "restricted"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Republishblock"
+          },
+          "lastScreening": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NovelPublicationScreening"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "screeningRejectionsLeft": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Screeningrejectionsleft"
+          },
+          "screeningRejectionLimit": {
+            "type": "integer",
+            "title": "Screeningrejectionlimit"
+          },
+          "firstPublishedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Firstpublishedat"
+          },
+          "publishedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publishedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "published",
+          "visibility",
+          "moderationStatus",
+          "publishedChapterCount",
+          "chapterCount",
+          "changedChapterOrdinals",
+          "metadataChanged",
+          "newPublishBlock",
+          "republishBlock",
+          "lastScreening",
+          "screeningRejectionsLeft",
+          "screeningRejectionLimit",
+          "firstPublishedAt",
+          "publishedAt"
+        ],
+        "title": "NovelPublicationStatusResponse",
+        "description": "게시자가 보는 공개 상태. 화면이 이 값들로 \"공개 전·공개 중·확인 실패·원작 허락 미달·원작 비공개·허락 하향 뒤·운영\n조치\" 상태를 가른다(\"확인 중\"과 심사 장애는 요청 중·요청 실패로 화면이 안다).\n\n- `published`: 공개 상태 행이 있는가(한 번이라도 공개했는가). 거둔 뒤에도 참이다.\n- `visibility`·`moderation_status`: 공개 범위·이용제한 두 축. 공개한 적이 없으면 비어 있다.\n- `published_chapter_count`: 1화부터 이어진 공개 화 수. `chapter_count` 는 소설의 화 수다.\n- `changed_chapter_ordinals`·`metadata_changed`: 공개한 뒤 고쳐서 공개본과 다른 화·소설 제목·소개. 다시 공개해야\n  반영된다.\n- `new_publish_block`: 새로 공개(처음 공개·다음 화)할 수 없는 이유. 없으면 비어 있다.\n- `republish_block`: 이미 공개한 것을 다시 내거나 거둔 공개를 다시 열 수 없는 이유.\n- `screening_rejections_left`: 오늘 더 걸릴 수 있는 심사 횟수(상한 `screening_rejection_limit`). 상한을 적용하지 않는\n  계정이면 비어 있다."
+      },
+      "NovelPublishRequest": {
+        "properties": {
+          "chapterId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapterid"
+          }
+        },
+        "type": "object",
+        "title": "NovelPublishRequest",
+        "description": "공개 요청 하나 = 화 하나(또는 소설 제목·소개만). `chapter_id` 가 다음 화(공개한 화 수 + 1번째)면 그 화를 새로\n공개하고, 이미 공개한 화면 바뀐 경우 다시 공개한다. 비우면 소설 제목·소개만 다시 공개한다(처음 공개에는 1화가 있어야\n한다). 어느 경우든 소설 제목·소개가 공개본과 다르면 같은 요청에서 함께 심사해 다시 공개하고, 거둔 공개는 다시 연다.\n\n여러 화를 한 요청에 받지 않는 것은 심사 호출이 화마다 수 초 걸려 요청 하나가 그만큼 붙잡히기 때문이다 — 화면이 1화부터\n한 화씩 부르면 앞 화까지는 공개된 채로 남고 이어짐도 요청마다 지켜진다."
       },
       "NovelReadingPositionRequest": {
         "properties": {

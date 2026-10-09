@@ -1,6 +1,6 @@
 import type { PromptLane } from "./lane";
 
-/** 코드가 아는 11채널(어드민은 이 집합을 늘리거나 줄이지
+/** 코드가 아는 12채널(어드민은 이 집합을 늘리거나 줄이지
  * 못한다). 목록·라벨·술어를 손으로 따로 적지 않고 `PROMPT_CHANNEL_LABELS`에서 도출해야 셋이
  * 어긋날 수 없다(legal의 `LEGAL_KIND_LABELS`와 같은 패턴). */
 export const PROMPT_CHANNEL_LABELS = {
@@ -17,6 +17,7 @@ export const PROMPT_CHANNEL_LABELS = {
   novelize_boundary: "소설 경계 제안",
   novelize_chapter: "소설 화 생성",
   novelize_revise: "소설 문단 수정",
+  novel_screen: "노벨 심사",
 } as const;
 
 export type PromptChannel = keyof typeof PROMPT_CHANNEL_LABELS;

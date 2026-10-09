@@ -18,12 +18,12 @@ export function isPromptModel(value: string): value is PromptModel {
 
 const PROMPT_MODELS = Object.keys(PROMPT_MODEL_LABELS).filter(isPromptModel);
 
-/** 발행 심사는 모델을 고르지 않아 Gemini 세트 하나뿐이다(서버가 다른 모델을 422로 거부한다). */
+/** 심사 레인(발행 심사·노벨 심사)은 모델을 고르지 않아 Gemini 세트 하나뿐이다(서버가 다른 모델을 422로 거부한다). */
 export function promptModelsFor(lane: PromptLane): readonly PromptModel[] {
-  return lane === "publish_filter" ? ["gemini"] : PROMPT_MODELS;
+  return lane === "publish_filter" || lane === "novel_screen" ? ["gemini"] : PROMPT_MODELS;
 }
 
-/** 한 화면에 체인 10개(스토리·캐릭터·소설 × 3 + 발행 심사)가 함께 있을 때 체인별 상태를 담는 키. */
+/** 한 화면에 체인 11개(스토리·캐릭터·소설 × 3 + 발행 심사·노벨 심사)가 함께 있을 때 체인별 상태를 담는 키. */
 export type PromptChainKey = `${PromptLane}:${PromptModel}`;
 
 export function promptChainKey(lane: PromptLane, model: PromptModel): PromptChainKey {

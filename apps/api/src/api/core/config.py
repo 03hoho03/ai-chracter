@@ -464,6 +464,11 @@ class Settings(BaseSettings):
     # 소설 하나의 스냅샷 개수 상한. 닿으면 가장 오래된 복원 직전 자동 스냅샷부터 지우고, 이름 붙인 것만 남았으면 새 저장을
     # 거절한다. 복원 직전 자동 스냅샷은 복원이 막히지 않게 이 상한을 넘어 한 장 더 둘 수 있다. 임시값.
     novelize_snapshot_limit: int = Field(default=50, ge=1)
+    # 노벨(공개 소설) 스위치. 꺼져 있으면 아무도 소설을 공개하거나 다시 공개할 수 없고 게시자의 공개 상태 조회도 403 이다 —
+    # 코드 기본값이 닫힘이라 env 설정 없이 배포하면 닫힌 채 뜬다(바꾸면 재기동해야 반영된다). 소설화 스위치·허용과 별개로 이
+    # 스위치도 켜져 있어야 한다. 끄는 동안에도 공개 상태 행은 남아 다시 켜면 그대로 돌아오고, 게시자의 공개 거두기는 막지
+    # 않는다(자기 글을 내리는 일이라).
+    novel_public_enabled: bool = False
 
     @field_validator(
         "novelize_grant_allowlist", "chat_premium_model_allowlist", "novelize_premium_model_allowlist", mode="before"
