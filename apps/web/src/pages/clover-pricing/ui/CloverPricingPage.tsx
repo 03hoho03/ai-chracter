@@ -289,8 +289,8 @@ function UsageCosts({ pricing }: { pricing: DeployedPricingResponse }) {
           <UsageRow label="소설 AI 수정 1회" cost={pricing.novelAiEditCost} />
         )}
         {/* 노벨(회원이 공개한 소설)은 화마다 소장한다. 앞 몇 화는 무료라 그 수를 함께 적는다 — 단가만 보면 1화부터 드는
-            것으로 읽힌다. */}
-        {pricing.novelReadCost !== undefined && (
+            것으로 읽힌다. 노벨이 꺼져 있으면 쓸 수 없는 사용처라 싣지 않는다(헤더 탭·홈 섹션과 같은 판정). */}
+        {pricing.novelPublicEnabled === true && pricing.novelReadCost !== undefined && (
           <UsageRow
             label={
               pricing.novelFreeChapterCount
