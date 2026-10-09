@@ -3055,7 +3055,7 @@ export interface paths {
         put?: never;
         /**
          * Purchase Novel Chapter
-         * @description 노벨 화 하나를 소장한다(`purchase_chapter`). 공개 스위치가 꺼져 있으면 403 `NOVEL_PUBLIC_DISABLED`.
+         * @description 노벨 화 하나를 소장한다(`purchase_chapter`). 노벨 스위치가 꺼져 있으면 404 `NOVEL_PUBLIC_DISABLED`.
          */
         post: operations["purchase_novel_chapter_webnovels__novel_id__chapters__chapter_id__purchase_post"];
         delete?: never;
@@ -3199,6 +3199,337 @@ export interface paths {
          *     노벨의 상태와 무관하다. 행을 지운 요청만 수를 내린다(좋아요와 같은 이유).
          */
         delete: operations["unlike_webnovel_webnovels__novel_id__like_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/webnovels/{novel_id}/chapters/{chapter_id}/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Webnovel Comments
+         * @description 화 댓글 최신순 20개씩. 다음 페이지는 `nextCursor` 를 그대로 `cursor` 로 넘긴다.
+         */
+        get: operations["list_webnovel_comments_webnovels__novel_id__chapters__chapter_id__comments_get"];
+        put?: never;
+        /**
+         * Create Webnovel Comment
+         * @description 화 댓글 쓰기. 빈 글은 422 `NOVEL_COMMENT_EMPTY`, 1,000자 초과는 422 `NOVEL_COMMENT_TOO_LONG`, 분당 5개를 넘으면 429
+         *     `NOVEL_COMMENT_RATE_LIMITED`, 볼 수 없는 화는 404/403(`require_chapter_reader`). 정지된 회원은 403 이다(작성자 행을 잠근
+         *     뒤 DB 의 정지 표식으로 다시 확인한다).
+         */
+        post: operations["create_webnovel_comment_webnovels__novel_id__chapters__chapter_id__comments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/webnovels/{novel_id}/comments/{comment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Webnovel Comment
+         * @description 작성자 본인이나 그 노벨의 게시자가 댓글을 지운다. 없거나 이미 지운 댓글은 404 `NOVEL_COMMENT_NOT_FOUND`, 둘 다
+         *     아니면 403 `NOVEL_COMMENT_DELETE_FORBIDDEN` 이다. 본문을 비우고 지운 사람·시각을 적는다(모듈 docstring).
+         */
+        delete: operations["delete_webnovel_comment_webnovels__novel_id__comments__comment_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/webnovels/{novel_id}/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report Webnovel
+         * @description 노벨(`chapterId` 없음)이나 그 공개 화 하나를 신고한다. 지금 읽을 수 없는 노벨은 404 `NOVEL_NOT_FOUND`, 그 노벨의 공개
+         *     화가 아니면 404 `NOVEL_CHAPTER_NOT_FOUND`, 자기가 게시한 노벨은 403 `NOVEL_REPORT_OWN`, 한도를 넘으면 429
+         *     `NOVEL_REPORT_RATE_LIMITED`. 화 신고는 그 화를 소장하지 않았어도 된다(목차의 화 제목도 공개 화면 글이다).
+         */
+        post: operations["report_webnovel_webnovels__novel_id__reports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/webnovels/{novel_id}/comments/{comment_id}/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report Webnovel Comment
+         * @description 남의 화 댓글을 신고한다. 없거나 지웠거나 운영자가 숨긴 댓글·내 댓글은 404 `NOVEL_COMMENT_NOT_FOUND`, 그 화를 볼 수
+         *     없으면 404/403(`require_chapter_reader`), 한도를 넘으면 429 `NOVEL_REPORT_RATE_LIMITED`.
+         */
+        post: operations["report_webnovel_comment_webnovels__novel_id__comments__comment_id__reports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/novels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Admin Novels
+         * @description 공개한 적 있는 노벨 전부, 마지막 공개 시각 최신순 20개씩(쪽 번호). 이용제한 상태로 거를 수 있다.
+         */
+        get: operations["list_admin_novels_admin_novels_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/novels/{novel_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Admin Novel
+         * @description 공개한 적 있는 노벨 하나(공개본 글·화 목록·심사 기록·최근 신고·구매). 공개 상태 행이 없으면 404 `NOVEL_NOT_FOUND`.
+         */
+        get: operations["get_admin_novel_admin_novels__novel_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/novels/{novel_id}/chapters/{chapter_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Admin Novel Chapter
+         * @description 화 공개본 하나 — 독자에게 나가는 그대로. 그 노벨의 공개 화가 아니면 404 `NOVEL_CHAPTER_NOT_FOUND`.
+         */
+        get: operations["get_admin_novel_chapter_admin_novels__novel_id__chapters__chapter_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/novels/{novel_id}/moderation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Moderate Admin Novel
+         * @description 노벨을 이용제한(`restrict`)하거나 해제(`lift`)한다. 사유가 공백뿐이면 422, 공개 상태 행이 없으면 404
+         *     `NOVEL_NOT_FOUND`, 이미 그 상태면 409 `NOVEL_ALREADY_RESTRICTED`·`NOVEL_NOT_RESTRICTED`(감사 로그가 빈 조치로 쌓이지
+         *     않게).
+         */
+        post: operations["moderate_admin_novel_admin_novels__novel_id__moderation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/novel-reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Admin Novel Reports
+         * @description 노벨 신고 최신순 20개씩(쪽 번호). 상태로 거를 수 있다.
+         */
+        get: operations["list_admin_novel_reports_admin_novel_reports_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/novel-reports/{report_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Admin Novel Report */
+        get: operations["get_admin_novel_report_admin_novel_reports__report_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/novel-reports/{report_id}/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Act On Admin Novel Report
+         * @description 신고를 처리한다 — `restrict` 는 그 노벨을 이용제한하고 신고를 처리완료로(이미 이용제한이어도 처리된다), `reject` 는
+         *     노벨을 건드리지 않고 반려로 둔다. 이미 처리된 신고도 다시 처리할 수 있다(상태·처리자·시각을 덮어쓴다). 노벨이 지워져
+         *     이용제한할 대상이 없으면 409 `NOVEL_GONE`(반려는 된다).
+         */
+        post: operations["act_on_admin_novel_report_admin_novel_reports__report_id__actions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/novels/{novel_id}/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Admin Novel Comments
+         * @description 노벨 하나의 댓글 전부(지운 것·숨긴 것 포함) 최신순 20개씩(쪽 번호).
+         */
+        get: operations["list_admin_novel_comments_admin_novels__novel_id__comments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/novel-comments/{comment_id}/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Act On Admin Novel Comment
+         * @description 댓글을 숨기거나(`hide`, 독자 목록에서 빠지고 본문은 남는다) 되돌리거나(`restore`) 지운다(`delete`, 본문을 비우고 되돌릴
+         *     수 없다). 사유가 공백뿐이면 422, 없는 댓글은 404 `NOVEL_COMMENT_NOT_FOUND`, 지운 댓글은 409.
+         */
+        post: operations["act_on_admin_novel_comment_admin_novel_comments__comment_id__actions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/novel-comment-reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Admin Novel Comment Reports
+         * @description 노벨 댓글 신고 최신순 20개씩(쪽 번호). 상태로 거를 수 있다.
+         */
+        get: operations["list_admin_novel_comment_reports_admin_novel_comment_reports_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/novel-comment-reports/{report_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Admin Novel Comment Report */
+        get: operations["get_admin_novel_comment_report_admin_novel_comment_reports__report_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/novel-comment-reports/{report_id}/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Act On Admin Novel Comment Report
+         * @description 댓글 신고를 처리한다 — `hide`·`delete` 는 그 댓글을 숨기거나 지우고 처리완료로, `reject` 는 댓글을 건드리지 않고
+         *     반려로 둔다. 이미 처리된 신고도 다시 처리할 수 있다. 댓글이 지워져(작성자 탈퇴·소설 삭제) 조치할 대상이 없으면 409
+         *     `NOVEL_COMMENT_GONE`, 지운 댓글이면 409 `NOVEL_COMMENT_DELETED`(반려는 된다).
+         */
+        post: operations["act_on_admin_novel_comment_report_admin_novel_comment_reports__report_id__actions_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -6039,6 +6370,547 @@ export interface components {
             /** Bodymarkdown */
             bodyMarkdown?: string | null;
         };
+        /** AdminNovelChapterItem */
+        AdminNovelChapterItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Ordinal */
+            ordinal: number;
+            /** Title */
+            title: string | null;
+            /** Edition */
+            edition: number;
+        };
+        /**
+         * AdminNovelChapterResponse
+         * @description 화 공개본 — 독자에게 나가는 그대로(제목·작가의 말·본문 문단).
+         */
+        AdminNovelChapterResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Ordinal */
+            ordinal: number;
+            /** Title */
+            title: string | null;
+            /** Authornote */
+            authorNote: string;
+            /** Edition */
+            edition: number;
+            /** Paragraphs */
+            paragraphs: string[];
+        };
+        /** AdminNovelCommentActionRequest */
+        AdminNovelCommentActionRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "hide" | "restore" | "delete";
+            /** Admincomment */
+            adminComment: string;
+        };
+        /**
+         * AdminNovelCommentItem
+         * @description 운영자가 보는 댓글 — 지운 댓글·숨긴 댓글도 싣는다(지운 댓글은 본문이 비어 있다).
+         */
+        AdminNovelCommentItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Novelid
+             * Format: uuid
+             */
+            novelId: string;
+            /**
+             * Chapterid
+             * Format: uuid
+             */
+            chapterId: string;
+            /** Chapterordinal */
+            chapterOrdinal: number;
+            /**
+             * Authoruserid
+             * Format: uuid
+             */
+            authorUserId: string;
+            /** Authornickname */
+            authorNickname: string | null;
+            /** Body */
+            body: string | null;
+            /** Moderatorhidden */
+            moderatorHidden: boolean;
+            /** Deletedby */
+            deletedBy: ("author" | "publisher" | "moderator") | null;
+            /** Deletedat */
+            deletedAt: string | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** AdminNovelCommentListResponse */
+        AdminNovelCommentListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminNovelCommentItem"][];
+            /** Page */
+            page: number;
+            /** Totalpages */
+            totalPages: number;
+            /** Totalcount */
+            totalCount: number;
+        };
+        /** AdminNovelCommentReportActionRequest */
+        AdminNovelCommentReportActionRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "hide" | "delete" | "reject";
+            /** Admincomment */
+            adminComment: string;
+        };
+        /**
+         * AdminNovelCommentReportDetailResponse
+         * @description `comment` 는 지금 댓글 행(지워졌으면 비어 있다), `evidence` 는 신고 시점 사본이다.
+         */
+        AdminNovelCommentReportDetailResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Commentid */
+            commentId: string | null;
+            /** Novelid */
+            novelId: string | null;
+            /**
+             * Commentauthoruserid
+             * Format: uuid
+             */
+            commentAuthorUserId: string;
+            /**
+             * Reporteruserid
+             * Format: uuid
+             */
+            reporterUserId: string;
+            reasonCategory: components["schemas"]["ReportReasonCategory"];
+            status: components["schemas"]["ReportStatus"];
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /**
+             * Evidenceexpiresat
+             * Format: date-time
+             */
+            evidenceExpiresAt: string;
+            /** Evidenceavailable */
+            evidenceAvailable: boolean;
+            /** Resolvedbyadminid */
+            resolvedByAdminId: string | null;
+            /** Resolvedat */
+            resolvedAt: string | null;
+            comment: components["schemas"]["AdminNovelCommentItem"] | null;
+            evidence: components["schemas"]["AdminNovelCommentReportEvidence"];
+        };
+        /** AdminNovelCommentReportEvidence */
+        AdminNovelCommentReportEvidence: {
+            /**
+             * Expiresat
+             * Format: date-time
+             */
+            expiresAt: string;
+            /** Available */
+            available: boolean;
+            /** Body */
+            body: string | null;
+        };
+        /**
+         * AdminNovelCommentReportListItem
+         * @description 노벨 댓글 신고 하나. 댓글·소설이 지워지면 `comment_id`·`novel_id` 가 비고, 누가 쓴 댓글이었는지는
+         *     `comment_author_user_id` 로 남는다.
+         */
+        AdminNovelCommentReportListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Commentid */
+            commentId: string | null;
+            /** Novelid */
+            novelId: string | null;
+            /**
+             * Commentauthoruserid
+             * Format: uuid
+             */
+            commentAuthorUserId: string;
+            /**
+             * Reporteruserid
+             * Format: uuid
+             */
+            reporterUserId: string;
+            reasonCategory: components["schemas"]["ReportReasonCategory"];
+            status: components["schemas"]["ReportStatus"];
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /**
+             * Evidenceexpiresat
+             * Format: date-time
+             */
+            evidenceExpiresAt: string;
+            /** Evidenceavailable */
+            evidenceAvailable: boolean;
+        };
+        /** AdminNovelCommentReportListResponse */
+        AdminNovelCommentReportListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminNovelCommentReportListItem"][];
+            /** Page */
+            page: number;
+            /** Totalpages */
+            totalPages: number;
+            /** Totalcount */
+            totalCount: number;
+        };
+        /**
+         * AdminNovelDetailResponse
+         * @description 공개본 글과 운영 판단 재료. `source_moderation_status` 는 원작의 지금 상태(원작이 없으면 비어 있다), `publisher_suspended`
+         *     는 게시자 정지 여부다 — 둘 다 `readable` 이 거짓인 이유를 가른다. `reports` 는 최근 노벨 신고 20개다.
+         */
+        AdminNovelDetailResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Sourcetitle */
+            sourceTitle: string;
+            /**
+             * Publisheruserid
+             * Format: uuid
+             */
+            publisherUserId: string;
+            /** Publishernickname */
+            publisherNickname: string | null;
+            /**
+             * Visibility
+             * @enum {string}
+             */
+            visibility: "public" | "withdrawn";
+            /**
+             * Moderationstatus
+             * @enum {string}
+             */
+            moderationStatus: "normal" | "restricted";
+            /** Readable */
+            readable: boolean;
+            /** Chaptercount */
+            chapterCount: number;
+            /** Likecount */
+            likeCount: number;
+            /** Viewcount */
+            viewCount: number;
+            /** Purchasecount */
+            purchaseCount: number;
+            /** Pendingreportcount */
+            pendingReportCount: number;
+            /**
+             * Publishedat
+             * Format: date-time
+             */
+            publishedAt: string;
+            /** Synopsis */
+            synopsis: string;
+            /**
+             * Contentid
+             * Format: uuid
+             */
+            contentId: string;
+            sourceModerationStatus: components["schemas"]["ModerationStatus"] | null;
+            /** Publishersuspended */
+            publisherSuspended: boolean;
+            /**
+             * Firstpublishedat
+             * Format: date-time
+             */
+            firstPublishedAt: string;
+            /** Chapters */
+            chapters: components["schemas"]["AdminNovelChapterItem"][];
+            /** Screenings */
+            screenings: components["schemas"]["AdminNovelScreeningItem"][];
+            /** Reports */
+            reports: components["schemas"]["AdminNovelReportListItem"][];
+            /** Purchasebuyercount */
+            purchaseBuyerCount: number;
+            /** Purchaseamount */
+            purchaseAmount: number;
+        };
+        /**
+         * AdminNovelListItem
+         * @description 공개 상태 행이 있는 소설 하나(거둔 것·이용제한된 것 포함). `readable` 은 지금 독자에게 보이는가(거둠·이용제한·게시자
+         *     정지·원작 숨김·공개 화 없음이면 거짓). `purchase_count` 는 환급되지 않은 구매 수, `pending_report_count` 는 처리 전 노벨
+         *     신고 수다.
+         */
+        AdminNovelListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Sourcetitle */
+            sourceTitle: string;
+            /**
+             * Publisheruserid
+             * Format: uuid
+             */
+            publisherUserId: string;
+            /** Publishernickname */
+            publisherNickname: string | null;
+            /**
+             * Visibility
+             * @enum {string}
+             */
+            visibility: "public" | "withdrawn";
+            /**
+             * Moderationstatus
+             * @enum {string}
+             */
+            moderationStatus: "normal" | "restricted";
+            /** Readable */
+            readable: boolean;
+            /** Chaptercount */
+            chapterCount: number;
+            /** Likecount */
+            likeCount: number;
+            /** Viewcount */
+            viewCount: number;
+            /** Purchasecount */
+            purchaseCount: number;
+            /** Pendingreportcount */
+            pendingReportCount: number;
+            /**
+             * Publishedat
+             * Format: date-time
+             */
+            publishedAt: string;
+        };
+        /** AdminNovelListResponse */
+        AdminNovelListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminNovelListItem"][];
+            /** Page */
+            page: number;
+            /** Totalpages */
+            totalPages: number;
+            /** Totalcount */
+            totalCount: number;
+        };
+        /**
+         * AdminNovelModerationRequest
+         * @description `admin_comment` 는 감사 로그에 남는 조치 사유(공백만이면 422). `reason_category` 는 신고 사유 분류를 고를 때만.
+         */
+        AdminNovelModerationRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "restrict" | "lift";
+            /** Admincomment */
+            adminComment: string;
+            reasonCategory?: components["schemas"]["ReportReasonCategory"] | null;
+        };
+        /** AdminNovelModerationResponse */
+        AdminNovelModerationResponse: {
+            /**
+             * Novelid
+             * Format: uuid
+             */
+            novelId: string;
+            /**
+             * Moderationstatus
+             * @enum {string}
+             */
+            moderationStatus: "normal" | "restricted";
+        };
+        /** AdminNovelReportActionRequest */
+        AdminNovelReportActionRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "restrict" | "reject";
+            /** Admincomment */
+            adminComment: string;
+        };
+        /**
+         * AdminNovelReportDetailResponse
+         * @description `novel_moderation_status` 는 신고된 노벨의 지금 이용제한 상태(소설이 지워졌으면 비어 있다).
+         */
+        AdminNovelReportDetailResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Novelid */
+            novelId: string | null;
+            /** Chapterid */
+            chapterId: string | null;
+            /** Chapterordinal */
+            chapterOrdinal: number | null;
+            /**
+             * Publisheruserid
+             * Format: uuid
+             */
+            publisherUserId: string;
+            /**
+             * Reporteruserid
+             * Format: uuid
+             */
+            reporterUserId: string;
+            reasonCategory: components["schemas"]["ReportReasonCategory"];
+            status: components["schemas"]["ReportStatus"];
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Evidencetitle */
+            evidenceTitle: string | null;
+            /**
+             * Evidenceexpiresat
+             * Format: date-time
+             */
+            evidenceExpiresAt: string;
+            /** Evidenceavailable */
+            evidenceAvailable: boolean;
+            /** Resolvedbyadminid */
+            resolvedByAdminId: string | null;
+            /** Resolvedat */
+            resolvedAt: string | null;
+            /** Novelmoderationstatus */
+            novelModerationStatus: ("normal" | "restricted") | null;
+            evidence: components["schemas"]["AdminNovelReportEvidence"];
+        };
+        /**
+         * AdminNovelReportEvidence
+         * @description 신고 시점 공개본 사본. 보유 기간이 지났거나 파기됐으면 `available` 이 거짓이고 글 칸이 모두 빈다.
+         */
+        AdminNovelReportEvidence: {
+            /**
+             * Expiresat
+             * Format: date-time
+             */
+            expiresAt: string;
+            /** Available */
+            available: boolean;
+            /** Title */
+            title: string | null;
+            /** Synopsis */
+            synopsis: string | null;
+            /** Chaptertitle */
+            chapterTitle: string | null;
+            /** Body */
+            body: string | null;
+        };
+        /**
+         * AdminNovelReportListItem
+         * @description 노벨 신고 하나. 소설·화가 지워지면 `novel_id`·`chapter_id` 가 비고, 무엇이 신고됐는지는 `evidence_title`·
+         *     `chapter_ordinal`·`publisher_user_id` 로 읽는다(증거가 파기되면 제목도 빈다). `chapter_ordinal` 이 있으면 화 신고다.
+         */
+        AdminNovelReportListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Novelid */
+            novelId: string | null;
+            /** Chapterid */
+            chapterId: string | null;
+            /** Chapterordinal */
+            chapterOrdinal: number | null;
+            /**
+             * Publisheruserid
+             * Format: uuid
+             */
+            publisherUserId: string;
+            /**
+             * Reporteruserid
+             * Format: uuid
+             */
+            reporterUserId: string;
+            reasonCategory: components["schemas"]["ReportReasonCategory"];
+            status: components["schemas"]["ReportStatus"];
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Evidencetitle */
+            evidenceTitle: string | null;
+            /**
+             * Evidenceexpiresat
+             * Format: date-time
+             */
+            evidenceExpiresAt: string;
+            /** Evidenceavailable */
+            evidenceAvailable: boolean;
+        };
+        /** AdminNovelReportListResponse */
+        AdminNovelReportListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminNovelReportListItem"][];
+            /** Page */
+            page: number;
+            /** Totalpages */
+            totalPages: number;
+            /** Totalcount */
+            totalCount: number;
+        };
+        /**
+         * AdminNovelScreeningItem
+         * @description 텍스트 심사 한 번. `reason` 은 심사 모델이 쓴 사유로 운영자만 본다.
+         */
+        AdminNovelScreeningItem: {
+            /** Chapterordinal */
+            chapterOrdinal: number | null;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "passed" | "rejected";
+            /** Flaggedparts */
+            flaggedParts: ("novel_title" | "synopsis" | "chapter_title" | "author_note" | "chapter_body")[];
+            /** Reason */
+            reason: string | null;
+            /** Model */
+            model: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
         /**
          * AdminPromptDraftResponse
          * @description `id`가 `None`이면 아직 저장된 초안 행이 없다는 뜻이다 — `GET .../draft`가 활성
@@ -6366,7 +7238,7 @@ export interface components {
              * Actiontype
              * @enum {string}
              */
-            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "home-novel-curation-clear" | "home-novel-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "notice-publish" | "notice-unpublish" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-payment-refund" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
+            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "home-novel-curation-clear" | "home-novel-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "notice-publish" | "notice-unpublish" | "novel-comment-delete" | "novel-comment-hide" | "novel-comment-report-reject" | "novel-comment-restore" | "novel-lift" | "novel-report-reject" | "novel-restrict" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-payment-refund" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
             /** Targetcontentid */
             targetContentId: string | null;
             /** Contentname */
@@ -10177,6 +11049,59 @@ export interface components {
             readingPosition: components["schemas"]["PublicNovelReadingPosition"] | null;
         };
         /**
+         * PublicNovelCommentCreateRequest
+         * @description 화 댓글 본문. 빈 글·1,000자(화면에 보이는 글자 수) 초과는 라우트가 422 로 거른다.
+         */
+        PublicNovelCommentCreateRequest: {
+            /** Body */
+            body: string;
+        };
+        /**
+         * PublicNovelCommentItem
+         * @description 화 댓글 하나와 보는 사람이 그 댓글에 할 수 있는 일. `is_publisher` 는 작성자가 이 노벨의 게시자인가(화면의 "게시자"
+         *     표식)이고, `can_delete` 는 작성자 본인이거나 보는 사람이 게시자일 때, `can_report` 는 남의 댓글일 때 참이다.
+         */
+        PublicNovelCommentItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Authornickname */
+            authorNickname: string | null;
+            /** Ispublisher */
+            isPublisher: boolean;
+            /** Ismine */
+            isMine: boolean;
+            /** Candelete */
+            canDelete: boolean;
+            /** Canreport */
+            canReport: boolean;
+            /** Body */
+            body: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /**
+         * PublicNovelCommentListResponse
+         * @description 최신순 한 페이지. `total_count` 는 그 화에 보이는 댓글 수다(지운 댓글·운영자가 숨긴 댓글은 빠진다).
+         */
+        PublicNovelCommentListResponse: {
+            /** Items */
+            items: components["schemas"]["PublicNovelCommentItem"][];
+            /** Nextcursor */
+            nextCursor: string | null;
+            /** Totalcount */
+            totalCount: number;
+        };
+        /** PublicNovelCommentReportRequest */
+        PublicNovelCommentReportRequest: {
+            reasonCategory: components["schemas"]["ReportReasonCategory"];
+        };
+        /**
          * PublicNovelDetailResponse
          * @description 노벨 작품 정보. 제목·소개·화 제목은 공개본 사본이다.
          *
@@ -10341,6 +11266,27 @@ export interface components {
             edition: number;
             /** Finished */
             finished: boolean;
+        };
+        /**
+         * PublicNovelReportRequest
+         * @description 노벨 신고. `chapter_id` 를 주면 그 공개 화를, 비우면 소설 전체를 신고한다.
+         */
+        PublicNovelReportRequest: {
+            reasonCategory: components["schemas"]["ReportReasonCategory"];
+            /** Chapterid */
+            chapterId?: string | null;
+        };
+        /**
+         * PublicNovelReportResponse
+         * @description 같은 대상을 다시 신고하면 처음 신고를 그대로 돌려준다(사유·증거를 바꾸지 않는다).
+         */
+        PublicNovelReportResponse: {
+            /**
+             * Reportid
+             * Format: uuid
+             */
+            reportId: string;
+            status: components["schemas"]["ReportStatus"];
         };
         /**
          * PublicNovelSource
@@ -15923,6 +16869,569 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_webnovel_comments_webnovels__novel_id__chapters__chapter_id__comments_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+            };
+            header?: never;
+            path: {
+                novel_id: string;
+                chapter_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicNovelCommentListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_webnovel_comment_webnovels__novel_id__chapters__chapter_id__comments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+                chapter_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicNovelCommentCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicNovelCommentItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_webnovel_comment_webnovels__novel_id__comments__comment_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    report_webnovel_webnovels__novel_id__reports_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicNovelReportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicNovelReportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    report_webnovel_comment_webnovels__novel_id__comments__comment_id__reports_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicNovelCommentReportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicNovelReportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_admin_novels_admin_novels_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                moderationStatus?: ("normal" | "restricted") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNovelListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_admin_novel_admin_novels__novel_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNovelDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_admin_novel_chapter_admin_novels__novel_id__chapters__chapter_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+                chapter_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNovelChapterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    moderate_admin_novel_admin_novels__novel_id__moderation_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminNovelModerationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNovelModerationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_admin_novel_reports_admin_novel_reports_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                status?: components["schemas"]["ReportStatus"] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNovelReportListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_admin_novel_report_admin_novel_reports__report_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNovelReportDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    act_on_admin_novel_report_admin_novel_reports__report_id__actions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminNovelReportActionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNovelReportDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_admin_novel_comments_admin_novels__novel_id__comments_get: {
+        parameters: {
+            query?: {
+                page?: number;
+            };
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNovelCommentListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    act_on_admin_novel_comment_admin_novel_comments__comment_id__actions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminNovelCommentActionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_admin_novel_comment_reports_admin_novel_comment_reports_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                status?: components["schemas"]["ReportStatus"] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNovelCommentReportListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_admin_novel_comment_report_admin_novel_comment_reports__report_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNovelCommentReportDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    act_on_admin_novel_comment_report_admin_novel_comment_reports__report_id__actions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminNovelCommentReportActionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNovelCommentReportDetailResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

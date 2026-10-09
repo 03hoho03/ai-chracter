@@ -7484,7 +7484,7 @@
           "webnovels"
         ],
         "summary": "Purchase Novel Chapter",
-        "description": "노벨 화 하나를 소장한다(`purchase_chapter`). 공개 스위치가 꺼져 있으면 403 `NOVEL_PUBLIC_DISABLED`.",
+        "description": "노벨 화 하나를 소장한다(`purchase_chapter`). 노벨 스위치가 꺼져 있으면 404 `NOVEL_PUBLIC_DISABLED`.",
         "operationId": "purchase_novel_chapter_webnovels__novel_id__chapters__chapter_id__purchase_post",
         "parameters": [
           {
@@ -7841,6 +7841,938 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webnovels/{novel_id}/chapters/{chapter_id}/comments": {
+      "get": {
+        "tags": [
+          "webnovels"
+        ],
+        "summary": "List Webnovel Comments",
+        "description": "화 댓글 최신순 20개씩. 다음 페이지는 `nextCursor` 를 그대로 `cursor` 로 넘긴다.",
+        "operationId": "list_webnovel_comments_webnovels__novel_id__chapters__chapter_id__comments_get",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          },
+          {
+            "name": "chapter_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chapter Id"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicNovelCommentListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "webnovels"
+        ],
+        "summary": "Create Webnovel Comment",
+        "description": "화 댓글 쓰기. 빈 글은 422 `NOVEL_COMMENT_EMPTY`, 1,000자 초과는 422 `NOVEL_COMMENT_TOO_LONG`, 분당 5개를 넘으면 429\n`NOVEL_COMMENT_RATE_LIMITED`, 볼 수 없는 화는 404/403(`require_chapter_reader`). 정지된 회원은 403 이다(작성자 행을 잠근\n뒤 DB 의 정지 표식으로 다시 확인한다).",
+        "operationId": "create_webnovel_comment_webnovels__novel_id__chapters__chapter_id__comments_post",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          },
+          {
+            "name": "chapter_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chapter Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicNovelCommentCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicNovelCommentItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webnovels/{novel_id}/comments/{comment_id}": {
+      "delete": {
+        "tags": [
+          "webnovels"
+        ],
+        "summary": "Delete Webnovel Comment",
+        "description": "작성자 본인이나 그 노벨의 게시자가 댓글을 지운다. 없거나 이미 지운 댓글은 404 `NOVEL_COMMENT_NOT_FOUND`, 둘 다\n아니면 403 `NOVEL_COMMENT_DELETE_FORBIDDEN` 이다. 본문을 비우고 지운 사람·시각을 적는다(모듈 docstring).",
+        "operationId": "delete_webnovel_comment_webnovels__novel_id__comments__comment_id__delete",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webnovels/{novel_id}/reports": {
+      "post": {
+        "tags": [
+          "webnovels"
+        ],
+        "summary": "Report Webnovel",
+        "description": "노벨(`chapterId` 없음)이나 그 공개 화 하나를 신고한다. 지금 읽을 수 없는 노벨은 404 `NOVEL_NOT_FOUND`, 그 노벨의 공개\n화가 아니면 404 `NOVEL_CHAPTER_NOT_FOUND`, 자기가 게시한 노벨은 403 `NOVEL_REPORT_OWN`, 한도를 넘으면 429\n`NOVEL_REPORT_RATE_LIMITED`. 화 신고는 그 화를 소장하지 않았어도 된다(목차의 화 제목도 공개 화면 글이다).",
+        "operationId": "report_webnovel_webnovels__novel_id__reports_post",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicNovelReportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicNovelReportResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webnovels/{novel_id}/comments/{comment_id}/reports": {
+      "post": {
+        "tags": [
+          "webnovels"
+        ],
+        "summary": "Report Webnovel Comment",
+        "description": "남의 화 댓글을 신고한다. 없거나 지웠거나 운영자가 숨긴 댓글·내 댓글은 404 `NOVEL_COMMENT_NOT_FOUND`, 그 화를 볼 수\n없으면 404/403(`require_chapter_reader`), 한도를 넘으면 429 `NOVEL_REPORT_RATE_LIMITED`.",
+        "operationId": "report_webnovel_comment_webnovels__novel_id__comments__comment_id__reports_post",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicNovelCommentReportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicNovelReportResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/novels": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Admin Novels",
+        "description": "공개한 적 있는 노벨 전부, 마지막 공개 시각 최신순 20개씩(쪽 번호). 이용제한 상태로 거를 수 있다.",
+        "operationId": "list_admin_novels_admin_novels_get",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "moderationStatus",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "normal",
+                    "restricted"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Moderationstatus"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNovelListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/novels/{novel_id}": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Admin Novel",
+        "description": "공개한 적 있는 노벨 하나(공개본 글·화 목록·심사 기록·최근 신고·구매). 공개 상태 행이 없으면 404 `NOVEL_NOT_FOUND`.",
+        "operationId": "get_admin_novel_admin_novels__novel_id__get",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNovelDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/novels/{novel_id}/chapters/{chapter_id}": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Admin Novel Chapter",
+        "description": "화 공개본 하나 — 독자에게 나가는 그대로. 그 노벨의 공개 화가 아니면 404 `NOVEL_CHAPTER_NOT_FOUND`.",
+        "operationId": "get_admin_novel_chapter_admin_novels__novel_id__chapters__chapter_id__get",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          },
+          {
+            "name": "chapter_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chapter Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNovelChapterResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/novels/{novel_id}/moderation": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Moderate Admin Novel",
+        "description": "노벨을 이용제한(`restrict`)하거나 해제(`lift`)한다. 사유가 공백뿐이면 422, 공개 상태 행이 없으면 404\n`NOVEL_NOT_FOUND`, 이미 그 상태면 409 `NOVEL_ALREADY_RESTRICTED`·`NOVEL_NOT_RESTRICTED`(감사 로그가 빈 조치로 쌓이지\n않게).",
+        "operationId": "moderate_admin_novel_admin_novels__novel_id__moderation_post",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminNovelModerationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNovelModerationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/novel-reports": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Admin Novel Reports",
+        "description": "노벨 신고 최신순 20개씩(쪽 번호). 상태로 거를 수 있다.",
+        "operationId": "list_admin_novel_reports_admin_novel_reports_get",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ReportStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNovelReportListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/novel-reports/{report_id}": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Admin Novel Report",
+        "operationId": "get_admin_novel_report_admin_novel_reports__report_id__get",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Report Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNovelReportDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/novel-reports/{report_id}/actions": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Act On Admin Novel Report",
+        "description": "신고를 처리한다 — `restrict` 는 그 노벨을 이용제한하고 신고를 처리완료로(이미 이용제한이어도 처리된다), `reject` 는\n노벨을 건드리지 않고 반려로 둔다. 이미 처리된 신고도 다시 처리할 수 있다(상태·처리자·시각을 덮어쓴다). 노벨이 지워져\n이용제한할 대상이 없으면 409 `NOVEL_GONE`(반려는 된다).",
+        "operationId": "act_on_admin_novel_report_admin_novel_reports__report_id__actions_post",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Report Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminNovelReportActionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNovelReportDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/novels/{novel_id}/comments": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Admin Novel Comments",
+        "description": "노벨 하나의 댓글 전부(지운 것·숨긴 것 포함) 최신순 20개씩(쪽 번호).",
+        "operationId": "list_admin_novel_comments_admin_novels__novel_id__comments_get",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNovelCommentListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/novel-comments/{comment_id}/actions": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Act On Admin Novel Comment",
+        "description": "댓글을 숨기거나(`hide`, 독자 목록에서 빠지고 본문은 남는다) 되돌리거나(`restore`) 지운다(`delete`, 본문을 비우고 되돌릴\n수 없다). 사유가 공백뿐이면 422, 없는 댓글은 404 `NOVEL_COMMENT_NOT_FOUND`, 지운 댓글은 409.",
+        "operationId": "act_on_admin_novel_comment_admin_novel_comments__comment_id__actions_post",
+        "parameters": [
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminNovelCommentActionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/novel-comment-reports": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Admin Novel Comment Reports",
+        "description": "노벨 댓글 신고 최신순 20개씩(쪽 번호). 상태로 거를 수 있다.",
+        "operationId": "list_admin_novel_comment_reports_admin_novel_comment_reports_get",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ReportStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNovelCommentReportListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/novel-comment-reports/{report_id}": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Admin Novel Comment Report",
+        "operationId": "get_admin_novel_comment_report_admin_novel_comment_reports__report_id__get",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Report Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNovelCommentReportDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/novel-comment-reports/{report_id}/actions": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Act On Admin Novel Comment Report",
+        "description": "댓글 신고를 처리한다 — `hide`·`delete` 는 그 댓글을 숨기거나 지우고 처리완료로, `reject` 는 댓글을 건드리지 않고\n반려로 둔다. 이미 처리된 신고도 다시 처리할 수 있다. 댓글이 지워져(작성자 탈퇴·소설 삭제) 조치할 대상이 없으면 409\n`NOVEL_COMMENT_GONE`, 지운 댓글이면 409 `NOVEL_COMMENT_DELETED`(반려는 된다).",
+        "operationId": "act_on_admin_novel_comment_report_admin_novel_comment_reports__report_id__actions_post",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Report Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminNovelCommentReportActionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNovelCommentReportDetailResponse"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -14963,6 +15895,1318 @@
         "type": "object",
         "title": "AdminNoticeUpdateRequest"
       },
+      "AdminNovelChapterItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "ordinal": {
+            "type": "integer",
+            "title": "Ordinal"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "edition": {
+            "type": "integer",
+            "title": "Edition"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "ordinal",
+          "title",
+          "edition"
+        ],
+        "title": "AdminNovelChapterItem"
+      },
+      "AdminNovelChapterResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "ordinal": {
+            "type": "integer",
+            "title": "Ordinal"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "authorNote": {
+            "type": "string",
+            "title": "Authornote"
+          },
+          "edition": {
+            "type": "integer",
+            "title": "Edition"
+          },
+          "paragraphs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Paragraphs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "ordinal",
+          "title",
+          "authorNote",
+          "edition",
+          "paragraphs"
+        ],
+        "title": "AdminNovelChapterResponse",
+        "description": "화 공개본 — 독자에게 나가는 그대로(제목·작가의 말·본문 문단)."
+      },
+      "AdminNovelCommentActionRequest": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "hide",
+              "restore",
+              "delete"
+            ],
+            "title": "Action"
+          },
+          "adminComment": {
+            "type": "string",
+            "title": "Admincomment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action",
+          "adminComment"
+        ],
+        "title": "AdminNovelCommentActionRequest"
+      },
+      "AdminNovelCommentItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "novelId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Novelid"
+          },
+          "chapterId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Chapterid"
+          },
+          "chapterOrdinal": {
+            "type": "integer",
+            "title": "Chapterordinal"
+          },
+          "authorUserId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Authoruserid"
+          },
+          "authorNickname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authornickname"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "moderatorHidden": {
+            "type": "boolean",
+            "title": "Moderatorhidden"
+          },
+          "deletedBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "author",
+                  "publisher",
+                  "moderator"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deletedby"
+          },
+          "deletedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deletedat"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "novelId",
+          "chapterId",
+          "chapterOrdinal",
+          "authorUserId",
+          "authorNickname",
+          "body",
+          "moderatorHidden",
+          "deletedBy",
+          "deletedAt",
+          "createdAt"
+        ],
+        "title": "AdminNovelCommentItem",
+        "description": "운영자가 보는 댓글 — 지운 댓글·숨긴 댓글도 싣는다(지운 댓글은 본문이 비어 있다)."
+      },
+      "AdminNovelCommentListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminNovelCommentItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "totalPages": {
+            "type": "integer",
+            "title": "Totalpages"
+          },
+          "totalCount": {
+            "type": "integer",
+            "title": "Totalcount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "totalPages",
+          "totalCount"
+        ],
+        "title": "AdminNovelCommentListResponse"
+      },
+      "AdminNovelCommentReportActionRequest": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "hide",
+              "delete",
+              "reject"
+            ],
+            "title": "Action"
+          },
+          "adminComment": {
+            "type": "string",
+            "title": "Admincomment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action",
+          "adminComment"
+        ],
+        "title": "AdminNovelCommentReportActionRequest"
+      },
+      "AdminNovelCommentReportDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "commentId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commentid"
+          },
+          "novelId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Novelid"
+          },
+          "commentAuthorUserId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Commentauthoruserid"
+          },
+          "reporterUserId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Reporteruserid"
+          },
+          "reasonCategory": {
+            "$ref": "#/components/schemas/ReportReasonCategory"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReportStatus"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "evidenceExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Evidenceexpiresat"
+          },
+          "evidenceAvailable": {
+            "type": "boolean",
+            "title": "Evidenceavailable"
+          },
+          "resolvedByAdminId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedbyadminid"
+          },
+          "resolvedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedat"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdminNovelCommentItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/AdminNovelCommentReportEvidence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "commentId",
+          "novelId",
+          "commentAuthorUserId",
+          "reporterUserId",
+          "reasonCategory",
+          "status",
+          "createdAt",
+          "evidenceExpiresAt",
+          "evidenceAvailable",
+          "resolvedByAdminId",
+          "resolvedAt",
+          "comment",
+          "evidence"
+        ],
+        "title": "AdminNovelCommentReportDetailResponse",
+        "description": "`comment` 는 지금 댓글 행(지워졌으면 비어 있다), `evidence` 는 신고 시점 사본이다."
+      },
+      "AdminNovelCommentReportEvidence": {
+        "properties": {
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expiresat"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expiresAt",
+          "available",
+          "body"
+        ],
+        "title": "AdminNovelCommentReportEvidence"
+      },
+      "AdminNovelCommentReportListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "commentId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commentid"
+          },
+          "novelId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Novelid"
+          },
+          "commentAuthorUserId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Commentauthoruserid"
+          },
+          "reporterUserId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Reporteruserid"
+          },
+          "reasonCategory": {
+            "$ref": "#/components/schemas/ReportReasonCategory"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReportStatus"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "evidenceExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Evidenceexpiresat"
+          },
+          "evidenceAvailable": {
+            "type": "boolean",
+            "title": "Evidenceavailable"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "commentId",
+          "novelId",
+          "commentAuthorUserId",
+          "reporterUserId",
+          "reasonCategory",
+          "status",
+          "createdAt",
+          "evidenceExpiresAt",
+          "evidenceAvailable"
+        ],
+        "title": "AdminNovelCommentReportListItem",
+        "description": "노벨 댓글 신고 하나. 댓글·소설이 지워지면 `comment_id`·`novel_id` 가 비고, 누가 쓴 댓글이었는지는\n`comment_author_user_id` 로 남는다."
+      },
+      "AdminNovelCommentReportListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminNovelCommentReportListItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "totalPages": {
+            "type": "integer",
+            "title": "Totalpages"
+          },
+          "totalCount": {
+            "type": "integer",
+            "title": "Totalcount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "totalPages",
+          "totalCount"
+        ],
+        "title": "AdminNovelCommentReportListResponse"
+      },
+      "AdminNovelDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "sourceTitle": {
+            "type": "string",
+            "title": "Sourcetitle"
+          },
+          "publisherUserId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Publisheruserid"
+          },
+          "publisherNickname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publishernickname"
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "withdrawn"
+            ],
+            "title": "Visibility"
+          },
+          "moderationStatus": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "restricted"
+            ],
+            "title": "Moderationstatus"
+          },
+          "readable": {
+            "type": "boolean",
+            "title": "Readable"
+          },
+          "chapterCount": {
+            "type": "integer",
+            "title": "Chaptercount"
+          },
+          "likeCount": {
+            "type": "integer",
+            "title": "Likecount"
+          },
+          "viewCount": {
+            "type": "integer",
+            "title": "Viewcount"
+          },
+          "purchaseCount": {
+            "type": "integer",
+            "title": "Purchasecount"
+          },
+          "pendingReportCount": {
+            "type": "integer",
+            "title": "Pendingreportcount"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Publishedat"
+          },
+          "synopsis": {
+            "type": "string",
+            "title": "Synopsis"
+          },
+          "contentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Contentid"
+          },
+          "sourceModerationStatus": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModerationStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "publisherSuspended": {
+            "type": "boolean",
+            "title": "Publishersuspended"
+          },
+          "firstPublishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Firstpublishedat"
+          },
+          "chapters": {
+            "items": {
+              "$ref": "#/components/schemas/AdminNovelChapterItem"
+            },
+            "type": "array",
+            "title": "Chapters"
+          },
+          "screenings": {
+            "items": {
+              "$ref": "#/components/schemas/AdminNovelScreeningItem"
+            },
+            "type": "array",
+            "title": "Screenings"
+          },
+          "reports": {
+            "items": {
+              "$ref": "#/components/schemas/AdminNovelReportListItem"
+            },
+            "type": "array",
+            "title": "Reports"
+          },
+          "purchaseBuyerCount": {
+            "type": "integer",
+            "title": "Purchasebuyercount"
+          },
+          "purchaseAmount": {
+            "type": "integer",
+            "title": "Purchaseamount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "sourceTitle",
+          "publisherUserId",
+          "publisherNickname",
+          "visibility",
+          "moderationStatus",
+          "readable",
+          "chapterCount",
+          "likeCount",
+          "viewCount",
+          "purchaseCount",
+          "pendingReportCount",
+          "publishedAt",
+          "synopsis",
+          "contentId",
+          "sourceModerationStatus",
+          "publisherSuspended",
+          "firstPublishedAt",
+          "chapters",
+          "screenings",
+          "reports",
+          "purchaseBuyerCount",
+          "purchaseAmount"
+        ],
+        "title": "AdminNovelDetailResponse",
+        "description": "공개본 글과 운영 판단 재료. `source_moderation_status` 는 원작의 지금 상태(원작이 없으면 비어 있다), `publisher_suspended`\n는 게시자 정지 여부다 — 둘 다 `readable` 이 거짓인 이유를 가른다. `reports` 는 최근 노벨 신고 20개다."
+      },
+      "AdminNovelListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "sourceTitle": {
+            "type": "string",
+            "title": "Sourcetitle"
+          },
+          "publisherUserId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Publisheruserid"
+          },
+          "publisherNickname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publishernickname"
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "withdrawn"
+            ],
+            "title": "Visibility"
+          },
+          "moderationStatus": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "restricted"
+            ],
+            "title": "Moderationstatus"
+          },
+          "readable": {
+            "type": "boolean",
+            "title": "Readable"
+          },
+          "chapterCount": {
+            "type": "integer",
+            "title": "Chaptercount"
+          },
+          "likeCount": {
+            "type": "integer",
+            "title": "Likecount"
+          },
+          "viewCount": {
+            "type": "integer",
+            "title": "Viewcount"
+          },
+          "purchaseCount": {
+            "type": "integer",
+            "title": "Purchasecount"
+          },
+          "pendingReportCount": {
+            "type": "integer",
+            "title": "Pendingreportcount"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Publishedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "sourceTitle",
+          "publisherUserId",
+          "publisherNickname",
+          "visibility",
+          "moderationStatus",
+          "readable",
+          "chapterCount",
+          "likeCount",
+          "viewCount",
+          "purchaseCount",
+          "pendingReportCount",
+          "publishedAt"
+        ],
+        "title": "AdminNovelListItem",
+        "description": "공개 상태 행이 있는 소설 하나(거둔 것·이용제한된 것 포함). `readable` 은 지금 독자에게 보이는가(거둠·이용제한·게시자\n정지·원작 숨김·공개 화 없음이면 거짓). `purchase_count` 는 환급되지 않은 구매 수, `pending_report_count` 는 처리 전 노벨\n신고 수다."
+      },
+      "AdminNovelListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminNovelListItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "totalPages": {
+            "type": "integer",
+            "title": "Totalpages"
+          },
+          "totalCount": {
+            "type": "integer",
+            "title": "Totalcount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "totalPages",
+          "totalCount"
+        ],
+        "title": "AdminNovelListResponse"
+      },
+      "AdminNovelModerationRequest": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "restrict",
+              "lift"
+            ],
+            "title": "Action"
+          },
+          "adminComment": {
+            "type": "string",
+            "title": "Admincomment"
+          },
+          "reasonCategory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportReasonCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "action",
+          "adminComment"
+        ],
+        "title": "AdminNovelModerationRequest",
+        "description": "`admin_comment` 는 감사 로그에 남는 조치 사유(공백만이면 422). `reason_category` 는 신고 사유 분류를 고를 때만."
+      },
+      "AdminNovelModerationResponse": {
+        "properties": {
+          "novelId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Novelid"
+          },
+          "moderationStatus": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "restricted"
+            ],
+            "title": "Moderationstatus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "novelId",
+          "moderationStatus"
+        ],
+        "title": "AdminNovelModerationResponse"
+      },
+      "AdminNovelReportActionRequest": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "restrict",
+              "reject"
+            ],
+            "title": "Action"
+          },
+          "adminComment": {
+            "type": "string",
+            "title": "Admincomment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action",
+          "adminComment"
+        ],
+        "title": "AdminNovelReportActionRequest"
+      },
+      "AdminNovelReportDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "novelId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Novelid"
+          },
+          "chapterId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapterid"
+          },
+          "chapterOrdinal": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapterordinal"
+          },
+          "publisherUserId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Publisheruserid"
+          },
+          "reporterUserId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Reporteruserid"
+          },
+          "reasonCategory": {
+            "$ref": "#/components/schemas/ReportReasonCategory"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReportStatus"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "evidenceTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidencetitle"
+          },
+          "evidenceExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Evidenceexpiresat"
+          },
+          "evidenceAvailable": {
+            "type": "boolean",
+            "title": "Evidenceavailable"
+          },
+          "resolvedByAdminId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedbyadminid"
+          },
+          "resolvedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedat"
+          },
+          "novelModerationStatus": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "normal",
+                  "restricted"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Novelmoderationstatus"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/AdminNovelReportEvidence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "novelId",
+          "chapterId",
+          "chapterOrdinal",
+          "publisherUserId",
+          "reporterUserId",
+          "reasonCategory",
+          "status",
+          "createdAt",
+          "evidenceTitle",
+          "evidenceExpiresAt",
+          "evidenceAvailable",
+          "resolvedByAdminId",
+          "resolvedAt",
+          "novelModerationStatus",
+          "evidence"
+        ],
+        "title": "AdminNovelReportDetailResponse",
+        "description": "`novel_moderation_status` 는 신고된 노벨의 지금 이용제한 상태(소설이 지워졌으면 비어 있다)."
+      },
+      "AdminNovelReportEvidence": {
+        "properties": {
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expiresat"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "synopsis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Synopsis"
+          },
+          "chapterTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chaptertitle"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expiresAt",
+          "available",
+          "title",
+          "synopsis",
+          "chapterTitle",
+          "body"
+        ],
+        "title": "AdminNovelReportEvidence",
+        "description": "신고 시점 공개본 사본. 보유 기간이 지났거나 파기됐으면 `available` 이 거짓이고 글 칸이 모두 빈다."
+      },
+      "AdminNovelReportListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "novelId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Novelid"
+          },
+          "chapterId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapterid"
+          },
+          "chapterOrdinal": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapterordinal"
+          },
+          "publisherUserId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Publisheruserid"
+          },
+          "reporterUserId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Reporteruserid"
+          },
+          "reasonCategory": {
+            "$ref": "#/components/schemas/ReportReasonCategory"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReportStatus"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "evidenceTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidencetitle"
+          },
+          "evidenceExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Evidenceexpiresat"
+          },
+          "evidenceAvailable": {
+            "type": "boolean",
+            "title": "Evidenceavailable"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "novelId",
+          "chapterId",
+          "chapterOrdinal",
+          "publisherUserId",
+          "reporterUserId",
+          "reasonCategory",
+          "status",
+          "createdAt",
+          "evidenceTitle",
+          "evidenceExpiresAt",
+          "evidenceAvailable"
+        ],
+        "title": "AdminNovelReportListItem",
+        "description": "노벨 신고 하나. 소설·화가 지워지면 `novel_id`·`chapter_id` 가 비고, 무엇이 신고됐는지는 `evidence_title`·\n`chapter_ordinal`·`publisher_user_id` 로 읽는다(증거가 파기되면 제목도 빈다). `chapter_ordinal` 이 있으면 화 신고다."
+      },
+      "AdminNovelReportListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminNovelReportListItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "totalPages": {
+            "type": "integer",
+            "title": "Totalpages"
+          },
+          "totalCount": {
+            "type": "integer",
+            "title": "Totalcount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "totalPages",
+          "totalCount"
+        ],
+        "title": "AdminNovelReportListResponse"
+      },
+      "AdminNovelScreeningItem": {
+        "properties": {
+          "chapterOrdinal": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapterordinal"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "rejected"
+            ],
+            "title": "Outcome"
+          },
+          "flaggedParts": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "novel_title",
+                "synopsis",
+                "chapter_title",
+                "author_note",
+                "chapter_body"
+              ]
+            },
+            "type": "array",
+            "title": "Flaggedparts"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chapterOrdinal",
+          "outcome",
+          "flaggedParts",
+          "reason",
+          "model",
+          "createdAt"
+        ],
+        "title": "AdminNovelScreeningItem",
+        "description": "텍스트 심사 한 번. `reason` 은 심사 모델이 쓴 사유로 운영자만 본다."
+      },
       "AdminPromptDraftResponse": {
         "properties": {
           "id": {
@@ -15730,6 +17974,13 @@
               "legal-publish",
               "notice-publish",
               "notice-unpublish",
+              "novel-comment-delete",
+              "novel-comment-hide",
+              "novel-comment-report-reject",
+              "novel-comment-restore",
+              "novel-lift",
+              "novel-report-reject",
+              "novel-restrict",
               "prompt-set-publish",
               "report-reject",
               "user-beta-off",
@@ -25179,6 +27430,124 @@
         "title": "PublicNovelChapterResponse",
         "description": "노벨 화 하나. `access` 가 `locked` 면 본문(`paragraphs`)과 작가의 말이 비어 있고 `price` 로 소장 화면을 그린다 —\n잠긴 화의 글은 한 글자도 싣지 않는다. 읽을 수 있으면 공개본 개정의 본문을 문단 배열로 싣는다(소유자 화 조회의\n`paragraphs` 와 같은 나눔이라 읽은 자리의 문단 번호가 같은 뜻이다). `edition` 은 공개본 판이다(읽은 자리 저장에 싣는다)."
       },
+      "PublicNovelCommentCreateRequest": {
+        "properties": {
+          "body": {
+            "type": "string",
+            "title": "Body"
+          }
+        },
+        "type": "object",
+        "required": [
+          "body"
+        ],
+        "title": "PublicNovelCommentCreateRequest",
+        "description": "화 댓글 본문. 빈 글·1,000자(화면에 보이는 글자 수) 초과는 라우트가 422 로 거른다."
+      },
+      "PublicNovelCommentItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "authorNickname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authornickname"
+          },
+          "isPublisher": {
+            "type": "boolean",
+            "title": "Ispublisher"
+          },
+          "isMine": {
+            "type": "boolean",
+            "title": "Ismine"
+          },
+          "canDelete": {
+            "type": "boolean",
+            "title": "Candelete"
+          },
+          "canReport": {
+            "type": "boolean",
+            "title": "Canreport"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "authorNickname",
+          "isPublisher",
+          "isMine",
+          "canDelete",
+          "canReport",
+          "body",
+          "createdAt"
+        ],
+        "title": "PublicNovelCommentItem",
+        "description": "화 댓글 하나와 보는 사람이 그 댓글에 할 수 있는 일. `is_publisher` 는 작성자가 이 노벨의 게시자인가(화면의 \"게시자\"\n표식)이고, `can_delete` 는 작성자 본인이거나 보는 사람이 게시자일 때, `can_report` 는 남의 댓글일 때 참이다."
+      },
+      "PublicNovelCommentListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PublicNovelCommentItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          },
+          "totalCount": {
+            "type": "integer",
+            "title": "Totalcount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "nextCursor",
+          "totalCount"
+        ],
+        "title": "PublicNovelCommentListResponse",
+        "description": "최신순 한 페이지. `total_count` 는 그 화에 보이는 댓글 수다(지운 댓글·운영자가 숨긴 댓글은 빠진다)."
+      },
+      "PublicNovelCommentReportRequest": {
+        "properties": {
+          "reasonCategory": {
+            "$ref": "#/components/schemas/ReportReasonCategory"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reasonCategory"
+        ],
+        "title": "PublicNovelCommentReportRequest"
+      },
       "PublicNovelDetailResponse": {
         "properties": {
           "id": {
@@ -25522,6 +27891,50 @@
         ],
         "title": "PublicNovelReadingPositionRequest",
         "description": "노벨 화를 읽던 자리. 소유자 읽은 자리와 같은 꼴이고 개정 id 대신 공개본 판(`edition`)을 싣는다. 같은 값을 다시\n보내도 결과가 같고, `finished` 가 한 번 참이 되면 그 화는 앞부분을 다시 읽어 저장해도 다 읽은 화로 남는다."
+      },
+      "PublicNovelReportRequest": {
+        "properties": {
+          "reasonCategory": {
+            "$ref": "#/components/schemas/ReportReasonCategory"
+          },
+          "chapterId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapterid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reasonCategory"
+        ],
+        "title": "PublicNovelReportRequest",
+        "description": "노벨 신고. `chapter_id` 를 주면 그 공개 화를, 비우면 소설 전체를 신고한다."
+      },
+      "PublicNovelReportResponse": {
+        "properties": {
+          "reportId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Reportid"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReportStatus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reportId",
+          "status"
+        ],
+        "title": "PublicNovelReportResponse",
+        "description": "같은 대상을 다시 신고하면 처음 신고를 그대로 돌려준다(사유·증거를 바꾸지 않는다)."
       },
       "PublicNovelSource": {
         "properties": {
