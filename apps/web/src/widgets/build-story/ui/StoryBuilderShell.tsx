@@ -64,6 +64,7 @@ import {
 import { AppealModal } from "@/features/submit-appeal";
 import { creationGuidePath } from "@/shared/config/creationGuide";
 
+import { STORY_REQUIRED_TAB_IDS } from "../model/requiredTabs";
 import { useMediaBookThumbnailsStore } from "../model/useMediaBookThumbnailsStore";
 import { EndingTab } from "./EndingTab";
 import { KeywordNoteTab } from "./KeywordNoteTab";
@@ -406,7 +407,12 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
                 onValueChange={(value) => isStoryBuilderTab(value) && setActiveTab(value)}
                 className="lg:gap-0"
               >
-                <BuilderTabStrip tabs={TABS} errorTabIds={errorTabIds} />
+                <BuilderTabStrip
+                  tabs={TABS}
+                  activeTab={activeTab}
+                  errorTabIds={errorTabIds}
+                  requiredTabIds={STORY_REQUIRED_TAB_IDS}
+                />
 
                 <TabsContent value="profile">
                   <ProfileTab

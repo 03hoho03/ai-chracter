@@ -44,6 +44,7 @@ import {
 import { AppealModal } from "@/features/submit-appeal";
 import { creationGuidePath } from "@/shared/config/creationGuide";
 
+import { CHARACTER_REQUIRED_TAB_IDS } from "../model/requiredTabs";
 import { AdvancedTab } from "./AdvancedTab";
 import { DetailTab } from "./DetailTab";
 import { IntroTab } from "./IntroTab";
@@ -327,7 +328,12 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
             onValueChange={(value) => isCharacterBuilderTab(value) && setActiveTab(value)}
             className="lg:gap-0"
           >
-            <BuilderTabStrip tabs={TABS} errorTabIds={errorTabIds} />
+            <BuilderTabStrip
+              tabs={TABS}
+              activeTab={activeTab}
+              errorTabIds={errorTabIds}
+              requiredTabIds={CHARACTER_REQUIRED_TAB_IDS}
+            />
 
             <TabsContent value="profile">
               <ProfileTab
