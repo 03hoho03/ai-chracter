@@ -1724,10 +1724,14 @@ Gemini 와 따로 묶인다. 소설 장 실패는 공급자와 무관하게 지�
 명단과도 무관하게 소유자면 된다.
 
 `.env` 에 줄을 더한다(파일을 통째로 덮거나 백업본으로 복원하지 않는다 — 교체 스크립트가 같은 파일의 `API_IMAGE_BLUE`·
-`API_IMAGE_GREEN` 을 고친다). 먼저 미리보기로 켠다:
+`API_IMAGE_GREEN` 을 고친다). 먼저 미리보기로 켠다. 줄을 더하기 **전에** 서빙 중인 색의 이미지가 명단을 아는 판인지
+확인한다 — 명단 설정이 없는 옛 이미지라면 `AttributeError` 로 끝나고, 그 상태에서 줄을 더해 올리면 모두에게 열린다. 끝에
+`ok` 가 찍힐 때만 다음 줄로 간다:
 
 ```sh
 cd /opt/ddona/app
+sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -T api_$(sudo bash ops/active-color.sh) \
+  python -c "from api.core.config import settings; settings.novel_public_preview_allowlist; print('ok')"
 sudo sh -c 'printf "\nNOVEL_PUBLIC_ENABLED=true\nNOVEL_PUBLIC_PREVIEW_ALLOWLIST=<계정 id>,<계정 id>\n" >> /opt/ddona/.env'
 sudo python3 ops/check_env.py --format /opt/ddona/.env
 sudo bash ops/swap-api.sh
@@ -1750,6 +1754,10 @@ sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -
 
 `True []` 가 나오면 전체 공개다. 다시 운영자만으로 좁히려면 명단 줄을 같은 방법으로 다시 넣고 올린다(공개 상태·구매·댓글은
 그대로 남고, 명단 밖 회원은 그동안 스위치를 끈 것과 같은 응답을 받는다).
+
+🔴 **명단 줄이 있는 동안 이 기능보다 옛 이미지로 되돌리면 모든 회원에게 열린다.** 옛 코드는 명단 키를 모르고 버린 채
+(`Settings` 가 모르는 키를 무시한다) `NOVEL_PUBLIC_ENABLED=true` 만 읽는다. 미리보기 동안 다른 이유로 롤백할 때도 먼저
+`NOVEL_PUBLIC_ENABLED` 줄부터 지운 뒤(`sudo sed -i '/^NOVEL_PUBLIC_ENABLED=/d' /opt/ddona/.env`) 롤백한다.
 
 `restart` 는 env 를 다시 읽지 않으므로 교체 스크립트를 태그 없이 불러 새 env 로 다시 띄운다("env 반영 재기동" 절). 줄을 더하거나
 지울 때마다 "BE 런타임" 절의 키 개수 문장을 VM 에서 다시 세어 고친다.
