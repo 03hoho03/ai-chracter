@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
-from api.db.models import User
+from api.db.models import AdminActionLog, User
 from api.db.models.character import CharacterVersionDetail
 from api.db.models.content import Content, ContentVersion, ContentVisibility, ModerationStatus
 from api.db.models.novel import (
@@ -26,7 +26,9 @@ from api.novel_public import reading
 from factories import (
     PublicNovel,
     _allow_novelize,
+    _create_admin,
     _login_as,
+    _login_as_admin,
     _make_asset,
     _make_public_novel,
     _make_user,
@@ -591,3 +593,80 @@ async def test_reader_routes_need_login(db_client: httpx.AsyncClient, db_session
 
     assert (await db_client.get("/webnovels")).status_code == 401
     assert (await db_client.get(_chapter_path(novel, 1))).status_code == 401
+
+
+# ── 홈 노벨 ─────────────────────────────────────────────────────────────────
+async def _as_admin(client: httpx.AsyncClient, db: AsyncSession) -> None:
+    admin = await _create_admin(db)
+    await db.commit()
+    await _login_as_admin(client, admin)
+
+
+async def test_admin_curates_home_novels_and_home_shows_only_readable_ones_in_slot_order(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """자리 순으로 보인다. 걸린 노벨이 이용제한되면 지정은 남은 채 홈에서 빠지고, 이용제한 중인 노벨은 새로 걸 수 없다.
+    같은 노벨을 다른 자리에 걸면 옮겨진다. 지정·해제는 노벨을 대상으로 감사 로그에 남는다."""
+    first, second, third = [await _novel(db_session, batches=(1,)) for _ in range(3)]
+    await _as_admin(db_client, db_session)
+    assert (await db_client.put("/admin/home-novel-curations/2", json={"novelId": str(first.novel_id)})).status_code == 204
+    assert (await db_client.put("/admin/home-novel-curations/1", json={"novelId": str(second.novel_id)})).status_code == 204
+    assert (await db_client.put("/admin/home-novel-curations/3", json={"novelId": str(first.novel_id)})).status_code == 204
+    await _restrict(db_session, third)
+    await db_session.commit()
+    rejected = await db_client.put("/admin/home-novel-curations/4", json={"novelId": str(third.novel_id)})
+    out_of_range = await db_client.put("/admin/home-novel-curations/11", json={"novelId": str(first.novel_id)})
+    slots = (await db_client.get("/admin/home-novel-curations")).json()["items"]
+
+    reader = await _member(db_session)
+    home = (await _get(db_client, "/webnovels/home-curation", as_user=reader)).json()["items"]
+    await _restrict(db_session, second)
+    await db_session.commit()
+    after_restrict = (await db_client.get("/webnovels/home-curation")).json()["items"]
+
+    assert (rejected.status_code, rejected.json()["detail"]) == (400, {"code": "NOT_PUBLICLY_LISTED"})
+    assert out_of_range.status_code == 422
+    assert [(s["position"], s["novel"]["id"] if s["novel"] else None) for s in slots[:4]] == [
+        (1, str(second.novel_id)),
+        (2, None),
+        (3, str(first.novel_id)),
+        (4, None),
+    ]
+    assert len(slots) == 10
+    assert [item["id"] for item in home] == [str(second.novel_id), str(first.novel_id)]
+    assert [item["id"] for item in after_restrict] == [str(first.novel_id)]
+    logs = (
+        await db_session.execute(
+            sa.select(AdminActionLog.action_type, AdminActionLog.target_novel_id).order_by(AdminActionLog.created_at)
+        )
+    ).all()
+    assert sorted(logs) == sorted(
+        [
+            ("home-novel-curation-set", first.novel_id),
+            ("home-novel-curation-set", second.novel_id),
+            ("home-novel-curation-set", first.novel_id),
+        ]
+    )
+
+
+async def test_admin_clears_a_home_novel_slot(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+    novel = await _novel(db_session, batches=(1,))
+    db_session.add(HomeNovelCuration(position=1, novel_id=novel.novel_id))
+    await db_session.commit()
+    await _as_admin(db_client, db_session)
+
+    cleared = await db_client.delete("/admin/home-novel-curations/1")
+    again = await db_client.delete("/admin/home-novel-curations/1")
+
+    assert (cleared.status_code, again.status_code) == (204, 204)
+    assert await db_session.scalar(sa.select(sa.func.count()).select_from(HomeNovelCuration)) == 0
+    logs = (await db_session.execute(sa.select(AdminActionLog.action_type, AdminActionLog.target_novel_id))).tuples()
+    assert list(logs) == [("home-novel-curation-clear", novel.novel_id)]
+
+
+async def test_home_novel_admin_routes_need_an_admin(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+    member = await _member(db_session)
+    await _login_as(db_client, member)
+
+    assert (await db_client.get("/admin/home-novel-curations")).status_code == 401
+    assert (await db_client.delete("/admin/home-novel-curations/1")).status_code == 401

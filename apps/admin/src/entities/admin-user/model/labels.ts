@@ -54,6 +54,8 @@ export const ACTION_TYPE_LABELS = {
   // 둔다. 문구는 작품 상세의 지정·해제 버튼과 같은 말이다.
   "home-curation-set": "홈 큐레이션 지정",
   "home-curation-clear": "홈 큐레이션 해제",
+  "home-novel-curation-set": "홈 노벨 지정",
+  "home-novel-curation-clear": "홈 노벨 해제",
   "inquiry-reply": "문의 답변",
   "legal-publish": "약관·정책 게시",
   "notice-publish": "공지 게시",
