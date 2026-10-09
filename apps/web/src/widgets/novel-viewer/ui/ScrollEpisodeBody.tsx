@@ -3,7 +3,7 @@ import { useRef, type PointerEventHandler } from "react";
 
 import type { ReadingPositionSession } from "../model/useReadingPosition";
 import { useScrollReadingTracker } from "../model/useScrollReadingTracker";
-import type { ViewerChapter, ViewerEpisode, ViewerNovel, ViewerRoute } from "../model/viewerSource";
+import type { EpisodeEndExtras, ViewerChapter, ViewerEpisode, ViewerNovel, ViewerRoute } from "../model/viewerSource";
 import { EpisodeEnd } from "./EpisodeEnd";
 import { EpisodeHeader } from "./EpisodeHeader";
 
@@ -19,6 +19,7 @@ type ScrollEpisodeBodyProps = {
   onPointerDown: PointerEventHandler<HTMLElement>;
   onPointerUp: PointerEventHandler<HTMLElement>;
   onOpenToc: (opener: HTMLElement) => void;
+  endExtras?: EpisodeEndExtras;
 };
 
 /** 창 세로 스크롤로 읽는 화 본문. 붙어 있는 동안 읽던 자리로 되돌리고 지금 문단을 잰다(`useScrollReadingTracker`). */
@@ -33,6 +34,7 @@ export function ScrollEpisodeBody({
   onPointerDown,
   onPointerUp,
   onOpenToc,
+  endExtras,
 }: ScrollEpisodeBodyProps) {
   const { paragraphs } = episode;
   const articleRef = useRef<HTMLElement>(null);
@@ -67,6 +69,7 @@ export function ScrollEpisodeBody({
           next={next}
           isInPageFormat={false}
           onOpenToc={onOpenToc}
+          extras={endExtras}
         />
       </article>
     </main>

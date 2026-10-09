@@ -6,7 +6,7 @@ import { useIsFinePointer } from "../lib/useIsFinePointer";
 import { usePagedReader, type PagedPosition, type PagedReaderHandle } from "../model/usePagedReader";
 import { usePageInput } from "../model/usePageInput";
 import type { ReadingPositionSession } from "../model/useReadingPosition";
-import type { ViewerChapter, ViewerEpisode, ViewerNovel, ViewerRoute } from "../model/viewerSource";
+import type { EpisodeEndExtras, ViewerChapter, ViewerEpisode, ViewerNovel, ViewerRoute } from "../model/viewerSource";
 import { EpisodeEnd } from "./EpisodeEnd";
 import { EpisodeHeader } from "./EpisodeHeader";
 import { PageTurnButton } from "./PageTurnButton";
@@ -35,6 +35,7 @@ type PagedEpisodeBodyProps = {
   /** 본문 가운데 탭 — 보기 설정이 열려 있으면 그것만 닫고, 아니면 바를 여닫는다. */
   onBodyTap: () => void;
   onOpenToc: (opener: HTMLElement) => void;
+  endExtras?: EpisodeEndExtras;
 };
 
 /**
@@ -70,6 +71,7 @@ export function PagedEpisodeBody({
   settingsPanelRef,
   onBodyTap,
   onOpenToc,
+  endExtras,
 }: PagedEpisodeBodyProps) {
   const { paragraphs } = episode;
   const isFinePointer = useIsFinePointer();
@@ -192,6 +194,7 @@ export function PagedEpisodeBody({
                   next={next}
                   isInPageFormat
                   onOpenToc={onOpenToc}
+                  extras={endExtras}
                 />
               </div>
             </article>

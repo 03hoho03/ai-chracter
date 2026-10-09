@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import type { SavedReadingPosition } from "../lib/toRestoreParagraphIndex";
 
 /** 읽기 화면이 놓인 경로 — 내 소설(`/novels/…`)과 노벨(`/webnovels/…`). 링크 목적지와 화 끝의 몇 자리가 이것으로
@@ -51,4 +53,19 @@ export type ReadingPositionStore = {
   /** 이 화를 떠날 때. 마지막으로 잰 자리(재지 않았으면 없다)와, 날아가던 저장이 모두 끝나면 풀리는 약속을 받는다 —
    * 캐시를 먼저 고쳐 두고 저장이 끝난 뒤 다시 받게 하는 데 쓴다. */
   onLeave: (lastRecorded: ViewerReadingPosition | undefined, settled: Promise<unknown>) => void;
+};
+
+/** 화 끝 블록이 놓인 자리의 크기 규칙. 판형 안이면 버튼·아이콘 크기를 px 로 고정한 클래스를 준다(판형 안 글자가
+ * 브라우저 기본 글자 크기를 따르면 쪽 수가 바뀐다). 스크롤 모드면 비어 있다(평소 크기). */
+export type EpisodeEndFormat = {
+  isInPageFormat: boolean;
+  buttonClassName: string | undefined;
+  iconClassName: string | undefined;
+};
+
+/** 노벨 화 끝에만 더하는 자리 — 다음 화 아래 [좋아요][댓글] 줄과, 맨 아래 "이 화 신고하기". 좋아요·댓글·신고는 다른
+ * 기능이라 노벨 화면이 그려 넣는다. */
+export type EpisodeEndExtras = {
+  renderActions: (format: EpisodeEndFormat) => ReactNode;
+  renderReport: (format: EpisodeEndFormat) => ReactNode;
 };

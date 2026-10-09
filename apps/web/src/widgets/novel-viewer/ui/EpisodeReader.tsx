@@ -17,7 +17,13 @@ import { useChromeVisibility } from "../model/useChromeVisibility";
 import type { PagedPosition, PagedReaderHandle } from "../model/usePagedReader";
 import { usePageFit } from "../model/usePageFit";
 import { useReadingPosition } from "../model/useReadingPosition";
-import type { ReadingPositionStore, ViewerEpisode, ViewerNovel, ViewerRoute } from "../model/viewerSource";
+import type {
+  EpisodeEndExtras,
+  ReadingPositionStore,
+  ViewerEpisode,
+  ViewerNovel,
+  ViewerRoute,
+} from "../model/viewerSource";
 import { PagedEpisodeBody } from "./PagedEpisodeBody";
 import { ScrollEpisodeBody } from "./ScrollEpisodeBody";
 import { ViewerBottomBar } from "./ViewerBottomBar";
@@ -37,6 +43,12 @@ type EpisodeReaderProps = {
   readingPosition: ReadingPositionStore;
   /** 목차 시트. 열림 상태를 받아 경로에 맞는 머리·목록으로 `ViewerTocSheet` 를 그린다. */
   renderToc: (sheet: ViewerTocSheetControl) => ReactNode;
+  /** 위 바의 목차 앞에 더할 버튼(노벨의 댓글). 숨은 바 안이라 바와 함께 `inert` 가 된다. */
+  topBarAction?: ReactNode;
+  /** 화 끝 블록에 더할 자리(노벨의 좋아요·댓글·신고). */
+  endExtras?: EpisodeEndExtras;
+  /** 호출부가 띄운 시트(노벨 댓글)가 열려 있는가 — 열려 있으면 Esc 를 그 시트에 맡긴다(목차 시트와 같은 이유). */
+  isExtraSheetOpen?: boolean;
 };
 
 /**
@@ -54,7 +66,16 @@ type EpisodeReaderProps = {
  * 내 소설(`NovelViewer`)과 노벨(`WebnovelViewer`)이 이 화면을 함께 쓴다. 둘이 다른 것 — 링크 경로, 읽은 자리의
  * 저장 주소·캐시, 목차의 머리와 표식, 화 끝의 몇 자리 — 은 호출부가 넣는다.
  */
-export function EpisodeReader({ route, novel, episode, readingPosition: store, renderToc }: EpisodeReaderProps) {
+export function EpisodeReader({
+  route,
+  novel,
+  episode,
+  readingPosition: store,
+  renderToc,
+  topBarAction,
+  endExtras,
+  isExtraSheetOpen = false,
+}: EpisodeReaderProps) {
   const settings = useAtomValue(readerSettingsAtom);
   const topBarId = useId();
   const bottomBarId = useId();
@@ -133,7 +154,11 @@ export function EpisodeReader({ route, novel, episode, readingPosition: store, r
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
-      const target = toEscapeTarget({ isTocOpen, isSettingsOpen, isChromeVisible: chrome.isVisible });
+      const target = toEscapeTarget({
+        isTocOpen: isTocOpen || isExtraSheetOpen,
+        isSettingsOpen,
+        isChromeVisible: chrome.isVisible,
+      });
       if (target === "settings") closeSettings();
       else if (target === "chrome") chrome.hide();
     }
@@ -215,6 +240,7 @@ export function EpisodeReader({ route, novel, episode, readingPosition: store, r
         settingsButtonRef={settingsButtonRef}
         onOpenToc={() => openToc(tocButtonRef.current)}
         onToggleSettings={() => (isSettingsOpen ? closeSettings() : setIsSettingsOpen(true))}
+        extraAction={topBarAction}
       />
 
       {/* 아래 바는 DOM 에서 본문보다 앞에 둔다(고정 위치라 화면 자리는 같고 쌓임은 z 값이 정한다). 바를 연 키보드
@@ -259,6 +285,7 @@ export function EpisodeReader({ route, novel, episode, readingPosition: store, r
           settingsPanelRef={settingsPanelRef}
           onBodyTap={handleBodyTap}
           onOpenToc={openToc}
+          endExtras={endExtras}
         />
       )}
       {fit !== undefined && mode === "scroll" && (
@@ -273,6 +300,7 @@ export function EpisodeReader({ route, novel, episode, readingPosition: store, r
           onPointerDown={chrome.handlePointerDown}
           onPointerUp={(event) => chrome.handlePointerUp(event, handleBodyTap)}
           onOpenToc={openToc}
+          endExtras={endExtras}
         />
       )}
 

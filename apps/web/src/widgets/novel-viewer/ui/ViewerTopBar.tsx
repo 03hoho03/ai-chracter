@@ -1,7 +1,7 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { ChevronLeft, ListOrdered, Type } from "lucide-react";
-import type { Ref } from "react";
+import type { ReactNode, Ref } from "react";
 
 import { VIEWER_BAR_ROW_PX } from "../lib/pageFit";
 import type { ViewerRoute } from "../model/viewerSource";
@@ -22,9 +22,11 @@ type ViewerTopBarProps = {
   settingsButtonRef: Ref<HTMLButtonElement>;
   onOpenToc: () => void;
   onToggleSettings: () => void;
+  /** 목차 앞에 더할 버튼(노벨의 댓글). */
+  extraAction?: ReactNode;
 };
 
-/** 읽기 화면의 위 바 — 뒤로(작품 정보) · 화 제목과 그 밑 화 안 위치 · 목차 · 보기 설정. 부를 때만 나타나는 일시적
+/** 읽기 화면의 위 바 — 뒤로(작품 정보) · 화 제목과 그 밑 화 안 위치 · (노벨이면) 댓글 · 목차 · 보기 설정. 부를 때만 나타나는 일시적
  * 표면이라 전역 헤더와 같은 높이(56px 한 줄)를 쓰되 그림자 없이 `border-b` 로만 본문과 갈린다. 줄 높이는 판형 배율
  * 계산이 비워 두는 자리와 같은 상수라, 페이지 모드에서 바가 판형을 덮지 않는다. 숨은 동안은 `inert` 라 포커스·
  * 보조기기에서 빠진다. 등장·퇴장은 장식 전환이라 `motion-safe:` 로만 움직인다.
@@ -45,6 +47,7 @@ export function ViewerTopBar({
   settingsButtonRef,
   onOpenToc,
   onToggleSettings,
+  extraAction,
 }: ViewerTopBarProps) {
   return (
     <nav
@@ -67,6 +70,7 @@ export function ViewerTopBar({
           <p className="truncate text-sm font-semibold text-foreground">{episodeLabel}</p>
           <p className="truncate text-xs text-muted-foreground tabular-nums">{location}</p>
         </div>
+        {extraAction}
         <Button ref={tocButtonRef} type="button" variant="ghost" size="icon" aria-label="목차" className="shrink-0" onClick={onOpenToc}>
           <ListOrdered aria-hidden />
         </Button>

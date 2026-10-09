@@ -7,7 +7,7 @@ import { useId } from "react";
 import { CloverIcon } from "@/entities/clover";
 import { toEpisodeLabel } from "@/entities/novel";
 
-import type { ViewerChapter, ViewerRoute } from "../model/viewerSource";
+import type { EpisodeEndExtras, ViewerChapter, ViewerRoute } from "../model/viewerSource";
 import { EpisodeLink, NovelInfoLink } from "./ViewerLinks";
 
 type EpisodeEndProps = {
@@ -20,6 +20,8 @@ type EpisodeEndProps = {
    * 블록이 한 쪽을 넘쳐 같은 판형인데 쪽 수가 바뀐다. */
   isInPageFormat: boolean;
   onOpenToc: (opener: HTMLElement) => void;
+  /** 노벨 화 끝의 좋아요·댓글 줄과 신고(내 소설에는 없다). */
+  extras?: EpisodeEndExtras;
 };
 
 /** 판형 안에서 버튼 크기를 정하는 값들 — 기본 버튼(36px·글자 16px·아이콘 16px)과 같은 모양을 px 로 적었다. 아이콘은
@@ -27,17 +29,18 @@ type EpisodeEndProps = {
 const PAGE_FORMAT_BUTTON = "h-[36px] gap-[6px] px-[16px] text-[16px]";
 const PAGE_FORMAT_ICON = "size-[16px]";
 
-/** 화 끝 — 작가의 말(있을 때만), 다음 화로 가는 버튼, 목차·작품 정보. 바가 숨어 있어도 여기서 다음으로 갈 수 있다.
+/** 화 끝 — 작가의 말(있을 때만), 다음 화로 가는 버튼, (노벨이면) 좋아요·댓글, 목차·작품 정보, (노벨이면) 이 화 신고. 바가 숨어 있어도 여기서 다음으로 갈 수 있다.
  * "다음 화"가 이 화면의 유일한 솔리드 채움이다.
  *
  * 내 소설에서는 작가의 말이 쓴 사람만 보는 메모라 그렇게 적고, 마지막 화면 다음 화를 만들 편집 화면으로 가는 길을
  * 둔다(고치기는 편집 화면이 맡는다). 노벨에서는 작가의 말이 독자에게 보이는 글이고, 다음 화가 아직 소장하지 않은
  * 잠긴 화면 버튼 끝에 가격을 붙여 누르기 전에 알린다(누르면 그 화의 소장 화면으로 간다). */
-export function EpisodeEnd({ route, novelId, authorNote, next, isInPageFormat, onOpenToc }: EpisodeEndProps) {
+export function EpisodeEnd({ route, novelId, authorNote, next, isInPageFormat, onOpenToc, extras }: EpisodeEndProps) {
   const noteHeadingId = useId();
   const isOwner = route === "owner";
   const button = isInPageFormat ? PAGE_FORMAT_BUTTON : undefined;
   const icon = isInPageFormat ? PAGE_FORMAT_ICON : undefined;
+  const format = { isInPageFormat, buttonClassName: button, iconClassName: icon };
 
   return (
     <footer className={cn("flex flex-col", isInPageFormat ? "gap-[24px]" : "gap-6 border-t border-border pt-8")}>
@@ -92,6 +95,12 @@ export function EpisodeEnd({ route, novelId, authorNote, next, isInPageFormat, o
         </Button>
       )}
 
+      {extras !== undefined && (
+        <div className={cn("flex flex-wrap justify-center", isInPageFormat ? "gap-[8px]" : "gap-2")}>
+          {extras.renderActions(format)}
+        </div>
+      )}
+
       <div className={cn("flex flex-wrap justify-center", isInPageFormat ? "gap-[8px]" : "gap-2")}>
         <Button type="button" variant="ghost" className={button} onClick={(event) => onOpenToc(event.currentTarget)}>
           목차
@@ -102,6 +111,8 @@ export function EpisodeEnd({ route, novelId, authorNote, next, isInPageFormat, o
           </NovelInfoLink>
         </Button>
       </div>
+
+      {extras !== undefined && <div className="flex justify-center">{extras.renderReport(format)}</div>}
     </footer>
   );
 }

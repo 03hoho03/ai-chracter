@@ -1,6 +1,6 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Link } from "@tanstack/react-router";
-import { BookX, CloudOff, Eye, Heart, Sparkles } from "lucide-react";
+import { BookX, CloudOff, Eye, Sparkles } from "lucide-react";
 import { useId } from "react";
 
 import { NovelReadProgressSummary, NovelStatusState, toNovelReadProgress, toResumeTarget } from "@/entities/novel";
@@ -14,7 +14,10 @@ import {
   WebnovelTocList,
   type WebnovelDetailResponse,
 } from "@/entities/webnovel";
+import { WebnovelLikeButton } from "@/features/like-webnovel";
 import { formatCompactCount } from "@/shared/lib/number/formatCompactCount";
+
+import { WebnovelActionsMenu } from "./WebnovelActionsMenu";
 
 const PAGE_CLASS = "mx-auto flex max-w-2xl flex-col gap-8 px-4 sm:px-6 py-10";
 
@@ -146,18 +149,22 @@ function WebnovelInfoContent({ novel }: { novel: WebnovelDetailResponse }) {
             </Link>
           </Button>
         )}
-        <p className="flex items-center gap-4 text-sm text-muted-foreground tabular-nums">
-          <span className="inline-flex items-center gap-1.5">
-            <Heart aria-hidden className="size-4" />
-            <span className="sr-only">좋아요</span>
-            {formatCompactCount(novel.likeCount)}
-          </span>
+        {/* 좋아요는 누르는 버튼, 조회 수는 글자뿐이다. `font-normal` 은 버튼의 medium 을 옆 조회 수와 같은 본문 굵기로
+            되돌린다(작품 상세의 지표 줄과 같은 꼴). */}
+        <div className="flex items-center gap-2 text-sm text-muted-foreground tabular-nums">
+          <WebnovelLikeButton
+            novelId={novel.id}
+            liked={novel.liked}
+            likeCount={novel.likeCount}
+            className="h-8 px-2 text-sm font-normal text-muted-foreground pointer-coarse:h-10"
+          />
           <span className="inline-flex items-center gap-1.5">
             <Eye aria-hidden className="size-4" />
             <span className="sr-only">조회</span>
             {formatCompactCount(novel.viewCount)}
           </span>
-        </p>
+          <WebnovelActionsMenu novelId={novel.id} isPublisher={novel.isPublisher} />
+        </div>
       </div>
 
       {novel.synopsis !== "" && (

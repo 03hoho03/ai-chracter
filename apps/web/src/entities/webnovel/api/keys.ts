@@ -3,13 +3,17 @@
  *
  * - `list`: 바뀌는 쓰기가 이 앱에는 없다(공개·좋아요는 다른 사람의 일이 대부분이라 들어올 때마다 새로 받는다).
  * - `detail`: 화 소장(그 화의 상태), 읽은 자리(떠날 때 다시 받는다).
- * - `chapter`: 화 소장(잠긴 화가 본문을 싣는다). */
+ * - `chapter`: 화 소장(잠긴 화가 본문을 싣는다).
+ * - `comments`: 그 화의 댓글 쓰기·지우기(다른 사람의 댓글은 시트를 열 때마다 새로 받는다).
+ * - `home`: 바뀌는 쓰기가 이 앱에는 없다(운영자가 고른다). */
 export const webnovelKeys = {
   all: ["webnovel"] as const,
   lists: () => [...webnovelKeys.all, "list"] as const,
   list: (sort: WebnovelListSort) => [...webnovelKeys.lists(), sort] as const,
   detail: (novelId: string) => [...webnovelKeys.all, "detail", novelId] as const,
   chapter: (novelId: string, chapterId: string) => [...webnovelKeys.all, "chapter", novelId, chapterId] as const,
+  comments: (novelId: string, chapterId: string) => [...webnovelKeys.all, "comments", novelId, chapterId] as const,
+  home: () => [...webnovelKeys.all, "home"] as const,
 };
 
 /** 목록 정렬 — 최신(공개 글이 마지막으로 바뀐 시각)과 인기(좋아요 수). */
