@@ -24,6 +24,7 @@ export { clampFieldAtCaret, isComposingChange } from "./lib/clampFieldAtCaret";
 export { useLimitedTextField } from "./lib/useLimitedTextField";
 export { focusNeighborToggle } from "./lib/focusNeighborToggle";
 export { focusItemToggle, revealItemToggle } from "./lib/focusItemToggle";
+export { sortableHandleId, useSortableList, type SortableHandleProps } from "./lib/useSortableList";
 export { AuthorMacroNotice } from "./ui/AuthorMacroNotice";
 export { BuilderLayout } from "./ui/BuilderLayout";
 export { BuilderTabStrip } from "./ui/BuilderTabStrip";

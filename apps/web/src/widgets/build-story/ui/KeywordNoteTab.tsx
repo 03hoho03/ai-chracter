@@ -1,41 +1,29 @@
-import {
-  closestCenter,
-  DndContext,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type Announcements,
-  type DragEndEvent,
-} from "@dnd-kit/core";
+import { closestCenter, DndContext } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Label } from "@ai-character-chat/ui/components/label";
-import { useEffect, useRef, useState } from "react";
 import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
-import { focusNeighborToggle, itemOpenKey, useBuilderUiState } from "@/features/build-common";
+import {
+  focusNeighborToggle,
+  itemOpenKey,
+  useBuilderUiState,
+  useSortableList,
+} from "@/features/build-common";
 import {
   createKeywordNote,
-  dragMoveIndices,
   FieldLabelText,
   MAX_ALWAYS_ON_KEYWORD_NOTES,
   MAX_KEYWORD_NOTES,
-  stepMoveIndices,
   type StoryBuilderFormValues,
   type StoryCollapsibleList,
 } from "@/features/build-story";
 
-import { KeywordNoteCard, keywordNoteHandleId } from "./KeywordNoteCard";
+import { KeywordNoteCard } from "./KeywordNoteCard";
 
 const KEYWORD_NOTE_LIST: StoryCollapsibleList = "keywordNote";
 const ADD_BUTTON_ID = "keyword-note-add";
 const ADD_LIMIT_REASON_ID = "keyword-note-add-limit";
-
-// dnd-kit 기본 안내는 영어이고 Space 로 집는 키보드 센서를 전제한다. 이 목록은 포인터로만 끌고 키보드는 핸들의
-// 화살표 키로 한 칸씩 옮기므로 그 방법을 한국어로 알려 준다.
-const SCREEN_READER_INSTRUCTIONS = {
-  draggable: "위·아래 화살표 키로 노트를 한 칸씩 옮길 수 있어요. 위에 있을수록 먼저 실려요.",
-};
 
 /** 탭 전체가 선택사항(0개도 발행 가능). 목록 순서가 곧 우선순위라 드래그·화살표 키로 재정렬한다. */
 export function KeywordNoteTab() {
@@ -55,39 +43,16 @@ export function KeywordNoteTab() {
     name: fields.map((_, index) => `keywordNotes.${index}.alwaysOn` as const),
   });
   const alwaysOnCount = alwaysOnFlags.filter(Boolean).length;
-  const sensors = useSensors(useSensor(PointerSensor));
-  const [announcement, setAnnouncement] = useState("");
-  // 재정렬 뒤 포커스를 둘 요소. 렌더가 끝난 뒤에야 그 요소가 제자리에 있으므로 effect 에서 옮긴다.
-  const pendingFocusIdRef = useRef<string | undefined>(undefined);
+  const sortable = useSortableList({
+    ids: fields.map((field) => field.id),
+    move,
+    itemObject: "노트를",
+    orderMeaning: "위에 있을수록 먼저 실려요.",
+  });
   // 배열 자체의 위반(노트 수·상시 수 상한)이 담기는 자리는 탭 마운트 상태에 따라 `.message` 와 `.root.message` 로
   // 갈린다(StartingSetupTab 의 같은 자리 주석 참고). 둘 다 읽는다.
   const notesError = errors.keywordNotes?.message ?? errors.keywordNotes?.root?.message;
   const isFull = fields.length >= MAX_KEYWORD_NOTES;
-
-  useEffect(() => {
-    const targetId = pendingFocusIdRef.current;
-    if (!targetId) return;
-    pendingFocusIdRef.current = undefined;
-    document.getElementById(targetId)?.focus();
-  }, [fields]);
-
-  // 드래그 끝의 안내는 dnd-kit 이 `announcements` 로 따로 읽으므로 여기서는 화살표 키 이동만 알린다.
-  function handleStep(index: number, step: -1 | 1, fieldId: string) {
-    const indices = stepMoveIndices(index, step, fields.length);
-    if (!indices) return;
-    move(indices.from, indices.to);
-    pendingFocusIdRef.current = keywordNoteHandleId(fieldId);
-    setAnnouncement(`${indices.to + 1}번째로 옮겼어요.`);
-  }
-
-  function handleDragEnd({ active, over }: DragEndEvent) {
-    const indices = dragMoveIndices(
-      fields.map((field) => field.id),
-      String(active.id),
-      over ? String(over.id) : null,
-    );
-    if (indices) move(indices.from, indices.to);
-  }
 
   function handleRemove(index: number) {
     // 지운 자리의 다음 노트(없으면 앞 노트, 그것도 없으면 추가 버튼)의 머리 줄 토글로 포커스를 옮긴다 — 삭제 버튼이
@@ -96,7 +61,7 @@ export function KeywordNoteTab() {
     const keys = getValues("keywordNotes").map((note) => itemOpenKey(KEYWORD_NOTE_LIST, note.id));
     focusNeighborToggle(keys, index, document.getElementById(ADD_BUTTON_ID));
     remove(index);
-    setAnnouncement("노트를 삭제했어요.");
+    sortable.announce("노트를 삭제했어요.");
   }
 
   function handleAdd() {
@@ -108,16 +73,6 @@ export function KeywordNoteTab() {
     uiState.open([itemOpenKey(KEYWORD_NOTE_LIST, id)]);
     append(createKeywordNote(id), { focusName: `keywordNotes.${fields.length}.name` });
   }
-
-  const announcements: Announcements = {
-    onDragStart: () => undefined,
-    onDragOver: () => undefined,
-    onDragCancel: () => "옮기기를 취소했어요.",
-    onDragEnd: ({ over }) => {
-      const to = over ? fields.findIndex((field) => field.id === over.id) : -1;
-      return to === -1 ? undefined : `${to + 1}번째로 옮겼어요.`;
-    },
-  };
 
   return (
     <div className="flex flex-col gap-6 py-6">
@@ -172,10 +127,10 @@ export function KeywordNoteTab() {
         </div>
       ) : (
         <DndContext
-          sensors={sensors}
+          sensors={sortable.sensors}
           collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-          accessibility={{ announcements, screenReaderInstructions: SCREEN_READER_INSTRUCTIONS }}
+          onDragEnd={sortable.handleDragEnd}
+          accessibility={sortable.accessibility}
         >
           <SortableContext items={fields.map((field) => field.id)} strategy={verticalListSortingStrategy}>
             <ol className="flex flex-col gap-4" aria-label="키워드 노트 목록(위에 있을수록 먼저 실려요)">
@@ -187,7 +142,7 @@ export function KeywordNoteTab() {
                   startingSetups={startingSetups}
                   isAlwaysOnFull={alwaysOnCount >= MAX_ALWAYS_ON_KEYWORD_NOTES}
                   onRemove={() => handleRemove(index)}
-                  onStep={(step) => handleStep(index, step, field.id)}
+                  handleProps={sortable.handleProps(index)}
                 />
               ))}
             </ol>
@@ -196,7 +151,7 @@ export function KeywordNoteTab() {
       )}
 
       <p className="sr-only" aria-live="polite">
-        {announcement}
+        {sortable.announcement}
       </p>
 
       <div className="flex flex-col gap-1.5">

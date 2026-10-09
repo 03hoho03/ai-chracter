@@ -91,7 +91,7 @@
 - **빌더 초안은 첫 자동저장 시점에 만들어진다.** `useDraftPersistence`가 그 경로(없으면 생성 → PATCH → URL 교체)를 소유하고, 생성 1회 보장은 순수 헬퍼 `runOnce`가 맡는다. 초안 id가 필요한 액션은 값이 아니라 **함수**(`ensureContentVersionId()`)를 받아 생성을 먼저 트리거한다. `createEmptyDraft(type)`가 서버 기본값을 흉내 내므로 서버가 바뀌면 여기도 바꾼다.
 - **발행 버튼은 비활성화하지 않는다** — `disabled`는 왜 못 누르는지 알려주지 않는다. 대신 `zodResolver` + `form.handleSubmit(handlePublish, handlePublishInvalid)`로 검증해 실패를 탭·필드 에러로 보여준다(이전엔 `builderSchema.safeParse(useWatch({control}))`로 버튼을 비활성했었다).
 - **발행은 `parse()` → `formToServer()` → draft PATCH → `publish()` 순서다**(`publish`가 무바디라 중간 debounce 미반영 값이 누락된다). 400 `detail`은 `{missingFields}`(토스트)와 `{reason}`(이의제기 배너) 두 모양 — `"reason" in detail`로 먼저 판별한다. nullable draft 스키마는 `safeParse`를 통과해도 서버 필수값이 빌 수 있어 `missingFields`→한국어 라벨 매핑이 필요하다.
-- **`useFieldArray`**: 순서 없는 배열은 `fields.map(key={field.id})` + `append({id: crypto.randomUUID()})`. 순서=우선순위면 `@dnd-kit/sortable` + `move`(listeners는 드래그 핸들에만). 부모의 동적 인덱스에 `name`이 의존하는 중첩 배열은 **부모 안정 `id`로 key**를 줘 통째로 remount(인덱스로 key 금지). 재귀 트리는 `useFieldArray` 대신 `items`/`onChange` 순수 제어 컴포넌트로.
+- **`useFieldArray`**: 순서 없는 배열은 `fields.map(key={field.id})` + `append({id: crypto.randomUUID()})`. 순서=우선순위면 `@dnd-kit/sortable` + `move`(listeners는 드래그 핸들에만) — 센서·화살표 키 한 칸 이동·한국어 안내는 `features/build-common`의 `useSortableList`가 맡고 손잡이는 `ItemDragHandle`이다. 부모의 동적 인덱스에 `name`이 의존하는 중첩 배열은 **부모 안정 `id`로 key**를 줘 통째로 remount(인덱스로 key 금지). 재귀 트리는 `useFieldArray` 대신 `items`/`onChange` 순수 제어 컴포넌트로.
 
 ## UI / 컴포넌트
 

@@ -71,7 +71,6 @@ export {
   storyAutosaveErrorMessage,
 } from "./model/mediaBookSaveError";
 export { excludeKeywordError, triggerKeywordError } from "./model/keywordNoteEdit";
-export { dragMoveIndices, stepMoveIndices, type MoveIndices } from "./model/keywordNoteOrder";
 export { mediaBookPublishErrorMessage } from "./model/mediaBookPublishErrorMessage";
 export {
   findNextIncompleteCell,

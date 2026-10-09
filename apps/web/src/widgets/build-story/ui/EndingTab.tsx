@@ -1,11 +1,4 @@
-import {
-  closestCenter,
-  DndContext,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
+import { closestCenter, DndContext } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@ai-character-chat/ui/components/button";
@@ -25,6 +18,8 @@ import {
   itemOpenKey,
   useBuilderSelection,
   useBuilderUiState,
+  useSortableList,
+  type SortableHandleProps,
 } from "@/features/build-common";
 import {
   endingSummary,
@@ -100,6 +95,8 @@ type EndingRowProps = {
   startingSetupIndex: number;
   endingIndex: number;
   stats: StatDefValues[];
+  /** 손잡이의 id·화살표 키 재정렬(`useSortableList`). */
+  handleProps: SortableHandleProps;
   onRemove: () => void;
 };
 
@@ -110,6 +107,7 @@ function EndingRow({
   startingSetupIndex,
   endingIndex,
   stats,
+  handleProps,
   onRemove,
 }: EndingRowProps) {
   const form = useFormContext<StoryBuilderFormValues>();
@@ -147,7 +145,14 @@ function EndingRow({
       summary={endingSummary({ turnGate, statRules })}
       // 지워진 스탯을 쓰는 조건은 폼 오류가 아니라 데이터 사실이라 따로 본다 — 접혀 있어도 머리 줄에 경고가 보여야 찾는다.
       hasError={!!endingErrors || hasRuleWithMissingStat(statRules, stats) || isPriorityStatMissing}
-      leading={<ItemDragHandle {...attributes} {...listeners} aria-label={`${endingIndex + 1}번째 엔딩 순서 변경`} />}
+      leading={
+        <ItemDragHandle
+          {...attributes}
+          {...listeners}
+          {...handleProps}
+          aria-label={`${endingIndex + 1}번째 엔딩 순서 변경`}
+        />
+      }
       trailing={
         <ItemRemoveButton
           label={trimmedName ? `${trimmedName} 엔딩 삭제` : `${endingIndex + 1}번째 엔딩 삭제`}
@@ -351,15 +356,13 @@ function EndingSection({ startingSetupIndex }: { startingSetupIndex: number }) {
   const endingsPath = `startingSetups.${startingSetupIndex}.endings` as const;
   const { fields, append, remove, move } = useFieldArray({ control, name: endingsPath });
   const stats = useWatch({ control, name: `startingSetups.${startingSetupIndex}.stats` });
-  const sensors = useSensors(useSensor(PointerSensor));
+  const sortable = useSortableList({
+    ids: fields.map((field) => field.id),
+    move,
+    itemObject: "엔딩을",
+    orderMeaning: "위에 있는 엔딩부터 판정해요.",
+  });
   const addButtonRef = useRef<HTMLButtonElement>(null);
-
-  function handleDragEnd({ active, over }: DragEndEvent) {
-    if (!over || active.id === over.id) return;
-    const oldIndex = fields.findIndex((field) => field.id === active.id);
-    const newIndex = fields.findIndex((field) => field.id === over.id);
-    if (oldIndex !== -1 && newIndex !== -1) move(oldIndex, newIndex);
-  }
 
   // 지우기 전에 포커스를 다음 엔딩의 머리 줄로(없으면 이전 엔딩, 그것도 없으면 엔딩 추가 버튼으로) 옮긴다 — 지운 뒤로
   // 미루면 누른 삭제 버튼이 사라지며 포커스가 body 로 떨어진다.
@@ -402,7 +405,12 @@ function EndingSection({ startingSetupIndex }: { startingSetupIndex: number }) {
           <p className="text-sm text-muted-foreground">아직 등록된 엔딩이 없어요.</p>
         </div>
       ) : (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <DndContext
+          sensors={sortable.sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={sortable.handleDragEnd}
+          accessibility={sortable.accessibility}
+        >
           <SortableContext items={fields.map((field) => field.id)} strategy={verticalListSortingStrategy}>
             <div className="flex flex-col gap-4">
               {fields.map((field, index) => (
@@ -412,6 +420,7 @@ function EndingSection({ startingSetupIndex }: { startingSetupIndex: number }) {
                   startingSetupIndex={startingSetupIndex}
                   endingIndex={index}
                   stats={stats}
+                  handleProps={sortable.handleProps(index)}
                   onRemove={() => handleRemove(index)}
                 />
               ))}
@@ -423,6 +432,10 @@ function EndingSection({ startingSetupIndex }: { startingSetupIndex: number }) {
       <Button ref={addButtonRef} type="button" variant="secondary" className="w-fit" onClick={handleAdd}>
         엔딩 추가
       </Button>
+
+      <p className="sr-only" aria-live="polite">
+        {sortable.announcement}
+      </p>
     </div>
   );
 }

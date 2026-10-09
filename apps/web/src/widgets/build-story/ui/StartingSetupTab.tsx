@@ -1,11 +1,4 @@
-import {
-  closestCenter,
-  DndContext,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
+import { closestCenter, DndContext } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@ai-character-chat/ui/components/button";
@@ -25,6 +18,8 @@ import {
   ItemRemoveButton,
   itemOpenKey,
   useBuilderUiState,
+  useSortableList,
+  type SortableHandleProps,
 } from "@/features/build-common";
 import {
   FieldLabelText,
@@ -56,7 +51,12 @@ export function StartingSetupTab() {
     formState: { errors },
   } = form;
   const { fields, append, remove, move } = useFieldArray({ control, name: "startingSetups" });
-  const sensors = useSensors(useSensor(PointerSensor));
+  const sortable = useSortableList({
+    ids: fields.map((field) => field.id),
+    move,
+    itemObject: "시작설정을",
+    orderMeaning: "맨 위 시작설정이 기본 선택이에요.",
+  });
   const uiState = useBuilderUiState();
   const addButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -126,13 +126,6 @@ export function StartingSetupTab() {
     );
   }
 
-  function handleDragEnd({ active, over }: DragEndEvent) {
-    if (!over || active.id === over.id) return;
-    const oldIndex = fields.findIndex((field) => field.id === active.id);
-    const newIndex = fields.findIndex((field) => field.id === over.id);
-    if (oldIndex !== -1 && newIndex !== -1) move(oldIndex, newIndex);
-  }
-
   return (
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-1" data-field-path="startingSetups">
@@ -158,7 +151,12 @@ export function StartingSetupTab() {
           <p className="text-sm text-muted-foreground">아직 등록된 시작설정이 없어요.</p>
         </div>
       ) : (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <DndContext
+          sensors={sortable.sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={sortable.handleDragEnd}
+          accessibility={sortable.accessibility}
+        >
           <SortableContext items={fields.map((field) => field.id)} strategy={verticalListSortingStrategy}>
             <div className="flex flex-col gap-4">
               {fields.map((field, index) => (
@@ -166,6 +164,7 @@ export function StartingSetupTab() {
                   key={field.id}
                   id={field.id}
                   index={index}
+                  handleProps={sortable.handleProps(index)}
                   onRemove={() => void handleRemove(index)}
                 />
               ))}
@@ -177,10 +176,20 @@ export function StartingSetupTab() {
       {/* 상한에 닿으면 추가 버튼을 렌더하지 않는다(SettingTab의
           전개 예시와 같은 형태). 스키마의 `.max()`만으로는 발행 시점에야 막혀 5개째를 만들게 둔다. */}
       {fields.length < MAX_STARTING_SETUPS ? (
-        <Button ref={addButtonRef} type="button" variant="secondary" className="w-fit" onClick={handleAdd}>
+        <Button
+          ref={addButtonRef}
+          type="button"
+          variant="secondary"
+          className="w-fit"
+          onClick={handleAdd}
+        >
           설정 추가
         </Button>
       ) : null}
+
+      <p className="sr-only" aria-live="polite">
+        {sortable.announcement}
+      </p>
     </div>
   );
 }
@@ -188,6 +197,8 @@ export function StartingSetupTab() {
 type StartingSetupRowProps = {
   id: string;
   index: number;
+  /** 손잡이의 id·화살표 키 재정렬(`useSortableList`). */
+  handleProps: SortableHandleProps;
   onRemove: () => void;
 };
 
@@ -197,6 +208,7 @@ type StartingSetupRowProps = {
 function StartingSetupRow({
   id,
   index,
+  handleProps,
   onRemove,
 }: StartingSetupRowProps) {
   const form = useFormContext<StoryBuilderFormValues>();
@@ -267,7 +279,14 @@ function StartingSetupRow({
       srTitlePrefix={`${index + 1}번째 시작설정: `}
       summary={startingSetupSummary({ prologue }, index)}
       hasError={hasOwnError}
-      leading={<ItemDragHandle {...attributes} {...listeners} aria-label={`${index + 1}번째 시작설정 순서 변경`} />}
+      leading={
+        <ItemDragHandle
+          {...attributes}
+          {...listeners}
+          {...handleProps}
+          aria-label={`${index + 1}번째 시작설정 순서 변경`}
+        />
+      }
       trailing={
         <ItemRemoveButton
           label={trimmedName ? `${trimmedName} 시작설정 삭제` : `${index + 1}번째 시작설정 삭제`}

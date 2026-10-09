@@ -17,6 +17,7 @@ import {
   itemOpenKey,
   KeywordChipField,
   useLimitedTextField,
+  type SortableHandleProps,
 } from "@/features/build-common";
 import {
   excludeKeywordError,
@@ -50,8 +51,8 @@ type KeywordNoteCardProps = {
   /** 다른 노트들로 상시가 이미 꽉 찼는가 — 이 노트가 꺼져 있을 때만 스위치를 잠근다. */
   isAlwaysOnFull: boolean;
   onRemove: () => void;
-  /** 화살표 키 재정렬 — 한 칸 위(-1)나 아래(1). */
-  onStep: (step: -1 | 1) => void;
+  /** 손잡이의 id·화살표 키 재정렬(`useSortableList`). */
+  handleProps: SortableHandleProps;
 };
 
 /**
@@ -62,7 +63,7 @@ type KeywordNoteCardProps = {
  * 열림 키는 폼 값의 노트 id 다. `id` prop(필드 배열이 주는 id)은 탭을 다시 열 때마다 새로 발급돼 열림을 잃으므로 끌기·
  * DOM id 에만 쓴다.
  */
-export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onRemove, onStep }: KeywordNoteCardProps) {
+export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onRemove, handleProps }: KeywordNoteCardProps) {
   const form = useFormContext<StoryBuilderFormValues>();
 
   const {
@@ -158,18 +159,11 @@ export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onR
         hasError={!!noteErrors}
         leading={
           <>
-            {/* 화살표 키 재정렬은 손잡이에만 건다 — 토글에 걸면 머리 줄을 지나며 누른 화살표가 순서를 바꾼다. */}
             <ItemDragHandle
-              id={keywordNoteHandleId(id)}
               {...attributes}
               {...listeners}
-              aria-roledescription="순서 핸들"
+              {...handleProps}
               aria-label={`${position}번째 노트 순서 변경`}
-              onKeyDown={(event) => {
-                if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
-                event.preventDefault();
-                onStep(event.key === "ArrowUp" ? -1 : 1);
-              }}
             />
             <span
               className="w-6 shrink-0 text-center text-sm font-semibold tabular-nums text-muted-foreground"
@@ -400,9 +394,4 @@ export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onR
       </CollapsibleItemCard>
     </li>
   );
-}
-
-/** 재정렬·삭제 뒤 탭이 포커스를 되돌릴 드래그 핸들의 id. */
-export function keywordNoteHandleId(noteId: string): string {
-  return `keyword-note-${noteId}-handle`;
 }
