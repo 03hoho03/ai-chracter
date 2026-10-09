@@ -351,7 +351,7 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
               <PromptTab />
             </TabsContent>
             <TabsContent value="advanced">
-              <AdvancedTab ensureContentVersionId={ensureContentVersionId} />
+              <AdvancedTab ensureContentVersionId={ensureContentVersionId} savedImages={draft.situationalImages} />
             </TabsContent>
             <TabsContent value="detail">
               <DetailTab />
