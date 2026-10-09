@@ -71,7 +71,7 @@ export {
   storyAutosaveErrorMessage,
 } from "./model/mediaBookSaveError";
 export { excludeKeywordError, triggerKeywordError } from "./model/keywordNoteEdit";
-export { dragMoveIndices, stepMoveIndices, type MoveIndices } from "./model/keywordNoteOrder";
+export { keywordNoteRestoreDecision } from "./model/keywordNoteRestore";
 export { mediaBookPublishErrorMessage } from "./model/mediaBookPublishErrorMessage";
 export {
   findNextIncompleteCell,
@@ -110,7 +110,6 @@ export {
   keywordNoteSchema,
   LOGIC_OPERATORS,
   MAX_ALWAYS_ON_KEYWORD_NOTES,
-  MAX_DEVELOPMENT_EXAMPLES,
   MAX_EXCLUDE_KEYWORDS,
   MAX_KEYWORD_NOTE_CONTENT_LENGTH,
   MAX_KEYWORD_NOTE_NAME_LENGTH,
@@ -125,9 +124,6 @@ export {
   MAX_SITUATION_NOTE_RULES,
   MAX_SITUATION_NOTES,
   mediaBookSchema,
-  countCharacters,
-  MAX_STARTING_SETUPS,
-  MAX_SUGGESTED_REPLIES,
   MAX_TRIGGER_KEYWORD_LENGTH,
   MAX_TRIGGER_KEYWORDS,
   PROMPT_TEMPLATE_VALUES,

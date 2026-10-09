@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
+import { BUILDER_SAVE_LIMIT_MESSAGE } from "@/entities/content";
 import { ApiErrorObject } from "@/shared/api/client";
 
 import {
   ENDING_RULE_STAT_NOT_FOUND_MESSAGE,
   isEndingRuleStatNotFoundError,
   MEDIA_BOOK_POSITION_TAKEN_MESSAGE,
-  STORY_SAVE_LIMIT_MESSAGE,
   storyAutosaveErrorMessage,
 } from "./mediaBookSaveError";
 
@@ -32,8 +32,8 @@ describe("storyAutosaveErrorMessage", () => {
     // 422 본문은 어느 필드가 넘쳤는지 화면이 가려 읽을 수 없는 모양이라 상태 코드만 본다.
     const error = new ApiErrorObject({ status: 422, message: "Field required", detail: undefined, fields: {} });
 
-    expect(storyAutosaveErrorMessage(error)).toBe(STORY_SAVE_LIMIT_MESSAGE);
-    expect(STORY_SAVE_LIMIT_MESSAGE).not.toMatch(/잠시 후/);
+    expect(storyAutosaveErrorMessage(error)).toBe(BUILDER_SAVE_LIMIT_MESSAGE);
+    expect(BUILDER_SAVE_LIMIT_MESSAGE).not.toMatch(/잠시 후/);
   });
 
   it("names the deleted-stat ending condition instead of blaming length limits", () => {

@@ -10,6 +10,7 @@ import { usePublishContentMutation, type CharacterDraftContent } from "@/entitie
 import type { PreviewStartPayload } from "@/entities/preview-session";
 import {
   characterBuilderSchema,
+  characterSaveErrorMessage,
   formToServer,
   serverToForm,
   CHARACTER_COLLAPSIBLE_LISTS,
@@ -43,6 +44,7 @@ import {
 import { AppealModal } from "@/features/submit-appeal";
 import { creationGuidePath } from "@/shared/config/creationGuide";
 
+import { CHARACTER_REQUIRED_TAB_IDS } from "../model/requiredTabs";
 import { AdvancedTab } from "./AdvancedTab";
 import { DetailTab } from "./DetailTab";
 import { IntroTab } from "./IntroTab";
@@ -147,7 +149,7 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
   const profileImageLocal = useProfileImageLocalUrl();
   const thumbnailUrl = resolveProfileImageUrl({ image: profileImage, local: profileImageLocal.local, draft });
 
-  const { saveDraft } = useDraftPersistence({ type: "character", draftId, initialNovelPermission: draft.novelPermission });
+  const { saveDraft, saveStatus } = useDraftPersistence({ type: "character", draftId, initialNovelPermission: draft.novelPermission });
   const publishMutation = usePublishContentMutation();
 
   // 발행 실패 시 첫 에러 필드로 이동한다(탭이 다르면 먼저 전환). tabId는
@@ -170,7 +172,9 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
     },
     formToServer,
     save: saveDraft,
+    onSchedule: saveStatus.markPending,
     flushOnUnmount: () => draftId !== undefined,
+    errorMessage: characterSaveErrorMessage,
   });
 
   /** 상황별 이미지 등록(`POST /assets/{id}/register-situational-image`)은 content_version_id를
@@ -186,8 +190,8 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
     try {
       await saveNow(form.getValues());
       toast.success("임시저장했어요.");
-    } catch {
-      toast.error("임시저장에 실패했어요. 잠시 후 다시 시도해주세요.");
+    } catch (error) {
+      toast.error(characterSaveErrorMessage(error) ?? "임시저장에 실패했어요. 잠시 후 다시 시도해주세요.");
     }
   }
 
@@ -291,6 +295,7 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
               guidePath={creationGuidePath("character", activeTab)}
               isPublishing={isPublishing}
               isPreviewOpen={isPreviewOpen}
+              saveStatus={saveStatus}
               onPreview={() => setIsPreviewOpen((prev) => !prev)}
               onSaveNow={() => void handleSaveNow()}
               onPublish={() => void form.handleSubmit(handlePublish, handlePublishInvalid)()}
@@ -325,7 +330,12 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
             onValueChange={(value) => isCharacterBuilderTab(value) && setActiveTab(value)}
             className="lg:gap-0"
           >
-            <BuilderTabStrip tabs={TABS} errorTabIds={errorTabIds} />
+            <BuilderTabStrip
+              tabs={TABS}
+              activeTab={activeTab}
+              errorTabIds={errorTabIds}
+              requiredTabIds={CHARACTER_REQUIRED_TAB_IDS}
+            />
 
             <TabsContent value="profile">
               <ProfileTab
@@ -341,7 +351,7 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
               <PromptTab />
             </TabsContent>
             <TabsContent value="advanced">
-              <AdvancedTab ensureContentVersionId={ensureContentVersionId} />
+              <AdvancedTab ensureContentVersionId={ensureContentVersionId} savedImages={draft.situationalImages} />
             </TabsContent>
             <TabsContent value="detail">
               <DetailTab />

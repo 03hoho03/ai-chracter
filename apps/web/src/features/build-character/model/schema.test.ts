@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import { createEmptyDraft } from "@/entities/content";
+
 import { characterBuilderSchema } from "./schema";
+import { serverToForm } from "./serverToForm";
 
 function validFullForm() {
   return {
@@ -64,5 +67,20 @@ describe("characterBuilderSchema publish-required nullable fields", () => {
 
   it("passes once all three are filled", () => {
     expect(characterBuilderSchema.safeParse(validFullForm()).success).toBe(true);
+  });
+});
+
+// 발행 실패 때 같은 탭 안의 첫 오류는 검증 오류의 순서를 따른다. 화면 맨 위 칸인 대표 이미지가 첫 오류여야 포커스가 둘째 칸(이름)으로
+// 먼저 가지 않는다.
+describe("characterBuilderSchema issue order", () => {
+  it("puts profile.image first for an empty draft", () => {
+    const draft = createEmptyDraft("character");
+    if (draft.type !== "character") throw new Error("캐릭터 빈 초안이 아니에요.");
+    const issues = characterBuilderSchema.safeParse(serverToForm(draft)).error?.issues ?? [];
+    expect(issues.map((issue) => issue.path.join(".")).slice(0, 3)).toEqual([
+      "profile.image",
+      "profile.name",
+      "profile.oneLiner",
+    ]);
   });
 });

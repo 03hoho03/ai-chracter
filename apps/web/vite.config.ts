@@ -25,7 +25,12 @@ const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN;
 export default defineConfig({
   resolve: {
     // @types/node 없이 쓰는 절대경로(node:url 대신 DOM 전역 URL) — POSIX(dev macOS·CI Linux) 전제.
-    alias: { "@": new URL("./src", import.meta.url).pathname },
+    // `@api-contract` 는 서버 패키지 안의 계약 데이터(빌더 한도 표 등)를 읽는 자리다. 서버가 같은 파일로 검사하므로
+    // 사본을 두지 않고 그 파일을 그대로 번들에 넣는다.
+    alias: {
+      "@": new URL("./src", import.meta.url).pathname,
+      "@api-contract": new URL("../api/src/api", import.meta.url).pathname,
+    },
   },
   server: {
     // tailscale serve(MagicDNS 호스트명)로 원격 접속할 때 Vite의 host 검사를 통과시킨다.

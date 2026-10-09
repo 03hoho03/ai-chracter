@@ -35,13 +35,13 @@ function debounce<TArgs extends unknown[]>(fn: (...args: TArgs) => void, ms: num
  * 횟수만큼 쌓이고(sonner 기본 `visibleToasts` 3), 600px 이하에서는 토스트가 전체 폭으로 바닥에 깔려
  * 입력 중인 필드를 가린다. `duration: Infinity`인 이유는 이게 "방금 일어난 일"이 아니라 **"마지막 편집이
  * 서버에 없다"는 지속 상태**이기 때문이다 — 기본 4초로 두면 사용자가 잠깐 눈을 뗀 사이 사라져, 저장되지
- * 않은 걸 모른 채 탭을 닫는다. 해제는 다음 저장 성공(`dismiss`)과 빌더 이탈 두 가지다. 성공 토스트는
+ * 않은 걸 모른 채 탭을 닫는다. 해제는 다음 저장 성공과 빌더 이탈 두 가지다 — 저장 성공은 어느 경로의 저장이든 `useDraftPersistence` 의 저장 상태가 걷는다. 성공 토스트는
  * 띄우지 않는다 — 1.5초마다 초록 토스트가 뜨면 재앙이다.
  *
  * 참고: 진짜 오프라인에서는 이 토스트가 뜨지 않는다. `app/AppProviders.tsx`의 `QueryClient`가 기본
  * `networkMode: "online"`이라 뮤테이션이 **pause**되고(재접속 시 한꺼번에 발사된다) 실패하지 않기
  * 때문이다. 이 토스트가 뜨는 건 4xx/5xx와 `navigator.onLine === true`인 연결 실패다(실측). */
-const AUTOSAVE_ERROR_TOAST_ID = "builder-autosave-error";
+export const AUTOSAVE_ERROR_TOAST_ID = "builder-autosave-error";
 
 /** 캐릭터/스토리 빌더 공용 자동저장 훅.
  * 필드 변경(subscribe) 시 디바운스 PATCH, "임시저장" 클릭 시 saveNow로 즉시 PATCH.
@@ -75,6 +75,11 @@ export function useAutosave<TForm, TPayload>(opts: {
    * `save` 와 같은 이유로 렌더마다 같은 함수여야 한다.
    */
   errorMessage?: (error: unknown) => string | undefined;
+  /**
+   * 편집이 들어와 디바운스 저장이 예약될 때마다 부른다(저장 상태를 "저장 대기"로 바꾸는 자리). 호출 시점의 최신 함수를 읽으므로
+   * 렌더마다 달라도 디바운스를 다시 만들지 않는다.
+   */
+  onSchedule?: () => void;
   debounceMs?: number;
 }) {
   const debouncedSave = useMemo(
@@ -82,7 +87,6 @@ export function useAutosave<TForm, TPayload>(opts: {
       debounce((values: TForm) => {
         void opts
           .save(opts.formToServer(values))
-          .then(() => toast.dismiss(AUTOSAVE_ERROR_TOAST_ID))
           .catch((error: unknown) => {
             const message =
               opts.errorMessage?.(error) ??
@@ -105,8 +109,17 @@ export function useAutosave<TForm, TPayload>(opts: {
   // `subscribe`는 ref로 최신 것을 읽는다.
   const subscribeRef = useRef(opts.subscribe);
   subscribeRef.current = opts.subscribe;
+  const onScheduleRef = useRef(opts.onSchedule);
+  onScheduleRef.current = opts.onSchedule;
 
-  useEffect(() => subscribeRef.current(debouncedSave), [debouncedSave]);
+  useEffect(
+    () =>
+      subscribeRef.current((values) => {
+        onScheduleRef.current?.();
+        debouncedSave(values);
+      }),
+    [debouncedSave],
+  );
 
   // `debouncedSave`는 마운트 내내 같은 인스턴스라(위 `save` 계약) 이 정리는 사실상 언마운트에서만 돈다.
   const flushOnUnmountRef = useRef(opts.flushOnUnmount);

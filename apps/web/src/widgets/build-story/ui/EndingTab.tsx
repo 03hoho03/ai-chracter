@@ -1,11 +1,4 @@
-import {
-  closestCenter,
-  DndContext,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
+import { closestCenter, DndContext } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@ai-character-chat/ui/components/button";
@@ -25,6 +18,9 @@ import {
   itemOpenKey,
   useBuilderSelection,
   useBuilderUiState,
+  useSortableList,
+  useUndoableRemoval,
+  type SortableHandleProps,
 } from "@/features/build-common";
 import {
   endingSummary,
@@ -41,6 +37,7 @@ import { MediaTagInsertButton } from "./MediaTagInsertButton";
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
 import { RuleListEditor } from "./RuleListEditor";
 import { StartingSetupPicker } from "./StartingSetupPicker";
+import { StartingSetupRequiredState } from "./StartingSetupRequiredState";
 import { StoryMacroNotice } from "./StoryMacroNotice";
 import { UnknownMediaTagNotice } from "./UnknownMediaTagNotice";
 
@@ -57,23 +54,14 @@ const NO_PRIORITY_STAT = "none";
 
 /** 엔딩은 시작설정별 독립 목록이라 StatTab과 동일하게 먼저
  * 시작설정을 고른다(0개 등록해도 발행 가능, 열린 결말). 고른 시작설정은 스탯 탭과 함께 셸의 화면 상태에서 읽고 쓴다. */
-export function EndingTab() {
+export function EndingTab({ onGoToStartingSetup }: { onGoToStartingSetup: () => void }) {
   const form = useFormContext<StoryBuilderFormValues>();
 
   const { control } = form;
   const startingSetups = useWatch({ control, name: "startingSetups" });
   const [selectedSetupId, setSelectedSetupId] = useBuilderSelection(SELECTED_STARTING_SETUP);
 
-  if (startingSetups.length === 0) {
-    // 다른 탭 본문과 같은 `py-6` 루트로 감싸야 탭 목록과의 간격이 탭마다 같다.
-    return (
-      <div className="py-6">
-        <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-20 text-center">
-          <p className="text-sm break-keep text-muted-foreground">먼저 시작설정 탭에서 시작설정을 추가해주세요.</p>
-        </div>
-      </div>
-    );
-  }
+  if (startingSetups.length === 0) return <StartingSetupRequiredState onGoToStartingSetup={onGoToStartingSetup} />;
 
   // 기억해 둔 시작설정이 지워졌거나 아직 고른 적이 없으면 첫 시작설정을 보인다.
   const selectedIndex = startingSetups.findIndex((setup) => setup.id === selectedSetupId);
@@ -100,6 +88,8 @@ type EndingRowProps = {
   startingSetupIndex: number;
   endingIndex: number;
   stats: StatDefValues[];
+  /** 손잡이의 id·화살표 키 재정렬(`useSortableList`). */
+  handleProps: SortableHandleProps;
   onRemove: () => void;
 };
 
@@ -110,6 +100,7 @@ function EndingRow({
   startingSetupIndex,
   endingIndex,
   stats,
+  handleProps,
   onRemove,
 }: EndingRowProps) {
   const form = useFormContext<StoryBuilderFormValues>();
@@ -147,7 +138,14 @@ function EndingRow({
       summary={endingSummary({ turnGate, statRules })}
       // 지워진 스탯을 쓰는 조건은 폼 오류가 아니라 데이터 사실이라 따로 본다 — 접혀 있어도 머리 줄에 경고가 보여야 찾는다.
       hasError={!!endingErrors || hasRuleWithMissingStat(statRules, stats) || isPriorityStatMissing}
-      leading={<ItemDragHandle {...attributes} {...listeners} aria-label={`${endingIndex + 1}번째 엔딩 순서 변경`} />}
+      leading={
+        <ItemDragHandle
+          {...attributes}
+          {...listeners}
+          {...handleProps}
+          aria-label={`${endingIndex + 1}번째 엔딩 순서 변경`}
+        />
+      }
       trailing={
         <ItemRemoveButton
           label={trimmedName ? `${trimmedName} 엔딩 삭제` : `${endingIndex + 1}번째 엔딩 삭제`}
@@ -342,31 +340,37 @@ function PriorityStatField({ id, stats, value, isMissing, onChange }: PrioritySt
 }
 
 /** 선택된 시작설정 하나의 엔딩 목록. `key={시작설정 id}`로 감싸 StatSection과 동일하게 시작설정
- * 전환마다 useFieldArray를 완전히 새로 마운트한다. */
+ * 전환마다 useFieldArray를 완전히 새로 마운트한다. 삭제 되돌리기도 이 목록이 쥐어, 시작설정을 바꾸거나 탭을 떠나면 그 토스트가
+ * 닫힌다 — 다시 마운트된 목록에는 지울 때 잡은 필드 배열이 없다. */
 function EndingSection({ startingSetupIndex }: { startingSetupIndex: number }) {
   const form = useFormContext<StoryBuilderFormValues>();
   const uiState = useBuilderUiState();
 
   const { control, getValues } = form;
   const endingsPath = `startingSetups.${startingSetupIndex}.endings` as const;
-  const { fields, append, remove, move } = useFieldArray({ control, name: endingsPath });
+  const { fields, append, remove, move, insert } = useFieldArray({ control, name: endingsPath });
   const stats = useWatch({ control, name: `startingSetups.${startingSetupIndex}.stats` });
-  const sensors = useSensors(useSensor(PointerSensor));
+  const sortable = useSortableList({
+    ids: fields.map((field) => field.id),
+    move,
+    itemObject: "엔딩을",
+    orderMeaning: "위에 있는 엔딩부터 판정해요.",
+  });
+  const removeWithUndo = useUndoableRemoval({
+    getItems: () => getValues(endingsPath),
+    remove,
+    insert: (index, ending) => insert(index, ending, { shouldFocus: false }),
+    openKey: (id) => itemOpenKey(ENDING_LIST, id),
+    objectPhrase: (ending) => (ending.name.trim() ? `‘${ending.name.trim()}’ 엔딩을` : "이름 없는 엔딩을"),
+  });
   const addButtonRef = useRef<HTMLButtonElement>(null);
-
-  function handleDragEnd({ active, over }: DragEndEvent) {
-    if (!over || active.id === over.id) return;
-    const oldIndex = fields.findIndex((field) => field.id === active.id);
-    const newIndex = fields.findIndex((field) => field.id === over.id);
-    if (oldIndex !== -1 && newIndex !== -1) move(oldIndex, newIndex);
-  }
 
   // 지우기 전에 포커스를 다음 엔딩의 머리 줄로(없으면 이전 엔딩, 그것도 없으면 엔딩 추가 버튼으로) 옮긴다 — 지운 뒤로
   // 미루면 누른 삭제 버튼이 사라지며 포커스가 body 로 떨어진다.
   function handleRemove(index: number) {
     const keys = getValues(endingsPath).map((ending) => itemOpenKey(ENDING_LIST, ending.id));
     focusNeighborToggle(keys, index, addButtonRef.current);
-    remove(index);
+    removeWithUndo(index);
   }
 
   // 새 엔딩은 펼친 채 이름 칸에 포커스한다. 열림 기록은 `append` 와 같은 핸들러에서 먼저 해야 새 본문이 보이는 채로
@@ -402,7 +406,12 @@ function EndingSection({ startingSetupIndex }: { startingSetupIndex: number }) {
           <p className="text-sm text-muted-foreground">아직 등록된 엔딩이 없어요.</p>
         </div>
       ) : (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <DndContext
+          sensors={sortable.sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={sortable.handleDragEnd}
+          accessibility={sortable.accessibility}
+        >
           <SortableContext items={fields.map((field) => field.id)} strategy={verticalListSortingStrategy}>
             <div className="flex flex-col gap-4">
               {fields.map((field, index) => (
@@ -412,6 +421,7 @@ function EndingSection({ startingSetupIndex }: { startingSetupIndex: number }) {
                   startingSetupIndex={startingSetupIndex}
                   endingIndex={index}
                   stats={stats}
+                  handleProps={sortable.handleProps(index)}
                   onRemove={() => handleRemove(index)}
                 />
               ))}
@@ -423,6 +433,10 @@ function EndingSection({ startingSetupIndex }: { startingSetupIndex: number }) {
       <Button ref={addButtonRef} type="button" variant="secondary" className="w-fit" onClick={handleAdd}>
         엔딩 추가
       </Button>
+
+      <p className="sr-only" aria-live="polite">
+        {sortable.announcement}
+      </p>
     </div>
   );
 }

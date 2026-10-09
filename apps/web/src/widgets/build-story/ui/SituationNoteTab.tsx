@@ -15,6 +15,7 @@ import {
 
 import { SituationNoteCard } from "./SituationNoteCard";
 import { StartingSetupPicker } from "./StartingSetupPicker";
+import { StartingSetupRequiredState } from "./StartingSetupRequiredState";
 
 const SITUATION_NOTE_LIST: StoryCollapsibleList = "situationNote";
 const ADD_BUTTON_ID = "situation-note-add";
@@ -25,23 +26,14 @@ const NO_STATS_REASON = "상황 노트는 스탯 값으로 조건을 걸어요. 
  * 상황 노트 탭. 스탯·엔딩 탭처럼 시작설정마다 독립 목록이라 먼저 시작설정을 고른다(고른 시작설정은 두 탭과 함께 셸의 화면
  * 상태에서 읽고 쓴다). 하나도 없어도 발행할 수 있다.
  */
-export function SituationNoteTab() {
+export function SituationNoteTab({ onGoToStartingSetup }: { onGoToStartingSetup: () => void }) {
   const form = useFormContext<StoryBuilderFormValues>();
 
   const { control } = form;
   const startingSetups = useWatch({ control, name: "startingSetups" });
   const [selectedSetupId, setSelectedSetupId] = useBuilderSelection(SELECTED_STARTING_SETUP);
 
-  if (startingSetups.length === 0) {
-    // 다른 탭 본문과 같은 `py-6` 루트로 감싸야 탭 목록과의 간격이 탭마다 같다.
-    return (
-      <div className="py-6">
-        <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-20 text-center">
-          <p className="text-sm break-keep text-muted-foreground">먼저 시작설정 탭에서 시작설정을 추가해주세요.</p>
-        </div>
-      </div>
-    );
-  }
+  if (startingSetups.length === 0) return <StartingSetupRequiredState onGoToStartingSetup={onGoToStartingSetup} />;
 
   // 기억해 둔 시작설정이 지워졌거나 아직 고른 적이 없으면 첫 시작설정을 보인다.
   const selectedIndex = startingSetups.findIndex((setup) => setup.id === selectedSetupId);

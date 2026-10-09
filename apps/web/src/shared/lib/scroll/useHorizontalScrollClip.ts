@@ -11,8 +11,7 @@ import { useCallback, useState } from "react";
  * 리사이즈뿐 아니라 **탭 라벨 자체가 늘어나는 경우**(발행 실패로 경고 아이콘이 붙어 탭 스트립 전체
  * 너비가 커진다)도 있어 `scroll` 리스너만으로는 못 잡는다.
  *
- * `isClippedLeft`는 양쪽 페이드가 필요한 소비처(홈 장르 캐러셀)를 위해 더했고, `BuilderTabStrip`은
- * 오른쪽만 쓴다.
+ * `isClippedLeft`는 양쪽 페이드가 필요한 소비처(홈 장르 캐러셀, 열린 탭으로 줄을 미는 `BuilderTabStrip`)가 쓴다.
  */
 export function useHorizontalScrollClip() {
   const [isClippedLeft, setIsClippedLeft] = useState(false);

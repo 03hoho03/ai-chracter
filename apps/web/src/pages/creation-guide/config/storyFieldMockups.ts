@@ -1,4 +1,10 @@
 import {
+  MAX_DESCRIPTION_LENGTH,
+  MAX_HASHTAG_LENGTH,
+  MAX_NAME_LENGTH,
+  MAX_ONE_LINER_LENGTH,
+} from "@/entities/content";
+import {
   MAX_KEYWORD_NOTE_CONTENT_LENGTH,
   MAX_KEYWORD_NOTE_NAME_LENGTH,
   MAX_MEDIA_BOOK_NAME_LENGTH,
@@ -68,7 +74,8 @@ export type FieldMockup = {
   readTiming: ReadTimingId | null;
   /** 글자 수 상한. 빌더 스키마의 상수만 가리킨다 — 숫자를 여기 따로 적으면 스키마와 어긋날 수 있다. */
   limit?: number;
-  /** 빌더가 `n/상한` 카운터를 그리는 칸. 목업도 같은 자리에 그린다. */
+  /** 빌더가 `n/상한` 카운터를 그리는 칸. 목업도 같은 자리(입력칸 바로 아래 오른쪽)에 그린다. 칩 칸이면 입력칸에 쓰는
+   * 항목 하나의 글자 수다. */
   counter?: true;
 };
 
@@ -78,8 +85,14 @@ export type FieldMockup = {
  */
 export const STORY_FIELD_MOCKUPS = {
   "profile.image": { kind: "image", seedPath: null, readTiming: "notRead" },
-  "profile.name": { kind: "text", seedPath: "name", readTiming: "notRead" },
-  "profile.oneLiner": { kind: "text", seedPath: "oneLiner", readTiming: "notRead" },
+  "profile.name": { kind: "text", seedPath: "name", readTiming: "notRead", limit: MAX_NAME_LENGTH, counter: true },
+  "profile.oneLiner": {
+    kind: "text",
+    seedPath: "oneLiner",
+    readTiming: "notRead",
+    limit: MAX_ONE_LINER_LENGTH,
+    counter: true,
+  },
 
   "storySetting.promptTemplate": { kind: "toggle", seedPath: "promptTemplate", readTiming: null },
   "storySetting.customPrompt": { kind: "textarea", seedPath: null, readTiming: null },
@@ -220,6 +233,7 @@ export const STORY_FIELD_MOCKUPS = {
     seedPath: "keywordNotes.*.triggerKeywords",
     readTiming: null,
     limit: MAX_TRIGGER_KEYWORD_LENGTH,
+    counter: true,
   },
   // 금지 키워드는 트리거 키워드와 같은 길이 규칙을 쓴다(빌더 스키마가 같은 목록 스키마를 공유한다).
   "keywordNotes.*.excludeKeywords": {
@@ -227,6 +241,7 @@ export const STORY_FIELD_MOCKUPS = {
     seedPath: null,
     readTiming: null,
     limit: MAX_TRIGGER_KEYWORD_LENGTH,
+    counter: true,
   },
   "keywordNotes.*.stickyTurns": { kind: "select", seedPath: null, readTiming: null },
   "keywordNotes.*.alwaysOn": { kind: "switch", seedPath: null, readTiming: null },
@@ -268,10 +283,22 @@ export const STORY_FIELD_MOCKUPS = {
     readTiming: null,
   },
 
-  "registration.description": { kind: "textarea", seedPath: "description", readTiming: "notRead" },
+  "registration.description": {
+    kind: "textarea",
+    seedPath: "description",
+    readTiming: "notRead",
+    limit: MAX_DESCRIPTION_LENGTH,
+    counter: true,
+  },
   "registration.genre": { kind: "select", seedPath: "genreId", readTiming: "notRead" },
   "registration.target": { kind: "toggle", seedPath: "target", readTiming: "notRead" },
-  "registration.hashtags": { kind: "chips", seedPath: "hashtags", readTiming: "notRead" },
+  "registration.hashtags": {
+    kind: "chips",
+    seedPath: "hashtags",
+    readTiming: "notRead",
+    limit: MAX_HASHTAG_LENGTH,
+    counter: true,
+  },
   "registration.visibility": { kind: "toggle", seedPath: "visibility", readTiming: "notRead" },
   "registration.novelPermission": { kind: "toggle", seedPath: null, readTiming: null },
 } as const satisfies Record<StoryFieldKey, FieldMockup>;

@@ -8,8 +8,8 @@ import { Camera, ChevronLeft, ChevronRight, Copy, ImageOff, Images, Loader2, X }
 import { useId, useState, type ChangeEvent } from "react";
 
 import { toMediaNameTag } from "@/entities/media-book";
+import { CharacterCount, clampFieldAtCaret, isComposingChange } from "@/features/build-common";
 import {
-  countCharacters,
   FieldLabelText,
   findCell,
   findNextIncompleteCell,
@@ -25,11 +25,11 @@ import {
 } from "@/features/build-story";
 import { MediaBookConfirmModal } from "@/features/edit-media-book";
 import { GeneratedImagePickerModal } from "@/features/select-generated-image";
+import { countCharacters } from "@/shared/lib/text/characterCount";
 import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
 
 import { toCellKey, type MediaBookPosition } from "./MediaBookGrid";
 import { focusCellOrHeading } from "./MediaBookSelectionProvider";
-import { clampCharacters } from "../lib/clampCharacters";
 import { copyMediaTag } from "../lib/copyMediaTag";
 import { MEDIA_BOOK_IMAGE_ACCEPT } from "../lib/mediaBookImageFile";
 import { useMediaBookCellImage } from "../model/useMediaBookCellImage";
@@ -298,13 +298,22 @@ function FilledCellFields({ cell, imageButtonsProps, onPatch, onClear }: FilledC
           placeholder="예) 리딩 중 웃음이 터져 대본으로 얼굴을 가린 유나"
           value={cell.situationDescription}
           aria-describedby={`${fieldId}-situation-help`}
+          // 조합 중에는 넘친 값도 그대로 쓴다. 제어 입력이라 쓰지 않으면 React 가 칸을 옛 값으로 되돌려 조합이 깨지고,
+          // 상한을 넘은 미디어 북은 저장 요청에서 통째로 빠져(`formToServer`) 서버 거절로 이어지지 않는다.
           onChange={(event) => {
-            const clamped = clampCharacters(event.target.value, MAX_MEDIA_BOOK_SITUATION_LENGTH);
-            setTruncatedField(clamped.isTruncated ? "situation" : undefined);
-            onPatch({ situationDescription: clamped.value });
+            if (!isComposingChange(event)) {
+              const isTruncated = clampFieldAtCaret(event.target, MAX_MEDIA_BOOK_SITUATION_LENGTH);
+              setTruncatedField(isTruncated ? "situation" : undefined);
+            }
+            onPatch({ situationDescription: event.target.value });
+          }}
+          onCompositionEnd={(event) => {
+            if (!clampFieldAtCaret(event.currentTarget, MAX_MEDIA_BOOK_SITUATION_LENGTH)) return;
+            setTruncatedField("situation");
+            onPatch({ situationDescription: event.currentTarget.value });
           }}
         />
-        <LimitedFieldHelp
+        <CharacterCount
           id={`${fieldId}-situation-help`}
           help="대화 중 어떤 이미지를 띄울지 AI가 고를 때 이름과 함께 읽어요."
           count={countCharacters(cell.situationDescription)}
@@ -321,12 +330,19 @@ function FilledCellFields({ cell, imageButtonsProps, onPatch, onClear }: FilledC
           value={cell.unlockHint}
           aria-describedby={`${fieldId}-hint-help`}
           onChange={(event) => {
-            const clamped = clampCharacters(event.target.value, MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH);
-            setTruncatedField(clamped.isTruncated ? "hint" : undefined);
-            onPatch({ unlockHint: clamped.value });
+            if (!isComposingChange(event)) {
+              const isTruncated = clampFieldAtCaret(event.target, MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH);
+              setTruncatedField(isTruncated ? "hint" : undefined);
+            }
+            onPatch({ unlockHint: event.target.value });
+          }}
+          onCompositionEnd={(event) => {
+            if (!clampFieldAtCaret(event.currentTarget, MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH)) return;
+            setTruncatedField("hint");
+            onPatch({ unlockHint: event.currentTarget.value });
           }}
         />
-        <LimitedFieldHelp
+        <CharacterCount
           id={`${fieldId}-hint-help`}
           help="아직 못 본 사람의 이미지 보관함에 흐린 이미지와 함께 보여요. 비우면 자물쇠만 보여요."
           count={countCharacters(cell.unlockHint)}
@@ -353,29 +369,6 @@ function FilledCellFields({ cell, imageButtonsProps, onPatch, onClear }: FilledC
         이 칸 비우기
       </Button>
     </div>
-  );
-}
-
-type LimitedFieldHelpProps = { id: string; help: string; count: number; max: number; isTruncated: boolean };
-
-/**
- * 글자 상한이 있는 입력칸 아래 줄 — 도움말과 글자 수. 상한에 닿으면 글자 수를 굵게 올리고(오류가 아니라 꽉 찬
- * 상태라 경고색을 쓰지 않는다), 입력이 잘린 그 순간에는 도움말 자리에 잘렸다고 알린다. 알림 자리는 늘 있어야
- * 스크린리더가 바뀐 글을 읽으므로 비워 둔 채 둔다.
- */
-function LimitedFieldHelp({ id, help, count, max, isTruncated }: LimitedFieldHelpProps) {
-  return (
-    <p id={id} className="flex justify-between gap-2 text-xs text-muted-foreground">
-      <span className="break-keep">
-        <span hidden={isTruncated}>{help}</span>
-        <span role="status" className="text-foreground">
-          {isTruncated ? `${max}자까지 들어가요. 넘친 글자는 넣지 않았어요.` : ""}
-        </span>
-      </span>
-      <span className={cn("shrink-0 tabular-nums", count >= max && "font-medium text-foreground")}>
-        {count}/{max}
-      </span>
-    </p>
   );
 }
 

@@ -1,18 +1,11 @@
-import {
-  closestCenter,
-  DndContext,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
+import { closestCenter, DndContext } from "@dnd-kit/core";
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ai-character-chat/ui/components/select";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
-import { GripVertical, Trash2, TriangleAlert } from "lucide-react";
+import { Trash2, TriangleAlert } from "lucide-react";
 import { useId, useRef } from "react";
 
 import {
@@ -22,6 +15,8 @@ import {
   ItemRemoveButton,
   itemOpenKey,
   useBuilderUiState,
+  useSortableList,
+  type SortableHandleProps,
 } from "@/features/build-common";
 import {
   COMPARISON_OPERATORS,
@@ -67,6 +62,10 @@ type RuleLimit = {
 
 type SingleRuleRowProps = {
   rule: SingleRuleValues;
+  /** 같은 목록 안에서 몇 번째 단일 규칙인지(1부터) — 손잡이 이름을 가른다. */
+  ruleOrdinal: number;
+  /** 손잡이의 id·화살표 키 재정렬(`useSortableList`). */
+  handleProps: SortableHandleProps;
   stats: StatDefValues[];
   /** 이 조건의 폼 경로(편집기에 `fieldPath` 를 준 목록만). 발행 실패 때 셸이 스탯 칸을 찾아 포커스하는 표식이 된다. */
   fieldPath: string | undefined;
@@ -78,6 +77,8 @@ type RuleGroupRowProps = {
   group: Extract<RuleListItemValues, { kind: "group" }>;
   /** 같은 목록 안에서 몇 번째 그룹인지(1부터). 그룹은 이름이 없어 손잡이·삭제 버튼의 이름을 이 순번으로 가른다. */
   groupOrdinal: number;
+  /** 손잡이의 id·화살표 키 재정렬(`useSortableList`). */
+  handleProps: SortableHandleProps;
   stats: StatDefValues[];
   emptyText: string;
   groupList: StoryCollapsibleList;
@@ -91,7 +92,7 @@ type RuleGroupRowProps = {
   onRemove: () => void;
 };
 
-/** 스탯 기반 규칙 목록 편집기. "단일 규칙 추가"/"규칙 그룹 추가"로 항목을 늘리고 dnd-kit로 재정렬한다.
+/** 스탯 기반 규칙 목록 편집기. "단일 규칙 추가"/"규칙 그룹 추가"로 항목을 늘리고 손잡이를 끌거나 화살표 키로 재정렬한다.
  * `allowGroups=false`로 그룹 내부(단일 규칙만)에도 그대로 재사용된다. 폼 상태를 직접 잡지 않는 제어 컴포넌트라 호출부가
  * 목록을 읽어 넘기고 바뀐 목록을 통째로 써 넣는다.
  *
@@ -111,7 +112,19 @@ export function RuleListEditor({
   noStatsReason,
   onChange,
 }: RuleListEditorProps) {
-  const sensors = useSensors(useSensor(PointerSensor));
+  const sortable = useSortableList({
+    ids: items.map((item) => item.id),
+    move: (from, to) => onChange(arrayMove(items, from, to)),
+    itemObject: "규칙을",
+    orderMeaning: "위에서부터 차례로 이어 판정해요.",
+    // 손잡이 이름이 종류별 순번(N번째 규칙·N번째 규칙 그룹)이라 옮긴 뒤의 안내도 같은 순번으로 말한다.
+    movedMessage: (orderAfter, movedId) => {
+      const kindOf = (id: string) => items.find((item) => item.id === id)?.kind;
+      const kind = kindOf(movedId);
+      const ordinal = orderAfter.slice(0, orderAfter.indexOf(movedId) + 1).filter((id) => kindOf(id) === kind).length;
+      return `${ordinal}번째 ${kind === "group" ? "규칙 그룹" : "규칙"}으로 옮겼어요.`;
+    },
+  });
   const uiState = useBuilderUiState();
   const addRuleButtonRef = useRef<HTMLButtonElement>(null);
   const addGroupButtonRef = useRef<HTMLButtonElement>(null);
@@ -160,19 +173,17 @@ export function RuleListEditor({
     onChange([...items, { kind: "group", id, rules: [], nextOp: null }]);
   }
 
-  function handleDragEnd({ active, over }: DragEndEvent) {
-    if (!over || active.id === over.id) return;
-    const oldIndex = items.findIndex((item) => item.id === active.id);
-    const newIndex = items.findIndex((item) => item.id === over.id);
-    if (oldIndex !== -1 && newIndex !== -1) onChange(arrayMove(items, oldIndex, newIndex));
-  }
-
   return (
     <div className="flex flex-col gap-3">
       {items.length === 0 ? (
         <p className="text-sm text-muted-foreground">{emptyText}</p>
       ) : (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <DndContext
+          sensors={sortable.sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={sortable.handleDragEnd}
+          accessibility={sortable.accessibility}
+        >
           <SortableContext items={items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
             <div className="flex flex-col gap-2">
               {items.map((item, index) => (
@@ -181,6 +192,7 @@ export function RuleListEditor({
                     <RuleGroupRow
                       group={item}
                       groupOrdinal={items.slice(0, index + 1).filter((other) => other.kind === "group").length}
+                      handleProps={sortable.handleProps(index)}
                       stats={stats}
                       emptyText={emptyText}
                       groupList={groupList}
@@ -194,6 +206,8 @@ export function RuleListEditor({
                   ) : (
                     <SingleRuleRow
                       rule={item}
+                      ruleOrdinal={items.slice(0, index + 1).filter((other) => other.kind === "rule").length}
+                      handleProps={sortable.handleProps(index)}
                       stats={stats}
                       fieldPath={fieldPath === undefined ? undefined : `${fieldPath}.${index}`}
                       onChange={(next) => updateItem(item.id, next)}
@@ -250,6 +264,10 @@ export function RuleListEditor({
           </p>
         )}
       </div>
+
+      <p className="sr-only" aria-live="polite">
+        {sortable.announcement}
+      </p>
     </div>
   );
 }
@@ -295,6 +313,8 @@ function LogicOpToggle({ value, onChange }: { value: LogicOp; onChange: (op: Log
  * 그대로 나와 하나를 고르면 고쳐지고, 줄 삭제 버튼으로 지울 수도 있다. 사실을 알리는 정적 문장이라 `role="alert"` 를 달지 않는다. */
 function SingleRuleRow({
   rule,
+  ruleOrdinal,
+  handleProps,
   stats,
   fieldPath,
   onChange,
@@ -311,15 +331,12 @@ function SingleRuleRow({
       className="flex flex-col gap-1.5 rounded-lg border border-border bg-background p-3"
     >
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          aria-label="순서 변경"
-          className="shrink-0 cursor-grab touch-none rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        <ItemDragHandle
           {...attributes}
           {...listeners}
-        >
-          <GripVertical aria-hidden className="size-4" />
-        </button>
+          {...handleProps}
+          aria-label={`${ruleOrdinal}번째 규칙 순서 변경`}
+        />
 
         {/* 세 컨트롤의 고정 폭 합(128+80+96px + 간격)이 좁은 행보다 넓어서, 한 줄에 두면 줄어들 수 있는
             유일한 칸인 기준값 입력이 26px로 찌그러지고 삭제 버튼이 행 밖으로 밀려났다(390px 실측).
@@ -386,9 +403,10 @@ function SingleRuleRow({
         </Button>
       </div>
 
-      {/* 손잡이(16px)와 간격(8px)만큼 들여 스탯 칸 왼쪽 끝에 맞춘다 — 위 컨트롤 줄의 높이·정렬은 문장이 있어도 그대로다. */}
+      {/* 손잡이가 줄 안쪽 여백으로 당겨진 만큼(-8px)을 빼고 손잡이(36px, 손가락 포인터 40px)와 간격(8px)만큼 들여 스탯 칸 왼쪽
+          끝에 맞춘다 — 위 컨트롤 줄의 높이·정렬은 문장이 있어도 그대로다. */}
       {isStatMissing && (
-        <p id={missingStatHintId} className="pl-6 text-xs break-keep text-destructive-text">
+        <p id={missingStatHintId} className="pl-9 text-xs break-keep text-destructive-text pointer-coarse:pl-10">
           이 조건의 스탯이 지워졌어요. 다른 스탯을 고르거나 조건을 지워 주세요.
         </p>
       )}
@@ -410,6 +428,7 @@ function RuleGroupRow({
   ruleLimit,
   rootRuleCount,
   noStatsReason,
+  handleProps,
   onChange,
   onRemove,
 }: RuleGroupRowProps) {
@@ -426,7 +445,14 @@ function RuleGroupRow({
       srTitlePrefix={`${groupOrdinal}번째 `}
       summary={`조건 ${group.rules.length}개`}
       hasError={hasRuleWithMissingStat(group.rules, stats)}
-      leading={<ItemDragHandle {...attributes} {...listeners} aria-label={`${groupOrdinal}번째 규칙 그룹 순서 변경`} />}
+      leading={
+        <ItemDragHandle
+          {...attributes}
+          {...listeners}
+          {...handleProps}
+          aria-label={`${groupOrdinal}번째 규칙 그룹 순서 변경`}
+        />
+      }
       trailing={<ItemRemoveButton label={`${groupOrdinal}번째 규칙 그룹 삭제`} onClick={onRemove} />}
     >
       <RuleListEditor

@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import Field
 
+from api.content.schemas import SITUATIONAL_IMAGE_TRIGGER_MAX_LENGTH
 from api.core.schema import CamelModel
 from api.db.models.content import ContentType
 from api.db.models.media import AssetStatus
@@ -56,7 +57,7 @@ class AssetCompleteResponse(CamelModel):
 class RegisterSituationalImageRequest(CamelModel):
     entity_id: uuid.UUID
     content_version_id: uuid.UUID
-    trigger_condition: str = Field(min_length=1)
+    trigger_condition: str = Field(min_length=1, max_length=SITUATIONAL_IMAGE_TRIGGER_MAX_LENGTH)
     order: int
 
 

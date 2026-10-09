@@ -64,6 +64,7 @@ import {
 import { AppealModal } from "@/features/submit-appeal";
 import { creationGuidePath } from "@/shared/config/creationGuide";
 
+import { STORY_REQUIRED_TAB_IDS } from "../model/requiredTabs";
 import { useMediaBookThumbnailsStore } from "../model/useMediaBookThumbnailsStore";
 import { EndingTab } from "./EndingTab";
 import { KeywordNoteTab } from "./KeywordNoteTab";
@@ -76,7 +77,7 @@ import { RegistrationTab } from "./RegistrationTab";
 import { SettingTab } from "./SettingTab";
 import { ShortcutTab } from "./ShortcutTab";
 import { SituationNoteTab } from "./SituationNoteTab";
-import { StartingSetupTab } from "./StartingSetupTab";
+import { STARTING_SETUP_ADD_BUTTON_ID, StartingSetupTab } from "./StartingSetupTab";
 import { StatTab } from "./StatTab";
 
 type StoryBuilderShellProps = {
@@ -150,7 +151,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
 
   const mediaBookThumbnails = useMediaBookThumbnailsStore(draft);
 
-  const { saveDraft } = useDraftPersistence({ type: "story", draftId, initialNovelPermission: draft.novelPermission });
+  const { saveDraft, saveStatus } = useDraftPersistence({ type: "story", draftId, initialNovelPermission: draft.novelPermission });
   const publishMutation = usePublishContentMutation();
 
   // 발행 실패 시 첫 에러 필드로 이동한다(탭이 다르면 먼저 전환). tabId는
@@ -181,6 +182,18 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
     focusFirstError(location);
   }
 
+  // 스탯·상황 노트·엔딩 탭의 빈 상태(시작설정 없음)에서 시작설정 탭으로 간다. 누른 버튼은 탭 본문과 함께 사라지므로, 새 탭이
+  // 커밋된 다음 프레임에 그 탭의 '설정 추가'로 포커스를 옮긴다(없으면 시작설정 탭 트리거).
+  function goToStartingSetup() {
+    setActiveTab("startingSetup");
+    requestAnimationFrame(() => {
+      const target =
+        document.getElementById(STARTING_SETUP_ADD_BUTTON_ID) ??
+        document.querySelector<HTMLElement>('[data-tab-id="startingSetup"]');
+      target?.focus();
+    });
+  }
+
   const { saveNow } = useAutosave({
     subscribe: (cb) => {
       // `watch` 콜백이 주는 값은 `DeepPartial`이다(미등록 필드가 있을 수 있어서). 구독은 **변경
@@ -190,6 +203,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
     },
     formToServer,
     save: saveDraft,
+    onSchedule: saveStatus.markPending,
     flushOnUnmount: () => draftId !== undefined,
     errorMessage: storyAutosaveErrorMessage,
   });
@@ -356,6 +370,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
             // 미디어 북 탭에서는 이 버튼이 여는 화면이 배치표라 그 화면의 머리와 같은 이름을 단다.
             previewLabel={activeTab === "mediaBook" ? "배치표" : undefined}
             previewIcon={activeTab === "mediaBook" ? <Grid3x3 aria-hidden className="size-3.5" /> : undefined}
+            saveStatus={saveStatus}
             onPreview={() => setIsPreviewOpen((prev) => !prev)}
             onSaveNow={() => void handleSaveNow()}
             onPublish={() => void form.handleSubmit(handlePublish, handlePublishInvalid)()}
@@ -406,7 +421,12 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
                 onValueChange={(value) => isStoryBuilderTab(value) && setActiveTab(value)}
                 className="lg:gap-0"
               >
-                <BuilderTabStrip tabs={TABS} errorTabIds={errorTabIds} />
+                <BuilderTabStrip
+                  tabs={TABS}
+                  activeTab={activeTab}
+                  errorTabIds={errorTabIds}
+                  requiredTabIds={STORY_REQUIRED_TAB_IDS}
+                />
 
                 <TabsContent value="profile">
                   <ProfileTab
@@ -422,10 +442,10 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
                   <StartingSetupTab />
                 </TabsContent>
                 <TabsContent value="stat">
-                  <StatTab />
+                  <StatTab onGoToStartingSetup={goToStartingSetup} />
                 </TabsContent>
                 <TabsContent value="situationNote">
-                  <SituationNoteTab />
+                  <SituationNoteTab onGoToStartingSetup={goToStartingSetup} />
                 </TabsContent>
                 <TabsContent value="mediaBook">
                   <MediaBookTab />
@@ -437,7 +457,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
                   <ShortcutTab />
                 </TabsContent>
                 <TabsContent value="ending">
-                  <EndingTab />
+                  <EndingTab onGoToStartingSetup={goToStartingSetup} />
                 </TabsContent>
                 <TabsContent value="registration">
                   <RegistrationTab />

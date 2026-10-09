@@ -7975,6 +7975,8 @@ export interface components {
             id: string;
             /** Imageassetid */
             imageAssetId: string | null;
+            /** Imageurl */
+            imageUrl: string | null;
             /** Triggercondition */
             triggerCondition: string;
         };

@@ -6,6 +6,7 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useRef } from "react";
 import { Controller, useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
+import { MAX_DEVELOPMENT_EXAMPLES } from "@/entities/content";
 import {
   CollapsibleItemCard,
   DefaultUserNameField,
@@ -16,7 +17,6 @@ import {
 } from "@/features/build-common";
 import {
   FieldLabelText,
-  MAX_DEVELOPMENT_EXAMPLES,
   PROMPT_TEMPLATE_LABELS,
   PROMPT_TEMPLATE_VALUES,
   STORY_FIELD_LABELS,
@@ -130,6 +130,7 @@ export function SettingTab() {
             id="story-setting-custom-prompt"
             placeholder="AI에게 지시할 프롬프트를 자유롭게 작성해주세요"
             rows={12}
+            className="min-h-64"
             aria-invalid={!!errors.storySetting?.customPrompt}
             aria-describedby={errors.storySetting?.customPrompt ? "story-setting-custom-prompt-error" : undefined}
             {...register("storySetting.customPrompt")}
@@ -149,6 +150,7 @@ export function SettingTab() {
             id="story-setting-world"
             placeholder="스토리의 세계관과 설정을 입력해주세요"
             rows={8}
+            className="min-h-32"
             aria-invalid={!!errors.storySetting?.worldSetting}
             aria-describedby={errors.storySetting?.worldSetting ? "story-setting-world-error" : undefined}
             {...register("storySetting.worldSetting")}

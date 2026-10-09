@@ -1,8 +1,21 @@
 import { z } from "zod";
 
-import { DEFAULT_NOVEL_PERMISSION, NOVEL_PERMISSION_VALUES } from "@/entities/content";
+import {
+  characterLimit,
+  DEFAULT_NOVEL_PERMISSION,
+  hashtagsSchema,
+  MAX_DESCRIPTION_LENGTH,
+  MAX_DEVELOPMENT_EXAMPLES,
+  MAX_NAME_LENGTH,
+  MAX_ONE_LINER_LENGTH,
+  MAX_STARTING_SETUPS,
+  MAX_SUGGESTED_REPLIES,
+  NOVEL_PERMISSION_VALUES,
+} from "@/entities/content";
 import { normalizeMediaBookName } from "@/entities/media-book";
 import { defaultUserNameIssue } from "@/entities/persona";
+import { caseFoldKey } from "@/shared/lib/text/caseFoldKey";
+import { countCharacters } from "@/shared/lib/text/characterCount";
 
 // 목록과 유니온 타입은 한쪽에서 도출한다. 값 목록을 스키마 옆의 단일 소스로 두고
 // 화면 글자는 fieldOptions.ts 가 값마다 붙인다(손복사 금지).
@@ -11,9 +24,6 @@ export type Target = (typeof TARGET_VALUES)[number];
 
 export const VISIBILITY_VALUES = ["public", "link", "private"] as const;
 export type Visibility = (typeof VISIBILITY_VALUES)[number];
-
-/** 전개 예시 개수 상한. 스키마의 `.max()`와 빌더의 라벨 표기·추가 버튼 게이트가 함께 읽는다. */
-export const MAX_DEVELOPMENT_EXAMPLES = 3;
 
 /**
  * 전개 예시 한 쌍. build-character의
@@ -310,12 +320,6 @@ export const situationNoteSchema = z.object({
   }),
 });
 
-/** 상한 값의 단일 소스. 스키마의 `.max()`와 메시지,
- * widgets/build-story/ui/StartingSetupTab.tsx의 라벨 표기·추가 버튼 게이트가 전부 여기를 읽는다
- * (같은 숫자를 두 번 적으면 한쪽만 고치고 끝난다). */
-export const MAX_STARTING_SETUPS = 4;
-export const MAX_SUGGESTED_REPLIES = 4;
-
 /**
  * 시작설정 배열은 dnd-kit로 재정렬 가능하며, 목록의 첫 번째
  * 항목이 기본 선택이다.
@@ -358,17 +362,6 @@ export const MAX_KEYWORD_NOTE_STICKY_TURNS = 5;
 export const MAX_ALWAYS_ON_KEYWORD_NOTES = 3;
 
 /**
- * 키워드 중복을 가리는 비교 키. 서버는 NFC 로 맞춘 뒤 파이썬 `casefold()` 로 접어 비교하는데 JS 에는 casefold 가
- * 없다. 소문자화만 하면 서버보다 느슨해(예: `ß`·`ẞ` 는 서버에서 `ss` 와 같다) 서버만 중복으로 보는 값을 폼이
- * 받아 자동저장이 거절된다. 소문자 → 대문자 → 소문자를 거치면 casefold 가 접는 모든 코드 포인트가 같은 키로
- * 모인다(전 코드 포인트 대조로 확인 — 소문자화만으로는 101개가 어긋났다). 반대로 폼이 더 엄격한 경우(점 없는
- * `ı` 와 `i` 등)는 서버가 받을 값을 폼이 막을 뿐이라 자동저장을 멈추지 않는다.
- */
-export function normalizeKeyword(value: string): string {
-  return value.normalize("NFC").toLowerCase().toUpperCase().toLowerCase();
-}
-
-/**
  * 키워드 칩 목록(트리거·금지 공용). 원소 하나의 위반도 배열 자리에 싣는다 — 화면은 키워드 목록 아래 한 줄로만 오류를
  * 보여 준다. "1개 이상"은 여기 두지 않는다 — 트리거 키워드만, 그것도 상시가 아닌 노트에만 요구한다(노트 스키마).
  */
@@ -387,7 +380,7 @@ function keywordListSchema(limitMessage: string) {
           ctx.addIssue({ code: "custom", message: TRIGGER_KEYWORD_TOO_LONG_MESSAGE });
           return;
         }
-        const key = normalizeKeyword(keyword);
+        const key = caseFoldKey(keyword);
         if (seen.has(key)) {
           ctx.addIssue({ code: "custom", message: TRIGGER_KEYWORD_DUPLICATE_MESSAGE });
           return;
@@ -469,12 +462,6 @@ const MEDIA_BOOK_NAME_FORBIDDEN = /[/{}:]/;
 // 축·칸·자산 id 는 서버가 uuid 로 받는다. `z.uuid()`는 RFC 변형 비트까지 요구해 서버가 받는 id 도 거절할 수
 // 있어, 서버(파이썬 `uuid.UUID`)처럼 16진 8-4-4-4-12 모양만 보는 `z.guid()`를 쓴다.
 const mediaBookIdSchema = z.guid("미디어 북 항목의 id 가 올바르지 않습니다");
-
-// 서버는 글자 수를 코드 포인트로 센다 — `.length`(UTF-16)로 세면 이모지가 두 글자가 돼 서버가 받는
-// 길이를 폼이 먼저 막는다.
-export function countCharacters(value: string): number {
-  return [...value].length;
-}
 
 /**
  * 미디어 북 축(인물·장면) 항목. 서버는 앞뒤 공백을 지우고 NFC 로 맞춘 뒤 길이를 재고 저장하므로, 폼도 같은
@@ -571,8 +558,8 @@ export const mediaBookSchema = z.object({
 
 export const storyBuilderSchema = z.object({
   profile: z.object({
-    name: z.string().min(1, "스토리 이름을 입력해주세요"),
-    oneLiner: z.string().min(1, "스토리를 한 줄로 소개해주세요"),
+    // 대표 이미지가 맨 앞인 이유: 발행 실패 때 포커스가 가는 "첫 오류"는 같은 탭 안에서 이 키 순서를 따른다. 화면에서 맨 위 칸이
+    // 대표 이미지라 순서가 다르면 둘째 칸(이름)으로 먼저 간다.
     // 타입은 초안(아직 비어 있는 상태)을 담기 위해 nullable로 두고, 발행 필수는 superRefine이 상시
     // 검증한다. **`.refine((v) => v !== null)`으로 줄이지
     // 말 것** — TS 5.5+가 그 콜백을 타입 술어로 추론하고 zod의 refine 선언이 그 경우에만 출력 타입을
@@ -586,6 +573,11 @@ export const storyBuilderSchema = z.object({
           ctx.addIssue({ code: z.ZodIssueCode.custom, message: "대표 이미지를 등록해주세요" });
         }
       }),
+    name: z.string().min(1, "스토리 이름을 입력해주세요").refine(...characterLimit(MAX_NAME_LENGTH, "이름")),
+    oneLiner: z
+      .string()
+      .min(1, "스토리를 한 줄로 소개해주세요")
+      .refine(...characterLimit(MAX_ONE_LINER_LENGTH, "한줄소개")),
   }),
   storySetting: storySettingSchema,
   startingSetups: z
@@ -608,7 +600,10 @@ export const storyBuilderSchema = z.object({
   shortcuts: z.array(shortcutSchema).default([]),
   mediaBook: mediaBookSchema,
   registration: z.object({
-    description: z.string().min(1, "스토리를 목록에서 소개할 설명을 입력해주세요"),
+    description: z
+      .string()
+      .min(1, "스토리를 목록에서 소개할 설명을 입력해주세요")
+      .refine(...characterLimit(MAX_DESCRIPTION_LENGTH, "등록 설명")),
     // 실제 StoryDraftPayload/Response의 genreId/target 계약(string|null / ContentTarget|null)에 맞춰
     // profile.image와 동일한 이유로 nullable로 둔다(캐릭터 빌더와 동일한 판단 — 초안 상태에선
     // 아직 선택 전일 수 있다). 발행 필수는 profile.image와 같은 이유·같은 방식(superRefine)으로 상시
@@ -629,7 +624,7 @@ export const storyBuilderSchema = z.object({
           ctx.addIssue({ code: z.ZodIssueCode.custom, message: "타겟을 선택해주세요" });
         }
       }),
-    hashtags: z.array(z.string()).default([]),
+    hashtags: hashtagsSchema,
     visibility: z.enum(VISIBILITY_VALUES).default("private"),
     novelPermission: z.enum(NOVEL_PERMISSION_VALUES).default(DEFAULT_NOVEL_PERMISSION),
   }),

@@ -6,12 +6,13 @@ import { useFormContext } from "react-hook-form";
 import { toast } from "sonner";
 
 import { normalizeMediaBookName, type MediaBookAxis } from "@/entities/media-book";
-import { CollapsibleSection, itemOpenKey, useBuilderUiState } from "@/features/build-common";
+import { CharacterCount, CollapsibleSection, itemOpenKey, useBuilderUiState } from "@/features/build-common";
 import {
   MEDIA_BOOK_AXIS_SECTION_LIST,
   addAxisItem,
   axisItems,
   countAxisItemCells,
+  MAX_MEDIA_BOOK_NAME_LENGTH,
   mediaBookNameError,
   removeAxisItem,
   renameAxisItem,
@@ -20,6 +21,7 @@ import {
   type StoryBuilderFormValues,
 } from "@/features/build-story";
 import { MediaBookConfirmModal } from "@/features/edit-media-book";
+import { countCharacters } from "@/shared/lib/text/characterCount";
 
 import { useMediaBookEditor } from "../model/useMediaBookEditor";
 
@@ -30,6 +32,7 @@ const AXIS_LABEL = { person: "인물", scene: "장면" } as const satisfies Reco
 /**
  * 인물 또는 장면 목록. 이름은 입력칸에서 바로 고치고(Enter·포커스 이동 때 반영, Esc 로 되돌림), 규칙에 맞지 않는
  * 이름은 폼에 쓰지 않고 입력칸 아래에 이유를 보인다 — 폼에는 언제나 서버가 받는 이름만 들어간다.
+ * 반영할 때 검사하는 칸이라 글자를 자르지 않고, 입력칸 아래 카운터는 서버처럼 앞뒤 공백을 지운 글자 수를 센다.
  *
  * 목록은 통째로 접힌다(머리 줄 `인물 3` + 이름 나열). 항목이 있으면 처음엔 접혀 있어 칸 상세가 한꺼번에 넣기 바로
  * 아래로 올라온다. 목록이 비었거나 저장하지 못한 이름이 남아 있으면 접지 못하게 펼쳐 둔다 — 비었으면 새 이름 입력칸이
@@ -154,7 +157,7 @@ export function MediaBookAxisList({ axis }: MediaBookAxisListProps) {
           aria-label={`새 ${label} 이름`}
           value={newName}
           aria-invalid={newNameError !== undefined}
-          aria-describedby={newNameError !== undefined ? `${listId}-new-error` : undefined}
+          aria-describedby={newNameError !== undefined ? `${listId}-new-count ${listId}-new-error` : `${listId}-new-count`}
           onChange={(event) => {
             setNewName(event.target.value);
             setNewNameError(undefined);
@@ -165,6 +168,11 @@ export function MediaBookAxisList({ axis }: MediaBookAxisListProps) {
           추가
         </Button>
       </div>
+      <CharacterCount
+        id={`${listId}-new-count`}
+        count={countCharacters(normalizeMediaBookName(newName))}
+        max={MAX_MEDIA_BOOK_NAME_LENGTH}
+      />
       {newNameError !== undefined && (
         <p id={`${listId}-new-error`} role="alert" className="text-xs text-destructive-text">
           {newNameError}
@@ -230,7 +238,7 @@ function AxisItemRow({ item, label, error, onErrorChange, onRename, onRemove }: 
           aria-label={`${label} 이름`}
           value={draftName}
           aria-invalid={error !== undefined}
-          aria-describedby={error !== undefined ? `${inputId}-error` : undefined}
+          aria-describedby={error !== undefined ? `${inputId}-count ${inputId}-error` : `${inputId}-count`}
           onChange={(event) => setDraftName(event.target.value)}
           onBlur={commitDraft}
           onKeyDown={handleKeyDown}
@@ -250,6 +258,11 @@ function AxisItemRow({ item, label, error, onErrorChange, onRename, onRemove }: 
           <Trash2 aria-hidden />
         </Button>
       </div>
+      <CharacterCount
+        id={`${inputId}-count`}
+        count={countCharacters(normalizeMediaBookName(draftName))}
+        max={MAX_MEDIA_BOOK_NAME_LENGTH}
+      />
       {error !== undefined && (
         <p id={`${inputId}-error`} role="alert" className="text-xs text-destructive-text">
           {error} — 저장되지 않았어요(Esc 로 되돌리기).

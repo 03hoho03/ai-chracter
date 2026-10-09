@@ -1,3 +1,4 @@
+export { characterSaveErrorMessage } from "./model/characterSaveError";
 export { CHARACTER_COLLAPSIBLE_LISTS, type CharacterCollapsibleList } from "./model/collapsibleLists";
 export { formToCard } from "./model/formToCard";
 export { formToServer } from "./model/formToServer";

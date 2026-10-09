@@ -12,6 +12,8 @@ on:
       - "apps/api/tests/fixtures/media_tag_cases.json"
       # 작가 글 매크로 치환 테스트도 서버 테스트와 함께 이 입력 표를 읽는다.
       - "apps/api/tests/fixtures/author_macro_cases.json"
+      # 빌더가 서버와 같은 글자·개수 한도를 이 표에서 읽는다 — 표만 고친 변경에서도 web 빌드와 테스트가 돌아야 한다.
+      - "apps/api/src/api/content/builder_limits.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
   pull_request:
@@ -24,6 +26,8 @@ on:
       - "apps/api/tests/fixtures/media_tag_cases.json"
       # 작가 글 매크로 치환 테스트도 서버 테스트와 함께 이 입력 표를 읽는다.
       - "apps/api/tests/fixtures/author_macro_cases.json"
+      # 빌더가 서버와 같은 글자·개수 한도를 이 표에서 읽는다 — 표만 고친 변경에서도 web 빌드와 테스트가 돌아야 한다.
+      - "apps/api/src/api/content/builder_limits.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
 

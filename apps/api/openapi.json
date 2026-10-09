@@ -19474,10 +19474,12 @@
         "properties": {
           "name": {
             "type": "string",
+            "maxLength": 30,
             "title": "Name"
           },
           "oneLiner": {
             "type": "string",
+            "maxLength": 50,
             "title": "Oneliner"
           },
           "thumbnailAssetId": {
@@ -19494,6 +19496,7 @@
           },
           "intro": {
             "type": "string",
+            "maxLength": 3000,
             "title": "Intro"
           },
           "exampleDialogues": {
@@ -19501,16 +19504,19 @@
               "$ref": "#/components/schemas/ExampleDialogueItem"
             },
             "type": "array",
+            "maxItems": 5,
             "title": "Exampledialogues"
           },
           "characterPrompt": {
             "type": "string",
+            "maxLength": 5000,
             "title": "Characterprompt"
           },
           "playguide": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "maxLength": 2000
               },
               {
                 "type": "null"
@@ -19532,6 +19538,7 @@
           },
           "description": {
             "type": "string",
+            "maxLength": 1000,
             "title": "Description"
           },
           "genreId": {
@@ -19558,9 +19565,11 @@
           },
           "hashtags": {
             "items": {
-              "type": "string"
+              "type": "string",
+              "maxLength": 20
             },
             "type": "array",
+            "maxItems": 10,
             "title": "Hashtags"
           },
           "visibility": {
@@ -19764,6 +19773,7 @@
           },
           "triggerCondition": {
             "type": "string",
+            "maxLength": 100,
             "title": "Triggercondition"
           }
         },
@@ -19794,6 +19804,17 @@
             ],
             "title": "Imageassetid"
           },
+          "imageUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imageurl"
+          },
           "triggerCondition": {
             "type": "string",
             "title": "Triggercondition"
@@ -19803,6 +19824,7 @@
         "required": [
           "id",
           "imageAssetId",
+          "imageUrl",
           "triggerCondition"
         ],
         "title": "CharacterSituationalImageItem"
@@ -28818,6 +28840,7 @@
           },
           "triggerCondition": {
             "type": "string",
+            "maxLength": 100,
             "minLength": 1,
             "title": "Triggercondition"
           },
@@ -29485,10 +29508,12 @@
         "properties": {
           "name": {
             "type": "string",
+            "maxLength": 30,
             "title": "Name"
           },
           "oneLiner": {
             "type": "string",
+            "maxLength": 50,
             "title": "Oneliner"
           },
           "thumbnailAssetId": {
@@ -29544,6 +29569,7 @@
               "$ref": "#/components/schemas/DevelopmentExampleItem"
             },
             "type": "array",
+            "maxItems": 3,
             "title": "Developmentexamples"
           },
           "userGoal": {
@@ -29578,6 +29604,7 @@
               "$ref": "#/components/schemas/StartingSetupDraftItem"
             },
             "type": "array",
+            "maxItems": 4,
             "title": "Startingsetups"
           },
           "keywordNotes": {
@@ -29597,6 +29624,7 @@
           },
           "description": {
             "type": "string",
+            "maxLength": 1000,
             "title": "Description"
           },
           "genreId": {
@@ -29623,9 +29651,11 @@
           },
           "hashtags": {
             "items": {
-              "type": "string"
+              "type": "string",
+              "maxLength": 20
             },
             "type": "array",
+            "maxItems": 10,
             "title": "Hashtags"
           },
           "visibility": {

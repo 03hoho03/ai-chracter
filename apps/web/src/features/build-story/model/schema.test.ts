@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { createEmptyDraft } from "@/entities/content";
+
 import {
   endingSchema,
   keywordNoteSchema,
@@ -8,7 +10,6 @@ import {
   mediaBookAxisSchema,
   mediaBookCellSchema,
   mediaBookSchema,
-  normalizeKeyword,
   ruleListItemSchema,
   shortcutSchema,
   STAT_RULES_REQUIRED_MESSAGE,
@@ -17,6 +18,7 @@ import {
   storyBuilderSchema,
   storySettingSchema,
 } from "./schema";
+import { serverToForm } from "./serverToForm";
 
 describe("storySettingSchema", () => {
   it.each(["basic", "emotional", "simulation"] as const)(
@@ -505,16 +507,6 @@ describe("keywordNoteSchema", () => {
   });
 });
 
-describe("normalizeKeyword", () => {
-  it("folds letter case and Unicode composition the way the server compares keywords", () => {
-    expect(normalizeKeyword("USB")).toBe("usb");
-    expect(normalizeKeyword("한밤".normalize("NFD"))).toBe("한밤");
-    // 파이썬 casefold 는 ß·ẞ 를 ss 로 접는다 — 소문자화만으로는 이 둘이 서버보다 느슨해진다.
-    expect(normalizeKeyword("ẞ")).toBe(normalizeKeyword("ss"));
-    expect(normalizeKeyword("ß")).toBe(normalizeKeyword("SS"));
-  });
-});
-
 describe("storyBuilderSchema keywordNotes", () => {
   function notes(count: number) {
     return Array.from({ length: count }, (_, i) => ({
@@ -987,5 +979,20 @@ describe("mediaBookSchema", () => {
     const book = { ...twoCellBook(), cells: [cellAt(0), cellAt(1, { personId: guid("a", 0) })] };
 
     expect(issuePaths(book)).toContainEqual(["cells", 1]);
+  });
+});
+
+// 발행 실패 때 같은 탭 안의 첫 오류는 검증 오류의 순서를 따른다. 화면 맨 위 칸인 대표 이미지가 첫 오류여야 포커스가 둘째 칸(이름)으로
+// 먼저 가지 않는다.
+describe("storyBuilderSchema issue order", () => {
+  it("puts profile.image first for an empty draft", () => {
+    const draft = createEmptyDraft("story");
+    if (draft.type !== "story") throw new Error("스토리 빈 초안이 아니에요.");
+    const issues = storyBuilderSchema.safeParse(serverToForm(draft)).error?.issues ?? [];
+    expect(issues.map((issue) => issue.path.join(".")).slice(0, 3)).toEqual([
+      "profile.image",
+      "profile.name",
+      "profile.oneLiner",
+    ]);
   });
 });

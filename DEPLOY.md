@@ -740,6 +740,9 @@ Pages 프로젝트 2개, 각각 Git 연동으로 `main` push 시 자동 빌드:
 - **Root directory**: **비워서 repo 루트 유지** (pnpm workspace 설치 때문에 필수)
 - **Build watch paths**: `apps/{web|admin}/*, packages/*, pnpm-lock.yaml, pnpm-workspace.yaml`
   (기본값 `*`는 전체 감시라 BE만 바뀌어도 FE가 재배포된다)
+  - web은 여기에 `apps/api/src/api/content/builder_limits.json`을 더한다. 빌더 글자·개수 한도 표를 서버와 web 번들이
+    함께 읽어서, 표만 고친 커밋에도 web이 다시 배포돼야 화면의 한도가 서버 검사와 같아진다. 이 값은 저장소 밖
+    Pages 대시보드 설정이라 사람이 바꾼다.
 - SPA fallback은 `apps/{web,admin}/public/_redirects`(`/* /index.html 200`)로 이미 되어 있다.
   단 Pages 자산 서버는 이 폴백을 없는 자산 파일(`/assets/옛-해시.js`)에도 200 HTML로 주고 확장자를 따라
   4시간 캐시시키므로, 자산 경로의 200 HTML은 Worker가 캐시 금지 404로 바꾼다 —

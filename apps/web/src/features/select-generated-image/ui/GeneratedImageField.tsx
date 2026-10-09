@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type Ref } from "react";
 import { Button, buttonVariants } from "@ai-character-chat/ui/components/button";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { cn } from "@ai-character-chat/ui/lib/utils";
@@ -35,6 +35,10 @@ type GeneratedImageFieldProps = {
    * undefined를 돌려주면 취소로 간주해 업로드하지 않는다. 갤러리 선택 경로(`handlePickFromGallery`)는
    * 거치지 않는다. */
   beforeUpload?: (file: File) => Promise<File | undefined>;
+  /** 파일 고르기 입력에 붙일 ref. 폼이 발행 실패 때 이 칸으로 포커스를 보낼 수 있게 RHF `Controller` 의 `field.ref` 를 넘긴다 —
+   * 그림이 없을 때(필수 오류가 나는 때) 이 칸에서 키보드로 닿는 첫 컨트롤이 파일 업로드다. 키보드로 발행했으면 그 라벨에 포커스 링이
+   * 보인다(마우스로 눌렀으면 링 없이 포커스만 온다). */
+  inputRef?: Ref<HTMLInputElement>;
 };
 
 /**
@@ -61,6 +65,7 @@ export function GeneratedImageField({
   label = "이미지",
   previewAspect = "square",
   beforeUpload,
+  inputRef,
 }: GeneratedImageFieldProps) {
   const [selectedFile, setSelectedFile] = useState<File>();
   const [isUploading, setIsUploading] = useState(false);
@@ -146,12 +151,14 @@ export function GeneratedImageField({
           )}
         </div>
 
+        {/* 보이는 크기(24px)는 그대로 두고 손가락 포인터에서만 투명한 의사 요소로 누르는 면을 40px 로 넓힌다 — 이 칸을 쓰는
+            다른 화면(프로필 편집·문의·이미지 생성 참조)의 모양을 바꾸지 않기 위해서다. 보더 안쪽 22px 에서 사방 9px 이다. */}
         {value !== null && !isUploading && (
           <button
             type="button"
             onClick={handleDelete}
             aria-label="이미지 삭제"
-            className="absolute -top-2 -right-2 inline-flex size-6 items-center justify-center rounded-full border border-input bg-background text-muted-foreground hover:text-destructive-text focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="absolute -top-2 -right-2 inline-flex size-6 items-center justify-center rounded-full border border-input bg-background text-muted-foreground hover:text-destructive-text focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 pointer-coarse:after:absolute pointer-coarse:after:-inset-[9px]"
           >
             <X aria-hidden className="size-3.5" />
           </button>
@@ -172,6 +179,7 @@ export function GeneratedImageField({
           <Camera aria-hidden className="size-4" />
           {isUploading ? "업로드 중..." : "파일 업로드"}
           <input
+            ref={inputRef}
             id={inputId}
             type="file"
             accept="image/png,image/jpeg,image/webp"

@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import {
   contentKeys,
@@ -14,7 +15,9 @@ import {
 import { draftKeys } from "@/entities/draft";
 
 import { runOnce } from "../lib/runOnce";
+import { createAutosaveStatusStore, type AutosaveStatusStore } from "./autosaveStatus";
 import { createNovelPermissionSync } from "./novelPermissionSync";
+import { AUTOSAVE_ERROR_TOAST_ID } from "./useAutosave";
 
 /**
  * 빌더의 저장 경로 하나 — 초안이 아직 서버에 없으면 만들고(지연 생성), 저장하고, URL을 초안
@@ -61,7 +64,7 @@ export function useDraftPersistence({
   const novelPermissionSyncRef = useRef<ReturnType<typeof createNovelPermissionSync>>(undefined);
   const novelPermissionSync = (novelPermissionSyncRef.current ??= createNovelPermissionSync(initialNovelPermission));
 
-  const saveDraft = useCallback(
+  const persist = useCallback(
     async (payload: ContentDraftPayload): Promise<ContentDraftResponse> => {
       const knownId = draftIdRef.current;
       const id = knownId ?? (await createDraftOnce());
@@ -94,9 +97,22 @@ export function useDraftPersistence({
     [createDraftOnce, navigate, novelPermissionSync, queryClient, type, updateDraftMutation.mutateAsync],
   );
 
+  // 세 저장 경로가 모두 이 함수를 지나므로 저장 상태도 여기서 잡는다(임시저장 버튼이 그린다). 저장소는 마운트 동안 하나여야 상태가
+  // 저장 사이에 이어지고 `saveDraft` 도 같은 함수로 남는다. 어느 경로의 저장이든 성공하면 자동저장 실패 토스트를 걷는다 — 다시 시도
+  // (임시저장)·발행 직전·이미지 등록 직전 저장이 성공한 뒤에도 그 토스트가 남으면 버튼의 "저장됨"과 서로 다른 말을 한다.
+  const saveStatusRef = useRef<AutosaveStatusStore>(undefined);
+  const saveStatus = (saveStatusRef.current ??= createAutosaveStatusStore({
+    onSaved: () => toast.dismiss(AUTOSAVE_ERROR_TOAST_ID),
+  }));
+  const saveDraft = useCallback(
+    (payload: ContentDraftPayload) => saveStatus.track(() => persist(payload)),
+    [persist, saveStatus],
+  );
+
   // 진행 상태(`isPending`)는 일부러 내보내지 않는다 — 이 훅은 자동저장·임시저장·발행 직전 저장이
   // 전부 지나는 길목이라, 그 플래그를 발행 버튼에 걸면 **자동저장이 돌 때마다 "발행 중..."**이 된다
   // (실측: 타이핑을 멈추고 1.5초 뒤 25ms 동안 primary CTA가 비활성화됐다. 느린 회선에선 초 단위다).
-  // 사용자가 시작한 액션의 진행 상태는 그 액션을 시작한 곳에서 로컬 state로 판단한다.
-  return { saveDraft };
+  // 사용자가 시작한 액션의 진행 상태는 그 액션을 시작한 곳에서 로컬 state로 판단한다. 저장 상태(`saveStatus`)는 React 상태가 아닌
+  // 외부 저장소라 셸을 다시 그리지 않고, 그것을 그리는 임시저장 버튼만 구독한다.
+  return { saveDraft, saveStatus };
 }

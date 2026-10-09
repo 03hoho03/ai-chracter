@@ -10,11 +10,13 @@ import { toast } from "sonner";
 import { STAT_ICON_OPTIONS } from "@/entities/chat-room";
 import {
   CollapsibleItemCard,
-  focusItemToggle,
   focusNeighborToggle,
+  focusRestoredToggle,
   ItemRemoveButton,
   itemOpenKey,
-  revealItemToggle,
+  orderWithPendingRemovals,
+  UNDO_TOAST_DURATION_MS,
+  UndoToastButton,
   useBuilderSelection,
   useBuilderUiState,
 } from "@/features/build-common";
@@ -33,15 +35,15 @@ import { ColorPicker, IconPicker } from "@/shared/ui/color-icon-picker";
 
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
 import { StartingSetupPicker } from "./StartingSetupPicker";
+import { StartingSetupRequiredState } from "./StartingSetupRequiredState";
 import { StatChangeFields } from "./StatChangeFields";
 import { StatRuleList } from "./StatRuleList";
 import { StoryMacroNotice } from "./StoryMacroNotice";
-import { UNDO_TOAST_DURATION_MS, UndoToastButton } from "./UndoToastButton";
 import { moveStatErrorsById } from "../model/moveStatErrorsById";
 import {
   endingsToRestorePriority,
-  orderWithPendingRemovals,
   restoreRemovedStat,
+  statRemovalPlace,
   type RemovedStat,
 } from "../model/restoreRemovedStat";
 import { revalidateStatRange, revalidateStatRangeIfInvalid } from "../model/statRangeValidation";
@@ -57,7 +59,7 @@ type PendingStatRemovals = Map<string, RemovedStat>;
 /** 탭 전체가 선택사항(0개도 발행 가능), 스탯은 시작설정별로
  * 독립이라 이 탭은 먼저 시작설정을 고른 뒤 그 시작설정의 스탯만 편집한다. 고른 시작설정은 셸의 화면 상태에 둔다 — 탭을
  * 옮겨도 남고 엔딩 탭과 같은 값을 보며, 발행 실패 때 셸이 오류가 있는 시작설정으로 바꿔 놓을 수 있다. */
-export function StatTab() {
+export function StatTab({ onGoToStartingSetup }: { onGoToStartingSetup: () => void }) {
   const form = useFormContext<StoryBuilderFormValues>();
 
   const { control } = form;
@@ -76,16 +78,7 @@ export function StatTab() {
     };
   }, []);
 
-  if (startingSetups.length === 0) {
-    // 다른 탭 본문과 같은 `py-6` 루트로 감싸야 탭 목록과의 간격이 탭마다 같다.
-    return (
-      <div className="py-6">
-        <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-20 text-center">
-          <p className="text-sm break-keep text-muted-foreground">먼저 시작설정 탭에서 시작설정을 추가해주세요.</p>
-        </div>
-      </div>
-    );
-  }
+  if (startingSetups.length === 0) return <StartingSetupRequiredState onGoToStartingSetup={onGoToStartingSetup} />;
 
   // 기억해 둔 시작설정이 지워졌거나 아직 고른 적이 없으면 첫 시작설정을 보인다.
   const selectedIndex = startingSetups.findIndex((setup) => setup.id === selectedSetupId);
@@ -348,21 +341,6 @@ function statNoun(removed: RemovedStat): string {
   return name ? `‘${name}’ 스탯` : "이름 없는 스탯";
 }
 
-/**
- * 되살린 스탯의 머리 줄로 포커스를 옮기고 그 머리 줄이 보이게 한다. 되돌리기 버튼에 포커스가 있으면 첫 이동이 토스트를
- * 떠나는 순간 sonner 가 토스트에 들어오기 전 자리로 포커스를 돌려보내고 그 자리를 잊는다 — 그래서 한 번 더 옮긴다.
- * 버튼에 포커스가 없었으면(클릭이 포커스를 주지 않는 브라우저) 첫 이동으로 끝나고 둘째는 아무것도 바꾸지 않는다.
- *
- * 포커스는 스크롤 없이 주고, 보이게 하는 일은 다음 프레임에 따로 한다. 지금 보이는 스탯 위쪽에 카드를 끼워 넣으면 브라우저의
- * 스크롤 앵커링이 보이던 스탯을 제자리에 두려고 카드 높이만큼 스크롤을 내려, 되살린 머리 줄이 화면 위로 밀려난다(포커스의
- * `preventScroll` 은 이것을 막지 않는다). 그 조정 뒤에 머리 줄만 화면 안으로 들인다 — 이미 보이면 움직이지 않고, 부드러운
- * 스크롤을 쓰지 않아 움직임 줄이기 설정과 상관없이 한 번에 옮긴다.
- */
-function focusRestoredToggle(openKey: string) {
-  if (focusItemToggle(openKey, { preventScroll: true })) focusItemToggle(openKey, { preventScroll: true });
-  requestAnimationFrame(() => revealItemToggle(openKey));
-}
-
 /** 선택된 시작설정 하나의 스탯 목록. `key={시작설정 id}`로 감싸 시작설정을 전환할 때마다
  * useFieldArray가 새 index로 완전히 새로 마운트되게 한다(name의 인덱스만 바뀌는 걸 이 훅이
  * 안정적으로 재구독하지 않아서, 상위 StatTab이 이 컴포넌트 자체를 remount하는 방식으로 우회). */
@@ -435,7 +413,9 @@ function StatSection({
       startingSetupId,
       order: orderWithPendingRemovals(
         getValues(statsPath).map((stat) => stat.id),
-        [...pendingRemovalsRef.current.values()].filter((each) => each.startingSetupId === startingSetupId),
+        [...pendingRemovalsRef.current.values()]
+          .filter((each) => each.startingSetupId === startingSetupId)
+          .map(statRemovalPlace),
       ),
       stat: structuredClone(getValues(`${statsPath}.${statIndex}`)),
       priorityEndingIds: updates.priorityStatEndings.map(({ endingId }) => endingId),

@@ -46,6 +46,22 @@ function isConditionalKey(key: StoryFieldKey): key is ConditionalStoryFieldKey {
   return required === "conditional";
 }
 
+type MockupCharacterCountProps = {
+  count: number;
+  max: number;
+};
+
+/** 빌더 칸 아래 줄의 `n/최대` 카운터 모양. 상한에 닿을 때의 모양은 `DESIGN.md` Inputs / Fields 절의 Character count 를 따른다. */
+export function MockupCharacterCount({ count, max }: MockupCharacterCountProps) {
+  return (
+    <span
+      className={cn("self-end text-xs text-muted-foreground tabular-nums", count >= max && "font-medium text-foreground")}
+    >
+      {`${count}/${max}`}
+    </span>
+  );
+}
+
 type MockupInputProps = {
   value: string;
   /** 값이 비었을 때 빌더처럼 흐리게 보이는 자리표시. */

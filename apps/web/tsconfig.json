@@ -4,7 +4,7 @@
     "types": ["vite/client"],
     "noEmit": true,
     "baseUrl": ".",
-    "paths": { "@/*": ["./src/*"] }
+    "paths": { "@/*": ["./src/*"], "@api-contract/*": ["../api/src/api/*"] }
   },
   "include": ["src", "worker", "vite.config.ts", "vitest.config.ts"]
 }

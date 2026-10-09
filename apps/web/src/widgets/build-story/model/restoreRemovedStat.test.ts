@@ -1,13 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import { orderWithPendingRemovals } from "@/features/build-common";
 import type { StatDefValues } from "@/features/build-story";
 
-import {
-  endingsToRestorePriority,
-  orderWithPendingRemovals,
-  restoreRemovedStat,
-  type RemovedStat,
-} from "./restoreRemovedStat";
+import { endingsToRestorePriority, restoreRemovedStat, statRemovalPlace, type RemovedStat } from "./restoreRemovedStat";
 
 function stat(id: string): StatDefValues {
   return {
@@ -43,7 +39,7 @@ function simulate(initial: StatDefValues[]) {
       if (target === undefined) throw new Error(`no stat ${id}`);
       const removed: RemovedStat = {
         startingSetupId: "s1",
-        order: orderWithPendingRemovals(ids(stats), pending),
+        order: orderWithPendingRemovals(ids(stats), pending.map(statRemovalPlace)),
         stat: target,
         priorityEndingIds: [],
       };

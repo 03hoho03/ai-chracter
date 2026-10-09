@@ -1,9 +1,11 @@
 import asyncio
 import io
+import json
 import unicodedata
 import uuid
-from collections.abc import AsyncGenerator
-from datetime import datetime, timezone, UTC
+from collections.abc import AsyncGenerator, Callable
+from datetime import datetime, timedelta, timezone, UTC
+from pathlib import Path
 from typing import Any
 
 import boto3
@@ -18,6 +20,7 @@ from sqlalchemy.orm import ORMExecuteState
 from sqlalchemy.pool import NullPool
 
 from api.core.config import settings
+from api.core.s3 import build_thumbnail_key
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import (
     Content,
@@ -57,6 +60,7 @@ from factories import (
     _login_as_admin,
     _make_asset,
     _make_user,
+    _set_signing_clock,
 )
 
 
@@ -619,9 +623,10 @@ async def test_patch_content_draft_preserves_image_asset_id_set_by_register_endp
     )
     assert patch_resp.status_code == 200
     body = patch_resp.json()
-    assert body["situationalImages"] == [
-        {"id": str(entity_id), "imageAssetId": str(asset.id), "triggerCondition": "수정된 조건"}
-    ]
+    [item] = body["situationalImages"]
+    image_url = item.pop("imageUrl")
+    assert item == {"id": str(entity_id), "imageAssetId": str(asset.id), "triggerCondition": "수정된 조건"}
+    assert build_thumbnail_key(asset.storage_key) in image_url
 
     row = await db_session.scalar(
         sa.select(SituationalImage).where(SituationalImage.entity_id == entity_id)
@@ -3867,3 +3872,211 @@ async def test_removing_stat_starting_setup_or_draft_leaves_no_stat_rules(
     deleted = await db_client.delete(f"/contents/{content.id}/draft")
     assert deleted.status_code == 204
     assert (await db_session.scalars(sa.select(StatRule).execution_options(populate_existing=True))).all() == []
+
+
+# 빌더 한도 표. 서버와 web 빌더가 함께 읽는 숫자라 테스트도 같은 파일에서 숫자를 읽는다 — 표를 고치면 서버 검사가
+# 그대로 따라가는지를 보는 것이 목적이라, 숫자를 여기에 다시 적으면 표와 서버가 어긋나도 알 수 없다.
+_BUILDER_LIMITS: dict[str, dict[str, int]] = json.loads(
+    (Path(__file__).parents[1] / "src" / "api" / "content" / "builder_limits.json").read_text(encoding="utf-8")
+)
+
+_DraftMaker = Callable[..., Any]
+
+
+def _text(size: int) -> str:
+    return "가" * size
+
+
+_BUILDER_LIMIT_CASES = [
+    # 글자 수: 크기는 칸에 넣는 글자 수다.
+    pytest.param(_make_empty_character_draft, "common", "nameMaxLength", lambda n: _draft_payload(name=_text(n)), id="character-name"),
+    pytest.param(_make_empty_character_draft, "common", "oneLinerMaxLength", lambda n: _draft_payload(oneLiner=_text(n)), id="character-one-liner"),
+    pytest.param(_make_empty_character_draft, "common", "descriptionMaxLength", lambda n: _draft_payload(description=_text(n)), id="character-description"),
+    pytest.param(_make_empty_character_draft, "common", "hashtagMaxLength", lambda n: _draft_payload(hashtags=[_text(n)]), id="character-hashtag-length"),
+    pytest.param(_make_empty_character_draft, "character", "introMaxLength", lambda n: _draft_payload(intro=_text(n)), id="intro"),
+    pytest.param(_make_empty_character_draft, "character", "characterPromptMaxLength", lambda n: _draft_payload(characterPrompt=_text(n)), id="character-prompt"),
+    pytest.param(_make_empty_character_draft, "character", "playguideMaxLength", lambda n: _draft_payload(playguide=_text(n)), id="playguide"),
+    pytest.param(
+        _make_empty_character_draft,
+        "character",
+        "exampleDialogueLineMaxLength",
+        lambda n: _draft_payload(exampleDialogues=[{"id": "d1", "userLine": _text(n), "characterLine": "반가워"}]),
+        id="example-dialogue-user-line",
+    ),
+    pytest.param(
+        _make_empty_character_draft,
+        "character",
+        "exampleDialogueLineMaxLength",
+        lambda n: _draft_payload(exampleDialogues=[{"id": "d1", "userLine": "안녕", "characterLine": _text(n)}]),
+        id="example-dialogue-character-line",
+    ),
+    pytest.param(
+        _make_empty_character_draft,
+        "character",
+        "situationalImageTriggerMaxLength",
+        lambda n: _draft_payload(situationalImages=[{"id": str(uuid.uuid4()), "triggerCondition": _text(n)}]),
+        id="situational-image-trigger",
+    ),
+    pytest.param(_make_empty_story_draft, "common", "nameMaxLength", lambda n: _story_draft_payload(name=_text(n)), id="story-name"),
+    pytest.param(_make_empty_story_draft, "common", "oneLinerMaxLength", lambda n: _story_draft_payload(oneLiner=_text(n)), id="story-one-liner"),
+    pytest.param(_make_empty_story_draft, "common", "descriptionMaxLength", lambda n: _story_draft_payload(description=_text(n)), id="story-description"),
+    pytest.param(_make_empty_story_draft, "common", "hashtagMaxLength", lambda n: _story_draft_payload(hashtags=[_text(n)]), id="story-hashtag-length"),
+    # 개수: 크기는 항목 수다.
+    pytest.param(
+        _make_empty_character_draft,
+        "character",
+        "exampleDialogueMaxCount",
+        lambda n: _draft_payload(
+            exampleDialogues=[{"id": f"d{i}", "userLine": "안녕", "characterLine": "반가워"} for i in range(n)]
+        ),
+        id="example-dialogue-count",
+    ),
+    pytest.param(
+        _make_empty_character_draft, "common", "hashtagMaxCount", lambda n: _draft_payload(hashtags=[f"태그{i}" for i in range(n)]), id="character-hashtag-count"
+    ),
+    pytest.param(
+        _make_empty_story_draft, "common", "hashtagMaxCount", lambda n: _story_draft_payload(hashtags=[f"태그{i}" for i in range(n)]), id="story-hashtag-count"
+    ),
+    pytest.param(
+        _make_empty_story_draft,
+        "story",
+        "startingSetupMaxCount",
+        lambda n: _story_draft_payload(startingSetups=[_starting_setup_item(name=f"시작설정{i}") for i in range(n)]),
+        id="starting-setup-count",
+    ),
+    pytest.param(
+        _make_empty_story_draft,
+        "story",
+        "developmentExampleMaxCount",
+        lambda n: _story_draft_payload(developmentExamples=[{"userLine": "질문", "assistantLine": "답"} for _ in range(n)]),
+        id="development-example-count",
+    ),
+    pytest.param(
+        _make_empty_story_draft,
+        "story",
+        "suggestedReplyMaxCount",
+        lambda n: _story_draft_payload(startingSetups=[_starting_setup_item(suggestedReplies=[f"답{i}" for i in range(n)])]),
+        id="suggested-reply-count",
+    ),
+]
+
+
+async def _logged_in_draft(db_client: httpx.AsyncClient, db_session: AsyncSession, make_draft: _DraftMaker) -> Content:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content: Content = await make_draft(db_session, creator_user_id=user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    return content
+
+
+@pytest.mark.parametrize(("make_draft", "section", "key", "make_payload"), _BUILDER_LIMIT_CASES)
+async def test_patch_draft_enforces_builder_limit_table(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    make_draft: _DraftMaker,
+    section: str,
+    key: str,
+    make_payload: Callable[[int], dict[str, object]],
+) -> None:
+    """표의 숫자 하나 넘으면 자동저장이 422 로 거절되고, 숫자 그대로면 저장된다."""
+    content = await _logged_in_draft(db_client, db_session, make_draft)
+    limit = _BUILDER_LIMITS[section][key]
+
+    over = await db_client.patch(f"/contents/{content.id}/draft", json=make_payload(limit + 1))
+    assert over.status_code == 422, over.text
+    at_limit = await db_client.patch(f"/contents/{content.id}/draft", json=make_payload(limit))
+    assert at_limit.status_code == 200, at_limit.text
+
+
+async def test_patch_draft_counts_characters_in_code_points(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """한도는 코드 포인트로 센다 — UTF-16 두 단위인 이모지로 한도를 정확히 채운 이름도 받는다. 빌더가 같은 단위로 세므로
+    단위가 다르면 화면에서는 남는다고 보인 글자가 저장에서 거절된다."""
+    content = await _logged_in_draft(db_client, db_session, _make_empty_character_draft)
+    limit = _BUILDER_LIMITS["common"]["nameMaxLength"]
+    emoji = "\U0001f600"
+    assert len(emoji.encode("utf-16-le")) // 2 == 2
+
+    over = await db_client.patch(f"/contents/{content.id}/draft", json=_draft_payload(name=emoji * (limit + 1)))
+    assert over.status_code == 422, over.text
+    at_limit = await db_client.patch(f"/contents/{content.id}/draft", json=_draft_payload(name=emoji * limit))
+    assert at_limit.status_code == 200, at_limit.text
+    assert at_limit.json()["name"] == emoji * limit
+
+
+async def _character_draft_with_situational_images(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, *, imaged: int, bare: int
+) -> tuple[Content, dict[uuid.UUID, Asset], list[uuid.UUID]]:
+    """상황별 이미지 행을 `imaged` 개는 그림을 붙여, `bare` 개는 그림 없이 둔 캐릭터 초안. 그림은 등록 엔드포인트가
+    붙이는 칸이라 행에 직접 넣는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_character_draft(db_session, creator_user_id=user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    imaged_ids = [uuid.uuid4() for _ in range(imaged)]
+    bare_ids = [uuid.uuid4() for _ in range(bare)]
+    patch = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_draft_payload(
+            situationalImages=[{"id": str(entity_id), "triggerCondition": "비 오는 날"} for entity_id in imaged_ids + bare_ids]
+        ),
+    )
+    assert patch.status_code == 200
+    assets: dict[uuid.UUID, Asset] = {}
+    for entity_id in imaged_ids:
+        asset = await _make_asset(db_session, user.id, status=AssetStatus.READY)
+        await db_session.execute(
+            sa.update(SituationalImage).where(SituationalImage.entity_id == entity_id).values(image_asset_id=asset.id)
+        )
+        assets[entity_id] = asset
+    await db_session.commit()
+    return content, assets, bare_ids
+
+
+async def test_get_character_draft_returns_situational_image_url_stable_within_a_signing_window(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """빌더를 다시 열면 상황별 이미지를 그림으로 보여 준다. 자동저장 응답마다 주소가 바뀌면 그림이 깜빡이므로 같은 서명
+    구간 안에서는 주소가 글자까지 같아야 한다. 그림을 아직 안 붙인 행은 null 이다."""
+    content, assets, bare_ids = await _character_draft_with_situational_images(db_client, db_session, imaged=1, bare=1)
+    [(imaged_id, asset)] = assets.items()
+
+    async def image_urls_at(at: datetime) -> dict[str, str | None]:
+        _set_signing_clock(monkeypatch, at)
+        resp = await db_client.get(f"/contents/{content.id}/draft")
+        assert resp.status_code == 200
+        return {item["id"]: item["imageUrl"] for item in resp.json()["situationalImages"]}
+
+    window_start = datetime(2026, 10, 1, 10, 0, tzinfo=UTC)
+    first = await image_urls_at(window_start + timedelta(seconds=1))
+    last = await image_urls_at(window_start + timedelta(minutes=15) - timedelta(seconds=1))
+
+    imaged_url = first[str(imaged_id)]
+    assert imaged_url is not None
+    assert f"{asset.storage_key}_thumb.webp" in imaged_url
+    assert first[str(bare_ids[0])] is None
+    assert first == last
+
+
+async def test_get_character_draft_signs_situational_images_without_a_query_per_image(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """자동저장 응답마다 상황별 이미지 전부를 서명한다 — 자산을 이미지 수만큼 따로 읽지 않는다."""
+    few, _, _ = await _character_draft_with_situational_images(db_client, db_session, imaged=1, bare=0)
+
+    async def _get_count(content: Content) -> int:
+        await db_client.get(f"/contents/{content.id}/draft")
+        with _count_queries() as count:
+            resp = await db_client.get(f"/contents/{content.id}/draft")
+        assert resp.status_code == 200
+        return count()
+
+    small = await _get_count(few)
+    many, _, _ = await _character_draft_with_situational_images(db_client, db_session, imaged=4, bare=0)
+    large = await _get_count(many)
+    assert large == small

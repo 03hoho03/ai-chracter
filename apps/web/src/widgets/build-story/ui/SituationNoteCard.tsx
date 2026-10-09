@@ -4,7 +4,13 @@ import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { useId } from "react";
 import { useFormContext } from "react-hook-form";
 
-import { CollapsibleItemCard, ItemRemoveButton, itemOpenKey } from "@/features/build-common";
+import {
+  FieldCharacterCount,
+  CollapsibleItemCard,
+  ItemRemoveButton,
+  itemOpenKey,
+  useLimitedTextField,
+} from "@/features/build-common";
 import {
   countRules,
   FieldLabelText,
@@ -45,8 +51,8 @@ type SituationNoteCardProps = {
  * 상황 노트 한 장. 머리 줄은 제목(이름, 비면 상황 글의 첫 줄)·조건 요약·삭제이고, 본문은 이름 → 조건 → 상황 순서다 — "이
  * 조건이면 → 이 사실"로 읽히게 조건을 상황 앞에 둔다.
  *
- * 이름·상황 칸은 등록한 입력이라 브라우저 `maxLength` 가 상한을 막는다(UTF-16 단위라 서버의 코드 포인트 셈보다 같거나 더
- * 엄격하다 — 상한을 넘는 글이 폼에 생기지 않는다). 조건은 제어 컴포넌트라 바뀐 목록을 통째로 써 넣는다. 발행을 한 번
+ * 이름·상황 칸은 등록한 입력이라 입력할 때 상한(서버와 같은 코드 포인트)에서 잘라 상한을 넘는 글이 폼에 생기지 않는다.
+ * 조건은 제어 컴포넌트라 바뀐 목록을 통째로 써 넣는다. 발행을 한 번
  * 시도한 뒤에는 조건을 바꿀 때 다시 검증해, 조건을 채우는 즉시 "조건을 넣어 주세요" 오류가 풀린다(입력 칸은 RHF 가 같은
  * 일을 한다).
  */
@@ -54,11 +60,12 @@ export function SituationNoteCard({ startingSetupIndex, noteIndex, note, stats, 
   const form = useFormContext<StoryBuilderFormValues>();
 
   const {
-    register,
     setValue,
     formState: { errors, isSubmitted },
   } = form;
   const notePath = `startingSetups.${startingSetupIndex}.situationNotes.${noteIndex}` as const;
+  const nameField = useLimitedTextField<StoryBuilderFormValues>(`${notePath}.name`, MAX_SITUATION_NOTE_NAME_LENGTH);
+  const contentField = useLimitedTextField<StoryBuilderFormValues>(`${notePath}.content`, MAX_SITUATION_NOTE_CONTENT_LENGTH);
   const noteErrors = errors.startingSetups?.[startingSetupIndex]?.situationNotes?.[noteIndex];
   // 조건 목록 자체에 걸린 오류(조건 없음·상한). 배열 자리 오류는 `.message` 와 `.root.message` 로 갈릴 수 있어 둘 다 읽는다.
   const conditionsError = noteErrors?.conditionRules?.message ?? noteErrors?.conditionRules?.root?.message;
@@ -74,7 +81,6 @@ export function SituationNoteCard({ startingSetupIndex, noteIndex, note, stats, 
     conditionsError: `${generatedId}-conditions-error`,
     content: `${generatedId}-content`,
     contentCount: `${generatedId}-content-count`,
-    contentHint: `${generatedId}-content-hint`,
     contentError: `${generatedId}-content-error`,
   };
 
@@ -96,20 +102,19 @@ export function SituationNoteCard({ startingSetupIndex, noteIndex, note, stats, 
       }
     >
       <div className="flex flex-col gap-1.5">
-        <div className="flex items-baseline justify-between gap-2">
-          <Label htmlFor={ids.name}><FieldLabelText field="startingSetups.*.situationNotes.*.name" /></Label>
-          <span id={ids.nameCount} className="text-xs tabular-nums text-muted-foreground">
-            <span className="sr-only">이름 </span>
-            {note.name.length}/{MAX_SITUATION_NOTE_NAME_LENGTH}
-          </span>
-        </div>
+        <Label htmlFor={ids.name}><FieldLabelText field="startingSetups.*.situationNotes.*.name" /></Label>
         <Input
           id={ids.name}
           placeholder="목록에서 알아볼 이름(선택)"
-          maxLength={MAX_SITUATION_NOTE_NAME_LENGTH}
           aria-invalid={!!noteErrors?.name}
           aria-describedby={noteErrors?.name ? `${ids.nameCount} ${ids.nameError}` : ids.nameCount}
-          {...register(`${notePath}.name`)}
+          {...nameField.registration}
+        />
+        <FieldCharacterCount
+          id={ids.nameCount}
+          name={nameField.registration.name}
+          max={MAX_SITUATION_NOTE_NAME_LENGTH}
+          isTruncated={nameField.isTruncated}
         />
         {!!noteErrors?.name && (
           <p id={ids.nameError} role="alert" className="text-xs text-destructive-text">
@@ -148,29 +153,24 @@ export function SituationNoteCard({ startingSetupIndex, noteIndex, note, stats, 
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <div className="flex items-baseline justify-between gap-2">
-          <Label htmlFor={ids.content}>
-            <FieldLabelText field="startingSetups.*.situationNotes.*.content" />
-          </Label>
-          <span id={ids.contentCount} className="text-xs tabular-nums text-muted-foreground">
-            <span className="sr-only">상황 </span>
-            {note.content.length}/{MAX_SITUATION_NOTE_CONTENT_LENGTH}
-          </span>
-        </div>
+        <Label htmlFor={ids.content}>
+          <FieldLabelText field="startingSetups.*.situationNotes.*.content" />
+        </Label>
         <Textarea
           id={ids.content}
           placeholder="예: 오늘은 가을 상영회 당일이다. 동아리 사람들은 아침부터 강당에 모여 있다."
           rows={3}
-          maxLength={MAX_SITUATION_NOTE_CONTENT_LENGTH}
           aria-invalid={!!noteErrors?.content}
-          aria-describedby={[ids.contentCount, ids.contentHint, noteErrors?.content ? ids.contentError : undefined]
-            .filter(Boolean)
-            .join(" ")}
-          {...register(`${notePath}.content`)}
+          aria-describedby={noteErrors?.content ? `${ids.contentCount} ${ids.contentError}` : ids.contentCount}
+          {...contentField.registration}
         />
-        <p id={ids.contentHint} className="text-xs break-keep text-muted-foreground">
-          조건이 맞는 턴에 ‘지금 이야기 속 사실’로 전해져요. ‘~해라’ 같은 지시 대신 사실로 적어 주세요.
-        </p>
+        <FieldCharacterCount
+          id={ids.contentCount}
+          help="조건이 맞는 턴에 ‘지금 이야기 속 사실’로 전해져요. ‘~해라’ 같은 지시 대신 사실로 적어 주세요."
+          name={contentField.registration.name}
+          max={MAX_SITUATION_NOTE_CONTENT_LENGTH}
+          isTruncated={contentField.isTruncated}
+        />
         <MediaTagOutsideNotice name={`${notePath}.content`} />
         <StoryMacroNotice name={`${notePath}.content`} />
         {!!noteErrors?.content && (

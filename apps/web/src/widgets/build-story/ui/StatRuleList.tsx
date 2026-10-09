@@ -1,24 +1,23 @@
-import {
-  closestCenter,
-  DndContext,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type Announcements,
-  type DragEndEvent,
-} from "@dnd-kit/core";
+import { closestCenter, DndContext } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
-import { useEffect, useId, useRef, useState, type Ref } from "react";
+import { useId, useRef, useState, type Ref } from "react";
 import { Controller, useFieldArray, useFormContext } from "react-hook-form";
 
-import { ItemDragHandle, ItemRemoveButton } from "@/features/build-common";
 import {
-  dragMoveIndices,
+  FieldCharacterCount,
+  ItemDragHandle,
+  ItemRemoveButton,
+  sortableHandleId,
+  useLimitedTextField,
+  useSortableList,
+  type SortableHandleProps,
+} from "@/features/build-common";
+import {
   FieldLabelText,
   MAX_STAT_RULE_CONDITION_LENGTH,
   MAX_STAT_RULES,
@@ -33,16 +32,9 @@ import {
   statRuleDeltaFromInput,
   statRuleDeltaHint,
 } from "../model/statChange";
-import { stepStatRule } from "../model/statRuleOrder";
 
 /** 턴당 자동 변화가 있어 추가를 잠갔을 때의 사유. 이 상태에서는 목록이 비어 있다(둘 다 있으면 충돌 상태라 잠그지 않는다). */
 const COUNTER_LOCK_REASON = "턴당 자동 변화가 있는 스탯은 AI가 판정하지 않아 규칙을 쓰지 않아요. 규칙을 쓰려면 턴당 자동 변화를 비워 주세요.";
-
-// dnd-kit 기본 안내는 영어이고 Space 로 집는 키보드 센서를 전제한다. 이 목록은 포인터로만 끌고 키보드는 손잡이의 화살표 키로
-// 한 칸씩 옮기므로 그 방법을 한국어로 알려 준다.
-const SCREEN_READER_INSTRUCTIONS = {
-  draggable: "위·아래 화살표 키로 규칙을 한 칸씩 옮길 수 있어요. 폭이 같으면 위에 있는 규칙이 적용돼요.",
-};
 
 type StatRuleListProps = {
   /** 칸 id 접두어(스탯 행의 안정 id). */
@@ -67,17 +59,18 @@ export function StatRuleList({ id, startingSetupIndex, statIndex, stat }: StatRu
 
   const {
     control,
-    getValues,
     formState: { errors },
   } = form;
   const statPath = `startingSetups.${startingSetupIndex}.stats.${statIndex}` as const;
   const rulesPath = `${statPath}.rules` as const;
   const { fields, append, remove, move } = useFieldArray({ control, name: rulesPath });
-  const sensors = useSensors(useSensor(PointerSensor));
-  const [announcement, setAnnouncement] = useState("");
+  const sortable = useSortableList({
+    ids: fields.map((field) => field.id),
+    move,
+    itemObject: "규칙을",
+    orderMeaning: "폭이 같으면 위에 있는 규칙이 적용돼요.",
+  });
   const addButtonRef = useRef<HTMLButtonElement>(null);
-  // 재정렬 뒤 포커스를 둘 손잡이(옮긴 규칙의 것). 렌더가 끝난 뒤에야 그 요소가 제자리에 있으므로 effect 에서 옮긴다.
-  const pendingFocusIdRef = useRef<string | undefined>(undefined);
   const rulesErrors = errors.startingSetups?.[startingSetupIndex]?.stats?.[statIndex]?.rules;
   // 목록 자체에 걸린 오류(개수 상한·판정 스탯의 규칙 없음). 배열 자리 오류는 `.message` 와 `.root.message` 로 갈릴 수 있어
   // 둘 다 읽는다.
@@ -94,19 +87,6 @@ export function StatRuleList({ id, startingSetupIndex, statIndex, stat }: StatRu
     error: `stat-${id}-rules-error`,
     reason: `stat-${id}-rules-reason`,
   };
-  // 손잡이 DOM id 를 만드는 규칙 id. `fields` 의 `id` 는 RHF 가 붙이는 렌더 키라 값의 id 와 다르므로 폼 값에서 읽는데, `stat`
-  // 이 아니라 폼 저장소에서 읽는다. `move` 는 저장소 값과 `fields` 를 함께 바꾸지만 `stat`(스탯 행의 구독)은 그다음 렌더에야
-  // 바뀐다 — `stat` 으로 짝지으면 이동 직후 한 번은 줄마다 옛 순서의 id 가 붙어, 아래 effect 가 옮긴 규칙이 아니라 그 자리로
-  // 밀려온 이웃 손잡이에 포커스를 둔다.
-  const ruleIds = getValues(rulesPath).map((rule) => rule.id);
-
-  useEffect(() => {
-    const targetId = pendingFocusIdRef.current;
-    if (!targetId) return;
-    pendingFocusIdRef.current = undefined;
-    document.getElementById(targetId)?.focus();
-  }, [fields]);
-
   function handleAdd() {
     if (lockReason !== undefined) return;
     // 증감은 빈 칸(NaN)으로 둔다 — 부호를 작가가 직접 고르게 한다. 다 채우기 전까지 자동저장은 이 규칙만 빼고 보낸다.
@@ -116,40 +96,12 @@ export function StatRuleList({ id, startingSetupIndex, statIndex, stat }: StatRu
   // 지운 자리의 다음 규칙(없으면 앞 규칙, 그것도 없으면 추가 버튼)의 손잡이로 포커스를 옮긴다 — 삭제 버튼이 사라지며 포커스가
   // body 로 떨어지지 않게 지우기 전에 옮긴다.
   function handleRemove(index: number) {
-    const neighborId = ruleIds[index + 1] ?? ruleIds[index - 1];
-    const neighbor = neighborId === undefined ? null : document.getElementById(ruleHandleId(neighborId));
+    const neighborId = fields[index + 1]?.id ?? fields[index - 1]?.id;
+    const neighbor = neighborId === undefined ? null : document.getElementById(sortableHandleId(neighborId));
     (neighbor ?? addButtonRef.current)?.focus();
     remove(index);
-    setAnnouncement("규칙을 지웠어요.");
+    sortable.announce("규칙을 지웠어요.");
   }
-
-  // 포커스는 옮긴 규칙의 손잡이를 따라간다 — 거듭 누른 화살표가 같은 규칙을 계속 옮기고, 안내도 그 규칙의 새 자리를 말한다.
-  function handleStep(index: number, step: -1 | 1) {
-    const moved = stepStatRule(ruleIds, index, step);
-    if (!moved) return;
-    move(moved.from, moved.to);
-    pendingFocusIdRef.current = ruleHandleId(moved.focusRuleId);
-    setAnnouncement(`${moved.to + 1}번째로 옮겼어요.`);
-  }
-
-  function handleDragEnd({ active, over }: DragEndEvent) {
-    const indices = dragMoveIndices(
-      fields.map((field) => field.id),
-      String(active.id),
-      over ? String(over.id) : null,
-    );
-    if (indices) move(indices.from, indices.to);
-  }
-
-  const announcements: Announcements = {
-    onDragStart: () => undefined,
-    onDragOver: () => undefined,
-    onDragCancel: () => "옮기기를 취소했어요.",
-    onDragEnd: ({ over }) => {
-      const to = over ? fields.findIndex((field) => field.id === over.id) : -1;
-      return to === -1 ? undefined : `${to + 1}번째로 옮겼어요.`;
-    },
-  };
 
   return (
     <div className="flex flex-col gap-2" role="group" aria-labelledby={ids.label} aria-describedby={ids.guide}>
@@ -173,10 +125,10 @@ export function StatRuleList({ id, startingSetupIndex, statIndex, stat }: StatRu
         </p>
       ) : (
         <DndContext
-          sensors={sensors}
+          sensors={sortable.sensors}
           collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-          accessibility={{ announcements, screenReaderInstructions: SCREEN_READER_INSTRUCTIONS }}
+          onDragEnd={sortable.handleDragEnd}
+          accessibility={sortable.accessibility}
         >
           <SortableContext items={fields.map((field) => field.id)} strategy={verticalListSortingStrategy}>
             <ol className="flex flex-col gap-2" aria-label="규칙 목록(폭이 같으면 위의 규칙이 적용돼요)">
@@ -184,13 +136,11 @@ export function StatRuleList({ id, startingSetupIndex, statIndex, stat }: StatRu
                 <StatRuleRow
                   key={field.id}
                   sortableId={field.id}
-                  ruleId={ruleIds[index] ?? field.id}
                   rulePath={`${rulesPath}.${index}`}
                   position={index + 1}
-                  condition={stat.rules[index]?.condition ?? ""}
                   range={stat}
                   onRemove={() => handleRemove(index)}
-                  onStep={(step) => handleStep(index, step)}
+                  handleProps={sortable.handleProps(index)}
                 />
               ))}
             </ol>
@@ -227,41 +177,37 @@ export function StatRuleList({ id, startingSetupIndex, statIndex, stat }: StatRu
       </div>
 
       <p className="sr-only" aria-live="polite">
-        {announcement}
+        {sortable.announcement}
       </p>
     </div>
   );
 }
 
-function ruleHandleId(ruleId: string): string {
-  return `stat-rule-${ruleId}-handle`;
-}
-
 type StatRuleRowProps = {
   /** dnd-kit 정렬 id(RHF 렌더 키). */
   sortableId: string;
-  /** 폼 값의 규칙 id — 손잡이 DOM id 를 만든다. */
-  ruleId: string;
   rulePath: `startingSetups.${number}.stats.${number}.rules.${number}`;
   position: number;
-  condition: string;
   /** 폭 경고에 쓰는 스탯 범위. */
   range: { min: number; max: number };
   onRemove: () => void;
-  onStep: (step: -1 | 1) => void;
+  /** 손잡이의 id·화살표 키 재정렬(`useSortableList`). */
+  handleProps: SortableHandleProps;
 };
 
 /**
  * 규칙 한 줄 — [손잡이] [조건 · 증감] [삭제]. 조건과 증감은 줄 폭이 넉넉하면 나란히(조건이 남는 폭을 쓴다), 좁으면 위아래로
  * 선다. 같은 줄이 넓은 화면의 카드와 좁은 화면 양쪽에 들어가 폭이 뷰포트만으로 정해지지 않아 컨테이너 폭으로 가른다.
  *
- * 조건 칸은 등록한 입력이라 브라우저 `maxLength` 가 상한을 막는다(UTF-16 단위라 서버의 코드 포인트 셈보다 같거나 더 엄격하다).
+ * 조건 칸은 등록한 입력이라 입력할 때 상한(코드 포인트)에서 자른다. 서버는 앞뒤 공백을 지운 뒤 세므로 화면이 같거나 더
+ * 엄격하다.
  */
-function StatRuleRow({ sortableId, ruleId, rulePath, position, condition, range, onRemove, onStep }: StatRuleRowProps) {
+function StatRuleRow({ sortableId, rulePath, position, range, onRemove, handleProps }: StatRuleRowProps) {
   const form = useFormContext<StoryBuilderFormValues>();
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: sortableId });
 
-  const { register, control, getFieldState, formState } = form;
+  const { control, getFieldState, formState } = form;
+  const conditionField = useLimitedTextField<StoryBuilderFormValues>(`${rulePath}.condition`, MAX_STAT_RULE_CONDITION_LENGTH);
   const conditionError = getFieldState(`${rulePath}.condition`, formState).error;
   const generatedId = useId();
   const ids = {
@@ -278,42 +224,34 @@ function StatRuleRow({ sortableId, ruleId, rulePath, position, condition, range,
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className="flex items-start gap-2 rounded-lg border border-border bg-background p-3"
     >
-      {/* 화살표 키 재정렬은 손잡이에만 건다 — 입력칸에서 누른 화살표가 순서를 바꾸면 안 된다. */}
       <ItemDragHandle
-        id={ruleHandleId(ruleId)}
         {...attributes}
         {...listeners}
-        aria-roledescription="순서 핸들"
+        {...handleProps}
         aria-label={`${position}번째 규칙 순서 변경`}
-        onKeyDown={(event) => {
-          if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
-          event.preventDefault();
-          onStep(event.key === "ArrowUp" ? -1 : 1);
-        }}
       />
 
       <div className="@container min-w-0 flex-1">
         <div className="grid gap-3 @md:grid-cols-stat-rule">
           <div className="flex min-w-0 flex-col gap-1.5">
-            <div className="flex items-baseline justify-between gap-2">
-              <Label htmlFor={ids.condition}>
-                <FieldLabelText field="startingSetups.*.stats.*.rules.*.condition" />
-              </Label>
-              <span id={ids.conditionCount} className="text-xs tabular-nums text-muted-foreground">
-                <span className="sr-only">조건 </span>
-                {condition.length}/{MAX_STAT_RULE_CONDITION_LENGTH}
-              </span>
-            </div>
+            <Label htmlFor={ids.condition}>
+              <FieldLabelText field="startingSetups.*.stats.*.rules.*.condition" />
+            </Label>
             <Textarea
               id={ids.condition}
               placeholder="예: 사용자가 약속한 시간에 늦었다"
               rows={2}
-              maxLength={MAX_STAT_RULE_CONDITION_LENGTH}
               aria-invalid={!!conditionError}
               aria-describedby={[ids.conditionCount, conditionError ? ids.conditionError : undefined]
                 .filter(Boolean)
                 .join(" ")}
-              {...register(`${rulePath}.condition`)}
+              {...conditionField.registration}
+            />
+            <FieldCharacterCount
+              id={ids.conditionCount}
+              name={conditionField.registration.name}
+              max={MAX_STAT_RULE_CONDITION_LENGTH}
+              isTruncated={conditionField.isTruncated}
             />
             {conditionError && (
               <p id={ids.conditionError} role="alert" className="text-xs break-keep text-destructive-text">

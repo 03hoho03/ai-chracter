@@ -2,7 +2,13 @@ import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Controller, useFormContext } from "react-hook-form";
 
-import { toThumbnailAspect, toThumbnailAspectRatio } from "@/entities/content";
+import {
+  MAX_NAME_LENGTH,
+  MAX_ONE_LINER_LENGTH,
+  toThumbnailAspect,
+  toThumbnailAspectRatio,
+} from "@/entities/content";
+import { FieldCharacterCount, useLimitedTextField } from "@/features/build-common";
 import type { CharacterBuilderFormValues } from "@/features/build-character";
 import { ImageCropModal } from "@/features/crop-image";
 import { GeneratedImageField } from "@/features/select-generated-image";
@@ -24,10 +30,11 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
   const form = useFormContext<CharacterBuilderFormValues>();
 
   const {
-    register,
     control,
     formState: { errors },
   } = form;
+  const name = useLimitedTextField<CharacterBuilderFormValues>("profile.name", MAX_NAME_LENGTH);
+  const oneLiner = useLimitedTextField<CharacterBuilderFormValues>("profile.oneLiner", MAX_ONE_LINER_LENGTH);
 
   return (
     <div className="flex flex-col gap-6 py-6">
@@ -44,6 +51,7 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
               previewUrl={thumbnailUrl ?? undefined}
               onUploadComplete={onUploadComplete}
               onPick={onPick}
+              inputRef={field.ref}
               previewAspect={toThumbnailAspect("character")}
               beforeUpload={(file) =>
                 ImageCropModal.call({ file, aspect: toThumbnailAspectRatio(toThumbnailAspect("character")) })
@@ -64,8 +72,14 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
           id="character-profile-name"
           placeholder="캐릭터 이름을 입력해주세요"
           aria-invalid={!!errors.profile?.name}
-          aria-describedby={errors.profile?.name ? "character-profile-name-error" : undefined}
-          {...register("profile.name")}
+          aria-describedby={errors.profile?.name ? "character-profile-name-count character-profile-name-error" : "character-profile-name-count"}
+          {...name.registration}
+        />
+        <FieldCharacterCount
+          id="character-profile-name-count"
+          name={name.registration.name}
+          max={MAX_NAME_LENGTH}
+          isTruncated={name.isTruncated}
         />
         {errors.profile?.name && (
           <p id="character-profile-name-error" role="alert" className="text-xs text-destructive-text">
@@ -80,8 +94,14 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
           id="character-profile-oneliner"
           placeholder="캐릭터를 한 줄로 소개해주세요"
           aria-invalid={!!errors.profile?.oneLiner}
-          aria-describedby={errors.profile?.oneLiner ? "character-profile-oneliner-error" : undefined}
-          {...register("profile.oneLiner")}
+          aria-describedby={errors.profile?.oneLiner ? "character-profile-oneliner-count character-profile-oneliner-error" : "character-profile-oneliner-count"}
+          {...oneLiner.registration}
+        />
+        <FieldCharacterCount
+          id="character-profile-oneliner-count"
+          name={oneLiner.registration.name}
+          max={MAX_ONE_LINER_LENGTH}
+          isTruncated={oneLiner.isTruncated}
         />
         <CharacterMacroNotice name="profile.oneLiner" />
         {errors.profile?.oneLiner && (

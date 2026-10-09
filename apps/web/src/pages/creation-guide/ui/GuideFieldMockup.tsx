@@ -3,13 +3,13 @@ import { GripVertical, ImageIcon } from "lucide-react";
 
 import { ENDING_RULE_OPERATOR_SYMBOLS, STAT_ICON_OPTIONS } from "@/entities/chat-room";
 import {
-  countCharacters,
   MAX_STAT_RULE_CONDITION_LENGTH,
   STORY_FIELD_LABELS,
   type FieldLabel,
   type StoryFieldKey,
 } from "@/features/build-story";
 import { assertNever } from "@/shared/lib/assertNever";
+import { countCharacters } from "@/shared/lib/text/characterCount";
 
 import { findGuideImage } from "../config/guideImages";
 import type { GuideMockupContext } from "../model/guideMockupContext";
@@ -20,6 +20,7 @@ import type { FieldValue } from "../model/parseManuscript";
 import { GuideCardListMockup } from "./GuideCardListMockup";
 import { GuideMediaGridMockup } from "./GuideMediaGridMockup";
 import {
+  MockupCharacterCount,
   MockupChoiceChips,
   MockupInput,
   MockupLabel,
@@ -86,18 +87,18 @@ function GuideFieldMockup({ value, context, clampsLongText }: GuideFieldMockupPr
     );
   }
 
-  const counter =
-    mockup.counter && mockup.limit !== undefined && (parsed.kind === "text" || parsed.kind === "textarea")
-      ? `${countCharacters(parsed.text)}/${mockup.limit}`
-      : null;
+  const countLimit = mockup.counter ? mockup.limit : undefined;
 
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
-      <div className="flex items-center justify-between gap-2">
-        <MockupLabel fieldKey={key} />
-        {counter && <span className="text-xs text-muted-foreground tabular-nums">{counter}</span>}
-      </div>
-      <MockupControl fieldKey={key} parsed={parsed} context={context} clampsLongText={clampsLongText} />
+      <MockupLabel fieldKey={key} />
+      <MockupControl
+        fieldKey={key}
+        parsed={parsed}
+        context={context}
+        clampsLongText={clampsLongText}
+        countLimit={countLimit}
+      />
     </div>
   );
 }
@@ -107,14 +108,26 @@ type MockupControlProps = {
   parsed: MockupValue;
   context: GuideMockupContext;
   clampsLongText: boolean;
+  /** 입력칸 아래 카운터의 상한. 없으면 카운터를 그리지 않는다. */
+  countLimit: number | undefined;
 };
 
-function MockupControl({ fieldKey, parsed, context, clampsLongText }: MockupControlProps) {
+function MockupControl({ fieldKey, parsed, context, clampsLongText, countLimit }: MockupControlProps) {
   switch (parsed.kind) {
     case "text":
-      return <MockupInput value={parsed.text} placeholder={placeholderOf(fieldKey)} />;
+      return (
+        <>
+          <MockupInput value={parsed.text} placeholder={placeholderOf(fieldKey)} />
+          {countLimit !== undefined && <MockupCharacterCount count={countCharacters(parsed.text)} max={countLimit} />}
+        </>
+      );
     case "textarea":
-      return <MockupTextarea text={parsed.text} clampsLongText={clampsLongText} />;
+      return (
+        <>
+          <MockupTextarea text={parsed.text} clampsLongText={clampsLongText} />
+          {countLimit !== undefined && <MockupCharacterCount count={countCharacters(parsed.text)} max={countLimit} />}
+        </>
+      );
     case "number":
       return <MockupInput value={String(parsed.value)} />;
     case "select":
@@ -124,7 +137,13 @@ function MockupControl({ fieldKey, parsed, context, clampsLongText }: MockupCont
     case "chips":
       return (
         <div className="flex flex-col gap-2">
-          {CHIP_INPUT_KEYS.has(fieldKey) && <MockupInput value="" placeholder={placeholderOf(fieldKey)} />}
+          {CHIP_INPUT_KEYS.has(fieldKey) && (
+            // 빌더처럼 입력칸 아래에 새로 넣을 항목 하나의 글자 수를 센다 — 그림의 입력칸은 비어 있다.
+            <div className="flex flex-col gap-1.5">
+              <MockupInput value="" placeholder={placeholderOf(fieldKey)} />
+              {countLimit !== undefined && <MockupCharacterCount count={0} max={countLimit} />}
+            </div>
+          )}
           <MockupValueChips items={parsed.items} />
         </div>
       );
@@ -247,7 +266,7 @@ function StatRulesMockup({ rules }: { rules: readonly Record<string, unknown>[] 
   );
 }
 
-/** 스탯의 「조건 → 증감」 규칙 줄. 빌더처럼 줄마다 손잡이·조건(글자 수)·증감을 그리고, 증감은 빌더 칸처럼 양수에도 부호를
+/** 스탯의 「조건 → 증감」 규칙 줄. 빌더처럼 줄마다 손잡이·조건(아래에 글자 수)·증감을 그리고, 증감은 빌더 칸처럼 양수에도 부호를
  * 붙인다. 넓으면 조건과 증감이 나란히, 좁으면 위아래로 선다(빌더와 같은 컨테이너 폭 기준). 삭제 버튼은 그리지 않는다. */
 function StatChangeRulesMockup({ rules }: { rules: readonly StatChangeRuleValue[] }) {
   return (
@@ -261,13 +280,9 @@ function StatChangeRulesMockup({ rules }: { rules: readonly StatChangeRuleValue[
           <div className="@container min-w-0 flex-1">
             <div className="grid gap-3 @md:grid-cols-stat-rule">
               <div className="flex min-w-0 flex-col gap-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <MockupLabel fieldKey="startingSetups.*.stats.*.rules.*.condition" />
-                  <span className="text-xs text-muted-foreground tabular-nums">
-                    {`${countCharacters(rule.condition)}/${MAX_STAT_RULE_CONDITION_LENGTH}`}
-                  </span>
-                </div>
+                <MockupLabel fieldKey="startingSetups.*.stats.*.rules.*.condition" />
                 <MockupTextarea text={rule.condition} />
+                <MockupCharacterCount count={countCharacters(rule.condition)} max={MAX_STAT_RULE_CONDITION_LENGTH} />
               </div>
               <div className="flex flex-col gap-1.5">
                 <MockupLabel fieldKey="startingSetups.*.stats.*.rules.*.delta" />

@@ -1,3 +1,4 @@
+import { BUILDER_SAVE_LIMIT_MESSAGE } from "@/entities/content";
 import { isApiError } from "@/shared/api/client";
 
 import { isSituationNoteStatNotFoundError, SITUATION_NOTE_STAT_NOT_FOUND_MESSAGE } from "./situationNoteErrors";
@@ -20,14 +21,6 @@ export function isMediaBookPositionTakenError(error: unknown): boolean {
 }
 
 /**
- * 서버가 저장 본문을 검증에서 거절한(422) 경우의 안내. 같은 값으로는 몇 번을 다시 보내도 거절되므로 기다리라고
- * 하지 않고 줄이라고 말한다. 422 본문에서는 어느 항목이 넘쳤는지 화면이 가려낼 수 없어(필드 오류가 이름만 남고
- * 위치는 버려진다) 항목을 짚지 않는다.
- */
-export const STORY_SAVE_LIMIT_MESSAGE =
-  "글자 수나 개수 제한을 넘은 항목이 있어 저장하지 못했어요. 입력한 내용은 그대로 있으니 긴 글이나 많이 추가한 항목을 줄여주세요.";
-
-/**
  * 엔딩 규칙이나 엔딩의 우선순위 스탯이 지워진 스탯을 가리켜 저장이 거절된 경우의 안내(서버는 둘에 같은 코드를 쓴다). 같은
  * 422 라도 글자 수 문제가 아니므로 줄이라고 하지 않고 고칠 자리(엔딩 탭)를 짚는다. 이 화면에서 스탯을 지우면 그 규칙은 함께
  * 지워지고 우선순위 스탯은 비워지므로, 이 문구는 그 처리 전에 저장된 초안이나 다른 기기에서 고친 초안에서만 보인다. 두 칸
@@ -46,6 +39,6 @@ export function storyAutosaveErrorMessage(error: unknown): string | undefined {
   if (isMediaBookPositionTakenError(error)) return MEDIA_BOOK_POSITION_TAKEN_MESSAGE;
   if (isEndingRuleStatNotFoundError(error)) return ENDING_RULE_STAT_NOT_FOUND_MESSAGE;
   if (isSituationNoteStatNotFoundError(error)) return SITUATION_NOTE_STAT_NOT_FOUND_MESSAGE;
-  if (isApiError(error) && error.status === 422) return STORY_SAVE_LIMIT_MESSAGE;
+  if (isApiError(error) && error.status === 422) return BUILDER_SAVE_LIMIT_MESSAGE;
   return undefined;
 }

@@ -1,7 +1,9 @@
 import asyncio
 import io
+import json
 import uuid
 from datetime import UTC, datetime, timezone
+from pathlib import Path
 
 import boto3
 import httpx
@@ -558,3 +560,54 @@ async def test_register_situational_image_is_refused_when_the_draft_is_published
         await db_session.scalars(sa.select(SituationalImage).where(SituationalImage.content_version_id == version.id))
     ).all()
     assert rows == []
+
+
+# 상황 조건 길이 한도는 빌더 화면과 초안 저장이 함께 읽는 한도 표에 있다. 등록 엔드포인트도 조건을 DB 에 쓰므로 같은
+# 한도를 지켜야 한다 — 숫자를 여기에 다시 적으면 표와 서버가 어긋나도 알 수 없어 테스트도 표에서 읽는다.
+_TRIGGER_MAX_LENGTH: int = json.loads(
+    (Path(__file__).parents[1] / "src" / "api" / "content" / "builder_limits.json").read_text(encoding="utf-8")
+)["character"]["situationalImageTriggerMaxLength"]
+
+
+async def test_register_situational_image_rejects_trigger_condition_over_the_builder_limit(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    version = await _make_draft_version(db_session, creator_user_id=user.id)
+    asset = await _make_ready_asset(db_session, user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.post(
+        f"/assets/{asset.id}/register-situational-image",
+        json={**_register_body(version), "triggerCondition": "가" * (_TRIGGER_MAX_LENGTH + 1)},
+    )
+
+    assert resp.status_code == 422, resp.text
+    rows = (
+        await db_session.scalars(sa.select(SituationalImage).where(SituationalImage.content_version_id == version.id))
+    ).all()
+    assert rows == []
+
+
+async def test_register_situational_image_accepts_trigger_condition_at_the_builder_limit(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    version = await _make_draft_version(db_session, creator_user_id=user.id)
+    asset = await _make_ready_asset(db_session, user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    trigger = "가" * _TRIGGER_MAX_LENGTH
+
+    resp = await db_client.post(
+        f"/assets/{asset.id}/register-situational-image",
+        json={**_register_body(version), "triggerCondition": trigger},
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["triggerCondition"] == trigger

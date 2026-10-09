@@ -1,6 +1,20 @@
 import { z } from "zod";
 
-import { DEFAULT_NOVEL_PERMISSION, NOVEL_PERMISSION_VALUES } from "@/entities/content";
+import {
+  characterLimit,
+  DEFAULT_NOVEL_PERMISSION,
+  hashtagsSchema,
+  MAX_CHARACTER_PROMPT_LENGTH,
+  MAX_DESCRIPTION_LENGTH,
+  MAX_EXAMPLE_DIALOGUE_LINE_LENGTH,
+  MAX_EXAMPLE_DIALOGUES,
+  MAX_INTRO_LENGTH,
+  MAX_NAME_LENGTH,
+  MAX_ONE_LINER_LENGTH,
+  MAX_PLAY_GUIDE_LENGTH,
+  MAX_SITUATIONAL_IMAGE_TRIGGER_LENGTH,
+  NOVEL_PERMISSION_VALUES,
+} from "@/entities/content";
 import { defaultUserNameIssue } from "@/entities/persona";
 
 // 목록과 유니온 타입은 한쪽에서 도출한다. 값 목록을 스키마 옆의 단일 소스로 두고
@@ -13,8 +27,14 @@ export type Visibility = (typeof VISIBILITY_VALUES)[number];
 
 export const exampleDialogueSchema = z.object({
   id: z.string(),
-  userLine: z.string().min(1, "사용자 대사를 입력해주세요"),
-  characterLine: z.string().min(1, "캐릭터 대사를 입력해주세요"),
+  userLine: z
+    .string()
+    .min(1, "사용자 대사를 입력해주세요")
+    .refine(...characterLimit(MAX_EXAMPLE_DIALOGUE_LINE_LENGTH, "사용자 대사")),
+  characterLine: z
+    .string()
+    .min(1, "캐릭터 대사를 입력해주세요")
+    .refine(...characterLimit(MAX_EXAMPLE_DIALOGUE_LINE_LENGTH, "캐릭터 대사")),
 });
 
 /** 상황별 이미지는 배열 순서 자체가 동시매칭 우선순위다. */
@@ -26,13 +46,14 @@ export const situationalImageSchema = z.object({
   situationDescription: z
     .string()
     .min(1, "어떤 상황에서 이 이미지를 노출할지 입력해주세요")
-    .refine((value) => value.trim().length > 0, "어떤 상황에서 이 이미지를 노출할지 입력해주세요"),
+    .refine((value) => value.trim().length > 0, "어떤 상황에서 이 이미지를 노출할지 입력해주세요")
+    .refine(...characterLimit(MAX_SITUATIONAL_IMAGE_TRIGGER_LENGTH, "상황")),
 });
 
 export const characterBuilderSchema = z.object({
   profile: z.object({
-    name: z.string().min(1, "캐릭터 이름을 입력해주세요"),
-    oneLiner: z.string().min(1, "캐릭터를 한 줄로 소개해주세요"),
+    // 대표 이미지가 맨 앞인 이유: 발행 실패 때 포커스가 가는 "첫 오류"는 같은 탭 안에서 이 키 순서를 따른다. 화면에서 맨 위 칸이
+    // 대표 이미지라 순서가 다르면 둘째 칸(이름)으로 먼저 간다.
     // 타입은 초안(아직 비어 있는 상태)을 담기 위해 nullable로 두고, 발행 필수는 superRefine이 상시
     // 검증한다. **`.refine((v) => v !== null)`으로 줄이지
     // 말 것** — TS 5.5+가 그 콜백을 타입 술어로 추론하고 zod의 refine 선언이 그 경우에만 출력 타입을
@@ -46,11 +67,22 @@ export const characterBuilderSchema = z.object({
           ctx.addIssue({ code: z.ZodIssueCode.custom, message: "대표 이미지를 등록해주세요" });
         }
       }),
+    name: z.string().min(1, "캐릭터 이름을 입력해주세요").refine(...characterLimit(MAX_NAME_LENGTH, "이름")),
+    oneLiner: z
+      .string()
+      .min(1, "캐릭터를 한 줄로 소개해주세요")
+      .refine(...characterLimit(MAX_ONE_LINER_LENGTH, "한줄소개")),
   }),
   intro: z.object({
-    firstMessage: z.string().min(1, "사용자와의 첫 대화에서 캐릭터가 건넬 말을 입력해주세요"),
-    exampleDialogues: z.array(exampleDialogueSchema).default([]),
-    playGuide: z.string().optional(),
+    firstMessage: z
+      .string()
+      .min(1, "사용자와의 첫 대화에서 캐릭터가 건넬 말을 입력해주세요")
+      .refine(...characterLimit(MAX_INTRO_LENGTH, "인트로")),
+    exampleDialogues: z
+      .array(exampleDialogueSchema)
+      .max(MAX_EXAMPLE_DIALOGUES, `예시 대화는 최대 ${MAX_EXAMPLE_DIALOGUES}개까지만 추가할 수 있습니다`)
+      .default([]),
+    playGuide: z.string().refine(...characterLimit(MAX_PLAY_GUIDE_LENGTH, "플레이가이드")).optional(),
     // 인트로·예시 대화와 한 화면에 두는 작품 기본 이름. 대화 프로필이 없는 사람의 `{{user}}` 가 된다. 비우면 대체어를 쓴다.
     defaultUserName: z
       .string()
@@ -61,11 +93,17 @@ export const characterBuilderSchema = z.object({
       .default(""),
   }),
   prompt: z.object({
-    characterPrompt: z.string().min(1, "캐릭터의 성격, 말투, 배경 등을 자유롭게 서술해주세요"),
+    characterPrompt: z
+      .string()
+      .min(1, "캐릭터의 성격, 말투, 배경 등을 자유롭게 서술해주세요")
+      .refine(...characterLimit(MAX_CHARACTER_PROMPT_LENGTH, "캐릭터 프롬프트")),
   }),
   situationalImages: z.array(situationalImageSchema).default([]),
   registration: z.object({
-    description: z.string().min(1, "캐릭터를 목록에서 소개할 설명을 입력해주세요"),
+    description: z
+      .string()
+      .min(1, "캐릭터를 목록에서 소개할 설명을 입력해주세요")
+      .refine(...characterLimit(MAX_DESCRIPTION_LENGTH, "등록 설명")),
     // CharacterDraftPayload/Response의 genreId/target은 실제로 string | null / ContentTarget | null이다
     // (초안 상태에선 아직 선택 전일 수 있음) — profile.image와 동일한 이유로 nullable로 둔다. 발행
     // 필수는 profile.image와 같은 이유·같은 방식(superRefine)으로 상시 검증한다
@@ -86,7 +124,7 @@ export const characterBuilderSchema = z.object({
           ctx.addIssue({ code: z.ZodIssueCode.custom, message: "타겟을 선택해주세요" });
         }
       }),
-    hashtags: z.array(z.string()).default([]),
+    hashtags: hashtagsSchema,
     visibility: z.enum(VISIBILITY_VALUES).default("private"),
     novelPermission: z.enum(NOVEL_PERMISSION_VALUES).default(DEFAULT_NOVEL_PERMISSION),
   }),

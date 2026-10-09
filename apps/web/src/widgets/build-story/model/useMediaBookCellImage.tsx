@@ -1,5 +1,6 @@
 import { toast } from "sonner";
 
+import { UNDO_TOAST_DURATION_MS, UndoToastButton } from "@/features/build-common";
 import {
   cellImageRefusalMessage,
   findCell,
@@ -14,7 +15,6 @@ import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMess
 import { useMediaBookEditor } from "./useMediaBookEditor";
 import { useMediaBookThumbnails } from "./useMediaBookThumbnails";
 import type { MediaBookPosition } from "../ui/MediaBookGrid";
-import { UNDO_TOAST_DURATION_MS, UndoToastButton } from "../ui/UndoToastButton";
 
 /** 칸 이미지를 바꾼 뒤 띄우는 되돌리기 토스트. id 가 하나라 연달아 바꾸면 쌓이지 않고 마지막 교체만 되돌린다. */
 export const MEDIA_BOOK_IMAGE_UNDO_TOAST_ID = "media-book-image-undo";

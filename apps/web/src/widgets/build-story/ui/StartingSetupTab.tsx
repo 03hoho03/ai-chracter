@@ -1,11 +1,4 @@
-import {
-  closestCenter,
-  DndContext,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
+import { closestCenter, DndContext } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@ai-character-chat/ui/components/button";
@@ -17,6 +10,7 @@ import { X } from "lucide-react";
 import { useRef, useState } from "react";
 import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
+import { MAX_STARTING_SETUPS, MAX_SUGGESTED_REPLIES } from "@/entities/content";
 import {
   CollapsibleItemCard,
   focusNeighborToggle,
@@ -24,11 +18,11 @@ import {
   ItemRemoveButton,
   itemOpenKey,
   useBuilderUiState,
+  useSortableList,
+  type SortableHandleProps,
 } from "@/features/build-common";
 import {
   FieldLabelText,
-  MAX_STARTING_SETUPS,
-  MAX_SUGGESTED_REPLIES,
   reconcileKeywordNotesOnStartingSetupRemoval,
   startingSetupSummary,
   type StoryBuilderFormValues,
@@ -44,6 +38,9 @@ import { UnknownMediaTagNotice } from "./UnknownMediaTagNotice";
 /** 열림 키의 목록 이름 — 발행 실패 때 셸이 오류 항목을 여는 키와 같은 이름이어야 한다(타입이 목록 정의의 키로 묶는다). */
 const STARTING_SETUP_LIST: StoryCollapsibleList = "startingSetup";
 
+/** '설정 추가' 버튼 id — 스탯·상황 노트·엔딩 탭의 빈 상태에서 이 탭으로 넘어올 때 포커스할 곳이다. */
+export const STARTING_SETUP_ADD_BUTTON_ID = "starting-setup-add";
+
 /** "설정 추가"로 여러 시작설정 생성, 발행하려면 최소 1개 필요.
  * 그 최소 1개는 storyBuilderSchema의 `.min(1)`이 막고, 위반은 발행을 눌렀을 때 토스트와 탭 에러로
  * 드러난다 — 발행 버튼 자체는 비활성화하지 않는다(apps/web/CLAUDE.md §폼 / 빌더). */
@@ -57,7 +54,12 @@ export function StartingSetupTab() {
     formState: { errors },
   } = form;
   const { fields, append, remove, move } = useFieldArray({ control, name: "startingSetups" });
-  const sensors = useSensors(useSensor(PointerSensor));
+  const sortable = useSortableList({
+    ids: fields.map((field) => field.id),
+    move,
+    itemObject: "시작설정을",
+    orderMeaning: "맨 위 시작설정이 기본 선택이에요.",
+  });
   const uiState = useBuilderUiState();
   const addButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -127,13 +129,6 @@ export function StartingSetupTab() {
     );
   }
 
-  function handleDragEnd({ active, over }: DragEndEvent) {
-    if (!over || active.id === over.id) return;
-    const oldIndex = fields.findIndex((field) => field.id === active.id);
-    const newIndex = fields.findIndex((field) => field.id === over.id);
-    if (oldIndex !== -1 && newIndex !== -1) move(oldIndex, newIndex);
-  }
-
   return (
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-1" data-field-path="startingSetups">
@@ -159,7 +154,12 @@ export function StartingSetupTab() {
           <p className="text-sm text-muted-foreground">아직 등록된 시작설정이 없어요.</p>
         </div>
       ) : (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <DndContext
+          sensors={sortable.sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={sortable.handleDragEnd}
+          accessibility={sortable.accessibility}
+        >
           <SortableContext items={fields.map((field) => field.id)} strategy={verticalListSortingStrategy}>
             <div className="flex flex-col gap-4">
               {fields.map((field, index) => (
@@ -167,6 +167,7 @@ export function StartingSetupTab() {
                   key={field.id}
                   id={field.id}
                   index={index}
+                  handleProps={sortable.handleProps(index)}
                   onRemove={() => void handleRemove(index)}
                 />
               ))}
@@ -178,10 +179,21 @@ export function StartingSetupTab() {
       {/* 상한에 닿으면 추가 버튼을 렌더하지 않는다(SettingTab의
           전개 예시와 같은 형태). 스키마의 `.max()`만으로는 발행 시점에야 막혀 5개째를 만들게 둔다. */}
       {fields.length < MAX_STARTING_SETUPS ? (
-        <Button ref={addButtonRef} type="button" variant="secondary" className="w-fit" onClick={handleAdd}>
+        <Button
+          ref={addButtonRef}
+          id={STARTING_SETUP_ADD_BUTTON_ID}
+          type="button"
+          variant="secondary"
+          className="w-fit"
+          onClick={handleAdd}
+        >
           설정 추가
         </Button>
       ) : null}
+
+      <p className="sr-only" aria-live="polite">
+        {sortable.announcement}
+      </p>
     </div>
   );
 }
@@ -189,6 +201,8 @@ export function StartingSetupTab() {
 type StartingSetupRowProps = {
   id: string;
   index: number;
+  /** 손잡이의 id·화살표 키 재정렬(`useSortableList`). */
+  handleProps: SortableHandleProps;
   onRemove: () => void;
 };
 
@@ -198,6 +212,7 @@ type StartingSetupRowProps = {
 function StartingSetupRow({
   id,
   index,
+  handleProps,
   onRemove,
 }: StartingSetupRowProps) {
   const form = useFormContext<StoryBuilderFormValues>();
@@ -268,7 +283,14 @@ function StartingSetupRow({
       srTitlePrefix={`${index + 1}번째 시작설정: `}
       summary={startingSetupSummary({ prologue }, index)}
       hasError={hasOwnError}
-      leading={<ItemDragHandle {...attributes} {...listeners} aria-label={`${index + 1}번째 시작설정 순서 변경`} />}
+      leading={
+        <ItemDragHandle
+          {...attributes}
+          {...listeners}
+          {...handleProps}
+          aria-label={`${index + 1}번째 시작설정 순서 변경`}
+        />
+      }
       trailing={
         <ItemRemoveButton
           label={trimmedName ? `${trimmedName} 시작설정 삭제` : `${index + 1}번째 시작설정 삭제`}
@@ -301,6 +323,7 @@ function StartingSetupRow({
           id={`starting-setup-${id}-prologue`}
           placeholder="이 시작설정의 도입부를 입력해주세요"
           rows={3}
+          className="min-h-32"
           aria-invalid={!!rowErrors?.prologue}
           aria-describedby={rowErrors?.prologue ? `starting-setup-${id}-prologue-error` : undefined}
           {...prologueField}
@@ -331,6 +354,7 @@ function StartingSetupRow({
           id={`starting-setup-${id}-opening-situation`}
           placeholder="채팅 시작 시 상황을 입력해주세요"
           rows={2}
+          className="min-h-32"
           aria-invalid={!!rowErrors?.openingSituation}
           aria-describedby={rowErrors?.openingSituation ? `starting-setup-${id}-opening-situation-error` : undefined}
           {...openingSituationField}
