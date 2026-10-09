@@ -53,6 +53,9 @@ from factories import (
 
 _SRC = Path(__file__).resolve().parent.parent / "src"
 
+# 소설 쪽은 정책 단가가 아니라 사용처 기록과 연쇄의 순사용(선차감 − 환급)을 보므로, 확인 금액·순사용을 고정 단가로 적는다.
+pytestmark = pytest.mark.usefixtures("novel_prices_for_flow_tests")
+
 
 @pytest.fixture(autouse=True)
 def _identity_settings(monkeypatch: pytest.MonkeyPatch) -> None:
