@@ -13,6 +13,15 @@ describe("cloverHubSearchSchema", () => {
     ).toEqual({ paymentId: "pay_1", code: "FAILURE_TYPE_PG" });
   });
 
+  it("상품 안내에서 고른 상품 키를 읽는다", () => {
+    expect(cloverHubSearchSchema.parse({ product: "lite" })).toEqual({ product: "lite" });
+  });
+
+  // 문자열이 아닌 상품 값은 어긋난 URL 이다 — 페이지를 죽이지 않고 부재로 접는다.
+  it("문자열이 아닌 상품 값은 부재로 읽는다", () => {
+    expect(cloverHubSearchSchema.parse({ product: 1 })).toEqual({});
+  });
+
   // 라우터가 숫자만인 쿼리 값을 숫자로 준다 — 버리면 실패한 결제가 성공처럼 읽힌다.
   it("숫자로 온 실패 코드도 버리지 않고 문자열로 읽는다", () => {
     expect(cloverHubSearchSchema.parse({ paymentId: "pay_1", code: 1001 })).toEqual({

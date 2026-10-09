@@ -1,5 +1,6 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Link } from "@tanstack/react-router";
+import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 
 import {
@@ -22,6 +23,7 @@ import { SUPPORT_DESTINATIONS } from "@/shared/config/supportDestinations";
 
 import type { CloverHubSearch } from "../model/cloverHubSearch";
 import { getPurchaseSection } from "../model/purchaseSection";
+import { findRequestedProduct } from "../model/requestedProduct";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 const IDENTITY_REQUIRED_MESSAGE = "본인인증을 하면 받을 수 있어요.";
@@ -56,8 +58,17 @@ const SECTION_LINK_CLASS =
  * 같은 `max-w-md`라 둘 사이를 오갈 때 컬럼 폭이 바뀌지 않는다.
  *
  * 결제창이 페이지를 떠났다가(모바일) 돌아오는 곳도 여기다 — 라우트가 넘긴 결과 쿼리로 확정을 이어받고 쿼리를 지운다.
+ * 상품 안내 화면에서 상품을 고르고 오면(`product`) 그 상품의 구매 확인을 바로 열고 그 파라미터만 지운다.
  */
-export function CloverHubPage({ search, onSearchClear }: { search: CloverHubSearch; onSearchClear: () => void }) {
+export function CloverHubPage({
+  search,
+  onSearchClear,
+  onProductClear,
+}: {
+  search: CloverHubSearch;
+  onSearchClear: () => void;
+  onProductClear: () => void;
+}) {
   usePaymentRedirect(search, onSearchClear);
 
   return (
@@ -72,7 +83,7 @@ export function CloverHubPage({ search, onSearchClear }: { search: CloverHubSear
       </div>
 
       <BalanceSection />
-      <PurchaseSection />
+      <PurchaseSection requestedProductKey={search.product} onRequestedProductHandled={onProductClear} />
       <MissionSection />
     </main>
   );
@@ -122,18 +133,25 @@ function BalanceSection() {
  *
  * 상품 카드는 outline 이다 — 카드는 고르기만 하고 결제는 다이얼로그에서 하므로, 돈이 나가는 확정의 채움은 구매 확인
  * 다이얼로그 안의 "결제하기" 하나다. 카드 여러 장이 솔리드면 한 화면에 핑크 채움이 상품 수만큼 뜬다. */
-function PurchaseSection() {
+type PurchaseBodyProps = {
+  /** 상품 안내 화면에서 고르고 온 상품 키(`?product=`). */
+  requestedProductKey: string | undefined;
+  onRequestedProductHandled: () => void;
+};
+
+function PurchaseSection(props: PurchaseBodyProps) {
   return (
     <section className="flex flex-col gap-4">
       <SectionHeading>클로버 구매</SectionHeading>
-      <PurchaseBody />
+      <PurchaseBody {...props} />
     </section>
   );
 }
 
-function PurchaseBody() {
+function PurchaseBody({ requestedProductKey, onRequestedProductHandled }: PurchaseBodyProps) {
   const pricingQuery = useCloverPricingQuery();
   const { data: me } = useSessionQuery();
+  useOpenRequestedProduct(requestedProductKey, onRequestedProductHandled);
 
   if (pricingQuery.isPending) {
     return <span className="text-sm text-muted-foreground">불러오는 중…</span>;
@@ -177,6 +195,27 @@ function PurchaseBody() {
       ))}
     </ul>
   );
+}
+
+/** 상품 안내 화면에서 고르고 온 상품의 구매 확인을 연다. 가격 응답과 세션이 모두 와서 살 수 있는 상태로 판정된 뒤에만
+ * 연다(`findRequestedProduct`). 연 뒤에는 그 파라미터만 지워 새로고침·뒤로가기로 다시 열리지 않게 한다. 같은 키를
+ * 두 번 열지 않게 연 키를 ref 로 기억한다 — StrictMode 의 이중 실행에서 창이 두 개 뜬다.
+ *
+ * effect 는 열 상품이 바뀔 때만 돈다. 콜백과 응답 객체는 렌더마다 새로 만들어지고, 키가 같으면 같은 요청이다. */
+function useOpenRequestedProduct(requestedProductKey: string | undefined, onHandled: () => void) {
+  const { data: pricing } = useCloverPricingQuery();
+  const { data: me } = useSessionQuery();
+  const openedKey = useRef<string | null>(null);
+  const product = pricing
+    ? findRequestedProduct(pricing.products, requestedProductKey, getPurchaseSection(pricing.paymentsEnabled, me))
+    : undefined;
+
+  useEffect(() => {
+    if (!product || !pricing || !me || openedKey.current === product.key) return;
+    openedKey.current = product.key;
+    void PurchaseConfirmDialog.call({ product, payMethods: pricing.payMethods, email: me.email });
+    onHandled();
+  }, [product?.key]);
 }
 
 function MissionSection() {
