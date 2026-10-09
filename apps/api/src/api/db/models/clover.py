@@ -41,7 +41,8 @@ class CloverLedger(Base):
     # 값이 늘 때 마이그레이션 없이 넓히기 위해서다. 값은 `core/clover.py`의 `CloverKind`
     # Literal이 강제 지점이다.
     kind: Mapped[str] = mapped_column(Text, nullable=False)
-    # 지금 채우는 것은 어드민 지급/회수·출석·미션 청구뿐이고 나머지는 NULL이다.
+    # 지금 채우는 것은 어드민 지급/회수·미션 청구·구매 지급뿐이고 나머지는 NULL이다(없어진 `attendance_grant` 의 과거
+    # 행도 키를 갖는다).
     # Postgres는 NULL을 중복으로 치지 않으므로 평범한 unique 인덱스가 "값이 있는 것만 유일"이
     # 된다.
     idempotency_key: Mapped[str | None] = mapped_column(Text, nullable=True)

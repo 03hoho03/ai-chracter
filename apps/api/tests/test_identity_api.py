@@ -673,5 +673,5 @@ async def test_leftover_onboarding_cannot_overwrite_a_verified_birth_date(
     monkeypatch.setattr(settings, "portone_webhook_secret", "whsec_dGVzdA==")
     await _make_published(db_session, kind="refund-policy", version="2026-10-01")
     await _login_as(db_client, user.id)
-    order = await db_client.post("/payments", json={"productKey": "basic", "agreed": True})
+    order = await db_client.post("/payments", json={"productKey": "basic_v2", "agreed": True})
     assert (order.status_code, order.json()["detail"]) == (403, {"code": "PAYMENT_AGE_RESTRICTED"})

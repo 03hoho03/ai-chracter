@@ -305,7 +305,7 @@ async def test_burst_check_runs_before_daily_check(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """위 두 테스트는 한쪽만 0으로 낮추므로 **순서에 대해서는 항진명제다** — 두 검사를 맞바꿔도
-    낮추지 않은 쪽은 기본 상한(10/30)에 안 걸려 그냥 통과하고, 같은 `window`가 나온다. 순서를
+    낮추지 않은 쪽은 기본 상한(`CHAT_BURST_LIMIT`·`CHAT_DAILY_LIMIT`)에 안 걸려 그냥 통과하고, 같은 `window`가 나온다. 순서를
     구분하는 유일한 상태는 둘 다 넘긴 사용자이고, 그때 나와야 하는 값은 몇 시간짜리 `day`가
     아니라 몇 초짜리 `minute`이다(게이트 docstring의 UX 결정)."""
     user = await _consented_user(db_client, db_session)

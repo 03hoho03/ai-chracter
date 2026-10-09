@@ -42,6 +42,8 @@ from api.novelize.deletion import delete_batch, delete_novels
 from api.novelize.router import delete_last_novel_chapter, delete_novel
 from factories import _assert_blocked, _clover_lots, _make_user_with_clover_lot
 
+pytestmark = pytest.mark.usefixtures("novel_prices_for_flow_tests")
+
 
 def _detail(exc: HTTPException) -> object:
     """`HTTPException.detail` 은 `str` 로 선언돼 있어 dict 와 비교하면 mypy 가 막는다 — 실제로는 dict 를 싣는다."""

@@ -59,6 +59,10 @@ def test_episode_unit_prices_are_read_from_the_clover_constants_at_call_time(mon
     assert [novel_episode_unit_price(m.id) for m in CHAT_MODELS] == [41, 106, 171]
 
 
-def test_default_episode_unit_prices_are_the_provisional_ones() -> None:
-    """Gemini 40·Sonnet 105·Opus 170 — 화 하나의 값이다(생성 한 번은 이 값 × 화 수)."""
-    assert [novel_episode_unit_price(m.id) for m in CHAT_MODELS] == [40, 105, 170]
+def test_default_episode_unit_prices_are_the_policy_constants() -> None:
+    """모델마다 화 하나의 값이다(생성 한 번은 이 값 × 화 수). 값 자체는 정책 상수 테스트가 고정한다."""
+    assert [novel_episode_unit_price(m.id) for m in CHAT_MODELS] == [
+        clover.NOVELIZE_EPISODE_COST,
+        clover.NOVELIZE_EPISODE_COST_SONNET,
+        clover.NOVELIZE_EPISODE_COST_OPUS,
+    ]

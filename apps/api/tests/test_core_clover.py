@@ -11,9 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from api.core import clover
 from api.core.clover import (
-    ATTENDANCE_GRANT_AMOUNT,
     CHAT_TURN_COST,
+    CHAT_TURN_COST_OPUS,
+    CHAT_TURN_COST_SONNET,
     IMAGE_UNIT_COST,
+    NOVELIZE_AI_EDIT_COST,
+    NOVELIZE_EPISODE_COST,
+    NOVELIZE_EPISODE_COST_OPUS,
+    NOVELIZE_EPISODE_COST_SONNET,
     PURCHASE_LOT_KINDS,
     CloverRefundExceedsSpendError,
     earned_lot_expiry,
@@ -27,6 +32,7 @@ from api.core.clover import (
     revoke_purchase_lots,
     spend,
 )
+from api.core.rate_limit_gate import CHAT_DAILY_LIMIT
 from api.db.models.auth import User
 from api.db.models.clover import CloverLedger, CloverLot, CloverSpendAllocation, CloverSpendRefund
 from factories import _make_payment, _make_user, _make_user_with_clover_lot
@@ -140,17 +146,12 @@ async def test_grant_increases_balance_and_writes_ledger(db_session: AsyncSessio
     db_session.add(user)
     await db_session.flush()
 
-    assert (
-        await grant(
-            db_session, user_id=user.id, amount=ATTENDANCE_GRANT_AMOUNT, kind="attendance_grant"
-        )
-        == ATTENDANCE_GRANT_AMOUNT
-    )
+    assert await grant(db_session, user_id=user.id, amount=100, kind="attendance_grant") == 100
 
     rows = await _ledger_rows(db_session, user.id)
     assert len(rows) == 1
-    assert rows[0].amount == ATTENDANCE_GRANT_AMOUNT
-    assert rows[0].balance_after == ATTENDANCE_GRANT_AMOUNT
+    assert rows[0].amount == 100
+    assert rows[0].balance_after == 100
     assert rows[0].idempotency_key is None
 
 
@@ -188,16 +189,16 @@ async def test_grant_creates_a_matching_lot(db_session: AsyncSession) -> None:
     balance = await grant(
         db_session,
         user_id=user.id,
-        amount=ATTENDANCE_GRANT_AMOUNT,
+        amount=100,
         kind="attendance_grant",
         expires_at=expires_at,
     )
-    assert balance == ATTENDANCE_GRANT_AMOUNT
+    assert balance == 100
 
     lots = (await db_session.scalars(select(CloverLot).where(CloverLot.user_id == user.id))).all()
     assert len(lots) == 1
-    assert lots[0].granted_amount == ATTENDANCE_GRANT_AMOUNT
-    assert lots[0].remaining == ATTENDANCE_GRANT_AMOUNT
+    assert lots[0].granted_amount == 100
+    assert lots[0].remaining == 100
     assert lots[0].expires_at == expires_at
     assert lots[0].kind == "attendance_grant"
 
@@ -729,7 +730,7 @@ def test_is_same_kst_day_boundary() -> None:
 
     assert is_same_kst_day(date(2026, 9, 17), now) is True
     assert is_same_kst_day(date(2026, 9, 16), now) is False
-    # 한 번도 받은 적 없는 유저 — 출석/확인 판정의 첫 호출이 여기로 온다.
+    # 한 번도 확인한 적 없는 유저 — 차감 확인 판정의 첫 호출이 여기로 온다.
     assert is_same_kst_day(None, now) is False
 
 
@@ -738,7 +739,7 @@ def test_is_same_kst_day_rejects_naive_datetime() -> None:
         is_same_kst_day(date(2026, 9, 17), datetime(2026, 9, 17, 12, 0))
 
 
-# ── earned_lot_expiry(출석·미션 지급용) ───────────────────────────
+# ── earned_lot_expiry(미션 지급용) ───────────────────────────
 def test_earned_lot_expiry_is_kst_midnight_plus_eight_days() -> None:
     """마이그레이션의 `_legacy_lot_expiry` 테스트와 같은 예시 — 지급일이 2026-09-21(KST)이면
     2026-09-29 00:00 KST가 나와야 한다."""
@@ -768,7 +769,13 @@ def test_policy_constants_match_decisions() -> None:
     # 달라지므로 정한 값을 여기서 고정한다.
     assert CHAT_TURN_COST == 10
     assert IMAGE_UNIT_COST == 30
-    assert ATTENDANCE_GRANT_AMOUNT == 100
+    assert NOVELIZE_EPISODE_COST == 80
+    assert NOVELIZE_AI_EDIT_COST == 30
+    assert CHAT_TURN_COST_SONNET == 60
+    assert CHAT_TURN_COST_OPUS == 110
+    assert NOVELIZE_EPISODE_COST_SONNET == 180
+    assert NOVELIZE_EPISODE_COST_OPUS == 300
+    assert CHAT_DAILY_LIMIT == 15
 
 
 async def test_ledger_table_is_reachable(db_session: AsyncSession) -> None:

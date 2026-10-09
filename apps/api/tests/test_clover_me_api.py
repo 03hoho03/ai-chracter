@@ -1,7 +1,7 @@
-"""`/me/clover` 3경로와 탈퇴 시 잔액 소멸.
+"""`/me/clover` 잔액 조회·차감 확인 경로와 탈퇴 시 잔액 소멸.
 
 🔴 시간을 얼리지 않는다 — 이 저장소에 `freezegun`·`time-machine`이 0건이라 KST 경계 검증은
-`clover_attendance_granted_on` 컬럼에 리터럴 날짜를 넣어 확인한다(`core/clover.py`의
+`clover_spend_confirmed_on` 컬럼에 리터럴 날짜를 넣어 확인한다(`core/clover.py`의
 `kst_today(now)`가 `now`를 인자로 받는 것과 같은 이유).
 """
 
@@ -13,7 +13,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.clover.router import _expiring_soon
-from api.core.clover import ATTENDANCE_GRANT_AMOUNT, earned_lot_expiry, grant, kst_today
+from api.core.clover import grant, kst_today
 from api.db.models.auth import User
 from api.db.models.clover import CloverLedger, CloverLot
 from factories import _login_as, _make_user
@@ -41,125 +41,6 @@ async def _balance(db: AsyncSession, user_id: uuid.UUID) -> int:
     return balance
 
 
-# ── 출석 ──────────────────────────────────────────────────────────────
-async def test_attendance_first_call_grants_and_increases_balance(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    user = await _logged_in(db_client, db_session)
-
-    resp = await db_client.post("/me/clover/attendance")
-
-    assert resp.status_code == 200
-    assert resp.json() == {"granted": True, "balance": ATTENDANCE_GRANT_AMOUNT}
-    assert await _balance(db_session, user.id) == ATTENDANCE_GRANT_AMOUNT
-    assert await _ledger_kinds(db_session, user.id) == ["attendance_grant"]
-
-
-async def test_attendance_grant_creates_a_lot_expiring_at_kst_midnight_plus_eight_days(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    """출석 지급도 만료가 붙는다(백필 로트와 같은 규칙: 지급일
-    KST 자정 + 8일). 이 테스트가 빨개지는 조건: `claim_clover_attendance`가 `grant()`에
-    `expires_at`을 안 넘기면 로트가 무기한
-    (`expires_at IS NULL`)으로 생긴다."""
-    user = await _logged_in(db_client, db_session)
-
-    # 🔴 리터럴 주입 — 요청 전에 한 번만 `now`를 잡는다. 응답을 받은 뒤 다시
-    # `datetime.now(UTC)`를 부르면(예전 버전) 그 사이 KST 자정을 걸쳐 실시간 평가가
-    # 플레이크를 낸다(같은 파일의 `test_attendance_opens_again_on_the_next_kst_day` 등이
-    # 이미 쓰는 "한 번만 잡은 값을 그대로 재사용" 패턴).
-    now = datetime.now(UTC)
-    resp = await db_client.post("/me/clover/attendance")
-    assert resp.json()["granted"] is True
-
-    lot = (
-        await db_session.scalars(
-            select(CloverLot).where(
-                CloverLot.user_id == user.id, CloverLot.kind == "attendance_grant"
-            )
-        )
-    ).one()
-    assert lot.expires_at == earned_lot_expiry(now)
-
-
-async def test_attendance_is_idempotent_within_the_same_kst_day(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    """🔴 멱등을 서버가 보장한다 — FE가 여러 번 불러도 안전해야 한다.
-
-    이 테스트가 빨개지는 조건: `clover_attendance_granted_on` 검사를 빼면 두 번째 호출이
-    `granted=true` + 잔액 200이 된다.
-    """
-    user = await _logged_in(db_client, db_session)
-
-    first = await db_client.post("/me/clover/attendance")
-    second = await db_client.post("/me/clover/attendance")
-
-    assert first.json()["granted"] is True
-    assert second.status_code == 200
-    assert second.json() == {"granted": False, "balance": ATTENDANCE_GRANT_AMOUNT}
-    assert await _balance(db_session, user.id) == ATTENDANCE_GRANT_AMOUNT
-    # 원장 행도 하나뿐이다 — 잔액만 보면 "지급 후 회수"도 같은 값이라 구분되지 않는다.
-    assert await _ledger_kinds(db_session, user.id) == ["attendance_grant"]
-
-
-async def test_attendance_does_not_double_grant_when_the_marker_is_missed(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    """🔴 동시 요청이 이중 지급되지 않는다 — 멱등을 **DB가** 강제해야 한다.
-
-    두 요청이 동시에 오면 두 번째는 첫 번째가 커밋하기 전에 `clover_attendance_granted_on`을
-    읽으므로 **표지를 못 본다.** 그 상태를 여기서는 표지를 지워서 만든다 — 파이썬 쪽 검사를
-    통과한 뒤에도 지급이 막히는가가 이 테스트의 질문이다.
-
-    빨개지는 조건: 멱등이 `is_same_kst_day` 검사 하나에만 걸려 있으면(= 원장 멱등키가 없으면)
-    두 번째 호출이 `granted=true` + 잔액 200 + 원장 2행이 된다. 진짜 동시 요청 재현은
-    `independent_session_factory`가 필요해 `test_clover_concurrency.py` 몫이고, 여기서는 **기구의 존재**를 고정한다.
-    """
-    user = await _logged_in(db_client, db_session)
-
-    first = await db_client.post("/me/clover/attendance")
-    assert first.json()["granted"] is True
-
-    # 표지만 지운다(원장 행은 그대로) — 동시 요청 둘째가 보는 상태와 같다.
-    # `synchronize_session=False`로 ORM 인스턴스를 건드리지 않고 DB만 바꾼 뒤 expire로 재조회를
-    # 강제한다. 그냥 UPDATE하면 `synchronize_session="auto"`가 메모리까지 맞춰 버린다.
-    await db_session.execute(
-        update(User).where(User.id == user.id).values(clover_attendance_granted_on=None),
-        execution_options={"synchronize_session": False},
-    )
-    await db_session.commit()
-    db_session.expire_all()
-
-    second = await db_client.post("/me/clover/attendance")
-
-    assert second.status_code == 200
-    assert second.json() == {"granted": False, "balance": ATTENDANCE_GRANT_AMOUNT}
-    assert await _balance(db_session, user.id) == ATTENDANCE_GRANT_AMOUNT
-    assert await _ledger_kinds(db_session, user.id) == ["attendance_grant"]
-
-
-async def test_attendance_opens_again_on_the_next_kst_day(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    """어제(KST) 받았으면 오늘 다시 받는다.
-
-    시간을 얼리는 대신 컬럼에 어제 날짜를 넣는다 — 판정이 `is_same_kst_day(컬럼, now)` 하나라
-    입력을 바꾸는 것으로 경계가 검증된다. 이 테스트가 빨개지는 조건: 판정을 "한 번이라도
-    받았으면 끝"(`is not None`)으로 바꾸면 `granted=false`가 된다.
-    """
-    yesterday = kst_today(datetime.now(UTC)) - timedelta(days=1)
-    user = await _logged_in(
-        db_client, db_session, clover_balance=50, clover_attendance_granted_on=yesterday
-    )
-
-    resp = await db_client.post("/me/clover/attendance")
-
-    assert resp.status_code == 200
-    assert resp.json() == {"granted": True, "balance": 50 + ATTENDANCE_GRANT_AMOUNT}
-    assert await _ledger_kinds(db_session, user.id) == ["attendance_grant"]
-
-
 # ── 잔액 조회 ────────────────────────────────────────────────────────────────
 async def test_balance_reports_flags_for_a_fresh_user(
     db_client: httpx.AsyncClient, db_session: AsyncSession
@@ -172,40 +53,27 @@ async def test_balance_reports_flags_for_a_fresh_user(
     assert resp.json() == {
         "balance": 30,
         "spendConfirmedToday": False,
-        "attendanceClaimable": True,
         "paidBalance": 0,
         "expiringSoon": None,
     }
 
 
-async def test_balance_flags_flip_once_today_is_recorded(
+async def test_balance_flag_flips_once_today_is_recorded(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """두 플래그가 **각각의 컬럼**을 본다는 것까지 고정한다 — 한 컬럼으로 둘을 답하면 빨개진다."""
+    """오늘(KST) 확인을 남기면 `spendConfirmedToday`가 참이 된다 — 날짜 비교를 빼고 상수를 돌려주면 빨개진다."""
     today = kst_today(datetime.now(UTC))
-    await _logged_in(
-        db_client,
-        db_session,
-        clover_balance=30,
-        clover_attendance_granted_on=today,
-        clover_spend_confirmed_on=today,
-    )
+    await _logged_in(db_client, db_session, clover_balance=30, clover_spend_confirmed_on=today)
 
     resp = await db_client.get("/me/clover")
 
-    assert resp.json() == {
-        "balance": 30,
-        "spendConfirmedToday": True,
-        "attendanceClaimable": False,
-        "paidBalance": 0,
-        "expiringSoon": None,
-    }
+    assert resp.json()["spendConfirmedToday"] is True
 
 
-async def test_balance_does_not_grant_attendance(
+async def test_balance_read_does_not_grant(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """🔴 GET에 부작용을 두지 않는다. 조회만으로 지급되면 빨개진다."""
+    """🔴 잔액 조회는 지급하지 않는다 — GET에 부작용을 두지 않는다. 조회만으로 지급되면 빨개진다."""
     user = await _logged_in(db_client, db_session)
 
     await db_client.get("/me/clover")
@@ -450,8 +318,17 @@ async def test_spend_confirmation_records_today_and_repeats_safely(
 # ── 인증·동의 ────────────────────────────────────────────────────────────────
 async def test_clover_routes_require_a_session(db_client: httpx.AsyncClient) -> None:
     assert (await db_client.get("/me/clover")).status_code == 401
-    assert (await db_client.post("/me/clover/attendance")).status_code == 401
     assert (await db_client.post("/me/clover/spend-confirmation")).status_code == 401
+
+
+async def test_daily_attendance_route_is_gone(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+    """일일 무료 지급 라우트는 없앴다 — 열어 둔 옛 화면의 버튼은 404를 받고 돈은 움직이지 않는다."""
+    user = await _logged_in(db_client, db_session)
+
+    resp = await db_client.post("/me/clover/attendance")
+
+    assert resp.status_code == 404
+    assert await _ledger_kinds(db_session, user.id) == []
 
 
 # ── 탈퇴 시 잔액 소멸 ──────────────────────────────────────────────────

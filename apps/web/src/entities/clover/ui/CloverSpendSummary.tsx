@@ -37,7 +37,7 @@ export function CloverSpendSummary({ cost, balance }: CloverSpendSummaryProps) {
       </p>
       {isInsufficient && (
         <p className="text-sm text-foreground break-keep">
-          클로버가 모자라 지금은 진행할 수 없어요. 출석·미션으로 클로버를 모은 뒤 다시 해주세요.
+          클로버가 모자라 지금은 진행할 수 없어요. 클로버를 채운 뒤 다시 해주세요.
         </p>
       )}
     </div>

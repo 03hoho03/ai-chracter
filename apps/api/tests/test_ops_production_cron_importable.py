@@ -7,7 +7,7 @@
 `DEPLOY.md` 백업 · 복원 절이 복원 절차를 `PYTHONPATH=. python3 -m ops.restore_db`로 명시하고,
 `ops/cron.d/ddona-resource-check`가 리소스 감시를, `ops/cron.d/ddona-bugsink-vacuum`가
 Bugsink 이벤트 파기를, `ops/cron.d/ddona-image-request-purge`가 이미지 생성 요청 파기를,
-`ops/cron.d/ddona-clover-expire`가 출석·미션 클로버 만료를 같은 방식으로 돌린다.
+`ops/cron.d/ddona-clover-expire`가 미션 클로버 만료를 같은 방식으로 돌린다.
 크론은 아니지만 `prune_api_images.py`도 배포 원격 셸이 같은 시스템 python3로 불러 함께 검사한다.
 **형제 모듈을 따로 검사하는 이유** — 진입점들의 허용 목록에 `ops`가 있어 `from ops.notify
 import ...` 자체는 통과하지만, `notify.py` 안에서 실제로 뭘 import하는지는 아무도 안 본다.
