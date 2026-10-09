@@ -12129,19 +12129,48 @@
           "chat"
         ],
         "summary": "List My Chat Rooms",
-        "description": "헤더 \"내 채팅목록\"용 — 콘텐츠 스코프 없이 사용자의 모든 방을 한 번에 내려준다.\n콘텐츠의 공개범위·이용제한·삭제 상태는 보지 않는다(`list_chat_rooms`도 그렇다 —\n여기서만 감추면 방 안에서는 보이는 대화가 목록에서만 사라지는 것처럼 보인다).",
+        "description": "콘텐츠 스코프 없이 사용자의 방을 최근 활동순으로 내려준다(`/chats` 전체 목록과 최근 대화 목록이 쓴다).\n`limit` 을 생략하면 전부, 주면 앞에서 그 개수만 준다 — 잘라도 \"대화 N\" 번호와 순서는 생략했을 때와 같다.\n콘텐츠의 공개범위·이용제한·삭제 상태는 보지 않는다(`list_chat_rooms`도 그렇다 —\n여기서만 감추면 방 안에서는 보이는 대화가 목록에서만 사라지는 것처럼 보인다).",
         "operationId": "list_my_chat_rooms_me_chat_rooms_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/MyChatRoomListItem"
                   },
-                  "type": "array",
                   "title": "Response List My Chat Rooms Me Chat Rooms Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
