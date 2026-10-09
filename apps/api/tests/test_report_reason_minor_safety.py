@@ -118,8 +118,12 @@ async def test_chat_response_report_accepts_minor_safety_and_admin_reads_it_back
 async def test_downgrade_moves_minor_safety_reports_to_other_instead_of_failing(ddl_engine: AsyncEngine) -> None:
     """Postgres 에 `DROP VALUE` 가 없어 downgrade 는 타입을 다시 만든다. 새 사유 행을 옮기지 않으면 캐스트가 실패해
     롤백이 막히고, 지우면 신고 기록이 사라진다. 두 테이블 모두에서 그 행만 `OTHER` 로 바뀌어야 한다.
-    마이그레이션 함수를 롤백되는 트랜잭션 안에서 직접 실행한다(세션 스코프 스키마는 건드리지 않는다)."""
+    마이그레이션 함수를 롤백되는 트랜잭션 안에서 직접 실행한다(세션 스코프 스키마는 건드리지 않는다).
+
+    같은 사유 타입을 쓰는 표를 나중 리비전이 더 만들었으면(노벨·노벨 댓글 신고) 실제 사슬처럼 그 리비전을 먼저 내린다 — 그
+    표가 남아 있으면 옛 타입을 지우는 문장이 의존 관계로 실패한다."""
     downgrade = _load("80f5dda86e33").downgrade
+    later_downgrades = [_load("b09b766254c6").downgrade]
     async with ddl_engine.connect() as connection:
         transaction = await connection.begin()
         try:
@@ -148,6 +152,8 @@ async def test_downgrade_moves_minor_safety_reports_to_other_instead_of_failing(
 
             def run_downgrade(sync_connection: Connection) -> None:
                 with Operations.context(MigrationContext.configure(sync_connection)):
+                    for later in later_downgrades:
+                        later()
                     downgrade()
 
             await connection.run_sync(run_downgrade)
