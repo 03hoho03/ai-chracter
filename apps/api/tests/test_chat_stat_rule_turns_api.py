@@ -198,6 +198,35 @@ async def test_room_turn_applies_fired_rules_and_judges_the_ending(
     assert room is not None and room.ending_reached is True
 
 
+async def test_room_turn_letters_stats_in_author_order_not_insertion_order(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """규칙 글자는 작가가 정한 스탯 순서(`order`)를 따른다. 신뢰(order 1)를 호감(order 0)보다 먼저 넣어, 정렬 없이 읽으면
+    행이 놓인 순서대로 신뢰가 a 가 되게 만든다 — 그 순서는 앞선 쓰기·롤백이 남긴 빈자리에 따라 실행마다 달라진다."""
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="어서 와")
+    trust = _stat(setup, "신뢰", 1)
+    db_session.add(trust)
+    await db_session.flush()
+    affection = _stat(setup, "호감", 0)
+    db_session.add(affection)
+    await db_session.flush()
+    await _add_rules(db_session, affection, ("감싸 준다", 3))
+    await _add_rules(db_session, trust, ("약속을 지킨다", 2))
+    await db_session.commit()
+    await _login_as(db_client, user_id)
+    created = await db_client.post(
+        "/chat-rooms", json={"contentId": str(content.id), "contentType": "story", "startingSetupId": str(setup.id)}
+    )
+    fake = _FakeLLMClient([StatRuleJudgmentResult(fired_rule_ids=["a1"])])
+
+    events = await _send(db_client, uuid.UUID(created.json()["id"]), fake)
+
+    assert "- a1: 감싸 준다" in fake.prompts[0] and "- b1: 약속을 지킨다" in fake.prompts[0]
+    assert [(e["statId"], e["newValue"]) for e in events if e["type"] == "statChange"] == [
+        (str(affection.entity_id), 40)
+    ]
+
+
 async def test_room_turn_skips_stats_and_endings_when_rule_judgment_fails(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

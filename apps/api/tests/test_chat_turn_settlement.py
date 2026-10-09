@@ -8,8 +8,9 @@
 
 import asyncio
 import gc
+import sys
 import uuid
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 
 import httpx
 import pytest
@@ -101,6 +102,53 @@ async def test_disconnect_while_the_generator_waits_at_yield_refunds_once(monkey
 
     await run_probe(_probe_app(recorder, settlement, body), recorder, disconnect_on="token")
     await _until(lambda: bool(recorder.events))
+
+    assert recorder.events == ["gen:GeneratorExit"]
+    assert refund.amounts == [_COST]
+
+
+async def test_yield_disconnect_refunds_once_whichever_generator_the_collector_closes_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """끊긴 라우트 제너레이터는 순환 참조 수거로 닫히고, 같은 순환에 묶인 다른 비동기 제너레이터와 닫히는 순서는 정해져
+    있지 않다. 다른 것이 먼저 닫혀도 라우트는 `GeneratorExit` 갈래로 끝나고 환급은 한 번이어야 한다 — 가드가 제 비동기
+    제너레이터를 가지면, 그것이 먼저 닫힌 뒤 라우트를 닫을 때 `RuntimeError` 가 난다. 순서를 직접 만들려고 이 구간에서
+    시작된 비동기 제너레이터를 전부 가로채 라우트보다 먼저 닫는다."""
+    refund = _install_fake_refund(monkeypatch)
+    recorder = Recorder()
+    settlement = _settlement()
+
+    async def body() -> AsyncIterator[dict[str, str]]:
+        while True:
+            yield {"type": "token"}
+
+    async def route() -> AsyncGenerator[dict[str, str], None]:
+        try:
+            async with settlement.guard():
+                async for event in body():
+                    yield event
+        except BaseException as exc:
+            recorder.events.append(f"gen:{type(exc).__name__}")
+            raise
+
+    started: list[AsyncGenerator[object, None]] = []
+    firstiter, finalizer = sys.get_asyncgen_hooks()
+
+    def capture(agen: AsyncGenerator[object, None]) -> None:
+        started.append(agen)
+        if firstiter is not None:
+            firstiter(agen)
+
+    sys.set_asyncgen_hooks(firstiter=capture, finalizer=finalizer)
+    try:
+        stream = route()
+        await anext(stream)
+    finally:
+        sys.set_asyncgen_hooks(firstiter=firstiter, finalizer=finalizer)
+    for other in started:
+        if other is not stream:
+            await other.aclose()
+    await stream.aclose()
 
     assert recorder.events == ["gen:GeneratorExit"]
     assert refund.amounts == [_COST]

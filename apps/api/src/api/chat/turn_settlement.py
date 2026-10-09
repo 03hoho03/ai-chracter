@@ -19,9 +19,8 @@
 
 import logging
 import uuid
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from types import TracebackType
 
 import anyio
 from sqlalchemy import select
@@ -114,12 +113,26 @@ class TurnSettlement:
             capture_dependency_failure(exc, dependency="db")
             return False
 
-    @asynccontextmanager
-    async def guard(self) -> AsyncIterator[None]:
+    def guard(self) -> "_SettlementGuard":
         """라우트 제너레이터 본문 전체(첫 `yield` 전 구간 포함)를 감싼다. 어떤 이유로든 본문이 정산 없이 끝나면 되돌리고
         원래 예외를 다시 올린다."""
-        try:
-            yield
-        except BaseException:
-            await self.refund_if_unsettled()
-            raise
+        return _SettlementGuard(self)
+
+
+class _SettlementGuard:
+    """`guard()` 의 컨텍스트 매니저. `@asynccontextmanager` 로 쓰지 않는다 — 그러면 가드가 제 비동기 제너레이터를 갖고,
+    끊긴 라우트 제너레이터와 같은 순환 참조에 묶여 수거될 때 둘 중 어느 것이 먼저 닫힐지 정해져 있지 않다. 가드 쪽이 먼저
+    닫히면 환급은 그때 한 번 일어나지만, 이어서 라우트를 닫을 때 끝난 제너레이터에 예외를 던지게 돼 `RuntimeError` 가 나고
+    종료 훅이 그것을 오류로 남긴다. 클래스로 두면 닫힐 제너레이터가 라우트 하나뿐이다."""
+
+    def __init__(self, settlement: TurnSettlement) -> None:
+        self._settlement = settlement
+
+    async def __aenter__(self) -> None:
+        return None
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, traceback: TracebackType | None
+    ) -> None:
+        if exc_type is not None:
+            await self._settlement.refund_if_unsettled()
