@@ -42,7 +42,10 @@ export const DeleteNovelModal = createCallable<DeleteNovelModalProps, boolean>((
   const router = useRouter();
   const navigate = useNavigate();
   const deleteMutation = useDeleteNovelMutation();
-  const detail = useNovelQuery(novelId);
+  // 지운 뒤에는 묻지 않는다 — 캐시를 버린 다음 모달이 닫히며 한 번 더 그려질 때(닫힘 상태로 그린 뒤 내린다) 이 조회가
+  // 비워진 캐시를 보고 지운 소설을 다시 받아 404 가 났다.
+  const [isDeleted, setIsDeleted] = useState(false);
+  const detail = useNovelQuery(novelId, { enabled: !isDeleted });
   const [error, setError] = useState<string | undefined>(undefined);
   const isDeleting = deleteMutation.isPending;
   const isPreviewPending = detail.isPending;
@@ -61,6 +64,7 @@ export const DeleteNovelModal = createCallable<DeleteNovelModalProps, boolean>((
         return;
       }
     }
+    setIsDeleted(true);
     // 지운 소설의 화면(작품 정보·편집 보드·읽기) 위에서 지웠으면 목록으로 옮긴다 — 남으면 그 화면이 곧 「찾을 수
     // 없어요」가 된다. 같은 접두사의 다른 소설(`/novels/abc` 와 `/novels/abcd`)은 경로 구분자로 가른다.
     const pathname = router.state.location.pathname;
