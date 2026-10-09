@@ -27,6 +27,8 @@ _BUILDER_LIMITS: dict[str, dict[str, int]] = json.loads(
 _COMMON_LIMITS = _BUILDER_LIMITS["common"]
 _CHARACTER_LIMITS = _BUILDER_LIMITS["character"]
 _STORY_LIMITS = _BUILDER_LIMITS["story"]
+# 상황 이미지 조건은 초안 저장과 이미지 등록 엔드포인트 두 곳에서 DB 에 쓰이므로 둘이 같은 한도를 읽게 이름을 연다.
+SITUATIONAL_IMAGE_TRIGGER_MAX_LENGTH = _CHARACTER_LIMITS["situationalImageTriggerMaxLength"]
 
 WorkName = Annotated[str, StringConstraints(max_length=_COMMON_LIMITS["nameMaxLength"])]
 WorkOneLiner = Annotated[str, StringConstraints(max_length=_COMMON_LIMITS["oneLinerMaxLength"])]
@@ -257,7 +259,7 @@ class CharacterSituationalImageDraftInput(CamelModel):
     `POST /assets/{id}/register-situational-image`."""
 
     id: uuid.UUID
-    trigger_condition: str = Field(max_length=_CHARACTER_LIMITS["situationalImageTriggerMaxLength"])
+    trigger_condition: str = Field(max_length=SITUATIONAL_IMAGE_TRIGGER_MAX_LENGTH)
 
 
 class CharacterDraftPayload(CamelModel):
