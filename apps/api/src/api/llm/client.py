@@ -2,70 +2,45 @@ import abc
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Literal, TypeVar
+from typing import TypeVar
 
 from pydantic import BaseModel
 
 from api.core.config import settings
+from api.llm.call_policy import CALL_POLICIES
+
+# `as LLMCallSite` 는 mypy strict 의 명시적 재export 요구 때문이다 — 이 이름을 `api.llm.client` 에서 가져오는 모듈이
+# 많아, 정의를 호출 정책 표 옆으로 옮겨도 기존 import 경로를 그대로 쓰게 둔다.
+from api.llm.call_policy import LLMCallSite as LLMCallSite
 from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, ChatModelProvider
 
 T = TypeVar("T", bound=BaseModel)
 
-# `gemini_usage`·`bedrock_usage` 로그의 grep 키다. 호출부와 1:1이라
-# 값을 바꾸거나 합치면 로그 분포가 끊긴다. 재생성은 `chat_generate`로 함께 집계한다.
-LLMCallSite = Literal[
-    "chat_generate",
-    "chat_stat_judgment",
-    "chat_ending_judgment",
-    "chat_situational_image",
-    # 스토리 미디어 북 칸 판정. 재생성도 여기로 함께 집계한다(생성과 같은 규칙).
-    "chat_media_book_image",
-    "chat_memory_summary",
-    "preview_generate",
-    "preview_stat_judgment",
-    "preview_ending_judgment",
-    "preview_media_book_image",
-    "publish_filter_character",
-    "publish_filter_story",
-    "seed_story_generate",
-    "seed_similarity_review",
-    # 소설화: 장 생성(스트리밍, 재생성도 여기로 함께 집계한다), AI 문단 수정(구조화), 장 경계 제안(구조화).
-    "novelize_chapter",
-    "novelize_revise",
-    "novelize_boundary",
-    # 지난 턴을 같은 입력으로 다시 생성해 비교하는 측정 도구의 생성 호출. 사용량이 실제 대화(`chat_generate`)와 섞이지
-    # 않게 따로 집계하고, Claude 로 쓴 턴도 다시 생성할 수 있게 모델 선택 허용 목록(`llm/routing.py`)에 넣는다. 설정은
-    # 채팅 생성과 같은 기본 갈래를 따라 타임아웃·출력 상한·사고 설정이 같다. 판정·심사 집합에는 넣지 않는다.
-    "replay_generate",
-]
-
 # 아래 집합들은 로그 라벨이면서 **모델 선택도 겸한다** — `llm/gemini.py` 의 `generate_structured` 가 아래
 # `structured_model` 로 이 집합을 보고 `gemini_*_judgment_model_name`·`gemini_publish_filter_model_name` 설정을
 # 고른다. 그래서 call_site 를 새로 만들거나 합치거나 나누면 그 호출이 어느 모델로 가는지도 바뀐다.
-# 새 판정·심사 call_site 는 알맞은 종류에 넣어야 스위치를 따라가고, 빠뜨리면 조용히 기본 모델로 돈다.
-# 기억 요약(`chat_memory_summary`)은 매 턴 생성 프롬프트에 실려 생성 품질에 바로 닿고, 시드
-# 스크립트 호출은 운영 판정이 아니라서 어느 집합에도 넣지 않는다.
-# 판정을 종류별로 나누는 건 모델을 바꿨을 때 품질이 종류마다 따로 움직여서다 — 같은 비교에서 스탯·엔딩은
-# 현행과 맞았지만 그림 매칭은 어긋나, 셋을 한 스위치로 묶으면 옮길 수 있는 둘까지 묶인다.
-STAT_JUDGMENT_CALL_SITES: frozenset[LLMCallSite] = frozenset({"chat_stat_judgment", "preview_stat_judgment"})
-ENDING_JUDGMENT_CALL_SITES: frozenset[LLMCallSite] = frozenset({"chat_ending_judgment", "preview_ending_judgment"})
+# 집합은 `llm/call_policy.py` 의 호출 정책 표에서 만든다 — 새 판정·심사 call_site 는 그 표의 행에 알맞은 종류를 적어야
+# 스위치를 따라가고, 빠뜨리면 조용히 기본 모델로 돈다.
+STAT_JUDGMENT_CALL_SITES: frozenset[LLMCallSite] = frozenset(
+    cs for cs, p in CALL_POLICIES.items() if p.judgment_kind == "stat"
+)
+ENDING_JUDGMENT_CALL_SITES: frozenset[LLMCallSite] = frozenset(
+    cs for cs, p in CALL_POLICIES.items() if p.judgment_kind == "ending"
+)
 IMAGE_JUDGMENT_CALL_SITES: frozenset[LLMCallSite] = frozenset(
-    {"chat_situational_image", "chat_media_book_image", "preview_media_book_image"}
+    cs for cs, p in CALL_POLICIES.items() if p.judgment_kind == "image"
 )
 # 판정 전체. 어드민 사용량 화면이 판정 비율(판정 호출 ÷ 생성 호출)을 낼 call_site 를 이것으로 가른다.
 JUDGMENT_CALL_SITES: frozenset[LLMCallSite] = (
     STAT_JUDGMENT_CALL_SITES | ENDING_JUDGMENT_CALL_SITES | IMAGE_JUDGMENT_CALL_SITES
 )
-# 발행 심사는 실패하면 발행이 막히는(fail-closed) 경로라 판정과 따로 바꾸고 되돌릴 수 있게 둔다.
-PUBLISH_FILTER_CALL_SITES: frozenset[LLMCallSite] = frozenset(
-    {"publish_filter_character", "publish_filter_story"}
+PUBLISH_FILTER_CALL_SITES: frozenset[LLMCallSite] = frozenset(cs for cs, p in CALL_POLICIES.items() if p.publish_filter)
+# 소설화 호출 전체 — `llm/gemini.py`·`llm/bedrock.py` 가 잘림·빈 본문을 구분된 실패로 올리는 호출.
+NOVELIZE_CALL_SITES: frozenset[LLMCallSite] = frozenset(cs for cs, p in CALL_POLICIES.items() if p.novelize is not None)
+# 그중 소설화 모델·출력 상한·사고 설정(`gemini_novelize_*`)을 쓰는 호출 — 본문을 쓰는 장 생성과 문단 수정이다.
+NOVELIZE_MODEL_CALL_SITES: frozenset[LLMCallSite] = frozenset(
+    cs for cs, p in CALL_POLICIES.items() if p.novelize == "prose"
 )
-# 소설화 호출 전체. 이 호출들은 결과를 소설 본문으로 저장하므로, 채팅이라면 경고만 남기고 넘길 결과(출력 상한에서
-# 잘림·빈 본문)를 `llm/gemini.py` 가 구분된 실패(`LLMTruncatedError`·`LLMEmptyResponseError`)로 올린다.
-NOVELIZE_CALL_SITES: frozenset[LLMCallSite] = frozenset({"novelize_chapter", "novelize_revise", "novelize_boundary"})
-# 그중 소설화 모델·출력 상한·사고 설정(`gemini_novelize_*`)을 쓰는 호출 — 본문을 쓰는 장 생성과 문단 수정이다. 장 경계
-# 제안은 턴 번호 몇 개를 고르는 판정이라 넣지 않아 기본 모델로 간다.
-NOVELIZE_MODEL_CALL_SITES: frozenset[LLMCallSite] = frozenset({"novelize_chapter", "novelize_revise"})
 
 
 def structured_model(call_site: LLMCallSite, default_model: str) -> str:
@@ -89,30 +64,16 @@ def structured_model(call_site: LLMCallSite, default_model: str) -> str:
     return default_model
 
 
-# 시드 스크립트 호출은 작품 하나를 통째로 만드는 비스트리밍 호출이라 운영 호출 상한(최대 60초)에 걸릴 수 있다. 운영
-# 서버가 부르는 호출이 아니어서 `.env` 로 바꿀 일이 없으므로 설정 키가 아니라 여기 고정한다.
-_SEED_TIMEOUT_MS = 300_000
-
-
 def request_timeout_ms(call_site: LLMCallSite) -> int:
-    """호출 하나가 요청에 실을 타임아웃(ms). 값은 `core/config.py` 의 `gemini_*_timeout_ms` 설정이고 고르는 기준은
-    위 call_site 집합이다. 모든 call_site 가 값을 받는다 — 요청 단위 값 없이 나간 호출이 한 번이라도 있으면 SDK 가
-    클라이언트 헤더에 전역값의 서버 기한 헤더를 써 넣어, 뒤따르는 호출이 자기 값을 헤더에 싣지 못한다."""
-    if call_site in JUDGMENT_CALL_SITES:
-        return settings.gemini_judgment_timeout_ms
-    if call_site in PUBLISH_FILTER_CALL_SITES:
-        return settings.gemini_publish_filter_timeout_ms
-    if call_site == "chat_memory_summary":
-        return settings.gemini_memory_summary_timeout_ms
-    if call_site in ("seed_story_generate", "seed_similarity_review"):
-        return _SEED_TIMEOUT_MS
-    if call_site == "novelize_chapter":
-        return settings.gemini_novelize_chapter_timeout_ms
-    if call_site == "novelize_revise":
-        return settings.gemini_novelize_revise_timeout_ms
-    if call_site == "novelize_boundary":
-        return settings.gemini_novelize_boundary_timeout_ms
-    return settings.gemini_generate_timeout_ms
+    """호출 하나가 요청에 실을 타임아웃(ms). 어느 값을 쓸지는 호출 정책 표의 `gemini_timeout` 이 정하고, 설정 이름이면
+    `core/config.py` 의 그 `gemini_*_timeout_ms` 값을 호출마다 읽는다. 모든 call_site 가 값을 받는다 — 요청 단위 값 없이
+    나간 호출이 한 번이라도 있으면 SDK 가 클라이언트 헤더에 전역값의 서버 기한 헤더를 써 넣어, 뒤따르는 호출이 자기
+    값을 헤더에 싣지 못한다."""
+    timeout = CALL_POLICIES[call_site].gemini_timeout
+    if isinstance(timeout, int):
+        return timeout
+    value: int = getattr(settings, timeout)
+    return value
 
 
 class SegmentedPrompt(str):

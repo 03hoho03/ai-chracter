@@ -23,6 +23,7 @@ from anthropic.types import TextBlockParam
 from pydantic import BaseModel
 
 from api.core.config import settings
+from api.llm.call_policy import CALL_POLICIES
 from api.llm.chat_models import actual_model_id
 from api.llm.client import (
     NOVELIZE_CALL_SITES,
@@ -53,14 +54,14 @@ def _bedrock_error(cls: type[E], message: str) -> E:
 def _timeout_seconds(call_site: LLMCallSite) -> float:
     """요청 하나의 타임아웃(초). SDK 의 httpx 경로에서 이 값은 연결·읽기 단계마다의 상한이라, 스트리밍에서는 호출 전체가
     아니라 "다음 청크까지"의 상한이다(Gemini 생성과 같은 성질). 꾸준히 흘러나오는 긴 장의 전체 시간은 소설화 작업 상한이
-    끊는다."""
-    if call_site == "novelize_chapter":
+    끊는다. 장 상한과 채팅 상한 중 무엇을 쓸지는 호출 정책 표의 `claude_limits` 가 정한다."""
+    if CALL_POLICIES[call_site].claude_limits == "chapter":
         return settings.bedrock_chapter_timeout_ms / 1000
     return settings.bedrock_chat_timeout_ms / 1000
 
 
 def _max_tokens(call_site: LLMCallSite) -> int:
-    if call_site == "novelize_chapter":
+    if CALL_POLICIES[call_site].claude_limits == "chapter":
         return settings.bedrock_chapter_max_tokens
     return settings.bedrock_chat_max_tokens
 
@@ -86,7 +87,7 @@ def _user_content(prompt: str, call_site: LLMCallSite) -> str | list[TextBlockPa
 
     지난 턴을 다시 생성하는 측정 호출(`replay_generate`)도 같은 블록·체크포인트로 보낸다 — 실제 생성과 같은 요청 모양이라야
     원가·지연 측정이 맞고, 같은 턴을 여러 번 돌릴 때 앞부분을 캐시로 싸게 읽는다."""
-    if call_site in ("chat_generate", "replay_generate") and isinstance(prompt, SegmentedPrompt):
+    if CALL_POLICIES[call_site].claude_cache_checkpoint and isinstance(prompt, SegmentedPrompt):
         if len(prompt.segments) == 3:
             first, history_end, rest = prompt.segments
             return [
