@@ -16,10 +16,13 @@ from typing import Literal
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from api.content.access import publicly_listed_conditions
 from api.core.config import settings
+from api.db.models.auth import User
 from api.db.models.content import Content, ModerationStatus
+from api.db.models.novel import NovelPublication
 
 # 새로 공개할 수 없는 이유. 앞의 것이 먼저다 — 이용제한은 모든 공개를 막고, 허락은 원작자가 바꿔야 풀리고, 목록 조건은
 # 원작자가 다시 공개하면 풀린다.
@@ -51,3 +54,19 @@ async def judge_source(db: AsyncSession, content_id: uuid.UUID, publisher_id: uu
         return SourceGate(new_publish_block="source_permission", source_available=True)
     listed = await db.scalar(select(Content.id).where(Content.id == content_id, *publicly_listed_conditions()))
     return SourceGate(new_publish_block=None if listed is not None else "source_not_listed", source_available=True)
+
+
+def readable_publication_conditions() -> tuple[ColumnElement[bool], ...]:
+    """독자가 지금 이 공개 소설을 읽을 수 있는가 — SQL 조건. 공개 중(거두지 않음) ∧ 운영자 이용제한 없음 ∧ 게시자가 탈퇴·정지
+    되지 않음 ∧ 원작이 이용제한·삭제되지 않음. 호출부가 `NovelPublication`·`Novel`·게시자 `User`(`User.id ==
+    Novel.user_id`)·원작 `Content`(`Content.id == Novel.content_id`)를 조인한다.
+
+    정지·원작 상태는 표식 칸을 두지 않고 조회 때 조인으로 본다 — 정지가 풀리거나 원작이 복구되면 표식을 되돌리지 않아도 다시
+    보인다. 구매·열람·목록이 이 조건 하나를 함께 써야 "목록엔 없는데 구매는 되는" 틈이 생기지 않는다."""
+    return (
+        NovelPublication.visibility == "public",
+        NovelPublication.moderation_status == "normal",
+        User.deleted_at.is_(None),
+        User.suspended_at.is_(None),
+        Content.moderation_status == ModerationStatus.NORMAL,
+    )

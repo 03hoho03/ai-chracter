@@ -394,6 +394,80 @@ async def _plant_novel_extras(db_session: AsyncSession, tree: NovelTree) -> None
     await db_session.flush()
 
 
+@dataclass(frozen=True)
+class PublicNovel:
+    novel_id: uuid.UUID
+    publisher_id: uuid.UUID
+    content_id: uuid.UUID
+    # 화 번호 순. `batch_ids` 는 묶음 번호 순이다.
+    chapter_ids: list[uuid.UUID]
+    batch_ids: list[uuid.UUID]
+
+
+async def _make_public_novel(
+    db_session: AsyncSession, publisher_id: uuid.UUID, *, batches: tuple[int, ...] = (6, 2)
+) -> PublicNovel:
+    """노벨에 공개된 소설 하나(flush, 커밋은 호출자). 원작은 다른 회원이 만든 공개 작품이고, 묶음마다 `batches` 의 화 수만큼
+    화가 있으며 모든 화가 1화부터 공개돼 있다(기본: 6화 + 2화 — 앞 5화 무료, 6~8화 유료, 마지막 묶음 = 7·8화)."""
+    creator = _make_user()
+    db_session.add(creator)
+    await db_session.flush()
+    source = Content(
+        creator_user_id=creator.id,
+        type=ContentType.CHARACTER,
+        hashtags=[],
+        visibility=ContentVisibility.PUBLIC,
+        moderation_status=ModerationStatus.NORMAL,
+    )
+    db_session.add(source)
+    await db_session.flush()
+    novel = Novel(
+        user_id=publisher_id,
+        content_id=source.id,
+        content_type="character",
+        content_title="원작",
+        character_name="인물",
+    )
+    db_session.add(novel)
+    await db_session.flush()
+    db_session.add(NovelPublication(novel_id=novel.id, visibility="public", title="공개 제목", synopsis="소개"))
+    now = datetime.now(UTC)
+    chapter_ids: list[uuid.UUID] = []
+    batch_ids: list[uuid.UUID] = []
+    ordinal = 0
+    for batch_ordinal, size in enumerate(batches, start=1):
+        segment: dict[str, Any] = {
+            "start_message_id": uuid.uuid4(),
+            "start_message_created_at": now + timedelta(minutes=batch_ordinal),
+            "end_message_id": uuid.uuid4(),
+            "end_message_created_at": now + timedelta(minutes=batch_ordinal, seconds=30),
+            "assistant_message_count": 1,
+            "source_hash": "0" * 64,
+        }
+        batch = NovelBatch(novel_id=novel.id, ordinal=batch_ordinal, target_episode_count=size, **segment)
+        db_session.add(batch)
+        await db_session.flush()
+        batch_ids.append(batch.id)
+        for episode_index in range(size):
+            ordinal += 1
+            chapter = NovelChapter(
+                novel_id=novel.id, ordinal=ordinal, batch_id=batch.id, episode_index=episode_index, **segment
+            )
+            db_session.add(chapter)
+            await db_session.flush()
+            revision = NovelChapterRevision(chapter_id=chapter.id, revision_no=1, body=f"{ordinal}화 본문", source="generate")
+            db_session.add(revision)
+            await db_session.flush()
+            db_session.add(
+                NovelChapterPublication(
+                    chapter_id=chapter.id, novel_id=novel.id, ordinal=ordinal, revision_id=revision.id
+                )
+            )
+            chapter_ids.append(chapter.id)
+    await db_session.flush()
+    return PublicNovel(novel.id, publisher_id, source.id, chapter_ids, batch_ids)
+
+
 async def _make_asset(
     db_session: AsyncSession,
     owner_user_id: uuid.UUID,
