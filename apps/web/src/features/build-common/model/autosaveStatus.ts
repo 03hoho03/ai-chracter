@@ -24,7 +24,13 @@ export type AutosaveStatusStore = {
  * 저장 요청은 초안 하나에 한 줄로 서서 차례로 끝나지만, 앞 요청이 끝나기 전에 다음 요청이 시작될 수는 있다. 그래서 나가 있는 요청
  * 수를 세고 그 수가 0이 될 때 마지막 결과를 보인다 — 앞 요청의 성공이 뒤 요청이 도는 중에 "저장됨"을 띄우지 않는다.
  */
-export function createAutosaveStatusStore(): AutosaveStatusStore {
+export function createAutosaveStatusStore({
+  onSaved,
+}: {
+  /** 저장 하나가 성공할 때마다 부른다. 어느 경로의 저장이든 성공하면 "마지막 편집이 서버에 없다"는 실패 알림이 거짓이 되므로, 그 알림을
+   * 걷는 자리를 저장 상태와 같은 곳에 둔다. */
+  onSaved?: () => void;
+} = {}): AutosaveStatusStore {
   let inFlight = 0;
   let isPending = false;
   let lastResult: AutosaveStatus = "idle";
@@ -58,6 +64,7 @@ export function createAutosaveStatusStore(): AutosaveStatusStore {
       try {
         const result = await save();
         lastResult = "saved";
+        onSaved?.();
         return result;
       } catch (error) {
         lastResult = "failed";

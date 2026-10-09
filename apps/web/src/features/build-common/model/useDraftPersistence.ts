@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import {
   contentKeys,
@@ -16,6 +17,7 @@ import { draftKeys } from "@/entities/draft";
 import { runOnce } from "../lib/runOnce";
 import { createAutosaveStatusStore, type AutosaveStatusStore } from "./autosaveStatus";
 import { createNovelPermissionSync } from "./novelPermissionSync";
+import { AUTOSAVE_ERROR_TOAST_ID } from "./useAutosave";
 
 /**
  * 빌더의 저장 경로 하나 — 초안이 아직 서버에 없으면 만들고(지연 생성), 저장하고, URL을 초안
@@ -96,9 +98,12 @@ export function useDraftPersistence({
   );
 
   // 세 저장 경로가 모두 이 함수를 지나므로 저장 상태도 여기서 잡는다(임시저장 버튼이 그린다). 저장소는 마운트 동안 하나여야 상태가
-  // 저장 사이에 이어지고 `saveDraft` 도 같은 함수로 남는다.
+  // 저장 사이에 이어지고 `saveDraft` 도 같은 함수로 남는다. 어느 경로의 저장이든 성공하면 자동저장 실패 토스트를 걷는다 — 다시 시도
+  // (임시저장)·발행 직전·이미지 등록 직전 저장이 성공한 뒤에도 그 토스트가 남으면 버튼의 "저장됨"과 서로 다른 말을 한다.
   const saveStatusRef = useRef<AutosaveStatusStore>(undefined);
-  const saveStatus = (saveStatusRef.current ??= createAutosaveStatusStore());
+  const saveStatus = (saveStatusRef.current ??= createAutosaveStatusStore({
+    onSaved: () => toast.dismiss(AUTOSAVE_ERROR_TOAST_ID),
+  }));
   const saveDraft = useCallback(
     (payload: ContentDraftPayload) => saveStatus.track(() => persist(payload)),
     [persist, saveStatus],

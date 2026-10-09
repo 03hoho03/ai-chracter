@@ -93,8 +93,10 @@ const TOUCH_TARGET_CLASSNAME = "pointer-coarse:h-10 pointer-coarse:min-w-10";
 /** 상태별 아이콘과 접근 이름 뒤에 붙는 말. 오프라인은 저장 상태가 아니라 연결 상태라 여기 없고 `SaveNowButton` 이 덮어쓴다. */
 const SAVE_STATUS_VIEW: Record<AutosaveStatus, { icon: ReactNode; text?: string }> = {
   idle: { icon: <Save aria-hidden className="size-3.5" /> },
-  // 회전은 진행 표시라 `motion-safe:` 로 가두지 않는다 — 멈추면 저장이 멈춘 것으로 읽힌다.
-  pending: { icon: <Loader2 aria-hidden className="size-3.5 animate-spin" />, text: "저장 대기 중" },
+  // 대기(입력을 멈추면 곧 저장된다)는 아직 아무 일도 진행되지 않으므로 정지 아이콘이다 — 입력하는 내내 돌면 어두운 방에서 움직임만
+  // 계속된다. 접근 이름으로만 저장 전임을 알린다.
+  pending: { icon: <Save aria-hidden className="size-3.5" />, text: "저장 대기 중" },
+  // 저장 요청이 나가 있는 동안의 회전은 진행 표시라 `motion-safe:` 로 가두지 않는다 — 멈추면 저장이 멈춘 것으로 읽힌다.
   saving: { icon: <Loader2 aria-hidden className="size-3.5 animate-spin" />, text: "저장 중" },
   saved: { icon: <Check aria-hidden className="size-3.5" />, text: "저장됨" },
   failed: {

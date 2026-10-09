@@ -77,3 +77,21 @@ describe("createAutosaveStatusStore", () => {
     expect(calls).toBe(3);
   });
 });
+
+describe("createAutosaveStatusStore onSaved", () => {
+  // 자동저장 실패 토스트를 걷는 자리다. 자동저장·임시저장·발행 직전·이미지 등록 직전 저장이 모두 이 저장소를 지나므로 어느 저장이
+  // 성공해도 불려야 하고, 실패한 저장에서는 불리면 안 된다(실패 알림이 그대로 남아야 한다).
+  it("runs after each successful save and never after a failed one", async () => {
+    let saved = 0;
+    const store = createAutosaveStatusStore({
+      onSaved: () => {
+        saved += 1;
+      },
+    });
+    await store.track(() => Promise.reject(new Error("boom"))).catch(() => undefined);
+    expect(saved).toBe(0);
+    await store.track(() => Promise.resolve());
+    await store.track(() => Promise.resolve());
+    expect(saved).toBe(2);
+  });
+});
