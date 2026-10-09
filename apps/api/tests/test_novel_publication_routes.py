@@ -155,6 +155,25 @@ async def test_switch_off_closes_status_and_publish_before_the_llm(
     assert llm.calls == []
 
 
+async def test_preview_list_closes_status_and_publish_to_a_publisher_outside_it(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """미리보기 명단이 있으면 명단 밖 게시자는 스위치가 꺼진 것과 같은 403 을 받고, 명단의 게시자는 그대로 공개한다."""
+    novel_id, chapters = await _novel_with_chapters(db_client, db_session, monkeypatch)
+    publisher = (await db_session.get_one(Novel, novel_id)).user_id
+
+    monkeypatch.setattr(settings, "novel_public_preview_allowlist", [uuid.uuid4()])
+    status_resp = await db_client.get(f"/novels/{novel_id}/publication")
+    blocked = await _publish(db_client, novel_id, chapters[0])
+    monkeypatch.setattr(settings, "novel_public_preview_allowlist", [publisher])
+    allowed = await _publish(db_client, novel_id, chapters[0])
+
+    assert (status_resp.status_code, status_resp.json()["detail"]["code"]) == (403, "NOVEL_PUBLIC_DISABLED")
+    assert (blocked.status_code, blocked.json()["detail"]["code"]) == (403, "NOVEL_PUBLIC_DISABLED")
+    assert allowed.status_code == 200
+    assert len(llm.calls) == 1
+
+
 # ── 처음 공개 ────────────────────────────────────────────────────────────────
 async def test_first_publish_freezes_metadata_and_chapter_one_after_screening(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM

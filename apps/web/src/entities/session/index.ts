@@ -4,6 +4,7 @@ export { useSessionQuery } from "./api/useSessionQuery";
 export type { MeResponse } from "./api/useSessionQuery";
 export type { EnabledFeature } from "./api/sessionQueryOptions";
 export { hasEnabledFeature } from "./model/enabledFeature";
+export { isWebnovelOpen } from "./model/webnovelOpen";
 export { requireSession } from "./lib/requireSession";
 export { resetSessionIfLost } from "./lib/resetSessionIfLost";
 export { formatAuthRateLimitMessage, getAuthRateLimit, type AuthRateLimitDetail } from "./model/authRateLimitMessage";

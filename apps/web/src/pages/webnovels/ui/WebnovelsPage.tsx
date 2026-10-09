@@ -6,6 +6,7 @@ import { useCallback, useId } from "react";
 
 import { useCloverPricingQuery } from "@/entities/clover";
 import { ContentListEmptyState } from "@/entities/content";
+import { isWebnovelOpen, useSessionQuery } from "@/entities/session";
 import {
   toUniqueWebnovels,
   toWebnovelLoadFailure,
@@ -32,13 +33,15 @@ function isListSort(value: string): value is WebnovelListSort {
  * 항목은 카드 그리드가 아니라 행(표지 왼쪽 · 글 오른쪽)이다 — 소설은 소개 문장이 고르는 기준인데, 좁은 화면의 세로
  * 그리드 카드에는 제목·원작·지표를 넣으면 소개가 들어갈 자리가 없다. `md` 이상은 두 열.
  *
- * 노벨이 꺼져 있으면(공개 가격 응답의 켜짐 표시, 또는 목록 API 의 404) 찾을 수 없는 화면을 그린다 — 헤더에서도 탭이
+ * 노벨이 닫혀 있으면(공개 가격 응답과 `/me` 의 켜짐 표시가 둘 다 닫힘, 또는 목록 API 의 404) 찾을 수 없는 화면을 그린다 — 헤더에서도 탭이
  * 사라지고, 주소로 들어온 사람에게도 노벨이 없는 것과 같다. */
 export function WebnovelsPage({ sort, onSortChange }: { sort: WebnovelListSort; onSortChange: (sort: WebnovelListSort) => void }) {
   const pricing = useCloverPricingQuery();
+  const session = useSessionQuery();
   const query = useWebnovelListQuery(sort);
   const isOff =
-    pricing.data?.novelPublicEnabled === false || (query.isError && toWebnovelLoadFailure(query.error).kind === "missing");
+    (pricing.data !== undefined && !isWebnovelOpen(pricing.data.novelPublicEnabled, session.data?.novelPublicEnabled)) ||
+    (query.isError && toWebnovelLoadFailure(query.error).kind === "missing");
 
   if (isOff) {
     return (

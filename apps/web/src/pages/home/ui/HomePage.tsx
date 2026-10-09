@@ -27,7 +27,7 @@ import {
 } from "@/entities/content";
 import { useCloverPricingQuery } from "@/entities/clover";
 import { useViewerPersonaName } from "@/entities/persona";
-import { useSessionQuery } from "@/entities/session";
+import { isWebnovelOpen, useSessionQuery } from "@/entities/session";
 import { useHomeWebnovelsQuery } from "@/entities/webnovel";
 import { SITE_INTRO } from "@/shared/config/site";
 import { useInfiniteScrollSentinel } from "@/shared/lib/infinite-scroll/useInfiniteScrollSentinel";
@@ -109,13 +109,14 @@ export function HomePage({
   // 넣어, 결과 그리드가 그려진 뒤 섹션이 위에서 밀고 들어오지 않게 한다.
   const isLoggedIn = sessionQuery.data !== undefined;
   const pricingQuery = useCloverPricingQuery();
-  const isWebnovelOpen = isLoggedIn && pricingQuery.data?.novelPublicEnabled === true;
-  const homeWebnovelsQuery = useHomeWebnovelsQuery({ enabled: isWebnovelOpen });
+  const isWebnovelSectionOpen =
+    isLoggedIn && isWebnovelOpen(pricingQuery.data?.novelPublicEnabled, sessionQuery.data?.novelPublicEnabled);
+  const homeWebnovelsQuery = useHomeWebnovelsQuery({ enabled: isWebnovelSectionOpen });
   const isWebnovelPending = isHomeWebnovelPending({
     isSessionPending: sessionQuery.isPending,
     isLoggedIn,
     isPricingPending: pricingQuery.isPending,
-    isOpen: isWebnovelOpen,
+    isOpen: isWebnovelSectionOpen,
     isPending: homeWebnovelsQuery.isPending,
   });
   const isCurationPending = homeCurationQuery.isPending || isWebnovelPending;
@@ -128,7 +129,7 @@ export function HomePage({
     item: homeCurationQuery.data ?? null,
   });
   const homeWebnovels =
-    isWebnovelOpen && curationView.kind !== "waiting" && !isFiltered && !hasGivenUpCuration
+    isWebnovelSectionOpen && curationView.kind !== "waiting" && !isFiltered && !hasGivenUpCuration
       ? (homeWebnovelsQuery.data ?? [])
       : [];
   const isListPending = contentListQuery.isPending || curationView.kind === "waiting";

@@ -566,9 +566,18 @@ class Settings(BaseSettings):
     # 스위치도 켜져 있어야 한다. 끄는 동안에도 공개 상태 행은 남아 다시 켜면 그대로 돌아오고, 게시자의 공개 거두기는 막지
     # 않는다(자기 글을 내리는 일이라).
     novel_public_enabled: bool = False
+    # 노벨 미리보기 명단 — 계정 id, 쉼표 구분(따옴표 없이). 비어 있으면(기본값) 스위치가 켜졌을 때 모두에게 열린다. 비어
+    # 있지 않으면 스위치가 켜져 있어도 이 명단의 로그인 회원에게만 열리고, 나머지(비로그인 포함)에게는 스위치를 끈 것과 같다
+    # — 약관이 시행되기 전에 운영자만 운영 환경에서 시험해 보고, 시행일에 명단을 비워 모두에게 연다. 판정은
+    # `novel_public/access.py` 의 `novel_public_open_to` 하나다. UUID 가 아닌 항목이 있으면 api 가 기동하지 못한다.
+    novel_public_preview_allowlist: Annotated[list[uuid.UUID], NoDecode] = []
 
     @field_validator(
-        "novelize_grant_allowlist", "chat_premium_model_allowlist", "novelize_premium_model_allowlist", mode="before"
+        "novelize_grant_allowlist",
+        "chat_premium_model_allowlist",
+        "novelize_premium_model_allowlist",
+        "novel_public_preview_allowlist",
+        mode="before",
     )
     @classmethod
     def _split_novelize_grant_allowlist(cls, value: object) -> object:

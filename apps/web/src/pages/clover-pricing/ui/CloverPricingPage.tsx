@@ -18,6 +18,7 @@ import {
   type CloverPricingResponse,
   type CloverProductItem,
 } from "@/entities/clover";
+import { isWebnovelOpen, useSessionQuery } from "@/entities/session";
 import { CONTACT_EMAIL } from "@/shared/config/site";
 import { SUPPORT_DESTINATIONS } from "@/shared/config/supportDestinations";
 
@@ -268,6 +269,7 @@ function ProductLink({ product }: { product: CloverProductItem }) {
  *
  * 모델 목록이 없는 응답(사용처 단가를 싣기 전의 옛 API)이면 기본 모델 대화 단가 한 줄로 돌아간다. */
 function UsageCosts({ pricing }: { pricing: DeployedPricingResponse }) {
+  const isWebnovelShown = isWebnovelOpen(pricing.novelPublicEnabled, useSessionQuery().data?.novelPublicEnabled);
   const models = pricing.models ?? [];
   const [exampleProduct] = pricing.products;
   const exampleAmount = exampleProduct ? exampleProduct.paidAmount + exampleProduct.bonusAmount : 0;
@@ -290,7 +292,7 @@ function UsageCosts({ pricing }: { pricing: DeployedPricingResponse }) {
         )}
         {/* 노벨(회원이 공개한 소설)은 화마다 소장한다. 앞 몇 화는 무료라 그 수를 함께 적는다 — 단가만 보면 1화부터 드는
             것으로 읽힌다. 노벨이 꺼져 있으면 쓸 수 없는 사용처라 싣지 않는다(헤더 탭·홈 섹션과 같은 판정). */}
-        {pricing.novelPublicEnabled === true && pricing.novelReadCost !== undefined && (
+        {isWebnovelShown && pricing.novelReadCost !== undefined && (
           <UsageRow
             label={
               pricing.novelFreeChapterCount

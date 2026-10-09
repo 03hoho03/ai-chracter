@@ -5,6 +5,7 @@ import { Link, useNavigate, useRouterState, useSearch } from "@tanstack/react-ro
 
 import { useCloverPricingQuery } from "@/entities/clover";
 import { isContentType, resolveHomeContentType, toHomeTypeSwitchSearch } from "@/entities/content";
+import { isWebnovelOpen, useSessionQuery } from "@/entities/session";
 
 /** 캐릭터/스토리 유형 토글과 그 옆 "노벨"·"이미지" 링크를 한 줄로 내보낸다. 토글을 누르면 홈의 그 유형으로
  * 이동한다 — 유형의 진실은 홈 URL의 `?type=` 하나뿐이다(스토리는 파라미터 없음).
@@ -21,8 +22,8 @@ import { isContentType, resolveHomeContentType, toHomeTypeSwitchSearch } from "@
  * `data-[state=on]`에 걸려 있다). `aria-current="page"`는 TanStack `Link`가 활성일 때 스스로 붙인다.
  *
  * "노벨"은 즐기는 목적지라 만드는 도구(이미지)보다 캐릭터·스토리 쪽에 둔다. 비로그인에게도 보인다 — 누르면 라우트의
- * `requireSession`이 로그인으로 보냈다가 돌려보낸다(이미지 링크와 같다). 노벨이 꺼져 있으면(공개 가격 응답의 켜짐
- * 표시) 링크를 그리지 않는다. 응답을 받기 전에도 그리지 않는다 — 꺼진 서비스의 탭이 잠깐 보였다 사라지는 것보다
+ * `requireSession`이 로그인으로 보냈다가 돌려보낸다(이미지 링크와 같다). 노벨이 닫혀 있으면(`isWebnovelOpen` — 공개 가격
+ * 응답과 `/me` 의 켜짐 표시) 링크를 그리지 않는다. 응답을 받기 전에도 그리지 않는다 — 꺼진 서비스의 탭이 잠깐 보였다 사라지는 것보다
  * 켜진 서비스의 탭이 잠깐 늦게 나타나는 편이 낫다. 헤더는 노벨 코드를 import 하지 않는다(경로 문자열과 플래그만) —
  * 노벨 화면이 첫 화면 번들로 끌려오지 않게.
  *
@@ -50,7 +51,10 @@ export function ContentTypeToggle({
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const isImageStudio = pathname === "/studio/images" || pathname.startsWith("/studio/images/");
   const isWebnovels = pathname === "/webnovels" || pathname.startsWith("/webnovels/");
-  const isWebnovelOpen = useCloverPricingQuery().data?.novelPublicEnabled === true;
+  const isWebnovelLinkShown = isWebnovelOpen(
+    useCloverPricingQuery().data?.novelPublicEnabled,
+    useSessionQuery().data?.novelPublicEnabled,
+  );
 
   const handleValueChange = (value: string) => {
     // Radix ToggleGroup(type="single")은 이미 선택된 항목을 다시 누르면 빈 문자열을 emit한다 — 그 경우 무시해
@@ -79,7 +83,7 @@ export function ContentTypeToggle({
         <ToggleGroupItem value="story">스토리</ToggleGroupItem>
       </ToggleGroup>
       {/* `shrink-0`은 `toggleVariants`가 아니라 `ToggleGroupItem`이 붙이는 클래스라 여기 직접 준다. */}
-      {isWebnovelOpen && (
+      {isWebnovelLinkShown && (
         <Link
           to="/webnovels"
           data-state={isWebnovels ? "on" : "off"}

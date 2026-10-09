@@ -87,6 +87,7 @@ from api.db.models.auth import User, WithdrawnEmail
 from api.db.session import get_db_session
 from api.legal.dependencies import _latest_published_legal_version, _reconsent_required
 from api.llm.model_access import has_chat_premium_access, has_novel_premium_access
+from api.novel_public.access import novel_public_open_to
 from api.novelize.access import has_novelize_access
 from api.payments.config import identity_gate_active
 from api.payments.eligibility import purchase_block_reason
@@ -921,6 +922,7 @@ async def get_me(
         daily_free_chat_turns=rate_limit_gate.CHAT_DAILY_LIMIT,
         paid_clover_balance=await clover.paid_balance(db, user_id=user.id),
         purchase_block_reason=purchase_block_reason(user),
+        novel_public_enabled=novel_public_open_to(user.id),
     )
 
 

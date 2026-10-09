@@ -598,6 +598,7 @@ async def test_login_adult_issues_session_and_me_returns_user(
         "dailyFreeChatTurns": rate_limit_gate.CHAT_DAILY_LIMIT,
         "paidCloverBalance": 0,
         "purchaseBlockReason": "identity_required",
+        "novelPublicEnabled": False,
     }
 
 

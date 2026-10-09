@@ -60,6 +60,7 @@ from api.db.models.auth import User
 from api.db.models.clover import CloverLedger, CloverLot
 from api.db.session import get_db_session
 from api.legal.dependencies import require_legal_consent
+from api.novel_public.access import novel_public_open_to
 from api.llm.chat_models import CHAT_MODELS, DEFAULT_CHAT_MODEL, chat_turn_cost, novel_episode_unit_price
 from api.payments.config import identity_gate_active, payments_active
 from api.payments.methods import PAY_METHODS
@@ -216,7 +217,7 @@ async def get_clover_pricing() -> CloverPricingResponse:
         daily_free_chat_turns=rate_limit_gate.CHAT_DAILY_LIMIT,
         novel_read_cost=clover.NOVEL_READ_COST,
         novel_free_chapter_count=clover.NOVEL_FREE_CHAPTER_COUNT,
-        novel_public_enabled=settings.novel_public_enabled,
+        novel_public_enabled=novel_public_open_to(None),
         payments_enabled=payments_active(),
         identity_gate_enabled=identity_gate_active(),
         pay_methods=[

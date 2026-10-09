@@ -145,3 +145,6 @@ class MeResponse(CamelModel):
     # 지금 클로버를 살 수 없는 이유(살 수 있으면 null). 주문 생성과 같은 판정 함수라, 허브가 구매 다이얼로그를 열기 전에
     # 나이 제한을 알린다. 결제 스위치는 여기 없다(가격 응답의 `paymentsEnabled`).
     purchase_block_reason: PurchaseBlockReason | None
+    # 노벨이 이 회원에게 열려 있는가 — 라우트 게이트와 같은 판정 함수의 값이다. 인증 없는 가격 응답의 같은 이름 값은 미리보기
+    # 명단이 있는 동안 거짓이라, 명단 회원의 화면은 이 값으로 노벨 탭을 연다.
+    novel_public_enabled: bool
