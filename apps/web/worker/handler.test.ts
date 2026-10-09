@@ -64,6 +64,33 @@ describe("handleRequest", () => {
     expect(await response.text()).toBe("/assets/chunk");
   });
 
+  it("없는 자산 파일은 SPA 셸 대신 캐시 금지 404다 — 옛 번들 이름에 HTML이 캐시되지 않게", async () => {
+    // Pages 자산 서버는 없는 파일에도 index.html을 200으로 준다.
+    const env = createEnv({
+      ASSETS: {
+        fetch: () =>
+          Promise.resolve(
+            new Response("<!doctype html>", {
+              status: 200,
+              headers: {
+                "content-type": "text/html; charset=utf-8",
+                "cache-control": "public, max-age=14400, must-revalidate",
+              },
+            }),
+          ),
+      },
+    });
+
+    const response = await handleRequest(get("/assets/index-old.js"), env, {
+      cache: NOOP_CACHE,
+    });
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
+  });
+
   it("딥링크는 index.html을 200으로 받는다 (SPA 폴백)", async () => {
     const env = createEnv();
 

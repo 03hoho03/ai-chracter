@@ -11,12 +11,12 @@
 | 테마 | 다크 기본 + 토글 | **라이트 고정** — `.dark`를 절대 붙이지 않는다 |
 | dev 포트 | 5173 | **5174**(`vite.config.ts`의 `server.port`, 동시 기동용) |
 | FSD 레이어 | 빈 레이어를 `.gitkeep`으로 미리 만든다 | **실제로 여러 화면이 공유할 때만 추가한다** |
-| 서버 렌더 보조 | `worker/`(봇 메타·sitemap) | **없다** — `_worker.js`가 없는 정적 SPA다 |
+| 서버 렌더 보조 | `worker/`(봇 메타·sitemap) | **없다** — `public/_worker.js` 하나가 없는 자산 파일 요청을 404로 바꾸는 일만 한다 |
 | 색인 | Worker가 `robots.txt`를 만든다 | `public/robots.txt`로 **전면 차단**(`Disallow: /`) |
 | 인증 | 세션 쿠키 + 구글 로그인 | 같은 모양, **다른 엔드포인트**(아래) |
 
 - **라이트 고정이라 다크에서만 드러나는 문제를 여기서는 못 본다.** 반대로 `packages/ui`를 고칠 때 다크만 확인하면 admin이 깨진다.
-- **`_worker.js`가 없어서 host 조건을 걸 자리가 없다** — 옛 `*.pages.dev` 주소를 새 도메인으로 넘기지 못하고(`_redirects`는 경로만 본다), `SameSite=lax` 쿠키라 거기서는 로그인도 안 된다. 의도된 결과이며 `admin.ddona.site`를 쓴다(`DEPLOY.md` "스택" 절).
+- **옛 `*.pages.dev` 주소를 새 도메인으로 넘기지 않는다** — `SameSite=lax` 쿠키라 거기서는 로그인도 안 된다. 의도된 결과이며 `admin.ddona.site`를 쓴다(`DEPLOY.md` "스택" 절). `public/_worker.js`가 있으니 host 조건을 걸 자리는 생겼지만, 넘길 이유가 생길 때까지 그 Worker는 자산 404 하나만 맡긴다.
 - **색인 차단은 web과 완전히 무관하다** — 별도 Pages 프로젝트라 web의 `robots.txt`(Worker 생성)를 고쳐도 admin에는 아무 영향이 없다. 등록 정책은 `DEPLOY.md` "admin 색인 차단" 절.
 
 ## 인증
