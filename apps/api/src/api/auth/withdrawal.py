@@ -178,10 +178,10 @@ async def erase_account(
     novel_ids = (await db.scalars(select(Novel.id).where(Novel.user_id == user_id))).all()
     await delete_novels(db, novel_ids)
     # 노벨: 이 사람이 게시자면 위에서 소설이 지워지고 남의 구매 행은 그대로 남는다 — 환급 없이 열람만 끝나고, 구매 행이
-    # 구매자에게 "게시자가 탈퇴했다"를 알려 줄 근거다. 이 사람이 산 구매 행은 지운다 — "이 사람이 어느 소설을 읽었는가"의
-    # 기록이라 대화 참여 기록(아래)과 같이 파기하고, 거래 기록은 원장과 사용처 행에 남는다. 지워진 구매는 그 뒤 게시자가
-    # 소설을 지워도 환급 대상이 아니다(탈퇴로 잔액이 이미 소멸했다).
-    await db.execute(delete(NovelPurchase).where(NovelPurchase.buyer_user_id == user_id))
+    # 구매자에게 "게시자가 탈퇴했다"를 알려 줄 근거다. 이 사람이 산 구매 행은 지우지 않고 구매자 칸만 비운다 — 화·가격·
+    # 차감 원장이 거래 기록으로 남아야 하지만 "이 사람이 어느 소설을 읽었는가"는 남기지 않는다. 구매자가 빈 구매는 그 뒤
+    # 게시자가 소설을 지워도 환급 대상이 아니다(탈퇴로 잔액이 이미 소멸했다).
+    await db.execute(update(NovelPurchase).where(NovelPurchase.buyer_user_id == user_id).values(buyer_user_id=None))
     # 남의 노벨을 읽은 자리도 "무엇을 어디까지 읽었는가"의 기록이라 같이 지운다. 노벨 좋아요는 남긴다 — 작품 좋아요와
     # 같이, 지우면 탈퇴가 남의 소설 순위를 움직인다.
     await db.execute(delete(NovelReaderPosition).where(NovelReaderPosition.user_id == user_id))

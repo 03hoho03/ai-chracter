@@ -8,8 +8,8 @@
 **삭제 환급** — 게시자가 산 화가 든 소설이나 마지막 묶음을 지우면, 그 화를 산 구매마다 차감을 깎은 로트로 되돌린다(유료는
 유료로, 무료·보너스는 그대로). 전액 취소가 성공으로 확정된 결제에서 나온 로트의 몫은 돌려주지 않는다 — 그 로트로 되돌리면
 돈과 클로버를 함께 돌려받는다. 부분 환불·진행 중이거나 실패한 취소의 결제는 정상 환급한다. 돌려준 양이 있으면 구매자에게
-알림을 하나 보낸다. 공개 철회·게시자 탈퇴는 환급하지 않는다(열람만 끝난다). 탈퇴한 구매자의 구매 행은 탈퇴 때
-지워지므로 환급 대상에 없다.
+알림을 하나 보낸다. 공개 철회·게시자 탈퇴는 환급하지 않는다(열람만 끝난다). 탈퇴한 구매자의 구매 행은 구매자 칸이
+비어 남지만 환급 대상이 아니다 — 탈퇴로 잔액이 이미 소멸했고 돌려받을 사람이 없다(`_REFUNDABLE`).
 
 **잠금 순서는 사용자 행(관련된 모든 사람, id 순) → 공개 상태 행 → 구매 행 → 클로버(배분 → 로트)다.** 구매는 구매자와
 게시자를, 삭제는 게시자와 그 소설의 구매자 전부를 같은 규칙으로 잡는다. 사용자 행을 사람마다 따로 잡으면 서로의 소설을
@@ -224,6 +224,11 @@ async def purchase_novel_chapter(
 
 
 # ── 삭제 환급 ────────────────────────────────────────────────────────────────
+# 삭제가 돌려줄 구매: 아직 환급하지 않았고 구매자가 있는 것. 탈퇴한 구매자의 구매는 구매자 칸이 비어 남는데, 잠글 사람도
+# 돌려받을 잔액도 없으니 잠금·환급·삭제 전 고지에서 모두 뺀다.
+_REFUNDABLE = (NovelPurchase.refunded_at.is_(None), NovelPurchase.buyer_user_id.is_not(None))
+
+
 async def lock_publisher_and_buyers(
     db: AsyncSession, *, publisher_id: uuid.UUID, novel_id: uuid.UUID
 ) -> frozenset[uuid.UUID]:
@@ -234,12 +239,10 @@ async def lock_publisher_and_buyers(
     없다(모듈 docstring)."""
     buyers = (
         await db.scalars(
-            select(distinct(NovelPurchase.buyer_user_id)).where(
-                NovelPurchase.novel_id == novel_id, NovelPurchase.refunded_at.is_(None)
-            )
+            select(distinct(NovelPurchase.buyer_user_id)).where(NovelPurchase.novel_id == novel_id, *_REFUNDABLE)
         )
     ).all()
-    user_ids = frozenset({publisher_id, *buyers})
+    user_ids = frozenset({publisher_id, *(buyer for buyer in buyers if buyer is not None)})  # `_REFUNDABLE` 이 이미 걸렀다
     await lock_users_in_order(db, user_ids)
     return user_ids
 
@@ -265,7 +268,7 @@ async def refund_deleted_purchases(
     알림을 하나씩 보낸다. **커밋하지 않는다** — 지우기와 같은 트랜잭션이어야 "지웠는데 환급이 없다"가 생기지 않는다.
     `lock_publisher_and_buyers` 뒤에 부른다. 잠그지 않은 구매자가 보이면 409 `NOVEL_DELETE_CONFLICT`(모듈 docstring)."""
     await db.execute(select(NovelPublication.novel_id).where(NovelPublication.novel_id == novel_id).with_for_update())
-    statement = select(NovelPurchase).where(NovelPurchase.novel_id == novel_id, NovelPurchase.refunded_at.is_(None))
+    statement = select(NovelPurchase).where(NovelPurchase.novel_id == novel_id, *_REFUNDABLE)
     if chapter_ids is not None:
         statement = statement.where(NovelPurchase.chapter_id.in_(chapter_ids))
     purchases = (
@@ -280,6 +283,7 @@ async def refund_deleted_purchases(
 
     by_buyer: dict[uuid.UUID, list[NovelPurchase]] = {}
     for purchase in purchases:
+        assert purchase.buyer_user_id is not None  # `_REFUNDABLE` 이 구매자 없는 행을 뺐다
         by_buyer.setdefault(purchase.buyer_user_id, []).append(purchase)
     now = await db.scalar(select(func.now()))
     for buyer_id, owned in by_buyer.items():
@@ -311,7 +315,7 @@ async def _buyers_and_amount(
 ) -> tuple[int, int]:
     statement = select(
         func.count(distinct(NovelPurchase.buyer_user_id)), func.coalesce(func.sum(NovelPurchase.price), 0)
-    ).where(NovelPurchase.novel_id == novel_id, NovelPurchase.refunded_at.is_(None))
+    ).where(NovelPurchase.novel_id == novel_id, *_REFUNDABLE)
     if chapter_ids is not None:
         statement = statement.where(NovelPurchase.chapter_id.in_(chapter_ids))
     buyers, amount = (await db.execute(statement)).one()
