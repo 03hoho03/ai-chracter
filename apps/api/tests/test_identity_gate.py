@@ -1,4 +1,4 @@
-"""미인증 회원 게이트: 채팅 무료분 0(빌더 미리보기 포함)·출석·미션 수령 차단, `/me/clover` 의 두 필드, 탈퇴한 같은 사람의
+"""미인증 회원 게이트: 채팅 무료분 0(빌더 미리보기 포함)·미션 수령 차단, `/me/clover` 의 유료 잔액, 탈퇴한 같은 사람의
 1회성 미션 재수령 차단.
 
 **스위치가 꺼져 있으면 지금과 같다** — 그래서 게이트가 거는 자리마다 같은 입력으로 스위치만 바꾼 꺼짐/켜짐 쌍을 둔다. 꺼짐
@@ -271,71 +271,9 @@ async def test_room_send_returns_the_identity_403(
     assert (resp.status_code, resp.json()["detail"]) == (403, {"code": "IDENTITY_VERIFICATION_REQUIRED"})
 
 
-# ── 출석 ─────────────────────────────────────────────────────────────────
-@_GATE
-async def test_attendance_is_gated(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, gate: bool
-) -> None:
-    _set_gate(monkeypatch, gate)
-    user = await _member(db_session)
-    await _login_as(db_client, user.id)
-
-    resp = await db_client.post("/me/clover/attendance")
-
-    if gate:
-        assert (resp.status_code, resp.json()["detail"]) == (403, {"code": "IDENTITY_VERIFICATION_REQUIRED"})
-        assert await _ledger_kinds(db_session, user.id) == []
-    else:
-        assert resp.json() == {"granted": True, "balance": clover.ATTENDANCE_GRANT_AMOUNT}
-
-
-async def test_attendance_already_claimed_today_is_still_403(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """같은 날 검사보다 앞이라 "이미 받음"(`granted=false`)을 보이지 않는다."""
-    _set_gate(monkeypatch, True)
-    user = await _member(db_session, clover_attendance_granted_on=clover.kst_today(datetime.now(UTC)))
-    await _login_as(db_client, user.id)
-
-    resp = await db_client.post("/me/clover/attendance")
-
-    assert resp.status_code == 403
-
-
-@pytest.mark.parametrize(
-    "overrides",
-    [pytest.param(_verified(), id="verified"), pytest.param({"rate_limit_exempt": True}, id="exempt")],
-)
-async def test_attendance_passes_verified_and_exempt_members(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, overrides: dict[str, object]
-) -> None:
-    _set_gate(monkeypatch, True)
-    user = await _member(db_session, **overrides)
-    await _login_as(db_client, user.id)
-
-    resp = await db_client.post("/me/clover/attendance")
-
-    assert resp.json() == {"granted": True, "balance": clover.ATTENDANCE_GRANT_AMOUNT}
-
-
 # ── /me/clover ───────────────────────────────────────────────────────────
-@_GATE
-@pytest.mark.parametrize("verified", [pytest.param(False, id="unverified"), pytest.param(True, id="verified")])
-async def test_attendance_claimable_means_a_press_would_pay(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, gate: bool, verified: bool
-) -> None:
-    """`attendanceClaimable` 은 "누르면 지급된다"다 — 게이트에 걸린 회원에게 참이면 보이는 버튼이 403 을 받는다."""
-    _set_gate(monkeypatch, gate)
-    user = await _member(db_session, **(_verified() if verified else {}))
-    await _login_as(db_client, user.id)
-
-    resp = await db_client.get("/me/clover")
-
-    assert resp.json()["attendanceClaimable"] is (verified or not gate)
-
-
 async def test_paid_balance_counts_only_purchased_lots(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
-    """탈퇴 경고가 쓰는 값이다 — 구매로 받은 유료·보너스의 남은 양만 세고, 출석 같은 무료 지급은 세지 않는다."""
+    """탈퇴 경고가 쓰는 값이다 — 구매로 받은 유료·보너스의 남은 양만 세고, 무료 지급은 세지 않는다."""
     user = await _member(db_session, balance=0)
     order = await _make_payment(db_session, user_id=user.id, status="paid", paid_at=datetime.now(UTC))
     await clover.grant(db_session, user_id=user.id, amount=1_000, kind="purchase_paid", payment_id=order.id)
@@ -471,11 +409,16 @@ async def test_mission_claim_is_gated_before_achievement(
         assert resp.json()["granted"] is True
 
 
-async def test_mission_claim_by_an_exempt_member_passes(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    "overrides",
+    [pytest.param(_verified(), id="verified"), pytest.param({"rate_limit_exempt": True}, id="exempt")],
+)
+async def test_mission_claim_passes_verified_and_exempt_members(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, overrides: dict[str, object]
 ) -> None:
+    """게이트가 켜져도 본인인증한 회원과 면제 회원은 미션 보상을 받는다 — 인증한 회원이 막히면 게이트는 풀 길이 없는 벽이다."""
     _set_gate(monkeypatch, True)
-    await _publisher(db_session, db_client, rate_limit_exempt=True)
+    await _publisher(db_session, db_client, **overrides)
 
     resp = await db_client.post("/me/clover/missions/first_publish/claim")
 

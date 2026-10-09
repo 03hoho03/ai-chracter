@@ -238,7 +238,7 @@ compose 가 읽는 이미지 키는 `API_IMAGE_BLUE`·`API_IMAGE_GREEN` 둘이�
 | `PORTONE_API_SECRET` | 포트원 V2 API 시크릿 | 결제·본인인증 조회와 환불(취소) 호출. 비면 결제·본인인증이 꺼진다(기동은 막지 않는다) |
 | `PORTONE_WEBHOOK_SECRET` | 포트원 콘솔의 웹훅 시크릿(`whsec_…`) | 결제 웹훅 서명 검증. 비거나 형식이 틀리면 모든 웹훅이 503 으로 돌아가 포트원이 재시도한다(Bugsink 에 남는다). 서명 시각 허용 오차가 5분이라 VM 시계(NTP)가 맞아야 한다 |
 | `IDENTITY_CI_HMAC_KEY` | `openssl rand -hex 32` 등으로 발급한 무작위 값 | 본인인증 CI 를 저장하기 전에 HMAC 으로 바꾸는 키. **한번 정하면 바꾸지 말 것** — 바뀌면 이미 인증한 사람과 대조가 어긋나 같은 사람이 다른 계정으로 다시 인증할 수 있게 된다. `WITHDRAWN_EMAIL_HMAC_KEY` 와 다른 값을 쓴다. 비면 본인인증이 꺼진다 |
-| `PAYMENTS_ENABLED` / `IDENTITY_GATE_ENABLED` | 켤 때 `true`(코드 기본값은 둘 다 `false`) | 결제 스위치 / 미인증 회원의 무료 대화·출석·미션을 막는 본인인증 게이트 스위치. 결제는 스위치와 위 포트원 키 넷, 그리고 본인인증 설정(상점 id·본인인증 채널키·API 시크릿·`IDENTITY_CI_HMAC_KEY`)이 모두 있어야 열린다 — 결제는 늘 본인인증을 요구해서다. 꺼져 있어도 웹훅 시크릿이 있으면 웹훅은 처리한다(진행 중 결제와 콘솔 취소를 맞춘다) |
+| `PAYMENTS_ENABLED` / `IDENTITY_GATE_ENABLED` | 켤 때 `true`(코드 기본값은 둘 다 `false`) | 결제 스위치 / 미인증 회원의 무료 대화·미션을 막는 본인인증 게이트 스위치. 결제는 스위치와 위 포트원 키 넷, 그리고 본인인증 설정(상점 id·본인인증 채널키·API 시크릿·`IDENTITY_CI_HMAC_KEY`)이 모두 있어야 열린다 — 결제는 늘 본인인증을 요구해서다. 꺼져 있어도 웹훅 시크릿이 있으면 웹훅은 처리한다(진행 중 결제와 콘솔 취소를 맞춘다) |
 | `PAYMENT_DISCORD_WEBHOOK_URL` | 결제 알림용 디스코드 채널 웹훅 주소 | 결제·환불 완료 알림(상품·금액·상태만, 회원·주문을 알아볼 단서는 싣지 않는다). 비면 건너뛴다. 크론 알림의 `DISCORD_WEBHOOK_URL` 과 다른 키다 |
 | `LOCAL_IMAGE_BASE_URL` | 집 PC 서버를 가리키는 터널 origin | **이미지 생성 필수** — 비어 있으면 capabilities가 전부 불가로 내려가 생성이 사전 차단된다. "이미지 생성" 절 |
 | `LOCAL_IMAGE_ACCESS_CLIENT_ID` / `LOCAL_IMAGE_ACCESS_CLIENT_SECRET` | Cloudflare Access 서비스 토큰 | **이미지 생성 필수**. "이미지 생성" 절 |
@@ -1203,7 +1203,7 @@ API 가상환경·SQLAlchemy를 import하지 않으며 Discord·메일·공지�
 
 ### 3-9. 클로버 만료 — expire cron
 
-출석·미션(과 백필) 클로버는 지급일(KST) 자정 + 8일에
+미션(과 백필) 클로버는 지급일(KST) 자정 + 8일에
 만료된다. 차감·잔액 판정 경로(`core/clover.py`)는 만료 필터를 걸지 않는다 — **만료의
 진실은 이 크론뿐이다.** 이 크론이 며칠 죽어도 Σ 불변식은 깨지지 않지만(배치 실행 전에 쓰인
 만료분은 이미 `remaining`이 줄어 있다), 만료분이 계속 쓰이는 유저에게 유리한 방향의 오차가

@@ -13,14 +13,16 @@ missions.py`의 판정 쿼리이지 채팅·발행·이미지 생성 플로우 �
 """
 
 import uuid
+from datetime import UTC, datetime
 
 import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.core.clover import earned_lot_expiry
 from api.db.models.auth import User
 from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom
-from api.db.models.clover import CloverLedger
+from api.db.models.clover import CloverLedger, CloverLot
 from api.db.models.content import (
     Content,
     ContentTarget,
@@ -173,6 +175,28 @@ async def test_claiming_the_same_mission_twice_grants_only_once(
 
     after = await _get_mission(db_client, "first_image")
     assert after == {"key": "first_image", "reward": 200, "achieved": True, "claimed": True}
+
+
+async def test_mission_claim_creates_a_lot_expiring_at_kst_midnight_plus_eight_days(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """무료 지급인 미션 보상에는 만료가 붙는다(지급일 KST 자정 + 8일). 이 테스트가 빨개지는 조건: 청구 라우트가
+    `grant()`에 `expires_at`을 안 넘기면 로트가 무기한(`expires_at IS NULL`)으로 생겨 무료 클로버가 영영 남는다."""
+    user = await _logged_in(db_client, db_session)
+    db_session.add(_make_image_request(owner_user_id=user.id, status="succeeded"))
+    await db_session.flush()
+
+    # 요청 전에 `now`를 한 번만 잡는다 — 응답 뒤에 다시 잡으면 그 사이 KST 자정을 걸쳐 만료 날짜가 하루 어긋날 수 있다.
+    now = datetime.now(UTC)
+    resp = await db_client.post("/me/clover/missions/first_image/claim")
+    assert resp.json()["granted"] is True
+
+    lot = (
+        await db_session.scalars(
+            select(CloverLot).where(CloverLot.user_id == user.id, CloverLot.kind == "mission_grant")
+        )
+    ).one()
+    assert lot.expires_at == earned_lot_expiry(now)
 
 
 async def test_claiming_an_unachieved_mission_is_rejected(

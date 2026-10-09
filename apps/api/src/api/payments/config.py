@@ -40,6 +40,6 @@ def payments_active() -> bool:
 
 
 def identity_gate_active() -> bool:
-    """미인증 회원의 무료 대화·출석·미션을 막는 게이트가 켜져 있는가. 인증할 수 없는 환경에서 게이트만 켜지면 아무도
+    """미인증 회원의 무료 대화·미션을 막는 게이트가 켜져 있는가. 인증할 수 없는 환경에서 게이트만 켜지면 아무도
     풀 수 없으므로 본인인증 설정이 함께 있어야 한다."""
     return settings.identity_gate_enabled and identity_configured()

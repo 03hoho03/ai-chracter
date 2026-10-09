@@ -24,8 +24,6 @@ class CloverBalanceResponse(CamelModel):
     balance: int
     # 오늘(KST) 이미 확인했는가 — false면 FE가 소진 시 확인 모달을 띄운다.
     spend_confirmed_today: bool
-    # 지금 출석을 누르면 지급되는가 — 오늘(KST) 아직 안 받았고 본인인증 게이트에 걸리지 않았다.
-    attendance_claimable: bool
     # 구매로 받은 클로버(유료+보너스) 중 남은 양. 탈퇴하면 이 몫도 사라지므로 탈퇴 화면이 경고에 쓴다.
     paid_balance: int
     # `expires_at > now()`인 로트만 본다(이미 만료됐지만
@@ -34,13 +32,6 @@ class CloverBalanceResponse(CamelModel):
     # 이내인지는 BE가 판정한다**(`clover/router.py`의 `EXPIRING_SOON_THRESHOLD`) — 값(3일)과
     # 판정 주체(채우는 쪽) 둘 다 설계에서 정해진 것이다.
     expiring_soon: CloverExpiringSoon | None
-
-
-class CloverAttendanceResponse(CamelModel):
-    # 오늘 이미 받았으면 false다. **에러가 아니다** — 멱등을 서버가 보장하므로
-    # FE가 여러 번 불러도 200이고, `useEffect` 경합도 안전하다.
-    granted: bool
-    balance: int
 
 
 class CloverMissionItem(CamelModel):
@@ -59,8 +50,8 @@ class CloverMissionsResponse(CamelModel):
 
 
 class CloverMissionClaimResponse(CamelModel):
-    # 이미 청구했으면 false다 — 출석(`CloverAttendanceResponse.granted`)과 같은 규칙,
-    # **에러가 아니다**.
+    # 이미 청구했으면 false다. **에러가 아니다** — 멱등을 서버가 보장하므로
+    # FE가 여러 번 불러도 200이고, `useEffect` 경합도 안전하다.
     granted: bool
     balance: int
 
@@ -115,6 +106,6 @@ class CloverPricingResponse(CamelModel):
     payments_enabled: bool
     # 구매 화면이 고를 수 있는 결제수단(`payments/methods.py` 가 유일한 목록).
     pay_methods: list[CloverPayMethodItem]
-    # 미인증 회원 게이트(무료 대화·출석·미션을 본인인증한 회원에게만)가 켜져 있는가. 로그인하지 않은 방문자도 읽는 정책
+    # 미인증 회원 게이트(무료 대화·미션을 본인인증한 회원에게만)가 켜져 있는가. 로그인하지 않은 방문자도 읽는 정책
     # 문장이 이 값으로 갈린다 — 꺼진 동안 "본인인증을 마친 회원은"이라고 쓰면 거짓이다. `GET /me` 와 같은 판정 함수다.
     identity_gate_enabled: bool

@@ -43,7 +43,6 @@ logger = logging.getLogger(__name__)
 # `monkeypatch.setattr`가 통하지 않는다(`core/rate_limit.py`의 상한 상수와 같은 규칙).
 CHAT_TURN_COST = 10
 IMAGE_UNIT_COST = 30
-ATTENDANCE_GRANT_AMOUNT = 100
 # 소설화 단가 — 화 하나의 클로버와 AI 문단 수정 한 번의 클로버. 생성 한 번은 묶음 하나를 여러 화로 쓰고 화 수 × 화
 # 단가를 낸다. 다시 만들기도 같은 호출이라 같은 화 단가다. 화 80: 운영에서 기본 모델 소설화 호출 다섯 번의 평균 토큰을
 # 이 모델의 2027년 인상 후 단가로 계산하면 호출 하나에 약 78원이고 장 경계 제안 약 4.6원을 더해 약 83원이다 — 쓸 수 있는
@@ -280,7 +279,7 @@ async def spend(
     """조건부 UPDATE + 원장 INSERT. 잔액이 모자라면 **아무것도 하지 않고 `None`**.
 
     성공하면 차감 후 잔액과 원장 id 를 돌려준다. 환급은 그 id 로 이 차감의 배분을 찾아 깎은 로트로 되돌린다. **커밋은 호출자가 한다** — 게이트만 별도 트랜잭션이
-    필요하고 어드민·출석·탈퇴는 호출자 세션에 얹혀야 조치와 원장이
+    필요하고 어드민·탈퇴는 호출자 세션에 얹혀야 조치와 원장이
     같이 커밋되거나 같이 롤백된다. 그래서 커밋 정책을 이 함수가 갖지 않는다.
 
     총액 CAS가 통과한 뒤 로트를 만료 임박 우선
@@ -382,10 +381,10 @@ async def grant(
     유니크 인덱스가 그걸 막는 유일한 수단이고, 더블클릭·재시도가
     곧 중복 지급이라 어드민 경로는 반드시 키를 넣는다.
 
-    🔴 `expires_at`은 호출 지점이 명시해야 한다 — 만료가 붙는 지급은 출석·미션·기존
+    🔴 `expires_at`은 호출 지점이 명시해야 한다 — 만료가 붙는 무료 지급은 미션과 기존
     잔액 백필뿐이고, 어드민 지급과 환불은 `None`(무기한)이다. 기본값을 `None`으로 둔 이유는
-    어드민 지급·환불 호출부가 만료를 안 넘겨 기본값에 기대기 때문이다 — 출석·미션(둘 다
-    `clover/router.py`)은 `core.clover.earned_lot_expiry`로 계산한 값을 명시적으로 넘긴다.
+    어드민 지급·환불 호출부가 만료를 안 넘겨 기본값에 기대기 때문이다 — 미션 청구
+    (`clover/router.py`)는 `core.clover.earned_lot_expiry`로 계산한 값을 명시적으로 넘긴다.
     """
     ledger = await _apply(
         db,
@@ -798,7 +797,8 @@ def kst_today(now: datetime) -> date:
 
     naive `now`는 거부한다 — `seconds_until_kst_midnight`와 같은 이유다. `astimezone`이
     naive를 **프로세스 로컬 시간**으로 재해석해서 같은 입력이 컨테이너 TZ마다 다른 날짜를 낸다.
-    출석·차감 확인이 이 날짜로 판정되므로, 틀리면 하루에 두 번 지급되거나 하루를 건너뛴다.
+    차감 확인과 무료 지급 로트의 만료가 이 날짜로 판정되므로, 틀리면 확인을 하루에 두 번 묻거나 하루를 건너뛰고
+    만료 시각이 하루 어긋난다.
 
     `now`를 인자로 받는 이유는 테스트다 — 이 저장소에 시간을 얼리는 수단이 0건이라
     (`freezegun`·`time-machine` 전부 없다) 경계 검증은 리터럴 주입으로만 된다.
@@ -814,7 +814,7 @@ def is_same_kst_day(last: date | None, now: datetime) -> bool:
 
 
 def earned_lot_expiry(now: datetime) -> datetime:
-    """출석·미션 지급이 만드는 로트의 만료 시각 — 지급일(KST) 자정 + 8일.
+    """미션 지급이 만드는 로트의 만료 시각 — 지급일(KST) 자정 + 8일.
     `kst_today`를 재사용해 날짜를 구하고(naive `now` 거부도 그쪽에
     위임한다), 그 날의 KST 자정에 8일을 더한다.
 
@@ -825,7 +825,7 @@ def earned_lot_expiry(now: datetime) -> datetime:
     🔴 마이그레이션(`cf74d6d53561_clover_lots.py`)의 `_legacy_lot_expiry`가 같은 계산을
     별도로 갖는다 — 마이그레이션이 `api.*`를 import하지 않는 것이 이 저장소 관례라
     사본이 둘인 것은 의도다. **다만 두 값은 반드시 같아야 한다** — 한쪽만 고치면 백필
-    로트와 출석·미션 로트의 유효기간 규칙이 갈린다.
+    로트와 미션 로트의 유효기간 규칙이 갈린다.
     """
     midnight_kst = datetime.combine(kst_today(now), time.min, tzinfo=KST)
     return midnight_kst + timedelta(days=8)

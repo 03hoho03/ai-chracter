@@ -1,4 +1,4 @@
-"""`ops/expire_clover.py` — 출석·미션 클로버 만료 배치.
+"""`ops/expire_clover.py` — 미션 클로버 만료 배치.
 
 `test_ops_purge_image_requests.py`(같은 `run_sh` 경계 모킹 패턴)를 그대로 베꼈다. Postgres가
 실제로 이 SQL을 원자적으로 실행하는지는 이 스위트가 검증하지 않는다 — `run_sh`가 매번 진짜
