@@ -1,12 +1,11 @@
+import { insertionIndex, type RemovalPlace } from "@/features/build-common";
 import type { StatDefValues } from "@/features/build-story";
 
 /**
  * 되돌리기를 위해 잡아 둔 지운 스탯 — 값 그대로(같은 id)와, 어느 시작설정에서 어떤 순서 속에 있었는지.
  *
- * `order` 는 지울 때 그 시작설정의 스탯 id 순서다(지운 스탯 포함). 아직 되돌릴 수 있는 앞선 삭제도 제자리에 끼워 둔
- * 순서라, 연달아 지운 스탯들을 어떤 차례로 되돌려도 서로의 앞뒤가 지우기 전과 같아진다. 위치를 인덱스로만 기억하면 순서를
- * 바꿔 되돌릴 때 어긋난다 — 예를 들어 `가 나 다 라` 에서 나·다를 차례로 지운 뒤 나를 먼저 되돌리고 다를 되돌리면, 다가
- * 지울 때의 인덱스(1)로 들어가 `가 다 나 라` 가 된다.
+ * `order` 는 지울 때 그 시작설정의 스탯 id 순서다(지운 스탯 포함, 아직 되돌릴 수 있는 앞선 삭제도 제자리에 끼운 것). 왜
+ * 인덱스가 아니라 순서를 기억하는지는 반복 항목 공용 삭제와 같다(`RemovalPlace`).
  */
 export type RemovedStat = {
   startingSetupId: string;
@@ -18,29 +17,9 @@ export type RemovedStat = {
 
 type StartingSetupStats = { id: string; stats: readonly StatDefValues[] };
 
-/**
- * `order` 에서 `id` 바로 앞에 있던 것들 가운데 지금 `ids` 에 남아 있는 가장 가까운 것 뒤가 `id` 의 자리다. 앞의 것이
- * 하나도 남아 있지 않으면 맨 앞이다. 그 사이 새로 추가한 스탯은 원래 순서에 없으므로 기준이 되지 않고 제자리에 남는다.
- */
-function insertionIndex(ids: readonly string[], order: readonly string[], id: string): number {
-  for (let at = order.indexOf(id) - 1; at >= 0; at--) {
-    const found = ids.indexOf(order[at] ?? "");
-    if (found !== -1) return found + 1;
-  }
-  return 0;
-}
-
-/**
- * 스탯 하나를 지우기 직전의 `RemovedStat.order` 를 만든다. `ids` 는 지금 목록(지울 스탯 포함), `pending` 은 같은
- * 시작설정에서 앞서 지웠고 아직 되돌릴 수 있는 것들(지운 차례대로)이다 — 그것들을 각자 기억한 자리에 다시 끼운다.
- */
-export function orderWithPendingRemovals(ids: readonly string[], pending: readonly RemovedStat[]): string[] {
-  const order = [...ids];
-  for (const removed of pending) {
-    if (order.includes(removed.stat.id)) continue;
-    order.splice(insertionIndex(order, removed.order, removed.stat.id), 0, removed.stat.id);
-  }
-  return order;
+/** 같은 시작설정에서 앞서 지웠고 아직 되돌릴 수 있는 스탯 삭제의 자리 정보(`orderWithPendingRemovals` 의 인자). */
+export function statRemovalPlace(removed: Pick<RemovedStat, "order" | "stat">): RemovalPlace {
+  return { id: removed.stat.id, order: removed.order };
 }
 
 /**

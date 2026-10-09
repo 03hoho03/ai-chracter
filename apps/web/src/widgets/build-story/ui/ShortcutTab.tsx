@@ -11,6 +11,7 @@ import {
   ItemRemoveButton,
   itemOpenKey,
   useBuilderUiState,
+  useUndoableRemoval,
 } from "@/features/build-common";
 import { FieldLabelText, type StoryBuilderFormValues, type StoryCollapsibleList } from "@/features/build-story";
 import { firstLine } from "@/shared/lib/text/firstLine";
@@ -26,8 +27,15 @@ export function ShortcutTab() {
   const form = useFormContext<StoryBuilderFormValues>();
 
   const { control, getValues } = form;
-  const { fields, append, remove } = useFieldArray({ control, name: "shortcuts" });
+  const { fields, append, remove, insert } = useFieldArray({ control, name: "shortcuts" });
   const uiState = useBuilderUiState();
+  const removeWithUndo = useUndoableRemoval({
+    getItems: () => getValues("shortcuts"),
+    remove,
+    insert: (index, shortcut) => insert(index, shortcut, { shouldFocus: false }),
+    openKey: (id) => itemOpenKey(SHORTCUT_LIST, id),
+    objectPhrase: (shortcut) => (shortcut.name.trim() ? `‘${shortcut.name.trim()}’ 단축어를` : "이름 없는 단축어를"),
+  });
   const addButtonRef = useRef<HTMLButtonElement>(null);
 
   function handleAppend() {
@@ -42,7 +50,7 @@ export function ShortcutTab() {
     // 지우기 전에 포커스를 옮긴다 — 지운 뒤로 미루면 누른 삭제 버튼이 사라지며 포커스가 문서 맨 앞으로 떨어진다.
     const keys = getValues("shortcuts").map((shortcut) => itemOpenKey(SHORTCUT_LIST, shortcut.id));
     focusNeighborToggle(keys, index, addButtonRef.current);
-    remove(index);
+    removeWithUndo(index);
   }
 
   return (

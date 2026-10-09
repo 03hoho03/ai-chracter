@@ -9,10 +9,12 @@ import {
   itemOpenKey,
   useBuilderUiState,
   useSortableList,
+  useUndoableRemoval,
 } from "@/features/build-common";
 import {
   createKeywordNote,
   FieldLabelText,
+  keywordNoteTitle,
   MAX_ALWAYS_ON_KEYWORD_NOTES,
   MAX_KEYWORD_NOTES,
   type StoryBuilderFormValues,
@@ -34,7 +36,7 @@ export function KeywordNoteTab() {
     getValues,
     formState: { errors },
   } = form;
-  const { fields, append, remove, move } = useFieldArray({ control, name: "keywordNotes" });
+  const { fields, append, remove, move, insert } = useFieldArray({ control, name: "keywordNotes" });
   const uiState = useBuilderUiState();
   const startingSetups = useWatch({ control, name: "startingSetups" });
   // 상시 개수만 따로 구독한다 — 노트 배열 전체를 구독하면 아무 노트에 한 글자 칠 때마다 카드 50개가 다시 그려진다.
@@ -49,6 +51,16 @@ export function KeywordNoteTab() {
     itemObject: "노트를",
     orderMeaning: "위에 있을수록 먼저 실려요.",
   });
+  const removeWithUndo = useUndoableRemoval({
+    getItems: () => getValues("keywordNotes"),
+    remove,
+    insert: (index, note) => insert(index, note, { shouldFocus: false }),
+    openKey: (id) => itemOpenKey(KEYWORD_NOTE_LIST, id),
+    objectPhrase: (note) => {
+      const title = keywordNoteTitle(note);
+      return title ? `‘${title}’ 노트를` : "이름 없는 노트를";
+    },
+  });
   // 배열 자체의 위반(노트 수·상시 수 상한)이 담기는 자리는 탭 마운트 상태에 따라 `.message` 와 `.root.message` 로
   // 갈린다(StartingSetupTab 의 같은 자리 주석 참고). 둘 다 읽는다.
   const notesError = errors.keywordNotes?.message ?? errors.keywordNotes?.root?.message;
@@ -60,7 +72,7 @@ export function KeywordNoteTab() {
     // 있으므로 지우기 전에 옮긴다.
     const keys = getValues("keywordNotes").map((note) => itemOpenKey(KEYWORD_NOTE_LIST, note.id));
     focusNeighborToggle(keys, index, document.getElementById(ADD_BUTTON_ID));
-    remove(index);
+    removeWithUndo(index);
     sortable.announce("노트를 삭제했어요.");
   }
 

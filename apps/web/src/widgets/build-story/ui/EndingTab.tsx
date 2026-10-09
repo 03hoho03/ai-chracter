@@ -19,6 +19,7 @@ import {
   useBuilderSelection,
   useBuilderUiState,
   useSortableList,
+  useUndoableRemoval,
   type SortableHandleProps,
 } from "@/features/build-common";
 import {
@@ -347,20 +348,28 @@ function PriorityStatField({ id, stats, value, isMissing, onChange }: PrioritySt
 }
 
 /** 선택된 시작설정 하나의 엔딩 목록. `key={시작설정 id}`로 감싸 StatSection과 동일하게 시작설정
- * 전환마다 useFieldArray를 완전히 새로 마운트한다. */
+ * 전환마다 useFieldArray를 완전히 새로 마운트한다. 삭제 되돌리기도 이 목록이 쥐어, 시작설정을 바꾸거나 탭을 떠나면 그 토스트가
+ * 닫힌다 — 다시 마운트된 목록에는 지울 때 잡은 필드 배열이 없다. */
 function EndingSection({ startingSetupIndex }: { startingSetupIndex: number }) {
   const form = useFormContext<StoryBuilderFormValues>();
   const uiState = useBuilderUiState();
 
   const { control, getValues } = form;
   const endingsPath = `startingSetups.${startingSetupIndex}.endings` as const;
-  const { fields, append, remove, move } = useFieldArray({ control, name: endingsPath });
+  const { fields, append, remove, move, insert } = useFieldArray({ control, name: endingsPath });
   const stats = useWatch({ control, name: `startingSetups.${startingSetupIndex}.stats` });
   const sortable = useSortableList({
     ids: fields.map((field) => field.id),
     move,
     itemObject: "엔딩을",
     orderMeaning: "위에 있는 엔딩부터 판정해요.",
+  });
+  const removeWithUndo = useUndoableRemoval({
+    getItems: () => getValues(endingsPath),
+    remove,
+    insert: (index, ending) => insert(index, ending, { shouldFocus: false }),
+    openKey: (id) => itemOpenKey(ENDING_LIST, id),
+    objectPhrase: (ending) => (ending.name.trim() ? `‘${ending.name.trim()}’ 엔딩을` : "이름 없는 엔딩을"),
   });
   const addButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -369,7 +378,7 @@ function EndingSection({ startingSetupIndex }: { startingSetupIndex: number }) {
   function handleRemove(index: number) {
     const keys = getValues(endingsPath).map((ending) => itemOpenKey(ENDING_LIST, ending.id));
     focusNeighborToggle(keys, index, addButtonRef.current);
-    remove(index);
+    removeWithUndo(index);
   }
 
   // 새 엔딩은 펼친 채 이름 칸에 포커스한다. 열림 기록은 `append` 와 같은 핸들러에서 먼저 해야 새 본문이 보이는 채로

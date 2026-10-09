@@ -21,6 +21,7 @@ import {
   itemOpenKey,
   useBuilderUiState,
   useLimitedTextField,
+  useUndoableRemoval,
 } from "@/features/build-common";
 import { firstLine } from "@/shared/lib/text/firstLine";
 import { RequiredText } from "@/shared/ui/RequiredText";
@@ -40,7 +41,7 @@ export function IntroTab() {
     getValues,
     formState: { errors },
   } = form;
-  const { fields, append, remove } = useFieldArray({ control, name: "intro.exampleDialogues" });
+  const { fields, append, remove, insert } = useFieldArray({ control, name: "intro.exampleDialogues" });
   const uiState = useBuilderUiState();
   const addButtonRef = useRef<HTMLButtonElement>(null);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(() => fields.length > 0);
@@ -48,6 +49,15 @@ export function IntroTab() {
   const firstMessage = useLimitedTextField<CharacterBuilderFormValues>("intro.firstMessage", MAX_INTRO_LENGTH);
   const playGuide = useLimitedTextField<CharacterBuilderFormValues>("intro.playGuide", MAX_PLAY_GUIDE_LENGTH);
   const isExampleDialogueFull = fields.length >= MAX_EXAMPLE_DIALOGUES;
+  const removeWithUndo = useUndoableRemoval({
+    getItems: () => getValues("intro.exampleDialogues"),
+    remove,
+    insert: (index, dialogue) => insert(index, dialogue, { shouldFocus: false }),
+    openKey: (id) => itemOpenKey(EXAMPLE_DIALOGUE_LIST, id),
+    objectPhrase: exampleDialogueObjectPhrase,
+    // 스위치를 끈 채 되돌리면 무엇이 돌아왔는지 보이지 않고 포커스할 머리 줄도 없다 — 켜서 보인다.
+    beforeRestore: () => setIsAdvancedOpen(true),
+  });
 
   // 스위치를 끈 채 이 탭에서 발행하면 예시 대화 오류가 화면에 없는 입력칸에 걸려 아무것도 보이지 않는다. 그래서 발행이 예시
   // 대화에 새 오류 묶음을 내면 그때 한 번 스위치를 켠다. 오류가 남은 채 사용자가 다시 끄는 것은 막지 않는다 — 오류 객체가
@@ -75,7 +85,7 @@ export function IntroTab() {
     // 지우기 전에 포커스를 옮긴다 — 지운 뒤로 미루면 누른 삭제 버튼이 사라지며 포커스가 문서 맨 앞으로 떨어진다.
     const keys = getValues("intro.exampleDialogues").map((dialogue) => itemOpenKey(EXAMPLE_DIALOGUE_LIST, dialogue.id));
     focusNeighborToggle(keys, index, addButtonRef.current);
-    remove(index);
+    removeWithUndo(index);
   }
 
   return (
@@ -177,6 +187,20 @@ export function IntroTab() {
       </div>
     </div>
   );
+}
+
+/** 토스트에 담을 사용자 대사 앞부분의 길이(코드 포인트). 긴 대사가 토스트 문장을 늘이지 않게 자른다. */
+const DIALOGUE_SNIPPET_LENGTH = 20;
+
+/** 토스트 문장의 목적어("‘안녕, 오랜만이야’ 예시 대화를") — 이름이 없어 사용자 대사 첫 줄 앞부분으로 가른다. */
+function exampleDialogueObjectPhrase(dialogue: { userLine: string }): string {
+  const characters = [...firstLine(dialogue.userLine)];
+  if (characters.length === 0) return "빈 예시 대화를";
+  const snippet =
+    characters.length > DIALOGUE_SNIPPET_LENGTH
+      ? `${characters.slice(0, DIALOGUE_SNIPPET_LENGTH).join("")}…`
+      : characters.join("");
+  return `‘${snippet}’ 예시 대화를`;
 }
 
 type ExampleDialogueItemProps = {
