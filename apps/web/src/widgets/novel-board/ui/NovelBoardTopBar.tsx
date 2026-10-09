@@ -1,7 +1,7 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft, History, Loader2, Plus } from "lucide-react";
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 
 import type { NovelChapterJobFlow } from "@/features/create-novel-chapter";
 
@@ -16,6 +16,8 @@ type NovelBoardTopBarProps = {
   versions?: { isOpen: boolean; onToggle: () => void };
   /** 다음 화 만들기. 상세를 받기 전에는 없다. */
   create?: CreateChapterAction;
+  /** 노벨 공개 버튼(ghost) — 공개는 다른 기능이라 화면이 넣는다. 버전 앞에 놓인다. */
+  publishAction?: ReactNode;
 };
 
 type CreateChapterAction = {
@@ -32,10 +34,10 @@ type CreateChapterAction = {
  * (full-bleed, `px-4 sm:px-6`) — 그 아래 `h-below-header` 높이 계산이 그대로 맞는다.
  *
  * 뒤로가기는 기록 뒤로가 아니라 작품 정보로 가는 고정 목적지다 — 보드에 오는 길이 여럿이다(작품 정보, 읽기 화면 끝의
- * "편집"). 이 화면의 유일한 솔리드 채움은 "다음 화 만들기"이고, 버전은 윤곽 토글이다. `sm` 미만에서는 두 버튼의
+ * "편집"). 이 화면의 유일한 솔리드 채움은 "다음 화 만들기"이고, 버전은 윤곽 토글, 노벨 공개는 ghost 다. `sm` 미만에서는 두 버튼의
  * 라벨을 숨기고 아이콘과 접근 이름만 남긴다(빌더 상단 바와 같은 규칙).
  */
-export function NovelBoardTopBar({ novelId, title, autosaveNotice, versions, create }: NovelBoardTopBarProps) {
+export function NovelBoardTopBar({ novelId, title, autosaveNotice, versions, create, publishAction }: NovelBoardTopBarProps) {
   return (
     <header className="sticky top-0 z-30 h-14 shrink-0 border-b border-border bg-background">
       <div className="flex h-14 items-center gap-2 px-4 sm:gap-3 sm:px-6">
@@ -52,6 +54,7 @@ export function NovelBoardTopBar({ novelId, title, autosaveNotice, versions, cre
           {!!autosaveNotice && <p className="hidden truncate text-xs text-muted-foreground sm:block">{autosaveNotice}</p>}
         </div>
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+          {publishAction}
           {versions !== undefined && (
             <Button
               type="button"

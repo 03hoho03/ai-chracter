@@ -10,6 +10,7 @@ export type NovelChapterSummary = components["schemas"]["NovelChapterSummary"];
 export type NovelBatchSummary = components["schemas"]["NovelBatchSummary"];
 export type NovelChapterReadingPosition = components["schemas"]["NovelChapterReadingPosition"];
 export type NovelPendingAiEdit = components["schemas"]["NovelPendingAiEdit"];
+export type NovelPurchaseRefundPreview = components["schemas"]["NovelPurchaseRefundPreview"];
 
 /** `GET /novels/{id}` — 소설 상세(장 목차·진행 중 작업·단가·입력 상한). 단가와 상한은 이 응답에서만 읽고 화면에
  * 사본을 두지 않는다 — 서버가 값을 바꾸면 사본이 조용히 어긋난다.

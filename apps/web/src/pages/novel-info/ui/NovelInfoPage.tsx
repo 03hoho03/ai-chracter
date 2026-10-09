@@ -16,6 +16,7 @@ import {
   type NovelDetailResponse,
 } from "@/entities/novel";
 import { NovelCoverActions, NovelSynopsisEditor, NovelTitleEditor } from "@/features/edit-novel-info";
+import { NovelPublicSection } from "@/features/publish-novel";
 import { GeneratedImagePickerModal } from "@/features/select-generated-image";
 
 import { NovelDeleteSection } from "./NovelDeleteSection";
@@ -172,6 +173,8 @@ function NovelInfoContent({ novel }: { novel: NovelDetailResponse }) {
         )}
         {novel.activeJob !== null && <ActiveJobNotice novelId={novel.id} />}
       </div>
+
+      <NovelPublicSection novel={novel} />
 
       <NovelSynopsisEditor novel={novel} />
 

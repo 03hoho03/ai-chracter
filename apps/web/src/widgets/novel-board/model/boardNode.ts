@@ -17,6 +17,9 @@ export type BoardEpisode = Pick<NovelChapterSummary, "id" | "batchId" | "ordinal
   hasPendingAiEdit: boolean;
   /** 이 화가 든 묶음을 다시 만드는 중인가. */
   isRegenerating: boolean;
+  /** 노벨에 공개 중인 화면 그 표시 — 공개본이 지금 글과 같은가(`published`), 공개한 뒤 고쳤는가(`changed`). 공개하지
+   * 않은 화·공개를 거둔 소설은 없다. */
+  publicMark?: "published" | "changed";
 };
 export type BoardBatch = Pick<NovelBatchSummary, "id" | "ordinal"> & {
   /** 묶음에 든 화 범위(`3~5화`). 화가 없는 묶음(낡은 상세)은 `undefined`. */
