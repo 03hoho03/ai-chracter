@@ -1,4 +1,5 @@
 import json
+import logging
 import uuid
 from pathlib import Path
 from typing import Any
@@ -1272,6 +1273,43 @@ async def test_send_message_dumps_prompt_when_configured(
     # 지시문이 실렸는지 모르면 회차를 나중에 설명할 수 없다.
     assert record["systemInstruction"] == _read_golden_prompt("system_instruction_character.txt")
     assert record["prompt"] == fake.received_prompt
+
+
+async def test_send_message_prompt_dump_failure_still_finishes_the_turn(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """덤프는 실험용 부가 기록이다. 쓰다 실패해도 경고만 남기고 턴은 `done` 까지 간다 — 덤프 실패가 SSE 제너레이터
+    본문을 뚫으면 요청 세션이 강제로 닫혀 그 턴이 끊긴다."""
+    # 디렉터리를 덤프 파일 자리로 주면 추가 모드로 열지 못해 쓰기가 실패한다.
+    monkeypatch.setattr(settings, "prompt_dump_path", str(tmp_path))
+
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+
+    fake = _FakeLLMClient(tokens=["안녕"])
+    _override_llm_client(fake)
+    try:
+        with caplog.at_level(logging.WARNING):
+            resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "반가워"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    events = _parse_sse_events(resp.text)
+    assert [event["type"] for event in events] == ["token", "done"]
+    assert events[-1]["finalMessage"]["content"] == "안녕"
+    assert any("프롬프트 덤프 실패" in record.getMessage() for record in caplog.records)
 
 
 def test_prompt_dump_names_the_chat_model_and_its_actual_id(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
