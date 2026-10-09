@@ -7,6 +7,12 @@
 
 그래서 "라우터에 남아 있으면서 호출부 일부가 옮겨 간 이름"을 지키는 목록에 두고, 테스트 파일들을 `ast` 로 훑어
 그 이름을 라우터에 패치하는 곳을 찾는다. 라우터 쪽 호출부만 감싸는 것이 맞는 패치는 허용 목록에 이유와 함께 적는다.
+
+훑는 범위는 좁다. 잡는 꼴은 `setattr`·`delattr`·`patch.object` 에 라우터 모듈(테스트 파일이 import 한 별칭이나
+`api.chat.router`)과 문자열 리터럴 이름을 넘기는 꼴, 그리고 `setattr`·`patch` 에 `"api.chat.router.X"` 문자열을 넘기는
+꼴뿐이다. 이름을 변수로 넘기는 패치(`parametrize` 뒤의 `setattr(chat_router, name, ...)` 등), `chat_router.X = ...` 직접
+대입, `patch.multiple`, 모듈을 다른 변수에 담아 쓰는 꼴(`r = chat_router`, `from api import chat` 뒤의 `chat.router`)은
+못 본다. 허용 목록은 테스트 함수 단위라, 허용된 함수 안에서는 지키는 이름의 라우터 패치가 더 생겨도 통과한다.
 """
 
 import ast
@@ -18,11 +24,17 @@ TESTS_DIR = Path(__file__).parent
 CHAT_DIR = Path(chat_router.__file__).parent
 ROUTER_MODULE = "api.chat.router"
 
-# 라우터에 계속 import 돼 있고 라우터 안 호출부도 남아 있지만, 일부 호출부가 아래 모듈들로 옮겨 간 이름.
-# 타입·모델 클래스는 넣지 않는다 — 옮긴 코드에서 주석으로만 쓰거나 생성자 호출이 라우터에만 있다. `settings` 도
-# 넣지 않는다 — 테스트는 모듈 속성이 아니라 `settings` 객체의 속성을 패치하므로 대상 객체가 같아 빗나가지 않는다.
+# 라우터의 속성이면서 아래 모듈들이 `이름(...)` 으로 부르는 이름. 라우터에 패치하면 그 모듈들의 호출부는 빗나간다.
+# 생성자를 부르는 모델 클래스와 SQLAlchemy 함수도 같은 이유로 넣는다. 두 방향 모두 아래 테스트가 기계적으로 맞춘다.
+# 부르지 않고 주석·비교에만 쓰는 공유 이름(타입, `DEFAULT_CHAT_MODEL`, `settings` 등)은 훑지 않는다.
 GUARDED = frozenset(
     {
+        "PromptNames",
+        "EndingRuleItem",
+        "EndingRuleGroupItem",
+        "select",
+        "and_",
+        "pg_insert",
         "load_room_stats",
         "format_persona",
         "preview_ending_rule_list_item",
@@ -35,6 +47,10 @@ GUARDED = frozenset(
     }
 )
 MOVED_CALLER_MODULES = ("turn_prompt.py", "room_stats.py")
+# 위 조건에 맞지만 지키지 않는 이름 → 이유.
+EXCLUDED = {
+    "dataclass": "클래스를 정의할 때 부르는 데코레이터라, 테스트가 패치할 때는 두 모듈 모두 이미 부른 뒤다.",
+}
 
 # `파일::함수`(클래스 안이면 `파일::클래스::함수`) → 라우터 쪽 패치가 맞는 이유.
 ALLOWLIST = {
@@ -127,14 +143,25 @@ def test_every_allowlisted_test_still_patches_a_guarded_router_name() -> None:
     assert stale == [], f"허용 목록 항목이 가리키는 패치가 더는 없다 — 항목을 지워라: {stale}"
 
 
-def test_guarded_names_are_router_attributes_still_called_from_moved_modules() -> None:
-    """지키는 목록이 헛돌지 않게 한다 — 라우터에서 사라진 이름은 패치가 `AttributeError` 로 이미 깨지고, 옮겨 간
-    모듈이 더는 부르지 않는 이름은 라우터 패치가 빗나갈 일이 없다. 둘 다 목록에서 빼야 할 항목이다."""
+def _names_called_from_moved_modules() -> set[str]:
     called: set[str] = set()
     for module_file in MOVED_CALLER_MODULES:
         tree = ast.parse((CHAT_DIR / module_file).read_text(encoding="utf-8"))
         called.update(
             node.func.id for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
         )
-    assert sorted(name for name in GUARDED if not hasattr(chat_router, name)) == []
-    assert sorted(GUARDED - called) == []
+    return called
+
+
+def test_guarded_names_are_router_attributes_still_called_from_moved_modules() -> None:
+    """지키는 목록이 헛돌지 않게 한다 — 라우터에서 사라진 이름은 패치가 `AttributeError` 로 이미 깨지고, 옮겨 간
+    모듈이 더는 부르지 않는 이름은 라우터 패치가 빗나갈 일이 없다. 둘 다 목록에서 빼야 할 항목이다."""
+    called = _names_called_from_moved_modules()
+    assert sorted(name for name in GUARDED | set(EXCLUDED) if not hasattr(chat_router, name)) == []
+    assert sorted((GUARDED | set(EXCLUDED)) - called) == []
+
+
+def test_every_router_attribute_called_from_moved_modules_is_guarded_or_excluded() -> None:
+    """옮겨 간 모듈이 라우터와 같은 이름을 새로 부르기 시작하면 지키는 목록에 넣거나 이유와 함께 제외하게 한다."""
+    shared = {name for name in _names_called_from_moved_modules() if hasattr(chat_router, name)}
+    assert sorted(shared - GUARDED - set(EXCLUDED)) == []
