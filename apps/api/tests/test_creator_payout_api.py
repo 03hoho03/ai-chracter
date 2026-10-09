@@ -8,13 +8,16 @@ import uuid
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 import httpx
 import pytest
-from sqlalchemy import func, select, update
+from fastapi import HTTPException
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.admin.creator_payout import _lock_application
+from api.auth.withdrawal import erase_account
 from api.core import config
 from api.core.config import settings
 from api.creator_payout.router import APPLICATION_RECEIVED_MESSAGE
@@ -445,7 +448,6 @@ async def test_revoke_stops_accrual_and_keeps_confirmed_rows(
     ("change", "reason"),
     [
         pytest.param({"suspended_at": datetime.now(UTC)}, "suspended", id="suspended"),
-        pytest.param({"deleted_at": datetime.now(UTC)}, "withdrawn", id="withdrawn"),
         pytest.param({"identity_verified_at": None, "identity_ci_hmac": None}, "identity_required", id="unverified"),
     ],
 )
@@ -542,22 +544,58 @@ async def test_decisions_refuse_the_wrong_state(db_client: httpx.AsyncClient, db
     assert (missing.status_code, missing.json()["detail"]) == (404, {"code": "CREATOR_PAYOUT_APPLICATION_NOT_FOUND"})
 
 
-async def test_withdrawn_applicant_can_still_be_rejected(
+async def test_erased_applicant_leaves_the_queue_and_cannot_be_decided(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """탈퇴 회원의 대기 신청도 거절해 큐에서 뺄 수 있어야 한다(승인만 막는다)."""
-    creator, _ = await _creator(db_session)
-    await _apply(db_client, creator)
-    application_id = await _application_id(db_session, creator, "pending")
-    creator.deleted_at = datetime.now(UTC)
-    await db_session.flush()
+    """탈퇴하면 대기 신청 행이 파기되어 큐에서 빠지고, 그 신청을 처리하려 하면 404 다(처리 화면을 열어 둔 채 탈퇴가 끝난
+    경우). 다른 회원의 신청은 큐에 그대로다."""
+    leaver, _ = await _creator(db_session)
+    stayer, _ = await _creator(db_session)
+    await _apply(db_client, leaver)
+    await _apply(db_client, stayer)
+    application_id = await _application_id(db_session, leaver, "pending")
+
+    async def keep(storage_key: str) -> None:
+        return None
+
+    await erase_account(db_session, leaver, delete_storage_object=keep)
     await _as_admin(db_client, db_session)
 
     resp = await db_client.post(
         f"/admin/creator-payout/applications/{application_id}/reject", json={"reasonText": "탈퇴"}
     )
+    queue = await db_client.get("/admin/creator-payout/applications")
 
-    assert resp.status_code == 204
+    assert (resp.status_code, resp.json()["detail"]) == (404, {"code": "CREATOR_PAYOUT_APPLICATION_NOT_FOUND"})
+    assert [item["userId"] for item in queue.json()["items"]] == [str(stayer.id)]
+
+
+async def test_application_erased_while_waiting_for_the_member_lock_is_404(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """처리는 신청 행의 회원을 잠금 없이 읽은 뒤 그 회원 행을 잠근다. 그 사이에 탈퇴가 커밋되면 신청 행이 없다 — 500 이 아니라
+    404 여야 한다. 첫 읽기 직후 신청 행을 지워 그 엇갈림을 만든다."""
+    creator, _ = await _creator(db_session)
+    await _apply(db_client, creator)
+    application_id = await _application_id(db_session, creator, "pending")
+    original_scalar = AsyncSession.scalar
+    reads = 0
+
+    async def scalar_then_withdraw(self: AsyncSession, *args: Any, **kwargs: Any) -> Any:
+        nonlocal reads
+        reads += 1
+        result = await original_scalar(self, *args, **kwargs)
+        if reads == 1:
+            await self.execute(delete(CreatorPayoutApplication).where(CreatorPayoutApplication.id == application_id))
+        return result
+
+    monkeypatch.setattr(AsyncSession, "scalar", scalar_then_withdraw)
+    with pytest.raises(HTTPException) as raised:
+        await _lock_application(db_session, application_id)
+
+    # `HTTPException.detail` 은 str 로 선언돼 있지만 이 라우터는 코드를 담은 dict 를 넣는다.
+    detail: object = raised.value.detail
+    assert (raised.value.status_code, detail) == (404, {"code": "CREATOR_PAYOUT_APPLICATION_NOT_FOUND"})
 
 
 async def test_admin_queue_stays_open_while_switched_off(

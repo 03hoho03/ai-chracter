@@ -28,6 +28,7 @@ from api.db.models.auth import User, WithdrawnEmail, WithdrawnIdentity
 from api.db.models.chat import ChatMessageReport, ChatRoom
 from api.db.models.clover import CloverLedger, CloverSpendUsage
 from api.db.models.content import Content, ContentChatParticipant, ContentVisibility
+from api.db.models.creator_payout import CreatorPayoutApplication
 from api.db.models.feature_grant import UserFeatureGrant
 from api.db.models.inquiry import Inquiry
 from api.db.models.media import Asset, AssetKind, ImageGenerationRequest
@@ -203,6 +204,11 @@ async def erase_account(
     )
     # 기능 허용은 계정에 딸린 설정이라 계정과 함께 지운다. 누가 언제 허용했는지는 감사 로그에 남는다.
     await db.execute(delete(UserFeatureGrant).where(UserFeatureGrant.user_id == user_id))
+    # 정산 신청 기록(신청·동의 시각, 처리 결과와 사유, 적립 구간)은 동의로 받은 기록이라 탈퇴하면 지체 없이 파기한다.
+    # 확정 행·내역 줄·배치 실행 기록은 신청 행을 참조하지 않아 그대로 남는다 — 그쪽은 세법상 장부로 보존한다. 적립 구간이
+    # 사라져도 탈퇴한 회원은 월 확정 배치가 건너뛰므로 정산이 달라지지 않는다. 어드민의 신청 처리도 이 회원의 `users` 행을
+    # 먼저 잠그므로, 잠금을 쥔 지금 지우면 처리 도중의 신청과 엇갈리지 않는다.
+    await db.execute(delete(CreatorPayoutApplication).where(CreatorPayoutApplication.user_id == user_id))
 
     # 위 `profile_image_asset_id = None` 대입이 DB에 반영된
     # 뒤라야 아래 `DELETE FROM assets`가 FK 위반을 내지 않는다. autoflush에 기대지 않는다.

@@ -60,7 +60,8 @@ def _require_reason(reason_text: str) -> None:
 
 async def _lock_application(db: AsyncSession, application_id: uuid.UUID) -> tuple[User, CreatorPayoutApplication]:
     """신청자 `users` 행 → 신청 행 순서로 잠근다. 신청자를 먼저 알아야 하므로 신청 행의 `user_id` 는 잠금 없이 읽는다
-    (그 칸은 바뀌지 않는다). 탈퇴 회원도 잠근다 — 거절·승인 취소는 탈퇴 회원의 신청에도 할 수 있어야 큐에서 빠진다."""
+    (그 칸은 바뀌지 않는다). 탈퇴는 같은 `users` 행을 잠근 채 신청 행을 지우므로, 그 사이에 탈퇴가 끝났으면 신청 행이 없어
+    404 다."""
     user_id = await db.scalar(
         select(CreatorPayoutApplication.user_id).where(CreatorPayoutApplication.id == application_id)
     )
@@ -79,8 +80,10 @@ async def _lock_application(db: AsyncSession, application_id: uuid.UUID) -> tupl
         .with_for_update()
         .execution_options(populate_existing=True)
     )
-    # 회원 행은 탈퇴해도 지우지 않고 신청 행은 지우는 경로가 없다.
-    assert user is not None and application is not None
+    # 회원 행은 탈퇴해도 지우지 않는다.
+    assert user is not None
+    if application is None:
+        raise _error(status.HTTP_404_NOT_FOUND, "CREATOR_PAYOUT_APPLICATION_NOT_FOUND")
     return user, application
 
 

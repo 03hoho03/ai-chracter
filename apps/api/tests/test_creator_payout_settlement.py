@@ -182,32 +182,65 @@ async def test_self_play_stays_excluded_after_the_spender_is_erased(db_session: 
     assert (await _confirmed(db_session, b.user, OCT)).gross_units == 0
 
 
-async def test_withdrawal_erases_the_spender_but_keeps_every_settlement(db_session: AsyncSession) -> None:
+async def test_withdrawal_erases_the_spender_and_the_application_but_keeps_every_settlement(
+    db_session: AsyncSession,
+) -> None:
     """탈퇴는 그 회원이 지불자인 사용처의 지불자만 끊는다 — 작품 소유자·자기 플레이 칸과 다른 회원의 행은 그대로이고,
-    탈퇴 회원의 작품에서 다른 회원(C)이 쓴 행의 지불자도 남는다. 같은 달 확정 값은 탈퇴 전후가 같다: A 는 B·C 가 쓴
-    44 × 3/22 = 6원, B 는 C 가 B 작품에 쓴 22 × 3/22 = 3원(자기 사용은 빠진다).
+    탈퇴 회원의 작품에서 다른 회원(C)이 쓴 행의 지불자도 남는다. 탈퇴 회원 B 의 정산 신청 행은 거절된 옛 신청까지 모두
+    지우고, 탈퇴 전에 확정한 B 의 9월 확정 행(C 가 B 작품에 쓴 22 × 3/22 = 3원)과 그 내역 줄은 그대로 남는다. 다른 회원의
+    신청 행은 그대로이고, A 의 같은 달 확정 값(B·C 가 쓴 44 × 3/22 = 6원)은 탈퇴 전후가 같다.
 
     사용은 9월이다 — 탈퇴 시각이 실제 지금이라, 그보다 앞서야 B 의 작품 사용이 "소유자 탈퇴 뒤"로 빠지지 않고 자기 플레이
     판정까지 간다."""
     a, a_content = await _creator(db_session)
     b = await _make_player(db_session, amount_krw=9_900, paid=3_300)
     c = await _make_player(db_session, amount_krw=9_900, paid=3_300)
+    db_session.add(
+        CreatorPayoutApplication(
+            user_id=b.user.id,
+            status="rejected",
+            consented_at=kst(8, 1),
+            privacy_version="2026-10-01",
+            applied_at=kst(8, 1),
+            decided_at=kst(8, 2),
+            decision_reason="발행한 작품이 없어요",
+        )
+    )
     await _application(db_session, b.user.id, accrual_start_at=APPROVED_BEFORE_OCTOBER)
+    c_application = await _application(db_session, c.user.id, accrual_start_at=APPROVED_BEFORE_OCTOBER)
     b_content = await _make_draft_content(db_session, creator_user_id=b.user.id)
     await _use(db_session, b, a_content, 22, kst(9, 10))
     await _use(db_session, b, b_content, 22, kst(9, 11))
     await _use(db_session, c, a_content, 22, kst(9, 12))
     await _use(db_session, c, b_content, 22, kst(9, 13))
 
-    async def september() -> tuple[int, int]:
-        return (
-            (await _confirmed(db_session, a, SEP)).amount_krw,
-            (await _confirmed(db_session, b.user, SEP)).amount_krw,
-        )
+    async def a_september() -> int:
+        async with db_session.begin_nested() as nested:
+            amount = (await _confirmed(db_session, a, SEP)).amount_krw
+            await nested.rollback()
+        return amount
 
-    async with db_session.begin_nested() as before_withdrawal:
-        before = await september()
-        await before_withdrawal.rollback()
+    async def b_confirmed() -> list[tuple[object, ...]]:
+        rows = await db_session.execute(
+            select(
+                CreatorPayoutConfirmation.id,
+                CreatorPayoutConfirmation.period_month,
+                CreatorPayoutConfirmation.gross_units,
+                CreatorPayoutConfirmation.exact_krw,
+                CreatorPayoutConfirmation.amount_krw,
+                CreatorPayoutConfirmationLine.content_id,
+                CreatorPayoutConfirmationLine.payment_id,
+                CreatorPayoutConfirmationLine.net_units,
+                CreatorPayoutConfirmationLine.exact_krw,
+            )
+            .join(CreatorPayoutConfirmationLine)
+            .where(CreatorPayoutConfirmation.user_id == b.user.id)
+        )
+        return [tuple(row) for row in rows]
+
+    a_before = await a_september()
+    assert (await _confirmed(db_session, b.user, SEP)).amount_krw == 3
+    b_before = await b_confirmed()
 
     async def keep(storage_key: str) -> None:
         return None
@@ -225,8 +258,15 @@ async def test_withdrawal_erases_the_spender_but_keeps_every_settlement(db_sessi
         [(None, a.id, False), (None, b.user.id, True), (c.user.id, a.id, False), (c.user.id, b.user.id, False)],
         key=str,
     )
-    assert before == (6, 3)
-    assert await september() == before
+    applications = (
+        (await db_session.execute(select(CreatorPayoutApplication.id, CreatorPayoutApplication.user_id))).tuples().all()
+    )
+    assert sorted(user_id for _, user_id in applications) == sorted([a.id, c.user.id])
+    assert c_application.id in {application_id for application_id, _ in applications}
+    assert a_before == 6
+    assert await a_september() == a_before
+    assert b_before and [row[5:7] for row in b_before] == [(b_content.id, c.payment.id)]
+    assert await b_confirmed() == b_before
 
 
 # ── 부분 환급, 월을 넘는 환급, 음수 달 ────────────────────────────────────────

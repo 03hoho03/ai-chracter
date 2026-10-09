@@ -1,7 +1,8 @@
 """크리에이터 정산 — 정산 신청(`creator_payout_applications`), 확정 행(`creator_payout_confirmations`), 확정 행의 작품 ×
 결제별 내역(`creator_payout_confirmation_lines`), 월 확정 배치의 달별 실행 기록(`creator_payout_batch_runs`).
 
-앞의 세 테이블은 탈퇴해도 지우지 않는다 — 확정 행과 내역은 지급·세무의 근거이고, 신청 행은 적립 구간의 근거다.
+확정 행·내역·배치 실행 기록은 탈퇴해도 지우지 않는다 — 지급·세무의 근거라 세법상 장부로 보존한다. 신청 행은 동의로 받은
+기록이라 탈퇴하면 지운다(`auth/withdrawal.py`). 그래서 확정 행·내역은 신청 행을 참조하지 않는다.
 상태·종류는 Text + Literal + CHECK 이다(`db/models/payment.py` 와 같은 방식). 🔴 `alembic check` 는 CHECK·부분 인덱스의
 WHERE·복합 PK 를 비교하지 않는다 — 이 파일의 제약은 `pytest.raises(IntegrityError)` 행위 테스트가 유일한 검증이다.
 """

@@ -22,6 +22,7 @@ from sqlalchemy import delete, select, text, update
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from api.auth.withdrawal import erase_account
 from api.core import config
 from api.core.clover import CloverKind, refund_spend, spend
 from api.creator_payout import monthly
@@ -338,6 +339,38 @@ async def test_withdrawn_creator_is_skipped(db_session: AsyncSession, factory: F
 
     assert await _monthly_rows(db_session, creator) == []
     assert results == [MonthResult(date(2026, 10, 1), 0, 0, 0, 0)]
+
+
+async def test_erased_creator_keeps_confirmed_rows_and_the_batch_settles_the_others(
+    db_session: AsyncSession, factory: Factory
+) -> None:
+    """X·Y 모두 10-01 승인, 10월에 각자 작품에서 22 → 10월 확정 각 3원. 그 뒤 X 가 탈퇴해 신청 행이 파기된다. 11월에 Y 작품
+    44 → 11월은 Y 만 6원으로 확정되고, X 는 11월 행이 없으며 10월 행은 그대로다. 깨지는 시나리오: 탈퇴가 확정 행까지 지우면
+    X 의 10월 행이 사라지고, 신청 행이 남은 채 배치가 탈퇴를 건너뛰지 않으면 X 의 11월 행이 생긴다."""
+    x, x_content = await _creator(db_session)
+    y, y_content = await _creator(db_session)
+    await _application(db_session, x.id, accrual_start_at=kst(10, 1))
+    await _application(db_session, y.id, accrual_start_at=kst(10, 1))
+    player = await _player(db_session)
+    await _use(db_session, player, x_content, 22, kst(10, 15))
+    await _use(db_session, player, y_content, 22, kst(10, 15))
+    await run_monthly(factory, now=kst(11, 3))
+
+    async def keep(storage_key: str) -> None:
+        return None
+
+    await erase_account(db_session, x, delete_storage_object=keep)
+    await _use(db_session, player, y_content, 44, kst(11, 15))
+
+    results = await run_monthly(factory, now=kst(12, 3))
+
+    october, november = date(2026, 10, 1), date(2026, 11, 1)
+    assert [(row.period_month, row.amount_krw) for row in await _monthly_rows(db_session, x)] == [(october, 3)]
+    assert [(row.period_month, row.amount_krw) for row in await _monthly_rows(db_session, y)] == [
+        (october, 3),
+        (november, 6),
+    ]
+    assert results == [MonthResult(november, 1, 6, 0, 0)]
 
 
 # ── 확정 뒤 결제 취소 조정만 있는 달 ───────────────────────────────────────────────
