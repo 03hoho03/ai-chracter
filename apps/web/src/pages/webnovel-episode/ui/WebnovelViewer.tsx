@@ -26,10 +26,13 @@ import { WebnovelLikeButton } from "@/features/like-webnovel";
 import { ReportContentModal } from "@/features/report-content";
 import { WebnovelCommentsSheet } from "@/features/webnovel-comments";
 import { formatCompactCount } from "@/shared/lib/number/formatCompactCount";
-
-import type { EpisodeEndFormat, ReadingPositionStore, ViewerChapter } from "../model/viewerSource";
-import { EpisodeReader } from "./EpisodeReader";
-import { ViewerTocSheet } from "./ViewerTocSheet";
+import {
+  EpisodeReader,
+  ViewerTocSheet,
+  type EpisodeEndFormat,
+  type ReadingPositionStore,
+  type ViewerChapter,
+} from "@/widgets/novel-viewer";
 
 type WebnovelViewerProps = {
   novel: WebnovelDetailResponse;

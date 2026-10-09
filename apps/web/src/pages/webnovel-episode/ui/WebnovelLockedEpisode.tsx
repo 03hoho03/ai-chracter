@@ -12,10 +12,7 @@ import {
   type WebnovelDetailResponse,
 } from "@/entities/webnovel";
 import { PurchaseWebnovelChapterModal } from "@/features/purchase-webnovel-chapter";
-
-import { VIEWER_BAR_ROW_PX } from "../lib/pageFit";
-import { NovelInfoLink } from "./ViewerLinks";
-import { ViewerTocSheet } from "./ViewerTocSheet";
+import { NovelInfoLink, VIEWER_BAR_ROW_PX, ViewerTocSheet } from "@/widgets/novel-viewer";
 
 type WebnovelLockedEpisodeProps = {
   novel: WebnovelDetailResponse;

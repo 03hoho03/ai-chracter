@@ -10,7 +10,9 @@ import {
   useWebnovelChapterQuery,
   useWebnovelQuery,
 } from "@/entities/webnovel";
-import { WebnovelLockedEpisode, WebnovelViewer } from "@/widgets/novel-viewer";
+
+import { WebnovelLockedEpisode } from "./WebnovelLockedEpisode";
+import { WebnovelViewer } from "./WebnovelViewer";
 
 /** `/webnovels/$novelId/episodes/$chapterId` — 노벨 화 하나. 작품 정보(목차·이웃 화·읽던 자리)와 화(본문 또는 잠김)를
  * 함께 받는다. 읽을 수 있으면 몰입 뷰어, 아직 소장하지 않은 유료 화면 소장 화면이다 — 사면 같은 주소에서 본문을 다시
