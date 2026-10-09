@@ -3,9 +3,9 @@
 
 소설 단독 삭제와 회원 탈퇴가 `delete_novels` 를 같이 쓴다. 두 경로가 자식 목록을 따로 가지면 테이블이 늘 때 한쪽에만
 더해지기 쉽고, 빠진 쪽은 소설 DELETE 가 FK 위반으로 500 이 된다. 뼈대 테이블(작업·개정·화·소설)에는 `ON DELETE
-CASCADE` 가 없어 자식부터 지운다. 묶음·인물·등장 인물·스냅샷·읽은 위치는 부모를 지우면 함께 지워지는 cascade 지만(옛 판
-코드로 되돌렸을 때 그 코드가 이 테이블들을 몰라도 지워지게 한 것이다), 여기서는 cascade 에 기대지 않고 순서를 직접 적어
-잠금·삭제 순서를 고정한다.
+CASCADE` 가 없어 자식부터 지운다. 묶음·인물·등장 인물·스냅샷·읽은 위치와 노벨 공개 상태·화 공개본·텍스트 심사 기록은
+부모를 지우면 함께 지워지는 cascade 지만(옛 판 코드로 되돌렸을 때 그 코드가 이 테이블들을 몰라도 지워지게 한 것이다), 여기서는
+cascade 에 기대지 않고 순서를 직접 적어 잠금·삭제 순서를 고정한다.
 
 이 모듈은 라우터를 import 하지 않는다 — `auth/withdrawal.py` 가 import 해도 순환이 생기지 않게."""
 
@@ -22,16 +22,19 @@ from api.db.models.novel import (
     NovelChapter,
     NovelChapterCharacter,
     NovelChapterRevision,
+    NovelChapterPublication,
     NovelCharacter,
     NovelJob,
+    NovelPublication,
     NovelReadingPosition,
+    NovelScreening,
     NovelSnapshot,
 )
 
 
 async def delete_novels(db: AsyncSession, novel_ids: Sequence[uuid.UUID]) -> None:
-    """`novel_ids` 소설들을 작업 → 화 잠금 → 읽은 위치 → 스냅샷 → 등장 인물 → 인물 → 개정 → 화 → 묶음 → 소설 순으로
-    지운다. 커밋은 호출부가 한다.
+    """`novel_ids` 소설들을 작업 → 화 잠금 → 읽은 위치 → 스냅샷 → 등장 인물 → 인물 → 텍스트 심사 기록 → 화 공개본 → 개정 →
+    화 → 묶음 → 공개 상태 → 소설 순으로 지운다. 커밋은 호출부가 한다. 화 공개본은 개정을 가리키므로 개정보다 먼저다.
 
     작업 행이 맨 앞인 이유는 둘이다. 작업이 화·개정을 FK 로 가리키므로 먼저 지워야 하고, 진행 중 작업이 성공을
     저장하는 트랜잭션과 겹쳤을 때도 안전해진다 — 성공 쪽이 작업 행을 잡고 있으면 이 DELETE 가 기다렸다가 뒤 문장들이
@@ -56,9 +59,12 @@ async def delete_novels(db: AsyncSession, novel_ids: Sequence[uuid.UUID]) -> Non
     await db.execute(delete(NovelSnapshot).where(NovelSnapshot.novel_id.in_(novel_ids)))
     await db.execute(delete(NovelChapterCharacter).where(NovelChapterCharacter.chapter_id.in_(chapter_ids)))
     await db.execute(delete(NovelCharacter).where(NovelCharacter.novel_id.in_(novel_ids)))
+    await db.execute(delete(NovelScreening).where(NovelScreening.novel_id.in_(novel_ids)))
+    await db.execute(delete(NovelChapterPublication).where(NovelChapterPublication.novel_id.in_(novel_ids)))
     await db.execute(delete(NovelChapterRevision).where(NovelChapterRevision.chapter_id.in_(chapter_ids)))
     await db.execute(delete(NovelChapter).where(NovelChapter.novel_id.in_(novel_ids)))
     await db.execute(delete(NovelBatch).where(NovelBatch.novel_id.in_(novel_ids)))
+    await db.execute(delete(NovelPublication).where(NovelPublication.novel_id.in_(novel_ids)))
     await db.execute(delete(Novel).where(Novel.id.in_(novel_ids)))
 
 
@@ -69,8 +75,10 @@ async def delete_batch(db: AsyncSession, *, novel_id: uuid.UUID, batch_id: uuid.
     시작 메시지의 하루 재시도 상한이 작업 행 수로 세므로, 지우면 묶음을 지웠다 다시 만드는 것으로 상한이 풀린다. 차감
     기록의 작업 쪽 짝도 남는다. 작업의 개정 참조는 모두 그 작업이 가리키는 화의 개정이라, 화로 골라 셋을 함께 비운다.
 
-    그다음 화를 잠그고(`delete_novels` 와 같은 이유) 읽은 위치·등장 인물·개정·화·묶음 순으로 지운다. 인물 카드는 남긴다 —
-    사용자가 메모를 적은 카드일 수 있고, 다른 화에도 나온다.
+    그다음 화를 잠그고(`delete_novels` 와 같은 이유) 읽은 위치·등장 인물·텍스트 심사 기록·화 공개본·개정·화·묶음 순으로
+    지운다. 인물 카드는 남긴다 — 사용자가 메모를 적은 카드일 수 있고, 다른 화에도 나온다. 소설의 공개 상태 행도 남긴다 —
+    지우는 것은 마지막 묶음뿐이라 남은 공개 화는 여전히 1화부터 이어지고, 공개한 화가 모두 지워져도 소설 제목·소개 사본과
+    운영자 조치는 소설에 남아야 한다(다시 화를 공개하면 같은 행을 쓴다).
 
     잠금 순서는 작업 행 → 화 행이다(`delete_novels` 와 같다). 화 id 는 잠금 없이 고른다 — 호출자가 사용자 행을 쥐고 있어
     같은 묶음에 화를 더하거나 빼는 경로(묶음 저장·삭제)가 끼어들 수 없다. 화를 먼저 잠그고 작업 행을 고치면, 작업 행을 쥔
@@ -88,6 +96,8 @@ async def delete_batch(db: AsyncSession, *, novel_id: uuid.UUID, batch_id: uuid.
     await db.execute(select(NovelChapter.id).where(NovelChapter.id.in_(chapter_ids)).with_for_update())
     await db.execute(delete(NovelReadingPosition).where(NovelReadingPosition.chapter_id.in_(chapter_ids)))
     await db.execute(delete(NovelChapterCharacter).where(NovelChapterCharacter.chapter_id.in_(chapter_ids)))
+    await db.execute(delete(NovelScreening).where(NovelScreening.chapter_id.in_(chapter_ids)))
+    await db.execute(delete(NovelChapterPublication).where(NovelChapterPublication.chapter_id.in_(chapter_ids)))
     await db.execute(delete(NovelChapterRevision).where(NovelChapterRevision.chapter_id.in_(chapter_ids)))
     await db.execute(delete(NovelChapter).where(NovelChapter.id.in_(chapter_ids)))
     await _shrink_snapshot_entries(db, novel_id, {str(chapter_id) for chapter_id in chapter_ids})

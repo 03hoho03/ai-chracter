@@ -1,5 +1,6 @@
 """대화를 소설로 옮긴 결과물. 소설 → 묶음 → 화(장) → 화 개정, 그리고 화를 만들거나 고치는 작업 행이 뼈대이고, 그
-옆에 인물 카드·화별 등장 인물·스냅샷·읽은 위치가 붙는다.
+옆에 인물 카드·화별 등장 인물·스냅샷·읽은 위치가 붙는다. 소유자가 소설을 노벨(공개 소설)로 내놓으면 공개 상태·화 공개본·
+텍스트 심사 기록이 더 붙는다.
 
 소설은 원래 대화방과 떨어진 문서다. 방을 지워도 소설은 남고(`novels.chat_room_id` 만 비워진다), 원작 작품을
 가리키는 칸은 FK 없는 사본이라 작품이 사라져도 영향이 없다. 탈퇴하면 소설 아래 테이블을 모두 파기한다.
@@ -7,11 +8,11 @@
 `relationship()` 이 없고 뼈대 테이블(소설·화·개정·작업)에는 `ON DELETE CASCADE` 도 없으므로, 지울 때는 작업 → 개정 →
 화 → 소설 순서를 직접 지킨다(`novelize/deletion.py` 의 `delete_novels` 한 곳).
 
-🔴 예외: 묶음·인물·등장 인물·스냅샷·읽은 위치는 부모(소설·화)를 지우면 함께 지워지는 `ON DELETE CASCADE` 다. 이 저장소의
-"cascade 없음" 관례를 일부러 어긴 것이다 — 이미지만 옛 판으로 되돌렸을 때 옛 코드의 화 삭제·소설 삭제·탈퇴는 이
-테이블들을 모르고 위 순서대로만 지우는데, cascade 가 없으면 그 DELETE 가 FK 위반으로 500 이 된다. 같은 이유로
-`novel_chapters.batch_id` 는 nullable 이다(옛 코드의 화 INSERT 는 이 칸을 모른다). 새 코드는 cascade 에 기대지 않고
-삭제 순서를 직접 적는다.
+🔴 예외: 묶음·인물·등장 인물·스냅샷·읽은 위치와 노벨 공개 상태·화 공개본·텍스트 심사 기록은 부모(소설·화·개정)를 지우면
+함께 지워지는 `ON DELETE CASCADE` 다. 이 저장소의 "cascade 없음" 관례를 일부러 어긴 것이다 — 이미지만 옛 판으로
+되돌렸을 때 옛 코드의 화 삭제·소설 삭제·탈퇴는 이 테이블들을 모르고 위 순서대로만 지우는데, cascade 가 없으면 그
+DELETE 가 FK 위반으로 500 이 된다. 같은 이유로 `novel_chapters.batch_id` 는 nullable 이다(옛 코드의 화 INSERT 는 이
+칸을 모른다). 새 코드는 cascade 에 기대지 않고 삭제 순서를 직접 적는다.
 
 종류·상태처럼 값이 정해진 칸은 native enum 이 아니라 Text + Literal 이고(값이 늘 때 타입 변경 마이그레이션이 필요
 없다), DB 쪽 범위는 CHECK 가 막는다. CHECK 문의 값 목록은 아래 Literal 에서 만든다 — 두 곳에 따로 적으면 한쪽만
@@ -464,4 +465,141 @@ class NovelReadingPosition(Base):
     # 소설의 마지막 읽은 화 조회용이고, 소설 삭제 때 FK 검사도 겸한다.
     __table_args__ = (
         Index("ix_novel_reading_positions_novel_id_updated_at", "novel_id", updated_at.desc()),
+    )
+
+
+# 노벨(공개 소설) — 소설 소유자가 자기 소설을 로그인 회원 누구나 읽게 내놓은 상태와, 그때 얼린 공개 화면 글.
+NovelPublicationVisibility = Literal["public", "withdrawn"]
+NovelPublicationModerationStatus = Literal["normal", "restricted"]
+NovelScreeningOutcome = Literal["passed", "rejected"]
+# 텍스트 심사가 문제로 짚을 수 있는 공개 화면 글의 자리.
+NovelScreeningPart = Literal["novel_title", "synopsis", "chapter_title", "author_note", "chapter_body"]
+
+
+class NovelPublication(Base):
+    """소설 한 권의 공개 상태와 소설 단위 공개 화면 글(제목·소개)의 공개 시점 사본. 행이 없으면 공개한 적이 없다.
+
+    상태는 두 축이다 — 게시자가 정하는 공개 범위(`visibility`: 공개 중·거둠)와 운영자가 정하는 이용제한
+    (`moderation_status`). 작품의 공개 범위·이용제한을 따로 두는 것과 같은 이유로, 게시자가 거뒀다 다시 여는 일과 운영 조치가
+    서로를 덮어쓰지 않게 한다. 거두기는 행을 지우지 않고 값만 바꾼다 — 다시 공개하면 공개 화 사본이 그대로 살아난다.
+
+    `title`·`synopsis` 는 소유자가 나중에 고쳐도 바뀌지 않는다. 고친 내용은 다시 공개해 텍스트 심사를 거쳐야 이 행에
+    들어온다(심사를 거치지 않은 글이 공개 화면에 나가지 않게). `title` 이 NULL 이면 화면은 원작 제목(`novels.content_title`)
+    으로 대신한다 — 소유자 화면과 같은 규칙이다. 표지는 사본을 두지 않는다. 공개 화면은 이미 발행 심사를 거친 원작 썸네일만
+    쓰고, 소설 생성 표지는 심사를 거친 적이 없어서다.
+
+    공개한 화 수는 칸으로 두지 않고 화 공개본 행(`NovelChapterPublication`) 수로 센다 — 마지막 묶음을 지우면 그 화의
+    공개본도 함께 지워지므로 칸을 두면 두 곳을 맞춰야 한다.
+
+    소설을 지우면 함께 지워지는 `ON DELETE CASCADE` 다(모듈 docstring 의 예외와 같은 이유 — 이 테이블을 모르는 옛 판 코드의
+    소설 삭제·탈퇴가 FK 위반으로 500 이 되지 않게). 새 코드는 `novelize/deletion.py` 에서 직접 지운다."""
+
+    __tablename__ = "novel_publications"
+
+    novel_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("novels.id", ondelete="CASCADE"), primary_key=True
+    )
+    visibility: Mapped[NovelPublicationVisibility] = mapped_column(Text, nullable=False)
+    moderation_status: Mapped[NovelPublicationModerationStatus] = mapped_column(
+        Text, nullable=False, server_default="normal"
+    )
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    synopsis: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    first_published_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    # 공개 화면 글이 마지막으로 바뀐 시각(처음 공개·화 추가·다시 공개). 거두기·다시 열기는 글이 바뀌지 않아 그대로다.
+    published_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            f"visibility IN ({_sql_in_list(NovelPublicationVisibility)})", name="ck_novel_publications_visibility"
+        ),
+        CheckConstraint(
+            f"moderation_status IN ({_sql_in_list(NovelPublicationModerationStatus)})",
+            name="ck_novel_publications_moderation_status",
+        ),
+    )
+
+
+class NovelChapterPublication(Base):
+    """화 하나의 공개본 — 공개 시점에 얼린 개정과 그 화의 공개 화면 글(제목·작가의 말) 사본. 행이 있는 화가 공개된 화다.
+
+    공개는 1화부터 이어진 앞부분만 된다(띄엄띄엄 공개하면 무료 화·구매 화의 경계가 흐려진다). 이어짐은 코드가 지키고, DB 는
+    `(novel_id, ordinal)` 유니크로 같은 번호가 둘 생기는 경합만 막는다. `ordinal` 은 화 번호 사본이다(화 번호는 바뀌지 않는다).
+
+    소유자가 화를 고치거나 스냅샷으로 되돌려도 이 행은 그대로다. 다시 공개해 심사를 통과해야 `revision_id`·사본이 바뀌고
+    `edition` 이 하나 오른다 — 구매 기록이 "어느 판을 보고 샀는가"를 가리킬 수 있게 판 번호를 둔다.
+
+    소설·화·개정을 지우면 함께 지워지는 `ON DELETE CASCADE` 다. 옛 판 코드는 개정 → 화 → 소설 순서로 지우므로 개정 FK 도
+    cascade 여야 그 첫 문장이 FK 위반이 되지 않는다."""
+
+    __tablename__ = "novel_chapter_publications"
+
+    chapter_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("novel_chapters.id", ondelete="CASCADE"), primary_key=True
+    )
+    novel_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("novels.id", ondelete="CASCADE"), nullable=False)
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    revision_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("novel_chapter_revisions.id", ondelete="CASCADE"), nullable=False
+    )
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    author_note: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    edition: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    first_published_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    published_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # 번호 유니크가 소설의 공개 화 목록 조회와 소설 DELETE 때 FK 검사도 겸한다. 개정 인덱스는 개정 DELETE 때 FK 검사용이다.
+    __table_args__ = (
+        CheckConstraint("ordinal >= 1", name="ck_novel_chapter_publications_ordinal_positive"),
+        CheckConstraint("edition >= 1", name="ck_novel_chapter_publications_edition_positive"),
+        Index("ux_novel_chapter_publications_novel_id_ordinal", "novel_id", "ordinal", unique=True),
+        Index("ix_novel_chapter_publications_revision_id", "revision_id"),
+    )
+
+
+class NovelScreening(Base):
+    """공개 전 텍스트 심사 한 번의 판정. 통과·거부만 남는다 — 심사 호출이 실패해(장애) 판정이 없으면 행이 없다.
+
+    게시자 화면의 "확인 실패" 안내(어느 화의 어느 글이 걸렸는지)와 운영자의 심사 결과 확인이 읽는다. `reason` 은 심사
+    모델이 쓴 사유로 운영자만 본다 — 게시자에게는 정해진 문구만 보인다. 사유가 소설 글을 옮겨 적을 수 있으므로 소설·화를
+    지우면 함께 지운다(`ON DELETE CASCADE`, 다른 소설 자식 테이블과 같은 이유). `chapter_id` 가 NULL 이면 소설 제목·소개만
+    심사한 것이다. `chapter_ordinal` 은 화가 지워지기 전까지의 안내용 사본이다."""
+
+    __tablename__ = "novel_screenings"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    novel_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("novels.id", ondelete="CASCADE"), nullable=False)
+    chapter_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("novel_chapters.id", ondelete="CASCADE"), nullable=True
+    )
+    chapter_ordinal: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
+    outcome: Mapped[NovelScreeningOutcome] = mapped_column(Text, nullable=False)
+    flagged_parts: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
+    )
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # 소설의 최근 심사 조회용이고 소설 DELETE 때 FK 검사도 겸한다. 화 인덱스는 화 DELETE 때 FK 검사용이다.
+    __table_args__ = (
+        CheckConstraint(f"outcome IN ({_sql_in_list(NovelScreeningOutcome)})", name="ck_novel_screenings_outcome"),
+        CheckConstraint(
+            f"flagged_parts <@ ARRAY[{_sql_in_list(NovelScreeningPart)}]::text[]",
+            name="ck_novel_screenings_flagged_parts",
+        ),
+        CheckConstraint("outcome = 'rejected' OR flagged_parts = '{}'", name="ck_novel_screenings_passed_flags_none"),
+        Index("ix_novel_screenings_novel_id_created_at", "novel_id", created_at.desc()),
+        Index("ix_novel_screenings_chapter_id", "chapter_id"),
     )

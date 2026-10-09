@@ -60,10 +60,13 @@ from api.db.models import (
     NovelBatch,
     NovelChapter,
     NovelChapterCharacter,
+    NovelChapterPublication,
     NovelChapterRevision,
     NovelCharacter,
     NovelJob,
+    NovelPublication,
     NovelReadingPosition,
+    NovelScreening,
     NovelSnapshot,
     Payment,
     SituationalImage,
@@ -358,8 +361,8 @@ async def _make_novel_tree(
 
 
 async def _plant_novel_extras(db_session: AsyncSession, tree: NovelTree) -> None:
-    """`tree` 의 소설·화에 인물 카드·등장 인물·스냅샷·읽은 위치를 하나씩 붙인다(flush). 소설을 지우는 경로가 이 테이블들까지
-    지우는지 볼 때 쓴다."""
+    """`tree` 의 소설·화에 인물 카드·등장 인물·스냅샷·읽은 위치와 노벨 공개 상태·화 공개본·텍스트 심사 기록을 하나씩
+    붙인다(flush). 소설을 지우는 경로가 이 테이블들까지 지우는지 볼 때 쓴다."""
     card = NovelCharacter(novel_id=tree.novel.id, name="인물")
     db_session.add(card)
     await db_session.flush()
@@ -373,6 +376,18 @@ async def _plant_novel_extras(db_session: AsyncSession, tree: NovelTree) -> None
                 paragraph_index=0,
                 paragraph_count=1,
                 revision_id=tree.first_revision.id,
+            ),
+            NovelPublication(novel_id=tree.novel.id, visibility="public"),
+            NovelChapterPublication(
+                chapter_id=tree.chapter.id, novel_id=tree.novel.id, ordinal=1, revision_id=tree.first_revision.id
+            ),
+            NovelScreening(
+                novel_id=tree.novel.id,
+                chapter_id=tree.chapter.id,
+                chapter_ordinal=1,
+                user_id=tree.novel.user_id,
+                outcome="passed",
+                model="gemini-test",
             ),
         ]
     )

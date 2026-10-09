@@ -8,10 +8,13 @@ from api.db.models import (
     NovelBatch,
     NovelChapter,
     NovelChapterCharacter,
+    NovelChapterPublication,
     NovelChapterRevision,
     NovelCharacter,
     NovelJob,
+    NovelPublication,
     NovelReadingPosition,
+    NovelScreening,
     NovelSnapshot,
     User,
 )
@@ -44,6 +47,13 @@ async def _row_counts(db_session: AsyncSession, novel_id: uuid.UUID) -> dict[str
         "positions": sa.select(sa.func.count())
         .select_from(NovelReadingPosition)
         .where(NovelReadingPosition.novel_id == novel_id),
+        "publications": sa.select(sa.func.count())
+        .select_from(NovelPublication)
+        .where(NovelPublication.novel_id == novel_id),
+        "chapter_publications": sa.select(sa.func.count())
+        .select_from(NovelChapterPublication)
+        .where(NovelChapterPublication.novel_id == novel_id),
+        "screenings": sa.select(sa.func.count()).select_from(NovelScreening).where(NovelScreening.novel_id == novel_id),
     }
     return {name: (await db_session.scalar(query)) or 0 for name, query in queries.items()}
 
@@ -58,6 +68,9 @@ _GONE = {
     "appearances": 0,
     "snapshots": 0,
     "positions": 0,
+    "publications": 0,
+    "chapter_publications": 0,
+    "screenings": 0,
 }
 
 
@@ -108,4 +121,7 @@ async def test_delete_novels_leaves_other_novels_untouched(db_session: AsyncSess
         "appearances": 1,
         "snapshots": 1,
         "positions": 1,
+        "publications": 1,
+        "chapter_publications": 1,
+        "screenings": 1,
     }
