@@ -1,7 +1,7 @@
 /** 확인 모달의 본문 문구.
  *
  * 🔴 **표면마다 무료분이 다시 차는 방식이 다르다.** 채팅은 KST 일일 키라 자정에 열리지만
- * (`core/rate_limit_gate.py`의 `CHAT_DAILY_LIMIT = 30`), 이미지는 **시간당 충전 토큰 버킷**이다
+ * (`core/rate_limit_gate.py`의 `CHAT_DAILY_LIMIT`), 이미지는 **시간당 충전 토큰 버킷**이다
  * (`IMAGE_TOKEN_CAPACITY = 10` · `IMAGE_TOKEN_REFILL_SECONDS = 3600`). 한 문구를 공유하면
  * 이미지에서 **최대 24시간짜리 거짓**이 된다.
  *

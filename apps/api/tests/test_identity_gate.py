@@ -121,7 +121,7 @@ async def test_unverified_free_turn_becomes_a_clover_turn(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, scopes: list[str], gate: bool
 ) -> None:
     """무료분이 남은 미인증 회원(확인 완료, 잔액 있음). 꺼짐: 지금처럼 무료로 지나고 일일 창을 센다. 켜짐: 무료분이 0 이라
-    클로버로 내고, 일일 창을 세지 않는다(인증한 날도 0/30 에서 시작한다)."""
+    클로버로 내고, 일일 창을 세지 않는다(인증한 날도 하루 무료분 0 에서 시작한다)."""
     _set_gate(monkeypatch, gate)
     user = await _member(db_session, balance=100, **_confirmed_today())
 
@@ -141,7 +141,7 @@ async def test_unverified_free_turn_becomes_a_clover_turn(
 async def test_daily_quota_sequence_is_unchanged_when_the_gate_is_off(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, gate: bool
 ) -> None:
-    """꺼짐: 30번째까지 무료, 31번째부터 클로버(지금 흐름 그대로). 켜짐: 첫 턴부터 클로버."""
+    """꺼짐: 하루 무료분까지 무료, 그다음 턴부터 클로버(지금 흐름 그대로). 켜짐: 첫 턴부터 클로버."""
     _set_gate(monkeypatch, gate)
     monkeypatch.setattr(rate_limit_gate, "CHAT_BURST_LIMIT", 100)
     user = await _member(db_session, balance=1_000, **_confirmed_today())

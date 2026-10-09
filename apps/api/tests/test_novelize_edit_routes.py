@@ -25,6 +25,8 @@ from factories import (
     _room_messages,
 )
 
+pytestmark = pytest.mark.usefixtures("novel_prices_for_flow_tests")
+
 _BODY = "첫 문단이다.\n\n둘째 문단이다.\n\n셋째 문단이다."
 
 

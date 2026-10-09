@@ -69,14 +69,15 @@ logger = logging.getLogger(__name__)
 # 함수 정의 시점의 값이 박혀 `monkeypatch.setattr`가 통하지 않는다.
 CHAT_BURST_LIMIT = 10
 CHAT_BURST_WINDOW_SECONDS = 60
-# 30은 **정책값이지 실측값이 아니다** — "하루 30턴이면 충분하다"는 관측이 아니라 쿼터를 지키기
-# 위해 고른 수다. 실제 사용 분포가 나오면 그 숫자로 다시 정해야 한다.
-CHAT_DAILY_LIMIT = 30
+# 15는 **정책값이지 실측값이 아니다** — "하루 15턴이면 충분하다"는 관측이 아니라 무료 사용자 한 명의 원가 상한을
+# 정한 수다. 조감독 작품 111턴 시뮬레이션의 턴당 원가 약 $0.0047(약 6.5원, 1달러 1,400원)로 보면 하루 15턴을 다
+# 써도 약 98원이다. 실제 사용 분포가 나오면 그 숫자로 다시 정해야 한다.
+CHAT_DAILY_LIMIT = 15
 
 # 이미지는 고정 창이 아니라 토큰 버킷이다 — 10장을 모아 뒀다가 한 번에 쓰고
 # 시간당 1장씩 연속 충전된다. **토큰 1개 = 이미지 1장**이라 `count=2` 요청은 2를 깎는다
 # (비용은 요청 수가 아니라 장수에 붙는다 — 집 PC가 장당 한 번씩 돈다).
-# 30과 마찬가지로 실측값이 아니라 정책값이다.
+# 채팅 하루 상한과 마찬가지로 실측값이 아니라 정책값이다.
 IMAGE_TOKEN_CAPACITY = 10
 IMAGE_TOKEN_REFILL_SECONDS = 3600
 
@@ -107,7 +108,7 @@ _IMAGE_SCOPE = "image_tokens"
 # `user_id` 필수라 인증 전인 auth에 안 맞는다).
 _IMAGE_WINDOW = "image"
 
-# 발행 심사·업로드 발급은 사용자당 시간당 고정 창이다. 30·10 처럼 정책값이지 실측값이 아니다.
+# 발행 심사·업로드 발급은 사용자당 시간당 고정 창이다. 채팅·이미지 상한처럼 정책값이지 실측값이 아니다.
 # 발행 10: 통과 기억이 적중하면(직전 통과와 그림·칸 이름·심사 세트·모델이 같으면) 심사를 부르지 않아 세지 않는다.
 # 거부·심사 실패는 기억하지 않아 같은 입력으로 다시 내도 매번 센다 — 그래도 정상 작가가 한 시간에 실제 심사를
 # 열 번 넘게 부를 일은 드물다(새 작품 첫 발행 1회, 거부 뒤 고쳐 다시 내기 몇 회). 업로드 120: 미디어 북 50칸 일괄 업로드에 캐릭터·썸네일 몇 장을 더해도 남는다.
@@ -316,7 +317,7 @@ async def charge_chat_turn(
         user = await db.get(User, user_id)
         if user is not None and user.rate_limit_exempt is True:
             return ChatCharge(source="skipped")
-        # 미인증 회원은 무료분이 0 이다. 일일 창보다 **앞**이라 그 카운터를 올리지 않고(인증한 날도 0/30 에서 시작한다),
+        # 미인증 회원은 무료분이 0 이다. 일일 창보다 **앞**이라 그 카운터를 올리지 않고(인증한 날도 하루 무료분 0 에서 시작한다),
         # Redis 를 쓰지 않는 차감으로 바로 간다.
         if user is not None and is_identity_gated(user):
             return await _charge_unverified_turn(user_id, db, session_factory, now, price=price)

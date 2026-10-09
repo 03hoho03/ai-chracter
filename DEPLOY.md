@@ -1592,8 +1592,9 @@ sudo bash ops/swap-api.sh
 2. 어드민 유저 상세에서 허용을 켠다 — API 로는 `POST /admin/users/{id}/chat-premium-models-grant`·
    `POST /admin/users/{id}/novelize-premium-models-grant` 에 `{"granted": true, "adminComment": "…"}`. 스위치가 꺼져 있어도 미리 줄
    수 있다. 소설 상위 모델은 그 계정에 소설화 허용(3-11 절)도 있어야 보인다.
-3. 클로버를 지급한다. 상위 모델 턴·소설 화는 레이트리밋 면제 계정도 값을 내고(턴 Sonnet 40·Opus 65, 소설은 화 하나당
-   Sonnet 105·Opus 170 이라 생성 한 번이 화 수 × 화 단가다 — `api/core/clover.py`), 하루 무료분은 Gemini 턴에만 쓰인다.
+3. 클로버를 지급한다. 상위 모델 턴·소설 화는 레이트리밋 면제 계정도 값을 내고(턴 단가는 `CHAT_TURN_COST_SONNET`·
+   `CHAT_TURN_COST_OPUS`, 소설은 화 하나당 `NOVELIZE_EPISODE_COST_SONNET`·`NOVELIZE_EPISODE_COST_OPUS` 이고 생성 한 번이
+   화 수 × 화 단가다 — 값은 `api/core/clover.py` 에서 확인한다), 하루 무료분은 Gemini 턴에만 쓰인다.
 4. 그 계정의 web 을 새로고침하면(세션 정보를 다시 받는다) 채팅 더보기에 모델 선택이 보인다. 고른 모델은 방마다 저장되고 다음
    턴부터 그 모델·그 가격으로 돈다.
 5. 소설 상위 모델은 장 생성·재생성 요청마다 고른다(방처럼 저장하지 않는다). 허용이 들어갔는지는 그 계정으로 소설 상세

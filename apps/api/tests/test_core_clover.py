@@ -13,7 +13,13 @@ from api.core import clover
 from api.core.clover import (
     ATTENDANCE_GRANT_AMOUNT,
     CHAT_TURN_COST,
+    CHAT_TURN_COST_OPUS,
+    CHAT_TURN_COST_SONNET,
     IMAGE_UNIT_COST,
+    NOVELIZE_AI_EDIT_COST,
+    NOVELIZE_EPISODE_COST,
+    NOVELIZE_EPISODE_COST_OPUS,
+    NOVELIZE_EPISODE_COST_SONNET,
     PURCHASE_LOT_KINDS,
     CloverRefundExceedsSpendError,
     earned_lot_expiry,
@@ -27,6 +33,7 @@ from api.core.clover import (
     revoke_purchase_lots,
     spend,
 )
+from api.core.rate_limit_gate import CHAT_DAILY_LIMIT
 from api.db.models.auth import User
 from api.db.models.clover import CloverLedger, CloverLot, CloverSpendAllocation, CloverSpendRefund
 from factories import _make_payment, _make_user, _make_user_with_clover_lot
@@ -769,6 +776,13 @@ def test_policy_constants_match_decisions() -> None:
     assert CHAT_TURN_COST == 10
     assert IMAGE_UNIT_COST == 30
     assert ATTENDANCE_GRANT_AMOUNT == 100
+    assert NOVELIZE_EPISODE_COST == 80
+    assert NOVELIZE_AI_EDIT_COST == 30
+    assert CHAT_TURN_COST_SONNET == 60
+    assert CHAT_TURN_COST_OPUS == 110
+    assert NOVELIZE_EPISODE_COST_SONNET == 180
+    assert NOVELIZE_EPISODE_COST_OPUS == 300
+    assert CHAT_DAILY_LIMIT == 15
 
 
 async def test_ledger_table_is_reachable(db_session: AsyncSession) -> None:
