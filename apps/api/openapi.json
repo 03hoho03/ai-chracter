@@ -12459,7 +12459,7 @@
           "creator-payout"
         ],
         "summary": "Get Creator Payout",
-        "description": "신청 상태와 신청 자격. 인증·나이·발행 작품이 모자라도 거절하지 않고 `eligibility` 로 보여 준다(신청과 같은 판정).",
+        "description": "신청 상태와 신청 자격, 적립 잔액. 인증·나이·발행 작품이 모자라도 거절하지 않고 `eligibility` 로 보여 준다(신청과\n같은 판정).",
         "operationId": "get_creator_payout_me_creator_payout_get",
         "responses": {
           "200": {
@@ -12468,6 +12468,55 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CreatorPayoutResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/creator-payout/statements": {
+      "get": {
+        "tags": [
+          "creator-payout"
+        ],
+        "summary": "List Creator Payout Statements",
+        "operationId": "list_creator_payout_statements_me_creator_payout_statements_get",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatorPayoutStatementsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -22685,15 +22734,149 @@
           "everApproved": {
             "type": "boolean",
             "title": "Everapproved"
+          },
+          "balanceKrw": {
+            "type": "integer",
+            "title": "Balancekrw"
           }
         },
         "type": "object",
         "required": [
           "application",
           "eligibility",
-          "everApproved"
+          "everApproved",
+          "balanceKrw"
         ],
         "title": "CreatorPayoutResponse"
+      },
+      "CreatorPayoutStatementLineView": {
+        "properties": {
+          "contentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Contentid"
+          },
+          "contentTitle": {
+            "type": "string",
+            "title": "Contenttitle"
+          },
+          "netUnits": {
+            "type": "integer",
+            "title": "Netunits"
+          },
+          "cancelAdjustKrw": {
+            "type": "integer",
+            "title": "Canceladjustkrw"
+          },
+          "amountKrw": {
+            "type": "integer",
+            "title": "Amountkrw"
+          }
+        },
+        "type": "object",
+        "required": [
+          "contentId",
+          "contentTitle",
+          "netUnits",
+          "cancelAdjustKrw",
+          "amountKrw"
+        ],
+        "title": "CreatorPayoutStatementLineView",
+        "description": "확정 하나의 작품별 내역(결제별 내역을 작품으로 합친 값). 원 단위는 원 미만을 0 쪽으로 버린 표시값이라 줄의 합이\n확정 금액과 다를 수 있다 — 합계는 확정의 `amountKrw` 를 쓴다."
+      },
+      "CreatorPayoutStatementView": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "retro",
+              "monthly"
+            ],
+            "title": "Kind"
+          },
+          "periodMonth": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Periodmonth"
+          },
+          "windowStart": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Windowstart"
+          },
+          "windowEnd": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Windowend"
+          },
+          "grossUnits": {
+            "type": "integer",
+            "title": "Grossunits"
+          },
+          "refundedUnits": {
+            "type": "integer",
+            "title": "Refundedunits"
+          },
+          "amountKrw": {
+            "type": "integer",
+            "title": "Amountkrw"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/CreatorPayoutStatementLineView"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "periodMonth",
+          "windowStart",
+          "windowEnd",
+          "grossUnits",
+          "refundedUnits",
+          "amountKrw",
+          "lines"
+        ],
+        "title": "CreatorPayoutStatementView",
+        "description": "확정 하나. `retro` 는 첫 승인 때의 소급, `monthly` 는 그 달(`periodMonth`, KST 1일) 확정이다."
+      },
+      "CreatorPayoutStatementsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CreatorPayoutStatementView"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "title": "CreatorPayoutStatementsResponse"
       },
       "DevelopmentExampleItem": {
         "properties": {

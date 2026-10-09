@@ -46,6 +46,7 @@ from api.db.models.content import (
 )
 from api.db.models.creator_payout import (
     CreatorPayoutApplication,
+    CreatorPayoutBatchRun,
     CreatorPayoutConfirmation,
     CreatorPayoutConfirmationLine,
 )
@@ -164,6 +165,7 @@ __all__ = [
     "ContentVersion",
     "ContentVisibility",
     "CreatorPayoutApplication",
+    "CreatorPayoutBatchRun",
     "CreatorPayoutConfirmation",
     "CreatorPayoutConfirmationLine",
     "DiscardedResponse",

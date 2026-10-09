@@ -33,11 +33,19 @@ from api.db.models.creator_payout import (
     CreatorPayoutConfirmationLine,
 )
 from api.db.models.payment import Payment, PaymentCancellation
-from factories import Player, _create_admin, _make_draft_content, _make_payment, _make_player, _make_user, _use
-
-
-def kst(month: int, day: int, hour: int = 0, minute: int = 0, second: int = 0, *, year: int = 2026) -> datetime:
-    return datetime(year, month, day, hour, minute, second, tzinfo=KST)
+from factories import (
+    Player,
+    _application,
+    _console_cancel,
+    _create_admin,
+    _make_draft_content,
+    _make_payment,
+    _make_player,
+    _make_user,
+    _refund,
+    _use,
+    kst,
+)
 
 
 def month_of(year: int, month: int) -> tuple[datetime, datetime]:
@@ -64,69 +72,6 @@ async def _creator(
     if accrual_start_at is not None:
         await _application(db, creator.id, accrual_start_at=accrual_start_at)
     return creator, content
-
-
-async def _application(
-    db: AsyncSession,
-    user_id: uuid.UUID,
-    *,
-    accrual_start_at: datetime,
-    monthly_from_at: datetime | None = None,
-    revoked_at: datetime | None = None,
-) -> CreatorPayoutApplication:
-    application = CreatorPayoutApplication(
-        user_id=user_id,
-        status="approved" if revoked_at is None else "revoked",
-        consented_at=accrual_start_at,
-        privacy_version="2026-10-01",
-        decided_at=accrual_start_at,
-        accrual_start_at=accrual_start_at,
-        monthly_from_at=monthly_from_at or accrual_start_at,
-        revoked_at=revoked_at,
-    )
-    db.add(application)
-    await db.flush()
-    return application
-
-
-async def _refund(db: AsyncSession, player: Player, ledger_id: uuid.UUID, amount: int, at: datetime) -> None:
-    """그 차감에서 `amount` 를 `at` 에 돌려준다(실제 환급 경로 — 배분 역순, 환급 행)."""
-    allocation_ids = select(CloverSpendAllocation.id).where(CloverSpendAllocation.spend_ledger_id == ledger_id)
-    before = set((await db.scalars(select(CloverSpendRefund.id))).all())
-    balance = await refund_spend(
-        db, user_id=player.user.id, spend_ledger_id=ledger_id, amount=amount, kind="chat_refund"
-    )
-    assert balance is not None
-    new = [
-        refund_id
-        for refund_id in (
-            await db.scalars(select(CloverSpendRefund.id).where(CloverSpendRefund.allocation_id.in_(allocation_ids)))
-        ).all()
-        if refund_id not in before
-    ]
-    assert new
-    await db.execute(update(CloverSpendRefund).where(CloverSpendRefund.id.in_(new)).values(created_at=at))
-
-
-async def _console_cancel(db: AsyncSession, payment: Payment, amount_krw: int, at: datetime) -> None:
-    """포트원 콘솔 취소가 `at` 에 성공한 상태를 결제 쪽 기록 방식대로 만든다 — 전액이면 남은 전부, 부분이면 취소액을
-    단가로 나눈 수량(올림)까지 유료 먼저 회수하고, 성공 취소 행을 남기고, 결제의 취소 합계를 올린다."""
-    full = payment.cancelled_amount_krw + amount_krw >= payment.amount_krw
-    need = None if full else -(-amount_krw * payment.paid_amount // payment.amount_krw)
-    paid, bonus = await revoke_purchase_lots(db, payment_id=payment.id, limit=need)
-    db.add(
-        PaymentCancellation(
-            payment_id=payment.id,
-            source="console",
-            status="succeeded",
-            amount_krw=amount_krw,
-            clawback_paid=paid,
-            clawback_bonus=bonus,
-            completed_at=at,
-        )
-    )
-    payment.cancelled_amount_krw += amount_krw
-    await db.flush()
 
 
 async def _admin_refund(db: AsyncSession, payment: Payment, amount_krw: int, at: datetime) -> None:

@@ -9,6 +9,8 @@
 Bugsink 이벤트 파기를, `ops/cron.d/ddona-image-request-purge`가 이미지 생성 요청 파기를,
 `ops/cron.d/ddona-clover-expire`가 미션 클로버 만료를 같은 방식으로 돌린다.
 크론은 아니지만 `prune_api_images.py`도 배포 원격 셸이 같은 시스템 python3로 불러 함께 검사한다.
+크리에이터 정산 월 확정 래퍼(`ops/creator-payout-settle.sh`)는 계산을 api 컨테이너 안에서 돌리고 알림만
+`creator_payout_notify.py`를 같은 시스템 python3로 부른다.
 **형제 모듈을 따로 검사하는 이유** — 진입점들의 허용 목록에 `ops`가 있어 `from ops.notify
 import ...` 자체는 통과하지만, `notify.py` 안에서 실제로 뭘 import하는지는 아무도 안 본다.
 `requests`를 몰래 넣어도 이 파일이 생기기 전엔 위 테스트들이 전부 통과했다(실측). `snapshot_redis.py`·
@@ -43,6 +45,7 @@ from pathlib import Path
 
 import ops.backup_db as backup_db
 import ops.check_resources as check_resources
+import ops.creator_payout_notify as creator_payout_notify
 import ops.db_url as db_url
 import ops.expire_clover as expire_clover
 import ops.notify as notify
@@ -127,6 +130,9 @@ _ALLOWED_TOP_LEVEL_MODULES: dict[str, set[str]] = {
         "datetime",
         "ops",
     },
+    # 크리에이터 정산 월 확정 래퍼(ops/creator-payout-settle.sh)가 실패·확정 요약 알림에 부른다. 월 확정 자체는 api
+    # 컨테이너 안에서 돌고, 이 모듈은 문구를 보내기만 한다.
+    "creator_payout_notify": {"sys", "ops"},
     # 크론은 아니지만 배포 원격 셸(.github/workflows/deploy-api.yml)이 같은 시스템 python3 로 부른다.
     # 최상단 import 하나가 시스템에 없으면 배포 때마다 정리가 실패해 디스크가 다시 찬다.
     "prune_api_images": {"argparse", "subprocess", "sys"},
@@ -233,6 +239,17 @@ def test_expire_clover_top_level_imports_are_satisfied_by_production_cron_enviro
         "/usr/bin/python3(+boto3, PYTHONPATH=/opt/ddona/scripts)에 없다 — 배포하면 매일 도는 "
         "크론이 import 시점에 죽어 클로버 7일 유효기간 약속이 조용히 "
         "깨진다."
+    )
+
+
+def test_creator_payout_notify_top_level_imports_are_satisfied_by_production_cron_environment() -> None:
+    path = Path(creator_payout_notify.__file__)
+    imports = _top_level_import_names(path)
+
+    disallowed = imports - _ALLOWED_TOP_LEVEL_MODULES["creator_payout_notify"]
+    assert not disallowed, (
+        f"ops/creator_payout_notify.py 최상단 import {disallowed}는 VM 시스템 /usr/bin/python3 에 없다 — 배포하면 "
+        "크리에이터 정산 월 확정 실패 알림이 import 시점에 죽어 실패가 조용해진다."
     )
 
 

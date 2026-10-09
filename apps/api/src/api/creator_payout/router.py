@@ -1,14 +1,20 @@
-"""크리에이터 정산의 회원 쪽 HTTP 표면: 신청과 신청 상태·자격 조회.
+"""크리에이터 정산의 회원 쪽 HTTP 표면: 신청, 신청 상태·자격·적립 잔액 조회, 확정 내역.
 
 정산 스위치가 꺼져 있으면 모든 라우트가 503 `CREATOR_PAYOUT_UNAVAILABLE` 이다. 어드민의 신청 처리(`admin/creator_payout.py`)는
 스위치와 무관하다.
 """
 
+import base64
+import binascii
+import json
 import uuid
+from collections import defaultdict
+from collections.abc import Iterable
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from sqlalchemy import case, exists, select
+from sqlalchemy import case, exists, func, select, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,9 +28,19 @@ from api.creator_payout.schemas import (
     CreatorPayoutApplicationView,
     CreatorPayoutEligibilityView,
     CreatorPayoutResponse,
+    CreatorPayoutStatementLineView,
+    CreatorPayoutStatementsResponse,
+    CreatorPayoutStatementView,
 )
 from api.db.models.auth import User
-from api.db.models.creator_payout import CreatorPayoutApplication
+from api.db.models.character import CharacterVersionDetail
+from api.db.models.content import ContentVersion
+from api.db.models.creator_payout import (
+    CreatorPayoutApplication,
+    CreatorPayoutConfirmation,
+    CreatorPayoutConfirmationLine,
+)
+from api.db.models.story import StoryVersionDetail
 from api.db.session import get_db_session
 from api.legal.dependencies import _latest_published_legal_version, require_legal_consent
 from api.payments.notify import PaymentNotifier, get_payment_notifier
@@ -36,6 +52,8 @@ me_router = APIRouter(prefix="/me/creator-payout", tags=["creator-payout"])
 APPLICATION_RECEIVED_MESSAGE = "크리에이터 정산 신청 1건 접수"
 
 _LIVE_STATUSES = ("pending", "approved")
+
+STATEMENTS_PAGE_SIZE = 20
 
 
 def _error(status_code: int, code: str) -> HTTPException:
@@ -65,7 +83,8 @@ async def get_creator_payout(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> CreatorPayoutResponse:
-    """신청 상태와 신청 자격. 인증·나이·발행 작품이 모자라도 거절하지 않고 `eligibility` 로 보여 준다(신청과 같은 판정)."""
+    """신청 상태와 신청 자격, 적립 잔액. 인증·나이·발행 작품이 모자라도 거절하지 않고 `eligibility` 로 보여 준다(신청과
+    같은 판정)."""
     if not creator_payout_active():
         raise _unavailable()
     user = await db.get(User, user_id)
@@ -107,6 +126,122 @@ async def get_creator_payout(
             suspended=eligibility.suspended,
         ),
         ever_approved=bool(ever_approved),
+        balance_krw=await _balance_krw(db, user_id),
+    )
+
+
+async def _balance_krw(db: AsyncSession, user_id: uuid.UUID) -> int:
+    """적립 잔액 = 확정 행 금액의 합. 저장하지 않으므로 확정·지급 경로가 잔액을 따로 고치지 않는다."""
+    total = await db.scalar(
+        select(func.coalesce(func.sum(CreatorPayoutConfirmation.amount_krw), 0)).where(
+            CreatorPayoutConfirmation.user_id == user_id
+        )
+    )
+    return int(total or 0)
+
+
+def _encode_cursor(confirmation: CreatorPayoutConfirmation) -> str:
+    return base64.urlsafe_b64encode(
+        json.dumps([confirmation.window_end.isoformat(), str(confirmation.id)]).encode()
+    ).decode()
+
+
+def _decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
+    try:
+        window_end, confirmation_id = json.loads(base64.urlsafe_b64decode(cursor.encode()))
+        decoded = datetime.fromisoformat(window_end), uuid.UUID(confirmation_id)
+    except (ValueError, TypeError, AttributeError, binascii.Error):
+        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "CREATOR_PAYOUT_CURSOR_INVALID") from None
+    if decoded[0].tzinfo is None:
+        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "CREATOR_PAYOUT_CURSOR_INVALID")
+    return decoded
+
+
+async def _content_titles(db: AsyncSession, content_ids: Iterable[uuid.UUID]) -> dict[uuid.UUID, str]:
+    """작품마다 가장 최근 발행본의 이름. 내려간 작품도 적립 내역에는 남으므로 지금 발행본이 아니라 마지막 발행본을 본다."""
+    ids = list(content_ids)
+    titles: dict[uuid.UUID, str] = {}
+    if not ids:
+        return titles
+    for detail in (CharacterVersionDetail, StoryVersionDetail):
+        rows = await db.execute(
+            select(ContentVersion.content_id, detail.name)
+            .join(detail, detail.content_version_id == ContentVersion.id)
+            .where(ContentVersion.content_id.in_(ids), ContentVersion.published_at.is_not(None))
+            .order_by(ContentVersion.published_at.desc())
+        )
+        for content_id, name in rows:
+            titles.setdefault(content_id, name)
+    return titles
+
+
+@me_router.get("/statements")
+async def list_creator_payout_statements(
+    cursor: str | None = None,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> CreatorPayoutStatementsResponse:
+    # 확정 내역(소급·월), 최신순 20개. 각 확정의 결제별 내역을 작품으로 합쳐 보인다. 커서가 깨졌으면 422
+    # `CREATOR_PAYOUT_CURSOR_INVALID`.
+    if not creator_payout_active():
+        raise _unavailable()
+    query = (
+        select(CreatorPayoutConfirmation)
+        .where(CreatorPayoutConfirmation.user_id == user_id)
+        .order_by(CreatorPayoutConfirmation.window_end.desc(), CreatorPayoutConfirmation.id.desc())
+    )
+    if cursor is not None:
+        # mypy strict 함정(apps/api/CLAUDE.md) — 오른쪽은 평범한 파이썬 튜플로 둔다.
+        query = query.where(
+            tuple_(CreatorPayoutConfirmation.window_end, CreatorPayoutConfirmation.id) < _decode_cursor(cursor)
+        )
+    rows = (await db.scalars(query.limit(STATEMENTS_PAGE_SIZE + 1))).all()
+    page = rows[:STATEMENTS_PAGE_SIZE]
+
+    # (확정, 작품) 마다 결제별 줄을 합친다. 원 미만은 합친 뒤 한 번 버린다.
+    sums: dict[uuid.UUID, dict[uuid.UUID, tuple[int, Decimal, Decimal]]] = defaultdict(dict)
+    if page:
+        lines = await db.scalars(
+            select(CreatorPayoutConfirmationLine).where(
+                CreatorPayoutConfirmationLine.confirmation_id.in_([row.id for row in page])
+            )
+        )
+        for line in lines:
+            units, adjust, exact = sums[line.confirmation_id].get(line.content_id, (0, Decimal(0), Decimal(0)))
+            sums[line.confirmation_id][line.content_id] = (
+                units + line.net_units,
+                adjust + line.cancel_adjust_krw,
+                exact + line.exact_krw,
+            )
+    titles = await _content_titles(db, {content_id for by_content in sums.values() for content_id in by_content})
+
+    return CreatorPayoutStatementsResponse(
+        items=[
+            CreatorPayoutStatementView(
+                kind=row.kind,
+                period_month=row.period_month,
+                window_start=row.window_start,
+                window_end=row.window_end,
+                gross_units=row.gross_units,
+                refunded_units=row.refunded_units,
+                amount_krw=row.amount_krw,
+                lines=[
+                    CreatorPayoutStatementLineView(
+                        content_id=content_id,
+                        content_title=titles.get(content_id, ""),
+                        net_units=units,
+                        # `int()` 는 0 쪽으로 버린다.
+                        cancel_adjust_krw=int(adjust),
+                        amount_krw=int(exact),
+                    )
+                    for content_id, (units, adjust, exact) in sorted(
+                        sums[row.id].items(), key=lambda item: (-item[1][2], str(item[0]))
+                    )
+                ],
+            )
+            for row in page
+        ],
+        next_cursor=_encode_cursor(page[-1]) if len(rows) > STATEMENTS_PAGE_SIZE else None,
     )
 
 

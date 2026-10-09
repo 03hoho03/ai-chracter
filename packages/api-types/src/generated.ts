@@ -4886,9 +4886,27 @@ export interface paths {
         };
         /**
          * Get Creator Payout
-         * @description 신청 상태와 신청 자격. 인증·나이·발행 작품이 모자라도 거절하지 않고 `eligibility` 로 보여 준다(신청과 같은 판정).
+         * @description 신청 상태와 신청 자격, 적립 잔액. 인증·나이·발행 작품이 모자라도 거절하지 않고 `eligibility` 로 보여 준다(신청과
+         *     같은 판정).
          */
         get: operations["get_creator_payout_me_creator_payout_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/creator-payout/statements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Creator Payout Statements */
+        get: operations["list_creator_payout_statements_me_creator_payout_statements_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -9135,6 +9153,66 @@ export interface components {
             eligibility: components["schemas"]["CreatorPayoutEligibilityView"];
             /** Everapproved */
             everApproved: boolean;
+            /** Balancekrw */
+            balanceKrw: number;
+        };
+        /**
+         * CreatorPayoutStatementLineView
+         * @description 확정 하나의 작품별 내역(결제별 내역을 작품으로 합친 값). 원 단위는 원 미만을 0 쪽으로 버린 표시값이라 줄의 합이
+         *     확정 금액과 다를 수 있다 — 합계는 확정의 `amountKrw` 를 쓴다.
+         */
+        CreatorPayoutStatementLineView: {
+            /**
+             * Contentid
+             * Format: uuid
+             */
+            contentId: string;
+            /** Contenttitle */
+            contentTitle: string;
+            /** Netunits */
+            netUnits: number;
+            /** Canceladjustkrw */
+            cancelAdjustKrw: number;
+            /** Amountkrw */
+            amountKrw: number;
+        };
+        /**
+         * CreatorPayoutStatementView
+         * @description 확정 하나. `retro` 는 첫 승인 때의 소급, `monthly` 는 그 달(`periodMonth`, KST 1일) 확정이다.
+         */
+        CreatorPayoutStatementView: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "retro" | "monthly";
+            /** Periodmonth */
+            periodMonth: string | null;
+            /**
+             * Windowstart
+             * Format: date-time
+             */
+            windowStart: string;
+            /**
+             * Windowend
+             * Format: date-time
+             */
+            windowEnd: string;
+            /** Grossunits */
+            grossUnits: number;
+            /** Refundedunits */
+            refundedUnits: number;
+            /** Amountkrw */
+            amountKrw: number;
+            /** Lines */
+            lines: components["schemas"]["CreatorPayoutStatementLineView"][];
+        };
+        /** CreatorPayoutStatementsResponse */
+        CreatorPayoutStatementsResponse: {
+            /** Items */
+            items: components["schemas"]["CreatorPayoutStatementView"][];
+            /** Nextcursor */
+            nextCursor: string | null;
         };
         /**
          * DevelopmentExampleItem
@@ -20135,6 +20213,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreatorPayoutResponse"];
+                };
+            };
+        };
+    };
+    list_creator_payout_statements_me_creator_payout_statements_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatorPayoutStatementsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

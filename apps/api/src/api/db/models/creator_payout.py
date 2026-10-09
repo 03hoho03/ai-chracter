@@ -1,7 +1,7 @@
 """크리에이터 정산 — 정산 신청(`creator_payout_applications`), 확정 행(`creator_payout_confirmations`), 확정 행의 작품 ×
-결제별 내역(`creator_payout_confirmation_lines`).
+결제별 내역(`creator_payout_confirmation_lines`), 월 확정 배치의 달별 실행 기록(`creator_payout_batch_runs`).
 
-세 테이블 모두 탈퇴해도 지우지 않는다 — 확정 행과 내역은 지급·세무의 근거이고, 신청 행은 적립 구간의 근거다.
+앞의 세 테이블은 탈퇴해도 지우지 않는다 — 확정 행과 내역은 지급·세무의 근거이고, 신청 행은 적립 구간의 근거다.
 상태·종류는 Text + Literal + CHECK 이다(`db/models/payment.py` 와 같은 방식). 🔴 `alembic check` 는 CHECK·부분 인덱스의
 WHERE·복합 PK 를 비교하지 않는다 — 이 파일의 제약은 `pytest.raises(IntegrityError)` 행위 테스트가 유일한 검증이다.
 """
@@ -11,7 +11,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, Numeric, Text, Uuid, func
+from sqlalchemy import BigInteger, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, Numeric, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base
@@ -179,3 +179,27 @@ class CreatorPayoutConfirmationLine(Base):
         # 확정 뒤 결제 취소 조정이 그 결제에서 출발해 앞선 줄을 찾는다. PK 는 확정 행 id 가 앞이라 이 조회에 못 쓴다.
         Index("ix_creator_payout_confirmation_lines_payment_id", "payment_id"),
     )
+
+
+class CreatorPayoutBatchRun(Base):
+    """월 확정 배치가 한 달을 끝냈다는 기록. 이 행이 있는 달은 다시 확정하지 않는다.
+
+    크리에이터별 확정 행과 따로 두는 것은, 감시 수 둘이 크리에이터가 아니라 그 달 전체의 값이고 확정 대상이 0명인 달에도
+    "그 달은 끝났다"가 남아야 해서다.
+
+    - `creator_count`·`total_amount_krw`: 그 달 월 확정 행의 수와 `amount_krw` 합.
+    - `unattributed_spend_count`: 그 달의 채팅·소설 차감 중 사용처가 없는 것(배포 겹침에 옛 이미지가 남긴 차감 등). 정산에서
+      빠졌다는 뜻이고 배치를 멈추지는 않는다.
+    - `refund_event_mismatch_count`: 사용처가 있는 유료 배분 중 환급 합(`refunded_amount`)과 환급 행 합이 다른 것. 환급 행
+      없이 환급된 몫은 정산에서 빠지지 않고 사용으로 남는다.
+    """
+
+    __tablename__ = "creator_payout_batch_runs"
+
+    # 그 달 1일(KST).
+    period_month: Mapped[date] = mapped_column(Date, primary_key=True)
+    finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    creator_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_amount_krw: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    unattributed_spend_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    refund_event_mismatch_count: Mapped[int] = mapped_column(Integer, nullable=False)

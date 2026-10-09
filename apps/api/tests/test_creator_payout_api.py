@@ -7,6 +7,8 @@
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
+from typing import Literal
 
 import httpx
 import pytest
@@ -19,12 +21,26 @@ from api.creator_payout.router import APPLICATION_RECEIVED_MESSAGE
 from api.creator_payout.settlement import confirm_window
 from api.db.models.auth import User
 from api.db.models.content import Content, ContentVersion
-from api.db.models.creator_payout import CreatorPayoutApplication, CreatorPayoutConfirmation
+from api.db.models.creator_payout import (
+    CreatorPayoutApplication,
+    CreatorPayoutConfirmation,
+    CreatorPayoutConfirmationLine,
+)
 from api.db.models.moderation import AdminActionLog
 from api.legal.dependencies import _latest_published_legal_version
 from api.main import app
 from api.payments.notify import get_payment_notifier
-from factories import _create_admin, _login_as, _login_as_admin, _make_draft_content, _make_player, _make_user, _use
+from factories import (
+    _create_admin,
+    _get_genre,
+    _login_as,
+    _login_as_admin,
+    _make_draft_content,
+    _make_player,
+    _make_published_character,
+    _make_user,
+    _use,
+)
 
 APPROVAL_CUT_LAG = timedelta(minutes=5)
 
@@ -231,6 +247,7 @@ async def test_get_shows_eligibility_without_refusing(db_client: httpx.AsyncClie
         "application": None,
         "eligibility": {"identityVerified": False, "adult": False, "hasPublishedWork": False, "suspended": False},
         "everApproved": False,
+        "balanceKrw": 0,
     }
 
 
@@ -566,6 +583,161 @@ async def test_admin_queue_lists_pending_applications_with_current_eligibility(
     }
     assert (second["userId"], second["nickname"], second["eligibility"]["withdrawn"]) == (str(leaver.id), None, True)
     assert approved.json()["items"] == []
+
+
+# ── 적립 잔액·확정 내역 ────────────────────────────────────────────────────────
+def _confirmation(
+    user: User,
+    *,
+    amount_krw: int,
+    window_end: datetime,
+    kind: Literal["retro", "monthly"] = "monthly",
+) -> CreatorPayoutConfirmation:
+    return CreatorPayoutConfirmation(
+        user_id=user.id,
+        kind=kind,
+        period_month=None if kind == "retro" else window_end.date().replace(day=1),
+        window_start=window_end - timedelta(days=1),
+        window_end=window_end,
+        gross_units=0,
+        refunded_units=0,
+        rate_bps=500,
+        exact_krw=Decimal(amount_krw),
+        amount_krw=amount_krw,
+    )
+
+
+async def test_balance_is_the_sum_of_confirmed_amounts(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+    """소급 5원 + 10월 10원 + 11월 −8원(확정 뒤 결제 취소 조정). 다른 사람의 확정은 섞이지 않는다."""
+    creator, _ = await _creator(db_session)
+    other, _ = await _creator(db_session)
+    db_session.add_all(
+        [
+            _confirmation(creator, amount_krw=5, window_end=datetime(2026, 9, 20, tzinfo=UTC), kind="retro"),
+            _confirmation(creator, amount_krw=10, window_end=datetime(2026, 10, 31, tzinfo=UTC)),
+            _confirmation(creator, amount_krw=-8, window_end=datetime(2026, 11, 30, tzinfo=UTC)),
+            _confirmation(other, amount_krw=100, window_end=datetime(2026, 10, 31, tzinfo=UTC)),
+        ]
+    )
+    await db_session.flush()
+    await _login_as(db_client, creator.id)
+
+    resp = await db_client.get("/me/creator-payout")
+
+    assert resp.json()["balanceKrw"] == 7
+
+
+async def test_statements_merge_payment_lines_by_content(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+    """한 작품을 결제 둘로 쓴 줄은 작품 하나로 합치고 원 미만을 합친 뒤 버린다(1.9 + 2.2 = 4.1 → 4원, 줄마다 버리면 3원).
+    조정만 있는 작품은 순사용 0, 조정·금액이 음수(−1.5 → −1원)다. 작품 이름은 마지막 발행본의 것이다."""
+    creator, _ = await _creator(db_session)
+    genre = await _get_genre(db_session)
+    titled = await _make_published_character(db_session, creator_user_id=creator.id, genre_id=genre.id)
+    untitled = await _make_draft_content(db_session, creator_user_id=creator.id)
+    player_a = await _make_player(db_session, amount_krw=9_900, paid=3_300)
+    player_b = await _make_player(db_session, amount_krw=9_900, paid=3_300)
+    confirmation = _confirmation(creator, amount_krw=2, window_end=datetime(2026, 10, 31, 15, tzinfo=UTC))
+    db_session.add(confirmation)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            CreatorPayoutConfirmationLine(
+                confirmation_id=confirmation.id,
+                content_id=titled.id,
+                payment_id=player_a.payment.id,
+                net_units=14,
+                cancel_adjust_krw=Decimal(0),
+                exact_krw=Decimal("1.9"),
+            ),
+            CreatorPayoutConfirmationLine(
+                confirmation_id=confirmation.id,
+                content_id=titled.id,
+                payment_id=player_b.payment.id,
+                net_units=16,
+                cancel_adjust_krw=Decimal(0),
+                exact_krw=Decimal("2.2"),
+            ),
+            CreatorPayoutConfirmationLine(
+                confirmation_id=confirmation.id,
+                content_id=untitled.id,
+                payment_id=player_a.payment.id,
+                net_units=0,
+                cancel_adjust_krw=Decimal("-1.5"),
+                exact_krw=Decimal("-1.5"),
+            ),
+        ]
+    )
+    await db_session.flush()
+    await _login_as(db_client, creator.id)
+
+    resp = await db_client.get("/me/creator-payout/statements")
+
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "items": [
+            {
+                "kind": "monthly",
+                "periodMonth": "2026-10-01",
+                "windowStart": "2026-10-30T15:00:00Z",
+                "windowEnd": "2026-10-31T15:00:00Z",
+                "grossUnits": 0,
+                "refundedUnits": 0,
+                "amountKrw": 2,
+                "lines": [
+                    {
+                        "contentId": str(titled.id),
+                        "contentTitle": "캐릭터",
+                        "netUnits": 30,
+                        "cancelAdjustKrw": 0,
+                        "amountKrw": 4,
+                    },
+                    {
+                        "contentId": str(untitled.id),
+                        "contentTitle": "",
+                        "netUnits": 0,
+                        "cancelAdjustKrw": -1,
+                        "amountKrw": -1,
+                    },
+                ],
+            }
+        ],
+        "nextCursor": None,
+    }
+
+
+async def test_statements_page_newest_first(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+    """21개 → 첫 쪽 20개(가장 늦은 끝부터)와 커서, 둘째 쪽에 가장 이른 하나. 깨진 커서는 422."""
+    creator, _ = await _creator(db_session)
+    db_session.add_all(
+        [
+            _confirmation(creator, amount_krw=index, window_end=datetime(2025, 1, 15, tzinfo=UTC) + timedelta(days=31 * index))
+            for index in range(21)
+        ]
+    )
+    await db_session.flush()
+    await _login_as(db_client, creator.id)
+
+    first = (await db_client.get("/me/creator-payout/statements")).json()
+    second = (
+        await db_client.get("/me/creator-payout/statements", params={"cursor": first["nextCursor"]})
+    ).json()
+    broken = await db_client.get("/me/creator-payout/statements", params={"cursor": "not-a-cursor"})
+
+    assert [item["amountKrw"] for item in first["items"]] == list(range(20, 0, -1))
+    assert ([item["amountKrw"] for item in second["items"]], second["nextCursor"]) == ([0], None)
+    assert (broken.status_code, broken.json()["detail"]) == (422, {"code": "CREATOR_PAYOUT_CURSOR_INVALID"})
+
+
+async def test_statements_are_closed_while_switched_off(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    creator, _ = await _creator(db_session)
+    await _login_as(db_client, creator.id)
+    monkeypatch.setattr(settings, "creator_payout_enabled", False)
+
+    resp = await db_client.get("/me/creator-payout/statements")
+
+    assert (resp.status_code, resp.json()["detail"]) == (503, {"code": "CREATOR_PAYOUT_UNAVAILABLE"})
 
 
 # ── 기능 목록·설정 ──────────────────────────────────────────────────────────
