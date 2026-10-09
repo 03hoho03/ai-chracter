@@ -1736,9 +1736,10 @@ sudo python3 ops/check_env.py --format /opt/ddona/.env
 sudo bash ops/swap-api.sh
 ```
 
-공개 상태·화 공개본·심사 기록과 구매(소장) 기록은 남아 다시 켜면 그대로 돌아온다. 꺼진 동안 화 구매
-(`POST /webnovels/{id}/chapters/{id}/purchase`)도 403 이고, 독자 라우트(`/webnovels` 목록·홈 노벨·좋아요·읽은 자리)는 404
-`NOVEL_PUBLIC_DISABLED` 다. 작품 정보·화 읽기는 그 소설을 소장한 회원에게 410 `NOVEL_READING_ENDED`(`reason: "service_off"`),
+공개 상태·화 공개본·심사 기록과 구매(소장)·댓글·신고 기록은 남아 다시 켜면 그대로 돌아온다. 꺼진 동안 독자 라우트
+(`/webnovels` 목록·홈 노벨·좋아요와 좋아요 취소·읽은 자리·화 구매·화 댓글 목록과 쓰기·노벨 신고·댓글 신고)는 404
+`NOVEL_PUBLIC_DISABLED` 다. 내 댓글 지우기(`DELETE /webnovels/{id}/comments/{id}`)와 어드민 노벨 화면·조치는 스위치와
+무관하게 된다. 작품 정보·화 읽기는 그 소설을 소장한 회원에게 410 `NOVEL_READING_ENDED`(`reason: "service_off"`),
 나머지에게 404 다. 화면은 인증 없는 `GET /clover/pricing` 의 `novelPublicEnabled` 로 노벨 탭을 숨긴다. 줄을 지웠으니 키 개수
 문장을 다시 센다.
 

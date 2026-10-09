@@ -11,6 +11,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.admin import home_novel_curation
 from api.core.config import settings
 from api.db.models import AdminActionLog, User
 from api.db.models.character import CharacterVersionDetail
@@ -23,6 +24,7 @@ from api.db.models.novel import (
     NovelReaderPosition,
 )
 from api.novel_public import reading
+from api.novelize.deletion import delete_novels
 from factories import (
     PublicNovel,
     _allow_novelize,
@@ -506,7 +508,8 @@ async def test_like_and_unlike_move_the_count_once_each(db_client: httpx.AsyncCl
 async def test_views_count_once_per_reader_and_only_when_a_body_was_served(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """화 본문을 내준 때만, 소설 단위로 회원마다 한 번 센다 — 같은 사람이 여러 화를 열어도, 잠긴 화를 열어도 더 오르지 않는다."""
+    """화 본문을 내준 때만, 소설 단위로 회원마다 한 번 센다 — 같은 사람이 여러 화를 열어도, 잠긴 화를 열어도 더 오르지 않는다.
+    게시자 본인이 자기 화를 열면 세지 않는다."""
     novel = await _novel(db_session)
     reader, other = await _member(db_session), await _member(db_session)
 
@@ -516,7 +519,9 @@ async def test_views_count_once_per_reader_and_only_when_a_body_was_served(
     await db_client.get(_chapter_path(novel, 2))
     await db_client.get(_chapter_path(novel, 1))
     await _get(db_client, _chapter_path(novel, 1), as_user=other)
+    own = await _get(db_client, _chapter_path(novel, 1), as_user=novel.publisher_id)
 
+    assert own.json()["access"] == "publisher"
     assert locked_only == 0
     assert (await db_client.get(f"/webnovels/{novel.novel_id}")).json()["viewCount"] == 2
 
@@ -647,6 +652,28 @@ async def test_admin_curates_home_novels_and_home_shows_only_readable_ones_in_sl
             ("home-novel-curation-set", first.novel_id),
         ]
     )
+
+
+async def test_a_novel_deleted_while_being_curated_is_a_conflict_not_a_server_error(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """읽을 수 있다고 판정한 뒤 지정을 쓰기 전에 게시자가 소설을 지우면 409 이고, 자리는 비어 있고 감사 로그도 남지 않는다."""
+    novel = await _novel(db_session, batches=(1,))
+    await _as_admin(db_client, db_session)
+    listed = home_novel_curation._is_listed
+
+    async def deleted_right_after_the_check(db: AsyncSession, novel_id: uuid.UUID) -> bool:
+        readable = await listed(db, novel_id)
+        await delete_novels(db, [novel_id])
+        return readable
+
+    monkeypatch.setattr(home_novel_curation, "_is_listed", deleted_right_after_the_check)
+
+    resp = await db_client.put("/admin/home-novel-curations/1", json={"novelId": str(novel.novel_id)})
+
+    assert (resp.status_code, resp.json()["detail"]) == (409, {"code": "HOME_NOVEL_CURATION_CONFLICT"})
+    assert await db_session.scalar(sa.select(sa.func.count()).select_from(HomeNovelCuration)) == 0
+    assert await db_session.scalar(sa.select(sa.func.count()).select_from(AdminActionLog)) == 0
 
 
 async def test_admin_clears_a_home_novel_slot(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:

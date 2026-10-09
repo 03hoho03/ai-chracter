@@ -448,7 +448,8 @@ async def get_webnovel_chapter(
     db: AsyncSession = Depends(get_db_session),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> PublicNovelChapterResponse:
-    """노벨 화 하나. 무료 화·소장한 화·게시자 본인이면 공개본 본문을 문단 배열로 싣고 조회 수를 센다. 아니면 본문 없이
+    """노벨 화 하나. 무료 화·소장한 화·게시자 본인이면 공개본 본문을 문단 배열로 싣고, 게시자 본인이 아니면 조회 수를 센다
+    (자기 글을 다시 열어 본 것은 독자의 조회가 아니다). 아니면 본문 없이
     `access: locked` 와 가격만 싣는다(소장 화면용). 읽을 수 없으면 소장했던 사람에게 410 `NOVEL_READING_ENDED`, 아니면 404
     `NOVEL_CHAPTER_NOT_FOUND`(모듈 docstring)."""
     row = (
@@ -489,7 +490,7 @@ async def get_webnovel_chapter(
 
     position = await db.get(NovelReaderPosition, (user_id, chapter_id))
     readable = access != "locked"
-    if readable:
+    if readable and not is_publisher:
         background_tasks.add_task(_count_view, session_factory, novel_id, user_id)
     return PublicNovelChapterResponse(
         novel_id=novel_id,
@@ -624,8 +625,9 @@ async def unlike_webnovel(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
-    """좋아요 취소. 안 했으면 아무것도 바뀌지 않는다. 지금 읽을 수 없는 노벨이어도 취소는 된다 — 내 표시를 거두는 일이라
-    노벨의 상태와 무관하다. 행을 지운 요청만 수를 내린다(좋아요와 같은 이유)."""
+    """좋아요 취소. 안 했으면 아무것도 바뀌지 않는다. 노벨 스위치가 꺼져 있으면 다른 독자 라우트처럼 404
+    `NOVEL_PUBLIC_DISABLED` 다(꺼진 동안 화면이 노벨 탭을 숨긴다). 스위치가 켜져 있으면 지금 읽을 수 없는 노벨이어도 취소는
+    된다 — 내 표시를 거두는 일이라 노벨의 상태와 무관하다. 행을 지운 요청만 수를 내린다(좋아요와 같은 이유)."""
     removed = await db.scalar(
         delete(NovelLike)
         .where(NovelLike.user_id == user_id, NovelLike.novel_id == novel_id)

@@ -117,11 +117,18 @@ async def report_webnovel(
             raise _error(status.HTTP_404_NOT_FOUND, "NOVEL_CHAPTER_NOT_FOUND")
         chapter = (found[0], found[1])
 
+    # 화 신고도 그 화가 지워지면 `chapter_id` 가 비지만 화 번호는 남는다. 그래서 노벨 전체 신고는 화 번호까지 빈 행만 같은
+    # 신고로 본다 — 그러지 않으면 지워진 화의 옛 신고가 새 노벨 신고 대신 돌아온다.
+    same_target = (
+        NovelReport.chapter_id == body.chapter_id
+        if body.chapter_id is not None
+        else NovelReport.chapter_id.is_(None) & NovelReport.chapter_ordinal.is_(None)
+    )
     existing = await db.scalar(
         select(NovelReport).where(
             NovelReport.reporter_user_id == user_id,
             NovelReport.novel_id == novel_id,
-            NovelReport.chapter_id.is_not_distinct_from(body.chapter_id),
+            same_target,
         )
     )
     if existing is not None:

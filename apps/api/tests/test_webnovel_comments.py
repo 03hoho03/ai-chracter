@@ -265,6 +265,32 @@ async def test_a_novel_or_chapter_report_keeps_a_copy_of_the_public_text(
     assert (rows[2].publisher_user_id, rows[2].status) == (novel.publisher_id, ReportStatus.PENDING)
 
 
+async def test_a_report_on_a_since_deleted_chapter_is_not_mistaken_for_a_whole_novel_report(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """화가 지워지면 그 화 신고의 화 칸은 비고 화 번호만 남는다. 같은 사람이 나중에 노벨 전체를 신고하면 그 옛 화 신고가
+    아니라 새 신고가 생긴다."""
+    novel = await _novel(db_session)
+    reporter = await _member(db_session)
+    await _login_as(db_client, reporter)
+    path = f"/webnovels/{novel.novel_id}/reports"
+    chapter = await db_client.post(path, json={"reasonCategory": "hate", "chapterId": str(novel.chapter_ids[7])})
+    # 마지막 묶음을 지울 때 외래 키가 하는 일(화 칸만 비우고 화 번호는 둔다)을 그대로 한다.
+    await db_session.execute(
+        sa.update(NovelReport).where(NovelReport.id == chapter.json()["reportId"]).values(chapter_id=None)
+    )
+    await db_session.commit()
+
+    whole = await db_client.post(path, json={"reasonCategory": "spam"})
+
+    assert whole.status_code == 200 and whole.json()["reportId"] != chapter.json()["reportId"]
+    rows = (await db_session.scalars(sa.select(NovelReport).where(NovelReport.reporter_user_id == reporter))).all()
+    assert sorted((row.chapter_ordinal or 0, row.reason_category) for row in rows) == [
+        (0, ReportReasonCategory.SPAM),
+        (8, ReportReasonCategory.HATE),
+    ]
+
+
 async def test_novel_reports_need_a_readable_novel_someone_else_published(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

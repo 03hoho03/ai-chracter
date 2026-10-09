@@ -12,6 +12,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Path, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin.action_log import record_admin_action
@@ -106,25 +107,35 @@ async def set_home_novel_curation(
     옮긴다(한 노벨은 한 자리에만). 같은 노벨을 같은 자리에 다시 걸어도 막지 않고 감사 로그에 한 행 더 남긴다.
 
     404 `NOVEL_NOT_FOUND` 는 공개한 적이 없는 소설, 400 `NOT_PUBLICLY_LISTED` 는 지금 독자가 읽을 수 없는 노벨이다(걸었는데
-    홈에 안 보이는 혼란을 거는 시점에 막는다)."""
+    홈에 안 보이는 혼란을 거는 시점에 막는다). 409 `HOME_NOVEL_CURATION_CONFLICT` 는 판정 뒤 쓰기 전에 상황이 바뀐 경우다 —
+    다른 운영자가 같은 노벨을 다른 자리에 동시에 걸었거나(한 노벨 한 자리 유니크) 그 사이 게시자가 소설을 지웠다. 목록을
+    새로 읽고 다시 걸면 된다."""
     if await db.get(NovelPublication, body.novel_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "NOVEL_NOT_FOUND"})
     if not await _is_listed(db, body.novel_id):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"code": "NOT_PUBLICLY_LISTED"})
 
-    await db.execute(
-        delete(HomeNovelCuration).where(
-            HomeNovelCuration.novel_id == body.novel_id, HomeNovelCuration.position != position
-        )
-    )
-    await db.execute(
-        insert(HomeNovelCuration)
-        .values(position=position, novel_id=body.novel_id)
-        .on_conflict_do_update(
-            index_elements=[HomeNovelCuration.position],
-            set_={"novel_id": body.novel_id, "updated_at": func.now()},
-        )
-    )
+    # 판정과 쓰기 사이를 잠그지 않는다 — 운영자 한두 명이 쓰는 화면이라 드문 겹침은 제약 위반을 409 로 돌려주는 것으로 족하다.
+    # SAVEPOINT 로 감싸 실패한 이 쓰기만 되감는다.
+    try:
+        async with db.begin_nested():
+            await db.execute(
+                delete(HomeNovelCuration).where(
+                    HomeNovelCuration.novel_id == body.novel_id, HomeNovelCuration.position != position
+                )
+            )
+            await db.execute(
+                insert(HomeNovelCuration)
+                .values(position=position, novel_id=body.novel_id)
+                .on_conflict_do_update(
+                    index_elements=[HomeNovelCuration.position],
+                    set_={"novel_id": body.novel_id, "updated_at": func.now()},
+                )
+            )
+    except IntegrityError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail={"code": "HOME_NOVEL_CURATION_CONFLICT"}
+        ) from None
     await record_admin_action(
         db,
         admin_id=admin_id,
