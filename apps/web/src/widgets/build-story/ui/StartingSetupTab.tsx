@@ -38,6 +38,9 @@ import { UnknownMediaTagNotice } from "./UnknownMediaTagNotice";
 /** 열림 키의 목록 이름 — 발행 실패 때 셸이 오류 항목을 여는 키와 같은 이름이어야 한다(타입이 목록 정의의 키로 묶는다). */
 const STARTING_SETUP_LIST: StoryCollapsibleList = "startingSetup";
 
+/** '설정 추가' 버튼 id — 스탯·상황 노트·엔딩 탭의 빈 상태에서 이 탭으로 넘어올 때 포커스할 곳이다. */
+export const STARTING_SETUP_ADD_BUTTON_ID = "starting-setup-add";
+
 /** "설정 추가"로 여러 시작설정 생성, 발행하려면 최소 1개 필요.
  * 그 최소 1개는 storyBuilderSchema의 `.min(1)`이 막고, 위반은 발행을 눌렀을 때 토스트와 탭 에러로
  * 드러난다 — 발행 버튼 자체는 비활성화하지 않는다(apps/web/CLAUDE.md §폼 / 빌더). */
@@ -178,6 +181,7 @@ export function StartingSetupTab() {
       {fields.length < MAX_STARTING_SETUPS ? (
         <Button
           ref={addButtonRef}
+          id={STARTING_SETUP_ADD_BUTTON_ID}
           type="button"
           variant="secondary"
           className="w-fit"

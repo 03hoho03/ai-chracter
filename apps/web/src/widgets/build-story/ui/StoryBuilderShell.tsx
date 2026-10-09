@@ -77,7 +77,7 @@ import { RegistrationTab } from "./RegistrationTab";
 import { SettingTab } from "./SettingTab";
 import { ShortcutTab } from "./ShortcutTab";
 import { SituationNoteTab } from "./SituationNoteTab";
-import { StartingSetupTab } from "./StartingSetupTab";
+import { STARTING_SETUP_ADD_BUTTON_ID, StartingSetupTab } from "./StartingSetupTab";
 import { StatTab } from "./StatTab";
 
 type StoryBuilderShellProps = {
@@ -180,6 +180,18 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
     const setupId = errorParentItemId(errors, values, STARTING_SETUP_SCOPE, TABS, location?.fieldPath);
     if (setupId !== undefined) uiState.select(SELECTED_STARTING_SETUP, setupId);
     focusFirstError(location);
+  }
+
+  // 스탯·상황 노트·엔딩 탭의 빈 상태(시작설정 없음)에서 시작설정 탭으로 간다. 누른 버튼은 탭 본문과 함께 사라지므로, 새 탭이
+  // 커밋된 다음 프레임에 그 탭의 '설정 추가'로 포커스를 옮긴다(없으면 시작설정 탭 트리거).
+  function goToStartingSetup() {
+    setActiveTab("startingSetup");
+    requestAnimationFrame(() => {
+      const target =
+        document.getElementById(STARTING_SETUP_ADD_BUTTON_ID) ??
+        document.querySelector<HTMLElement>('[data-tab-id="startingSetup"]');
+      target?.focus();
+    });
   }
 
   const { saveNow } = useAutosave({
@@ -430,10 +442,10 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
                   <StartingSetupTab />
                 </TabsContent>
                 <TabsContent value="stat">
-                  <StatTab />
+                  <StatTab onGoToStartingSetup={goToStartingSetup} />
                 </TabsContent>
                 <TabsContent value="situationNote">
-                  <SituationNoteTab />
+                  <SituationNoteTab onGoToStartingSetup={goToStartingSetup} />
                 </TabsContent>
                 <TabsContent value="mediaBook">
                   <MediaBookTab />
@@ -445,7 +457,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
                   <ShortcutTab />
                 </TabsContent>
                 <TabsContent value="ending">
-                  <EndingTab />
+                  <EndingTab onGoToStartingSetup={goToStartingSetup} />
                 </TabsContent>
                 <TabsContent value="registration">
                   <RegistrationTab />

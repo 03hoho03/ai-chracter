@@ -35,6 +35,7 @@ import { ColorPicker, IconPicker } from "@/shared/ui/color-icon-picker";
 
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
 import { StartingSetupPicker } from "./StartingSetupPicker";
+import { StartingSetupRequiredState } from "./StartingSetupRequiredState";
 import { StatChangeFields } from "./StatChangeFields";
 import { StatRuleList } from "./StatRuleList";
 import { StoryMacroNotice } from "./StoryMacroNotice";
@@ -58,7 +59,7 @@ type PendingStatRemovals = Map<string, RemovedStat>;
 /** 탭 전체가 선택사항(0개도 발행 가능), 스탯은 시작설정별로
  * 독립이라 이 탭은 먼저 시작설정을 고른 뒤 그 시작설정의 스탯만 편집한다. 고른 시작설정은 셸의 화면 상태에 둔다 — 탭을
  * 옮겨도 남고 엔딩 탭과 같은 값을 보며, 발행 실패 때 셸이 오류가 있는 시작설정으로 바꿔 놓을 수 있다. */
-export function StatTab() {
+export function StatTab({ onGoToStartingSetup }: { onGoToStartingSetup: () => void }) {
   const form = useFormContext<StoryBuilderFormValues>();
 
   const { control } = form;
@@ -77,16 +78,7 @@ export function StatTab() {
     };
   }, []);
 
-  if (startingSetups.length === 0) {
-    // 다른 탭 본문과 같은 `py-6` 루트로 감싸야 탭 목록과의 간격이 탭마다 같다.
-    return (
-      <div className="py-6">
-        <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-20 text-center">
-          <p className="text-sm break-keep text-muted-foreground">먼저 시작설정 탭에서 시작설정을 추가해주세요.</p>
-        </div>
-      </div>
-    );
-  }
+  if (startingSetups.length === 0) return <StartingSetupRequiredState onGoToStartingSetup={onGoToStartingSetup} />;
 
   // 기억해 둔 시작설정이 지워졌거나 아직 고른 적이 없으면 첫 시작설정을 보인다.
   const selectedIndex = startingSetups.findIndex((setup) => setup.id === selectedSetupId);
