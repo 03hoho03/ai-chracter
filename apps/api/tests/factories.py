@@ -148,7 +148,8 @@ async def _make_user_with_clover_lot(
 
 
 async def _make_payment(db_session: AsyncSession, *, user_id: uuid.UUID, **overrides: object) -> Payment:
-    """주문 행 하나(기본: 베이직 상품 값, `pending`). 구매 로트(`purchase_paid`·`purchase_bonus`)는 결제를 가리켜야 하므로
+    """주문 행 하나(기본: 지금은 팔지 않는 예전 베이직 상품(`basic`)의 값, `pending`). 환불·정산은 상품 키를 다시
+    찾지 않고 이 행의 금액·수량을 쓰므로, 예전 키의 행으로도 그 경로가 돌아야 한다. 구매 로트(`purchase_paid`·`purchase_bonus`)는 결제를 가리켜야 하므로
     (로트 CHECK) 그런 로트를 만드는 셋업이 먼저 부른다."""
     defaults: dict[str, object] = {
         "payment_id": f"clv{uuid.uuid4().hex}",

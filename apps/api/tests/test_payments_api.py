@@ -232,7 +232,7 @@ async def test_create_payment_fixes_the_amount_on_the_server(
     await _make_published(db_session, kind="refund-policy", version="2026-10-01")
     user = await _buyer(db_session, db_client)
 
-    resp = await db_client.post("/payments", json={"productKey": "plus", "agreed": True})
+    resp = await db_client.post("/payments", json={"productKey": "plus_v2", "agreed": True})
 
     assert resp.status_code == 201
     body = resp.json()
@@ -243,7 +243,7 @@ async def test_create_payment_fixes_the_amount_on_the_server(
         "storeId": _STORE,
         "channelKey": _CHANNEL,
         "orderName": "클로버 플러스",
-        "totalAmount": 33_000,
+        "totalAmount": 30_000,
         "currency": "KRW",
     }
     assert order.payment_id.startswith("clv") and len(order.payment_id) == 35
@@ -259,9 +259,9 @@ async def test_create_payment_fixes_the_amount_on_the_server(
         order.refund_policy_version,
     ) == (
         user.id,
-        "plus",
-        33_000,
-        11_000,
+        "plus_v2",
+        30_000,
+        10_000,
         1_500,
         _CHANNEL,
         "pending",
@@ -270,11 +270,26 @@ async def test_create_payment_fixes_the_amount_on_the_server(
     )
 
 
+async def test_create_payment_rejects_a_retired_product_key(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """예전 상품표의 키로는 주문이 생기지 않는다. 깨지는 시나리오: 배포 전에 열어 둔 화면이 옛 상품을 눌렀는데 그 키가
+    아직 받아들여져 옛 가격으로 주문이 생기거나, 같은 키가 새 가격의 상품을 가리킨다."""
+    await _make_published(db_session, kind="refund-policy", version="2026-10-01")
+    user = await _buyer(db_session, db_client)
+
+    resp = await db_client.post("/payments", json={"productKey": "basic", "agreed": True})
+
+    assert resp.status_code == 422
+    assert [error["loc"] for error in resp.json()["detail"]] == [["body", "productKey"]]
+    assert await db_session.scalar(select(Payment).where(Payment.user_id == user.id)) is None
+
+
 async def test_create_payment_requires_agreement(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
     await _make_published(db_session, kind="refund-policy", version="2026-10-01")
     await _user(db_session, db_client)
 
-    resp = await db_client.post("/payments", json={"productKey": "basic", "agreed": False})
+    resp = await db_client.post("/payments", json={"productKey": "basic_v2", "agreed": False})
 
     assert resp.status_code == 422
 
@@ -290,7 +305,7 @@ async def test_create_payment_is_closed_when_payments_are_off(
     user = await _user(db_session, db_client)
     monkeypatch.setattr(settings, setting, False if setting == "payments_enabled" else "")
 
-    resp = await db_client.post("/payments", json={"productKey": "basic", "agreed": True})
+    resp = await db_client.post("/payments", json={"productKey": "basic_v2", "agreed": True})
 
     assert (resp.status_code, resp.json()["detail"]) == (503, {"code": "PAYMENTS_UNAVAILABLE"})
     assert await db_session.scalar(select(Payment).where(Payment.user_id == user.id)) is None
@@ -303,7 +318,7 @@ async def test_create_payment_needs_a_published_refund_policy(
     assert await _latest_published_legal_version(db_session, "refund-policy") is None
     await _buyer(db_session, db_client)
 
-    resp = await db_client.post("/payments", json={"productKey": "basic", "agreed": True})
+    resp = await db_client.post("/payments", json={"productKey": "basic_v2", "agreed": True})
 
     assert (resp.status_code, resp.json()["detail"]) == (503, {"code": "PAYMENTS_UNAVAILABLE"})
 
@@ -323,7 +338,7 @@ async def test_create_payment_requires_identity_verification(
     monkeypatch.setattr(settings, "identity_gate_enabled", gate)
     user = await _user(db_session, db_client, rate_limit_exempt=exempt)
 
-    resp = await db_client.post("/payments", json={"productKey": "basic", "agreed": True})
+    resp = await db_client.post("/payments", json={"productKey": "basic_v2", "agreed": True})
 
     assert (resp.status_code, resp.json()["detail"]) == (403, {"code": "IDENTITY_VERIFICATION_REQUIRED"})
     assert await db_session.scalar(select(Payment).where(Payment.user_id == user.id)) is None
@@ -341,7 +356,7 @@ async def test_create_payment_requires_the_verified_age_of_nineteen(
     born = date(datetime.now(UTC).date().year - age, 1, 1)
     user = await _buyer(db_session, db_client, birth_date=born)
 
-    resp = await db_client.post("/payments", json={"productKey": "basic", "agreed": True})
+    resp = await db_client.post("/payments", json={"productKey": "basic_v2", "agreed": True})
 
     assert resp.status_code == status_code
     orders = (await db_session.scalars(select(Payment).where(Payment.user_id == user.id))).all()

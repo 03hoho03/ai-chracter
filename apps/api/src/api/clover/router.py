@@ -41,11 +41,12 @@ from api.clover.schemas import (
     CloverMissionClaimResponse,
     CloverMissionItem,
     CloverMissionsResponse,
+    CloverModelPricingItem,
     CloverPayMethodItem,
     CloverPricingResponse,
     CloverProductItem,
 )
-from api.core import clover
+from api.core import clover, rate_limit_gate
 from api.core.clover import (
     PURCHASE_LOT_KINDS,
     earned_lot_expiry,
@@ -58,7 +59,7 @@ from api.db.models.auth import User
 from api.db.models.clover import CloverLedger, CloverLot
 from api.db.session import get_db_session
 from api.legal.dependencies import require_legal_consent
-from api.llm.chat_models import DEFAULT_CHAT_MODEL, chat_turn_cost
+from api.llm.chat_models import CHAT_MODELS, DEFAULT_CHAT_MODEL, chat_turn_cost, novel_episode_unit_price
 from api.payments.config import identity_gate_active, payments_active
 from api.payments.methods import PAY_METHODS
 from api.session.dependencies import get_current_user_id
@@ -174,8 +175,12 @@ async def _expiring_soon(db: AsyncSession, *, user_id: uuid.UUID, now: datetime)
 
 @router.get("/pricing")
 async def get_clover_pricing() -> CloverPricingResponse:
-    """공개 조회 — 인증 없음. 충전 상품과 기본 모델 기준 사용 단가를 한 응답에 싣는다. 웹 상품 안내는 숫자 사본 없이
-    이 값만 쓴다. DB 를 읽지 않아 비용이 없으므로 레이트리밋도 붙이지 않는다."""
+    """공개 조회 — 인증 없음. 충전 상품과 모든 사용처·모델의 사용 단가, 하루 무료 대화 수를 한 응답에 싣는다. 웹 상품
+    안내는 숫자 사본 없이 이 값만 쓴다. DB 를 읽지 않아 비용이 없으므로 레이트리밋도 붙이지 않는다.
+
+    허용 전용 표시는 설정이 아니라 허용 판정의 구조에서 온다 — 상위 모델(`llm/model_access.py`)과 소설
+    (`novelize/access.py`)은 스위치가 켜져 있어도 env 명단과 어드민 허용 행이 있는 계정만 쓴다. 판정이 명단 없이 모두에게
+    열리도록 바뀌면 여기 값도 함께 바꾼다."""
     # 상품과 단가는 요청마다 모듈 속성으로 다시 읽는다 — import 로 값을 묶어 두면 상수를 바꿔도(테스트의 monkeypatch 포함)
     # 응답이 따라오지 않는다.
     return CloverPricingResponse(
@@ -191,6 +196,20 @@ async def get_clover_pricing() -> CloverPricingResponse:
         ],
         chat_turn_cost=chat_turn_cost(DEFAULT_CHAT_MODEL),
         image_cost=clover.IMAGE_UNIT_COST,
+        models=[
+            CloverModelPricingItem(
+                id=m.id,
+                name=m.name,
+                is_default=m.id == DEFAULT_CHAT_MODEL,
+                restricted=m.id != DEFAULT_CHAT_MODEL,
+                chat_turn_cost=chat_turn_cost(m.id),
+                novel_episode_cost=novel_episode_unit_price(m.id),
+            )
+            for m in CHAT_MODELS
+        ],
+        novel_ai_edit_cost=clover.NOVELIZE_AI_EDIT_COST,
+        novel_restricted=True,
+        daily_free_chat_turns=rate_limit_gate.CHAT_DAILY_LIMIT,
         payments_enabled=payments_active(),
         identity_gate_enabled=identity_gate_active(),
         pay_methods=[

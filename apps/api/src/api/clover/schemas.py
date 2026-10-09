@@ -4,6 +4,7 @@ from typing import Literal
 
 from api.clover.products import ProductKey
 from api.core.schema import CamelModel
+from api.llm.chat_models import ChatModelId
 from api.payments.methods import PayMethod
 
 # 원장 조회 쿼리 파라미터와 응답 `category` 필드가
@@ -94,14 +95,38 @@ class CloverPayMethodItem(CamelModel):
     easy_pay_provider: str | None
 
 
+class CloverModelPricingItem(CamelModel):
+    """글쓰기 모델 하나의 사용 단가. 모델 레지스트리(`llm/chat_models.py`)의 모든 모델이 레지스트리 순서대로 실린다."""
+
+    id: ChatModelId
+    name: str
+    # 새 대화방이 고르는 기본 모델인가.
+    is_default: bool
+    # 허용된 계정만 쓰는 모델인가(상위 모델). 기능 스위치가 꺼져 있어도 켜져 있어도 같은 값이다 — 스위치 상태를 내보내면
+    # 비로그인 방문자에게 기능이 켜졌는지가 드러난다(소설 라우트가 꺼짐·미허용을 한 가지 거부로 내는 것과 같은 이유).
+    restricted: bool
+    # 이 모델로 쓰는 채팅 턴 하나와 소설 화 하나의 클로버.
+    chat_turn_cost: int
+    novel_episode_cost: int
+
+
 class CloverPricingResponse(CamelModel):
-    """공개 가격 안내. 단가는 기본 모델 기준만 싣는다 — 상위 모델은 허용된 계정만 쓰고 소설은 허용 명단 전용이라
-    공개 안내에 넣지 않는다."""
+    """공개 가격 안내. 구매 전 안내에 없는 사용처 가격은 숨은 가격으로 읽히므로 상위 모델과 소설(화·AI 수정)까지 모든
+    사용처의 단가를 싣고, 허용된 계정만 쓰는 사용처는 그 사실(`restricted`·`novel_restricted`)을 함께 싣는다."""
 
     products: list[CloverProductItem]
-    # 기본 모델로 쓰는 채팅 턴 하나와 이미지 한 장의 클로버.
+    # 기본 모델로 쓰는 채팅 턴 하나와 이미지 한 장의 클로버. 채팅 턴은 `models` 의 기본 모델 값과 같다 — 모델별 목록이
+    # 생기기 전에 배포된 화면이 이 칸을 읽으므로 남겨 둔다.
     chat_turn_cost: int
     image_cost: int
+    models: list[CloverModelPricingItem]
+    # AI 문단 수정 한 번의 클로버. 모델과 무관하다(언제나 기본 모델로 고친다).
+    novel_ai_edit_cost: int
+    # 소설(화 생성·AI 수정)이 허용된 계정 전용인가. 상위 모델 소설 화는 이 값과 모델의 `restricted` 를 함께 본다.
+    novel_restricted: bool
+    # 하루에 클로버 없이 쓸 수 있는 대화 턴 수. 로그인한 화면은 `GET /me` 의 같은 값을 읽지만 공개 안내는 그 응답을
+    # 못 읽는다.
+    daily_free_chat_turns: int
     # 지금 결제를 받는가. 거짓이면 구매 화면이 "준비 중"을 보인다.
     payments_enabled: bool
     # 구매 화면이 고를 수 있는 결제수단(`payments/methods.py` 가 유일한 목록).
