@@ -1376,6 +1376,112 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/creator-payout/payouts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Creator Payouts
+         * @description 그 상태의 지급(기본 처리 중), 오래된 신청부터. 탈퇴 회원의 건도 나온다(닉네임 null).
+         */
+        get: operations["list_creator_payouts_admin_creator_payout_payouts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/creator-payout/payouts/{payout_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Creator Payout Detail
+         * @description 지급 건 하나와 마스킹한 수취인, 신청 때의 원천징수와 지금 세율로 다시 계산한 값. 수취인 실명을 복호화하지 못하면
+         *     (키 분실 등) 409 `CREATOR_PAYOUT_INFO_UNREADABLE` — 작가에게 지급 정보를 다시 입력받고 이 건은 반려 뒤 재신청한다.
+         */
+        get: operations["get_creator_payout_detail_admin_creator_payout_payouts__payout_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/creator-payout/payouts/{payout_id}/payee-info-view": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * View Creator Payout Payee Info
+         * @description 지급 건 수취인의 지급 정보 원문(실명·주민등록번호·은행·계좌번호). 사유가 필요하고, **열람 1회 = 감사 1행**이다 —
+         *     감사 행을 커밋한 뒤에만 원문을 돌려준다. 복호화하지 못하면 409 `CREATOR_PAYOUT_INFO_UNREADABLE`(본 것이 없어 감사 행도
+         *     남기지 않는다). 원문은 이 응답에만 있고 로그·감사 기록·예외 메시지에는 넣지 않는다.
+         */
+        post: operations["view_creator_payout_payee_info_admin_creator_payout_payouts__payout_id__payee_info_view_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/creator-payout/payouts/{payout_id}/transfer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Creator Payout Transfer
+         * @description 은행에서 이체를 마쳤다고 기록한다. 처리 중이 아니면 409 `CREATOR_PAYOUT_NOT_REQUESTED`. 이체일이 신청일(KST)보다
+         *     앞서거나 오늘(KST)보다 뒤면 422 `CREATOR_PAYOUT_TRANSFER_DATE_INVALID`. 금액은 신청 때 이미 잔액에서 빠져 있어 잔액은
+         *     그대로다.
+         */
+        post: operations["record_creator_payout_transfer_admin_creator_payout_payouts__payout_id__transfer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/creator-payout/payouts/{payout_id}/return": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Return Creator Payout
+         * @description 반려한다(지급 정보가 사실과 다름, 이체 실패 등). 사유는 신청자에게 보인다. 처리 중이 아니면 409
+         *     `CREATOR_PAYOUT_NOT_REQUESTED`. 반려된 금액은 잔액(파생값)으로 저절로 돌아온다.
+         */
+        post: operations["return_creator_payout_admin_creator_payout_payouts__payout_id__return_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/assets/presigned-upload": {
         parameters: {
             query?: never;
@@ -4893,8 +4999,8 @@ export interface paths {
         };
         /**
          * Get Creator Payout
-         * @description 신청 상태와 신청 자격, 적립 잔액. 인증·나이·발행 작품이 모자라도 거절하지 않고 `eligibility` 로 보여 준다(신청과
-         *     같은 판정).
+         * @description 신청 상태와 신청 자격, 적립 잔액, 지급 정보 표시값과 처리 중인 지급. 인증·나이·발행 작품이 모자라도 거절하지
+         *     않고 `eligibility` 로 보여 준다(신청과 같은 판정).
          */
         get: operations["get_creator_payout_me_creator_payout_get"];
         put?: never;
@@ -4941,6 +5047,60 @@ export interface paths {
          *     승인 취소·거절된 회원은 다시 신청할 수 있다(새 행). 동의 기록에 남길 처리방침 게시본이 없으면 503 이다.
          */
         post: operations["apply_creator_payout_me_creator_payout_application_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/creator-payout/payout-info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Payout Info
+         * @description 지급 정보를 등록하거나 새로 입력한다(이전 판은 남기고 새 판을 넣는다). 순서: 스위치·암호화 키
+         *     503 → 회원 행 잠금(탈퇴 401·정지 403) → 미인증·만 19세 미만 403 → 승인된 적 없음 403 `CREATOR_PAYOUT_NOT_APPROVED` → 형식 422
+         *     `CREATOR_PAYOUT_INFO_INVALID` → 외국인등록번호 422 `CREATOR_PAYOUT_FOREIGNER_UNSUPPORTED` → 주민등록번호 앞 7자리가
+         *     본인인증 생년월일과 다름 422 `CREATOR_PAYOUT_RRN_MISMATCH` → 처리 중인 지급이 있음 409 `CREATOR_PAYOUT_IN_PROGRESS`
+         *     (처리 중인 건의 수취인을 바꾸지 않는다).
+         *
+         *     동의 기록에 남길 처리방침 게시본이 없으면 503 이다.
+         */
+        put: operations["put_payout_info_me_creator_payout_payout_info_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/creator-payout/payouts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Payouts */
+        get: operations["list_payouts_me_creator_payout_payouts_get"];
+        put?: never;
+        /**
+         * Request Payout
+         * @description 확정 잔액 전액의 지급을 신청한다(금액을 고르지 않는다). 순서: 스위치·암호화 키 503 → 회원 행 잠금(탈퇴 401·정지 403) →
+         *     미인증·만 19세 미만 403 → 승인된 적 없음 403 `CREATOR_PAYOUT_NOT_APPROVED`(승인 취소된 회원은 신청할 수 있다) →
+         *     지급 정보 없음 409 `CREATOR_PAYOUT_INFO_REQUIRED` → 처리 중인 지급이 있음 409 `CREATOR_PAYOUT_IN_PROGRESS` → 잔액 0
+         *     이하 422 `CREATOR_PAYOUT_NOTHING_TO_PAY` → 잔액이 최소 지급액 미만이고 탈퇴 전 신청이 아님 422
+         *     `CREATOR_PAYOUT_BELOW_MINIMUM`(+ `minimumKrw`·`balanceKrw`).
+         *
+         *     `forWithdrawal` 은 잔액이 최소액 미만일 때만 쓰인다 — 최소액 이상이면 일반 신청으로 남긴다. 실제로 탈퇴하는지는
+         *     강제하지 않는다(악용해도 최소액 미만을 조금 일찍 받는 것뿐이다). 원천징수 세율·세액은 신청 때 계산해 행에 남긴다.
+         */
+        post: operations["request_payout_me_creator_payout_payouts_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5919,6 +6079,65 @@ export interface components {
             reasonText: string;
         };
         /**
+         * AdminCreatorPayoutDetail
+         * @description 지급 건 하나. 회원 상세(탈퇴 회원은 404)에 기대지 않고 처리에 필요한 값을 이 응답이 갖는다.
+         *
+         *     `withholding` 은 신청 때 계산해 남긴 원천징수이고 이체는 이 값으로 한다. `currentWithholding` 은 지금 코드의 세율로
+         *     다시 계산한 값이라, 신청 뒤 세율 상수가 바뀌었으면 둘이 달라 화면이 경고한다. 수취인은 실명 첫·끝 글자, 은행, 계좌
+         *     끝 4자리만 싣는다 — 원문은 사유를 적고 `payee-info-view` 로만 본다.
+         */
+        AdminCreatorPayoutDetail: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Userid
+             * Format: uuid
+             */
+            userId: string;
+            /** Nickname */
+            nickname: string | null;
+            /** Withdrawn */
+            withdrawn: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "requested" | "paid" | "returned";
+            /** Amountkrw */
+            amountKrw: number;
+            /** Forwithdrawal */
+            forWithdrawal: boolean;
+            withholding: components["schemas"]["AdminCreatorPayoutWithholding"];
+            currentWithholding: components["schemas"]["AdminCreatorPayoutWithholding"];
+            /** Maskedname */
+            maskedName: string;
+            /**
+             * Bankcode
+             * @enum {string}
+             */
+            bankCode: "002" | "003" | "004" | "007" | "011" | "012" | "020" | "023" | "027" | "031" | "032" | "034" | "035" | "037" | "039" | "045" | "048" | "050" | "064" | "071" | "081" | "088" | "089" | "090" | "092";
+            /** Accountlast4 */
+            accountLast4: string;
+            /**
+             * Requestedat
+             * Format: date-time
+             */
+            requestedAt: string;
+            /** Paidat */
+            paidAt: string | null;
+            /** Transferredon */
+            transferredOn: string | null;
+            /** Returnedat */
+            returnedAt: string | null;
+            /** Adminmemo */
+            adminMemo: string;
+            /** Returnreason */
+            returnReason: string;
+        };
+        /**
          * AdminCreatorPayoutEligibility
          * @description 신청자의 지금 자격. 회원의 신청·승인 재확인과 같은 판정 함수의 값이다.
          */
@@ -5933,6 +6152,80 @@ export interface components {
             suspended: boolean;
             /** Withdrawn */
             withdrawn: boolean;
+        };
+        /** AdminCreatorPayoutItem */
+        AdminCreatorPayoutItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Userid
+             * Format: uuid
+             */
+            userId: string;
+            /** Nickname */
+            nickname: string | null;
+            /** Withdrawn */
+            withdrawn: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "requested" | "paid" | "returned";
+            /** Amountkrw */
+            amountKrw: number;
+            /** Netamountkrw */
+            netAmountKrw: number;
+            /**
+             * Requestedat
+             * Format: date-time
+             */
+            requestedAt: string;
+        };
+        /** AdminCreatorPayoutListResponse */
+        AdminCreatorPayoutListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminCreatorPayoutItem"][];
+            /** Page */
+            page: number;
+            /** Totalpages */
+            totalPages: number;
+            /** Totalcount */
+            totalCount: number;
+        };
+        /**
+         * AdminCreatorPayoutReturnRequest
+         * @description 반려 사유. 공백만이면 422(라우터가 확인한다). 신청자의 크리에이터 정산 화면에 그대로 보인다.
+         */
+        AdminCreatorPayoutReturnRequest: {
+            /** Reasontext */
+            reasonText: string;
+        };
+        /** AdminCreatorPayoutTransferRequest */
+        AdminCreatorPayoutTransferRequest: {
+            /**
+             * Transferredon
+             * Format: date
+             */
+            transferredOn: string;
+            /**
+             * Adminmemo
+             * @default
+             */
+            adminMemo: string;
+        };
+        /** AdminCreatorPayoutWithholding */
+        AdminCreatorPayoutWithholding: {
+            /** Incometaxratebps */
+            incomeTaxRateBps: number;
+            /** Incometaxkrw */
+            incomeTaxKrw: number;
+            /** Localtaxkrw */
+            localTaxKrw: number;
+            /** Netamountkrw */
+            netAmountKrw: number;
         };
         /** AdminDashboardActivityResponse */
         AdminDashboardActivityResponse: {
@@ -7164,6 +7457,32 @@ export interface components {
             createdAt: string;
         };
         /**
+         * AdminPayeeInfoViewRequest
+         * @description 지급 정보 원문 열람 사유. `reason_text` 가 공백만이면 422(라우터가 확인한다). 채팅 열람과 같은 사유 분류를 쓴다.
+         */
+        AdminPayeeInfoViewRequest: {
+            reasonCategory: components["schemas"]["ChatViewReasonCategory"];
+            /** Reasontext */
+            reasonText: string;
+        };
+        /**
+         * AdminPayeeInfoViewResponse
+         * @description 지급 정보 원문. 이 응답에만 싣고 로그·감사 기록에는 남기지 않는다.
+         */
+        AdminPayeeInfoViewResponse: {
+            /** Legalname */
+            legalName: string;
+            /** Rrn */
+            rrn: string;
+            /**
+             * Bankcode
+             * @enum {string}
+             */
+            bankCode: "002" | "003" | "004" | "007" | "011" | "012" | "020" | "023" | "027" | "031" | "032" | "034" | "035" | "037" | "039" | "045" | "048" | "050" | "064" | "071" | "081" | "088" | "089" | "090" | "092";
+            /** Accountnumber */
+            accountNumber: string;
+        };
+        /**
          * AdminPromptDraftResponse
          * @description `id`가 `None`이면 아직 저장된 초안 행이 없다는 뜻이다 — `GET .../draft`가 활성
          *     세트의 복제본을 그 자리에서 만들어 보여줄 뿐 아무것도 저장하지 않는다(부작용 없는
@@ -7490,7 +7809,7 @@ export interface components {
              * Actiontype
              * @enum {string}
              */
-            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "home-novel-curation-clear" | "home-novel-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "notice-publish" | "notice-unpublish" | "novel-comment-delete" | "novel-comment-hide" | "novel-comment-report-reject" | "novel-comment-restore" | "novel-lift" | "novel-report-reject" | "novel-restrict" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-creator-payout-approve" | "user-creator-payout-reject" | "user-creator-payout-revoke" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-payment-refund" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
+            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "home-novel-curation-clear" | "home-novel-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "notice-publish" | "notice-unpublish" | "novel-comment-delete" | "novel-comment-hide" | "novel-comment-report-reject" | "novel-comment-restore" | "novel-lift" | "novel-report-reject" | "novel-restrict" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-creator-payout-approve" | "user-creator-payout-info-view" | "user-creator-payout-reject" | "user-creator-payout-return" | "user-creator-payout-revoke" | "user-creator-payout-transfer" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-payment-refund" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
             /** Targetcontentid */
             targetContentId: string | null;
             /** Contentname */
@@ -9168,6 +9487,70 @@ export interface components {
             /** Suspended */
             suspended: boolean;
         };
+        /** CreatorPayoutInProgressView */
+        CreatorPayoutInProgressView: {
+            /** Amountkrw */
+            amountKrw: number;
+            /**
+             * Requestedat
+             * Format: date-time
+             */
+            requestedAt: string;
+        };
+        /**
+         * CreatorPayoutInfoView
+         * @description 등록한 지급 정보의 표시값. 주민등록번호는 싣지 않는다. `maskedName` 은 실명의 첫·끝 글자만 남긴 값이고, 암호화 키를
+         *     잃어 복호화할 수 없으면 null 이다(은행·계좌 끝 4자리는 평문이라 그대로 보인다) — 그때는 지급 정보를 다시 입력받는다.
+         */
+        CreatorPayoutInfoView: {
+            /** Maskedname */
+            maskedName: string | null;
+            /**
+             * Bankcode
+             * @enum {string}
+             */
+            bankCode: "002" | "003" | "004" | "007" | "011" | "012" | "020" | "023" | "027" | "031" | "032" | "034" | "035" | "037" | "039" | "045" | "048" | "050" | "064" | "071" | "081" | "088" | "089" | "090" | "092";
+            /** Accountlast4 */
+            accountLast4: string;
+        };
+        /**
+         * CreatorPayoutPayoutView
+         * @description 지급 신청 하나. `transferredOn` 은 이체한 날(KST), `returnReason` 은 반려 사유다.
+         */
+        CreatorPayoutPayoutView: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "requested" | "paid" | "returned";
+            /** Amountkrw */
+            amountKrw: number;
+            /** Incometaxkrw */
+            incomeTaxKrw: number;
+            /** Localtaxkrw */
+            localTaxKrw: number;
+            /** Netamountkrw */
+            netAmountKrw: number;
+            /**
+             * Requestedat
+             * Format: date-time
+             */
+            requestedAt: string;
+            /** Transferredon */
+            transferredOn: string | null;
+            /** Returnreason */
+            returnReason: string;
+        };
+        /** CreatorPayoutPayoutsResponse */
+        CreatorPayoutPayoutsResponse: {
+            /** Items */
+            items: components["schemas"]["CreatorPayoutPayoutView"][];
+        };
         /** CreatorPayoutResponse */
         CreatorPayoutResponse: {
             application: components["schemas"]["CreatorPayoutApplicationView"] | null;
@@ -9178,6 +9561,12 @@ export interface components {
             balanceKrw: number;
             /** Ratebps */
             rateBps: number;
+            /** Minimumpayoutkrw */
+            minimumPayoutKrw: number;
+            /** Payoutavailable */
+            payoutAvailable: boolean;
+            payoutInfo: components["schemas"]["CreatorPayoutInfoView"] | null;
+            inProgressPayout: components["schemas"]["CreatorPayoutInProgressView"] | null;
         };
         /**
          * CreatorPayoutStatementLineView
@@ -11696,6 +12085,27 @@ export interface components {
             /** Linkable */
             linkable: boolean;
         };
+        /**
+         * PutPayoutInfoRequest
+         * @description 지급 정보. 형식은 라우터가 확인하고 `CREATOR_PAYOUT_INFO_INVALID` 로 답한다 — 스키마 검증 오류는 입력값을 응답에
+         *     되돌려 싣기 때문이다. 실명은 앞뒤 공백을 빼고 1~40자, 주민등록번호는 숫자 13자리(하이픈 없이), 계좌번호는 숫자
+         *     6~20자리(하이픈 없이), 은행은 코드 목록 안. `agreed` 는 지급 정보 수집·이용과 국외이전 동의다.
+         */
+        PutPayoutInfoRequest: {
+            /** Legalname */
+            legalName: string;
+            /** Rrn */
+            rrn: string;
+            /** Bankcode */
+            bankCode: string;
+            /** Accountnumber */
+            accountNumber: string;
+            /**
+             * Agreed
+             * @constant
+             */
+            agreed: true;
+        };
         /** RegisterSituationalImageRequest */
         RegisterSituationalImageRequest: {
             /**
@@ -11733,6 +12143,28 @@ export interface components {
          * @enum {string}
          */
         ReportStatus: "pending" | "resolved" | "rejected";
+        /** RequestPayoutRequest */
+        RequestPayoutRequest: {
+            /**
+             * Forwithdrawal
+             * @default false
+             */
+            forWithdrawal: boolean;
+        };
+        /**
+         * RequestPayoutResponse
+         * @description 신청한 금액(확정 잔액 전액)과 떼는 원천징수, 실지급액.
+         */
+        RequestPayoutResponse: {
+            /** Amountkrw */
+            amountKrw: number;
+            /** Incometaxkrw */
+            incomeTaxKrw: number;
+            /** Localtaxkrw */
+            localTaxKrw: number;
+            /** Netamountkrw */
+            netAmountKrw: number;
+        };
         /** ResendVerificationCodeRequest */
         ResendVerificationCodeRequest: {
             /**
@@ -14208,6 +14640,170 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AdminCreatorPayoutDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_creator_payouts_admin_creator_payout_payouts_get: {
+        parameters: {
+            query?: {
+                status?: "requested" | "paid" | "returned";
+                page?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCreatorPayoutListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_creator_payout_detail_admin_creator_payout_payouts__payout_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                payout_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCreatorPayoutDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    view_creator_payout_payee_info_admin_creator_payout_payouts__payout_id__payee_info_view_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                payout_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminPayeeInfoViewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPayeeInfoViewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_creator_payout_transfer_admin_creator_payout_payouts__payout_id__transfer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                payout_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminCreatorPayoutTransferRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    return_creator_payout_admin_creator_payout_payouts__payout_id__return_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                payout_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminCreatorPayoutReturnRequest"];
             };
         };
         responses: {
@@ -20310,6 +20906,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApplyCreatorPayoutResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_payout_info_me_creator_payout_payout_info_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PutPayoutInfoRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_payouts_me_creator_payout_payouts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatorPayoutPayoutsResponse"];
+                };
+            };
+        };
+    };
+    request_payout_me_creator_payout_payouts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestPayoutRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequestPayoutResponse"];
                 };
             };
             /** @description Validation Error */

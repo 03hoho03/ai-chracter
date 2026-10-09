@@ -1,4 +1,4 @@
-"""`require_legal_consent`가 "막는다" 57개에
+"""`require_legal_consent`가 "막는다" 59개에
 붙어 있고 "연다" 28개에는 안 붙어 있는지 3층으로 검증한다.
 개수에는 대화 프로필 차단 4·개방 1과 방 기억 차단 3·개방 1이 들어 있다(그 전에는 21+15였다). 채팅 응답 신고 개방 1을 더해 18이다.
 소설 쓰기 차단 11(방의 소설 만들기·설정 노트·주인공 이름·장 경계 제안·장 생성·재생성·직접 수정·되돌리기·AI 수정·
@@ -8,17 +8,17 @@
 쓰기 차단 3(추가·고치기·합치기), 편집 보드 배치 저장 차단 1, 읽은 위치 저장 차단 1, 스냅샷 저장·복원 차단 2와 스냅샷 삭제
 개방 1을 더해 51+22였고, 작품의 소설화 허락 바꾸기 차단 1을 더해 52+22였고, 노벨 공개 차단 1과 공개 거두기 개방 1을 더해
 53+23이었다. 공개 노벨 독자 쪽 차단 3(화 구매, 독자 읽은 자리 저장, 화 댓글 쓰기)과 개방 5(좋아요·좋아요 취소, 내 댓글 지우기,
-노벨·화 신고, 댓글 신고)를 더해 56+28이었고, 크리에이터 정산 신청 차단 1을 더해 57+28이다. 클로버를 쓰거나 남이 보는 글을 새로 남기는 일은 막고, 내 표시를 거두거나
+노벨·화 신고, 댓글 신고)를 더해 56+28이었고, 크리에이터 정산 신청 차단 1을 더해 57+28이었고, 크리에이터 지급 정보 입력·지급 신청 차단 2를 더해 59+28이다. 클로버를 쓰거나 남이 보는 글을 새로 남기는 일은 막고, 내 표시를 거두거나
 지우는 일과 신고(안전 경로)는 연다 — 작품 쪽의 같은 일과 같은 편이다. 다시 공개는 공개와 같은 라우트라 따로 세지 않는다. 읽은 위치 저장은 화면을 떠날 때 응답을
 기다리지 않고 보내는 요청이지만 쓰기라 막는다 — 막혀도 위치가 남지 않을 뿐 읽기는 된다. 소설 라우트는 소설화 허용 게이트가 재동의 게이트보다 먼저 돌아 (b)는 사용자에게 소설화를 허용해 둔 채 요청한다.
 
-(a) 라우트 테이블 내성검사 — `app.routes`를 순회해 57개/28개의 실제 데코레이터를 대조한다.
+(a) 라우트 테이블 내성검사 — `app.routes`를 순회해 59개/28개의 실제 데코레이터를 대조한다.
     이 저장소가 신형 FastAPI(0.139) 내부 구조를 쓴다 — `app.routes`는 평범한 `APIRoute` 목록이
     아니라 `_IncludedRouter`(`app.include_router()`의 결과)로 감싸여 있어, 공개 API인
     `fastapi.routing.iter_route_contexts()`로 펼쳐야 각 라우트의 `.dependant`에 닿는다
     (`fastapi/openapi/utils.py`의 `get_openapi`가 스키마를 만들 때 쓰는 것과 같은 경로).
-(b) 57개에 최소 요청 → 403 + `LEGAL_RECONSENT_REQUIRED`. `require_legal_consent`가
-    데코레이터든(53개) 시그니처든(SSE 4개) `dependant.dependencies`의 나머지보다 먼저
+(b) 59개에 최소 요청 → 403 + `LEGAL_RECONSENT_REQUIRED`. `require_legal_consent`가
+    데코레이터든(55개) 시그니처든(SSE 4개) `dependant.dependencies`의 나머지보다 먼저
     해석되므로(fastapi.dependencies.utils.solve_dependencies가 그 리스트를 순서대로 돌며 첫
     HTTPException에서 곧장 전파한다) 경로 파라미터는 실존할 필요가 없다 — 라우터 본문의
     소유권 조회(404) 이전에 게이트가 먼저 막는다.
@@ -58,7 +58,7 @@ from factories import (
     _make_user,
 )
 
-# ---- (a)/(b) 공통: "막는다" 57개. path는 실제 라우트 경로(=(a)의 조회 키이자 (b)의 URL 템플릿) ----
+# ---- (a)/(b) 공통: "막는다" 59개. path는 실제 라우트 경로(=(a)의 조회 키이자 (b)의 URL 템플릿) ----
 
 _BLOCKED_REQUESTS: list[tuple[str, str, dict[str, object] | None]] = [
     ("POST", "/chat-rooms", {"contentId": str(uuid.uuid4()), "contentType": "character"}),
@@ -157,8 +157,14 @@ _BLOCKED_REQUESTS: list[tuple[str, str, dict[str, object] | None]] = [
         {"paragraphIndex": 0, "paragraphCount": 1, "edition": 1, "finished": False},
     ),
     ("POST", "/webnovels/{novel_id}/chapters/{chapter_id}/comments", {"body": "댓글"}),
-    # 크리에이터 정산 신청
+    # 크리에이터 정산 신청, 지급 정보 입력, 지급 신청
     ("POST", "/me/creator-payout/application", {"agreed": True}),
+    (
+        "PUT",
+        "/me/creator-payout/payout-info",
+        {"legalName": "홍길동", "rrn": "0001014123456", "bankCode": "088", "accountNumber": "110123456789", "agreed": True},
+    ),
+    ("POST", "/me/creator-payout/payouts", {"forWithdrawal": False}),
 ]
 
 # ---- (a)/(c) 공통: "연다" 28개 ----
@@ -227,7 +233,7 @@ def test_open_endpoints_never_carry_the_consent_gate() -> None:
         assert require_legal_consent not in dependency_calls, f"{method} {path} must not require consent"
 
 
-# ---- (b) 57개 최소 요청 → 403 ----
+# ---- (b) 59개 최소 요청 → 403 ----
 
 _DUMMY_IDS = {
     "room_id": str(uuid.uuid4()),

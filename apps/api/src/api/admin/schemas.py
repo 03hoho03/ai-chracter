@@ -9,7 +9,7 @@ from api.chat.prompt_builder import PromptLane
 from api.core.schema import CamelModel
 from api.db.models.chat import ChatMessageRole
 from api.db.models.content import ContentType, ContentVisibility, ModerationStatus
-from api.db.models.creator_payout import CreatorPayoutApplicationStatus
+from api.db.models.creator_payout import BankCode, CreatorPayoutApplicationStatus, CreatorPayoutStatus
 from api.db.models.moderation import (
     AdminActionType,
     ModerationActionType,
@@ -773,5 +773,88 @@ class AdminCreatorPayoutApproveResponse(CamelModel):
 class AdminCreatorPayoutDecisionRequest(CamelModel):
     """거절·승인 취소 사유. 공백만이면 422(라우터가 확인한다). 두 사유 모두 신청자의 크리에이터 정산 화면에 그대로
     보이므로(감사 로그에도 남는다) 신청자에게 보여도 되는 글만 적고 내부 판단 근거는 적지 않는다."""
+
+    reason_text: str = Field(max_length=1000)
+
+
+class AdminCreatorPayoutItem(CamelModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    # 탈퇴 회원은 닉네임이 파기돼 null 이다. 탈퇴 전에 신청한 지급도 끝까지 처리하므로 목록에 남는다.
+    nickname: str | None
+    withdrawn: bool
+    status: CreatorPayoutStatus
+    amount_krw: int
+    net_amount_krw: int
+    requested_at: datetime
+
+
+class AdminCreatorPayoutListResponse(CamelModel):
+    items: list[AdminCreatorPayoutItem]
+    page: int
+    total_pages: int
+    total_count: int
+
+
+class AdminCreatorPayoutWithholding(CamelModel):
+    income_tax_rate_bps: int
+    income_tax_krw: int
+    local_tax_krw: int
+    net_amount_krw: int
+
+
+class AdminCreatorPayoutDetail(CamelModel):
+    """지급 건 하나. 회원 상세(탈퇴 회원은 404)에 기대지 않고 처리에 필요한 값을 이 응답이 갖는다.
+
+    `withholding` 은 신청 때 계산해 남긴 원천징수이고 이체는 이 값으로 한다. `currentWithholding` 은 지금 코드의 세율로
+    다시 계산한 값이라, 신청 뒤 세율 상수가 바뀌었으면 둘이 달라 화면이 경고한다. 수취인은 실명 첫·끝 글자, 은행, 계좌
+    끝 4자리만 싣는다 — 원문은 사유를 적고 `payee-info-view` 로만 본다.
+    """
+
+    id: uuid.UUID
+    user_id: uuid.UUID
+    nickname: str | None
+    withdrawn: bool
+    status: CreatorPayoutStatus
+    amount_krw: int
+    for_withdrawal: bool
+    withholding: AdminCreatorPayoutWithholding
+    current_withholding: AdminCreatorPayoutWithholding
+    masked_name: str
+    bank_code: BankCode
+    account_last4: str
+    requested_at: datetime
+    paid_at: datetime | None
+    transferred_on: date | None
+    returned_at: datetime | None
+    admin_memo: str
+    return_reason: str
+
+
+class AdminPayeeInfoViewRequest(CamelModel):
+    """지급 정보 원문 열람 사유. `reason_text` 가 공백만이면 422(라우터가 확인한다). 채팅 열람과 같은 사유 분류를 쓴다."""
+
+    reason_category: ChatViewReasonCategory
+    reason_text: str = Field(max_length=1000)
+
+
+class AdminPayeeInfoViewResponse(CamelModel):
+    """지급 정보 원문. 이 응답에만 싣고 로그·감사 기록에는 남기지 않는다."""
+
+    legal_name: str
+    rrn: str
+    bank_code: BankCode
+    account_number: str
+
+
+class AdminCreatorPayoutTransferRequest(CamelModel):
+    # 실제로 이체한 날(KST). 신청일(KST)보다 앞서거나 오늘(KST)보다 뒤면 422.
+    transferred_on: date
+    # 운영자만 보는 메모(감사 로그에도 남는다).
+    admin_memo: str = Field(default="", max_length=1000)
+
+
+class AdminCreatorPayoutReturnRequest(CamelModel):
+    """반려 사유. 공백만이면 422(라우터가 확인한다). 신청자의 크리에이터 정산 화면에 그대로 보인다."""
 
     reason_text: str = Field(max_length=1000)

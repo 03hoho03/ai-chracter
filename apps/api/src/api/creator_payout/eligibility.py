@@ -48,6 +48,13 @@ class CreatorPayoutEligibility:
             return "no_published_work"
         return None
 
+    @property
+    def payout_block_reason(self) -> CreatorPayoutBlockReason | None:
+        """지급 정보 입력·지급 신청을 막는 이유. 신청과 같되 발행 작품은 보지 않는다 — 이미 확정된 적립금은 작품을 내린
+        뒤에도 받을 수 있다. "승인된 적이 있는가"는 회원 상태가 아니라 신청 이력이라 라우터가 따로 본다."""
+        reason = self.block_reason
+        return None if reason == "no_published_work" else reason
+
 
 def creator_payout_eligibility(user: User, published_count: int) -> CreatorPayoutEligibility:
     verified = user.identity_verified_at is not None

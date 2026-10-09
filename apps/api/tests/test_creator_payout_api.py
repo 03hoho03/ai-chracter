@@ -34,6 +34,7 @@ from api.legal.dependencies import _latest_published_legal_version
 from api.main import app
 from api.payments.notify import get_payment_notifier
 from factories import (
+    CREATOR_PAYOUT_TEST_KEYS,
     _create_admin,
     _get_genre,
     _login_as,
@@ -51,11 +52,12 @@ APPROVAL_CUT_LAG = timedelta(minutes=5)
 # ── 셋업 ─────────────────────────────────────────────────────────────────
 @pytest.fixture(autouse=True)
 def _creator_payout_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    """정산은 스위치와 본인인증 설정이 모두 있어야 켜진다. 로컬 `.env` 의 값이 아니라 테스트가 정한다."""
+    """정산은 스위치와 본인인증 설정, 지급 정보 암호화 키가 모두 있어야 켜진다. 로컬 `.env` 의 값이 아니라 테스트가 정한다."""
     monkeypatch.setattr(settings, "portone_store_id", "store-test-0001")
     monkeypatch.setattr(settings, "portone_identity_channel_key", "identity-channel-test")
     monkeypatch.setattr(settings, "portone_api_secret", "api-secret-test")
     monkeypatch.setattr(settings, "identity_ci_hmac_key", "ci-key-test")
+    monkeypatch.setattr(settings, "creator_payout_encryption_keys", CREATOR_PAYOUT_TEST_KEYS)
     monkeypatch.setattr(settings, "creator_payout_enabled", True)
     monkeypatch.setattr(settings, "creator_payout_retro_days", 90)
     monkeypatch.setattr(settings, "creator_payout_rate_bps", 500)
@@ -252,6 +254,10 @@ async def test_get_shows_eligibility_without_refusing(db_client: httpx.AsyncClie
         "everApproved": False,
         "balanceKrw": 0,
         "rateBps": 500,
+        "minimumPayoutKrw": 10_000,
+        "payoutAvailable": True,
+        "payoutInfo": None,
+        "inProgressPayout": None,
     }
 
 

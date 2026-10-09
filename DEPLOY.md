@@ -199,8 +199,8 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**68개 키다**(2026-10-10 VM 실측, 키 이름만 셈): 아래 표 106개 중 51개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
-`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 7개·소설화 조정용 `NOVELIZE_*` 19개, 실측 때 넣지 않은 상위 모델 Bedrock 키 9개(`BEDROCK_*`), 실측 때 넣지 않은 결제·본인인증 키 2개(`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 실측 때 넣지 않은 크리에이터 정산 키 3개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`), 모두 55개 제외 —
+**68개 키다**(2026-10-10 VM 실측, 키 이름만 셈): 아래 표 108개 중 51개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 7개·소설화 조정용 `NOVELIZE_*` 19개, 실측 때 넣지 않은 상위 모델 Bedrock 키 9개(`BEDROCK_*`), 실측 때 넣지 않은 결제·본인인증 키 2개(`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 실측 때 넣지 않은 크리에이터 정산 키 5개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`·`CREATOR_PAYOUT_MINIMUM_KRW`·`CREATOR_PAYOUT_ENCRYPTION_KEYS`), 모두 57개 제외 —
 운영에서 켜 둔 소설화 `NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`, 상위 모델 스위치·명단 4개(`CHAT_PREMIUM_*` 2개·`NOVELIZE_PREMIUM_*` 2개), 결제·본인인증 키 7개(`PORTONE_*` 5개·
 `IDENTITY_CI_HMAC_KEY`·`PAYMENTS_ENABLED`), 노벨 키 2개(`NOVEL_PUBLIC_ENABLED`·`NOVEL_PUBLIC_PREVIEW_ALLOWLIST`)는 셈에 들어간다) + 앱이 읽지만 아래 표에
 행이 없는 키 2개(`ANTHROPIC_DIRECT_API_KEY`·`LLM_CALL_SITE_BACKENDS`) + compose용 6개(`API_IMAGE_BLUE`·`API_IMAGE_GREEN`·`SITE_ADDRESS`·
@@ -240,8 +240,10 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `IDENTITY_CI_HMAC_KEY` | `openssl rand -hex 32` 등으로 발급한 무작위 값 | 본인인증 CI 를 저장하기 전에 HMAC 으로 바꾸는 키. **한번 정하면 바꾸지 말 것** — 바뀌면 이미 인증한 사람과 대조가 어긋나 같은 사람이 다른 계정으로 다시 인증할 수 있게 된다. `WITHDRAWN_EMAIL_HMAC_KEY` 와 다른 값을 쓴다. 비면 본인인증이 꺼진다 |
 | `PAYMENTS_ENABLED` / `IDENTITY_GATE_ENABLED` | 켤 때 `true`(코드 기본값은 둘 다 `false`) | 결제 스위치 / 미인증 회원의 무료 대화·미션을 막는 본인인증 게이트 스위치. 결제는 스위치와 위 포트원 키 넷, 그리고 본인인증 설정(상점 id·본인인증 채널키·API 시크릿·`IDENTITY_CI_HMAC_KEY`)이 모두 있어야 열린다 — 결제는 늘 본인인증을 요구해서다. 꺼져 있어도 웹훅 시크릿이 있으면 웹훅은 처리한다(진행 중 결제와 콘솔 취소를 맞춘다) |
 | `PAYMENT_DISCORD_WEBHOOK_URL` | 결제 알림용 디스코드 채널 웹훅 주소 | 결제·환불 완료 알림(상품·금액·상태만, 회원·주문을 알아볼 단서는 싣지 않는다). 비면 건너뛴다. 크론 알림의 `DISCORD_WEBHOOK_URL` 과 다른 키다 |
-| `CREATOR_PAYOUT_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 크리에이터 정산 스위치. 스위치와 본인인증 설정(상점 id·본인인증 채널키·API 시크릿·`IDENTITY_CI_HMAC_KEY`)이 모두 있어야 열린다 — 신청 자격이 본인인증한 만 19세 이상(나이는 코드 상수라 env 가 없다)이라서다. 켜면 결제·게이트가 꺼져 있어도 본인인증 시작이 열린다. 꺼져 있으면 회원의 정산 조회·신청이 503 이고, 어드민의 신청 처리(승인·거절·승인 취소)는 스위치와 무관하게 열려 있다. 신청 접수 알림은 `PAYMENT_DISCORD_WEBHOOK_URL` 채널을 같이 쓴다(건수만, 회원을 알아볼 단서는 싣지 않는다) |
+| `CREATOR_PAYOUT_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 크리에이터 정산 스위치. 스위치와 본인인증 설정(상점 id·본인인증 채널키·API 시크릿·`IDENTITY_CI_HMAC_KEY`)이 모두 있어야 열린다(지급 정보 입력·지급 신청은 `CREATOR_PAYOUT_ENCRYPTION_KEYS` 도 있어야 열리고, 정산 신청·적립·확정·조회는 키와 무관하다) — 신청 자격이 본인인증한 만 19세 이상(나이는 코드 상수라 env 가 없다)이라서다. 켜면 결제·게이트가 꺼져 있어도 본인인증 시작이 열린다. 꺼져 있으면 회원의 정산 조회·신청·지급 정보 입력·지급 신청이 503 이고, 어드민의 신청·지급 처리(승인·거절·승인 취소, 이체 기록·반려)는 스위치와 무관하게 열려 있다. 정산 신청·지급 신청 접수 알림은 `PAYMENT_DISCORD_WEBHOOK_URL` 채널을 같이 쓴다(건수·금액만, 회원을 알아볼 단서는 싣지 않는다) |
 | `CREATOR_PAYOUT_RATE_BPS` / `CREATOR_PAYOUT_RETRO_DAYS` | 설정 안 함(기본 `500` / `90`) | 정산 비율(bps, 500 = 공급가의 5%, 1~10000) / 첫 승인 때 거슬러 확정하는 소급 일수(1 이상). 범위 밖이면 api 가 뜨지 않는다. 비율은 확정할 때마다 확정 행에 남아, 바꿔도 이미 확정한 금액은 그대로다 |
+| `CREATOR_PAYOUT_MINIMUM_KRW` | 설정 안 함(기본 `10000`) | 지급을 신청할 수 있는 최소 확정 잔액(원, 1 이상). 탈퇴하려는 회원은 이보다 적어도 탈퇴 화면에서 신청할 수 있다. 범위 밖이면 api 가 뜨지 않는다 |
+| `CREATOR_PAYOUT_ENCRYPTION_KEYS` | 🔴 지급 기능을 열 때 넣는다. `k1:<base64url 32바이트>` | 크리에이터 지급 정보(실명·주민등록번호·계좌번호) 암호화 키 목록 `kid:키[,kid:키]`. 맨 앞 키로 암호화하고 모든 키로 복호화한다. 비면 지급만 닫힌다 — 지급 정보 입력·지급 신청이 503 이고 정산 조회 응답의 `payoutAvailable` 이 거짓이다(어드민 지급 상세·열람은 409). 정산 신청·적립·월 확정·조회는 키와 무관하게 돈다, 형식이 틀리면 api 가 뜨지 않는다. **키를 잃으면 지급 정보를 되살릴 수 없다** — 만들기·보관·회전 절차는 "크리에이터 지급 정보 암호화 키" 절. 비밀 |
 | `LOCAL_IMAGE_BASE_URL` | 집 PC 서버를 가리키는 터널 origin | **이미지 생성 필수** — 비어 있으면 capabilities가 전부 불가로 내려가 생성이 사전 차단된다. "이미지 생성" 절 |
 | `LOCAL_IMAGE_ACCESS_CLIENT_ID` / `LOCAL_IMAGE_ACCESS_CLIENT_SECRET` | Cloudflare Access 서비스 토큰 | **이미지 생성 필수**. "이미지 생성" 절 |
 | `LOCAL_IMAGE_MODEL_WIRE_ID` | 집 PC가 보고하는 **실제** 모델 id | **이미지 생성 필수.** 기본값은 공개 id(`v1`)와 같아 로컬·테스트는 설정 없이 돌지만, 운영에서 집 PC의 값과 다르면 교차 검증에서 전부 걸러져 생성이 사전 차단된다. **이 값을 소스에 두지 않는 것이 요점이다**("이미지 생성" 절) |
@@ -1850,6 +1852,50 @@ tail -f /var/log/ddona-creator-payout-settle.log
 
 ⚠️ 16:35 UTC — 다른 크론(05:00·06:00·15:05·18:00 UTC, 매시 17분, 5분마다)과 겹치지 않는다. 배포 교체와 겹치면 그날은
 실패 알림이 오고 다음 날 따라잡는다. 배치끼리는 advisory 잠금으로 하나만 돌고, 겹친 쪽은 아무것도 하지 않고 정상 종료한다.
+
+### 3-14. 크리에이터 지급 정보 암호화 키 — 만들기 · 보관 · 회전
+
+크리에이터 지급 정보(실명·주민등록번호·계좌번호)는 api 가 `CREATOR_PAYOUT_ENCRYPTION_KEYS` 의 키로 AES-256-GCM 암호화해
+DB 에 넣는다(`api/core/field_crypto.py`). DB 백업은 암호문만 R2 로 가져간다 — **키가 백업과 함께 새면 암호화가
+무의미하고, 키를 잃으면 지급 정보를 되살릴 수 없다.** 값 형식은 `kid:base64url(32바이트)` 를 쉼표로 이은 목록이고
+**맨 앞 키로 암호화, 목록의 모든 키로 복호화**한다. 키 id 는 `[A-Za-z0-9_-]` 1~32자다.
+
+**처음 켤 때**:
+
+```sh
+# 1. 키 만들기(VM 이 아니라 운영자 PC 에서 — 셸 기록에 남기지 않으려면 출력만 복사한다)
+python3 -c "import os,base64;print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+# 2. 보관: 비밀번호 관리자 + 오프라인 사본 둘. DB 백업과 같은 곳(R2)·저장소·Bugsink·디스코드에 두지 않는다.
+# 3. VM .env 에 한 줄 더하고 형식 검사 → 교체(restart 는 env 를 다시 읽지 않는다 — "env 반영 재기동" 절)
+cd /opt/ddona/app
+sudo sh -c 'printf "\nCREATOR_PAYOUT_ENCRYPTION_KEYS=k1:<키>\n" >> /opt/ddona/.env'
+sudo python3 ops/check_env.py --format /opt/ddona/.env
+sudo bash ops/swap-api.sh
+```
+
+형식이 틀리면 api 가 뜨지 않는다(오류 문장에 값은 찍히지 않는다). 키가 비어 있으면 지급 정보 입력·지급 신청만 닫힌다(503,
+정산 조회의 `payoutAvailable` 거짓). 정산 신청·적립·월 확정·조회는 키와 무관하다. 넣은 뒤 "BE 런타임" 절의 키 개수 문장을 VM 에서 다시 센다.
+
+**회전**(키가 샜을 때, 또는 주기적으로):
+
+1. 새 키를 만들어 보관한다(위 1·2).
+2. `.env` 의 값 맨 앞에 `k2:<새 키>,` 를 붙인다 — 옛 키(`k1:…`)는 **뒤에 남긴다**(옛 키로 만든 행을 아직 읽어야 한다).
+   형식 검사 → `sudo bash ops/swap-api.sh`. 이때부터 새로 입력되는 지급 정보는 새 키로 암호화된다.
+3. 옛 키로 만든 행을 새 키로 다시 암호화한다(행마다 커밋 — 도중에 멈춰도 다시 돌리면 남은 행만 한다):
+
+   ```sh
+   sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -T api_$(sudo bash ops/active-color.sh) \
+     python -m api.creator_payout.reencrypt
+   ```
+
+   마지막 줄 "지급 정보 재암호화: N행, 복호화할 수 없어 건너뜀 M행". M 이 0 이 아니면 종료 코드가 1 이다 — 그 행은 목록에
+   없는 키로 만들어졌다는 뜻이라 옛 키를 지우지 말고 원인을 먼저 찾는다.
+4. 옛 키는 **3 이후 백업 보관 기간(일 7개 + 주 4개 — 약 35일)이 지난 뒤** 값에서 지우고 재기동한다. 그 전에 지우면 그
+   기간의 백업을 복원했을 때 지급 정보를 읽지 못한다. 보관해 둔 옛 키 사본도 그때 폐기한다.
+
+**키를 잃었을 때**: 복호화할 수 없다. 작가의 정산 화면은 열리고 등록 정보의 실명만 비어 보이며(은행·계좌 끝 4자리는
+평문이라 보인다), 어드민 지급 상세·원문 열람은 409 `CREATOR_PAYOUT_INFO_UNREADABLE` 이다. 새 키를 넣고 작가에게 지급
+정보를 다시 입력받는다(새 판이 새 키로 저장된다). 이미 신청된 건은 반려한 뒤 다시 신청받는다.
 
 ---
 

@@ -3247,6 +3247,258 @@
         }
       }
     },
+    "/admin/creator-payout/payouts": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Creator Payouts",
+        "description": "그 상태의 지급(기본 처리 중), 오래된 신청부터. 탈퇴 회원의 건도 나온다(닉네임 null).",
+        "operationId": "list_creator_payouts_admin_creator_payout_payouts_get",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "requested",
+                "paid",
+                "returned"
+              ],
+              "type": "string",
+              "default": "requested",
+              "title": "Status"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCreatorPayoutListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/creator-payout/payouts/{payout_id}": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Creator Payout Detail",
+        "description": "지급 건 하나와 마스킹한 수취인, 신청 때의 원천징수와 지금 세율로 다시 계산한 값. 수취인 실명을 복호화하지 못하면\n(키 분실 등) 409 `CREATOR_PAYOUT_INFO_UNREADABLE` — 작가에게 지급 정보를 다시 입력받고 이 건은 반려 뒤 재신청한다.",
+        "operationId": "get_creator_payout_detail_admin_creator_payout_payouts__payout_id__get",
+        "parameters": [
+          {
+            "name": "payout_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Payout Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCreatorPayoutDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/creator-payout/payouts/{payout_id}/payee-info-view": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "View Creator Payout Payee Info",
+        "description": "지급 건 수취인의 지급 정보 원문(실명·주민등록번호·은행·계좌번호). 사유가 필요하고, **열람 1회 = 감사 1행**이다 —\n감사 행을 커밋한 뒤에만 원문을 돌려준다. 복호화하지 못하면 409 `CREATOR_PAYOUT_INFO_UNREADABLE`(본 것이 없어 감사 행도\n남기지 않는다). 원문은 이 응답에만 있고 로그·감사 기록·예외 메시지에는 넣지 않는다.",
+        "operationId": "view_creator_payout_payee_info_admin_creator_payout_payouts__payout_id__payee_info_view_post",
+        "parameters": [
+          {
+            "name": "payout_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Payout Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminPayeeInfoViewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPayeeInfoViewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/creator-payout/payouts/{payout_id}/transfer": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Record Creator Payout Transfer",
+        "description": "은행에서 이체를 마쳤다고 기록한다. 처리 중이 아니면 409 `CREATOR_PAYOUT_NOT_REQUESTED`. 이체일이 신청일(KST)보다\n앞서거나 오늘(KST)보다 뒤면 422 `CREATOR_PAYOUT_TRANSFER_DATE_INVALID`. 금액은 신청 때 이미 잔액에서 빠져 있어 잔액은\n그대로다.",
+        "operationId": "record_creator_payout_transfer_admin_creator_payout_payouts__payout_id__transfer_post",
+        "parameters": [
+          {
+            "name": "payout_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Payout Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminCreatorPayoutTransferRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/creator-payout/payouts/{payout_id}/return": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Return Creator Payout",
+        "description": "반려한다(지급 정보가 사실과 다름, 이체 실패 등). 사유는 신청자에게 보인다. 처리 중이 아니면 409\n`CREATOR_PAYOUT_NOT_REQUESTED`. 반려된 금액은 잔액(파생값)으로 저절로 돌아온다.",
+        "operationId": "return_creator_payout_admin_creator_payout_payouts__payout_id__return_post",
+        "parameters": [
+          {
+            "name": "payout_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Payout Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminCreatorPayoutReturnRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/assets/presigned-upload": {
       "post": {
         "tags": [
@@ -12488,7 +12740,7 @@
           "creator-payout"
         ],
         "summary": "Get Creator Payout",
-        "description": "신청 상태와 신청 자격, 적립 잔액. 인증·나이·발행 작품이 모자라도 거절하지 않고 `eligibility` 로 보여 준다(신청과\n같은 판정).",
+        "description": "신청 상태와 신청 자격, 적립 잔액, 지급 정보 표시값과 처리 중인 지급. 인증·나이·발행 작품이 모자라도 거절하지\n않고 `eligibility` 로 보여 준다(신청과 같은 판정).",
         "operationId": "get_creator_payout_me_creator_payout_get",
         "responses": {
           "200": {
@@ -12578,6 +12830,102 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApplyCreatorPayoutResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/creator-payout/payout-info": {
+      "put": {
+        "tags": [
+          "creator-payout"
+        ],
+        "summary": "Put Payout Info",
+        "description": "지급 정보를 등록하거나 새로 입력한다(이전 판은 남기고 새 판을 넣는다). 순서: 스위치·암호화 키\n503 → 회원 행 잠금(탈퇴 401·정지 403) → 미인증·만 19세 미만 403 → 승인된 적 없음 403 `CREATOR_PAYOUT_NOT_APPROVED` → 형식 422\n`CREATOR_PAYOUT_INFO_INVALID` → 외국인등록번호 422 `CREATOR_PAYOUT_FOREIGNER_UNSUPPORTED` → 주민등록번호 앞 7자리가\n본인인증 생년월일과 다름 422 `CREATOR_PAYOUT_RRN_MISMATCH` → 처리 중인 지급이 있음 409 `CREATOR_PAYOUT_IN_PROGRESS`\n(처리 중인 건의 수취인을 바꾸지 않는다).\n\n동의 기록에 남길 처리방침 게시본이 없으면 503 이다.",
+        "operationId": "put_payout_info_me_creator_payout_payout_info_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutPayoutInfoRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/creator-payout/payouts": {
+      "get": {
+        "tags": [
+          "creator-payout"
+        ],
+        "summary": "List Payouts",
+        "operationId": "list_payouts_me_creator_payout_payouts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatorPayoutPayoutsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "creator-payout"
+        ],
+        "summary": "Request Payout",
+        "description": "확정 잔액 전액의 지급을 신청한다(금액을 고르지 않는다). 순서: 스위치·암호화 키 503 → 회원 행 잠금(탈퇴 401·정지 403) →\n미인증·만 19세 미만 403 → 승인된 적 없음 403 `CREATOR_PAYOUT_NOT_APPROVED`(승인 취소된 회원은 신청할 수 있다) →\n지급 정보 없음 409 `CREATOR_PAYOUT_INFO_REQUIRED` → 처리 중인 지급이 있음 409 `CREATOR_PAYOUT_IN_PROGRESS` → 잔액 0\n이하 422 `CREATOR_PAYOUT_NOTHING_TO_PAY` → 잔액이 최소 지급액 미만이고 탈퇴 전 신청이 아님 422\n`CREATOR_PAYOUT_BELOW_MINIMUM`(+ `minimumKrw`·`balanceKrw`).\n\n`forWithdrawal` 은 잔액이 최소액 미만일 때만 쓰인다 — 최소액 이상이면 일반 신청으로 남긴다. 실제로 탈퇴하는지는\n강제하지 않는다(악용해도 최소액 미만을 조금 일찍 받는 것뿐이다). 원천징수 세율·세액은 신청 때 계산해 행에 남긴다.",
+        "operationId": "request_payout_me_creator_payout_payouts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestPayoutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestPayoutResponse"
                 }
               }
             }
@@ -14757,6 +15105,169 @@
         "title": "AdminCreatorPayoutDecisionRequest",
         "description": "거절·승인 취소 사유. 공백만이면 422(라우터가 확인한다). 두 사유 모두 신청자의 크리에이터 정산 화면에 그대로\n보이므로(감사 로그에도 남는다) 신청자에게 보여도 되는 글만 적고 내부 판단 근거는 적지 않는다."
       },
+      "AdminCreatorPayoutDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "userId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Userid"
+          },
+          "nickname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nickname"
+          },
+          "withdrawn": {
+            "type": "boolean",
+            "title": "Withdrawn"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "requested",
+              "paid",
+              "returned"
+            ],
+            "title": "Status"
+          },
+          "amountKrw": {
+            "type": "integer",
+            "title": "Amountkrw"
+          },
+          "forWithdrawal": {
+            "type": "boolean",
+            "title": "Forwithdrawal"
+          },
+          "withholding": {
+            "$ref": "#/components/schemas/AdminCreatorPayoutWithholding"
+          },
+          "currentWithholding": {
+            "$ref": "#/components/schemas/AdminCreatorPayoutWithholding"
+          },
+          "maskedName": {
+            "type": "string",
+            "title": "Maskedname"
+          },
+          "bankCode": {
+            "type": "string",
+            "enum": [
+              "002",
+              "003",
+              "004",
+              "007",
+              "011",
+              "012",
+              "020",
+              "023",
+              "027",
+              "031",
+              "032",
+              "034",
+              "035",
+              "037",
+              "039",
+              "045",
+              "048",
+              "050",
+              "064",
+              "071",
+              "081",
+              "088",
+              "089",
+              "090",
+              "092"
+            ],
+            "title": "Bankcode"
+          },
+          "accountLast4": {
+            "type": "string",
+            "title": "Accountlast4"
+          },
+          "requestedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Requestedat"
+          },
+          "paidAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paidat"
+          },
+          "transferredOn": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transferredon"
+          },
+          "returnedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Returnedat"
+          },
+          "adminMemo": {
+            "type": "string",
+            "title": "Adminmemo"
+          },
+          "returnReason": {
+            "type": "string",
+            "title": "Returnreason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "userId",
+          "nickname",
+          "withdrawn",
+          "status",
+          "amountKrw",
+          "forWithdrawal",
+          "withholding",
+          "currentWithholding",
+          "maskedName",
+          "bankCode",
+          "accountLast4",
+          "requestedAt",
+          "paidAt",
+          "transferredOn",
+          "returnedAt",
+          "adminMemo",
+          "returnReason"
+        ],
+        "title": "AdminCreatorPayoutDetail",
+        "description": "지급 건 하나. 회원 상세(탈퇴 회원은 404)에 기대지 않고 처리에 필요한 값을 이 응답이 갖는다.\n\n`withholding` 은 신청 때 계산해 남긴 원천징수이고 이체는 이 값으로 한다. `currentWithholding` 은 지금 코드의 세율로\n다시 계산한 값이라, 신청 뒤 세율 상수가 바뀌었으면 둘이 달라 화면이 경고한다. 수취인은 실명 첫·끝 글자, 은행, 계좌\n끝 4자리만 싣는다 — 원문은 사유를 적고 `payee-info-view` 로만 본다."
+      },
       "AdminCreatorPayoutEligibility": {
         "properties": {
           "identityVerified": {
@@ -14790,6 +15301,163 @@
         ],
         "title": "AdminCreatorPayoutEligibility",
         "description": "신청자의 지금 자격. 회원의 신청·승인 재확인과 같은 판정 함수의 값이다."
+      },
+      "AdminCreatorPayoutItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "userId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Userid"
+          },
+          "nickname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nickname"
+          },
+          "withdrawn": {
+            "type": "boolean",
+            "title": "Withdrawn"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "requested",
+              "paid",
+              "returned"
+            ],
+            "title": "Status"
+          },
+          "amountKrw": {
+            "type": "integer",
+            "title": "Amountkrw"
+          },
+          "netAmountKrw": {
+            "type": "integer",
+            "title": "Netamountkrw"
+          },
+          "requestedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Requestedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "userId",
+          "nickname",
+          "withdrawn",
+          "status",
+          "amountKrw",
+          "netAmountKrw",
+          "requestedAt"
+        ],
+        "title": "AdminCreatorPayoutItem"
+      },
+      "AdminCreatorPayoutListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminCreatorPayoutItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "totalPages": {
+            "type": "integer",
+            "title": "Totalpages"
+          },
+          "totalCount": {
+            "type": "integer",
+            "title": "Totalcount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "totalPages",
+          "totalCount"
+        ],
+        "title": "AdminCreatorPayoutListResponse"
+      },
+      "AdminCreatorPayoutReturnRequest": {
+        "properties": {
+          "reasonText": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Reasontext"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reasonText"
+        ],
+        "title": "AdminCreatorPayoutReturnRequest",
+        "description": "반려 사유. 공백만이면 422(라우터가 확인한다). 신청자의 크리에이터 정산 화면에 그대로 보인다."
+      },
+      "AdminCreatorPayoutTransferRequest": {
+        "properties": {
+          "transferredOn": {
+            "type": "string",
+            "format": "date",
+            "title": "Transferredon"
+          },
+          "adminMemo": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Adminmemo",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "transferredOn"
+        ],
+        "title": "AdminCreatorPayoutTransferRequest"
+      },
+      "AdminCreatorPayoutWithholding": {
+        "properties": {
+          "incomeTaxRateBps": {
+            "type": "integer",
+            "title": "Incometaxratebps"
+          },
+          "incomeTaxKrw": {
+            "type": "integer",
+            "title": "Incometaxkrw"
+          },
+          "localTaxKrw": {
+            "type": "integer",
+            "title": "Localtaxkrw"
+          },
+          "netAmountKrw": {
+            "type": "integer",
+            "title": "Netamountkrw"
+          }
+        },
+        "type": "object",
+        "required": [
+          "incomeTaxRateBps",
+          "incomeTaxKrw",
+          "localTaxKrw",
+          "netAmountKrw"
+        ],
+        "title": "AdminCreatorPayoutWithholding"
       },
       "AdminDashboardActivityResponse": {
         "properties": {
@@ -17754,6 +18422,81 @@
         "title": "AdminNovelScreeningItem",
         "description": "텍스트 심사 한 번. `reason` 은 심사 모델이 쓴 사유로 운영자만 본다."
       },
+      "AdminPayeeInfoViewRequest": {
+        "properties": {
+          "reasonCategory": {
+            "$ref": "#/components/schemas/ChatViewReasonCategory"
+          },
+          "reasonText": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Reasontext"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reasonCategory",
+          "reasonText"
+        ],
+        "title": "AdminPayeeInfoViewRequest",
+        "description": "지급 정보 원문 열람 사유. `reason_text` 가 공백만이면 422(라우터가 확인한다). 채팅 열람과 같은 사유 분류를 쓴다."
+      },
+      "AdminPayeeInfoViewResponse": {
+        "properties": {
+          "legalName": {
+            "type": "string",
+            "title": "Legalname"
+          },
+          "rrn": {
+            "type": "string",
+            "title": "Rrn"
+          },
+          "bankCode": {
+            "type": "string",
+            "enum": [
+              "002",
+              "003",
+              "004",
+              "007",
+              "011",
+              "012",
+              "020",
+              "023",
+              "027",
+              "031",
+              "032",
+              "034",
+              "035",
+              "037",
+              "039",
+              "045",
+              "048",
+              "050",
+              "064",
+              "071",
+              "081",
+              "088",
+              "089",
+              "090",
+              "092"
+            ],
+            "title": "Bankcode"
+          },
+          "accountNumber": {
+            "type": "string",
+            "title": "Accountnumber"
+          }
+        },
+        "type": "object",
+        "required": [
+          "legalName",
+          "rrn",
+          "bankCode",
+          "accountNumber"
+        ],
+        "title": "AdminPayeeInfoViewResponse",
+        "description": "지급 정보 원문. 이 응답에만 싣고 로그·감사 기록에는 남기지 않는다."
+      },
       "AdminPromptDraftResponse": {
         "properties": {
           "id": {
@@ -18537,8 +19280,11 @@
               "user-clover-grant",
               "user-clover-revoke",
               "user-creator-payout-approve",
+              "user-creator-payout-info-view",
               "user-creator-payout-reject",
+              "user-creator-payout-return",
               "user-creator-payout-revoke",
+              "user-creator-payout-transfer",
               "user-novelize-off",
               "user-novelize-on",
               "user-novelize-premium-models-off",
@@ -22792,6 +23538,168 @@
         "title": "CreatorPayoutEligibilityView",
         "description": "신청 자격. 신청과 같은 판정 함수의 값이라 화면이 미리 보여 주는 자격과 신청의 거절이 갈리지 않는다."
       },
+      "CreatorPayoutInProgressView": {
+        "properties": {
+          "amountKrw": {
+            "type": "integer",
+            "title": "Amountkrw"
+          },
+          "requestedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Requestedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "amountKrw",
+          "requestedAt"
+        ],
+        "title": "CreatorPayoutInProgressView"
+      },
+      "CreatorPayoutInfoView": {
+        "properties": {
+          "maskedName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maskedname"
+          },
+          "bankCode": {
+            "type": "string",
+            "enum": [
+              "002",
+              "003",
+              "004",
+              "007",
+              "011",
+              "012",
+              "020",
+              "023",
+              "027",
+              "031",
+              "032",
+              "034",
+              "035",
+              "037",
+              "039",
+              "045",
+              "048",
+              "050",
+              "064",
+              "071",
+              "081",
+              "088",
+              "089",
+              "090",
+              "092"
+            ],
+            "title": "Bankcode"
+          },
+          "accountLast4": {
+            "type": "string",
+            "title": "Accountlast4"
+          }
+        },
+        "type": "object",
+        "required": [
+          "maskedName",
+          "bankCode",
+          "accountLast4"
+        ],
+        "title": "CreatorPayoutInfoView",
+        "description": "등록한 지급 정보의 표시값. 주민등록번호는 싣지 않는다. `maskedName` 은 실명의 첫·끝 글자만 남긴 값이고, 암호화 키를\n잃어 복호화할 수 없으면 null 이다(은행·계좌 끝 4자리는 평문이라 그대로 보인다) — 그때는 지급 정보를 다시 입력받는다."
+      },
+      "CreatorPayoutPayoutView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "requested",
+              "paid",
+              "returned"
+            ],
+            "title": "Status"
+          },
+          "amountKrw": {
+            "type": "integer",
+            "title": "Amountkrw"
+          },
+          "incomeTaxKrw": {
+            "type": "integer",
+            "title": "Incometaxkrw"
+          },
+          "localTaxKrw": {
+            "type": "integer",
+            "title": "Localtaxkrw"
+          },
+          "netAmountKrw": {
+            "type": "integer",
+            "title": "Netamountkrw"
+          },
+          "requestedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Requestedat"
+          },
+          "transferredOn": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transferredon"
+          },
+          "returnReason": {
+            "type": "string",
+            "title": "Returnreason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "amountKrw",
+          "incomeTaxKrw",
+          "localTaxKrw",
+          "netAmountKrw",
+          "requestedAt",
+          "transferredOn",
+          "returnReason"
+        ],
+        "title": "CreatorPayoutPayoutView",
+        "description": "지급 신청 하나. `transferredOn` 은 이체한 날(KST), `returnReason` 은 반려 사유다."
+      },
+      "CreatorPayoutPayoutsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CreatorPayoutPayoutView"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "CreatorPayoutPayoutsResponse"
+      },
       "CreatorPayoutResponse": {
         "properties": {
           "application": {
@@ -22818,6 +23726,34 @@
           "rateBps": {
             "type": "integer",
             "title": "Ratebps"
+          },
+          "minimumPayoutKrw": {
+            "type": "integer",
+            "title": "Minimumpayoutkrw"
+          },
+          "payoutAvailable": {
+            "type": "boolean",
+            "title": "Payoutavailable"
+          },
+          "payoutInfo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreatorPayoutInfoView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "inProgressPayout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreatorPayoutInProgressView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -22826,7 +23762,11 @@
           "eligibility",
           "everApproved",
           "balanceKrw",
-          "rateBps"
+          "rateBps",
+          "minimumPayoutKrw",
+          "payoutAvailable",
+          "payoutInfo",
+          "inProgressPayout"
         ],
         "title": "CreatorPayoutResponse"
       },
@@ -28872,6 +29812,41 @@
         "title": "PublicNovelSource",
         "description": "원작 표기. `title`·`character_name` 은 소설을 만들 때의 원작 사본이다. `cover_url` 은 원작의 지금 게시본 썸네일 —\n노벨 표지는 이것뿐이고, 원작자가 탈퇴했거나 썸네일이 없으면 비어 있다(화면이 기본 표지를 그린다). `linkable` 은 원작이\n지금 작품 목록에 실려 원작 상세로 링크를 걸 수 있는가다."
       },
+      "PutPayoutInfoRequest": {
+        "properties": {
+          "legalName": {
+            "type": "string",
+            "title": "Legalname"
+          },
+          "rrn": {
+            "type": "string",
+            "title": "Rrn"
+          },
+          "bankCode": {
+            "type": "string",
+            "title": "Bankcode"
+          },
+          "accountNumber": {
+            "type": "string",
+            "title": "Accountnumber"
+          },
+          "agreed": {
+            "type": "boolean",
+            "const": true,
+            "title": "Agreed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "legalName",
+          "rrn",
+          "bankCode",
+          "accountNumber",
+          "agreed"
+        ],
+        "title": "PutPayoutInfoRequest",
+        "description": "지급 정보. 형식은 라우터가 확인하고 `CREATOR_PAYOUT_INFO_INVALID` 로 답한다 — 스키마 검증 오류는 입력값을 응답에\n되돌려 싣기 때문이다. 실명은 앞뒤 공백을 빼고 1~40자, 주민등록번호는 숫자 13자리(하이픈 없이), 계좌번호는 숫자\n6~20자리(하이픈 없이), 은행은 코드 목록 안. `agreed` 는 지급 정보 수집·이용과 국외이전 동의다."
+      },
       "RegisterSituationalImageRequest": {
         "properties": {
           "entityId": {
@@ -28959,6 +29934,46 @@
           "rejected"
         ],
         "title": "ReportStatus"
+      },
+      "RequestPayoutRequest": {
+        "properties": {
+          "forWithdrawal": {
+            "type": "boolean",
+            "title": "Forwithdrawal",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "RequestPayoutRequest"
+      },
+      "RequestPayoutResponse": {
+        "properties": {
+          "amountKrw": {
+            "type": "integer",
+            "title": "Amountkrw"
+          },
+          "incomeTaxKrw": {
+            "type": "integer",
+            "title": "Incometaxkrw"
+          },
+          "localTaxKrw": {
+            "type": "integer",
+            "title": "Localtaxkrw"
+          },
+          "netAmountKrw": {
+            "type": "integer",
+            "title": "Netamountkrw"
+          }
+        },
+        "type": "object",
+        "required": [
+          "amountKrw",
+          "incomeTaxKrw",
+          "localTaxKrw",
+          "netAmountKrw"
+        ],
+        "title": "RequestPayoutResponse",
+        "description": "신청한 금액(확정 잔액 전액)과 떼는 원천징수, 실지급액."
       },
       "ResendVerificationCodeRequest": {
         "properties": {
