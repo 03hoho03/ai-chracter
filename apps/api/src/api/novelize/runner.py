@@ -81,6 +81,7 @@ from api.novelize.output import (
     has_structure_lines,
     parse_batch_output,
 )
+from api.novelize.paragraphs import resplit_long_paragraphs
 from api.novelize.prompts import NovelizeReviseResult
 from api.novelize.source import group_turns, load_candidates, message_key, next_chapter_start
 from api.novelize.text import clean_chapter_body, looks_like_refusal, split_paragraphs
@@ -416,9 +417,10 @@ async def _finish_chain(session_factory: SessionFactory, job_id: uuid.UUID) -> N
 
 
 async def _generate_batch(llm_client: LLMClient, chapter_input: ChapterInput, usage: LLMCallContext) -> ParsedBatch:
-    """모델을 불러 묶음 출력을 받고 화로 나눈다. 판정 순서는 형식 → 화마다 본문 후처리 → 거절 → 최소 길이다. 후처리가
-    빈 줄을 접으므로 형식을 먼저 읽는다. 형식이 어긋났어도 출력 전체가 거절문이면 거절로 실패한다 — 모델은 거절할 때
-    형식을 지키지 않고, 사용자에게는 "형식 오류"보다 "거절"이 맞는 안내다.
+    """모델을 불러 묶음 출력을 받고 화로 나눈다. 판정 순서는 형식 → 화마다 본문 후처리 → 거절 → 최소 길이이고, 판정을
+    통과한 본문만 긴 문단을 다시 나눠 낸다. 후처리가 빈 줄을 접으므로 형식을 먼저 읽는다. 형식이 어긋났어도 출력
+    전체가 거절문이면 거절로 실패한다 — 모델은 거절할 때 형식을 지키지 않고, 사용자에게는 "형식 오류"보다 "거절"이
+    맞는 안내다.
 
     화 수는 여기서 판정하지 않는다. 생성의 화 수 상한(연쇄 자식은 부모 행의 값)과 다시 만들기의 화 수 불일치는 저장이
     작업 행을 잡은 뒤 판정한다."""
@@ -456,8 +458,14 @@ async def _generate_batch(llm_client: LLMClient, chapter_input: ChapterInput, us
         _judge(split_paragraphs(body))
         if len(body) < settings.novelize_min_chapter_chars:
             raise _JobFailedError("malformed")
+        # 판정은 모델이 낸 문단 모양 그대로 본다 — 거절 판정은 첫·끝 문단을 보므로 다시 나눈 뒤면 입력이 바뀐다.
         episodes.append(
-            ParsedEpisode(title=episode.title, summary=episode.summary, characters=episode.characters, body=body)
+            ParsedEpisode(
+                title=episode.title,
+                summary=episode.summary,
+                characters=episode.characters,
+                body=resplit_long_paragraphs(body),
+            )
         )
     return ParsedBatch(novel_title=parsed.novel_title, episodes=tuple(episodes))
 
