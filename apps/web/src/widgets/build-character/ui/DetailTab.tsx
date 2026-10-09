@@ -1,5 +1,3 @@
-import { Button } from "@ai-character-chat/ui/components/button";
-import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import {
   Select,
@@ -11,11 +9,14 @@ import {
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { X } from "lucide-react";
-import { useState } from "react";
-import { Controller, useFormContext, useWatch } from "react-hook-form";
+import { Controller, useFormContext } from "react-hook-form";
 
-import { NOVEL_PERMISSION_FIELD_LABEL, NovelPermissionPicker, useGenreListQuery } from "@/entities/content";
+import {
+  MAX_DESCRIPTION_LENGTH,
+  NOVEL_PERMISSION_FIELD_LABEL,
+  NovelPermissionPicker,
+  useGenreListQuery,
+} from "@/entities/content";
 import { useCreatorPayoutRate } from "@/entities/creator-payout";
 import { hasEnabledFeature, useSessionQuery } from "@/entities/session";
 import {
@@ -25,6 +26,7 @@ import {
   type Target,
   type Visibility,
 } from "@/features/build-character";
+import { CharacterCount, HashtagField, useLimitedTextField } from "@/features/build-common";
 import { RequiredText } from "@/shared/ui/RequiredText";
 
 import { CharacterMacroNotice } from "./CharacterMacroNotice";
@@ -49,31 +51,13 @@ export function DetailTab() {
   const form = useFormContext<CharacterBuilderFormValues>();
 
   const {
-    register,
     control,
-    setValue,
     formState: { errors },
   } = form;
   const genreListQuery = useGenreListQuery();
   const { data: me } = useSessionQuery();
   const payoutRate = useCreatorPayoutRate(hasEnabledFeature(me?.enabledFeatures, "creator_payout"));
-  const hashtags = useWatch({ control, name: "registration.hashtags" });
-  const [hashtagInput, setHashtagInput] = useState("");
-
-  function addHashtag() {
-    const trimmed = hashtagInput.trim();
-    setHashtagInput("");
-    if (!trimmed || hashtags.includes(trimmed)) return;
-    setValue("registration.hashtags", [...hashtags, trimmed], { shouldValidate: true });
-  }
-
-  function removeHashtag(hashtag: string) {
-    setValue(
-      "registration.hashtags",
-      hashtags.filter((tag) => tag !== hashtag),
-      { shouldValidate: true },
-    );
-  }
+  const description = useLimitedTextField<CharacterBuilderFormValues>("registration.description", MAX_DESCRIPTION_LENGTH);
 
   return (
     <div className="flex flex-col gap-6 py-6">
@@ -84,8 +68,18 @@ export function DetailTab() {
           placeholder="캐릭터를 목록에서 소개할 설명을 입력해주세요"
           rows={4}
           aria-invalid={!!errors.registration?.description}
-          aria-describedby={errors.registration?.description ? "character-detail-description-error" : undefined}
-          {...register("registration.description")}
+          aria-describedby={
+            errors.registration?.description
+              ? "character-detail-description-count character-detail-description-error"
+              : "character-detail-description-count"
+          }
+          {...description.registration}
+        />
+        <CharacterCount
+          id="character-detail-description-count"
+          count={description.count}
+          max={MAX_DESCRIPTION_LENGTH}
+          isTruncated={description.isTruncated}
         />
         <CharacterMacroNotice name="registration.description" />
         {errors.registration?.description && (
@@ -164,47 +158,7 @@ export function DetailTab() {
         )}
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="character-detail-hashtag-input">해시태그</Label>
-        <div className="flex gap-2">
-          <Input
-            id="character-detail-hashtag-input"
-            placeholder="해시태그를 입력 후 추가해주세요"
-            value={hashtagInput}
-            onChange={(event) => setHashtagInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key !== "Enter") return;
-              event.preventDefault();
-              addHashtag();
-            }}
-          />
-          <Button type="button" variant="secondary" onClick={addHashtag}>
-            추가
-          </Button>
-        </div>
-        {hashtags.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {hashtags.map((hashtag) => (
-              <span
-                key={hashtag}
-                className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1 text-xs text-secondary-foreground"
-              >
-                #{hashtag}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-4"
-                  aria-label={`${hashtag} 해시태그 삭제`}
-                  onClick={() => removeHashtag(hashtag)}
-                >
-                  <X aria-hidden className="size-3" />
-                </Button>
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
+      <HashtagField idPrefix="character-detail-hashtag" labelContent="해시태그" />
 
       <div className="flex flex-col gap-1.5">
         <span className="text-sm leading-none font-medium"><RequiredText>공개범위</RequiredText></span>

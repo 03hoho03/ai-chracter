@@ -338,6 +338,7 @@ components:
 - **Focus:** `ring-3 ring-ring/50` + `border-ring` — 버튼과 동일한 포커스 언어.
 - **Error:** `aria-invalid`에 `border-destructive` + `ring-destructive/20`. 에러 텍스트는 Label 크기 + `text-destructive-text`(글자는 텍스트 전용 토큰, 보더·링은 `--destructive`).
 - **Required:** 필수 라벨은 글자 뒤 띄어쓰기 한 칸 + 별표이고, 별표만 `text-destructive-text`다(`apps/web/src/shared/ui/RequiredText.tsx`). 빨강이 오류 전용이라는 원칙의 예외로 사용자가 고른 관례다 — 별표 한 글자에만 걸리고 라벨 글자나 다른 강조로 번지지 않는다. 별표는 숨기지 않아 접근 이름에 "*"가 남는다.
+- **Character count:** 글자 수 한도가 있는 빌더 칸은 입력칸 바로 아래 줄 오른쪽에 `n/최대`(`text-xs tabular-nums`, 화면 밖 접두 "글자 수", 입력칸의 `aria-describedby`)를 두고 그 줄 왼쪽은 도움말 자리다(`apps/web/src/features/build-common/ui/CharacterCount.tsx`). 셈은 서버와 같은 코드 포인트이고 앞뒤 공백도 센다. 상한에 닿으면 굵게만 올린다 — 꽉 찬 것은 오류가 아니라 경고색을 쓰지 않는다. 값을 바로 폼에 쓰는 칸은 `maxLength` 대신 입력할 때 상한에서 자르고 그 순간 도움말 자리에 "N자까지 들어가요. 넘친 글자는 넣지 않았어요."를 알린다(`useLimitedTextField`). 넣거나 반영할 때 검사하는 칸(칩 입력·미디어 북 이름)은 자르지 않는다 — 넘으면 숫자가 오류 글자색이 되고 넣을 때 이유와 함께 거절한다.
 
 ### Builder repeated items (빌더 반복 항목 접기)
 빌더의 반복 항목은 전부 같은 접기 카드(`features/build-common/ui/CollapsibleItemCard.tsx`)에 담긴다 — 스토리의 시작설정·스탯·상황 노트·엔딩(+ 엔딩·상황 노트 안 규칙 그룹)·키워드북 노트·단축어·전개 예시, 캐릭터의 예시 대화·상황별 이미지. 긴 항목 몇 개가 화면을 다 먹어 목록 전체를 훑을 수 없던 것을 푸는 패턴이다.

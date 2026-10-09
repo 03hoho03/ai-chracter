@@ -10,6 +10,7 @@ import { usePublishContentMutation, type CharacterDraftContent } from "@/entitie
 import type { PreviewStartPayload } from "@/entities/preview-session";
 import {
   characterBuilderSchema,
+  characterSaveErrorMessage,
   formToServer,
   serverToForm,
   CHARACTER_COLLAPSIBLE_LISTS,
@@ -171,6 +172,7 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
     formToServer,
     save: saveDraft,
     flushOnUnmount: () => draftId !== undefined,
+    errorMessage: characterSaveErrorMessage,
   });
 
   /** 상황별 이미지 등록(`POST /assets/{id}/register-situational-image`)은 content_version_id를
@@ -186,8 +188,8 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
     try {
       await saveNow(form.getValues());
       toast.success("임시저장했어요.");
-    } catch {
-      toast.error("임시저장에 실패했어요. 잠시 후 다시 시도해주세요.");
+    } catch (error) {
+      toast.error(characterSaveErrorMessage(error) ?? "임시저장에 실패했어요. 잠시 후 다시 시도해주세요.");
     }
   }
 

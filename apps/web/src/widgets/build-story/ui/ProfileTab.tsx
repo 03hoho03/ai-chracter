@@ -2,7 +2,13 @@ import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Controller, useFormContext } from "react-hook-form";
 
-import { toThumbnailAspect, toThumbnailAspectRatio } from "@/entities/content";
+import {
+  MAX_NAME_LENGTH,
+  MAX_ONE_LINER_LENGTH,
+  toThumbnailAspect,
+  toThumbnailAspectRatio,
+} from "@/entities/content";
+import { CharacterCount, useLimitedTextField } from "@/features/build-common";
 import { FieldLabelText, type StoryBuilderFormValues } from "@/features/build-story";
 import { ImageCropModal } from "@/features/crop-image";
 import { GeneratedImageField } from "@/features/select-generated-image";
@@ -24,10 +30,11 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
   const form = useFormContext<StoryBuilderFormValues>();
 
   const {
-    register,
     control,
     formState: { errors },
   } = form;
+  const name = useLimitedTextField<StoryBuilderFormValues>("profile.name", MAX_NAME_LENGTH);
+  const oneLiner = useLimitedTextField<StoryBuilderFormValues>("profile.oneLiner", MAX_ONE_LINER_LENGTH);
 
   return (
     <div className="flex flex-col gap-6 py-6">
@@ -66,9 +73,10 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
           id="story-profile-name"
           placeholder="스토리 이름을 입력해주세요"
           aria-invalid={!!errors.profile?.name}
-          aria-describedby={errors.profile?.name ? "story-profile-name-error" : undefined}
-          {...register("profile.name")}
+          aria-describedby={errors.profile?.name ? "story-profile-name-count story-profile-name-error" : "story-profile-name-count"}
+          {...name.registration}
         />
+        <CharacterCount id="story-profile-name-count" count={name.count} max={MAX_NAME_LENGTH} isTruncated={name.isTruncated} />
         {errors.profile?.name && (
           <p id="story-profile-name-error" role="alert" className="text-xs text-destructive-text">
             {errors.profile.name.message}
@@ -82,9 +90,10 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
           id="story-profile-oneliner"
           placeholder="스토리를 한 줄로 소개해주세요"
           aria-invalid={!!errors.profile?.oneLiner}
-          aria-describedby={errors.profile?.oneLiner ? "story-profile-oneliner-error" : undefined}
-          {...register("profile.oneLiner")}
+          aria-describedby={errors.profile?.oneLiner ? "story-profile-oneliner-count story-profile-oneliner-error" : "story-profile-oneliner-count"}
+          {...oneLiner.registration}
         />
+        <CharacterCount id="story-profile-oneliner-count" count={oneLiner.count} max={MAX_ONE_LINER_LENGTH} isTruncated={oneLiner.isTruncated} />
         <MediaTagOutsideNotice name="profile.oneLiner" />
         <StoryMacroNotice name="profile.oneLiner" />
         {errors.profile?.oneLiner && (

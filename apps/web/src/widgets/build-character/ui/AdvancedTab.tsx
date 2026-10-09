@@ -17,15 +17,17 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
-import { registerSituationalImage } from "@/entities/content";
+import { MAX_SITUATIONAL_IMAGE_TRIGGER_LENGTH, registerSituationalImage } from "@/entities/content";
 import type { CharacterBuilderFormValues, CharacterCollapsibleList } from "@/features/build-character";
 import {
+  CharacterCount,
   CollapsibleItemCard,
   focusNeighborToggle,
   ItemDragHandle,
   ItemRemoveButton,
   itemOpenKey,
   useBuilderUiState,
+  useLimitedTextField,
 } from "@/features/build-common";
 import { uploadAsset } from "@/shared/api/asset/uploadAsset";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
@@ -138,12 +140,15 @@ function SituationalImageRow({
   const form = useFormContext<CharacterBuilderFormValues>();
 
   const {
-    register,
     getValues,
     setValue,
     control,
     formState: { errors },
   } = form;
+  const situation = useLimitedTextField<CharacterBuilderFormValues>(
+    `situationalImages.${index}.situationDescription`,
+    MAX_SITUATIONAL_IMAGE_TRIGGER_LENGTH,
+  );
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
   const [selectedFile, setSelectedFile] = useState<File>();
   const [isUploading, setIsUploading] = useState(false);
@@ -152,6 +157,7 @@ function SituationalImageRow({
   const itemErrors = errors.situationalImages?.[index];
   const situationDescriptionError = itemErrors?.situationDescription;
   const situationDescriptionErrorId = `situational-image-${id}-description-error`;
+  const situationDescriptionCountId = `situational-image-${id}-description-count`;
   const title = `상황별 이미지 ${index + 1}`;
 
   const objectPreviewUrl = useMemo(
@@ -242,8 +248,18 @@ function SituationalImageRow({
             placeholder="어떤 상황에서 이 이미지를 노출할지 입력해주세요"
             rows={2}
             aria-invalid={!!situationDescriptionError}
-            aria-describedby={situationDescriptionError ? situationDescriptionErrorId : undefined}
-            {...register(`situationalImages.${index}.situationDescription`)}
+            aria-describedby={
+              situationDescriptionError
+                ? `${situationDescriptionCountId} ${situationDescriptionErrorId}`
+                : situationDescriptionCountId
+            }
+            {...situation.registration}
+          />
+          <CharacterCount
+            id={situationDescriptionCountId}
+            count={situation.count}
+            max={MAX_SITUATIONAL_IMAGE_TRIGGER_LENGTH}
+            isTruncated={situation.isTruncated}
           />
           {situationDescriptionError && (
             <p id={situationDescriptionErrorId} role="alert" className="text-xs text-destructive-text">

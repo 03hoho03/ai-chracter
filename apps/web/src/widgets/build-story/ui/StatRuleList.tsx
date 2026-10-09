@@ -16,7 +16,7 @@ import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { useEffect, useId, useRef, useState, type Ref } from "react";
 import { Controller, useFieldArray, useFormContext } from "react-hook-form";
 
-import { ItemDragHandle, ItemRemoveButton } from "@/features/build-common";
+import { CharacterCount, ItemDragHandle, ItemRemoveButton, useLimitedTextField } from "@/features/build-common";
 import {
   dragMoveIndices,
   FieldLabelText,
@@ -187,7 +187,6 @@ export function StatRuleList({ id, startingSetupIndex, statIndex, stat }: StatRu
                   ruleId={ruleIds[index] ?? field.id}
                   rulePath={`${rulesPath}.${index}`}
                   position={index + 1}
-                  condition={stat.rules[index]?.condition ?? ""}
                   range={stat}
                   onRemove={() => handleRemove(index)}
                   onStep={(step) => handleStep(index, step)}
@@ -244,7 +243,6 @@ type StatRuleRowProps = {
   ruleId: string;
   rulePath: `startingSetups.${number}.stats.${number}.rules.${number}`;
   position: number;
-  condition: string;
   /** 폭 경고에 쓰는 스탯 범위. */
   range: { min: number; max: number };
   onRemove: () => void;
@@ -255,13 +253,15 @@ type StatRuleRowProps = {
  * 규칙 한 줄 — [손잡이] [조건 · 증감] [삭제]. 조건과 증감은 줄 폭이 넉넉하면 나란히(조건이 남는 폭을 쓴다), 좁으면 위아래로
  * 선다. 같은 줄이 넓은 화면의 카드와 좁은 화면 양쪽에 들어가 폭이 뷰포트만으로 정해지지 않아 컨테이너 폭으로 가른다.
  *
- * 조건 칸은 등록한 입력이라 브라우저 `maxLength` 가 상한을 막는다(UTF-16 단위라 서버의 코드 포인트 셈보다 같거나 더 엄격하다).
+ * 조건 칸은 등록한 입력이라 입력할 때 상한(코드 포인트)에서 자른다. 서버는 앞뒤 공백을 지운 뒤 세므로 화면이 같거나 더
+ * 엄격하다.
  */
-function StatRuleRow({ sortableId, ruleId, rulePath, position, condition, range, onRemove, onStep }: StatRuleRowProps) {
+function StatRuleRow({ sortableId, ruleId, rulePath, position, range, onRemove, onStep }: StatRuleRowProps) {
   const form = useFormContext<StoryBuilderFormValues>();
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: sortableId });
 
-  const { register, control, getFieldState, formState } = form;
+  const { control, getFieldState, formState } = form;
+  const conditionField = useLimitedTextField<StoryBuilderFormValues>(`${rulePath}.condition`, MAX_STAT_RULE_CONDITION_LENGTH);
   const conditionError = getFieldState(`${rulePath}.condition`, formState).error;
   const generatedId = useId();
   const ids = {
@@ -295,25 +295,24 @@ function StatRuleRow({ sortableId, ruleId, rulePath, position, condition, range,
       <div className="@container min-w-0 flex-1">
         <div className="grid gap-3 @md:grid-cols-stat-rule">
           <div className="flex min-w-0 flex-col gap-1.5">
-            <div className="flex items-baseline justify-between gap-2">
-              <Label htmlFor={ids.condition}>
-                <FieldLabelText field="startingSetups.*.stats.*.rules.*.condition" />
-              </Label>
-              <span id={ids.conditionCount} className="text-xs tabular-nums text-muted-foreground">
-                <span className="sr-only">조건 </span>
-                {condition.length}/{MAX_STAT_RULE_CONDITION_LENGTH}
-              </span>
-            </div>
+            <Label htmlFor={ids.condition}>
+              <FieldLabelText field="startingSetups.*.stats.*.rules.*.condition" />
+            </Label>
             <Textarea
               id={ids.condition}
               placeholder="예: 사용자가 약속한 시간에 늦었다"
               rows={2}
-              maxLength={MAX_STAT_RULE_CONDITION_LENGTH}
               aria-invalid={!!conditionError}
               aria-describedby={[ids.conditionCount, conditionError ? ids.conditionError : undefined]
                 .filter(Boolean)
                 .join(" ")}
-              {...register(`${rulePath}.condition`)}
+              {...conditionField.registration}
+            />
+            <CharacterCount
+              id={ids.conditionCount}
+              count={conditionField.count}
+              max={MAX_STAT_RULE_CONDITION_LENGTH}
+              isTruncated={conditionField.isTruncated}
             />
             {conditionError && (
               <p id={ids.conditionError} role="alert" className="text-xs break-keep text-destructive-text">

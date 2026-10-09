@@ -5,14 +5,22 @@ import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { useRef, useState } from "react";
 import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
+import {
+  MAX_EXAMPLE_DIALOGUE_LINE_LENGTH,
+  MAX_EXAMPLE_DIALOGUES,
+  MAX_INTRO_LENGTH,
+  MAX_PLAY_GUIDE_LENGTH,
+} from "@/entities/content";
 import type { CharacterBuilderFormValues, CharacterCollapsibleList } from "@/features/build-character";
 import {
+  CharacterCount,
   CollapsibleItemCard,
   DefaultUserNameField,
   focusNeighborToggle,
   ItemRemoveButton,
   itemOpenKey,
   useBuilderUiState,
+  useLimitedTextField,
 } from "@/features/build-common";
 import { firstLine } from "@/shared/lib/text/firstLine";
 import { RequiredText } from "@/shared/ui/RequiredText";
@@ -37,6 +45,9 @@ export function IntroTab() {
   const addButtonRef = useRef<HTMLButtonElement>(null);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(() => fields.length > 0);
   const defaultUserName = useWatch({ control, name: "intro.defaultUserName" });
+  const firstMessage = useLimitedTextField<CharacterBuilderFormValues>("intro.firstMessage", MAX_INTRO_LENGTH);
+  const playGuide = useLimitedTextField<CharacterBuilderFormValues>("intro.playGuide", MAX_PLAY_GUIDE_LENGTH);
+  const isExampleDialogueFull = fields.length >= MAX_EXAMPLE_DIALOGUES;
 
   // 스위치를 끈 채 이 탭에서 발행하면 예시 대화 오류가 화면에 없는 입력칸에 걸려 아무것도 보이지 않는다. 그래서 발행이 예시
   // 대화에 새 오류 묶음을 내면 그때 한 번 스위치를 켠다. 오류가 남은 채 사용자가 다시 끄는 것은 막지 않는다 — 오류 객체가
@@ -49,6 +60,8 @@ export function IntroTab() {
   }
 
   function handleAppend() {
+    // 상한에서도 버튼은 `aria-disabled` 로 남는다(아래 버튼 주석). 실제 차단은 여기다.
+    if (isExampleDialogueFull) return;
     const id = crypto.randomUUID();
     // 새 항목을 열림으로 기록하는 일은 append 와 같은 핸들러에서 그보다 먼저 한다. 같은 커밋에 본문이 보여야 append 가
     // 주는 포커스가 숨은 입력칸에 걸려 헛돌지 않는다.
@@ -72,9 +85,10 @@ export function IntroTab() {
           placeholder="사용자와의 첫 대화에서 캐릭터가 건넬 말을 입력해주세요"
           rows={4}
           aria-invalid={!!errors.intro?.firstMessage}
-          aria-describedby={errors.intro?.firstMessage ? "character-intro-first-message-error" : undefined}
-          {...register("intro.firstMessage")}
+          aria-describedby={errors.intro?.firstMessage ? "character-intro-first-message-count character-intro-first-message-error" : "character-intro-first-message-count"}
+          {...firstMessage.registration}
         />
+        <CharacterCount id="character-intro-first-message-count" count={firstMessage.count} max={MAX_INTRO_LENGTH} isTruncated={firstMessage.isTruncated} />
         <CharacterMacroNotice name="intro.firstMessage" />
         {errors.intro?.firstMessage && (
           <p id="character-intro-first-message-error" role="alert" className="text-xs text-destructive-text">
@@ -110,9 +124,24 @@ export function IntroTab() {
           {fields.map((field, index) => (
             <ExampleDialogueItem key={field.id} index={index} onRemove={() => handleRemove(index)} />
           ))}
-          <Button ref={addButtonRef} type="button" variant="secondary" onClick={handleAppend}>
+          {/* 상한에서도 버튼을 트리에 남기고 `aria-disabled` 로만 잠근다 — `disabled` 는 누르는 순간 포커스를 body 로
+              떨어뜨리고, 지우면 왜 더 못 넣는지가 사라진다. */}
+          <Button
+            ref={addButtonRef}
+            type="button"
+            variant="secondary"
+            aria-disabled={isExampleDialogueFull}
+            aria-describedby={isExampleDialogueFull ? "character-intro-dialogue-limit" : undefined}
+            className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
+            onClick={handleAppend}
+          >
             예시 대화 추가
           </Button>
+          {isExampleDialogueFull && (
+            <p id="character-intro-dialogue-limit" className="text-xs break-keep text-muted-foreground">
+              예시 대화는 최대 {MAX_EXAMPLE_DIALOGUES}개예요. 더 넣으려면 하나를 지워 주세요.
+            </p>
+          )}
         </div>
       )}
 
@@ -122,7 +151,14 @@ export function IntroTab() {
           id="character-intro-play-guide"
           placeholder="사용자에게 노출할 플레이 안내를 입력해주세요"
           rows={3}
-          {...register("intro.playGuide")}
+          aria-describedby="character-intro-play-guide-count"
+          {...playGuide.registration}
+        />
+        <CharacterCount
+          id="character-intro-play-guide-count"
+          count={playGuide.count}
+          max={MAX_PLAY_GUIDE_LENGTH}
+          isTruncated={playGuide.isTruncated}
         />
         <CharacterMacroNotice name="intro.playGuide" />
       </div>
@@ -139,16 +175,25 @@ type ExampleDialogueItemProps = {
  * 요약으로 보인다. 열림 키는 폼 값의 id 다 — 필드 배열이 주는 id 는 탭을 다시 열 때마다 새로 발급돼 열림을 잃는다. */
 function ExampleDialogueItem({ index, onRemove }: ExampleDialogueItemProps) {
   const {
-    register,
     control,
     formState: { errors },
   } = useFormContext<CharacterBuilderFormValues>();
+  const userLine = useLimitedTextField<CharacterBuilderFormValues>(
+    `intro.exampleDialogues.${index}.userLine`,
+    MAX_EXAMPLE_DIALOGUE_LINE_LENGTH,
+  );
+  const characterLine = useLimitedTextField<CharacterBuilderFormValues>(
+    `intro.exampleDialogues.${index}.characterLine`,
+    MAX_EXAMPLE_DIALOGUE_LINE_LENGTH,
+  );
   const dialogue = useWatch({ control, name: `intro.exampleDialogues.${index}` });
   const itemErrors = errors.intro?.exampleDialogues?.[index];
   const userLineError = itemErrors?.userLine;
   const userLineErrorId = `character-intro-dialogue-${dialogue.id}-user-line-error`;
   const characterLineError = itemErrors?.characterLine;
   const characterLineErrorId = `character-intro-dialogue-${dialogue.id}-character-line-error`;
+  const userLineCountId = `character-intro-dialogue-${dialogue.id}-user-line-count`;
+  const characterLineCountId = `character-intro-dialogue-${dialogue.id}-character-line-count`;
   const title = `예시 대화 ${index + 1}`;
 
   return (
@@ -165,8 +210,14 @@ function ExampleDialogueItem({ index, onRemove }: ExampleDialogueItemProps) {
           placeholder="사용자 대사"
           rows={2}
           aria-invalid={!!userLineError}
-          aria-describedby={userLineError ? userLineErrorId : undefined}
-          {...register(`intro.exampleDialogues.${index}.userLine`)}
+          aria-describedby={userLineError ? `${userLineCountId} ${userLineErrorId}` : userLineCountId}
+          {...userLine.registration}
+        />
+        <CharacterCount
+          id={userLineCountId}
+          count={userLine.count}
+          max={MAX_EXAMPLE_DIALOGUE_LINE_LENGTH}
+          isTruncated={userLine.isTruncated}
         />
         <CharacterMacroNotice name={`intro.exampleDialogues.${index}.userLine`} />
         {userLineError && (
@@ -180,8 +231,14 @@ function ExampleDialogueItem({ index, onRemove }: ExampleDialogueItemProps) {
           placeholder="캐릭터 대사"
           rows={4}
           aria-invalid={!!characterLineError}
-          aria-describedby={characterLineError ? characterLineErrorId : undefined}
-          {...register(`intro.exampleDialogues.${index}.characterLine`)}
+          aria-describedby={characterLineError ? `${characterLineCountId} ${characterLineErrorId}` : characterLineCountId}
+          {...characterLine.registration}
+        />
+        <CharacterCount
+          id={characterLineCountId}
+          count={characterLine.count}
+          max={MAX_EXAMPLE_DIALOGUE_LINE_LENGTH}
+          isTruncated={characterLine.isTruncated}
         />
         <CharacterMacroNotice name={`intro.exampleDialogues.${index}.characterLine`} />
         {characterLineError && (

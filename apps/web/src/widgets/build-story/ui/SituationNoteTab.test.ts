@@ -140,12 +140,16 @@ describe("SituationNoteTab 노트 추가 잠금", () => {
 });
 
 describe("SituationNoteCard", () => {
-  // 자동저장은 폼 검증을 거치지 않아 상한을 넘는 글이 폼에 들어가면 서버가 초안 저장을 통째로 거절한다 — 입력 칸이 막는다.
-  it("이름 20자·상황 800자를 입력 칸에서 막는다", () => {
-    const html = render([setup({ situationNotes: [note("n1")] })]);
+  // 자동저장은 폼 검증을 거치지 않아 상한을 넘는 글이 폼에 들어가면 서버가 초안 저장을 통째로 거절한다 — 칸 아래 카운터가
+  // 서버와 같은 단위로 남은 폭을 보이고, 입력이 상한에서 잘린다(자르는 규칙은 글자 수 셈 함수의 테스트가 본다).
+  it("이름·상황 칸 아래에 서버와 같은 코드 포인트로 센 글자 수와 상한(20·800)을 보인다", () => {
+    const html = render([setup({ situationNotes: [note("n1", { name: "도희😀", content: "😀😀" })] })]);
 
-    expect(html).toMatch(/<input[^>]*maxLength="20"[^>]*name="startingSetups\.0\.situationNotes\.0\.name"/);
-    expect(html).toMatch(/<textarea[^>]*maxLength="800"[^>]*name="startingSetups\.0\.situationNotes\.0\.content"/);
+    // 이모지는 UTF-16 으로 두 칸이지만 서버처럼 한 글자로 센다.
+    expect(html).toContain("<span class=\"sr-only\">글자 수 </span>3/20");
+    expect(html).toContain("<span class=\"sr-only\">글자 수 </span>2/800");
+    expect(html).toMatch(/<input[^>]*aria-describedby="[^"]*-name-count"[^>]*name="startingSetups\.0\.situationNotes\.0\.name"/);
+    expect(html).not.toMatch(/maxLength=/);
   });
 
   it("접힌 머리 줄에 이름(없으면 상황의 첫 줄)과 조건 요약을 보인다", () => {

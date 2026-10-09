@@ -1,5 +1,3 @@
-import { Button } from "@ai-character-chat/ui/components/button";
-import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import {
   Select,
@@ -11,13 +9,13 @@ import {
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { X } from "lucide-react";
-import { useRef, useState } from "react";
-import { Controller, useFormContext, useWatch } from "react-hook-form";
+import { useRef } from "react";
+import { Controller, useFormContext } from "react-hook-form";
 
-import { NovelPermissionPicker, useGenreListQuery } from "@/entities/content";
+import { MAX_DESCRIPTION_LENGTH, NovelPermissionPicker, useGenreListQuery } from "@/entities/content";
 import { useCreatorPayoutRate } from "@/entities/creator-payout";
 import { hasEnabledFeature, useSessionQuery } from "@/entities/session";
+import { CharacterCount, HashtagField, useLimitedTextField } from "@/features/build-common";
 import {
   FieldLabelText,
   TARGET_LABELS,
@@ -38,34 +36,16 @@ export function RegistrationTab() {
   const form = useFormContext<StoryBuilderFormValues>();
 
   const {
-    register,
     control,
-    setValue,
     formState: { errors },
   } = form;
   const genreListQuery = useGenreListQuery();
   const { data: me } = useSessionQuery();
   const payoutRate = useCreatorPayoutRate(hasEnabledFeature(me?.enabledFeatures, "creator_payout"));
-  const hashtags = useWatch({ control, name: "registration.hashtags" });
-  const [hashtagInput, setHashtagInput] = useState("");
-  const descriptionField = register("registration.description");
+  const description = useLimitedTextField<StoryBuilderFormValues>("registration.description", MAX_DESCRIPTION_LENGTH);
+  const descriptionField = description.registration;
   // "이미지 넣기"가 커서 자리를 읽을 입력창. `register` 의 ref 와 함께 건다.
   const descriptionRef = useRef<HTMLTextAreaElement | null>(null);
-
-  function addHashtag() {
-    const trimmed = hashtagInput.trim();
-    setHashtagInput("");
-    if (!trimmed || hashtags.includes(trimmed)) return;
-    setValue("registration.hashtags", [...hashtags, trimmed], { shouldValidate: true });
-  }
-
-  function removeHashtag(hashtag: string) {
-    setValue(
-      "registration.hashtags",
-      hashtags.filter((tag) => tag !== hashtag),
-      { shouldValidate: true },
-    );
-  }
 
   return (
     <div className="flex flex-col gap-6 py-6">
@@ -79,12 +59,22 @@ export function RegistrationTab() {
           placeholder="스토리를 목록에서 소개할 설명을 입력해주세요"
           rows={4}
           aria-invalid={!!errors.registration?.description}
-          aria-describedby={errors.registration?.description ? "story-registration-description-error" : undefined}
+          aria-describedby={
+            errors.registration?.description
+              ? "story-registration-description-count story-registration-description-error"
+              : "story-registration-description-count"
+          }
           {...descriptionField}
           ref={(element) => {
             descriptionField.ref(element);
             descriptionRef.current = element;
           }}
+        />
+        <CharacterCount
+          id="story-registration-description-count"
+          count={description.count}
+          max={MAX_DESCRIPTION_LENGTH}
+          isTruncated={description.isTruncated}
         />
         <UnknownMediaTagNotice name="registration.description" />
         <StoryMacroNotice name="registration.description" />
@@ -164,47 +154,7 @@ export function RegistrationTab() {
         )}
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="story-registration-hashtag-input"><FieldLabelText field="registration.hashtags" /></Label>
-        <div className="flex gap-2">
-          <Input
-            id="story-registration-hashtag-input"
-            placeholder="해시태그를 입력 후 추가해주세요"
-            value={hashtagInput}
-            onChange={(event) => setHashtagInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key !== "Enter") return;
-              event.preventDefault();
-              addHashtag();
-            }}
-          />
-          <Button type="button" variant="secondary" onClick={addHashtag}>
-            추가
-          </Button>
-        </div>
-        {hashtags.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {hashtags.map((hashtag) => (
-              <span
-                key={hashtag}
-                className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1 text-xs text-secondary-foreground"
-              >
-                #{hashtag}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-4"
-                  aria-label={`${hashtag} 해시태그 삭제`}
-                  onClick={() => removeHashtag(hashtag)}
-                >
-                  <X aria-hidden className="size-3" />
-                </Button>
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
+      <HashtagField idPrefix="story-registration-hashtag" labelContent={<FieldLabelText field="registration.hashtags" />} />
 
       <div className="flex flex-col gap-1.5">
         <span className="text-sm leading-none font-medium"><FieldLabelText field="registration.visibility" /></span>
