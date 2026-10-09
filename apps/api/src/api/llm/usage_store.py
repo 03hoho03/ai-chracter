@@ -1,6 +1,6 @@
 """LLM 호출 사용량을 Redis 일 단위 해시에 누적한다.
 
-`gemini_usage`·`bedrock_usage` 로그 줄은 컨테이너가 배포마다 새로 떠서 사라진다. 그래서 같은 숫자를 배포를
+`gemini_usage`·`bedrock_usage`·`anthropic_usage` 로그 줄은 컨테이너가 배포마다 새로 떠서 사라진다. 그래서 같은 숫자를 배포를
 넘겨 남기려고 둔다. 키는 `llm_usage:{KST 날짜}` 하나, 필드는 `{call_site}|{model}|{지표}` 이고
 값은 HINCRBY 누적이다. 사용자·방 id 는 넣지 않는다 — 개인 단위 이용 기록이 되면 처리방침
 항목·보존기간·탈퇴 파기와 엮인다.
@@ -8,8 +8,8 @@
 지표:
 - `calls` 응답을 받은 호출 수(실패·중단 스트림은 `_log_usage` 와 같이 세지 않는다)
 - `prompt`·`cached`·`candidates`·`thoughts`·`total` SDK 가 보고한 토큰 합
-- `cache_write` 캐시에 새로 쓴 입력 토큰 합(Bedrock 의 Claude 만 보고한다). Claude 는 입력 토큰을 캐시 읽기·쓰기를 뺀 값으로
-  보고하지만 `llm/bedrock.py` 가 셋을 더해 `prompt` 에 넣으므로, 모든 모델에서 `prompt` 는 캐시를 포함한 입력 전체이고
+- `cache_write` 캐시에 새로 쓴 입력 토큰 합(Claude 만 보고한다). Claude 는 입력 토큰을 캐시 읽기·쓰기를 뺀 값으로
+  보고하지만 `llm/claude_messages.py` 가 셋을 더해 `prompt` 에 넣으므로, 모든 모델에서 `prompt` 는 캐시를 포함한 입력 전체이고
   `cached`·`cache_write` 는 그 안의 몫이다
 - `missing` 사용량 메타데이터가 없거나 `prompt_token_count` 가 None 인 호출 수. 이미지가 실린
   호출은 입력 토큰이 None 으로 오고 `total` 만 온다 — 입력 원가는 `total − candidates − thoughts`

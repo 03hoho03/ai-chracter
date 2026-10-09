@@ -57,14 +57,20 @@ BACKENDS: dict[BackendId, BackendSpec] = {
             ("BEDROCK_REGION", "bedrock_region"),
         ),
     ),
+    "anthropic": BackendSpec(
+        # 직접 API 는 JSON 스키마 출력을 받지만, 이 구현은 아직 구조화 호출을 구현하지 않았다.
+        capabilities=BackendCapabilities(structured="none", structured_images=False, structured_with_instruction=False),
+        model_id_settings={"sonnet": "anthropic_sonnet_model_id", "opus": "anthropic_opus_model_id"},
+        credential_env=(("ANTHROPIC_DIRECT_API_KEY", "anthropic_direct_api_key"),),
+    ),
 }
 
 # 모델 → 그 모델을 서비스할 수 있는 구현, 첫 값이 기본(배정이 없을 때 가는 곳). 서비스 여부 자체는 위 행의
 # `model_id_settings` 에도 있어 이 표는 "기본 순서" 만의 소스다 — 두 표가 같은 사실을 말하는지는 테스트가 본다.
 MODEL_BACKENDS: dict[ChatModelId, tuple[BackendId, ...]] = {
     "gemini": ("gemini",),
-    "sonnet": ("bedrock",),
-    "opus": ("bedrock",),
+    "sonnet": ("bedrock", "anthropic"),
+    "opus": ("bedrock", "anthropic"),
 }
 
 

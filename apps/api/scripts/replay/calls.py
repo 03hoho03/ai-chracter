@@ -1,10 +1,10 @@
 """리플레이 호출과 호출 기록.
 
 호출은 앱의 라우팅 클라이언트(`get_llm_client` 가 돌려주는 것)로 call_site `replay_generate` 를 실어 보낸다. 고른 모델이
-Claude 면 Bedrock 으로 가고, 모델·출력 상한·사고 설정·타임아웃이 실제 채팅 생성과 같다. 정지 시퀀스는 그 갈래 세트의 사용자
-라벨로 만든다(서버와 같은 모양).
+Claude 면 그 호출 위치의 배정대로 Bedrock 이나 Anthropic API 로 가고(배정이 없으면 Bedrock), 모델·출력 상한·사고 설정·
+타임아웃이 실제 채팅 생성과 같다. 정지 시퀀스는 그 갈래 세트의 사용자 라벨로 만든다(서버와 같은 모양).
 
-실제로 보낸 모델 id 와 토큰은 공급자 구현이 호출을 마치며 부르는 사용량 기록 함수(`record_usage`)를 감싸 잡는다. 두
+실제로 보낸 모델 id 와 토큰은 공급자 구현이 호출을 마치며 부르는 사용량 기록 함수(`record_usage`)를 감싸 잡는다. 모든
 공급자가 이 이름을 같은 인자(call_site, 실제 모델 id, 사용량 메타데이터)로 부르므로 SDK 안쪽을 감쌀 필요가 없다. 중단·오류로
 끝난 호출은 기록 함수가 불리지 않아 원가를 모르고(`costUsd` 가 None), 장부는 그 호출을 넉넉한 값으로 센다.
 """
@@ -19,7 +19,7 @@ from datetime import UTC, datetime
 from itertools import groupby
 from typing import Any
 
-from api.llm import bedrock, gemini
+from api.llm import anthropic_api, bedrock, gemini
 from api.llm.client import LLMCallContext, LLMClient
 from api.llm.pricing import estimate_cost_usd
 from replay.assemble import REPLAY_CALL_SITE, GenerationInput
@@ -45,10 +45,10 @@ class SentCall:
 
 @contextlib.contextmanager
 def capture_usage() -> Iterator[list[SentCall]]:
-    """이 블록 안에서 두 공급자의 사용량 기록을 감싸, 원래 기록을 그대로 한 뒤 보낸 값을 목록에 더한다. 블록을 나가면
-    원래 함수로 되돌린다."""
+    """이 블록 안에서 공급자 구현 모듈마다의 사용량 기록을 감싸, 원래 기록을 그대로 한 뒤 보낸 값을 목록에 더한다. 블록을
+    나가면 원래 함수로 되돌린다."""
     sent: list[SentCall] = []
-    originals = [(module, module.record_usage) for module in (gemini, bedrock)]
+    originals = [(module, module.record_usage) for module in (gemini, bedrock, anthropic_api)]
 
     def wrap(original: Callable[..., Any]) -> Callable[..., Any]:
         async def record_usage(call_site: str, model: str, usage_metadata: object | None, **kwargs: Any) -> None:

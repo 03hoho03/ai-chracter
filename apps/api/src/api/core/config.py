@@ -10,6 +10,9 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from api.llm import backends
 from api.llm.call_policy import BackendId, LLMCallSite
 
+# Anthropic API 의 사고 깊이(`output_config.effort`). API 가 받는 값만 둔다 — 오타가 첫 호출의 거부가 아니라 기동 거부가 되게.
+ClaudeEffort = Literal["low", "medium", "high", "xhigh", "max"]
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -261,6 +264,24 @@ class Settings(BaseSettings):
     # 몇 개가 들어가는지 계산해 본다.
     bedrock_chat_max_tokens: int = 4096
     bedrock_chapter_max_tokens: int = 32_768
+    # 상위 모델을 Anthropic API 로 직접 보낼 때의 설정(`llm/anthropic_api.py`). 아래 배정(`LLM_CALL_SITE_BACKENDS`)이 호출을
+    # 이 구현으로 옮길 때만 쓰이고, 배정이 없으면 상위 모델은 위 Bedrock 으로 간다. 키의 env 이름을 SDK 가 스스로 읽는
+    # `ANTHROPIC_API_KEY` 와 나눈다(Bedrock 키가 `AWS_*` 를 피한 것과 같은 이유) — 배정이 경로를 옮기는데 키가 비면 기동하지
+    # 않는다(`llm/backends.py` 의 `assignment_errors`).
+    anthropic_direct_api_key: str = Field(default="", repr=False)
+    # 실제 모델 id. 같은 `opus`·`sonnet` 이라도 Bedrock 쪽 id 와 버전이 다르다 — 화면의 모델 이름은 Bedrock 쪽을 따른다.
+    anthropic_sonnet_model_id: str = "claude-sonnet-5-5"
+    anthropic_opus_model_id: str = "claude-opus-5-5"
+    # 요청 타임아웃(ms). Bedrock 과 같은 값이고 같은 뜻("다음 청크까지")이다.
+    anthropic_chat_timeout_ms: int = 45_000
+    anthropic_chapter_timeout_ms: int = 300_000
+    # 출력 상한. 이 경로의 모델은 사고를 끌 수 없고 사고 토큰이 이 상한 안에 들어, Bedrock 상한(사고 끔)을 그대로 쓰면 사고가
+    # 상한을 다 써 본문 없이 끝날 수 있다. 상한이지 과금량이 아니다 — 쓰지 않은 몫은 과금되지 않는다.
+    anthropic_chat_max_tokens: int = 16_000
+    anthropic_chapter_max_tokens: int = 64_000
+    # 사고 깊이. 채팅 턴(다시 생성 포함) / 소설 장. 모델의 기본값에 맡기지 않고 늘 보낸다.
+    anthropic_chat_effort: ClaudeEffort = "low"
+    anthropic_chapter_effort: ClaudeEffort = "medium"
     # 상위 모델 스위치와 허용 가능 계정 명단 — 채팅과 소설화에 한 벌씩. 뜻은 소설화 스위치·명단과 같다(기본 닫힘, 명단에서
     # 빼고 재기동하면 허용 행이 있어도 막힘). 소설 장의 상위 모델은 소설화 자체 허용도 함께 있어야 쓸 수 있다.
     chat_premium_models_enabled: bool = False
@@ -301,6 +322,14 @@ class Settings(BaseSettings):
         "bedrock_chapter_timeout_ms",
         "bedrock_chat_max_tokens",
         "bedrock_chapter_max_tokens",
+        "anthropic_sonnet_model_id",
+        "anthropic_opus_model_id",
+        "anthropic_chat_timeout_ms",
+        "anthropic_chapter_timeout_ms",
+        "anthropic_chat_max_tokens",
+        "anthropic_chapter_max_tokens",
+        "anthropic_chat_effort",
+        "anthropic_chapter_effort",
         "chat_premium_models_enabled",
         "novelize_premium_models_enabled",
         mode="before",
@@ -316,19 +345,26 @@ class Settings(BaseSettings):
         return value
 
     @model_validator(mode="after")
-    def _premium_models_need_bedrock_credentials(self) -> "Settings":
-        """스위치 하나라도 켜져 있으면 Bedrock 키·비밀 키·리전이 모두 있어야 한다. 켜진 채 빈 값으로 뜨면 첫 상위 모델
-        호출에서야 실패하고(그 턴은 환불된다), 클라이언트가 막지 못한 경로가 생기면 R2 자격으로 서명된다."""
-        if not (self.chat_premium_models_enabled or self.novelize_premium_models_enabled):
-            return self
+    def _premium_models_need_backend_credentials(self) -> "Settings":
+        """켜진 스위치가 여는 호출(채팅: 턴 생성과 측정용 다시 생성, 소설: 장 생성)이 상위 모델로 실제로 갈 구현마다 그
+        자격이 모두 있어야 한다. 배정이 없으면 그 구현은 Bedrock 이라 키·비밀 키·리전 셋을 본다. 켜진 채 빈 값으로 뜨면 첫
+        상위 모델 호출에서야 실패하고(그 턴은 환불된다), Bedrock 은 클라이언트가 막지 못한 경로가 생기면 R2 자격으로 서명된다."""
+        call_sites: list[LLMCallSite] = []
+        if self.chat_premium_models_enabled:
+            call_sites += ["chat_generate", "replay_generate"]
+        if self.novelize_premium_models_enabled:
+            call_sites.append("novelize_chapter")
+        premium_models = [model for model in backends.MODEL_BACKENDS if model != backends.DEFAULT_CHAT_MODEL]
+        resolved = {
+            backends.pick_backend(call_site, model, self.llm_call_site_backends)[1]
+            for call_site in call_sites
+            for model in premium_models
+        }
         missing = [
             env_name
-            for env_name, value in (
-                ("BEDROCK_ACCESS_KEY_ID", self.bedrock_access_key_id),
-                ("BEDROCK_SECRET_ACCESS_KEY", self.bedrock_secret_access_key),
-                ("BEDROCK_REGION", self.bedrock_region),
-            )
-            if not value.strip()
+            for backend in sorted(resolved)
+            for env_name, attr in backends.BACKENDS[backend].credential_env
+            if not str(getattr(self, attr)).strip()
         ]
         if missing:
             raise ValueError(f"상위 모델 스위치가 켜져 있는데 {', '.join(missing)} 가 비어 있다")

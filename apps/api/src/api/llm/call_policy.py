@@ -15,7 +15,7 @@ import 해 집합을 만들어도 순환을 따질 일이 없다. 같은 이유�
 from dataclasses import dataclass
 from typing import Literal
 
-# `gemini_usage`·`bedrock_usage` 로그의 grep 키다. 호출부와 1:1이라
+# `gemini_usage`·`bedrock_usage`·`anthropic_usage` 로그의 grep 키다. 호출부와 1:1이라
 # 값을 바꾸거나 합치면 로그 분포가 끊긴다. 재생성은 `chat_generate`로 함께 집계한다.
 LLMCallSite = Literal[
     "chat_generate",
@@ -49,7 +49,7 @@ LLMCallSite = Literal[
 JudgmentKind = Literal["stat", "ending", "image"]
 
 # 공급자 구현의 id. 구현마다의 능력·서비스하는 모델·자격은 `llm/backends.py` 의 등록부 한 행이 정한다.
-BackendId = Literal["gemini", "bedrock"]
+BackendId = Literal["gemini", "bedrock", "anthropic"]
 
 # 호출 위치가 클라이언트의 어느 메서드로 부르는가. 기동 검증이 이 값을 배정된 구현의 능력과 견준다 — 구조화 출력을 받지
 # 못하는 구현에 판정을 배정한 채 뜨면 첫 판정에서야 실패한다. `structured_images` 는 그림을 함께 싣는 구조화,
@@ -101,8 +101,8 @@ class CallPolicy:
     # 수정으로 소설화 모델·출력 상한·사고 설정(`gemini_novelize_*`)을 쓴다. `boundary`(장 경계 제안)는 턴 번호 몇 개를
     # 고르는 판정이라 실패 구분만 받고 모델·상한·사고는 기본을 따른다.
     novelize: Literal["prose", "boundary"] | None = None
-    # Claude 의 타임아웃·출력 상한 프로필. `chapter` 는 소설 장 생성용 긴 상한(`bedrock_chapter_*`), `chat` 은 채팅 상한
-    # (`bedrock_chat_*`). 소설화 갈래에서 파생하지 않는 것은 Claude 로 가는 소설화 호출이 지금 장 생성 하나뿐이어서다 —
+    # Claude 의 타임아웃·출력 상한(Anthropic API 직접 구현은 사고 깊이도) 프로필. `chapter` 는 소설 장 생성용 긴 상한
+    # (`bedrock_chapter_*`·`anthropic_chapter_*`), `chat` 은 채팅 상한(`bedrock_chat_*`·`anthropic_chat_*`). 소설화 갈래에서 파생하지 않는 것은 Claude 로 가는 소설화 호출이 지금 장 생성 하나뿐이어서다 —
     # 문단 수정·장 경계 제안은 구조화 호출이고 모델 선택 대상이 아니라 언제나 Gemini 로 가므로 이 값이 운영에서 쓰이지
     # 않는다. 이들을 Claude 로 보내게 되면 그때 상한을 따로 정해야 하므로 갈래와 묶지 않고 행마다 적는다.
     claude_limits: Literal["chat", "chapter"] = "chat"

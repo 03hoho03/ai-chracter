@@ -18,6 +18,7 @@
 """
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -39,6 +40,7 @@ from api.core.config import settings
 from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom
 from api.db.models.content import ContentVersion
 from api.db.models.story import KeywordNote, Shortcut, SituationNote, StartingSetup, StoryVersionDetail
+from api.llm.call_policy import BackendId
 from api.llm.chat_models import ChatModelId, parse_chat_model_id
 from api.llm.client import LLMCallSite
 from api.llm.model_access import effective_room_model
@@ -69,6 +71,14 @@ Variant = Literal["window", "set", "model", "version", "swap"]
 
 # 그 턴에 읽힌 작품 행 중 치환 표가 바꿀 수 있는 글 칸 — 생성 프롬프트에 실리는 작가 글 전부다.
 _DETAIL_TEXT_FIELDS = ("setting_text", "development_examples", "user_goal", "rules", "custom_prompt")
+
+
+# 구현마다 다시 생성하는 호출(채팅과 같은 상한)의 출력 상한. 호출마다 설정에서 읽는다.
+_OUTPUT_CAP: dict[BackendId, Callable[[], int]] = {
+    "gemini": lambda: settings.gemini_max_output_tokens,
+    "bedrock": lambda: settings.bedrock_chat_max_tokens,
+    "anthropic": lambda: settings.anthropic_chat_max_tokens,
+}
 
 
 def sent_model_id(chat_model: ChatModelId) -> str:
@@ -128,9 +138,10 @@ class GenerationInput:
 
     def cost_ceiling_usd(self) -> float:
         """원가를 모르고 끝난 호출(사용량 기록 없음)을 상한에 셀 값 — 이 모델 단가로 입력 추정과 출력 상한(사고 토큰
-        포함)을 다 쓴 경우. 단가표에 없는 모델이면 단가표에서 가장 비싼 모델로 센다(모르면 크게 센다)."""
+        포함)을 다 쓴 경우. 출력 상한은 이 호출이 실제로 갈 구현의 채팅 상한이다. 단가표에 없는 모델이면 단가표에서 가장
+        비싼 모델로 센다(모르면 크게 센다)."""
         tokens = self.estimated_input_tokens()
-        output = settings.gemini_max_output_tokens if self.chat_model == "gemini" else settings.bedrock_chat_max_tokens
+        output = _OUTPUT_CAP[resolve_backend(REPLAY_CALL_SITE, self.chat_model)[0]]()
         cost = estimate_cost_usd(
             sent_model_id(self.chat_model),
             input_tokens=tokens,
