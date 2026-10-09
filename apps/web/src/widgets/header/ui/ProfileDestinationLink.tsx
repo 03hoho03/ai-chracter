@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import {
   BookText,
   FileText,
+  House,
   IdCard,
   ImagePlus,
   Info,
@@ -27,20 +28,7 @@ import type { MeResponse } from "@/entities/session";
 import { SUPPORT_DESTINATIONS, type SupportDestinationKey } from "@/shared/config/supportDestinations";
 import { assertNever } from "@/shared/lib/assertNever";
 
-/** 목적지는 이 배열 하나에서만 정한다. 좌측 드로어(`MobileNavDrawer`)가 같은 배열을 평면화해
- * 읽는다 — 두 곳이 각자 목록을 들면 한쪽에만 항목이 추가되는 게 이 저장소의 알려진 실패 모드다
- * (`toContentStatusTags` 선례: "같은 작품이 한 화면에서는 이용제한, 다른 화면에서는 공개가 됐다").
- *
- * 키 유니언도 이 배열에서 도출한다. 유니언을 따로 적으면 키를 유니언과 `switch`에만 더하고 배열에서
- * 빠뜨려도 컴파일이 통과해, 그 목적지가 메뉴와 드로어 어디에도 나타나지 않는다. */
-export const PROFILE_DESTINATION_GROUPS = [
-  { label: "창작", keys: ["builder", "my-works", "studio-images", "creator-payout"] },
-  { label: "활동", keys: ["chats", "novels", "favorites"] },
-  { label: "계정", keys: ["profile", "personas", "clover", "mypage"] },
-  { label: "고객센터", keys: ["about", "notices", "inquiry-new", "terms", "privacy", "operation-policy", "youth-policy", "refund-policy"] },
-] as const satisfies readonly { label: string; keys: readonly string[] }[];
-
-export type ProfileDestinationKey = (typeof PROFILE_DESTINATION_GROUPS)[number]["keys"][number];
+import type { ProfileDestinationKey } from "../model/profileDestinations";
 
 /** 메뉴에 나오는 고객센터 목적지. `SUPPORT_DESTINATIONS`에는 푸터에만 걸리는 목적지(클로버 상품 안내)와
  * 크리에이터 정산 화면에서만 거는 목적지(크리에이터 정산 정책)도 있어
@@ -80,6 +68,17 @@ export const ProfileDestinationLink = forwardRef<HTMLAnchorElement, ProfileDesti
   ref,
 ) {
   switch (destinationKey) {
+    case "home":
+      // 패널 내비의 홈이다. 로고도 홈으로 가지만 둘은 다르게 읽힌다 — 이 행은 이름 "홈"으로 읽히고 홈에 있을 때
+      // 패널이 내비 행의 현재 위치 표시(채움·막대)를 그리도록 두는데, 로고는 "또나"로 읽히고 보이는 현재 위치 표시가
+      // 없다. 로고를 누르면 홈으로 간다는 관습을 모르는 사람도 내비 목록에서 홈을 찾고 지금 홈에 있는지 알 수 있도록
+      // 둘 다 둔다.
+      return (
+        <Link ref={ref} to="/" className={className} {...rest}>
+          <House aria-hidden />
+          홈
+        </Link>
+      );
     case "builder":
       return (
         <Link ref={ref} to="/builder" className={className} {...rest}>
@@ -182,7 +181,7 @@ export const ProfileDestinationLink = forwardRef<HTMLAnchorElement, ProfileDesti
       );
     }
     default:
-      // default 가 없으면 키를 PROFILE_DESTINATION_GROUPS 배열에만 추가하고 케이스를 빠뜨려도
+      // default 가 없으면 키를 목적지 배열(`profileDestinations.ts`)에만 추가하고 케이스를 빠뜨려도
       // typecheck 가 통과해 undefined 가 렌더되고, 빈 항목이 조용히 나타나 클릭해도 아무 일도
       // 안 난다(2026-09-15 적대적 리뷰가 실증). assertNever 로 다음 키 추가 때 컴파일 에러로 막는다.
       return assertNever(destinationKey);

@@ -16,8 +16,9 @@ import { toast } from "sonner";
 import type { MeResponse } from "@/entities/session";
 import { useLogoutMutation } from "@/features/logout";
 
+import { PROFILE_DESTINATION_GROUPS } from "../model/profileDestinations";
 import { isProfileDestinationVisible } from "../model/profileDestinationVisibility";
-import { PROFILE_DESTINATION_GROUPS, ProfileDestinationLink } from "./ProfileDestinationLink";
+import { ProfileDestinationLink } from "./ProfileDestinationLink";
 
 /** 창작 / 활동 / 계정 그룹 + 로그아웃.
  * `계정` 아래에 `고객센터` 그룹이 있다.

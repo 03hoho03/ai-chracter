@@ -30,8 +30,9 @@ import { assertNever } from "@/shared/lib/assertNever";
 
 import { NotificationFeedStatus } from "./NotificationFeedStatus";
 import { ContentTypeToggle } from "./ContentTypeToggle";
+import { PROFILE_DESTINATION_GROUPS } from "../model/profileDestinations";
 import { isProfileDestinationVisible } from "../model/profileDestinationVisibility";
-import { PROFILE_DESTINATION_GROUPS, ProfileDestinationLink } from "./ProfileDestinationLink";
+import { ProfileDestinationLink } from "./ProfileDestinationLink";
 
 const ROW_CLASS =
   "flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-left text-sm text-foreground motion-safe:transition-colors hover:bg-secondary/50 focus-visible:bg-secondary/50 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 aria-disabled:opacity-65 [&_svg]:size-4 [&_svg]:shrink-0";
