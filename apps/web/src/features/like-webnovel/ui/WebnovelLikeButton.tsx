@@ -59,7 +59,10 @@ export function WebnovelLikeButton({ novelId, liked, likeCount, className, iconC
   );
 
   const isLiked = desired ?? liked;
-  const count = Math.max(likeCount + (isLiked === liked ? 0 : isLiked ? 1 : -1), 0);
+  // 낙관값이 서버 값과 다를 때만 수를 하나 옮긴다.
+  let delta = 0;
+  if (isLiked !== liked) delta = isLiked ? 1 : -1;
+  const count = Math.max(likeCount + delta, 0);
 
   return (
     <Button
