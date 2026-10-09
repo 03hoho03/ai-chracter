@@ -48,6 +48,7 @@ from api.inquiry.router import me_router as inquiry_me_router, router as inquiry
 from api.legal.router import router as legal_router
 from api.moderation.router import router as moderation_router
 from api.notice.router import router as notice_router
+from api.novel_public.admin import router as novel_public_admin_router
 from api.novel_public.comments import comments_router as novel_public_comments_router
 from api.novel_public.router import owner_router as novel_public_owner_router
 from api.novel_public.purchases import reader_router as novel_public_reader_router
@@ -171,6 +172,7 @@ app.include_router(novel_public_reader_router)
 app.include_router(novel_public_reading_router)
 app.include_router(novel_public_comments_router)
 app.include_router(novel_public_reports_router)
+app.include_router(novel_public_admin_router)
 app.include_router(comments_router)
 app.include_router(comments_me_router)
 app.include_router(comment_reports_router)

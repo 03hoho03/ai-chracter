@@ -192,6 +192,8 @@ class Appeal(Base):
 # mypy가 막고 응답은 OpenAPI 유니언으로 FE에 내려간다. 처음 계획은 `admin/action_log.py`였지만
 # 그 모듈이 이 파일을 import하므로 여기 둔다(순환 import 회피).
 # 값을 추가할 때 마이그레이션은 필요 없다(컬럼은 Text) — 이 목록과 FE 라벨만 늘린다.
+# 🔴 다만 이 Literal 은 응답 칸이기도 하다(회원 상세의 조치 이력). 새 값으로 쓴 행이 생긴 뒤 이미지를 그 값을 모르는 옛 판으로
+# 되돌리면 그 행이 걸리는 회원 상세가 응답 검증에서 500 이 된다 — 값을 쓰는 코드를 되돌릴 때는 그 행이 있는지 먼저 본다.
 AdminActionType = Literal[
     "appeal-accept",
     "chat-report-reject",
@@ -212,6 +214,13 @@ AdminActionType = Literal[
     "legal-publish",
     "notice-publish",
     "notice-unpublish",
+    "novel-comment-delete",
+    "novel-comment-hide",
+    "novel-comment-report-reject",
+    "novel-comment-restore",
+    "novel-lift",
+    "novel-report-reject",
+    "novel-restrict",
     "prompt-set-publish",
     "report-reject",
     "user-beta-off",
