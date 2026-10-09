@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isHomeWebnovelPending,
   shouldRestoreResultsFocus,
   toHomeCurationHeading,
   toHomeCurationLayoutKey,
@@ -73,5 +74,24 @@ describe("toHomeCurationHeading", () => {
   it("서비스 이름으로 유형별 제목을 만든다 — 스토리는 '이야기'로 부른다", () => {
     expect(toHomeCurationHeading("story")).toBe("또나가 고른 이야기");
     expect(toHomeCurationHeading("character")).toBe("또나가 고른 캐릭터");
+  });
+});
+
+describe("isHomeWebnovelPending", () => {
+  const base = { isSessionPending: false, isLoggedIn: true, isPricingPending: false, isOpen: true, isPending: true };
+
+  it("로그인했고 노벨이 열려 있으면 응답을 기다린다", () => {
+    expect(isHomeWebnovelPending(base)).toBe(true);
+    expect(isHomeWebnovelPending({ ...base, isPending: false })).toBe(false);
+  });
+
+  it("비로그인이나 닫힌 노벨은 조회하지 않으므로 기다리지 않는다", () => {
+    expect(isHomeWebnovelPending({ ...base, isLoggedIn: false })).toBe(false);
+    expect(isHomeWebnovelPending({ ...base, isOpen: false })).toBe(false);
+  });
+
+  it("섹션이 있을지 모르는 동안은 기다린다", () => {
+    expect(isHomeWebnovelPending({ ...base, isSessionPending: true, isLoggedIn: false })).toBe(true);
+    expect(isHomeWebnovelPending({ ...base, isPricingPending: true, isOpen: false })).toBe(true);
   });
 });
