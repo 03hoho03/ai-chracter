@@ -1,6 +1,7 @@
 """채팅 턴의 실패 경로를 칸마다 지금 동작 그대로 고정한다 — 버그로 보이는 동작도 고치지 않고 기록한다.
 
-칸은 (실패 종류, 경로)다. 경로는 보내기·수정·재생성(스토리 방, 그림 판정 실패만 캐릭터 방)과 미리보기 스토리·캐릭터다.
+칸은 (실패 종류, 경로)다. 경로는 보내기·수정·재생성(스토리 방, 그림 판정 실패와 재생성의 커밋 뒤 상황 이미지 URL
+서명 실패만 캐릭터 방)과 미리보기 스토리·캐릭터다.
 칸마다 남기는 것:
 
 - HTTP 상태와 SSE 이벤트 순서(토큰 글, 오류·정책 문구, 스탯 변화, 엔딩, 마지막 메시지의 글·그림 유무)
@@ -605,7 +606,7 @@ _CELLS: dict[str, tuple[tuple[str, ...], _Arm]] = {
     "disconnect-during-judgment": (_STORY_ALL, _hang_during_judgment),
     "cancel-after-done-before-the-preview-save": (("preview-story",), _preview_save("hang")),
     "preview-save-fails": (("preview-story",), _preview_save("fail")),
-    "post-commit-signing-failure": (("send", "regenerate"), _fail_post_commit_signing),
+    "post-commit-signing-failure": (("send", "regenerate", "regenerate-character"), _fail_post_commit_signing),
     "epilogue-display-failure": (("send",), _fail_epilogue_display),
 }
 

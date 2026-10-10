@@ -28,7 +28,7 @@ from api.db.models import (
     StatRule,
     StoryPromptTemplate,
 )
-from api.chat import router as chat_router
+from api.chat import turn_engine, turn_store
 from api.llm.client import LLMCallContext, LLMClient, LLMClientError, LLMPolicyViolationError
 from factories import (
     _clear_llm_override,
@@ -557,12 +557,11 @@ async def test_regenerate_policy_violation_refetch_restores_image(
 async def test_regenerate_llm_error_keeps_original_message(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """이 흡수(원래 응답 유지)는 그대로 두되, `regenerate_message`도
-    새 턴(`run_turn`)과 같은 `gemini` 태그로 Bugsink 이벤트에 승격돼야 한다 — 형제 경로지만
-    사용자 흐름이 달라 아직 검증되지 않았다."""
+    """재생성의 생성 LLM 실패는 원래 응답을 그대로 두고, 새 턴과 같은 `gemini` 태그로 Bugsink 이벤트에 승격돼야 한다.
+    그 흡수 자리는 턴 골격(`run_turn`)의 생성 `except` 라 그 모듈(`turn_engine`)의 이름을 감싼다."""
     captured: list[tuple[BaseException, str]] = []
     monkeypatch.setattr(
-        chat_router,
+        turn_engine,
         "capture_dependency_failure",
         lambda exc, *, dependency: captured.append((exc, dependency)),
     )
@@ -680,7 +679,7 @@ async def test_regenerate_image_matching_failure_replaces_message_without_image(
     남는다(원래 매칭된 이미지를 이월하지 않는다)."""
     captured: list[tuple[BaseException, str]] = []
     monkeypatch.setattr(
-        chat_router,
+        turn_engine,
         "capture_dependency_failure",
         lambda exc, *, dependency: captured.append((exc, dependency)),
     )
@@ -752,13 +751,13 @@ async def test_regenerate_presigned_url_failure_still_completes_the_turn_without
 ) -> None:
     """전송 경로의 presign 실패 흡수 테스트를 재생성 경로에 다시 미러링한 짝 테스트
     — 매칭 필터를 통과한 뒤의 S3 presign 실패를
-    흡수해 스트림은 정상 종료된다. `new_message.image_id`는 `db.commit()` 전에 대입되고
-    presign 실패는 그 뒤에 일어나므로, DB에는 매칭된 entity_id가 그대로 남고 done
-    이벤트의 imageId만 null이 된다 — send_message(`RoomTurnStore`)와 정확히 같은
-    성질이다(재조회 시 `_to_response`가 다시 서명을 시도한다)."""
+    흡수해 스트림은 정상 종료된다. 새 응답의 image_id는 쓰기 구간 커밋 전에 대입되고
+    presign 실패는 그 뒤(`RoomTurnStore.present`)에 일어나므로, DB에는 매칭된 entity_id가 그대로 남고 done
+    이벤트의 imageId만 null이 된다 — 보내기와 같은 저장소 코드라 같은 성질이다(재조회 시 `_to_response`가 다시
+    서명을 시도한다)."""
     captured: list[tuple[BaseException, str]] = []
     monkeypatch.setattr(
-        chat_router,
+        turn_store,
         "capture_dependency_failure",
         lambda exc, *, dependency: captured.append((exc, dependency)),
     )
@@ -793,7 +792,7 @@ async def test_regenerate_presigned_url_failure_still_completes_the_turn_without
     def _raise_presign(storage_key: str) -> str:
         raise RuntimeError("s3 presign boom")
 
-    monkeypatch.setattr(chat_router, "generate_presigned_get_url", _raise_presign)
+    monkeypatch.setattr(turn_store, "generate_presigned_get_url", _raise_presign)
 
     _override_llm_client(
         _StructuredFakeLLMClient(

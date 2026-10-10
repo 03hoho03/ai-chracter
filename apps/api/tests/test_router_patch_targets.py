@@ -39,7 +39,7 @@ GUARDED = frozenset(
         "get_cached_active_prompt_set",
         "set_cached_active_prompt_set",
         "load_active_prompt_set",
-        # 새 턴 판정이 부르는 것. 판정 헬퍼는 재생성·미리보기가 라우터에서 이름으로 부르고, 나머지는 미리보기 판정이
+        # 턴 판정이 부르는 것. 판정 헬퍼 일부는 미리보기가 라우터에서 이름으로 부르고, 나머지는 미리보기 판정이
         # 라우터에서 함께 부른다.
         "capture_dependency_failure",
         "LLMCallContext",
@@ -56,14 +56,13 @@ GUARDED = frozenset(
         "_await_stat_judgment",
         "_endings_to_judge",
         "_judge_media_cell",
-        "_judge_situational_image",
-        "_prepare_media_cell_judgment",
-        "_prepare_situational_image_judgment",
         "_MediaCellJudgment",
-        # 새 턴 골격(`turn_engine`)과 턴 저장소(`turn_store`)가 부르는 것. 생성 스트림·문구·`done` 메시지 조립·쓰기 구간
-        # 잠금·노출 기록·칸 서명은 재생성·미리보기가 라우터에서 이름으로 부르고, 나머지는 라우터의 다른 라우트가 쓴다.
+        # 턴 골격(`turn_engine`)과 턴 저장소(`turn_store`)가 부르는 것. 생성 스트림·문구는 미리보기가 라우터에서 이름으로
+        # 부르고, 나머지는 라우터의 다른 라우트가 쓴다(폐기 기록과 `delete` 는 편집·메시지 삭제가 라우터에서 계속 쓴다).
         "TurnResult",
         "ChatMessage",
+        "DiscardedResponse",
+        "delete",
         "ChatMessageResponse",
         "ChatRoomStat",
         "CharacterImageExposure",
@@ -78,12 +77,7 @@ GUARDED = frozenset(
         "strip_media_tags",
         "_stream_generated_tokens",
         "_policy_warning_message",
-        "_turn_message_response",
-        "_lock_room_for_turn_write",
-        "_record_character_image_exposure",
-        "_record_story_media_exposure",
         "_record_story_media_unlocks",
-        "_sign_judged_cell",
     }
 )
 MOVED_CALLER_MODULES = ("turn_prompt.py", "room_stats.py", "turn_judgments.py", "turn_engine.py", "turn_store.py")
@@ -91,8 +85,7 @@ MOVED_CALLER_MODULES = ("turn_prompt.py", "room_stats.py", "turn_judgments.py", 
 EXCLUDED: dict[str, str] = {}
 
 # `capture_dependency_failure` 를 라우터에 패치해 그 자리의 Bugsink 태그를 재는 테스트들의 공통 이유. 재는 흡수 자리가
-# 라우터에 남아 있어(새 턴 생성 프롬프트 렌더·재생성·미리보기 저장), 판정·턴 골격·턴 저장소 모듈의 흡수 자리는 이
-# 패치와 무관하다.
+# 라우터에 남아 있어(턴 생성 프롬프트 렌더·미리보기 저장), 판정·턴 골격·턴 저장소 모듈의 흡수 자리는 이 패치와 무관하다.
 _ROUTER_CAPTURE_SITE = (
     "라우터에 남은 흡수 자리({site})의 Bugsink 태그를 잰다 — 판정·턴 골격·턴 저장소 모듈의 흡수 자리는 재지 않는다."
 )
@@ -111,15 +104,10 @@ ALLOWLIST = {
     "test_chat_model_billing.py::test_route_body_failure_before_the_first_event_refunds_the_premium_price": (
         _ROUTER_BODY_FIRST_READ
     ),
-    "test_clover_chat_refund.py::_run_body_failure": _ROUTER_BODY_FIRST_READ,
-    "test_chat_message_edit_regenerate_delete_api.py::test_regenerate_llm_error_keeps_original_message": (
-        _ROUTER_CAPTURE_SITE.format(site="재생성 생성 LLM 실패")
-    ),
-    "test_chat_message_edit_regenerate_delete_api.py::test_regenerate_image_matching_failure_replaces_message_without_image": (
-        _ROUTER_CAPTURE_SITE.format(site="재생성의 이미지 매칭 except — 판정 헬퍼는 올리기만 한다")
-    ),
-    "test_chat_message_edit_regenerate_delete_api.py::test_regenerate_presigned_url_failure_still_completes_the_turn_without_image": (
-        _ROUTER_CAPTURE_SITE.format(site="재생성 커밋 뒤 URL 서명")
+    "test_clover_chat_refund.py::_run_body_failure": (
+        _ROUTER_BODY_FIRST_READ
+        + " 같은 함수가 편집 라우트 본문의 절단 `delete(ChatMessage)` 도 깬다 — 그 절단도 라우터에 남은 선행 작업이고, "
+        "턴 저장소의 재생성 옛 응답 삭제는 재지 않는다."
     ),
     "test_preview_message_api.py::test_send_preview_message_redis_save_failure_still_completes_the_turn": (
         _ROUTER_CAPTURE_SITE.format(site="미리보기 세션 저장")

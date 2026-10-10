@@ -63,6 +63,310 @@
       "turnCount": 2
     }
   },
+  "generation-error/regenerate": {
+    "events": [
+      {
+        "message": "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "type": "error"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate",
+        null
+      ]
+    ],
+    "logs": [
+      [
+        "api.chat.router",
+        "WARNING",
+        "대화방 <room> 응답 재생성 실패: 생성 실패"
+      ]
+    ],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "ending": null,
+      "endingReached": false,
+      "lastImage": null,
+      "stats": [
+        [
+          "<id>",
+          "73"
+        ]
+      ],
+      "turnCount": 1
+    }
+  },
+  "generation-prompt-render-failure/regenerate": {
+    "events": [
+      {
+        "message": "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "type": "error"
+      }
+    ],
+    "llm": [],
+    "logs": [
+      [
+        "api.chat.router",
+        "WARNING",
+        "대화방 <room> 재생성 프롬프트 렌더 실패: channel='generation' slot='prologue' variant='' body 렌더 실패: KeyError('characterization_missing_value')"
+      ]
+    ],
+    "sentry": [
+      [
+        "PromptRenderError",
+        "prompt_render"
+      ]
+    ],
+    "state": {
+      "ending": null,
+      "endingReached": false,
+      "lastImage": null,
+      "stats": [
+        [
+          "<id>",
+          "73"
+        ]
+      ],
+      "turnCount": 1
+    }
+  },
+  "media-judgment-error/regenerate": {
+    "events": [
+      {
+        "type": "token"
+      },
+      {
+        "hasImageUrl": false,
+        "imageId": null,
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate",
+        null
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image",
+        null
+      ]
+    ],
+    "logs": [
+      [
+        "api.chat.turn_judgments",
+        "WARNING",
+        "대화방 <room> 재생성 미디어 북 칸 판정 실패 — 이번 턴은 그림 없이 진행한다: 판정 실패"
+      ]
+    ],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "ending": null,
+      "endingReached": false,
+      "lastImage": null,
+      "stats": [
+        [
+          "<id>",
+          "73"
+        ]
+      ],
+      "turnCount": 1
+    }
+  },
+  "media-judgment-prompt-render-failure/regenerate": {
+    "events": [
+      {
+        "type": "token"
+      },
+      {
+        "hasImageUrl": false,
+        "imageId": null,
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate",
+        null
+      ]
+    ],
+    "logs": [
+      [
+        "api.chat.turn_judgments",
+        "WARNING",
+        "대화방 <room> 미디어 북 칸 판정 프롬프트 렌더 실패 — 이번 턴은 그림 없이 진행한다: channel='image_judgment' slot='image_list_intro' variant='' body 렌더 실패: KeyError('characterization_missing_value')"
+      ]
+    ],
+    "sentry": [
+      [
+        "PromptRenderError",
+        "prompt_render"
+      ]
+    ],
+    "state": {
+      "ending": null,
+      "endingReached": false,
+      "lastImage": null,
+      "stats": [
+        [
+          "<id>",
+          "73"
+        ]
+      ],
+      "turnCount": 1
+    }
+  },
+  "post-commit-signing-failure/regenerate": {
+    "events": [
+      {
+        "type": "token"
+      },
+      {
+        "hasImageUrl": false,
+        "imageId": null,
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate",
+        null
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image",
+        null
+      ]
+    ],
+    "logs": [
+      [
+        "api.chat.router",
+        "WARNING",
+        "대화방 <room> 미디어 북 칸 URL 조립 실패 — 그림 없이 진행한다: 서명 실패"
+      ]
+    ],
+    "sentry": [
+      [
+        "RuntimeError",
+        "s3"
+      ]
+    ],
+    "state": {
+      "ending": null,
+      "endingReached": false,
+      "lastImage": "<cell>",
+      "stats": [
+        [
+          "<id>",
+          "73"
+        ]
+      ],
+      "turnCount": 1
+    }
+  },
+  "post-commit-signing-failure/regenerate-character": {
+    "events": [
+      {
+        "type": "token"
+      },
+      {
+        "hasImageUrl": false,
+        "imageId": null,
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate",
+        null
+      ],
+      [
+        "generate_structured",
+        "chat_situational_image",
+        null
+      ]
+    ],
+    "logs": [
+      [
+        "api.chat.router",
+        "WARNING",
+        "대화방 <room> 재생성 상황이미지 URL 조립 실패 — 이미지 없이 진행한다: 서명 실패"
+      ]
+    ],
+    "sentry": [
+      [
+        "RuntimeError",
+        "s3"
+      ]
+    ],
+    "state": {
+      "ending": null,
+      "endingReached": false,
+      "lastImage": "<image>",
+      "stats": [],
+      "turnCount": 1
+    }
+  },
+  "situational-image-judgment-error/regenerate-character": {
+    "events": [
+      {
+        "type": "token"
+      },
+      {
+        "hasImageUrl": false,
+        "imageId": null,
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate",
+        null
+      ],
+      [
+        "generate_structured",
+        "chat_situational_image",
+        null
+      ]
+    ],
+    "logs": [
+      [
+        "api.chat.router",
+        "WARNING",
+        "대화방 <room> 재생성 이미지 매칭 실패 — 이번 재생성의 매칭을 건너뛴다: 판정 실패"
+      ]
+    ],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "ending": null,
+      "endingReached": false,
+      "lastImage": null,
+      "stats": [],
+      "turnCount": 1
+    }
+  },
   "situational-image-judgment-error/send-character": {
     "events": [
       {
@@ -105,6 +409,45 @@
       "lastImage": null,
       "stats": [],
       "turnCount": 2
+    }
+  },
+  "situational-image-judgment-prompt-render-failure/regenerate-character": {
+    "events": [
+      {
+        "type": "token"
+      },
+      {
+        "hasImageUrl": false,
+        "imageId": null,
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate",
+        null
+      ]
+    ],
+    "logs": [
+      [
+        "api.chat.router",
+        "WARNING",
+        "대화방 <room> 재생성 이미지 매칭 실패 — 이번 재생성의 매칭을 건너뛴다: channel='image_judgment' slot='image_list_intro' variant='' body 렌더 실패: KeyError('characterization_missing_value')"
+      ]
+    ],
+    "sentry": [
+      [
+        "PromptRenderError",
+        "prompt_render"
+      ]
+    ],
+    "state": {
+      "ending": null,
+      "endingReached": false,
+      "lastImage": null,
+      "stats": [],
+      "turnCount": 1
     }
   },
   "three-stats-change-in-one-turn/send": {
