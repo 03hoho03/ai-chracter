@@ -855,7 +855,9 @@
         "chat_media_book_image"
       ]
     ],
-    "scheduled": [],
+    "scheduled": [
+      "fold_memory"
+    ],
     "sentry": [],
     "state": {
       "discarded": [
@@ -3053,7 +3055,9 @@
         "chat_media_book_image"
       ]
     ],
-    "scheduled": [],
+    "scheduled": [
+      "fold_memory"
+    ],
     "sentry": [
       [
         "LLMClientError",
@@ -3304,7 +3308,9 @@
         "chat_generate"
       ]
     ],
-    "scheduled": [],
+    "scheduled": [
+      "fold_memory"
+    ],
     "sentry": [
       [
         "PromptRenderError",
@@ -3473,7 +3479,9 @@
         "chat_media_book_image"
       ]
     ],
-    "scheduled": [],
+    "scheduled": [
+      "fold_memory"
+    ],
     "sentry": [
       [
         "RuntimeError",
@@ -3545,7 +3553,9 @@
         "chat_situational_image"
       ]
     ],
-    "scheduled": [],
+    "scheduled": [
+      "fold_memory"
+    ],
     "sentry": [
       [
         "RuntimeError",
@@ -3956,7 +3966,9 @@
         "chat_situational_image"
       ]
     ],
-    "scheduled": [],
+    "scheduled": [
+      "fold_memory"
+    ],
     "sentry": [
       [
         "LLMClientError",
