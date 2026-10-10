@@ -181,7 +181,7 @@ from api.llm.client import (
 )
 from api.llm.dependencies import get_llm_client
 from api.llm.model_access import effective_room_model, has_chat_premium_access
-from api.persona.router import get_owned_persona, lock_user_default_persona
+from api.persona.router import get_owned_persona, lock_user_default_persona, promote_oldest_persona
 from api.persona.schemas import PersonaSelectRequest, RoomPersonaResponse
 from api.session.dependencies import get_current_user_id
 
@@ -717,7 +717,7 @@ async def _create_room(
     """`POST /chat-rooms`와 `POST /chat-rooms/{id}/change-starting-setup`이 공유하는
     방 생성 핵심 로직 — 항상 콘텐츠의 현재 발행 버전에 고정한다.
 
-    `persona_id`는 받은 값만 쓴다. "새 방 = 기본"과 "원래
+    `persona_id`는 받은 값만 쓴다. "새 방 = 고른 것 또는 기본"과 "원래
     방 승계" 규칙은 두 호출부가 각자 한 번씩 정한다. 둘 다 유저 행을 잠근 뒤에 값을
     읽어야 프로필 삭제와 엇갈려 FK 위반 500이 나지 않는다. 키워드 전용 필수라 새
     호출부가 값을 빠뜨리면 mypy가 잡는다."""
@@ -782,10 +782,18 @@ async def create_chat_room(
             )
         setup = await _resolve_setup_for_content(db, content, payload.starting_setup_id)
 
-    # 새 방은 기본 프로필로 시작한다. 유저 행을 잠그면서 컬럼으로
+    # 새 방은 고른 프로필, 없으면 기본 프로필로 시작한다. 유저 행을 잠그면서 컬럼으로
     # 읽는다(`db.get(User)`는 락을 걸지 않는다 — `persona/router.py` 모듈 docstring).
+    # 고른 프로필도 소유를 본다 — 남의 프로필 id를 방에 실으면 그 사람의 프로필이 내 프롬프트에 들어간다.
     default_persona_id = await lock_user_default_persona(db, user_id)
-    room = await _create_room(db, user_id, content, setup, persona_id=default_persona_id)
+    if payload.persona_id is not None:
+        await get_owned_persona(db, payload.persona_id, user_id)
+    # 프로필이 있는데 기본이 비어 있는 예전 계정은 여기서 가장 먼저 만든 것을 기본으로 채운다 — 고른 프로필이 있어도
+    # 기본은 그것과 따로 채운다. 프로필이 없으면 "선택 없음" 방이다(이름을 먼저 받는 건 화면 몫이고, 예전 화면도 열려야 한다).
+    if default_persona_id is None:
+        default_persona_id = await promote_oldest_persona(db, user_id)
+    persona_id = payload.persona_id if payload.persona_id is not None else default_persona_id
+    room = await _create_room(db, user_id, content, setup, persona_id=persona_id)
     await db.commit()
 
     return await _to_response(db, room)

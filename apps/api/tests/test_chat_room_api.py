@@ -1229,15 +1229,119 @@ async def test_create_chat_room_starts_with_the_default_persona(
     assert await _room_persona_id(db_session, resp.json()["id"]) == default.id
 
 
-async def test_create_chat_room_without_default_persona_has_no_persona(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
+async def _user_with_character(db_session: AsyncSession) -> tuple[User, Content]:
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
-    db_session.add(UserPersona(user_id=user.id, name="기본 아님"))
+    return user, content
+
+
+async def _add_persona(
+    db_session: AsyncSession, user: User, name: str, created_at: datetime | None = None
+) -> UserPersona:
+    persona = UserPersona(user_id=user.id, name=name, **({"created_at": created_at} if created_at else {}))
+    db_session.add(persona)
+    await db_session.flush()
+    return persona
+
+
+async def _default_persona_id(db_session: AsyncSession, user_id: uuid.UUID) -> uuid.UUID | None:
+    return await db_session.scalar(sa.select(User.default_persona_id).where(User.id == user_id))
+
+
+async def test_create_chat_room_without_default_promotes_the_oldest_persona_and_uses_it(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """기본이 비어 있는데 프로필이 있으면(예전 계정) 새 방을 만들 때 가장 먼저 만든 것을 기본으로 올리고 그걸로 시작한다.
+    삽입 순서를 생성 시각 순서와 어긋나게 둬 "삽입 순"과 갈린다."""
+    user, content = await _user_with_character(db_session)
+    now = datetime.now(UTC)
+    await _add_persona(db_session, user, "나중", now - timedelta(minutes=1))
+    oldest = await _add_persona(db_session, user, "먼저", now - timedelta(minutes=3))
+    await _add_persona(db_session, user, "중간", now - timedelta(minutes=2))
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await _create_room_via_api(db_client, content.id)
+
+    assert resp.status_code == 201
+    assert resp.json()["personaId"] == str(oldest.id)
+    assert await _room_persona_id(db_session, resp.json()["id"]) == oldest.id
+    assert await _default_persona_id(db_session, user.id) == oldest.id
+
+
+async def test_create_chat_room_promotion_breaks_created_at_tie_by_id(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user, content = await _user_with_character(db_session)
+    same_time = datetime.now(UTC) - timedelta(minutes=1)
+    tied = [await _add_persona(db_session, user, f"동률{index}", same_time) for index in range(3)]
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await _create_room_via_api(db_client, content.id)
+
+    assert resp.status_code == 201
+    expected = min(persona.id for persona in tied)
+    assert resp.json()["personaId"] == str(expected)
+    assert await _default_persona_id(db_session, user.id) == expected
+
+
+async def test_create_chat_room_with_persona_id_uses_it_and_still_promotes_a_default(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """시작 화면에서 고른 프로필로 방을 연다. 기본이 비어 있었으면 기본은 따로 가장 오래된 것으로 채운다 — 고른 것을
+    기본으로 삼지 않는다."""
+    user, content = await _user_with_character(db_session)
+    now = datetime.now(UTC)
+    oldest = await _add_persona(db_session, user, "먼저", now - timedelta(minutes=2))
+    chosen = await _add_persona(db_session, user, "고른 것", now - timedelta(minutes=1))
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.post(
+        "/chat-rooms", json={"contentId": str(content.id), "contentType": "character", "personaId": str(chosen.id)}
+    )
+
+    assert resp.status_code == 201
+    assert resp.json()["personaId"] == str(chosen.id)
+    assert await _room_persona_id(db_session, resp.json()["id"]) == chosen.id
+    assert await _default_persona_id(db_session, user.id) == oldest.id
+
+
+async def test_create_chat_room_with_persona_id_keeps_the_existing_default(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    _, story, _, default, other = await _persona_room_fixture(db_client, db_session)
+    setup_id = await db_session.scalar(
+        sa.select(StartingSetup.id).where(
+            StartingSetup.content_version_id == story.current_published_version_id, StartingSetup.order == 1
+        )
+    )
+
+    resp = await db_client.post(
+        "/chat-rooms",
+        json={
+            "contentId": str(story.id),
+            "contentType": "story",
+            "startingSetupId": str(setup_id),
+            "personaId": str(other.id),
+        },
+    )
+
+    assert resp.status_code == 201
+    assert resp.json()["personaId"] == str(other.id)
+    assert await _default_persona_id(db_session, default.user_id) == default.id
+
+
+async def test_create_chat_room_without_any_persona_has_no_persona(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """프로필이 없는 사용자의 방은 "선택 없음"으로 연다 — 이름을 먼저 받는 건 화면 몫이고, 그걸 모르는 예전 화면도 방을
+    열 수 있어야 한다."""
+    user, content = await _user_with_character(db_session)
     await db_session.commit()
     await _login_as(db_client, user.id)
 
@@ -1245,6 +1349,33 @@ async def test_create_chat_room_without_default_persona_has_no_persona(
 
     assert resp.status_code == 201
     assert resp.json()["personaId"] is None
+    assert await _default_persona_id(db_session, user.id) is None
+
+
+async def test_create_chat_room_with_others_or_unknown_persona_id_is_rejected_without_a_room(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """🔴 남의 프로필 id를 내 방에 실을 수 없다 — 방 선택(`PUT /chat-rooms/{id}/persona`)과 같은 응답이다."""
+    user, content = await _user_with_character(db_session)
+    own = await _add_persona(db_session, user, "내 것")
+    user.default_persona_id = own.id
+    stranger = _make_user()
+    db_session.add(stranger)
+    await db_session.flush()
+    others = await _add_persona(db_session, stranger, "남의 것")
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    body = {"contentId": str(content.id), "contentType": "character"}
+
+    forbidden = await db_client.post("/chat-rooms", json={**body, "personaId": str(others.id)})
+    missing = await db_client.post("/chat-rooms", json={**body, "personaId": str(uuid.uuid4())})
+
+    assert forbidden.status_code == 403
+    assert forbidden.json()["detail"] == "Not the persona owner"
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "Persona not found"
+    rooms = await db_session.scalar(sa.select(sa.func.count()).select_from(ChatRoom).where(ChatRoom.user_id == user.id))
+    assert rooms == 0
 
 
 async def test_change_starting_setup_inherits_the_original_rooms_non_default_persona(
@@ -1295,6 +1426,24 @@ async def test_change_starting_setup_after_the_original_persona_was_deleted_has_
 
     assert resp.status_code == 201
     assert resp.json()["personaId"] is None
+
+
+async def test_change_starting_setup_does_not_promote_a_default(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """시작설정 변경은 원래 방의 선택을 잇기만 한다 — 기본이 비어 있어도 여기서는 채우지 않고 새 방도 "선택 없음"이다."""
+    user, story, second_setup, _, _ = await _persona_room_fixture(db_client, db_session)
+    room_id = await _story_room_with_persona(db_client, db_session, story, None)
+    await db_session.execute(sa.update(User).where(User.id == user.id).values(default_persona_id=None))
+    await db_session.commit()
+
+    resp = await db_client.post(
+        f"/chat-rooms/{room_id}/change-starting-setup", json={"startingSetupId": str(second_setup.id)}
+    )
+
+    assert resp.status_code == 201
+    assert resp.json()["personaId"] is None
+    assert await _default_persona_id(db_session, user.id) is None
 
 
 async def test_change_starting_setup_rejects_character_chat_room(
