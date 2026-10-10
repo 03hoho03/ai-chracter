@@ -2,7 +2,7 @@
 
 id 는 공급사 모델명이 아닌 불투명 값(`gemini`·`sonnet`·`opus`)이다. 방·작업 행과 FE 가 이 값을 저장하고 주고받으므로,
 모델 버전을 바꿀 때는 실제 모델 id 설정만 바꾸고 이 값은 그대로 둔다. 판정·요약·심사처럼 구조화 출력이 필요한 호출은
-고른 모델과 무관하게 기본 모델로 구현을 고른다(`llm/routing.py`). 모델을 어느 구현이 어느 설정의 id 로 서비스하는지는
+고른 모델과 무관하게 구현을 고른다 — 판정·요약은 판정·요약 모델 설정으로, 나머지는 기본 모델로(`llm/routing.py`). 모델을 어느 구현이 어느 설정의 id 로 서비스하는지는
 `llm/backends.py` 의 등록부가 정한다.
 
 정적 데이터만 둔다 — 누가 어느 모델을 쓸 수 있는지는 기능별 허용 판정이 정한다. 가격의 소스는 `core/clover.py` 이고,
@@ -16,24 +16,24 @@ from typing import Literal, TypeGuard, assert_never, get_args
 
 from api.core import clover
 from api.core.config import settings
-from api.llm.backends import BACKENDS, MODEL_BACKENDS
+from api.llm.backends import BACKENDS, MODEL_BACKENDS, call_site_model
 
 # `as` 는 mypy strict 의 명시적 재export 요구 때문이다 — 기동 검증이 읽도록 정의를 잎 모듈(`llm/backends.py`)로 옮겼고,
 # 이 이름을 여기서 가져오는 모듈이 많아 기존 import 경로를 그대로 쓰게 둔다.
 from api.llm.backends import DEFAULT_CHAT_MODEL as DEFAULT_CHAT_MODEL
 from api.llm.backends import ChatModelId as ChatModelId
-from api.llm.call_policy import BackendId
+from api.llm.backends import PromptSetModelId as PromptSetModelId
+from api.llm.call_policy import BackendId, LLMCallSite
 
 
 # 채팅방에 지정할 수 있는 모델. 아래 레지스트리의 `chat_selectable` 이 원천이고, 이 타입은 요청 검증용 사본이다 — 둘이
 # 같은 집합인지는 테스트가 본다.
 ChatRoomModelId = Literal["gemini", "opus"]
 
-# 프롬프트 세트 체인의 모델 축(`prompt_sets.model`) — 글쓰기 모델 전부에 판정 전용 id(`haiku`)를 더한 것이다. 판정 전용
-# id 의 체인은 판정·요약 문안만 갖고, 그 id 로는 글을 쓰지 않으므로 글쓰기 모델 타입·레지스트리·파서에는 넣지 않는다 — 넣으면
-# 방·소설 요청이 그 값을 받고 가격·구현 등록부가 그 행을 요구한다. 그래서 이 타입은 프롬프트 세트를 다루는 곳(어드민 프롬프트
-# 화면, 활성 세트 조회와 그 캐시)에서만 쓴다. 글쓰기 모델 집합에 판정 전용 id 하나를 더한 집합인지는 테스트가 본다.
-PromptSetModelId = Literal["gemini", "sonnet", "opus", "haiku"]
+# 프롬프트 세트 체인의 모델 축(`prompt_sets.model`)이자 판정·요약 모델 설정의 값(정의는 `llm/backends.py`). 판정 전용 id 의
+# 체인은 판정·요약 문안만 갖고, 그 id 로는 글을 쓰지 않으므로 글쓰기 모델 타입·레지스트리·파서·가격에는 넣지 않는다 — 넣으면
+# 방·소설 요청이 그 값을 받는다. 그래서 이 타입은 프롬프트 세트를 다루는 곳(어드민 프롬프트 화면, 활성 세트 조회와 그 캐시)과
+# 판정·요약 모델 설정에서만 쓴다. 글쓰기 모델 집합에 판정 전용 id 하나를 더한 집합인지는 테스트가 본다.
 _PROMPT_SET_MODEL_IDS: frozenset[PromptSetModelId] = frozenset(get_args(PromptSetModelId))
 
 
@@ -92,11 +92,17 @@ def parse_prompt_set_model_id(raw: str) -> PromptSetModelId | None:
     return raw if raw in _PROMPT_SET_MODEL_IDS else None
 
 
-def backend_model_id(backend: BackendId, model: ChatModelId) -> str:
+def backend_model_id(backend: BackendId, model: PromptSetModelId) -> str:
     """그 구현이 그 모델로 보내는 실제 모델 id. Gemini 는 채팅 생성 모델 설정이다 — 판정·심사·소설화는 Gemini 클라이언트가
     호출마다 따로 모델을 고르므로 이 값과 다를 수 있다. 구현이 서비스하지 않는 모델이면 `KeyError` 다(호출부의 버그)."""
     value: str = getattr(settings, BACKENDS[backend].model_id_settings[model])
     return value
+
+
+def configured_call_site_model(call_site: LLMCallSite) -> PromptSetModelId:
+    """그 호출의 모델 — 판정·요약이면 지금 설정의 판정·요약 모델, 아니면 기본 모델(`llm/backends.py` 의 `call_site_model`).
+    설정은 호출마다 읽는다(import 때 붙잡으면 테스트가 바꾼 설정이 실리지 않는다)."""
+    return call_site_model(call_site, lambda name: str(getattr(settings, name)))
 
 
 def chat_turn_cost(model_id: ChatModelId) -> int:

@@ -27,9 +27,13 @@ from api.chat.prompt_builder import MemorySummaryResult, PromptNames, PromptRend
 from api.core.redis import redis_client
 from api.core.sentry import capture_dependency_failure
 from api.db.models import ChatMessage, ChatMessageRole, ChatRoom, ChatRoomMemorySnapshot, PromptSection, PromptSet
-from api.llm.client import LLMCallContext, LLMClient, LLMClientError, LLMRateLimitError
+from api.llm.chat_models import configured_call_site_model
+from api.llm.client import LLMCallContext, LLMCallSite, LLMClient, LLMClientError, dependency_tag
+from api.llm.routing import resolve_backend
 
 logger = logging.getLogger(__name__)
+
+_SUMMARY_CALL_SITE: LLMCallSite = "chat_memory_summary"
 
 # 한 번에 접는 턴 수. 원문은 접은 뒤 20턴, 다음 접기 직전 29턴 사이를 오간다.
 FOLD_TURNS = 10
@@ -142,12 +146,15 @@ async def fold_memory(
         result = await llm_client.generate_structured(
             prompt,
             MemorySummaryResult,
-            usage=LLMCallContext(call_site="chat_memory_summary", user_id=user_id, room_id=room_id),
+            usage=LLMCallContext(call_site=_SUMMARY_CALL_SITE, user_id=user_id, room_id=room_id),
         )
         summary = result.summary.strip()[:SUMMARY_MAX_LENGTH]
         if not summary:
-            # 빈 요약을 커밋하면 접은 10턴이 요약에도 원문에도 없게 된다.
-            raise LLMClientError("요약 응답이 비었다")
+            # 빈 요약을 커밋하면 접은 10턴이 요약에도 원문에도 없게 된다. 실패의 공급자는 요약이 실제로 간 구현이다
+            # (요약 모델을 Claude 로 바꾸면 Gemini 가 아니다).
+            empty = LLMClientError("요약 응답이 비었다")
+            empty.provider = resolve_backend(_SUMMARY_CALL_SITE, configured_call_site_model(_SUMMARY_CALL_SITE))[0]
+            raise empty
 
         async with session_factory() as session:
             claimed = await session.scalar(
@@ -232,14 +239,13 @@ async def _clear_backoff(room_id: uuid.UUID) -> None:
 
 
 def _dependency_tag(exc: Exception) -> str:
-    """요약 접기 실패의 승격 태그. `chat/turn_judgments.py`의 `_llm_dependency_tag`와 렌더 실패(`prompt_render`)는
-    같지만, LLM 실패를 공급자로 가르지 않고 `gemini`/`gemini_rate_limit` 로 붙이며, DB 실패(`db`)와 그 밖의 접기 실패(`memory_fold`)를 따로 묶는다."""
+    """요약 접기 실패의 승격 태그. `chat/turn_judgments.py`의 `_llm_dependency_tag`와 같이 렌더 실패는 `prompt_render`, LLM
+    실패는 공급자와 쿼터 소진 여부로 가른 태그(`llm/client.py` 의 `dependency_tag` — Gemini 면 `gemini`/`gemini_rate_limit`)이고,
+    DB 실패(`db`)와 그 밖의 접기 실패(`memory_fold`)를 따로 묶는다."""
     if isinstance(exc, PromptRenderError):
         return "prompt_render"
-    if isinstance(exc, LLMRateLimitError):
-        return "gemini_rate_limit"
     if isinstance(exc, LLMClientError):
-        return "gemini"
+        return dependency_tag(exc)
     if isinstance(exc, SQLAlchemyError):
         return "db"
     return "memory_fold"

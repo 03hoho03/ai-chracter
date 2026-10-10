@@ -63,7 +63,7 @@ from api.chat.schemas import (
     PreviewSessionState,
 )
 from api.chat.stats import apply_rule_judgment
-from api.chat.turn_prompt import preview_ending_rule_list_item
+from api.chat.turn_prompt import JudgmentPromptSets, preview_ending_rule_list_item
 from api.content.media_tags import normalize_media_tags
 from api.content.schemas import (
     CharacterDraftPayload,
@@ -653,10 +653,10 @@ def _preview_ending_reached_event(
 @dataclass
 class JudgmentContext:
     """한 턴의 판정들이 함께 읽는 입력. `stat_after` 만 판정 사이에 쓴다 — 스탯 판정의 반영 결과를 엔딩 판정이 읽는다.
-    방(과 그 세션)·초안처럼 판정마다 출처가 다른 입력은 판정의 생성자가 받는다."""
+    방(과 그 세션)·초안처럼 판정마다 출처가 다른 입력은 판정의 생성자가 받는다. 판정은 `prompt_sets` 에서 자기 종류의 세트를
+    집는다(판정 종류마다 판정 모델이 따로다)."""
 
-    prompt_set: PromptSet
-    prompt_sections: list[PromptSection]
+    prompt_sets: JudgmentPromptSets
     history: list[ChatMessage]
     user_message: str
     assistant_message: str
@@ -737,8 +737,8 @@ def _prepare_stat_request(
     흡수하지 않으면 예외가 준비 루프를 빠져나가 칸 판정의 준비와 판정까지 사라진다."""
     try:
         return prepare_stat_judgment(
-            prompt_set=ctx.prompt_set,
-            sections=ctx.prompt_sections,
+            prompt_set=ctx.prompt_sets.stat[0],
+            sections=ctx.prompt_sets.stat[1],
             stat_defs=stat_defs,
             rules_by_stat_id=rules_by_stat_id,
             user_message=ctx.user_message,
@@ -971,8 +971,8 @@ class EndingJudgment:
             log_subject=ctx.log_subject,
         ):
             ending_judgment_prompt = build_ending_judgment_prompt(
-                prompt_set=ctx.prompt_set,
-                sections=ctx.prompt_sections,
+                prompt_set=ctx.prompt_sets.ending[0],
+                sections=ctx.prompt_sets.ending[1],
                 judgment_prompt=ending.judgment_prompt,
                 history=self._due.history,
                 user_message=ctx.user_message,
@@ -1020,8 +1020,8 @@ class MediaCellJudgment:
         self._judgment = await _prepare_media_cell_judgment(
             self._db,
             self._room,
-            prompt_set=ctx.prompt_set,
-            prompt_sections=ctx.prompt_sections,
+            prompt_set=ctx.prompt_sets.image[0],
+            prompt_sections=ctx.prompt_sets.image[1],
             history=ctx.history,
             user_message=ctx.user_message,
             assistant_message=ctx.assistant_message,
@@ -1063,8 +1063,8 @@ class SituationalImageJudgment:
         self._judgment = await _prepare_situational_image_judgment(
             self._db,
             self._room,
-            prompt_set=ctx.prompt_set,
-            prompt_sections=ctx.prompt_sections,
+            prompt_set=ctx.prompt_sets.image[0],
+            prompt_sections=ctx.prompt_sets.image[1],
             history=ctx.history,
             user_message=ctx.user_message,
             assistant_message=ctx.assistant_message,
@@ -1178,8 +1178,8 @@ class PreviewEndingJudgment:
             log_subject=ctx.log_subject,
         ):
             ending_judgment_prompt = build_ending_judgment_prompt(
-                prompt_set=ctx.prompt_set,
-                sections=ctx.prompt_sections,
+                prompt_set=ctx.prompt_sets.ending[0],
+                sections=ctx.prompt_sets.ending[1],
                 judgment_prompt=ending.judgment_prompt,
                 history=ctx.history,
                 user_message=ctx.user_message,
@@ -1230,8 +1230,8 @@ class PreviewMediaCellJudgment:
         self._judgment = _prepare_preview_media_cell_judgment(
             self._payload,
             self._media_images,
-            prompt_set=ctx.prompt_set,
-            prompt_sections=ctx.prompt_sections,
+            prompt_set=ctx.prompt_sets.image[0],
+            prompt_sections=ctx.prompt_sets.image[1],
             history=ctx.history,
             user_message=ctx.user_message,
             assistant_message=ctx.assistant_message,

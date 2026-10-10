@@ -62,6 +62,7 @@ GUARDED = frozenset(
         "normalize_texts_for_display",
         "strip_media_tags",
         "_record_story_media_unlocks",
+        "JudgmentPromptSets",
     }
 )
 MOVED_CALLER_MODULES = ("turn_prompt.py", "room_stats.py", "turn_judgments.py", "turn_engine.py", "turn_store.py")

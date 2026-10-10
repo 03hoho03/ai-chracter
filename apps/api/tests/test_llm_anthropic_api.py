@@ -505,15 +505,6 @@ async def test_other_failures_are_plain_client_errors(
     assert recorded == []
 
 
-async def test_generate_structured_is_not_supported() -> None:
-    class _Schema(BaseModel):
-        ok: bool
-
-    with pytest.raises(LLMClientError) as exc_info:
-        await AnthropicLLMClient().generate_structured("p", _Schema, usage=_CHAT)
-    assert exc_info.value.provider == "anthropic"
-
-
 # ---- SDK 클라이언트 생성 ---------------------------------------------------------------------
 
 

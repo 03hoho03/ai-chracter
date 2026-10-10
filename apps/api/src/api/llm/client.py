@@ -4,7 +4,11 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
+import anthropic
+import botocore.eventstream
+import botocore.exceptions
 import httpx
+import httpx2
 from google.genai import errors as genai_errors
 from pydantic import BaseModel
 
@@ -212,33 +216,64 @@ def dependency_tag(exc: LLMClientError) -> str:
     return exc.provider
 
 
+# 다시 기다리지 않을 시간 초과. SDK 의 시간 초과(`APITimeoutError`)는 연결 오류의 하위 클래스이고, botocore 의 두 시간 초과도
+# 전송 예외의 하위 클래스라, 아래 전송 오류보다 먼저 가려야 한다.
+_TIMEOUT_CAUSES: tuple[type[BaseException], ...] = (
+    httpx.TimeoutException,
+    httpx2.TimeoutException,
+    anthropic.APITimeoutError,
+    botocore.exceptions.ReadTimeoutError,
+    botocore.exceptions.ConnectTimeoutError,
+    TimeoutError,
+)
+# 시간 초과가 아닌 전송 오류(연결 거부·끊김·응답 프레임 깨짐). Claude SDK 는 요청 단계의 연결 실패를 `APIConnectionError` 로
+# 감싸지만 응답을 읽는 도중의 실패는 `httpx2` 예외 그대로 올리고, Bedrock 의 botocore 예외(연결·프레임)는 감싸지 않는다.
+# botocore 의 자격·프로필 예외(`NoCredentialsError` 등)는 다시 불러도 같아 넣지 않는다.
+_TRANSPORT_CAUSES: tuple[type[BaseException], ...] = (
+    httpx.TransportError,
+    httpx2.TransportError,
+    anthropic.APIConnectionError,
+    botocore.exceptions.HTTPClientError,
+    botocore.exceptions.ConnectionError,
+    botocore.eventstream.ParserError,
+)
+
+
 def is_retryable_judgment_failure(exc: LLMClientError) -> bool:
     """실패한 판정 호출을 곧바로 한 번 다시 부를 만한가. 일시적인 서버·연결 오류와 파싱 실패만 그렇다. 가르는 기준은 걸린
     시간이 아니라 실패의 종류다 — 파싱 실패는 응답을 다 받은 뒤에 오고, 5xx 도 오래 기다린 뒤에 올 수 있다. 시간 초과로 끝난
     실패는 다시 부르면 한 번 더 기다려 턴 락 TTL 을 넘길 수 있고, 다시 불러도 같은 답이 나올 실패는 부를 값이 없어 부르지
     않는다. 위에서부터 처음 맞는 줄로 정한다.
 
-    1. 쿼터 소진(429)·안전 차단 → 아니다. 곧바로 다시 불러도 같은 쿼터이고, 같은 입력이면 같은 판단일 가능성이 높다.
-    2. 원인이 httpx 타임아웃·`TimeoutError` → 아니다. 이미 판정 타임아웃만큼 기다렸고, 한 번 더 기다리면 턴 락 TTL 을 넘길 수 있다.
-    3. 원인이 Gemini `APIError` 504 → 아니다. 서버 쪽 시간 초과도 기다린 뒤에 오므로 타임아웃과 같다.
-    4. 원인이 Gemini `APIError` 5xx → 그렇다.
-    5. 원인이 타임아웃이 아닌 httpx 전송 오류(연결 거부·연결 끊김) → 그렇다.
-    6. 원인이 없고 타입이 정확히 `LLMClientError` → 그렇다. Gemini 구조화 호출에서 이 꼴은 응답이 스키마로 읽히지 않은 파싱
-       실패 하나뿐이고, 구조화 호출에는 시드가 붙지 않아 다시 뽑으면 다른 표본이다. 잘림·빈 응답 같은 하위 클래스는 소설화
-       호출의 구분된 실패라 넣지 않는다.
-    7. 그 밖(4xx 등) → 아니다.
+    1. 쿼터 소진(429)·안전 차단(Claude 의 정책 거절 포함) → 아니다. 곧바로 다시 불러도 같은 쿼터이고, 같은 입력이면 같은
+       판단일 가능성이 높다.
+    2. 원인이 시간 초과(httpx·httpx2·Claude SDK·botocore·`TimeoutError`) → 아니다. 이미 판정 타임아웃만큼 기다렸고, 한 번 더
+       기다리면 턴 락 TTL 을 넘길 수 있다.
+    3. 원인이 Gemini `APIError` → 504 가 아닌 5xx 만 그렇다. 서버 쪽 시간 초과(504)도 기다린 뒤에 오므로 타임아웃과 같다.
+    4. 원인이 Claude SDK 의 상태 오류 → 같은 규칙(504 가 아닌 5xx, 과부하 529 포함)을 **상태 코드로** 본다. 같은 상태가 SDK
+       클라이언트마다 다른 클래스로 온다 — 직접 API 클라이언트는 504 를 `InternalServerError`, 529 를 `OverloadedError` 로,
+       Bedrock 클라이언트는 503 을 `ServiceUnavailableError` 로 올린다. 클래스로 가르면 구현을 바꿀 때 분류가 조용히 달라진다.
+       스트림 도중의 오류 이벤트는 상태가 200 이라 아니다.
+    5. 원인이 시간 초과가 아닌 전송 오류(연결 거부·끊김·프레임 깨짐) → 그렇다.
+    6. 원인이 없고 타입이 정확히 `LLMClientError` → 그렇다. 판정·요약 호출에서 이 꼴은 응답이 스키마로 읽히지 않은 파싱 실패
+       (Claude 는 출력 상한에서 끝난 응답 포함)뿐이고, 구조화 호출에는 시드가 붙지 않아 다시 뽑으면 다른 표본이다. 잘림·빈
+       응답 같은 하위 클래스는 소설화 호출의 구분된 실패라 넣지 않는다. Claude 구현에는 같은 꼴의 실패가 둘 더 있다 — 자격이
+       비어 SDK 를 만들지 않은 것과 그림을 실은 구조화 호출을 거부한 것. 둘 다 기동 검증이 막는다: 판정이 갈 구현의 자격이
+       비면 기동하지 않고, 그림을 싣는 호출(발행 심사)은 Claude 구현에 배정할 수 없다. 그래서 판정에서는 파싱 실패로 읽어도
+       된다.
+    7. 그 밖(4xx, 자격 같은 설정 오류 등) → 아니다.
 
-    Gemini 정규화가 5xx·연결 끊김·타임아웃을 모두 같은 `LLMClientError` 로 올리므로 타입이 아니라 원인(`__cause__`)을 본다.
-    Claude 구현의 원인은 아직 가르지 않는다 — 구조화 호출을 받지 못해 판정은 Gemini 로만 가고(그런 배정은 기동에서 거부된다),
-    가르지 않은 원인은 7 로 떨어진다."""
+    정규화가 5xx·연결 끊김·타임아웃을 모두 같은 `LLMClientError` 로 올리므로 타입이 아니라 원인(`__cause__`)을 본다."""
     if isinstance(exc, (LLMRateLimitError, LLMPolicyViolationError)):
         return False
     cause = exc.__cause__
-    if isinstance(cause, (httpx.TimeoutException, TimeoutError)):
+    if isinstance(cause, _TIMEOUT_CAUSES):
         return False
     if isinstance(cause, genai_errors.APIError):
         return cause.code != 504 and cause.code >= 500
-    if isinstance(cause, httpx.TransportError):
+    if isinstance(cause, anthropic.APIStatusError):
+        return cause.status_code != 504 and cause.status_code >= 500
+    if isinstance(cause, _TRANSPORT_CAUSES):
         return True
     return cause is None and type(exc) is LLMClientError
 

@@ -45,6 +45,7 @@ from api.db.models import (
     User,
 )
 from api.db.session import get_session_factory
+from api.llm.claude_messages import claude_error
 from api.llm.client import (
     LLMCallContext,
     LLMClient,
@@ -404,6 +405,9 @@ async def test_fold_discards_its_summary_when_the_memory_changed_meanwhile(
         pytest.param(LLMClientError("boom"), "gemini", id="llm-error"),
         pytest.param(LLMPolicyViolationError("blocked"), "gemini", id="safety-block"),
         pytest.param(LLMRateLimitError("quota"), "gemini_rate_limit", id="quota"),
+        # 요약 모델을 Claude 로 바꾸면 실패의 태그도 그 구현의 이름이다(판정·생성 실패와 같은 분류).
+        pytest.param(claude_error(LLMClientError, "boom", "bedrock"), "bedrock", id="bedrock-error"),
+        pytest.param(claude_error(LLMRateLimitError, "quota", "anthropic"), "anthropic_rate_limit", id="anthropic-quota"),
         pytest.param("   ", "gemini", id="blank-summary"),
     ],
 )

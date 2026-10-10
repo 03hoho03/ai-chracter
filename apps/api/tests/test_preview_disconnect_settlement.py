@@ -29,6 +29,7 @@ from api.chat.prompt_builder import (
     load_active_prompt_set,
 )
 from api.chat.schemas import ChatMessageCreateRequest, ChatStreamEvent, PreviewSessionState
+from api.chat.turn_prompt import JudgmentPromptSets
 from api.content.schemas import MediaTagImage, StoryDraftPayload
 from api.core import clover
 from api.core.rate_limit_gate import ChatCharge
@@ -125,6 +126,9 @@ async def _drive(
             shortcut=None,
             llm_client=_PreviewLLM(cell_id),
             prompt_set_data=prompt_set_data,
+            judgment_sets=JudgmentPromptSets(
+                stat=prompt_set_data, ending=prompt_set_data, image=prompt_set_data, summary=prompt_set_data
+            ),
             persona=None,
             media_images={cell_id: MediaTagImage(url="https://example.test/cell.png", width=10, height=20)},
             charge=ChatCharge(source="clover", clover_amount=_COST, spend_ledger_id=uuid.uuid4()),

@@ -9,6 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from api.core.config import Settings
+from factories import PRODUCTION_ENV_NAMES, load_production_env
 
 _ENV = "LLM_CALL_SITE_BACKENDS"
 _BEDROCK_CREDENTIALS = ("BEDROCK_ACCESS_KEY_ID", "BEDROCK_SECRET_ACCESS_KEY")
@@ -205,104 +206,6 @@ def test_premium_switches_without_an_assignment_still_need_bedrock_credentials_e
         _load_env(monkeypatch, **{_ANTHROPIC_KEY: "sk-ant-test", switch: "true"})
 
 
-# 운영 API 컨테이너가 받는 env 키 이름(값 없이). 컨테이너는 `.env` 를 통째로 받으므로 compose·다른 서비스 키도 섞여 있다.
-# 운영은 상위 모델 호출 셋을 모두 Anthropic 으로 배정하고, Bedrock 자격(`BEDROCK_*`)은 운영에 없다. 채팅·소설 상위 모델
-# 스위치는 켠 상태가 기동 검증이 더 엄격한 경우라 켠 상태로 본다.
-_PRODUCTION_ENV_NAMES = (
-    "ANTHROPIC_DIRECT_API_KEY",
-    "API_BASE_URL",
-    "API_IMAGE_BLUE",
-    "API_IMAGE_GREEN",
-    "AWS_ACCESS_KEY_ID",
-    "AWS_REGION",
-    "AWS_SECRET_ACCESS_KEY",
-    "BUGSINK_BASE_URL",
-    "BUGSINK_CREATE_SUPERUSER",
-    "BUGSINK_SECRET_KEY",
-    "CHAT_PREMIUM_MODEL_ALLOWLIST",
-    "CHAT_PREMIUM_MODELS_ENABLED",
-    "CORS_ALLOW_ORIGINS",
-    "DATABASE_URL",
-    "DB_MAX_OVERFLOW",
-    "DB_POOL_SIZE",
-    "DB_POOL_TIMEOUT",
-    "DDONA_ENV_FILE",
-    "DISCORD_WEBHOOK_URL",
-    "EMAIL_FROM",
-    "EMAIL_PROVIDER",
-    "FORWARDED_ALLOW_IPS",
-    "FRONTEND_BASE_URL",
-    "GEMINI_API_KEY",
-    "GEMINI_ENDING_JUDGMENT_MODEL_NAME",
-    "GEMINI_MODEL_NAME",
-    "GEMINI_STAT_JUDGMENT_MODEL_NAME",
-    "GOOGLE_CLIENT_ID",
-    "GOOGLE_CLIENT_SECRET",
-    "HEALTHCHECKS_BACKUP_PING_URL",
-    "HEALTHCHECKS_RESOURCE_PING_URL",
-    "IDENTITY_CI_HMAC_KEY",
-    "IMAGE_DECODE_CONCURRENCY",
-    "INGEST_SHARED_SECRET",
-    "KAKAO_ADMIN_KEY",
-    "KAKAO_CLIENT_SECRET",
-    "KAKAO_REST_API_KEY",
-    "LLM_CALL_SITE_BACKENDS",
-    "LOCAL_IMAGE_ACCESS_CLIENT_ID",
-    "LOCAL_IMAGE_ACCESS_CLIENT_SECRET",
-    "LOCAL_IMAGE_BASE_URL",
-    "LOCAL_IMAGE_MODEL_WIRE_ID",
-    "LOCAL_IMAGE_REFERENCE_ENABLED",
-    "NOVELIZE_ENABLED",
-    "NOVELIZE_GRANT_ALLOWLIST",
-    "NOVELIZE_PREMIUM_MODEL_ALLOWLIST",
-    "NOVELIZE_PREMIUM_MODELS_ENABLED",
-    "NOVEL_PUBLIC_ENABLED",
-    "PAYMENTS_ENABLED",
-    "PORTONE_API_SECRET",
-    "PORTONE_IDENTITY_CHANNEL_KEY",
-    "PORTONE_PAYMENT_CHANNEL_KEY",
-    "PORTONE_STORE_ID",
-    "PORTONE_WEBHOOK_SECRET",
-    "POSTGRES_DB",
-    "POSTGRES_PASSWORD",
-    "REDIS_URL",
-    "RESEND_API_KEY",
-    "S3_BUCKET_NAME",
-    "S3_ENDPOINT_URL",
-    "SENTRY_DSN",
-    "SENTRY_ENVIRONMENT",
-    "SESSION_COOKIE_SAMESITE",
-    "SESSION_COOKIE_SECURE",
-    "SITE_ADDRESS",
-    "WEB_CONCURRENCY",
-    "WITHDRAWN_EMAIL_HMAC_KEY",
-)
-
-# 문자열이 아닌 설정만 형식에 맞는 가짜 값을 둔다. 나머지(문자열 설정과 `Settings` 가 모르는 키)는 아무 글자다. 배정은
-# 운영 값 그대로다 — 형식만 맞는 다른 배정이면 Bedrock 으로 남는 호출이 생겨 이 집합으로는 기동하지 못한다.
-_TYPED_FAKE_VALUES = {
-    "CHAT_PREMIUM_MODELS_ENABLED": "true",
-    "CORS_ALLOW_ORIGINS": "https://a.example,https://b.example",
-    "DB_MAX_OVERFLOW": "10",
-    "DB_POOL_SIZE": "5",
-    "DB_POOL_TIMEOUT": "30",
-    "EMAIL_PROVIDER": "resend",
-    "IMAGE_DECODE_CONCURRENCY": "3",
-    "LLM_CALL_SITE_BACKENDS": _ALL_PREMIUM_CALLS_TO_ANTHROPIC,
-    "LOCAL_IMAGE_REFERENCE_ENABLED": "true",
-    "NOVELIZE_ENABLED": "true",
-    "NOVELIZE_GRANT_ALLOWLIST": "11111111-1111-4111-8111-111111111111",
-    "NOVELIZE_PREMIUM_MODEL_ALLOWLIST": "22222222-2222-4222-8222-222222222222",
-    "NOVELIZE_PREMIUM_MODELS_ENABLED": "true",
-    "NOVEL_PUBLIC_ENABLED": "true",
-    "PAYMENTS_ENABLED": "true",
-    "S3_ENDPOINT_URL": "https://r2.example",
-    "SENTRY_ENVIRONMENT": "production",
-    "SESSION_COOKIE_SAMESITE": "none",
-    "SESSION_COOKIE_SECURE": "true",
-}
-
-
 def test_the_production_env_key_set_starts_with_every_premium_call_on_anthropic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -310,15 +213,10 @@ def test_the_production_env_key_set_starts_with_every_premium_call_on_anthropic(
     통과해야 한다. 두 스위치는 켠 상태가 기동 검증이 더 엄격한 경우라 그 상태로 본다. 컨테이너가 받는 `.env` 에는 `Settings` 가 모르는 compose·다른 서비스 키도 있어,
     모르는 키를 무시하는 설정이 이 기동의 전제다."""
     assert Settings.model_config.get("extra") == "ignore"
-    # 테스트 프로세스가 물려받은 설정 env 를 지워, 운영에 있는 키만 남긴다.
-    for name in Settings.model_fields:
-        monkeypatch.delenv(name.upper(), raising=False)
-    unknown = [name for name in _PRODUCTION_ENV_NAMES if name.lower() not in Settings.model_fields]
+    unknown = [name for name in PRODUCTION_ENV_NAMES if name.lower() not in Settings.model_fields]
     assert unknown, "운영 env 에 Settings 가 모르는 키가 있다는 전제가 깨졌다"
-    for name in _PRODUCTION_ENV_NAMES:
-        monkeypatch.setenv(name, _TYPED_FAKE_VALUES.get(name, "x"))
 
-    loaded = Settings(_env_file=None)  # type: ignore[call-arg]
+    loaded = load_production_env(monkeypatch)
 
     assert loaded.chat_premium_models_enabled and loaded.novelize_premium_models_enabled
     assert loaded.llm_call_site_backends == {

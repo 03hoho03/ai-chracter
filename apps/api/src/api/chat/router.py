@@ -34,10 +34,12 @@ from api.chat.turn_lock import (
 )
 from api.chat.turn_prompt import (
     GenerationPrompt,
+    JudgmentPromptSets,
     build_preview_prompt,
     build_room_prompt,
     format_persona,
     generation_prompt_set,
+    judgment_prompt_sets,
 )
 from api.chat.turn_engine import (
     _GENERATION_ERROR_MESSAGE,
@@ -149,6 +151,7 @@ from api.llm.chat_models import (
     CHAT_MODELS_BY_ID,
     DEFAULT_CHAT_MODEL,
     DEFAULT_CHAT_ROOM_MODEL,
+    PromptSetModelId,
     chat_turn_cost,
     is_chat_room_model,
 )
@@ -350,8 +353,8 @@ async def _active_prompt_set_dependency(
     setup: StartingSetup | None = Depends(_starting_setup_dependency),
     db: AsyncSession = Depends(get_db_session),
 ) -> tuple[PromptSet, list[PromptSection]]:
-    """이 세트는 언제나 그 레인의 **Gemini 세트**다 — 판정·요약·그림 판정은 방의 글쓰기 모델과 무관하게 이 세트를
-    읽는다(Claude·판정 전용 세트에도 그 채널이 있지만 판정 모델을 그 모델로 바꾸는 설정이 아직 없다).
+    """이 세트는 언제나 그 레인의 **Gemini 세트**다 — Gemini 방의 생성 세트이고, 판정·요약 모델이 Gemini 인 판정·요약도
+    이 세트를 읽는다(`_judgment_prompt_sets_dependency`).
 
     실제 채팅은 요청 스코프 `db` 세션을 이미 갖고 있으므로 그대로 재사용한다
     (미리보기의 `_preview_prompt_set_dependency`와 달리
@@ -367,6 +370,21 @@ async def _active_prompt_set_dependency(
     prompt_set, sections = await load_active_prompt_set(db, lane=lane, model="gemini")
     await set_cached_active_prompt_set(lane, prompt_set, sections, model="gemini")
     return prompt_set, sections
+
+
+async def _judgment_prompt_sets_dependency(
+    setup: StartingSetup | None = Depends(_starting_setup_dependency),
+    db: AsyncSession = Depends(get_db_session),
+    gemini_set: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
+) -> JudgmentPromptSets:
+    """판정 종류마다·요약의 세트 — 방의 글쓰기 모델이 아니라 판정·요약 모델 설정의 세트다. 모델이 Gemini 인 칸은 위 Gemini
+    세트를 그대로 받아 조회가 늘지 않는다. 그 밖의 모델은 캐시를 보고 없으면 요청 세션으로 읽는다(위 의존성과 같은 이유)."""
+    lane = _lane_for_setup(setup)
+
+    async def load(model: PromptSetModelId) -> tuple[PromptSet, list[PromptSection]]:
+        return await load_active_prompt_set(db, lane=lane, model=model)
+
+    return await judgment_prompt_sets(lane=lane, gemini_set=gemini_set, load=load)
 
 
 # `_preview_prompt_set_dependency`는 여기 두지 않는다 — `_owned_preview_session_dependency`
@@ -880,8 +898,8 @@ async def _room_generation_prompt(
     *,
     render_failure_log: str = "대화방 %s 프롬프트 렌더 실패: %s",
 ) -> tuple[PromptSet, GenerationPrompt] | None:
-    """방 턴(보내기·수정·재생성)의 생성 프롬프트를 조립한다. 생성은 값을 낸 모델의 세트로, 판정·요약은 받은 Gemini 세트
-    (`prompt_set`)로 한다. 렌더 실패·생성 세트 없음이면 환불까지 마치고 `None` — 호출부가 오류 이벤트로 끝낸다.
+    """방 턴(보내기·수정·재생성)의 생성 프롬프트를 조립한다. 생성은 값을 낸 모델의 세트로 한다 — 받은 Gemini 세트
+    (`prompt_set`)는 Gemini 턴의 생성 세트다(판정·요약 세트는 라우트가 따로 받는다). 렌더 실패·생성 세트 없음이면 환불까지 마치고 `None` — 호출부가 오류 이벤트로 끝낸다.
     `render_failure_log` 는 그 실패의 경고 문구다 — 재생성은 원래 "재생성" 이 들어간 자기 문구로 남겼고 그 문장을 지킨다.
 
     이 함수는 제너레이터가 아니다. 환불은 호출부의 `yield` **앞**이어야 하는데(뒤에 두면 클라이언트가 이미 끊었을 때
@@ -915,7 +933,7 @@ def _fold_after_commit(
     names: PromptNames,
 ) -> Callable[[TurnResult], None]:
     """턴을 커밋한 뒤 긴 방의 요약 접기(`fold_memory`)를 background로 예약하는 콜백. 접을 때인지는 접기 쪽이 새 세션으로
-    다시 읽어 판정한다(턴마다 예약하고 대부분은 읽기만 하고 끝난다). 요약은 판정과 같은 Gemini 세트로 한다.
+    다시 읽어 판정한다(턴마다 예약하고 대부분은 읽기만 하고 끝난다). 세트는 요약 모델의 세트다(라우트가 넘긴다).
     생성 윈도우 설정이 꺼져 있으면 요약을 싣지 않으므로 접기도 예약하지 않는다 — 설정은 예약하는 그때 읽는다."""
 
     def schedule(_turn: TurnResult) -> None:
@@ -955,6 +973,8 @@ async def send_message(
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
     llm_client: LLMClient = Depends(get_llm_client),
     prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
+    # 판정·요약 모델마다의 세트. 세트가 없으면 여기서 실패해 스트림 전 오류 응답이고 차감 게이트(`charge`)보다 앞이다.
+    judgment_sets: JudgmentPromptSets = Depends(_judgment_prompt_sets_dependency),
     setup: StartingSetup | None = Depends(_starting_setup_dependency),
     # 차감 게이트: 반환형이 `None`에서
     # `ChatCharge`로 바뀌었다(무엇으로 냈는지가 환불 대상을 가른다).
@@ -1019,8 +1039,7 @@ async def send_message(
                     user_content=payload.content,
                     generation=generation,
                     generation_set=generation_set,
-                    judgment_set=prompt_set,
-                    judgment_sections=prompt_sections,
+                    judgment_sets=judgment_sets,
                     charge=charge,
                 ),
                 llm=llm_client,
@@ -1040,8 +1059,8 @@ async def send_message(
                     llm_client,
                     room,
                     setup,
-                    prompt_set,
-                    prompt_sections,
+                    judgment_sets.summary[0],
+                    judgment_sets.summary[1],
                     generation.names,
                 ),
                 log=logger,
@@ -1093,6 +1112,8 @@ async def regenerate_message(
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
     llm_client: LLMClient = Depends(get_llm_client),
     prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
+    # 판정·요약 모델마다의 세트. 세트가 없으면 여기서 실패해 스트림 전 오류 응답이고 차감 게이트(`charge`)보다 앞이다.
+    judgment_sets: JudgmentPromptSets = Depends(_judgment_prompt_sets_dependency),
     setup: StartingSetup | None = Depends(_starting_setup_dependency),
     # 차감 게이트(mypy가 안 잡는다, 조회·검증
     # 의존성 전부보다 뒤에 둔다 — `send_message`의 같은 자리 주석 참조)
@@ -1171,8 +1192,7 @@ async def regenerate_message(
                     user_content=user_content,
                     generation=generation,
                     generation_set=generation_set,
-                    judgment_set=prompt_set,
-                    judgment_sections=prompt_sections,
+                    judgment_sets=judgment_sets,
                     charge=charge,
                 ),
                 llm=llm_client,
@@ -1185,8 +1205,8 @@ async def regenerate_message(
                     llm_client,
                     room,
                     setup,
-                    prompt_set,
-                    prompt_sections,
+                    judgment_sets.summary[0],
+                    judgment_sets.summary[1],
                     generation.names,
                 ),
                 log=logger,
@@ -1230,6 +1250,8 @@ async def edit_message(
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
     llm_client: LLMClient = Depends(get_llm_client),
     prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
+    # 판정·요약 모델마다의 세트. 세트가 없으면 여기서 실패해 스트림 전 오류 응답이고 차감 게이트(`charge`)보다 앞이다.
+    judgment_sets: JudgmentPromptSets = Depends(_judgment_prompt_sets_dependency),
     setup: StartingSetup | None = Depends(_starting_setup_dependency),
     # 차감 게이트(mypy가 안 잡는다, 조회·검증
     # 의존성 전부보다 뒤에 둔다 — `send_message`의 같은 자리 주석 참조)
@@ -1303,8 +1325,7 @@ async def edit_message(
                     user_content=payload.content,
                     generation=generation,
                     generation_set=generation_set,
-                    judgment_set=prompt_set,
-                    judgment_sections=prompt_sections,
+                    judgment_sets=judgment_sets,
                     charge=charge,
                 ),
                 llm=llm_client,
@@ -1317,8 +1338,8 @@ async def edit_message(
                     llm_client,
                     room,
                     setup,
-                    prompt_set,
-                    prompt_sections,
+                    judgment_sets.summary[0],
+                    judgment_sets.summary[1],
                     generation.names,
                 ),
                 log=logger,
@@ -2304,6 +2325,22 @@ async def _preview_prompt_set_dependency(
     return prompt_set, sections
 
 
+async def _preview_judgment_prompt_sets_dependency(
+    state: PreviewSessionState = Depends(_owned_preview_session_dependency),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+    gemini_set: tuple[PromptSet, list[PromptSection]] = Depends(_preview_prompt_set_dependency),
+) -> JudgmentPromptSets:
+    """미리보기 판정의 세트 — 방과 같은 규칙(`_judgment_prompt_sets_dependency`)이되, 읽을 때는 위 Gemini 세트 의존성처럼
+    세션을 짧게 열고 바로 닫는다."""
+    lane = _lane_for_preview_payload(state.payload)
+
+    async def load(model: PromptSetModelId) -> tuple[PromptSet, list[PromptSection]]:
+        async with session_factory() as session:
+            return await load_active_prompt_set(session, lane=lane, model=model)
+
+    return await judgment_prompt_sets(lane=lane, gemini_set=gemini_set, load=load)
+
+
 async def _preview_persona_dependency(
     user_id: uuid.UUID = Depends(get_current_user_id),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
@@ -2394,6 +2431,8 @@ async def send_preview_message(
     shortcut: ShortcutDraftItem | None = Depends(_validate_preview_shortcut),
     llm_client: LLMClient = Depends(get_llm_client),
     prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_preview_prompt_set_dependency),
+    # 판정 모델마다의 세트(미리보기에는 요약이 없다). 차감 게이트보다 앞이다.
+    judgment_sets: JudgmentPromptSets = Depends(_preview_judgment_prompt_sets_dependency),
     # 작가의 기본 대화 프로필. `charge`보다 앞이다.
     persona: UserPersona | None = Depends(_preview_persona_dependency),
     # 미디어 북 칸 그림(소유·준비 확인 + 서명, 아닌 칸은 뺀다). DB 장애가 차감 전에 실패하도록 `charge`보다 앞이다.
@@ -2462,8 +2501,7 @@ async def send_preview_message(
                     generation=generation,
                     # 미리보기는 Gemini 로만 돌아 생성·판정이 같은 세트다.
                     generation_set=prompt_set,
-                    judgment_set=prompt_set,
-                    judgment_sections=prompt_sections,
+                    judgment_sets=judgment_sets,
                     charge=charge,
                 ),
                 llm=llm_client,

@@ -48,6 +48,10 @@ LLMCallSite = Literal[
 
 JudgmentKind = Literal["stat", "ending", "image"]
 
+# 판정·요약 호출의 모델(문안 체인의 모델 id)을 담은 `core/config.py` 설정 이름. 값은 `llm/backends.py` 의 `call_site_model` 이
+# 호출마다 읽는다.
+ModelSetting = Literal["stat_judgment_model", "ending_judgment_model", "image_judgment_model", "memory_summary_model"]
+
 # 공급자 구현의 id. 구현마다의 능력·서비스하는 모델·자격은 `llm/backends.py` 의 등록부 한 행이 정한다.
 BackendId = Literal["gemini", "bedrock", "anthropic"]
 
@@ -87,13 +91,17 @@ class CallPolicy:
     backend: BackendId | None = None
     # 사용자가 고른 모델(상위 모델이면 Bedrock)을 따르는 호출인가. 아니면 상위 모델이 실려 와도 경고 후 Gemini 로 간다.
     model_selectable: bool = False
-    # 판정 종류. 구조화 호출의 모델을 `gemini_<종류>_judgment_model_name` 스위치로 고르고, 어드민 판정 비율의 대상이 된다.
+    # 판정 종류. 판정 모델이 Gemini 일 때 실제 Gemini 모델을 `gemini_<종류>_judgment_model_name` 스위치로 고르고, 어드민
+    # 판정 비율의 대상이 된다.
     # 판정을 종류별로 나누는 건 모델을 바꿨을 때 품질이 종류마다 따로 움직여서다 — 같은 비교에서 스탯·엔딩은 현행과
     # 맞았지만 그림 매칭은 어긋나, 셋을 한 스위치로 묶으면 옮길 수 있는 둘까지 묶인다. 기억 요약은 매 턴 생성 프롬프트에
     # 실려 생성 품질에 바로 닿고, 시드 스크립트 호출은 운영 판정이 아니라서 판정에 넣지 않는다.
     # `judgment_kind`·`publish_filter`·`novelize == "prose"` 는 서로 배타다 — 한 행에 둘을 켜면 모델 고르기에서 조용히
     # 앞의 것(판정 → 발행 심사 → 소설화 순)이 이긴다.
     judgment_kind: JudgmentKind | None = None
+    # 이 호출의 모델을 고르는 설정 이름. 판정 종류마다 하나, 기억 요약에 하나다 — 방의 모델과 무관하게 이 설정의 모델로 간다.
+    # 없으면 모델을 고를 수 있는 호출은 방의 모델, 나머지는 기본 모델이다. 구현은 그 모델과 배정으로 정해진다.
+    model_setting: ModelSetting | None = None
     # 발행 심사. 실패하면 발행이 막히는(fail-closed) 경로라 판정과 따로 모델을 바꾸고 되돌릴 수 있게 둔다.
     publish_filter: bool = False
     # 소설화 호출이면 그 갈래. 결과를 소설 본문으로 저장하므로, 채팅이라면 경고만 남기고 넘길 결과(출력 상한에서 잘림·빈
@@ -105,6 +113,10 @@ class CallPolicy:
     # (`bedrock_chapter_*`·`anthropic_chapter_*`), `chat` 은 채팅 상한(`bedrock_chat_*`·`anthropic_chat_*`). 소설화 갈래에서 파생하지 않는 것은 Claude 로 가는 소설화 호출이 지금 장 생성 하나뿐이어서다 —
     # 문단 수정·장 경계 제안은 구조화 호출이고 모델 선택 대상이 아니라 언제나 Gemini 로 가므로 이 값이 운영에서 쓰이지
     # 않는다. 이들을 Claude 로 보내게 되면 그때 상한을 따로 정해야 하므로 갈래와 묶지 않고 행마다 적는다.
+    # Claude 로 가는 판정·요약(구조화)은 이 프로필의 타임아웃이 아니라 위 `gemini_timeout` 값으로 끊고(판정 하나가 턴을 붙잡는
+    # 시간이 공급자에 따라 늘지 않게), 출력 상한은 `chat` 프로필 값을 쓴다. 사고 깊이도 `chat` 프로필 값을 쓰지만 직접
+    # API 구현에만 해당한다 — Bedrock 구현은 판정·요약에서 사고를 끄고 깊이를 보내지 않으며, 직접 API 구현도 깊이를 받지
+    # 않는 모델(Haiku)에는 싣지 않는다.
     claude_limits: Literal["chat", "chapter"] = "chat"
     # Claude 에 빌더가 나눈 프롬프트 블록을 캐시 체크포인트와 함께 보내는가(채팅 턴 생성과 그 측정용 다시 생성).
     claude_cache_checkpoint: bool = False
@@ -118,27 +130,50 @@ CALL_POLICIES: dict[LLMCallSite, CallPolicy] = {
         claude_cache_checkpoint=True,
     ),
     "chat_stat_judgment": CallPolicy(
-        gemini_timeout="gemini_judgment_timeout_ms", call_kind="structured", judgment_kind="stat"
+        gemini_timeout="gemini_judgment_timeout_ms",
+        call_kind="structured",
+        judgment_kind="stat",
+        model_setting="stat_judgment_model",
     ),
     "chat_ending_judgment": CallPolicy(
-        gemini_timeout="gemini_judgment_timeout_ms", call_kind="structured", judgment_kind="ending"
+        gemini_timeout="gemini_judgment_timeout_ms",
+        call_kind="structured",
+        judgment_kind="ending",
+        model_setting="ending_judgment_model",
     ),
     "chat_situational_image": CallPolicy(
-        gemini_timeout="gemini_judgment_timeout_ms", call_kind="structured", judgment_kind="image"
+        gemini_timeout="gemini_judgment_timeout_ms",
+        call_kind="structured",
+        judgment_kind="image",
+        model_setting="image_judgment_model",
     ),
     "chat_media_book_image": CallPolicy(
-        gemini_timeout="gemini_judgment_timeout_ms", call_kind="structured", judgment_kind="image"
+        gemini_timeout="gemini_judgment_timeout_ms",
+        call_kind="structured",
+        judgment_kind="image",
+        model_setting="image_judgment_model",
     ),
-    "chat_memory_summary": CallPolicy(gemini_timeout="gemini_memory_summary_timeout_ms", call_kind="structured"),
+    "chat_memory_summary": CallPolicy(
+        gemini_timeout="gemini_memory_summary_timeout_ms", call_kind="structured", model_setting="memory_summary_model"
+    ),
     "preview_generate": CallPolicy(gemini_timeout="gemini_generate_timeout_ms", call_kind="stream"),
     "preview_stat_judgment": CallPolicy(
-        gemini_timeout="gemini_judgment_timeout_ms", call_kind="structured", judgment_kind="stat"
+        gemini_timeout="gemini_judgment_timeout_ms",
+        call_kind="structured",
+        judgment_kind="stat",
+        model_setting="stat_judgment_model",
     ),
     "preview_ending_judgment": CallPolicy(
-        gemini_timeout="gemini_judgment_timeout_ms", call_kind="structured", judgment_kind="ending"
+        gemini_timeout="gemini_judgment_timeout_ms",
+        call_kind="structured",
+        judgment_kind="ending",
+        model_setting="ending_judgment_model",
     ),
     "preview_media_book_image": CallPolicy(
-        gemini_timeout="gemini_judgment_timeout_ms", call_kind="structured", judgment_kind="image"
+        gemini_timeout="gemini_judgment_timeout_ms",
+        call_kind="structured",
+        judgment_kind="image",
+        model_setting="image_judgment_model",
     ),
     "publish_filter_character": CallPolicy(
         gemini_timeout="gemini_publish_filter_timeout_ms", call_kind="structured_images", publish_filter=True

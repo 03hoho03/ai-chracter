@@ -1,11 +1,10 @@
-"""AWS Bedrock 의 Claude 로 글을 쓰는 LLMClient. 채팅 턴 생성(지난 턴 다시 생성 포함)과 소설 장 생성(`generate`)만
-받는다 — 라우팅 클라이언트(`llm/routing.py`)는 구조화 호출의 구현을 기본 모델로 고르는데 이 구현은 기본 모델을
-서비스하지 않고, 등록부(`llm/backends.py`)가 이 구현을 구조화 출력을 받지 못하는 구현으로 적어 기동 검증이 그런 배정을
-거부하므로 여기서는 구현하지 않는다.
+"""AWS Bedrock 의 Claude 를 부르는 LLMClient. 채팅 턴 생성(지난 턴 다시 생성 포함)과 소설 장 생성(`generate`), 그리고
+판정·요약 모델이 Claude 일 때의 판정·요약(`generate_structured`)을 받는다. 그림을 싣는 구조화(발행 심사)와 지시문을 따로
+싣는 구조화(소설화)는 받지 않는다 — 등록부(`llm/backends.py`)가 그렇게 적어 기동 검증이 그런 배정을 거부한다.
 
 실패 규칙은 `llm/gemini.py` 와 같다. SDK·네트워크 예외는 전부 `LLMClientError` 계열로 바꾼다(그대로 새면 SSE 제너레이터를
 뚫어 요청 스코프 DB 세션이 강제 종료된다). 사용량은 정상 종료한 스트림만 기록하고, 소설 장의 잘림·빈 본문은 기록한 **뒤**
-구분된 실패로 올린다. 여기서 올리는 예외에는 `provider = "bedrock"` 을 적어 Bugsink 태그가 Gemini 와 갈리게 한다.
+구분된 실패로 올린다. 구조화 호출은 응답을 받으면 기록하고 그 뒤에 읽는다(거절·잘림·파싱 실패도 과금된 응답이다). 여기서 올리는 예외에는 `provider = "bedrock"` 을 적어 Bugsink 태그가 Gemini 와 갈리게 한다.
 
 요청에 계정을 가리키는 값(`metadata.user_id` 등)을 싣지 않는다 — 개인정보 처리방침의 국외 이전 항목이 이 전제로 쓰인다.
 
@@ -24,13 +23,16 @@ from pydantic import BaseModel
 
 from api.core.config import settings
 from api.llm.call_policy import CALL_POLICIES
-from api.llm.chat_models import backend_model_id
+from api.llm.chat_models import backend_model_id, configured_call_site_model
 from api.llm.claude_messages import (
     COMMON_TRANSPORT_ERRORS,
     ClaudeStreamTally,
     ClaudeUsage,
     claude_error,
+    message_usage,
+    parse_structured,
     raise_if_unusable,
+    structured_output_config,
     user_content,
 )
 from api.llm.client import (
@@ -40,6 +42,7 @@ from api.llm.client import (
     LLMClientError,
     LLMRateLimitError,
     collect_usage,
+    request_timeout_ms,
 )
 from api.llm.usage_store import record_usage
 
@@ -195,4 +198,28 @@ class BedrockLLMClient(LLMClient):
         *,
         usage: LLMCallContext,
     ) -> T:
-        raise _bedrock_error(LLMClientError, "Bedrock client does not serve structured calls — they go to Gemini")
+        """판정·요약 하나. 모델은 방의 모델이 아니라 그 호출의 판정·요약 모델 설정이다(라우터가 이 구현을 고른 것도 그
+        모델로다). 타임아웃은 그 호출 위치의 Gemini 값과 같고(판정 하나가 턴을 붙잡는 시간이 공급자에 따라 늘지 않게), 출력
+        상한은 채팅 상한이다. 사고는 생성과 같이 끈다. 응답 해석과 실패 정규화는 공용 조각(`parse_structured`)이다."""
+        if images:
+            # 그림을 싣는 호출(발행 심사)은 기동 검증이 이 구현에 배정하지 못하게 막는다.
+            raise _bedrock_error(LLMClientError, "Bedrock client does not take images in a structured call")
+        model = backend_model_id("bedrock", configured_call_site_model(usage.call_site))
+        try:
+            message = await self._sdk().messages.create(
+                model=model,
+                max_tokens=_max_tokens(usage.call_site),
+                messages=[{"role": "user", "content": str(prompt)}],
+                output_config=structured_output_config(response_schema),
+                thinking={"type": "disabled"},
+                timeout=request_timeout_ms(usage.call_site) / 1000,
+            )
+        except _TRANSPORT_ERRORS as exc:
+            if _is_throttling(exc):
+                raise _bedrock_error(LLMRateLimitError, f"Bedrock generate_structured() call failed: {exc}") from exc
+            raise _bedrock_error(LLMClientError, f"Bedrock generate_structured() call failed: {exc}") from exc
+        usage_metadata = message_usage(message)
+        _log_usage(usage, model, usage_metadata)
+        await record_usage(usage.call_site, model, usage_metadata)
+        collect_usage(usage, model, usage_metadata)
+        return parse_structured(message, response_schema, "bedrock", "Bedrock")
