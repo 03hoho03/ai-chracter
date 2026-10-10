@@ -42,7 +42,7 @@
   - 상한은 요청 전용 검증(`StoryDraftPayload._check_situation_note_limits`)에 있다: 시작설정마다 노트 10개(`MAX_SITUATION_NOTES_PER_SETUP`), 본문 800자, 이름 20자, 노트당 조건 규칙 10개(`SITUATION_NOTE_MAX_RULES` — 그룹 안의 규칙까지 세고 그룹 자체는 세지 않는다). 넘으면 422다. 엔딩 규칙에는 개수 상한이 없다. 그 시작설정에 없는 스탯을 가리키는 조건은 저장 422(`SITUATION_NOTE_STAT_NOT_FOUND`)·발행 400(`situationNotes.conditionRules`)이고, 조건이 없는 노트와 본문이 공백뿐인 노트는 저장은 받고 발행이 막는다(`situationNotes.emptyConditionRules`·`situationNotes.infoText`, `validate_story_publish`).
   - 빌더 미리보기는 페이로드의 **첫 시작설정**의 노트만, 미리보기 세션이 들고 있는 스탯 값으로 평가한다. 노트는 세션을 시작할 때의 페이로드로 고정되므로 노트를 고친 뒤에는 미리보기를 새로 시작해야 반영된다.
 - 단축어(`shortcuts[].prompt`) → 실행된 턴에만 `shortcut_prompt` 자리. FE는 단축어를 고르면 그 `prompt` 글을 사용자 메시지로 전송한다(`widgets/chat-room/ui/ChatRoomView.tsx`의 `handleShortcutSelect`). 그래서 같은 글이 사용자 메시지로 저장·표시되고, 그 턴의 키워드 매칭에는 이번 사용자 메시지로(직전 AI 응답과 함께), 스탯 판정 입력에는 사용자 발화로 들어간다. 대화 기록에 남으므로 유지 턴이 있는 노트는 뒤 턴에서도 이 글로 열릴 수 있다.
-- 대화 프로필(사용자가 방에서 고른 것) → `user_persona` 자리. 빌더 필드가 아니다. 프로필이 없고 작품 기본 이름이 있으면 대신 `user_name` 자리에 이름 한 줄만 실린다(아래 작가 글의 이름 표기).
+- 대화 프로필(사용자가 방에서 고른 것) → `user_persona` 자리. 빌더 필드가 아니다.
 - 생성 프롬프트에 **없는 것**: 이름·한줄소개, 플레이가이드(`playguide`), 추천 답변(`suggestedReplies`), 스탯 정의와 현재 값, 엔딩, 등록 설명, 미디어 북(칸 이름·상황 설명·해금 힌트). 이야기를 쓰는 모델은 게이지 값을 모른다(상황 노트도 값이 아니라 조건이 참인 노트의 글만 싣는다) — 튜토리얼이 "상태창에 수치를 쓰게 하지 말라"고 가르치는 근거가 이것이다. 이야기를 쓰는 모델은 어떤 그림이 붙을지도 모르고, 그림은 아래 칸 판정이 응답 뒤에 따로 고른다.
 
 ### 스토리 — 미디어 북
@@ -83,12 +83,12 @@
 ### 작가 글의 이름 표기 (`{{user}}`·`{{char}}`)
 
 - 규칙은 순수 함수 하나다: BE `api/content/author_macros.py`의 `expand_author_macros`, FE `shared/lib/text/authorMacros.ts`의 `expandAuthorMacros`(Worker는 사본 `worker/authorMacros.ts`). 세 구현이 같은 입력 표 `apps/api/tests/fixtures/author_macro_cases.json`으로 시험된다. 대소문자는 ASCII만 무시하고 중괄호 안쪽 공백·탭을 허용한다. 이름 바로 뒤(또는 닫는 따옴표 한 글자 `'’"”」』` 뒤)의 조사(은/는·이/가·을/를·과/와·아/야·이랑/랑·으로/로)와 서술격(이에요/예요·이다/다·이나/나·이며/며·이고/고·이라고/라고·이라서/라서·이야/야)은 그 뒤가 한글 음절이 아닐 때만 이름의 받침에 맞게 고치고, 이름 끝이 한글이 아니면 작가가 쓴 조사를 둔다. 작가가 쓴 `야`는 부르는 말(아/야)로 읽고, 서술격은 `이야`로 쓴 것만 고친다. 닫는 따옴표 뒤의 `이라고/라고`는 직접 인용 조사라 고치지 않고, 닫는 괄호 `)`는 괄호 앞 말이 조사를 받으므로 닫는 표시로 보지 않는다. 이 밖의 말은 손대지 않는다. 그 밖의 모양(`{user}`·`<USER>` 등)은 글자 그대로이고, 빌더가 `shared/lib/text/authorMacroWarnings.ts`로 경고만 한다(발행은 막지 않는다).
-- 이름: `{{user}}`는 대화 프로필 이름 → 작품 기본 이름(`defaultUserName`, 방이면 방이 고정한 버전·미리보기면 초안) → `FALLBACK_USER_NAME`("당신") 순이다(`resolve_user_name`). `{{char}}`는 캐릭터 작품에서만 캐릭터 이름이고 스토리에서는 글자 그대로 모델과 화면에 간다. 빌더에는 작품 기본 이름 입력칸이 없고 초안 저장(`PATCH /contents/{id}/draft`)도 이 값을 쓰지 않는다. 이미 저장된 값이 있는 작품은 발행·방·미리보기에서 계속 그 값을 쓴다.
+- 이름: `{{user}}`는 대화 프로필 이름, 없으면 `FALLBACK_USER_NAME`("당신")이다(`resolve_user_name`). `{{char}}`는 캐릭터 작품에서만 캐릭터 이름이고 스토리에서는 글자 그대로 모델과 화면에 간다.
 - 저장은 원문 그대로다. 첫 메시지도 `{{user}}`가 든 채 복사되어 저장되고, 쓰는 순간 바꾼다. 미디어 북 태그가 있는 글은 태그를 먼저 처리하고 나서 바꾼다(이름이 태그로 읽히지 않게).
 - 프롬프트: 빌더 함수들이 필수 인자 `names`(`api/chat/prompt_builder.py`의 `PromptNames`)로 값을 조립하는 순간 바꾼다. 바뀌는 것은 작가 필드 값 전부(스토리 설정·커스텀·규칙·목표·전개 예시 양쪽 줄·프롤로그·키워드북·상황 노트·단축어 `shortcut_prompt`, 캐릭터 프롬프트·예시 대화 양쪽 줄, 스탯 이름·설명, 판단 프롬프트, 칸 상황 설명, 상황별 이미지 노출 상황)와 대화 기록의 **모델 응답 줄**, 판정 입력의 이번 턴 응답이다. 키워드 스캔도 모델 응답 줄을 바꾼 글로 본다. 바꾸지 않는 것: 이번 턴 사용자 메시지, 대화 기록의 사용자 줄, `user_persona`, 요약 본문, 화자 라벨, 미디어 북 인물·장면 이름(태그 키라 중괄호를 쓸 수 없다).
 - 사용자 메시지는 FE가 보내기 전에 바꿔 저장한다(`features/send-message`의 `expandUserTextForRoom`, 빌더 미리보기 전송도 같다). 추천 답변·단축어 글도 사용자 메시지라 같은 길이다. 그래서 저장된 사용자 메시지는 뒤에 프로필이 바뀌어도 그대로이고, 대화 기록의 사용자 줄에 남은 `{{user}}`는 사용자가 친 글자라 BE가 건드리지 않는다(골든 `generation_story_basic_media_tags.txt`가 그 경계를 지킨다). 단축어 턴은 사용자 메시지(FE)와 `shortcut_prompt` 자리(BE)가 같은 이름 규칙으로 한 이름이 된다.
-- 이름 한 줄 자리 `user_name`(조건부, 문안 정본은 어드민 `/prompt-sets`): 스탯·엔딩·칸 판정과 요약에는 `PromptNames.judgment_user_name`, 곧 실제 이름(프로필 또는 작품 기본 이름)이 있을 때만 "대화 속 사용자의 이름" 한 줄이 실린다. 생성에는 `generation_user_name`, 곧 **프로필이 없고 작품 기본 이름이 있을 때만** `[사용자 이름]` 섹션이 실린다 — 프로필이 있으면 `user_persona`가 이미 이름을 주고, `user_persona` 문안은 "사용자가 정한 자기 설정"이라 작품 기본 이름으로 채우면 거짓이 된다. 둘 다 비면 섹션째 빠져 이름 없는 방의 프롬프트는 이 자리가 생기기 전과 같다.
-- 화면: FE가 렌더 경계에서 바꾼다(`ChatMarkdown`은 `AuthorMacroNamesProvider`로, 평문은 `MediaTagText` 등). 방 화면은 방 응답의 `personaName`·`defaultUserName`·`contentName`(방이 고정한 버전)을 쓰고, 방이 없는 작품 상세는 그 화면에서 지금 시작하면 쓰일 프로필(고른 것 → 기본 → 가장 먼저 만든 것)의 이름을, 홈 큐레이션은 보는 사람의 기본 프로필 이름을 쓴다(둘 다 비로그인이면 작품 기본 이름). 이름류 칸(엔딩·스탯·시작설정·단축어 이름)도 바뀐다. BE가 화면용으로 바꾸는 곳은 방 목록의 마지막 메시지 미리보기(`_last_message_preview`)뿐이고, 봇용 메타(Worker)는 보는 사람이 없어 작품 기본 이름 → "당신"이다. 어드민은 원문을 보여 준다.
+- 이름 한 줄 자리 `user_name`(조건부, 문안 정본은 어드민 `/prompt-sets`): 스탯·엔딩·칸 판정과 요약에는 `PromptNames.judgment_user_name`, 곧 프로필 이름이 있을 때만 "대화 속 사용자의 이름" 한 줄이 실린다. 생성에는 `generation_user_name` 값을 넘기지만 실채팅에서는 **늘 비어 있어** `[사용자 이름]` 섹션이 빠진다 — 프로필이 있으면 `user_persona`가 이미 이름을 주고, 없으면 실을 이름이 없다. 슬롯은 DB 세트에 남아 있어 어드민 프롬프트 미리보기만 샘플 이름으로 이 섹션 문안을 보여 준다. 값이 비면 섹션째 빠져 이름 없는 방의 프롬프트는 이 자리가 생기기 전과 같다.
+- 화면: FE가 렌더 경계에서 바꾼다(`ChatMarkdown`은 `AuthorMacroNamesProvider`로, 평문은 `MediaTagText` 등). 방 화면은 방 응답의 `personaName`과 `contentName`(방이 고정한 버전)을 쓰고, 방이 없는 작품 상세는 그 화면에서 지금 시작하면 쓰일 프로필(고른 것 → 기본 → 가장 먼저 만든 것)의 이름을, 홈 큐레이션은 보는 사람의 기본 프로필 이름을 쓴다(둘 다 비로그인이면 "당신"). 이름류 칸(엔딩·스탯·시작설정·단축어 이름)도 바뀐다. BE가 화면용으로 바꾸는 곳은 방 목록의 마지막 메시지 미리보기(`_last_message_preview`)뿐이고, 봇용 메타(Worker)는 보는 사람이 없어 "당신"이다. 어드민은 원문을 보여 준다.
 
 ## 2. 스탯 판정
 
@@ -213,7 +213,7 @@
 
 1. 공통 프롬프트(DB)를 바꿨다면 먼저 운영 활성 세트를 기준으로 **바뀐 섹션만** 덧붙여 게시하고, 되돌리기용 이전 버전 id를 기록한다. 로컬 게시본을 통째로 붙이면 운영에만 있던 문안이 덮인다.
 2. 운영 seed 계정으로 로그인해 빌더에 입력한다. 입력 전에 저장소 JSON을 **필드별 입력표**로 만든다. JSON 키와 빌더 라벨이 다르다.
-   - `settingText` → 스토리 설정, `customPrompt` → 커스텀 프롬프트, `promptTemplate` → 프롬프트 템플릿(`emotional` = 감정형), `userGoal` → 사용자의 역할과 목표, `rules` → 규칙, `developmentExamples` → 전개 예시. `defaultUserName`(사용자 기본 이름)은 빌더에 입력칸이 없어 옮길 자리가 없다(위 작가 글의 이름 표기 절).
+   - `settingText` → 스토리 설정, `customPrompt` → 커스텀 프롬프트, `promptTemplate` → 프롬프트 템플릿(`emotional` = 감정형), `userGoal` → 사용자의 역할과 목표, `rules` → 규칙, `developmentExamples` → 전개 예시.
    - `startingSetups[].openingMessage` → 시작상황, `playguide` → 플레이가이드, `suggestedReplies` → 추천 답변.
    - `statDefs[].perTurnDelta` → 턴당 자동 변화, `description` → 설명, `rules[]` → 규칙(`condition` → 조건, `delta` → 증감, 부호를 붙여 `+3`·`-3`처럼 입력). 규칙의 배열 순서가 빌더 목록 순서이고 폭이 같을 때의 우선순위라 그 순서대로 입력한다. 턴당 자동 변화가 없는 스탯은 규칙이 하나 이상 있어야 발행된다(위 스탯 판정 절).
    - `endings[].turnCountGate` → 엔딩조건(최소 턴수), `judgmentPrompt` → 판단 프롬프트, `hint` → 엔딩힌트, `statRules` → 스탯 기반 규칙. JSON은 스탯을 이름(`"stat"`)으로 가리키고 로더가 id로 바꾼다(`_resolve_stat_refs`).
