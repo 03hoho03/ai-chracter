@@ -4,6 +4,8 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
+import httpx
+from google.genai import errors as genai_errors
 from pydantic import BaseModel
 
 from api.core.config import settings
@@ -208,6 +210,35 @@ def dependency_tag(exc: LLMClientError) -> str:
     if isinstance(exc, LLMRateLimitError):
         return f"{exc.provider}_rate_limit"
     return exc.provider
+
+
+def is_retryable_judgment_failure(exc: LLMClientError) -> bool:
+    """실패한 판정 호출을 곧바로 한 번 다시 부를 만한가. 빠르게 끝나는 일시 오류와 파싱 실패만 그렇다 — 다시 부르는 만큼 턴이
+    길어지므로, 기다린 끝에 온 실패와 다시 불러도 같은 답이 나올 실패는 부르지 않는다. 위에서부터 처음 맞는 줄로 정한다.
+
+    1. 쿼터 소진(429)·안전 차단 → 아니다. 곧바로 다시 불러도 같은 쿼터이고, 같은 입력이면 같은 판단일 가능성이 높다.
+    2. 원인이 httpx 타임아웃·`TimeoutError` → 아니다. 이미 판정 타임아웃만큼 기다렸고, 한 번 더 기다리면 턴 락 TTL 을 넘길 수 있다.
+    3. 원인이 Gemini `APIError` 504 → 아니다. 서버 쪽 시간 초과도 기다린 뒤에 오므로 타임아웃과 같다.
+    4. 원인이 Gemini `APIError` 5xx → 그렇다.
+    5. 원인이 타임아웃이 아닌 httpx 전송 오류(연결 거부·연결 끊김) → 그렇다.
+    6. 원인이 없고 타입이 정확히 `LLMClientError` → 그렇다. Gemini 구조화 호출에서 이 꼴은 응답이 스키마로 읽히지 않은 파싱
+       실패 하나뿐이고, 구조화 호출에는 시드가 붙지 않아 다시 뽑으면 다른 표본이다. 잘림·빈 응답 같은 하위 클래스는 소설화
+       호출의 구분된 실패라 넣지 않는다.
+    7. 그 밖(4xx 등) → 아니다.
+
+    Gemini 정규화가 5xx·연결 끊김·타임아웃을 모두 같은 `LLMClientError` 로 올리므로 타입이 아니라 원인(`__cause__`)을 본다.
+    Claude 구현의 원인은 아직 가르지 않는다 — 구조화 호출을 받지 못해 판정은 Gemini 로만 가고(그런 배정은 기동에서 거부된다),
+    가르지 않은 원인은 7 로 떨어진다."""
+    if isinstance(exc, (LLMRateLimitError, LLMPolicyViolationError)):
+        return False
+    cause = exc.__cause__
+    if isinstance(cause, (httpx.TimeoutException, TimeoutError)):
+        return False
+    if isinstance(cause, genai_errors.APIError):
+        return cause.code != 504 and cause.code >= 500
+    if isinstance(cause, httpx.TransportError):
+        return True
+    return cause is None and type(exc) is LLMClientError
 
 
 class LLMClient(abc.ABC):

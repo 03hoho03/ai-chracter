@@ -1096,10 +1096,14 @@ async def regenerate_message(
 
     - 저장소는 replace 모드다(`RoomTurnStore(mode="replace")`) — 옛 응답을 지우고 바꿔 넣으며 turn_count 를 올리지 않는다.
     - 원 턴을 단축어로 보냈으면 그 단축어를 다시 싣는다(`_replaced_turn_shortcut` — 그 응답의 턴 기록에서 찾는다).
-    - 스탯·엔딩 판정은 다시 하지 않는다(`regenerate_judgments`) — 원 응답 생성 때 이미 한 번 반영됐고, 그 반영분을
-      되돌리는 코드가 아직 없어(턴 기록은 남지만 기록을 쓰기 전에 보낸 턴에는 없다) 다시 하면 중복 적용되어 부정확해진다. 그림 판정(캐릭터 상황별 이미지·스토리 미디어 북 칸 — 스토리는
-      엔딩 뒤에도)은 다시 한다 — 노출 기록(`CharacterImageExposure`·`StoryMediaExposure`)은 첫 노출만 기록해 멱등이라
-      다시 해도 중복 적용이 없고, 새 응답 텍스트에 맞는 그림이 붙는다.
+    - 스토리 방이면 스탯을 다시 판정한다 — 바꾸는 응답의 턴 기록이 있고, 그 기록에 엔딩이 없고, 방이 엔딩 전이고, 그 턴이
+      방의 마지막 턴일 때만이다(`regenerate_judgments`). 그 턴의 스탯 효과를 기록의 반영 전 값으로 되돌린 데서 새 응답으로
+      판정하고, 되돌림과 새 값을 응답과 한 커밋에 쓴다. 빠르게 끝나는 판정 실패(504 를 뺀 5xx·연결 끊김·파싱 실패)는 한 번
+      더 부르고, 끝내 실패하거나 조건을 못 채우면 스탯을 건드리지 않는다. 엔딩 판정은 하지 않는다 — 다시 판정한 스탯이 엔딩
+      조건을 채우면 다음 새 턴의 엔딩 판정이 본다.
+    - 그림 판정(캐릭터 상황별 이미지·스토리 미디어 북 칸 — 스토리는 엔딩 뒤에도)은 다시 한다 — 노출 기록
+      (`CharacterImageExposure`·`StoryMediaExposure`)은 첫 노출만 기록해 멱등이라 다시 해도 중복 적용이 없고, 새 응답
+      텍스트에 맞는 그림이 붙는다.
     - 커밋 뒤 요약 접기는 새 턴과 같이 예약한다. 턴 수는 그대로지만 새 응답이 길어 글자 기준을 넘길 수 있고, 앞 턴에서
       실패한 접기나 이 재생성의 되감기가 `memory_version` 을 올려 결과를 버리게 된, 진행 중이던 접기를 다시 시도해야 할
       수 있다 — 접을 때인지는 접기 쪽이 다시 판정한다.
@@ -1164,7 +1168,7 @@ async def regenerate_message(
                     charge=charge,
                 ),
                 llm=llm_client,
-                judgments=regenerate_judgments(db, room, setup),
+                judgments=regenerate_judgments(db, room, setup, last_message.id, log=logger),
                 store=RoomTurnStore(db, room, setup, mode="replace", replaced_message_id=last_message.id, log=logger),
                 settlement=settlement,
                 after_commit=_fold_after_commit(

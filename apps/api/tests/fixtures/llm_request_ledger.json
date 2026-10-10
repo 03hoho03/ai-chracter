@@ -391,6 +391,19 @@
         "systemSha": "dadb574a8387a80011ef46ed5f9d641c12f1ff1e00a29c8ea0d9c75cef2976a4"
       },
       {
+        "callSite": "chat_stat_judgment",
+        "hasRoom": true,
+        "hasUser": true,
+        "method": "generate_structured",
+        "model": "gemini",
+        "promptSha": "4dd777ac21cdeed1bb3b02bfbb18a59c5fa76e1d45bdbfce22544384ee4255f8",
+        "provider": "gemini",
+        "responseSchema": "StatRuleJudgmentResult",
+        "segments": null,
+        "stopSequences": null,
+        "systemSha": null
+      },
+      {
         "callSite": "chat_media_book_image",
         "hasRoom": true,
         "hasUser": true,

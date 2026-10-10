@@ -296,8 +296,9 @@ async def test_send_evaluates_before_judgment_and_regenerate_reevaluates_with_cu
     original, regenerated = fake.generation_prompts
     assert _section(original) is None
     assert _section(regenerated) == "표지-가까워짐"
-    # 재생성은 판정을 다시 부르지 않는다 — 판정은 원 턴의 한 번뿐이다.
-    assert fake.judgment_schemas == [StatRuleJudgmentResult]
+    # 재생성은 생성 프롬프트를 지금 값(80)으로 조립한 뒤에야 그 턴의 스탯을 되돌려 다시 판정한다 — 그래서 판정이 두 번이어도
+    # 재생성 프롬프트의 노트는 지금 값의 것이다.
+    assert fake.judgment_schemas == [StatRuleJudgmentResult, StatRuleJudgmentResult]
 
 
 async def test_edit_evaluates_notes_with_current_values(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:

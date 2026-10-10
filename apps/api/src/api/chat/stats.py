@@ -35,7 +35,7 @@ def apply_rule_judgment(
     대응표에 없는 id(모델이 지어낸 것)는 버리고 경고를 남긴다. 같은 id 가 여러 번 와도 한 번이다. 대응표가 `defs` 에 없는
     스탯이나 카운터 스탯을 가리키면 그 규칙은 쓰지 않는다. 발동한 규칙이 없는 스탯은 값 그대로다.
 
-    호출부가 턴당 정확히 한 번만 부르는 것이 이 함수의 전제다(`chat/turn_judgments.py` 의 `_await_stat_judgment` — 방·미리보기 스탯 판정이 함께 부른다). 판정 LLM 호출이
+    호출부가 턴당 정확히 한 번만 부르는 것이 이 함수의 전제다(`chat/turn_judgments.py` 의 `_await_stat_judgment` — 방·미리보기 스탯 판정이 함께 부른다 — 와, 재생성의 재판정이 성공한 결과 하나에 부르는 `_await_stat_rejudgment`). 판정 LLM 호출이
     실패하면 이 함수 자체가 호출되지 않아 그 턴은 카운터도 함께 멈춘다 — 턴 전체를 무효로 보는 기존 실패 처리와 같은 결이다.
     """
     defs_by_id = {str(stat_def.entity_id): stat_def for stat_def in defs}

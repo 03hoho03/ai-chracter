@@ -187,8 +187,10 @@ class RoomTurnStore:
 
     턴 기록(`chat_turns`)도 응답과 같은 커밋에 쓴다 — 응답이 저장됐는데 기록이 없거나, 응답 없이 기록만 남는 턴이 생기지
     않는다. append 는 이 턴의 값으로 한 행을 쓴다. replace 는 바꾸는 응답의 기록이 있을 때만 한 행을 쓰고, 모델·차감·LLM 호출은
-    이 재생성의 것, 턴 번호·스탯 변화·엔딩·단축어는 그 기록의 값 그대로다. 재생성은 스탯·엔딩을 다시 판정하지 않으므로 방에
-    남아 있는 효과는 원 턴의 것이고, 그 효과를 이 응답에 귀속해 두어야 다음 재생성이 무엇을 되돌릴지 안다. 턴 번호를 이어받는
+    이 재생성의 것, 턴 번호·엔딩·단축어는 그 기록의 값 그대로다. 스탯 변화는 재생성이 스탯을 다시 판정했으면 그 결과(턴이 시작할
+    때의 값 대비)이고, 아니면(재판정 조건을 못 채웠거나 재판정이 끝내 실패했다) 그 기록의 값 그대로다 — 그때 방에 남아 있는
+    효과는 원 턴의 것이고, 그 효과를 이 응답에 귀속해 두어야 다음 재생성이 무엇을 되돌릴지 안다. 엔딩은 재생성이 판정하지 않으므로
+    늘 이어받는다. 턴 번호를 이어받는
     것은 메시지 삭제로 앞 응답이 마지막이 된 방에서 재생성의 턴 번호(지금 `turn_count`)가 그 응답의 턴보다 크기 때문이다.
     바꾸는 응답에 기록이 없으면(기록을 쓰기 전에 보낸 턴) 쓰지 않는다 — 빈 효과로 쓰면 "원 턴이 아무것도 바꾸지 않았다"와
     구별되지 않는다. 바꾼 응답의 옛 기록은 지우지 않는다(그 호출의 원가도 실제로 났다).
@@ -235,7 +237,8 @@ class RoomTurnStore:
 
         append 는 새 응답을 넣고 flush 해 id 를 얻은 뒤 `turn_count` 를 올린다. replace 는 옛 응답 DELETE → 폐기 기록 →
         미리 정한 id 의 새 응답 순서이고 flush 하지 않는다(재생성이 원래 쓰던 모양 그대로다). 그 뒤 노출 기록·스탯·엔딩·그림·
-        커밋은 두 모드가 같은 코드를 지난다 — 재생성은 스탯·엔딩 판정을 하지 않아 그 칸이 비어 있다."""
+        커밋은 두 모드가 같은 코드를 지난다 — 재생성은 엔딩 판정을 하지 않아 그 칸이 비어 있고, 스탯 칸은 재판정했을 때만 찬다(되돌린
+        값과 새 값이 함께 들어 있다)."""
         db, room, setup = self.db, self._room, self._setup
         result = turn.judgments
         # 노출 기록 실패 때 그림을 `None` 으로 덮으므로 지역 이름으로 읽는다(판정 결과는 그대로 둔다).
@@ -355,7 +358,9 @@ class RoomTurnStore:
                 return
             record.kind = "regenerate"
             record.turn_number = replaced_record.turn_number
-            record.stat_changes = replaced_record.stat_changes
+            record.stat_changes = (
+                turn.judgments.stat_changes if turn.judgments.stats_rejudged else replaced_record.stat_changes
+            )
             record.ending_entity_id = replaced_record.ending_entity_id
             record.shortcut_entity_id = replaced_record.shortcut_entity_id
         self.db.add(record)
