@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { chatRoomKeys, dropLastMessage } from "@/entities/chat-room";
 import type { ChatMessage, ChatRoomState } from "@/entities/chat-room";
+import { cloverKeys } from "@/entities/clover";
 
 import { settleTurnStreamEnd } from "./settleTurnStreamEnd";
 
@@ -50,6 +51,7 @@ describe("settleTurnStreamEnd", () => {
     queryClient.setQueryData(chatRoomKeys.detail(ROOM_ID), buildState(MESSAGES));
     queryClient.setQueryData(chatRoomKeys.memory(ROOM_ID), { notes: [] });
     queryClient.setQueryData(chatRoomKeys.myList("viewer-1"), { items: [] });
+    queryClient.setQueryData(cloverKeys.balance(), { balance: 100 });
   });
 
   it("재생성이 done 없이 끝나면 지운 옛 답변을 되살리고 방을 다시 받는다", () => {
@@ -80,5 +82,17 @@ describe("settleTurnStreamEnd", () => {
       expect(isStale(queryClient, chatRoomKeys.memory(ROOM_ID))).toBe(true);
       expect(isStale(queryClient, chatRoomKeys.myList("viewer-1"))).toBe(true);
     }
+  });
+
+  it("done 없이 끝난 스트림 뒤에도 클로버 잔액을 낡음으로 표시한다 — 정책 위반으로 소모됐거나 환급됐을 수 있다", () => {
+    settleTurnStreamEnd(queryClient, ROOM_ID, { dropped: undefined, hasCommitted: false });
+
+    expect(isStale(queryClient, cloverKeys.balance())).toBe(true);
+  });
+
+  it("done 을 반영한 턴 뒤에도 클로버 잔액을 낡음으로 표시한다", () => {
+    settleTurnStreamEnd(queryClient, ROOM_ID, { dropped: undefined, hasCommitted: true });
+
+    expect(isStale(queryClient, cloverKeys.balance())).toBe(true);
   });
 });
