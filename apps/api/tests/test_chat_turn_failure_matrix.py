@@ -35,6 +35,7 @@
 
 import asyncio
 import inspect
+import logging
 import re
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -55,6 +56,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 from starlette.types import Message
 
+from api.chat import router as chat_router
 from api.chat.preview_session import get_preview_session
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
@@ -413,28 +415,33 @@ async def _delete_room_during_generation(ctx: _Ctx) -> None:
     ctx.witnesses.append(("생성 도중 방 삭제가 성공하지 않았다", lambda: statuses == [204]))
 
 
-async def _abort_stat_rule_read(ctx: _Ctx) -> None:
-    """스탯 규칙을 읽는 첫 문장 대신 요청 세션에서 `SELECT 1/0` 을 보내 트랜잭션을 진짜 aborted 로 만든다.
+def _abort_first_read(entity: type, place: str) -> _Arm:
+    """`entity` 를 읽는 첫 문장 대신 요청 세션에서 `SELECT 1/0` 을 보내 트랜잭션을 진짜 aborted 로 만든다. 턴 안에서
+    스탯 규칙과 엔딩을 처음 읽는 것은 판정 준비라(생성 앞부분은 읽지 않는다) 첫 문장이 곧 그 판정 준비의 읽기다.
 
     환급은 따로 손대지 않는다 — aborted 트랜잭션이 열린 채 불린 환급은 모든 칸에 걸린
     `_refunds_outlive_the_request_session` 이 요청 세션이 닫힌(SAVEPOINT 로 되감긴) 뒤에 돌리므로, aborted 트랜잭션 위에서
     환급 세션이 시작해 실패하는 하네스 산물이 생기지 않는다."""
-    aborted: list[AsyncSession] = []
-    original_execute = AsyncSession.execute
 
-    async def execute(self: AsyncSession, statement: Any, *args: Any, **kwargs: Any) -> Any:
-        if (
-            not aborted
-            and isinstance(statement, sa.Select)
-            and statement.column_descriptions
-            and statement.column_descriptions[0].get("entity") is StatRule
-        ):
-            aborted.append(self)
-            return await original_execute(self, sa.text("SELECT 1/0"))
-        return await original_execute(self, statement, *args, **kwargs)
+    async def arm(ctx: _Ctx) -> None:
+        aborted: list[AsyncSession] = []
+        original_execute = AsyncSession.execute
 
-    ctx.monkeypatch.setattr(AsyncSession, "execute", execute)
-    ctx.witnesses.append(("스탯 규칙 읽기에 닿지 않았다", lambda: bool(aborted)))
+        async def execute(self: AsyncSession, statement: Any, *args: Any, **kwargs: Any) -> Any:
+            if (
+                not aborted
+                and isinstance(statement, sa.Select)
+                and statement.column_descriptions
+                and statement.column_descriptions[0].get("entity") is entity
+            ):
+                aborted.append(self)
+                return await original_execute(self, sa.text("SELECT 1/0"))
+            return await original_execute(self, statement, *args, **kwargs)
+
+        ctx.monkeypatch.setattr(AsyncSession, "execute", execute)
+        ctx.witnesses.append((f"{place}에 닿지 않았다", lambda: bool(aborted)))
+
+    return arm
 
 
 _ASSISTANT_WRITE = "failure_matrix_assistant_write"
@@ -598,7 +605,8 @@ _CELLS: dict[str, tuple[tuple[str, ...], _Arm]] = {
         ("send-character", "edit-character", "regenerate-character"),
         _script_change(_set_judgment_error(ImageMatchJudgmentResult)),
     ),
-    "stat-rule-read-aborts-the-transaction": (("send", "edit"), _abort_stat_rule_read),
+    "stat-rule-read-aborts-the-transaction": (("send", "edit"), _abort_first_read(StatRule, "스탯 규칙 읽기")),
+    "ending-read-aborts-the-transaction": (("send", "edit"), _abort_first_read(Ending, "엔딩 읽기")),
     "stat-judgment-prompt-render-failure": (("send", "edit", "preview-story"), _break_channel("stat_rule_judgment")),
     "write-commit-fails": (_ROOM, _fail_write_commit),
     "room-deleted-before-the-write": (("send", "regenerate"), _delete_room_during_generation),
@@ -860,6 +868,57 @@ async def test_failure_cell_matches_the_recorded_behavior(
             "scheduled": scheduled,
         },
     )
+
+
+# ── 판정 준비 실패의 경고 ─────────────────────────────────────────────────────────────────
+#
+# 판정 준비가 흡수한 실패는 매트릭스가 기록하지 않는 서버 로그에만 남는다. 경고는 라우터의 로거 이름으로 남아야 한다 —
+# 판정 준비의 렌더 실패 경고는 지금까지 턴 골격이 라우터가 넘긴 로거로 남겼으므로, 로거 이름으로 거르는 쪽(Bugsink
+# breadcrumb 범주)이 흡수 자리가 판정 안으로 옮겨 간 뒤에도 같은 이름으로 읽는다. 어느 판정을 포기했는지도 글에 남긴다.
+
+
+@pytest.mark.usefixtures("committing_request_session")
+@pytest.mark.parametrize(
+    ("cell", "surface", "subject"),
+    [
+        pytest.param("stat-rule-read-aborts-the-transaction", "send", "스탯 판정", id="stat-rule-read/send"),
+        pytest.param("ending-read-aborts-the-transaction", "send", "엔딩 판정", id="ending-read/send"),
+        pytest.param("stat-judgment-prompt-render-failure", "send", "스탯 판정", id="stat-render/send"),
+        pytest.param(
+            "stat-judgment-prompt-render-failure", "preview-story", "스탯 판정", id="stat-render/preview-story"
+        ),
+    ],
+)
+async def test_judgment_prepare_failure_warns_with_the_route_logger(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    cell: str,
+    surface: str,
+    subject: str,
+) -> None:
+    target = await _SURFACES[surface](db_client, db_session)
+    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
+    _refunds_outlive_the_request_session(monkeypatch, db_session)
+    ctx = _Ctx(db_client, db_session, monkeypatch, target, _Script(), asyncio.Event(), [])
+    await _CELLS[cell][1](ctx)
+    _record_sentry(monkeypatch, ctx.sentry)
+
+    _override_llm_client(_MatrixLLM(ctx.script, match_id=target.match_id, disconnect=ctx.disconnect))
+    try:
+        with caplog.at_level(logging.WARNING, logger=chat_router.__name__):
+            await _drive(ctx)
+    finally:
+        _clear_llm_override()
+
+    for description, reached in ctx.witnesses:
+        assert reached(), description
+    assert [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == chat_router.__name__ and subject in record.getMessage()
+    ], f"{subject} 준비 실패 경고가 라우터 로거로 남지 않았다"
 
 
 # ── background 일이 도는 순간의 요청 트랜잭션 ─────────────────────────────────────────────
