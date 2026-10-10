@@ -70,7 +70,7 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
         <Label htmlFor="character-profile-name"><RequiredText>이름</RequiredText></Label>
         <Input
           id="character-profile-name"
-          placeholder="캐릭터 이름을 입력해주세요"
+          placeholder="예: 민유나"
           aria-invalid={!!errors.profile?.name}
           aria-describedby={errors.profile?.name ? "character-profile-name-count character-profile-name-error" : "character-profile-name-count"}
           {...name.registration}

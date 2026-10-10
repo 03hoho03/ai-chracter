@@ -206,7 +206,7 @@ function StatRow({
         />
         <Input
           id={`stat-${id}-name`}
-          placeholder="스탯 이름을 입력해주세요"
+          placeholder="예: 유나 호감도"
           aria-invalid={!!statErrors?.name}
           aria-describedby={statErrors?.name ? errorIds.name : undefined}
           {...register(`${statPath}.name`)}

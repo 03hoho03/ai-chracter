@@ -302,7 +302,7 @@ function StartingSetupRow({
         <Label htmlFor={`starting-setup-${id}-name`}><FieldLabelText field="startingSetups.*.name" /></Label>
         <Input
           id={`starting-setup-${id}-name`}
-          placeholder="시작설정 이름을 입력해주세요"
+          placeholder="예: 첫 기획 회의"
           aria-invalid={!!rowErrors?.name}
           aria-describedby={rowErrors?.name ? `starting-setup-${id}-name-error` : undefined}
           {...register(`startingSetups.${index}.name`)}

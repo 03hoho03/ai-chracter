@@ -72,7 +72,7 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
         <Label htmlFor="story-profile-name"><FieldLabelText field="profile.name" /></Label>
         <Input
           id="story-profile-name"
-          placeholder="스토리 이름을 입력해주세요"
+          placeholder="예: 복학했더니 영화 동아리 조감독이 됐다"
           aria-invalid={!!errors.profile?.name}
           aria-describedby={errors.profile?.name ? "story-profile-name-count story-profile-name-error" : "story-profile-name-count"}
           {...name.registration}

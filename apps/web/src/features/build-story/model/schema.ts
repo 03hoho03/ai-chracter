@@ -11,6 +11,8 @@ import {
   MAX_STARTING_SETUPS,
   MAX_SUGGESTED_REPLIES,
   NOVEL_PERMISSION_VALUES,
+  isBlankText,
+  requiredText,
 } from "@/entities/content";
 import { normalizeMediaBookName } from "@/entities/media-book";
 import { caseFoldKey } from "@/shared/lib/text/caseFoldKey";
@@ -65,20 +67,20 @@ export const storySettingSchema = z
   })
   .superRefine((value, ctx) => {
     if (value.promptTemplate === "custom") {
-      if (!value.customPrompt || value.customPrompt.length < 1) {
+      if (isBlankText(value.customPrompt ?? "")) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["customPrompt"],
-          message: "커스텀 프롬프트를 입력해 주세요.",
+          message: "커스텀 프롬프트를 입력해주세요",
         });
       }
       return;
     }
-    if (!value.worldSetting || value.worldSetting.length < 1) {
+    if (isBlankText(value.worldSetting ?? "")) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["worldSetting"],
-        message: "세계관 설정을 입력해 주세요.",
+        message: "스토리 설정/정보를 입력해주세요",
       });
     }
   });
@@ -166,14 +168,14 @@ const STAT_INTEGER_MESSAGE = "정수로 입력해주세요";
 export const statDefSchema = z
   .object({
     id: z.string(),
-    name: z.string().min(1, "스탯 이름을 입력해주세요"),
+    name: z.string().refine(...requiredText("스탯 이름을 입력해주세요")),
     icon: z.string().min(1, "아이콘을 선택해주세요"),
     color: z.string().min(1, "색상을 선택해주세요"),
     min: z.number({ error: "최소값을 입력해주세요" }).int(STAT_INTEGER_MESSAGE),
     max: z.number({ error: "최대값을 입력해주세요" }).int(STAT_INTEGER_MESSAGE),
     initial: z.number({ error: "초기값을 입력해주세요" }).int(STAT_INTEGER_MESSAGE),
     unit: z.string().optional(),
-    description: z.string().min(1, "스탯에 대한 설명을 입력해주세요"),
+    description: z.string().refine(...requiredText("스탯 설명을 입력해주세요")),
     /**
      * 매 턴 자동으로 더해지는 값(감소는 음수). 비우면 판정 LLM이 작가가 쓴 규칙 가운데 맞은 것을 골라 이 스탯을 바꾼다(규칙이
      * 없으면 변하지 않는다).
@@ -255,9 +257,9 @@ export const ruleListItemSchema = z.discriminatedUnion("kind", [singleRuleSchema
 /** turnGate는 최소 10턴(선행 게이트), statRules가 비어있으면 judgePrompt만으로 판정한다. */
 export const endingSchema = z.object({
   id: z.string(),
-  name: z.string().min(1, "엔딩 이름을 입력해주세요"),
+  name: z.string().refine(...requiredText("엔딩 이름을 입력해주세요")),
   turnGate: z.number().min(10, "엔딩조건은 10턴 이상이어야 합니다"),
-  judgePrompt: z.string().min(1, "이 엔딩에 도달했는지 AI가 판단할 기준을 입력해주세요"),
+  judgePrompt: z.string().refine(...requiredText("판단 프롬프트를 입력해주세요")),
   statRules: z.array(ruleListItemSchema).default([]),
   epilogue: z.string().optional(),
   hint: z.string().optional(),
@@ -320,8 +322,8 @@ export const situationNoteSchema = z.object({
  */
 export const startingSetupSchema = z.object({
   id: z.string(),
-  name: z.string().min(1, "시작설정 이름을 입력해주세요"),
-  prologue: z.string().min(1, "이 시작설정의 도입부를 입력해주세요"),
+  name: z.string().refine(...requiredText("시작설정 이름을 입력해주세요")),
+  prologue: z.string().refine(...requiredText("프롤로그를 입력해주세요")),
   openingSituation: z.string().optional(),
   playGuide: z.string().optional(),
   suggestedReplies: z
@@ -396,7 +398,7 @@ export const keywordNoteSchema = z
     id: z.string(),
     content: z
       .string()
-      .min(1, "정보를 입력해주세요")
+      .refine(...requiredText("정보를 입력해주세요"))
       .refine(
         (value) => countCharacters(value) <= MAX_KEYWORD_NOTE_CONTENT_LENGTH,
         `정보는 ${MAX_KEYWORD_NOTE_CONTENT_LENGTH}자 이하로 입력해주세요`,
@@ -438,9 +440,9 @@ export function createKeywordNote(id: string): KeywordNoteValues {
 
 export const shortcutSchema = z.object({
   id: z.string(),
-  name: z.string().min(1, "단축어 이름을 입력해주세요"),
-  description: z.string().min(1, "이 단축어가 어떤 동작을 하는지 설명해주세요"),
-  prompt: z.string().min(1, "단축어 실행 시 AI에게 전달할 프롬프트를 입력해주세요"),
+  name: z.string().refine(...requiredText("단축어 이름을 입력해주세요")),
+  description: z.string().refine(...requiredText("단축어 설명을 입력해주세요")),
+  prompt: z.string().refine(...requiredText("실행될 프롬프트를 입력해주세요")),
 });
 
 /** 서버가 422 로 막는 미디어 북 상한의 단일 소스. 스키마의 `.max()`와 메시지가 여기를 읽는다. */
@@ -567,10 +569,10 @@ export const storyBuilderSchema = z.object({
           ctx.addIssue({ code: z.ZodIssueCode.custom, message: "대표 이미지를 등록해주세요" });
         }
       }),
-    name: z.string().min(1, "스토리 이름을 입력해주세요").refine(...characterLimit(MAX_NAME_LENGTH, "이름")),
+    name: z.string().refine(...requiredText("스토리 이름을 입력해주세요")).refine(...characterLimit(MAX_NAME_LENGTH, "이름")),
     oneLiner: z
       .string()
-      .min(1, "스토리를 한 줄로 소개해주세요")
+      .refine(...requiredText("한줄소개를 입력해주세요"))
       .refine(...characterLimit(MAX_ONE_LINER_LENGTH, "한줄소개")),
   }),
   storySetting: storySettingSchema,
@@ -596,7 +598,7 @@ export const storyBuilderSchema = z.object({
   registration: z.object({
     description: z
       .string()
-      .min(1, "스토리를 목록에서 소개할 설명을 입력해주세요")
+      .refine(...requiredText("등록 설명을 입력해주세요"))
       .refine(...characterLimit(MAX_DESCRIPTION_LENGTH, "등록 설명")),
     // 실제 StoryDraftPayload/Response의 genreId/target 계약(string|null / ContentTarget|null)에 맞춰
     // profile.image와 동일한 이유로 nullable로 둔다(캐릭터 빌더와 동일한 판단 — 초안 상태에선

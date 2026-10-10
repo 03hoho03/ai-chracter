@@ -157,7 +157,7 @@ function EndingRow({
         <Label htmlFor={`ending-${id}-name`}><FieldLabelText field="startingSetups.*.endings.*.name" /></Label>
         <Input
           id={`ending-${id}-name`}
-          placeholder="엔딩 이름을 입력해주세요"
+          placeholder="예: 컷 소리가 난 뒤에도"
           aria-invalid={!!endingErrors?.name}
           aria-describedby={endingErrors?.name ? `ending-${id}-name-error` : undefined}
           {...register(`${endingPath}.name`)}

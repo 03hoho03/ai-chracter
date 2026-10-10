@@ -112,3 +112,4 @@ export {
   hashtagsSchema,
 } from "./model/builderLimits";
 export { hashtagRefusal, normalizeHashtag } from "./model/hashtag";
+export { isBlankText, requiredText } from "./model/requiredText";
