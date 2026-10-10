@@ -47,6 +47,7 @@ from api.db.models import (
     ChatMessageRole,
     ChatRoom,
     ChatRoomMemorySnapshot,
+    ChatTurn,
     CloverLedger,
     CloverLot,
     Content,
@@ -388,6 +389,21 @@ def _count_queries() -> Generator[Callable[[], int], None, None]:
         yield lambda: count
     finally:
         sa.event.remove(engine.sync_engine, "before_cursor_execute", _before_cursor_execute)
+
+
+def _make_chat_turn(chat_room_id: uuid.UUID, **overrides: object) -> ChatTurn:
+    """턴 기록 한 행. 응답 메시지 id 는 FK 가 없는 칸이라 실제 메시지 없이 새 id 를 쓴다."""
+    defaults: dict[str, object] = {
+        "chat_room_id": chat_room_id,
+        "assistant_message_id": uuid.uuid4(),
+        "kind": "send",
+        "turn_number": 1,
+        "chat_model": "gemini",
+        "charge_source": "free",
+        "clover_amount": 0,
+    }
+    defaults.update(overrides)
+    return ChatTurn(**defaults)
 
 
 async def _get_genre(db_session: AsyncSession, name: str | None = None) -> Genre:
