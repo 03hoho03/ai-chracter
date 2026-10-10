@@ -353,7 +353,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
   return (
     <FormProvider {...form}>
       {/* 빌더는 전역 Header 대신 이 전용 상단바를 쓴다(같은
-          56px 자리, `routes/__root.tsx`가 `/builder` 경로에서 Header를 뺀다). 저장 계약("자동저장")을
+          57px 자리, `routes/__root.tsx`가 `/builder` 경로에서 Header를 뺀다). 저장 계약("자동저장")을
           여기서 한 번 말해 둔다 — 안 그러면 사용자가 그 단어를 처음 만나는 자리가 빨간 실패
           토스트다. */}
       <BuilderTopBar

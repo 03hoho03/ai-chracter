@@ -69,7 +69,7 @@ type OverviewSectionProps = {
   children?: React.ReactNode;
 };
 
-/** 절 제목은 앵커로 이동했을 때 전역 헤더(sticky 56px) 아래로 숨지 않도록 위 여백을 남긴다. */
+/** 절 제목은 앵커로 이동했을 때 전역 헤더(sticky, 경계선 포함 57px) 아래로 숨지 않도록 위 여백을 남긴다. */
 function OverviewSection({ section, children }: OverviewSectionProps) {
   return (
     <section id={section.id} aria-labelledby={headingIdOf(section)} className="flex scroll-mt-20 flex-col gap-4">

@@ -191,18 +191,26 @@
 
 /* apps/web 에서 2회 이상 반복되던 레이아웃 임의값. 값은 그대로, 이름만 붙였다. */
 @utility h-below-header {
-  /* sticky 헤더(h-14 = 3.5rem) 아래 남는 뷰포트 높이 */
-  height: calc(100dvh - 3.5rem);
+  /* sticky 헤더 아래 남는 뷰포트 높이. 헤더 총높이는 안쪽 바 h-14(3.5rem) + 아래 경계선 1px 이다 — 경계선을 바깥 요소에
+     걸어 border-box 에 먹히지 않게 한 구조라 3.5rem 만 빼면 문서가 1px 넘쳐 창이 스크롤된다. 빌더·소설 편집 보드의
+     전용 상단바도 같은 구조라 같은 값이 맞는다 */
+  height: calc(100dvh - 3.5rem - 1px);
 }
 @utility min-h-below-header {
-  /* sticky 헤더(h-14 = 3.5rem) 아래 남는 뷰포트 높이를 최소 높이로 — 인증 화면이 폼을 그 영역 가운데 놓는다 */
-  min-height: calc(100dvh - 3.5rem);
+  /* h-below-header 와 같은 계산을 최소 높이로 — 인증 화면이 폼을 헤더 아래 보이는 영역 가운데 놓는다 */
+  min-height: calc(100dvh - 3.5rem - 1px);
 }
 @utility max-h-below-header {
-  /* 헤더 아래까지 자라는 바텀시트의 상한 — h-below-header 와 같은 계산(헤더 h-14 = 3.5rem 미러링).
-     쓰는 곳은 이미지 스튜디오 옵션 시트 하나라 위 머리 주석의 "2회 이상 반복"에는 들지 않지만, 헤더
-     높이를 미러링한 값이라 임의값으로 흩지 않고 짝들 옆에 모은다(헤더 높이를 바꿀 때 함께 찾히게) */
-  max-height: calc(100dvh - 3.5rem);
+  /* 헤더 아래까지 자라는 바텀시트의 상한 — h-below-header 와 같은 계산. 시트가 가장 커도 위 끝이 헤더 경계선 아래에
+     멈춘다. 쓰는 곳은 이미지 스튜디오 옵션 시트·소설 다음 화 범위 시트, admin 필터·상세 조치 시트다(admin 상단바는 경계선을
+     한 요소에 건 56px 라 그 위로는 1px 틈이 남는다). 헤더 높이를 미러링한 값이라 임의값으로 흩지 않고 짝들 옆에
+     모은다(헤더 높이를 바꿀 때 함께 찾히게) */
+  max-height: calc(100dvh - 3.5rem - 1px);
+}
+@utility top-below-header {
+  /* 바텀시트 윗변을 헤더 경계선 바로 아래에 붙인다 — h-below-header 와 같은 헤더 높이(이미지 스튜디오 보관함 시트,
+     옆 옵션 시트의 상한과 같은 선) */
+  top: calc(3.5rem + 1px);
 }
 @utility min-h-placeholder {
   /* 준비 중·로딩·오류처럼 본문이 비는 화면의 세로 중앙 정렬용 최소 높이 */
