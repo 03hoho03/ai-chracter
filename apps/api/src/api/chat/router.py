@@ -122,6 +122,7 @@ from api.db.models.chat import (
     ChatRoom,
     ChatRoomMemorySnapshot,
     ChatRoomStat,
+    ChatTurn,
     DiscardedResponse,
     StoryEndingUnlock,
     StoryMediaExposure,
@@ -1592,6 +1593,8 @@ async def reset_chat_room(
         # 요약은 지운 대화에서 나왔으므로 함께 지운다. 기억 노트는 사용자가 적은 것이라 남긴다.
         await rewind_memory(db, room.id, None)
         await db.execute(delete(ChatMessage).where(ChatMessage.chat_room_id == room.id))
+        # 방 행이 남으니 FK 때문은 아니다 — 지운 대화의 턴 기록을 남기지 않는다.
+        await db.execute(delete(ChatTurn).where(ChatTurn.chat_room_id == room.id))
         room.turn_count = 0
         room.ending_reached = False
         room.ending_entity_id = None
