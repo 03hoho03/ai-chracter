@@ -20,6 +20,7 @@ import {
   useSortableList,
   useUndoableRemoval,
   type SortableHandleProps,
+  FieldGuideLink,
 } from "@/features/build-common";
 import {
   endingSummary,
@@ -31,6 +32,7 @@ import {
   type StoryBuilderFormValues,
   type StoryCollapsibleList,
 } from "@/features/build-story";
+import { creationGuidePath } from "@/shared/config/creationGuide";
 import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 
 import { MediaTagInsertButton } from "./MediaTagInsertButton";
@@ -44,6 +46,9 @@ import { UnknownMediaTagNotice } from "./UnknownMediaTagNotice";
 /** 열림 키의 목록 이름 — 발행 실패 때 셸이 오류 항목을 여는 키와 같은 이름이어야 한다(타입이 목록 정의의 키로 묶는다). */
 const ENDING_LIST: StoryCollapsibleList = "ending";
 const RULE_GROUP_LIST: StoryCollapsibleList = "ruleGroup";
+
+// 칸 `?` 가 가리키는 작성 가이드 자리 — 스토리 원고는 칸 블록마다 앵커(블록 첫 칸의 키)가 있어 그 블록까지 바로 간다.
+const JUDGE_PROMPT_GUIDE_PATH = `${creationGuidePath("story", "ending")}#startingSetups.*.endings.*.judgePrompt`;
 
 /** 엔딩의 스탯 규칙은 선택이다 — 비워 두면 판단 프롬프트만으로 판정한다. */
 const ENDING_RULES_EMPTY_TEXT = "등록된 규칙이 없어요. 비워두면 판단 프롬프트만으로 엔딩을 판정해요.";
@@ -157,7 +162,7 @@ function EndingRow({
         <Label htmlFor={`ending-${id}-name`}><FieldLabelText field="startingSetups.*.endings.*.name" /></Label>
         <Input
           id={`ending-${id}-name`}
-          placeholder="엔딩 이름을 입력해주세요"
+          placeholder="예: 컷 소리가 난 뒤에도"
           aria-invalid={!!endingErrors?.name}
           aria-describedby={endingErrors?.name ? `ending-${id}-name-error` : undefined}
           {...register(`${endingPath}.name`)}
@@ -190,17 +195,27 @@ function EndingRow({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`ending-${id}-judge-prompt`}><FieldLabelText field="startingSetups.*.endings.*.judgePrompt" /></Label>
+        <div className="flex items-center gap-1">
+          <Label htmlFor={`ending-${id}-judge-prompt`}><FieldLabelText field="startingSetups.*.endings.*.judgePrompt" /></Label>
+          <FieldGuideLink href={JUDGE_PROMPT_GUIDE_PATH} fieldLabel="판단 프롬프트" />
+        </div>
         <BuilderTextarea
           id={`ending-${id}-judge-prompt`}
           placeholder="이 엔딩에 도달했는지 AI가 판단할 기준을 입력해주세요"
           rows={3}
           aria-invalid={!!endingErrors?.judgePrompt}
-          aria-describedby={endingErrors?.judgePrompt ? `ending-${id}-judge-prompt-error` : undefined}
+          aria-describedby={
+            endingErrors?.judgePrompt
+              ? `ending-${id}-judge-prompt-help ending-${id}-judge-prompt-error`
+              : `ending-${id}-judge-prompt-help`
+          }
           {...register(`${endingPath}.judgePrompt`)}
         />
         <MediaTagOutsideNotice name={`${endingPath}.judgePrompt`} />
         <StoryMacroNotice name={`${endingPath}.judgePrompt`} />
+        <p id={`ending-${id}-judge-prompt-help`} className="text-xs break-keep text-muted-foreground">
+          판정 AI가 대화를 읽고 답할 질문이에요. 게이지 값은 못 보니 숫자 대신 이야기 속 사건을 물어요.
+        </p>
         {endingErrors?.judgePrompt && (
           <p id={`ending-${id}-judge-prompt-error`} role="alert" className="text-xs text-destructive-text">
             {endingErrors.judgePrompt.message}

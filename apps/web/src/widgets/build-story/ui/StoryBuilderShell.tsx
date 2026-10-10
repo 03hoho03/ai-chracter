@@ -33,6 +33,7 @@ import {
   STORY_STARTING_SETUP_LIST_LABELS,
   STORY_TABS,
   toMediaBookPreviewImages,
+  VISIBILITY_LABELS,
   type StoryBuilderFormValues,
   type StoryBuilderTab,
 } from "@/features/build-story";
@@ -46,6 +47,7 @@ import {
   errorParentItemId,
   errorTabs,
   fieldLabelByFormPath,
+  FirstPublishConfirmModal,
   firstErrorLocation,
   flattenFieldErrorPaths,
   getFilterRejectionReason,
@@ -54,7 +56,10 @@ import {
   invalidFieldsMessage,
   missingFieldsMessage,
   resolveProfileImageUrl,
+  tabFromSearch,
+  tabToSearch,
   useAutosave,
+  useConfirmFirstPublish,
   useCreateBuilderUiState,
   useDraftPersistence,
   useFocusFirstError,
@@ -82,6 +87,10 @@ import { StatTab } from "./StatTab";
 type StoryBuilderShellProps = {
   draft: StoryDraftContent;
   draftId: string | undefined;
+  /** 주소의 `?tab=` 값 — 처음 열 탭을 고른다. 이 빌더에 없는 탭 id 면 기본 탭이다. */
+  tab: string | undefined;
+  /** 탭을 바꿀 때 주소에 적을 값(기본 탭이면 `undefined`). */
+  onTabChange: (tab: string | undefined) => void;
   renderPreview: (args: {
     kind: "card" | "chat";
     getPayload: () => PreviewStartPayload;
@@ -114,9 +123,16 @@ const MEDIA_BOOK_LABEL = "미디어 북";
  * 미리보기를 CharacterBuilderShell.tsx와 동일한 방식으로 연동한다.
  *
  * `draftId`는 아직 서버에 없는 초안이면 undefined다 — 첫 저장이 초안을 만들고 URL을 바꾼다. */
-export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilderShellProps) {
+export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPreview }: StoryBuilderShellProps) {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<StoryBuilderTab>("profile");
+  const confirmFirstPublish = useConfirmFirstPublish();
+  const [activeTab, setActiveTabState] = useState<StoryBuilderTab>(() => tabFromSearch(tab, TABS));
+  // 탭을 바꾸는 모든 길(탭 줄·첫 오류로 이동·빈 상태 안내)이 여기를 지나 주소의 `?tab=` 도 함께 바꾼다 — 새로고침하면 보던
+  // 탭으로 돌아온다. 화면은 로컬 상태로 바로 바꾸고 주소는 뒤따른다(주소 이동을 기다리면 탭 전환이 한 박자 늦다).
+  function setActiveTab(nextTab: StoryBuilderTab) {
+    setActiveTabState(nextTab);
+    onTabChange(tabToSearch(nextTab, TABS));
+  }
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   // 폼 컨벤션(중복 제출 방지는 `isSubmitting`)에서 의도적으로 벗어난다 — `form.formState.isSubmitting`은
   // 검증 구간까지 포함해 true가 되는데 발행 버튼은 네이티브 `disabled`라 유효성 실패 때마다 포커스가
@@ -182,7 +198,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
   }
 
   // 스탯·상황 노트·엔딩 탭의 빈 상태(시작설정 없음)에서 시작설정 탭으로 간다. 누른 버튼은 탭 본문과 함께 사라지므로, 새 탭이
-  // 커밋된 다음 프레임에 그 탭의 '설정 추가'로 포커스를 옮긴다(없으면 시작설정 탭 트리거).
+  // 커밋된 다음 프레임에 그 탭의 '시작설정 추가'로 포커스를 옮긴다(없으면 시작설정 탭 트리거).
   function goToStartingSetup() {
     setActiveTab("startingSetup");
     requestAnimationFrame(() => {
@@ -224,6 +240,14 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
   // (default() 적용 포함) 여기서 다시 parse()할 필요가 없다.
   async function handlePublish(values: StoryBuilderFormValues) {
     setRejectionReason(undefined);
+    const { visibility } = values.registration;
+    const shouldPublish = await confirmFirstPublish({
+      contentId: draftId,
+      contentLabel: "스토리",
+      visibility,
+      visibilityLabel: VISIBILITY_LABELS[visibility],
+    });
+    if (!shouldPublish) return;
     const payload = formToServer(values);
     setIsPublishing(true);
     try {
@@ -461,6 +485,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
                 </TabsContent>
               </Tabs>
             </BuilderLayout>
+            <FirstPublishConfirmModal />
           </MediaBookSelectionProvider>
         </MediaBookThumbnailsProvider>
       </BuilderUiStateContext.Provider>

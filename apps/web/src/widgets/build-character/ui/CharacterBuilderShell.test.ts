@@ -8,6 +8,6 @@ describe("CharacterBuilderShell", () => {
   // 않고, 탭을 옮기면 링크도 따라간다). 단계 id 가 탭 id 와 같다는 것은 원고 검사가 따로 본다.
   it("links the top bar to the character guide step of the open tab", () => {
     expect(shellSource).toContain(`guidePath={creationGuidePath("character", activeTab)}`);
-    expect(shellSource).toMatch(/const \[activeTab, setActiveTab\] = useState<CharacterBuilderTab>\(/);
+    expect(shellSource).toMatch(/const \[activeTab, setActiveTabState\] = useState<CharacterBuilderTab>\(/);
   });
 });

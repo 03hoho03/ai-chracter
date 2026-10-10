@@ -30,7 +30,7 @@ import { CharacterMacroNotice } from "./CharacterMacroNotice";
 
 const EXAMPLE_DIALOGUE_LIST: CharacterCollapsibleList = "exampleDialogue";
 
-/** 인트로는 단일 필드, 예시 대화는 고급설정 뒤에 숨겨진 add/remove 전용
+/** 인트로는 단일 필드, 예시 대화는 고급 설정 뒤에 숨겨진 add/remove 전용
  * 목록(순서가 판정에 영향 없어 dnd-kit 불필요), 플레이가이드는 선택 입력. */
 export function IntroTab() {
   const form = useFormContext<CharacterBuilderFormValues>();
@@ -220,6 +220,8 @@ function ExampleDialogueItem({ index, onRemove }: ExampleDialogueItemProps) {
   const userLineErrorId = `character-intro-dialogue-${dialogue.id}-user-line-error`;
   const characterLineError = itemErrors?.characterLine;
   const characterLineErrorId = `character-intro-dialogue-${dialogue.id}-character-line-error`;
+  const userLineId = `character-intro-dialogue-${dialogue.id}-user-line`;
+  const characterLineId = `character-intro-dialogue-${dialogue.id}-character-line`;
   const userLineCountId = `character-intro-dialogue-${dialogue.id}-user-line-count`;
   const characterLineCountId = `character-intro-dialogue-${dialogue.id}-character-line-count`;
   const title = `예시 대화 ${index + 1}`;
@@ -233,9 +235,10 @@ function ExampleDialogueItem({ index, onRemove }: ExampleDialogueItemProps) {
       hasError={!!itemErrors}
       trailing={<ItemRemoveButton label={`${title} 삭제`} onClick={onRemove} />}
     >
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor={userLineId}>사용자 대사</Label>
         <BuilderTextarea
-          placeholder="사용자 대사"
+          id={userLineId}
           rows={2}
           aria-invalid={!!userLineError}
           aria-describedby={userLineError ? `${userLineCountId} ${userLineErrorId}` : userLineCountId}
@@ -254,9 +257,10 @@ function ExampleDialogueItem({ index, onRemove }: ExampleDialogueItemProps) {
           </p>
         )}
       </div>
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor={characterLineId}>캐릭터 대사</Label>
         <BuilderTextarea
-          placeholder="캐릭터 대사"
+          id={characterLineId}
           rows={4}
           aria-invalid={!!characterLineError}
           aria-describedby={characterLineError ? `${characterLineCountId} ${characterLineErrorId}` : characterLineCountId}

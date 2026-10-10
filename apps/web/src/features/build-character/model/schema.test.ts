@@ -25,6 +25,31 @@ function validFullForm() {
 /** 초안을 담으려고 nullable로 둔 3필드는 화면에 `*`가
  * 붙어 있고 서버도 요구한다. 타입은 그대로 두고 refine이 상시 검증해 서버 400 왕복 전에 걸린다
  * (스토리 빌더의 같은 3필드와 짝, `features/build-story/model/schema.test.ts`). */
+// 서버 발행 검사는 공백만인 필수 칸을 빈 칸으로 거절한다. 화면도 같은 판정으로 먼저 막아야 발행 버튼이 그 칸을 짚는다.
+describe("characterBuilderSchema blank required text", () => {
+  it.each([
+    [["profile", "name"], "캐릭터 이름을 입력해주세요"],
+    [["profile", "oneLiner"], "한줄소개를 입력해주세요"],
+    [["intro", "firstMessage"], "인트로를 입력해주세요"],
+    [["prompt", "characterPrompt"], "캐릭터 프롬프트를 입력해주세요"],
+    [["registration", "description"], "등록 설명을 입력해주세요"],
+  ] as const)("%j 이 공백만이면 칸 이름을 든 문구로 거절한다", ([section, field], message) => {
+    const form = validFullForm();
+    const result = characterBuilderSchema.safeParse({ ...form, [section]: { ...form[section], [field]: " \n\u3000" } });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toContainEqual(expect.objectContaining({ path: [section, field], message }));
+  });
+
+  it("앞뒤 공백이 있는 값은 통과하고 자르지 않는다", () => {
+    const form = validFullForm();
+    const result = characterBuilderSchema.safeParse({ ...form, profile: { ...form.profile, name: "  루나 " } });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.profile.name).toBe("  루나 ");
+  });
+});
+
 describe("characterBuilderSchema publish-required nullable fields", () => {
   it("rejects a null profile.image", () => {
     const result = characterBuilderSchema.safeParse({

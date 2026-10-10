@@ -676,6 +676,49 @@ function validFullForm() {
   };
 }
 
+// 서버 발행 검사는 공백만인 필수 칸을 빈 칸으로 거절한다. 화면도 같은 판정으로 먼저 막아야 발행 버튼이 그 칸을 짚는다.
+describe("storyBuilderSchema blank required text", () => {
+  const BLANK = " \n\u3000";
+
+  it.each([
+    ["profile.name", (f: ReturnType<typeof validFullForm>) => ({ ...f, profile: { ...f.profile, name: BLANK } }), "스토리 이름을 입력해주세요"],
+    ["profile.oneLiner", (f: ReturnType<typeof validFullForm>) => ({ ...f, profile: { ...f.profile, oneLiner: BLANK } }), "한줄소개를 입력해주세요"],
+    ["registration.description", (f: ReturnType<typeof validFullForm>) => ({ ...f, registration: { ...f.registration, description: BLANK } }), "등록 설명을 입력해주세요"],
+    ["storySetting.worldSetting", (f: ReturnType<typeof validFullForm>) => ({ ...f, storySetting: { promptTemplate: "basic" as const, worldSetting: BLANK } }), "스토리 설정/정보를 입력해주세요"],
+    ["storySetting.customPrompt", (f: ReturnType<typeof validFullForm>) => ({ ...f, storySetting: { promptTemplate: "custom" as const, customPrompt: BLANK } }), "커스텀 프롬프트를 입력해주세요"],
+    ["startingSetups.0.name", (f: ReturnType<typeof validFullForm>) => ({ ...f, startingSetups: [{ ...validStartingSetup(), name: BLANK }] }), "시작설정 이름을 입력해주세요"],
+    ["startingSetups.0.prologue", (f: ReturnType<typeof validFullForm>) => ({ ...f, startingSetups: [{ ...validStartingSetup(), prologue: BLANK }] }), "프롤로그를 입력해주세요"],
+  ] as const)("%s 이 공백만이면 칸 이름을 든 문구로 거절한다", (path, toForm, message) => {
+    const result = storyBuilderSchema.safeParse(toForm(validFullForm()));
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map((issue) => [issue.path.join("."), issue.message])).toContainEqual([path, message]);
+  });
+
+  it.each([
+    ["stat name", () => statDefSchema.safeParse({ ...validStatDef(), name: BLANK }), "스탯 이름을 입력해주세요"],
+    ["stat description", () => statDefSchema.safeParse({ ...validStatDef(), description: BLANK }), "스탯 설명을 입력해주세요"],
+    ["ending name", () => endingSchema.safeParse({ id: "e", name: BLANK, turnGate: 10, judgePrompt: "판정", priorityStatId: null }), "엔딩 이름을 입력해주세요"],
+    ["ending judgePrompt", () => endingSchema.safeParse({ id: "e", name: "엔딩", turnGate: 10, judgePrompt: BLANK, priorityStatId: null }), "판단 프롬프트를 입력해주세요"],
+    ["shortcut name", () => shortcutSchema.safeParse({ id: "s", name: BLANK, description: "설명", prompt: "프롬프트" }), "단축어 이름을 입력해주세요"],
+    ["shortcut description", () => shortcutSchema.safeParse({ id: "s", name: "이름", description: BLANK, prompt: "프롬프트" }), "단축어 설명을 입력해주세요"],
+    ["shortcut prompt", () => shortcutSchema.safeParse({ id: "s", name: "이름", description: "설명", prompt: BLANK }), "실행될 프롬프트를 입력해주세요"],
+  ] as const)("%s 가 공백만이면 거절한다", (_name, parse, message) => {
+    const result = parse();
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map((issue) => issue.message)).toContain(message);
+  });
+
+  it("앞뒤 공백이 있는 값은 통과하고 자르지 않는다", () => {
+    const form = validFullForm();
+    const result = storyBuilderSchema.safeParse({ ...form, profile: { ...form.profile, name: "  항해 " } });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.profile.name).toBe("  항해 ");
+  });
+});
+
 describe("storyBuilderSchema startingSetups", () => {
   it("requires at least one starting setup", () => {
     const empty = storyBuilderSchema.safeParse({ ...validFullForm(), startingSetups: [] });

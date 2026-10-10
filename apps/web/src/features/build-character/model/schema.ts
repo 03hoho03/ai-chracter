@@ -14,6 +14,7 @@ import {
   MAX_PLAY_GUIDE_LENGTH,
   MAX_SITUATIONAL_IMAGE_TRIGGER_LENGTH,
   NOVEL_PERMISSION_VALUES,
+  requiredText,
 } from "@/entities/content";
 
 // 목록과 유니온 타입은 한쪽에서 도출한다. 값 목록을 스키마 옆의 단일 소스로 두고
@@ -28,11 +29,11 @@ export const exampleDialogueSchema = z.object({
   id: z.string(),
   userLine: z
     .string()
-    .min(1, "사용자 대사를 입력해주세요")
+    .refine(...requiredText("사용자 대사를 입력해주세요"))
     .refine(...characterLimit(MAX_EXAMPLE_DIALOGUE_LINE_LENGTH, "사용자 대사")),
   characterLine: z
     .string()
-    .min(1, "캐릭터 대사를 입력해주세요")
+    .refine(...requiredText("캐릭터 대사를 입력해주세요"))
     .refine(...characterLimit(MAX_EXAMPLE_DIALOGUE_LINE_LENGTH, "캐릭터 대사")),
 });
 
@@ -44,8 +45,7 @@ export const situationalImageSchema = z.object({
   image: z.object({ assetId: z.string() }).nullable(),
   situationDescription: z
     .string()
-    .min(1, "어떤 상황에서 이 이미지를 노출할지 입력해주세요")
-    .refine((value) => value.trim().length > 0, "어떤 상황에서 이 이미지를 노출할지 입력해주세요")
+    .refine(...requiredText("노출할 상황을 입력해주세요"))
     .refine(...characterLimit(MAX_SITUATIONAL_IMAGE_TRIGGER_LENGTH, "상황")),
 });
 
@@ -66,16 +66,16 @@ export const characterBuilderSchema = z.object({
           ctx.addIssue({ code: z.ZodIssueCode.custom, message: "대표 이미지를 등록해주세요" });
         }
       }),
-    name: z.string().min(1, "캐릭터 이름을 입력해주세요").refine(...characterLimit(MAX_NAME_LENGTH, "이름")),
+    name: z.string().refine(...requiredText("캐릭터 이름을 입력해주세요")).refine(...characterLimit(MAX_NAME_LENGTH, "이름")),
     oneLiner: z
       .string()
-      .min(1, "캐릭터를 한 줄로 소개해주세요")
+      .refine(...requiredText("한줄소개를 입력해주세요"))
       .refine(...characterLimit(MAX_ONE_LINER_LENGTH, "한줄소개")),
   }),
   intro: z.object({
     firstMessage: z
       .string()
-      .min(1, "사용자와의 첫 대화에서 캐릭터가 건넬 말을 입력해주세요")
+      .refine(...requiredText("인트로를 입력해주세요"))
       .refine(...characterLimit(MAX_INTRO_LENGTH, "인트로")),
     exampleDialogues: z
       .array(exampleDialogueSchema)
@@ -89,14 +89,14 @@ export const characterBuilderSchema = z.object({
   prompt: z.object({
     characterPrompt: z
       .string()
-      .min(1, "캐릭터의 성격, 말투, 배경 등을 자유롭게 서술해주세요")
+      .refine(...requiredText("캐릭터 프롬프트를 입력해주세요"))
       .refine(...characterLimit(MAX_CHARACTER_PROMPT_LENGTH, "캐릭터 프롬프트")),
   }),
   situationalImages: z.array(situationalImageSchema).default([]),
   registration: z.object({
     description: z
       .string()
-      .min(1, "캐릭터를 목록에서 소개할 설명을 입력해주세요")
+      .refine(...requiredText("등록 설명을 입력해주세요"))
       .refine(...characterLimit(MAX_DESCRIPTION_LENGTH, "등록 설명")),
     // CharacterDraftPayload/Response의 genreId/target은 실제로 string | null / ContentTarget | null이다
     // (초안 상태에선 아직 선택 전일 수 있음) — profile.image와 동일한 이유로 nullable로 둔다. 발행

@@ -19,6 +19,7 @@ import {
   useBuilderUiState,
   useSortableList,
   type SortableHandleProps,
+  FieldGuideLink,
 } from "@/features/build-common";
 import {
   FieldLabelText,
@@ -28,6 +29,7 @@ import {
   type StoryCollapsibleList,
 } from "@/features/build-story";
 import { MediaBookConfirmModal } from "@/features/edit-media-book";
+import { creationGuidePath } from "@/shared/config/creationGuide";
 import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 
 import { MediaTagInsertButton } from "./MediaTagInsertButton";
@@ -38,10 +40,14 @@ import { UnknownMediaTagNotice } from "./UnknownMediaTagNotice";
 /** 열림 키의 목록 이름 — 발행 실패 때 셸이 오류 항목을 여는 키와 같은 이름이어야 한다(타입이 목록 정의의 키로 묶는다). */
 const STARTING_SETUP_LIST: StoryCollapsibleList = "startingSetup";
 
-/** '설정 추가' 버튼 id — 스탯·상황 노트·엔딩 탭의 빈 상태에서 이 탭으로 넘어올 때 포커스할 곳이다. */
+// 칸 `?` 가 가리키는 작성 가이드 자리 — 스토리 원고는 칸 블록마다 앵커(블록 첫 칸의 키)가 있어 그 블록까지 바로 간다.
+const PROLOGUE_GUIDE_PATH = `${creationGuidePath("story", "startingSetup")}#startingSetups.*.prologue`;
+const OPENING_SITUATION_GUIDE_PATH = `${creationGuidePath("story", "startingSetup")}#startingSetups.*.openingSituation`;
+
+/** '시작설정 추가' 버튼 id — 스탯·상황 노트·엔딩 탭의 빈 상태에서 이 탭으로 넘어올 때 포커스할 곳이다. */
 export const STARTING_SETUP_ADD_BUTTON_ID = "starting-setup-add";
 
-/** "설정 추가"로 여러 시작설정 생성, 발행하려면 최소 1개 필요.
+/** "시작설정 추가"로 여러 시작설정 생성, 발행하려면 최소 1개 필요.
  * 그 최소 1개는 storyBuilderSchema의 `.min(1)`이 막고, 위반은 발행을 눌렀을 때 토스트와 탭 에러로
  * 드러난다 — 발행 버튼 자체는 비활성화하지 않는다(apps/web/CLAUDE.md §폼 / 빌더). */
 export function StartingSetupTab() {
@@ -63,7 +69,7 @@ export function StartingSetupTab() {
   const uiState = useBuilderUiState();
   const addButtonRef = useRef<HTMLButtonElement>(null);
 
-  // 지운 시작설정 자리에서 포커스를 다음 시작설정의 머리 줄로(없으면 이전, 그것도 없으면 설정 추가 버튼으로) 옮긴다. `keys`
+  // 지운 시작설정 자리에서 포커스를 다음 시작설정의 머리 줄로(없으면 이전, 그것도 없으면 시작설정 추가 버튼으로) 옮긴다. `keys`
   // 는 지우기 전 목록이다 — 이웃의 머리 줄은 지운 뒤에도 남는다. 상한(4개)에서는 추가 버튼이 없지만 그때는 이웃이 늘 있다.
   function focusAfterRemoval(keys: readonly string[], index: number) {
     focusNeighborToggle(keys, index, addButtonRef.current);
@@ -87,7 +93,7 @@ export function StartingSetupTab() {
         title: "시작설정을 지울까요?",
         description: `이 시작설정의 ${contents.join("와 ")}도 함께 지워져요.`,
         confirmLabel: "지우기",
-        // 취소면 삭제 버튼으로, 지웠으면 그 카드가 사라지므로 이웃 시작설정의 머리 줄(없으면 설정 추가 버튼)로.
+        // 취소면 삭제 버튼으로, 지웠으면 그 카드가 사라지므로 이웃 시작설정의 머리 줄(없으면 시작설정 추가 버튼)로.
         onRestoreFocus: () => {
           if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus();
           else focusAfterRemoval(keys, index);
@@ -187,7 +193,7 @@ export function StartingSetupTab() {
           className="w-fit"
           onClick={handleAdd}
         >
-          설정 추가
+          시작설정 추가
         </Button>
       ) : null}
 
@@ -207,7 +213,7 @@ type StartingSetupRowProps = {
 };
 
 /** 이름/프롤로그(필수), 시작상황(선택, 비어있으면 프롤로그가 첫
- * 메시지로 노출됨을 안내), 고급설정 뒤의 플레이가이드/추천 답변(선택). 목록 순서가 곧 기본 선택
+ * 메시지로 노출됨을 안내), 고급 설정 뒤의 플레이가이드/추천 답변(선택). 목록 순서가 곧 기본 선택
  * 우선순위라 dnd-kit로 재정렬한다(AdvancedTab의 situationalImages와 동일 패턴). */
 function StartingSetupRow({
   id,
@@ -302,7 +308,7 @@ function StartingSetupRow({
         <Label htmlFor={`starting-setup-${id}-name`}><FieldLabelText field="startingSetups.*.name" /></Label>
         <Input
           id={`starting-setup-${id}-name`}
-          placeholder="시작설정 이름을 입력해주세요"
+          placeholder="예: 첫 기획 회의"
           aria-invalid={!!rowErrors?.name}
           aria-describedby={rowErrors?.name ? `starting-setup-${id}-name-error` : undefined}
           {...register(`startingSetups.${index}.name`)}
@@ -316,7 +322,10 @@ function StartingSetupRow({
 
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between gap-2">
-          <Label htmlFor={`starting-setup-${id}-prologue`}><FieldLabelText field="startingSetups.*.prologue" /></Label>
+          <div className="flex items-center gap-1">
+            <Label htmlFor={`starting-setup-${id}-prologue`}><FieldLabelText field="startingSetups.*.prologue" /></Label>
+            <FieldGuideLink href={PROLOGUE_GUIDE_PATH} fieldLabel="프롤로그" />
+          </div>
           <MediaTagInsertButton name={`startingSetups.${index}.prologue`} fieldLabel="프롤로그" textareaRef={prologueRef} />
         </div>
         <BuilderTextarea
@@ -324,7 +333,11 @@ function StartingSetupRow({
           placeholder="이 시작설정의 도입부를 입력해주세요"
           rows={5}
           aria-invalid={!!rowErrors?.prologue}
-          aria-describedby={rowErrors?.prologue ? `starting-setup-${id}-prologue-error` : undefined}
+          aria-describedby={
+            rowErrors?.prologue
+              ? `starting-setup-${id}-prologue-help starting-setup-${id}-prologue-error`
+              : `starting-setup-${id}-prologue-help`
+          }
           {...prologueField}
           ref={(element) => {
             prologueField.ref(element);
@@ -333,6 +346,9 @@ function StartingSetupRow({
         />
         <UnknownMediaTagNotice name={`startingSetups.${index}.prologue`} />
         <StoryMacroNotice name={`startingSetups.${index}.prologue`} />
+        <p id={`starting-setup-${id}-prologue-help`} className="text-xs break-keep text-muted-foreground">
+          누가 언제 왜 여기 있는지만 짧게 써요. 작품 상세에서 시작설정을 고를 때도 이 글이 보여요.
+        </p>
         {rowErrors?.prologue && (
           <p id={`starting-setup-${id}-prologue-error`} role="alert" className="text-xs text-destructive-text">
             {rowErrors.prologue.message}
@@ -342,7 +358,10 @@ function StartingSetupRow({
 
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between gap-2">
-          <Label htmlFor={`starting-setup-${id}-opening-situation`}><FieldLabelText field="startingSetups.*.openingSituation" /></Label>
+          <div className="flex items-center gap-1">
+            <Label htmlFor={`starting-setup-${id}-opening-situation`}><FieldLabelText field="startingSetups.*.openingSituation" /></Label>
+            <FieldGuideLink href={OPENING_SITUATION_GUIDE_PATH} fieldLabel="시작상황" />
+          </div>
           <MediaTagInsertButton
             name={`startingSetups.${index}.openingSituation`}
             fieldLabel="시작상황"
@@ -354,7 +373,11 @@ function StartingSetupRow({
           placeholder="채팅 시작 시 상황을 입력해주세요"
           rows={5}
           aria-invalid={!!rowErrors?.openingSituation}
-          aria-describedby={rowErrors?.openingSituation ? `starting-setup-${id}-opening-situation-error` : undefined}
+          aria-describedby={
+            rowErrors?.openingSituation
+              ? `starting-setup-${id}-opening-situation-help starting-setup-${id}-opening-situation-error`
+              : `starting-setup-${id}-opening-situation-help`
+          }
           {...openingSituationField}
           ref={(element) => {
             openingSituationField.ref(element);
@@ -363,8 +386,8 @@ function StartingSetupRow({
         />
         <UnknownMediaTagNotice name={`startingSetups.${index}.openingSituation`} />
         <StoryMacroNotice name={`startingSetups.${index}.openingSituation`} />
-        <p className="text-xs text-muted-foreground">
-          비워두면 채팅 시작 시 프롤로그가 첫 메시지로 노출돼요.
+        <p id={`starting-setup-${id}-opening-situation-help`} className="text-xs break-keep text-muted-foreground">
+          대화방을 열면 AI의 첫 메시지로 한 번 나가요. 비워두면 프롤로그가 대신 나가요.
         </p>
         {rowErrors?.openingSituation && (
           <p
@@ -418,7 +441,7 @@ function StartingSetupRow({
                 `disabled`도, 조건부 렌더도 안 된다(apps/web/CLAUDE.md §포커스) — 둘 다 4번째를 넣는
                 순간 그 컨트롤이 blur/언마운트돼 포커스가 <body>로 떨어진다. 대신 `aria-disabled`로
                 잠그고(ContentListLoadMore와 같은 레시피) 실제 차단은 handleAddSuggestedReply가 한다.
-                같은 자리의 `설정 추가`는 useFieldArray.append()가 새 행으로 포커스를 옮겨 주므로
+                같은 자리의 `시작설정 추가`는 useFieldArray.append()가 새 행으로 포커스를 옮겨 주므로
                 조건부 렌더로 둔다 — 두 버튼에서 실제로 다른 값이다. */}
             <div className="flex gap-2">
               <Input

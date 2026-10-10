@@ -129,7 +129,7 @@ function ShortcutRow({
         <Label htmlFor={`shortcut-${id}-name`}><FieldLabelText field="shortcuts.*.name" /></Label>
         <Input
           id={`shortcut-${id}-name`}
-          placeholder="단축어 이름을 입력해주세요"
+          placeholder="예: 며칠 뒤로"
           aria-invalid={!!shortcutErrors?.name}
           aria-describedby={shortcutErrors?.name ? `shortcut-${id}-name-error` : undefined}
           {...register(`shortcuts.${index}.name`)}

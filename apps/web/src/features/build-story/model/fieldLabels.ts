@@ -21,11 +21,11 @@ export type FieldLabel = {
  * 값을 읽어 두 화면의 칸 이름이 어긋날 수 없게 한다.
  *
  * 키는 폼 경로이고 배열 위치는 `*` 로 쓴다(`STORY_TABS` 의 `fields` 와 같은 표기). 폼 값이 없는 화면 칸은 `$` 로
- * 시작하는 조각을 쓴다(고급설정 스위치). 목록 자체(`startingSetups` 등)도 키로 둔다.
+ * 시작하는 조각을 쓴다(고급 설정 스위치). 목록 자체(`startingSetups` 등)도 키로 둔다.
  *
- * 빌더 화면에 라벨로 보이지 않는 키가 있다. 스탯 아이콘·색은 버튼의 접근 이름으로만 쓰이고, 전개 예시의 두 칸은 빌더에서
- * 자리표시로 보인다. 스탯·상황 노트·엔딩 목록과 미디어 북 인물·장면·배치표는 빌더에 같은 이름의 칸 라벨이 없어 작성 가이드만
- * 읽는다(탭 이름이나 배치표 머리와 같은 글자를 쓴다).
+ * 빌더 화면에 라벨로 보이지 않는 키가 있다. 스탯 아이콘·색은 버튼의 접근 이름으로만 쓰인다. 스탯·상황 노트·엔딩 목록과
+ * 미디어 북 인물·장면·배치표는 빌더에 같은 이름의 칸 라벨이 없어 작성 가이드만 읽는다(탭 이름이나 배치표 머리와 같은
+ * 글자를 쓴다).
  */
 export const STORY_FIELD_LABELS = {
   "profile.image": { label: "대표 이미지", required: true },
@@ -40,7 +40,7 @@ export const STORY_FIELD_LABELS = {
   "storySetting.developmentExamples": {
     label: "전개 예시",
     required: false,
-    note: `고급설정, 최대 ${MAX_DEVELOPMENT_EXAMPLES}개`,
+    note: `고급 설정, 최대 ${MAX_DEVELOPMENT_EXAMPLES}개`,
   },
   "storySetting.developmentExamples.*.userLine": { label: "사용자 메시지", required: false },
   "storySetting.developmentExamples.*.assistantLine": { label: "스토리 응답", required: false },
@@ -49,7 +49,7 @@ export const STORY_FIELD_LABELS = {
   "startingSetups.*.name": { label: "이름", required: true },
   "startingSetups.*.prologue": { label: "프롤로그", required: true },
   "startingSetups.*.openingSituation": { label: "시작상황", required: false },
-  "startingSetups.*.$advanced": { label: "고급설정", required: false },
+  "startingSetups.*.$advanced": { label: "고급 설정", required: false },
   "startingSetups.*.playGuide": { label: "플레이가이드", required: false },
   "startingSetups.*.suggestedReplies": {
     label: "추천 답변",

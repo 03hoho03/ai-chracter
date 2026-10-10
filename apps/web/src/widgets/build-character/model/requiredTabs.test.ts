@@ -14,7 +14,7 @@ function tabIdOfFile(filePath: string): string {
 }
 
 describe("CHARACTER_REQUIRED_TAB_IDS", () => {
-  it("빈 초안에서 오류가 나는 탭은 프로필·인트로·프롬프트·상세다", () => {
+  it("빈 초안에서 오류가 나는 탭은 프로필·인트로·프롬프트·등록이다", () => {
     expect([...CHARACTER_REQUIRED_TAB_IDS].sort()).toEqual(["detail", "intro", "profile", "prompt"]);
   });
 
