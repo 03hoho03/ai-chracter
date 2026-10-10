@@ -72,8 +72,8 @@ export const FirstPersonaNameModal = createCallable<void, Persona | undefined>((
         form.setError("name", { message: "이 이름은 쓸 수 없어요. 다른 이름을 입력해주세요" });
         return;
       }
-      // 409 는 그사이 다른 탭에서 프로필을 만들어 이 판정(0개)이 낡았다는 뜻이다 — 이름을 더 받지 않고 서버 문구를 보이며
-      // 닫는다. 생성 훅이 목록을 다시 받으므로 다시 누르면 있는 프로필로 시작한다.
+      // 프로필 만들기의 409 는 개수 상한(10개)에 닿았다는 뜻뿐이라, 이 모달을 띄운 판정(0개)이 낡았다는 신호다 — 이름을 더
+      // 받지 않고 서버 문구를 보이며 닫는다. 생성 훅이 목록을 다시 받으므로 다시 누르면 있는 프로필로 시작한다.
       if (isApiError(error) && error.status === 409) {
         toast.error(error.message);
         call.end(undefined);
