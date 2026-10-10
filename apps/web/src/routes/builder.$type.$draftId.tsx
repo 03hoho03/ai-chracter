@@ -22,7 +22,14 @@ const builderSearchSchema = z.object({
 
 export const Route = createFileRoute("/builder/$type/$draftId")({
   validateSearch: builderSearchSchema,
-  beforeLoad: ({ context, location }) => requireSession(context.queryClient, location.href),
+  // 세션은 빌더에 들어올 때만 확인한다. 라우터는 서치만 바뀐 이동(탭 전환)과 첫 저장의 id 교체에도 이 함수를 다시 부르는데
+  // (`cause` 가 "stay"), 세션을 잃어 세션 캐시가 비워진 뒤라면 그때 로그인 화면으로 보내져 빌더가 언마운트되고 마지막 저장
+  // 뒤의 편집이 사라진다. 빌더에 머무는 동안에는 세션을 잃어도 화면을 지키고, 다음에 인증이 필요한 화면에 들어갈 때 보낸다.
+  // 이 라우트는 컨텍스트의 `session` 을 읽지 않는다.
+  beforeLoad: async ({ context, location, cause }) => {
+    if (cause === "stay") return;
+    return requireSession(context.queryClient, location.href);
+  },
   component: RouteComponent,
 });
 
