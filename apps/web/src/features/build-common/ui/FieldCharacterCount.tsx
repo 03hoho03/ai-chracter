@@ -2,8 +2,7 @@ import type { ReactNode } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
 
 import { countCharacters } from "@/shared/lib/text/characterCount";
-
-import { CharacterCount } from "./CharacterCount";
+import { CharacterCount } from "@/shared/ui/CharacterCount";
 
 type FieldCharacterCountProps = {
   id: string;

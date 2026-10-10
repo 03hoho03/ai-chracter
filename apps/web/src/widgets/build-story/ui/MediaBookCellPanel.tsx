@@ -7,7 +7,7 @@ import { Camera, ChevronLeft, ChevronRight, Copy, ImageOff, Images, Loader2, X }
 import { useId, useState, type ChangeEvent } from "react";
 
 import { toMediaNameTag } from "@/entities/media-book";
-import { CharacterCount, clampFieldAtCaret, isComposingChange } from "@/features/build-common";
+import { clampFieldAtCaret, isComposingChange } from "@/features/build-common";
 import {
   FieldLabelText,
   findCell,
@@ -26,6 +26,7 @@ import { MediaBookConfirmModal } from "@/features/edit-media-book";
 import { GeneratedImagePickerModal } from "@/features/select-generated-image";
 import { countCharacters } from "@/shared/lib/text/characterCount";
 import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
+import { CharacterCount } from "@/shared/ui/CharacterCount";
 import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
 
 import { toCellKey, type MediaBookPosition } from "./MediaBookGrid";

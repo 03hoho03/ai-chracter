@@ -4,7 +4,8 @@ import type { ReactNode } from "react";
 type CharacterCountProps = {
   /** 입력칸의 `aria-describedby` 가 가리킬 id. */
   id: string;
-  /** 코드 포인트로 센 글자 수(`shared/lib/text/characterCount`). */
+  /** 그 칸의 서버가 한도를 재는 것과 같은 규칙으로 센 글자 수. 규칙이 칸마다 달라(앞뒤 공백을 세는지, 그래핌으로
+   * 세는지) 부르는 쪽이 세어 넘긴다. */
   count: number;
   max: number;
   /** 방금 입력이 상한에서 잘렸는가. 그 순간에만 도움말 자리에 알린다. */
@@ -14,8 +15,8 @@ type CharacterCountProps = {
 };
 
 /**
- * 글자 수 상한이 있는 빌더 입력칸 바로 아래 줄 — 왼쪽은 도움말, 오른쪽은 `n/최대`. 상한에 닿을 때·넘을 때의 모양은
- * `DESIGN.md` Inputs / Fields 절의 Character count 가 정한다. 잘렸다는 알림 자리는 늘 있어야 스크린리더가 바뀐 글을
+ * 글자 수 상한이 있는 입력칸 바로 아래 줄 — 왼쪽은 도움말, 오른쪽은 `n/최대`. 빌더 칸과 빌더 밖 칸이 같은 모양을 쓴다.
+ * 상한에 닿을 때·넘을 때의 모양은 `DESIGN.md` Inputs / Fields 절의 Character count 가 정한다. 잘렸다는 알림 자리는 늘 있어야 스크린리더가 바뀐 글을
  * 읽으므로 비워 둔 채 둔다.
  */
 export function CharacterCount({ id, count, max, isTruncated = false, help }: CharacterCountProps) {

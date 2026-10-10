@@ -35,7 +35,6 @@ export { BuilderLayout } from "./ui/BuilderLayout";
 export { BuilderTabStrip } from "./ui/BuilderTabStrip";
 export { BuilderTopBar } from "./ui/BuilderTopBar";
 export { BuilderTopBarActions } from "./ui/BuilderTopBarActions";
-export { CharacterCount } from "./ui/CharacterCount";
 export { FieldCharacterCount } from "./ui/FieldCharacterCount";
 export { FieldGuideLink } from "./ui/FieldGuideLink";
 export { FirstPublishConfirmModal } from "./ui/FirstPublishConfirmModal";
