@@ -21,6 +21,10 @@ const WELL_CLASS: Record<RecentChatsSurface, string> = {
 
 const SKELETON_ROW_KEYS = [0, 1, 2, 3, 4];
 
+/** 섹션 이름에 다는 속성. 드로어가 이 이름으로 첫 포커스 자리를 찾으므로 두 곳이 같은 상수를 쓴다 — 한쪽만 바꾸면
+ * 조용히 Radix 기본 포커스로 떨어진다. */
+export const RECENT_CHATS_HEAD_ATTR = "data-recent-chats-head";
+
 type RecentChatsSectionProps = {
   /** 로그인한 사용자 id. 없으면 비로그인 안내를 그린다. */
   viewerId: string | undefined;
@@ -43,7 +47,7 @@ type RecentChatsSectionProps = {
  * 스크롤 아래로 가서 거기 두면 스크롤해야 닿는다.
  *
  * 섹션 이름은 프로그램 포커스만 받는다(`tabIndex={-1}`, Tab 순서 밖) — 채팅방에서 드로어를 처음 열면 목록이 아직
- * 로딩 중이라 현재 방 행이 없어, 드로어가 그 대신 여기(`data-recent-chats-head`)로 포커스를 보낸다.
+ * 로딩 중이라 현재 방 행이 없어, 드로어가 그 대신 여기(`RECENT_CHATS_HEAD_ATTR`)로 포커스를 보낸다.
  */
 export function RecentChatsSection({ viewerId, isSessionPending, surface, onNavigate, className }: RecentChatsSectionProps) {
   const labelId = useId();
@@ -52,7 +56,11 @@ export function RecentChatsSection({ viewerId, isSessionPending, surface, onNavi
   return (
     <section aria-labelledby={labelId} className={cn("mt-4", className)}>
       <div className="flex h-8 items-center justify-between pr-2 pl-4">
-        <p id={labelId} tabIndex={-1} data-recent-chats-head className="text-xs font-medium text-muted-foreground outline-none">
+        <p
+          id={labelId}
+          tabIndex={-1}
+          {...{ [RECENT_CHATS_HEAD_ATTR]: "" }}
+          className="text-xs font-medium text-muted-foreground outline-none">
           최근 대화
         </p>
         {!isSignedOut && (

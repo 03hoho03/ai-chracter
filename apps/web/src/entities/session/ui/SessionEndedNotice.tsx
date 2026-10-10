@@ -13,8 +13,9 @@ const MESSAGE_CLASS = "min-w-0 flex-1 basis-48 text-xs break-keep text-muted-for
  * 재시도 버튼도, 경고 틴트(`destructive`)·`role="alert"` 도 쓰지 않는다 — 본인인증 안내(`IdentityRequiredNotice`)와 같은
  * 중립 표면에 사실과 다음 행동만 둔다.
  *
- * 로그인이 풀렸으면 로그인 화면으로 보내고, 로그인 뒤 지금 주소로 돌아오게 한다. 화면에 남은 내 메시지는 서버가 거절해
- * 저장되지 않았으므로 그렇다고 말한다(다시 들어오면 사라진다). 정지는 다시 로그인해도 풀리지 않아 링크 없이 문의처만 말한다. */
+ * 로그인이 풀렸으면 로그인 화면으로 보내고, 로그인 뒤 지금 주소로 돌아오게 한다. 새 메시지든 다시 생성하기든 미리보기 시작이든
+ * 서버가 거절해 아무것도 처리되지 않았으므로, 어느 경우에나 참인 "요청이 처리되지 않았다"로 말한다(화면에 남은 내
+ * 메시지는 저장되지 않아 다시 들어오면 사라진다). 정지는 다시 로그인해도 풀리지 않아 링크 없이 문의처만 말한다. */
 export function SessionEndedNotice({ reason }: { reason: SessionEndReason }) {
   const redirect = useRouterState({ select: (state) => loginRedirectTarget(state.location) });
 
@@ -28,7 +29,7 @@ export function SessionEndedNotice({ reason }: { reason: SessionEndReason }) {
 
   return (
     <div role="status" className={NOTICE_CLASS}>
-      <p className={MESSAGE_CLASS}>로그인이 풀렸어요. 보낸 메시지는 전달되지 않았어요.</p>
+      <p className={MESSAGE_CLASS}>로그인이 풀려 요청이 처리되지 않았어요.</p>
       <Button asChild variant="outline" size="sm">
         <Link to="/login" search={{ redirect }}>
           다시 로그인

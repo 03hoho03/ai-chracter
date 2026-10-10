@@ -25,7 +25,7 @@ import { assertNever } from "@/shared/lib/assertNever";
 import { NotificationFeedStatus } from "./NotificationFeedStatus";
 import { ContentTypeToggle } from "./ContentTypeToggle";
 import { ProfileDestinationLink } from "./ProfileDestinationLink";
-import { RecentChatsSection } from "./RecentChatsSection";
+import { RECENT_CHATS_HEAD_ATTR, RecentChatsSection } from "./RecentChatsSection";
 import { SIDE_PANEL_ID } from "./SidePanel";
 import { SIDE_PANEL_NAV_ROW_CLASS } from "./sidePanelRowClass";
 import { useIsSidePanelLayout } from "../lib/useIsSidePanelLayout";
@@ -121,7 +121,7 @@ export function MobileNavDrawer({ className }: { className?: string }) {
           // 사용자가 움직였을 수 있다). 그 밖의 화면에서 현재 링크가 없으면 Radix 기본(첫 버튼)에 맡긴다.
           const content = contentRef.current;
           const current = content?.querySelector<HTMLElement>('a[aria-current="page"]');
-          const target = current ?? (isChatRoom ? content?.querySelector<HTMLElement>("[data-recent-chats-head]") : null);
+          const target = current ?? (isChatRoom ? content?.querySelector<HTMLElement>(`[${RECENT_CHATS_HEAD_ATTR}]`) : null);
           if (!target) return;
           event.preventDefault();
           target.focus();
