@@ -1,4 +1,5 @@
-"""채팅 턴의 판정(스탯 규칙·엔딩·스토리 칸·캐릭터 상황 이미지)과 그 헬퍼. 재생성은 이 가운데 그림 판정(칸·상황 이미지)만 한다.
+"""채팅 턴의 판정(스탯 규칙·엔딩·스토리 칸·캐릭터 상황 이미지)과 그 헬퍼. 재생성은 엔딩 판정을 하지 않고, 스탯은 바꾸는 턴의
+효과를 되돌린 값에서 다시 판정할 수 있을 때만 다시 판정한다(`RegenerateStatJudgment`).
 빌더 미리보기도 같은 판정을 하되(상황 이미지 판정은 없다) 입력을 DB 대신 초안 페이로드에서 읽는 미리보기판 클래스를 쓴다 —
 입력 출처는 생성자가, 턴마다 같은 공통 입력은 `JudgmentContext` 가 갖는다.
 
@@ -75,7 +76,7 @@ from api.content.schemas import (
 from api.core.config import settings
 from api.core.sentry import capture_dependency_failure
 from api.db.models.character import SituationalImage
-from api.db.models.chat import ChatMessage, ChatRoom, ChatRoomStat
+from api.db.models.chat import ChatMessage, ChatRoom, ChatRoomStat, ChatTurn
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import (
     Ending,
@@ -88,7 +89,14 @@ from api.db.models.story import (
     StatDef,
     StatRule,
 )
-from api.llm.client import CallUsage, LLMCallContext, LLMClient, LLMClientError, dependency_tag
+from api.llm.client import (
+    CallUsage,
+    LLMCallContext,
+    LLMClient,
+    LLMClientError,
+    dependency_tag,
+    is_retryable_judgment_failure,
+)
 
 # 판정 실패는 흡수하더라도 서버 로그에 남긴다 — 라우터와 같은 이유로 이 모듈의 로그도 전부 warning 이상이다.
 logger = logging.getLogger(__name__)
@@ -266,6 +274,40 @@ async def _await_stat_judgment(
         logger.warning("%s 스탯 판정 실패 — 이번 턴의 스탯·엔딩 판정을 건너뛴다: %s", log_subject, exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
         return None
+
+
+async def _await_stat_rejudgment(
+    llm_client: LLMClient,
+    request: StatJudgmentRequest,
+    usage: LLMCallContext,
+    *,
+    log_subject: str,
+    current_stats: dict[str, float],
+    stat_defs: list[StatDef],
+) -> dict[str, float] | None:
+    """재생성의 스탯 재판정 — `_await_stat_judgment` 와 같되, 첫 호출이 곧바로 다시 부를 만한 실패
+    (`is_retryable_judgment_failure`)면 한 번만 더 부른다. 재생성은 원 턴의 효과가 이미 반영된 상태에서 시작해 실패하면 새 응답에
+    맞지 않는 스탯이 남으므로 다시 부를 만한 실패에서는 한 번 더 시도할 값이 있다. 보내기·수정의 판정은 실패해도 "그 턴의 효과
+    없음"으로 일관되므로 다시 부르지 않는다 — 그래서 재시도를 공통 헬퍼가 아니라 여기에만 둔다.
+
+    다시 부르는 것은 LLM 호출뿐이고 반영(`apply_rule_judgment`)은 성공한 결과 하나에 한 번이다. 실패한 호출마다 경고를 한 줄씩
+    남기고(보내기·수정의 판정 실패 경고와 같은 "스탯 판정 실패"가 들어 있어 실패율을 함께 셀 수 있다), Bugsink 승격은 끝내
+    실패했을 때 한 번이다. 끝내 실패하면 `None` 이다."""
+    if request.prompt is None:
+        return apply_rule_judgment(current_stats, [], request.rule_ids, stat_defs)
+    attempt = 1
+    while True:
+        try:
+            rule_judgment = await llm_client.generate_structured(request.prompt, StatRuleJudgmentResult, usage=usage)
+        except LLMClientError as exc:
+            if attempt == 1 and is_retryable_judgment_failure(exc):
+                attempt += 1
+                logger.warning("%s 스탯 판정 실패 — 한 번 다시 부른다: %s", log_subject, exc)
+                continue
+            logger.warning("%s 스탯 판정 실패 — 옛 응답의 스탯 효과를 그대로 둔다: %s", log_subject, exc)
+            capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+            return None
+        return apply_rule_judgment(current_stats, rule_judgment.fired_rule_ids, request.rule_ids, stat_defs)
 
 
 async def _no_judgment() -> None:
@@ -639,6 +681,8 @@ class TurnJudgmentResult:
     stat_writes: dict[str, float] = field(default_factory=dict)
     # 바뀐 스탯마다 `[반영 전, 반영 뒤]` — 턴 기록의 `stat_changes` 가 이 값이다. 반영 전 값이 없던 스탯은 `None` 이다.
     stat_changes: dict[str, list[float | None]] = field(default_factory=dict)
+    # 재생성이 스탯을 다시 판정해 위 칸들을 채웠는가. 거짓이면 재생성 기록은 바꾸는 응답의 기록에서 스탯 변화를 이어받는다.
+    stats_rejudged: bool = False
     stat_change_events: list[ChatStatChangeEvent] = field(default_factory=list)
     judged_cell_id: uuid.UUID | None = None
     matched_image: SituationalImage | None = None
@@ -762,6 +806,124 @@ class StatJudgment:
     def apply(self, ctx: JudgmentContext, result: TurnJudgmentResult) -> None:
         result.stat_rows = self._stat_rows
         _apply_stat_result(ctx, result, self._current_stats, self._updated)
+
+
+def _starting_values(
+    current_stats: dict[str, float], stat_changes: dict[str, list[float | None]], stat_defs: list[StatDef]
+) -> dict[str, float]:
+    """바꾸는 응답의 턴 기록에 남은 변화(`{스탯: [반영 전, 반영 뒤]}`)를 지금 값에서 되돌린 값 — 그 턴이 시작할 때의 값이다.
+    기록에 없는 스탯은 그 턴이 바꾸지 않았으니 지금 값 그대로다. 반영 전 값이 비어 있으면 그 스탯의 시작값(`initial_value`)으로
+    되돌린다 — `load_room_stats` 가 행이 없는 스탯을 시작값으로 채우는 것과 같은 뜻이다. 비어 있다고 판정 입력에서 빼면, 규칙이
+    발동하지 않은 판정 스탯은 판정 결과에도 없어 쓰이지 않고 원 턴의 값이 그대로 굳는다. 지금 버전에 정의가 없는 스탯은 판정
+    대상이 아니므로 지금 값 그대로 둔다. 기록은 JSON 이라 정수·실수가 섞여 오므로 실수로 맞춘다."""
+    initial_values = {str(stat_def.entity_id): float(stat_def.initial_value) for stat_def in stat_defs}
+    starting = dict(current_stats)
+    for stat_id, (before, _after) in stat_changes.items():
+        if before is not None:
+            starting[stat_id] = float(before)
+        elif stat_id in initial_values:
+            starting[stat_id] = initial_values[stat_id]
+    return starting
+
+
+class RegenerateStatJudgment:
+    """재생성의 스탯 재판정 — 바꾸는 응답의 턴 효과를 되돌린 값에서 새 응답으로 다시 판정한다. 그 응답의 턴 기록이 있고, 그
+    기록에 엔딩이 없고, 방이 아직 엔딩 전이고, 그 기록의 턴이 방의 마지막 턴(`turn_number == turn_count`)일 때만 한다.
+
+    - 엔딩이 난 턴은 되돌리면 사용자 단위 엔딩 수집과 엔딩 뒤 판정 정지까지 건드리므로 그대로 둔다.
+    - 기록이 없는 턴(기록을 쓰기 전에 보낸 턴)은 무엇을 되돌릴지 모른다.
+    - 마지막 턴이 아니면(메시지 삭제로 뒤 턴을 지워 앞 응답이 마지막이 된 방) 기록의 반영 전 값이 절대값이라 되돌리면 지운 턴들의
+      효과까지 사라진다. 메시지 삭제는 지운 턴의 효과를 남기므로 그 의미를 지킨다.
+
+    되돌린 값은 메모리에서 판정 입력으로만 쓰고, 되돌림과 새 값은 쓰기 구간이 한 커밋에 쓴다 — 생성 프롬프트는 이미 지금 DB 값으로
+    조립됐고(상황 노트가 지금 스탯으로 고른다), 생성이 실패한 재생성은 이 판정까지 오지 않아 스탯이 그대로다. 판정이 반영 전 값에서
+    출발하므로 카운터도 반영 전 값에서 한 번만 구른다(원 턴의 카운터는 되돌림으로 사라진다).
+
+    판정 LLM 실패는 다시 부를 만한 종류(일시적인 서버·연결 오류와 파싱 실패)에 한해 한 번 더 부르고(`_await_stat_rejudgment`),
+    끝내 실패하면 되돌리지 않는다 — 스탯 값과
+    `statChange` 는 그대로이고 재생성 기록은 옛 기록의 변화를 이어받는다(재판정 전 재생성과 같은 화면이고, 다음 재생성이 그 기록으로
+    정확히 되돌린다). 준비의 DB 읽기·렌더 실패도 같은 결과다. 엔딩 판정은 하지 않는다 — 엔딩 판정은 게이트를 넘긴 뒤 5턴마다
+    판정 차례가 온 턴(`is_ending_check_due`)에만 돌므로, 재판정한 스탯이 엔딩 조건을 새로 채우면 그것을 보는 것은 다음에 판정
+    차례가 오는 새 턴이다. 재생성한 턴 자신이 판정 차례였다면 그 차례의 엔딩 기회는 다음 차례(5턴 뒤)로 밀린다."""
+
+    wave = 1
+
+    def __init__(
+        self,
+        db: AsyncSession,
+        room: ChatRoom,
+        setup: StartingSetup,
+        replaced_message_id: uuid.UUID,
+        *,
+        log: logging.Logger,
+    ) -> None:
+        self._db = db
+        self._room = room
+        self._setup = setup
+        self._replaced_message_id = replaced_message_id
+        self._log = log
+        self._stat_defs: list[StatDef] = []
+        self._stat_rows: dict[str, ChatRoomStat] = {}
+        # 지금 DB 값(화면이 들고 있는 값)과 바꾸는 턴이 시작할 때의 값.
+        self._current_stats: dict[str, float] = {}
+        self._starting_stats: dict[str, float] = {}
+        self._request: StatJudgmentRequest | None = None
+        self._updated: dict[str, float] | None = None
+
+    async def prepare(self, ctx: JudgmentContext) -> None:
+        if self._room.ending_reached:
+            return
+        try:
+            async with self._db.begin_nested():
+                record = await self._db.scalar(
+                    select(ChatTurn).where(ChatTurn.assistant_message_id == self._replaced_message_id)
+                )
+                if record is None or record.ending_entity_id is not None or record.turn_number != self._room.turn_count:
+                    return
+                stat_defs, stat_rows, current_stats = await load_room_stats(self._db, self._room.id, self._setup.id)
+                rules_by_stat_id = await _load_stat_rules(self._db, stat_defs)
+        except SQLAlchemyError as exc:
+            self._log.warning(
+                "%s 스탯 재판정 입력 조회 실패 — 옛 응답의 스탯 효과를 그대로 둔다: %s", ctx.log_subject, exc
+            )
+            capture_dependency_failure(exc, dependency="db")
+            return
+        self._stat_defs, self._stat_rows, self._current_stats = stat_defs, stat_rows, current_stats
+        self._starting_stats = _starting_values(current_stats, record.stat_changes, stat_defs)
+        self._request = _prepare_stat_request(ctx, stat_defs, rules_by_stat_id, log=self._log)
+
+    async def judge(self, llm_client: LLMClient, ctx: JudgmentContext) -> None:
+        if self._request is None:
+            return
+        self._updated = await _await_stat_rejudgment(
+            llm_client,
+            self._request,
+            LLMCallContext(
+                call_site="chat_stat_judgment",
+                user_id=self._room.user_id,
+                room_id=self._room.id,
+                usage_sink=ctx.usage_sink,
+            ),
+            log_subject=ctx.log_subject,
+            current_stats=self._starting_stats,
+            stat_defs=self._stat_defs,
+        )
+
+    def apply(self, ctx: JudgmentContext, result: TurnJudgmentResult) -> None:
+        """쓸 값과 `statChange` 는 지금 DB 값과 달라진 스탯이다 — 되돌리기만 하고 새 판정이 다시 바꾸지 않은 스탯도 써야 하고,
+        화면은 지금 DB 값을 들고 있다. 기록에 남길 변화는 턴이 시작할 때의 값 대비다(이 응답에 귀속된 효과)."""
+        updated = self._updated
+        ctx.stat_after = updated
+        if updated is None:
+            return
+        result.stat_rows = self._stat_rows
+        result.stats_rejudged = True
+        for stat_id, new_value in updated.items():
+            if new_value != self._current_stats.get(stat_id):
+                result.stat_writes[stat_id] = new_value
+                result.stat_change_events.append(ChatStatChangeEvent(stat_id=stat_id, new_value=new_value))
+            if new_value != self._starting_stats.get(stat_id):
+                result.stat_changes[stat_id] = [self._starting_stats.get(stat_id), new_value]
 
 
 class EndingJudgment:
@@ -1106,13 +1268,20 @@ def new_turn_judgments(
     return [SituationalImageJudgment(db, room)]
 
 
-def regenerate_judgments(db: AsyncSession, room: ChatRoom, setup: StartingSetup | None) -> list[TurnJudgment]:
-    """재생성이 할 판정 — 그림 판정만이다(스토리는 칸, 캐릭터는 상황 이미지). 스탯·엔딩 판정은 하지 않는다: 원 응답 때
-    이미 한 번 반영됐고, 그 반영분을 되돌릴 턴별 기록이 없어 다시 하면 같은 턴이 두 번 반영된다. 그림 판정은 다시 한다 —
-    노출 기록은 첫 노출만 남겨 멱등이라 중복이 생기지 않고, 새 응답 글에 맞는 그림이 붙는다. 스토리 칸 판정은 엔딩 뒤에도
-    한다(새 턴과 같다)."""
+def regenerate_judgments(
+    db: AsyncSession,
+    room: ChatRoom,
+    setup: StartingSetup | None,
+    replaced_message_id: uuid.UUID,
+    *,
+    log: logging.Logger,
+) -> list[TurnJudgment]:
+    """재생성이 할 판정과 그 준비 순서. 스토리는 스탯 재판정 → 칸 순으로 준비하고 둘을 함께 부른다. 스탯은 바꾸는 응답의 턴
+    효과를 되돌린 값에서 다시 판정하되 그럴 수 있는 턴에서만 한다(`RegenerateStatJudgment`). 엔딩 판정은 하지 않는다. 그림
+    판정은 다시 한다 — 노출 기록은 첫 노출만 남겨 멱등이라 중복이 생기지 않고, 새 응답 글에 맞는 그림이 붙는다. 스토리 칸
+    판정은 엔딩 뒤에도 한다(새 턴과 같다). 캐릭터는 상황 이미지 하나다. `log` 는 스탯 재판정 준비 실패 경고의 로거다."""
     if setup is not None:
-        return [MediaCellJudgment(db, room)]
+        return [RegenerateStatJudgment(db, room, setup, replaced_message_id, log=log), MediaCellJudgment(db, room)]
     return [SituationalImageJudgment(db, room)]
 
 

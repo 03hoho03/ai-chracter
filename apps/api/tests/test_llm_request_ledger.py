@@ -329,8 +329,9 @@ _CHARACTER_TURN_SITES = {"chat_generate", "chat_situational_image", "chat_memory
 _REQUIRED_CALL_SITES: dict[str, set[str]] = {
     "send-story": _STORY_TURN_SITES,
     "edit-story": _STORY_TURN_SITES,
+    # 기록 없는 응답의 재생성은 스탯을 다시 판정하지 않는다. 단축어 경우는 마지막 턴의 기록(엔딩 없음)이 있어 다시 판정한다.
     "regenerate-story": {"chat_generate", "chat_media_book_image", "chat_memory_summary"},
-    "regenerate-story-shortcut": {"chat_generate", "chat_media_book_image", "chat_memory_summary"},
+    "regenerate-story-shortcut": {"chat_generate", "chat_stat_judgment", "chat_media_book_image", "chat_memory_summary"},
     "send-character": _CHARACTER_TURN_SITES,
     "edit-character": _CHARACTER_TURN_SITES,
     "regenerate-character": {"chat_generate", "chat_situational_image", "chat_memory_summary"},

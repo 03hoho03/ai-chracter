@@ -247,8 +247,8 @@ class ChatTurn(Base):
       `stat_changes` 는 `{statEntityId: [before, after]}` 다.
 
     응답이 재생성·수정·메시지 삭제로 지워져도 그 행은 방이 지워지거나 초기화될 때까지 남는다. 그래서 한 방 안에서
-    `(chat_room_id, turn_number)` 는 유일하지 않고(수정 뒤 같은 턴 번호가 둘, 재생성 체인은 같은 `stat_changes` 를
-    복사한 행이 여럿), `stat_changes` 를 방 단위로 합치면 이중 계산이 된다 — 기록은 메시지 id 로 찾는다.
+    `(chat_room_id, turn_number)` 는 유일하지 않고(수정 뒤 같은 턴 번호가 둘, 재생성 체인은 같은 턴의 스탯 효과를
+    행마다 다시 적는다), `stat_changes` 를 방 단위로 합치면 이중 계산이 된다 — 기록은 메시지 id 로 찾는다.
 
     방 삭제·탈퇴는 `delete_chat_rooms` 가 방 행보다 먼저 이 행을 지운다(`ON DELETE CASCADE` 가 없다). 초기화도 그 방의
     행을 지운다 — 방 행은 남아 FK 와는 무관하고, 지운 대화의 기록을 남기지 않으려는 것이다. `kind`·`charge_source` 는

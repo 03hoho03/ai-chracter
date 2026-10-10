@@ -628,7 +628,8 @@ async def test_regenerate_story_message_rejudges_media_cell(
 
     events = await _regenerate(db_client, room_id, fake)
 
-    assert fake.schemas() == [ImageMatchJudgmentResult]
+    # 마지막 턴의 기록이 있어 스탯도 다시 판정한다 — 칸 판정과 함께 부르므로 순서는 보지 않는다.
+    assert sorted(schema.__name__ for schema in fake.schemas()) == ["ImageMatchJudgmentResult", "StatRuleJudgmentResult"]
     final = events[-1]["finalMessage"]
     assert final["imageId"] == str(cell.entity_id)
     assert (final["imageWidth"], final["imageHeight"]) == (300, 400)
@@ -681,7 +682,8 @@ async def test_regenerate_story_message_without_candidates_makes_no_judgment_cal
 
     events = await _regenerate(db_client, room_id, fake)
 
-    assert fake.calls == []
+    # 칸 후보가 없어 칸 판정은 부르지 않는다 — 마지막 턴의 스탯 재판정만 나간다.
+    assert [site for site, _, _ in fake.calls] == ["chat_stat_judgment"]
     assert events[-1]["finalMessage"]["imageId"] is None
 
 
