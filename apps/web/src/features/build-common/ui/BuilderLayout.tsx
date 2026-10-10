@@ -37,6 +37,11 @@ type BuilderLayoutProps = {
  * `min-h-0`(그리드 자식의 기본 `min-height:auto`를 되돌린다) + `overflow-y-auto`가 없으면 두 열이
  * 콘텐츠 높이만큼 늘어나 페이지 전체가 스크롤된다 — `lg:h-below-header`로
  * 그리드 행 자체를 뷰포트 높이에 고정하고, 각 열에 그 두 클래스를 걸어 열 내부만 스크롤되게 한다.
+ *
+ * 폼 열의 `lg:relative`는 그 안의 `sr-only`(`position: absolute`) 요소들이 이 스크롤 상자를 기준으로
+ * 잡게 한다. 없으면 기준이 문서가 되어, 글자 수 화면 밖 접두처럼 폼 아래쪽에 놓인 그 요소들이 상자에
+ * 잘리지 않은 채 문서 높이를 늘린다. 그러면 폼 열을 끝까지 내린 뒤 더 굴릴 때 문서가 스크롤되어 폼·미리보기
+ * 두 열이 함께 위로 밀려 올라가고 아래가 빈 화면이 된다.
  */
 export function BuilderLayout({ children, preview, isPreviewOpen }: BuilderLayoutProps) {
   return (
@@ -49,7 +54,7 @@ export function BuilderLayout({ children, preview, isPreviewOpen }: BuilderLayou
     >
       <div
         className={cn(
-          "flex-col gap-6 px-4 sm:px-6 py-10 lg:pt-6 lg:flex lg:min-h-0 lg:overflow-y-auto",
+          "flex-col gap-6 px-4 sm:px-6 py-10 lg:pt-6 lg:relative lg:flex lg:min-h-0 lg:overflow-y-auto",
           isPreviewOpen ? "hidden" : "flex",
         )}
       >
