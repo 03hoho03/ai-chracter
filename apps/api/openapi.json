@@ -12748,7 +12748,7 @@
           "persona"
         ],
         "summary": "Delete Persona",
-        "description": "프로필을 지운다. 이 프로필을 참조하던 방은 \"선택 없음\"이 되고, 기본 프로필이었으면\n기본도 비운다.\nFK에 `ondelete`가 없으므로 참조를 먼저 끊고 flush한 뒤 지운다.",
+        "description": "프로필을 지운다. 마지막 하나면 409다. 이 프로필을 참조하던 방은 \"선택 없음\"이 되고(승격된 기본으로 바꾸지\n않는다 — 그 방에서 고른 적 없는 이름이 다음 턴에 끼어든다), 기본 프로필이었으면 남은 것 중 가장 먼저 만든 것이\n기본이 된다. 개수는 유저 행을 잠근 뒤에 세야 두 요청이 동시에 마지막 둘을 지우지 못한다.\nFK에 `ondelete`가 없으므로 참조를 먼저 끊고 flush한 뒤 지운다.",
         "operationId": "delete_persona_me_personas__persona_id__delete",
         "parameters": [
           {
@@ -12785,7 +12785,7 @@
           "persona"
         ],
         "summary": "Set Default Persona",
-        "description": "`/me/personas/default`가 아닌 이유: `/me/personas/{persona_id}`와 모양이 같아\n`\"default\"`를 UUID로 파싱하다 422가 난다.",
+        "description": "`/me/personas/default`가 아닌 이유: `/me/personas/{persona_id}`와 모양이 같아\n`\"default\"`를 UUID로 파싱하다 422가 난다.\n\n프로필이 있으면 null(비우기)은 409다. 요청 모델이 아니라 여기서 막는 이유: 방 선택(`PUT /chat-rooms/{id}/persona`)과\n같은 모델을 쓰고, 방에서는 \"선택 안 함\"이 계속 된다. 프로필이 없으면 비울 것이 없어 그대로 둔다.",
         "operationId": "set_default_persona_me_default_persona_put",
         "requestBody": {
           "content": {
@@ -20172,6 +20172,18 @@
               }
             ],
             "title": "Startingsetupid"
+          },
+          "personaId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Personaid"
           }
         },
         "type": "object",
@@ -27923,7 +27935,7 @@
           "personaId"
         ],
         "title": "PersonaSelectRequest",
-        "description": "`PUT /me/default-persona`와 `PUT /chat-rooms/{id}/persona`가 공유한다. `persona_id`는\n필수다 — null(해제)은 명시해야 하고, 필드를 빼먹은 요청은 422다."
+        "description": "`PUT /me/default-persona`와 `PUT /chat-rooms/{id}/persona`가 공유한다. `persona_id`는\n필수다 — null(해제)은 명시해야 하고, 필드를 빼먹은 요청은 422다. 기본 지정에서 null을 막는 건 그 라우트가 한다(방\n선택은 null이 \"선택 안 함\"이라 계속 받는다)."
       },
       "PersonaUpsertRequest": {
         "properties": {
@@ -29025,6 +29037,19 @@
       },
       "SignupRequest": {
         "properties": {
+          "personaName": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Personaname"
+          },
           "email": {
             "type": "string",
             "format": "email",
@@ -29168,6 +29193,19 @@
       },
       "SocialOnboardingRequest": {
         "properties": {
+          "personaName": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Personaname"
+          },
           "nickname": {
             "type": "string",
             "minLength": 1,

@@ -5033,8 +5033,9 @@ export interface paths {
         post?: never;
         /**
          * Delete Persona
-         * @description 프로필을 지운다. 이 프로필을 참조하던 방은 "선택 없음"이 되고, 기본 프로필이었으면
-         *     기본도 비운다.
+         * @description 프로필을 지운다. 마지막 하나면 409다. 이 프로필을 참조하던 방은 "선택 없음"이 되고(승격된 기본으로 바꾸지
+         *     않는다 — 그 방에서 고른 적 없는 이름이 다음 턴에 끼어든다), 기본 프로필이었으면 남은 것 중 가장 먼저 만든 것이
+         *     기본이 된다. 개수는 유저 행을 잠근 뒤에 세야 두 요청이 동시에 마지막 둘을 지우지 못한다.
          *     FK에 `ondelete`가 없으므로 참조를 먼저 끊고 flush한 뒤 지운다.
          */
         delete: operations["delete_persona_me_personas__persona_id__delete"];
@@ -5055,6 +5056,9 @@ export interface paths {
          * Set Default Persona
          * @description `/me/personas/default`가 아닌 이유: `/me/personas/{persona_id}`와 모양이 같아
          *     `"default"`를 UUID로 파싱하다 422가 난다.
+         *
+         *     프로필이 있으면 null(비우기)은 409다. 요청 모델이 아니라 여기서 막는 이유: 방 선택(`PUT /chat-rooms/{id}/persona`)과
+         *     같은 모델을 쓰고, 방에서는 "선택 안 함"이 계속 된다. 프로필이 없으면 비울 것이 없어 그대로 둔다.
          */
         put: operations["set_default_persona_me_default_persona_put"];
         post?: never;
@@ -8117,6 +8121,8 @@ export interface components {
             contentType: "character" | "story";
             /** Startingsetupid */
             startingSetupId?: string | null;
+            /** Personaid */
+            personaId?: string | null;
         };
         /** ChatRoomListItem */
         ChatRoomListItem: {
@@ -11284,7 +11290,8 @@ export interface components {
         /**
          * PersonaSelectRequest
          * @description `PUT /me/default-persona`와 `PUT /chat-rooms/{id}/persona`가 공유한다. `persona_id`는
-         *     필수다 — null(해제)은 명시해야 하고, 필드를 빼먹은 요청은 422다.
+         *     필수다 — null(해제)은 명시해야 하고, 필드를 빼먹은 요청은 422다. 기본 지정에서 null을 막는 건 그 라우트가 한다(방
+         *     선택은 null이 "선택 안 함"이라 계속 받는다).
          */
         PersonaSelectRequest: {
             /** Personaid */
@@ -11764,6 +11771,8 @@ export interface components {
         };
         /** SignupRequest */
         SignupRequest: {
+            /** Personaname */
+            personaName?: string | null;
             /**
              * Email
              * Format: email
@@ -11844,6 +11853,8 @@ export interface components {
          *     토큰이 새도 그 쿠키가 없는 다른 브라우저에서는 가입을 끝낼 수 없게 하려는 것이다.
          */
         SocialOnboardingRequest: {
+            /** Personaname */
+            personaName?: string | null;
             /** Nickname */
             nickname: string;
             /**
