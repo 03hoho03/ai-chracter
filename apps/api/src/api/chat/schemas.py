@@ -18,6 +18,8 @@ class ChatRoomCreateRequest(CamelModel):
     content_id: uuid.UUID
     content_type: Literal["character", "story"]
     starting_setup_id: uuid.UUID | None = None
+    # 시작 화면에서 고른 대화 프로필. 없으면 기본 프로필로 시작한다(이 필드를 모르는 예전 화면도 그대로 된다).
+    persona_id: uuid.UUID | None = None
 
 
 class ChatMessageCreateRequest(CamelModel):

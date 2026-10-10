@@ -6,16 +6,40 @@ from pydantic import EmailStr, Field, field_validator
 
 from api.auth.age import is_under_minimum_age
 from api.auth.oauth_common import OAuthProvider
+from api.content.author_macros import user_name_error
 from api.core.schema import CamelModel
 from api.db.models.feature_grant import FeatureName
 from api.payments.eligibility import PurchaseBlockReason
+from api.persona.schemas import PersonaName
 
 # 화면이 진입점을 보이고 숨기는 기능 이름. 계정별 허용 행이 있는 기능(`FeatureName`)에 전역 스위치뿐인 크리에이터 정산을
 # 더한다 — `FeatureName` 자체를 넓히면 정산이 계정별 허용 행을 만들 수 있는 값으로 타입 검사를 통과한다.
 EnabledFeature = FeatureName | Literal["creator_payout"]
 
 
-class SignupRequest(CamelModel):
+class _SignupPersonaName(CamelModel):
+    """가입 화면이 함께 받는 첫 대화 프로필 이름. 비었거나 없으면 프로필을 만들지 않는다(닉네임으로 채우지 않는다 —
+    닉네임은 프롬프트에 싣지 않는 계정 정보다). 이름 규칙은 프로필 화면(`PersonaUpsertRequest`)과 같다."""
+
+    persona_name: PersonaName | None = None
+
+    @field_validator("persona_name", mode="before")
+    @classmethod
+    def _blank_means_none(cls, value: object) -> object:
+        # 화면은 빈칸을 그대로 보낼 수 있다 — 공백뿐인 값을 길이 검사(최소 1자)의 422 대신 "안 만듦"으로 읽는다.
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator("persona_name")
+    @classmethod
+    def _reject_forbidden_characters(cls, value: str | None) -> str | None:
+        if value is not None and (error := user_name_error(value)) is not None:
+            raise ValueError(error)
+        return value
+
+
+class SignupRequest(_SignupPersonaName):
     email: EmailStr
     password: str = Field(min_length=8)
     nickname: str = Field(min_length=1)
@@ -62,7 +86,7 @@ class LoginRequest(CamelModel):
     password: str
 
 
-class SocialOnboardingRequest(CamelModel):
+class SocialOnboardingRequest(_SignupPersonaName):
     """소셜 가입(구글·카카오) 온보딩이 함께 쓰는 요청 — 생성 타입이 provider 마다 갈리지 않게
     하나로 둔다. 가입 대기 토큰은 본문이 아니라 HttpOnly 쿠키로 받는다: URL·히스토리·리퍼러로
     토큰이 새도 그 쿠키가 없는 다른 브라우저에서는 가입을 끝낼 수 없게 하려는 것이다."""

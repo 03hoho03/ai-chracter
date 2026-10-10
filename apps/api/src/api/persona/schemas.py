@@ -44,8 +44,8 @@ class PersonaUpsertRequest(CamelModel):
 
 
 class PersonaCreateRequest(PersonaUpsertRequest):
-    # "기본이 없으면 켠다"는 규칙은 FE 체크박스 초기값 한 곳에만
-    # 있다. BE는 받은 값만 따르므로 기본값 없는 필수 필드다(생략 → 422).
+    # 첫 프로필은 이 값과 무관하게 기본이 된다(`create_persona`). 그 밖에는 받은 값만 따르므로 기본값 없는 필수
+    # 필드다(생략 → 422).
     set_as_default: bool
 
 
@@ -66,7 +66,8 @@ class PersonaListResponse(CamelModel):
 
 class PersonaSelectRequest(CamelModel):
     """`PUT /me/default-persona`와 `PUT /chat-rooms/{id}/persona`가 공유한다. `persona_id`는
-    필수다 — null(해제)은 명시해야 하고, 필드를 빼먹은 요청은 422다."""
+    필수다 — null(해제)은 명시해야 하고, 필드를 빼먹은 요청은 422다. 기본 지정에서 null을 막는 건 그 라우트가 한다(방
+    선택은 null이 "선택 안 함"이라 계속 받는다)."""
 
     persona_id: uuid.UUID | None
 

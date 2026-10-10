@@ -74,6 +74,7 @@ export const RoomPersonaModal = createCallable<RoomPersonaModalProps, void>(({ c
     body = (
       <CreatePersonaForm
         defaultPersonaId={personaList.defaultPersonaId}
+        isFirstPersona={personaList.items.length === 0}
         onCreated={handleCreated}
         onCancel={() => setView("select")}
       />

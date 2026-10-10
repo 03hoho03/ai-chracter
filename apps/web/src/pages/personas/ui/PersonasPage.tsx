@@ -91,6 +91,7 @@ function PersonaListSection({ personaList, editing, onEditingChange }: PersonaLi
       </h2>
       <CreatePersonaForm
         defaultPersonaId={defaultPersonaId}
+        isFirstPersona={items.length === 0}
         onCreated={() => closeFormAndRestoreFocus(focusCreateTrigger)}
         onCancel={() => closeFormAndRestoreFocus(focusCreateTrigger)}
       />
@@ -164,6 +165,7 @@ function PersonaListSection({ personaList, editing, onEditingChange }: PersonaLi
                   <PersonaActionMenu
                     persona={persona}
                     isDefault={isDefault}
+                    isLastPersona={items.length === 1}
                     onEdit={() => onEditingChange({ kind: "edit", personaId: persona.id })}
                   />
                 </div>

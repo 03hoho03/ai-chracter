@@ -1,9 +1,12 @@
+import { useState } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { useNavigate } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 
 import { toStartChatErrorMessage, useChatRoomListQuery, useStartChatMutation } from "@/entities/chat-room";
+import { isLegalReconsentRequiredError } from "@/entities/legal";
+import { useChoosePersonaForNewRoom } from "@/features/choose-start-persona";
 
 import { ChatRoomListItemRow } from "./ChatRoomListItemRow";
 
@@ -19,15 +22,31 @@ export function ChatRoomListView({
   const navigate = useNavigate();
   const listQuery = useChatRoomListQuery({ contentId, contentType });
   const startChatMutation = useStartChatMutation();
+  const choosePersonaForNewRoom = useChoosePersonaForNewRoom();
+  // 프로필 고르기(이름 모달 포함)부터 방 생성까지 — 모달이 떠 있는 동안 버튼을 다시 눌러 모달이 둘 뜨지 않게.
+  const [isStarting, setIsStarting] = useState(false);
 
+  // 여기는 프로필을 고르는 줄이 없어 기본 프로필로 시작한다. 프로필이 하나도 없으면 이름 모달이 뜨고, 닫으면 시작하지 않는다.
   const handleStartNewChat = async () => {
+    if (isStarting) return;
+    setIsStarting(true);
     try {
+      const personaChoice = await choosePersonaForNewRoom();
+      if (personaChoice.kind === "cancelled") return;
       // "새 대화 시작" 버튼은 캐릭터 목록에만 있어 `contentType`은 항상 "character"다.
-      const room = await startChatMutation.mutateAsync({ contentId, contentType: "character" });
+      const room = await startChatMutation.mutateAsync({
+        contentId,
+        contentType: "character",
+        personaId: personaChoice.personaId,
+      });
       void navigate({ to: "/chat/$roomId", params: { roomId: room.id } });
     } catch (error) {
+      // 재동의가 필요하면 전역 재동의 모달이 뜬다 — 그 위를 실패 토스트로 덮지 않는다.
+      if (isLegalReconsentRequiredError(error)) return;
       // 이용제한·비공개 작품은 기다려도 안 풀리므로 "잠시 후 다시"라고 말하지 않는다.
       toast.error(toStartChatErrorMessage(error, "새 대화를 시작하지 못했어요. 잠시 후 다시 시도해주세요."));
+    } finally {
+      setIsStarting(false);
     }
   };
 
@@ -37,7 +56,7 @@ export function ChatRoomListView({
         <h1 className="text-xl font-bold tracking-tight text-foreground">내 채팅목록</h1>
 
         {contentType === "character" && (
-          <Button size="sm" className="gap-1.5" disabled={startChatMutation.isPending} onClick={() => void handleStartNewChat()}>
+          <Button size="sm" className="gap-1.5" disabled={isStarting} onClick={() => void handleStartNewChat()}>
             <Plus aria-hidden className="size-4" />
             새 대화 시작
           </Button>

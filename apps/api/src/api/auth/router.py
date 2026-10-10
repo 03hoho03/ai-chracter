@@ -91,6 +91,7 @@ from api.novel_public.access import novel_public_open_to
 from api.novelize.access import has_novelize_access
 from api.payments.config import identity_gate_active
 from api.payments.eligibility import purchase_block_reason
+from api.persona.signup import create_signup_persona, ensure_signup_persona, replace_signup_personas
 from api.session.cookies import clear_session_cookie, get_session_id_from_request, set_session_cookie
 from api.session.dependencies import get_current_user_id
 from api.session.store import create_session, delete_session, revoke_user_sessions
@@ -249,6 +250,7 @@ async def signup(
         existing.privacy_version = privacy_version
         # 국외이전 동의는 처리방침 버전에 묶인다.
         existing.transfer_version = privacy_version
+        await replace_signup_personas(db, existing, payload.persona_name)
         await db.commit()
     else:
         privacy_version = await _latest_published_legal_version(db, "privacy")
@@ -276,6 +278,7 @@ async def signup(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
             ) from None
+        await create_signup_persona(db, user, payload.persona_name)
         await db.commit()
 
     code = generate_code()
@@ -480,6 +483,7 @@ async def onboarding_google(
         user = User(email=pending["email"], google_sub=pending["sub"], email_verified_at=now)
         await _apply_onboarding_consent(db, user, payload, now)
         await _flush_social_signup(db, user)
+        await create_signup_persona(db, user, payload.persona_name)
     else:
         # 대입·커밋·pending 토큰 삭제 **전**에 막는다 — 뒤에서 막으면 403인데도
         # 닉네임·생년월일이 덮어써진 채 커밋되고, 토큰이 지워져 재시도가 400으로 바뀐다.
@@ -491,6 +495,7 @@ async def onboarding_google(
         # 만 19세 판정을 넘지 못하게 한다.
         if user.identity_verified_at is None:
             user.birth_date = payload.birth_date
+        await ensure_signup_persona(db, user, payload.persona_name)
     await db.commit()
     await delete_pending_google_signup(token)
     return await _start_onboarded_session(response, user, provider="google")
@@ -627,6 +632,10 @@ async def onboarding_kakao(
             raise _onboarding_conflict("EMAIL_ALREADY_REGISTERED")
         await _apply_onboarding_consent(db, user, payload, now)
         await _flush_social_signup(db, user)
+        if replaced_email_signup:
+            await replace_signup_personas(db, user, payload.persona_name)
+        else:
+            await create_signup_persona(db, user, payload.persona_name)
     else:
         # 구글 온보딩과 같다 — 대입·커밋·가입 대기 삭제 전에 막아야 403 인데도 프로필이 덮어써지거나
         # 재시도가 400 으로 바뀌지 않는다.
@@ -636,6 +645,7 @@ async def onboarding_kakao(
         # 구글 온보딩과 같다 — 본인인증한 생년월일을 자기 신고값으로 되돌리지 않는다.
         if user.identity_verified_at is None:
             user.birth_date = payload.birth_date
+        await ensure_signup_persona(db, user, payload.persona_name)
     await db.commit()
     if replaced_email_signup:
         # 대체된 이메일 가입에 발급했던 인증 코드를 지운다. 남아 있어도 이미 인증된 행이라 결과는

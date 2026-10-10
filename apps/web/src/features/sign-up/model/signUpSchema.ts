@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { personaNameIssue } from "@/entities/persona";
+
 const requiredAgreement = (message: string) =>
   z.boolean().refine((value) => value === true, { message });
 
@@ -20,6 +22,13 @@ export const signUpSchema = z.object({
   email: z.email({ message: "이메일 형식이 올바르지 않습니다" }),
   password: z.string().min(8, { message: "비밀번호는 8자 이상이어야 합니다" }),
   nickname: z.string().min(1, { message: "닉네임을 입력해주세요" }),
+  // 첫 대화 프로필 이름(선택). 비워 두면 프로필을 만들지 않고 처음 대화를 시작할 때 받는다. 적었으면 프로필 이름 규칙을
+  // 그대로 건다 — 서버가 같은 규칙으로 422 를 내면 가입 전체가 일반 오류로 끝난다.
+  personaName: z.string().superRefine((value, context) => {
+    if (value.trim() === "") return;
+    const issue = personaNameIssue(value);
+    if (issue !== null) context.addIssue({ code: "custom", message: issue });
+  }),
   birthDate: z
     .string()
     .min(1, { message: "생년월일을 입력해주세요" })
@@ -43,6 +52,7 @@ export const signUpDefaultValues: SignUpFormValues = {
   email: "",
   password: "",
   nickname: "",
+  personaName: "",
   birthDate: "",
   termsAgreed: false,
   privacyAgreed: false,

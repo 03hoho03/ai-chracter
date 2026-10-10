@@ -20,6 +20,7 @@ from api.db.models import (
     StartingSetup,
     StoryPromptTemplate,
     StoryVersionDetail,
+    UserPersona,
 )
 from factories import (
     _get_genre,
@@ -108,9 +109,11 @@ async def test_room_response_names_come_from_room_persona_and_pinned_version(
 async def test_room_response_follows_persona_rename_and_delete(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """프로필 이름은 방에 복사하지 않고 읽을 때 조인한다 — 고치거나 지우면 다음 조회부터 바뀐다."""
+    """프로필 이름은 방에 복사하지 않고 읽을 때 조인한다 — 고치거나 지우면 다음 조회부터 바뀐다. 마지막 프로필은 지울 수
+    없어 하나를 더 둔다."""
     user_id, content, setup = await _story_with_setup(db_session, opening_message="시작")
     persona = await _make_default_persona(db_session, user_id, "지훈")
+    db_session.add(UserPersona(user_id=user_id, name="남길 것"))
     await db_session.commit()
     await _login_as(db_client, user_id)
     room = await _create_room(db_client, content, setup)

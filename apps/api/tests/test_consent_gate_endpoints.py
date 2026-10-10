@@ -475,13 +475,29 @@ async def test_delete_persona_still_open_without_consent(
 ) -> None:
     user = await _unconsented_user(db_client, db_session)
     persona = UserPersona(user_id=user.id, name="하늘")
-    db_session.add(persona)
+    db_session.add_all([persona, UserPersona(user_id=user.id, name="남길 것")])
     await db_session.flush()
     await db_session.commit()
 
     resp = await db_client.delete(f"/me/personas/{persona.id}")
 
     assert resp.status_code == 204
+
+
+async def test_delete_last_persona_without_consent_is_refused_as_last_not_as_unconsented(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """삭제에는 게이트가 없으므로 미동의 사용자가 마지막 프로필을 지우려 하면 재동의 403이 아니라 마지막 1개 409가 난다 —
+    재동의 모달이 아니라 "지울 수 없다"는 안내가 맞는 응답이다."""
+    user = await _unconsented_user(db_client, db_session)
+    persona = UserPersona(user_id=user.id, name="하늘")
+    db_session.add(persona)
+    await db_session.flush()
+    await db_session.commit()
+
+    resp = await db_client.delete(f"/me/personas/{persona.id}")
+
+    assert resp.status_code == 409
 
 
 async def test_clear_memory_note_still_open_without_consent(

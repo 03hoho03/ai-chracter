@@ -10,7 +10,9 @@ type ContentDetailPageProps = { id: string; type: ContentType; targetCommentId?:
 export function ContentDetailPage({ id, type, targetCommentId }: ContentDetailPageProps) {
   return (
     <main data-content-detail className="mx-auto max-w-2xl px-4 sm:px-6 py-10">
-      <ContentDetailView id={id} type={type} variant="page"
+      {/* 작품마다 새로 마운트한다 — 풀페이지끼리 넘어가면 같은 컴포넌트가 남아, 앞 작품에서 고른 시작설정·대화 프로필이
+          다음 작품으로 따라온다(모달은 아웃렛이 같은 이유로 key 를 준다). */}
+      <ContentDetailView key={id} id={id} type={type} variant="page"
         comments={<ContentComments key={id} contentId={id} targetCommentId={targetCommentId} />} />
     </main>
   );

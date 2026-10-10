@@ -181,7 +181,7 @@ from api.llm.client import (
 )
 from api.llm.dependencies import get_llm_client
 from api.llm.model_access import effective_room_model, has_chat_premium_access
-from api.persona.router import get_owned_persona, lock_user_default_persona
+from api.persona.router import get_owned_persona, lock_user_default_persona, promote_oldest_persona
 from api.persona.schemas import PersonaSelectRequest, RoomPersonaResponse
 from api.session.dependencies import get_current_user_id
 
@@ -717,7 +717,7 @@ async def _create_room(
     """`POST /chat-rooms`와 `POST /chat-rooms/{id}/change-starting-setup`이 공유하는
     방 생성 핵심 로직 — 항상 콘텐츠의 현재 발행 버전에 고정한다.
 
-    `persona_id`는 받은 값만 쓴다. "새 방 = 기본"과 "원래
+    `persona_id`는 받은 값만 쓴다. "새 방 = 고른 것 또는 기본"과 "원래
     방 승계" 규칙은 두 호출부가 각자 한 번씩 정한다. 둘 다 유저 행을 잠근 뒤에 값을
     읽어야 프로필 삭제와 엇갈려 FK 위반 500이 나지 않는다. 키워드 전용 필수라 새
     호출부가 값을 빠뜨리면 mypy가 잡는다."""
@@ -782,10 +782,18 @@ async def create_chat_room(
             )
         setup = await _resolve_setup_for_content(db, content, payload.starting_setup_id)
 
-    # 새 방은 기본 프로필로 시작한다. 유저 행을 잠그면서 컬럼으로
+    # 새 방은 고른 프로필, 없으면 기본 프로필로 시작한다. 유저 행을 잠그면서 컬럼으로
     # 읽는다(`db.get(User)`는 락을 걸지 않는다 — `persona/router.py` 모듈 docstring).
+    # 고른 프로필도 소유를 본다 — 남의 프로필 id를 방에 실으면 그 사람의 프로필이 내 프롬프트에 들어간다.
     default_persona_id = await lock_user_default_persona(db, user_id)
-    room = await _create_room(db, user_id, content, setup, persona_id=default_persona_id)
+    if payload.persona_id is not None:
+        await get_owned_persona(db, payload.persona_id, user_id)
+    # 프로필이 있는데 기본이 비어 있는 예전 계정은 여기서 가장 먼저 만든 것을 기본으로 채운다 — 고른 프로필이 있어도
+    # 기본은 그것과 따로 채운다. 프로필이 없으면 "선택 없음" 방이다(이름을 먼저 받는 건 화면 몫이고, 예전 화면도 열려야 한다).
+    if default_persona_id is None:
+        default_persona_id = await promote_oldest_persona(db, user_id)
+    persona_id = payload.persona_id if payload.persona_id is not None else default_persona_id
+    room = await _create_room(db, user_id, content, setup, persona_id=persona_id)
     await db.commit()
 
     return await _to_response(db, room)
@@ -1102,7 +1110,7 @@ async def regenerate_message(
                 generation_set, generation_sections = await generation_prompt_set(
                     db, lane=_lane_for_setup(setup), model=charge.model, gemini_set=(prompt_set, prompt_sections)
                 )
-                prompt, system_instruction, persona_rendered, note_rendered, names = await build_room_prompt(
+                prompt, system_instruction, persona_description_rendered, note_rendered, names = await build_room_prompt(
                     db, room, setup, history[:-1], user_content, None, generation_set, generation_sections
                 )
             except (PromptRenderError, PromptSetNotFoundError) as exc:
@@ -1134,7 +1142,7 @@ async def regenerate_message(
             except LLMPolicyViolationError:
                 # 환불하지 않는다.
                 settlement.mark_settled()
-                yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_rendered, note_rendered))
+                yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_description_rendered, note_rendered))
                 return
             except LLMClientError as exc:
                 logger.warning("대화방 %s 응답 재생성 실패: %s", room.id, exc)
@@ -2529,6 +2537,7 @@ async def _stream_preview_turn(
     prompt_set: PromptSet,
     prompt_sections: list[PromptSection],
     user_persona: str,
+    persona_description: str,
     names: PromptNames,
     # 새 턴(`run_turn`)은 `room.user_id`를 쓰지만 `PreviewSessionState`에는 user_id가 없다
     # (`_owned_preview_session_dependency` docstring) — 그래서 여기만 인자로 받는다.
@@ -2546,7 +2555,7 @@ async def _stream_preview_turn(
     호출부(`send_preview_message`)의 `Depends`가 DB에서 값으로 읽어 넘긴 것이다 — 이
     함수 자체는 세션을 열지 않는다."""
     try:
-        prompt, system_instruction, persona_rendered, _, _ = build_preview_prompt(
+        prompt, system_instruction, persona_description_rendered, _, _ = build_preview_prompt(
             state.payload,
             history,
             user_content,
@@ -2554,6 +2563,7 @@ async def _stream_preview_turn(
             prompt_set,
             prompt_sections,
             user_persona,
+            persona_description,
             state.stats,
             names,
         )
@@ -2584,7 +2594,7 @@ async def _stream_preview_turn(
     except LLMPolicyViolationError:
         # 환불하지 않는다.
         settlement.mark_settled()
-        yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_rendered, note_rendered=False))
+        yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_description_rendered, note_rendered=False))
         return
     except LLMClientError as exc:
         logger.warning("미리보기 메시지 생성 실패: %s", exc)
@@ -2786,6 +2796,7 @@ async def send_preview_message(
             prompt_set,
             prompt_sections,
             format_persona(persona),
+            persona.description if persona is not None else "",
             names,
             user_id,
             media_images,

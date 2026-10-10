@@ -8,7 +8,7 @@ type PersonaSummaryProps = {
   isDefault: boolean;
   className?: string;
   /** 보조 글자(설명·`기본` 배지)의 잉크. 기본은 `text-muted-foreground`이고, 그 값이 AA를 못 넘는 표면에
-   * 얹는 호출부만 바꾼다(대화방 선택 목록의 hover·선택 행 — `RoomPersonaPicker`). */
+   * 얹는 호출부만 바꾼다(프로필 고르기 목록의 hover·선택 행 — `PersonaToggleList`). */
   secondaryTextClassName?: string;
 };
 
