@@ -316,9 +316,9 @@ function NotificationDisclosure({ viewerId, onNavigate }: { viewerId: string; on
         <span className="flex-1">알림</span>
         {unreadCount > 0 && (
           // 채움이 아니라 윤곽이다 — 채움(`accent`)은 두 테마 모두 행 hover 채움 `secondary` 와 같은 값(0.26 / 0.93)이라 hover·
-          // 포커스 때 알약이 사라졌다. `border` 윤곽은 시트(`popover`) 위 1.30 / 1.28, hover `secondary` 위 1.14 / 1.13 으로
-          // 남는다(`DESIGN.md` Status badges 절의 중립 상태와 같은 처방). 읽을 게 생겼다는 표시라 글자는 밝기 천장이다.
-          <span className="flex h-4 min-w-4 items-center justify-center rounded-full border border-border px-1 text-badge leading-none font-semibold text-foreground">
+          // 포커스 때 알약이 사라졌다. `input` 윤곽은 시트(`popover`) 위 3.22 / 3.34, hover `secondary` 위 2.82 / 2.96 으로
+          // 남는다(`border` 윤곽은 1.30 / 1.28, hover 위 1.14 / 1.13 이라 거의 안 보였다). 읽을 게 생겼다는 표시라 글자는 밝기 천장이다.
+          <span className="flex h-4 min-w-4 items-center justify-center rounded-full border border-input px-1 text-badge leading-none font-semibold text-foreground">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         )}
