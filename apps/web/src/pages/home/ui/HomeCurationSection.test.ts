@@ -45,4 +45,8 @@ describe("HomeCurationSection", () => {
     expect(render({ defaultUserName: "막내" }, null)).toContain("막내는 영화 동아리의 조감독이다.");
     expect(render({}, null)).toContain("당신은 영화 동아리의 조감독이다.");
   });
+
+  it("is its own size container, since the column ladder it shares with the grid below is a container query", () => {
+    expect(render({}, null)).toMatch(/^<section [^>]*class="@container /);
+  });
 });

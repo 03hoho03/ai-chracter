@@ -27,7 +27,9 @@ type HomeCurationSectionProps = {
  * 아니라 크기와 배치로 만든다: 그림 옆에 제목과 한 줄 소개를 가로로 펼쳐 그리드 카드보다 말이 많다.
  *
  * 640px 이상에서는 바로 아래 그리드와 같은 열 사다리(`toGridColumns`) 위에 놓는다: 그림이 한 열, 제목·소개가 두 열을
- * 차지한다. 그래서 그림은 어느 폭에서나 그리드 카드 그림과 같은 크기이고, 블록은 그리드 세 칸 폭이라 행 끝까지
+ * 차지한다. 그 사다리는 컨테이너 쿼리라 섹션이 컨테이너(`@container`)다 — 섹션과 아래 그리드의 래퍼가 같은 부모 폭을
+ * 받으므로 열 수가 같다. 좁은 화면 배치 ↔ 그리드 배치 전환은 뷰포트 `sm:` 그대로 두었다: 그리드는 뷰포트 624~639px
+ * 에서 한 단계 일찍 열이 늘지만 그 띠에서 이 블록은 아직 블록 요소라 열 클래스가 효력이 없어, 전환 시점이 지금과 같다. 그래서 그림은 어느 폭에서나 그리드 카드 그림과 같은 크기이고, 블록은 그리드 세 칸 폭이라 행 끝까지
  * 늘어나지 않는다(열이 셋뿐인 640~767px 캐릭터 화면에서만 행 전체다). 그보다 좁으면 그림을 `w-28`(112px)로
  * 고정하고 제목·소개가 나머지 폭을 쓴다. 그림 크기의 천장은 그리드 카드다: 같은 512px 썸네일 축소본을 그리드가 이미
  * 그 크기로 그리므로 선명도가 그리드와 같고, 그보다 키우면 큐레이션만 흐려진다.
@@ -54,7 +56,7 @@ export function HomeCurationSection({ item, viewerPersonaName, onOpen }: HomeCur
   );
 
   return (
-    <section aria-labelledby={headingId} className="flex flex-col gap-3">
+    <section aria-labelledby={headingId} className="@container flex flex-col gap-3">
       <h2 id={headingId} className="text-sm font-medium text-muted-foreground">
         {toHomeCurationHeading(item.type)}
       </h2>
