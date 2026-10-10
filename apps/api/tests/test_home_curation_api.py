@@ -15,7 +15,6 @@ from api.db.models import (
     ContentVisibility,
     HomeCuration,
     ModerationStatus,
-    StoryVersionDetail,
 )
 from factories import _get_genre, _login_as, _make_published_character, _make_published_story, _make_user
 
@@ -55,22 +54,6 @@ async def test_returns_the_curated_work_with_its_one_liner_and_thumbnail(
     }
     # 그리드 카드와 같은 512px 축소본을 서명한다 — 원본은 첫 화면에 싣기엔 무겁다.
     assert "_thumb.webp" in item["thumbnailUrl"]
-
-
-async def test_curated_work_carries_its_default_user_name(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    """응답은 보는 사람과 무관하다 — 프로필 없는 사람·비로그인 홈이 한줄소개의 `{{user}}` 를 바꿀 이름을 함께 싣는다."""
-    content = await _curated_story(db_session)
-    assert content.current_published_version_id is not None
-    detail = await db_session.get(StoryVersionDetail, content.current_published_version_id)
-    assert detail is not None
-    detail.default_user_name = "모험가"
-    await db_session.commit()
-
-    resp = await db_client.get("/home-curation", params={"type": "story"})
-
-    assert resp.json()["item"]["defaultUserName"] == "모험가"
 
 
 async def test_each_type_reads_its_own_slot(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:

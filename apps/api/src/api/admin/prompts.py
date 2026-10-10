@@ -47,6 +47,7 @@ from api.chat.prompt_builder import (
 from api.chat.prompt_builder import build_ending_judgment_prompt as _build_ending_judgment_prompt
 from api.chat.prompt_builder import build_image_judgment_prompt as _build_image_judgment_prompt
 from api.chat.prompt_set_cache import invalidate_active_prompt_set
+from api.content.author_macros import expand_author_macros
 from api.content.publish import (
     MediaBookFilterCell,
     build_character_publish_filter_prompt,
@@ -1091,11 +1092,33 @@ _SAMPLE_DEVELOPMENT_EXAMPLES = [{"userLine": "[샘플] 이 방향으로 가보�
 _SAMPLE_USER_PERSONA = format_user_persona(
     name="[샘플] 하늘", gender="female", description="[샘플] 밤하늘을 좋아하는 대학생"
 )
-# 이름 한 줄도 비우면 conditional 드롭으로 안 보인다(위 프로필과 같은 이유). 실채팅의 생성 채널은 프로필이 있으면 이름
-# 한 줄을 비우지만, 미리보기는 운영자가 두 문안을 다 보게 프로필 없음 + 작품 기본 이름으로 고르고 프로필 섹션 값은 위
-# 샘플을 그대로 넘긴다 — 생성 미리보기에 두 섹션이 함께 보이는 것은 미리보기에서만이다.
-_SAMPLE_STORY_NAMES = PromptNames(persona_name=None, default_user_name="[샘플] 하늘", char_name=None)
-_SAMPLE_CHARACTER_NAMES = PromptNames(persona_name=None, default_user_name="[샘플] 하늘", char_name="[샘플] 캐릭터")
+
+
+@dataclass(frozen=True)
+class _SamplePromptNames(PromptNames):
+    """미리보기 전용 이름 묶음 — 모든 이름 자리를 샘플 이름으로 채운다.
+
+    이름 한 줄도 비우면 conditional 드롭으로 안 보인다(위 프로필과 같은 이유). 실채팅의 생성 채널은 이름 한 줄을 늘
+    비우고 판정·요약은 프로필이 없으면 비우지만, 미리보기는 운영자가 생성·판정·요약 채널의 이름 문안을 다 보게 세 자리를
+    모두 샘플 이름으로 덮는다. 프로필 섹션 값은 위 샘플을 그대로 넘긴다 — 생성 미리보기에 두 섹션이 함께 보이는 것은
+    미리보기에서만이다. 실채팅 클래스에 미리보기용 필드를 두지 않으려고 여기서만 덮는다."""
+
+    sample_user_name: str = "[샘플] 하늘"
+
+    def expand(self, text: str) -> str:
+        return expand_author_macros(text, user_name=self.sample_user_name, char_name=self.char_name)
+
+    @property
+    def judgment_user_name(self) -> str:
+        return self.sample_user_name
+
+    @property
+    def generation_user_name(self) -> str:
+        return self.sample_user_name
+
+
+_SAMPLE_STORY_NAMES = _SamplePromptNames(persona_name=None, char_name=None)
+_SAMPLE_CHARACTER_NAMES = _SamplePromptNames(persona_name=None, char_name="[샘플] 캐릭터")
 # 기억 슬롯도 비우면 conditional 드롭으로 안 보인다(위 프로필과 같은 이유).
 _SAMPLE_MEMORY_NOTE = "[샘플] 주인공의 여동생 이름은 서연이다."
 _SAMPLE_MEMORY_SUMMARY = "[샘플] 두 사람은 비 오는 밤 편의점에서 처음 만났고, 다음 주에 다시 보기로 약속했다."

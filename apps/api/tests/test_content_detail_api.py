@@ -667,29 +667,20 @@ async def test_view_count_skipped_when_redis_errors(
 
 
 @pytest.mark.parametrize("content_type", [ContentType.STORY, ContentType.CHARACTER])
-async def test_get_content_detail_returns_default_user_name_and_leaves_macros_in_text(
+async def test_get_content_detail_leaves_macros_in_text(
     db_client: httpx.AsyncClient, db_session: AsyncSession, content_type: ContentType
 ) -> None:
-    """작품 기본 이름은 보는 사람이 없는 곳(공유 미리보기)과 프로필 없는 사람의 화면이 `{{user}}` 를 바꿀 이름이다.
-    글은 원문 그대로 보낸다 — 보는 사람의 프로필 이름이 먼저이고 그건 화면이 안다."""
+    """글은 원문 그대로 보낸다 — `{{user}}` 를 바꿀 이름(보는 사람의 프로필 이름, 없으면 대체어)은 화면이 안다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
     genre = await _get_genre(db_session)
-    content, version = await _make_published_content(
+    content, _version = await _make_published_content(
         db_session, creator_user_id=user.id, genre_id=genre.id, content_type=content_type, one_liner="{{user}}의 하루"
     )
-    detail: CharacterVersionDetail | StoryVersionDetail | None = (
-        await db_session.get(CharacterVersionDetail, version.id)
-        if content_type == ContentType.CHARACTER
-        else await db_session.get(StoryVersionDetail, version.id)
-    )
-    assert detail is not None
-    detail.default_user_name = "모험가"
     await db_session.commit()
 
     resp = await db_client.get(f"/contents/{content.id}")
 
     assert resp.status_code == 200
-    assert resp.json()["defaultUserName"] == "모험가"
     assert resp.json()["oneLiner"] == "{{user}}의 하루"

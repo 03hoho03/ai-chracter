@@ -10,7 +10,6 @@ import pytest
 
 from api.content.author_macros import (
     FALLBACK_USER_NAME,
-    default_user_name_error,
     expand_author_macros,
     user_name_error,
 )
@@ -78,20 +77,8 @@ _ACCEPTED_NAMES = [
 @pytest.mark.parametrize("name", _REJECTED_NAMES)
 def test_user_name_error_rejects_notation_characters(name: str) -> None:
     assert user_name_error(name) is not None
-    assert default_user_name_error(name) is not None
 
 
 @pytest.mark.parametrize("name", _ACCEPTED_NAMES)
 def test_user_name_error_accepts_plain_names(name: str) -> None:
     assert user_name_error(name) is None
-
-
-@pytest.mark.parametrize("name", ["{지훈}", "{{char}}", "지}"])
-def test_default_user_name_error_also_rejects_braces(name: str) -> None:
-    """작품 기본 이름은 작가가 글과 함께 쓰는 칸이라, 매크로나 이미지 태그를 이름 속에 숨겨 넣지 못하게 한다."""
-    assert default_user_name_error(name) is not None
-
-
-def test_default_user_name_error_accepts_empty() -> None:
-    """비워 두면 대체어를 쓴다는 뜻이다."""
-    assert default_user_name_error("") is None

@@ -18,6 +18,9 @@ from api.db.models.chat import ChatRoom
 from api.db.models.persona import UserPersona
 from api.db.models.story import StartingSetup, StoryVersionDetail
 
+# 작품 기본 이름 단계를 지우기 전의 기록에만 있는 키. 그때는 프로필 없는 방의 `{{user}}` 이름이 이 값이었다.
+_REMOVED_DEFAULT_USER_NAME_KEY = "defaultUserName"
+
 
 @dataclass(frozen=True)
 class RoomFixed:
@@ -32,7 +35,6 @@ class RoomFixed:
         "chatModel",
         "personaId",
         "personaName",
-        "defaultUserName",
         "userName",
         "persona",
     )
@@ -44,13 +46,12 @@ class RoomFixed:
     chat_model: str | None
     persona_id: uuid.UUID | None
     persona_name: str | None
-    default_user_name: str
     persona: InjectedPersona | None
 
     @property
     def user_name(self) -> str:
         """`{{user}}` 자리에 들어가는 이름 — 서버의 치환과 같은 함수로 고른다."""
-        return resolve_user_name(self.persona_name, self.default_user_name)
+        return resolve_user_name(self.persona_name)
 
     def as_record(self) -> dict[str, Any]:
         persona = self.persona
@@ -61,7 +62,6 @@ class RoomFixed:
             "chatModel": self.chat_model,
             "personaId": _str_or_none(self.persona_id),
             "personaName": self.persona_name,
-            "defaultUserName": self.default_user_name,
             "userName": self.user_name,
             "persona": None
             if persona is None
@@ -71,7 +71,18 @@ class RoomFixed:
     @classmethod
     def from_record(cls, record: dict[str, Any]) -> "RoomFixed | None":
         """`roomStatic` 줄에서 다시 읽는다. 이 값을 기록하기 전의 옛 로그면 None — 호출부가 DB 지금 값을 쓰고
-        "고정값 기록 없음"을 남긴다."""
+        "고정값 기록 없음"을 남긴다.
+
+        작품 기본 이름이 든 옛 기록은 거부한다(`ReplayRefusedError`). 그 방은 지금 코드에 없는 이름으로 조립됐으므로
+        재현하면 다른 이름으로 조립한 바이트를 측정 결과처럼 내게 된다. 빈 값이면 그때도 이름 조건이 지금과 같아 키만
+        무시한다."""
+        if record.get(_REMOVED_DEFAULT_USER_NAME_KEY):
+            # 순환 import 를 피해 여기서 읽는다 — `replay.logs` 가 이 모듈을 import 한다.
+            from replay.logs import ReplayRefusedError
+
+            raise ReplayRefusedError(
+                "방 고정값 기록에 작품 기본 이름이 있다 — 그 이름 단계가 지워져 지금 코드로는 같은 이름으로 조립할 수 없다"
+            )
         if "contentVersionId" not in record:
             return None
         persona = record.get("persona")
@@ -82,7 +93,6 @@ class RoomFixed:
             chat_model=record.get("chatModel"),
             persona_id=_uuid_or_none(record.get("personaId")),
             persona_name=record.get("personaName"),
-            default_user_name=record.get("defaultUserName") or "",
             persona=None
             if persona is None
             else InjectedPersona(
@@ -100,8 +110,8 @@ def _uuid_or_none(value: str | None) -> uuid.UUID | None:
 
 
 async def load_room_fixed(db: AsyncSession, room_id: uuid.UUID) -> RoomFixed | None:
-    """방이 없으면 None. 스토리 방만 다룬다 — 작품 기본 이름을 스토리 상세에서 읽는다. 읽기만 하고 세션에 아무것도
-    남기지 않는다(리플레이는 받은 세션을 되돌리지 않고 그대로 쓴다)."""
+    """방이 없으면 None. 스토리 방만 다룬다 — 스토리 상세가 없는 방은 거부한다. 읽기만 하고 세션에 아무것도 남기지
+    않는다(리플레이는 받은 세션을 되돌리지 않고 그대로 쓴다)."""
     room = await db.scalar(select(ChatRoom).where(ChatRoom.id == room_id))
     if room is None:
         return None
@@ -136,7 +146,6 @@ async def load_room_fixed(db: AsyncSession, room_id: uuid.UUID) -> RoomFixed | N
         chat_model=room.chat_model,
         persona_id=room.persona_id,
         persona_name=persona.name if persona is not None else None,
-        default_user_name=detail.default_user_name,
         persona=persona,
     )
 

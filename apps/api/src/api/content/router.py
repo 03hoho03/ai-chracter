@@ -689,7 +689,6 @@ async def _character_draft_response(
         ],
         character_prompt=detail.character_prompt,
         playguide=detail.playguide,
-        default_user_name=detail.default_user_name,
         situational_images=[
             CharacterSituationalImageItem(
                 id=image.entity_id,
@@ -945,7 +944,6 @@ async def _story_draft_response(
         ],
         user_goal=detail.user_goal,
         rules=detail.rules,
-        default_user_name=detail.default_user_name,
         starting_setups=starting_setups,
         keyword_notes=[
             KeywordNoteDraftItem(
@@ -1033,8 +1031,6 @@ async def _update_character_draft(
     detail.example_dialogues = [item.model_dump(by_alias=True) for item in payload.example_dialogues]
     detail.character_prompt = payload.character_prompt
     detail.playguide = payload.playguide
-    # 작품 기본 이름은 빌더에 입력칸이 없어 초안 저장으로 쓰지 않는다. 요청에 실려 와도(옛 화면, 미리보기용으로 폼에 남은 값)
-    # 저장된 값을 그대로 둔다 — 발행·방·미리보기는 저장된 값을 계속 읽는다.
     version.detail_description = payload.description
     content.genre_id = payload.genre_id
     content.target = payload.target
@@ -1455,7 +1451,6 @@ async def _update_story_draft(
     ]
     detail.user_goal = payload.user_goal
     detail.rules = payload.rules
-    # 작품 기본 이름은 캐릭터 쪽과 같은 이유로 쓰지 않는다.
     version.detail_description = payload.description
     content.genre_id = payload.genre_id
     content.target = payload.target
@@ -1813,7 +1808,6 @@ async def _restore_draft_detail(
         draft_character.example_dialogues = published_character.example_dialogues
         draft_character.character_prompt = published_character.character_prompt
         draft_character.playguide = published_character.playguide
-        draft_character.default_user_name = published_character.default_user_name
         return
 
     published_story = await db.get(StoryVersionDetail, published_version_id)
@@ -1829,7 +1823,6 @@ async def _restore_draft_detail(
     draft_story.development_examples = published_story.development_examples
     draft_story.user_goal = published_story.user_goal
     draft_story.rules = published_story.rules
-    draft_story.default_user_name = published_story.default_user_name
 
 
 @router.post(
@@ -2219,7 +2212,6 @@ async def _write_character_publish(
             example_dialogues=detail.example_dialogues,
             character_prompt=detail.character_prompt,
             playguide=detail.playguide,
-            default_user_name=detail.default_user_name,
         )
     )
     await _clone_character_children(db, version.id, new_version.id)
@@ -2757,7 +2749,6 @@ async def _write_story_publish(
             development_examples=detail.development_examples,
             user_goal=detail.user_goal,
             rules=detail.rules,
-            default_user_name=detail.default_user_name,
         )
     )
 
@@ -2947,7 +2938,6 @@ async def get_home_curation(type: ContentType, db: AsyncSession = Depends(get_db
                 Content,
                 detail_model.name,
                 detail_model.one_liner,
-                detail_model.default_user_name,
                 detail_model.thumbnail_asset_id,
             )
             .join(HomeCuration, HomeCuration.content_id == Content.id)
@@ -2957,14 +2947,13 @@ async def get_home_curation(type: ContentType, db: AsyncSession = Depends(get_db
     if row is None:
         return HomeCurationResponse(item=None)
 
-    content, name, one_liner, default_user_name, thumbnail_asset_id = row
+    content, name, one_liner, thumbnail_asset_id = row
     return HomeCurationResponse(
         item=HomeCurationItem(
             id=content.id,
             type=content.type,
             name=name,
             one_liner=one_liner,
-            default_user_name=default_user_name,
             thumbnail_url=await _resolve_thumbnail_url(db, thumbnail_asset_id),
         )
     )
@@ -3030,7 +3019,6 @@ async def get_content_detail(
                 ContentVersion,
                 detail_model.name,
                 detail_model.one_liner,
-                detail_model.default_user_name,
                 detail_model.thumbnail_asset_id,
                 Genre.name,
                 User.nickname,
@@ -3044,7 +3032,7 @@ async def get_content_detail(
     ).first()
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
-    content, version, name, one_liner, default_user_name, thumbnail_asset_id, genre_name, creator_nickname = row
+    content, version, name, one_liner, thumbnail_asset_id, genre_name, creator_nickname = row
     assert version.version_number is not None
     assert version.published_at is not None
     assert content.genre_id is not None
@@ -3125,7 +3113,6 @@ async def get_content_detail(
         hashtags=content.hashtags,
         one_liner=one_liner,
         detail_description=detail_description,
-        default_user_name=default_user_name,
         chat_count=content.chat_count,
         like_count=content.like_count,
         is_liked=is_liked,

@@ -181,8 +181,8 @@ def test_tutorial_suggested_replies_load_their_heroine_note_on_the_first_turn() 
         for setup in story.payload.starting_setups:
             # 방을 만들 때 첫 화면은 시작상황, 없으면 프롤로그가 AI 메시지로 들어간다.
             opening = ChatMessage(role=ChatMessageRole.ASSISTANT, content=setup.opening_message or setup.prologue)
-            # 대화 프로필이 없는 방의 이름 — 첫 메시지의 `{{user}}` 는 작품 기본 이름(없으면 "당신")으로 바뀐 뒤 매칭된다.
-            names = PromptNames(persona_name=None, default_user_name=story.payload.default_user_name, char_name=None)
+            # 대화 프로필이 없는 방의 이름 — 첫 메시지의 `{{user}}` 는 "당신"으로 바뀐 뒤 매칭된다.
+            names = PromptNames(persona_name=None, char_name=None)
             for reply in setup.suggested_replies:
                 heroine_notes = [note.name for note in notes if note.name and note.name in reply]
                 assert heroine_notes, f"{story.slug} / {reply!r}: 이름 칸으로 찾은 인물 노트가 없다"

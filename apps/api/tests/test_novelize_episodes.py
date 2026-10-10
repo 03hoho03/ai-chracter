@@ -110,7 +110,7 @@ def _message(role: ChatMessageRole, content: str) -> ChatMessage:
 
 def test_source_chars_counts_what_the_model_reads() -> None:
     """이미지 태그는 빼고 작가 글 이름은 바꾼 글자로 센다. 사용자 줄의 `{{user}}` 는 사용자가 친 글자라 그대로 센다."""
-    names = PromptNames(persona_name="서진", default_user_name="", char_name="도윤")
+    names = PromptNames(persona_name="서진", char_name="도윤")
     turns = [
         SourceTurn(users=(), assistant=_message(ChatMessageRole.ASSISTANT, "  {{char}}가 웃었다. ")),
         SourceTurn(

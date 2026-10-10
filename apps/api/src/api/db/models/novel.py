@@ -83,8 +83,8 @@ class Novel(Base):
     `content_id`·`content_title`·`character_name` 은 만들 때의 원작 사본이고 FK 가 없다 — 작품이 지워지거나 바뀌어도
     소설은 그대로다. 스토리 작품은 캐릭터 한 명이 정해져 있지 않아 `character_name` 이 NULL 이다.
 
-    `protagonist_name` 은 본문에서 사용자 쪽 인물을 부르는 이름이다. 대화 프로필 이름(없으면 작품 기본 이름)으로
-    미리 채우고, 둘 다 없으면 NULL 로 두었다가 첫 장을 만들기 전에 입력받는다. 나중에 바꿔도 이미 만든 장 본문은
+    `protagonist_name` 은 본문에서 사용자 쪽 인물을 부르는 이름이다. 대화 프로필 이름으로 미리 채우고, 없으면 NULL 로
+    두었다가 첫 장을 만들기 전에 입력받는다. 나중에 바꿔도 이미 만든 장 본문은
     그대로다."""
 
     __tablename__ = "novels"

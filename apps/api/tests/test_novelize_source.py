@@ -180,7 +180,7 @@ def test_turn_lines_number_each_message_by_turn_and_expand_names_only_in_replies
         SourceTurn(users=(u2a, u2b), assistant=a2),
     ]
 
-    names = PromptNames(persona_name="서진", default_user_name="", char_name="도윤")
+    names = PromptNames(persona_name="서진", char_name="도윤")
     lines = format_turn_lines(turns, names=names, user_label="사용자", assistant_label="캐릭터")
 
     assert lines == (

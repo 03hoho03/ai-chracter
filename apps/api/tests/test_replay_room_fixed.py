@@ -6,24 +6,20 @@ import dataclasses
 import uuid
 from typing import Any
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.turn_prompt import InjectedPersona
 from api.db.models.chat import ChatRoom
 from api.db.models.persona import UserPersona
-from api.db.models.story import StoryVersionDetail
 from factories import _story_with_setup
+from replay.logs import ReplayRefusedError
 from replay.room_fixed import RoomFixed, diff_fixed, load_room_fixed
 
 
-async def _room(
-    db_session: AsyncSession, *, persona: UserPersona | None, default_user_name: str
-) -> tuple[ChatRoom, uuid.UUID]:
+async def _room(db_session: AsyncSession, *, persona: UserPersona | None) -> tuple[ChatRoom, uuid.UUID]:
     user_id, content, setup = await _story_with_setup(db_session, opening_message="어서 와")
     assert content.current_published_version_id is not None
-    detail = await db_session.get(StoryVersionDetail, content.current_published_version_id)
-    assert detail is not None
-    detail.default_user_name = default_user_name
     if persona is not None:
         persona.user_id = user_id
         db_session.add(persona)
@@ -43,7 +39,7 @@ async def _room(
 
 async def test_load_reads_the_fixed_values_and_the_full_persona(db_session: AsyncSession) -> None:
     persona = UserPersona(user_id=uuid.uuid4(), name="하늘", gender="female", description="밤에만 글을 쓴다")
-    room, setup_row_id = await _room(db_session, persona=persona, default_user_name="여행자")
+    room, setup_row_id = await _room(db_session, persona=persona)
 
     fixed = await load_room_fixed(db_session, room.id)
 
@@ -54,20 +50,19 @@ async def test_load_reads_the_fixed_values_and_the_full_persona(db_session: Asyn
         chat_model="sonnet",
         persona_id=persona.id,
         persona_name="하늘",
-        default_user_name="여행자",
         persona=InjectedPersona(name="하늘", gender="female", description="밤에만 글을 쓴다"),
     )
-    # 프로필 이름이 작품 기본 이름보다 먼저다(서버의 `{{user}}` 치환과 같은 규칙).
     assert fixed.user_name == "하늘"
 
 
-async def test_load_without_persona_uses_the_story_default_name(db_session: AsyncSession) -> None:
-    room, _ = await _room(db_session, persona=None, default_user_name="여행자")
+async def test_load_without_persona_uses_the_fallback_name(db_session: AsyncSession) -> None:
+    # 서버의 `{{user}}` 치환과 같은 규칙 — 프로필이 없으면 "당신".
+    room, _ = await _room(db_session, persona=None)
 
     fixed = await load_room_fixed(db_session, room.id)
 
     assert fixed is not None
-    assert (fixed.persona_id, fixed.persona, fixed.user_name) == (None, None, "여행자")
+    assert (fixed.persona_id, fixed.persona, fixed.user_name) == (None, None, "당신")
 
 
 async def test_load_of_a_missing_room_is_none(db_session: AsyncSession) -> None:
@@ -82,7 +77,6 @@ def _fixed(**changes: Any) -> RoomFixed:
         chat_model=None,
         persona_id=uuid.UUID(int=4),
         persona_name="하늘",
-        default_user_name="여행자",
         persona=InjectedPersona(name="하늘", gender=None, description="첫 설명"),
     )
     return dataclasses.replace(base, **changes)
@@ -122,14 +116,6 @@ def test_diff_ignores_the_persona_body_and_the_physical_setup_row() -> None:
     assert diff_fixed(recorded, current) == []
 
 
-def test_diff_sees_a_user_name_change_through_the_story_default_name() -> None:
-    # 프로필 없는 방에서는 작품 기본 이름이 `{{user}}` 이름이다.
-    recorded = _fixed(persona_id=None, persona_name=None, persona=None)
-    current = _fixed(persona_id=None, persona_name=None, persona=None, default_user_name="나그네")
-
-    assert [d.split(":")[0] for d in diff_fixed(recorded, current)] == ["userName"]
-
-
 def test_record_round_trip_keeps_every_value_and_old_records_have_none() -> None:
     fixed = _fixed(chat_model="sonnet")
 
@@ -137,6 +123,23 @@ def test_record_round_trip_keeps_every_value_and_old_records_have_none() -> None
 
     assert record["persona"] == {"name": "하늘", "gender": None, "description": "첫 설명"}
     assert record["userName"] == "하늘"
+    assert set(record) == set(RoomFixed.RECORD_KEYS)
     assert RoomFixed.from_record(record) == fixed
     # 이 값들을 기록하기 전의 옛 로그(방 고정값 없음)는 None 이다 — 리플레이가 "고정값 기록 없음"을 남긴다.
     assert RoomFixed.from_record({"kind": "roomStatic", "stats": [], "names": {}}) is None
+
+
+@pytest.mark.parametrize("old_value", [pytest.param("", id="empty"), pytest.param(None, id="null")])
+def test_old_record_with_an_empty_default_user_name_still_reads(old_value: str | None) -> None:
+    # 작품 기본 이름 단계를 지우기 전의 기록에는 이 키가 있다. 값이 비어 있으면 그 기록의 이름 조건은 지금과 같다.
+    fixed = _fixed()
+
+    assert RoomFixed.from_record({**fixed.as_record(), "defaultUserName": old_value}) == fixed
+
+
+def test_old_record_with_a_default_user_name_is_refused() -> None:
+    # 값이 든 옛 기록은 지금 코드가 재현할 수 없는 이름으로 조립됐다 — 다른 이름으로 조용히 재현하지 않고 거부한다.
+    record = {**_fixed(persona_id=None, persona_name=None, persona=None).as_record(), "defaultUserName": "여행자"}
+
+    with pytest.raises(ReplayRefusedError, match="작품 기본 이름"):
+        RoomFixed.from_record(record)

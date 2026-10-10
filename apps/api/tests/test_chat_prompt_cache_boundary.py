@@ -20,7 +20,7 @@ from api.db.models.story import StoryPromptTemplate
 from api.llm.client import SegmentedPrompt
 from factories import _clear_llm_override, _FakeLLMClient, _open_room, _override_llm_client
 
-_NO_NAMES = PromptNames(persona_name=None, default_user_name="", char_name=None)
+_NO_NAMES = PromptNames(persona_name=None, char_name=None)
 _PROMPT_SET = PromptSet(
     status="published", user_label="나", story_assistant_label="진행", story_example_label="서술", character_assistant_label="너"
 )

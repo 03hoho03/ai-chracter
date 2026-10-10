@@ -7865,7 +7865,7 @@
           "novels"
         ],
         "summary": "Create Room Novel",
-        "description": "방의 소설을 만들거나, 이미 있으면 그대로 돌려준다(201 / 200). 무과금이다.\n\n원작 제목·캐릭터 이름·레인은 방이 고정한 버전에서 사본으로 떠 둔다 — 방이 지워지거나 작품이 바뀌어도 소설은\n그대로 읽혀야 한다. 주인공 이름은 방에 건 대화 프로필 이름, 없으면 그 버전의 작품 기본 이름이고, 둘 다 없으면\n비워 두었다가 첫 장을 만들기 전에 받는다. 이용 제한 작품이어도 만들 수 있다(모델을 부르지 않는다).\n\n작가가 소설화를 허용하지 않은 작품이면 작가 본인이 아닌 사람은 새로 만들 수 없다(403 `CONTENT_NOVELIZE_FORBIDDEN`).\n이 판정은 이미 있는 소설을 돌려주는 분기 뒤에 둔다 — 허락을 낮춰도 이미 만든 소설은 계속 열리고 이어 쓸 수 있어야\n한다. 같은 이유로 모델을 부르는 라우트(다음 화·연쇄·다시 만들기·AI 수정)는 허락을 보지 않는다. 허락 변경과 겹친\n생성은 잠그지 않는다 — 놓치는 것은 금지로 바꾸는 순간과 겹친 생성 하나이고, 그 소설은 어차피 유지되는 대상이다.",
+        "description": "방의 소설을 만들거나, 이미 있으면 그대로 돌려준다(201 / 200). 무과금이다.\n\n원작 제목·캐릭터 이름·레인은 방이 고정한 버전에서 사본으로 떠 둔다 — 방이 지워지거나 작품이 바뀌어도 소설은\n그대로 읽혀야 한다. 주인공 이름은 방에 건 대화 프로필 이름이고, 없으면 비워 두었다가 첫 장을 만들기 전에\n받는다. 이용 제한 작품이어도 만들 수 있다(모델을 부르지 않는다).\n\n작가가 소설화를 허용하지 않은 작품이면 작가 본인이 아닌 사람은 새로 만들 수 없다(403 `CONTENT_NOVELIZE_FORBIDDEN`).\n이 판정은 이미 있는 소설을 돌려주는 분기 뒤에 둔다 — 허락을 낮춰도 이미 만든 소설은 계속 열리고 이어 쓸 수 있어야\n한다. 같은 이유로 모델을 부르는 라우트(다음 화·연쇄·다시 만들기·AI 수정)는 허락을 보지 않는다. 허락 변경과 겹친\n생성은 잠그지 않는다 — 놓치는 것은 금지로 바꾸는 순간과 겹친 생성 하나이고, 그 소설은 어차피 유지되는 대상이다.",
         "operationId": "create_room_novel_chat_rooms__room_id__novel_post",
         "parameters": [
           {
@@ -20735,11 +20735,6 @@
             ],
             "title": "Playguide"
           },
-          "defaultUserName": {
-            "type": "string",
-            "maxLength": 20,
-            "title": "Defaultusername"
-          },
           "situationalImages": {
             "items": {
               "$ref": "#/components/schemas/CharacterSituationalImageDraftInput"
@@ -20896,10 +20891,6 @@
             ],
             "title": "Playguide"
           },
-          "defaultUserName": {
-            "type": "string",
-            "title": "Defaultusername"
-          },
           "situationalImages": {
             "items": {
               "$ref": "#/components/schemas/CharacterSituationalImageItem"
@@ -20965,7 +20956,6 @@
           "exampleDialogues",
           "characterPrompt",
           "playguide",
-          "defaultUserName",
           "situationalImages",
           "description",
           "genreId",
@@ -21815,10 +21805,6 @@
               }
             ],
             "title": "Personaname"
-          },
-          "defaultUserName": {
-            "type": "string",
-            "title": "Defaultusername"
           },
           "contentName": {
             "type": "string",
@@ -23511,10 +23497,6 @@
             "type": "string",
             "title": "Detaildescription"
           },
-          "defaultUserName": {
-            "type": "string",
-            "title": "Defaultusername"
-          },
           "chatCount": {
             "type": "integer",
             "title": "Chatcount"
@@ -25114,10 +25096,6 @@
           "oneLiner": {
             "type": "string",
             "title": "Oneliner"
-          },
-          "defaultUserName": {
-            "type": "string",
-            "title": "Defaultusername"
           },
           "thumbnailUrl": {
             "anyOf": [
@@ -31190,11 +31168,6 @@
             ],
             "title": "Rules"
           },
-          "defaultUserName": {
-            "type": "string",
-            "maxLength": 20,
-            "title": "Defaultusername"
-          },
           "startingSetups": {
             "items": {
               "$ref": "#/components/schemas/StartingSetupDraftItem"
@@ -31412,10 +31385,6 @@
             ],
             "title": "Rules"
           },
-          "defaultUserName": {
-            "type": "string",
-            "title": "Defaultusername"
-          },
           "startingSetups": {
             "items": {
               "$ref": "#/components/schemas/StartingSetupDraftItem"
@@ -31500,7 +31469,6 @@
           "developmentExamples",
           "userGoal",
           "rules",
-          "defaultUserName",
           "startingSetups",
           "keywordNotes",
           "shortcuts",

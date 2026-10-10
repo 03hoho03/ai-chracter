@@ -28,8 +28,8 @@ from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import KeywordNote, StatDef, StatRule, StoryPromptTemplate
 
-_STORY = PromptNames(persona_name="지훈", default_user_name="모험가", char_name=None)
-_CHARACTER = PromptNames(persona_name="지훈", default_user_name="", char_name="하늘")
+_STORY = PromptNames(persona_name="지훈", char_name=None)
+_CHARACTER = PromptNames(persona_name="지훈", char_name="하늘")
 
 
 def _section(channel: str, scope: str, body: str) -> PromptSection:
@@ -61,19 +61,14 @@ def _history() -> list[ChatMessage]:
 
 
 def test_prompt_names_choose_the_macro_name_and_the_name_line_values() -> None:
-    """`{{user}}` 는 언제나 이름이 있다(없으면 "당신"). 이름 한 줄은 실제 이름이 있을 때만 값이 있어 비면 섹션째 빠진다.
-    생성 채널의 한 줄은 프로필이 없을 때만 — 프로필이 있으면 프로필 섹션이 이미 이름을 준다."""
-    with_persona = PromptNames(persona_name="지훈", default_user_name="모험가", char_name=None)
-    default_only = PromptNames(persona_name=None, default_user_name="모험가", char_name=None)
-    nothing = PromptNames(persona_name=None, default_user_name="", char_name=None)
+    """`{{user}}` 는 언제나 이름이 있다(프로필이 없으면 "당신"). 판정·요약의 이름 한 줄은 프로필 이름이 있을 때만 값이
+    있어 비면 섹션째 빠진다. 생성 채널의 이름 한 줄은 늘 비어 있다 — 프로필이 있으면 프로필 섹션이 이미 이름을 준다."""
+    with_persona = PromptNames(persona_name="지훈", char_name=None)
+    nothing = PromptNames(persona_name=None, char_name=None)
 
-    assert [names.expand("{{user}}는") for names in (with_persona, default_only, nothing)] == [
-        "지훈은",
-        "모험가는",
-        "당신은",
-    ]
-    assert [names.judgment_user_name for names in (with_persona, default_only, nothing)] == ["지훈", "모험가", ""]
-    assert [names.generation_user_name for names in (with_persona, default_only, nothing)] == ["", "모험가", ""]
+    assert [names.expand("{{user}}는") for names in (with_persona, nothing)] == ["지훈은", "당신은"]
+    assert [names.judgment_user_name for names in (with_persona, nothing)] == ["지훈", ""]
+    assert [names.generation_user_name for names in (with_persona, nothing)] == ["", ""]
 
 
 # ---- 생성 ----------------------------------------------------------------------------------
@@ -176,16 +171,16 @@ def test_character_generation_expands_prompt_examples_and_assistant_history() ->
         user_persona="",
         memory_note="",
         memory_summary="",
-        names=PromptNames(persona_name=None, default_user_name="민수", char_name="하늘"),
+        names=PromptNames(persona_name=None, char_name="하늘"),
     )
 
     assert prompt.split("|") == [
-        "하늘은 민수를 기다린다",
-        "U: 하늘아\nC: 민수야",
+        "하늘은 당신을 기다린다",
+        "U: 하늘아\nC: 당신아",
         "C: 하늘이 웃는다\nU: {{char}}라고 쳤다",
         "{{user}} 그대로",
-        # 프로필 없이 작품 기본 이름만 있으면 생성 채널에도 이름 한 줄이 실린다.
-        "민수",
+        # 프로필이 없어도 생성 채널의 이름 한 줄은 비운다 — 슬롯 값은 늘 넘기되 빈 값이라 섹션째 빠진다.
+        "",
     ]
 
 
@@ -285,7 +280,7 @@ def test_memory_summary_expands_assistant_lines_and_carries_the_name_line() -> N
         is_story_chat=True,
         previous_summary="",
         turns=_history(),
-        names=PromptNames(persona_name=None, default_user_name="모험가", char_name=None),
+        names=PromptNames(persona_name="모험가", char_name=None),
     )
 
     # 요약은 태그를 지우지 않는다(요약 입력에는 첫 메시지가 빠져 태그가 오지 않는다) — 바꾸기만 한다.
@@ -293,8 +288,8 @@ def test_memory_summary_expands_assistant_lines_and_carries_the_name_line() -> N
 
 
 def test_judgment_name_line_section_drops_without_an_actual_name() -> None:
-    """이름 한 줄은 conditional 행이다 — 프로필도 작품 기본 이름도 없으면 값이 비어 섹션째 빠지고, "사용자의 이름:
-    당신" 같은 줄이 나가지 않는다."""
+    """이름 한 줄은 conditional 행이다 — 프로필이 없으면 값이 비어 섹션째 빠지고, "사용자의 이름: 당신" 같은 줄이
+    나가지 않는다."""
     sections = [
         PromptSection(
             channel="stat_rule_judgment", scope="story", slot="user_name", variant="",
@@ -311,7 +306,7 @@ def test_judgment_name_line_section_drops_without_an_actual_name() -> None:
         )
         return prompt
 
-    assert render(PromptNames(persona_name=None, default_user_name="", char_name=None)) == "메시지"
+    assert render(PromptNames(persona_name=None, char_name=None)) == "메시지"
     assert render(_STORY) == "사용자의 이름: 지훈\n\n메시지"
 
 
@@ -332,4 +327,4 @@ def test_keyword_scan_reads_the_expanded_assistant_text() -> None:
     assert [(turn.assistant_text, turn.user_texts) for turn in turns] == [("지훈은 문을 연다", ("{{user}}야",))]
     assert match_keyword_notes([note], history, "안녕", names=_STORY) == [note]
     # 이름이 다르면 같은 첫 메시지라도 걸리지 않는다 — 원문(`{{user}}`)이 아니라 바뀐 글을 본다는 뜻이다.
-    assert match_keyword_notes([note], history, "안녕", names=PromptNames(None, "", None)) == []
+    assert match_keyword_notes([note], history, "안녕", names=PromptNames(None, None)) == []
