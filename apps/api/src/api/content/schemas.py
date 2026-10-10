@@ -270,9 +270,9 @@ class CharacterDraftPayload(CamelModel):
     example_dialogues: list[ExampleDialogueItem] = Field(max_length=_CHARACTER_LIMITS["exampleDialogueMaxCount"])
     character_prompt: str = Field(max_length=_CHARACTER_LIMITS["characterPromptMaxLength"])
     playguide: Annotated[str, StringConstraints(max_length=_CHARACTER_LIMITS["playguideMaxLength"])] | None
-    # 안 보내면 저장된 값을 그대로 둔다(router 가 `model_fields_set` 으로 가른다) — 이 칸을 모르는 화면(배포 전부터
-    # 열려 있던 탭의 옛 번들)의 자동저장이 작가가 넣은 이름을 지우지 않게. `default_factory` 인 이유는
-    # `KeywordNoteDraftInput` 의 같은 주석과 같다.
+    # 초안 저장은 이 값을 쓰지 않는다(빌더에 입력칸이 없다). 미리보기 시작 요청이 같은 모델을 써서 그 이름으로 남아 있다.
+    # 검증은 그대로라 규칙에 어긋난 값은 저장 요청이어도 422 다. `default_factory` 인 이유는 `KeywordNoteDraftInput` 의
+    # 같은 주석과 같다.
     default_user_name: DefaultUserName = Field(default_factory=str)
     situational_images: list[CharacterSituationalImageDraftInput]
     description: WorkDescription

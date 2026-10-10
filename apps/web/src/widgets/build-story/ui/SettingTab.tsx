@@ -9,7 +9,6 @@ import { Controller, useFieldArray, useFormContext, useWatch } from "react-hook-
 import { MAX_DEVELOPMENT_EXAMPLES } from "@/entities/content";
 import {
   CollapsibleItemCard,
-  DefaultUserNameField,
   focusNeighborToggle,
   indexOpenKey,
   ItemRemoveButton,
@@ -48,7 +47,6 @@ export function SettingTab() {
   } = form;
   const promptTemplate = useWatch({ control, name: "storySetting.promptTemplate" });
   const isCustom = promptTemplate === "custom";
-  const defaultUserName = useWatch({ control, name: "storySetting.defaultUserName" });
 
   const { fields, append, remove } = useFieldArray({ control, name: "storySetting.developmentExamples" });
   // 머리 줄 요약은 사용자 메시지만 쓴다 — 배열 전체를 구독하면 긴 스토리 응답에 한 글자 칠 때마다 탭 전체가 다시 그려진다.
@@ -202,15 +200,6 @@ export function SettingTab() {
           </p>
         )}
       </div>
-
-      <DefaultUserNameField
-        id="story-setting-default-user-name"
-        label={<FieldLabelText field="storySetting.defaultUserName" />}
-        contentType="story"
-        value={defaultUserName}
-        publishError={errors.storySetting?.defaultUserName?.message}
-        registration={register("storySetting.defaultUserName")}
-      />
 
       <div className="flex flex-col gap-4" data-field-path="storySetting.developmentExamples">
         <Label><FieldLabelText field="storySetting.developmentExamples" /></Label>

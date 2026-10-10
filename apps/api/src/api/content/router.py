@@ -1033,9 +1033,8 @@ async def _update_character_draft(
     detail.example_dialogues = [item.model_dump(by_alias=True) for item in payload.example_dialogues]
     detail.character_prompt = payload.character_prompt
     detail.playguide = payload.playguide
-    # 안 보냈으면 저장된 값을 둔다 — 이 칸을 모르는 옛 화면의 자동저장이 작가가 넣은 이름을 지우지 않게.
-    if "default_user_name" in payload.model_fields_set:
-        detail.default_user_name = payload.default_user_name
+    # 작품 기본 이름은 빌더에 입력칸이 없어 초안 저장으로 쓰지 않는다. 요청에 실려 와도(옛 화면, 미리보기용으로 폼에 남은 값)
+    # 저장된 값을 그대로 둔다 — 발행·방·미리보기는 저장된 값을 계속 읽는다.
     version.detail_description = payload.description
     content.genre_id = payload.genre_id
     content.target = payload.target
@@ -1456,9 +1455,7 @@ async def _update_story_draft(
     ]
     detail.user_goal = payload.user_goal
     detail.rules = payload.rules
-    # 캐릭터 쪽과 같은 이유로 보냈을 때만 쓴다.
-    if "default_user_name" in payload.model_fields_set:
-        detail.default_user_name = payload.default_user_name
+    # 작품 기본 이름은 캐릭터 쪽과 같은 이유로 쓰지 않는다.
     version.detail_description = payload.description
     content.genre_id = payload.genre_id
     content.target = payload.target

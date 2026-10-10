@@ -997,30 +997,35 @@ _DEFAULT_USER_NAME_DRAFTS = [
 
 
 @pytest.mark.parametrize(("make_draft", "make_payload"), _DEFAULT_USER_NAME_DRAFTS)
-async def test_patch_draft_keeps_default_user_name_when_key_omitted(
+async def test_patch_draft_never_overwrites_stored_default_user_name(
     db_client: httpx.AsyncClient, db_session: AsyncSession, make_draft: Any, make_payload: Any
 ) -> None:
-    """작품 기본 이름 칸을 모르는 옛 화면(배포 전부터 열린 빌더 탭)의 자동저장은 이 키를 안 보낸다. 그 저장이 작가가 넣은
-    이름을 빈 값으로 지우면 안 된다. 보낸 값은 앞뒤 공백을 걷어 저장하고, 빈 값을 보내면 지운다."""
+    """빌더에는 작품 기본 이름 칸이 없다. 그래도 옛 화면의 자동저장과 미리보기용으로 폼에 남은 값이 이 키를 실어 보낼 수
+    있는데, 그 저장이 이미 저장된 이름을 바꾸거나 지우면 안 된다. 저장값은 발행·방·미리보기가 계속 읽는다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
     content = await make_draft(db_session, creator_user_id=user.id)
+    version_id = await db_session.scalar(
+        sa.select(ContentVersion.id).where(ContentVersion.content_id == content.id)
+    )
+    detail_model = StoryVersionDetail if content.type == ContentType.STORY else CharacterVersionDetail
+    await db_session.execute(
+        sa.update(detail_model)
+        .where(detail_model.content_version_id == version_id)
+        .values(default_user_name="지훈")
+    )
     await db_session.commit()
     await _login_as(db_client, user.id)
 
-    saved = await db_client.patch(f"/contents/{content.id}/draft", json=make_payload(defaultUserName=" 지훈 "))
-    assert saved.status_code == 200
-    assert saved.json()["defaultUserName"] == "지훈"
-
-    omitted = await db_client.patch(f"/contents/{content.id}/draft", json=make_payload(name="새 이름"))
-    assert omitted.status_code == 200
-    assert omitted.json()["defaultUserName"] == "지훈"
-    assert (await db_client.get(f"/contents/{content.id}/draft")).json()["defaultUserName"] == "지훈"
-
-    cleared = await db_client.patch(f"/contents/{content.id}/draft", json=make_payload(defaultUserName=""))
-    assert cleared.status_code == 200
-    assert cleared.json()["defaultUserName"] == ""
+    for sent in ("민수", ""):
+        resp = await db_client.patch(f"/contents/{content.id}/draft", json=make_payload(defaultUserName=sent))
+        assert resp.status_code == 200
+        assert resp.json()["defaultUserName"] == "지훈"
+        stored = await db_session.scalar(
+            sa.select(detail_model.default_user_name).where(detail_model.content_version_id == version_id)
+        )
+        assert stored == "지훈"
 
 
 @pytest.mark.parametrize(("make_draft", "make_payload"), _DEFAULT_USER_NAME_DRAFTS)

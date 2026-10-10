@@ -99,7 +99,6 @@ export const STORY_FIELD_MOCKUPS = {
   "storySetting.worldSetting": { kind: "textarea", seedPath: "settingText", readTiming: "everyTurn" },
   "storySetting.rules": { kind: "textarea", seedPath: "rules", readTiming: "everyTurn" },
   "storySetting.userGoal": { kind: "textarea", seedPath: "userGoal", readTiming: "everyTurn" },
-  "storySetting.defaultUserName": { kind: "text", seedPath: null, readTiming: null },
   "storySetting.developmentExamples": {
     kind: "cardList",
     seedPath: "developmentExamples",

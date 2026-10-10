@@ -35,23 +35,10 @@ describe("SettingTab development examples", () => {
 });
 
 describe("SettingTab default user name", () => {
-  // 사용자에 관한 칸이 한 자리에 모이도록 기본 이름은 "사용자의 역할과 목표" 바로 뒤, 전개 예시 앞에 선다.
-  it("sits right after the user's role and goal", () => {
-    const html = renderToStaticMarkup(createElement(SettingTabWithForm));
-    const userGoal = html.indexOf('name="storySetting.userGoal"');
-    const defaultUserName = html.indexOf('name="storySetting.defaultUserName"');
-    const examples = html.indexOf('name="storySetting.developmentExamples.0.userLine"');
-    expect(userGoal).toBeGreaterThan(-1);
-    expect(defaultUserName).toBeGreaterThan(userGoal);
-    expect(examples).toBeGreaterThan(defaultUserName);
-  });
-
-  // 자동저장은 폼 검증을 거치지 않으므로 서버가 받지 않을 이름은 발행 전에도 바로 알린다.
-  it("shows a name the server would reject while typing, before any publish", () => {
-    const html = renderToStaticMarkup(createElement(SettingTabWithForm, { defaultUserName: "별*" }));
-    expect(html).toContain("고칠 때까지 이 칸은 저장되지 않아요");
-    expect(renderToStaticMarkup(createElement(SettingTabWithForm, { defaultUserName: "조수" }))).not.toContain(
-      "저장되지 않아요",
-    );
+  // 빌더는 작품 기본 이름을 받지 않는다. 폼에 남은 값은 미리보기로만 실려 가고 화면에는 칸이 없어야 한다.
+  it("has no default user name field even when the form carries a stored name", () => {
+    const html = renderToStaticMarkup(createElement(SettingTabWithForm, { defaultUserName: "모험가" }));
+    expect(html).toContain('name="storySetting.userGoal"');
+    expect(fieldTagOf(html, "storySetting.defaultUserName")).toBe("");
   });
 });

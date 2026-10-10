@@ -1218,7 +1218,6 @@ async def test_reset_draft_after_real_publish_restores_character_edits(
             "exampleDialogues": [],
             "characterPrompt": "고쳐 쓴 프롬프트",
             "playguide": None,
-            "defaultUserName": "고쳐 쓴 이름",
             "situationalImages": [],
             "description": "고쳐 쓴 설명",
             "genreId": str(genre.id),
@@ -1229,6 +1228,13 @@ async def test_reset_draft_after_real_publish_restores_character_edits(
     )
     assert patch_resp.status_code == 200
     draft_version_id = uuid.UUID(patch_resp.json()["contentVersionId"])
+    # 초안 저장은 작품 기본 이름을 쓰지 않으니, 복원이 되돌릴 차이를 DB 에 직접 만든다.
+    await db_session.execute(
+        sa.update(CharacterVersionDetail)
+        .where(CharacterVersionDetail.content_version_id == draft_version_id)
+        .values(default_user_name="고쳐 쓴 이름")
+    )
+    await db_session.commit()
 
     resp = await db_client.post(f"/contents/{content.id}/draft/reset")
     assert resp.status_code == 204
@@ -1265,6 +1271,38 @@ async def test_reset_draft_after_real_publish_restores_character_edits(
 
     await db_session.refresh(content)
     assert content.current_published_version_id == version.id
+
+
+async def test_published_default_user_name_reaches_detail_and_room_responses(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """빌더에서 칸이 사라져도 이미 저장된 작품 기본 이름은 발행을 거쳐 상세 화면과 방 응답에 그대로 실린다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, _version, _thumbnail, _image = await _make_publishable_character_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        publish_resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+    assert publish_resp.status_code == 200
+
+    detail_resp = await db_client.get(f"/contents/{content.id}")
+    assert detail_resp.status_code == 200
+    assert detail_resp.json()["defaultUserName"] == "여행자"
+
+    room_resp = await db_client.post(
+        "/chat-rooms", json={"contentId": str(content.id), "contentType": "character"}
+    )
+    assert room_resp.status_code == 201, room_resp.text
+    assert room_resp.json()["defaultUserName"] == "여행자"
 
 
 async def test_reset_draft_after_real_publish_restores_story_edits(
@@ -1309,7 +1347,6 @@ async def test_reset_draft_after_real_publish_restores_story_edits(
             "settingText": "고쳐 쓴 세계관",
             "developmentExample": None,
             "customPrompt": None,
-            "defaultUserName": "고쳐 쓴 이름",
             "startingSetups": [
                 {
                     "id": str(setup.entity_id),
@@ -1339,6 +1376,13 @@ async def test_reset_draft_after_real_publish_restores_story_edits(
         },
     )
     assert patch_resp.status_code == 200
+    # 캐릭터 쪽과 같은 이유로 작품 기본 이름은 DB 에 직접 바꿔 둔다.
+    await db_session.execute(
+        sa.update(StoryVersionDetail)
+        .where(StoryVersionDetail.content_version_id == draft_version_id)
+        .values(default_user_name="고쳐 쓴 이름")
+    )
+    await db_session.commit()
 
     resp = await db_client.post(f"/contents/{content.id}/draft/reset")
     assert resp.status_code == 204
