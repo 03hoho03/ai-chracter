@@ -478,6 +478,84 @@ async def test_ending_reached_event_carries_cell_id_epilogue_and_url_map(
     assert asset.storage_key in ending_event["mediaTagImages"][str(cell.entity_id)]["url"]
 
 
+async def _reach_ending(db_client: httpx.AsyncClient, room_id: str) -> None:
+    """엔딩 판정이 참으로 나오는 한 턴을 보낸다."""
+    fake = _RecordingLLMClient(tokens=["떠났다"], structured_results=[EndingJudgmentResult(triggered=True)])
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "떠난다"})
+    finally:
+        _clear_llm_override()
+    assert any(event["type"] == "endingReached" for event in _parse_sse_events(resp.text))
+
+
+async def test_room_after_reaching_an_ending_carries_its_cell_id_epilogue_and_url_map(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """엔딩 도달 이벤트는 그 턴의 스트림에만 실린다 — 방을 다시 받아도(새로고침·재조회) 화면이 에필로그를 그리도록
+    방 응답이 도달한 엔딩의 id·에필로그·그 그림 맵을 이벤트와 같은 형태로 싣는다."""
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="시작")
+    assert content.current_published_version_id is not None
+    cell, asset = await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "옥상")
+    ending = await _add_epilogue_ending(db_session, setup, "끝났다.\n\n{{img::민아/옥상}}\n\n{{img::수아/옥상}}")
+    await db_session.commit()
+    await _login_as(db_client, user_id)
+    room = await _create_room(db_client, content, setup)
+    await _reach_ending(db_client, room["id"])
+
+    resp = await db_client.get(f"/chat-rooms/{room['id']}")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["endingReached"] is True
+    assert body["ending"]["endingId"] == str(ending.entity_id)
+    assert body["ending"]["epilogue"] == f"끝났다.\n\n{_id_tag(cell.entity_id)}"
+    assert list(body["ending"]["mediaTagImages"]) == [str(cell.entity_id)]
+    assert asset.storage_key in body["ending"]["mediaTagImages"][str(cell.entity_id)]["url"]
+    # 첫 메시지의 칸 맵에는 에필로그 그림이 섞이지 않는다.
+    assert body["mediaTagImages"] == {}
+
+
+async def test_room_carries_no_ending_before_reaching_one_and_after_reset(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="시작")
+    await _add_epilogue_ending(db_session, setup, "끝났다.")
+    await db_session.commit()
+    await _login_as(db_client, user_id)
+    room = await _create_room(db_client, content, setup)
+    assert room["ending"] is None
+    await _reach_ending(db_client, room["id"])
+
+    reset = await db_client.post(f"/chat-rooms/{room['id']}/reset")
+
+    assert reset.status_code == 200
+    assert reset.json()["endingReached"] is False
+    assert reset.json()["ending"] is None
+
+
+async def test_room_carries_no_ending_when_the_pinned_version_no_longer_has_the_reached_one(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """방이 다른 버전으로 옮겨 가며 도달한 엔딩이 그 버전에서 빠졌으면 실을 에필로그가 없다 — 도달 표시만 남는다."""
+    user_id, content, setup = await _story_with_setup(db_session, opening_message="시작")
+    await _add_epilogue_ending(db_session, setup, "끝났다.")
+    await db_session.commit()
+    await _login_as(db_client, user_id)
+    room = await _create_room(db_client, content, setup)
+    await _reach_ending(db_client, room["id"])
+    stored = await db_session.get(ChatRoom, uuid.UUID(room["id"]))
+    assert stored is not None
+    await db_session.refresh(stored)
+    stored.ending_entity_id = uuid.uuid4()
+    await db_session.commit()
+
+    resp = await db_client.get(f"/chat-rooms/{room['id']}")
+
+    assert resp.json()["endingReached"] is True
+    assert resp.json()["ending"] is None
+
+
 async def test_ending_collection_carries_cell_id_epilogue_and_url_map_only_for_reached_endings(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
