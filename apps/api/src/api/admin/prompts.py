@@ -58,7 +58,7 @@ from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StatDef, StatRule, StoryPromptTemplate
 from api.db.session import get_db_session
-from api.llm.chat_models import ChatModelId, parse_chat_model_id
+from api.llm.chat_models import PromptSetModelId, parse_prompt_set_model_id
 from api.novel_public.screening import NovelScreenItem, build_novel_screen_prompt
 from api.novelize.prompts import (
     NovelizePrompt,
@@ -297,40 +297,60 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str]]]]
     for lane, by_channel in _EXPECTED_ROWS_BY_LANE.items()
 }
 
-# Claude 세트(sonnet·opus 체인)는 고른 모델이 실제로 쓰는 채널만 갖는다. 채팅 레인은 생성의 `system`·`generation` 뿐이고
-# — 판정·요약 호출은 고른 모델과 무관하게 Gemini 세트를 읽는다 — `novel` 레인은 화 생성 `novelize_chapter` 뿐이다(경계
-# 제안·문단 수정은 늘 Gemini 체인). 그래서 Claude 세트의 R-1 기대 집합은 같은 레인 Gemini 표에서 그 레인의 채널만 남긴
-# 것이다(표를 따로 적지 않는다 — 슬롯이 늘면 두 체인이 함께 따라온다). 레인마다 따로 두는 이유는 한 집합으로 두면 다른
-# 레인의 Claude 체인 기대 집합이 비어 그 체인 게시가 영원히 R-1 에 막히기 때문이다. 발행 심사 레인에는 Claude 체인이 없다
-# (`_require_lane_model`).
+# 채팅 레인의 판정(스탯 규칙·엔딩·그림)·기억 요약 호출이 읽는 채널. 옛 `stat_judgment` 은 읽는 코드가 없어 Gemini 체인에만
+# 남아 있다. 판정·요약 문안 체인이 있는 레인은 story·character 뿐이다.
+_JUDGMENT_CHANNELS_BY_LANE: dict[PromptLane, frozenset[str]] = {
+    "story": frozenset({"stat_rule_judgment", "ending_judgment", "image_judgment", "memory_summary"}),
+    "character": frozenset({"image_judgment", "memory_summary"}),
+    "publish_filter": frozenset(),
+    "novel": frozenset(),
+    "novel_screen": frozenset(),
+}
+
+# Gemini 가 아닌 체인은 그 모델이 쓸 수 있는 채널만 갖는다.
+# - Claude 세트(sonnet·opus 체인): 채팅 레인은 생성의 `system`·`generation` 과 그 레인의 판정·요약 채널, `novel` 레인은 화
+#   생성 `novelize_chapter` 뿐이다(경계 제안·문단 수정은 늘 Gemini 체인). 판정·요약 채널은 판정 모델을 그 모델로 바꿨을 때
+#   읽는 문안이다 — 지금 판정·요약은 고른 모델과 무관하게 Gemini 세트를 읽는다.
+# - 판정 전용 세트(haiku 체인): 그 레인의 판정·요약 채널만. 그 id 로는 글을 쓰지 않는다.
+# R-1 기대 집합은 같은 레인 Gemini 표에서 이 채널만 남긴 것이다(표를 따로 적지 않는다 — 슬롯이 늘면 체인이 함께 따라온다).
+# 그래서 **판정·요약 슬롯을 더하거나 바꾸는 마이그레이션은 Gemini 체인뿐 아니라 Claude 체인(story·character × sonnet·opus)과
+# 판정 전용 체인(story·character × haiku)도 다뤄야** 그 체인 게시가 "누락"으로 막히지 않는다. 레인마다 따로 두는 이유는 한
+# 집합으로 두면 다른 레인의 체인 기대 집합이 비어 그 체인 게시가 영원히 R-1 에 막히기 때문이다. 심사 레인에는 Gemini 체인뿐이고
+# 판정 전용 체인은 채팅 레인에만 있다(`_require_lane_model`).
 _CLAUDE_SET_CHANNELS_BY_LANE: dict[PromptLane, frozenset[str]] = {
-    "story": frozenset({"system", "generation"}),
-    "character": frozenset({"system", "generation"}),
+    "story": frozenset({"system", "generation"}) | _JUDGMENT_CHANNELS_BY_LANE["story"],
+    "character": frozenset({"system", "generation"}) | _JUDGMENT_CHANNELS_BY_LANE["character"],
     "publish_filter": frozenset(),
     "novel": frozenset({"novelize_chapter"}),
     "novel_screen": frozenset(),
 }
 
 
-def _expected_slots(lane: PromptLane, model: ChatModelId) -> dict[str, frozenset[tuple[str, str]]]:
+def _expected_slots(lane: PromptLane, model: PromptSetModelId) -> dict[str, frozenset[tuple[str, str]]]:
     expected = _EXPECTED_SLOTS_BY_LANE[lane]
     if model == "gemini":
         return expected
-    channels = _CLAUDE_SET_CHANNELS_BY_LANE[lane]
+    channels = _JUDGMENT_CHANNELS_BY_LANE[lane] if model == "haiku" else _CLAUDE_SET_CHANNELS_BY_LANE[lane]
     return {channel: slots for channel, slots in expected.items() if channel in channels}
 
 
-def _freezes_novel_rows(lane: PromptLane, model: ChatModelId) -> bool:
+def _freezes_novel_rows(lane: PromptLane, model: PromptSetModelId) -> bool:
     """얼린 소설 행이 있는 체인 — 채팅 레인의 Gemini 체인뿐이다(Claude 채팅 체인에는 처음부터 소설 행이 없다)."""
     return lane in ("story", "character") and model == "gemini"
 
 
-def _require_lane_model(lane: PromptLane, model: ChatModelId) -> None:
-    """심사 레인(발행 심사·노벨 텍스트 심사)은 Gemini 세트뿐이다 — 심사는 모델을 고르지 않는다."""
+def _require_lane_model(lane: PromptLane, model: PromptSetModelId) -> None:
+    """심사 레인(발행 심사·노벨 텍스트 심사)은 Gemini 세트뿐이다 — 심사는 모델을 고르지 않는다. 판정 전용 체인은 채팅
+    판정·요약 문안이라 스토리·캐릭터 레인에만 있다."""
     if lane in ("publish_filter", "novel_screen") and model != "gemini":
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={"rule": "lane-model", "message": "심사 레인에는 Gemini 세트만 있습니다."},
+        )
+    if model == "haiku" and lane not in ("story", "character"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"rule": "lane-model", "message": "판정 전용 세트는 스토리·캐릭터 레인에만 있습니다."},
         )
 
 
@@ -353,6 +373,9 @@ def _require_lane_model(lane: PromptLane, model: ChatModelId) -> None:
 # 이 사고를 렌더러 수준에서 고정한다.
 #
 # `StoryPromptTemplate`에서 직접 뽑아 두 벌로 갈릴 여지를 없앤다.
+#
+# 두 슬롯 모두 생성 채널에 있다 — 검사는 그 체인이 그 채널을 갖는 경우에만 한다(`_validate_prompt_draft_for_publish`). 레인
+# 기준으로만 걸면 생성 채널이 없는 story 판정 전용 세트가 영원히 게시할 수 없다.
 _REQUIRED_VARIANT_SLOTS_BY_LANE: dict[PromptLane, dict[tuple[str, str, str], frozenset[str]]] = {
     "story": {
         ("system", "story", "template_instruction"): frozenset(t.value for t in StoryPromptTemplate),
@@ -391,7 +414,7 @@ def _validation_error(rule: str, message: str) -> HTTPException:
 
 
 def _validate_prompt_draft_for_publish(
-    prompt_set: PromptSet, sections: list[PromptSection], *, lane: PromptLane, model: ChatModelId = "gemini"
+    prompt_set: PromptSet, sections: list[PromptSection], *, lane: PromptLane, model: PromptSetModelId = "gemini"
 ) -> None:
     """R-1~R-8. 규칙
     이름이 붙은 순서대로 검사하고 첫 위반에서 멈춘다("순서대로 본다") — 뒤의 규칙들은
@@ -403,13 +426,16 @@ def _validate_prompt_draft_for_publish(
     for section in sections:
         grouped.setdefault(section.channel, set()).add((section.scope, section.slot))
     actual = {channel: frozenset(rows) for channel, rows in grouped.items()}
-    if actual != _expected_slots(lane, model):
+    expected = _expected_slots(lane, model)
+    if actual != expected:
         raise _validation_error(
             "R-1", "슬롯 집합이 코드가 아는 목록과 다릅니다(누락 또는 잉여가 있습니다)."
         )
 
-    # R-2
+    # R-2 — 이 체인에 있는 채널의 슬롯만(위 `_REQUIRED_VARIANT_SLOTS_BY_LANE` 주석).
     for (channel, scope, slot), required_variants in _REQUIRED_VARIANT_SLOTS_BY_LANE[lane].items():
+        if channel not in expected:
+            continue
         present = {
             s.variant for s in sections if s.channel == channel and s.scope == scope and s.slot == slot
         }
@@ -512,7 +538,7 @@ async def _next_published_version(db: AsyncSession) -> str:
     return str((latest_version or 0) + 1)
 
 
-async def _get_draft(db: AsyncSession, lane: PromptLane, model: ChatModelId) -> PromptSet | None:
+async def _get_draft(db: AsyncSession, lane: PromptLane, model: PromptSetModelId) -> PromptSet | None:
     """`lane`이 없는 `db.scalar()`는 레인 필터가
     빠져도 조용히 첫 행을 반환한다 — `.scalars(...).one_or_none()`으로 두면 레인·모델 필터가
     빠졌을 때(부분 유니크 인덱스가 (레인, 모델)별이라 초안이 여러 행일 수 있다) `MultipleResultsFound`로
@@ -581,7 +607,9 @@ async def _active_frozen_novel_sections(db: AsyncSession, lane: PromptLane) -> l
     return [s for s in active_sections if s.channel in _NOVELIZE_CHANNELS]
 
 
-def _visible_sections(lane: PromptLane, model: ChatModelId, sections: list[PromptSection]) -> list[PromptSection]:
+def _visible_sections(
+    lane: PromptLane, model: PromptSetModelId, sections: list[PromptSection]
+) -> list[PromptSection]:
     """초안 응답에 싣는 섹션. 채팅 Gemini 체인에서는 얼린 소설 행을 뺀다 — 소설 문안은 소설 탭에서만 고치고, 화면이 받지
     않은 행은 저장 때 서버가 다시 채운다(`_replace_draft_content`)."""
     if not _freezes_novel_rows(lane, model):
@@ -614,7 +642,7 @@ async def _replace_draft_content(
     db: AsyncSession,
     *,
     lane: PromptLane,
-    model: ChatModelId,
+    model: PromptSetModelId,
     labels: AdminPromptLabels,
     sections: list[_SectionFields],
 ) -> PromptSet:
@@ -731,13 +759,13 @@ async def _replace_draft_content(
 
 # `{lane}` 라우트의 모델은 쿼리 `?model=`(기본 gemini)로 받는다 — 경로 세그먼트를 늘리지 않아 아래 `/{id}` 충돌
 # 규약이 그대로이고, 모델을 모르는 옛 어드민 화면도 그대로 Gemini 세트를 편집한다.
-_MODEL_QUERY = Query("gemini", description="세트의 글쓰기 모델. 생략하면 Gemini 세트다.")
+_MODEL_QUERY = Query("gemini", description="세트 체인의 모델(글쓰기 모델 또는 판정 전용 id). 생략하면 Gemini 세트다.")
 
 
 @router.get("/admin/prompt-sets/{lane}/draft")
 async def get_prompt_draft(
     lane: PromptLane,
-    model: ChatModelId = _MODEL_QUERY,
+    model: PromptSetModelId = _MODEL_QUERY,
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminPromptDraftResponse:
@@ -770,7 +798,7 @@ async def get_prompt_draft(
 async def upsert_prompt_draft(
     lane: PromptLane,
     body: AdminPromptDraftUpsertRequest,
-    model: ChatModelId = _MODEL_QUERY,
+    model: PromptSetModelId = _MODEL_QUERY,
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminPromptDraftResponse:
@@ -800,7 +828,7 @@ async def upsert_prompt_draft(
 @router.post("/admin/prompt-sets/{lane}/draft/preview")
 async def preview_prompt_draft(
     lane: PromptLane,
-    model: ChatModelId = _MODEL_QUERY,
+    model: PromptSetModelId = _MODEL_QUERY,
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminPromptPreviewResponse:
@@ -829,7 +857,7 @@ async def preview_prompt_draft(
 async def publish_prompt_set(
     lane: PromptLane,
     body: AdminPromptPublishRequest,
-    model: ChatModelId = _MODEL_QUERY,
+    model: PromptSetModelId = _MODEL_QUERY,
     admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminPromptSetDetailResponse:
@@ -957,7 +985,7 @@ async def restore_prompt_set(
                 "message": "레인 분리 이전 버전은 복원할 수 없습니다.",
             },
         )
-    model = parse_chat_model_id(source.model)
+    model = parse_prompt_set_model_id(source.model)
     if model is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -984,7 +1012,7 @@ async def get_prompt_set(
 ) -> AdminPromptSetDetailResponse:
     prompt_set = await db.get(PromptSet, id)
     lane = as_prompt_lane(prompt_set.lane) if prompt_set is not None else None
-    model = parse_chat_model_id(prompt_set.model) if prompt_set is not None else None
+    model = parse_prompt_set_model_id(prompt_set.model) if prompt_set is not None else None
     if prompt_set is None or lane is None or model is None:
         # `lane`이 `legacy`면 응답의 `lane: PromptLane`을 채울 수 없다 — 새
         # 코드는 legacy를 읽지 않는다는 원칙을 그대로 따라 404로 취급한다. 레지스트리에서 내린 모델도 같다.
@@ -1027,7 +1055,7 @@ async def list_prompt_sets(
     items: list[AdminPromptSetSummary] = []
     for prompt_set in prompt_sets:
         lane = as_prompt_lane(prompt_set.lane)
-        model = parse_chat_model_id(prompt_set.model)
+        model = parse_prompt_set_model_id(prompt_set.model)
         if lane is None or model is None:
             continue  # legacy(레인 분리 과도기의 격리 값)와 레지스트리에서 내린 모델의 세트는 목록에서 뺀다.
         items.append(
@@ -1164,7 +1192,7 @@ def _novelize_preview_item(channel: str, label: str, build: Callable[[], Noveliz
 def _novel_preview_items(
     sections: list[PromptSection],
     *,
-    model: ChatModelId,
+    model: PromptSetModelId,
     chat_sets: _ChatSets,
 ) -> list[AdminPromptPreviewItem]:
     """`novel` 레인. 원작 종류(스토리·캐릭터)마다 그 채팅 Gemini 세트의 라벨·등급 규칙으로 렌더한다. Claude 체인은 화
@@ -1184,7 +1212,7 @@ def _novel_preview_items(
 def _novel_content_preview_items(
     sections: list[PromptSection],
     *,
-    model: ChatModelId,
+    model: PromptSetModelId,
     content: _NovelContentLane,
     chat_set: PromptSet,
     chat_sections: list[PromptSection],
@@ -1252,157 +1280,165 @@ def _novel_content_preview_items(
 
 
 def _story_preview_items(
-    prompt_set: PromptSet, sections: list[PromptSection], *, generation_only: bool
+    prompt_set: PromptSet, sections: list[PromptSection], *, channels: frozenset[str]
 ) -> list[AdminPromptPreviewItem]:
-    """`generation_only` 면 system·generation 항목만 만든다(Claude 세트 — 다른 채널 행이 없어 렌더할 수 없다)."""
+    """`channels` 에 있는 채널의 항목만 만든다(`_preview_channels`)."""
     items: list[AdminPromptPreviewItem] = []
 
-    for template in StoryPromptTemplate:
-        items.append(
-            AdminPromptPreviewItem(
-                channel="system",
-                label=f"system · 스토리 · {template.value}",
-                text=system_instruction_for(sections, is_story_chat=True, template=template),
+    if "system" in channels:
+        for template in StoryPromptTemplate:
+            items.append(
+                AdminPromptPreviewItem(
+                    channel="system",
+                    label=f"system · 스토리 · {template.value}",
+                    text=system_instruction_for(sections, is_story_chat=True, template=template),
+                )
             )
-        )
 
-    for label_suffix, template, custom_prompt in (
-        ("스토리 · basic", StoryPromptTemplate.BASIC, None),
-        ("스토리 · custom", StoryPromptTemplate.CUSTOM, "[샘플] 커스텀 프롬프트"),
-    ):
+    if "generation" in channels:
+        for label_suffix, template, custom_prompt in (
+            ("스토리 · basic", StoryPromptTemplate.BASIC, None),
+            ("스토리 · custom", StoryPromptTemplate.CUSTOM, "[샘플] 커스텀 프롬프트"),
+        ):
+            items.append(
+                AdminPromptPreviewItem(
+                    channel="generation",
+                    label=f"generation · {label_suffix}",
+                    text=build_story_generation_prompt(
+                        prompt_set=prompt_set,
+                        sections=sections,
+                        prompt_template=template,
+                        setting_text="[샘플] 세계관 설정" if custom_prompt is None else None,
+                        development_examples=_SAMPLE_DEVELOPMENT_EXAMPLES,
+                        user_goal="[샘플] 사용자의 목표",
+                        rules="[샘플] 규칙",
+                        custom_prompt=custom_prompt,
+                        prologue="[샘플] 시작 상황",
+                        history=_SAMPLE_HISTORY,
+                        user_message="[샘플] 사용자 메시지",
+                        user_persona=_SAMPLE_USER_PERSONA,
+                        memory_note=_SAMPLE_MEMORY_NOTE,
+                        memory_summary=_SAMPLE_MEMORY_SUMMARY,
+                        keyword_note_texts=["[샘플] 키워드북 항목"],
+                        situation_note_texts=["[샘플] 상황 노트"],
+                        shortcut_prompt=None,
+                        names=_SAMPLE_STORY_NAMES,
+                    ),
+                )
+            )
+
+    if "stat_rule_judgment" in channels:
+        rule_judgment_text, _ = build_stat_rule_judgment_prompt(
+            prompt_set=prompt_set,
+            sections=sections,
+            stat_defs=_SAMPLE_STAT_DEFS,
+            rules_by_stat_id=_SAMPLE_STAT_RULES,
+            user_message="[샘플] 사용자 메시지",
+            assistant_message="[샘플] 진행자 응답",
+            names=_SAMPLE_STORY_NAMES,
+        )
+        items.append(
+            AdminPromptPreviewItem(channel="stat_rule_judgment", label="stat_rule_judgment", text=rule_judgment_text)
+        )
+    if "ending_judgment" in channels:
         items.append(
             AdminPromptPreviewItem(
-                channel="generation",
-                label=f"generation · {label_suffix}",
-                text=build_story_generation_prompt(
+                channel="ending_judgment",
+                label="ending_judgment",
+                text=_build_ending_judgment_prompt(
                     prompt_set=prompt_set,
                     sections=sections,
-                    prompt_template=template,
-                    setting_text="[샘플] 세계관 설정" if custom_prompt is None else None,
-                    development_examples=_SAMPLE_DEVELOPMENT_EXAMPLES,
-                    user_goal="[샘플] 사용자의 목표",
-                    rules="[샘플] 규칙",
-                    custom_prompt=custom_prompt,
-                    prologue="[샘플] 시작 상황",
+                    judgment_prompt="[샘플] 엔딩 판정 기준",
                     history=_SAMPLE_HISTORY,
                     user_message="[샘플] 사용자 메시지",
-                    user_persona=_SAMPLE_USER_PERSONA,
-                    memory_note=_SAMPLE_MEMORY_NOTE,
+                    assistant_message="[샘플] 진행자 응답",
                     memory_summary=_SAMPLE_MEMORY_SUMMARY,
-                    keyword_note_texts=["[샘플] 키워드북 항목"],
-                    situation_note_texts=["[샘플] 상황 노트"],
-                    shortcut_prompt=None,
                     names=_SAMPLE_STORY_NAMES,
                 ),
             )
         )
-    if generation_only:
-        return items
-
-    rule_judgment_text, _ = build_stat_rule_judgment_prompt(
-        prompt_set=prompt_set,
-        sections=sections,
-        stat_defs=_SAMPLE_STAT_DEFS,
-        rules_by_stat_id=_SAMPLE_STAT_RULES,
-        user_message="[샘플] 사용자 메시지",
-        assistant_message="[샘플] 진행자 응답",
-        names=_SAMPLE_STORY_NAMES,
-    )
-    items.append(
-        AdminPromptPreviewItem(channel="stat_rule_judgment", label="stat_rule_judgment", text=rule_judgment_text)
-    )
-    items.append(
-        AdminPromptPreviewItem(
-            channel="ending_judgment",
-            label="ending_judgment",
-            text=_build_ending_judgment_prompt(
-                prompt_set=prompt_set,
-                sections=sections,
-                judgment_prompt="[샘플] 엔딩 판정 기준",
-                history=_SAMPLE_HISTORY,
-                user_message="[샘플] 사용자 메시지",
-                assistant_message="[샘플] 진행자 응답",
-                memory_summary=_SAMPLE_MEMORY_SUMMARY,
-                names=_SAMPLE_STORY_NAMES,
-            ),
+    if "image_judgment" in channels:
+        items.append(
+            AdminPromptPreviewItem(
+                channel="image_judgment",
+                label="image_judgment",
+                text=_build_image_judgment_prompt(
+                    prompt_set=prompt_set,
+                    sections=sections,
+                    scope="story",
+                    assistant_label=prompt_set.story_assistant_label,
+                    image_lines=media_cell_image_lines(_SAMPLE_MEDIA_CELLS, names=_SAMPLE_STORY_NAMES),
+                    history=_SAMPLE_HISTORY,
+                    user_message="[샘플] 사용자 메시지",
+                    assistant_message="[샘플] 진행자 응답",
+                    names=_SAMPLE_STORY_NAMES,
+                ),
+            )
         )
-    )
-    items.append(
-        AdminPromptPreviewItem(
-            channel="image_judgment",
-            label="image_judgment",
-            text=_build_image_judgment_prompt(
-                prompt_set=prompt_set,
-                sections=sections,
-                scope="story",
-                assistant_label=prompt_set.story_assistant_label,
-                image_lines=media_cell_image_lines(_SAMPLE_MEDIA_CELLS, names=_SAMPLE_STORY_NAMES),
-                history=_SAMPLE_HISTORY,
-                user_message="[샘플] 사용자 메시지",
-                assistant_message="[샘플] 진행자 응답",
-                names=_SAMPLE_STORY_NAMES,
-            ),
+    if "memory_summary" in channels:
+        items.append(
+            _memory_summary_preview_item(prompt_set, sections, is_story_chat=True, names=_SAMPLE_STORY_NAMES)
         )
-    )
-    items.append(_memory_summary_preview_item(prompt_set, sections, is_story_chat=True, names=_SAMPLE_STORY_NAMES))
     # 얼린 소설 행은 미리보지 않는다 — 소설 문안은 `novel` 레인 미리보기에서 본다.
 
     return items
 
 
 def _character_preview_items(
-    prompt_set: PromptSet, sections: list[PromptSection], *, generation_only: bool
+    prompt_set: PromptSet, sections: list[PromptSection], *, channels: frozenset[str]
 ) -> list[AdminPromptPreviewItem]:
-    """`generation_only` 는 `_story_preview_items` 와 같다."""
+    """`channels` 는 `_story_preview_items` 와 같다."""
     items: list[AdminPromptPreviewItem] = []
 
-    items.append(
-        AdminPromptPreviewItem(
-            channel="system",
-            label="system · 캐릭터",
-            text=system_instruction_for(sections, is_story_chat=False),
+    if "system" in channels:
+        items.append(
+            AdminPromptPreviewItem(
+                channel="system",
+                label="system · 캐릭터",
+                text=system_instruction_for(sections, is_story_chat=False),
+            )
         )
-    )
-    items.append(
-        AdminPromptPreviewItem(
-            channel="generation",
-            label="generation · 캐릭터",
-            text=build_generation_prompt(
-                prompt_set=prompt_set,
-                sections=sections,
-                character_prompt="[샘플] 캐릭터 프롬프트",
-                example_dialogues=_SAMPLE_EXAMPLE_DIALOGUES,
-                history=_SAMPLE_HISTORY,
-                user_message="[샘플] 사용자 메시지",
-                user_persona=_SAMPLE_USER_PERSONA,
-                memory_note=_SAMPLE_MEMORY_NOTE,
-                memory_summary=_SAMPLE_MEMORY_SUMMARY,
-                names=_SAMPLE_CHARACTER_NAMES,
-            ),
+    if "generation" in channels:
+        items.append(
+            AdminPromptPreviewItem(
+                channel="generation",
+                label="generation · 캐릭터",
+                text=build_generation_prompt(
+                    prompt_set=prompt_set,
+                    sections=sections,
+                    character_prompt="[샘플] 캐릭터 프롬프트",
+                    example_dialogues=_SAMPLE_EXAMPLE_DIALOGUES,
+                    history=_SAMPLE_HISTORY,
+                    user_message="[샘플] 사용자 메시지",
+                    user_persona=_SAMPLE_USER_PERSONA,
+                    memory_note=_SAMPLE_MEMORY_NOTE,
+                    memory_summary=_SAMPLE_MEMORY_SUMMARY,
+                    names=_SAMPLE_CHARACTER_NAMES,
+                ),
+            )
         )
-    )
-    if generation_only:
-        return items
-    items.append(
-        AdminPromptPreviewItem(
-            channel="image_judgment",
-            label="image_judgment",
-            text=_build_image_judgment_prompt(
-                prompt_set=prompt_set,
-                sections=sections,
-                scope="character",
-                assistant_label=prompt_set.character_assistant_label,
-                image_lines=situational_image_lines(_SAMPLE_SITUATIONAL_IMAGES, names=_SAMPLE_CHARACTER_NAMES),
-                history=_SAMPLE_HISTORY,
-                user_message="[샘플] 사용자 메시지",
-                assistant_message="[샘플] 캐릭터 응답",
-                names=_SAMPLE_CHARACTER_NAMES,
-            ),
+    if "image_judgment" in channels:
+        items.append(
+            AdminPromptPreviewItem(
+                channel="image_judgment",
+                label="image_judgment",
+                text=_build_image_judgment_prompt(
+                    prompt_set=prompt_set,
+                    sections=sections,
+                    scope="character",
+                    assistant_label=prompt_set.character_assistant_label,
+                    image_lines=situational_image_lines(_SAMPLE_SITUATIONAL_IMAGES, names=_SAMPLE_CHARACTER_NAMES),
+                    history=_SAMPLE_HISTORY,
+                    user_message="[샘플] 사용자 메시지",
+                    assistant_message="[샘플] 캐릭터 응답",
+                    names=_SAMPLE_CHARACTER_NAMES,
+                ),
+            )
         )
-    )
-    items.append(
-        _memory_summary_preview_item(prompt_set, sections, is_story_chat=False, names=_SAMPLE_CHARACTER_NAMES)
-    )
+    if "memory_summary" in channels:
+        items.append(
+            _memory_summary_preview_item(prompt_set, sections, is_story_chat=False, names=_SAMPLE_CHARACTER_NAMES)
+        )
 
     return items
 
@@ -1454,20 +1490,29 @@ def _novel_screen_preview_items(sections: list[PromptSection]) -> list[AdminProm
     return [AdminPromptPreviewItem(channel="novel_screen", label="novel_screen · 텍스트 심사", text=text)]
 
 
+def _preview_channels(lane: PromptLane, model: PromptSetModelId, sections: list[PromptSection]) -> frozenset[str]:
+    """채팅 레인 미리보기가 렌더할 채널 — 그 체인이 갖는 채널이다. Gemini 체인은 지금처럼 전부다. 다른 체인은 그 체인
+    기대 채널 중 초안에 실제로 있는 것만이다: 판정 전용 세트에는 생성 행이 없고, 판정·요약 행을 심기 전의 Claude 버전을
+    복원한 초안에는 판정·요약 행이 없다 — 없는 채널을 렌더하면 빌더가 렌더를 거부한다(그런 초안의 게시는 슬롯 검사가 막는다)."""
+    expected = frozenset(_expected_slots(lane, model))
+    if model == "gemini":
+        return expected
+    return expected & {section.channel for section in sections}
+
+
 def _build_preview_items(
     prompt_set: PromptSet,
     sections: list[PromptSection],
     *,
     lane: PromptLane,
-    model: ChatModelId,
+    model: PromptSetModelId,
     chat_sets: _ChatSets | None = None,
 ) -> list[AdminPromptPreviewItem]:
     """`chat_sets` 는 `novel` 레인에서만 쓴다 — 원작 종류(story·character)마다 채팅 Gemini 활성 세트와 섹션."""
-    generation_only = model != "gemini"
     if lane == "story":
-        return _story_preview_items(prompt_set, sections, generation_only=generation_only)
+        return _story_preview_items(prompt_set, sections, channels=_preview_channels(lane, model, sections))
     if lane == "character":
-        return _character_preview_items(prompt_set, sections, generation_only=generation_only)
+        return _character_preview_items(prompt_set, sections, channels=_preview_channels(lane, model, sections))
     if lane == "novel":
         assert chat_sets is not None  # 호출부(`preview_prompt_draft`)가 novel 레인이면 읽어 넘긴다
         return _novel_preview_items(sections, model=model, chat_sets=chat_sets)

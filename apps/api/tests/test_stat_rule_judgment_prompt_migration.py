@@ -128,8 +128,8 @@ async def test_active_story_gemini_set_is_the_source_plus_four_rows(db_session: 
 
 @pytest.mark.parametrize("model", ["sonnet", "opus"])
 async def test_claude_story_sets_are_untouched(db_session: AsyncSession, model: ChatModelId) -> None:
-    """Claude 체인 기대 집합은 system·generation 뿐이라 이 채널이 들어가면 그 체인 게시가 막힌다."""
-    assert await _active_id(db_session, model) == _CLAUDE_SET_IDS[model]
+    """이 리비전은 Claude 체인 세트에 행을 넣지 않는다 — 그때 그 체인의 기대 집합은 system·generation 뿐이었다. Claude
+    체인의 판정·요약 행은 뒤의 판정 문안 체인 리비전이 새 세트로 넣는다."""
     assert all(s.channel != _M._CHANNEL for s in await _sections_of(db_session, _CLAUDE_SET_IDS[model]))
 
 
@@ -143,8 +143,12 @@ async def test_downgrade_then_upgrade_swaps_the_active_set_and_back(db_session: 
 
     assert await _active_id(db_session) == _SOURCE_SET_ID
     assert await db_session.get(PromptSet, _M.NEW_SET_ID) is None
+    # Gemini 체인 안에서만 센다 — 뒤의 판정 문안 체인 리비전이 이 채널을 Claude·판정 전용 체인에도 복사해 두었다.
     remaining = await db_session.scalar(
-        sa.select(sa.func.count()).select_from(PromptSection).where(PromptSection.channel == _M._CHANNEL)
+        sa.select(sa.func.count())
+        .select_from(PromptSection)
+        .join(PromptSet, PromptSet.id == PromptSection.prompt_set_id)
+        .where(PromptSection.channel == _M._CHANNEL, PromptSet.model == "gemini")
     )
     assert remaining == 0
     assert {model: await _active_id(db_session, model) for model in _CLAUDE_SET_IDS} == claude_before

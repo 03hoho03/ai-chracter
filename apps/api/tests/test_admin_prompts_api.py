@@ -23,7 +23,9 @@ story v12·character v13·publish_filter v8이다. 마이그레이션 `e6aa289fe
 character sonnet v16·opus v17)를 더하고, 소설 프롬프트 레인 마이그레이션이 `novel` 레인 세트 4개(gemini 옛 문안 v18·
 새 문안 v19, sonnet v20, opus v21)를 더하고, 마이그레이션 `d9768bc0cfee`가 story 레인에 스탯 규칙 판정 행을 더한 Gemini
 세트 v22를 만들어 story 활성이 v22가 되고, 노벨 텍스트 심사 레인 마이그레이션이 `novel_screen` 레인 Gemini 세트 v23을
-심으므로 다음 게시 버전은 "24"부터다(전 레인·전 모델 대상 자동 증가).
+심고, 판정 문안 체인 마이그레이션이 story·character 레인마다 판정·요약 행을 더한 Claude 세트 둘과 판정 전용(haiku) 세트
+하나(story sonnet v24·opus v25·haiku v26, character sonnet v27·opus v28·haiku v29)를 심으므로 다음 게시 버전은 "30"부터다
+(전 레인·전 모델 대상 자동 증가).
 채팅 레인 Gemini 초안 응답은 얼린 소설화 행을 싣지 않는다(`_visible_section_count`).
 섹션 수는 `_expected_section_count`로 코드 표에서 도출한다 — DB 행은 마이그레이션이
 만드므로 동어반복이 아니다.
@@ -49,7 +51,7 @@ from api.core.redis import redis_client
 from api.db.models.moderation import AdminActionLog
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StoryPromptTemplate
-from api.llm.chat_models import ChatModelId
+from api.llm.chat_models import ChatModelId, PromptSetModelId
 from factories import _create_admin, _login_as, _login_as_admin, _make_user
 
 
@@ -450,8 +452,8 @@ async def test_list_returns_metadata_only_and_marks_active(
     draft = [item for item in items if item["status"] == "draft"]
     # Gemini: story v1·v2·v4·v6·v9·v10·v12, character v1·v3·v5·v11·v13, publish_filter v1·v7·v8 (모듈 docstring — 세트를
     # 만든 여덟 마이그레이션이 v2·v3, v4·v5, v6, v7, v8, v9, v10·v11, v12·v13을 만든다). Claude: v14~v17. 소설: v18~v21.
-    # 스탯 규칙 판정: story v22. 노벨 텍스트 심사: v23.
-    assert len(published) == 25
+    # 스탯 규칙 판정: story v22. 노벨 텍스트 심사: v23. 판정 문안 체인: v24~v29.
+    assert len(published) == 31
     assert len(draft) == 1
     active = [item for item in published if item["isActive"]]
     # (레인, 모델)마다 하나 — Claude 세트는 원본 Gemini 세트보다 published_at 이 과거지만 모델이 달라 각자 활성이다.
@@ -459,10 +461,12 @@ async def test_list_returns_metadata_only_and_marks_active(
         ("story", "gemini", "22"),
         ("character", "gemini", "13"),
         ("publish_filter", "gemini", "8"),
-        ("story", "sonnet", "14"),
-        ("story", "opus", "15"),
-        ("character", "sonnet", "16"),
-        ("character", "opus", "17"),
+        ("story", "sonnet", "24"),
+        ("story", "opus", "25"),
+        ("story", "haiku", "26"),
+        ("character", "sonnet", "27"),
+        ("character", "opus", "28"),
+        ("character", "haiku", "29"),
         ("novel", "gemini", "19"),
         ("novel", "sonnet", "20"),
         ("novel", "opus", "21"),
@@ -484,9 +488,13 @@ async def test_list_returns_metadata_only_and_marks_active(
         ("publish_filter", "1"),
         ("publish_filter", "7"),
         ("novel", "18"),
+        ("story", "14"),
+        ("story", "15"),
+        ("character", "16"),
+        ("character", "17"),
     }
     assert draft[0]["isActive"] is False
-    assert {item["version"] for item in published} == {str(n) for n in range(1, 24)}
+    assert {item["version"] for item in published} == {str(n) for n in range(1, 30)}
 
 
 async def test_get_by_id_returns_full_sections(
@@ -669,7 +677,7 @@ async def test_publish_valid_unmodified_draft_succeeds_with_next_version(
     resp = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "정기 점검 후 재게시"})
     assert resp.status_code == 200
     body = resp.json()
-    assert body["version"] == "24"
+    assert body["version"] == "30"
     assert body["status"] == "published"
     assert body["lane"] == "story"
     assert body["note"] == "정기 점검 후 재게시"
@@ -696,12 +704,12 @@ async def test_publish_assigns_sequential_integer_versions(
 ) -> None:
     await _login_new_admin(db_client, db_session)
     await _make_valid_draft(db_client, "story")
-    first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v24"})
-    assert first.json()["version"] == "24"
+    first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v30"})
+    assert first.json()["version"] == "30"
 
     await _make_valid_draft(db_client, "story")
-    second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v25"})
-    assert second.json()["version"] == "25"
+    second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v31"})
+    assert second.json()["version"] == "31"
 
 
 async def test_next_version_is_global_monotonic_not_per_lane(
@@ -709,23 +717,23 @@ async def test_next_version_is_global_monotonic_not_per_lane(
 ) -> None:
     """`_next_published_version`에 레인 필터가 없다("안 넣는 것"이 결정이다).
     세트를 만든 마이그레이션들이 story v2·v4·v6·v9·v10·v12·character v3·v5·v11·v13·publish_filter v7·v8을 만든 테스트
-    DB(+ Claude 세트 v14~v17, 소설 세트 v18~v21, 스탯 규칙 판정 story 세트 v22, 노벨 텍스트 심사 세트 v23)에서, story가
-    v24·v25를 게시한 뒤 character 게시가 v26을 받아야 한다(레인별
+    DB(+ Claude 세트 v14~v17, 소설 세트 v18~v21, 스탯 규칙 판정 story 세트 v22, 노벨 텍스트 심사 세트 v23, 판정 문안 체인
+    세트 v24~v29)에서, story가 v30·v31을 게시한 뒤 character 게시가 v32를 받아야 한다(레인별
     독립 증가라면 character의 다음 게시는 v18일 것이다) —
     이 테스트는 그 레인 필터의 **부재**를 고정한다."""
     await _login_new_admin(db_client, db_session)
 
     await _make_valid_draft(db_client, "story")
-    first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v24"})
-    assert first.json()["version"] == "24"
+    first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v30"})
+    assert first.json()["version"] == "30"
 
     await _make_valid_draft(db_client, "story")
-    second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v25"})
-    assert second.json()["version"] == "25"
+    second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v31"})
+    assert second.json()["version"] == "31"
 
     await _make_valid_draft(db_client, "character")
-    third = await db_client.post("/admin/prompt-sets/character/publish", json={"note": "character v26"})
-    assert third.json()["version"] == "26"
+    third = await db_client.post("/admin/prompt-sets/character/publish", json={"note": "character v32"})
+    assert third.json()["version"] == "32"
 
 
 async def test_publishing_one_lane_does_not_affect_other_lanes_active_set(
@@ -809,7 +817,7 @@ async def test_publish_succeeds_even_when_cache_invalidation_fails(
         resp = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "캐시 실패해도 성공"})
 
     assert resp.status_code == 200
-    assert resp.json()["version"] == "24"
+    assert resp.json()["version"] == "30"
     assert any(record.levelno >= logging.WARNING for record in caplog.records)
     assert captured == ["redis"]
 
@@ -926,7 +934,7 @@ async def test_list_excludes_legacy_and_marks_exactly_one_active_per_lane_and_mo
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """`GET /admin/prompt-sets` 응답에 legacy 행이 없고 `isActive`가
-    정확히 10개((레인, 모델)마다 하나씩 — 채팅·심사 Gemini 3 + 채팅 Claude 4 + 소설 3)다."""
+    정확히 13개((레인, 모델)마다 하나씩 — 채팅·심사 Gemini 4 + 채팅 Claude 4 + 판정 전용 2 + 소설 3)다."""
     await _login_new_admin(db_client, db_session)
 
     resp = await db_client.get("/admin/prompt-sets")
@@ -938,9 +946,10 @@ async def test_list_excludes_legacy_and_marks_exactly_one_active_per_lane_and_mo
     assert lanes == {"story", "character", "publish_filter", "novel", "novel_screen"}
 
     active_items = [item for item in items if item["isActive"]]
-    assert len(active_items) == 11
+    assert len(active_items) == 13
     assert sorted((item["lane"], item["model"]) for item in active_items) == [
         ("character", "gemini"),
+        ("character", "haiku"),
         ("character", "opus"),
         ("character", "sonnet"),
         ("novel", "gemini"),
@@ -949,6 +958,7 @@ async def test_list_excludes_legacy_and_marks_exactly_one_active_per_lane_and_mo
         ("novel_screen", "gemini"),
         ("publish_filter", "gemini"),
         ("story", "gemini"),
+        ("story", "haiku"),
         ("story", "opus"),
         ("story", "sonnet"),
     ]
@@ -1186,18 +1196,29 @@ async def test_seed_sections_use_only_allowed_placeholders(db_session: AsyncSess
 
 # ---- 모델별 세트 — `?model=` ------------------------------------------------------------
 #
-# story·character 레인은 (레인, 모델)마다 독립 체인이다. Claude 세트(sonnet·opus)는 마이그레이션이 Gemini 활성 세트의
-# system·generation 채널만 복사해 심었다.
+# story·character 레인은 (레인, 모델)마다 독립 체인이다. Claude 세트(sonnet·opus)는 생성 채널(system·generation)과 그 레인의
+# 판정·요약 채널을, 판정 전용 세트(haiku)는 판정·요약 채널만 갖는다 — 마이그레이션이 Gemini 활성 세트에서 복사해 심었다.
 
-_CLAUDE_CHANNELS = {"system", "generation"}
+_JUDGMENT_CHANNELS: dict[str, set[str]] = {
+    "story": {"stat_rule_judgment", "ending_judgment", "image_judgment", "memory_summary"},
+    "character": {"image_judgment", "memory_summary"},
+}
+_GENERATION_CHANNELS = {"system", "generation"}
 
 
-def _claude_section_count(lane: PromptLane) -> int:
+def _claude_channels(lane: str) -> set[str]:
+    return _GENERATION_CHANNELS | _JUDGMENT_CHANNELS[lane]
+
+
+def _section_count(lane: PromptLane, channels: set[str]) -> int:
     rows = admin_prompts._EXPECTED_ROWS_BY_LANE[lane]
-    return sum(len(rows[channel]) for channel in _CLAUDE_CHANNELS)
+    return sum(len(rows[channel]) for channel in channels)
 
 
-@pytest.mark.parametrize("lane", [pytest.param("story", id="story"), pytest.param("character", id="character")])
+_CHAT_LANES = [pytest.param("story", id="story"), pytest.param("character", id="character")]
+
+
+@pytest.mark.parametrize("lane", _CHAT_LANES)
 async def test_claude_draft_without_a_draft_returns_that_models_active_set(
     db_client: httpx.AsyncClient, db_session: AsyncSession, lane: PromptLane
 ) -> None:
@@ -1211,8 +1232,8 @@ async def test_claude_draft_without_a_draft_returns_that_models_active_set(
     body = resp.json()
     assert body["id"] is None
     assert body["model"] == "sonnet"
-    assert {s["channel"] for s in body["sections"]} == _CLAUDE_CHANNELS
-    assert len(body["sections"]) == len(sonnet_sections) == _claude_section_count(lane)
+    assert {s["channel"] for s in body["sections"]} == _claude_channels(lane)
+    assert len(body["sections"]) == len(sonnet_sections) == _section_count(lane, _claude_channels(lane))
     assert body["labels"]["userLabel"] == sonnet_set.user_label
 
 
@@ -1272,24 +1293,45 @@ async def test_publish_filter_lane_rejects_a_non_gemini_model(
     assert drafts == []
 
 
-@pytest.mark.parametrize("lane", [pytest.param("story", id="story"), pytest.param("character", id="character")])
+@pytest.mark.parametrize("lane", _CHAT_LANES)
 async def test_claude_set_passes_publish_validation_only_as_a_claude_set(
     db_session: AsyncSession, lane: PromptLane
 ) -> None:
     """R-1 의 기대 집합이 모델로 갈린다 — 마이그레이션이 심은 Claude 세트는 Claude 로는 통과하고, 같은 내용을 Gemini
-    세트로 게시하려 하면 판정·요약 채널이 빠졌다고 R-1 이다."""
+    세트로 게시하려 하면 옛 스탯 판정·소설화 채널이 빠졌다고, 판정 전용 세트로 게시하려 하면 생성 채널이 잉여라고 R-1 이다."""
     prompt_set, sections = await load_active_prompt_set(db_session, lane=lane, model="opus")
 
     admin_prompts._validate_prompt_draft_for_publish(prompt_set, sections, lane=lane, model="opus")
-    with pytest.raises(HTTPException) as exc_info:
-        admin_prompts._validate_prompt_draft_for_publish(prompt_set, sections, lane=lane, model="gemini")
-    assert cast(dict[str, str], exc_info.value.detail)["rule"] == "R-1"
+    others: tuple[PromptSetModelId, ...] = ("gemini", "haiku")
+    for other in others:
+        with pytest.raises(HTTPException) as exc_info:
+            admin_prompts._validate_prompt_draft_for_publish(prompt_set, sections, lane=lane, model=other)
+        assert cast(dict[str, str], exc_info.value.detail)["rule"] == "R-1"
 
 
-async def test_claude_draft_with_a_judgment_channel_is_rejected_r1(
+@pytest.mark.parametrize("lane", _CHAT_LANES)
+async def test_judgment_only_set_passes_publish_validation_only_as_a_judgment_only_set(
+    db_session: AsyncSession, lane: PromptLane
+) -> None:
+    """판정 전용 세트에는 생성 채널이 없다 — Claude 로 게시하면 누락, 거꾸로 Gemini 세트를 판정 전용으로 게시하면 잉여다."""
+    haiku_set, haiku_sections = await load_active_prompt_set(db_session, lane=lane, model="haiku")
+    gemini_set, gemini_sections = await load_active_prompt_set(db_session, lane=lane)
+
+    admin_prompts._validate_prompt_draft_for_publish(haiku_set, haiku_sections, lane=lane, model="haiku")
+    cases: list[tuple[PromptSet, list[PromptSection], PromptSetModelId]] = [
+        (haiku_set, haiku_sections, "sonnet"),
+        (gemini_set, gemini_sections, "haiku"),
+    ]
+    for prompt_set, sections, model in cases:
+        with pytest.raises(HTTPException) as exc_info:
+            admin_prompts._validate_prompt_draft_for_publish(prompt_set, sections, lane=lane, model=model)
+        assert cast(dict[str, str], exc_info.value.detail)["rule"] == "R-1"
+
+
+async def test_claude_draft_with_the_retired_stat_judgment_channel_is_rejected_r1(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """Claude 세트에 판정 채널 행이 섞이면 잉여다 — 그 행은 아무 호출도 읽지 않는다."""
+    """옛 스탯 판정 채널(`stat_judgment`)은 Gemini 체인에만 남아 있다 — Claude 세트에 섞이면 아무 호출도 읽지 않는 잉여다."""
     await _login_new_admin(db_client, db_session)
     _, gemini_sections = await load_active_prompt_set(db_session, lane="story")
     sonnet = (await db_client.get("/admin/prompt-sets/story/draft", params={"model": "sonnet"})).json()
@@ -1329,10 +1371,10 @@ async def test_claude_publish_becomes_that_models_active_set_and_invalidates_onl
     assert resp.status_code == 200
     body = resp.json()
     assert body["model"] == "sonnet"
-    assert body["version"] == "24"
-    assert len(body["sections"]) == _claude_section_count("story")
+    assert body["version"] == "30"
+    assert len(body["sections"]) == _section_count("story", _claude_channels("story"))
     # 얼린 소설화 행은 채팅 Gemini 체인에만 있다 — Claude 채팅 체인 게시에 끼워 넣지 않는다.
-    assert {s["channel"] for s in body["sections"]} == _CLAUDE_CHANNELS
+    assert {s["channel"] for s in body["sections"]} == _claude_channels("story")
     db_session.expire_all()
     sonnet_after, _ = await load_active_prompt_set(db_session, lane="story", model="sonnet")
     assert str(sonnet_after.id) == body["id"]
@@ -1361,12 +1403,12 @@ async def test_restore_of_a_claude_set_goes_into_that_models_draft(
     assert detail.json()["model"] == "opus"
 
 
-@pytest.mark.parametrize("lane", [pytest.param("story", id="story"), pytest.param("character", id="character")])
-async def test_claude_preview_has_only_system_and_generation_items(
+@pytest.mark.parametrize("lane", _CHAT_LANES)
+async def test_claude_preview_matches_the_gemini_preview_item_for_item(
     db_client: httpx.AsyncClient, db_session: AsyncSession, lane: str
 ) -> None:
-    """Claude 세트에는 판정·요약·소설화 행이 없다 — 그 항목을 만들지 않는다(만들면 렌더 오류). 생성 항목은 Gemini 미리보기의
-    같은 항목과 라벨·순서가 같다."""
+    """Claude 세트는 생성 문안과 판정·요약 문안을 모두 갖는다 — 미리보기도 그 항목을 다 내고, 시드가 Gemini 세트의 사본이라
+    Gemini 미리보기와 라벨·순서·글이 같다."""
     await _login_new_admin(db_client, db_session)
 
     claude = await db_client.post(f"/admin/prompt-sets/{lane}/draft/preview", params={"model": "sonnet"})
@@ -1374,10 +1416,127 @@ async def test_claude_preview_has_only_system_and_generation_items(
 
     assert claude.status_code == 200
     claude_items = claude.json()["items"]
-    assert {item["channel"] for item in claude_items} == _CLAUDE_CHANNELS
-    assert [(i["channel"], i["label"], i["text"]) for i in claude_items] == [
-        (i["channel"], i["label"], i["text"]) for i in gemini.json()["items"] if i["channel"] in _CLAUDE_CHANNELS
+    assert {item["channel"] for item in claude_items} == _claude_channels(lane)
+    assert claude_items == gemini.json()["items"]
+
+
+async def test_claude_preview_of_a_draft_restored_from_before_the_judgment_rows_shows_generation_only(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """판정·요약 행을 심기 전의 Claude 버전도 복원은 된다(게시는 누락으로 막힌다). 그 초안의 미리보기는 없는 채널을 렌더하다
+    실패하지 않고 있는 생성 항목만 낸다."""
+    await _login_new_admin(db_client, db_session)
+    old_set = await db_session.scalar(
+        sa.select(PromptSet)
+        .where(PromptSet.lane == "story", PromptSet.model == "sonnet", PromptSet.status == "published")
+        .order_by(PromptSet.published_at.asc())
+        .limit(1)
+    )
+    assert old_set is not None
+    restored = await db_client.post(f"/admin/prompt-sets/{old_set.id}/restore")
+    assert {s["channel"] for s in restored.json()["sections"]} == _GENERATION_CHANNELS
+
+    resp = await db_client.post("/admin/prompt-sets/story/draft/preview", params={"model": "sonnet"})
+
+    assert resp.status_code == 200
+    assert {item["channel"] for item in resp.json()["items"]} == _GENERATION_CHANNELS
+
+
+# ---- 판정 전용 체인(haiku) ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("lane", _CHAT_LANES)
+async def test_judgment_only_draft_without_a_draft_is_its_judgment_rows(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, lane: PromptLane
+) -> None:
+    await _login_new_admin(db_client, db_session)
+    haiku_set, haiku_sections = await load_active_prompt_set(db_session, lane=lane, model="haiku")
+
+    resp = await db_client.get(f"/admin/prompt-sets/{lane}/draft", params={"model": "haiku"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert (body["id"], body["model"]) == (None, "haiku")
+    assert {s["channel"] for s in body["sections"]} == _JUDGMENT_CHANNELS[lane]
+    assert len(body["sections"]) == len(haiku_sections) == _section_count(lane, _JUDGMENT_CHANNELS[lane])
+    assert body["labels"]["userLabel"] == haiku_set.user_label
+
+
+@pytest.mark.parametrize("lane", _CHAT_LANES)
+async def test_judgment_only_preview_has_only_the_judgment_items_of_the_gemini_preview(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, lane: str
+) -> None:
+    """판정 전용 세트에는 생성 행이 없다 — 생성 항목을 만들면 렌더할 행이 없다. 판정·요약 항목은 Gemini 미리보기와 같다."""
+    await _login_new_admin(db_client, db_session)
+
+    haiku = await db_client.post(f"/admin/prompt-sets/{lane}/draft/preview", params={"model": "haiku"})
+    gemini = await db_client.post(f"/admin/prompt-sets/{lane}/draft/preview")
+
+    assert haiku.status_code == 200
+    assert haiku.json()["items"] == [
+        item for item in gemini.json()["items"] if item["channel"] in _JUDGMENT_CHANNELS[lane]
     ]
+    assert {item["channel"] for item in haiku.json()["items"]} == _JUDGMENT_CHANNELS[lane]
+
+
+@pytest.mark.parametrize("lane", _CHAT_LANES)
+async def test_judgment_only_draft_publishes_and_becomes_that_chains_active_set(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, lane: PromptLane
+) -> None:
+    """story 판정 전용 세트에는 variant 를 반드시 갖춰야 하는 생성 슬롯이 없다 — 그 검사를 레인 기준으로 하면 영원히 게시할
+    수 없다. 게시는 그 체인 캐시 키만 지운다."""
+    await _login_new_admin(db_client, db_session)
+    gemini_before, gemini_sections = await load_active_prompt_set(db_session, lane=lane)
+    haiku_before, haiku_sections = await load_active_prompt_set(db_session, lane=lane, model="haiku")
+    await set_cached_active_prompt_set(lane, gemini_before, gemini_sections, model="gemini")
+    await set_cached_active_prompt_set(lane, haiku_before, haiku_sections, model="haiku")
+    await _make_valid_draft(db_client, lane, "haiku")
+
+    resp = await db_client.post(f"/admin/prompt-sets/{lane}/publish", params={"model": "haiku"}, json={"note": "h"})
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["model"] == "haiku"
+    assert {s["channel"] for s in body["sections"]} == _JUDGMENT_CHANNELS[lane]
+    db_session.expire_all()
+    assert str((await load_active_prompt_set(db_session, lane=lane, model="haiku"))[0].id) == body["id"]
+    assert (await load_active_prompt_set(db_session, lane=lane))[0].id == gemini_before.id
+    assert await get_cached_active_prompt_set(lane, model="haiku") is None
+    assert await get_cached_active_prompt_set(lane, model="gemini") is not None
+
+
+async def test_judgment_only_versions_are_listed_fetched_and_restored(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """채팅 모델 목록 밖의 id 라도 판정 전용 세트는 버전 이력에 보이고, 열리고, 그 체인 초안으로 복원된다."""
+    await _login_new_admin(db_client, db_session)
+    haiku_set, haiku_sections = await load_active_prompt_set(db_session, lane="story", model="haiku")
+
+    listed = await db_client.get("/admin/prompt-sets")
+    detail = await db_client.get(f"/admin/prompt-sets/{haiku_set.id}")
+    restored = await db_client.post(f"/admin/prompt-sets/{haiku_set.id}/restore")
+
+    haiku_items = [item for item in listed.json()["items"] if item["model"] == "haiku"]
+    assert {(item["lane"], item["isActive"]) for item in haiku_items} == {("story", True), ("character", True)}
+    assert detail.status_code == 200
+    assert (detail.json()["model"], len(detail.json()["sections"])) == ("haiku", len(haiku_sections))
+    assert restored.status_code == 200
+    assert restored.json()["model"] == "haiku"
+    drafts = (await db_session.scalars(sa.select(PromptSet).where(PromptSet.status == "draft"))).all()
+    assert [(d.lane, d.model) for d in drafts] == [("story", "haiku")]
+
+
+@pytest.mark.parametrize("lane", ["novel", "publish_filter", "novel_screen"])
+async def test_judgment_only_model_is_rejected_outside_the_chat_lanes(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, lane: str
+) -> None:
+    """판정 전용 체인은 채팅 판정·요약을 위한 것이라 스토리·캐릭터 레인에만 있다."""
+    await _login_new_admin(db_client, db_session)
+
+    resp = await db_client.get(f"/admin/prompt-sets/{lane}/draft", params={"model": "haiku"})
+
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["rule"] == "lane-model"
 
 
 # ---- 소설 레인과 채팅 레인의 얼린 소설 행 ---------------------------------------------------
@@ -1592,5 +1751,5 @@ async def test_novel_screen_lane_publishes_its_seed_and_previews_with_sample_tex
     (item,) = preview.json()["items"]
     assert item["channel"] == "novel_screen"
     assert "[판정 방법]" in item["text"] and "=== chapter_body: 본문 ===\n[샘플] 첫 문단이다." in item["text"]
-    assert (published.status_code, published.json()["version"]) == (200, "24")
+    assert (published.status_code, published.json()["version"]) == (200, "30")
     assert (claude.status_code, claude.json()["detail"]["rule"]) == (422, "lane-model")

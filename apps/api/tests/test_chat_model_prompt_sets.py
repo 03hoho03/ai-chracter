@@ -1,7 +1,7 @@
 """한 턴이 읽는 두 프롬프트 세트 — 생성은 값을 낸 모델의 세트, 판정·요약은 Gemini 세트.
 
 시드 마이그레이션이 Claude 세트를 Gemini 세트의 사본으로 심으므로, 그대로 두면 어느 세트가 쓰였는지 결과로 구분되지
-않는다. 그래서 테스트 안에서 Opus 세트의 바닥 지시문·생성 문안에 표지 문장을 붙이고 사용자 라벨을 바꾼다.
+않는다. 그래서 테스트 안에서 Opus 세트의 모든 문안(생성 채널과 판정·요약 채널)에 표지 문장을 붙이고 사용자 라벨을 바꾼다.
 """
 
 import uuid
@@ -71,19 +71,13 @@ async def _opus_story_room(
     return room.room_id, user.id
 
 
-async def _opus_set_id(db_session: AsyncSession) -> uuid.UUID:
-    set_id = await db_session.scalar(
-        select(PromptSet.id).where(PromptSet.lane == "story", PromptSet.model == "opus", PromptSet.status == "published")
-    )
-    assert set_id is not None
-    return set_id
-
-
 async def _mark_opus_set(db_session: AsyncSession) -> None:
-    set_id = await _opus_set_id(db_session)
+    """활성 story Opus 세트의 모든 행에 표지를 붙인다 — 판정·요약 채널도 있어서, 판정이 이 세트를 읽으면 표지가 판정
+    프롬프트에 나온다."""
+    set_id = (await load_active_prompt_set(db_session, lane="story", model="opus"))[0].id
     await db_session.execute(
         update(PromptSection)
-        .where(PromptSection.prompt_set_id == set_id, PromptSection.channel.in_(["system", "generation"]))
+        .where(PromptSection.prompt_set_id == set_id)
         .values(body=PromptSection.body + "\n" + _MARK)
     )
     await db_session.execute(update(PromptSet).where(PromptSet.id == set_id).values(user_label=_OPUS_LABEL))
@@ -120,8 +114,8 @@ async def test_premium_turn_generates_from_its_model_set_and_judges_from_the_gem
     assert system_instruction is not None and _MARK in system_instruction
     assert _MARK in prompt
     assert stop_sequences == [f"\n{_OPUS_LABEL}:"]
-    # 스탯 판정은 Gemini 세트로 렌더됐다 — Claude 세트에는 판정 채널이 없어 그 세트로 렌더하면 판정 문안이 비어 스탯
-    # 정의조차 실리지 않는다.
+    # 스탯 판정은 Gemini 세트로 렌더됐다 — Opus 세트에도 판정 채널이 있고 표지가 붙어 있지만, 판정은 고른 모델과 무관하게
+    # Gemini 세트를 읽는다.
     assert len(fake.structured_prompts) == 1
     assert "[STAT]신뢰" in fake.structured_prompts[0]
     assert _MARK not in fake.structured_prompts[0]
@@ -151,9 +145,10 @@ async def test_missing_model_set_is_an_error_event_with_a_refund(
     """(레인, 모델)에 게시본이 없으면 Gemini 세트로 조용히 대신 쓰지 않는다 — 렌더 실패와 같은 오류 이벤트와 환불이다.
     세트는 차감 뒤에야 알 수 있어(모델이 영수증에서 온다) 의존성 단계의 404·500 이 아니다."""
     room_id, user_id = await _opus_story_room(db_client, db_session, monkeypatch)
-    set_id = await _opus_set_id(db_session)
-    await db_session.execute(delete(PromptSection).where(PromptSection.prompt_set_id == set_id))
-    await db_session.execute(delete(PromptSet).where(PromptSet.id == set_id))
+    # 활성본 하나만 지우면 그 이전 게시본이 활성이 된다 — 체인을 통째로 비운다.
+    opus_sets = select(PromptSet.id).where(PromptSet.lane == "story", PromptSet.model == "opus")
+    await db_session.execute(delete(PromptSection).where(PromptSection.prompt_set_id.in_(opus_sets)))
+    await db_session.execute(delete(PromptSet).where(PromptSet.lane == "story", PromptSet.model == "opus"))
     await db_session.commit()
     fake = _RecordingLLM()
 
@@ -175,7 +170,7 @@ async def test_missing_model_set_is_an_error_event_with_a_refund(
 async def test_memory_fold_gets_the_gemini_set_in_a_premium_room(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """요약은 구조가 정해진 Gemini 호출이라 Gemini 세트를 받는다(Claude 세트에는 요약 채널이 없다)."""
+    """요약은 구조가 정해진 Gemini 호출이라 Gemini 세트를 받는다(Opus 세트에도 요약 채널이 있지만 고른 모델과 무관하다)."""
     room_id, _ = await _opus_story_room(db_client, db_session, monkeypatch)
     folded_with: list[str] = []
 

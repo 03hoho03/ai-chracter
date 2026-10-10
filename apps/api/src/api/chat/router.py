@@ -351,7 +351,7 @@ async def _active_prompt_set_dependency(
     db: AsyncSession = Depends(get_db_session),
 ) -> tuple[PromptSet, list[PromptSection]]:
     """이 세트는 언제나 그 레인의 **Gemini 세트**다 — 판정·요약·그림 판정은 방의 글쓰기 모델과 무관하게 이 세트를
-    읽는다(Claude 세트에는 그 채널이 없다).
+    읽는다(Claude·판정 전용 세트에도 그 채널이 있지만 판정 모델을 그 모델로 바꾸는 설정이 아직 없다).
 
     실제 채팅은 요청 스코프 `db` 세션을 이미 갖고 있으므로 그대로 재사용한다
     (미리보기의 `_preview_prompt_set_dependency`와 달리

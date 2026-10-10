@@ -7630,7 +7630,7 @@ export interface components {
              * Model
              * @enum {string}
              */
-            model: "gemini" | "sonnet" | "opus";
+            model: "gemini" | "sonnet" | "opus" | "haiku";
             labels: components["schemas"]["AdminPromptLabels"];
             /** Sections */
             sections: components["schemas"]["AdminPromptSectionItem"][];
@@ -7741,7 +7741,7 @@ export interface components {
              * Model
              * @enum {string}
              */
-            model: "gemini" | "sonnet" | "opus";
+            model: "gemini" | "sonnet" | "opus" | "haiku";
             /** Note */
             note: string;
             /**
@@ -7793,7 +7793,7 @@ export interface components {
              * Model
              * @enum {string}
              */
-            model: "gemini" | "sonnet" | "opus";
+            model: "gemini" | "sonnet" | "opus" | "haiku";
             /** Isactive */
             isActive: boolean;
         };
@@ -14409,8 +14409,8 @@ export interface operations {
     get_prompt_draft_admin_prompt_sets__lane__draft_get: {
         parameters: {
             query?: {
-                /** @description 세트의 글쓰기 모델. 생략하면 Gemini 세트다. */
-                model?: "gemini" | "sonnet" | "opus";
+                /** @description 세트 체인의 모델(글쓰기 모델 또는 판정 전용 id). 생략하면 Gemini 세트다. */
+                model?: "gemini" | "sonnet" | "opus" | "haiku";
             };
             header?: never;
             path: {
@@ -14443,8 +14443,8 @@ export interface operations {
     upsert_prompt_draft_admin_prompt_sets__lane__draft_put: {
         parameters: {
             query?: {
-                /** @description 세트의 글쓰기 모델. 생략하면 Gemini 세트다. */
-                model?: "gemini" | "sonnet" | "opus";
+                /** @description 세트 체인의 모델(글쓰기 모델 또는 판정 전용 id). 생략하면 Gemini 세트다. */
+                model?: "gemini" | "sonnet" | "opus" | "haiku";
             };
             header?: never;
             path: {
@@ -14481,8 +14481,8 @@ export interface operations {
     preview_prompt_draft_admin_prompt_sets__lane__draft_preview_post: {
         parameters: {
             query?: {
-                /** @description 세트의 글쓰기 모델. 생략하면 Gemini 세트다. */
-                model?: "gemini" | "sonnet" | "opus";
+                /** @description 세트 체인의 모델(글쓰기 모델 또는 판정 전용 id). 생략하면 Gemini 세트다. */
+                model?: "gemini" | "sonnet" | "opus" | "haiku";
             };
             header?: never;
             path: {
@@ -14515,8 +14515,8 @@ export interface operations {
     publish_prompt_set_admin_prompt_sets__lane__publish_post: {
         parameters: {
             query?: {
-                /** @description 세트의 글쓰기 모델. 생략하면 Gemini 세트다. */
-                model?: "gemini" | "sonnet" | "opus";
+                /** @description 세트 체인의 모델(글쓰기 모델 또는 판정 전용 id). 생략하면 Gemini 세트다. */
+                model?: "gemini" | "sonnet" | "opus" | "haiku";
             };
             header?: never;
             path: {

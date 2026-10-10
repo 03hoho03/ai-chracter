@@ -1686,24 +1686,90 @@ sudo bash ops/swap-api.sh
   스위치가 꺼져 있으면 새 코드에도 영향이 없다. 🔴 소설 레인(`novel`)의 Claude 세트는 지우지 않는다(아래 SQL 의
   `lane <> 'novel'`) — 그 레인의 Sonnet·Opus 체인은 소설 프롬프트 레인 리비전(`a7a87e3ba631`)이 심은 것이라 위 시드 4개
   목록에 없고, 지우면 다시 올린 뒤 그 체인이 빈 채로 남아 상위 모델 화 생성이 실패·환불되고 어드민 「소설」 탭 초안 조회가
-  500 이 된다. 옛 코드는 레인으로 세트를 골라 소설 레인을 읽지 않는다:
+  500 이 된다. 옛 코드는 레인으로 세트를 골라 소설 레인을 읽지 않는다. 🔴 판정 문안 체인 리비전(`1a843a0b2d8f`, 아래)이 심은
+  시드 6개(story·character × Sonnet·Opus·Haiku)도 같은 이유로 남긴다 — 아래 SQL 의 제외 목록 뒤쪽 6개가 그것이다. 이 목록에서
+  빼면 다시 올릴 때 그 리비전도 건너뛰어 판정 전용 체인이 빈 채로 남고 Claude 체인은 판정·요약 행 없는 이전 세트로 돌아간다:
 
   ```sh
   sudo /opt/ddona/backup.sh   # 먼저 백업
   sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
     psql -U postgres -d ai_character_chat -c \
-    "BEGIN; DELETE FROM prompt_sections WHERE prompt_set_id IN (SELECT id FROM prompt_sets WHERE model <> 'gemini' AND lane <> 'novel' AND id NOT IN ('ba2a926c-e9ed-46e0-b42c-9c21c63552f6','f3237e56-5ff6-4b27-9135-98495c0094bb','b9c2f1ec-5e8c-48ce-8fc9-ffefdc6950d2','9b308ef1-bdb9-4f23-a2d8-fb6ae6ad778c')); DELETE FROM prompt_sets WHERE model <> 'gemini' AND lane <> 'novel' AND id NOT IN ('ba2a926c-e9ed-46e0-b42c-9c21c63552f6','f3237e56-5ff6-4b27-9135-98495c0094bb','b9c2f1ec-5e8c-48ce-8fc9-ffefdc6950d2','9b308ef1-bdb9-4f23-a2d8-fb6ae6ad778c'); COMMIT;"
+    "BEGIN; DELETE FROM prompt_sections WHERE prompt_set_id IN (SELECT id FROM prompt_sets WHERE model <> 'gemini' AND lane <> 'novel' AND id NOT IN ('ba2a926c-e9ed-46e0-b42c-9c21c63552f6','f3237e56-5ff6-4b27-9135-98495c0094bb','b9c2f1ec-5e8c-48ce-8fc9-ffefdc6950d2','9b308ef1-bdb9-4f23-a2d8-fb6ae6ad778c','32b99025-22e8-45fa-86a5-50f267b30a1b','73026fdc-e2bc-4e99-9b94-950f791d6835','e8685db5-f431-419a-9957-0db6b27ec848','b483d5c3-92dd-4dd9-ad4b-9ae6488bbcb4','9a2b4dbb-ff70-4ccf-a8b3-4cff6ca785c0','8114a6d6-b5cc-4b4a-b8ac-a8f1c25b640d')); DELETE FROM prompt_sets WHERE model <> 'gemini' AND lane <> 'novel' AND id NOT IN ('ba2a926c-e9ed-46e0-b42c-9c21c63552f6','f3237e56-5ff6-4b27-9135-98495c0094bb','b9c2f1ec-5e8c-48ce-8fc9-ffefdc6950d2','9b308ef1-bdb9-4f23-a2d8-fb6ae6ad778c','32b99025-22e8-45fa-86a5-50f267b30a1b','73026fdc-e2bc-4e99-9b94-950f791d6835','e8685db5-f431-419a-9957-0db6b27ec848','b483d5c3-92dd-4dd9-ad4b-9ae6488bbcb4','9a2b4dbb-ff70-4ccf-a8b3-4cff6ca785c0','8114a6d6-b5cc-4b4a-b8ac-a8f1c25b640d'); COMMIT;"
   ```
 
 - 스키마까지 되돌리면(`alembic downgrade a966fc016bf1`, 순서는 위 절들과 같이 태그 롤백 먼저 — 묶음·화 구조 리비전이 위에
   있으면 그것부터, 아래 「롤백 순서」 4단계) downgrade 가 Gemini 가 아닌
-  세트 전부(시드 + 어드민이 만든 것)를 지우고 인덱스를 되돌린 뒤 열을 지운다. 그 위의 방 모델·장 작업 모델 리비전(`519329713933`·
-  `2494aa0e607e`, 아래)이 먼저 내려가야 하므로 이 한 줄이 셋 다 내린다. 목표는 엔딩 우선 스탯 리비전(`a966fc016bf1`)이다 —
-  이 배포의 세 리비전이 그 위에 쌓여 있어, 그보다 아래(`3bb2cc159b6d`)로 내리면 엔딩의 우선 스탯 열과 값까지 지워진다.
-- 앞으로 슬롯을 더하는 마이그레이션은 Gemini 두 레인뿐 아니라 Claude 체인 네 개도 다룰지 판단한다 — `system`·`generation`
-  슬롯이면 Claude 체인에도 넣어야 게시 검증의 슬롯 집합이 맞는다.
+  세트 전부(시드 + 어드민이 만든 것)를 지우고 인덱스를 되돌린 뒤 열을 지운다. 🔴 `alembic downgrade` 는 목표 위에 쌓인 리비전을
+  head 부터 전부 지나가므로, 이 한 줄은 이 배포의 세 리비전(모델 축·방 모델·장 작업 모델)만 내리는 명령이 아니다 — 지금 head 에서
+  돌리면 그 위에 나중에 쌓인 리비전(묶음·화 구조, 판정 문안 체인 `1a843a0b2d8f`, 그 아래 턴 기록 `42ba15156c84` 등)의
+  downgrade 까지 함께 돈다. 판정 문안 체인 downgrade 는 시드 뒤 어드민의 Claude 게시가 있으면 `RuntimeError` 로 멈추고, 턴 기록
+  downgrade 는 `chat_turns` 테이블을 지운다(그 리비전 코드가 떠 있으면 방 삭제·탈퇴가 실패하므로 이미지를 먼저 되돌린다). 그래서
+  먼저 새 이미지로 `alembic history -r a966fc016bf1:head` 를 돌려 목표 위에 무엇이 있는지 보고, 위쪽 리비전은 각자의 롤백 절
+  (아래 「판정 문안 체인」의 롤백 순서, 소설화 절의 「묶음·화 구조만 내릴 때」 등)을 위에서부터 먼저 따른 뒤 이 줄을 돌린다.
+  목표는 엔딩 우선 스탯 리비전(`a966fc016bf1`)이다 — 이 배포의 세 리비전이 그 위에 쌓여 있어, 그보다 아래(`3bb2cc159b6d`)로
+  내리면 엔딩의 우선 스탯 열과 값까지 지워진다.
+- 앞으로 슬롯을 더하는 마이그레이션은 Gemini 두 레인뿐 아니라 다른 체인도 다룰지 판단한다 — `system`·`generation` 슬롯이면
+  Claude 체인 네 개(story·character × Sonnet·Opus)에, 판정·요약 슬롯이면 그 넷과 판정 전용 체인 둘(story·character ×
+  Haiku)에도 넣어야 게시 검증의 슬롯 집합이 맞는다(아래 「판정 문안 체인」).
 - 앞으로 활성·초안 세트를 원시 SQL 로 고르는 마이그레이션은 반드시 모델로 거른다(`AND model = 'gemini'` 또는 대상 모델). 레인만
   보는 조회는 Claude 세트를 집을 수 있고, 초안을 한 행으로 읽으면 레인에 초안이 둘 이상일 때 `MultipleResultsFound` 로 깨진다.
+
+**판정 문안 체인(`1a843a0b2d8f`).** 판정·요약 문안을 Gemini 가 아닌 체인에도 둔다 — 판정을 다른 모델로 돌릴 준비 데이터이고,
+이 배포만으로는 어떤 호출도 그 행을 읽지 않는다(판정·요약은 계속 Gemini 세트). 마이그레이션이 레인(story·character)마다 세 세트를
+게시본으로 심는다:
+
+| 레인 | 모델 | 채널 | 판정·요약 행 수 | 게시 시각 |
+|---|---|---|---|---|
+| story | Sonnet·Opus | 그 체인 활성 세트 그대로(`system`·`generation`) + `stat_rule_judgment`·`ending_judgment`·`image_judgment`·`memory_summary` | 17 | 그 체인 활성과 Gemini 활성 사이의 중간값 |
+| story | Haiku(판정 전용, 새 체인) | 판정·요약 채널만 | 17 | Gemini 활성 − 1초 |
+| character | Sonnet·Opus | 그 체인 활성 세트 그대로 + `image_judgment`·`memory_summary` | 8 | 중간값 |
+| character | Haiku(판정 전용, 새 체인) | 판정·요약 채널만 | 8 | Gemini 활성 − 1초 |
+
+판정·요약 행은 그 레인 Gemini 활성 세트의 바이트 사본이고(옛 `stat_judgment` 은 빼고), 생성 행은 손대지 않아 생성 글은 그대로다.
+게시 시각은 모델로 거르는 조회가 새 세트를, 레인만 보는 옛 조회가 여전히 Gemini 세트를 집게 고른 것이고, 둘을 함께 만족하는 시각이
+없으면 마이그레이션이 `RuntimeError` 로 배포를 멈춘다(어드민이 Claude 체인을 Gemini 보다 나중에 게시한 경우). 어드민 「프롬프트
+관리」의 스토리·캐릭터 레인에 「Claude Haiku 4.5 · 판정 전용」 탭이 생기고, Claude 탭에도 판정·요약 채널 탭이 생긴다.
+
+- **배포 전**: `sudo /opt/ddona/backup.sh` 백업이 최근에 돌았는지 본다(3-4 절). 배포 **직전**에 아래 읽기 전용 SELECT 로 두 레인의
+  Claude 활성(`sonnet`·`opus` 의 최신 `published_at`)이 Gemini 활성보다 과거인지, Claude 초안에 판정·요약 채널 행이 없는지,
+  `haiku` 세트가 없는지 다시 본다 — 어긋나면 마이그레이션이 멈춘다:
+
+  ```sql
+  SELECT lane, model, status, id, version, published_at FROM prompt_sets
+   WHERE lane IN ('story','character') ORDER BY lane, model, status, published_at DESC NULLS LAST;
+  SELECT p.lane, p.model, s.channel, count(*) FROM prompt_sets p JOIN prompt_sections s ON s.prompt_set_id = p.id
+   WHERE p.status = 'draft' AND p.model <> 'gemini' AND p.lane IN ('story','character') GROUP BY 1,2,3 ORDER BY 1,2,3;
+  ```
+- **배포 뒤**: 같은 첫 SELECT 로 여섯 체인(story·character × sonnet·opus·haiku)의 최신 게시본이 아래 시드 id 이고 Gemini 활성 id 가
+  배포 전과 같은지 본다. 채널 행 수(판정·요약은 story 17·character 8, Claude 세트는 거기에 생성 행)와 레인만 보는 최신 게시본이
+  Gemini 세트인지도 본다:
+
+  ```sql
+  SELECT p.lane, p.model, s.channel, count(*) FROM prompt_sets p JOIN prompt_sections s ON s.prompt_set_id = p.id
+   WHERE p.id IN ('32b99025-22e8-45fa-86a5-50f267b30a1b','73026fdc-e2bc-4e99-9b94-950f791d6835','e8685db5-f431-419a-9957-0db6b27ec848',
+                  'b483d5c3-92dd-4dd9-ad4b-9ae6488bbcb4','9a2b4dbb-ff70-4ccf-a8b3-4cff6ca785c0','8114a6d6-b5cc-4b4a-b8ac-a8f1c25b640d')
+   GROUP BY 1,2,3 ORDER BY 1,2,3;
+  SELECT DISTINCT ON (lane) lane, model, id FROM prompt_sets WHERE status = 'published' AND lane IN ('story','character')
+   ORDER BY lane, published_at DESC;   -- 두 줄 모두 model = gemini
+  ```
+
+  시드 id 는 story Sonnet `32b99025…`·Opus `73026fdc…`·Haiku `e8685db5…`, character Sonnet `b483d5c3…`·Opus `9a2b4dbb…`·Haiku
+  `8114a6d6…` 이다.
+- **배포 뒤 공지**: 배포 전부터 열어 둔 어드민 프롬프트 편집 탭은 **새로고침**한다 — 그 탭에서 저장하면 초안이 섹션 전체 교체로 판정·요약
+  행을 잃고 게시가 "누락"으로 막힌다.
+- **겹침·이미지 롤백**: 옛 이미지는 Claude 세트의 생성 채널만 렌더하고 판정은 Gemini 세트를 읽어 생성·판정 모두 그대로다. 옛 이미지의
+  어드민 게시 검증이 새 Claude 세트를 "잉여"로 거부해 **Claude 체인 어드민 게시만** 막힌다. 판정 전용 세트는 옛 이미지에서 보이지 않는다.
+  그래서 이 배포는 이미지 롤백 하한을 올리지 않는다.
+- **롤백 순서**: ① 판정을 Gemini 가 아닌 모델로 돌리는 설정이 있으면 전부 Gemini 로 되돌렸는지 확인(이 배포 시점에는 그런 설정이 없어
+  늘 참이다 — 판정 모델 설정이 생긴 뒤부터 의미가 있다) → ② 1순위는 이미지만 되돌리기(`sudo DDONA_ROLLBACK=1 bash ops/swap-api.sh <이전
+  태그>`) → ③ 시드까지 걷어야 하면 **새 이미지로** `alembic downgrade 42ba15156c84` 를 돌린 뒤 이미지를 되돌린다(3-2 절의 `docker run
+  … <IMAGE>:<새 코드 TAG>` 꼴, 먼저 백업). downgrade 는 시드 뒤에 어드민이 Claude 체인(Sonnet·Opus)에 게시한 버전이 있으면 아무것도
+  지우지 않고 멈춘다 — 그때는 멈추고 판단한다. 없으면 Claude 시드 4개, Haiku 세트 전부(어드민이 만든 것 포함), Claude 초안의
+  판정·요약 행을 지운다.
+- 🔴 **프롬프트 옛 버전을 통째로 복원하지 않는다** — 이 배포 이전 Claude 버전은 판정·요약 행이 없어 새 코드에서 게시가 "누락"으로
+  막히고, 옛 이미지에서 복원·게시하면 판정·요약 행이 사라진다. 현재 활성본에서 바뀐 섹션만 고친다.
+- 🔴 **시드를 손으로 지우지 않는다** — 다시 배포할 때 `alembic upgrade head` 가 이 리비전을 건너뛰어 판정 전용 체인이 빈 채로 남고(어드민
+  초안 조회 500), Claude 체인은 판정·요약 행 없는 이전 세트로 돌아가 새 코드의 Claude 게시가 막힌다. 걷어야 하면 위 ③ 의 downgrade 로만.
 
 **롤백 순서.** 1차는 스위치 끄기(위 「끄기」)다 — 재기동 한 번으로 모든 채팅 턴이 Gemini 로 돌고 방은 막히지 않는다(소설
 장까지 되돌릴 때는 소설 스위치 줄도 지운다). 코드까지 되돌릴 때는 스위치 먼저 → 태그 롤백(옛 이미지) → Pages(web) 순서이고,
@@ -1724,7 +1790,8 @@ Anthropic 을 게시한 뒤에는 가입 화면의 국외이전 고지 사본(`a
 4. 스키마까지 되돌리면 옛 이미지가 떠 있는 상태에서 새 코드 이미지로 내린다. 🔴 **묶음·화 구조 리비전(`4a4af1ac1df8`·
    `3af53088351c`·`a7a87e3ba631`)이 위에 있으면 먼저 3-11 절의 「묶음·화 구조만 내릴 때」로 `2494aa0e607e` 까지 내린다** —
    아래 세 줄을 그 위에서 바로 돌리면 그 세 리비전도 함께 내리려다 거부 조건에 걸려 멈추거나, 통과하면 그 절의 묶음·화 구조 전용
-   데이터가 같이 사라진다. 그다음 리비전은 위에서부터 장 작업 모델
+   데이터가 같이 사라진다. 그 내림 역시 head 부터 지나가므로, 묶음·화 구조보다 위에 쌓인 리비전(판정 문안 체인·턴 기록 등)이
+   있으면 그 롤백 절들을 먼저 따른다(위 「판정 문안 체인」). 그다음 리비전은 위에서부터 장 작업 모델
    (`2494aa0e607e`) → 방 모델(`519329713933`) → 모델 축(`e6aa289fea62`) 순서로 엔딩 우선 스탯 리비전(`a966fc016bf1`) 위에
    쌓여 있다. 장 작업 모델 리비전만 내리면 작업마다 적은 모델이 사라지고(차감액은 남는다), 방 모델 리비전까지 내리면 방마다
    고른 모델이 사라지고(전부 Gemini), 그 아래 모델 축 리비전까지 내리면 Claude 세트 전부(시드 포함) 삭제도 함께 일어난다.

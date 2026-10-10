@@ -32,10 +32,12 @@ class PromptSet(Base):
     즉시 드러난다. 부분 유니크 인덱스 2개(초안 전역 1개·게시 버전 중복 금지)의 유니크
     범위가 전역에서 **레인별**로 좁혀진다(아래 `__table_args__`).
 
-    **`model`**은 이 세트로 생성하는 글쓰기 모델의 레지스트리 id(`llm/chat_models.py` 의 `ChatModelId`)다. story·
-    character 레인은 모델마다 초안·게시·복원·활성 판정이 따로 가는 독립 버전 체인을 갖는다. Gemini 세트는 모든 채널을
-    담고, 판정·요약·심사·소설화처럼 고른 모델과 무관한 호출도 언제나 Gemini 세트를 읽는다. 그래서 Claude 세트에는 생성에
-    쓰는 `system`·`generation` 채널과 라벨만 있다. publish_filter 레인은 Gemini 세트뿐이다. `lane` 과 달리
+    **`model`**은 세트 체인의 모델 축(`llm/chat_models.py` 의 `PromptSetModelId`) — 글쓰기 모델의 레지스트리 id 이거나 판정
+    전용 id(`haiku`)다. story·character 레인은 모델마다 초안·게시·복원·활성 판정이 따로 가는 독립 버전 체인을 갖는다.
+    Gemini 세트는 모든 채널을 담는다. Claude 세트(sonnet·opus)는 생성에 쓰는 `system`·`generation` 채널과 그 레인의
+    판정·요약 채널을, 판정 전용 세트는 판정·요약 채널만 갖는다(채널 집합의 소스는 `admin/prompts.py` 의 게시 검증 표다).
+    지금 판정·요약·심사·소설 묶음 경계·문단 수정은 고른 모델과 무관하게 Gemini 세트를 읽는다. 심사 레인은 Gemini 세트뿐이다.
+    `lane` 과 달리
     `server_default` 를 남긴다 — 이 열을 모르는 옛 이미지로 되돌린 동안 어드민이 게시한 행도 Gemini 체인에 들어가고,
     모델을 적지 않은 생성 지점은 가장 안전한 쪽(지금까지와 같은 Gemini)으로 간다. 버전 번호는 레인·모델을 가리지 않는
     전역 자동 증가 그대로다.

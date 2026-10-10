@@ -40,6 +40,8 @@ _NOVELIZE = set(_M.CHANNELS)
 # 이 리비전 뒤에 story 레인 Gemini 체인에 스탯 규칙 판정 채널을 더한 세트를 게시하는 리비전 — head 상태에서는 그 세트가
 # story 활성 세트이고 버전도 이 리비전의 세트들보다 뒤다.
 _STAT_RULE_SET_ID: uuid.UUID = _load("d9768bc0cfee").NEW_SET_ID
+# 이 리비전 뒤에 채팅 레인 Claude·판정 전용 체인에 판정 문안 세트를 게시하는 리비전의 세트 — 버전이 이 리비전의 세트들보다 뒤다.
+_JUDGMENT_CHAIN_SET_IDS: list[uuid.UUID] = list(_load("1a843a0b2d8f").NEW_SET_IDS.values())
 
 Row = tuple[str, str, str, str, str, bool, int]
 
@@ -131,6 +133,7 @@ async def test_versions_follow_the_global_sequence_and_the_copy_is_older(db_sess
             PromptSet.status == "published",
             PromptSet.lane.not_in(("novel", "novel_screen")),
             PromptSet.id != _STAT_RULE_SET_ID,
+            PromptSet.id.not_in(_JUDGMENT_CHAIN_SET_IDS),
         )
     )
     assert others is not None

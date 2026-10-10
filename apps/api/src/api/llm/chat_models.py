@@ -12,7 +12,7 @@ import 하므로, 여기서 `api.chat` 을 부르면 순환이다.
 """
 
 from dataclasses import dataclass
-from typing import Literal, TypeGuard, assert_never
+from typing import Literal, TypeGuard, assert_never, get_args
 
 from api.core import clover
 from api.core.config import settings
@@ -28,6 +28,13 @@ from api.llm.call_policy import BackendId
 # 채팅방에 지정할 수 있는 모델. 아래 레지스트리의 `chat_selectable` 이 원천이고, 이 타입은 요청 검증용 사본이다 — 둘이
 # 같은 집합인지는 테스트가 본다.
 ChatRoomModelId = Literal["gemini", "opus"]
+
+# 프롬프트 세트 체인의 모델 축(`prompt_sets.model`) — 글쓰기 모델 전부에 판정 전용 id(`haiku`)를 더한 것이다. 판정 전용
+# id 의 체인은 판정·요약 문안만 갖고, 그 id 로는 글을 쓰지 않으므로 글쓰기 모델 타입·레지스트리·파서에는 넣지 않는다 — 넣으면
+# 방·소설 요청이 그 값을 받고 가격·구현 등록부가 그 행을 요구한다. 그래서 이 타입은 프롬프트 세트를 다루는 곳(어드민 프롬프트
+# 화면, 활성 세트 조회와 그 캐시)에서만 쓴다. 글쓰기 모델 집합에 판정 전용 id 하나를 더한 집합인지는 테스트가 본다.
+PromptSetModelId = Literal["gemini", "sonnet", "opus", "haiku"]
+_PROMPT_SET_MODEL_IDS: frozenset[PromptSetModelId] = frozenset(get_args(PromptSetModelId))
 
 
 @dataclass(frozen=True)
@@ -77,6 +84,12 @@ def parse_chat_model_id(raw: str) -> ChatModelId | None:
     """저장된 값이나 요청 값을 레지스트리 id 로 읽는다. 레지스트리 밖이면 None — DB 칸에 값 제약이 없어 레지스트리에서
     내린 모델의 옛 값이 남을 수 있고, 그 값을 어떻게 다룰지(거부·기본 모델로 대체)는 호출부가 정한다."""
     return raw if raw in CHAT_MODELS_BY_ID else None
+
+
+def parse_prompt_set_model_id(raw: str) -> PromptSetModelId | None:
+    """저장된 세트의 모델 값을 체인 모델 축으로 읽는다. 판정 전용 id 도 받는다 — 어드민 버전 목록·조회·복원이 그 체인을
+    다뤄야 해서다. 축 밖의 값이면 None."""
+    return raw if raw in _PROMPT_SET_MODEL_IDS else None
 
 
 def backend_model_id(backend: BackendId, model: ChatModelId) -> str:
