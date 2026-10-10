@@ -90,7 +90,7 @@ function SheetContent({
         data-slot="sheet-content"
         data-side={side}
         className={cn(
-          "fixed z-50 flex flex-col gap-4 bg-popover bg-clip-padding text-sm text-popover-foreground shadow-lg motion-safe:transition motion-safe:duration-200 ease-in-out data-[side=bottom]:inset-x-0 data-[side=bottom]:bottom-0 data-[side=bottom]:h-auto data-[side=bottom]:border-t data-[side=left]:inset-y-0 data-[side=left]:left-0 data-[side=left]:h-full data-[side=left]:w-3/4 data-[side=left]:touch-pan-y data-[side=left]:border-r data-[side=right]:inset-y-0 data-[side=right]:right-0 data-[side=right]:h-full data-[side=right]:w-3/4 data-[side=right]:border-l data-[side=top]:inset-x-0 data-[side=top]:top-0 data-[side=top]:h-auto data-[side=top]:border-b data-[side=left]:sm:max-w-sm data-[side=right]:sm:max-w-sm motion-safe:data-open:animate-in data-open:fade-in-0 data-[side=bottom]:data-open:slide-in-from-bottom-10 data-[side=left]:data-open:slide-in-from-left-10 data-[side=right]:data-open:slide-in-from-right-10 data-[side=top]:data-open:slide-in-from-top-10 motion-safe:data-closed:animate-out data-closed:fade-out-0 data-[side=bottom]:data-closed:slide-out-to-bottom-10 data-[side=left]:data-closed:slide-out-to-left-10 data-[side=right]:data-closed:slide-out-to-right-10 data-[side=top]:data-closed:slide-out-to-top-10",
+          "fixed z-50 flex flex-col gap-4 bg-popover bg-clip-padding text-sm text-popover-foreground shadow-lg motion-safe:transition motion-safe:duration-200 ease-in-out data-[side=bottom]:inset-x-0 data-[side=bottom]:bottom-0 data-[side=bottom]:h-auto data-[side=bottom]:border-t data-[side=left]:inset-y-0 data-[side=left]:left-0 data-[side=left]:h-full data-[side=left]:w-3/4 data-[side=left]:touch-pan-y data-[side=left]:touch-pinch-zoom data-[side=left]:border-r data-[side=right]:inset-y-0 data-[side=right]:right-0 data-[side=right]:h-full data-[side=right]:w-3/4 data-[side=right]:border-l data-[side=top]:inset-x-0 data-[side=top]:top-0 data-[side=top]:h-auto data-[side=top]:border-b data-[side=left]:sm:max-w-sm data-[side=right]:sm:max-w-sm motion-safe:data-open:animate-in data-open:fade-in-0 data-[side=bottom]:data-open:slide-in-from-bottom-10 data-[side=left]:data-open:slide-in-from-left-10 data-[side=right]:data-open:slide-in-from-right-10 data-[side=top]:data-open:slide-in-from-top-10 motion-safe:data-closed:animate-out data-closed:fade-out-0 data-[side=bottom]:data-closed:slide-out-to-bottom-10 data-[side=left]:data-closed:slide-out-to-left-10 data-[side=right]:data-closed:slide-out-to-right-10 data-[side=top]:data-closed:slide-out-to-top-10",
           className
         )}
         {...props}
@@ -131,8 +131,12 @@ function setRef<T>(ref: React.Ref<T> | undefined, value: T | null) {
  * 포인터 흐름을 그 함수에 잇고 시트를 옮긴다. 시트 요소에 직접 단 처리기라 떼는 함수를 돌려준다.
  *
  * - **시작**: 첫 포인터의 주 버튼 누름만 본다. 10px 를 움직인 순간 왼쪽 가로 이동이면 끌기이고, 아니면 그 누름이
- *   끝날 때까지 보지 않는다(세로 스크롤은 `touch-pan-y` 로 브라우저가 맡는다). 끌기가 시작되면 포인터를 잡아
- *   시트 밖까지 따라가고, 마우스로 시작된 글자 선택을 지운다.
+ *   끝날 때까지 보지 않는다(세로 스크롤과 두 손가락 확대는 `touch-action: pan-y pinch-zoom` 으로 브라우저가
+ *   맡는다 — 확대를 빼면 드로어 위에서 글자를 키울 수 없다). 끌기가 시작되면 포인터를 잡아 시트 밖까지 따라가고,
+ *   마우스로 시작된 글자 선택을 지운다.
+ * - **판정에서 빼는 요소 없음**: 누른 대상과 무관하게 모든 누름을 본다. 지금 왼쪽 시트 내용(링크·버튼·글)에는
+ *   괜찮지만, 글 입력칸·가로 스크롤 요소·끌어 놓기를 왼쪽 시트에 넣으면 그 요소에서 시작한 누름을 판정에서 빼는
+ *   처리를 함께 넣어야 한다(아니면 글자 고르기·가로 스크롤이 시트 끌기로 바뀐다).
  * - **따라오기**: CSS 개별 속성 `translate` 로 옮긴다. 열림·닫힘 키프레임은 `transform` 을 움직여 둘이 겹치지 않고
  *   더해지므로, 닫힘 애니메이션이 끌던 자리에서 이어진다. 끄는 동안은 전이를 끈다. 손을 따라오는 이동은 직접 조작이라
  *   `prefers-reduced-motion` 에서도 남는다.

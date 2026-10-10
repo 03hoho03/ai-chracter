@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { toThumbnailAspect, toThumbnailAspectRatio } from "./cardLayout";
+import {
+  toPriorityCount,
+  toThumbnailAspect,
+  toThumbnailAspectRatio,
+} from "./cardLayout";
 import { toGridColumns } from "../ui/cardLayoutClass";
 
 describe("toThumbnailAspect", () => {
@@ -45,4 +49,18 @@ describe("toGridColumns", () => {
       "grid-cols-2 @min-[37rem]:grid-cols-3 @min-[45rem]:grid-cols-4 @min-[60rem]:grid-cols-5 @min-[75rem]:grid-cols-6 items-start",
     );
   });
+});
+
+describe("toPriorityCount", () => {
+  // eager 로 당길 첫 줄 카드 수는 열 사다리의 최대 열과 같아야 한다 — 손으로 맞춘 값이라 사다리만 바꾸면 첫 줄 끝
+  // 카드가 lazy 로 빠진다. 사다리 문자열의 마지막 열 수와 비교해 둘을 묶는다.
+  it.each(["square", "portrait", "mixed"] as const)(
+    "%s 는 열 사다리의 최대 열 수와 같다",
+    (aspect) => {
+      const columns = [...toGridColumns(aspect).matchAll(/grid-cols-(\d+)/g)].map(
+        (match) => Number(match[1]),
+      );
+      expect(toPriorityCount(aspect)).toBe(Math.max(...columns));
+    },
+  );
 });
