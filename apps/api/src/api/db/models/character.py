@@ -16,8 +16,6 @@ class CharacterVersionDetail(Base):
     """
 
     __tablename__ = "character_version_details"
-    # `StoryVersionDetail.__mapper_args__` 와 같은 이유로 작품 기본 이름 칸을 매퍼에서 뺀다.
-    __mapper_args__ = {"exclude_properties": ["default_user_name"]}  # noqa: RUF012
 
     content_version_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("content_versions.id"), primary_key=True
@@ -31,8 +29,6 @@ class CharacterVersionDetail(Base):
     example_dialogues: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
     character_prompt: Mapped[str] = mapped_column(Text, nullable=False)
     playguide: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # 매퍼에서 뺀 칸(위 `__mapper_args__`).
-    default_user_name: Mapped[str] = mapped_column(Text, server_default="", nullable=False)
 
 
 class SituationalImage(Base):

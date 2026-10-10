@@ -58,12 +58,6 @@ class StoryVersionDetail(Base):
     """
 
     __tablename__ = "story_version_details"
-    # 아래 `default_user_name` 칸(작품 기본 이름)은 코드가 더는 읽지도 쓰지도 않아 매퍼에서 뺀다. 칸 선언은 테이블
-    # 메타데이터에 남겨 칸을 지우는 마이그레이션 전까지 `alembic check` 를 맞추고, 매퍼에서 빼서 SELECT·INSERT 에
-    # 나타나지 않게 한다 — 그래야 칸을 지운 스키마 위에서 이 코드가 돌아도(배포 겹침 중) 깨지지 않는다. 매퍼에서 빠진
-    # 속성을 인스턴스에서 읽으면 예외 없이 칸 선언 객체가 돌아오므로 읽지 않는다. 칸을 지우는 마이그레이션과 함께 이
-    # 줄과 칸 선언을 지운다. `ClassVar` 로 적지 못하는 것은 기반 클래스가 이 이름을 인스턴스 변수로 선언해서다.
-    __mapper_args__ = {"exclude_properties": ["default_user_name"]}  # noqa: RUF012
 
     content_version_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("content_versions.id"), primary_key=True
@@ -89,8 +83,6 @@ class StoryVersionDetail(Base):
     # 필수로 만들지 않는다 — 기존 33건이 비어 있는 채로 발행돼 있다.
     user_goal: Mapped[str | None] = mapped_column(Text, nullable=True)
     rules: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # 매퍼에서 뺀 칸(위 `__mapper_args__`). `server_default` 덕에 이 칸을 모르는 INSERT 도 NOT NULL 위반이 되지 않는다.
-    default_user_name: Mapped[str] = mapped_column(Text, server_default="", nullable=False)
 
 
 class StartingSetup(Base):
