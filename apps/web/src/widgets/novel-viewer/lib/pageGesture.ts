@@ -1,3 +1,5 @@
+import { SHEET_SWIPE_VELOCITY_PX_PER_MS } from "@ai-character-chat/ui/lib/sheet-swipe";
+
 import { shouldToggleChrome } from "./shouldToggleChrome";
 
 /** 본문 탭 영역 — 창 폭의 왼쪽·오른쪽 4분의 1 이 이전·다음 쪽이고 가운데 절반이 바 토글이다. 조사한 뷰어들에서
@@ -6,9 +8,10 @@ import { shouldToggleChrome } from "./shouldToggleChrome";
 const TAP_ZONE_RATIO = 0.25;
 
 /** 탭이 아닌 손짓을 넘김으로 칠 기준 — 쪽 폭의 15% 이상 끌었거나 손을 뗄 때 0.3px/ms 이상으로 튕겼다. 짧게 튕기는
- * 스와이프와 천천히 끄는 끌기를 둘 다 받으면서, 그보다 작은 흔들림은 제자리로 돌려보낸다. */
+ * 스와이프와 천천히 끄는 끌기를 둘 다 받으면서, 그보다 작은 흔들림은 제자리로 돌려보낸다. 속도 기준은 왼쪽 드로어를
+ * 밀어 닫는 손짓과 같은 값을 `@ai-character-chat/ui` 에서 가져온다(앱 안에서 튕김의 손맛이 갈리지 않게). 거리 기준은
+ * 다르다 — 드로어는 닫으면 열린 문맥을 버려 1/3 이고, 쪽은 바로 되돌릴 수 있는 작은 이동이라 15%다. */
 const SWIPE_DISTANCE_RATIO = 0.15;
-const SWIPE_VELOCITY_PX_PER_MS = 0.3;
 
 /** 손을 뗀 뒤 맞춰 들어가는 시간. 한 화면 전체를 갈 때 넘김 전환과 같은 250ms 이고 남은 거리에 비례해 줄인다 — 거의
  * 다 끌어 놓은 쪽이 고정 250ms 동안 들어오면 늘어져 보인다. 남은 거리가 아주 짧아도 순간이동이 아니라 맞춰 들어가는
@@ -78,9 +81,9 @@ export function toPageGesture({
   }
   if (isZoomed || pageWidth <= 0 || (dx === 0 && dy === 0)) return "none";
   if (Math.abs(dx) < Math.abs(dy)) return "settle";
-  if (Math.abs(velocityX) >= SWIPE_VELOCITY_PX_PER_MS && Math.sign(velocityX) === -Math.sign(dx)) return "settle";
+  if (Math.abs(velocityX) >= SHEET_SWIPE_VELOCITY_PX_PER_MS && Math.sign(velocityX) === -Math.sign(dx)) return "settle";
   const isFarEnough = Math.abs(dx) >= pageWidth * SWIPE_DISTANCE_RATIO;
-  const isFlick = Math.abs(velocityX) >= SWIPE_VELOCITY_PX_PER_MS && Math.sign(velocityX) === Math.sign(dx);
+  const isFlick = Math.abs(velocityX) >= SHEET_SWIPE_VELOCITY_PX_PER_MS && Math.sign(velocityX) === Math.sign(dx);
   if (!isFarEnough && !isFlick) return "settle";
   // 손가락을 왼쪽으로 밀면(dx < 0) 다음 쪽이 오른쪽에서 들어온다.
   return dx < 0 ? "next" : "previous";

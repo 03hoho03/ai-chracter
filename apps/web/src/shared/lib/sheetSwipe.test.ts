@@ -100,6 +100,7 @@ describe("toReleaseVelocity", () => {
 describe("shouldSuppressClickAfterSwipe", () => {
   it("끌기로 끝난 뗌 바로 뒤의 포인터 click 은 막는다", () => {
     expect(shouldSuppressClickAfterSwipe({ suppressedAt: 1000, clickAt: 1010, detail: 1 })).toBe(true);
+    expect(shouldSuppressClickAfterSwipe({ suppressedAt: 1000, clickAt: 1100, detail: 1 })).toBe(true);
   });
 
   it("끌기 표시가 없거나 시간이 지났으면 막지 않는다", () => {

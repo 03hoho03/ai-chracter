@@ -1,5 +1,7 @@
-// 왼쪽 시트를 왼쪽으로 밀어 닫는 손짓의 판정. 수치는 web 소설 뷰어 페이지 모드의 쪽 끌기와 같은 값이다 — 한 앱
-// 안에서 "끌기"의 손맛이 갈리지 않게. 거리 기준만 다르다(`toSheetSwipeRelease`).
+// 왼쪽 시트를 왼쪽으로 밀어 닫는 손짓의 판정. 튕김 속도 기준·속도를 재는 창·끌기 뒤 click 억제는 web 소설 뷰어
+// 페이지 모드의 쪽 끌기가 여기서 가져다 쓴다 — 한 앱 안에서 "끌기"의 손맛이 갈리지 않게. 끌기 시작 거리·닫는 거리·
+// 맞춰 들어가는 시간은 같은 숫자라도 뷰어가 따로 둔다: 뷰어의 시작 거리는 가로 이동만 보고 자기 탭 거리와 묶여 있고,
+// 들어가는 시간 상한은 쪽 넘김 전환 시간과 묶여 있으며, 넘기는 거리는 쪽 폭의 15%로 여기(1/3)와 다르다.
 
 /** 누른 자리에서 이만큼 움직인 순간 끌기인지 정한다. 그 안의 움직임은 탭(링크·버튼 누름)으로 남는다. */
 export const SHEET_SWIPE_START_PX = 10
@@ -8,7 +10,7 @@ export const SHEET_SWIPE_START_PX = 10
 export const SHEET_SWIPE_VELOCITY_WINDOW_MS = 100
 
 /** 이 속도(px/ms) 이상으로 튕기며 놓으면 거리와 무관하게 그 방향으로 친다. */
-const SWIPE_VELOCITY_PX_PER_MS = 0.3
+export const SHEET_SWIPE_VELOCITY_PX_PER_MS = 0.3
 
 /** 시트 폭의 이 비율 이상 끌었으면 닫는다. 쪽 넘김(쪽 폭의 15%)보다 크게 잡는다 — 쪽 넘김은 바로 되돌릴 수 있는
  * 작은 이동이지만, 드로어를 닫으면 펼쳐 둔 목록·스크롤 위치 같은 열린 문맥을 버린다. */
@@ -59,8 +61,8 @@ export function toSheetSwipeRelease({
   velocityX: number
   sheetWidth: number
 }): "close" | "settle" {
-  if (velocityX >= SWIPE_VELOCITY_PX_PER_MS) return "settle"
-  if (velocityX <= -SWIPE_VELOCITY_PX_PER_MS) return "close"
+  if (velocityX >= SHEET_SWIPE_VELOCITY_PX_PER_MS) return "settle"
+  if (velocityX <= -SHEET_SWIPE_VELOCITY_PX_PER_MS) return "close"
   const isFarEnough = sheetWidth > 0 && -toSheetSwipeOffset(dx) >= sheetWidth * CLOSE_DISTANCE_RATIO
   return isFarEnough ? "close" : "settle"
 }
