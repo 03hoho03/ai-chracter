@@ -187,7 +187,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
   }
 
   // 스탯·상황 노트·엔딩 탭의 빈 상태(시작설정 없음)에서 시작설정 탭으로 간다. 누른 버튼은 탭 본문과 함께 사라지므로, 새 탭이
-  // 커밋된 다음 프레임에 그 탭의 '설정 추가'로 포커스를 옮긴다(없으면 시작설정 탭 트리거).
+  // 커밋된 다음 프레임에 그 탭의 '시작설정 추가'로 포커스를 옮긴다(없으면 시작설정 탭 트리거).
   function goToStartingSetup() {
     setActiveTab("startingSetup");
     requestAnimationFrame(() => {

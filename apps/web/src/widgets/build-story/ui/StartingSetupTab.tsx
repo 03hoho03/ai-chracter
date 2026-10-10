@@ -38,10 +38,10 @@ import { UnknownMediaTagNotice } from "./UnknownMediaTagNotice";
 /** 열림 키의 목록 이름 — 발행 실패 때 셸이 오류 항목을 여는 키와 같은 이름이어야 한다(타입이 목록 정의의 키로 묶는다). */
 const STARTING_SETUP_LIST: StoryCollapsibleList = "startingSetup";
 
-/** '설정 추가' 버튼 id — 스탯·상황 노트·엔딩 탭의 빈 상태에서 이 탭으로 넘어올 때 포커스할 곳이다. */
+/** '시작설정 추가' 버튼 id — 스탯·상황 노트·엔딩 탭의 빈 상태에서 이 탭으로 넘어올 때 포커스할 곳이다. */
 export const STARTING_SETUP_ADD_BUTTON_ID = "starting-setup-add";
 
-/** "설정 추가"로 여러 시작설정 생성, 발행하려면 최소 1개 필요.
+/** "시작설정 추가"로 여러 시작설정 생성, 발행하려면 최소 1개 필요.
  * 그 최소 1개는 storyBuilderSchema의 `.min(1)`이 막고, 위반은 발행을 눌렀을 때 토스트와 탭 에러로
  * 드러난다 — 발행 버튼 자체는 비활성화하지 않는다(apps/web/CLAUDE.md §폼 / 빌더). */
 export function StartingSetupTab() {
@@ -63,7 +63,7 @@ export function StartingSetupTab() {
   const uiState = useBuilderUiState();
   const addButtonRef = useRef<HTMLButtonElement>(null);
 
-  // 지운 시작설정 자리에서 포커스를 다음 시작설정의 머리 줄로(없으면 이전, 그것도 없으면 설정 추가 버튼으로) 옮긴다. `keys`
+  // 지운 시작설정 자리에서 포커스를 다음 시작설정의 머리 줄로(없으면 이전, 그것도 없으면 시작설정 추가 버튼으로) 옮긴다. `keys`
   // 는 지우기 전 목록이다 — 이웃의 머리 줄은 지운 뒤에도 남는다. 상한(4개)에서는 추가 버튼이 없지만 그때는 이웃이 늘 있다.
   function focusAfterRemoval(keys: readonly string[], index: number) {
     focusNeighborToggle(keys, index, addButtonRef.current);
@@ -87,7 +87,7 @@ export function StartingSetupTab() {
         title: "시작설정을 지울까요?",
         description: `이 시작설정의 ${contents.join("와 ")}도 함께 지워져요.`,
         confirmLabel: "지우기",
-        // 취소면 삭제 버튼으로, 지웠으면 그 카드가 사라지므로 이웃 시작설정의 머리 줄(없으면 설정 추가 버튼)로.
+        // 취소면 삭제 버튼으로, 지웠으면 그 카드가 사라지므로 이웃 시작설정의 머리 줄(없으면 시작설정 추가 버튼)로.
         onRestoreFocus: () => {
           if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus();
           else focusAfterRemoval(keys, index);
@@ -187,7 +187,7 @@ export function StartingSetupTab() {
           className="w-fit"
           onClick={handleAdd}
         >
-          설정 추가
+          시작설정 추가
         </Button>
       ) : null}
 
@@ -418,7 +418,7 @@ function StartingSetupRow({
                 `disabled`도, 조건부 렌더도 안 된다(apps/web/CLAUDE.md §포커스) — 둘 다 4번째를 넣는
                 순간 그 컨트롤이 blur/언마운트돼 포커스가 <body>로 떨어진다. 대신 `aria-disabled`로
                 잠그고(ContentListLoadMore와 같은 레시피) 실제 차단은 handleAddSuggestedReply가 한다.
-                같은 자리의 `설정 추가`는 useFieldArray.append()가 새 행으로 포커스를 옮겨 주므로
+                같은 자리의 `시작설정 추가`는 useFieldArray.append()가 새 행으로 포커스를 옮겨 주므로
                 조건부 렌더로 둔다 — 두 버튼에서 실제로 다른 값이다. */}
             <div className="flex gap-2">
               <Input

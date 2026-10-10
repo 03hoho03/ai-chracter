@@ -1,7 +1,7 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 
 type StartingSetupRequiredStateProps = {
-  /** 시작설정 탭으로 넘어가고 그 탭의 '설정 추가'로 포커스를 옮긴다(셸이 탭 전환을 쥐고 있다). */
+  /** 시작설정 탭으로 넘어가고 그 탭의 '시작설정 추가'로 포커스를 옮긴다(셸이 탭 전환을 쥐고 있다). */
   onGoToStartingSetup: () => void;
 };
 
