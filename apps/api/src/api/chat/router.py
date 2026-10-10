@@ -295,6 +295,28 @@ async def _validate_shortcut(
     return shortcut
 
 
+async def _replaced_turn_shortcut(db: AsyncSession, room: ChatRoom, message_id: uuid.UUID) -> Shortcut | None:
+    """재생성할 응답을 만든 턴의 단축어. 메시지에는 단축어 칸이 없어 그 응답의 턴 기록에서 찾는다 — 재생성 기록은 대체한
+    기록의 값을 이어받으므로 재생성을 거듭해도 처음 보낸 턴의 단축어다. 기록이 없는 응답(기록을 쓰기 전에 보낸 턴)은 단축어
+    없이 재생성한다.
+
+    단축어는 방이 지금 고정한 버전에서 찾는다(프롬프트의 다른 재료와 같다). 방을 새 버전에 고정해 그 단축어가 빠졌으면 단축어
+    없이 재생성한다 — 이 요청은 단축어를 고르지 않았으므로 `_validate_shortcut` 처럼 400 으로 막을 근거가 없고, 작가가 단축어를
+    지운 정상 상황이라 경고로 남기지도 않는다."""
+    shortcut_entity_id = await db.scalar(
+        select(ChatTurn.shortcut_entity_id).where(ChatTurn.assistant_message_id == message_id)
+    )
+    if shortcut_entity_id is None:
+        return None
+    shortcut: Shortcut | None = await db.scalar(
+        select(Shortcut).where(
+            Shortcut.entity_id == shortcut_entity_id,
+            Shortcut.content_version_id == room.content_version_id,
+        )
+    )
+    return shortcut
+
+
 async def _starting_setup_dependency(
     room: ChatRoom = Depends(_owned_room_dependency),
     db: AsyncSession = Depends(get_db_session),
@@ -1073,6 +1095,7 @@ async def regenerate_message(
     와 같은 턴 골격(`run_turn`)을 지나지만 새 턴이 아니라 같은 턴의 응답을 바꾸는 것이라 셋이 다르다.
 
     - 저장소는 replace 모드다(`RoomTurnStore(mode="replace")`) — 옛 응답을 지우고 바꿔 넣으며 turn_count 를 올리지 않는다.
+    - 원 턴을 단축어로 보냈으면 그 단축어를 다시 싣는다(`_replaced_turn_shortcut` — 그 응답의 턴 기록에서 찾는다).
     - 스탯·엔딩 판정은 다시 하지 않는다(`regenerate_judgments`) — 원 응답 생성 때 이미 한 번 반영됐고, 그 반영분을
       되돌리는 코드가 아직 없어(턴 기록은 남지만 기록을 쓰기 전에 보낸 턴에는 없다) 다시 하면 중복 적용되어 부정확해진다. 그림 판정(캐릭터 상황별 이미지·스토리 미디어 북 칸 — 스토리는
       엔딩 뒤에도)은 다시 한다 — 노출 기록(`CharacterImageExposure`·`StoryMediaExposure`)은 첫 노출만 기록해 멱등이라
@@ -1116,7 +1139,7 @@ async def regenerate_message(
                 setup,
                 history[:-1],
                 user_content,
-                None,
+                await _replaced_turn_shortcut(db, room, last_message.id),
                 prompt_set,
                 prompt_sections,
                 charge,
