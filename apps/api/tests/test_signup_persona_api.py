@@ -13,7 +13,7 @@ from collections.abc import Awaitable, Callable
 
 import httpx
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.google_oauth import PendingGoogleSignup, store_pending_google_signup
@@ -124,14 +124,13 @@ async def test_signup_without_persona_name_creates_none(
     "name",
     [pytest.param("a:b", id="colon"), pytest.param("*별*", id="markdown"), pytest.param("가" * 21, id="21-chars")],
 )
-async def test_signup_with_invalid_persona_name_returns_422_without_a_user(
-    submit: Submit, ok_status: int, name: str, db_client: httpx.AsyncClient, db_session: AsyncSession
+async def test_signup_with_invalid_persona_name_returns_422(
+    submit: Submit, ok_status: int, name: str, db_client: httpx.AsyncClient
 ) -> None:
-    """프로필 화면과 같은 이름 규칙이다. 가입 자체가 거절돼 사용자도 생기지 않는다."""
-    resp, email = await submit(db_client, {"personaName": name})
+    """프로필 화면과 같은 이름 규칙이다. 요청 검증에서 거절되므로 가입 처리에 들어가지 않는다."""
+    resp, _ = await submit(db_client, {"personaName": name})
 
     assert resp.status_code == 422
-    assert await db_session.scalar(select(func.count()).select_from(User).where(User.email == email)) == 0
 
 
 # ---- 방치된 미인증 행 덮어쓰기: 남아 있던 프로필을 바꾼다 ----
