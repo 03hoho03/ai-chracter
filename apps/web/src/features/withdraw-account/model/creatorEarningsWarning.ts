@@ -1,7 +1,7 @@
 import { isCreatorPayoutUnavailableError, type CreatorPayoutResponse } from "@/entities/creator-payout";
 
 /** 탈퇴 확인의 크리에이터 적립금 경고. 탈퇴하면 지급을 신청하지 않은 확정 잔액과 아직 확정되지 않은 적립이 모두
- * 사라지고(크리에이터 정산 정책의 탈퇴 조항), 지급 신청 기능이 아직 없어 탈퇴 전에 받을 방법도 없다.
+ * 사라진다(크리에이터 정산 정책의 탈퇴 조항). 탈퇴 전에 받을 길이 있는지는 따로 `getWithdrawalPayoutAction` 이 정한다.
  *
  * - `confirmed` — 승인된 적이 있고 확정 잔액이 0 보다 크다. 그 금액과 미확정 적립이 함께 사라진다.
  * - `unconfirmed` — 승인된 적이 있고 확정 잔액은 0 이하지만 미확정 적립이 있을 수 있다. 0 원이나 음수를 "확정된

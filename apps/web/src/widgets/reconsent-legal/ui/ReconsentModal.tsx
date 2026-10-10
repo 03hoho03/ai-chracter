@@ -151,7 +151,7 @@ export function ReconsentModal() {
         <DialogFooter>
           {/* 미동의 이용자의 출구는 탈퇴다. 기존
               WithdrawAccountDialog(트리거+AlertDialog+뮤테이션)를 그대로 재사용한다. */}
-          <WithdrawAccountDialog label="동의하지 않고 탈퇴" />
+          <WithdrawAccountDialog label="동의하지 않고 탈퇴" isBehindReconsent />
           {/* 로딩 중 plain `disabled`는 브라우저가 즉시 blur해
               포커스를 <body>로 떨어뜨린다(apps/web/CLAUDE.md). 이 모달이 ESC를 막아 키보드 복귀 수단이
               Tab 하나뿐이라 영향이 커진다. `aria-disabled` + 핸들러 early return으로 바꾼다
