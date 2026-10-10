@@ -31,6 +31,7 @@ import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
 import { expandAuthorMacros } from "@/shared/lib/text/authorMacros";
 
 import { previewAuthorMacroNames } from "../model/previewAuthorMacroNames";
+import { previewEmptyHint } from "../model/previewEmptyHint";
 import { previewPersonaLabel } from "../model/previewPersonaLabel";
 
 type PreviewSessionViewProps = {
@@ -71,6 +72,7 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
   // 바꿔 보인다. 작품 쪽 값은 세션 상태의 것이라 세션 도중 폼에서 이름을 고쳐도 서버(시작 때 페이로드)와 갈리지 않는다.
   const macroNames = previewAuthorMacroNames(state.authorNameSource, state.contentType, personaList);
   const expandForPreview = (text: string) => expandAuthorMacros(text, macroNames);
+  const emptyHint = previewEmptyHint(state.contentType, state.messages);
 
   // 미리보기도 채팅 4경로와 **같은 게이트**를 지나므로 같은
   // 확인이 필요하다. 트리거를 위젯이 만들어 넘기는 이유와 단가를 여기서 묶는 이유는
@@ -216,6 +218,10 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
           {/* 메시지 사이 gap-6(24px)은 한 메시지 안 문단 간격(12px)의 두 배다. 상자 없는 산문이 한 컬럼에 흐르므로
               같은 값이면 메시지 경계와 문단 경계가 구분되지 않는다. */}
           <div className="flex flex-col gap-6">
+            {/* 보이는 글이 없는 첫 화면은 빈 열이라 무엇이 여기 나올지, 미리보기가 무엇을 보는지 알려 준다. */}
+            {emptyHint !== undefined && (
+              <p className="mx-auto max-w-sm py-8 text-center text-sm break-keep text-muted-foreground">{emptyHint}</p>
+            )}
             {/* 스토리 첫 메시지는 작성자 글이라 글 속 미디어 북 태그를 그림으로 그린다(채팅방과 같은 규칙). */}
             {/* 첫 메시지(캐릭터 인사말 포함)는 작성자 글이라 이름 매크로도 바꾼다. */}
             {state.messages.map((message, index) => {
