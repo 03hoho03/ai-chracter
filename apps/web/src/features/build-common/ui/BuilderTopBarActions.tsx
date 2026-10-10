@@ -37,8 +37,8 @@ type BuilderTopBarActionsProps = {
  * 같은 JSX를 들고 있던 것을 모았다 — 셸마다 다른 제목은
  * 원래부터 `BuilderTopBar`의 `title` prop이라 여기 오지 않는다.
  *
- * [미리보기]는 lg 이상에서 프리뷰 열이 항상 보이므로 `lg:hidden`이고, 폭이 좁을 때 작성 가이드·미리보기·
- * 임시저장 세 컨트롤은 라벨을 숨기고 아이콘만 남긴다(`hidden sm:inline`, `BuilderTopBar` 주석의 선례) — 발행은
+ * [미리보기]는 lg 이상에서 프리뷰 열이 항상 보이므로 `lg:hidden`이고, `lg` 미만에서 작성 가이드·미리보기·
+ * 임시저장 세 컨트롤은 라벨을 숨기고 아이콘만 남긴다(`hidden lg:inline`, 이유는 `BuilderTopBar` 주석) — 발행은
  * 아이콘이 없어 라벨을 항상 노출한다.
  */
 export function BuilderTopBarActions({
@@ -60,7 +60,7 @@ export function BuilderTopBarActions({
       <Button asChild variant="ghost" size="sm" className={TOUCH_TARGET_CLASSNAME}>
         <a href={guidePath} target="_blank" rel="noopener noreferrer" aria-label="작성 가이드 (새 탭에서 열림)">
           <BookOpen aria-hidden className="size-3.5" />
-          <span className="hidden sm:inline">작성 가이드</span>
+          <span className="hidden lg:inline">작성 가이드</span>
         </a>
       </Button>
       {/* 열림 상태에 따라 아이콘·라벨·aria-expanded가 바뀐다. 실제 열기/닫기 토글 로직은
@@ -76,7 +76,7 @@ export function BuilderTopBarActions({
         onClick={onPreview}
       >
         {isPreviewOpen ? <X aria-hidden className="size-3.5" /> : previewIcon}
-        <span className="hidden sm:inline">{isPreviewOpen ? "닫기" : previewLabel}</span>
+        <span className="hidden lg:inline">{isPreviewOpen ? "닫기" : previewLabel}</span>
       </Button>
       <SaveNowButton saveStatus={saveStatus} onSaveNow={onSaveNow} />
       <Button size="sm" disabled={isPublishing} className={TOUCH_TARGET_CLASSNAME} onClick={onPublish}>
@@ -86,7 +86,7 @@ export function BuilderTopBarActions({
   );
 }
 
-/** 손가락 포인터에서 상단바 버튼을 40px 로 올린다. 좁은 화면에서는 라벨이 숨어 아이콘만 남으므로 폭도 40px 를 채운다. 상단바(56px)
+/** 손가락 포인터에서 상단바 버튼을 40px 로 올린다. `lg` 미만에서는 라벨이 숨어 아이콘만 남으므로 폭도 40px 를 채운다. 상단바(56px)
  * 안에 들어가고, 마우스 포인터의 32px 는 그대로다. */
 const TOUCH_TARGET_CLASSNAME = "pointer-coarse:h-10 pointer-coarse:min-w-10";
 
@@ -141,7 +141,7 @@ function SaveNowButton({ saveStatus, onSaveNow }: { saveStatus: AutosaveStatusSt
         onClick={onSaveNow}
       >
         {view.icon}
-        <span className="hidden sm:inline">임시저장</span>
+        <span className="hidden lg:inline">임시저장</span>
       </Button>
       <span role="status" className="sr-only">
         {isOnline ? "" : "연결이 끊겼어요. 연결되면 저장돼요."}

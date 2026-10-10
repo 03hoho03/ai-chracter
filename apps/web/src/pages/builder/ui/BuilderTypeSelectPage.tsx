@@ -43,7 +43,9 @@ export function BuilderTypeSelectPage() {
           (`routes/__root.tsx`). 실제 빌더(`/builder/$type/$draftId`)로 들어갈 때 크롬이 출렁이지
           않도록 타입 선택 화면부터 같은 상단바를 쓴다. */}
       <BuilderTopBar title="작품 만들기" />
-      <main className="mx-auto flex max-w-2xl flex-col gap-6 px-4 sm:px-6 py-10">
+      {/* lg 이상은 빌더 폼 열처럼 왼쪽에 붙는다 — 상단바 뒤로가기와 콘텐츠 left 를 맞춘다(같은 페이지의 로드 실패·
+          스켈레톤 화면과 같은 자리). */}
+      <main className="mx-auto flex max-w-2xl flex-col gap-6 px-4 sm:px-6 py-10 lg:mx-0">
         {/* 2열 전환이 `sm`(640px)이 아니라 `md`(768px)인 건 실측이다 — 640px에서 2열은 카드를 290px로 만들어
             텍스트 폭이 224px가 되는데, 가장 긴 설명 줄이 227px라 640~645px 구간에서만 한 줄이 접힌다. */}
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">

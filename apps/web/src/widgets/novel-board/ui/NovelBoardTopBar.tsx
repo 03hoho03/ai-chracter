@@ -36,7 +36,7 @@ type CreateChapterAction = {
  *
  * 뒤로가기는 기록 뒤로가 아니라 작품 정보로 가는 고정 목적지다 — 보드에 오는 길이 여럿이다(작품 정보, 읽기 화면 끝의
  * "편집"). 이 화면의 유일한 솔리드 채움은 "다음 화 만들기"이고, 버전은 윤곽 토글, 노벨 공개는 ghost 다. `sm` 미만에서는 두 버튼의
- * 라벨을 숨기고 아이콘과 접근 이름만 남긴다(빌더 상단 바와 같은 규칙).
+ * 라벨을 숨기고 아이콘과 접근 이름만 남긴다(빌더 상단 바는 본문 2단 경계에 맞춰 `lg` 에서 가른다 — 경계가 다르다).
  */
 export function NovelBoardTopBar({ novelId, title, autosaveNotice, versions, create, publishAction }: NovelBoardTopBarProps) {
   return (
