@@ -1,8 +1,8 @@
 import abc
 import uuid
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
-from typing import TypeVar
+from dataclasses import dataclass, field
+from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
@@ -94,6 +94,56 @@ class SegmentedPrompt(str):
 
 
 @dataclass(frozen=True)
+class CallUsage:
+    """턴 기록(`chat_turns.llm_calls`)에 남는 호출 한 건의 사용량. 토큰 칸은 SDK 가 보고한 값 그대로이고, 보고하지 않은
+    칸은 `None` 이다(이미지가 실린 호출은 입력 토큰이 오지 않는다). 입력 토큰은 캐시를 포함한 전체다 — Claude 사용량도
+    공급자 모듈이 같은 뜻으로 옮겨 온다."""
+
+    call_site: str
+    model: str
+    prompt_tokens: int | None
+    cached_tokens: int | None
+    cache_write_tokens: int | None
+    output_tokens: int | None
+    thoughts_tokens: int | None
+
+    def as_record(self) -> dict[str, Any]:
+        return {
+            "callSite": self.call_site,
+            "model": self.model,
+            "promptTokens": self.prompt_tokens,
+            "cachedTokens": self.cached_tokens,
+            "cacheWriteTokens": self.cache_write_tokens,
+            "outputTokens": self.output_tokens,
+            "thoughtsTokens": self.thoughts_tokens,
+        }
+
+
+def _token_count(usage_metadata: object | None, attr: str) -> int | None:
+    value = getattr(usage_metadata, attr, None)
+    return value if isinstance(value, int) else None
+
+
+def collect_usage(usage: "LLMCallContext", model: str, usage_metadata: object | None) -> None:
+    """호출 한 건을 그 호출의 `usage_sink` 에 더한다(없으면 아무것도 하지 않는다). 공급자 구현이 `record_usage` 를 부르는
+    바로 그 자리에서 함께 부른다 — 그래서 더하는 조건(스트림은 정상 종료 때만, 구조화는 파싱 검사 앞)이 사용량 집계와
+    같다. 생성 스트림 안에서 불리므로 메타데이터가 이상해도 예외를 내지 않게 정수가 아닌 값은 `None` 으로 읽는다."""
+    if usage.usage_sink is None:
+        return
+    usage.usage_sink.append(
+        CallUsage(
+            call_site=usage.call_site,
+            model=model,
+            prompt_tokens=_token_count(usage_metadata, "prompt_token_count"),
+            cached_tokens=_token_count(usage_metadata, "cached_content_token_count"),
+            cache_write_tokens=_token_count(usage_metadata, "cache_write_token_count"),
+            output_tokens=_token_count(usage_metadata, "candidates_token_count"),
+            thoughts_tokens=_token_count(usage_metadata, "thoughts_token_count"),
+        )
+    )
+
+
+@dataclass(frozen=True)
 class LLMCallContext:
     """호출 한 건의 사용량을 누구·어디에 귀속할지. 필수 키워드 인자라 새 호출부가
     빠뜨리면 mypy가 잡는다. `room_id`는 DB 방이 없는 호출(미리보기·발행 심사·스크립트)에서 None.
@@ -107,6 +157,10 @@ class LLMCallContext:
     user_id: uuid.UUID | None
     room_id: uuid.UUID | None
     model: ChatModelId = DEFAULT_CHAT_MODEL
+    # 이 호출의 사용량을 모을 목록. 채팅 턴 골격만 넘기고(방 턴은 모은 것을 턴 기록에 싣는다) 나머지 호출부는 두지 않는다 —
+    # 기본값이 None 이라 기존 호출부와 테스트 가짜는 그대로다. 비교·해시에서 빼는 것은 이 칸이 호출의 귀속(누구·어디)이 아니라
+    # 모으는 자리라서이고, 목록은 해시할 수 없어 넣으면 이 frozen 데이터클래스의 해시가 TypeError 가 된다.
+    usage_sink: list[CallUsage] | None = field(default=None, compare=False, hash=False)
 
 
 class LLMClientError(Exception):

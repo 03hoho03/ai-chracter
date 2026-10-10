@@ -88,7 +88,7 @@ from api.db.models.story import (
     StatDef,
     StatRule,
 )
-from api.llm.client import LLMCallContext, LLMClient, LLMClientError, dependency_tag
+from api.llm.client import CallUsage, LLMCallContext, LLMClient, LLMClientError, dependency_tag
 
 # 판정 실패는 흡수하더라도 서버 로그에 남긴다 — 라우터와 같은 이유로 이 모듈의 로그도 전부 warning 이상이다.
 logger = logging.getLogger(__name__)
@@ -381,7 +381,7 @@ async def _prepare_situational_image_judgment(
 
 
 async def _judge_situational_image(
-    llm_client: LLMClient, judgment: _SituationalImageJudgment, room: ChatRoom
+    llm_client: LLMClient, judgment: _SituationalImageJudgment, room: ChatRoom, usage_sink: list[CallUsage] | None
 ) -> SituationalImage | None:
     """상황별 이미지 판정 LLM 호출 — DB 에 닿지 않는다. 응답(matchedImageEntityId)은 항상 단수라 "동시 매칭 시
     order 최상위만 발동"은 프롬프트 지시로 처리하고, 그 반환값이 실제 후보 목록에 있는지만 방어적으로 재확인한다.
@@ -391,7 +391,9 @@ async def _judge_situational_image(
         llm_client,
         judgment.prompt,
         {image.entity_id for image in judgment.candidates},
-        LLMCallContext(call_site="chat_situational_image", user_id=room.user_id, room_id=room.id),
+        LLMCallContext(
+            call_site="chat_situational_image", user_id=room.user_id, room_id=room.id, usage_sink=usage_sink
+        ),
     )
     return next((image for image in judgment.candidates if image.entity_id == matched_id), None)
 
@@ -622,6 +624,9 @@ class JudgmentContext:
     turn: int
     log_subject: str
     stat_after: dict[str, float] | None = None
+    # 방 판정이 자기 호출 컨텍스트에 넘겨 턴 기록에 실을 사용량 목록. `run_turn` 은 미리보기에도 이 목록을 넣지만,
+    # 미리보기 판정 클래스는 기록이 없어 자기 호출 컨텍스트에 넘기지 않는다.
+    usage_sink: list[CallUsage] | None = None
 
 
 @dataclass
@@ -632,6 +637,8 @@ class TurnJudgmentResult:
     # 스탯 행(스탯 entity_id 문자열 → 행)과 바뀐 값만(같은 키 → 새 값). 쓰기는 `stat_writes` 의 키만 쓴다.
     stat_rows: dict[str, ChatRoomStat] = field(default_factory=dict)
     stat_writes: dict[str, float] = field(default_factory=dict)
+    # 바뀐 스탯마다 `[반영 전, 반영 뒤]` — 턴 기록의 `stat_changes` 가 이 값이다. 반영 전 값이 없던 스탯은 `None` 이다.
+    stat_changes: dict[str, list[float | None]] = field(default_factory=dict)
     stat_change_events: list[ChatStatChangeEvent] = field(default_factory=list)
     judged_cell_id: uuid.UUID | None = None
     matched_image: SituationalImage | None = None
@@ -670,6 +677,7 @@ def _apply_stat_result(
     for stat_id, new_value in updated.items():
         if new_value != current.get(stat_id):
             result.stat_writes[stat_id] = new_value
+            result.stat_changes[stat_id] = [current.get(stat_id), new_value]
             result.stat_change_events.append(ChatStatChangeEvent(stat_id=stat_id, new_value=new_value))
 
 
@@ -740,7 +748,12 @@ class StatJudgment:
         self._updated = await _await_stat_judgment(
             llm_client,
             self._request,
-            LLMCallContext(call_site="chat_stat_judgment", user_id=self._room.user_id, room_id=self._room.id),
+            LLMCallContext(
+                call_site="chat_stat_judgment",
+                user_id=self._room.user_id,
+                room_id=self._room.id,
+                usage_sink=ctx.usage_sink,
+            ),
             log_subject=ctx.log_subject,
             current_stats=self._current_stats,
             stat_defs=self._stat_defs,
@@ -809,7 +822,10 @@ class EndingJudgment:
                 ending_judgment_prompt,
                 EndingJudgmentResult,
                 usage=LLMCallContext(
-                    call_site="chat_ending_judgment", user_id=self._room.user_id, room_id=self._room.id
+                    call_site="chat_ending_judgment",
+                    user_id=self._room.user_id,
+                    room_id=self._room.id,
+                    usage_sink=ctx.usage_sink,
                 ),
             )
             if not ending_judgment.triggered:
@@ -856,7 +872,12 @@ class MediaCellJudgment:
         self._cell_id = await _judge_media_cell(
             llm_client,
             self._judgment,
-            LLMCallContext(call_site="chat_media_book_image", user_id=self._room.user_id, room_id=self._room.id),
+            LLMCallContext(
+                call_site="chat_media_book_image",
+                user_id=self._room.user_id,
+                room_id=self._room.id,
+                usage_sink=ctx.usage_sink,
+            ),
             log_subject=ctx.log_subject,
         )
 
@@ -891,7 +912,7 @@ class SituationalImageJudgment:
     async def judge(self, llm_client: LLMClient, ctx: JudgmentContext) -> None:
         if self._judgment is None:
             return
-        self._matched = await _judge_situational_image(llm_client, self._judgment, self._room)
+        self._matched = await _judge_situational_image(llm_client, self._judgment, self._room, ctx.usage_sink)
 
     def apply(self, ctx: JudgmentContext, result: TurnJudgmentResult) -> None:
         result.matched_image = self._matched

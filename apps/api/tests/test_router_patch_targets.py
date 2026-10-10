@@ -49,6 +49,7 @@ GUARDED = frozenset(
         "TurnResult",
         "ChatMessage",
         "DiscardedResponse",
+        "ChatTurn",
         "delete",
         "ChatMessageResponse",
         "ChatRoomStat",

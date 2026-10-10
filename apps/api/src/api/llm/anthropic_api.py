@@ -38,6 +38,7 @@ from api.llm.client import (
     LLMClientError,
     LLMEmptyResponseError,
     LLMRateLimitError,
+    collect_usage,
 )
 from api.llm.usage_store import record_usage
 
@@ -171,6 +172,7 @@ class AnthropicLLMClient(LLMClient):
         usage_metadata = tally.usage()
         _log_usage(usage, model, usage_metadata)
         await record_usage(usage.call_site, model, usage_metadata)
+        collect_usage(usage, model, usage_metadata)
         if tally.truncated and not tally.has_text:
             # 사고가 먼저 나오므로 사고 도중 상한에 닿으면 본문이 하나도 없다. 채팅이라도 빈 턴을 저장·과금하지 않고 실패로
             # 올려 환불 경로를 태운다(원가는 이미 나가 위에서 기록했다). 본문이 조금이라도 있으면 아래 규칙대로다.

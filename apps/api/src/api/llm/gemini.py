@@ -20,6 +20,7 @@ from api.llm.client import (
     LLMRateLimitError,
     LLMTruncatedError,
     request_timeout_ms,
+    collect_usage,
     structured_model,
 )
 from api.llm.usage_store import record_usage
@@ -176,6 +177,7 @@ class GeminiLLMClient(LLMClient):
         # 끊으면(aclose) `yield` 자리에서 GeneratorExit으로 빠진다. 그 경우는 기록하지 않는다.
         _log_usage(usage, model, usage_metadata)
         await record_usage(usage.call_site, model, usage_metadata)
+        collect_usage(usage, model, usage_metadata)
         # 소설화만 잘림·빈 본문을 실패로 올린다 — 결과가 소설 본문으로 저장되기 때문이다. 사용량 기록 **뒤**라 과금된
         # 호출이 집계에서 빠지지 않는다. 채팅은 위 경고만 남기고 받은 그대로 끝난다.
         if usage.call_site in NOVELIZE_CALL_SITES:
@@ -232,6 +234,7 @@ class GeminiLLMClient(LLMClient):
         usage_metadata = getattr(response, "usage_metadata", None)
         _log_usage(usage, model, usage_metadata)
         await record_usage(usage.call_site, model, usage_metadata)
+        collect_usage(usage, model, usage_metadata)
         if not isinstance(response.parsed, response_schema):
             # 안전 차단 응답은 본문이 없어 파싱 실패로 보인다. 차단 표시는 파싱에 실패했을 때만 본다 — 파싱해 낸
             # 결과는 지금처럼 돌려주고, 바뀌는 것은 원래도 실패하던 응답의 예외 종류뿐이다. 판정 호출부는 둘 다

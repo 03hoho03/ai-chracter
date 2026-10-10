@@ -233,8 +233,8 @@ ChatTurnChargeSource = Literal["free", "clover", "skipped"]
 
 class ChatTurn(Base):
     """턴이 남긴 응답 하나 = 한 행. 그 응답을 만든 글쓰기 모델, 그 턴의 차감, LLM 호출별 토큰 사용량, 그 응답에 귀속된
-    스탯 변화·도달한 엔딩을 숫자와 id 로만 남긴다 — 프롬프트·응답 글은 싣지 않는다. 지금은 이 테이블에 쓰는 코드가 없고,
-    방 삭제·초기화가 지우는 쪽만 먼저 들어와 있다. 턴 쓰기 구간이 응답과 같은 커밋에 행을 넣게 하는 일이 남았다.
+    스탯 변화·도달한 엔딩을 숫자와 id 로만 남긴다 — 프롬프트·응답 글은 싣지 않는다. 방 턴의 쓰기
+    구간이 응답과 같은 커밋에 행을 넣는다(`chat/turn_store.py` 의 `RoomTurnStore` — 어느 경로가 어떤 값을 쓰는지도 거기 있다).
 
     미리보기 턴은 방 행이 없어 `chat_room_id` 를 채울 수 없으므로 기록하지 않는다.
 
@@ -245,6 +245,10 @@ class ChatTurn(Base):
     - `turn_number` 는 이 응답이 속한 턴이다. 재생성 행은 대체한 응답 기록의 값을 이어받는다.
     - `llm_calls` 는 `[{callSite, model, promptTokens, cachedTokens, cacheWriteTokens, outputTokens, thoughtsTokens}]`,
       `stat_changes` 는 `{statEntityId: [before, after]}` 다.
+
+    응답이 재생성·수정·메시지 삭제로 지워져도 그 행은 방이 지워지거나 초기화될 때까지 남는다. 그래서 한 방 안에서
+    `(chat_room_id, turn_number)` 는 유일하지 않고(수정 뒤 같은 턴 번호가 둘, 재생성 체인은 같은 `stat_changes` 를
+    복사한 행이 여럿), `stat_changes` 를 방 단위로 합치면 이중 계산이 된다 — 기록은 메시지 id 로 찾는다.
 
     방 삭제·탈퇴는 `delete_chat_rooms` 가 방 행보다 먼저 이 행을 지운다(`ON DELETE CASCADE` 가 없다). 초기화도 그 방의
     행을 지운다 — 방 행은 남아 FK 와는 무관하고, 지운 대화의 기록을 남기지 않으려는 것이다. `kind`·`charge_source` 는
