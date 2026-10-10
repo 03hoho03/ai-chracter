@@ -49,6 +49,32 @@ def test_dump_record_takes_the_last_line_of_that_room_and_turn(tmp_path: Path) -
         replay_logs.dump_record(dump, ROOM, 7)
 
 
+def test_dump_record_picks_the_generation_line_even_when_judgment_lines_follow_it(tmp_path: Path) -> None:
+    """측정 서버는 판정 프롬프트도 같은 덤프에 남기고, 판정은 생성 뒤에 돈다 — 판정 줄이 그 턴의 마지막 줄이 된다. 리플레이는
+    생성 줄(`kind` 가 없는 옛 줄이나 `generation`)만 고르고 세야 한다. 판정 줄을 세면 유실 턴 재시도처럼 보이고, 판정 줄을
+    고르면 지시문이 없는 줄로 조립을 대조한다."""
+    dump = _write(
+        tmp_path / "dump.jsonl",
+        [
+            {"roomId": str(ROOM), "turn": 4, "systemInstruction": "s", "prompt": "옛 덤프의 생성 줄"},
+            {"roomId": str(ROOM), "turn": 4, "kind": "judgment", "callSite": "chat_stat_judgment", "prompt": "판정"},
+            {"roomId": str(ROOM), "turn": 5, "kind": "generation", "systemInstruction": "s", "prompt": "생성"},
+            {"roomId": str(ROOM), "turn": 5, "kind": "judgment", "callSite": "chat_stat_judgment", "prompt": "스탯"},
+            {"roomId": str(ROOM), "turn": 5, "kind": "judgment", "callSite": "chat_media_book_image", "prompt": "칸"},
+            {"roomId": str(ROOM), "turn": 6, "kind": "judgment", "callSite": "chat_stat_judgment", "prompt": "판정만"},
+        ],
+    )
+    assert replay_logs.dump_record(dump, ROOM, 4) == (
+        {"roomId": str(ROOM), "turn": 4, "systemInstruction": "s", "prompt": "옛 덤프의 생성 줄"},
+        1,
+    )
+    record, count = replay_logs.dump_record(dump, ROOM, 5)
+    assert (record["prompt"], count) == ("생성", 1)
+    # 판정 줄만 있는 턴은 생성 덤프가 없는 턴이다.
+    with pytest.raises(ReplayRefusedError, match="덤프에 턴 6"):
+        replay_logs.dump_record(dump, ROOM, 6)
+
+
 # ---- 스탯 기준 줄 ------------------------------------------------------------------------------
 
 
