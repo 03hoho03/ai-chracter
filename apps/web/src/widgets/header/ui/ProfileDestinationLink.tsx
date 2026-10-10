@@ -47,6 +47,34 @@ const SUPPORT_DESTINATION_ICON: Record<MenuSupportDestinationKey, LucideIcon> = 
   "refund-policy": ReceiptText,
 };
 
+/** 목적지 이름. 링크 글자이자, 글자를 숨기는 좌측 패널 레일의 툴팁 글자다 — 둘이 같은 소스를 읽어야 툴팁과 접근 이름이
+ * 갈리지 않는다. 고객센터 목적지는 푸터와 함께 쓰는 `SUPPORT_DESTINATIONS` 의 라벨이다.
+ *
+ * - 내 소설·크리에이터 정산·대화 프로필·클로버는 페이지 h1 과 같은 문자열이다(`설정` 선례). 내 소설·정산은 허용된 계정에만
+ *   보인다(`isProfileDestinationVisible`). */
+export const PROFILE_DESTINATION_LABEL: Record<ProfileDestinationKey, string> = {
+  home: "홈",
+  builder: "작품 만들기",
+  "my-works": "내 작품",
+  novels: "내 소설",
+  "studio-images": "이미지 생성",
+  favorites: "즐겨찾기",
+  chats: "내 채팅목록",
+  profile: "내 프로필",
+  personas: "대화 프로필",
+  clover: "클로버",
+  "creator-payout": "크리에이터 정산",
+  mypage: "설정",
+  about: SUPPORT_DESTINATIONS.about.label,
+  notices: SUPPORT_DESTINATIONS.notices.label,
+  "inquiry-new": SUPPORT_DESTINATIONS["inquiry-new"].label,
+  terms: SUPPORT_DESTINATIONS.terms.label,
+  privacy: SUPPORT_DESTINATIONS.privacy.label,
+  "operation-policy": SUPPORT_DESTINATIONS["operation-policy"].label,
+  "youth-policy": SUPPORT_DESTINATIONS["youth-policy"].label,
+  "refund-policy": SUPPORT_DESTINATIONS["refund-policy"].label,
+};
+
 /** `me`는 `내 프로필`만 쓴다. 그 키에서만 필수로 두어, 비로그인 드로어가 공개 목적지를 `me` 없이 그릴 수 있게 한다. */
 type ProfileDestinationLinkProps = ComponentPropsWithoutRef<"a"> &
   (
@@ -67,6 +95,8 @@ export const ProfileDestinationLink = forwardRef<HTMLAnchorElement, ProfileDesti
   { destinationKey, me, className, ...rest },
   ref,
 ) {
+  const label = PROFILE_DESTINATION_LABEL[destinationKey];
+
   switch (destinationKey) {
     case "home":
       // 패널 내비의 홈이다. 로고도 홈으로 가지만 둘은 다르게 읽힌다 — 이 행은 이름 "홈"으로 읽히고 홈에 있을 때
@@ -76,91 +106,88 @@ export const ProfileDestinationLink = forwardRef<HTMLAnchorElement, ProfileDesti
       return (
         <Link ref={ref} to="/" className={className} {...rest}>
           <House aria-hidden />
-          홈
+          <span>{label}</span>
         </Link>
       );
     case "builder":
       return (
         <Link ref={ref} to="/builder" className={className} {...rest}>
           <Plus aria-hidden />
-          작품 만들기
+          <span>{label}</span>
         </Link>
       );
     case "my-works":
       return (
         <Link ref={ref} to="/my" className={className} {...rest}>
           <LayoutGrid aria-hidden />
-          내 작품
+          <span>{label}</span>
         </Link>
       );
     case "studio-images":
       return (
         <Link ref={ref} to="/studio/images" className={className} {...rest}>
           <ImagePlus aria-hidden />
-          이미지 생성
+          <span>{label}</span>
         </Link>
       );
     case "creator-payout":
-      // 라벨은 페이지 h1(`크리에이터 정산`)과 같은 문자열이다. 정산이 열린 계정에만 보인다(`isProfileDestinationVisible`).
       return (
         <Link ref={ref} to="/creator-payout" className={className} {...rest}>
           <Wallet aria-hidden />
-          크리에이터 정산
+          <span>{label}</span>
         </Link>
       );
     case "chats":
       return (
         <Link ref={ref} to="/chats" className={className} {...rest}>
           <MessagesSquare aria-hidden />
-          내 채팅목록
+          <span>{label}</span>
         </Link>
       );
     case "novels":
-      // 라벨은 페이지 h1(`내 소설`)과 같은 문자열이다. 허용된 계정에만 보인다(`isProfileDestinationVisible`).
       // 글리프는 채팅 더보기의 `소설로 보기`와 같다.
       return (
         <Link ref={ref} to="/novels" className={className} {...rest}>
           <BookText aria-hidden />
-          내 소설
+          <span>{label}</span>
         </Link>
       );
     case "favorites":
       return (
         <Link ref={ref} to="/favorites" className={className} {...rest}>
           <Star aria-hidden />
-          즐겨찾기
+          <span>{label}</span>
         </Link>
       );
     case "profile":
       return (
         <Link ref={ref} to="/profile/$userId" params={{ userId: me.id }} className={className} {...rest}>
           <User aria-hidden />
-          내 프로필
+          <span>{label}</span>
         </Link>
       );
     case "personas":
-      // 라벨은 페이지 h1(`대화 프로필`)과 같은 문자열이다(`설정` 선례).
       return (
         <Link ref={ref} to="/personas" className={className} {...rest}>
           <IdCard aria-hidden />
-          대화 프로필
+          <span>{label}</span>
         </Link>
       );
     case "clover":
-      // 라벨은 허브 페이지 h1(`클로버`)과 같은 문자열이다. 크기는 여기서 정한다 — 메뉴 항목·버튼의 svg
+      // 크기는 여기서 정한다 — 메뉴 항목·버튼의 svg
       // 크기 규칙은 `size-` 클래스가 이미 있는 svg 를 건너뛰므로, 기본 `size-3.5` 를 그대로 두면 이웃
       // 아이콘(16px)보다 작은 14px 로 그려진다.
       return (
         <Link ref={ref} to="/clover" className={className} {...rest}>
           <CloverIcon className="size-4" />
-          클로버
+          <span>{label}</span>
         </Link>
       );
     case "mypage":
       return (
         <Link ref={ref} to="/mypage" className={className} {...rest}>
           <Settings2 aria-hidden />
-          설정
+          <span>{label}</span>
         </Link>
       );
     case "about":
@@ -171,12 +198,12 @@ export const ProfileDestinationLink = forwardRef<HTMLAnchorElement, ProfileDesti
     case "operation-policy":
     case "youth-policy":
     case "refund-policy": {
-      const { label, to } = SUPPORT_DESTINATIONS[destinationKey];
+      const { to } = SUPPORT_DESTINATIONS[destinationKey];
       const Icon = SUPPORT_DESTINATION_ICON[destinationKey];
       return (
         <Link ref={ref} to={to} className={className} {...rest}>
           <Icon aria-hidden />
-          {label}
+          <span>{label}</span>
         </Link>
       );
     }

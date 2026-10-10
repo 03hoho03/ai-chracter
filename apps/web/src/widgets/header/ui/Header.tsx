@@ -15,9 +15,9 @@ import { SearchInlineExpand } from "./SearchInlineExpand";
 
 /**
  * 로고 · 캐릭터/스토리 토글 · 노벨(노벨이 열려 있을 때) · 이미지 · 클로버 · 검색 · 알림 벨 · 프로필로 고정 구성되며(클로버·알림·프로필은
- * 로그인 시에만, 비로그인은 그 자리에 로그인 버튼) 모든 화면에서 동일하게 노출된다(`routes/__root.tsx`에 마운트). 크롬은 항상 얇게 유지한다(DESIGN.md Overview 절).
- * 내부 바는 full-bleed다 — 전역 헤더는 뷰포트에 속하고 본문은 컬럼(`max-w-5xl`)에 속한다는 결정이며, 그 대가로
- * 로고 left와 본문 콘텐츠 left가 어긋난다(의도다).
+ * 로그인 시에만, 비로그인은 그 자리에 로그인 버튼) `routes/__root.tsx`에 마운트되고, 헤더를 그리지 않는 화면은
+ * `isGlobalHeaderHidden`이 정한다. 크롬은 항상 얇게 유지한다(DESIGN.md Overview 절).
+ * `lg` 이상에서는 헤더가 좌측 패널 오른쪽 열에 놓이고, 로고는 패널 머리에만 있어 헤더의 로고는 `lg:hidden`이다.
  *
  * `sm`(640px) 미만은 [버거] · [로고 중앙] · [검색] 셋으로 축약한다. 한 DOM에 `grid grid-cols-[1fr_auto_1fr]
  * … sm:flex`를 써서 두 레이아웃을 만든다 — 마크업을 두 벌 두면 로고가 둘(접근가능한 홈 링크가 둘)이 되고
@@ -42,7 +42,9 @@ export function Header() {
         <MobileNavDrawer className={cn("justify-self-start", isSearchExpanded ? "hidden" : "sm:hidden")} />
 
         {/* 로고는 두 구성 모두에서 항상 노출된다(검색 독점 중인 sm 미만은 예외) — 워드마크 하나가 약 65px라
-            숨겨서 아낄 폭이 거의 없다. 워드마크 SVG는 aria-hidden이라 링크 이름은 `aria-label`이 맡는다. `justify-self-center`는
+            숨겨서 아낄 폭이 거의 없다. 단 `lg` 이상에서는 좌측 패널 머리에 로고가 있어 여기서는 `lg:hidden` 이다 — 화면에
+            로고 홈 링크는 하나다(`display:none` 이라 접근성 트리에서도 빠진다. 패널 마운트 판정이 같은 `64rem` 경계다).
+            워드마크 SVG는 aria-hidden이라 링크 이름은 `aria-label`이 맡는다. `justify-self-center`는
             grid(모바일)에서만 의미가 있고 `sm:flex`에서는 무시된다. */}
         <Link
           to="/"
@@ -50,6 +52,7 @@ export function Header() {
           className={cn(
             "inline-flex shrink-0 items-center justify-self-center rounded-md text-foreground focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-3 focus-visible:ring-ring/50",
             isSearchExpanded && "hidden sm:inline-flex",
+            "lg:hidden",
           )}
         >
           <BrandLogo className="h-5 w-auto" />
