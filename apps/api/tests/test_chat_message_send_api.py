@@ -1,12 +1,14 @@
 import json
 import logging
 import uuid
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import httpx
 import pytest
 import sqlalchemy as sa
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat import turn_engine, turn_store
@@ -23,7 +25,7 @@ from api.db.models import (
     SituationalImage,
     UserPersona,
 )
-from api.llm.client import LLMClientError, LLMPolicyViolationError
+from api.llm.client import LLMCallContext, LLMClient, LLMClientError, LLMPolicyViolationError
 from replay import logs as replay_logs
 from factories import (
     _add_room_situational_image,
@@ -40,6 +42,8 @@ from factories import (
     _parse_sse_events,
     _read_golden_prompt,
 )
+
+T = TypeVar("T", bound=BaseModel)
 
 
 async def _create_room_via_api(client: httpx.AsyncClient, content_id: uuid.UUID) -> httpx.Response:
@@ -1410,6 +1414,103 @@ async def test_judgment_prompt_dump_failure_still_runs_the_judgment(
     assert _parse_sse_events(resp.text)[-1]["finalMessage"]["imageId"] == str(image_id)
     assert [record.getMessage() for record in caplog.records if "판정 프롬프트 덤프 실패" in record.getMessage()] == [
         f"판정 프롬프트 덤프 실패 (room={room.room_id}, turn=3, call_site=chat_situational_image)"
+    ]
+
+
+class _RecordingInner(LLMClient):
+    """받은 호출을 그대로 적어 두는 클라이언트 — 덤프 래퍼가 무엇을 넘겼는지 보려고 쓴다."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
+
+    async def _tokens(self) -> AsyncIterator[str]:
+        yield "생성"
+
+    def generate(
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+        stop_sequences: list[str] | None = None,
+        *,
+        usage: LLMCallContext,
+    ) -> AsyncIterator[str]:
+        self.calls.append(("generate", (prompt, system_instruction, stop_sequences), {"usage": usage}))
+        return self._tokens()
+
+    async def generate_structured(
+        self,
+        prompt: str,
+        response_schema: type[T],
+        images: list[tuple[bytes, str]] | None = None,
+        *,
+        usage: LLMCallContext,
+    ) -> T:
+        self.calls.append(("generate_structured", (prompt, response_schema, images), {"usage": usage}))
+        return response_schema.model_validate({"matched_image_entity_id": "img-1"})
+
+    async def generate_structured_with_instruction(
+        self,
+        prompt: str,
+        response_schema: type[T],
+        *,
+        system_instruction: str,
+        usage: LLMCallContext,
+    ) -> T:
+        self.calls.append(
+            (
+                "generate_structured_with_instruction",
+                (prompt, response_schema),
+                {"system_instruction": system_instruction, "usage": usage},
+            )
+        )
+        return response_schema.model_validate({"matched_image_entity_id": "img-2"})
+
+
+async def test_judgment_dump_wrapper_forwards_every_client_call_unchanged(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """측정 서버의 판정 덤프 래퍼는 `LLMClient` 의 호출 메서드를 모두 받은 인자 그대로 감싼 클라이언트로 넘긴다. 하나라도
+    빠지면 기반 클래스 구현이 불려 그 호출이 측정 서버에서만 실패한다. 구조화 호출은 넘기기 전에 판정 줄을 남기고, 지시문을
+    따로 보내는 호출이면 그 지시문도 줄에 싣는다. 생성 스트림은 판정이 아니라 줄을 남기지 않는다."""
+    dump_path = tmp_path / "prompts.jsonl"
+    monkeypatch.setattr(settings, "prompt_dump_path", str(dump_path))
+    monkeypatch.setattr(settings, "gemini_image_judgment_model_name", "image-judge-x")
+    room_id = uuid.uuid4()
+    usage = LLMCallContext(call_site="chat_situational_image", user_id=None, room_id=room_id)
+    inner = _RecordingInner()
+    wrapper = turn_engine._JudgmentPromptDump(inner, turn=4, log=logging.getLogger("test"))
+
+    tokens = [token async for token in wrapper.generate("생성 프롬프트", "생성 지시", ["나:"], usage=usage)]
+    structured = await wrapper.generate_structured(
+        "판정 프롬프트", ImageMatchJudgmentResult, [(b"png", "image/png")], usage=usage
+    )
+    with_instruction = await wrapper.generate_structured_with_instruction(
+        "본문 프롬프트", ImageMatchJudgmentResult, system_instruction="역할 규칙", usage=usage
+    )
+
+    assert tokens == ["생성"]
+    assert structured == ImageMatchJudgmentResult(matched_image_entity_id="img-1")
+    assert with_instruction == ImageMatchJudgmentResult(matched_image_entity_id="img-2")
+    assert inner.calls == [
+        ("generate", ("생성 프롬프트", "생성 지시", ["나:"]), {"usage": usage}),
+        ("generate_structured", ("판정 프롬프트", ImageMatchJudgmentResult, [(b"png", "image/png")]), {"usage": usage}),
+        (
+            "generate_structured_with_instruction",
+            ("본문 프롬프트", ImageMatchJudgmentResult),
+            {"system_instruction": "역할 규칙", "usage": usage},
+        ),
+    ]
+    common = {
+        "roomId": str(room_id),
+        "turn": 4,
+        "kind": "judgment",
+        "callSite": "chat_situational_image",
+        "model": "image-judge-x",
+        "schema": "ImageMatchJudgmentResult",
+    }
+    assert [json.loads(line) for line in dump_path.read_text(encoding="utf-8").splitlines()] == [
+        {**common, "prompt": "판정 프롬프트"},
+        {**common, "prompt": "본문 프롬프트", "systemInstruction": "역할 규칙"},
     ]
 
 

@@ -119,7 +119,13 @@ def _dump_prompt(
 
 
 def _dump_judgment_prompt(
-    *, room_id: uuid.UUID | None, call_site: LLMCallSite, turn: int, schema: str, prompt: str
+    *,
+    room_id: uuid.UUID | None,
+    call_site: LLMCallSite,
+    turn: int,
+    schema: str,
+    prompt: str,
+    system_instruction: str | None = None,
 ) -> None:
     """판정 호출 하나의 프롬프트를 생성 프롬프트와 같은 덤프 파일에 한 줄로 남긴다. 판정 모델을 바꿔 볼 때 같은 판정 입력을
     다시 보내 지금 판정과 맞춰 보는 재료다. 방·턴 번호는 그 턴의 생성 줄과 같아서 둘을 짝지을 수 있고, `kind` 가
@@ -127,7 +133,8 @@ def _dump_judgment_prompt(
 
     응답 스키마는 클래스 이름으로 남긴다 — 호출 위치마다 스키마가 하나라 다시 보낼 때 그 이름으로 찾는다. 모델은 실제로 보낸
     id 다. 판정은 방의 모델이 아니라 기본 모델로 구현을 고르고, Gemini 구현은 판정 종류마다 판정 모델 설정을 따로 고른다
-    (`structured_model`). 지시문은 없다 — 판정은 지시문 없이 프롬프트 하나로 부른다."""
+    (`structured_model`). 지시문을 따로 보내는 구조화 호출(`generate_structured_with_instruction`)이면 그 지시문을
+    `systemInstruction` 으로 함께 남긴다 — 생성 줄과 같은 키다. 지시문 없이 부른 판정 줄에는 이 키가 없다."""
     backend, sent = resolve_backend(call_site, DEFAULT_CHAT_MODEL)
     record = {
         "roomId": str(room_id) if room_id is not None else None,
@@ -138,6 +145,8 @@ def _dump_judgment_prompt(
         "schema": schema,
         "prompt": prompt,
     }
+    if system_instruction is not None:
+        record["systemInstruction"] = system_instruction
     assert settings.prompt_dump_path is not None
     with open(settings.prompt_dump_path, "a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -145,7 +154,8 @@ def _dump_judgment_prompt(
 
 class _JudgmentPromptDump(LLMClient):
     """판정 호출마다 프롬프트를 덤프한 뒤 감싼 클라이언트로 그대로 넘긴다. `run_turn` 이 덤프 경로가 설정된 측정 서버에서만
-    판정에 이것을 건네고, 운영(경로 없음)에서는 판정이 원래 클라이언트를 그대로 받는다.
+    판정에 이것을 건네고, 운영(경로 없음)에서는 판정이 원래 클라이언트를 그대로 받는다. `LLMClient` 의 호출 메서드를 모두
+    그대로 넘긴다 — 하나라도 빠지면 기반 클래스 구현(`NotImplementedError`)이 불려 그 호출이 측정 서버에서만 실패한다.
 
     덤프는 호출 앞에서 한다 — 실패한 판정의 입력도 남고, 다시 부르는 판정(재생성의 스탯 재판정)은 시도마다 한 줄이다. 덤프
     실패는 경고만 남기고 판정을 막지 않는다(생성 덤프와 같은 이유)."""
@@ -173,6 +183,30 @@ class _JudgmentPromptDump(LLMClient):
         *,
         usage: LLMCallContext,
     ) -> T:
+        self._dump(prompt, response_schema, usage=usage)
+        return await self._inner.generate_structured(prompt, response_schema, images, usage=usage)
+
+    async def generate_structured_with_instruction(
+        self,
+        prompt: str,
+        response_schema: type[T],
+        *,
+        system_instruction: str,
+        usage: LLMCallContext,
+    ) -> T:
+        self._dump(prompt, response_schema, usage=usage, system_instruction=system_instruction)
+        return await self._inner.generate_structured_with_instruction(
+            prompt, response_schema, system_instruction=system_instruction, usage=usage
+        )
+
+    def _dump(
+        self,
+        prompt: str,
+        response_schema: type[BaseModel],
+        *,
+        usage: LLMCallContext,
+        system_instruction: str | None = None,
+    ) -> None:
         try:
             _dump_judgment_prompt(
                 room_id=usage.room_id,
@@ -180,6 +214,7 @@ class _JudgmentPromptDump(LLMClient):
                 turn=self._turn,
                 schema=response_schema.__name__,
                 prompt=prompt,
+                system_instruction=system_instruction,
             )
         except Exception:
             self._log.warning(
@@ -189,7 +224,6 @@ class _JudgmentPromptDump(LLMClient):
                 usage.call_site,
                 exc_info=True,
             )
-        return await self._inner.generate_structured(prompt, response_schema, images, usage=usage)
 
 
 async def _stream_generated_tokens(
