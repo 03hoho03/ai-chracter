@@ -15,6 +15,7 @@ import { useId } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
 import { createCallable } from "@/shared/lib/callable/createCallable";
+import { CharacterCount } from "@/shared/ui/CharacterCount";
 
 import { createAiEditInstructionSchema, type AiEditInstructionFormValues } from "../model/aiEditInstructionSchema";
 import { countChapterChars } from "../model/chapterBody";
@@ -88,9 +89,7 @@ export const AiEditInstructionModal = createCallable<AiEditInstructionModalProps
                   aria-describedby={describedBy}
                   {...form.register("instruction")}
                 />
-                <p id={`${fieldId}-count`} className="text-xs text-muted-foreground tabular-nums">
-                  {length.toLocaleString()} / {maxLength.toLocaleString()}자
-                </p>
+                <CharacterCount id={`${fieldId}-count`} count={length} max={maxLength} />
                 {errors.instruction && (
                   <p id={`${fieldId}-error`} role="alert" className="text-xs break-keep text-destructive-text">
                     {errors.instruction.message}

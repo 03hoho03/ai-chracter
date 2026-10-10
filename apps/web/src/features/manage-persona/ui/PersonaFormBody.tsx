@@ -9,10 +9,11 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Controller, useForm, useWatch } from "react-hook-form";
 
 import { PERSONA_DESCRIPTION_MAX_LENGTH } from "@/entities/persona";
+import { CharacterCount } from "@/shared/ui/CharacterCount";
 
 import { personaErrorMessage } from "../model/personaErrorMessage";
 import { PERSONA_GENDER_OPTIONS, PERSONA_GENDER_OPTION_LABEL, toPersonaGenderOption } from "../model/personaGenderOption";
-import { personaFormSchema, type PersonaFormValues } from "../model/schema";
+import { countPersonaDescriptionChars, personaFormSchema, type PersonaFormValues } from "../model/schema";
 
 type PersonaFormBodyProps = {
   defaultValues: PersonaFormValues;
@@ -31,7 +32,7 @@ export function PersonaFormBody({ defaultValues, showsSetAsDefault, submitLabel,
     defaultValues,
   });
   const { errors, isSubmitting } = form.formState;
-  const descriptionLength = useWatch({ control: form.control, name: "description" }).length;
+  const descriptionLength = countPersonaDescriptionChars(useWatch({ control: form.control, name: "description" }));
 
   const nameId = `${fieldId}-name`;
   const descriptionId = `${fieldId}-description`;
@@ -116,14 +117,9 @@ export function PersonaFormBody({ defaultValues, showsSetAsDefault, submitLabel,
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <div className="flex items-baseline justify-between gap-2">
-          <Label htmlFor={descriptionId}>
-            설명 <span className="font-normal text-muted-foreground">(선택)</span>
-          </Label>
-          <span id={`${descriptionId}-count`} className="text-xs text-muted-foreground tabular-nums">
-            {descriptionLength}/{PERSONA_DESCRIPTION_MAX_LENGTH}
-          </span>
-        </div>
+        <Label htmlFor={descriptionId}>
+          설명 <span className="font-normal text-muted-foreground">(선택)</span>
+        </Label>
         <Textarea
           id={descriptionId}
           rows={4}
@@ -134,6 +130,7 @@ export function PersonaFormBody({ defaultValues, showsSetAsDefault, submitLabel,
           }
           {...form.register("description")}
         />
+        <CharacterCount id={`${descriptionId}-count`} count={descriptionLength} max={PERSONA_DESCRIPTION_MAX_LENGTH} />
         {errors.description && (
           <p id={`${descriptionId}-error`} role="alert" className="text-xs text-destructive-text">
             {errors.description.message}

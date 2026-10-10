@@ -7,6 +7,7 @@ import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { useFormContext, useWatch } from "react-hook-form";
 
 import { countCommentGraphemes, uniqueComments, useCommentCandidatesQuery, type CommentAuthor } from "@/entities/comment";
+import { CharacterCount } from "@/shared/ui/CharacterCount";
 
 import { findCommentMentionToken } from "../model/mentionToken";
 import { COMMENT_MAX_GRAPHEMES, COMMENT_MAX_MENTIONS, COMMENT_MENTION_LIMIT_MESSAGE, type CommentFormValues } from "../model/schema";
@@ -131,7 +132,7 @@ export function CommentTextField({
         ref={(element) => { field.ref(element); inputRef.current = element; }}
         role="combobox" aria-autocomplete="list" aria-expanded={isOpen} aria-controls={isOpen ? listId : undefined}
         aria-activedescendant={isOpen && items[active] ? listId + "-" + items[active]?.id : undefined}
-        aria-invalid={!!bodyError || !!mentionsError} aria-describedby={[id + "-help", bodyError ? id + "-error" : undefined, mentionsError ? mentionsErrorId : undefined].filter(Boolean).join(" ")}
+        aria-invalid={!!bodyError || !!mentionsError} aria-describedby={[id + "-count", bodyError ? id + "-error" : undefined, mentionsError ? mentionsErrorId : undefined].filter(Boolean).join(" ")}
         placeholder="작품을 보고 느낀 이야기를 남겨보세요."
         className="min-h-24 scroll-mb-32 resize-y"
         onChange={(event) => { void field.onChange(event); setCaret(event.currentTarget.selectionStart); setActiveIndex(0); setDismissed(undefined); }}
@@ -152,10 +153,8 @@ export function CommentTextField({
             if (author) handleChoose(author);
           }
         }} />
-      <div id={id + "-help"} className="flex flex-wrap justify-between gap-1 text-xs text-muted-foreground">
-        <span>{canMention ? "Enter는 줄바꿈 · @로 작품 참여자 멘션" : "Enter는 줄바꿈 · 멘션 선택은 참여 가능한 로그인 상태에서 이용해요."}</span>
-        <span aria-live="off" className={countCommentGraphemes(body) > COMMENT_MAX_GRAPHEMES ? "text-destructive-text" : undefined}>{countCommentGraphemes(body)} / {COMMENT_MAX_GRAPHEMES.toLocaleString("ko-KR")}</span>
-      </div>
+      <CharacterCount id={id + "-count"} count={countCommentGraphemes(body)} max={COMMENT_MAX_GRAPHEMES}
+        help={canMention ? "Enter는 줄바꿈 · @로 작품 참여자 멘션" : "Enter는 줄바꿈 · 멘션 선택은 참여 가능한 로그인 상태에서 이용해요."} />
       {!!bodyError && <p id={id + "-error"} role="alert" className="text-xs text-destructive-text">{bodyError.message}</p>}
       {isOpen && !!position && createPortal(
         <div ref={popupRef} className="z-[60] overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10"

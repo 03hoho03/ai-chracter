@@ -27,10 +27,11 @@ export function isChatMessageReportReason(value: string): value is ChatMessageRe
 /** 목록·검증을 라벨 맵에서 도출한다 — 손으로 또 적으면 새 사유가 모달에서 조용히 빠진다. */
 export const CHAT_MESSAGE_REPORT_REASONS = Object.keys(CHAT_MESSAGE_REPORT_REASON_LABELS).filter(isChatMessageReportReason);
 
-/** 메모 카운터가 보여 줄 길이. 검증(아래 `trim().max`)과 서버 모두 앞뒤 공백을 뺀 길이로 재므로 카운터도
- * 같은 기준을 쓴다 — 공백 포함 길이를 보이면 "203/200" 인데 제출은 통과하는 어긋남이 생긴다. */
+/** 메모가 서버가 세는 방식 그대로 센 글자 수 — 앞뒤 공백을 잘라낸 뒤 코드 포인트 수. 공백 포함 길이를 보이면
+ * "203/200" 인데 제출은 통과하고, `.length`(UTF-16)로 세면 이모지가 2자가 돼 서버가 받는 메모를 화면이 먼저
+ * 막는다. 카운터와 아래 검증이 이 값을 함께 쓴다. */
 export function countNoteLength(note: string): number {
-  return note.trim().length;
+  return Array.from(note.trim()).length;
 }
 
 export const chatMessageReportSchema = z.object({
@@ -38,7 +39,7 @@ export const chatMessageReportSchema = z.object({
   note: z
     .string()
     .trim()
-    .max(CHAT_MESSAGE_REPORT_NOTE_MAX_LENGTH, {
+    .refine((value) => countNoteLength(value) <= CHAT_MESSAGE_REPORT_NOTE_MAX_LENGTH, {
       message: `메모는 ${CHAT_MESSAGE_REPORT_NOTE_MAX_LENGTH}자 이내로 입력해주세요`,
     }),
 });

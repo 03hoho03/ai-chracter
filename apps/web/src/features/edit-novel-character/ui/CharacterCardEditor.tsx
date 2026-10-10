@@ -15,6 +15,7 @@ import {
   type NovelDetailResponse,
 } from "@/entities/novel";
 import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
+import { CharacterCount } from "@/shared/ui/CharacterCount";
 
 import {
   addAlias,
@@ -468,9 +469,7 @@ function CharacterMemoField({ memo, maxLength, onSave, onDraftDirtyChange }: Cha
           placeholder="예: 편의점 야간 점원. 손님에게는 존댓말, 동생에게는 반말."
           {...form.register("memo")}
         />
-        <p id={countId} className="text-right text-xs text-muted-foreground tabular-nums">
-          {countCharacterChars(value).toLocaleString()} / {maxLength.toLocaleString()}자
-        </p>
+        <CharacterCount id={countId} count={countCharacterChars(value)} max={maxLength} />
         {fieldError !== undefined && (
           <p id={errorId} role="alert" className="text-sm break-keep text-destructive-text">
             {fieldError}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { personaFormSchema } from "./schema";
+import { countPersonaDescriptionChars, personaFormSchema } from "./schema";
 
 function validValues() {
   return { name: "하늘", gender: "unspecified", description: "", setAsDefault: false };
@@ -65,7 +65,23 @@ describe("personaFormSchema", () => {
     expect(trimmed.data?.description).toBe("나".repeat(500));
   });
 
+  // 서버는 앞뒤 공백을 뗀 뒤 코드 포인트로 한도를 잰다 — UTF-16 으로 재면 이모지 500자를 1000자로 보고 막는다.
+  it("accepts 500 emoji and rejects 501, counting code points as the server does", () => {
+    expect(personaFormSchema.safeParse({ ...validValues(), description: "😀".repeat(500) }).success).toBe(true);
+    expect(personaFormSchema.safeParse({ ...validValues(), description: "😀".repeat(501) }).success).toBe(false);
+  });
+
   it("rejects a gender outside the three options", () => {
     expect(personaFormSchema.safeParse({ ...validValues(), gender: "other" }).success).toBe(false);
+  });
+});
+
+describe("countPersonaDescriptionChars", () => {
+  it("counts an emoji as one character", () => {
+    expect(countPersonaDescriptionChars("😀가")).toBe(2);
+  });
+
+  it("leaves out the surrounding whitespace the server strips", () => {
+    expect(countPersonaDescriptionChars("  가 나\n ")).toBe(3);
   });
 });

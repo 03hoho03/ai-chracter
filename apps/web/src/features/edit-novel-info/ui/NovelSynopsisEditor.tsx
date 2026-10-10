@@ -7,6 +7,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
 import { novelKeys, toNovelActionError, type NovelDetailResponse } from "@/entities/novel";
+import { CharacterCount } from "@/shared/ui/CharacterCount";
 
 import { useUpdateNovelInfoMutation } from "../api/useUpdateNovelInfoMutation";
 import { countInfoChars, createSynopsisFormSchema, type SynopsisFormValues } from "../model/schema";
@@ -100,9 +101,7 @@ export function NovelSynopsisEditor({ novel }: { novel: NovelDetailResponse }) {
             }}
             {...form.register("synopsis")}
           />
-          <p id={countId} className="text-right text-xs text-muted-foreground tabular-nums">
-            {countInfoChars(synopsis).toLocaleString()} / {maxLength.toLocaleString()}자
-          </p>
+          <CharacterCount id={countId} count={countInfoChars(synopsis)} max={maxLength} />
           {errorMessage !== undefined && (
             <p id={errorId} role="alert" className="text-sm break-keep text-destructive-text">
               {errorMessage}

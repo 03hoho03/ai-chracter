@@ -7,6 +7,7 @@ import { useForm, useWatch } from "react-hook-form";
 
 import { useChatRoomMemoryQuery, type ChatRoomMemory } from "@/entities/chat-room";
 import { formatRelativeTime } from "@/shared/lib/time/formatRelativeTime";
+import { CharacterCount } from "@/shared/ui/CharacterCount";
 
 import {
   useClearMemoryNoteMutation,
@@ -239,11 +240,6 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
   } else if (isEditingSummary) {
     summaryBody = (
       <div className="flex flex-col gap-1.5">
-        <div className="flex justify-end">
-          <span id={`${summaryId}-count`} className="text-xs text-muted-foreground tabular-nums">
-            {summaryLength}/{memory.limits.summaryMaxLength}
-          </span>
-        </div>
         <Textarea
           id={summaryId}
           rows={8}
@@ -253,6 +249,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
           aria-describedby={errors.summary ? `${summaryId}-error ${summaryId}-count` : `${summaryId}-count`}
           {...form.register("summary")}
         />
+        <CharacterCount id={`${summaryId}-count`} count={summaryLength} max={memory.limits.summaryMaxLength} />
         {errors.summary && (
           <p id={`${summaryId}-error`} role="alert" className="text-xs text-destructive-text">
             {errors.summary.message}
@@ -338,14 +335,9 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
       </section>
 
       <section aria-labelledby={`${noteId}-heading`} className="flex flex-col gap-1.5 border-t border-border pt-5">
-        <div className="flex items-baseline justify-between gap-2">
-          <label id={`${noteId}-heading`} htmlFor={noteId} className="text-sm font-semibold text-foreground">
-            꼭 기억할 것
-          </label>
-          <span id={`${noteId}-count`} className="text-xs text-muted-foreground tabular-nums">
-            {noteLength}/{memory.limits.noteMaxLength}
-          </span>
-        </div>
+        <label id={`${noteId}-heading`} htmlFor={noteId} className="text-sm font-semibold text-foreground">
+          꼭 기억할 것
+        </label>
         {writeError?.section === "note" && (
           <WriteErrorNotice error={writeError.error} onReload={() => void handleReloadAfterConflict()} />
         )}
@@ -354,23 +346,24 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
           rows={5}
           placeholder="캐릭터가 이 대화방에서 잊지 않았으면 하는 것"
           aria-invalid={!!errors.note}
-          aria-describedby={
-            errors.note ? `${noteId}-error ${noteId}-count ${noteId}-hint` : `${noteId}-count ${noteId}-hint`
-          }
+          aria-describedby={errors.note ? `${noteId}-error ${noteId}-count` : `${noteId}-count`}
           {...noteField}
           ref={(element) => {
             noteField.ref(element);
             noteRef.current = element;
           }}
         />
+        <CharacterCount
+          id={`${noteId}-count`}
+          count={noteLength}
+          max={memory.limits.noteMaxLength}
+          help="다음 대화부터 반영돼요. 실명 등 개인정보는 적지 않는 것을 권해요."
+        />
         {errors.note && (
           <p id={`${noteId}-error`} role="alert" className="text-xs text-destructive-text">
             {errors.note.message}
           </p>
         )}
-        <p id={`${noteId}-hint`} className="text-xs break-keep text-muted-foreground">
-          다음 대화부터 반영돼요. 실명 등 개인정보는 적지 않는 것을 권해요.
-        </p>
         <div className="mt-1.5 flex justify-between gap-2">
           <Button
             type="button"

@@ -6,7 +6,7 @@ import { useFormContext } from "react-hook-form";
 import { toast } from "sonner";
 
 import { normalizeMediaBookName, type MediaBookAxis } from "@/entities/media-book";
-import { CharacterCount, CollapsibleSection, itemOpenKey, useBuilderUiState } from "@/features/build-common";
+import { CollapsibleSection, itemOpenKey, useBuilderUiState } from "@/features/build-common";
 import {
   MEDIA_BOOK_AXIS_SECTION_LIST,
   addAxisItem,
@@ -22,6 +22,7 @@ import {
 } from "@/features/build-story";
 import { MediaBookConfirmModal } from "@/features/edit-media-book";
 import { countCharacters } from "@/shared/lib/text/characterCount";
+import { CharacterCount } from "@/shared/ui/CharacterCount";
 
 import { useMediaBookEditor } from "../model/useMediaBookEditor";
 

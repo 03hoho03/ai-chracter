@@ -13,6 +13,7 @@ import {
   type NovelDetailResponse,
 } from "@/entities/novel";
 import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
+import { CharacterCount } from "@/shared/ui/CharacterCount";
 
 import { countEpisodeChars, createAuthorNoteSchema, type AuthorNoteFormValues } from "../model/schema";
 
@@ -125,9 +126,7 @@ export function AuthorNoteEditor({ novel, chapter }: AuthorNoteEditorProps) {
             }}
             {...form.register("authorNote")}
           />
-          <p id={countId} className="text-right text-xs text-muted-foreground tabular-nums">
-            {countEpisodeChars(authorNote).toLocaleString()} / {maxLength.toLocaleString()}자
-          </p>
+          <CharacterCount id={countId} count={countEpisodeChars(authorNote)} max={maxLength} />
           {errorMessage !== undefined && (
             <p id={errorId} role="alert" className="text-sm break-keep text-destructive-text">
               {errorMessage}
