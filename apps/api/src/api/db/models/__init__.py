@@ -49,6 +49,8 @@ from api.db.models.creator_payout import (
     CreatorPayoutBatchRun,
     CreatorPayoutConfirmation,
     CreatorPayoutConfirmationLine,
+    CreatorPayout,
+    CreatorPayoutProfile,
 )
 from api.db.models.feature_grant import FeatureName, UserFeatureGrant
 from api.db.models.inquiry import Inquiry, InquiryCategory, InquiryStatus
@@ -164,10 +166,12 @@ __all__ = [
     "ContentType",
     "ContentVersion",
     "ContentVisibility",
+    "CreatorPayout",
     "CreatorPayoutApplication",
     "CreatorPayoutBatchRun",
     "CreatorPayoutConfirmation",
     "CreatorPayoutConfirmationLine",
+    "CreatorPayoutProfile",
     "DiscardedResponse",
     "Ending",
     "EndingRule",

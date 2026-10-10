@@ -7,16 +7,27 @@ import { ContentListEmptyState, ContentListLoadMore } from "@/entities/content";
 import {
   creatorPayoutKeys,
   formatPayoutRate,
+  formatPayoutStatus,
   formatStatementPeriod,
+  formatTransferredOn,
   isCreatorPayoutUnavailableError,
+  PAYOUT_INFO_SECTION_ID,
   toStatementsLoadMoreRecovery,
+  useCreatorPayoutPayoutsQuery,
   useCreatorPayoutQuery,
   useCreatorPayoutStatementsQuery,
+  type CreatorPayoutPayout,
+  type CreatorPayoutResponse,
   type CreatorPayoutStatement,
 } from "@/entities/creator-payout";
 import { CreatorPayoutApplicationPanel } from "@/features/apply-creator-payout";
+import { PayoutInfoPanel } from "@/features/edit-payout-info";
+import { RequestCreatorPayoutPanel } from "@/features/request-creator-payout";
 import { SUPPORT_DESTINATIONS } from "@/shared/config/supportDestinations";
 import { formatKrw } from "@/shared/lib/number/formatKrw";
+import { formatDate } from "@/shared/lib/time/formatDate";
+
+import { getBalancePayoutNote, getPayoutSections } from "../model/payoutSections";
 
 const INLINE_LINK_CLASS = "font-medium whitespace-nowrap text-primary underline-offset-4 hover:underline focus-visible:underline";
 
@@ -25,9 +36,13 @@ const INLINE_LINK_CLASS = "font-medium whitespace-nowrap text-primary underline-
  * 컨테이너 폭은 클로버 허브·마이페이지와 같은 `max-w-md`다. 섹션이 텍스트 몇 줄과 짧은 행뿐이라 같은 밀도이고, 내역
  * 행은 이름과 금액을 양 끝으로 벌리므로 컬럼을 넓혀도 그 사이 빈자리만 는다.
  *
- * 적립금과 내역은 승인된 적이 있을 때만 보인다(승인 취소 뒤에도 — 확정분이 남아 있다). 그 전에는 셀 것이 없다.
- * 지급 신청은 아직 열지 않았다 — 적립금 아래에 준비 중이라고만 말하고 버튼을 두지 않는다. 탈퇴하면 확정 적립금이
- * 사라진다는 것도 같은 자리에서 말한다 — 적립금이 보이는 곳에서 그것이 영구하지 않다는 사실을 함께 알린다. */
+ * 적립금과 내역은 승인된 적이 있을 때만 보인다(승인 취소 뒤에도 — 확정분이 남아 있고 지급을 신청할 수 있다). 그 전에는
+ * 셀 것이 없다. 신청과 지급 정보는 거기에 더해 서버가 지급을 받을 때(`payoutAvailable`)만 보인다 — 받지 않으면 적립금
+ * 아래에 그 사실만 말하고 버튼을 두지 않는다. 지급 내역은 그 동안에도 보인다(`getPayoutSections`). 탈퇴하면 신청하지 않은 적립금이 사라진다는 것도
+ * 적립금 자리에서 말한다 — 적립금이 보이는 곳에서 그것이 영구하지 않다는 사실을 함께 알린다.
+ *
+ * 지급 신청은 적립금 바로 아래에 둔다(신청 금액이 곧 그 적립금이다). 지급 정보는 그다음 섹션이고, 신청 자리가 등록이
+ * 먼저 필요하다고 말할 때 그 섹션으로 가는 앵커를 단다. */
 export function CreatorPayoutPage() {
   return (
     <main className="mx-auto flex max-w-md flex-col gap-10 px-4 sm:px-6 py-10">
@@ -91,19 +106,28 @@ function CreatorPayoutBody() {
   }
 
   const payout = query.data;
+  const sections = getPayoutSections(payout);
   return (
     <>
       <section className="flex flex-col gap-4">
         <SectionHeading>정산 신청</SectionHeading>
         <CreatorPayoutApplicationPanel payout={payout} />
       </section>
-      {payout.everApproved && <BalanceSection balanceKrw={payout.balanceKrw} />}
+      {payout.everApproved && <BalanceSection payout={payout} showRequest={sections.request} />}
+      {sections.payoutInfo && (
+        <section id={PAYOUT_INFO_SECTION_ID} className="flex scroll-mt-20 flex-col gap-4">
+          <SectionHeading>지급 정보</SectionHeading>
+          <PayoutInfoPanel payout={payout} />
+        </section>
+      )}
+      {sections.payouts && <PayoutsSection />}
       {payout.everApproved && <StatementsSection />}
     </>
   );
 }
 
-function BalanceSection({ balanceKrw }: { balanceKrw: number }) {
+function BalanceSection({ payout, showRequest }: { payout: CreatorPayoutResponse; showRequest: boolean }) {
+  const { balanceKrw } = payout;
   return (
     <section className="flex flex-col gap-4">
       <SectionHeading>적립금</SectionHeading>
@@ -119,11 +143,88 @@ function BalanceSection({ balanceKrw }: { balanceKrw: number }) {
         <p className="text-xs break-keep text-muted-foreground">
           확정된 적립만 보여요. 지난달 적립은 매달 3일에 확정돼 더해져요.
         </p>
-        <p className="text-xs break-keep text-muted-foreground">
-          지급 신청은 준비 중이에요. 탈퇴하면 확정된 적립금도 사라져요.
-        </p>
+        <p className="text-xs break-keep text-muted-foreground">{getBalancePayoutNote(payout)}</p>
       </div>
+      {showRequest && (
+        <RequestCreatorPayoutPanel payout={payout} payoutInfoSectionId={PAYOUT_INFO_SECTION_ID} />
+      )}
     </section>
+  );
+}
+
+/** 지급 신청 내역(최신순). 건마다 신청 금액에서 원천징수를 뗀 실지급액을 오른쪽에 두고, 이체한 날·반려 사유를 그 아래에
+ * 둔다. 반려된 금액은 잔액으로 돌아오므로(서버가 잔액을 매번 다시 더한다) 그 사실도 함께 말한다. */
+function PayoutsSection() {
+  const query = useCreatorPayoutPayoutsQuery();
+  return (
+    <section className="flex flex-col gap-4">
+      <SectionHeading>지급 내역</SectionHeading>
+      <PayoutsBody query={query} />
+    </section>
+  );
+}
+
+function PayoutsBody({ query }: { query: ReturnType<typeof useCreatorPayoutPayoutsQuery> }) {
+  // 재시도 백오프 중에도 `isPending` 이라 실패로 끝난 뒤에만 오류를 보인다. 백그라운드 재조회가 실패하면 보이던 내역을 둔다.
+  if (!query.data && !query.isError) {
+    return <p className="text-sm text-muted-foreground">불러오는 중…</p>;
+  }
+  if (!query.data) {
+    return (
+      <div role="alert" className="flex flex-wrap items-center gap-3">
+        <p className="text-sm break-keep text-destructive-text">지급 내역을 불러오지 못했어요.</p>
+        <Button type="button" variant="outline" size="sm" onClick={() => void query.refetch()}>
+          다시 시도
+        </Button>
+      </div>
+    );
+  }
+  if (query.data.items.length === 0) {
+    return <ContentListEmptyState message="아직 지급 신청이 없어요." />;
+  }
+  return (
+    <ul className="flex flex-col gap-2">
+      {query.data.items.map((item) => (
+        <PayoutRow key={item.id} payout={item} />
+      ))}
+    </ul>
+  );
+}
+
+/** 지급 하나. 상태는 색이 아니라 글자로 말한다(무채색 규칙 — 반려도 오류가 아니라 처리 결과다). */
+function PayoutRow({ payout }: { payout: CreatorPayoutPayout }) {
+  const withheldKrw = payout.incomeTaxKrw + payout.localTaxKrw;
+  return (
+    <li className="flex flex-col gap-2 rounded-xl border border-border px-4 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className="text-sm font-medium text-foreground">{formatPayoutStatus(payout.status)}</span>
+          <span className="text-xs text-muted-foreground">{formatDate(payout.requestedAt)} 신청</span>
+          {payout.status === "paid" && payout.transferredOn && (
+            <span className="text-xs text-muted-foreground">{formatTransferredOn(payout.transferredOn)} 이체</span>
+          )}
+        </div>
+        <span className="flex shrink-0 flex-col items-end gap-0.5">
+          <span className="text-sm font-medium tabular-nums text-foreground">{formatKrw(payout.netAmountKrw)}</span>
+          <span className="text-xs text-muted-foreground">실지급액</span>
+        </span>
+      </div>
+      <p className="text-xs break-keep text-muted-foreground tabular-nums">
+        신청 {formatKrw(payout.amountKrw)} · 원천징수 {formatKrw(withheldKrw)}(소득세 {formatKrw(payout.incomeTaxKrw)},
+        지방소득세 {formatKrw(payout.localTaxKrw)})
+      </p>
+      {payout.status === "returned" && (
+        <div className="flex flex-col gap-0.5 border-t border-border pt-2">
+          {payout.returnReason && (
+            <p className="text-sm break-keep whitespace-pre-line text-foreground">
+              <span className="text-muted-foreground">사유: </span>
+              {payout.returnReason}
+            </p>
+          )}
+          <p className="text-xs break-keep text-muted-foreground">반려된 금액은 적립금으로 돌아왔어요.</p>
+        </div>
+      )}
+    </li>
   );
 }
 

@@ -15,6 +15,7 @@ import {
   type AdminUserDetailResponse,
   type AdminUserPaymentItem,
 } from "@/entities/admin-user";
+import { PAYEE_INFO_VIEW_REASON_CATEGORY_LABELS } from "@/entities/creator-payout";
 import { CHAT_MESSAGE_REPORT_REASON_LABELS, REPORT_REASON_LABELS, REPORT_STATUS_LABELS } from "@/entities/report";
 import { formatCount } from "@/shared/lib/format/formatCount";
 import { formatDateTime, formatDateTimeParts } from "@/shared/lib/format/formatDateTime";
@@ -26,6 +27,7 @@ import { PageContainer } from "@/shared/ui/PageContainer";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { QueryState } from "@/shared/ui/QueryState";
 
+import { CreatorPayoutSection } from "./CreatorPayoutSection";
 import { RefundPaymentModal } from "./RefundPaymentModal";
 import { UserActionPanel } from "./UserActionPanel";
 
@@ -42,9 +44,11 @@ const INLINE_LINK_CLASS =
 /** `AdminUserActionLogItem.reasonCategory`는 enum이 아니라 plain `string | null`이다 — 작품 직접
  * 조치 로그(신고 사유, REPORT_REASON_LABELS), 채팅 열람 로그(별도 사유,
  * CHAT_VIEW_REASON_CATEGORY_LABELS), 채팅 응답 신고 처리 로그(신고 사유,
- * CHAT_MESSAGE_REPORT_REASON_LABELS)가 같은 테이블을 써서 세 사유 체계가 섞여 들어온다. 겹치는 키는
- * `other`("기타", 세 집합 모두)와 `minor_safety`("아동·청소년 관련", 작품 신고·채팅 응답 신고 둘)이고
- * 겹치는 집합끼리 한글 라벨이 같으므로(entities/report, entities/admin-user 각 model/labels.ts 확인)
+ * CHAT_MESSAGE_REPORT_REASON_LABELS), 크리에이터 지급 정보 열람 로그(별도 사유,
+ * PAYEE_INFO_VIEW_REASON_CATEGORY_LABELS)가 같은 테이블을 써서 네 사유 체계가 섞여 들어온다. 겹치는 키는
+ * `other`("기타", 네 집합 모두), `legal-request`("법적 요청", 채팅 열람·지급 정보 열람 둘), `minor_safety`
+ * ("아동·청소년 관련", 작품 신고·채팅 응답 신고 둘)이고 겹치는 집합끼리 한글 라벨이 같으므로(entities/report,
+ * entities/admin-user, entities/creator-payout 각 model/labels.ts 확인)
  * 스프레드 순서와 무관하게 값이 동일하다 — 합쳐도 의미가 바뀌지 않는다. 겹치는 키를 새로 만들면
  * 라벨도 같게 둔다.
  * `Record<string, string>`이라 `??` 폴백으로 모르는 값은 원문 그대로 보여준다(CLOVER_KIND_LABELS와
@@ -53,6 +57,7 @@ const REASON_CATEGORY_LABELS_ALL: Record<string, string> = {
   ...REPORT_REASON_LABELS,
   ...CHAT_VIEW_REASON_CATEGORY_LABELS,
   ...CHAT_MESSAGE_REPORT_REASON_LABELS,
+  ...PAYEE_INFO_VIEW_REASON_CATEGORY_LABELS,
 };
 
 export function UserDetailPage({ userId }: UserDetailPageProps) {
@@ -312,6 +317,8 @@ function UserDetailSections({ userId, user }: UserDetailSectionsProps) {
       <CloverLedgerSection userId={userId} />
 
       <PaymentsSection userId={userId} />
+
+      <CreatorPayoutSection userId={userId} />
 
       <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 @xl:p-6">
         <h2 className="text-lg font-semibold text-foreground">채팅방</h2>

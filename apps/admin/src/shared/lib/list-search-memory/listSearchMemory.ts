@@ -10,7 +10,8 @@ export type ListRouteId =
   | "/reports/"
   | "/inquiries/"
   | "/notices/"
-  | "/image-generations/";
+  | "/image-generations/"
+  | "/creator-payouts/";
 
 /** 그 목록 라우트가 검증한 search 타입. 라우터 등록(`Register`)에서 읽는 타입이라 shared 가 app 을 import 하지 않는다. */
 export type ListSearch<Id extends ListRouteId> = RouteById<RegisteredRouter["routeTree"], Id>["types"]["fullSearchSchema"];

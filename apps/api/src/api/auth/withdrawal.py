@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 
 from botocore.exceptions import BotoCoreError, ClientError
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, exists, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
@@ -28,7 +28,7 @@ from api.db.models.auth import User, WithdrawnEmail, WithdrawnIdentity
 from api.db.models.chat import ChatMessageReport, ChatRoom
 from api.db.models.clover import CloverLedger, CloverSpendUsage
 from api.db.models.content import Content, ContentChatParticipant, ContentVisibility
-from api.db.models.creator_payout import CreatorPayoutApplication
+from api.db.models.creator_payout import CreatorPayout, CreatorPayoutApplication, CreatorPayoutProfile
 from api.db.models.feature_grant import UserFeatureGrant
 from api.db.models.inquiry import Inquiry
 from api.db.models.media import Asset, AssetKind, ImageGenerationRequest
@@ -201,6 +201,15 @@ async def erase_account(
         update(CloverSpendUsage)
         .where(CloverSpendUsage.spend_ledger_id.in_(select(CloverLedger.id).where(CloverLedger.user_id == user_id)))
         .values(spender_user_id=None)
+    )
+    # 크리에이터 지급 정보(실명·주민등록번호·계좌)는 어느 지급도 가리키지 않는 판만 지운다. 지급에 쓰인 판과 지급·확정
+    # 행은 원천징수·지급명세서와 정산의 근거라 남기고, 탈퇴 전에 신청한 지급은 그 판으로 끝까지 처리한다. 지급 신청은 이
+    # 회원 행을 잠그고 판을 고르므로, 그 행을 잠근 지금 새 지급이 판을 가리키며 끼어들지 않는다.
+    await db.execute(
+        delete(CreatorPayoutProfile).where(
+            CreatorPayoutProfile.user_id == user_id,
+            ~exists().where(CreatorPayout.profile_id == CreatorPayoutProfile.id),
+        )
     )
     # 기능 허용은 계정에 딸린 설정이라 계정과 함께 지운다. 누가 언제 허용했는지는 감사 로그에 남는다.
     await db.execute(delete(UserFeatureGrant).where(UserFeatureGrant.user_id == user_id))

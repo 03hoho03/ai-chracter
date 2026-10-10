@@ -30,6 +30,12 @@ export const ACTION_TYPE_LABELS = {
   "user-creator-payout-approve": "크리에이터 정산 승인",
   "user-creator-payout-reject": "크리에이터 정산 거절",
   "user-creator-payout-revoke": "크리에이터 정산 승인 취소",
+  "user-creator-payout-transfer": "크리에이터 지급 이체 기록",
+  "user-creator-payout-return": "크리에이터 지급 반려",
+  "user-creator-payout-info-view": "크리에이터 지급 정보 열람",
+  // 둘 다 탈퇴한 회원의 지급 건에만 생긴다 — 탈퇴 회원은 회원 상세가 없어 실제로는 조치 이력 표에 나오지 않는다.
+  "user-creator-payout-hold": "크리에이터 지급 보류",
+  "user-creator-payout-payee-replace": "크리에이터 지급 수취 정보 교체",
   "user-payment-refund": "결제 환불",
   "user-novelize-on": "소설화 허용",
   "user-novelize-off": "소설화 회수",

@@ -3,4 +3,5 @@ export const creatorPayoutKeys = {
   all: ["creator-payout"] as const,
   summary: () => [...creatorPayoutKeys.all, "summary"] as const,
   statements: () => [...creatorPayoutKeys.all, "statements"] as const,
+  payouts: () => [...creatorPayoutKeys.all, "payouts"] as const,
 };

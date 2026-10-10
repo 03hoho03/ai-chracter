@@ -5,6 +5,8 @@ from typing import Annotated, Literal
 from pydantic import Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from api.core.field_crypto import FieldKeyring
+
 # 둘 다 `settings` 를 찾지 않는 모듈이다(`backends` 는 `call_policy` 만, `call_policy` 는 아무 `api` 모듈도 import 하지 않는다) — 아래 `settings = Settings()` 가 이 모듈을 import 하는 도중에 돌므로,
 # 기동 검증이 읽는 표는 `settings` 를 찾지 않는 모듈에 있어야 한다.
 from api.llm import backends
@@ -15,7 +17,8 @@ ClaudeEffort = Literal["low", "medium", "high", "xhigh", "max"]
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # 설정 검증 오류 메시지에 입력값을 싣지 않는다 — 비밀 설정(키·토큰)이 형식 오류로 기동 로그에 찍히지 않게.
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", hide_input_in_errors=True)
 
     # 비밀 필드는 `Field(repr=False)`로 repr에서 뺀다. 어떤 필드가 비밀인지는 이 파일에서
     # `repr=False` 를 찾으면 나온다 — 개수·목록을 여기 적어 두면 필드를 더할 때 이 주석만 낡는다.
@@ -150,8 +153,20 @@ class Settings(BaseSettings):
     # 에 걸리므로 1 이상만 받는다. 범위 밖이면 기동하지 않는다(잘못된 비율로 돈을 계산하는 것보다 뜨지 않는 편이 낫다).
     creator_payout_rate_bps: int = Field(default=500, ge=1, le=10_000)
     creator_payout_retro_days: int = Field(default=90, ge=1)
+    # 지급을 신청할 수 있는 최소 확정 잔액(원). 탈퇴하려는 회원은 이보다 적어도 신청할 수 있다.
+    creator_payout_minimum_krw: int = Field(default=10_000, ge=1)
+    # 크리에이터 지급 정보(실명·주민등록번호·계좌번호) 암호화 키 목록 `kid:base64url(32바이트)[,kid:…]`. 맨 앞 키로
+    # 암호화하고 모든 키로 복호화한다(`core/field_crypto.py`). 비면 정산이 꺼진다. 키를 잃으면 지급 정보를 되살릴 수
+    # 없다 — 보관·회전 절차는 DEPLOY.md. 형식이 틀리면 기동하지 않는다.
+    creator_payout_encryption_keys: str = Field(default="", repr=False)
 
-    @field_validator("creator_payout_enabled", "creator_payout_rate_bps", "creator_payout_retro_days", mode="before")
+    @field_validator(
+        "creator_payout_enabled",
+        "creator_payout_rate_bps",
+        "creator_payout_retro_days",
+        "creator_payout_minimum_krw",
+        mode="before",
+    )
     @classmethod
     def _empty_creator_payout_value_is_default(cls, value: object, info: ValidationInfo) -> object:
         """env 에 값만 비운 줄(`KEY=`)이 남아도 기동하게 빈 값은 코드 기본값으로 읽는다 — 정수·불리언 파싱은 빈
@@ -159,6 +174,13 @@ class Settings(BaseSettings):
         if isinstance(value, str) and not value.strip():
             assert info.field_name is not None
             return cls.model_fields[info.field_name].default
+        return value
+
+    @field_validator("creator_payout_encryption_keys")
+    @classmethod
+    def _creator_payout_encryption_keys_are_well_formed(cls, value: str) -> str:
+        if value:
+            FieldKeyring.parse(value)
         return value
 
     # Password reset tokens expire 1 hour after issuance.

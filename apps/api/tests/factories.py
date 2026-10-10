@@ -8,6 +8,7 @@ LLM 페이크 주입(`_override_llm_client`/`_clear_llm_override`)·SSE 파싱(`
 각 파일에 그대로 뒀다."""
 
 import asyncio
+import base64
 import json
 import os
 import uuid
@@ -249,6 +250,10 @@ async def _use(
 
 
 # ── 크리에이터 정산 셋업 ──
+# 지급 정보 암호화 키(테스트 전용 고정값, `kid:base64url(32바이트)`). 정산은 이 키까지 있어야 켜진다.
+CREATOR_PAYOUT_TEST_KEYS = "k1:" + base64.urlsafe_b64encode(bytes(range(32))).decode()
+
+
 def kst(month: int, day: int, hour: int = 0, minute: int = 0, second: int = 0, *, year: int = 2026) -> datetime:
     return datetime(year, month, day, hour, minute, second, tzinfo=KST)
 
