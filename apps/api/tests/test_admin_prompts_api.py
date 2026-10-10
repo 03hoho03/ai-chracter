@@ -657,6 +657,55 @@ async def test_preview_renders_the_persona_section_only_in_generation_items(
     assert all("[사용자 정보]" not in item["text"] for item in others)
 
 
+_SAMPLE_USER_NAME_LINE = "대화 속 사용자의 이름: [샘플] 하늘"
+# 레인별로 이름 한 줄을 받는 항목. 나머지 항목(system)은 그 줄이 0줄이어야 한다. 판정 전용 세트(haiku)는 생성 항목 없이
+# 판정·요약 항목만 있다.
+_NAME_LINE_LABELS = {
+    "story": {
+        "generation · 스토리 · basic",
+        "generation · 스토리 · custom",
+        "stat_rule_judgment",
+        "ending_judgment",
+        "image_judgment",
+        "memory_summary",
+    },
+    "character": {"generation · 캐릭터", "image_judgment", "memory_summary"},
+}
+
+
+@pytest.mark.parametrize("model", [pytest.param(None, id="gemini"), "sonnet", "opus", "haiku"])
+@pytest.mark.parametrize("lane", ["story", "character"])
+async def test_preview_shows_the_sample_user_name_line_in_every_item_that_takes_a_name(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, lane: str, model: str | None
+) -> None:
+    """미리보기는 이름 한 줄 섹션을 고정 샘플 이름으로 채워 운영자가 그 문안을 생성·판정·요약 채널 모두에서 보게 한다.
+    실채팅에서 이 줄이 비는 경우(생성 채널은 늘, 판정·요약은 프로필이 없을 때)와 달리 미리보기는 비우지 않는다 —
+    비우면 conditional 드롭으로 섹션이 사라진다. 샘플 프로필 이름도 같은 글자라 이름 부분 문자열이 아니라 줄 전체를 센다."""
+    await _login_new_admin(db_client, db_session)
+
+    resp = await db_client.post(f"/admin/prompt-sets/{lane}/draft/preview", params={"model": model} if model else {})
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    expected = {
+        label for label in _NAME_LINE_LABELS[lane] if model != "haiku" or not label.startswith("generation")
+    }
+    assert {item["label"]: item["text"].count(_SAMPLE_USER_NAME_LINE) for item in items} == {
+        item["label"]: (1 if item["label"] in expected else 0) for item in items
+    }
+    assert {item["label"] for item in items} >= expected
+    generation = [item for item in items if item["channel"] == "generation"]
+    assert all("[사용자 이름]" in item["text"] for item in generation)
+    assert bool(generation) is (model != "haiku")
+
+
+def test_preview_sample_names_replace_author_macros_with_the_sample_names() -> None:
+    """샘플 글에는 `{{user}}` 가 없어 미리보기 출력으로는 치환 이름을 볼 수 없다 — 샘플 이름 묶음을 직접 확인한다."""
+    assert admin_prompts._SAMPLE_STORY_NAMES.expand("{{user}}") == "[샘플] 하늘"
+    assert admin_prompts._SAMPLE_CHARACTER_NAMES.expand("{{user}}") == "[샘플] 하늘"
+    assert admin_prompts._SAMPLE_CHARACTER_NAMES.expand("{{char}}") == "[샘플] 캐릭터"
+    assert admin_prompts._SAMPLE_STORY_NAMES.expand("{{char}}") == "{{char}}"
+
+
 # ---- 게시 — happy path ----------------------------------------------------------
 
 
