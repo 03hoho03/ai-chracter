@@ -624,7 +624,8 @@ class JudgmentContext:
     turn: int
     log_subject: str
     stat_after: dict[str, float] | None = None
-    # 방 판정이 자기 호출 컨텍스트에 넘겨 턴 기록에 실을 사용량 목록. 미리보기 판정은 기록이 없어 넘기지 않는다.
+    # 방 판정이 자기 호출 컨텍스트에 넘겨 턴 기록에 실을 사용량 목록. `run_turn` 은 미리보기에도 이 목록을 넣지만,
+    # 미리보기 판정 클래스는 기록이 없어 자기 호출 컨텍스트에 넘기지 않는다.
     usage_sink: list[CallUsage] | None = None
 
 

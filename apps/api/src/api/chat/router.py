@@ -1208,8 +1208,8 @@ async def edit_message(
     삭제되는 메시지 중 AI 응답 개수만큼 turn_count를 미리 되돌려둔다(그래야 턴 골격이 쓰는
     turn_count+1과 합쳐 실제 남은 대화 길이와 일치하고, 이후 엔딩 턴게이트 판정이 어긋나지 않는다).
     다만 삭제된 턴들이 이미 반영해 둔 chat_room_stats/ending_reached 등의 상태까지 되돌리는
-    건 하지 않는다 — 기록을 쓰기 전에 보낸 턴에는 되돌릴 근거가 되는 턴별 변경 이력이 없고
-    (알려진 한계), 요구사항에도 이 롤백은 없다.
+    건 하지 않는다 — 이 롤백은 구현돼 있지 않다(요구사항에도 없다). 턴 기록에 스탯 변화가 남는 턴도
+    되돌리지 않고, 기록을 쓰기 전에 보낸 턴에는 되돌릴 근거가 되는 턴별 변경 이력부터 없다.
     """
     # 정산 가드는 `send_message` 와 같다. 첫 `yield` 전 구간은 조회·DELETE·커밋이 다 들어 있어 세 라우트 중 위험이 가장 크다.
     settlement = TurnSettlement(charge=charge, user_id=room.user_id, session_factory=session_factory)
