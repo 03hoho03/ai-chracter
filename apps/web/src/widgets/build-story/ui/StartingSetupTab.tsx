@@ -207,7 +207,7 @@ type StartingSetupRowProps = {
 };
 
 /** 이름/프롤로그(필수), 시작상황(선택, 비어있으면 프롤로그가 첫
- * 메시지로 노출됨을 안내), 고급설정 뒤의 플레이가이드/추천 답변(선택). 목록 순서가 곧 기본 선택
+ * 메시지로 노출됨을 안내), 고급 설정 뒤의 플레이가이드/추천 답변(선택). 목록 순서가 곧 기본 선택
  * 우선순위라 dnd-kit로 재정렬한다(AdvancedTab의 situationalImages와 동일 패턴). */
 function StartingSetupRow({
   id,

@@ -34,7 +34,7 @@ const DEVELOPMENT_EXAMPLE_LIST: StoryCollapsibleList = "developmentExample";
  * 커스텀 프롬프트 입력 폼을 전환한다. 숨겨진 필드는 RHF 기본 동작(shouldUnregister: false)대로
  * 언마운트돼도 값이 폼 상태에 그대로 보존된다.
  *
- * 규칙·사용자의 역할과 목표·전개 예시(고급설정)는 프롬프트
+ * 규칙·사용자의 역할과 목표·전개 예시(고급 설정)는 프롬프트
  * L1 작품 층에서 템플릿과 무관하게 항상 적용되므로 이 템플릿 전환 대상이 아니다
  * (셋 다 발행 필수도 아니다). */
 export function SettingTab() {
