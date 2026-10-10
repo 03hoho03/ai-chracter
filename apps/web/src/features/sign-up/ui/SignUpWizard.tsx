@@ -5,6 +5,7 @@ import { FormProvider, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 import {
+  clearViewerQueries,
   formatAuthRateLimitMessage,
   getAuthRateLimit,
   LOGIN_LINK_ERROR_TYPE,
@@ -98,6 +99,9 @@ export function SignUpWizard(props: SignUpWizardProps) {
       // 이메일 인증만으로는 세션이 발급되지 않으므로, 방금 만든 계정으로 직접 로그인해
       // 세션을 발급시킨다 (apps/api/CLAUDE.md의 me_router 세션 발급 규약 참고).
       await loginMutation.mutateAsync(toSignUpLoginRequest(values));
+      // 로그인 폼과 같은 이유로, 새 세션을 읽기 전에 앞 계정의 캐시를 비운다(`LoginForm`). 소셜 온보딩은 전체 페이지
+      // 이동으로 들어와 캐시가 처음부터 비어 있다.
+      clearViewerQueries(queryClient);
       await completeSignUp();
     } catch (error) {
       const apiError = isApiError(error) ? error : undefined;

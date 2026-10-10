@@ -7,6 +7,8 @@ export { hasEnabledFeature } from "./model/enabledFeature";
 export { isWebnovelOpen } from "./model/webnovelOpen";
 export { requireSession } from "./lib/requireSession";
 export { resetSessionIfLost } from "./lib/resetSessionIfLost";
+export { clearViewerQueries } from "./lib/clearViewerSession";
+export { useClearViewerSession } from "./lib/useClearViewerSession";
 export { formatAuthRateLimitMessage, getAuthRateLimit, type AuthRateLimitDetail } from "./model/authRateLimitMessage";
 export { LOGIN_LINK_ERROR_TYPE, type AuthFormErrorBanner } from "./model/authFormErrorBanner";
 export { isSessionLostError } from "./model/sessionLost";

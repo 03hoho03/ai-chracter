@@ -14,14 +14,20 @@ export type ContentBrowseParams = {
 
 export const contentKeys = {
   all: ["content"] as const,
+  /** 아래 네 접두(작가 목록·상세·초안·버전 이력)는 보는 사람에 따라 응답이 달라, 로그아웃·로그인 때 이 접두로 비운다.
+   * 둘러보기·장르·홈 큐레이션은 누구에게나 같아 남긴다. */
+  lists: () => [...contentKeys.all, "list"] as const,
+  details: () => [...contentKeys.all, "detail"] as const,
+  drafts: () => [...contentKeys.all, "draft"] as const,
+  versionLists: () => [...contentKeys.all, "versions"] as const,
   list: (userId: string, type: ContentType, visibility?: VisibilityFilter) =>
-    [...contentKeys.all, "list", userId, type, visibility ?? "all"] as const,
+    [...contentKeys.listByUser(userId), type, visibility ?? "all"] as const,
   /** 공개범위 전환 성공 시 유형/공개여부 필터와 무관하게 그 작가의 모든 목록 쿼리를
    * 무효화하기 위한 공통 접두사(TanStack Query는 배열 접두사로 부분 매칭한다). */
-  listByUser: (userId: string) => [...contentKeys.all, "list", userId] as const,
-  detail: (id: string) => [...contentKeys.all, "detail", id] as const,
-  draft: (id: string) => [...contentKeys.all, "draft", id] as const,
-  versions: (id: string) => [...contentKeys.all, "versions", id] as const,
+  listByUser: (userId: string) => [...contentKeys.lists(), userId] as const,
+  detail: (id: string) => [...contentKeys.details(), id] as const,
+  draft: (id: string) => [...contentKeys.drafts(), id] as const,
+  versions: (id: string) => [...contentKeys.versionLists(), id] as const,
   browse: (params: ContentBrowseParams) => [...contentKeys.all, "browse", params] as const,
   /** 상세 조회가 조회수를 올린 뒤 유형/정렬/필터와 무관하게 홈 목록을 무효화하기 위한 공통 접두사. */
   browseAll: () => [...contentKeys.all, "browse"] as const,
