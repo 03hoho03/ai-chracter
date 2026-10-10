@@ -974,7 +974,7 @@ async def send_message(
                     charge=charge,
                 ),
                 llm=llm_client,
-                judgments=new_turn_judgments(db, room, setup),
+                judgments=new_turn_judgments(db, room, setup, log=logger),
                 store=RoomTurnStore(db, room, setup, mode="append", log=logger),
                 settlement=settlement,
                 after_commit=_fold_after_commit(
@@ -1245,7 +1245,7 @@ async def edit_message(
                     charge=charge,
                 ),
                 llm=llm_client,
-                judgments=new_turn_judgments(db, room, setup),
+                judgments=new_turn_judgments(db, room, setup, log=logger),
                 store=RoomTurnStore(db, room, setup, mode="append", log=logger),
                 settlement=settlement,
                 after_commit=_fold_after_commit(

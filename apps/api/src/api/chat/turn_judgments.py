@@ -8,13 +8,16 @@ LLM 호출, 엔딩은 엔딩마다 프롬프트 렌더도 여기서 한다), `ap
 `wave`(같은 물결의 판정은 함께 부르고, 두 번째 물결은 첫 물결을 반영한 뒤 차례로 부른다)만 알려 준다. 이 모듈은 라우터를
 import 하지 않는다(라우터가 이 모듈을 import 한다).
 
-흡수 범위는 헬퍼마다 다르고 클래스는 그대로 따른다. 스탯·칸 판정은 자기 LLM 실패를 흡수하고, 칸 준비는 자기 DB·렌더 실패를,
-상황 이미지 후보 조회는 자기 DB 실패를 흡수한다. 스탯 준비의 DB 읽기·렌더, 엔딩 준비의 DB 읽기, 엔딩 판정의 렌더·LLM, 상황 이미지
-준비의 렌더와 판정 LLM 은 흡수하지 않고 부르는 쪽으로 올린다.
+흡수 범위는 헬퍼마다 다르고 클래스는 그대로 따른다. 스탯·칸 판정은 자기 LLM 실패를 흡수하고, 스탯·칸 준비는 자기 DB·렌더 실패를,
+엔딩 준비와 상황 이미지 후보 조회는 자기 DB 실패를 흡수한다 — 준비 실패를 판정 안에서 흡수해야 뒤 판정의 준비와 판정이 그대로
+돈다(예외가 준비 루프를 빠져나가면 뒤 판정은 준비조차 못 한다). 준비의 DB 읽기는 SAVEPOINT 로 감싸 실패가 그 읽기만 되감고
+요청 세션의 트랜잭션은 유효하게 남게 한다. 엔딩 판정의 렌더·LLM, 상황 이미지 준비의 렌더와 판정 LLM 은 흡수하지 않고 부르는 쪽으로
+올린다.
 
 미리보기판은 판정 헬퍼(`_await_stat_judgment`·`_endings_to_judge`·`_judge_media_cell`)를 방 판정과 그대로 함께 쓰고, 호출
-위치(`preview_*`)와 판정 주어("미리보기")만 다르다. 미리보기 칸 판정의 프롬프트 렌더 경고는 원래 라우터 안에 있던 것이라
-부르는 쪽이 넘긴 로거로 남긴다(로거 이름으로 거르는 쪽이 옮긴 뒤에도 같은 이름을 읽는다)."""
+위치(`preview_*`)와 판정 주어("미리보기")만 다르다. 미리보기 칸 판정의 프롬프트 렌더 경고와, 방·미리보기 스탯 준비와 방 엔딩
+준비의 실패 경고는 부르는 쪽이 넘긴 로거로 남긴다 — 앞의 것은 원래 라우터 안에 있던 것이고, 뒤의 것 가운데 스탯 렌더 실패는
+판정 안으로 옮기기 전까지 턴 골격이 라우터의 로거로 남기던 것이다(로거 이름으로 거르는 쪽이 옮긴 뒤에도 같은 이름을 읽는다)."""
 
 import logging
 import uuid
@@ -670,17 +673,45 @@ def _apply_stat_result(
             result.stat_change_events.append(ChatStatChangeEvent(stat_id=stat_id, new_value=new_value))
 
 
+def _prepare_stat_request(
+    ctx: JudgmentContext,
+    stat_defs: list[StatDef],
+    rules_by_stat_id: dict[uuid.UUID, list[StatRule]],
+    *,
+    log: logging.Logger,
+) -> StatJudgmentRequest | None:
+    """스탯 판정 프롬프트 조립 — 방·미리보기 스탯 판정이 함께 쓴다. 렌더 실패는 흡수해 `None` 이다: 판정 요청이 없으면
+    스탯 판정을 부르지 않고 반영 결과도 `None` 이라 엔딩 판정도 건너뛴다(카운터도 굴리지 않는다 — LLM 실패와 같은 결과).
+    흡수하지 않으면 예외가 준비 루프를 빠져나가 칸 판정의 준비와 판정까지 사라진다."""
+    try:
+        return prepare_stat_judgment(
+            prompt_set=ctx.prompt_set,
+            sections=ctx.prompt_sections,
+            stat_defs=stat_defs,
+            rules_by_stat_id=rules_by_stat_id,
+            user_message=ctx.user_message,
+            assistant_message=ctx.assistant_message,
+            names=ctx.names,
+        )
+    except PromptRenderError as exc:
+        log.warning("%s 스탯 판정 프롬프트 렌더 실패 — 이번 턴의 스탯·엔딩 판정을 건너뛴다: %s", ctx.log_subject, exc)
+        capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+        return None
+
+
 class StatJudgment:
-    """스토리 스탯 규칙 판정. 최초 엔딩 전에만 돈다. 준비의 DB 읽기·렌더 실패는 흡수하지 않는다(DB 예외는 부르는 쪽의
-    판정 `except` 도 지나 스트림을 끊고, 렌더 실패는 그 `except` 가 받는다). LLM 실패는 `_await_stat_judgment` 가 흡수해
-    결과가 `None` 이고, 그러면 엔딩 판정도 건너뛴다."""
+    """스토리 스탯 규칙 판정. 최초 엔딩 전에만 돈다. 준비의 DB 읽기 실패와 렌더 실패는 흡수하고 그 턴의 스탯·엔딩 판정을
+    건너뛴다(칸 판정은 그대로 돈다). DB 읽기는 SAVEPOINT 안에서 해 실패가 그 읽기만 되감는다 — 그래야 뒤의 엔딩·칸 준비가
+    같은 요청 세션으로 읽을 수 있다. 준비가 실패하면 판정 요청이 없어 카운터 스탯도 굴리지 않는다. LLM 실패는
+    `_await_stat_judgment` 가 흡수해 결과가 `None` 이고, 그러면 엔딩 판정도 건너뛴다. 경고는 부르는 쪽이 넘긴 로거로 남긴다."""
 
     wave = 1
 
-    def __init__(self, db: AsyncSession, room: ChatRoom, setup: StartingSetup) -> None:
+    def __init__(self, db: AsyncSession, room: ChatRoom, setup: StartingSetup, *, log: logging.Logger) -> None:
         self._db = db
         self._room = room
         self._setup = setup
+        self._log = log
         self._stat_defs: list[StatDef] = []
         self._stat_rows: dict[str, ChatRoomStat] = {}
         self._current_stats: dict[str, float] = {}
@@ -690,18 +721,18 @@ class StatJudgment:
     async def prepare(self, ctx: JudgmentContext) -> None:
         if self._room.ending_reached:
             return
-        self._stat_defs, self._stat_rows, self._current_stats = await load_room_stats(
-            self._db, self._room.id, self._setup.id
-        )
-        self._request = prepare_stat_judgment(
-            prompt_set=ctx.prompt_set,
-            sections=ctx.prompt_sections,
-            stat_defs=self._stat_defs,
-            rules_by_stat_id=await _load_stat_rules(self._db, self._stat_defs),
-            user_message=ctx.user_message,
-            assistant_message=ctx.assistant_message,
-            names=ctx.names,
-        )
+        try:
+            async with self._db.begin_nested():
+                stat_defs, stat_rows, current_stats = await load_room_stats(self._db, self._room.id, self._setup.id)
+                rules_by_stat_id = await _load_stat_rules(self._db, stat_defs)
+        except SQLAlchemyError as exc:
+            self._log.warning(
+                "%s 스탯 판정 입력 조회 실패 — 이번 턴의 스탯·엔딩 판정을 건너뛴다: %s", ctx.log_subject, exc
+            )
+            capture_dependency_failure(exc, dependency="db")
+            return
+        self._stat_defs, self._stat_rows, self._current_stats = stat_defs, stat_rows, current_stats
+        self._request = _prepare_stat_request(ctx, stat_defs, rules_by_stat_id, log=self._log)
 
     async def judge(self, llm_client: LLMClient, ctx: JudgmentContext) -> None:
         if self._request is None:
@@ -725,30 +756,37 @@ class EndingJudgment:
     그 프롬프트는 `judge` 에서 정한다. 준비는 판정할 때가 된 엔딩과 그 규칙·히스토리만 미리 읽는다(판정 LLM 을 기다리는
     동안 트랜잭션을 쥐지 않게).
 
-    엔딩 판정의 렌더·LLM 실패는 흡수하지 않는다 — 첫 실패에서 남은 엔딩을 보지 않고 부르는 쪽 `except` 로 간다."""
+    준비의 DB 읽기 실패는 SAVEPOINT 안에서 흡수하고(경고는 부르는 쪽이 넘긴 로거로) 그 턴의 엔딩 판정만 건너뛴다 — 스탯
+    판정과 칸 판정은 이미 준비를 마쳤거나 같은 요청 세션으로 그대로 준비한다. 엔딩 판정의 렌더·LLM 실패는 흡수하지 않는다 —
+    첫 실패에서 남은 엔딩을 보지 않고 부르는 쪽 `except` 로 간다."""
 
     wave = 2
 
-    def __init__(self, db: AsyncSession, room: ChatRoom, setup: StartingSetup) -> None:
+    def __init__(self, db: AsyncSession, room: ChatRoom, setup: StartingSetup, *, log: logging.Logger) -> None:
         self._db = db
         self._room = room
         self._setup = setup
+        self._log = log
         self._due: _DueEndings | None = None
         self._reached: Ending | None = None
 
     async def prepare(self, ctx: JudgmentContext) -> None:
         if self._room.ending_reached:
             return
-        self._due = await _load_due_endings(self._db, self._room, self._setup, ctx.history, ctx.turn)
+        try:
+            async with self._db.begin_nested():
+                self._due = await _load_due_endings(self._db, self._room, self._setup, ctx.history, ctx.turn)
+        except SQLAlchemyError as exc:
+            self._log.warning("%s 엔딩 판정 입력 조회 실패 — 이번 턴의 엔딩 판정을 건너뛴다: %s", ctx.log_subject, exc)
+            capture_dependency_failure(exc, dependency="db")
 
     async def judge(self, llm_client: LLMClient, ctx: JudgmentContext) -> None:
         # 엔딩 판정: 엔딩별 turn_count_gate를 넘긴 시점부터 5턴마다만 호출하고, 그 외 턴은 스킵한다.
         # 스탯 규칙을 통과한 엔딩만, `_endings_to_judge` 가 정한 순서(목록 순서, 우선 스탯을 채운 엔딩끼리는
         # 그 값이 가장 높은 것만, 그 뒤는 없음)로 판정해 첫 충족 엔딩에서 멈춘다(동시 충족 시 하나만 발동).
-        # 스탯 반영 뒤라 순차다.
-        if ctx.stat_after is None:
+        # 스탯 반영 뒤라 순차다. 준비에서 엔딩을 읽지 못했으면(`_due` 가 없다) 이번 턴은 엔딩을 판정하지 않는다.
+        if ctx.stat_after is None or self._due is None:
             return
-        assert self._due is not None  # 스탯 판정은 엔딩 전에만 돌고, 그때 엔딩도 함께 읽었다.
         for ending in _endings_to_judge(
             [
                 (ending, ending.entity_id, ending.priority_stat_def_entity_id, rule_items)
@@ -861,18 +899,26 @@ class SituationalImageJudgment:
 
 class PreviewStatJudgment:
     """미리보기 스탯 규칙 판정 — `StatJudgment` 의 초안판. 스탯 정의·규칙은 초안에서, 지금 값은 세션에서 읽는다(DB 읽기
-    없음). 최초 엔딩 전에만 돈다. 준비의 렌더 실패는 흡수하지 않고(부르는 쪽 `except` 가 받아 칸 판정까지 함께 버린다),
-    LLM 실패는 `_await_stat_judgment` 가 흡수해 엔딩 판정도 건너뛴다. 스탯 행이 없어 `stat_rows` 는 비워 둔다."""
+    없음). 최초 엔딩 전에만 돈다. 준비의 렌더 실패는 방 판정처럼 흡수해(경고는 부르는 쪽이 넘긴 로거로) 스탯·엔딩 판정만
+    건너뛰고 칸 판정은 그대로 돈다. LLM 실패는 `_await_stat_judgment` 가 흡수해 엔딩 판정도 건너뛴다. 스탯 행이 없어
+    `stat_rows` 는 비워 둔다."""
 
     wave = 1
 
     def __init__(
-        self, setup: StartingSetupDraftItem, stats: dict[str, float], *, ending_reached: bool, user_id: uuid.UUID
+        self,
+        setup: StartingSetupDraftItem,
+        stats: dict[str, float],
+        *,
+        ending_reached: bool,
+        user_id: uuid.UUID,
+        log: logging.Logger,
     ) -> None:
         self._setup = setup
         self._current_stats = stats
         self._ending_reached = ending_reached
         self._user_id = user_id
+        self._log = log
         self._stat_defs: list[StatDef] = []
         self._request: StatJudgmentRequest | None = None
         self._updated: dict[str, float] | None = None
@@ -881,14 +927,11 @@ class PreviewStatJudgment:
         if self._ending_reached:
             return
         self._stat_defs = [_preview_stat_def(stat_def) for stat_def in self._setup.stat_defs]
-        self._request = prepare_stat_judgment(
-            prompt_set=ctx.prompt_set,
-            sections=ctx.prompt_sections,
-            stat_defs=self._stat_defs,
-            rules_by_stat_id={stat_def.id: _preview_stat_rules(stat_def) for stat_def in self._setup.stat_defs},
-            user_message=ctx.user_message,
-            assistant_message=ctx.assistant_message,
-            names=ctx.names,
+        self._request = _prepare_stat_request(
+            ctx,
+            self._stat_defs,
+            {stat_def.id: _preview_stat_rules(stat_def) for stat_def in self._setup.stat_defs},
+            log=self._log,
         )
 
     async def judge(self, llm_client: LLMClient, ctx: JudgmentContext) -> None:
@@ -1027,11 +1070,18 @@ class PreviewMediaCellJudgment:
         result.judged_cell_id = self._cell_id
 
 
-def new_turn_judgments(db: AsyncSession, room: ChatRoom, setup: StartingSetup | None) -> list[TurnJudgment]:
+def new_turn_judgments(
+    db: AsyncSession, room: ChatRoom, setup: StartingSetup | None, *, log: logging.Logger
+) -> list[TurnJudgment]:
     """새 턴이 할 판정과 그 준비 순서. 스토리는 스탯 → 엔딩 → 칸 순으로 준비하고 스탯·칸을 함께 부른 뒤 엔딩을
-    부른다(함께 부르는 순서도 이 목록 순서다). 캐릭터는 상황 이미지 하나다. 판정은 요청 세션(`db`)으로 방을 읽는다."""
+    부른다(함께 부르는 순서도 이 목록 순서다). 캐릭터는 상황 이미지 하나다. 판정은 요청 세션(`db`)으로 방을 읽는다.
+    `log` 는 스탯·엔딩 준비 실패 경고의 로거다."""
     if setup is not None:
-        return [StatJudgment(db, room, setup), EndingJudgment(db, room, setup), MediaCellJudgment(db, room)]
+        return [
+            StatJudgment(db, room, setup, log=log),
+            EndingJudgment(db, room, setup, log=log),
+            MediaCellJudgment(db, room),
+        ]
     return [SituationalImageJudgment(db, room)]
 
 
@@ -1057,7 +1107,7 @@ def preview_judgments(
     캐릭터 초안은 판정이 없다(상황 이미지 매칭은 미리보기에서 돌지 않는다).
 
     스탯의 지금 값과 엔딩 도달 여부는 여기서 세션을 읽어 둔다 — 판정은 세션을 읽지 않고, 세션은 판정 뒤 쓰기 단계에서만
-    바뀐다. `log` 는 칸 판정 프롬프트 렌더 경고의 로거다."""
+    바뀐다. `log` 는 스탯 준비 실패와 칸 판정 프롬프트 렌더 경고의 로거다."""
     payload = state.payload
     if isinstance(payload, CharacterDraftPayload):
         return []
@@ -1065,7 +1115,9 @@ def preview_judgments(
     setup = payload.starting_setups[0] if payload.starting_setups else None
     if setup is not None:
         judgments += [
-            PreviewStatJudgment(setup, dict(state.stats), ending_reached=state.ending_reached, user_id=user_id),
+            PreviewStatJudgment(
+                setup, dict(state.stats), ending_reached=state.ending_reached, user_id=user_id, log=log
+            ),
             PreviewEndingJudgment(setup, payload, media_images, user_id=user_id),
         ]
     judgments.append(PreviewMediaCellJudgment(payload, media_images, user_id=user_id, log=log))

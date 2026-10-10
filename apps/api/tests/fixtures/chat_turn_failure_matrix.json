@@ -1407,6 +1407,180 @@
     },
     "status": 200
   },
+  "ending-read-aborts-the-transaction/edit": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "newValue": 78.0,
+        "statId": "<id2>",
+        "type": "statChange"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": true,
+        "imageId": "<candidate>",
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ]
+    ],
+    "scheduled": [
+      "fold_memory"
+    ],
+    "sentry": [
+      [
+        "DBAPIError",
+        "db"
+      ]
+    ],
+    "state": {
+      "discarded": [
+        "edit"
+      ],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "고쳐 말하면, 마을을 떠나자",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          "<candidate>"
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": [
+        "78.0"
+      ]
+    },
+    "status": 200
+  },
+  "ending-read-aborts-the-transaction/send": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "newValue": 78.0,
+        "statId": "<id2>",
+        "type": "statChange"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": true,
+        "imageId": "<candidate>",
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_stat_judgment"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
+      ]
+    ],
+    "scheduled": [
+      "fold_memory"
+    ],
+    "sentry": [
+      [
+        "DBAPIError",
+        "db"
+      ]
+    ],
+    "state": {
+      "discarded": [],
+      "messages": [
+        [
+          "assistant",
+          "다시 만났네요!",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "[A01]나나나나나나나나나나나나나나나",
+          null
+        ],
+        [
+          "user",
+          "마을을 떠나자",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          "<candidate>"
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 2
+      },
+      "stats": [
+        "78.0"
+      ]
+    },
+    "status": 200
+  },
   "epilogue-display-failure/send": {
     "clover": {
       "balanceDelta": -10,
@@ -4338,8 +4512,8 @@
       },
       {
         "content": "오늘은 비가 와.",
-        "hasImageUrl": false,
-        "imageId": null,
+        "hasImageUrl": true,
+        "imageId": "<candidate>",
         "type": "done"
       }
     ],
@@ -4347,6 +4521,10 @@
       [
         "generate",
         "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
       ]
     ],
     "scheduled": [
@@ -4376,7 +4554,7 @@
         [
           "assistant",
           "오늘은 비가 와.",
-          null
+          "<candidate>"
         ]
       ],
       "room": {
@@ -4408,8 +4586,8 @@
       },
       {
         "content": "오늘은 비가 와.",
-        "hasImageUrl": false,
-        "imageId": null,
+        "hasImageUrl": true,
+        "imageId": "<candidate>",
         "type": "done"
       }
     ],
@@ -4417,6 +4595,10 @@
       [
         "generate",
         "preview_generate"
+      ],
+      [
+        "generate_structured",
+        "preview_media_book_image"
       ]
     ],
     "scheduled": [],
@@ -4442,7 +4624,7 @@
         [
           "assistant",
           "오늘은 비가 와.",
-          null
+          "<candidate>"
         ]
       ],
       "stats": [
@@ -4471,8 +4653,8 @@
       },
       {
         "content": "오늘은 비가 와.",
-        "hasImageUrl": false,
-        "imageId": null,
+        "hasImageUrl": true,
+        "imageId": "<candidate>",
         "type": "done"
       }
     ],
@@ -4480,6 +4662,10 @@
       [
         "generate",
         "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
       ]
     ],
     "scheduled": [
@@ -4517,7 +4703,7 @@
         [
           "assistant",
           "오늘은 비가 와.",
-          null
+          "<candidate>"
         ]
       ],
       "room": {
@@ -4532,28 +4718,47 @@
   },
   "stat-rule-read-aborts-the-transaction/edit": {
     "clover": {
-      "balanceDelta": 0,
+      "balanceDelta": -10,
       "ledger": [
-        "chat_refund",
         "chat_spend"
       ]
     },
-    "escaped": [
-      "DBAPIError"
-    ],
+    "escaped": [],
     "events": [
       {
-        "type": "tokens"
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": true,
+        "imageId": "<candidate>",
+        "type": "done"
       }
     ],
     "llm": [
       [
         "generate",
         "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
       ]
     ],
-    "scheduled": [],
-    "sentry": [],
+    "scheduled": [
+      "fold_memory"
+    ],
+    "sentry": [
+      [
+        "DBAPIError",
+        "db"
+      ]
+    ],
     "state": {
       "discarded": [
         "edit"
@@ -4568,11 +4773,16 @@
           "user",
           "고쳐 말하면, 마을을 떠나자",
           null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          "<candidate>"
         ]
       ],
       "room": {
         "endingReached": false,
-        "turnCount": 0
+        "turnCount": 1
       },
       "stats": [
         "73"
@@ -4582,28 +4792,47 @@
   },
   "stat-rule-read-aborts-the-transaction/send": {
     "clover": {
-      "balanceDelta": 0,
+      "balanceDelta": -10,
       "ledger": [
-        "chat_refund",
         "chat_spend"
       ]
     },
-    "escaped": [
-      "DBAPIError"
-    ],
+    "escaped": [],
     "events": [
       {
-        "type": "tokens"
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": true,
+        "imageId": "<candidate>",
+        "type": "done"
       }
     ],
     "llm": [
       [
         "generate",
         "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_media_book_image"
       ]
     ],
-    "scheduled": [],
-    "sentry": [],
+    "scheduled": [
+      "fold_memory"
+    ],
+    "sentry": [
+      [
+        "DBAPIError",
+        "db"
+      ]
+    ],
     "state": {
       "discarded": [],
       "messages": [
@@ -4626,11 +4855,16 @@
           "user",
           "마을을 떠나자",
           null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          "<candidate>"
         ]
       ],
       "room": {
         "endingReached": false,
-        "turnCount": 1
+        "turnCount": 2
       },
       "stats": [
         "73"
