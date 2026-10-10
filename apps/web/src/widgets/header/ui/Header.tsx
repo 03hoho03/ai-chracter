@@ -1,10 +1,10 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { CloverIcon } from "@/entities/clover";
-import { useSessionQuery } from "@/entities/session";
+import { loginRedirectTarget, useSessionQuery } from "@/entities/session";
 
 import { BrandLogo } from "./BrandLogo";
 import { ContentTypeToggle } from "./ContentTypeToggle";
@@ -31,6 +31,8 @@ import { SearchInlineExpand } from "./SearchInlineExpand";
  */
 export function Header() {
   const { data: me } = useSessionQuery();
+  // 로그인 뒤 지금 화면으로 돌아오게 한다(인증 흐름 화면에서는 그 화면의 `redirect` 를 잇거나 싣지 않는다).
+  const loginRedirect = useRouterState({ select: (state) => loginRedirectTarget(state.location) });
   // `sm`(640px) 미만에서 검색이 펼쳐지면 버거·로고를 숨기고 검색이 헤더 한 줄을 독점한다. 640~1023px 에서는 펼쳐도
   // 버거·로고가 남고 입력칸이 3열 안에 든다 — 그 폭에서 버거를 숨기면 검색하는 동안 드로어에 닿을 길이 없다. 펼침 상태 자체는
   // `SearchInlineExpand`가 계속 들고(자동 펼침 초기값·디바운스 등 자체 로직과 묶여 있어서), 이 값은
@@ -107,7 +109,9 @@ export function Header() {
             </div>
           ) : (
             <Button asChild size="sm" className="hidden lg:inline-flex">
-              <Link to="/login">로그인</Link>
+              <Link to="/login" search={{ redirect: loginRedirect }}>
+                로그인
+              </Link>
             </Button>
           )}
         </div>

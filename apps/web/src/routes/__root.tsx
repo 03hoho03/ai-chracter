@@ -58,8 +58,8 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 
 function RootComponent() {
   // 전역 크롬(헤더·좌측 패널)을 건너뛰는 라우트(빌더·소설 화 읽기·소설 편집 보드)와 그 이유는 `isGlobalHeaderHidden` 에
-  // 모아 둔다 — 헤더와 패널이 같은 판정을 읽어, 헤더 없는 화면에 패널만 남는 일이 없다. 빌더는 같은 56px(`h-14`) 자리에
-  // 전용 상단바(`features/build-common`의 `BuilderTopBar`)를 두므로 헤더를 빼도 `calc(100dvh-3.5rem)` 높이 계산은
+  // 모아 둔다 — 헤더와 패널이 같은 판정을 읽어, 헤더 없는 화면에 패널만 남는 일이 없다. 빌더는 같은 57px(안쪽 `h-14` + 경계선) 자리에
+  // 전용 상단바(`features/build-common`의 `BuilderTopBar`)를 두므로 헤더를 빼도 `h-below-header` 높이 계산은
   // 그대로다(DESIGN.md Navigation 절). 판정은 경로 매칭 대신 pathname 으로 한다 — `useRouterState`가 이미 헤더
   // 자신(SearchInlineExpand)·채팅 리스트에서 쓰는 방식이라 새 패턴을 들이지 않는다.
   const pathname = useRouterState({ select: (state) => state.location.pathname });

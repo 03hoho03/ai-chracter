@@ -8,7 +8,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { EyeIcon, EyeOffIcon } from "lucide-react";
 import { useForm } from "react-hook-form";
 
-import { sessionKeys } from "@/entities/session";
+import { clearViewerQueries, sessionKeys } from "@/entities/session";
 
 import { useLoginMutation } from "../api/useLoginMutation";
 import {
@@ -53,6 +53,9 @@ export function LoginForm({ redirectTo, errorCode, errorMethod }: LoginFormProps
     setIsRedirectErrorDismissed(true);
     try {
       await loginMutation.mutateAsync(values);
+      // 세션을 잃은 탭(다른 탭의 로그아웃·만료)은 앞 계정의 캐시를 그대로 든 채 여기로 온다 — 세션 소실 처리는 보던
+      // 화면과 입력을 지키려고 세션만 비운다. 새 세션을 읽기 전에 비워 이 계정에게 앞 계정의 값이 보이지 않게 한다.
+      clearViewerQueries(queryClient);
       await queryClient.invalidateQueries({ queryKey: sessionKeys.current() });
       await navigate({ to: redirectTo || "/" });
     } catch (error) {
@@ -75,7 +78,7 @@ export function LoginForm({ redirectTo, errorCode, errorMethod }: LoginFormProps
         }}
       >
         {!!bannerMessage && (
-          <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive-text">
+          <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm break-keep wrap-break-word text-destructive-text">
             {bannerMessage}
           </p>
         )}

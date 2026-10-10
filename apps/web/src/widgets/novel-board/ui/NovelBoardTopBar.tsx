@@ -30,7 +30,7 @@ type CreateChapterAction = {
 };
 
 /**
- * 편집 보드의 상단 바. 전역 헤더 대신 같은 56px(`h-14`) 자리를 쓰는 전용 바이고 클래스는 빌더 상단 바와 같다
+ * 편집 보드의 상단 바. 전역 헤더 대신 같은 자리(바깥 `border-b` + 안쪽 `h-14`, 총 57px)를 쓰는 전용 바이고 클래스는 빌더 상단 바와 같다
  * (안쪽 바가 뷰포트를 꽉 채우고 `px-4 sm:px-6`만 — 보드에는 좌측 패널이 없다) — 그 아래 `h-below-header` 높이 계산이
  * 그대로 맞는다.
  *
@@ -40,7 +40,7 @@ type CreateChapterAction = {
  */
 export function NovelBoardTopBar({ novelId, title, autosaveNotice, versions, create, publishAction }: NovelBoardTopBarProps) {
   return (
-    <header className="sticky top-0 z-30 h-14 shrink-0 border-b border-border bg-background">
+    <header className="sticky top-0 z-30 shrink-0 border-b border-border bg-background">
       <div className="flex h-14 items-center gap-2 px-4 sm:gap-3 sm:px-6">
         <Button asChild variant="ghost" size="icon" aria-label="작품 정보" className="shrink-0">
           <Link to="/novels/$novelId" params={{ novelId }}>

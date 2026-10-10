@@ -39,7 +39,7 @@ import {
 } from "@/entities/clover";
 import { useContentDetailQuery } from "@/entities/content";
 import { IdentityRequiredNotice } from "@/entities/identity";
-import { useSessionQuery } from "@/entities/session";
+import { SessionEndedNotice, useSessionQuery } from "@/entities/session";
 import { useConfirmCloverSpend } from "@/features/confirm-clover-spend";
 import { NarrationMarkerButton } from "@/features/insert-narration-marker";
 import { ReportChatMessageModal } from "@/features/report-chat-message";
@@ -97,8 +97,11 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   const cloverBalance = clover?.balance ?? 0;
   const isPremiumRoom = room !== undefined && isPremiumChatModel(room.effectiveChatModel);
   const isCloverShort = room?.turnCost !== undefined && isCloverInsufficient(cloverBalance, room.turnCost);
+  // 세션을 잃은 뒤에는 잔량 줄을 내린다 — 잔액을 다시 받는 조회가 401 로 실패해도 옛 값이 캐시에 남아, 로그인이 풀린
+  // 화면에 잔량 줄이 그대로 남는다.
   const shouldShowClover =
     clover !== undefined &&
+    me !== undefined &&
     shouldShowCloverBalance({
       spendConfirmedToday: clover.spendConfirmedToday,
       hasCloverShortage: isCloverShort,
@@ -229,11 +232,14 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
     })),
   };
 
-  // no-nested-ternary — 네 갈래(레이트리밋/앞 턴 진행 중/거절/실패)를 렌더 전에 미리 갈라 둔다.
+  // no-nested-ternary — 갈래(세션 끝남/레이트리밋/본인인증/앞 턴 진행 중/거절/실패)를 렌더 전에 미리 갈라 둔다.
   // 제한 거부는 실패 배너를 띄우지 않는다 — 다시 시도해도 안 풀리고, 안내는 입력창 자리가 맡는다.
   let errorNotice: ReactNode = null;
   if (status.kind === "error" && !isRestricted) {
-    if (status.rateLimit) {
+    if (status.sessionEnded) {
+      // 응답 생성이 실패한 것이 아니라 로그인이 풀렸거나 정지된 것이다. 이 탭에서 다시 보내도 같은 거절이라 재시도를 두지 않는다.
+      errorNotice = <SessionEndedNotice reason={status.sessionEnded} />;
+    } else if (status.rateLimit) {
       errorNotice = (
         <RateLimitNotice rateLimit={status.rateLimit} surface={isPremiumRoom ? "premiumChat" : "chat"} onRetry={retry} />
       );
@@ -268,7 +274,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
     } else {
       errorNotice = (
         <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5">
-          <span className="text-xs text-destructive-text">응답 생성에 실패했습니다 · 다시 시도</span>
+          <span className="text-xs break-keep text-destructive-text">응답 생성에 실패했습니다 · 다시 시도</span>
           <Button variant="destructive" size="sm" onClick={retry}>
             <RotateCw aria-hidden className="size-3.5" />
             다시 시도

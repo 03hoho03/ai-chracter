@@ -33,8 +33,10 @@ const LINK_CLASS =
  * `primary`가 아니라 밝기 천장(`text-foreground`)과 굵기로 올린다 — `primary`는 이 시스템의 유일한 강조색이다.
  *
  * 콘텐츠 상세화면의 `lg` 미만에서는 플레이 바가 바닥에 `fixed`로 붙고 이 푸터가 그 화면 문서의 마지막
- * 요소다. 그래서 바 높이(p-4 16px×2 + 버튼 48px ≈ 80px + safe-area)만큼의 아래 여백을 여기서 져야 마지막
- * 줄이 바에 가려지지 않는다. `lg`부터는 바가 본문 안 인라인으로 돌아가 보통 여백으로 되돌린다.
+ * 요소다. 그래서 바 높이 + safe-area 만큼의 아래 여백을 여기서 져야 마지막 줄이 바에 가려지지 않는다. 바는 캐릭터가
+ * 81px(경계선 1 + p-4 16×2 + 버튼 48), 스토리가 시작 설정 이름 한 줄이 더해져 약 104px(390px 실측 103.66)이라 큰 쪽에
+ * 맞춘 7rem(112px)을 둔다 — 경로가 작품 종류를 가르지 않아 캐릭터 화면은 바 위로 약 31px가 빈다. `lg`부터는 바가 본문
+ * 안 인라인으로 돌아가 보통 여백으로 되돌린다.
  */
 export function SiteFooter() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
@@ -45,7 +47,7 @@ export function SiteFooter() {
       <div
         className={cn(
           "mx-auto flex max-w-5xl flex-col gap-3 px-4 pt-6 sm:px-6",
-          hasFixedPlayBarBelow ? "pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-4-safe" : "pb-4-safe",
+          hasFixedPlayBarBelow ? "pb-[calc(7rem+env(safe-area-inset-bottom))] lg:pb-4-safe" : "pb-4-safe",
         )}
       >
         <nav aria-label="서비스 정보">

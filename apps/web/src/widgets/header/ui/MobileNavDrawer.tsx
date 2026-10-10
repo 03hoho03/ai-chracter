@@ -1,7 +1,7 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@ai-character-chat/ui/components/sheet";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { Bell, ChevronDown, LogIn, LogOut, Menu } from "lucide-react";
 import { Fragment, useId, useRef, useState, type ComponentProps } from "react";
 import { toast } from "sonner";
@@ -16,7 +16,7 @@ import {
   useNotificationUnreadCountQuery,
   type NotificationResponse,
 } from "@/entities/notification";
-import { useSessionQuery } from "@/entities/session";
+import { loginRedirectTarget, useSessionQuery } from "@/entities/session";
 import { useLogoutMutation } from "@/features/logout";
 import { MAIN_CONTENT_ID } from "@/shared/config/landmarks";
 import { isPublicSupportDestinationKey } from "@/shared/config/supportDestinations";
@@ -25,11 +25,12 @@ import { assertNever } from "@/shared/lib/assertNever";
 import { NotificationFeedStatus } from "./NotificationFeedStatus";
 import { ContentTypeToggle } from "./ContentTypeToggle";
 import { ProfileDestinationLink } from "./ProfileDestinationLink";
-import { RecentChatsSection } from "./RecentChatsSection";
+import { RECENT_CHATS_HEAD_ATTR, RecentChatsSection } from "./RecentChatsSection";
 import { SIDE_PANEL_ID } from "./SidePanel";
 import { SIDE_PANEL_NAV_ROW_CLASS } from "./sidePanelRowClass";
 import { useIsSidePanelLayout } from "../lib/useIsSidePanelLayout";
 import { PROFILE_MENU_DESTINATION_GROUPS, SIDE_PANEL_DESTINATION_KEYS } from "../model/profileDestinations";
+import { getSidePanelScreen } from "../model/sidePanelCollapse";
 import { isProfileDestinationVisible } from "../model/profileDestinationVisibility";
 
 const DIVIDER_CLASS = "my-1 h-px shrink-0 border-0 bg-border";
@@ -68,6 +69,9 @@ const NOTIFICATION_ACTION_ROW_CLASS = cn(NOTIFICATION_ROW_CLASS, "flex-col items
  */
 export function MobileNavDrawer({ className }: { className?: string }) {
   const { data: me, isPending: isSessionPending } = useSessionQuery();
+  // 헤더의 "로그인"과 같은 규칙으로 로그인 뒤 돌아올 곳을 싣는다.
+  const loginRedirect = useRouterState({ select: (state) => loginRedirectTarget(state.location) });
+  const isChatRoom = useRouterState({ select: (state) => getSidePanelScreen(state.location.pathname) === "chat" });
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
   const logout = useLogoutMutation();
@@ -111,11 +115,16 @@ export function MobileNavDrawer({ className }: { className?: string }) {
         side="left"
         onOpenAutoFocus={(event) => {
           // 시트 안에서 DOM 순서상 첫 현재 화면 링크(`aria-current="page"` — 노벨 pill·패널 내비·현재 방·계정·고객센터
-          // 목적지 어느 것이든)에서 시작한다. 없으면 Radix 기본(첫 버튼 — 로그인 상태면 유형 전환)에 맡긴다.
-          const current = contentRef.current?.querySelector<HTMLElement>('a[aria-current="page"]');
-          if (!current) return;
+          // 목적지 어느 것이든)에서 시작한다. 채팅방인데 현재 방 행이 없으면(처음 열 때는 최근 대화가 아직 로딩 중이고,
+          // 현재 방이 최근 10개 밖일 수도 있다) 현재 방이 놓일 최근 대화 섹션 이름에서 시작한다 — 첫 버튼(유형 전환)에서
+          // 시작하면 지금 있는 곳과 무관한 자리에서 읽기가 시작된다. 목록이 도착한 뒤 포커스를 옮기지는 않는다(그새
+          // 사용자가 움직였을 수 있다). 그 밖의 화면에서 현재 링크가 없으면 Radix 기본(첫 버튼)에 맡긴다.
+          const content = contentRef.current;
+          const current = content?.querySelector<HTMLElement>('a[aria-current="page"]');
+          const target = current ?? (isChatRoom ? content?.querySelector<HTMLElement>(`[${RECENT_CHATS_HEAD_ATTR}]`) : null);
+          if (!target) return;
           event.preventDefault();
-          current.focus();
+          target.focus();
         }}
         onCloseAutoFocus={(event) => {
           const isNavigation = isClosingForNavigationRef.current;
@@ -145,7 +154,7 @@ export function MobileNavDrawer({ className }: { className?: string }) {
 
         <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-3">
           {!me && (
-            <Link to="/login" onClick={handleNavigate} className={SIDE_PANEL_NAV_ROW_CLASS}>
+            <Link to="/login" search={{ redirect: loginRedirect }} onClick={handleNavigate} className={SIDE_PANEL_NAV_ROW_CLASS}>
               <LogIn aria-hidden />
               로그인
             </Link>

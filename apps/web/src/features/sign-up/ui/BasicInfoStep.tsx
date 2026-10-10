@@ -50,7 +50,7 @@ export function BasicInfoStep({ onSubmit, isSubmitting }: BasicInfoStepProps) {
       }}
     >
       {errors.root && (
-        <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive-text">
+        <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm break-keep wrap-break-word text-destructive-text">
           {errors.root.message}
         </p>
       )}

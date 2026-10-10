@@ -5,9 +5,9 @@ import { ChevronRight, ImageOff } from "lucide-react";
 import { useId } from "react";
 
 import { useRecentChatRoomListQuery, type MyChatRoomListItem } from "@/entities/chat-room";
+import { loginRedirectTarget } from "@/entities/session";
 import { formatRelativeTime } from "@/shared/lib/time/formatRelativeTime";
 
-import { loginRedirectTarget } from "../lib/loginRedirectTarget";
 import { SIDE_PANEL_ROW_CLASS } from "./sidePanelRowClass";
 
 /** 이 섹션이 놓이는 표면. `muted` 는 `popover`(드로어)와 같은 값이라 거기서는 썸네일 웰·스켈레톤이 사라진다 — 표면마다
@@ -20,6 +20,10 @@ const WELL_CLASS: Record<RecentChatsSurface, string> = {
 };
 
 const SKELETON_ROW_KEYS = [0, 1, 2, 3, 4];
+
+/** 섹션 이름에 다는 속성. 드로어가 이 이름으로 첫 포커스 자리를 찾으므로 두 곳이 같은 상수를 쓴다 — 한쪽만 바꾸면
+ * 조용히 Radix 기본 포커스로 떨어진다. */
+export const RECENT_CHATS_HEAD_ATTR = "data-recent-chats-head";
 
 type RecentChatsSectionProps = {
   /** 로그인한 사용자 id. 없으면 비로그인 안내를 그린다. */
@@ -41,6 +45,9 @@ type RecentChatsSectionProps = {
  * 섹션 이름은 제목 요소가 아니라 문단이다 — 패널은 DOM 에서 본문 앞이라 h2 를 쓰면 페이지 h1 보다 먼저 나온다. 목록이
  * `aria-labelledby` 로 이 이름을 가리킨다. "전체 보기"는 목록 끝이 아니라 머리에 둔다 — 낮은 화면에서는 목록 끝이 패널
  * 스크롤 아래로 가서 거기 두면 스크롤해야 닿는다.
+ *
+ * 섹션 이름은 프로그램 포커스만 받는다(`tabIndex={-1}`, Tab 순서 밖) — 채팅방에서 드로어를 처음 열면 목록이 아직
+ * 로딩 중이라 현재 방 행이 없어, 드로어가 그 대신 여기(`RECENT_CHATS_HEAD_ATTR`)로 포커스를 보낸다.
  */
 export function RecentChatsSection({ viewerId, isSessionPending, surface, onNavigate, className }: RecentChatsSectionProps) {
   const labelId = useId();
@@ -49,7 +56,11 @@ export function RecentChatsSection({ viewerId, isSessionPending, surface, onNavi
   return (
     <section aria-labelledby={labelId} className={cn("mt-4", className)}>
       <div className="flex h-8 items-center justify-between pr-2 pl-4">
-        <p id={labelId} className="text-xs font-medium text-muted-foreground">
+        <p
+          id={labelId}
+          tabIndex={-1}
+          {...{ [RECENT_CHATS_HEAD_ATTR]: "" }}
+          className="text-xs font-medium text-muted-foreground outline-none">
           최근 대화
         </p>
         {!isSignedOut && (
@@ -79,8 +90,7 @@ export function RecentChatsSection({ viewerId, isSessionPending, surface, onNavi
  * 위해서다(같은 목적지 진입점이 한 화면에 둘이다). outline 의 hover 채움 `muted` 는 이 표면에서 보이지 않아 `secondary` 로
  * 덮는다. */
 function SignedOutNotice({ onNavigate }: { onNavigate: (() => void) | undefined }) {
-  const location = useRouterState({ select: (state) => state.location });
-  const redirect = loginRedirectTarget(location);
+  const redirect = useRouterState({ select: (state) => loginRedirectTarget(state.location) });
 
   return (
     <div className="flex flex-col items-start gap-2 px-4 py-1">

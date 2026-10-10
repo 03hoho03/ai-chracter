@@ -15,8 +15,9 @@ type BuilderTopBarProps = {
 
 /**
  * 빌더 라우트는 전역 Header(`routes/__root.tsx`) 대신 이
- * 전용 상단바를 쓴다(크랙 실측 기준). 같은 56px(`h-14`) 자리를 차지하므로 BuilderLayout의
- * `calc(100dvh-3.5rem)` 높이 계산이 그대로 유지된다 — 헤더 자리만 바뀌고 높이 계산식은 그대로다.
+ * 전용 상단바를 쓴다(크랙 실측 기준). 전역 헤더와 같은 구조(바깥 `border-b` + 안쪽 `h-14`, 총 57px)라 같은 자리를
+ * 차지하므로 BuilderLayout의 `h-below-header` 높이 계산이 그대로 맞는다 — `h-14`와 `border-b`를 한 요소에 걸면
+ * border-box 라 56px 가 되어 그 아래 화면이 1px 짧아진다.
  *
  * 안쪽 바가 뷰포트를 꽉 채운다(`mx-auto max-w-*` 없이 `px-4 sm:px-6`만 — 전역 헤더 안쪽 바와 같은 클래스이고, 빌더
  * 라우트에는 좌측 패널이 없어 그 폭이 뷰포트다). lg 이상에서는
@@ -31,7 +32,7 @@ type BuilderTopBarProps = {
  */
 export function BuilderTopBar({ title, actions, autosaveNotice }: BuilderTopBarProps) {
   return (
-    <header className="sticky top-0 z-30 h-14 shrink-0 border-b border-border bg-background">
+    <header className="sticky top-0 z-30 shrink-0 border-b border-border bg-background">
       <div className="flex h-14 items-center gap-2 px-4 sm:gap-3 sm:px-6">
         <Button asChild variant="ghost" size="icon" aria-label="뒤로가기" className="shrink-0 pointer-coarse:size-10">
           <Link to="/my">

@@ -45,7 +45,13 @@ export function EmailVerifyStep({ onSubmit, isSubmitting }: EmailVerifyStepProps
     if (isValid) onSubmit();
   }
 
+  // 쿨다운·전송 중 비활성은 `disabled`가 아니라 `aria-disabled`다 — `disabled`면 버튼이 탭 순회에서 빠지고, 누르는
+  // 순간 붙으면 포커스가 `<body>`로 떨어져 남은 시간 안내(버튼 라벨)가 키보드 사용자에게 닿지 않는다(apps/web/CLAUDE.md
+  // 포커스 절). pointer-events-none 은 포인터만 막으므로 Enter·Space 는 핸들러 첫 줄에서 무시한다.
+  const isResendBlocked = secondsLeft > 0 || resendMutation.isPending;
+
   async function handleResend() {
+    if (isResendBlocked) return;
     try {
       await resendMutation.mutateAsync(toResendVerificationCodeRequest(email));
       setSecondsLeft(RESEND_COOLDOWN_SECONDS);
@@ -120,8 +126,9 @@ export function EmailVerifyStep({ onSubmit, isSubmitting }: EmailVerifyStepProps
           type="button"
           variant="ghost"
           size="sm"
+          aria-disabled={isResendBlocked}
+          className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
           onClick={() => void handleResend()}
-          disabled={secondsLeft > 0 || resendMutation.isPending}
         >
           {secondsLeft > 0 ? `재전송 (${secondsLeft}초)` : "인증코드 재전송"}
         </Button>

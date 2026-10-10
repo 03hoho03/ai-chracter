@@ -353,7 +353,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
   return (
     <FormProvider {...form}>
       {/* 빌더는 전역 Header 대신 이 전용 상단바를 쓴다(같은
-          56px 자리, `routes/__root.tsx`가 `/builder` 경로에서 Header를 뺀다). 저장 계약("자동저장")을
+          57px 자리, `routes/__root.tsx`가 `/builder` 경로에서 Header를 뺀다). 저장 계약("자동저장")을
           여기서 한 번 말해 둔다 — 안 그러면 사용자가 그 단어를 처음 만나는 자리가 빨간 실패
           토스트다. */}
       <BuilderTopBar
@@ -393,7 +393,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
             >
               {rejectionReason !== undefined && draftId !== undefined && (
                 <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
-                  <div>
+                  <div className="min-w-0 break-keep wrap-break-word">
                     <p className="text-sm font-medium text-destructive-text">발행이 거부되었어요</p>
                     <p className="mt-1 text-sm text-muted-foreground">{rejectionReason}</p>
                   </div>

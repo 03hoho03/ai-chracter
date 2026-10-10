@@ -22,7 +22,7 @@ import { IdentityRequiredNotice } from "@/entities/identity";
 import type { MediaTagImages } from "@/entities/media-book";
 import { usePersonasQuery } from "@/entities/persona";
 import { buildPreviewStartState, usePreviewSessionQuery, useStartPreviewMutation } from "@/entities/preview-session";
-import { useSessionQuery } from "@/entities/session";
+import { getSessionEndReason, SessionEndedNotice, useSessionQuery, type SessionEndReason } from "@/entities/session";
 import { PreviewCloseHeader } from "@/features/build-common";
 import { useConfirmCloverSpend } from "@/features/confirm-clover-spend";
 import { NarrationMarkerButton } from "@/features/insert-narration-marker";
@@ -88,6 +88,8 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
   const isSending = status.kind === "sending";
   const [text, setText] = useState("");
   const [isStarting, setIsStarting] = useState(false);
+  // 미리보기 세션을 만드는 요청이 세션이 끝나 거절됐을 때의 까닭. 전송이 거절됐을 때(`status.sessionEnded`)와 같은 안내를 띄운다.
+  const [startSessionEnded, setStartSessionEnded] = useState<SessionEndReason>();
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -98,6 +100,7 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
   // 마운트→언마운트→재마운트 취약성은 뮤테이션 훅 자체의 성질이라 여전히 적용된다.
   async function startPreview(): Promise<string | undefined> {
     setIsStarting(true);
+    setStartSessionEnded(undefined);
     try {
       const nextState = await startMutation.mutateAsync({
         payload: getPayload(),
@@ -105,8 +108,12 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
       });
       setPreviewSessionId(nextState.previewSessionId);
       return nextState.previewSessionId;
-    } catch {
-      toast.error("미리보기 세션을 시작하지 못했어요. 잠시 후 다시 시도해주세요.");
+    } catch (error) {
+      // 로그인이 풀렸거나 정지돼 거절된 것이면 "잠시 후 다시 시도"가 거짓이다(기다려도 같은 거절) — 첫 전송이 이 요청에서
+      // 막혀도 세션이 있을 때의 전송 거절과 같은 안내(다시 로그인 / 문의처)를 띄운다.
+      const sessionEnded = getSessionEndReason(error);
+      if (sessionEnded) setStartSessionEnded(sessionEnded);
+      else toast.error("미리보기 세션을 시작하지 못했어요. 잠시 후 다시 시도해주세요.");
       return undefined;
     } finally {
       setIsStarting(false);
@@ -152,9 +159,13 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
     void sendWithSession(reply);
   }
 
-  // no-nested-ternary — 세 갈래(레이트리밋/거절/실패)를 렌더 전에 미리 갈라 둔다.
+  // no-nested-ternary — 갈래(세션 끝남/레이트리밋/본인인증/거절/실패)를 렌더 전에 미리 갈라 둔다.
   let errorNotice: ReactNode = null;
-  if (status.kind === "error") {
+  const sessionEnded = startSessionEnded ?? (status.kind === "error" ? status.sessionEnded : undefined);
+  if (sessionEnded) {
+    // 응답 생성이 실패한 것이 아니라 로그인이 풀렸거나 정지된 것이다.
+    errorNotice = <SessionEndedNotice reason={sessionEnded} />;
+  } else if (status.kind === "error") {
     if (status.rateLimit) {
       errorNotice = <RateLimitNotice rateLimit={status.rateLimit} surface="preview" />;
     } else if (status.identityRequired) {
@@ -170,7 +181,7 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
     } else {
       errorNotice = (
         <div role="alert" className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5">
-          <span className="text-xs text-destructive-text">응답 생성에 실패했습니다.</span>
+          <span className="text-xs break-keep text-destructive-text">응답 생성에 실패했습니다.</span>
         </div>
       );
     }

@@ -18,6 +18,6 @@ import { isSuspendedError } from "../model/suspendedAccount";
 export function resetSessionIfLost(queryClient: QueryClient, error: unknown): void {
   if (!isSessionLostError(error) && !isSuspendedError(error)) return;
   if (queryClient.getQueryData(sessionKeys.current()) === undefined) return;
-  // 로그아웃과 같은 이유로 resetQueries다(`features/logout/api/useLogoutMutation.ts`).
+  // 로그아웃과 같은 이유로 resetQueries다(`./clearViewerSession.ts`).
   void queryClient.resetQueries({ queryKey: sessionKeys.current() });
 }

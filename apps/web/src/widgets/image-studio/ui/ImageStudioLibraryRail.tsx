@@ -45,11 +45,11 @@ export function ImageStudioLibraryRail({ isOpen, onOpenChange, onImageDeleted }:
   return (
     <Sheet open={isOpen} onOpenChange={onOpenChange}>
       {/* 보관함 시트는 헤더 아래까지(긴 그리드). ChatMorePanel의
-          top-below-chat-header(118px)는 전역 헤더 + 채팅 헤더를 뺀 값이라 여기엔 안 맞는다(이 화면 위쪽 크롬은 전역 헤더 h-14 한 줄뿐).
-          정확한 값은 브라우저 실측으로 정하기로 하고 지금은 top-14로 둔다. */}
+          top-below-chat-header(118px)는 전역 헤더 + 채팅 헤더를 뺀 값이라 여기엔 안 맞는다(이 화면 위쪽 크롬은 전역 헤더 한 줄뿐).
+          윗변은 헤더 경계선 바로 아래(57px)다 — 옵션 시트의 상한(max-h-below-header)과 같은 선. */}
       <SheetContent
         side="bottom"
-        className="top-14 rounded-t-xl"
+        className="top-below-header rounded-t-xl"
         // 브라우저 실검증 — 이 시트는 SheetTrigger가 아니라 셸의 별도 버튼이 onOpenChange(true)로
         // 여는데, radix Dialog는 SheetTrigger로 열렸을 때만 트리거에 포커스를 자동 복원한다.
         // 트리거가 시트 트리 밖에 있어 복원 대상이 없으므로 직접 지정한다.
