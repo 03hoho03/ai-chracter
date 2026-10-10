@@ -44,7 +44,8 @@ export function applyStreamEvent(
             endingStatus: {
               reached: true,
               endingId: event.endingId,
-              reachedAtTurn: prev.turnCount,
+              // 서버는 엔딩을 이 턴의 번호(턴 수 + 1)에 기록하는데, 턴 수를 올리는 done 은 이 이벤트 뒤에 온다.
+              reachedAtTurn: prev.turnCount + 1,
               epilogue: event.epilogue ?? undefined,
               mediaTagImages: event.mediaTagImages,
             },
