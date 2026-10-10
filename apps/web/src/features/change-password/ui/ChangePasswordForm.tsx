@@ -6,7 +6,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
-import { LOGIN_LINK_ERROR_TYPE } from "@/entities/session";
+import { LOGIN_LINK_ERROR_TYPE, loginRedirectTarget } from "@/entities/session";
 
 import { useChangePasswordMutation } from "../api/useChangePasswordMutation";
 import { getChangePasswordErrorBanner } from "../model/changePasswordErrorBanner";
@@ -32,8 +32,8 @@ export function ChangePasswordForm() {
   });
 
   const changePasswordMutation = useChangePasswordMutation();
-  // 다시 로그인한 뒤 이 화면으로 돌아오게 한다(`requireSession`이 `redirect`에 현재 href를 싣는 것과 같다).
-  const currentHref = useRouterState({ select: (state) => state.location.href });
+  // 다시 로그인한 뒤 이 화면으로 돌아오게 한다(다른 로그인 링크와 같은 `loginRedirectTarget` 규칙).
+  const redirect = useRouterState({ select: (state) => loginRedirectTarget(state.location) });
 
   async function handleValidSubmit(values: ChangePasswordFormValues) {
     clearErrors("root");
@@ -67,7 +67,7 @@ export function ChangePasswordForm() {
           {errors.root.type === LOGIN_LINK_ERROR_TYPE && (
             <Link
               to="/login"
-              search={{ redirect: currentHref }}
+              search={{ redirect }}
               className="mt-2 inline-block rounded-sm font-medium underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               다시 로그인하기

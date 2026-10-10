@@ -6,6 +6,7 @@ export type { EnabledFeature } from "./api/sessionQueryOptions";
 export { hasEnabledFeature } from "./model/enabledFeature";
 export { isWebnovelOpen } from "./model/webnovelOpen";
 export { requireSession } from "./lib/requireSession";
+export { loginRedirectTarget } from "./lib/loginRedirectTarget";
 export { resetSessionIfLost } from "./lib/resetSessionIfLost";
 export { clearViewerQueries } from "./lib/clearViewerSession";
 export { useClearViewerSession } from "./lib/useClearViewerSession";

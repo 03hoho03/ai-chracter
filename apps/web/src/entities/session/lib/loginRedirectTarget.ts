@@ -1,5 +1,7 @@
-/** 로그인·가입·온보딩 화면. 여기서 로그인 링크가 현재 주소를 `redirect` 로 넘기면 로그인 뒤 다시 로그인 화면으로 돌아온다. */
-const AUTH_FLOW_PATH = /^\/(?:login|signup|onboarding\/[^/]+)$/;
+/** 로그인·가입·온보딩·비밀번호 찾기·재설정 화면. 여기서 로그인 링크가 현재 주소를 `redirect` 로 넘기면 로그인 뒤 다시
+ * 그 화면으로 돌아온다 — 재설정 화면은 주소에 재설정 토큰을 들고 있어, 넘기면 토큰이 로그인 화면 주소와 방문 기록으로
+ * 옮겨 간다. */
+const AUTH_FLOW_PATH = /^\/(?:login|signup|forgot-password|reset-password|onboarding\/[^/]+)$/;
 
 type LoginRedirectLocation = {
   pathname: string;

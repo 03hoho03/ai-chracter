@@ -1,6 +1,7 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Link, useRouterState } from "@tanstack/react-router";
 
+import { loginRedirectTarget } from "../lib/loginRedirectTarget";
 import type { SessionEndReason } from "../model/sessionEndReason";
 import { SUSPENDED_ERROR_MESSAGE } from "../model/suspendedAccount";
 
@@ -15,7 +16,7 @@ const MESSAGE_CLASS = "min-w-0 flex-1 basis-48 text-xs break-keep text-muted-for
  * 로그인이 풀렸으면 로그인 화면으로 보내고, 로그인 뒤 지금 주소로 돌아오게 한다. 화면에 남은 내 메시지는 서버가 거절해
  * 저장되지 않았으므로 그렇다고 말한다(다시 들어오면 사라진다). 정지는 다시 로그인해도 풀리지 않아 링크 없이 문의처만 말한다. */
 export function SessionEndedNotice({ reason }: { reason: SessionEndReason }) {
-  const href = useRouterState({ select: (state) => state.location.href });
+  const redirect = useRouterState({ select: (state) => loginRedirectTarget(state.location) });
 
   if (reason === "suspended") {
     return (
@@ -29,7 +30,7 @@ export function SessionEndedNotice({ reason }: { reason: SessionEndReason }) {
     <div role="status" className={NOTICE_CLASS}>
       <p className={MESSAGE_CLASS}>로그인이 풀렸어요. 보낸 메시지는 전달되지 않았어요.</p>
       <Button asChild variant="outline" size="sm">
-        <Link to="/login" search={{ redirect: href }}>
+        <Link to="/login" search={{ redirect }}>
           다시 로그인
         </Link>
       </Button>
