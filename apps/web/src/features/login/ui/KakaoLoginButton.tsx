@@ -27,8 +27,12 @@ function KakaoSymbol() {
  * 레이블 `#191919` 다. 이 버튼은 배포 SVG 를 따른다(노랑 위 글자 대비는 `#191919` 13.75, 본문 값 12.52 로 둘 다 충분).
  *
  * 호버에서도 색을 바꾸지 않는다. 가이드는 정해진 색 밖의 색을 금지하고 호버 변형을 따로 두지 않는다. 누름
- * 피드백은 `Button` 베이스의 `active:translate-y-px`가 진다. */
-const KAKAO_BRAND_COLOR_CLASSNAME = "bg-[#FEE500] text-[#191919] hover:bg-[#FEE500]";
+ * 피드백은 `Button` 베이스의 `active:translate-y-px`가 진다.
+ *
+ * 포커스 때 보더도 노랑으로 칠한다. `Button` 베이스가 포커스에서 투명 보더를 `ring` 색으로 칠하는데, `primary` 채움은
+ * 같은 색이라 채움이 1px 넓어진 것으로만 보이지만 노랑 위에서는 채움 안쪽에 1px 핑크 선이 남는다. 노랑으로 칠하면
+ * `primary` 버튼과 같은 모양(채움이 보더 끝까지 → 2px 틈 → 2px 아웃라인)이 된다. */
+const KAKAO_BRAND_COLOR_CLASSNAME = "bg-[#FEE500] text-[#191919] hover:bg-[#FEE500] focus-visible:border-[#FEE500]";
 
 /** 카카오 로그인 버튼. `packages/ui`의 variant로 두지 않고 이 슬라이스에만 둔다 — 공용 어휘가 되면 노랑이
  * 다른 화면으로 번질 길이 생긴다.
