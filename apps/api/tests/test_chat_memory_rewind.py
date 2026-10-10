@@ -35,6 +35,7 @@ from api.db.models import (
     ChatMessageRole,
     ChatRoom,
     ChatRoomMemorySnapshot,
+    ChatTurn,
     CloverLedger,
     CloverLot,
     CloverSpendAllocation,
@@ -53,6 +54,7 @@ from factories import (
     _clear_llm_override,
     _get_genre,
     _login_as,
+    _make_chat_turn,
     _make_published_character,
     _make_user,
     _memory_version,
@@ -672,6 +674,39 @@ async def test_a_room_deleted_while_a_fold_holds_it_is_deleted_cleanly(committed
     async with async_sessionmaker(committed_engine, expire_on_commit=False)() as session:
         assert await session.scalar(sa.select(ChatRoom.id).where(ChatRoom.id == room.room_id)) is None
     assert await _committed_snapshots(committed_engine, room) == []
+
+
+async def test_a_room_deleted_while_a_turn_write_holds_it_takes_the_turn_record_too(
+    committed_engine: AsyncEngine,
+) -> None:
+    """턴 쓰기 구간은 방 행을 `FOR NO KEY UPDATE` 로 잡고 응답과 턴 기록을 한 커밋에 넣는다. 그 구간이 커밋 직전일 때 방을
+    지운다. 삭제가 기록을 방 행 잠금보다 먼저 지우면 그 뒤 커밋된 기록을 못 보고 방 DELETE 가 FK 위반으로 실패한다. 잠금을
+    먼저 잡으면 턴 커밋을 기다렸다가 그 기록까지 지운다."""
+    room = await _seed_committed_room(committed_engine, turns=1)
+    turn_write = async_sessionmaker(committed_engine, expire_on_commit=False)()
+    deletion: asyncio.Task[None] | None = None
+    try:
+        await turn_write.scalar(
+            sa.select(ChatRoom.id).where(ChatRoom.id == room.room_id).with_for_update(key_share=True)
+        )
+        turn_write.add(_make_chat_turn(room.room_id, assistant_message_id=room.turns[1][1].id))
+        await turn_write.flush()
+        deletion = asyncio.create_task(_delete_room_committed(committed_engine, room))
+        await _wait_until_a_lock_is_awaited(committed_engine)
+        await turn_write.commit()
+    finally:
+        await turn_write.close()
+        if deletion is not None:
+            await asyncio.wait_for(deletion, 10)
+
+    async with async_sessionmaker(committed_engine, expire_on_commit=False)() as session:
+        assert await session.scalar(sa.select(ChatRoom.id).where(ChatRoom.id == room.room_id)) is None
+        assert (
+            await session.scalar(
+                sa.select(sa.func.count()).select_from(ChatTurn).where(ChatTurn.chat_room_id == room.room_id)
+            )
+            == 0
+        )
 
 
 async def test_a_message_deleted_after_the_fold_read_its_input_voids_the_fold(
