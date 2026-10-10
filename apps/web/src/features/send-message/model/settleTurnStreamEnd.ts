@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 
 import { chatRoomKeys, restoreMessage } from "@/entities/chat-room";
 import type { ChatMessage } from "@/entities/chat-room";
+import { cloverKeys } from "@/entities/clover";
 
 type TurnStreamEnd = {
   /** 재생성이 스트림 전에 화면에서 지운 옛 답변. 재생성이 아니거나 지운 게 없으면 없다. */
@@ -31,4 +32,10 @@ export function settleTurnStreamEnd(
   // 내 방 목록의 미리보기·최근 활동 순서도 턴이 끝난 뒤에만 갱신한다 — 스트리밍 중에 다시 받으면 답 없는
   // 미리보기만 보인다. 실패로 끝나도 서버가 사용자 메시지를 이미 커밋했을 수 있어 성공 분기가 아니라 여기서 한다.
   void queryClient.invalidateQueries({ queryKey: chatRoomKeys.myLists() });
+  // 무료 일일분을 넘긴 턴은 클로버를 깎는다. 성공한 턴만이 아니라 정책 위반으로 끝난 턴(소모, 환급 없음)·
+  // 스트림 안 오류(환급)·끊김 뒤에도 잔액이 바뀌었을 수 있고, 끊긴 턴을 환급했는지는 서버만 알아서 끝날 때마다
+  // 무효화한다. `useSendMessage`가 전송·재생성·편집 셋을 모두 이 함수로 끝내므로 세 표면의 차감이 여기 한 곳에서 반영된다.
+  // `invalidateQueries`인 이유: 잔액은 "낡았다"이지 버리는 값이 아니다(`apps/web/CLAUDE.md` "데이터 / 상태" 절의
+  // 캐시 처방 기준).
+  void queryClient.invalidateQueries({ queryKey: cloverKeys.balance() });
 }

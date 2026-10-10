@@ -13,7 +13,6 @@ import {
 } from "@/entities/chat-room";
 import { chatStreamEventSchema } from "@/entities/chat-room";
 import type { ChatMessage, ChatRateLimit, ChatRoomState, ChatStreamRequest } from "@/entities/chat-room";
-import { cloverKeys } from "@/entities/clover";
 import type { CloverSpendConfirmOutcome } from "@/entities/clover";
 import { isIdentityVerificationRequiredError } from "@/entities/identity";
 import { isLegalReconsentRequiredError } from "@/entities/legal";
@@ -147,11 +146,6 @@ export function useSendMessage(
             hasCommitted = true;
             const archiveKey = imageArchiveKeyToInvalidate(imageArchive, message);
             if (archiveKey) void queryClient.invalidateQueries({ queryKey: archiveKey });
-            // 무료 일일분을 넘긴 턴은 클로버를 깎았다. 이 훅이
-            // 전송·재생성·편집 셋을 모두 태우므로 세 표면의 차감이 여기 한 곳에서 반영된다.
-            // `invalidateQueries`를 쓰는 이유: 잔액은 "낡았다"이지 "틀렸다"(버리는 값)가 아니다
-            // (`apps/web/CLAUDE.md` §데이터/상태의 판단 기준).
-            void queryClient.invalidateQueries({ queryKey: cloverKeys.balance() });
           },
         });
       }
