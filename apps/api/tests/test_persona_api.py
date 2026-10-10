@@ -8,15 +8,20 @@
 `test_auth_me_api.py`, 재동의 게이트 분류는 `test_consent_gate_endpoints.py`에 있다.
 """
 
+import asyncio
+import contextlib
 import uuid
 from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from api.db.models import ChatRoom, User, UserPersona
+from api.main import app
+from api.persona import router as persona_router
+from api.session.store import revoke_user_sessions
 from factories import _get_genre, _login_as, _make_published_character, _make_user
 
 
@@ -224,6 +229,20 @@ async def test_create_tenth_persona_succeeds(db_client: httpx.AsyncClient, db_se
     assert resp.status_code == 201
 
 
+@pytest.mark.parametrize("set_as_default", [True, False])
+async def test_create_first_persona_becomes_default_regardless_of_set_as_default(
+    set_as_default: bool, db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """프로필이 하나라도 있으면 기본이 있어야 하므로, 첫 프로필은 체크박스와 무관하게 기본이 된다."""
+    user = await _logged_in_user(db_client, db_session)
+    await db_session.commit()
+
+    resp = await db_client.post("/me/personas", json=_create_body(setAsDefault=set_as_default))
+
+    assert resp.status_code == 201
+    assert await _default_persona_id(db_session, user.id) == uuid.UUID(resp.json()["id"])
+
+
 @pytest.mark.parametrize(
     ("has_default", "set_as_default", "expect_new_is_default"),
     [
@@ -233,26 +252,26 @@ async def test_create_tenth_persona_succeeds(db_client: httpx.AsyncClient, db_se
         pytest.param(True, False, False, id="has-default-unchecked-keeps"),
     ],
 )
-async def test_create_persona_follows_set_as_default(
+async def test_create_persona_with_existing_profiles_follows_set_as_default(
     has_default: bool,
     set_as_default: bool,
     expect_new_is_default: bool,
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """BE는 받은 `setAsDefault`만 따른다(자체 추론 없음)."""
+    """프로필이 이미 있으면 받은 `setAsDefault`만 따른다. 기본이 비어 있는 예전 계정도 여기서 기본을 채우지 않는다 —
+    그 승격은 새 방을 만들 때 한다."""
     user = await _logged_in_user(db_client, db_session)
-    existing_default = None
+    existing = await _make_persona(db_session, user.id, name="원래 것")
     if has_default:
-        existing_default = await _make_persona(db_session, user.id, name="원래 기본")
-        user.default_persona_id = existing_default.id
+        user.default_persona_id = existing.id
     await db_session.commit()
 
     resp = await db_client.post("/me/personas", json=_create_body(setAsDefault=set_as_default))
 
     assert resp.status_code == 201
     new_id = uuid.UUID(resp.json()["id"])
-    expected = new_id if expect_new_is_default else (existing_default.id if existing_default else None)
+    expected = new_id if expect_new_is_default else (existing.id if has_default else None)
     assert await _default_persona_id(db_session, user.id) == expected
 
 
@@ -329,17 +348,22 @@ async def test_update_persona_of_other_user_returns_403_and_unknown_returns_404(
 # ---- DELETE /me/personas/{persona_id} ----
 
 
-async def test_delete_default_persona_nulls_referencing_rooms_and_default(
+async def test_delete_default_persona_promotes_the_oldest_remaining_and_nulls_referencing_rooms(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """프로필을 지우면 참조하던 방은 "선택 없음", 기본이었으면 기본도 없음.
-    다른 프로필을 가리키는 방은 그대로다."""
+    """기본을 지우면 남은 것 중 가장 먼저 만든 것이 기본이 된다. 지운 프로필을 쓰던 방은 승격된 것으로 바꾸지 않고
+    "선택 없음"이 되며, 다른 프로필을 가리키는 방은 그대로다.
+
+    지울 프로필을 전체에서 가장 오래된 것으로 둬야 "남은 것 중"이 갈린다. 남은 둘은 나중 것을 먼저 넣어 삽입 순서가
+    생성 시각 순서와 어긋나게 한다."""
     user = await _logged_in_user(db_client, db_session)
-    target = await _make_persona(db_session, user.id, name="지울 것")
-    kept = await _make_persona(db_session, user.id, name="남길 것")
+    now = datetime.now(UTC)
+    target = await _make_persona(db_session, user.id, name="지울 것", created_at=now - timedelta(minutes=3))
+    newer = await _make_persona(db_session, user.id, name="나중", created_at=now - timedelta(minutes=1))
+    older = await _make_persona(db_session, user.id, name="먼저", created_at=now - timedelta(minutes=2))
     user.default_persona_id = target.id
     referencing_room = await _make_room(db_session, user, persona_id=target.id)
-    other_room = await _make_room(db_session, user, persona_id=kept.id)
+    other_room = await _make_room(db_session, user, persona_id=newer.id)
     await db_session.commit()
 
     resp = await db_client.delete(f"/me/personas/{target.id}")
@@ -347,16 +371,36 @@ async def test_delete_default_persona_nulls_referencing_rooms_and_default(
     assert resp.status_code == 204
     assert await db_session.scalar(select(UserPersona.id).where(UserPersona.id == target.id)) is None
     assert await _room_persona_id(db_session, referencing_room.id) is None
-    assert await _room_persona_id(db_session, other_room.id) == kept.id
-    assert await _default_persona_id(db_session, user.id) is None
+    assert await _room_persona_id(db_session, other_room.id) == newer.id
+    assert await _default_persona_id(db_session, user.id) == older.id
+
+
+async def test_delete_default_persona_breaks_created_at_tie_by_id(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """생성 시각이 같으면 id가 작은 쪽이 기본이 된다 — 목록(`GET /me/personas`)과 같은 순서다."""
+    user = await _logged_in_user(db_client, db_session)
+    same_time = datetime.now(UTC) - timedelta(minutes=1)
+    target = await _make_persona(db_session, user.id, name="지울 것", created_at=same_time - timedelta(minutes=1))
+    tied = [await _make_persona(db_session, user.id, name=f"동률{index}", created_at=same_time) for index in range(2)]
+    user.default_persona_id = target.id
+    await db_session.commit()
+
+    resp = await db_client.delete(f"/me/personas/{target.id}")
+
+    assert resp.status_code == 204
+    assert await _default_persona_id(db_session, user.id) == min(persona.id for persona in tied)
 
 
 async def test_delete_non_default_persona_keeps_default(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
+    """기본이 아닌 걸 지우면 기본은 그대로다 — 지울 것을 더 오래된 것으로 둬야 "무조건 가장 오래된 것으로 승격"과 갈린다."""
     user = await _logged_in_user(db_client, db_session)
-    default = await _make_persona(db_session, user.id, name="기본")
-    target = await _make_persona(db_session, user.id, name="지울 것")
+    now = datetime.now(UTC)
+    target = await _make_persona(db_session, user.id, name="지울 것", created_at=now - timedelta(minutes=3))
+    await _make_persona(db_session, user.id, name="먼저", created_at=now - timedelta(minutes=2))
+    default = await _make_persona(db_session, user.id, name="기본", created_at=now - timedelta(minutes=1))
     user.default_persona_id = default.id
     await db_session.commit()
 
@@ -364,6 +408,25 @@ async def test_delete_non_default_persona_keeps_default(
 
     assert resp.status_code == 204
     assert await _default_persona_id(db_session, user.id) == default.id
+
+
+async def test_delete_last_persona_returns_409_and_keeps_it(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """프로필이 하나라도 있으면 하나는 남아야 한다. 화면이 409 문구를 그대로 보여 준다."""
+    user = await _logged_in_user(db_client, db_session)
+    only = await _make_persona(db_session, user.id)
+    user.default_persona_id = only.id
+    room = await _make_room(db_session, user, persona_id=only.id)
+    await db_session.commit()
+
+    resp = await db_client.delete(f"/me/personas/{only.id}")
+
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "마지막 대화 프로필은 지울 수 없어요. 다른 프로필을 먼저 만들어 주세요."
+    assert await db_session.scalar(select(UserPersona.id).where(UserPersona.id == only.id)) == only.id
+    assert await _default_persona_id(db_session, user.id) == only.id
+    assert await _room_persona_id(db_session, room.id) == only.id
 
 
 async def test_delete_persona_of_other_user_returns_403_and_unknown_returns_404(
@@ -387,17 +450,48 @@ async def test_delete_persona_of_other_user_returns_403_and_unknown_returns_404(
 # ---- PUT /me/default-persona ----
 
 
-async def test_set_default_persona_sets_and_clears(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+async def test_set_default_persona_sets_it(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
     user = await _logged_in_user(db_client, db_session)
+    current = await _make_persona(db_session, user.id, name="지금 기본")
     persona = await _make_persona(db_session, user.id)
+    user.default_persona_id = current.id
     await db_session.commit()
 
-    set_resp = await db_client.put("/me/default-persona", json={"personaId": str(persona.id)})
-    assert set_resp.status_code == 204
+    resp = await db_client.put("/me/default-persona", json={"personaId": str(persona.id)})
+
+    assert resp.status_code == 204
     assert await _default_persona_id(db_session, user.id) == persona.id
 
-    clear_resp = await db_client.put("/me/default-persona", json={"personaId": None})
-    assert clear_resp.status_code == 204
+
+@pytest.mark.parametrize("has_default", [True, False])
+async def test_clear_default_persona_with_profiles_returns_409(
+    has_default: bool, db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """프로필이 있으면 기본을 비울 수 없다 — 다른 프로필을 기본으로 지정하는 것만 된다. 기본이 비어 있는 예전 계정도
+    같은 응답이다(비우기를 "아무것도 안 바뀜"으로 통과시키지 않는다)."""
+    user = await _logged_in_user(db_client, db_session)
+    persona = await _make_persona(db_session, user.id)
+    if has_default:
+        user.default_persona_id = persona.id
+    await db_session.commit()
+
+    resp = await db_client.put("/me/default-persona", json={"personaId": None})
+
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "기본 대화 프로필은 비울 수 없어요. 다른 프로필을 기본으로 지정해 주세요."
+    assert await _default_persona_id(db_session, user.id) == (persona.id if has_default else None)
+
+
+async def test_clear_default_persona_without_profiles_is_allowed(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """프로필이 없으면 비울 기본도 없다 — 거절할 이유가 없어 그대로 204다."""
+    user = await _logged_in_user(db_client, db_session)
+    await db_session.commit()
+
+    resp = await db_client.put("/me/default-persona", json={"personaId": None})
+
+    assert resp.status_code == 204
     assert await _default_persona_id(db_session, user.id) is None
 
 
@@ -507,3 +601,68 @@ async def test_get_chat_room_exposes_persona_id(db_client: httpx.AsyncClient, db
 
     assert resp.status_code == 200
     assert resp.json()["personaId"] == str(persona.id)
+
+
+# ---- 동시 삭제 ----
+
+
+async def test_concurrent_deletes_of_the_last_two_personas_leave_one(
+    db_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """프로필 둘을 두 요청이 동시에 지워도 하나는 남는다. 개수를 센 직후 상대 요청을 잠깐 기다리게 해, 유저 행 잠금이
+    없으면 둘 다 "2개"를 보고 둘 다 지우는 엇갈림을 실제로 만든다. 잠금이 있으면 뒤 요청은 잠금에서 기다리다 앞 요청의
+    커밋 뒤에 1개를 세고 409가 된다.
+
+    롤백 공유 커넥션(`db_client`)은 두 요청이 한 트랜잭션을 써 잠금이 드러나지 않으므로 실제로 커밋하는 별도
+    커넥션에서 돌린다."""
+    factory = async_sessionmaker(db_engine, expire_on_commit=False)
+    user = _make_user()
+    async with factory() as db:
+        db.add(user)
+        await db.flush()
+        first = UserPersona(user_id=user.id, name="첫째")
+        second = UserPersona(user_id=user.id, name="둘째")
+        db.add_all([first, second])
+        await db.flush()
+        user.default_persona_id = first.id
+        await db.commit()
+
+    real_count = persona_router.count_personas
+    counted = 0
+    both_counted = asyncio.Event()
+
+    async def count_then_wait_for_the_other(db: AsyncSession, user_id: uuid.UUID) -> int:
+        nonlocal counted
+        count = await real_count(db, user_id)
+        counted += 1
+        if counted >= 2:
+            both_counted.set()
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(both_counted.wait(), 0.5)
+        return count
+
+    monkeypatch.setattr(persona_router, "count_personas", count_then_wait_for_the_other)
+    try:
+        transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+        async with (
+            httpx.AsyncClient(transport=transport, base_url="http://testserver") as one,
+            httpx.AsyncClient(transport=transport, base_url="http://testserver") as other,
+        ):
+            await _login_as(one, user.id)
+            await _login_as(other, user.id)
+            responses = await asyncio.gather(
+                one.delete(f"/me/personas/{first.id}"), other.delete(f"/me/personas/{second.id}")
+            )
+
+        assert sorted(response.status_code for response in responses) == [204, 409]
+        async with factory() as db:
+            remaining = (await db.scalars(select(UserPersona.id).where(UserPersona.user_id == user.id))).all()
+            assert len(remaining) == 1
+            assert await db.scalar(select(User.default_persona_id).where(User.id == user.id)) == remaining[0]
+    finally:
+        async with factory() as db:
+            await db.execute(update(User).where(User.id == user.id).values(default_persona_id=None))
+            await db.execute(delete(UserPersona).where(UserPersona.user_id == user.id))
+            await db.execute(delete(User).where(User.id == user.id))
+            await db.commit()
+        await revoke_user_sessions(user.id)

@@ -8,6 +8,10 @@
 `users.default_persona_id`나 `chat_rooms.persona_id`에 싣는 모든 경로는 `get_owned_persona`를
 거친다. 예외는 `change_starting_setup`의 승계뿐이다 — 같은 유저의 방에서 복사한다.
 
+**프로필이 하나라도 있으면 기본이 있다.** 첫 프로필은 기본이 되고, 마지막 하나는 지울 수 없고, 기본을 비울 수 없다.
+기본을 지우면 남은 것 중 가장 먼저 만든 것이 기본이 된다. 이 규칙 전에 만든 계정은 프로필이 있어도 기본이 비어 있을 수
+있어서, 새 방을 만들 때 같은 순서로 기본을 채운다(`chat/router.py`의 방 생성). 예외는 탈퇴다 — 프로필을 전부 지운다.
+
 **동시성**: 프로필을 참조하거나 바꾸는 쓰기는 먼저 유저 행을 잠근다(락 순서 users →
 user_personas → chat_rooms). 락 뒤의 값은 `with_for_update()`를 건 컬럼 select로 읽는다 —
 `db.get(User)`는 락을 걸지 않는다. 엔티티 select 대신 컬럼 select인 이유는, 같은 세션에 살아 있는
@@ -41,6 +45,9 @@ from api.session.dependencies import get_current_user_id
 me_router = APIRouter(prefix="/me", tags=["persona"])
 
 _PERSONA_LIMIT_MESSAGE = f"대화 프로필은 최대 {PERSONA_MAX_COUNT}개까지 만들 수 있어요."
+# 화면이 409 의 `detail` 을 그대로 보여 준다.
+_LAST_PERSONA_MESSAGE = "마지막 대화 프로필은 지울 수 없어요. 다른 프로필을 먼저 만들어 주세요."
+_CLEAR_DEFAULT_MESSAGE = "기본 대화 프로필은 비울 수 없어요. 다른 프로필을 기본으로 지정해 주세요."
 
 
 async def lock_user_default_persona(db: AsyncSession, user_id: uuid.UUID) -> uuid.UUID | None:
@@ -55,6 +62,24 @@ async def get_owned_persona(db: AsyncSession, persona_id: uuid.UUID, user_id: uu
     if persona.user_id != user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not the persona owner")
     return persona
+
+
+async def count_personas(db: AsyncSession, user_id: uuid.UUID) -> int:
+    return await db.scalar(select(func.count()).select_from(UserPersona).where(UserPersona.user_id == user_id)) or 0
+
+
+async def promote_oldest_persona(
+    db: AsyncSession, user_id: uuid.UUID, *, excluding: uuid.UUID | None = None
+) -> uuid.UUID | None:
+    """남은 프로필 중 가장 먼저 만든 것을 기본으로 올리고 그 id를 돌려준다. 프로필이 없으면 아무것도 바꾸지 않고 None.
+    순서는 목록(`GET /me/personas`)과 같다 — 생성 시각, 같으면 id. 유저 행을 잠근 뒤에 부른다."""
+    query = select(UserPersona.id).where(UserPersona.user_id == user_id)
+    if excluding is not None:
+        query = query.where(UserPersona.id != excluding)
+    oldest = await db.scalar(query.order_by(UserPersona.created_at.asc(), UserPersona.id.asc()).limit(1))
+    if oldest is not None:
+        await db.execute(update(User).where(User.id == user_id).values(default_persona_id=oldest))
+    return oldest
 
 
 def _to_response(persona: UserPersona) -> PersonaResponse:
@@ -91,8 +116,8 @@ async def create_persona(
 ) -> PersonaResponse:
     # 락 뒤에 세야 두 요청이 동시에 10번째를 넘기지 못한다.
     await lock_user_default_persona(db, user_id)
-    count = await db.scalar(select(func.count()).select_from(UserPersona).where(UserPersona.user_id == user_id))
-    if count is not None and count >= PERSONA_MAX_COUNT:
+    count = await count_personas(db, user_id)
+    if count >= PERSONA_MAX_COUNT:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_PERSONA_LIMIT_MESSAGE)
 
     persona = UserPersona(
@@ -100,8 +125,9 @@ async def create_persona(
     )
     db.add(persona)
     await db.flush()
-    # 받은 값만 따른다(기본 유무로 추론하지 않는다).
-    if payload.set_as_default:
+    # 첫 프로필은 받은 값과 무관하게 기본이다 — 프로필이 있는데 기본이 없는 상태를 만들지 않는다. 그 밖에는 받은 값만
+    # 따른다(기본이 비어 있는 예전 계정도 여기서 채우지 않는다 — 새 방을 만들 때 채운다).
+    if payload.set_as_default or count == 0:
         await db.execute(update(User).where(User.id == user_id).values(default_persona_id=persona.id))
     await db.commit()
     return _to_response(persona)
@@ -136,15 +162,18 @@ async def delete_persona(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
-    """프로필을 지운다. 이 프로필을 참조하던 방은 "선택 없음"이 되고, 기본 프로필이었으면
-    기본도 비운다.
+    """프로필을 지운다. 마지막 하나면 409다. 이 프로필을 참조하던 방은 "선택 없음"이 되고(승격된 기본으로 바꾸지
+    않는다 — 그 방에서 고른 적 없는 이름이 다음 턴에 끼어든다), 기본 프로필이었으면 남은 것 중 가장 먼저 만든 것이
+    기본이 된다. 개수는 유저 행을 잠근 뒤에 세야 두 요청이 동시에 마지막 둘을 지우지 못한다.
     FK에 `ondelete`가 없으므로 참조를 먼저 끊고 flush한 뒤 지운다."""
     default_persona_id = await lock_user_default_persona(db, user_id)
     persona = await get_owned_persona(db, persona_id, user_id)
+    if await count_personas(db, user_id) <= 1:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_LAST_PERSONA_MESSAGE)
 
     await db.execute(update(ChatRoom).where(ChatRoom.persona_id == persona.id).values(persona_id=None))
     if default_persona_id == persona.id:
-        await db.execute(update(User).where(User.id == user_id).values(default_persona_id=None))
+        await promote_oldest_persona(db, user_id, excluding=persona.id)
     await db.flush()
     await db.delete(persona)
     await db.commit()
@@ -159,9 +188,14 @@ async def set_default_persona(
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
     """`/me/personas/default`가 아닌 이유: `/me/personas/{persona_id}`와 모양이 같아
-    `"default"`를 UUID로 파싱하다 422가 난다."""
+    `"default"`를 UUID로 파싱하다 422가 난다.
+
+    프로필이 있으면 null(비우기)은 409다. 요청 모델이 아니라 여기서 막는 이유: 방 선택(`PUT /chat-rooms/{id}/persona`)과
+    같은 모델을 쓰고, 방에서는 "선택 안 함"이 계속 된다. 프로필이 없으면 비울 것이 없어 그대로 둔다."""
     await lock_user_default_persona(db, user_id)
     if payload.persona_id is not None:
         await get_owned_persona(db, payload.persona_id, user_id)
+    elif await count_personas(db, user_id) > 0:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_CLEAR_DEFAULT_MESSAGE)
     await db.execute(update(User).where(User.id == user_id).values(default_persona_id=payload.persona_id))
     await db.commit()
