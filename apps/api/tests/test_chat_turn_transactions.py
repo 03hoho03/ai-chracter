@@ -655,7 +655,12 @@ async def test_room_deleted_during_generation_ends_with_an_error_and_no_refund(
     assert resp.status_code == 200
     assert [event["type"] for event in _parse_sse_events(resp.text)] == ["token", "token", "error"]
     assert await db_session.scalar(sa.select(sa.func.count()).select_from(ChatRoom).where(ChatRoom.id == room.room_id)) == 0
-    assert any(str(room.room_id) in record.getMessage() for record in caplog.records if record.levelno >= logging.WARNING)
+    # 로거 이름까지 본다 — 이 경고는 턴 저장소로 옮겨 갔지만 라우터가 넘긴 로거로 남아 Bugsink breadcrumb 범주가 그대로다.
+    assert any(
+        str(room.room_id) in record.getMessage() and record.name == chat_router.__name__
+        for record in caplog.records
+        if record.levelno >= logging.WARNING
+    )
     await db_session.refresh(user)
     assert user.clover_balance == 100 - clover.CHAT_TURN_COST
     kinds = (await db_session.scalars(sa.select(CloverLedger.kind).where(CloverLedger.user_id == user.id))).all()
