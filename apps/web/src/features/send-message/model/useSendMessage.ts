@@ -16,7 +16,7 @@ import type { ChatMessage, ChatRateLimit, ChatRoomState, ChatStreamRequest } fro
 import type { CloverSpendConfirmOutcome } from "@/entities/clover";
 import { isIdentityVerificationRequiredError } from "@/entities/identity";
 import { isLegalReconsentRequiredError } from "@/entities/legal";
-import { resetSessionIfLost, sessionKeys } from "@/entities/session";
+import { getSessionEndReason, resetSessionIfLost, sessionKeys, type SessionEndReason } from "@/entities/session";
 import { openChatStream } from "@/shared/api/sse/openChatStream";
 
 import { ensureUserMessageForSend } from "./ensureUserMessageForSend";
@@ -47,6 +47,8 @@ type PendingRequest = {
 // 중립 배너와 다시 보내기를 띄운다.
 // `identityRequired`는 본인인증 전이라 무료 대화가 없고 가진 클로버도 모자라 서버가 막은 것이다. 다시 보내도 안 풀리고
 // 실패도 아니라 재시도 대신 본인인증 안내를 띄운다.
+// `sessionEnded`는 세션이 끝나(로그인이 풀렸거나 정지) 서버가 거절한 것이다. 응답 생성이 실패한 것이 아니고 이 탭에서는
+// 다시 보내도 같은 거절이라, 재시도 대신 까닭에 맞는 안내(다시 로그인 / 문의처)를 띄운다.
 type SendMessageStatus =
   | { kind: "idle" }
   | { kind: "sending" }
@@ -58,6 +60,7 @@ type SendMessageStatus =
       restricted?: boolean;
       busy?: boolean;
       identityRequired?: boolean;
+      sessionEnded?: SessionEndReason;
     };
 
 /** 낙관적 업데이트가 핵심: 사용자 메시지는 스트림 성공 여부와
@@ -159,6 +162,11 @@ export function useSendMessage(
       }
       // 같은 이유로 세션 소실 401·정지 403도 여기서 세션을 비운다.
       resetSessionIfLost(queryClient, error);
+      const sessionEnded = getSessionEndReason(error);
+      if (sessionEnded) {
+        setStatus({ kind: "error", retryPayload: pending, sessionEnded });
+        return;
+      }
       // 방을 연 뒤에 작품이 제한된 경우다. 방을 다시 받아 `contentRestricted`를 서버 값으로 맞춘다 — 확인 모달은
       // 띄우지 않는다(429가 아니라 클로버와 무관하다).
       if (isContentRestrictedError(error)) {

@@ -13,7 +13,7 @@ import {
 } from "@/entities/preview-session";
 import { previewStreamEventSchema } from "@/entities/preview-session";
 import type { PreviewChatMessage, PreviewSessionState } from "@/entities/preview-session";
-import { resetSessionIfLost, sessionKeys } from "@/entities/session";
+import { getSessionEndReason, resetSessionIfLost, sessionKeys, type SessionEndReason } from "@/entities/session";
 import { openChatStream } from "@/shared/api/sse/openChatStream";
 import { expandAuthorMacros, type AuthorMacroNames } from "@/shared/lib/text/authorMacros";
 
@@ -21,11 +21,17 @@ import { expandAuthorMacros, type AuthorMacroNames } from "@/shared/lib/text/aut
 // 타입으로 막지 못했다(useSendMessage와 동일한 처방). 재시도가 없어 useSendMessage와 달리 retryPayload는
 // 필요 없다. 429만 배너 문구가 갈리므로 그 값만 함께 싣는다.
 // `declined`는 확인 모달에서 **사용자가 그만둔 것**이라 실패가 아니다. 문구만 배너가
-// 갈라 쓴다(`useSendMessage`와 같은 처방).
+// 갈라 쓴다(`useSendMessage`와 같은 처방). `sessionEnded`(로그인이 풀렸거나 정지)도 실패가 아니라 까닭이다.
 type PreviewSendStatus =
   | { kind: "idle" }
   | { kind: "sending" }
-  | { kind: "error"; rateLimit?: ChatRateLimit; declined?: boolean; identityRequired?: boolean };
+  | {
+      kind: "error";
+      rateLimit?: ChatRateLimit;
+      declined?: boolean;
+      identityRequired?: boolean;
+      sessionEnded?: SessionEndReason;
+    };
 
 /**
  * features/send-message의 useSendMessage와 동일한 낙관적 업데이트+SSE
@@ -96,6 +102,8 @@ export function usePreviewSendMessage(
     let declined = false;
     // 본인인증 전이라 막힌 것도 실패와 구분한다(같은 이유로 바깥에 둔다).
     let identityRequired = false;
+    // 세션이 끝나 거절된 것도 실패와 구분한다(같은 이유로 바깥에 둔다).
+    let sessionEnded: SessionEndReason | undefined;
 
     try {
       for await (const event of openChatStream(
@@ -128,6 +136,7 @@ export function usePreviewSendMessage(
       }
       // 같은 이유로 세션 소실 401·정지 403도 여기서 세션을 비운다.
       resetSessionIfLost(queryClient, error);
+      sessionEnded = getSessionEndReason(error);
       // 동의가 필요하면 배너가 아니라 모달이고, 동의하면 같은
       // 텍스트로 한 번 더 보낸다. 🔴 재전송은 `send`를 다시 부르므로 **낙관적 사용자 메시지가
       // 한 번 더 추가된다** — 그래서 아래 `finally`가 끝난 뒤가 아니라 여기서 `return`하지 않고,
@@ -150,7 +159,7 @@ export function usePreviewSendMessage(
     } finally {
       if (!handedOffToRetry) {
         setStreamingText("");
-        setStatus(hasErrored ? { kind: "error", rateLimit, declined, identityRequired } : { kind: "idle" });
+        setStatus(hasErrored ? { kind: "error", rateLimit, declined, identityRequired, sessionEnded } : { kind: "idle" });
       }
       // 미리보기도 채팅 4경로의 같은 게이트를 지나므로 무료 일일분을
       // 넘기면 클로버가 깎인다(미리보기 문구가 "같은 한도를 쓴다"고 먼저 말하는 이유).

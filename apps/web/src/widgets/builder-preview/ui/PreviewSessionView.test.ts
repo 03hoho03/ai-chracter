@@ -11,3 +11,14 @@ describe("PreviewSessionView", () => {
     expect(viewSource).not.toContain("onReport");
   });
 });
+
+// 세션이 끝나 거절된 미리보기(첫 전송의 세션 생성 거절 포함)는 실패 배너·"잠시 후 다시 시도" 토스트가 아니라 안내를 띄운다.
+describe("PreviewSessionView session-ended notice", () => {
+  it("routes both the send rejection and the session-start rejection to the notice before the failure banner", () => {
+    expect(viewSource).toContain("startSessionEnded ?? (status.kind === \"error\" ? status.sessionEnded : undefined)");
+    expect(viewSource).toContain("if (sessionEnded) setStartSessionEnded(sessionEnded);");
+    const notice = viewSource.indexOf("<SessionEndedNotice reason={sessionEnded} />");
+    expect(notice).toBeGreaterThan(-1);
+    expect(notice).toBeLessThan(viewSource.indexOf("응답 생성에 실패했습니다."));
+  });
+});

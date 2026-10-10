@@ -25,3 +25,18 @@ describe("ChatRoomView report menu wiring", () => {
     for (const bubble of temporary) expect(bubble).not.toContain("onReport");
   });
 });
+
+// 세션이 끝나 거절된 전송(로그인이 풀림·정지)은 실패가 아니다. 이 갈래가 빠지면 if 사슬 끝의 "응답 생성에 실패했습니다"로
+// 떨어지는데, 상태의 사유 필드가 선택 속성이라 타입 검사가 못 잡는다.
+describe("ChatRoomView session-ended notice", () => {
+  it("shows the session-ended notice before any failure banner", () => {
+    const branch = viewSource.indexOf("if (status.sessionEnded)");
+    expect(branch).toBeGreaterThan(-1);
+    expect(viewSource).toContain("<SessionEndedNotice reason={status.sessionEnded} />");
+    expect(branch).toBeLessThan(viewSource.indexOf("응답 생성에 실패했습니다"));
+  });
+
+  it("hides the clover balance line once the session is gone", () => {
+    expect(viewSource).toMatch(/shouldShowClover =\s*clover !== undefined &&\s*me !== undefined &&/);
+  });
+});
