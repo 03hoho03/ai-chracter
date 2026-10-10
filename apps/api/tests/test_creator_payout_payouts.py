@@ -1,10 +1,12 @@
 """크리에이터 지급: 지급 정보 입력(검증·암호화·판 갈기), 지급 신청(잔액 전액·최소액·탈퇴 전 예외·원천징수 스냅숏), 어드민
-지급 처리(목록·상세·원문 열람·이체 기록·반려), 탈퇴 뒤 보존, 키 회전·분실.
+지급 처리(목록·상세·원문 열람·이체 기록·반려, 탈퇴한 회원 건의 보류·수취 정보 교체), 탈퇴 뒤 보존, 키 회전·분실, 어드민 회원
+상세의 정산 섹션.
 
 잔액은 확정 행을 직접 넣어 만든다(확정 계산은 정산 테스트 몫이다). 회원은 2000-01-01생 본인인증 성인이고, 그 사람의
 주민등록번호는 `RRN`(2000년대 출생 여성, 7번째 자리 4)이다.
 """
 
+import asyncio
 import base64
 import importlib.util
 import logging
@@ -20,16 +22,21 @@ import httpx
 import pytest
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
-from sqlalchemy import func, select, update
+from fastapi import HTTPException
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from api.admin.creator_payout import return_creator_payout
+from api.admin.schemas import AdminCreatorPayoutReturnRequest
 from api.auth.withdrawal import erase_account
+from api.comments.access import lock_active_user
 from api.core import config
 from api.core.config import settings
 from api.core.field_crypto import FieldDecryptError, FieldKeyring
 from api.core.rate_limit import KST
+from api.core.security import hash_withdrawn_email
 from api.creator_payout.payout_info import (
     EncryptedColumn,
     PayoutInfo,
@@ -40,20 +47,29 @@ from api.creator_payout.payout_info import (
 )
 from api.creator_payout.monthly import run_monthly
 from api.creator_payout.reencrypt import reencrypt_profiles
-from api.creator_payout.router import payout_requested_message
+from api.creator_payout.router import balance_krw, member_payout_status, payout_requested_message
 from api.creator_payout.tax import withholding
-from api.db.models.auth import User
+from api.db.models.auth import AdminUser, User, WithdrawnEmail
 from api.db.models.creator_payout import (
     CreatorPayout,
     CreatorPayoutApplication,
     CreatorPayoutConfirmation,
     CreatorPayoutProfile,
+    CreatorPayoutStatus,
 )
 from api.db.models.moderation import AdminActionLog
 from api.legal.dependencies import _latest_published_legal_version
 from api.main import app
 from api.payments.notify import get_payment_notifier
-from factories import CREATOR_PAYOUT_TEST_KEYS, _application, _create_admin, _login_as, _login_as_admin, _make_user
+from factories import (
+    CREATOR_PAYOUT_TEST_KEYS,
+    _application,
+    _assert_blocked,
+    _create_admin,
+    _login_as,
+    _login_as_admin,
+    _make_user,
+)
 
 RRN = "0001014123456"
 ACCOUNT = "110123456789"
@@ -424,7 +440,7 @@ async def test_reentering_payout_info_adds_a_version(db_client: httpx.AsyncClien
     [payout] = await _payouts(db_session, user)
     transferred = await db_client.post(
         f"/admin/creator-payout/payouts/{payout.id}/transfer",
-        json={"transferredOn": datetime.now(KST).date().isoformat()},
+        json={"transferredOn": datetime.now(KST).date().isoformat(), "payeeProfileId": str(payout.profile_id)},
     )
     assert transferred.status_code == 204
 
@@ -641,7 +657,11 @@ async def test_return_restores_the_balance_and_transfer_keeps_it_spent(
     [second] = [payout for payout in await _payouts(db_session, user) if payout.status == "requested"]
     transferred = await db_client.post(
         f"/admin/creator-payout/payouts/{second.id}/transfer",
-        json={"transferredOn": datetime.now(KST).date().isoformat(), "adminMemo": "국민 이체"},
+        json={
+            "transferredOn": datetime.now(KST).date().isoformat(),
+            "payeeProfileId": str(second.profile_id),
+            "adminMemo": "국민 이체",
+        },
     )
     assert transferred.status_code == 204
     assert await _balance(db_client) == 0
@@ -682,6 +702,7 @@ async def test_admin_detail_masks_the_payee_and_previews_withholding(
         "6789",
         False,
     )
+    assert (body["payeeInfoReadable"], body["payeeProfileId"]) == (True, str(payout.profile_id))
     assert body["withholding"] == {
         "incomeTaxRateBps": 200,
         "incomeTaxKrw": 240,
@@ -730,16 +751,25 @@ async def test_payee_info_view_needs_a_reason_and_logs_every_view(
     url = f"/admin/creator-payout/payouts/{payout.id}/payee-info-view"
 
     blank = await db_client.post(url, json={"reasonCategory": "other", "reasonText": "  "})
-    first = await db_client.post(url, json={"reasonCategory": "legal-request", "reasonText": "지급명세서 작성"})
-    second = await db_client.post(url, json={"reasonCategory": "other", "reasonText": "이체 계좌 확인"})
+    chat_only = await db_client.post(url, json={"reasonCategory": "report-investigation", "reasonText": "신고 조사"})
+    first = await db_client.post(url, json={"reasonCategory": "payout-statement", "reasonText": "지급명세서 작성"})
+    second = await db_client.post(url, json={"reasonCategory": "payout-processing", "reasonText": "이체 계좌 확인"})
 
     assert blank.status_code == 422
-    assert first.json() == {"legalName": "홍길동", "rrn": RRN, "bankCode": "088", "accountNumber": ACCOUNT}
+    # 채팅 열람에만 있는 사유 분류는 받지 않는다.
+    assert chat_only.status_code == 422
+    assert first.json() == {
+        "payeeProfileId": str(payout.profile_id),
+        "legalName": "홍길동",
+        "rrn": RRN,
+        "bankCode": "088",
+        "accountNumber": ACCOUNT,
+    }
     assert second.status_code == 200
     views = await _audit(db_session, "user-creator-payout-info-view")
     assert sorted((log.reason_category, log.reason_text) for log in views) == [
-        ("legal-request", "지급명세서 작성"),
-        ("other", "이체 계좌 확인"),
+        ("payout-processing", "이체 계좌 확인"),
+        ("payout-statement", "지급명세서 작성"),
     ]
     assert {(log.admin_id, log.target_user_id) for log in views} == {(admin_id, user.id)}
     for secret in (RRN, ACCOUNT, "홍길동"):
@@ -755,10 +785,14 @@ async def test_transfer_validates_the_date_and_state(db_client: httpx.AsyncClien
     today = datetime.now(KST).date()
     requested_on = payout.requested_at.astimezone(KST).date()
 
-    before = await db_client.post(url, json={"transferredOn": (requested_on - timedelta(days=1)).isoformat()})
-    future = await db_client.post(url, json={"transferredOn": (today + timedelta(days=1)).isoformat()})
-    done = await db_client.post(url, json={"transferredOn": today.isoformat(), "adminMemo": "국민 이체"})
-    again = await db_client.post(url, json={"transferredOn": today.isoformat()})
+    payee = {"payeeProfileId": str(payout.profile_id)}
+
+    before = await db_client.post(
+        url, json={"transferredOn": (requested_on - timedelta(days=1)).isoformat(), **payee}
+    )
+    future = await db_client.post(url, json={"transferredOn": (today + timedelta(days=1)).isoformat(), **payee})
+    done = await db_client.post(url, json={"transferredOn": today.isoformat(), "adminMemo": "국민 이체", **payee})
+    again = await db_client.post(url, json={"transferredOn": today.isoformat(), **payee})
     returned = await db_client.post(
         f"/admin/creator-payout/payouts/{payout.id}/return", json={"reasonText": "중복"}
     )
@@ -819,10 +853,11 @@ async def _profile_under_other_key(db: AsyncSession, user: User) -> CreatorPayou
     return profile
 
 
-async def test_lost_key_keeps_the_owner_view_and_stops_the_admin(
+async def test_lost_key_keeps_both_views_open_without_the_name_and_refuses_the_plaintext(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """작가 화면은 200 으로 열리고 실명만 비며(은행·끝 4자리는 평문), 어드민 상세·원문 열람은 409 이고 열람 기록도 없다."""
+    """작가 화면과 어드민 상세는 200 으로 열리고 실명만 비며(은행·끝 4자리는 평문), 원문 열람은 409 이고 열람 기록도 없다.
+    상세가 열리므로 운영자가 그 건을 반려해 작가가 지급 정보를 다시 입력하게 할 수 있다."""
     user = await _member(db_session)
     profile = await _profile_under_other_key(db_session, user)
     db_session.add(
@@ -852,10 +887,117 @@ async def test_lost_key_keeps_the_owner_view_and_stops_the_admin(
 
     assert owner.status_code == 200
     assert owner.json()["payoutInfo"] == {"maskedName": None, "bankCode": "088", "accountLast4": "6789"}
-    unreadable = (409, {"code": "CREATOR_PAYOUT_INFO_UNREADABLE"})
-    assert (detail.status_code, detail.json()["detail"]) == unreadable
-    assert (view.status_code, view.json()["detail"]) == unreadable
+    assert detail.status_code == 200
+    body = detail.json()
+    assert (body["payeeInfoReadable"], body["maskedName"], body["bankCode"], body["accountLast4"]) == (
+        False,
+        None,
+        "088",
+        "6789",
+    )
+    assert (body["status"], body["amountKrw"], body["payeeProfileId"]) == ("requested", 10_000, str(profile.id))
+    assert (view.status_code, view.json()["detail"]) == (409, {"code": "CREATOR_PAYOUT_INFO_UNREADABLE"})
     assert await _audit(db_session, "user-creator-payout-info-view") == []
+
+    returned = await db_client.post(
+        f"/admin/creator-payout/payouts/{payout.id}/return", json={"reasonText": "지급 정보를 다시 입력해 주세요"}
+    )
+
+    assert returned.status_code == 204
+    [stored] = await _payouts(db_session, user)
+    assert stored.status == "returned"
+
+
+async def _corrupt(db: AsyncSession, profile: CreatorPayoutProfile, column: EncryptedColumn) -> None:
+    """그 칸 암호문의 마지막 바이트를 뒤집는다 — 키는 있는데 한 칸만 복호화에 실패하는 경우."""
+    attribute = f"{column}_ciphertext"
+    blob: bytes = getattr(profile, attribute)
+    setattr(profile, attribute, blob[:-1] + bytes([blob[-1] ^ 1]))
+    await db.flush()
+
+
+@pytest.mark.parametrize("column", [column for column, _ in PLAINTEXTS])
+async def test_any_unreadable_payee_field_marks_the_detail_unreadable_and_refuses_the_transfer(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, column: EncryptedColumn
+) -> None:
+    """실명만 멀쩡하고 주민등록번호나 계좌번호가 깨져도 상세는 읽을 수 없다고 답하고 실명 마스킹도 싣지 않는다 — 원문
+    열람과 이체 기록이 세 칸을 모두 읽어야 하므로, 실명만 보고 "읽힘"이라 하면 화면이 막힐 일을 보여 준다. 이체 기록은
+    409 이고 상태·감사 기록이 그대로다. 응답 어디에도 원문이 없다."""
+    user = await _ready(db_client, db_session, 10_000)
+    assert (await _request(db_client)).status_code == 201
+    [payout] = await _payouts(db_session, user)
+    [profile] = await _profiles(db_session, user)
+    await _corrupt(db_session, profile, column)
+    await _as_admin(db_client, db_session)
+    base = f"/admin/creator-payout/payouts/{payout.id}"
+    today = datetime.now(KST).date().isoformat()
+
+    detail = await db_client.get(base)
+    transfer = await db_client.post(
+        f"{base}/transfer", json={"transferredOn": today, "payeeProfileId": str(profile.id)}
+    )
+
+    assert detail.status_code == 200
+    body = detail.json()
+    assert (body["payeeInfoReadable"], body["maskedName"], body["accountLast4"]) == (False, None, "6789")
+    for _, secret in PLAINTEXTS:
+        assert secret not in detail.text
+    assert "홍*동" not in detail.text
+    assert (transfer.status_code, transfer.json()["detail"]) == (409, {"code": "CREATOR_PAYOUT_INFO_UNREADABLE"})
+    [stored] = await _payouts(db_session, user)
+    assert (stored.status, stored.paid_at) == ("requested", None)
+    assert await _audit(db_session, "user-creator-payout-transfer") == []
+
+
+@pytest.mark.parametrize("column", ["rrn", "account_number"])
+async def test_member_with_an_unreadable_rrn_or_account_is_asked_to_reenter_and_cannot_request(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, column: EncryptedColumn
+) -> None:
+    """실명은 읽히는데 주민등록번호나 계좌번호만 깨져도 작가 화면은 실명 마스킹을 비워 다시 입력하라고 알리고, 지급
+    신청은 409 로 받지 않는다 — 운영자가 그 판으로는 이체할 수 없어서다. 응답 어디에도 원문이 없고 지급 행이 생기지
+    않는다."""
+    user = await _ready(db_client, db_session, 10_000)
+    [profile] = await _profiles(db_session, user)
+    await _corrupt(db_session, profile, column)
+
+    owner = await db_client.get("/me/creator-payout")
+    requested = await _request(db_client)
+
+    assert owner.status_code == 200
+    assert owner.json()["payoutInfo"] == {"maskedName": None, "bankCode": "088", "accountLast4": "6789"}
+    for response in (owner, requested):
+        for _, secret in PLAINTEXTS:
+            assert secret not in response.text
+        assert "홍*동" not in response.text
+    assert (requested.status_code, requested.json()["detail"]) == (409, {"code": "CREATOR_PAYOUT_INFO_UNREADABLE"})
+    assert await _payouts(db_session, user) == []
+
+
+async def test_transfer_refusals_on_an_unreadable_payee_come_in_order(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """판이 바뀌었다는 409 가 읽을 수 없다는 409 보다 먼저다(운영자는 새 판부터 다시 봐야 한다). 읽을 수 없다는 409 는
+    이체일 422 보다 먼저다(날짜를 고쳐도 기록할 수 없다)."""
+    user = await _member(db_session)
+    profile = await _profile_under_other_key(db_session, user)
+    db_session.add(_payout_row(user.id, profile.id))
+    await db_session.flush()
+    [payout] = await _payouts(db_session, user)
+    await _as_admin(db_client, db_session)
+    url = f"/admin/creator-payout/payouts/{payout.id}/transfer"
+    today = datetime.now(KST).date()
+
+    changed = await db_client.post(
+        url, json={"transferredOn": today.isoformat(), "payeeProfileId": str(uuid.uuid4())}
+    )
+    future = await db_client.post(
+        url, json={"transferredOn": (today + timedelta(days=1)).isoformat(), "payeeProfileId": str(profile.id)}
+    )
+
+    assert (changed.status_code, changed.json()["detail"]) == (409, {"code": "CREATOR_PAYOUT_PAYEE_CHANGED"})
+    assert (future.status_code, future.json()["detail"]) == (409, {"code": "CREATOR_PAYOUT_INFO_UNREADABLE"})
+    [stored] = await _payouts(db_session, user)
+    assert stored.status == "requested"
 
 
 async def test_admin_without_any_key_reads_nothing(
@@ -870,7 +1012,8 @@ async def test_admin_without_any_key_reads_nothing(
 
     detail = await db_client.get(f"/admin/creator-payout/payouts/{payout.id}")
 
-    assert (detail.status_code, detail.json()["detail"]) == (409, {"code": "CREATOR_PAYOUT_INFO_UNREADABLE"})
+    assert detail.status_code == 200
+    assert (detail.json()["payeeInfoReadable"], detail.json()["maskedName"]) == (False, None)
 
 
 async def test_key_rotation_reads_old_rows_and_reencrypts_them(
@@ -912,7 +1055,10 @@ async def test_erase_account_keeps_payout_records_and_deletes_unused_payout_info
     [paid] = await _payouts(db_session, user)
     today = datetime.now(KST).date().isoformat()
     assert (
-        await db_client.post(f"/admin/creator-payout/payouts/{paid.id}/transfer", json={"transferredOn": today})
+        await db_client.post(
+            f"/admin/creator-payout/payouts/{paid.id}/transfer",
+            json={"transferredOn": today, "payeeProfileId": str(paid.profile_id)},
+        )
     ).status_code == 204
     await _register(db_client, bankCode="004")
     await _register(db_client, bankCode="020")
@@ -945,7 +1091,8 @@ async def test_erase_account_keeps_payout_records_and_deletes_unused_payout_info
     assert (await db_client.get(f"/admin/creator-payout/payouts/{in_progress.id}")).status_code == 200
     assert (
         await db_client.post(
-            f"/admin/creator-payout/payouts/{in_progress.id}/transfer", json={"transferredOn": today}
+            f"/admin/creator-payout/payouts/{in_progress.id}/transfer",
+            json={"transferredOn": today, "payeeProfileId": str(in_progress.profile_id)},
         )
     ).status_code == 204
 
@@ -995,6 +1142,11 @@ async def _insert_fails(db: AsyncSession, row: object) -> None:
         pytest.param({"status": "paid", "paid_at": datetime(2026, 10, 9, tzinfo=UTC)}, id="paid-without-transfer-date"),
         pytest.param({"transferred_on": date(2026, 10, 9), "paid_at": datetime(2026, 10, 9, tzinfo=UTC)}, id="requested-with-paid"),
         pytest.param({"status": "returned"}, id="returned-without-time"),
+        pytest.param({"status": "held"}, id="held-without-time"),
+        pytest.param(
+            {"status": "returned", "returned_at": datetime(2026, 10, 9, tzinfo=UTC), "held_at": datetime(2026, 10, 9, tzinfo=UTC)},
+            id="held-then-returned",
+        ),
     ],
 )
 async def test_payout_check_constraints(db_session: AsyncSession, overrides: dict[str, object]) -> None:
@@ -1006,7 +1158,8 @@ async def test_payout_check_constraints(db_session: AsyncSession, overrides: dic
     await _insert_fails(db_session, _payout_row(user.id, profile.id, **overrides))
 
 
-async def test_one_requested_payout_per_member(db_session: AsyncSession) -> None:
+async def test_one_in_progress_payout_per_member(db_session: AsyncSession) -> None:
+    """처리 중·보류는 아직 이체하지 않은 지급이라 합쳐서 한 사람에 하나다."""
     user = await _member(db_session)
     profile = _profile_for(user.id)
     db_session.add(profile)
@@ -1020,6 +1173,7 @@ async def test_one_requested_payout_per_member(db_session: AsyncSession) -> None
     await db_session.flush()
 
     await _insert_fails(db_session, _payout_row(user.id, profile.id))
+    await _insert_fails(db_session, _payout_row(user.id, profile.id, status="held", held_at=datetime(2026, 10, 9, tzinfo=UTC)))
     assert await db_session.scalar(select(func.count()).where(CreatorPayout.user_id == user.id)) == 2
 
 
@@ -1037,6 +1191,28 @@ async def test_one_current_payout_info_per_member(db_session: AsyncSession) -> N
     no_key = _profile_for(user.id)
     no_key.superseded_at, no_key.key_id = datetime(2026, 10, 3, tzinfo=UTC), ""
     await _insert_fails(db_session, no_key)
+
+
+async def test_payout_info_is_either_consented_or_entered_by_an_admin(db_session: AsyncSession) -> None:
+    """판은 회원이 동의하고 넣었거나(동의 시각·처리방침 버전) 운영자가 넣었거나(넣은 운영자) 둘 중 하나다."""
+    user = await _member(db_session)
+    admin_id = (await _create_admin(db_session))["id"]
+    assert isinstance(admin_id, uuid.UUID)
+    superseded = datetime(2026, 10, 1, tzinfo=UTC)
+
+    def variant(**values: object) -> CreatorPayoutProfile:
+        profile = _profile_for(user.id)
+        profile.superseded_at = superseded
+        for name, value in values.items():
+            setattr(profile, name, value)
+        return profile
+
+    await _insert_fails(db_session, variant(entered_by_admin_id=admin_id))
+    await _insert_fails(db_session, variant(consented_at=None, privacy_version=None))
+    await _insert_fails(db_session, variant(privacy_version=None))
+    await _insert_fails(db_session, variant(consented_at=None, entered_by_admin_id=admin_id))
+    db_session.add(variant(consented_at=None, privacy_version=None, entered_by_admin_id=admin_id))
+    await db_session.flush()
 
 
 def _load_payouts_migration() -> ModuleType:
@@ -1065,3 +1241,420 @@ async def test_downgrade_refuses_while_payout_info_exists(db_session: AsyncSessi
     with pytest.raises(RuntimeError, match="creator_payout_profiles 에 1행"):
         await connection.run_sync(downgrade)
     assert len(await _profiles(db_session, user)) == 1
+
+
+# ── 탈퇴한 회원의 지급: 반려 대신 보류, 수취 정보 교체 ─────────────────────────────
+NEW_ACCOUNT = "3333012345678"
+
+
+async def _withdrawn_with_request(client: httpx.AsyncClient, db: AsyncSession) -> tuple[User, CreatorPayout]:
+    """잔액 10,000원을 신청한 뒤 탈퇴한 회원과 그 처리 중인 지급."""
+    user = await _ready(client, db, 10_000)
+    assert (await _request(client)).status_code == 201
+    locked = await db.get(User, user.id, with_for_update=True)
+    assert locked is not None
+    await erase_account(db, locked, delete_storage_object=_keep)
+    [payout] = await _payouts(db, user)
+    return user, payout
+
+
+def _payee(**overrides: object) -> dict[str, object]:
+    body: dict[str, object] = {
+        "legalName": "홍길동",
+        "rrn": RRN,
+        "bankCode": "090",
+        "accountNumber": NEW_ACCOUNT,
+        "reasonText": "문의로 받은 계좌",
+    }
+    body.update(overrides)
+    return body
+
+
+async def test_withdrawn_payee_payout_is_held_not_returned_and_stays_reserved(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """탈퇴한 회원은 다시 신청할 수 없어 반려하면 금액이 갈 곳을 잃는다 — 반려는 409, 보류는 잔액을 돌려주지 않고 이체로
+    끝난다."""
+    user, payout = await _withdrawn_with_request(db_client, db_session)
+    admin_id = await _as_admin(db_client, db_session)
+    base = f"/admin/creator-payout/payouts/{payout.id}"
+
+    returned = await db_client.post(f"{base}/return", json={"reasonText": "계좌 명의가 다릅니다"})
+    blank = await db_client.post(f"{base}/hold", json={"reasonText": " "})
+    held = await db_client.post(f"{base}/hold", json={"reasonText": "계좌 해지됨"})
+    held_again = await db_client.post(f"{base}/hold", json={"reasonText": "다시"})
+    returned_after_hold = await db_client.post(f"{base}/return", json={"reasonText": "반려"})
+
+    assert (returned.status_code, returned.json()["detail"]) == (409, {"code": "CREATOR_PAYOUT_PAYEE_WITHDRAWN"})
+    assert (blank.status_code, held.status_code) == (422, 204)
+    not_requested = (409, {"code": "CREATOR_PAYOUT_NOT_REQUESTED"})
+    assert (held_again.status_code, held_again.json()["detail"]) == not_requested
+    assert (returned_after_hold.status_code, returned_after_hold.json()["detail"]) == not_requested
+    [stored] = await _payouts(db_session, user)
+    assert (stored.status, stored.hold_reason, stored.decided_by_admin_id) == ("held", "계좌 해지됨", admin_id)
+    assert stored.held_at is not None and stored.returned_at is None
+    assert await balance_krw(db_session, user.id) == 0
+    [log] = await _audit(db_session, "user-creator-payout-hold")
+    assert (log.target_user_id, log.reason_text) == (user.id, "계좌 해지됨")
+    assert await _audit(db_session, "user-creator-payout-return") == []
+    listed = (await db_client.get("/admin/creator-payout/payouts", params={"status": "held"})).json()["items"]
+    assert [(item["id"], item["status"], item["withdrawn"]) for item in listed] == [(str(payout.id), "held", True)]
+    detail = (await db_client.get(base)).json()
+    assert (detail["status"], detail["holdReason"], detail["heldAt"] is not None) == ("held", "계좌 해지됨", True)
+
+    today = datetime.now(KST).date().isoformat()
+    transferred = await db_client.post(
+        f"{base}/transfer", json={"transferredOn": today, "payeeProfileId": str(payout.profile_id)}
+    )
+
+    assert transferred.status_code == 204
+    [paid] = await _payouts(db_session, user)
+    assert (paid.status, paid.held_at is not None) == ("paid", True)
+    assert await balance_krw(db_session, user.id) == 0
+
+
+async def test_live_member_payout_cannot_be_held_or_have_its_payee_replaced(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """살아 있는 회원의 건은 반려하면 회원이 다시 입력·신청한다 — 보류·운영자 교체는 탈퇴한 회원 건에만 있다."""
+    user = await _ready(db_client, db_session, 10_000)
+    assert (await _request(db_client)).status_code == 201
+    [payout] = await _payouts(db_session, user)
+    await _as_admin(db_client, db_session)
+    base = f"/admin/creator-payout/payouts/{payout.id}"
+
+    held = await db_client.post(f"{base}/hold", json={"reasonText": "보류"})
+    replaced = await db_client.put(f"{base}/payee-info", json=_payee())
+
+    not_withdrawn = {"code": "CREATOR_PAYOUT_PAYEE_NOT_WITHDRAWN"}
+    assert (held.status_code, held.json()["detail"]) == (409, not_withdrawn)
+    assert (replaced.status_code, replaced.json()["detail"]) == (409, not_withdrawn)
+    [stored] = await _payouts(db_session, user)
+    assert (stored.status, stored.held_at) == ("requested", None)
+    assert len(await _profiles(db_session, user)) == 1
+
+
+async def test_replacing_the_payee_points_the_payout_at_an_admin_entered_version(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    """새 판을 넣고 지급이 그것을 가리킨다(지급명세서가 실제 수취인을 읽는다). 어느 지급도 가리키지 않게 된 앞 판은 탈퇴
+    규칙대로 지운다. 감사 로그에는 사유만, 로그에는 값이 없다."""
+    caplog.set_level(logging.DEBUG)
+    user, payout = await _withdrawn_with_request(db_client, db_session)
+    old_profile_id = payout.profile_id
+    admin_id = await _as_admin(db_client, db_session)
+    base = f"/admin/creator-payout/payouts/{payout.id}"
+    assert (await db_client.post(f"{base}/hold", json={"reasonText": "계좌 해지됨"})).status_code == 204
+
+    blank = await db_client.put(f"{base}/payee-info", json=_payee(reasonText=" "))
+    done = await db_client.put(f"{base}/payee-info", json=_payee(legalName="홍길순"))
+
+    assert (blank.status_code, done.status_code) == (422, 204)
+    [stored] = await _payouts(db_session, user)
+    [profile] = await _profiles(db_session, user)
+    assert stored.profile_id == profile.id != old_profile_id
+    assert (stored.status, stored.amount_krw, stored.net_amount_krw) == ("held", 10_000, 9_670)
+    assert (profile.entered_by_admin_id, profile.consented_at, profile.privacy_version) == (admin_id, None, None)
+    assert (profile.superseded_at, profile.bank_code, profile.account_last4) == (None, "090", "5678")
+    assert [decrypt_field(_keyring(), profile, column) for column, _ in PLAINTEXTS] == ["홍길순", RRN, NEW_ACCOUNT]
+    [log] = await _audit(db_session, "user-creator-payout-payee-replace")
+    assert (log.admin_id, log.target_user_id, log.reason_text) == (admin_id, user.id, "문의로 받은 계좌")
+    detail = (await db_client.get(base)).json()
+    assert (detail["maskedName"], detail["accountLast4"], detail["payeeEnteredByAdmin"]) == ("홍*순", "5678", True)
+    for secret in (RRN, NEW_ACCOUNT, "홍길순"):
+        assert secret not in caplog.text
+
+
+async def test_replacing_the_payee_keeps_a_version_another_payout_still_uses(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """앞 판을 이미 이체한 지급이 가리키면 그 판은 원천징수 근거라 남고 내려가기만 한다."""
+    user = await _ready(db_client, db_session, 10_000)
+    assert (await _request(db_client)).status_code == 201
+    await _confirm(db_session, user, 10_000, month=11)
+    [paid] = await _payouts(db_session, user)
+    await db_session.execute(
+        update(CreatorPayout)
+        .where(CreatorPayout.id == paid.id)
+        .values(status="paid", paid_at=func.now(), transferred_on=date(2026, 10, 9))
+    )
+    assert (await _request(db_client)).status_code == 201
+    locked = await db_session.get(User, user.id, with_for_update=True)
+    assert locked is not None
+    await erase_account(db_session, locked, delete_storage_object=_keep)
+    [in_progress] = [payout for payout in await _payouts(db_session, user) if payout.status == "requested"]
+    await _as_admin(db_client, db_session)
+
+    resp = await db_client.put(f"/admin/creator-payout/payouts/{in_progress.id}/payee-info", json=_payee())
+
+    assert resp.status_code == 204
+    profiles = {profile.id: profile for profile in await _profiles(db_session, user)}
+    by_status = {payout.status: payout for payout in await _payouts(db_session, user)}
+    assert set(profiles) == {by_status["paid"].profile_id, by_status["requested"].profile_id}
+    assert profiles[by_status["paid"].profile_id].superseded_at is not None
+    assert profiles[by_status["requested"].profile_id].superseded_at is None
+
+
+async def test_payee_replacement_refuses_bad_input_in_order(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """형식 → 외국인등록번호 → 지금 판의 주민등록번호와 생년월일이 다름. 키가 없으면 넣을 수 없다. 끝난 건은 바꾸지 않는다."""
+    user, payout = await _withdrawn_with_request(db_client, db_session)
+    await _as_admin(db_client, db_session)
+    url = f"/admin/creator-payout/payouts/{payout.id}/payee-info"
+
+    async def put(**overrides: object) -> tuple[int, object]:
+        resp = await db_client.put(url, json=_payee(**overrides))
+        return resp.status_code, resp.json()["detail"]
+
+    assert await put(accountNumber="12-34") == (422, {"code": "CREATOR_PAYOUT_INFO_INVALID"})
+    assert await put(rrn="0001015123456") == (422, {"code": "CREATOR_PAYOUT_FOREIGNER_UNSUPPORTED"})
+    # 생년월일만 하루 다르다.
+    assert await put(rrn="0001024123456") == (422, {"code": "CREATOR_PAYOUT_RRN_MISMATCH"})
+    monkeypatch.setattr(settings, "creator_payout_encryption_keys", "")
+    assert await put() == (503, {"code": "CREATOR_PAYOUT_UNAVAILABLE"})
+    monkeypatch.setattr(settings, "creator_payout_encryption_keys", CREATOR_PAYOUT_TEST_KEYS)
+    [unchanged] = await _profiles(db_session, user)
+    assert unchanged.id == payout.profile_id
+    today = datetime.now(KST).date().isoformat()
+    assert (
+        await db_client.post(
+            f"/admin/creator-payout/payouts/{payout.id}/transfer",
+            json={"transferredOn": today, "payeeProfileId": str(payout.profile_id)},
+        )
+    ).status_code == 204
+    assert await put() == (409, {"code": "CREATOR_PAYOUT_NOT_REQUESTED"})
+
+
+async def test_payee_replacement_skips_the_birth_date_check_when_the_old_version_is_unreadable(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """키를 잃어 지금 판을 읽을 수 없으면 대조할 값이 없다 — 형식만 보고 받는다(이 건을 이체할 길이 이것뿐이다). 그 건의
+    상세도 실명 없이 열리고 보류할 수 있다."""
+    user = await _member(db_session)
+    profile = await _profile_under_other_key(db_session, user)
+    db_session.add(_payout_row(user.id, profile.id))
+    await db_session.flush()
+    await erase_account(db_session, user, delete_storage_object=_keep)
+    [payout] = await _payouts(db_session, user)
+    await _as_admin(db_client, db_session)
+    base = f"/admin/creator-payout/payouts/{payout.id}"
+    detail = await db_client.get(base)
+    assert (detail.status_code, detail.json()["payeeInfoReadable"]) == (200, False)
+    assert (await db_client.post(f"{base}/hold", json={"reasonText": "계좌 해지됨"})).status_code == 204
+
+    resp = await db_client.put(f"{base}/payee-info", json=_payee(rrn="0001024123456"))
+
+    assert resp.status_code == 204
+    [replacement] = await _profiles(db_session, user)
+    assert decrypt_field(_keyring(), replacement, "rrn") == "0001024123456"
+
+
+async def test_transfer_refuses_when_the_payee_changed_after_the_operator_looked(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """운영자가 보고 이체한 판(상세·원문 열람의 `payeeProfileId`)과 지금 판이 다르면 이체 기록은 409 다 — 그 사이 다른
+    운영자가 수취 정보를 바꿨다면 돈은 앞 판 계좌로 갔고, 그대로 기록하면 지급이 돈을 받지 않은 판을 가리킨다. 지금 판을
+    다시 보고 보내면 기록된다."""
+    user, payout = await _withdrawn_with_request(db_client, db_session)
+    await _as_admin(db_client, db_session)
+    base = f"/admin/creator-payout/payouts/{payout.id}"
+    assert (await db_client.post(f"{base}/hold", json={"reasonText": "계좌 해지됨"})).status_code == 204
+    viewed = await db_client.post(
+        f"{base}/payee-info-view", json={"reasonCategory": "other", "reasonText": "이체 계좌 확인"}
+    )
+    seen = viewed.json()["payeeProfileId"]
+    assert seen == str(payout.profile_id)
+    assert (await db_client.put(f"{base}/payee-info", json=_payee())).status_code == 204
+    today = datetime.now(KST).date().isoformat()
+
+    stale = await db_client.post(f"{base}/transfer", json={"transferredOn": today, "payeeProfileId": seen})
+
+    assert (stale.status_code, stale.json()["detail"]) == (409, {"code": "CREATOR_PAYOUT_PAYEE_CHANGED"})
+    [stored] = await _payouts(db_session, user)
+    assert (stored.status, stored.paid_at) == ("held", None)
+    assert await _audit(db_session, "user-creator-payout-transfer") == []
+    current = (await db_client.get(base)).json()["payeeProfileId"]
+    assert current == str(stored.profile_id) != seen
+
+    done = await db_client.post(f"{base}/transfer", json={"transferredOn": today, "payeeProfileId": current})
+
+    assert done.status_code == 204
+    [paid] = await _payouts(db_session, user)
+    assert (paid.status, str(paid.profile_id)) == ("paid", current)
+
+
+async def test_return_waits_for_an_in_flight_withdrawal_and_then_refuses(db_engine: AsyncEngine) -> None:
+    """반려는 수취인 `users` 행을 잠근 뒤 탈퇴 여부를 읽는다. 탈퇴가 그 행을 쥐고 파기하는 동안 들어온 반려는 그 잠금에서
+    멈춰 있어야 하고(`_assert_blocked`), 탈퇴가 커밋한 뒤에는 409 `CREATOR_PAYOUT_PAYEE_WITHDRAWN` 으로 끝나야 한다 —
+    잠금 없이 읽으면 "탈퇴 안 함"을 보고 반려해, 다시 신청할 수 없는 사람의 금액이 갈 곳을 잃는다. `db_session` 하나
+    위에서는 두 세션이 같은 트랜잭션이라 잠금이 서로를 막지 않으므로 엔진에서 커넥션을 따로 받는다.
+
+    여기서 쓴 행은 롤백되지 않아 끝에 직접 지운다."""
+    factory = async_sessionmaker(db_engine, expire_on_commit=False)
+    async with factory() as setup:
+        user = _make_user(nickname="탈퇴할 작가")
+        admin = AdminUser(email=f"admin-{uuid.uuid4()}@example.com", password_hash="unused")
+        setup.add_all([user, admin])
+        await setup.flush()
+        profile = _profile_for(user.id)
+        setup.add(profile)
+        await setup.flush()
+        payout = _payout_row(user.id, profile.id)
+        setup.add(payout)
+        await setup.commit()
+    email = user.email
+    try:
+        async with factory() as withdrawal, factory() as operator:
+            locked = await lock_active_user(withdrawal, user.id)
+
+            waiting = asyncio.create_task(
+                return_creator_payout(
+                    payout.id, AdminCreatorPayoutReturnRequest(reason_text="이체 실패"), admin.id, operator
+                )
+            )
+            await _assert_blocked(waiting)
+
+            await erase_account(withdrawal, locked, delete_storage_object=_keep)
+
+            with pytest.raises(HTTPException) as refused:
+                await waiting
+
+        detail: object = refused.value.detail
+        assert (refused.value.status_code, detail) == (409, {"code": "CREATOR_PAYOUT_PAYEE_WITHDRAWN"})
+        async with factory() as check:
+            stored = await check.get(CreatorPayout, payout.id)
+            assert stored is not None
+            assert (stored.status, stored.returned_at) == ("requested", None)
+    finally:
+        async with factory() as cleanup:
+            await cleanup.execute(delete(AdminActionLog).where(AdminActionLog.admin_id == admin.id))
+            await cleanup.execute(delete(CreatorPayout).where(CreatorPayout.user_id == user.id))
+            await cleanup.execute(delete(CreatorPayoutProfile).where(CreatorPayoutProfile.user_id == user.id))
+            await cleanup.execute(
+                delete(WithdrawnEmail).where(WithdrawnEmail.email_hmac == hash_withdrawn_email(email))
+            )
+            await cleanup.execute(delete(User).where(User.id == user.id))
+            await cleanup.execute(delete(AdminUser).where(AdminUser.id == admin.id))
+            await cleanup.commit()
+
+
+async def test_held_payout_blocks_the_member_like_a_requested_one(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """보류는 탈퇴한 회원 건에만 생기지만, 회원 쪽 판정도 보류를 처리 중으로 센다 — 새 확정분이 있어도 두 번째 지급
+    신청·지급 정보 변경을 받지 않고, 금액은 잔액에서 빠진 채이며, 화면에는 처리 중으로 보인다."""
+    user = await _ready(db_client, db_session, 10_000)
+    assert (await _request(db_client)).status_code == 201
+    [payout] = await _payouts(db_session, user)
+    await db_session.execute(
+        update(CreatorPayout).where(CreatorPayout.id == payout.id).values(status="held", held_at=func.now())
+    )
+    await _confirm(db_session, user, 20_000, month=11)
+
+    request = await _request(db_client)
+    info = await db_client.put("/me/creator-payout/payout-info", json=_info(bankCode="004"))
+    overview = (await db_client.get("/me/creator-payout")).json()
+    listed = (await db_client.get("/me/creator-payout/payouts")).json()["items"]
+
+    in_progress = (409, {"code": "CREATOR_PAYOUT_IN_PROGRESS"})
+    assert (request.status_code, request.json()["detail"]) == in_progress
+    assert (info.status_code, info.json()["detail"]) == in_progress
+    assert (overview["balanceKrw"], overview["inProgressPayout"]["amountKrw"]) == (20_000, 10_000)
+    assert [item["status"] for item in listed] == ["requested"]
+
+
+def test_member_sees_a_held_payout_as_in_progress() -> None:
+    statuses: tuple[CreatorPayoutStatus, ...] = ("requested", "held", "paid", "returned")
+    assert [member_payout_status(status) for status in statuses] == [
+        "requested",
+        "requested",
+        "paid",
+        "returned",
+    ]
+
+
+# ── 어드민 회원 상세의 정산 섹션 ─────────────────────────────────────────────────
+async def test_member_detail_section_shows_history_balance_and_recent_rows(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """신청 이력 전부(최신순), 잔액(처리 중 지급을 뺀 값), 확정은 최근 12개, 지급은 최근 20개."""
+    user = await _member(db_session, status="revoked")
+    db_session.add(
+        CreatorPayoutApplication(
+            user_id=user.id,
+            status="rejected",
+            consented_at=datetime(2026, 8, 1, tzinfo=UTC),
+            privacy_version="2026-08-01",
+            applied_at=datetime(2026, 8, 1, tzinfo=UTC),
+            decided_at=datetime(2026, 8, 2, tzinfo=UTC),
+            decision_reason="발행 작품 없음",
+        )
+    )
+    for index in range(13):
+        start = datetime(2025 + (index // 12), index % 12 + 1, 1, tzinfo=KST)
+        db_session.add(
+            CreatorPayoutConfirmation(
+                user_id=user.id,
+                kind="monthly",
+                period_month=start.date(),
+                window_start=start,
+                window_end=start + timedelta(days=28),
+                gross_units=0,
+                refunded_units=0,
+                rate_bps=500,
+                exact_krw=Decimal(2_000),
+                amount_krw=2_000,
+            )
+        )
+    profile = _profile_for(user.id)
+    db_session.add(profile)
+    await db_session.flush()
+    for day in range(1, 21):
+        db_session.add(
+            _payout_row(
+                user.id,
+                profile.id,
+                status="returned",
+                amount_krw=1_000,
+                income_tax_krw=30,
+                local_tax_krw=0,
+                net_amount_krw=970,
+                requested_at=datetime(2026, 9, day, tzinfo=UTC),
+                returned_at=datetime(2026, 9, day, tzinfo=UTC),
+            )
+        )
+    db_session.add(_payout_row(user.id, profile.id, requested_at=datetime(2026, 10, 1, tzinfo=UTC)))
+    await db_session.flush()
+    await _as_admin(db_client, db_session)
+
+    resp = await db_client.get(f"/admin/users/{user.id}/creator-payout")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert [(item["status"], item["decisionReason"]) for item in body["applications"]] == [
+        ("revoked", ""),
+        ("rejected", "발행 작품 없음"),
+    ]
+    assert body["balanceKrw"] == 13 * 2_000 - 10_000
+    assert [item["periodMonth"] for item in body["confirmations"][:: len(body["confirmations"]) - 1]] == [
+        "2026-01-01",
+        "2025-02-01",
+    ]
+    assert len(body["confirmations"]) == 12
+    assert len(body["payouts"]) == 20
+    assert (body["payouts"][0]["status"], body["payouts"][0]["amountKrw"]) == ("requested", 10_000)
+    assert body["payouts"][-1]["requestedAt"].startswith("2026-09-02")
+
+
+async def test_member_detail_section_is_404_for_withdrawn_or_missing_members(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = await _member(db_session)
+    assert (await db_client.get(f"/admin/users/{user.id}/creator-payout")).status_code == 401
+    await erase_account(db_session, user, delete_storage_object=_keep)
+    await _as_admin(db_client, db_session)
+
+    for user_id in (user.id, uuid.uuid4()):
+        resp = await db_client.get(f"/admin/users/{user_id}/creator-payout")
+        assert (resp.status_code, resp.json()["detail"]) == (404, "User not found")

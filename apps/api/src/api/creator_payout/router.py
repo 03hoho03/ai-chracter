@@ -29,7 +29,7 @@ from api.core.identity_gate import identity_verification_required
 from api.core.sentry import capture_dependency_failure
 from api.creator_payout.config import creator_payout_active, creator_payout_transfer_active, payout_keyring
 from api.creator_payout.eligibility import CreatorPayoutBlockReason, load_creator_payout_eligibility
-from api.creator_payout.payout_info import decrypt_field, mask_name, new_profile, parse_payout_info
+from api.creator_payout.payout_info import decrypt_profile, mask_name, new_profile, parse_payout_info
 from api.creator_payout.schemas import (
     ApplyCreatorPayoutRequest,
     ApplyCreatorPayoutResponse,
@@ -37,6 +37,7 @@ from api.creator_payout.schemas import (
     CreatorPayoutEligibilityView,
     CreatorPayoutInfoView,
     CreatorPayoutInProgressView,
+    CreatorPayoutMemberStatus,
     CreatorPayoutPayoutsResponse,
     CreatorPayoutPayoutView,
     CreatorPayoutResponse,
@@ -57,6 +58,8 @@ from api.db.models.creator_payout import (
     CreatorPayoutConfirmation,
     CreatorPayoutConfirmationLine,
     CreatorPayoutProfile,
+    CreatorPayoutStatus,
+    IN_PROGRESS_PAYOUT_STATUSES,
 )
 from api.db.models.story import StoryVersionDetail
 from api.db.session import get_db_session
@@ -76,8 +79,8 @@ def payout_requested_message(amount_krw: int) -> str:
     return f"크리에이터 지급 신청 {amount_krw:,}원 접수"
 
 
-# 잔액에서 빼는 지급 상태. 반려된 지급은 빼지 않아 금액이 잔액으로 돌아온다.
-BALANCE_DEBITING_PAYOUT_STATUSES = ("requested", "paid")
+# 잔액에서 빼는 지급 상태. 반려된 지급은 빼지 않아 금액이 잔액으로 돌아온다. 보류된 지급은 이체를 기다리는 금액이라 뺀다.
+BALANCE_DEBITING_PAYOUT_STATUSES = ("requested", "held", "paid")
 
 _LIVE_STATUSES = ("pending", "approved")
 
@@ -160,7 +163,7 @@ async def get_creator_payout(
 
 
 async def balance_krw(db: AsyncSession, user_id: uuid.UUID) -> int:
-    """적립 잔액 = 확정 행 금액의 합 − 처리 중·지급된 지급 금액. 저장하지 않으므로 확정·지급 신청·반려·탈퇴가 잔액을
+    """적립 잔액 = 확정 행 금액의 합 − 처리 중·보류·지급된 지급 금액. 저장하지 않으므로 확정·지급 신청·반려·탈퇴가 잔액을
     따로 고치지 않는다 — 반려는 지급 행 상태만 바꾸면 금액이 돌아온다."""
     confirmed = await db.scalar(
         select(func.coalesce(func.sum(CreatorPayoutConfirmation.amount_krw), 0)).where(
@@ -199,8 +202,11 @@ async def _current_profile(db: AsyncSession, user_id: uuid.UUID) -> CreatorPayou
 
 
 async def _in_progress_payout(db: AsyncSession, user_id: uuid.UUID) -> CreatorPayout | None:
+    """아직 이체하지 않은 지급(처리 중·보류). 한 사람에 하나다(부분 유니크)."""
     payout: CreatorPayout | None = await db.scalar(
-        select(CreatorPayout).where(CreatorPayout.user_id == user_id, CreatorPayout.status == "requested")
+        select(CreatorPayout).where(
+            CreatorPayout.user_id == user_id, CreatorPayout.status.in_(IN_PROGRESS_PAYOUT_STATUSES)
+        )
     )
     return payout
 
@@ -218,13 +224,14 @@ def _report_owner_view_decrypt_failure_once(exc: FieldDecryptError) -> None:
 
 
 async def _payout_info_view(db: AsyncSession, user_id: uuid.UUID) -> CreatorPayoutInfoView | None:
-    """지금 쓰는 지급 정보의 표시값. 실명을 복호화하지 못하면(키 분실 등) 마스킹 이름만 비우고 나머지를 보인다 — 이
-    화면이 실패하면 잔액·내역까지 볼 수 없다. 실패는 값 없이 남긴다."""
+    """지금 쓰는 지급 정보의 표시값. 세 칸(실명·주민등록번호·계좌번호) 중 하나라도 복호화하지 못하면(키 분실·암호문
+    손상) 마스킹 이름만 비우고 나머지를 보인다 — 운영자는 세 칸을 모두 읽어야 이체할 수 있으므로 실명만 읽혀도 다시
+    입력받아야 한다. 이 화면이 실패하면 잔액·내역까지 볼 수 없어 오류로 끝내지 않는다. 실패는 값 없이 남긴다."""
     profile = await _current_profile(db, user_id)
     if profile is None:
         return None
     try:
-        masked_name: str | None = mask_name(decrypt_field(payout_keyring(), profile, "legal_name"))
+        masked_name: str | None = mask_name(decrypt_profile(payout_keyring(), profile)["legal_name"])
     except FieldDecryptError as exc:
         logger.warning("creator payout info could not be decrypted for the owner view")
         _report_owner_view_decrypt_failure_once(exc)
@@ -477,7 +484,8 @@ async def request_payout(
 ) -> RequestPayoutResponse:
     """확정 잔액 전액의 지급을 신청한다(금액을 고르지 않는다). 순서: 스위치·암호화 키 503 → 회원 행 잠금(탈퇴 401·정지 403) →
     미인증·만 19세 미만 403 → 승인된 적 없음 403 `CREATOR_PAYOUT_NOT_APPROVED`(승인 취소된 회원은 신청할 수 있다) →
-    지급 정보 없음 409 `CREATOR_PAYOUT_INFO_REQUIRED` → 처리 중인 지급이 있음 409 `CREATOR_PAYOUT_IN_PROGRESS` → 잔액 0
+    지급 정보 없음 409 `CREATOR_PAYOUT_INFO_REQUIRED` → 지급 정보의 세 칸 중 하나라도 복호화할 수 없음 409
+    `CREATOR_PAYOUT_INFO_UNREADABLE`(운영자가 이체할 수 없는 판으로 신청을 받지 않는다 — 다시 입력하면 풀린다) → 처리 중인 지급이 있음 409 `CREATOR_PAYOUT_IN_PROGRESS` → 잔액 0
     이하 422 `CREATOR_PAYOUT_NOTHING_TO_PAY` → 잔액이 최소 지급액 미만이고 탈퇴 전 신청이 아님 422
     `CREATOR_PAYOUT_BELOW_MINIMUM`(+ `minimumKrw`·`balanceKrw`).
 
@@ -490,6 +498,10 @@ async def request_payout(
     profile = await _current_profile(db, user_id)
     if profile is None:
         raise _error(status.HTTP_409_CONFLICT, "CREATOR_PAYOUT_INFO_REQUIRED")
+    try:
+        decrypt_profile(payout_keyring(), profile)
+    except FieldDecryptError:
+        raise _error(status.HTTP_409_CONFLICT, "CREATOR_PAYOUT_INFO_UNREADABLE") from None
     if await _in_progress_payout(db, user_id) is not None:
         raise _error(status.HTTP_409_CONFLICT, "CREATOR_PAYOUT_IN_PROGRESS")
     balance = await balance_krw(db, user_id)
@@ -533,6 +545,16 @@ async def request_payout(
     )
 
 
+def member_payout_status(payout_status: CreatorPayoutStatus) -> CreatorPayoutMemberStatus:
+    """회원에게 보이는 지급 상태. 보류는 탈퇴한 회원의 건에만 생겨 회원 화면에 나올 일이 없지만, 그 회원에게 보류는
+    여전히 이체를 기다리는 처리 중이다 — 회원 쪽 응답 타입에 운영 상태를 늘리지 않는다."""
+    match payout_status:
+        case "held":
+            return "requested"
+        case "requested" | "paid" | "returned":
+            return payout_status
+
+
 @me_router.get("/payouts")
 async def list_payouts(
     user_id: uuid.UUID = Depends(get_current_user_id),
@@ -550,7 +572,7 @@ async def list_payouts(
         items=[
             CreatorPayoutPayoutView(
                 id=row.id,
-                status=row.status,
+                status=member_payout_status(row.status),
                 amount_krw=row.amount_krw,
                 income_tax_krw=row.income_tax_krw,
                 local_tax_krw=row.local_tax_krw,

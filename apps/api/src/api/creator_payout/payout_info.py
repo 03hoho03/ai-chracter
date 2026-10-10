@@ -45,6 +45,19 @@ def parse_payout_info(
     """형식 → 외국인등록번호 → 주민등록번호 앞 7자리(생년월일 + 세기)와 본인인증 생년월일 대조 순으로 보고, 받을 수
     없으면 그 이유를 돌려준다. 실명은 앞뒤 공백을 뺀 뒤 1~40자다. 주민등록번호 끝자리 검증식은 쓰지 않는다 — 2020년
     10월 뒤 발급분은 뒤 6자리가 임의 번호라 검증식이 맞지 않는다."""
+    info = parse_payout_info_format(
+        legal_name=legal_name, rrn=rrn, bank_code=bank_code, account_number=account_number
+    )
+    if isinstance(info, PayoutInfo) and (birth_date is None or rrn_birth_date(info.rrn) != birth_date):
+        return "rrn_mismatch"
+    return info
+
+
+def parse_payout_info_format(
+    *, legal_name: str, rrn: str, bank_code: str, account_number: str
+) -> PayoutInfo | Literal["invalid", "foreigner"]:
+    """`parse_payout_info` 에서 생년월일 대조만 뺀 것 — 대조할 생년월일이 없을 때(탈퇴 회원의 지급 정보를 운영자가
+    다시 넣는데 앞 판을 읽을 수 없을 때) 쓴다."""
     name = legal_name.strip()
     bank = _BANK_CODES.get(bank_code)
     if (
@@ -56,13 +69,11 @@ def parse_payout_info(
         return "invalid"
     if rrn[6] in _FOREIGNER_RRN_DIGITS:
         return "foreigner"
-    if birth_date is None or _rrn_birth_date(rrn) != birth_date:
-        return "rrn_mismatch"
     return PayoutInfo(legal_name=name, rrn=rrn, bank_code=bank, account_number=account_number)
 
 
-def _rrn_birth_date(rrn: str) -> date | None:
-    """내국인 주민등록번호(7번째 자리 0~4·9)의 생년월일. 없는 날짜면 `None`."""
+def rrn_birth_date(rrn: str) -> date | None:
+    """내국인 주민등록번호(7번째 자리 0~4·9, 숫자 13자리)의 생년월일. 없는 날짜면 `None`."""
     century = _CENTURY_BY_RRN_DIGIT[rrn[6]]
     try:
         return date(century + int(rrn[0:2]), int(rrn[2:4]), int(rrn[4:6]))
@@ -82,7 +93,24 @@ def new_profile(
     consented_at: datetime,
     privacy_version: str,
 ) -> CreatorPayoutProfile:
-    """암호화한 새 지급 정보 판. id 를 먼저 정해야 연관 데이터에 넣을 수 있다."""
+    """회원이 동의하고 입력한, 암호화한 새 지급 정보 판."""
+    profile = _encrypted_profile(keyring, info, user_id=user_id)
+    profile.consented_at = consented_at
+    profile.privacy_version = privacy_version
+    return profile
+
+
+def new_admin_profile(
+    keyring: FieldKeyring, info: PayoutInfo, *, user_id: uuid.UUID, admin_id: uuid.UUID
+) -> CreatorPayoutProfile:
+    """탈퇴한 회원의 처리 중인 지급을 이체하려고 운영자가 문의로 받아 넣는, 암호화한 새 지급 정보 판."""
+    profile = _encrypted_profile(keyring, info, user_id=user_id)
+    profile.entered_by_admin_id = admin_id
+    return profile
+
+
+def _encrypted_profile(keyring: FieldKeyring, info: PayoutInfo, *, user_id: uuid.UUID) -> CreatorPayoutProfile:
+    """id 를 먼저 정해야 연관 데이터에 넣을 수 있다."""
     profile_id = uuid.uuid4()
     key_id, name_blob = keyring.encrypt(info.legal_name, aad=_aad(profile_id, "legal_name"))
     _, rrn_blob = keyring.encrypt(info.rrn, aad=_aad(profile_id, "rrn"))
@@ -96,8 +124,6 @@ def new_profile(
         account_number_ciphertext=account_blob,
         bank_code=info.bank_code,
         account_last4=info.account_number[-4:],
-        consented_at=consented_at,
-        privacy_version=privacy_version,
     )
 
 
@@ -105,6 +131,11 @@ def decrypt_field(keyring: FieldKeyring, profile: CreatorPayoutProfile, column: 
     """한 칸을 복호화한다. 실패하면 `FieldDecryptError`."""
     blob: bytes = getattr(profile, f"{column}_ciphertext")
     return keyring.decrypt(profile.key_id, blob, aad=_aad(profile.id, column))
+
+
+def decrypt_profile(keyring: FieldKeyring, profile: CreatorPayoutProfile) -> dict[EncryptedColumn, str]:
+    """세 칸을 모두 복호화한다. 하나라도 실패하면 `FieldDecryptError` — 한 칸이라도 읽을 수 없는 판은 이체할 수 없다."""
+    return {column: decrypt_field(keyring, profile, column) for column in _ENCRYPTED_COLUMNS}
 
 
 def reencrypt_profile(keyring: FieldKeyring, profile: CreatorPayoutProfile) -> None:

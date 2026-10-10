@@ -7,8 +7,10 @@ from api.db.models.creator_payout import (
     BankCode,
     CreatorPayoutApplicationStatus,
     CreatorPayoutConfirmationKind,
-    CreatorPayoutStatus,
 )
+
+# 회원에게 보이는 지급 상태. 운영 상태인 보류(탈퇴한 회원의 건에만 생긴다)는 처리 중으로 보인다.
+CreatorPayoutMemberStatus = Literal["requested", "paid", "returned"]
 
 
 class ApplyCreatorPayoutRequest(CamelModel):
@@ -41,8 +43,8 @@ class CreatorPayoutEligibilityView(CamelModel):
 
 
 class CreatorPayoutInfoView(CamelModel):
-    """등록한 지급 정보의 표시값. 주민등록번호는 싣지 않는다. `maskedName` 은 실명의 첫·끝 글자만 남긴 값이고, 암호화 키를
-    잃어 복호화할 수 없으면 null 이다(은행·계좌 끝 4자리는 평문이라 그대로 보인다) — 그때는 지급 정보를 다시 입력받는다."""
+    """등록한 지급 정보의 표시값. 주민등록번호는 싣지 않는다. `maskedName` 은 실명의 첫·끝 글자만 남긴 값이고, 실명·주민등록번호·
+    계좌번호 중 하나라도 복호화할 수 없으면(키 분실·암호문 손상) null 이다(은행·계좌 끝 4자리는 평문이라 그대로 보인다) — 그때는 지급 정보를 다시 입력받는다."""
 
     masked_name: str | None
     bank_code: BankCode
@@ -60,8 +62,8 @@ class CreatorPayoutResponse(CamelModel):
     # 승인된 적이 있는가(승인 중이거나 승인 취소됨). 승인 취소 뒤에도 확정된 적립은 남아 지급을 신청할 수 있어서, 최근
     # 신청이 다시 대기 중이어도 참이다.
     ever_approved: bool
-    # 적립 잔액(원) = 확정 행 금액의 합 − 처리 중·지급된 지급 금액. 저장하지 않고 매번 더한다(반려된 지급은 빼지 않아
-    # 저절로 돌아온다). 지급 뒤 확정 뒤 결제 취소 조정이 들어오면 음수일 수 있고, 음수는 다음 적립과 상계된다.
+    # 적립 잔액(원) = 확정 행 금액의 합 − 처리 중·보류·지급된 지급 금액. 저장하지 않고 매번 더한다(반려된 지급은 빼지
+    # 않아 저절로 돌아온다). 지급 뒤 확정 뒤 결제 취소 조정이 들어오면 음수일 수 있고, 음수는 다음 적립과 상계된다.
     balance_krw: int
     # 적립 비율(만분율, 500 = 5%). 서버 설정값이라 웹이 사본을 두지 않고 이 값으로 비율을 말한다.
     rate_bps: int
@@ -138,7 +140,7 @@ class CreatorPayoutPayoutView(CamelModel):
     """지급 신청 하나. `transferredOn` 은 이체한 날(KST), `returnReason` 은 반려 사유다."""
 
     id: uuid.UUID
-    status: CreatorPayoutStatus
+    status: CreatorPayoutMemberStatus
     amount_krw: int
     income_tax_krw: int
     local_tax_krw: int

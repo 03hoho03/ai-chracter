@@ -7,9 +7,11 @@ Create Date: 2026-10-09 23:12:32.567815
 크리에이터 지급 테이블 둘을 만든다.
 
 - `creator_payout_profiles`: 지급 정보 한 판(실명·주민등록번호·계좌번호는 앱 키로 암호화한 바이트, 은행 코드와 계좌 끝
-  4자리는 평문). 고치지 않고 새 판을 넣으며, 지금 쓰는 판은 한 사람에 하나(부분 유니크).
+  4자리는 평문). 고치지 않고 새 판을 넣으며, 지금 쓰는 판은 한 사람에 하나(부분 유니크). 회원이 동의하고 넣은 판은 동의
+  시각·처리방침 버전을, 탈퇴한 회원의 지급을 이체하려고 운영자가 넣은 판은 넣은 운영자를 갖는다(CHECK 로 둘 중 하나).
 - `creator_payouts`: 지급 신청과 그 처리 기록. 신청 때의 지급 정보 판을 FK 로 가리키고 원천징수 세율·세액을 남긴다.
-  처리 중(`requested`)인 지급은 한 사람에 하나(부분 유니크).
+  탈퇴한 회원의 건은 반려 대신 보류(`held`)한다. 아직 이체하지 않은(`requested`·`held`) 지급은 한 사람에 하나(부분
+  유니크).
 - CHECK·부분 인덱스의 WHERE 는 `alembic check` 가 비교하지 않는다 — 행위 테스트가 유일한 검증이다.
 
 첫 문장은 `SET LOCAL lock_timeout = '5s'` 다. 새 테이블이 `users`·`admin_users` 에 FK 를 걸 때 참조 테이블에 짧은
@@ -60,12 +62,16 @@ def upgrade() -> None:
     sa.Column('account_number_ciphertext', sa.LargeBinary(), nullable=False),
     sa.Column('bank_code', sa.Text(), nullable=False),
     sa.Column('account_last4', sa.Text(), nullable=False),
-    sa.Column('consented_at', sa.DateTime(timezone=True), nullable=False),
-    sa.Column('privacy_version', sa.Text(), nullable=False),
+    sa.Column('consented_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('privacy_version', sa.Text(), nullable=True),
+    sa.Column('entered_by_admin_id', sa.Uuid(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('superseded_at', sa.DateTime(timezone=True), nullable=True),
     sa.CheckConstraint("key_id <> ''", name='ck_creator_payout_profiles_key_id'),
     sa.CheckConstraint('char_length(account_last4) = 4', name='ck_creator_payout_profiles_account_last4'),
+    sa.CheckConstraint('(entered_by_admin_id IS NULL) = (consented_at IS NOT NULL)', name='ck_creator_payout_profiles_source'),
+    sa.CheckConstraint('(consented_at IS NULL) = (privacy_version IS NULL)', name='ck_creator_payout_profiles_consent'),
+    sa.ForeignKeyConstraint(['entered_by_admin_id'], ['admin_users.id'], name='fk_creator_payout_profiles_entered_by_admin_id'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], name='fk_creator_payout_profiles_user_id'),
     sa.PrimaryKeyConstraint('id')
     )
@@ -85,12 +91,15 @@ def upgrade() -> None:
     sa.Column('paid_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('transferred_on', sa.Date(), nullable=True),
     sa.Column('returned_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('held_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('decided_by_admin_id', sa.Uuid(), nullable=True),
     sa.Column('admin_memo', sa.Text(), server_default='', nullable=False),
     sa.Column('return_reason', sa.Text(), server_default='', nullable=False),
+    sa.Column('hold_reason', sa.Text(), server_default='', nullable=False),
     sa.CheckConstraint("(status = 'paid') = (paid_at IS NOT NULL AND transferred_on IS NOT NULL)", name='ck_creator_payouts_paid'),
     sa.CheckConstraint("(status = 'returned') = (returned_at IS NOT NULL)", name='ck_creator_payouts_returned'),
-    sa.CheckConstraint("status IN ('requested', 'paid', 'returned')", name='ck_creator_payouts_status'),
+    sa.CheckConstraint("(status <> 'held' OR held_at IS NOT NULL) AND (status <> 'returned' OR held_at IS NULL)", name='ck_creator_payouts_held'),
+    sa.CheckConstraint("status IN ('requested', 'held', 'paid', 'returned')", name='ck_creator_payouts_status'),
     sa.CheckConstraint('amount_krw > 0', name='ck_creator_payouts_amount'),
     sa.CheckConstraint('income_tax_krw >= 0 AND local_tax_krw >= 0', name='ck_creator_payouts_taxes_non_negative'),
     sa.CheckConstraint('income_tax_rate_bps > 0', name='ck_creator_payouts_income_tax_rate_bps'),
@@ -102,14 +111,14 @@ def upgrade() -> None:
     )
     op.create_index('ix_creator_payouts_status_requested_at', 'creator_payouts', ['status', 'requested_at'], unique=False)
     op.create_index('ix_creator_payouts_user_id_requested_at', 'creator_payouts', ['user_id', sa.literal_column('requested_at DESC')], unique=False)
-    op.create_index('ux_creator_payouts_user_id_requested', 'creator_payouts', ['user_id'], unique=True, postgresql_where=sa.text("status = 'requested'"))
+    op.create_index('ux_creator_payouts_user_id_in_progress', 'creator_payouts', ['user_id'], unique=True, postgresql_where=sa.text("status IN ('requested', 'held')"))
 
 
 def downgrade() -> None:
     """Downgrade schema."""
     op.execute("SET LOCAL lock_timeout = '5s'")
     _assert_downgradable(op.get_bind())
-    op.drop_index('ux_creator_payouts_user_id_requested', table_name='creator_payouts', postgresql_where=sa.text("status = 'requested'"))
+    op.drop_index('ux_creator_payouts_user_id_in_progress', table_name='creator_payouts', postgresql_where=sa.text("status IN ('requested', 'held')"))
     op.drop_index('ix_creator_payouts_user_id_requested_at', table_name='creator_payouts')
     op.drop_index('ix_creator_payouts_status_requested_at', table_name='creator_payouts')
     op.drop_table('creator_payouts')

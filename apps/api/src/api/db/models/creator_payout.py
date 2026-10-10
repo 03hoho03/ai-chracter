@@ -39,8 +39,12 @@ from api.db.models.payment import _sql_in_list
 CreatorPayoutApplicationStatus = Literal["pending", "approved", "rejected", "revoked"]
 # 확정 종류. retro 는 첫 승인 때 지난 기간을 한 번 세는 행, monthly 는 매달 확정하는 행이다.
 CreatorPayoutConfirmationKind = Literal["retro", "monthly"]
-# 지급 상태. requested → paid | returned. 둘 다 끝이고, 반려된 금액은 잔액(파생값)으로 저절로 돌아온다.
-CreatorPayoutStatus = Literal["requested", "paid", "returned"]
+# 지급 상태. requested → paid | returned | held, held → paid. paid·returned 는 끝이고, 반려된 금액은 잔액(파생값)으로
+# 저절로 돌아온다. held 는 탈퇴한 회원의 건만 간다 — 탈퇴 회원은 다시 신청할 수 없어 반려하면 금액이 갈 곳을 잃으므로,
+# 이체할 수 없으면 반려 대신 보류하고 수취 정보를 새로 받아 이체한다. 보류된 금액은 잔액으로 돌아오지 않는다.
+CreatorPayoutStatus = Literal["requested", "held", "paid", "returned"]
+# 아직 이체하지 않은 지급. 한 사람에 하나이고, 있으면 새 지급 신청과 지급 정보 변경을 받지 않는다.
+IN_PROGRESS_PAYOUT_STATUSES: tuple[CreatorPayoutStatus, ...] = ("requested", "held")
 # 지급 정보의 은행 코드(금융결제원 3자리 표준 코드). 입력은 이 목록 밖 코드를 받지 않는다. DB CHECK 는 두지 않는다 —
 # 은행이 합쳐져 목록이 바뀌어도 이미 지급에 쓰인 판은 남아야 한다(그때 응답 타입도 함께 넓힌다).
 BankCode = Literal[
@@ -259,6 +263,10 @@ class CreatorPayoutProfile(Base):
     `superseded_at` 을 세운다. 지급 행이 신청 때의 판을 FK 로 가리키므로, 신청 뒤 정보를 바꿔도 처리 중인 지급의 수취인이
     바뀌지 않고 주민등록번호 사본이 지급 건 수만큼 늘지도 않는다.
 
+    회원이 입력 화면에서 동의하고 넣은 판은 동의 시각과 처리방침 버전을 갖는다. 탈퇴한 회원의 처리 중인 지급을 이체하려고
+    운영자가 문의로 받은 정보를 넣은 판은 동의 칸 대신 넣은 운영자(`entered_by_admin_id`)를 갖고, 그 지급 행이 새 판을
+    가리킨다 — 지급 행이 가리키는 판이 늘 실제로 이체한 수취인이라 지급명세서가 그 판을 읽는다.
+
     실명·주민등록번호·계좌번호는 `key_id` 의 키로 암호화한 `nonce ‖ 암호문 ‖ tag` 이고, 연관 데이터가 이 행의 id 와 칸
     이름이다(`creator_payout/payout_info.py`) — 그래서 id 를 INSERT 전에 정한다. 키를 바꾼 뒤 다시 암호화하는 것
     (`creator_payout/reencrypt.py`)이 이 행을 고치는 유일한 경로이고 값은 그대로다. 은행 코드와 계좌 끝 4자리는 화면 표시용
@@ -277,15 +285,27 @@ class CreatorPayoutProfile(Base):
     account_number_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     bank_code: Mapped[BankCode] = mapped_column(Text, nullable=False)
     account_last4: Mapped[str] = mapped_column(Text, nullable=False)
-    # 지급 정보 입력 화면의 수집·이용(국외이전 포함) 동의 시각과 그때 게시돼 있던 개인정보 처리방침 버전.
-    consented_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    privacy_version: Mapped[str] = mapped_column(Text, nullable=False)
+    # 지급 정보 입력 화면의 수집·이용(국외이전 포함) 동의 시각과 그때 게시돼 있던 개인정보 처리방침 버전. 운영자가 넣은
+    # 판은 둘 다 없다.
+    consented_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    privacy_version: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 탈퇴한 회원의 지급을 이체하려고 이 판을 넣은 운영자. 회원이 넣은 판은 없다.
+    entered_by_admin_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("admin_users.id", name="fk_creator_payout_profiles_entered_by_admin_id"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         CheckConstraint("key_id <> ''", name="ck_creator_payout_profiles_key_id"),
         CheckConstraint("char_length(account_last4) = 4", name="ck_creator_payout_profiles_account_last4"),
+        # 판은 회원이 동의하고 넣었거나 운영자가 넣었거나 둘 중 하나다.
+        CheckConstraint(
+            "(entered_by_admin_id IS NULL) = (consented_at IS NOT NULL)", name="ck_creator_payout_profiles_source"
+        ),
+        CheckConstraint(
+            "(consented_at IS NULL) = (privacy_version IS NULL)", name="ck_creator_payout_profiles_consent"
+        ),
         # 지금 쓰는 판은 한 사람에 하나.
         Index(
             "ux_creator_payout_profiles_user_id_current",
@@ -301,7 +321,7 @@ class CreatorPayout(Base):
     남긴다 — 세율이 나중에 바뀌어도 이 건이 어느 세율로 계산됐는지가 남는다(끝수를 버려 세액만으로는 세율을 되짚기
     어렵다). 실제 이체는 운영자가 은행에서 하고 이 행은 그 기록만 한다.
 
-    적립 잔액은 확정 금액 합에서 `requested`·`paid` 금액을 뺀 파생값이라, 반려는 상태만 바꾸면 잔액이 돌아온다.
+    적립 잔액은 확정 금액 합에서 `requested`·`held`·`paid` 금액을 뺀 파생값이라, 반려는 상태만 바꾸면 잔액이 돌아온다.
     `for_withdrawal` 은 최소 지급액 미만을 탈퇴 전 예외로 실제로 신청한 건만 참이다.
     """
 
@@ -326,6 +346,8 @@ class CreatorPayout(Base):
     # 운영자가 적는 실제 이체일(KST 날짜).
     transferred_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     returned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 보류한 시각. 보류한 건을 이체한 뒤에도 남아 보류를 거쳤다는 것을 보인다.
+    held_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     decided_by_admin_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("admin_users.id", name="fk_creator_payouts_decided_by_admin_id"), nullable=True
     )
@@ -333,6 +355,8 @@ class CreatorPayout(Base):
     admin_memo: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     # 반려 사유. 신청자에게 보인다.
     return_reason: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    # 보류 사유. 운영자만 본다(보류는 탈퇴한 회원의 건이라 보일 사람이 없다).
+    hold_reason: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
 
     __table_args__ = (
         CheckConstraint(f"status IN ({_sql_in_list(CreatorPayoutStatus)})", name="ck_creator_payouts_status"),
@@ -348,12 +372,17 @@ class CreatorPayout(Base):
             "(status = 'paid') = (paid_at IS NOT NULL AND transferred_on IS NOT NULL)", name="ck_creator_payouts_paid"
         ),
         CheckConstraint("(status = 'returned') = (returned_at IS NOT NULL)", name="ck_creator_payouts_returned"),
-        # 처리 중인 지급은 한 사람에 하나.
+        # 보류에서 이체로 넘어간 건도 보류 시각을 남기므로 한쪽 방향만 묶는다. 반려된 건은 보류를 거치지 않았다.
+        CheckConstraint(
+            "(status <> 'held' OR held_at IS NOT NULL) AND (status <> 'returned' OR held_at IS NULL)",
+            name="ck_creator_payouts_held",
+        ),
+        # 처리 중(보류 포함)인 지급은 한 사람에 하나.
         Index(
-            "ux_creator_payouts_user_id_requested",
+            "ux_creator_payouts_user_id_in_progress",
             "user_id",
             unique=True,
-            postgresql_where=status == "requested",
+            postgresql_where=status.in_(IN_PROGRESS_PAYOUT_STATUSES),
         ),
         # 어드민 지급 큐.
         Index("ix_creator_payouts_status_requested_at", "status", "requested_at"),

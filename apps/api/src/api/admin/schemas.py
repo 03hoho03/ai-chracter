@@ -9,7 +9,12 @@ from api.chat.prompt_builder import PromptLane
 from api.core.schema import CamelModel
 from api.db.models.chat import ChatMessageRole
 from api.db.models.content import ContentType, ContentVisibility, ModerationStatus
-from api.db.models.creator_payout import BankCode, CreatorPayoutApplicationStatus, CreatorPayoutStatus
+from api.db.models.creator_payout import (
+    BankCode,
+    CreatorPayoutApplicationStatus,
+    CreatorPayoutConfirmationKind,
+    CreatorPayoutStatus,
+)
 from api.db.models.moderation import (
     AdminActionType,
     ModerationActionType,
@@ -809,6 +814,10 @@ class AdminCreatorPayoutDetail(CamelModel):
     `withholding` 은 신청 때 계산해 남긴 원천징수이고 이체는 이 값으로 한다. `currentWithholding` 은 지금 코드의 세율로
     다시 계산한 값이라, 신청 뒤 세율 상수가 바뀌었으면 둘이 달라 화면이 경고한다. 수취인은 실명 첫·끝 글자, 은행, 계좌
     끝 4자리만 싣는다 — 원문은 사유를 적고 `payee-info-view` 로만 본다.
+
+    수취인의 암호화한 칸(실명·주민등록번호·계좌번호) 중 하나라도 복호화하지 못하면(키 분실 등) 상세 전체를 거절하지
+    않고 `payeeInfoReadable` 을 거짓, `maskedName` 을 null 로 싣는다 — 그 건도 열어서 반려·보류할 수 있어야 한다. 은행과
+    계좌 끝 4자리는 평문 칸이라 그대로 싣는다. 복호화한 값은 싣지 않는다.
     """
 
     id: uuid.UUID
@@ -820,27 +829,49 @@ class AdminCreatorPayoutDetail(CamelModel):
     for_withdrawal: bool
     withholding: AdminCreatorPayoutWithholding
     current_withholding: AdminCreatorPayoutWithholding
-    masked_name: str
+    # 수취인의 암호화한 세 칸을 모두 복호화할 수 있는가. 거짓이면 `masked_name` 이 null 이고 원문 열람·이체 기록도 409 다.
+    payee_info_readable: bool
+    masked_name: str | None
     bank_code: BankCode
     account_last4: str
     requested_at: datetime
     paid_at: datetime | None
     transferred_on: date | None
     returned_at: datetime | None
+    # 보류한 시각과 사유(운영자만 본다). 보류한 뒤 이체한 건도 남는다.
+    held_at: datetime | None
+    hold_reason: str
     admin_memo: str
     return_reason: str
+    # 지금 수취인이 운영자가 넣은 판인가(탈퇴한 회원에게 문의로 받아 바꾼 수취 정보).
+    payee_entered_by_admin: bool
+    # 지금 수취인 판의 id. 이체 완료를 기록할 때 되돌려 보내, 그 사이 수취 정보가 바뀌었으면 409 를 받는다.
+    payee_profile_id: uuid.UUID
+
+
+class PayeeInfoViewReasonCategory(str, enum.Enum):
+    """지급 정보 원문 열람 사유 분류. 채팅 열람(`ChatViewReasonCategory`)과 따로 둔다 — 원문을 여는 흔한 이유는 이체 전
+    계좌 확인과 지급명세서 작성인데, 신고 조사·이의제기 검토는 지급 업무에 없다. 감사 로그의 `reason_category` 에 섞여
+    들어가므로 겹치는 값(`legal-request`·`other`)은 채팅 열람과 뜻이 같다."""
+
+    PAYOUT_PROCESSING = "payout-processing"
+    PAYOUT_STATEMENT = "payout-statement"
+    LEGAL_REQUEST = "legal-request"
+    OTHER = "other"
 
 
 class AdminPayeeInfoViewRequest(CamelModel):
-    """지급 정보 원문 열람 사유. `reason_text` 가 공백만이면 422(라우터가 확인한다). 채팅 열람과 같은 사유 분류를 쓴다."""
+    """지급 정보 원문 열람 사유. `reason_text` 가 공백만이면 422(라우터가 확인한다)."""
 
-    reason_category: ChatViewReasonCategory
+    reason_category: PayeeInfoViewReasonCategory
     reason_text: str = Field(max_length=1000)
 
 
 class AdminPayeeInfoViewResponse(CamelModel):
     """지급 정보 원문. 이 응답에만 싣고 로그·감사 기록에는 남기지 않는다."""
 
+    # 이 원문이 어느 수취인 판의 것인가. 이 값으로 이체 완료를 기록하면 열람 뒤 바뀐 정보에 기록이 붙지 않는다.
+    payee_profile_id: uuid.UUID
     legal_name: str
     rrn: str
     bank_code: BankCode
@@ -848,13 +879,77 @@ class AdminPayeeInfoViewResponse(CamelModel):
 
 
 class AdminCreatorPayoutTransferRequest(CamelModel):
+    # 운영자가 보고 이체한 수취인 판의 id(상세·원문 열람 응답의 `payeeProfileId`). 지금 판과 다르면 409 — 그 사이 수취
+    # 정보가 바뀌어 돈이 간 곳과 기록이 가리키는 곳이 달라진다.
+    payee_profile_id: uuid.UUID
     # 실제로 이체한 날(KST). 신청일(KST)보다 앞서거나 오늘(KST)보다 뒤면 422.
     transferred_on: date
     # 운영자만 보는 메모(감사 로그에도 남는다).
     admin_memo: str = Field(default="", max_length=1000)
 
 
+class AdminCreatorPayoutHoldRequest(CamelModel):
+    """보류 사유. 공백만이면 422(라우터가 확인한다). 운영자만 본다 — 보류는 탈퇴한 회원의 건이라 보일 사람이 없다."""
+
+    reason_text: str = Field(max_length=1000)
+
+
+class AdminCreatorPayoutPayeeReplaceRequest(CamelModel):
+    """탈퇴한 회원에게 문의로 받은 새 수취 정보와 바꾸는 사유. 형식은 라우터가 확인하고 `CREATOR_PAYOUT_INFO_INVALID` 로
+    답한다 — 스키마 검증 오류는 입력값을 응답에 되돌려 싣기 때문이다. 형식은 회원의 지급 정보 입력과 같다. 사유는 감사
+    로그에 남고, 값은 남지 않는다."""
+
+    legal_name: str
+    rrn: str
+    bank_code: str
+    account_number: str
+    reason_text: str = Field(max_length=1000)
+
+
 class AdminCreatorPayoutReturnRequest(CamelModel):
     """반려 사유. 공백만이면 422(라우터가 확인한다). 신청자의 크리에이터 정산 화면에 그대로 보인다."""
 
     reason_text: str = Field(max_length=1000)
+
+
+class AdminUserCreatorPayoutApplication(CamelModel):
+    """정산 신청 하나. `decisionReason` 은 거절·승인 취소 사유(신청자에게 보이는 글)다."""
+
+    id: uuid.UUID
+    status: CreatorPayoutApplicationStatus
+    applied_at: datetime
+    decided_at: datetime | None
+    decision_reason: str
+    accrual_start_at: datetime | None
+    revoked_at: datetime | None
+
+
+class AdminUserCreatorPayoutConfirmation(CamelModel):
+    id: uuid.UUID
+    kind: CreatorPayoutConfirmationKind
+    period_month: date | None
+    window_start: datetime
+    window_end: datetime
+    gross_units: int
+    refunded_units: int
+    rate_bps: int
+    amount_krw: int
+    created_at: datetime
+
+
+class AdminUserCreatorPayoutPayout(CamelModel):
+    id: uuid.UUID
+    status: CreatorPayoutStatus
+    amount_krw: int
+    net_amount_krw: int
+    requested_at: datetime
+    transferred_on: date | None
+
+
+class AdminUserCreatorPayoutResponse(CamelModel):
+    """회원 상세의 크리에이터 정산 섹션: 신청 이력 전부(최신순), 적립 잔액(음수일 수 있다), 최근 확정 12개, 최근 지급 20개."""
+
+    applications: list[AdminUserCreatorPayoutApplication]
+    balance_krw: int
+    confirmations: list[AdminUserCreatorPayoutConfirmation]
+    payouts: list[AdminUserCreatorPayoutPayout]

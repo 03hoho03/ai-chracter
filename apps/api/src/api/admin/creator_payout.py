@@ -1,5 +1,6 @@
 """어드민 크리에이터 정산 신청 처리: 대기 큐, 승인(첫 승인이면 지난 기간 소급 확정), 거절, 승인 취소. 그리고 지급 처리:
-지급 큐·상세(원천징수 미리보기), 지급 정보 원문 열람(사유 + 열람마다 감사 1행), 이체 완료 기록, 반려.
+지급 큐·상세(원천징수 미리보기), 지급 정보 원문 열람(사유 + 열람마다 감사 1행), 이체 완료 기록, 반려, 탈퇴한 회원 건의
+보류와 수취 정보 교체. 회원 상세의 정산 섹션(신청 이력·잔액·최근 확정·최근 지급).
 
 정산 스위치와 무관하게 열려 있다 — 스위치를 끄기 전에 들어온 신청과 지급, 탈퇴 전에 신청한 지급을 마무리해야 한다.
 
@@ -12,7 +13,7 @@ import uuid
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import exists, func, select
+from sqlalchemy import delete, exists, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin.action_log import record_admin_action
@@ -25,13 +26,19 @@ from api.admin.schemas import (
     AdminCreatorPayoutDecisionRequest,
     AdminCreatorPayoutDetail,
     AdminCreatorPayoutEligibility,
+    AdminCreatorPayoutHoldRequest,
     AdminCreatorPayoutItem,
     AdminCreatorPayoutListResponse,
+    AdminCreatorPayoutPayeeReplaceRequest,
     AdminCreatorPayoutReturnRequest,
     AdminCreatorPayoutTransferRequest,
     AdminCreatorPayoutWithholding,
     AdminPayeeInfoViewRequest,
     AdminPayeeInfoViewResponse,
+    AdminUserCreatorPayoutApplication,
+    AdminUserCreatorPayoutConfirmation,
+    AdminUserCreatorPayoutPayout,
+    AdminUserCreatorPayoutResponse,
 )
 from api.core.config import settings
 from api.core.field_crypto import FieldDecryptError
@@ -43,7 +50,18 @@ from api.creator_payout.eligibility import (
     load_creator_payout_eligibility,
     published_content_counts,
 )
-from api.creator_payout.payout_info import decrypt_field, mask_name
+from api.creator_payout.payout_info import (
+    PayoutInfo,
+    PayoutInfoRefusal,
+    decrypt_field,
+    decrypt_profile,
+    mask_name,
+    new_admin_profile,
+    parse_payout_info,
+    parse_payout_info_format,
+    rrn_birth_date,
+)
+from api.creator_payout.router import balance_krw
 from api.creator_payout.settlement import confirm_window
 from api.creator_payout.tax import withholding
 from api.db.models.auth import User
@@ -54,6 +72,7 @@ from api.db.models.creator_payout import (
     CreatorPayoutConfirmation,
     CreatorPayoutProfile,
     CreatorPayoutStatus,
+    IN_PROGRESS_PAYOUT_STATUSES,
 )
 from api.db.session import get_db_session
 
@@ -295,8 +314,10 @@ async def revoke_creator_payout_application(
 
 
 # ── 지급 ─────────────────────────────────────────────────────────────────────
-# 지급 건 처리는 지급 행 하나만 잠근다. 잔액은 파생값이라 다른 쓰기와 줄을 설 필요가 없고, 탈퇴 회원의 건도 처리해야 해서
-# 회원 행을 잡지 않는다. 실제 이체는 운영자가 은행에서 하고 여기서는 그 기록만 남긴다.
+# 이체 기록은 지급 행 하나만 잠근다. 잔액은 파생값이라 다른 쓰기와 줄을 설 필요가 없고, 탈퇴 회원의 건도 처리해야 한다.
+# 반려·보류·수취 정보 교체는 수취인이 탈퇴했는지에 따라 갈리므로 회원 `users` 행 → 지급 행 순서로 잠근다 — 탈퇴도 그 행을
+# 잠그므로, 반려가 "탈퇴하지 않았다"를 본 뒤 탈퇴가 끼어들어 반려된 금액이 갈 곳을 잃는 일이 없다. 실제 이체는 운영자가
+# 은행에서 하고 여기서는 그 기록만 남긴다.
 
 
 def _unreadable() -> HTTPException:
@@ -330,7 +351,10 @@ async def _payout_with_parties(
     return row
 
 
-async def _lock_requested_payout(db: AsyncSession, payout_id: uuid.UUID) -> CreatorPayout:
+async def _lock_payout_row(
+    db: AsyncSession, payout_id: uuid.UUID, allowed: tuple[CreatorPayoutStatus, ...]
+) -> CreatorPayout:
+    """지급 행을 잠근다. 상태가 `allowed` 밖이면 409 `CREATOR_PAYOUT_NOT_REQUESTED`."""
     payout = await db.scalar(
         select(CreatorPayout)
         .where(CreatorPayout.id == payout_id)
@@ -339,9 +363,29 @@ async def _lock_requested_payout(db: AsyncSession, payout_id: uuid.UUID) -> Crea
     )
     if payout is None:
         raise _error(status.HTTP_404_NOT_FOUND, "CREATOR_PAYOUT_NOT_FOUND")
-    if payout.status != "requested":
+    if payout.status not in allowed:
         raise _error(status.HTTP_409_CONFLICT, "CREATOR_PAYOUT_NOT_REQUESTED")
     return payout
+
+
+async def _lock_payout_and_payee(
+    db: AsyncSession, payout_id: uuid.UUID, allowed: tuple[CreatorPayoutStatus, ...]
+) -> tuple[CreatorPayout, User]:
+    """수취인 `users` 행 → 지급 행 순서로 잠근다. 수취인을 먼저 알아야 하므로 지급 행의 `user_id` 는 잠금 없이 읽는다(그
+    칸은 바뀌지 않는다)."""
+    user_id = await db.scalar(select(CreatorPayout.user_id).where(CreatorPayout.id == payout_id))
+    if user_id is None:
+        raise _error(status.HTTP_404_NOT_FOUND, "CREATOR_PAYOUT_NOT_FOUND")
+    # 회원의 쓰기·탈퇴와 같은 잠금(`lock_active_user`)이라 탈퇴와 줄을 선다.
+    user = await db.scalar(
+        select(User)
+        .where(User.id == user_id)
+        .with_for_update(key_share=True)
+        .execution_options(populate_existing=True)
+    )
+    # 회원 행은 탈퇴해도 지우지 않는다.
+    assert user is not None
+    return await _lock_payout_row(db, payout_id, allowed), user
 
 
 @router.get("/admin/creator-payout/payouts")
@@ -392,14 +436,19 @@ async def get_creator_payout_detail(
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminCreatorPayoutDetail:
-    """지급 건 하나와 마스킹한 수취인, 신청 때의 원천징수와 지금 세율로 다시 계산한 값. 수취인 실명을 복호화하지 못하면
-    (키 분실 등) 409 `CREATOR_PAYOUT_INFO_UNREADABLE` — 작가에게 지급 정보를 다시 입력받고 이 건은 반려 뒤 재신청한다."""
+    """지급 건 하나와 마스킹한 수취인, 신청 때의 원천징수와 지금 세율로 다시 계산한 값. 수취인의 암호화한 칸(실명·주민등록번호·
+    계좌번호) 중 하나라도 복호화하지 못하면(키 분실 등) 거절하지 않고 `payeeInfoReadable` 거짓·`maskedName` null 로 답한다
+    — 원문 열람과 이체 기록이 세 칸을 모두 읽어야 하므로 한 칸만 깨져도 그 둘은 409 다 — 운영자가 그 건을 열어 처리할 수
+    있어야 한다. 살아 있는 회원의 건은 반려하고 작가에게 지급 정보를 다시 입력받아 재신청하게 한다. 탈퇴한 회원의 건은
+    반려할 수 없어 보류하고 문의로 받은 정보로 수취 정보를 바꾼다(`payee-info`)."""
     payout, profile, user = await _payout_with_parties(db, payout_id)
+    masked_name: str | None
     try:
-        masked_name = mask_name(decrypt_field(payout_keyring(), profile, "legal_name"))
+        # 마스킹에는 실명만 쓰지만 세 칸을 다 풀어 본다. 복호화한 값은 이 함수 밖으로 내보내지 않는다.
+        masked_name = mask_name(decrypt_profile(payout_keyring(), profile)["legal_name"])
     except FieldDecryptError as exc:
         capture_dependency_failure(exc, dependency="creator_payout")
-        raise _unreadable() from None
+        masked_name = None
     current = withholding(payout.amount_krw)
     return AdminCreatorPayoutDetail(
         id=payout.id,
@@ -415,6 +464,7 @@ async def get_creator_payout_detail(
         current_withholding=_withholding_view(
             current.income_tax_rate_bps, current.income_tax_krw, current.local_tax_krw, current.net_amount_krw
         ),
+        payee_info_readable=masked_name is not None,
         masked_name=masked_name,
         bank_code=profile.bank_code,
         account_last4=profile.account_last4,
@@ -422,8 +472,12 @@ async def get_creator_payout_detail(
         paid_at=payout.paid_at,
         transferred_on=payout.transferred_on,
         returned_at=payout.returned_at,
+        held_at=payout.held_at,
+        hold_reason=payout.hold_reason,
         admin_memo=payout.admin_memo,
         return_reason=payout.return_reason,
+        payee_entered_by_admin=profile.entered_by_admin_id is not None,
+        payee_profile_id=profile.id,
     )
 
 
@@ -442,6 +496,7 @@ async def view_creator_payout_payee_info(
     try:
         keyring = payout_keyring()
         response = AdminPayeeInfoViewResponse(
+            payee_profile_id=profile.id,
             legal_name=decrypt_field(keyring, profile, "legal_name"),
             rrn=decrypt_field(keyring, profile, "rrn"),
             bank_code=profile.bank_code,
@@ -469,10 +524,29 @@ async def record_creator_payout_transfer(
     admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
-    """은행에서 이체를 마쳤다고 기록한다. 처리 중이 아니면 409 `CREATOR_PAYOUT_NOT_REQUESTED`. 이체일이 신청일(KST)보다
-    앞서거나 오늘(KST)보다 뒤면 422 `CREATOR_PAYOUT_TRANSFER_DATE_INVALID`. 금액은 신청 때 이미 잔액에서 빠져 있어 잔액은
-    그대로다."""
-    payout = await _lock_requested_payout(db, payout_id)
+    """은행에서 이체를 마쳤다고 기록한다. 처리 중·보류가 아니면 409 `CREATOR_PAYOUT_NOT_REQUESTED`. 운영자가 보고 이체한
+    수취인 판(`payeeProfileId`)이 지금 판과 다르면 409 `CREATOR_PAYOUT_PAYEE_CHANGED` — 그 사이 다른 운영자가 수취 정보를
+    바꿨으면 기록이 실제로 돈을 받지 않은 판을 가리키고, 실제로 받은 판은 참조를 잃어 지워지기 때문이다. 이체일이
+    신청일(KST)보다 앞서거나 오늘(KST)보다 뒤면 422 `CREATOR_PAYOUT_TRANSFER_DATE_INVALID`. 금액은 신청 때 이미 잔액에서
+    빠져 있어 잔액은 그대로다.
+
+    지금 판을 복호화할 수 없으면(키 분실 등, 세 칸 중 하나라도) 409 `CREATOR_PAYOUT_INFO_UNREADABLE` — 지급명세서는 이
+    기록이 가리키는 판의 실명·주민등록번호로 쓰므로, 읽을 수 없는 판에 이체를 기록하면 누구에게 지급했는지 신고할 수
+    없다. 상세 화면은 이 경우 이체 기록을 숨기지만, 읽히던 때 연 화면에서 보내는 기록은 여기서 막는다. 순서는 상태 409 →
+    판 바뀜 409 → 읽을 수 없음 409 → 이체일 422 다 — 판이 바뀌었으면 운영자가 새 판부터 다시 봐야 하고, 읽을 수 없는
+    판이면 날짜를 고쳐도 기록할 수 없다."""
+    payout = await _lock_payout_row(db, payout_id, IN_PROGRESS_PAYOUT_STATUSES)
+    # 수취 정보 교체도 이 지급 행을 잠근 채 판을 바꾸므로, 잠근 뒤 읽은 판 id 는 이 트랜잭션이 끝날 때까지 그대로다.
+    if payout.profile_id != body.payee_profile_id:
+        raise _error(status.HTTP_409_CONFLICT, "CREATOR_PAYOUT_PAYEE_CHANGED")
+    profile = await db.get(CreatorPayoutProfile, payout.profile_id)
+    # 지급 행이 FK 로 가리키는 판이라 있다.
+    assert profile is not None
+    try:
+        decrypt_profile(payout_keyring(), profile)
+    except FieldDecryptError as exc:
+        capture_dependency_failure(exc, dependency="creator_payout")
+        raise _unreadable() from None
     if not payout.requested_at.astimezone(KST).date() <= body.transferred_on <= datetime.now(KST).date():
         raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "CREATOR_PAYOUT_TRANSFER_DATE_INVALID")
     payout.status = "paid"
@@ -498,9 +572,14 @@ async def return_creator_payout(
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
     """반려한다(지급 정보가 사실과 다름, 이체 실패 등). 사유는 신청자에게 보인다. 처리 중이 아니면 409
-    `CREATOR_PAYOUT_NOT_REQUESTED`. 반려된 금액은 잔액(파생값)으로 저절로 돌아온다."""
+    `CREATOR_PAYOUT_NOT_REQUESTED`. 반려된 금액은 잔액(파생값)으로 저절로 돌아온다.
+
+    수취인이 탈퇴했으면 409 `CREATOR_PAYOUT_PAYEE_WITHDRAWN` — 탈퇴한 회원은 다시 신청할 수 없어 반려하면 금액이 갈 곳을
+    잃는다. 그 건은 보류(`hold`)하고 수취 정보를 바꿔(`payee-info`) 이체한다."""
     _require_reason(body.reason_text)
-    payout = await _lock_requested_payout(db, payout_id)
+    payout, user = await _lock_payout_and_payee(db, payout_id, ("requested",))
+    if user.deleted_at is not None:
+        raise _error(status.HTTP_409_CONFLICT, "CREATOR_PAYOUT_PAYEE_WITHDRAWN")
     payout.status = "returned"
     payout.returned_at = await _transaction_now(db)
     payout.return_reason = body.reason_text
@@ -513,3 +592,191 @@ async def return_creator_payout(
         reason_text=body.reason_text,
     )
     await db.commit()
+
+
+@router.post("/admin/creator-payout/payouts/{payout_id}/hold", status_code=status.HTTP_204_NO_CONTENT)
+async def hold_creator_payout(
+    payout_id: uuid.UUID,
+    body: AdminCreatorPayoutHoldRequest,
+    admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    """탈퇴한 회원의 처리 중인 지급을 보류한다 — 등록된 정보로 이체할 수 없어 새 수취 정보를 기다리는 동안. 사유는 운영자만
+    본다. 처리 중이 아니면 409 `CREATOR_PAYOUT_NOT_REQUESTED`, 수취인이 탈퇴하지 않았으면 409
+    `CREATOR_PAYOUT_PAYEE_NOT_WITHDRAWN`(살아 있는 회원의 건은 반려하면 회원이 다시 신청한다). 보류된 금액은 잔액으로
+    돌아오지 않고 그 지급 건에 남아, 수취 정보를 바꾼 뒤 이체한다."""
+    _require_reason(body.reason_text)
+    payout, user = await _lock_payout_and_payee(db, payout_id, ("requested",))
+    if user.deleted_at is None:
+        raise _error(status.HTTP_409_CONFLICT, "CREATOR_PAYOUT_PAYEE_NOT_WITHDRAWN")
+    payout.status = "held"
+    payout.held_at = await _transaction_now(db)
+    payout.hold_reason = body.reason_text
+    payout.decided_by_admin_id = admin_id
+    await record_admin_action(
+        db,
+        admin_id=admin_id,
+        action_type="user-creator-payout-hold",
+        target_user_id=payout.user_id,
+        reason_text=body.reason_text,
+    )
+    await db.commit()
+
+
+@router.put("/admin/creator-payout/payouts/{payout_id}/payee-info", status_code=status.HTTP_204_NO_CONTENT)
+async def replace_creator_payout_payee_info(
+    payout_id: uuid.UUID,
+    body: AdminCreatorPayoutPayeeReplaceRequest,
+    admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    """탈퇴한 회원의 처리 중·보류 지급의 수취 정보를 운영자가 문의로 받은 새 정보로 바꾼다. 순서: 사유 공백 422 → 처리
+    중·보류가 아님 409 `CREATOR_PAYOUT_NOT_REQUESTED` → 수취인이 탈퇴하지 않음 409 `CREATOR_PAYOUT_PAYEE_NOT_WITHDRAWN`(살아
+    있는 회원은 반려 뒤 직접 다시 입력한다) → 암호화 키 없음 503 `CREATOR_PAYOUT_UNAVAILABLE` → 형식 422
+    `CREATOR_PAYOUT_INFO_INVALID` → 외국인등록번호 422 `CREATOR_PAYOUT_FOREIGNER_UNSUPPORTED` → 주민등록번호의 생년월일이
+    지금 수취인 판의 것과 다름 422 `CREATOR_PAYOUT_RRN_MISMATCH`.
+
+    생년월일 대조는 회원 입력의 본인인증 생년월일 대조를 대신한다 — 탈퇴하면 회원의 생년월일이 지워지지만, 지금 판의
+    주민등록번호는 입력 때 그 생년월일과 맞춰 본 값이다. 지금 판을 복호화할 수 없으면(키 분실) 대조할 값이 없어 형식만 본다.
+
+    새 판을 넣고 지급 행이 그것을 가리키게 한다 — 지급 행이 가리키는 판이 실제로 이체한 수취인이라 지급명세서가 그 판을
+    읽는다. 원천징수는 금액에서 나와 바뀌지 않는다. 앞 판은 내리고, 어느 지급도 가리키지 않게 되면 지운다(탈퇴 때 지급에
+    쓰이지 않는 판을 지우는 것과 같은 규칙). 감사 로그에는 사유만 남고 값은 남지 않는다. 상태는 그대로다.
+    """
+    _require_reason(body.reason_text)
+    payout, user = await _lock_payout_and_payee(db, payout_id, IN_PROGRESS_PAYOUT_STATUSES)
+    if user.deleted_at is None:
+        raise _error(status.HTTP_409_CONFLICT, "CREATOR_PAYOUT_PAYEE_NOT_WITHDRAWN")
+    try:
+        keyring = payout_keyring()
+    except FieldDecryptError:
+        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "CREATOR_PAYOUT_UNAVAILABLE") from None
+    previous = await db.get(CreatorPayoutProfile, payout.profile_id)
+    # 지급 행이 FK 로 가리키는 판이라 있다.
+    assert previous is not None
+    info: PayoutInfo | PayoutInfoRefusal
+    try:
+        expected_birth_date = rrn_birth_date(decrypt_field(keyring, previous, "rrn"))
+    except FieldDecryptError as exc:
+        capture_dependency_failure(exc, dependency="creator_payout")
+        info = parse_payout_info_format(
+            legal_name=body.legal_name, rrn=body.rrn, bank_code=body.bank_code, account_number=body.account_number
+        )
+    else:
+        info = parse_payout_info(
+            legal_name=body.legal_name,
+            rrn=body.rrn,
+            bank_code=body.bank_code,
+            account_number=body.account_number,
+            birth_date=expected_birth_date,
+        )
+    match info:
+        case "invalid":
+            raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "CREATOR_PAYOUT_INFO_INVALID")
+        case "foreigner":
+            raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "CREATOR_PAYOUT_FOREIGNER_UNSUPPORTED")
+        case "rrn_mismatch":
+            raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "CREATOR_PAYOUT_RRN_MISMATCH")
+
+    # 지금 판을 먼저 내려야 새 판이 "지금 쓰는 판은 하나" 부분 유니크에 걸리지 않는다.
+    await db.execute(
+        update(CreatorPayoutProfile)
+        .where(CreatorPayoutProfile.user_id == user.id, CreatorPayoutProfile.superseded_at.is_(None))
+        .values(superseded_at=await _transaction_now(db))
+    )
+    replacement = new_admin_profile(keyring, info, user_id=user.id, admin_id=admin_id)
+    db.add(replacement)
+    await db.flush()
+    payout.profile_id = replacement.id
+    await db.flush()
+    await db.execute(
+        delete(CreatorPayoutProfile).where(
+            CreatorPayoutProfile.id == previous.id,
+            ~exists().where(CreatorPayout.profile_id == CreatorPayoutProfile.id),
+        )
+    )
+    await record_admin_action(
+        db,
+        admin_id=admin_id,
+        action_type="user-creator-payout-payee-replace",
+        target_user_id=user.id,
+        reason_text=body.reason_text,
+    )
+    await db.commit()
+
+
+# ── 회원 상세 ─────────────────────────────────────────────────────────────────
+
+ADMIN_USER_CONFIRMATION_LIMIT = 12
+ADMIN_USER_PAYOUT_LIMIT = 20
+
+
+@router.get("/admin/users/{user_id}/creator-payout")
+async def get_user_creator_payout(
+    user_id: uuid.UUID,
+    _admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> AdminUserCreatorPayoutResponse:
+    """회원 상세의 크리에이터 정산 섹션: 신청 이력 전부(최신순), 적립 잔액, 최근 확정 12개, 최근 지급 20개. 없는 회원과
+    탈퇴한 회원은 회원 상세와 같이 404 다 — 탈퇴한 회원의 지급은 지급 큐에서 처리한다(지급 상세가 필요한 값을 다 갖는다)."""
+    user = await db.get(User, user_id)
+    if user is None or user.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    applications = await db.scalars(
+        select(CreatorPayoutApplication)
+        .where(CreatorPayoutApplication.user_id == user_id)
+        .order_by(CreatorPayoutApplication.applied_at.desc(), CreatorPayoutApplication.id)
+    )
+    confirmations = await db.scalars(
+        select(CreatorPayoutConfirmation)
+        .where(CreatorPayoutConfirmation.user_id == user_id)
+        .order_by(CreatorPayoutConfirmation.window_end.desc(), CreatorPayoutConfirmation.id)
+        .limit(ADMIN_USER_CONFIRMATION_LIMIT)
+    )
+    payouts = await db.scalars(
+        select(CreatorPayout)
+        .where(CreatorPayout.user_id == user_id)
+        .order_by(CreatorPayout.requested_at.desc(), CreatorPayout.id)
+        .limit(ADMIN_USER_PAYOUT_LIMIT)
+    )
+    return AdminUserCreatorPayoutResponse(
+        applications=[
+            AdminUserCreatorPayoutApplication(
+                id=row.id,
+                status=row.status,
+                applied_at=row.applied_at,
+                decided_at=row.decided_at,
+                decision_reason=row.decision_reason,
+                accrual_start_at=row.accrual_start_at,
+                revoked_at=row.revoked_at,
+            )
+            for row in applications
+        ],
+        balance_krw=await balance_krw(db, user_id),
+        confirmations=[
+            AdminUserCreatorPayoutConfirmation(
+                id=row.id,
+                kind=row.kind,
+                period_month=row.period_month,
+                window_start=row.window_start,
+                window_end=row.window_end,
+                gross_units=row.gross_units,
+                refunded_units=row.refunded_units,
+                rate_bps=row.rate_bps,
+                amount_krw=row.amount_krw,
+                created_at=row.created_at,
+            )
+            for row in confirmations
+        ],
+        payouts=[
+            AdminUserCreatorPayoutPayout(
+                id=row.id,
+                status=row.status,
+                amount_krw=row.amount_krw,
+                net_amount_krw=row.net_amount_krw,
+                requested_at=row.requested_at,
+                transferred_on=row.transferred_on,
+            )
+            for row in payouts
+        ],
+    )
