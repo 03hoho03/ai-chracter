@@ -4,13 +4,14 @@ import io
 import json
 import logging
 import uuid
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime, timezone
 from typing import Any, Literal
 
 import boto3
 import httpx
 import pytest
+import pytest_asyncio
 import sqlalchemy as sa
 from PIL import Image
 from redis.exceptions import RedisError
@@ -40,6 +41,21 @@ from api.llm.local_image import (
 )
 from api.main import app
 from factories import _clover_lots, _login_as, _make_user, _make_user_with_clover_lot, _patch_httpx
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _await_generation_tasks(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[None]:
+    """테스트가 띄운 생성 태스크가 끝날 때까지 기다린 뒤에야 테스트 커넥션을 정리하게 한다.
+
+    생성 태스크는 conftest 가 묶어 둔 테스트 커넥션을 함께 쓴다. 테스트가 환불 행 같은 중간 결과만 보고 끝나면 태스크는
+    그 커넥션에서 아직 세션을 닫는 중일 수 있고, 그 사이에 `db_session` 정리가 롤백을 보내면 asyncpg 가 "another
+    operation is in progress" 로 거절한다. 망가진 커넥션은 풀로 돌아가 같은 워커의 다음 테스트 setup 까지 깨뜨린다.
+    `db_session`·`monkeypatch` 에 의존하므로 이 정리가 그 둘보다 먼저 돈다 — 커넥션 롤백 전, 그리고 테스트가 바꿔 둔
+    스텁이 그대로인 채로 태스크가 끝난다. 끝나지 않는 태스크가 있으면 상한에서 취소되고 정리가 실패해 드러난다."""
+    yield
+    tasks = list(image_jobs._background_tasks)
+    if tasks:
+        await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=5)
 
 
 def _png_bytes(width: int = 64, height: int = 64) -> bytes:
