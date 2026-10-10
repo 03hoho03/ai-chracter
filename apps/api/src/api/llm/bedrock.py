@@ -39,6 +39,7 @@ from api.llm.client import (
     LLMClient,
     LLMClientError,
     LLMRateLimitError,
+    collect_usage,
 )
 from api.llm.usage_store import record_usage
 
@@ -183,6 +184,7 @@ class BedrockLLMClient(LLMClient):
         usage_metadata = tally.usage()
         _log_usage(usage, model, usage_metadata)
         await record_usage(usage.call_site, model, usage_metadata)
+        collect_usage(usage, model, usage_metadata)
         raise_if_unusable(tally, usage.call_site, max_tokens)
 
     async def generate_structured(

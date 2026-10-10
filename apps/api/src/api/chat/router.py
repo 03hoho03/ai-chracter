@@ -996,7 +996,14 @@ async def send_message(
                 ),
                 llm=llm_client,
                 judgments=new_turn_judgments(db, room, setup, log=logger),
-                store=RoomTurnStore(db, room, setup, mode="append", log=logger),
+                store=RoomTurnStore(
+                    db,
+                    room,
+                    setup,
+                    mode="append",
+                    shortcut_entity_id=shortcut.entity_id if shortcut is not None else None,
+                    log=logger,
+                ),
                 settlement=settlement,
                 after_commit=_fold_after_commit(
                     background_tasks,
@@ -1066,8 +1073,8 @@ async def regenerate_message(
     와 같은 턴 골격(`run_turn`)을 지나지만 새 턴이 아니라 같은 턴의 응답을 바꾸는 것이라 셋이 다르다.
 
     - 저장소는 replace 모드다(`RoomTurnStore(mode="replace")`) — 옛 응답을 지우고 바꿔 넣으며 turn_count 를 올리지 않는다.
-    - 스탯·엔딩 판정은 다시 하지 않는다(`regenerate_judgments`) — 원 응답 생성 때 이미 한 번 반영됐고, 그 반영분을 되돌릴
-      턴별 이력이 없어 다시 하면 중복 적용되어 부정확해진다. 그림 판정(캐릭터 상황별 이미지·스토리 미디어 북 칸 — 스토리는
+    - 스탯·엔딩 판정은 다시 하지 않는다(`regenerate_judgments`) — 원 응답 생성 때 이미 한 번 반영됐고, 그 반영분을
+      되돌리는 코드가 아직 없어(턴 기록은 남지만 기록을 쓰기 전에 보낸 턴에는 없다) 다시 하면 중복 적용되어 부정확해진다. 그림 판정(캐릭터 상황별 이미지·스토리 미디어 북 칸 — 스토리는
       엔딩 뒤에도)은 다시 한다 — 노출 기록(`CharacterImageExposure`·`StoryMediaExposure`)은 첫 노출만 기록해 멱등이라
       다시 해도 중복 적용이 없고, 새 응답 텍스트에 맞는 그림이 붙는다.
     - 커밋 뒤 요약 접기는 새 턴과 같이 예약한다. 턴 수는 그대로지만 새 응답이 길어 글자 기준을 넘길 수 있고, 앞 턴에서
@@ -1201,7 +1208,7 @@ async def edit_message(
     삭제되는 메시지 중 AI 응답 개수만큼 turn_count를 미리 되돌려둔다(그래야 턴 골격이 쓰는
     turn_count+1과 합쳐 실제 남은 대화 길이와 일치하고, 이후 엔딩 턴게이트 판정이 어긋나지 않는다).
     다만 삭제된 턴들이 이미 반영해 둔 chat_room_stats/ending_reached 등의 상태까지 되돌리는
-    건 하지 않는다 — 되돌릴 근거가 되는 턴별 변경 이력 자체가 저장되어 있지 않고
+    건 하지 않는다 — 기록을 쓰기 전에 보낸 턴에는 되돌릴 근거가 되는 턴별 변경 이력이 없고
     (알려진 한계), 요구사항에도 이 롤백은 없다.
     """
     # 정산 가드는 `send_message` 와 같다. 첫 `yield` 전 구간은 조회·DELETE·커밋이 다 들어 있어 세 라우트 중 위험이 가장 크다.

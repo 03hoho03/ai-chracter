@@ -44,6 +44,7 @@ from api.db.models.chat import ChatMessage, ChatRoom
 from api.db.models.prompt import PromptSection, PromptSet
 from api.llm.chat_models import ChatModelId
 from api.llm.client import (
+    CallUsage,
     LLMCallContext,
     LLMCallSite,
     LLMClient,
@@ -245,6 +246,8 @@ class TurnResult:
     # 생성 스트림이 끝난 시각. 미리보기 저장소가 응답 시각으로 쓴다(방은 쓰기 구간의 DB 시각을 쓴다).
     generated_at: datetime
     judgments: TurnJudgmentResult
+    # 이 턴의 생성·판정 호출이 공급자 구현에서 남긴 사용량(턴 뒤 요약 접기는 들지 않는다). 방 턴 기록의 `llm_calls` 다.
+    llm_calls: list[CallUsage]
 
 
 @dataclass
@@ -330,6 +333,8 @@ async def run_turn(
 
     next_turn = store.turn_number()
     chunks: list[str] = []
+    # 생성과 판정 호출이 같은 목록에 사용량을 더한다 — 공급자 구현이 사용량을 집계하는 자리에서 함께 더한다.
+    llm_calls: list[CallUsage] = []
     try:
         async for token_event in _stream_generated_tokens(
             llm,
@@ -342,6 +347,7 @@ async def run_turn(
                 user_id=inp.user_id,
                 room_id=room.id if room is not None else None,
                 model=inp.charge.model,
+                usage_sink=llm_calls,
             ),
             turn=next_turn,
             log=log,
@@ -377,6 +383,7 @@ async def run_turn(
         names=generation.names,
         turn=next_turn,
         log_subject=f"대화방 {room.id}{_JUDGMENT_LOG_SUBJECT_SUFFIX[inp.kind]}" if room is not None else "미리보기",
+        usage_sink=llm_calls,
     )
     # 판정 단계의 LLM 실패는 반드시 이 안에서 흡수한다 — 예외가 SSE 제너레이터 밖으로 새면
     # ASGI 태스크가 취소되면서 요청 스코프 DB 세션이 강제 종료되고, 망가진 asyncpg 커넥션이
@@ -414,6 +421,7 @@ async def run_turn(
         assistant_content=assistant_content,
         generated_at=generated_at,
         judgments=result,
+        llm_calls=llm_calls,
     )
     # 쓰기 구간은 예외를 흡수하지 않는다 — 쓰기·커밋 실패는 제너레이터를 뚫고 정산 가드가 응답 행을 확인해 정산한다.
     written = await store.write(turn, settlement)

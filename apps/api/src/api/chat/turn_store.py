@@ -23,6 +23,7 @@ from starlette.concurrency import run_in_threadpool
 from api.chat.schemas import PreviewSessionState
 from api.chat.turn_engine import TurnPresentation, TurnResult, TurnWrite, _turn_message_response
 from api.chat.turn_settlement import TurnSettlement
+from api.core.rate_limit_gate import ChatCharge
 from api.content.media_book import normalize_texts, normalize_texts_for_display, resolve_media_tag_images
 from api.content.media_tags import strip_media_tags
 from api.content.schemas import MediaTagImage
@@ -34,6 +35,7 @@ from api.db.models.chat import (
     ChatMessageRole,
     ChatRoom,
     ChatRoomStat,
+    ChatTurn,
     DiscardedResponse,
     StoryEndingUnlock,
     StoryMediaExposure,
@@ -183,6 +185,14 @@ class RoomTurnStore:
     넣으며, 응답이 실제로 지워졌다는 폐기 기록을 같은 트랜잭션에 남긴다. 턴 번호는 지금 `turn_count` 그대로이고 올리지
     않는다. 노출 기록·그림·커밋·정산과 커밋 뒤 표시는 두 모드가 같다.
 
+    턴 기록(`chat_turns`)도 응답과 같은 커밋에 쓴다 — 응답이 저장됐는데 기록이 없거나, 응답 없이 기록만 남는 턴이 생기지
+    않는다. append 는 이 턴의 값으로 한 행을 쓴다. replace 는 바꾸는 응답의 기록이 있을 때만 한 행을 쓰고, 모델·차감·LLM 호출은
+    이 재생성의 것, 턴 번호·스탯 변화·엔딩·단축어는 그 기록의 값 그대로다. 재생성은 스탯·엔딩을 다시 판정하지 않으므로 방에
+    남아 있는 효과는 원 턴의 것이고, 그 효과를 이 응답에 귀속해 두어야 다음 재생성이 무엇을 되돌릴지 안다. 턴 번호를 이어받는
+    것은 메시지 삭제로 앞 응답이 마지막이 된 방에서 재생성의 턴 번호(지금 `turn_count`)가 그 응답의 턴보다 크기 때문이다.
+    바꾸는 응답에 기록이 없으면(기록을 쓰기 전에 보낸 턴) 쓰지 않는다 — 빈 효과로 쓰면 "원 턴이 아무것도 바꾸지 않았다"와
+    구별되지 않는다. 바꾼 응답의 옛 기록은 지우지 않는다(그 호출의 원가도 실제로 났다).
+
     트랜잭션 반납은 `commit()` 이다 — 읽기만 한 트랜잭션이라 끝내기만 하고, `expire_on_commit=False` 라 읽어 둔 객체를
     그대로 쓴다(`rollback()` 은 객체를 만료시켜 다음 속성 접근이 실패한다)."""
 
@@ -194,6 +204,7 @@ class RoomTurnStore:
         *,
         mode: TurnStoreMode,
         replaced_message_id: uuid.UUID | None = None,
+        shortcut_entity_id: uuid.UUID | None = None,
         log: logging.Logger,
     ) -> None:
         # 바꿀 응답은 replace 에만 있고 replace 에는 반드시 있다 — 어긋나면 append 가 남의 응답을 지우거나 replace 가 지울
@@ -205,6 +216,8 @@ class RoomTurnStore:
         self._setup = setup
         self._mode = mode
         self._replaced_message_id = replaced_message_id
+        # 보내기에서 고른 단축어. 재생성은 바꾸는 응답의 기록에서 이어받으므로 넘기지 않는다.
+        self._shortcut_entity_id = shortcut_entity_id
 
     def turn_number(self) -> int:
         if self._mode == "replace":
@@ -232,6 +245,13 @@ class RoomTurnStore:
         if await _lock_room_for_turn_write(db, room, log=self._log) is None:
             settlement.mark_settled()
             return None
+
+        # 바꾸는 응답의 기록은 그 응답을 지우기 전에, 아직 아무것도 쓰지 않은 자리에서 읽는다.
+        replaced_record = (
+            await db.scalar(select(ChatTurn).where(ChatTurn.assistant_message_id == self._replaced_message_id))
+            if self._replaced_message_id is not None
+            else None
+        )
 
         if self._replaced_message_id is None:
             assistant_message = ChatMessage(
@@ -297,10 +317,48 @@ class RoomTurnStore:
         elif judged_cell_id is not None:
             assistant_message.image_id = judged_cell_id
 
+        self._add_turn_record(turn, settlement.charge, assistant_message.id, replaced_record)
+
         await db.commit()
         # 응답이 저장됐다 — 이 뒤로 끊겨도 차감은 소모다.
         settlement.mark_settled()
         return TurnWrite(message=assistant_message, matched_image=matched_image, judged_cell_id=judged_cell_id)
+
+    def _add_turn_record(
+        self,
+        turn: TurnResult,
+        charge: ChatCharge,
+        assistant_message_id: uuid.UUID,
+        replaced_record: ChatTurn | None,
+    ) -> None:
+        """쓰기 구간 안에서 턴 기록 한 행을 더한다(규칙은 클래스 설명). 차감은 이 턴의 정산이 쥔 영수증이다. 커밋은 부르는
+        쪽의 것이다."""
+        record = ChatTurn(
+            chat_room_id=self._room.id,
+            assistant_message_id=assistant_message_id,
+            chat_model=charge.model,
+            charge_source=charge.source,
+            clover_amount=charge.clover_amount,
+            spend_ledger_id=charge.spend_ledger_id,
+            llm_calls=[call.as_record() for call in turn.llm_calls],
+        )
+        if self._replaced_message_id is None:
+            assert turn.kind in ("send", "edit")
+            reached_ending = turn.judgments.reached_ending
+            record.kind = turn.kind
+            record.turn_number = turn.turn_number
+            record.stat_changes = turn.judgments.stat_changes
+            record.ending_entity_id = reached_ending.entity_id if reached_ending is not None else None
+            record.shortcut_entity_id = self._shortcut_entity_id
+        else:
+            if replaced_record is None:
+                return
+            record.kind = "regenerate"
+            record.turn_number = replaced_record.turn_number
+            record.stat_changes = replaced_record.stat_changes
+            record.ending_entity_id = replaced_record.ending_entity_id
+            record.shortcut_entity_id = replaced_record.shortcut_entity_id
+        self.db.add(record)
 
     async def present(self, turn: TurnResult, written: TurnWrite) -> TurnPresentation:
         """커밋 뒤 조회(상황 이미지 URL·칸 서명·에필로그). 커밋 뒤라 여기서 예외가 새면 SSE 제너레이터를 뚫으므로 자리마다
