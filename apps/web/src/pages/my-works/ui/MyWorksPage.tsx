@@ -88,7 +88,7 @@ const SORT_OPTIONS: { value: MyWorksSort; label: string }[] = MY_WORKS_SORTS.map
  * 초안(`GET /me/drafts`)을 각각 받아 클라이언트에서 병합한다. */
 export function MyWorksPage({ userId, search, onSearchChange }: MyWorksPageProps) {
   return (
-    <main className="mx-auto flex max-w-5xl flex-col gap-6 px-4 sm:px-6 py-10">
+    <main className="mx-auto flex max-w-list flex-col gap-6 px-4 sm:px-6 py-10 lg:pt-6">
       {/* 제목과 버튼은 접지 않고 한 줄에 둔다 — 390px 실측으로 `내 작품` 65.38px + `작품 만들기`
           107.05px(컨트롤 크기 개편 전 85.92px) = 172.43px이라 본문 358px의 48%다(최악인 320px에서도 간격
           115.58px이 남는다). 버튼은 `Button`의 base가 이미 `shrink-0`이라 제목이 먼저 줄어들고,
@@ -268,7 +268,7 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
       ) : (
         // `tabIndex={-1}`은 Tab 순서에 넣지 않으면서 프로그램 포커스만 받게 한다 — "더 보기"가
         // 마지막 페이지에서 사라질 때 포커스를 여기로 넘긴다. `mixed`인 이유:
-        // '전체' 필터에서 캐릭터·스토리가 실제로 섞이므로 그리드는 항상 캐릭터 규격(2/3/4열)에
+        // '전체' 필터에서 캐릭터·스토리가 실제로 섞이므로 그리드는 항상 캐릭터 규격(2~6열)에
         // `items-start`를 쓰고, 카드는 각자 `toThumbnailAspect(item.type)`로 자기 비율을 지킨다.
         <ContentCardGrid thumbnailAspect="mixed" ref={gridRef} tabIndex={-1} className="outline-none">
           {visibleItems.map((item, index) => (

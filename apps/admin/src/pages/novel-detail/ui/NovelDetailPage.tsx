@@ -103,7 +103,7 @@ function NovelSummary({ novel }: { novel: AdminNovelDetailResponse }) {
       </div>
 
       {reasons.length > 0 && (
-        <div className="flex flex-col gap-1 rounded-lg border border-destructive/30 bg-destructive/10 p-3">
+        <div className="flex flex-col gap-1 rounded-lg bg-destructive/10 p-3">
           <p className="text-sm font-medium text-destructive-text">독자에게 보이지 않는 이유</p>
           <ul className="flex flex-col gap-0.5 text-sm text-foreground">
             {reasons.map((reason) => (

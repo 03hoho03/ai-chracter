@@ -52,7 +52,7 @@ export function RateLimitNotice({ rateLimit, surface, onRetry }: RateLimitNotice
   }
 
   return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5">
+    <div className="flex items-center justify-between gap-3 rounded-lg bg-destructive/10 px-3.5 py-2.5">
       <span aria-hidden className="min-w-0 break-keep text-xs text-destructive-text">
         {formatChatRateLimitMessage(rateLimit, surface, secondsLeft)}
       </span>

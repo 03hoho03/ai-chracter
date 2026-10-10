@@ -19,7 +19,7 @@ import {
 import { useInfiniteScrollSentinel } from "@/shared/lib/infinite-scroll/useInfiniteScrollSentinel";
 import { formatCompactCount } from "@/shared/lib/number/formatCompactCount";
 
-const PAGE_CLASS = "mx-auto flex max-w-5xl flex-col gap-6 px-4 sm:px-6 py-10";
+const PAGE_CLASS = "mx-auto flex max-w-list flex-col gap-6 px-4 sm:px-6 py-10 lg:pt-6";
 
 const SORT_LABELS: Record<WebnovelListSort, string> = { latest: "최신순", popular: "인기순" };
 

@@ -9,15 +9,21 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        /** `focus-visible:ring-ring`(불투명)은 base의 `ring-ring/50`을 덮는다 — **`primary` 솔리드
-         * 채움 위에서는 기본 레시피가 통째로 무너지기 때문이다.** `focus-visible:border-ring`이
-         * `--ring == --primary`라 보더를 채움과 **같은 색**(1.0000:1)으로 칠해 rest의 1px 윤곽을
-         * 지우고, 남는 50% 링은 페이지 배경 대비 2.5757(다크)/2.5511(라이트)로 WCAG 1.4.11의 3:1에
-         * 미달한다(두 스토리에서 독립 측정해 일치). 불투명 링은 7.1768/6.7011. `toggle.tsx`가 선택
-         * 상태에 대해 같은 처방을 이미 했고, 이건 그 나머지 절반이다 — 두 프리미티브가
+        /** **`primary` 솔리드 채움 위에서는 base의 포커스 레시피가 통째로 무너진다.**
+         * `focus-visible:border-ring`이 `--ring == --primary`라 보더를 채움과 **같은 색**으로 칠해
+         * rest의 1px 윤곽을 지우고, 남는 50% 링은 페이지 배경 대비 2.5757(다크)/2.5511(라이트)로
+         * WCAG 1.4.11의 3:1에 미달한다. 링을 불투명으로 올려도 링 대 채움이 1.00:1이라 포커스가
+         * "버튼이 3px 커진 것"으로만 보였다. 그래서 링을 끄고(`ring-0`) 2px 불투명 아웃라인을 2px
+         * 띄워 그린다 — 띄운 틈은 칠하지 않은 빈 자리라 아래 표면(페이지·카드·모달·모달 바닥 띠)이
+         * 그대로 비쳐, 채움 대 틈이 표면 색 그대로 5.78~7.17:1이 된다. 단색 `ring-offset-*`은 모달
+         * 바닥 띠(`secondary/50`이 `popover` 위에 겹친 면)에 맞는 토큰이 없다. 아웃라인은 강제 색상
+         * 모드에서도 남는다(box-shadow 링은 지워진다). base의 `outline-none`이 아웃라인 스타일
+         * 변수를 `none`으로 세우므로 `outline-solid`를 빼면 선이 사라진다.
+         * `toggle.tsx`의 선택 상태와 카카오 로그인 버튼(이 variant를 물려받음)이 같은 처방이다 —
          * 같은 채움을 쓰는데 포커스 표시만 갈리면 관습이 나뉜다. 다른 variant는 채움이 무채색이거나
-         * `/10` 틴트라 측정된 결함이 없으므로 base를 건드리지 않고 여기까지만 좁힌다. */
-        default: "bg-primary text-primary-foreground hover:bg-primary/80 focus-visible:ring-ring",
+         * `/10` 틴트라 보더가 살아 있으므로 base를 그대로 쓴다. */
+        default:
+          "bg-primary text-primary-foreground hover:bg-primary/80 focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring",
         outline:
           "border-input bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground",
         secondary:
@@ -30,8 +36,8 @@ const buttonVariants = cva(
          * 자기 채움 1.1312 / 1.1728). 불투명 보더는 자기 채움(`bg-destructive/10`) 대비 **4.8431 / 4.5795**,
          * 페이지 배경 대비 **5.2933 / 5.3328**로 WCAG 1.4.11(3:1)을 넘는다 — 3:1을 지는 건 링이 아니라
          * 이 1px 보더이고, 그건 `로그아웃`·인풋·제출 버튼이 이미 쓰는 것과 **같은 구조**다.
-         * `/10` 틴트 채움이라 `default`처럼 불투명 링까지 갈 필요가 없다(`toggle.tsx`의 `list`가 같은 이유로
-         * 기본 레시피를 그대로 쓴다) — 불투명 링이 필요한 건 보더가 채움에 먹히는 **솔리드 채움**뿐이다.
+         * `/10` 틴트 채움이라 `default`처럼 띄운 아웃라인까지 갈 필요가 없다(`toggle.tsx`의 `list`가 같은 이유로
+         * 기본 레시피를 그대로 쓴다) — 그 처방이 필요한 건 보더가 채움에 먹히는 **솔리드 채움**뿐이다.
          * 참고로 50% 링 자체는 페이지 배경 대비 2.1017 / 2.2862로, 하우스 레시피의 링과 같은 등급이다. */
         destructive:
           "bg-destructive/10 text-destructive-text hover:bg-destructive/20 focus-visible:border-destructive focus-visible:ring-destructive/50",

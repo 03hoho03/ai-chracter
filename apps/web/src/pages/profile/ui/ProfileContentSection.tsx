@@ -201,7 +201,7 @@ type ProfileContentCardProps = {
   isOwner: boolean;
   ownerUserId: string;
   thumbnailAspect: ThumbnailAspect;
-  /** 공용 ContentCard와 같은 규칙. 첫 줄 카드 수가 그리드 폭에 따라 갈리므로(캐릭터 2/3/4 · 스토리 3/4/5)
+  /** 공용 ContentCard와 같은 규칙. 첫 줄 카드 수가 그리드 폭에 따라 갈리므로(캐릭터 2~6 · 스토리 3~7)
    * 호출부는 그 최대값인 `toPriorityCount(aspect)` 보다 앞선 카드에 준다. */
   isPriority?: boolean;
   /** LCP 후보 1장(`index === 0`)에만 준다. */

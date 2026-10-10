@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { toThumbnailAspect, toThumbnailAspectRatio } from "./cardLayout";
+import {
+  toPriorityCount,
+  toThumbnailAspect,
+  toThumbnailAspectRatio,
+} from "./cardLayout";
 import { toGridColumns } from "../ui/cardLayoutClass";
 
 describe("toThumbnailAspect", () => {
@@ -26,16 +30,37 @@ describe("toThumbnailAspectRatio", () => {
 describe("toGridColumns", () => {
   // 경계는 뷰포트가 아니라 그리드 폭이다 — 37rem·45rem 은 뷰포트 sm·md 에서 거터 48px 를 뺀 폭이라, 패널이 없는
   // 화면은 뷰포트 경계를 쓰던 때와 같은 열이 나오고(뷰포트 624~639px 한 띠만 한 단계 일찍 는다 — `cardLayoutClass.ts`
-  // 주석), 왼쪽 패널이 폭을 가져간 화면은 카드가 받는 폭대로 열이 정해진다.
-  it("square는 그리드 폭 37rem·45rem 에서 2/3/4열로 오른다", () => {
-    expect(toGridColumns("square")).toBe("grid-cols-2 @min-[37rem]:grid-cols-3 @min-[45rem]:grid-cols-4");
+  // 주석), 왼쪽 패널이 폭을 가져간 화면은 카드가 받는 폭대로 열이 정해진다. 60rem·75rem 은 넓은 목록 컬럼에서 카드가
+  // 커지는 대신 열이 늘게 15rem 마다 더한 단계다.
+  it("square는 그리드 폭 37·45·60·75rem 에서 2/3/4/5/6열로 오른다", () => {
+    expect(toGridColumns("square")).toBe(
+      "grid-cols-2 @min-[37rem]:grid-cols-3 @min-[45rem]:grid-cols-4 @min-[60rem]:grid-cols-5 @min-[75rem]:grid-cols-6",
+    );
   });
 
-  it("portrait은 가장 좁은 폭부터 3열이다 — 카드 껍데기가 걷혀 작가명 공간 부족 근거가 사라졌다", () => {
-    expect(toGridColumns("portrait")).toBe("grid-cols-3 @min-[37rem]:grid-cols-4 @min-[45rem]:grid-cols-5");
+  it("portrait은 가장 좁은 폭부터 3열이고 7열까지 오른다 — 카드 껍데기가 걷혀 작가명 공간 부족 근거가 사라졌다", () => {
+    expect(toGridColumns("portrait")).toBe(
+      "grid-cols-3 @min-[37rem]:grid-cols-4 @min-[45rem]:grid-cols-5 @min-[60rem]:grid-cols-6 @min-[75rem]:grid-cols-7",
+    );
   });
 
   it("mixed는 square와 같은 열 수에 items-start를 더한다", () => {
-    expect(toGridColumns("mixed")).toBe("grid-cols-2 @min-[37rem]:grid-cols-3 @min-[45rem]:grid-cols-4 items-start");
+    expect(toGridColumns("mixed")).toBe(
+      "grid-cols-2 @min-[37rem]:grid-cols-3 @min-[45rem]:grid-cols-4 @min-[60rem]:grid-cols-5 @min-[75rem]:grid-cols-6 items-start",
+    );
   });
+});
+
+describe("toPriorityCount", () => {
+  // eager 로 당길 첫 줄 카드 수는 열 사다리의 최대 열과 같아야 한다 — 손으로 맞춘 값이라 사다리만 바꾸면 첫 줄 끝
+  // 카드가 lazy 로 빠진다. 사다리 문자열의 마지막 열 수와 비교해 둘을 묶는다.
+  it.each(["square", "portrait", "mixed"] as const)(
+    "%s 는 열 사다리의 최대 열 수와 같다",
+    (aspect) => {
+      const columns = [...toGridColumns(aspect).matchAll(/grid-cols-(\d+)/g)].map(
+        (match) => Number(match[1]),
+      );
+      expect(toPriorityCount(aspect)).toBe(Math.max(...columns));
+    },
+  );
 });

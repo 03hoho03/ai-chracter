@@ -178,7 +178,7 @@ export function HomePage({
   return (
     // 홈은 보이는 첫 행이 h1이 아니라 유형·정렬 행인 유일한 라우트라(비로그인은 그 위에 소개 한 줄) 상단
     // 패딩을 pt-4로 줄인다(홈의 h1은 sr-only, 즐겨찾기·내 작품은 보이는 h1으로 시작한다).
-    <main className="mx-auto flex max-w-5xl flex-col gap-6 px-4 sm:px-6 pt-4 pb-10">
+    <main className="mx-auto flex max-w-list flex-col gap-6 px-4 sm:px-6 pt-4 pb-10 lg:pt-6">
       <h1 className="sr-only">{contentType === "character" ? "캐릭터 홈" : "스토리 홈"}</h1>
 
       {/* 처음 온 사람에게 이곳이 무엇인지 말하는 한 줄. 비로그인에게만, 닫기 없이 상시. 세션 확인 중에는
@@ -237,8 +237,8 @@ export function HomePage({
       </div>
 
       {/* 장르 캐러셀. flex-wrap 대신 overflow-x-auto인 이유: 칩 11개가 1줄에 필요한 폭은
-          780.71px, 본문 컨테이너는 1024px 뷰포트에서 976px다 — 1024px 이상에서만 전부 보이고
-          390px에서는 3줄로 접힌다. 래퍼는 항상 렌더하고 min-h-8(칩 높이 32px)로 자리를
+          780.71px라 본문 폭(뷰포트와 좌측 패널 상태에 따라 달라진다)이 그보다 좁으면 넘치고,
+          줄바꿈으로 받으면 390px에서는 3줄로 접힌다. 래퍼는 항상 렌더하고 min-h-8(칩 높이 32px)로 자리를
           예약한다: 조건부(genreListQuery.data &&)를 안쪽 ToggleGroup에만 두는 이유는, 행 전체를
           조건부로 걸면 로딩 중엔 행이 없다가 도착 시 행 + gap-6(24px)이 통째로 삽입되어 전
           뷰포트에서 새 점프가 생기기 때문이다. */}

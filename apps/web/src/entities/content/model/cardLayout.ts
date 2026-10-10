@@ -42,12 +42,12 @@ export function toThumbnailAspectRatio(aspect: ThumbnailAspect): number {
  * 3/4/5 로 바꿨는데 호출부 4곳의 `index < 4` 가 그대로 남아 md 이상에서 첫 줄 마지막(5번째)
  * 카드가 lazy 로 빠졌다. 손으로 맞춘 값은 사다리를 바꿀 때 따라오지 않는다.
  *
- * `square`·`mixed` 가 4인 것은 그 사다리의 최대가 `@min-[45rem]:grid-cols-4` 이기 때문이다. 그리드가 좁으면
+ * `square`·`mixed` 가 6인 것은 그 사다리의 최대가 `@min-[75rem]:grid-cols-6` 이기 때문이다. 그리드가 좁으면
  * 실제 열 수보다 많이 당겨지지만(2열이면 2장이 과하게) 그건 원래 감수하던 오차다. */
 const MAX_COLUMNS: Record<GridAspect, number> = {
-  square: 4,
-  portrait: 5,
-  mixed: 4,
+  square: 6,
+  portrait: 7,
+  mixed: 6,
 };
 
 export function toPriorityCount(aspect: GridAspect): number {

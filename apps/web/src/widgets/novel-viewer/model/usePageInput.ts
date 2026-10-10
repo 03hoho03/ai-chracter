@@ -1,18 +1,23 @@
+import {
+  SHEET_SWIPE_VELOCITY_WINDOW_MS,
+  shouldSuppressClickAfterSwipe,
+  toReleaseVelocity,
+  type PointerSample,
+} from "@ai-character-chat/ui/lib/sheet-swipe";
 import { useEffect, useLayoutEffect, useRef, type DragEvent, type MouseEvent, type PointerEvent, type RefObject } from "react";
 
 import { toPageGesture } from "../lib/pageGesture";
 import { toPageKeyAction, type PageKeyFocus } from "../lib/pageKey";
-import { isMouseReleasedElsewhere, shouldGuardEdgeTouch, shouldSuppressClick } from "../lib/pointerGuard";
+import { isMouseReleasedElsewhere, shouldGuardEdgeTouch } from "../lib/pointerGuard";
 import { reduceWheel, type WheelTurnState } from "../lib/wheelTurn";
 import { INTERACTIVE_SELECTOR } from "./useChromeVisibility";
 import type { PagedDirectMove, PagedReaderHandle } from "./usePagedReader";
 
-/** 가로로 이만큼 움직여야 끌기로 친다 — 탭으로 치는 거리와 같은 값이라, 탭이 아닌 가로 손짓은 곧바로 쪽을 끈다. */
+/** 가로로 이만큼 움직여야 끌기로 친다 — 탭으로 치는 거리와 같은 값이라, 탭이 아닌 가로 손짓은 곧바로 쪽을 끈다.
+ * 드로어 밀어 닫기의 시작 거리(`SHEET_SWIPE_START_PX`)와 숫자는 같지만 가져다 쓰지 않는다 — 그쪽은 대각선 거리로
+ * 재고, 이 값은 가로 이동만 보며 이 뷰어의 탭 거리(`shouldToggleChrome`)와 함께 움직여야 탭도 끌기도 아닌 틈이 없다.
+ * 놓을 때의 속도 재기와 끌기 뒤 click 억제는 드로어와 같은 것을 `@ai-character-chat/ui` 에서 가져다 쓴다. */
 const DRAG_START_PX = 10;
-/** 손을 뗄 때의 속도를 이 시간 안의 움직임으로 잰다. 더 길면 멈췄다 놓은 손짓도 빠르게 튕긴 것으로 읽힌다. */
-const VELOCITY_WINDOW_MS = 100;
-
-type PointerSample = { x: number; time: number };
 
 type PointerStart = {
   pointerId: number;
@@ -45,7 +50,7 @@ type UsePageInputOptions = {
  *
  * - **끌기**: 가로로 탭 거리 이상 움직이면 쪽이 손을 그대로 따라오고, 놓으면 넘기거나 제자리로 맞춰 들어간다. 끌고
  *   놓은 직후의 click 은 막는다 — 링크 위에서 시작한 끌기가 작가의 말·다음 화로 새지 않게. 막는 것은 뗌 바로 뒤의
- *   포인터 click 뿐이다(`shouldSuppressClick`) — 터치 스와이프는 click 을 만들지 않아 표시만 남는데, 그것이 나중의
+ *   포인터 click 뿐이다(`shouldSuppressClickAfterSwipe`) — 터치 스와이프는 click 을 만들지 않아 표시만 남는데, 그것이 나중의
  *   키보드·보조기기 활성화를 삼키면 안 된다.
  * - **끊긴 누름**: 끄는 도중 둘째 손가락이 닿아도 그 누름은 무시하고 첫 손가락의 끌기를 이어 간다. 브라우저가 핀치를
  *   잡아 취소를 보내면 어느 손가락의 취소든 끌던 쪽을 제자리로 돌린다. 마우스를 본문 밖(겹쳐 뜬 바·넘김 버튼 위)에서
@@ -118,7 +123,9 @@ export function usePageInput(options: UsePageInputOptions) {
     const dy = event.clientY - start.y;
     const samples = samplesRef.current;
     samples.push({ x: event.clientX, time: event.timeStamp });
-    while (samples.length > 2 && event.timeStamp - (samples[0]?.time ?? event.timeStamp) > VELOCITY_WINDOW_MS) samples.shift();
+    while (samples.length > 2 && event.timeStamp - (samples[0]?.time ?? event.timeStamp) > SHEET_SWIPE_VELOCITY_WINDOW_MS) {
+      samples.shift();
+    }
 
     if (!isDraggingRef.current) {
       const isHorizontalDrag = Math.abs(dx) >= DRAG_START_PX && Math.abs(dx) >= Math.abs(dy);
@@ -144,7 +151,7 @@ export function usePageInput(options: UsePageInputOptions) {
       dx,
       dy,
       dt: event.timeStamp - start.time,
-      velocityX: releaseVelocity(samplesRef.current, { x: event.clientX, time: event.timeStamp }),
+      velocityX: toReleaseVelocity(samplesRef.current, { x: event.clientX, time: event.timeStamp }),
       clientX: event.clientX,
       viewportWidth: window.innerWidth,
       pageWidth,
@@ -173,7 +180,7 @@ export function usePageInput(options: UsePageInputOptions) {
   function handleClickCapture(event: MouseEvent<HTMLElement>) {
     const suppressedAt = suppressClickAtRef.current;
     suppressClickAtRef.current = undefined;
-    if (!shouldSuppressClick({ suppressedAt, clickAt: event.timeStamp, detail: event.detail })) return;
+    if (!shouldSuppressClickAfterSwipe({ suppressedAt, clickAt: event.timeStamp, detail: event.detail })) return;
     event.preventDefault();
     event.stopPropagation();
   }
@@ -262,13 +269,6 @@ export function usePageInput(options: UsePageInputOptions) {
 
 function isZoomed(): boolean {
   return (window.visualViewport?.scale ?? 1) > 1;
-}
-
-/** 놓기 직전 짧은 구간의 가로 속도(px/ms, 오른쪽이 +). */
-function releaseVelocity(samples: readonly PointerSample[], last: PointerSample): number {
-  const first = samples.find((sample) => last.time - sample.time <= VELOCITY_WINDOW_MS);
-  if (first === undefined || last.time <= first.time) return 0;
-  return (last.x - first.x) / (last.time - first.time);
 }
 
 /** 키를 누른 순간 포커스가 있는 자리. 슬라이더를 입력칸보다 먼저 본다 — 범위 입력도 `input` 이다. */

@@ -36,22 +36,23 @@ import { cn } from "@ai-character-chat/ui/lib/utils"
  * **`variant="list"`는 위 두 변경을 둘 다 안 받는다** — 세로로 쌓인 목록형 선택지(신고 사유 등)라
  * 칩이 아니고, 칩 전제 위에 선 결정이 그대로 적용되지 않는다. 아래 variant 주석 참조.
  *
- * **`primary` 솔리드 채움을 쓰는 variant(`default`/`outline`)에서는 선택 시 포커스 링을 불투명하게
- * 쓴다**(`data-[state=on]:focus-visible:ring-ring`). `list`는 선택 상태가 `bg-primary/10` **틴트**라
- * 기본 레시피로도 3:1이 나오므로 제외한다 — 측정된 결함이 없는 곳까지 렌더를 바꾸지 않는다.
- * 기본 레시피의 `ring-ring/50`은 배경 위에서만 계산된 값이라, `primary` 솔리드 채움 위에서는
- * 포커스 표시가 통째로 무너진다 — `focus-visible:border-ring`이 보더를 채움과 **같은 핑크**로
+ * **`primary` 솔리드 채움을 쓰는 variant(`default`/`outline`)에서는 선택 시 링을 끄고 2px 불투명
+ * 아웃라인을 2px 띄워 그린다**(`button.tsx` `default`와 같은 처방, 이유는 그 주석). `list`는 선택 상태가
+ * `bg-primary/10` **틴트**라 기본 레시피로도 3:1이 나오므로 제외한다 — 측정된 결함이 없는 곳까지 렌더를
+ * 바꾸지 않는다. 기본 레시피의 `ring-ring/50`은 배경 위에서만 계산된 값이라, `primary` 솔리드 채움
+ * 위에서는 포커스 표시가 통째로 무너진다 — `focus-visible:border-ring`이 보더를 채움과 **같은 핑크**로
  * 바꿔 rest에 있던 윤곽을 지우고(라이트 대비 1.0000 / 다크 1.0437), 남는 건 50% 링 하나인데 그게
  * 페이지 배경 대비 2.5757(다크) / 2.5511(라이트)로 WCAG 1.4.11의 3:1에 미달한다(두 리뷰어가
- * 독립 측정해 일치). ToggleGroup은 roving tabindex라 **선택된 칩이 있으면 Tab이 닿는 칩은 언제나 그
+ * 독립 측정해 일치). 링을 불투명으로 올리면 링 대 채움이 1.00:1이라 칩이 커진 것으로만 보인다.
+ * ToggleGroup은 roving tabindex라 **선택된 칩이 있으면 Tab이 닿는 칩은 언제나 그
  * 칩 하나**여서 이건 엣지가 아니라 이 프리미티브의 기본 포커스 상태다(선택이 비어 있으면 Radix roving
- * focus가 마지막으로 포커스한 칩, 그것도 없으면 첫 칩으로 보낸다 — 헤더 유형 토글이 이미지 화면에서 그렇다). 불투명 링은 7.18(다크) / 6.70(라이트). */
+ * focus가 마지막으로 포커스한 칩, 그것도 없으면 첫 칩으로 보낸다 — 헤더 유형 토글이 이미지 화면에서 그렇다). */
 const toggleVariants = cva(
   "group/toggle inline-flex items-center justify-center gap-1 rounded-full text-sm font-medium text-muted-foreground whitespace-nowrap motion-safe:transition-all outline-none hover:bg-muted hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 aria-pressed:bg-primary aria-pressed:text-primary-foreground data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:hover:bg-primary/80 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
-        default: "bg-transparent data-[state=on]:focus-visible:ring-ring aria-pressed:focus-visible:ring-ring",
+        default: "bg-transparent data-[state=on]:focus-visible:ring-0 data-[state=on]:focus-visible:outline-2 data-[state=on]:focus-visible:outline-offset-2 data-[state=on]:focus-visible:outline-solid data-[state=on]:focus-visible:outline-ring aria-pressed:focus-visible:ring-0 aria-pressed:focus-visible:outline-2 aria-pressed:focus-visible:outline-offset-2 aria-pressed:focus-visible:outline-solid aria-pressed:focus-visible:outline-ring",
         /** **`data-filter-default` 표식이 붙은 항목은 선택돼도 채우지 않는다.** 필터 칩 줄의 기본값 항목
          * (아무것도 거르지 않는 `전체`)이 그 표식을 단다 — 필터가 실제로 걸렸을 때만 `primary` 솔리드
          * 채움(화면의 밝기 예산)을 쓰게 하려는 것이다(DESIGN.md Toggles 절). 선택 표시는 채움 대신
@@ -63,9 +64,9 @@ const toggleVariants = cva(
          * hover는 3중 chain `data-[state=on]:hover:bg-primary/80`이 따로 있어 같은 깊이로 **따로** 덮는다 —
          * 빠뜨리면 hover에서만 핑크가 스친다. 포커스 보더도 다시 `border-ring`으로 올린다 — 선택 보더
          * (`border-foreground`)가 베이스의 `focus-visible:border-ring`보다 특이도가 높아 덮어 버리기 때문이다.
-         * 불투명 링(`data-[state=on]:focus-visible:ring-ring`)은 그대로 걸린다. */
+         * 선택 포커스의 띄운 아웃라인(`data-[state=on]:focus-visible:outline-*`)은 그대로 걸린다. */
         outline:
-          "border border-input bg-transparent hover:bg-muted data-[state=on]:focus-visible:ring-ring aria-pressed:focus-visible:ring-ring data-filter-default:data-[state=on]:border-foreground data-filter-default:data-[state=on]:bg-transparent data-filter-default:data-[state=on]:text-foreground data-filter-default:data-[state=on]:hover:bg-muted data-filter-default:data-[state=on]:focus-visible:border-ring",
+          "border border-input bg-transparent hover:bg-muted data-[state=on]:focus-visible:ring-0 data-[state=on]:focus-visible:outline-2 data-[state=on]:focus-visible:outline-offset-2 data-[state=on]:focus-visible:outline-solid data-[state=on]:focus-visible:outline-ring aria-pressed:focus-visible:ring-0 aria-pressed:focus-visible:outline-2 aria-pressed:focus-visible:outline-offset-2 aria-pressed:focus-visible:outline-solid aria-pressed:focus-visible:outline-ring data-filter-default:data-[state=on]:border-foreground data-filter-default:data-[state=on]:bg-transparent data-filter-default:data-[state=on]:text-foreground data-filter-default:data-[state=on]:hover:bg-muted data-filter-default:data-[state=on]:focus-visible:border-ring",
         /** 세로로 쌓인 목록형 선택지(신고 사유 등). 행이 버튼보다 훨씬 넓어서 솔리드 채움을 쓰면
          * 같은 화면의 primary CTA와 같은 크기·같은 색 덩어리가 둘이 되어 무엇이 액션인지 흐려진다
          * (DESIGN.md 밝기 예산 규칙: "밝은 면적은 예산이고, 한 화면에서 지금 눌러야 할 단 하나에만
@@ -97,8 +98,8 @@ const toggleVariants = cva(
          * `border border-transparent` — 장식이 아니라 WCAG 1.4.11을 지는 하중 부재다.
          * `focus-visible:border-ring`(베이스에 있음)이 이걸 불투명 핑크로 바꿔 포커스를 드러낸다.
          * 50% 링만으로는 배경 대비 2.5757(다크)로 3:1 미달이다(DESIGN.md §Toggles 실측) — 지우지
-         * 말 것. `tab`은 활성 솔리드 채움이 없어 `default`/`outline`/`list`가 쓰는 불투명 포커스
-         * 링 오버라이드(`data-[state=on]:focus-visible:ring-ring`)가 필요 없다 — 보더 하나로 이미
+         * 말 것. `tab`은 활성 솔리드 채움이 없어 `default`/`outline`이 선택 칩에 쓰는 띄운
+         * 아웃라인 오버라이드(`data-[state=on]:focus-visible:outline-*`)가 필요 없다 — 보더 하나로 이미
          * 3:1을 지므로 이건 실측이 아니라 구조적 결론이다.
          *
          * **활성 채움 제거는 베이스와 같은 modifier chain으로 재선언해야 twMerge가 지운다**
@@ -144,8 +145,8 @@ const toggleVariants = cva(
          * 같은 값이라 사라진다 — DESIGN.md Colors 절 "표면 위 채움"). 선택 채움·글자·hover 는 베이스와 **같은
          * modifier chain** 으로 다시 선언해야 twMerge 가 베이스의 `primary` 쪽을 지운다(`packages/ui/CLAUDE.md`).
          * 선택된 칩은 보더가 이미 `ring` 이라 포커스 때 `focus-visible:border-ring` 이 바꾸는 것이 없어, 남는 50%
-         * 링만으로는 3:1 에 못 미친다 — 그래서 선택 칩의 포커스 링을 불투명하게 올린다(`default`·`outline` 과 같은
-         * 처방). */
+         * 링만으로는 3:1 에 못 미친다 — 그래서 선택 칩의 포커스 링을 불투명하게 올린다. 채움이 무채 `secondary` 라
+         * 불투명 링이 채움과 갈리므로 `default`·`outline` 의 띄운 아웃라인까지 갈 필요가 없다. */
         neutral:
           "border border-input bg-transparent hover:bg-secondary data-[state=on]:border-ring data-[state=on]:bg-secondary data-[state=on]:text-foreground data-[state=on]:hover:bg-secondary data-[state=on]:focus-visible:ring-ring aria-pressed:border-ring aria-pressed:bg-secondary aria-pressed:text-foreground aria-pressed:focus-visible:ring-ring",
         tab: "relative rounded-md border border-transparent hover:bg-transparent data-[state=on]:bg-transparent data-[state=on]:text-foreground data-[state=on]:hover:bg-transparent aria-pressed:bg-transparent aria-pressed:text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-foreground after:opacity-0 data-[state=on]:after:opacity-100 motion-safe:after:transition-opacity",

@@ -25,7 +25,7 @@ export function ProfilePage({
   const isOwner = sessionQuery.data?.id === userId;
 
   return (
-    <main className="mx-auto flex max-w-4xl flex-col gap-8 px-4 sm:px-6 py-10">
+    <main className="mx-auto flex max-w-list flex-col gap-8 px-4 sm:px-6 py-10 lg:pt-6">
       <ProfileBody
         query={profileQuery}
         userId={userId}

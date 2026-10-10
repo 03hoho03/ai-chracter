@@ -46,7 +46,7 @@ export function SiteFooter() {
     <footer className="border-t border-border">
       <div
         className={cn(
-          "mx-auto flex max-w-5xl flex-col gap-3 px-4 pt-6 sm:px-6",
+          "mx-auto flex max-w-list flex-col gap-3 px-4 pt-6 sm:px-6",
           hasFixedPlayBarBelow ? "pb-[calc(7rem+env(safe-area-inset-bottom))] lg:pb-4-safe" : "pb-4-safe",
         )}
       >
