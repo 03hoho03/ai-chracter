@@ -22,7 +22,8 @@ export type ContentCardGridProps = {
  * 막지 못한다 — 부모 폭이 바깥에서 정해지는 자리에 둔다.
  *
  * `ref`·`tabIndex`·`className`은 래퍼가 아니라 안쪽 그리드로 보낸다 — `/my`·프로필 그리드가 "더 보기"가 마지막
- * 페이지에서 사라질 때 포커스를 받는 자리로 쓴다. 이 컴포넌트가 그 둘을 삼키면 그 동작이 깨진다. */
+ * 페이지에서 사라질 때 그리드를 포커스 받는 자리로 쓴다. 앞의 둘(`ref`·`tabIndex`)을 래퍼가 삼키면 그 동작이 깨지고,
+ * `className`은 포커스를 받는 요소에 붙어야 할 클래스(예: `outline-none`)를 싣는 자리라 같은 요소로 간다. */
 export function ContentCardGrid({ thumbnailAspect, className, ref, tabIndex, children }: ContentCardGridProps) {
   return (
     <div className="@container w-full">

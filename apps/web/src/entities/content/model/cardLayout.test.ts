@@ -25,7 +25,8 @@ describe("toThumbnailAspectRatio", () => {
 
 describe("toGridColumns", () => {
   // 경계는 뷰포트가 아니라 그리드 폭이다 — 37rem·45rem 은 뷰포트 sm·md 에서 거터 48px 를 뺀 폭이라, 패널이 없는
-  // 화면은 지금까지와 같은 열이 나오고 왼쪽 패널이 폭을 가져간 화면은 카드가 받는 폭대로 열이 정해진다.
+  // 화면은 뷰포트 경계를 쓰던 때와 같은 열이 나오고(뷰포트 624~639px 한 띠만 한 단계 일찍 는다 — `cardLayoutClass.ts`
+  // 주석), 왼쪽 패널이 폭을 가져간 화면은 카드가 받는 폭대로 열이 정해진다.
   it("square는 그리드 폭 37rem·45rem 에서 2/3/4열로 오른다", () => {
     expect(toGridColumns("square")).toBe("grid-cols-2 @min-[37rem]:grid-cols-3 @min-[45rem]:grid-cols-4");
   });

@@ -7,7 +7,7 @@ import { ContentListEmptyState } from "@/entities/content";
 import { useSessionQuery } from "@/entities/session";
 import { formatRelativeTime } from "@/shared/lib/time/formatRelativeTime";
 
-/** 헤더 "내 채팅목록"(파라미터 없이 진입)에서 보이는 전체 대화방 목록 — 콘텐츠 스코프 없이 한 번에
+/** "내 채팅목록"(`/chats`에 파라미터 없이 진입 — 좌측 패널의 "최근 대화 전체 보기"·레일 아이콘, 좁은 화면은 드로어)에서 보이는 전체 대화방 목록 — 콘텐츠 스코프 없이 한 번에
  * 받는다(`GET /me/chat-rooms`). 이름변경·초기화·삭제는 다루지 않는다(읽기+열기만) — 그 조작은
  * 콘텐츠 스코프 목록(`ChatRoomListView`, `/chats?contentId=`)의 몫으로 남는다. */
 export function MyChatRoomListView() {

@@ -39,8 +39,8 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-background">
-      {/* px-4 sm:px-6는 본문 컬럼과 같은 값을 유지한다 — 헤더를 px-6으로 올리면 390px에서 내부 폭이
-          358→342px로 줄어 압박 지점에 들어간다(기존 실측). */}
+      {/* px-4 sm:px-6는 본문 컬럼과 같은 값을 유지한다 — `lg` 미만에서는 이 바와 `max-w-5xl` 본문 컬럼이 둘 다
+          뷰포트를 꽉 채우므로, 값이 같아야 버거와 본문 왼쪽 끝이 같은 x에 선다. */}
       <div className="grid h-14 grid-cols-[1fr_auto_1fr] items-center gap-2 px-4 sm:px-6 lg:flex">
         <MobileNavDrawer className={cn("justify-self-start lg:hidden", isSearchExpanded && "max-sm:hidden")} />
 
