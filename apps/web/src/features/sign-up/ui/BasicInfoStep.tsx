@@ -7,11 +7,13 @@ import { useFormContext } from "react-hook-form";
 
 import type { SignUpFormValues } from "../model/signUpSchema";
 import { LegalConsentFields } from "./LegalConsentFields";
+import { PersonaNameField } from "./PersonaNameField";
 
 const BASIC_INFO_FIELDS = [
   "email",
   "password",
   "nickname",
+  "personaName",
   "birthDate",
   "termsAgreed",
   "privacyAgreed",
@@ -119,6 +121,8 @@ export function BasicInfoStep({ onSubmit, isSubmitting }: BasicInfoStepProps) {
           </p>
         )}
       </div>
+
+      <PersonaNameField idPrefix="signup" />
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="signup-birth-date">생년월일</Label>

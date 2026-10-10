@@ -8,9 +8,11 @@ import { LOGIN_LINK_ERROR_TYPE } from "@/entities/session";
 
 import type { SignUpFormValues } from "../model/signUpSchema";
 import { LegalConsentFields } from "./LegalConsentFields";
+import { PersonaNameField } from "./PersonaNameField";
 
 const BASIC_INFO_FIELDS = [
   "nickname",
+  "personaName",
   "birthDate",
   "termsAgreed",
   "privacyAgreed",
@@ -79,6 +81,8 @@ export function SocialBasicInfoStep({ onSubmit, isSubmitting }: SocialBasicInfoS
           </p>
         )}
       </div>
+
+      <PersonaNameField idPrefix="onboarding" />
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="onboarding-birth-date">생년월일</Label>

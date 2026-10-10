@@ -7,6 +7,7 @@ function validPayload() {
     email: "user@example.com",
     password: "password123",
     nickname: "닉네임",
+    personaName: "",
     birthDate: "2000-01-01",
     termsAgreed: true,
     privacyAgreed: true,
@@ -62,5 +63,14 @@ describe("signUpSchema", () => {
     });
 
     expect(result.success).toBe(true);
+  });
+
+  // 대화에서 쓸 이름은 선택이다 — 비우면 통과하고, 적었으면 프로필 이름 규칙을 건다.
+  it.each(["", "   "])("accepts a blank personaName %j", (personaName) => {
+    expect(signUpSchema.safeParse({ ...validPayload(), personaName }).success).toBe(true);
+  });
+
+  it.each(["지:훈", "가".repeat(21)])("rejects personaName %j", (personaName) => {
+    expect(signUpSchema.safeParse({ ...validPayload(), personaName }).success).toBe(false);
   });
 });
