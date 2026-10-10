@@ -234,14 +234,14 @@ def validate_story_publish(
     ):
         missing.append("mediaBook.orphanCells")
 
-    if any(not note.always_on and not any(k.strip() for k in note.trigger_keywords) for note in keyword_notes):
+    if any(not note.always_on and all(_is_blank(k) for k in note.trigger_keywords) for note in keyword_notes):
         missing.append("keywordNotes.triggerKeywords")
-    if any(not note.info_text.strip() for note in keyword_notes):
+    if any(_is_blank(note.info_text) for note in keyword_notes):
         missing.append("keywordNotes.infoText")
 
     if any(count_rules(RULE_LIST_ADAPTER.validate_python(note.condition_rules)) == 0 for note in situation_notes):
         missing.append("situationNotes.emptyConditionRules")
-    if any(not note.info_text.strip() for note in situation_notes):
+    if any(_is_blank(note.info_text) for note in situation_notes):
         missing.append("situationNotes.infoText")
     if dangling_situation_note_paths:
         missing.append("situationNotes.conditionRules")

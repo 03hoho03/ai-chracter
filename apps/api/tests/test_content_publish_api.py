@@ -2933,6 +2933,9 @@ async def test_publish_and_reset_clone_every_situation_note_field(
         pytest.param([("본문", 0)], [], ["situationNotes.emptyConditionRules"], id="no-rules"),
         pytest.param([("본문", -1)], [], ["situationNotes.emptyConditionRules"], id="only-an-empty-group"),
         pytest.param([("  \n", 1)], [], ["situationNotes.infoText"], id="blank-text"),
+        # 화면의 trim() 은 BOM 을 지우고 NEL 은 남긴다(Python 의 인자 없는 strip() 은 그 반대).
+        pytest.param([("\ufeff", 1)], [], ["situationNotes.infoText"], id="bom-text-is-blank"),
+        pytest.param([("\u0085", 1)], [], [], id="nel-text-is-not-blank"),
         pytest.param(
             [("본문", 1)],
             ["startingSetups[0].situationNotes[0].conditionRules[0].statId"],
@@ -3147,6 +3150,11 @@ async def test_publish_rejects_keyword_note_without_keywords_unless_always_on(
         pytest.param([("정보", [" "], False)], ["keywordNotes.triggerKeywords"], id="blank-keywords-only"),
         pytest.param([(" \n", ["단서"], False)], ["keywordNotes.infoText"], id="blank-info"),
         pytest.param([(" ", [], True)], ["keywordNotes.infoText"], id="always-on-blank-info"),
+        # 화면의 trim() 은 BOM 을 지우고 NEL 은 남긴다(Python 의 인자 없는 strip() 은 그 반대).
+        pytest.param([("\ufeff", ["단서"], False)], ["keywordNotes.infoText"], id="bom-info-is-blank"),
+        pytest.param([("\u0085", ["단서"], False)], [], id="nel-info-is-not-blank"),
+        pytest.param([("정보", ["\ufeff"], False)], ["keywordNotes.triggerKeywords"], id="bom-keywords-only"),
+        pytest.param([("정보", ["\u0085"], False)], [], id="nel-keyword-is-not-blank"),
         pytest.param(
             [("", [], False), ("", [], False)],
             ["keywordNotes.triggerKeywords", "keywordNotes.infoText"],
