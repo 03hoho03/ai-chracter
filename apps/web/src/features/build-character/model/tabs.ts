@@ -11,8 +11,8 @@ export const CHARACTER_TABS = [
   { id: "profile", label: "프로필", fields: ["profile"], preview: "card" },
   { id: "intro", label: "인트로", fields: ["intro"], preview: "chat" },
   { id: "prompt", label: "프롬프트", fields: ["prompt"], preview: "chat" },
-  { id: "advanced", label: "고급기능", fields: ["situationalImages"], preview: "chat" },
-  { id: "detail", label: "상세", fields: ["registration"], preview: "card" },
+  { id: "advanced", label: "상황별 이미지", fields: ["situationalImages"], preview: "chat" },
+  { id: "detail", label: "등록", fields: ["registration"], preview: "card" },
 ] as const satisfies readonly BuilderTab[];
 
 /** `TabsTrigger`의 value 좁힘·활성 탭 atom이 쓰는 탭 id 유니언. `CHARACTER_TABS`에서 도출한다

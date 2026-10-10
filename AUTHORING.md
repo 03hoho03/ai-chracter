@@ -220,7 +220,7 @@
    - `startingSetups[].situationNotes[]` → 상황 노트 탭(시작설정마다): `name` → 이름, `conditionRules` → 조건, `infoText` → 상황. 조건은 엔딩 규칙처럼 스탯을 이름(`"stat"`)으로 가리키고 같은 `_resolve_stat_refs`가 id로 바꾼다(없는 이름이면 파일명을 담은 오류). 배열 순서가 빌더 목록 순서다. 시드에서 이 키를 **통째로 빼면 기존 노트를 지우지 않고 그대로 둔다**(`StartingSetupDraftItem` docstring — 키를 모르는 옛 화면의 저장이 노트를 지우지 않게 한 설계). 노트를 지우려면 `"situationNotes": []`로 적는다. 스탯의 `rules`도 키를 빼면 기존 규칙이 유지된다(규칙을 지우려면 `"rules": []`).
    - `keywordNotes[].infoText` → 정보, `triggerKeywords` → 트리거 키워드, `startingSetupId: null` → 적용 대상 "스토리 전체". 입력표에 적용 대상 행을 따로 둔다. 시드 JSON은 `null`만 쓸 수 있어서 "특정 시작설정"을 고르면 대조가 어긋난다. 노트의 배열 순서가 빌더 목록 순서(우선순위)이니 그 순서대로 입력한다. `name` → 이름, `excludeKeywords` → 금지 키워드, `stickyTurns` → 유지 턴, `alwaysOn` → 상시 적용. 시드 JSON에 키가 없는 옵션은 입력표에서 기본값(이름 비움, 금지 없음, 유지 0, 상시 꺼짐)으로 둔다.
    - 캐릭터: `intro` → 인트로, `exampleDialogues` → 예시 대화, `characterPrompt` → 캐릭터 프롬프트, `situationalImages[].triggerCondition` → 노출 상황.
-   - 루트 `description` → 등록 설명(캐릭터는 상세 탭).
+   - 루트 `description` → 등록 설명(등록 탭).
 3. 이미지: 대표 이미지는 생성 이미지에서 고를 수 있다. 상황별 이미지는 업로드 전용이라 파일로 받아 올린다. 참조 생성은 본인의 완성된 생성 이미지만 참조로 쓸 수 있으므로 기준 이미지를 지우지 않는다.
 4. 대조: 발행 전에 운영 초안을 API로 읽어 저장소 JSON과 필드별로 비교한다. id·이미지 id·순서에서 파생되는 값은 빼고, 엔딩 규칙은 운영의 `statId`를 스탯 이름으로 풀어 JSON의 `"stat"`과 비교한다. 키워드북 노트의 순서는 우선순위라 파생값이 아니니, 시드 배열 순서와 운영 빌더 목록 순서도 비교한다. 불일치가 0이어야 발행한다.
 5. 발행하고 자동 심사 결과를 기록한다. 탈락하면 사유를 받아 문안을 고치되, **저장소 JSON도 같이** 고친다(원고 인용 대조가 그 뒤를 따른다).
