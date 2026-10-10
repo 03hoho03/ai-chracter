@@ -17,7 +17,6 @@ import {
   FieldLabelText,
   PROMPT_TEMPLATE_LABELS,
   PROMPT_TEMPLATE_VALUES,
-  STORY_FIELD_LABELS,
   type StoryBuilderFormValues,
   type StoryCollapsibleList,
 } from "@/features/build-story";
@@ -208,6 +207,8 @@ export function SettingTab() {
         )}
         {fields.map((field, index) => {
           const exampleErrors = errors.storySetting?.developmentExamples?.[index];
+          const userLineId = `story-setting-example-${field.id}-user-line`;
+          const assistantLineId = `story-setting-example-${field.id}-assistant-line`;
           const userLineErrorId = `story-setting-example-${field.id}-user-line-error`;
           const assistantLineErrorId = `story-setting-example-${field.id}-assistant-line-error`;
           const title = `전개 예시 ${index + 1}`;
@@ -221,9 +222,12 @@ export function SettingTab() {
               hasError={!!exampleErrors}
               trailing={<ItemRemoveButton label={`${title} 삭제`} onClick={() => handleRemoveExample(index)} />}
             >
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor={userLineId}>
+                  <FieldLabelText field="storySetting.developmentExamples.*.userLine" />
+                </Label>
                 <BuilderTextarea
-                  placeholder={STORY_FIELD_LABELS["storySetting.developmentExamples.*.userLine"].label}
+                  id={userLineId}
                   rows={2}
                   aria-invalid={!!exampleErrors?.userLine}
                   aria-describedby={exampleErrors?.userLine ? userLineErrorId : undefined}
@@ -236,8 +240,13 @@ export function SettingTab() {
                     {exampleErrors.userLine.message}
                   </p>
                 )}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor={assistantLineId}>
+                  <FieldLabelText field="storySetting.developmentExamples.*.assistantLine" />
+                </Label>
                 <BuilderTextarea
-                  placeholder={STORY_FIELD_LABELS["storySetting.developmentExamples.*.assistantLine"].label}
+                  id={assistantLineId}
                   rows={6}
                   aria-invalid={!!exampleErrors?.assistantLine}
                   aria-describedby={exampleErrors?.assistantLine ? assistantLineErrorId : undefined}
