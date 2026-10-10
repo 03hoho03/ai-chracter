@@ -287,7 +287,7 @@ async def _await_stat_rejudgment(
 ) -> dict[str, float] | None:
     """재생성의 스탯 재판정 — `_await_stat_judgment` 와 같되, 첫 호출이 곧바로 다시 부를 만한 실패
     (`is_retryable_judgment_failure`)면 한 번만 더 부른다. 재생성은 원 턴의 효과가 이미 반영된 상태에서 시작해 실패하면 새 응답에
-    맞지 않는 스탯이 남으므로 빠르게 끝나는 실패에서는 한 번 더 시도할 값이 있다. 보내기·수정의 판정은 실패해도 "그 턴의 효과
+    맞지 않는 스탯이 남으므로 다시 부를 만한 실패에서는 한 번 더 시도할 값이 있다. 보내기·수정의 판정은 실패해도 "그 턴의 효과
     없음"으로 일관되므로 다시 부르지 않는다 — 그래서 재시도를 공통 헬퍼가 아니라 여기에만 둔다.
 
     다시 부르는 것은 LLM 호출뿐이고 반영(`apply_rule_judgment`)은 성공한 결과 하나에 한 번이다. 실패한 호출마다 경고를 한 줄씩
@@ -808,16 +808,21 @@ class StatJudgment:
         _apply_stat_result(ctx, result, self._current_stats, self._updated)
 
 
-def _starting_values(current_stats: dict[str, float], stat_changes: dict[str, list[float | None]]) -> dict[str, float]:
+def _starting_values(
+    current_stats: dict[str, float], stat_changes: dict[str, list[float | None]], stat_defs: list[StatDef]
+) -> dict[str, float]:
     """바꾸는 응답의 턴 기록에 남은 변화(`{스탯: [반영 전, 반영 뒤]}`)를 지금 값에서 되돌린 값 — 그 턴이 시작할 때의 값이다.
-    기록에 없는 스탯은 그 턴이 바꾸지 않았으니 지금 값 그대로다. 반영 전 값이 없던 스탯은 값이 없던 것으로 되돌린다(판정이
-    시작값으로 본다). 기록은 JSON 이라 정수·실수가 섞여 오므로 실수로 맞춘다."""
+    기록에 없는 스탯은 그 턴이 바꾸지 않았으니 지금 값 그대로다. 반영 전 값이 비어 있으면 그 스탯의 시작값(`initial_value`)으로
+    되돌린다 — `load_room_stats` 가 행이 없는 스탯을 시작값으로 채우는 것과 같은 뜻이다. 비어 있다고 판정 입력에서 빼면, 규칙이
+    발동하지 않은 판정 스탯은 판정 결과에도 없어 쓰이지 않고 원 턴의 값이 그대로 굳는다. 지금 버전에 정의가 없는 스탯은 판정
+    대상이 아니므로 지금 값 그대로 둔다. 기록은 JSON 이라 정수·실수가 섞여 오므로 실수로 맞춘다."""
+    initial_values = {str(stat_def.entity_id): float(stat_def.initial_value) for stat_def in stat_defs}
     starting = dict(current_stats)
     for stat_id, (before, _after) in stat_changes.items():
-        if before is None:
-            starting.pop(stat_id, None)
-        else:
+        if before is not None:
             starting[stat_id] = float(before)
+        elif stat_id in initial_values:
+            starting[stat_id] = initial_values[stat_id]
     return starting
 
 
@@ -834,10 +839,12 @@ class RegenerateStatJudgment:
     조립됐고(상황 노트가 지금 스탯으로 고른다), 생성이 실패한 재생성은 이 판정까지 오지 않아 스탯이 그대로다. 판정이 반영 전 값에서
     출발하므로 카운터도 반영 전 값에서 한 번만 구른다(원 턴의 카운터는 되돌림으로 사라진다).
 
-    판정 LLM 실패는 빠르게 끝나는 것에 한해 한 번 더 부르고(`_await_stat_rejudgment`), 끝내 실패하면 되돌리지 않는다 — 스탯 값과
+    판정 LLM 실패는 다시 부를 만한 종류(일시적인 서버·연결 오류와 파싱 실패)에 한해 한 번 더 부르고(`_await_stat_rejudgment`),
+    끝내 실패하면 되돌리지 않는다 — 스탯 값과
     `statChange` 는 그대로이고 재생성 기록은 옛 기록의 변화를 이어받는다(재판정 전 재생성과 같은 화면이고, 다음 재생성이 그 기록으로
-    정확히 되돌린다). 준비의 DB 읽기·렌더 실패도 같은 결과다. 엔딩 판정은 하지 않는다 — 재판정한 스탯이 엔딩 조건을 새로 채우면
-    다음 새 턴의 엔딩 판정이 본다."""
+    정확히 되돌린다). 준비의 DB 읽기·렌더 실패도 같은 결과다. 엔딩 판정은 하지 않는다 — 엔딩 판정은 게이트를 넘긴 뒤 5턴마다
+    판정 차례가 온 턴(`is_ending_check_due`)에만 돌므로, 재판정한 스탯이 엔딩 조건을 새로 채우면 그것을 보는 것은 다음에 판정
+    차례가 오는 새 턴이다. 재생성한 턴 자신이 판정 차례였다면 그 차례의 엔딩 기회는 다음 차례(5턴 뒤)로 밀린다."""
 
     wave = 1
 
@@ -882,7 +889,7 @@ class RegenerateStatJudgment:
             capture_dependency_failure(exc, dependency="db")
             return
         self._stat_defs, self._stat_rows, self._current_stats = stat_defs, stat_rows, current_stats
-        self._starting_stats = _starting_values(current_stats, record.stat_changes)
+        self._starting_stats = _starting_values(current_stats, record.stat_changes, stat_defs)
         self._request = _prepare_stat_request(ctx, stat_defs, rules_by_stat_id, log=self._log)
 
     async def judge(self, llm_client: LLMClient, ctx: JudgmentContext) -> None:

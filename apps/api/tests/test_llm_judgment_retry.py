@@ -1,6 +1,6 @@
 """판정 실패를 곧바로 한 번 다시 부를 만한 것인지 가르는 분류(`is_retryable_judgment_failure`).
 
-다시 부르는 것: 빠르게 끝나는 일시 오류(5xx — 504 제외 — 와 타임아웃이 아닌 연결 끊김)와 파싱 실패. 파싱 실패는 구조화 호출에
+다시 부르는 것: 일시적인 서버·연결 오류(5xx — 504 제외 — 와 타임아웃이 아닌 연결 끊김)와 파싱 실패. 파싱 실패는 구조화 호출에
 시드가 붙지 않아 다시 뽑으면 다른 표본이다. 다시 부르지 않는 것: 타임아웃(이미 판정 타임아웃만큼 기다렸고 한 번 더 기다리면 턴 락
 TTL 을 넘길 수 있다 — 504 도 기다린 뒤에 오므로 같다), 429(곧바로 다시 불러도 같은 쿼터), 안전 차단(같은 입력이면 같은 판단),
 그 밖의 4xx.
@@ -81,7 +81,7 @@ _CASES: dict[str, tuple[Callable[..., Any], bool]] = {
 
 
 @pytest.mark.parametrize("case", list(_CASES))
-async def test_judgment_failure_is_retried_only_for_fast_transient_failures_and_parse_failures(
+async def test_judgment_failure_is_retried_only_for_transient_server_or_connection_failures_and_parse_failures(
     monkeypatch: pytest.MonkeyPatch, case: str
 ) -> None:
     generate_content, expected = _CASES[case]

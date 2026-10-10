@@ -6,7 +6,7 @@
 - 판정 입력은 기록의 반영 전 값이다(메모리에서만). 되돌림과 새 값은 쓰기 구간에서 함께 쓰고, 카운터는 반영 전 값에서 한 번만
   구른다. 새 기록의 스탯 변화는 반영 전 값 대비 새 결과다. `statChange` 는 화면이 들고 있는 값(지금 DB 값)과 달라진 스탯에만 나간다.
 - 재생성에서 엔딩 판정은 하지 않는다.
-- 재판정은 빠르게 끝나는 일시 오류(5xx — 504 제외 — 와 타임아웃이 아닌 연결 끊김)와 파싱 실패에만 곧바로 한 번 다시 부른다.
+- 재판정은 일시적인 서버·연결 오류(5xx — 504 제외 — 와 타임아웃이 아닌 연결 끊김)와 파싱 실패에만 곧바로 한 번 다시 부른다.
   끝내 실패하면 되돌리지 않는다 — 스탯 값과 `statChange` 는 그대로이고 새 기록은 옛 기록을 이어받는다. 보내기·수정의 스탯 판정은
   다시 부르지 않는다.
 - 응답을 받은 호출(파싱 실패 포함)의 사용량은 턴 기록의 LLM 호출에 남는다. 응답 없이 끝난 호출(5xx·연결 끊김)은 공급자 구현이
@@ -321,6 +321,26 @@ async def test_a_regeneration_that_kept_the_old_effect_is_reverted_to_the_origin
     assert await _values(db_session, room, stats) == (71, 29)
 
 
+async def test_a_record_whose_before_value_is_empty_reverts_that_stat_to_its_initial_value(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """기록의 반영 전 값이 비어 있으면 그 스탯의 시작값에서 다시 판정한다 — 방 스탯을 읽을 때 행이 없는 스탯을 시작값으로 보는
+    것과 같은 뜻이다. 규칙이 발동하지 않아도 원 턴의 값이 남지 않고 시작값으로 돌아온다."""
+    room, stats = await _story_room(db_session, db_client)
+    await _send(db_client, monkeypatch, room, "약속을 지킨다", "a1")
+    assert await _values(db_session, room, stats) == (78, 29)
+    record = await _record_of_last_reply(db_session, room)
+    record.stat_changes = {stats.trust: [None, 78], stats.days: [30, 29]}
+    await db_session.commit()
+
+    events = await _regenerate(db_client, room, _TurnLLM(monkeypatch, "아무 일 없다", [_fired()]))
+
+    # 신뢰의 시작값은 73 이다.
+    assert await _values(db_session, room, stats) == (73, 29)
+    assert _stat_events(events) == {stats.trust: 73}
+    assert (await _record_of_last_reply(db_session, room)).stat_changes == {stats.days: [30, 29]}
+
+
 # ── 지금 동작 그대로인 경우 ──────────────────────────────────────────────────────────────
 
 
@@ -488,7 +508,7 @@ _RETRIED: dict[str, Any] = {
 
 
 @pytest.mark.parametrize("failure", list(_RETRIED))
-async def test_a_fast_transient_or_parse_failure_is_rejudged_once_more_and_the_second_result_applies(
+async def test_a_transient_server_connection_or_parse_failure_is_rejudged_once_more_and_the_second_result_applies(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
     room, stats = await _story_room(db_session, db_client)
