@@ -206,8 +206,10 @@ def test_premium_switches_without_an_assignment_still_need_bedrock_credentials_e
 
 
 # 운영 API 컨테이너가 받는 env 키 이름(값 없이). 컨테이너는 `.env` 를 통째로 받으므로 compose·다른 서비스 키도 섞여 있다.
-# 상위 모델(`BEDROCK_*`·`*_PREMIUM_*`)과 호출 위치 배정 키는 운영에 없다.
+# 운영은 상위 모델 호출 셋을 모두 Anthropic 으로 배정하고, Bedrock 자격(`BEDROCK_*`)은 운영에 없다. 채팅·소설 상위 모델
+# 스위치는 켠 상태가 기동 검증이 더 엄격한 경우라 켠 상태로 본다.
 _PRODUCTION_ENV_NAMES = (
+    "ANTHROPIC_DIRECT_API_KEY",
     "API_BASE_URL",
     "API_IMAGE_BLUE",
     "API_IMAGE_GREEN",
@@ -217,6 +219,8 @@ _PRODUCTION_ENV_NAMES = (
     "BUGSINK_BASE_URL",
     "BUGSINK_CREATE_SUPERUSER",
     "BUGSINK_SECRET_KEY",
+    "CHAT_PREMIUM_MODEL_ALLOWLIST",
+    "CHAT_PREMIUM_MODELS_ENABLED",
     "CORS_ALLOW_ORIGINS",
     "DATABASE_URL",
     "DB_MAX_OVERFLOW",
@@ -242,6 +246,7 @@ _PRODUCTION_ENV_NAMES = (
     "KAKAO_ADMIN_KEY",
     "KAKAO_CLIENT_SECRET",
     "KAKAO_REST_API_KEY",
+    "LLM_CALL_SITE_BACKENDS",
     "LOCAL_IMAGE_ACCESS_CLIENT_ID",
     "LOCAL_IMAGE_ACCESS_CLIENT_SECRET",
     "LOCAL_IMAGE_BASE_URL",
@@ -249,6 +254,9 @@ _PRODUCTION_ENV_NAMES = (
     "LOCAL_IMAGE_REFERENCE_ENABLED",
     "NOVELIZE_ENABLED",
     "NOVELIZE_GRANT_ALLOWLIST",
+    "NOVELIZE_PREMIUM_MODEL_ALLOWLIST",
+    "NOVELIZE_PREMIUM_MODELS_ENABLED",
+    "NOVEL_PUBLIC_ENABLED",
     "PAYMENTS_ENABLED",
     "PORTONE_API_SECRET",
     "PORTONE_IDENTITY_CHANNEL_KEY",
@@ -270,17 +278,23 @@ _PRODUCTION_ENV_NAMES = (
     "WITHDRAWN_EMAIL_HMAC_KEY",
 )
 
-# 문자열이 아닌 설정만 형식에 맞는 가짜 값을 둔다. 나머지(문자열 설정과 `Settings` 가 모르는 키)는 아무 글자다.
+# 문자열이 아닌 설정만 형식에 맞는 가짜 값을 둔다. 나머지(문자열 설정과 `Settings` 가 모르는 키)는 아무 글자다. 배정은
+# 운영 값 그대로다 — 형식만 맞는 다른 배정이면 Bedrock 으로 남는 호출이 생겨 이 집합으로는 기동하지 못한다.
 _TYPED_FAKE_VALUES = {
+    "CHAT_PREMIUM_MODELS_ENABLED": "true",
     "CORS_ALLOW_ORIGINS": "https://a.example,https://b.example",
     "DB_MAX_OVERFLOW": "10",
     "DB_POOL_SIZE": "5",
     "DB_POOL_TIMEOUT": "30",
     "EMAIL_PROVIDER": "resend",
     "IMAGE_DECODE_CONCURRENCY": "3",
+    "LLM_CALL_SITE_BACKENDS": _ALL_PREMIUM_CALLS_TO_ANTHROPIC,
     "LOCAL_IMAGE_REFERENCE_ENABLED": "true",
     "NOVELIZE_ENABLED": "true",
     "NOVELIZE_GRANT_ALLOWLIST": "11111111-1111-4111-8111-111111111111",
+    "NOVELIZE_PREMIUM_MODEL_ALLOWLIST": "22222222-2222-4222-8222-222222222222",
+    "NOVELIZE_PREMIUM_MODELS_ENABLED": "true",
+    "NOVEL_PUBLIC_ENABLED": "true",
     "PAYMENTS_ENABLED": "true",
     "S3_ENDPOINT_URL": "https://r2.example",
     "SENTRY_ENVIRONMENT": "production",
@@ -289,9 +303,12 @@ _TYPED_FAKE_VALUES = {
 }
 
 
-def test_the_production_env_key_set_starts_with_no_assignment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """운영 env 그대로 새 이미지가 떠야 하고, 배정 키가 없으니 라우팅이 지금과 같아야 한다. 컨테이너가 받는 `.env` 에는
-    `Settings` 가 모르는 compose·다른 서비스 키도 있어, 모르는 키를 무시하는 설정이 이 기동의 전제다."""
+def test_the_production_env_key_set_starts_with_every_premium_call_on_anthropic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """운영 env 그대로 새 이미지가 떠야 한다 — 상위 모델 호출이 모두 Anthropic 으로 가므로 Bedrock 자격 없이도 기동 검증을
+    통과해야 한다. 두 스위치는 켠 상태가 기동 검증이 더 엄격한 경우라 그 상태로 본다. 컨테이너가 받는 `.env` 에는 `Settings` 가 모르는 compose·다른 서비스 키도 있어,
+    모르는 키를 무시하는 설정이 이 기동의 전제다."""
     assert Settings.model_config.get("extra") == "ignore"
     # 테스트 프로세스가 물려받은 설정 env 를 지워, 운영에 있는 키만 남긴다.
     for name in Settings.model_fields:
@@ -303,4 +320,10 @@ def test_the_production_env_key_set_starts_with_no_assignment(monkeypatch: pytes
 
     loaded = Settings(_env_file=None)  # type: ignore[call-arg]
 
-    assert loaded.llm_call_site_backends == {}
+    assert loaded.chat_premium_models_enabled and loaded.novelize_premium_models_enabled
+    assert loaded.llm_call_site_backends == {
+        "chat_generate": "anthropic",
+        "replay_generate": "anthropic",
+        "novelize_chapter": "anthropic",
+    }
+    assert loaded.bedrock_access_key_id == ""

@@ -311,7 +311,6 @@ async def _build_user_detail_response(db: AsyncSession, user: User) -> AdminUser
         rate_limit_exempt=user.rate_limit_exempt,
         beta_joined_at=user.beta_joined_at,
         novelize_granted_at=granted_at_by_feature.get("novelize"),
-        chat_premium_models_granted_at=granted_at_by_feature.get("chat_premium_models"),
         novelize_premium_models_granted_at=granted_at_by_feature.get("novelize_premium_models"),
         clover_balance=user.clover_balance,
         chat_room_count=chat_room_count,
@@ -675,7 +674,8 @@ async def _set_feature_grant(
 
     **허용은 그 기능의 env 명단(`allowlist`) 안의 계정에만 줄 수 있다.** 명단 밖이면 422 `{"code": not_allowlisted_code}`로
     거부하고 행도 감사 로그도 남기지 않는다 — 명단은 처리방침이 그 기능의 수집 항목·국외 이전을 싣고 재동의를 받기 전까지
-    허용을 운영 시험 계정 안에 가두는 장치다. 공백 코멘트 422 와 갈리도록 code 를 둔다. 회수는 명단과 상관없이 늘 된다(명단에서
+    허용을 운영 시험 계정 안에 가두는 장치다. 이 처리를 쓰는 기능은 소설화와 소설 상위 모델 둘이다 — 채팅 상위 모델은
+    스위치 하나로 로그인 회원 전원에게 열려 명단도 허용 행도 쓰지 않으므로 허용 경로가 없다. 공백 코멘트 422 와 갈리도록 code 를 둔다. 회수는 명단과 상관없이 늘 된다(명단에서
     이미 뺀 계정의 행도 지울 수 있어야 한다). 전역 스위치는 보지 않는다 — 켜기 전에 허용을 미리 줄 수 있다.
 
     **이미 허용된 계정을 다시 허용해도 첫 행을 그대로 둔다**(허용 시각·허용한 운영자를 덮어쓰지 않는다). 동시에 두 번
@@ -733,28 +733,6 @@ async def set_user_novelize_grant(
         not_allowlisted_code="NOVELIZE_GRANT_NOT_ALLOWLISTED",
         on_action="user-novelize-on",
         off_action="user-novelize-off",
-    )
-
-
-@router.post("/admin/users/{user_id}/chat-premium-models-grant", status_code=status.HTTP_204_NO_CONTENT)
-async def set_user_chat_premium_models_grant(
-    user_id: uuid.UUID,
-    body: AdminUserFeatureGrantRequest,
-    admin_id: uuid.UUID = Depends(get_current_admin_id),
-    db: AsyncSession = Depends(get_db_session),
-) -> None:
-    """채팅방에 상위 글쓰기 모델을 고를 수 있게 하는 허용 행의 유일한 경로다(규칙은 `_set_feature_grant`). 명단은
-    `chat_premium_model_allowlist` 다."""
-    await _set_feature_grant(
-        db,
-        admin_id=admin_id,
-        user_id=user_id,
-        body=body,
-        feature="chat_premium_models",
-        allowlist=settings.chat_premium_model_allowlist,
-        not_allowlisted_code="CHAT_PREMIUM_MODELS_GRANT_NOT_ALLOWLISTED",
-        on_action="user-chat-premium-models-on",
-        off_action="user-chat-premium-models-off",
     )
 
 

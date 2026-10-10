@@ -144,19 +144,21 @@ async def test_every_model_and_novel_cost_is_exposed(
 @pytest.mark.parametrize(
     ("switch", "allowlist"),
     [
-        pytest.param("chat_premium_models_enabled", "chat_premium_model_allowlist", id="chat-premium"),
+        pytest.param("chat_premium_models_enabled", None, id="chat-premium"),
         pytest.param("novelize_premium_models_enabled", "novelize_premium_model_allowlist", id="novel-premium"),
         pytest.param("novelize_enabled", "novelize_grant_allowlist", id="novelize"),
     ],
 )
 async def test_restricted_marks_do_not_reveal_switches(
-    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, switch: str, allowlist: str
+    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, switch: str, allowlist: str | None
 ) -> None:
-    """허용 전용 표시는 구조에서 오는 값이라 스위치를 켜고 명단을 채워도 그대로다. 스위치에 따라 값이 바뀌면 비로그인
-    방문자가 기능이 켜졌는지 알게 된다 — 소설 라우트가 꺼짐·미허용을 한 가지 거부로 내는 것과 같은 이유다."""
+    """허용 전용 표시는 구조에서 오는 값이라 스위치를 켜고 명단을 채워도 그대로다(채팅 상위 모델은 명단이 없다). 스위치에
+    따라 값이 바뀌면 비로그인 방문자가 기능이 켜졌는지 알게 된다 — 소설 라우트가 꺼짐·미허용을 한 가지 거부로 내는 것과
+    같은 이유다."""
     before = (await db_client.get("/clover/pricing")).json()
     monkeypatch.setattr(settings, switch, True)
-    monkeypatch.setattr(settings, allowlist, [uuid.uuid4()])
+    if allowlist is not None:
+        monkeypatch.setattr(settings, allowlist, [uuid.uuid4()])
 
     after = (await db_client.get("/clover/pricing")).json()
 

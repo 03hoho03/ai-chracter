@@ -16,9 +16,9 @@ import httpx2
 import pytest
 import sqlalchemy as sa
 from factories import (
+    _enable_chat_premium,
     Room,
     _add_chapter,
-    _allow_chat_premium,
     _allow_novel_premium,
     _batch_output,
     _clear_llm_override,
@@ -239,7 +239,7 @@ async def test_a_premium_model_without_novel_premium_access_is_403_before_chargi
     missing: str,
 ) -> None:
     """장 요청의 모델은 그때 고르는 값이라 쓸 수 없으면 Gemini 로 바꿔 받지 않고 거절한다 — 사용자가 확인한 것은 그
-    모델과 그 가격이다. 채팅 상위 모델 허용은 소설 장을 열지 않는다(허용이 기능마다 따로다)."""
+    모델과 그 가격이다. 채팅 상위 모델 스위치는 소설 장을 열지 않는다(판정이 기능마다 따로다)."""
     room, novel_id, owner_id = await _novel(db_client, db_session, monkeypatch, premium=missing != "chat-only")
     if missing == "switch":
         monkeypatch.setattr(settings, "novelize_premium_models_enabled", False)
@@ -249,7 +249,7 @@ async def test_a_premium_model_without_novel_premium_access_is_403_before_chargi
         await db_session.execute(sa.text("DELETE FROM user_feature_grants WHERE feature = 'novelize_premium_models'"))
         await db_session.commit()
     else:
-        await _allow_chat_premium(db_session, monkeypatch, owner_id)
+        _enable_chat_premium(monkeypatch)
     messages = await _room_messages(db_session, room.room_id)
     chapter = await _add_chapter(db_session, novel_id, room, messages[0], room.turns[1][1])
 

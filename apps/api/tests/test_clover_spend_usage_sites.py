@@ -36,9 +36,9 @@ from api.novelize import router as novelize_router
 from api.novelize import runner
 from factories import (
     _add_chapter,
-    _allow_chat_premium,
     _batch_output,
     _clear_llm_override,
+    _enable_chat_premium,
     _FakeLLMClient,
     _get_genre,
     _login_as,
@@ -185,7 +185,7 @@ async def test_a_paid_turn_in_another_creators_room_records_the_room_and_its_own
     )
     await db_session.commit()
     if mode == "opus":
-        await _allow_chat_premium(db_session, monkeypatch, player.id)
+        _enable_chat_premium(monkeypatch)
 
     room_id, resp = await _paid_room_turn(
         db_client, db_session, monkeypatch, player=player, content=content, surface=surface, mode=mode

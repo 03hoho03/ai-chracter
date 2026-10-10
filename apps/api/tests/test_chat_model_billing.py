@@ -28,9 +28,9 @@ from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom
 from api.db.models.clover import CloverLedger
 from api.llm.client import LLMClientError, LLMPolicyViolationError
 from factories import (
-    _allow_chat_premium,
     _clear_llm_override,
     _clover_lots,
+    _enable_chat_premium,
     _FakeLLMClient,
     _get_genre,
     _login_as,
@@ -53,7 +53,7 @@ async def _user(
     exempt: bool = False,
     confirmed_today: bool = False,
 ) -> User:
-    """채팅 상위 모델을 허용받은 계정. 오늘 확인은 기본으로 하지 않는다 — 상위 모델 턴이 확인을 묻지 않는 것을 보려면 그
+    """채팅 상위 모델 스위치를 켠 일반 계정(명단·허용 행 없음). 오늘 확인은 기본으로 하지 않는다 — 상위 모델 턴이 확인을 묻지 않는 것을 보려면 그
     상태가 기본이어야 한다."""
     user = await _make_user_with_clover_lot(
         db_session,
@@ -62,7 +62,7 @@ async def _user(
         clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC)) if confirmed_today else None,
     )
     await db_session.commit()
-    await _allow_chat_premium(db_session, monkeypatch, user.id)
+    _enable_chat_premium(monkeypatch)
     await _login_as(db_client, user.id)
     return user
 
@@ -102,6 +102,23 @@ async def _balance(db_session: AsyncSession, user: User) -> int:
 
 
 # ---- 게이트 갈래 ----
+
+
+async def test_a_plain_account_picks_opus_and_its_turn_charges_the_opus_price(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """스위치만 켜져 있으면 명단·허용 행 없는 계정도 모델 지정 라우트로 Opus 를 고르고, 그 방의 턴은 Opus 로 생성되며
+    Opus 값을 낸다."""
+    user = await _user(db_client, db_session, monkeypatch)
+    room_id = await _room(db_client, db_session, user, None)
+    fake = _FakeLLMClient(tokens=["응", "답"])
+
+    assert (await db_client.put(f"/chat-rooms/{room_id}/model", json={"model": "opus"})).status_code == 200
+    resp = await _send(db_client, room_id, fake)
+
+    assert resp.status_code == 200
+    assert await _ledger(db_session, user.id) == [("chat_spend", -_OPUS)]
+    assert [u.model for u in fake.usages if u.call_site == "chat_generate"] == ["opus"]
 
 
 async def test_premium_turn_charges_its_price_and_generates_with_that_model(
@@ -244,6 +261,22 @@ async def test_chat_premium_works_for_an_account_without_novel_premium_access(
 
     assert (await _send(db_client, room_id)).status_code == 200
     assert await _ledger(db_session, user.id) == [("chat_spend", -_OPUS)]
+
+
+async def test_a_switched_off_premium_room_uses_up_the_free_daily_quota_like_gemini(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """스위치를 끈 Opus 방의 턴은 Gemini 턴이라 일일 카운터를 올린다 — 무료분 1턴짜리 날에 둘째 턴은 Gemini 값을 낸다.
+    카운터를 올리지 않으면 꺼진 상위 모델 방이 무료분을 무한히 쓴다."""
+    user = await _user(db_client, db_session, monkeypatch, confirmed_today=True)
+    room_id = await _room(db_client, db_session, user, "opus")
+    monkeypatch.setattr(settings, "chat_premium_models_enabled", False)
+    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 1)
+
+    assert (await _send(db_client, room_id)).status_code == 200
+    assert (await _send(db_client, room_id)).status_code == 200
+
+    assert await _ledger(db_session, user.id) == [("chat_spend", -clover.CHAT_TURN_COST)]
 
 
 # ---- 생성 모델의 출처 ----

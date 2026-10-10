@@ -9,6 +9,7 @@ import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.admin.action_log import record_admin_action
 from api.core.config import settings
 from api.core.redis import redis_client
 from api.db.models import (
@@ -33,6 +34,7 @@ from api.db.models import (
     ReportStatus,
     UserFeatureGrant,
 )
+from api.db.models.moderation import AdminActionType
 from api.session.suspension import SUSPENDED_USER_KEY_PREFIX, is_user_suspended
 from factories import (
     _count_queries,
@@ -225,12 +227,6 @@ _ADMIN_SESSION_GUARD_CASES = [
         f"/admin/users/{uuid.uuid4()}/novelize-grant",
         {"granted": True, "adminComment": "운영 시험"},
         id="novelize-grant",
-    ),
-    pytest.param(
-        "post",
-        f"/admin/users/{uuid.uuid4()}/chat-premium-models-grant",
-        {"granted": True, "adminComment": "운영 시험"},
-        id="chat-premium-models-grant",
     ),
     pytest.param(
         "post",
@@ -1962,20 +1958,13 @@ async def test_user_detail_exposes_novelize_granted_at(
     assert plain_detail["novelizeGrantedAt"] is None
 
 
-# ---- 상위 모델 허용(채팅·소설) ---------------------------------------------------
+# ---- 상위 모델 허용(소설) --------------------------------------------------------
 #
-# 소설화 허용과 같은 공용 처리라 소설화 블록의 갈래(켜기·끄기·다시 켜기·명단 밖·공백·탈퇴)를 기능마다 한 번씩 본다. 기능을
-# 바꿔 끼우는 실수(채팅 경로가 소설 행을 만드는 것)가 드러나도록 행의 feature·감사 로그 종류·명단 설정을 경로마다 따로 단언한다.
+# 소설화 허용과 같은 공용 처리라 소설화 블록의 갈래(켜기·끄기·다시 켜기·명단 밖·공백·탈퇴)를 본다. 기능을 바꿔 끼우는
+# 실수(소설 상위 모델 경로가 소설화 행을 만드는 것)가 드러나도록 행의 feature·감사 로그 종류·명단 설정을 따로 단언한다.
+# 채팅 상위 모델은 스위치 하나로 열려 허용 경로가 없다.
 
 _PREMIUM_GRANT_CASES = [
-    pytest.param(
-        "chat-premium-models-grant",
-        "chat_premium_models",
-        "chat_premium_model_allowlist",
-        "user-chat-premium-models",
-        "CHAT_PREMIUM_MODELS_GRANT_NOT_ALLOWLISTED",
-        id="chat",
-    ),
     pytest.param(
         "novelize-premium-models-grant",
         "novelize_premium_models",
@@ -2045,11 +2034,11 @@ async def test_premium_models_grant_outside_its_own_allowlist_returns_422(
     action: str,
     code: str,
 ) -> None:
-    """명단은 기능마다 따로다 — 다른 두 명단에 있어도 이 기능의 명단에 없으면 거절이다."""
+    """명단은 기능마다 따로다 — 다른 명단에 있어도 이 기능의 명단에 없으면 거절이다."""
     user = _make_user()
     db_session.add(user)
     await db_session.commit()
-    for name in ("novelize_grant_allowlist", "chat_premium_model_allowlist", "novelize_premium_model_allowlist"):
+    for name in ("novelize_grant_allowlist", "novelize_premium_model_allowlist"):
         monkeypatch.setattr(settings, name, [] if name == allowlist else [user.id])
 
     resp = await _premium_grant(db_client, db_session, user.id, route, True, "허용")
@@ -2085,21 +2074,63 @@ async def test_premium_models_grant_needs_a_comment_and_a_live_user(
     assert await _novelize_grants(db_session, live.id) == []
 
 
-async def test_user_detail_exposes_premium_models_granted_at(
+async def test_user_detail_exposes_novel_premium_models_granted_at_and_no_chat_grant_field(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
+    """채팅 상위 모델은 허용 행을 보지 않으므로 상세에 채팅 허용 시각 칸이 없다 — 옛 채팅 허용 행이 남아 있어도 보여 주면
+    운영자가 그 행이 무언가를 연다고 읽는다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
-    chat_grant = await _grant_feature(db_session, user.id, "chat_premium_models")
+    await _grant_feature(db_session, user.id, "chat_premium_models")
+    novel_grant = await _grant_feature(db_session, user.id, "novelize_premium_models")
     await db_session.commit()
-    await db_session.refresh(chat_grant)
+    await db_session.refresh(novel_grant)
 
     admin_payload = await _create_admin(db_session)
     await db_session.commit()
     await _login_as_admin(db_client, admin_payload)
 
     detail = (await db_client.get(f"/admin/users/{user.id}")).json()
-    assert datetime.fromisoformat(detail["chatPremiumModelsGrantedAt"]) == chat_grant.granted_at
-    assert detail["novelizePremiumModelsGrantedAt"] is None
+    assert "chatPremiumModelsGrantedAt" not in detail
+    assert datetime.fromisoformat(detail["novelizePremiumModelsGrantedAt"]) == novel_grant.granted_at
     assert detail["novelizeGrantedAt"] is None
+
+
+async def test_the_chat_premium_models_grant_route_is_gone(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """허용 행이 채팅 판정에 쓰이지 않으니 그 행을 만드는 경로도 없다 — 남아 있으면 운영자가 아무 효과 없는 허용을 준다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+
+    resp = await _premium_grant(db_client, db_session, user.id, "chat-premium-models-grant", True, "허용")
+
+    assert resp.status_code == 404
+    assert await _novelize_grants(db_session, user.id) == []
+
+
+@pytest.mark.parametrize("action_type", ["user-chat-premium-models-on", "user-chat-premium-models-off"])
+async def test_user_detail_still_shows_old_chat_premium_models_audit_logs(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, action_type: AdminActionType
+) -> None:
+    """허용 경로를 없앤 뒤에도 그 경로가 남긴 감사 로그는 남는다. 응답 스키마가 그 값을 모르면 상세가 500 이 된다."""
+    user = _make_user()
+    db_session.add(user)
+    admin_payload = await _create_admin(db_session)
+    await db_session.flush()
+    await record_admin_action(
+        db_session,
+        admin_id=uuid.UUID(str(admin_payload["id"])),
+        action_type=action_type,
+        target_user_id=user.id,
+        reason_text="예전 허용",
+    )
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.get(f"/admin/users/{user.id}")
+
+    assert resp.status_code == 200
+    assert [log["actionType"] for log in resp.json()["actionLogs"]] == [action_type]

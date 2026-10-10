@@ -997,6 +997,7 @@ async def test_me_enabled_features_follow_the_route_gate(
     await db_session.commit()
     monkeypatch.setattr(settings, "novelize_enabled", enabled)
     monkeypatch.setattr(settings, "novelize_grant_allowlist", [user.id] if allowlisted else [uuid.uuid4()])
+    monkeypatch.setattr(settings, "chat_premium_models_enabled", False)
     await _login_as(db_client, user.id)
 
     resp = await db_client.get("/me")

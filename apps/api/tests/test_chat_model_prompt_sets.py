@@ -23,8 +23,8 @@ from api.db.models.chat import ChatRoom
 from api.db.models.clover import CloverLedger
 from api.llm.client import LLMCallContext, LLMClient
 from factories import (
-    _allow_chat_premium,
     _clear_llm_override,
+    _enable_chat_premium,
     _make_user_with_clover_lot,
     _open_room,
     _override_llm_client,
@@ -64,7 +64,7 @@ async def _opus_story_room(
     """Opus 를 고른 스토리 방(스탯 하나라 새 턴마다 스탯 판정이 구조화 호출로 나간다)과 그 주인."""
     user = await _make_user_with_clover_lot(db_session, clover_balance=1000)
     await db_session.commit()
-    await _allow_chat_premium(db_session, monkeypatch, user.id)
+    _enable_chat_premium(monkeypatch)
     room = await _open_room(db_client, db_session, turns=1, lane="story", user=user)
     await db_session.execute(update(ChatRoom).where(ChatRoom.id == room.room_id).values(chat_model="opus"))
     await db_session.commit()

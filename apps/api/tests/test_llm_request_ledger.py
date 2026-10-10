@@ -48,10 +48,10 @@ from api.llm.routing import RoutingLLMClient
 from factories import (
     _add_room_cell_and_endings,
     _add_room_situational_image,
-    _allow_chat_premium,
     _assert_characterization,
     _assert_recorded_cases,
     _clear_llm_override,
+    _enable_chat_premium,
     _login_as,
     _make_asset,
     _make_chat_turn,
@@ -280,7 +280,7 @@ async def _send_story_opus(
     """미리보기는 모델을 싣지 않아 언제나 Gemini 라, 상위 모델 경우는 실제 방이어야 한다."""
     user = await _make_user_with_clover_lot(db_session, clover_balance=1000)
     await db_session.commit()
-    await _allow_chat_premium(db_session, monkeypatch, user.id)
+    _enable_chat_premium(monkeypatch)
     room = await _open_room(db_client, db_session, turns=_ROOM_TURNS, lane="story", user=user)
     cell_id = await _add_room_cell_and_endings(db_session, room.room_id, _ENDING_GATES)
     await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room.room_id).values(chat_model="opus"))

@@ -9,7 +9,6 @@ type UserActionPanelProps = {
   isRateLimitExempt: boolean;
   isBeta: boolean;
   isNovelizeGranted: boolean;
-  isChatPremiumModelsGranted: boolean;
   isNovelizePremiumModelsGranted: boolean;
   restrictableContentCount: number;
   restorableContentCount: number;
@@ -20,7 +19,8 @@ type UserActionPanelProps = {
 /** ContentActionPanel과 같은 결 — 정지 여부 하나로 분기한다: 정상이면 [경고][정지],
  * 정지 중이면 [경고][정지 해제]. 경고는 정지 중에도 BE가 허용한다.
  * 레이트리밋 면제는 정지와 무관한 별개 축이라 정지 여부와 상관없이
- * 항상 한 자리를 차지하고, 현재 면제 여부로만 라벨이 갈린다. 베타 지정·소설화 허용·상위 모델 허용(채팅·소설화)도 같은 모양의 별개 축이다.
+ * 항상 한 자리를 차지하고, 현재 면제 여부로만 라벨이 갈린다. 베타 지정·소설화 허용·소설화 상위 모델 허용도 같은 모양의 별개 축이다.
+ * 채팅 상위 모델은 서버 스위치 하나로 모든 회원에게 열려 계정별 토글이 없다.
  *
  * 유저에게 불이익을 주는 징계와 계정 설정(면제·베타·소설화·상위 모델·클로버)을 두 묶음으로 가르고 징계를 위에 둔다 — 한 줄에 섞여
  * 있으면 클로버를 주려다 정지를 누르기 쉽다. 제목·표면은 조치 열·시트가 진다. */
@@ -30,7 +30,6 @@ export function UserActionPanel({
   isRateLimitExempt,
   isBeta,
   isNovelizeGranted,
-  isChatPremiumModelsGranted,
   isNovelizePremiumModelsGranted,
   restrictableContentCount,
   restorableContentCount,
@@ -100,20 +99,8 @@ export function UserActionPanel({
         >
           {isNovelizeGranted ? "소설화 회수" : "소설화 허용"}
         </Button>
-        {/* 상위 모델 허용은 채팅과 소설화가 따로다(스위치·명단도 따로). 소설화 쪽은 소설화 허용도 있어야 쓰이지만 순서는 강제하지
-         * 않는다 — 서버도 보지 않으므로 여기서 버튼을 숨기거나 막지 않는다. */}
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() =>
-            void UserActionConfirmModal.call({
-              action: isChatPremiumModelsGranted ? "chat-premium-models-off" : "chat-premium-models-on",
-              ...commonProps,
-            })
-          }
-        >
-          {isChatPremiumModelsGranted ? "채팅 상위 모델 회수" : "채팅 상위 모델 허용"}
-        </Button>
+        {/* 소설화 상위 모델은 소설화 허용도 있어야 쓰이지만 순서는 강제하지 않는다 — 서버도 보지 않으므로 여기서 버튼을 숨기거나
+         * 막지 않는다. */}
         <Button
           type="button"
           variant="outline"

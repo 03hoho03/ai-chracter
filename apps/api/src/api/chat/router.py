@@ -1747,8 +1747,8 @@ async def set_room_model(
     (턴 게이트의 영수증) — 그래서 턴 락을 잡지 않는다.
 
     기본 모델(`"gemini"`·null)은 누구나 고를 수 있다 — 허용을 거둔 뒤에도 방을 되돌릴 수 있어야 한다. 기본 모델은 빈 값으로
-    저장한다(새 방과 같은 상태). 상위 모델은 채팅 상위 모델 허용(`has_chat_premium_access`)이 있어야 하고, 없으면 403
-    `{"code": "CHAT_MODEL_NOT_ALLOWED"}` 하나다 — 꺼짐·명단 밖·허용 행 없음을 가르지 않는다(소설화 게이트와 같은 이유).
+    저장한다(새 방과 같은 상태). 상위 모델은 채팅 상위 모델 허용(`has_chat_premium_access` — 스위치 하나)이 있어야 하고,
+    없으면 403 `{"code": "CHAT_MODEL_NOT_ALLOWED"}` 다.
     고를 때 확인하는 가격은 응답의 턴 가격이고, 그 뒤 턴은 하루 1회 확인 없이 그 가격으로 차감된다."""
     room = await _get_owned_room(db, room_id, user_id)
     model = payload.model or DEFAULT_CHAT_ROOM_MODEL
