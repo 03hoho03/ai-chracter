@@ -17,6 +17,7 @@ import { Controller, useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
 import { createCallable } from "@/shared/lib/callable/createCallable";
+import { CharacterCount } from "@/shared/ui/CharacterCount";
 
 import { useReportChatMessageMutation } from "../api/useReportChatMessageMutation";
 import { formToServer } from "../model/formToServer";
@@ -133,14 +134,9 @@ export const ReportChatMessageModal = createCallable<ReportChatMessageModalProps
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <div className="flex items-baseline justify-between gap-2">
-                  <Label htmlFor={noteId}>
-                    메모 <span className="font-normal text-muted-foreground">(선택)</span>
-                  </Label>
-                  <span id={noteCountId} className="text-xs text-muted-foreground tabular-nums">
-                    {noteLength}/{CHAT_MESSAGE_REPORT_NOTE_MAX_LENGTH}
-                  </span>
-                </div>
+                <Label htmlFor={noteId}>
+                  메모 <span className="font-normal text-muted-foreground">(선택)</span>
+                </Label>
                 <Textarea
                   id={noteId}
                   rows={3}
@@ -149,6 +145,7 @@ export const ReportChatMessageModal = createCallable<ReportChatMessageModalProps
                   aria-describedby={errors.note ? `${noteErrorId} ${noteCountId}` : noteCountId}
                   {...form.register("note")}
                 />
+                <CharacterCount id={noteCountId} count={noteLength} max={CHAT_MESSAGE_REPORT_NOTE_MAX_LENGTH} />
                 {errors.note && (
                   <p id={noteErrorId} role="alert" className="text-xs text-destructive-text">
                     {errors.note.message}

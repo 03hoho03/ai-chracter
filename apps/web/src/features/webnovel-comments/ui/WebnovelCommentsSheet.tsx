@@ -14,6 +14,7 @@ import { toast } from "sonner";
 
 import { useWebnovelCommentsQuery, type WebnovelComment } from "@/entities/webnovel";
 import { formatRelativeTime } from "@/shared/lib/time/formatRelativeTime";
+import { CharacterCount } from "@/shared/ui/CharacterCount";
 
 import { useCreateWebnovelCommentMutation, useDeleteWebnovelCommentMutation } from "../api/useWebnovelCommentMutations";
 import { countVisibleCharacters, toCommentWriteError, WEBNOVEL_COMMENT_MAX_LENGTH } from "../model/commentFailure";
@@ -225,10 +226,11 @@ function CommentList({
   );
 }
 
-/** 입력칸과 [등록]. 실패하면 쓴 글을 그대로 두고 밑에 까닭을 말한다. 글자 수는 상한 가까이에서만 보인다. */
+/** 입력칸과 [등록]. 실패하면 쓴 글을 그대로 두고 밑에 까닭을 말한다. 글자 수는 입력칸 바로 아래에 늘 보인다. */
 function CommentComposer({ novelId, chapterId }: { novelId: string; chapterId: string }) {
   const inputId = useId();
   const errorId = useId();
+  const countId = useId();
   const create = useCreateWebnovelCommentMutation(novelId, chapterId);
   const [body, setBody] = useState("");
   const [error, setError] = useState<string | undefined>(undefined);
@@ -272,24 +274,18 @@ function CommentComposer({ novelId, chapterId }: { novelId: string; chapterId: s
         rows={2}
         placeholder="이 화에 대한 생각을 남겨 주세요"
         aria-invalid={error !== undefined || isOver}
-        aria-describedby={error !== undefined ? errorId : undefined}
+        aria-describedby={error !== undefined ? `${countId} ${errorId}` : countId}
         className="max-h-40"
         onChange={(event) => setBody(event.target.value)}
       />
+      <CharacterCount id={countId} count={length} max={WEBNOVEL_COMMENT_MAX_LENGTH} />
       <div className="flex items-center justify-between gap-2">
         <p id={errorId} role={error !== undefined ? "alert" : undefined} className="min-w-0 text-xs break-keep text-destructive-text">
           {error}
         </p>
-        <div className="flex shrink-0 items-center gap-3">
-          {length > WEBNOVEL_COMMENT_MAX_LENGTH - 100 && (
-            <span className={isOver ? "text-xs text-destructive-text tabular-nums" : "text-xs text-muted-foreground tabular-nums"}>
-              {length.toLocaleString()}/{WEBNOVEL_COMMENT_MAX_LENGTH.toLocaleString()}
-            </span>
-          )}
-          <Button type="submit" size="sm" aria-disabled={create.isPending} className="aria-disabled:opacity-65">
-            {create.isPending ? "남기는 중…" : "등록"}
-          </Button>
-        </div>
+        <Button type="submit" size="sm" aria-disabled={create.isPending} className="shrink-0 aria-disabled:opacity-65">
+          {create.isPending ? "남기는 중…" : "등록"}
+        </Button>
       </div>
     </form>
   );
