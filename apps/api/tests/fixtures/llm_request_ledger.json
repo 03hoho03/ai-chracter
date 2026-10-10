@@ -284,6 +284,19 @@
         "segments": null,
         "stopSequences": null,
         "systemSha": null
+      },
+      {
+        "callSite": "chat_memory_summary",
+        "hasRoom": true,
+        "hasUser": true,
+        "method": "generate_structured",
+        "model": "gemini",
+        "promptSha": "0c4ffe4eb8f675d95deb553aab4aa14a5df0559a1cd6583b2596f97fbdc36cdd",
+        "provider": "gemini",
+        "responseSchema": "MemorySummaryResult",
+        "segments": null,
+        "stopSequences": null,
+        "systemSha": null
       }
     ],
     "promptDump": [
@@ -327,6 +340,19 @@
         "promptSha": "0f58ba1389e105a51cbdab7f2ee5cd0f471051f08d7f2d0648f5b709af28f9bd",
         "provider": "gemini",
         "responseSchema": "ImageMatchJudgmentResult",
+        "segments": null,
+        "stopSequences": null,
+        "systemSha": null
+      },
+      {
+        "callSite": "chat_memory_summary",
+        "hasRoom": true,
+        "hasUser": true,
+        "method": "generate_structured",
+        "model": "gemini",
+        "promptSha": "1fe00e2e2c14e43ca54b4116a835e50ca4ba38f352cf4938ea1e57239e5ab93d",
+        "provider": "gemini",
+        "responseSchema": "MemorySummaryResult",
         "segments": null,
         "stopSequences": null,
         "systemSha": null

@@ -1,7 +1,9 @@
 """긴 방의 요약 접기 — 턴이 끝난 뒤 background가 오래된 10턴을 요약 스냅샷으로 접는다.
 
 - 언제 접나: 커서 뒤(오프닝 제외) 턴이 30이 되면, 또는 원문이 24,000자 이상이고 접은 뒤 10턴이
-  남으면. 접기는 새 턴을 만드는 send·edit 뒤에만 돈다(재생성은 턴 수를 바꾸지 않는다).
+  남으면. 접기는 턴을 커밋하는 send·edit·재생성 뒤마다 예약된다 — 재생성은 턴 수를 바꾸지 않지만 긴 응답으로 글자
+  기준을 넘길 수 있고, 앞 턴에서 실패한 접기나 재생성의 되감기가 `memory_version` 을 올려 결과를 버리게 된, 진행
+  중이던 접기를 다음 보내기까지 미루지 않는다.
 - 무엇이 남나: 커서 = 접은 10번째 응답의 키, 본문 ≤ 1,500자, `source="auto"`, 되돌리기 버퍼 없음.
 - 실패하면: 사용자에게 보이는 것 없이 흡수하고 커서는 그대로 — 다음 턴 뒤 다시 시도한다. 연속
   실패가 쌓이면 몇 턴 쉬었다 시도한다.
@@ -256,14 +258,20 @@ async def test_edit_folds_when_the_rewritten_turn_leaves_thirty_turns(
     assert len(await _snapshots(db_session, room)) == (1 if folds else 0)
 
 
-async def test_regenerate_does_not_fold(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+async def test_regenerate_in_a_room_due_for_a_fold_folds_the_oldest_ten(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """재생성은 턴 수를 바꾸지 않지만 커밋 뒤 접기를 예약한다 — 접을 때가 된 방이면 다음 보내기까지 미루지 않고 접는다."""
     room = await _open_room(db_client, db_session, turns=30)
     fake = SummaryLLMClient()
 
-    await _request(db_client, room, "regenerate", fake)
+    events = await _request(db_client, room, "regenerate", fake)
 
-    assert fake.summary_prompts == []
-    assert await _snapshots(db_session, room) == []
+    assert events[-1] == "done"
+    assert len(fake.summary_prompts) == 1
+    assert fake.summary_usages[0].call_site == "chat_memory_summary"
+    tenth = room.turns[10][1]
+    assert [row.cursor_message_id for row in await _snapshots(db_session, room)] == [tenth.id]
 
 
 async def test_long_text_folds_before_thirty_turns(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
@@ -306,14 +314,26 @@ class _StatChangingLLMClient(SummaryLLMClient):
         return await super().generate_structured(prompt, response_schema, images, usage=usage)
 
 
+@pytest.mark.parametrize(
+    ("action", "after_commit_events"),
+    [
+        pytest.param("send", ["statChange", "done"], id="send"),
+        pytest.param("regenerate", ["done"], id="regenerate"),
+    ],
+)
 async def test_fold_is_scheduled_before_the_first_event_after_the_turn_commits(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    action: str,
+    after_commit_events: list[str],
 ) -> None:
     """클라이언트가 이벤트를 받고 끊으면 그 뒤에 예약하려던 background는 예약 자체가 사라진다(실제
     uvicorn으로 고정한 성질 — `test_sse_background_tasks.py`). 그래서 접기 예약은 턴 커밋 뒤 첫
     이벤트보다 앞이어야 한다. 턴 제너레이터가 이벤트를 내놓는 순간과 예약 호출을 한 로그에 적는다 —
     응답 본문이 나가는 순간으로는 못 본다(FastAPI가 제너레이터를 별도 태스크로 몇 개 앞서 당긴다).
-    스탯이 바뀌는 스토리 턴이라 첫 사후 이벤트가 `done`이 아니라 `statChange`다."""
+    보내기는 스탯이 바뀌는 스토리 턴이라 첫 사후 이벤트가 `done`이 아니라 `statChange`다. 재생성은 스탯을 다시 판정하지
+    않아 첫 사후 이벤트가 `done`이다."""
     log: list[str] = []
     original_add_task = BackgroundTasks.add_task
 
@@ -321,7 +341,7 @@ async def test_fold_is_scheduled_before_the_first_event_after_the_turn_commits(
         log.append(f"schedule:{func.__name__}")
         original_add_task(self, func, *args, **kwargs)
 
-    # 보내기 라우트는 턴 골격을 라우터에 import 된 이름으로 부른다 — 그 자리를 감싼 것으로 바꾼다.
+    # 라우트는 턴 골격을 라우터에 import 된 이름으로 부른다 — 그 자리를 감싼 것으로 바꾼다.
     original_turn = turn_engine.run_turn
 
     async def _recording_turn(*args: Any, **kwargs: Any) -> AsyncIterator[ChatStreamEvent]:
@@ -334,10 +354,10 @@ async def test_fold_is_scheduled_before_the_first_event_after_the_turn_commits(
     monkeypatch.setattr(chat_router, "run_turn", _recording_turn)
 
     room = await _open_room(db_client, db_session, turns=1, lane="story")
-    events = await _request(db_client, room, "send", _StatChangingLLMClient())
+    events = await _request(db_client, room, action, _StatChangingLLMClient())
 
-    assert events == ["token", "statChange", "done"]
-    assert log == ["token", "schedule:fold_memory", "statChange", "done"]
+    assert events == ["token", *after_commit_events]
+    assert log == ["token", "schedule:fold_memory", *after_commit_events]
 
 
 async def test_generation_window_switched_off_does_not_fold(

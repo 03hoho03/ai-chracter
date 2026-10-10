@@ -1022,6 +1022,8 @@ async def _regeneratable_last_message_dependency(
 
 @router.post("/{room_id}/regenerate", response_class=EventSourceResponse)
 async def regenerate_message(
+    # 턴 뒤 요약 접기 예약용(`_fold_after_commit`).
+    background_tasks: BackgroundTasks,
     # send_message와 같은 이유로 시그니처 Depends
     _consent: None = Depends(require_legal_consent),
     room: ChatRoom = Depends(_playable_room_dependency),
@@ -1047,8 +1049,9 @@ async def regenerate_message(
       턴별 이력이 없어 다시 하면 중복 적용되어 부정확해진다. 그림 판정(캐릭터 상황별 이미지·스토리 미디어 북 칸 — 스토리는
       엔딩 뒤에도)은 다시 한다 — 노출 기록(`CharacterImageExposure`·`StoryMediaExposure`)은 첫 노출만 기록해 멱등이라
       다시 해도 중복 적용이 없고, 새 응답 텍스트에 맞는 그림이 붙는다.
-    - 커밋 뒤 요약 접기를 예약하지 않는다(`after_commit=None`, 이 라우트에는 `BackgroundTasks` 도 없다). 지금 재생성의
-      동작이 그렇고, 이 라우트는 그것을 바꾸지 않는다 — 접기를 붙이는 것은 동작 변경이라 따로 다룬다.
+    - 커밋 뒤 요약 접기는 새 턴과 같이 예약한다. 턴 수는 그대로지만 새 응답이 길어 글자 기준을 넘길 수 있고, 앞 턴에서
+      실패한 접기나 이 재생성의 되감기가 `memory_version` 을 올려 결과를 버리게 된, 진행 중이던 접기를 다시 시도해야 할
+      수 있다 — 접을 때인지는 접기 쪽이 다시 판정한다.
 
     생성이 실패하면(policyWarning/error) 기존 응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 메시지를 건드리지
     않는다. 바꿀 응답을 덮던 요약은 생성 전에 되감겨 커밋되므로 생성이 실패해도 되돌아오지 않는다.
@@ -1113,13 +1116,21 @@ async def regenerate_message(
                 judgments=regenerate_judgments(db, room, setup),
                 store=RoomTurnStore(db, room, setup, mode="replace", replaced_message_id=last_message.id, log=logger),
                 settlement=settlement,
-                # 재생성은 요약 접기를 예약하지 않는다(위 docstring).
-                after_commit=None,
+                after_commit=_fold_after_commit(
+                    background_tasks,
+                    session_factory,
+                    llm_client,
+                    room,
+                    setup,
+                    prompt_set,
+                    prompt_sections,
+                    generation.names,
+                ),
                 log=logger,
             ):
                 yield event
     finally:
-        # 방 락 해제의 첫 자리(`_room_turn_lock_dependency`). 의존성 정리보다 먼저 풀어야 다음 요청이 기다리지 않는다.
+        # 방 락 해제의 첫 자리(`send_message` 의 같은 자리 주석 참조).
         await release_room_turn_lock(turn_lock)
 
 

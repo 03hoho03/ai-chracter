@@ -9,7 +9,7 @@ Bedrock 으로 가고 판정·요약은 Gemini 로 가는지가 장부의 공급
 프롬프트에 실리는 id(칸·상황 이미지·초안 항목)는 테스트마다 새로 만들어지므로, 해시 전에 처음 나온 순서의 번호로 바꾼다
 (같은 id 가 같은 자리에 나오는지는 남는다).
 
-방은 30턴짜리라 보내기·수정 뒤 요약 접기가 실제로 요약 LLM 을 부른다(접기는 응답 뒤 background 에서 돌고 장부의 끝에
+방은 30턴짜리라 보내기·수정·재생성 뒤 요약 접기가 실제로 요약 LLM 을 부른다(접기는 응답 뒤 background 에서 돌고 장부의 끝에
 남는다). 엔딩은 게이트 1·5 둘이라 보내기(31턴째)와 수정(30턴째)에서 각각 하나씩 판정 차례가 온다.
 
 측정용 프롬프트 덤프도 켜 두고 덤프 줄의 (방 id 유무, 턴, 고른 모델)을 장부 옆에 남긴다 — 리플레이가 방·턴으로 덤프 줄을
@@ -282,7 +282,7 @@ _CASES: dict[str, _Builder] = {
 }
 
 # 경우마다 장부가 지나야 하는 호출 위치 — 이 경로를 지나지 않으면 그 판정 프롬프트는 아무도 지문을 뜨지 않는다. 접기가
-# 요약 LLM 을 부르는 것은 30턴 방의 보내기·수정이다(재생성은 접기를 예약하지 않는다).
+# 요약 LLM 을 부르는 것은 30턴 방의 보내기·수정·재생성이다(재생성도 커밋 뒤 접기를 예약한다).
 _STORY_TURN_SITES = {
     "chat_generate",
     "chat_stat_judgment",
@@ -294,10 +294,10 @@ _CHARACTER_TURN_SITES = {"chat_generate", "chat_situational_image", "chat_memory
 _REQUIRED_CALL_SITES: dict[str, set[str]] = {
     "send-story": _STORY_TURN_SITES,
     "edit-story": _STORY_TURN_SITES,
-    "regenerate-story": {"chat_generate", "chat_media_book_image"},
+    "regenerate-story": {"chat_generate", "chat_media_book_image", "chat_memory_summary"},
     "send-character": _CHARACTER_TURN_SITES,
     "edit-character": _CHARACTER_TURN_SITES,
-    "regenerate-character": {"chat_generate", "chat_situational_image"},
+    "regenerate-character": {"chat_generate", "chat_situational_image", "chat_memory_summary"},
     "preview-story": {
         "preview_generate",
         "preview_stat_judgment",

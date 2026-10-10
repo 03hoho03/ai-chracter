@@ -874,7 +874,8 @@ async def _fold_target(db_client: httpx.AsyncClient, db_session: AsyncSession, c
     action, lane = case.split("-")
     room = await _open_room(db_client, db_session, turns=30, lane=lane)
     if lane == "story":
-        # 보내기 31턴째·수정 30턴째에 각각 하나씩 엔딩 판정 차례가 오게 한다.
+        # 보내기 31턴째·수정 30턴째에 각각 하나씩 엔딩 판정 차례가 오게 한다. 재생성은 엔딩을 다시 판정하지 않으므로
+        # 이 문턱은 재생성 턴에 쓰이지 않는다.
         match_id = await _add_room_cell_and_endings(db_session, room.room_id, (1, 5))
     else:
         match_id = await _add_room_situational_image(db_session, room.room_id)
@@ -882,7 +883,10 @@ async def _fold_target(db_client: httpx.AsyncClient, db_session: AsyncSession, c
     return _Target(method, path, body, room.user_id, str(match_id), room_id=room.room_id)
 
 
-@pytest.mark.parametrize("case", ["send-story", "edit-story", "send-character", "edit-character"])
+@pytest.mark.parametrize(
+    "case",
+    ["send-story", "edit-story", "regenerate-story", "send-character", "edit-character", "regenerate-character"],
+)
 async def test_background_work_starts_with_no_request_transaction_open(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, case: str
 ) -> None:
@@ -914,12 +918,13 @@ async def test_background_work_starts_with_no_request_transaction_open(
     assert response.status_code == 200, response.text
     events = _parse_sse_events(response.text)
     assert events[-1]["type"] == "done"
-    # 턴이 커밋 뒤 조회를 실제로 지났다 — 그림 URL(칸 서명·상황 이미지 URL)과, 스토리 방은 엔딩 에필로그. 건너뛰었다면
-    # "열린 트랜잭션 0" 은 그 조회가 연 트랜잭션을 반납하는지를 재지 않은 것이다.
+    # 턴이 커밋 뒤 조회를 실제로 지났다 — 그림 URL(칸 서명·상황 이미지 URL)과, 스토리 방의 보내기·수정은 엔딩 에필로그.
+    # 건너뛰었다면 "열린 트랜잭션 0" 은 그 조회가 연 트랜잭션을 반납하는지를 재지 않은 것이다. 재생성은 엔딩을 다시
+    # 판정하지 않아 그림 URL 조회만 지난다.
     final = events[-1]["finalMessage"]
     assert final["imageId"] == target.match_id
     assert final["imageUrl"]
-    if case.endswith("-story"):
+    if case in ("send-story", "edit-story"):
         assert any(event["type"] == "endingReached" and event.get("epilogue") for event in events)
     # 접기가 실제로 요약 LLM 을 불렀다 — 안 불렀다면 "열린 트랜잭션 0" 이 아무것도 재지 않은 것이다.
     assert ["generate_structured", "chat_memory_summary"] in fake.calls

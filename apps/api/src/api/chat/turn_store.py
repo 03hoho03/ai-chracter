@@ -304,9 +304,8 @@ class RoomTurnStore:
 
     async def present(self, turn: TurnResult, written: TurnWrite) -> TurnPresentation:
         """커밋 뒤 조회(상황 이미지 URL·칸 서명·에필로그). 커밋 뒤라 여기서 예외가 새면 SSE 제너레이터를 뚫으므로 자리마다
-        흡수하고 그림 없이 마무리한다. 끝에서 이 조회가 연 트랜잭션을 반납한다 — 보내기·수정은 요청 세션이 턴 뒤
-        background 일(요약 접기의 LLM 호출)이 끝난 뒤에야 닫히므로 열린 트랜잭션이 그 내내 커넥션을 쥐게 되고, 접기를
-        예약하지 않는 재생성도 같은 자리에서 반납해 남은 SSE 이벤트를 내보내는 동안 커넥션을 쥐지 않는다."""
+        흡수하고 그림 없이 마무리한다. 끝에서 이 조회가 연 트랜잭션을 반납한다 — 요청 세션은 턴 뒤 background 일(요약
+        접기의 LLM 호출)이 끝난 뒤에야 닫히므로, 반납하지 않으면 열린 트랜잭션이 그 내내 커넥션을 쥔다."""
         db, room = self.db, self._room
         matched_image = written.matched_image
         matched_image_url: str | None = None
@@ -350,7 +349,7 @@ class RoomTurnStore:
                 update={"epilogue": epilogue_text, "media_tag_images": epilogue_images}
             )
 
-        # 커밋 뒤 조회가 다시 연 트랜잭션을 반납한다 — 보내기·수정의 요청 세션은 요약 접기(LLM 호출)가 끝난 뒤에야 닫힌다.
+        # 커밋 뒤 조회가 다시 연 트랜잭션을 반납한다 — 요청 세션은 요약 접기(LLM 호출)가 끝난 뒤에야 닫힌다.
         await db.commit()
 
         return TurnPresentation(
