@@ -3511,6 +3511,76 @@
     },
     "status": 200
   },
+  "post-commit-signing-failure/regenerate-character": {
+    "clover": {
+      "balanceDelta": -10,
+      "ledger": [
+        "chat_spend"
+      ]
+    },
+    "escaped": [],
+    "events": [
+      {
+        "delta": "오늘은 ",
+        "type": "token"
+      },
+      {
+        "delta": "비가 와.",
+        "type": "token"
+      },
+      {
+        "content": "오늘은 비가 와.",
+        "hasImageUrl": false,
+        "imageId": null,
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "chat_generate"
+      ],
+      [
+        "generate_structured",
+        "chat_situational_image"
+      ]
+    ],
+    "scheduled": [],
+    "sentry": [
+      [
+        "RuntimeError",
+        "s3"
+      ]
+    ],
+    "state": {
+      "discarded": [
+        "regenerate"
+      ],
+      "messages": [
+        [
+          "assistant",
+          "인트로",
+          null
+        ],
+        [
+          "user",
+          "[U01]가가가가가가가가가가가가가가가",
+          null
+        ],
+        [
+          "assistant",
+          "오늘은 비가 와.",
+          "<candidate>"
+        ]
+      ],
+      "room": {
+        "endingReached": false,
+        "turnCount": 1
+      },
+      "stats": []
+    },
+    "status": 200
+  },
   "post-commit-signing-failure/send": {
     "clover": {
       "balanceDelta": -10,
