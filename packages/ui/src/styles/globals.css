@@ -76,6 +76,11 @@
      다른 열을 보인다. `--grid-template-columns-*` 는 Tailwind v4 가 `grid-cols-*` 에 쓰는 네임스페이스라 이 한
      줄로 `grid-cols-stat-rule` 유틸리티가 생긴다. */
   --grid-template-columns-stat-rule: minmax(0, 1fr) 6rem;
+  /* 카드 그리드형 목록(홈·즐겨찾기·내 작품·프로필·노벨 목록)과 사이트 푸터의 본문 컬럼 상한 — 래퍼 1440px, 좌우
+     24px 를 빼면 콘텐츠 1392px. 여섯 곳이 같은 폭이어야 목록과 그 아래 푸터가 한 선에 서므로 임의값으로 흩지 않는다.
+     `--container-*` 는 Tailwind v4 가 `max-w-*` 에 쓰는 네임스페이스라 이 한 줄로 `max-w-list` 유틸리티가 생긴다.
+     이유와 실측은 DESIGN.md Layout containers 절. */
+  --container-list: 90rem;
 }
 
 :root {

@@ -178,7 +178,7 @@ export function HomePage({
   return (
     // 홈은 보이는 첫 행이 h1이 아니라 유형·정렬 행인 유일한 라우트라(비로그인은 그 위에 소개 한 줄) 상단
     // 패딩을 pt-4로 줄인다(홈의 h1은 sr-only, 즐겨찾기·내 작품은 보이는 h1으로 시작한다).
-    <main className="mx-auto flex max-w-5xl flex-col gap-6 px-4 sm:px-6 pt-4 pb-10">
+    <main className="mx-auto flex max-w-list flex-col gap-6 px-4 sm:px-6 pt-4 pb-10 lg:pt-6">
       <h1 className="sr-only">{contentType === "character" ? "캐릭터 홈" : "스토리 홈"}</h1>
 
       {/* 처음 온 사람에게 이곳이 무엇인지 말하는 한 줄. 비로그인에게만, 닫기 없이 상시. 세션 확인 중에는
