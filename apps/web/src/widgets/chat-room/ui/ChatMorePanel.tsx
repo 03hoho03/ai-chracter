@@ -43,9 +43,10 @@ export function ChatMorePanel(props: ChatMorePanelProps) {
       </SheetTrigger>
       {/* lg 미만은 우측 시트가 아니라 바닥에서 올라오는 드롭업이다. 목적은 패널을 여는 동안에도
           "지금 누구와 대화 중인지"(아바타·캐릭터명·방 이름)가 계속 보이는 것이므로 시트 상단을 채팅 헤더
-          바로 아래에 붙인다. 390x844에서 실측한 값이 그 118px이다 — 전역 헤더 56 + border 1 + 채팅 헤더
-          60 + border 1. ChatRoomView의 h-below-header와 같은 수동 미러링이다(DESIGN.md).
-          전역 헤더까지 보이게 할지는 이 실측으로 결론이 났다: 전역 헤더(0~57)가 채팅 헤더(57~118) 위에
+          바로 아래에 붙인다. 그 값(약 123.5px)은 전역 헤더 56 + border 1 + 채팅 헤더(py-3 + 이름 열 두 줄
+          약 41.5 + border 1 = 약 66.5)이고, top-below-chat-header 가 글자 토큰으로 같은 식을 계산한다.
+          ChatRoomView의 h-below-header와 같은 계열의 미러링이다(DESIGN.md).
+          전역 헤더까지 보이게 할지는 이 실측으로 결론이 났다: 전역 헤더(0~57)가 채팅 헤더(57~123.5) 위에
           있으므로 채팅 헤더를 남기면 전역 헤더는 반드시 함께 남는다 — 둘을 따로 고를 수 없다. 시트를
           57px까지 올려 채팅 헤더를 덮는 반대 선택지는 그 목적과 정면으로 어긋나서 버렸다. */}
       <SheetContent side="bottom" className="top-below-chat-header rounded-t-xl">

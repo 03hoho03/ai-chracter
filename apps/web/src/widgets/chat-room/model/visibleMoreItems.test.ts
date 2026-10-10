@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { visibleMoreItems } from "./visibleMoreItems";
+import { CHAT_MODEL_FEATURE_GATE, isFeatureItemVisible, visibleMoreItems } from "./visibleMoreItems";
 
 const ITEMS = [
   { key: "play-guide", isActive: true },
@@ -31,5 +31,25 @@ describe("visibleMoreItems", () => {
       "coming-soon",
       "chat-model",
     ]);
+  });
+});
+
+describe("isFeatureItemVisible", () => {
+  it("요구 기능이 없는 항목은 허용 기능이 없어도 보인다", () => {
+    expect(isFeatureItemVisible({}, [])).toBe(true);
+  });
+
+  it("요구 기능이 허용돼 있으면 보인다", () => {
+    expect(isFeatureItemVisible(CHAT_MODEL_FEATURE_GATE, ["chat_premium_models"])).toBe(true);
+  });
+
+  // 다른 기능의 허용으로는 열리지 않는다 — 소설화만 허용된 계정에 모델 칩이 새면 안 된다.
+  it("요구 기능이 허용돼 있지 않으면 숨는다", () => {
+    expect(isFeatureItemVisible(CHAT_MODEL_FEATURE_GATE, [])).toBe(false);
+    expect(isFeatureItemVisible(CHAT_MODEL_FEATURE_GATE, ["novelize"])).toBe(false);
+  });
+
+  it("채팅 모델 게이트는 채팅 상위 모델 기능을 요구한다", () => {
+    expect(CHAT_MODEL_FEATURE_GATE.requiredFeature).toBe("chat_premium_models");
   });
 });

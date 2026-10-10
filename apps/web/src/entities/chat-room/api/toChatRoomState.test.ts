@@ -85,8 +85,15 @@ describe("toChatRoomState", () => {
       updatedAt: "2026-07-08T00:00:00Z",
     };
 
-    const premium = toChatRoomState({ ...base, chatModel: "opus", effectiveChatModel: "opus", turnCost: 65 });
+    const premium = toChatRoomState({
+      ...base,
+      chatModel: "opus",
+      effectiveChatModel: "opus",
+      effectiveChatModelName: "Claude Opus 5.5",
+      turnCost: 65,
+    });
     expect(premium.effectiveChatModel).toBe("opus");
+    expect(premium.effectiveChatModelName).toBe("Claude Opus 5.5");
     expect(premium.turnCost).toBe(65);
 
     // 허용을 거둔 방은 저장값(opus)이 아니라 서버가 정한 유효 모델과 그 가격을 따른다.
@@ -116,6 +123,8 @@ describe("toChatRoomState", () => {
 
     expect(state.effectiveChatModel).toBe("gemini");
     expect(state.turnCost).toBeUndefined();
+    // 이름은 기본 모델 이름으로 채우지 않는다 — 화면은 이름이 없으면 모델 칩을 그리지 않는다.
+    expect(state.effectiveChatModelName).toBeUndefined();
   });
 
   // 화면이 작가 글의 `{{user}}`·`{{char}}` 를 방이 고정한 버전의 이름으로 바꾸려면 세 이름이 방 상태에 있어야 한다.

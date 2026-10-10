@@ -88,6 +88,8 @@ export type ChatRoomState = {
   novelCreationBlocked: boolean;
   // 다음 턴을 실제로 쓸 모델. 방에 저장한 모델을 지금 쓸 수 없으면(허용 회수·기능 꺼짐) 서버가 기본 모델로 바꿔 준 값이다.
   effectiveChatModel: ChatModelId;
+  // 그 모델의 보이는 이름(채팅 모델 칩에 쓴다). undefined 는 이 칸이 생기기 전의 서버다 — 그때 칩을 그리지 않는다.
+  effectiveChatModelName?: string;
   // 다음 턴 하나의 클로버(그 모델의 가격). undefined 는 서버가 값을 주지 않았다는 뜻이다 — 이 칸이 생기기 전의 서버가
   // 그렇다(서버와 화면은 따로 배포된다). 그때 화면은 가격 숫자를 말하지 않고 부족 여부도 판정하지 않는다.
   turnCost: number | undefined;

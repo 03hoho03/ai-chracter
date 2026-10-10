@@ -45,6 +45,7 @@ export { MessageBubble, USER_MESSAGE_FRAME } from "./ui/MessageBubble";
 export { RateLimitNotice } from "./ui/RateLimitNotice";
 export { TypingIndicator } from "./ui/TypingIndicator";
 export { StatGaugePanel } from "./ui/StatGaugePanel";
+export { applyRoomChatModel } from "./model/applyRoomChatModel";
 export { applyStreamEvent } from "./model/applyStreamEvent";
 export { buildEditPayload } from "./model/buildEditPayload";
 export { canReportMessage } from "./model/canReportMessage";

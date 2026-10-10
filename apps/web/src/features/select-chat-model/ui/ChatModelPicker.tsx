@@ -1,16 +1,22 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { cn } from "@ai-character-chat/ui/lib/utils";
+import { Link } from "@tanstack/react-router";
 import { useId, useState } from "react";
 import { toast } from "sonner";
 
 import { isPremiumChatModel, type ChatModel, type ChatModelId } from "@/entities/chat-model";
-import { CloverBalance, useCloverBalanceQuery } from "@/entities/clover";
+import { CloverBalance, isCloverInsufficient, useCloverBalanceQuery } from "@/entities/clover";
 import { useSessionQuery } from "@/entities/session";
 
 import { useSetRoomChatModelMutation } from "../api/useSetRoomChatModelMutation";
 import { isChatModelNotAllowedError } from "../model/chatModelError";
-import { formatChatModelPrice, formatPremiumModelConfirm } from "../model/chatModelCopy";
+import {
+  chatModelBadges,
+  formatChatModelPrice,
+  formatPremiumModelConfirm,
+  formatPremiumModelShortage,
+} from "../model/chatModelCopy";
 
 type ChatModelPickerProps = {
   roomId: string;
@@ -19,6 +25,8 @@ type ChatModelPickerProps = {
   models: ChatModel[];
   onChanged: () => void;
 };
+
+const INLINE_LINK_CLASS = "font-medium whitespace-nowrap text-primary underline-offset-4 hover:underline focus-visible:underline";
 
 const ITEM_CLASS = "group/model-option h-auto min-h-11 w-full justify-start px-3.5 py-2.5 whitespace-normal hover:bg-secondary";
 
@@ -41,7 +49,11 @@ export function ChatModelPicker({ roomId, currentModelId, models, onChanged }: C
   const { data: me } = useSessionQuery();
   const [pendingModelId, setPendingModelId] = useState<ChatModelId | undefined>(undefined);
   const confirmId = useId();
+  const shortageId = useId();
   const pendingModel = models.find((model) => model.id === pendingModelId);
+  const isPendingModelShort =
+    pendingModel !== undefined && clover !== undefined && isCloverInsufficient(clover.balance, pendingModel.turnCost);
+  const pendingDescriptionIds = isPendingModelShort ? `${confirmId} ${shortageId}` : confirmId;
   const isSaving = setRoomChatModelMutation.isPending;
 
   function save(modelId: ChatModelId) {
@@ -99,22 +111,23 @@ export function ChatModelPicker({ roomId, currentModelId, models, onChanged }: C
           <ToggleGroupItem
             key={model.id}
             value={model.id}
-            aria-describedby={model.id === pendingModelId ? confirmId : undefined}
+            aria-describedby={model.id === pendingModelId ? pendingDescriptionIds : undefined}
             className={ITEM_CLASS}
           >
             <span className="flex min-w-0 flex-col gap-0.5 text-left">
               <span className="flex min-w-0 items-center gap-2">
                 <span className="truncate text-sm font-medium text-foreground">{model.name}</span>
-                {model.id === currentModelId && (
+                {chatModelBadges(model, currentModelId).map((badge) => (
                   <span
+                    key={badge}
                     className={cn(
                       "inline-flex shrink-0 items-center rounded-full border border-border px-2 py-0.5 text-badge font-medium",
                       SECONDARY_TEXT_CLASS,
                     )}
                   >
-                    사용 중
+                    {badge}
                   </span>
-                )}
+                ))}
               </span>
               <span className={cn("text-xs break-keep", SECONDARY_TEXT_CLASS)}>{formatChatModelPrice(model, me?.identityGated ?? false)}</span>
             </span>
@@ -131,6 +144,16 @@ export function ChatModelPicker({ roomId, currentModelId, models, onChanged }: C
             <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
               <span>남은 클로버</span>
               <CloverBalance balance={clover.balance} />
+            </p>
+          )}
+          {/* 부족해도 바꾸는 것은 막지 않는다(전송할 때 서버가 판정한다). 충전으로 가는 길은 텍스트 링크다 — 이 블록의
+              솔리드 채움은 실행 버튼 하나뿐이어야 한다. */}
+          {isPendingModelShort && (
+            <p id={shortageId} className="text-sm break-keep text-foreground">
+              {formatPremiumModelShortage(pendingModel)}{" "}
+              <Link to="/clover" className={INLINE_LINK_CLASS}>
+                클로버 충전하기
+              </Link>
             </p>
           )}
           {/* 버튼 순서는 `취소` 먼저 — 확인 모달 푸터와 같다. 저장 중에는 실행을 `disabled` 대신 `aria-disabled` 로
