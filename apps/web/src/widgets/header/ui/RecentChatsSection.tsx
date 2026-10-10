@@ -27,6 +27,11 @@ type RecentChatsSectionProps = {
   /** 세션을 아직 묻는 중이면 비로그인으로 단정하지 않고 스켈레톤을 둔다. */
   isSessionPending: boolean;
   surface: RecentChatsSurface;
+  /** 섹션 안의 링크(행·전체 보기·로그인)를 누를 때 부른다. 드로어는 이걸로 자기를 닫는다 — 섹션은 패널에도 놓여
+   * 시트 닫기 버튼(`SheetClose`)을 직접 쓸 수 없다. */
+  onNavigate?: () => void;
+  /** 위 여백을 바꿀 때. 패널은 내비와 간격(`mt-4`)으로 가르고, 드로어는 구분선으로 가른다. */
+  className?: string;
 };
 
 /**
@@ -37,12 +42,12 @@ type RecentChatsSectionProps = {
  * `aria-labelledby` 로 이 이름을 가리킨다. "전체 보기"는 목록 끝이 아니라 머리에 둔다 — 낮은 화면에서는 목록 끝이 패널
  * 스크롤 아래로 가서 거기 두면 스크롤해야 닿는다.
  */
-export function RecentChatsSection({ viewerId, isSessionPending, surface }: RecentChatsSectionProps) {
+export function RecentChatsSection({ viewerId, isSessionPending, surface, onNavigate, className }: RecentChatsSectionProps) {
   const labelId = useId();
   const isSignedOut = !isSessionPending && viewerId === undefined;
 
   return (
-    <section aria-labelledby={labelId} className="mt-4">
+    <section aria-labelledby={labelId} className={cn("mt-4", className)}>
       <div className="flex h-8 items-center justify-between pr-2 pl-4">
         <p id={labelId} className="text-xs font-medium text-muted-foreground">
           최근 대화
@@ -50,6 +55,7 @@ export function RecentChatsSection({ viewerId, isSessionPending, surface }: Rece
         {!isSignedOut && (
           <Link
             to="/chats"
+            onClick={onNavigate}
             className="inline-flex items-center gap-0.5 rounded-md px-1 text-xs text-muted-foreground motion-safe:transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-1 focus-visible:outline-ring"
           >
             {/* 접근 이름은 보이는 글자를 포함해야 해서 앞에 숨은 글자를 덧붙인다 — "최근 대화 전체 보기". */}
@@ -60,18 +66,19 @@ export function RecentChatsSection({ viewerId, isSessionPending, surface }: Rece
       </div>
 
       {isSignedOut ? (
-        <SignedOutNotice />
+        <SignedOutNotice onNavigate={onNavigate} />
       ) : (
-        <RecentChatsBody viewerId={viewerId} labelId={labelId} surface={surface} />
+        <RecentChatsBody viewerId={viewerId} labelId={labelId} surface={surface} onNavigate={onNavigate} />
       )}
     </section>
   );
 }
 
 /** 대화 목록 자리의 로그인 안내. 버튼이 `outline` 인 이유: 비로그인 헤더의 "로그인"이 그 화면의 솔리드 버튼이다. 라벨을
- * "로그인하고 보기"로 둔 것도 헤더의 "로그인"과 라벨로 가르기 위해서다(같은 목적지 진입점이 한 화면에 둘이다). outline 의
- * hover 채움 `muted` 는 이 표면에서 보이지 않아 `secondary` 로 덮는다. */
-function SignedOutNotice() {
+ * "로그인하고 보기"로 둔 것도 다른 "로그인"(패널 옆 헤더의 버튼, 좁은 화면에서는 드로어 맨 위 행)과 라벨로 가르기
+ * 위해서다(같은 목적지 진입점이 한 화면에 둘이다). outline 의 hover 채움 `muted` 는 이 표면에서 보이지 않아 `secondary` 로
+ * 덮는다. */
+function SignedOutNotice({ onNavigate }: { onNavigate: (() => void) | undefined }) {
   const location = useRouterState({ select: (state) => state.location });
   const redirect = loginRedirectTarget(location);
 
@@ -79,7 +86,7 @@ function SignedOutNotice() {
     <div className="flex flex-col items-start gap-2 px-4 py-1">
       <p className="text-sm break-keep text-muted-foreground">로그인하면 이어서 하던 대화가 여기에 보여요.</p>
       <Button asChild variant="outline" size="sm" className="hover:bg-secondary">
-        <Link to="/login" search={{ redirect }}>
+        <Link to="/login" search={{ redirect }} onClick={onNavigate}>
           로그인하고 보기
         </Link>
       </Button>
@@ -91,11 +98,12 @@ type RecentChatsBodyProps = {
   viewerId: string | undefined;
   labelId: string;
   surface: RecentChatsSurface;
+  onNavigate: (() => void) | undefined;
 };
 
 /** 데이터가 있는 채 다시 받기에 실패하면 목록을 그대로 둔다 — 실패 배너는 `/chats` 가 진다. 목록이 없을 때만 다시 시도를
  * 준다. */
-function RecentChatsBody({ viewerId, labelId, surface }: RecentChatsBodyProps) {
+function RecentChatsBody({ viewerId, labelId, surface, onNavigate }: RecentChatsBodyProps) {
   const listQuery = useRecentChatRoomListQuery(viewerId);
 
   if (listQuery.isPending) return <RecentChatsSkeleton surface={surface} />;
@@ -126,7 +134,7 @@ function RecentChatsBody({ viewerId, labelId, surface }: RecentChatsBodyProps) {
     <ul aria-labelledby={labelId} className="flex flex-col gap-0.5">
       {items.map((item) => (
         <li key={item.id}>
-          <RecentChatRow item={item} surface={surface} />
+          <RecentChatRow item={item} surface={surface} onNavigate={onNavigate} />
         </li>
       ))}
     </ul>
@@ -161,13 +169,22 @@ function RecentChatsSkeleton({ surface }: { surface: RecentChatsSurface }) {
  * 테두리가 없으면 그 순간 썸네일 자리가 사라진다. 현재 방의 굵기는 첫 줄(작품명)에만 건다 — 행 전체에 걸면 둘째 줄까지
  * 굵어져 두 줄을 가르는 굵기 차이가 무너진다.
  */
-function RecentChatRow({ item, surface }: { item: MyChatRoomListItem; surface: RecentChatsSurface }) {
+function RecentChatRow({
+  item,
+  surface,
+  onNavigate,
+}: {
+  item: MyChatRoomListItem;
+  surface: RecentChatsSurface;
+  onNavigate: (() => void) | undefined;
+}) {
   const relativeTime = formatRelativeTime(item.lastMessageAt ?? item.createdAt, new Date());
 
   return (
     <Link
       to="/chat/$roomId"
       params={{ roomId: item.id }}
+      onClick={onNavigate}
       className={cn(SIDE_PANEL_ROW_CLASS, "group min-h-12 px-4 py-1")}
     >
       <span className={cn("size-8 shrink-0 overflow-hidden rounded-md border border-foreground/10", WELL_CLASS[surface])}>

@@ -38,13 +38,10 @@ import { getPasswordSection } from "../model/passwordSection";
  * 문장에서 `프로필 메뉴`라는 말도 뺐다 — **그 이름은 화면 어디에도 보이지 않는다**(헤더 트리거는 아이콘
  * 전용이고 접근가능 이름은 `~님 메뉴`다). 목적지로 가는 경로를 외우게 하는 대신 목적지를 직접 누르게 한다.
  *
- * 중복 진입점 걱정은 실측으로 기각됐다 — 다만 **이유가 두 겹이고, 한 겹만 적으면 틀린다**. 메뉴가 닫혀
- * 있으면 Radix가 `DropdownMenuContent`를 DOM에서 통째로 언마운트하므로 `내 작품` 링크는 1개다. 그런데
- * 메뉴가 **열려 있으면 DOM에는 실제로 2개가 존재한다**(실측). 그때 목록을 1개로 지키는 건 언마운트가
- * 아니라 Radix가 `main`·`header`에 거는 `aria-hidden="true"`다 — 접근성 트리 기준으로 세면 열림·닫힘
- * 양쪽 모두 **정확히 1개**다(`a[href]` 중 `closest('[aria-hidden="true"]')`가 없는 것만 카운트한 실측).
- * 그래서 이 불변식은 **토스터를 포털로 옮기듯 `main` 바깥으로 무언가를 꺼내는 순간 조용히 깨진다.** 사이트 푸터는
- * 포털이 아니라 같은 트리 안에 렌더돼 함께 가려지지만, 푸터에 `내 작품` 링크를 더하면 닫힘 상태에서 2개가 된다.
+ * 링크 글자는 목적지 이름 `내 작품`이 아니라 `만든 작품과 초안 보기`다. `lg` 이상에서는 좌측 패널에 늘 `내 작품` 행이
+ * 있어, 본문 링크도 같은 이름이면 한 화면에 같은 이름·같은 목적지 링크가 둘이 된다(같은 목적지 진입점이 둘이면 라벨로
+ * 가른다 — `apps/web/CLAUDE.md`). 글자가 그 화면에서 찾을 것(초안)을 말해, 초안을 찾아 온 사람이 바로 누를 수 있다.
+ * 그래서 접근성 트리에서 이름이 `내 작품`인 링크는 `lg` 이상에서 패널의 하나, 그보다 좁으면 0개(드로어가 닫혀 있을 때)다.
  *
  * 본인인증창이 페이지를 떠났다가(모바일) 돌아오는 곳도 여기다 — 라우트가 넘긴 결과 쿼리로 저장을 이어받고 쿼리를 지운다.
  */
@@ -86,12 +83,12 @@ export function MyPagePage({ search, onSearchClear }: { search: MypageSearch; on
       <div className="flex flex-col gap-1.5">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">설정</h1>
         <p className="text-sm break-keep text-muted-foreground">
-          화면과 계정을 관리해요. 만든 작품과 초안은{" "}
+          화면과 계정을 관리해요.{" "}
           {/* 문장 속 링크는 `font-medium text-primary hover:underline`이 저장소 관용구다(`LoginForm`·
               `SignUpPage` 선례). 여기에 둘을 더했다.
-              · `whitespace-nowrap` — `break-keep`은 어절 경계를 허용하므로 `내 / 작품`으로 갈린다(320px에서
-                실측 2줄). 목적지 이름이 두 줄에 걸치면 읽기도 누르기도 나빠진다. 40px짜리 어구라 272px
-                컬럼에서도 넘칠 위험이 없다.
+              · `whitespace-nowrap` — `break-keep`은 어절 경계를 허용하므로 링크 어구가 어절 사이에서 두 줄로
+                갈린다. 링크가 두 줄에 걸치면 읽기도 누르기도 나빠진다. 어구 폭이 136px(실측)라 320px 화면의
+                288px 컬럼에서도 넘칠 위험이 없다.
               · `focus-visible:underline` — 전역 base(`globals.css`의 `outline-ring/50`)가 주는 건 1px UA
                 아웃라인 하나뿐이고 실측 **2.5757 다크 / 2.5511 라이트**로 WCAG 1.4.11(3:1)에 미달한다. 카드
                 링크용 3px 링 레시피는 문장 안에서 라인박스를 깨므로 쓸 수 없다 — 대신 밑줄을 더한다.
@@ -101,9 +98,8 @@ export function MyPagePage({ search, onSearchClear }: { search: MypageSearch; on
             to="/my"
             className="font-medium whitespace-nowrap text-primary hover:underline focus-visible:underline"
           >
-            내 작품
+            만든 작품과 초안 보기
           </Link>
-          에 있어요.
         </p>
       </div>
 

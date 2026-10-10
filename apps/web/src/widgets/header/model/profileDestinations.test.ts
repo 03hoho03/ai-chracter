@@ -6,7 +6,7 @@ import { isProfileDestinationVisible } from "./profileDestinationVisibility";
 const MENU_KEYS = PROFILE_MENU_DESTINATION_GROUPS.flatMap((group) => group.keys);
 
 describe("목적지 자리", () => {
-  // 패널이 보이는 폭에서는 헤더의 프로필 메뉴도 함께 보이도록 짠다 — 한 키가 두 자리에 있으면 메뉴를 연 화면에 같은
+  // 패널이 보이는 폭에서는 헤더의 프로필 메뉴도 함께 보인다 — 한 키가 두 자리에 있으면 메뉴를 연 화면에 같은
   // 항목이 두 번 보인다.
   it("패널 내비·레일의 내 채팅목록·프로필 메뉴는 키가 겹치지 않는다", () => {
     const placed = [...SIDE_PANEL_DESTINATION_KEYS, SIDE_PANEL_RAIL_CHATS_KEY, ...MENU_KEYS];

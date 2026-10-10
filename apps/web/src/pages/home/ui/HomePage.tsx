@@ -187,7 +187,7 @@ export function HomePage({
         <p className="break-keep text-sm text-muted-foreground">{SITE_INTRO} 둘러보는 데는 로그인이 필요 없어요.</p>
       )}
 
-      {/* 유형 행. 640px 미만에서는 헤더에 유형 탭이 없어(버거 드로어 안에만 있다) 여기서 바로 바꾸게 하고,
+      {/* 유형 행. 1024px 미만에서는 헤더에 유형 탭이 없어(버거 드로어 안에만 있다) 여기서 바로 바꾸게 하고,
           그 이상은 바로 위 헤더 탭이 전환을 맡으므로 같은 컨트롤을 두 번 세우지 않고 지금 유형 이름만 보인다.
           이름은 h1이 아니다 — h1은 위 sr-only가 맡고, 보이는 h1은 Display(`text-2xl`) 전용이라 이 행에 둘 수
           없다. 같은 말을 h1이 이미 읽으므로 이름은 `aria-hidden`이다.
@@ -208,12 +208,12 @@ export function HomePage({
             if (isContentType(value)) onTypeChange(value);
           }}
           aria-label="콘텐츠 유형 전환"
-          className="-ml-2 sm:hidden"
+          className="-ml-2 lg:hidden"
         >
           <ToggleGroupItem value="character">캐릭터</ToggleGroupItem>
           <ToggleGroupItem value="story">스토리</ToggleGroupItem>
         </ToggleGroup>
-        <p aria-hidden className="hidden text-lg font-semibold text-foreground sm:block">
+        <p aria-hidden className="hidden text-lg font-semibold text-foreground lg:block">
           {CONTENT_TYPE_LABEL[contentType]}
         </p>
 

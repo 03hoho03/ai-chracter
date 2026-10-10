@@ -22,3 +22,14 @@ export const SIDE_PANEL_ROW_CLASS = cn(
   "aria-[current=page]:bg-secondary aria-[current=page]:text-foreground",
   "aria-[current=page]:before:absolute aria-[current=page]:before:inset-y-2 aria-[current=page]:before:left-0 aria-[current=page]:before:w-px aria-[current=page]:before:bg-foreground",
 );
+
+/** 글자가 보이는 내비 행(펼친 패널·드로어). 드로어도 같은 클래스를 써야 같은 목적지가 두 표면에서 같은 hover·현재 표시를
+ * 갖는다. 현재 항목의 굵기는 이 행에만 건다 — 라벨이 숨는 레일 칸에서는 굵기가 보이지 않는다.
+ *
+ * `shrink-0`: 드로어는 이 행 몇 개(알림 펼침·로그아웃·비로그인 로그인)를 스크롤하는 세로 flex 에 바로 놓는다. 높이가
+ * `h-9` 고정에 세로 패딩이 없어, 내용이 넘치면 flex 아이템의 자동 최소 높이(글자 한 줄)까지 줄어든다. `<li>` 안에 놓인
+ * 행은 flex 아이템이 아니라 영향이 없다. */
+export const SIDE_PANEL_NAV_ROW_CLASS = cn(
+  SIDE_PANEL_ROW_CLASS,
+  "h-9 shrink-0 px-4 [&_svg]:size-4 [&_svg]:shrink-0 aria-[current=page]:font-semibold",
+);

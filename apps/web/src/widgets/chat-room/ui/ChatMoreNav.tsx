@@ -34,7 +34,7 @@ type MorePanelItem = FeatureGatedItem & {
   isActive: boolean;
 };
 
-// 아이콘은 프로필 메뉴의 `내 소설`과 같은 글리프다 — 같은 대상에 다른 그림을 붙이면 둘이 다른 기능으로 읽힌다.
+// 아이콘은 좌측 패널(좁은 화면은 드로어)의 `내 소설`과 같은 글리프다 — 같은 대상에 다른 그림을 붙이면 둘이 다른 기능으로 읽힌다.
 // 플레이가이드의 `BookOpen`과는 일부러 다른 그림을 고른다(한 목록 안에서 펼친 책 둘이 나란히 놓인다).
 const NOVEL_ITEM: MorePanelItem = {
   key: "novel",

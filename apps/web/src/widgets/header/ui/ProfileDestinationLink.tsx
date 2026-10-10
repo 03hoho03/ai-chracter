@@ -85,12 +85,13 @@ type ProfileDestinationLinkProps = ComponentPropsWithoutRef<"a"> &
 /** 라우트별 `to`/`params` 타입이 제각각이라(`/profile/$userId`만 params가 필요하다) 하나의 배열에
  * `to` 문자열을 담아 범용으로 렌더하면 라우터 제네릭과 계속 부딪힌다 — `switch`로 각 케이스를 그대로
  * 적어 리터럴 타입 추론을 그대로 받는다. `className`은 호출부가 준다 — `ProfileMenu`는 `DropdownMenuItem
- * asChild`의 기본 클래스에 얹혀야 해서 비워 두고(원래도 그랬다), 드로어는 자기 행 스타일을 준다.
+ * asChild`의 기본 클래스에 얹혀야 해서 비워 두고(원래도 그랬다), 좌측 패널·드로어는 패널 행 스타일을 준다.
  *
- * `forwardRef` + `...rest` 전달이 필수다 — 두 호출부 모두 `asChild`(`DropdownMenuItem`·`SheetClose`)로
- * 이 컴포넌트를 감싸는데, Radix의 Slot은 `ref`와 `onClick`(메뉴 선택·시트 닫기를 거는 바로 그 핸들러)을
- * 바로 아래 자식에 병합해 얹는다. 이 컴포넌트가 일반 함수 컴포넌트로 `className`만 받고 나머지를 버리면
- * 그 `onClick`이 실제 `<Link>`까지 못 가 "눌러도 메뉴/시트가 안 닫힌다"가 조용히 재현된다(실측). */
+ * `forwardRef` + `...rest` 전달이 필수다 — 프로필 메뉴는 `DropdownMenuItem asChild`로, 패널 레일은 툴팁 트리거
+ * (`TooltipTrigger asChild`)로 이 컴포넌트를 감싸는데, Radix의 Slot은 `ref`와 이벤트 핸들러(메뉴 선택을 거는 `onClick`,
+ * 툴팁을 여는 포인터·포커스 핸들러)를 바로 아래 자식에 병합해 얹는다. 이 컴포넌트가 일반 함수 컴포넌트로 `className`만
+ * 받고 나머지를 버리면 그 핸들러가 실제 `<Link>`까지 못 가 "눌러도 메뉴가 안 닫힌다"가 조용히 재현된다(실측). 드로어가
+ * 넘기는 닫기 `onClick`도 같은 길로 간다. */
 export const ProfileDestinationLink = forwardRef<HTMLAnchorElement, ProfileDestinationLinkProps>(function ProfileDestinationLink(
   { destinationKey, me, className, ...rest },
   ref,
@@ -124,6 +125,8 @@ export const ProfileDestinationLink = forwardRef<HTMLAnchorElement, ProfileDesti
         </Link>
       );
     case "studio-images":
+      // 글리프는 `ImagePlus`("이미지를 새로 만든다")다 — 라벨이 `이미지 생성`이고, `/studio/images`는 탭 지정 없이 도착하면
+      // `생성` 탭을 연다.
       return (
         <Link ref={ref} to="/studio/images" className={className} {...rest}>
           <ImagePlus aria-hidden />

@@ -10,9 +10,12 @@ import { useSessionQuery } from "@/entities/session";
 import { BrandLogo } from "./BrandLogo";
 import { PROFILE_DESTINATION_LABEL, ProfileDestinationLink } from "./ProfileDestinationLink";
 import { RecentChatsSection } from "./RecentChatsSection";
-import { SIDE_PANEL_ROW_CLASS } from "./sidePanelRowClass";
+import { SIDE_PANEL_NAV_ROW_CLASS, SIDE_PANEL_ROW_CLASS } from "./sidePanelRowClass";
 import { SIDE_PANEL_DESTINATION_KEYS, SIDE_PANEL_RAIL_CHATS_KEY } from "../model/profileDestinations";
 import { isProfileDestinationVisible } from "../model/profileDestinationVisibility";
+
+/** 패널의 DOM id. 드로어가 열린 채 창이 `lg` 이상으로 넓어지면 드로어가 닫히며 포커스를 이 패널의 현재 항목으로 보낸다. */
+export const SIDE_PANEL_ID = "side-panel";
 
 const LOGO_LINK_CLASS =
   "inline-flex shrink-0 items-center rounded-md text-foreground focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-3 focus-visible:ring-ring/50";
@@ -64,6 +67,7 @@ export function SidePanel({ isCollapsed, isToggled, onToggle }: SidePanelProps) 
     // 레일 칸이 줄지어 있어 툴팁 하나를 본 뒤 이웃 칸으로 옮기면 지연 없이 바로 뜬다(Radix 의 건너뛰기 지연 300ms).
     <TooltipProvider delayDuration={300} skipDelayDuration={300}>
       <aside
+        id={SIDE_PANEL_ID}
         aria-label="사이트 메뉴"
         className={cn(
           "sticky top-0 flex h-dvh shrink-0 flex-col overflow-hidden border-r border-border bg-background",
@@ -102,7 +106,7 @@ export function SidePanel({ isCollapsed, isToggled, onToggle }: SidePanelProps) 
                       <ProfileDestinationLink destinationKey={key} className={RAIL_ROW_CLASS} />
                     </RailTooltip>
                   ) : (
-                    <ProfileDestinationLink destinationKey={key} className={EXPANDED_ROW_CLASS} />
+                    <ProfileDestinationLink destinationKey={key} className={SIDE_PANEL_NAV_ROW_CLASS} />
                   )}
                 </li>
               ))}
@@ -130,8 +134,6 @@ export function SidePanel({ isCollapsed, isToggled, onToggle }: SidePanelProps) 
     </TooltipProvider>
   );
 }
-
-const EXPANDED_ROW_CLASS = cn(SIDE_PANEL_ROW_CLASS, "h-9 px-4 [&_svg]:size-4 [&_svg]:shrink-0 aria-[current=page]:font-semibold");
 
 // 라벨은 접근 이름으로만 남는다(`sr-only`). 보이는 이름표는 툴팁이 진다.
 const RAIL_ROW_CLASS = cn(SIDE_PANEL_ROW_CLASS, "size-10 justify-center [&_svg]:size-4 [&_svg]:shrink-0 [&>span]:sr-only");

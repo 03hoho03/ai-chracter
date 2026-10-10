@@ -116,8 +116,8 @@ export function SearchInlineExpand({
     <div
       className={cn(
         // `sm` 미만 펼침은 더 이상 "선호 폭 `w-40`"이 아니라 헤더 한 줄 전체를 차지한다(`Header`가
-        // 이 상태일 때 버거·로고를 숨기고 이 그룹을 3열 모두에 걸치게 한다). `sm` 이상은 현행 `w-64`를
-        // 그대로 유지한다 — `min-w-0`은 그 구간에서 아이콘 4개 + 펼친 검색이 좁아질 때의 안전장치로 남는다.
+        // 이 상태일 때 버거·로고를 숨기고 이 그룹을 3열 모두에 걸치게 한다). `sm` 이상은 `w-64`다 — `min-w-0`은
+        // 그 폭이 모자랄 때(`lg` 미만 헤더의 좁은 3열, `lg` 이상에서 아이콘 넷과 함께 놓일 때) 검색만 줄어들게 하는 안전장치다.
         "flex min-w-0 items-center justify-end motion-safe:transition-[width] motion-safe:duration-200 motion-safe:ease-out",
         isExpanded ? "w-full sm:w-64" : "w-8",
       )}
