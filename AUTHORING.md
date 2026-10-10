@@ -119,7 +119,7 @@
 - 판정 모델의 입력: 엔딩의 판단 프롬프트와 대화 기록, 이번 턴. 스탯 값·스탯 정의·스토리 설정은 싣지 않는다. 긴 대화에서는 판정 윈도우 설정(`memory_window_ending_judgment`, 기본 켜짐)에 따라 요약이 덮은 원문 대신 현재 요약을 싣는다 — 끄면 대화 기록 전체를 싣는다.
 - 그래서 판단 프롬프트는 규칙이 잴 수 없는 서사적 사건만 묻는다. 규칙의 임계값을 판단 프롬프트가 되물으면 모델이 그 숫자를 서사로 재해석해 발동을 거부한 실측이 있다(`test_seed_ending_judgment_prompts_do_not_restate_rule_thresholds` docstring).
 - 목록 순서는 **같은 판정 턴 안의** 우선순위일 뿐이다. 노말·배드가 루트와 같은 게이트에서 판단 프롬프트만으로 참이 되면 첫 판정 턴에 방이 끝나 뒤의 루트 기회가 사라진다. 예시 작품은 노말·배드의 게이트를 늦추고, 초기값에서 거짓인 시계 스탯(`상영회까지 ≤ 0`) 조건을 엔딩 다섯 개 모두에 넣어 이것을 막는다. 게이트는 턴 수로 판정되므로 메시지 수정으로 시계 값이 대화보다 앞서 줄어 있는 방에서도 이른 발동을 막는다. 우선 스탯 무리도 같은 판정 턴 안에서만 비교한다 — 엔딩마다 게이트가 달라 판정 시점이 엇갈리면, 값이 가장 높은 루트가 판정 시점이 아닌 턴에 더 낮은 루트가 혼자 무리가 되어 판정될 수 있다. 무리로 비교할 엔딩은 게이트를 같게 둔다.
-- 빌더 미리보기(`_stream_preview_turn`)는 같은 순서(생성 → 스탯 판정 → 엔딩별 규칙 → 엔딩 판정)와 같은 엔진(`apply_rule_judgment`·`evaluate_rule_list`·`is_ending_check_due`·`_endings_to_judge`·`match_keyword_notes`·`pick_situation_note_texts`)을 쓰고, 방 상태만 DB 대신 Redis(`api/chat/preview_session.py`)에 둔다. 미리보기는 페이로드의 첫 시작설정으로만 시작한다(`_build_preview_start_state`). 상황별 이미지 매칭은 미리보기에서 돌지 않는다. 미디어 북 칸 판정은 돌고, 후보는 페이로드의 칸 중 노출 제외가 아니고 요청자 소유의 준비된 이미지가 붙은 칸이다(`_prepare_preview_media_cell_judgment`).
+- 빌더 미리보기는 실채팅과 같은 턴 골격(`api/chat/turn_engine.py`의 `run_turn`)을 지나 같은 순서(생성 → 스탯 판정 → 엔딩별 규칙 → 엔딩 판정)와 같은 엔진(`apply_rule_judgment`·`evaluate_rule_list`·`is_ending_check_due`·`_endings_to_judge`·`match_keyword_notes`·`pick_situation_note_texts`)을 쓰고, 방 상태만 DB 대신 Redis(`api/chat/preview_session.py`)에 둔다. 미리보기는 페이로드의 첫 시작설정으로만 시작한다(`_build_preview_start_state`). 상황별 이미지 매칭은 미리보기에서 돌지 않는다. 미디어 북 칸 판정은 돌고, 후보는 페이로드의 칸 중 노출 제외가 아니고 요청자 소유의 준비된 이미지가 붙은 칸이다(`api/chat/turn_judgments.py`의 `_prepare_preview_media_cell_judgment`).
 
 ## 4. 요약 접기와 첫 메시지 고정
 

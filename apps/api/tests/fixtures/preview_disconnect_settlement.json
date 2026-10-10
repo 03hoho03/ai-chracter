@@ -1,0 +1,53 @@
+{
+  "story-turn": [
+    {
+      "closedAfter": "end",
+      "events": [
+        "token",
+        "statChange",
+        "endingReached",
+        "done"
+      ],
+      "refunds": 0,
+      "saves": 1
+    },
+    {
+      "closedAfter": "token",
+      "events": [
+        "token"
+      ],
+      "refunds": 1,
+      "saves": 0
+    },
+    {
+      "closedAfter": "statChange",
+      "events": [
+        "token",
+        "statChange"
+      ],
+      "refunds": 1,
+      "saves": 0
+    },
+    {
+      "closedAfter": "endingReached",
+      "events": [
+        "token",
+        "statChange",
+        "endingReached"
+      ],
+      "refunds": 1,
+      "saves": 0
+    },
+    {
+      "closedAfter": "done",
+      "events": [
+        "token",
+        "statChange",
+        "endingReached",
+        "done"
+      ],
+      "refunds": 0,
+      "saves": 0
+    }
+  ]
+}

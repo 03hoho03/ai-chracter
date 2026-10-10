@@ -231,7 +231,7 @@ async def test_send_preview_message_character_streams_and_appends(db_client: htt
 
 
 async def test_send_preview_message_story_selects_template_instruction(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
-    """`_stream_preview_turn` 호출부는 `payload.prompt_template`을
+    """미리보기 생성 프롬프트 조립(`build_preview_prompt`)은 `payload.prompt_template`을
     골라 시스템 지시문(L0.5)에 잇는다."""
     user = _make_user()
     db_session.add(user)
@@ -257,8 +257,8 @@ async def test_send_preview_message_story_selects_template_instruction(db_client
 async def test_send_preview_message_policy_violation_emits_policy_warning(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """`chat/router.py`의 `_stream_preview_turn`은 본 채팅·재생성과 글자 그대로 같은
-    `except LLMPolicyViolationError` 핸들러를 갖지만 여태 이 경로만 테스트가 없었다."""
+    """미리보기도 본 채팅·재생성과 같은 턴 골격(`run_turn`)의 `except LLMPolicyViolationError` 핸들러를 지나지만
+    여태 이 경로만 테스트가 없었다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()

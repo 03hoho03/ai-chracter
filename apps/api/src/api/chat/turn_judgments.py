@@ -1,4 +1,6 @@
-"""실채팅 턴의 판정(스탯 규칙·엔딩·스토리 칸·캐릭터 상황 이미지)과 그 헬퍼. 재생성은 이 가운데 그림 판정(칸·상황 이미지)만 한다.
+"""채팅 턴의 판정(스탯 규칙·엔딩·스토리 칸·캐릭터 상황 이미지)과 그 헬퍼. 재생성은 이 가운데 그림 판정(칸·상황 이미지)만 한다.
+빌더 미리보기도 같은 판정을 하되(상황 이미지 판정은 없다) 입력을 DB 대신 초안 페이로드에서 읽는 미리보기판 클래스를 쓴다 —
+입력 출처는 생성자가, 턴마다 같은 공통 입력은 `JudgmentContext` 가 갖는다.
 
 판정 하나는 세 단계로 나뉜다 — `prepare`(DB 읽기와, 엔딩을 뺀 판정의 프롬프트 조립, 요청 세션의 트랜잭션 안), `judge`(DB 에 닿지 않는다 —
 LLM 호출, 엔딩은 엔딩마다 프롬프트 렌더도 여기서 한다), `apply`(결과를 `TurnJudgmentResult` 에 옮긴다). 단계 사이의
@@ -10,7 +12,9 @@ import 하지 않는다(라우터가 이 모듈을 import 한다).
 상황 이미지 후보 조회는 자기 DB 실패를 흡수한다. 스탯 준비의 DB 읽기·렌더, 엔딩 준비의 DB 읽기, 엔딩 판정의 렌더·LLM, 상황 이미지
 준비의 렌더와 판정 LLM 은 흡수하지 않고 부르는 쪽으로 올린다.
 
-헬퍼 함수 일부는 빌더 미리보기(`_stream_preview_turn`)도 그대로 부른다."""
+미리보기판은 판정 헬퍼(`_await_stat_judgment`·`_endings_to_judge`·`_judge_media_cell`)를 방 판정과 그대로 함께 쓰고, 호출
+위치(`preview_*`)와 판정 주어("미리보기")만 다르다. 미리보기 칸 판정의 프롬프트 렌더 경고는 원래 라우터 안에 있던 것이라
+부르는 쪽이 넘긴 로거로 남긴다(로거 이름으로 거르는 쪽이 옮긴 뒤에도 같은 이름을 읽는다)."""
 
 import logging
 import uuid
@@ -52,8 +56,19 @@ from api.chat.schemas import (
     EndingRuleGroupItem,
     EndingRuleItem,
     EndingRuleListItem,
+    PreviewSessionState,
 )
 from api.chat.stats import apply_rule_judgment
+from api.chat.turn_prompt import preview_ending_rule_list_item
+from api.content.media_tags import normalize_media_tags
+from api.content.schemas import (
+    CharacterDraftPayload,
+    EndingDraftItem,
+    MediaTagImage,
+    StartingSetupDraftItem,
+    StatDefDraftItem,
+    StoryDraftPayload,
+)
 from api.core.config import settings
 from api.core.sentry import capture_dependency_failure
 from api.db.models.character import SituationalImage
@@ -77,8 +92,8 @@ logger = logging.getLogger(__name__)
 
 
 def _llm_dependency_tag(exc: LLMClientError | PromptRenderError | PromptSetNotFoundError) -> str:
-    """생성·판정 흡수 지점(이 모듈의 판정 헬퍼, 턴 골격 `chat/turn_engine.py` 의 생성·판정, `chat/router.py` 의 생성
-    프롬프트 렌더·미리보기)이 공유하는 승격 태그
+    """생성·판정 흡수 지점(이 모듈의 판정 헬퍼, 턴 골격 `chat/turn_engine.py` 의 생성·판정, `chat/router.py` 의 방·미리보기
+    생성 프롬프트 렌더)이 공유하는 승격 태그
     분류다. `PromptRenderError`는 외부 의존이 아니라 우리 템플릿 결함이라 별도 태그로 갈라
     묶어 본다. 생성 세트가 없는 것(`PromptSetNotFoundError`)도 같은 묶음이다 — 둘 다 어드민 문안 쪽을 고쳐야 한다. LLM 실패는 공급자와 쿼터 소진(429) 여부로 가른다(`llm/client.py` 의 `dependency_tag`) —
     안 갈라 붙이면 승격된 이벤트가 행동 가능하지 않다."""
@@ -481,19 +496,126 @@ async def _judge_media_cell(
         return None
 
 
+def _preview_stat_def(item: StatDefDraftItem) -> StatDef:
+    return StatDef(
+        entity_id=item.id,
+        name=item.name,
+        description=item.description,
+        min_value=item.min_value,
+        max_value=item.max_value,
+        initial_value=item.initial_value,
+        per_turn_delta=item.per_turn_delta,
+    )
+
+
+def _preview_stat_rules(item: StatDefDraftItem) -> list[StatRule]:
+    """초안 스탯의 규칙을 판정 빌더가 읽는 인메모리 `StatRule` 로. 배열 순서가 순서다(저장과 같다)."""
+    return [
+        StatRule(entity_id=rule.id, condition=rule.condition, delta=rule.delta, order=order)
+        for order, rule in enumerate(item.rules)
+    ]
+
+
+def _preview_cells_by_name(
+    payload: StoryDraftPayload, media_images: dict[uuid.UUID, MediaTagImage]
+) -> dict[tuple[str, str], uuid.UUID]:
+    """페이로드 미디어 북을 (인물 이름, 장면 이름) → 칸 id 로. 축이 없는 칸은 이름이 없어 빠진다(실채팅의
+    `load_media_cells_by_name` 과 같은 규칙). 그림을 서명하지 못한 칸(남의 자산·준비 안 된 자산)도 빼서 그 칸의
+    태그는 없는 이름처럼 지워진다 — 빈칸 자리를 남기지 않는다."""
+    if payload.media_book is None:
+        return {}
+    people = {person.id: person.name for person in payload.media_book.people}
+    scenes = {scene.id: scene.name for scene in payload.media_book.scenes}
+    return {
+        (people[cell.person_id], scenes[cell.scene_id]): cell.id
+        for cell in payload.media_book.cells
+        if cell.person_id in people and cell.scene_id in scenes and cell.id in media_images
+    }
+
+
+def _prepare_preview_media_cell_judgment(
+    payload: StoryDraftPayload,
+    media_images: dict[uuid.UUID, MediaTagImage],
+    *,
+    prompt_set: PromptSet,
+    prompt_sections: list[PromptSection],
+    history: list[ChatMessage],
+    user_message: str,
+    assistant_message: str,
+    names: PromptNames,
+    log: logging.Logger,
+) -> _MediaCellJudgment | None:
+    """미리보기 칸 판정 — 실채팅 `_prepare_media_cell_judgment` 의 페이로드판. 후보는 노출 제외가 아니고 그림을
+    서명한 칸(요청자 소유·준비 완료 — 라우터의 `_preview_media_book_dependency`)이며 빌더 축 순서다. 렌더 실패는 그림만
+    포기하고, 그 경고는 부르는 쪽 로거(`log`)로 남긴다."""
+    if payload.media_book is None:
+        return None
+    people = {person.id: (order, person.name) for order, person in enumerate(payload.media_book.people)}
+    scenes = {scene.id: (order, scene.name) for order, scene in enumerate(payload.media_book.scenes)}
+    candidates = [
+        MediaCellCandidate(
+            entity_id=cell.id,
+            person=people[cell.person_id][1],
+            scene=scenes[cell.scene_id][1],
+            situation_description=cell.situation_description,
+        )
+        for cell in sorted(
+            payload.media_book.cells, key=lambda cell: (people[cell.person_id][0], scenes[cell.scene_id][0])
+        )
+        if not cell.exclude_from_chat and cell.id in media_images
+    ]
+    if not candidates:
+        return None
+    try:
+        prompt = build_image_judgment_prompt(
+            prompt_set=prompt_set,
+            sections=prompt_sections,
+            scope="story",
+            assistant_label=prompt_set.story_assistant_label,
+            image_lines=media_cell_image_lines(candidates, names=names),
+            history=history,
+            user_message=user_message,
+            assistant_message=assistant_message,
+            names=names,
+        )
+    except PromptRenderError as exc:
+        log.warning("미리보기 미디어 북 칸 판정 프롬프트 렌더 실패 — 이번 턴은 그림 없이 진행한다: %s", exc)
+        capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+        return None
+    return _MediaCellJudgment(prompt=prompt, candidate_ids={cell.entity_id for cell in candidates})
+
+
+def _preview_ending_reached_event(
+    payload: StoryDraftPayload,
+    media_images: dict[uuid.UUID, MediaTagImage],
+    ending_id: uuid.UUID,
+    epilogue: str | None,
+) -> ChatEndingReachedEvent:
+    """미리보기 엔딩 이벤트. 에필로그는 페이로드 그대로라 이름 형태 태그다 — 실채팅처럼 칸 id 형태로 바꾸고(없는
+    이름은 지운다) 가리키는 칸의 그림 맵을 싣는다."""
+    if not epilogue:
+        return ChatEndingReachedEvent(ending_id=ending_id, epilogue=epilogue)
+    epilogue_text, refs = normalize_media_tags(epilogue, _preview_cells_by_name(payload, media_images))
+    return ChatEndingReachedEvent(
+        ending_id=ending_id,
+        epilogue=epilogue_text,
+        media_tag_images={cell_id: media_images[cell_id] for cell_id in refs if cell_id in media_images},
+    )
+
+
 @dataclass
 class JudgmentContext:
-    """한 턴의 판정들이 함께 읽는 입력. `stat_after` 만 판정 사이에 쓴다 — 스탯 판정의 반영 결과를 엔딩 판정이 읽는다."""
+    """한 턴의 판정들이 함께 읽는 입력. `stat_after` 만 판정 사이에 쓴다 — 스탯 판정의 반영 결과를 엔딩 판정이 읽는다.
+    방(과 그 세션)·초안처럼 판정마다 출처가 다른 입력은 판정의 생성자가 받는다."""
 
-    db: AsyncSession
-    room: ChatRoom
     prompt_set: PromptSet
     prompt_sections: list[PromptSection]
     history: list[ChatMessage]
     user_message: str
     assistant_message: str
     names: PromptNames
-    # 이번 턴 번호(새 턴은 쓰기 구간이 올릴 `turn_count`, 재생성은 지금 `turn_count`) — 엔딩 판정 차례를 정한다.
+    # 이번 턴 번호(새 턴은 쓰기 구간이 올릴 `turn_count`, 재생성은 지금 `turn_count`, 미리보기는 세션의 `turn_count` + 1)
+    # — 엔딩 판정 차례를 정한다.
     turn: int
     log_subject: str
     stat_after: dict[str, float] | None = None
@@ -510,12 +632,14 @@ class TurnJudgmentResult:
     stat_change_events: list[ChatStatChangeEvent] = field(default_factory=list)
     judged_cell_id: uuid.UUID | None = None
     matched_image: SituationalImage | None = None
+    # 방 엔딩만 채운다 — 미리보기 엔딩은 DB 행이 없어 이벤트만 남긴다.
     reached_ending: Ending | None = None
     ending_reached_event: ChatEndingReachedEvent | None = None
 
 
 class TurnJudgment(Protocol):
-    """새 턴 판정 하나. `prepare` 는 요청 세션으로 읽고, `judge` 는 LLM 만 부르고, `apply` 는 결과를 옮긴다.
+    """턴 판정 하나. `prepare` 는 입력을 읽고 프롬프트를 조립하고(방은 요청 세션으로 읽는다), `judge` 는 LLM 만 부르고,
+    `apply` 는 결과를 옮긴다.
 
     `wave` 는 부르는 차례다 — 1 은 반납 뒤 함께 부르고(하나뿐이면 바로 기다린다) 곧바로 반영하며, 2 는 그 반영을 읽어야
     하는 판정이라 그 뒤에 목록 순서대로 하나씩 부르고 반영한다."""
@@ -529,6 +653,23 @@ class TurnJudgment(Protocol):
     def apply(self, ctx: JudgmentContext, result: TurnJudgmentResult) -> None: ...
 
 
+def _apply_stat_result(
+    ctx: JudgmentContext,
+    result: TurnJudgmentResult,
+    current: dict[str, float],
+    updated: dict[str, float] | None,
+) -> None:
+    """스탯 판정의 반영 — 엔딩 판정이 읽을 값을 넘기고, 바뀐 스탯만 쓸 값과 `statChange` 이벤트(반영 결과의 키 순서)로
+    옮긴다. 방·미리보기 스탯 판정이 함께 쓴다."""
+    ctx.stat_after = updated
+    if updated is None:
+        return
+    for stat_id, new_value in updated.items():
+        if new_value != current.get(stat_id):
+            result.stat_writes[stat_id] = new_value
+            result.stat_change_events.append(ChatStatChangeEvent(stat_id=stat_id, new_value=new_value))
+
+
 class StatJudgment:
     """스토리 스탯 규칙 판정. 최초 엔딩 전에만 돈다. 준비의 DB 읽기·렌더 실패는 흡수하지 않는다(DB 예외는 부르는 쪽의
     판정 `except` 도 지나 스트림을 끊고, 렌더 실패는 그 `except` 가 받는다). LLM 실패는 `_await_stat_judgment` 가 흡수해
@@ -536,7 +677,9 @@ class StatJudgment:
 
     wave = 1
 
-    def __init__(self, setup: StartingSetup) -> None:
+    def __init__(self, db: AsyncSession, room: ChatRoom, setup: StartingSetup) -> None:
+        self._db = db
+        self._room = room
         self._setup = setup
         self._stat_defs: list[StatDef] = []
         self._stat_rows: dict[str, ChatRoomStat] = {}
@@ -545,16 +688,16 @@ class StatJudgment:
         self._updated: dict[str, float] | None = None
 
     async def prepare(self, ctx: JudgmentContext) -> None:
-        if ctx.room.ending_reached:
+        if self._room.ending_reached:
             return
         self._stat_defs, self._stat_rows, self._current_stats = await load_room_stats(
-            ctx.db, ctx.room.id, self._setup.id
+            self._db, self._room.id, self._setup.id
         )
         self._request = prepare_stat_judgment(
             prompt_set=ctx.prompt_set,
             sections=ctx.prompt_sections,
             stat_defs=self._stat_defs,
-            rules_by_stat_id=await _load_stat_rules(ctx.db, self._stat_defs),
+            rules_by_stat_id=await _load_stat_rules(self._db, self._stat_defs),
             user_message=ctx.user_message,
             assistant_message=ctx.assistant_message,
             names=ctx.names,
@@ -566,7 +709,7 @@ class StatJudgment:
         self._updated = await _await_stat_judgment(
             llm_client,
             self._request,
-            LLMCallContext(call_site="chat_stat_judgment", user_id=ctx.room.user_id, room_id=ctx.room.id),
+            LLMCallContext(call_site="chat_stat_judgment", user_id=self._room.user_id, room_id=self._room.id),
             log_subject=ctx.log_subject,
             current_stats=self._current_stats,
             stat_defs=self._stat_defs,
@@ -574,13 +717,7 @@ class StatJudgment:
 
     def apply(self, ctx: JudgmentContext, result: TurnJudgmentResult) -> None:
         result.stat_rows = self._stat_rows
-        ctx.stat_after = self._updated
-        if self._updated is None:
-            return
-        for stat_id, new_value in self._updated.items():
-            if new_value != self._current_stats.get(stat_id):
-                result.stat_writes[stat_id] = new_value
-                result.stat_change_events.append(ChatStatChangeEvent(stat_id=stat_id, new_value=new_value))
+        _apply_stat_result(ctx, result, self._current_stats, self._updated)
 
 
 class EndingJudgment:
@@ -592,15 +729,17 @@ class EndingJudgment:
 
     wave = 2
 
-    def __init__(self, setup: StartingSetup) -> None:
+    def __init__(self, db: AsyncSession, room: ChatRoom, setup: StartingSetup) -> None:
+        self._db = db
+        self._room = room
         self._setup = setup
         self._due: _DueEndings | None = None
         self._reached: Ending | None = None
 
     async def prepare(self, ctx: JudgmentContext) -> None:
-        if ctx.room.ending_reached:
+        if self._room.ending_reached:
             return
-        self._due = await _load_due_endings(ctx.db, ctx.room, self._setup, ctx.history, ctx.turn)
+        self._due = await _load_due_endings(self._db, self._room, self._setup, ctx.history, ctx.turn)
 
     async def judge(self, llm_client: LLMClient, ctx: JudgmentContext) -> None:
         # 엔딩 판정: 엔딩별 turn_count_gate를 넘긴 시점부터 5턴마다만 호출하고, 그 외 턴은 스킵한다.
@@ -631,7 +770,9 @@ class EndingJudgment:
             ending_judgment = await llm_client.generate_structured(
                 ending_judgment_prompt,
                 EndingJudgmentResult,
-                usage=LLMCallContext(call_site="chat_ending_judgment", user_id=ctx.room.user_id, room_id=ctx.room.id),
+                usage=LLMCallContext(
+                    call_site="chat_ending_judgment", user_id=self._room.user_id, room_id=self._room.id
+                ),
             )
             if not ending_judgment.triggered:
                 continue
@@ -653,14 +794,16 @@ class MediaCellJudgment:
 
     wave = 1
 
-    def __init__(self) -> None:
+    def __init__(self, db: AsyncSession, room: ChatRoom) -> None:
+        self._db = db
+        self._room = room
         self._judgment: _MediaCellJudgment | None = None
         self._cell_id: uuid.UUID | None = None
 
     async def prepare(self, ctx: JudgmentContext) -> None:
         self._judgment = await _prepare_media_cell_judgment(
-            ctx.db,
-            ctx.room,
+            self._db,
+            self._room,
             prompt_set=ctx.prompt_set,
             prompt_sections=ctx.prompt_sections,
             history=ctx.history,
@@ -675,7 +818,7 @@ class MediaCellJudgment:
         self._cell_id = await _judge_media_cell(
             llm_client,
             self._judgment,
-            LLMCallContext(call_site="chat_media_book_image", user_id=ctx.room.user_id, room_id=ctx.room.id),
+            LLMCallContext(call_site="chat_media_book_image", user_id=self._room.user_id, room_id=self._room.id),
             log_subject=ctx.log_subject,
         )
 
@@ -689,14 +832,16 @@ class SituationalImageJudgment:
 
     wave = 1
 
-    def __init__(self) -> None:
+    def __init__(self, db: AsyncSession, room: ChatRoom) -> None:
+        self._db = db
+        self._room = room
         self._judgment: _SituationalImageJudgment | None = None
         self._matched: SituationalImage | None = None
 
     async def prepare(self, ctx: JudgmentContext) -> None:
         self._judgment = await _prepare_situational_image_judgment(
-            ctx.db,
-            ctx.room,
+            self._db,
+            self._room,
             prompt_set=ctx.prompt_set,
             prompt_sections=ctx.prompt_sections,
             history=ctx.history,
@@ -708,25 +853,220 @@ class SituationalImageJudgment:
     async def judge(self, llm_client: LLMClient, ctx: JudgmentContext) -> None:
         if self._judgment is None:
             return
-        self._matched = await _judge_situational_image(llm_client, self._judgment, ctx.room)
+        self._matched = await _judge_situational_image(llm_client, self._judgment, self._room)
 
     def apply(self, ctx: JudgmentContext, result: TurnJudgmentResult) -> None:
         result.matched_image = self._matched
 
 
-def new_turn_judgments(setup: StartingSetup | None) -> list[TurnJudgment]:
+class PreviewStatJudgment:
+    """미리보기 스탯 규칙 판정 — `StatJudgment` 의 초안판. 스탯 정의·규칙은 초안에서, 지금 값은 세션에서 읽는다(DB 읽기
+    없음). 최초 엔딩 전에만 돈다. 준비의 렌더 실패는 흡수하지 않고(부르는 쪽 `except` 가 받아 칸 판정까지 함께 버린다),
+    LLM 실패는 `_await_stat_judgment` 가 흡수해 엔딩 판정도 건너뛴다. 스탯 행이 없어 `stat_rows` 는 비워 둔다."""
+
+    wave = 1
+
+    def __init__(
+        self, setup: StartingSetupDraftItem, stats: dict[str, float], *, ending_reached: bool, user_id: uuid.UUID
+    ) -> None:
+        self._setup = setup
+        self._current_stats = stats
+        self._ending_reached = ending_reached
+        self._user_id = user_id
+        self._stat_defs: list[StatDef] = []
+        self._request: StatJudgmentRequest | None = None
+        self._updated: dict[str, float] | None = None
+
+    async def prepare(self, ctx: JudgmentContext) -> None:
+        if self._ending_reached:
+            return
+        self._stat_defs = [_preview_stat_def(stat_def) for stat_def in self._setup.stat_defs]
+        self._request = prepare_stat_judgment(
+            prompt_set=ctx.prompt_set,
+            sections=ctx.prompt_sections,
+            stat_defs=self._stat_defs,
+            rules_by_stat_id={stat_def.id: _preview_stat_rules(stat_def) for stat_def in self._setup.stat_defs},
+            user_message=ctx.user_message,
+            assistant_message=ctx.assistant_message,
+            names=ctx.names,
+        )
+
+    async def judge(self, llm_client: LLMClient, ctx: JudgmentContext) -> None:
+        if self._request is None:
+            return
+        self._updated = await _await_stat_judgment(
+            llm_client,
+            self._request,
+            LLMCallContext(call_site="preview_stat_judgment", user_id=self._user_id, room_id=None),
+            log_subject=ctx.log_subject,
+            current_stats=self._current_stats,
+            stat_defs=self._stat_defs,
+        )
+
+    def apply(self, ctx: JudgmentContext, result: TurnJudgmentResult) -> None:
+        _apply_stat_result(ctx, result, self._current_stats, self._updated)
+
+
+class PreviewEndingJudgment:
+    """미리보기 엔딩 판정 — `EndingJudgment` 의 초안판. 엔딩·규칙은 초안에서 읽고 요약이 없다(빈 요약으로 판정한다). 읽을
+    DB 가 없어 판정 차례와 규칙 변환까지 `judge` 에서 한다. 렌더·LLM 실패는 흡수하지 않는다(방 엔딩 판정과 같다).
+
+    발동한 엔딩의 이벤트는 에필로그의 이름 형태 태그를 칸 id 형태로 바꿔 싣는다 — 미리보기에는 커밋 뒤 조회가 없어 반영
+    단계에서 만든다."""
+
+    wave = 2
+
+    def __init__(
+        self,
+        setup: StartingSetupDraftItem,
+        payload: StoryDraftPayload,
+        media_images: dict[uuid.UUID, MediaTagImage],
+        *,
+        user_id: uuid.UUID,
+    ) -> None:
+        self._setup = setup
+        self._payload = payload
+        self._media_images = media_images
+        self._user_id = user_id
+        self._reached: EndingDraftItem | None = None
+
+    async def prepare(self, ctx: JudgmentContext) -> None:
+        return None
+
+    async def judge(self, llm_client: LLMClient, ctx: JudgmentContext) -> None:
+        # 실채팅과 같은 순서 함수로 판정 차례·규칙 통과 엔딩의 판정 순서를 정한다.
+        if ctx.stat_after is None:
+            return
+        for ending in _endings_to_judge(
+            [
+                (
+                    ending,
+                    ending.id,
+                    ending.priority_stat_id,
+                    [preview_ending_rule_list_item(item) for item in ending.stat_rules],
+                )
+                for ending in self._setup.endings
+                if is_ending_check_due(ctx.turn, ending.turn_count_gate)
+            ],
+            ctx.stat_after,
+            log_subject=ctx.log_subject,
+        ):
+            ending_judgment_prompt = build_ending_judgment_prompt(
+                prompt_set=ctx.prompt_set,
+                sections=ctx.prompt_sections,
+                judgment_prompt=ending.judgment_prompt,
+                history=ctx.history,
+                user_message=ctx.user_message,
+                assistant_message=ctx.assistant_message,
+                memory_summary="",
+                names=ctx.names,
+            )
+            ending_judgment = await llm_client.generate_structured(
+                ending_judgment_prompt,
+                EndingJudgmentResult,
+                usage=LLMCallContext(call_site="preview_ending_judgment", user_id=self._user_id, room_id=None),
+            )
+            if not ending_judgment.triggered:
+                continue
+            self._reached = ending
+            break
+
+    def apply(self, ctx: JudgmentContext, result: TurnJudgmentResult) -> None:
+        if self._reached is None:
+            return
+        result.ending_reached_event = _preview_ending_reached_event(
+            self._payload, self._media_images, self._reached.id, self._reached.epilogue
+        )
+
+
+class PreviewMediaCellJudgment:
+    """미리보기 미디어 북 칸 판정 — `MediaCellJudgment` 의 초안판. 엔딩 여부·시작설정 유무와 무관하게 돈다. 준비와 판정이
+    자기 실패를 전부 흡수해 그림만 포기한다. 노출(보관함 해금)은 기록하지 않는다."""
+
+    wave = 1
+
+    def __init__(
+        self,
+        payload: StoryDraftPayload,
+        media_images: dict[uuid.UUID, MediaTagImage],
+        *,
+        user_id: uuid.UUID,
+        log: logging.Logger,
+    ) -> None:
+        self._payload = payload
+        self._media_images = media_images
+        self._user_id = user_id
+        self._log = log
+        self._judgment: _MediaCellJudgment | None = None
+        self._cell_id: uuid.UUID | None = None
+
+    async def prepare(self, ctx: JudgmentContext) -> None:
+        self._judgment = _prepare_preview_media_cell_judgment(
+            self._payload,
+            self._media_images,
+            prompt_set=ctx.prompt_set,
+            prompt_sections=ctx.prompt_sections,
+            history=ctx.history,
+            user_message=ctx.user_message,
+            assistant_message=ctx.assistant_message,
+            names=ctx.names,
+            log=self._log,
+        )
+
+    async def judge(self, llm_client: LLMClient, ctx: JudgmentContext) -> None:
+        if self._judgment is None:
+            return
+        self._cell_id = await _judge_media_cell(
+            llm_client,
+            self._judgment,
+            LLMCallContext(call_site="preview_media_book_image", user_id=self._user_id, room_id=None),
+            log_subject=ctx.log_subject,
+        )
+
+    def apply(self, ctx: JudgmentContext, result: TurnJudgmentResult) -> None:
+        result.judged_cell_id = self._cell_id
+
+
+def new_turn_judgments(db: AsyncSession, room: ChatRoom, setup: StartingSetup | None) -> list[TurnJudgment]:
     """새 턴이 할 판정과 그 준비 순서. 스토리는 스탯 → 엔딩 → 칸 순으로 준비하고 스탯·칸을 함께 부른 뒤 엔딩을
-    부른다(함께 부르는 순서도 이 목록 순서다). 캐릭터는 상황 이미지 하나다."""
+    부른다(함께 부르는 순서도 이 목록 순서다). 캐릭터는 상황 이미지 하나다. 판정은 요청 세션(`db`)으로 방을 읽는다."""
     if setup is not None:
-        return [StatJudgment(setup), EndingJudgment(setup), MediaCellJudgment()]
-    return [SituationalImageJudgment()]
+        return [StatJudgment(db, room, setup), EndingJudgment(db, room, setup), MediaCellJudgment(db, room)]
+    return [SituationalImageJudgment(db, room)]
 
 
-def regenerate_judgments(setup: StartingSetup | None) -> list[TurnJudgment]:
+def regenerate_judgments(db: AsyncSession, room: ChatRoom, setup: StartingSetup | None) -> list[TurnJudgment]:
     """재생성이 할 판정 — 그림 판정만이다(스토리는 칸, 캐릭터는 상황 이미지). 스탯·엔딩 판정은 하지 않는다: 원 응답 때
     이미 한 번 반영됐고, 그 반영분을 되돌릴 턴별 기록이 없어 다시 하면 같은 턴이 두 번 반영된다. 그림 판정은 다시 한다 —
     노출 기록은 첫 노출만 남겨 멱등이라 중복이 생기지 않고, 새 응답 글에 맞는 그림이 붙는다. 스토리 칸 판정은 엔딩 뒤에도
     한다(새 턴과 같다)."""
     if setup is not None:
-        return [MediaCellJudgment()]
-    return [SituationalImageJudgment()]
+        return [MediaCellJudgment(db, room)]
+    return [SituationalImageJudgment(db, room)]
+
+
+def preview_judgments(
+    state: PreviewSessionState,
+    media_images: dict[uuid.UUID, MediaTagImage],
+    user_id: uuid.UUID,
+    *,
+    log: logging.Logger,
+) -> list[TurnJudgment]:
+    """미리보기 턴이 할 판정과 그 준비 순서 — 새 턴과 같은 순서(스탯 → 엔딩 → 칸 준비, 스탯·칸을 함께 부른 뒤 엔딩)다.
+    스토리 초안은 첫 시작설정으로 판정하고(미리보기는 그 시작설정으로만 시작한다), 시작설정이 없으면 칸 판정만 한다.
+    캐릭터 초안은 판정이 없다(상황 이미지 매칭은 미리보기에서 돌지 않는다).
+
+    스탯의 지금 값과 엔딩 도달 여부는 여기서 세션을 읽어 둔다 — 판정은 세션을 읽지 않고, 세션은 판정 뒤 쓰기 단계에서만
+    바뀐다. `log` 는 칸 판정 프롬프트 렌더 경고의 로거다."""
+    payload = state.payload
+    if isinstance(payload, CharacterDraftPayload):
+        return []
+    judgments: list[TurnJudgment] = []
+    setup = payload.starting_setups[0] if payload.starting_setups else None
+    if setup is not None:
+        judgments += [
+            PreviewStatJudgment(setup, dict(state.stats), ending_reached=state.ending_reached, user_id=user_id),
+            PreviewEndingJudgment(setup, payload, media_images, user_id=user_id),
+        ]
+    judgments.append(PreviewMediaCellJudgment(payload, media_images, user_id=user_id, log=log))
+    return judgments

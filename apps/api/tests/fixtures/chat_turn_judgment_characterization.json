@@ -63,6 +63,196 @@
       "turnCount": 2
     }
   },
+  "ending-judgment-error/preview": {
+    "events": [
+      {
+        "type": "token"
+      },
+      {
+        "newValue": 90.0,
+        "stat": "체력",
+        "type": "statChange"
+      },
+      {
+        "hasImageUrl": true,
+        "imageId": "<cell>",
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "preview_generate",
+        null
+      ],
+      [
+        "generate_structured",
+        "preview_stat_judgment",
+        null
+      ],
+      [
+        "generate_structured",
+        "preview_media_book_image",
+        null
+      ],
+      [
+        "generate_structured",
+        "preview_ending_judgment",
+        "해피엔딩"
+      ]
+    ],
+    "logs": [
+      [
+        "api.chat.router",
+        "WARNING",
+        "미리보기 판정 실패 — 이번 턴의 판정을 건너뛴다: 판정 실패"
+      ]
+    ],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "endingReached": false,
+      "messages": [
+        [
+          "assistant",
+          null
+        ],
+        [
+          "user",
+          null
+        ],
+        [
+          "assistant",
+          "<cell>"
+        ]
+      ],
+      "stats": [
+        [
+          "체력",
+          "90.0"
+        ]
+      ],
+      "turnCount": 1
+    }
+  },
+  "ending-rule-on-missing-stat/preview": {
+    "events": [
+      {
+        "type": "token"
+      },
+      {
+        "newValue": 90.0,
+        "stat": "체력",
+        "type": "statChange"
+      },
+      {
+        "hasImageUrl": true,
+        "imageId": "<cell>",
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "preview_generate",
+        null
+      ],
+      [
+        "generate_structured",
+        "preview_stat_judgment",
+        null
+      ],
+      [
+        "generate_structured",
+        "preview_media_book_image",
+        null
+      ]
+    ],
+    "logs": [
+      [
+        "api.chat.turn_judgments",
+        "WARNING",
+        "미리보기 엔딩 해피엔딩 의 규칙이 값이 없는 스탯 <missing-stat> 을 가리킨다 — 그 항목은 거짓으로 본다"
+      ]
+    ],
+    "sentry": [],
+    "state": {
+      "endingReached": false,
+      "messages": [
+        [
+          "assistant",
+          null
+        ],
+        [
+          "user",
+          null
+        ],
+        [
+          "assistant",
+          "<cell>"
+        ]
+      ],
+      "stats": [
+        [
+          "체력",
+          "90.0"
+        ]
+      ],
+      "turnCount": 1
+    }
+  },
+  "generation-error/preview": {
+    "events": [
+      {
+        "message": "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "type": "error"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "preview_generate",
+        null
+      ]
+    ],
+    "logs": [
+      [
+        "api.chat.router",
+        "WARNING",
+        "미리보기 메시지 생성 실패: 생성 실패"
+      ]
+    ],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "endingReached": false,
+      "messages": [
+        [
+          "assistant",
+          null
+        ],
+        [
+          "user",
+          null
+        ]
+      ],
+      "stats": [
+        [
+          "체력",
+          "50.0"
+        ]
+      ],
+      "turnCount": 0
+    }
+  },
   "generation-error/regenerate": {
     "events": [
       {
@@ -103,6 +293,48 @@
       "turnCount": 1
     }
   },
+  "generation-prompt-render-failure/preview": {
+    "events": [
+      {
+        "message": "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "type": "error"
+      }
+    ],
+    "llm": [],
+    "logs": [
+      [
+        "api.chat.router",
+        "WARNING",
+        "미리보기 프롬프트 렌더 실패: channel='generation' slot='prologue' variant='' body 렌더 실패: KeyError('characterization_missing_value')"
+      ]
+    ],
+    "sentry": [
+      [
+        "PromptRenderError",
+        "prompt_render"
+      ]
+    ],
+    "state": {
+      "endingReached": false,
+      "messages": [
+        [
+          "assistant",
+          null
+        ],
+        [
+          "user",
+          null
+        ]
+      ],
+      "stats": [
+        [
+          "체력",
+          "50.0"
+        ]
+      ],
+      "turnCount": 0
+    }
+  },
   "generation-prompt-render-failure/regenerate": {
     "events": [
       {
@@ -132,6 +364,82 @@
         [
           "<id>",
           "73"
+        ]
+      ],
+      "turnCount": 1
+    }
+  },
+  "media-judgment-error/preview": {
+    "events": [
+      {
+        "type": "token"
+      },
+      {
+        "newValue": 90.0,
+        "stat": "체력",
+        "type": "statChange"
+      },
+      {
+        "hasImageUrl": false,
+        "imageId": null,
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "preview_generate",
+        null
+      ],
+      [
+        "generate_structured",
+        "preview_stat_judgment",
+        null
+      ],
+      [
+        "generate_structured",
+        "preview_media_book_image",
+        null
+      ],
+      [
+        "generate_structured",
+        "preview_ending_judgment",
+        "해피엔딩"
+      ]
+    ],
+    "logs": [
+      [
+        "api.chat.turn_judgments",
+        "WARNING",
+        "미리보기 미디어 북 칸 판정 실패 — 이번 턴은 그림 없이 진행한다: 판정 실패"
+      ]
+    ],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "endingReached": false,
+      "messages": [
+        [
+          "assistant",
+          null
+        ],
+        [
+          "user",
+          null
+        ],
+        [
+          "assistant",
+          null
+        ]
+      ],
+      "stats": [
+        [
+          "체력",
+          "90.0"
         ]
       ],
       "turnCount": 1
@@ -181,6 +489,77 @@
         [
           "<id>",
           "73"
+        ]
+      ],
+      "turnCount": 1
+    }
+  },
+  "media-judgment-prompt-render-failure/preview": {
+    "events": [
+      {
+        "type": "token"
+      },
+      {
+        "newValue": 90.0,
+        "stat": "체력",
+        "type": "statChange"
+      },
+      {
+        "hasImageUrl": false,
+        "imageId": null,
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "preview_generate",
+        null
+      ],
+      [
+        "generate_structured",
+        "preview_stat_judgment",
+        null
+      ],
+      [
+        "generate_structured",
+        "preview_ending_judgment",
+        "해피엔딩"
+      ]
+    ],
+    "logs": [
+      [
+        "api.chat.router",
+        "WARNING",
+        "미리보기 미디어 북 칸 판정 프롬프트 렌더 실패 — 이번 턴은 그림 없이 진행한다: channel='image_judgment' slot='image_list_intro' variant='' body 렌더 실패: KeyError('characterization_missing_value')"
+      ]
+    ],
+    "sentry": [
+      [
+        "PromptRenderError",
+        "prompt_render"
+      ]
+    ],
+    "state": {
+      "endingReached": false,
+      "messages": [
+        [
+          "assistant",
+          null
+        ],
+        [
+          "user",
+          null
+        ],
+        [
+          "assistant",
+          null
+        ]
+      ],
+      "stats": [
+        [
+          "체력",
+          "90.0"
         ]
       ],
       "turnCount": 1
@@ -323,6 +702,74 @@
       "turnCount": 1
     }
   },
+  "preview-save-fails/preview": {
+    "events": [
+      {
+        "type": "token"
+      },
+      {
+        "newValue": 90.0,
+        "stat": "체력",
+        "type": "statChange"
+      },
+      {
+        "hasImageUrl": true,
+        "imageId": "<cell>",
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "preview_generate",
+        null
+      ],
+      [
+        "generate_structured",
+        "preview_stat_judgment",
+        null
+      ],
+      [
+        "generate_structured",
+        "preview_media_book_image",
+        null
+      ],
+      [
+        "generate_structured",
+        "preview_ending_judgment",
+        "해피엔딩"
+      ]
+    ],
+    "logs": [
+      [
+        "api.chat.router",
+        "WARNING",
+        "미리보기 세션 <session> 상태 저장 실패 — 이번 턴은 다음 조회에 반영되지 않는다: 미리보기 세션 저장 실패"
+      ]
+    ],
+    "sentry": [
+      [
+        "RedisError",
+        "redis"
+      ]
+    ],
+    "state": {
+      "endingReached": false,
+      "messages": [
+        [
+          "assistant",
+          null
+        ]
+      ],
+      "stats": [
+        [
+          "체력",
+          "50.0"
+        ]
+      ],
+      "turnCount": 0
+    }
+  },
   "situational-image-judgment-error/regenerate-character": {
     "events": [
       {
@@ -446,6 +893,113 @@
       "ending": null,
       "endingReached": false,
       "lastImage": null,
+      "stats": [],
+      "turnCount": 1
+    }
+  },
+  "stat-judgment-error/preview": {
+    "events": [
+      {
+        "type": "token"
+      },
+      {
+        "hasImageUrl": true,
+        "imageId": "<cell>",
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "preview_generate",
+        null
+      ],
+      [
+        "generate_structured",
+        "preview_stat_judgment",
+        null
+      ],
+      [
+        "generate_structured",
+        "preview_media_book_image",
+        null
+      ]
+    ],
+    "logs": [
+      [
+        "api.chat.turn_judgments",
+        "WARNING",
+        "미리보기 스탯 판정 실패 — 이번 턴의 스탯·엔딩 판정을 건너뛴다: 판정 실패"
+      ]
+    ],
+    "sentry": [
+      [
+        "LLMClientError",
+        "gemini"
+      ]
+    ],
+    "state": {
+      "endingReached": false,
+      "messages": [
+        [
+          "assistant",
+          null
+        ],
+        [
+          "user",
+          null
+        ],
+        [
+          "assistant",
+          "<cell>"
+        ]
+      ],
+      "stats": [
+        [
+          "체력",
+          "50.0"
+        ]
+      ],
+      "turnCount": 1
+    }
+  },
+  "story-without-setup-with-cell/preview": {
+    "events": [
+      {
+        "type": "token"
+      },
+      {
+        "hasImageUrl": true,
+        "imageId": "<cell>",
+        "type": "done"
+      }
+    ],
+    "llm": [
+      [
+        "generate",
+        "preview_generate",
+        null
+      ],
+      [
+        "generate_structured",
+        "preview_media_book_image",
+        null
+      ]
+    ],
+    "logs": [],
+    "sentry": [],
+    "state": {
+      "endingReached": false,
+      "messages": [
+        [
+          "user",
+          null
+        ],
+        [
+          "assistant",
+          "<cell>"
+        ]
+      ],
       "stats": [],
       "turnCount": 1
     }

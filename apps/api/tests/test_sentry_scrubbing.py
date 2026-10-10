@@ -173,7 +173,7 @@ async def test_password_reset_email_body_local_variable_is_not_captured() -> Non
 
 
 async def test_chat_generation_prompt_local_variables_are_not_captured() -> None:
-    """`chat/turn_engine.py`의 `_stream_generated_tokens`(`run_turn`/`_stream_preview_turn`이 공유 — 보내기·수정·재생성은
+    """`chat/turn_engine.py`의 `_stream_generated_tokens`(`run_turn` 이 부른다 — 보내기·수정·재생성·미리보기가 모두
     `run_turn` 을 지난다)는 예외를 삼키지 않고 그대로 올린다 — 채팅 프롬프트·바닥
     지시문이 `prompt`/`system_instruction` 지역변수로 산다."""
     secret_prompt = (
