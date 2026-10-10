@@ -6,7 +6,7 @@ describe("previewEmptyHint", () => {
   it.each([
     ["메시지가 없다", []],
     ["인트로가 빈 첫 메시지 하나뿐이다", [{ content: "" }]],
-    ["첫 메시지가 공백뿐이다", [{ content: " \n　" }]],
+    ["첫 메시지가 공백뿐이다", [{ content: " \n\u3000" }]],
   ])("%s면 안내를 낸다", (_name, messages) => {
     expect(previewEmptyHint("character", messages)).toContain("인트로를 쓰면");
   });

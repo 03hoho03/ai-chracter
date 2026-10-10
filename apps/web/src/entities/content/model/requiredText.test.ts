@@ -8,9 +8,9 @@ describe("isBlankText", () => {
     ["빈 문자열", ""],
     ["반각 공백", "   "],
     ["줄바꿈·탭", "\n\t\r\n"],
-    ["전각 공백", "　　"],
-    ["줄바꿈 없는 공백(NBSP)", " "],
-    ["BOM", "﻿"],
+    ["전각 공백", "\u3000\u3000"],
+    ["줄바꿈 없는 공백(NBSP)", "\u00a0"],
+    ["BOM", "\ufeff"],
   ])("%s만이면 빈 칸이다", (_name, value) => {
     expect(isBlankText(value)).toBe(true);
   });
