@@ -2,7 +2,6 @@ import { useState, type ReactNode } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Tabs, TabsContent } from "@ai-character-chat/ui/components/tabs";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { FormProvider, useForm, useWatch, type FieldErrors, type Path, type Resolver } from "react-hook-form";
 import { toast } from "sonner";
@@ -25,7 +24,6 @@ import {
   BuilderUiStateContext,
   BuilderTopBar,
   BuilderTopBarActions,
-  confirmFirstPublish,
   errorItemKeys,
   errorTabs,
   fieldLabelByFormPath,
@@ -41,6 +39,7 @@ import {
   tabFromSearch,
   tabToSearch,
   useAutosave,
+  useConfirmFirstPublish,
   useCreateBuilderUiState,
   useDraftPersistence,
   useFocusFirstError,
@@ -125,7 +124,7 @@ const MISSING_FIELD_LABEL_BY_FORM_PATH = fieldLabelByFormPath(MISSING_FIELD_FORM
  * `draftId`는 아직 서버에 없는 초안이면 undefined다 — 첫 저장이 초안을 만들고 URL을 바꾼다. */
 export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, renderPreview }: CharacterBuilderShellProps) {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
+  const confirmFirstPublish = useConfirmFirstPublish();
   const [activeTab, setActiveTabState] = useState<CharacterBuilderTab>(() => tabFromSearch(tab, TABS));
   // 탭을 바꾸는 모든 길(탭 줄·첫 오류로 이동·빈 상태 안내)이 여기를 지나 주소의 `?tab=` 도 함께 바꾼다 — 새로고침하면 보던
   // 탭으로 돌아온다. 화면은 로컬 상태로 바로 바꾸고 주소는 뒤따른다(주소 이동을 기다리면 탭 전환이 한 박자 늦다).
@@ -217,7 +216,7 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
   async function handlePublish(values: CharacterBuilderFormValues) {
     setRejectionReason(undefined);
     const { visibility } = values.registration;
-    const shouldPublish = await confirmFirstPublish(queryClient, {
+    const shouldPublish = await confirmFirstPublish({
       contentId: draftId,
       contentLabel: "캐릭터",
       visibility,

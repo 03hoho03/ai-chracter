@@ -21,7 +21,7 @@ export { getPublishFailureMessage } from "./model/publishFailureMessage";
 export { resolveProfileImageUrl, type ProfileImageLocalEntry } from "./model/resolveProfileImageUrl";
 export { useProfileImageLocalUrl } from "./model/useProfileImageLocalUrl";
 export { useFocusFirstError } from "./lib/useFocusFirstError";
-export { confirmFirstPublish } from "./lib/confirmFirstPublish";
+export { useConfirmFirstPublish } from "./lib/useConfirmFirstPublish";
 export { clampFieldAtCaret, isComposingChange } from "./lib/clampFieldAtCaret";
 export { useLimitedTextField } from "./lib/useLimitedTextField";
 export { focusNeighborToggle } from "./lib/focusNeighborToggle";
