@@ -4,6 +4,7 @@ import { useSetAtom } from "jotai";
 
 import { commentDraftLogoutRevisionAtom, commentKeys } from "@/entities/comment";
 import { notificationKeys } from "@/entities/notification";
+import { personaKeys } from "@/entities/persona";
 import { sessionKeys } from "@/entities/session";
 import { apiClient } from "@/shared/api/client";
 
@@ -25,6 +26,7 @@ export function useWithdrawAccountMutation() {
       setLogoutRevision((revision) => revision + 1);
       void queryClient.resetQueries({ queryKey: commentKeys.all });
       void queryClient.resetQueries({ queryKey: notificationKeys.all });
+      void queryClient.resetQueries({ queryKey: personaKeys.all });
       void queryClient.resetQueries({ queryKey: sessionKeys.current() });
     },
   });

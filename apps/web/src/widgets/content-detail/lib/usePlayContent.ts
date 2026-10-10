@@ -50,12 +50,15 @@ export function usePlayContent(contentId: string, contentType: ContentType, opti
     //     값에 멈춘다). 선례는 `widgets/builder-preview/ui/PreviewSessionView.tsx`의 `startPreview`다.
     if (isStartingRef.current) return;
     isStartingRef.current = true;
+    // 프로필 목록을 새로 받는 동안에도 누른 것이 받아들여졌음을 보인다.
+    setIsStarting(true);
     try {
-      // 프로필이 하나도 없으면 여기서 이름 모달이 뜬다. 닫으면 방을 만들지 않고 상세에 머문다. 스피너는 모달이 끝나고
-      // 실제로 방을 만들 때부터 돈다 — 모달 뒤에서 미리 돌면 닫았을 때 아무 일도 없었는데 무언가 하던 것처럼 보인다.
-      const personaChoice = await choosePersonaForNewRoom(personaId);
+      // 프로필이 하나도 없으면 여기서 이름 모달이 뜬다. 닫으면 방을 만들지 않고 상세에 머문다. 모달이 뜨기 직전에 스피너를
+      // 끄고 모달이 끝나면 다시 켠다 — 모달 뒤에서 돌고 있으면 닫았을 때 아무 일도 없었는데 무언가 하던 것처럼 보인다.
+      const personaChoice = await choosePersonaForNewRoom(personaId, { onBeforeNameModal: () => setIsStarting(false) });
       if (personaChoice.kind === "cancelled") {
         isStartingRef.current = false;
+        setIsStarting(false);
         return;
       }
       setIsStarting(true);
@@ -115,12 +118,11 @@ export function usePlayContent(contentId: string, contentType: ContentType, opti
     hasAutoStartedRef.current = true;
     if (!session.data) return; // 로그인 리다이렉트 복귀 경로라 이론상 항상 존재하지만 방어적으로 둔다.
     const restoredSetupId = params.get("startingSetupId") ?? undefined;
-    // 고른 프로필이 그사이 지워졌어도 시작 쪽이 기본으로 넘어간다(`resolveStartPersona`). 프로필이 없으면 시작 직전에
-    // 이름 모달이 뜬다.
-    const restoredPersonaId = params.get("personaId") ?? undefined;
     if (restoredSetupId) onRestoreSetupRef.current?.(restoredSetupId);
     clearAutoplayParams();
-    void startRef.current(restoredSetupId, restoredPersonaId);
+    // 대화 프로필은 실어 오지 않는다 — 로그인하지 않은 사람에게는 고를 줄이 없었다. 로그인한 계정의 기본으로 시작하고,
+    // 프로필이 없으면 시작 직전에 이름 모달이 뜬다.
+    void startRef.current(restoredSetupId);
     // deps가 정직한 이유: 본문이 읽는 나머지는 전부 ref(렌더 간 동일한 객체)이거나 effect 안에서 직접
     // 읽는 값이라, 이 effect가 실제로 반응해야 할 바깥 값은 세션 둘뿐이다.
   }, [session.isPending, session.data]);
@@ -129,7 +131,6 @@ export function usePlayContent(contentId: string, contentType: ContentType, opti
     if (!session.data) {
       const query = new URLSearchParams({ autoplay: "1" });
       if (startingSetupId) query.set("startingSetupId", startingSetupId);
-      if (personaId) query.set("personaId", personaId);
       // 로그인 화면 위에 상세 모달이 남지 않게 한다. 히스토리 엔트리는 남겨둔다 —
       // 로그인 후 복귀 지점이 바로 그 `/content/...` 풀페이지라 뒤로가기가 그리 가는 편이 자연스럽다.
       setModalState(undefined);
@@ -144,8 +145,8 @@ export function usePlayContent(contentId: string, contentType: ContentType, opti
 
   return {
     handlePlay,
-    /** 플레이 시작이 진행 중. `POST /chat-rooms`를 보낸 시점부터 **`/chat/$roomId`에 도착해 이 훅이
-     * 언마운트될 때까지** true다(실패했을 때만 false로 돌아간다 — 근거는 `start()`의 래치 주석).
+    /** 플레이 시작이 진행 중. 누른 시점(프로필 목록을 받는 동안)부터 **`/chat/$roomId`에 도착해 이 훅이
+     * 언마운트될 때까지** true다. 이름 모달이 떠 있는 동안과 실패·취소했을 때만 false다(근거는 `start()`의 주석).
      * 호출부는 이 값으로 **`disabled`가 아니라 `aria-disabled`**를
      * 세운다 — `disabled`는 붙는 즉시 브라우저가 blur해서 누를 때마다 포커스가 `<body>`로 떨어진다
      * (실측 근거는 `entities/content/ui/ContentListLoadMore.tsx`). `aria-disabled`는 포인터만 막으므로
@@ -190,7 +191,6 @@ function clearAutoplayParams() {
   const params = new URLSearchParams(window.location.search);
   params.delete("autoplay");
   params.delete("startingSetupId");
-  params.delete("personaId");
   const query = params.toString();
   History.prototype.replaceState.call(
     window.history,

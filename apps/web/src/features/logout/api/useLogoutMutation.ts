@@ -3,6 +3,7 @@ import { useSetAtom } from "jotai";
 
 import { commentDraftLogoutRevisionAtom, commentKeys } from "@/entities/comment";
 import { notificationKeys } from "@/entities/notification";
+import { personaKeys } from "@/entities/persona";
 import { sessionKeys } from "@/entities/session";
 import { apiClient } from "@/shared/api/client";
 
@@ -18,6 +19,7 @@ export function useLogoutMutation() {
       setLogoutRevision((revision) => revision + 1);
       void queryClient.resetQueries({ queryKey: commentKeys.all });
       void queryClient.resetQueries({ queryKey: notificationKeys.all });
+      void queryClient.resetQueries({ queryKey: personaKeys.all });
       // invalidateQueries only marks the query stale and refetches in the background — until that
       // refetch resolves, `data` keeps the previous (logged-in) value, so the header wouldn't switch
       // to the logged-out UI immediately. setQueryData(key, undefined) is a documented no-op (TanStack

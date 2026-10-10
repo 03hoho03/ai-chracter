@@ -13,6 +13,7 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
+import { toast } from "sonner";
 
 import { isLegalReconsentRequiredError } from "@/entities/legal";
 import { personaKeys, useCreatePersonaMutation, type Persona, type PersonaList } from "@/entities/persona";
@@ -71,10 +72,14 @@ export const FirstPersonaNameModal = createCallable<void, Persona | undefined>((
         form.setError("name", { message: "이 이름은 쓸 수 없어요. 다른 이름을 입력해주세요" });
         return;
       }
-      // 409 는 다른 탭에서 이미 상한까지 만든 경우라 서버 문구가 사유를 말한다.
-      form.setError("root", {
-        message: isApiError(error) && error.status === 409 ? error.message : GENERIC_ERROR_MESSAGE,
-      });
+      // 409 는 그사이 다른 탭에서 프로필을 만들어 이 판정(0개)이 낡았다는 뜻이다 — 이름을 더 받지 않고 서버 문구를 보이며
+      // 닫는다. 생성 훅이 목록을 다시 받으므로 다시 누르면 있는 프로필로 시작한다.
+      if (isApiError(error) && error.status === 409) {
+        toast.error(error.message);
+        call.end(undefined);
+        return;
+      }
+      form.setError("root", { message: GENERIC_ERROR_MESSAGE });
     }
   }
 
