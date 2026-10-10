@@ -23,11 +23,13 @@ import {
   useSortableList,
   useUndoableRemoval,
   type SortableHandleProps,
+  FieldGuideLink,
 } from "@/features/build-common";
 import { uploadAsset } from "@/shared/api/asset/uploadAsset";
 import { MAX_SOURCE_BYTES } from "@/shared/lib/asset/resizeImage";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
 import { firstLine } from "@/shared/lib/text/firstLine";
+import { creationGuidePath } from "@/shared/config/creationGuide";
 import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
 
@@ -158,7 +160,10 @@ export function AdvancedTab({ ensureContentVersionId, savedImages }: AdvancedTab
   return (
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-1">
-        <Label>상황별 이미지 (선택)</Label>
+        <div className="flex items-center gap-1">
+          <Label>상황별 이미지 (선택)</Label>
+          <FieldGuideLink href={creationGuidePath("character", "advanced")} fieldLabel="상황별 이미지" />
+        </div>
         <p className="text-sm text-muted-foreground">
           특정 대화 상황에서 노출할 이미지를 등록해요. 여러 이미지가 동시에 조건을 만족하면
           목록에서 가장 위에 있는 항목 하나만 노출돼요.

@@ -19,6 +19,7 @@ import {
   useBuilderUiState,
   useSortableList,
   type SortableHandleProps,
+  FieldGuideLink,
 } from "@/features/build-common";
 import {
   FieldLabelText,
@@ -28,6 +29,7 @@ import {
   type StoryCollapsibleList,
 } from "@/features/build-story";
 import { MediaBookConfirmModal } from "@/features/edit-media-book";
+import { creationGuidePath } from "@/shared/config/creationGuide";
 import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 
 import { MediaTagInsertButton } from "./MediaTagInsertButton";
@@ -37,6 +39,10 @@ import { UnknownMediaTagNotice } from "./UnknownMediaTagNotice";
 
 /** 열림 키의 목록 이름 — 발행 실패 때 셸이 오류 항목을 여는 키와 같은 이름이어야 한다(타입이 목록 정의의 키로 묶는다). */
 const STARTING_SETUP_LIST: StoryCollapsibleList = "startingSetup";
+
+// 칸 `?` 가 가리키는 작성 가이드 자리 — 스토리 원고는 칸 블록마다 앵커(블록 첫 칸의 키)가 있어 그 블록까지 바로 간다.
+const PROLOGUE_GUIDE_PATH = `${creationGuidePath("story", "startingSetup")}#startingSetups.*.prologue`;
+const OPENING_SITUATION_GUIDE_PATH = `${creationGuidePath("story", "startingSetup")}#startingSetups.*.openingSituation`;
 
 /** '시작설정 추가' 버튼 id — 스탯·상황 노트·엔딩 탭의 빈 상태에서 이 탭으로 넘어올 때 포커스할 곳이다. */
 export const STARTING_SETUP_ADD_BUTTON_ID = "starting-setup-add";
@@ -316,7 +322,10 @@ function StartingSetupRow({
 
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between gap-2">
-          <Label htmlFor={`starting-setup-${id}-prologue`}><FieldLabelText field="startingSetups.*.prologue" /></Label>
+          <div className="flex items-center gap-1">
+            <Label htmlFor={`starting-setup-${id}-prologue`}><FieldLabelText field="startingSetups.*.prologue" /></Label>
+            <FieldGuideLink href={PROLOGUE_GUIDE_PATH} fieldLabel="프롤로그" />
+          </div>
           <MediaTagInsertButton name={`startingSetups.${index}.prologue`} fieldLabel="프롤로그" textareaRef={prologueRef} />
         </div>
         <BuilderTextarea
@@ -324,7 +333,11 @@ function StartingSetupRow({
           placeholder="이 시작설정의 도입부를 입력해주세요"
           rows={5}
           aria-invalid={!!rowErrors?.prologue}
-          aria-describedby={rowErrors?.prologue ? `starting-setup-${id}-prologue-error` : undefined}
+          aria-describedby={
+            rowErrors?.prologue
+              ? `starting-setup-${id}-prologue-help starting-setup-${id}-prologue-error`
+              : `starting-setup-${id}-prologue-help`
+          }
           {...prologueField}
           ref={(element) => {
             prologueField.ref(element);
@@ -333,6 +346,9 @@ function StartingSetupRow({
         />
         <UnknownMediaTagNotice name={`startingSetups.${index}.prologue`} />
         <StoryMacroNotice name={`startingSetups.${index}.prologue`} />
+        <p id={`starting-setup-${id}-prologue-help`} className="text-xs break-keep text-muted-foreground">
+          누가 언제 왜 여기 있는지만 짧게 써요. 작품 상세에서 시작설정을 고를 때도 이 글이 보여요.
+        </p>
         {rowErrors?.prologue && (
           <p id={`starting-setup-${id}-prologue-error`} role="alert" className="text-xs text-destructive-text">
             {rowErrors.prologue.message}
@@ -342,7 +358,10 @@ function StartingSetupRow({
 
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between gap-2">
-          <Label htmlFor={`starting-setup-${id}-opening-situation`}><FieldLabelText field="startingSetups.*.openingSituation" /></Label>
+          <div className="flex items-center gap-1">
+            <Label htmlFor={`starting-setup-${id}-opening-situation`}><FieldLabelText field="startingSetups.*.openingSituation" /></Label>
+            <FieldGuideLink href={OPENING_SITUATION_GUIDE_PATH} fieldLabel="시작상황" />
+          </div>
           <MediaTagInsertButton
             name={`startingSetups.${index}.openingSituation`}
             fieldLabel="시작상황"
@@ -354,7 +373,11 @@ function StartingSetupRow({
           placeholder="채팅 시작 시 상황을 입력해주세요"
           rows={5}
           aria-invalid={!!rowErrors?.openingSituation}
-          aria-describedby={rowErrors?.openingSituation ? `starting-setup-${id}-opening-situation-error` : undefined}
+          aria-describedby={
+            rowErrors?.openingSituation
+              ? `starting-setup-${id}-opening-situation-help starting-setup-${id}-opening-situation-error`
+              : `starting-setup-${id}-opening-situation-help`
+          }
           {...openingSituationField}
           ref={(element) => {
             openingSituationField.ref(element);
@@ -363,8 +386,8 @@ function StartingSetupRow({
         />
         <UnknownMediaTagNotice name={`startingSetups.${index}.openingSituation`} />
         <StoryMacroNotice name={`startingSetups.${index}.openingSituation`} />
-        <p className="text-xs text-muted-foreground">
-          비워두면 채팅 시작 시 프롤로그가 첫 메시지로 노출돼요.
+        <p id={`starting-setup-${id}-opening-situation-help`} className="text-xs break-keep text-muted-foreground">
+          대화방을 열면 AI의 첫 메시지로 한 번 나가요. 비워두면 프롤로그가 대신 나가요.
         </p>
         {rowErrors?.openingSituation && (
           <p
