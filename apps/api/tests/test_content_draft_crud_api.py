@@ -466,6 +466,29 @@ async def test_patch_content_draft_updates_fields_without_validation(
     ]
 
 
+async def test_patch_content_draft_keeps_whitespace_only_required_text(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """공백만인 필수 칸은 발행이 막고 초안 저장은 받는다. 자동저장은 작가가 칸을 비우는 중에도 돌기 때문에, 저장에서
+    막으면 편집마다 저장이 실패한다. 받은 값은 잘리지 않고 그대로 남는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_character_draft(db_session, creator_user_id=user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    blank = " \u3000\ufeff\n"
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_draft_payload(name=blank, characterPrompt=blank, description=blank),
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert (body["name"], body["characterPrompt"], body["description"]) == (blank, blank, blank)
+
+
 async def test_patch_content_draft_updates_registration_fields(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

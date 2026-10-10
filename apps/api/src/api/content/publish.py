@@ -1,3 +1,4 @@
+import re
 import uuid
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
@@ -31,6 +32,20 @@ from api.db.models.story import (
 )
 
 
+# 빌더 화면이 칸이 비었는지 볼 때 쓰는 JS `String.prototype.trim()` 이 지우는 문자들(ECMAScript WhiteSpace +
+# LineTerminator). Python 의 인자 없는 `str.strip()` 은 집합이 달라(U+001C–001F·U+0085 를 더 지우고 U+FEFF 는 남긴다)
+# 그대로 쓰면 화면은 통과시킨 칸을 서버가 막거나 그 반대가 생긴다.
+_SCREEN_BLANK_TEXT = re.compile(
+    r"[\u0009-\u000d\u0020\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]*"
+)
+
+
+def _is_blank(value: str | None) -> bool:
+    """발행 필수 텍스트 칸이 비었는가 — 없음, 빈 문자열, 화면 기준 공백만인 값. 판정만 하고 값은 고치지 않는다
+    (저장값의 앞뒤 공백은 작가가 쓴 그대로 둔다)."""
+    return value is None or _SCREEN_BLANK_TEXT.fullmatch(value) is not None
+
+
 def validate_character_publish(
     content: Content,
     version: ContentVersion,
@@ -47,19 +62,19 @@ def validate_character_publish(
     can never show.
     """
     missing: list[str] = []
-    if not detail.name:
+    if _is_blank(detail.name):
         missing.append("name")
-    if not detail.one_liner:
+    if _is_blank(detail.one_liner):
         missing.append("oneLiner")
     if detail.thumbnail_asset_id is None:
         missing.append("thumbnailAssetId")
-    if not detail.intro:
+    if _is_blank(detail.intro):
         missing.append("intro")
-    if not detail.character_prompt:
+    if _is_blank(detail.character_prompt):
         missing.append("characterPrompt")
     if any(image.image_asset_id is None for image in situational_images):
         missing.append("situationalImages")
-    if not version.detail_description:
+    if _is_blank(version.detail_description):
         missing.append("description")
     if content.genre_id is None:
         missing.append("genreId")
@@ -168,24 +183,24 @@ def validate_story_publish(
     하려는 것이다. 세 키 모두 노트 수와 상관없이 한 번씩이다.
     """
     missing: list[str] = []
-    if not detail.name:
+    if _is_blank(detail.name):
         missing.append("name")
-    if not detail.one_liner:
+    if _is_blank(detail.one_liner):
         missing.append("oneLiner")
     if detail.thumbnail_asset_id is None:
         missing.append("thumbnailAssetId")
     if detail.prompt_template == StoryPromptTemplate.CUSTOM:
-        if not detail.custom_prompt:
+        if _is_blank(detail.custom_prompt):
             missing.append("customPrompt")
-    elif not detail.setting_text:
+    elif _is_blank(detail.setting_text):
         missing.append("settingText")
 
     if not starting_setups:
         missing.append("startingSetups")
     for setup_index, setup in enumerate(starting_setups):
-        if not setup.name:
+        if _is_blank(setup.name):
             missing.append(f"startingSetups[{setup_index}].name")
-        if not setup.prologue:
+        if _is_blank(setup.prologue):
             missing.append(f"startingSetups[{setup_index}].prologue")
         for ending_index, ending in enumerate(endings_by_setup_id.get(setup.id, [])):
             if ending.turn_count_gate < 10:
@@ -231,7 +246,7 @@ def validate_story_publish(
     if dangling_situation_note_paths:
         missing.append("situationNotes.conditionRules")
 
-    if not version.detail_description:
+    if _is_blank(version.detail_description):
         missing.append("description")
     if content.genre_id is None:
         missing.append("genreId")

@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.assets import blur as blur_module
 from api.assets.image_processing import IMAGE_WORK_CONCURRENCY, generate_blurred_image
 from api.content import publish_filter_memo
-from api.content.publish import PublishFilterResult, validate_story_publish
+from api.content.publish import PublishFilterResult, validate_character_publish, validate_story_publish
 from api.content import router as content_router
 from api.content.router import _MEDIA_BOOK_S3_CONCURRENCY
 from api.core import rate_limit_gate
@@ -489,6 +489,113 @@ async def test_publish_character_rejects_situational_image_without_image(
     assert version.published_at is None
 
 
+# 화면이 trim() 으로 지우는 문자들을 섞은 공백만인 값(일반 공백·탭·줄바꿈·줄바꿈 없는 공백·전각 공백·BOM).
+_BLANK_TEXT = " \t\n\u00a0\u3000\ufeff"
+
+
+async def test_publish_character_rejects_whitespace_only_required_text_before_filter(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """화면은 공백만인 칸을 비었다고 보는데 서버가 빈 문자열만 막으면, API 직접 호출이나 옛 화면이 보낸 공백만인
+    이름·인트로가 그대로 발행된다. 필수 텍스트 다섯 칸이 공백만이면 빈 칸과 같은 키로 알리고, 심사 호출 전에 막는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, _thumbnail, _image = await _make_publishable_character_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    await db_session.execute(
+        sa.update(CharacterVersionDetail)
+        .where(CharacterVersionDetail.content_version_id == version.id)
+        .values(name=_BLANK_TEXT, one_liner=_BLANK_TEXT, intro=_BLANK_TEXT, character_prompt=_BLANK_TEXT)
+    )
+    version.detail_description = _BLANK_TEXT
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == {
+        "missingFields": ["name", "oneLiner", "intro", "characterPrompt", "description"]
+    }
+    assert fake.calls == 0
+    await db_session.refresh(version)
+    assert version.published_at is None
+
+
+async def test_publish_keeps_surrounding_whitespace_of_a_real_value(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """공백 판정은 발행 여부만 정한다. 앞뒤에 공백이 붙은 정상 값은 발행되고, 발행본에도 작가가 쓴 그대로 남는다 —
+    판정하면서 값을 잘라 저장하면 작가가 일부러 둔 줄바꿈·들여쓰기가 사라진다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, _thumbnail, _image = await _make_publishable_character_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    padded_name = "\ufeff 아리아\u3000\n"
+    padded_description = "\n  상세 설명  \n"
+    await db_session.execute(
+        sa.update(CharacterVersionDetail)
+        .where(CharacterVersionDetail.content_version_id == version.id)
+        .values(name=padded_name)
+    )
+    version.detail_description = padded_description
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    await db_session.refresh(version)
+    assert version.published_at is not None
+    assert version.detail_description == padded_description
+    published_detail = await db_session.get(CharacterVersionDetail, version.id)
+    assert published_detail is not None
+    await db_session.refresh(published_detail)
+    assert published_detail.name == padded_name
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        # 화면의 trim() 은 BOM 을 지우고 Python 의 인자 없는 strip() 은 남긴다.
+        pytest.param("\ufeff", ["name"], id="bom-is-blank"),
+        # 반대로 strip() 은 NEL 을 지우고 trim() 은 남긴다 — 화면이 받아 준 값을 서버가 막지 않는다.
+        pytest.param("\u0085", [], id="nel-is-not-blank"),
+    ],
+)
+def test_validate_character_publish_judges_blank_with_the_screen_trim_characters(
+    name: str, expected: list[str]
+) -> None:
+    """서버와 화면이 "공백만"을 다른 문자 집합으로 판정하면, 화면은 통과시킨 칸을 서버가 400 으로 막거나 그 반대가
+    생긴다. 두 집합이 갈리는 문자 하나씩으로 서버가 화면 쪽 집합을 쓰는지 확인한다."""
+    content = Content(genre_id=uuid.uuid4(), target=ContentTarget.ALL)
+    version = ContentVersion(detail_description="상세 설명")
+    detail = CharacterVersionDetail(
+        name=name,
+        one_liner="한 줄",
+        thumbnail_asset_id=uuid.uuid4(),
+        intro="안녕",
+        character_prompt="너는 아리아다.",
+    )
+
+    assert validate_character_publish(content, version, detail, []) == expected
+
+
 async def test_publish_rejects_when_filter_fails_and_leaves_draft_unchanged(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
@@ -886,6 +993,52 @@ async def test_publish_story_rejects_incomplete_draft_with_missing_fields(
             "target",
         ]
     }
+
+
+async def test_publish_story_rejects_whitespace_only_required_text_before_filter(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """캐릭터와 같은 관문을 스토리 필수 텍스트 칸(이름·한 줄 소개·세계관·시작설정 이름·프롤로그·상세 설명)에 둔다.
+    시작설정 칸은 빈 값과 같은 인덱스 키로 알린다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, _thumbnail, setup, _ending, _stat = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    await db_session.execute(
+        sa.update(StoryVersionDetail)
+        .where(StoryVersionDetail.content_version_id == version.id)
+        .values(name=_BLANK_TEXT, one_liner=_BLANK_TEXT, setting_text=_BLANK_TEXT)
+    )
+    version.detail_description = _BLANK_TEXT
+    setup.name = _BLANK_TEXT
+    setup.prologue = _BLANK_TEXT
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == {
+        "missingFields": [
+            "name",
+            "oneLiner",
+            "settingText",
+            "startingSetups[0].name",
+            "startingSetups[0].prologue",
+            "description",
+        ]
+    }
+    assert fake.calls == 0
+    await db_session.refresh(version)
+    assert version.published_at is None
 
 
 async def test_publish_story_rejects_ending_with_low_turn_count_gate(
@@ -2224,6 +2377,32 @@ def _valid_story_rows() -> tuple[Content, ContentVersion, StoryVersionDetail, li
         setting_text="설정",
     )
     return content, version, detail, [StartingSetup(id=uuid.uuid4(), name="시작", prologue="프롤로그")]
+
+
+def test_validate_story_publish_rejects_whitespace_only_custom_prompt() -> None:
+    """커스텀 템플릿은 세계관 대신 커스텀 프롬프트가 필수다. 공백만이면 대화에 실릴 지시가 없으니 빈 값과 같이 막는다."""
+    content, version, detail, setups = _valid_story_rows()
+    detail.prompt_template = StoryPromptTemplate.CUSTOM
+    detail.custom_prompt = _BLANK_TEXT
+
+    missing = validate_story_publish(
+        content,
+        version,
+        detail,
+        setups,
+        {},
+        media_book_people=[],
+        media_book_scenes=[],
+        media_book_cells=[],
+        keyword_notes=[],
+        dangling_stat_rule_paths=[],
+        stat_rules=[],
+        situation_notes=[],
+        dangling_situation_note_paths=[],
+        stat_defs=[],
+    )
+
+    assert missing == ["customPrompt"]
 
 
 def _media_book_rows(
