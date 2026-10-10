@@ -1,8 +1,10 @@
 """정책 차단 안내 문구의 분기.
 
 `ChatPolicyWarningEvent.message`는 **그 턴 생성 프롬프트에 대화 프로필 섹션이 실제로
-렌더됐을 때만** 프로필 안내 문구로 바뀐다. 판정 기준은 "값이 비지 않았다" **그리고** "그 턴의
-활성 세트에서 `select_sections_for_render`가 `user_persona` 슬롯을 골랐다"다.
+렌더됐고 그 프로필에 설명이 있을 때만** 프로필 안내 문구로 바뀐다. 판정 기준은 "값이 비지 않았다" **그리고** "그 턴의
+활성 세트에서 `select_sections_for_render`가 `user_persona` 슬롯을 골랐다" **그리고** "설명이 비지 않았다"다. 이름만 있는
+프로필은 일반 문구다 — 이름은 가입·첫 대화에서 거의 모두가 정하므로, 이름만으로 프로필 안내를 붙이면 거의 모든 차단에
+붙어 안내가 뜻을 잃는다.
 
 - 프로필 있음/없음 × 실채팅/재생성/미리보기(3곳의 `yield ChatPolicyWarningEvent`).
 - 프로필은 있는데 활성 세트에 슬롯이 없는 경우(캐시 TTL 창): 배포 직후 Redis 캐시에
@@ -79,6 +81,7 @@ async def _run_policy_turn(
     *,
     surface: str,
     with_persona: bool,
+    persona_description: str = "밤하늘을 좋아한다",
     stale_cache: bool = False,
     memory_note: str = "",
 ) -> tuple[User, list[dict[str, Any]]]:
@@ -93,7 +96,7 @@ async def _run_policy_turn(
         clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC)),
     )
     if with_persona:
-        persona = UserPersona(user_id=user.id, name="하늘", gender="female", description="밤하늘을 좋아한다")
+        persona = UserPersona(user_id=user.id, name="하늘", gender="female", description=persona_description)
         db_session.add(persona)
         await db_session.flush()
         user.default_persona_id = persona.id
@@ -193,6 +196,22 @@ async def test_policy_warning_mentions_persona_only_when_the_persona_section_was
 
 
 @pytest.mark.parametrize("surface", _SURFACES)
+async def test_policy_warning_keeps_default_message_for_a_name_only_persona(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    surface: str,
+) -> None:
+    """프로필 섹션은 들어갔지만 설명이 없다 — 이름만으로는 프로필 안내를 붙이지 않는다."""
+    user, events = await _run_policy_turn(
+        db_client, db_session, monkeypatch, surface=surface, with_persona=True, persona_description=""
+    )
+
+    assert events == [{"type": "policyWarning", "message": _DEFAULT_MESSAGE}]
+    await _assert_not_refunded(db_session, user)
+
+
+@pytest.mark.parametrize("surface", _SURFACES)
 async def test_policy_warning_keeps_default_message_when_the_active_set_has_no_persona_slot(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
@@ -231,6 +250,27 @@ async def test_policy_warning_mentions_the_memory_note_when_the_note_section_was
     )
 
     assert events == [{"type": "policyWarning", "message": expected}]
+    await _assert_not_refunded(db_session, user)
+
+
+@pytest.mark.parametrize("surface", _ROOM_SURFACES)
+async def test_policy_warning_mentions_only_the_note_when_the_persona_has_no_description(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    surface: str,
+) -> None:
+    user, events = await _run_policy_turn(
+        db_client,
+        db_session,
+        monkeypatch,
+        surface=surface,
+        with_persona=True,
+        persona_description="",
+        memory_note="우산은 파란색",
+    )
+
+    assert events == [{"type": "policyWarning", "message": _NOTE_MESSAGE}]
     await _assert_not_refunded(db_session, user)
 
 

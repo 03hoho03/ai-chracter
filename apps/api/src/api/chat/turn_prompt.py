@@ -53,12 +53,13 @@ logger = logging.getLogger(__name__)
 
 
 class GenerationPrompt(NamedTuple):
-    """한 턴의 생성 호출에 넘길 값. `persona_rendered`·`note_rendered` 는 대화 프로필·기억 노트 섹션이 이 프롬프트에
-    실제로 들어갔는가이고(정책 안내 문구 분기용), `names` 는 같은 턴의 판정·요약이 생성과 같은 이름을 쓰도록 함께 돌려준다."""
+    """한 턴의 생성 호출에 넘길 값. `persona_description_rendered` 는 대화 프로필 섹션이 이 프롬프트에 실제로 들어갔고
+    그 프로필에 설명이 있는가, `note_rendered` 는 기억 노트 섹션이 실제로 들어갔는가다(정책 안내 문구 분기용 — 이름만 있는
+    프로필은 안내 대상이 아니다). `names` 는 같은 턴의 판정·요약이 생성과 같은 이름을 쓰도록 함께 돌려준다."""
 
     prompt: str
     system_instruction: str
-    persona_rendered: bool
+    persona_description_rendered: bool
     note_rendered: bool
     names: PromptNames
 
@@ -187,7 +188,7 @@ async def build_room_prompt(
     바꾸면 다음 턴부터, 재생성·편집은 그 시점의 방 선택값을 쓴다. 그 사이 프로필이
     지워졌으면 `db.get`이 None이라 "선택 없음"(`""`)과 같다.
 
-    세 번째·네 번째 값은 대화 프로필·기억 노트 섹션이 이 프롬프트에 **실제로 들어갔는가**다
+    세 번째·네 번째 값은 대화 프로필(설명이 있을 때만)·기억 노트 섹션이 이 프롬프트에 **실제로 들어갔는가**다
     (`user_persona_rendered`·`memory_note_rendered`, 정책 안내 문구 분기용). scope·variant를 아는
     곳이 여기뿐이라 함께 돌려준다.
 
@@ -218,11 +219,13 @@ async def build_room_prompt(
         memory_note = room.memory_note
         persona = await db.get(UserPersona, room.persona_id) if room.persona_id is not None else None
         persona_name = persona.name if persona is not None else None
+        persona_description = persona.description if persona is not None else ""
         user_persona = format_persona(persona)
     else:
         memory_note = turn_state.memory_note
         injected = turn_state.persona
         persona_name = injected.name if injected is not None else None
+        persona_description = injected.description if injected is not None else ""
         user_persona = (
             ""
             if injected is None
@@ -287,7 +290,8 @@ async def build_room_prompt(
         return GenerationPrompt(
             prompt,
             system_instruction_for(prompt_sections, is_story_chat=True, template=story_detail.prompt_template),
-            user_persona_rendered(
+            bool(persona_description)
+            and user_persona_rendered(
                 prompt_sections, is_story_chat=True, template=story_detail.prompt_template, user_persona=user_persona
             ),
             memory_note_rendered(
@@ -318,7 +322,8 @@ async def build_room_prompt(
     return GenerationPrompt(
         prompt,
         system_instruction_for(prompt_sections, is_story_chat=False),
-        user_persona_rendered(prompt_sections, is_story_chat=False, user_persona=user_persona),
+        bool(persona_description)
+        and user_persona_rendered(prompt_sections, is_story_chat=False, user_persona=user_persona),
         memory_note_rendered(prompt_sections, is_story_chat=False, memory_note=memory_note),
         names,
     )
@@ -354,6 +359,7 @@ def build_preview_prompt(
     prompt_set: PromptSet,
     prompt_sections: list[PromptSection],
     user_persona: str,
+    persona_description: str,
     stats: dict[str, float],
     names: PromptNames,
 ) -> GenerationPrompt:
@@ -412,10 +418,10 @@ def build_preview_prompt(
         prompt_sections, is_story_chat=isinstance(payload, StoryDraftPayload), template=template
     )
     # 활성 세트는 미리보기가 쓰는 것(라우터의 `_preview_prompt_set_dependency`), 값은 작가의 기본 프로필.
-    persona_rendered = user_persona_rendered(
+    persona_description_rendered = bool(persona_description) and user_persona_rendered(
         prompt_sections,
         is_story_chat=isinstance(payload, StoryDraftPayload),
         template=template,
         user_persona=user_persona,
     )
-    return GenerationPrompt(prompt, system_instruction, persona_rendered, False, names)
+    return GenerationPrompt(prompt, system_instruction, persona_description_rendered, False, names)

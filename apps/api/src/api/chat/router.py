@@ -1110,7 +1110,7 @@ async def regenerate_message(
                 generation_set, generation_sections = await generation_prompt_set(
                     db, lane=_lane_for_setup(setup), model=charge.model, gemini_set=(prompt_set, prompt_sections)
                 )
-                prompt, system_instruction, persona_rendered, note_rendered, names = await build_room_prompt(
+                prompt, system_instruction, persona_description_rendered, note_rendered, names = await build_room_prompt(
                     db, room, setup, history[:-1], user_content, None, generation_set, generation_sections
                 )
             except (PromptRenderError, PromptSetNotFoundError) as exc:
@@ -1142,7 +1142,7 @@ async def regenerate_message(
             except LLMPolicyViolationError:
                 # 환불하지 않는다.
                 settlement.mark_settled()
-                yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_rendered, note_rendered))
+                yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_description_rendered, note_rendered))
                 return
             except LLMClientError as exc:
                 logger.warning("대화방 %s 응답 재생성 실패: %s", room.id, exc)
@@ -2537,6 +2537,7 @@ async def _stream_preview_turn(
     prompt_set: PromptSet,
     prompt_sections: list[PromptSection],
     user_persona: str,
+    persona_description: str,
     names: PromptNames,
     # 새 턴(`run_turn`)은 `room.user_id`를 쓰지만 `PreviewSessionState`에는 user_id가 없다
     # (`_owned_preview_session_dependency` docstring) — 그래서 여기만 인자로 받는다.
@@ -2554,7 +2555,7 @@ async def _stream_preview_turn(
     호출부(`send_preview_message`)의 `Depends`가 DB에서 값으로 읽어 넘긴 것이다 — 이
     함수 자체는 세션을 열지 않는다."""
     try:
-        prompt, system_instruction, persona_rendered, _, _ = build_preview_prompt(
+        prompt, system_instruction, persona_description_rendered, _, _ = build_preview_prompt(
             state.payload,
             history,
             user_content,
@@ -2562,6 +2563,7 @@ async def _stream_preview_turn(
             prompt_set,
             prompt_sections,
             user_persona,
+            persona_description,
             state.stats,
             names,
         )
@@ -2592,7 +2594,7 @@ async def _stream_preview_turn(
     except LLMPolicyViolationError:
         # 환불하지 않는다.
         settlement.mark_settled()
-        yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_rendered, note_rendered=False))
+        yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_description_rendered, note_rendered=False))
         return
     except LLMClientError as exc:
         logger.warning("미리보기 메시지 생성 실패: %s", exc)
@@ -2794,6 +2796,7 @@ async def send_preview_message(
             prompt_set,
             prompt_sections,
             format_persona(persona),
+            persona.description if persona is not None else "",
             names,
             user_id,
             media_images,

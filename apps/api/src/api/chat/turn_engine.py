@@ -60,14 +60,15 @@ _PERSONA_AND_NOTE_POLICY_WARNING_MESSAGE = (
 _GENERATION_ERROR_MESSAGE = "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
 
 
-def _policy_warning_message(persona_rendered: bool, note_rendered: bool) -> str:
+def _policy_warning_message(persona_description_rendered: bool, note_rendered: bool) -> str:
     """그 턴 생성 프롬프트에 대화 프로필·기억 노트 섹션이 실제로
     들어갔을 때만(`user_persona_rendered`·`memory_note_rendered`) 그 안내를 붙이고, 둘 다면 한 문장으로
-    합친다. 원인이 그것인지는 알 수 없어서 "~일 수 있다"로 쓴다. 요약은 대화에서 나온 것이라 안내에
+    합친다. 프로필은 설명이 있을 때만 안내한다 — 이름은 거의 모두가 정하므로 이름만으로 붙이면 거의 모든 차단에 붙는다.
+    원인이 그것인지는 알 수 없어서 "~일 수 있다"로 쓴다. 요약은 대화에서 나온 것이라 안내에
     넣지 않는다. `yield ChatPolicyWarningEvent` 3곳이 공유한다(미리보기는 노트가 없어 거짓)."""
-    if persona_rendered and note_rendered:
+    if persona_description_rendered and note_rendered:
         return _PERSONA_AND_NOTE_POLICY_WARNING_MESSAGE
-    if persona_rendered:
+    if persona_description_rendered:
         return _PERSONA_POLICY_WARNING_MESSAGE
     if note_rendered:
         return _NOTE_POLICY_WARNING_MESSAGE
@@ -312,7 +313,7 @@ async def run_turn(
         # 태웠다. 이미지 가드 차단이 환불되는 것과 결론이 갈리는 자리다.
         settlement.mark_settled()
         yield ChatPolicyWarningEvent(
-            message=_policy_warning_message(generation.persona_rendered, generation.note_rendered)
+            message=_policy_warning_message(generation.persona_description_rendered, generation.note_rendered)
         )
         return
     except LLMClientError as exc:

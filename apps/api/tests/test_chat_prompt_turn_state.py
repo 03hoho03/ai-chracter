@@ -182,3 +182,23 @@ async def test_injected_no_persona_falls_back_to_work_default_name_despite_room_
     assert _DB_PERSONA_NAME not in prompt and _DB_PERSONA_DESCRIPTION not in prompt
     assert "작품기본이름의 옥상 이야기" in prompt
     assert (persona_rendered, persona_name) == (False, None)
+
+
+async def test_injected_name_only_persona_is_not_counted_for_the_policy_warning(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """정책 안내는 프로필 설명이 실린 턴에만 프로필을 언급한다. 설명 유무도 주입 프로필을 본다 — 방의 지금 프로필에는
+    설명이 있어서, 그쪽을 보면 참이 된다."""
+    room, trust_id = await _story_room(db_client, db_session)
+    turn_state = _turn_state(room, trust_id, trust=0)
+    name_only = InjectedTurnState(
+        summary=turn_state.summary,
+        memory_note=turn_state.memory_note,
+        stats=turn_state.stats,
+        persona=InjectedPersona(name=_INJECTED_PERSONA.name, gender=None, description=""),
+    )
+
+    prompt, persona_rendered, persona_name = await _build(db_session, room, name_only)
+
+    assert f"{_INJECTED_PERSONA.name}의 옥상 이야기" in prompt
+    assert (persona_rendered, persona_name) == (False, _INJECTED_PERSONA.name)
