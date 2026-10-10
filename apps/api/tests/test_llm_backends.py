@@ -27,7 +27,9 @@ from api.llm.backends import (
     BackendCapabilities,
     BackendSpec,
     ChatModelId,
+    PromptSetModelId,
     assignment_errors,
+    call_site_model,
     pick_backend,
 )
 from api.llm.call_policy import CALL_POLICIES, BackendId, LLMCallSite
@@ -40,6 +42,11 @@ from replay.assemble import GenerationInput, sent_model_id
 _FAKE = cast(BackendId, "fake")
 _FAKE_SENT_ID = "fake-backend-model-id"
 _MODELS: tuple[ChatModelId, ...] = get_args(ChatModelId)
+
+
+def _default_setting(name: str) -> str:
+    """기동 검증이 읽는 설정을 코드 기본값으로 읽는다 — env 없이 뜬 서버와 같다."""
+    return str(Settings.model_fields[name].default)
 
 
 def _models_of(call_site: LLMCallSite) -> tuple[ChatModelId, ...]:
@@ -84,7 +91,7 @@ def test_every_backend_id_has_exactly_one_registry_row() -> None:
 def test_the_default_order_table_and_the_served_models_agree() -> None:
     """모델 → 구현 표(기본 순서)와 구현마다 서비스하는 모델은 같은 사실의 두 방향이다. 어긋나면 기본 구현이 그 모델의
     id 를 모르거나, 서비스하는 구현이 해석에서 빠진다."""
-    assert set(MODEL_BACKENDS) == set(_MODELS)
+    assert set(MODEL_BACKENDS) == set(get_args(PromptSetModelId))
     for model, ordered in MODEL_BACKENDS.items():
         assert ordered, model
         for backend in ordered:
@@ -114,7 +121,7 @@ def test_writing_down_the_default_backend_of_a_call_is_accepted_at_boot(call_sit
     """지금 기본으로 가는 구현을 그대로 배정하면 아무것도 바뀌지 않으므로 기동 검증이 받아야 한다 — 받지 않으면 능력 표나
     호출 방식 표가 지금 라우팅과 어긋난 것이다."""
     for model in _models_of(call_site):
-        assert assignment_errors({call_site: MODEL_BACKENDS[model][0]}, lambda _: "") == []
+        assert assignment_errors({call_site: MODEL_BACKENDS[model][0]}, _default_setting) == []
 
 
 # ── 해석 규칙 ─────────────────────────────────────────────────────────────────────────────
@@ -172,7 +179,7 @@ def test_an_assignment_whose_backend_cannot_take_the_call_kind_is_rejected(
     """구조화 출력을 받지 못하는 구현에 판정을 배정하면 첫 판정에서야 실패한다 — 기동에서 막는다."""
     _register_fake(monkeypatch, **capabilities)
 
-    errors = assignment_errors({call_site: _FAKE}, lambda _: "")
+    errors = assignment_errors({call_site: _FAKE}, _default_setting)
 
     assert bool(errors) is rejected
     if rejected:
@@ -188,7 +195,7 @@ def test_an_assignment_that_moves_a_call_needs_the_backend_credentials(
     _register_fake(monkeypatch, credential_env=(("FAKE_API_KEY", "fake_api_key"),))
     read = {"fake_api_key": value}
 
-    errors = assignment_errors({"chat_stat_judgment": _FAKE}, read.__getitem__)
+    errors = assignment_errors({"chat_stat_judgment": _FAKE}, lambda name: read[name] if name in read else _default_setting(name))
 
     assert bool(errors) is rejected
     if rejected:
@@ -386,3 +393,124 @@ def test_the_replay_cost_ceiling_uses_the_output_cap_of_the_backend_the_call_res
     )
     assert expected is not None
     assert replayed.cost_ceiling_usd() == pytest.approx(expected)
+
+
+# ── 판정·요약 모델 ──────────────────────────────────────────────────────────────────────────
+
+_JUDGMENT_SETTINGS = ("stat_judgment_model", "ending_judgment_model", "image_judgment_model", "memory_summary_model")
+
+
+def test_the_judgment_only_model_is_served_by_both_claude_backends_with_bedrock_first() -> None:
+    """판정 전용 `haiku` 는 글쓰기 모델이 아니라서 채팅 선택에는 없지만, 등록부에는 행이 있어야 판정 모델로 고를 수 있다."""
+    assert MODEL_BACKENDS["haiku"] == ("bedrock", "anthropic")
+    assert BACKENDS["bedrock"].model_id_settings["haiku"] == "bedrock_haiku_model_id"
+    assert BACKENDS["anthropic"].model_id_settings["haiku"] == "anthropic_haiku_model_id"
+    assert "haiku" not in get_args(ChatModelId)
+
+
+@pytest.mark.parametrize("backend", ["bedrock", "anthropic"])
+def test_both_claude_backends_take_plain_structured_calls_but_not_images_or_a_separate_instruction(
+    backend: BackendId,
+) -> None:
+    """구조화 출력은 Claude 공용 조각 하나로 두 구현이 함께 받는다 — 한쪽만 올리면 다른 쪽 배정이 기동에서 거부된다."""
+    assert BACKENDS[backend].capabilities == BackendCapabilities(
+        structured="json_schema", structured_images=False, structured_with_instruction=False
+    )
+
+
+def test_each_judgment_and_summary_call_reads_the_model_setting_of_its_kind() -> None:
+    expected_by_kind = {"stat": "stat_judgment_model", "ending": "ending_judgment_model", "image": "image_judgment_model"}
+    for call_site, policy in CALL_POLICIES.items():
+        if policy.judgment_kind is not None:
+            assert policy.model_setting == expected_by_kind[policy.judgment_kind], call_site
+        elif call_site == "chat_memory_summary":
+            assert policy.model_setting == "memory_summary_model"
+        else:
+            assert policy.model_setting is None, call_site
+
+
+def test_a_call_reads_its_model_from_its_setting_and_the_rest_use_the_default_model() -> None:
+    read = {"stat_judgment_model": "haiku", "memory_summary_model": "opus"}
+
+    def setting(name: str) -> str:
+        return read.get(name, "gemini")
+
+    assert call_site_model("chat_stat_judgment", setting) == "haiku"
+    assert call_site_model("preview_stat_judgment", setting) == "haiku"
+    assert call_site_model("chat_memory_summary", setting) == "opus"
+    assert call_site_model("chat_ending_judgment", setting) == "gemini"
+    # 설정 칸이 없는 구조화 호출(심사·소설화)과 생성 호출은 기본 모델이다.
+    assert call_site_model("novelize_revise", setting) == DEFAULT_CHAT_MODEL
+    assert call_site_model("chat_generate", setting) == DEFAULT_CHAT_MODEL
+
+
+@pytest.mark.parametrize(
+    ("call_site", "model", "call_model", "assignments", "expected"),
+    [
+        # 판정 호출은 판정 모델로 간다. 배정이 없으면 그 모델의 기본 구현이다.
+        ("chat_stat_judgment", "haiku", "haiku", {}, ("haiku", "bedrock")),
+        ("chat_memory_summary", "opus", "opus", {}, ("opus", "bedrock")),
+        ("preview_ending_judgment", "sonnet", "sonnet", {"preview_ending_judgment": "anthropic"}, ("sonnet", "anthropic")),
+        # 방의 모델이 실려 와도 판정 모델로 읽힌다.
+        ("chat_stat_judgment", "opus", "haiku", {}, ("haiku", "bedrock")),
+        ("chat_stat_judgment", "opus", "gemini", {}, ("gemini", "gemini")),
+        # 설정 칸이 없는 비선택 호출은 기본 모델이다.
+        ("novelize_revise", "haiku", "gemini", {}, ("gemini", "gemini")),
+    ],
+)
+def test_a_call_that_cannot_pick_a_model_goes_with_its_own_model(
+    call_site: LLMCallSite,
+    model: PromptSetModelId,
+    call_model: PromptSetModelId,
+    assignments: dict[LLMCallSite, BackendId],
+    expected: tuple[PromptSetModelId, BackendId],
+) -> None:
+    assert pick_backend(call_site, model, assignments, call_model=call_model) == expected
+
+
+async def test_structured_calls_go_where_the_judgment_model_of_their_kind_resolves(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """판정 모델을 바꾸면 그 종류의 판정(채팅·미리보기)만 옮겨 간다. 방의 모델(여기서는 Opus)은 판정 경로에 아무 영향이
+    없다 — 판정은 방의 모델이 아니라 판정 모델 설정으로 해석한다."""
+    for name in _JUDGMENT_SETTINGS:
+        monkeypatch.setattr(settings, name, "gemini")
+    monkeypatch.setattr(settings, "stat_judgment_model", "haiku")
+    monkeypatch.setattr(settings, "memory_summary_model", "sonnet")
+    _assign(monkeypatch, {"chat_memory_summary": "anthropic"})
+    reached: list[str] = []
+    router = RoutingLLMClient(
+        _Named("gemini", reached),
+        factories={"bedrock": lambda: _Named("bedrock", reached), "anthropic": lambda: _Named("anthropic", reached)},
+    )
+
+    for call_site in (
+        "chat_stat_judgment",
+        "preview_stat_judgment",
+        "chat_ending_judgment",
+        "chat_situational_image",
+        "chat_media_book_image",
+        "chat_memory_summary",
+    ):
+        await router.generate_structured(
+            "p", _Parsed, usage=LLMCallContext(call_site, None, None, model="opus")
+        )
+
+    assert reached == ["bedrock", "bedrock", "gemini", "gemini", "gemini", "anthropic"]
+
+
+def test_the_judgment_dump_names_the_id_the_judgment_model_sends(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """판정 덤프의 `model` 도 실제로 보낸 id 다 — 판정 모델을 바꾸면 그 모델의 id, Gemini 면 판정 종류의 Gemini 모델이다."""
+    dump_path = tmp_path / "prompts.jsonl"
+    monkeypatch.setattr(settings, "prompt_dump_path", str(dump_path))
+    monkeypatch.setattr(settings, "stat_judgment_model", "haiku")
+    monkeypatch.setattr(settings, "ending_judgment_model", "gemini")
+    monkeypatch.setattr(settings, "gemini_ending_judgment_model_name", "ending-judge-x")
+
+    for call_site in ("chat_stat_judgment", "chat_ending_judgment"):
+        turn_engine._dump_judgment_prompt(
+            room_id=None, call_site=call_site, turn=1, schema="S", prompt="p"
+        )
+
+    records = [json.loads(line) for line in dump_path.read_text(encoding="utf-8").splitlines()]
+    assert [r["model"] for r in records] == [settings.bedrock_haiku_model_id, "ending-judge-x"]

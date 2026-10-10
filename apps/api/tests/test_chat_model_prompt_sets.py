@@ -18,6 +18,7 @@ from api.chat import turn_prompt
 from api.chat.prompt_builder import StatRuleJudgmentResult, load_active_prompt_set
 from api.chat.prompt_set_cache import get_cached_active_prompt_set
 from api.core import clover
+from api.core.config import settings
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.chat import ChatRoom
 from api.db.models.clover import CloverLedger
@@ -215,3 +216,132 @@ async def test_gemini_room_does_not_read_any_model_set(
     assert resp.status_code == 200
     assert _generation(fake)[3].model == "gemini"
     assert set(looked_up) == {"gemini"}
+
+
+# ── 판정·요약 모델을 바꿨을 때 읽는 세트 ───────────────────────────────────────────────────
+
+_HAIKU_MARK = "하이쿠 세트 표지 문장"
+
+
+async def _mark_haiku_set(db_session: AsyncSession) -> None:
+    """활성 story 판정 전용(haiku) 세트의 모든 행에 표지를 붙인다 — 그 세트에는 판정·요약 채널만 있다."""
+    set_id = (await load_active_prompt_set(db_session, lane="story", model="haiku"))[0].id
+    await db_session.execute(
+        update(PromptSection)
+        .where(PromptSection.prompt_set_id == set_id)
+        .values(body=PromptSection.body + "\n" + _HAIKU_MARK)
+    )
+    await db_session.commit()
+
+
+async def _gemini_story_room(db_client: httpx.AsyncClient, db_session: AsyncSession) -> uuid.UUID:
+    user = await _make_user_with_clover_lot(db_session, clover_balance=0)
+    await db_session.commit()
+    return (await _open_room(db_client, db_session, turns=1, lane="story", user=user)).room_id
+
+
+@pytest.mark.parametrize("surface", ["send", "regenerate"])
+async def test_a_stat_judgment_model_reads_the_set_of_that_model(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, surface: str
+) -> None:
+    """스탯 판정 모델을 바꾸면 스탯 판정이 그 모델의 세트로 렌더된다 — 다른 모델용 문안으로 판정하지 않는다. 생성은 방의
+    모델 세트 그대로다."""
+    monkeypatch.setattr(settings, "stat_judgment_model", "haiku")
+    room_id = await _gemini_story_room(db_client, db_session)
+    await _mark_haiku_set(db_session)
+    fake = _RecordingLLM()
+
+    if surface == "send":
+        resp = await _post(db_client, fake, "POST", f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+    else:
+        resp = await _post(db_client, fake, "POST", f"/chat-rooms/{room_id}/regenerate")
+
+    assert resp.status_code == 200
+    prompt, system_instruction, _, _ = _generation(fake)
+    assert _HAIKU_MARK not in prompt and _HAIKU_MARK not in (system_instruction or "")
+    if surface == "send":
+        assert len(fake.structured_prompts) == 1
+        assert "[STAT]신뢰" in fake.structured_prompts[0]
+        assert _HAIKU_MARK in fake.structured_prompts[0]
+
+
+async def test_memory_fold_gets_the_set_of_the_summary_model(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "memory_summary_model", "haiku")
+    room_id = await _gemini_story_room(db_client, db_session)
+    folded_with: list[str] = []
+
+    async def _recording_fold(*_args: Any, **kwargs: Any) -> None:
+        folded_with.append(kwargs["prompt_set"].model)
+
+    monkeypatch.setattr(chat_router, "fold_memory", _recording_fold)
+
+    resp = await _post(db_client, _RecordingLLM(), "POST", f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+
+    assert resp.status_code == 200
+    assert folded_with == ["haiku"]
+
+
+async def test_gemini_judgment_models_add_no_set_lookup(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """판정·요약 모델이 모두 기본(Gemini)이면 받은 Gemini 세트를 그대로 넘긴다 — 캐시·DB 조회가 하나도 늘지 않는다."""
+    for name in ("stat_judgment_model", "ending_judgment_model", "image_judgment_model", "memory_summary_model"):
+        monkeypatch.setattr(settings, name, "gemini")
+    room_id = await _gemini_story_room(db_client, db_session)
+    looked_up: list[str] = []
+
+    async def _cached(lane: Any, *, model: str) -> Any:
+        looked_up.append(model)
+        return None
+
+    async def _load(db: Any, *, lane: Any, model: str = "gemini") -> Any:
+        looked_up.append(model)
+        raise AssertionError("판정 세트를 따로 읽었다")
+
+    monkeypatch.setattr(turn_prompt, "get_cached_active_prompt_set", _cached)
+    monkeypatch.setattr(turn_prompt, "load_active_prompt_set", _load)
+
+    resp = await _post(db_client, _RecordingLLM(), "POST", f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+
+    assert resp.status_code == 200
+    assert looked_up == []
+
+
+async def test_judgment_sets_read_each_non_gemini_model_once_and_hand_gemini_kinds_the_received_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """두 종류가 같은 모델이면 그 모델의 세트를 한 번만 읽는다. 캐시에 없으면 넘겨받은 읽기로 읽고 캐시에 채운다."""
+    monkeypatch.setattr(settings, "stat_judgment_model", "haiku")
+    monkeypatch.setattr(settings, "ending_judgment_model", "gemini")
+    monkeypatch.setattr(settings, "image_judgment_model", "haiku")
+    monkeypatch.setattr(settings, "memory_summary_model", "sonnet")
+    cache: dict[str, Any] = {}
+    loads: list[str] = []
+
+    async def _cached(lane: Any, *, model: str) -> Any:
+        return cache.get(model)
+
+    async def _store(lane: Any, prompt_set: Any, sections: Any, *, model: str) -> None:
+        cache[model] = (prompt_set, sections)
+
+    monkeypatch.setattr(turn_prompt, "get_cached_active_prompt_set", _cached)
+    monkeypatch.setattr(turn_prompt, "set_cached_active_prompt_set", _store)
+
+    def _set(model: str) -> tuple[PromptSet, list[PromptSection]]:
+        return PromptSet(model=model), []
+
+    async def _load(model: str) -> tuple[PromptSet, list[PromptSection]]:
+        loads.append(model)
+        return _set(model)
+
+    gemini_set = _set("gemini")
+    first = await turn_prompt.judgment_prompt_sets(lane="story", gemini_set=gemini_set, load=_load)
+    second = await turn_prompt.judgment_prompt_sets(lane="story", gemini_set=gemini_set, load=_load)
+
+    assert sorted(loads) == ["haiku", "sonnet"]
+    for sets in (first, second):
+        assert sets.ending is gemini_set
+        assert (sets.stat[0].model, sets.image[0].model, sets.summary[0].model) == ("haiku", "haiku", "sonnet")
+    assert first.stat is first.image

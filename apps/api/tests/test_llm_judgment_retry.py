@@ -13,7 +13,10 @@ from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
 
+import botocore.eventstream
+import botocore.exceptions
 import httpx
+import httpx2
 import pytest
 from google.genai import errors as genai_errors
 
@@ -112,3 +115,34 @@ def test_a_causeless_subclass_is_not_taken_for_a_parse_failure(error_type: type[
     """원인 없는 실패 가운데 파싱 실패로 보는 것은 정확히 `LLMClientError` 인 것뿐이다 — 잘림·빈 응답은 소설화 호출에서만
     올라오는 구분된 실패라, 하위 클래스까지 받으면 판정이 아닌 실패가 파싱 실패로 섞인다."""
     assert is_retryable_judgment_failure(error_type("잘렸다")) is False
+
+
+def _caused_by(cause: BaseException) -> LLMClientError:
+    try:
+        raise LLMClientError("Bedrock generate_structured() call failed") from cause
+    except LLMClientError as exc:
+        return exc
+
+
+_BEDROCK_REQUEST = httpx2.Request("POST", "https://bedrock-runtime.invalid")
+
+
+@pytest.mark.parametrize(
+    ("cause", "expected"),
+    [
+        # SDK 가 감싸지 않고 그대로 올리는 전송 예외 — 응답을 읽다 연결이 끊긴 것은 한 번 다시, 시간 초과는 다시 기다리지 않는다.
+        pytest.param(httpx2.ReadTimeout("slow", request=_BEDROCK_REQUEST), False, id="httpx2-read-timeout"),
+        pytest.param(httpx2.RemoteProtocolError("closed", request=_BEDROCK_REQUEST), True, id="httpx2-disconnect"),
+        # botocore 는 Bedrock 요청 서명과 응답 프레임 해석에서 그대로 올린다. 전송 실패(연결·프레임 깨짐)만 일시 오류다.
+        pytest.param(botocore.exceptions.ReadTimeoutError(endpoint_url="u"), False, id="botocore-read-timeout"),
+        pytest.param(botocore.exceptions.ConnectTimeoutError(endpoint_url="u"), False, id="botocore-connect-timeout"),
+        pytest.param(botocore.exceptions.EndpointConnectionError(endpoint_url="u"), True, id="botocore-endpoint"),
+        pytest.param(botocore.exceptions.ConnectionClosedError(endpoint_url="u"), True, id="botocore-closed"),
+        pytest.param(botocore.eventstream.ChecksumMismatch(1, 2), True, id="botocore-frame"),
+        # 자격·프로필 문제는 다시 불러도 같다 — 기동 검증이 빈 자격을 막고, 남는 것은 설정 사고다.
+        pytest.param(botocore.exceptions.NoCredentialsError(), False, id="botocore-no-credentials"),
+        pytest.param(botocore.exceptions.ProfileNotFound(profile="p"), False, id="botocore-profile"),
+    ],
+)
+def test_claude_transport_causes_outside_the_sdk_are_sorted_by_kind(cause: BaseException, expected: bool) -> None:
+    assert is_retryable_judgment_failure(_caused_by(cause)) is expected

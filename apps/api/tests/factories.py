@@ -31,7 +31,7 @@ from starlette.types import Message
 from api.chat.prompt_builder import ImageMatchJudgmentResult, stat_rule_letters
 from api.content.schemas import RULE_LIST_ADAPTER, EndingRuleListDraftItem
 from api.core.clover import CloverKind, SpendUsage, refund_spend, revoke_purchase_lots, spend
-from api.core.config import settings
+from api.core.config import Settings, settings
 from api.core.rate_limit import KST
 from api.core.security import hash_password
 from api.db.models.clover import CloverSpendAllocation, CloverSpendRefund, CloverSpendUsage
@@ -1999,3 +1999,119 @@ class _FakeProviderSdks:
     def client(self) -> RoutingLLMClient:
         self.built += 1
         return RoutingLLMClient(self.gemini, factories={"bedrock": lambda: self.bedrock})
+
+
+# ── 운영 env 키 이름으로 기동 ───────────────────────────────────────────────────────────────
+
+# 운영 API 컨테이너가 받는 env 키 이름(값 없이). 컨테이너는 `.env` 를 통째로 받으므로 compose·다른 서비스 키도 섞여 있다.
+# 운영 키 이름이 바뀌면 이 목록 하나만 고친다 — 운영 env 그대로 새 이미지가 뜨는지 보는 테스트들이 모두 이 목록을 읽는다.
+# 운영은 상위 모델 호출 셋을 모두 Anthropic 으로 배정하고, Bedrock 자격(`BEDROCK_*`)은 운영에 없다.
+PRODUCTION_ENV_NAMES = (
+    "ANTHROPIC_DIRECT_API_KEY",
+    "API_BASE_URL",
+    "API_IMAGE_BLUE",
+    "API_IMAGE_GREEN",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_REGION",
+    "AWS_SECRET_ACCESS_KEY",
+    "BUGSINK_BASE_URL",
+    "BUGSINK_CREATE_SUPERUSER",
+    "BUGSINK_SECRET_KEY",
+    "CHAT_PREMIUM_MODEL_ALLOWLIST",
+    "CHAT_PREMIUM_MODELS_ENABLED",
+    "CORS_ALLOW_ORIGINS",
+    "DATABASE_URL",
+    "DB_MAX_OVERFLOW",
+    "DB_POOL_SIZE",
+    "DB_POOL_TIMEOUT",
+    "DDONA_ENV_FILE",
+    "DISCORD_WEBHOOK_URL",
+    "EMAIL_FROM",
+    "EMAIL_PROVIDER",
+    "FORWARDED_ALLOW_IPS",
+    "FRONTEND_BASE_URL",
+    "GEMINI_API_KEY",
+    "GEMINI_ENDING_JUDGMENT_MODEL_NAME",
+    "GEMINI_MODEL_NAME",
+    "GEMINI_STAT_JUDGMENT_MODEL_NAME",
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
+    "HEALTHCHECKS_BACKUP_PING_URL",
+    "HEALTHCHECKS_RESOURCE_PING_URL",
+    "IDENTITY_CI_HMAC_KEY",
+    "IMAGE_DECODE_CONCURRENCY",
+    "INGEST_SHARED_SECRET",
+    "KAKAO_ADMIN_KEY",
+    "KAKAO_CLIENT_SECRET",
+    "KAKAO_REST_API_KEY",
+    "LLM_CALL_SITE_BACKENDS",
+    "LOCAL_IMAGE_ACCESS_CLIENT_ID",
+    "LOCAL_IMAGE_ACCESS_CLIENT_SECRET",
+    "LOCAL_IMAGE_BASE_URL",
+    "LOCAL_IMAGE_MODEL_WIRE_ID",
+    "LOCAL_IMAGE_REFERENCE_ENABLED",
+    "NOVELIZE_ENABLED",
+    "NOVELIZE_GRANT_ALLOWLIST",
+    "NOVELIZE_PREMIUM_MODEL_ALLOWLIST",
+    "NOVELIZE_PREMIUM_MODELS_ENABLED",
+    "NOVEL_PUBLIC_ENABLED",
+    "PAYMENTS_ENABLED",
+    "PORTONE_API_SECRET",
+    "PORTONE_IDENTITY_CHANNEL_KEY",
+    "PORTONE_PAYMENT_CHANNEL_KEY",
+    "PORTONE_STORE_ID",
+    "PORTONE_WEBHOOK_SECRET",
+    "POSTGRES_DB",
+    "POSTGRES_PASSWORD",
+    "REDIS_URL",
+    "RESEND_API_KEY",
+    "S3_BUCKET_NAME",
+    "S3_ENDPOINT_URL",
+    "SENTRY_DSN",
+    "SENTRY_ENVIRONMENT",
+    "SESSION_COOKIE_SAMESITE",
+    "SESSION_COOKIE_SECURE",
+    "SITE_ADDRESS",
+    "WEB_CONCURRENCY",
+    "WITHDRAWN_EMAIL_HMAC_KEY",
+)
+
+# 운영의 상위 모델 배정 — 상위 모델 스위치가 쓰는 호출 위치 셋을 모두 Anthropic 으로 옮긴다.
+PRODUCTION_PREMIUM_ASSIGNMENT = "chat_generate:anthropic,replay_generate:anthropic,novelize_chapter:anthropic"
+
+# 문자열이 아닌 설정만 형식에 맞는 가짜 값을 둔다. 나머지(문자열 설정과 `Settings` 가 모르는 키)는 아무 글자다. 배정은
+# 운영 값 그대로다 — 형식만 맞는 다른 배정이면 Bedrock 으로 남는 호출이 생겨 이 집합으로는 기동하지 못한다. 두 상위 모델
+# 스위치는 켠 상태가 기동 검증이 더 엄격한 경우라 켠 상태로 둔다.
+PRODUCTION_ENV_TYPED_VALUES = {
+    "CHAT_PREMIUM_MODELS_ENABLED": "true",
+    "CORS_ALLOW_ORIGINS": "https://a.example,https://b.example",
+    "DB_MAX_OVERFLOW": "10",
+    "DB_POOL_SIZE": "5",
+    "DB_POOL_TIMEOUT": "30",
+    "EMAIL_PROVIDER": "resend",
+    "IMAGE_DECODE_CONCURRENCY": "3",
+    "LLM_CALL_SITE_BACKENDS": PRODUCTION_PREMIUM_ASSIGNMENT,
+    "LOCAL_IMAGE_REFERENCE_ENABLED": "true",
+    "NOVELIZE_ENABLED": "true",
+    "NOVELIZE_GRANT_ALLOWLIST": "11111111-1111-4111-8111-111111111111",
+    "NOVELIZE_PREMIUM_MODEL_ALLOWLIST": "22222222-2222-4222-8222-222222222222",
+    "NOVELIZE_PREMIUM_MODELS_ENABLED": "true",
+    "NOVEL_PUBLIC_ENABLED": "true",
+    "PAYMENTS_ENABLED": "true",
+    "S3_ENDPOINT_URL": "https://r2.example",
+    "SENTRY_ENVIRONMENT": "production",
+    "SESSION_COOKIE_SAMESITE": "none",
+    "SESSION_COOKIE_SECURE": "true",
+}
+
+
+def load_production_env(monkeypatch: pytest.MonkeyPatch, **extra: str) -> Settings:
+    """운영 env 키 이름 집합(값은 형식만 맞춘 가짜)에 `extra` 를 더해 `Settings` 를 새로 만든다. 테스트 프로세스가 물려받은
+    설정 env 는 먼저 지워, 운영에 있는 키와 `extra` 만 남긴다."""
+    for name in Settings.model_fields:
+        monkeypatch.delenv(name.upper(), raising=False)
+    for name in PRODUCTION_ENV_NAMES:
+        monkeypatch.setenv(name, PRODUCTION_ENV_TYPED_VALUES.get(name, "x"))
+    for name, value in extra.items():
+        monkeypatch.setenv(name, value)
+    return Settings(_env_file=None)  # type: ignore[call-arg]
