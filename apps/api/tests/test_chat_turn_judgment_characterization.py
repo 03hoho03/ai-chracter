@@ -8,6 +8,9 @@
 - 한 턴에 스탯 여럿이 바뀔 때 `statChange` 이벤트끼리의 순서. 다른 테스트는 바뀌는 스탯이 하나이거나 사전으로 비교한다.
   순서가 DB 의 행 배치(정렬 없는 읽기)에 좌우되지 않게, 방의 스탯 행은 작가 순서로 마지막인 스탯 하나에만 남긴다 — 행이
   없는 스탯은 판정이 시작값으로 본다(버전을 옮긴 방에서 새 버전에 생긴 스탯과 같은 모양).
+- 재생성이 실패를 흡수하며 남기는 경고(로거 이름·문구). 재생성의 경고 몇 개는 새 턴과 문구가 다르다("재생성" 이 들어간다).
+  매트릭스는 로그를 남기지 않으므로, 재생성 코드를 옮기는 리팩터가 문구나 로거 이름을 조용히 바꾸면 여기서만 갈린다.
+  실패를 만드는 장치는 매트릭스와 같은 자리(활성 세트 문안·가짜 LLM·URL 서명)다.
 
 기대값은 지금 동작을 기록한 것이다(`fixtures/chat_turn_judgment_characterization.json`). 다시 뜨는 법은
 `factories._assert_characterization`.
@@ -32,7 +35,19 @@ from api.chat.prompt_builder import (
     MemorySummaryResult,
     StatRuleJudgmentResult,
 )
-from api.db.models import ChatMessage, ChatRoom, ChatRoomStat, Ending, StartingSetup, StatDef, StatRule
+from api.chat.prompt_set_cache import ACTIVE_PROMPT_SET_KEY_PREFIX
+from api.core import s3 as s3_module
+from api.core.redis import redis_client
+from api.db.models import (
+    ChatMessage,
+    ChatRoom,
+    ChatRoomStat,
+    Ending,
+    PromptSection,
+    StartingSetup,
+    StatDef,
+    StatRule,
+)
 from api.llm.client import LLMCallContext, LLMClient, LLMClientError
 from factories import (
     _add_room_cell_and_endings,
@@ -53,8 +68,9 @@ _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 
 
 class _JudgmentLLM(LLMClient):
-    """판정마다 정해 둔 답을 낸다. 엔딩 판정은 `ending_verdicts` 를 호출 순서대로 꺼낸다(예외면 올린다). 호출마다
-    (메서드, 호출 위치, 엔딩 판정이면 그 판정 문안이 가리키는 엔딩 이름)을 남긴다."""
+    """판정마다 정해 둔 답을 낸다. 엔딩 판정은 `ending_verdicts` 를 호출 순서대로 꺼낸다(예외면 올린다). 생성은
+    `generation_error` 가 있으면 토큰 없이 그 예외를 올린다. 호출마다 (메서드, 호출 위치, 엔딩 판정이면 그 판정 문안이
+    가리키는 엔딩 이름)을 남긴다."""
 
     def __init__(
         self,
@@ -64,8 +80,10 @@ class _JudgmentLLM(LLMClient):
         image_error: Exception | None = None,
         ending_verdicts: list[bool | Exception] | None = None,
         ending_markers: dict[str, str] | None = None,
+        generation_error: Exception | None = None,
     ) -> None:
         self._fired_rule_ids = fired_rule_ids
+        self._generation_error = generation_error
         self._match_id = match_id
         self._image_error = image_error
         self._ending_verdicts = list(ending_verdicts or [])
@@ -81,6 +99,8 @@ class _JudgmentLLM(LLMClient):
         usage: LLMCallContext,
     ) -> AsyncIterator[str]:
         self.calls.append(["generate", usage.call_site, None])
+        if self._generation_error is not None:
+            raise self._generation_error
         yield "오늘은 비가 와."
 
     async def generate_structured(
@@ -107,12 +127,23 @@ class _JudgmentLLM(LLMClient):
 
 
 class _Case:
-    """경우 하나의 셋업 결과 — 보낼 방, 가짜 LLM, 기록에서 id 를 바꿔 쓸 이름표."""
+    """경우 하나의 셋업 결과 — 보낼 방, 가짜 LLM, 기록에서 id 를 바꿔 쓸 이름표. `action` 은 보내기(`"send"`)나
+    재생성(`"regenerate"`)이고, `arm` 은 요청 직전에 바꿔 끼울 것(커밋 뒤 URL 서명 실패 등)이다."""
 
-    def __init__(self, room_id: uuid.UUID, fake: _JudgmentLLM, names: dict[str, str]) -> None:
+    def __init__(
+        self,
+        room_id: uuid.UUID,
+        fake: _JudgmentLLM,
+        names: dict[str, str],
+        *,
+        action: str = "send",
+        arm: Callable[[pytest.MonkeyPatch], None] | None = None,
+    ) -> None:
         self.room_id = room_id
         self.fake = fake
         self.names = names
+        self.action = action
+        self.arm = arm
 
 
 # ── 경우 ─────────────────────────────────────────────────────────────────────────────────
@@ -202,10 +233,98 @@ async def _story_room_with_three_changing_stats(db_client: httpx.AsyncClient, db
     return _Case(room_id, fake, {str(stat.entity_id): stat.name for stat in stats})
 
 
+# ── 재생성 경우 ──────────────────────────────────────────────────────────────────────────
+#
+# 방은 매트릭스와 같은 모양이다 — 1턴을 심은 방(스토리는 칸 하나, 캐릭터는 상황 이미지 하나)의 마지막 응답을 다시 만든다.
+
+
+async def _break_channel(db_session: AsyncSession, channel: str) -> None:
+    """활성 세트의 `channel` 문안(늘 렌더되는 섹션)에 값이 없는 자리표시자를 붙여 렌더가 `PromptRenderError` 로 끝나게
+    한다. 셋업이 캐시에 남긴 세트를 지워 요청이 고친 문안을 읽게 한다."""
+    await db_session.execute(
+        sa.update(PromptSection)
+        .where(PromptSection.channel == channel, PromptSection.conditional.is_(False))
+        .values(body=PromptSection.body + " {characterization_missing_value}")
+    )
+    await db_session.commit()
+    keys = await redis_client.keys(f"{ACTIVE_PROMPT_SET_KEY_PREFIX}*")
+    if keys:
+        await redis_client.delete(*keys)
+
+
+def _fail_url_signing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """커밋 뒤 그림 URL 서명을 실패시킨다. 서명 함수들이 공통으로 지나는 URL 조립을 바꿔, 서명을 부르는 자리가 옮겨 가도
+    빗나가지 않게 한다."""
+
+    def boom(*_args: Any, **_kwargs: Any) -> str:
+        raise RuntimeError("서명 실패")
+
+    monkeypatch.setattr(s3_module, "build_windowed_presigned_get_url", boom)
+
+
+async def _regenerate_story(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    *,
+    break_channel: str | None = None,
+    generation_error: Exception | None = None,
+    image_error: Exception | None = None,
+    arm: Callable[[pytest.MonkeyPatch], None] | None = None,
+) -> _Case:
+    room = await _open_room(db_client, db_session, turns=1, lane="story")
+    cell_id = await _add_room_cell_and_endings(db_session, room.room_id, ())
+    if break_channel is not None:
+        await _break_channel(db_session, break_channel)
+    fake = _JudgmentLLM(
+        fired_rule_ids=[], match_id=str(cell_id), image_error=image_error, generation_error=generation_error
+    )
+    return _Case(room.room_id, fake, {str(cell_id): "<cell>"}, action="regenerate", arm=arm)
+
+
+async def _regenerate_character(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    *,
+    break_channel: str | None = None,
+    image_error: Exception | None = None,
+    arm: Callable[[pytest.MonkeyPatch], None] | None = None,
+) -> _Case:
+    room = await _open_room(db_client, db_session, turns=1)
+    image_id = await _add_room_situational_image(db_session, room.room_id)
+    if break_channel is not None:
+        await _break_channel(db_session, break_channel)
+    fake = _JudgmentLLM(fired_rule_ids=[], match_id=str(image_id), image_error=image_error)
+    return _Case(room.room_id, fake, {str(image_id): "<image>"}, action="regenerate", arm=arm)
+
+
 _CASES: dict[str, Callable[[httpx.AsyncClient, AsyncSession], Awaitable[_Case]]] = {
     "ending-judgment-error-with-a-second-due-ending/send": _story_room_with_two_due_endings,
     "situational-image-judgment-error/send-character": _character_room_with_failing_image_judgment,
     "three-stats-change-in-one-turn/send": _story_room_with_three_changing_stats,
+    "generation-prompt-render-failure/regenerate": lambda client, session: _regenerate_story(
+        client, session, break_channel="generation"
+    ),
+    "generation-error/regenerate": lambda client, session: _regenerate_story(
+        client, session, generation_error=LLMClientError("생성 실패")
+    ),
+    "media-judgment-error/regenerate": lambda client, session: _regenerate_story(
+        client, session, image_error=LLMClientError("판정 실패")
+    ),
+    "media-judgment-prompt-render-failure/regenerate": lambda client, session: _regenerate_story(
+        client, session, break_channel="image_judgment"
+    ),
+    "post-commit-signing-failure/regenerate": lambda client, session: _regenerate_story(
+        client, session, arm=_fail_url_signing
+    ),
+    "situational-image-judgment-error/regenerate-character": lambda client, session: _regenerate_character(
+        client, session, image_error=LLMClientError("판정 실패")
+    ),
+    "situational-image-judgment-prompt-render-failure/regenerate-character": lambda client, session: (
+        _regenerate_character(client, session, break_channel="image_judgment")
+    ),
+    "post-commit-signing-failure/regenerate-character": lambda client, session: _regenerate_character(
+        client, session, arm=_fail_url_signing
+    ),
 }
 
 
@@ -280,11 +399,18 @@ async def test_turn_judgment_case_matches_the_recorded_behavior(
         sentry.append([type(error).__name__ if error is not None else None, tags.get("dependency")])
 
     monkeypatch.setattr(sentry_sdk, "capture_exception", capture_exception)
+    if case.arm is not None:
+        case.arm(monkeypatch)
     caplog.clear()
     _override_llm_client(case.fake)
     try:
         with caplog.at_level(logging.WARNING):
-            response = await db_client.post(f"/chat-rooms/{case.room_id}/messages", json={"content": "마을을 떠나자"})
+            if case.action == "regenerate":
+                response = await db_client.post(f"/chat-rooms/{case.room_id}/regenerate")
+            else:
+                response = await db_client.post(
+                    f"/chat-rooms/{case.room_id}/messages", json={"content": "마을을 떠나자"}
+                )
     finally:
         _clear_llm_override()
 
