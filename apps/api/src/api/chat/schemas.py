@@ -183,6 +183,16 @@ class ChatRoomContentSnapshot(CamelModel):
     pinned_starting_setup_id: uuid.UUID
 
 
+class ChatRoomEnding(CamelModel):
+    """방이 도달한 엔딩. 엔딩 도달 이벤트(`ChatEndingReachedEvent`)와 같은 세 칸이다 — 이벤트는 그 턴의 스트림에만
+    실리므로, 방을 다시 받아도(새로고침·재조회) 화면이 에필로그를 그리도록 방 응답에도 싣는다."""
+
+    ending_id: uuid.UUID
+    epilogue: str | None
+    # 에필로그의 칸 id 형태 태그가 가리키는 그림(방이 고정한 버전 기준). 첫 메시지의 맵(`media_tag_images`)과 따로 둔다.
+    media_tag_images: dict[uuid.UUID, MediaTagImage] = Field(default_factory=dict)
+
+
 class ChatRoomResponse(CamelModel):
     id: uuid.UUID
     content_id: uuid.UUID
@@ -191,6 +201,9 @@ class ChatRoomResponse(CamelModel):
     starting_setup_id: uuid.UUID | None = None
     turn_count: int
     ending_reached: bool
+    # 도달한 엔딩. 도달 전·초기화 뒤, 그리고 방 버전에 그 엔딩이 없으면(버전이 옮겨 가며 빠졌으면) None 이다 — 그때도
+    # `ending_reached` 는 그대로라 도달 표시만 남는다. 기본값을 두는 이유는 `persona_id` 와 같다(이 칸을 모르는 화면·픽스처).
+    ending: ChatRoomEnding | None = None
     stats: dict[str, float] | None = None
     messages: list[ChatMessageResponse]
     # `messageLimit` 로 꼬리만 받았을 때 그 앞에 메시지가 더 있는가. 전량 조회는 언제나 거짓이다.

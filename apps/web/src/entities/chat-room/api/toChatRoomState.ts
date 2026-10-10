@@ -118,7 +118,17 @@ export function toChatRoomState(dto: ChatRoomResponseDto): ChatRoomState {
     hasMoreMessagesBefore: dto.hasMoreMessagesBefore,
     openingMediaTagImages: toMediaTagImages(dto.mediaTagImages),
     stats: dto.stats ?? {},
-    endingStatus: { reached: dto.endingReached, endingId: undefined, reachedAtTurn: undefined, epilogue: undefined },
+    // 도달한 엔딩은 스트림 이벤트처럼 방 응답에도 실려 와, 방을 다시 받아도 에필로그가 남는다. 이 칸이 없는 옛 서버
+    // 응답(또는 null)은 도달 여부만 옮긴다. 도달 턴 번호는 방 응답에 없다.
+    endingStatus: dto.ending
+      ? {
+          reached: dto.endingReached,
+          endingId: dto.ending.endingId,
+          reachedAtTurn: undefined,
+          epilogue: dto.ending.epilogue ?? undefined,
+          mediaTagImages: toMediaTagImages(dto.ending.mediaTagImages),
+        }
+      : { reached: dto.endingReached, endingId: undefined, reachedAtTurn: undefined, epilogue: undefined },
     turnCount: dto.turnCount,
     personaId: dto.personaId ?? undefined,
     personaName: dto.personaName ?? undefined,

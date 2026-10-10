@@ -21456,6 +21456,43 @@
         ],
         "title": "ChatRoomCreateRequest"
       },
+      "ChatRoomEnding": {
+        "properties": {
+          "endingId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Endingid"
+          },
+          "epilogue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epilogue"
+          },
+          "mediaTagImages": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MediaTagImage"
+            },
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "type": "object",
+            "title": "Mediatagimages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "endingId",
+          "epilogue"
+        ],
+        "title": "ChatRoomEnding",
+        "description": "방이 도달한 엔딩. 엔딩 도달 이벤트(`ChatEndingReachedEvent`)와 같은 세 칸이다 — 이벤트는 그 턴의 스트림에만\n실리므로, 방을 다시 받아도(새로고침·재조회) 화면이 에필로그를 그리도록 방 응답에도 싣는다."
+      },
       "ChatRoomListItem": {
         "properties": {
           "id": {
@@ -21747,6 +21784,16 @@
           "endingReached": {
             "type": "boolean",
             "title": "Endingreached"
+          },
+          "ending": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatRoomEnding"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "stats": {
             "anyOf": [

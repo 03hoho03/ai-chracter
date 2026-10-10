@@ -64,7 +64,7 @@ export type ChatRoomState = {
   // 깨진다 — 변환(`toChatRoomState`)에서 한 번 채운다.
   openingMediaTagImages: MediaTagImages;
   stats: Record<string, number>; // statId -> 현재값 — 캐릭터 챗에서는 항상 빈 객체
-  // `mediaTagImages` 는 에필로그의 칸 id 형태 태그가 가리키는 그림이다(엔딩 도달 이벤트에만 실려 온다).
+  // `mediaTagImages` 는 에필로그의 칸 id 형태 태그가 가리키는 그림이다(엔딩 도달 이벤트와 방 응답의 엔딩에 실려 온다).
   endingStatus: {
     reached: boolean;
     endingId?: string;

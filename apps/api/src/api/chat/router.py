@@ -68,6 +68,7 @@ from api.chat.schemas import (
     ChatModelItem,
     ChatRoomContentSnapshot,
     ChatRoomCreateRequest,
+    ChatRoomEnding,
     ChatRoomListItem,
     ChatRoomMemoryLimits,
     ChatRoomMemoryNoteRequest,
@@ -546,6 +547,24 @@ async def _sign_message_images(
     return image_urls, cell_images
 
 
+async def _reached_ending(db: AsyncSession, room: ChatRoom, setup: StartingSetup | None) -> ChatRoomEnding | None:
+    """방이 도달한 엔딩을 방이 고정한 버전의 엔딩 행에서 읽는다. 그 버전에 엔딩이 없으면(버전이 옮겨 가며 빠졌으면)
+    None 이다. 에필로그는 스트림의 엔딩 도달 이벤트처럼 칸 id 형태로 바꾸고 가리키는 칸을 서명한다 — 이 방이 도달한
+    엔딩이라 그 칸을 보여 줘도 된다(아직 도달하지 않은 엔딩까지 실리는 스냅숏 쪽은 서명하지 않는다). 방 응답의 다른
+    서명처럼 실패는 흡수하지 않는다."""
+    if setup is None or not room.ending_reached or room.ending_entity_id is None:
+        return None
+    ending = await db.scalar(
+        select(Ending).where(Ending.starting_setup_id == setup.id, Ending.entity_id == room.ending_entity_id)
+    )
+    if ending is None:
+        return None
+    if not ending.epilogue:
+        return ChatRoomEnding(ending_id=ending.entity_id, epilogue=ending.epilogue)
+    [epilogue], images = await normalize_texts_for_display(db, room.content_version_id, [ending.epilogue])
+    return ChatRoomEnding(ending_id=ending.entity_id, epilogue=epilogue, media_tag_images=images)
+
+
 async def _to_response(db: AsyncSession, room: ChatRoom, *, message_limit: int | None = None) -> ChatRoomResponse:
     """방 응답. `message_limit` 가 있으면 메시지는 최신 그만큼만(오래된 것부터) 싣고 그 앞이 더 있는지를
     `has_more_messages_before` 로 알린다 — 긴 방의 진입 응답을 줄이려고 화면이 꼬리만 받고 위로 올라갈 때
@@ -622,6 +641,7 @@ async def _to_response(db: AsyncSession, room: ChatRoom, *, message_limit: int |
         starting_setup_id=setup.entity_id if setup is not None else None,
         turn_count=room.turn_count,
         ending_reached=room.ending_reached,
+        ending=await _reached_ending(db, room, setup),
         stats=stats,
         messages=[
             _room_message_response(m, image_urls, cell_images)

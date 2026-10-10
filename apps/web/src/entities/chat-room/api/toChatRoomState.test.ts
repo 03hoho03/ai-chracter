@@ -203,7 +203,8 @@ describe("toChatRoomState", () => {
     expect(toChatRoomState({ ...base, personaId: null })).toHaveProperty("personaId", undefined);
   });
 
-  it("carries the endingReached flag through into endingStatus.reached", () => {
+  // 이 칸이 생기기 전의 서버는 도달 여부만 보낸다 — 에필로그 없이 도달 표시만 옮긴다(배포가 겹치는 동안의 옛 API).
+  it("carries the endingReached flag through into endingStatus.reached without an ending field (older server)", () => {
     const state = toChatRoomState({
       id: "room-1",
       contentId: "content-1",
@@ -221,6 +222,70 @@ describe("toChatRoomState", () => {
     });
 
     expect(state.endingStatus).toEqual({ reached: true, endingId: undefined, reachedAtTurn: undefined, epilogue: undefined });
+  });
+
+  // 도달한 엔딩은 그 턴의 스트림 이벤트에만 실려 왔다 — 방을 다시 받으면(새로고침·재조회) 에필로그가 사라지지 않도록
+  // 방 응답의 엔딩을 이벤트와 같은 자리로 옮긴다. 에필로그 그림은 첫 메시지의 그림 맵과 섞지 않는다.
+  it("carries the reached ending's id, epilogue and its images into endingStatus", () => {
+    const state = toChatRoomState({
+      id: "room-1",
+      contentId: "content-1",
+      contentType: "story",
+      name: "대화 1",
+      turnCount: 12,
+      endingReached: true,
+      ending: {
+        endingId: "ending-1",
+        epilogue: "끝났다.\n\n{{img::cell-2}}",
+        mediaTagImages: { "cell-2": { url: "https://r2.example/epilogue.webp", width: 300, height: null } },
+      },
+      mediaTagImages: { "cell-1": { url: "https://r2.example/opening.webp", width: 640, height: 480 } },
+      messages: [],
+      latestVersionAvailable: false,
+      versionAutoUpgraded: false,
+      contentRestricted: false,
+      hasMoreMessagesBefore: false,
+      createdAt: "2026-07-08T00:00:00Z",
+      updatedAt: "2026-07-08T00:00:00Z",
+    });
+
+    expect(state.endingStatus).toEqual({
+      reached: true,
+      endingId: "ending-1",
+      reachedAtTurn: undefined,
+      epilogue: "끝났다.\n\n{{img::cell-2}}",
+      mediaTagImages: { "cell-2": { url: "https://r2.example/epilogue.webp", width: 300, height: undefined } },
+    });
+    expect(state.openingMediaTagImages).toEqual({
+      "cell-1": { url: "https://r2.example/opening.webp", width: 640, height: 480 },
+    });
+  });
+
+  it("maps a reached ending without an epilogue to an undefined epilogue", () => {
+    const state = toChatRoomState({
+      id: "room-1",
+      contentId: "content-1",
+      contentType: "story",
+      name: "대화 1",
+      turnCount: 12,
+      endingReached: true,
+      ending: { endingId: "ending-1", epilogue: null },
+      messages: [],
+      latestVersionAvailable: false,
+      versionAutoUpgraded: false,
+      contentRestricted: false,
+      hasMoreMessagesBefore: false,
+      createdAt: "2026-07-08T00:00:00Z",
+      updatedAt: "2026-07-08T00:00:00Z",
+    });
+
+    expect(state.endingStatus).toEqual({
+      reached: true,
+      endingId: "ending-1",
+      reachedAtTurn: undefined,
+      epilogue: undefined,
+      mediaTagImages: {},
+    });
   });
 
   it("carries whether older messages are still on the server", () => {

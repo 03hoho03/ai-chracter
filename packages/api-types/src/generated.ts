@@ -8698,6 +8698,24 @@ export interface components {
             /** Personaid */
             personaId?: string | null;
         };
+        /**
+         * ChatRoomEnding
+         * @description 방이 도달한 엔딩. 엔딩 도달 이벤트(`ChatEndingReachedEvent`)와 같은 세 칸이다 — 이벤트는 그 턴의 스트림에만
+         *     실리므로, 방을 다시 받아도(새로고침·재조회) 화면이 에필로그를 그리도록 방 응답에도 싣는다.
+         */
+        ChatRoomEnding: {
+            /**
+             * Endingid
+             * Format: uuid
+             */
+            endingId: string;
+            /** Epilogue */
+            epilogue: string | null;
+            /** Mediatagimages */
+            mediaTagImages?: {
+                [key: string]: components["schemas"]["MediaTagImage"];
+            };
+        };
         /** ChatRoomListItem */
         ChatRoomListItem: {
             /**
@@ -8832,6 +8850,7 @@ export interface components {
             turnCount: number;
             /** Endingreached */
             endingReached: boolean;
+            ending?: components["schemas"]["ChatRoomEnding"] | null;
             /** Stats */
             stats?: {
                 [key: string]: number;
