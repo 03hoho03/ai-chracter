@@ -132,7 +132,6 @@ export function toChatRoomState(dto: ChatRoomResponseDto): ChatRoomState {
     turnCount: dto.turnCount,
     personaId: dto.personaId ?? undefined,
     personaName: dto.personaName ?? undefined,
-    defaultUserName: dto.defaultUserName ?? "",
     contentName: dto.contentName,
     latestVersionAvailable: dto.latestVersionAvailable,
     versionAutoUpgraded: dto.versionAutoUpgraded,

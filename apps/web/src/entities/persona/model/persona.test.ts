@@ -18,7 +18,7 @@ describe("defaultPersonaName", () => {
     expect(defaultPersonaName(listWith("p2"))).toBe("하늘");
   });
 
-  // 이름이 없으면 작가 글의 `{{user}}` 는 작품 기본 이름으로 넘어간다.
+  // 이름이 없으면 작가 글의 `{{user}}` 는 대체어로 넘어간다.
   it.each([
     ["no list yet", undefined],
     ["no default profile", listWith(null)],

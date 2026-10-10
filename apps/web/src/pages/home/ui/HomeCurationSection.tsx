@@ -15,7 +15,7 @@ import { toHomeCurationHeading } from "../model/homeCuration";
 
 type HomeCurationSectionProps = {
   item: HomeCurationItem;
-  /** 한줄소개 속 `{{user}}` 에 넣을 보는 사람의 기본 프로필 이름. 비로그인·프로필 없음이면 null(작품 기본 이름). */
+  /** 한줄소개 속 `{{user}}` 에 넣을 보는 사람의 기본 프로필 이름. 비로그인·프로필 없음이면 null(대체어). */
   viewerPersonaName: string | null;
   onOpen: (type: ContentType, id: string) => void;
 };
@@ -52,7 +52,6 @@ export function HomeCurationSection({ item, viewerPersonaName, onOpen }: HomeCur
     item.oneLiner,
     resolveAuthorMacroNames({
       personaName: viewerPersonaName,
-      defaultUserName: item.defaultUserName,
       contentType: item.type,
       contentName: item.name,
     }),

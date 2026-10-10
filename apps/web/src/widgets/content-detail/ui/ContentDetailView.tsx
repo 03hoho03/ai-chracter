@@ -127,7 +127,7 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
   const [chosenPersonaId, setChosenPersonaId] = useState<string | undefined>(undefined);
   const content = detailQuery.data;
   // 방이 없는 화면이라 작가 글의 `{{user}}` 는 지금 시작하면 쓰일 프로필의 이름이다 — 프로필 줄에서 바꾸면 본문도 따라
-  // 바뀐다(프로필이 없거나 비로그인이면 작품 기본 이름).
+  // 바뀐다(프로필이 없거나 비로그인이면 대체어).
   const isLoggedIn = useSessionQuery().data !== undefined;
   const personaList = usePersonasQuery({ enabled: isLoggedIn }).data;
   const startPersona = isLoggedIn ? resolveStartPersona(personaList, chosenPersonaId) : null;
@@ -280,7 +280,6 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
   const selectedSetupId = selectedSetupIdOverride ?? content.startingSetups?.[0]?.id;
   const macroNames = resolveAuthorMacroNames({
     personaName: startPersona?.name ?? null,
-    defaultUserName: content.defaultUserName,
     contentType: content.type,
     contentName: content.name,
   });

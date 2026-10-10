@@ -95,16 +95,6 @@ describe("characterBuilderSchema publish-required nullable fields", () => {
   });
 });
 
-// 빌더에 작품 기본 이름 칸이 없으니, 규칙에 어긋난 옛 저장값이 폼에 남아 있어도 고칠 길이 없는 오류로 발행을 막으면 안 된다.
-describe("characterBuilderSchema default user name", () => {
-  it("does not block publishing on a stored name the rules would reject", () => {
-    const form = validFullForm();
-    expect(
-      characterBuilderSchema.safeParse({ ...form, intro: { ...form.intro, defaultUserName: "{{user}}" } }).success,
-    ).toBe(true);
-  });
-});
-
 // 발행 실패 때 같은 탭 안의 첫 오류는 검증 오류의 순서를 따른다. 화면 맨 위 칸인 대표 이미지가 첫 오류여야 포커스가 둘째 칸(이름)으로
 // 먼저 가지 않는다.
 describe("characterBuilderSchema issue order", () => {

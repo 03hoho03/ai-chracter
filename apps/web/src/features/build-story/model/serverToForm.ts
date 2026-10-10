@@ -189,8 +189,6 @@ export function serverToForm(data: StoryDraftContent): StoryBuilderFormValues {
       worldSetting: data.settingText ?? undefined,
       developmentExamples: data.developmentExamples.map(fromApiDevelopmentExample),
       userGoal: data.userGoal ?? undefined,
-      // 이 칸이 생기기 전 서버의 응답에는 키가 없다(타입은 필수지만 런타임엔 undefined 일 수 있다).
-      defaultUserName: data.defaultUserName ?? "",
       rules: data.rules ?? undefined,
       customPrompt: data.customPrompt ?? undefined,
     },

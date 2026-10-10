@@ -18,7 +18,6 @@ function buildRoom(overrides: Partial<ChatRoomState> = {}): ChatRoomState {
     stats: {},
     endingStatus: { reached: false },
     turnCount: 0,
-    defaultUserName: "",
     latestVersionAvailable: false,
     versionAutoUpgraded: false,
     contentRestricted: false,
@@ -39,13 +38,13 @@ function clientWith(room: ChatRoomState): QueryClient {
 describe("expandUserTextForRoom", () => {
   // 추천 답변·단축어 프롬프트는 작가 글이라 `{{user}}` 가 들어 있을 수 있다 — 보내기 전에 바꿔야 대화 기록에 이름이 남는다.
   it("puts the room's profile name in before the text is sent, fixing the particle", () => {
-    const queryClient = clientWith(buildRoom({ personaName: "지훈", defaultUserName: "조감독" }));
+    const queryClient = clientWith(buildRoom({ personaName: "지훈" }));
     expect(expandUserTextForRoom(queryClient, ROOM_ID, "{{user}}는 고개를 끄덕인다.")).toBe("지훈은 고개를 끄덕인다.");
   });
 
-  it("uses the work's default name when the room has no profile", () => {
-    const queryClient = clientWith(buildRoom({ defaultUserName: "조감독" }));
-    expect(expandUserTextForRoom(queryClient, ROOM_ID, "나는 {{user}}야")).toBe("나는 조감독아");
+  it("uses the fallback name when the room has no profile", () => {
+    const queryClient = clientWith(buildRoom());
+    expect(expandUserTextForRoom(queryClient, ROOM_ID, "나는 {{user}}야")).toBe("나는 당신아");
   });
 
   it("names {{char}} in a character room and leaves it as written in a story room", () => {

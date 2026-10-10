@@ -64,7 +64,6 @@ function baseDraftResponse(): StoryDraftResponse {
     developmentExamples: [{ userLine: "무슨 일이 있었는지 설명해주세요", assistantLine: "폭풍우로 배가 좌초된다" }],
     userGoal: "표류에서 살아남아 무사히 귀환한다",
     rules: "선원들 앞에서 약한 모습을 보이지 않는다",
-    defaultUserName: "",
     customPrompt: null,
     startingSetups: [
       {
@@ -126,7 +125,6 @@ describe("serverToForm", () => {
         worldSetting: "근미래 해양 도시",
         developmentExamples: [{ userLine: "무슨 일이 있었는지 설명해주세요", assistantLine: "폭풍우로 배가 좌초된다" }],
         userGoal: "표류에서 살아남아 무사히 귀환한다",
-        defaultUserName: "",
         rules: "선원들 앞에서 약한 모습을 보이지 않는다",
         customPrompt: undefined,
       },
@@ -532,35 +530,6 @@ describe("serverToForm", () => {
     expect(payload.userGoal).toBeNull();
     expect(payload.rules).toBeNull();
     expect(payload.developmentExamples).toEqual([]);
-  });
-
-  it("round-trips the default user name", () => {
-    const response = { ...baseDraftResponse(), defaultUserName: "조수" };
-
-    expect(formToServer(serverToForm(response)).defaultUserName).toBe("조수");
-  });
-
-  it("keeps a default user name typed with surrounding spaces the same after a save and reload", () => {
-    const form = serverToForm(baseDraftResponse());
-    form.storySetting.defaultUserName = " 조수 ";
-    const saved = formToServer(form).defaultUserName;
-    expect(saved).toBe("조수");
-
-    const reloaded = serverToForm({ ...baseDraftResponse(), defaultUserName: saved ?? "" });
-
-    expect(reloaded.storySetting.defaultUserName).toBe("조수");
-    expect(formToServer(reloaded).defaultUserName).toBe("조수");
-  });
-
-  // 이 칸이 생기기 전 서버의 응답에는 키가 없다. 폼 값이 undefined 면 입력칸이 비제어로 시작하고 검사 함수가 던진다.
-  it("treats a response without the default user name as an empty one", () => {
-    const oldResponse: Partial<StoryDraftResponse> = baseDraftResponse();
-    delete oldResponse.defaultUserName;
-
-    const form = serverToForm(oldResponse as StoryDraftResponse);
-
-    expect(form.storySetting.defaultUserName).toBe("");
-    expect(formToServer(form).defaultUserName).toBe("");
   });
 
   it.each(["forbidden", "private", "public"] as const)("round-trips the novel permission %s", (novelPermission) => {

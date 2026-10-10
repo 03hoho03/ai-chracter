@@ -72,7 +72,7 @@ export function buildPreviewStartState(
   mediaBookImages: MediaTagImages = {},
 ): PreviewSessionState {
   const now = new Date().toISOString();
-  const authorNameSource = { defaultUserName: payload.defaultUserName ?? "", contentName: payload.name };
+  const authorNameSource = { contentName: payload.name };
 
   if (isCharacterPayload(payload)) {
     return {

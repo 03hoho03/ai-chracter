@@ -28,7 +28,6 @@ function buildState(overrides: Partial<ChatRoomState> = {}): ChatRoomState {
     stats: { hp: 50 },
     endingStatus: { reached: false, endingId: undefined, reachedAtTurn: undefined, epilogue: undefined },
     turnCount: 3,
-    defaultUserName: "",
     latestVersionAvailable: false,
     versionAutoUpgraded: false,
     contentRestricted: false,

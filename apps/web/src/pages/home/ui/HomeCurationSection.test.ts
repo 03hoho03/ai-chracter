@@ -37,13 +37,12 @@ function accessibleNameText(html: string): string {
 
 describe("HomeCurationSection", () => {
   it("puts the viewer's profile name into the one-liner and the card's accessible name", () => {
-    const html = render({ defaultUserName: "조감독" }, "지훈");
+    const html = render({}, "지훈");
     expect(html).toContain("지훈은 영화 동아리의 조감독이다.");
     expect(accessibleNameText(html)).toBe("상영회까지 지훈은 영화 동아리의 조감독이다.");
   });
 
-  it("falls back to the work's default name, then the fallback name, for a signed-out viewer", () => {
-    expect(render({ defaultUserName: "막내" }, null)).toContain("막내는 영화 동아리의 조감독이다.");
+  it("falls back to the fallback name for a signed-out viewer", () => {
     expect(render({}, null)).toContain("당신은 영화 동아리의 조감독이다.");
   });
 
