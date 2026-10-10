@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Tabs, TabsContent } from "@ai-character-chat/ui/components/tabs";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Grid3x3 } from "lucide-react";
 import { FormProvider, useForm, useWatch, type FieldErrors, type Resolver } from "react-hook-form";
@@ -33,6 +34,7 @@ import {
   STORY_STARTING_SETUP_LIST_LABELS,
   STORY_TABS,
   toMediaBookPreviewImages,
+  VISIBILITY_LABELS,
   type StoryBuilderFormValues,
   type StoryBuilderTab,
 } from "@/features/build-story";
@@ -42,10 +44,12 @@ import {
   BuilderTopBar,
   BuilderTopBarActions,
   BuilderUiStateContext,
+  confirmFirstPublish,
   errorItemKeys,
   errorParentItemId,
   errorTabs,
   fieldLabelByFormPath,
+  FirstPublishConfirmModal,
   firstErrorLocation,
   flattenFieldErrorPaths,
   getFilterRejectionReason,
@@ -116,6 +120,7 @@ const MEDIA_BOOK_LABEL = "미디어 북";
  * `draftId`는 아직 서버에 없는 초안이면 undefined다 — 첫 저장이 초안을 만들고 URL을 바꾼다. */
 export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilderShellProps) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<StoryBuilderTab>("profile");
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   // 폼 컨벤션(중복 제출 방지는 `isSubmitting`)에서 의도적으로 벗어난다 — `form.formState.isSubmitting`은
@@ -224,6 +229,14 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
   // (default() 적용 포함) 여기서 다시 parse()할 필요가 없다.
   async function handlePublish(values: StoryBuilderFormValues) {
     setRejectionReason(undefined);
+    const { visibility } = values.registration;
+    const shouldPublish = await confirmFirstPublish(queryClient, {
+      contentId: draftId,
+      contentLabel: "스토리",
+      visibility,
+      visibilityLabel: VISIBILITY_LABELS[visibility],
+    });
+    if (!shouldPublish) return;
     const payload = formToServer(values);
     setIsPublishing(true);
     try {
@@ -461,6 +474,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
                 </TabsContent>
               </Tabs>
             </BuilderLayout>
+            <FirstPublishConfirmModal />
           </MediaBookSelectionProvider>
         </MediaBookThumbnailsProvider>
       </BuilderUiStateContext.Provider>

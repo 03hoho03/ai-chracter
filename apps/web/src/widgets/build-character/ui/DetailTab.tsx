@@ -23,12 +23,12 @@ import {
   VISIBILITY_VALUES,
   type CharacterBuilderFormValues,
   type Target,
-  type Visibility,
 } from "@/features/build-character";
 import { FieldCharacterCount, HashtagField, useLimitedTextField } from "@/features/build-common";
 import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 import { RequiredText } from "@/shared/ui/RequiredText";
 
+import { VISIBILITY_LABELS } from "../model/visibilityLabels";
 import { CharacterMacroNotice } from "./CharacterMacroNotice";
 
 // 값 목록(TARGET_VALUES/VISIBILITY_VALUES)은 스키마가 단일 소스다. 여기서는 그 배열을 map해
@@ -37,12 +37,6 @@ const TARGET_LABELS: Record<Target, string> = {
   female: "여성향",
   male: "남성향",
   all: "공용",
-};
-
-const VISIBILITY_LABELS: Record<Visibility, string> = {
-  public: "전체공개",
-  link: "링크공개",
-  private: "비공개",
 };
 
 /** 등록 설명/장르/타겟/해시태그/공개범위/소설 만들기 허락 메타데이터. 장르 목록은

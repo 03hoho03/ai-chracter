@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Tabs, TabsContent } from "@ai-character-chat/ui/components/tabs";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { FormProvider, useForm, useWatch, type FieldErrors, type Path, type Resolver } from "react-hook-form";
 import { toast } from "sonner";
@@ -24,9 +25,11 @@ import {
   BuilderUiStateContext,
   BuilderTopBar,
   BuilderTopBarActions,
+  confirmFirstPublish,
   errorItemKeys,
   errorTabs,
   fieldLabelByFormPath,
+  FirstPublishConfirmModal,
   firstErrorLocation,
   flattenFieldErrorPaths,
   getFilterRejectionReason,
@@ -45,6 +48,7 @@ import { AppealModal } from "@/features/submit-appeal";
 import { creationGuidePath } from "@/shared/config/creationGuide";
 
 import { CHARACTER_REQUIRED_TAB_IDS } from "../model/requiredTabs";
+import { VISIBILITY_LABELS } from "../model/visibilityLabels";
 import { AdvancedTab } from "./AdvancedTab";
 import { DetailTab } from "./DetailTab";
 import { IntroTab } from "./IntroTab";
@@ -115,6 +119,7 @@ const MISSING_FIELD_LABEL_BY_FORM_PATH = fieldLabelByFormPath(MISSING_FIELD_FORM
  * `draftId`는 아직 서버에 없는 초안이면 undefined다 — 첫 저장이 초안을 만들고 URL을 바꾼다. */
 export function CharacterBuilderShell({ draft, draftId, renderPreview }: CharacterBuilderShellProps) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<CharacterBuilderTab>("profile");
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   // 폼 컨벤션(중복 제출 방지는 `isSubmitting`)에서 의도적으로 벗어난다 — `form.formState.isSubmitting`은
@@ -199,6 +204,14 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
   // (default() 적용 포함) 여기서 다시 parse()할 필요가 없다.
   async function handlePublish(values: CharacterBuilderFormValues) {
     setRejectionReason(undefined);
+    const { visibility } = values.registration;
+    const shouldPublish = await confirmFirstPublish(queryClient, {
+      contentId: draftId,
+      contentLabel: "캐릭터",
+      visibility,
+      visibilityLabel: VISIBILITY_LABELS[visibility],
+    });
+    if (!shouldPublish) return;
     const payload = formToServer(values);
     setIsPublishing(true);
     try {
@@ -354,6 +367,7 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
             </TabsContent>
           </Tabs>
         </BuilderLayout>
+        <FirstPublishConfirmModal />
       </BuilderUiStateContext.Provider>
     </FormProvider>
   );

@@ -13,7 +13,7 @@ export { useDeleteContentDraftMutation } from "./api/useDeleteContentDraftMutati
 export { useResetContentDraftMutation } from "./api/useResetContentDraftMutation";
 export { usePublishContentMutation } from "./api/usePublishContentMutation";
 export type { ContentPublishResponse } from "./api/usePublishContentMutation";
-export { useContentVersionsQuery } from "./api/useContentVersionsQuery";
+export { contentVersionsQueryOptions, useContentVersionsQuery } from "./api/useContentVersionsQuery";
 export type { ContentVersionSummary } from "./api/useContentVersionsQuery";
 export { useContentListQuery } from "./api/useContentListQuery";
 export type { ContentListItem, ContentListResponse } from "./api/useContentListQuery";
