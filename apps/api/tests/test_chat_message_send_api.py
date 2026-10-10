@@ -24,7 +24,9 @@ from api.db.models import (
     UserPersona,
 )
 from api.llm.client import LLMClientError, LLMPolicyViolationError
+from replay import logs as replay_logs
 from factories import (
+    _add_room_situational_image,
     _clear_llm_override,
     _count_queries,
     _FakeLLMClient,
@@ -33,6 +35,7 @@ from factories import (
     _make_asset,
     _make_published_character,
     _make_user,
+    _open_room,
     _override_llm_client,
     _parse_sse_events,
     _read_golden_prompt,
@@ -1310,6 +1313,129 @@ async def test_send_message_prompt_dump_failure_still_finishes_the_turn(
     assert [event["type"] for event in events] == ["token", "done"]
     assert events[-1]["finalMessage"]["content"] == "안녕"
     assert any("프롬프트 덤프 실패" in record.getMessage() for record in caplog.records)
+
+
+async def test_send_message_dumps_judgment_prompts_after_the_generation_line(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """측정 서버에서는 판정 프롬프트도 같은 덤프에 남는다 — 판정 모델을 바꿔 보는 측정이 같은 판정 입력을 다시 보낼 수 있게.
+    줄마다 `kind` 로 생성과 판정을 가르고, 판정 줄은 같은 방·턴 번호에 호출 위치·실제로 간 모델·응답 스키마를 함께 싣는다.
+    리플레이는 그 턴의 생성 줄 하나만 고르고 센다."""
+    dump_path = tmp_path / "prompts.jsonl"
+    monkeypatch.setattr(settings, "prompt_dump_path", str(dump_path))
+    monkeypatch.setattr(settings, "gemini_image_judgment_model_name", "image-judge-x")
+    room = await _open_room(db_client, db_session, turns=2)
+    image_id = await _add_room_situational_image(db_session, room.room_id)
+
+    fake = _FakeLLMClient(
+        tokens=["안녕"], structured_result=ImageMatchJudgmentResult(matched_image_entity_id=str(image_id))
+    )
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room.room_id}/messages", json={"content": "반가워"})
+    finally:
+        _clear_llm_override()
+    assert resp.status_code == 200
+    assert _parse_sse_events(resp.text)[-1]["finalMessage"]["imageId"] == str(image_id)
+
+    generation, judgment = [json.loads(line) for line in dump_path.read_text(encoding="utf-8").splitlines()]
+    assert (generation["kind"], generation["turn"], generation["prompt"]) == ("generation", 3, fake.received_prompt)
+    assert judgment == {
+        "roomId": str(room.room_id),
+        "turn": 3,
+        "kind": "judgment",
+        "callSite": "chat_situational_image",
+        "model": "image-judge-x",
+        "schema": "ImageMatchJudgmentResult",
+        "prompt": fake.received_judgment_prompt,
+    }
+    assert replay_logs.dump_record(dump_path, room.room_id, 3) == (generation, 1)
+
+
+async def test_a_failed_judgment_still_leaves_its_prompt_in_the_dump(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """판정 프롬프트는 호출 앞에서 남긴다 — 판정 호출이 실패해도 그 입력은 덤프에 있다."""
+    dump_path = tmp_path / "prompts.jsonl"
+    monkeypatch.setattr(settings, "prompt_dump_path", str(dump_path))
+    room = await _open_room(db_client, db_session, turns=2)
+    await _add_room_situational_image(db_session, room.room_id)
+
+    fake = _FakeLLMClient(tokens=["안녕"], structured_error=LLMClientError("가짜 판정 실패"))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room.room_id}/messages", json={"content": "반가워"})
+    finally:
+        _clear_llm_override()
+    assert resp.status_code == 200
+    assert _parse_sse_events(resp.text)[-1]["type"] == "done"
+
+    records = [json.loads(line) for line in dump_path.read_text(encoding="utf-8").splitlines()]
+    assert [(r["kind"], r.get("callSite")) for r in records] == [
+        ("generation", None),
+        ("judgment", "chat_situational_image"),
+    ]
+    assert records[1]["prompt"] == fake.received_judgment_prompt
+
+
+async def test_judgment_prompt_dump_failure_still_runs_the_judgment(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """판정 프롬프트 덤프도 부가 기록이다. 쓰다 실패해도 경고만 남기고 판정은 그대로 불려 그림이 붙는다."""
+    monkeypatch.setattr(settings, "prompt_dump_path", str(tmp_path))
+    room = await _open_room(db_client, db_session, turns=2)
+    image_id = await _add_room_situational_image(db_session, room.room_id)
+
+    fake = _FakeLLMClient(
+        tokens=["안녕"], structured_result=ImageMatchJudgmentResult(matched_image_entity_id=str(image_id))
+    )
+    _override_llm_client(fake)
+    try:
+        with caplog.at_level(logging.WARNING):
+            resp = await db_client.post(f"/chat-rooms/{room.room_id}/messages", json={"content": "반가워"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert _parse_sse_events(resp.text)[-1]["finalMessage"]["imageId"] == str(image_id)
+    assert [record.getMessage() for record in caplog.records if "판정 프롬프트 덤프 실패" in record.getMessage()] == [
+        f"판정 프롬프트 덤프 실패 (room={room.room_id}, turn=3, call_site=chat_situational_image)"
+    ]
+
+
+async def test_send_message_with_a_judgment_dumps_nothing_by_default(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """운영(덤프 경로 없음)에서는 판정이 있는 턴에도 판정 덤프를 쓰려 하지 않는다 — 판정은 덤프 기록 없이 원래 클라이언트로
+    바로 간다."""
+    monkeypatch.setattr(settings, "prompt_dump_path", None)
+    dumped: list[str] = []
+    monkeypatch.setattr(turn_engine, "_dump_judgment_prompt", lambda **kwargs: dumped.append(kwargs["prompt"]))
+    room = await _open_room(db_client, db_session, turns=2)
+    image_id = await _add_room_situational_image(db_session, room.room_id)
+
+    fake = _FakeLLMClient(
+        tokens=["안녕"], structured_result=ImageMatchJudgmentResult(matched_image_entity_id=str(image_id))
+    )
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room.room_id}/messages", json={"content": "반가워"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert fake.generate_structured_called
+    assert dumped == []
 
 
 def test_prompt_dump_names_the_chat_model_and_its_actual_id(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

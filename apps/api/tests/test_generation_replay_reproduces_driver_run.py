@@ -337,9 +337,14 @@ async def driven(
     )
 
 
+def _generation_dump(driven: DrivenRoom) -> list[dict[str, Any]]:
+    """덤프의 생성 줄. 같은 덤프에 판정 프롬프트 줄(`kind` 가 `judgment`)도 남는다."""
+    return [r for r in _jsonl(driven.dump) if r["kind"] == "generation"]
+
+
 def _dumped_prompts(driven: DrivenRoom) -> dict[int, str]:
-    """턴 → 서버가 그 턴에 마지막으로 덤프한 프롬프트(유실 턴의 재시도가 앞 시도를 덮는다)."""
-    return {r["turn"]: r["prompt"] for r in _jsonl(driven.dump) if r["roomId"] == str(driven.room_id)}
+    """턴 → 서버가 그 턴에 마지막으로 덤프한 생성 프롬프트(유실 턴의 재시도가 앞 시도를 덮는다)."""
+    return {r["turn"]: r["prompt"] for r in _generation_dump(driven) if r["roomId"] == str(driven.room_id)}
 
 
 def _note_sent_at(driven: DrivenRoom, turn: int) -> str:
@@ -361,7 +366,10 @@ async def test_replay_reassembles_every_turn_of_a_real_driver_run_byte_identical
     dumped = _dumped_prompts(driven)
     # 대본이 그대로 돌았다: 13번 생성을 불렀고 한 번 실패해 그 턴이 덤프에 두 번 남았다.
     assert driven.generations == len(SCRIPT)
-    assert [r["turn"] for r in _jsonl(driven.dump)] == [1, 2, 3, 4, 5, 6, 7, 7, 8, 9, 10, 11, 12]
+    assert [r["turn"] for r in _generation_dump(driven)] == [1, 2, 3, 4, 5, 6, 7, 7, 8, 9, 10, 11, 12]
+    # 성공한 턴마다 스탯 판정 줄이 생성 줄 뒤에 남았다 — 리플레이는 이 줄들을 거르고도 아래 기준을 채워야 한다.
+    judged = [(r["turn"], r["callSite"]) for r in _jsonl(driven.dump) if r["kind"] == "judgment"]
+    assert [turn for turn, call_site in judged if call_site == "chat_stat_judgment"] == list(range(1, 13))
     assert [r["done"] for r in turn_lines].count(False) == 1
 
     logs = load_driver_logs(driven.log, driven.snapshot_log, driven.room_id)

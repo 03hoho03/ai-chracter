@@ -12,7 +12,7 @@ Bedrock 으로 가고 판정·요약은 Gemini 로 가는지가 장부의 공급
 방은 30턴짜리라 보내기·수정·재생성 뒤 요약 접기가 실제로 요약 LLM 을 부른다(접기는 응답 뒤 background 에서 돌고 장부의 끝에
 남는다). 엔딩은 게이트 1·5 둘이라 보내기(31턴째)와 수정(30턴째)에서 각각 하나씩 판정 차례가 온다.
 
-측정용 프롬프트 덤프도 켜 두고 덤프 줄의 (방 id 유무, 턴, 고른 모델)을 장부 옆에 남긴다 — 리플레이가 방·턴으로 덤프 줄을
+측정용 프롬프트 덤프도 켜 두고 생성 덤프 줄의 (방 id 유무, 턴, 고른 모델)을 장부 옆에 남긴다 — 리플레이가 방·턴으로 덤프 줄을
 고르므로 경로마다 다른 턴 번호(보내기·수정은 올린 턴, 재생성은 지금 턴, 미리보기는 세션 턴 + 1)가 지켜져야 한다.
 
 기대값은 지금 동작을 기록한 것이다(`fixtures/llm_request_ledger.json`). 다시 뜨는 법은 `factories._assert_characterization`.
@@ -362,6 +362,9 @@ def _dump_lines(path: Path) -> list[dict[str, Any]]:
     lines = []
     for line in path.read_text(encoding="utf-8").splitlines():
         record = json.loads(line)
+        # 판정 프롬프트 줄은 리플레이가 거르는 줄이라 여기 남기지 않는다 — 그 줄은 판정 덤프 테스트가 따로 본다.
+        if record["kind"] == "judgment":
+            continue
         lines.append(
             {"hasRoomId": record["roomId"] is not None, "turn": record["turn"], "chatModel": record["chatModel"]}
         )

@@ -20,7 +20,9 @@ import uuid
 from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal, Protocol
+from typing import Literal, Protocol, TypeVar
+
+from pydantic import BaseModel
 
 from api.chat.prompt_builder import PromptRenderError
 from api.chat.schemas import (
@@ -42,7 +44,7 @@ from api.core.sentry import capture_dependency_failure
 from api.db.models.character import SituationalImage
 from api.db.models.chat import ChatMessage, ChatRoom
 from api.db.models.prompt import PromptSection, PromptSet
-from api.llm.chat_models import ChatModelId
+from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId
 from api.llm.client import (
     CallUsage,
     LLMCallContext,
@@ -50,8 +52,11 @@ from api.llm.client import (
     LLMClient,
     LLMClientError,
     LLMPolicyViolationError,
+    structured_model,
 )
 from api.llm.routing import resolve_backend
+
+T = TypeVar("T", bound=BaseModel)
 
 _POLICY_WARNING_MESSAGE = "메시지 생성이 콘텐츠 정책에 의해 중단되었습니다."
 # 문구의 유일한 자리. 턴 골격은 `_policy_warning_message`로만 고른다.
@@ -94,10 +99,14 @@ def _dump_prompt(
     바닥 지시문도 함께 남긴다 — 실험에서 바꿔 가며 비교하는 것이 바로 그것이라, 대화록만 남고 그때
     어떤 지시문이 실렸는지 모르면 회차를 나중에 설명할 수 없다. 모델은 고른 모델(`chatModel`)과 실제로 보낸 모델 id
     (`model`)를 함께 남기고, 시드는 Gemini 만 받는 설정이라 Gemini 턴에만 적는다. 보낸 id 는 라우터와 같은 해석
-    (`resolve_backend`)으로 얻는다 — 호출 위치의 배정으로 구현이 바뀌면 그 구현의 id 다."""
+    (`resolve_backend`)으로 얻는다 — 호출 위치의 배정으로 구현이 바뀌면 그 구현의 id 다.
+
+    같은 파일에 판정 프롬프트 줄(`_dump_judgment_prompt`)도 남으므로 `kind` 로 가른다. 이 칸이 없는 옛 덤프의 줄은 모두
+    생성 줄이다."""
     record = {
         "roomId": str(room_id) if room_id is not None else None,
         "turn": turn,
+        "kind": "generation",
         "chatModel": model,
         "model": resolve_backend(call_site, model)[1],
         "seed": settings.gemini_seed if model == "gemini" else None,
@@ -107,6 +116,80 @@ def _dump_prompt(
     assert settings.prompt_dump_path is not None
     with open(settings.prompt_dump_path, "a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def _dump_judgment_prompt(
+    *, room_id: uuid.UUID | None, call_site: LLMCallSite, turn: int, schema: str, prompt: str
+) -> None:
+    """판정 호출 하나의 프롬프트를 생성 프롬프트와 같은 덤프 파일에 한 줄로 남긴다. 판정 모델을 바꿔 볼 때 같은 판정 입력을
+    다시 보내 지금 판정과 맞춰 보는 재료다. 방·턴 번호는 그 턴의 생성 줄과 같아서 둘을 짝지을 수 있고, `kind` 가
+    `judgment` 라 생성 줄만 읽는 리플레이(`scripts/replay/logs.py` 의 `dump_record`)가 걸러 낸다.
+
+    응답 스키마는 클래스 이름으로 남긴다 — 호출 위치마다 스키마가 하나라 다시 보낼 때 그 이름으로 찾는다. 모델은 실제로 보낸
+    id 다. 판정은 방의 모델이 아니라 기본 모델로 구현을 고르고, Gemini 구현은 판정 종류마다 판정 모델 설정을 따로 고른다
+    (`structured_model`). 지시문은 없다 — 판정은 지시문 없이 프롬프트 하나로 부른다."""
+    backend, sent = resolve_backend(call_site, DEFAULT_CHAT_MODEL)
+    record = {
+        "roomId": str(room_id) if room_id is not None else None,
+        "turn": turn,
+        "kind": "judgment",
+        "callSite": call_site,
+        "model": structured_model(call_site, sent) if backend == "gemini" else sent,
+        "schema": schema,
+        "prompt": prompt,
+    }
+    assert settings.prompt_dump_path is not None
+    with open(settings.prompt_dump_path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+class _JudgmentPromptDump(LLMClient):
+    """판정 호출마다 프롬프트를 덤프한 뒤 감싼 클라이언트로 그대로 넘긴다. `run_turn` 이 덤프 경로가 설정된 측정 서버에서만
+    판정에 이것을 건네고, 운영(경로 없음)에서는 판정이 원래 클라이언트를 그대로 받는다.
+
+    덤프는 호출 앞에서 한다 — 실패한 판정의 입력도 남고, 다시 부르는 판정(재생성의 스탯 재판정)은 시도마다 한 줄이다. 덤프
+    실패는 경고만 남기고 판정을 막지 않는다(생성 덤프와 같은 이유)."""
+
+    def __init__(self, inner: LLMClient, *, turn: int, log: logging.Logger) -> None:
+        self._inner = inner
+        self._turn = turn
+        self._log = log
+
+    def generate(
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+        stop_sequences: list[str] | None = None,
+        *,
+        usage: LLMCallContext,
+    ) -> AsyncIterator[str]:
+        return self._inner.generate(prompt, system_instruction, stop_sequences, usage=usage)
+
+    async def generate_structured(
+        self,
+        prompt: str,
+        response_schema: type[T],
+        images: list[tuple[bytes, str]] | None = None,
+        *,
+        usage: LLMCallContext,
+    ) -> T:
+        try:
+            _dump_judgment_prompt(
+                room_id=usage.room_id,
+                call_site=usage.call_site,
+                turn=self._turn,
+                schema=response_schema.__name__,
+                prompt=prompt,
+            )
+        except Exception:
+            self._log.warning(
+                "판정 프롬프트 덤프 실패 (room=%s, turn=%s, call_site=%s)",
+                usage.room_id,
+                self._turn,
+                usage.call_site,
+                exc_info=True,
+            )
+        return await self._inner.generate_structured(prompt, response_schema, images, usage=usage)
 
 
 async def _stream_generated_tokens(
@@ -390,6 +473,7 @@ async def run_turn(
     # 풀로 돌아가 그걸 집어간 **무관한 다른 요청**이 InterfaceError로 500이 난다(부하 실측).
     # 이미 응답은 스트리밍됐으니, 그 턴의 판정만 포기하고(그 전까지 나온 판정 결과는 그대로 쓴다)
     # 정상적으로 커밋 → done 이벤트까지 마무리하는 것이 실패의 폭발 반경을 그 턴에 가둔다.
+    judge_llm = _JudgmentPromptDump(llm, turn=next_turn, log=log) if settings.prompt_dump_path is not None else llm
     try:
         # 입력 읽기(방은 DB 읽기)는 전부 목록 순서대로 판정 LLM 앞(그리고 반납 앞)에서 하고, 쓰기는 전부 쓰기 구간이다.
         for judgment in judgments:
@@ -400,16 +484,16 @@ async def run_turn(
         # 결과가 남는다. 판정이 하나뿐이면(캐릭터의 상황 이미지) 묶지 않고 바로 기다린다.
         first_wave = [judgment for judgment in judgments if judgment.wave == 1]
         if len(first_wave) == 1:
-            await first_wave[0].judge(llm, ctx)
+            await first_wave[0].judge(judge_llm, ctx)
         else:
-            await asyncio.gather(*(judgment.judge(llm, ctx) for judgment in first_wave))
+            await asyncio.gather(*(judgment.judge(judge_llm, ctx) for judgment in first_wave))
         # 두 번째 물결(엔딩) **앞**에서 반영한다 — 엔딩 판정이 실패해도 스탯 변화·칸 그림은 남는다.
         for judgment in first_wave:
             judgment.apply(ctx, result)
         # 엔딩은 스탯 반영 뒤 값으로 판정하므로 차례로 부른다.
         for judgment in judgments:
             if judgment.wave == 2:
-                await judgment.judge(llm, ctx)
+                await judgment.judge(judge_llm, ctx)
                 judgment.apply(ctx, result)
     except (LLMClientError, PromptRenderError) as exc:
         log.warning(_JUDGMENT_FAILURE_LOG[inp.kind], *room_log_args, exc)
