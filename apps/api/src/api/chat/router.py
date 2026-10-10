@@ -144,7 +144,14 @@ from api.db.models.story import (
 )
 from api.db.session import get_db_session, get_session_factory
 from api.legal.dependencies import require_legal_consent
-from api.llm.chat_models import CHAT_MODELS, DEFAULT_CHAT_MODEL, chat_turn_cost
+from api.llm.chat_models import (
+    CHAT_MODELS,
+    CHAT_MODELS_BY_ID,
+    DEFAULT_CHAT_MODEL,
+    DEFAULT_CHAT_ROOM_MODEL,
+    chat_turn_cost,
+    is_chat_room_model,
+)
 from api.llm.client import LLMClient
 from api.llm.dependencies import get_llm_client
 from api.llm.model_access import effective_room_model, has_chat_premium_access
@@ -253,8 +260,8 @@ async def enforce_room_chat_charge(
     db: AsyncSession = Depends(get_db_session),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> ChatCharge:
-    """턴 세 경로(전송·재생성·편집)의 차감 게이트. 방이 고른 모델을 지금 쓸 모델로 읽어(허용이 없거나 레지스트리에서 내린
-    모델이면 Gemini) 그 모델의 가격으로 차감한다. 상한·차감 본문은 미리보기와 같은 `charge_chat_turn` 이다.
+    """턴 세 경로(전송·재생성·편집)의 차감 게이트. 방이 고른 모델을 지금 쓸 모델로 읽어(허용이 없거나, 레지스트리에서 내렸거나
+    채팅에서 고를 수 없는 모델이면 Gemini) 그 모델의 가격으로 차감한다. 상한·차감 본문은 미리보기와 같은 `charge_chat_turn` 이다.
 
     영수증의 `model` 이 이 턴의 생성 모델이다 — 생성 쪽은 방을 다시 읽지 않는다. 이 게이트와 생성 사이에 방의 모델이
     바뀌어도(모델 지정 라우트는 턴 락을 잡지 않는다) 값을 낸 모델로 생성한다.
@@ -683,6 +690,7 @@ async def _to_response(db: AsyncSession, room: ChatRoom, *, message_limit: int |
         novel_creation_blocked=novel_creation_blocked,
         chat_model=room.chat_model,
         effective_chat_model=effective_model,
+        effective_chat_model_name=CHAT_MODELS_BY_ID[effective_model].name,
         turn_cost=chat_turn_cost(effective_model),
         created_at=room.created_at,
         updated_at=room.updated_at,
@@ -1434,12 +1442,13 @@ async def list_chat_models(
     db: AsyncSession = Depends(get_db_session),
 ) -> list[ChatModelItem]:
     """이 계정이 채팅방에 고를 수 있는 모델과 턴 가격. 기본 모델(Gemini)은 언제나 있고 맨 앞이다 — 빌더 미리보기도 이 항목에서
-    턴 가격을 읽는다. 상위 모델은 채팅 상위 모델 허용이 있을 때만 싣는다(모델 지정 라우트·턴 게이트와 같은 판정)."""
+    턴 가격을 읽는다. 상위 모델은 채팅 상위 모델 허용이 있을 때만 싣는다(모델 지정 라우트·턴 게이트와 같은 판정). 채팅에서
+    고를 수 없는 모델(소설에만 남은 Sonnet)은 허용이 있어도 싣지 않는다."""
     allowed = await has_chat_premium_access(db, user_id)
     return [
-        ChatModelItem(id=spec.id, name=spec.name, turn_cost=chat_turn_cost(spec.id))
+        ChatModelItem(id=spec.id, name=spec.name, beta=spec.beta, turn_cost=chat_turn_cost(spec.id))
         for spec in CHAT_MODELS
-        if spec.id == DEFAULT_CHAT_MODEL or allowed
+        if is_chat_room_model(spec.id) and (spec.id == DEFAULT_CHAT_MODEL or allowed)
     ]
 
 
@@ -1742,12 +1751,17 @@ async def set_room_model(
     `{"code": "CHAT_MODEL_NOT_ALLOWED"}` 하나다 — 꺼짐·명단 밖·허용 행 없음을 가르지 않는다(소설화 게이트와 같은 이유).
     고를 때 확인하는 가격은 응답의 턴 가격이고, 그 뒤 턴은 하루 1회 확인 없이 그 가격으로 차감된다."""
     room = await _get_owned_room(db, room_id, user_id)
-    model = payload.model or DEFAULT_CHAT_MODEL
+    model = payload.model or DEFAULT_CHAT_ROOM_MODEL
     if model != DEFAULT_CHAT_MODEL and not await has_chat_premium_access(db, user_id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"code": "CHAT_MODEL_NOT_ALLOWED"})
     room.chat_model = None if model == DEFAULT_CHAT_MODEL else model
     await db.commit()
-    return ChatRoomModelResponse(chat_model=room.chat_model, effective_chat_model=model, turn_cost=chat_turn_cost(model))
+    return ChatRoomModelResponse(
+        chat_model=room.chat_model,
+        effective_chat_model=model,
+        effective_chat_model_name=CHAT_MODELS_BY_ID[model].name,
+        turn_cost=chat_turn_cost(model),
+    )
 
 
 @router.post(

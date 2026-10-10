@@ -1,9 +1,12 @@
+from typing import get_args
+
 import pytest
 
 from api.core import clover
 from api.core.config import settings
 from api.llm.chat_models import (
     CHAT_MODELS,
+    ChatRoomModelId,
     backend_model_id,
     chat_turn_cost,
     novel_episode_unit_price,
@@ -24,6 +27,12 @@ def test_the_registry_lists_gemini_first_then_the_premium_models() -> None:
         ("sonnet", "bedrock"),
         ("opus", "bedrock"),
     ]
+
+
+def test_the_chat_room_model_type_matches_the_chat_selectable_models() -> None:
+    """방 모델 지정 요청은 이 타입으로 받고 방 해석·목록은 레지스트리 표시를 읽는다 — 둘이 갈리면 목록에 없는 모델을
+    지정할 수 있거나, 목록의 모델을 지정하면 422 가 된다."""
+    assert set(get_args(ChatRoomModelId)) == {m.id for m in CHAT_MODELS if m.chat_selectable}
 
 
 def test_actual_model_ids_follow_the_settings(monkeypatch: pytest.MonkeyPatch) -> None:

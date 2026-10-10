@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.core import clover
 from api.core.config import settings
 from api.db.models.chat import ChatRoom
+from api.llm.chat_models import CHAT_MODELS_BY_ID
 from factories import (
     _allow_chat_premium,
     _get_genre,
@@ -55,6 +56,7 @@ async def test_allowed_user_selects_a_premium_model(
     assert resp.json() == {
         "chatModel": "opus",
         "effectiveChatModel": "opus",
+        "effectiveChatModelName": CHAT_MODELS_BY_ID["opus"].name,
         "turnCost": clover.CHAT_TURN_COST_OPUS,
     }
     assert await _stored(db_session, room_id) == "opus"
@@ -73,7 +75,12 @@ async def test_anyone_can_go_back_to_gemini_even_with_the_switch_off(
     resp = await db_client.put(f"/chat-rooms/{room_id}/model", json={"model": model})
 
     assert resp.status_code == 200
-    assert resp.json() == {"chatModel": None, "effectiveChatModel": "gemini", "turnCost": clover.CHAT_TURN_COST}
+    assert resp.json() == {
+        "chatModel": None,
+        "effectiveChatModel": "gemini",
+        "effectiveChatModelName": "Gemini",
+        "turnCost": clover.CHAT_TURN_COST,
+    }
     assert await _stored(db_session, room_id) is None
 
 
@@ -93,7 +100,7 @@ async def test_premium_model_is_refused_without_access(
     monkeypatch.setattr(settings, "chat_premium_models_enabled", enabled)
     monkeypatch.setattr(settings, "chat_premium_model_allowlist", [user_id] if allowlisted else [uuid.uuid4()])
 
-    resp = await db_client.put(f"/chat-rooms/{room_id}/model", json={"model": "sonnet"})
+    resp = await db_client.put(f"/chat-rooms/{room_id}/model", json={"model": "opus"})
 
     assert resp.status_code == 403
     assert resp.json()["detail"] == {"code": "CHAT_MODEL_NOT_ALLOWED"}
@@ -111,6 +118,18 @@ async def test_unknown_model_is_422(
     assert await _stored(db_session, room_id) is None
 
 
+async def test_a_registry_model_chat_does_not_offer_is_422_even_with_access(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sonnet 은 소설 장 생성에만 남은 모델이다 — 허용이 있는 계정이 채팅방에 지정하려 해도 받지 않고 저장하지 않는다."""
+    room_id, _ = await _room_of_new_user(db_client, db_session, monkeypatch, allowed=True)
+
+    resp = await db_client.put(f"/chat-rooms/{room_id}/model", json={"model": "sonnet"})
+
+    assert resp.status_code == 422
+    assert await _stored(db_session, room_id) is None
+
+
 async def test_cannot_set_the_model_of_someone_elses_room(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -121,7 +140,7 @@ async def test_cannot_set_the_model_of_someone_elses_room(
     await _allow_chat_premium(db_session, monkeypatch, other.id)
     await _login_as(db_client, other.id)
 
-    resp = await db_client.put(f"/chat-rooms/{room_id}/model", json={"model": "sonnet"})
+    resp = await db_client.put(f"/chat-rooms/{room_id}/model", json={"model": "opus"})
 
     assert resp.status_code == 403
     assert await _stored(db_session, room_id) is None
@@ -141,22 +160,57 @@ async def test_room_response_shows_the_stored_and_the_effective_model(
         "gemini",
         clover.CHAT_TURN_COST,
     )
-    assert (await db_client.put(f"/chat-rooms/{room_id}/model", json={"model": "sonnet"})).status_code == 200
+    assert (await db_client.put(f"/chat-rooms/{room_id}/model", json={"model": "opus"})).status_code == 200
 
     chosen = (await db_client.get(f"/chat-rooms/{room_id}")).json()
     monkeypatch.setattr(settings, "chat_premium_models_enabled", False)
     revoked = (await db_client.get(f"/chat-rooms/{room_id}")).json()
 
     assert (chosen["chatModel"], chosen["effectiveChatModel"], chosen["turnCost"]) == (
-        "sonnet",
-        "sonnet",
-        clover.CHAT_TURN_COST_SONNET,
+        "opus",
+        "opus",
+        clover.CHAT_TURN_COST_OPUS,
     )
     assert (revoked["chatModel"], revoked["effectiveChatModel"], revoked["turnCost"]) == (
-        "sonnet",
+        "opus",
         "gemini",
         clover.CHAT_TURN_COST,
     )
+
+
+async def test_a_room_storing_sonnet_runs_on_gemini_even_with_access(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """채팅에서 내린 Sonnet 이 저장된 방(내리기 전에 고른 방)은 허용이 있어도 Gemini 와 Gemini 가격으로 보인다 — 화면이
+    고를 수 없는 모델로 턴이 돌면 안 된다."""
+    room_id, _ = await _room_of_new_user(db_client, db_session, monkeypatch, allowed=True)
+    await db_session.execute(update(ChatRoom).where(ChatRoom.id == room_id).values(chat_model="sonnet"))
+    await db_session.commit()
+
+    body = (await db_client.get(f"/chat-rooms/{room_id}")).json()
+
+    assert (body["chatModel"], body["effectiveChatModel"], body["effectiveChatModelName"], body["turnCost"]) == (
+        "sonnet",
+        "gemini",
+        "Gemini",
+        clover.CHAT_TURN_COST,
+    )
+
+
+async def test_the_effective_model_name_is_the_name_the_model_list_shows(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """화면은 방의 모델 이름을 목록과 따로 받는다 — 두 곳의 이름이 갈리면 고른 이름과 방에 뜨는 이름이 다르다."""
+    room_id, _ = await _room_of_new_user(db_client, db_session, monkeypatch, allowed=True)
+    names = {m["id"]: m["name"] for m in (await db_client.get("/chat-models")).json()}
+    fresh = (await db_client.get(f"/chat-rooms/{room_id}")).json()
+
+    put = (await db_client.put(f"/chat-rooms/{room_id}/model", json={"model": "opus"})).json()
+    chosen = (await db_client.get(f"/chat-rooms/{room_id}")).json()
+
+    assert fresh["effectiveChatModelName"] == names["gemini"]
+    assert put["effectiveChatModelName"] == names["opus"]
+    assert chosen["effectiveChatModelName"] == names["opus"]
 
 
 # ---- GET /chat-models ----
@@ -173,12 +227,13 @@ async def test_model_list_for_an_account_without_access_is_gemini_only(
     resp = await db_client.get("/chat-models")
 
     assert resp.status_code == 200
-    assert resp.json() == [{"id": "gemini", "name": "Gemini", "turnCost": clover.CHAT_TURN_COST}]
+    assert resp.json() == [{"id": "gemini", "name": "Gemini", "beta": False, "turnCost": clover.CHAT_TURN_COST}]
 
 
-async def test_model_list_for_an_allowed_account_has_every_model_with_its_price(
+async def test_model_list_for_an_allowed_account_has_the_chat_models_with_price_and_beta_mark(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Sonnet 은 채팅에서 고를 수 없어 허용이 있어도 목록에 없다."""
     user = _make_user()
     db_session.add(user)
     await db_session.commit()
@@ -187,10 +242,9 @@ async def test_model_list_for_an_allowed_account_has_every_model_with_its_price(
 
     resp = await db_client.get("/chat-models")
 
-    assert [(m["id"], m["turnCost"]) for m in resp.json()] == [
-        ("gemini", clover.CHAT_TURN_COST),
-        ("sonnet", clover.CHAT_TURN_COST_SONNET),
-        ("opus", clover.CHAT_TURN_COST_OPUS),
+    assert [(m["id"], m["turnCost"], m["beta"]) for m in resp.json()] == [
+        ("gemini", clover.CHAT_TURN_COST, False),
+        ("opus", clover.CHAT_TURN_COST_OPUS, True),
     ]
 
 

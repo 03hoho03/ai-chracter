@@ -174,3 +174,19 @@ async def test_effective_room_model_reads_access_only_for_a_premium_room(
     assert await effective_room_model(_NoQuerySession(), user_id, "gemini") == "gemini"  # type: ignore[arg-type]
     assert await effective_room_model(db_session, user_id, "opus") == "opus"
     assert await effective_room_model(db_session, uuid.uuid4(), "opus") == "gemini"
+
+
+@pytest.mark.parametrize(
+    "stored",
+    [pytest.param("sonnet", id="sonnet-only-for-novels"), pytest.param("haiku", id="retired-model")],
+)
+async def test_a_room_storing_a_model_chat_does_not_offer_is_gemini_even_with_access(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, stored: str
+) -> None:
+    """Sonnet 은 레지스트리에 있지만 채팅에서는 고를 수 없다 — 그 값이 남은 방은 허용이 있어도 Gemini 로 돈다. 소설이 쓰는
+    `effective_model` 은 같은 값을 그대로 읽는다."""
+    user_id = await _user(db_session, "chat_premium_models")
+    _open_chat(monkeypatch, enabled=True, allowlist=[user_id])
+
+    assert await effective_room_model(db_session, user_id, stored) == "gemini"
+    assert effective_model("sonnet", allowed=True) == "sonnet"

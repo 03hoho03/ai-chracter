@@ -1,5 +1,5 @@
 """채팅 턴 하나가 LLM 에 보내는 요청 전부를 장부로 고정한다 — 보내기·수정·재생성 × 스토리·캐릭터, 미리보기 스토리·캐릭터,
-상위 모델(sonnet)을 고른 스토리 방의 보내기, 그리고 단축어로 보낸 스토리 턴의 재생성.
+상위 모델(opus)을 고른 스토리 방의 보내기, 그리고 단축어로 보낸 스토리 턴의 재생성.
 
 장부 한 줄은 요청만 본다(응답 텍스트·토큰 수는 보지 않는다): 부른 메서드, 실제로 간 공급자, 호출 위치, 실린 모델,
 사용자·방 귀속 유무, 프롬프트와 지시문의 sha256, 정지 시퀀스, 응답 스키마 이름, 캐시 블록 조각 수와 조각별 sha256.
@@ -274,7 +274,7 @@ async def _preview_character(db_client: httpx.AsyncClient, db_session: AsyncSess
     return _Case("POST", f"/preview-sessions/{session_id}/messages", {"content": "안녕"}, None)
 
 
-async def _send_story_sonnet(
+async def _send_story_opus(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> _Case:
     """미리보기는 모델을 싣지 않아 언제나 Gemini 라, 상위 모델 경우는 실제 방이어야 한다."""
@@ -283,13 +283,13 @@ async def _send_story_sonnet(
     await _allow_chat_premium(db_session, monkeypatch, user.id)
     room = await _open_room(db_client, db_session, turns=_ROOM_TURNS, lane="story", user=user)
     cell_id = await _add_room_cell_and_endings(db_session, room.room_id, _ENDING_GATES)
-    await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room.room_id).values(chat_model="sonnet"))
+    await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room.room_id).values(chat_model="opus"))
     # 테스트 DB 의 상위 모델 세트 생성 문안은 Gemini 세트와 같아, 그대로면 어느 세트로 조립했는지가 sha 에 드러나지 않는다.
     # 상위 모델 세트의 생성 문안에만 표지를 붙여 "생성은 모델 세트, 판정·요약은 Gemini 세트"가 뒤바뀌면 장부가 바뀌게 한다.
     marked = await db_session.scalars(
         sa.update(PromptSection)
         .where(
-            PromptSection.prompt_set_id.in_(sa.select(PromptSet.id).where(PromptSet.model == "sonnet")),
+            PromptSection.prompt_set_id.in_(sa.select(PromptSet.id).where(PromptSet.model == "opus")),
             PromptSection.channel == "generation",
         )
         .values(body=PromptSection.body + " (상위 모델 세트)")
@@ -313,7 +313,7 @@ _CASES: dict[str, _Builder] = {
     "regenerate-character": _regenerate_character,
     "preview-story": _preview_story,
     "preview-character": _preview_character,
-    "send-story-sonnet": _send_story_sonnet,
+    "send-story-opus": _send_story_opus,
 }
 
 # 경우마다 장부가 지나야 하는 호출 위치 — 이 경로를 지나지 않으면 그 판정 프롬프트는 아무도 지문을 뜨지 않는다. 접기가
@@ -341,7 +341,7 @@ _REQUIRED_CALL_SITES: dict[str, set[str]] = {
         "preview_ending_judgment",
     },
     "preview-character": {"preview_generate"},
-    "send-story-sonnet": _STORY_TURN_SITES,
+    "send-story-opus": _STORY_TURN_SITES,
 }
 
 

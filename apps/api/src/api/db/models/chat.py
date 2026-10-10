@@ -79,7 +79,7 @@ class ChatRoom(Base):
     )
     # 방이 고른 글쓰기 모델의 레지스트리 id(`llm/chat_models.py`). NULL 이 기본 모델(Gemini)이다. 값 제약을 두지 않는다 —
     # 레지스트리에서 내린 모델의 옛 값이 남아도 행이 살아 있어야 하고, 그 값은 턴마다 쓸 수 있는 모델로 다시 판정한다
-    # (`llm/model_access.py` 의 `effective_model`). 바꾸는 경로는 `PUT /chat-rooms/{id}/model` 하나다.
+    # (`llm/model_access.py` 의 `effective_room_model`). 바꾸는 경로는 `PUT /chat-rooms/{id}/model` 하나다.
     chat_model: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # 프로필 삭제의 `UPDATE chat_rooms SET persona_id=NULL WHERE persona_id=…`가 전체

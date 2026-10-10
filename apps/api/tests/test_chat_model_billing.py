@@ -40,7 +40,7 @@ from factories import (
     _parse_sse_events,
 )
 
-_SONNET = clover.CHAT_TURN_COST_SONNET
+_OPUS = clover.CHAT_TURN_COST_OPUS
 _START = 1000
 
 
@@ -110,16 +110,16 @@ async def test_premium_turn_charges_its_price_and_generates_with_that_model(
     """무료분이 남아 있어도(기본 상한, 소진 패치 없음) 상위 모델 턴은 그 모델 가격을 낸다. 하루 1회 확인을 한 적이 없어도
     묻지 않는다 — 모델을 고를 때 본 턴당 가격이 확인이다."""
     user = await _user(db_client, db_session, monkeypatch)
-    room_id = await _room(db_client, db_session, user, "sonnet")
+    room_id = await _room(db_client, db_session, user, "opus")
     fake = _FakeLLMClient(tokens=["응", "답"])
 
     resp = await _send(db_client, room_id, fake)
 
     assert resp.status_code == 200
     assert [e["type"] for e in _parse_sse_events(resp.text)][-1] == "done"
-    assert await _balance(db_session, user) == _START - _SONNET
-    assert await _ledger(db_session, user.id) == [("chat_spend", -_SONNET)]
-    assert [u.model for u in fake.usages if u.call_site == "chat_generate"] == ["sonnet"]
+    assert await _balance(db_session, user) == _START - _OPUS
+    assert await _ledger(db_session, user.id) == [("chat_spend", -_OPUS)]
+    assert [u.model for u in fake.usages if u.call_site == "chat_generate"] == ["opus"]
 
 
 async def test_premium_turn_charges_an_exempt_account(
@@ -141,22 +141,22 @@ async def test_premium_turn_does_not_use_up_the_free_daily_quota(
     """무료분 1턴짜리 날에 상위 모델 턴을 먼저 돌려도, 같은 방을 Gemini 로 돌린 다음 턴은 무료다. 상위 모델 턴이 일일
     카운터를 올리면 둘째 턴이 무료분을 넘겨 Gemini 값을 낸다(오늘 확인을 해 둬서 확인 429 가 아니라 차감으로 드러난다)."""
     user = await _user(db_client, db_session, monkeypatch, confirmed_today=True)
-    room_id = await _room(db_client, db_session, user, "sonnet")
+    room_id = await _room(db_client, db_session, user, "opus")
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 1)
 
     assert (await _send(db_client, room_id)).status_code == 200
     await _set_model(db_session, room_id, None)
     assert (await _send(db_client, room_id)).status_code == 200
 
-    assert await _ledger(db_session, user.id) == [("chat_spend", -_SONNET)]
+    assert await _ledger(db_session, user.id) == [("chat_spend", -_OPUS)]
 
 
 async def test_premium_turn_without_enough_clover_is_the_clover_shortage_429(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Gemini 가격으로는 낼 수 있는 잔액이어도 상위 모델 가격에 모자라면 부족이다. 무료분은 남아 있다."""
-    user = await _user(db_client, db_session, monkeypatch, balance=_SONNET - 1)
-    room_id = await _room(db_client, db_session, user, "sonnet")
+    user = await _user(db_client, db_session, monkeypatch, balance=_OPUS - 1)
+    room_id = await _room(db_client, db_session, user, "opus")
     fake = _FakeLLMClient(tokens=["응"])
 
     resp = await _send(db_client, room_id, fake)
@@ -172,7 +172,7 @@ async def test_premium_turn_still_gets_the_burst_limit(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     user = await _user(db_client, db_session, monkeypatch, exempt=True)
-    room_id = await _room(db_client, db_session, user, "sonnet")
+    room_id = await _room(db_client, db_session, user, "opus")
     monkeypatch.setattr(rate_limit_gate, "CHAT_BURST_LIMIT", 0)
 
     resp = await _send(db_client, room_id)
@@ -188,7 +188,7 @@ async def test_premium_turn_is_refused_when_redis_fails(
     """Gemini 방은 Redis 부분 장애에서 상한 없이 통과하지만, 상위 모델 방은 분당 상한을 못 센 채 비싼 호출을 열지 않고
     503 으로 거절한다. 차감 전이라 원장도 그대로다."""
     user = await _user(db_client, db_session, monkeypatch)
-    room_id = await _room(db_client, db_session, user, "sonnet")
+    room_id = await _room(db_client, db_session, user, "opus")
 
     async def _down(*args: object, **kwargs: object) -> int:
         raise RedisConnectionError("redis down")
@@ -221,7 +221,7 @@ async def test_revoked_premium_room_runs_as_gemini_at_gemini_price(
 ) -> None:
     """스위치를 끄면(1차 롤백) 상위 모델을 고른 방은 막히지 않고 Gemini 로, Gemini 가격과 무료분으로 돈다."""
     user = await _user(db_client, db_session, monkeypatch, confirmed_today=True)
-    room_id = await _room(db_client, db_session, user, "sonnet")
+    room_id = await _room(db_client, db_session, user, "opus")
     monkeypatch.setattr(settings, "chat_premium_models_enabled", False)
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", daily_limit)
     fake = _FakeLLMClient(tokens=["응"])
@@ -240,10 +240,10 @@ async def test_chat_premium_works_for_an_account_without_novel_premium_access(
     monkeypatch.setattr(settings, "novelize_premium_models_enabled", True)
     monkeypatch.setattr(settings, "novelize_premium_model_allowlist", [uuid.uuid4()])
     user = await _user(db_client, db_session, monkeypatch)
-    room_id = await _room(db_client, db_session, user, "sonnet")
+    room_id = await _room(db_client, db_session, user, "opus")
 
     assert (await _send(db_client, room_id)).status_code == 200
-    assert await _ledger(db_session, user.id) == [("chat_spend", -_SONNET)]
+    assert await _ledger(db_session, user.id) == [("chat_spend", -_OPUS)]
 
 
 # ---- 생성 모델의 출처 ----
@@ -252,10 +252,10 @@ async def test_chat_premium_works_for_an_account_without_novel_premium_access(
 async def test_generation_uses_the_charged_model_even_if_the_room_changes_after_the_gate(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """게이트가 Sonnet 값을 받은 뒤 방을 Gemini 로 되돌리고 허용까지 거둬도, 그 턴은 값을 낸 Sonnet 으로 생성한다. 생성
-    직전에 방을 다시 읽으면 Sonnet 값을 내고 Gemini 글을 받는다."""
+    """게이트가 Opus 값을 받은 뒤 방을 Gemini 로 되돌리고 허용까지 거둬도, 그 턴은 값을 낸 Opus 로 생성한다. 생성
+    직전에 방을 다시 읽으면 Opus 값을 내고 Gemini 글을 받는다."""
     user = await _user(db_client, db_session, monkeypatch)
-    room_id = await _room(db_client, db_session, user, "sonnet")
+    room_id = await _room(db_client, db_session, user, "opus")
     real_charge = charge_chat_turn
 
     async def _charge_then_switch(*args: Any, **kwargs: Any) -> Any:
@@ -269,8 +269,8 @@ async def test_generation_uses_the_charged_model_even_if_the_room_changes_after_
 
     assert (await _send(db_client, room_id, fake)).status_code == 200
 
-    assert await _ledger(db_session, user.id) == [("chat_spend", -_SONNET)]
-    assert [u.model for u in fake.usages if u.call_site == "chat_generate"] == ["sonnet"]
+    assert await _ledger(db_session, user.id) == [("chat_spend", -_OPUS)]
+    assert [u.model for u in fake.usages if u.call_site == "chat_generate"] == ["opus"]
 
 
 # ---- 상위 모델 가격의 환불 ----
@@ -284,13 +284,13 @@ async def _failing_premium_turn(
     surface: str,
     failure: str,
 ) -> tuple[User, httpx.Response]:
-    """Gemini 로 첫 턴을 무료로 돌려 둔 뒤(재생성·편집 대상) 방을 Sonnet 으로 바꾸고 실패하는 턴을 보낸다. 원장에는
+    """Gemini 로 첫 턴을 무료로 돌려 둔 뒤(재생성·편집 대상) 방을 Opus 로 바꾸고 실패하는 턴을 보낸다. 원장에는
     실패한 턴의 행만 남는다."""
     user = await _user(db_client, db_session, monkeypatch)
     room_id = await _room(db_client, db_session, user, None)
     if surface in ("regenerate", "edit"):
         assert (await _send(db_client, room_id)).status_code == 200
-    await _set_model(db_session, room_id, "sonnet")
+    await _set_model(db_session, room_id, "opus")
 
     if failure == "render":
 
@@ -337,7 +337,7 @@ async def test_our_side_failure_refunds_the_premium_price(
     assert resp.status_code == 200
     assert [e["type"] for e in _parse_sse_events(resp.text)] == ["error"]
     assert await _balance(db_session, user) == _START
-    assert await _ledger(db_session, user.id) == [("chat_refund", _SONNET), ("chat_spend", -_SONNET)]
+    assert await _ledger(db_session, user.id) == [("chat_refund", _OPUS), ("chat_spend", -_OPUS)]
     # 상위 모델 차감도 차감 id 를 들고 가 깎은 그 로트로 돌아간다(새 환급 로트가 생기지 않는다).
     assert await _clover_lots(db_session, user.id) == [("legacy_balance", _START)]
 
@@ -350,14 +350,14 @@ async def test_policy_violation_keeps_the_premium_charge(
     user, resp = await _failing_premium_turn(db_client, db_session, monkeypatch, surface=surface, failure="policy")
 
     assert [e["type"] for e in _parse_sse_events(resp.text)] == ["policyWarning"]
-    assert await _ledger(db_session, user.id) == [("chat_spend", -_SONNET)]
+    assert await _ledger(db_session, user.id) == [("chat_spend", -_OPUS)]
 
 
 async def test_route_body_failure_before_the_first_event_refunds_the_premium_price(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     user = await _user(db_client, db_session, monkeypatch)
-    room_id = await _room(db_client, db_session, user, "sonnet")
+    room_id = await _room(db_client, db_session, user, "opus")
 
     def _boom(*args: Any, **kwargs: Any) -> Any:
         raise RuntimeError("본문 실패")
@@ -370,7 +370,7 @@ async def test_route_body_failure_before_the_first_event_refunds_the_premium_pri
         raised = exc
 
     assert raised is not None
-    assert await _ledger(db_session, user.id) == [("chat_refund", _SONNET), ("chat_spend", -_SONNET)]
+    assert await _ledger(db_session, user.id) == [("chat_refund", _OPUS), ("chat_spend", -_OPUS)]
 
 
 # ---- 의존성 순서 ----

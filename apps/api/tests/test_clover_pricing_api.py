@@ -120,7 +120,7 @@ async def test_every_model_and_novel_cost_is_exposed(
         },
         {
             "id": "sonnet",
-            "name": "Claude Sonnet 4.6",
+            "name": "Claude Sonnet 5.5",
             "isDefault": False,
             "restricted": True,
             "chatTurnCost": 910_002,
@@ -128,7 +128,7 @@ async def test_every_model_and_novel_cost_is_exposed(
         },
         {
             "id": "opus",
-            "name": "Claude Opus 4.6",
+            "name": "Claude Opus 5.5",
             "isDefault": False,
             "restricted": True,
             "chatTurnCost": 910_003,

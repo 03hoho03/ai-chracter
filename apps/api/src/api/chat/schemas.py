@@ -11,7 +11,14 @@ from api.db.models.chat import ChatMessageReportReason, ChatMessageRole
 from api.db.models.content import ContentType
 from api.db.models.moderation import ReportStatus
 from api.db.models.story import EndingRuleOperator, LogicalOp
-from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, chat_turn_cost
+from api.llm.chat_models import (
+    CHAT_MODELS_BY_ID,
+    DEFAULT_CHAT_MODEL,
+    DEFAULT_CHAT_ROOM_MODEL,
+    ChatModelId,
+    ChatRoomModelId,
+    chat_turn_cost,
+)
 
 
 class ChatRoomCreateRequest(CamelModel):
@@ -238,36 +245,41 @@ class ChatRoomResponse(CamelModel):
     novel_creation_blocked: bool = Field(default_factory=bool)
     # 방이 고른 글쓰기 모델 — 저장된 값 그대로다(None 이 기본 모델). 레지스트리에서 내린 모델의 옛 값일 수도 있어 문자열이다.
     chat_model: str | None = None
-    # 다음 턴이 실제로 쓸 모델과 그 턴의 클로버. 허용을 거뒀거나 레지스트리에서 내린 모델이면 Gemini 와 Gemini 가격이다 —
-    # 화면은 저장 값이 아니라 이 둘을 보여 준다. 기본값은 이 필드를 모르는 생성 타입·픽스처와의 호환용이고(`persona_id` 와
-    # 같은 이유), 응답에는 항상 실린다. 둘 다 `default_factory` 다 — 스키마에 `default` 가 실리면 생성 타입이 그 필드를 필수로
+    # 다음 턴이 실제로 쓸 모델과 그 턴의 클로버. 허용을 거뒀거나, 레지스트리에서 내렸거나 채팅에서 고를 수 없는
+    # 모델이면 Gemini 와 Gemini 가격이다 — 화면은 저장 값이 아니라 이 둘을 보여 준다. 기본값은 이 필드를 모르는 생성
+    # 타입·픽스처와의 호환용이고(`persona_id` 와 같은 이유), 응답에는 항상 실린다. 둘 다 `default_factory` 다 — 스키마에 `default` 가 실리면 생성 타입이 그 필드를 필수로
     # 만들어 기존 픽스처가 깨진다.
-    effective_chat_model: ChatModelId = Field(default_factory=lambda: DEFAULT_CHAT_MODEL)
+    effective_chat_model: ChatRoomModelId = Field(default_factory=lambda: DEFAULT_CHAT_ROOM_MODEL)
+    # 유효 모델의 화면 이름(`GET /chat-models` 의 같은 모델 `name` 과 같다). 기본값을 두는 이유는 `effective_chat_model` 과
+    # 같다.
+    effective_chat_model_name: str = Field(default_factory=lambda: CHAT_MODELS_BY_ID[DEFAULT_CHAT_MODEL].name)
     turn_cost: int = Field(default_factory=lambda: chat_turn_cost(DEFAULT_CHAT_MODEL))
     created_at: datetime
     updated_at: datetime
 
 
 class ChatRoomModelSelectRequest(CamelModel):
-    """`PUT /chat-rooms/{id}/model`. 필드는 필수다 — 기본 모델로 되돌리기는 `"gemini"` 나 null 을 명시한다. 레지스트리 밖
-    값은 422 다."""
+    """`PUT /chat-rooms/{id}/model`. 필드는 필수다 — 기본 모델로 되돌리기는 `"gemini"` 나 null 을 명시한다. 채팅에서 고를
+    수 없는 값(레지스트리 밖, 소설에만 남은 Sonnet)은 422 다."""
 
-    model: ChatModelId | None
+    model: ChatRoomModelId | None
 
 
 class ChatRoomModelResponse(CamelModel):
-    """지정한 뒤의 방 모델. 방 응답의 같은 이름 세 필드와 같은 값이다 — 화면이 방을 다시 읽지 않고 바로 반영한다."""
+    """지정한 뒤의 방 모델. 방 응답의 같은 이름 네 필드와 같은 값이다 — 화면이 방을 다시 읽지 않고 바로 반영한다."""
 
     chat_model: str | None
-    effective_chat_model: ChatModelId
+    effective_chat_model: ChatRoomModelId
+    effective_chat_model_name: str
     turn_cost: int
 
 
 class ChatModelItem(CamelModel):
     """`GET /chat-models` 의 한 항목 — 이 계정이 채팅방에 고를 수 있는 모델과 그 모델의 턴 가격."""
 
-    id: ChatModelId
+    id: ChatRoomModelId
     name: str
+    beta: bool
     turn_cost: int
 
 

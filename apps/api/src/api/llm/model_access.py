@@ -20,7 +20,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
 from api.db.models.feature_grant import FeatureName, UserFeatureGrant
-from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, parse_chat_model_id
+from api.llm.chat_models import (
+    DEFAULT_CHAT_MODEL,
+    DEFAULT_CHAT_ROOM_MODEL,
+    ChatModelId,
+    ChatRoomModelId,
+    is_chat_room_model,
+    parse_chat_model_id,
+)
 from api.novelize.access import has_novelize_access
 
 
@@ -58,9 +65,11 @@ def effective_model(stored: str | None, *, allowed: bool) -> ChatModelId:
     return model if allowed else DEFAULT_CHAT_MODEL
 
 
-async def effective_room_model(db: AsyncSession, user_id: uuid.UUID, stored: str | None) -> ChatModelId:
+async def effective_room_model(db: AsyncSession, user_id: uuid.UUID, stored: str | None) -> ChatRoomModelId:
     """방에 저장된 모델(`chat_rooms.chat_model`)을 그 방 주인이 지금 쓸 모델로 읽는다. 기본 모델 방은 허용을 보지 않는다 —
-    턴마다 부르는 값이라 대부분의 방에서 쿼리를 더하지 않는다."""
-    if effective_model(stored, allowed=True) == DEFAULT_CHAT_MODEL:
-        return DEFAULT_CHAT_MODEL
-    return effective_model(stored, allowed=await has_chat_premium_access(db, user_id))
+    턴마다 부르는 값이라 대부분의 방에서 쿼리를 더하지 않는다. 채팅에서 고를 수 없는 모델(채팅에서 내리기 전에 저장된
+    Sonnet)도 허용과 무관하게 기본 모델이다 — 화면이 고를 수 없는 모델로 턴이 돌면 안 된다."""
+    model = effective_model(stored, allowed=True)
+    if not is_chat_room_model(model) or model == DEFAULT_CHAT_ROOM_MODEL:
+        return DEFAULT_CHAT_ROOM_MODEL
+    return model if await has_chat_premium_access(db, user_id) else DEFAULT_CHAT_ROOM_MODEL

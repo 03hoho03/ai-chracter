@@ -119,7 +119,6 @@ _MODES = {
     "gemini": clover.CHAT_TURN_COST,
     # 본인인증 게이트에 걸린 회원의 Gemini 턴(무료분 0).
     "unverified": clover.CHAT_TURN_COST,
-    "sonnet": clover.CHAT_TURN_COST_SONNET,
     "opus": clover.CHAT_TURN_COST_OPUS,
 }
 
@@ -175,7 +174,7 @@ async def test_a_paid_turn_in_another_creators_room_records_the_room_and_its_own
     surface: str,
     mode: str,
 ) -> None:
-    """방 세 경로 모두, 차감 갈래(무료분 소진 뒤·미인증·Sonnet·Opus) 모두 한 차감에 사용처 하나가 남고, 소유자는 플레이어가
+    """방 세 경로 모두, 차감 갈래(무료분 소진 뒤·미인증·Opus) 모두 한 차감에 사용처 하나가 남고, 소유자는 플레이어가
     아니라 작품 작가다."""
     creator = await _another_creator(db_session)
     content = await _make_published_character(
@@ -185,7 +184,7 @@ async def test_a_paid_turn_in_another_creators_room_records_the_room_and_its_own
         db_session, clover_balance=1000, clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC))
     )
     await db_session.commit()
-    if mode in ("sonnet", "opus"):
+    if mode == "opus":
         await _allow_chat_premium(db_session, monkeypatch, player.id)
 
     room_id, resp = await _paid_room_turn(

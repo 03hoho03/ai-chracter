@@ -291,7 +291,8 @@ class Settings(BaseSettings):
     # `ANTHROPIC_API_KEY` 와 나눈다(Bedrock 키가 `AWS_*` 를 피한 것과 같은 이유) — 배정이 경로를 옮기는데 키가 비면 기동하지
     # 않는다(`llm/backends.py` 의 `assignment_errors`).
     anthropic_direct_api_key: str = Field(default="", repr=False)
-    # 실제 모델 id. 같은 `opus`·`sonnet` 이라도 Bedrock 쪽 id 와 버전이 다르다 — 화면의 모델 이름은 Bedrock 쪽을 따른다.
+    # 실제 모델 id. 같은 `opus`·`sonnet` 이라도 Bedrock 쪽 id 와 버전이 다르다. 화면의 모델 이름(`llm/chat_models.py`)은
+    # 운영이 실제로 부르는 쪽을 따르고, 운영은 배정으로 상위 모델을 이 구현에 보내므로 지금은 이 쪽 버전이다.
     anthropic_sonnet_model_id: str = "claude-sonnet-5-5"
     anthropic_opus_model_id: str = "claude-opus-5-5"
     # 요청 타임아웃(ms). Bedrock 과 같은 값이고 같은 뜻("다음 청크까지")이다.

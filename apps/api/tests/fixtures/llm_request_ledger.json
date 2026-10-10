@@ -569,14 +569,14 @@
       }
     ]
   },
-  "send-story-sonnet": {
+  "send-story-opus": {
     "calls": [
       {
         "callSite": "chat_generate",
         "hasRoom": true,
         "hasUser": true,
         "method": "generate",
-        "model": "sonnet",
+        "model": "opus",
         "promptSha": "066f4cdd1aa1538aa3139000cb463d18ad885321740fc6924c2c990c18ed7008",
         "provider": "bedrock",
         "responseSchema": null,
@@ -648,7 +648,7 @@
     ],
     "promptDump": [
       {
-        "chatModel": "sonnet",
+        "chatModel": "opus",
         "hasRoomId": true,
         "turn": 31
       }

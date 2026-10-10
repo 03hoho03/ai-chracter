@@ -330,8 +330,8 @@ def _expected_models(*, premium: bool) -> list[dict[str, Any]]:
         return [gemini]
     return [
         gemini,
-        {"id": "sonnet", "name": "Claude Sonnet 4.6", "chapterGenerate": 106, "chapterRegenerate": 106},
-        {"id": "opus", "name": "Claude Opus 4.6", "chapterGenerate": 171, "chapterRegenerate": 171},
+        {"id": "sonnet", "name": "Claude Sonnet 5.5", "chapterGenerate": 106, "chapterRegenerate": 106},
+        {"id": "opus", "name": "Claude Opus 5.5", "chapterGenerate": 171, "chapterRegenerate": 171},
     ]
 
 
