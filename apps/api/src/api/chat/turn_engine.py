@@ -1,14 +1,16 @@
-"""실채팅 새 턴 하나의 골격 — 생성 스트림 → 판정 → 쓰기 → 커밋 뒤 표시 → 사후 이벤트.
+"""실채팅 턴 하나의 골격 — 생성 스트림 → 판정 → 쓰기 → 커밋 뒤 표시 → 사후 이벤트.
 
-보내기(`send_message`)와 수정(`edit_message`)이 같은 `run_turn` 을 지난다. 둘 다 실제로는 같은 "새 턴"이고, 차이는 라우트가
-그 앞에서 하는 선행 작업(새 사용자 메시지 커밋 / 되감기·절단·편집 커밋)과 넘기는 히스토리·단축어뿐이다. 생성 프롬프트는
-라우트가 조립해 `TurnInput` 에 싣는다 — 조립 입력이 경로마다 달라서다(재생성은 마지막 응답을 뺀 히스토리, 미리보기는
-초안 페이로드). 조립이 실패하면 라우트가 그 자리에서 오류로 끝내고 이 골격에는 들어오지 않는다.
+보내기(`send_message`)·수정(`edit_message`)·재생성(`regenerate_message`)이 같은 `run_turn` 을 지난다. 보내기와 수정은 실제로는
+같은 "새 턴"이고, 차이는 라우트가 그 앞에서 하는 선행 작업(새 사용자 메시지 커밋 / 되감기·절단·편집 커밋)과 넘기는
+히스토리·단축어뿐이다. 재생성은 같은 턴의 마지막 응답을 바꾸는 것이라 판정 목록(그림 판정만)과 저장소(옛 응답을 지우고
+바꿔 넣으며 `turn_count` 를 올리지 않는다)가 다르고, 커밋 뒤 사후 작업(요약 접기 예약)이 없다. 생성 프롬프트는 라우트가
+조립해 `TurnInput` 에 싣는다 — 조립 입력이 경로마다 달라서다(재생성은 마지막 응답을 뺀 히스토리, 미리보기는 초안 페이로드).
+조립이 실패하면 라우트가 그 자리에서 오류로 끝내고 이 골격에는 들어오지 않는다.
 
 방에 무엇을 언제 쓰는지는 저장소(`TurnStore`, 실채팅은 `chat/turn_store.py` 의 `RoomTurnStore`)가 정하고, 이 모듈은 단계의
 순서·예외 범위·이벤트 순서만 정한다. 이 모듈은 라우터를 import 하지 않는다(라우터가 이 모듈을 import 한다).
 
-재생성과 빌더 미리보기는 아직 이 골격을 쓰지 않고, 여기 있는 생성 스트림·문구·`done` 메시지 조립 헬퍼만 라우터에서 부른다."""
+빌더 미리보기는 아직 이 골격을 쓰지 않고, 여기 있는 생성 스트림·문구 헬퍼만 라우터에서 부른다."""
 
 import asyncio
 import json
@@ -51,7 +53,7 @@ from api.llm.client import (
 from api.llm.routing import resolve_backend
 
 _POLICY_WARNING_MESSAGE = "메시지 생성이 콘텐츠 정책에 의해 중단되었습니다."
-# 문구의 유일한 자리. 3곳은 `_policy_warning_message`로만 고른다.
+# 문구의 유일한 자리. 2곳(턴 골격·미리보기)은 `_policy_warning_message`로만 고른다.
 _PERSONA_POLICY_WARNING_MESSAGE = f"{_POLICY_WARNING_MESSAGE} 대화 프로필 내용이 원인일 수 있어요."
 _NOTE_POLICY_WARNING_MESSAGE = f"{_POLICY_WARNING_MESSAGE} 기억 노트 내용이 원인일 수 있어요."
 _PERSONA_AND_NOTE_POLICY_WARNING_MESSAGE = (
@@ -65,7 +67,8 @@ def _policy_warning_message(persona_description_rendered: bool, note_rendered: b
     들어갔을 때만(`user_persona_rendered`·`memory_note_rendered`) 그 안내를 붙이고, 둘 다면 한 문장으로
     합친다. 프로필은 설명이 있을 때만 안내한다 — 이름은 거의 모두가 정하므로 이름만으로 붙이면 거의 모든 차단에 붙는다.
     원인이 그것인지는 알 수 없어서 "~일 수 있다"로 쓴다. 요약은 대화에서 나온 것이라 안내에
-    넣지 않는다. `yield ChatPolicyWarningEvent` 3곳이 공유한다(미리보기는 노트가 없어 거짓)."""
+    넣지 않는다. `yield ChatPolicyWarningEvent` 2곳(턴 골격·미리보기)이 공유한다(미리보기는 노트가 없어
+    거짓)."""
     if persona_description_rendered and note_rendered:
         return _PERSONA_AND_NOTE_POLICY_WARNING_MESSAGE
     if persona_description_rendered:
@@ -179,7 +182,23 @@ def _turn_message_response(
     )
 
 
-TurnKind = Literal["send", "edit"]
+TurnKind = Literal["send", "edit", "regenerate"]
+
+# 경로별 경고 문구. 재생성은 원래 자기 라우트 안에서 "재생성" 이 들어간 문구로 남겼고, 그 문장을 그대로 지킨다 — 로그와
+# Bugsink breadcrumb 를 문구로 찾는 쪽이 골격으로 옮긴 뒤에도 같은 문장을 읽는다. 포맷 문자열 자체를 경로마다 따로 둬야
+# 기록의 메시지 틀과 인자가 옮기기 전과 같다.
+_GENERATION_FAILURE_LOG: dict[TurnKind, str] = {
+    "send": "대화방 %s 메시지 생성 실패: %s",
+    "edit": "대화방 %s 메시지 생성 실패: %s",
+    "regenerate": "대화방 %s 응답 재생성 실패: %s",
+}
+_JUDGMENT_FAILURE_LOG: dict[TurnKind, str] = {
+    "send": "대화방 %s 판정 실패 — 이번 턴의 판정을 건너뛴다: %s",
+    "edit": "대화방 %s 판정 실패 — 이번 턴의 판정을 건너뛴다: %s",
+    "regenerate": "대화방 %s 재생성 이미지 매칭 실패 — 이번 재생성의 매칭을 건너뛴다: %s",
+}
+# 판정 헬퍼가 자기 경고 앞에 붙이는 주어(`JudgmentContext.log_subject`)의 꼬리.
+_JUDGMENT_LOG_SUBJECT_SUFFIX: dict[TurnKind, str] = {"send": "", "edit": "", "regenerate": " 재생성"}
 
 
 @dataclass(frozen=True)
@@ -203,7 +222,7 @@ class TurnInput:
 
 @dataclass
 class TurnResult:
-    """한 턴이 만든 것 — 생성된 글과 판정이 고른 그대로의 결과. 쓰기·표시 단계에서 노출 기록·서명 실패로 그림을 버린
+    """한 턴(새 턴이나 재생성)이 만든 것 — 생성된 글과 판정이 고른 그대로의 결과. 쓰기·표시 단계에서 노출 기록·서명 실패로 그림을 버린
     결과는 여기 넣지 않고 `TurnWrite`·`TurnPresentation` 에 둔다. "판정이 고른 것"과 "실제로 보여 준 것"을 섞지 않아야,
     나중에 턴마다 남기는 기록이 이 값을 그대로 원천으로 쓸 수 있다."""
 
@@ -241,7 +260,7 @@ class TurnStore(Protocol):
     db: AsyncSession
 
     def turn_number(self) -> int:
-        """이번 턴 번호. 생성 전 반납 뒤에 읽는다."""
+        """이번 턴 번호(재생성은 바꾸는 응답의 턴 번호). 생성 전 반납 뒤에 읽는다."""
         ...
 
     async def release(self) -> None:
@@ -267,11 +286,12 @@ async def run_turn(
     after_commit: Callable[[TurnResult], None] | None,
     log: logging.Logger,
 ) -> AsyncIterator[ChatStreamEvent]:
-    """생성 + 판정 + 쓰기까지 "새 턴 하나"를 전부 실행한다. 캐릭터 챗은 상황별 이미지 매칭만, 스토리 챗은 스탯 변경·엔딩
-    판정과 미디어 북 칸 판정을 한다(그림 결과는 둘 다 `chat_messages.image_id`에 저장돼 done 이벤트의 finalMessage와
-    `GET /chat-rooms/{id}` 재조회 둘 다에 실린다 — 캐릭터는 상황별 이미지 entity_id, 스토리는 칸 entity_id).
+    """생성 + 판정 + 쓰기까지 턴 하나(새 턴이나 재생성)를 전부 실행한다. 캐릭터 챗은 상황별 이미지 매칭만, 스토리 챗은
+    스탯 변경·엔딩 판정과 미디어 북 칸 판정을 한다(그림 결과는 둘 다 `chat_messages.image_id`에 저장돼 done 이벤트의
+    finalMessage와 `GET /chat-rooms/{id}` 재조회 둘 다에 실린다 — 캐릭터는 상황별 이미지 entity_id, 스토리는 칸 entity_id).
     스토리 챗은 최초 엔딩 도달(room.ending_reached) 이후로 스탯·엔딩 판정이 멈추고 칸 판정만 계속한다 — 메시지 생성
-    자체는 계속 허용. 어떤 판정을 어떤 차례로 할지는 `judgments` 목록이 정한다(`new_turn_judgments`).
+    자체는 계속 허용. 어떤 판정을 어떤 차례로 할지는 `judgments` 목록이 정한다(새 턴은 `new_turn_judgments`, 재생성은
+    그림 판정만 하는 `regenerate_judgments`).
 
     LLM(생성·판정)을 기다리는 동안 요청 세션은 트랜잭션을 쥐지 않는다 — 쥐면 그동안 커넥션 하나를 통째로 점유해,
     동시에 진행할 수 있는 턴 수가 커넥션 풀 크기에 묶인다. 그래서 턴은 세 구간으로 나뉜다: ① 읽기(생성 프롬프트,
@@ -281,7 +301,8 @@ async def run_turn(
     LLM 을 기다리는 사이 방이 사라질 수 있다 — 그때는 아무것도 쓰지 않고 오류 이벤트로 끝내며 환불하지 않는다(사용자가
     지웠고 LLM 은 이미 탔다).
 
-    턴을 커밋하고 커밋 뒤 조회까지 반납한 다음 `after_commit` 을 부른다(실채팅은 요약 접기 예약). 첫 사후 `yield`
+    턴을 커밋하고 커밋 뒤 조회까지 반납한 다음 `after_commit` 을 부른다(보내기·수정은 요약 접기 예약, 재생성은 `None` 이라
+    부르지 않는다). 첫 사후 `yield`
     **앞**이다 — 그 뒤에 두면 `done`을 받고 연결을 끊은 클라이언트의 턴에서 예약 자체가 사라진다.
 
     경고 로그는 부르는 쪽 로거(`log`)로 남긴다 — 이 경고들은 원래 라우트 안에 있던 것이라, 로거 이름으로 거르는 쪽(Bugsink
@@ -317,7 +338,7 @@ async def run_turn(
         )
         return
     except LLMClientError as exc:
-        log.warning("대화방 %s 메시지 생성 실패: %s", room.id, exc)
+        log.warning(_GENERATION_FAILURE_LOG[inp.kind], room.id, exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
         await settlement.refund()
         yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
@@ -338,7 +359,7 @@ async def run_turn(
         assistant_message=assistant_content,
         names=generation.names,
         turn=next_turn,
-        log_subject=f"대화방 {room.id}",
+        log_subject=f"대화방 {room.id}{_JUDGMENT_LOG_SUBJECT_SUFFIX[inp.kind]}",
     )
     # 판정 단계의 LLM 실패는 반드시 이 안에서 흡수한다 — 예외가 SSE 제너레이터 밖으로 새면
     # ASGI 태스크가 취소되면서 요청 스코프 DB 세션이 강제 종료되고, 망가진 asyncpg 커넥션이
@@ -367,7 +388,7 @@ async def run_turn(
                 await judgment.judge(llm, ctx)
                 judgment.apply(ctx, result)
     except (LLMClientError, PromptRenderError) as exc:
-        log.warning("대화방 %s 판정 실패 — 이번 턴의 판정을 건너뛴다: %s", room.id, exc)
+        log.warning(_JUDGMENT_FAILURE_LOG[inp.kind], room.id, exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
 
     turn = TurnResult(kind=inp.kind, turn_number=next_turn, assistant_content=assistant_content, judgments=result)

@@ -1,8 +1,8 @@
 """실채팅 방에 턴을 쓰고, 커밋 뒤 화면에 실을 것을 조립하는 저장소(`RoomTurnStore`)와 그 헬퍼.
 
 턴 골격(`chat/turn_engine.py` 의 `run_turn`)이 단계의 순서를 정하고, 이 모듈은 각 단계에서 방에 무엇을 어떤 트랜잭션으로
-쓰는지를 정한다. 헬퍼 중 쓰기 구간 잠금·노출 기록·칸 서명은 재생성(`regenerate_message`)도, 칸 해금 기록은 방의 첫 메시지
-삽입도 라우터에서 그대로 부른다. 이 모듈은 라우터를 import 하지 않는다(라우터가 이 모듈을 import 한다).
+쓰는지를 정한다. 헬퍼 중 칸 해금 기록은 방의 첫 메시지 삽입도 라우터에서 그대로 부른다. 이 모듈은 라우터를 import 하지
+않는다(라우터가 이 모듈을 import 한다).
 
 경고는 전부 부르는 쪽이 넘긴 로거(`log`)로 남긴다 — 이 경고들은 원래 라우터 안에 있던 것이라, 로거 이름으로 거르는
 쪽(경고의 로거 이름까지 기록한 테스트, Bugsink breadcrumb 범주)이 옮긴 뒤에도 같은 이름(`api.chat.router`)으로
@@ -13,7 +13,7 @@ import uuid
 from decimal import Decimal
 from typing import Literal
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,11 +32,21 @@ from api.db.models.chat import (
     ChatMessageRole,
     ChatRoom,
     ChatRoomStat,
+    DiscardedResponse,
     StoryEndingUnlock,
     StoryMediaExposure,
 )
 from api.db.models.media import Asset
 from api.db.models.story import StartingSetup
+
+TurnStoreMode = Literal["append", "replace"]
+
+# 커밋 뒤 상황 이미지 URL 조립 실패의 경고 문구. 재생성은 원래 자기 라우트 안에서 "재생성" 이 들어간 문구로 남겼고, 그
+# 문장을 그대로 지킨다(턴 골격의 경로별 문구와 같은 이유).
+_SITUATIONAL_URL_FAILURE_LOG: dict[TurnStoreMode, str] = {
+    "append": "대화방 %s 상황이미지 URL 조립 실패 — 이미지 없이 진행한다: %s",
+    "replace": "대화방 %s 재생성 상황이미지 URL 조립 실패 — 이미지 없이 진행한다: %s",
+}
 
 
 async def _lock_room_for_turn_write(db: AsyncSession, room: ChatRoom, *, log: logging.Logger) -> uuid.UUID | None:
@@ -167,7 +177,9 @@ async def _sign_judged_cell(
 
 class RoomTurnStore:
     """실채팅 방의 턴 저장소. `mode="append"` 는 새 턴을 덧붙인다(보내기·수정) — 응답 메시지를 새로 넣고 `turn_count` 를
-    하나 올린다.
+    하나 올린다. `mode="replace"` 는 재생성이다 — 같은 턴의 마지막 응답(`replaced_message_id`)을 지우고 새 응답으로 바꿔
+    넣으며, 응답이 실제로 지워졌다는 폐기 기록을 같은 트랜잭션에 남긴다. 턴 번호는 지금 `turn_count` 그대로이고 올리지
+    않는다. 노출 기록·그림·커밋·정산과 커밋 뒤 표시는 두 모드가 같다.
 
     트랜잭션 반납은 `commit()` 이다 — 읽기만 한 트랜잭션이라 끝내기만 하고, `expire_on_commit=False` 라 읽어 둔 객체를
     그대로 쓴다(`rollback()` 은 객체를 만료시켜 다음 속성 접근이 실패한다)."""
@@ -178,16 +190,24 @@ class RoomTurnStore:
         room: ChatRoom,
         setup: StartingSetup | None,
         *,
-        mode: Literal["append"],
+        mode: TurnStoreMode,
+        replaced_message_id: uuid.UUID | None = None,
         log: logging.Logger,
     ) -> None:
+        # 바꿀 응답은 replace 에만 있고 replace 에는 반드시 있다 — 어긋나면 append 가 남의 응답을 지우거나 replace 가 지울
+        # 것 없이 응답을 하나 더 넣는다.
+        assert (mode == "replace") == (replaced_message_id is not None)
         self.db = db
         self._log = log
         self._room = room
         self._setup = setup
         self._mode = mode
+        self._replaced_message_id = replaced_message_id
 
     def turn_number(self) -> int:
+        if self._mode == "replace":
+            # 재생성은 같은 턴의 응답을 바꾸는 것이라 턴 번호가 그대로다.
+            return self._room.turn_count
         return self._room.turn_count + 1
 
     async def release(self) -> None:
@@ -196,7 +216,11 @@ class RoomTurnStore:
     async def write(self, turn: TurnResult, settlement: TurnSettlement) -> TurnWrite | None:
         """쓰기 구간. 방 행을 먼저 잠그며 존재를 확인한다 — 쓰기 구간끼리(요약 접기의 버전 갱신 포함) 줄을 서고, LLM 을
         기다리는 사이 방이 지워졌으면 응답 INSERT 가 외래 키 위반으로 제너레이터를 뚫기 전에 갈라진다. 그 밖의 쓰기·커밋
-        실패는 흡수하지 않는다."""
+        실패는 흡수하지 않는다.
+
+        append 는 새 응답을 넣고 flush 해 id 를 얻은 뒤 `turn_count` 를 올린다. replace 는 옛 응답 DELETE → 폐기 기록 →
+        미리 정한 id 의 새 응답 순서이고 flush 하지 않는다(재생성이 원래 쓰던 모양 그대로다). 그 뒤 노출 기록·스탯·엔딩·그림·
+        커밋은 두 모드가 같은 코드를 지난다 — 재생성은 스탯·엔딩 판정을 하지 않아 그 칸이 비어 있다."""
         db, room, setup = self.db, self._room, self._setup
         result = turn.judgments
         # 노출 기록 실패 때 그림을 `None` 으로 덮으므로 지역 이름으로 읽는다(판정 결과는 그대로 둔다).
@@ -207,14 +231,28 @@ class RoomTurnStore:
             settlement.mark_settled()
             return None
 
-        assistant_message = ChatMessage(
-            chat_room_id=room.id, role=ChatMessageRole.ASSISTANT, content=turn.assistant_content
-        )
-        db.add(assistant_message)
-        await db.flush()
-        # 여기부터 아래 커밋이 돌아올 때까지 끊기면 응답이 저장됐는지 알 수 없다 — 정산이 응답 행을 직접 확인한다.
-        settlement.set_pending_message(db, room.id, assistant_message.id)
-        room.turn_count = turn.turn_number
+        if self._replaced_message_id is None:
+            assistant_message = ChatMessage(
+                chat_room_id=room.id, role=ChatMessageRole.ASSISTANT, content=turn.assistant_content
+            )
+            db.add(assistant_message)
+            await db.flush()
+            # 여기부터 아래 커밋이 돌아올 때까지 끊기면 응답이 저장됐는지 알 수 없다 — 정산이 응답 행을 직접 확인한다.
+            settlement.set_pending_message(db, room.id, assistant_message.id)
+            room.turn_count = turn.turn_number
+        else:
+            await db.execute(delete(ChatMessage).where(ChatMessage.id == self._replaced_message_id))
+            # 옛 응답 DELETE 와 같은 트랜잭션이라 응답이 실제로 지워진 재생성만 센다 — 렌더 실패·정책 위반·LLM 오류는 이
+            # 쓰기 구간에 오기 전에 옛 응답을 남긴 채 끝나므로 기록되지 않는다.
+            db.add(DiscardedResponse(user_id=room.user_id, chat_room_id=room.id, kind="regenerate", discarded_count=1))
+            # id 를 여기서 정한다 — 컬럼 기본값(`uuid4`)은 flush 때에야 채워지는데, 정산은 커밋 전에 이 id 를 알아야 한다.
+            assistant_message = ChatMessage(
+                id=uuid.uuid4(), chat_room_id=room.id, role=ChatMessageRole.ASSISTANT, content=turn.assistant_content
+            )
+            db.add(assistant_message)
+            # 여기부터 아래 커밋이 돌아올 때까지 끊기면 응답이 저장됐는지 알 수 없다(위 append 의 같은 자리). 턴 수는
+            # 올리지 않는다.
+            settlement.set_pending_message(db, room.id, assistant_message.id)
 
         if judged_cell_id is not None and not await _record_story_media_exposure(
             db, room, judged_cell_id, log=self._log
@@ -281,7 +319,7 @@ class RoomTurnStore:
                 assert image_asset is not None
                 matched_image_url = await run_in_threadpool(generate_presigned_get_url, image_asset.storage_key)
             except Exception as exc:
-                self._log.warning("대화방 %s 상황이미지 URL 조립 실패 — 이미지 없이 진행한다: %s", room.id, exc)
+                self._log.warning(_SITUATIONAL_URL_FAILURE_LOG[self._mode], room.id, exc)
                 capture_dependency_failure(exc, dependency="s3")
                 matched_image = None
                 matched_image_url = None

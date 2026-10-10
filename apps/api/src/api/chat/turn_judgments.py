@@ -1,4 +1,4 @@
-"""실채팅 새 턴의 판정(스탯 규칙·엔딩·스토리 칸·캐릭터 상황 이미지)과 그 헬퍼.
+"""실채팅 턴의 판정(스탯 규칙·엔딩·스토리 칸·캐릭터 상황 이미지)과 그 헬퍼. 재생성은 이 가운데 그림 판정(칸·상황 이미지)만 한다.
 
 판정 하나는 세 단계로 나뉜다 — `prepare`(DB 읽기와, 엔딩을 뺀 판정의 프롬프트 조립, 요청 세션의 트랜잭션 안), `judge`(DB 에 닿지 않는다 —
 LLM 호출, 엔딩은 엔딩마다 프롬프트 렌더도 여기서 한다), `apply`(결과를 `TurnJudgmentResult` 에 옮긴다). 단계 사이의
@@ -10,7 +10,7 @@ import 하지 않는다(라우터가 이 모듈을 import 한다).
 상황 이미지 후보 조회는 자기 DB 실패를 흡수한다. 스탯 준비의 DB 읽기·렌더, 엔딩 준비의 DB 읽기, 엔딩 판정의 렌더·LLM, 상황 이미지
 준비의 렌더와 판정 LLM 은 흡수하지 않고 부르는 쪽으로 올린다.
 
-헬퍼 함수는 재생성(`regenerate_message`)과 빌더 미리보기(`_stream_preview_turn`)도 그대로 부른다."""
+헬퍼 함수 일부는 빌더 미리보기(`_stream_preview_turn`)도 그대로 부른다."""
 
 import logging
 import uuid
@@ -77,7 +77,8 @@ logger = logging.getLogger(__name__)
 
 
 def _llm_dependency_tag(exc: LLMClientError | PromptRenderError | PromptSetNotFoundError) -> str:
-    """생성·판정 흡수 지점(이 모듈의 판정 헬퍼와 `chat/router.py` 의 생성·판정·재생성·미리보기)이 공유하는 승격 태그
+    """생성·판정 흡수 지점(이 모듈의 판정 헬퍼, 턴 골격 `chat/turn_engine.py` 의 생성·판정, `chat/router.py` 의 생성
+    프롬프트 렌더·미리보기)이 공유하는 승격 태그
     분류다. `PromptRenderError`는 외부 의존이 아니라 우리 템플릿 결함이라 별도 태그로 갈라
     묶어 본다. 생성 세트가 없는 것(`PromptSetNotFoundError`)도 같은 묶음이다 — 둘 다 어드민 문안 쪽을 고쳐야 한다. LLM 실패는 공급자와 쿼터 소진(429) 여부로 가른다(`llm/client.py` 의 `dependency_tag`) —
     안 갈라 붙이면 승격된 이벤트가 행동 가능하지 않다."""
@@ -492,7 +493,7 @@ class JudgmentContext:
     user_message: str
     assistant_message: str
     names: PromptNames
-    # 이번 턴 번호(쓰기 구간이 올릴 `turn_count`) — 엔딩 판정 차례를 정한다.
+    # 이번 턴 번호(새 턴은 쓰기 구간이 올릴 `turn_count`, 재생성은 지금 `turn_count`) — 엔딩 판정 차례를 정한다.
     turn: int
     log_subject: str
     stat_after: dict[str, float] | None = None
@@ -718,4 +719,14 @@ def new_turn_judgments(setup: StartingSetup | None) -> list[TurnJudgment]:
     부른다(함께 부르는 순서도 이 목록 순서다). 캐릭터는 상황 이미지 하나다."""
     if setup is not None:
         return [StatJudgment(setup), EndingJudgment(setup), MediaCellJudgment()]
+    return [SituationalImageJudgment()]
+
+
+def regenerate_judgments(setup: StartingSetup | None) -> list[TurnJudgment]:
+    """재생성이 할 판정 — 그림 판정만이다(스토리는 칸, 캐릭터는 상황 이미지). 스탯·엔딩 판정은 하지 않는다: 원 응답 때
+    이미 한 번 반영됐고, 그 반영분을 되돌릴 턴별 기록이 없어 다시 하면 같은 턴이 두 번 반영된다. 그림 판정은 다시 한다 —
+    노출 기록은 첫 노출만 남겨 멱등이라 중복이 생기지 않고, 새 응답 글에 맞는 그림이 붙는다. 스토리 칸 판정은 엔딩 뒤에도
+    한다(새 턴과 같다)."""
+    if setup is not None:
+        return [MediaCellJudgment()]
     return [SituationalImageJudgment()]

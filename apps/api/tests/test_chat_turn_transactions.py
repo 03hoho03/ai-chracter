@@ -781,7 +781,7 @@ async def test_regenerate_write_failure_keeps_the_old_response(
         # 지운 응답 수 0 은 CHECK(1 이상) 위반 — 쓰기 구간의 커밋에서 터진다.
         return DiscardedResponse(**{**fields, "discarded_count": 0})
 
-    monkeypatch.setattr(chat_router, "DiscardedResponse", _breaking_discarded_response)
+    monkeypatch.setattr(turn_store, "DiscardedResponse", _breaking_discarded_response)
     _override_llm_client(_AnswerAllLLMClient())
     try:
         exc = await _request_failure(db_client, f"/chat-rooms/{room.room_id}/regenerate", None)
