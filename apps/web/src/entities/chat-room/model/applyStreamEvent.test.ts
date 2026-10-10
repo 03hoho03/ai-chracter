@@ -73,15 +73,25 @@ describe("applyStreamEvent", () => {
     });
   });
 
-  it("endingReached sets endingStatus (including epilogue) using the current turnCount", () => {
+  it("records the ending at the turn the server counts it in (one past the current turnCount)", () => {
     applyStreamEvent(queryClient, ROOM_ID, { type: "endingReached", endingId: "ending-1", epilogue: "끝" });
 
     expect(queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(ROOM_ID))?.endingStatus).toEqual({
       reached: true,
       endingId: "ending-1",
-      reachedAtTurn: 3,
+      reachedAtTurn: 4,
       epilogue: "끝",
     });
+  });
+
+  it("ends a turn that reached an ending with reachedAtTurn equal to the new turnCount", () => {
+    const finalMessage: ChatMessage = { id: "m2", role: "assistant", content: "마지막 대사", createdAt: "2026-07-08T00:01:00Z" };
+
+    applyStreamEvent(queryClient, ROOM_ID, { type: "endingReached", endingId: "ending-1", epilogue: null });
+    applyStreamEvent(queryClient, ROOM_ID, { type: "done", finalMessage });
+
+    const next = queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(ROOM_ID));
+    expect(next?.endingStatus.reachedAtTurn).toBe(next?.turnCount);
   });
 
   it("endingReached normalizes a null epilogue to undefined", () => {
