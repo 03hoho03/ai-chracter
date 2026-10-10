@@ -35,7 +35,7 @@ from api.chat.schemas import (
     ChatTokenEvent,
 )
 from api.chat.turn_judgments import JudgmentContext, TurnJudgment, TurnJudgmentResult, _llm_dependency_tag
-from api.chat.turn_prompt import GenerationPrompt
+from api.chat.turn_prompt import GenerationPrompt, JudgmentPromptSets
 from api.chat.turn_settlement import TurnSettlement
 from api.content.schemas import MediaTagImage
 from api.core.config import settings
@@ -44,7 +44,7 @@ from api.core.sentry import capture_dependency_failure
 from api.db.models.character import SituationalImage
 from api.db.models.chat import ChatMessage, ChatRoom
 from api.db.models.prompt import PromptSection, PromptSet
-from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId
+from api.llm.chat_models import ChatModelId, configured_call_site_model
 from api.llm.client import (
     CallUsage,
     LLMCallContext,
@@ -132,10 +132,10 @@ def _dump_judgment_prompt(
     `judgment` 라 생성 줄만 읽는 리플레이(`scripts/replay/logs.py` 의 `dump_record`)가 걸러 낸다.
 
     응답 스키마는 클래스 이름으로 남긴다 — 호출 위치마다 스키마가 하나라 다시 보낼 때 그 이름으로 찾는다. 모델은 실제로 보낸
-    id 다. 판정은 방의 모델이 아니라 기본 모델로 구현을 고르고, Gemini 구현은 판정 종류마다 판정 모델 설정을 따로 고른다
-    (`structured_model`). 지시문을 따로 보내는 구조화 호출(`generate_structured_with_instruction`)이면 그 지시문을
+    id 다. 판정은 방의 모델이 아니라 판정 종류의 판정 모델 설정으로 구현을 고르고(`configured_call_site_model`), 그 구현이
+    Gemini 면 판정 종류마다 실제 Gemini 모델을 따로 고른다(`structured_model`). 지시문을 따로 보내는 구조화 호출(`generate_structured_with_instruction`)이면 그 지시문을
     `systemInstruction` 으로 함께 남긴다 — 생성 줄과 같은 키다. 지시문 없이 부른 판정 줄에는 이 키가 없다."""
-    backend, sent = resolve_backend(call_site, DEFAULT_CHAT_MODEL)
+    backend, sent = resolve_backend(call_site, configured_call_site_model(call_site))
     record = {
         "roomId": str(room_id) if room_id is not None else None,
         "turn": turn,
@@ -344,9 +344,8 @@ class TurnInput:
     generation: GenerationPrompt
     # 생성 프롬프트를 조립한 세트 — 정지 시퀀스의 사용자 라벨을 여기서 읽는다.
     generation_set: PromptSet
-    # 판정(과 요약 접기)은 고른 모델과 무관하게 Gemini 세트로 한다.
-    judgment_set: PromptSet
-    judgment_sections: list[PromptSection]
+    # 판정은 고른 모델과 무관하게 판정 종류마다 판정 모델의 세트로 한다(요약 접기는 라우트가 요약 세트를 따로 넘긴다).
+    judgment_sets: JudgmentPromptSets
     # 생성 호출의 모델을 정한다.
     charge: ChatCharge
 
@@ -492,8 +491,7 @@ async def run_turn(
     # 도중 예외가 나도 그때까지 채운 결과는 쓰기 구간으로 간다.
     result = TurnJudgmentResult()
     ctx = JudgmentContext(
-        prompt_set=inp.judgment_set,
-        prompt_sections=inp.judgment_sections,
+        prompt_sets=inp.judgment_sets,
         history=inp.history,
         user_message=inp.user_content,
         assistant_message=assistant_content,

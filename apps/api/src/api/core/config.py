@@ -1,6 +1,6 @@
 import json
 import uuid
-from typing import Annotated, Literal
+from typing import Annotated, Literal, get_args
 
 from pydantic import Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -10,6 +10,7 @@ from api.core.field_crypto import FieldKeyring
 # 둘 다 `settings` 를 찾지 않는 모듈이다(`backends` 는 `call_policy` 만, `call_policy` 는 아무 `api` 모듈도 import 하지 않는다) — 아래 `settings = Settings()` 가 이 모듈을 import 하는 도중에 돌므로,
 # 기동 검증이 읽는 표는 `settings` 를 찾지 않는 모듈에 있어야 한다.
 from api.llm import backends
+from api.llm.backends import PromptSetModelId
 from api.llm.call_policy import BackendId, LLMCallSite
 
 # Anthropic API 의 사고 깊이(`output_config.effort`). API 가 받는 값만 둔다 — 오타가 첫 호출의 거부가 아니라 기동 거부가 되게.
@@ -275,6 +276,8 @@ class Settings(BaseSettings):
     # 모델 값(`sonnet`·`opus`)은 그대로다 — 단가표(`llm/pricing.py`)에 없는 id 면 어드민 원가가 "단가 없음"이 된다.
     bedrock_sonnet_model_id: str = "global.anthropic.claude-sonnet-4-6"
     bedrock_opus_model_id: str = "global.anthropic.claude-opus-4-6-v1"
+    # 판정 전용 모델(Claude Haiku 4.5). 판정·요약 모델 설정이 `haiku` 일 때만 쓰인다.
+    bedrock_haiku_model_id: str = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
     # 요청 타임아웃(ms). SDK 가 httpx 계열이라 스트리밍에서는 Gemini 와 같이 "다음 청크까지"의 상한이고 호출 전체의 상한이
     # 아니다. 채팅은 Gemini 생성 상한과 같은 값, 장은 Gemini 장 생성 상한과 같은 값이다. 재시도는 하지 않는다.
     bedrock_chat_timeout_ms: int = 45_000
@@ -295,6 +298,7 @@ class Settings(BaseSettings):
     # 운영이 실제로 부르는 쪽을 따르고, 운영은 배정으로 상위 모델을 이 구현에 보내므로 지금은 이 쪽 버전이다.
     anthropic_sonnet_model_id: str = "claude-sonnet-5-5"
     anthropic_opus_model_id: str = "claude-opus-5-5"
+    anthropic_haiku_model_id: str = "claude-haiku-4-5"
     # 요청 타임아웃(ms). Bedrock 과 같은 값이고 같은 뜻("다음 청크까지")이다.
     anthropic_chat_timeout_ms: int = 45_000
     anthropic_chapter_timeout_ms: int = 300_000
@@ -315,6 +319,15 @@ class Settings(BaseSettings):
     # 기본 구현으로 간다. 배정은 그 구현이 그 모델을 서비스할 때만 따르고(`llm/backends.py` 의 `pick_backend`), 따를 수 없는
     # 배정은 아래 기동 검증이 거부한다. 호출 위치·구현 이름은 대소문자까지 정확해야 한다.
     llm_call_site_backends: Annotated[dict[LLMCallSite, BackendId], NoDecode] = {}
+    # 판정 종류(스탯·엔딩·그림 매칭)와 기억 요약마다 쓰는 모델 — 값은 문안 체인의 모델 id(`gemini`·`sonnet`·`opus`·판정 전용
+    # `haiku`)이고, 판정은 그 모델의 활성 프롬프트 세트로 렌더된다. 방의 모델과 무관하다. 기본값 `gemini` 면 지금 동작 그대로이고,
+    # 그때 실제 Gemini 모델은 위 `gemini_*_judgment_model_name` 이 고른다. 그 모델을 어느 구현이 서비스할지는 위 배정이 정하고,
+    # 배정이 없으면 모델의 기본 구현이다(`haiku`·`sonnet`·`opus` → Bedrock). 배정이 그 모델을 서비스하지 않거나 가는 구현의
+    # 자격이 비면 기동하지 않는다. 되돌리려면 env 줄을 지우고 재기동한다.
+    stat_judgment_model: PromptSetModelId = "gemini"
+    ending_judgment_model: PromptSetModelId = "gemini"
+    image_judgment_model: PromptSetModelId = "gemini"
+    memory_summary_model: PromptSetModelId = "gemini"
 
     @field_validator("llm_call_site_backends", mode="before")
     @classmethod
@@ -341,12 +354,14 @@ class Settings(BaseSettings):
     @field_validator(
         "bedrock_sonnet_model_id",
         "bedrock_opus_model_id",
+        "bedrock_haiku_model_id",
         "bedrock_chat_timeout_ms",
         "bedrock_chapter_timeout_ms",
         "bedrock_chat_max_tokens",
         "bedrock_chapter_max_tokens",
         "anthropic_sonnet_model_id",
         "anthropic_opus_model_id",
+        "anthropic_haiku_model_id",
         "anthropic_chat_timeout_ms",
         "anthropic_chapter_timeout_ms",
         "anthropic_chat_max_tokens",
@@ -355,6 +370,10 @@ class Settings(BaseSettings):
         "anthropic_chapter_effort",
         "chat_premium_models_enabled",
         "novelize_premium_models_enabled",
+        "stat_judgment_model",
+        "ending_judgment_model",
+        "image_judgment_model",
+        "memory_summary_model",
         mode="before",
     )
     @classmethod
@@ -377,7 +396,9 @@ class Settings(BaseSettings):
             call_sites += ["chat_generate", "replay_generate"]
         if self.novelize_premium_models_enabled:
             call_sites.append("novelize_chapter")
-        premium_models = [model for model in backends.MODEL_BACKENDS if model != backends.DEFAULT_CHAT_MODEL]
+        # 글쓰기 모델만 본다 — 구현 등록부의 모델 표에는 판정 전용 id 도 있어, 그 표로 고르면 스위치가 열지 않는 경로의
+        # 자격까지 요구한다.
+        premium_models = [model for model in get_args(backends.ChatModelId) if model != backends.DEFAULT_CHAT_MODEL]
         resolved = {
             backends.pick_backend(call_site, model, self.llm_call_site_backends)[1]
             for call_site in call_sites
@@ -395,8 +416,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _call_site_backends_can_be_followed(self) -> "Settings":
-        """배정이 틀린 채 뜨면 그 호출이 첫 호출에서야 실패하거나 배정이 조용히 무시된다. 규칙은 등록부 쪽에 있다
-        (`llm/backends.py` 의 `assignment_errors`) — 구현 행이 늘어도 여기는 그대로다."""
+        """배정이나 판정·요약 모델이 틀린 채 뜨면 그 호출이 첫 호출에서야 실패하거나 배정이 조용히 무시된다. 규칙은 등록부
+        쪽에 있다(`llm/backends.py` 의 `assignment_errors`) — 구현 행이 늘어도 여기는 그대로다."""
         errors = backends.assignment_errors(self.llm_call_site_backends, lambda name: str(getattr(self, name)))
         if errors:
             raise ValueError("; ".join(errors))

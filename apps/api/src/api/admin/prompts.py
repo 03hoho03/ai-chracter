@@ -311,7 +311,7 @@ _JUDGMENT_CHANNELS_BY_LANE: dict[PromptLane, frozenset[str]] = {
 # Gemini 가 아닌 체인은 그 모델이 쓸 수 있는 채널만 갖는다.
 # - Claude 세트(sonnet·opus 체인): 채팅 레인은 생성의 `system`·`generation` 과 그 레인의 판정·요약 채널, `novel` 레인은 화
 #   생성 `novelize_chapter` 뿐이다(경계 제안·문단 수정은 늘 Gemini 체인). 판정·요약 채널은 판정 모델을 그 모델로 바꿨을 때
-#   읽는 문안이다 — 지금 판정·요약은 고른 모델과 무관하게 Gemini 세트를 읽는다.
+#   읽는 문안이다(판정·요약 모델 설정, 기본은 Gemini — 방에서 고른 모델과는 무관하다).
 # - 판정 전용 세트(haiku 체인): 그 레인의 판정·요약 채널만. 그 id 로는 글을 쓰지 않는다.
 # R-1 기대 집합은 같은 레인 Gemini 표에서 이 채널만 남긴 것이다(표를 따로 적지 않는다 — 슬롯이 늘면 체인이 함께 따라온다).
 # 그래서 **판정·요약 슬롯을 더하거나 바꾸는 마이그레이션은 Gemini 체인뿐 아니라 Claude 체인(story·character × sonnet·opus)과

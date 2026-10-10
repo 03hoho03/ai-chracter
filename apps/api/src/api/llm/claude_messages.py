@@ -1,7 +1,8 @@
 """Claude Messages API 를 쓰는 구현(`llm/bedrock.py`·`llm/anthropic_api.py`)이 함께 쓰는 요청·응답 조각.
 
-같은 Messages API 라 요청 블록·스트림 이벤트·사용량의 모양이 같다. 구현마다 다른 것 — SDK 와 자격, 요청에 더 싣는 값
-(Bedrock 은 사고 끔, 직접 API 는 사고 깊이), 스로틀 판별, 잡을 전송 예외, 로그 줄과 사용량 기록 — 은 각 구현에 남긴다.
+같은 Messages API 라 요청 블록·스트림 이벤트·구조화 출력의 요청과 응답 해석·사용량의 모양이 같다. 구현마다 다른 것 — SDK 와
+자격, 요청에 더 싣는 값(Bedrock 은 사고 끔, 직접 API 는 사고 깊이), 스로틀 판별, 잡을 전송 예외, 로그 줄과 사용량 기록 — 은
+각 구현에 남긴다.
 
 스트림 읽기는 이벤트 하나를 먹는 집계기(`ClaudeStreamTally.feed`)이고 제너레이터가 아니다. SDK 스트림을 쥐는 것,
 `async for` 읽기 루프, `except` 의 예외 변환은 구현이 자기 제너레이터 안에서 한다 — 잡을 전송 예외와 쿼터 판별이 구현마다
@@ -22,7 +23,8 @@ from typing import Any, TypeVar
 import anthropic
 import httpx
 import httpx2
-from anthropic.types import TextBlockParam
+from anthropic.types import Message, OutputConfigParam, TextBlockParam
+from pydantic import BaseModel, ValidationError
 
 from api.llm.call_policy import CALL_POLICIES, BackendId
 from api.llm.client import (
@@ -36,6 +38,7 @@ from api.llm.client import (
 )
 
 E = TypeVar("E", bound=LLMClientError)
+T = TypeVar("T", bound=BaseModel)
 
 # 두 구현이 함께 잡는 전송 예외. SDK 는 요청 단계의 실패를 자기 예외(`AnthropicError` 계열)로 바꾸지만, 스트림을 읽는 도중의
 # 네트워크 실패는 자기가 쓰는 `httpx2` 예외 그대로 올린다. `httpx`(이 저장소의 다른 SDK 가 쓰는 쪽)와 `TimeoutError` 는
@@ -175,6 +178,51 @@ class ClaudeStreamTally:
         return to_usage(
             self._input_tokens, self._cache_read, self._cache_write, self._output_tokens, self._thinking_tokens
         )
+
+
+def structured_output_config(schema: type[BaseModel]) -> OutputConfigParam:
+    """구조화 호출의 `output_config` — 응답을 JSON 스키마로 묶는다. 스키마는 SDK 가 API 가 받는 부분집합으로 바꾼 것이다
+    (`additionalProperties: false` 등). 두 구현 모두 이 모양 그대로 보낸다 — Bedrock 클라이언트도 모델 id·스트림 여부만 URL 로
+    옮기고 나머지 본문은 그대로 싣는다. 직접 API 구현은 여기에 사고 깊이를 더한다."""
+    return {"format": {"type": "json_schema", "schema": anthropic.transform_schema(schema)}}
+
+
+def message_usage(message: Message) -> ClaudeUsage:
+    """비스트림 응답 하나의 사용량. 스트림 집계와 같은 뜻으로 옮긴다(`to_usage`)."""
+    usage = message.usage
+    details = usage.output_tokens_details
+    return to_usage(
+        usage.input_tokens,
+        usage.cache_read_input_tokens or 0,
+        usage.cache_creation_input_tokens or 0,
+        usage.output_tokens,
+        details.thinking_tokens if details is not None else None,
+    )
+
+
+def parse_structured(message: Message, schema: type[T], provider: BackendId, label: str) -> T:
+    """구조화 응답을 스키마로 읽는다. 사용량을 기록한 **뒤** 부른다 — 아래 실패도 모두 과금된 응답이다.
+
+    1. 정책 거절(`refusal`) → `LLMPolicyViolationError`. 거절 응답은 스키마와 맞지 않을 수 있어 파싱부터 하면 파싱 실패로
+       둔갑해 같은 입력을 또 보낸다.
+    2. 출력 상한(`max_tokens`)에서 끝남 → 원인 없는 `LLMClientError`. 읽혀도 끝까지 쓴 답이 아니다. Gemini 에서 잘린 응답이
+       파싱 실패로 보이는 것과 같은 결과다(판정 재시도 분류가 한 번 다시 부른다).
+    3. 텍스트 블록만 이어 읽는다 — 사고를 끌 수 없는 모델은 사고 블록이 앞에 온다. 텍스트가 없거나 스키마로 읽히지 않으면
+       원인 없는 `LLMClientError` 다. 🔴 검증 오류를 원인으로 달지 않는다 — 판정 재시도 분류는 "원인 없는 `LLMClientError`"를
+       파싱 실패로 읽는다.
+
+    SDK 의 `messages.parse()` 를 쓰지 않는 것은 그것이 검증 오류를 SDK 예외가 아닌 pydantic 예외로 올리고(구현의 예외 변환 밖으로
+    샌다) 거절 응답도 파싱부터 하기 때문이다."""
+    if message.stop_reason == "refusal":
+        raise claude_error(LLMPolicyViolationError, f"{label} Claude refused the structured call", provider)
+    if message.stop_reason == "max_tokens":
+        raise claude_error(LLMClientError, f"{label} structured output hit max_tokens for {schema.__name__}", provider)
+    text = "".join(block.text for block in message.content if block.type == "text")
+    try:
+        return schema.model_validate_json(text)
+    except ValidationError:
+        pass
+    raise claude_error(LLMClientError, f"{label} structured response could not be parsed into {schema.__name__}", provider)
 
 
 def raise_if_unusable(tally: ClaudeStreamTally, call_site: LLMCallSite, max_tokens: int) -> None:

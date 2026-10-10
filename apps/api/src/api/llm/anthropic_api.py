@@ -1,7 +1,8 @@
-"""Anthropic API 로 Claude 에 바로 보내는 LLMClient. 배정(`LLM_CALL_SITE_BACKENDS`)이 상위 모델의 호출을 이 구현으로 옮길
-때만 닿는다 — 배정이 없으면 상위 모델은 Bedrock 으로 간다(`llm/backends.py` 의 기본 순서). 받는 호출과 실패 규칙은 Bedrock
-구현과 같다: 채팅 턴 생성(지난 턴 다시 생성 포함)과 소설 장 생성(`generate`)만 받고, 구조화 호출은 등록부가 받지 못하는
-구현으로 적어 기동 검증이 그런 배정을 거부한다. 예외에는 `provider = "anthropic"` 을 적는다.
+"""Anthropic API 로 Claude 에 바로 보내는 LLMClient. 배정(`LLM_CALL_SITE_BACKENDS`)이 호출을 이 구현으로 옮길 때만 닿는다 —
+배정이 없으면 Claude 모델은 Bedrock 으로 간다(`llm/backends.py` 의 기본 순서). 받는 호출과 실패 규칙은 Bedrock 구현과 같다:
+채팅 턴 생성(지난 턴 다시 생성 포함)과 소설 장 생성(`generate`), 판정·요약 모델이 Claude 일 때의 판정·요약
+(`generate_structured`)을 받고, 그림·지시문을 따로 싣는 구조화는 등록부가 받지 못하는 구현으로 적어 기동 검증이 그런 배정을
+거부한다. 예외에는 `provider = "anthropic"` 을 적는다.
 
 이 경로의 모델(Opus 5.5 등)은 사고를 끌 수 없다 — `thinking` 을 끄거나 예산으로 보내면 요청이 거부되고, 생략하면 모델이
 알아서 사고한다. 그래서 요청에 `thinking` 을 싣지 않고 깊이만 `output_config.effort` 로 고른다. 사고 토큰은 출력 상한
@@ -22,13 +23,16 @@ from pydantic import BaseModel
 
 from api.core.config import ClaudeEffort, settings
 from api.llm.call_policy import CALL_POLICIES
-from api.llm.chat_models import backend_model_id
+from api.llm.chat_models import PromptSetModelId, backend_model_id, configured_call_site_model
 from api.llm.claude_messages import (
     COMMON_TRANSPORT_ERRORS,
     ClaudeStreamTally,
     ClaudeUsage,
     claude_error,
+    message_usage,
+    parse_structured,
     raise_if_unusable,
+    structured_output_config,
     user_content,
 )
 from api.llm.client import (
@@ -39,6 +43,7 @@ from api.llm.client import (
     LLMEmptyResponseError,
     LLMRateLimitError,
     collect_usage,
+    request_timeout_ms,
 )
 from api.llm.usage_store import record_usage
 
@@ -50,6 +55,9 @@ logger = logging.getLogger(__name__)
 # SDK 는 호스트를 인자로 받지 않으면 env `ANTHROPIC_BASE_URL` 을 읽는다. 키를 명시로 넘기는 것과 같은 이유로 호스트도
 # 명시한다 — 프로세스 env 의 값이 이 구현의 요청을 다른 곳으로 보내지 않게.
 _BASE_URL = "https://api.anthropic.com"
+
+# 사고 깊이(`output_config.effort`)를 받지 않는 모델 — 보내면 요청이 400 으로 거부된다(Claude Haiku 4.5).
+_MODELS_WITHOUT_EFFORT: frozenset[PromptSetModelId] = frozenset({"haiku"})
 
 
 def _anthropic_error(cls: type[E], message: str) -> E:
@@ -189,4 +197,31 @@ class AnthropicLLMClient(LLMClient):
         *,
         usage: LLMCallContext,
     ) -> T:
-        raise _anthropic_error(LLMClientError, "Anthropic client does not serve structured calls — they go to Gemini")
+        """판정·요약 하나. 모델·타임아웃·출력 상한은 Bedrock 구현과 같은 규칙이다(그 호출의 판정·요약 모델, 그 호출 위치의
+        Gemini 타임아웃, 채팅 상한). 사고는 생성과 같이 싣지 않고 깊이만 채팅 값으로 보낸다 — 깊이를 받지 않는 모델에는 그것도
+        싣지 않는다. 사고하는 모델은 사고 블록이 앞에 오고 그 토큰도 출력 상한 안에 든다."""
+        if images:
+            # 그림을 싣는 호출(발행 심사)은 기동 검증이 이 구현에 배정하지 못하게 막는다.
+            raise _anthropic_error(LLMClientError, "Anthropic client does not take images in a structured call")
+        chosen = configured_call_site_model(usage.call_site)
+        model = backend_model_id("anthropic", chosen)
+        output_config = structured_output_config(response_schema)
+        if chosen not in _MODELS_WITHOUT_EFFORT:
+            output_config["effort"] = _effort(usage.call_site)
+        try:
+            message = await self._sdk().messages.create(
+                model=model,
+                max_tokens=_max_tokens(usage.call_site),
+                messages=[{"role": "user", "content": str(prompt)}],
+                output_config=output_config,
+                timeout=request_timeout_ms(usage.call_site) / 1000,
+            )
+        except COMMON_TRANSPORT_ERRORS as exc:
+            if _is_throttling(exc):
+                raise _anthropic_error(LLMRateLimitError, f"Anthropic generate_structured() call failed: {exc}") from exc
+            raise _anthropic_error(LLMClientError, f"Anthropic generate_structured() call failed: {exc}") from exc
+        usage_metadata = message_usage(message)
+        _log_usage(usage, model, usage_metadata)
+        await record_usage(usage.call_site, model, usage_metadata)
+        collect_usage(usage, model, usage_metadata)
+        return parse_structured(message, response_schema, "anthropic", "Anthropic")

@@ -6,7 +6,7 @@
 
 import logging
 import uuid
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import NamedTuple
 
@@ -47,7 +47,8 @@ from api.db.models.chat import ChatMessage, ChatRoom
 from api.db.models.persona import UserPersona
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import KeywordNote, Shortcut, SituationNote, StartingSetup, StoryVersionDetail
-from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId
+from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, PromptSetModelId, configured_call_site_model
+from api.llm.client import LLMCallSite
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +97,7 @@ async def generation_prompt_set(
     gemini_set: tuple[PromptSet, list[PromptSection]],
 ) -> tuple[PromptSet, list[PromptSection]]:
     """이 턴의 생성(바닥 지시문·생성 프롬프트·화자 라벨·정지 시퀀스)에 쓸 세트. 글쓰기 모델마다 독립 세트가 있고, 판정·요약은
-    모델과 무관하게 `gemini_set`(라우터의 `_active_prompt_set_dependency`)을 쓴다.
+    방의 모델과 무관하게 판정·요약 모델의 세트를 쓴다(`judgment_prompt_sets`).
 
     Gemini 면 받은 Gemini 세트를 그대로 돌려준다 — 조회가 없고, Gemini 턴의 프롬프트는 모델별 세트가 생기기 전과 바이트까지
     같다. 그 밖의 모델은 캐시를 보고 없으면 (레인, 모델) 활성 세트를 읽는다. 모델은 차감 영수증에서 오므로 차감 뒤에 읽는다 —
@@ -109,6 +110,55 @@ async def generation_prompt_set(
     prompt_set, sections = await load_active_prompt_set(db, lane=lane, model=model)
     await set_cached_active_prompt_set(lane, prompt_set, sections, model=model)
     return prompt_set, sections
+
+
+PromptSetData = tuple[PromptSet, list[PromptSection]]
+
+
+@dataclass(frozen=True)
+class JudgmentPromptSets:
+    """한 턴의 판정·요약이 렌더할 세트 — 판정 종류마다, 그리고 기억 요약에 하나씩. 각각 그 종류의 판정·요약 모델 설정의
+    (레인, 모델) 활성 세트다. 모델이 같은 칸은 같은 객체다."""
+
+    stat: PromptSetData
+    ending: PromptSetData
+    image: PromptSetData
+    summary: PromptSetData
+
+
+# 칸마다 모델을 읽는 호출 위치. 채팅·미리보기 판정은 같은 종류면 같은 모델 설정을 쓰므로 채팅 쪽 하나로 읽는다.
+_JUDGMENT_SET_CALL_SITES: dict[str, LLMCallSite] = {
+    "stat": "chat_stat_judgment",
+    "ending": "chat_ending_judgment",
+    "image": "chat_situational_image",
+    "summary": "chat_memory_summary",
+}
+
+
+async def judgment_prompt_sets(
+    *, lane: PromptLane, gemini_set: PromptSetData, load: Callable[[PromptSetModelId], Awaitable[PromptSetData]]
+) -> JudgmentPromptSets:
+    """판정·요약 모델마다의 세트를 모은다. 모델이 Gemini 인 칸은 받은 Gemini 세트를 그대로 넘긴다 — 판정·요약 모델이 모두
+    기본값이면 조회가 하나도 늘지 않고, 프롬프트는 이 설정이 생기기 전과 바이트까지 같다. 그 밖의 모델은 모델마다 한 번만 캐시를
+    보고, 없으면 `load` 로 (레인, 모델) 활성 세트를 읽어 캐시에 채운다. `load` 는 부르는 쪽이 정한다 — 방은 요청 세션, 미리보기는
+    짧게 여닫는 세션으로 읽는다.
+
+    세트가 없으면 `PromptSetNotFoundError` 가 그대로 올라간다. 라우터의 의존성 단계에서 부르므로 스트림 전의 오류 응답이 되고
+    차감도 일어나지 않는다 — 판정 모델에 맞는 문안이 없는데 다른 모델용 문안으로 판정하지 않는다."""
+    by_model: dict[PromptSetModelId, PromptSetData] = {DEFAULT_CHAT_MODEL: gemini_set}
+    chosen: dict[str, PromptSetData] = {}
+    for kind, call_site in _JUDGMENT_SET_CALL_SITES.items():
+        model = configured_call_site_model(call_site)
+        if model not in by_model:
+            cached = await get_cached_active_prompt_set(lane, model=model)
+            if cached is None:
+                cached = await load(model)
+                await set_cached_active_prompt_set(lane, cached[0], cached[1], model=model)
+            by_model[model] = cached
+        chosen[kind] = by_model[model]
+    return JudgmentPromptSets(
+        stat=chosen["stat"], ending=chosen["ending"], image=chosen["image"], summary=chosen["summary"]
+    )
 
 
 def _situation_note_rules(note: SituationNote, room_id: uuid.UUID) -> list[EndingRuleListDraftItem]:
