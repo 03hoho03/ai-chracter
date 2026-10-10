@@ -1,10 +1,10 @@
 import { Label } from "@ai-character-chat/ui/components/label";
-import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { useFormContext } from "react-hook-form";
 
 import { MAX_CHARACTER_PROMPT_LENGTH } from "@/entities/content";
 import type { CharacterBuilderFormValues } from "@/features/build-character";
 import { FieldCharacterCount, useLimitedTextField } from "@/features/build-common";
+import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 import { RequiredText } from "@/shared/ui/RequiredText";
 
 import { CharacterMacroNotice } from "./CharacterMacroNotice";
@@ -25,11 +25,10 @@ export function PromptTab() {
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="character-prompt"><RequiredText>캐릭터 프롬프트</RequiredText></Label>
-        <Textarea
+        <BuilderTextarea
           id="character-prompt"
           placeholder="캐릭터의 성격, 말투, 배경 등을 자유롭게 서술해주세요"
           rows={12}
-          className="min-h-64"
           aria-invalid={!!errors.prompt?.characterPrompt}
           aria-describedby={errors.prompt?.characterPrompt ? "character-prompt-count character-prompt-error" : "character-prompt-count"}
           {...characterPrompt.registration}

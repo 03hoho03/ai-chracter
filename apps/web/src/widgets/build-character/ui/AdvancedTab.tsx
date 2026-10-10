@@ -3,7 +3,6 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-
 import { CSS } from "@dnd-kit/utilities";
 import { Button, buttonVariants } from "@ai-character-chat/ui/components/button";
 import { Label } from "@ai-character-chat/ui/components/label";
-import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Camera, ImageOff, Loader2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
@@ -29,6 +28,7 @@ import { uploadAsset } from "@/shared/api/asset/uploadAsset";
 import { MAX_SOURCE_BYTES } from "@/shared/lib/asset/resizeImage";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
 import { firstLine } from "@/shared/lib/text/firstLine";
+import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
 
 import { situationalImageAfterRelink, situationalImageRelinkAction } from "../model/situationalImageRelink";
@@ -353,7 +353,7 @@ function SituationalImageRow({
     >
       <div className="flex flex-col gap-1.5">
         <Label htmlFor={descriptionId}>노출할 상황</Label>
-        <Textarea
+        <BuilderTextarea
           id={descriptionId}
           placeholder="어떤 상황에서 이 이미지를 노출할지 입력해주세요"
           rows={2}

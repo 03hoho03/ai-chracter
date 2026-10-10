@@ -5,7 +5,6 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ai-character-chat/ui/components/select";
-import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { TriangleAlert } from "lucide-react";
 import { useRef } from "react";
 import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
@@ -32,6 +31,7 @@ import {
   type StoryBuilderFormValues,
   type StoryCollapsibleList,
 } from "@/features/build-story";
+import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 
 import { MediaTagInsertButton } from "./MediaTagInsertButton";
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
@@ -191,7 +191,7 @@ function EndingRow({
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor={`ending-${id}-judge-prompt`}><FieldLabelText field="startingSetups.*.endings.*.judgePrompt" /></Label>
-        <Textarea
+        <BuilderTextarea
           id={`ending-${id}-judge-prompt`}
           placeholder="이 엔딩에 도달했는지 AI가 판단할 기준을 입력해주세요"
           rows={3}
@@ -213,7 +213,7 @@ function EndingRow({
           <Label htmlFor={`ending-${id}-epilogue`}><FieldLabelText field="startingSetups.*.endings.*.epilogue" /></Label>
           <MediaTagInsertButton name={epiloguePath} fieldLabel="에필로그" textareaRef={epilogueRef} />
         </div>
-        <Textarea
+        <BuilderTextarea
           id={`ending-${id}-epilogue`}
           placeholder="엔딩 도달 시 보여줄 에필로그를 입력해주세요"
           rows={3}

@@ -4,7 +4,6 @@ import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ai-character-chat/ui/components/select";
 import { Switch } from "@ai-character-chat/ui/components/switch";
-import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useFormContext, useWatch } from "react-hook-form";
@@ -38,6 +37,7 @@ import {
   type StoryBuilderFormValues,
   type StoryCollapsibleList,
 } from "@/features/build-story";
+import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
 import { StoryMacroNotice } from "./StoryMacroNotice";
@@ -200,7 +200,7 @@ export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onR
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor={ids.content}><FieldLabelText field="keywordNotes.*.content" /></Label>
-          <Textarea
+          <BuilderTextarea
             id={ids.content}
             placeholder="키워드가 나오면 AI가 참고할 정보를 적어 주세요. 대상의 이름도 함께 적어 주세요."
             rows={3}

@@ -1,7 +1,6 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Switch } from "@ai-character-chat/ui/components/switch";
-import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { useRef, useState } from "react";
 import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
@@ -24,6 +23,7 @@ import {
   useUndoableRemoval,
 } from "@/features/build-common";
 import { firstLine } from "@/shared/lib/text/firstLine";
+import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 import { RequiredText } from "@/shared/ui/RequiredText";
 
 import { CharacterMacroNotice } from "./CharacterMacroNotice";
@@ -93,11 +93,10 @@ export function IntroTab() {
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="character-intro-first-message"><RequiredText>인트로 (첫 대화 본문)</RequiredText></Label>
-        <Textarea
+        <BuilderTextarea
           id="character-intro-first-message"
           placeholder="사용자와의 첫 대화에서 캐릭터가 건넬 말을 입력해주세요"
-          rows={4}
-          className="min-h-32"
+          rows={5}
           aria-invalid={!!errors.intro?.firstMessage}
           aria-describedby={errors.intro?.firstMessage ? "character-intro-first-message-count character-intro-first-message-error" : "character-intro-first-message-count"}
           {...firstMessage.registration}
@@ -162,7 +161,7 @@ export function IntroTab() {
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="character-intro-play-guide">플레이가이드</Label>
-        <Textarea
+        <BuilderTextarea
           id="character-intro-play-guide"
           placeholder="사용자에게 노출할 플레이 안내를 입력해주세요"
           rows={3}
@@ -235,7 +234,7 @@ function ExampleDialogueItem({ index, onRemove }: ExampleDialogueItemProps) {
       trailing={<ItemRemoveButton label={`${title} 삭제`} onClick={onRemove} />}
     >
       <div className="flex flex-col gap-1">
-        <Textarea
+        <BuilderTextarea
           placeholder="사용자 대사"
           rows={2}
           aria-invalid={!!userLineError}
@@ -256,7 +255,7 @@ function ExampleDialogueItem({ index, onRemove }: ExampleDialogueItemProps) {
         )}
       </div>
       <div className="flex flex-col gap-1">
-        <Textarea
+        <BuilderTextarea
           placeholder="캐릭터 대사"
           rows={4}
           aria-invalid={!!characterLineError}
