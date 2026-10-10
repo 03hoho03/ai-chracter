@@ -366,6 +366,65 @@
       }
     ]
   },
+  "regenerate-story-shortcut": {
+    "calls": [
+      {
+        "callSite": "chat_generate",
+        "hasRoom": true,
+        "hasUser": true,
+        "method": "generate",
+        "model": "gemini",
+        "promptSha": "1ad03cca9cde1a479247349d4278cf3192f4cfb9bfc2dfd4b457359352ad11c7",
+        "provider": "gemini",
+        "responseSchema": null,
+        "segments": {
+          "count": 3,
+          "shas": [
+            "6d38fc2dab357e5523c0efe66ced7f16eb3b18944263d67df18ee46f2789127b",
+            "3757fcca21bc302b23fb23b9d83169c6f391c1fc671037b95d7d11f9a621a4cb",
+            "ad4fd537943c982279ca1c466eeffbb0f753f022713647fe3f82762d8a808fc5"
+          ]
+        },
+        "stopSequences": [
+          "\n사용자:"
+        ],
+        "systemSha": "dadb574a8387a80011ef46ed5f9d641c12f1ff1e00a29c8ea0d9c75cef2976a4"
+      },
+      {
+        "callSite": "chat_media_book_image",
+        "hasRoom": true,
+        "hasUser": true,
+        "method": "generate_structured",
+        "model": "gemini",
+        "promptSha": "0f58ba1389e105a51cbdab7f2ee5cd0f471051f08d7f2d0648f5b709af28f9bd",
+        "provider": "gemini",
+        "responseSchema": "ImageMatchJudgmentResult",
+        "segments": null,
+        "stopSequences": null,
+        "systemSha": null
+      },
+      {
+        "callSite": "chat_memory_summary",
+        "hasRoom": true,
+        "hasUser": true,
+        "method": "generate_structured",
+        "model": "gemini",
+        "promptSha": "1fe00e2e2c14e43ca54b4116a835e50ca4ba38f352cf4938ea1e57239e5ab93d",
+        "provider": "gemini",
+        "responseSchema": "MemorySummaryResult",
+        "segments": null,
+        "stopSequences": null,
+        "systemSha": null
+      }
+    ],
+    "promptDump": [
+      {
+        "chatModel": "gemini",
+        "hasRoomId": true,
+        "turn": 30
+      }
+    ]
+  },
   "send-character": {
     "calls": [
       {

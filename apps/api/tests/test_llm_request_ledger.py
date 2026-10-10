@@ -1,5 +1,5 @@
 """채팅 턴 하나가 LLM 에 보내는 요청 전부를 장부로 고정한다 — 보내기·수정·재생성 × 스토리·캐릭터, 미리보기 스토리·캐릭터,
-그리고 상위 모델(sonnet)을 고른 스토리 방의 보내기.
+상위 모델(sonnet)을 고른 스토리 방의 보내기, 그리고 단축어로 보낸 스토리 턴의 재생성.
 
 장부 한 줄은 요청만 본다(응답 텍스트·토큰 수는 보지 않는다): 부른 메서드, 실제로 간 공급자, 호출 위치, 실린 모델,
 사용자·방 귀속 유무, 프롬프트와 지시문의 sha256, 정지 시퀀스, 응답 스키마 이름, 캐시 블록 조각 수와 조각별 sha256.
@@ -41,7 +41,8 @@ from api.chat.prompt_builder import (
 from api.chat.prompt_set_cache import ACTIVE_PROMPT_SET_KEY_PREFIX
 from api.core.config import settings
 from api.core.redis import redis_client
-from api.db.models import AssetStatus, ChatRoom, PromptSection, PromptSet
+from api.db.models import AssetStatus, ChatMessage, ChatMessageRole, ChatRoom, PromptSection, PromptSet
+from api.db.models.story import Shortcut
 from api.llm.client import LLMCallContext, LLMCallSite, LLMClient, SegmentedPrompt
 from api.llm.routing import RoutingLLMClient
 from factories import (
@@ -53,6 +54,7 @@ from factories import (
     _clear_llm_override,
     _login_as,
     _make_asset,
+    _make_chat_turn,
     _make_user,
     _make_user_with_clover_lot,
     _open_room,
@@ -193,6 +195,38 @@ async def _regenerate_story(db_client: httpx.AsyncClient, db_session: AsyncSessi
     return _Case("POST", f"/chat-rooms/{room_id}/regenerate", None, cell_id)
 
 
+async def _regenerate_story_shortcut(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, _: pytest.MonkeyPatch
+) -> _Case:
+    """마지막 응답이 단축어로 보낸 턴이다 — 그 턴 기록이 단축어를 가리킨다. 재생성 프롬프트에 단축어 문안이 실려
+    `regenerate-story` 와 생성 프롬프트만 다르다."""
+    room_id, cell_id, _last_user = await _story_room(db_client, db_session)
+    version_id = await db_session.scalar(sa.select(ChatRoom.content_version_id).where(ChatRoom.id == room_id))
+    assert version_id is not None
+    shortcut = Shortcut(
+        entity_id=uuid.uuid4(),
+        content_version_id=version_id,
+        name="수색",
+        description="주변을 수색한다",
+        prompt="플레이어가 주변을 자세히 수색하는 상황을 묘사하라",
+    )
+    db_session.add(shortcut)
+    last_reply_id = await db_session.scalar(
+        sa.select(ChatMessage.id)
+        .where(ChatMessage.chat_room_id == room_id, ChatMessage.role == ChatMessageRole.ASSISTANT)
+        .order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc())
+        .limit(1)
+    )
+    assert last_reply_id is not None
+    db_session.add(
+        _make_chat_turn(
+            room_id, assistant_message_id=last_reply_id, turn_number=_ROOM_TURNS, shortcut_entity_id=shortcut.entity_id
+        )
+    )
+    await db_session.commit()
+    return _Case("POST", f"/chat-rooms/{room_id}/regenerate", None, cell_id)
+
+
 async def _send_character(db_client: httpx.AsyncClient, db_session: AsyncSession, _: pytest.MonkeyPatch) -> _Case:
     room_id, image_id, _last_user = await _character_room(db_client, db_session)
     return _Case("POST", f"/chat-rooms/{room_id}/messages", {"content": "골목으로 가자"}, image_id)
@@ -273,6 +307,7 @@ _CASES: dict[str, _Builder] = {
     "send-story": _send_story,
     "edit-story": _edit_story,
     "regenerate-story": _regenerate_story,
+    "regenerate-story-shortcut": _regenerate_story_shortcut,
     "send-character": _send_character,
     "edit-character": _edit_character,
     "regenerate-character": _regenerate_character,
@@ -295,6 +330,7 @@ _REQUIRED_CALL_SITES: dict[str, set[str]] = {
     "send-story": _STORY_TURN_SITES,
     "edit-story": _STORY_TURN_SITES,
     "regenerate-story": {"chat_generate", "chat_media_book_image", "chat_memory_summary"},
+    "regenerate-story-shortcut": {"chat_generate", "chat_media_book_image", "chat_memory_summary"},
     "send-character": _CHARACTER_TURN_SITES,
     "edit-character": _CHARACTER_TURN_SITES,
     "regenerate-character": {"chat_generate", "chat_situational_image", "chat_memory_summary"},

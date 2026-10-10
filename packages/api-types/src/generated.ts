@@ -4468,6 +4468,7 @@ export interface paths {
          *     와 같은 턴 골격(`run_turn`)을 지나지만 새 턴이 아니라 같은 턴의 응답을 바꾸는 것이라 셋이 다르다.
          *
          *     - 저장소는 replace 모드다(`RoomTurnStore(mode="replace")`) — 옛 응답을 지우고 바꿔 넣으며 turn_count 를 올리지 않는다.
+         *     - 원 턴을 단축어로 보냈으면 그 단축어를 다시 싣는다(`_replaced_turn_shortcut` — 그 응답의 턴 기록에서 찾는다).
          *     - 스탯·엔딩 판정은 다시 하지 않는다(`regenerate_judgments`) — 원 응답 생성 때 이미 한 번 반영됐고, 그 반영분을
          *       되돌리는 코드가 아직 없어(턴 기록은 남지만 기록을 쓰기 전에 보낸 턴에는 없다) 다시 하면 중복 적용되어 부정확해진다. 그림 판정(캐릭터 상황별 이미지·스토리 미디어 북 칸 — 스토리는
          *       엔딩 뒤에도)은 다시 한다 — 노출 기록(`CharacterImageExposure`·`StoryMediaExposure`)은 첫 노출만 기록해 멱등이라
