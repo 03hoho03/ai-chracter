@@ -36,6 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from api.chat import router as chat_router
 from api.chat import turn_settlement, turn_store
 from api.chat.preview_session import get_preview_session
+from api.chat.room_deletion import delete_chat_rooms
 from api.chat.turn_settlement import TurnSettlement
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
@@ -65,7 +66,7 @@ from api.db.models import (
     StatRule,
     User,
 )
-from api.db.models.chat import DiscardedResponse, StoryEndingUnlock, StoryMediaExposure
+from api.db.models.chat import ChatTurn, DiscardedResponse, StoryEndingUnlock, StoryMediaExposure
 from api.db.models.clover import CloverLedger
 from api.llm.client import LLMCallContext, LLMClient
 from factories import (
@@ -73,6 +74,7 @@ from factories import (
     _clear_llm_override,
     _get_genre,
     _login_as,
+    _make_chat_turn,
     _make_published_character,
     _make_user,
     _make_user_with_clover_lot,
@@ -514,8 +516,8 @@ async def independent_session_factory(
             version_ids = (
                 await cleanup.scalars(sa.select(ContentVersion.id).where(ContentVersion.content_id.in_(content_ids)))
             ).all()
-            await cleanup.execute(sa.delete(ChatMessage).where(ChatMessage.chat_room_id.in_(room_ids)))
-            await cleanup.execute(sa.delete(ChatRoom).where(ChatRoom.id.in_(room_ids)))
+            # 방과 그 자식(턴 기록 포함)은 앱의 삭제 경로로 지운다 — 자식 테이블이 늘어도 여기를 따로 고치지 않게.
+            await delete_chat_rooms(cleanup, room_ids)
             await cleanup.execute(
                 sa.delete(CharacterVersionDetail).where(CharacterVersionDetail.content_version_id.in_(version_ids))
             )
@@ -721,8 +723,8 @@ async def test_send_write_failure_after_the_stat_write_saves_nothing_of_the_turn
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """판정 기준(결과를 보기 전에 적었다): 스탯 쓰기 뒤에 진짜 DB 오류(외래 키 위반)가 나면 이번 턴의 AI 응답 메시지,
-    올라간 `turn_count`, 바뀐 스탯 값 중 **하나라도** 저장돼 있으면 실패다. 보내기 전에 커밋한 사용자 메시지는 남는 것이
-    맞다.
+    올라간 `turn_count`, 바뀐 스탯 값, 턴 기록 중 **하나라도** 저장돼 있으면 실패다. 보내기 전에 커밋한 사용자 메시지는
+    남는 것이 맞다.
 
     함께 고정하는 동작: 예외가 제너레이터 밖으로 나가 스트림이 done·error 이벤트 없이 끊기고, 응답이 저장되지 않았으므로
     정산 가드가 클로버를 되돌린다(원래 예외는 그대로 올라간다)."""
@@ -754,6 +756,10 @@ async def test_send_write_failure_after_the_stat_write_saves_nothing_of_the_turn
     assert after["messages"] == [*before["messages"], {"role": "user", "content": "마을을 떠나자", "imageId": None}]
     assert after["turnCount"] == before["turnCount"]
     assert after["stats"] == before["stats"]
+    records = await db_session.scalar(
+        sa.select(sa.func.count()).select_from(ChatTurn).where(ChatTurn.chat_room_id == room.room_id)
+    )
+    assert records == 0
     await db_session.refresh(user)
     assert user.clover_balance == 100
     kinds = (await db_session.scalars(sa.select(CloverLedger.kind).where(CloverLedger.user_id == user.id))).all()
@@ -765,8 +771,8 @@ async def test_regenerate_write_failure_keeps_the_old_response(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """판정 기준(결과를 보기 전에 적었다): 재생성 쓰기 구간에서 진짜 DB 오류(폐기 기록의 CHECK 위반)가 나면 옛 응답이
-    그대로 있어야 하고, 새 응답과 폐기 기록은 없어야 한다 — 옛 응답이 지워져 있거나 새 응답·폐기 기록이 하나라도 저장돼
-    있으면 실패다.
+    그대로 있어야 하고, 새 응답과 폐기 기록, 새 턴 기록은 없어야 한다 — 옛 응답이 지워져 있거나 새 응답·폐기 기록·새 턴
+    기록이 하나라도 저장돼 있으면 실패다. 옛 응답에 기록을 둬서 재생성이 기록을 쓰는 경우로 만든다.
 
     함께 고정하는 동작: 예외가 제너레이터 밖으로 나가 스트림이 done·error 이벤트 없이 끊기고, 새 응답이 저장되지
     않았으므로 정산 가드가 클로버를 되돌린다."""
@@ -774,6 +780,9 @@ async def test_regenerate_write_failure_keeps_the_old_response(
         db_session, clover_balance=100, clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC))
     )
     room = await _open_room(db_client, db_session, turns=1, user=user)
+    old_record = _make_chat_turn(room.room_id, assistant_message_id=room.turns[1][1].id)
+    db_session.add(old_record)
+    await db_session.commit()
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
     before = await _room_state(db_session, room.room_id)
 
@@ -796,6 +805,8 @@ async def test_regenerate_write_failure_keeps_the_old_response(
         sa.select(sa.func.count()).select_from(DiscardedResponse).where(DiscardedResponse.user_id == user.id)
     )
     assert discarded == 0
+    records = (await db_session.scalars(sa.select(ChatTurn.id).where(ChatTurn.chat_room_id == room.room_id))).all()
+    assert records == [old_record.id]
     await db_session.refresh(user)
     assert user.clover_balance == 100
     kinds = (await db_session.scalars(sa.select(CloverLedger.kind).where(CloverLedger.user_id == user.id))).all()
