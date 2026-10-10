@@ -1,8 +1,8 @@
 """실제 방의 턴이 작가 글의 `{{user}}`·`{{char}}` 를 방의 이름으로 바꿔 모델에 보내는지 — 생성·판정·요약 호출부 전부.
 
-이름은 방이 고른 대화 프로필 → 방이 고정한 버전의 작품 기본 이름 → "당신" 순서로 고른다. 사용자 메시지는 화면이 보내기
-전에 바꿔 저장하므로 서버는 손대지 않는다 — 거기 남은 `{{user}}` 는 사용자가 친 글자다. 판정·요약 채널에는 실제 이름이
-있을 때 "대화 속 사용자의 이름" 한 줄이, 생성 채널에는 프로필이 없고 작품 기본 이름이 있을 때만 그 한 줄이 실린다.
+이름은 방이 고른 대화 프로필, 없으면 "당신"이다. 사용자 메시지는 화면이 보내기 전에 바꿔 저장하므로 서버는 손대지
+않는다 — 거기 남은 `{{user}}` 는 사용자가 친 글자다. 판정·요약 채널에는 프로필 이름이 있을 때 "대화 속 사용자의 이름"
+한 줄이 실리고, 생성 채널에는 그 한 줄이 실리지 않는다(프로필 섹션이 이름을 준다).
 섹션 문안은 마이그레이션이 심은 활성 세트(테스트 DB)의 것이다.
 """
 
@@ -11,7 +11,6 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
-import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -185,24 +184,11 @@ async def test_story_turn_names_the_user_in_author_text_and_judgment_but_leaves_
     assert "{{user}}라고 쳤다" in stat_prompt
 
 
-@pytest.mark.parametrize(
-    ("default_user_name", "expected_opening", "expected_line"),
-    [
-        pytest.param("모험가", "모험가는 옥상 문 앞에 선다.", "대화 속 사용자의 이름: 모험가", id="default-name"),
-        pytest.param("", "당신은 옥상 문 앞에 선다.", None, id="fallback"),
-    ],
-)
-async def test_story_room_without_persona_uses_the_pinned_default_name(
-    db_client: httpx.AsyncClient,
-    db_session: AsyncSession,
-    default_user_name: str,
-    expected_opening: str,
-    expected_line: str | None,
+async def test_story_room_without_persona_uses_the_fallback_name(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """프로필이 없으면 작품 기본 이름이 `{{user}}` 를 채우고 생성·판정 양쪽에 이름 한 줄이 실린다. 기본 이름도 없으면
-    "당신" 으로 바꾸되 이름 한 줄은 어디에도 없다("대화 속 사용자의 이름: 당신" 은 거짓 줄이다)."""
+    """프로필이 없으면 "당신" 으로 바꾸되 이름 한 줄은 어디에도 없다("대화 속 사용자의 이름: 당신" 은 거짓 줄이다)."""
     user_id, content, setup = await _story_with_setup(db_session, opening_message=_OPENING)
-    (await _story_detail(db_session, content)).default_user_name = default_user_name
     _add_stat(db_session, setup, "설명")
     await db_session.commit()
     await _login_as(db_client, user_id)
@@ -212,12 +198,8 @@ async def test_story_room_without_persona_uses_the_pinned_default_name(
 
     [prompt] = fake.prompts
     stat_prompt = fake.judgment(StatRuleJudgmentResult)
-    assert expected_opening in prompt
-    if expected_line is None:
-        assert "대화 속 사용자의 이름" not in prompt + stat_prompt
-    else:
-        assert f"[사용자 이름]\n{expected_line}" in prompt
-        assert expected_line in stat_prompt
+    assert "당신은 옥상 문 앞에 선다." in prompt
+    assert "대화 속 사용자의 이름" not in prompt + stat_prompt
 
 
 async def test_regenerate_rebuilds_the_same_named_prompt_as_the_original_turn(
@@ -277,12 +259,10 @@ async def test_memory_fold_names_the_user_with_the_turns_names(
     await db_session.execute(
         sa.update(ChatMessage).where(ChatMessage.id == first_reply.id).values(content="{{user}}가 웃었다")
     )
-    version_id = await db_session.scalar(sa.select(ChatRoom.content_version_id).where(ChatRoom.id == room.room_id))
-    await db_session.execute(
-        sa.update(CharacterVersionDetail)
-        .where(CharacterVersionDetail.content_version_id == version_id)
-        .values(default_user_name="모험가")
-    )
+    user_id = await db_session.scalar(sa.select(ChatRoom.user_id).where(ChatRoom.id == room.room_id))
+    assert user_id is not None
+    persona = await _make_default_persona(db_session, user_id, "모험가")
+    await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room.room_id).values(persona_id=persona.id))
     await db_session.commit()
 
     fake = await _post(db_client, f"/chat-rooms/{room.room_id}/messages", {"content": "새 메시지"})

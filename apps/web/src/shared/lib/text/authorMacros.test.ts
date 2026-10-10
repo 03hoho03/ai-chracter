@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 import { loadAuthorMacroCases } from "../../../../test/authorMacroCases";
 
 import {
-  defaultUserNameError,
   expandAuthorMacros,
   FALLBACK_USER_NAME,
   resolveAuthorMacroNames,
@@ -29,7 +28,6 @@ describe("expandAuthorMacros", () => {
 describe("resolveAuthorMacroNames", () => {
   const base = {
     personaName: null,
-    defaultUserName: "",
     contentType: "story",
     contentName: "상영회까지",
   } as const;
@@ -39,24 +37,16 @@ describe("resolveAuthorMacroNames", () => {
       resolveAuthorMacroNames({
         ...base,
         personaName: "지훈",
-        defaultUserName: "조감독",
       }).userName,
     ).toBe("지훈");
   });
 
-  it("falls back to the work's default name when there is no profile", () => {
-    expect(
-      resolveAuthorMacroNames({ ...base, defaultUserName: "조감독" }).userName,
-    ).toBe("조감독");
-  });
-
-  it("falls back to the fallback name when neither is set", () => {
+  it("falls back to the fallback name when there is no profile", () => {
     expect(resolveAuthorMacroNames(base).userName).toBe(FALLBACK_USER_NAME);
     expect(
       resolveAuthorMacroNames({
         ...base,
         personaName: undefined,
-        defaultUserName: undefined,
       }).userName,
     ).toBe(FALLBACK_USER_NAME);
   });
@@ -125,21 +115,9 @@ const ACCEPTED_NAMES = [
 describe("userNameError", () => {
   it.each(REJECTED_NAMES)("rejects %s", (_id, name) => {
     expect(userNameError(name)).not.toBeNull();
-    expect(defaultUserNameError(name)).not.toBeNull();
   });
 
   it.each(ACCEPTED_NAMES)("accepts %s", (_id, name) => {
     expect(userNameError(name)).toBeNull();
-  });
-});
-
-describe("defaultUserNameError", () => {
-  // 작품 기본 이름은 작가가 글과 함께 쓰는 칸이라 매크로나 이미지 태그를 이름 속에 숨겨 넣지 못하게 한다.
-  it.each(["{지훈}", "{{char}}", "지}"])("also rejects braces (%s)", (name) => {
-    expect(defaultUserNameError(name)).not.toBeNull();
-  });
-
-  it("accepts an empty name, which means the fallback name", () => {
-    expect(defaultUserNameError("")).toBeNull();
   });
 });

@@ -9,12 +9,10 @@ from typing import Annotated, Literal, Self
 from pydantic import AfterValidator, Field, StringConstraints, TypeAdapter, model_validator
 
 from api.chat.keyword_notes import normalize_keyword_text
-from api.content.author_macros import default_user_name_error
 from api.core.schema import CamelModel
 from api.db.models.content import ContentTarget, ContentType, ContentVisibility, ModerationStatus, NovelPermission
 from api.db.models.moderation import ReportReasonCategory
 from api.db.models.story import EndingRuleOperator, LogicalOp, StoryPromptTemplate
-from api.persona.schemas import PERSONA_NAME_MAX_LENGTH
 
 VisibilityFilter = Literal["all", "public", "link", "private"]
 
@@ -43,22 +41,6 @@ def _default_novel_permission() -> NovelPermission:
     """응답의 소설화 허락 기본값. 서버는 언제나 작품 행의 값을 채워 보낸다 — 기본값은 이 칸을 모르는 생성 타입·화면과의
     호환용이다(`default_factory` 여야 생성 타입에서 선택 칸이 된다)."""
     return "private"
-
-
-def _reject_invalid_default_user_name(value: str) -> str:
-    error = default_user_name_error(value)
-    if error is not None:
-        raise ValueError(error)
-    return value
-
-
-# 작품 기본 이름. 대화 프로필 이름 대신 같은 `{{user}}` 자리에 들어가므로 상한도 프로필 이름과 같다. 비우면 대체어를
-# 쓴다는 뜻이라 빈 값을 받는다. 요청에만 건다 — 응답에 걸면 규칙이 바뀐 뒤 이미 저장된 값이 있는 초안을 열 수 없다.
-DefaultUserName = Annotated[
-    str,
-    StringConstraints(strip_whitespace=True, max_length=PERSONA_NAME_MAX_LENGTH),
-    AfterValidator(_reject_invalid_default_user_name),
-]
 
 
 class DraftSummary(CamelModel):
@@ -146,9 +128,6 @@ class HomeCurationItem(CamelModel):
     type: ContentType
     name: str
     one_liner: str
-    # 이 발행본의 작품 기본 이름(빈 값 = 대체어). 응답은 보는 사람과 무관하므로 화면이 보는 사람의 프로필 이름을 먼저
-    # 쓰고, 없을 때 이 값으로 한줄소개의 `{{user}}` 를 바꾼다. 기본값은 이 필드를 모르는 생성 타입·화면과의 호환용이다.
-    default_user_name: str = Field(default_factory=str)
     thumbnail_url: str | None
 
 
@@ -200,9 +179,6 @@ class ContentDetailResponse(CamelModel):
     hashtags: list[str]
     one_liner: str
     detail_description: str
-    # 현재 발행본의 작품 기본 이름(빈 값 = 대체어). 글 속 `{{user}}` 는 바꾸지 않고 내보낸다 — 보는 사람의 프로필
-    # 이름이 먼저이고 그건 화면이 안다. 공유 미리보기처럼 보는 사람이 없는 곳이 이 값을 쓴다.
-    default_user_name: str = Field(default_factory=str)
     chat_count: int
     like_count: int
     is_liked: bool
@@ -270,10 +246,6 @@ class CharacterDraftPayload(CamelModel):
     example_dialogues: list[ExampleDialogueItem] = Field(max_length=_CHARACTER_LIMITS["exampleDialogueMaxCount"])
     character_prompt: str = Field(max_length=_CHARACTER_LIMITS["characterPromptMaxLength"])
     playguide: Annotated[str, StringConstraints(max_length=_CHARACTER_LIMITS["playguideMaxLength"])] | None
-    # 초안 저장은 이 값을 쓰지 않는다(빌더에 입력칸이 없다). 미리보기 시작 요청이 같은 모델을 써서 그 이름으로 남아 있다.
-    # 검증은 그대로라 규칙에 어긋난 값은 저장 요청이어도 422 다. `default_factory` 인 이유는 `KeywordNoteDraftInput` 의
-    # 같은 주석과 같다.
-    default_user_name: DefaultUserName = Field(default_factory=str)
     situational_images: list[CharacterSituationalImageDraftInput]
     description: WorkDescription
     genre_id: uuid.UUID | None
@@ -321,7 +293,6 @@ class CharacterDraftResponse(CamelModel):
     example_dialogues: list[ExampleDialogueItem]
     character_prompt: str
     playguide: str | None
-    default_user_name: str
     situational_images: list[CharacterSituationalImageItem]
     description: str
     genre_id: uuid.UUID | None
@@ -694,8 +665,6 @@ class StoryDraftPayload(CamelModel):
     )
     user_goal: str | None = None
     rules: str | None = None
-    # `CharacterDraftPayload.default_user_name` 과 같다.
-    default_user_name: DefaultUserName = Field(default_factory=str)
     starting_setups: list[StartingSetupDraftItem] = Field(max_length=_STORY_LIMITS["startingSetupMaxCount"])
     keyword_notes: list[KeywordNoteDraftInput] = Field(max_length=MAX_KEYWORD_NOTES)
     shortcuts: list[ShortcutDraftItem]
@@ -780,7 +749,6 @@ class StoryDraftResponse(CamelModel):
     development_examples: list[DevelopmentExampleItem]
     user_goal: str | None
     rules: str | None
-    default_user_name: str
     starting_setups: list[StartingSetupDraftItem]
     keyword_notes: list[KeywordNoteDraftItem]
     shortcuts: list[ShortcutDraftItem]

@@ -1013,45 +1013,35 @@ def _starting_setup_item(**overrides: object) -> dict[str, object]:
     return item
 
 
-_DEFAULT_USER_NAME_DRAFTS = [
+_DRAFT_KINDS = [
     pytest.param(_make_empty_story_draft, _story_draft_payload, id="story"),
     pytest.param(_make_empty_character_draft, _draft_payload, id="character"),
 ]
 
 
-@pytest.mark.parametrize(("make_draft", "make_payload"), _DEFAULT_USER_NAME_DRAFTS)
-async def test_patch_draft_never_overwrites_stored_default_user_name(
+@pytest.mark.parametrize(("make_draft", "make_payload"), _DRAFT_KINDS)
+async def test_patch_draft_from_an_old_bundle_ignores_the_removed_default_user_name(
     db_client: httpx.AsyncClient, db_session: AsyncSession, make_draft: Any, make_payload: Any
 ) -> None:
-    """빌더에는 작품 기본 이름 칸이 없다. 그래도 옛 화면의 자동저장과 미리보기용으로 폼에 남은 값이 이 키를 실어 보낼 수
-    있는데, 그 저장이 이미 저장된 이름을 바꾸거나 지우면 안 된다. 저장값은 발행·방·미리보기가 계속 읽는다."""
+    """작품 기본 이름 칸은 없어졌지만 배포 전에 받은 화면은 자동저장에 그 키를 계속 실어 보낸다. 그 저장이 거절되면
+    작가의 글이 저장되지 않는다 — 어떤 값이 와도(예전에는 거절하던 값도) 무시하고 저장하며, 응답에는 그 키가 없다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
     content = await make_draft(db_session, creator_user_id=user.id)
-    version_id = await db_session.scalar(
-        sa.select(ContentVersion.id).where(ContentVersion.content_id == content.id)
-    )
-    detail_model = StoryVersionDetail if content.type == ContentType.STORY else CharacterVersionDetail
-    await db_session.execute(
-        sa.update(detail_model)
-        .where(detail_model.content_version_id == version_id)
-        .values(default_user_name="지훈")
-    )
     await db_session.commit()
     await _login_as(db_client, user.id)
 
-    for sent in ("민수", ""):
-        resp = await db_client.patch(f"/contents/{content.id}/draft", json=make_payload(defaultUserName=sent))
-        assert resp.status_code == 200
-        assert resp.json()["defaultUserName"] == "지훈"
-        stored = await db_session.scalar(
-            sa.select(detail_model.default_user_name).where(detail_model.content_version_id == version_id)
+    for sent in ("민수", "", "{{user}}", "민:수"):
+        resp = await db_client.patch(
+            f"/contents/{content.id}/draft", json=make_payload(name=f"이름 {sent}", defaultUserName=sent)
         )
-        assert stored == "지훈"
+        assert resp.status_code == 200
+        assert resp.json()["name"] == f"이름 {sent}"
+        assert "defaultUserName" not in resp.json()
 
 
-@pytest.mark.parametrize(("make_draft", "make_payload"), _DEFAULT_USER_NAME_DRAFTS)
+@pytest.mark.parametrize(("make_draft", "make_payload"), _DRAFT_KINDS)
 async def test_patch_draft_keeps_novel_permission_when_key_omitted(
     db_client: httpx.AsyncClient, db_session: AsyncSession, make_draft: Any, make_payload: Any
 ) -> None:
@@ -1074,30 +1064,6 @@ async def test_patch_draft_keeps_novel_permission_when_key_omitted(
     assert (await db_client.get(f"/contents/{content.id}/draft")).json()["novelPermission"] == "forbidden"
     stored = await db_session.scalar(sa.select(Content.novel_permission).where(Content.id == content.id))
     assert stored == "forbidden"
-
-
-@pytest.mark.parametrize(
-    "name",
-    [
-        pytest.param("가" * 21, id="longer-than-profile-name"),
-        pytest.param("{{user}}", id="braces"),
-        pytest.param("*민수*", id="markdown"),
-        pytest.param("민:수", id="colon"),
-    ],
-)
-async def test_patch_draft_rejects_default_user_name_that_cannot_stand_in_for_user(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, name: str
-) -> None:
-    """작품 기본 이름은 작가 글의 `{{user}}` 자리에 들어간다. 프로필 이름이 못 쓰는 문자·길이와 중괄호를 막는다."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
-    content = await _make_empty_story_draft(db_session, creator_user_id=user.id)
-    await db_session.commit()
-    await _login_as(db_client, user.id)
-
-    resp = await db_client.patch(f"/contents/{content.id}/draft", json=_story_draft_payload(defaultUserName=name))
-    assert resp.status_code == 422
 
 
 async def test_patch_content_draft_upserts_starting_setup_tree(

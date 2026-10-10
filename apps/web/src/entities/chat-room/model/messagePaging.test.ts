@@ -28,7 +28,6 @@ function buildState(roomMessages: ChatMessage[], hasMoreMessagesBefore = true): 
     stats: {},
     endingStatus: { reached: false, endingId: undefined, reachedAtTurn: undefined, epilogue: undefined },
     turnCount: 60,
-    defaultUserName: "",
     latestVersionAvailable: false,
     versionAutoUpgraded: false,
     contentRestricted: false,

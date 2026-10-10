@@ -312,33 +312,31 @@ def format_user_persona(*, name: str, gender: str | None, description: str) -> s
 class PromptNames:
     """한 턴의 프롬프트가 쓰는 이름 — 작가 글의 `{{user}}`·`{{char}}` 를 바꿀 이름과 이름 한 줄 섹션의 값.
 
-    `persona_name` 은 대화 프로필 이름(없으면 None), `default_user_name` 은 방이 고정한 버전(미리보기는 초안)의 작품
-    기본 이름, `char_name` 은 캐릭터 작품의 이름(스토리는 None — `{{char}}` 를 글자 그대로 둔다).
+    `persona_name` 은 대화 프로필 이름(없으면 None), `char_name` 은 캐릭터 작품의 이름(스토리는 None — `{{char}}` 를
+    글자 그대로 둔다).
 
     작가 글은 원문 그대로 저장되고 빌더가 값을 조립하는 순간 바꾼다. 빌더가 바꾸는 것은 작가 글 필드와 대화 기록의
     모델 응답 줄(첫 메시지는 작가 글의 복사본이다)뿐이다 — 사용자 메시지는 화면이 보내기 전에 이미 바꿔 저장하므로, 거기
     남은 `{{user}}` 는 사용자가 친 글자다. 이미지 태그는 먼저 지우고 나서 바꾼다(이름이 태그로 읽히지 않게)."""
 
     persona_name: str | None
-    default_user_name: str
     char_name: str | None
 
     def expand(self, text: str) -> str:
-        return expand_author_macros(
-            text, user_name=resolve_user_name(self.persona_name, self.default_user_name), char_name=self.char_name
-        )
+        return expand_author_macros(text, user_name=resolve_user_name(self.persona_name), char_name=self.char_name)
 
     @property
     def judgment_user_name(self) -> str:
-        """판정·요약 채널의 이름 한 줄 값 — 실제 이름(프로필 또는 작품 기본 이름)이 있을 때만. 대체어 "당신" 은 이름이
-        아니라 "사용자의 이름: 당신" 같은 줄이 나가지 않게 비운다."""
-        return self.persona_name or self.default_user_name
+        """판정·요약 채널의 이름 한 줄 값 — 프로필 이름이 있을 때만. 대체어 "당신" 은 이름이 아니라 "사용자의 이름: 당신"
+        같은 줄이 나가지 않게 비운다."""
+        return self.persona_name or ""
 
     @property
     def generation_user_name(self) -> str:
-        """생성 채널의 이름 한 줄 값 — 프로필이 없고 작품 기본 이름이 있을 때만. 프로필이 있으면 프로필 섹션이 이미 이름을
-        준다. 작품 기본 이름으로 프로필 섹션을 채우지 않는 이유는 그 섹션 문안이 "사용자가 스스로 정한 자기 설정"이라서다."""
-        return "" if self.persona_name else self.default_user_name
+        """생성 채널의 이름 한 줄 값 — 실채팅에서는 늘 비어 있다. 프로필이 있으면 프로필 섹션이 이미 이름을 주고, 없으면
+        실을 이름이 없다. 슬롯은 DB 프롬프트 세트에 남아 있어 값은 계속 넘기고, 비어 있으니 conditional 로 섹션째 빠진다.
+        어드민 미리보기는 이 섹션 문안을 보이려고 하위 클래스에서 샘플 이름으로 덮는다."""
+        return ""
 
 
 def _turn_text(message: ChatMessage, names: PromptNames, *, strip_tags: bool) -> str:
@@ -888,7 +886,7 @@ def build_memory_summary_prompt(
     것을 쓴다 — 스토리 챗은 `story_assistant_label`, 캐릭터 챗은 `character_assistant_label`.
     노트·스탯·계정 정보는 인자로 받지 않는다: 노트는 매 턴 따로 실리고, 스탯 수치가 요약에 새면
     진실 소스가 둘이 되며, 계정 정보는 프롬프트에 넣지 않는다. 사용자 이름은 계정 정보가 아니라 이야기 속에서 사용자를
-    부르는 이름이라(대화 프로필 이름 또는 작품 기본 이름) 이름 한 줄로 싣는다 — 요약이 대화 속 그 이름이 사용자라는 걸
+    부르는 이름이라(대화 프로필 이름) 이름 한 줄로 싣는다 — 요약이 대화 속 그 이름이 사용자라는 걸
     알게 하려는 것이다. 모델 응답 줄은 `names` 로 `{{user}}`·`{{char}}` 를 바꾼다(태그는 지우지 않는다 — 요약 입력에는
     작가 글의 복사본인 첫 메시지가 빠져 있다)."""
     assistant_label = prompt_set.story_assistant_label if is_story_chat else prompt_set.character_assistant_label

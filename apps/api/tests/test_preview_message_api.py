@@ -1038,7 +1038,7 @@ async def test_send_preview_message_without_default_persona_has_no_persona_secti
     ("persona_name", "expected_setting", "expected_prologue"),
     [
         pytest.param("지훈", "지훈의 세계\n", "지훈은 문 앞에 선다.", id="authors-default-persona"),
-        pytest.param(None, "모험가의 세계\n", "모험가는 문 앞에 선다.", id="draft-default-name"),
+        pytest.param(None, "당신의 세계\n", "당신은 문 앞에 선다.", id="no-persona"),
     ],
 )
 async def test_send_preview_message_names_the_user_like_a_real_room(
@@ -1048,8 +1048,9 @@ async def test_send_preview_message_names_the_user_like_a_real_room(
     expected_setting: str,
     expected_prologue: str,
 ) -> None:
-    """미리보기는 실제 방과 같은 규칙으로 이름을 고른다 — 작가의 기본 프로필, 없으면 초안의 작품 기본 이름. 프로필이
-    없을 때만 생성 채널에 이름 한 줄이 실린다. 사용자 메시지는 그대로다."""
+    """미리보기는 실제 방과 같은 규칙으로 이름을 고른다 — 작가의 기본 프로필, 없으면 "당신". 생성 채널에는 이름 한 줄이
+    실리지 않는다. 사용자 메시지는 그대로다. 배포 전에 받은 화면은 지워진 작품 기본 이름 키를 미리보기 시작 요청에도
+    실어 보내는데, 받아 주되 이름 고르기에 쓰지 않는다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -1083,7 +1084,8 @@ async def test_send_preview_message_names_the_user_like_a_real_room(
     # 프롤로그는 프롤로그 자리와 첫 메시지(대화 기록) 두 곳에 실린다.
     assert prompt.count(expected_prologue) == 2
     assert prompt.count("{{user}}") == 1
-    assert ("[사용자 이름]\n대화 속 사용자의 이름: 모험가" in prompt) is (persona_name is None)
+    assert "대화 속 사용자의 이름" not in prompt
+    assert "모험가" not in prompt
 
 
 def test_send_preview_message_resolves_persona_before_the_clover_charge() -> None:

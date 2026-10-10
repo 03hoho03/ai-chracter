@@ -92,24 +92,14 @@ DEVELOPMENT_EXAMPLE: dict[str, Any] = {
 }
 
 
-# 이름이 없는 턴 — 대화 프로필도 작품 기본 이름도 없다. 이름 한 줄(생성·판정)이 비어 섹션째 빠지므로 이 인자가 생기기
-# 전에 뜬 골든과 바이트까지 같다. 픽스처 글에는 `{{char}}` 가 없어 캐릭터 이름은 결과에 영향이 없다.
-_NO_NAMES = PromptNames(persona_name=None, default_user_name="", char_name=None)
+# 이름이 없는 턴 — 대화 프로필이 없다. 이름 한 줄(생성·판정)이 비어 섹션째 빠지므로 이 인자가 생기기 전에 뜬 골든과
+# 바이트까지 같다. 픽스처 글에는 `{{char}}` 가 없어 캐릭터 이름은 결과에 영향이 없다.
+_NO_NAMES = PromptNames(persona_name=None, char_name=None)
 
-# 작가 글의 `{{user}}` 가 이름으로 바뀌는 턴 — 아래 두 골든은 이 리비전 이후에 손으로 적었다(`main()` 으로 뜨지 않았다).
-# 생성은 프로필 없이 작품 기본 이름만 있는 방이라 생성 채널에도 이름 한 줄이 실리고, 판정은 프로필 이름이 있는 방이다.
-# 기록의 사용자 줄에 남은 `{{user}}` 는 사용자가 친 글자라 그대로다.
-_DEFAULT_NAME_ONLY = PromptNames(persona_name=None, default_user_name="지훈", char_name=None)
-_PERSONA_NAME = PromptNames(persona_name="하늘", default_user_name="", char_name=None)
-STORY_SETTING_TEXT_WITH_USER = "옥상에서 {{user}}는 늘 혼자다."
+# 작가 글의 `{{user}}` 가 이름으로 바뀌는 턴 — 아래 판정 골든은 이 리비전 이후에 손으로 적었다(`main()` 으로 뜨지
+# 않았다). 프로필 이름이 있는 방이다. 기록의 사용자 줄에 남은 `{{user}}` 는 사용자가 친 글자라 그대로다.
+_PERSONA_NAME = PromptNames(persona_name="하늘", char_name=None)
 ENDING_JUDGMENT_PROMPT_WITH_USER = "{{user}}가 종잇조각을 읽으면 이 엔딩이 발동한다."
-
-
-def _story_history_with_user_macro() -> list[ChatMessage]:
-    return [
-        ChatMessage(role=ChatMessageRole.ASSISTANT, content="{{user}}가 문 앞에 서자 바람이 분다."),
-        ChatMessage(role=ChatMessageRole.USER, content="{{user}}는 문을 두드려 본다."),
-    ]
 
 
 def _story_history_calling_the_user() -> list[ChatMessage]:
@@ -555,29 +545,6 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
         ),
     ),
     # -- 작가 글의 `{{user}}` 치환과 이름 한 줄 --
-    (
-        "generation_story_default_user_name.txt",
-        "story",
-        lambda ps, sections: build_story_generation_prompt(
-            prompt_set=ps,
-            sections=sections,
-            prompt_template=StoryPromptTemplate.BASIC,
-            setting_text=STORY_SETTING_TEXT_WITH_USER,
-            development_examples=[],
-            user_goal=None,
-            rules=None,
-            custom_prompt=None,
-            prologue=STORY_PROLOGUE,
-            history=_story_history_with_user_macro(),
-            user_message=USER_MESSAGE,
-            user_persona="",
-            memory_note="",
-            memory_summary="",
-            keyword_note_texts=None,
-            shortcut_prompt=None,
-            names=_DEFAULT_NAME_ONLY,
-        ),
-    ),
     (
         "judgment_ending_user_name.txt",
         "story",

@@ -1,7 +1,5 @@
 import type { components } from "@ai-character-chat/api-types";
 
-import { defaultUserNameIssue } from "@/entities/persona";
-
 import {
   MAX_STAT_RULES,
   mediaBookSchema,
@@ -208,12 +206,6 @@ export function formToServer(values: StoryBuilderFormValues): StoryBuilderDraftP
     // 전개 예시의 출처는 이제 developmentExamples 하나뿐이다.
     developmentExamples: values.storySetting.developmentExamples.map(toApiDevelopmentExample),
     userGoal: values.storySetting.userGoal ?? null,
-    // 입력칸 없이 저장된 값이 폼을 거쳐 실린다. 초안 저장은 이 값을 쓰지 않고 미리보기 시작만 이름으로 쓴다. 다만 서버가 요청을
-    // 검사하므로 규칙에 어긋난 옛 값을 실으면 PATCH 전체가 422 가 돼 다른 칸의 수정까지 저장되지 않는다 — 그런 값은 빼고 보낸다.
-    // 앞뒤 공백은 서버처럼 걷어 보낸다 — 걷지 않으면 미리보기 화면과 서버 프롬프트의 이름이 갈린다.
-    ...(defaultUserNameIssue(values.storySetting.defaultUserName) === null
-      ? { defaultUserName: values.storySetting.defaultUserName.trim() }
-      : {}),
     rules: values.storySetting.rules ?? null,
     customPrompt: values.storySetting.customPrompt ?? null,
     startingSetups: values.startingSetups.map(toApiStartingSetup),

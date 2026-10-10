@@ -27,8 +27,6 @@ export type PreviewShortcut = {
  * 고쳐도 모델이 아는 이름과 화면·보내는 글의 이름이 갈리지 않는다. 새 세션(미리보기 초기화)에서 다시 잡힌다.
  */
 export type PreviewAuthorNameSource = {
-  /** 작품 기본 이름. 페이로드에 없으면(서버가 받지 않을 값이라 빼고 보냈으면) 서버처럼 빈 값이다. */
-  defaultUserName: string;
   /** 작품 이름 — 캐릭터 미리보기에서 `{{char}}` 가 된다. */
   contentName: string;
 };

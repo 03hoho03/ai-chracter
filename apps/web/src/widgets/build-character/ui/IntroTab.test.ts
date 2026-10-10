@@ -10,7 +10,7 @@ import { IntroTab } from "./IntroTab";
 function IntroTabWithForm() {
   const form = useForm<CharacterBuilderFormValues>({
     defaultValues: {
-      intro: { exampleDialogues: [{ id: "dialogue-1", userLine: "", characterLine: "" }], defaultUserName: "여행자" },
+      intro: { exampleDialogues: [{ id: "dialogue-1", userLine: "", characterLine: "" }] },
     },
   });
   return createElement(FormProvider<CharacterBuilderFormValues>, { ...form, children: createElement(IntroTab) });
@@ -27,13 +27,5 @@ describe("IntroTab example dialogues", () => {
   it.each(["userLine", "characterLine"])("renders %s as a multi-line field", (key) => {
     const html = renderToStaticMarkup(createElement(IntroTabWithForm));
     expect(fieldTagOf(html, `intro.exampleDialogues.0.${key}`)).toBe("textarea");
-  });
-});
-
-describe("IntroTab default user name", () => {
-  // 빌더는 작품 기본 이름을 받지 않는다. 폼에 남은 값은 미리보기로만 실려 가고 화면에는 칸이 없어야 한다.
-  it("has no default user name field even when the form carries a stored name", () => {
-    const html = renderToStaticMarkup(createElement(IntroTabWithForm));
-    expect(fieldTagOf(html, "intro.defaultUserName")).toBe("");
   });
 });

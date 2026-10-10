@@ -28,8 +28,7 @@ from api.novelize.text import ending_excerpt, split_paragraphs
 
 class ProtagonistNameMissingError(Exception):
     """소설의 주인공 이름 칸이 비어 장을 만들 수 없다. 장 본문은 사용자 쪽 인물을 이름으로 불러야 하는데, 대화 프로필
-    이름도 작품 기본 이름도 없으면 칸이 빈 채로 만들어진다. 장 생성 요청은 차감 전에 이것으로 422 를 내고 이름을
-    받는다."""
+    이름이 없으면 칸이 빈 채로 만들어진다. 장 생성 요청은 차감 전에 이것으로 422 를 내고 이름을 받는다."""
 
 
 def require_protagonist_name(novel: Novel) -> str:

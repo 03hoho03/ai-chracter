@@ -143,7 +143,7 @@ def format_turn_lines(
 
 def novel_prompt_names(*, protagonist_name: str, character_name: str | None) -> PromptNames:
     """소설 프롬프트의 이름 — 작가 글의 `{{user}}` 를 대화 프로필이 아니라 소설 주인공 이름으로 바꾼다. 주인공 이름은
-    소설을 만들 때 대화 프로필 이름(없으면 작품 기본 이름)으로 미리 채운 칸이라, 사용자가 고치지 않았으면 대화 때와
-    같은 이름이다. 스토리는 캐릭터 이름이 없어 `{{char}}` 를 글자 그대로 둔다."""
-    return PromptNames(persona_name=protagonist_name, default_user_name="", char_name=character_name)
+    소설을 만들 때 대화 프로필 이름으로 미리 채운 칸이라, 사용자가 고치지 않았으면 대화 때와 같은 이름이다. 스토리는
+    캐릭터 이름이 없어 `{{char}}` 를 글자 그대로 둔다."""
+    return PromptNames(persona_name=protagonist_name, char_name=character_name)
 

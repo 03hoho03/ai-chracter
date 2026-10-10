@@ -192,9 +192,9 @@ async def build_room_prompt(
     (`user_persona_rendered`·`memory_note_rendered`, 정책 안내 문구 분기용). scope·variant를 아는
     곳이 여기뿐이라 함께 돌려준다.
 
-    다섯 번째 값은 이 턴의 이름(`PromptNames`) — 방 프로필 이름, 방이 고정한 버전의 작품 기본 이름, 캐릭터 작품이면
-    그 이름이다. 작가 글의 `{{user}}`·`{{char}}` 를 바꾸고 이름 한 줄을 채우는 데 쓰며, 프로필과 버전 상세를 읽는 곳이
-    여기뿐이라 판정·요약 호출부가 같은 값을 쓰도록 함께 돌려준다(같은 턴 안에서 생성과 판정의 이름이 갈리지 않게).
+    다섯 번째 값은 이 턴의 이름(`PromptNames`) — 방 프로필 이름과, 캐릭터 작품이면 그 이름이다. 작가 글의
+    `{{user}}`·`{{char}}` 를 바꾸고 이름 한 줄을 채우는 데 쓰며, 프로필과 버전 상세를 읽는 곳이 여기뿐이라 판정·요약
+    호출부가 같은 값을 쓰도록 함께 돌려준다(같은 턴 안에서 생성과 판정의 이름이 갈리지 않게).
 
     `history`는 호출부가 읽은 전체 히스토리이고, 요약 스냅샷이 덮은 메시지는 여기서 빼고 그 자리를
     현재 요약 본문이 대신한다(`prompt_window`). 세 라우트의 생성 프롬프트가 모두 이 함수를 지나므로
@@ -245,11 +245,7 @@ async def build_room_prompt(
                 .order_by(KeywordNote.order, KeywordNote.entity_id)
             )
         ).all()
-        names = PromptNames(
-            persona_name=persona_name,
-            default_user_name=story_detail.default_user_name,
-            char_name=None,
-        )
+        names = PromptNames(persona_name=persona_name, char_name=None)
         matched_notes = match_keyword_notes(notes, history, user_content, names=names)
         situation_notes = (
             await db.scalars(
@@ -302,11 +298,7 @@ async def build_room_prompt(
 
     detail = await db.get(CharacterVersionDetail, room.content_version_id)
     assert detail is not None
-    names = PromptNames(
-        persona_name=persona_name,
-        default_user_name=detail.default_user_name,
-        char_name=detail.name,
-    )
+    names = PromptNames(persona_name=persona_name, char_name=detail.name)
     prompt = build_generation_prompt(
         prompt_set=prompt_set,
         sections=prompt_sections,

@@ -656,8 +656,8 @@ async def create_room_novel(
     """방의 소설을 만들거나, 이미 있으면 그대로 돌려준다(201 / 200). 무과금이다.
 
     원작 제목·캐릭터 이름·레인은 방이 고정한 버전에서 사본으로 떠 둔다 — 방이 지워지거나 작품이 바뀌어도 소설은
-    그대로 읽혀야 한다. 주인공 이름은 방에 건 대화 프로필 이름, 없으면 그 버전의 작품 기본 이름이고, 둘 다 없으면
-    비워 두었다가 첫 장을 만들기 전에 받는다. 이용 제한 작품이어도 만들 수 있다(모델을 부르지 않는다).
+    그대로 읽혀야 한다. 주인공 이름은 방에 건 대화 프로필 이름이고, 없으면 비워 두었다가 첫 장을 만들기 전에
+    받는다. 이용 제한 작품이어도 만들 수 있다(모델을 부르지 않는다).
 
     작가가 소설화를 허용하지 않은 작품이면 작가 본인이 아닌 사람은 새로 만들 수 없다(403 `CONTENT_NOVELIZE_FORBIDDEN`).
     이 판정은 이미 있는 소설을 돌려주는 분기 뒤에 둔다 — 허락을 낮춰도 이미 만든 소설은 계속 열리고 이어 쓸 수 있어야
@@ -674,11 +674,11 @@ async def create_room_novel(
     character_name: str | None
     if content.type == ContentType.STORY:
         story = await db.get_one(StoryVersionDetail, room.content_version_id)
-        title, character_name, default_user_name = story.name, None, story.default_user_name
+        title, character_name = story.name, None
     else:
         character = await db.get_one(CharacterVersionDetail, room.content_version_id)
-        title, character_name, default_user_name = character.name, character.name, character.default_user_name
-    protagonist = (persona.name if persona is not None else "") or default_user_name.strip()
+        title, character_name = character.name, character.name
+    protagonist = persona.name if persona is not None else ""
 
     # 같은 방에 두 요청이 겹치면 방 유니크 인덱스에서 하나만 들어가고 다른 쪽은 아무것도 하지 않는다.
     inserted = await db.scalar(

@@ -2,7 +2,6 @@ export { personaKeys } from "./api/keys";
 export { personaListQueryOptions } from "./api/personaListQueryOptions";
 export { useCreatePersonaMutation } from "./api/useCreatePersonaMutation";
 export { usePersonasQuery, useViewerPersonaName } from "./api/usePersonasQuery";
-export { defaultUserNameIssue } from "./model/defaultUserName";
 export {
   defaultPersonaName,
   PERSONA_DESCRIPTION_MAX_LENGTH,

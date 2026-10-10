@@ -21,13 +21,6 @@ import {
 import { serverToForm } from "./serverToForm";
 
 describe("storySettingSchema", () => {
-  // 빌더에 작품 기본 이름 칸이 없으니, 규칙에 어긋난 옛 저장값이 폼에 남아 있어도 고칠 길이 없는 오류로 발행을 막으면 안 된다.
-  it("does not block publishing on a stored default user name the rules would reject", () => {
-    const result = storySettingSchema.safeParse({ worldSetting: "세계관 설명", defaultUserName: "{{user}}" });
-
-    expect(result.success).toBe(true);
-  });
-
   it.each(["basic", "emotional", "simulation"] as const)(
     "requires worldSetting when promptTemplate is %s",
     (promptTemplate) => {

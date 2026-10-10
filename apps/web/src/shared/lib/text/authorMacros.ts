@@ -27,7 +27,7 @@
  * - 이름 끝 글자가 한글 음절이 아니면(`Alex`, `R2`) 받침을 알 수 없어 작가가 쓴 조사를 그대로 둔다.
  */
 
-/** 대화 프로필도 작품 기본 이름도 없을 때 쓰는 이름. */
+/** 대화 프로필 이름이 없을 때 쓰는 이름. */
 export const FALLBACK_USER_NAME = "당신";
 
 /** `{{user}}`·`{{char}}` 자리에 넣을 이름. `charName` 이 null 이면 `{{char}}` 를 글자 그대로 둔다. */
@@ -36,22 +36,20 @@ export type AuthorMacroNames = { userName: string; charName: string | null };
 type AuthorMacroNameSource = {
   /** 이 화면에서 쓸 대화 프로필 이름 — 방 화면은 방의 프로필, 작품 상세는 지금 시작하면 쓰일 프로필, 홈은 보는 사람의 기본 프로필. 없으면 null. */
   personaName: string | null | undefined;
-  /** 작가가 작품에 적어 둔 기본 이름. 비어 있으면 대체어를 쓴다. */
-  defaultUserName: string | null | undefined;
   contentType: "character" | "story";
   /** 작품 이름 — 캐릭터 작품에서만 `{{char}}` 가 된다. */
   contentName: string | null | undefined;
 };
 
 /**
- * 화면에서 작가 글의 매크로를 무엇으로 바꿀지 정하는 유일한 규칙. 사용자 이름은 대화 프로필 이름 → 작품 기본 이름 →
- * `FALLBACK_USER_NAME` 순이다(서버 `resolve_user_name` 과 같은 순서 — 모델이 부른 이름과 화면의 이름이 같아야 한다).
+ * 화면에서 작가 글의 매크로를 무엇으로 바꿀지 정하는 유일한 규칙. 사용자 이름은 대화 프로필 이름, 없으면
+ * `FALLBACK_USER_NAME` 이다(서버 `resolve_user_name` 과 같은 규칙 — 모델이 부른 이름과 화면의 이름이 같아야 한다).
  * `{{char}}` 는 캐릭터 작품에서만 작품 이름이다 — 스토리에는 가리킬 한 사람이 없다.
  * 화면마다 다른 것은 어느 프로필 이름을 넘기느냐뿐이고, 그 선택은 호출부가 한다.
  */
 export function resolveAuthorMacroNames(source: AuthorMacroNameSource): AuthorMacroNames {
   return {
-    userName: source.personaName || source.defaultUserName || FALLBACK_USER_NAME,
+    userName: source.personaName || FALLBACK_USER_NAME,
     charName: source.contentType === "character" ? source.contentName || null : null,
   };
 }
@@ -114,7 +112,7 @@ function particleFor(name: string, written: string): string {
 
 /**
  * 작가 글의 `{{user}}` 를 `userName` 으로, `{{char}}` 를 `charName` 으로 바꾸고 바로 뒤 조사를 맞춘다.
- * `userName` 은 호출부가 이미 고른 이름이다(대화 프로필 → 작품 기본 이름 → `FALLBACK_USER_NAME`).
+ * `userName` 은 호출부가 이미 고른 이름이다(대화 프로필 이름, 없으면 `FALLBACK_USER_NAME`).
  * `charName` 이 null 이면 스토리라 `{{char}}` 를 글자 그대로 둔다.
  */
 export function expandAuthorMacros(
@@ -168,14 +166,4 @@ export function userNameError(name: string): string | null {
   if (LINE_START_MARKER.test(name) || THEMATIC_BREAK.test(name))
     return "이름을 >, -, +, 1. 같은 인용·목록 표시나 ~~~ 로 시작하거나 ---·___ 로만 지을 수 없어요";
   return null;
-}
-
-/**
- * 작품 기본 이름이 `{{user}}` 자리에 들어갈 수 없는 이유. 빈 값은 대체어를 쓴다는 뜻이라 허용한다.
- * 프로필 이름 규칙에 중괄호를 더 막는다 — 작가가 이름 칸에 매크로나 이미지 태그를 숨겨 넣지 못하게.
- */
-export function defaultUserNameError(name: string): string | null {
-  if (name.includes("{") || name.includes("}"))
-    return "기본 이름에는 중괄호({, })를 쓸 수 없어요";
-  return userNameError(name);
 }

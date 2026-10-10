@@ -85,7 +85,6 @@ class FakeServer:
             },
             "personaId": str(PERSONA_ID) if self.persona is not None else None,
             "personaName": self.persona.name if self.persona is not None else None,
-            "defaultUserName": "여행자",
             "contentName": "등대지기",
             "chatModel": "sonnet",
             "effectiveChatModel": "gemini",
@@ -102,7 +101,6 @@ class FakeServer:
             "chat_model": "sonnet",
             "persona_id": PERSONA_ID if self.persona is not None else None,
             "persona_name": self.persona.name if self.persona is not None else None,
-            "default_user_name": "여행자",
             "persona": self.persona,
         }
         turn_count = self.db_changes.get("turn_count", self.turn_count)
@@ -234,9 +232,9 @@ def test_create_room_renders_author_text_like_the_screen_and_hides_private_field
     # 최신 발행본 번호는 방 버전이 아니라서 남기지 않는다 — 방 버전은 방 고정값의 버전 id 로 남는다.
     assert "versionNumber" not in meta
     opening = _records(run["log"], "opening")[0]
-    assert opening["messages"] == ["여행자, 왔어?\n\n[그림: 서진/옥상]"]
-    assert opening["suggestedReplies"] == ["여행자입니다"]
-    assert opening["playGuide"] == "여행자가 고른다"
+    assert opening["messages"] == ["당신, 왔어?\n\n[그림: 서진/옥상]"]
+    assert opening["suggestedReplies"] == ["당신입니다"]
+    assert opening["playGuide"] == "당신이 고른다"
     assert opening["roomAfter"]["stats"] == {"마감까지": 28, "서진 호감도": 20}
     # 비공개 필드는 시뮬레이터 쪽 어디에도 없다.
     for leaked in ("비공개", SHORTCUT_PROMPT):
@@ -256,7 +254,6 @@ def test_room_static_records_the_fixed_values_and_the_full_persona(run: dict[str
         "chatModel": "sonnet",
         "personaId": str(PERSONA_ID),
         "personaName": "하늘",
-        "defaultUserName": "여행자",
         "userName": "하늘",
         "persona": {"name": "하늘", "gender": "female", "description": "밤에만 글을 쓴다(프로필 전문)"},
     }
@@ -453,7 +450,7 @@ def test_records_keep_the_keys_the_pair_judge_reads(run: dict[str, Any]) -> None
     assert _say(run, "첫 말") == 0
     assert _main(run, "--room", ROOM_ID, "--shortcut", "며칠 뒤로") == 0
     opening = _records(run["log"], "opening")[0]
-    assert opening["messages"] == ["여행자, 왔어?\n\n[그림: 서진/옥상]"]
+    assert opening["messages"] == ["당신, 왔어?\n\n[그림: 서진/옥상]"]
     turns = _records(run["log"], "turn")
     assert [(t["clientTurn"], t["userText"], t["reply"]) for t in turns] == [(1, "첫 말", "답 하나"), (2, None, "답 둘")]
 
@@ -488,7 +485,7 @@ def test_shortcut_sends_prompt_and_id_but_logs_only_the_name(
     run["server"].turns = [_turn({"type": "token", "delta": "며칠 뒤"})]
     assert _main(run, "--room", ROOM_ID, "--shortcut", "며칠 뒤로") == 0
     sent = run["server"].paths("POST", "/messages")[0][2]
-    assert sent == {"content": "여행자는 며칠을 건너뛴다(비공개 원문)", "shortcutId": SHORTCUT_ID}
+    assert sent == {"content": "당신은 며칠을 건너뛴다(비공개 원문)", "shortcutId": SHORTCUT_ID}
     turn = _records(run["log"], "turn")[0]
     assert (turn["userText"], turn["shortcut"]) == (None, "며칠 뒤로")
     assert "비공개 원문" not in run["log"].read_text()
@@ -564,7 +561,7 @@ def test_ending_exits_3_and_shows_the_rendered_epilogue(
     run["server"].turns = [_turn({"type": "endingReached", "endingId": ENDING_ID, "epilogue": epilogue})]
     assert _say(run) == 3
     ending = _records(run["log"], "turn")[0]["ending"]
-    assert ending == {"id": ENDING_ID, "name": "새 학기의 첫 장", "epilogue": "여행자의 첫 장 [그림: 서진/옥상]"}
+    assert ending == {"id": ENDING_ID, "name": "새 학기의 첫 장", "epilogue": "당신의 첫 장 [그림: 서진/옥상]"}
 
 
 def test_gemini_429_in_the_server_log_for_this_room_exits_5(

@@ -582,7 +582,7 @@ async def _run_fold(engine: AsyncEngine, room: Room, factory: async_sessionmaker
         prompt_set=prompt_set,
         sections=sections,
         is_story_chat=False,
-        names=PromptNames(persona_name=None, default_user_name="", char_name=None),
+        names=PromptNames(persona_name=None, char_name=None),
     )
 
 

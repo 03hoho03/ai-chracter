@@ -82,9 +82,6 @@ export const characterBuilderSchema = z.object({
       .max(MAX_EXAMPLE_DIALOGUES, `예시 대화는 최대 ${MAX_EXAMPLE_DIALOGUES}개까지만 추가할 수 있습니다`)
       .default([]),
     playGuide: z.string().refine(...characterLimit(MAX_PLAY_GUIDE_LENGTH, "플레이가이드")).optional(),
-    // 입력칸은 없다. 저장된 작품 기본 이름을 미리보기 시작 요청에 그대로 실으려고 폼에 둔다. 보이지 않는 값이라
-    // 발행을 막지 않도록 검사하지 않고, 규칙에 어긋난 옛 값은 서버로 보낼 때 빠진다.
-    defaultUserName: z.string().default(""),
   }),
   prompt: z.object({
     characterPrompt: z

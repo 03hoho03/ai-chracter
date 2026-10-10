@@ -23,7 +23,6 @@ function buildState(messages: ChatMessage[]): ChatRoomState {
     stats: {},
     endingStatus: { reached: false, endingId: undefined, reachedAtTurn: undefined, epilogue: undefined },
     turnCount: 1,
-    defaultUserName: "",
     latestVersionAvailable: false,
     versionAutoUpgraded: false,
     contentRestricted: false,

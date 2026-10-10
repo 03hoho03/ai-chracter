@@ -684,7 +684,6 @@ async def _to_response(db: AsyncSession, room: ChatRoom, *, message_limit: int |
         version_auto_upgraded=room.version_auto_upgraded,
         persona_id=room.persona_id,
         persona_name=persona.name if persona is not None else None,
-        default_user_name=version_detail.default_user_name,
         content_name=version_detail.name,
         content_restricted=content.moderation_status != ModerationStatus.NORMAL,
         novel_creation_blocked=novel_creation_blocked,
@@ -1366,7 +1365,6 @@ def _last_message_preview(
     room: ChatRoom,
     content_type: ContentType,
     content_name: str,
-    default_user_name: str,
     persona_names: dict[uuid.UUID, str],
 ) -> str:
     """방 목록의 마지막 메시지 미리보기. 목록 화면은 방마다 다른 프로필 이름을 모르므로 작가 글의 `{{user}}`·
@@ -1380,7 +1378,7 @@ def _last_message_preview(
     persona_name = persona_names.get(room.persona_id) if room.persona_id is not None else None
     return expand_author_macros(
         preview,
-        user_name=resolve_user_name(persona_name, default_user_name),
+        user_name=resolve_user_name(persona_name),
         char_name=content_name if content_type == ContentType.CHARACTER else None,
     )
 
@@ -1397,12 +1395,12 @@ async def list_chat_rooms(
     content = await db.get(Content, content_id)
     assert content is not None
     detail_model = detail_model_for(content.type)
-    # 방마다 고정한 버전이 다를 수 있다 — 버전별 작품명·작품 기본 이름.
-    version_names: dict[uuid.UUID, tuple[str, str]] = {
-        version_id: (name, default_user_name)
-        for version_id, name, default_user_name in (
+    # 방마다 고정한 버전이 다를 수 있다 — 버전별 작품명.
+    version_names: dict[uuid.UUID, str] = {
+        version_id: name
+        for version_id, name in (
             await db.execute(
-                select(detail_model.content_version_id, detail_model.name, detail_model.default_user_name).where(
+                select(detail_model.content_version_id, detail_model.name).where(
                     detail_model.content_version_id.in_({room.content_version_id for room in rooms})
                 )
             )
@@ -1433,7 +1431,7 @@ async def list_chat_rooms(
                 id=room.id,
                 name=_display_name(room, ordinal),
                 last_message_preview=_last_message_preview(
-                    last_message, room, content.type, *version_names[room.content_version_id], persona_names
+                    last_message, room, content.type, version_names[room.content_version_id], persona_names
                 ),
                 created_at=room.created_at,
             )
@@ -1585,7 +1583,7 @@ async def list_my_chat_rooms(
                     content_name=detail.name,
                     thumbnail_url=None,
                     last_message_preview=_last_message_preview(
-                        last_message, room, content.type, detail.name, detail.default_user_name, persona_names
+                        last_message, room, content.type, detail.name, persona_names
                     ),
                     last_message_at=last_message.created_at if last_message is not None else None,
                     created_at=room.created_at,
@@ -2418,10 +2416,9 @@ async def send_preview_message(
         await db.commit()
 
         prompt_set, prompt_sections = prompt_set_data
-        # 실제 방과 같은 규칙으로 고른 이름 — 프로필은 작가의 기본 프로필, 작품 기본 이름은 초안 값이다.
+        # 실제 방과 같은 규칙으로 고른 이름 — 프로필은 작가의 기본 프로필이다.
         names = PromptNames(
             persona_name=persona.name if persona is not None else None,
-            default_user_name=state.payload.default_user_name,
             char_name=state.payload.name if isinstance(state.payload, CharacterDraftPayload) else None,
         )
         history = [_preview_chat_message(message) for message in state.messages]

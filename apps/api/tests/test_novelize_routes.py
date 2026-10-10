@@ -142,27 +142,13 @@ async def test_creating_a_room_novel_copies_the_work_and_prefills_the_profile_na
     assert await _novel_ledger(db_session, room.user_id) == []
 
 
-async def test_room_novel_falls_back_to_the_work_default_name_then_to_none(
+async def test_room_novel_without_persona_leaves_the_protagonist_name_empty(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch, persona=None, lane="story")
+    _room, novel_id = await _novel_setup(db_client, db_session, monkeypatch, persona=None, lane="story")
     story = (await db_client.get(f"/novels/{novel_id}")).json()
 
     assert (story["contentType"], story["characterName"], story["protagonistName"]) == ("story", None, None)
-
-    chat_room = await db_session.get(ChatRoom, room.room_id)
-    assert chat_room is not None
-    await db_session.execute(
-        sa.text("UPDATE story_version_details SET default_user_name = '나그네' WHERE content_version_id = :v"),
-        {"v": chat_room.content_version_id},
-    )
-    await db_session.execute(sa.delete(Novel).where(Novel.id == novel_id))
-    await db_session.commit()
-
-    recreated = await db_client.post(f"/chat-rooms/{room.room_id}/novel")
-
-    assert recreated.status_code == 201, recreated.text
-    assert recreated.json()["protagonistName"] == "나그네"
 
 
 async def test_room_novel_lookup_is_404_before_creation_and_403_for_someone_elses_room(

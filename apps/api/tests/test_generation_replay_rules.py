@@ -199,12 +199,12 @@ def test_room_static_refuses_records_that_disagree_or_duplicate_stat_names() -> 
 
 def test_room_static_names_the_cause_when_old_and_new_records_are_mixed() -> None:
     # 고정값 기록이 없는 옛 로그를 기준을 다시 잡아 이어 친 방 — 기록이 "없음/있음"으로 섞여 방 전체를 거부한다.
-    fixed = _static(contentVersionId=str(uuid.uuid4()), defaultUserName="나")
+    fixed = _static(contentVersionId=str(uuid.uuid4()))
     for records in ([_static(), fixed], [fixed, _static()]):
         with pytest.raises(ReplayRefusedError, match="고정값이 있는 기록과 없는 기록이 섞였다"):
             replay_logs.room_static(_logs([], records))
     # 고정값끼리 다르면 섞였다고 하지 않는다.
-    other = _static(contentVersionId=str(uuid.uuid4()), defaultUserName="나")
+    other = _static(contentVersionId=str(uuid.uuid4()))
     with pytest.raises(ReplayRefusedError, match="기록마다 다르다") as refused:
         replay_logs.room_static(_logs([], [fixed, other]))
     assert "섞였다" not in str(refused.value)

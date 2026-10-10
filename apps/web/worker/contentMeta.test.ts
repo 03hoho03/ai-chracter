@@ -34,7 +34,6 @@ function createSource(
     oneLiner: "달빛 마녀",
     detailDescription: "달빛을 다루는 마녀다.",
     creatorNickname: "제작자",
-    defaultUserName: "",
     ...overrides,
   };
 }
@@ -180,7 +179,7 @@ describe("buildContentHead", () => {
   });
 
   // 그림 태그가 아닌 `{{…}}` 는 지우지 않는다 — 예전엔 `{{user}}` 가 글자 그대로 남았지만, 이제 작가 글의 이름 매크로라
-  // 지우지 않고 이름으로 바꾼다(링크 미리보기엔 보는 사람이 없어 작품 기본 이름, 없으면 대체어).
+  // 지우지 않고 이름으로 바꾼다(링크 미리보기엔 보는 사람이 없어 대체어).
   it("detailDescription으로 떨어질 때 그림 태그는 지우고 {{user}} 는 지우지 않고 이름으로 바꾼다", () => {
     const head = buildContentHead(
       createSource({
@@ -197,22 +196,21 @@ describe("buildContentHead", () => {
     expect(head).not.toContain("img::");
   });
 
-  it("한줄소개의 {{user}} 를 작품 기본 이름으로, 조사도 받침에 맞춰 바꾼다", () => {
+  it("한줄소개의 {{user}} 를 대체어로, 조사도 받침에 맞춰 바꾼다", () => {
     const head = buildContentHead(
       createSource({
         type: "story",
         oneLiner: "{{user}}는 영화 동아리의 막내다. {{char}}",
-        defaultUserName: "조감독",
       }),
       origin,
     );
 
     // 스토리에는 `{{char}}` 가 가리킬 한 사람이 없어 글자 그대로 둔다.
     expect(head).toContain(
-      '<meta name="description" content="조감독은 영화 동아리의 막내다. {{char}}" />',
+      '<meta name="description" content="당신은 영화 동아리의 막내다. {{char}}" />',
     );
     expect(head).toContain(
-      '<meta property="og:description" content="조감독은 영화 동아리의 막내다. {{char}}" />',
+      '<meta property="og:description" content="당신은 영화 동아리의 막내다. {{char}}" />',
     );
   });
 
@@ -310,17 +308,15 @@ describe("handleContentMeta", () => {
     expect(html).toContain('<div id="root">');
   });
 
-  it("상세 응답의 작품 기본 이름으로 한줄소개의 {{user}} 를 바꾼다", async () => {
-    stubJson(
-      createDetailBody({ oneLiner: "{{user}}를 기다린 달빛 마녀", defaultUserName: "나그네" }),
-    );
+  it("상세 응답의 한줄소개 속 {{user}} 를 대체어로 바꾼다", async () => {
+    stubJson(createDetailBody({ oneLiner: "{{user}}를 기다린 달빛 마녀" }));
 
     const html = await (
       await handleContentMeta(botRequest(), createEnv(), ID)
     ).text();
 
     expect(html).toContain(
-      '<meta name="description" content="나그네를 기다린 달빛 마녀" />',
+      '<meta name="description" content="당신을 기다린 달빛 마녀" />',
     );
     expect(html).not.toContain("{{user}}");
   });

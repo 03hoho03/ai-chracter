@@ -16,7 +16,7 @@ from api.chat.stats import apply_rule_judgment
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StatDef, StatRule
 
-_NAMES = PromptNames(persona_name="하늘", default_user_name="", char_name=None)
+_NAMES = PromptNames(persona_name="하늘", char_name=None)
 
 
 def _stat(

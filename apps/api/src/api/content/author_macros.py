@@ -31,7 +31,7 @@
 
 import re
 
-# 대화 프로필도 작품 기본 이름도 없을 때 쓰는 이름. 이름 고르기는 호출부가 하고, 이 값만 여기서 정한다.
+# 대화 프로필이 없을 때 쓰는 이름. 이름 고르기는 호출부가 하고, 이 값만 여기서 정한다.
 FALLBACK_USER_NAME = "당신"
 
 # 받침 있는 이름 뒤의 형태 → 받침 없는 이름 뒤의 형태.
@@ -69,9 +69,9 @@ _HANGUL_LAST = ord("힣")
 _RIEUL_FINAL = 8  # 한글 음절의 종성 번호에서 ㄹ
 
 
-def resolve_user_name(persona_name: str | None, default_user_name: str) -> str:
-    """`{{user}}` 자리에 넣을 이름을 고른다 — 대화 프로필 이름 → 작품 기본 이름 → `FALLBACK_USER_NAME`."""
-    return persona_name or default_user_name or FALLBACK_USER_NAME
+def resolve_user_name(persona_name: str | None) -> str:
+    """`{{user}}` 자리에 넣을 이름을 고른다 — 대화 프로필 이름, 없으면 `FALLBACK_USER_NAME`."""
+    return persona_name or FALLBACK_USER_NAME
 
 
 def _final_consonant(name: str) -> int | None:
@@ -97,7 +97,7 @@ def _particle_for(name: str, written: str) -> str:
 def expand_author_macros(text: str, *, user_name: str, char_name: str | None) -> str:
     """작가 글의 `{{user}}` 를 `user_name` 으로, `{{char}}` 를 `char_name` 으로 바꾸고 바로 뒤 조사를 맞춘다.
 
-    `user_name` 은 호출부가 이미 고른 이름이다(대화 프로필 → 작품 기본 이름 → `FALLBACK_USER_NAME`).
+    `user_name` 은 호출부가 이미 고른 이름이다(대화 프로필 이름, 없으면 `FALLBACK_USER_NAME`).
     `char_name` 이 None 이면 스토리라 `{{char}}` 를 글자 그대로 둔다."""
     names = {"user": user_name, "char": char_name}
 
@@ -140,12 +140,3 @@ def user_name_error(name: str) -> str | None:
     if _LINE_START_MARKER.match(name) or _THEMATIC_BREAK.fullmatch(name):
         return "이름을 >, -, +, 1. 같은 인용·목록 표시나 ~~~ 로 시작하거나 ---·___ 로만 지을 수 없어요."
     return None
-
-
-def default_user_name_error(name: str) -> str | None:
-    """작품 기본 이름이 `{{user}}` 자리에 들어갈 수 없는 이유. 빈 값은 대체어를 쓴다는 뜻이라 허용한다.
-
-    프로필 이름 규칙에 중괄호를 더 막는다 — 작가가 이름 칸에 매크로나 이미지 태그를 숨겨 넣지 못하게."""
-    if "{" in name or "}" in name:
-        return "기본 이름에는 중괄호({, })를 쓸 수 없어요."
-    return user_name_error(name)

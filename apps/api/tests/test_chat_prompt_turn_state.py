@@ -58,7 +58,6 @@ async def _story_room(db_client: httpx.AsyncClient, db_session: AsyncSession) ->
     detail = await db_session.get(StoryVersionDetail, chat_room.content_version_id)
     assert detail is not None
     detail.setting_text = "{{user}}의 옥상 이야기"
-    detail.default_user_name = "작품기본이름"
     setup = await _resolve_starting_setup(db_session, chat_room)
     assert setup is not None
     trust_id = await db_session.scalar(select(StatDef.entity_id).where(StatDef.starting_setup_id == setup.id))
@@ -168,7 +167,7 @@ async def test_injected_summary_is_ignored_when_generation_window_is_off(
     assert all(_user_text(turn, 20) in prompt for turn in (1, 2, 3))
 
 
-async def test_injected_no_persona_falls_back_to_work_default_name_despite_room_persona(
+async def test_injected_no_persona_falls_back_to_the_fallback_name_despite_room_persona(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     room, trust_id = await _story_room(db_client, db_session)
@@ -180,7 +179,7 @@ async def test_injected_no_persona_falls_back_to_work_default_name_despite_room_
     prompt, persona_rendered, persona_name = await _build(db_session, room, no_persona)
 
     assert _DB_PERSONA_NAME not in prompt and _DB_PERSONA_DESCRIPTION not in prompt
-    assert "작품기본이름의 옥상 이야기" in prompt
+    assert "당신의 옥상 이야기" in prompt
     assert (persona_rendered, persona_name) == (False, None)
 
 

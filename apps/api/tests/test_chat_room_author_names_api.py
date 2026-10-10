@@ -1,7 +1,7 @@
 """방 화면이 작가 글의 `{{user}}`·`{{char}}` 를 바꿀 이름(방 응답)과, 서버가 직접 바꿔 내보내는 방 목록 미리보기.
 
-이름은 방이 고른 대화 프로필 → 방이 고정한 버전의 작품 기본 이름 → "당신" 순서로 고른다. 작품 쪽 값은 최신 발행본이
-아니라 방이 고정한 버전에서 읽어야 모델이 부른 이름과 화면의 이름이 갈리지 않는다.
+이름은 방이 고른 대화 프로필, 없으면 "당신"이다. 작품명(`{{char}}`)은 최신 발행본이 아니라 방이 고정한 버전에서 읽어야
+모델이 부른 이름과 화면의 이름이 갈리지 않는다.
 """
 
 import uuid
@@ -32,15 +32,8 @@ from factories import (
 )
 
 
-async def _set_default_user_name(db_session: AsyncSession, content: Content, name: str) -> None:
-    assert content.current_published_version_id is not None
-    detail = await db_session.get(StoryVersionDetail, content.current_published_version_id)
-    assert detail is not None
-    detail.default_user_name = name
-
-
 async def _publish_renamed_version(db_session: AsyncSession, content: Content, setup: StartingSetup) -> None:
-    """작품명·작품 기본 이름을 바꾼 새 발행본을 현재 발행본으로 만든다. 이미 있는 방은 옛 버전에 남는다."""
+    """작품명을 바꾼 새 발행본을 현재 발행본으로 만든다. 이미 있는 방은 옛 버전에 남는다."""
     version = ContentVersion(
         content_id=content.id, version_number=2, published_at=datetime.now(UTC), detail_description="설명"
     )
@@ -52,7 +45,6 @@ async def _publish_renamed_version(db_session: AsyncSession, content: Content, s
             name="새 작품명",
             one_liner="한줄소개",
             prompt_template=StoryPromptTemplate.BASIC,
-            default_user_name="용사",
         )
     )
     db_session.add(
@@ -90,7 +82,6 @@ async def test_room_response_names_come_from_room_persona_and_pinned_version(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     user_id, content, setup = await _story_with_setup(db_session, opening_message="시작")
-    await _set_default_user_name(db_session, content, "모험가")
     await _make_default_persona(db_session, user_id, "지훈")
     await db_session.commit()
     await _login_as(db_client, user_id)
@@ -102,7 +93,7 @@ async def test_room_response_names_come_from_room_persona_and_pinned_version(
 
     assert resp.status_code == 200
     body = resp.json()
-    assert (body["personaName"], body["defaultUserName"], body["contentName"]) == ("지훈", "모험가", "스토리")
+    assert (body["personaName"], body["contentName"]) == ("지훈", "스토리")
     assert body["latestVersionAvailable"] is True
 
 
@@ -131,9 +122,8 @@ async def test_room_response_follows_persona_rename_and_delete(
 async def test_story_room_preview_uses_each_rooms_name_and_leaves_char_as_text(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """방마다 프로필이 달라 목록 화면은 이름을 모른다 — 서버가 방마다 바꾼다. 프로필이 없으면 방이 고정한 버전의 작품
-    기본 이름(새 발행본의 "용사" 가 아니다), 그것도 없으면 "당신". 스토리에는 `{{char}}` 가 가리킬 한 사람이 없어
-    글자 그대로 둔다."""
+    """방마다 프로필이 달라 목록 화면은 이름을 모른다 — 서버가 방마다 바꾼다. 프로필이 없으면 "당신". 스토리에는
+    `{{char}}` 가 가리킬 한 사람이 없어 새 발행본이 나와도 글자 그대로 둔다."""
     user_id, content, setup = await _story_with_setup(
         db_session, opening_message="{{user}}는 문을 연다. {{char}}가 있다."
     )
@@ -144,16 +134,13 @@ async def test_story_room_preview_uses_each_rooms_name_and_leaves_char_as_text(
     without_persona = await _create_room(db_client, content, setup)
     cleared = await db_client.put(f"/chat-rooms/{without_persona['id']}/persona", json={"personaId": None})
     assert cleared.status_code == 200
-    previews_without_default_name = await _previews(db_client, content)
 
-    await _set_default_user_name(db_session, content, "모험가")
     await _publish_renamed_version(db_session, content, setup)
     await db_session.commit()
     previews = await _previews(db_client, content)
 
-    assert previews_without_default_name[without_persona["id"]] == ("당신은 문을 연다. {{char}}가 있다.",) * 2
     assert previews[with_persona["id"]] == ("지훈은 문을 연다. {{char}}가 있다.",) * 2
-    assert previews[without_persona["id"]] == ("모험가는 문을 연다. {{char}}가 있다.",) * 2
+    assert previews[without_persona["id"]] == ("당신은 문을 연다. {{char}}가 있다.",) * 2
 
 
 async def test_character_room_preview_replaces_char_with_character_name(
@@ -178,7 +165,7 @@ async def test_character_room_preview_replaces_char_with_character_name(
     room_body = (await db_client.get(f"/chat-rooms/{room['id']}")).json()
 
     assert previews[room["id"]] == ("하늘이 당신을 반긴다.",) * 2
-    assert (room_body["personaName"], room_body["defaultUserName"], room_body["contentName"]) == (None, "", "하늘")
+    assert (room_body["personaName"], room_body["contentName"]) == (None, "하늘")
 
 
 async def test_room_preview_leaves_user_message_as_sent(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:

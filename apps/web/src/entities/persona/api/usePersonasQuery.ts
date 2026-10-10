@@ -11,7 +11,7 @@ export function usePersonasQuery({ enabled = true }: { enabled?: boolean } = {})
 
 /**
  * 방 없는 화면(홈 큐레이션)에서 작가 글의 `{{user}}` 에 넣을 보는 사람의 이름 — 기본 프로필의 이름이다.
- * 로그인하지 않았거나, 기본 프로필이 없거나, 목록을 아직 모르면 null 이라 작품 기본 이름으로 넘어간다(목록은 앱 전역
+ * 로그인하지 않았거나, 기본 프로필이 없거나, 목록을 아직 모르면 null 이라 대체어로 넘어간다(목록은 앱 전역
  * 캐시라 두 번째 화면부터는 바로 있다).
  */
 export function useViewerPersonaName(isLoggedIn: boolean): string | null {

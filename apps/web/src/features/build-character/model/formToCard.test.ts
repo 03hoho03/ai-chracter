@@ -6,7 +6,7 @@ import type { CharacterBuilderFormValues } from "./schema";
 function baseFormValues(): CharacterBuilderFormValues {
   return {
     profile: { name: "은빛 늑대", oneLiner: "숲의 파수꾼", image: { assetId: "asset-thumbnail" } },
-    intro: { firstMessage: "첫 인사", exampleDialogues: [], playGuide: undefined, defaultUserName: "" },
+    intro: { firstMessage: "첫 인사", exampleDialogues: [], playGuide: undefined },
     prompt: { characterPrompt: "캐릭터 설정 프롬프트" },
     situationalImages: [],
     registration: {

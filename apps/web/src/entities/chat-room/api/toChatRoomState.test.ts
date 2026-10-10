@@ -30,7 +30,6 @@ describe("toChatRoomState", () => {
       stats: {},
       endingStatus: { reached: false, endingId: undefined, reachedAtTurn: undefined, epilogue: undefined },
       turnCount: 3,
-      defaultUserName: "",
       latestVersionAvailable: true,
       versionAutoUpgraded: false,
       contentRestricted: false,
@@ -127,8 +126,8 @@ describe("toChatRoomState", () => {
     expect(state.effectiveChatModelName).toBeUndefined();
   });
 
-  // 화면이 작가 글의 `{{user}}`·`{{char}}` 를 방이 고정한 버전의 이름으로 바꾸려면 세 이름이 방 상태에 있어야 한다.
-  // 프로필 없음(서버 null)은 undefined 로 접는다 — 이름 고르기가 다음 순서(작품 기본 이름)로 넘어간다.
+  // 화면이 작가 글의 `{{user}}`·`{{char}}` 를 방의 프로필 이름과 방이 고정한 버전의 작품 이름으로 바꾸려면 두 이름이
+  // 방 상태에 있어야 한다. 프로필 없음(서버 null)은 undefined 로 접는다 — 이름 고르기가 대체어로 넘어간다.
   it("carries the names the screen puts in for {{user}} and {{char}}", () => {
     const base: Parameters<typeof toChatRoomState>[0] = {
       id: "room-1",
@@ -147,11 +146,10 @@ describe("toChatRoomState", () => {
     };
 
     expect(
-      toChatRoomState({ ...base, personaName: "지훈", defaultUserName: "조감독", contentName: "유나" }),
-    ).toMatchObject({ personaName: "지훈", defaultUserName: "조감독", contentName: "유나" });
+      toChatRoomState({ ...base, personaName: "지훈", contentName: "유나" }),
+    ).toMatchObject({ personaName: "지훈", contentName: "유나" });
     expect(toChatRoomState({ ...base, personaName: null })).toMatchObject({
       personaName: undefined,
-      defaultUserName: "",
     });
   });
 

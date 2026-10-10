@@ -24,7 +24,7 @@ from api.db.models.story import StoryPromptTemplate
 _PERSONA = "이름: 하늘\n성별: 여성\n설명: 밤하늘을 좋아한다"
 
 # 이름이 없는 턴 — 이름 한 줄이 비어 섹션째 빠진다. 이름 치환은 `test_prompt_author_macros.py` 가 본다.
-_NO_NAMES = PromptNames(persona_name=None, default_user_name="", char_name=None)
+_NO_NAMES = PromptNames(persona_name=None, char_name=None)
 
 
 def _generation_body(sections: list[PromptSection], slot: str) -> str:
