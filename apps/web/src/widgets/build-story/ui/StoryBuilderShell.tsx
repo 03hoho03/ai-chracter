@@ -416,7 +416,7 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
               }
             >
               {rejectionReason !== undefined && draftId !== undefined && (
-                <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
+                <div role="alert" className="flex items-start justify-between gap-3 rounded-lg bg-destructive/10 px-4 py-3">
                   <div className="min-w-0 break-keep wrap-break-word">
                     <p className="text-sm font-medium text-destructive-text">발행이 거부되었어요</p>
                     <p className="mt-1 text-sm text-muted-foreground">{rejectionReason}</p>

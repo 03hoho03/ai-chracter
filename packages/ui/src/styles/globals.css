@@ -103,7 +103,7 @@
   --accent-foreground: oklch(0.22 0 0);
   --destructive: oklch(0.55 0.19 25);
   --destructive-foreground: oklch(1 0 0);
-  /* 텍스트·글리프 전용. 채움(`bg-destructive/5`·`/10`·`/20`, `border-destructive/30`, `ring-destructive/20`)은
+  /* 텍스트·글리프 전용. 채움(`bg-destructive/10`·`/20`, `ring-destructive/20`)은
      --destructive를 그대로 쓴다 — 둘을 갈라야 틴트 픽셀을 안 건드리고 텍스트 대비만 올릴 수 있다.
      0.55로는 틴트가 popover(사다리 한 칸 안쪽) 위에 얹히는 순간 AA가 깨진다(rest 4.2059 / hover 3.6035).
      0.49면 최악 조합(hover `/20` over popover)이 4.6907이다 — 브라우저 실측이고 여유가 0.19뿐이다.
