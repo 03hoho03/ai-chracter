@@ -282,7 +282,7 @@ _CASES: dict[str, _Builder] = {
 }
 
 # 경우마다 장부가 지나야 하는 호출 위치 — 이 경로를 지나지 않으면 그 판정 프롬프트는 아무도 지문을 뜨지 않는다. 접기가
-# 요약 LLM 을 부르는 것은 30턴 방의 보내기·수정이다(재생성은 접기를 예약하지 않는다).
+# 요약 LLM 을 부르는 것은 30턴 방의 보내기·수정·재생성이다(재생성도 커밋 뒤 접기를 예약한다).
 _STORY_TURN_SITES = {
     "chat_generate",
     "chat_stat_judgment",
@@ -294,10 +294,10 @@ _CHARACTER_TURN_SITES = {"chat_generate", "chat_situational_image", "chat_memory
 _REQUIRED_CALL_SITES: dict[str, set[str]] = {
     "send-story": _STORY_TURN_SITES,
     "edit-story": _STORY_TURN_SITES,
-    "regenerate-story": {"chat_generate", "chat_media_book_image"},
+    "regenerate-story": {"chat_generate", "chat_media_book_image", "chat_memory_summary"},
     "send-character": _CHARACTER_TURN_SITES,
     "edit-character": _CHARACTER_TURN_SITES,
-    "regenerate-character": {"chat_generate", "chat_situational_image"},
+    "regenerate-character": {"chat_generate", "chat_situational_image", "chat_memory_summary"},
     "preview-story": {
         "preview_generate",
         "preview_stat_judgment",
