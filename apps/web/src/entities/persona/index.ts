@@ -1,4 +1,6 @@
 export { personaKeys } from "./api/keys";
+export { personaListQueryOptions } from "./api/personaListQueryOptions";
+export { useCreatePersonaMutation } from "./api/useCreatePersonaMutation";
 export { usePersonasQuery, useViewerPersonaName } from "./api/usePersonasQuery";
 export { defaultUserNameIssue } from "./model/defaultUserName";
 export {
@@ -10,4 +12,7 @@ export {
   type PersonaList,
 } from "./model/persona";
 export { PERSONA_GENDER_LABEL, PERSONA_GENDERS } from "./model/personaGender";
+export { personaNameIssue } from "./model/personaName";
+export { resolveStartPersona } from "./model/startPersona";
 export { PersonaSummary } from "./ui/PersonaSummary";
+export { PersonaToggleList } from "./ui/PersonaToggleList";

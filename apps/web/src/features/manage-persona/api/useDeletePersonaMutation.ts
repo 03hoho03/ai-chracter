@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { chatRoomKeys } from "@/entities/chat-room";
 import { personaKeys } from "@/entities/persona";
-import { apiClient } from "@/shared/api/client";
+import { apiClient, isApiError } from "@/shared/api/client";
 
 /** 삭제하면 그 프로필을 참조하던 방의 `personaId`가 서버에서 NULL이 된다.
  * 어느 방이 참조했는지 FE는 모르므로 방 상세 캐시를 전부 invalidate한다(`removeQueries`가 아닌 이유:
@@ -18,6 +18,10 @@ export function useDeletePersonaMutation() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: personaKeys.all });
       void queryClient.invalidateQueries({ queryKey: chatRoomKeys.details() });
+    },
+    // 409 = 남은 것이 이것 하나였다(다른 탭에서 지웠다) — 캐시의 개수가 낡아 메뉴가 삭제를 막지 못했다는 뜻이라 다시 읽는다.
+    onError: (error) => {
+      if (isApiError(error) && error.status === 409) void queryClient.invalidateQueries({ queryKey: personaKeys.all });
     },
   });
 }

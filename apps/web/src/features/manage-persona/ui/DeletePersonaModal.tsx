@@ -21,7 +21,8 @@ type DeletePersonaModalProps = {
 };
 
 /** 자체 호출형 react-call — 삭제 뒤 동작(목록·방 캐시 갱신 + 토스트)이 호출부와 무관하게 같다.
- * 참조하던 방은 "선택 안 함"이 되고, 기본이었으면 기본도 없어진다. */
+ * 참조하던 방은 "선택 안 함"이 되고, 기본이었으면 남은 것 중 가장 먼저 만든 프로필이 기본이 된다. 마지막 하나는 서버가
+ * 409 로 거절하고 그 문구를 토스트로 그대로 보인다(메뉴가 미리 막지만 다른 탭에서 지운 경우가 남는다). */
 export const DeletePersonaModal = createCallable<DeletePersonaModalProps, void>(({ call, persona, isDefault }) => {
   const deleteMutation = useDeletePersonaMutation();
 
@@ -43,7 +44,7 @@ export const DeletePersonaModal = createCallable<DeletePersonaModalProps, void>(
           <DialogTitle className="break-all">'{persona.name}' 프로필을 삭제할까요?</DialogTitle>
           <DialogDescription className="break-keep">
             이 프로필을 쓰던 대화방은 '선택 안 함'으로 바뀌어요.
-            {isDefault && " 기본 프로필도 없어져요."} 지난 대화 내용은 그대로예요.
+            {isDefault && " 남은 프로필 중 가장 오래된 프로필이 기본이 돼요."} 지난 대화 내용은 그대로예요.
           </DialogDescription>
         </DialogHeader>
 

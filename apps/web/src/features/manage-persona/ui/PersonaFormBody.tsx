@@ -16,14 +16,15 @@ import { personaFormSchema, type PersonaFormValues } from "../model/schema";
 
 type PersonaFormBodyProps = {
   defaultValues: PersonaFormValues;
-  /** 생성 폼에만 "기본으로 지정"이 있다 — 편집에서 기본을 바꾸는 길은 목록의 메뉴다(`PUT /me/default-persona`). */
-  isCreate: boolean;
+  /** "기본으로 지정"을 보인다. 생성 폼에만 있고(편집에서 기본을 바꾸는 길은 목록의 메뉴다 — `PUT /me/default-persona`),
+   * 첫 프로필을 만들 때는 서버가 무조건 기본으로 두어 고를 것이 없으니 빼고 폼값(켜짐)을 그대로 보낸다. */
+  showsSetAsDefault: boolean;
   submitLabel: string;
   onValidSubmit: (values: PersonaFormValues) => Promise<void>;
   onCancel: () => void;
 };
 
-export function PersonaFormBody({ defaultValues, isCreate, submitLabel, onValidSubmit, onCancel }: PersonaFormBodyProps) {
+export function PersonaFormBody({ defaultValues, showsSetAsDefault, submitLabel, onValidSubmit, onCancel }: PersonaFormBodyProps) {
   const fieldId = useId();
   const form = useForm<PersonaFormValues>({
     resolver: zodResolver(personaFormSchema),
@@ -140,7 +141,7 @@ export function PersonaFormBody({ defaultValues, isCreate, submitLabel, onValidS
         )}
       </div>
 
-      {isCreate && (
+      {showsSetAsDefault && (
         <Controller
           control={form.control}
           name="setAsDefault"

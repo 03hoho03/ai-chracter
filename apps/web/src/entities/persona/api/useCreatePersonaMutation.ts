@@ -1,8 +1,10 @@
 import type { ApiError, components } from "@ai-character-chat/api-types";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { personaKeys, type Persona } from "@/entities/persona";
 import { apiClient, isApiError } from "@/shared/api/client";
+
+import { personaKeys } from "./keys";
+import type { Persona } from "../model/persona";
 
 type PersonaCreateRequest = components["schemas"]["PersonaCreateRequest"];
 
