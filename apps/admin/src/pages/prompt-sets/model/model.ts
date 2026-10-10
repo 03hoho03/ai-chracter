@@ -8,8 +8,8 @@ export type PromptModel = components["schemas"]["AdminPromptSetSummary"]["model"
 /** 스키마에 모델이 늘면 이 `Record`가 컴파일 에러로 잡는다. */
 export const PROMPT_MODEL_LABELS: Record<PromptModel, string> = {
   gemini: "Gemini",
-  sonnet: "Claude Sonnet 4.6",
-  opus: "Claude Opus 4.6",
+  sonnet: "Claude Sonnet 5.5",
+  opus: "Claude Opus 5.5",
 };
 
 export function isPromptModel(value: string): value is PromptModel {
