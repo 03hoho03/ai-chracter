@@ -1,11 +1,11 @@
 """SDK 스크러빙 옵션(`api.core.sentry.build_sentry_options`)이
 실제로 유출을 막는지 검증한다. 손으로 만든 event dict에 스크러버를 먹이는
 테스트는 항진명제다. 여기서는 **전역 `sentry_sdk.init()`을 부르지 않고** `sentry_sdk.Client`를
-직접 만들어, 실제 프로덕션 코드(`auth/emails.py`·`chat/router.py`·`chat/prompt_set_cache.py`)에서
+직접 만들어, 실제 프로덕션 코드(`auth/emails.py`·`chat/turn_engine.py`·`chat/prompt_set_cache.py`)에서
 실제로 raise된 예외를 SDK의 진짜 이벤트 빌더(`event_from_exception`)·`Client.capture_event`
 파이프라인(스크러버·`before_send` 포함)에 흘려 transport가 받은 envelope을 단언한다.
 
-`chat/router.py`(`_stream_new_turn` 등)·`chat/prompt_set_cache.py`의 실제 except 블록은 이제
+`chat/router.py`·`chat/turn_engine.py`(`run_turn` 등)·`chat/prompt_set_cache.py`의 실제 except 블록은 이제
 `capture_dependency_failure`(`api.core.sentry`)를 부르지만, 그건 **전역** `sentry_sdk.
 capture_exception`을 호출하는 얇은 래퍼라 이 파일이 만든 격리된 `Client`(위 `_make_client`)는
 전혀 거치지 않는다 — 전역 SDK는 `init()`이 안 불린 이 테스트 환경(DSN 빈 문자열)에서 no-op이다.
@@ -18,6 +18,7 @@ failure` 자체가 실제로 불리는지·태그가 맞는지는 `tests/test_pr
 """
 
 import json
+import logging
 import sys
 from collections.abc import AsyncIterator, Callable
 from typing import Any
@@ -38,7 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.auth import emails as auth_emails
 from api.auth.emails import send_password_reset_email
 from api.chat import prompt_set_cache
-from api.chat import router as chat_router
+from api.chat import turn_engine
 from api.chat.prompt_builder import load_active_prompt_set
 from api.core.email import EmailSendError
 from api.core.redis import redis_client
@@ -172,7 +173,7 @@ async def test_password_reset_email_body_local_variable_is_not_captured() -> Non
 
 
 async def test_chat_generation_prompt_local_variables_are_not_captured() -> None:
-    """`chat/router.py`의 `_stream_generated_tokens`(`_stream_new_turn`/`regenerate_message`/
+    """`chat/turn_engine.py`의 `_stream_generated_tokens`(`run_turn`/`regenerate_message`/
     `_stream_preview_turn`이 공유)는 예외를 삼키지 않고 그대로 올린다 — 채팅 프롬프트·바닥
     지시문이 `prompt`/`system_instruction` 지역변수로 산다."""
     secret_prompt = (
@@ -198,7 +199,7 @@ async def test_chat_generation_prompt_local_variables_are_not_captured() -> None
     client, transport = _make_client()
     chunks: list[str] = []
     try:
-        async for _ in chat_router._stream_generated_tokens(
+        async for _ in turn_engine._stream_generated_tokens(
             _RaisingLLMClient(),
             secret_prompt,
             chunks,
@@ -206,6 +207,7 @@ async def test_chat_generation_prompt_local_variables_are_not_captured() -> None
             "user_label",
             usage=LLMCallContext(call_site="chat_generate", user_id=None, room_id=None),
             turn=1,
+            log=logging.getLogger("api.chat.router"),
         ):
             pass
     except LLMClientError as exc:

@@ -218,8 +218,8 @@ async def _run_failing_turn(
     return user, resp
 
 
-# 환불되는 6지점. 제너레이터 3개 × 실패 2종이고, 전송·편집이 같은
-# `_stream_new_turn`을 공유하므로 전송으로 대표한다(편집은 같은 6지점을 다시 태운다).
+# 환불되는 지점은 경로(전송·편집 / 재생성 / 미리보기) × 실패 2종이다. 전송·편집은 렌더 실패 환불을
+# 라우터의 `_room_generation_prompt` 로, 생성 실패 환불을 턴 골격(`run_turn`)으로 함께 쓰므로 편집도 같은 지점을 다시 태운다.
 @pytest.mark.parametrize("surface", ["send", "edit", "regenerate", "preview"])
 @pytest.mark.parametrize("failure", ["render", "llm"])
 async def test_our_side_failure_refunds_clover(

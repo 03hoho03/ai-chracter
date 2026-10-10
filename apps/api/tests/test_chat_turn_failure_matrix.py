@@ -71,7 +71,9 @@ from api.db.models import (
     ChatMessageRole,
     ChatRoom,
     ChatRoomStat,
+    Ending,
     PromptSection,
+    StartingSetup,
     StatRule,
     User,
 )
@@ -542,6 +544,22 @@ async def _fail_post_commit_signing(ctx: _Ctx) -> None:
     ctx.witnesses.append(("그림 서명에 닿지 않았다", lambda: bool(reached)))
 
 
+async def _fail_epilogue_display(ctx: _Ctx) -> None:
+    """도달할 엔딩의 에필로그에 방 버전의 칸 태그를 넣고 커밋 뒤 그림 서명을 실패시킨다 — 에필로그를 화면용으로 해석하는
+    자리가 서명에서 실패한다. 판정 칸 서명도 같은 장치로 함께 실패한다."""
+    assert ctx.target.room_id is not None
+    version_id = sa.select(ChatRoom.content_version_id).where(ChatRoom.id == ctx.target.room_id).scalar_subquery()
+    setup_ids = sa.select(StartingSetup.id).where(StartingSetup.content_version_id == version_id)
+    await ctx.db_session.execute(
+        sa.update(Ending)
+        .where(Ending.starting_setup_id.in_(setup_ids))
+        .values(epilogue=Ending.epilogue + "\n\n{{img::민아/교실}}")
+    )
+    await ctx.db_session.commit()
+    await _fail_post_commit_signing(ctx)
+    ctx.witnesses.append(("에필로그 그림 해석이 서명 실패를 흡수하지 않았다", _captured(ctx, "RuntimeError", "db")))
+
+
 _ROOM = ("send", "edit", "regenerate")
 _ALL = (*_ROOM, "preview-story", "preview-character")
 _STORY_ALL = (*_ROOM, "preview-story")
@@ -588,6 +606,7 @@ _CELLS: dict[str, tuple[tuple[str, ...], _Arm]] = {
     "cancel-after-done-before-the-preview-save": (("preview-story",), _preview_save("hang")),
     "preview-save-fails": (("preview-story",), _preview_save("fail")),
     "post-commit-signing-failure": (("send", "regenerate"), _fail_post_commit_signing),
+    "epilogue-display-failure": (("send",), _fail_epilogue_display),
 }
 
 

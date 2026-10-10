@@ -38,7 +38,7 @@ async def load_room_stats(
     db: AsyncSession, room_id: uuid.UUID, setup_id: uuid.UUID
 ) -> tuple[list[StatDef], dict[str, ChatRoomStat], dict[str, float]]:
     """시작설정의 스탯 정의, 방의 스탯 행(스탯 entity_id 문자열 → 행), 지금 값(같은 키 → 값)을 읽는다. 판정 단계는
-    행 사전을 라우터의 `_write_room_stat` 에 넘겨 바뀐 값을 쓰고, 생성 프롬프트 조립은 지금 값으로 상황 노트 조건을 본다 —
+    행 사전을 `chat/turn_store.py` 의 `_write_room_stat` 에 넘겨 바뀐 값을 쓰고, 생성 프롬프트 조립은 지금 값으로 상황 노트 조건을 본다 —
     두 자리가 같은 값을 보도록 한 곳에서 읽는다.
 
     행이 없는 스탯(버전을 옮긴 방에서 새 버전에 생긴 스탯)은 시작값으로 본다 — 승격이 채우는 값과 같다."""

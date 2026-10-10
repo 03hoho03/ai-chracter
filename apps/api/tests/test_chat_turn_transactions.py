@@ -34,7 +34,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from api.chat import router as chat_router
-from api.chat import turn_settlement
+from api.chat import turn_settlement, turn_store
 from api.chat.preview_session import get_preview_session
 from api.chat.turn_settlement import TurnSettlement
 from api.chat.prompt_builder import (
@@ -655,7 +655,12 @@ async def test_room_deleted_during_generation_ends_with_an_error_and_no_refund(
     assert resp.status_code == 200
     assert [event["type"] for event in _parse_sse_events(resp.text)] == ["token", "token", "error"]
     assert await db_session.scalar(sa.select(sa.func.count()).select_from(ChatRoom).where(ChatRoom.id == room.room_id)) == 0
-    assert any(str(room.room_id) in record.getMessage() for record in caplog.records if record.levelno >= logging.WARNING)
+    # 로거 이름까지 본다 — 이 경고는 턴 저장소로 옮겨 갔지만 라우터가 넘긴 로거로 남아 Bugsink breadcrumb 범주가 그대로다.
+    assert any(
+        str(room.room_id) in record.getMessage() and record.name == chat_router.__name__
+        for record in caplog.records
+        if record.levelno >= logging.WARNING
+    )
     await db_session.refresh(user)
     assert user.clover_balance == 100 - clover.CHAT_TURN_COST
     kinds = (await db_session.scalars(sa.select(CloverLedger.kind).where(CloverLedger.user_id == user.id))).all()
@@ -728,7 +733,7 @@ async def test_send_write_failure_after_the_stat_write_saves_nothing_of_the_turn
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
     before = await _room_state(db_session, room.room_id)
 
-    write_room_stat = chat_router._write_room_stat
+    write_room_stat = turn_store._write_room_stat
 
     def _write_then_break(
         db: AsyncSession, room_id: uuid.UUID, stat_rows: dict[str, ChatRoomStat], stat_id: str, value: float
@@ -737,7 +742,7 @@ async def test_send_write_failure_after_the_stat_write_saves_nothing_of_the_turn
         # 없는 방을 가리키는 스탯 행 — 쓰기 구간의 커밋에서 외래 키 위반으로 터진다.
         db.add(ChatRoomStat(chat_room_id=uuid.uuid4(), stat_entity_id=uuid.uuid4(), current_value=Decimal(0)))
 
-    monkeypatch.setattr(chat_router, "_write_room_stat", _write_then_break)
+    monkeypatch.setattr(turn_store, "_write_room_stat", _write_then_break)
     _override_llm_client(_AnswerAllLLMClient())
     try:
         exc = await _request_failure(db_client, f"/chat-rooms/{room.room_id}/messages", {"content": "마을을 떠나자"})

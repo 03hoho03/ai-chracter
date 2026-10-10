@@ -1,4 +1,5 @@
 import json
+import logging
 import uuid
 from pathlib import Path
 from typing import Any
@@ -8,7 +9,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat import router as chat_router
+from api.chat import turn_engine, turn_store
 from api.chat import turn_judgments
 from api.chat.prompt_builder import ImageMatchJudgmentResult
 from api.core.config import settings
@@ -247,7 +248,7 @@ async def test_send_message_llm_error_emits_error_event_and_keeps_user_message(
     통째로 죽어도 로그를 직접 뒤지기 전엔 아무도 모른다."""
     captured: list[tuple[BaseException, str]] = []
     monkeypatch.setattr(
-        chat_router,
+        turn_engine,
         "capture_dependency_failure",
         lambda exc, *, dependency: captured.append((exc, dependency)),
     )
@@ -604,7 +605,7 @@ async def test_send_message_presigned_url_failure_still_completes_the_turn_witho
     나가고 스트림이 정상 종료돼야 한다."""
     captured: list[tuple[BaseException, str]] = []
     monkeypatch.setattr(
-        chat_router,
+        turn_store,
         "capture_dependency_failure",
         lambda exc, *, dependency: captured.append((exc, dependency)),
     )
@@ -612,7 +613,7 @@ async def test_send_message_presigned_url_failure_still_completes_the_turn_witho
     def _raise_presign(storage_key: str) -> str:
         raise RuntimeError("s3 presign boom")
 
-    monkeypatch.setattr(chat_router, "generate_presigned_get_url", _raise_presign)
+    monkeypatch.setattr(turn_store, "generate_presigned_get_url", _raise_presign)
 
     user = _make_user()
     db_session.add(user)
@@ -665,7 +666,7 @@ async def test_send_message_asset_lookup_failure_still_completes_the_turn_withou
     `AsyncSession.get`을 `Asset` 조회에서만 실패하도록 monkeypatch해 재현한다."""
     captured: list[tuple[BaseException, str]] = []
     monkeypatch.setattr(
-        chat_router,
+        turn_store,
         "capture_dependency_failure",
         lambda exc, *, dependency: captured.append((exc, dependency)),
     )
@@ -721,7 +722,7 @@ async def test_send_message_situational_image_candidate_query_failure_still_comp
     """`_load_situational_candidates`의 후보 조회
     (`db.scalars(select(SituationalImage)...)`)가 실패해도 이번 턴의 이미지 매칭만 포기하고
     스트림은 done까지 정상 종료된다. 이 호출은 커밋 뒤 presign·자산 조회를 감싸는 가드 밖에 있고,
-    호출부(`_stream_new_turn`)의 기존 `except (LLMClientError, PromptRenderError)`는 DB
+    호출부(`chat/turn_engine.py` 의 `run_turn`)의 기존 `except (LLMClientError, PromptRenderError)`는 DB
     예외를 잡지 않는다 — 함수 자신이 흡수해야 한다. 그 함수는 `chat/turn_judgments.py` 에 있어 Bugsink 승격도
     그 모듈의 이름으로 잡는다.
 
@@ -799,7 +800,7 @@ async def test_send_message_image_exposure_lookup_failure_still_completes_the_tu
     `test_send_message_image_exposure_lookup_real_sql_failure_is_isolated_by_savepoint`가 잰다."""
     captured: list[tuple[BaseException, str]] = []
     monkeypatch.setattr(
-        chat_router,
+        turn_store,
         "capture_dependency_failure",
         lambda exc, *, dependency: captured.append((exc, dependency)),
     )
@@ -938,7 +939,7 @@ async def test_send_message_image_exposure_lookup_real_sql_failure_is_isolated_b
     매칭이 이미 성공한 뒤라(`matched`까지 도달) 후보 조회 실패와는 다른 코드 경로를 지난다."""
     captured: list[tuple[BaseException, str]] = []
     monkeypatch.setattr(
-        chat_router,
+        turn_store,
         "capture_dependency_failure",
         lambda exc, *, dependency: captured.append((exc, dependency)),
     )
@@ -1274,6 +1275,43 @@ async def test_send_message_dumps_prompt_when_configured(
     assert record["prompt"] == fake.received_prompt
 
 
+async def test_send_message_prompt_dump_failure_still_finishes_the_turn(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """덤프는 실험용 부가 기록이다. 쓰다 실패해도 경고만 남기고 턴은 `done` 까지 간다 — 덤프 실패가 SSE 제너레이터
+    본문을 뚫으면 요청 세션이 강제로 닫혀 그 턴이 끊긴다."""
+    # 디렉터리를 덤프 파일 자리로 주면 추가 모드로 열지 못해 쓰기가 실패한다.
+    monkeypatch.setattr(settings, "prompt_dump_path", str(tmp_path))
+
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+
+    fake = _FakeLLMClient(tokens=["안녕"])
+    _override_llm_client(fake)
+    try:
+        with caplog.at_level(logging.WARNING):
+            resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "반가워"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    events = _parse_sse_events(resp.text)
+    assert [event["type"] for event in events] == ["token", "done"]
+    assert events[-1]["finalMessage"]["content"] == "안녕"
+    assert any("프롬프트 덤프 실패" in record.getMessage() for record in caplog.records)
+
+
 def test_prompt_dump_names_the_chat_model_and_its_actual_id(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """덤프로 회차를 재현하려면 그 턴이 실제로 어느 모델로 갔는지가 남아야 한다. 시드는 Gemini 만 받는 설정이라 다른
     모델의 줄에 남기면 재현 조건을 잘못 적은 것이 된다."""
@@ -1284,7 +1322,7 @@ def test_prompt_dump_names_the_chat_model_and_its_actual_id(monkeypatch: pytest.
     monkeypatch.setattr(settings, "bedrock_sonnet_model_id", "sonnet-actual")
 
     for model in ("gemini", "sonnet"):
-        chat_router._dump_prompt(
+        turn_engine._dump_prompt(
             room_id=None, call_site="chat_generate", model=model, turn=1, prompt="p", system_instruction="s"
         )
 
