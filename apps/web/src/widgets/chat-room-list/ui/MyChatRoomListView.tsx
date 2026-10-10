@@ -1,23 +1,47 @@
 import { Button } from "@ai-character-chat/ui/components/button";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { ImageOff } from "lucide-react";
 
 import { stripChatNotation, useMyChatRoomListQuery, type MyChatRoomListItem } from "@/entities/chat-room";
 import { ContentListEmptyState } from "@/entities/content";
+import { useSessionQuery } from "@/entities/session";
 import { formatRelativeTime } from "@/shared/lib/time/formatRelativeTime";
 
-/** 헤더 "내 채팅목록"(파라미터 없이 진입)에서 보이는 전체 대화방 목록 — 콘텐츠 스코프 없이 한 번에
+/** "내 채팅목록"(`/chats`에 파라미터 없이 진입 — 좌측 패널의 "최근 대화 전체 보기"·레일 아이콘, 좁은 화면은 드로어)에서 보이는 전체 대화방 목록 — 콘텐츠 스코프 없이 한 번에
  * 받는다(`GET /me/chat-rooms`). 이름변경·초기화·삭제는 다루지 않는다(읽기+열기만) — 그 조작은
  * 콘텐츠 스코프 목록(`ChatRoomListView`, `/chats?contentId=`)의 몫으로 남는다. */
 export function MyChatRoomListView() {
-  const listQuery = useMyChatRoomListQuery();
+  const sessionQuery = useSessionQuery();
+  const listQuery = useMyChatRoomListQuery(sessionQuery.data?.id);
+  // 세션 조회가 끝났는데 사용자가 없으면(다른 탭 로그아웃 뒤 포커스 401) 목록 쿼리는 꺼진 채 pending 이라 스켈레톤이
+  // 끝나지 않는다. 세션을 다시 묻는 중(pending)일 때만 스켈레톤을 두고, 끝났으면 로그인 링크를 준다.
+  const isSignedOut = !sessionQuery.isPending && sessionQuery.data === undefined;
 
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-4 px-4 sm:px-6 py-10">
       <h1 className="text-xl font-bold tracking-tight text-foreground">내 채팅목록</h1>
 
-      <MyChatRoomListBody listQuery={listQuery} />
+      {isSignedOut ? <SignedOutNotice /> : <MyChatRoomListBody listQuery={listQuery} />}
     </main>
+  );
+}
+
+/** 세션을 잃어도 화면을 옮기지 않는 앱 공통 동작(`resetSessionIfLost`)을 따라 링크만 준다. 다음 인증 라우트 진입은
+ * `requireSession` 이 로그인으로 보낸다. 돌아올 곳은 `requireSession` 처럼 현재 href 로 싣는다. */
+function SignedOutNotice() {
+  const currentHref = useRouterState({ select: (state) => state.location.href });
+
+  return (
+    <p className="text-sm break-keep text-muted-foreground">
+      로그인이 풀렸어요.{" "}
+      <Link
+        to="/login"
+        search={{ redirect: currentHref }}
+        className="rounded-sm font-medium text-foreground underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        다시 로그인하기
+      </Link>
+    </p>
   );
 }
 

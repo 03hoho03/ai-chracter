@@ -1,5 +1,6 @@
 // 홈 큐레이션 카드는 비로그인 홈에도 나오고, 카드의 접근 이름이 한줄소개 문단을 가리킨다 — 작가 글의 `{{user}}` 가
 // 보이는 글과 읽히는 글 양쪽에서 이름이 돼야 한다.
+// 그리고 블록이 아래 그리드와 같은 열 사다리(컨테이너 쿼리)를 쓰므로 섹션 자신이 크기 컨테이너여야 한다.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -44,5 +45,9 @@ describe("HomeCurationSection", () => {
   it("falls back to the work's default name, then the fallback name, for a signed-out viewer", () => {
     expect(render({ defaultUserName: "막내" }, null)).toContain("막내는 영화 동아리의 조감독이다.");
     expect(render({}, null)).toContain("당신은 영화 동아리의 조감독이다.");
+  });
+
+  it("is its own size container, since the column ladder it shares with the grid below is a container query", () => {
+    expect(render({}, null)).toMatch(/^<section [^>]*class="(?:[^"]* )?@container[ "]/);
   });
 });

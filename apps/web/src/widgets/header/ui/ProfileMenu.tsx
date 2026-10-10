@@ -16,20 +16,20 @@ import { toast } from "sonner";
 import type { MeResponse } from "@/entities/session";
 import { useLogoutMutation } from "@/features/logout";
 
+import { PROFILE_MENU_DESTINATION_GROUPS } from "../model/profileDestinations";
 import { isProfileDestinationVisible } from "../model/profileDestinationVisibility";
-import { PROFILE_DESTINATION_GROUPS, ProfileDestinationLink } from "./ProfileDestinationLink";
+import { ProfileDestinationLink } from "./ProfileDestinationLink";
 
-/** 창작 / 활동 / 계정 그룹 + 로그아웃.
- * `계정` 아래에 `고객센터` 그룹이 있다.
+/** 계정 / 고객센터 그룹 + 로그아웃.
  *
- * 최상단이 `작품 만들기`인 건 정해 둔 세 진입점(`/my` 상단 · `/my` 빈 상태 · 여기) 중 **화면과
- * 무관하게 항상 닿는 유일한 자리**라서다. 헤더에는 만들기를 더하지 않는다 — 크롬은 h-14 한 줄뿐이고
- * 이미 아이콘 넷이 앉아 있다.
+ * 작품 만들기·내 작품·내 소설·이미지 생성·즐겨찾기는 좌측 패널에 있어 여기 두지 않는다 — 이 메뉴는 `lg`(1024px) 이상
+ * 헤더에만 있고 그 폭에는 늘 패널이 함께 있으므로, 같은 목적지를 두면 메뉴를 연 화면에 같은 항목이 두 번 보인다. 내
+ * 채팅목록도 패널(최근 대화의 "전체 보기", 접힌 레일의 칸)이 맡는다. 목적지 배치는 `profileDestinations.ts` 한 곳이 정한다.
  *
  * 미구현 기능(구독함·활동배지·차단관리·크리에이터·혜택)은 넣지 않는다 — 이 판단은 그대로다.
- * **세로 여유는 390×844가 아니라 640×844에서 잰다** — 이 드롭다운의 트리거는 `sm`(640px) 미만에서
- * `hidden`이고 그 폭에서는 모바일 드로어가 같은 목적지를 대신한다(390에는 잴 드롭다운이 없다). 항목을
- * 더하면 그 폭에서 `[data-slot=dropdown-menu-content]`의 `data-clipped-below`가 `"false"`인지 다시 본다.
+ * **세로 여유는 메뉴가 있는 가장 낮은 흔한 화면인 1024×768에서 잰다** — 이 드롭다운의 트리거는 `lg` 미만에서
+ * `hidden`이고 그 폭에서는 모바일 드로어가 같은 목적지를 대신한다(그보다 좁은 화면에는 잴 드롭다운이 없다). 항목을
+ * 더하면 그 크기에서 `[data-slot=dropdown-menu-content]`의 `data-clipped-below`가 `"false"`인지 다시 본다.
  */
 export function ProfileMenu({ me }: { me: MeResponse }) {
   const navigate = useNavigate();
@@ -50,8 +50,8 @@ export function ProfileMenu({ me }: { me: MeResponse }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        {/* `계정 메뉴`가 아니라 `메뉴`다 — 로그아웃 하나를 빼면 전부 목적지고 첫 그룹이 `창작`이라, 스크린리더가
-            "계정 메뉴"를 읽고 연 다음 첫 announce가 `그룹 창작 · 작품 만들기`가 되면 이름과 내용이 어긋난다.
+        {/* `계정 메뉴`가 아니라 `메뉴`다 — 첫 그룹은 `계정`이지만 고객센터 목적지 여덟 개가 함께 있어, 스크린리더가
+            "계정 메뉴"를 읽고 연 다음 공지사항·이용약관 같은 항목을 만나면 이름과 내용이 어긋난다.
             눈으로 보는 사용자에겐 안 보이는 자리라 이 어긋남은 AT 사용자만 겪는다. */}
         <Button type="button" variant="ghost" size="icon" aria-label={`${me.nickname}님 메뉴`}>
           <User aria-hidden />
@@ -61,24 +61,24 @@ export function ProfileMenu({ me }: { me: MeResponse }) {
           한때 구분선을 둘(신원 블록 아래 / 로그아웃 위)만 두고 "라벨이 이미 경계를 그으니 중복"이라고
           적어 뒀는데, 재보니 거짓이었다. `DropdownMenuContent`에 flex도 gap도 없어 행 박스가 그대로
           맞닿고(인접 행 `top - bottom` 전부 **0.00px** 실측), 패딩은 `py-1`로 박스 **안**에 있다. 그래서
-          `이미지 생성`(창작 마지막) ↔ `활동` 라벨의 광학 간격이 4+4=**8px**인데 같은 그룹 안
-          `작품 만들기` ↔ `내 작품`도 4+4=**8px**로 **완전히 같다**. 근접성 축이 경계에 기여하는 게 0이라
+          구분선이 없으면 `설정`(계정 마지막) ↔ `고객센터` 라벨의 광학 간격이 4+4=**8px**인데 같은 그룹 안
+          `내 프로필` ↔ `대화 프로필`도 4+4=**8px**로 **완전히 같다**. 근접성 축이 경계에 기여하는 게 0이라
           유사성 축(12px/500/muted vs 14px/400/foreground) 혼자 일하고 있었다. 이 저장소는 이미
           `apps/web/CLAUDE.md`에서 필터 축 간격 1.5배를 Gestalt 임계 미달로 판정했다 — 여기는 1.0배였다.
-          **가로로 눕힌 폰(844×390)에서는 대가가 있다** — 프리미티브의 `max-h-(--radix-…-available-height)`가
-          메뉴를 잘라, 구분선·항목이 늘수록 맨 끝 `로그아웃` 행부터 화면 밖으로 밀린다. 항목을 더하면 그
-          폭에서 스크롤 끝까지 내렸을 때 `로그아웃`이 온전히 보이는지 다시 본다.
+          **높이가 낮은 창에서는 대가가 있다** — 프리미티브의 `max-h-(--radix-…-available-height)`가
+          메뉴를 잘라, 구분선·항목이 늘수록 맨 끝 `로그아웃` 행부터 화면 밖으로 밀린다. 항목을 더하면 낮은 창에서
+          스크롤 끝까지 내렸을 때 `로그아웃`이 온전히 보이는지 다시 본다.
           **여기 한때 "포인터·터치 사용자에게는 잘렸다는 신호가 아예 없다"고 적혀 있었는데, 그건 이제
           거짓이다.** 그 뒤 프리미티브에 하단 페이드가 들어갔다 — `dropdown-menu.tsx`가 콜백 ref로
           `scrollHeight - scrollTop - clientHeight > 1`을 재서 `data-clipped-below`를 세우고, 그때만
           `::after` 스티키 그라디언트(`h-8`, `from-popover`)가 얹힌다 — 스크롤 끝에서는 `"false"`로 걷힌다.
           잘렸다는 사실과 도달 경로가 둘 다 화면에 있다.
           그래도 구분선을 되돌리지 않는다: 위의 1.0배 결함은 **모든 폭·모든 기기에서 항상** 켜져 있는 반면
-          이건 가로 폰 한 곳이고 페이드·스크롤·키보드라는 탈출구가 있다.
+          이건 낮은 창에서만이고 페이드·스크롤·키보드라는 탈출구가 있다.
           뷰포트를 **넘어가는** 일은 이 프리미티브에서 구조적으로 불가능하다(잘릴 뿐이다). */}
       <DropdownMenuContent align="end" className="w-56">
         {/* 닉네임은 그룹 이름이 아니라 "누구의 메뉴인가"다. 기본 Label 스타일(text-xs muted)을 그대로 두면
-            바로 아래 `창작`과 글자 크기·색이 같아 넷째 그룹 라벨로 읽힌다. 반대로 크기만 올리면 이번엔
+            바로 아래 `계정`과 글자 크기·색이 같아 또 하나의 그룹 라벨로 읽힌다. 반대로 크기만 올리면 이번엔
             항목(14px/400/foreground)과 한 웨이트 차이밖에 안 나 아이콘 없는 비활성 항목으로 읽힌다.
             실측 세 값은 라벨 12px/500/oklch(0.68) · 항목 14px/400/oklch(0.93) · 여기 14px/600/oklch(0.93)이라
             **항목과는 웨이트(400↔600)가, 라벨과는 크기(12↔14)와 색(muted↔foreground)이** 가른다 —
@@ -91,17 +91,12 @@ export function ProfileMenu({ me }: { me: MeResponse }) {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
 
-        {/* 목적지는 `PROFILE_DESTINATION_GROUPS`(위) 하나에서만 온다 — 그룹 구조·라벨·구분선 위치는
-            그대로다, 목록만 밖으로 뺀 리팩터다. 개별 항목의 주석(같은 글리프를 쓰는 이유, 라벨이 페이지
-            제목과 같아야 하는 이유 등)은 `ProfileDestinationLink`로 옮기지 않았다 — 그 근거들은 각
-            라우트 자체의 성질이라 이 파일에 남겨도 무방하지만, 정확한 위치가 흩어지므로 배열 옆
-            대신 여기 한 번에 적어 둔다: 이미지 생성은 `ImagePlus`("이미지를 새로 만든다") 글리프를 쓰고
-            (라벨이 `이미지 생성`이고 `/studio/images`는 탭 지정 없이 도착하면 `생성` 탭을 연다),
-            클로버는 lucide 글리프 대신 재화 그림 `CloverIcon`을 쓰며(헤더 클로버 버튼·잔액 표시와 같은
+        {/* 목적지는 `PROFILE_MENU_DESTINATION_GROUPS` 하나에서만 온다. 개별 항목의 근거 중 이 메뉴에 남은 것을 여기
+            한 번에 적어 둔다: 클로버는 lucide 글리프 대신 재화 그림 `CloverIcon`을 쓰며(헤더 클로버 버튼·잔액 표시와 같은
             그림이다 — 같은 대상에 다른 아이콘을 붙이면 둘이 다른 기능으로 읽힌다), `설정`은 페이지 제목과
             같은 문자열이어야 하며, `문의하기`는 h1이 `문의하기`인 `/inquiries/new`로 간다
             (`/inquiries` 목록의 h1은 `내 문의 내역`이라 라벨이 어긋난다). */}
-        {PROFILE_DESTINATION_GROUPS.map((group) => (
+        {PROFILE_MENU_DESTINATION_GROUPS.map((group) => (
           <Fragment key={group.label}>
             <ProfileMenuGroup label={group.label}>
               {group.keys

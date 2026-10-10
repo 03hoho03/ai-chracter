@@ -1383,10 +1383,12 @@ async def list_chat_models(
 
 @me_router.get("/chat-rooms")
 async def list_my_chat_rooms(
+    limit: int | None = Query(None, ge=1),
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> list[MyChatRoomListItem]:
-    """헤더 "내 채팅목록"용 — 콘텐츠 스코프 없이 사용자의 모든 방을 한 번에 내려준다.
+    """콘텐츠 스코프 없이 사용자의 방을 최근 활동순으로 내려준다(`/chats` 전체 목록과 최근 대화 목록이 쓴다).
+    `limit` 을 생략하면 전부, 주면 앞에서 그 개수만 준다 — 잘라도 "대화 N" 번호와 순서는 생략했을 때와 같다.
     콘텐츠의 공개범위·이용제한·삭제 상태는 보지 않는다(`list_chat_rooms`도 그렇다 —
     여기서만 감추면 방 안에서는 보이는 대화가 목록에서만 사라지는 것처럼 보인다)."""
     rooms = list(
@@ -1475,7 +1477,9 @@ async def list_my_chat_rooms(
         ).all()
     }
 
-    items: list[MyChatRoomListItem] = []
+    # 썸네일은 키만 모아 두고 자른 뒤에 서명한다 — 최근 대화 목록처럼 앞 몇 개만 그리는 화면이 나머지 방까지
+    # 서명하지 않게. 정렬 키에 썸네일 URL 이 없어 서명 전에 정렬해도 순서는 같다.
+    rows: list[tuple[MyChatRoomListItem, str | None]] = []
     for room in rooms:
         content = contents.get(room.content_id)
         if content is None:
@@ -1488,38 +1492,47 @@ async def list_my_chat_rooms(
         if detail is None:
             continue
 
-        thumbnail_url: str | None = None
+        thumbnail_key: str | None = None
         if detail.thumbnail_asset_id is not None:
             asset = assets.get(detail.thumbnail_asset_id)
             if asset is not None:
-                thumbnail_url = await run_in_threadpool(
-                    generate_presigned_get_url, build_thumbnail_key(asset.storage_key)
-                )
+                thumbnail_key = build_thumbnail_key(asset.storage_key)
 
         last_message = last_messages.get(room.id)
-        items.append(
-            MyChatRoomListItem(
-                id=room.id,
-                name=_display_name(room, ordinals[room.id]),
-                content_id=room.content_id,
-                content_type=content.type,
-                content_name=detail.name,
-                thumbnail_url=thumbnail_url,
-                last_message_preview=_last_message_preview(
-                    last_message, room, content.type, detail.name, detail.default_user_name, persona_names
+        rows.append(
+            (
+                MyChatRoomListItem(
+                    id=room.id,
+                    name=_display_name(room, ordinals[room.id]),
+                    content_id=room.content_id,
+                    content_type=content.type,
+                    content_name=detail.name,
+                    thumbnail_url=None,
+                    last_message_preview=_last_message_preview(
+                        last_message, room, content.type, detail.name, detail.default_user_name, persona_names
+                    ),
+                    last_message_at=last_message.created_at if last_message is not None else None,
+                    created_at=room.created_at,
                 ),
-                last_message_at=last_message.created_at if last_message is not None else None,
-                created_at=room.created_at,
+                thumbnail_key,
             )
         )
 
     # (last_message_at ?? created_at) DESC -> created_at DESC -> id DESC. NULLS LAST로
     # 빈 방을 몰지 않는다 — 메시지 없는 방의 활동 시각은 생성 시각으로 폴백한다.
-    items.sort(
-        key=lambda item: (item.last_message_at or item.created_at, item.created_at, item.id),
+    rows.sort(
+        key=lambda row: (row[0].last_message_at or row[0].created_at, row[0].created_at, row[0].id),
         reverse=True,
     )
-    return items
+    # 번호 매기기·건너뛰기·정렬이 모두 끝난 뒤에 자른다. 먼저 자르면 잘린 목록으로 "대화 N" 을 세거나,
+    # 목록에서 빠질 방이 자리를 먹어 개수가 모자란다. `None` 이면 슬라이스가 전체다.
+    rows = rows[:limit]
+    keys = [key for _, key in rows if key is not None]
+    signed = dict(zip(keys, await run_in_threadpool(_sign_urls, keys), strict=True))
+    return [
+        item if key is None else item.model_copy(update={"thumbnail_url": signed[key]})
+        for item, key in rows
+    ]
 
 
 @router.patch("/{room_id}", dependencies=[Depends(require_legal_consent)])

@@ -5,6 +5,7 @@ import { personaKeys } from "@/entities/persona/@x/chat-room";
 import { apiClient } from "@/shared/api/client";
 
 import { toChatRoomState } from "./toChatRoomState";
+import { chatRoomKeys } from "./keys";
 import type { ChatRoomState } from "../model/chatRoomState";
 
 type ChatRoomResponseDto = components["schemas"]["ChatRoomResponse"];
@@ -12,6 +13,7 @@ type ChatRoomCreateRequestDto = components["schemas"]["ChatRoomCreateRequest"];
 
 // "새 대화 시작"(플레이 버튼의 최초 진입 포함)의 실체. 캐릭터/스토리
 // 공용(BE의 ChatRoomCreateRequest.contentType은 "character"|"story" 둘 다 허용).
+// 새 방이 내 방 목록 맨 위에 와야 하므로 목록을 무효화한다(호출부가 곧바로 방으로 떠나도 훅 정의의 onSuccess 는 돈다).
 export function useStartChatMutation() {
   const queryClient = useQueryClient();
 
@@ -22,6 +24,7 @@ export function useStartChatMutation() {
     // `defaultPersonaId` 가 낡으므로 다시 읽는다. 방 화면으로 넘어가는 길을 막지 않게 기다리지 않는다.
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: personaKeys.all });
+      void queryClient.invalidateQueries({ queryKey: chatRoomKeys.myLists() });
     },
   });
 }

@@ -128,18 +128,15 @@ function CardPreview<TFieldValues extends FieldValues>({
         {/* 목록 로딩·실패·빈 응답이어도 내 카드는 반드시 그린다 — 프리뷰의 주인공은 내 카드이고
             둘러싼 카드는 맥락일 뿐이다. 그래서 목록 상태에 대한 별도 에러/빈 상태 분기를 두지 않고
             `backgroundItems`가 빈 배열로 조용히 접히게 둔다. */}
-        {/* `entities/content`의 `ContentCardGrid`(`sm:`/`md:` 뷰포트
-            브레이크포인트)를 여기서는 쓰지 않는다 — 이 그리드는 폭 전체가 아니라 `BuilderLayout`의
-            2단 그리드가 남긴 프리뷰 열(`1fr`) 안에 있어서, 뷰포트가 아무리 넓어도 열 자체는 좁을 수
-            있다(1024~1150px 실측: 열 폭
-            300~350px인데 뷰포트 기준으론 이미 `md:grid-cols-4`가 걸려 카드가 78px까지 눌리고 배지
-            글자가 세로로 깨졌다). `ContentCardGrid`를 이 사례에 맞게 고치면 뷰포트 전체 폭에서 쓰는
-            홈·즐겨찾기·프로필·내작품 쪽 계약이 깨지므로 손대지 않는다 — 대신 이 열 전용으로
-            `grid-template-columns: repeat(auto-fit, minmax(...))`를 쓴다. 열의 **실제 렌더 폭**만 보고
-            열 개수를 정하는 순수 CSS 공식이라 미디어/컨테이너 쿼리의 이산 구간(테스트 안 한 폭에서
-            깨질 여지)이 없다. 하한 120px는 실측 이분탐색 근거다 — "스토리" 배지 한 개가 실제로 두 줄로
-            깨지는 경계는 88~90px(그 아래 82~88px 전부 재현, 90px부터 한 줄)이라 120px는 그 위 30px
-            여유를 둔 값이다. */}
+        {/* `entities/content`의 `ContentCardGrid`를 여기서는 쓰지 않는다. 그 그리드는 이제 뷰포트가 아니라 그리드
+            폭으로 열을 고르지만(컨테이너 쿼리), 가장 좁은 단계의 열 수가 고정이다(스토리 3열·캐릭터 2열) — 폭이
+            그 아래로 내려가도 열이 줄지 않는다. 이 그리드는 `BuilderLayout`의 2단 그리드가 남긴 프리뷰 열(`1fr`)
+            안에 있어 넓은 화면에서도 좁다(1024px 실측: 그리드 폭 280px). 거기서 스토리 3열이면 카드가 85px 로,
+            "스토리" 배지 한 개가 두 줄로 깨지는 88~90px 경계(그 아래 82~88px 전부 재현, 90px부터 한 줄) 밑으로
+            눌린다. 공용 그리드를 이 칸에 맞추는 일은 홈·즐겨찾기·프로필·내 작품의 열 사다리를 함께 바꾸는 일이라 여기서
+            하지 않고, 이 열 전용으로 `grid-template-columns: repeat(auto-fit, minmax(...))`를 쓴다. 열의 **실제 렌더 폭**만 보고
+            열 개수를 정하는 순수 CSS 공식이라 정해 둔 구간 사이(테스트 안 한 폭)에서 깨질 여지가 없다. 하한 120px는
+            그 배지 경계 위로 30px 여유를 둔 값이다. */}
         <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-3">
           <ContentCard key="preview-own-card" {...myCard} />
           {backgroundItems.map((item) => (

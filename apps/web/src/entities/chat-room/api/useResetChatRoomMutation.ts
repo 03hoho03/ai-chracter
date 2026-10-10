@@ -22,6 +22,8 @@ export function useResetChatRoomMutation(roomId: string) {
       // 남기지 않고 버린다. 다음에 기억 패널을 열면 새로 받는다. 기억 패널이 열려 있는 채 초기화되면 다음
       // 렌더에서 불러오는 중으로 돌아가 폼을 새로 만들므로, 저장하지 않은 노트 입력은 사라진다.
       queryClient.removeQueries({ queryKey: chatRoomKeys.memory(roomId) });
+      // 내 방 목록의 미리보기가 첫 메시지로 바뀐다.
+      void queryClient.invalidateQueries({ queryKey: chatRoomKeys.myLists() });
     },
   });
 }

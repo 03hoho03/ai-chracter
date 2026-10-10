@@ -3,12 +3,16 @@ from datetime import datetime, timedelta, timezone, UTC
 from decimal import Decimal
 
 import httpx
+import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin.action_log import record_admin_action
+from api.chat import router as chat_router
+from api.core.s3 import build_thumbnail_key
 from api.db.models import (
     AdminActionLog,
+    Asset,
     CharacterVersionDetail,
     ChatMessage,
     ChatMessageRole,
@@ -1719,3 +1723,212 @@ async def test_my_chat_rooms_mixed_content_types_thumbnail_and_moderation(
     assert deleted_item["contentType"] == "character"
     assert deleted_item["contentName"] == "캐릭터"
     assert deleted_item["thumbnailUrl"] is not None
+
+
+async def _seed_my_rooms_with_a_skipped_room(
+    db_session: AsyncSession,
+) -> tuple[User, dict[str, uuid.UUID], str, str]:
+    """"내 채팅목록" 의 자르기·순번·서명을 한 번에 가르는 방 배치를 직접 삽입한다(시각을 고정해야 활동순을 정할 수 있다).
+
+    작품 C(썸네일) 에 방 c1·x·c2·c3(생성순), 작품 D(썸네일, C 와 다른 파일) 에 d1, 썸네일 없는 스토리 S 에 메시지 없는
+    s1, 다른 사용자의 방 하나. x 는 버전 상세가 없는 C 의 두 번째 버전에 고정돼 목록에서 빠지지만 C 의 생성순 번호 하나를
+    먹고(그래서 c2 가 "대화 3", c3 가 "대화 4"), 활동은 전체에서 가장 최근이라 빠지기 전에 자르면 맨 앞 칸을 차지한다.
+    활동순은 x > c3 > d1 > c1 > c2 > s1 이다. 돌려주는 것은 (로그인할 사용자, 이름별 방 id, C 썸네일 키, D 썸네일 키).
+    """
+    user = _make_user()
+    other = _make_user()
+    db_session.add_all([user, other])
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content_c = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    content_d = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    story = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    other_content = await _make_published_character(db_session, creator_user_id=other.id, genre_id=genre.id)
+    assert content_c.current_published_version_id is not None
+    assert content_d.current_published_version_id is not None
+    assert story.current_published_version_id is not None
+    assert other_content.current_published_version_id is not None
+    await db_session.execute(
+        sa.update(StoryVersionDetail)
+        .where(StoryVersionDetail.content_version_id == story.current_published_version_id)
+        .values(thumbnail_asset_id=None)
+    )
+    detail_less_version = ContentVersion(
+        content_id=content_c.id, version_number=2, published_at=datetime.now(UTC), detail_description="상세 없음"
+    )
+    db_session.add(detail_less_version)
+    await db_session.flush()
+
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    # 이름 -> (사용자, 작품, 고정 버전, 생성 시각(분), 마지막 메시지 시각(분) 또는 None)
+    layout: dict[str, tuple[User, Content, uuid.UUID, int, int | None]] = {
+        "s1": (user, story, story.current_published_version_id, 0, None),
+        "c1": (user, content_c, content_c.current_published_version_id, 1, 30),
+        "x": (user, content_c, detail_less_version.id, 2, 60),
+        "c2": (user, content_c, content_c.current_published_version_id, 3, 20),
+        "c3": (user, content_c, content_c.current_published_version_id, 4, 50),
+        "d1": (user, content_d, content_d.current_published_version_id, 5, 40),
+        "other": (other, other_content, other_content.current_published_version_id, 6, 70),
+    }
+    room_ids: dict[str, uuid.UUID] = {}
+    for label, (owner, content, version_id, created_minute, message_minute) in layout.items():
+        room = ChatRoom(
+            user_id=owner.id,
+            content_id=content.id,
+            content_version_id=version_id,
+            created_at=base + timedelta(minutes=created_minute),
+        )
+        db_session.add(room)
+        await db_session.flush()
+        room_ids[label] = room.id
+        if message_minute is not None:
+            db_session.add(
+                ChatMessage(
+                    chat_room_id=room.id,
+                    role=ChatMessageRole.USER,
+                    content=f"{label} 마지막 말",
+                    created_at=base + timedelta(minutes=message_minute),
+                )
+            )
+    await db_session.flush()
+
+    thumbnail_keys: list[str] = []
+    for content in (content_c, content_d):
+        storage_key = await db_session.scalar(
+            sa.select(Asset.storage_key)
+            .join(CharacterVersionDetail, CharacterVersionDetail.thumbnail_asset_id == Asset.id)
+            .where(CharacterVersionDetail.content_version_id == content.current_published_version_id)
+        )
+        assert storage_key is not None
+        thumbnail_keys.append(build_thumbnail_key(storage_key))
+    await db_session.commit()
+    return user, room_ids, thumbnail_keys[0], thumbnail_keys[1]
+
+
+def _record_presigned_keys(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """라우터의 서명 함수를 키를 기록하고 `signed/<키>` 를 돌려주는 가짜로 바꾼다 — 응답 URL 이 결정적이 되고,
+    어떤 방의 썸네일을 서명했는지 셀 수 있다(서명은 네트워크 없는 로컬 계산이라 moto 쪽에서는 보이지 않는다)."""
+    signed_keys: list[str] = []
+
+    def _fake_presign(key: str) -> str:
+        signed_keys.append(key)
+        return f"signed/{key}"
+
+    monkeypatch.setattr(chat_router, "generate_presigned_get_url", _fake_presign)
+    return signed_keys
+
+
+async def test_my_chat_rooms_without_limit_drops_detail_less_rooms_but_counts_them_in_names(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`limit` 을 주지 않은 응답은 지금까지와 같아야 한다 — 옛 화면은 계속 생략해서 부른다. 순서·이름·썸네일·미리보기·
+    시각을 전부 값으로 고정해, 서명 위치를 옮기는 리팩터가 이 중 하나라도 바꾸면 깨진다. 버전 상세가 없는 방은 목록에서
+    빠지되 같은 작품의 "대화 N" 번호는 하나 먹는다(방 안에서 보이는 번호와 맞추려고)."""
+    user, rooms, c_key, d_key = await _seed_my_rooms_with_a_skipped_room(db_session)
+    _record_presigned_keys(monkeypatch)
+
+    await _login_as(db_client, user.id)
+    resp = await db_client.get("/me/chat-rooms")
+
+    assert resp.status_code == 200
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    expected = [
+        ("c3", "대화 4", "character", "캐릭터", f"signed/{c_key}", "c3 마지막 말", 50, 4),
+        ("d1", "대화 1", "character", "캐릭터", f"signed/{d_key}", "d1 마지막 말", 40, 5),
+        ("c1", "대화 1", "character", "캐릭터", f"signed/{c_key}", "c1 마지막 말", 30, 1),
+        ("c2", "대화 3", "character", "캐릭터", f"signed/{c_key}", "c2 마지막 말", 20, 3),
+        ("s1", "대화 1", "story", "스토리", None, "", None, 0),
+    ]
+    items = resp.json()
+    assert [item["id"] for item in items] == [str(rooms[label]) for label, *_ in expected]
+    for item, (label, name, content_type, content_name, thumbnail_url, preview, message_minute, created_minute) in zip(
+        items, expected, strict=True
+    ):
+        room = await db_session.get(ChatRoom, rooms[label])
+        assert room is not None
+        assert item["name"] == name, label
+        assert item["contentId"] == str(room.content_id), label
+        assert item["contentType"] == content_type, label
+        assert item["contentName"] == content_name, label
+        assert item["thumbnailUrl"] == thumbnail_url, label
+        assert item["lastMessagePreview"] == preview, label
+        expected_message_at = None if message_minute is None else base + timedelta(minutes=message_minute)
+        last_message_at = item["lastMessageAt"]
+        assert (None if last_message_at is None else datetime.fromisoformat(last_message_at)) == expected_message_at, label
+        assert datetime.fromisoformat(item["createdAt"]) == base + timedelta(minutes=created_minute), label
+
+
+async def test_my_chat_rooms_limit_keeps_names_numbered_across_all_rooms(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """잘린 목록으로 "대화 N" 을 세면 최근 목록의 이름이 `/chats` 전체 목록·방 안 이름과 달라진다(c3 가 "대화 4" 가
+    아니라 "대화 1" 로). 방 수보다 큰 `limit` 은 생략과 같은 전체를 준다."""
+    user, rooms, _c_key, _d_key = await _seed_my_rooms_with_a_skipped_room(db_session)
+    _record_presigned_keys(monkeypatch)
+
+    await _login_as(db_client, user.id)
+    full = (await db_client.get("/me/chat-rooms")).json()
+    resp = await db_client.get("/me/chat-rooms", params={"limit": 1})
+    large_resp = await db_client.get("/me/chat-rooms", params={"limit": 50})
+
+    assert resp.status_code == 200
+    assert [(item["id"], item["name"]) for item in resp.json()] == [(str(rooms["c3"]), "대화 4")]
+    assert resp.json() == full[:1]
+    assert large_resp.json() == full
+
+
+async def test_my_chat_rooms_limit_fills_up_after_skipping_detail_less_rooms(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """목록에서 빠지는 방을 걸러내기 전에 자르면 그 방이 `limit` 칸 하나를 먹어 요청한 개수가 안 찬다(가장 최근 활동이
+    빠지는 방 x 라 `limit=2` 가 c3 하나만 준다)."""
+    user, rooms, _c_key, _d_key = await _seed_my_rooms_with_a_skipped_room(db_session)
+    _record_presigned_keys(monkeypatch)
+
+    await _login_as(db_client, user.id)
+    full = (await db_client.get("/me/chat-rooms")).json()
+    resp = await db_client.get("/me/chat-rooms", params={"limit": 2})
+
+    assert resp.status_code == 200
+    assert [item["id"] for item in resp.json()] == [str(rooms["c3"]), str(rooms["d1"])]
+    assert resp.json() == full[:2]
+
+
+async def test_my_chat_rooms_limit_signs_only_returned_thumbnails(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """자르기 전에 서명하면 `limit` 을 줘도 사용자의 방 전부를 서명한다 — 최근 목록은 여러 화면에서 불리므로 그 비용을
+    없애는 것이 `limit` 의 목적이다. c1·c2·c3 는 같은 작품이라 키가 같아서, 잘려 나간 방 중 키가 다른 d1 로만 갈린다."""
+    user, _rooms, c_key, d_key = await _seed_my_rooms_with_a_skipped_room(db_session)
+    signed_keys = _record_presigned_keys(monkeypatch)
+
+    await _login_as(db_client, user.id)
+    await db_client.get("/me/chat-rooms")
+    assert set(signed_keys) == {c_key, d_key}  # 가짜 서명이 실제로 호출 경로에 걸려 있다는 대조군
+
+    signed_keys.clear()
+    resp = await db_client.get("/me/chat-rooms", params={"limit": 1})
+
+    assert resp.status_code == 200
+    assert set(signed_keys) == {c_key}
+
+
+async def test_my_chat_rooms_rejects_limit_below_one(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+    """하한이 없으면 파이썬 슬라이스가 `limit=0` 에 빈 목록, `limit=-1` 에 마지막 방만 빠진 목록을 200 으로 조용히
+    돌려준다 — 틀린 화면이 오류 없이 그려지므로 요청 단계에서 422 로 막는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    assert content.current_published_version_id is not None
+    db_session.add(
+        ChatRoom(user_id=user.id, content_id=content.id, content_version_id=content.current_published_version_id)
+    )
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    resp = await db_client.get("/me/chat-rooms", params={"limit": 0})
+
+    assert resp.status_code == 422
+    assert [error["loc"] for error in resp.json()["detail"]] == [["query", "limit"]]

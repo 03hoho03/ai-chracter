@@ -49,7 +49,7 @@ export function createQueryClient(): QueryClient {
 }
 
 /** 소설화 허용이 없다는 403 을 받으면 세션을 다시 읽는다. 허용을 회수한 직후의 탭은 옛 `GET /me` 의 허용 기능
- * 목록을 들고 있어 채팅 더보기·프로필 메뉴에 소설 진입점을 계속 보이므로, 이 응답을 계기로 진입점까지 거둔다.
+ * 목록을 들고 있어 채팅 더보기·좌측 패널(드로어)에 소설 진입점을 계속 보이므로, 이 응답을 계기로 진입점까지 거둔다.
  * 조회든 쓰기든 같은 일이라 두 캐시가 함께 부른다. */
 function invalidateSessionIfNovelizeRevoked(client: QueryClient, error: unknown) {
   if (isNovelizeNotAllowedError(error)) {

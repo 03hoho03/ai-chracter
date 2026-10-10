@@ -280,14 +280,15 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
 
   return (
     <div className="flex h-below-header flex-col">
-      {/* border-b를 <header>가 아니라 안쪽 컬럼 div에 건다 — 뷰포트를 가로지르는 선은 전역 헤더의
-          border-b 하나뿐이어야 한다(DESIGN.md §Navigation "크롬은 sticky 헤더 하나뿐이다"). <header>에
-          걸면 이 선만 전폭이 되어 바로 아래 StatGaugePanel·버전 배너의 border-b, 입력창의 border-t와
-          길이가 크게 벌어진다. 옮기면 선이 뷰포트가 아니라 컬럼 경계를 따른다 — 1425px 실측에서
-          전역 헤더 1425 / 채팅 헤더 1024 / 입력창 1024px다.
+      {/* border-b를 <header>가 아니라 안쪽 컬럼 div에 건다 — 화면을 가로지르는 가로선은 y=56 한 줄
+          (`lg` 미만은 전역 헤더, 이상은 좌측 패널 머리와 전역 헤더의 border-b가 이어진 것)뿐이어야 한다
+          (DESIGN.md Layout containers 절, 크롬 구성은 DESIGN.md Navigation 절). <header>에 걸면 이 선만
+          본문 열 전폭이 되어 바로 아래 StatGaugePanel·버전 배너의 border-b, 입력창의 border-t와 길이가
+          크게 벌어진다. 컬럼 div에 걸면 선이 컬럼 경계를 따른다 — 1440px·레일 실측에서 y=56 선 1440 /
+          채팅 헤더 1024 / 입력 바 1024px다.
           단 "전부 같은 길이"가 되는 건 사이드바가 닫혀 있을 때뿐이다: 열면 채팅 헤더 선은 행 전체를
           (1024), 아래 선들은 채팅 컬럼만(736) 덮는다. 헤더가 채팅 컬럼과 사이드바 **둘 다** 위에
-          있으니 이건 맞는 동작이다 — 옮기기 전에는 같은 상태에서 1425 vs 736이었다. */}
+          있으니 이건 맞는 동작이다. */}
       <header className="shrink-0">
         <div className="mx-auto flex max-w-5xl items-center gap-3 border-b border-border px-4 sm:px-6 py-3">
           <Button variant="ghost" size="icon" aria-label="뒤로가기" onClick={() => window.history.back()}>

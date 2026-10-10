@@ -34,7 +34,7 @@
 - **플랫 파일명은 `.`으로 경로를 구분한다**(`onboarding.google.tsx` → `/onboarding/google`). 같은 부모 아래서 정적 세그먼트가 동적 파라미터보다 먼저 매치된다. 인덱스 라우트는 `createFileRoute("/builder/")`(끝 슬래시)로 선언하지만 `fullPath`·`<Link to>`·`KNOWN_ROUTES`는 전부 `/builder`다 — `worker/routes.test.ts`의 `toRoutePattern`이 이 셋을 맞춘다.
 - **화면 상태를 유지한 채 URL만 바꿔야 하면 라우트를 하나로 합친다.** 같은 라우트에서 파라미터만 바뀌면 리마운트가 없지만 **다른 라우트 파일로 넘어가면 리마운트한다** — `autoCodeSplitting`이 파일마다 별도 lazy 컴포넌트를 만들어서, 두 파일이 `component:`에 **같은 함수**를 넣어도 소용없다(실측). 빌더가 만들기와 이어쓰기를 `builder.$type.$draftId.tsx` 한 라우트로 받고 `new`를 sentinel로 쓰는 이유다.
 - **쿼리 키가 바뀌는 URL 교체는 `setQueryData`로 캐시를 먼저 채우고 `navigate`한다** — 안 그러면 그 렌더가 `isPending`이 되어 아래 트리가 통째로 언마운트된다(리마운트가 없어도).
-- **전역 Header는 `widgets/header`, `__root`에 1회 마운트한다**(개별 페이지가 헤더를 렌더하지 않음). 로그인 전용 하위 컴포넌트는 `me`를 props로 받고 세션을 재조회하지 않는다.
+- **전역 Header와 좌측 패널은 `widgets/header`, `__root`에 1회 마운트한다**(개별 페이지가 그리지 않음). 패널은 `lg` 이상에서만 JS로 마운트하고(미디어 쿼리는 CSS `lg:`와 같은 `(min-width: 64rem)` — `1024px` 훅을 재사용하면 기본 글꼴이 16px가 아닐 때 로고 둘이나 내비 없는 구간이 생긴다), 버거 드로어(Sheet)는 `lg`에 들어서면 강제로 닫는다 — 아래 메뉴·모달 절의 "Sheet ↔ 인라인은 JS로 분기, 하나만 마운트"를 이렇게 지킨다. 로그인 전용 하위 컴포넌트는 `me`를 props로 받고 세션을 재조회하지 않는다.
 - 미구현 화면은 `shared/ui/ComingSoonPage`로 잇되, 라우트 파일은 그 스토리의 최종 형태(`beforeLoad: requireSession` 등)로 만들어 나중에 다시 손대지 않게 한다.
 
 ## Cloudflare Pages Worker (`worker/`)

@@ -4641,7 +4641,8 @@ export interface paths {
         };
         /**
          * List My Chat Rooms
-         * @description 헤더 "내 채팅목록"용 — 콘텐츠 스코프 없이 사용자의 모든 방을 한 번에 내려준다.
+         * @description 콘텐츠 스코프 없이 사용자의 방을 최근 활동순으로 내려준다(`/chats` 전체 목록과 최근 대화 목록이 쓴다).
+         *     `limit` 을 생략하면 전부, 주면 앞에서 그 개수만 준다 — 잘라도 "대화 N" 번호와 순서는 생략했을 때와 같다.
          *     콘텐츠의 공개범위·이용제한·삭제 상태는 보지 않는다(`list_chat_rooms`도 그렇다 —
          *     여기서만 감추면 방 안에서는 보이는 대화가 목록에서만 사라지는 것처럼 보인다).
          */
@@ -19983,7 +19984,9 @@ export interface operations {
     };
     list_my_chat_rooms_me_chat_rooms_get: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -19997,6 +20000,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MyChatRoomListItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

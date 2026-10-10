@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSetAtom } from "jotai";
 
+import { chatRoomKeys } from "@/entities/chat-room";
 import { commentDraftLogoutRevisionAtom, commentKeys } from "@/entities/comment";
 import { notificationKeys } from "@/entities/notification";
 import { personaKeys } from "@/entities/persona";
@@ -20,6 +21,10 @@ export function useLogoutMutation() {
       void queryClient.resetQueries({ queryKey: commentKeys.all });
       void queryClient.resetQueries({ queryKey: notificationKeys.all });
       void queryClient.resetQueries({ queryKey: personaKeys.all });
+      // 내 방 목록 키는 보는 사람 id 별이라, id 앞에서 끊긴 접두로 어느 계정의 것이든 모두 비운다. 리셋이 아니라
+      // 지우기다 — 리셋은 화면에 붙은 목록을 곧바로 다시 받아 이미 지워진 쿠키로 401 이 난다. 키에 id 가 있어
+      // 아래 세션 리셋으로 다음 렌더에서 목록 훅이 빈 id 키(조회 꺼짐)로 옮겨 가므로, 옛 데이터는 지우기만 하면 된다.
+      queryClient.removeQueries({ queryKey: chatRoomKeys.myLists() });
       // invalidateQueries only marks the query stale and refetches in the background — until that
       // refetch resolves, `data` keeps the previous (logged-in) value, so the header wouldn't switch
       // to the logged-out UI immediately. setQueryData(key, undefined) is a documented no-op (TanStack
