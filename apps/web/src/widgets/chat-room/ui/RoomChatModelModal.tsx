@@ -58,7 +58,8 @@ export const RoomChatModelModal = createCallable<RoomChatModelModalProps, void>(
         <DialogHeader>
           <DialogTitle>AI 모델</DialogTitle>
           <DialogDescription className="break-keep">
-            이 대화방에서 캐릭터의 답을 쓰는 모델이에요. 바꾸면 다음 턴부터 적용되고, 지난 대화는 그대로예요.
+            이 대화방에서 캐릭터의 답을 쓰는 모델이에요. 바꾸면 다음 턴부터 적용되고, 지금 쓰고 있는 답과 지난 대화는
+            그대로예요. 모델마다 문체가 달라 답의 느낌이 바뀔 수 있어요.
           </DialogDescription>
         </DialogHeader>
 

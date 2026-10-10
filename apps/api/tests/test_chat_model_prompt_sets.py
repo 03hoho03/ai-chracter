@@ -1,7 +1,7 @@
 """한 턴이 읽는 두 프롬프트 세트 — 생성은 값을 낸 모델의 세트, 판정·요약은 Gemini 세트.
 
 시드 마이그레이션이 Claude 세트를 Gemini 세트의 사본으로 심으므로, 그대로 두면 어느 세트가 쓰였는지 결과로 구분되지
-않는다. 그래서 테스트 안에서 Sonnet 세트의 바닥 지시문·생성 문안에 표지 문장을 붙이고 사용자 라벨을 바꾼다.
+않는다. 그래서 테스트 안에서 Opus 세트의 바닥 지시문·생성 문안에 표지 문장을 붙이고 사용자 라벨을 바꾼다.
 """
 
 import uuid
@@ -23,16 +23,16 @@ from api.db.models.chat import ChatRoom
 from api.db.models.clover import CloverLedger
 from api.llm.client import LLMCallContext, LLMClient
 from factories import (
-    _allow_chat_premium,
     _clear_llm_override,
+    _enable_chat_premium,
     _make_user_with_clover_lot,
     _open_room,
     _override_llm_client,
     _parse_sse_events,
 )
 
-_MARK = "소넷 세트 표지 문장"
-_SONNET_LABEL = "소넷독자"
+_MARK = "오퍼스 세트 표지 문장"
+_OPUS_LABEL = "오퍼스독자"
 
 
 class _RecordingLLM(LLMClient):
@@ -58,35 +58,35 @@ class _RecordingLLM(LLMClient):
         return StatRuleJudgmentResult(fired_rule_ids=[])
 
 
-async def _sonnet_story_room(
+async def _opus_story_room(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> tuple[uuid.UUID, uuid.UUID]:
-    """Sonnet 을 고른 스토리 방(스탯 하나라 새 턴마다 스탯 판정이 구조화 호출로 나간다)과 그 주인."""
+    """Opus 를 고른 스토리 방(스탯 하나라 새 턴마다 스탯 판정이 구조화 호출로 나간다)과 그 주인."""
     user = await _make_user_with_clover_lot(db_session, clover_balance=1000)
     await db_session.commit()
-    await _allow_chat_premium(db_session, monkeypatch, user.id)
+    _enable_chat_premium(monkeypatch)
     room = await _open_room(db_client, db_session, turns=1, lane="story", user=user)
-    await db_session.execute(update(ChatRoom).where(ChatRoom.id == room.room_id).values(chat_model="sonnet"))
+    await db_session.execute(update(ChatRoom).where(ChatRoom.id == room.room_id).values(chat_model="opus"))
     await db_session.commit()
     return room.room_id, user.id
 
 
-async def _sonnet_set_id(db_session: AsyncSession) -> uuid.UUID:
+async def _opus_set_id(db_session: AsyncSession) -> uuid.UUID:
     set_id = await db_session.scalar(
-        select(PromptSet.id).where(PromptSet.lane == "story", PromptSet.model == "sonnet", PromptSet.status == "published")
+        select(PromptSet.id).where(PromptSet.lane == "story", PromptSet.model == "opus", PromptSet.status == "published")
     )
     assert set_id is not None
     return set_id
 
 
-async def _mark_sonnet_set(db_session: AsyncSession) -> None:
-    set_id = await _sonnet_set_id(db_session)
+async def _mark_opus_set(db_session: AsyncSession) -> None:
+    set_id = await _opus_set_id(db_session)
     await db_session.execute(
         update(PromptSection)
         .where(PromptSection.prompt_set_id == set_id, PromptSection.channel.in_(["system", "generation"]))
         .values(body=PromptSection.body + "\n" + _MARK)
     )
-    await db_session.execute(update(PromptSet).where(PromptSet.id == set_id).values(user_label=_SONNET_LABEL))
+    await db_session.execute(update(PromptSet).where(PromptSet.id == set_id).values(user_label=_OPUS_LABEL))
     await db_session.commit()
 
 
@@ -107,8 +107,8 @@ def _generation(fake: _RecordingLLM) -> tuple[str, str | None, list[str] | None,
 async def test_premium_turn_generates_from_its_model_set_and_judges_from_the_gemini_set(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    room_id, _ = await _sonnet_story_room(db_client, db_session, monkeypatch)
-    await _mark_sonnet_set(db_session)
+    room_id, _ = await _opus_story_room(db_client, db_session, monkeypatch)
+    await _mark_opus_set(db_session)
     fake = _RecordingLLM()
 
     resp = await _post(db_client, fake, "POST", f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
@@ -116,10 +116,10 @@ async def test_premium_turn_generates_from_its_model_set_and_judges_from_the_gem
     assert resp.status_code == 200
     assert [e["type"] for e in _parse_sse_events(resp.text)][-1] == "done"
     prompt, system_instruction, stop_sequences, usage = _generation(fake)
-    assert usage.model == "sonnet"
+    assert usage.model == "opus"
     assert system_instruction is not None and _MARK in system_instruction
     assert _MARK in prompt
-    assert stop_sequences == [f"\n{_SONNET_LABEL}:"]
+    assert stop_sequences == [f"\n{_OPUS_LABEL}:"]
     # 스탯 판정은 Gemini 세트로 렌더됐다 — Claude 세트에는 판정 채널이 없어 그 세트로 렌더하면 판정 문안이 비어 스탯
     # 정의조차 실리지 않는다.
     assert len(fake.structured_prompts) == 1
@@ -130,18 +130,18 @@ async def test_premium_turn_generates_from_its_model_set_and_judges_from_the_gem
 async def test_premium_regenerate_generates_from_its_model_set(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    room_id, _ = await _sonnet_story_room(db_client, db_session, monkeypatch)
-    await _mark_sonnet_set(db_session)
+    room_id, _ = await _opus_story_room(db_client, db_session, monkeypatch)
+    await _mark_opus_set(db_session)
     fake = _RecordingLLM()
 
     resp = await _post(db_client, fake, "POST", f"/chat-rooms/{room_id}/regenerate")
 
     assert resp.status_code == 200
     prompt, system_instruction, stop_sequences, usage = _generation(fake)
-    assert usage.model == "sonnet"
+    assert usage.model == "opus"
     assert system_instruction is not None and _MARK in system_instruction
     assert _MARK in prompt
-    assert stop_sequences == [f"\n{_SONNET_LABEL}:"]
+    assert stop_sequences == [f"\n{_OPUS_LABEL}:"]
 
 
 @pytest.mark.parametrize("surface", ["send", "regenerate"])
@@ -150,8 +150,8 @@ async def test_missing_model_set_is_an_error_event_with_a_refund(
 ) -> None:
     """(레인, 모델)에 게시본이 없으면 Gemini 세트로 조용히 대신 쓰지 않는다 — 렌더 실패와 같은 오류 이벤트와 환불이다.
     세트는 차감 뒤에야 알 수 있어(모델이 영수증에서 온다) 의존성 단계의 404·500 이 아니다."""
-    room_id, user_id = await _sonnet_story_room(db_client, db_session, monkeypatch)
-    set_id = await _sonnet_set_id(db_session)
+    room_id, user_id = await _opus_story_room(db_client, db_session, monkeypatch)
+    set_id = await _opus_set_id(db_session)
     await db_session.execute(delete(PromptSection).where(PromptSection.prompt_set_id == set_id))
     await db_session.execute(delete(PromptSet).where(PromptSet.id == set_id))
     await db_session.commit()
@@ -169,14 +169,14 @@ async def test_missing_model_set_is_an_error_event_with_a_refund(
         (row.kind, row.amount)
         for row in (await db_session.scalars(select(CloverLedger).where(CloverLedger.user_id == user_id))).all()
     )
-    assert ledger == [("chat_refund", clover.CHAT_TURN_COST_SONNET), ("chat_spend", -clover.CHAT_TURN_COST_SONNET)]
+    assert ledger == [("chat_refund", clover.CHAT_TURN_COST_OPUS), ("chat_spend", -clover.CHAT_TURN_COST_OPUS)]
 
 
 async def test_memory_fold_gets_the_gemini_set_in_a_premium_room(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """요약은 구조가 정해진 Gemini 호출이라 Gemini 세트를 받는다(Claude 세트에는 요약 채널이 없다)."""
-    room_id, _ = await _sonnet_story_room(db_client, db_session, monkeypatch)
+    room_id, _ = await _opus_story_room(db_client, db_session, monkeypatch)
     folded_with: list[str] = []
 
     async def _recording_fold(*_args: Any, **kwargs: Any) -> None:

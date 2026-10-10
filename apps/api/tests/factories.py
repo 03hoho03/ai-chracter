@@ -1632,14 +1632,10 @@ async def _allow_novelize(db_session: AsyncSession, monkeypatch: pytest.MonkeyPa
     await db_session.commit()
 
 
-async def _allow_chat_premium(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, user_id: uuid.UUID) -> None:
-    """채팅 상위 모델을 켜고 `user_id` 를 명단에 더한 뒤 허용 행을 넣고 커밋한다. 앞서 더한 계정은 명단에 남는다."""
+def _enable_chat_premium(monkeypatch: pytest.MonkeyPatch) -> None:
+    """채팅 상위 모델 스위치만 켠다. 채팅 상위 모델은 스위치 하나로 로그인 회원 전원에게 열리므로 명단도 허용 행도 두지
+    않는다 — 셋업이 허용 행을 넣으면 판정이 그 행을 다시 읽기 시작해도 테스트가 알아채지 못한다."""
     monkeypatch.setattr(settings, "chat_premium_models_enabled", True)
-    monkeypatch.setattr(
-        settings, "chat_premium_model_allowlist", [*settings.chat_premium_model_allowlist, user_id]
-    )
-    await _grant_feature(db_session, user_id, "chat_premium_models")
-    await db_session.commit()
 
 
 async def _allow_novel_premium(

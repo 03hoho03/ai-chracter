@@ -1,12 +1,4 @@
 import { Button } from "@ai-character-chat/ui/components/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@ai-character-chat/ui/components/table";
 import { Link } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
 import { useRef, type ReactNode, type Ref } from "react";
@@ -24,19 +16,24 @@ import { SUPPORT_DESTINATIONS } from "@/shared/config/supportDestinations";
 
 import { formatFreeChatSentence } from "../model/freeChatSentence";
 import { formatTrialSentence } from "../model/trialSentence";
+import { chatAndNovelCostRows } from "../model/usageCostRows";
 
 const INLINE_LINK_CLASSNAME =
   "whitespace-nowrap font-medium text-primary underline-offset-4 hover:underline focus-visible:underline";
 
-/** 사용처 단가 목록과 무료 대화 수, 노벨 열람가·무료 화 수는 가격 응답에 나중에 더한 필드다. */
-type AddedPricingKey = "models" | "novelAiEditCost" | "dailyFreeChatTurns" | "novelReadCost" | "novelFreeChapterCount";
+/** 사용처 단가 목록과 무료 대화 수, 노벨 열람가·무료 화 수, 최상위 소설 화 단가는 가격 응답에 나중에 더한 필드다. */
+type AddedPricingKey =
+  | "models"
+  | "novelAiEditCost"
+  | "dailyFreeChatTurns"
+  | "novelReadCost"
+  | "novelFreeChapterCount"
+  | "novelEpisodeCost";
 
 /** 이 화면이 읽는 가격 응답. web 과 API 는 따로 배포돼 새 화면이 옛 API 의 응답(위 필드가 없다)을 받는 구간이 있다.
  * 타입은 그 필드를 필수로 적지만 그 구간에는 런타임에 비어 있으므로, 화면은 이 모양으로 읽고 빈 필드를 건너뛴다. */
 type DeployedPricingResponse = Omit<CloverPricingResponse, AddedPricingKey> &
   Partial<Pick<CloverPricingResponse, AddedPricingKey>>;
-
-type ModelPricing = CloverPricingResponse["models"][number];
 
 /** `/clover/pricing` — 로그인 없이 보는 클로버 상품 안내.
  *
@@ -264,13 +261,12 @@ function ProductLink({ product }: { product: CloverProductItem }) {
   );
 }
 
-/** 사용처별 단가. 대화와 소설은 모델마다 값이 달라 모델 × 사용처 표로, 이미지와 AI 수정은 모델과 무관해 한 줄씩 둔다.
- * 응답에 실린 사용처는 전부 같은 모양으로 싣는다. 행을 상자로 감싸지 않고 선으로만 가른다(누르는 것이 아니다).
+/** 사용처별 단가 한 목록. 대화는 모델마다 한 줄(값이 모델마다 다르다), 소설 화·이미지·AI 수정은 모델과 무관해 한 줄씩
+ * 둔다. 응답에 실린 사용처는 전부 같은 모양으로 싣는다. 행을 상자로 감싸지 않고 선으로만 가른다(누르는 것이 아니다).
  *
- * 모델 목록이 없는 응답(사용처 단가를 싣기 전의 옛 API)이면 기본 모델 대화 단가 한 줄로 돌아간다. */
+ * 대화·소설 줄을 어떻게 만들지(옛 API 응답 대체 포함)는 `chatAndNovelCostRows` 가 정한다. */
 function UsageCosts({ pricing }: { pricing: DeployedPricingResponse }) {
   const isWebnovelShown = isWebnovelOpen(pricing.novelPublicEnabled, useSessionQuery().data?.novelPublicEnabled);
-  const models = pricing.models ?? [];
   const [exampleProduct] = pricing.products;
   const exampleAmount = exampleProduct ? exampleProduct.paidAmount + exampleProduct.bonusAmount : 0;
   const freeChatSentence = formatFreeChatSentence(
@@ -283,9 +279,10 @@ function UsageCosts({ pricing }: { pricing: DeployedPricingResponse }) {
     <>
       {/* 클로버 없이 쓸 수 있는 부분을 단가보다 먼저 말한다 — 표만 보면 첫 턴부터 클로버가 드는 것으로 읽힌다. */}
       {freeChatSentence && <p className="text-sm break-keep text-foreground">{freeChatSentence}</p>}
-      {models.length > 0 && <ModelCostTable models={models} />}
       <dl className="flex flex-col divide-y divide-border border-y border-border">
-        {models.length === 0 && <UsageRow label="대화 1턴" cost={pricing.chatTurnCost} />}
+        {chatAndNovelCostRows(pricing).map((row) => (
+          <UsageRow key={row.key} label={row.label} note={row.note} isBeta={row.beta} cost={row.cost} />
+        ))}
         <UsageRow label="이미지 1장" cost={pricing.imageCost} />
         {pricing.novelAiEditCost !== undefined && (
           <UsageRow label="소설 AI 수정 1회" cost={pricing.novelAiEditCost} />
@@ -316,65 +313,36 @@ function UsageCosts({ pricing }: { pricing: DeployedPricingResponse }) {
   );
 }
 
-/** 모델 × 사용처(대화 1턴, 소설 1화) 단가 표. 두 사용처가 같은 모델 목록을 공유하므로 표로 묶으면 모델 이름을 한 번만
- * 읽는다. 값 칸은 클로버 개수이고, 단위는 칸마다 아이콘을 되풀이하지 않고 열 머리에 한 번 적는다. 오른쪽 정렬
- * `tabular-nums` 로 자릿수를 세로로 맞춘다. 정보 표라 행 hover 를 끈다. */
-function ModelCostTable({ models }: { models: readonly ModelPricing[] }) {
-  return (
-    <Table>
-      <caption className="sr-only">모델별 클로버 단가</caption>
-      <TableHeader>
-        <TableRow className="hover:bg-transparent">
-          <TableHead scope="col" className="pl-0 align-bottom">
-            모델
-          </TableHead>
-          <TableHead scope="col" className="h-auto py-2 text-right align-bottom">
-            <ColumnHeading label="대화 1턴" />
-          </TableHead>
-          <TableHead scope="col" className="h-auto py-2 pr-0 text-right align-bottom">
-            <ColumnHeading label="소설 1화" />
-          </TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {models.map((model) => (
-          <TableRow key={model.id} className="hover:bg-transparent">
-            <TableHead scope="row" className="h-auto py-3 pl-0 align-top font-medium">
-              <span className="flex flex-col">
-                {model.name}
-                {model.isDefault && <span className="text-xs font-normal text-muted-foreground">기본 모델</span>}
-              </span>
-            </TableHead>
-            <TableCell className="py-3 text-right align-top">
-              <CostValue>{model.chatTurnCost.toLocaleString()}</CostValue>
-            </TableCell>
-            <TableCell className="py-3 pr-0 text-right align-top">
-              <CostValue>{model.novelEpisodeCost.toLocaleString()}</CostValue>
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
-}
-
-function ColumnHeading({ label }: { label: string }) {
-  return (
-    <span className="flex flex-col items-end">
-      {label}
-      <span className="text-xs font-normal text-muted-foreground">클로버</span>
-    </span>
-  );
-}
-
 function CostValue({ children }: { children: ReactNode }) {
   return <span className="text-sm whitespace-nowrap tabular-nums text-foreground">{children}</span>;
 }
 
-function UsageRow({ label, cost }: { label: string; cost: number }) {
+/** 값 칸은 오른쪽 정렬 `tabular-nums` 로 자릿수를 세로로 맞춘다. `베타` 배지는 모델 선택 목록 행의 배지와 같은 윤곽이다
+ * (DESIGN.md Status badges 절). */
+function UsageRow({
+  label,
+  note,
+  isBeta = false,
+  cost,
+}: {
+  label: string;
+  note?: string;
+  isBeta?: boolean;
+  cost: number;
+}) {
   return (
     <div className="flex items-start justify-between gap-3 py-3">
-      <dt className="text-sm font-medium text-foreground">{label}</dt>
+      <dt className="flex min-w-0 flex-col gap-0.5">
+        <span className="flex flex-wrap items-center gap-2 text-sm font-medium break-keep text-foreground">
+          {label}
+          {isBeta && (
+            <span className="inline-flex shrink-0 items-center rounded-full border border-border px-2 py-0.5 text-badge font-medium text-muted-foreground">
+              베타
+            </span>
+          )}
+        </span>
+        {note && <span className="text-xs text-muted-foreground">{note}</span>}
+      </dt>
       <dd>
         <CostValue>클로버 {cost.toLocaleString()}개</CostValue>
       </dd>

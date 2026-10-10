@@ -24,6 +24,7 @@ const SERVER_ROOM = {
   versionAutoUpgraded: false,
   contentRestricted: false,
   effectiveChatModel: "gemini",
+  effectiveChatModelName: "Gemini",
   turnCost: 10,
   createdAt: "2026-10-05T00:00:00Z",
   updatedAt: "2026-10-05T00:00:00Z",
@@ -39,6 +40,7 @@ describe("refreshChatRoomTurnPrice", () => {
     queryClient.setQueryData(chatRoomKeys.detail(ROOM_ID), {
       messages: [OPTIMISTIC_MESSAGE],
       effectiveChatModel: "opus",
+      effectiveChatModelName: "Claude Opus 5.5",
       turnCost: 65,
     });
     get.mockReset().mockResolvedValue({ data: SERVER_ROOM });
@@ -48,11 +50,12 @@ describe("refreshChatRoomTurnPrice", () => {
     await expect(refreshChatRoomTurnPrice(queryClient, ROOM_ID)).resolves.toBe(10);
   });
 
-  it("writes the fresh model and price into the cache so the shortage notice follows", async () => {
+  it("writes the fresh model, its name and price into the cache so the shortage notice and the model chip follow", async () => {
     await refreshChatRoomTurnPrice(queryClient, ROOM_ID);
 
     const cached = queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(ROOM_ID));
     expect(cached?.effectiveChatModel).toBe("gemini");
+    expect(cached?.effectiveChatModelName).toBe("Gemini");
     expect(cached?.turnCost).toBe(10);
   });
 

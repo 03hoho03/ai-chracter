@@ -1,4 +1,4 @@
-"""공개 `GET /clover/pricing` — 클로버 충전 상품과 모든 사용처·모델의 사용 단가.
+"""공개 `GET /clover/pricing` — 클로버 충전 상품과 일반 회원이 쓸 수 있는 모든 사용처·채팅에서 고를 수 있는 모델의 사용 단가.
 
 이 파일이 검증하는 성질:
 
@@ -6,8 +6,9 @@
 2. 응답은 요청 시점의 상품 목록과 `core/clover.py` 단가 상수를 따른다 — 상수를 바꾼 뒤 응답이 따라오는지로 확인한다.
    응답을 오늘의 상수 값과 비교만 하면 라우트가 숫자 사본을 들고 있어도 통과하므로 그렇게 쓰지 않는다.
 3. 상위 모델 단가와 소설 단가(화·AI 수정)도 응답에 실린다 — 구매 전 안내에 없는 사용처 가격은 숨은 가격으로 읽힌다.
-   모델 레지스트리의 모든 모델이 실리고, 허용된 계정만 쓰는 사용처는 그 사실이 함께 실린다.
-   노벨 화 소장 가격과 무료 화 수도 싣는다.
+   모델 목록은 채팅에서 고를 수 있는 모델만 싣고, 베타 표시는 스위치와 무관한 고정 값이다. 허용된 계정만 쓰는 소설은
+   그 사실이 함께 실린다. 소설 상위 모델의 화 단가는 일반 회원이 살 수 없어 따로 싣지 않는다. 노벨 화 소장 가격과
+   무료 화 수도 싣는다.
 4. 상품 정의가 지금의 가격 규칙을 지킨다(아래 테스트 docstring).
 
 `db_client` 를 쓰는 이유는 DB 가 아니라 쿠키다 — 세션 스코프 `api_client` 는 앞 테스트의 세션 쿠키를 들고 있을 수
@@ -70,6 +71,7 @@ async def test_response_follows_products_and_cost_constants(
         "models",
         "novelAiEditCost",
         "novelRestricted",
+        "novelEpisodeCost",
         "dailyFreeChatTurns",
     ):
         del body[key]
@@ -85,12 +87,15 @@ async def test_response_follows_products_and_cost_constants(
     }
 
 
-async def test_every_model_and_novel_cost_is_exposed(
+async def test_chat_selectable_models_and_novel_cost_are_exposed(
     db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """모든 단가 상수와 무료 대화 수를 서로 겹치지 않는 표지 값으로 바꿔 두면 응답이 그 값을 모델별로 그대로 싣는다.
-    모델 목록은 레지스트리 전체를 레지스트리 순서대로 담는다 — 레지스트리에 모델을 더하고 응답에 빠뜨리면 깨진다.
-    기본 모델만 누구나 쓰고, 상위 모델과 소설은 허용된 계정 전용이다(`llm/model_access.py`·`novelize/access.py`)."""
+    모델 목록은 레지스트리에서 채팅에서 고를 수 있는 모델만 레지스트리 순서대로 담는다 — 이 목록은 채팅 모델 안내라 채팅에서
+    고를 수 없는 Sonnet 을 실으면 채팅에서 살 수 없는 선택지가 보이고, 고를 수 있는 모델을 빠뜨리면 숨은 가격이 된다.
+    Sonnet 은 소설 상위 모델로 쓰이지만 별도 허용 명단에 든 계정만 써서 일반 회원은 살 수 없으므로 그 화 단가도 따로 싣지
+    않는다. 행에 허용 전용 표시는 없고 베타 표시가 있다. 모델별 소설 화 단가 칸은 그 칸을 가드 없이 읽는 옛 화면을 위해
+    남아 있어 Opus 행의 소설 화 단가는 계속 보이고, 기본 모델의 소설 화 단가는 최상위 칸에도 실린다."""
     sentinels = {
         "CHAT_TURN_COST": 910_001,
         "CHAT_TURN_COST_SONNET": 910_002,
@@ -108,34 +113,27 @@ async def test_every_model_and_novel_cost_is_exposed(
 
     assert resp.status_code == 200
     body = resp.json()
-    assert [m["id"] for m in body["models"]] == [m.id for m in CHAT_MODELS]
+    assert [m["id"] for m in body["models"]] == [m.id for m in CHAT_MODELS if m.chat_selectable] == ["gemini", "opus"]
     assert body["models"] == [
         {
             "id": "gemini",
             "name": "Gemini",
             "isDefault": True,
-            "restricted": False,
+            "beta": False,
             "chatTurnCost": 910_001,
             "novelEpisodeCost": 910_004,
         },
         {
-            "id": "sonnet",
-            "name": "Claude Sonnet 4.6",
-            "isDefault": False,
-            "restricted": True,
-            "chatTurnCost": 910_002,
-            "novelEpisodeCost": 910_005,
-        },
-        {
             "id": "opus",
-            "name": "Claude Opus 4.6",
+            "name": "Claude Opus 5.5",
             "isDefault": False,
-            "restricted": True,
+            "beta": True,
             "chatTurnCost": 910_003,
             "novelEpisodeCost": 910_006,
         },
     ]
     assert body["chatTurnCost"] == sentinels["CHAT_TURN_COST"]
+    assert body["novelEpisodeCost"] == sentinels["NOVELIZE_EPISODE_COST"]
     assert body["novelAiEditCost"] == 910_007
     assert body["novelRestricted"] is True
     assert body["dailyFreeChatTurns"] == 910_008
@@ -144,23 +142,27 @@ async def test_every_model_and_novel_cost_is_exposed(
 @pytest.mark.parametrize(
     ("switch", "allowlist"),
     [
-        pytest.param("chat_premium_models_enabled", "chat_premium_model_allowlist", id="chat-premium"),
+        pytest.param("chat_premium_models_enabled", None, id="chat-premium"),
         pytest.param("novelize_premium_models_enabled", "novelize_premium_model_allowlist", id="novel-premium"),
         pytest.param("novelize_enabled", "novelize_grant_allowlist", id="novelize"),
     ],
 )
-async def test_restricted_marks_do_not_reveal_switches(
-    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, switch: str, allowlist: str
+async def test_pricing_does_not_reveal_switches(
+    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, switch: str, allowlist: str | None
 ) -> None:
-    """허용 전용 표시는 구조에서 오는 값이라 스위치를 켜고 명단을 채워도 그대로다. 스위치에 따라 값이 바뀌면 비로그인
-    방문자가 기능이 켜졌는지 알게 된다 — 소설 라우트가 꺼짐·미허용을 한 가지 거부로 내는 것과 같은 이유다."""
+    """비로그인 응답은 스위치를 켜고 명단을 채워도 그대로다(채팅 상위 모델은 명단이 없다) — 모델 행과 베타 표시, 소설의
+    허용 전용 표시는 모두 고정 값이다. 스위치에 따라 값이 바뀌면 비로그인 방문자가 기능이 켜졌는지 알게 된다 — 소설
+    라우트가 꺼짐·미허용을 한 가지 거부로 내는 것과 같은 이유다."""
     before = (await db_client.get("/clover/pricing")).json()
     monkeypatch.setattr(settings, switch, True)
-    monkeypatch.setattr(settings, allowlist, [uuid.uuid4()])
+    if allowlist is not None:
+        monkeypatch.setattr(settings, allowlist, [uuid.uuid4()])
 
     after = (await db_client.get("/clover/pricing")).json()
 
     assert after == before
+    assert [m["id"] for m in after["models"]] == ["gemini", "opus"]
+    assert all("restricted" not in m for m in after["models"])
 
 
 def test_products_follow_the_pricing_rule() -> None:

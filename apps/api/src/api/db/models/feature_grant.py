@@ -9,8 +9,9 @@ from api.db.base import Base
 
 # 계정별로 허용해야 쓸 수 있는 기능의 이름. `feature` 컬럼은 native enum 이 아니라 Text 라 값이 늘어도
 # 마이그레이션이 필요 없고, 값 범위는 이 Literal 이 파이썬 쪽에서만 강제한다.
-# `chat_premium_models`·`novelize_premium_models` 는 채팅 턴·소설 장 생성에 Gemini 밖의 글쓰기 모델을 고를 수 있게 하는
-# 허용이다(`llm/model_access.py`). 채팅과 소설을 따로 연다.
+# `novelize_premium_models` 는 소설 장 생성에 Gemini 밖의 글쓰기 모델을 고를 수 있게 하는 허용이다(`llm/model_access.py`).
+# `chat_premium_models` 는 채팅 상위 모델을 계정별로 열던 시절의 값이다 — 지금 채팅은 스위치 하나로 열려 이 행을 읽지 않고
+# 새로 만드는 경로도 없지만, 그 값의 행이 DB 에 남아 있어(지우지 않는다) 값 범위에 그대로 둔다.
 FeatureName = Literal["novelize", "chat_premium_models", "novelize_premium_models"]
 
 

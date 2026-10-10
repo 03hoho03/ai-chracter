@@ -12,7 +12,7 @@ import 하므로, 여기서 `api.chat` 을 부르면 순환이다.
 """
 
 from dataclasses import dataclass
-from typing import assert_never
+from typing import Literal, TypeGuard, assert_never
 
 from api.core import clover
 from api.core.config import settings
@@ -25,10 +25,20 @@ from api.llm.backends import ChatModelId as ChatModelId
 from api.llm.call_policy import BackendId
 
 
+# 채팅방에 지정할 수 있는 모델. 아래 레지스트리의 `chat_selectable` 이 원천이고, 이 타입은 요청 검증용 사본이다 — 둘이
+# 같은 집합인지는 테스트가 본다.
+ChatRoomModelId = Literal["gemini", "opus"]
+
+
 @dataclass(frozen=True)
 class ChatModelSpec:
     id: ChatModelId
+    # 화면에 보이는 이름. 운영이 그 id 로 실제로 부르는 모델을 따른다 — 운영 경로나 모델 버전을 바꾸면 같이 고친다.
     name: str
+    # 채팅방에서 고를 수 있는가. 거짓인 모델도 소설 장 생성·어드민·측정 리플레이에서는 그대로 쓴다.
+    chat_selectable: bool
+    # 화면이 베타 표시를 붙이는가.
+    beta: bool
 
     @property
     def provider(self) -> BackendId:
@@ -38,11 +48,29 @@ class ChatModelSpec:
 
 # 순서가 곧 선택지의 순서다 — 기본 모델이 맨 앞.
 CHAT_MODELS: tuple[ChatModelSpec, ...] = (
-    ChatModelSpec(id="gemini", name="Gemini"),
-    ChatModelSpec(id="sonnet", name="Claude Sonnet 4.6"),
-    ChatModelSpec(id="opus", name="Claude Opus 4.6"),
+    ChatModelSpec(id="gemini", name="Gemini", chat_selectable=True, beta=False),
+    # 지금은 베타 표시가 보이는 곳이 채팅 모델 목록뿐이라 Sonnet 에서는 쓰이지 않는다. 나중에 채팅에 다시 열 때 표시 없이
+    # 나가지 않게 미리 켜 둔다.
+    ChatModelSpec(id="sonnet", name="Claude Sonnet 5.5", chat_selectable=False, beta=True),
+    ChatModelSpec(id="opus", name="Claude Opus 5.5", chat_selectable=True, beta=True),
 )
 CHAT_MODELS_BY_ID: dict[ChatModelId, ChatModelSpec] = {m.id: m for m in CHAT_MODELS}
+
+
+def is_chat_room_model(model: ChatModelId) -> TypeGuard[ChatRoomModelId]:
+    """그 모델을 채팅방에서 고를 수 있는가."""
+    return CHAT_MODELS_BY_ID[model].chat_selectable
+
+
+def _default_chat_room_model() -> ChatRoomModelId:
+    if not is_chat_room_model(DEFAULT_CHAT_MODEL):
+        raise RuntimeError("기본 모델은 채팅방에서 고를 수 있어야 한다")
+    return DEFAULT_CHAT_MODEL
+
+
+# 기본 모델을 방 모델 타입으로 본 값. `DEFAULT_CHAT_MODEL` 은 등록부(`llm/backends.py`)에 전체 모델 타입으로 선언돼 있어
+# 방 모델 자리(유효 방 모델·방 응답)에 그대로 넣을 수 없다. 기본 모델을 채팅에서 고를 수 없게 바꾸면 import 에서 멈춘다.
+DEFAULT_CHAT_ROOM_MODEL: ChatRoomModelId = _default_chat_room_model()
 
 
 def parse_chat_model_id(raw: str) -> ChatModelId | None:

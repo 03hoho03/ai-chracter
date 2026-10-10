@@ -4,6 +4,7 @@ import { useAtomValue } from "jotai";
 import { Avatar, AvatarFallback, AvatarImage } from "@ai-character-chat/ui/components/avatar";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { ArrowLeft, Ban, History, Loader2, RotateCw, Send, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 
@@ -50,9 +51,11 @@ import { expandAuthorMacros, type AuthorMacroNames } from "@/shared/lib/text/aut
 
 import { useMemoryFollowUpRefresh } from "../lib/useMemoryFollowUpRefresh";
 import { chatSidePanelAtom } from "../model/atoms";
+import { chatModelChipName } from "../model/chatModelChip";
 import { loadOlderKeepingScroll, restorePrependScroll } from "../model/prependScrollAnchor";
 import { ChatMemorySidebar } from "./ChatMemorySidebar";
 import { ChatMemoryTrigger } from "./ChatMemoryTrigger";
+import { ChatModelChip } from "./ChatModelChip";
 import { ChatMorePanel } from "./ChatMorePanel";
 import { ChatMoreSidebar } from "./ChatMoreSidebar";
 import { RoomChatModelModal } from "./RoomChatModelModal";
@@ -213,6 +216,13 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   // 작품이 이용제한·삭제됐다 — 방을 열 때 서버가 알려 주거나(`contentRestricted`), 연 뒤에 제한돼 보내기가 거부됐다.
   // 어느 쪽이든 입력창·재생성·편집을 걷고 안내만 남긴다(읽기·삭제·신고는 그대로).
   const isRestricted = room.contentRestricted || (status.kind === "error" && status.restricted === true);
+  // 모델 칩은 헤더(sm 이상)와 입력 바(sm 미만) 두 자리에 같은 판정으로 선다. 이름은 방 응답에 실려 와 방과 같은 렌더에
+  // 그려진다 — 따로 받아 오면 칩이 늦게 끼어들며 작품 이름 열을 줄이고 대화 목록을 민다.
+  const chatModelChipLabel = chatModelChipName({
+    enabledFeatures: me?.enabledFeatures ?? [],
+    isRestricted,
+    modelName: room.effectiveChatModelName,
+  });
 
   // 작가 글 속 `{{user}}`·`{{char}}` 를 방의 이름으로 바꿔 보인다. 보내는 글은 전송 훅이 같은 이름으로 바꾼다 — 칩에
   // 보인 글과 저장되는 글이 같다.
@@ -308,6 +318,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
             <span className="truncate text-sm font-semibold text-foreground">{content?.name ?? "대화"}</span>
             <span className="truncate text-xs text-muted-foreground">{room.name}</span>
           </div>
+          {chatModelChipLabel && <ChatModelChip roomId={roomId} modelName={chatModelChipLabel} placement="header" />}
           <ChatMemoryTrigger roomId={roomId} triggerRef={memoryTriggerRef} />
           <ChatMorePanel
             roomId={roomId}
@@ -480,12 +491,18 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                     </div>
                   )}
 
-                {/* 추천 답변 칩 줄과 **같은 층위**(입력 행의 형제)로 한 줄.
-                    칩 줄 자체가 조건부라 "필요할 때만 노출"과 형태가 같다.
+                {/* 추천 답변 칩 줄과 **같은 층위**(입력 행의 형제)로 한 줄. 오른쪽은 클로버 잔량이고 "필요할 때만 노출"한다.
+                    왼쪽은 sm 미만에서 헤더에서 물러난 모델 칩이다 — 잔량이 없는 방에서도 줄이 선다(폰에서 모델을 바꾸는
+                    입구가 방에 따라 있다 없다 하지 않게). sm 이상에서는 칩이 헤더에 있어, 잔량이 없으면 줄도 숨긴다.
                     429 배너(`RateLimitNotice`)는 메시지 목록 하단에 있는 별개 자리다. */}
-                {shouldShowClover && (
-                  <div className="mb-2 flex justify-end">
-                    <CloverBalance balance={cloverBalance} isInsufficient={isCloverShort} />
+                {(shouldShowClover || chatModelChipLabel) && (
+                  <div className={cn("mb-2 flex items-center justify-between gap-2", !shouldShowClover && "sm:hidden")}>
+                    {chatModelChipLabel && (
+                      <ChatModelChip roomId={roomId} modelName={chatModelChipLabel} placement="input-bar" />
+                    )}
+                    {shouldShowClover && (
+                      <CloverBalance balance={cloverBalance} isInsufficient={isCloverShort} className="ml-auto" />
+                    )}
                   </div>
                 )}
 

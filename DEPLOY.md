@@ -199,11 +199,11 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**68개 키다**(2026-10-10 VM 실측, 키 이름만 셈): 아래 표 108개 중 51개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
+**68개 키다**(2026-10-10 VM 실측, 키 이름만 셈): 아래 표 109개 중 52개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
 `LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 7개·소설화 조정용 `NOVELIZE_*` 19개, 실측 때 넣지 않은 상위 모델 Bedrock 키 9개(`BEDROCK_*`), 실측 때 넣지 않은 결제·본인인증 키 2개(`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 실측 때 넣지 않은 크리에이터 정산 키 5개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`·`CREATOR_PAYOUT_MINIMUM_KRW`·`CREATOR_PAYOUT_ENCRYPTION_KEYS`), 모두 57개 제외 —
-운영에서 켜 둔 소설화 `NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`, 상위 모델 스위치·명단 4개(`CHAT_PREMIUM_*` 2개·`NOVELIZE_PREMIUM_*` 2개), 결제·본인인증 키 7개(`PORTONE_*` 5개·
-`IDENTITY_CI_HMAC_KEY`·`PAYMENTS_ENABLED`), 노벨 키 2개(`NOVEL_PUBLIC_ENABLED`·`NOVEL_PUBLIC_PREVIEW_ALLOWLIST`)는 셈에 들어간다) + 앱이 읽지만 아래 표에
-행이 없는 키 2개(`ANTHROPIC_DIRECT_API_KEY`·`LLM_CALL_SITE_BACKENDS`) + compose용 6개(`API_IMAGE_BLUE`·`API_IMAGE_GREEN`·`SITE_ADDRESS`·
+운영에서 켜 둔 소설화 `NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`, 상위 모델 스위치·명단 3개(`CHAT_PREMIUM_MODELS_ENABLED`·`NOVELIZE_PREMIUM_*` 2개), 상위 모델 직결 키·배정 2개(`ANTHROPIC_DIRECT_API_KEY`·`LLM_CALL_SITE_BACKENDS`), 결제·본인인증 키 7개(`PORTONE_*` 5개·
+`IDENTITY_CI_HMAC_KEY`·`PAYMENTS_ENABLED`), 노벨 키 2개(`NOVEL_PUBLIC_ENABLED`·`NOVEL_PUBLIC_PREVIEW_ALLOWLIST`)는 셈에 들어간다) + 앱이 읽지 않지만
+옛 이미지로 태그 롤백할 때를 위해 남긴 키 1개(`CHAT_PREMIUM_MODEL_ALLOWLIST`) + compose용 6개(`API_IMAGE_BLUE`·`API_IMAGE_GREEN`·`SITE_ADDRESS`·
 `POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE` — 두 색으로 나뉘기 전의 `API_IMAGE` 줄은 없다) + "Bugsink(에러 트래커)" 절의 6개
 (`BUGSINK_*` 3개·`INGEST_SHARED_SECRET`·`SENTRY_DSN`·`SENTRY_ENVIRONMENT`) + 크론 알림 3개
 (`DISCORD_WEBHOOK_URL`·`HEALTHCHECKS_BACKUP_PING_URL`은 "백업 · 복원" 절, `HEALTHCHECKS_RESOURCE_PING_URL`은 "VM 리소스 감시" 절). `apps/api/.env`는 **로컬 개발용이며 배포와 무관하다.**
@@ -282,13 +282,15 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `NOVELIZE_PREVIOUS_SUMMARIES_MAX_CHARS` / `NOVELIZE_SNAPSHOT_LIMIT` | 설정 안 함(기본 `8000` / `50`) | 다음 묶음 생성에 싣는 지난 화 요약 전체의 글자 상한(넘으면 오래된 화부터 뺀다) / 소설 하나의 스냅샷 개수 상한(닿으면 가장 오래된 복원 직전 자동 스냅샷부터 지우고, 이름 붙인 것만 남았으면 새 저장을 거절한다) |
 | `NOVELIZE_HEARTBEAT_INTERVAL_SECONDS` / `NOVELIZE_HEARTBEAT_EXPIRY_SECONDS` / `NOVELIZE_JOB_TIMEOUT_SECONDS` | 설정 안 함(기본값은 `.env.example`) | 소설화 작업의 살아 있음 표시 주기 / 그 표시가 이만큼 끊기면 죽은 작업으로 보고 실패·환불하는 만료 / 작업 하나의 전체 상한(초). 만료는 주기보다 넉넉히 길어야 한다 — 짧으면 DB 가 잠깐 느린 것만으로 살아 있는 작업이 환불되고 결과가 버려진다. "소설화 켜기 · 끄기 · 회수 · 롤백" 절의 대기 시간이 이 값들에서 나온다 |
 | `NOVELIZE_MIN_CHAPTER_CHARS` / `NOVELIZE_PREVIOUS_EXCERPT_CHARS` | 설정 안 함(기본값은 `.env.example`) | 화 본문 하나라도 이보다 짧으면 정상 종료여도 그 묶음 생성을 실패·환불하는 하한(글자) / 다음 묶음 생성에 싣는 직전 화 끝 발췌의 목표 길이(글자) |
-| `BEDROCK_ACCESS_KEY_ID` / `BEDROCK_SECRET_ACCESS_KEY` | Bedrock 호출만 허용한 전용 IAM 사용자의 액세스 키 쌍 | 상위 모델(Bedrock 의 Claude) 자격. 🔴 R2 용 `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` 와 다른 키이고 그 줄들은 건드리지 않는다 — 앱이 이 두 키를 SDK 에 명시로 넘기며, 비어 있으면 호출 전에 실패한다(R2 키로 내려가지 않게). 아래 상위 모델 스위치가 하나라도 켜져 있는데 비어 있으면 api 가 기동하지 못한다. 넣는 순서는 "상위 모델(Bedrock) — 꺼진 채 배포 · 켜기 · 끄기" 절 |
-| `BEDROCK_REGION` | 설정 안 함(기본 `ap-northeast-2`) | 호출 출발 리전. `AWS_REGION`(R2 의 `auto`)과 별개다. 스위치가 켜져 있는데 값만 비우면(`BEDROCK_REGION=`) 기동하지 못한다 |
+| `BEDROCK_ACCESS_KEY_ID` / `BEDROCK_SECRET_ACCESS_KEY` | Bedrock 호출만 허용한 전용 IAM 사용자의 액세스 키 쌍 | 상위 모델을 Bedrock 의 Claude 로 보낼 때의 자격 — 아래 `LLM_CALL_SITE_BACKENDS` 에 배정이 없는 호출 위치는 코드 기본 경로인 Bedrock 으로 간다(운영은 상위 모델 호출을 모두 직결에 배정해 두었다). 🔴 R2 용 `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` 와 다른 키이고 그 줄들은 건드리지 않는다 — 앱이 이 두 키를 SDK 에 명시로 넘기며, 비어 있으면 호출 전에 실패한다(R2 키로 내려가지 않게). 켜진 상위 모델 스위치가 여는 호출 중 Bedrock 으로 가는 것이 있는데 비어 있으면 api 가 기동하지 못한다. 경로와 넣는 순서는 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" 절 |
+| `BEDROCK_REGION` | 설정 안 함(기본 `ap-northeast-2`) | 호출 출발 리전. `AWS_REGION`(R2 의 `auto`)과 별개다. 스위치가 켜진 호출이 Bedrock 으로 가는데 값만 비우면(`BEDROCK_REGION=`) 기동하지 못한다 |
 | `BEDROCK_SONNET_MODEL_ID` / `BEDROCK_OPUS_MODEL_ID` | 설정 안 함(기본값은 `.env.example`) | 실제 모델 id. 새 버전으로 옮길 때 이 값만 바꾸면 방·작업에 저장된 모델 값은 그대로다. 단가표(`apps/api/src/api/llm/pricing.py`)에 없는 id 면 어드민 사용량의 원가가 "단가 없음"으로 빠진다 — 단가를 함께 넣는다 |
 | `BEDROCK_CHAT_TIMEOUT_MS` / `BEDROCK_CHAPTER_TIMEOUT_MS` | 설정 안 함(기본 `45000` / `300000`) | 상위 모델 채팅 턴 / 소설 장 생성의 요청 타임아웃(ms). 스트리밍이라 "다음 청크까지"의 상한이다. 재시도는 하지 않는다 |
 | `BEDROCK_CHAT_MAX_TOKENS` / `BEDROCK_CHAPTER_MAX_TOKENS` | 설정 안 함(기본 `4096` / `32768`) | 출력 상한. Bedrock 은 요청의 출력 상한만큼 분당 토큰 쿼터를 먼저 잡으므로 올리면 동시 요청이 스로틀되기 쉽다. 장이 잘리면 실패·환불이다 |
-| `CHAT_PREMIUM_MODELS_ENABLED` / `CHAT_PREMIUM_MODEL_ALLOWLIST` | 켤 때 `true` / 계정 id **쉼표 구분**(코드 기본값은 꺼짐·빈 명단) | 채팅 상위 모델 스위치와 허용 가능 계정 명단. 뜻은 소설화 스위치·명단과 같다. 켜고 끄는 법은 "상위 모델(Bedrock) — 꺼진 채 배포 · 켜기 · 끄기" 절 |
-| `NOVELIZE_PREMIUM_MODELS_ENABLED` / `NOVELIZE_PREMIUM_MODEL_ALLOWLIST` | 켤 때 `true` / 계정 id **쉼표 구분**(코드 기본값은 꺼짐·빈 명단) | 소설 장 상위 모델의 같은 한 벌. 소설화 자체(`NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`)도 열려 있어야 쓸 수 있다 |
+| `ANTHROPIC_DIRECT_API_KEY` | Anthropic 콘솔에서 만든 이 서비스 전용 API 키 | 상위 모델을 Anthropic API 로 직접 보낼 때의 자격. SDK 가 스스로 읽는 `ANTHROPIC_API_KEY` 와 이름을 나눴다. 아래 배정이 호출을 직결로 옮기는데 비어 있으면 스위치와 무관하게 api 가 기동하지 못한다. 직결의 모델 id·타임아웃·출력 상한·사고 깊이(나머지 `ANTHROPIC_*`)는 설정 안 함이 기본이다(기본값은 `.env.example`) |
+| `LLM_CALL_SITE_BACKENDS` | `chat_generate:anthropic,replay_generate:anthropic,novelize_chapter:anthropic`(쉼표 구분, 공백·따옴표 없이. 코드 기본값은 배정 없음) | 호출 위치마다 공급자 구현을 배정한다. 배정이 없는 호출 위치의 상위 모델은 코드 기본 경로인 Bedrock 으로 간다. 🔴 운영은 이 세 배정을 유지한다 — 빼면 채팅 Opus 가 Bedrock 으로 가고, 스위치가 켜진 채 Bedrock 키가 없으면 api 가 기동하지 못한다. 따를 수 없는 배정(모르는 이름, 그 모델을 서비스하지 않는 구현)도 기동을 막는다. 절은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" |
+| `CHAT_PREMIUM_MODELS_ENABLED` | 켤 때 `true`(코드 기본값은 꺼짐) | 채팅 상위 모델 스위치. 켜면 로그인 회원 모두가 채팅방에 상위 모델(Opus)을 고를 수 있다 — 명단·계정별 허용은 없다. 운영 `.env` 에 남은 `CHAT_PREMIUM_MODEL_ALLOWLIST` 줄은 지금 이미지가 읽지 않지만 지우지 않는다(채팅 명단이 있던 옛 이미지로 태그 롤백하면 옛 판정이 그 명단을 다시 읽는다). 켜고 끄는 법은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" 절 |
+| `NOVELIZE_PREMIUM_MODELS_ENABLED` / `NOVELIZE_PREMIUM_MODEL_ALLOWLIST` | 켤 때 `true` / 계정 id **쉼표 구분**(코드 기본값은 꺼짐·빈 명단) | 소설 장 상위 모델 스위치와 허용 가능 계정 명단. 뜻은 소설화 스위치·명단과 같고, 어드민이 준 계정별 허용 행도 있어야 한다. 소설화 자체(`NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`)도 열려 있어야 쓸 수 있다 |
 | `NOVEL_PUBLIC_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 노벨(공개 소설) 스위치. 소설화(`NOVELIZE_ENABLED`·명단·계정별 허용)와 별개로 이 스위치도 켜져 있어야 소설을 노벨에 공개·다시 공개할 수 있다 — 코드 기본값이 닫힘이라 이 줄 없이 배포하면 닫힌 채 뜬다. 끄면 재기동 뒤 공개·다시 공개·게시자의 공개 상태 조회가 403 `NOVEL_PUBLIC_DISABLED` 이고, 공개 상태 행은 남아 다시 켜면 그대로 돌아온다. 켜기·끄기는 "노벨(공개 소설) 켜기 · 끄기" 절 |
 | `NOVEL_PUBLIC_PREVIEW_ALLOWLIST` | 미리보기 동안 계정 id, **쉼표 구분**(공백·따옴표 없이). 전체 공개 뒤에는 줄을 지운다(코드 기본값은 빈 명단) | 노벨 미리보기 명단. 비어 있으면 스위치가 켜졌을 때 모두에게 열리고, 비어 있지 않으면 스위치가 켜져 있어도 명단의 로그인 회원에게만 열린다 — 그 밖의 회원·비로그인은 스위치를 끈 것과 같은 응답이고, 인증 없는 가격 응답의 `novelPublicEnabled` 도 거짓이다. UUID 가 아닌 항목이 있으면 api 가 기동하지 못한다. 절차는 "노벨(공개 소설) 켜기 · 끄기" 절 |
 
@@ -1522,7 +1524,7 @@ sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env \
 목표로 내리면 소설화 리비전들만이 아니라 그 위에 쌓인 엔딩 우선 스탯(`a966fc016bf1`)·모델 축(`e6aa289fea62`)·방
 모델(`519329713933`)·장 작업 모델(`2494aa0e607e`) 리비전과 묶음·화 구조 세 리비전까지 함께 내린다 — 엔딩의 우선 스탯 값,
 Claude 프롬프트 세트, 방마다 고른 모델도 사라지고, 위 묶음·화 구조의 거부 조건이 그대로 걸린다. 그래서 먼저 위 「묶음·화
-구조만 내릴 때」를 통과시키고, 상위 모델 리비전은 "상위 모델(Bedrock) — 꺼진 채 배포 · 켜기 · 끄기" 절의 롤백 순서를 본 뒤에
+구조만 내릴 때」를 통과시키고, 상위 모델 리비전은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" 절의 롤백 순서를 본 뒤에
 내린다:
 
 ```sh
@@ -1555,93 +1557,120 @@ story 먼저). 소설 프롬프트 레인 리비전(`a7a87e3ba631`): `novel` 레
 Gemini 활성 `85102fbf-51a6-48bb-a44f-b320eaa6325d`, Sonnet `dace3703-a59e-4d5d-b765-a64085001771`, Opus
 `2b816f0c-0de0-4d23-ac90-6648c705d271` — 어드민이 게시하기 전이면 (novel, gemini)·(novel, sonnet)·(novel, opus) 행이 뒤의 셋이다.
 
-### 3-12. 상위 모델(Bedrock) — 꺼진 채 배포 · 켜기 · 끄기
+### 3-12. 상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기
 
-채팅 턴 생성과 소설 장 생성은 Gemini 대신 AWS Bedrock 의 Claude(Sonnet·Opus)로 돌 수 있다. 판정·요약·발행 심사·문단 수정은
-고른 모델과 무관하게 Gemini 다. 상위 모델은 채팅·소설화에 한 벌씩 스위치(`CHAT_PREMIUM_MODELS_ENABLED`·
-`NOVELIZE_PREMIUM_MODELS_ENABLED`)와 env 명단으로 닫혀 있고, 코드 기본값이 꺼짐·빈 명단이라 **배포만으로는 닫힌 채 뜬다.**
+채팅 턴 생성(측정용 리플레이 포함)과 소설 장 생성은 Gemini 대신 Claude 로 돌 수 있다. 판정·요약·발행 심사·문단 수정은
+고른 모델과 무관하게 Gemini 다. 채팅에서 고를 수 있는 상위 모델은 Opus 하나다 — Sonnet 은 소설 장에만 남았고, 채팅에서
+내리기 전에 Sonnet 을 저장한 방은 Gemini 로 Gemini 가격에 돈다.
 
-**꺼진 채 배포 — 키 넣는 순서.** 키는 스위치보다 먼저, 스위치 없이 넣는다. 옛 이미지는 모르는 키를 무시하므로 이미지 배포
-앞뒤 어느 쪽에 넣어도 된다.
+**공급자 경로.** 상위 모델 호출이 어느 공급자로 가는지는 호출 위치마다 정한다. 코드 기본 경로는 AWS Bedrock 이고,
+`LLM_CALL_SITE_BACKENDS` 에 배정한 호출 위치만 Anthropic API 직결(`ANTHROPIC_DIRECT_API_KEY`)로 간다. 운영은 채팅
+턴(`chat_generate`)·측정용 리플레이(`replay_generate`)·소설 장(`novelize_chapter`)을 모두 `anthropic` 에 배정해 두었고
+**이 배정을 유지한다** — 배정을 빼면 그 호출의 Opus 가 코드 기본 경로인 Bedrock 으로 가고, 스위치가 켜진 채 Bedrock 키가
+없으면 api 가 기동을 거부한다. 이 절은 운영 경로(직결)를 기준으로 적는다. Bedrock 으로 보낼 때의 키는 env 표의 `BEDROCK_*`
+행이다 — Bedrock 모델 호출만 허용한 전용 IAM 사용자 키를 쓰고, R2 키(`AWS_ACCESS_KEY_ID` 등)를 재사용하거나 그 줄을 고치지
+않으며, Bedrock 계정 설정에서 모델 호출 로깅(model invocation logging)이 꺼져 있는지 먼저 본다.
 
-1. AWS 콘솔에서 Bedrock 모델 호출만 허용한 전용 IAM 사용자의 액세스 키를 만든다. R2 키(`AWS_ACCESS_KEY_ID` 등)를 재사용하거나
-   그 줄을 고치지 않는다 — 그 줄들은 boto3 가 R2 자격으로 읽는다.
-2. Bedrock 계정 설정에서 모델 호출 로깅(model invocation logging)이 꺼져 있는지 본다. 개인정보 처리방침 초안이 대화 원문을
-   AWS 쪽에 남기지 않는다는 전제로 쓰였다.
-3. `.env` 에 두 줄을 더한다(리전은 기본값이면 생략). 파일을 통째로 덮거나 백업본으로 복원하지 않는다(교체 스크립트가 같은
-   파일의 `API_IMAGE_BLUE`·`API_IMAGE_GREEN` 을 고친다). 값은 셸 기록에 남지 않게 편집기로 넣어도 된다:
+**스위치.** 상위 모델은 채팅·소설화에 스위치가 하나씩(`CHAT_PREMIUM_MODELS_ENABLED`·`NOVELIZE_PREMIUM_MODELS_ENABLED`)이고
+코드 기본값이 꺼짐이라 `.env` 에 스위치 줄이 없으면 **배포만으로는 닫힌 채 뜬다.** 채팅은 스위치 하나로 로그인 회원 모두에게 열린다 — 명단도 계정별
+허용도 없다. 소설은 스위치에 더해 env 명단(`NOVELIZE_PREMIUM_MODEL_ALLOWLIST`)과 계정별 허용 행이 있어야 한다(아래 「소설
+계정 허용」). 운영 `.env` 에 남은 `CHAT_PREMIUM_MODEL_ALLOWLIST` 줄은 **지우지 않는다** — 지금 이미지는 그 키를 읽지 않고
+무시하지만, 채팅 명단이 있던 옛 이미지로 태그 롤백하면 옛 판정이 그 명단(과 어드민 허용 행)을 다시 읽는다.
 
-   ```sh
-   cd /opt/ddona/app
-   sudo sh -c 'printf "\nBEDROCK_ACCESS_KEY_ID=<키 id>\nBEDROCK_SECRET_ACCESS_KEY=<비밀 키>\n" >> /opt/ddona/.env'
-   sudo python3 ops/check_env.py --format /opt/ddona/.env
-   sudo bash ops/swap-api.sh
-   # 값은 찍지 않고 들어갔는지만 본다 — True True ap-northeast-2 False False 여야 한다.
-   sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -T api_$(sudo bash ops/active-color.sh) python -c \
-     "from api.core.config import settings as s; print(bool(s.bedrock_access_key_id.strip()), bool(s.bedrock_secret_access_key.strip()), s.bedrock_region, s.chat_premium_models_enabled, s.novelize_premium_models_enabled)"
-   ```
+**명단 이미지에서 넘어올 때.** 🔴 채팅 상위 모델을 env 명단(`CHAT_PREMIUM_MODEL_ALLOWLIST`)으로 가두던 이미지에서 이
+이미지로 넘어올 때 운영 `.env` 에 `CHAT_PREMIUM_MODELS_ENABLED=true` 줄이 이미 있으면(명단으로 운영자만 열어 둔 상태), 새
+이미지는 명단을 읽지 않으므로 배포되는 순간 로그인 회원 전체에게 열린다. 그래서 **병합·자동 배포 전에** 아래 「끄기」 블록으로
+그 줄을 먼저 지우고, 아래 「켜기 전 확인」 명령의 마지막 값(스위치)이 `False` 인지 본 뒤 병합한다. 공개는 그 뒤 「켜기 —
+공개」 순서로 따로 연다.
 
-4. "BE 런타임" 절의 키 개수 문장을 VM 에서 다시 세어 고친다.
-
-키만 있고 스위치가 꺼져 있으면 아무 호출도 Bedrock 으로 가지 않는다.
-
-**켜기.** 위 확인에서 키 두 개가 `True` 인 것을 먼저 본다 — 🔴 스위치가 켜졌는데 키나 리전이 비어 있으면 api 가 기동하지
-못한다. 교체 스크립트의 새 색이 healthy 가 안 돼 교체가 실패하고(옛 색은 그대로 서빙, 종료코드 1), 그 줄을 고치기 전에는
-다음 배포도 같은 이유로 실패한다. 그다음 쓸 기능의 스위치와 명단만 더한다(채팅만이면 `CHAT_PREMIUM_*` 두 줄, 소설 장까지면
-`NOVELIZE_PREMIUM_*` 두 줄도):
+**켜기 전 확인.** 직결 키와 배정이 들어 있는지 본다. 값은 찍지 않는다:
 
 ```sh
 cd /opt/ddona/app
-sudo sh -c 'printf "\nCHAT_PREMIUM_MODELS_ENABLED=true\nCHAT_PREMIUM_MODEL_ALLOWLIST=<계정 id>,<계정 id>\n" >> /opt/ddona/.env'
+sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -T api_$(sudo bash ops/active-color.sh) python -c \
+  "from api.core.config import settings as s; print(bool(s.anthropic_direct_api_key.strip()), {k: s.llm_call_site_backends.get(k) for k in ('chat_generate', 'replay_generate', 'novelize_chapter')}, s.chat_premium_models_enabled)"
+```
+
+`True {'chat_generate': 'anthropic', 'replay_generate': 'anthropic', 'novelize_chapter': 'anthropic'} False` 여야 한다. 첫 값이
+`False` 면 키를, 배정에 `None` 이 있으면 배정을 스위치보다 먼저, 스위치 없이 넣는다. 키 없이 배정만 있으면 스위치와
+무관하게 api 가 기동하지 못하므로 키 줄이 먼저다. 파일을 통째로 덮거나 백업본으로 복원하지 않는다(교체 스크립트가 같은
+파일의 `API_IMAGE_BLUE`·`API_IMAGE_GREEN` 을 고친다). 키 값은 셸 기록에 남지 않게 편집기로 넣어도 된다. 배정 줄이 이미 있는데
+항목이 빠졌으면 새 줄을 더하지 말고 그 줄을 고친다(같은 키가 두 번이면 형식 검사의 `duplicate-key` 위반이다):
+
+```sh
+cd /opt/ddona/app
+sudo sh -c 'printf "\nANTHROPIC_DIRECT_API_KEY=<키>\n" >> /opt/ddona/.env'
+sudo sh -c 'printf "\nLLM_CALL_SITE_BACKENDS=chat_generate:anthropic,replay_generate:anthropic,novelize_chapter:anthropic\n" >> /opt/ddona/.env'
 sudo python3 ops/check_env.py --format /opt/ddona/.env
 sudo bash ops/swap-api.sh
 ```
 
-`restart` 는 env 를 다시 읽지 않으므로 교체 스크립트를 태그 없이 부른다("env 반영 재기동" 절). 줄을 넣었으니 키 개수 문장을 다시 센다.
+넣은 뒤 위 확인 명령을 다시 돌리고, "BE 런타임" 절의 키 개수 문장을 VM 에서 다시 세어 고친다. 키·배정만 있고 스위치가
+꺼져 있으면 아무 호출도 상위 모델로 가지 않는다.
 
-**계정 허용.** 스위치와 명단만으로는 아직 아무도 못 쓴다 — 계정마다 허용 행이 있어야 한다(채팅·소설 따로).
+**켜기 — 공개.** 🔴 Anthropic 국외이전을 담은 개인정보처리방침이 게시·시행되고, 그 판의 가입 화면 국외이전 사본
+(`apps/web/src/features/sign-up/ui/LegalConsentFields.tsx`)이 배포된 뒤에만 스위치 줄을 더한다 — 그 전에 켜면 처리방침에
+없는 국외이전이 된다. 위 확인이 기대값일 때 채팅 스위치 한 줄을 더한다. 🔴 스위치가 켜졌는데 그 호출이 갈 공급자의 키가 비어
+있으면 api 가 기동하지 못한다. 교체 스크립트의 새 색이 healthy 가 안 돼 교체가 실패하고(옛 색은 그대로 서빙, 종료코드 1),
+그 줄을 고치기 전에는 다음 배포도 같은 이유로 실패한다:
 
-1. 명단에 그 계정 id 가 있는지 본다(위 `CHAT_PREMIUM_MODEL_ALLOWLIST`·`NOVELIZE_PREMIUM_MODEL_ALLOWLIST`). 명단 밖 계정의 허용은
-   어드민이 422 `CHAT_PREMIUM_MODELS_GRANT_NOT_ALLOWLISTED`·`NOVELIZE_PREMIUM_MODELS_GRANT_NOT_ALLOWLISTED` 로 거절한다.
-2. 어드민 유저 상세에서 허용을 켠다 — API 로는 `POST /admin/users/{id}/chat-premium-models-grant`·
-   `POST /admin/users/{id}/novelize-premium-models-grant` 에 `{"granted": true, "adminComment": "…"}`. 스위치가 꺼져 있어도 미리 줄
-   수 있다. 소설 상위 모델은 그 계정에 소설화 허용(3-11 절)도 있어야 보인다.
-3. 클로버를 지급한다. 상위 모델 턴·소설 화는 레이트리밋 면제 계정도 값을 내고(턴 단가는 `CHAT_TURN_COST_SONNET`·
-   `CHAT_TURN_COST_OPUS`, 소설은 화 하나당 `NOVELIZE_EPISODE_COST_SONNET`·`NOVELIZE_EPISODE_COST_OPUS` 이고 생성 한 번이
-   화 수 × 화 단가다 — 값은 `api/core/clover.py` 에서 확인한다), 하루 무료분은 Gemini 턴에만 쓰인다.
-4. 그 계정의 web 을 새로고침하면(세션 정보를 다시 받는다) 채팅 더보기에 모델 선택이 보인다. 고른 모델은 방마다 저장되고 다음
-   턴부터 그 모델·그 가격으로 돈다.
-5. 소설 상위 모델은 장 생성·재생성 요청마다 고른다(방처럼 저장하지 않는다). 허용이 들어갔는지는 그 계정으로 소설 상세
+```sh
+cd /opt/ddona/app
+sudo sh -c 'printf "\nCHAT_PREMIUM_MODELS_ENABLED=true\n" >> /opt/ddona/.env'
+sudo python3 ops/check_env.py --format /opt/ddona/.env
+sudo bash ops/swap-api.sh
+```
+
+`restart` 는 env 를 다시 읽지 않으므로 교체 스크립트를 태그 없이 부른다("env 반영 재기동" 절). 위 확인 명령의 마지막 값이
+`True` 인지 보고, 줄을 넣었으니 키 개수 문장을 다시 센다. 로그인 회원이 web 을 새로고침하면(세션 정보를 다시 받는다) 채팅
+화면의 모델 선택 입구(헤더 칩 또는 더보기 「AI 모델」)가 보인다. 고른 모델은 방마다 저장되고 다음 턴부터 그 모델·그 가격으로 돈다. 상위 모델 턴은 레이트리밋
+면제 계정도 값을 내고(턴 단가 `CHAT_TURN_COST_OPUS`, 값은 `api/core/clover.py` 에서 확인한다), 하루 무료분은 Gemini 턴에만
+쓰인다. 소설 장의 상위 모델도 열 때는 `NOVELIZE_PREMIUM_*` 두 줄(스위치·명단)을 같은 방식으로 더한다.
+
+**소설 계정 허용.** 소설 상위 모델은 스위치와 명단만으로는 아직 아무도 못 쓴다 — 계정마다 허용 행이 있어야 한다.
+
+1. 명단(`NOVELIZE_PREMIUM_MODEL_ALLOWLIST`)에 그 계정 id 가 있는지 본다. 명단 밖 계정의 허용은 어드민이 422
+   `NOVELIZE_PREMIUM_MODELS_GRANT_NOT_ALLOWLISTED` 로 거절한다.
+2. 어드민 유저 상세에서 허용을 켠다 — API 로는 `POST /admin/users/{id}/novelize-premium-models-grant` 에
+   `{"granted": true, "adminComment": "…"}`. 스위치가 꺼져 있어도 미리 줄 수 있다. 그 계정에 소설화 허용(3-11 절)도 있어야
+   보인다.
+3. 클로버를 지급한다. 소설 화는 레이트리밋 면제 계정도 값을 낸다(화 하나당 `NOVELIZE_EPISODE_COST_SONNET`·
+   `NOVELIZE_EPISODE_COST_OPUS` 이고 생성 한 번이 화 수 × 화 단가다 — 값은 `api/core/clover.py` 에서 확인한다).
+4. 소설 상위 모델은 장 생성·재생성 요청마다 고른다(방처럼 저장하지 않는다). 허용이 들어갔는지는 그 계정으로 소설 상세
    (`GET /novels/{id}`)를 열어 `chapterModels` 에 Sonnet·Opus 가 실렸는지로 본다 — 허용이 없으면 Gemini 하나뿐이다. 장 작업은
    요청한 모델을 `novel_jobs.model` 에 적고, 실행은 그 값으로 돈다.
 
-회수는 어드민에서 허용을 끄는 것(재기동 없음) 또는 명단에서 지우고 `sudo bash ops/swap-api.sh` 다. 허용 행만 남은 계정도 명단 밖이면
-접근 시점에 막힌다. 소설은 회수 뒤의 장 요청이 상위 모델이면 403 `NOVEL_MODEL_NOT_ALLOWED` 다(방과 달리 Gemini 로 바꿔
-받지 않는다 — 장 요청의 모델은 그 가격과 함께 지금 고른 값이다). 회수 전에 값을 낸 장 작업은 회수와 무관하게 그 모델로 끝난다.
+회수는 어드민에서 허용을 끄는 것(재기동 없음) 또는 명단에서 지우고 `sudo bash ops/swap-api.sh` 다. 허용 행만 남은 계정도 명단
+밖이면 접근 시점에 막힌다. 회수 뒤의 장 요청이 상위 모델이면 403 `NOVEL_MODEL_NOT_ALLOWED` 다(방과 달리 Gemini 로 바꿔 받지
+않는다 — 장 요청의 모델은 그 가격과 함께 지금 고른 값이다). 회수 전에 값을 낸 장 작업은 회수와 무관하게 그 모델로 끝난다.
 
-**끄기.** 스위치 줄만 지우고 다시 올린다. 키·명단 줄은 남겨 두면 다시 켤 때 스위치 한 줄이면 된다:
+**끄기.** 채팅 스위치 줄만 지우고 다시 올린다. 키·배정 줄은 남겨 두면 다시 켤 때 스위치 한 줄이면 된다. 소설 줄
+(`NOVELIZE_PREMIUM_*`)은 건드리지 않는다 — 소설 상위 모델까지 끌 때만 `NOVELIZE_PREMIUM_MODELS_ENABLED` 줄도 같은 방식으로
+지운다:
 
 ```sh
 cd /opt/ddona/app
-sudo sed -i '/^CHAT_PREMIUM_MODELS_ENABLED=/d;/^NOVELIZE_PREMIUM_MODELS_ENABLED=/d' /opt/ddona/.env
+sudo sed -i '/^CHAT_PREMIUM_MODELS_ENABLED=/d' /opt/ddona/.env
 sudo python3 ops/check_env.py --format /opt/ddona/.env
 sudo bash ops/swap-api.sh
 ```
 
-끄거나 허용을 거둬도 **상위 모델을 고른 방은 막히지 않는다.** 방에 저장된 모델(`chat_rooms.chat_model`)은 그대로 남고, 그
-방의 다음 턴은 Gemini 로 Gemini 가격(하루 무료분 포함)에 돈다. 방 응답과 모델 목록은 실제로 쓰일 모델(Gemini)을 보인다. 다시
-켜면 저장된 모델로 돌아간다. 진행 중이던 턴과 소설 장 작업은 이미 값을 낸 모델로 끝난다(스위치를 껐다고 Gemini 로 바꾸지
-않는다 — 상위 모델 값을 내고 Gemini 글을 받게 된다). 끄는 동안 Redis 일부 장애가 나도 Gemini 턴은 지금처럼
+끄거나 소설 허용을 거둬도 **상위 모델을 고른 방은 막히지 않는다.** 방에 저장된 모델(`chat_rooms.chat_model`)은 그대로 남고,
+그 방의 다음 턴은 Gemini 로 Gemini 가격(하루 무료분 포함)에 돈다. 방 응답과 모델 목록은 실제로 쓰일 모델(Gemini)을 보인다.
+다시 켜면 저장된 모델로 돌아간다. 진행 중이던 턴과 소설 장 작업은 이미 값을 낸 모델로 끝난다(스위치를 껐다고 Gemini 로
+바꾸지 않는다 — 상위 모델 값을 내고 Gemini 글을 받게 된다). 끄는 동안 Redis 일부 장애가 나도 Gemini 턴은 지금처럼
 통과한다(상위 모델 턴만 503 `CHAT_MODEL_UNAVAILABLE` 로 거절된다 — 켜져 있을 때의 동작이다).
 
-**키 교체·회수.** 새 키를 만든 뒤 `.env` 의 두 줄을 `sudo sed -i` 로 바꾸고 형식 검사 → `sudo bash ops/swap-api.sh` → 위 확인 명령,
-그다음 AWS 콘솔에서 옛 키를 비활성화한다. 키가 새어 나갔으면 먼저 콘솔에서 비활성화한다 — 스위치가 켜져 있으면 그동안의
-상위 모델 호출은 실패하고 환불된다.
+**키 교체·회수.** 새 키를 만든 뒤 `.env` 의 `ANTHROPIC_DIRECT_API_KEY` 줄을 `sudo sed -i` 로 바꾸고 형식 검사 →
+`sudo bash ops/swap-api.sh` → 위 확인 명령, 그다음 Anthropic 콘솔에서 옛 키를 비활성화한다. 키가 새어 나갔으면 먼저 콘솔에서
+비활성화한다 — 스위치가 켜져 있으면 그동안의 상위 모델 호출은 실패하고 환불된다. Bedrock 키(`BEDROCK_*` 두 줄)도 같은
+순서이고 옛 키는 AWS 콘솔에서 비활성화한다.
 
-**보는 곳.** Bedrock 호출 한 건마다 API 로그에 `bedrock_usage` 줄(입력·캐시 읽기·캐시 쓰기·출력 토큰)이 남고, 사용량 집계
-(`llm_usage_report.py --model global.anthropic.claude-sonnet-4-6` 처럼 실제 모델 id 로 좁힌다)와 어드민 사용량 화면에 Gemini
-호출과 같은 표로 나온다. 채팅에서 흡수된 실패는 Bugsink 태그 `dependency=bedrock`(쿼터 소진은 `bedrock_rate_limit`)로
-Gemini 와 따로 묶인다. 소설 장 실패는 공급자와 무관하게 지금처럼 `dependency=novelize` 다.
+**보는 곳.** 직결 호출 한 건마다 API 로그에 `anthropic_usage` 줄(입력·캐시 읽기·캐시 쓰기·출력 토큰)이 남고(Bedrock 으로 간
+호출은 `bedrock_usage`), 사용량 집계(`scripts/llm_usage_report.py --model claude-opus-5-5` 처럼 실제 모델 id 로 좁힌다)와
+어드민 사용량 화면에 Gemini 호출과 같은 표로 나온다. 채팅에서 흡수된 실패는 Bugsink 태그 `dependency=anthropic`(쿼터 소진은
+`anthropic_rate_limit`, Bedrock 경로는 `bedrock`·`bedrock_rate_limit`)로 Gemini 와 따로 묶인다. 소설 장 실패는 공급자와
+무관하게 지금처럼 `dependency=novelize` 다.
 
 **프롬프트 세트와 롤백.** 이 배포의 마이그레이션(`e6aa289fea62`)이 `prompt_sets` 에 모델 열을 더하고 Claude 세트 네 개
 (story·character × Sonnet·Opus, 그 레인 Gemini 활성 세트의 `system`·`generation` 사본)를 게시본으로 심는다. 초안은 심지 않고,
@@ -1676,8 +1705,13 @@ Gemini 와 따로 묶인다. 소설 장 실패는 공급자와 무관하게 지�
 - 앞으로 활성·초안 세트를 원시 SQL 로 고르는 마이그레이션은 반드시 모델로 거른다(`AND model = 'gemini'` 또는 대상 모델). 레인만
   보는 조회는 Claude 세트를 집을 수 있고, 초안을 한 행으로 읽으면 레인에 초안이 둘 이상일 때 `MultipleResultsFound` 로 깨진다.
 
-**롤백 순서.** 1차는 스위치 끄기(위 「끄기」)다 — 재기동 한 번으로 모든 턴·장이 Gemini 로 돌고 방은 막히지 않는다. 코드까지
-되돌릴 때는 스위치를 끈 뒤 태그 롤백(옛 이미지)을 하고, 스키마는 그 뒤에 내린다:
+**롤백 순서.** 1차는 스위치 끄기(위 「끄기」)다 — 재기동 한 번으로 모든 채팅 턴이 Gemini 로 돌고 방은 막히지 않는다(소설
+장까지 되돌릴 때는 소설 스위치 줄도 지운다). 코드까지 되돌릴 때는 스위치 먼저 → 태그 롤백(옛 이미지) → Pages(web) 순서이고,
+스키마는 그 뒤에 내린다. 채팅 명단이 있던 옛 이미지로 돌아가면 채팅 상위 모델은 스위치를 다시 켜도 남겨 둔
+`CHAT_PREMIUM_MODEL_ALLOWLIST` 와 어드민 허용 행이 둘 다 있는 계정에만 열린다. web 은 Pages 이전 배포로 되돌리되, 처리방침에
+Anthropic 을 게시한 뒤에는 가입 화면의 국외이전 고지 사본(`apps/web/src/features/sign-up/ui/LegalConsentFields.tsx`)을 게시본과
+같은 판으로 유지한 채 web 을 되돌린다 — 이전 배포로 통째 돌리면 그 사본까지 옛 판이 되므로, 그때는 사본을 둔 채 되돌릴
+변경만 되돌린 web 을 배포한다. 상위 모델 스키마를 처음 들인 배포까지 되돌릴 때의 순서는 다음과 같다:
 
 1. 스위치를 끄고 진행 중인 소설 작업이 0 인지 본다(연쇄 부모 포함, 3-11 절의 확인 SQL). 🔴 옛 이미지는 작업의 모델 칸을
    모르므로, 진행 중인 상위 모델 화 작업이 남은 채 옛 이미지가 뜨면 그 작업은 상위 모델 값을 낸 채 Gemini 로 돈다.
@@ -2112,7 +2146,8 @@ sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env \
   않아 놓칠 수 있다 — 놓친 작업은 그 소설을 열거나 폴링할 때의 지연 정리가 환불하고, 그때까지 차감액이 묶인다. 소설화는 허용
   명단 계정에만 열려 있어 영향이 작다.
 - **드레인 유예(65초)보다 긴 요청은 교체 때 끊긴다.** 지금 가장 긴 동기 요청은 발행 자동 심사(상한 60초)다. 상위 모델(Opus)
-  채팅 턴처럼 더 긴 요청을 열 때는 `docker-compose.prod.yml`의 `stop_grace_period`를 다시 정한다.
+  채팅 턴은 실측 평균 11.5초·최대 16.7초로 이 유예 안에 든다. 이보다 긴 요청을 열 때는 `docker-compose.prod.yml`의
+  `stop_grace_period`를 다시 정한다.
 - **Pages 프리뷰에서는 API 연동 확인 불가**: `CORS_ALLOW_ORIGINS`가 prod 두 도메인만 허용해 PR
   프리뷰(랜덤 서브도메인)에서 CORS로 막힌다. 필요해지면 완화.
 - **즉시 롤백 스위치(옛 스택)는 없다.** 인프라 장애 복구는 "VM 재구축 → compose → R2 백업 복원"이고

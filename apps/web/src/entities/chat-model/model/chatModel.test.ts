@@ -5,7 +5,6 @@ import { defaultChatTurnCost, isPremiumChatModel } from "./chatModel";
 describe("isPremiumChatModel", () => {
   it("기본 모델만 상위 모델이 아니다", () => {
     expect(isPremiumChatModel("gemini")).toBe(false);
-    expect(isPremiumChatModel("sonnet")).toBe(true);
     expect(isPremiumChatModel("opus")).toBe(true);
   });
 });
@@ -23,6 +22,6 @@ describe("defaultChatTurnCost", () => {
 
   it("목록이 없으면 undefined 다 — 숫자를 지어내지 않는다", () => {
     expect(defaultChatTurnCost(undefined)).toBeUndefined();
-    expect(defaultChatTurnCost([{ id: "sonnet", turnCost: 40 }])).toBeUndefined();
+    expect(defaultChatTurnCost([{ id: "opus", turnCost: 120 }])).toBeUndefined();
   });
 });

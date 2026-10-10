@@ -247,8 +247,13 @@
   scroll-margin-top: calc(1rem + env(safe-area-inset-top));
 }
 @utility top-below-chat-header {
-  /* 채팅방 lg 미만 더보기 드롭업의 상단 — 전역 헤더 56 + border 1 + 채팅 헤더 60 + border 1(390x844 실측) */
-  top: 118px;
+  /* 채팅방 lg 미만 더보기 드롭업의 상단 — 전역 헤더 h-14 + border 1 + 채팅 헤더(py-3 + 이름 열 두 줄 text-sm·text-xs 의
+     줄높이 + border 1). 5rem = h-14 3.5rem + py-3 1.5rem, 2px = border 둘. 기본 루트에서 약 123.52px 이고 헤더 밑선도
+     같은 소수 위치라 반올림하지 않는다. 글자 크기·줄높이 토큰은 따라가고, py-3·border 를 바꾸면 여기도 고친다 */
+  top: calc(
+    5rem + 2px + --theme(--text-sm) * --theme(--text-sm--line-height) + --theme(--text-xs) *
+      --theme(--text-xs--line-height)
+  );
 }
 @utility max-h-dialog {
   /* 다이얼로그 최대 높이 — 위아래 1rem 씩 뷰포트 안에 남긴다(DialogContent 는 안에 DialogBody 가 있을 때만 이 값을 스스로 건다) */

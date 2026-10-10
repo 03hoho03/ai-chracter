@@ -595,27 +595,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/admin/users/{user_id}/chat-premium-models-grant": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Set User Chat Premium Models Grant
-         * @description 채팅방에 상위 글쓰기 모델을 고를 수 있게 하는 허용 행의 유일한 경로다(규칙은 `_set_feature_grant`). 명단은
-         *     `chat_premium_model_allowlist` 다.
-         */
-        post: operations["set_user_chat_premium_models_grant_admin_users__user_id__chat_premium_models_grant_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/admin/users/{user_id}/novelize-premium-models-grant": {
         parameters: {
             query?: never;
@@ -4631,8 +4610,8 @@ export interface paths {
          *     (턴 게이트의 영수증) — 그래서 턴 락을 잡지 않는다.
          *
          *     기본 모델(`"gemini"`·null)은 누구나 고를 수 있다 — 허용을 거둔 뒤에도 방을 되돌릴 수 있어야 한다. 기본 모델은 빈 값으로
-         *     저장한다(새 방과 같은 상태). 상위 모델은 채팅 상위 모델 허용(`has_chat_premium_access`)이 있어야 하고, 없으면 403
-         *     `{"code": "CHAT_MODEL_NOT_ALLOWED"}` 하나다 — 꺼짐·명단 밖·허용 행 없음을 가르지 않는다(소설화 게이트와 같은 이유).
+         *     저장한다(새 방과 같은 상태). 상위 모델은 채팅 상위 모델 허용(`has_chat_premium_access` — 스위치 하나)이 있어야 하고,
+         *     없으면 403 `{"code": "CHAT_MODEL_NOT_ALLOWED"}` 다.
          *     고를 때 확인하는 가격은 응답의 턴 가격이고, 그 뒤 턴은 하루 1회 확인 없이 그 가격으로 차감된다.
          */
         put: operations["set_room_model_chat_rooms__room_id__model_put"];
@@ -4867,7 +4846,8 @@ export interface paths {
         /**
          * List Chat Models
          * @description 이 계정이 채팅방에 고를 수 있는 모델과 턴 가격. 기본 모델(Gemini)은 언제나 있고 맨 앞이다 — 빌더 미리보기도 이 항목에서
-         *     턴 가격을 읽는다. 상위 모델은 채팅 상위 모델 허용이 있을 때만 싣는다(모델 지정 라우트·턴 게이트와 같은 판정).
+         *     턴 가격을 읽는다. 상위 모델은 채팅 상위 모델 허용이 있을 때만 싣는다(모델 지정 라우트·턴 게이트와 같은 판정). 채팅에서
+         *     고를 수 없는 모델(소설에만 남은 Sonnet)은 허용이 있어도 싣지 않는다.
          */
         get: operations["list_chat_models_chat_models_get"];
         put?: never;
@@ -5020,12 +5000,18 @@ export interface paths {
         };
         /**
          * Get Clover Pricing
-         * @description 공개 조회 — 인증 없음. 충전 상품과 모든 사용처·모델의 사용 단가, 하루 무료 대화 수를 한 응답에 싣는다. 웹 상품
-         *     안내는 숫자 사본 없이 이 값만 쓴다. DB 를 읽지 않아 비용이 없으므로 레이트리밋도 붙이지 않는다.
+         * @description 공개 조회 — 인증 없음. 충전 상품과 일반 회원이 쓸 수 있는 모든 사용처·허용 계정 전용 소설의 사용 단가, 채팅에서
+         *     고를 수 있는 모델별 단가, 하루 무료 대화 수를 한 응답에 싣는다. 웹 상품 안내는 숫자 사본 없이 이 값만 쓴다. DB 를 읽지
+         *     않아 비용이 없으므로 레이트리밋도 붙이지 않는다.
          *
-         *     허용 전용 표시는 설정이 아니라 허용 판정의 구조에서 온다 — 상위 모델(`llm/model_access.py`)과 소설
-         *     (`novelize/access.py`)은 스위치가 켜져 있어도 env 명단과 어드민 허용 행이 있는 계정만 쓴다. 판정이 명단 없이 모두에게
-         *     열리도록 바뀌면 여기 값도 함께 바꾼다.
+         *     모델 행은 채팅에서 고를 수 있는 모델만 싣는다. 소설 상위 모델은 소설 허용에 더해 별도 명단에 든 계정만 써서 일반 회원은
+         *     살 수 없으므로 그 화 단가를 따로 싣지 않는다 — 모델 행의 소설 화 단가 칸은 옛 화면 호환용으로 남아 있어 Opus 행의
+         *     값은 계속 보인다.
+         *
+         *     채팅 상위 모델은 스위치 하나로 로그인 회원 모두에게 열리므로(`llm/model_access.py`) 모델 행에 허용 전용 표시가 없고,
+         *     행과 베타 표시는 스위치와 무관한 레지스트리 값이다. 소설 허용 전용 표시는 허용 판정의 구조에서 온다 — 소설
+         *     (`novelize/access.py`)은 스위치가 켜져 있어도 env 명단과 어드민 허용 행이 있는 계정만 쓴다. 그 판정이 명단 없이
+         *     모두에게 열리도록 바뀌면 그 값도 함께 바꾼다.
          */
         get: operations["get_clover_pricing_clover_pricing_get"];
         put?: never;
@@ -8182,8 +8168,6 @@ export interface components {
             betaJoinedAt: string | null;
             /** Novelizegrantedat */
             novelizeGrantedAt: string | null;
-            /** Chatpremiummodelsgrantedat */
-            chatPremiumModelsGrantedAt?: string | null;
             /** Novelizepremiummodelsgrantedat */
             novelizePremiumModelsGrantedAt?: string | null;
             /** Cloverbalance */
@@ -8204,7 +8188,7 @@ export interface components {
         /**
          * AdminUserFeatureGrantRequest
          * @description 기능 허용/회수를 `granted` 한 필드로 받는 토글이다. `admin_comment`가 필수인 이유는
-         *     `AdminUserRateLimitExemptRequest`와 같다(비어 있으면 422). 채팅·소설 상위 모델 허용 경로가 쓴다.
+         *     `AdminUserRateLimitExemptRequest`와 같다(비어 있으면 422). 소설 상위 모델 허용 경로가 쓴다.
          */
         AdminUserFeatureGrantRequest: {
             /** Granted */
@@ -8665,9 +8649,11 @@ export interface components {
              * Id
              * @enum {string}
              */
-            id: "gemini" | "sonnet" | "opus";
+            id: "gemini" | "opus";
             /** Name */
             name: string;
+            /** Beta */
+            beta: boolean;
             /** Turncost */
             turnCost: number;
         };
@@ -8808,7 +8794,7 @@ export interface components {
         };
         /**
          * ChatRoomModelResponse
-         * @description 지정한 뒤의 방 모델. 방 응답의 같은 이름 세 필드와 같은 값이다 — 화면이 방을 다시 읽지 않고 바로 반영한다.
+         * @description 지정한 뒤의 방 모델. 방 응답의 같은 이름 네 필드와 같은 값이다 — 화면이 방을 다시 읽지 않고 바로 반영한다.
          */
         ChatRoomModelResponse: {
             /** Chatmodel */
@@ -8817,18 +8803,20 @@ export interface components {
              * Effectivechatmodel
              * @enum {string}
              */
-            effectiveChatModel: "gemini" | "sonnet" | "opus";
+            effectiveChatModel: "gemini" | "opus";
+            /** Effectivechatmodelname */
+            effectiveChatModelName: string;
             /** Turncost */
             turnCost: number;
         };
         /**
          * ChatRoomModelSelectRequest
-         * @description `PUT /chat-rooms/{id}/model`. 필드는 필수다 — 기본 모델로 되돌리기는 `"gemini"` 나 null 을 명시한다. 레지스트리 밖
-         *     값은 422 다.
+         * @description `PUT /chat-rooms/{id}/model`. 필드는 필수다 — 기본 모델로 되돌리기는 `"gemini"` 나 null 을 명시한다. 채팅에서 고를
+         *     수 없는 값(레지스트리 밖, 소설에만 남은 Sonnet)은 422 다.
          */
         ChatRoomModelSelectRequest: {
             /** Model */
-            model: ("gemini" | "sonnet" | "opus") | null;
+            model: ("gemini" | "opus") | null;
         };
         /** ChatRoomRenameRequest */
         ChatRoomRenameRequest: {
@@ -8892,7 +8880,9 @@ export interface components {
              * Effectivechatmodel
              * @enum {string}
              */
-            effectiveChatModel?: "gemini" | "sonnet" | "opus";
+            effectiveChatModel?: "gemini" | "opus";
+            /** Effectivechatmodelname */
+            effectiveChatModelName?: string;
             /** Turncost */
             turnCost?: number;
             /**
@@ -9007,7 +8997,9 @@ export interface components {
         };
         /**
          * CloverModelPricingItem
-         * @description 글쓰기 모델 하나의 사용 단가. 모델 레지스트리(`llm/chat_models.py`)의 모든 모델이 레지스트리 순서대로 실린다.
+         * @description 글쓰기 모델 하나의 사용 단가. 모델 레지스트리(`llm/chat_models.py`)에서 채팅에서 고를 수 있는 모델만 레지스트리
+         *     순서대로 실린다 — 이 목록은 채팅 모델 안내다. 채팅에서 고를 수 없는 모델(Sonnet)은 소설 상위 모델로 쓰이는데, 소설
+         *     상위 모델은 별도 허용 명단에 든 계정만 써서 일반 회원은 살 수 없으므로 그 화 단가를 이 안내에 따로 싣지 않는다.
          */
         CloverModelPricingItem: {
             /**
@@ -9019,8 +9011,8 @@ export interface components {
             name: string;
             /** Isdefault */
             isDefault: boolean;
-            /** Restricted */
-            restricted: boolean;
+            /** Beta */
+            beta: boolean;
             /** Chatturncost */
             chatTurnCost: number;
             /** Novelepisodecost */
@@ -9041,8 +9033,11 @@ export interface components {
         };
         /**
          * CloverPricingResponse
-         * @description 공개 가격 안내. 구매 전 안내에 없는 사용처 가격은 숨은 가격으로 읽히므로 상위 모델과 소설(화·AI 수정)까지 모든
-         *     사용처의 단가를 싣고, 허용된 계정만 쓰는 사용처는 그 사실(`restricted`·`novel_restricted`)을 함께 싣는다.
+         * @description 공개 가격 안내. 구매 전 안내에 없는 사용처 가격은 숨은 가격으로 읽히므로 일반 회원이 쓸 수 있는 모든 사용처(채팅에서
+         *     고를 수 있는 상위 모델 포함)의 단가와, 허용된 계정만 쓰는 소설(기본 모델 화·AI 수정)의 단가를 싣고 소설은 그
+         *     사실(`novel_restricted`)을 함께 싣는다. 소설 상위 모델의 화 단가는 따로 싣지 않는다 — 소설 허용에 더해 별도 명단에 든
+         *     계정만 쓰고 일반 회원은 살 수 없는 선택지라서다. 다만 모델 행의 `novel_episode_cost` 칸이 옛 화면 호환용으로 남아 있어
+         *     Opus 행의 소설 화 단가는 계속 보인다.
          */
         CloverPricingResponse: {
             /** Products */
@@ -9053,6 +9048,8 @@ export interface components {
             imageCost: number;
             /** Models */
             models: components["schemas"]["CloverModelPricingItem"][];
+            /** Novelepisodecost */
+            novelEpisodeCost: number;
             /** Novelaieditcost */
             novelAiEditCost: number;
             /** Novelrestricted */
@@ -13692,39 +13689,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AdminUserNovelizeGrantRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    set_user_chat_premium_models_grant_admin_users__user_id__chat_premium_models_grant_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AdminUserFeatureGrantRequest"];
             };
         };
         responses: {

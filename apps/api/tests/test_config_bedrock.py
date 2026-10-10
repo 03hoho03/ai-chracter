@@ -17,7 +17,7 @@ _CREDENTIALS = {
 
 
 def _load(monkeypatch: pytest.MonkeyPatch, **env: str) -> Settings:
-    for key in (*_SWITCHES, *_CREDENTIALS, "CHAT_PREMIUM_MODEL_ALLOWLIST", "NOVELIZE_PREMIUM_MODEL_ALLOWLIST"):
+    for key in (*_SWITCHES, *_CREDENTIALS, "NOVELIZE_PREMIUM_MODEL_ALLOWLIST"):
         monkeypatch.delenv(key, raising=False)
     for key, value in env.items():
         monkeypatch.setenv(key, value)
@@ -30,7 +30,6 @@ def test_premium_models_are_closed_by_default(monkeypatch: pytest.MonkeyPatch) -
 
     assert loaded.chat_premium_models_enabled is False
     assert loaded.novelize_premium_models_enabled is False
-    assert loaded.chat_premium_model_allowlist == []
     assert loaded.novelize_premium_model_allowlist == []
     assert loaded.bedrock_access_key_id == ""
 
@@ -55,12 +54,21 @@ def test_a_switch_on_with_all_credentials_starts(monkeypatch: pytest.MonkeyPatch
     assert loaded.bedrock_access_key_id == "AKIATEST"
 
 
-@pytest.mark.parametrize("field", ["chat_premium_model_allowlist", "novelize_premium_model_allowlist"])
+@pytest.mark.parametrize("field", ["novelize_premium_model_allowlist"])
 def test_allowlists_split_like_the_novelize_allowlist(monkeypatch: pytest.MonkeyPatch, field: str) -> None:
     assert getattr(_load(monkeypatch, **{field.upper(): f" {_A} , ,{_B},"}), field) == [_A, _B]
     assert getattr(_load(monkeypatch, **{field.upper(): ""}), field) == []
     with pytest.raises(ValidationError):
         _load(monkeypatch, **{field.upper(): "not-a-uuid"})
+
+
+@pytest.mark.parametrize("value", [str(_A), "not-a-uuid"])
+def test_a_leftover_chat_allowlist_line_is_ignored(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    """채팅 상위 모델은 스위치 하나로 열려 명단 키가 없다. 운영 env 에 옛 명단 줄이 남아 있어도(값이 깨져 있어도) 기동하고,
+    그 값이 어디에도 읽히지 않는다."""
+    loaded = _load(monkeypatch, CHAT_PREMIUM_MODEL_ALLOWLIST=value)
+
+    assert "chat_premium_model_allowlist" not in type(loaded).model_fields
 
 
 @pytest.mark.parametrize(

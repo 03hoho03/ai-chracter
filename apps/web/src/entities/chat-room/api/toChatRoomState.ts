@@ -143,6 +143,8 @@ export function toChatRoomState(dto: ChatRoomResponseDto): ChatRoomState {
     // 두 칸은 응답 스키마상 선택이다(서버 기본값이 있는 칸). 모델은 서버 기본값과 같은 기본 모델로 채우고, 가격은
     // 화면이 사본을 두지 않도록 비워 둔다.
     effectiveChatModel: dto.effectiveChatModel ?? DEFAULT_CHAT_MODEL,
+    // 이름은 기본 모델 이름으로 채우지 않는다 — 모델 칸이 없어 기본 모델로 읽은 방이 실제로는 상위 모델 방일 수 있다.
+    effectiveChatModelName: dto.effectiveChatModelName,
     turnCost: dto.turnCost,
   };
 }

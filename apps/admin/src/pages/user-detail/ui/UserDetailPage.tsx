@@ -106,7 +106,6 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
                 isRateLimitExempt={user.rateLimitExempt}
                 isBeta={user.betaJoinedAt !== null}
                 isNovelizeGranted={user.novelizeGrantedAt !== null}
-                isChatPremiumModelsGranted={!!user.chatPremiumModelsGrantedAt}
                 isNovelizePremiumModelsGranted={!!user.novelizePremiumModelsGrantedAt}
                 restrictableContentCount={user.restrictableContentCount}
                 restorableContentCount={user.restorableContentCount}
@@ -187,12 +186,6 @@ function UserDetailSections({ userId, user }: UserDetailSectionsProps) {
             <div>
               <dt className="text-muted-foreground">소설화 허용</dt>
               <dd className="text-foreground">{formatDateTime(user.novelizeGrantedAt)}</dd>
-            </div>
-          )}
-          {!!user.chatPremiumModelsGrantedAt && (
-            <div>
-              <dt className="text-muted-foreground">채팅 상위 모델 허용</dt>
-              <dd className="text-foreground">{formatDateTime(user.chatPremiumModelsGrantedAt)}</dd>
             </div>
           )}
           {!!user.novelizePremiumModelsGrantedAt && (
@@ -585,7 +578,6 @@ function userStatusSummary(user: AdminUserDetailResponse) {
     user.rateLimitExempt && "면제",
     user.betaJoinedAt && "베타",
     user.novelizeGrantedAt && "소설화",
-    user.chatPremiumModelsGrantedAt && "채팅 상위 모델",
     user.novelizePremiumModelsGrantedAt && "소설화 상위 모델",
   ]
     .filter(Boolean)

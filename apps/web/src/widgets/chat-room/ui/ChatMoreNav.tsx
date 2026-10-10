@@ -23,7 +23,7 @@ import type { AuthorMacroNames } from "@/shared/lib/text/authorMacros";
 
 import { chatSidePanelAtom } from "../model/atoms";
 import { isStillInRoom } from "../model/roomNovelNavigation";
-import { visibleMoreItems, type FeatureGatedItem } from "../model/visibleMoreItems";
+import { CHAT_MODEL_FEATURE_GATE, visibleMoreItems, type FeatureGatedItem } from "../model/visibleMoreItems";
 import { RoomChatModelModal } from "./RoomChatModelModal";
 import { RoomPersonaModal } from "./RoomPersonaModal";
 
@@ -50,7 +50,7 @@ const CHAT_MODEL_ITEM: MorePanelItem = {
   label: "AI 모델",
   icon: Cpu,
   isActive: true,
-  requiredFeature: "chat_premium_models",
+  ...CHAT_MODEL_FEATURE_GATE,
 };
 
 const CHARACTER_ITEMS: MorePanelItem[] = [

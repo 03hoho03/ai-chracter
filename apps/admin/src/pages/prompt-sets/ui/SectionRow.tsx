@@ -11,7 +11,7 @@ import type { PromptSetFormValues } from "../model/schema";
 /** 수위 규칙은 체인마다 사본이라(레인 2 × 모델 3) 한 곳만 고치면 체인끼리 조용히 어긋난다 — 검증이 잡지 않으니 그 칸에서
  * 알린다. */
 const RULE_RATING_HINT =
-  "수위 규칙은 스토리·캐릭터 레인마다 Gemini·Claude Sonnet 4.6·Claude Opus 4.6 세트에 하나씩, 모두 여섯 벌이 따로 있어요. 바꿀 때는 여섯 세트를 모두 고쳐 각각 게시하세요 — 서로 달라도 알려 주는 곳이 없어요.";
+  "수위 규칙은 스토리·캐릭터 레인마다 Gemini·Claude Sonnet 5.5·Claude Opus 5.5 세트에 하나씩, 모두 여섯 벌이 따로 있어요. 바꿀 때는 여섯 세트를 모두 고쳐 각각 게시하세요 — 서로 달라도 알려 주는 곳이 없어요.";
 
 const BADGE_CLASS =
   "inline-flex items-center rounded-full border border-border px-2 py-0.5 text-badge font-medium text-muted-foreground";

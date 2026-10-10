@@ -291,7 +291,8 @@ class Settings(BaseSettings):
     # `ANTHROPIC_API_KEY` 와 나눈다(Bedrock 키가 `AWS_*` 를 피한 것과 같은 이유) — 배정이 경로를 옮기는데 키가 비면 기동하지
     # 않는다(`llm/backends.py` 의 `assignment_errors`).
     anthropic_direct_api_key: str = Field(default="", repr=False)
-    # 실제 모델 id. 같은 `opus`·`sonnet` 이라도 Bedrock 쪽 id 와 버전이 다르다 — 화면의 모델 이름은 Bedrock 쪽을 따른다.
+    # 실제 모델 id. 같은 `opus`·`sonnet` 이라도 Bedrock 쪽 id 와 버전이 다르다. 화면의 모델 이름(`llm/chat_models.py`)은
+    # 운영이 실제로 부르는 쪽을 따르고, 운영은 배정으로 상위 모델을 이 구현에 보내므로 지금은 이 쪽 버전이다.
     anthropic_sonnet_model_id: str = "claude-sonnet-5-5"
     anthropic_opus_model_id: str = "claude-opus-5-5"
     # 요청 타임아웃(ms). Bedrock 과 같은 값이고 같은 뜻("다음 청크까지")이다.
@@ -304,10 +305,10 @@ class Settings(BaseSettings):
     # 사고 깊이. 채팅 턴(다시 생성 포함) / 소설 장. 모델의 기본값에 맡기지 않고 늘 보낸다.
     anthropic_chat_effort: ClaudeEffort = "low"
     anthropic_chapter_effort: ClaudeEffort = "medium"
-    # 상위 모델 스위치와 허용 가능 계정 명단 — 채팅과 소설화에 한 벌씩. 뜻은 소설화 스위치·명단과 같다(기본 닫힘, 명단에서
-    # 빼고 재기동하면 허용 행이 있어도 막힘). 소설 장의 상위 모델은 소설화 자체 허용도 함께 있어야 쓸 수 있다.
+    # 상위 모델 스위치 — 채팅과 소설화에 하나씩(기본 닫힘). 채팅은 이 스위치 하나로 로그인 회원 전원에게 열린다. 소설은
+    # 허용 가능 계정 명단도 두며 뜻은 소설화 스위치·명단과 같다(명단에서 빼고 재기동하면 허용 행이 있어도 막힘). 소설 장의
+    # 상위 모델은 소설화 자체 허용도 함께 있어야 쓸 수 있다.
     chat_premium_models_enabled: bool = False
-    chat_premium_model_allowlist: Annotated[list[uuid.UUID], NoDecode] = []
     novelize_premium_models_enabled: bool = False
     novelize_premium_model_allowlist: Annotated[list[uuid.UUID], NoDecode] = []
     # 호출 위치마다 공급자 구현을 배정한다(`call_site:backend` 를 쉼표로 이은 목록, 따옴표 없이). 비면 배정 없음 — 모델의
@@ -596,7 +597,6 @@ class Settings(BaseSettings):
 
     @field_validator(
         "novelize_grant_allowlist",
-        "chat_premium_model_allowlist",
         "novelize_premium_model_allowlist",
         "novel_public_preview_allowlist",
         mode="before",
