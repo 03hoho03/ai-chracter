@@ -1,6 +1,5 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Label } from "@ai-character-chat/ui/components/label";
-import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useRef } from "react";
@@ -23,6 +22,7 @@ import {
   type StoryCollapsibleList,
 } from "@/features/build-story";
 import { firstLine } from "@/shared/lib/text/firstLine";
+import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
 import { StoryMacroNotice } from "./StoryMacroNotice";
@@ -124,11 +124,10 @@ export function SettingTab() {
       {isCustom ? (
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="story-setting-custom-prompt"><FieldLabelText field="storySetting.customPrompt" /></Label>
-          <Textarea
+          <BuilderTextarea
             id="story-setting-custom-prompt"
             placeholder="AI에게 지시할 프롬프트를 자유롭게 작성해주세요"
             rows={12}
-            className="min-h-64"
             aria-invalid={!!errors.storySetting?.customPrompt}
             aria-describedby={errors.storySetting?.customPrompt ? "story-setting-custom-prompt-error" : undefined}
             {...register("storySetting.customPrompt")}
@@ -144,11 +143,10 @@ export function SettingTab() {
       ) : (
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="story-setting-world"><FieldLabelText field="storySetting.worldSetting" /></Label>
-          <Textarea
+          <BuilderTextarea
             id="story-setting-world"
             placeholder="스토리의 세계관과 설정을 입력해주세요"
             rows={8}
-            className="min-h-32"
             aria-invalid={!!errors.storySetting?.worldSetting}
             aria-describedby={errors.storySetting?.worldSetting ? "story-setting-world-error" : undefined}
             {...register("storySetting.worldSetting")}
@@ -165,7 +163,7 @@ export function SettingTab() {
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="story-setting-rules"><FieldLabelText field="storySetting.rules" /></Label>
-        <Textarea
+        <BuilderTextarea
           id="story-setting-rules"
           placeholder="진행 중 지켜야 할 규칙을 입력해주세요"
           rows={4}
@@ -184,7 +182,7 @@ export function SettingTab() {
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="story-setting-user-goal"><FieldLabelText field="storySetting.userGoal" /></Label>
-        <Textarea
+        <BuilderTextarea
           id="story-setting-user-goal"
           placeholder="사용자가 이 이야기에서 맡는 역할과 이루고자 하는 목표를 입력해주세요"
           rows={4}
@@ -224,7 +222,7 @@ export function SettingTab() {
               trailing={<ItemRemoveButton label={`${title} 삭제`} onClick={() => handleRemoveExample(index)} />}
             >
               <div className="flex flex-col gap-2">
-                <Textarea
+                <BuilderTextarea
                   placeholder={STORY_FIELD_LABELS["storySetting.developmentExamples.*.userLine"].label}
                   rows={2}
                   aria-invalid={!!exampleErrors?.userLine}
@@ -238,7 +236,7 @@ export function SettingTab() {
                     {exampleErrors.userLine.message}
                   </p>
                 )}
-                <Textarea
+                <BuilderTextarea
                   placeholder={STORY_FIELD_LABELS["storySetting.developmentExamples.*.assistantLine"].label}
                   rows={6}
                   aria-invalid={!!exampleErrors?.assistantLine}

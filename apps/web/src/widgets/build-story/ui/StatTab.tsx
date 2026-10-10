@@ -1,7 +1,6 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
-import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { useEffect, useRef, type RefObject } from "react";
 import { flushSync } from "react-dom";
 import { Controller, useFieldArray, useFormContext, useWatch } from "react-hook-form";
@@ -31,6 +30,7 @@ import {
   type StoryCollapsibleList,
 } from "@/features/build-story";
 import { MediaBookConfirmModal } from "@/features/edit-media-book";
+import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 import { ColorPicker, IconPicker } from "@/shared/ui/color-icon-picker";
 
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
@@ -301,7 +301,7 @@ function StatRow({
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor={`stat-${id}-description`}><FieldLabelText field="startingSetups.*.stats.*.description" /></Label>
-        <Textarea
+        <BuilderTextarea
           id={`stat-${id}-description`}
           placeholder="스탯에 대한 설명을 입력해주세요"
           rows={2}

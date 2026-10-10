@@ -5,7 +5,6 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Switch } from "@ai-character-chat/ui/components/switch";
-import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { X } from "lucide-react";
 import { useRef, useState } from "react";
 import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
@@ -29,6 +28,7 @@ import {
   type StoryCollapsibleList,
 } from "@/features/build-story";
 import { MediaBookConfirmModal } from "@/features/edit-media-book";
+import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 
 import { MediaTagInsertButton } from "./MediaTagInsertButton";
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
@@ -319,11 +319,10 @@ function StartingSetupRow({
           <Label htmlFor={`starting-setup-${id}-prologue`}><FieldLabelText field="startingSetups.*.prologue" /></Label>
           <MediaTagInsertButton name={`startingSetups.${index}.prologue`} fieldLabel="프롤로그" textareaRef={prologueRef} />
         </div>
-        <Textarea
+        <BuilderTextarea
           id={`starting-setup-${id}-prologue`}
           placeholder="이 시작설정의 도입부를 입력해주세요"
-          rows={3}
-          className="min-h-32"
+          rows={5}
           aria-invalid={!!rowErrors?.prologue}
           aria-describedby={rowErrors?.prologue ? `starting-setup-${id}-prologue-error` : undefined}
           {...prologueField}
@@ -350,11 +349,10 @@ function StartingSetupRow({
             textareaRef={openingSituationRef}
           />
         </div>
-        <Textarea
+        <BuilderTextarea
           id={`starting-setup-${id}-opening-situation`}
           placeholder="채팅 시작 시 상황을 입력해주세요"
-          rows={2}
-          className="min-h-32"
+          rows={5}
           aria-invalid={!!rowErrors?.openingSituation}
           aria-describedby={rowErrors?.openingSituation ? `starting-setup-${id}-opening-situation-error` : undefined}
           {...openingSituationField}
@@ -395,7 +393,7 @@ function StartingSetupRow({
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor={`starting-setup-${id}-play-guide`}><FieldLabelText field="startingSetups.*.playGuide" /></Label>
-            <Textarea
+            <BuilderTextarea
               id={`starting-setup-${id}-play-guide`}
               placeholder="사용자에게 노출할 플레이 안내를 입력해주세요"
               rows={3}

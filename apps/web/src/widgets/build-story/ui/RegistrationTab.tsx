@@ -6,7 +6,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@ai-character-chat/ui/components/select";
-import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useRef } from "react";
@@ -24,6 +23,7 @@ import {
   VISIBILITY_VALUES,
   type StoryBuilderFormValues,
 } from "@/features/build-story";
+import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 
 import { MediaTagInsertButton } from "./MediaTagInsertButton";
 import { StoryMacroNotice } from "./StoryMacroNotice";
@@ -59,11 +59,10 @@ export function RegistrationTab() {
             maxLength={MAX_DESCRIPTION_LENGTH}
           />
         </div>
-        <Textarea
+        <BuilderTextarea
           id="story-registration-description"
           placeholder="스토리를 목록에서 소개할 설명을 입력해주세요"
-          rows={4}
-          className="min-h-32"
+          rows={5}
           aria-invalid={!!errors.registration?.description}
           aria-describedby={
             errors.registration?.description

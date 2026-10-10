@@ -2,7 +2,6 @@ import { Button, buttonVariants } from "@ai-character-chat/ui/components/button"
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Switch } from "@ai-character-chat/ui/components/switch";
-import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Camera, ChevronLeft, ChevronRight, Copy, ImageOff, Images, Loader2, X } from "lucide-react";
 import { useId, useState, type ChangeEvent } from "react";
@@ -26,6 +25,7 @@ import {
 import { MediaBookConfirmModal } from "@/features/edit-media-book";
 import { GeneratedImagePickerModal } from "@/features/select-generated-image";
 import { countCharacters } from "@/shared/lib/text/characterCount";
+import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
 
 import { toCellKey, type MediaBookPosition } from "./MediaBookGrid";
@@ -292,7 +292,7 @@ function FilledCellFields({ cell, imageButtonsProps, onPatch, onClear }: FilledC
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor={`${fieldId}-situation`}><FieldLabelText field="mediaBook.cells.*.situationDescription" /></Label>
-        <Textarea
+        <BuilderTextarea
           id={`${fieldId}-situation`}
           rows={2}
           placeholder="예) 리딩 중 웃음이 터져 대본으로 얼굴을 가린 유나"

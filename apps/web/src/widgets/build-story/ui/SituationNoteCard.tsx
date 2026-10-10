@@ -1,6 +1,5 @@
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
-import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { useId } from "react";
 import { useFormContext } from "react-hook-form";
 
@@ -26,6 +25,7 @@ import {
   type StoryBuilderFormValues,
   type StoryCollapsibleList,
 } from "@/features/build-story";
+import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
 import { RuleListEditor } from "./RuleListEditor";
@@ -156,7 +156,7 @@ export function SituationNoteCard({ startingSetupIndex, noteIndex, note, stats, 
         <Label htmlFor={ids.content}>
           <FieldLabelText field="startingSetups.*.situationNotes.*.content" />
         </Label>
-        <Textarea
+        <BuilderTextarea
           id={ids.content}
           placeholder="예: 오늘은 가을 상영회 당일이다. 동아리 사람들은 아침부터 강당에 모여 있다."
           rows={3}

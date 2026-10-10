@@ -1,6 +1,5 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
-import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { Merge, Pencil, Plus, X } from "lucide-react";
@@ -15,6 +14,7 @@ import {
   type NovelCharacterUpdateRequest,
   type NovelDetailResponse,
 } from "@/entities/novel";
+import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 
 import {
   addAlias,
@@ -460,7 +460,7 @@ function CharacterMemoField({ memo, maxLength, onSave, onDraftDirtyChange }: Cha
           void form.handleSubmit(handleValidSubmit)(event);
         }}
       >
-        <Textarea
+        <BuilderTextarea
           aria-labelledby={headingId}
           aria-invalid={fieldError !== undefined}
           aria-describedby={[descriptionId, countId, fieldError !== undefined && errorId].filter(Boolean).join(" ")}

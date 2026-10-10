@@ -1,6 +1,5 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Label } from "@ai-character-chat/ui/components/label";
-import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { useQueryClient } from "@tanstack/react-query";
 import { Pencil, Sparkles, X } from "lucide-react";
 import { Fragment, useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
@@ -14,6 +13,7 @@ import {
   type NovelDetailResponse,
   type NovelPendingAiEdit,
 } from "@/entities/novel";
+import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 
 import { useSaveChapterRevisionMutation } from "../api/useSaveChapterRevisionMutation";
 import { countChapterChars, joinParagraphRange, toManualEditSave, type ManualEditBase } from "../model/chapterBody";
@@ -59,9 +59,9 @@ type ManualEditOutcome = "manualSaved" | "manualUnchanged" | "manualCancelled";
  * - **동작 줄**: 고른 범위의 마지막 문단 바로 아래, 문서 흐름 안에 둔다. 화면 아래에 붙는 고정 막대는 이 앱의
  *   크롬 규칙(크롬 자리는 위쪽 헤더 한 줄과 넓은 화면의 좌측 패널뿐이고, 한 화면에만 두는 sticky/fixed 띠도 헤더 자리
  *   밖에 더하지 않는다 — DESIGN.md Navigation 절)에 어긋난다.
- * - **직접 고치기**: 고른 문단 자리에 입력칸이 들어선다(내용만큼 자란다). 시작한 순간의 판·문단을 잡아 두고 저장은
- *   그 문단으로 장 전체 본문을 조립해 그 판을 기준으로 보낸다 — 그사이 판이 바뀌었으면 서버가 409 로 막고, 입력한
- *   글은 그대로 둔다.
+ * - **직접 고치기**: 고른 문단 자리에 입력칸이 들어선다(여덟 줄 높이에 고정되고 넘친 글은 칸 안에서
+ *   스크롤된다). 시작한 순간의 판·문단을 잡아 두고 저장은 그 문단으로 장 전체 본문을 조립해 그 판을 기준으로 보낸다 —
+ *   그사이 판이 바뀌었으면 서버가 409 로 막고, 입력한 글은 그대로 둔다.
  * - **다시 만드는 중**: 이 장을 다시 만드는 작업이 도는 동안은 직접 고치기 시작과 저장을 `aria-disabled` 로 막고
  *   사유를 단다. 다시 만든 글은 그때의 최신 판 위에 쌓여, 그사이 저장한 글을 판 이력으로 밀어낸다. 이미 열린
  *   입력칸은 닫지 않는다(쓰던 글을 지우지 않는다) — 끝나면 판이 바뀌어 저장 대신 "최신 글에서 다시"를 안내한다. */
@@ -448,12 +448,13 @@ function ManualEditor({
   return (
     <div className="flex flex-col gap-2 py-1">
       <Label htmlFor={id}>{rangeLabel} 직접 고치기</Label>
-      <Textarea
+      <BuilderTextarea
         id={id}
         autoFocus
         value={draft}
         aria-invalid={error !== undefined}
         aria-describedby={`${id}-hint${error !== undefined ? ` ${id}-error` : ""}`}
+        rows={8}
         className="leading-relaxed break-keep"
         onChange={(event) => onDraftChange(event.target.value)}
       />

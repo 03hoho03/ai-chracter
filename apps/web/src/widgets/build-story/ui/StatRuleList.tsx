@@ -4,7 +4,6 @@ import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
-import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { useId, useRef, useState, type Ref } from "react";
 import { Controller, useFieldArray, useFormContext } from "react-hook-form";
 
@@ -25,6 +24,7 @@ import {
   type StatDefValues,
   type StoryBuilderFormValues,
 } from "@/features/build-story";
+import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 
 import {
   formatStatRuleDelta,
@@ -237,7 +237,7 @@ function StatRuleRow({ sortableId, rulePath, position, range, onRemove, handlePr
             <Label htmlFor={ids.condition}>
               <FieldLabelText field="startingSetups.*.stats.*.rules.*.condition" />
             </Label>
-            <Textarea
+            <BuilderTextarea
               id={ids.condition}
               placeholder="예: 사용자가 약속한 시간에 늦었다"
               rows={2}

@@ -1,7 +1,6 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
-import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { useRef } from "react";
 import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
@@ -15,6 +14,7 @@ import {
 } from "@/features/build-common";
 import { FieldLabelText, type StoryBuilderFormValues, type StoryCollapsibleList } from "@/features/build-story";
 import { firstLine } from "@/shared/lib/text/firstLine";
+import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
 import { StoryMacroNotice } from "./StoryMacroNotice";
@@ -143,7 +143,7 @@ function ShortcutRow({
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor={`shortcut-${id}-description`}><FieldLabelText field="shortcuts.*.description" /></Label>
-        <Textarea
+        <BuilderTextarea
           id={`shortcut-${id}-description`}
           placeholder="이 단축어가 어떤 동작을 하는지 설명해주세요"
           rows={2}
@@ -162,7 +162,7 @@ function ShortcutRow({
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor={`shortcut-${id}-prompt`}><FieldLabelText field="shortcuts.*.prompt" /></Label>
-        <Textarea
+        <BuilderTextarea
           id={`shortcut-${id}-prompt`}
           placeholder="단축어 실행 시 AI에게 전달할 프롬프트를 입력해주세요"
           rows={3}

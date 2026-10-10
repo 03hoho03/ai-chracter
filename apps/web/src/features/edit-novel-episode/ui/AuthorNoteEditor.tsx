@@ -1,5 +1,4 @@
 import { Button } from "@ai-character-chat/ui/components/button";
-import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { Pencil } from "lucide-react";
@@ -13,6 +12,7 @@ import {
   type NovelChapterSummary,
   type NovelDetailResponse,
 } from "@/entities/novel";
+import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 
 import { countEpisodeChars, createAuthorNoteSchema, type AuthorNoteFormValues } from "../model/schema";
 
@@ -110,7 +110,7 @@ export function AuthorNoteEditor({ novel, chapter }: AuthorNoteEditorProps) {
             void form.handleSubmit(handleValidSubmit)(event);
           }}
         >
-          <Textarea
+          <BuilderTextarea
             autoFocus
             aria-labelledby={headingId}
             aria-invalid={errorMessage !== undefined}

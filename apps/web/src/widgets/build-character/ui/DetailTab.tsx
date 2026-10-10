@@ -6,7 +6,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@ai-character-chat/ui/components/select";
-import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Controller, useFormContext } from "react-hook-form";
@@ -27,6 +26,7 @@ import {
   type Visibility,
 } from "@/features/build-character";
 import { FieldCharacterCount, HashtagField, useLimitedTextField } from "@/features/build-common";
+import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 import { RequiredText } from "@/shared/ui/RequiredText";
 
 import { CharacterMacroNotice } from "./CharacterMacroNotice";
@@ -63,11 +63,10 @@ export function DetailTab() {
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="character-detail-description"><RequiredText>등록 설명</RequiredText></Label>
-        <Textarea
+        <BuilderTextarea
           id="character-detail-description"
           placeholder="캐릭터를 목록에서 소개할 설명을 입력해주세요"
-          rows={4}
-          className="min-h-32"
+          rows={5}
           aria-invalid={!!errors.registration?.description}
           aria-describedby={
             errors.registration?.description
