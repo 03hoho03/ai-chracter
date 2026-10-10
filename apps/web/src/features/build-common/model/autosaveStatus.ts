@@ -8,6 +8,17 @@
  */
 export type AutosaveStatus = "idle" | "pending" | "saving" | "saved" | "failed";
 
+/**
+ * 지금 창을 닫으면 편집이 사라질 수 있는가 — 새로고침·탭 닫기 때 브라우저 확인창을 띄울지의 판정.
+ *
+ * 저장을 기다리는 편집(`pending`), 끝나지 않은 저장(`saving`), 실패한 저장(`failed`)이 그렇다. 실패는 자동저장 실패 알림이
+ * "입력한 내용은 그대로 있다"고 약속한 상태라, 그대로 닫으면 그 내용이 경고 없이 사라진다. 저장이 끝났거나(`saved`) 아직
+ * 편집이 없으면(`idle`) 묻지 않는다. 이미지 업로드는 이 저장소가 세지 않아 판정 밖이다.
+ */
+export function hasUnsavedChanges(status: AutosaveStatus): boolean {
+  return status === "pending" || status === "saving" || status === "failed";
+}
+
 export type AutosaveStatusStore = {
   getSnapshot: () => AutosaveStatus;
   subscribe: (listener: () => void) => () => void;

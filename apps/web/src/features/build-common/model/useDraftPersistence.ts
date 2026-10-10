@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -15,7 +15,7 @@ import {
 import { draftKeys } from "@/entities/draft";
 
 import { runOnce } from "../lib/runOnce";
-import { createAutosaveStatusStore, type AutosaveStatusStore } from "./autosaveStatus";
+import { createAutosaveStatusStore, hasUnsavedChanges, type AutosaveStatusStore } from "./autosaveStatus";
 import { createNovelPermissionSync } from "./novelPermissionSync";
 import { AUTOSAVE_ERROR_TOAST_ID } from "./useAutosave";
 
@@ -109,6 +109,18 @@ export function useDraftPersistence({
     (payload: ContentDraftPayload) => saveStatus.track(() => persist(payload)),
     [persist, saveStatus],
   );
+
+  // 서버에 아직 없는 편집이 있으면 새로고침·탭 닫기 때 브라우저 확인창을 띄운다. 디바운스 저장은 언마운트 때 흘려 보내지만
+  // 창을 닫으면 언마운트가 돌지 않는다. 앱 안 이동은 이 이벤트가 아니라 언마운트 저장이 맡는다. 저장 상태는 이벤트 때 읽는다 —
+  // 구독하면 셸이 저장마다 다시 그려진다.
+  useEffect(() => {
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      if (!hasUnsavedChanges(saveStatus.getSnapshot())) return;
+      event.preventDefault();
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [saveStatus]);
 
   // 진행 상태(`isPending`)는 일부러 내보내지 않는다 — 이 훅은 자동저장·임시저장·발행 직전 저장이
   // 전부 지나는 길목이라, 그 플래그를 발행 버튼에 걸면 **자동저장이 돌 때마다 "발행 중..."**이 된다

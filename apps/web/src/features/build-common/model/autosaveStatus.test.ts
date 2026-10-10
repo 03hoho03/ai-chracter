@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createAutosaveStatusStore } from "./autosaveStatus";
+import { createAutosaveStatusStore, hasUnsavedChanges, type AutosaveStatus } from "./autosaveStatus";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -93,5 +93,18 @@ describe("createAutosaveStatusStore onSaved", () => {
     await store.track(() => Promise.resolve());
     await store.track(() => Promise.resolve());
     expect(saved).toBe(2);
+  });
+});
+
+describe("hasUnsavedChanges", () => {
+  // 새로고침·탭 닫기 확인창의 판정. 실패는 자동저장 실패 알림이 내용 보존을 약속한 상태라 묻는다.
+  it.each<[AutosaveStatus, boolean]>([
+    ["pending", true],
+    ["saving", true],
+    ["failed", true],
+    ["saved", false],
+    ["idle", false],
+  ])("%s → %s", (status, expected) => {
+    expect(hasUnsavedChanges(status)).toBe(expected);
   });
 });
