@@ -1,6 +1,7 @@
 export { useAutosave } from "./model/useAutosave";
 export { useDraftPersistence } from "./model/useDraftPersistence";
 export { errorTabs } from "./model/errorTabs";
+export { tabFromSearch, tabToSearch } from "./model/builderTabSearch";
 export { requiredTabIds } from "./model/requiredTabIds";
 export { errorItemKeys } from "./model/errorItemKeys";
 export { errorParentItemId } from "./model/errorParentItemId";

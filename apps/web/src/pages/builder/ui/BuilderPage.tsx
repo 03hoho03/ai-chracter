@@ -17,8 +17,21 @@ import { BuilderPreview } from "@/widgets/builder-preview";
  *
  * 응답의 `type` 판별값으로 캐릭터/스토리 빌더를 나눈다 — URL의 `$type`은 가독성용이라 신뢰하지 않고,
  * 아직 초안이 없을 때의 초기값을 고를 때만 쓴다.
+ *
+ * `tab` 은 주소의 `?tab=` 그대로다(어느 빌더의 탭인지 모른다). 빌더가 자기 탭 목록으로 읽고, 탭을 바꿀 때
+ * `onTabChange` 로 주소에 돌려 적는다.
  */
-export function BuilderPage({ type, draftId }: { type: ContentType; draftId: string | undefined }) {
+export function BuilderPage({
+  type,
+  draftId,
+  tab,
+  onTabChange,
+}: {
+  type: ContentType;
+  draftId: string | undefined;
+  tab: string | undefined;
+  onTabChange: (tab: string | undefined) => void;
+}) {
   const draftQuery = useContentDraftQuery(draftId);
   const emptyDraft = useMemo(() => createEmptyDraft(type), [type]);
 
@@ -43,6 +56,8 @@ export function BuilderPage({ type, draftId }: { type: ContentType; draftId: str
       <CharacterBuilderShell
         draft={draft}
         draftId={draftId}
+        tab={tab}
+        onTabChange={onTabChange}
         renderPreview={(previewProps) => (
           <BuilderPreview
             {...previewProps}
@@ -58,6 +73,8 @@ export function BuilderPage({ type, draftId }: { type: ContentType; draftId: str
     <StoryBuilderShell
       draft={draft}
       draftId={draftId}
+      tab={tab}
+      onTabChange={onTabChange}
       renderPreview={(previewProps) => (
         <BuilderPreview
           {...previewProps}

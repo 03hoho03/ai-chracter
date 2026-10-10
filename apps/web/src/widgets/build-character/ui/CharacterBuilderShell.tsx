@@ -38,6 +38,8 @@ import {
   invalidFieldsMessage,
   missingFieldsMessage,
   resolveProfileImageUrl,
+  tabFromSearch,
+  tabToSearch,
   useAutosave,
   useCreateBuilderUiState,
   useDraftPersistence,
@@ -58,6 +60,10 @@ import { PromptTab } from "./PromptTab";
 type CharacterBuilderShellProps = {
   draft: CharacterDraftContent;
   draftId: string | undefined;
+  /** 주소의 `?tab=` 값 — 처음 열 탭을 고른다. 이 빌더에 없는 탭 id 면 기본 탭이다. */
+  tab: string | undefined;
+  /** 탭을 바꿀 때 주소에 적을 값(기본 탭이면 `undefined`). */
+  onTabChange: (tab: string | undefined) => void;
   renderPreview: (args: {
     kind: "card" | "chat";
     getPayload: () => PreviewStartPayload;
@@ -117,10 +123,16 @@ const MISSING_FIELD_LABEL_BY_FORM_PATH = fieldLabelByFormPath(MISSING_FIELD_FORM
  * 미리보기를 여기서 연동한다.
  *
  * `draftId`는 아직 서버에 없는 초안이면 undefined다 — 첫 저장이 초안을 만들고 URL을 바꾼다. */
-export function CharacterBuilderShell({ draft, draftId, renderPreview }: CharacterBuilderShellProps) {
+export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, renderPreview }: CharacterBuilderShellProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<CharacterBuilderTab>("profile");
+  const [activeTab, setActiveTabState] = useState<CharacterBuilderTab>(() => tabFromSearch(tab, TABS));
+  // 탭을 바꾸는 모든 길(탭 줄·첫 오류로 이동·빈 상태 안내)이 여기를 지나 주소의 `?tab=` 도 함께 바꾼다 — 새로고침하면 보던
+  // 탭으로 돌아온다. 화면은 로컬 상태로 바로 바꾸고 주소는 뒤따른다(주소 이동을 기다리면 탭 전환이 한 박자 늦다).
+  function setActiveTab(nextTab: CharacterBuilderTab) {
+    setActiveTabState(nextTab);
+    onTabChange(tabToSearch(nextTab, TABS));
+  }
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   // 폼 컨벤션(중복 제출 방지는 `isSubmitting`)에서 의도적으로 벗어난다 — `form.formState.isSubmitting`은
   // 검증 구간까지 포함해 true가 되는데 발행 버튼은 네이티브 `disabled`라 유효성 실패 때마다 포커스가

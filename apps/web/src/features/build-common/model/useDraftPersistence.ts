@@ -90,7 +90,8 @@ export function useDraftPersistence({
       if (knownId === undefined) {
         // 방금 없던 초안이 생겼으니 초안 목록은 낡았다(내 작품 `/my`의 `미등록`).
         void queryClient.invalidateQueries({ queryKey: draftKeys.list() });
-        await navigate({ to: "/builder/$type/$draftId", params: { type, draftId: id }, replace: true });
+        // 서치를 그대로 둔다 — 주지 않으면 라우터가 비워 보던 탭(`?tab=`)이 주소에서 사라진다.
+        await navigate({ to: "/builder/$type/$draftId", params: { type, draftId: id }, search: true, replace: true });
       }
       return draft;
     },
