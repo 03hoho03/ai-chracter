@@ -11,7 +11,7 @@ from api.core.config import settings
 from api.core.redis import redis_client
 from api.core.sentry import capture_dependency_failure
 from api.db.models.prompt import PromptSection, PromptSet
-from api.llm.chat_models import ChatModelId
+from api.llm.chat_models import PromptSetModelId
 
 # uvicorn은 root logger에 핸들러를 안 붙여 info는 조용히 사라진다(apps/api/CLAUDE.md
 # "SSE 스트리밍" 절) — 아래 GET/SET 폴백은 warning 이상으로 남겨야 캐시가 계속 죽어 있어 매 턴 DB를
@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 ACTIVE_PROMPT_SET_KEY_PREFIX = "prompt_set:active:"
 
 
-def _active_prompt_set_key(lane: PromptLane, model: ChatModelId) -> str:
+def _active_prompt_set_key(lane: PromptLane, model: PromptSetModelId) -> str:
     return f"{ACTIVE_PROMPT_SET_KEY_PREFIX}{lane}:{model}"
 
 
@@ -140,7 +140,7 @@ def _from_cached_section(cached: _CachedPromptSection) -> PromptSection:
 
 
 async def get_cached_active_prompt_set(
-    lane: PromptLane, *, model: ChatModelId
+    lane: PromptLane, *, model: PromptSetModelId
 ) -> tuple[PromptSet, list[PromptSection]] | None:
     """`(lane, model)`의 캐시 히트면 DB에 닿지 않고 값을 재구성해 돌려준다. 미스면 `None` — 활성
     세트가 없다는 사실 자체는 절대 캐싱하지 않는다(negative caching 금지) —
@@ -167,7 +167,7 @@ async def get_cached_active_prompt_set(
 
 
 async def set_cached_active_prompt_set(
-    lane: PromptLane, prompt_set: PromptSet, sections: Sequence[PromptSection], *, model: ChatModelId
+    lane: PromptLane, prompt_set: PromptSet, sections: Sequence[PromptSection], *, model: PromptSetModelId
 ) -> None:
     """캐시 미스 뒤 DB에서 읽은 값을 `(lane, model)` 키에 채운다. `settings.prompt_set_cache_ttl_seconds`를
     상한으로 둔다 — `invalidate_active_prompt_set`의 `DEL`이 무효화의 정공법이고, TTL은 그
@@ -191,7 +191,7 @@ async def set_cached_active_prompt_set(
         capture_dependency_failure(dependency="redis")
 
 
-async def invalidate_active_prompt_set(lane: PromptLane, *, model: ChatModelId) -> None:
+async def invalidate_active_prompt_set(lane: PromptLane, *, model: PromptSetModelId) -> None:
     """`(lane, model)` 키 하나만 지운다 — 게시는 (레인, 모델) 단위 이벤트이고, 다 지우면 다른
     체인의 캐시를 이유 없이 버린다.
 

@@ -6,11 +6,15 @@ from api.core import clover
 from api.core.config import settings
 from api.llm.chat_models import (
     CHAT_MODELS,
+    CHAT_MODELS_BY_ID,
+    ChatModelId,
     ChatRoomModelId,
+    PromptSetModelId,
     backend_model_id,
     chat_turn_cost,
     novel_episode_unit_price,
     parse_chat_model_id,
+    parse_prompt_set_model_id,
 )
 
 
@@ -19,6 +23,22 @@ def test_ids_outside_the_registry_are_not_models() -> None:
     assert parse_chat_model_id("sonnet") == "sonnet"
     assert parse_chat_model_id("claude-sonnet-4-6") is None
     assert parse_chat_model_id("") is None
+
+
+def test_the_judgment_only_id_is_a_prompt_set_model_but_never_a_chat_model() -> None:
+    """판정 전용 id 는 판정·요약 문안 체인에만 있다 — 채팅 생성 모델 선택(레지스트리·파서)에 나오면 그 id 로 생성하려 들거나
+    값을 매길 수 없는 모델이 방·소설 요청에 들어온다."""
+    assert get_args(ChatModelId) == ("gemini", "sonnet", "opus")
+    assert "haiku" not in CHAT_MODELS_BY_ID
+    assert parse_chat_model_id("haiku") is None
+    assert set(get_args(PromptSetModelId)) == set(get_args(ChatModelId)) | {"haiku"}
+    assert [parse_prompt_set_model_id(m) for m in ("gemini", "sonnet", "opus", "haiku")] == [
+        "gemini",
+        "sonnet",
+        "opus",
+        "haiku",
+    ]
+    assert parse_prompt_set_model_id("claude-haiku-4-5") is None
 
 
 def test_the_registry_lists_gemini_first_then_the_premium_models() -> None:

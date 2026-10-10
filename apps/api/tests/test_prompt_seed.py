@@ -19,7 +19,8 @@ published 세트를 만들어 레인마다 published가 여럿이다.
    docstring의 실측 기록).
 4. 활성 세트 조회가 모델로 거른다 — 모델을 주지 않으면 Gemini 세트다.
 
-1·2는 Gemini 세트를 본다. Claude 세트(system·generation 사본)는 `test_prompt_model_sets_migration.py`가 본다.
+1·2는 Gemini 세트를 본다. Claude 세트의 생성 채널 사본은 `test_prompt_model_sets_migration.py`가, Claude·판정 전용 세트의
+판정·요약 채널은 `test_prompt_judgment_chains_migration.py`가 본다.
 """
 
 import uuid

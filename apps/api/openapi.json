@@ -2408,14 +2408,15 @@
               "enum": [
                 "gemini",
                 "sonnet",
-                "opus"
+                "opus",
+                "haiku"
               ],
               "type": "string",
-              "description": "세트의 글쓰기 모델. 생략하면 Gemini 세트다.",
+              "description": "세트 체인의 모델(글쓰기 모델 또는 판정 전용 id). 생략하면 Gemini 세트다.",
               "default": "gemini",
               "title": "Model"
             },
-            "description": "세트의 글쓰기 모델. 생략하면 Gemini 세트다."
+            "description": "세트 체인의 모델(글쓰기 모델 또는 판정 전용 id). 생략하면 Gemini 세트다."
           }
         ],
         "responses": {
@@ -2472,14 +2473,15 @@
               "enum": [
                 "gemini",
                 "sonnet",
-                "opus"
+                "opus",
+                "haiku"
               ],
               "type": "string",
-              "description": "세트의 글쓰기 모델. 생략하면 Gemini 세트다.",
+              "description": "세트 체인의 모델(글쓰기 모델 또는 판정 전용 id). 생략하면 Gemini 세트다.",
               "default": "gemini",
               "title": "Model"
             },
-            "description": "세트의 글쓰기 모델. 생략하면 Gemini 세트다."
+            "description": "세트 체인의 모델(글쓰기 모델 또는 판정 전용 id). 생략하면 Gemini 세트다."
           }
         ],
         "requestBody": {
@@ -2549,14 +2551,15 @@
               "enum": [
                 "gemini",
                 "sonnet",
-                "opus"
+                "opus",
+                "haiku"
               ],
               "type": "string",
-              "description": "세트의 글쓰기 모델. 생략하면 Gemini 세트다.",
+              "description": "세트 체인의 모델(글쓰기 모델 또는 판정 전용 id). 생략하면 Gemini 세트다.",
               "default": "gemini",
               "title": "Model"
             },
-            "description": "세트의 글쓰기 모델. 생략하면 Gemini 세트다."
+            "description": "세트 체인의 모델(글쓰기 모델 또는 판정 전용 id). 생략하면 Gemini 세트다."
           }
         ],
         "responses": {
@@ -2615,14 +2618,15 @@
               "enum": [
                 "gemini",
                 "sonnet",
-                "opus"
+                "opus",
+                "haiku"
               ],
               "type": "string",
-              "description": "세트의 글쓰기 모델. 생략하면 Gemini 세트다.",
+              "description": "세트 체인의 모델(글쓰기 모델 또는 판정 전용 id). 생략하면 Gemini 세트다.",
               "default": "gemini",
               "title": "Model"
             },
-            "description": "세트의 글쓰기 모델. 생략하면 Gemini 세트다."
+            "description": "세트 체인의 모델(글쓰기 모델 또는 판정 전용 id). 생략하면 Gemini 세트다."
           }
         ],
         "requestBody": {
@@ -18713,7 +18717,8 @@
             "enum": [
               "gemini",
               "sonnet",
-              "opus"
+              "opus",
+              "haiku"
             ],
             "title": "Model"
           },
@@ -18962,7 +18967,8 @@
             "enum": [
               "gemini",
               "sonnet",
-              "opus"
+              "opus",
+              "haiku"
             ],
             "title": "Model"
           },
@@ -19089,7 +19095,8 @@
             "enum": [
               "gemini",
               "sonnet",
-              "opus"
+              "opus",
+              "haiku"
             ],
             "title": "Model"
           },

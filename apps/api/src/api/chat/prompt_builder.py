@@ -15,7 +15,7 @@ from api.db.models.character import SituationalImage
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StatDef, StatRule, StoryPromptTemplate
-from api.llm.chat_models import ChatModelId
+from api.llm.chat_models import PromptSetModelId
 from api.llm.client import SegmentedPrompt
 
 logger = logging.getLogger(__name__)
@@ -159,11 +159,11 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
 
 
 async def load_active_prompt_set(
-    db: AsyncSession, *, lane: PromptLane, model: ChatModelId = "gemini"
+    db: AsyncSession, *, lane: PromptLane, model: PromptSetModelId = "gemini"
 ) -> tuple[PromptSet, list[PromptSection]]:
     """`(lane, model)`의 활성 세트(published 중 `published_at`이 가장 최신인 것)와 그 섹션 전부를
     읽는다. `model` 기본값이 Gemini 인 것은 판정·요약·심사·소설 묶음 경계·문단 수정처럼 고른 모델과 무관한 호출이 전부
-    Gemini 세트를 읽기 때문이고(소설 화 생성만 작업의 모델 체인을 읽는다), 모델을 빠뜨린 호출부도 지금까지와 같은 세트로 간다(Claude 세트에는 판정·요약 채널이 없다). `legal_documents`의 `_get_latest_published`와 같은 모양이다. 활성 세트가 없으면
+    Gemini 세트를 읽기 때문이고(소설 화 생성만 작업의 모델 체인을 읽는다), 모델을 빠뜨린 호출부도 지금까지와 같은 세트로 간다(Claude·판정 전용 세트의 판정·요약 채널은 판정 모델을 그 모델로 바꿨을 때 읽을 문안이다). `legal_documents`의 `_get_latest_published`와 같은 모양이다. 활성 세트가 없으면
     `PromptSetNotFoundError` — downgrade 직후처럼 테이블 자체가 없는 게 아니라
     행만 없는 상태는 만들어지기 어렵지만, 그 경우에도 조용히 넘어가지 않는다.
 

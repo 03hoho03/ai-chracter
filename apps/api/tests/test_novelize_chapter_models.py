@@ -307,16 +307,18 @@ async def test_the_price_check_uses_the_chosen_models_price(
     }
 
 
+@pytest.mark.parametrize("model", ["gpt", "haiku"])  # haiku 는 판정 문안 전용 id 라 글을 쓰지 않는다
 async def test_a_model_outside_the_registry_is_422(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
     llm: _ModelLLM,
     enqueued: list[uuid.UUID],
+    model: str,
 ) -> None:
     room, novel_id, _ = await _novel(db_client, db_session, monkeypatch, premium=True)
 
-    resp = await _create(db_client, novel_id, room, cost=105, model="gpt")
+    resp = await _create(db_client, novel_id, room, cost=105, model=model)
 
     assert resp.status_code == 422, resp.text
     assert await _jobs(db_session, novel_id) == []
