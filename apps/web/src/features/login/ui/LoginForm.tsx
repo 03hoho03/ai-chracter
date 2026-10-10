@@ -78,7 +78,7 @@ export function LoginForm({ redirectTo, errorCode, errorMethod }: LoginFormProps
         }}
       >
         {!!bannerMessage && (
-          <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive-text">
+          <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm break-keep wrap-break-word text-destructive-text">
             {bannerMessage}
           </p>
         )}

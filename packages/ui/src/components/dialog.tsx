@@ -225,6 +225,9 @@ function DialogTitle({
   )
 }
 
+/** 한국어 문장이 어절 중간에서 끊기지 않게 `break-keep`, 컨테이너보다 긴 URL·영문이 넘치지 않게
+ * `wrap-break-word` 를 둔다. 짝을 `break-words` 로 적으면 tailwind-merge 가 `break-keep` 과 같은 무리로
+ * 보고 앞의 것을 지운다 — 호출부에서 `break-*` 를 넘겨도 같은 이유로 `break-keep` 이 빠진다. */
 function DialogDescription({
   className,
   ...props
@@ -233,7 +236,7 @@ function DialogDescription({
     <DialogPrimitive.Description
       data-slot="dialog-description"
       className={cn(
-        "text-sm text-muted-foreground *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-foreground",
+        "text-sm break-keep wrap-break-word text-muted-foreground *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-foreground",
         className
       )}
       {...props}
