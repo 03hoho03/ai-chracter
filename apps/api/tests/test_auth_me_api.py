@@ -26,6 +26,7 @@ from api.db.models import (
     ChatRoom,
     ChatRoomMemorySnapshot,
     ChatRoomStat,
+    ChatTurn,
     Content,
     ContentTarget,
     ContentType,
@@ -56,6 +57,7 @@ from factories import (
     _get_genre,
     _grant_novelize,
     _login_as,
+    _make_chat_turn,
     _make_novel_tree,
     _plant_novel_extras,
     _make_user,
@@ -264,6 +266,7 @@ async def test_withdraw_soft_deletes_hides_content_and_deletes_own_chat_rooms(
     db_session.add(
         ChatRoomStat(chat_room_id=own_room.id, stat_entity_id=uuid.uuid4(), current_value=1)
     )
+    db_session.add(_make_chat_turn(own_room.id))
     await db_session.flush()
     db_session.add(
         ChatRoomMemorySnapshot(
@@ -328,6 +331,10 @@ async def test_withdraw_soft_deletes_hides_content_and_deletes_own_chat_rooms(
         .where(ChatRoomMemorySnapshot.chat_room_id == own_room_id)
     )
     assert remaining_snapshots == 0
+    remaining_turns = await db_session.scalar(
+        select(sa.func.count()).select_from(ChatTurn).where(ChatTurn.chat_room_id == own_room_id)
+    )
+    assert remaining_turns == 0
 
     # Another user's chat room against the same (now-private) content survives.
     assert await db_session.get(ChatRoom, other_room_id) is not None

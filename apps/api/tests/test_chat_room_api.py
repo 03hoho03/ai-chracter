@@ -19,6 +19,7 @@ from api.db.models import (
     ChatRoom,
     ChatRoomMemorySnapshot,
     ChatRoomStat,
+    ChatTurn,
     Content,
     ContentTarget,
     ContentType,
@@ -38,7 +39,7 @@ from api.db.models import (
     User,
     UserPersona,
 )
-from factories import _create_admin, _get_genre, _login_as, _make_asset, _make_user
+from factories import _create_admin, _get_genre, _login_as, _make_asset, _make_chat_turn, _make_user
 
 
 async def _make_published_character(
@@ -544,10 +545,44 @@ async def test_delete_chat_room_removes_room_and_messages(
     assert remaining == []
 
 
+async def test_reset_chat_room_erases_that_rooms_turn_records(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """초기화는 지운 대화의 턴 기록을 남기지 않는다. 방 행은 남으므로 기록이 남아도 FK 위반은 없다 — 그래서 응답 코드가
+    아니라 행 수로 본다. 같은 사용자의 다른 방 기록은 그대로다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+    sibling_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+    db_session.add_all(
+        [
+            _make_chat_turn(room_id, turn_number=1),
+            _make_chat_turn(room_id, turn_number=2),
+            _make_chat_turn(sibling_id, turn_number=1),
+        ]
+    )
+    await db_session.commit()
+
+    resp = await db_client.post(f"/chat-rooms/{room_id}/reset")
+
+    assert resp.status_code == 200
+    counts = {
+        rid: await db_session.scalar(sa.select(sa.func.count()).select_from(ChatTurn).where(ChatTurn.chat_room_id == rid))
+        for rid in (room_id, sibling_id)
+    }
+    assert counts == {room_id: 0, sibling_id: 1}
+
+
 async def _seed_chat_room_with_children(
     db_session: AsyncSession, *, user_id: uuid.UUID, content_version: ContentVersion
 ) -> uuid.UUID:
-    """메시지 1개·스탯 1개·요약 스냅샷 1개를 가진 방을 심는다. 방 삭제가 자식을 빠짐없이, 그리고
+    """메시지 1개·스탯 1개·요약 스냅샷 1개·턴 기록 1개를 가진 방을 심는다. 방 삭제가 자식을 빠짐없이, 그리고
     **그 방 것만** 지우는지 보려면 지워질 방과 남아야 할 방 양쪽에 자식이 있어야 한다."""
     room = ChatRoom(user_id=user_id, content_id=content_version.content_id, content_version_id=content_version.id)
     db_session.add(room)
@@ -555,6 +590,7 @@ async def _seed_chat_room_with_children(
     message = ChatMessage(chat_room_id=room.id, role=ChatMessageRole.USER, content="안녕")
     db_session.add(message)
     db_session.add(ChatRoomStat(chat_room_id=room.id, stat_entity_id=uuid.uuid4(), current_value=Decimal(1)))
+    db_session.add(_make_chat_turn(room.id))
     await db_session.flush()
     db_session.add(
         ChatRoomMemorySnapshot(
@@ -569,8 +605,8 @@ async def _seed_chat_room_with_children(
     return room.id
 
 
-async def _chat_room_row_counts(db_session: AsyncSession, room_id: uuid.UUID) -> tuple[int, int, int, int]:
-    """(방, 메시지, 스탯, 요약 스냅샷) 행 수. 컬럼 단위 count라 요청과 같은 세션의 identity map에
+async def _chat_room_row_counts(db_session: AsyncSession, room_id: uuid.UUID) -> tuple[int, int, int, int, int]:
+    """(방, 메시지, 스탯, 요약 스냅샷, 턴 기록) 행 수. 컬럼 단위 count라 요청과 같은 세션의 identity map에
     남은 객체에 속지 않는다."""
     counts = []
     for model, column in (
@@ -578,15 +614,16 @@ async def _chat_room_row_counts(db_session: AsyncSession, room_id: uuid.UUID) ->
         (ChatMessage, ChatMessage.chat_room_id),
         (ChatRoomStat, ChatRoomStat.chat_room_id),
         (ChatRoomMemorySnapshot, ChatRoomMemorySnapshot.chat_room_id),
+        (ChatTurn, ChatTurn.chat_room_id),
     ):
         counts.append(await db_session.scalar(sa.select(sa.func.count()).select_from(model).where(column == room_id)))
-    return (counts[0] or 0, counts[1] or 0, counts[2] or 0, counts[3] or 0)
+    return (counts[0] or 0, counts[1] or 0, counts[2] or 0, counts[3] or 0, counts[4] or 0)
 
 
 async def test_delete_chat_room_removes_only_that_rooms_children(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """방 삭제는 그 방의 메시지·스탯·요약 스냅샷·방 행을 모두 지우고, 같은 사용자의 다른 방은 건드리지 않는다.
+    """방 삭제는 그 방의 메시지·스탯·요약 스냅샷·턴 기록·방 행을 모두 지우고, 같은 사용자의 다른 방은 건드리지 않는다.
     탈퇴도 같은 삭제 함수를 쓰므로 그 함수의 방 필터가 넓어지면 두 경로가 함께 여기서 드러난다."""
     user = _make_user()
     db_session.add(user)
@@ -607,8 +644,8 @@ async def test_delete_chat_room_removes_only_that_rooms_children(
     resp = await db_client.delete(f"/chat-rooms/{target}")
 
     assert resp.status_code == 204
-    assert await _chat_room_row_counts(db_session, target) == (0, 0, 0, 0)
-    assert await _chat_room_row_counts(db_session, sibling) == (1, 1, 1, 1)
+    assert await _chat_room_row_counts(db_session, target) == (0, 0, 0, 0, 0)
+    assert await _chat_room_row_counts(db_session, sibling) == (1, 1, 1, 1, 1)
 
 
 async def test_delete_chat_room_viewed_by_admin_keeps_the_view_log_without_the_room(

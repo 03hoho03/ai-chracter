@@ -12,18 +12,20 @@ from collections.abc import Sequence
 from sqlalchemy import delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.db.models.chat import ChatMessage, ChatRoom, ChatRoomMemorySnapshot, ChatRoomStat
+from api.db.models.chat import ChatMessage, ChatRoom, ChatRoomMemorySnapshot, ChatRoomStat, ChatTurn
 
 
 async def delete_chat_rooms(db: AsyncSession, room_ids: Sequence[uuid.UUID]) -> None:
-    """`room_ids` 방들을 자식(요약 스냅샷 → 스탯 → 메시지)부터 지우고 방 행을 지운다. 커밋은
+    """`room_ids` 방들을 자식(요약 스냅샷 → 스탯 → 턴 기록 → 메시지)부터 지우고 방 행을 지운다. 커밋은
     호출부가 한다 — 탈퇴는 같은 트랜잭션에서 다른 정리도 한다.
 
     첫 문장은 방 행의 `memory_version`을 올리는 UPDATE다. 요약 접기는 다른 세션에서 돌며
     "읽을 때의 버전이 그대로일 때만" 버전을 올리고 스냅샷을 넣는다. 이 UPDATE가 방 행을 먼저
     잠가 두면, 진행 중인 접기는 이 트랜잭션이 끝날 때까지 기다렸다가 버전이 바뀌었음을 보고
     물러난다. 순서가 반대(스냅샷 DELETE 먼저)면 그 사이 커밋된 접기 스냅샷이 남아 방 DELETE가
-    FK 위반으로 실패한다. ORM 속성 대입이 아니라 명시 UPDATE 문인 이유는 탈퇴가 방을 ORM 객체로
+    FK 위반으로 실패한다. 턴 기록도 같은 이유로 이 UPDATE 뒤에 지운다 — 기록은 방 행을 잠근 턴 쓰기
+    구간이 응답과 한 커밋에 넣을 자리라, 이 UPDATE로 그 커밋을 기다린 뒤에 지워야 그 턴이 넣은
+    기록까지 지워진다. ORM 속성 대입이 아니라 명시 UPDATE 문인 이유는 탈퇴가 방을 ORM 객체로
     싣지 않고 id 목록만 넘기기 때문이다."""
     if not room_ids:
         return
@@ -32,5 +34,6 @@ async def delete_chat_rooms(db: AsyncSession, room_ids: Sequence[uuid.UUID]) -> 
     )
     await db.execute(delete(ChatRoomMemorySnapshot).where(ChatRoomMemorySnapshot.chat_room_id.in_(room_ids)))
     await db.execute(delete(ChatRoomStat).where(ChatRoomStat.chat_room_id.in_(room_ids)))
+    await db.execute(delete(ChatTurn).where(ChatTurn.chat_room_id.in_(room_ids)))
     await db.execute(delete(ChatMessage).where(ChatMessage.chat_room_id.in_(room_ids)))
     await db.execute(delete(ChatRoom).where(ChatRoom.id.in_(room_ids)))

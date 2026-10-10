@@ -29,7 +29,7 @@ from api.db.models import (
     StoryMediaExposure,
     User,
 )
-from factories import _make_novel_tree, _make_user
+from factories import _make_chat_turn, _make_novel_tree, _make_user
 
 
 async def _make_published_version(db_session: AsyncSession, user: User) -> ContentVersion:
@@ -326,6 +326,24 @@ async def test_discarded_response_rejects_zero_count(db_session: AsyncSession) -
                     user_id=room.user_id, chat_room_id=room.id, kind="regenerate", discarded_count=0
                 )
             )
+
+
+# `alembic check` 는 CHECK 제약을 비교하지 않는다 — 턴 기록의 종류와 차감 출처가 정해진 값뿐이라는 두 불변식은
+# 아래 두 테스트에서만 검증된다.
+async def test_chat_turn_rejects_unknown_kind(db_session: AsyncSession) -> None:
+    room = await _make_chat_room(db_session)
+
+    with pytest.raises(IntegrityError):
+        async with db_session.begin_nested():
+            db_session.add(_make_chat_turn(room.id, kind="preview"))
+
+
+async def test_chat_turn_rejects_unknown_charge_source(db_session: AsyncSession) -> None:
+    room = await _make_chat_room(db_session)
+
+    with pytest.raises(IntegrityError):
+        async with db_session.begin_nested():
+            db_session.add(_make_chat_turn(room.id, charge_source="token"))
 
 
 async def test_room_deletion_keeps_discarded_responses_and_reports_with_references_cleared(

@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 from sqlalchemy import (
     Boolean,
@@ -20,10 +20,12 @@ from sqlalchemy import (
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base
 from api.db.models.moderation import ReportStatus
+from api.db.models.payment import _sql_in_list
 
 
 class ChatMessageRole(str, enum.Enum):
@@ -222,6 +224,64 @@ class StoryMediaExposure(Base):
     cell_entity_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     first_exposed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+ChatTurnKind = Literal["send", "edit", "regenerate"]
+ChatTurnChargeSource = Literal["free", "clover", "skipped"]
+
+
+class ChatTurn(Base):
+    """턴이 남긴 응답 하나 = 한 행. 그 응답을 만든 글쓰기 모델, 그 턴의 차감, LLM 호출별 토큰 사용량, 그 응답에 귀속된
+    스탯 변화·도달한 엔딩을 숫자와 id 로만 남긴다 — 프롬프트·응답 글은 싣지 않는다. 지금은 이 테이블에 쓰는 코드가 없고,
+    방 삭제·초기화가 지우는 쪽만 먼저 들어와 있다. 턴 쓰기 구간이 응답과 같은 커밋에 행을 넣게 하는 일이 남았다.
+
+    미리보기 턴은 방 행이 없어 `chat_room_id` 를 채울 수 없으므로 기록하지 않는다.
+
+    - `assistant_message_id` 는 유니크지만 FK 가 없다 — 재생성·편집·메시지 삭제·초기화가 메시지 행을 실제로 지우고,
+      배포 겹침 구간의 옛 이미지도 그 경로를 그대로 돈다.
+    - `spend_ledger_id` 는 클로버 원장 행 id 의 사본이고 FK 가 없다 — 턴 쓰기가 원장 행에 FK 확인 잠금을 걸지 않게 하고,
+      차감의 사용처는 `clover_spend_usages` 가 맡으므로 여기서는 그와 잇는 조인 키로만 쓴다.
+    - `turn_number` 는 이 응답이 속한 턴이다. 재생성 행은 대체한 응답 기록의 값을 이어받는다.
+    - `llm_calls` 는 `[{callSite, model, promptTokens, cachedTokens, cacheWriteTokens, outputTokens, thoughtsTokens}]`,
+      `stat_changes` 는 `{statEntityId: [before, after]}` 다.
+
+    방 삭제·탈퇴는 `delete_chat_rooms` 가 방 행보다 먼저 이 행을 지운다(`ON DELETE CASCADE` 가 없다). 초기화도 그 방의
+    행을 지운다 — 방 행은 남아 FK 와는 무관하고, 지운 대화의 기록을 남기지 않으려는 것이다. `kind`·`charge_source` 는
+    native enum 이 아니라 Text 이고 위 Literal 이 값 범위다."""
+
+    __tablename__ = "chat_turns"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    chat_room_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("chat_rooms.id"), nullable=False)
+    assistant_message_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    kind: Mapped[ChatTurnKind] = mapped_column(Text, nullable=False)
+    turn_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 영수증에 찍히는 와이어 id(`gemini`·`sonnet`·`opus` 등) — 방의 `chat_model` 과 달리 그 턴에 실제로 쓴 모델이다.
+    chat_model: Mapped[str] = mapped_column(Text, nullable=False)
+    charge_source: Mapped[ChatTurnChargeSource] = mapped_column(Text, nullable=False)
+    clover_amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    spend_ledger_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    shortcut_entity_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    llm_calls: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    stat_changes: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    ending_entity_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # 🔴 `alembic check`는 CHECK 제약을 비교하지 않는다 — 두 CHECK 의 검증은 행위 테스트가 유일하다.
+    # 인덱스의 앞 열은 방 삭제·초기화의 DELETE 와 방 DELETE 의 FK 확인이 이 테이블을 방으로 찾기 위한 것이다(Postgres 는
+    # FK 열에 인덱스를 만들지 않는다). 뒤 열은 한 방의 기록을 턴 순서로 읽는 조회(턴당 원가 측정)를 받는다.
+    __table_args__ = (
+        UniqueConstraint("assistant_message_id", name="ux_chat_turns_assistant_message_id"),
+        CheckConstraint(f"kind IN ({_sql_in_list(ChatTurnKind)})", name="ck_chat_turns_kind"),
+        CheckConstraint(
+            f"charge_source IN ({_sql_in_list(ChatTurnChargeSource)})", name="ck_chat_turns_charge_source"
+        ),
+        Index("ix_chat_turns_chat_room_id_turn_number", "chat_room_id", "turn_number"),
     )
 
 
