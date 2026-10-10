@@ -4,6 +4,7 @@ import { createRootRouteWithContext, ErrorComponent, Outlet, useRouterState } fr
 import { ChangeContentVisibilityModal } from "@/features/change-content-visibility";
 import { ChangeNovelPermissionModal } from "@/features/change-novel-permission";
 import { ChangeStartingSetupModal, ConfirmStartingSetupChangeModal } from "@/features/change-starting-setup";
+import { FirstPersonaNameModal } from "@/features/choose-start-persona";
 import { ImageCropModal } from "@/features/crop-image";
 import { MediaBookConfirmModal, MediaBookOverwriteModal, MediaTagPickerModal } from "@/features/edit-media-book";
 import { EndingCollectionModal } from "@/features/ending-collection";
@@ -110,6 +111,7 @@ function RootComponent() {
       <DeleteLastChapterModal />
       <DeleteNovelModal />
       <DeletePersonaModal />
+      <FirstPersonaNameModal />
     </>
   );
 }

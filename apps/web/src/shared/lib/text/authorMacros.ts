@@ -34,7 +34,7 @@ export const FALLBACK_USER_NAME = "당신";
 export type AuthorMacroNames = { userName: string; charName: string | null };
 
 type AuthorMacroNameSource = {
-  /** 이 화면에서 쓸 대화 프로필 이름 — 방 화면은 방의 프로필, 방 없는 화면은 보는 사람의 기본 프로필. 없으면 null. */
+  /** 이 화면에서 쓸 대화 프로필 이름 — 방 화면은 방의 프로필, 작품 상세는 지금 시작하면 쓰일 프로필, 홈은 보는 사람의 기본 프로필. 없으면 null. */
   personaName: string | null | undefined;
   /** 작가가 작품에 적어 둔 기본 이름. 비어 있으면 대체어를 쓴다. */
   defaultUserName: string | null | undefined;

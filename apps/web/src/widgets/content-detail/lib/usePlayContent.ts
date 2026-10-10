@@ -5,7 +5,9 @@ import { toast } from "sonner";
 
 import { contentDetailModalAtom, type ContentType } from "@/entities/content";
 import { toStartChatErrorMessage, useStartChatMutation } from "@/entities/chat-room";
+import { isLegalReconsentRequiredError } from "@/entities/legal";
 import { useSessionQuery } from "@/entities/session";
+import { useChoosePersonaForNewRoom } from "@/features/choose-start-persona";
 
 type UsePlayContentOptions = {
   /** 스토리 전용 — 로그인 복귀 후 자동 재생 시 로컬 선택 state도 복원값으로 맞춘다. */
@@ -29,10 +31,11 @@ export function usePlayContent(contentId: string, contentType: ContentType, opti
   const isStartingRef = useRef(false);
   const [isStarting, setIsStarting] = useState(false);
   const startChatMutation = useStartChatMutation();
+  const choosePersonaForNewRoom = useChoosePersonaForNewRoom();
   const [modalState, setModalState] = useAtom(contentDetailModalAtom);
   const isFromModal = modalState !== undefined;
 
-  async function start(startingSetupId?: string) {
+  async function start(startingSetupId?: string, personaId?: string) {
     // 연타 방지 — `POST /chat-rooms`에는 유니크 제약이 없어(설계다) 두 번 부르면 오프닝 메시지만 든
     // 빈 방이 하나 더 생기고, 스토리 콘텐츠에는 그 방을 지울 UI가 없다. 호출부의 `aria-disabled`는
     // 포인터만 막고 키보드 Enter는 통과시키므로, 중복 생성을 실제로 막는 건 이 래치다.
@@ -47,9 +50,21 @@ export function usePlayContent(contentId: string, contentType: ContentType, opti
     //     값에 멈춘다). 선례는 `widgets/builder-preview/ui/PreviewSessionView.tsx`의 `startPreview`다.
     if (isStartingRef.current) return;
     isStartingRef.current = true;
-    setIsStarting(true);
     try {
-      const room = await startChatMutation.mutateAsync({ contentId, contentType, startingSetupId });
+      // 프로필이 하나도 없으면 여기서 이름 모달이 뜬다. 닫으면 방을 만들지 않고 상세에 머문다. 스피너는 모달이 끝나고
+      // 실제로 방을 만들 때부터 돈다 — 모달 뒤에서 미리 돌면 닫았을 때 아무 일도 없었는데 무언가 하던 것처럼 보인다.
+      const personaChoice = await choosePersonaForNewRoom(personaId);
+      if (personaChoice.kind === "cancelled") {
+        isStartingRef.current = false;
+        return;
+      }
+      setIsStarting(true);
+      const room = await startChatMutation.mutateAsync({
+        contentId,
+        contentType,
+        startingSetupId,
+        personaId: personaChoice.personaId,
+      });
       // 방 생성이 끝난 뒤에 닫는다 — 클릭 즉시 닫으면 생성을 기다리는 동안 아무 피드백 없이 리스트만 보인다.
       setModalState(undefined);
       void navigate({ to: "/chat/$roomId", params: { roomId: room.id }, replace: isFromModal });
@@ -71,6 +86,8 @@ export function usePlayContent(contentId: string, contentType: ContentType, opti
     } catch (error) {
       isStartingRef.current = false;
       setIsStarting(false);
+      // 재동의가 필요하면 전역 재동의 모달이 뜬다 — 그 위를 실패 토스트로 덮지 않는다.
+      if (isLegalReconsentRequiredError(error)) return;
       // 이용제한·비공개 작품은 기다려도 안 풀리므로 "잠시 후 다시"라고 말하지 않는다.
       toast.error(toStartChatErrorMessage(error, "대화방을 시작하지 못했어요. 잠시 후 다시 시도해주세요."));
     }
@@ -98,17 +115,21 @@ export function usePlayContent(contentId: string, contentType: ContentType, opti
     hasAutoStartedRef.current = true;
     if (!session.data) return; // 로그인 리다이렉트 복귀 경로라 이론상 항상 존재하지만 방어적으로 둔다.
     const restoredSetupId = params.get("startingSetupId") ?? undefined;
+    // 고른 프로필이 그사이 지워졌어도 시작 쪽이 기본으로 넘어간다(`resolveStartPersona`). 프로필이 없으면 시작 직전에
+    // 이름 모달이 뜬다.
+    const restoredPersonaId = params.get("personaId") ?? undefined;
     if (restoredSetupId) onRestoreSetupRef.current?.(restoredSetupId);
     clearAutoplayParams();
-    void startRef.current(restoredSetupId);
+    void startRef.current(restoredSetupId, restoredPersonaId);
     // deps가 정직한 이유: 본문이 읽는 나머지는 전부 ref(렌더 간 동일한 객체)이거나 effect 안에서 직접
     // 읽는 값이라, 이 effect가 실제로 반응해야 할 바깥 값은 세션 둘뿐이다.
   }, [session.isPending, session.data]);
 
-  function handlePlay(startingSetupId?: string) {
+  function handlePlay(startingSetupId?: string, personaId?: string) {
     if (!session.data) {
       const query = new URLSearchParams({ autoplay: "1" });
       if (startingSetupId) query.set("startingSetupId", startingSetupId);
+      if (personaId) query.set("personaId", personaId);
       // 로그인 화면 위에 상세 모달이 남지 않게 한다. 히스토리 엔트리는 남겨둔다 —
       // 로그인 후 복귀 지점이 바로 그 `/content/...` 풀페이지라 뒤로가기가 그리 가는 편이 자연스럽다.
       setModalState(undefined);
@@ -118,7 +139,7 @@ export function usePlayContent(contentId: string, contentType: ContentType, opti
       });
       return;
     }
-    void start(startingSetupId);
+    void start(startingSetupId, personaId);
   }
 
   return {
@@ -169,6 +190,7 @@ function clearAutoplayParams() {
   const params = new URLSearchParams(window.location.search);
   params.delete("autoplay");
   params.delete("startingSetupId");
+  params.delete("personaId");
   const query = params.toString();
   History.prototype.replaceState.call(
     window.history,

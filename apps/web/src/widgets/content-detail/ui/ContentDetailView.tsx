@@ -35,7 +35,7 @@ import {
   type ThumbnailAspect,
 } from "@/entities/content";
 import { toMediaTagImages } from "@/entities/media-book";
-import { useViewerPersonaName } from "@/entities/persona";
+import { resolveStartPersona, usePersonasQuery } from "@/entities/persona";
 import { useSessionQuery } from "@/entities/session";
 import { isApiError } from "@/shared/api/client";
 import { assertNever } from "@/shared/lib/assertNever";
@@ -47,6 +47,7 @@ import { ContentActionsMenu } from "./ContentActionsMenu";
 import { ContentDetailModalShell } from "./ContentDetailModalShell";
 import { ContentUnavailableState } from "./ContentUnavailableState";
 import { MediaTagText } from "./MediaTagText";
+import { StartPersonaRow } from "./StartPersonaRow";
 import { StoryDetailBody } from "./StoryDetailBody";
 import { StoryPlayBar } from "./StoryPlayBar";
 import { VersionHistoryModal } from "./VersionHistoryModal";
@@ -121,10 +122,15 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
   // 고정 바)가 형제로 갈라지면서 상태를 여기서 들고 있어야 서로 공유할 수 있다. 캐릭터는 쓰지
   // 않지만 다른 optimistic override들과 같은 이유로 무조건 호출한다(hooks 규칙).
   const [selectedSetupIdOverride, setSelectedSetupIdOverride] = useState<string | undefined>(undefined);
+  // 새 대화를 시작할 대화 프로필 — 본문의 프로필 줄(`StartPersonaRow`)과 하단 플레이 바가 형제라 시작설정 선택과 같은
+  // 이유로 여기서 쥔다. undefined 면 기본(`resolveStartPersona`).
+  const [chosenPersonaId, setChosenPersonaId] = useState<string | undefined>(undefined);
   const content = detailQuery.data;
-  // 방이 없는 화면이라 작가 글의 `{{user}}` 는 보는 사람의 기본 프로필 이름이다(없거나 비로그인이면 작품 기본 이름).
+  // 방이 없는 화면이라 작가 글의 `{{user}}` 는 지금 시작하면 쓰일 프로필의 이름이다 — 프로필 줄에서 바꾸면 본문도 따라
+  // 바뀐다(프로필이 없거나 비로그인이면 작품 기본 이름).
   const isLoggedIn = useSessionQuery().data !== undefined;
-  const viewerPersonaName = useViewerPersonaName(isLoggedIn);
+  const personaList = usePersonasQuery({ enabled: isLoggedIn }).data;
+  const startPersona = isLoggedIn ? resolveStartPersona(personaList, chosenPersonaId) : null;
 
   // 상세 GET이 백그라운드로 조회수를 올리므로 홈 목록을 무효화해야 한다 — 모달 경로는 홈 리스트가
   // 언마운트되지 않아 이것 없이는 닫아도 카드 숫자가 갱신되지 않는다.
@@ -273,7 +279,7 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
   const isFavorited = isFavoriteDesired ?? content.isFavorited;
   const selectedSetupId = selectedSetupIdOverride ?? content.startingSetups?.[0]?.id;
   const macroNames = resolveAuthorMacroNames({
-    personaName: viewerPersonaName,
+    personaName: startPersona?.name ?? null,
     defaultUserName: content.defaultUserName,
     contentType: content.type,
     contentName: content.name,
@@ -287,13 +293,14 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
           contentId={content.id}
           startingSetups={content.startingSetups ?? []}
           selectedSetupId={selectedSetupId}
+          personaId={startPersona?.id}
           macroNames={macroNames}
           onRestoreSetup={setSelectedSetupIdOverride}
         />
       );
       break;
     case "character":
-      footer = <CharacterPlayBar contentId={content.id} />;
+      footer = <CharacterPlayBar contentId={content.id} personaId={startPersona?.id} />;
       break;
     default:
       assertNever(content.type);
@@ -476,6 +483,12 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
         />
       )}
       {content.type === "character" && <CharacterChatHistoryLink contentId={content.id} />}
+
+      {/* 시작 준비(시작 상황·내 대화 목록)의 마지막 줄이라 업데이트(참고 정보)보다 위다. 프로필이 없으면 그리지 않는다 —
+          그 사람은 플레이를 누를 때 이름부터 받는다. */}
+      {personaList !== undefined && startPersona !== null && (
+        <StartPersonaRow personaList={personaList} startPersona={startPersona} onSelect={setChosenPersonaId} />
+      )}
 
       {/* 업데이트 이력은 대화수·좋아요 같은 **지표가 아니다** — 통계 줄에 섞여 있어서 2열로 좁아진
           우측 열에서 자리를 다퉜다(2026-09-15 실사용 제보). 참고 정보라 플레이로 가는 길(시작설정

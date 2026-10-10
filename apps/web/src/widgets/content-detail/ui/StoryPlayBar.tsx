@@ -10,6 +10,8 @@ type StoryPlayBarProps = {
   contentId: string;
   startingSetups: NonNullable<ContentDetailResponse["startingSetups"]>;
   selectedSetupId: string | undefined;
+  /** 본문의 대화 프로필 줄에서 고른 프로필. undefined 면 시작 쪽이 기본으로 정한다. */
+  personaId: string | undefined;
   /** 시작설정 이름 속 `{{user}}`·`{{char}}` 를 바꿀 이름(보는 사람 기준). */
   macroNames: AuthorMacroNames;
   onRestoreSetup: (id: string) => void;
@@ -22,6 +24,7 @@ export function StoryPlayBar({
   contentId,
   startingSetups,
   selectedSetupId,
+  personaId,
   macroNames,
   onRestoreSetup,
 }: StoryPlayBarProps) {
@@ -37,7 +40,7 @@ export function StoryPlayBar({
       <Button
         size="lg"
         aria-disabled={isStarting}
-        onClick={() => handlePlay(selectedSetup.id)}
+        onClick={() => handlePlay(selectedSetup.id, personaId)}
         className="h-12 w-full gap-2 aria-disabled:pointer-events-none aria-disabled:opacity-65"
       >
         {isStarting ? <Loader2 aria-hidden className="size-4 animate-spin" /> : <Play aria-hidden className="size-4" />}
