@@ -307,8 +307,12 @@ describe("chat markdown pipeline", () => {
 
   // 사용자 입력 길이에는 상한이 없다. 짝 없는 표지나 깊은 중첩이 몇만 자 이어져도 방이 깨지면 안 된다
   // (재귀가 입력 길이만큼 깊어지면 호출 스택이 넘친다).
-  describe("pathological input", () => {
-    const LIMIT_MS = 1000;
+  // 시간 상한은 입력 길이에 제곱으로 느려지는 구현을 잡기 위한 것이다. 다른 테스트가 함께 도는 병렬 실행에서 선형
+  // 구현도 1초를 넘긴 적이 있어 3초로 두고, 테스트 타임아웃을 그보다 크게 잡아 3~10초는 시간 단언이, 10초를 넘으면
+  // 타임아웃이 실패를 알린다. 시간 단언이 없는 무작위 섞기 테스트도 병렬 실행에서 기본 5초를 넘긴 적이 있어 같은
+  // 타임아웃 아래에 둔다.
+  describe("pathological input", { timeout: 10_000 }, () => {
+    const LIMIT_MS = 3000;
     it.each([
       ["unclosed openers x2500", "*a ".repeat(2500)],
       ["unclosed openers x20000", "*a ".repeat(20000)],
