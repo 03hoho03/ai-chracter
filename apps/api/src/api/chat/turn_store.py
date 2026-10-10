@@ -1,4 +1,5 @@
-"""실채팅 방에 턴을 쓰고, 커밋 뒤 화면에 실을 것을 조립하는 저장소(`RoomTurnStore`)와 그 헬퍼.
+"""실채팅 방에 턴을 쓰고, 커밋 뒤 화면에 실을 것을 조립하는 저장소(`RoomTurnStore`)와 그 헬퍼, 그리고 빌더 미리보기의
+턴을 세션 상태에 쓰는 저장소(`PreviewTurnStore`).
 
 턴 골격(`chat/turn_engine.py` 의 `run_turn`)이 단계의 순서를 정하고, 이 모듈은 각 단계에서 방에 무엇을 어떤 트랜잭션으로
 쓰는지를 정한다. 헬퍼 중 칸 해금 기록은 방의 첫 메시지 삽입도 라우터에서 그대로 부른다. 이 모듈은 라우터를 import 하지
@@ -19,7 +20,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
-from api.chat.turn_engine import TurnPresentation, TurnResult, TurnWrite
+from api.chat.schemas import PreviewSessionState
+from api.chat.turn_engine import TurnPresentation, TurnResult, TurnWrite, _turn_message_response
 from api.chat.turn_settlement import TurnSettlement
 from api.content.media_book import normalize_texts, normalize_texts_for_display, resolve_media_tag_images
 from api.content.media_tags import strip_media_tags
@@ -356,4 +358,55 @@ class RoomTurnStore:
             matched_image_url=matched_image_url,
             judged_cell_image=judged_cell_image,
             ending_reached_event=ending_reached_event,
+        )
+
+
+class PreviewTurnStore:
+    """빌더 미리보기의 턴 저장소. 방 대신 미리보기 세션 상태(`PreviewSessionState`)에 쓰고, 그 상태를 Redis 에 저장하는
+    것은 라우트가 턴 골격이 끝난 뒤 정산 가드 밖에서 한다(저장 중 끊김이 정산을 지나지 않게). DB 에 닿지 않는다 — 요청
+    세션은 라우트가 본문 첫머리에서 이미 반납했다.
+
+    정산 표시는 여기서 세우지 않는다. 미리보기는 응답을 DB 에 남기지 않아 `done` 을 내보내는 순간이 응답 확정이고, 그
+    표시는 골격이 `done` 바로 앞에서 세운다 — 여기서 세우면 `statChange`·`endingReached` 에서 끊긴 사용자의 차감이
+    환급되지 않는다."""
+
+    def __init__(self, state: PreviewSessionState, media_images: dict[uuid.UUID, MediaTagImage]) -> None:
+        self._state = state
+        self._media_images = media_images
+
+    def turn_number(self) -> int:
+        return self._state.turn_count + 1
+
+    async def release(self) -> None:
+        return None
+
+    async def write(self, turn: TurnResult, settlement: TurnSettlement) -> TurnWrite:
+        """응답을 세션 메시지에 덧붙이고 턴 수·바뀐 스탯·엔딩 도달을 반영한다. 응답 시각은 생성이 끝난 시각이다. 판정이
+        고른 칸은 그 그림을 서명해 둔 칸일 때만 메시지에 싣는다(`done` 과 같은 값)."""
+        result = turn.judgments
+        message = ChatMessage(
+            id=uuid.uuid4(),
+            role=ChatMessageRole.ASSISTANT,
+            content=turn.assistant_content,
+            created_at=turn.generated_at,
+        )
+        judged_cell_id = result.judged_cell_id
+        judged_cell_image = self._media_images.get(judged_cell_id) if judged_cell_id is not None else None
+        self._state.messages.append(_turn_message_response(message, None, None, judged_cell_id, judged_cell_image))
+        self._state.turn_count = turn.turn_number
+        # 판정은 지금 값에서 시작해 바뀐 스탯(새로 생긴 카운터 포함)만 넘기므로, 덮어 쓰면 반영 뒤 값 전체와 같다.
+        self._state.stats.update(result.stat_writes)
+        if result.ending_reached_event is not None:
+            self._state.ending_reached = True
+        return TurnWrite(message=message, matched_image=None, judged_cell_id=judged_cell_id)
+
+    async def present(self, turn: TurnResult, written: TurnWrite) -> TurnPresentation:
+        """칸 그림은 의존성이 서명해 둔 것을 그대로 쓰고, 엔딩 이벤트는 판정이 이미 화면용으로 만들었다. 커밋 뒤 조회가
+        없다."""
+        judged_cell_id = written.judged_cell_id
+        return TurnPresentation(
+            matched_image=None,
+            matched_image_url=None,
+            judged_cell_image=self._media_images.get(judged_cell_id) if judged_cell_id is not None else None,
+            ending_reached_event=turn.judgments.ending_reached_event,
         )

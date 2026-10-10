@@ -5184,9 +5184,10 @@ export interface paths {
         put?: never;
         /**
          * Send Preview Message
-         * @description 미리보기 메시지 전송 SSE. `_stream_preview_turn`이
-         *     실제 생성+판단 파이프라인을 담당한다 — `chat_rooms`/조회수/대화수 등 어떤 지표 테이블도
-         *     이 경로에서는 전혀 건드리지 않는다(Redis의 `PreviewSessionState` 하나만 갱신). 프롬프트
+         * @description 미리보기 메시지 전송 SSE. 사용자 메시지를 세션에 덧붙이고 생성 프롬프트를 초안에서 조립한 뒤, 실제 생성+판단
+         *     파이프라인은 실채팅과 같은 턴 골격(`chat/turn_engine.py` 의 `run_turn`)이 담당한다 — 판정은 초안에서 읽는 미리보기판
+         *     (`preview_judgments`), 쓰기는 세션 상태에 하는 저장소(`PreviewTurnStore`)다. `chat_rooms`/조회수/대화수 등 어떤 지표
+         *     테이블도 이 경로에서는 전혀 건드리지 않는다(Redis의 `PreviewSessionState` 하나만 갱신). 프롬프트
          *     세트만은 예외다 — `_preview_prompt_set_dependency`가 캐시 히트면 DB에 닿지 않고, 미스일
          *     때만 짧게 연 세션으로 활성 세트를 읽는다.
          */

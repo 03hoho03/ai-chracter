@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import uuid
 from collections.abc import AsyncIterator, Callable, Sequence
@@ -13,26 +12,16 @@ from sqlalchemy.orm import aliased
 from starlette.concurrency import run_in_threadpool
 
 from api.chat.chat_count import record_chat_participant
-from api.chat.ending_rules import (
-    is_ending_check_due,
-)
 from api.chat.memory_fold import SUMMARY_MAX_LENGTH, fold_memory
 from api.chat.memory_rewind import rewind_memory
 from api.chat.memory_window import select_current_snapshot
 from api.chat.preview_session import create_preview_session, get_preview_session, update_preview_session
 from api.chat.prompt_builder import (
-    EndingJudgmentResult,
-    MediaCellCandidate,
     PromptLane,
     PromptNames,
     PromptRenderError,
     PromptSetNotFoundError,
-    StatJudgmentRequest,
-    build_ending_judgment_prompt,
-    build_image_judgment_prompt,
     load_active_prompt_set,
-    media_cell_image_lines,
-    prepare_stat_judgment,
 )
 from api.chat.prompt_set_cache import get_cached_active_prompt_set, set_cached_active_prompt_set
 from api.chat.room_deletion import delete_chat_rooms
@@ -49,43 +38,34 @@ from api.chat.turn_prompt import (
     build_room_prompt,
     format_persona,
     generation_prompt_set,
-    preview_ending_rule_list_item,
 )
 from api.chat.turn_engine import (
     _GENERATION_ERROR_MESSAGE,
     TurnInput,
     TurnResult,
-    _policy_warning_message,
-    _stream_generated_tokens,
     run_turn,
 )
 from api.chat.turn_store import (
+    PreviewTurnStore,
     RoomTurnStore,
     _record_story_media_unlocks,
 )
 from api.chat.turn_judgments import (
-    _await_stat_judgment,
     _ending_rule_items,
-    _endings_to_judge,
-    _judge_media_cell,
     _llm_dependency_tag,
-    _MediaCellJudgment,
-    _no_judgment,
     new_turn_judgments,
+    preview_judgments,
     regenerate_judgments,
 )
 from api.chat.turn_settlement import TurnSettlement
 from api.chat.schemas import (
     ChangeStartingSetupRequest,
-    ChatDoneEvent,
-    ChatEndingReachedEvent,
     ChatErrorEvent,
     ChatMessageCreateRequest,
     ChatMessageEditRequest,
     ChatMessagePageResponse,
     ChatMessageResponse,
     ChatModelItem,
-    ChatPolicyWarningEvent,
     ChatRoomContentSnapshot,
     ChatRoomCreateRequest,
     ChatRoomListItem,
@@ -99,7 +79,6 @@ from api.chat.schemas import (
     ChatRoomModelSelectRequest,
     ChatRoomRenameRequest,
     ChatRoomResponse,
-    ChatStatChangeEvent,
     ChatStreamEvent,
     EndingCollectionItem,
     EndingSnapshot,
@@ -121,12 +100,11 @@ from api.content.media_book import (
     resolve_media_tag_images,
     sign_owned_cell_images,
 )
-from api.content.media_tags import media_tag_refs, normalize_media_tags, strip_media_tags
+from api.content.media_tags import media_tag_refs, strip_media_tags
 from api.content.schemas import (
     CharacterDraftPayload,
     MediaTagImage,
     ShortcutDraftItem,
-    StatDefDraftItem,
     StoryDraftPayload,
 )
 from api.core.clover import SpendUsage
@@ -160,18 +138,12 @@ from api.db.models.story import (
     Shortcut,
     StartingSetup,
     StatDef,
-    StatRule,
     StoryVersionDetail,
 )
 from api.db.session import get_db_session, get_session_factory
 from api.legal.dependencies import require_legal_consent
 from api.llm.chat_models import CHAT_MODELS, DEFAULT_CHAT_MODEL, chat_turn_cost
-from api.llm.client import (
-    LLMCallContext,
-    LLMClient,
-    LLMClientError,
-    LLMPolicyViolationError,
-)
+from api.llm.client import LLMClient
 from api.llm.dependencies import get_llm_client
 from api.llm.model_access import effective_room_model, has_chat_premium_access
 from api.persona.router import get_owned_persona, lock_user_default_persona, promote_oldest_persona
@@ -992,6 +964,7 @@ async def send_message(
                 TurnInput(
                     kind="send",
                     room=room,
+                    user_id=room.user_id,
                     history=history,
                     user_content=payload.content,
                     generation=generation,
@@ -1001,7 +974,7 @@ async def send_message(
                     charge=charge,
                 ),
                 llm=llm_client,
-                judgments=new_turn_judgments(setup),
+                judgments=new_turn_judgments(db, room, setup),
                 store=RoomTurnStore(db, room, setup, mode="append", log=logger),
                 settlement=settlement,
                 after_commit=_fold_after_commit(
@@ -1127,6 +1100,7 @@ async def regenerate_message(
                 TurnInput(
                     kind="regenerate",
                     room=room,
+                    user_id=room.user_id,
                     history=history[:-1],
                     user_content=user_content,
                     generation=generation,
@@ -1136,7 +1110,7 @@ async def regenerate_message(
                     charge=charge,
                 ),
                 llm=llm_client,
-                judgments=regenerate_judgments(setup),
+                judgments=regenerate_judgments(db, room, setup),
                 store=RoomTurnStore(db, room, setup, mode="replace", replaced_message_id=last_message.id, log=logger),
                 settlement=settlement,
                 # 재생성은 요약 접기를 예약하지 않는다(위 docstring).
@@ -1250,6 +1224,7 @@ async def edit_message(
                 TurnInput(
                     kind="edit",
                     room=room,
+                    user_id=room.user_id,
                     history=history,
                     user_content=payload.content,
                     generation=generation,
@@ -1259,7 +1234,7 @@ async def edit_message(
                     charge=charge,
                 ),
                 llm=llm_client,
-                judgments=new_turn_judgments(setup),
+                judgments=new_turn_judgments(db, room, setup),
                 store=RoomTurnStore(db, room, setup, mode="append", log=logger),
                 settlement=settlement,
                 after_commit=_fold_after_commit(
@@ -2305,317 +2280,6 @@ def _preview_chat_message(message: ChatMessageResponse) -> ChatMessage:
     return ChatMessage(role=message.role, content=message.content)
 
 
-def _preview_stat_def(item: StatDefDraftItem) -> StatDef:
-    return StatDef(
-        entity_id=item.id,
-        name=item.name,
-        description=item.description,
-        min_value=item.min_value,
-        max_value=item.max_value,
-        initial_value=item.initial_value,
-        per_turn_delta=item.per_turn_delta,
-    )
-
-
-def _preview_stat_rules(item: StatDefDraftItem) -> list[StatRule]:
-    """초안 스탯의 규칙을 판정 빌더가 읽는 인메모리 `StatRule` 로. 배열 순서가 순서다(저장과 같다)."""
-    return [
-        StatRule(entity_id=rule.id, condition=rule.condition, delta=rule.delta, order=order)
-        for order, rule in enumerate(item.rules)
-    ]
-
-
-def _preview_cells_by_name(
-    payload: StoryDraftPayload, media_images: dict[uuid.UUID, MediaTagImage]
-) -> dict[tuple[str, str], uuid.UUID]:
-    """페이로드 미디어 북을 (인물 이름, 장면 이름) → 칸 id 로. 축이 없는 칸은 이름이 없어 빠진다(실채팅의
-    `load_media_cells_by_name` 과 같은 규칙). 그림을 서명하지 못한 칸(남의 자산·준비 안 된 자산)도 빼서 그 칸의
-    태그는 없는 이름처럼 지워진다 — 빈칸 자리를 남기지 않는다."""
-    if payload.media_book is None:
-        return {}
-    people = {person.id: person.name for person in payload.media_book.people}
-    scenes = {scene.id: scene.name for scene in payload.media_book.scenes}
-    return {
-        (people[cell.person_id], scenes[cell.scene_id]): cell.id
-        for cell in payload.media_book.cells
-        if cell.person_id in people and cell.scene_id in scenes and cell.id in media_images
-    }
-
-
-def _prepare_preview_media_cell_judgment(
-    payload: StoryDraftPayload,
-    media_images: dict[uuid.UUID, MediaTagImage],
-    *,
-    prompt_set: PromptSet,
-    prompt_sections: list[PromptSection],
-    history: list[ChatMessage],
-    user_message: str,
-    assistant_message: str,
-    names: PromptNames,
-) -> _MediaCellJudgment | None:
-    """미리보기 칸 판정 — 실채팅 `_prepare_media_cell_judgment` 의 페이로드판. 후보는 노출 제외가 아니고 그림을
-    서명한 칸(요청자 소유·준비 완료 — `_preview_media_book_dependency`)이며 빌더 축 순서다. 렌더 실패는 그림만
-    포기한다."""
-    if payload.media_book is None:
-        return None
-    people = {person.id: (order, person.name) for order, person in enumerate(payload.media_book.people)}
-    scenes = {scene.id: (order, scene.name) for order, scene in enumerate(payload.media_book.scenes)}
-    candidates = [
-        MediaCellCandidate(
-            entity_id=cell.id,
-            person=people[cell.person_id][1],
-            scene=scenes[cell.scene_id][1],
-            situation_description=cell.situation_description,
-        )
-        for cell in sorted(
-            payload.media_book.cells, key=lambda cell: (people[cell.person_id][0], scenes[cell.scene_id][0])
-        )
-        if not cell.exclude_from_chat and cell.id in media_images
-    ]
-    if not candidates:
-        return None
-    try:
-        prompt = build_image_judgment_prompt(
-            prompt_set=prompt_set,
-            sections=prompt_sections,
-            scope="story",
-            assistant_label=prompt_set.story_assistant_label,
-            image_lines=media_cell_image_lines(candidates, names=names),
-            history=history,
-            user_message=user_message,
-            assistant_message=assistant_message,
-            names=names,
-        )
-    except PromptRenderError as exc:
-        logger.warning("미리보기 미디어 북 칸 판정 프롬프트 렌더 실패 — 이번 턴은 그림 없이 진행한다: %s", exc)
-        capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
-        return None
-    return _MediaCellJudgment(prompt=prompt, candidate_ids={cell.entity_id for cell in candidates})
-
-
-def _preview_ending_reached_event(
-    payload: StoryDraftPayload,
-    media_images: dict[uuid.UUID, MediaTagImage],
-    ending_id: uuid.UUID,
-    epilogue: str | None,
-) -> ChatEndingReachedEvent:
-    """미리보기 엔딩 이벤트. 에필로그는 페이로드 그대로라 이름 형태 태그다 — 실채팅처럼 칸 id 형태로 바꾸고(없는
-    이름은 지운다) 가리키는 칸의 그림 맵을 싣는다."""
-    if not epilogue:
-        return ChatEndingReachedEvent(ending_id=ending_id, epilogue=epilogue)
-    epilogue_text, refs = normalize_media_tags(epilogue, _preview_cells_by_name(payload, media_images))
-    return ChatEndingReachedEvent(
-        ending_id=ending_id,
-        epilogue=epilogue_text,
-        media_tag_images={cell_id: media_images[cell_id] for cell_id in refs if cell_id in media_images},
-    )
-
-
-async def _stream_preview_turn(
-    state: PreviewSessionState,
-    llm_client: LLMClient,
-    history: list[ChatMessage],
-    user_content: str,
-    shortcut: ShortcutDraftItem | None,
-    prompt_set: PromptSet,
-    prompt_sections: list[PromptSection],
-    user_persona: str,
-    persona_description: str,
-    names: PromptNames,
-    # 새 턴(`run_turn`)은 `room.user_id`를 쓰지만 `PreviewSessionState`에는 user_id가 없다
-    # (`_owned_preview_session_dependency` docstring) — 그래서 여기만 인자로 받는다.
-    user_id: uuid.UUID,
-    # 페이로드 칸 id → 서명된 그림(`_preview_media_book_dependency`). 이 함수는 세션을 열지 않는다.
-    media_images: dict[uuid.UUID, MediaTagImage],
-    settlement: TurnSettlement,
-) -> AsyncIterator[ChatStreamEvent]:
-    """새 턴(`run_turn`)과 같은 순서(생성 스트리밍 → 스탯 판단 → 엔딩 판정)를 따르되
-    `ChatRoom`/DB 대신 `PreviewSessionState`(Redis, 호출부가 커밋)를 직접 갱신한다. 스탯
-    반영(`apply_rule_judgment`)/엔딩 규칙 평가(`evaluate_rule_list`)/턴게이트
-    (`is_ending_check_due`)/엔딩 판정 순서(`_endings_to_judge`)/키워드 매칭(`match_keyword_notes`) 엔진과 SSE 이벤트 스키마는
-    실제 채팅과 완전히 동일하게 재사용한다 — `ChatRoom`/`chat_room_stats` 등 방
-    상태는 DB 대신 Redis 상태 갱신으로 대체했다. 프롬프트 세트(`prompt_set`/`prompt_sections`)는
-    호출부(`send_preview_message`)의 `Depends`가 DB에서 값으로 읽어 넘긴 것이다 — 이
-    함수 자체는 세션을 열지 않는다."""
-    try:
-        prompt, system_instruction, persona_description_rendered, _, _ = build_preview_prompt(
-            state.payload,
-            history,
-            user_content,
-            shortcut,
-            prompt_set,
-            prompt_sections,
-            user_persona,
-            persona_description,
-            state.stats,
-            names,
-        )
-    except PromptRenderError as exc:
-        # apps/api/CLAUDE.md §SSE — LLM 호출 전이므로 여기서 흡수해도 잃는 게 없다.
-        logger.warning("미리보기 프롬프트 렌더 실패: %s", exc)
-        capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
-        # 🔴 처음 설계가 빠뜨렸던 환불 자리다 — 미리보기도
-        # 같은 게이트를 지나므로 클로버가 깎인다. 환불은 `yield` 앞이다.
-        await settlement.refund()
-        yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
-        return
-
-    chunks: list[str] = []
-    try:
-        async for token_event in _stream_generated_tokens(
-            llm_client,
-            prompt,
-            chunks,
-            system_instruction,
-            prompt_set.user_label,
-            # 미리보기는 DB 방이 없다(Redis 세션).
-            usage=LLMCallContext(call_site="preview_generate", user_id=user_id, room_id=None),
-            turn=state.turn_count + 1,
-            log=logger,
-        ):
-            yield token_event
-    except LLMPolicyViolationError:
-        # 환불하지 않는다.
-        settlement.mark_settled()
-        yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_description_rendered, note_rendered=False))
-        return
-    except LLMClientError as exc:
-        logger.warning("미리보기 메시지 생성 실패: %s", exc)
-        capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
-        # 🔴 처음 설계가 빠뜨렸던 환불 자리다.
-        await settlement.refund()
-        yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
-        return
-
-    assistant_content = "".join(chunks)
-    assistant_message = ChatMessageResponse(
-        id=uuid.uuid4(), role=ChatMessageRole.ASSISTANT, content=assistant_content, created_at=datetime.now(UTC)
-    )
-    state.messages.append(assistant_message)
-    state.turn_count += 1
-
-    stat_change_events: list[ChatStatChangeEvent] = []
-    ending_reached_event: ChatEndingReachedEvent | None = None
-
-    # 실제 채팅(`run_turn`)과 같은 이유로 판정 실패를 여기서 흡수한다 — 미리보기는
-    # `ChatRoom` 등 방 상태를 DB에 쓰지 않지만, 예외가 SSE 제너레이터 밖으로 새면 커넥션이
-    # 깨지는 것은 동일하다. 스탯 판정(최초 엔딩 전만)과 칸 판정(엔딩 뒤에도)을 실채팅처럼 동시에 부른다 —
-    # 이 경로엔 DB 세션이 없어 gather 앞뒤를 가를 쓰기가 없다. 노출(보관함 해금)은 기록하지 않는다.
-    try:
-        if isinstance(state.payload, StoryDraftPayload):
-            setup = state.payload.starting_setups[0] if state.payload.starting_setups else None
-            stat_request: StatJudgmentRequest | None = None
-            stat_defs: list[StatDef] = []
-            current_stats = dict(state.stats)
-            if setup is not None and not state.ending_reached:
-                stat_defs = [_preview_stat_def(stat_def) for stat_def in setup.stat_defs]
-                stat_request = prepare_stat_judgment(
-                    prompt_set=prompt_set,
-                    sections=prompt_sections,
-                    stat_defs=stat_defs,
-                    rules_by_stat_id={stat_def.id: _preview_stat_rules(stat_def) for stat_def in setup.stat_defs},
-                    user_message=user_content,
-                    assistant_message=assistant_content,
-                    names=names,
-                )
-            media_judgment = _prepare_preview_media_cell_judgment(
-                state.payload,
-                media_images,
-                prompt_set=prompt_set,
-                prompt_sections=prompt_sections,
-                history=history,
-                user_message=user_content,
-                assistant_message=assistant_content,
-                names=names,
-            )
-
-            updated_stats, judged_cell_id = await asyncio.gather(
-                _await_stat_judgment(
-                    llm_client,
-                    stat_request,
-                    LLMCallContext(call_site="preview_stat_judgment", user_id=user_id, room_id=None),
-                    log_subject="미리보기",
-                    current_stats=current_stats,
-                    stat_defs=stat_defs,
-                )
-                if stat_request is not None
-                else _no_judgment(),
-                _judge_media_cell(
-                    llm_client,
-                    media_judgment,
-                    LLMCallContext(call_site="preview_media_book_image", user_id=user_id, room_id=None),
-                    log_subject="미리보기",
-                )
-                if media_judgment is not None
-                else _no_judgment(),
-            )
-
-            judged_image = media_images.get(judged_cell_id) if judged_cell_id is not None else None
-            if judged_cell_id is not None and judged_image is not None:
-                assistant_message.image_id = judged_cell_id
-                assistant_message.image_url = judged_image.url
-                assistant_message.image_width = judged_image.width
-                assistant_message.image_height = judged_image.height
-
-            if setup is not None and updated_stats is not None:
-                for stat_id, new_value in updated_stats.items():
-                    if new_value != current_stats.get(stat_id):
-                        stat_change_events.append(ChatStatChangeEvent(stat_id=stat_id, new_value=new_value))
-                state.stats = updated_stats
-
-                # 실채팅과 같은 순서 함수로 판정 차례·규칙 통과 엔딩의 판정 순서를 정한다.
-                for ending in _endings_to_judge(
-                    [
-                        (
-                            ending,
-                            ending.id,
-                            ending.priority_stat_id,
-                            [preview_ending_rule_list_item(item) for item in ending.stat_rules],
-                        )
-                        for ending in setup.endings
-                        if is_ending_check_due(state.turn_count, ending.turn_count_gate)
-                    ],
-                    updated_stats,
-                    log_subject="미리보기",
-                ):
-                    ending_judgment_prompt = build_ending_judgment_prompt(
-                        prompt_set=prompt_set,
-                        sections=prompt_sections,
-                        judgment_prompt=ending.judgment_prompt,
-                        history=history,
-                        user_message=user_content,
-                        assistant_message=assistant_content,
-                        memory_summary="",
-                        names=names,
-                    )
-                    ending_judgment = await llm_client.generate_structured(
-                        ending_judgment_prompt,
-                        EndingJudgmentResult,
-                        usage=LLMCallContext(call_site="preview_ending_judgment", user_id=user_id, room_id=None),
-                    )
-                    if not ending_judgment.triggered:
-                        continue
-
-                    state.ending_reached = True
-                    ending_reached_event = _preview_ending_reached_event(
-                        state.payload, media_images, ending.id, ending.epilogue
-                    )
-                    break
-    except (LLMClientError, PromptRenderError) as exc:
-        logger.warning("미리보기 판정 실패 — 이번 턴의 판정을 건너뛴다: %s", exc)
-        capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
-
-    for stat_change_event in stat_change_events:
-        yield stat_change_event
-    if ending_reached_event is not None:
-        yield ending_reached_event
-
-    # 미리보기는 DB 에 남기는 것이 없어 done 을 내보내는 순간이 응답 확정이다. done 뒤로 두면 done 을 받고 끊은
-    # 사용자까지 환급된다.
-    settlement.mark_settled()
-    yield ChatDoneEvent(final_message=assistant_message)
-
-
 @preview_router.post("/{id}/messages", response_class=EventSourceResponse)
 async def send_preview_message(
     id: str,
@@ -2628,8 +2292,8 @@ async def send_preview_message(
     db: AsyncSession = Depends(get_db_session),
     # 환불은 별도 트랜잭션이라 요청 세션으로는 못 한다 — 나머지 3경로도 같은 이유로 팩토리를 따로 받는다.
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
-    # 새 턴(`run_turn`)은 `room.user_id`를 쓰는데 `PreviewSessionState`에는 user_id가 없어
-    # (`_owned_preview_session_dependency` docstring) 이 경로만 명시적으로 받는다. 같은
+    # 방 경로는 `room.user_id`를 쓰는데 `PreviewSessionState`에는 user_id가 없어
+    # (`_owned_preview_session_dependency` docstring) 이 경로만 명시적으로 받는다(정산·`TurnInput.user_id`). 같은
     # `Depends`를 게이트·재동의가 이미 쓰고 있어 요청 스코프 캐시로 한 번만 해석된다.
     user_id: uuid.UUID = Depends(get_current_user_id),
     state: PreviewSessionState = Depends(_owned_preview_session_dependency),
@@ -2645,9 +2309,10 @@ async def send_preview_message(
     # 두면 만료·남의 세션(404)에서 차감만 남는다.
     charge: ChatCharge = Depends(enforce_chat_rate_limit),
 ) -> AsyncIterator[ChatStreamEvent]:
-    """미리보기 메시지 전송 SSE. `_stream_preview_turn`이
-    실제 생성+판단 파이프라인을 담당한다 — `chat_rooms`/조회수/대화수 등 어떤 지표 테이블도
-    이 경로에서는 전혀 건드리지 않는다(Redis의 `PreviewSessionState` 하나만 갱신). 프롬프트
+    """미리보기 메시지 전송 SSE. 사용자 메시지를 세션에 덧붙이고 생성 프롬프트를 초안에서 조립한 뒤, 실제 생성+판단
+    파이프라인은 실채팅과 같은 턴 골격(`chat/turn_engine.py` 의 `run_turn`)이 담당한다 — 판정은 초안에서 읽는 미리보기판
+    (`preview_judgments`), 쓰기는 세션 상태에 하는 저장소(`PreviewTurnStore`)다. `chat_rooms`/조회수/대화수 등 어떤 지표
+    테이블도 이 경로에서는 전혀 건드리지 않는다(Redis의 `PreviewSessionState` 하나만 갱신). 프롬프트
     세트만은 예외다 — `_preview_prompt_set_dependency`가 캐시 히트면 DB에 닿지 않고, 미스일
     때만 짧게 연 세션으로 활성 세트를 읽는다."""
     # 정산 가드는 `send_message` 와 같다. 미리보기는 턴 락이 없어 가드 하나로 감싼다.
@@ -2670,28 +2335,58 @@ async def send_preview_message(
             )
         )
 
-        async for event in _stream_preview_turn(
-            state,
-            llm_client,
-            history,
-            payload.content,
-            shortcut,
-            prompt_set,
-            prompt_sections,
-            format_persona(persona),
-            persona.description if persona is not None else "",
-            names,
-            user_id,
-            media_images,
-            settlement,
-        ):
-            yield event
+        try:
+            # 초안 페이로드와 세션 상태로 조립한다(DB 조회 없음). 상황 노트 조건은 이번 턴 판정 반영 전 세션 스탯으로 본다.
+            generation = build_preview_prompt(
+                state.payload,
+                history,
+                payload.content,
+                shortcut,
+                prompt_set,
+                prompt_sections,
+                format_persona(persona),
+                persona.description if persona is not None else "",
+                state.stats,
+                names,
+            )
+        except PromptRenderError as exc:
+            # apps/api/CLAUDE.md 의 SSE 스트리밍 절 — LLM 호출 전이므로 여기서 흡수해도 잃는 게 없다.
+            logger.warning("미리보기 프롬프트 렌더 실패: %s", exc)
+            capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+            # 🔴 처음 설계가 빠뜨렸던 환불 자리다 — 미리보기도
+            # 같은 게이트를 지나므로 클로버가 깎인다. 환불은 `yield` 앞이다.
+            await settlement.refund()
+            yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
+        else:
+            # `return` 으로 끝내지 않고 `else` 로 가른다 — 렌더 실패도 아래 세션 저장(사용자 메시지만)까지 가야 한다.
+            async for event in run_turn(
+                TurnInput(
+                    kind="preview",
+                    room=None,
+                    user_id=user_id,
+                    history=history,
+                    user_content=payload.content,
+                    generation=generation,
+                    # 미리보기는 Gemini 로만 돌아 생성·판정이 같은 세트다.
+                    generation_set=prompt_set,
+                    judgment_set=prompt_set,
+                    judgment_sections=prompt_sections,
+                    charge=charge,
+                ),
+                llm=llm_client,
+                judgments=preview_judgments(state, media_images, user_id, log=logger),
+                store=PreviewTurnStore(state, media_images),
+                settlement=settlement,
+                after_commit=None,
+                log=logger,
+            ):
+                yield event
 
     # 미리보기도 `require_legal_consent`가
     # `get_db_session`을 쥐고 있어 실채팅과 같은 폭발 반경을 갖는다 — 이 SET이 실패해도
     # 제너레이터를 뚫으면 안 된다. 이 시점엔 이미 `ChatDoneEvent`까지 yield된 뒤라(위 루프),
     # 실패를 알리는 이벤트를 새로 추가해도 클라이언트가 듣고 있다는 보장이 없다 — 판정 실패를
-    # 흡수하는 기존 자리들(`_stream_preview_turn`의 판정 except, `prompt_set_cache.py`의 Redis
+    # 흡수하는 기존 자리들(턴 골격 `run_turn`의 판정 except, `prompt_set_cache.py`의 Redis
     # GET/SET)과 같은 모양으로 조용히 흡수하고 로그+모니터링으로만 남긴다. 대가: 이번 턴은
     # Redis에 반영되지 않아 다음 조회에서 사라진다.
     #

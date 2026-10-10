@@ -3,7 +3,7 @@
 라우터와 `chat/turn_prompt.py`·`chat/room_stats.py`·`chat/turn_judgments.py`·`chat/turn_engine.py`·`chat/turn_store.py`
 는 같은 함수를 각자 `from ... import 이름` 으로 가져와 부른다. 테스트가 `monkeypatch.setattr(chat_router, "이름", ...)` 로
 감싸면 라우터에 남은 호출부만 바뀌고, 옮겨 간 호출부(생성 프롬프트 조립·생성 세트 고르기·상황 노트 평가·새 턴 판정·새 턴
-골격·턴 쓰기와 커밋 뒤 조회)는 원래 함수를 그대로 부른다. 라우터에서 이름이 아예
+골격·턴 쓰기와 커밋 뒤 조회, 미리보기 판정과 미리보기 턴)는 원래 함수를 그대로 부른다. 라우터에서 이름이 아예
 사라졌다면 `AttributeError` 로 시끄럽게 깨지지만, 이름이 남아 있으면 패치가 성공하고 단언만 헛돈다.
 
 그래서 "라우터에 남아 있으면서 호출부 일부가 옮겨 간 이름"을 지키는 목록에 두고, 테스트 파일들을 `ast` 로 훑어
@@ -35,30 +35,17 @@ GUARDED = frozenset(
         "select",
         "and_",
         "format_persona",
-        "preview_ending_rule_list_item",
         "get_cached_active_prompt_set",
         "set_cached_active_prompt_set",
         "load_active_prompt_set",
-        # 턴 판정이 부르는 것. 판정 헬퍼 일부는 미리보기가 라우터에서 이름으로 부르고, 나머지는 미리보기 판정이
-        # 라우터에서 함께 부른다.
+        # 턴 판정이 부르는 것. 라우터도 계속 쓴다 — 생성 프롬프트 렌더 실패(방·미리보기)와 미리보기 저장 실패의 Bugsink
+        # 승격, 엔딩 스냅숏의 규칙 조회, 스탯 정의 조회(첫 스탯 심기·콘텐츠 스냅숏).
         "capture_dependency_failure",
-        "LLMCallContext",
-        "ChatStatChangeEvent",
-        "ChatEndingReachedEvent",
-        "MediaCellCandidate",
-        "prepare_stat_judgment",
-        "build_ending_judgment_prompt",
-        "build_image_judgment_prompt",
-        "media_cell_image_lines",
-        "is_ending_check_due",
         "_llm_dependency_tag",
         "_ending_rule_items",
-        "_await_stat_judgment",
-        "_endings_to_judge",
-        "_judge_media_cell",
-        "_MediaCellJudgment",
-        # 턴 골격(`turn_engine`)과 턴 저장소(`turn_store`)가 부르는 것. 생성 스트림·문구는 미리보기가 라우터에서 이름으로
-        # 부르고, 나머지는 라우터의 다른 라우트가 쓴다(폐기 기록과 `delete` 는 편집·메시지 삭제가 라우터에서 계속 쓴다).
+        "StatDef",
+        # 턴 골격(`turn_engine`)과 턴 저장소(`turn_store`)가 부르는 것. 라우터의 다른 라우트가 쓴다(폐기 기록과 `delete` 는
+        # 편집·메시지 삭제가 라우터에서 계속 쓴다).
         "TurnResult",
         "ChatMessage",
         "DiscardedResponse",
@@ -68,15 +55,11 @@ GUARDED = frozenset(
         "CharacterImageExposure",
         "StoryEndingUnlock",
         "ChatErrorEvent",
-        "ChatPolicyWarningEvent",
-        "ChatDoneEvent",
         "run_in_threadpool",
         "resolve_media_tag_images",
         "normalize_texts",
         "normalize_texts_for_display",
         "strip_media_tags",
-        "_stream_generated_tokens",
-        "_policy_warning_message",
         "_record_story_media_unlocks",
     }
 )
