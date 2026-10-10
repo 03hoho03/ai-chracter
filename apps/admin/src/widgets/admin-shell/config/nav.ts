@@ -1,4 +1,5 @@
 import {
+  Banknote,
   BookOpen,
   BookOpenText,
   ChartLine,
@@ -30,6 +31,7 @@ export const ADMIN_NAV_GROUPS = [
       { label: "신고 관리", to: "/reports", icon: Flag },
       { label: "이의제기 검토", to: "/appeals", icon: Scale },
       { label: "정산 신청 검토", to: "/creator-payout-applications", icon: HandCoins },
+      { label: "지급 처리", to: "/creator-payouts", icon: Banknote },
       { label: "문의 관리", to: "/inquiries", icon: Inbox },
     ],
   },

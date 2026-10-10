@@ -22,11 +22,13 @@ import { Route as NovelsIndexRouteImport } from './routes/novels.index'
 import { Route as NoticesIndexRouteImport } from './routes/notices.index'
 import { Route as InquiriesIndexRouteImport } from './routes/inquiries.index'
 import { Route as ImageGenerationsIndexRouteImport } from './routes/image-generations.index'
+import { Route as CreatorPayoutsIndexRouteImport } from './routes/creator-payouts.index'
 import { Route as ContentsIndexRouteImport } from './routes/contents.index'
 import { Route as ReportsReportIdRouteImport } from './routes/reports.$reportId'
 import { Route as NovelsNovelIdRouteImport } from './routes/novels.$novelId'
 import { Route as NoticesNoticeIdRouteImport } from './routes/notices.$noticeId'
 import { Route as InquiriesInquiryIdRouteImport } from './routes/inquiries.$inquiryId'
+import { Route as CreatorPayoutsPayoutIdRouteImport } from './routes/creator-payouts.$payoutId'
 import { Route as ContentsContentIdRouteImport } from './routes/contents.$contentId'
 import { Route as UsersUserIdIndexRouteImport } from './routes/users.$userId.index'
 import { Route as UsersUserIdImageGenerationsRouteImport } from './routes/users.$userId.image-generations'
@@ -98,6 +100,11 @@ const ImageGenerationsIndexRoute = ImageGenerationsIndexRouteImport.update({
   path: '/image-generations/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CreatorPayoutsIndexRoute = CreatorPayoutsIndexRouteImport.update({
+  id: '/creator-payouts/',
+  path: '/creator-payouts/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ContentsIndexRoute = ContentsIndexRouteImport.update({
   id: '/contents/',
   path: '/contents/',
@@ -121,6 +128,11 @@ const NoticesNoticeIdRoute = NoticesNoticeIdRouteImport.update({
 const InquiriesInquiryIdRoute = InquiriesInquiryIdRouteImport.update({
   id: '/inquiries/$inquiryId',
   path: '/inquiries/$inquiryId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CreatorPayoutsPayoutIdRoute = CreatorPayoutsPayoutIdRouteImport.update({
+  id: '/creator-payouts/$payoutId',
+  path: '/creator-payouts/$payoutId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ContentsContentIdRoute = ContentsContentIdRouteImport.update({
@@ -154,11 +166,13 @@ export interface FileRoutesByFullPath {
   '/prompt-sets': typeof PromptSetsRoute
   '/usage-metrics': typeof UsageMetricsRoute
   '/contents/$contentId': typeof ContentsContentIdRoute
+  '/creator-payouts/$payoutId': typeof CreatorPayoutsPayoutIdRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
   '/novels/$novelId': typeof NovelsNovelIdRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
   '/contents/': typeof ContentsIndexRoute
+  '/creator-payouts/': typeof CreatorPayoutsIndexRoute
   '/image-generations/': typeof ImageGenerationsIndexRoute
   '/inquiries/': typeof InquiriesIndexRoute
   '/notices/': typeof NoticesIndexRoute
@@ -178,11 +192,13 @@ export interface FileRoutesByTo {
   '/prompt-sets': typeof PromptSetsRoute
   '/usage-metrics': typeof UsageMetricsRoute
   '/contents/$contentId': typeof ContentsContentIdRoute
+  '/creator-payouts/$payoutId': typeof CreatorPayoutsPayoutIdRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
   '/novels/$novelId': typeof NovelsNovelIdRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
   '/contents': typeof ContentsIndexRoute
+  '/creator-payouts': typeof CreatorPayoutsIndexRoute
   '/image-generations': typeof ImageGenerationsIndexRoute
   '/inquiries': typeof InquiriesIndexRoute
   '/notices': typeof NoticesIndexRoute
@@ -203,11 +219,13 @@ export interface FileRoutesById {
   '/prompt-sets': typeof PromptSetsRoute
   '/usage-metrics': typeof UsageMetricsRoute
   '/contents/$contentId': typeof ContentsContentIdRoute
+  '/creator-payouts/$payoutId': typeof CreatorPayoutsPayoutIdRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
   '/novels/$novelId': typeof NovelsNovelIdRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
   '/contents/': typeof ContentsIndexRoute
+  '/creator-payouts/': typeof CreatorPayoutsIndexRoute
   '/image-generations/': typeof ImageGenerationsIndexRoute
   '/inquiries/': typeof InquiriesIndexRoute
   '/notices/': typeof NoticesIndexRoute
@@ -229,11 +247,13 @@ export interface FileRouteTypes {
     | '/prompt-sets'
     | '/usage-metrics'
     | '/contents/$contentId'
+    | '/creator-payouts/$payoutId'
     | '/inquiries/$inquiryId'
     | '/notices/$noticeId'
     | '/novels/$novelId'
     | '/reports/$reportId'
     | '/contents/'
+    | '/creator-payouts/'
     | '/image-generations/'
     | '/inquiries/'
     | '/notices/'
@@ -253,11 +273,13 @@ export interface FileRouteTypes {
     | '/prompt-sets'
     | '/usage-metrics'
     | '/contents/$contentId'
+    | '/creator-payouts/$payoutId'
     | '/inquiries/$inquiryId'
     | '/notices/$noticeId'
     | '/novels/$novelId'
     | '/reports/$reportId'
     | '/contents'
+    | '/creator-payouts'
     | '/image-generations'
     | '/inquiries'
     | '/notices'
@@ -277,11 +299,13 @@ export interface FileRouteTypes {
     | '/prompt-sets'
     | '/usage-metrics'
     | '/contents/$contentId'
+    | '/creator-payouts/$payoutId'
     | '/inquiries/$inquiryId'
     | '/notices/$noticeId'
     | '/novels/$novelId'
     | '/reports/$reportId'
     | '/contents/'
+    | '/creator-payouts/'
     | '/image-generations/'
     | '/inquiries/'
     | '/notices/'
@@ -302,11 +326,13 @@ export interface RootRouteChildren {
   PromptSetsRoute: typeof PromptSetsRoute
   UsageMetricsRoute: typeof UsageMetricsRoute
   ContentsContentIdRoute: typeof ContentsContentIdRoute
+  CreatorPayoutsPayoutIdRoute: typeof CreatorPayoutsPayoutIdRoute
   InquiriesInquiryIdRoute: typeof InquiriesInquiryIdRoute
   NoticesNoticeIdRoute: typeof NoticesNoticeIdRoute
   NovelsNovelIdRoute: typeof NovelsNovelIdRoute
   ReportsReportIdRoute: typeof ReportsReportIdRoute
   ContentsIndexRoute: typeof ContentsIndexRoute
+  CreatorPayoutsIndexRoute: typeof CreatorPayoutsIndexRoute
   ImageGenerationsIndexRoute: typeof ImageGenerationsIndexRoute
   InquiriesIndexRoute: typeof InquiriesIndexRoute
   NoticesIndexRoute: typeof NoticesIndexRoute
@@ -411,6 +437,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ImageGenerationsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/creator-payouts/': {
+      id: '/creator-payouts/'
+      path: '/creator-payouts'
+      fullPath: '/creator-payouts/'
+      preLoaderRoute: typeof CreatorPayoutsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/contents/': {
       id: '/contents/'
       path: '/contents'
@@ -444,6 +477,13 @@ declare module '@tanstack/react-router' {
       path: '/inquiries/$inquiryId'
       fullPath: '/inquiries/$inquiryId'
       preLoaderRoute: typeof InquiriesInquiryIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/creator-payouts/$payoutId': {
+      id: '/creator-payouts/$payoutId'
+      path: '/creator-payouts/$payoutId'
+      fullPath: '/creator-payouts/$payoutId'
+      preLoaderRoute: typeof CreatorPayoutsPayoutIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/contents/$contentId': {
@@ -486,11 +526,13 @@ const rootRouteChildren: RootRouteChildren = {
   PromptSetsRoute: PromptSetsRoute,
   UsageMetricsRoute: UsageMetricsRoute,
   ContentsContentIdRoute: ContentsContentIdRoute,
+  CreatorPayoutsPayoutIdRoute: CreatorPayoutsPayoutIdRoute,
   InquiriesInquiryIdRoute: InquiriesInquiryIdRoute,
   NoticesNoticeIdRoute: NoticesNoticeIdRoute,
   NovelsNovelIdRoute: NovelsNovelIdRoute,
   ReportsReportIdRoute: ReportsReportIdRoute,
   ContentsIndexRoute: ContentsIndexRoute,
+  CreatorPayoutsIndexRoute: CreatorPayoutsIndexRoute,
   ImageGenerationsIndexRoute: ImageGenerationsIndexRoute,
   InquiriesIndexRoute: InquiriesIndexRoute,
   NoticesIndexRoute: NoticesIndexRoute,
