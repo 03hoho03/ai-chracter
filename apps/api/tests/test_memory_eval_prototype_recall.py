@@ -10,6 +10,7 @@ import pytest
 
 from api.db.models import ChatMessage, ChatMessageRole
 
+from memory_eval.recall_offline import Episode
 from memory_eval.prototype_extract import PrototypeEpisode, PrototypeResult, Window, episode_rows, truncate_detail
 from memory_eval.prototype_recall import (
     EpisodeNouns,
@@ -20,6 +21,7 @@ from memory_eval.prototype_recall import (
     query_nouns_rule,
     query_nouns_substring,
     recall_cue,
+    retrieve_e,
     rule_tokens,
     episode_nouns_rule,
     score_episodes,
@@ -418,3 +420,28 @@ def test_query_nouns_rule_tokenizes_user_and_matches_one_char_nouns_at_word_boun
     )
     assert {"빵", "정류장", "먹으러", "만났지"} == query.user
     assert {"가방", "렌즈"} == query.assistant
+
+
+def _episode(eid: str, detail: str, *, end_turn: int, snapshot_turn: int) -> Episode:
+    return Episode(
+        id=eid,
+        start_turn=end_turn,
+        end_turn=end_turn,
+        title="장면",
+        detail=detail,
+        asserted_by="narration",
+        nouns=(),
+        importance=3,
+        available_from_turn=snapshot_turn,
+    )
+
+
+def test_retrieve_e_tokenizes_body_without_morphology_and_caps_plain_turns() -> None:
+    episodes = [
+        _episode("G", "태민이랑 밀알당에서 소금빵을 먹었다", end_turn=12, snapshot_turn=31),
+        *[_episode(f"o{i}", f"동아리방에서 회의{i}를 했다", end_turn=20 + i, snapshot_turn=41) for i in range(6)],
+    ]
+    asked = retrieve_e(episodes, user_text="밀알당에서 뭐 먹었지?", previous_assistant="", current_turn=300)
+    assert [r.episode_id for r in asked if r.injected] == ["G"]
+    plain = retrieve_e(episodes, user_text="회의0 회의1 회의2 다 끝났어", previous_assistant="", current_turn=300)
+    assert sum(r.injected for r in plain) == 1
