@@ -17,8 +17,11 @@ from memory_eval.prototype_recall import (
     Query,
     Scored,
     episode_nouns_substring,
+    query_nouns_rule,
     query_nouns_substring,
     recall_cue,
+    rule_tokens,
+    episode_nouns_rule,
     score_episodes,
     select_injected,
     time_cue,
@@ -381,3 +384,37 @@ def test_plain_turn_below_threshold_injects_nothing() -> None:
 )
 def test_recall_cue(text: str, cue: bool) -> None:
     assert recall_cue(text) is cue
+
+
+# ---------------------------------------------------------------- 형태소기 없는 결정론 보충(조사·어미 떼기)
+
+
+@pytest.mark.parametrize(
+    ("text", "tokens"),
+    [
+        pytest.param("정류장에서 카메라를 들고", ["정류장", "카메라", "들고"], id="strip-particles"),
+        pytest.param("도희에게 우비랑 렌즈까지", ["도희", "우비", "렌즈"], id="two-char-particles"),
+        pytest.param("빵. 차를", [], id="drop-one-char"),
+        pytest.param("가방이, 「밀알당」으로!", ["가방", "밀알당"], id="punctuation"),
+        pytest.param("가방이 가방을", ["가방"], id="dedupe"),
+    ],
+)
+def test_rule_tokens(text: str, tokens: list[str]) -> None:
+    assert rule_tokens(text) == tokens
+
+
+def test_rule_tokens_drop_stopwords() -> None:
+    assert rule_tokens("우리 처음 기억이 정류장") == ["정류장"]
+
+
+def test_episode_nouns_rule_merges_llm_pieces_and_body_tokens() -> None:
+    nouns = episode_nouns_rule(["렌즈 케이스", "빵"], "편의점 장면", "도희가 편의점에서 우비를 샀다")
+    assert {"렌즈", "케이스", "빵", "편의점", "장면", "도희", "우비", "샀다"} == nouns
+
+
+def test_query_nouns_rule_tokenizes_user_and_matches_one_char_nouns_at_word_boundary() -> None:
+    query = query_nouns_rule(
+        "빵 먹으러 정류장에서 만났지?", "가방에 렌즈", episode_nouns=frozenset({"빵", "정류장"}), names=()
+    )
+    assert {"빵", "정류장", "먹으러", "만났지"} == query.user
+    assert {"가방", "렌즈"} == query.assistant
