@@ -203,3 +203,84 @@ def test_countdown_trace_reads_stats_and_note_bodies_from_the_attempt_folder(tmp
         {"statAfter": 0.0, "ending": False, "promptNotes": ["상영회 직전"]},
         {"statAfter": 0.0, "ending": True, "promptNotes": ["상영회 당일"]},
     ]
+
+
+# ---------------------------------------------------------------- 대조군은 개발 문항만, 다수결, 범주별 관문
+
+
+def test_plant_table_controls_use_dev_items_only() -> None:
+    from memory_eval.judge import controls
+
+    items = {row["item"] for row in controls(_set())}
+    assert items == {"spk01", "spk05", "abs01"}
+
+
+class _Scripted:
+    """정해 둔 순서대로 판정을 돌려주는 판정자. None 은 호출 실패(예외)."""
+
+    def __init__(self, verdicts: list[str | None]) -> None:
+        self._verdicts = list(verdicts)
+        self.calls = 0
+
+    async def verdict(self, prompt: str) -> Any:
+        from memory_eval.judge import JudgeVerdict
+
+        self.calls += 1
+        value = self._verdicts.pop(0)
+        if value is None:
+            raise RuntimeError("판정 실패")
+        return JudgeVerdict(verdict=value, reason="")
+
+
+def _majority(
+    monkeypatch: pytest.MonkeyPatch, verdicts: list[str | None], kind: str = "abstain"
+) -> tuple[str | None, list[str | None], int]:
+    import asyncio
+
+    from memory_eval import judge as judge_mod
+
+    async def no_wait(_: float) -> None:
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", no_wait)
+    judge = _Scripted(verdicts)
+    result, votes = asyncio.run(judge_mod.judged_majority(judge, kind, "p"))  # type: ignore[arg-type]
+    return result, votes, judge.calls
+
+
+def test_majority_takes_the_verdict_two_of_three_runs_agree_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert _majority(monkeypatch, ["fabricated", "declined", "fabricated"]) == (
+        "fabricated",
+        ["fabricated", "declined", "fabricated"],
+        3,
+    )
+
+
+def test_majority_is_unjudgeable_when_all_three_runs_differ(monkeypatch: pytest.MonkeyPatch) -> None:
+    result, votes, _ = _majority(monkeypatch, ["asserted", "guess", "none"], kind="rewind")
+    assert result is None and votes == ["asserted", "guess", "none"]
+
+
+def test_majority_counts_a_failed_run_as_a_vote_for_unjudgeable(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 한 번은 판정, 두 번은 재시도 3회를 다 쓴 실패 → 불능 둘이 다수
+    result, votes, calls = _majority(monkeypatch, ["declined"] + [None] * 6)
+    assert result is None and votes == ["declined", None, None] and calls == 7
+
+
+def test_judge_estimate_covers_every_majority_run() -> None:
+    from memory_eval.judge import JUDGE_CALL_ESTIMATE_USD, JUDGE_VOTES, judge_estimate_usd
+
+    assert JUDGE_VOTES == 3
+    assert judge_estimate_usd(10) == pytest.approx(10 * 3 * JUDGE_CALL_ESTIMATE_USD)
+
+
+def test_control_gate_needs_every_category_above_the_line_not_just_the_total() -> None:
+    from memory_eval.judge import controls_pass
+
+    ok = [{"kind": "abstain", "expected": "declined", "judged": "declined"}] * 16
+    rewind = [{"kind": "rewind", "expected": "none", "judged": "none"}] * 3 + [
+        {"kind": "rewind", "expected": "none", "judged": "guess"}
+    ]
+    assert sum(r["judged"] == r["expected"] for r in ok + rewind) / 20 == 0.95  # 총계는 넘는다
+    assert not controls_pass(ok + rewind)
+    assert controls_pass(ok + rewind[:3])
