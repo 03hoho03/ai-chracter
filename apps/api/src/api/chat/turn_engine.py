@@ -20,7 +20,7 @@ import uuid
 from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal, Protocol, TypeVar
+from typing import Any, Literal, Protocol, TypeVar
 
 from pydantic import BaseModel
 
@@ -364,6 +364,8 @@ class TurnResult:
     judgments: TurnJudgmentResult
     # 이 턴의 생성·판정 호출이 공급자 구현에서 남긴 사용량(턴 뒤 요약 접기는 들지 않는다). 방 턴 기록의 `llm_calls` 다.
     llm_calls: list[CallUsage]
+    # 이 턴의 생성 프롬프트가 실은 장면 기억(조립 결과의 `memory_recall` 그대로). 방 턴 기록의 `memory_recall` 이다.
+    memory_recall: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass
@@ -538,6 +540,7 @@ async def run_turn(
         generated_at=generated_at,
         judgments=result,
         llm_calls=llm_calls,
+        memory_recall=generation.memory_recall,
     )
     # 쓰기 구간은 예외를 흡수하지 않는다 — 쓰기·커밋 실패는 제너레이터를 뚫고 정산 가드가 응답 행을 확인해 정산한다.
     written = await store.write(turn, settlement)
