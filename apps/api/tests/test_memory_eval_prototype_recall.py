@@ -418,8 +418,35 @@ def test_query_nouns_rule_tokenizes_user_and_matches_one_char_nouns_at_word_boun
     query = query_nouns_rule(
         "빵 먹으러 정류장에서 만났지?", "가방에 렌즈", episode_nouns=frozenset({"빵", "정류장"}), names=()
     )
-    assert {"빵", "정류장", "먹으러", "만났지"} == query.user
+    # 방 에피소드에 한 번도 나오지 않은 토큰(먹으러·만났지)은 사용자 질의가 아니다.
+    assert {"빵", "정류장"} == query.user
     assert {"가방", "렌즈"} == query.assistant
+
+
+def test_retrieve_e_anaphora_follow_up_takes_assistant_path_when_no_user_token_is_in_the_room() -> None:
+    episodes = [
+        _episode("G", "도희가 렌즈 케이스를 가방에 넣었다", end_turn=12, snapshot_turn=31),
+        *[
+            _episode(f"o{i}", f"동아리방에서 회의{i}를 했다", end_turn=20 + i, snapshot_turn=41 + 10 * i)
+            for i in range(6)
+        ],
+    ]
+    ranked = retrieve_e(
+        episodes, user_text="그때 그거 어디 뒀더라?", previous_assistant="렌즈 케이스 얘기가 나왔다", current_turn=300
+    )
+    assert [r.episode_id for r in ranked if r.injected] == ["G"]
+
+
+def test_retrieve_e_user_tokens_emptied_by_common_filter_do_not_take_assistant_path() -> None:
+    # 촬영이 방 에피소드 대부분에 나와 흔한 명사로 빠진다 — 사용자가 꺼낸 화제가 흔한 것이지 앞 맥락을 가리킨 게 아니다.
+    episodes = [
+        _episode("G", "도희가 렌즈 케이스를 가방에 넣었다", end_turn=12, snapshot_turn=31),
+        *[_episode(f"o{i}", "동아리방에서 촬영을 했다", end_turn=20 + i, snapshot_turn=41 + 10 * i) for i in range(6)],
+    ]
+    ranked = retrieve_e(
+        episodes, user_text="그때 촬영 어땠더라?", previous_assistant="렌즈 케이스 얘기가 나왔다", current_turn=300
+    )
+    assert ranked == []
 
 
 def _episode(eid: str, detail: str, *, end_turn: int, snapshot_turn: int) -> Episode:
