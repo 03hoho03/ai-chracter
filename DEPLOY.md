@@ -1687,14 +1687,16 @@ sudo bash ops/swap-api.sh
   `lane <> 'novel'`) — 그 레인의 Sonnet·Opus 체인은 소설 프롬프트 레인 리비전(`a7a87e3ba631`)이 심은 것이라 위 시드 4개
   목록에 없고, 지우면 다시 올린 뒤 그 체인이 빈 채로 남아 상위 모델 화 생성이 실패·환불되고 어드민 「소설」 탭 초안 조회가
   500 이 된다. 옛 코드는 레인으로 세트를 골라 소설 레인을 읽지 않는다. 🔴 판정 문안 체인 리비전(`1a843a0b2d8f`, 아래)이 심은
-  시드 6개(story·character × Sonnet·Opus·Haiku)도 같은 이유로 남긴다 — 아래 SQL 의 제외 목록 뒤쪽 6개가 그것이다. 이 목록에서
-  빼면 다시 올릴 때 그 리비전도 건너뛰어 판정 전용 체인이 빈 채로 남고 Claude 체인은 판정·요약 행 없는 이전 세트로 돌아간다:
+  시드 6개(story·character × Sonnet·Opus·Haiku)도 같은 이유로 남긴다 — 아래 SQL 의 제외 목록 일곱째부터 6개가 그것이다. 이
+  목록에서 빼면 다시 올릴 때 그 리비전도 건너뛰어 판정 전용 체인이 빈 채로 남고 Claude 체인은 판정·요약 행 없는 이전 세트로
+  돌아간다. 장면 기억 문안 리비전(`fc6f0e134782`, 아래)이 심은 Gemini 가 아닌 시드 6개도 같은 이유로 남긴다(제외 목록 마지막
+  6개):
 
   ```sh
   sudo /opt/ddona/backup.sh   # 먼저 백업
   sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
     psql -U postgres -d ai_character_chat -c \
-    "BEGIN; DELETE FROM prompt_sections WHERE prompt_set_id IN (SELECT id FROM prompt_sets WHERE model <> 'gemini' AND lane <> 'novel' AND id NOT IN ('ba2a926c-e9ed-46e0-b42c-9c21c63552f6','f3237e56-5ff6-4b27-9135-98495c0094bb','b9c2f1ec-5e8c-48ce-8fc9-ffefdc6950d2','9b308ef1-bdb9-4f23-a2d8-fb6ae6ad778c','32b99025-22e8-45fa-86a5-50f267b30a1b','73026fdc-e2bc-4e99-9b94-950f791d6835','e8685db5-f431-419a-9957-0db6b27ec848','b483d5c3-92dd-4dd9-ad4b-9ae6488bbcb4','9a2b4dbb-ff70-4ccf-a8b3-4cff6ca785c0','8114a6d6-b5cc-4b4a-b8ac-a8f1c25b640d')); DELETE FROM prompt_sets WHERE model <> 'gemini' AND lane <> 'novel' AND id NOT IN ('ba2a926c-e9ed-46e0-b42c-9c21c63552f6','f3237e56-5ff6-4b27-9135-98495c0094bb','b9c2f1ec-5e8c-48ce-8fc9-ffefdc6950d2','9b308ef1-bdb9-4f23-a2d8-fb6ae6ad778c','32b99025-22e8-45fa-86a5-50f267b30a1b','73026fdc-e2bc-4e99-9b94-950f791d6835','e8685db5-f431-419a-9957-0db6b27ec848','b483d5c3-92dd-4dd9-ad4b-9ae6488bbcb4','9a2b4dbb-ff70-4ccf-a8b3-4cff6ca785c0','8114a6d6-b5cc-4b4a-b8ac-a8f1c25b640d'); COMMIT;"
+    "BEGIN; DELETE FROM prompt_sections WHERE prompt_set_id IN (SELECT id FROM prompt_sets WHERE model <> 'gemini' AND lane <> 'novel' AND id NOT IN ('ba2a926c-e9ed-46e0-b42c-9c21c63552f6','f3237e56-5ff6-4b27-9135-98495c0094bb','b9c2f1ec-5e8c-48ce-8fc9-ffefdc6950d2','9b308ef1-bdb9-4f23-a2d8-fb6ae6ad778c','32b99025-22e8-45fa-86a5-50f267b30a1b','73026fdc-e2bc-4e99-9b94-950f791d6835','e8685db5-f431-419a-9957-0db6b27ec848','b483d5c3-92dd-4dd9-ad4b-9ae6488bbcb4','9a2b4dbb-ff70-4ccf-a8b3-4cff6ca785c0','8114a6d6-b5cc-4b4a-b8ac-a8f1c25b640d','99c2b0f5-3c36-4a96-adbd-d226e430b4f8','3db7a362-b2a1-4927-82d1-f6aeb4c94e3c','2517d852-c29f-4271-83c0-b5799da1ade0','9c029822-2229-48c6-bd0e-03312c2b618b','952ae5d4-5fa9-4cba-b6ba-d5970ac119ab','1b13a6d3-2747-4348-8e63-10aafceeb1ce')); DELETE FROM prompt_sets WHERE model <> 'gemini' AND lane <> 'novel' AND id NOT IN ('ba2a926c-e9ed-46e0-b42c-9c21c63552f6','f3237e56-5ff6-4b27-9135-98495c0094bb','b9c2f1ec-5e8c-48ce-8fc9-ffefdc6950d2','9b308ef1-bdb9-4f23-a2d8-fb6ae6ad778c','32b99025-22e8-45fa-86a5-50f267b30a1b','73026fdc-e2bc-4e99-9b94-950f791d6835','e8685db5-f431-419a-9957-0db6b27ec848','b483d5c3-92dd-4dd9-ad4b-9ae6488bbcb4','9a2b4dbb-ff70-4ccf-a8b3-4cff6ca785c0','8114a6d6-b5cc-4b4a-b8ac-a8f1c25b640d','99c2b0f5-3c36-4a96-adbd-d226e430b4f8','3db7a362-b2a1-4927-82d1-f6aeb4c94e3c','2517d852-c29f-4271-83c0-b5799da1ade0','9c029822-2229-48c6-bd0e-03312c2b618b','952ae5d4-5fa9-4cba-b6ba-d5970ac119ab','1b13a6d3-2747-4348-8e63-10aafceeb1ce'); COMMIT;"
   ```
 
 - 스키마까지 되돌리면(`alembic downgrade a966fc016bf1`, 순서는 위 절들과 같이 태그 롤백 먼저 — 묶음·화 구조 리비전이 위에
@@ -1771,6 +1773,42 @@ sudo bash ops/swap-api.sh
   막히고, 옛 이미지에서 복원·게시하면 판정·요약 행이 사라진다. 현재 활성본에서 바뀐 섹션만 고친다.
 - 🔴 **시드를 손으로 지우지 않는다** — 다시 배포할 때 `alembic upgrade head` 가 이 리비전을 건너뛰어 판정 전용 체인이 빈 채로 남고(어드민
   초안 조회 500), Claude 체인은 판정·요약 행 없는 이전 세트로 돌아가 새 코드의 Claude 게시가 막힌다. 걷어야 하면 위 ③ 의 downgrade 로만.
+
+**장면 기억 문안(`fc6f0e134782`).** 장면 기억의 추출 지시문 채널 `memory_episode`(지시문·이야기 속 이름·앞 구간 장면 제목·접힌
+대화 4행)와 생성 채널의 회상 슬롯 `memory_recall`(conditional, `history` 바로 뒤)을 채팅 두 레인의 여덟 체인(story·character ×
+Gemini·Sonnet·Opus·Haiku)에 새 게시본으로 심는다 — 회상 슬롯은 글을 쓰는 세 체인에만. 새 세트는 그 체인 **활성 세트의 바이트
+사본**에 행을 더한 것이라 운영자가 고친 문안(운영 요약 문안 등)이 그대로 옮겨진다. 이 배포만으로는 어떤 호출도 새 행을 읽지 않는다
+(추출 호출이 아직 없고, 회상 값이 비어 섹션째 빠진다 — 생성 글은 바이트 그대로다). 버전은 전 레인 최대 + 1 부터 (story, character)
+× (Gemini, Sonnet, Opus, Haiku) 순서로 8개가 붙고, 레인 활성 Gemini 세트가 바뀐다.
+
+- **게시 시각**: 새 Gemini 세트는 `max(now, 원본 + 1초)`(레인만 보는 "최신 게시본" 조회가 계속 Gemini 를 집는다), 다른 세 체인은
+  (그 체인 활성, 새 Gemini) 중간값. 레인만 보는 조회가 이미 Gemini 가 아닌 세트를 집고 있거나, 어느 세트에 새 행이 이미 있거나,
+  `generation` 의 `history` 가 정확히 하나가 아니면 마이그레이션이 `RuntimeError` 로 배포를 멈춘다.
+- **배포 전**: 백업이 최근에 돌았는지 본다(「백업 · 복원」 절). 아래 첫 SELECT 로 두 레인 레인만 보는 최신 게시본이 Gemini 인지 본다.
+- **배포 뒤**: 여덟 체인의 최신 게시본이 아래 시드 id 이고, 레인만 보는 최신 게시본이 새 Gemini 세트인지, 새 채널 행 수(체인마다
+  `memory_episode` 4, 글을 쓰는 체인은 `memory_recall` 1)를 본다:
+
+  ```sql
+  SELECT DISTINCT ON (lane) lane, model, id, version FROM prompt_sets WHERE status = 'published' AND lane IN ('story','character')
+   ORDER BY lane, published_at DESC;   -- 배포 뒤에는 두 줄이 아래 Gemini 시드 id
+  SELECT p.lane, p.model, p.version, s.channel, s.slot FROM prompt_sets p JOIN prompt_sections s ON s.prompt_set_id = p.id
+   WHERE p.id IN ('7aa4122b-a9db-4003-bbe0-ee130b46034b','99c2b0f5-3c36-4a96-adbd-d226e430b4f8','3db7a362-b2a1-4927-82d1-f6aeb4c94e3c',
+                  '2517d852-c29f-4271-83c0-b5799da1ade0','a80dffe5-207a-4a95-abac-95cda93d9219','9c029822-2229-48c6-bd0e-03312c2b618b',
+                  '952ae5d4-5fa9-4cba-b6ba-d5970ac119ab','1b13a6d3-2747-4348-8e63-10aafceeb1ce')
+     AND (s.channel = 'memory_episode' OR s.slot = 'memory_recall') ORDER BY 1,2,4,5;
+  ```
+
+  시드 id 는 story Gemini `7aa4122b…`·Sonnet `99c2b0f5…`·Opus `3db7a362…`·Haiku `2517d852…`, character Gemini `a80dffe5…`·Sonnet
+  `9c029822…`·Opus `952ae5d4…`·Haiku `1b13a6d3…` 이다.
+- **배포 뒤 공지**: 배포 전부터 열어 둔 어드민 프롬프트 편집 탭은 **새로고침**한다 — 그 탭에서 저장하면 초안이 섹션 전체 교체로 새
+  행을 잃고 게시가 "누락"으로 막힌다. 어드민에 「장면 기억 추출」 탭이 생긴다.
+- **겹침·이미지 롤백**: 옛 이미지는 회상 값을 넘기지 않아 새 슬롯이 빠지고(생성 글 그대로), 새 채널은 읽지 않는다. 옛 이미지의
+  어드민 게시 검증이 새 세트를 "잉여"로 거부해 **여덟 체인의 어드민 게시만** 막힌다. 이미지 롤백 하한을 올리지 않는다.
+- **롤백 순서**: ① 1순위는 이미지만 되돌리기 → ② 시드까지 걷어야 하면 **새 이미지로** `alembic downgrade f028a5a3b9e6` 를 돌린 뒤
+  이미지를 되돌린다(먼저 백업). downgrade 는 시드 뒤에 어드민이 여덟 체인 중 하나라도 새 버전을 게시했으면 아무것도 지우지 않고
+  멈춘다 — 그때는 멈추고 판단한다. 없으면 시드 8개와 초안의 새 행을 지우고 초안 order 를 되돌린다.
+- 🔴 **시드를 손으로 지우지 않는다**(다시 배포할 때 이 리비전을 건너뛴다), 🔴 **프롬프트 옛 버전을 통째로 복원하지 않는다**(이 배포
+  이전 버전은 새 행이 없어 새 코드에서 게시가 "누락"으로 막힌다 — 현재 활성본에서 바뀐 섹션만 고친다).
 
 **롤백 순서.** 1차는 스위치 끄기(위 「끄기」)다 — 재기동 한 번으로 모든 채팅 턴이 Gemini 로 돌고 방은 막히지 않는다(소설
 장까지 되돌릴 때는 소설 스위치 줄도 지운다). 코드까지 되돌릴 때는 스위치 먼저 → 태그 롤백(옛 이미지) → Pages(web) 순서이고,
