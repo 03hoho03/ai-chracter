@@ -258,6 +258,8 @@ def test_common_noun_ratio_boundary(df: int, kept: bool) -> None:
 
 @pytest.mark.parametrize(("count", "recalls"), [pytest.param(4, False, id="four"), pytest.param(5, True, id="five")])
 def test_fewer_than_five_episodes_recall_nothing(count: int, recalls: bool) -> None:
+    """장면 다섯이면 드문 명사 하나로 실리고 넷이면 실리지 않는다. 흔한 명사 비율이 0.2 인 동안은 넷 이하의 방에서 어느
+    명사든 df/N ≥ 1/4 이라 비율 규칙만으로도 빠진다 — 그래서 이 테스트가 가르는 것은 하한이 5 보다 커지는 쪽이다."""
     rows = [
         RecallCandidate(id="g", nouns=frozenset({"밀알당"}), importance=3, end_turn=5, snapshot=1),
         *_filler(count - 1),
@@ -302,10 +304,31 @@ def test_more_rare_overlap_outranks_a_recent_single_overlap() -> None:
 
 def test_reply_words_alone_without_a_time_cue_recall_nothing() -> None:
     """사용자 메시지에 방 장면의 낱말이 없고 시간 단서도 없으면 직전 응답에 드문 낱말이 있어도 찾지 않는다 — 상시로 찾으면
-    매 턴 현재 장면 낱말로 최근 장면이 실린다."""
-    rows = [RecallCandidate(id="g", nouns=frozenset({"렌즈"}), importance=3, end_turn=10, snapshot=1), *_filler(9)]
-    query = RecallQuery(user=frozenset(), assistant=frozenset({"렌즈"}), time_cue=False)
+    매 턴 현재 장면 낱말로 최근 장면이 실린다. 렌즈 장면은 최근 스냅샷 둘보다 앞이라, 시간 단서만 있으면 찾힌다."""
+    rows = [*_old_lens_scene_and_recent_fillers()]
+    reply = frozenset({"렌즈"})
+    assert score_episodes(rows, RecallQuery(user=frozenset(), assistant=reply, time_cue=False), current_turn=100) == []
+    cued = score_episodes(rows, RecallQuery(user=frozenset(), assistant=reply, time_cue=True), current_turn=100)
+    assert [row.id for row in select_injected(cued, recall_cue=True)] == ["g"]
+
+
+def test_common_only_user_query_does_not_fall_back_to_the_reply() -> None:
+    """ "그때 촬영 어땠더라?" — 사용자 질의에 방 장면의 낱말(촬영)이 있었으면 그것이 흔해서 빠져도 직전 응답으로 넘어가지
+    않는다(사용자가 꺼낸 화제가 흔한 것일 뿐 앞 맥락을 가리킨 것이 아니다). 응답에는 찾을 수 있는 드문 낱말이 있다."""
+    rows = [*_old_lens_scene_and_recent_fillers(), *_sharing("촬영", 5, prefix="c")]
+    query = RecallQuery(user=frozenset({"촬영"}), assistant=frozenset({"렌즈"}), time_cue=True)
     assert score_episodes(rows, query, current_turn=100) == []
+
+
+def _old_lens_scene_and_recent_fillers() -> list[RecallCandidate]:
+    """스냅샷 1 의 렌즈 장면 하나와, 그 뒤 스냅샷 2·3 의 빈 장면 아홉."""
+    return [
+        RecallCandidate(id="g", nouns=frozenset({"렌즈"}), importance=3, end_turn=10, snapshot=1),
+        *[
+            RecallCandidate(id=f"f{i}", nouns=frozenset(), importance=1, end_turn=30 + i, snapshot=2 + i % 2)
+            for i in range(9)
+        ],
+    ]
 
 
 def test_recall_noun_in_user_message_is_not_diluted_by_current_scene_nouns() -> None:
@@ -412,6 +435,8 @@ class Scene:
     turn: int
     asserted_by: str = "narration"
     importance: int = 3
+    # 장면 id 를 정하고 싶을 때(id 순과 일어난 순서를 일부러 다르게 둔다).
+    key: int | None = None
 
 
 _FILLER_SCENES = [Scene(f"잡담 {i}", f"평범한 하루 {i}번째.", [f"일상{i}"], turn=1 + i % 4) for i in range(5)]
@@ -471,6 +496,7 @@ async def _add_scene(
         nouns=episode_nouns(scene.nouns, scene.title, scene.detail),
         asserted_by=scene.asserted_by,
         importance=scene.importance,
+        **({"id": uuid.UUID(int=scene.key)} if scene.key is not None else {}),
     )
     db_session.add(episode)
     await db_session.flush()
@@ -606,12 +632,12 @@ async def test_recall_caps_three_episodes_in_event_order(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """회상 단서 턴은 셋까지, 줄은 일어난 순서(끝 키 오름차순) — 순위(중요도)와 다른 순서로 심는다. 장면마다 드문 낱말이
-    하나씩 있어 넷 다 임계를 넘고, 순위는 중요도가 가른다."""
+    하나씩 있어 넷 다 임계를 넘고, 순위는 중요도가 가른다. id 순은 첫날·둘째·셋째라 일어난 순서와 다르다."""
     lamps = [
-        Scene("등대 첫날", "등대 벤치에서 처음 만났다.", ["벤치"], turn=4, importance=5),
-        Scene("등대 둘째", "등대 계단을 올랐다.", ["계단"], turn=1, importance=4),
-        Scene("등대 셋째", "등대 불빛을 봤다.", ["불빛"], turn=3, importance=3),
-        Scene("등대 넷째", "등대 자물쇠가 잠겼다.", ["자물쇠"], turn=2, importance=1),
+        Scene("등대 첫날", "등대 벤치에서 처음 만났다.", ["벤치"], turn=4, importance=5, key=1),
+        Scene("등대 둘째", "등대 계단을 올랐다.", ["계단"], turn=1, importance=4, key=2),
+        Scene("등대 셋째", "등대 불빛을 봤다.", ["불빛"], turn=3, importance=3, key=3),
+        Scene("등대 넷째", "등대 자물쇠가 잠겼다.", ["자물쇠"], turn=2, importance=1, key=4),
     ]
     room = await _story_room(
         db_client, db_session, [*lamps, *[Scene(f"잡담 {i}", f"하루 {i}.", [f"일상{i}"], turn=2) for i in range(26)]]
