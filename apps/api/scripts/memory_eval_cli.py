@@ -453,6 +453,8 @@ def cmd_judge(args: argparse.Namespace) -> int:
     controls_path = args.run / "judge" / "controls.json"
     if args.controls:
         items = judge_mod.controls(plant_set)
+        for path in args.extra_controls:
+            items += judge_mod.load_extra_controls(path, plant_set)
     else:
         splits = _splits(args)
         rows = [r for r in _probe_rows(args.probes) if r["split"] in splits and r["status"] == "accept"]
@@ -486,7 +488,7 @@ def cmd_judge(args: argparse.Namespace) -> int:
         out = []
         for item in items:
             entry = plant_set.item(item["item"])
-            replies = [item["reply"]] if args.controls else item["replies"]
+            replies = judge_mod.control_replies(item) if args.controls else item["replies"]
             prompt = judge_mod.judge_prompt(item["kind"], entry, replies)
             out.append({**item, "judged": await judge_mod.judged_or_none(judge, item["kind"], prompt)})
         return out
@@ -498,6 +500,18 @@ def cmd_judge(args: argparse.Namespace) -> int:
         _write(controls_path, {"passed": judge_mod.controls_pass(results), "accuracy": accuracy, "rows": results})
     else:
         _write(args.out, results)
+    return 0
+
+
+def cmd_countdown(args: argparse.Namespace) -> int:
+    """CP300 상영회 카운트다운(스탯 값·노트 본문 존재만 — 두 절반 합계, 문항 이름은 개발 절반만)."""
+    from memory_eval import countdown
+
+    bodies = countdown.note_bodies(args.seed_json, [countdown.DAY_NOTE, countdown.EVE_NOTE])
+    rows = [r for r in _probe_rows(args.probes) if r["status"] == "accept" and int(r["checkpoint"]) == args.checkpoint]
+    result = countdown.screening_countdown([countdown.probe_trace(r, bodies) for r in rows])
+    _write(args.out, result)
+    _print(result)
     return 0
 
 
@@ -789,9 +803,19 @@ def build_parser() -> argparse.ArgumentParser:
     with_splits(p)
     paid(p)
     p.add_argument("--controls", action="store_true", help="대조군만")
+    p.add_argument(
+        "--extra-controls", type=Path, nargs="*", default=[], help="실제 응답·합성 견본 대조군(개발 절반 문항만)"
+    )
     p.add_argument("--probes", type=Path, nargs="*", default=[])
     p.add_argument("--out", type=Path)
     p.set_defaults(fn=cmd_judge)
+
+    p = sub.add_parser("countdown", help="CP300 상영회 카운트다운 — 스탯·노트 본문 존재만, 갈래별")
+    p.add_argument("--probes", type=Path, nargs="+", required=True)
+    p.add_argument("--checkpoint", type=int, default=300)
+    p.add_argument("--seed-json", type=Path, default=DEFAULT_SEED_JSON)
+    p.add_argument("--out", type=Path, required=True)
+    p.set_defaults(fn=cmd_countdown)
 
     p = sub.add_parser("attribution")
     with_plants(p)
