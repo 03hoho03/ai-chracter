@@ -28,6 +28,11 @@ from memory_eval.ledger import Ledger
 EXTRACT_MODEL = "claude-haiku-5-5"
 # 창 하나 견적: 입력 약 4K 토큰 × 토크나이저 1.3, 출력 약 1.5K.
 EXTRACT_CALL_ESTIMATE_USD = 0.002
+# 서버 절단 상한 — 저장 전에 서버가 자르는 길이와 장면 수(운영 스키마의 같은 상수와 맞춘다).
+MAX_EPISODES = 6
+TITLE_MAX = 60
+DETAIL_MAX = 300
+_SENTENCE_ENDS = (".", "다", "요")
 
 
 class PrototypeEpisode(BaseModel):
@@ -160,19 +165,35 @@ async def call_haiku(api_key: str, prompt: str, ledger: Ledger, *, stage: str) -
     return parse_structured(message, PrototypeResult, "anthropic", "Anthropic")
 
 
+def truncate_detail(detail: str, limit: int = DETAIL_MAX) -> str:
+    """상한을 넘으면 상한 안의 마지막 문장 끝(`.`·`다`·`요`) 뒤에서, 없으면 글자 단위로 자른다."""
+    if len(detail) <= limit:
+        return detail
+    head = detail[:limit]
+    cut = max(head.rfind(mark) for mark in _SENTENCE_ENDS)
+    return head[: cut + 1] if cut >= 0 else head
+
+
 def episode_rows(window: Window, result: PrototypeResult, *, version: str) -> list[dict[str, Any]]:
-    """오프라인 회상 입력 꼴(`recall_offline.load_episodes_json`). 길이 절단·명사 정규화는 시제품 검색 쪽에서 한다."""
+    """오프라인 회상 입력 꼴(`recall_offline.load_episodes_json`). 서버가 저장 전에 하는 것처럼 빈 본문을 버린 뒤 앞에서부터
+    6개, 제목·본문을 상한에서 자른다(빈 장면이 자리를 먹어 뒤쪽 장면이 잘리지 않게 빈 것을 먼저 버린다). 명사 정규화는 시제품
+    검색 쪽에서 한다."""
+    kept = [e for e in result.episodes if e.detail.strip()][:MAX_EPISODES]
     rows = []
-    for k, episode in enumerate(result.episodes[:6]):
+    for k, episode in enumerate(kept):
         start, end = map_lines(window, episode.start_line, episode.end_line)
+        detail = episode.detail.strip()
         rows.append(
             {
                 "id": f"{window.snapshot_id}:{k}",
                 "snapshot_id": str(window.snapshot_id),
                 "start_turn": start,
                 "end_turn": end,
-                "title": episode.title,
-                "detail": episode.detail,
+                "title": episode.title.strip()[:TITLE_MAX],
+                "detail": truncate_detail(detail),
+                "truncated": len(detail) > DETAIL_MAX,
+                "rawCount": len(result.episodes),
+                "rawEmpty": sum(1 for e in result.episodes if not e.detail.strip()),
                 "nouns": episode.nouns,
                 "keywords": episode.keywords,
                 "asserted_by": episode.asserted_by,
