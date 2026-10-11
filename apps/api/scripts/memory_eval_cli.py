@@ -634,9 +634,15 @@ def cmd_s8(args: argparse.Namespace) -> int:
     ensure_unique_probe_rows(scores)
     judge_rows = [r for path in args.judged for r in json.loads(path.read_text(encoding="utf-8"))]
     offline = json.loads(args.offline.read_text(encoding="utf-8"))["rows"]
-    result = s8_verdict(plant_set, scores, judge_rows=judge_rows, offline_rows=offline)
+    points = [
+        json.loads(line) for path in args.trajectory for line in path.read_text(encoding="utf-8").splitlines() if line
+    ]
+    result = s8_verdict(
+        plant_set, scores, judge_rows=judge_rows, offline_rows=offline,
+        trajectory_points=points or None, recall_section_max=args.recall_section_max,
+    )  # fmt: skip
     _write(args.out, result)
-    _print({k: result[k].get("pass") for k in ("1", "2", "3", "4", "5")} | {"allPass": result["allPass"]})
+    _print({k: result[k].get("pass") for k in ("1", "2", "3", "4", "5", "6", "7")} | {"allPass": result["allPass"]})
     return 0
 
 
@@ -841,6 +847,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--scores", type=Path, nargs="+", required=True, help="score 출력(A·B 갈래)")
     p.add_argument("--judged", type=Path, nargs="*", default=[], help="judge 출력")
     p.add_argument("--offline", type=Path, required=True, help="recall-offline 출력(시험 절반)")
+    p.add_argument("--trajectory", type=Path, nargs="*", default=[], help="trajectory 점(jsonl, A·B 갈래) — ⑥·⑦")
+    p.add_argument("--recall-section-max", type=int, help="테스트가 계산한 회상 섹션 최대 글자 — ⑥")
     p.add_argument("--out", type=Path, required=True)
     p.set_defaults(fn=cmd_s8)
 
