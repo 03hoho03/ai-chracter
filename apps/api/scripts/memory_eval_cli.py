@@ -335,6 +335,45 @@ def cmd_recall_offline(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_export_episodes(args: argparse.Namespace) -> int:
+    """방의 장면을 오프라인 회상 입력(JSON)으로 — 명사는 저장된 값, 검색 대상이 되는 첫 턴은 스냅샷 커서로 계산. 읽기만."""
+    from memory_eval.runtime import make_engine
+    from memory_eval.server_recall import export_episodes
+
+    async def go() -> list[dict[str, Any]]:
+        engine, factory = make_engine(_db_url(writes=False))
+        try:
+            async with factory() as db:
+                return await export_episodes(db, args.room)
+        finally:
+            await engine.dispose()
+
+    rows = asyncio.run(go())
+    _write(args.out, rows)
+    print(f"장면 {len(rows)}개 → {args.out}")
+    return 0
+
+
+def cmd_recall_parity(args: argparse.Namespace) -> int:
+    """같은 질의를 두 검색 함수로 돌린 `recall-offline` 출력 둘을 행 단위로 견준다."""
+    from memory_eval.recall_offline import compare_rows
+
+    a, b = (json.loads(path.read_text(encoding="utf-8"))["rows"] for path in (args.a, args.b))
+    result = {"a": str(args.a), "b": str(args.b), **compare_rows(a, b)}
+    _write(args.out, result)
+    _print({k: result[k] for k in ("rows", "matched", "rate")})
+    return 0
+
+
+def cmd_recall_warnings(args: argparse.Namespace) -> int:
+    """로그 파일마다 서버 회상 실패 경고 줄 수와 합계."""
+    from memory_eval.probe import recall_warning_count
+
+    counts = {str(p): recall_warning_count(p.read_text(encoding="utf-8", errors="replace")) for p in args.logs}
+    _print({"files": len(counts), "total": sum(counts.values()), "nonzero": {k: v for k, v in counts.items() if v}})
+    return 0
+
+
 # ---------------------------------------------------------------- 프로브·채점
 
 
@@ -778,6 +817,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--out", type=Path)
     p.set_defaults(fn=cmd_recall_offline)
+
+    p = sub.add_parser("export-episodes", help="방의 장면을 오프라인 회상 입력으로(읽기만)")
+    p.add_argument("--room", type=uuid.UUID, required=True)
+    p.add_argument("--out", type=Path, required=True)
+    p.set_defaults(fn=cmd_export_episodes)
+
+    p = sub.add_parser("recall-parity", help="두 recall-offline 출력의 행 단위 일치")
+    p.add_argument("--a", type=Path, required=True)
+    p.add_argument("--b", type=Path, required=True)
+    p.add_argument("--out", type=Path, required=True)
+    p.set_defaults(fn=cmd_recall_parity)
+
+    p = sub.add_parser("recall-warnings", help="로그의 서버 회상 실패 경고 줄 수")
+    p.add_argument("--logs", type=Path, nargs="+", required=True)
+    p.set_defaults(fn=cmd_recall_warnings)
 
     p = sub.add_parser("probe")
     with_plants(p)

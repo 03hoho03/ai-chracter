@@ -298,3 +298,31 @@ def best_tuning(results: Sequence[TuningResult]) -> TuningResult:
     """튜닝 목적함수(개발 절반, 300턴 체크포인트): 직접 형식 recall@3 최대 → 대명사 질문 턴 recall@3 최대 → 보통 턴 주입률
     최소 → 임계가 큰 쪽."""
     return max(results, key=lambda r: (r.direct, r.anaphora, -r.injection_rate, r.tau))
+
+
+# 두 구현의 점수를 같다고 보는 허용 오차.
+SCORE_TOLERANCE = 1e-6
+
+
+def compare_rows(a: Sequence[Mapping[str, Any]], b: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """같은 질의 집합을 두 검색 함수로 돌린 결과를 행 단위로 견준다: 주입 id(순서 포함)·상위 10 순서·상위 10 점수(허용 오차
+    안). 두 결과의 행 키(체크포인트·문항·질의 종류)가 다르면 같은 질의를 돌린 것이 아니므로 거부한다."""
+
+    def keyed(rows: Sequence[Mapping[str, Any]]) -> dict[tuple[int, str, str], Mapping[str, Any]]:
+        return {(int(r["checkpoint"]), str(r["item_id"]), str(r["kind"])): r for r in rows}
+
+    left, right = keyed(a), keyed(b)
+    if left.keys() != right.keys() or len(left) != len(a) or len(right) != len(b):
+        raise SystemExit("두 회상 결과의 행(체크포인트·문항·질의 종류)이 같지 않다 — 같은 질의를 돌렸는지 확인")
+    mismatches = []
+    for key in sorted(left):
+        x, y = left[key], right[key]
+        fields = [f for f in ("injected", "top10") if list(x[f]) != list(y[f])]
+        xs, ys = dict(x["scores"]), dict(y["scores"])
+        if xs.keys() != ys.keys() or any(abs(float(xs[k]) - float(ys[k])) > SCORE_TOLERANCE for k in xs):
+            fields.append("scores")
+        if fields:
+            mismatches.append({"checkpoint": key[0], "item": key[1], "kind": key[2], "fields": fields})
+    n = len(left)
+    return {"rows": n, "matched": n - len(mismatches), "rate": (n - len(mismatches)) / n if n else None,
+            "mismatches": mismatches}  # fmt: skip

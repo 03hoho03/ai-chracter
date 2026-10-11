@@ -166,7 +166,7 @@ async def _extract_once(
     """운영과 같이 턴마다 추출 작업을 한 번 부른다(그 작업이 가장 오래된 미추출 스냅샷 하나를 처리하고, 실패는 시도 3회까지
     다음 턴에 다시 잡는다). 미추출·완료 수를 앞뒤로 돌려준다 — 연속 실패 판정은 부르는 쪽이 한다."""
     try:
-        from api.chat import memory_episodes  # type: ignore[attr-defined]
+        from api.chat import memory_episodes
     except ImportError as exc:
         raise SystemExit("추출 켬 실행은 추출을 구현한 코드에서만 돈다(에피소드 추출 모듈이 없다)") from exc
     async with session_factory() as db:
