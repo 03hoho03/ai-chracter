@@ -161,7 +161,10 @@ def episode_nouns_rule(llm_nouns: Iterable[str], title: str, detail: str) -> fro
 def query_nouns_rule(
     user_text: str, previous_assistant: str, *, episode_nouns: frozenset[str], names: Iterable[str]
 ) -> Query:
-    """(e) 질의 = 같은 규칙의 토큰 ∪ 1자 에피소드 명사 중 어절 경계로 걸린 것."""
+    """(e) 질의 = 같은 규칙의 토큰 ∪ 1자 에피소드 명사 중 어절 경계로 걸린 것. 사용자 쪽은 그중 방 에피소드에 한 번이라도
+    나온 토큰(df > 0, `episode_nouns` 에 있는 것)만 남긴다 — 조사 떼기 토큰은 "그거·어디·뒀더라" 같은 어절도 남겨, 거르지
+    않으면 대명사 후속 질문의 사용자 질의가 비지 않아 직전 AI 응답으로 찾는 경로에 들어가지 못한다. 흔한 명사 제외는 이
+    뒤(점수 함수)에서 하므로, 흔한 명사만 있던 질의("그때 회의 어땠더라?")는 여기서 비지 않고 회상 없음이 된다."""
     names = tuple(names)
     one_char = [n for n in episode_nouns if len(n) == 1]
 
@@ -170,7 +173,7 @@ def query_nouns_rule(
         hits = set(rule_tokens(text)) | {n for n in one_char if matches(n, norm)}
         return frozenset(n for n in hits if _keep(n, names))
 
-    user = side(user_text)
+    user = side(user_text) & episode_nouns
     return Query(user=user, assistant=side(previous_assistant) - user, time_cue=time_cue(user_text))
 
 
@@ -289,20 +292,22 @@ class Retriever:
     supplement: str = "all"
     names: tuple[str, ...] = ()
     kw_table: Mapping[tuple[str, str], float] | None = None  # (에피소드 id, 정규화한 사용자 글) → 유사도
-    _nouns: dict[str, frozenset[str]] = field(default_factory=dict)
+    _nouns: dict[tuple[str, str, str, tuple[str, ...]], frozenset[str]] = field(default_factory=dict)
     log: list[dict[str, Any]] | None = None
 
     def episode_nouns(self, episode: Episode) -> frozenset[str]:
-        if episode.id not in self._nouns:
+        # id 만으로 캐시하면 같은 id 의 다른 에피소드(다른 추출 판·테스트)가 앞 내용을 물려받는다.
+        key = (episode.id, episode.title, episode.detail, tuple(episode.nouns))
+        if key not in self._nouns:
             if self.method == "substring":
-                self._nouns[episode.id] = episode_nouns_substring(episode.nouns)
+                self._nouns[key] = episode_nouns_substring(episode.nouns)
             elif self.method == "rule":
-                self._nouns[episode.id] = episode_nouns_rule(episode.nouns, episode.title, episode.detail)
+                self._nouns[key] = episode_nouns_rule(episode.nouns, episode.title, episode.detail)
             else:
-                self._nouns[episode.id] = episode_nouns_kiwi(
+                self._nouns[key] = episode_nouns_kiwi(
                     episode.nouns, episode.title, episode.detail, supplement=self.supplement
                 )
-        return self._nouns[episode.id]
+        return self._nouns[key]
 
     def __call__(
         self, episodes: Sequence[Episode], *, user_text: str, previous_assistant: str, current_turn: int
