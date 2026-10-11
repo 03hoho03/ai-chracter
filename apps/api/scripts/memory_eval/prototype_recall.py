@@ -41,6 +41,12 @@ PARTICLES = "이|가|을|를|은|는|도|만|에|에서|랑|이랑|하고|과|�
 KIWI_NOUN_TAGS = frozenset({"NNG", "NNP", "SL"})
 MAX_EPISODE_NOUNS = 30
 _EDGE_PUNCT = re.compile(r"^[\W_]+|[\W_]+$")
+# 형태소기 없는 보충(e): 어절 끝의 흔한 조사 하나를 뗀다(긴 것부터). 같은 규칙을 저장·질의 양쪽에 쓰므로 "고양이 → 고양"처럼
+# 잘못 떼도 양쪽이 같게 틀려 겹침은 유지된다.
+_TRAILING_PARTICLE = re.compile(
+    r"(에서|에게|한테|까지|부터|이랑|으로|처럼|보다|하고|은|는|이|가|을|를|에|로|와|과|도|만|의|랑)$"
+)
+_NON_WORD = re.compile(r"[\W_]+")
 
 
 @dataclass(frozen=True)
@@ -131,6 +137,41 @@ def query_nouns_substring(
     user = frozenset(n for n in episode_nouns if _keep(n, names) and matches(n, user_norm))
     assistant = frozenset(n for n in episode_nouns if _keep(n, names) and matches(n, assistant_norm)) - user
     return Query(user=user, assistant=assistant, time_cue=time_cue(user_text))
+
+
+def rule_tokens(text: str) -> list[str]:
+    """공백으로 나눈 어절에서 기호를 지우고 끝 조사 하나를 뗀 2자 이상 토큰(불용어 제외, 중복 제거, 나온 순서)."""
+    out: list[str] = []
+    for word in normalize_keyword_text(text).split():
+        token = _TRAILING_PARTICLE.sub("", _NON_WORD.sub("", word))
+        if len(token) >= 2 and token not in STOPWORDS and token not in out:
+            out.append(token)
+    return out
+
+
+def episode_nouns_rule(llm_nouns: Iterable[str], title: str, detail: str) -> frozenset[str]:
+    """(e) 쓰기 시점 명사 = 모델 명사의 공백 조각 ∪ 제목·본문의 조사 뗀 토큰(형태소기 없음)."""
+    out = list(episode_nouns_substring(llm_nouns))
+    for token in rule_tokens(f"{title} {detail}"):
+        if token not in out:
+            out.append(token)
+    return frozenset(out[:MAX_EPISODE_NOUNS])
+
+
+def query_nouns_rule(
+    user_text: str, previous_assistant: str, *, episode_nouns: frozenset[str], names: Iterable[str]
+) -> Query:
+    """(e) 질의 = 같은 규칙의 토큰 ∪ 1자 에피소드 명사 중 어절 경계로 걸린 것."""
+    names = tuple(names)
+    one_char = [n for n in episode_nouns if len(n) == 1]
+
+    def side(text: str) -> frozenset[str]:
+        norm = normalize_keyword_text(text)
+        hits = set(rule_tokens(text)) | {n for n in one_char if matches(n, norm)}
+        return frozenset(n for n in hits if _keep(n, names))
+
+    user = side(user_text)
+    return Query(user=user, assistant=side(previous_assistant) - user, time_cue=time_cue(user_text))
 
 
 @cache
@@ -243,7 +284,7 @@ def select_injected(scored: Sequence[Scored], params: Params, *, recall_cue: boo
 class Retriever:
     """`recall_offline.Retriever` 모양. 에피소드 명사는 처음 볼 때 한 번 계산해 둔다."""
 
-    method: str  # substring · kiwi · kiwi_kw
+    method: str  # substring(ⓐ) · kiwi(ⓑ) · kiwi_write(쓰기만 Kiwi, 질의는 부분 문자열) · rule(형태소기 없는 조사 떼기)
     params: Params = field(default_factory=Params)
     supplement: str = "all"
     names: tuple[str, ...] = ()
@@ -255,6 +296,8 @@ class Retriever:
         if episode.id not in self._nouns:
             if self.method == "substring":
                 self._nouns[episode.id] = episode_nouns_substring(episode.nouns)
+            elif self.method == "rule":
+                self._nouns[episode.id] = episode_nouns_rule(episode.nouns, episode.title, episode.detail)
             else:
                 self._nouns[episode.id] = episode_nouns_kiwi(
                     episode.nouns, episode.title, episode.detail, supplement=self.supplement
@@ -277,9 +320,11 @@ class Retriever:
             )
             for e in episodes
         ]
-        if self.method == "substring":
-            pool = frozenset(x for row in rows for x in row.nouns)
+        pool = frozenset(x for row in rows for x in row.nouns)
+        if self.method in ("substring", "kiwi_write"):
             query = query_nouns_substring(user_text, previous_assistant, episode_nouns=pool, names=self.names)
+        elif self.method == "rule":
+            query = query_nouns_rule(user_text, previous_assistant, episode_nouns=pool, names=self.names)
         else:
             query = query_nouns_kiwi(user_text, previous_assistant, names=self.names)
         scored = score_episodes(rows, query, current_turn=current_turn, params=self.params)
