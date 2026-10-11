@@ -248,6 +248,14 @@ async def restore(
     diffs = fingerprint_diff(expected, actual)
     if diffs:
         raise SystemExit("복원 뒤 지문이 체크포인트와 다르다: " + "; ".join(diffs))
+    pinned_file = pinned_path(dumps_dir, checkpoint, label)
+    if pinned_file.exists():
+        from memory_eval.pinned_stats import pinned_diff
+
+        pinned = {k: float(v) for k, v in json.loads(pinned_file.read_text(encoding="utf-8")).items()}
+        off = pinned_diff(actual["stats"], pinned)
+        if off:
+            raise SystemExit("복원 뒤 스탯이 고정 값과 다르다: " + "; ".join(off))
     return {"redisDeleted": deleted, "fingerprint": actual}
 
 
@@ -257,6 +265,11 @@ def require_episodes(fingerprint: Mapping[str, Any], *, required: bool) -> None:
         raise SystemExit(
             f"에피소드가 없는 상태로 얼리려 한다(episodeCount={fingerprint.get('episodeCount')!r}) — 추출 확인"
         )
+
+
+def pinned_path(dumps_dir: Path, checkpoint: int, label: str) -> Path:
+    """얼릴 때 고정한 스탯(entity_id → 값). 있으면 복원 뒤 지문의 스탯이 이 값과 같은지도 단언한다."""
+    return dumps_dir / f"{label}-cp{checkpoint}.pinned.json"
 
 
 def dump_path(dumps_dir: Path, checkpoint: int, label: str) -> Path:
