@@ -1728,7 +1728,8 @@ sudo bash ops/swap-api.sh
 판정·요약 행은 그 레인 Gemini 활성 세트의 바이트 사본이고(옛 `stat_judgment` 은 빼고), 생성 행은 손대지 않아 생성 글은 그대로다.
 게시 시각은 모델로 거르는 조회가 새 세트를, 레인만 보는 옛 조회가 여전히 Gemini 세트를 집게 고른 것이고, 둘을 함께 만족하는 시각이
 없으면 마이그레이션이 `RuntimeError` 로 배포를 멈춘다(어드민이 Claude 체인을 Gemini 보다 나중에 게시한 경우). 어드민 「프롬프트
-관리」의 스토리·캐릭터 레인에 「Claude Haiku 4.5 · 판정 전용」 탭이 생기고, Claude 탭에도 판정·요약 채널 탭이 생긴다.
+관리」의 스토리·캐릭터 레인에 「Claude Haiku · 판정 전용」 탭이 생기고, Claude 탭에도 판정·요약 채널 탭이 생긴다(탭 이름에 버전을 적지
+않는 것은 같은 `haiku` 가 직결로는 Haiku 5.5, Bedrock 으로는 Haiku 4.5 이기 때문이다).
 
 - **배포 전**: `sudo /opt/ddona/backup.sh` 백업이 최근에 돌았는지 본다(3-4 절). 배포 **직전**에 아래 읽기 전용 SELECT 로 두 레인의
   Claude 활성(`sonnet`·`opus` 의 최신 `published_at`)이 Gemini 활성보다 과거인지, Claude 초안에 판정·요약 채널 행이 없는지,

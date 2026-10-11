@@ -4,10 +4,11 @@
 (`generate_structured`)을 받고, 그림·지시문을 따로 싣는 구조화는 등록부가 받지 못하는 구현으로 적어 기동 검증이 그런 배정을
 거부한다. 예외에는 `provider = "anthropic"` 을 적는다.
 
-이 경로의 모델(Opus 5.5 등)은 사고를 끌 수 없다 — `thinking` 을 끄거나 예산으로 보내면 요청이 거부되고, 생략하면 모델이
-알아서 사고한다. 그래서 요청에 `thinking` 을 싣지 않고 깊이만 `output_config.effort` 로 고른다. 사고 토큰은 출력 상한
-안에 들고 출력 단가로 과금된다. 강제 도구 선택과 assistant 미리 채우기도 이 모델들이 거부하는데, 대본이 user 메시지
-하나라 둘 다 쓰지 않는다.
+글쓰기 모델(Opus 5.5 등)은 사고를 끌 수 없다 — `thinking` 을 끄거나 예산으로 보내면 요청이 거부되고, 생략하면 모델이
+알아서 사고한다. 그래서 생성 요청에는 `thinking` 을 싣지 않고 깊이만 `output_config.effort` 로 고른다. 판정 전용 Haiku 는
+버전마다 규칙이 달라 판정·요약 요청에서만 실제 모델 id 로 가른다(`_structured_reasoning`). 사고 토큰은 출력 상한 안에 들고
+출력 단가로 과금된다. 강제 도구 선택과 assistant 미리 채우기도 이 모델들이 거부하는데, 대본이 user 메시지 하나라 둘 다
+쓰지 않는다.
 
 요청에 계정을 가리키는 값(`metadata.user_id` 등)을 싣지 않는다. 다른 모델로 조용히 넘기는 서버 쪽 대체 경로도 쓰지 않는다
 (실패하면 오류와 환불이다 — 사용자가 고른 것과 다른 경로가 돌지 않게).
@@ -19,11 +20,13 @@ from typing import TypeVar
 
 import anthropic
 from anthropic import AsyncAnthropic
+from anthropic.types import ThinkingConfigParam
 from pydantic import BaseModel
 
 from api.core.config import ClaudeEffort, settings
+from api.llm.backends import turns_off_structured_thinking
 from api.llm.call_policy import CALL_POLICIES
-from api.llm.chat_models import PromptSetModelId, backend_model_id, configured_call_site_model
+from api.llm.chat_models import backend_model_id, configured_call_site_model
 from api.llm.claude_messages import (
     COMMON_TRANSPORT_ERRORS,
     ClaudeStreamTally,
@@ -56,8 +59,8 @@ logger = logging.getLogger(__name__)
 # 명시한다 — 프로세스 env 의 값이 이 구현의 요청을 다른 곳으로 보내지 않게.
 _BASE_URL = "https://api.anthropic.com"
 
-# 사고 깊이(`output_config.effort`)를 받지 않는 모델 — 보내면 요청이 400 으로 거부된다(Claude Haiku 4.5).
-_MODELS_WITHOUT_EFFORT: frozenset[PromptSetModelId] = frozenset({"haiku"})
+# 사고 깊이(`output_config.effort`)를 받지 않는 모델의 id 접두 — 보내면 요청이 400 으로 거부된다(Claude Haiku 4.5).
+_STRUCTURED_NO_EFFORT_PREFIXES = ("claude-haiku-4-5",)
 
 
 def _anthropic_error(cls: type[E], message: str) -> E:
@@ -83,6 +86,26 @@ def _effort(call_site: LLMCallSite) -> ClaudeEffort:
     if CALL_POLICIES[call_site].claude_limits == "chapter":
         return settings.anthropic_chapter_effort
     return settings.anthropic_chat_effort
+
+
+def _structured_reasoning(model_id: str) -> tuple[ThinkingConfigParam | None, ClaudeEffort | None]:
+    """판정·요약 요청의 (사고 설정, 깊이). None 이면 싣지 않는다. 판정 전용 id `haiku` 가 구현에 따라 Haiku 4.5 와 5.5 를
+    함께 가리켜, 문안 모델 id 가 아니라 실제로 보내는 모델 id 로 가른다.
+
+    - Haiku 4.5: 둘 다 싣지 않는다 — 깊이를 받으면 400 이고, 사고는 요청할 때만 한다.
+    - Haiku 5.x: 사고를 끄고 깊이를 보낸다 — 사고가 기본으로 켜져 있고 깊이 기본값이 medium 이라, 둘 다 생략하면 판정이
+      사고하며 돈다. 끄는 것은 Haiku 4.5 판정의 조건(사고 없음)을 잇고 사고 토큰(출력 단가)을 없앤다. 사고를 끈 요청은
+      깊이를 high 까지만 받는다 — 기동 검증이 그 위를 거부한다(`llm/backends.py`).
+    - 그 밖(Opus·Sonnet 5.5): 사고를 싣지 않고 깊이만 — 생성 경로와 같다.
+
+    깊이는 판정·요약 몫의 설정(`anthropic_structured_effort`)이다. 채팅 생성 깊이를 따르면 그 값을 xhigh 로 올리는 순간
+    Haiku 5.x 판정이 전부 거부된다."""
+    effort = settings.anthropic_structured_effort
+    if model_id.startswith(_STRUCTURED_NO_EFFORT_PREFIXES):
+        return None, None
+    if turns_off_structured_thinking(model_id):
+        return {"type": "disabled"}, effort
+    return None, effort
 
 
 def _is_throttling(exc: BaseException) -> bool:
@@ -198,22 +221,23 @@ class AnthropicLLMClient(LLMClient):
         usage: LLMCallContext,
     ) -> T:
         """판정·요약 하나. 모델·타임아웃·출력 상한은 Bedrock 구현과 같은 규칙이다(그 호출의 판정·요약 모델, 그 호출 위치의
-        Gemini 타임아웃, 채팅 상한). 사고는 생성과 같이 싣지 않고 깊이만 채팅 값으로 보낸다 — 깊이를 받지 않는 모델에는 그것도
-        싣지 않는다. 사고하는 모델은 사고 블록이 앞에 오고 그 토큰도 출력 상한 안에 든다."""
+        Gemini 타임아웃, 채팅 상한). 사고와 깊이는 보내는 모델 id 로 정한다(`_structured_reasoning`). 사고하는 모델은 사고
+        블록이 앞에 오고 그 토큰도 출력 상한 안에 든다."""
         if images:
             # 그림을 싣는 호출(발행 심사)은 기동 검증이 이 구현에 배정하지 못하게 막는다.
             raise _anthropic_error(LLMClientError, "Anthropic client does not take images in a structured call")
-        chosen = configured_call_site_model(usage.call_site)
-        model = backend_model_id("anthropic", chosen)
+        model = backend_model_id("anthropic", configured_call_site_model(usage.call_site))
+        thinking, effort = _structured_reasoning(model)
         output_config = structured_output_config(response_schema)
-        if chosen not in _MODELS_WITHOUT_EFFORT:
-            output_config["effort"] = _effort(usage.call_site)
+        if effort is not None:
+            output_config["effort"] = effort
         try:
             message = await self._sdk().messages.create(
                 model=model,
                 max_tokens=_max_tokens(usage.call_site),
                 messages=[{"role": "user", "content": str(prompt)}],
                 output_config=output_config,
+                thinking=thinking if thinking is not None else anthropic.omit,
                 timeout=request_timeout_ms(usage.call_site) / 1000,
             )
         except COMMON_TRANSPORT_ERRORS as exc:

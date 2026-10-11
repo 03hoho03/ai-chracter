@@ -298,7 +298,10 @@ class Settings(BaseSettings):
     # 운영이 실제로 부르는 쪽을 따르고, 운영은 배정으로 상위 모델을 이 구현에 보내므로 지금은 이 쪽 버전이다.
     anthropic_sonnet_model_id: str = "claude-sonnet-5-5"
     anthropic_opus_model_id: str = "claude-opus-5-5"
-    anthropic_haiku_model_id: str = "claude-haiku-4-5"
+    # 판정 전용 모델(Claude Haiku 5.5). 판정·요약 모델 설정이 `haiku` 이고 배정이 그 호출을 이 구현으로 옮길 때만 쓰인다.
+    # 위 Bedrock 쪽은 Haiku 4.5 그대로다 — 같은 `haiku` 라도 구현에 따라 버전이 다르다. 판정 요청의 사고·깊이 규칙은 이
+    # 값(실제 모델 id)으로 가른다(`llm/anthropic_api.py`).
+    anthropic_haiku_model_id: str = "claude-haiku-5-5"
     # 요청 타임아웃(ms). Bedrock 과 같은 값이고 같은 뜻("다음 청크까지")이다.
     anthropic_chat_timeout_ms: int = 45_000
     anthropic_chapter_timeout_ms: int = 300_000
@@ -309,6 +312,10 @@ class Settings(BaseSettings):
     # 사고 깊이. 채팅 턴(다시 생성 포함) / 소설 장. 모델의 기본값에 맡기지 않고 늘 보낸다.
     anthropic_chat_effort: ClaudeEffort = "low"
     anthropic_chapter_effort: ClaudeEffort = "medium"
+    # 판정·요약(구조화 호출)의 사고 깊이. 채팅 생성 깊이와 나눈다 — 함께 쓰면 채팅 깊이를 xhigh 로 올리는 순간, 사고를 끈
+    # Haiku 5.x 판정(사고를 끈 요청은 깊이를 high 까지만 받는다)이 전부 거부된다. 기본값이 채팅 기본값과 같아 env 를 두지
+    # 않으면 Opus·Sonnet 판정 요청은 이 설정 전과 같다.
+    anthropic_structured_effort: ClaudeEffort = "low"
     # 상위 모델 스위치 — 채팅과 소설화에 하나씩(기본 닫힘). 채팅은 이 스위치 하나로 로그인 회원 전원에게 열린다. 소설은
     # 허용 가능 계정 명단도 두며 뜻은 소설화 스위치·명단과 같다(명단에서 빼고 재기동하면 허용 행이 있어도 막힘). 소설 장의
     # 상위 모델은 소설화 자체 허용도 함께 있어야 쓸 수 있다.
@@ -368,6 +375,7 @@ class Settings(BaseSettings):
         "anthropic_chapter_max_tokens",
         "anthropic_chat_effort",
         "anthropic_chapter_effort",
+        "anthropic_structured_effort",
         "chat_premium_models_enabled",
         "novelize_premium_models_enabled",
         "stat_judgment_model",

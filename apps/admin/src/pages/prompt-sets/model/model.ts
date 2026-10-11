@@ -11,7 +11,7 @@ export const PROMPT_MODEL_LABELS: Record<PromptModel, string> = {
   gemini: "Gemini",
   sonnet: "Claude Sonnet 5.5",
   opus: "Claude Opus 5.5",
-  haiku: "Claude Haiku 4.5 · 판정 전용",
+  haiku: "Claude Haiku · 판정 전용",
 };
 
 export function isPromptModel(value: string): value is PromptModel {

@@ -97,6 +97,19 @@ MODEL_BACKENDS: dict[PromptSetModelId, tuple[BackendId, ...]] = {
 }
 
 
+# Anthropic 직결 판정·요약에서 사고를 끄는 모델의 id 접두(Haiku 5.x). 이 모델들은 사고가 기본으로 켜져 있어 판정 요청이
+# 사고를 끄는데, 사고를 끈 요청은 깊이를 high 까지만 받는다. 요청을 만드는 쪽(`llm/anthropic_api.py`)과 그 깊이 상한을
+# 기동에서 거부하는 아래 검증이 같은 규칙을 읽게 여기 둔다 — 실제 모델 id 로 가르는 이유는 판정 전용 id `haiku` 가
+# 구현에 따라 Haiku 4.5(깊이를 받지 않는다)와 5.5 를 함께 가리키기 때문이다.
+_STRUCTURED_THINKING_OFF_PREFIXES = ("claude-haiku-5",)
+_EFFORTS_WITH_THINKING_OFF = frozenset({"low", "medium", "high"})
+
+
+def turns_off_structured_thinking(model_id: str) -> bool:
+    """Anthropic 직결 구조화 호출이 이 모델에서 `thinking: disabled` 를 싣는가."""
+    return model_id.startswith(_STRUCTURED_THINKING_OFF_PREFIXES)
+
+
 def call_site_model(call_site: LLMCallSite, read_setting: Callable[[str], str]) -> PromptSetModelId:
     """모델을 설정으로 고르는 호출(판정·요약)이면 그 설정의 모델, 아니면 기본 모델. 구조화 호출의 라우팅, Claude 구현이 보낼
     모델 id, 판정 덤프, 판정 세트 읽기, 기동 검증이 모두 이 함수 하나로 모델을 정한다 — 따로 계산하면 덤프의 id 나 읽은
@@ -169,7 +182,8 @@ def assignment_errors(assignments: Mapping[LLMCallSite, BackendId], read_setting
     모델 설정이 있는 호출(판정·요약)은 배정이 있든 없든 그 호출이 실제로 갈 구현을 해석해, 방식을 받지 못하거나 자격이 비어
     있으면 거부한다 — 판정 모델만 바꾸고 배정을 두지 않으면 판정은 그 모델의 기본 구현(Claude 면 Bedrock)으로 가는데, 그
     자격이 비어 있으면 매 판정이 실패한다. 채팅 판정과 미리보기 판정은 모델 설정을 함께 쓰지만 배정은 호출 위치마다라
-    따로 본다."""
+    따로 본다. 그 호출이 Anthropic 직결에서 사고를 끄는 모델로 가면 구조화 깊이가 사고를 끈 요청이 받는 범위인지도 본다 —
+    아니면 매 판정이 400 이다."""
     errors: list[str] = []
     for call_site, backend in assignments.items():
         policy = CALL_POLICIES[call_site]
@@ -207,4 +221,14 @@ def assignment_errors(assignments: Mapping[LLMCallSite, BackendId], read_setting
         missing = _missing_credentials(backend, read_setting)
         if missing:
             errors.append(f"{entry} — 가는 구현 {backend} 의 {', '.join(missing)} 가 비어 있다")
+        # Bedrock 구현은 판정에서 깊이를 보내지 않아 이 상한이 없다.
+        if backend != "anthropic":
+            continue
+        model_id = read_setting(BACKENDS[backend].model_id_settings[model])
+        effort = read_setting("anthropic_structured_effort")
+        if turns_off_structured_thinking(model_id) and effort not in _EFFORTS_WITH_THINKING_OFF:
+            errors.append(
+                f"{entry} — {model_id} 는 사고를 끄고 판정하는데 ANTHROPIC_STRUCTURED_EFFORT={effort} 다"
+                f"(사고를 끈 요청은 {'·'.join(sorted(_EFFORTS_WITH_THINKING_OFF))} 만 받는다)"
+            )
     return errors
