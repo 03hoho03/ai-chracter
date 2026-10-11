@@ -18,9 +18,10 @@ Create Date: 2026-10-11 18:22:18.664476
 갱신하므로, 되감기가 추출 기록을 스냅샷보다 먼저 지우면 둘이 서로를 기다린다. 방 FK 는 방 삭제가 스냅샷부터 지우므로 방 DELETE
 시점에는 자식이 남지 않는다. CHECK 는 `alembic check` 가 비교하지 않아 행위 테스트가 유일한 검증이다.
 
-첫 문장은 `SET LOCAL lock_timeout = '5s'` 다. `chat_turns` 의 칸 추가(상수 기본값이라 메타데이터 변경)와 두 테이블의 FK 가
-`chat_rooms`·`chat_room_memory_snapshots`·`chat_turns` 에 짧은 락을 잡는데, 떠 있는 API 가 그 테이블들을 턴마다 쓰므로
-오래 걸린 트랜잭션 뒤에서 기다리며 뒤의 요청을 줄 세우지 않게 5초 안에 못 잡으면 실패시킨다(체인 전체 롤백, 다시 돌리면 된다).
+첫 문장은 `SET LOCAL lock_timeout = '5s'` 다. `chat_turns` 의 칸 추가는 상수 기본값이라 메타데이터 변경이지만
+`ACCESS EXCLUSIVE` 를 잠깐 잡고, 두 테이블의 FK 생성은 참조하는 `chat_rooms`·`chat_room_memory_snapshots` 에
+`SHARE ROW EXCLUSIVE` 를 잠깐 잡는다. 떠 있는 API 가 그 테이블들을 턴마다 쓰므로 오래 걸린 트랜잭션 뒤에서 기다리며 뒤의
+요청을 줄 세우지 않게 5초 안에 못 잡으면 실패시킨다(체인 전체 롤백, 다시 돌리면 된다).
 
 **배포 겹침** — 옛 코드는 두 테이블을 모르고 읽지도 쓰지도 않는다. 옛 코드의 `chat_turns` INSERT 는 새 칸을 몰라도
 `server_default` 로 성공한다(그래서 기본값을 떼지 않는다). 옛 코드의 스냅샷 DELETE 는 위 CASCADE 로 이 행들까지 지운다.
