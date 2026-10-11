@@ -13,12 +13,12 @@ import dataclasses
 import json
 import time
 import uuid
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Any, TypeVar
 
 from pydantic import BaseModel
-from sqlalchemy import func, select, text, update
+from sqlalchemy import func, select, text, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.chat import memory_fold
@@ -41,6 +41,8 @@ T = TypeVar("T", bound=BaseModel)
 FOLD_CALL_ESTIMATE_USD = 0.002
 MAX_CONSECUTIVE_FOLD_FAILURES = 3
 MAX_CONSECUTIVE_EXTRACT_FAILURES = 3
+# 되감기 직전 그 스냅샷의 추출을 따라잡게 부르는 최대 횟수(추출 작업 자신의 재시도 3회와 같은 수).
+REWIND_EXTRACT_ATTEMPTS = 3
 
 
 class LedgerTap(LLMClient):
@@ -289,7 +291,9 @@ async def run_insert(
             for item_id, plant in rewinds.items():
                 if item_id in done_rewinds:
                     continue
-                deleted = await _maybe_rewind(session_factory, room_id, plant, by_turn, cookie_value)
+                deleted = await _maybe_rewind(
+                    session_factory, room_id, plant, by_turn, cookie_value, extract=extract, llm=llm
+                )
                 if deleted is not None:
                     done_rewinds.add(item_id)
                     record.setdefault("rewinds", []).append(deleted)
@@ -343,14 +347,52 @@ async def run_insert(
         await engine.dispose()
 
 
+@dataclasses.dataclass(frozen=True)
+class RewindState:
+    snapshot_id: str | None
+    extraction_status: str | None
+    covering_episodes: int | None
+
+
+def rewind_ready(state: RewindState, *, extract: bool) -> bool:
+    """지워도 되는가. 추출을 켠 실행은 그 메시지를 덮는 스냅샷의 추출이 끝났고(done) 그 턴을 덮는 에피소드가 있어야 한다 —
+    아니면 지운 핵심어가 애초에 에피소드에 없어 되감기 누출 검사가 아무것도 검증하지 못한다. 추출을 끈 실행은 기다리지 않는다."""
+    if not extract:
+        return True
+    return state.extraction_status == "done" and bool(state.covering_episodes)
+
+
+async def ensure_rewind_ready(
+    read: Callable[[], Awaitable[RewindState]],
+    extract_once: Callable[[], Awaitable[None]],
+    *,
+    extract_enabled: bool,
+    attempts: int,
+) -> RewindState:
+    """지울 준비가 될 때까지 추출을 따라잡게 다시 부른다. 횟수 안에 안 되면 넣기를 멈춘다."""
+    state = await read()
+    for _ in range(attempts):
+        if rewind_ready(state, extract=extract_enabled):
+            return state
+        await extract_once()
+        state = await read()
+    if rewind_ready(state, extract=extract_enabled):
+        return state
+    raise SystemExit(f"되감기 전 추출이 {attempts}번 안에 끝나지 않았다 — 넣기를 멈춘다: {state}")
+
+
 async def _maybe_rewind(
     session_factory: async_sessionmaker[AsyncSession],
     room_id: uuid.UUID,
     plant: dict[str, Any],
     by_turn: dict[int, ScriptTurn],
     cookie_value: str | None,
+    *,
+    extract: bool,
+    llm: LLMClient,
 ) -> dict[str, Any] | None:
-    """그 메시지를 담은 스냅샷이 생긴 첫 턴(그 접기와 추출이 끝난 직후, 다음 접기 전)에 지운다."""
+    """그 메시지를 담은 스냅샷이 생긴 첫 턴(그 접기와 추출이 끝난 직후, 다음 접기 전)에 지운다. 추출을 켠 실행은 그 스냅샷의
+    추출이 끝나고 그 턴을 덮는 에피소드가 생길 때까지 추출을 따라잡게 한 뒤 지운다. 지울 때의 상태를 기록에 남긴다."""
     content = by_turn[int(plant["plantTurn"])].user
     async with session_factory() as db:
         key = await _message_key(db, room_id, content)
@@ -359,6 +401,19 @@ async def _maybe_rewind(
         current = await load_current_summary(db, room_id)
         if current is None or key > current.cursor:
             return None
+        user_id = await db.scalar(select(ChatRoom.user_id).where(ChatRoom.id == room_id))
+    plant_turn = int(plant["plantTurn"])
+
+    async def read() -> RewindState:
+        async with session_factory() as db:
+            return await _rewind_state(db, room_id, key, plant_turn)
+
+    async def extract_once() -> None:
+        assert user_id is not None
+        await _extract_once(session_factory, llm, room_id, user_id)
+
+    state = await ensure_rewind_ready(read, extract_once, extract_enabled=extract, attempts=REWIND_EXTRACT_ATTEMPTS)
+    async with session_factory() as db:
         before = await _snapshot_count(db, room_id)
         turn_count = int(await db.scalar(select(ChatRoom.turn_count).where(ChatRoom.id == room_id)) or 0)
     if cookie_value is None:
@@ -379,7 +434,45 @@ async def _maybe_rewind(
         "atTurn": turn_count,
         "nominalTurn": nominal,
         "snapshotsRemoved": removed,
+        "snapshotId": state.snapshot_id,
+        "extractionStatus": state.extraction_status,
+        "coveringEpisodes": state.covering_episodes,
     }
+
+
+async def _rewind_state(
+    db: AsyncSession, room_id: uuid.UUID, key: tuple[Any, uuid.UUID], plant_turn: int
+) -> RewindState:
+    """그 메시지를 덮는 스냅샷(커서가 메시지 키 이상인 가장 이른 스냅샷), 그 스냅샷의 추출 상태, 그 턴을 덮는 에피소드 수.
+    추출 테이블이 없는 코드(추출 전)면 추출 상태·에피소드 수는 None."""
+    snapshot = await db.scalar(
+        select(ChatRoomMemorySnapshot.id)
+        .where(
+            ChatRoomMemorySnapshot.chat_room_id == room_id,
+            tuple_(ChatRoomMemorySnapshot.cursor_created_at, ChatRoomMemorySnapshot.cursor_message_id) >= key,
+        )
+        .order_by(ChatRoomMemorySnapshot.cursor_created_at, ChatRoomMemorySnapshot.cursor_message_id)
+        .limit(1)
+    )
+    if not await db.scalar(text("SELECT to_regclass('chat_memory_extractions') IS NOT NULL")):
+        return RewindState(
+            snapshot_id=str(snapshot) if snapshot else None, extraction_status=None, covering_episodes=None
+        )
+    status = await db.scalar(
+        text("SELECT status FROM chat_memory_extractions WHERE snapshot_id = :snapshot"), {"snapshot": snapshot}
+    )
+    episodes = await db.scalar(
+        text(
+            "SELECT count(*) FROM chat_memory_episodes WHERE chat_room_id = :room "
+            "AND start_turn <= :turn AND end_turn >= :turn"
+        ),
+        {"room": room_id, "turn": plant_turn},
+    )
+    return RewindState(
+        snapshot_id=str(snapshot) if snapshot else None,
+        extraction_status=str(status) if status is not None else None,
+        covering_episodes=int(episodes or 0),
+    )
 
 
 def _append(path: Path, record: dict[str, Any]) -> None:
