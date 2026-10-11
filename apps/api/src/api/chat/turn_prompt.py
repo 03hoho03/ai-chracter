@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.ending_rules import evaluate_rule_list
 from api.chat.keyword_notes import match_keyword_notes
+from api.chat.memory_recall import NO_RECALL, Recall, recall_for_turn
 from api.chat.memory_window import CurrentSummary, load_current_summary, prompt_window
 from api.chat.prompt_builder import (
     PromptLane,
@@ -56,7 +57,11 @@ logger = logging.getLogger(__name__)
 class GenerationPrompt(NamedTuple):
     """한 턴의 생성 호출에 넘길 값. `persona_description_rendered` 는 대화 프로필 섹션이 이 프롬프트에 실제로 들어갔고
     그 프로필에 설명이 있는가, `note_rendered` 는 기억 노트 섹션이 실제로 들어갔는가다(정책 안내 문구 분기용 — 이름만 있는
-    프로필은 안내 대상이 아니다). `names` 는 같은 턴의 판정·요약이 생성과 같은 이름을 쓰도록 함께 돌려준다."""
+    프로필은 안내 대상이 아니다). `names` 는 같은 턴의 판정·요약이 생성과 같은 이름을 쓰도록 함께 돌려준다.
+
+    `memory_recall` 은 이 프롬프트의 회상 섹션에 실은 장면 목록 `[{episodeId, score, rank, chars, path}]`(순위 순)이다 — 턴
+    기록이 그대로 쓰고, 평가 하네스가 조립 결과에서 이 이름으로 읽는다. 회상을 하지 않았거나 실은 장면이 없으면 빈 튜플이다.
+    끝 칸이고 기본값이 있지만 튜플 길이가 늘었으므로 위치로 풀어 쓰는 쪽은 여섯 칸으로 받는다."""
 
     prompt: str
     system_instruction: str
@@ -82,7 +87,11 @@ class InjectedTurnState:
 
     네 칸을 한꺼번에 준다(일부만 주고 나머지를 DB 에서 읽으면 서로 다른 시점의 값이 섞인다). `summary` 가 None 이면
     "요약 없음", `memory_note` 가 `""` 이면 "노트 없음", `persona` 가 None 이면 "프로필 없음"이다. `stats` 의 키는
-    스탯 entity_id 문자열이고, 빠진 스탯은 상황 노트 조건에서 거짓이다."""
+    스탯 entity_id 문자열이고, 빠진 스탯은 상황 노트 조건에서 거짓이다.
+
+    `recall_lines` 는 그 턴 회상 섹션의 줄이다(턴 기록의 장면 id 로 다시 렌더한 것, `""` 이면 회상 없음). None 이면 주입한
+    요약 커서로 지금 장면에서 다시 찾는다 — 그 사이 늘어난 장면 때문에 그 턴과 다른 글이 될 수 있다. 회상 스위치와 생성
+    윈도우가 꺼져 있으면 이 값과 무관하게 회상 섹션이 없다(실제 턴과 같은 규칙)."""
 
     summary: CurrentSummary | None
     memory_note: str
@@ -267,13 +276,35 @@ async def build_room_prompt(
 
     `turn_state` 를 주면 요약·기억 노트·스탯·대화 프로필을 DB 대신 그 묶음에서 읽는다(지난 턴을 그때 상태로 다시
     조립하는 측정 도구가 쓴다 — 실제 대화의 호출부는 주지 않는다). 주입 요약에도 생성 윈도우 설정이 똑같이 걸리고,
-    주입 프로필은 프로필 섹션·이름(`{{user}}` 치환·키워드 매칭·이름 한 줄)·프로필 렌더 여부가 모두 함께 본다."""
+    주입 프로필은 프로필 섹션·이름(`{{user}}` 치환·키워드 매칭·이름 한 줄)·프로필 렌더 여부가 모두 함께 본다.
+
+    회상 스위치(`memory_episodes_recall`)와 생성 윈도우가 켜져 있고 요약 커서가 있으면 장면 기억을 회상해 대화 기록 바로 뒤
+    섹션에 싣는다(`chat/memory_recall.py`). 기록 뒤라 Claude 캐시 블록의 앞 둘(기록 끝까지)은 회상과 무관하게 같다. 꺼져
+    있으면 장면을 읽지도 않아 프롬프트와 SQL 이 회상이 생기기 전과 같다."""
     memory_summary = ""
+    full_history = history
+    current_summary: CurrentSummary | None = None
     if settings.memory_window_generation:
         current_summary = await load_current_summary(db, room.id) if turn_state is None else turn_state.summary
         if current_summary is not None:
             history = prompt_window(history, current_summary.cursor)
             memory_summary = current_summary.text
+
+    async def recall(names: PromptNames) -> Recall:
+        if not settings.memory_episodes_recall or current_summary is None:
+            return NO_RECALL
+        if turn_state is not None and turn_state.recall_lines is not None:
+            return Recall(turn_state.recall_lines, ())
+        return await recall_for_turn(
+            db,
+            room_id=room.id,
+            cursor=current_summary.cursor,
+            history=full_history,
+            window=history,
+            user_content=user_content,
+            names=names,
+        )
+
     if turn_state is None:
         memory_note = room.memory_note
         persona = await db.get(UserPersona, room.persona_id) if room.persona_id is not None else None
@@ -305,6 +336,7 @@ async def build_room_prompt(
             )
         ).all()
         names = PromptNames(persona_name=persona_name, char_name=None)
+        recalled = await recall(names)
         matched_notes = match_keyword_notes(notes, history, user_content, names=names)
         situation_notes = (
             await db.scalars(
@@ -341,6 +373,7 @@ async def build_room_prompt(
             situation_note_texts=situation_note_texts,
             shortcut_prompt=shortcut.prompt if shortcut is not None else None,
             names=names,
+            memory_recall_lines=recalled.lines,
         )
         return GenerationPrompt(
             prompt,
@@ -353,11 +386,13 @@ async def build_room_prompt(
                 prompt_sections, is_story_chat=True, template=story_detail.prompt_template, memory_note=memory_note
             ),
             names,
+            recalled.record,
         )
 
     detail = await db.get(CharacterVersionDetail, room.content_version_id)
     assert detail is not None
     names = PromptNames(persona_name=persona_name, char_name=detail.name)
+    recalled = await recall(names)
     prompt = build_generation_prompt(
         prompt_set=prompt_set,
         sections=prompt_sections,
@@ -369,6 +404,7 @@ async def build_room_prompt(
         memory_note=memory_note,
         memory_summary=memory_summary,
         names=names,
+        memory_recall_lines=recalled.lines,
     )
     return GenerationPrompt(
         prompt,
@@ -377,6 +413,7 @@ async def build_room_prompt(
         and user_persona_rendered(prompt_sections, is_story_chat=False, user_persona=user_persona),
         memory_note_rendered(prompt_sections, is_story_chat=False, memory_note=memory_note),
         names,
+        recalled.record,
     )
 
 

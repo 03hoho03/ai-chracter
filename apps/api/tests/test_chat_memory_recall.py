@@ -285,6 +285,29 @@ def test_rare_noun_outranks_character_name_overlap() -> None:
     assert [row.id for row in select_injected(scored, recall_cue=False)] == ["g"]
 
 
+def test_more_rare_overlap_outranks_a_recent_single_overlap() -> None:
+    """임계용 점수는 드문 명사 하나에서 상한(1)에 닿아, 드문 명사 둘을 가진 옛 장면과 하나를 가진 최근 장면이 최근성으로만
+    갈린다. 순위는 상한 없는 원점수라 둘을 가진 장면이 1위이고, 보통 턴의 한 자리도 그 장면이 차지한다."""
+    rows = [
+        RecallCandidate(id="old-two", nouns=frozenset({"렌즈", "케이스"}), importance=1, end_turn=10, snapshot=1),
+        RecallCandidate(id="recent-one", nouns=frozenset({"가방"}), importance=1, end_turn=290, snapshot=9),
+        *_filler(28),
+    ]
+    query = RecallQuery(user=frozenset({"렌즈", "케이스", "가방"}), assistant=frozenset(), time_cue=False)
+    scored = score_episodes(rows, query, current_turn=300)
+    by_id = {row.id: row for row in scored}
+    assert by_id["recent-one"].s > by_id["old-two"].s
+    assert [row.id for row in select_injected(scored, recall_cue=False)] == ["old-two"]
+
+
+def test_reply_words_alone_without_a_time_cue_recall_nothing() -> None:
+    """사용자 메시지에 방 장면의 낱말이 없고 시간 단서도 없으면 직전 응답에 드문 낱말이 있어도 찾지 않는다 — 상시로 찾으면
+    매 턴 현재 장면 낱말로 최근 장면이 실린다."""
+    rows = [RecallCandidate(id="g", nouns=frozenset({"렌즈"}), importance=3, end_turn=10, snapshot=1), *_filler(9)]
+    query = RecallQuery(user=frozenset(), assistant=frozenset({"렌즈"}), time_cue=False)
+    assert score_episodes(rows, query, current_turn=100) == []
+
+
 def test_recall_noun_in_user_message_is_not_diluted_by_current_scene_nouns() -> None:
     """사용자가 드문 명사로 물으면 직전 응답의 현재 장면 명사 스무 개가 질의를 묽히지 않는다 — 정답 장면이 실리고 현재
     장면을 공유하는 최근 장면은 실리지 않는다."""
@@ -541,15 +564,16 @@ async def test_recall_keeps_first_two_cache_blocks_identical(
 async def test_recall_result_is_recorded_on_the_prompt_for_the_harness(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """조립 결과의 `memory_recall` 칸에 실은 장면이 순위 순으로 남는다(평가 하네스가 이 칸을 JSON 으로 읽는다)."""
+    """조립 결과의 `memory_recall` 칸에 실은 장면이 순위 순으로 남는다(평가 하네스가 이 칸을 JSON 으로 읽는다). 점수는 시간
+    단서가 없는 턴이라 최근성까지 들어간 값이다 — 이번 턴 번호는 오프닝을 뺀 응답 8개 + 1 = 9, 장면 끝 턴 3."""
     room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY])
     _recall_on(monkeypatch)
-    on = await _build(db_session, room, "밀알당 기억나?")
+    on = await _build(db_session, room, "밀알당 가자")
 
     bakery_id = await db_session.scalar(sa.select(ChatMemoryEpisode.id).where(ChatMemoryEpisode.title == _BAKERY.title))
     [entry] = json.loads(json.dumps(on._asdict()["memory_recall"]))
     line = "- 밀알당에 간 날: 태민이랑 밀알당에서 소금빵을 먹었다. (인물의 말)"
-    assert entry.pop("score") >= memory_recall.TAU
+    assert math.isclose(entry.pop("score"), 0.7 + 0.05 * (3 - 1) / 4 + 0.02 * 3 / 9, abs_tol=1e-9)
     assert entry == {"episodeId": str(bakery_id), "rank": 1, "chars": len(line), "path": "user"}
 
 
@@ -732,7 +756,7 @@ async def test_recall_read_failure_is_absorbed_and_the_turn_finishes(
     assert HEADER not in fake.prompts[-1]
     assert captured == ["db"]
     assert any("회상" in record.getMessage() for record in caplog.records)
-    assert [record.memory_recall for record in await _records(db_session, room.room_id)] == [[]]
+    assert [record.memory_recall for record in (await _records(db_session, room.room_id)).values()] == [[]]
 
 
 # --- 턴 기록 · 리플레이 -----------------------------------------------------------------------
@@ -775,15 +799,17 @@ async def _send(
     assert _parse_sse_events(response.text)[-1]["type"] == "done", response.text
 
 
-async def _records(db_session: AsyncSession, room_id: uuid.UUID) -> list[ChatTurn]:
-    db_session.expire_all()
-    return list(
-        (
-            await db_session.scalars(
-                sa.select(ChatTurn).where(ChatTurn.chat_room_id == room_id).order_by(ChatTurn.created_at, ChatTurn.id)
-            )
-        ).all()
-    )
+async def _records(db_session: AsyncSession, room_id: uuid.UUID) -> dict[str, ChatTurn]:
+    """방의 턴 기록을 종류별로. 한 테스트 안에서는 `created_at` 이 같아 순서로는 가를 수 없다. 심어 둔 메시지 객체를 만료시키지
+    않도록 기록만 다시 읽는다."""
+    records = (
+        await db_session.scalars(
+            sa.select(ChatTurn).where(ChatTurn.chat_room_id == room_id).execution_options(populate_existing=True)
+        )
+    ).all()
+    by_kind: dict[str, ChatTurn] = {record.kind: record for record in records}
+    assert len(by_kind) == len(records)
+    return by_kind
 
 
 async def test_send_regenerate_and_edit_record_their_own_recall(
@@ -813,13 +839,14 @@ async def test_send_regenerate_and_edit_record_their_own_recall(
     )
 
     records = await _records(db_session, room.room_id)
-    assert [record.kind for record in records] == ["send", "regenerate", "edit"]
-    assert [[entry["episodeId"] for entry in record.memory_recall] for record in records] == [
-        [str(ids[_BAKERY.title])],
-        [str(ids[_BAKERY.title])],
-        [str(ids[tower.title])],
-    ]
-    assert all(entry["path"] == "user" and entry["rank"] == 1 for record in records for entry in record.memory_recall)
+    assert {kind: [entry["episodeId"] for entry in record.memory_recall] for kind, record in records.items()} == {
+        "send": [str(ids[_BAKERY.title])],
+        "regenerate": [str(ids[_BAKERY.title])],
+        "edit": [str(ids[tower.title])],
+    }
+    assert all(
+        entry["path"] == "user" and entry["rank"] == 1 for record in records.values() for entry in record.memory_recall
+    )
     assert all(HEADER in prompt for prompt in fake.prompts)
 
 
@@ -833,7 +860,7 @@ async def test_replay_rebuilds_recall_lines_from_turn_record(
     before = await _history(db_session, room.room_id)
     fake = _PromptCapture()
     await _send(db_client, room, "POST", f"/chat-rooms/{room.room_id}/messages", {"content": "밀알당 기억나?"}, fake)
-    [record] = await _records(db_session, room.room_id)
+    record = (await _records(db_session, room.room_id))["send"]
 
     snapshot_id = await db_session.scalar(
         sa.select(ChatMemoryEpisode.snapshot_id).where(ChatMemoryEpisode.title == _BAKERY.title)
@@ -871,6 +898,6 @@ async def test_replay_of_a_turn_without_recall_gets_no_lines(
 ) -> None:
     room = await _story_room(db_client, db_session, _FILLER_SCENES)
     await _send(db_client, room, "POST", f"/chat-rooms/{room.room_id}/messages", {"content": "안녕"}, _PromptCapture())
-    [record] = await _records(db_session, room.room_id)
+    record = (await _records(db_session, room.room_id))["send"]
     assert await turn_recall_lines(db_session, record.assistant_message_id) == ""
     assert await turn_recall_lines(db_session, uuid.uuid4()) == ""

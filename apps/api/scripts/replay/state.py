@@ -12,9 +12,10 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.chat.memory_recall import RecallRecordMissingError, recall_lines_from_record
 from api.chat.memory_window import CurrentSummary
 from api.chat.turn_prompt import InjectedPersona, InjectedTurnState
-from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom, ChatRoomMemorySnapshot
+from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom, ChatRoomMemorySnapshot, ChatTurn
 from api.db.models.story import Shortcut, StatDef
 from replay.logs import DriverLogs, ReplayRefusedError, RoomStatic, memory_snapshot, sha256, stats_line, turn_line
 
@@ -30,12 +31,20 @@ class RestoredTurn:
     shortcut_entity_id: uuid.UUID | None
     memory_note: str
     summary: CurrentSummary | None
+    # 그 턴 회상 섹션의 줄(턴 기록의 장면 id 로 다시 렌더한 것, 회상이 없던 턴은 `""`).
+    recall_lines: str
     stats_by_id: dict[str, float]
     stats_by_name: dict[str, float]
     sources: dict[str, Any]
 
     def turn_state(self, stats: dict[str, float], persona: InjectedPersona | None) -> InjectedTurnState:
-        return InjectedTurnState(summary=self.summary, memory_note=self.memory_note, stats=stats, persona=persona)
+        return InjectedTurnState(
+            summary=self.summary,
+            memory_note=self.memory_note,
+            stats=stats,
+            persona=persona,
+            recall_lines=self.recall_lines,
+        )
 
 
 async def stats_for_setup(db: AsyncSession, setup_id: uuid.UUID, values: dict[str, float]) -> dict[str, float]:
@@ -148,6 +157,8 @@ async def restore_turn(
     if assistant_id is not None and str(messages[index + 1].id) != assistant_id:
         raise ReplayRefusedError(f"DB 의 턴 {turn} 응답이 로그의 응답 메시지 {assistant_id} 가 아니다")
 
+    recall_lines = await turn_recall_lines(db, messages[index + 1].id)
+
     shortcut_id = line.get("shortcutId")
     if shortcut_id is None and line.get("shortcut") is not None:
         # 단축어 id 를 남기기 전의 로그는 이름만 있다.
@@ -162,6 +173,7 @@ async def restore_turn(
         shortcut_entity_id=uuid.UUID(shortcut_id) if shortcut_id is not None else None,
         memory_note=note,
         summary=summary,
+        recall_lines=recall_lines,
         stats_by_id=by_id,
         stats_by_name=by_name,
         sources={
@@ -179,4 +191,13 @@ async def restore_turn(
 
 
 async def turn_recall_lines(db: AsyncSession, assistant_message_id: uuid.UUID) -> str:
-    return ""
+    """그 응답의 턴 기록이 실은 장면 기억 줄(회상 섹션 값). 지금 장면으로 다시 찾지 않는다 — 그 사이 늘어난 장면 때문에 그
+    턴과 다른 글이 된다. 기록이 없거나(턴 기록을 쓰기 전의 턴) 비어 있으면 회상이 없던 턴이라 `""`. 기록한 장면이 그 뒤
+    되감기로 사라졌으면 그 턴의 회상 섹션을 다시 만들 수 없어 거부한다."""
+    record = await db.scalar(
+        select(ChatTurn.memory_recall).where(ChatTurn.assistant_message_id == assistant_message_id)
+    )
+    try:
+        return await recall_lines_from_record(db, record or [])
+    except RecallRecordMissingError as exc:
+        raise ReplayRefusedError(str(exc)) from exc

@@ -193,7 +193,8 @@ class RoomTurnStore:
     늘 이어받는다. 턴 번호를 이어받는
     것은 메시지 삭제로 앞 응답이 마지막이 된 방에서 재생성의 턴 번호(지금 `turn_count`)가 그 응답의 턴보다 크기 때문이다.
     바꾸는 응답에 기록이 없으면(기록을 쓰기 전에 보낸 턴) 쓰지 않는다 — 빈 효과로 쓰면 "원 턴이 아무것도 바꾸지 않았다"와
-    구별되지 않는다. 바꾼 응답의 옛 기록은 지우지 않는다(그 호출의 원가도 실제로 났다).
+    구별되지 않는다. 바꾼 응답의 옛 기록은 지우지 않는다(그 호출의 원가도 실제로 났다). 회상한 장면(`memory_recall`)은 두
+    모드 모두 이 턴의 프롬프트가 실은 것이다.
 
     트랜잭션 반납은 `commit()` 이다 — 읽기만 한 트랜잭션이라 끝내기만 하고, `expire_on_commit=False` 라 읽어 둔 객체를
     그대로 쓴다(`rollback()` 은 객체를 만료시켜 다음 속성 접근이 실패한다)."""
@@ -345,6 +346,10 @@ class RoomTurnStore:
             spend_ledger_id=charge.spend_ledger_id,
             llm_calls=[call.as_record() for call in turn.llm_calls],
         )
+        # 회상한 턴만 칸을 채운다 — 비어 있으면 INSERT 에 칸을 싣지 않아 DB 기본값 `[]` 이 들어가고, 문장이 회상 전과 같다.
+        # 재생성·수정도 그 턴에 새로 조립한 프롬프트의 회상이다(대체되는 기록에서 물려받지 않는다).
+        if turn.memory_recall:
+            record.memory_recall = list(turn.memory_recall)
         if self._replaced_message_id is None:
             assert turn.kind in ("send", "edit")
             reached_ending = turn.judgments.reached_ending
