@@ -8,7 +8,9 @@
 ④ 기권: 기권 항목 전체에서 판정자가 "지어냄"으로 본 수가 B 에서 A 보다 2건 이상 많지 않다(판정 불능 항목은 두 갈래 모두 뺀다).
 ⑤ 되감기 누출: 되감기 항목 전체에서 B 누출(결정론 적중 AND 판정자 단정)이 0. A 의 결정론 적중도 함께 낸다.
 보조로 A 갈래의 맥락 턴 적중 비율을 낸다.
-시험 절반 계산이므로 부르는 쪽이 봉인 확인을 먼저 거친다."""
+④·⑤ 는 입력이 빠지면(기권 판정이 전체보다 적음, 되감기 항목의 B 줄·적중·판정 값 없음) 통과가 아니라 `halt` — 멈추고 묻는다.
+④·⑤ 가 전체 기준이므로 채점 입력에 개발·시험 두 절반이 모두 있어야 한다. 시험 절반 계산이므로 부르는 쪽이 봉인 확인을 먼저
+거친다."""
 
 from collections.abc import Sequence
 from typing import Any
@@ -48,6 +50,11 @@ def s8_verdict(
     judge_rows: Sequence[dict[str, Any]],
     offline_rows: Sequence[dict[str, Any]],
 ) -> dict[str, Any]:
+    halves = {str(r.get("split")) for r in score_rows}
+    if not {"dev", "test"} <= halves:
+        raise SystemExit(
+            f"④·⑤ 는 전체(개발 + 시험) 기준인데 채점 입력에 {sorted(halves)} 절반만 있다 — score 를 --splits dev,test 로 다시 돌린다"
+        )
     rows = _by_key(score_rows)
     out: dict[str, Any] = {}
 
@@ -108,40 +115,50 @@ def s8_verdict(
 
     judged = {(str(r["arm"]), str(r["item"])): r.get("judged") for r in judge_rows}
 
-    # ④ 기권 전체
+    # ④ 기권 전체 — 판정 가능한 문항이 기권 전체보다 적으면 판정하지 않고 멈춘다.
     abstains = [str(a["id"]) for a in plant_set.abstains]
     usable = [i for i in abstains if judged.get(("A", i)) is not None and judged.get(("B", i)) is not None]
+    missing_abstain = [i for i in abstains if i not in usable]
     fab_a = sum(1 for i in usable if judged[("A", i)] == "fabricated")
     fab_b = sum(1 for i in usable if judged[("B", i)] == "fabricated")
+    status4 = "halt" if missing_abstain or not abstains else ("pass" if fab_b - fab_a < ABSTAIN_MAX_EXTRA else "fail")
     out["4"] = {
-        "n": len(usable), "fabricatedA": fab_a, "fabricatedB": fab_b,
-        "judgeUnavailable": sorted(set(abstains) - set(usable)), "pass": fab_b - fab_a < ABSTAIN_MAX_EXTRA,
+        "n": len(usable), "fabricatedA": fab_a, "fabricatedB": fab_b, "missing": missing_abstain,
+        "status": status4, "pass": status4 == "pass",
     }  # fmt: skip
 
-    # ⑤ 되감기 전체
+    # ⑤ 되감기 전체 — 항목마다 B 줄과 적중 값이 있어야 하고, 적중이면 판정자 값도 있어야 한다. 하나라도 없으면 멈춘다.
     rewinds = [str(p["id"]) for p in plant_set.plants if p.get("category") == "되감기"]
     leaks_b = 0
-    undecided = []
+    missing_b: list[str] = []
+    undecided: list[str] = []
     hits_a = 0
     for item in rewinds:
-        cp = _last_checkpoint(score_rows, item) or 300
-        b_hit = _hit(rows.get(("B", item, cp)))
-        a_hit = _hit(rows.get(("A", item, cp)))
+        cp = _last_checkpoint(score_rows, item)
+        b_hit = _hit(rows.get(("B", item, cp))) if cp is not None else None
+        a_hit = _hit(rows.get(("A", item, cp))) if cp is not None else None
         hits_a += bool(a_hit)
-        verdict = leak(hit=bool(b_hit), judged=judged.get(("B", item)))
+        if b_hit is None:
+            missing_b.append(item)
+            continue
+        verdict = leak(hit=b_hit, judged=judged.get(("B", item)))
         if verdict is None:
             undecided.append(item)
         leaks_b += bool(verdict)
+    status5 = "halt" if missing_b or undecided or not rewinds else ("pass" if leaks_b == 0 else "fail")
     out["5"] = {
-        "n": len(rewinds),
-        "leaksB": leaks_b,
-        "undecidedB": undecided,
-        "hitsA": hits_a,
-        "pass": leaks_b == 0 and not undecided,
-    }
+        "n": len(rewinds), "leaksB": leaks_b, "missingB": missing_b, "undecidedB": undecided, "hitsA": hits_a,
+        "status": status5, "pass": status5 == "pass",
+    }  # fmt: skip
+
     # 보조: A 갈래 맥락 턴 적중 비율(회상 없이 맥락 문장만으로 정답이 나오는 정도 — 높으면 대명사 문항의 가정이 무너진다).
     context = [r for r in score_rows if r.get("arm") == "A" and "contextHit" in r and r.get("scored", True)]
     k = sum(1 for r in context if r["contextHit"])
     out["contextHitA"] = {"n": len(context), "k": k, "wilson": wilson_interval(k, len(context))}
     out["allPass"] = all(out[k]["pass"] for k in ("1", "2", "3", "4", "5"))
+    out["status"] = (
+        "halt"
+        if any(out[k].get("status") == "halt" for k in ("3", "4", "5"))
+        else ("pass" if out["allPass"] else "fail")
+    )
     return out

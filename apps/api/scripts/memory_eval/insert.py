@@ -139,7 +139,7 @@ async def _pending_extractions(db: AsyncSession, room_id: uuid.UUID) -> int:
     value = await db.scalar(
         text(
             "SELECT count(*) FROM chat_room_memory_snapshots s WHERE s.chat_room_id = :room AND NOT EXISTS "
-            "(SELECT 1 FROM chat_memory_extractions x WHERE x.snapshot_id = s.id AND x.status IN ('done', 'failed'))"
+            "(SELECT 1 FROM chat_memory_extractions x WHERE x.snapshot_id = s.id AND x.status = 'done')"
         ),
         {"room": room_id},
     )
@@ -383,7 +383,7 @@ def _done_rewinds(path: Path) -> set[str]:
 
 
 class ExtractionStreak:
-    """추출 연속 실패 세기. 미추출 스냅샷이 있었는데 이번 추출 작업 뒤 완료 수가 늘지 않으면 실패 한 번, 늘면 초기화. 할 일이
+    """추출 연속 실패 세기. 완료되지 않은 스냅샷(실패 상태로 남은 것 포함 — 재시도해도 진전이 없으면 실패로 센다)이 있었는데 이번 추출 작업 뒤 완료 수가 늘지 않으면 실패 한 번, 늘면 초기화. 할 일이
     없던 턴은 세지 않는다. `observe` 가 참이면 한도에 닿았다(넣기를 멈춘다)."""
 
     def __init__(self, *, limit: int) -> None:
