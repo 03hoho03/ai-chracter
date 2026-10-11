@@ -123,7 +123,9 @@ def arm_env(arm: str) -> dict[str, str]:
 @contextlib.asynccontextmanager
 async def app_client(cookie_value: str) -> AsyncIterator[httpx.AsyncClient]:
     """앱을 이 프로세스 안에서 ASGI 로 부르는 클라이언트(세션 쿠키는 드라이버가 저장한 값). 나올 때 앱의 DB 풀을 닫는다 —
-    템플릿 복제가 작업 DB 에 남은 연결을 거부하므로."""
+    템플릿 복제가 작업 DB 에 남은 연결을 거부하므로. 앱 안의 모듈 싱글턴(Redis 클라이언트 등)은 처음 쓴 이벤트 루프에 묶이므로
+    이 클라이언트는 한 프로세스에서 한 루프(넣기 한 번의 `asyncio.run`) 안에서만 쓴다 — `asyncio.run` 을 되풀이하는 프로브
+    경로에서는 쓰지 않는다."""
     from api.db.session import engine as app_engine
     from api.main import app
 
