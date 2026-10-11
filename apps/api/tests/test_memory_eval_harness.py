@@ -87,7 +87,7 @@ def test_fingerprint_diff_treats_missing_field_as_difference() -> None:
 def test_only_prefixed_databases_can_be_dropped_or_templated() -> None:
     assert template_db_name(50) == "lm_eval_cp50_frozen"
     ensure_eval_db_name("lm_eval_work")
-    for bad in ("ai_character_chat", "ai_character_chat_test", "postgres", "lm_evalwork"):
+    for bad in ("ai_character_chat", "ai_character_chat_test", "postgres", "lm_evalwork", "lm_eval_"):
         with pytest.raises(SystemExit):
             ensure_eval_db_name(bad)
 
@@ -443,6 +443,7 @@ def test_ledger_refuses_a_call_that_would_cross_the_cap(tmp_path: Path) -> None:
     )
     assert ledger.total_usd() == pytest.approx(0.6)
     ledger.check_headroom(0.39)
+    ledger.check_headroom(0.4)  # 상한과 정확히 같은 누적은 허용한다(넘을 때만 멈춘다)
     with pytest.raises(BudgetExceededError):
         ledger.check_headroom(0.41)
     # 다시 열어도 누적이 이어진다.
@@ -474,13 +475,13 @@ def test_budget_counts_context_turns_of_two_turn_probes_per_arm() -> None:
 def test_test_half_requires_the_sealed_v2_preregistration(tmp_path: Path) -> None:
     import hashlib
 
-    from memory_eval.seal import require_seal
+    from memory_eval.seal import PREREGISTRATION_FILE, require_seal
 
-    prereg = tmp_path / "preregistration.md"
-    sha_file = tmp_path / "preregistration.sha256"
+    prereg = tmp_path / PREREGISTRATION_FILE
+    sha_file = prereg.with_suffix(".sha256")
     prereg.write_text("# 사전 등록 (v1.2)\n", encoding="utf-8")
     digest = hashlib.sha256(prereg.read_bytes()).hexdigest()
-    sha_file.write_text(f"{digest}  preregistration.md\n", encoding="utf-8")
+    sha_file.write_text(f"{digest}  {PREREGISTRATION_FILE}\n", encoding="utf-8")
     require_seal({"dev"}, prereg, seal_sha=None)  # 개발 절반은 봉인 없이 된다
     with pytest.raises(SystemExit):
         require_seal({"test"}, prereg, seal_sha=None)
@@ -490,7 +491,7 @@ def test_test_half_requires_the_sealed_v2_preregistration(tmp_path: Path) -> Non
     sealed = hashlib.sha256(prereg.read_bytes()).hexdigest()
     with pytest.raises(SystemExit):
         require_seal({"test"}, prereg, seal_sha=sealed)  # 해시 파일이 아직 옛 값
-    sha_file.write_text(f"{sealed}  preregistration.md\n", encoding="utf-8")
+    sha_file.write_text(f"{sealed}  {PREREGISTRATION_FILE}\n", encoding="utf-8")
     with pytest.raises(SystemExit):
         require_seal({"test"}, prereg, seal_sha="0" * 64)  # 준 해시가 파일과 다르다
     require_seal({"test"}, prereg, seal_sha=sealed)
@@ -566,3 +567,125 @@ def test_tuning_objective_orders_direct_then_anaphora_then_injection_rate_then_l
         TuningResult(tau=0.60, common_ratio=0.4, direct=0.7, anaphora=0.9, injection_rate=0.0),
     ]
     assert best_tuning(results) == results[3]
+
+
+# ---------------------------------------------------------------- 프로브 실행 순서(복원·서버·드라이버를 흉내)
+
+
+def _fake_probe_world(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, say_codes: list[int]) -> dict[str, Any]:
+    import json
+    import uuid as uuid_mod
+
+    from memory_eval import checkpoint as checkpoint_mod
+    from memory_eval import probe as probe_mod
+    from memory_eval import server as server_mod
+
+    calls: dict[str, Any] = {"restore": 0, "start": [], "stop": 0, "sleep": [], "topup": 0, "driver": []}
+    codes = iter(say_codes)
+
+    async def restore(*_: Any, **__: Any) -> dict[str, Any]:
+        calls["restore"] += 1
+        return {"fingerprint": {"turnCount": 100}}
+
+    def start(overrides: dict[str, str], **kwargs: Any) -> Any:
+        calls["start"].append(overrides)
+        kwargs["log"].write_text("")
+        return server_mod.ServerHandle(process=None, base="http://fake", log=kwargs["log"])  # type: ignore[arg-type]
+
+    def driver(run: Any, base: str, folder: Path, *extra: str) -> int:
+        calls["driver"].append(extra[0])
+        if extra[0] == "--rebase":
+            return 0
+        code = next(codes)
+        reply = "" if code not in (0, 3) else f"응답 {len(calls['driver'])}"
+        with (folder / "chat.jsonl").open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"kind": "turn", "reply": reply, "clientTurn": 101}) + "\n")
+        return code
+
+    async def usage(*_: Any) -> list[dict[str, Any]]:
+        return [{"callSite": "chat_generate", "model": "claude-opus-5-5", "promptTokens": 10_000, "outputTokens": 500}]
+
+    async def top_up(*_: Any) -> None:
+        calls["topup"] += 1
+
+    monkeypatch.setattr(checkpoint_mod, "restore", restore)
+    monkeypatch.setattr(server_mod, "start", start)
+    monkeypatch.setattr(server_mod, "stop", lambda _h: calls.__setitem__("stop", calls["stop"] + 1))
+    monkeypatch.setattr(probe_mod, "_driver", driver)
+    monkeypatch.setattr(probe_mod, "_turn_usage", usage)
+    monkeypatch.setattr(probe_mod, "_top_up", top_up)
+    monkeypatch.setattr("time.sleep", lambda s: calls["sleep"].append(s))
+    calls["run"] = probe_mod.ProbeRun(
+        stage="s4",
+        arm="B",
+        room_id=uuid_mod.uuid4(),
+        run_dir=tmp_path,
+        database_url="postgresql+asyncpg://x@localhost/lm_eval_work",
+        cred_file=tmp_path / "cred",
+        cookie_file=tmp_path / "cookie",
+        port=8130,
+        server_overrides={"CHAT_PREMIUM_MODELS_ENABLED": "true"},
+        allow_paid=False,
+        opus_turn_usd=0.13,
+        judgment_turn_usd=0.003,
+        ledger=Ledger(tmp_path / "ledger.jsonl", cap_usd=30.0),
+        pacer=BurstPacer(limit=9, window_seconds=60.0),
+    )
+    return calls
+
+
+def test_probe_restores_and_restarts_for_every_retry_and_records_usage(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from memory_eval.plants import Probe
+    from memory_eval.probe import run_probe
+
+    calls = _fake_probe_world(monkeypatch, tmp_path, say_codes=[4, 0])
+    result = run_probe(calls["run"], Probe(item_id="obj01", checkpoint=100, turns=["질문"], kind="plant", split="dev"))
+    assert result["status"] == "accept"
+    assert [a["action"] for a in result["attempts"]] == ["retry", "accept"]
+    assert calls["restore"] == 2 and len(calls["start"]) == 2 and calls["stop"] == 2
+    assert 60 in calls["sleep"]
+    assert calls["driver"] == ["--rebase", "--say", "--rebase", "--say"]
+    # 프로브마다 덤프 파일이 따로이고 갈래 설정이 서버 env 에 실린다.
+    dumps = {o["PROMPT_DUMP_PATH"] for o in calls["start"]}
+    assert len(dumps) == 2
+    assert all(o["MEMORY_EPISODES_RECALL"] == "true" for o in calls["start"])
+    assert len(calls["run"].ledger.rows()) == 2
+
+
+def test_two_turn_probe_tops_up_clover_and_keeps_both_replies(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from memory_eval.plants import Probe
+    from memory_eval.probe import run_probe
+
+    calls = _fake_probe_world(monkeypatch, tmp_path, say_codes=[0, 7, 0, 0])
+    result = run_probe(
+        calls["run"], Probe(item_id="obj03", checkpoint=50, turns=["맥락", "질문"], kind="plant", split="test")
+    )
+    assert result["status"] == "accept"
+    assert calls["topup"] == 1
+    assert [t["user"] for t in result["turns"]] == ["맥락", "질문"]
+    assert all(t["reply"] for t in result["turns"])
+
+
+def test_lost_generation_with_exit_zero_counts_as_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from memory_eval.plants import Probe
+    from memory_eval.probe import run_probe
+
+    # 드라이버가 0 으로 끝나도 응답이 비면(생성 오류로 유실) 그 밖의 오류로 세어 두 번 재시도 뒤 불능.
+    calls = _fake_probe_world(monkeypatch, tmp_path, say_codes=[0, 0, 0])
+    monkeypatch.setattr("memory_eval.probe._last_turn", lambda _f: {"reply": ""})
+    result = run_probe(calls["run"], Probe(item_id="obj01", checkpoint=100, turns=["질문"], kind="plant", split="dev"))
+    assert result["status"] == "unprobeable"
+    assert calls["restore"] == 3
+
+
+def test_probe_stops_before_a_call_that_would_cross_the_cap(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from memory_eval.plants import Probe
+    from memory_eval.probe import run_probe
+
+    calls = _fake_probe_world(monkeypatch, tmp_path, say_codes=[0])
+    calls["run"].ledger.cap_usd = 0.1
+    with pytest.raises(BudgetExceededError):
+        run_probe(calls["run"], Probe(item_id="obj01", checkpoint=100, turns=["질문"], kind="plant", split="dev"))
+    assert calls["restore"] == 0

@@ -19,7 +19,7 @@ from typing import Any
 
 from memory_eval import checkpoint, ledger as ledger_mod, plants as plants_mod
 from memory_eval.ledger import EXIT_BUDGET, BudgetExceededError, Ledger
-from memory_eval.seal import require_seal
+from memory_eval.seal import PREREGISTRATION_FILE, require_seal
 from memory_eval.transcript import LengthRule, check_script, load_transcript, work_text_from_seed
 
 DEFAULT_SEED_JSON = Path(__file__).resolve().parent / "seed_content/data/tutorial/stories/tutorial-filmclub.json"
@@ -45,7 +45,7 @@ def _write(path: Path, obj: Any) -> None:
 
 def _splits(args: argparse.Namespace) -> set[str]:
     splits = set(args.splits.split(","))
-    require_seal(splits, args.run / "preregistration.md", seal_sha=args.seal_sha)
+    require_seal(splits, args.run / PREREGISTRATION_FILE, seal_sha=args.seal_sha)
     return splits
 
 
@@ -354,7 +354,9 @@ def cmd_probe(args: argparse.Namespace) -> int:
                 key, _, value = line.partition("=")
                 overrides[key.strip()] = value.strip()
     from memory_eval import server
+    from memory_eval.runtime import require_arm_supported
 
+    require_arm_supported(args.arm)
     if server.port_in_use(args.port):
         raise SystemExit(f"포트 {args.port} 에 이미 서버가 있다")
     run = probe_mod.ProbeRun(
