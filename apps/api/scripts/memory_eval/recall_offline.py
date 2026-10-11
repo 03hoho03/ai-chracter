@@ -261,11 +261,14 @@ PASSLINE_MIN_N = 5
 
 
 def direct_passline(rows: Sequence[dict[str, Any]], plant_set: PlantSet, *, threshold: float) -> dict[str, Any]:
-    """직접 형식 합격선: 300턴 체크포인트의 직접 형식 질문 턴만, 일부러 실패하게 만든 측정 문항은 분모에서 빼고 따로 보고한다.
-    분모가 하한보다 작으면 `halt`(멈추고 묻는다)."""
+    """직접 형식 합격선: 심기 표가 합격선 대상(`metrics.MR1_passline`)으로 표시한 항목의 300턴 질문 턴만 센다 — 직접
+    형식이어도 화자·되감기 항목은 대상이 아니다. 일부러 실패하게 만든 측정 문항은 표시되지 않아 함께 빠지고 따로 보고한다.
+    분모(정답 에피소드가 없어 빠진 문항을 뺀 수)가 하한보다 작으면 `halt`(멈추고 묻는다)."""
+    marked = {str(e["id"]) for e in plant_set.plants if (e.get("metrics") or {}).get("MR1_passline")}
     designed = sorted(str(e["id"]) for e in plant_set.plants if (e.get("limitProbe") or {}).get("designedToFail"))
     candidates = [r for r in rows if r["kind"] == "question" and r["form"] == "direct" and int(r["checkpoint"]) == 300]
-    counted = [r for r in candidates if r["item_id"] not in designed and r.get("recall3") is not None]
+    targets = [r for r in candidates if r["item_id"] in marked]
+    counted = [r for r in targets if r.get("recall3") is not None]
     k = sum(1 for r in counted if r["recall3"])
     n = len(counted)
     status = "halt" if n < PASSLINE_MIN_N else ("pass" if k / n >= threshold else "fail")
@@ -275,7 +278,9 @@ def direct_passline(rows: Sequence[dict[str, Any]], plant_set: PlantSet, *, thre
         "k": k,
         "rate": k / n if n else None,
         "wilson": wilson_interval(k, n),
-        "noGold": sorted(r["item_id"] for r in candidates if r.get("recall3") is None and r["item_id"] not in designed),
+        "items": sorted(r["item_id"] for r in counted),
+        "noGold": sorted(r["item_id"] for r in targets if r.get("recall3") is None),
+        "excluded": sorted({r["item_id"] for r in candidates if r["item_id"] not in marked}),
         "designedToFail": sorted({r["item_id"] for r in candidates if r["item_id"] in designed}),
     }
 

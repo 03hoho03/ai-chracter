@@ -17,7 +17,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from memory_eval.ledger import Ledger
+from memory_eval.ledger import BudgetExceededError, Ledger
 from memory_eval.metrics import answer_matches
 from memory_eval.plants import PlantSet
 
@@ -203,6 +203,8 @@ async def judged_or_none(judge: HaikuJudge, kind: JudgeKind, prompt: str) -> str
     for _ in range(JUDGE_RETRIES):
         try:
             result = await judge.verdict(prompt)
+        except BudgetExceededError:
+            raise
         except Exception:  # 판정 실패·파싱 실패·거부 — 같은 입력으로 다시
             await asyncio.sleep(1)
             continue
@@ -211,16 +213,28 @@ async def judged_or_none(judge: HaikuJudge, kind: JudgeKind, prompt: str) -> str
     return None
 
 
-def control_accuracy(rows: Sequence[dict[str, Any]]) -> float:
-    scored = [r for r in rows if r.get("judged") is not None]
-    if not scored:
-        return 0.0
-    return sum(1 for r in scored if r["judged"] == r["expected"]) / len(scored)
-
-
 def require_controls_passed(path: Path) -> None:
     if not path.exists():
         raise SystemExit("판정자 대조군 기록이 없다 — 대조군을 먼저 돌린다")
-    accuracy = float(json.loads(path.read_text(encoding="utf-8"))["accuracy"])
-    if accuracy < CONTROL_ACCURACY_MIN:
-        raise SystemExit(f"판정자 대조군 정확도 {accuracy:.3f} < {CONTROL_ACCURACY_MIN} — 본 판정을 하지 않는다")
+    rows = json.loads(path.read_text(encoding="utf-8"))["rows"]
+    if not controls_pass(rows):
+        raise SystemExit(
+            f"판정자 대조군이 관문을 못 넘었다(정확도 {CONTROL_ACCURACY_MIN} 미만 또는 판정 불능 있음) — 본 판정을 하지 않는다"
+        )
+
+
+def controls_pass(rows: Sequence[dict[str, Any]]) -> bool:
+    """대조군 관문: 판정 불능이 하나라도 있으면 실패, 아니면 정확도가 기준 이상."""
+    if not rows or any(r.get("judged") is None for r in rows):
+        return False
+    return sum(1 for r in rows if r["judged"] == r["expected"]) / len(rows) >= CONTROL_ACCURACY_MIN
+
+
+def ensure_unique_probe_rows(rows: Sequence[dict[str, Any]]) -> None:
+    """(단계, 갈래, 체크포인트, 문항)마다 한 줄이어야 한다 — 재실행으로 겹친 줄을 두 번 세지 않게 거부한다."""
+    seen: set[tuple[Any, ...]] = set()
+    for row in rows:
+        key = (row["stage"], row["arm"], int(row["checkpoint"]), row["item"])
+        if key in seen:
+            raise SystemExit(f"프로브 결과에 같은 문항 줄이 둘 이상이다: {key}")
+        seen.add(key)

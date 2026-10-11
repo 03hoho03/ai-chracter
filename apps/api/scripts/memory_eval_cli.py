@@ -137,6 +137,8 @@ def cmd_freeze(args: argparse.Namespace) -> int:
             dumps_dir=args.run / "dumps",
             container=args.pg_container,
             db_user=args.db_user,
+            label=args.label,
+            require_episode_rows=args.require_episodes,
         )
     )
     _print(result)
@@ -153,6 +155,7 @@ def cmd_restore(args: argparse.Namespace) -> int:
                 checkpoint=args.checkpoint,
                 room_id=args.room,
                 dumps_dir=args.run / "dumps",
+                label=args.label,
             )
         )
     )
@@ -243,6 +246,8 @@ def cmd_insert(args: argparse.Namespace) -> int:
             database_url=_db_url(writes=True),
             container=args.pg_container,
             db_user=args.db_user,
+            recall_field=args.recall_field,
+            recall_header=args.recall_header,
         )
     )
     _print(result)
@@ -260,7 +265,14 @@ def cmd_trajectory(args: argparse.Namespace) -> int:
             for arm in args.arms.split(","):
                 async with factory() as db:
                     point, _ = await assemble_point(
-                        db, args.room, next_turn=args.next_turn, user_content=args.user_text, arm=arm, model=args.model
+                        db,
+                        args.room,
+                        next_turn=args.next_turn,
+                        user_content=args.user_text,
+                        arm=arm,
+                        model=args.model,
+                        recall_header=args.recall_header,
+                        recall_field=args.recall_field,
                     )
                 append_point(args.run / f"trajectory-{args.label}-{arm}.jsonl", point)
                 points.append(point)
@@ -332,7 +344,14 @@ def cmd_probe(args: argparse.Namespace) -> int:
     items = set(args.items.split(",")) if args.items else None
     probes = [p for cp in cps for p in plants_mod.opus_probes(plant_set, cp) if items is None or p.item_id in items]
     book = Ledger(args.run / "ledger.jsonl")
-    if args.dry_run or (not args.allow_paid and not args.no_key_smoke):
+    out = args.run / "probes" / f"{args.stage}-{args.arm}.jsonl"
+    done = (
+        [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines() if line.strip()]
+        if out.exists()
+        else []
+    )
+    probes, unprobeable = probe_mod.pending_probes(probes, done)
+    if args.dry_run or not args.allow_paid:
         turns = sum(len(p.turns) for p in probes)
         _print(
             {
@@ -343,6 +362,8 @@ def cmd_probe(args: argparse.Namespace) -> int:
                 "twoTurn": sum(1 for p in probes if p.two_turn),
                 "estimateUsd": turns * (args.opus_turn_usd + args.judgment_turn_usd),
                 "ledgerSpentUsd": book.total_usd(),
+                "alreadyDone": len(done),
+                "unprobeableSoFar": unprobeable,
                 "plan": [{"cp": p.checkpoint, "item": p.item_id, "turns": p.turns} for p in probes],
             }
         )
@@ -359,6 +380,10 @@ def cmd_probe(args: argparse.Namespace) -> int:
     require_arm_supported(args.arm)
     if server.port_in_use(args.port):
         raise SystemExit(f"포트 {args.port} 에 이미 서버가 있다")
+    trees = [str(p) for p in server.API_DIR.parents[1].parent.glob("long-memory*")]
+    others = server.conflicting_servers(server.running_api_servers(), trees, own_pids=set())
+    if others:
+        raise SystemExit(f"같은 격리 Redis·DB 를 쓰는 다른 API 서버가 떠 있다 — 내린 뒤 다시: {others}")
     run = probe_mod.ProbeRun(
         stage=args.stage,
         arm=args.arm,
@@ -374,9 +399,8 @@ def cmd_probe(args: argparse.Namespace) -> int:
         judgment_turn_usd=args.judgment_turn_usd,
         ledger=book,
         pacer=probe_mod.BurstPacer(limit=args.burst_limit, window_seconds=60.0),
+        checkpoint_label=args.checkpoint_label or args.stage,
     )
-    out = args.run / "probes" / f"{args.stage}-{args.arm}.jsonl"
-    unprobeable = 0
     for p in probes:
         result = probe_mod.run_probe(run, p)
         with out.open("a", encoding="utf-8") as handle:
@@ -398,9 +422,13 @@ def cmd_score(args: argparse.Namespace) -> int:
     from memory_eval.judge import deterministic
 
     splits = _splits(args)
+    from memory_eval.judge import ensure_unique_probe_rows
+
     plant_set = plants_mod.load_plants(args.plants)
+    source = _probe_rows(args.probes)
+    ensure_unique_probe_rows(source)
     rows = []
-    for row in _probe_rows(args.probes):
+    for row in source:
         if row["split"] not in splits or row["status"] not in ("accept", "count_wrong"):
             rows.append(
                 {**{k: row[k] for k in ("stage", "arm", "checkpoint", "item", "split", "status")}, "scored": False}
@@ -463,7 +491,9 @@ def cmd_judge(args: argparse.Namespace) -> int:
 
     results = asyncio.run(go())
     if args.controls:
-        _write(controls_path, {"accuracy": judge_mod.control_accuracy(results), "rows": results})
+        judged = [r for r in results if r["judged"] is not None]
+        accuracy = sum(1 for r in judged if r["judged"] == r["expected"]) / len(results) if results else 0.0
+        _write(controls_path, {"passed": judge_mod.controls_pass(results), "accuracy": accuracy, "rows": results})
     else:
         _write(args.out, results)
     return 0
@@ -577,12 +607,28 @@ def cmd_prototype_extract(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_s8(args: argparse.Namespace) -> int:
+    from memory_eval.judge import ensure_unique_probe_rows
+    from memory_eval.verdict import s8_verdict
+
+    require_seal({"test"}, args.run / PREREGISTRATION_FILE, seal_sha=args.seal_sha)
+    plant_set = plants_mod.load_plants(args.plants)
+    scores = [r for path in args.scores for r in json.loads(path.read_text(encoding="utf-8"))]
+    ensure_unique_probe_rows(scores)
+    judge_rows = [r for path in args.judged for r in json.loads(path.read_text(encoding="utf-8"))]
+    offline = json.loads(args.offline.read_text(encoding="utf-8"))["rows"]
+    result = s8_verdict(plant_set, scores, judge_rows=judge_rows, offline_rows=offline)
+    _write(args.out, result)
+    _print({k: result[k].get("pass") for k in ("1", "2", "3", "4", "5")} | {"allPass": result["allPass"]})
+    return 0
+
+
 def cmd_ledger(args: argparse.Namespace) -> int:
     book = Ledger(args.run / "ledger.jsonl")
     rows = book.rows()
     by_stage: dict[str, float] = {}
     for row in rows:
-        by_stage[row["stage"]] = by_stage.get(row["stage"], 0.0) + float(row["costUsd"])
+        by_stage[row["stage"]] = by_stage.get(row["stage"], 0.0) + ledger_mod.row_cost(row)
     _print({"calls": len(rows), "totalUsd": book.total_usd(), "byStage": by_stage, "capUsd": book.cap_usd})
     return 0
 
@@ -642,8 +688,10 @@ def build_parser() -> argparse.ArgumentParser:
         p = sub.add_parser(name)
         p.add_argument("--room", type=uuid.UUID, required=True)
         p.add_argument("--checkpoint", type=int, required=True)
+        p.add_argument("--label", required=True, help="단계 이름(s4·s8) — 템플릿·덤프 이름에 들어간다")
         p.add_argument("--pg-container")
         p.add_argument("--db-user", default="postgres")
+        p.add_argument("--require-episodes", action="store_true", help="에피소드가 0 이면 얼리지 않는다")
         p.set_defaults(fn=fn)
 
     p = sub.add_parser("fingerprint")
@@ -675,6 +723,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--arms", default="baseline")
     p.add_argument("--trajectory-model", default="opus")
     p.add_argument("--label", default="s4")
+    p.add_argument("--recall-field", help="조립 결과의 회상 칸 이름(B 갈래 궤적에 필수)")
+    p.add_argument("--recall-header", default="[지난 기억 — 참고]")
     p.add_argument("--cookie-file", type=Path)
     p.add_argument("--pg-container")
     p.add_argument("--db-user", default="postgres")
@@ -687,6 +737,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--arms", default="baseline")
     p.add_argument("--model", default="opus")
     p.add_argument("--label", default="point")
+    p.add_argument("--recall-field")
+    p.add_argument("--recall-header", default="[지난 기억 — 참고]")
     p.set_defaults(fn=cmd_trajectory)
 
     p = sub.add_parser("recall-offline")
@@ -704,7 +756,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("probe")
     with_plants(p)
     paid(p)
-    p.add_argument("--no-key-smoke", action="store_true", help="키를 비운 서버로 절차만 끝까지(생성은 실패한다)")
+    p.add_argument("--checkpoint-label", help="복원할 템플릿의 단계 이름(넣기 실행의 --label, 기본 = --stage)")
     p.add_argument("--stage", required=True)
     p.add_argument("--arm", required=True, choices=["baseline", "A", "B"])
     p.add_argument("--checkpoints", default="50,100,300")
@@ -752,6 +804,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--version", default="v1")
     p.add_argument("--out", type=Path)
     p.set_defaults(fn=cmd_prototype_extract)
+
+    p = sub.add_parser("s8-verdict", help="최종 짝 비교 ①~⑤ 판정(시험 절반 — 봉인 해시 필요)")
+    with_plants(p)
+    p.add_argument("--seal-sha", required=True)
+    p.add_argument("--scores", type=Path, nargs="+", required=True, help="score 출력(A·B 갈래)")
+    p.add_argument("--judged", type=Path, nargs="*", default=[], help="judge 출력")
+    p.add_argument("--offline", type=Path, required=True, help="recall-offline 출력(시험 절반)")
+    p.add_argument("--out", type=Path, required=True)
+    p.set_defaults(fn=cmd_s8)
 
     p = sub.add_parser("ledger")
     p.set_defaults(fn=cmd_ledger)

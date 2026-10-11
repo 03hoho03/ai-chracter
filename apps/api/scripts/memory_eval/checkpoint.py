@@ -1,6 +1,6 @@
 """체크포인트 얼리기·복원과 상태 지문.
 
-체크포인트마다 작업 DB 를 템플릿 DB(`lm_eval_cp<T>_frozen`)로 얼리고 `pg_dump -Fc` 백업도 남긴다. 프로브마다 서버를 내린 채
+체크포인트마다 작업 DB 를 템플릿 DB(`lm_eval_<단계>_cp<T>_frozen`)로 얼리고 `pg_dump -Fc` 백업도 남긴다. 프로브마다 서버를 내린 채
 작업 DB 를 지우고 그 템플릿에서 다시 만든다(`DROP DATABASE` → `CREATE DATABASE … TEMPLATE`). 템플릿 복제는 원본에 다른 연결이
 없어야 하므로 서버가 내려가 있어야 하고, 연결이 남아 있으면 끊지 않고 거부한다(누가 쥐고 있는지 모르는 연결을 끊지 않는다).
 
@@ -27,8 +27,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 EVAL_DB_PREFIX = "lm_eval_"
 
 
-def template_db_name(checkpoint: int) -> str:
-    return f"{EVAL_DB_PREFIX}cp{checkpoint}_frozen"
+def template_db_name(checkpoint: int, label: str) -> str:
+    """단계(`label`)가 이름에 들어가 기준선과 최종 비교의 템플릿이 서로 덮지 않는다."""
+    return f"{EVAL_DB_PREFIX}{label}_cp{checkpoint}_frozen"
 
 
 def ensure_eval_db_name(name: str) -> None:
@@ -187,8 +188,8 @@ async def read_fingerprint(database_url: str, room_id: uuid.UUID) -> dict[str, A
         await engine.dispose()
 
 
-def fingerprint_path(dumps_dir: Path, checkpoint: int) -> Path:
-    return dumps_dir / f"cp{checkpoint}.fingerprint.json"
+def fingerprint_path(dumps_dir: Path, checkpoint: int, label: str) -> Path:
+    return dumps_dir / f"{label}-cp{checkpoint}.fingerprint.json"
 
 
 def write_fingerprint(path: Path, fingerprint: Mapping[str, Any]) -> None:
@@ -219,28 +220,44 @@ async def freeze(
     dumps_dir: Path,
     container: str | None,
     db_user: str,
+    label: str,
+    require_episode_rows: bool,
 ) -> dict[str, Any]:
-    """작업 DB 를 템플릿으로 얼리고 지문을 남긴다. 컨테이너를 주면 `pg_dump -Fc` 백업도."""
+    """작업 DB 를 템플릿으로 얼리고 지문을 남긴다. 컨테이너를 주면 `pg_dump -Fc` 백업도. 추출을 켠 실행이면 에피소드가
+    있어야 얼린다."""
     ensure_eval_db_name(work_db)
     fingerprint = await read_fingerprint(database_url, room_id)
-    template = template_db_name(checkpoint)
+    require_episodes(fingerprint, required=require_episode_rows)
+    template = template_db_name(checkpoint, label)
     await clone_database(database_url, source=work_db, target=template, replace=True)
-    write_fingerprint(fingerprint_path(dumps_dir, checkpoint), fingerprint)
+    write_fingerprint(fingerprint_path(dumps_dir, checkpoint, label), fingerprint)
     if container:
-        await pg_dump(container, db_user, template, dumps_dir / f"cp{checkpoint}.dump")
+        await pg_dump(container, db_user, template, dump_path(dumps_dir, checkpoint, label))
     return {"template": template, "fingerprint": fingerprint}
 
 
 async def restore(
-    database_url: str, *, work_db: str, checkpoint: int, room_id: uuid.UUID, dumps_dir: Path
+    database_url: str, *, work_db: str, checkpoint: int, room_id: uuid.UUID, dumps_dir: Path, label: str
 ) -> dict[str, Any]:
     """작업 DB 를 템플릿에서 다시 만들고 방 Redis 키를 지운 뒤 지문을 단언한다. 다르면 `SystemExit`."""
     ensure_eval_db_name(work_db)
-    await clone_database(database_url, source=template_db_name(checkpoint), target=work_db, replace=True)
+    await clone_database(database_url, source=template_db_name(checkpoint, label), target=work_db, replace=True)
     deleted = await clear_room_redis_keys(room_id)
-    expected = json.loads(fingerprint_path(dumps_dir, checkpoint).read_text(encoding="utf-8"))
+    expected = json.loads(fingerprint_path(dumps_dir, checkpoint, label).read_text(encoding="utf-8"))
     actual = await read_fingerprint(database_url, room_id)
     diffs = fingerprint_diff(expected, actual)
     if diffs:
         raise SystemExit("복원 뒤 지문이 체크포인트와 다르다: " + "; ".join(diffs))
     return {"redisDeleted": deleted, "fingerprint": actual}
+
+
+def require_episodes(fingerprint: Mapping[str, Any], *, required: bool) -> None:
+    """추출을 켠 실행(또는 회상 갈래)의 체크포인트는 에피소드가 있어야 한다 — 0 이면 추출이 조용히 실패한 상태로 얼린다."""
+    if required and not fingerprint.get("episodeCount"):
+        raise SystemExit(
+            f"에피소드가 없는 상태로 얼리려 한다(episodeCount={fingerprint.get('episodeCount')!r}) — 추출 확인"
+        )
+
+
+def dump_path(dumps_dir: Path, checkpoint: int, label: str) -> Path:
+    return dumps_dir / f"{label}-cp{checkpoint}.dump"

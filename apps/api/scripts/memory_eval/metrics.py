@@ -1,7 +1,7 @@
 """평가 지표의 순수 계산. LLM·DB 없음.
 
 - 정답 일치: 정답 키는 묶음 목록이다. 묶음마다 표기 하나 이상이 글에 있어야 하고, 묶음 전부를 채워야 맞다. 비교는 NFC ·
-  casefold · 공백 제거 · 숫자 정규화(단위 앞 한글 수사·`H:MM`·`N시반` → 아라비아 숫자) 뒤 부분 문자열이다. 숫자가 든 표기는 앞뒤 글자가 숫자가 아닐 때만 맞는다 — `1월15일` 이
+  casefold · 공백 제거 · 숫자 정규화(단위 앞 한글 수사·`H:MM`·`N시반` → 아라비아 숫자) 뒤 부분 문자열이다. 숫자 경계는 공백을 지운 뒤 표기의 첫 글자가 숫자면 그 앞, 끝 글자가 숫자면 그 뒤만 본다 — `1월15일` 이
   `11월15일` 안에서 맞으면 다른 날짜를 맞혔다고 세게 된다.
 - 비율은 늘 표본 수와 윌슨 95% 구간을 함께 낸다. 두 갈래 짝 비교는 불일치 쌍의 정확 이항 검정(단측)이다.
 - 개발/시험 분할은 층마다 id 를 문자열 순으로 정렬해 같은 시드로 섞고, 앞 ceil(n/2) 개를 개발로 보낸다."""
@@ -59,8 +59,8 @@ def _spelling_in(spelling: str, text: str) -> bool:
     start = text.find(needle)
     while start != -1:
         end = start + len(needle)
-        before_ok = start == 0 or not text[start - 1].isdigit()
-        after_ok = end == len(text) or not text[end].isdigit()
+        before_ok = not needle[0].isdigit() or start == 0 or not text[start - 1].isdigit()
+        after_ok = not needle[-1].isdigit() or end == len(text) or not text[end].isdigit()
         if before_ok and after_ok:
             return True
         start = text.find(needle, start + 1)
