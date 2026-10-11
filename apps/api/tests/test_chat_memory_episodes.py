@@ -361,6 +361,16 @@ def test_a_blank_title_falls_back_to_the_start_of_the_detail() -> None:
     assert draft.title == "나" * EPISODE_TITLE_MAX
 
 
+def test_a_blank_title_takes_its_nouns_from_the_detail_alone() -> None:
+    """저장 제목만 본문 앞부분으로 채우고, 명사는 빈 제목과 본문으로 센다 — 평가 하네스가 같은 장면에서 낸 명사와 같아야
+    한다. 본문 앞 60자에서 끊긴 낱말 조각("베이커")이 명사로 새면 갈린다."""
+    detail = "나" * 56 + " 베이커리에서 빵을 샀다"
+    draft = _one(_item(title="", detail=detail, nouns=["빵"]))
+    assert draft.title == ("나" * 56 + " 베이커")
+    assert draft.nouns == episode_nouns(["빵"], "", detail)
+    assert "베이커" not in draft.nouns
+
+
 @pytest.mark.parametrize(
     ("start_line", "end_line", "start_index", "end_index", "turns"),
     [
@@ -654,6 +664,43 @@ async def test_extraction_records_token_usage(db_client: httpx.AsyncClient, db_s
         5_000,
         1_200,
         900,
+        0,
+    )
+
+
+async def test_a_failed_attempt_keeps_the_tokens_it_spent(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """응답을 받고 나서 실패한 시도(파싱 실패 등)도 토큰을 썼다 — 실패 기록에 남기고, 다시 쥔 시도의 토큰은 더한다."""
+    _capture_failures(monkeypatch)
+    room = await _open_room(db_client, db_session, turns=10)
+    await _plant(db_session, room, 10)
+    metadata = SimpleNamespace(
+        prompt_token_count=1_000, cached_content_token_count=100, candidates_token_count=300, thoughts_token_count=0
+    )
+    fake = EpisodeLLMClient(LLMClientError("parse"), usage_metadata=metadata)
+
+    await _extract(db_session, room, fake)
+
+    row = (await _extractions(db_session, room))[0]
+    assert (row.status, row.model, row.prompt_tokens, row.cached_tokens, row.output_tokens, row.thoughts_tokens) == (
+        "failed",
+        "claude-haiku-5-5",
+        1_000,
+        100,
+        300,
+        0,
+    )
+
+    await _extract(db_session, room, fake)
+
+    row = (await _extractions(db_session, room))[0]
+    assert (row.status, row.attempts, row.prompt_tokens, row.cached_tokens, row.output_tokens, row.thoughts_tokens) == (
+        "done",
+        2,
+        2_000,
+        200,
+        600,
         0,
     )
 

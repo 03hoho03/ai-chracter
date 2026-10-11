@@ -111,7 +111,8 @@ def normalize_episodes(
     하나가 파싱 실패가 된다) 상한은 여기서 자른다. 상수는 테이블 CHECK 와 같은 것이다.
 
     - 본문이 빈 장면을 버린 뒤 앞 `MAX_EPISODES` 개.
-    - 제목은 상한에서 글자 단위로, 본문은 상한 안 마지막 문장 끝 뒤에서(없으면 글자 단위로) 자른다. 제목이 비면 본문 앞부분을 쓴다.
+    - 제목은 상한에서 글자 단위로, 본문은 상한 안 마지막 문장 끝 뒤에서(없으면 글자 단위로) 자른다. 제목이 비면 본문 앞부분을
+      저장한다(명사는 빈 제목 그대로 센다).
     - 중요도는 1~5 로 맞춘다. 키워드·근거는 빈 것을 버리고 상한까지.
     - 줄 번호(1부터, `window` 순서)는 1~n 으로 맞추고 뒤집혔으면 맞바꾼 뒤 메시지 키로 바꾼다.
     - 턴은 오프닝을 뺀 어시스턴트 메시지 순번이다. `window` 앞에 그런 메시지가 `turns_before` 개 있었다. 사용자 줄은 그 답이 붙을
@@ -131,7 +132,11 @@ def normalize_episodes(
 
 def _draft(ordinal: int, item: MemoryEpisodeItem, window: Sequence[ChatMessage], turn_at: list[int]) -> EpisodeDraft:
     detail = _cut_detail(item.detail.strip())
-    title = item.title.strip()[:EPISODE_TITLE_MAX].strip() or detail[:EPISODE_TITLE_MAX].strip()
+    title = item.title.strip()[:EPISODE_TITLE_MAX].strip()
+    # 명사는 대체하기 전 제목으로 센다 — 본문 앞부분에서 끊긴 낱말 조각이 명사로 새지 않고, 평가 하네스가 같은 장면에서 내는
+    # 명사와 같다. 저장 제목만 본문 앞부분으로 채운다(제목 칸은 비울 수 없다).
+    nouns = episode_nouns(item.nouns, title, detail)
+    title = title or detail[:EPISODE_TITLE_MAX].strip()
     last = len(window)
     start, end = (min(max(line, 1), last) - 1 for line in (item.start_line, item.end_line))
     if start > end:
@@ -144,7 +149,7 @@ def _draft(ordinal: int, item: MemoryEpisodeItem, window: Sequence[ChatMessage],
         end_turn=turn_at[end],
         title=title,
         detail=detail,
-        nouns=episode_nouns(item.nouns, title, detail),
+        nouns=nouns,
         keywords=_kept_texts(item.keywords, EPISODE_KEYWORDS_MAX),
         evidence=_kept_texts(item.evidence, EPISODE_EVIDENCE_MAX),
         asserted_by=item.asserted_by,
@@ -197,6 +202,7 @@ async def extract_pending_episode(
     """
     claimed_at: datetime | None = None
     candidate: _Candidate | None = None
+    usage_sink: list[CallUsage] = []
     try:
         async with session_factory() as session:
             candidate = await _next_candidate(session, room_id)
@@ -218,7 +224,6 @@ async def extract_pending_episode(
         )
         if not prompt:
             raise PromptRenderError("장면 기억 channel 이 비어 있다 — 활성 세트에 추출 지시문이 없다")
-        usage_sink: list[CallUsage] = []
         result = await llm_client.generate_structured(
             prompt,
             MemoryEpisodeResult,
@@ -248,7 +253,7 @@ async def extract_pending_episode(
         logger.warning("대화방 %s 장면 기억 추출 실패 — 다음 턴 뒤에 다시 시도한다: %s", room_id, exc)
         capture_dependency_failure(exc, dependency=_dependency_tag(exc))
         if candidate is not None and claimed_at is not None:
-            await _mark_failed(session_factory, candidate.snapshot_id, claimed_at)
+            await _mark_failed(session_factory, candidate.snapshot_id, claimed_at, usage_sink)
 
 
 def _retryable() -> ColumnElement[bool]:
@@ -404,20 +409,20 @@ async def _finish_claim(
 
 
 def _usage_values(usage: list[CallUsage]) -> dict[str, Any]:
+    """이 시도의 사용량을 추출 기록에 **더하는** 값. 한 스냅샷 = 한 행이라 실패한 시도·다시 쥔 시도의 토큰이 같은 칸에 쌓인다
+    (모델은 마지막 시도의 것). 보고되지 않은 칸은 건드리지 않는다. 캐시 쓰기 토큰 칸은 두지 않는다 — 이 호출은 캐시
+    체크포인트를 보내지 않아(호출 정책 표의 `claude_cache_checkpoint` 기본값) 캐시 쓰기가 생기지 않는다."""
     if not usage:
         return {}
-
-    def total(name: str) -> int | None:
+    extraction = ChatMemoryExtraction
+    values: dict[str, Any] = {"model": usage[-1].model}
+    for name in ("prompt_tokens", "cached_tokens", "output_tokens", "thoughts_tokens"):
         counts = [getattr(call, name) for call in usage]
-        return None if all(count is None for count in counts) else sum(count or 0 for count in counts)
-
-    return {
-        "model": usage[-1].model,
-        "prompt_tokens": total("prompt_tokens"),
-        "cached_tokens": total("cached_tokens"),
-        "output_tokens": total("output_tokens"),
-        "thoughts_tokens": total("thoughts_tokens"),
-    }
+        if all(count is None for count in counts):
+            continue
+        column = getattr(extraction, name)
+        values[name] = func.coalesce(column, 0) + sum(count or 0 for count in counts)
+    return values
 
 
 def _episode_rows(candidate: _Candidate, drafts: Sequence[EpisodeDraft]) -> list[ChatMemoryEpisode]:
@@ -445,10 +450,14 @@ def _episode_rows(candidate: _Candidate, drafts: Sequence[EpisodeDraft]) -> list
 
 
 async def _mark_failed(
-    session_factory: async_sessionmaker[AsyncSession], snapshot_id: uuid.UUID, claimed_at: datetime
+    session_factory: async_sessionmaker[AsyncSession],
+    snapshot_id: uuid.UUID,
+    claimed_at: datetime,
+    usage: list[CallUsage],
 ) -> None:
-    """내 선점 그대로일 때만 `failed` 로 적는다 — 그사이 다른 작업이 다시 쥐었으면 그 작업의 기록을 건드리지 않는다. 이
-    기록 자체가 실패하면 경고만 남긴다(10분 뒤 낡은 선점으로 다시 쥔다)."""
+    """내 선점 그대로일 때만 `failed` 로 적는다 — 그사이 다른 작업이 다시 쥐었으면 그 작업의 기록을 건드리지 않는다. 응답을
+    받고 나서 실패했으면(파싱 실패 등) 그 시도가 쓴 토큰도 더한다. 이 기록 자체가 실패하면 경고만 남긴다(10분 뒤 낡은
+    선점으로 다시 쥔다)."""
     extraction = ChatMemoryExtraction
     try:
         async with session_factory() as session:
@@ -459,7 +468,7 @@ async def _mark_failed(
                     extraction.status == "running",
                     extraction.claimed_at == claimed_at,
                 )
-                .values(status="failed")
+                .values(status="failed", **_usage_values(usage))
             )
             await session.commit()
     except Exception as exc:
