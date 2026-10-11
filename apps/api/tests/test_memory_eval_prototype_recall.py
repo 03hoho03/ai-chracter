@@ -18,6 +18,7 @@ from memory_eval.prototype_recall import (
     Scored,
     episode_nouns_substring,
     query_nouns_substring,
+    recall_cue,
     score_episodes,
     select_injected,
     time_cue,
@@ -56,7 +57,9 @@ def test_case1_rare_noun_injects_gold_only() -> None:
     scored = _by_id(score_episodes(rows, query, current_turn=300, params=Params()))
     assert scored["G"].s == pytest.approx(0.7 + 0.025 + 0.02 * 30 / 300)
     assert scored["R"].s == pytest.approx(0.025 + 0.02 * 285 / 300)
-    assert select_injected(score_episodes(rows, query, current_turn=300, params=Params()), Params()) == ["G"]
+    assert select_injected(
+        score_episodes(rows, query, current_turn=300, params=Params()), Params(), recall_cue=True
+    ) == ["G"]
 
 
 def test_case1_variant_same_noun_in_three_scenes_injects_all_three() -> None:
@@ -70,7 +73,7 @@ def test_case1_variant_same_noun_in_three_scenes_injects_all_three() -> None:
     by_id = _by_id(scored)
     assert by_id["B0"].s == pytest.approx(0.7 * _w(3) / W_RARE + 0.025 + 0.02 * 30 / 300)
     assert by_id["B0"].s == pytest.approx(0.597, abs=0.001)
-    assert sorted(select_injected(scored, Params())) == ["B0", "B1", "B2"]
+    assert sorted(select_injected(scored, Params(), recall_cue=True)) == ["B0", "B1", "B2"]
 
 
 def test_case2_anaphora_follow_up_uses_assistant_nouns_minus_recent_two_snapshots() -> None:
@@ -94,7 +97,7 @@ def test_case2_anaphora_follow_up_uses_assistant_nouns_minus_recent_two_snapshot
     assert by_id["f100"].s == pytest.approx(0.7 * _w(4) / W_RARE + 0.025)
     assert by_id["R1"].overlap == frozenset()
     assert by_id["R2"].overlap == frozenset()
-    assert select_injected(scored, Params())[0] == "G"
+    assert select_injected(scored, Params(), recall_cue=True)[0] == "G"
 
 
 @pytest.mark.parametrize(
@@ -105,7 +108,7 @@ def test_case2_assistant_path_needs_time_cue(cue: bool, recalled: bool) -> None:
     rows = [gold, *_filler(27, snapshot=2), *_filler(1, start=50, snapshot=8), *_filler(1, start=60, snapshot=9)]
     query = Query(user=frozenset(), assistant=frozenset({"렌즈"}), time_cue=cue)
     scored = score_episodes(rows, query, current_turn=300, params=Params())
-    assert (select_injected(scored, Params()) == ["G"]) is recalled
+    assert (select_injected(scored, Params(), recall_cue=True) == ["G"]) is recalled
 
 
 def test_case3_only_common_nouns_has_no_section() -> None:
@@ -133,7 +136,7 @@ def test_case4_common_name_plus_rare_noun_keeps_rare_noun_only() -> None:
     by_id = _by_id(scored)
     assert by_id["G"].s == pytest.approx(0.7 + 0.025)
     assert by_id["m0"].s == pytest.approx(0.025)
-    assert select_injected(scored, Params()) == ["G"]
+    assert select_injected(scored, Params(), recall_cue=True) == ["G"]
 
 
 def test_case6_user_query_emptied_by_common_noun_does_not_take_assistant_path() -> None:
@@ -161,7 +164,9 @@ def test_threshold_boundary(delta: float, injected: bool) -> None:
     s = score_episodes(rows, query, current_turn=300, params=Params())[0].s
     assert s == pytest.approx(0.7 + 0.025 + 0.02 * 30 / 300)
     params = Params(tau=s + delta)
-    assert (select_injected(score_episodes(rows, query, current_turn=300, params=params), params) == ["G"]) is injected
+    assert (
+        select_injected(score_episodes(rows, query, current_turn=300, params=params), params, recall_cue=True) == ["G"]
+    ) is injected
 
 
 @pytest.mark.parametrize(
@@ -202,7 +207,9 @@ def test_inject_at_most_three_ranked_by_uncapped_score() -> None:
     query = Query(
         user=frozenset({"렌즈", "케이스", "단서0", "단서1", "단서2", "단서3"}), assistant=frozenset(), time_cue=False
     )
-    injected = select_injected(score_episodes(rows, query, current_turn=300, params=Params()), Params())
+    injected = select_injected(
+        score_episodes(rows, query, current_turn=300, params=Params()), Params(), recall_cue=True
+    )
     assert len(injected) == 3
     assert injected[0] == "both"
 
@@ -303,11 +310,11 @@ def _item(detail: str, *, title: str = "장면") -> PrototypeEpisode:
     )
 
 
-def test_episode_rows_drop_empty_detail_before_the_six_cap() -> None:
-    items = [_item(""), *[_item(f"본문{i}") for i in range(7)]]
+def test_episode_rows_drop_empty_detail_before_the_ten_cap() -> None:
+    items = [_item(""), *[_item(f"본문{i}") for i in range(11)]]
     rows = episode_rows(_window(), PrototypeResult(episodes=items), version="t")
-    assert [r["detail"] for r in rows] == [f"본문{i}" for i in range(6)]
-    assert (rows[0]["rawCount"], rows[0]["rawEmpty"]) == (8, 1)
+    assert [r["detail"] for r in rows] == [f"본문{i}" for i in range(10)]
+    assert (rows[0]["rawCount"], rows[0]["rawEmpty"]) == (12, 1)
 
 
 @pytest.mark.parametrize(
@@ -326,3 +333,51 @@ def test_title_is_cut_to_60_chars() -> None:
     rows = episode_rows(_window(), PrototypeResult(episodes=[_item("본문", title="제" * 61)]), version="t")
     assert rows[0]["title"] == "제" * 60
     assert rows[0]["truncated"] is False
+
+
+# ---------------------------------------------------------------- 보통 턴 주입 상한(회상 단서가 없는 턴은 최고점 1개)
+
+
+def _three_above_threshold() -> list[Scored]:
+    scenes = [
+        EpisodeNouns(id=f"B{i}", nouns=frozenset({"베이커리"}), importance=3, end_turn=30 + i, snapshot=1)
+        for i in range(3)
+    ]
+    query = Query(user=frozenset({"베이커리"}), assistant=frozenset(), time_cue=False)
+    return score_episodes([*scenes, *_filler(27, snapshot=2)], query, current_turn=300, params=Params())
+
+
+@pytest.mark.parametrize(
+    ("cue", "expected"),
+    [
+        pytest.param(True, ["B2", "B1", "B0"], id="recall-cue-three"),
+        pytest.param(False, ["B2"], id="plain-turn-top-one"),
+    ],
+)
+def test_plain_turn_injects_only_the_top_episode(cue: bool, expected: list[str]) -> None:
+    assert select_injected(_three_above_threshold(), Params(), recall_cue=cue) == expected
+
+
+def test_plain_turn_cap_is_a_parameter() -> None:
+    assert len(select_injected(_three_above_threshold(), Params(max_inject_plain=2), recall_cue=False)) == 2
+
+
+def test_plain_turn_below_threshold_injects_nothing() -> None:
+    assert select_injected(_three_above_threshold(), Params(tau=0.99), recall_cue=False) == []
+
+
+@pytest.mark.parametrize(
+    ("text", "cue"),
+    [
+        pytest.param("태민이랑 빵 먹으러 갔던 데, 이름 뭐였지?", True, id="mwoyeotji"),
+        pytest.param("지각하면 문 잠근다던 회의, 몇 시 시작이었지?", True, id="eotji"),
+        pytest.param("그때 거기 어디라고 했더라?", True, id="time-cue"),
+        pytest.param("그거 기억 안 나?", True, id="gieok-an"),
+        pytest.param("내가 군대에서 취사병이었다고 말한 적 있었나?", True, id="malhan-jeok"),
+        pytest.param("전에 말한 그 카페 가자", True, id="jeone-malhan"),
+        pytest.param("세빈이 오이 먹던가?", False, id="no-marker"),
+        pytest.param("오늘 촬영 진짜 힘들었지만 재밌었어", False, id="past-tense-statement"),
+    ],
+)
+def test_recall_cue(text: str, cue: bool) -> None:
+    assert recall_cue(text) is cue
