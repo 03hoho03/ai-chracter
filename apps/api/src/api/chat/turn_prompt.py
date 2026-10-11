@@ -8,7 +8,7 @@ import logging
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 from pydantic import ValidationError
 from sqlalchemy import or_, select
@@ -63,6 +63,7 @@ class GenerationPrompt(NamedTuple):
     persona_description_rendered: bool
     note_rendered: bool
     names: PromptNames
+    memory_recall: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -87,6 +88,7 @@ class InjectedTurnState:
     memory_note: str
     stats: dict[str, float]
     persona: InjectedPersona | None
+    recall_lines: str | None = None
 
 
 async def generation_prompt_set(

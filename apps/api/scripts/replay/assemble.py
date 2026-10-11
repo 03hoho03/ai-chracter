@@ -264,7 +264,7 @@ async def _assemble(
     room = room or ctx.room
     turn_state = turn_state or ctx.turn_state
     history = ctx.restored.history
-    prompt, system_instruction, _, _, names = await build_room_prompt(
+    prompt, system_instruction, _, _, names, _ = await build_room_prompt(
         db,
         room,
         setup or ctx.setup,

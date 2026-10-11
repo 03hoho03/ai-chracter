@@ -176,3 +176,7 @@ async def restore_turn(
             },
         },
     )
+
+
+async def turn_recall_lines(db: AsyncSession, assistant_message_id: uuid.UUID) -> str:
+    return ""
