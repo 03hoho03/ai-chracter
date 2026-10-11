@@ -347,9 +347,16 @@ def retrieve_b(episodes: Sequence[Episode], **kw: Any) -> list[Ranked]:
     return _DEFAULTS["b"](episodes, **kw)
 
 
+def retrieve_e(episodes: Sequence[Episode], **kw: Any) -> list[Ranked]:
+    """확정 방식: 형태소기 없이 조사 떼기 토큰을 쓰기·질의 양쪽에 쓴다. 운영 회상 구현은 이 함수와 같은 토큰·점수·순위를
+    내야 한다(기준 벡터로 대조)."""
+    return _DEFAULTS["e"](episodes, **kw)
+
+
 # 개발 절반 튜닝 결과(격자 τ 0.20~0.60 × 흔한 명사 비율 0.2·0.3·0.4 에서 직접 형식 recall@3 → 대명사 → 보통 턴 주입률 → τ 순).
 SELECTED = Params(tau=0.60, common_ratio=0.2)
 _DEFAULTS: dict[str, Retriever] = {
     "a": Retriever("substring", params=SELECTED),
     "b": Retriever("kiwi", params=SELECTED),
+    "e": Retriever("rule", params=SELECTED),
 }
