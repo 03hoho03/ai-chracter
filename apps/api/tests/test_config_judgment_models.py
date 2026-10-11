@@ -21,6 +21,8 @@ _MODEL_KEYS = ("STAT_JUDGMENT_MODEL", "ENDING_JUDGMENT_MODEL", "IMAGE_JUDGMENT_M
 _BEDROCK_KEYS = ("BEDROCK_ACCESS_KEY_ID", "BEDROCK_SECRET_ACCESS_KEY", "BEDROCK_REGION")
 _ANTHROPIC_KEY = "ANTHROPIC_DIRECT_API_KEY"
 _ASSIGN = "LLM_CALL_SITE_BACKENDS"
+_HAIKU_ID_KEYS = ("BEDROCK_HAIKU_MODEL_ID", "ANTHROPIC_HAIKU_MODEL_ID")
+_EFFORT_KEYS = ("ANTHROPIC_CHAT_EFFORT", "ANTHROPIC_STRUCTURED_EFFORT")
 _BEDROCK_CREDENTIALS = {
     "BEDROCK_ACCESS_KEY_ID": "AKIATEST",
     "BEDROCK_SECRET_ACCESS_KEY": "secret",
@@ -29,7 +31,7 @@ _BEDROCK_CREDENTIALS = {
 
 
 def _load(monkeypatch: pytest.MonkeyPatch, **env: str) -> Settings:
-    for key in (*_MODEL_KEYS, *_BEDROCK_KEYS, _ANTHROPIC_KEY, _ASSIGN, "BEDROCK_HAIKU_MODEL_ID", "ANTHROPIC_HAIKU_MODEL_ID"):
+    for key in (*_MODEL_KEYS, *_BEDROCK_KEYS, _ANTHROPIC_KEY, _ASSIGN, *_HAIKU_ID_KEYS, *_EFFORT_KEYS):
         monkeypatch.delenv(key, raising=False)
     for key, value in env.items():
         monkeypatch.setenv(key, value)
@@ -46,10 +48,12 @@ def test_every_judgment_and_summary_model_defaults_to_gemini(monkeypatch: pytest
         loaded.memory_summary_model,
     ) == ("gemini", "gemini", "gemini", "gemini")
     assert loaded.bedrock_haiku_model_id == "global.anthropic.claude-haiku-4-5-20251001-v1:0"
-    assert loaded.anthropic_haiku_model_id == "claude-haiku-4-5"
+    # 직결은 Haiku 5.5, Bedrock 은 Haiku 4.5 다 — 이 저장소의 판정 평가는 직결로만 하고 Bedrock 의 Haiku 5.5 구조화 출력은
+    # 확인하지 않아 그쪽 id 는 옮기지 않았다.
+    assert loaded.anthropic_haiku_model_id == "claude-haiku-5-5"
 
 
-@pytest.mark.parametrize("key", [*_MODEL_KEYS, "BEDROCK_HAIKU_MODEL_ID", "ANTHROPIC_HAIKU_MODEL_ID"])
+@pytest.mark.parametrize("key", [*_MODEL_KEYS, *_HAIKU_ID_KEYS])
 @pytest.mark.parametrize("blank", ["", "  "])
 def test_an_empty_env_line_reads_as_the_default(monkeypatch: pytest.MonkeyPatch, key: str, blank: str) -> None:
     loaded = _load(monkeypatch, **{key: blank})
@@ -121,6 +125,57 @@ def test_a_judgment_left_on_bedrock_while_its_preview_moves_to_anthropic_still_n
         )
 
 
+_HAIKU_ON_ANTHROPIC = {
+    "STAT_JUDGMENT_MODEL": "haiku",
+    _ASSIGN: "chat_stat_judgment:anthropic,preview_stat_judgment:anthropic",
+    _ANTHROPIC_KEY: "sk-ant-test",
+}
+
+
+@pytest.mark.parametrize("effort", ["xhigh", "max"])
+def test_startup_rejects_extreme_effort_when_a_structured_call_goes_to_haiku_5(
+    monkeypatch: pytest.MonkeyPatch, effort: str
+) -> None:
+    """Haiku 5.x 직결 판정은 사고를 끄는데, 사고를 끈 요청은 깊이 high 까지만 받는다 — 그 위면 매 판정이 400 이다. 첫
+    판정에서야 터지는 것보다 기동이 멈추는 편이 싸다."""
+    with pytest.raises(ValidationError, match="ANTHROPIC_STRUCTURED_EFFORT"):
+        _load(
+            monkeypatch,
+            **_HAIKU_ON_ANTHROPIC,
+            ANTHROPIC_HAIKU_MODEL_ID="claude-haiku-5-5",
+            ANTHROPIC_STRUCTURED_EFFORT=effort,
+        )
+
+
+@pytest.mark.parametrize(
+    "env",
+    [
+        pytest.param(
+            {**_HAIKU_ON_ANTHROPIC, "ANTHROPIC_HAIKU_MODEL_ID": "claude-haiku-5-5", "ANTHROPIC_STRUCTURED_EFFORT": "high"},
+            id="high-is-the-ceiling-of-disabled-thinking",
+        ),
+        pytest.param(
+            {**_HAIKU_ON_ANTHROPIC, "ANTHROPIC_HAIKU_MODEL_ID": "claude-haiku-4-5", "ANTHROPIC_STRUCTURED_EFFORT": "xhigh"},
+            id="haiku-4-5-gets-no-effort-at-all",
+        ),
+        pytest.param(
+            {**_HAIKU_ON_ANTHROPIC, "ANTHROPIC_HAIKU_MODEL_ID": "claude-haiku-5-5", "ANTHROPIC_CHAT_EFFORT": "xhigh"},
+            id="chat-effort-is-not-the-judgments",
+        ),
+        pytest.param(
+            {"STAT_JUDGMENT_MODEL": "haiku", "ANTHROPIC_STRUCTURED_EFFORT": "xhigh", **_BEDROCK_CREDENTIALS},
+            id="haiku-on-bedrock",
+        ),
+    ],
+)
+def test_startup_accepts_extreme_effort_where_no_structured_call_turns_thinking_off(
+    monkeypatch: pytest.MonkeyPatch, env: dict[str, str]
+) -> None:
+    """사고를 끄는 구조화 호출(Haiku 5.x 로 가는 직결 판정·요약)이 없으면 깊이 상한도 없다. Bedrock 구현은 깊이를 보내지
+    않고, Haiku 4.5 직결은 깊이를 싣지 않으며, 채팅 생성 깊이는 판정과 따로다."""
+    _load(monkeypatch, **env)
+
+
 def test_the_judgment_only_model_is_not_a_premium_writing_model(monkeypatch: pytest.MonkeyPatch) -> None:
     """상위 모델 스위치는 채팅·소설 글쓰기 모델의 경로만 본다. 판정 전용 `haiku` 가 그 검사에 섞이면, haiku 를 서비스하는
     구현이 글쓰기 모델과 다를 때 쓰지도 않는 경로의 자격을 요구한다 — 그 상황을 등록부에서 만들어 본다."""
@@ -155,7 +210,7 @@ def test_the_production_env_key_set_has_no_judgment_model_keys_and_judges_with_g
 ) -> None:
     """이 변경은 운영 env 를 바꾸지 않는다 — 판정·요약 모델 키가 운영에 없으면 판정은 지금처럼 Gemini 로 가고, 운영의 Bedrock
     자격 없음·상위 모델 Anthropic 배정 그대로 뜬다."""
-    assert not {*_MODEL_KEYS, "BEDROCK_HAIKU_MODEL_ID", "ANTHROPIC_HAIKU_MODEL_ID"} & set(PRODUCTION_ENV_NAMES)
+    assert not {*_MODEL_KEYS, *_HAIKU_ID_KEYS, *_EFFORT_KEYS} & set(PRODUCTION_ENV_NAMES)
 
     loaded = load_production_env(monkeypatch)
 

@@ -178,38 +178,84 @@ async def test_the_bedrock_request_carries_the_schema_with_thinking_off_and_noth
         assert absent not in body, absent
 
 
-@pytest.mark.parametrize(
-    ("model", "effort"),
-    [
-        # Haiku 4.5 는 `effort` 를 받으면 요청을 400 으로 거부한다.
-        pytest.param("haiku", None, id="haiku"),
-        pytest.param("opus", "low", id="opus"),
-        pytest.param("sonnet", "low", id="sonnet"),
-    ],
-)
-async def test_the_direct_request_carries_the_schema_without_thinking_and_effort_only_where_the_model_takes_it(
-    monkeypatch: pytest.MonkeyPatch, recorded: list[Any], model: str, effort: str | None
-) -> None:
-    monkeypatch.setattr(settings, "stat_judgment_model", model)
-    seen: list[httpx2.Request] = []
-    client = _build_anthropic(monkeypatch, _replying(_message(_VALID), seen))
-
-    await _judge(client)
-
+def _direct_body(seen: list[httpx2.Request], model: str) -> dict[str, Any]:
+    """직결 구조화 요청 본문. 사고·깊이 말고는 모델과 무관하게 같은 모양이어야 한다."""
     (request,) = seen
     assert request.url.path == "/v1/messages"
-    body = json.loads(request.content)
+    body: dict[str, Any] = json.loads(request.content)
     assert body["model"] == getattr(settings, f"anthropic_{model}_model_id")
     assert body["messages"] == [{"role": "user", "content": "판정 프롬프트"}]
     assert body["max_tokens"] == settings.anthropic_chat_max_tokens
-    expected: dict[str, Any] = {
-        "format": {"type": "json_schema", "schema": anthropic.transform_schema(StatRuleJudgmentResult)}
+    assert body["output_config"]["format"] == {
+        "type": "json_schema",
+        "schema": anthropic.transform_schema(StatRuleJudgmentResult),
     }
-    if effort is not None:
-        expected["effort"] = effort
-    assert body["output_config"] == expected
-    for absent in ("thinking", "stream", "system", "tool_choice", "tools", "metadata"):
+    for absent in ("stream", "system", "tool_choice", "tools", "metadata", "temperature", "top_p", "top_k"):
         assert absent not in body, absent
+    return body
+
+
+async def _judge_directly(monkeypatch: pytest.MonkeyPatch, model: str) -> dict[str, Any]:
+    monkeypatch.setattr(settings, "stat_judgment_model", model)
+    seen: list[httpx2.Request] = []
+    client = _build_anthropic(monkeypatch, _replying(_message(_VALID), seen))
+    await _judge(client)
+    return _direct_body(seen, model)
+
+
+async def test_structured_call_to_haiku_5_disables_thinking_and_sends_low_effort(
+    monkeypatch: pytest.MonkeyPatch, recorded: list[Any]
+) -> None:
+    """Haiku 5.5 는 사고가 기본으로 켜져 있고 깊이 기본값이 medium 이다 — 둘 다 보내지 않으면 판정이 사고하며 돈다. 사고를
+    끄고 깊이를 낮춰 Haiku 4.5 판정과 같은 조건(사고 없음)을 유지한다. 비기본 temperature 는 이 모델이 거부한다."""
+    monkeypatch.setattr(settings, "anthropic_haiku_model_id", "claude-haiku-5-5")
+
+    body = await _judge_directly(monkeypatch, "haiku")
+
+    assert body["thinking"] == {"type": "disabled"}
+    assert body["output_config"]["effort"] == "low"
+
+
+@pytest.mark.parametrize("model_id", ["claude-haiku-4-5", "claude-haiku-4-5-20251001"])
+async def test_structured_call_to_haiku_4_5_sends_neither_effort_nor_thinking(
+    monkeypatch: pytest.MonkeyPatch, recorded: list[Any], model_id: str
+) -> None:
+    """Haiku 4.5 는 깊이를 받으면 요청을 400 으로 거부하고, 사고는 요청할 때만 한다 — 둘 다 싣지 않는 지금 동작 그대로다.
+    판정 전용 id `haiku` 가 4.5 와 5.5 를 함께 가리키므로 규칙은 실제로 보내는 모델 id 로 가른다."""
+    monkeypatch.setattr(settings, "anthropic_haiku_model_id", model_id)
+
+    body = await _judge_directly(monkeypatch, "haiku")
+
+    assert body["model"] == model_id
+    assert "thinking" not in body
+    assert "effort" not in body["output_config"]
+
+
+@pytest.mark.parametrize("model", ["opus", "sonnet"])
+async def test_structured_call_to_opus_keeps_effort_without_thinking(
+    monkeypatch: pytest.MonkeyPatch, recorded: list[Any], model: str
+) -> None:
+    """Opus·Sonnet 5.5 는 사고를 싣지 않고 깊이만 보낸다(지금 동작). 깊이는 구조화 호출 몫의 설정에서 읽는다 — 채팅 생성
+    깊이를 올려도 판정·요약의 깊이는 따라 움직이지 않는다."""
+    monkeypatch.setattr(settings, "anthropic_chat_effort", "xhigh")
+
+    body = await _judge_directly(monkeypatch, model)
+
+    assert "thinking" not in body
+    assert body["output_config"]["effort"] == "low"
+
+
+async def test_the_structured_effort_setting_reaches_haiku_5_under_disabled_thinking(
+    monkeypatch: pytest.MonkeyPatch, recorded: list[Any]
+) -> None:
+    """사고를 끈 채로도 깊이는 설정 값을 따른다(disabled 는 high 까지 받는다)."""
+    monkeypatch.setattr(settings, "anthropic_haiku_model_id", "claude-haiku-5-5")
+    monkeypatch.setattr(settings, "anthropic_structured_effort", "high")
+
+    body = await _judge_directly(monkeypatch, "haiku")
+
+    assert body["thinking"] == {"type": "disabled"}
+    assert body["output_config"]["effort"] == "high"
 
 
 @pytest.mark.parametrize(
@@ -239,7 +285,7 @@ async def test_the_timeout_is_the_one_the_call_site_already_uses(
 async def test_thinking_blocks_are_skipped_and_only_the_text_is_parsed(
     monkeypatch: pytest.MonkeyPatch, recorded: list[Any]
 ) -> None:
-    """직접 API 의 5.5 모델은 사고를 끌 수 없어 응답 앞에 사고 블록이 붙는다 — 본문은 텍스트 블록뿐이다."""
+    """직접 API 의 Opus·Sonnet 5.5 는 판정에서도 사고를 끄지 않아 응답 앞에 사고 블록이 붙는다 — 본문은 텍스트 블록뿐이다."""
     monkeypatch.setattr(settings, "stat_judgment_model", "opus")
     thinking = {"type": "thinking", "thinking": "", "signature": "sig"}
     client = _build_anthropic(

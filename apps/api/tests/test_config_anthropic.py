@@ -15,6 +15,7 @@ _KEYS = (
     "ANTHROPIC_CHAPTER_MAX_TOKENS",
     "ANTHROPIC_CHAT_EFFORT",
     "ANTHROPIC_CHAPTER_EFFORT",
+    "ANTHROPIC_STRUCTURED_EFFORT",
     "LLM_CALL_SITE_BACKENDS",
 )
 
@@ -37,6 +38,8 @@ _DEFAULTS = [
     ("ANTHROPIC_CHAPTER_MAX_TOKENS", "anthropic_chapter_max_tokens", 64_000),
     ("ANTHROPIC_CHAT_EFFORT", "anthropic_chat_effort", "low"),
     ("ANTHROPIC_CHAPTER_EFFORT", "anthropic_chapter_effort", "medium"),
+    # 판정·요약(구조화) 깊이. 채팅 깊이와 기본값이 같아 env 를 두지 않으면 Opus·Sonnet 구조화 요청이 이 설정 전과 같다.
+    ("ANTHROPIC_STRUCTURED_EFFORT", "anthropic_structured_effort", "low"),
 ]
 
 
@@ -59,7 +62,7 @@ def test_an_empty_env_line_reads_as_the_default(
     assert getattr(_load(monkeypatch, **{key: blank}), field) == default
 
 
-@pytest.mark.parametrize("key", ["ANTHROPIC_CHAT_EFFORT", "ANTHROPIC_CHAPTER_EFFORT"])
+@pytest.mark.parametrize("key", ["ANTHROPIC_CHAT_EFFORT", "ANTHROPIC_CHAPTER_EFFORT", "ANTHROPIC_STRUCTURED_EFFORT"])
 @pytest.mark.parametrize("value", ["lowest", "LOW", "none"])
 def test_an_effort_outside_the_api_levels_refuses_to_start(
     monkeypatch: pytest.MonkeyPatch, key: str, value: str
