@@ -313,8 +313,8 @@ class Settings(BaseSettings):
     anthropic_chat_effort: ClaudeEffort = "low"
     anthropic_chapter_effort: ClaudeEffort = "medium"
     # 판정·요약(구조화 호출)의 사고 깊이. 채팅 생성 깊이와 나눈다 — 함께 쓰면 채팅 깊이를 xhigh 로 올리는 순간, 사고를 끈
-    # Haiku 5.x 판정(사고를 끈 요청은 깊이를 high 까지만 받는다)이 전부 거부된다. 기본값이 채팅 기본값과 같아 env 를 두지
-    # 않으면 Opus·Sonnet 판정 요청은 이 설정 전과 같다.
+    # Haiku 5.x 판정(사고를 끈 요청은 깊이를 high 까지만 받는다)이 전부 거부된다. 기본값이 채팅 기본값과 같아 두 깊이
+    # env(ANTHROPIC_CHAT_EFFORT·ANTHROPIC_STRUCTURED_EFFORT)를 모두 두지 않으면 Opus·Sonnet 판정 요청은 이전과 같다.
     anthropic_structured_effort: ClaudeEffort = "low"
     # 상위 모델 스위치 — 채팅과 소설화에 하나씩(기본 닫힘). 채팅은 이 스위치 하나로 로그인 회원 전원에게 열린다. 소설은
     # 허용 가능 계정 명단도 두며 뜻은 소설화 스위치·명단과 같다(명단에서 빼고 재기동하면 허용 행이 있어도 막힘). 소설 장의

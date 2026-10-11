@@ -38,7 +38,8 @@ _DEFAULTS = [
     ("ANTHROPIC_CHAPTER_MAX_TOKENS", "anthropic_chapter_max_tokens", 64_000),
     ("ANTHROPIC_CHAT_EFFORT", "anthropic_chat_effort", "low"),
     ("ANTHROPIC_CHAPTER_EFFORT", "anthropic_chapter_effort", "medium"),
-    # 판정·요약(구조화) 깊이. 채팅 깊이와 기본값이 같아 env 를 두지 않으면 Opus·Sonnet 구조화 요청이 이 설정 전과 같다.
+    # 판정·요약(구조화) 깊이. 채팅 깊이와 기본값이 같아 두 깊이 env(ANTHROPIC_CHAT_EFFORT·ANTHROPIC_STRUCTURED_EFFORT)를
+    # 모두 두지 않으면 Opus·Sonnet 판정 요청은 이전과 같다.
     ("ANTHROPIC_STRUCTURED_EFFORT", "anthropic_structured_effort", "low"),
 ]
 
