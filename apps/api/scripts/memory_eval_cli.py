@@ -201,6 +201,7 @@ def cmd_set_model(args: argparse.Namespace) -> int:
 
 def cmd_insert(args: argparse.Namespace) -> int:
     from memory_eval import insert
+    from memory_eval.pinned_stats import load_pinned_doc
 
     plant_set = plants_mod.load_plants(args.plants)
     freeze_at = _ints(args.freeze_at)
@@ -248,6 +249,7 @@ def cmd_insert(args: argparse.Namespace) -> int:
             db_user=args.db_user,
             recall_field=args.recall_field,
             recall_header=args.recall_header,
+            pinned_doc=load_pinned_doc(args.checkpoint_stats) if args.checkpoint_stats else None,
         )
     )
     _print(result)
@@ -724,6 +726,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--trajectory-model", default="opus")
     p.add_argument("--label", default="s4")
     p.add_argument("--recall-field", help="조립 결과의 회상 칸 이름(B 갈래 궤적에 필수)")
+    p.add_argument(
+        "--checkpoint-stats", type=Path, help="체크포인트별 스탯 고정 파일 — 얼리기 직전에 방 스탯을 그 값으로"
+    )
     p.add_argument("--recall-header", default="[지난 기억 — 참고]")
     p.add_argument("--cookie-file", type=Path)
     p.add_argument("--pg-container")

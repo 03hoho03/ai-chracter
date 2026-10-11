@@ -4,7 +4,7 @@
 `fold_memory` 를 직접 부른다(서버 백그라운드와 같은 함수, 같은 세트·이름) → 추출을 켠 실행이면 운영처럼 턴마다
 추출 작업을 한 번(연속 3턴 진전이 없으면 멈춘다) → 되감기 항목이 있으면 그 메시지를 담은 스냅샷이 막 생기고 추출까지 끝난 턴에 실제 메시지 삭제 API(앱을 프로세스
 안에서 ASGI 로)로 지우고 지워진 스냅샷이 정확히 1개인지 단언 → 궤적 갈래마다 다음 턴의 생성 프롬프트를 조립해 기록 → 얼릴
-체크포인트면 템플릿으로 얼린다.
+체크포인트면 (스탯 고정 파일을 줬으면 그 체크포인트의 값으로 방 스탯을 맞춘 뒤) 템플릿으로 얼린다.
 
 LLM 은 셋 중 하나로만 돈다: 가짜(유료 호출 0 — 절차 확인용), 실제(명시 승인 인자가 있을 때만, 원장 상한 확인 뒤), 드라이런(DB 도
 LLM 도 건드리지 않고 계획·견적만). 이미 넣은 턴 뒤에서 이어 넣는다(방의 턴 수부터)."""
@@ -27,8 +27,9 @@ from api.db.models import ChatMessage, ChatMessageRole, ChatRoom, ChatRoomMemory
 from api.llm.chat_models import ChatModelId
 from api.llm.client import CallUsage, LLMCallContext, LLMClient
 
-from memory_eval.checkpoint import database_name, freeze
+from memory_eval.checkpoint import database_name, freeze, pinned_path
 from memory_eval.ledger import Ledger
+from memory_eval.pinned_stats import apply_pinned_stats, pinned_for_checkpoint, preflight_pinned
 from memory_eval.plants import PlantSet
 from memory_eval.runtime import app_client, load_room, make_engine, story_judgment_sets
 from memory_eval.trajectory import DEFAULT_RECALL_HEADER, append_point, assemble_point
@@ -225,6 +226,7 @@ async def run_insert(
     db_user: str,
     recall_field: str | None = None,
     recall_header: str = DEFAULT_RECALL_HEADER,
+    pinned_doc: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     by_turn = {t.turn: t for t in script}
     engine, session_factory = make_engine(database_url)
@@ -238,6 +240,10 @@ async def run_insert(
             ctx = await load_room(db, room_id)
             start = ctx.room.turn_count + 1
             sets = await story_judgment_sets(db)
+            if pinned_doc is not None:
+                await preflight_pinned(
+                    db, room_id, ctx.setup.id, pinned_doc, [t for t in freeze_at if start <= t <= until_turn]
+                )
         summary_set, summary_sections = sets.summary
         for turn in range(start, until_turn + 1):
             row = by_turn.get(turn)
@@ -309,6 +315,13 @@ async def run_insert(
                     f"턴 {turn}: 접기가 {consecutive_fold_failures}번 연속 실패 — 멈춘다(서버 로그·원장 확인)"
                 )
             if turn in freeze_at:
+                pinned: dict[str, Any] | None = None
+                if pinned_doc is not None:
+                    async with session_factory() as db:
+                        pinned = await apply_pinned_stats(
+                            db, room_id, ctx.setup.id, pinned_for_checkpoint(pinned_doc, turn)
+                        )
+                    _append(log_path, {"turn": turn, "pinnedStats": pinned})
                 await engine.dispose()
                 frozen = await freeze(
                     database_url,
@@ -321,6 +334,9 @@ async def run_insert(
                     label=label,
                     require_episode_rows=extract,
                 )
+                if pinned is not None:
+                    path = pinned_path(run_dir / "dumps", turn, label)
+                    path.write_text(json.dumps(pinned["pinned"], ensure_ascii=False) + "\n", encoding="utf-8")
                 _append(log_path, {"turn": turn, "frozen": frozen["template"], "fingerprint": frozen["fingerprint"]})
         return {"start": start, "until": until_turn, "log": str(log_path)}
     finally:
