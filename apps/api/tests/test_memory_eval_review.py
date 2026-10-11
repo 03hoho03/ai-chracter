@@ -414,8 +414,10 @@ def test_s8_rewind_hit_without_a_score_value_halts() -> None:
         for i, s in (("rew01", "dev"), ("rew02", "test"))
     ]
     result = s8_verdict(_rewind_set(), _both_halves(rows), judge_rows=[], offline_rows=[])
+    # 불능 항목은 빼고 계속하지만(사전 등록 v2), 둘 다 빠지면 분모가 0 이라 멈춘다.
     assert result["5"]["status"] == "halt"
-    assert result["5"]["missingB"] == ["rew01", "rew02"]
+    assert result["5"]["excluded"] == ["rew01", "rew02"]
+    assert result["5"]["n"] == 0
 
 
 def test_s8_abstain_without_all_six_judgments_halts_and_names_the_missing() -> None:

@@ -4,11 +4,15 @@
    프로브 불능이면 그 항목을 뺀다. 회상 코드 오류로 끝난 B 응답(`count_wrong`)은 B 오답이다. 정확 McNemar 단측 p < 0.05 그리고
    (B − A)/n ≥ 0.20.
 ② 300턴 정답 포함(`metrics.MA1_300`, 시험 절반): B 윌슨 하한 ≥ A 점추정.
-③ 오프라인 직접 형식 합격선: `recall_offline.direct_passline`(분모 하한·대상 표시 포함).
-④ 기권: 기권 항목 전체에서 판정자가 "지어냄"으로 본 수가 B 에서 A 보다 2건 이상 많지 않다(판정 불능 항목은 두 갈래 모두 뺀다).
+③ 오프라인 직접 형식 합격선: `recall_offline.direct_passline`(분모 하한·대상 표시 포함). 회상 질문 recall@3 은 서버와 같은 주입 상한(회상 단서 3·그 밖 1)을 적용한 주입 집합으로 센다.
+④ 기권: 기권 항목 전체에서 판정자가 "지어냄"으로 본 수가 B 에서 A 보다 2건 이상 많지 않다.
 ⑤ 되감기 누출: 되감기 항목 전체에서 B 누출(결정론 적중 AND 판정자 단정)이 0. A 의 결정론 적중도 함께 낸다.
-보조로 A 갈래의 맥락 턴 적중 비율을 낸다.
-④·⑤ 는 입력이 빠지면(기권 판정이 전체보다 적음, 되감기 항목의 B 줄·적중·판정 값 없음) 통과가 아니라 `halt` — 멈추고 묻는다.
+④·⑤ 의 불능: 어느 갈래든 프로브 불능이거나 판정 불능(판정 줄의 값이 None)인 항목은 두 갈래 모두에서 빼고 계속한다. 예외로
+   되감기 B 가 결정론으로 적중했는데 판정이 불능이면 누출로 센다(누출을 놓치는 쪽보다 과대 집계가 안전하다). 빼고 난 분모가
+   0 이면 `halt`. 불능 기록 자체가 없는 입력 누락(채점 줄·판정 줄이 아예 없음)은 불능이 아니라 집계 입력의 결함이라 `halt`.
+⑥ 프롬프트 길이: 턴 101~300 의 갈래별 최소제곱 기울기 차 |b_B − b_A| < 2자/턴 그리고 같은 턴의 B − A 최대 ≤ 회상 섹션 최대값.
+⑦ 캐시 블록: 같은 턴마다 앞 두 블록 해시가 B 와 A 에서 같다. ⑥·⑦ 은 `trajectory` 두 갈래 점에서 계산하고, 점이 없으면 `halt`.
+합격(`allPass`)은 ①~⑦ 전부. 보조로 A 갈래의 맥락 턴 적중 비율을 낸다.
 ④·⑤ 가 전체 기준이므로 채점 입력에 개발·시험 두 절반이 모두 있어야 한다. 시험 절반 계산이므로 부르는 쪽이 봉인 확인을 먼저
 거친다."""
 
@@ -16,13 +20,15 @@ from collections.abc import Sequence
 from typing import Any
 
 from memory_eval.judge import leak
-from memory_eval.metrics import mcnemar_exact_one_sided, wilson_interval
+from memory_eval.metrics import mcnemar_exact_one_sided, ols_slope, wilson_interval
 from memory_eval.plants import PlantSet
 from memory_eval.recall_offline import direct_passline
 
 PAIR_P_MAX = 0.05
 PAIR_MIN_GAIN = 0.20
 ABSTAIN_MAX_EXTRA = 2
+SLOPE_DIFF_MAX = 2.0
+TRAJECTORY_TURNS = (101, 300)
 
 
 def _hit(row: dict[str, Any] | None) -> bool | None:
@@ -38,6 +44,35 @@ def _by_key(rows: Sequence[dict[str, Any]]) -> dict[tuple[str, str, int], dict[s
     return {(str(r["arm"]), str(r["item"]), int(r["checkpoint"])): r for r in rows}
 
 
+def _unprobeable(row: dict[str, Any] | None) -> bool:
+    return row is not None and (row.get("status") == "unprobeable" or not row.get("scored", True))
+
+
+def trajectory_checks(points: Sequence[dict[str, Any]], *, recall_section_max: int) -> dict[str, Any]:
+    """⑥ 길이(턴 101~300 기울기 차·같은 턴 B − A 최대)와 ⑦ 캐시 블록(같은 턴 앞 두 블록 해시 동일)."""
+    low, high = TRAJECTORY_TURNS
+    by_arm: dict[str, dict[int, dict[str, Any]]] = {"A": {}, "B": {}}
+    for point in points:
+        if point.get("arm") in by_arm:
+            by_arm[str(point["arm"])][int(point["turn"])] = point
+    turns = sorted(set(by_arm["A"]) & set(by_arm["B"]))
+    window = [t for t in turns if low <= t <= high]
+    if len(window) < 2:
+        halt = {"status": "halt", "pass": False, "turns": len(window)}
+        return {"6": dict(halt), "7": dict(halt)}
+    slope = {arm: ols_slope([(t, by_arm[arm][t]["chars"]) for t in window]) for arm in ("A", "B")}
+    diff = abs(slope["B"] - slope["A"])
+    max_diff = max(by_arm["B"][t]["chars"] - by_arm["A"][t]["chars"] for t in turns)
+    ok6 = diff < SLOPE_DIFF_MAX and max_diff <= recall_section_max
+    mismatched = [t for t in turns if by_arm["A"][t]["segmentSha"][:2] != by_arm["B"][t]["segmentSha"][:2]]
+    return {
+        "6": {"slopeA": slope["A"], "slopeB": slope["B"], "slopeDiff": diff, "maxDiff": max_diff,
+              "recallSectionMax": recall_section_max, "turns": len(window), "status": "pass" if ok6 else "fail", "pass": ok6},
+        "7": {"turns": len(turns), "mismatchedTurns": mismatched, "status": "fail" if mismatched else "pass",
+              "pass": not mismatched},
+    }  # fmt: skip
+
+
 def _last_checkpoint(rows: Sequence[dict[str, Any]], item: str) -> int | None:
     cps = [int(r["checkpoint"]) for r in rows if r["item"] == item]
     return max(cps) if cps else None
@@ -49,6 +84,8 @@ def s8_verdict(
     *,
     judge_rows: Sequence[dict[str, Any]],
     offline_rows: Sequence[dict[str, Any]],
+    trajectory_points: Sequence[dict[str, Any]] | None = None,
+    recall_section_max: int | None = None,
 ) -> dict[str, Any]:
     halves = {str(r.get("split")) for r in score_rows}
     if not {"dev", "test"} <= halves:
@@ -115,50 +152,81 @@ def s8_verdict(
 
     judged = {(str(r["arm"]), str(r["item"])): r.get("judged") for r in judge_rows}
 
-    # ④ 기권 전체 — 판정 가능한 문항이 기권 전체보다 적으면 판정하지 않고 멈춘다.
+    def score_at(arm: str, item: str) -> dict[str, Any] | None:
+        cp = _last_checkpoint(score_rows, item)
+        return rows.get((arm, item, cp)) if cp is not None else None
+
+    # ④ 기권 전체 — 불능 항목은 두 갈래 모두 빼고, 판정 줄 자체가 없으면 입력 누락으로 멈춘다.
     abstains = [str(a["id"]) for a in plant_set.abstains]
-    usable = [i for i in abstains if judged.get(("A", i)) is not None and judged.get(("B", i)) is not None]
-    missing_abstain = [i for i in abstains if i not in usable]
+    usable: list[str] = []
+    excluded4: list[str] = []
+    missing_abstain: list[str] = []
+    for item in abstains:
+        if _unprobeable(score_at("A", item)) or _unprobeable(score_at("B", item)):
+            excluded4.append(item)
+        elif ("A", item) not in judged or ("B", item) not in judged:
+            missing_abstain.append(item)
+        elif judged[("A", item)] is None or judged[("B", item)] is None:
+            excluded4.append(item)
+        else:
+            usable.append(item)
     fab_a = sum(1 for i in usable if judged[("A", i)] == "fabricated")
     fab_b = sum(1 for i in usable if judged[("B", i)] == "fabricated")
-    status4 = "halt" if missing_abstain or not abstains else ("pass" if fab_b - fab_a < ABSTAIN_MAX_EXTRA else "fail")
+    status4 = "halt" if missing_abstain or not usable else ("pass" if fab_b - fab_a < ABSTAIN_MAX_EXTRA else "fail")
     out["4"] = {
-        "n": len(usable), "fabricatedA": fab_a, "fabricatedB": fab_b, "missing": missing_abstain,
+        "n": len(usable), "fabricatedA": fab_a, "fabricatedB": fab_b, "excluded": excluded4, "missing": missing_abstain,
         "status": status4, "pass": status4 == "pass",
     }  # fmt: skip
 
-    # ⑤ 되감기 전체 — 항목마다 B 줄과 적중 값이 있어야 하고, 적중이면 판정자 값도 있어야 한다. 하나라도 없으면 멈춘다.
+    # ⑤ 되감기 전체 — 불능 항목은 빼되, B 가 적중했는데 판정 불능이면 누출로 센다.
     rewinds = [str(p["id"]) for p in plant_set.plants if p.get("category") == "되감기"]
     leaks_b = 0
-    missing_b: list[str] = []
-    undecided: list[str] = []
     hits_a = 0
+    counted: list[str] = []
+    excluded5: list[str] = []
+    missing_b: list[str] = []
+    missing_judge: list[str] = []
+    by_unjudgeable: list[str] = []
     for item in rewinds:
-        cp = _last_checkpoint(score_rows, item)
-        b_hit = _hit(rows.get(("B", item, cp))) if cp is not None else None
-        a_hit = _hit(rows.get(("A", item, cp))) if cp is not None else None
-        hits_a += bool(a_hit)
-        if b_hit is None:
+        a_row, b_row = score_at("A", item), score_at("B", item)
+        if b_row is None:
             missing_b.append(item)
             continue
+        if _unprobeable(a_row) or _unprobeable(b_row):
+            excluded5.append(item)
+            continue
+        hits_a += bool(_hit(a_row))
+        b_hit = bool(_hit(b_row))
+        if b_hit and ("B", item) not in judged:
+            missing_judge.append(item)
+            continue
+        counted.append(item)
         verdict = leak(hit=b_hit, judged=judged.get(("B", item)))
         if verdict is None:
-            undecided.append(item)
-        leaks_b += bool(verdict)
-    status5 = "halt" if missing_b or undecided or not rewinds else ("pass" if leaks_b == 0 else "fail")
+            by_unjudgeable.append(item)
+            verdict = True
+        leaks_b += verdict
+    status5 = "halt" if missing_b or missing_judge or not counted else ("pass" if leaks_b == 0 else "fail")
     out["5"] = {
-        "n": len(rewinds), "leaksB": leaks_b, "missingB": missing_b, "undecidedB": undecided, "hitsA": hits_a,
-        "status": status5, "pass": status5 == "pass",
+        "n": len(counted), "leaksB": leaks_b, "leakByUnjudgeable": by_unjudgeable, "excluded": excluded5,
+        "missingB": missing_b, "missingJudge": missing_judge, "hitsA": hits_a, "status": status5, "pass": status5 == "pass",
     }  # fmt: skip
+
+    # ⑥·⑦
+    if trajectory_points is None or recall_section_max is None:
+        missing_input = {"status": "halt", "pass": False, "missingInput": True}
+        out["6"], out["7"] = dict(missing_input), dict(missing_input)
+    else:
+        out.update(trajectory_checks(trajectory_points, recall_section_max=recall_section_max))
 
     # 보조: A 갈래 맥락 턴 적중 비율(회상 없이 맥락 문장만으로 정답이 나오는 정도 — 높으면 대명사 문항의 가정이 무너진다).
     context = [r for r in score_rows if r.get("arm") == "A" and "contextHit" in r and r.get("scored", True)]
     k = sum(1 for r in context if r["contextHit"])
     out["contextHitA"] = {"n": len(context), "k": k, "wilson": wilson_interval(k, len(context))}
-    out["allPass"] = all(out[k]["pass"] for k in ("1", "2", "3", "4", "5"))
+    out["allPass"] = all(out[k]["pass"] for k in ("1", "2", "3", "4", "5", "6", "7"))
     out["status"] = (
         "halt"
-        if any(out[k].get("status") == "halt" for k in ("3", "4", "5"))
+        if any(out[k].get("status") == "halt" for k in ("3", "4", "5", "6", "7"))
         else ("pass" if out["allPass"] else "fail")
     )
     return out
