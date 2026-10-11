@@ -5,6 +5,8 @@
 - 커서 뒤를 건드리면 스냅샷은 그대로다. 어느 쪽이든 방의 기억 버전은 올라간다(진행 중인 접기가 낡은
   입력으로 커밋하지 못하게).
 - 초기화는 요약만 지우고 노트는 남긴다.
+- 스냅샷에서 뽑은 장면 기억과 추출 기록은 스냅샷 DELETE 의 CASCADE 로 함께 사라진다. 되감기·초기화·방 삭제의 DELETE 문장은
+  이 두 테이블을 모르는 옛 이미지와 같으므로, 아래 세 경로 테스트가 옛 이미지가 새 스키마 위에서 FK 위반 없이 지우는지도 본다.
 - 롤백은 방 행을 먼저 잠근 뒤 스냅샷을 지운다 — 그래야 동시에 도는 접기가 지운 대화를 담은 스냅샷을
   남기지 못한다. 이 경합은 한 커넥션 위에서는 재현되지 않으므로(같은 트랜잭션끼리는 락을 다투지
   않는다) 아래 경합 테스트는 커밋되는 독립 커넥션을 쓴다.
@@ -31,6 +33,8 @@ from api.chat.room_deletion import delete_chat_rooms
 from api.db.models import (
     Asset,
     CharacterVersionDetail,
+    ChatMemoryEpisode,
+    ChatMemoryExtraction,
     ChatMessage,
     ChatMessageRole,
     ChatRoom,
@@ -55,6 +59,8 @@ from factories import (
     _get_genre,
     _login_as,
     _make_chat_turn,
+    _make_memory_episode,
+    _make_memory_extraction,
     _make_published_character,
     _make_user,
     _memory_version,
@@ -322,6 +328,71 @@ async def test_reset_clears_the_summary_and_keeps_the_note(db_client: httpx.Asyn
     assert await db_session.scalar(sa.select(ChatRoom.memory_note).where(ChatRoom.id == room.room_id)) == note
     assert await _rolled_back_at(db_session, room) is None
     assert await _memory_version(db_session, room) == 1
+
+
+# --- 장면 기억 · 추출 기록 -----------------------------------------------------------------------
+
+
+async def _seed_episodes_on_every_snapshot(db_session: AsyncSession, room: Room) -> dict[str, uuid.UUID]:
+    """방의 스냅샷마다 장면 하나와 추출 기록 하나를 넣고 `{요약 글: 스냅샷 id}` 를 돌려준다."""
+    snapshots = (
+        await db_session.execute(
+            sa.select(ChatRoomMemorySnapshot.id, ChatRoomMemorySnapshot.summary_text).where(
+                ChatRoomMemorySnapshot.chat_room_id == room.room_id
+            )
+        )
+    ).all()
+    for snapshot in snapshots:
+        db_session.add(_make_memory_episode(room.room_id, snapshot.id))
+        db_session.add(_make_memory_extraction(room.room_id, snapshot.id))
+    await db_session.commit()
+    return {snapshot.summary_text: snapshot.id for snapshot in snapshots}
+
+
+async def _episode_snapshot_ids(db_session: AsyncSession, room_id: uuid.UUID) -> tuple[set[uuid.UUID], set[uuid.UUID]]:
+    """방에 남은 (장면 기억의 스냅샷 id 들, 추출 기록의 스냅샷 id 들)."""
+    episodes = await db_session.scalars(
+        sa.select(ChatMemoryEpisode.snapshot_id).where(ChatMemoryEpisode.chat_room_id == room_id)
+    )
+    extractions = await db_session.scalars(
+        sa.select(ChatMemoryExtraction.snapshot_id).where(ChatMemoryExtraction.chat_room_id == room_id)
+    )
+    return set(episodes.all()), set(extractions.all())
+
+
+async def test_rewinding_memory_deletes_episodes_of_rewound_snapshots(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """요약 구간 안의 메시지를 지우면 그 지점 이상을 덮는 스냅샷이 지워지고, 그 스냅샷에서 뽑은 장면·추출 기록도 함께
+    사라진다. 남은 스냅샷의 것은 그대로다 — 지운 대화의 장면만 잊는다."""
+    room = await _room_with_two_snapshots(db_client, db_session, turns=24)
+    snapshot_ids = await _seed_episodes_on_every_snapshot(db_session, room)
+
+    await _delete(db_client, room, room.turns[15][0])
+
+    assert [row.summary_text for row in await _snapshots(db_session, room)] == ["[S10]"]
+    kept = {snapshot_ids["[S10]"]}
+    assert await _episode_snapshot_ids(db_session, room.room_id) == (kept, kept)
+
+
+@pytest.mark.parametrize("action", ["reset", "delete"])
+async def test_room_reset_and_deletion_leave_no_episode_rows(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, action: str
+) -> None:
+    """초기화는 방의 스냅샷을 전부, 방 삭제(탈퇴도 같은 함수)는 방까지 지운다. 장면·추출 기록은 그 DELETE 의 CASCADE 로
+    0행이 되고, 방 DELETE 가 남은 자식 때문에 FK 위반으로 실패하지 않는다."""
+    room = await _room_with_two_snapshots(db_client, db_session, turns=24)
+    await _seed_episodes_on_every_snapshot(db_session, room)
+
+    if action == "reset":
+        response = await db_client.post(f"/chat-rooms/{room.room_id}/reset")
+        assert response.status_code == 200, response.text
+    else:
+        response = await db_client.delete(f"/chat-rooms/{room.room_id}")
+        assert response.status_code == 204, response.text
+        assert await db_session.scalar(sa.select(ChatRoom.id).where(ChatRoom.id == room.room_id)) is None
+
+    assert await _episode_snapshot_ids(db_session, room.room_id) == (set(), set())
 
 
 # --- 커밋되는 독립 커넥션 ---------------------------------------------------------------------
