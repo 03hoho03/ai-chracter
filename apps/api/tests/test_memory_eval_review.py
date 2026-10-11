@@ -269,7 +269,7 @@ def test_s8_pairs_use_the_last_checkpoint_and_drop_items_unprobeable_in_either_a
     rows += [_score("p5", "A", True), _score("p5", "B", True)]  # 둘 다 맞음
     rows += [_score("p6", "A", False), _score("p6", "B", False, status="unprobeable")]  # 한 갈래 불능 → 빠짐
     rows += [_score("p7", "A", True), _score("p7", "B", False, status="count_wrong")]  # 회상 오류 = B 오답
-    result = s8_verdict(plants, rows, judge_rows=[], offline_rows=[])
+    result = s8_verdict(plants, _both_halves(rows), judge_rows=[], offline_rows=[])
     first = result["1"]
     assert (first["n"], first["bOnly"], first["aOnly"]) == (7, 5, 1)
     assert first["excludedUnprobeable"] == ["p6"]
@@ -303,7 +303,7 @@ def test_s8_rewind_leak_and_abstain_rules() -> None:
         {"item": "abs01", "arm": "A", "checkpoint": 300, "judged": "declined"},
         {"item": "abs02", "arm": "A", "checkpoint": 300, "judged": "declined"},
     ]
-    result = s8_verdict(plants, rows, judge_rows=judge_rows, offline_rows=[])
+    result = s8_verdict(plants, _both_halves(rows), judge_rows=judge_rows, offline_rows=[])
     assert result["5"]["leaksB"] == 0 and result["5"]["hitsA"] == 1 and result["5"]["pass"] is True
     assert result["4"]["fabricatedB"] - result["4"]["fabricatedA"] == 2 and result["4"]["pass"] is False
 
@@ -357,3 +357,85 @@ def test_recall_stack_is_judged_per_traceback_block() -> None:
     assert not recall_stack_in(unrelated)
     inside = 'Traceback (most recent call last):\n  File "api/chat/memory_recall.py", line 9, in score\nKeyError: y\n'
     assert recall_stack_in(unrelated + inside)
+
+
+# ---------------------------------------------------------------- 재리뷰: ④·⑤ 입력 누락
+
+
+def _rewind_set() -> PlantSet:
+    rewinds = [
+        _entry(id=i, category="되감기", split=s, metrics={}, answerKeys=[["스쿠버"]])
+        for i, s in (("rew01", "dev"), ("rew02", "test"))
+    ]
+    abstains = [
+        {
+            "id": f"abs0{i}",
+            "category": "기권",
+            "split": "dev" if i <= 3 else "test",
+            "question": "q",
+            "probeCheckpoints": {"opus": [300], "offline": []},
+        }
+        for i in range(1, 7)
+    ]
+    return _set(rewinds, abstains)
+
+
+def _both_halves(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """④·⑤ 는 전체 기준이라 집계 입력에 두 절반이 다 있어야 한다 — 다른 절반의 짝 대상 없는 줄을 하나 더한다."""
+    present = {r["split"] for r in rows}
+    filler = {
+        "stage": "s8",
+        "arm": "A",
+        "checkpoint": 50,
+        "item": "filler",
+        "status": "accept",
+        "scored": True,
+        "hit": False,
+    }
+    return rows + [{**filler, "split": s, "item": f"filler-{s}"} for s in ("dev", "test") if s not in present]
+
+
+def test_s8_rewind_with_a_missing_item_halts_instead_of_passing() -> None:
+    from memory_eval.verdict import s8_verdict
+
+    rows = [{**_score("rew02", arm, False), "split": "test"} for arm in ("A", "B")]
+    result = s8_verdict(_rewind_set(), _both_halves(rows), judge_rows=[], offline_rows=[])
+    assert result["5"]["status"] == "halt"
+    assert result["5"]["missingB"] == ["rew01"]
+    assert result["5"]["pass"] is False
+    assert result["status"] == "halt"
+
+
+def test_s8_rewind_hit_without_a_score_value_halts() -> None:
+    from memory_eval.verdict import s8_verdict
+
+    rows = [
+        {**_score(i, "B", False), "split": s, "status": "unprobeable", "scored": False}
+        for i, s in (("rew01", "dev"), ("rew02", "test"))
+    ]
+    result = s8_verdict(_rewind_set(), _both_halves(rows), judge_rows=[], offline_rows=[])
+    assert result["5"]["status"] == "halt"
+    assert result["5"]["missingB"] == ["rew01", "rew02"]
+
+
+def test_s8_abstain_without_all_six_judgments_halts_and_names_the_missing() -> None:
+    from memory_eval.verdict import s8_verdict
+
+    result = s8_verdict(_rewind_set(), _both_halves([]), judge_rows=[], offline_rows=[])
+    assert result["4"]["status"] == "halt"
+    assert result["4"]["pass"] is False
+    assert result["4"]["missing"] == [f"abs0{i}" for i in range(1, 7)]
+
+
+def test_s8_refuses_input_that_lacks_one_half() -> None:
+    from memory_eval.verdict import s8_verdict
+
+    only_test = [{**_score("rew02", "B", False), "split": "test"}]
+    with pytest.raises(SystemExit, match="--splits dev,test"):
+        s8_verdict(_rewind_set(), only_test, judge_rows=[], offline_rows=[])
+
+
+def test_unreadable_working_directory_counts_as_a_conflict() -> None:
+    from memory_eval.server import conflicting_servers
+
+    assert conflicting_servers([(9, "")], ["/w/long-memory-eval"], own_pids=set()) == [(9, "")]

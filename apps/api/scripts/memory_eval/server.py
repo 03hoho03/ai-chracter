@@ -81,11 +81,17 @@ def port_in_use(port: int) -> bool:
 def conflicting_servers(procs: list[tuple[int, str]], trees: list[str], *, own_pids: set[int]) -> list[tuple[int, str]]:
     """같은 격리 Redis·DB 를 쓰는 워크트리(`trees`)에서 도는 다른 서버. 프로브는 방 키·활성 세트 캐시를 지우고 DB 를 템플릿으로
     갈아 끼우므로, 그동안 다른 측정 서버가 같은 자원을 쓰면 서로의 상태를 깬다."""
-    return [
-        (pid, cwd)
-        for pid, cwd in procs
-        if pid not in own_pids and any(cwd == tree or cwd.startswith(tree.rstrip("/") + "/") for tree in trees)
-    ]
+    conflicts: list[tuple[int, str]] = []
+    for pid, cwd in procs:
+        if pid in own_pids:
+            continue
+        if not cwd:
+            # 작업 디렉터리를 읽지 못한 서버는 어느 트리인지 모른다 — 통과시키지 않는다.
+            print(f"경고: API 서버 pid {pid} 의 작업 디렉터리를 읽지 못했다 — 같은 자원을 쓴다고 보고 거부한다")
+            conflicts.append((pid, cwd))
+        elif any(cwd == tree or cwd.startswith(tree.rstrip("/") + "/") for tree in trees):
+            conflicts.append((pid, cwd))
+    return conflicts
 
 
 def running_api_servers() -> list[tuple[int, str]]:
