@@ -16,7 +16,7 @@ import sqlalchemy as sa
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.admin.prompts import _build_preview_items, _validate_prompt_draft_for_publish
+from api.admin.prompts import _build_preview_items, _expected_slots, _validate_prompt_draft_for_publish
 from api.chat.prompt_builder import PromptLane, load_active_prompt_set
 from api.db.models.prompt import PromptSection, PromptSet
 from api.llm.chat_models import PromptSetModelId
@@ -43,6 +43,10 @@ _GEMINI_SET_IDS: dict[str, uuid.UUID] = {
     "character": _load("3bb2cc159b6d").NEW_SET_IDS["character"],
 }
 
+# 이 리비전 뒤에 여덟 체인(이 리비전의 여섯 포함)에 장면 기억 문안을 더한 새 세트를 게시하는 리비전. head 상태에서는 그
+# 세트들이 활성이라, "이 리비전 직후 상태"를 보는 테스트는 그 리비전을 먼저 되돌린다(실제 downgrade 순서).
+_LATER = _load("fc6f0e134782")
+
 _LANES: tuple[PromptLane, ...] = ("story", "character")
 _CLAUDE_MODELS: tuple[PromptSetModelId, ...] = ("sonnet", "opus")
 _CLAUDE_PAIRS: list[tuple[PromptLane, PromptSetModelId]] = [(lane, model) for lane in _LANES for model in _CLAUDE_MODELS]
@@ -59,6 +63,11 @@ Key = tuple[str, str, str, str]
 
 def _ids(pairs: list[tuple[PromptLane, PromptSetModelId]]) -> list[str]:
     return [f"{lane}-{model}" for lane, model in pairs]
+
+
+async def _undo_later_revisions(db_session: AsyncSession) -> None:
+    connection = await db_session.connection()
+    await connection.run_sync(_LATER.delete_seeded_rows)
 
 
 async def _sections_of(db_session: AsyncSession, set_id: uuid.UUID) -> list[PromptSection]:
@@ -156,6 +165,7 @@ def test_an_existing_judgment_only_set_raises() -> None:
 async def test_each_chain_is_active_at_its_seeded_set(
     db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId
 ) -> None:
+    await _undo_later_revisions(db_session)
     assert await _active_id(db_session, lane, model) == _M.NEW_SET_IDS[(lane, model)]
 
 
@@ -165,6 +175,7 @@ async def test_gemini_chain_and_the_lane_only_select_keep_the_gemini_set(
 ) -> None:
     """기본 Gemini 체인은 그대로다. 모델 열을 모르는 코드(옛 이미지·옛 마이그레이션의 원시 SQL)가 레인만 보고 최신
     게시본을 고를 때도 여전히 Gemini 세트를 집는다 — 새 세트가 그보다 과거여야 성립한다."""
+    await _undo_later_revisions(db_session)
     assert await _active_id(db_session, lane, "gemini") == _GEMINI_SET_IDS[lane]
     connection = await db_session.connection()
     chosen = (await connection.execute(_M._LANE_ONLY_ACTIVE_SET_SQL, {"lane": lane})).one().id
@@ -225,6 +236,7 @@ async def test_new_sets_are_published_inside_the_window(db_session: AsyncSession
 
 async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: AsyncSession) -> None:
     """전 레인·전 모델 published 최대 + 1 을 (story, character) × (sonnet, opus, haiku) 순서로."""
+    await _undo_later_revisions(db_session)
     order = [_M.NEW_SET_IDS[pair] for pair in _ALL_PAIRS]
     versions = [int((await _get_set(db_session, set_id)).version or "0") for set_id in order]
     others = (
@@ -244,15 +256,28 @@ async def test_no_drafts_are_seeded(db_session: AsyncSession) -> None:
 
 
 @pytest.mark.parametrize(("lane", "model"), _ALL_PAIRS, ids=_ids(_ALL_PAIRS))
-async def test_seeded_sets_pass_publish_validation_for_their_chain(
+async def test_seeded_sets_match_publish_validation_but_for_the_later_revisions_rows(
     db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId
 ) -> None:
-    """게시 검증의 기대 집합과 시드가 맞물린다 — 어긋나면 운영자가 그 체인을 손대는 순간 게시가 막힌다."""
-    prompt_set, sections = await load_active_prompt_set(db_session, lane=lane, model=model)
+    """게시 검증의 기대 집합과 시드가 맞물린다 — head 코드 표와의 차이는 뒤 리비전(장면 기억 문안)이 더한 행뿐이다. 그 뒤
+    리비전 이후로 이 시드는 게시 검증에 막히고(복원해도 게시할 수 없다), 그 행을 더한 뒤 리비전의 세트가 그 체인의 게시
+    검증을 통과한다."""
+    sections = await _sections_of(db_session, _M.NEW_SET_IDS[(lane, model)])
+    prompt_set = await _get_set(db_session, _M.NEW_SET_IDS[(lane, model)])
+    later = {(row[0], row[1], row[2]) for row in _LATER.EPISODE_CHANNEL_ROWS}
+    if model != "haiku":
+        later.add(("generation", "both", _LATER.RECALL_SLOT))
+    seeded = {(s.channel, s.scope, s.slot) for s in sections}
+    expected = {(channel, scope, slot) for channel, slots in _expected_slots(lane, model).items() for scope, slot in slots}
+    assert seeded | later == expected and not seeded & later
 
-    _validate_prompt_draft_for_publish(prompt_set, sections, lane=lane, model=model)
     with pytest.raises(HTTPException):
-        _validate_prompt_draft_for_publish(prompt_set, sections, lane=lane, model="gemini")
+        _validate_prompt_draft_for_publish(prompt_set, sections, lane=lane, model=model)
+    later_set, later_sections = await load_active_prompt_set(db_session, lane=lane, model=model)
+    assert later_set.id == _LATER.NEW_SET_IDS[(lane, model)]
+    _validate_prompt_draft_for_publish(later_set, later_sections, lane=lane, model=model)
+    with pytest.raises(HTTPException):
+        _validate_prompt_draft_for_publish(later_set, later_sections, lane=lane, model="gemini")
 
 
 @pytest.mark.parametrize(("lane", "model"), _CLAUDE_PAIRS, ids=_ids(_CLAUDE_PAIRS))
@@ -324,6 +349,7 @@ async def test_downgrade_then_upgrade_swaps_the_chains_back_and_forth(db_session
     db_session.add(_set(lane="story", model="haiku", status="draft"))
     await db_session.flush()
     draft_id = await _clone_as_draft(db_session, _M.NEW_SET_IDS[("story", "sonnet")], "story", "sonnet")
+    await _undo_later_revisions(db_session)
     gemini_before = {lane: await _active_id(db_session, lane, "gemini") for lane in _LANES}
     connection = await db_session.connection()
 
@@ -346,6 +372,7 @@ async def test_downgrade_then_upgrade_swaps_the_chains_back_and_forth(db_session
 async def test_downgrade_removes_judgment_only_sets_the_admin_published(db_session: AsyncSession) -> None:
     """이전 코드는 판정 전용 세트를 목록·조회·복원 어디서도 다루지 못한다 — 남기면 고아이고, 다시 올릴 때 "이미 세트가
     있다"로 막힌다."""
+    await _undo_later_revisions(db_session)
     db_session.add(_set(lane="character", model="haiku", status="published", published_at=datetime.now(UTC)))
     await db_session.flush()
     connection = await db_session.connection()
@@ -381,6 +408,7 @@ async def test_upgrade_refuses_to_run_twice(db_session: AsyncSession) -> None:
 async def test_upgrade_stops_when_the_lane_has_no_window(db_session: AsyncSession) -> None:
     """어드민이 Claude 체인을 Gemini 활성보다 나중에 게시했으면(레인만 보는 조회가 이미 Claude 를 집는다) 두 규칙을 함께
     만족하는 시각이 없다."""
+    await _undo_later_revisions(db_session)
     connection = await db_session.connection()
     await connection.run_sync(_M.delete_seeded_rows)
     db_session.add(_set(lane="story", model="opus", status="published", published_at=await _after_gemini(db_session, "story")))
@@ -439,13 +467,20 @@ async def test_patch_drafts_adds_the_judgment_rows_in_place_and_the_draft_publis
     assert await connection.run_sync(_M._patch_drafts) == [(lane, model)]
 
     sections = await _sections_of(db_session, draft_id)
-    assert _keyed(sections) == {
+    patched = _keyed(sections)
+    assert patched == {
         **before,
         **{key: value for key, value in gemini.items() if key[0] in _EXPECTED_JUDGMENT_CHANNELS[lane]},
     }
-    draft = await _get_set(db_session, draft_id)
+    # 코드 표는 head 기준이라, 체인이 실제로 하듯 뒤 리비전(장면 기억 문안)의 초안 패치도 거친 뒤 게시 게이트를 태운다.
+    assert await connection.run_sync(_LATER._patch_drafts) == [(lane, model)]
+    sections = await _sections_of(db_session, draft_id)
+    draft = await _get_set(db_session, draft_id)  # 섹션을 읽으며 세션이 만료시킨 뒤에 읽는다
     _validate_prompt_draft_for_publish(draft, sections, lane=lane, model=model)
 
+    # 되돌리기도 실제 순서대로 뒤 리비전부터.
+    await connection.run_sync(_LATER._delete_draft_rows)
+    assert _keyed(await _sections_of(db_session, draft_id)) == patched
     await connection.run_sync(_M._delete_draft_rows)
     assert _keyed(await _sections_of(db_session, draft_id)) == before
 

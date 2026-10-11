@@ -50,6 +50,10 @@ _CLAUDE_SET_IDS: dict[ChatModelId, uuid.UUID] = {
     model: _load("e6aa289fea62").NEW_SET_IDS[("story", model)] for model in _CLAUDE_MODELS
 }
 
+# 이 리비전 뒤에 story Gemini 체인(과 다른 체인)에 이 세트를 복사한 새 세트를 게시하는 장면 기억 문안 리비전. head 상태에서는
+# 그 세트가 story 활성이라, 되돌리기 왕복은 그 리비전을 먼저 되돌린다(실제 downgrade 순서).
+_MEMORY_EPISODE_MIGRATION = _load("fc6f0e134782")
+
 _NEW_KEYS = {(row[0], row[1], row[2], row[3]) for row in _M.NEW_ROWS}
 
 Key = tuple[str, str, str, str]
@@ -104,8 +108,11 @@ def test_assert_layout_raises_when_the_channel_is_already_there() -> None:
 
 
 async def test_active_story_gemini_set_is_the_source_plus_four_rows(db_session: AsyncSession) -> None:
-    """활성 story Gemini 세트가 이 리비전의 세트이고, 원본보다 나중 게시이며, 새 4행 말고는 원본과 바이트까지 같다.
-    `published_at`이 원본보다 과거가 되면 새 세트가 활성이 되지 못하므로 활성 id 를 직접 단언한다."""
+    """활성 story Gemini 세트가 이 리비전의 세트(head 에서는 장면 기억 문안 리비전이 그것을 복사한 세트)이고, 원본보다
+    나중 게시이며, 새 4행 말고는 원본과 바이트까지 같다. `published_at`이 원본보다 과거가 되면 새 세트가 활성이 되지
+    못하므로 활성 id 를 직접 단언한다."""
+    connection = await db_session.connection()
+    await connection.run_sync(_MEMORY_EPISODE_MIGRATION.delete_seeded_rows)
     assert await _active_id(db_session) == _M.NEW_SET_ID
     active = await db_session.get(PromptSet, _M.NEW_SET_ID)
     source = await db_session.get(PromptSet, _SOURCE_SET_ID)
@@ -137,6 +144,7 @@ async def test_downgrade_then_upgrade_swaps_the_active_set_and_back(db_session: 
     """되돌리면 활성 story Gemini 세트가 원본으로 돌아가고 이 채널 행이 어디에도 남지 않는다. 다시 올리면 같은 리터럴
     세트가 활성이 된다. Claude 체인 활성 세트는 내내 그대로다."""
     connection = await db_session.connection()
+    await connection.run_sync(_MEMORY_EPISODE_MIGRATION.delete_seeded_rows)
     claude_before = {model: await _active_id(db_session, model) for model in _CLAUDE_SET_IDS}
 
     await connection.run_sync(_M.delete_seeded_rows)
@@ -218,10 +226,17 @@ async def test_patch_draft_adds_rows_in_place_and_the_draft_publishes_then_downg
         (c, s, slot, v): (body, cond, order) for c, s, slot, v, body, cond, order in _M.NEW_ROWS
     }
     assert after == before
-    draft = await db_session.get(PromptSet, draft_id)
+    # 코드 표는 head 기준이라, 체인이 실제로 하듯 뒤 리비전(장면 기억 문안)의 초안 패치도 거친 뒤 게시 게이트를 태운다.
+    patched = _keyed(await _sections_of(db_session, draft_id))
+    assert await connection.run_sync(_MEMORY_EPISODE_MIGRATION._patch_drafts) == [("story", "gemini")]
+    sections = await _sections_of(db_session, draft_id)
+    draft = await db_session.get(PromptSet, draft_id)  # 섹션을 읽으며 세션이 만료시킨 뒤에 읽는다
     assert draft is not None
     _validate_prompt_draft_for_publish(draft, sections, lane="story")
 
+    # 되돌리기도 실제 순서대로 뒤 리비전부터.
+    await connection.run_sync(_MEMORY_EPISODE_MIGRATION._delete_draft_rows)
+    assert _keyed(await _sections_of(db_session, draft_id)) == patched
     await connection.run_sync(_M._delete_draft_rows)
     assert _keyed(await _sections_of(db_session, draft_id)) == before
 

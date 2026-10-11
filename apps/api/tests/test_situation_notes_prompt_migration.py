@@ -46,6 +46,7 @@ _NOVELIZE_MIGRATION = _load("3bb2cc159b6d")
 # story 레인 Gemini 체인에 스탯 규칙 판정 채널을 더하는 리비전 — 초안 게시 검사가 head 코드 표를 쓰므로 story 초안은
 # 이것도 거친다.
 _STAT_RULE_MIGRATION = _load("d9768bc0cfee")
+_MEMORY_EPISODE_MIGRATION = _load("fc6f0e134782")
 
 _NEW_KEY = ("generation", "story", "situation_notes", "")
 
@@ -212,6 +213,7 @@ async def test_character_lane_is_untouched(db_session: AsyncSession) -> None:
         _CHARACTER_SET_ID,
         _USER_NAME_MIGRATION.NEW_SET_IDS["character"],
         _NOVELIZE_MIGRATION.NEW_SET_IDS["character"],
+        _MEMORY_EPISODE_MIGRATION.NEW_SET_IDS[("character", "gemini")],
     )
     assert all(s.slot != "situation_notes" for s in sections)
 
@@ -305,6 +307,7 @@ async def test_patch_draft_adds_the_row_in_place_and_draft_then_publishes(
     assert await connection.run_sync(_USER_NAME_MIGRATION._patch_draft, "story") is True
     assert await connection.run_sync(_NOVELIZE_MIGRATION._patch_draft, "story") is True
     assert await connection.run_sync(_STAT_RULE_MIGRATION._patch_draft) is True
+    assert await connection.run_sync(_MEMORY_EPISODE_MIGRATION._patch_drafts) == [("story", "gemini")]
     sections = await _sections_of(db_session, draft_id)
     draft = await db_session.get(PromptSet, draft_id)
     assert draft is not None

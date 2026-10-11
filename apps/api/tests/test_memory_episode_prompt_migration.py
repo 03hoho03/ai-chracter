@@ -13,6 +13,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import ModuleType
+from typing import cast
 
 import pytest
 import sqlalchemy as sa
@@ -282,7 +283,7 @@ async def test_seeded_sets_pass_publish_validation_and_the_previous_sets_no_long
     previous = await _get_set(db_session, _PREVIOUS_SET_IDS[(lane, model)])
     with pytest.raises(HTTPException) as caught:
         _validate_prompt_draft_for_publish(previous, previous_sections, lane=lane, model=model)
-    assert caught.value.detail["rule"] == "R-1"
+    assert cast(dict[str, object], caught.value.detail)["rule"] == "R-1"
 
 
 # ---- 되돌리기·다시 올리기 ----------------------------------------------------------------------
