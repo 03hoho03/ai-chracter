@@ -465,6 +465,7 @@ def build_generation_prompt(
     memory_note: str,
     memory_summary: str,
     names: PromptNames,
+    memory_recall_lines: str = "",
 ) -> str:
     """생성 프롬프트를 조립한다 — 캐릭터 챗 전용.
 
@@ -533,6 +534,7 @@ def build_story_generation_prompt(
     keyword_note_texts: list[str] | None = None,
     situation_note_texts: list[str] | None = None,
     shortcut_prompt: str | None = None,
+    memory_recall_lines: str = "",
 ) -> str:
     """생성 프롬프트를 조립한다 — 스토리 챗 전용.
 
@@ -899,3 +901,15 @@ def build_memory_summary_prompt(
     return render_prompt_channel(
         sections, channel="memory_summary", scope="story" if is_story_chat else "character", values=values
     )
+
+
+def build_memory_episode_prompt(
+    *,
+    prompt_set: PromptSet,
+    sections: Sequence[PromptSection],
+    is_story_chat: bool,
+    previous_titles: Sequence[str],
+    turns: list[ChatMessage],
+    names: PromptNames,
+) -> str:
+    return ""
