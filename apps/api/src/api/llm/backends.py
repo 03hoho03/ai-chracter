@@ -102,7 +102,7 @@ MODEL_BACKENDS: dict[PromptSetModelId, tuple[BackendId, ...]] = {
 # 기동에서 거부하는 아래 검증이 같은 규칙을 읽게 여기 둔다 — 실제 모델 id 로 가르는 이유는 판정 전용 id `haiku` 가
 # 구현에 따라 Haiku 4.5(깊이를 받지 않는다)와 5.5 를 함께 가리키기 때문이다.
 _STRUCTURED_THINKING_OFF_PREFIXES = ("claude-haiku-5",)
-_EFFORTS_WITH_THINKING_OFF = frozenset({"low", "medium", "high"})
+_EFFORTS_WITH_THINKING_OFF = ("low", "medium", "high")
 
 
 def turns_off_structured_thinking(model_id: str) -> bool:
@@ -229,6 +229,6 @@ def assignment_errors(assignments: Mapping[LLMCallSite, BackendId], read_setting
         if turns_off_structured_thinking(model_id) and effort not in _EFFORTS_WITH_THINKING_OFF:
             errors.append(
                 f"{entry} — {model_id} 는 사고를 끄고 판정하는데 ANTHROPIC_STRUCTURED_EFFORT={effort} 다"
-                f"(사고를 끈 요청은 {'·'.join(sorted(_EFFORTS_WITH_THINKING_OFF))} 만 받는다)"
+                f"(사고를 끈 요청은 {'·'.join(_EFFORTS_WITH_THINKING_OFF)} 만 받는다)"
             )
     return errors
