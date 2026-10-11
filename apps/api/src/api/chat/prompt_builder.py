@@ -916,6 +916,25 @@ def build_memory_summary_prompt(
     )
 
 
+# 장면 기억 추출의 응답 스키마. docstring·필드 설명·길이·범위 제약을 두지 않는다 — docstring 은 스키마 설명으로 모델에
+# 전송되고(지시문의 소스는 DB 채널 하나다), 제약은 Claude 쪽에서는 설명 문구로만 가는데 우리 파서는 제약을 그대로 검사해
+# 넘친 응답 하나가 추출 전체의 파싱 실패가 된다. 상한은 `chat/memory_episodes.py` 가 서버에서 자른다.
+class MemoryEpisodeItem(BaseModel):
+    title: str
+    detail: str
+    nouns: list[str]
+    keywords: list[str]
+    asserted_by: Literal["user", "character", "narration", "mixed"]
+    evidence: list[str]
+    importance: int
+    start_line: int
+    end_line: int
+
+
+class MemoryEpisodeResult(BaseModel):
+    episodes: list[MemoryEpisodeItem]
+
+
 def build_memory_episode_prompt(
     *,
     prompt_set: PromptSet,

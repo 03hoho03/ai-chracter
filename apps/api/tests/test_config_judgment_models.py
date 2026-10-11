@@ -17,7 +17,13 @@ from api.llm.backends import PromptSetModelId
 from api.llm.call_policy import CALL_POLICIES
 from factories import PRODUCTION_ENV_NAMES, load_production_env
 
-_MODEL_KEYS = ("STAT_JUDGMENT_MODEL", "ENDING_JUDGMENT_MODEL", "IMAGE_JUDGMENT_MODEL", "MEMORY_SUMMARY_MODEL")
+_MODEL_KEYS = (
+    "STAT_JUDGMENT_MODEL",
+    "ENDING_JUDGMENT_MODEL",
+    "IMAGE_JUDGMENT_MODEL",
+    "MEMORY_SUMMARY_MODEL",
+    "MEMORY_EPISODE_MODEL",
+)
 _BEDROCK_KEYS = ("BEDROCK_ACCESS_KEY_ID", "BEDROCK_SECRET_ACCESS_KEY", "BEDROCK_REGION")
 _ANTHROPIC_KEY = "ANTHROPIC_DIRECT_API_KEY"
 _ASSIGN = "LLM_CALL_SITE_BACKENDS"
@@ -46,7 +52,8 @@ def test_every_judgment_and_summary_model_defaults_to_gemini(monkeypatch: pytest
         loaded.ending_judgment_model,
         loaded.image_judgment_model,
         loaded.memory_summary_model,
-    ) == ("gemini", "gemini", "gemini", "gemini")
+        loaded.memory_episode_model,
+    ) == ("gemini", "gemini", "gemini", "gemini", "gemini")
     assert loaded.bedrock_haiku_model_id == "global.anthropic.claude-haiku-4-5-20251001-v1:0"
     # 직결은 Haiku 5.5, Bedrock 은 Haiku 4.5 다 — 이 저장소의 판정 평가는 직결로만 하고 Bedrock 의 Haiku 5.5 구조화 출력은
     # 확인하지 않아 그쪽 id 는 옮기지 않았다.
@@ -219,8 +226,9 @@ def test_the_production_env_key_set_has_no_judgment_model_keys_and_judges_with_g
         loaded.ending_judgment_model,
         loaded.image_judgment_model,
         loaded.memory_summary_model,
+        loaded.memory_episode_model,
     ]
-    assert models == ["gemini"] * 4
+    assert models == ["gemini"] * 5
     judged = [cs for cs, policy in CALL_POLICIES.items() if policy.model_setting is not None]
     assert judged
     for call_site in judged:

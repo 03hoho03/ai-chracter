@@ -335,6 +335,8 @@ class Settings(BaseSettings):
     ending_judgment_model: PromptSetModelId = "gemini"
     image_judgment_model: PromptSetModelId = "gemini"
     memory_summary_model: PromptSetModelId = "gemini"
+    # 요약 접기 뒤 장면 기억 추출(`chat/memory_episodes.py`)의 모델. 위 판정·요약 모델과 같은 규칙이다.
+    memory_episode_model: PromptSetModelId = "gemini"
 
     @field_validator("llm_call_site_backends", mode="before")
     @classmethod
@@ -382,6 +384,7 @@ class Settings(BaseSettings):
         "ending_judgment_model",
         "image_judgment_model",
         "memory_summary_model",
+        "memory_episode_model",
         mode="before",
     )
     @classmethod
@@ -542,6 +545,10 @@ class Settings(BaseSettings):
     # 전체 히스토리로 돌아간다 — 되돌리기 스위치 하나로 전부 돌아가게.
     memory_window_ending_judgment: bool = True
     memory_window_image_judgment: bool = True
+    # 요약 접기가 접은 대화 구간을 장면 기억(`chat_memory_episodes`)으로 뽑는 백그라운드 추출을 켠다. 기본은 꺼짐 — 꺼져
+    # 있으면 접기 뒤에 아무것도 예약하지 않아 턴의 호출·트랜잭션이 이 스위치가 생기기 전과 같다. 위 생성 윈도우 스위치가
+    # 꺼져 있으면 접기 자체가 없어 이 값과 무관하게 추출도 없다. 끄면(줄 삭제 + 재기동) 이미 뽑은 장면은 남고 새로 뽑지 않는다.
+    memory_episodes_extract: bool = False
 
     # 소설화 전역 스위치. 꺼져 있으면 허용 행이 있어도 아무도 못 쓴다 — 코드 기본값이 닫힘이어야 env 설정 없이
     # 배포해도 닫힌 채로 뜬다. 끄면 다음 요청부터 막히고(재기동 필요), 허용 행은 남아 다시 켜면 그대로 돌아온다.
