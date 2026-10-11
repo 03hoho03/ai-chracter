@@ -713,6 +713,7 @@ _PUBLISH_FILTER_SITES = ("publish_filter_character", "publish_filter_story")
 # 판정·심사가 아닌 구조화 호출 — 어느 스위치에도 끌려가면 안 된다.
 _OTHER_STRUCTURED_SITES = (
     "chat_memory_summary",
+    "chat_memory_episode",
     "seed_story_generate",
     "seed_similarity_review",
     "novelize_boundary",
@@ -942,6 +943,8 @@ _EXPECTED_TIMEOUT_MS: dict[str, int] = {
     "preview_ending_judgment": 20_000,
     "preview_media_book_image": 20_000,
     "chat_memory_summary": 60_000,
+    # 장면 기억 추출은 요약과 같은 백그라운드 구조화 호출이라 요약 타임아웃을 쓴다.
+    "chat_memory_episode": 60_000,
     "publish_filter_character": 60_000,
     "publish_filter_story": 60_000,
     "novel_publish_screen": 60_000,

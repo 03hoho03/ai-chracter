@@ -25,6 +25,9 @@ LLMCallSite = Literal[
     # 스토리 미디어 북 칸 판정. 재생성도 여기로 함께 집계한다(생성과 같은 규칙).
     "chat_media_book_image",
     "chat_memory_summary",
+    # 요약 접기가 접은 구간을 장면 기억으로 뽑는 백그라운드 추출(`chat/memory_episodes.py`). 요약처럼 사용자가 시킨 호출이
+    # 아니라 클로버를 깎지 않고 레이트리밋에도 세지 않는다.
+    "chat_memory_episode",
     "preview_generate",
     "preview_stat_judgment",
     "preview_ending_judgment",
@@ -50,7 +53,9 @@ JudgmentKind = Literal["stat", "ending", "image"]
 
 # 판정·요약 호출의 모델(문안 체인의 모델 id)을 담은 `core/config.py` 설정 이름. 값은 `llm/backends.py` 의 `call_site_model` 이
 # 호출마다 읽는다.
-ModelSetting = Literal["stat_judgment_model", "ending_judgment_model", "image_judgment_model", "memory_summary_model"]
+ModelSetting = Literal[
+    "stat_judgment_model", "ending_judgment_model", "image_judgment_model", "memory_summary_model", "memory_episode_model"
+]
 
 # 공급자 구현의 id. 구현마다의 능력·서비스하는 모델·자격은 `llm/backends.py` 의 등록부 한 행이 정한다.
 BackendId = Literal["gemini", "bedrock", "anthropic"]
@@ -99,7 +104,7 @@ class CallPolicy:
     # `judgment_kind`·`publish_filter`·`novelize == "prose"` 는 서로 배타다 — 한 행에 둘을 켜면 모델 고르기에서 조용히
     # 앞의 것(판정 → 발행 심사 → 소설화 순)이 이긴다.
     judgment_kind: JudgmentKind | None = None
-    # 이 호출의 모델을 고르는 설정 이름. 판정 종류마다 하나, 기억 요약에 하나다 — 방의 모델과 무관하게 이 설정의 모델로 간다.
+    # 이 호출의 모델을 고르는 설정 이름. 판정 종류마다 하나, 기억 요약과 장면 기억 추출에 하나씩이다 — 방의 모델과 무관하게 이 설정의 모델로 간다.
     # 없으면 모델을 고를 수 있는 호출은 방의 모델, 나머지는 기본 모델이다. 구현은 그 모델과 배정으로 정해진다.
     model_setting: ModelSetting | None = None
     # 발행 심사. 실패하면 발행이 막히는(fail-closed) 경로라 판정과 따로 모델을 바꾸고 되돌릴 수 있게 둔다.
@@ -155,6 +160,10 @@ CALL_POLICIES: dict[LLMCallSite, CallPolicy] = {
     ),
     "chat_memory_summary": CallPolicy(
         gemini_timeout="gemini_memory_summary_timeout_ms", call_kind="structured", model_setting="memory_summary_model"
+    ),
+    # 요약과 같은 백그라운드 구조화 호출이라 요약의 타임아웃을 쓴다. 판정 종류가 아니라 어드민 판정 비율에 들지 않는다.
+    "chat_memory_episode": CallPolicy(
+        gemini_timeout="gemini_memory_summary_timeout_ms", call_kind="structured", model_setting="memory_episode_model"
     ),
     "preview_generate": CallPolicy(gemini_timeout="gemini_generate_timeout_ms", call_kind="stream"),
     "preview_stat_judgment": CallPolicy(

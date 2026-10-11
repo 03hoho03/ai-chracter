@@ -1,0 +1,2689 @@
+{
+  "names": "names 가 없는 항목은 이름 제외 없음(스토리 방, 페르소나 없음)과 같다",
+  "about": "장기 기억 회상 기준 벡터 — 형태소기 없이 어절 끝 조사 하나를 뗀 토큰을 쓰기(장면 명사)·질의 양쪽에 쓰고, 사용자 질의는 방 장면 명사에 나온 토큰(df > 0)만 남긴다. 평가 하네스의 시제품 구현이 낸 값이고, 운영 코드의 장면 명사·회상은 이 벡터와 같은 토큰·점수·순위·주입을 내야 한다. 실수는 소수 6자리 반올림, 대조 허용 오차 1e-6.",
+  "generatedBy": "exp/long-memory-eval 8ae97d22 scripts/memory_eval/prototype_recall.py (rule_tokens · episode_nouns_rule · query_nouns_rule · score_episodes · select_injected)",
+  "params": {
+    "tau": 0.6,
+    "commonRatio": 0.2,
+    "commonRule": "df/N > commonRatio 이면 질의에서 뺀다(같으면 남김)",
+    "minEpisodes": 5,
+    "maxInjectRecallCue": 3,
+    "maxInjectPlain": 1,
+    "wNoun": 0.7,
+    "wKeyword": 0,
+    "wImportance": 0.05,
+    "wRecency": 0.02,
+    "maxEpisodeNouns": 30,
+    "weight": "w(n) = ln((N+1)/(df+1)) + 1, w_rare = ln((N+1)/2) + 1",
+    "score": "s = 0.7·min(1, W(Q⁺∩M)/w_rare) + 0.05·(clamp(importance,1,5)−1)/4 + (0 if timeCue else 0.02·endTurn/max(currentTurn,1)); 주입은 s ≥ tau",
+    "rank": "r = W(Q⁺∩M) + w_rare·(중요도·최근성 항)/0.7; 정렬 (−r, −endTurn, −snapshot, id)",
+    "userFilter": "사용자 토큰 = rule_tokens(사용자 메시지) ∪ 1자 명사 어절 경계 적중 중 방 에피소드 명사 집합에 있는 것(df > 0). 이 필터 뒤 0개면 \"사용자 질의 없음\", 1개 이상이면 \"사용자 질의 있음\" — 흔한 명사 제외는 그다음 단계라 흔한 명사만 남은 질의는 \"있음\"이고 Q⁺ 가 비어 회상 없음(사례 ⑥)",
+    "queryPath": "user 토큰이 있으면 Q = user; user 가 비고 timeCue 면 Q = assistant − (가장 최근 스냅샷 2개 에피소드 명사); 그 밖 회상 없음. Q⁺ = {n ∈ Q: 0 < df(n) ≤ commonRatio·N}, 비면 회상 없음"
+  },
+  "regex": {
+    "trailingParticle": "(에서|에게|한테|까지|부터|이랑|으로|처럼|보다|하고|은|는|이|가|을|를|에|로|와|과|도|만|의|랑)$",
+    "nonWord": "[\\W_]+",
+    "oneCharNoun": "(^|\\s)n(이|가|을|를|은|는|도|만|에|에서|랑|이랑|하고|과|와|의)?(\\s|$|[.,!?…~])",
+    "timeCue": "예전에|처음|지난번|저번|그때|옛날|전에\\s|기억(나|해|하)",
+    "recallCue": "예전에|처음|지난번|저번|그때|옛날|전에\\s|기억(나|해|하)|기억\\s?안|뭐였|뭐더라|(였|었)(지|더라)\\s*[?？]|었더라|였더라|전에\\s?말한|(라고|다고)\\s?했(었)?지|(말|얘기|이야기)한\\s?적"
+  },
+  "stopwords": [
+    "거",
+    "거기",
+    "것",
+    "그때",
+    "기분",
+    "기억",
+    "나",
+    "날",
+    "너",
+    "느낌",
+    "등",
+    "때",
+    "무엇",
+    "뭐",
+    "사람",
+    "생각",
+    "수",
+    "얘기",
+    "여기",
+    "예전",
+    "옛날",
+    "오늘",
+    "우리",
+    "이야기",
+    "일",
+    "저",
+    "저번",
+    "정말",
+    "중",
+    "지금",
+    "지난번",
+    "진짜",
+    "처음"
+  ],
+  "tokenizeRule": "normalize_keyword_text(NFC+casefold) → 공백 분리 → 어절의 \\W·_ 전부 지움 → 끝 조사 하나 뗌(trailingParticle) → 2자 이상 · 불용어 아님 · 중복 아님(나온 순서). 1자 명사는 모델 명사로만 저장되고 질의에서는 oneCharNoun 어절 경계로만 걸린다",
+  "episodeNounsRule": "모델 명사를 공백 조각으로(clean·불용어 제거, 1자 유지) → 이어서 rule_tokens(title + ' ' + detail) → 중복 제거 → 앞 30개",
+  "tokenize": [
+    {
+      "text": "정류장에서 카메라를 들고",
+      "tokens": [
+        "정류장",
+        "카메라",
+        "들고"
+      ]
+    },
+    {
+      "text": "도희에게 우비랑 렌즈까지",
+      "tokens": [
+        "도희",
+        "우비",
+        "렌즈"
+      ]
+    },
+    {
+      "text": "빵. 차를",
+      "tokens": []
+    },
+    {
+      "text": "가방이, 「밀알당」으로!",
+      "tokens": [
+        "가방",
+        "밀알당"
+      ]
+    },
+    {
+      "text": "가방이 가방을",
+      "tokens": [
+        "가방"
+      ]
+    },
+    {
+      "text": "우리 처음 기억이 정류장",
+      "tokens": [
+        "정류장"
+      ]
+    },
+    {
+      "text": "Camera를 ABC로",
+      "tokens": [
+        "camera",
+        "abc"
+      ]
+    },
+    {
+      "text": "고양이가 옥상 정원에",
+      "tokens": [
+        "고양이",
+        "옥상",
+        "정원"
+      ]
+    },
+    {
+      "text": "편의점처럼 보다 하고",
+      "tokens": [
+        "편의점"
+      ]
+    },
+    {
+      "text": "11월15일에 8시10분까지",
+      "tokens": [
+        "11월15일",
+        "8시10분"
+      ]
+    },
+    {
+      "text": "선배한테 부터",
+      "tokens": [
+        "선배"
+      ]
+    },
+    {
+      "text": "소금빵을 먹었다",
+      "tokens": [
+        "소금빵",
+        "먹었다"
+      ]
+    }
+  ],
+  "episodeNouns": [
+    {
+      "llmNouns": [
+        "렌즈 케이스",
+        "빵"
+      ],
+      "title": "편의점 장면",
+      "detail": "도희가 편의점에서 우비를 샀다",
+      "nouns": [
+        "도희",
+        "렌즈",
+        "빵",
+        "샀다",
+        "우비",
+        "장면",
+        "케이스",
+        "편의점"
+      ]
+    },
+    {
+      "llmNouns": [
+        "밀알당",
+        "소금빵"
+      ],
+      "title": "밀알당에 간 날",
+      "detail": "태민이랑 밀알당에서 소금빵을 먹었다. 내기에서 지면 닭강정을 사 준다고 했다.",
+      "nouns": [
+        "내기",
+        "닭강정",
+        "먹었다",
+        "밀알당",
+        "소금빵",
+        "준다고",
+        "지면",
+        "태민",
+        "했다"
+      ]
+    },
+    {
+      "llmNouns": [
+        "기억",
+        "  가방! "
+      ],
+      "title": "",
+      "detail": "가방이 가방을 기억에",
+      "nouns": [
+        "가방"
+      ]
+    }
+  ],
+  "queries": [
+    {
+      "userText": "빵 먹으러 정류장에서 만났지?",
+      "previousAssistant": "가방에 렌즈",
+      "episodeNounPool": [
+        "빵",
+        "정류장"
+      ],
+      "names": [],
+      "user": [
+        "빵",
+        "정류장"
+      ],
+      "assistant": [
+        "가방",
+        "렌즈"
+      ],
+      "timeCue": false,
+      "recallCue": false
+    },
+    {
+      "userText": "그때 그거 어디 뒀더라?",
+      "previousAssistant": "가방에 넣어 둔 렌즈 케이스 말이야",
+      "episodeNounPool": [
+        "가방",
+        "렌즈",
+        "케이스"
+      ],
+      "names": [],
+      "user": [],
+      "assistant": [
+        "가방",
+        "넣어",
+        "렌즈",
+        "말이야",
+        "케이스"
+      ],
+      "timeCue": true,
+      "recallCue": true
+    },
+    {
+      "userText": "태민이랑 빵집 가자",
+      "previousAssistant": "",
+      "episodeNounPool": [
+        "빵",
+        "태민"
+      ],
+      "names": [],
+      "user": [
+        "태민"
+      ],
+      "assistant": [],
+      "timeCue": false,
+      "recallCue": false
+    },
+    {
+      "userText": "세빈이 오이 먹던가?",
+      "previousAssistant": "",
+      "episodeNounPool": [
+        "오이"
+      ],
+      "names": [],
+      "user": [],
+      "assistant": [],
+      "timeCue": false,
+      "recallCue": false
+    },
+    {
+      "userText": "그거 기억 안 나?",
+      "previousAssistant": "",
+      "episodeNounPool": [],
+      "names": [],
+      "user": [],
+      "assistant": [],
+      "timeCue": false,
+      "recallCue": true
+    },
+    {
+      "userText": "민지랑 베이커리 갔던 날 기억나?",
+      "previousAssistant": "민지가 웃는다",
+      "episodeNounPool": [
+        "민지",
+        "베이커리"
+      ],
+      "names": [
+        "민지"
+      ],
+      "user": [
+        "베이커리"
+      ],
+      "assistant": [
+        "웃는다"
+      ],
+      "timeCue": true,
+      "recallCue": true
+    }
+  ],
+  "scoreCases": [
+    {
+      "name": "case1_rare_noun",
+      "currentTurn": 300,
+      "recallCue": true,
+      "episodes": [
+        {
+          "id": "G",
+          "nouns": [
+            "베이커리",
+            "크루아상"
+          ],
+          "importance": 3,
+          "endTurn": 30,
+          "snapshot": 1
+        },
+        {
+          "id": "R",
+          "nouns": [
+            "현재0",
+            "현재1",
+            "현재10",
+            "현재11",
+            "현재12",
+            "현재13",
+            "현재14",
+            "현재15",
+            "현재16",
+            "현재17",
+            "현재18",
+            "현재19",
+            "현재2",
+            "현재3",
+            "현재4",
+            "현재5",
+            "현재6",
+            "현재7",
+            "현재8",
+            "현재9"
+          ],
+          "importance": 3,
+          "endTurn": 285,
+          "snapshot": 28
+        },
+        {
+          "id": "f0",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 40,
+          "snapshot": 2
+        },
+        {
+          "id": "f1",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 41,
+          "snapshot": 2
+        },
+        {
+          "id": "f2",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 42,
+          "snapshot": 2
+        },
+        {
+          "id": "f3",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 43,
+          "snapshot": 2
+        },
+        {
+          "id": "f4",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 44,
+          "snapshot": 2
+        },
+        {
+          "id": "f5",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 45,
+          "snapshot": 2
+        },
+        {
+          "id": "f6",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 46,
+          "snapshot": 2
+        },
+        {
+          "id": "f7",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 47,
+          "snapshot": 2
+        },
+        {
+          "id": "f8",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 48,
+          "snapshot": 2
+        },
+        {
+          "id": "f9",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 49,
+          "snapshot": 2
+        },
+        {
+          "id": "f10",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 50,
+          "snapshot": 2
+        },
+        {
+          "id": "f11",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 51,
+          "snapshot": 2
+        },
+        {
+          "id": "f12",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 52,
+          "snapshot": 2
+        },
+        {
+          "id": "f13",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 53,
+          "snapshot": 2
+        },
+        {
+          "id": "f14",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 54,
+          "snapshot": 2
+        },
+        {
+          "id": "f15",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 55,
+          "snapshot": 2
+        },
+        {
+          "id": "f16",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 56,
+          "snapshot": 2
+        },
+        {
+          "id": "f17",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 57,
+          "snapshot": 2
+        },
+        {
+          "id": "f18",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 58,
+          "snapshot": 2
+        },
+        {
+          "id": "f19",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 59,
+          "snapshot": 2
+        },
+        {
+          "id": "f20",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 60,
+          "snapshot": 2
+        },
+        {
+          "id": "f21",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 61,
+          "snapshot": 2
+        },
+        {
+          "id": "f22",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 62,
+          "snapshot": 2
+        },
+        {
+          "id": "f23",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 63,
+          "snapshot": 2
+        },
+        {
+          "id": "f24",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 64,
+          "snapshot": 2
+        },
+        {
+          "id": "f25",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 65,
+          "snapshot": 2
+        },
+        {
+          "id": "f26",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 66,
+          "snapshot": 2
+        },
+        {
+          "id": "f27",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 67,
+          "snapshot": 2
+        }
+      ],
+      "query": {
+        "user": [
+          "베이커리"
+        ],
+        "assistant": [
+          "현재0",
+          "현재1",
+          "현재10",
+          "현재11",
+          "현재12",
+          "현재13",
+          "현재14",
+          "현재15",
+          "현재16",
+          "현재17",
+          "현재18",
+          "현재19",
+          "현재2",
+          "현재3",
+          "현재4",
+          "현재5",
+          "현재6",
+          "현재7",
+          "현재8",
+          "현재9"
+        ],
+        "timeCue": false
+      },
+      "expected": {
+        "ranking": [
+          {
+            "id": "G",
+            "s": 0.727,
+            "r": 3.88513,
+            "overlap": [
+              "베이커리"
+            ]
+          },
+          {
+            "id": "(겹침 없는 행)",
+            "note": "s = 중요도·최근성만"
+          }
+        ],
+        "injected": [
+          "G"
+        ]
+      },
+      "recall": true
+    },
+    {
+      "name": "case1_variant_df3",
+      "currentTurn": 300,
+      "recallCue": true,
+      "episodes": [
+        {
+          "id": "B0",
+          "nouns": [
+            "베이커리"
+          ],
+          "importance": 3,
+          "endTurn": 30,
+          "snapshot": 1
+        },
+        {
+          "id": "B1",
+          "nouns": [
+            "베이커리"
+          ],
+          "importance": 3,
+          "endTurn": 31,
+          "snapshot": 1
+        },
+        {
+          "id": "B2",
+          "nouns": [
+            "베이커리"
+          ],
+          "importance": 3,
+          "endTurn": 32,
+          "snapshot": 1
+        },
+        {
+          "id": "f0",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 40,
+          "snapshot": 2
+        },
+        {
+          "id": "f1",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 41,
+          "snapshot": 2
+        },
+        {
+          "id": "f2",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 42,
+          "snapshot": 2
+        },
+        {
+          "id": "f3",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 43,
+          "snapshot": 2
+        },
+        {
+          "id": "f4",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 44,
+          "snapshot": 2
+        },
+        {
+          "id": "f5",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 45,
+          "snapshot": 2
+        },
+        {
+          "id": "f6",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 46,
+          "snapshot": 2
+        },
+        {
+          "id": "f7",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 47,
+          "snapshot": 2
+        },
+        {
+          "id": "f8",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 48,
+          "snapshot": 2
+        },
+        {
+          "id": "f9",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 49,
+          "snapshot": 2
+        },
+        {
+          "id": "f10",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 50,
+          "snapshot": 2
+        },
+        {
+          "id": "f11",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 51,
+          "snapshot": 2
+        },
+        {
+          "id": "f12",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 52,
+          "snapshot": 2
+        },
+        {
+          "id": "f13",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 53,
+          "snapshot": 2
+        },
+        {
+          "id": "f14",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 54,
+          "snapshot": 2
+        },
+        {
+          "id": "f15",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 55,
+          "snapshot": 2
+        },
+        {
+          "id": "f16",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 56,
+          "snapshot": 2
+        },
+        {
+          "id": "f17",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 57,
+          "snapshot": 2
+        },
+        {
+          "id": "f18",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 58,
+          "snapshot": 2
+        },
+        {
+          "id": "f19",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 59,
+          "snapshot": 2
+        },
+        {
+          "id": "f20",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 60,
+          "snapshot": 2
+        },
+        {
+          "id": "f21",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 61,
+          "snapshot": 2
+        },
+        {
+          "id": "f22",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 62,
+          "snapshot": 2
+        },
+        {
+          "id": "f23",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 63,
+          "snapshot": 2
+        },
+        {
+          "id": "f24",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 64,
+          "snapshot": 2
+        },
+        {
+          "id": "f25",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 65,
+          "snapshot": 2
+        },
+        {
+          "id": "f26",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 66,
+          "snapshot": 2
+        }
+      ],
+      "query": {
+        "user": [
+          "베이커리"
+        ],
+        "assistant": [],
+        "timeCue": false
+      },
+      "expected": {
+        "ranking": [
+          {
+            "id": "B2",
+            "s": 0.597429,
+            "r": 3.192695,
+            "overlap": [
+              "베이커리"
+            ]
+          },
+          {
+            "id": "B1",
+            "s": 0.597362,
+            "r": 3.192339,
+            "overlap": [
+              "베이커리"
+            ]
+          },
+          {
+            "id": "B0",
+            "s": 0.597296,
+            "r": 3.191982,
+            "overlap": [
+              "베이커리"
+            ]
+          },
+          {
+            "id": "(겹침 없는 행)",
+            "note": "s = 중요도·최근성만"
+          }
+        ],
+        "injected": []
+      },
+      "recall": true
+    },
+    {
+      "name": "case2_anaphora_ai_path",
+      "currentTurn": 300,
+      "recallCue": true,
+      "episodes": [
+        {
+          "id": "G",
+          "nouns": [
+            "가방",
+            "렌즈",
+            "케이스"
+          ],
+          "importance": 3,
+          "endTurn": 60,
+          "snapshot": 3
+        },
+        {
+          "id": "f100",
+          "nouns": [
+            "가방"
+          ],
+          "importance": 3,
+          "endTurn": 140,
+          "snapshot": 1
+        },
+        {
+          "id": "f101",
+          "nouns": [
+            "가방"
+          ],
+          "importance": 3,
+          "endTurn": 141,
+          "snapshot": 1
+        },
+        {
+          "id": "f102",
+          "nouns": [
+            "가방"
+          ],
+          "importance": 3,
+          "endTurn": 142,
+          "snapshot": 1
+        },
+        {
+          "id": "R1",
+          "nouns": [
+            "현재0",
+            "현재1",
+            "현재2",
+            "현재3",
+            "현재4",
+            "현재5",
+            "현재6",
+            "현재7",
+            "현재8",
+            "현재9"
+          ],
+          "importance": 3,
+          "endTurn": 290,
+          "snapshot": 28
+        },
+        {
+          "id": "R2",
+          "nouns": [
+            "현재10",
+            "현재11",
+            "현재12",
+            "현재13",
+            "현재14",
+            "현재15",
+            "현재16",
+            "현재17",
+            "현재18",
+            "현재19"
+          ],
+          "importance": 3,
+          "endTurn": 280,
+          "snapshot": 27
+        },
+        {
+          "id": "f0",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 40,
+          "snapshot": 2
+        },
+        {
+          "id": "f1",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 41,
+          "snapshot": 2
+        },
+        {
+          "id": "f2",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 42,
+          "snapshot": 2
+        },
+        {
+          "id": "f3",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 43,
+          "snapshot": 2
+        },
+        {
+          "id": "f4",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 44,
+          "snapshot": 2
+        },
+        {
+          "id": "f5",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 45,
+          "snapshot": 2
+        },
+        {
+          "id": "f6",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 46,
+          "snapshot": 2
+        },
+        {
+          "id": "f7",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 47,
+          "snapshot": 2
+        },
+        {
+          "id": "f8",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 48,
+          "snapshot": 2
+        },
+        {
+          "id": "f9",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 49,
+          "snapshot": 2
+        },
+        {
+          "id": "f10",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 50,
+          "snapshot": 2
+        },
+        {
+          "id": "f11",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 51,
+          "snapshot": 2
+        },
+        {
+          "id": "f12",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 52,
+          "snapshot": 2
+        },
+        {
+          "id": "f13",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 53,
+          "snapshot": 2
+        },
+        {
+          "id": "f14",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 54,
+          "snapshot": 2
+        },
+        {
+          "id": "f15",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 55,
+          "snapshot": 2
+        },
+        {
+          "id": "f16",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 56,
+          "snapshot": 2
+        },
+        {
+          "id": "f17",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 57,
+          "snapshot": 2
+        },
+        {
+          "id": "f18",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 58,
+          "snapshot": 2
+        },
+        {
+          "id": "f19",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 59,
+          "snapshot": 2
+        },
+        {
+          "id": "f20",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 60,
+          "snapshot": 2
+        },
+        {
+          "id": "f21",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 61,
+          "snapshot": 2
+        },
+        {
+          "id": "f22",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 62,
+          "snapshot": 2
+        },
+        {
+          "id": "f23",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 63,
+          "snapshot": 2
+        }
+      ],
+      "query": {
+        "user": [],
+        "assistant": [
+          "가방",
+          "렌즈",
+          "케이스",
+          "현재0",
+          "현재1",
+          "현재10",
+          "현재11",
+          "현재12",
+          "현재13",
+          "현재14",
+          "현재15",
+          "현재16",
+          "현재17",
+          "현재18",
+          "현재19",
+          "현재2",
+          "현재3",
+          "현재4",
+          "현재5",
+          "현재6",
+          "현재7",
+          "현재8",
+          "현재9"
+        ],
+        "timeCue": true
+      },
+      "expected": {
+        "ranking": [
+          {
+            "id": "G",
+            "s": 0.725,
+            "r": 10.439831,
+            "overlap": [
+              "가방",
+              "렌즈",
+              "케이스"
+            ]
+          },
+          {
+            "id": "f102",
+            "s": 0.55354,
+            "r": 2.958151,
+            "overlap": [
+              "가방"
+            ]
+          },
+          {
+            "id": "f101",
+            "s": 0.55354,
+            "r": 2.958151,
+            "overlap": [
+              "가방"
+            ]
+          },
+          {
+            "id": "f100",
+            "s": 0.55354,
+            "r": 2.958151,
+            "overlap": [
+              "가방"
+            ]
+          },
+          {
+            "id": "(겹침 없는 행)",
+            "note": "s = 중요도·최근성만"
+          }
+        ],
+        "injected": [
+          "G"
+        ]
+      },
+      "recall": true
+    },
+    {
+      "name": "case3_common_only",
+      "currentTurn": 300,
+      "recallCue": false,
+      "episodes": [
+        {
+          "id": "f0",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 40,
+          "snapshot": 1
+        },
+        {
+          "id": "f1",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 41,
+          "snapshot": 1
+        },
+        {
+          "id": "f2",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 42,
+          "snapshot": 1
+        },
+        {
+          "id": "f3",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 43,
+          "snapshot": 1
+        },
+        {
+          "id": "f4",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 44,
+          "snapshot": 1
+        },
+        {
+          "id": "f5",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 45,
+          "snapshot": 1
+        },
+        {
+          "id": "f6",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 46,
+          "snapshot": 1
+        },
+        {
+          "id": "f7",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 47,
+          "snapshot": 1
+        },
+        {
+          "id": "m0",
+          "nouns": [
+            "민지",
+            "촬영"
+          ],
+          "importance": 3,
+          "endTurn": 100,
+          "snapshot": 4
+        },
+        {
+          "id": "m1",
+          "nouns": [
+            "민지",
+            "촬영"
+          ],
+          "importance": 3,
+          "endTurn": 101,
+          "snapshot": 4
+        },
+        {
+          "id": "m2",
+          "nouns": [
+            "민지",
+            "촬영"
+          ],
+          "importance": 3,
+          "endTurn": 102,
+          "snapshot": 4
+        },
+        {
+          "id": "m3",
+          "nouns": [
+            "민지",
+            "촬영"
+          ],
+          "importance": 3,
+          "endTurn": 103,
+          "snapshot": 4
+        },
+        {
+          "id": "m4",
+          "nouns": [
+            "민지",
+            "촬영"
+          ],
+          "importance": 3,
+          "endTurn": 104,
+          "snapshot": 4
+        },
+        {
+          "id": "m5",
+          "nouns": [
+            "민지",
+            "촬영"
+          ],
+          "importance": 3,
+          "endTurn": 105,
+          "snapshot": 4
+        },
+        {
+          "id": "m6",
+          "nouns": [
+            "민지",
+            "촬영"
+          ],
+          "importance": 3,
+          "endTurn": 106,
+          "snapshot": 4
+        },
+        {
+          "id": "m7",
+          "nouns": [
+            "민지",
+            "촬영"
+          ],
+          "importance": 3,
+          "endTurn": 107,
+          "snapshot": 4
+        },
+        {
+          "id": "m8",
+          "nouns": [
+            "민지",
+            "촬영"
+          ],
+          "importance": 3,
+          "endTurn": 108,
+          "snapshot": 4
+        },
+        {
+          "id": "m9",
+          "nouns": [
+            "민지",
+            "촬영"
+          ],
+          "importance": 3,
+          "endTurn": 109,
+          "snapshot": 4
+        },
+        {
+          "id": "m10",
+          "nouns": [
+            "민지",
+            "촬영"
+          ],
+          "importance": 3,
+          "endTurn": 110,
+          "snapshot": 4
+        },
+        {
+          "id": "m11",
+          "nouns": [
+            "민지",
+            "촬영"
+          ],
+          "importance": 3,
+          "endTurn": 111,
+          "snapshot": 4
+        },
+        {
+          "id": "m12",
+          "nouns": [
+            "민지",
+            "촬영"
+          ],
+          "importance": 3,
+          "endTurn": 112,
+          "snapshot": 4
+        },
+        {
+          "id": "m13",
+          "nouns": [
+            "민지",
+            "촬영"
+          ],
+          "importance": 3,
+          "endTurn": 113,
+          "snapshot": 4
+        },
+        {
+          "id": "m14",
+          "nouns": [
+            "민지",
+            "촬영"
+          ],
+          "importance": 3,
+          "endTurn": 114,
+          "snapshot": 4
+        },
+        {
+          "id": "m15",
+          "nouns": [
+            "민지",
+            "촬영"
+          ],
+          "importance": 3,
+          "endTurn": 115,
+          "snapshot": 4
+        },
+        {
+          "id": "m16",
+          "nouns": [
+            "민지",
+            "촬영"
+          ],
+          "importance": 3,
+          "endTurn": 116,
+          "snapshot": 4
+        },
+        {
+          "id": "m17",
+          "nouns": [
+            "민지",
+            "촬영"
+          ],
+          "importance": 3,
+          "endTurn": 117,
+          "snapshot": 4
+        },
+        {
+          "id": "m18",
+          "nouns": [
+            "민지",
+            "촬영"
+          ],
+          "importance": 3,
+          "endTurn": 118,
+          "snapshot": 4
+        },
+        {
+          "id": "m19",
+          "nouns": [
+            "민지",
+            "촬영"
+          ],
+          "importance": 3,
+          "endTurn": 119,
+          "snapshot": 4
+        },
+        {
+          "id": "f50",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 90,
+          "snapshot": 2
+        },
+        {
+          "id": "f51",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 91,
+          "snapshot": 2
+        }
+      ],
+      "query": {
+        "user": [
+          "민지",
+          "촬영"
+        ],
+        "assistant": [
+          "카메라"
+        ],
+        "timeCue": false
+      },
+      "expected": {
+        "ranking": [],
+        "injected": []
+      },
+      "recall": false
+    },
+    {
+      "name": "case4_common_name_plus_rare",
+      "currentTurn": 300,
+      "recallCue": true,
+      "episodes": [
+        {
+          "id": "G",
+          "nouns": [
+            "민지",
+            "베이커리"
+          ],
+          "importance": 3,
+          "endTurn": 30,
+          "snapshot": 1
+        },
+        {
+          "id": "m0",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 100,
+          "snapshot": 4
+        },
+        {
+          "id": "m1",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 101,
+          "snapshot": 4
+        },
+        {
+          "id": "m2",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 102,
+          "snapshot": 4
+        },
+        {
+          "id": "m3",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 103,
+          "snapshot": 4
+        },
+        {
+          "id": "m4",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 104,
+          "snapshot": 4
+        },
+        {
+          "id": "m5",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 105,
+          "snapshot": 4
+        },
+        {
+          "id": "m6",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 106,
+          "snapshot": 4
+        },
+        {
+          "id": "m7",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 107,
+          "snapshot": 4
+        },
+        {
+          "id": "m8",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 108,
+          "snapshot": 4
+        },
+        {
+          "id": "m9",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 109,
+          "snapshot": 4
+        },
+        {
+          "id": "m10",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 110,
+          "snapshot": 4
+        },
+        {
+          "id": "m11",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 111,
+          "snapshot": 4
+        },
+        {
+          "id": "m12",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 112,
+          "snapshot": 4
+        },
+        {
+          "id": "m13",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 113,
+          "snapshot": 4
+        },
+        {
+          "id": "m14",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 114,
+          "snapshot": 4
+        },
+        {
+          "id": "m15",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 115,
+          "snapshot": 4
+        },
+        {
+          "id": "m16",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 116,
+          "snapshot": 4
+        },
+        {
+          "id": "m17",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 117,
+          "snapshot": 4
+        },
+        {
+          "id": "m18",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 118,
+          "snapshot": 4
+        },
+        {
+          "id": "m19",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 119,
+          "snapshot": 4
+        },
+        {
+          "id": "m20",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 120,
+          "snapshot": 4
+        },
+        {
+          "id": "m21",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 121,
+          "snapshot": 4
+        },
+        {
+          "id": "m22",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 122,
+          "snapshot": 4
+        },
+        {
+          "id": "m23",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 123,
+          "snapshot": 4
+        },
+        {
+          "id": "m24",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 124,
+          "snapshot": 4
+        },
+        {
+          "id": "m25",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 125,
+          "snapshot": 4
+        },
+        {
+          "id": "m26",
+          "nouns": [
+            "민지"
+          ],
+          "importance": 3,
+          "endTurn": 126,
+          "snapshot": 4
+        },
+        {
+          "id": "f60",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 100,
+          "snapshot": 2
+        },
+        {
+          "id": "f61",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 101,
+          "snapshot": 2
+        }
+      ],
+      "query": {
+        "user": [
+          "민지",
+          "베이커리"
+        ],
+        "assistant": [],
+        "timeCue": true
+      },
+      "expected": {
+        "ranking": [
+          {
+            "id": "G",
+            "s": 0.725,
+            "r": 3.874441,
+            "overlap": [
+              "베이커리"
+            ]
+          },
+          {
+            "id": "(겹침 없는 행)",
+            "note": "s = 중요도·최근성만"
+          }
+        ],
+        "injected": [
+          "G"
+        ]
+      },
+      "recall": true
+    },
+    {
+      "name": "case6_user_query_emptied",
+      "currentTurn": 300,
+      "recallCue": true,
+      "episodes": [
+        {
+          "id": "f0",
+          "nouns": [
+            "촬영장"
+          ],
+          "importance": 3,
+          "endTurn": 40,
+          "snapshot": 1
+        },
+        {
+          "id": "f1",
+          "nouns": [
+            "촬영장"
+          ],
+          "importance": 3,
+          "endTurn": 41,
+          "snapshot": 1
+        },
+        {
+          "id": "f2",
+          "nouns": [
+            "촬영장"
+          ],
+          "importance": 3,
+          "endTurn": 42,
+          "snapshot": 1
+        },
+        {
+          "id": "f3",
+          "nouns": [
+            "촬영장"
+          ],
+          "importance": 3,
+          "endTurn": 43,
+          "snapshot": 1
+        },
+        {
+          "id": "f4",
+          "nouns": [
+            "촬영장"
+          ],
+          "importance": 3,
+          "endTurn": 44,
+          "snapshot": 1
+        },
+        {
+          "id": "f5",
+          "nouns": [
+            "촬영장"
+          ],
+          "importance": 3,
+          "endTurn": 45,
+          "snapshot": 1
+        },
+        {
+          "id": "f6",
+          "nouns": [
+            "촬영장"
+          ],
+          "importance": 3,
+          "endTurn": 46,
+          "snapshot": 1
+        },
+        {
+          "id": "f7",
+          "nouns": [
+            "촬영장"
+          ],
+          "importance": 3,
+          "endTurn": 47,
+          "snapshot": 1
+        },
+        {
+          "id": "f8",
+          "nouns": [
+            "촬영장"
+          ],
+          "importance": 3,
+          "endTurn": 48,
+          "snapshot": 1
+        },
+        {
+          "id": "f9",
+          "nouns": [
+            "촬영장"
+          ],
+          "importance": 3,
+          "endTurn": 49,
+          "snapshot": 1
+        },
+        {
+          "id": "f10",
+          "nouns": [
+            "촬영장"
+          ],
+          "importance": 3,
+          "endTurn": 50,
+          "snapshot": 1
+        },
+        {
+          "id": "f11",
+          "nouns": [
+            "촬영장"
+          ],
+          "importance": 3,
+          "endTurn": 51,
+          "snapshot": 1
+        },
+        {
+          "id": "f12",
+          "nouns": [
+            "촬영장"
+          ],
+          "importance": 3,
+          "endTurn": 52,
+          "snapshot": 1
+        },
+        {
+          "id": "f13",
+          "nouns": [
+            "촬영장"
+          ],
+          "importance": 3,
+          "endTurn": 53,
+          "snapshot": 1
+        },
+        {
+          "id": "f14",
+          "nouns": [
+            "촬영장"
+          ],
+          "importance": 3,
+          "endTurn": 54,
+          "snapshot": 1
+        },
+        {
+          "id": "G",
+          "nouns": [
+            "렌즈"
+          ],
+          "importance": 3,
+          "endTurn": 60,
+          "snapshot": 3
+        },
+        {
+          "id": "f40",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 80,
+          "snapshot": 2
+        },
+        {
+          "id": "f41",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 81,
+          "snapshot": 2
+        },
+        {
+          "id": "f42",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 82,
+          "snapshot": 2
+        },
+        {
+          "id": "f43",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 83,
+          "snapshot": 2
+        },
+        {
+          "id": "f44",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 84,
+          "snapshot": 2
+        },
+        {
+          "id": "f45",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 85,
+          "snapshot": 2
+        },
+        {
+          "id": "f46",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 86,
+          "snapshot": 2
+        },
+        {
+          "id": "f47",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 87,
+          "snapshot": 2
+        },
+        {
+          "id": "f48",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 88,
+          "snapshot": 2
+        },
+        {
+          "id": "f49",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 89,
+          "snapshot": 2
+        },
+        {
+          "id": "f50",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 90,
+          "snapshot": 2
+        },
+        {
+          "id": "f51",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 91,
+          "snapshot": 2
+        },
+        {
+          "id": "f52",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 92,
+          "snapshot": 2
+        },
+        {
+          "id": "f53",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 93,
+          "snapshot": 2
+        }
+      ],
+      "query": {
+        "user": [
+          "촬영장"
+        ],
+        "assistant": [
+          "렌즈"
+        ],
+        "timeCue": true
+      },
+      "expected": {
+        "ranking": [],
+        "injected": []
+      },
+      "recall": false
+    },
+    {
+      "name": "plain_turn_cap1",
+      "currentTurn": 300,
+      "recallCue": false,
+      "episodes": [
+        {
+          "id": "B0",
+          "nouns": [
+            "베이커리"
+          ],
+          "importance": 3,
+          "endTurn": 30,
+          "snapshot": 1
+        },
+        {
+          "id": "B1",
+          "nouns": [
+            "베이커리"
+          ],
+          "importance": 3,
+          "endTurn": 31,
+          "snapshot": 1
+        },
+        {
+          "id": "B2",
+          "nouns": [
+            "베이커리"
+          ],
+          "importance": 3,
+          "endTurn": 32,
+          "snapshot": 1
+        },
+        {
+          "id": "f0",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 40,
+          "snapshot": 2
+        },
+        {
+          "id": "f1",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 41,
+          "snapshot": 2
+        },
+        {
+          "id": "f2",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 42,
+          "snapshot": 2
+        },
+        {
+          "id": "f3",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 43,
+          "snapshot": 2
+        },
+        {
+          "id": "f4",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 44,
+          "snapshot": 2
+        },
+        {
+          "id": "f5",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 45,
+          "snapshot": 2
+        },
+        {
+          "id": "f6",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 46,
+          "snapshot": 2
+        },
+        {
+          "id": "f7",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 47,
+          "snapshot": 2
+        },
+        {
+          "id": "f8",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 48,
+          "snapshot": 2
+        },
+        {
+          "id": "f9",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 49,
+          "snapshot": 2
+        },
+        {
+          "id": "f10",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 50,
+          "snapshot": 2
+        },
+        {
+          "id": "f11",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 51,
+          "snapshot": 2
+        },
+        {
+          "id": "f12",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 52,
+          "snapshot": 2
+        },
+        {
+          "id": "f13",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 53,
+          "snapshot": 2
+        },
+        {
+          "id": "f14",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 54,
+          "snapshot": 2
+        },
+        {
+          "id": "f15",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 55,
+          "snapshot": 2
+        },
+        {
+          "id": "f16",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 56,
+          "snapshot": 2
+        },
+        {
+          "id": "f17",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 57,
+          "snapshot": 2
+        },
+        {
+          "id": "f18",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 58,
+          "snapshot": 2
+        },
+        {
+          "id": "f19",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 59,
+          "snapshot": 2
+        },
+        {
+          "id": "f20",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 60,
+          "snapshot": 2
+        },
+        {
+          "id": "f21",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 61,
+          "snapshot": 2
+        },
+        {
+          "id": "f22",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 62,
+          "snapshot": 2
+        },
+        {
+          "id": "f23",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 63,
+          "snapshot": 2
+        },
+        {
+          "id": "f24",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 64,
+          "snapshot": 2
+        },
+        {
+          "id": "f25",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 65,
+          "snapshot": 2
+        },
+        {
+          "id": "f26",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 66,
+          "snapshot": 2
+        }
+      ],
+      "query": {
+        "user": [
+          "베이커리"
+        ],
+        "assistant": [],
+        "timeCue": false
+      },
+      "expected": {
+        "ranking": [
+          {
+            "id": "B2",
+            "s": 0.597429,
+            "r": 3.192695,
+            "overlap": [
+              "베이커리"
+            ]
+          },
+          {
+            "id": "B1",
+            "s": 0.597362,
+            "r": 3.192339,
+            "overlap": [
+              "베이커리"
+            ]
+          },
+          {
+            "id": "B0",
+            "s": 0.597296,
+            "r": 3.191982,
+            "overlap": [
+              "베이커리"
+            ]
+          },
+          {
+            "id": "(겹침 없는 행)",
+            "note": "s = 중요도·최근성만"
+          }
+        ],
+        "injected": []
+      },
+      "recall": true
+    },
+    {
+      "name": "n4_off",
+      "currentTurn": 300,
+      "recallCue": true,
+      "episodes": [
+        {
+          "id": "G",
+          "nouns": [
+            "베이커리"
+          ],
+          "importance": 3,
+          "endTurn": 30,
+          "snapshot": 1
+        },
+        {
+          "id": "f0",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 40,
+          "snapshot": 2
+        },
+        {
+          "id": "f1",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 41,
+          "snapshot": 2
+        },
+        {
+          "id": "f2",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 42,
+          "snapshot": 2
+        }
+      ],
+      "query": {
+        "user": [
+          "베이커리"
+        ],
+        "assistant": [],
+        "timeCue": false
+      },
+      "expected": {
+        "ranking": [],
+        "injected": []
+      },
+      "recall": false
+    },
+    {
+      "name": "n5_on",
+      "currentTurn": 300,
+      "recallCue": true,
+      "episodes": [
+        {
+          "id": "G",
+          "nouns": [
+            "베이커리"
+          ],
+          "importance": 3,
+          "endTurn": 30,
+          "snapshot": 1
+        },
+        {
+          "id": "f0",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 40,
+          "snapshot": 2
+        },
+        {
+          "id": "f1",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 41,
+          "snapshot": 2
+        },
+        {
+          "id": "f2",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 42,
+          "snapshot": 2
+        },
+        {
+          "id": "f3",
+          "nouns": [],
+          "importance": 3,
+          "endTurn": 43,
+          "snapshot": 2
+        }
+      ],
+      "query": {
+        "user": [
+          "베이커리"
+        ],
+        "assistant": [],
+        "timeCue": false
+      },
+      "expected": {
+        "ranking": [
+          {
+            "id": "G",
+            "s": 0.727,
+            "r": 2.179559,
+            "overlap": [
+              "베이커리"
+            ]
+          },
+          {
+            "id": "(겹침 없는 행)",
+            "note": "s = 중요도·최근성만"
+          }
+        ],
+        "injected": [
+          "G"
+        ]
+      },
+      "recall": true
+    }
+  ],
+  "endToEnd": [
+    {
+      "userText": "태민이랑 밀알당에서 뭐 먹었지?",
+      "previousAssistant": "동아리방 창밖으로 해가 진다.",
+      "currentTurn": 120,
+      "queryTokens": {
+        "user": [
+          "밀알당",
+          "태민"
+        ],
+        "assistant": [
+          "동아리방",
+          "진다",
+          "창밖"
+        ]
+      },
+      "timeCue": false,
+      "recallCue": true,
+      "expected": {
+        "ranking": [
+          {
+            "id": "e1",
+            "s": 0.7395,
+            "r": 2.645379,
+            "overlap": [
+              "밀알당"
+            ]
+          }
+        ],
+        "injected": [
+          "e1"
+        ],
+        "recall": true
+      }
+    },
+    {
+      "userText": "밀알당 소금빵 또 먹고 싶다",
+      "previousAssistant": "",
+      "currentTurn": 120,
+      "queryTokens": {
+        "user": [
+          "밀알당",
+          "소금빵"
+        ],
+        "assistant": []
+      },
+      "timeCue": false,
+      "recallCue": false,
+      "expected": {
+        "ranking": [
+          {
+            "id": "e1",
+            "s": 0.7395,
+            "r": 5.149456,
+            "overlap": [
+              "밀알당",
+              "소금빵"
+            ]
+          }
+        ],
+        "injected": [
+          "e1"
+        ],
+        "recall": true
+      }
+    },
+    {
+      "userText": "도희 선배 오늘 어땠어?",
+      "previousAssistant": "",
+      "currentTurn": 120,
+      "queryTokens": {
+        "user": [
+          "도희",
+          "선배"
+        ],
+        "assistant": []
+      },
+      "timeCue": false,
+      "recallCue": false,
+      "expected": {
+        "ranking": [],
+        "injected": [],
+        "recall": false
+      }
+    },
+    {
+      "userText": "그때 그거 어디 뒀더라?",
+      "previousAssistant": "도희가 렌즈 케이스 얘기를 꺼낸다. 단체 사진 얘기도 한다.",
+      "currentTurn": 120,
+      "queryTokens": {
+        "user": [],
+        "assistant": [
+          "꺼낸다",
+          "단체",
+          "도희",
+          "렌즈",
+          "사진",
+          "케이스",
+          "한다"
+        ]
+      },
+      "timeCue": true,
+      "recallCue": true,
+      "expected": {
+        "ranking": [
+          {
+            "id": "e3",
+            "s": 0.725,
+            "r": 5.097586,
+            "overlap": [
+              "렌즈",
+              "케이스"
+            ]
+          }
+        ],
+        "injected": [
+          "e3"
+        ],
+        "recall": true
+      },
+      "note": "대명사 후속(사용자 토큰 df > 0 필터): '그거·어디·뒀더라' 는 방 에피소드에 없는 토큰(df 0)이라 사용자 질의에서 빠지고, 사용자 질의가 0개 + 시간 단서라 직전 AI 응답 토큰으로 찾는다"
+    },
+    {
+      "userText": "빵 들고 정류장 가던 날 기억나?",
+      "previousAssistant": "",
+      "currentTurn": 120,
+      "queryTokens": {
+        "user": [
+          "들고",
+          "빵",
+          "정류장"
+        ],
+        "assistant": []
+      },
+      "timeCue": true,
+      "recallCue": true,
+      "expected": {
+        "ranking": [
+          {
+            "id": "e4",
+            "s": 0.7125,
+            "r": 5.05287,
+            "overlap": [
+              "들고",
+              "빵"
+            ]
+          }
+        ],
+        "injected": [
+          "e4"
+        ],
+        "recall": true
+      }
+    },
+    {
+      "userText": "탁구장 가자",
+      "previousAssistant": "",
+      "currentTurn": 120,
+      "queryTokens": {
+        "user": [
+          "탁구장"
+        ],
+        "assistant": []
+      },
+      "timeCue": false,
+      "recallCue": false,
+      "expected": {
+        "ranking": [
+          {
+            "id": "e7",
+            "s": 0.74,
+            "r": 2.647168,
+            "overlap": [
+              "탁구장"
+            ]
+          }
+        ],
+        "injected": [
+          "e7"
+        ],
+        "recall": true
+      }
+    },
+    {
+      "userText": "도희 선배랑 탁구장 간 날 기억나?",
+      "previousAssistant": "",
+      "currentTurn": 120,
+      "names": [
+        "도희"
+      ],
+      "queryTokens": {
+        "user": [
+          "선배",
+          "탁구장"
+        ],
+        "assistant": []
+      },
+      "timeCue": true,
+      "recallCue": true,
+      "expected": {
+        "ranking": [
+          {
+            "id": "e7",
+            "s": 0.725,
+            "r": 2.593509,
+            "overlap": [
+              "탁구장"
+            ]
+          }
+        ],
+        "injected": [
+          "e7"
+        ],
+        "recall": true
+      },
+      "note": "이름 제외 경로 — names 가 비어 있지 않을 때 그 이름은 사용자·AI 질의 양쪽에서 빠진다(정규화 후 비교)"
+    },
+    {
+      "userText": "도희 선배랑 월미도 가기로 했었지?",
+      "previousAssistant": "",
+      "currentTurn": 120,
+      "names": [
+        "도희"
+      ],
+      "queryTokens": {
+        "user": [
+          "선배"
+        ],
+        "assistant": []
+      },
+      "timeCue": false,
+      "recallCue": true,
+      "expected": {
+        "ranking": [],
+        "injected": [],
+        "recall": false
+      },
+      "note": "알려진 한계(사전 등록 v2 한계 15): '월미도' 는 끝 글자 '도' 가 조사로 떼어져 '월미' 가 되고, 저장 쪽 '월미도에' 는 '월미도' 라 겹치지 않는다 — 이 규칙대로면 회상 없음이 기대값이다"
+    },
+    {
+      "userText": "밀알당 기억나?",
+      "previousAssistant": "",
+      "currentTurn": 120,
+      "episodesUsed": [
+        "e1",
+        "e2",
+        "e3",
+        "e4"
+      ],
+      "expected": {
+        "ranking": [],
+        "injected": [],
+        "recall": false
+      },
+      "note": "에피소드 4개 < 하한 5 → 회상 없음"
+    }
+  ]
+}

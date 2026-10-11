@@ -127,7 +127,11 @@ async def _drive(
             llm_client=_PreviewLLM(cell_id),
             prompt_set_data=prompt_set_data,
             judgment_sets=JudgmentPromptSets(
-                stat=prompt_set_data, ending=prompt_set_data, image=prompt_set_data, summary=prompt_set_data
+                stat=prompt_set_data,
+                ending=prompt_set_data,
+                image=prompt_set_data,
+                summary=prompt_set_data,
+                episode=prompt_set_data,
             ),
             persona=None,
             media_images={cell_id: MediaTagImage(url="https://example.test/cell.png", width=10, height=20)},

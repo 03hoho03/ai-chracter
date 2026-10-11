@@ -17,6 +17,7 @@ const CALL_SITE_LABELS: Record<string, string> = {
   chat_situational_image: "상황 이미지 판정",
   chat_media_book_image: "미디어 북 칸 판정",
   chat_memory_summary: "기억 요약",
+  chat_memory_episode: "장면 기억 추출",
   preview_generate: "미리보기 생성",
   preview_stat_judgment: "미리보기 스탯 판정",
   preview_ending_judgment: "미리보기 엔딩 판정",
