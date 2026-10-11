@@ -5,6 +5,7 @@ from decimal import Decimal
 from typing import Any, Literal
 
 from sqlalchemy import (
+    ARRAY,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -13,6 +14,7 @@ from sqlalchemy import (
     Index,
     Integer,
     Numeric,
+    SmallInteger,
     Text,
     UniqueConstraint,
     Uuid,
@@ -135,7 +137,8 @@ class ChatRoomMemorySnapshot(Base):
     아니라 Text다 — 허용값은 이 행을 쓰는 코드와 응답 스키마가 강제한다.
 
     `relationship()`·`ondelete`는 선언하지 않는다(저장소 규약) — 위 경로들이 이 행을 직접
-    지운다.
+    지운다. 이 행을 지우면 그 접기에서 뽑은 장면 기억(`ChatMemoryEpisode`)과 추출 기록
+    (`ChatMemoryExtraction`)은 그 두 테이블 쪽 `ON DELETE CASCADE`로 함께 지워진다.
     """
 
     __tablename__ = "chat_room_memory_snapshots"
@@ -163,6 +166,136 @@ class ChatRoomMemorySnapshot(Base):
             "cursor_created_at",
             "cursor_message_id",
         ),
+    )
+
+
+EpisodeAssertedBy = Literal["user", "character", "narration", "mixed"]
+EpisodeExtractionStatus = Literal["running", "done", "failed"]
+
+# 장면 기억 칸의 상한. CHECK 와 추출 결과를 자르는 쪽이 같은 상수를 쓴다 — 값이 갈리면 잘라 낸 행이 CHECK 에 막힌다.
+EPISODE_TITLE_MAX = 60
+EPISODE_DETAIL_MAX = 300
+EPISODE_NOUNS_MAX = 30
+EPISODE_KEYWORDS_MAX = 8
+EPISODE_EVIDENCE_MAX = 2
+
+
+class ChatMemoryEpisode(Base):
+    """요약 접기 한 번이 접은 대화 구간 안의 장면 하나. 한 번 쓰면 고쳐 쓰지 않는다 — 낡은 기억은 지우지 않고 검색
+    순위로만 밀린다.
+
+    그 접기의 스냅샷이 지워지면(편집·삭제·재생성·초기화·방 삭제·탈퇴의 되감기) DB 가 이 행도 함께 지운다. 이 저장소의
+    "`ON DELETE CASCADE` 없음" 규약의 예외인 이유는 둘이다.
+    - 이 테이블을 모르는 옛 이미지(배포 겹침·이미지 롤백)가 스냅샷을 지울 때 FK 위반으로 실패하지 않게 한다.
+    - 새 코드도 이 행을 따로 지우지 않고 CASCADE 에 맡긴다. 되감기가 이 테이블·추출 기록을 스냅샷보다 먼저 지우면,
+      스냅샷을 잠근 채 추출 기록을 갱신하려는 추출 작업과 서로를 기다린다(교착). 지우는 쪽도 추출 쪽도 스냅샷을 먼저
+      잡아야 한 방향으로만 줄을 선다.
+
+    칸:
+    - `start_*`·`end_*` 는 이 장면이 덮는 원문의 처음·마지막 메시지 키다. 메시지 정렬과 같은 `(created_at, id)` 모양이고,
+      메시지 id 에 FK 가 없는 이유는 스냅샷 커서와 같다(그 메시지를 지우는 경로가 이 행을 먼저 없앤다).
+    - `start_turn`·`end_turn` 은 추출 시점의 어시스턴트 메시지 순번이다 — 그 뒤 메시지가 지워지면 근사값이 된다.
+    - `nouns` 는 검색에 쓰는 정규화된 명사, `keywords` 는 짧은 핵심 구절, `evidence` 는 원문에서 옮긴 짧은 근거다.
+    - `asserted_by` 는 장면의 사실을 누가 말했는가다: 사용자 본인(`user`), 캐릭터(`character` — 캐릭터가 사용자에 대해
+      지어낸 말을 사실로 회상하지 않게 구별한다), 서술(`narration`), 섞임(`mixed`).
+    - `importance` 는 1~5, `ordinal` 은 그 접기 안의 장면 순서(0부터)다.
+    `asserted_by` 는 native enum 이 아니라 Text 이고 위 Literal 이 값 범위다."""
+
+    __tablename__ = "chat_memory_episodes"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    chat_room_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("chat_rooms.id"), nullable=False)
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("chat_room_memory_snapshots.id", ondelete="CASCADE"), nullable=False
+    )
+    ordinal: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    start_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    start_message_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    end_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end_message_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    start_turn: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_turn: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    detail: Mapped[str] = mapped_column(Text, nullable=False)
+    nouns: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
+    keywords: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default=text("'{}'::text[]"))
+    evidence: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default=text("'{}'::text[]"))
+    asserted_by: Mapped[EpisodeAssertedBy] = mapped_column(Text, nullable=False)
+    importance: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # 🔴 `alembic check`는 CHECK 제약을 비교하지 않는다 — 아래 CHECK 의 검증은 행위 테스트가 유일하다.
+    # 유니크의 앞 열(`snapshot_id`)이 스냅샷 DELETE 의 CASCADE 가 이 테이블을 찾는 인덱스를 겸한다. 방 인덱스는 한 방의
+    # 장면을 원문 순서로 읽는 검색과, 방 DELETE 의 FK 확인을 받는다.
+    __table_args__ = (
+        UniqueConstraint("snapshot_id", "ordinal", name="ux_chat_memory_episodes_snapshot_ordinal"),
+        CheckConstraint(
+            f"asserted_by IN ({_sql_in_list(EpisodeAssertedBy)})", name="ck_chat_memory_episodes_asserted_by"
+        ),
+        CheckConstraint("importance BETWEEN 1 AND 5", name="ck_chat_memory_episodes_importance"),
+        CheckConstraint("ordinal >= 0", name="ck_chat_memory_episodes_ordinal"),
+        CheckConstraint("start_turn <= end_turn", name="ck_chat_memory_episodes_turn_order"),
+        CheckConstraint(
+            "(start_created_at, start_message_id) <= (end_created_at, end_message_id)",
+            name="ck_chat_memory_episodes_range_order",
+        ),
+        CheckConstraint(
+            f"char_length(title) BETWEEN 1 AND {EPISODE_TITLE_MAX}", name="ck_chat_memory_episodes_title_length"
+        ),
+        CheckConstraint(
+            f"char_length(detail) BETWEEN 1 AND {EPISODE_DETAIL_MAX}", name="ck_chat_memory_episodes_detail_length"
+        ),
+        CheckConstraint(f"cardinality(nouns) <= {EPISODE_NOUNS_MAX}", name="ck_chat_memory_episodes_nouns_count"),
+        CheckConstraint(
+            f"cardinality(keywords) <= {EPISODE_KEYWORDS_MAX}", name="ck_chat_memory_episodes_keywords_count"
+        ),
+        CheckConstraint(
+            f"cardinality(evidence) <= {EPISODE_EVIDENCE_MAX}", name="ck_chat_memory_episodes_evidence_count"
+        ),
+        Index("ix_chat_memory_episodes_room_end", "chat_room_id", "end_created_at", "end_message_id"),
+    )
+
+
+class ChatMemoryExtraction(Base):
+    """스냅샷 하나의 장면 기억 추출 기록 — 한 스냅샷 = 한 행. 세 가지를 겸한다.
+    - 아직 뽑지 않은 스냅샷의 표지: 행이 없으면 미추출이다.
+    - 같은 스냅샷을 두 작업이 동시에 뽑지 않게 하는 선점: PK 가 `snapshot_id` 다.
+    - 추출 호출 원가: 모델 id 와 토큰(`prompt_tokens` 는 캐시 포함 입력 전체 — 사용량 기록과 같은 뜻).
+
+    스냅샷과 함께 지워진다(`ChatMemoryEpisode` 와 같은 이유 — 옛 이미지의 스냅샷 DELETE, 그리고 교착).
+    `status` 는 `running`(작업이 쥠)·`done`(끝남 — 그때만 `episode_count` 가 있다)·`failed`(실패 — 재시도 대상)이고,
+    native enum 이 아니라 Text 다. `attempts` 는 선점할 때마다 센다."""
+
+    __tablename__ = "chat_memory_extractions"
+
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("chat_room_memory_snapshots.id", ondelete="CASCADE"), primary_key=True
+    )
+    chat_room_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("chat_rooms.id"), nullable=False)
+    status: Mapped[EpisodeExtractionStatus] = mapped_column(Text, nullable=False)
+    attempts: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cached_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    thoughts_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    episode_count: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+
+    # 🔴 `alembic check`는 CHECK 제약을 비교하지 않는다 — 아래 CHECK 의 검증은 행위 테스트가 유일하다.
+    # 방 인덱스는 방 DELETE 의 FK 확인이 이 테이블을 방으로 찾기 위한 것이다(Postgres 는 FK 열에 인덱스를 만들지 않는다).
+    __table_args__ = (
+        CheckConstraint(
+            f"status IN ({_sql_in_list(EpisodeExtractionStatus)})", name="ck_chat_memory_extractions_status"
+        ),
+        CheckConstraint("attempts >= 1", name="ck_chat_memory_extractions_attempts"),
+        CheckConstraint(
+            "(status = 'done') = (episode_count IS NOT NULL)", name="ck_chat_memory_extractions_done_count"
+        ),
+        Index("ix_chat_memory_extractions_room", "chat_room_id"),
     )
 
 
@@ -245,6 +378,8 @@ class ChatTurn(Base):
     - `turn_number` 는 이 응답이 속한 턴이다. 재생성 행은 대체한 응답 기록의 값을 이어받는다.
     - `llm_calls` 는 `[{callSite, model, promptTokens, cachedTokens, cacheWriteTokens, outputTokens, thoughtsTokens}]`,
       `stat_changes` 는 `{statEntityId: [before, after]}` 다.
+    - `memory_recall` 은 그 턴 프롬프트에 실은 장면 기억 목록 `[{episodeId, score, rank, chars}]` 이다(글은 싣지 않는다).
+      회상을 쓰지 않은 턴과 이 칸을 모르는 옛 이미지가 넣은 행은 DB 기본값 `[]` 이다.
 
     응답이 재생성·수정·메시지 삭제로 지워져도 그 행은 방이 지워지거나 초기화될 때까지 남는다. 그래서 한 방 안에서
     `(chat_room_id, turn_number)` 는 유일하지 않고(수정 뒤 같은 턴 번호가 둘, 재생성 체인은 같은 턴의 스탯 효과를
@@ -271,6 +406,9 @@ class ChatTurn(Base):
         JSONB, nullable=False, server_default=text("'[]'::jsonb")
     )
     stat_changes: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    memory_recall: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
     ending_entity_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

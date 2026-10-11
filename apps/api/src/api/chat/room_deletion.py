@@ -4,6 +4,10 @@
 때 한쪽에만 더해지기 쉽고, 빠진 쪽은 방 DELETE가 FK 위반으로 500이 된다 — 그래서 사본을 두지
 않는다. `ON DELETE CASCADE`가 없으므로(apps/api/CLAUDE.md 모델 규약) 자식을 먼저 지운다.
 
+예외는 요약 스냅샷의 자식인 장면 기억(`chat_memory_episodes`)과 추출 기록(`chat_memory_extractions`)이다. 이 둘은 스냅샷
+DELETE 의 CASCADE 가 지우므로 아래 목록에 넣지 않는다 — 스냅샷보다 먼저 지우면 스냅샷을 잠근 채 추출 기록을 갱신하는 추출
+작업과 서로를 기다린다(교착).
+
 이 모듈은 라우터를 import하지 않는다 — `auth/router.py`가 import해도 순환이 생기지 않게."""
 
 import uuid
