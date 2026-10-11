@@ -10,7 +10,7 @@ import pytest
 from memory_eval.probe import recall_warning_count
 from memory_eval.prototype_recall import retrieve_e
 from memory_eval.recall_offline import Episode, compare_rows
-from memory_eval.server_recall import available_from_turns, retrieve_server
+from memory_eval.server_recall import available_from_turns, export_rows, retrieve_server
 
 
 def _filler(count: int, *, start: int, available: int) -> list[Episode]:
@@ -169,3 +169,20 @@ def test_recall_warning_count_counts_only_the_recall_failure_line() -> None:
     )
     assert recall_warning_count(log) == 2
     assert recall_warning_count("") == 0
+
+
+def test_export_rows_make_episodes_searchable_from_the_turn_after_the_fold_that_wrote_them() -> None:
+    """검색 대상이 되는 첫 턴은 그 장면을 쓴 스냅샷이 만들어진 시각까지 들어온 진행자 메시지 수 + 1 이다 — 커서가 덮은 끝이
+    아니다(30턴에 접힌 스냅샷의 커서는 10턴 근처에 있다)."""
+    from types import SimpleNamespace
+
+    start = datetime(2026, 10, 12, tzinfo=UTC)
+    assistant = [start + timedelta(minutes=2 * t) for t in range(1, 41)]  # 1~40턴 응답
+    episode = SimpleNamespace(
+        id=uuid.UUID(int=7), snapshot_id=uuid.UUID(int=70), ordinal=0, start_turn=1, end_turn=10, title="t",
+        detail="d", asserted_by="narration", nouns=["n"], keywords=[], importance=3,
+    )  # fmt: skip
+    folded_at_30 = start + timedelta(minutes=60, seconds=5)
+    [row] = export_rows([(episode, folded_at_30)], assistant)
+    assert row["available_from_turn"] == 31
+    assert (row["id"], row["end_turn"], row["nouns"]) == (str(uuid.UUID(int=7)), 10, ["n"])
