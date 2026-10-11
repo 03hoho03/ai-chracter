@@ -8,6 +8,8 @@ import hashlib
 import re
 from pathlib import Path
 
+# 원자료 폴더 안의 사전 등록 문서 파일 이름(해시 파일은 같은 이름의 `.sha256`).
+PREREGISTRATION_FILE = "preregistration.md"  # cite-ok: 하네스가 여는 원자료 폴더의 실제 파일 이름이다
 _V2_HEADER = re.compile(r"\(v2(\.\d+)?\)")
 
 

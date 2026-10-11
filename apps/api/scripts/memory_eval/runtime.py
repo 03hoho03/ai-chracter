@@ -104,6 +104,14 @@ def arm_settings(arm: str) -> Iterator[None]:
             setattr(settings, name, value)
 
 
+def require_arm_supported(arm: str) -> None:
+    """서버는 모르는 환경변수를 조용히 버린다 — 갈래 설정 칸이 없는 코드로 B 갈래를 돌리면 회상 없이 돈다. 같은 코드의
+    이 프로세스에서 먼저 막는다."""
+    missing = [name for name in ARMS[arm] if not hasattr(settings, name)]
+    if missing:
+        raise SystemExit(f"갈래 {arm} 의 설정 {missing} 가 이 코드에 없다(회상을 구현한 코드에서만 돈다)")
+
+
 def arm_env(arm: str) -> dict[str, str]:
     """서버 프로세스용 같은 갈래 설정(환경변수)."""
     return {
