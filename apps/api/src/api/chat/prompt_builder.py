@@ -90,6 +90,9 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
     ("generation", "memory_note"): frozenset({"memory_note"}),
     ("generation", "memory_summary"): frozenset({"memory_summary"}),
     ("generation", "history"): frozenset({"history_lines"}),
+    # 회상한 장면 기억 줄. conditional 이라 회상이 없는 턴은 섹션째 빠진다. 대화 기록 바로 뒤라 Claude 프롬프트 캐시의 마지막
+    # 블록에 들어가, 턴마다 바뀌어도 앞 두 블록의 캐시를 깨지 않는다.
+    ("generation", "memory_recall"): frozenset({"memory_recall_lines"}),
     ("generation", "keyword_notes"): frozenset({"keyword_note_lines"}),
     # 조건이 참인 상황 노트 본문. conditional 이라 참인 노트가 없으면 섹션째 빠진다.
     ("generation", "situation_notes"): frozenset({"situation_note_lines"}),
@@ -120,6 +123,11 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
     ("memory_summary", "previous_summary"): frozenset({"previous_summary"}),
     ("memory_summary", "turn_context"): frozenset({"turn_lines"}),
     ("memory_summary", "user_name"): frozenset({"user_name"}),
+    # 장면 기억 추출 호출 전용 channel — `build_memory_episode_prompt`가 만드는 `values`.
+    ("memory_episode", "instruction"): frozenset(),
+    ("memory_episode", "user_name"): frozenset({"user_name"}),
+    ("memory_episode", "previous_titles"): frozenset({"previous_titles"}),
+    ("memory_episode", "turn_context"): frozenset({"turn_lines"}),
     ("image_judgment", "image_list_intro"): frozenset({"image_lines"}),
     ("image_judgment", "turn_context"): frozenset({"turn_lines"}),
     ("image_judgment", "judgment_instruction"): frozenset(),
@@ -465,6 +473,7 @@ def build_generation_prompt(
     memory_note: str,
     memory_summary: str,
     names: PromptNames,
+    memory_recall_lines: str = "",
 ) -> str:
     """생성 프롬프트를 조립한다 — 캐릭터 챗 전용.
 
@@ -479,6 +488,9 @@ def build_generation_prompt(
 
     `memory_note`(사용자가 적은 기억 노트)와 `memory_summary`(윈도우 밖으로 접힌 대화의 현재 요약)도
     같은 규칙이다 — 비어 있으면 섹션째 빠지고, 기본값이 없다.
+
+    `memory_recall_lines`(회상한 장면 기억 줄, 대화 기록 바로 뒤 섹션)도 비면 섹션째 빠진다. 이쪽만 기본값 `""` 이 있는
+    이유는 회상을 켜지 않은 호출부(리플레이 포함)가 인자를 넘기지 않아도 이 인자 이전과 바이트까지 같게 하려는 것이다.
 
     작가 글(캐릭터 프롬프트, 예시 대화의 양쪽 줄 — 사용자 라벨 줄도 작가가 쓴 글이다)과 대화 기록의 모델 응답 줄은
     `names` 로 `{{user}}`·`{{char}}` 를 바꾼다. 이 빌더는 이미지 태그를 지우지 않는다(캐릭터 작품에는 미디어 북이 없다).
@@ -500,6 +512,7 @@ def build_generation_prompt(
         "user_name": names.generation_user_name,
         "memory_note": memory_note,
         "memory_summary": memory_summary,
+        "memory_recall_lines": memory_recall_lines,
         "user_label": prompt_set.user_label,
         "user_message": user_message,
         "assistant_label": prompt_set.character_assistant_label,
@@ -533,10 +546,11 @@ def build_story_generation_prompt(
     keyword_note_texts: list[str] | None = None,
     situation_note_texts: list[str] | None = None,
     shortcut_prompt: str | None = None,
+    memory_recall_lines: str = "",
 ) -> str:
     """생성 프롬프트를 조립한다 — 스토리 챗 전용.
 
-    `user_persona`·`memory_note`·`memory_summary`는 `build_generation_prompt`와 같다(필수 인자).
+    `user_persona`·`memory_note`·`memory_summary`·`memory_recall_lines`는 `build_generation_prompt`와 같다(앞 셋은 필수 인자).
 
     "스토리 설정 템플릿+시작설정 프롤로그" 뒤에 최근 히스토리, 매칭된 키워드북 정보
     (사용자에게는 비노출, `match_keyword_notes`로 이미 걸러진 결과만 받음), (단축어
@@ -584,6 +598,7 @@ def build_story_generation_prompt(
         "user_name": names.generation_user_name,
         "memory_note": memory_note,
         "memory_summary": memory_summary,
+        "memory_recall_lines": memory_recall_lines,
         "keyword_note_lines": "\n".join(names.expand(text) for text in keyword_note_texts) if keyword_note_texts else "",
         "situation_note_lines": (
             "\n".join(names.expand(text) for text in situation_note_texts) if situation_note_texts else ""
@@ -898,4 +913,37 @@ def build_memory_summary_prompt(
     values = {"previous_summary": previous_summary, "turn_lines": turn_lines, "user_name": names.judgment_user_name}
     return render_prompt_channel(
         sections, channel="memory_summary", scope="story" if is_story_chat else "character", values=values
+    )
+
+
+def build_memory_episode_prompt(
+    *,
+    prompt_set: PromptSet,
+    sections: Sequence[PromptSection],
+    is_story_chat: bool,
+    previous_titles: Sequence[str],
+    turns: list[ChatMessage],
+    names: PromptNames,
+) -> str:
+    """장면 기억 추출 호출 프롬프트를 조립한다 — 요약 접기 한 번이 접은 대화 구간을 장면 카드로 나누게 한다.
+
+    지시문 전체가 `memory_episode` channel(DB)에 있고, 코드는 이름 한 줄·앞 구간 장면 제목·줄 번호를 붙인 접힌 대화만
+    만든다. 줄은 `[번호] 라벨: 글` 이고 번호는 1부터다 — 모델이 장면의 시작·끝을 이 번호로 돌려준다. 라벨은 요약과 같다
+    (스토리 챗은 `story_assistant_label`, 캐릭터 챗은 `character_assistant_label`). 요약과 달리 미디어 북 태그를 지운다 —
+    태그 속 칸 이름·id 조각이 장면의 명사로 새면 아무 질문에나 그 장면이 걸린다. `previous_titles` 가 비면(첫 구간) 그
+    섹션이, 이야기 속 사용자 이름이 없으면 이름 한 줄이 통째로 빠진다. 노트·스탯·계정 정보는 인자로 받지 않는다(요약과
+    같은 이유)."""
+    assistant_label = prompt_set.story_assistant_label if is_story_chat else prompt_set.character_assistant_label
+    turn_lines = "\n".join(
+        f"[{number}] {prompt_set.user_label if message.role == ChatMessageRole.USER else assistant_label}: "
+        f"{_turn_text(message, names, strip_tags=True)}"
+        for number, message in enumerate(turns, start=1)
+    )
+    values = {
+        "user_name": names.judgment_user_name,
+        "previous_titles": "\n".join(previous_titles),
+        "turn_lines": turn_lines,
+    }
+    return render_prompt_channel(
+        sections, channel="memory_episode", scope="story" if is_story_chat else "character", values=values
     )

@@ -34,7 +34,7 @@ from api.chat.prompt_builder import PromptLane, load_active_prompt_set, system_i
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StoryPromptTemplate
 
-# 레인 분리 이후 (channel, scope, slot, variant) 전수는 레인별로 갈린다(story 62 / character 38 /
+# 레인 분리 이후 (channel, scope, slot, variant) 전수는 레인별로 갈린다(story 67 / character 43 /
 # publish_filter 4 — 마이그레이션 `a69cbd40dec8`의 `NEW_SECTION_IDS`·`_lanes_for` 배정
 # 26/13/16에 마이그레이션 `b72c33c70240`이 story·character generation에 `user_persona`를 한 행씩 더했고,
 # `c328445d4c2d`가 채팅방 기억 행을 더했다 — generation 2 · story ending_judgment 1 · 새 channel
@@ -46,7 +46,8 @@ from api.db.models.story import StoryPromptTemplate
 # (장 경계 제안 4·장 생성 6·문단 수정 6)을 두 레인에 16행씩 더해 story 58 / character 38 이다). 그 16행은 지금 채팅
 # 레인에 얼려 둔 옛 문안이고, 소설 프롬프트 레인 리비전이 `novel` 레인에 경계 제안 4·화 생성 9·문단 수정 6 의 19행을
 # 심었다(화 생성에 인물 메모·지난 화 요약·화 수 지시 슬롯이 늘었다). `d9768bc0cfee`가 story 레인에 스탯 규칙 판정
-# 채널 `stat_rule_judgment` 4행을 더해 story 62 다.
+# 채널 `stat_rule_judgment` 4행을 더해 story 62 다. `fc6f0e134782`가 두 레인에 회상 슬롯 `memory_recall` 1행과 장면 기억
+# 추출 채널 `memory_episode` 4행을 더해 story 67 / character 43 이다.
 # system/generation 채널의 `scope='both'` 행은 story·character 두 레인에 사본으로 들어간다.
 _NOVELIZE_SLOTS: dict[str, set[tuple[str, str, str]]] = {
     "novelize_boundary": {
@@ -98,6 +99,7 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
             ("both", "memory_note", ""),
             ("both", "memory_summary", ""),
             ("both", "history", ""),
+            ("both", "memory_recall", ""),
             ("story", "keyword_notes", ""),
             ("story", "situation_notes", ""),
             ("story", "shortcut_prompt", ""),
@@ -128,6 +130,12 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
             ("both", "previous_summary", ""),
             ("both", "turn_context", ""),
         },
+        "memory_episode": {
+            ("both", "instruction", ""),
+            ("both", "user_name", ""),
+            ("both", "previous_titles", ""),
+            ("both", "turn_context", ""),
+        },
         "image_judgment": {
             ("story", "image_list_intro", ""),
             ("story", "user_name", ""),
@@ -153,6 +161,7 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
             ("both", "memory_note", ""),
             ("both", "memory_summary", ""),
             ("both", "history", ""),
+            ("both", "memory_recall", ""),
             ("both", "final_frame", ""),
         },
         "image_judgment": {
@@ -165,6 +174,12 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
             ("both", "instruction", ""),
             ("both", "user_name", ""),
             ("both", "previous_summary", ""),
+            ("both", "turn_context", ""),
+        },
+        "memory_episode": {
+            ("both", "instruction", ""),
+            ("both", "user_name", ""),
+            ("both", "previous_titles", ""),
             ("both", "turn_context", ""),
         },
         **_NOVELIZE_SLOTS,

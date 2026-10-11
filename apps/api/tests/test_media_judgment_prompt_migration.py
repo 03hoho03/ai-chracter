@@ -48,6 +48,7 @@ _NOVELIZE_MIGRATION = _load("3bb2cc159b6d")
 # story 레인 Gemini 체인에 스탯 규칙 판정 채널을 더하는 리비전 — 초안 게시 검사가 head 코드 표를 쓰므로 story 초안은
 # 이것도 거친다.
 _STAT_RULE_MIGRATION = _load("d9768bc0cfee")
+_MEMORY_EPISODE_MIGRATION = _load("fc6f0e134782")
 
 _NEW_KEYS = {
     ("image_judgment", "story", "image_list_intro", ""),
@@ -125,12 +126,13 @@ async def test_active_story_set_is_this_revisions_set_with_media_judgment_rows(d
 
 async def test_character_lane_keeps_its_active_set(db_session: AsyncSession) -> None:
     """이 리비전은 character 레인에 새 세트를 만들지 않는다 — 활성은 이전 세트이거나, 뒤 리비전(사용자 이름 한 줄·
-    소설화 채널)이 두 레인에 만든 세트다."""
+    소설화 채널·장면 기억 문안)이 두 레인에 만든 세트다."""
     active, _ = await load_active_prompt_set(db_session, lane="character")
     assert active.id in (
         _PREVIOUS_SET_IDS["character"],
         _USER_NAME_MIGRATION.NEW_SET_IDS["character"],
         _NOVELIZE_MIGRATION.NEW_SET_IDS["character"],
+        _MEMORY_EPISODE_MIGRATION.NEW_SET_IDS[("character", "gemini")],
     )
 
 
@@ -222,6 +224,7 @@ async def test_patch_draft_adds_rows_in_place_and_draft_then_publishes(db_sessio
     assert await connection.run_sync(_USER_NAME_MIGRATION._patch_draft, "story") is True
     assert await connection.run_sync(_NOVELIZE_MIGRATION._patch_draft, "story") is True
     assert await connection.run_sync(_STAT_RULE_MIGRATION._patch_draft) is True
+    assert await connection.run_sync(_MEMORY_EPISODE_MIGRATION._patch_drafts) == [("story", "gemini")]
     sections = await _sections_of(db_session, draft_id)
     draft = await db_session.get(PromptSet, draft_id)
     assert draft is not None

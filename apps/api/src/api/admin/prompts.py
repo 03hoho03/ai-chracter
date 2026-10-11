@@ -34,6 +34,7 @@ from api.chat.prompt_builder import (
     PromptNames,
     as_prompt_lane,
     build_generation_prompt,
+    build_memory_episode_prompt,
     build_memory_summary_prompt,
     build_stat_rule_judgment_prompt,
     build_story_generation_prompt,
@@ -128,7 +129,9 @@ _NOVEL_LANE_ROWS: dict[str, frozenset[tuple[str, str, str]]] = {
 # 36/19/4행, 2417f5829bb1이 story generation 에 상황 노트 행 1개를 더한 37/19/4행, 여기에 사용자 이름 한 줄
 # 리비전이 슬롯 `user_name`을 story 5행(generation·stat·ending·image 판정·요약)·character 3행(generation·image 판정·
 # 요약) 더한 42/22/4행, 여기에 소설화 채널 리비전이 소설화 세 채널(장 경계 제안 4·장 생성 6·문단 수정 6)을 story·
-# character 에 16행씩 더한 58/38/4행과 정확히 같다. 소설 프롬프트 레인 리비전이 만든 `novel` 레인은 경계 제안 4·화 생성
+# character 에 16행씩 더한 58/38/4행, 스탯 규칙 판정 채널 리비전 `d9768bc0cfee`가 story 에 4행을 더한 62/38/4행, 여기에
+# 장면 기억 문안 리비전 `fc6f0e134782`가 두 레인에 회상 슬롯 `memory_recall` 1행과 추출 채널 `memory_episode` 4행을 더한
+# 67/43/4행과 정확히 같다. 소설 프롬프트 레인 리비전이 만든 `novel` 레인은 경계 제안 4·화 생성
 # 9·문단 수정 6 의 19행이다(story·character 의 소설화 16행은 그대로 얼려 둔다).
 # `tests/test_prompt_seed.py`의 `_EXPECTED_SLOTS_BY_LANE`이 "시드가 이 표와 일치하는가"를 보는
 # 반면, 이 상수는 "임의의 초안이 이 표와 일치하는가"(게시 검증)를 본다 — 검증 대상이
@@ -174,6 +177,8 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
                 ("both", "memory_note", ""),
                 ("both", "memory_summary", ""),
                 ("both", "history", ""),
+                # 마이그레이션 `fc6f0e134782`가 DB에 넣는 행과 같이 간다(위 user_persona와 같은 이유).
+                ("both", "memory_recall", ""),
                 ("story", "keyword_notes", ""),
                 # 마이그레이션 `2417f5829bb1`이 DB에 넣는 행과 같이 간다(위 user_persona와 같은 이유).
                 ("story", "situation_notes", ""),
@@ -217,6 +222,15 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
                 ("both", "turn_context", ""),
             }
         ),
+        # 마이그레이션 `fc6f0e134782`가 DB에 넣는 행과 같이 간다(위 user_persona와 같은 이유).
+        "memory_episode": frozenset(
+            {
+                ("both", "instruction", ""),
+                ("both", "user_name", ""),
+                ("both", "previous_titles", ""),
+                ("both", "turn_context", ""),
+            }
+        ),
         # 마이그레이션 `2519dde454e0`이 DB에 넣는 행과 같이 간다(위 user_persona와 같은 이유).
         "image_judgment": frozenset(
             {
@@ -249,6 +263,7 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
                 ("both", "memory_note", ""),
                 ("both", "memory_summary", ""),
                 ("both", "history", ""),
+                ("both", "memory_recall", ""),
                 ("both", "final_frame", ""),
             }
         ),
@@ -265,6 +280,14 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
                 ("both", "instruction", ""),
                 ("both", "user_name", ""),
                 ("both", "previous_summary", ""),
+                ("both", "turn_context", ""),
+            }
+        ),
+        "memory_episode": frozenset(  # 위 story와 같다
+            {
+                ("both", "instruction", ""),
+                ("both", "user_name", ""),
+                ("both", "previous_titles", ""),
                 ("both", "turn_context", ""),
             }
         ),
@@ -298,11 +321,11 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str]]]]
     for lane, by_channel in _EXPECTED_ROWS_BY_LANE.items()
 }
 
-# 채팅 레인의 판정(스탯 규칙·엔딩·그림)·기억 요약 호출이 읽는 채널. 옛 `stat_judgment` 은 읽는 코드가 없어 Gemini 체인에만
-# 남아 있다. 판정·요약 문안 체인이 있는 레인은 story·character 뿐이다.
+# 채팅 레인의 판정(스탯 규칙·엔딩·그림)·기억 요약·장면 기억 추출 호출이 읽는 채널. 옛 `stat_judgment` 은 읽는 코드가 없어
+# Gemini 체인에만 남아 있다. 판정·요약 문안 체인이 있는 레인은 story·character 뿐이다.
 _JUDGMENT_CHANNELS_BY_LANE: dict[PromptLane, frozenset[str]] = {
-    "story": frozenset({"stat_rule_judgment", "ending_judgment", "image_judgment", "memory_summary"}),
-    "character": frozenset({"image_judgment", "memory_summary"}),
+    "story": frozenset({"stat_rule_judgment", "ending_judgment", "image_judgment", "memory_summary", "memory_episode"}),
+    "character": frozenset({"image_judgment", "memory_summary", "memory_episode"}),
     "publish_filter": frozenset(),
     "novel": frozenset(),
     "novel_screen": frozenset(),
@@ -1122,6 +1145,10 @@ _SAMPLE_CHARACTER_NAMES = _SamplePromptNames(persona_name=None, char_name="[샘�
 # 기억 슬롯도 비우면 conditional 드롭으로 안 보인다(위 프로필과 같은 이유).
 _SAMPLE_MEMORY_NOTE = "[샘플] 주인공의 여동생 이름은 서연이다."
 _SAMPLE_MEMORY_SUMMARY = "[샘플] 두 사람은 비 오는 밤 편의점에서 처음 만났고, 다음 주에 다시 보기로 약속했다."
+# 회상 섹션과 추출 호출의 앞 구간 장면 제목도 비우면 conditional 드롭으로 안 보인다(위 프로필과 같은 이유). 회상 줄은 실채팅의
+# 줄 모양(`- 제목: 내용`, 인물이 한 말이면 꼬리표)을 흉내 낸다.
+_SAMPLE_MEMORY_RECALL_LINES = "- [샘플] 빵집 약속: [샘플] 토요일 열한 시에 소금빵을 사 오기로 했다. (인물의 말)"
+_SAMPLE_PREVIOUS_EPISODE_TITLES = ["[샘플] 비 오는 밤 편의점"]
 _SAMPLE_STAT_DEFS = [
     StatDef(
         entity_id=uuid.uuid4(),
@@ -1180,6 +1207,25 @@ def _memory_summary_preview_item(
             sections=sections,
             is_story_chat=is_story_chat,
             previous_summary=_SAMPLE_MEMORY_SUMMARY,
+            turns=_SAMPLE_HISTORY,
+            names=names,
+        ),
+    )
+
+
+def _memory_episode_preview_item(
+    prompt_set: PromptSet, sections: list[PromptSection], *, is_story_chat: bool, names: PromptNames
+) -> AdminPromptPreviewItem:
+    """장면 기억 추출 호출 프롬프트. 앞 구간이 있는 경우(두 번째 접기부터)를 보여 준다 — 비우면 그 섹션이 드롭돼 운영자가
+    문안을 못 본다."""
+    return AdminPromptPreviewItem(
+        channel="memory_episode",
+        label="memory_episode",
+        text=build_memory_episode_prompt(
+            prompt_set=prompt_set,
+            sections=sections,
+            is_story_chat=is_story_chat,
+            previous_titles=_SAMPLE_PREVIOUS_EPISODE_TITLES,
             turns=_SAMPLE_HISTORY,
             names=names,
         ),
@@ -1346,6 +1392,7 @@ def _story_preview_items(
                         situation_note_texts=["[샘플] 상황 노트"],
                         shortcut_prompt=None,
                         names=_SAMPLE_STORY_NAMES,
+                        memory_recall_lines=_SAMPLE_MEMORY_RECALL_LINES,
                     ),
                 )
             )
@@ -1402,6 +1449,10 @@ def _story_preview_items(
         items.append(
             _memory_summary_preview_item(prompt_set, sections, is_story_chat=True, names=_SAMPLE_STORY_NAMES)
         )
+    if "memory_episode" in channels:
+        items.append(
+            _memory_episode_preview_item(prompt_set, sections, is_story_chat=True, names=_SAMPLE_STORY_NAMES)
+        )
     # 얼린 소설 행은 미리보지 않는다 — 소설 문안은 `novel` 레인 미리보기에서 본다.
 
     return items
@@ -1437,6 +1488,7 @@ def _character_preview_items(
                     memory_note=_SAMPLE_MEMORY_NOTE,
                     memory_summary=_SAMPLE_MEMORY_SUMMARY,
                     names=_SAMPLE_CHARACTER_NAMES,
+                    memory_recall_lines=_SAMPLE_MEMORY_RECALL_LINES,
                 ),
             )
         )
@@ -1461,6 +1513,10 @@ def _character_preview_items(
     if "memory_summary" in channels:
         items.append(
             _memory_summary_preview_item(prompt_set, sections, is_story_chat=False, names=_SAMPLE_CHARACTER_NAMES)
+        )
+    if "memory_episode" in channels:
+        items.append(
+            _memory_episode_preview_item(prompt_set, sections, is_story_chat=False, names=_SAMPLE_CHARACTER_NAMES)
         )
 
     return items
