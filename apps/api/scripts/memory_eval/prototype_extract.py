@@ -29,7 +29,7 @@ EXTRACT_MODEL = "claude-haiku-5-5"
 # 창 하나 견적: 입력 약 4K 토큰 × 토크나이저 1.3, 출력 약 1.5K.
 EXTRACT_CALL_ESTIMATE_USD = 0.002
 # 서버 절단 상한 — 저장 전에 서버가 자르는 길이와 장면 수(운영 스키마의 같은 상수와 맞춘다).
-MAX_EPISODES = 6
+MAX_EPISODES = 10
 TITLE_MAX = 60
 DETAIL_MAX = 300
 _SENTENCE_ENDS = (".", "다", "요")
@@ -176,7 +176,7 @@ def truncate_detail(detail: str, limit: int = DETAIL_MAX) -> str:
 
 def episode_rows(window: Window, result: PrototypeResult, *, version: str) -> list[dict[str, Any]]:
     """오프라인 회상 입력 꼴(`recall_offline.load_episodes_json`). 서버가 저장 전에 하는 것처럼 빈 본문을 버린 뒤 앞에서부터
-    6개, 제목·본문을 상한에서 자른다(빈 장면이 자리를 먹어 뒤쪽 장면이 잘리지 않게 빈 것을 먼저 버린다). 명사 정규화는 시제품
+    10개, 제목·본문을 상한에서 자른다(빈 장면이 자리를 먹어 뒤쪽 장면이 잘리지 않게 빈 것을 먼저 버린다). 명사 정규화는 시제품
     검색 쪽에서 한다."""
     kept = [e for e in result.episodes if e.detail.strip()][:MAX_EPISODES]
     rows = []

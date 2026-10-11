@@ -31,6 +31,12 @@ STOPWORDS = frozenset(
     "예전 기억 처음 얘기 이야기 생각 기분 느낌 옛날 지난번 저번 그때".split()
 )
 TIME_CUE = re.compile(r"예전에|처음|지난번|저번|그때|옛날|전에\s|기억(나|해|하)")
+# 회상 질문 표지 — 이 표지가 있는 턴만 최대 3개를 싣고, 없는 보통 턴은 임계를 넘는 최고점 1개만 싣는다. 시간 단서에 "기억 안·
+# 뭐였·뭐더라·~였지?·~었지?·~였더라·전에 말한·~라고 했지·말한 적" 같은 되묻는 끝말을 더했다(개발 문항 질문으로 정함).
+RECALL_CUE = re.compile(
+    TIME_CUE.pattern
+    + r"|기억\s?안|뭐였|뭐더라|(였|었)(지|더라)\s*[?？]|었더라|였더라|전에\s?말한|(라고|다고)\s?했(었)?지|(말|얘기|이야기)한\s?적"
+)
 PARTICLES = "이|가|을|를|은|는|도|만|에|에서|랑|이랑|하고|과|와|의"
 KIWI_NOUN_TAGS = frozenset({"NNG", "NNP", "SL"})
 MAX_EPISODE_NOUNS = 30
@@ -62,6 +68,7 @@ class Params:
     use_kw: bool = False
     min_episodes: int = 5
     max_inject: int = 3
+    max_inject_plain: int = 1  # 회상 단서가 없는 보통 턴
     w_noun: float = 0.7
     w_kw: float = 0.3
     w_importance: float = 0.05
@@ -81,6 +88,10 @@ class Scored:
 
 def time_cue(text: str) -> bool:
     return TIME_CUE.search(text) is not None
+
+
+def recall_cue(text: str) -> bool:
+    return RECALL_CUE.search(text) is not None
 
 
 def clean_noun(noun: str) -> str:
@@ -220,8 +231,9 @@ def score_episodes(rows: Sequence[EpisodeNouns], query: Query, *, current_turn: 
     return scored
 
 
-def select_injected(scored: Sequence[Scored], params: Params) -> list[str]:
-    return [x.id for x in scored if x.s >= params.tau][: params.max_inject]
+def select_injected(scored: Sequence[Scored], params: Params, *, recall_cue: bool) -> list[str]:
+    cap = params.max_inject if recall_cue else params.max_inject_plain
+    return [x.id for x in scored if x.s >= params.tau][:cap]
 
 
 # ---------------------------------------------------------------- 오프라인 회상 어댑터
@@ -271,7 +283,7 @@ class Retriever:
         else:
             query = query_nouns_kiwi(user_text, previous_assistant, names=self.names)
         scored = score_episodes(rows, query, current_turn=current_turn, params=self.params)
-        injected = set(select_injected(scored, self.params))
+        injected = set(select_injected(scored, self.params, recall_cue=recall_cue(user_text)))
         if self.log is not None:
             self.log.append({"user": sorted(query.user), "assistantN": len(query.assistant), "timeCue": query.time_cue})
         # 순위 목록에는 무엇이든 겹친 에피소드만 싣는다(겹침 없이 중요도·최근성만 받은 장면은 후보가 아니다).
