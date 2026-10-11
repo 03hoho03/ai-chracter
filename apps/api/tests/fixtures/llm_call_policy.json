@@ -247,6 +247,84 @@
       "bedrock_usage call_site=chat_media_book_image model=bedrock_sonnet_model_id"
     ]
   },
+  "chat_memory_episode": {
+    "bedrock": {
+      "cacheBlocks": null,
+      "failures": {
+        "empty": null,
+        "ok": null,
+        "truncated": null
+      },
+      "maxTokens": "bedrock_chat_max_tokens",
+      "model": "bedrock_sonnet_model_id",
+      "timeout": "bedrock_chat_timeout_ms"
+    },
+    "declaredDefaults": {
+      "bedrock": {
+        "maxTokens": 4096,
+        "timeoutMs": 45000
+      },
+      "generate": {
+        "maxOutputTokens": 8192,
+        "thinking": null,
+        "timeoutMs": 60000
+      },
+      "structured": {
+        "maxOutputTokens": null,
+        "thinking": null,
+        "timeoutMs": 60000
+      }
+    },
+    "gemini": {
+      "generate": {
+        "failures": {
+          "empty": null,
+          "ok": null,
+          "truncated": null
+        },
+        "maxOutputTokens": "gemini_max_output_tokens",
+        "model": "gemini_model_name",
+        "seed": true,
+        "thinking": {
+          "budget": "gemini_thinking_budget",
+          "level": null
+        },
+        "timeout": "gemini_memory_summary_timeout_ms"
+      },
+      "structured": {
+        "failures": {
+          "empty": "LLMClientError",
+          "ok": null,
+          "truncated": "LLMClientError"
+        },
+        "maxOutputTokens": null,
+        "model": "gemini_model_name",
+        "seed": false,
+        "thinking": null,
+        "timeout": "gemini_memory_summary_timeout_ms"
+      }
+    },
+    "inJudgmentRatio": false,
+    "metricKeys": [
+      "chat_memory_episode|bedrock_sonnet_model_id|calls",
+      "chat_memory_episode|bedrock_sonnet_model_id|candidates",
+      "chat_memory_episode|bedrock_sonnet_model_id|prompt",
+      "chat_memory_episode|bedrock_sonnet_model_id|total",
+      "chat_memory_episode|gemini_model_name|calls",
+      "chat_memory_episode|gemini_model_name|candidates",
+      "chat_memory_episode|gemini_model_name|prompt",
+      "chat_memory_episode|gemini_model_name|total"
+    ],
+    "routingWhenSonnet": {
+      "generate": "gemini",
+      "structured": "gemini",
+      "warned": true
+    },
+    "usageLogLines": [
+      "gemini_usage call_site=chat_memory_episode model=gemini_model_name",
+      "bedrock_usage call_site=chat_memory_episode model=bedrock_sonnet_model_id"
+    ]
+  },
   "chat_memory_summary": {
     "bedrock": {
       "cacheBlocks": null,

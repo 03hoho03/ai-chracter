@@ -12,6 +12,7 @@ from sqlalchemy.orm import aliased
 from starlette.concurrency import run_in_threadpool
 
 from api.chat.chat_count import record_chat_participant
+from api.chat.memory_episodes import extract_pending_episode
 from api.chat.memory_fold import SUMMARY_MAX_LENGTH, fold_memory
 from api.chat.memory_rewind import rewind_memory
 from api.chat.memory_window import select_current_snapshot
@@ -928,25 +929,44 @@ def _fold_after_commit(
     llm_client: LLMClient,
     room: ChatRoom,
     setup: StartingSetup | None,
-    prompt_set: PromptSet,
-    prompt_sections: list[PromptSection],
+    judgment_sets: JudgmentPromptSets,
     names: PromptNames,
 ) -> Callable[[TurnResult], None]:
     """턴을 커밋한 뒤 긴 방의 요약 접기(`fold_memory`)를 background로 예약하는 콜백. 접을 때인지는 접기 쪽이 새 세션으로
     다시 읽어 판정한다(턴마다 예약하고 대부분은 읽기만 하고 끝난다). 세트는 요약 모델의 세트다(라우트가 넘긴다).
-    생성 윈도우 설정이 꺼져 있으면 요약을 싣지 않으므로 접기도 예약하지 않는다 — 설정은 예약하는 그때 읽는다."""
+    생성 윈도우 설정이 꺼져 있으면 요약을 싣지 않으므로 접기도 예약하지 않는다 — 설정은 예약하는 그때 읽는다.
+
+    장면 기억 추출 스위치가 켜져 있으면 접기 **뒤에** 추출(`extract_pending_episode`, 추출 모델의 세트)을 예약한다.
+    background 는 넣은 순서대로 차례로 돌아 접기가 이 턴에 커밋한 스냅샷을 추출이 바로 본다. 추출할 스냅샷이 없으면 읽기만
+    하고 끝난다. 스위치가 꺼져 있으면 예약이 접기 하나뿐이라 턴의 호출·트랜잭션이 이 스위치가 생기기 전과 같다."""
 
     def schedule(_turn: TurnResult) -> None:
-        if settings.memory_window_generation:
+        if not settings.memory_window_generation:
+            return
+        is_story_chat = setup is not None
+        summary_set, summary_sections = judgment_sets.summary
+        background_tasks.add_task(
+            fold_memory,
+            session_factory,
+            llm_client,
+            room_id=room.id,
+            user_id=room.user_id,
+            prompt_set=summary_set,
+            sections=summary_sections,
+            is_story_chat=is_story_chat,
+            names=names,
+        )
+        if settings.memory_episodes_extract:
+            episode_set, episode_sections = judgment_sets.episode
             background_tasks.add_task(
-                fold_memory,
+                extract_pending_episode,
                 session_factory,
                 llm_client,
                 room_id=room.id,
                 user_id=room.user_id,
-                prompt_set=prompt_set,
-                sections=prompt_sections,
-                is_story_chat=setup is not None,
+                prompt_set=episode_set,
+                sections=episode_sections,
+                is_story_chat=is_story_chat,
                 names=names,
             )
 
@@ -1059,8 +1079,7 @@ async def send_message(
                     llm_client,
                     room,
                     setup,
-                    judgment_sets.summary[0],
-                    judgment_sets.summary[1],
+                    judgment_sets,
                     generation.names,
                 ),
                 log=logger,
@@ -1205,8 +1224,7 @@ async def regenerate_message(
                     llm_client,
                     room,
                     setup,
-                    judgment_sets.summary[0],
-                    judgment_sets.summary[1],
+                    judgment_sets,
                     generation.names,
                 ),
                 log=logger,
@@ -1338,8 +1356,7 @@ async def edit_message(
                     llm_client,
                     room,
                     setup,
-                    judgment_sets.summary[0],
-                    judgment_sets.summary[1],
+                    judgment_sets,
                     generation.names,
                 ),
                 log=logger,

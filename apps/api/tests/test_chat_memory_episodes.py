@@ -518,7 +518,7 @@ async def test_extraction_prompt_carries_previous_scene_titles(
     await _extract(db_session, room, fake)
 
     prompt = fake.episode_prompts[0]
-    assert "[T1]\n[T2]" in prompt
+    assert "[앞 구간의 마지막 장면]\n[T1]\n[T2]" in prompt
     assert "[T0]" not in prompt
 
 
@@ -531,7 +531,7 @@ async def test_first_window_sends_no_previous_scene_section(
 
     await _extract(db_session, room, fake)
 
-    assert "[앞 구간의 마지막 장면]" not in fake.episode_prompts[0]
+    assert "[앞 구간의 마지막 장면]" not in fake.episode_prompts[0].splitlines()
     assert "[U01]" in fake.episode_prompts[0]
 
 

@@ -117,13 +117,15 @@ PromptSetData = tuple[PromptSet, list[PromptSection]]
 
 @dataclass(frozen=True)
 class JudgmentPromptSets:
-    """한 턴의 판정·요약이 렌더할 세트 — 판정 종류마다, 그리고 기억 요약에 하나씩. 각각 그 종류의 판정·요약 모델 설정의
-    (레인, 모델) 활성 세트다. 모델이 같은 칸은 같은 객체다."""
+    """한 턴의 판정·요약이 렌더할 세트 — 판정 종류마다, 그리고 기억 요약과 장면 기억 추출에 하나씩. 각각 그 종류의 판정·요약
+    모델 설정의 (레인, 모델) 활성 세트다. 모델이 같은 칸은 같은 객체다. 미리보기도 같은 함수로 모든 칸을 채우지만 미리보기에는
+    요약·추출이 없어 그 두 칸은 쓰지 않는다."""
 
     stat: PromptSetData
     ending: PromptSetData
     image: PromptSetData
     summary: PromptSetData
+    episode: PromptSetData
 
 
 # 칸마다 모델을 읽는 호출 위치. 채팅·미리보기 판정은 같은 종류면 같은 모델 설정을 쓰므로 채팅 쪽 하나로 읽는다.
@@ -132,6 +134,7 @@ _JUDGMENT_SET_CALL_SITES: dict[str, LLMCallSite] = {
     "ending": "chat_ending_judgment",
     "image": "chat_situational_image",
     "summary": "chat_memory_summary",
+    "episode": "chat_memory_episode",
 }
 
 
@@ -157,7 +160,11 @@ async def judgment_prompt_sets(
             by_model[model] = cached
         chosen[kind] = by_model[model]
     return JudgmentPromptSets(
-        stat=chosen["stat"], ending=chosen["ending"], image=chosen["image"], summary=chosen["summary"]
+        stat=chosen["stat"],
+        ending=chosen["ending"],
+        image=chosen["image"],
+        summary=chosen["summary"],
+        episode=chosen["episode"],
     )
 
 
