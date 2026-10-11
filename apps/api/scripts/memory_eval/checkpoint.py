@@ -198,17 +198,27 @@ def write_fingerprint(path: Path, fingerprint: Mapping[str, Any]) -> None:
 
 
 async def clear_room_redis_keys(room_id: uuid.UUID) -> list[str]:
-    """그 방의 턴 락·접기 백오프와 활성 프롬프트 세트 캐시만 지운다. `FLUSHDB`·`FLUSHALL` 은 쓰지 않는다."""
-    from api.chat.prompt_set_cache import ACTIVE_PROMPT_SET_KEY_PREFIX
-    from api.core.redis import redis_client
+    """그 방의 턴 락·접기 백오프와 활성 프롬프트 세트 캐시만 지운다. `FLUSHDB`·`FLUSHALL` 은 쓰지 않는다.
 
-    keys = [f"chat_room:turn_lock:{room_id}", f"memory_fold_backoff:{room_id}"]
-    keys += [key async for key in redis_client.scan_iter(match=f"{ACTIVE_PROMPT_SET_KEY_PREFIX}*")]
-    deleted = []
-    for key in keys:
-        if await redis_client.delete(key):
-            deleted.append(key)
-    return deleted
+    앱의 모듈 싱글턴 Redis 클라이언트를 쓰지 않고 호출마다 연결을 만들어 이 루프 안에서 닫는다 — 프로브는 시도마다
+    `asyncio.run` 으로 새 이벤트 루프를 열고, 싱글턴은 처음 쓴 루프에 묶여 두 번째 루프에서 "다른 루프에 붙은 Future" 로
+    죽는다."""
+    from redis.asyncio import Redis
+
+    from api.chat.prompt_set_cache import ACTIVE_PROMPT_SET_KEY_PREFIX
+    from api.core.config import settings
+
+    client = Redis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        keys = [f"chat_room:turn_lock:{room_id}", f"memory_fold_backoff:{room_id}"]
+        keys += [key async for key in client.scan_iter(match=f"{ACTIVE_PROMPT_SET_KEY_PREFIX}*")]
+        deleted = []
+        for key in keys:
+            if await client.delete(key):
+                deleted.append(key)
+        return deleted
+    finally:
+        await client.aclose()
 
 
 async def freeze(
