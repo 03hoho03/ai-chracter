@@ -473,7 +473,7 @@ def cmd_judge(args: argparse.Namespace) -> int:
         _print(
             {
                 "calls": len(items),
-                "estimateUsd": len(items) * judge_mod.JUDGE_CALL_ESTIMATE_USD,
+                "estimateUsd": judge_mod.judge_estimate_usd(len(items)),
                 "controls": args.controls,
             }
         )
@@ -490,7 +490,8 @@ def cmd_judge(args: argparse.Namespace) -> int:
             entry = plant_set.item(item["item"])
             replies = judge_mod.control_replies(item) if args.controls else item["replies"]
             prompt = judge_mod.judge_prompt(item["kind"], entry, replies)
-            out.append({**item, "judged": await judge_mod.judged_or_none(judge, item["kind"], prompt)})
+            judged, votes = await judge_mod.judged_majority(judge, item["kind"], prompt)
+            out.append({**item, "judged": judged, "votes": votes})
         return out
 
     results = asyncio.run(go())
