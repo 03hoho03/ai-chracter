@@ -22,8 +22,8 @@ LLM 을 부르지 않는다(DB 읽기 한두 번과 파이썬 점수).
 않는다.
 
 후보는 지금 요약 커서까지 접힌 스냅샷에서 뽑혔고 커서 이하에서 끝나는 장면뿐이다 — 커서 뒤는 원문 윈도우로 이미 실린다.
-읽기는 요청 세션의 SAVEPOINT 안이고, DB 오류면 경고·승격을 남기고 회상 없이 조립한다(생성 프롬프트 조립은 SSE 제너레이터
-본문 안이라 예외가 새면 무관한 요청까지 500 이 된다)."""
+읽기는 요청 세션의 SAVEPOINT 안이고, DB 오류든 그 밖의 예외든 경고·승격을 남기고 회상 없이 조립한다(생성 프롬프트 조립은
+SSE 제너레이터 본문 안이라 예외가 새면 무관한 요청까지 500 이 된다)."""
 
 import logging
 import math
@@ -314,8 +314,10 @@ async def recall_for_turn(
     names: PromptNames,
 ) -> Recall:
     """이번 턴의 회상. `history` 는 방의 전체 대화(턴 번호를 센다), `window` 는 이번 생성 프롬프트에 실리는 대화(스캔 글을
-    뽑는다), `cursor` 는 지금 요약 커서다. 장면 읽기가 실패하면 회상 없음 — 읽기를 SAVEPOINT 로 감싸 실패한 문장이 요청
-    세션의 트랜잭션을 망가뜨리지 않게 한다."""
+    뽑는다), `cursor` 는 지금 요약 커서다. 무엇이 실패하든 회상 없음이다 — 이 함수는 SSE 제너레이터 본문 안에서 불려 예외가
+    새면 무관한 요청까지 500 이 된다. 읽기를 SAVEPOINT 로 감싸 실패한 문장이 요청 세션의 트랜잭션을 망가뜨리지 않게 하고(DB
+    실패), 토큰화·점수에서 난 예외도 같은 자리에서 받는다(커밋 뒤 조회를 흡수하는 `turn_store.present` 와 같은 규칙). 경고에
+    스택을 싣는다. 취소(`CancelledError`)는 `Exception` 이 아니라 그대로 올라간다."""
     try:
         async with db.begin_nested():
             return await _recall(
@@ -327,9 +329,11 @@ async def recall_for_turn(
                 user_content=user_content,
                 names=names,
             )
-    except SQLAlchemyError as exc:
-        logger.warning("대화방 %s 장면 기억 회상을 읽지 못해 이번 턴은 회상 없이 조립한다: %s", room_id, exc)
-        capture_dependency_failure(exc, dependency="db")
+    except Exception as exc:
+        logger.warning(
+            "대화방 %s 장면 기억 회상을 읽지 못해 이번 턴은 회상 없이 조립한다: %s", room_id, exc, exc_info=True
+        )
+        capture_dependency_failure(exc, dependency="db" if isinstance(exc, SQLAlchemyError) else "memory_recall")
         return NO_RECALL
 
 

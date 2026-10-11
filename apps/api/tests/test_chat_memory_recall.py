@@ -785,6 +785,37 @@ async def test_recall_read_failure_is_absorbed_and_the_turn_finishes(
     assert [record.memory_recall for record in (await _records(db_session, room.room_id)).values()] == [[]]
 
 
+async def test_recall_scoring_failure_is_absorbed_and_the_turn_finishes(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """DB 가 아닌 곳(토큰화·점수)에서 난 예외도 SSE 로 새지 않는다 — 회상 없이 턴을 마치고, 스택이 실린 경고와 승격을 남긴다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY])
+    _recall_on(monkeypatch)
+
+    def broken(*_args: object, **_kwargs: object) -> list[memory_recall.ScoredEpisode]:
+        raise ValueError("점수 계산 실패")
+
+    monkeypatch.setattr(memory_recall, "score_episodes", broken)
+    captured: list[str] = []
+    monkeypatch.setattr(
+        memory_recall, "capture_dependency_failure", lambda exc, *, dependency: captured.append(dependency)
+    )
+    fake = _PromptCapture()
+    with caplog.at_level(logging.WARNING):
+        await _send(
+            db_client, room, "POST", f"/chat-rooms/{room.room_id}/messages", {"content": "밀알당 기억나?"}, fake
+        )
+
+    assert HEADER not in fake.prompts[-1]
+    assert captured == ["memory_recall"]
+    [warning] = [record for record in caplog.records if "회상" in record.getMessage()]
+    assert warning.exc_info is not None and warning.exc_info[0] is ValueError
+    assert [record.memory_recall for record in (await _records(db_session, room.room_id)).values()] == [[]]
+
+
 # --- 턴 기록 · 리플레이 -----------------------------------------------------------------------
 
 
@@ -917,6 +948,10 @@ async def test_replay_rebuilds_recall_lines_from_turn_record(
     await db_session.commit()
     with pytest.raises(ReplayRefusedError):
         await turn_recall_lines(db_session, record.assistant_message_id)
+
+    # 리플레이의 회상 스위치가 꺼져 있으면 회상 섹션을 싣지 않으므로 사라진 장면은 거부할 이유가 아니다.
+    monkeypatch.setattr(settings, "memory_episodes_recall", False)
+    assert await turn_recall_lines(db_session, record.assistant_message_id) == ""
 
 
 async def test_replay_of_a_turn_without_recall_gets_no_lines(

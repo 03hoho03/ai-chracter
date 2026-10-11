@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.chat.memory_recall import RecallRecordMissingError, recall_lines_from_record
 from api.chat.memory_window import CurrentSummary
 from api.chat.turn_prompt import InjectedPersona, InjectedTurnState
+from api.core.config import settings
 from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom, ChatRoomMemorySnapshot, ChatTurn
 from api.db.models.story import Shortcut, StatDef
 from replay.logs import DriverLogs, ReplayRefusedError, RoomStatic, memory_snapshot, sha256, stats_line, turn_line
@@ -193,7 +194,10 @@ async def restore_turn(
 async def turn_recall_lines(db: AsyncSession, assistant_message_id: uuid.UUID) -> str:
     """그 응답의 턴 기록이 실은 장면 기억 줄(회상 섹션 값). 지금 장면으로 다시 찾지 않는다 — 그 사이 늘어난 장면 때문에 그
     턴과 다른 글이 된다. 기록이 없거나(턴 기록을 쓰기 전의 턴) 비어 있으면 회상이 없던 턴이라 `""`. 기록한 장면이 그 뒤
-    되감기로 사라졌으면 그 턴의 회상 섹션을 다시 만들 수 없어 거부한다."""
+    되감기로 사라졌으면 그 턴의 회상 섹션을 다시 만들 수 없어 거부한다 — 단 이 리플레이의 회상 스위치가 켜져 있을 때만이다.
+    꺼져 있으면 조립이 회상 섹션을 싣지 않으므로 줄을 만들 필요가 없고 `""` 이다."""
+    if not settings.memory_episodes_recall:
+        return ""
     record = await db.scalar(
         select(ChatTurn.memory_recall).where(ChatTurn.assistant_message_id == assistant_message_id)
     )
