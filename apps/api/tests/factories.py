@@ -43,6 +43,8 @@ from api.db.models import (
     AssetKind,
     AssetStatus,
     CharacterVersionDetail,
+    ChatMemoryEpisode,
+    ChatMemoryExtraction,
     ChatMessage,
     ChatMessageRole,
     ChatRoom,
@@ -404,6 +406,47 @@ def _make_chat_turn(chat_room_id: uuid.UUID, **overrides: object) -> ChatTurn:
     }
     defaults.update(overrides)
     return ChatTurn(**defaults)
+
+
+def _make_memory_episode(chat_room_id: uuid.UUID, snapshot_id: uuid.UUID, **overrides: object) -> ChatMemoryEpisode:
+    """장면 기억 한 행. 기본값은 모든 CHECK 를 통과하는 평범한 장면이다 — 처음·끝 메시지 키가 같은 한 메시지짜리 구간.
+    메시지 id 칸은 FK 가 없어 실제 메시지 없이 새 id 를 쓴다."""
+    at = datetime.now(UTC)
+    message_id = uuid.uuid4()
+    defaults: dict[str, object] = {
+        "chat_room_id": chat_room_id,
+        "snapshot_id": snapshot_id,
+        "ordinal": 0,
+        "start_created_at": at,
+        "start_message_id": message_id,
+        "end_created_at": at,
+        "end_message_id": message_id,
+        "start_turn": 1,
+        "end_turn": 1,
+        "title": "파란 우산을 빌려준 날",
+        "detail": "비 오는 정류장에서 파란 우산을 빌려주었다.",
+        "nouns": ["우산", "정류장"],
+        "asserted_by": "user",
+        "importance": 3,
+    }
+    defaults.update(overrides)
+    return ChatMemoryEpisode(**defaults)
+
+
+def _make_memory_extraction(
+    chat_room_id: uuid.UUID, snapshot_id: uuid.UUID, **overrides: object
+) -> ChatMemoryExtraction:
+    """스냅샷 하나의 추출 기록. 기본값은 장면 하나를 뽑고 끝난 기록이다."""
+    defaults: dict[str, object] = {
+        "chat_room_id": chat_room_id,
+        "snapshot_id": snapshot_id,
+        "status": "done",
+        "attempts": 1,
+        "claimed_at": datetime.now(UTC),
+        "episode_count": 1,
+    }
+    defaults.update(overrides)
+    return ChatMemoryExtraction(**defaults)
 
 
 async def _get_genre(db_session: AsyncSession, name: str | None = None) -> Genre:

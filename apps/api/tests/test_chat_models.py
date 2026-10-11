@@ -1,5 +1,6 @@
 import uuid
-from datetime import datetime, timezone, UTC
+from collections.abc import Callable
+from datetime import datetime, timedelta, timezone, UTC
 
 import pytest
 import sqlalchemy as sa
@@ -11,9 +12,13 @@ from api.db.models import (
     CharacterImageExposure,
     ChatMessage,
     ChatMessageReport,
+    ChatMemoryEpisode,
+    ChatMemoryExtraction,
     ChatMessageRole,
     ChatRoom,
+    ChatRoomMemorySnapshot,
     ChatRoomStat,
+    ChatTurn,
     Content,
     ContentTarget,
     ContentType,
@@ -29,7 +34,13 @@ from api.db.models import (
     StoryMediaExposure,
     User,
 )
-from factories import _make_chat_turn, _make_novel_tree, _make_user
+from factories import (
+    _make_chat_turn,
+    _make_memory_episode,
+    _make_memory_extraction,
+    _make_novel_tree,
+    _make_user,
+)
 
 
 async def _make_published_version(db_session: AsyncSession, user: User) -> ContentVersion:
@@ -344,6 +355,238 @@ async def test_chat_turn_rejects_unknown_charge_source(db_session: AsyncSession)
     with pytest.raises(IntegrityError):
         async with db_session.begin_nested():
             db_session.add(_make_chat_turn(room.id, charge_source="token"))
+
+
+async def test_chat_turn_insert_without_recall_column_gets_empty_list(db_session: AsyncSession) -> None:
+    """회상 목록 칸을 모르는 옛 이미지의 턴 기록 INSERT(배포 겹침·이미지 롤백)가 DB 기본값으로 성공한다. 기본값을 떼면
+    그 INSERT 가 NOT NULL 위반으로 실패하고 응답 커밋까지 함께 깨진다 — `alembic check` 는 기본값을 비교하지 않는다."""
+    room = await _make_chat_room(db_session)
+    turn_id = uuid.uuid4()
+
+    await db_session.execute(
+        sa.text(
+            "INSERT INTO chat_turns (id, chat_room_id, assistant_message_id, kind, turn_number, chat_model, "
+            "charge_source, clover_amount) VALUES (:id, :room, :message, 'send', 1, 'gemini', 'free', 0)"
+        ),
+        {"id": turn_id, "room": room.id, "message": uuid.uuid4()},
+    )
+
+    assert await db_session.scalar(sa.select(ChatTurn.memory_recall).where(ChatTurn.id == turn_id)) == []
+
+
+# --- 장면 기억 · 추출 기록 -------------------------------------------------------------------------
+#
+# `alembic check` 는 CHECK 제약을 비교하지 않는다 — 아래 거부 테스트가 이 두 테이블 CHECK 의 유일한 검증이다. 거부 테스트는
+# 예외가 났다는 것만이 아니라 **어느 제약**이 거부했는지 본다(다른 제약이 우연히 같은 값을 막아도 초록이 되지 않게).
+
+
+async def _make_snapshot(db_session: AsyncSession, room: ChatRoom) -> ChatRoomMemorySnapshot:
+    snapshot = ChatRoomMemorySnapshot(
+        chat_room_id=room.id,
+        cursor_created_at=datetime.now(UTC),
+        cursor_message_id=uuid.uuid4(),
+        summary_text="요약",
+        source="auto",
+    )
+    db_session.add(snapshot)
+    await db_session.flush()
+    return snapshot
+
+
+def _violated_constraint(error: IntegrityError) -> str | None:
+    """asyncpg 가 알려 준, 행을 거부한 제약 이름."""
+    name = getattr(error.orig.__cause__, "constraint_name", None) if error.orig is not None else None
+    return name if isinstance(name, str) else None
+
+
+_AT = datetime(2026, 1, 1, tzinfo=UTC)
+_FIRST_ID = uuid.UUID(int=1)
+_SECOND_ID = uuid.UUID(int=2)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        pytest.param(
+            {
+                "title": "가" * 60,
+                "detail": "나" * 300,
+                "nouns": [f"명사{i}" for i in range(30)],
+                "keywords": [f"구절{i}" for i in range(8)],
+                "evidence": ["근거 하나", "근거 둘"],
+                "importance": 5,
+                "asserted_by": "mixed",
+            },
+            id="max",
+        ),
+        pytest.param(
+            {"title": "가", "detail": "나", "nouns": [], "importance": 1, "ordinal": 0, "asserted_by": "narration"},
+            id="min",
+        ),
+        pytest.param({"asserted_by": "character"}, id="character"),
+        pytest.param({"asserted_by": "user"}, id="user"),
+        pytest.param(
+            {
+                "start_created_at": _AT,
+                "start_message_id": _FIRST_ID,
+                "end_created_at": _AT,
+                "end_message_id": _SECOND_ID,
+                "start_turn": 4,
+                "end_turn": 5,
+            },
+            id="range-ties-on-time",
+        ),
+    ],
+)
+async def test_memory_episode_accepts_values_on_the_boundary(
+    db_session: AsyncSession, overrides: dict[str, object]
+) -> None:
+    room = await _make_chat_room(db_session)
+    snapshot = await _make_snapshot(db_session, room)
+
+    db_session.add(_make_memory_episode(room.id, snapshot.id, **overrides))
+    await db_session.flush()
+
+    count = await db_session.scalar(
+        sa.select(sa.func.count()).select_from(ChatMemoryEpisode).where(ChatMemoryEpisode.snapshot_id == snapshot.id)
+    )
+    assert count == 1
+
+
+@pytest.mark.parametrize(
+    ("overrides", "constraint"),
+    [
+        pytest.param({"asserted_by": "narrator"}, "ck_chat_memory_episodes_asserted_by", id="asserted-by"),
+        pytest.param({"importance": 0}, "ck_chat_memory_episodes_importance", id="importance-0"),
+        pytest.param({"importance": 6}, "ck_chat_memory_episodes_importance", id="importance-6"),
+        pytest.param({"ordinal": -1}, "ck_chat_memory_episodes_ordinal", id="ordinal"),
+        pytest.param({"start_turn": 3, "end_turn": 2}, "ck_chat_memory_episodes_turn_order", id="turn-order"),
+        pytest.param(
+            {
+                "start_created_at": _AT + timedelta(seconds=1),
+                "start_message_id": _FIRST_ID,
+                "end_created_at": _AT,
+                "end_message_id": _SECOND_ID,
+            },
+            "ck_chat_memory_episodes_range_order",
+            id="range-order-time",
+        ),
+        pytest.param(
+            {
+                "start_created_at": _AT,
+                "start_message_id": _SECOND_ID,
+                "end_created_at": _AT,
+                "end_message_id": _FIRST_ID,
+            },
+            "ck_chat_memory_episodes_range_order",
+            id="range-order-id",
+        ),
+        pytest.param({"title": ""}, "ck_chat_memory_episodes_title_length", id="title-0"),
+        pytest.param({"title": "가" * 61}, "ck_chat_memory_episodes_title_length", id="title-61"),
+        pytest.param({"detail": ""}, "ck_chat_memory_episodes_detail_length", id="detail-0"),
+        pytest.param({"detail": "나" * 301}, "ck_chat_memory_episodes_detail_length", id="detail-301"),
+        pytest.param(
+            {"nouns": [f"명사{i}" for i in range(31)]}, "ck_chat_memory_episodes_nouns_count", id="nouns-31"
+        ),
+        pytest.param(
+            {"keywords": [f"구절{i}" for i in range(9)]}, "ck_chat_memory_episodes_keywords_count", id="keywords-9"
+        ),
+        pytest.param(
+            {"evidence": ["하나", "둘", "셋"]}, "ck_chat_memory_episodes_evidence_count", id="evidence-3"
+        ),
+    ],
+)
+async def test_memory_episode_rejects_values_outside_its_checks(
+    db_session: AsyncSession, overrides: dict[str, object], constraint: str
+) -> None:
+    room = await _make_chat_room(db_session)
+    snapshot = await _make_snapshot(db_session, room)
+
+    with pytest.raises(IntegrityError) as raised:
+        async with db_session.begin_nested():
+            db_session.add(_make_memory_episode(room.id, snapshot.id, **overrides))
+
+    assert _violated_constraint(raised.value) == constraint
+
+
+async def test_memory_episode_without_keywords_and_evidence_gets_empty_lists(db_session: AsyncSession) -> None:
+    """추출 결과에 구절·근거가 없으면 칸을 비워 넣는다 — DB 기본값이 빈 배열이어야 NOT NULL 에 막히지 않는다."""
+    room = await _make_chat_room(db_session)
+    snapshot = await _make_snapshot(db_session, room)
+    episode = _make_memory_episode(room.id, snapshot.id)
+    db_session.add(episode)
+    await db_session.flush()
+
+    row = (
+        await db_session.execute(
+            sa.select(ChatMemoryEpisode.keywords, ChatMemoryEpisode.evidence).where(
+                ChatMemoryEpisode.id == episode.id
+            )
+        )
+    ).one()
+    assert (row.keywords, row.evidence) == ([], [])
+
+
+async def test_memory_extraction_accepts_each_status_with_its_count(db_session: AsyncSession) -> None:
+    """뽑는 중·실패는 장면 수가 없고, 끝난 기록은 0 을 포함한 장면 수가 있다(장면이 없는 구간도 끝난 것이다)."""
+    room = await _make_chat_room(db_session)
+    rows: list[dict[str, object]] = [
+        {"status": "running", "episode_count": None},
+        {"status": "failed", "episode_count": None, "attempts": 3},
+        {"status": "done", "episode_count": 0},
+    ]
+    for overrides in rows:
+        snapshot = await _make_snapshot(db_session, room)
+        db_session.add(_make_memory_extraction(room.id, snapshot.id, **overrides))
+    await db_session.flush()
+
+    count = await db_session.scalar(
+        sa.select(sa.func.count()).select_from(ChatMemoryExtraction).where(ChatMemoryExtraction.chat_room_id == room.id)
+    )
+    assert count == len(rows)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "constraint"),
+    [
+        pytest.param({"status": "pending", "episode_count": None}, "ck_chat_memory_extractions_status", id="status"),
+        pytest.param({"attempts": 0}, "ck_chat_memory_extractions_attempts", id="attempts-0"),
+        pytest.param({"status": "done", "episode_count": None}, "ck_chat_memory_extractions_done_count", id="done-no-count"),
+        pytest.param({"status": "running", "episode_count": 2}, "ck_chat_memory_extractions_done_count", id="running-count"),
+    ],
+)
+async def test_memory_extraction_rejects_values_outside_its_checks(
+    db_session: AsyncSession, overrides: dict[str, object], constraint: str
+) -> None:
+    room = await _make_chat_room(db_session)
+    snapshot = await _make_snapshot(db_session, room)
+
+    with pytest.raises(IntegrityError) as raised:
+        async with db_session.begin_nested():
+            db_session.add(_make_memory_extraction(room.id, snapshot.id, **overrides))
+
+    assert _violated_constraint(raised.value) == constraint
+
+
+@pytest.mark.parametrize(
+    ("make", "constraint"),
+    [
+        pytest.param(_make_memory_episode, "chat_memory_episodes_snapshot_id_fkey", id="episode"),
+        pytest.param(_make_memory_extraction, "chat_memory_extractions_snapshot_id_fkey", id="extraction"),
+    ],
+)
+async def test_episode_insert_for_missing_snapshot_is_rejected(
+    db_session: AsyncSession, make: Callable[..., object], constraint: str
+) -> None:
+    """추출이 끝날 때 스냅샷이 이미 지워졌으면(그 구간 대화가 되감겼다) 결과를 넣지 못해야 한다 — 지운 대화의 장면이
+    남지 않게 하는 마지막 방어선이 이 FK 다."""
+    room = await _make_chat_room(db_session)
+
+    with pytest.raises(IntegrityError) as raised:
+        async with db_session.begin_nested():
+            db_session.add(make(room.id, uuid.uuid4()))
+
+    assert _violated_constraint(raised.value) == constraint
 
 
 async def test_room_deletion_keeps_discarded_responses_and_reports_with_references_cleared(
