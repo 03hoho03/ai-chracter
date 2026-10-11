@@ -43,6 +43,7 @@ async def assemble_point(
     arm: str,
     model: ChatModelId,
     recall_header: str = DEFAULT_RECALL_HEADER,
+    recall_field: str | None = None,
 ) -> tuple[dict[str, Any], str]:
     """다음 턴의 프롬프트를 조립해 한 점과 프롬프트 본문을 돌려준다."""
     ctx = await load_room(db, room_id)
@@ -80,8 +81,8 @@ async def assemble_point(
     matched = match_keyword_notes(notes, window, user_content, names=ctx.names)
     segments = prompt.segments if isinstance(prompt, SegmentedPrompt) else (prompt,)
     recall = recall_section(prompt, recall_header)
-    extra = generation._asdict()
-    recall_result = extra.get("memory_recall") or extra.get("recall")
+    recalled = recall_result(generation, field=recall_field, arm=arm)
+    check_recall_section(recalled, section=recall)
     point = {
         "turn": next_turn,
         "arm": arm,
@@ -95,7 +96,7 @@ async def assemble_point(
         "keywordNotes": len(matched),
         "keywordNoteChars": sum(len(n.info_text) for n in matched if n.info_text in prompt),
         "recallChars": len(recall),
-        "recall": recall_result if isinstance(recall_result, list | tuple) else None,
+        "recall": recalled,
         "historyMessages": len(history),
         "historySelectMs": round(history_ms, 3),
         "buildMs": round(build_ms, 3),
@@ -123,3 +124,26 @@ def append_point(path: Path, point: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(point, ensure_ascii=False) + "\n")
+
+
+# 회상을 켜는 갈래. 이 갈래는 조립 결과에 회상 칸이 있어야 한다.
+RECALL_ARMS = frozenset({"B"})
+
+
+def recall_result(generation: Any, *, field: str | None, arm: str) -> list[Any] | None:
+    """조립 결과의 회상 칸(이름은 실행 인자로 받는다 — 추측하지 않는다). 칸이 없으면 None("칸 없음"), 있으면 그 목록(빈
+    목록 = "회상 없음"). 회상 갈래에서 칸이 없으면 회상을 구현하지 않은 코드이므로 거부한다."""
+    fields = generation._asdict() if hasattr(generation, "_asdict") else {}
+    if field is None or field not in fields:
+        if arm in RECALL_ARMS:
+            raise SystemExit(
+                f"갈래 {arm} 인데 조립 결과에 회상 칸({field!r})이 없다 — 칸 이름을 --recall-field 로 준다"
+            )
+        return None
+    return list(fields[field])
+
+
+def check_recall_section(result: list[Any] | None, *, section: str) -> None:
+    """회상이 실린 턴인데 프롬프트에서 머리글을 찾지 못하면 섹션 글자 수를 0 으로 잘못 세게 된다 — 거부한다."""
+    if result and not section:
+        raise SystemExit("회상이 실렸는데 프롬프트에서 회상 머리글을 찾지 못했다 — --recall-header 확인")

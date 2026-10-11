@@ -1,8 +1,8 @@
 """고정 대본을 격리 작업 DB 의 방에 턴 단위로 넣는다 — 운영과 같은 순서로 접기·추출·되감기를 일으킨다.
 
 턴마다: 사용자·진행자 메시지를 한 문장씩 넣고(`clock_timestamp` 라 넣은 순서가 곧 키 순서) 방 턴 수를 올려 커밋 → 실제
-`fold_memory` 를 직접 부른다(서버 백그라운드와 같은 함수, 같은 세트·이름) → 추출을 켠 실행이면 미추출 스냅샷이 없을 때까지
-추출 작업 → 되감기 항목이 있으면 그 메시지를 담은 스냅샷이 막 생기고 추출까지 끝난 턴에 실제 메시지 삭제 API(앱을 프로세스
+`fold_memory` 를 직접 부른다(서버 백그라운드와 같은 함수, 같은 세트·이름) → 추출을 켠 실행이면 운영처럼 턴마다
+추출 작업을 한 번(연속 3턴 진전이 없으면 멈춘다) → 되감기 항목이 있으면 그 메시지를 담은 스냅샷이 막 생기고 추출까지 끝난 턴에 실제 메시지 삭제 API(앱을 프로세스
 안에서 ASGI 로)로 지우고 지워진 스냅샷이 정확히 1개인지 단언 → 궤적 갈래마다 다음 턴의 생성 프롬프트를 조립해 기록 → 얼릴
 체크포인트면 템플릿으로 얼린다.
 
@@ -31,7 +31,7 @@ from memory_eval.checkpoint import database_name, freeze
 from memory_eval.ledger import Ledger
 from memory_eval.plants import PlantSet
 from memory_eval.runtime import app_client, load_room, make_engine, story_judgment_sets
-from memory_eval.trajectory import append_point, assemble_point
+from memory_eval.trajectory import DEFAULT_RECALL_HEADER, append_point, assemble_point
 from memory_eval.transcript import ScriptTurn
 
 T = TypeVar("T", bound=BaseModel)
@@ -39,6 +39,7 @@ T = TypeVar("T", bound=BaseModel)
 # 실호출 견적(접기 한 번, Haiku 5.5): 요약 입력 약 3.2K 토큰 × 토크나이저 1.3 + 출력 약 0.6K → 넉넉히 반올림.
 FOLD_CALL_ESTIMATE_USD = 0.002
 MAX_CONSECUTIVE_FOLD_FAILURES = 3
+MAX_CONSECUTIVE_EXTRACT_FAILURES = 3
 
 
 class LedgerTap(LLMClient):
@@ -145,9 +146,22 @@ async def _pending_extractions(db: AsyncSession, room_id: uuid.UUID) -> int:
     return int(value or 0)
 
 
-async def _extract_until_caught_up(
+async def _done_extractions(db: AsyncSession, room_id: uuid.UUID) -> int:
+    value = await db.scalar(
+        text(
+            "SELECT count(*) FROM chat_memory_extractions x JOIN chat_room_memory_snapshots s ON s.id = x.snapshot_id "
+            "WHERE s.chat_room_id = :room AND x.status = 'done'"
+        ),
+        {"room": room_id},
+    )
+    return int(value or 0)
+
+
+async def _extract_once(
     session_factory: async_sessionmaker[AsyncSession], llm: LLMClient, room_id: uuid.UUID, user_id: uuid.UUID
-) -> int:
+) -> dict[str, int]:
+    """운영과 같이 턴마다 추출 작업을 한 번 부른다(그 작업이 가장 오래된 미추출 스냅샷 하나를 처리하고, 실패는 시도 3회까지
+    다음 턴에 다시 잡는다). 미추출·완료 수를 앞뒤로 돌려준다 — 연속 실패 판정은 부르는 쪽이 한다."""
     try:
         from api.chat import memory_episodes  # type: ignore[attr-defined]
     except ImportError as exc:
@@ -156,26 +170,23 @@ async def _extract_until_caught_up(
         ctx = await load_room(db, room_id)
         sets = await story_judgment_sets(db)
         pending = await _pending_extractions(db, room_id)
+        done_before = await _done_extractions(db, room_id)
     episode_set = getattr(sets, "episode", None)
     if episode_set is None:
         raise SystemExit("판정 세트에 추출 칸이 없다(추출을 구현한 코드에서만 돈다)")
-    runs = 0
-    for _ in range(pending + 3):
-        async with session_factory() as db:
-            if await _pending_extractions(db, room_id) == 0:
-                break
-        await memory_episodes.extract_pending_episode(
-            session_factory,
-            llm,
-            room_id=room_id,
-            user_id=user_id,
-            prompt_set=episode_set[0],
-            sections=episode_set[1],
-            is_story_chat=True,
-            names=ctx.names,
-        )
-        runs += 1
-    return runs
+    await memory_episodes.extract_pending_episode(
+        session_factory,
+        llm,
+        room_id=room_id,
+        user_id=user_id,
+        prompt_set=episode_set[0],
+        sections=episode_set[1],
+        is_story_chat=True,
+        names=ctx.names,
+    )
+    async with session_factory() as db:
+        done_after = await _done_extractions(db, room_id)
+    return {"pendingBefore": pending, "doneBefore": done_before, "doneAfter": done_after}
 
 
 async def _message_key(db: AsyncSession, room_id: uuid.UUID, content: str) -> tuple[Any, uuid.UUID] | None:
@@ -212,6 +223,8 @@ async def run_insert(
     database_url: str,
     container: str | None,
     db_user: str,
+    recall_field: str | None = None,
+    recall_header: str = DEFAULT_RECALL_HEADER,
 ) -> dict[str, Any]:
     by_turn = {t.turn: t for t in script}
     engine, session_factory = make_engine(database_url)
@@ -219,6 +232,7 @@ async def run_insert(
     rewinds = {p["id"]: p for p in rewind_items(plant_set)}
     done_rewinds = _done_rewinds(log_path)
     consecutive_fold_failures = 0
+    extraction_streak = ExtractionStreak(limit=MAX_CONSECUTIVE_EXTRACT_FAILURES)
     try:
         async with session_factory() as db:
             ctx = await load_room(db, room_id)
@@ -257,7 +271,15 @@ async def run_insert(
             consecutive_fold_failures = consecutive_fold_failures + 1 if due and not folded else 0
             record: dict[str, Any] = {"turn": turn, "foldDue": due, "folded": folded, "snapshots": after}
             if extract:
-                record["extractRuns"] = await _extract_until_caught_up(session_factory, llm, room_id, ctx.room.user_id)
+                state = await _extract_once(session_factory, llm, room_id, ctx.room.user_id)
+                record["extract"] = state
+                if extraction_streak.observe(
+                    pending_before=state["pendingBefore"],
+                    done_before=state["doneBefore"],
+                    done_after=state["doneAfter"],
+                ):
+                    _append(log_path, record)
+                    raise SystemExit(f"턴 {turn}: 추출이 {extraction_streak.failures}번 연속 진전 없음 — 멈춘다")
             for item_id, plant in rewinds.items():
                 if item_id in done_rewinds:
                     continue
@@ -270,7 +292,14 @@ async def run_insert(
                 for arm in arms:
                     async with session_factory() as db:
                         point, _ = await assemble_point(
-                            db, room_id, next_turn=turn + 1, user_content=next_row.user, arm=arm, model=trajectory_model
+                            db,
+                            room_id,
+                            next_turn=turn + 1,
+                            user_content=next_row.user,
+                            arm=arm,
+                            model=trajectory_model,
+                            recall_header=recall_header,
+                            recall_field=recall_field,
                         )
                     append_point(run_dir / f"trajectory-{label}-{arm}.jsonl", point)
             record["ms"] = round((time.perf_counter() - started) * 1000, 1)
@@ -289,6 +318,8 @@ async def run_insert(
                     dumps_dir=run_dir / "dumps",
                     container=container,
                     db_user=db_user,
+                    label=label,
+                    require_episode_rows=extract,
                 )
                 _append(log_path, {"turn": turn, "frozen": frozen["template"], "fingerprint": frozen["fingerprint"]})
         return {"start": start, "until": until_turn, "log": str(log_path)}
@@ -349,3 +380,18 @@ def _done_rewinds(path: Path) -> set[str]:
         for entry in json.loads(line).get("rewinds", []):
             done.add(str(entry["item"]))
     return done
+
+
+class ExtractionStreak:
+    """추출 연속 실패 세기. 미추출 스냅샷이 있었는데 이번 추출 작업 뒤 완료 수가 늘지 않으면 실패 한 번, 늘면 초기화. 할 일이
+    없던 턴은 세지 않는다. `observe` 가 참이면 한도에 닿았다(넣기를 멈춘다)."""
+
+    def __init__(self, *, limit: int) -> None:
+        self.limit = limit
+        self.failures = 0
+
+    def observe(self, *, pending_before: int, done_before: int, done_after: int) -> bool:
+        if pending_before == 0:
+            return False
+        self.failures = 0 if done_after > done_before else self.failures + 1
+        return self.failures >= self.limit

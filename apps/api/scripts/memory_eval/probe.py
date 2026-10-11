@@ -15,6 +15,7 @@
 import asyncio
 import json
 import os
+import re
 import subprocess
 import time
 import uuid
@@ -133,6 +134,8 @@ class ProbeRun:
     judgment_turn_usd: float
     ledger: Ledger
     pacer: BurstPacer
+    # 복원할 체크포인트 템플릿의 단계 이름(얼린 넣기 실행의 label — 기준선 s4, 최종 비교 s8).
+    checkpoint_label: str = ""
     clover_top_up: int = 3_000
 
 
@@ -163,13 +166,8 @@ def _last_turn(folder: Path) -> dict[str, Any] | None:
     return turns[-1] if turns else None
 
 
-def _recall_stack(server_log: Path, offset: int) -> bool:
-    if not server_log.exists():
-        return False
-    with server_log.open("rb") as handle:
-        handle.seek(offset)
-        tail = handle.read().decode(errors="replace")
-    return "Traceback" in tail and "memory_recall" in tail
+def _server_log_text(server_log: Path) -> str:
+    return server_log.read_text(encoding="utf-8", errors="replace") if server_log.exists() else ""
 
 
 async def _turn_usage(database_url: str, room_id: uuid.UUID, since: datetime) -> list[dict[str, Any]]:
@@ -226,6 +224,7 @@ def run_probe(run: ProbeRun, probe: Probe) -> dict[str, Any]:
                 checkpoint=probe.checkpoint,
                 room_id=run.room_id,
                 dumps_dir=run.run_dir / "dumps",
+                label=run.checkpoint_label,
             )
         )
         if top_up:
@@ -264,7 +263,10 @@ def run_probe(run: ProbeRun, probe: Probe) -> dict[str, Any]:
                         break
         finally:
             server.stop(handle)
-        usage = asyncio.run(_turn_usage(run.database_url, run.room_id, started_at))
+        log_text = _server_log_text(server_log)
+        # 원장 기준은 서버 로그(실패한 시도·백그라운드 접기·추출 포함). 턴 기록은 생성 호출 수 대조에만 쓴다.
+        usage = parse_usage_log(log_text)
+        recorded_turns = asyncio.run(_turn_usage(run.database_url, run.room_id, started_at))
         for call in usage:
             run.ledger.append(
                 stage=run.stage,
@@ -275,10 +277,10 @@ def run_probe(run: ProbeRun, probe: Probe) -> dict[str, Any]:
                 cache_write_tokens=int(call.get("cacheWriteTokens") or 0),
                 output_tokens=int(call.get("outputTokens") or 0),
                 thoughts_tokens=int(call.get("thoughtsTokens") or 0),
-                note=f"{probe.item_id} cp{probe.checkpoint} {run.arm}",
+                note=f"{probe.item_id} cp{probe.checkpoint} {run.arm}" + (" usage=missing" if call["missing"] else ""),
             )
         saved = len(turns) == len(probe.turns) and all(t["reply"] for t in turns)
-        attempt = Attempt(exit_code=code, response_saved=saved, recall_stack=_recall_stack(server_log, 0))
+        attempt = Attempt(exit_code=code, response_saved=saved, recall_stack=recall_stack_in(log_text))
         if code == EXIT_OK and not saved:
             # 드라이버는 생성 오류로 유실된 턴도 0 으로 끝낸다 — 응답이 없으면 그 밖의 오류로 센다.
             attempt = Attempt(exit_code=1, response_saved=False, recall_stack=attempt.recall_stack)
@@ -291,7 +293,11 @@ def run_probe(run: ProbeRun, probe: Probe) -> dict[str, Any]:
                 "saved": saved,
                 "action": action.kind,
                 "reason": action.reason,
-                "costUsd": sum(opus_turn_cost_from_usage(c) for c in usage),
+                "costUsd": sum(opus_turn_cost_from_usage(c) for c in usage if not c["missing"]),
+                "usageMissing": sum(1 for c in usage if c["missing"]),
+                "usageProviders": sorted({str(c["provider"]) for c in usage}),
+                "generateCallsLog": sum(1 for c in usage if c["callSite"] == "chat_generate"),
+                "generateCallsTurns": sum(1 for c in recorded_turns if c.get("callSite") == "chat_generate"),
                 "fingerprint": restored["fingerprint"],
                 "folder": str(folder),
             }
@@ -311,3 +317,68 @@ def run_probe(run: ProbeRun, probe: Probe) -> dict[str, Any]:
         if action.wait_seconds:
             time.sleep(action.wait_seconds)
         top_up = action.top_up
+
+
+def pending_probes(probes: Sequence[Probe], done: Sequence[dict[str, Any]]) -> tuple[list[Probe], int]:
+    """재실행: 결과 파일에 이미 있는 (체크포인트, 문항)은 건너뛰고, 그 파일의 불능 수부터 이어 센다."""
+    finished = {(int(r["checkpoint"]), str(r["item"])) for r in done}
+    todo = [p for p in probes if (p.checkpoint, p.item_id) not in finished]
+    return todo, sum(1 for r in done if r.get("status") == "unprobeable")
+
+
+_USAGE_LINE = re.compile(r"\b(anthropic|gemini|bedrock)_usage\s+(.*)$")
+_USAGE_FIELDS = {
+    "prompt_tokens": "promptTokens",
+    "cached_content_tokens": "cachedTokens",
+    "cache_write_tokens": "cacheWriteTokens",
+    "candidates_tokens": "outputTokens",
+    "thoughts_tokens": "thoughtsTokens",
+}
+
+
+def _int_or_none(raw: str | None) -> int | None:
+    return int(raw) if raw is not None and raw.isdigit() else None
+
+
+def parse_usage_log(text: str) -> list[dict[str, Any]]:
+    """서버 로그의 사용량 줄(`anthropic_usage`·`gemini_usage`·`bedrock_usage`) — 실패한 시도와 백그라운드 접기·추출까지
+    서버가 실제로 부른 호출 전부다. 원장은 이것을 기준으로 적고 턴 기록(`chat_turns.llm_calls`)은 대조에만 쓴다(둘을 더하면
+    같은 호출이 두 번 세진다). 메타데이터가 없는 줄은 `missing` 으로 표시한다."""
+    calls = []
+    for line in text.splitlines():
+        match = _USAGE_LINE.search(line)
+        if match is None:
+            continue
+        fields = dict(part.split("=", 1) for part in match.group(2).split() if "=" in part)
+        call: dict[str, Any] = {
+            "provider": match.group(1),
+            "callSite": fields.get("call_site"),
+            "model": fields.get("model"),
+        }
+        for raw, name in _USAGE_FIELDS.items():
+            call[name] = _int_or_none(fields.get(raw))
+        call["missing"] = fields.get("usage") == "missing" or call["promptTokens"] is None
+        calls.append(call)
+    return calls
+
+
+_TRACEBACK = "Traceback (most recent call last):"
+
+
+def recall_stack_in(text: str) -> bool:
+    """스택 블록(머리줄부터 들여쓰지 않은 예외 줄까지) 안에 회상 모듈 프레임이 있는가. 블록 밖 로그 줄의 낱말은 보지 않는다."""
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        if lines[i].startswith(_TRACEBACK):
+            block = [lines[i]]
+            i += 1
+            while i < len(lines) and (lines[i].startswith((" ", "\t")) or not lines[i].strip()):
+                block.append(lines[i])
+                i += 1
+            if i < len(lines):
+                block.append(lines[i])  # 예외 줄
+            if any("memory_recall" in line for line in block if line.lstrip().startswith("File ")):
+                return True
+        i += 1
+    return False

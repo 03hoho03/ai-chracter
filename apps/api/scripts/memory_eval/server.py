@@ -76,3 +76,27 @@ def port_in_use(port: int) -> bool:
     except httpx.HTTPError:
         return False
     return True
+
+
+def conflicting_servers(procs: list[tuple[int, str]], trees: list[str], *, own_pids: set[int]) -> list[tuple[int, str]]:
+    """같은 격리 Redis·DB 를 쓰는 워크트리(`trees`)에서 도는 다른 서버. 프로브는 방 키·활성 세트 캐시를 지우고 DB 를 템플릿으로
+    갈아 끼우므로, 그동안 다른 측정 서버가 같은 자원을 쓰면 서로의 상태를 깬다."""
+    return [
+        (pid, cwd)
+        for pid, cwd in procs
+        if pid not in own_pids and any(cwd == tree or cwd.startswith(tree.rstrip("/") + "/") for tree in trees)
+    ]
+
+
+def running_api_servers() -> list[tuple[int, str]]:
+    """이 기계에서 도는 `uvicorn api.main:app` 프로세스와 그 작업 디렉터리."""
+    found = subprocess.run(["pgrep", "-f", "[u]vicorn api.main:app"], capture_output=True, text=True, check=False)
+    procs = []
+    for raw in found.stdout.split():
+        pid = int(raw)
+        cwd = subprocess.run(
+            ["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"], capture_output=True, text=True, check=False
+        )
+        path = next((line[1:] for line in cwd.stdout.splitlines() if line.startswith("n")), "")
+        procs.append((pid, path))
+    return procs

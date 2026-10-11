@@ -57,6 +57,15 @@ def cost_usd(
     ) / 1_000_000
 
 
+def row_cost(row: Mapping[str, Any]) -> float:
+    """원장 한 줄의 원가. 하네스가 쓰는 줄은 `costUsd`, 하네스 전에 손으로 남긴 줄은 `cost_usd` 다 — 둘 다 상한 계산에 든다."""
+    if "costUsd" in row:
+        return float(row["costUsd"])
+    if "cost_usd" in row:
+        return float(row["cost_usd"])
+    raise KeyError(f"원가 칸이 없는 원장 줄: {sorted(row)}")
+
+
 class Ledger:
     def __init__(self, path: Path, *, cap_usd: float = APPROVED_CAP_USD) -> None:
         self.path = path
@@ -68,7 +77,7 @@ class Ledger:
         return [json.loads(line) for line in self.path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
     def total_usd(self) -> float:
-        return sum(float(r["costUsd"]) for r in self.rows())
+        return sum(row_cost(r) for r in self.rows())
 
     def append(
         self,

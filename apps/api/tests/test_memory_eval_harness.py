@@ -85,7 +85,7 @@ def test_fingerprint_diff_treats_missing_field_as_difference() -> None:
 
 
 def test_only_prefixed_databases_can_be_dropped_or_templated() -> None:
-    assert template_db_name(50) == "lm_eval_cp50_frozen"
+    assert template_db_name(50, "s4") == "lm_eval_s4_cp50_frozen"
     ensure_eval_db_name("lm_eval_work")
     for bad in ("ai_character_chat", "ai_character_chat_test", "postgres", "lm_evalwork", "lm_eval_"):
         with pytest.raises(SystemExit):
@@ -534,8 +534,8 @@ def test_direct_passline_halts_below_five_and_drops_designed_failures() -> None:
         }
 
     plants = _plant_set(
-        [_plant(id=f"p{i}", split="test") for i in range(6)]
-        + [_plant(id="loc04", split="test", limitProbe={"designedToFail": True})]
+        [_plant(id=f"p{i}", split="test", metrics={"MR1_passline": True}) for i in range(6)]
+        + [_plant(id="loc04", split="test", limitProbe={"designedToFail": True}, metrics={"MR1_passline": False})]
     )
     rows = [row(f"p{i}", True) for i in range(4)] + [row("p4", None), row("loc04", False)]
     verdict = direct_passline(rows, plants, threshold=0.7)
@@ -598,6 +598,12 @@ def _fake_probe_world(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, say_codes
             return 0
         code = next(codes)
         reply = "" if code not in (0, 3) else f"응답 {len(calls['driver'])}"
+        # 서버가 부른 호출은 서버 로그의 사용량 줄로 남는다(원장 기준).
+        with (folder / "server.log").open("a", encoding="utf-8") as log:
+            log.write(
+                "anthropic_usage call_site=chat_generate model=claude-opus-5-5 prompt_tokens=10000 cached_content_tokens=0 "
+                "cache_write_tokens=0 candidates_tokens=500 thoughts_tokens=0 total_tokens=10500 user_id=u room_id=r\n"
+            )
         with (folder / "chat.jsonl").open("a", encoding="utf-8") as handle:
             handle.write(json.dumps({"kind": "turn", "reply": reply, "clientTurn": 101}) + "\n")
         return code
