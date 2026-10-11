@@ -436,6 +436,11 @@ def test_the_direct_api_ids_are_priced_at_the_published_list_price() -> None:
     assert MODEL_PRICES["claude-sonnet-5-5"] == ModelPrice(2.00, 0.10, 10.00, cache_write_usd_per_million=2.50)
 
 
+def test_haiku_5_5_is_priced_at_the_list_price_for_prompts_up_to_100k_tokens() -> None:
+    """판정 전용 Haiku 5.5 의 표 값(프롬프트 100K 토큰 이하). 캐시 읽기는 Opus·Sonnet 5.5 와 달리 입력의 0.1 배다."""
+    assert MODEL_PRICES["claude-haiku-5-5"] == ModelPrice(0.10, 0.01, 0.50, cache_write_usd_per_million=0.125)
+
+
 # ---- 실패 매핑 -------------------------------------------------------------------------------
 
 
