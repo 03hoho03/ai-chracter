@@ -296,6 +296,7 @@ def run_probe(run: ProbeRun, probe: Probe) -> dict[str, Any]:
                 "costUsd": sum(opus_turn_cost_from_usage(c) for c in usage if not c["missing"]),
                 "usageMissing": sum(1 for c in usage if c["missing"]),
                 "usageProviders": sorted({str(c["provider"]) for c in usage}),
+                "recallWarnings": recall_warning_count(log_text),
                 "generateCallsLog": sum(1 for c in usage if c["callSite"] == "chat_generate"),
                 "generateCallsTurns": sum(1 for c in recorded_turns if c.get("callSite") == "chat_generate"),
                 "fingerprint": restored["fingerprint"],
@@ -382,3 +383,12 @@ def recall_stack_in(text: str) -> bool:
                 return True
         i += 1
     return False
+
+
+# 서버 회상이 실패를 받아 회상 없이 조립할 때 남기는 경고의 고정 문구.
+RECALL_WARNING = "장면 기억 회상을 읽지 못해"
+
+
+def recall_warning_count(text: str) -> int:
+    """서버 로그에서 회상 실패 경고 줄 수. 회상은 실패해도 턴을 깨지 않으므로 종료 코드로는 드러나지 않는다."""
+    return sum(1 for line in text.splitlines() if RECALL_WARNING in line)
