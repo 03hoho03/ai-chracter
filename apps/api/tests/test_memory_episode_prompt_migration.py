@@ -395,6 +395,22 @@ async def test_upgrade_copies_the_operators_edited_text_not_the_seed(db_session:
     assert new == _expected_after(edited, "gemini")
 
 
+async def test_upgrade_copies_each_chains_own_labels(db_session: AsyncSession) -> None:
+    """라벨도 그 체인 활성 세트의 것이다 — 어드민은 체인마다 라벨을 따로 고칠 수 있다(테스트 DB 의 시드는 모든 체인 라벨이
+    같아, 한 체인만 바꿔야 Gemini 라벨을 복사하는 실수와 갈린다)."""
+    connection = await db_session.connection()
+    await connection.run_sync(_M.delete_seeded_rows)
+    await db_session.execute(
+        sa.update(PromptSet).where(PromptSet.id == _PREVIOUS_SET_IDS[("story", "sonnet")]).values(user_label="독자")
+    )
+
+    await connection.run_sync(_M.seed_published_sets)
+
+    db_session.expire_all()
+    assert (await _get_set(db_session, _M.NEW_SET_IDS[("story", "sonnet")])).user_label == "독자"
+    assert (await _get_set(db_session, _M.NEW_SET_IDS[("story", "gemini")])).user_label != "독자"
+
+
 async def test_upgrade_refuses_to_run_twice(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
     with pytest.raises(RuntimeError, match="이미 있다"):
