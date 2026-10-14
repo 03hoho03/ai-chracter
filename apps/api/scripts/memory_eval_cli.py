@@ -371,6 +371,75 @@ def cmd_trajectory(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_trajectory_replay(args: argparse.Namespace) -> int:
+    """얼린 체크포인트에서 지난 턴들의 생성 프롬프트를 그때 상태로 갈래마다 다시 조립해 궤적 점을 쓴다(LLM 없음, 읽기만).
+    기준 궤적을 주면 표본 턴을 기준 갈래(설정 덮어쓰기 없음)로 다시 조립해 넣기 때 기록과 견주고, 어긋나면 갈래 점을 쓰지 않고
+    멈춘다. 끝에 앞 두 캐시 블록 해시 일치(⑤)와 길이(⑥)를 같은 판정 함수로 계산해 출력한다."""
+    from memory_eval import trajectory_replay as tr
+    from memory_eval.runtime import load_room, make_engine, story_generation_set
+    from memory_eval.verdict import trajectory_checks
+
+    arms = args.arms.split(",")
+    counts = tr.snapshot_counts(
+        [json.loads(line) for line in args.insert_log.read_text(encoding="utf-8").splitlines() if line]
+    )
+    recorded = (
+        {
+            int(p["turn"]): p
+            for p in (json.loads(x) for x in args.baseline.read_text(encoding="utf-8").splitlines() if x)
+        }
+        if args.baseline
+        else {}
+    )
+    low, high = _range(args.turns)
+
+    async def go() -> dict[str, Any]:
+        engine, factory = make_engine(_db_url(writes=False))
+        try:
+            async with factory() as db:
+                ctx = await load_room(db, args.room)
+                timeline = await tr.load_timeline(db, ctx)
+                persona = await tr.injected_persona(db, ctx)
+                prompt_set = await story_generation_set(db, args.model)
+                headers = {
+                    "recall_header": tr.section_header(prompt_set[1], "memory_recall"),
+                    "fact_header": tr.section_header(prompt_set[1], "memory_facts"),
+                }
+
+                async def point(turn: int, arm: str) -> dict[str, Any]:
+                    built, _ = await tr.replay_point(
+                        db, ctx, timeline, turn=turn, counts=counts, arm=arm, prompt_set=prompt_set,
+                        persona=persona, **headers,
+                    )  # fmt: skip
+                    return built
+
+                sample = [t for t in _ints(args.compare_turns) if t in recorded]
+                compared = {t: tr.point_diff(recorded[t], await point(t, "baseline")) for t in sample}
+                if any(compared.values()):
+                    return {"baselineCompare": compared, "halted": "기준 궤적과 다르다 — 재구성 규칙을 확인한다"}
+                points = {arm: [await point(t, arm) for t in range(low, high + 1)] for arm in arms}
+        finally:
+            await engine.dispose()
+        args.out_dir.mkdir(parents=True, exist_ok=True)
+        for arm, rows in points.items():
+            (args.out_dir / f"trajectory-{arm}.jsonl").write_text(
+                "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8"
+            )
+        flat = [p for rows in points.values() for p in rows]
+        summary: dict[str, Any] = {"baselineCompare": compared, "turns": [low, high]}
+        if recorded:
+            summary["recordedMismatch"] = {
+                arm: [p["turn"] for p in rows if p["turn"] in recorded and tr.point_diff(recorded[p["turn"]], p)]
+                for arm, rows in points.items()
+            }
+        if len(arms) == 2:
+            summary["checks"] = trajectory_checks(flat, recall_section_max=args.section_max, arms=(arms[0], arms[1]))
+        return summary
+
+    _print(asyncio.run(go()))
+    return 0
+
+
 # ---------------------------------------------------------------- 오프라인 회상
 
 
@@ -1152,6 +1221,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--recall-field")
     p.add_argument("--recall-header", default="[지난 기억 — 참고]")
     p.set_defaults(fn=cmd_trajectory)
+
+    p = sub.add_parser(
+        "trajectory-replay", help="얼린 체크포인트에서 지난 턴의 생성 프롬프트를 그때 상태로 갈래마다 다시 조립"
+    )
+    p.add_argument("--room", type=uuid.UUID, required=True)
+    p.add_argument("--insert-log", type=Path, required=True, help="그 체크포인트를 만든 넣기 기록(턴별 스냅샷 수)")
+    p.add_argument("--baseline", type=Path, help="넣기 때 남긴 기준 갈래 궤적 — 표본 턴을 다시 조립해 견준다")
+    p.add_argument("--compare-turns", default="2,30,31,41,100,101,200,300", help="기준 궤적과 견줄 표본 턴")
+    p.add_argument("--turns", default="2,300", help="조립할 턴 범위(양끝 포함)")
+    p.add_argument("--arms", default="A2,B2")
+    p.add_argument("--model", default="opus")
+    p.add_argument("--section-max", type=int, default=970, help="⑥ 의 같은 턴 차 최대(섹션 최대 + 구분)")
+    p.add_argument("--out-dir", type=Path, required=True)
+    p.set_defaults(fn=cmd_trajectory_replay)
 
     p = sub.add_parser("recall-offline")
     with_plants(p)
