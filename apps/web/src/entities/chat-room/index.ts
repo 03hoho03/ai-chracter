@@ -66,6 +66,7 @@ export { roomAuthorMacroNames } from "./model/roomAuthorMacroNames";
 export { shouldShowSuggestedReplies } from "./model/shouldShowSuggestedReplies";
 export { OPERATOR_MAP as ENDING_RULE_OPERATOR_SYMBOLS, toChatRoomState } from "./api/toChatRoomState";
 export { restoreMessages, truncateAndEdit } from "./model/truncateAndEdit";
+export { countMessagesAfter, shouldConfirmEditTruncation } from "./model/editTruncation";
 export { dropLastMessage, restoreMessage } from "./model/dropLastMessage";
 export { stripChatNotation } from "./model/stripChatNotation";
 export { chatStreamEventSchema } from "./api/chatStream";
