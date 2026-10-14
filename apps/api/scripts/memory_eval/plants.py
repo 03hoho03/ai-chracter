@@ -43,6 +43,8 @@ class Probe:
     turns: list[str]
     kind: str  # plant · abstain
     split: str
+    # 장면 설정 턴이 앞서는 두 턴 프로브 — 둘째 턴 전에 기억 상태(요약 커서·사실 행 수)가 체크포인트 그대로인지 본다.
+    guard_memory: bool = False
 
     @property
     def two_turn(self) -> bool:
@@ -64,6 +66,10 @@ def plant_turns(plant: dict[str, Any]) -> list[int]:
 
 
 def _probe_turns(entry: dict[str, Any]) -> list[str]:
+    setup = entry.get("setup_turn_text")
+    if setup:
+        # 비밀 문항: 모르는 인물을 장면에 들이는 설정 턴 다음에 질문 턴.
+        return [str(setup), str(entry["question"])]
     context = entry.get("contextTurn")
     if entry.get("questionForm") == "anaphora" and context:
         return [str(context["userLine"]), str(entry["question"])]
@@ -83,6 +89,7 @@ def opus_probes(plant_set: PlantSet, checkpoint: int) -> list[Probe]:
                         turns=_probe_turns(entry),
                         kind=kind,
                         split=str(entry.get("split", "")),
+                        guard_memory=bool(entry.get("setup_turn_text")),
                     )
                 )
     return probes

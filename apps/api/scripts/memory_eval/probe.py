@@ -10,7 +10,10 @@
 - 드라이버 종료 코드 4(분당 버스트): 60초 기다려 재시도, 최대 3회. 7(클로버 부족): 채운 뒤 재시도, 최대 3회.
 - 3(엔딩 도달): 응답이 저장됐으면 그대로 채점(재시도 안 함), 저장되지 않았으면 재시도 최대 2회.
 - 그 밖의 오류: 재시도 최대 2회. 단 서버 로그 스택이 회상 코드 안이면 재시도하지 않고 그 갈래의 오답으로 센다.
-- 재시도를 다 쓰면 "프로브 불능". 불능이 전체 프로브의 5%를 넘으면 실행을 멈춘다."""
+- 재시도를 다 쓰면 "프로브 불능". 불능이 전체 프로브의 5%를 넘으면 실행을 멈춘다.
+- 장면 설정 턴이 앞서는 두 턴 프로브(비밀 문항)는 둘째 턴 전에 요약 커서·사실 행 수가 체크포인트 지문과 같은지 본다. 다르면
+  설정 턴이 접기·추출을 일으켜 질문 턴이 체크포인트와 다른 기억 위에서 묻게 되므로 재시도 없이 그 프로브를 불능으로 둔다
+  (같은 복원에서 다시 보내도 같은 접기가 다시 난다)."""
 
 import asyncio
 import json
@@ -20,7 +23,7 @@ import re
 import subprocess
 import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -36,6 +39,12 @@ EXIT_BURST = 4
 EXIT_CLOVER = 7
 
 BURST_WAIT_SECONDS = 60
+# 두 턴 프로브의 둘째 턴 전 기억 상태 확인: 설정 턴 응답 뒤 서버 백그라운드(접기·추출)가 끝날 틈을 두고 몇 번 읽어, 그사이
+# 한 번이라도 체크포인트와 달라지면 다르다고 본다.
+MEMORY_GUARD_READS = 3
+MEMORY_GUARD_INTERVAL_SECONDS = 2.0
+# 둘째 턴 전에 체크포인트와 같아야 하는 지문 칸.
+MEMORY_GUARD_FIELDS = ("cursor", "factCount")
 _MAX_RETRIES = {"burst": 3, "clover": 3, "ending_unsaved": 2, "other": 2}
 
 
@@ -85,6 +94,15 @@ def next_action(attempts: Sequence[Attempt]) -> Action:
     if reason == "clover":
         return Action(kind="retry", top_up=True, reason="클로버 부족")
     return Action(kind="retry", reason=f"종료 코드 {last.exit_code}")
+
+
+def memory_drift(expected: Mapping[str, Any], actual: Mapping[str, Any]) -> list[str]:
+    """요약 커서·사실 행 수 가운데 체크포인트 지문과 달라진 칸. 사실 테이블이 없는 코드면 두 지문 모두 사실 칸이 없어 같다."""
+    return [
+        f"{name}: 체크포인트 {expected.get(name)!r} → 지금 {actual.get(name)!r}"
+        for name in MEMORY_GUARD_FIELDS
+        if expected.get(name) != actual.get(name)
+    ]
 
 
 def should_halt(unprobeable: int, total: int) -> bool:
@@ -240,11 +258,16 @@ def run_probe(run: ProbeRun, probe: Probe) -> dict[str, Any]:
         started_at = datetime.now(UTC)
         handle = server.start(overrides, port=run.port, log=server_log, allow_paid=run.allow_paid)
         turns: list[dict[str, Any]] = []
+        drift: list[str] = []
         code = EXIT_OK
         try:
             code = _driver(run, handle.base, folder, "--rebase", f"체크포인트 {probe.checkpoint} 복원")
             if code == EXIT_OK:
-                for text_ in probe.turns:
+                for index, text_ in enumerate(probe.turns):
+                    if index > 0 and probe.guard_memory:
+                        drift = _guard_memory(run, restored["fingerprint"])
+                        if drift:
+                            break
                     wait = run.pacer.wait_before_send(now=time.monotonic())
                     if wait:
                         time.sleep(wait)
@@ -289,6 +312,8 @@ def run_probe(run: ProbeRun, probe: Probe) -> dict[str, Any]:
             attempt = Attempt(exit_code=1, response_saved=False, recall_stack=attempt.recall_stack)
         attempts.append(attempt)
         action = next_action(attempts)
+        if drift:
+            action = Action(kind="unprobeable", reason="둘째 턴 전 기억 상태가 체크포인트와 다르다")
         records.append(
             {
                 "attempt": attempt_no,
@@ -303,6 +328,7 @@ def run_probe(run: ProbeRun, probe: Probe) -> dict[str, Any]:
                 "generateCallsLog": sum(1 for c in usage if c["callSite"] == "chat_generate"),
                 "generateCallsTurns": sum(1 for c in recorded_turns if c.get("callSite") == "chat_generate"),
                 "fingerprint": restored["fingerprint"],
+                "memoryDrift": drift,
                 "folder": str(folder),
             }
         )
@@ -321,6 +347,18 @@ def run_probe(run: ProbeRun, probe: Probe) -> dict[str, Any]:
         if action.wait_seconds:
             time.sleep(action.wait_seconds)
         top_up = action.top_up
+
+
+def _guard_memory(run: ProbeRun, expected: Mapping[str, Any]) -> list[str]:
+    """설정 턴 뒤 기억 상태를 몇 번 읽어 처음 달라진 차이를 돌려준다(끝까지 같으면 빈 목록)."""
+    from memory_eval import checkpoint
+
+    for _ in range(MEMORY_GUARD_READS):
+        time.sleep(MEMORY_GUARD_INTERVAL_SECONDS)
+        drift = memory_drift(expected, asyncio.run(checkpoint.read_fingerprint(run.database_url, run.room_id)))
+        if drift:
+            return drift
+    return []
 
 
 def pending_probes(probes: Sequence[Probe], done: Sequence[dict[str, Any]]) -> tuple[list[Probe], int]:

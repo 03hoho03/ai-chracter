@@ -10,7 +10,9 @@
 Redis 는 통째로 비우지 않는다(세션 저장소가 같은 Redis 라 비우면 쿠키가 죽고 이메일당 로그인 상한에 걸린다). 그 방의 턴 락과
 접기 백오프, 그리고 활성 프롬프트 세트 캐시만 지운다.
 
-지문 = 스탯 값 · 엔딩 도달 · 턴 수 · 현재 요약 커서 · 스냅샷 수 · 에피소드 수(테이블이 있으면) · 메시지 수 · `memory_version`.
+지문 = 스탯 값 · 엔딩 도달 · 턴 수 · 현재 요약 커서 · 스냅샷 수 · 에피소드 수(테이블이 있으면) · 사실 행 수(사실 테이블
+`chat_memory_facts` 가 있을 때만 칸이 생긴다 — 그 테이블이 없던 때 얼린 지문과 견줘도 칸 차이가 나지 않게) · 메시지 수 ·
+`memory_version`.
 복원 직후 지문이 얼릴 때의 지문과 다르면 프로브를 보내지 않는다."""
 
 import asyncio
@@ -166,6 +168,14 @@ async def compute_fingerprint(conn: AsyncConnection, room_id: uuid.UUID) -> dict
             )
             or 0
         )
+    facts: dict[str, int] = {}
+    if await conn.scalar(text("SELECT to_regclass('chat_memory_facts') IS NOT NULL")):
+        facts["factCount"] = int(
+            await conn.scalar(
+                text("SELECT count(*) FROM chat_memory_facts WHERE chat_room_id = :room"), {"room": room_id}
+            )
+            or 0
+        )
     return {
         "turnCount": int(room.turn_count),
         "endingReached": bool(room.ending_reached),
@@ -176,6 +186,7 @@ async def compute_fingerprint(conn: AsyncConnection, room_id: uuid.UUID) -> dict
         "snapshotCount": int(snapshots or 0),
         "messageCount": int(messages or 0),
         "episodeCount": episodes,
+        **facts,
     }
 
 
