@@ -704,6 +704,55 @@ def cmd_prototype_extract(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_prototype_facts(args: argparse.Namespace) -> int:
+    """스냅샷마다 사실 시제품 추출. 기본은 드라이런(창 수·입력 글자·견적), 실제 호출은 --allow-paid 일 때만."""
+    from memory_eval import prototype_extract as pe, prototype_facts as pf
+    from memory_eval.runtime import load_room, make_engine, story_judgment_sets
+
+    async def go() -> dict[str, Any]:
+        engine, factory = make_engine(_db_url(writes=False))
+        try:
+            async with factory() as db:
+                ctx = await load_room(db, args.room)
+                windows = await pe.build_windows(db, args.room)
+                sets = await story_judgment_sets(db)
+        finally:
+            await engine.dispose()
+        prompt_set = sets.summary[0]
+        instruction = args.instruction_file.read_text(encoding="utf-8")
+        user_name = ctx.names.judgment_user_name
+
+        def render(window: pe.Window) -> str:
+            return pe.render_window(window, prompt_set, ctx.names)
+
+        if args.dry_run or not args.allow_paid:
+            return {
+                "windows": len(windows),
+                "promptChars": [len(pf.build_prompt(instruction, user_name, [], render(w))) for w in windows],
+                "estimateUsd": len(windows) * pf.FACT_CALL_ESTIMATE_USD,
+                "model": args.model,
+            }
+        if args.out is None:
+            raise SystemExit("실제 추출은 --out 이 있어야 한다")
+        from api.core.config import settings
+
+        book = Ledger(args.run / "ledger.jsonl")
+
+        async def caller(prompt: str) -> pf.PrototypeFactResult:
+            return await pf.call_haiku(
+                settings.anthropic_direct_api_key, prompt, book, stage=f"facts-{args.version}", model=args.model
+            )
+
+        rows = await pf.extract_windows(
+            windows, render=render, caller=caller, instruction=instruction, user_name=user_name, version=args.version
+        )
+        _write(args.out, rows)
+        return {"windows": len(windows), "facts": len(rows), "out": str(args.out)}
+
+    _print(asyncio.run(go()))
+    return 0
+
+
 def cmd_s8(args: argparse.Namespace) -> int:
     from memory_eval.judge import ensure_unique_probe_rows
     from memory_eval.verdict import s8_verdict
@@ -943,6 +992,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--version", default="v1")
     p.add_argument("--out", type=Path)
     p.set_defaults(fn=cmd_prototype_extract)
+
+    p = sub.add_parser("prototype-facts", help="스냅샷마다 사실 시제품 추출(기본 드라이런)")
+    paid(p)
+    p.add_argument("--room", type=uuid.UUID, required=True)
+    p.add_argument("--instruction-file", type=Path, required=True)
+    p.add_argument("--model", default="claude-haiku-5-5")
+    p.add_argument("--version", default="v1")
+    p.add_argument("--out", type=Path)
+    p.set_defaults(fn=cmd_prototype_facts)
 
     p = sub.add_parser("s8-verdict", help="최종 짝 비교 ①~⑤ 판정(시험 절반 — 봉인 해시 필요)")
     with_plants(p)
