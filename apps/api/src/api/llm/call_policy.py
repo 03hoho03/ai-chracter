@@ -28,6 +28,9 @@ LLMCallSite = Literal[
     # 요약 접기가 접은 구간을 장면 기억으로 뽑는 백그라운드 추출(`chat/memory_episodes.py`). 요약처럼 사용자가 시킨 호출이
     # 아니라 클로버를 깎지 않고 레이트리밋에도 세지 않는다.
     "chat_memory_episode",
+    # 요약 접기가 접은 구간을 관계·사실 기억으로 뽑는 백그라운드 추출(`chat/memory_facts.py`). 장면 추출과 같은 이유로 클로버를
+    # 깎지 않고 레이트리밋에도 세지 않는다.
+    "chat_memory_fact",
     "preview_generate",
     "preview_stat_judgment",
     "preview_ending_judgment",
@@ -54,7 +57,12 @@ JudgmentKind = Literal["stat", "ending", "image"]
 # 판정·요약 호출의 모델(문안 체인의 모델 id)을 담은 `core/config.py` 설정 이름. 값은 `llm/backends.py` 의 `call_site_model` 이
 # 호출마다 읽는다.
 ModelSetting = Literal[
-    "stat_judgment_model", "ending_judgment_model", "image_judgment_model", "memory_summary_model", "memory_episode_model"
+    "stat_judgment_model",
+    "ending_judgment_model",
+    "image_judgment_model",
+    "memory_summary_model",
+    "memory_episode_model",
+    "memory_fact_model",
 ]
 
 # 공급자 구현의 id. 구현마다의 능력·서비스하는 모델·자격은 `llm/backends.py` 의 등록부 한 행이 정한다.
@@ -164,6 +172,10 @@ CALL_POLICIES: dict[LLMCallSite, CallPolicy] = {
     # 요약과 같은 백그라운드 구조화 호출이라 요약의 타임아웃을 쓴다. 판정 종류가 아니라 어드민 판정 비율에 들지 않는다.
     "chat_memory_episode": CallPolicy(
         gemini_timeout="gemini_memory_summary_timeout_ms", call_kind="structured", model_setting="memory_episode_model"
+    ),
+    # 장면 추출과 같은 백그라운드 구조화 호출이라 같은 타임아웃을 쓰고, 같은 이유로 판정 종류가 아니다.
+    "chat_memory_fact": CallPolicy(
+        gemini_timeout="gemini_memory_summary_timeout_ms", call_kind="structured", model_setting="memory_fact_model"
     ),
     "preview_generate": CallPolicy(gemini_timeout="gemini_generate_timeout_ms", call_kind="stream"),
     "preview_stat_judgment": CallPolicy(

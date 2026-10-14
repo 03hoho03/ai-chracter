@@ -403,6 +403,7 @@ _JUDGMENT_SETTINGS = (
     "image_judgment_model",
     "memory_summary_model",
     "memory_episode_model",
+    "memory_fact_model",
 )
 
 
@@ -433,6 +434,8 @@ def test_each_judgment_and_summary_call_reads_the_model_setting_of_its_kind() ->
             assert policy.model_setting == "memory_summary_model"
         elif call_site == "chat_memory_episode":
             assert policy.model_setting == "memory_episode_model"
+        elif call_site == "chat_memory_fact":
+            assert policy.model_setting == "memory_fact_model"
         else:
             assert policy.model_setting is None, call_site
 
@@ -486,6 +489,7 @@ async def test_structured_calls_go_where_the_judgment_model_of_their_kind_resolv
     monkeypatch.setattr(settings, "stat_judgment_model", "haiku")
     monkeypatch.setattr(settings, "memory_summary_model", "sonnet")
     monkeypatch.setattr(settings, "memory_episode_model", "haiku")
+    monkeypatch.setattr(settings, "memory_fact_model", "opus")
     _assign(monkeypatch, {"chat_memory_summary": "anthropic", "chat_memory_episode": "anthropic"})
     reached: list[str] = []
     router = RoutingLLMClient(
@@ -501,12 +505,13 @@ async def test_structured_calls_go_where_the_judgment_model_of_their_kind_resolv
         "chat_media_book_image",
         "chat_memory_summary",
         "chat_memory_episode",
+        "chat_memory_fact",
     ):
         await router.generate_structured(
             "p", _Parsed, usage=LLMCallContext(call_site, None, None, model="opus")
         )
 
-    assert reached == ["bedrock", "bedrock", "gemini", "gemini", "gemini", "anthropic", "anthropic"]
+    assert reached == ["bedrock", "bedrock", "gemini", "gemini", "gemini", "anthropic", "anthropic", "bedrock"]
 
 
 def test_the_judgment_dump_names_the_id_the_judgment_model_sends(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
