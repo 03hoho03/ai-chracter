@@ -795,6 +795,33 @@ def cmd_prototype_facts(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_fact_metrics(args: argparse.Namespace) -> int:
+    """사실 계층 오프라인 지표(보존율·중복 키·상한 탈락, 범주별). 개발 보기가 기본이다."""
+    from memory_eval.facts import RENDER_MAX_CHARS, fact_metrics
+    from memory_eval.prototype_facts import load_fact_rows
+
+    splits = _splits(args)
+    plant_set = _plant_view(args, splits)
+    rows = load_fact_rows(args.facts)
+    cps: list[int | None] = list(_ints(args.checkpoints)) if args.checkpoints else [None]
+    report: dict[str, Any] = {
+        "splits": sorted(splits),
+        "facts": str(args.facts),
+        "results": [
+            fact_metrics(plant_set.all_items(), rows, checkpoint=cp, max_chars=args.max_chars or RENDER_MAX_CHARS)
+            for cp in cps
+        ],
+    }
+    _write(args.out, report)
+    _print(
+        [
+            {"checkpoint": r["checkpoint"], "preserved": r["overall"]["preserved"]["rate"], "rows": r["rows"]}
+            for r in report["results"]
+        ]
+    )
+    return 0
+
+
 def cmd_s8(args: argparse.Namespace) -> int:
     from memory_eval.judge import ensure_unique_probe_rows
     from memory_eval.verdict import s8_verdict
@@ -1048,6 +1075,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--version", default="v1")
     p.add_argument("--out", type=Path)
     p.set_defaults(fn=cmd_prototype_facts)
+
+    p = sub.add_parser("fact-metrics", help="사실 계층 오프라인 지표(개발 보기 기본)")
+    with_plants(p)
+    with_splits(p)
+    p.add_argument("--facts", type=Path, required=True, help="사실 행(시제품 JSON 배열 또는 넣기 따라잡기 JSONL)")
+    p.add_argument("--checkpoints", help="체크포인트별로 나눠 센다(비우면 전체 행 한 번)")
+    p.add_argument("--max-chars", type=int, help="렌더 상한(기본 700)")
+    p.add_argument("--out", type=Path, required=True)
+    p.set_defaults(fn=cmd_fact_metrics)
 
     p = sub.add_parser("s8-verdict", help="최종 짝 비교 ①~⑤ 판정(시험 절반 — 봉인 해시 필요)")
     with_plants(p)

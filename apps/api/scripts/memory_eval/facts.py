@@ -16,6 +16,8 @@ from typing import Any
 
 from api.chat.keyword_notes import normalize_keyword_text
 
+from memory_eval.metrics import answer_matches, normalize_match_text, wilson_interval
+
 KINDS = ("relation", "fact")
 TRUTH_STATUSES = ("confirmed", "claimed", "disproved")
 RENDER_MAX_CHARS = 700
@@ -113,3 +115,149 @@ def existing_key_lines(rows: Sequence[Mapping[str, Any]], *, limit: int = EXISTI
     """추출 입력의 기존 키 목록: 앞 창들의 행을 키별 최신으로 줄여 최근 `limit` 개를 `키 = 값 (진실 상태)` 줄로."""
     latest = latest_by_key(rows)[-limit:] if limit > 0 else []
     return [f"{row_key(r)} = {r.get('value')} ({r.get('truth_status')})" for r in latest]
+
+
+# ---------------------------------------------------------------- 오프라인 지표
+
+# 심기 표의 기대 사실은 반증을 `refuted` 로 적는다 — 행의 `disproved` 와 같은 뜻으로 맞춘다.
+_STATUS_ALIASES = {"refuted": "disproved"}
+# 정답 묶음이 지금 값을 묻는 범주(정답 = 기대 사실의 값). 나머지 범주의 묶음은 질문의 답(귀속·거절·비밀 지킴)이라 값 비교에 쓰지 않는다.
+_VALUE_BUNDLE_CATEGORIES = ("relation", "correction", "detail")
+
+
+def normalize_status(status: str | None) -> str:
+    return _STATUS_ALIASES.get(str(status or ""), str(status or ""))
+
+
+def expected_key(expected: Mapping[str, Any]) -> str:
+    return row_key(expected)
+
+
+def _names(value: Any) -> frozenset[str]:
+    return frozenset(normalize_part(str(n)) for n in (value or []) if normalize_part(str(n)))
+
+
+def value_matches(row_value: str | None, entry: Mapping[str, Any]) -> bool:
+    """값은 느슨히 본다: 정답 일치와 같은 정규화(NFC·casefold·공백 제거·숫자 표기) 뒤 기대 값과 행 값 가운데 한쪽이 다른
+    쪽에 들어 있거나, 정답 묶음이 지금 값을 묻는 범주(관계·정정·디테일)에서 행 값이 그 묶음을 채우면 맞다."""
+    expected = (entry.get("expected_fact") or {}).get("value")
+    got = normalize_match_text(str(row_value or ""))
+    want = normalize_match_text(str(expected or ""))
+    if got and want and (want in got or got in want):
+        return True
+    bundles = (entry.get("answer_key") or {}).get("bundles") or []
+    return (
+        entry.get("category") in _VALUE_BUNDLE_CATEGORIES and bool(bundles) and answer_matches(str(row_value), bundles)
+    )
+
+
+def row_matches(row: Mapping[str, Any], entry: Mapping[str, Any], *, check_key: bool = True) -> bool:
+    """행이 항목의 기대 사실을 담는가: 키(정규화 뒤 같음) · 진실 상태(반증 표기 맞춤) · 아는 사람(정규화한 이름 집합이 같음,
+    기대가 공개면 행도 비어야 함) · 값(`value_matches`)."""
+    expected = entry.get("expected_fact") or {}
+    if check_key and row_key(row) != expected_key(expected):
+        return False
+    if normalize_status(row.get("truth_status")) != normalize_status(expected.get("truth_status")):
+        return False
+    if _names(row.get("known_by")) != _names(expected.get("known_by")):
+        return False
+    return value_matches(row.get("value"), entry)
+
+
+def _rate(k: int, n: int) -> dict[str, Any]:
+    return {"k": k, "n": n, "rate": k / n if n else None, "wilson": wilson_interval(k, n)}
+
+
+def fact_metrics(
+    items: Sequence[Mapping[str, Any]],
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    checkpoint: int | None = None,
+    max_chars: int = RENDER_MAX_CHARS,
+) -> dict[str, Any]:
+    """사실 계층 오프라인 지표. 체크포인트를 주면 그때 읽을 수 있던 행(`available_from_turn` ≤ 체크포인트 + 1)과 그때 심기가
+    모두 접힌 항목만 센다.
+
+    항목 단위(기대 사실이 있는 항목, 범주별·전체):
+    - `preserved`(사실 보존율): 덧붙은 행 가운데 `row_matches` 인 행이 하나라도 있다.
+    - `preservedInRead`: 그 키의 키별 최신 행(읽기가 실제로 내놓는 행)이 `row_matches` 다.
+    - `droppedByCap`(분모 = `preservedInRead` 인 항목): 그 최신 행이 렌더 상한에서 잘렸다.
+    - 진단: `keyFound`(그 키의 행이 있다), `matchedIgnoringKey`(키만 빼고 맞는 행이 있다 — 키 이름이 갈려 놓친 것).
+
+    행 단위:
+    - `duplicateKeyRate`: 같은 스냅샷(같은 추출 호출)에서 같은 키가 두 번 이상 나온 행 / 전체 행.
+    - `restatedRate`: 앞 스냅샷에 같은 키·같은 값·같은 진실 상태 행이 이미 있는데 다시 쓴 행 / 전체 행(바뀐 것 없는 재진술).
+    - `capDropRate`: 키별 최신 행 가운데 렌더 상한에서 잘린 행 / 키별 최신 행."""
+    visible = [
+        r
+        for r in rows
+        if checkpoint is None or r.get("available_from_turn") is None or int(r["available_from_turn"]) <= checkpoint + 1
+    ]
+    targets = [
+        e
+        for e in items
+        if e.get("expected_fact")
+        and (checkpoint is None or checkpoint in (e.get("probeCheckpoints") or {}).get("offline", []))
+    ]
+    kept, dropped, _ = render(visible, max_chars=max_chars)
+    latest = {row_key(r): r for r in kept + dropped}
+    dropped_keys = {row_key(r) for r in dropped}
+    per_item = []
+    for entry in targets:
+        key = expected_key(entry["expected_fact"])
+        resolved = latest.get(key)
+        in_read = resolved is not None and row_matches(resolved, entry)
+        per_item.append(
+            {
+                "item": entry["id"],
+                "category": entry.get("category"),
+                "split": entry.get("split"),
+                "key": key,
+                "preserved": any(row_matches(r, entry) for r in visible),
+                "preservedInRead": in_read,
+                "droppedByCap": in_read and key in dropped_keys,
+                "keyFound": resolved is not None,
+                "matchedIgnoringKey": any(row_matches(r, entry, check_key=False) for r in visible),
+            }
+        )
+
+    def summary(members: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+        read = [m for m in members if m["preservedInRead"]]
+        return {
+            "preserved": _rate(sum(1 for m in members if m["preserved"]), len(members)),
+            "preservedInRead": _rate(len(read), len(members)),
+            "droppedByCap": _rate(sum(1 for m in read if m["droppedByCap"]), len(read)),
+            "keyFound": _rate(sum(1 for m in members if m["keyFound"]), len(members)),
+            "matchedIgnoringKey": _rate(sum(1 for m in members if m["matchedIgnoringKey"]), len(members)),
+        }
+
+    by_category: dict[str, list[Mapping[str, Any]]] = {}
+    for m in per_item:
+        by_category.setdefault(str(m["category"]), []).append(m)
+    seen_in_snapshot: dict[tuple[str, str], int] = {}
+    for r in visible:
+        pair = (str(r.get("snapshot_id")), row_key(r))
+        seen_in_snapshot[pair] = seen_in_snapshot.get(pair, 0) + 1
+    duplicates = sum(1 for r in visible if seen_in_snapshot[(str(r.get("snapshot_id")), row_key(r))] > 1)
+    restated = 0
+    earlier: dict[tuple[str, str, str], set[str]] = {}
+    for r in visible:
+        sig = (row_key(r), normalize_part(r.get("value")), normalize_status(r.get("truth_status")))
+        snapshots = earlier.setdefault(sig, set())
+        if snapshots - {str(r.get("snapshot_id"))}:
+            restated += 1
+        snapshots.add(str(r.get("snapshot_id")))
+    n_rows = len(visible)
+    n_latest = len(kept) + len(dropped)
+    return {
+        "checkpoint": checkpoint,
+        "maxChars": max_chars,
+        "rows": n_rows,
+        "latestRows": n_latest,
+        "duplicateKeyRate": _rate(duplicates, n_rows),
+        "restatedRate": _rate(restated, n_rows),
+        "capDropRate": _rate(len(dropped), n_latest),
+        "overall": summary(per_item),
+        "byCategory": {name: summary(members) for name, members in sorted(by_category.items())},
+        "items": per_item,
+    }
