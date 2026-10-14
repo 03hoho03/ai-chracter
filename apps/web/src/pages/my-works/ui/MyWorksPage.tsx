@@ -28,6 +28,7 @@ import {
 } from "@/entities/content";
 import { useDraftListQuery } from "@/entities/draft";
 
+import { resolveMyWorksEmptyResult, toMyWorksScopeLabel } from "../model/myWorksEmptyResult";
 import {
   filterMyWorks,
   mergeMyWorks,
@@ -47,6 +48,7 @@ import {
   type MyWorkTypeFilter,
 } from "../model/myWorksSearch";
 import { MyWorkCardMenu } from "./MyWorkCardMenu";
+import { MyWorksSearchField } from "./MyWorksSearchField";
 
 type MyWorksPageProps = {
   userId: string;
@@ -144,10 +146,14 @@ type MyWorksBodyProps = {
  * 필터·정렬 툴바는 마지막 분기(볼 것이 하나라도 있는 상태)에서만 렌더한다 — 걸러낼 대상이 없는
  * 로딩·전면에러·"작품 0건" 화면에서 필터를 띄우면 아무 데도 닿지 않는 컨트롤이 된다. */
 function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
-  const characterQuery = useProfileContentListQuery({ userId, type: "character" });
-  const storyQuery = useProfileContentListQuery({ userId, type: "story" });
-  const draftListQuery = useDraftListQuery();
+  const { type: typeFilter, visibility: visibilityFilter, sort, q } = resolveMyWorksSearch(search);
+  // 검색어는 서버가 거른다 — 세 목록 모두에 같은 `q`를 싣고, 커서를 따라 다음 페이지를 당길 때도 다시 보낸다.
+  // 공개범위는 지금처럼 화면이 거른다(아래 `filterMyWorks`).
+  const characterQuery = useProfileContentListQuery({ userId, type: "character", q });
+  const storyQuery = useProfileContentListQuery({ userId, type: "story", q });
+  const draftListQuery = useDraftListQuery({ q });
   const typeFilterRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
   const queries = [characterQuery, storyQuery, draftListQuery];
@@ -197,7 +203,9 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
       />
     ) : undefined;
 
-  if (items.length === 0) {
+  // 검색어가 걸린 0건은 "아직 만든 작품이 없어요"가 아니다 — 서버가 검색어로 걸러 세 목록이 다 비었을 뿐이다.
+  // 그 경우는 툴바(검색 칸)를 남긴 아래 분기의 빈 결과로 보낸다.
+  if (items.length === 0 && q === undefined) {
     return (
       <div className="flex flex-col gap-6">
         {errorBanner}
@@ -215,7 +223,6 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
     );
   }
 
-  const { type: typeFilter, visibility: visibilityFilter, sort } = resolveMyWorksSearch(search);
   const visibleItems = filterMyWorks(items, { type: typeFilter, visibility: visibilityFilter });
 
   // "더 보기"는 **지금 칩이 보여주는 스트림만** 진행시킨다(`toMyWorkPageSources`). `전체`가 둘인 게
@@ -243,9 +250,11 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
 
       <MyWorksToolbar
         typeFilterRef={typeFilterRef}
+        searchInputRef={searchInputRef}
         typeFilter={typeFilter}
         visibilityFilter={visibilityFilter}
         sort={sort}
+        q={q}
         count={visibleItems.length}
         hasMore={hasMore}
         onSearchChange={onSearchChange}
@@ -253,12 +262,17 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
 
       {visibleItems.length === 0 ? (
         <MyWorksEmptyResult
-          isFiltered={typeFilter !== "all" || visibilityFilter !== "all"}
+          q={q}
           filterLabel={describeFilter(typeFilter, visibilityFilter)}
           hasMore={hasMore}
           onResetFilter={() => {
             focusTypeFilter("all");
-            onSearchChange({ type: undefined, visibility: undefined });
+            onSearchChange({ type: undefined, visibility: undefined, q: undefined });
+          }}
+          onClearQuery={() => {
+            // 검색 칸은 이 패널이 사라져도 툴바에 남는다 — 지운 뒤 바로 다시 칠 수 있게 그리로 옮긴다.
+            searchInputRef.current?.focus();
+            onSearchChange({ q: undefined });
           }}
           onShowUnpublished={() => {
             focusTypeFilter("unpublished");
@@ -294,11 +308,13 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
 }
 
 type MyWorksEmptyResultProps = {
-  isFiltered: boolean;
-  filterLabel: string;
+  q: string | undefined;
+  /** 걸린 칩 필터를 이름으로 적은 말. 칩 필터가 없으면 `undefined`. */
+  filterLabel: string | undefined;
   /** 아직 안 불러온 페이지가 남아 있는지. 남았으면 "없어요"가 목록 전체에 대한 말이 아니다. */
   hasMore: boolean;
   onResetFilter: () => void;
+  onClearQuery: () => void;
   onShowUnpublished: () => void;
 };
 
@@ -312,15 +328,20 @@ type MyWorksEmptyResultProps = {
  * 이미 해제 상태라 아무 일도 하지 않으며 (3) 초안이 `미등록`에 멀쩡히 있다는 사실을 말하지 않는다
  * (실측: 발행작 응답을 비우면 `전체 0건` + 죽은 버튼). `미등록 보기`는 이 분기에 도달한 이상 항상
  * 1건 이상으로 간다.
+ *
+ * 문장과 버튼의 선택은 `resolveMyWorksEmptyResult`가 한다.
  */
 function MyWorksEmptyResult({
-  isFiltered,
+  q,
   filterLabel,
   hasMore,
   onResetFilter,
+  onClearQuery,
   onShowUnpublished,
 }: MyWorksEmptyResultProps) {
-  if (!isFiltered) {
+  const result = resolveMyWorksEmptyResult({ q, filterLabel, hasMore });
+
+  if (result.kind === "noPublished") {
     return (
       <ContentListEmptyState
         message="아직 발행한 작품이 없어요."
@@ -339,21 +360,19 @@ function MyWorksEmptyResult({
 
   // 패널 밖 건수 줄에만 조건이 적혀 있으면, 공유 URL로 이 화면에 바로 도착한 사람에게 패널이
   // "조건"이라는 대명사만 말하게 된다. 같은 문장을 패널 안에서 한 번 더 완결시킨다.
-  //
-  // 남은 페이지가 있으면 그 문장의 범위를 **불러온 만큼**으로 좁힌다. 공개여부는 서버가 아니라
-  // 화면이 거르므로 첫 24건이 전부 공개작이면 `비공개`가 0건인데, 다음 페이지에는 있을 수 있다 —
-  // 그때 "비공개에 해당하는 작품이 없어요"는 거짓이고 바로 아래 "더 보기" 버튼과도 어긋난다.
   return (
     <ContentListEmptyState
-      message={
-        hasMore
-          ? `지금까지 불러온 작품 중에는 ${filterLabel}에 해당하는 게 없어요.`
-          : `${filterLabel}에 해당하는 작품이 없어요.`
-      }
+      message={result.message}
       action={
-        <Button type="button" variant="outline" onClick={onResetFilter}>
-          필터 모두 해제
-        </Button>
+        result.action === "clearQuery" ? (
+          <Button type="button" variant="outline" onClick={onClearQuery}>
+            검색어 지우기
+          </Button>
+        ) : (
+          <Button type="button" variant="outline" onClick={onResetFilter}>
+            필터 모두 해제
+          </Button>
+        )
       }
     />
   );
@@ -361,9 +380,11 @@ function MyWorksEmptyResult({
 
 type MyWorksToolbarProps = {
   typeFilterRef: RefObject<HTMLDivElement | null>;
+  searchInputRef: RefObject<HTMLInputElement | null>;
   typeFilter: MyWorkTypeFilter;
   visibilityFilter: VisibilityFilter;
   sort: MyWorksSort;
+  q: string | undefined;
   count: number;
   hasMore: boolean;
   onSearchChange: (patch: Partial<MyWorksSearch>) => void;
@@ -379,9 +400,11 @@ type MyWorksToolbarProps = {
  * 새로 발명해야 한다. */
 function MyWorksToolbar({
   typeFilterRef,
+  searchInputRef,
   typeFilter,
   visibilityFilter,
   sort,
+  q,
   count,
   hasMore,
   onSearchChange,
@@ -493,6 +516,16 @@ function MyWorksToolbar({
             </SelectContent>
           </Select>
         )}
+
+        {/* 검색은 칩·`공개 여부`와 별개 축이라 같은 `gap-6`으로 떨어뜨리고, 넓은 화면에서는 줄 끝으로 민다.
+            폭이 모자라면 다음 줄로 접혀 그 줄을 다 쓴다(390px에서는 셋째 줄 전체 폭). 칩을 눌러도 검색어는 그대로다 —
+            칩 `onValueChange`가 함수형 업데이터로 `q`를 남긴다. */}
+        <MyWorksSearchField
+          inputRef={searchInputRef}
+          query={q}
+          onQueryChange={(next) => onSearchChange({ q: next })}
+          className="ml-auto min-w-0 flex-1 basis-56 sm:max-w-72"
+        />
       </div>
 
       <div className="flex items-center justify-between gap-3">
@@ -510,7 +543,7 @@ function MyWorksToolbar({
             된다(그때는 그게 실제로 총계다). 두 문구가 갈리는 지점과 버튼이 사라지는 지점이 같아서
             사용자에겐 한 가지 상태 변화로 읽힌다. */}
         <p aria-live="polite" aria-atomic className="text-sm text-muted-foreground">
-          {describeFilter(typeFilter, visibilityFilter)} {count}건{hasMore ? " 표시 중" : ""}
+          {toMyWorksScopeLabel({ q, filterLabel: describeFilter(typeFilter, visibilityFilter) })} {count}건{hasMore ? " 표시 중" : ""}
         </p>
 
         <Select
@@ -546,14 +579,15 @@ function MyWorksToolbar({
   );
 }
 
-/** 건수 앞에 걸려 있는 축을 전부 이름으로 적는다 — 좁혀 놓고 "전체 0건"이라고 하면 작품이 하나도 없는
- * 것처럼 읽힌다(실제로는 32건이 있고 그중 비공개가 0건인 상태다). 아무것도 안 걸렸을 때만 "전체"다. */
-function describeFilter(typeFilter: MyWorkTypeFilter, visibilityFilter: VisibilityFilter): string {
+/** 걸려 있는 칩 필터 축을 전부 이름으로 적는다(`캐릭터 · 비공개`). 아무것도 안 걸렸으면 `undefined`다 — 그때
+ * 건수 줄이 `전체`라고 쓸지, 검색어만 쓸지는 `toMyWorksScopeLabel`이 정한다. 좁혀 놓고 "전체 0건"이라고 하면
+ * 작품이 하나도 없는 것처럼 읽힌다(실제로는 32건이 있고 그중 비공개가 0건인 상태다). */
+function describeFilter(typeFilter: MyWorkTypeFilter, visibilityFilter: VisibilityFilter): string | undefined {
   const axes: string[] = [];
   if (typeFilter !== "all") axes.push(TYPE_FILTER_LABEL[typeFilter]);
   if (visibilityFilter !== "all") axes.push(VISIBILITY_FILTER_LABEL[visibilityFilter]);
 
-  return axes.length === 0 ? "전체" : axes.join(" · ");
+  return axes.length === 0 ? undefined : axes.join(" · ");
 }
 
 type MyWorkCardProps = {
@@ -653,6 +687,8 @@ function MyWorksSkeleton() {
               ))}
             </SelectContent>
           </Select>
+
+          <div className="invisible ml-auto h-8 min-w-0 flex-1 basis-56 sm:max-w-72" />
         </div>
         <div className="h-8" />
       </div>

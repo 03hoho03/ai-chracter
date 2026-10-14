@@ -20,8 +20,10 @@ export const contentKeys = {
   details: () => [...contentKeys.all, "detail"] as const,
   drafts: () => [...contentKeys.all, "draft"] as const,
   versionLists: () => [...contentKeys.all, "versions"] as const,
-  list: (userId: string, type: ContentType, visibility?: VisibilityFilter) =>
-    [...contentKeys.listByUser(userId), type, visibility ?? "all"] as const,
+  /** 검색어(`q`)가 마지막 칸인 것은 `useProfileContentListQuery`가 "검색어만 바뀌었는가"를 그 칸을 뺀 나머지의
+   * 비교로 판정하기 때문이다 — 순서를 바꾸면 그 판정도 함께 고쳐야 한다. */
+  list: (userId: string, type: ContentType, visibility?: VisibilityFilter, q?: string) =>
+    [...contentKeys.listByUser(userId), type, visibility ?? "all", q ?? ""] as const,
   /** 공개범위 전환 성공 시 유형/공개여부 필터와 무관하게 그 작가의 모든 목록 쿼리를
    * 무효화하기 위한 공통 접두사(TanStack Query는 배열 접두사로 부분 매칭한다). */
   listByUser: (userId: string) => [...contentKeys.lists(), userId] as const,
