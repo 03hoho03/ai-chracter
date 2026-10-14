@@ -68,10 +68,12 @@ class FactRecordMissingError(Exception):
     """턴 기록에 남은 사실이 지금 DB 에 없다(그 뒤 되감기로 지워졌다)."""
 
 
-def fact_line(row: ChatMemoryFact) -> str:
-    """사실 한 줄. 꼬리표는 이 순서로 붙는다 — 반증이면 줄 앞 표지, 주장이면 끝에 말한 쪽(사용자가 내놓은 주장은 사용자 꼬리표,
-    아니면 말한 인물 이름, 이름이 없으면 인물 꼬리표), 아는 사람이 있으면 그 뒤에 `(이름·이름만 앎)`. 사용자·인물 꼬리표는
-    회상 줄과 같은 상수다(두 섹션 문안이 같은 꼬리표를 설명한다)."""
+def fact_line(row: ChatMemoryFact, *, user_name: str | None = None) -> str:
+    """사실 한 줄. 꼬리표는 이 순서로 붙는다 — 반증이면 줄 앞 표지, 주장이면 끝에 말한 쪽, 아는 사람이 있으면 그 뒤에
+    `(이름·이름만 앎)`. 말한 쪽은 사용자가 내놓은 주장이거나 말한 사람이 그 턴 사용자의 이야기 속 이름(`user_name`, 사실 키와
+    같은 정규화로 견준다)이면 사용자 꼬리표다 — 추출이 사용자 말을 그 이름의 인물 말로 적어도 사용자가 한 말로 읽히게. 그 밖은
+    말한 인물 이름, 이름이 없으면 인물 꼬리표다. 사용자·인물 꼬리표는 회상 줄과 같은 상수다(두 섹션 문안이 같은 꼬리표를
+    설명한다)."""
     if row.kind == "relation":
         line = f"{row.subject} → {row.object}: {row.value}"
     else:
@@ -79,7 +81,8 @@ def fact_line(row: ChatMemoryFact) -> str:
     if row.truth_status == "disproved":
         line = DISPROVED_MARK + line
     elif row.truth_status == "claimed":
-        if row.asserted_by == "user":
+        spoken_by_user = bool(user_name and row.speaker and normalize_part(row.speaker) == normalize_part(user_name))
+        if row.asserted_by == "user" or spoken_by_user:
             line += memory_recall.USER_ASSERTION_TAIL
         elif row.speaker:
             line += f" ({row.speaker}의 말)"
@@ -133,7 +136,12 @@ def _relevant(ordered: Sequence[ChatMemoryFact], query: str, names: Sequence[str
 
 
 def select_fact_rows(
-    rows: Sequence[ChatMemoryFact], *, query: str, names: Sequence[str], current_turn: int
+    rows: Sequence[ChatMemoryFact],
+    *,
+    query: str,
+    names: Sequence[str],
+    current_turn: int,
+    user_name: str | None = None,
 ) -> list[ChatMemoryFact]:
     """쓴 순서의 행 전부에서 섹션에 실을 행을 렌더 순서로 고른다(규칙은 모듈 설명). `query` 는 이번 턴 사용자 메시지, `names`
     는 질의에서 뺄 이름, `current_turn` 은 이번 턴 번호(관련 점수의 최근성)다."""
@@ -141,7 +149,7 @@ def select_fact_rows(
         row
         for _, row in sorted(_latest_by_key(rows), key=lambda pair: (_group(pair[1]), -pair[1].importance, -pair[0]))
     ]
-    lengths = [len(fact_line(row)) for row in ordered]
+    lengths = [len(fact_line(row, user_name=user_name)) for row in ordered]
     chosen: set[int] = set()
     used = 0
 
@@ -209,10 +217,11 @@ async def _facts(
         query=user_content,
         names=[name for name in (names.persona_name, names.char_name) if name],
         current_turn=current_turn,
+        user_name=names.persona_name,
     )
     if not picked:
         return NO_FACTS
-    lines = [fact_line(row) for row in picked]
+    lines = [fact_line(row, user_name=names.persona_name) for row in picked]
     record = tuple({"factId": str(row.id), "chars": len(line)} for row, line in zip(picked, lines, strict=True))
     return FactSection("\n".join(lines), record)
 
@@ -242,15 +251,20 @@ async def facts_for_turn(
         return NO_FACTS
 
 
-async def fact_lines_from_record(db: AsyncSession, record: Sequence[dict[str, Any]]) -> str:
-    """턴 기록(`chat_turns.memory_facts`)의 사실을 그 턴과 같은 줄·같은 순서로 다시 렌더한다 — 지금 행으로 다시 고르면 그 사이
-    쓰인 행 때문에 다른 글이 된다. 사실 행은 한 번 쓰면 고쳐 쓰지 않으므로 id 로 같은 줄이 나온다. 기록한 사실 중 하나라도 없으면
-    `FactRecordMissingError`."""
+async def fact_rows_from_record(db: AsyncSession, record: Sequence[dict[str, Any]]) -> list[ChatMemoryFact]:
+    """턴 기록(`chat_turns.memory_facts`)의 사실 행을 기록 순서(그 턴의 줄 순서)로 — 지금 행으로 다시 고르면 그 사이 쓰인 행
+    때문에 다른 글이 된다. 사실 행은 한 번 쓰면 고쳐 쓰지 않으므로 같은 id 면 같은 줄이 나온다(`fact_lines` 로 렌더한다). 기록한
+    사실 중 하나라도 없으면 `FactRecordMissingError`."""
     if not record:
-        return ""
+        return []
     ids = [uuid.UUID(str(entry["factId"])) for entry in record]
     rows = {row.id: row for row in (await db.scalars(select(ChatMemoryFact).where(ChatMemoryFact.id.in_(ids)))).all()}
     missing = [str(fact_id) for fact_id in ids if fact_id not in rows]
     if missing:
         raise FactRecordMissingError(f"턴 기록의 사실이 지금 없다: {missing}")
-    return "\n".join(fact_line(rows[fact_id]) for fact_id in ids)
+    return [rows[fact_id] for fact_id in ids]
+
+
+def fact_lines(rows: Sequence[ChatMemoryFact], *, user_name: str | None) -> str:
+    """사실 행들의 섹션 줄. `user_name` 은 그 턴 사용자의 이야기 속 이름이다(`fact_line`)."""
+    return "\n".join(fact_line(row, user_name=user_name) for row in rows)

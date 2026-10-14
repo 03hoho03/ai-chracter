@@ -33,7 +33,7 @@ from api.chat.memory_nouns import episode_nouns
 from api.chat.memory_window import CurrentSummary, load_current_summary
 from api.chat.prompt_builder import MemorySummaryResult, PromptLane, StatRuleJudgmentResult, load_active_prompt_set
 from api.chat.router import _resolve_starting_setup
-from api.chat.turn_prompt import GenerationPrompt, InjectedTurnState, build_room_prompt
+from api.chat.turn_prompt import GenerationPrompt, InjectedPersona, InjectedTurnState, build_room_prompt
 from api.core.config import settings
 from api.db.models import ChatMemoryFact, ChatMessage, ChatMessageRole, ChatRoom, ChatRoomMemorySnapshot
 from api.db.models.chat import FACT_VALUE_MAX, ChatTurn
@@ -172,6 +172,15 @@ def test_assertion_tails_reuse_the_recall_constants(monkeypatch: pytest.MonkeyPa
     character = _fields("유나", "오디션", "겨울", truth_status="claimed", asserted_by="character")
     assert fact_line(ChatMemoryFact(**user)) == "- 유나 · 오디션: 겨울 (바뀐 사용자 꼬리표)"
     assert fact_line(ChatMemoryFact(**character)) == "- 유나 · 오디션: 겨울 (바뀐 인물 꼬리표)"
+
+
+def test_claim_spoken_under_the_user_name_gets_the_user_tail() -> None:
+    """추출이 사용자 말을 사용자의 이야기 속 이름을 가진 인물의 말로 적어도(`asserted_by` 가 인물) 사용자 꼬리표다. 이름은 사실
+    키와 같은 정규화(대소문자·공백)로 견주고, 다른 인물 이름은 그대로 그 인물의 말이다."""
+    spoken = _fields("유나", "오디션", "겨울", truth_status="claimed", asserted_by="character", speaker=" Haneul ")
+    assert fact_line(ChatMemoryFact(**spoken), user_name="haneul") == "- 유나 · 오디션: 겨울 (사용자의 말)"
+    assert fact_line(ChatMemoryFact(**spoken), user_name="민수") == "- 유나 · 오디션: 겨울 ( Haneul 의 말)"
+    assert fact_line(ChatMemoryFact(**spoken)) == "- 유나 · 오디션: 겨울 ( Haneul 의 말)"
 
 
 # --- 키별 최신 · 렌더 순서 ---------------------------------------------------------------------
@@ -510,6 +519,22 @@ async def test_character_lane_gets_the_facts_section_too(
     built = await _build(db_session, room, "오디션 언제야?", lane="character")
     assert _section(built.prompt).endswith("\n- 유나 · 오디션: 겨울 (민수의 말)")
     assert len(built.memory_facts) == 1
+
+
+async def test_room_prompt_uses_the_persona_name_for_the_user_tail(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """조립은 그 턴 대화 프로필의 이름을 사용자 이름으로 넘긴다 — 그 이름이 말한 주장은 사용자 꼬리표다."""
+    room, snapshots = await _fact_room(db_client, db_session)
+    claim = _fields("유나", "오디션", "겨울", truth_status="claimed", asserted_by="character", speaker="하늘")
+    await _plant(db_session, room, snapshots[2], [claim])
+    _facts_on(monkeypatch)
+    summary = await load_current_summary(db_session, room.room_id)
+    state = InjectedTurnState(
+        summary=summary, memory_note="", stats={}, persona=InjectedPersona(name="하늘", gender=None, description="")
+    )
+    built = await _build(db_session, room, "오디션 언제야?", turn_state=state)
+    assert _section(built.prompt).endswith("\n- 유나 · 오디션: 겨울 (사용자의 말)")
 
 
 # --- 턴 기록 · 실패 흡수 · 리플레이 -------------------------------------------------------------

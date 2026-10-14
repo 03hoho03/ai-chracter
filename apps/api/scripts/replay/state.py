@@ -12,12 +12,19 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat.memory_fact_section import FactRecordMissingError, fact_lines_from_record
+from api.chat.memory_fact_section import FactRecordMissingError, fact_lines, fact_rows_from_record
 from api.chat.memory_recall import RecallRecordMissingError, recall_lines_from_record
 from api.chat.memory_window import CurrentSummary
 from api.chat.turn_prompt import InjectedPersona, InjectedTurnState
 from api.core.config import settings
-from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom, ChatRoomMemorySnapshot, ChatTurn
+from api.db.models.chat import (
+    ChatMemoryFact,
+    ChatMessage,
+    ChatMessageRole,
+    ChatRoom,
+    ChatRoomMemorySnapshot,
+    ChatTurn,
+)
 from api.db.models.story import Shortcut, StatDef
 from replay.logs import DriverLogs, ReplayRefusedError, RoomStatic, memory_snapshot, sha256, stats_line, turn_line
 
@@ -35,8 +42,9 @@ class RestoredTurn:
     summary: CurrentSummary | None
     # 그 턴 회상 섹션의 줄(턴 기록의 장면 id 로 다시 렌더한 것, 회상이 없던 턴은 `""`).
     recall_lines: str
-    # 그 턴 사실 섹션의 줄(턴 기록의 사실 id 로 다시 렌더한 것, 사실이 없던 턴은 `""`).
-    fact_lines: str
+    # 그 턴 사실 섹션에 실린 행(턴 기록의 사실 id 로 다시 읽은 것, 사실이 없던 턴은 빈 목록). 줄은 대화 프로필이 정해지는
+    # `turn_state` 에서 렌더한다 — 사용자 이름이 말한 주장의 꼬리표가 그 이름에 달렸다.
+    fact_rows: list[ChatMemoryFact]
     stats_by_id: dict[str, float]
     stats_by_name: dict[str, float]
     sources: dict[str, Any]
@@ -48,7 +56,7 @@ class RestoredTurn:
             stats=stats,
             persona=persona,
             recall_lines=self.recall_lines,
-            fact_lines=self.fact_lines,
+            fact_lines=fact_lines(self.fact_rows, user_name=persona.name if persona is not None else None),
         )
 
 
@@ -163,7 +171,7 @@ async def restore_turn(
         raise ReplayRefusedError(f"DB 의 턴 {turn} 응답이 로그의 응답 메시지 {assistant_id} 가 아니다")
 
     recall_lines = await turn_recall_lines(db, messages[index + 1].id)
-    fact_lines = await turn_fact_lines(db, messages[index + 1].id)
+    fact_rows = await turn_fact_rows(db, messages[index + 1].id)
 
     shortcut_id = line.get("shortcutId")
     if shortcut_id is None and line.get("shortcut") is not None:
@@ -180,7 +188,7 @@ async def restore_turn(
         memory_note=note,
         summary=summary,
         recall_lines=recall_lines,
-        fact_lines=fact_lines,
+        fact_rows=fact_rows,
         stats_by_id=by_id,
         stats_by_name=by_name,
         sources={
@@ -213,14 +221,19 @@ async def turn_recall_lines(db: AsyncSession, assistant_message_id: uuid.UUID) -
         raise ReplayRefusedError(str(exc)) from exc
 
 
-async def turn_fact_lines(db: AsyncSession, assistant_message_id: uuid.UUID) -> str:
-    """그 응답의 턴 기록이 실은 사실 기억 줄(사실 섹션 값). 규칙은 `turn_recall_lines` 와 같다 — 지금 행으로 다시 고르지 않고,
-    기록이 없거나 비면 `""`, 기록한 사실이 되감기로 사라졌으면 거부한다. 단 이 리플레이의 사실 주입 스위치가 꺼져 있으면 조립이
-    사실 섹션을 싣지 않으므로 `""` 다."""
+async def turn_fact_rows(db: AsyncSession, assistant_message_id: uuid.UUID) -> list[ChatMemoryFact]:
+    """그 응답의 턴 기록이 실은 사실 행. 규칙은 `turn_recall_lines` 와 같다 — 지금 행으로 다시 고르지 않고, 기록이 없거나 비면
+    빈 목록, 기록한 사실이 되감기로 사라졌으면 거부한다. 단 이 리플레이의 사실 주입 스위치가 꺼져 있으면 조립이 사실 섹션을
+    싣지 않으므로 빈 목록이다."""
     if not settings.memory_facts_inject:
-        return ""
+        return []
     record = await db.scalar(select(ChatTurn.memory_facts).where(ChatTurn.assistant_message_id == assistant_message_id))
     try:
-        return await fact_lines_from_record(db, record or [])
+        return await fact_rows_from_record(db, record or [])
     except FactRecordMissingError as exc:
         raise ReplayRefusedError(str(exc)) from exc
+
+
+async def turn_fact_lines(db: AsyncSession, assistant_message_id: uuid.UUID, *, user_name: str | None = None) -> str:
+    """그 응답의 턴 기록이 실은 사실 기억 줄(사실 섹션 값). `user_name` 은 그 턴 대화 프로필의 이름이다."""
+    return fact_lines(await turn_fact_rows(db, assistant_message_id), user_name=user_name)
