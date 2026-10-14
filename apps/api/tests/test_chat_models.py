@@ -7,6 +7,7 @@ import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
+from api.chat.memory_rewind import rewind_memory
 from api.chat.room_deletion import delete_chat_rooms
 from api.db.models import (
     CharacterImageExposure,
@@ -14,6 +15,8 @@ from api.db.models import (
     ChatMessageReport,
     ChatMemoryEpisode,
     ChatMemoryExtraction,
+    ChatMemoryFact,
+    ChatMemoryFactExtraction,
     ChatMessageRole,
     ChatRoom,
     ChatRoomMemorySnapshot,
@@ -38,6 +41,8 @@ from factories import (
     _make_chat_turn,
     _make_memory_episode,
     _make_memory_extraction,
+    _make_memory_fact,
+    _make_memory_fact_extraction,
     _make_novel_tree,
     _make_user,
 )
@@ -587,6 +592,263 @@ async def test_episode_insert_for_missing_snapshot_is_rejected(
             db_session.add(make(room.id, uuid.uuid4()))
 
     assert _violated_constraint(raised.value) == constraint
+
+
+# --- 사실 기억 · 추출 기록 -------------------------------------------------------------------------
+#
+# 장면 기억 절과 같은 규칙이다 — `alembic check` 는 CHECK 를 비교하지 않으므로 아래 거부 테스트가 유일한 검증이고, 거부
+# 테스트는 어느 제약이 거부했는지까지 본다. 상한마다 통과하는 끝값과 막히는 바로 다음 값을 함께 둔다(한쪽만 두면 상한이
+# 한 칸 밀려도 초록이다).
+
+# 사실(속성) 행의 칸 조합. 팩토리 기본값은 관계 행이다.
+_ATTRIBUTE_FACT: dict[str, object] = {
+    "kind": "fact",
+    "object": None,
+    "attribute": "직업",
+    "fact_key": "fact|민수|직업",
+    "value": "제빵사",
+}
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        pytest.param(
+            {
+                "subject": "가" * 60,
+                "object": "나" * 60,
+                "value": "다" * 200,
+                "fact_key": "라" * 200,
+                "speaker": "마" * 60,
+                "known_by": ["바" * 60 for _ in range(10)],
+                "importance": 5,
+                "ordinal": 19,
+                "truth_status": "disproved",
+                "asserted_by": "narration",
+            },
+            id="relation-max",
+        ),
+        pytest.param(
+            {
+                **_ATTRIBUTE_FACT,
+                "subject": "가",
+                "attribute": "나",
+                "value": "다",
+                "fact_key": "k",
+                "speaker": "마",
+                "known_by": ["바"],
+                "importance": 1,
+                "ordinal": 0,
+                "truth_status": "claimed",
+                "asserted_by": "character",
+            },
+            id="fact-min",
+        ),
+        pytest.param({**_ATTRIBUTE_FACT, "attribute": "나" * 60}, id="attribute-max"),
+        pytest.param({"known_by": None, "speaker": None}, id="public-without-speaker"),
+        pytest.param(
+            {
+                "start_created_at": _AT,
+                "start_message_id": _FIRST_ID,
+                "end_created_at": _AT,
+                "end_message_id": _SECOND_ID,
+                "start_turn": 4,
+                "end_turn": 5,
+            },
+            id="range-ties-on-time",
+        ),
+    ],
+)
+async def test_memory_fact_accepts_values_on_the_boundary(
+    db_session: AsyncSession, overrides: dict[str, object]
+) -> None:
+    room = await _make_chat_room(db_session)
+    snapshot = await _make_snapshot(db_session, room)
+
+    db_session.add(_make_memory_fact(room.id, snapshot.id, **overrides))
+    await db_session.flush()
+
+    count = await db_session.scalar(
+        sa.select(sa.func.count()).select_from(ChatMemoryFact).where(ChatMemoryFact.snapshot_id == snapshot.id)
+    )
+    assert count == 1
+
+
+@pytest.mark.parametrize(
+    ("overrides", "constraint"),
+    [
+        # 알 수 없는 종류는 종류별 칸 정합도 어기지만, Postgres 는 CHECK 를 이름 순으로 검사해 종류 제약이 먼저 거부한다.
+        pytest.param({"kind": "event"}, "ck_chat_memory_facts_kind", id="kind"),
+        pytest.param({"object": None}, "ck_chat_memory_facts_kind_columns", id="relation-without-object"),
+        pytest.param({"attribute": "직업"}, "ck_chat_memory_facts_kind_columns", id="relation-with-attribute"),
+        pytest.param(
+            {**_ATTRIBUTE_FACT, "attribute": None}, "ck_chat_memory_facts_kind_columns", id="fact-without-attribute"
+        ),
+        pytest.param({**_ATTRIBUTE_FACT, "object": "지아"}, "ck_chat_memory_facts_kind_columns", id="fact-with-object"),
+        pytest.param({"truth_status": "rumored"}, "ck_chat_memory_facts_truth_status", id="truth-status"),
+        # 장면 기억은 섞임(`mixed`)을 받지만 사실 한 줄은 말한 쪽이 하나다.
+        pytest.param({"asserted_by": "mixed"}, "ck_chat_memory_facts_asserted_by", id="asserted-by"),
+        pytest.param({"importance": 0}, "ck_chat_memory_facts_importance", id="importance-0"),
+        pytest.param({"importance": 6}, "ck_chat_memory_facts_importance", id="importance-6"),
+        pytest.param({"ordinal": -1}, "ck_chat_memory_facts_ordinal", id="ordinal--1"),
+        pytest.param({"ordinal": 20}, "ck_chat_memory_facts_ordinal", id="ordinal-20"),
+        pytest.param({"start_turn": 3, "end_turn": 2}, "ck_chat_memory_facts_turn_order", id="turn-order"),
+        pytest.param(
+            {
+                "start_created_at": _AT,
+                "start_message_id": _SECOND_ID,
+                "end_created_at": _AT,
+                "end_message_id": _FIRST_ID,
+            },
+            "ck_chat_memory_facts_range_order",
+            id="range-order-id",
+        ),
+        pytest.param({"subject": ""}, "ck_chat_memory_facts_subject_length", id="subject-0"),
+        pytest.param({"subject": "가" * 61}, "ck_chat_memory_facts_subject_length", id="subject-61"),
+        pytest.param({"object": "나" * 61}, "ck_chat_memory_facts_object_length", id="object-61"),
+        pytest.param(
+            {**_ATTRIBUTE_FACT, "attribute": "나" * 61}, "ck_chat_memory_facts_attribute_length", id="attribute-61"
+        ),
+        pytest.param({"speaker": ""}, "ck_chat_memory_facts_speaker_length", id="speaker-0"),
+        pytest.param({"speaker": "마" * 61}, "ck_chat_memory_facts_speaker_length", id="speaker-61"),
+        pytest.param({"value": ""}, "ck_chat_memory_facts_value_length", id="value-0"),
+        pytest.param({"value": "다" * 201}, "ck_chat_memory_facts_value_length", id="value-201"),
+        pytest.param({"fact_key": ""}, "ck_chat_memory_facts_fact_key_length", id="fact-key-0"),
+        pytest.param({"fact_key": "라" * 201}, "ck_chat_memory_facts_fact_key_length", id="fact-key-201"),
+        # "아무도 모른다"와 "모른다"를 NULL 하나로 둔다 — 빈 배열이 들어오면 읽는 쪽이 두 뜻을 갈라야 한다.
+        pytest.param({"known_by": []}, "ck_chat_memory_facts_known_by_count", id="known-by-empty"),
+        pytest.param(
+            {"known_by": [f"인물{i}" for i in range(11)]}, "ck_chat_memory_facts_known_by_count", id="known-by-11"
+        ),
+        pytest.param({"known_by": ["민수", "바" * 61]}, "ck_chat_memory_facts_known_by_items", id="known-by-item-61"),
+        pytest.param({"known_by": ["민수", None]}, "ck_chat_memory_facts_known_by_items", id="known-by-null-item"),
+    ],
+)
+async def test_memory_fact_rejects_values_outside_its_checks(
+    db_session: AsyncSession, overrides: dict[str, object], constraint: str
+) -> None:
+    room = await _make_chat_room(db_session)
+    snapshot = await _make_snapshot(db_session, room)
+
+    with pytest.raises(IntegrityError) as raised:
+        async with db_session.begin_nested():
+            db_session.add(_make_memory_fact(room.id, snapshot.id, **overrides))
+
+    assert _violated_constraint(raised.value) == constraint
+
+
+async def test_memory_fact_extraction_accepts_each_status_with_its_count(db_session: AsyncSession) -> None:
+    """뽑는 중·실패는 사실 수가 없고, 끝난 기록은 0 을 포함한 사실 수가 있다(사실이 없는 구간도 끝난 것이다)."""
+    room = await _make_chat_room(db_session)
+    rows: list[dict[str, object]] = [
+        {"status": "running", "fact_count": None},
+        {"status": "failed", "fact_count": None, "attempts": 3},
+        {"status": "done", "fact_count": 0},
+    ]
+    for overrides in rows:
+        snapshot = await _make_snapshot(db_session, room)
+        db_session.add(_make_memory_fact_extraction(room.id, snapshot.id, **overrides))
+    await db_session.flush()
+
+    count = await db_session.scalar(
+        sa.select(sa.func.count())
+        .select_from(ChatMemoryFactExtraction)
+        .where(ChatMemoryFactExtraction.chat_room_id == room.id)
+    )
+    assert count == len(rows)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "constraint"),
+    [
+        pytest.param({"status": "pending", "fact_count": None}, "ck_chat_memory_fact_extractions_status", id="status"),
+        pytest.param({"attempts": 0}, "ck_chat_memory_fact_extractions_attempts", id="attempts-0"),
+        pytest.param(
+            {"status": "done", "fact_count": None}, "ck_chat_memory_fact_extractions_done_count", id="done-no-count"
+        ),
+        pytest.param(
+            {"status": "running", "fact_count": 2}, "ck_chat_memory_fact_extractions_done_count", id="running-count"
+        ),
+    ],
+)
+async def test_memory_fact_extraction_rejects_values_outside_its_checks(
+    db_session: AsyncSession, overrides: dict[str, object], constraint: str
+) -> None:
+    room = await _make_chat_room(db_session)
+    snapshot = await _make_snapshot(db_session, room)
+
+    with pytest.raises(IntegrityError) as raised:
+        async with db_session.begin_nested():
+            db_session.add(_make_memory_fact_extraction(room.id, snapshot.id, **overrides))
+
+    assert _violated_constraint(raised.value) == constraint
+
+
+@pytest.mark.parametrize(
+    ("make", "constraint"),
+    [
+        pytest.param(_make_memory_fact, "chat_memory_facts_snapshot_id_fkey", id="fact"),
+        pytest.param(_make_memory_fact_extraction, "chat_memory_fact_extractions_snapshot_id_fkey", id="extraction"),
+    ],
+)
+async def test_fact_insert_for_missing_snapshot_is_rejected(
+    db_session: AsyncSession, make: Callable[..., object], constraint: str
+) -> None:
+    """추출이 끝날 때 스냅샷이 이미 지워졌으면(그 구간 대화가 되감겼다) 결과를 넣지 못해야 한다 — 지운 대화의 사실이
+    남지 않게 하는 마지막 방어선이 이 FK 다."""
+    room = await _make_chat_room(db_session)
+
+    with pytest.raises(IntegrityError) as raised:
+        async with db_session.begin_nested():
+            db_session.add(make(room.id, uuid.uuid4()))
+
+    assert _violated_constraint(raised.value) == constraint
+
+
+async def test_chat_turn_insert_without_facts_column_gets_empty_list(db_session: AsyncSession) -> None:
+    """사실 목록 칸을 모르는 옛 이미지의 턴 기록 INSERT(배포 겹침·이미지 롤백)가 DB 기본값으로 성공한다. 기본값을 떼면
+    그 INSERT 가 NOT NULL 위반으로 실패하고 응답 커밋까지 함께 깨진다 — `alembic check` 는 기본값을 비교하지 않는다."""
+    room = await _make_chat_room(db_session)
+    turn_id = uuid.uuid4()
+
+    await db_session.execute(
+        sa.text(
+            "INSERT INTO chat_turns (id, chat_room_id, assistant_message_id, kind, turn_number, chat_model, "
+            "charge_source, clover_amount) VALUES (:id, :room, :message, 'send', 1, 'gemini', 'free', 0)"
+        ),
+        {"id": turn_id, "room": room.id, "message": uuid.uuid4()},
+    )
+
+    assert await db_session.scalar(sa.select(ChatTurn.memory_facts).where(ChatTurn.id == turn_id)) == []
+
+
+@pytest.mark.parametrize("path", ["rewind", "reset", "room-deletion"])
+async def test_snapshot_delete_statements_succeed_over_fact_rows(db_session: AsyncSession, path: str) -> None:
+    """되감기·초기화(`rewind_memory`)와 방 삭제·탈퇴(`delete_chat_rooms`)의 스냅샷 DELETE 문장은 사실 계층 테이블을
+    모르던 이미지의 것과 같다. 사실 행과 그 추출 기록이 있는 DB 위에서 그 문장이 FK 위반 없이 끝나고 두 테이블이
+    비어야, 배포 겹침·이미지 롤백 동안 옛 이미지의 되감기·삭제가 500 이 되지 않는다(근거는 스냅샷 FK 의 CASCADE)."""
+    room = await _make_chat_room(db_session)
+    snapshot = await _make_snapshot(db_session, room)
+    db_session.add(_make_memory_fact(room.id, snapshot.id))
+    db_session.add(_make_memory_fact_extraction(room.id, snapshot.id))
+    await db_session.flush()
+
+    if path == "rewind":
+        await rewind_memory(db_session, room.id, (snapshot.cursor_created_at, snapshot.cursor_message_id))
+    elif path == "reset":
+        await rewind_memory(db_session, room.id, None)
+    else:
+        await delete_chat_rooms(db_session, [room.id])
+
+    facts = await db_session.scalar(
+        sa.select(sa.func.count()).select_from(ChatMemoryFact).where(ChatMemoryFact.chat_room_id == room.id)
+    )
+    extractions = await db_session.scalar(
+        sa.select(sa.func.count())
+        .select_from(ChatMemoryFactExtraction)
+        .where(ChatMemoryFactExtraction.chat_room_id == room.id)
+    )
+    assert (facts, extractions) == (0, 0)
 
 
 async def test_room_deletion_keeps_discarded_responses_and_reports_with_references_cleared(
