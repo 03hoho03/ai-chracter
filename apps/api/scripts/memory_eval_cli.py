@@ -496,6 +496,12 @@ def cmd_probe(args: argparse.Namespace) -> int:
             if line.strip() and not line.startswith("#"):
                 key, _, value = line.partition("=")
                 overrides[key.strip()] = value.strip()
+    else:
+        from memory_eval.arm_env import ARM_ENV, env_pairs
+
+        if args.arm in ARM_ENV:
+            # 2차 런 갈래는 env 표를 그대로 쓴다 — 파일을 손으로 옮기다 공통 줄이 갈래마다 갈리지 않게.
+            overrides.update(dict(env_pairs(args.arm)))
     from memory_eval import server
     from memory_eval.runtime import require_arm_supported
 
@@ -834,6 +840,14 @@ def cmd_summary_sections(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_arm_env(args: argparse.Namespace) -> int:
+    """2차 런 갈래의 측정 서버 env 줄을 출력한다(`--server-env` 파일로 쓸 수 있다)."""
+    from memory_eval.arm_env import env_text
+
+    print(env_text(args.arm, prompt_dump=args.prompt_dump), end="")
+    return 0
+
+
 def cmd_s8(args: argparse.Namespace) -> int:
     from memory_eval.judge import ensure_unique_probe_rows
     from memory_eval.verdict import s8_verdict
@@ -1022,7 +1036,7 @@ def build_parser() -> argparse.ArgumentParser:
     paid(p)
     p.add_argument("--checkpoint-label", help="복원할 템플릿의 단계 이름(넣기 실행의 --label, 기본 = --stage)")
     p.add_argument("--stage", required=True)
-    p.add_argument("--arm", required=True, choices=["baseline", "A", "B"])
+    p.add_argument("--arm", required=True, choices=["baseline", "A", "B", "A2", "B2"])
     p.add_argument("--checkpoints", default="50,100,300")
     p.add_argument("--items")
     p.add_argument("--room", type=uuid.UUID)
@@ -1101,6 +1115,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--inputs", type=Path, nargs="+", required=True, help="memory-snapshots.jsonl 또는 요약 본문 파일")
     p.add_argument("--out", type=Path, required=True)
     p.set_defaults(fn=cmd_summary_sections)
+
+    p = sub.add_parser("arm-env", help="2차 런 갈래(A2·B2)의 측정 서버 env 줄")
+    p.add_argument("--arm", required=True, choices=["A2", "B2"])
+    p.add_argument("--prompt-dump", help="PROMPT_DUMP_PATH 줄을 더한다(프로브는 폴더마다 따로 넣는다)")
+    p.set_defaults(fn=cmd_arm_env)
 
     p = sub.add_parser("s8-verdict", help="최종 짝 비교 ①~⑤ 판정(시험 절반 — 봉인 해시 필요)")
     with_plants(p)

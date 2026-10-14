@@ -26,11 +26,15 @@ from replay.local_db import ensure_local_database
 
 from memory_eval.checkpoint import database_name, ensure_eval_db_name
 
-# 갈래 = 같은 DB 상태에서 조립만 달리하는 설정 묶음. 회상 스위치는 회상을 구현한 코드에만 있다.
+# 갈래 = 같은 DB 상태에서 조립만 달리하는 설정 묶음. 회상 스위치는 회상을 구현한 코드에만 있다. A2·B2 는 2차 런의 두 갈래
+# (둘 다 회상을 켜고 B2 만 사실 섹션을 싣는다 — 서버 env 전체는 `memory_eval.arm_env` 모듈) — 사실 주입 설정이 없는 코드면
+# 거부된다.
 ARMS: dict[str, dict[str, Any]] = {
     "baseline": {},
     "A": {"memory_episodes_recall": False},
     "B": {"memory_episodes_recall": True},
+    "A2": {"memory_episodes_recall": True, "memory_facts_inject": False},
+    "B2": {"memory_episodes_recall": True, "memory_facts_inject": True},
 }
 
 

@@ -127,7 +127,7 @@ def append_point(path: Path, point: dict[str, Any]) -> None:
 
 
 # 회상을 켜는 갈래. 이 갈래는 조립 결과에 회상 칸이 있어야 한다.
-RECALL_ARMS = frozenset({"B"})
+RECALL_ARMS = frozenset({"B", "A2", "B2"})
 
 
 def recall_result(generation: Any, *, field: str | None, arm: str) -> list[Any] | None:
