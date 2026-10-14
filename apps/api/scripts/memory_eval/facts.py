@@ -218,6 +218,42 @@ def alias_user(rows: Sequence[Mapping[str, Any]], user_name: str | None) -> list
     return out
 
 
+# 근사 일치의 값 문턱(글자 2-그램 다이스 계수).
+NEAR_DICE = 0.5
+
+
+def _bigrams(text: str) -> set[str]:
+    t = normalize_match_text(text)
+    return {t[i : i + 2] for i in range(len(t) - 1)}
+
+
+def _dice(a: str, b: str) -> float:
+    x, y = _bigrams(a), _bigrams(b)
+    return 2 * len(x & y) / (len(x) + len(y)) if x and y else 0.0
+
+
+def _state_words(value: str) -> set[str]:
+    """관계 값의 머리(`상태 낱말 — 근거` 의 앞, `·` 로 이은 낱말들)."""
+    head = value.split("—", 1)[0] if "—" in value else ""
+    return {normalize_part(w) for w in head.split("·") if normalize_part(w)}
+
+
+def near_matches(row: Mapping[str, Any], entry: Mapping[str, Any]) -> bool:
+    """키를 묻지 않는 근사 일치(진단): 진실 상태·아는 사람은 `row_matches` 와 같게 보고, 값은 관계면 상태 낱말이 하나라도
+    겹치고, 사실이면 `value_matches` 이거나 글자 2-그램 다이스가 `NEAR_DICE` 이상이다. 옛 값을 담은 행은 맞지 않는다."""
+    expected = entry.get("expected_fact") or {}
+    if row.get("kind") != expected.get("kind") or row.get("truth_status") != expected.get("truth_status"):
+        return False
+    if _names(row.get("known_by")) != _names(expected.get("known_by")):
+        return False
+    value = str(row.get("value") or "")
+    if holds_old_value(value, entry):
+        return False
+    if expected.get("kind") == "relation":
+        return bool(_state_words(value) & _state_words(str(expected.get("value") or "")))
+    return value_matches(value, entry) or _dice(value, str(expected.get("value") or "")) >= NEAR_DICE
+
+
 def _rate(k: int, n: int) -> dict[str, Any]:
     return {"k": k, "n": n, "rate": k / n if n else None, "wilson": wilson_interval(k, n)}
 
@@ -241,6 +277,8 @@ def fact_metrics(
     - `readIgnoringKey`: 키만 빼고 맞는 행이 있고 그 행의 키별 최신 행도 키만 빼고 맞는다(속성 이름을 묻지 않는 읽기 보존 —
       같은 키의 뒤 행이 덮어써 읽기에서 사라진 것은 빠진다). `droppedByCapIgnoringKey`(분모 = `readIgnoringKey`): 그런 키가
       모두 렌더 상한에서 잘렸다.
+    - `nearInRead`(진단): `near_matches` 인 행이 있고 그 키의 최신 행도 그렇다 — 관계는 기대 키(주어 → 대상)에서만 센다.
+      값의 글자 그대로 포함만 보는 위 지표가 바꿔 쓴 값을 모두 놓치므로 함께 낸다. `nearDroppedByCap`: 그런 키가 모두 잘렸다.
 
     행 단위:
     - `duplicateKeyRate`: 같은 스냅샷(같은 추출 호출)에서 같은 키가 두 번 이상 나온 행 / 전체 행.
@@ -276,6 +314,9 @@ def fact_metrics(
             for r in visible
             if row_matches(r, entry, check_key=False) and row_matches(latest[row_key(r)], entry, check_key=False)
         }
+        near_keys = {row_key(r) for r in visible if near_matches(r, entry) and near_matches(latest[row_key(r)], entry)}
+        if entry["expected_fact"].get("kind") == "relation":
+            near_keys &= {key}
         per_item.append(
             {
                 "item": entry["id"],
@@ -289,6 +330,8 @@ def fact_metrics(
                 "matchedIgnoringKey": any(row_matches(r, entry, check_key=False) for r in visible),
                 "readIgnoringKey": bool(read_keys),
                 "droppedByCapIgnoringKey": bool(read_keys) and not (read_keys & kept_keys),
+                "nearInRead": bool(near_keys),
+                "nearDroppedByCap": bool(near_keys) and not (near_keys & kept_keys),
             }
         )
         if with_rows:
@@ -313,6 +356,7 @@ def fact_metrics(
     def summary(members: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         read = [m for m in members if m["preservedInRead"]]
         read_ik = [m for m in members if m["readIgnoringKey"]]
+        near = [m for m in members if m["nearInRead"]]
         return {
             "preserved": _rate(sum(1 for m in members if m["preserved"]), len(members)),
             "preservedInRead": _rate(len(read), len(members)),
@@ -321,6 +365,8 @@ def fact_metrics(
             "matchedIgnoringKey": _rate(sum(1 for m in members if m["matchedIgnoringKey"]), len(members)),
             "readIgnoringKey": _rate(len(read_ik), len(members)),
             "droppedByCapIgnoringKey": _rate(sum(1 for m in read_ik if m["droppedByCapIgnoringKey"]), len(read_ik)),
+            "nearInRead": _rate(len(near), len(members)),
+            "nearDroppedByCap": _rate(sum(1 for m in near if m["nearDroppedByCap"]), len(near)),
         }
 
     by_category: dict[str, list[Mapping[str, Any]]] = {}
