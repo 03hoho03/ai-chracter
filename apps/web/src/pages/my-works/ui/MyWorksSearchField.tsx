@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { useDebounce } from "react-use";
 
 import { normalizeMyWorksQuery } from "../model/myWorksSearch";
@@ -50,6 +51,15 @@ export function MyWorksSearchField({ inputRef, query, onQueryChange, className }
     lastWrittenQueryRef.current = query;
   }, [query]);
 
+  // 지우기는 기다릴 이유가 없다 — 디바운스를 거치지 않고 바로 URL에서 뺀다.
+  const handleClear = () => {
+    setValue("");
+    inputRef.current?.focus();
+    if (query === undefined) return;
+    lastWrittenQueryRef.current = undefined;
+    onQueryChange(undefined);
+  };
+
   return (
     <div className={cn("relative", className)}>
       <Search
@@ -66,8 +76,22 @@ export function MyWorksSearchField({ inputRef, query, onQueryChange, className }
         placeholder="제목으로 찾기"
         aria-label="내 작품 제목 검색"
         // 같은 줄의 칩·`공개 여부` 트리거(`size="sm"`)와 높이를 맞춘다. 글자는 프리미티브의 16px 그대로다(iOS 확대 방지).
-        className="h-8 pl-8"
+        // 브라우저 기본 지우기 단추는 숨긴다 — 크롬은 다크에서도 그것을 순백(#fff)으로 그려 이 테마의 밝기 천장
+        // (`foreground`)을 넘는다. 대신 아래 `검색어 지우기` 단추가 그 자리를 맡는다.
+        className="h-8 pr-8 pl-8 [&::-webkit-search-cancel-button]:appearance-none"
       />
+      {value !== "" && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label="검색어 지우기"
+          onClick={handleClear}
+          className="absolute top-1/2 right-1 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+        >
+          <X aria-hidden />
+        </Button>
+      )}
     </div>
   );
 }
