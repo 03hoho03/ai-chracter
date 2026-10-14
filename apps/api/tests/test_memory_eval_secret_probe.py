@@ -28,7 +28,9 @@ def _entry(item: str, **overrides: Any) -> dict[str, Any]:
 
 def test_secret_probe_sends_the_scene_setup_first_and_guards_the_memory_before_the_question() -> None:
     plants = PlantSet(
-        raw={}, plants=[_entry("sec01"), _entry("rel01", category="relation", setup_turn_text=None)], abstains=[]
+        raw={},
+        plants=[_entry("secret-a"), _entry("relation-a", category="relation", setup_turn_text=None)],
+        abstains=[],
     )
     secret, relation = opus_probes(plants, 300)
     assert secret.turns == ["동아리방에 세빈이 들어와 가방을 내려놓았다.", "세빈아, 요즘 유나 무슨 일 있대?"]

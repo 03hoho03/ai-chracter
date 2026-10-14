@@ -306,11 +306,11 @@ def _fact_row(snapshot: str = "s1", turn: int = 41, **overrides: Any) -> dict[st
 
 
 def test_preservation_compares_the_normalized_key_status_alias_known_by_set_and_a_loose_value() -> None:
-    items = [_entry("sec01", "secret", _SECRET)]
+    items = [_entry("secret-a", "secret", _SECRET)]
     row = _fact_row(attribute="전학  계획", value="다음 달 부산으로 전학 간다고 함", known_by=["민지", "사용자"])
     result = fact_metrics(items, [row])
     assert result["items"][0]["preserved"] is True
-    refuted = _entry("cor01", "correction", _SECRET | {"truth_status": "refuted", "known_by": None})
+    refuted = _entry("correction-a", "correction", _SECRET | {"truth_status": "refuted", "known_by": None})
     assert fact_metrics([refuted], [_fact_row(attribute="전학 계획", value="부산으로 전학", truth_status="disproved")])[
         "items"
     ][0]["preserved"]
@@ -327,7 +327,7 @@ def test_preservation_compares_the_normalized_key_status_alias_known_by_set_and_
 )
 def test_a_row_that_differs_in_one_part_does_not_preserve_the_fact(overrides: dict[str, Any], why: str) -> None:
     row = _fact_row(attribute="전학 계획", value="다음 달 부산으로 전학", known_by=["민지", "사용자"]) | overrides
-    assert fact_metrics([_entry("sec01", "secret", _SECRET)], [row])["items"][0]["preserved"] is False, why
+    assert fact_metrics([_entry("secret-a", "secret", _SECRET)], [row])["items"][0]["preserved"] is False, why
 
 
 def test_answer_bundles_count_as_the_value_only_where_they_ask_for_the_current_value() -> None:
@@ -340,12 +340,16 @@ def test_answer_bundles_count_as_the_value_only_where_they_ask_for_the_current_v
     }
     bundles = {"mode": "match", "bundles": [["6월 9일", "유월 구일"]]}
     row = _fact_row(value="6월 9일")
-    assert fact_metrics([_entry("cor01", "correction", expected, answer_key=bundles)], [row])["items"][0]["preserved"]
-    assert not fact_metrics([_entry("spk01", "speaker", expected, answer_key=bundles)], [row])["items"][0]["preserved"]
+    assert fact_metrics([_entry("correction-a", "correction", expected, answer_key=bundles)], [row])["items"][0][
+        "preserved"
+    ]
+    assert not fact_metrics([_entry("speaker-a", "speaker", expected, answer_key=bundles)], [row])["items"][0][
+        "preserved"
+    ]
 
 
 def test_read_preservation_needs_the_latest_row_of_the_key_to_hold_the_current_value() -> None:
-    items = [_entry("rel01", "relation", _RELATION)]
+    items = [_entry("relation-a", "relation", _RELATION)]
     old_then_new = [
         _fact_row(kind="relation", subject="태민", object="민지", attribute=None, value="서먹함"),
         _fact_row(kind="relation", subject="태민", object="민지", attribute=None, value="믿음"),
@@ -357,7 +361,7 @@ def test_read_preservation_needs_the_latest_row_of_the_key_to_hold_the_current_v
 
 
 def test_cap_drop_counts_rows_cut_by_the_render_limit_and_items_whose_read_row_was_cut() -> None:
-    items = [_entry("sec01", "secret", _SECRET)]
+    items = [_entry("secret-a", "secret", _SECRET)]
     filler = [_fact_row(kind="relation", subject=f"인물{i}", object="민지", value="가" * 30) for i in range(3)]
     secret = _fact_row(attribute="전학 계획", value="다음 달 부산으로 전학", known_by=["민지", "사용자"])
     result = fact_metrics(items, [*filler, secret], max_chars=len(facts.render_line(filler[0])) * 3 + 2)
@@ -380,17 +384,17 @@ def test_duplicate_keys_within_one_snapshot_and_restatements_across_snapshots_ar
 
 def test_a_checkpoint_counts_only_rows_readable_then_and_items_folded_by_then() -> None:
     items = [
-        _entry("sec01", "secret", _SECRET),
-        _entry("sec02", "secret", _SECRET, probeCheckpoints={"opus": [300], "offline": [300]}),
+        _entry("secret-a", "secret", _SECRET),
+        _entry("secret-b", "secret", _SECRET, probeCheckpoints={"opus": [300], "offline": [300]}),
     ]
     late = _fact_row(turn=150, attribute="전학 계획", value="다음 달 부산으로 전학", known_by=["민지", "사용자"])
     at100 = fact_metrics(items, [late], checkpoint=100)
-    assert [i["item"] for i in at100["items"]] == ["sec01"]
+    assert [i["item"] for i in at100["items"]] == ["secret-a"]
     assert at100["rows"] == 0 and at100["items"][0]["preserved"] is False
     assert fact_metrics(items, [late], checkpoint=300)["overall"]["preserved"]["k"] == 2
 
 
 def test_a_key_naming_miss_shows_up_as_matched_ignoring_key() -> None:
     row = _fact_row(attribute="이사 예정", value="다음 달 부산으로 전학", known_by=["민지", "사용자"])
-    item = fact_metrics([_entry("sec01", "secret", _SECRET)], [row])["items"][0]
+    item = fact_metrics([_entry("secret-a", "secret", _SECRET)], [row])["items"][0]
     assert not item["preserved"] and item["matchedIgnoringKey"]

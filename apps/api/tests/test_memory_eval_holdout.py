@@ -12,6 +12,7 @@ import pytest
 from memory_eval import holdout
 from memory_eval.metrics import stratified_split
 from memory_eval.plants import opus_probes
+from memory_eval.seal import PREREGISTRATION_FILE
 
 PRIMARY = ("relation", "secret", "false_premise", "correction")
 
@@ -69,10 +70,10 @@ def _write_plants(tmp_path: Path, raw: dict[str, Any]) -> Path:
 
 
 def _seal(run: Path, *, header: str = "# 사전 등록 (v3)") -> str:
-    doc = run / "preregistration.md"
+    doc = run / PREREGISTRATION_FILE
     doc.write_text(f"{header}\n본문\n", encoding="utf-8")
     sha = hashlib.sha256(doc.read_bytes()).hexdigest()
-    (run / "preregistration.sha256").write_text(f"{sha}  preregistration.md\n", encoding="utf-8")
+    (run / PREREGISTRATION_FILE).with_suffix(".sha256").write_text(f"{sha}  {PREREGISTRATION_FILE}\n", encoding="utf-8")
     return sha
 
 
@@ -151,7 +152,7 @@ def _split_run(tmp_path: Path) -> tuple[Path, Path]:
 def test_dev_view_holds_only_dev_items_and_refuses_a_test_item_lookup(tmp_path: Path) -> None:
     plants, split_dir = _split_run(tmp_path)
     test_ids = json.loads((split_dir / holdout.TEST_IDS_FILE).read_text(encoding="utf-8"))
-    view = holdout.load_view(plants, split_dir, {"dev"}, preregistration=tmp_path / "preregistration.md", seal_sha=None)
+    view = holdout.load_view(plants, split_dir, {"dev"}, preregistration=tmp_path / PREREGISTRATION_FILE, seal_sha=None)
     assert {e["split"] for e in view.all_items()} == {"dev"}
     assert not {e["id"] for e in view.all_items()} & set(test_ids)
     with pytest.raises(SystemExit, match="시험 문항"):
@@ -164,7 +165,7 @@ def test_dev_view_holds_only_dev_items_and_refuses_a_test_item_lookup(tmp_path: 
 def test_dev_view_never_opens_the_test_keys_file(tmp_path: Path) -> None:
     plants, split_dir = _split_run(tmp_path)
     (split_dir / holdout.TEST_KEYS_FILE).unlink()
-    view = holdout.load_view(plants, split_dir, {"dev"}, preregistration=tmp_path / "preregistration.md", seal_sha=None)
+    view = holdout.load_view(plants, split_dir, {"dev"}, preregistration=tmp_path / PREREGISTRATION_FILE, seal_sha=None)
     assert view.plants
 
 
@@ -172,14 +173,14 @@ def test_test_view_needs_the_seal_hash(tmp_path: Path) -> None:
     plants, split_dir = _split_run(tmp_path)
     _seal(tmp_path)
     with pytest.raises(SystemExit, match="봉인"):
-        holdout.load_view(plants, split_dir, {"test"}, preregistration=tmp_path / "preregistration.md", seal_sha=None)
+        holdout.load_view(plants, split_dir, {"test"}, preregistration=tmp_path / PREREGISTRATION_FILE, seal_sha=None)
 
 
 def test_test_view_refuses_an_older_edition_preregistration(tmp_path: Path) -> None:
     plants, split_dir = _split_run(tmp_path)
     sha = _seal(tmp_path, header="# 사전 등록 (v2)")
     with pytest.raises(SystemExit, match="v3"):
-        holdout.load_view(plants, split_dir, {"test"}, preregistration=tmp_path / "preregistration.md", seal_sha=sha)
+        holdout.load_view(plants, split_dir, {"test"}, preregistration=tmp_path / PREREGISTRATION_FILE, seal_sha=sha)
 
 
 def test_sealed_test_view_takes_test_items_from_the_test_keys_file(tmp_path: Path) -> None:
@@ -187,12 +188,12 @@ def test_sealed_test_view_takes_test_items_from_the_test_keys_file(tmp_path: Pat
     sha = _seal(tmp_path)
     keys = json.loads((split_dir / holdout.TEST_KEYS_FILE).read_text(encoding="utf-8"))
     view = holdout.load_view(
-        plants, split_dir, {"dev", "test"}, preregistration=tmp_path / "preregistration.md", seal_sha=sha
+        plants, split_dir, {"dev", "test"}, preregistration=tmp_path / PREREGISTRATION_FILE, seal_sha=sha
     )
     assert {e["id"] for e in view.all_items() if e["split"] == "test"} == {e["id"] for e in keys["items"]}
     assert view.hidden == frozenset()
     only_test = holdout.load_view(
-        plants, split_dir, {"test"}, preregistration=tmp_path / "preregistration.md", seal_sha=sha
+        plants, split_dir, {"test"}, preregistration=tmp_path / PREREGISTRATION_FILE, seal_sha=sha
     )
     assert {e["split"] for e in only_test.all_items()} == {"test"}
 
@@ -203,7 +204,7 @@ def test_tampered_test_keys_file_is_refused(tmp_path: Path) -> None:
     path = split_dir / holdout.TEST_KEYS_FILE
     path.write_text(path.read_text(encoding="utf-8").replace("정답 문장", "바뀐 문장"), encoding="utf-8")
     with pytest.raises(SystemExit, match="sha256"):
-        holdout.load_view(plants, split_dir, {"test"}, preregistration=tmp_path / "preregistration.md", seal_sha=sha)
+        holdout.load_view(plants, split_dir, {"test"}, preregistration=tmp_path / PREREGISTRATION_FILE, seal_sha=sha)
 
 
 def test_plants_changed_after_the_split_are_refused(tmp_path: Path) -> None:
@@ -212,7 +213,7 @@ def test_plants_changed_after_the_split_are_refused(tmp_path: Path) -> None:
     raw["plants"][0]["question"] = "고친 질문"
     plants.write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
     with pytest.raises(SystemExit, match="분할 때와 다르다"):
-        holdout.load_view(plants, split_dir, {"dev"}, preregistration=tmp_path / "preregistration.md", seal_sha=None)
+        holdout.load_view(plants, split_dir, {"dev"}, preregistration=tmp_path / PREREGISTRATION_FILE, seal_sha=None)
 
 
 def test_harness_entry_maps_second_format_fields_to_the_ones_the_probe_and_recall_code_read() -> None:

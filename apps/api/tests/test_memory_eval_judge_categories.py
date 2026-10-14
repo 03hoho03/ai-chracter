@@ -21,7 +21,7 @@ from memory_eval.plants import PlantSet
 
 def _relation(**overrides: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
-        "id": "rel01",
+        "id": "relation-a",
         "category": "relation",
         "split": "dev",
         "question": "태민이 요즘 민지를 어떻게 생각하는 것 같아?",
@@ -40,7 +40,7 @@ def _relation(**overrides: Any) -> dict[str, Any]:
 
 def _secret(**overrides: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
-        "id": "sec01",
+        "id": "secret-a",
         "category": "secret",
         "split": "dev",
         "setup_turn_text": "동아리방에 세빈이 들어와 가방을 내려놓았다.",
@@ -62,7 +62,7 @@ def _secret(**overrides: Any) -> dict[str, Any]:
 
 def _premise(**overrides: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
-        "id": "fp01",
+        "id": "premise-a",
         "category": "false_premise",
         "subtype": "character_claim",
         "split": "dev",
@@ -82,7 +82,7 @@ def _premise(**overrides: Any) -> dict[str, Any]:
 
 def _correction(**overrides: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
-        "id": "cor01",
+        "id": "correction-a",
         "category": "correction",
         "split": "dev",
         "question": "상영회 몇 시에 시작한다고 했지?",
@@ -101,7 +101,7 @@ def _correction(**overrides: Any) -> dict[str, Any]:
 
 def _speaker(**overrides: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
-        "id": "spk01",
+        "id": "speaker-a",
         "category": "speaker",
         "subtype": "fabricated",
         "split": "dev",
@@ -220,11 +220,18 @@ def test_first_format_items_keep_the_first_format_scoring() -> None:
 def test_controls_cover_each_second_format_kind_from_the_dev_half_only() -> None:
     plant_set = PlantSet(
         raw={},
-        plants=[_relation(), _secret(), _premise(), _correction(), _speaker(), _relation(id="rel09", split="test")],
+        plants=[
+            _relation(),
+            _secret(),
+            _premise(),
+            _correction(),
+            _speaker(),
+            _relation(id="relation-z", split="test"),
+        ],
         abstains=[],
     )
     rows = controls(plant_set)
-    assert "rel09" not in {r["item"] for r in rows}
+    assert "relation-z" not in {r["item"] for r in rows}
     by_kind: dict[str, set[str]] = {}
     for row in rows:
         assert row["expected"] in VERDICTS[row["kind"]]
