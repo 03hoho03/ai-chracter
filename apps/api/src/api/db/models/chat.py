@@ -593,14 +593,44 @@ class ChatTurn(Base):
     )
 
 
-DiscardedResponseKind = Literal["regenerate", "edit"]
+class ChatPreviousResponse(Base):
+    """재생성이 밀어낸 직전 AI 응답 하나 — 방당 한 행이고, 사용자가 그 응답으로 되돌릴 수 있게 둔다.
+
+    재생성의 쓰기 구간이 옛 응답을 지우는 같은 트랜잭션에서 그 응답의 원래 id·시각·본문·그림을 여기 옮겨 적는다(이미 있으면
+    덮는다 — 늘 바로 직전 응답 하나만 남는다). 생성·정책·렌더 실패로 끝난 재생성은 그 구간에 오지 않으므로 이 행이 바뀌지
+    않는다. 되돌리기는 이 행을 원래 id·시각으로 메시지에 다시 넣고, 그때 지운 지금 응답을 이 행에 옮겨 적는다(맞바꾸기 — 한 번
+    더 되돌리면 원래대로다). `replaced_by_message_id` 는 이 행을 밀어낸 응답이고, 그 응답이 지금도 방의 마지막 메시지일
+    때만 되돌릴 수 있다 — 이 테이블을 모르는 옛 이미지가 대화를 바꿔도 이 비교 하나로 낡은 행이 쓰이지 않는다.
+
+    대화를 바꾸는 경로(보내기·수정·메시지 삭제·초기화)는 같은 커밋에서 이 행을 지운다. 방 FK 가 `ON DELETE CASCADE` 인 것은
+    장면 기억과 같은 이유다 — 방 삭제·탈퇴는 이 행을 따로 지우지 않고, 이 테이블을 모르는 옛 이미지가 방을 지워도 FK 위반으로
+    실패하지 않는다. 메시지 id·그림 id 칸에 FK 가 없는 이유는 가리키는 메시지가 이미 지워졌거나(되살릴 응답) 곧 지워질 수
+    있고(밀어낸 응답), 그림은 메시지의 `image_id` 와 같은 다형 참조이기 때문이다."""
+
+    __tablename__ = "chat_previous_responses"
+
+    chat_room_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("chat_rooms.id", ondelete="CASCADE"), primary_key=True
+    )
+    replaced_by_message_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    message_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    message_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    image_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+DiscardedResponseKind = Literal["regenerate", "edit", "undo"]
 
 
 class DiscardedResponse(Base):
-    """재생성·편집으로 AI 응답이 실제로 지워진 한 번 = 한 행. 응답 품질 불만의 암묵 신호를 SQL로
-    세기 위한 기록이라 응답 원문은 저장하지 않는다.
+    """재생성·편집·되돌리기로 AI 응답이 실제로 지워진 한 번 = 한 행. 응답 품질 불만의 암묵 신호를 SQL로
+    세기 위한 기록이라 응답 원문은 저장하지 않는다. 되돌리기(`undo`)는 지금 응답을 지우는 동시에 재생성이 밀어낸 직전 응답을
+    되살린다 — 재생성 수를 셀 때 이 행을 섞지 않는다.
 
-    `discarded_count`는 그 행동이 지운 AI 응답 수다 — 재생성은 항상 1, 편집은 편집한 메시지 뒤에서
+    `discarded_count`는 그 행동이 지운 AI 응답 수다 — 재생성·되돌리기는 항상 1, 편집은 편집한 메시지 뒤에서
     지워진 AI 응답 수. 0개를 지운 행동은 행을 만들지 않으므로 CHECK가 1 이상을 강제한다.
 
     방 삭제·탈퇴는 이 행을 지우지 않는다(`delete_chat_rooms`의 자식 목록에 없는 것이 의도다).
