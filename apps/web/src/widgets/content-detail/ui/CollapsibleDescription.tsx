@@ -47,7 +47,7 @@ export function CollapsibleDescription({ text, children }: CollapsibleDescriptio
     };
     measure();
     // 폭·높이가 둘 다 그대로인 알림은 건너뛴다 — 감시를 걸면 바로 오는 첫 알림이 그렇다. 폭만 보면 안 된다: 그림이 늦게
-    // 도착하면 폭은 그대로여도 내용이 자란다(자는 네 줄에서 잘리므로 그때는 자의 높이가 자란다).
+    // 도착하면 폭은 그대로여도 내용이 자란다(자는 다섯 줄에서 잘리므로 그때는 자의 높이가 자란다).
     let measuredWidth = ruler.clientWidth;
     let measuredHeight = ruler.clientHeight;
     const observer = new ResizeObserver(() => {
