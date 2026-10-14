@@ -553,3 +553,150 @@ async def test_list_user_contents_cursor_keeps_visibility_filter_across_pages(
     assert cursors[-1] is None
     collected = [item["name"] for page in pages for item in page]
     assert collected == [f"비공개-{index:02d}" for index in range(private_total)]
+
+
+async def test_list_user_contents_q_matches_title_part_ignoring_case_and_outer_spaces(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    now = datetime(2026, 8, 1, tzinfo=UTC)
+    for index, name in enumerate(["Moon Knight", "달빛 moonlight", "Sunrise"]):
+        await _make_published_content(
+            db_session,
+            creator_user_id=user.id,
+            genre_id=genre.id,
+            published_at=now - timedelta(minutes=index),
+            name=name,
+        )
+    await db_session.commit()
+
+    for q in ("MOON", "  mOoN  "):
+        resp = await db_client.get(f"/users/{user.id}/contents", params={"type": "character", "q": q})
+        assert resp.status_code == 200
+        assert [item["name"] for item in resp.json()["items"]] == ["Moon Knight", "달빛 moonlight"]
+
+
+async def test_list_user_contents_q_treats_like_wildcards_and_backslash_as_plain_text(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """`%`·`_` 가 와일드카드로 먹히면 모든 제목이 걸리고, `\\` 가 이스케이프 문자로 먹히면
+    패턴이 그 글자로 끝나 Postgres 가 오류를 낸다. 각 글자는 그 글자를 담은 제목 하나만 찾아야 한다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    names = ["100% 진심", "a_b", "역\\슬래시", "a/b", "평범한 제목"]
+    for name in names:
+        await _make_published_content(db_session, creator_user_id=user.id, genre_id=genre.id, name=name)
+    await db_session.commit()
+
+    for q, expected in [("%", "100% 진심"), ("_", "a_b"), ("\\", "역\\슬래시"), ("/", "a/b")]:
+        resp = await db_client.get(f"/users/{user.id}/contents", params={"type": "character", "q": q})
+        assert resp.status_code == 200, q
+        assert [item["name"] for item in resp.json()["items"]] == [expected], q
+
+
+async def test_list_user_contents_blank_q_returns_same_bytes_as_no_q(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    for name in ["첫째", "둘째"]:
+        await _make_published_content(db_session, creator_user_id=user.id, genre_id=genre.id, name=name)
+    await db_session.commit()
+
+    baseline = await db_client.get(f"/users/{user.id}/contents", params={"type": "character"})
+    assert len(baseline.json()["items"]) == 2
+    for q in ("", "   "):
+        resp = await db_client.get(f"/users/{user.id}/contents", params={"type": "character", "q": q})
+        assert resp.status_code == 200
+        assert resp.content == baseline.content
+
+
+async def test_list_user_contents_q_keeps_filter_across_cursor_pages(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """커서에는 정렬 키만 들어 있으므로 `q` 도 페이지마다 다시 걸려야 한다. 걸리지 않는 제목을
+    첫 페이지 안과 페이지 경계 위에 끼워 두고, 두 번째 페이지에서도 새지 않는지 본다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    now = datetime(2026, 9, 1, tzinfo=UTC)
+    match_total = 25
+    for index in range(match_total):
+        await _make_published_content(
+            db_session,
+            creator_user_id=user.id,
+            genre_id=genre.id,
+            published_at=now - timedelta(minutes=index),
+            name=f"검색어-{index:02d}",
+        )
+    for offset in (0, 23):
+        await _make_published_content(
+            db_session,
+            creator_user_id=user.id,
+            genre_id=genre.id,
+            published_at=now - timedelta(minutes=offset, seconds=30),
+            name=f"다른 제목-{offset:02d}",
+        )
+    await db_session.commit()
+
+    pages, cursors = await _collect_all_pages(db_client, user.id, {"type": "character", "q": "검색어"})
+
+    assert [len(page) for page in pages] == [24, 1]
+    assert cursors[-1] is None
+    collected = [item["name"] for page in pages for item in page]
+    assert collected == [f"검색어-{index:02d}" for index in range(match_total)]
+
+
+async def test_list_user_contents_q_does_not_widen_stranger_visibility(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """남의 프로필에서 `q` 는 공개·정상 작품 안에서만 거른다. 검색어가 든 링크공개·비공개·
+    이용제한 작품은 걸려 나오면 안 되고, 주인에게는 기존 범위 안에서 검색어가 든 것만 보인다."""
+    owner = _make_user()
+    stranger = _make_user()
+    db_session.add_all([owner, stranger])
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    now = datetime(2026, 9, 2, tzinfo=UTC)
+    hidden = [
+        ("달 링크공개", ContentVisibility.LINK, ModerationStatus.NORMAL),
+        ("달 비공개", ContentVisibility.PRIVATE, ModerationStatus.NORMAL),
+        ("달 이용제한", ContentVisibility.PUBLIC, ModerationStatus.RESTRICTED),
+    ]
+    await _make_published_content(
+        db_session, creator_user_id=owner.id, genre_id=genre.id, published_at=now, name="달 공개"
+    )
+    await _make_published_content(
+        db_session, creator_user_id=owner.id, genre_id=genre.id, published_at=now, name="해 공개"
+    )
+    for index, (name, visibility, moderation_status) in enumerate(hidden, start=1):
+        await _make_published_content(
+            db_session,
+            creator_user_id=owner.id,
+            genre_id=genre.id,
+            visibility=visibility,
+            moderation_status=moderation_status,
+            published_at=now - timedelta(minutes=index),
+            name=name,
+        )
+    await db_session.commit()
+
+    params = {"type": "character", "q": "달"}
+    anonymous = await db_client.get(f"/users/{owner.id}/contents", params=params)
+    assert [item["name"] for item in anonymous.json()["items"]] == ["달 공개"]
+
+    await _login_as(db_client, stranger.id)
+    as_stranger = await db_client.get(f"/users/{owner.id}/contents", params=params)
+    assert [item["name"] for item in as_stranger.json()["items"]] == ["달 공개"]
+
+    await _login_as(db_client, owner.id)
+    as_owner = await db_client.get(f"/users/{owner.id}/contents", params=params)
+    assert [item["name"] for item in as_owner.json()["items"]] == ["달 공개"] + [name for name, _, _ in hidden]

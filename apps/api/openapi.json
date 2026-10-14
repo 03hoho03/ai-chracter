@@ -4768,6 +4768,23 @@
               ],
               "title": "Cursor"
             }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
           }
         ],
         "responses": {
@@ -4950,7 +4967,7 @@
           "content"
         ],
         "summary": "List User Contents",
-        "description": "커서 페이징. 정렬 키는 기존 `published_at DESC, id DESC` 그대로다 — 커서는 그\n두 값만 담으므로 `visibility` 등 WHERE 조건은 페이지마다 호출부가 다시 넘겨야 한다.",
+        "description": "커서 페이징. 정렬 키는 기존 `published_at DESC, id DESC` 그대로다 — 커서는 그\n두 값만 담으므로 `visibility`·`q` 등 WHERE 조건은 페이지마다 호출부가 다시 넘겨야 한다.\n\n`q` 는 현재 발행 버전 제목의 부분 일치다. 남의 프로필에도 열려 있으므로 위 가시성 조건에\nAND 로만 덧붙여 공개 범위를 넓히지 않는다.",
         "operationId": "list_user_contents_users__id__contents_get",
         "parameters": [
           {
@@ -4991,6 +5008,23 @@
                 }
               ],
               "title": "Visibility"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
             }
           },
           {
