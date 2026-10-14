@@ -708,7 +708,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     def with_splits(p: argparse.ArgumentParser) -> None:
         p.add_argument("--splits", default="dev", help="dev · test · dev,test (시험 절반은 봉인 해시가 있어야 한다)")
-        p.add_argument("--seal-sha", help="v2 봉인 사전 등록의 sha256")
+        p.add_argument("--seal-sha", help="이번 런 봉인 사전 등록의 sha256")
 
     def paid(p: argparse.ArgumentParser) -> None:
         p.add_argument("--dry-run", action="store_true")

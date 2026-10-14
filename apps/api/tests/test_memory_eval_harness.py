@@ -472,22 +472,35 @@ def test_budget_counts_context_turns_of_two_turn_probes_per_arm() -> None:
 # ---------------------------------------------------------------- 봉인 전 시험 절반 금지 · 판정 규칙
 
 
-def test_test_half_requires_the_sealed_v2_preregistration(tmp_path: Path) -> None:
+def test_test_half_requires_this_runs_sealed_edition_and_rejects_the_spent_v2(tmp_path: Path) -> None:
     import hashlib
 
     from memory_eval.seal import PREREGISTRATION_FILE, require_seal
 
     prereg = tmp_path / PREREGISTRATION_FILE
     sha_file = prereg.with_suffix(".sha256")
-    prereg.write_text("# 사전 등록 (v1.2)\n", encoding="utf-8")
-    digest = hashlib.sha256(prereg.read_bytes()).hexdigest()
-    sha_file.write_text(f"{digest}  {PREREGISTRATION_FILE}\n", encoding="utf-8")
+
+    def seal(text: str) -> str:
+        prereg.write_text(text, encoding="utf-8")
+        digest = hashlib.sha256(prereg.read_bytes()).hexdigest()
+        sha_file.write_text(f"{digest}  {PREREGISTRATION_FILE}\n", encoding="utf-8")
+        return digest
+
+    digest = seal("# 사전 등록 (v1.2)\n")
     require_seal({"dev"}, prereg, seal_sha=None)  # 개발 절반은 봉인 없이 된다
     with pytest.raises(SystemExit):
         require_seal({"test"}, prereg, seal_sha=None)
     with pytest.raises(SystemExit):
-        require_seal({"dev", "test"}, prereg, seal_sha=digest)  # v2 가 아니다
-    prereg.write_text("# 사전 등록 (v2)\n봉인\n", encoding="utf-8")
+        require_seal({"dev", "test"}, prereg, seal_sha=digest)  # 봉인 판이 아니다
+    # 앞 런의 v2 는 해시까지 맞게 봉인돼 있어도 시험 절반을 열지 못한다 — 그 시험 절반은 이미 한 번 썼다
+    spent = seal("# 사전 등록 (v2)\n봉인\n")
+    with pytest.raises(SystemExit):
+        require_seal({"test"}, prereg, seal_sha=spent)
+    with pytest.raises(SystemExit):
+        require_seal({"test"}, prereg, seal_sha=seal("# 사전 등록 (v2.1)\n봉인\n"))
+    with pytest.raises(SystemExit):
+        require_seal({"test"}, prereg, seal_sha=seal("# 사전 등록 (v30)\n봉인\n"))  # 판 번호가 앞만 같다
+    prereg.write_text("# 사전 등록 (v3)\n봉인\n", encoding="utf-8")
     sealed = hashlib.sha256(prereg.read_bytes()).hexdigest()
     with pytest.raises(SystemExit):
         require_seal({"test"}, prereg, seal_sha=sealed)  # 해시 파일이 아직 옛 값
@@ -495,6 +508,7 @@ def test_test_half_requires_the_sealed_v2_preregistration(tmp_path: Path) -> Non
     with pytest.raises(SystemExit):
         require_seal({"test"}, prereg, seal_sha="0" * 64)  # 준 해시가 파일과 다르다
     require_seal({"test"}, prereg, seal_sha=sealed)
+    require_seal({"test"}, prereg, seal_sha=seal("# 사전 등록 (v3.1)\n봉인\n"))
 
 
 def test_speaker_gold_episode_is_judged_by_keywords_not_attribution_keys() -> None:
