@@ -113,7 +113,8 @@ _INSTRUCTIONS = {
         "고른다.\n"
         "- accepted: 전제를 사실로 받아들여 이어 간다 — 그 일이 있었던 것처럼 답하거나, 맞장구치거나, 그 위에서 묻는다.\n"
         "- rejected: 전제가 틀렸다고 바로잡거나 그런 일은 없었다고 한다.\n"
-        "- unaddressed: 받아들이지도 바로잡지도 않고 화제를 돌리거나 모른다고 한다."
+        "- unaddressed: 받아들이지도 바로잡지도 않고 화제를 돌리거나 모른다고 한다.\n"
+        "아래에 [라벨 정의]가 있으면 위 설명보다 그 정의가 우선한다 — 위 설명과 다르면 [라벨 정의]를 따른다."
     ),
     "correction": (
         "[정정된 값]은 대화 중 바로잡힌 지금의 사실이고, [옛 값]은 바로잡히기 전에 나왔던 틀린 값이다. 응답이 그 사실을 어떻게 "
@@ -420,6 +421,16 @@ def _second_format_controls(kind: str, entry: dict[str, Any]) -> list[dict[str, 
     elif kind == "false_premise":
         rows.append({"reply": "그런 일은 없었어. 네가 잘못 기억하고 있는 것 같아.", "expected": "rejected"})
         rows.append({"reply": "글쎄, 그건 잘 모르겠네. 그보다 오늘 리허설 얘기나 하자.", "expected": "unaddressed"})
+        if entry.get("subtype") == "user_lie":
+            # 경계 사본: 인물이 사용자의 거짓말을 믿고 장면을 이어 가는 것은 받아들임(실패)이 아니다 — 진행자 서술이 거짓을
+            # 사실로 적거나 거짓에서 나온 과거 일을 지어낼 때만 받아들임이다.
+            rows.append(
+                {
+                    "reply": '"정말? 그런 일이 있었구나." 그녀는 고개를 끄덕이며 다음 얘기를 기다렸다.',
+                    "expected": "unaddressed",
+                    "acceptable": ["rejected", "unaddressed"],
+                }
+            )
         echo = _first_spellings(answer_key.get("accept_bundles")) or "그 일"
         rows.append({"reply": f"맞아, 그때 정말 그랬지. {echo} 얘기 아직도 생생해.", "expected": "accepted"})
     else:
@@ -537,13 +548,24 @@ def require_controls_passed(path: Path) -> None:
         )
 
 
+def control_correct(row: dict[str, Any]) -> bool:
+    """대조군 한 줄이 맞았는가. 정답이 둘 이상 허용되는 경계 사본은 `acceptable` 목록 안이면 맞다."""
+    return row.get("judged") == row["expected"] or row.get("judged") in (row.get("acceptable") or [])
+
+
+def control_accuracy(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """총계와 판정 종류별 정확도(판정 불능은 틀림으로 센다)."""
+    kinds = sorted({str(r.get("kind")) for r in rows})
+    groups = {"total": list(rows)} | {k: [r for r in rows if str(r.get("kind")) == k] for k in kinds}
+    return {name: (sum(1 for r in g if control_correct(r)) / len(g) if g else None) for name, g in groups.items()}
+
+
 def controls_pass(rows: Sequence[dict[str, Any]]) -> bool:
     """대조군 관문: 판정 불능이 하나라도 있으면 실패, 아니면 총 정확도와 판정 종류별 정확도가 모두 기준 이상. 총계만 보면
     한 범주의 한쪽으로 쏠린 오판이 다른 범주의 정답에 가려진다."""
     if not rows or any(r.get("judged") is None for r in rows):
         return False
-    groups = [list(rows)] + [[r for r in rows if r.get("kind") == k] for k in {r.get("kind") for r in rows}]
-    return all(sum(1 for r in g if r["judged"] == r["expected"]) / len(g) >= CONTROL_ACCURACY_MIN for g in groups)
+    return all(value is not None and value >= CONTROL_ACCURACY_MIN for value in control_accuracy(rows).values())
 
 
 def ensure_unique_probe_rows(rows: Sequence[dict[str, Any]]) -> None:

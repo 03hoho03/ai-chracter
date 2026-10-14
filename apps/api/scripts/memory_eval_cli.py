@@ -54,6 +54,11 @@ def _splits(args: argparse.Namespace) -> set[str]:
     return splits
 
 
+def _ledger(args: argparse.Namespace) -> Ledger:
+    """원장 — 상한과 멈춤 선은 실행 인자(기본은 이 런의 승인 값)."""
+    return Ledger(args.run / "ledger.jsonl", cap_usd=args.cap_usd, halt_usd=args.halt_usd)
+
+
 def _plant_view(args: argparse.Namespace, splits: set[str] | None = None) -> plants_mod.PlantSet:
     """심기 표를 읽는 모든 명령의 입구. 1차 형식은 항목의 분할 칸을 그대로 쓰고, 2차 형식은 분할 파일로 보기를 만든다 — 절반을
     주지 않으면 개발 보기이고, 시험 절반은 봉인 확인을 지나야 시험 정답 파일을 연다."""
@@ -127,9 +132,10 @@ def cmd_budget(args: argparse.Namespace) -> int:
         opus_turn_usd=args.opus_turn_usd,
         server_judgment_turn_usd=args.judgment_turn_usd,
         extras=extras,
-        cap_usd=args.cap,
+        cap_usd=args.cap_usd,
     )
-    estimate["ledgerSpentUsd"] = Ledger(args.run / "ledger.jsonl", cap_usd=args.cap).total_usd()
+    estimate["ledgerSpentUsd"] = _ledger(args).total_usd()
+    estimate["haltUsd"] = args.halt_usd
     _print(estimate)
     return 0
 
@@ -256,7 +262,7 @@ def cmd_insert(args: argparse.Namespace) -> int:
             extract=args.extract,
             extract_facts=args.extract_facts,
         )
-        report["ledgerSpentUsd"] = Ledger(args.run / "ledger.jsonl").total_usd()
+        report["ledgerSpentUsd"] = _ledger(args).total_usd()
         _print(report)
         return 0
     if args.fake_llm == args.allow_paid:
@@ -273,7 +279,7 @@ def cmd_insert(args: argparse.Namespace) -> int:
 
         llm = insert.LedgerTap(
             get_llm_client(),
-            Ledger(args.run / "ledger.jsonl"),
+            _ledger(args),
             stage=args.label,
             per_call_estimate_usd=insert.FOLD_CALL_ESTIMATE_USD,
         )
@@ -321,7 +327,7 @@ def _fact_catch_up(args: argparse.Namespace, llm: "LLMClient") -> "FactCatchUp":
     else:
         from api.core.config import settings
 
-        book = Ledger(args.run / "ledger.jsonl")
+        book = _ledger(args)
 
         async def caller(prompt: str) -> pf.PrototypeFactResult:
             return await pf.call_haiku(settings.anthropic_direct_api_key, prompt, book, stage=f"{args.label}-facts")
@@ -433,6 +439,25 @@ def cmd_export_episodes(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_export_facts(args: argparse.Namespace) -> int:
+    """방의 사실 행을 사실 오프라인 지표 입력(JSON 배열)으로. 읽기만."""
+    from memory_eval.fact_export import export_facts
+    from memory_eval.runtime import make_engine
+
+    async def go() -> list[dict[str, Any]]:
+        engine, factory = make_engine(_db_url(writes=False))
+        try:
+            async with factory() as db:
+                return await export_facts(db, args.room)
+        finally:
+            await engine.dispose()
+
+    rows = asyncio.run(go())
+    _write(args.out, rows)
+    print(f"사실 {len(rows)}행 → {args.out}")
+    return 0
+
+
 def cmd_recall_parity(args: argparse.Namespace) -> int:
     """같은 질의를 두 검색 함수로 돌린 `recall-offline` 출력 둘을 행 단위로 견준다."""
     from memory_eval.recall_offline import compare_rows
@@ -465,7 +490,7 @@ def cmd_probe(args: argparse.Namespace) -> int:
     for item_id in sorted(items or ()):
         plant_set.item(item_id)  # 숨긴 시험 문항이면 거부, 없는 문항이면 KeyError
     probes = [p for cp in cps for p in plants_mod.opus_probes(plant_set, cp) if items is None or p.item_id in items]
-    book = Ledger(args.run / "ledger.jsonl")
+    book = _ledger(args)
     out = args.run / "probes" / f"{args.stage}-{args.arm}.jsonl"
     done = (
         [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines() if line.strip()]
@@ -620,7 +645,7 @@ def cmd_judge(args: argparse.Namespace) -> int:
         judge_mod.require_controls_passed(controls_path)
     from api.core.config import settings
 
-    judge = judge_mod.HaikuJudge(settings.anthropic_direct_api_key, Ledger(args.run / "ledger.jsonl"), stage="judge")
+    judge = judge_mod.HaikuJudge(settings.anthropic_direct_api_key, _ledger(args), stage="judge")
 
     async def go() -> list[dict[str, Any]]:
         out = []
@@ -635,8 +660,16 @@ def cmd_judge(args: argparse.Namespace) -> int:
     results = asyncio.run(go())
     if args.controls:
         judged = [r for r in results if r["judged"] is not None]
-        accuracy = sum(1 for r in judged if r["judged"] == r["expected"]) / len(results) if results else 0.0
-        _write(controls_path, {"passed": judge_mod.controls_pass(results), "accuracy": accuracy, "rows": results})
+        accuracy = sum(1 for r in judged if judge_mod.control_correct(r)) / len(results) if results else 0.0
+        _write(
+            controls_path,
+            {
+                "passed": judge_mod.controls_pass(results),
+                "accuracy": accuracy,
+                "accuracyByKind": judge_mod.control_accuracy(results),
+                "rows": results,
+            },
+        )
     else:
         _write(args.out, results)
     return 0
@@ -703,6 +736,8 @@ def cmd_attribution(args: argparse.Namespace) -> int:
                     recall_header=args.recall_header,
                     static_texts=statics,
                     context_response=context,
+                    fact_header=args.fact_header,
+                    old_keys=(entry.get("answer_key") or {}).get("reject_bundles") or [],
                 )
                 if prompt
                 else {"unattributable": "덤프 없음"}
@@ -747,7 +782,7 @@ def cmd_prototype_extract(args: argparse.Namespace) -> int:
                 }
             from api.core.config import settings
 
-            book = Ledger(args.run / "ledger.jsonl")
+            book = _ledger(args)
             rows: list[dict[str, Any]] = []
             titles: list[str] = []
             for window in windows:
@@ -804,7 +839,7 @@ def cmd_prototype_facts(args: argparse.Namespace) -> int:
             raise SystemExit("실제 추출은 --out 이 있어야 한다")
         from api.core.config import settings
 
-        book = Ledger(args.run / "ledger.jsonl")
+        book = _ledger(args)
 
         async def caller(prompt: str) -> pf.PrototypeFactResult:
             return await pf.call_haiku(
@@ -890,13 +925,50 @@ def cmd_s8(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_v3_verdict(args: argparse.Namespace) -> int:
+    """2차 런 최종 짝 비교 ①~⑦(시험 절반 — 봉인 확인 뒤). 결과는 `verdict.json`."""
+    from memory_eval.judge import ensure_unique_probe_rows
+    from memory_eval.verdict_v3 import v3_verdict
+
+    require_seal({"test"}, args.run / PREREGISTRATION_FILE, seal_sha=args.seal_sha)
+    plant_set = _plant_view(args, {"test"})
+    scores = [r for path in args.scores for r in json.loads(path.read_text(encoding="utf-8"))]
+    ensure_unique_probe_rows(scores)
+    judge_rows = [r for path in args.judged for r in json.loads(path.read_text(encoding="utf-8"))]
+    controls_path = args.controls or args.run / "judge" / "controls.json"
+    control_rows = json.loads(controls_path.read_text(encoding="utf-8"))["rows"] if controls_path.exists() else None
+    points = [
+        json.loads(line) for path in args.trajectory for line in path.read_text(encoding="utf-8").splitlines() if line
+    ]
+    result = v3_verdict(
+        plant_set, scores, judge_rows=judge_rows, control_rows=control_rows, trajectory_points=points or None,
+        section_max=args.section_max, unaddressed=args.unaddressed,
+    )  # fmt: skip
+    _write(args.out or args.run / "verdict.json", result)
+    keys = ("1", "2", "3", "4", "5", "6", "7")
+    _print(
+        {k: result[k].get("status") for k in keys}
+        | {"primaryByPolicy": {p: v["status"] for p, v in result["primaryByPolicy"].items()}}
+        | {"allPass": result["allPass"], "status": result["status"]}
+    )
+    return 0
+
+
 def cmd_ledger(args: argparse.Namespace) -> int:
-    book = Ledger(args.run / "ledger.jsonl")
+    book = _ledger(args)
     rows = book.rows()
     by_stage: dict[str, float] = {}
     for row in rows:
         by_stage[row["stage"]] = by_stage.get(row["stage"], 0.0) + ledger_mod.row_cost(row)
-    _print({"calls": len(rows), "totalUsd": book.total_usd(), "byStage": by_stage, "capUsd": book.cap_usd})
+    _print(
+        {
+            "calls": len(rows),
+            "totalUsd": book.total_usd(),
+            "byStage": by_stage,
+            "capUsd": book.cap_usd,
+            "haltUsd": book.halt_usd,
+        }
+    )
     return 0
 
 
@@ -906,6 +978,10 @@ def cmd_ledger(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="memory_eval_cli")
     ap.add_argument("--run", type=Path, required=True, help="원자료 폴더(대본·덤프·원장·결과)")
+    ap.add_argument("--cap-usd", type=float, default=ledger_mod.APPROVED_CAP_USD, help="원장 상한(넘지 않는다)")
+    ap.add_argument(
+        "--halt-usd", type=float, default=ledger_mod.RUN_HALT_USD, help="누적 멈춤 선(닿으면 멈추고 묻는다)"
+    )
     sub = ap.add_subparsers(dest="command", required=True)
 
     def with_plants(p: argparse.ArgumentParser) -> None:
@@ -946,7 +1022,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--opus-turn-usd", type=float, default=0.13)
     p.add_argument("--judgment-turn-usd", type=float, default=0.003)
     p.add_argument("--extra", action="append", default=[], help="이름=달러 (여러 번)")
-    p.add_argument("--cap", type=float, default=ledger_mod.APPROVED_CAP_USD)
     p.set_defaults(fn=cmd_budget)
 
     p = sub.add_parser("init-work-db", help="격리 DB 를 작업 DB(실행 명령 DATABASE_URL 의 이름)로 복제")
@@ -1040,6 +1115,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", type=Path, required=True)
     p.set_defaults(fn=cmd_export_episodes)
 
+    p = sub.add_parser("export-facts", help="방의 사실 행을 fact-metrics 입력으로(읽기만)")
+    p.add_argument("--room", type=uuid.UUID, required=True)
+    p.add_argument("--out", type=Path, required=True)
+    p.set_defaults(fn=cmd_export_facts)
+
     p = sub.add_parser("recall-parity", help="두 recall-offline 출력의 행 단위 일치")
     p.add_argument("--a", type=Path, required=True)
     p.add_argument("--b", type=Path, required=True)
@@ -1110,6 +1190,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--probes", type=Path, nargs="+", required=True)
     p.add_argument("--seed-json", type=Path, default=DEFAULT_SEED_JSON)
     p.add_argument("--recall-header", default="[지난 기억 — 참고]")
+    p.add_argument(
+        "--fact-header", help="사실 섹션 머리글(사실을 싣는 갈래의 귀속 자리) — 운영 렌더의 머리글을 그대로 준다"
+    )
     p.add_argument("--out", type=Path, required=True)
     p.set_defaults(fn=cmd_attribution)
 
@@ -1159,6 +1242,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--recall-section-max", type=int, help="테스트가 계산한 회상 섹션 최대 글자 — ⑥")
     p.add_argument("--out", type=Path, required=True)
     p.set_defaults(fn=cmd_s8)
+
+    p = sub.add_parser("v3-verdict", help="2차 런 최종 짝 비교 ①~⑦(시험 절반 — 봉인 해시 필요)")
+    with_plants(p)
+    p.add_argument("--seal-sha", required=True)
+    p.add_argument("--scores", type=Path, nargs="+", required=True, help="score 출력(A2·B2 갈래)")
+    p.add_argument("--judged", type=Path, nargs="+", required=True, help="judge 출력(A2·B2 갈래)")
+    p.add_argument("--controls", type=Path, help="대조군 기록(기본 <원자료>/judge/controls.json)")
+    p.add_argument("--trajectory", type=Path, nargs="*", default=[], help="trajectory 점(jsonl, A2·B2)")
+    p.add_argument("--section-max", type=int, help="테스트가 계산한 사실 섹션 최대 글자")
+    p.add_argument("--unaddressed", default="pass", choices=["pass", "fail", "exclude"])
+    p.add_argument("--out", type=Path, help="기본 <원자료>/verdict.json")
+    p.set_defaults(fn=cmd_v3_verdict)
 
     p = sub.add_parser("ledger")
     p.set_defaults(fn=cmd_ledger)

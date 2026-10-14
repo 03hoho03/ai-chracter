@@ -23,7 +23,9 @@ SUPPLEMENTARY_PRICES: dict[str, ModelPrice] = {
     "claude-haiku-5-5": ModelPrice(0.10, 0.01, 0.50, cache_write_usd_per_million=0.125),
 }
 
-APPROVED_CAP_USD = 30.0
+# 이 런의 승인 값: 누적이 멈춤 선에 닿으면 멈추고 묻고(승인을 받아 멈춤 선을 올려 이어 간다), 상한은 넘지 않는다.
+APPROVED_CAP_USD = 60.0
+RUN_HALT_USD = 50.0
 EXIT_BUDGET = 20
 
 
@@ -67,9 +69,11 @@ def row_cost(row: Mapping[str, Any]) -> float:
 
 
 class Ledger:
-    def __init__(self, path: Path, *, cap_usd: float = APPROVED_CAP_USD) -> None:
+    def __init__(self, path: Path, *, cap_usd: float = APPROVED_CAP_USD, halt_usd: float | None = None) -> None:
         self.path = path
         self.cap_usd = cap_usd
+        # 멈춤 선(없으면 상한만 본다). 상한보다 높게 주어도 상한이 이긴다.
+        self.halt_usd = halt_usd
 
     def rows(self) -> list[dict[str, Any]]:
         if not self.path.exists():
@@ -121,9 +125,11 @@ class Ledger:
 
     def check_headroom(self, next_estimate_usd: float) -> None:
         total = self.total_usd()
-        if total + next_estimate_usd > self.cap_usd:
+        limit = self.cap_usd if self.halt_usd is None else min(self.cap_usd, self.halt_usd)
+        if total + next_estimate_usd > limit:
+            name = "상한" if limit == self.cap_usd else "멈춤 선"
             raise BudgetExceededError(
-                f"누적 ${total:.4f} + 다음 견적 ${next_estimate_usd:.4f} 가 상한 ${self.cap_usd:.2f} 를 넘는다 — 멈추고 묻는다"
+                f"누적 ${total:.4f} + 다음 견적 ${next_estimate_usd:.4f} 가 {name} ${limit:.2f} 를 넘는다 — 멈추고 묻는다"
             )
 
 

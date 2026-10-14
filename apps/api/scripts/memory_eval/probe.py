@@ -507,10 +507,13 @@ def parse_usage_log(text: str) -> list[dict[str, Any]]:
 
 
 _TRACEBACK = "Traceback (most recent call last):"
+# 기억을 프롬프트에 싣는 모듈(장면 회상, 사실 섹션). 이 안에서 난 오류로 끝난 응답은 그 갈래의 오답으로 센다.
+INJECTION_MODULES = ("memory_recall", "memory_facts")
 
 
 def recall_stack_in(text: str) -> bool:
-    """스택 블록(머리줄부터 들여쓰지 않은 예외 줄까지) 안에 회상 모듈 프레임이 있는가. 블록 밖 로그 줄의 낱말은 보지 않는다."""
+    """스택 블록(머리줄부터 들여쓰지 않은 예외 줄까지) 안에 기억 주입 모듈(회상·사실) 프레임이 있는가. 블록 밖 로그 줄의 낱말은
+    보지 않는다. 이 판정은 시도가 오류로 끝났을 때만 쓰인다 — 백그라운드 추출 실패는 턴을 깨지 않아 여기 오지 않는다."""
     lines = text.splitlines()
     i = 0
     while i < len(lines):
@@ -522,7 +525,9 @@ def recall_stack_in(text: str) -> bool:
                 i += 1
             if i < len(lines):
                 block.append(lines[i])  # 예외 줄
-            if any("memory_recall" in line for line in block if line.lstrip().startswith("File ")):
+            if any(
+                module in line for line in block if line.lstrip().startswith("File ") for module in INJECTION_MODULES
+            ):
                 return True
         i += 1
     return False

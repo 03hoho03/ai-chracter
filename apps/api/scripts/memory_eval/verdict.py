@@ -48,13 +48,23 @@ def _unprobeable(row: dict[str, Any] | None) -> bool:
     return row is not None and (row.get("status") == "unprobeable" or not row.get("scored", True))
 
 
-def trajectory_checks(points: Sequence[dict[str, Any]], *, recall_section_max: int) -> dict[str, Any]:
-    """⑥ 길이(턴 101~300 기울기 차·같은 턴 B − A 최대)와 ⑦ 캐시 블록(같은 턴 앞 두 블록 해시 동일)."""
+# 갈래 쌍(기준, 비교). 1차 런은 A·B, 2차 런은 A2·B2.
+ARM_PAIRS = (("A", "B"), ("A2", "B2"))
+
+
+def trajectory_checks(
+    points: Sequence[dict[str, Any]], *, recall_section_max: int, arms: tuple[str, str] | None = None
+) -> dict[str, Any]:
+    """⑥ 길이(턴 101~300 기울기 차·같은 턴 B − A 최대)와 ⑦ 캐시 블록(같은 턴 앞 두 블록 해시 동일). 갈래 쌍을 주지 않으면 점에
+    나온 갈래로 고른다(2차 런 갈래가 있으면 A2·B2, 아니면 A·B). 아래 A·B 는 그 쌍의 기준·비교 갈래다."""
+    present = {str(p.get("arm")) for p in points}
+    base, other = arms or next((pair for pair in reversed(ARM_PAIRS) if set(pair) & present), ARM_PAIRS[0])
     low, high = TRAJECTORY_TURNS
     by_arm: dict[str, dict[int, dict[str, Any]]] = {"A": {}, "B": {}}
     for point in points:
-        if point.get("arm") in by_arm:
-            by_arm[str(point["arm"])][int(point["turn"])] = point
+        name = {base: "A", other: "B"}.get(str(point.get("arm")))
+        if name is not None:
+            by_arm[name][int(point["turn"])] = point
     turns = sorted(set(by_arm["A"]) & set(by_arm["B"]))
     window = [t for t in turns if low <= t <= high]
     if len(window) < 2:
