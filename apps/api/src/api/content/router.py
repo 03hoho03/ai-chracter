@@ -10,8 +10,8 @@ from decimal import Decimal
 from typing import Literal
 
 from botocore.exceptions import BotoCoreError, ClientError
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
-from sqlalchemy import any_, func, or_, select, tuple_, update
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
+from sqlalchemy import any_, exists, func, or_, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -153,11 +153,22 @@ FAVORITES_PAGE_SIZE = 20
 # 전부에 나누어떨어져 마지막 행이 꽉 찬다(20은 3열에서 빈칸 2개). 홈·즐겨찾기 목록은 그 그리드를
 # 쓰지 않으므로 `CONTENT_LIST_PAGE_SIZE`(20)와 값을 공유하지 않고 별도 상수로 둔다.
 CREATOR_CONTENT_PAGE_SIZE = 24
+# 작가 작품 목록(`/me/drafts`·`/users/{id}/contents`)의 제목 검색어 상한. 제목 열에 길이 제한이 없어
+# 제목에서 나온 값은 아니고, 공개 라우트가 끝없이 긴 `ILIKE` 패턴을 받지 않게 하려는 넉넉한 상한이다.
+CREATOR_CONTENT_QUERY_MAX_LENGTH = 100
+
+
+def _title_search_term(q: str | None) -> str | None:
+    """앞뒤 공백을 걷은 검색어. 비거나 공백뿐이면 `None` — 검색하지 않은 요청과 똑같이 응답한다."""
+    if q is None:
+        return None
+    return q.strip() or None
 
 
 @router.get("/me/drafts")
 async def list_my_drafts(
     cursor: str | None = None,
+    q: str | None = Query(None, max_length=CREATOR_CONTENT_QUERY_MAX_LENGTH),
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> DraftListResponse:
@@ -182,6 +193,30 @@ async def list_my_drafts(
         )
         .order_by(Content.updated_at.desc(), Content.id.desc())
     )
+    term = _title_search_term(q)
+    if term is not None:
+        # 목록에 보이는 제목은 가장 최근 미발행 버전의 것이라(아래 `latest_draft_by_content`) 검색도
+        # 그 버전의 상세만 본다. `type` 인자가 없으니 캐릭터·스토리 상세를 모두 본다.
+        latest_draft_id = (
+            select(ContentVersion.id)
+            .where(ContentVersion.content_id == Content.id, ContentVersion.published_at.is_(None))
+            .order_by(ContentVersion.created_at.desc())
+            .limit(1)
+            .correlate(Content)
+            .scalar_subquery()
+        )
+        content_query = content_query.where(
+            or_(
+                exists().where(
+                    CharacterVersionDetail.content_version_id == latest_draft_id,
+                    CharacterVersionDetail.name.icontains(term, autoescape=True),
+                ),
+                exists().where(
+                    StoryVersionDetail.content_version_id == latest_draft_id,
+                    StoryVersionDetail.name.icontains(term, autoescape=True),
+                ),
+            )
+        )
     if cursor is not None:
         updated_at, last_content_id = _decode_cursor(cursor)
         content_query = content_query.where(
@@ -462,12 +497,16 @@ async def list_user_contents(
     id: uuid.UUID,
     type: ContentType,
     visibility: VisibilityFilter | None = None,
+    q: str | None = Query(None, max_length=CREATOR_CONTENT_QUERY_MAX_LENGTH),
     cursor: str | None = None,
     viewer_user_id: uuid.UUID | None = Depends(get_current_user_id_optional),
     db: AsyncSession = Depends(get_db_session),
 ) -> ContentSummaryListResponse:
     """커서 페이징. 정렬 키는 기존 `published_at DESC, id DESC` 그대로다 — 커서는 그
-    두 값만 담으므로 `visibility` 등 WHERE 조건은 페이지마다 호출부가 다시 넘겨야 한다."""
+    두 값만 담으므로 `visibility`·`q` 등 WHERE 조건은 페이지마다 호출부가 다시 넘겨야 한다.
+
+    `q` 는 현재 발행 버전 제목의 부분 일치다. 남의 프로필에도 열려 있으므로 위 가시성 조건에
+    AND 로만 덧붙여 공개 범위를 넓히지 않는다."""
     is_owner = viewer_user_id is not None and viewer_user_id == id
 
     query = (
@@ -488,6 +527,13 @@ async def list_user_contents(
         query = query.where(
             Content.visibility == ContentVisibility.PUBLIC,
             Content.moderation_status == ModerationStatus.NORMAL,
+        )
+
+    term = _title_search_term(q)
+    if term is not None:
+        detail_model = _detail_model(type)
+        query = query.join(detail_model, detail_model.content_version_id == ContentVersion.id).where(
+            detail_model.name.icontains(term, autoescape=True)
         )
 
     # Deterministic order: newest publish first, id as the tiebreaker.

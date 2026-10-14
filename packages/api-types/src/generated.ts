@@ -2194,7 +2194,10 @@ export interface paths {
         /**
          * List User Contents
          * @description 커서 페이징. 정렬 키는 기존 `published_at DESC, id DESC` 그대로다 — 커서는 그
-         *     두 값만 담으므로 `visibility` 등 WHERE 조건은 페이지마다 호출부가 다시 넘겨야 한다.
+         *     두 값만 담으므로 `visibility`·`q` 등 WHERE 조건은 페이지마다 호출부가 다시 넘겨야 한다.
+         *
+         *     `q` 는 현재 발행 버전 제목의 부분 일치다. 남의 프로필에도 열려 있으므로 위 가시성 조건에
+         *     AND 로만 덧붙여 공개 범위를 넓히지 않는다.
          */
         get: operations["list_user_contents_users__id__contents_get"];
         put?: never;
@@ -16017,6 +16020,7 @@ export interface operations {
         parameters: {
             query?: {
                 cursor?: string | null;
+                q?: string | null;
             };
             header?: never;
             path?: never;
@@ -16145,6 +16149,7 @@ export interface operations {
             query: {
                 type: components["schemas"]["ContentType"];
                 visibility?: ("all" | "public" | "link" | "private") | null;
+                q?: string | null;
                 cursor?: string | null;
             };
             header?: never;
