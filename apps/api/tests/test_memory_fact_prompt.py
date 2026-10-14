@@ -58,6 +58,8 @@ def _window() -> list[ChatMessage]:
 
 
 def _harness_prompt(user_name: str, existing: list[str], turn_lines: str) -> str:
+    """측정 하네스의 조립을 옮긴 것. 이름이 있을 때 하네스와 같다. 이름이 비면 운영은 이름 줄을 통째로 빼고(그 슬롯이
+    conditional 이다) 하네스는 빈 이름 줄을 넣지만, 측정에서는 이름이 늘 있었으므로 운영 쪽을 기대값으로 둔다."""
     parts = [_M.FACT_INSTRUCTION_BODY.strip()]
     if user_name:
         parts.append(f"사용자의 이야기 속 이름: {user_name}")
@@ -93,10 +95,16 @@ async def test_fact_prompt_has_the_layout_the_harness_measured(
         f"[3] {prompt_set.user_label}: 토요일 열한 시에"
     )
     assert prompt == _harness_prompt("하늘", _EXISTING, turn_lines)
+    # 위 사본과 따로, 하네스가 만든 모양을 글자로 한 번 더 적는다.
+    assert prompt == (
+        f"{_M.FACT_INSTRUCTION_BODY}\n\n사용자의 이야기 속 이름: 하늘\n\n[기존 키]\n{_EXISTING[0]}\n{_EXISTING[1]}"
+        f"\n\n[접힌 대화]\n{turn_lines}"
+    )
 
 
-async def test_first_window_still_carries_the_existing_keys_header_with_none(db_session: AsyncSession) -> None:
-    """첫 구간에는 기존 키가 없어도 머리글과 "(없음)"이 실린다(하네스와 같다). 이름이 없으면 이름 한 줄만 빠진다."""
+async def test_without_a_name_the_name_line_drops_and_no_existing_keys_reads_none(db_session: AsyncSession) -> None:
+    """이야기 속 이름이 없으면 이름 줄이 통째로 빠지고(하네스와 다른 곳 — 측정에서는 이름이 늘 있었다), 기존 키가 없는 첫
+    구간에도 머리글과 "(없음)"이 실린다."""
     prompt_set, sections = await load_active_prompt_set(db_session, lane="story")
 
     prompt = build_memory_fact_prompt(
@@ -108,7 +116,10 @@ async def test_first_window_still_carries_the_existing_keys_header_with_none(db_
         names=_NO_NAMES,
     )
 
-    assert prompt == _harness_prompt("", [], f"[1] {prompt_set.user_label}: 빵집 가자 {{{{user}}}}")
+    assert prompt == (
+        f"{_M.FACT_INSTRUCTION_BODY}\n\n[기존 키]\n(없음)\n\n[접힌 대화]\n[1] {prompt_set.user_label}: 빵집 가자 {{{{user}}}}"
+    )
+    assert not any(line.startswith("사용자의 이야기 속 이름: ") for line in prompt.split("\n"))
 
 
 # ---- 생성 프롬프트의 사실 섹션 ----------------------------------------------------------------
