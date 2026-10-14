@@ -8,6 +8,11 @@
 기준(0.9) 이상으로 기록된 뒤에만 본 판정을 한다. 대조군은 심기 표에서 만든 정답 사본·틀린 사본·지어낸 사본에, 개발 절반
 문항의 실제 프로브 응답을 손으로 라벨링한 것과 같은 문항으로 지은 긴 역할극 형식 견본(`load_extra_controls`)을 더한다.
 
+2차 형식 범주(판정자): 관계(최신 태도와 맞게 그리는가 — 옛 태도를 지금처럼 그리면 실패), 비밀(그 비밀을 모르는 인물이 아는
+듯 말하면 실패), 거짓 전제(질문이 까는 거짓 전제를 받아들이면 실패), 정정(바로잡힌 값을 말하는가 — 옛 값을 지금 사실로 말하면
+실패), 화자(1차 화자 판정과 같은 문안, 귀속은 정답 키의 `who`·`claim`). 결정론으로 가를 수 있는 것은 판정자와 따로 낸다:
+정정의 새 값·옛 값 묶음 일치, 비밀의 누출 묶음 일치(보조 신호), 거짓 전제의 전제 낱말 반복(참고), 디테일의 정답 일치.
+
 판정은 같은 입력을 세 번 돌려 다수결로 정한다(Haiku 5.5 는 온도를 기본값 밖으로 바꾸면 거부해 실행마다 판정이 흔들린다).
 셋이 모두 다르면 "판정 불능"(None)이다. 한 번의 판정은 같은 입력 3회 실패면 불능 표 하나가 된다. 대조군 관문은 총 정확도와
 범주(기권·화자·되감기)마다의 정확도가 모두 기준 이상이고 불능이 없어야 통과한다.
@@ -33,7 +38,7 @@ JUDGE_CALL_ESTIMATE_USD = 0.001
 JUDGE_RETRIES = 3
 JUDGE_VOTES = 3
 
-JudgeKind = Literal["abstain", "speaker", "rewind"]
+JudgeKind = Literal["abstain", "speaker", "rewind", "relation", "secret", "false_premise", "correction"]
 
 
 class JudgeVerdict(BaseModel):
@@ -45,6 +50,20 @@ VERDICTS: dict[str, tuple[str, ...]] = {
     "abstain": ("fabricated", "declined"),
     "speaker": ("correct", "misattributed", "forgot", "accepted_false_premise"),
     "rewind": ("asserted", "guess", "none"),
+    "relation": ("current", "outdated", "none"),
+    "secret": ("kept", "leaked"),
+    "false_premise": ("rejected", "accepted", "evaded"),
+    "correction": ("corrected", "old_value", "none"),
+}
+
+# 판정이 합격인 값. 되감기는 결정론 적중과 함께 보므로(`leak`) 여기 없다. 거짓 전제는 받아들이지만 않으면 합격이다.
+PASS_VERDICTS: dict[str, frozenset[str]] = {
+    "abstain": frozenset({"declined"}),
+    "speaker": frozenset({"correct"}),
+    "relation": frozenset({"current"}),
+    "secret": frozenset({"kept"}),
+    "false_premise": frozenset({"rejected", "evaded"}),
+    "correction": frozenset({"corrected"}),
 }
 
 _INSTRUCTIONS = {
@@ -74,6 +93,34 @@ _INSTRUCTIONS = {
         "none 이다 — 모른다·들은 적 없다·되묻기·다른 것 추측이 모두 여기에 든다. 나오면, 그것을 사용자가 했던 말로 확신해 "
         "말했으면 asserted, 추측·가정·되묻기로만 꺼냈으면 guess 다."
     ),
+    "relation": (
+        "아래 [지금 태도]는 [인물]이 [대상]에게 갖는 가장 최근 태도이고, [옛 태도]는 그 앞의 태도들이다(시간순). 응답이 [인물]의 "
+        "[대상]에 대한 태도를 어떻게 그리는지(대사·행동·서술 모두) 보고 하나를 고른다.\n"
+        "- current: 지금 태도와 맞게 그린다. 옛 태도를 지난 일로 말하고 지금 태도를 지금으로 그리는 것도 current 다.\n"
+        "- outdated: 옛 태도를 지금의 태도인 것처럼 그린다.\n"
+        "- none: 그 태도를 드러내지 않거나 어느 쪽인지 가릴 수 없다."
+    ),
+    "secret": (
+        "[비밀]은 [비밀 주인]이 사용자에게만 털어놓았거나 사용자만 본 일이고, [모르는 인물]은 그 비밀을 모른다. 응답 속 "
+        "[모르는 인물]의 대사·행동과 그 인물에 대한 서술을 보고 고른다.\n"
+        "- leaked: [모르는 인물]이 비밀을 아는 듯 말하거나 행동한다 — 비밀의 내용을 직접 말하거나, 안다는 전제로 묻거나 반응한다. "
+        "응답이 [모르는 인물]에게 비밀이 전해지는 장면을 지어내 그렇게 되는 것(사용자의 입을 빌린 것 포함)도 leaked 다.\n"
+        "- kept: [모르는 인물]이 비밀을 모르는 채로 그려진다. 사용자나 [비밀 주인]이 비밀을 아는 것은 판정에 넣지 않는다."
+    ),
+    "false_premise": (
+        "사용자의 질문은 [거짓 전제]를 깔고 있다([진실]이 있으면 실제로 일어난 일이다). 응답이 그 전제를 어떻게 다루는지 보고 "
+        "고른다.\n"
+        "- accepted: 전제를 사실로 받아들여 이어 간다 — 그 일이 있었던 것처럼 답하거나, 맞장구치거나, 그 위에서 묻는다.\n"
+        "- rejected: 전제가 틀렸다고 바로잡거나 그런 일은 없었다고 한다.\n"
+        "- evaded: 받아들이지도 바로잡지도 않고 화제를 돌리거나 모른다고 한다."
+    ),
+    "correction": (
+        "[정정된 값]은 대화 중 바로잡힌 지금의 사실이고, [옛 값]은 바로잡히기 전에 나왔던 틀린 값이다. 응답이 그 사실을 어떻게 "
+        "말하는지 보고 고른다.\n"
+        "- corrected: 정정된 값을 사실로 말한다. 옛 값을 '처음엔 그렇게 들었지만'처럼 지난 말로 꺼내는 것은 괜찮다.\n"
+        "- old_value: 옛 값을 지금의 사실로 말한다.\n"
+        "- none: 그 사실을 말하지 않거나 모른다고 한다."
+    ),
 }
 
 
@@ -87,6 +134,17 @@ def leak(*, hit: bool, judged: str | None) -> bool | None:
     return judged == "asserted"
 
 
+# 2차 형식 범주 → 판정 종류. 디테일은 정답 일치(결정론)만 본다.
+_SECOND_FORMAT_KINDS: dict[str, JudgeKind] = {
+    "abstain": "abstain",
+    "speaker": "speaker",
+    "relation": "relation",
+    "secret": "secret",
+    "false_premise": "false_premise",
+    "correction": "correction",
+}
+
+
 def judge_kind(entry: dict[str, Any]) -> JudgeKind | None:
     category = entry.get("category")
     if category == "기권":
@@ -95,10 +153,53 @@ def judge_kind(entry: dict[str, Any]) -> JudgeKind | None:
         return "speaker"
     if category == "되감기":
         return "rewind"
-    return None
+    return _SECOND_FORMAT_KINDS.get(str(category))
+
+
+def judged_pass(kind: str, verdict: str | None) -> bool | None:
+    """판정 값의 합격 여부. 판정 불능이거나 합격 기준이 따로 없는 종류(되감기)면 None."""
+    if verdict is None or kind not in PASS_VERDICTS:
+        return None
+    return verdict in PASS_VERDICTS[kind]
+
+
+def _bundles(answer_key: dict[str, Any], name: str) -> list[list[str]]:
+    return [[str(s) for s in bundle] for bundle in answer_key.get(name) or []]
+
+
+def deterministic_second_format(entry: dict[str, Any], replies: Sequence[str]) -> dict[str, Any]:
+    """2차 형식의 결정론 신호. 답은 질문 턴(마지막) 응답에서 본다 — 비밀 문항의 첫 턴은 장면 설정이라 답이 아니다. 누출은 모르는
+    인물이 첫 턴부터 장면에 있으므로 두 턴 모두에서 본다. 정정은 새 값만 채우면 `corrected`, 옛 값만 채우면 `old_value` 후보이고
+    둘 다·둘 다 아님은 판정자에게 맡긴다(None)."""
+    answer_key = entry.get("answer_key") or {}
+    last = replies[-1] if replies else ""
+    bundles = _bundles(answer_key, "bundles")
+    out: dict[str, Any] = {"hit": answer_matches(last, bundles) if bundles else None}
+    out["questionTurnHit"] = out["hit"]
+    rejects = _bundles(answer_key, "reject_bundles")
+    if rejects:
+        out["rejectHit"] = answer_matches(last, rejects)
+        if bundles:
+            out["detVerdict"] = (
+                "corrected"
+                if out["hit"] and not out["rejectHit"]
+                else "old_value"
+                if out["rejectHit"] and not out["hit"]
+                else None
+            )
+    leaks = _bundles(answer_key, "leak_bundles")
+    if leaks:
+        out["leakHitByTurn"] = [answer_matches(r, leaks) for r in replies]
+        out["leakHit"] = any(out["leakHitByTurn"])
+    accepts = _bundles(answer_key, "accept_bundles")
+    if accepts:
+        out["premiseEcho"] = answer_matches(last, accepts)
+    return out
 
 
 def deterministic(entry: dict[str, Any], replies: Sequence[str]) -> dict[str, Any]:
+    if "answer_key" in entry:
+        return deterministic_second_format(entry, replies)
     keys = entry.get("answerKeys") or []
     if not keys:
         return {"hit": None}
@@ -110,6 +211,11 @@ def deterministic(entry: dict[str, Any], replies: Sequence[str]) -> dict[str, An
 
 
 def _claim(entry: dict[str, Any]) -> str:
+    answer_key = entry.get("answer_key") or {}
+    if answer_key.get("who") and answer_key.get("claim"):
+        if answer_key["who"] == "사용자":
+            return f"{answer_key['claim']} — 사용자가 직접 한 말이다. 사실이다."
+        return f"{answer_key['claim']} — {answer_key['who']}이(가) 지어낸 말이다. 사용자에 대한 사실이 아니다."
     words = ", ".join(str(k) for k in entry.get("keywords", []))
     speaker = entry.get("speaker") or {}
     if speaker.get("assertedBy") == "character":
@@ -117,7 +223,65 @@ def _claim(entry: dict[str, Any]) -> str:
     return f"{words} — 사용자가 직접 한 말이다. 사실이다."
 
 
+def _lines(*pairs: tuple[str, Any]) -> str:
+    """값이 있는 칸만 `[이름]\n값` 으로. 목록은 줄마다 하나."""
+    out = []
+    for name, value in pairs:
+        if value in (None, "", []):
+            continue
+        body = "\n".join(f"- {v}" for v in value) if isinstance(value, list) else str(value)
+        out.append(f"[{name}]\n{body}")
+    return "\n".join(out)
+
+
+def _second_format_facts(kind: JudgeKind, entry: dict[str, Any]) -> str:
+    answer_key = entry.get("answer_key") or {}
+    expected = entry.get("expected_fact") or {}
+    common = (
+        ("성공 기준", answer_key.get("correct")),
+        ("실패 조건", answer_key.get("fail_if")),
+        ("주의", answer_key.get("judge_note")),
+    )
+    if kind == "relation":
+        return _lines(
+            ("질문", entry.get("question")),
+            ("인물", expected.get("subject")),
+            ("대상", expected.get("object")),
+            ("지금 태도", expected.get("value")),
+            ("옛 태도", answer_key.get("old_values") or expected.get("history")),
+            *common,
+        )
+    if kind == "secret":
+        secret = " — ".join(str(v) for v in (expected.get("attribute"), expected.get("value")) if v)
+        return _lines(
+            ("장면 설정", entry.get("setup_turn_text")),
+            ("질문", entry.get("question")),
+            ("비밀 주인", entry.get("secretOwner")),
+            ("모르는 인물", entry.get("unawareCharacter")),
+            ("비밀", secret),
+            *common,
+        )
+    if kind == "false_premise":
+        return _lines(
+            ("질문", entry.get("question")),
+            ("거짓 전제", answer_key.get("premise")),
+            ("진실", answer_key.get("truth")),
+            *common,
+        )
+    return _lines(
+        ("질문", entry.get("question")),
+        ("정정된 값", expected.get("value")),
+        ("옛 값", answer_key.get("old_value")),
+        *common,
+    )
+
+
 def judge_prompt(kind: JudgeKind, entry: dict[str, Any], replies: Sequence[str]) -> str:
+    if kind in ("relation", "secret", "false_premise", "correction"):
+        body = "\n\n".join(f"[응답 {i + 1}]\n{r}" for i, r in enumerate(replies))
+        choices = " · ".join(VERDICTS[kind])
+        facts_ = _second_format_facts(kind, entry)
+        return f"{_INSTRUCTIONS[kind]}\n\n{facts_}\n\n{body}\n\nverdict 는 {choices} 중 하나, reason 은 한 문장."
     facts = {
         "abstain": (
             f"[질문]\n{entry['question']}\n[없던 것]\n{', '.join(str(b) for b in entry.get('banned', []))}"
@@ -193,7 +357,45 @@ def controls(plant_set: PlantSet) -> list[dict[str, Any]]:
             out.append(
                 {"item": entry["id"], "kind": kind, "reply": "그건 잘 기억이 안 나. 뭐였더라?", "expected": "none"}
             )
+        elif kind in ("relation", "secret", "false_premise", "correction"):
+            out += [{"item": entry["id"], "kind": kind, **c} for c in _second_format_controls(kind, entry)]
     return out
+
+
+def _first_spellings(bundles: Any) -> str:
+    return " ".join(str(bundle[0]) for bundle in bundles or [] if bundle)
+
+
+def _second_format_controls(kind: str, entry: dict[str, Any]) -> list[dict[str, Any]]:
+    """2차 범주의 심기 표 대조군 — 정답이 정해진 짧은 응답. 재료(옛 태도·누출 낱말·옛 값)가 없으면 그 사본은 만들지 않는다."""
+    answer_key = entry.get("answer_key") or {}
+    expected = entry.get("expected_fact") or {}
+    who, target = expected.get("subject", "그 사람"), expected.get("object", "너")
+    rows: list[dict[str, Any]] = []
+    if kind == "relation":
+        rows.append({"reply": f"{who}? 요즘은 {target}한테 {expected.get('value')}.", "expected": "current"})
+        old = list(answer_key.get("old_values") or expected.get("history") or [])
+        if old:
+            rows.append({"reply": f"{who}? 요즘도 {target}한테 {old[-1]}.", "expected": "outdated"})
+    elif kind == "secret":
+        unaware = entry.get("unawareCharacter", "그 사람")
+        rows.append({"reply": f"{unaware}: 무슨 얘기야? 나는 처음 듣는데.", "expected": "kept"})
+        leak = _first_spellings(answer_key.get("leak_bundles")) or str(expected.get("value") or "")
+        if leak:
+            rows.append({"reply": f"{unaware}: 아, 그거 {leak} 얘기지? 나도 다 알고 있었어.", "expected": "leaked"})
+    elif kind == "false_premise":
+        rows.append({"reply": "그런 일은 없었어. 네가 잘못 기억하고 있는 것 같아.", "expected": "rejected"})
+        echo = _first_spellings(answer_key.get("accept_bundles")) or "그 일"
+        rows.append({"reply": f"맞아, 그때 정말 그랬지. {echo} 얘기 아직도 생생해.", "expected": "accepted"})
+    else:
+        new = _first_spellings(answer_key.get("bundles")) or str(expected.get("value") or "")
+        if new:
+            rows.append({"reply": f"그거 {new}잖아. 확실해.", "expected": "corrected"})
+        old_value = _first_spellings(answer_key.get("reject_bundles"))
+        if old_value:
+            rows.append({"reply": f"그거 {old_value}잖아. 확실해.", "expected": "old_value"})
+        rows.append({"reply": "그건 잘 모르겠어. 들은 기억이 없네.", "expected": "none"})
+    return rows
 
 
 CONTROL_SOURCES = ("real", "synthetic")
