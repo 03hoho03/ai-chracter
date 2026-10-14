@@ -16,6 +16,23 @@ export const MY_WORKS_SORTS = ["latest"] as const;
 
 export type MyWorksSort = (typeof MY_WORKS_SORTS)[number];
 
+/** 서버(`GET /users/{id}/contents`·`GET /me/drafts`의 `q`)가 받는 검색어 길이 상한. 넘기면 422가 오므로
+ * 보내기 전에 여기서 자른다. */
+export const MY_WORKS_QUERY_MAX_LENGTH = 100;
+
+/**
+ * 검색어를 서버에 보낼 꼴로 편다: 앞뒤 공백을 걷고, 상한을 넘으면 자르고, 남는 게 없으면 `undefined`(= 검색 안 함,
+ * URL에서도 파라미터가 빠진다).
+ *
+ * 길이는 UTF-16 단위가 아니라 **코드 포인트**로 센다. 서버의 상한은 파이썬 `len`(코드 포인트)이라 단위가 같아야
+ * 하고, `String.prototype.slice`로 자르면 이모지 한가운데가 갈려 짝 잃은 서로게이트가 남는데 그 문자열은
+ * `encodeURIComponent`가 `URIError`로 던져 요청 자체가 나가지 않는다.
+ */
+export function normalizeMyWorksQuery(raw: string): string | undefined {
+  const cut = Array.from(raw.trim()).slice(0, MY_WORKS_QUERY_MAX_LENGTH).join("").trimEnd();
+  return cut === "" ? undefined : cut;
+}
+
 /** 필터·정렬은 전부 URL 서치 파라미터에 남아 새로고침·뒤로가기에서 보존된다.
  * 기본값(`all` / `latest`)은 파라미터를 **비워서** 표현한다 — `?type=all&sort=latest`가 늘 붙어 있으면
  * 공유 URL이 지저분해지는 데다 "필터가 걸려 있다"는 신호 자체가 죽는다. */
@@ -28,6 +45,9 @@ export const myWorksSearchSchema = z.object({
   type: z.enum(MY_WORK_TYPE_FILTERS).exclude(["all"]).optional().catch(undefined),
   visibility: z.enum(VISIBILITY_FILTERS).exclude(["all"]).optional().catch(undefined),
   sort: z.enum(MY_WORKS_SORTS).optional().catch(undefined),
+  // 손으로 고친 URL(`?q=%20%20`·101자)도 화면에 오기 전에 보낼 꼴로 접는다 — 그래야 쿼리 키·건수 줄·빈 상태
+  // 문구가 모두 실제로 보낸 검색어와 같은 말을 한다. 숫자로 파싱돼 온 `?q=1`은 문자열이 아니라 부재로 떨어진다.
+  q: z.string().transform(normalizeMyWorksQuery).optional().catch(undefined),
 });
 
 export type MyWorksSearch = z.infer<typeof myWorksSearchSchema>;
@@ -44,6 +64,7 @@ export function resolveMyWorksSearch(search: MyWorksSearch): {
   type: MyWorkTypeFilter;
   visibility: VisibilityFilter;
   sort: MyWorksSort;
+  q: string | undefined;
 } {
   const type = search.type ?? "all";
 
@@ -51,6 +72,7 @@ export function resolveMyWorksSearch(search: MyWorksSearch): {
     type,
     visibility: type === "unpublished" ? "all" : (search.visibility ?? "all"),
     sort: search.sort ?? "latest",
+    q: search.q,
   };
 }
 

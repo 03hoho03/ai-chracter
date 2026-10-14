@@ -9,6 +9,8 @@ export type ContentCardGridProps = {
   className?: string;
   ref?: Ref<HTMLDivElement>;
   tabIndex?: number;
+  /** 내용이 곧 바뀔 것임을 보조기기에 알린다(`/my`가 검색어를 바꾼 뒤 응답을 기다리는 동안). */
+  "aria-busy"?: boolean;
   children: ReactNode;
 };
 
@@ -24,10 +26,22 @@ export type ContentCardGridProps = {
  * `ref`·`tabIndex`·`className`은 래퍼가 아니라 안쪽 그리드로 보낸다 — `/my`·프로필 그리드가 "더 보기"가 마지막
  * 페이지에서 사라질 때 그리드를 포커스 받는 자리로 쓴다. 앞의 둘(`ref`·`tabIndex`)을 래퍼가 삼키면 그 동작이 깨지고,
  * `className`은 포커스를 받는 요소에 붙어야 할 클래스(예: `outline-none`)를 싣는 자리라 같은 요소로 간다. */
-export function ContentCardGrid({ thumbnailAspect, className, ref, tabIndex, children }: ContentCardGridProps) {
+export function ContentCardGrid({
+  thumbnailAspect,
+  className,
+  ref,
+  tabIndex,
+  "aria-busy": ariaBusy,
+  children,
+}: ContentCardGridProps) {
   return (
     <div className="@container w-full">
-      <div ref={ref} tabIndex={tabIndex} className={cn("grid gap-3", toGridColumns(thumbnailAspect), className)}>
+      <div
+        ref={ref}
+        tabIndex={tabIndex}
+        aria-busy={ariaBusy}
+        className={cn("grid gap-3", toGridColumns(thumbnailAspect), className)}
+      >
         {children}
       </div>
     </div>
