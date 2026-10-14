@@ -4511,6 +4511,35 @@ export interface paths {
         patch: operations["edit_message_chat_rooms__room_id__messages__message_id__patch"];
         trace?: never;
     };
+    "/chat-rooms/{room_id}/messages/{message_id}/restore-previous": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Previous Message
+         * @description 재생성이 밀어낸 직전 응답으로 되돌린다. `message_id` 는 지금 보이는 응답(재생성이 만든 응답)이다. 되살린 응답을 원래
+         *     id·시각으로 다시 넣고 지금 응답을 보관으로 옮기므로, 되살린 응답 id 로 한 번 더 부르면 원래대로 돌아간다. 같은 요청이 두 번
+         *     오면 두 번째는 `message_id` 가 더는 마지막 응답이 아니라 409 다.
+         *
+         *     모델을 부르지 않고 자기 기록을 고르는 일이라 차감 게이트·분당 상한·LLM 의존성이 없고(재생성 차감은 돌려주지 않는다),
+         *     이용제한된 작품의 방에서도 된다(초기화·삭제와 같다). 대화를 바꾸므로 방 턴 락 아래서 하고(진행 중 턴이면 409
+         *     `CHAT_TURN_IN_PROGRESS`), 락을 잡은 뒤 방 행을 잠그며 다시 읽는다 — 앞 턴이 올린 `turn_count`·엔딩을 보고, 락 없이 겹친
+         *     턴 쓰기와도 줄을 선다. 되돌릴 수 없으면 409 `PREVIOUS_RESPONSE_UNAVAILABLE` 이다(`chat/previous_response.py`).
+         *
+         *     응답은 방 상태다. 화면이 이 응답으로 방 캐시를 바꾸므로 위로 불러 둔 깊이만큼 `messageLimit` 을 넘긴다(버전 승격과 같다).
+         */
+        post: operations["restore_previous_message_chat_rooms__room_id__messages__message_id__restore_previous_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chat-rooms/{room_id}/reset": {
         parameters: {
             query?: never;
@@ -8871,6 +8900,8 @@ export interface components {
             contentRestricted: boolean;
             /** Novelcreationblocked */
             novelCreationBlocked?: boolean;
+            /** Previousresponsefor */
+            previousResponseFor?: string | null;
             /** Chatmodel */
             chatModel?: string | null;
             /**
@@ -20398,6 +20429,40 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_previous_message_chat_rooms__room_id__messages__message_id__restore_previous_post: {
+        parameters: {
+            query?: {
+                messageLimit?: number | null;
+            };
+            header?: never;
+            path: {
+                room_id: string;
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatRoomResponse"];
                 };
             };
             /** @description Validation Error */
