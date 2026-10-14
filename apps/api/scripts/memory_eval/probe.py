@@ -14,6 +14,7 @@
 
 import asyncio
 import json
+import math
 import os
 import re
 import subprocess
@@ -257,6 +258,8 @@ def run_probe(run: ProbeRun, probe: Probe) -> dict[str, Any]:
                             "exit": code,
                             "reply": (last or {}).get("reply") or "",
                             "clientTurn": (last or {}).get("clientTurn"),
+                            # 드라이버가 잰 첫 글자 지연(보낸 뒤 첫 token 이벤트까지, ms). 첫 글자 전에 끊기면 None.
+                            "ttftMs": (last or {}).get("ttftMs"),
                         }
                     )
                     if code not in (EXIT_OK, EXIT_ENDING):
@@ -392,3 +395,38 @@ RECALL_WARNING = "장면 기억 회상을 읽지 못해"
 def recall_warning_count(text: str) -> int:
     """서버 로그에서 회상 실패 경고 줄 수. 회상은 실패해도 턴을 깨지 않으므로 종료 코드로는 드러나지 않는다."""
     return sum(1 for line in text.splitlines() if RECALL_WARNING in line)
+
+
+def percentile(values: Sequence[float], p: float) -> float | None:
+    """가장 가까운 순위 백분위수: 정렬한 값의 ceil(p/100 · n) 번째. 값이 없으면 None."""
+    if not values:
+        return None
+    ordered = sorted(values)
+    rank = max(1, math.ceil(p / 100 * len(ordered)))
+    return float(ordered[rank - 1])
+
+
+def probe_summary(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """프로브 결과 요약: 갈래별 상태 수와 첫 글자 지연(ms) p50·p95. 지연은 받아들인(accept) 프로브의 턴 가운데 드라이버가
+    지연을 잰 턴만 센다 — 재시도 끝에 불능이 된 프로브의 턴은 서버 상태가 다른 시도라 섞지 않는다."""
+    out: dict[str, Any] = {}
+    for arm in sorted({str(r["arm"]) for r in rows}):
+        members = [r for r in rows if str(r["arm"]) == arm]
+        status: dict[str, int] = {}
+        for r in members:
+            status[str(r["status"])] = status.get(str(r["status"]), 0) + 1
+        ttft = [
+            float(t["ttftMs"])
+            for r in members
+            if r["status"] == "accept"
+            for t in r.get("turns", [])
+            if t.get("ttftMs") is not None
+        ]
+        out[arm] = {
+            "probes": len(members),
+            "status": status,
+            "ttftTurns": len(ttft),
+            "ttftP50Ms": percentile(ttft, 50),
+            "ttftP95Ms": percentile(ttft, 95),
+        }
+    return out

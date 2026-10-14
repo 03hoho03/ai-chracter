@@ -537,6 +537,8 @@ def cmd_probe(args: argparse.Namespace) -> int:
         unprobeable += result["status"] == "unprobeable"
         if probe_mod.should_halt(unprobeable, args.halt_base):
             raise SystemExit(f"프로브 불능 {unprobeable}건 — 멈추고 묻는다")
+    if out.exists():
+        _print(probe_mod.probe_summary(_probe_rows([out])))
     return 0
 
 
@@ -544,6 +546,14 @@ def _probe_rows(paths: list[Path]) -> list[dict[str, Any]]:
     return [
         json.loads(line) for path in paths for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
     ]
+
+
+def cmd_latency(args: argparse.Namespace) -> int:
+    """프로브 결과 파일들의 갈래별 상태 수와 첫 글자 지연 p50·p95."""
+    from memory_eval.probe import probe_summary
+
+    _print(probe_summary(_probe_rows(args.probes)))
+    return 0
 
 
 def cmd_score(args: argparse.Namespace) -> int:
@@ -1049,6 +1059,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--burst-limit", type=int, default=9)
     p.add_argument("--halt-base", type=int, default=56, help="불능 멈춤 기준 문항 수(갈래당)")
     p.set_defaults(fn=cmd_probe)
+
+    p = sub.add_parser("latency", help="프로브 결과의 갈래별 상태 수·첫 글자 지연 p50/p95")
+    p.add_argument("--probes", type=Path, nargs="+", required=True)
+    p.set_defaults(fn=cmd_latency)
 
     p = sub.add_parser("score")
     with_plants(p)
