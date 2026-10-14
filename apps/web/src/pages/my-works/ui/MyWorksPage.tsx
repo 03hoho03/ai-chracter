@@ -28,6 +28,7 @@ import {
 } from "@/entities/content";
 import { useDraftListQuery } from "@/entities/draft";
 
+import { resolveMyWorksBodyView } from "../model/myWorksBodyView";
 import { resolveMyWorksEmptyResult, toMyWorksScopeLabel } from "../model/myWorksEmptyResult";
 import {
   filterMyWorks,
@@ -203,9 +204,20 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
       />
     ) : undefined;
 
+  const visibleItems = filterMyWorks(items, { type: typeFilter, visibility: visibilityFilter });
+  // 검색어만 바뀐 새 쿼리는 응답 전까지 이전 검색어의 목록을 자리표시로 받는다. 그 자리표시로는 "0건"의 결론을
+  // 내리지 않는다(`resolveMyWorksBodyView`).
+  const isShowingPlaceholder = queries.some((query) => query.isPlaceholderData);
+  const view = resolveMyWorksBodyView({
+    itemCount: items.length,
+    visibleCount: visibleItems.length,
+    q,
+    isShowingPlaceholder,
+  });
+
   // 검색어가 걸린 0건은 "아직 만든 작품이 없어요"가 아니다 — 서버가 검색어로 걸러 세 목록이 다 비었을 뿐이다.
   // 그 경우는 툴바(검색 칸)를 남긴 아래 분기의 빈 결과로 보낸다.
-  if (items.length === 0 && q === undefined) {
+  if (view === "nothingMade") {
     return (
       <div className="flex flex-col gap-6">
         {errorBanner}
@@ -222,8 +234,6 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
       </div>
     );
   }
-
-  const visibleItems = filterMyWorks(items, { type: typeFilter, visibility: visibilityFilter });
 
   // "더 보기"는 **지금 칩이 보여주는 스트림만** 진행시킨다(`toMyWorkPageSources`). `전체`가 둘인 게
   // 핵심이다 — 캐릭터·스토리는 각각 페이징된 뒤 `mergeMyWorks`가 클라이언트에서 합치므로 한쪽만
@@ -257,13 +267,17 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
         q={q}
         count={visibleItems.length}
         hasMore={hasMore}
+        isBusy={isShowingPlaceholder}
         onSearchChange={onSearchChange}
       />
 
-      {visibleItems.length === 0 ? (
+      {view === "awaiting" && <MyWorksSkeletonGrid />}
+
+      {view === "emptyResult" && (
         <MyWorksEmptyResult
           q={q}
           filterLabel={describeFilter(typeFilter, visibilityFilter)}
+          hasUnpublishedMatch={items.some((item) => item.kind === "draft")}
           hasMore={hasMore}
           onResetFilter={() => {
             focusTypeFilter("all");
@@ -279,12 +293,20 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
             onSearchChange({ type: "unpublished", visibility: undefined });
           }}
         />
-      ) : (
+      )}
+
+      {view === "list" && (
         // `tabIndex={-1}`은 Tab 순서에 넣지 않으면서 프로그램 포커스만 받게 한다 — "더 보기"가
         // 마지막 페이지에서 사라질 때 포커스를 여기로 넘긴다. `mixed`인 이유:
         // '전체' 필터에서 캐릭터·스토리가 실제로 섞이므로 그리드는 항상 캐릭터 규격(2~6열)에
         // `items-start`를 쓰고, 카드는 각자 `toThumbnailAspect(item.type)`로 자기 비율을 지킨다.
-        <ContentCardGrid thumbnailAspect="mixed" ref={gridRef} tabIndex={-1} className="outline-none">
+        <ContentCardGrid
+          thumbnailAspect="mixed"
+          ref={gridRef}
+          tabIndex={-1}
+          aria-busy={isShowingPlaceholder}
+          className="outline-none"
+        >
           {visibleItems.map((item, index) => (
             <MyWorkCard
               key={`${item.kind}-${item.id}`}
@@ -311,6 +333,8 @@ type MyWorksEmptyResultProps = {
   q: string | undefined;
   /** 걸린 칩 필터를 이름으로 적은 말. 칩 필터가 없으면 `undefined`. */
   filterLabel: string | undefined;
+  /** 불러온 목록에 초안이 있는지. 칩 필터 없는 검색이 0건일 때 검색어가 초안에만 걸렸는지를 가른다. */
+  hasUnpublishedMatch: boolean;
   /** 아직 안 불러온 페이지가 남아 있는지. 남았으면 "없어요"가 목록 전체에 대한 말이 아니다. */
   hasMore: boolean;
   onResetFilter: () => void;
@@ -334,17 +358,18 @@ type MyWorksEmptyResultProps = {
 function MyWorksEmptyResult({
   q,
   filterLabel,
+  hasUnpublishedMatch,
   hasMore,
   onResetFilter,
   onClearQuery,
   onShowUnpublished,
 }: MyWorksEmptyResultProps) {
-  const result = resolveMyWorksEmptyResult({ q, filterLabel, hasMore });
+  const result = resolveMyWorksEmptyResult({ q, filterLabel, hasUnpublishedMatch, hasMore });
 
   if (result.kind === "noPublished") {
     return (
       <ContentListEmptyState
-        message="아직 발행한 작품이 없어요."
+        message={result.message}
         action={
           // `size="sm"`(32px)이 아닌 이유: 이 버튼은 초안 지연 생성 이후 **모든 신규 창작자의
           // 첫 화면**에서 유일한 앞길인데, 190px 패널 한가운데 32px 보조 액션으로 놓이면 위계가
@@ -387,6 +412,8 @@ type MyWorksToolbarProps = {
   q: string | undefined;
   count: number;
   hasMore: boolean;
+  /** 이전 검색어의 자리표시를 보여주는 중인가. 그동안 건수는 새 검색어 이름 옆에 옛 건수라 읽기를 미룬다. */
+  isBusy: boolean;
   onSearchChange: (patch: Partial<MyWorksSearch>) => void;
 };
 
@@ -407,6 +434,7 @@ function MyWorksToolbar({
   q,
   count,
   hasMore,
+  isBusy,
   onSearchChange,
 }: MyWorksToolbarProps) {
   return (
@@ -542,7 +570,7 @@ function MyWorksToolbar({
             총계를 주장하지 않게 하고, 마지막 페이지가 도착해 "더 보기"가 사라지는 순간 그냥 `32건`이
             된다(그때는 그게 실제로 총계다). 두 문구가 갈리는 지점과 버튼이 사라지는 지점이 같아서
             사용자에겐 한 가지 상태 변화로 읽힌다. */}
-        <p aria-live="polite" aria-atomic className="text-sm text-muted-foreground">
+        <p aria-live="polite" aria-atomic aria-busy={isBusy} className="text-sm text-muted-foreground">
           {toMyWorksScopeLabel({ q, filterLabel: describeFilter(typeFilter, visibilityFilter) })} {count}건{hasMore ? " 표시 중" : ""}
         </p>
 
@@ -693,18 +721,25 @@ function MyWorksSkeleton() {
         <div className="h-8" />
       </div>
 
-      <ContentCardGrid thumbnailAspect="mixed">
-        {Array.from({ length: 8 }, (_, index) => (
-          <ContentCardSkeleton
-            key={index}
-            thumbnailAspect={index % 2 === 0 ? "square" : "portrait"}
-            metrics={{ viewCount: 0, chatCount: 0, likeCount: 0 }}
-            tags={["character"]}
-            actions={<span aria-hidden className="size-8" />}
-          />
-        ))}
-      </ContentCardGrid>
+      <MyWorksSkeletonGrid />
     </div>
+  );
+}
+
+/** 카드 자리만 까는 그리드. 첫 로딩(`MyWorksSkeleton`)과 검색어를 바꾼 뒤 응답을 기다리는 동안 둘이 쓴다. */
+function MyWorksSkeletonGrid() {
+  return (
+    <ContentCardGrid thumbnailAspect="mixed" aria-busy>
+      {Array.from({ length: 8 }, (_, index) => (
+        <ContentCardSkeleton
+          key={index}
+          thumbnailAspect={index % 2 === 0 ? "square" : "portrait"}
+          metrics={{ viewCount: 0, chatCount: 0, likeCount: 0 }}
+          tags={["character"]}
+          actions={<span aria-hidden className="size-8" />}
+        />
+      ))}
+    </ContentCardGrid>
   );
 }
 
