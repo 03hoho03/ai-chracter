@@ -46,6 +46,8 @@ _GEMINI_SET_IDS: dict[str, uuid.UUID] = {
 # 이 리비전 뒤에 여덟 체인(이 리비전의 여섯 포함)에 장면 기억 문안을 더한 새 세트를 게시하는 리비전. head 상태에서는 그
 # 세트들이 활성이라, "이 리비전 직후 상태"를 보는 테스트는 그 리비전을 먼저 되돌린다(실제 downgrade 순서).
 _LATER = _load("fc6f0e134782")
+# 그 뒤 여덟 체인에 관계·사실 기억 문안을 더한 새 세트를 게시하는 리비전 — 지금 head 의 활성이라 되돌릴 때는 이것부터다.
+_LATEST = _load("5cab2abe4e7b")
 
 _LANES: tuple[PromptLane, ...] = ("story", "character")
 _CLAUDE_MODELS: tuple[PromptSetModelId, ...] = ("sonnet", "opus")
@@ -67,6 +69,7 @@ def _ids(pairs: list[tuple[PromptLane, PromptSetModelId]]) -> list[str]:
 
 async def _undo_later_revisions(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_LATEST.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
 
 
@@ -259,14 +262,14 @@ async def test_no_drafts_are_seeded(db_session: AsyncSession) -> None:
 async def test_seeded_sets_match_publish_validation_but_for_the_later_revisions_rows(
     db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId
 ) -> None:
-    """게시 검증의 기대 집합과 시드가 맞물린다 — head 코드 표와의 차이는 뒤 리비전(장면 기억 문안)이 더한 행뿐이다. 그 뒤
-    리비전 이후로 이 시드는 게시 검증에 막히고(복원해도 게시할 수 없다), 그 행을 더한 뒤 리비전의 세트가 그 체인의 게시
-    검증을 통과한다."""
+    """게시 검증의 기대 집합과 시드가 맞물린다 — head 코드 표와의 차이는 뒤 리비전들(장면 기억 문안·관계·사실 기억 문안)이
+    더한 행뿐이다. 그 뒤 리비전 이후로 이 시드는 게시 검증에 막히고(복원해도 게시할 수 없다), 그 행을 더한 마지막 리비전의
+    세트가 그 체인의 게시 검증을 통과한다."""
     sections = await _sections_of(db_session, _M.NEW_SET_IDS[(lane, model)])
     prompt_set = await _get_set(db_session, _M.NEW_SET_IDS[(lane, model)])
-    later = {(row[0], row[1], row[2]) for row in _LATER.EPISODE_CHANNEL_ROWS}
+    later = {(row[0], row[1], row[2]) for row in (*_LATER.EPISODE_CHANNEL_ROWS, *_LATEST.FACT_CHANNEL_ROWS)}
     if model != "haiku":
-        later.add(("generation", "both", _LATER.RECALL_SLOT))
+        later |= {("generation", "both", _LATER.RECALL_SLOT), ("generation", "both", _LATEST.FACTS_SLOT)}
     seeded = {(s.channel, s.scope, s.slot) for s in sections}
     expected = {(channel, scope, slot) for channel, slots in _expected_slots(lane, model).items() for scope, slot in slots}
     assert seeded | later == expected and not seeded & later
@@ -274,7 +277,7 @@ async def test_seeded_sets_match_publish_validation_but_for_the_later_revisions_
     with pytest.raises(HTTPException):
         _validate_prompt_draft_for_publish(prompt_set, sections, lane=lane, model=model)
     later_set, later_sections = await load_active_prompt_set(db_session, lane=lane, model=model)
-    assert later_set.id == _LATER.NEW_SET_IDS[(lane, model)]
+    assert later_set.id == _LATEST.NEW_SET_IDS[(lane, model)]
     _validate_prompt_draft_for_publish(later_set, later_sections, lane=lane, model=model)
     with pytest.raises(HTTPException):
         _validate_prompt_draft_for_publish(later_set, later_sections, lane=lane, model="gemini")
@@ -474,11 +477,13 @@ async def test_patch_drafts_adds_the_judgment_rows_in_place_and_the_draft_publis
     }
     # 코드 표는 head 기준이라, 체인이 실제로 하듯 뒤 리비전(장면 기억 문안)의 초안 패치도 거친 뒤 게시 게이트를 태운다.
     assert await connection.run_sync(_LATER._patch_drafts) == [(lane, model)]
+    assert await connection.run_sync(_LATEST._patch_drafts) == [(lane, model)]
     sections = await _sections_of(db_session, draft_id)
     draft = await _get_set(db_session, draft_id)  # 섹션을 읽으며 세션이 만료시킨 뒤에 읽는다
     _validate_prompt_draft_for_publish(draft, sections, lane=lane, model=model)
 
     # 되돌리기도 실제 순서대로 뒤 리비전부터.
+    await connection.run_sync(_LATEST._delete_draft_rows)
     await connection.run_sync(_LATER._delete_draft_rows)
     assert _keyed(await _sections_of(db_session, draft_id)) == patched
     await connection.run_sync(_M._delete_draft_rows)

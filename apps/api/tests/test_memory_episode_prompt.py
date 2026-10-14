@@ -37,7 +37,8 @@ def _load(revision: str) -> ModuleType:
     return module
 
 
-_M = _load("fc6f0e134782")
+# head 의 추출 지시문·회상 문안은 관계·사실 기억 문안 리비전이 바꾼 판이다(채널의 슬롯 모양은 이 리비전 그대로다).
+_M = _load("5cab2abe4e7b")
 _NAMES = PromptNames(persona_name="하늘", char_name="민지")
 _NO_NAMES = PromptNames(persona_name=None, char_name=None)
 _RECALL_LINES = "- 빵집 약속: 토요일 열한 시에 소금빵을 사 오기로 했다. (인물의 말)"
