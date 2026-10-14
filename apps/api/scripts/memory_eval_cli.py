@@ -898,6 +898,46 @@ def cmd_fact_metrics(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_section_grid(args: argparse.Namespace) -> int:
+    """사실 섹션 선택 방식 격자(`constant` 기준선 + `mixed` 상시 비율 × 관련 임계)의 섹션 적중. 개발 보기 전용 — 항목 질문과
+    행 일치 여부만 쓰고 행 내용은 내지 않는다."""
+    from memory_eval.facts import RENDER_MAX_CHARS, USER_PLACEHOLDER, alias_user, section_grid
+    from memory_eval.prototype_facts import load_fact_rows
+
+    plant_set = _plant_view(args, {"dev"})
+    rows = alias_user(load_fact_rows(args.facts), args.user_name)
+    names = [n for n in (args.user_name, USER_PLACEHOLDER, *(args.names or [])) if n]
+    report = section_grid(
+        plant_set.all_items(),
+        rows,
+        checkpoints=_ints(args.checkpoints),
+        ratios=[float(x) for x in args.ratios.split(",")],
+        taus=[float(x) for x in args.taus.split(",")],
+        names=names,
+        max_chars=args.max_chars or RENDER_MAX_CHARS,
+    )
+    report["facts"] = str(args.facts)
+    _write(args.out, report)
+    _print(
+        {
+            "chosen": report["chosen"],
+            "table": [
+                {
+                    "config": r["config"],
+                    "primary": r["primaryHits"],
+                    "secret": r["secretHits"],
+                    "abstainMis": r["abstainMisinjected"],
+                    "hits": {
+                        c: f"{t['hit']}/{t['reachable']}/{t['n']}" for c, t in r["totals"].items() if c != "abstain"
+                    },
+                }
+                for r in report["results"]
+            ],
+        }
+    )
+    return 0
+
+
 def cmd_summary_sections(args: argparse.Namespace) -> int:
     """체크포인트 요약 본문의 칸별 글자 수·비율(특히 `[관계]` 칸)."""
     from memory_eval.summary_sections import section_report, summaries_from_file
@@ -1240,6 +1280,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--out", type=Path, required=True)
     p.set_defaults(fn=cmd_fact_metrics)
+
+    p = sub.add_parser("section-grid", help="사실 섹션 선택 방식 격자의 섹션 적중(개발 보기 전용)")
+    with_plants(p)
+    p.add_argument("--facts", type=Path, required=True, help="사실 행(시제품 JSON 배열 또는 넣기 따라잡기 JSONL)")
+    p.add_argument("--checkpoints", default="100,300")
+    p.add_argument("--ratios", default="0.3,0.5,0.7", help="상시 몫(상한 대비)")
+    p.add_argument("--taus", default="0.4,0.5,0.6", help="관련 행 점수 임계")
+    p.add_argument("--max-chars", type=int, help="렌더 상한(기본 700)")
+    p.add_argument("--user-name", help="사용자의 이야기 속 이름 — 행에서 자리표시(사용자)로 바꾸고 질의에서도 뺀다")
+    p.add_argument("--names", nargs="*", help="질의에서 뺄 이름을 더 준다(인물 이름 등)")
+    p.add_argument("--out", type=Path, required=True)
+    p.set_defaults(fn=cmd_section_grid)
 
     p = sub.add_parser("summary-sections", help="요약 본문의 칸별 글자 수·비율")
     p.add_argument("--inputs", type=Path, nargs="+", required=True, help="memory-snapshots.jsonl 또는 요약 본문 파일")

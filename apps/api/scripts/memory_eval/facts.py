@@ -9,18 +9,29 @@ disproved), `asserted_by`(user·character·narration), `speaker`, `known_by`(배
   앞에 있으면 마지막 행이 반증이 아니어도 그 반증 행이 이긴다. 값이 다른 옛 주장의 반증 행은 새 값을 가리지 않는다(정정).
 - 렌더 순서: 관계 → 아는 사람이 정해진 사실 → 반증 → 그 밖의 사실. 묶음 안은 중요도가 높은 쪽, 같으면 최근 쪽이 먼저다.
 - 렌더 상한: 줄을 순서대로 이어 붙이다 다음 줄이 상한(줄바꿈 포함 글자 수)을 넘으면 거기서 멈추고 나머지는 모두 탈락이다.
+- 섹션 선택(`select_section`): `constant` 는 위 렌더 순서로만 자르고, `mixed` 는 상한의 앞 몫을 렌더 순서로, 나머지를 이번 턴
+  사용자 메시지와 명사가 겹치는 행으로 채운다(질의가 없으면 둘이 같다).
   줄 모양은 이 하네스의 시제품이다 — 운영 렌더가 생기면 그 함수의 줄로 같은 상한을 다시 잰다."""
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from api.chat.keyword_notes import normalize_keyword_text
 
 from memory_eval.metrics import answer_matches, normalize_match_text, wilson_interval
+from memory_eval.prototype_recall import EpisodeNouns, Params, query_nouns_rule, rule_tokens, score_episodes
 
 KINDS = ("relation", "fact")
 TRUTH_STATUSES = ("confirmed", "claimed", "disproved")
 RENDER_MAX_CHARS = 700
+# 사실 섹션 선택 방식. `mixed` = 상한의 앞 몫은 렌더 순서(상시), 나머지는 이번 턴 사용자 메시지와 명사가 겹치는 행(관련).
+SECTION_MODES = ("constant", "mixed")
+# 상시 몫(상한 대비)과 관련 행의 점수 임계 — 개발 절반 오프라인 격자(`section-grid`)로 정한 값.
+CONSTANT_RATIO = 0.3
+RELEVANCE_TAU = 0.6
+# 관련 점수에서 질의로 쓰지 않는 흔한 명사의 문턱(방 행 가운데 이 비율을 넘게 나오는 명사) — 장면 회상과 같은 값.
+RELEVANCE_COMMON_RATIO = 0.2
 # 추출 입력에 주는 기존 키 목록의 줄 수 상한.
 EXISTING_KEYS_MAX = 40
 
@@ -92,23 +103,128 @@ def render_line(row: Mapping[str, Any]) -> str:
     return head
 
 
-def render(
-    rows: Sequence[Mapping[str, Any]], *, max_chars: int = RENDER_MAX_CHARS
-) -> tuple[list[Mapping[str, Any]], list[Mapping[str, Any]], str]:
-    """덧붙은 행 전부를 받아 키별 최신으로 줄이고 렌더한다. (실린 행, 상한에 잘린 행, 렌더 글)."""
+def row_nouns(row: Mapping[str, Any]) -> frozenset[str]:
+    """관련 점수에 쓰는 행 명사: 주어·대상(관계)이나 속성(사실)·값을 이은 글의 조사 뗀 토큰(장면 회상과 같은 `rule_tokens`)."""
+    return frozenset(rule_tokens(f"{row.get('subject') or ''} {target_of(row) or ''} {row.get('value') or ''}"))
+
+
+def relevant_rows(
+    latest: Sequence[Mapping[str, Any]],
+    query: str,
+    *,
+    names: Sequence[str] = (),
+    tau: float = RELEVANCE_TAU,
+    current_turn: int | None = None,
+) -> list[Mapping[str, Any]]:
+    """`latest`(키별 최신 행) 가운데 `query`(이번 턴 사용자 메시지)와 명사가 겹치고 점수가 `tau` 이상인 행, 순위 순.
+
+    토큰·점수는 장면 회상의 확정 규칙을 그대로 쓴다(`prototype_recall.query_nouns_rule`·`score_episodes`): 질의 = 사용자
+    메시지의 조사 뗀 토큰에서 이름·불용어를 빼고 방 행에 한 번이라도 나온 것만, 방 행의 `RELEVANCE_COMMON_RATIO` 를 넘게
+    나오는 명사는 뺀다, 명사 가중 `ln((N+1)/(df+1)) + 1` 을 드문 명사 하나 = 1 로 둔 절대 척도(상한 1)에 중요도·최근성
+    (끝 턴 / 지금 턴, 시간 단서가 있으면 끔)을 조금 더한 값이 임계, 순위는 상한 없는 원점수. 행이 `min_episodes`(5) 개 미만이면
+    관련 행은 없다. 직전 AI 응답 쪽 질의는 쓰지 않는다."""
+    nouns = [row_nouns(r) for r in latest]
+    turn = current_turn or max((int(r.get("end_turn") or 0) for r in latest), default=1)
+    candidates = [
+        EpisodeNouns(
+            id=str(i),
+            nouns=nouns[i],
+            importance=int(r.get("importance") or 1),
+            end_turn=int(r.get("end_turn") or 0),
+            snapshot=0,
+        )
+        for i, r in enumerate(latest)
+    ]
+    pool = frozenset(n for ns in nouns for n in ns)
+    q = query_nouns_rule(query, "", episode_nouns=pool, names=names)
+    params = Params(tau=tau, common_ratio=RELEVANCE_COMMON_RATIO)
+    scored = score_episodes(candidates, q, current_turn=turn, params=params)
+    return [latest[int(x.id)] for x in scored if x.overlap and x.s >= tau]
+
+
+@dataclass(frozen=True)
+class Section:
+    """사실 섹션 하나. `kept` 는 렌더 순서, `relevant` 는 관련 쪽이 실은 행(상시 쪽과 겹친 행은 빠진다)."""
+
+    kept: list[Mapping[str, Any]]
+    dropped: list[Mapping[str, Any]]
+    relevant: list[Mapping[str, Any]]
+    text: str
+
+
+def select_section(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    max_chars: int = RENDER_MAX_CHARS,
+    mode: str = "mixed",
+    query: str = "",
+    names: Sequence[str] = (),
+    constant_ratio: float = CONSTANT_RATIO,
+    tau: float = RELEVANCE_TAU,
+    current_turn: int | None = None,
+) -> Section:
+    """덧붙은 행 전부에서 사실 섹션을 고른다. 줄 비용 = 줄 글자 수 + 줄바꿈(첫 줄 빼고 1).
+
+    - `constant`: 렌더 순서대로 이어 붙이다 다음 줄이 상한을 넘으면 멈춘다.
+    - `mixed`: 렌더 순서 전부가 상한 안이면 `constant` 와 같다. 아니면 ① 상시 — 렌더 순서대로 `constant_ratio × 상한` 까지
+      (다음 줄이 넘으면 멈춤), ② 관련 — `relevant_rows` 순위대로 상시에 없는 행을 상한까지(다음 줄이 넘으면 멈춤), ③ 남은
+      자리는 ①이 멈춘 곳부터 렌더 순서대로 다시 채운다(관련 행이 없으면 결과가 `constant` 와 같다). 실린 행은 렌더 순서로 쓴다."""
     ordered = render_order(latest_by_key(rows))
-    kept: list[Mapping[str, Any]] = []
-    lines: list[str] = []
+    lines = [render_line(r) for r in ordered]
+    chosen: list[int] = []
     used = 0
-    for k, row in enumerate(ordered):
-        line = render_line(row)
-        cost = len(line) + (1 if lines else 0)
-        if used + cost > max_chars:
-            return kept, list(ordered[k:]), "\n".join(lines)
-        kept.append(row)
-        lines.append(line)
-        used += cost
-    return kept, [], "\n".join(lines)
+
+    def fits(i: int, limit: float) -> bool:
+        return used + len(lines[i]) + (1 if chosen else 0) <= limit
+
+    def take(i: int) -> None:
+        nonlocal used
+        used += len(lines[i]) + (1 if chosen else 0)
+        chosen.append(i)
+
+    def fill(limit: float, start: int = 0) -> int:
+        for i in range(start, len(ordered)):
+            if i in chosen:
+                continue
+            if not fits(i, limit):
+                return i
+            take(i)
+        return len(ordered)
+
+    relevant: list[int] = []
+    if mode == "constant":
+        fill(max_chars)
+    elif mode == "mixed":
+        stop = fill(constant_ratio * max_chars)
+        if stop < len(ordered):
+            index = {id(r): i for i, r in enumerate(ordered)}
+            for row in relevant_rows(ordered, query, names=names, tau=tau, current_turn=current_turn):
+                i = index[id(row)]
+                if i in chosen:
+                    continue
+                if not fits(i, max_chars):
+                    break
+                take(i)
+                relevant.append(i)
+            fill(max_chars, stop)
+    else:
+        raise ValueError(f"사실 섹션 선택 방식은 {SECTION_MODES} 중 하나다: {mode}")
+    picked = sorted(chosen)
+    return Section(
+        kept=[ordered[i] for i in picked],
+        dropped=[r for i, r in enumerate(ordered) if i not in chosen],
+        relevant=[ordered[i] for i in sorted(relevant)],
+        text="\n".join(lines[i] for i in picked),
+    )
+
+
+def render(
+    rows: Sequence[Mapping[str, Any]], *, max_chars: int = RENDER_MAX_CHARS, **selection: Any
+) -> tuple[list[Mapping[str, Any]], list[Mapping[str, Any]], str]:
+    """덧붙은 행 전부를 받아 키별 최신으로 줄이고 렌더한다. (실린 행, 상한에 잘린 행, 렌더 글). 선택 인자는 `select_section`
+    과 같다 — 질의가 없으면 어느 방식이든 렌더 순서대로 자른다."""
+    section = select_section(rows, max_chars=max_chars, **selection)
+    return section.kept, section.dropped, section.text
 
 
 def existing_key_lines(rows: Sequence[Mapping[str, Any]], *, limit: int = EXISTING_KEYS_MAX) -> list[str]:
@@ -402,3 +518,134 @@ def fact_metrics(
         "byCategory": {name: summary(members) for name, members in sorted(by_category.items())},
         "items": per_item,
     }
+
+
+# ---------------------------------------------------------------- 섹션 적중(선택 방식 비교)
+
+# 격자 목적함수의 주 지표 범주(최종 판정의 주 지표 범주와 같다).
+SECTION_PRIMARY_CATEGORIES = ("relation", "secret", "false_premise", "correction")
+ABSTAIN_CATEGORY = "abstain"
+
+
+def _near_in(rows: Sequence[Mapping[str, Any]], entry: Mapping[str, Any]) -> bool:
+    """`rows` 에 근사 일치하는 행이 있는가 — 관계는 기대 키(주어 → 대상)의 행만 센다(`fact_metrics` 의 `nearInRead` 와 같은 꼴)."""
+    expected = entry.get("expected_fact") or {}
+    key = expected_key(expected)
+    relation = expected.get("kind") == "relation"
+    return any(near_matches(r, entry) and (not relation or row_key(r) == key) for r in rows)
+
+
+def section_metrics(
+    items: Sequence[Mapping[str, Any]],
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    checkpoint: int,
+    names: Sequence[str] = (),
+    max_chars: int = RENDER_MAX_CHARS,
+    **selection: Any,
+) -> dict[str, Any]:
+    """선택 방식 하나의 섹션 적중(체크포인트 하나). 질의 = 항목 질문(두 턴 프로브는 질문 턴이 둘째라 `question` 그대로).
+
+    - 기대 사실 항목(그때 심기가 모두 접힌 것): `hit` = 섹션에 근사 일치(`near_matches`) 행이 실렸다. `reachable` = 키별 최신
+      행 어딘가에 있다(상한이 없으면 실렸을 것 — 적중의 천장). `viaRelevant` = 맞힌 행이 관련 쪽으로 실렸다.
+    - 기권 항목(묻는 체크포인트와 상관없이 이 체크포인트에서): `misinjected` = 관련 쪽이 한 줄이라도 실었다(기권 질문엔 실을
+      사실이 없다)."""
+    visible = [
+        r for r in rows if r.get("available_from_turn") is None or int(r["available_from_turn"]) <= checkpoint + 1
+    ]
+    latest = latest_by_key(visible)
+    per_item: list[dict[str, Any]] = []
+    for entry in items:
+        category = str(entry.get("category"))
+        is_abstain = category == ABSTAIN_CATEGORY
+        if not is_abstain and not (
+            entry.get("expected_fact") and checkpoint in (entry.get("probeCheckpoints") or {}).get("offline", [])
+        ):
+            continue
+        section = select_section(
+            visible,
+            max_chars=max_chars,
+            query=str(entry.get("question") or ""),
+            names=names,
+            current_turn=checkpoint,
+            **selection,
+        )
+        result: dict[str, Any] = {"item": entry["id"], "category": category, "relevantLines": len(section.relevant)}
+        if is_abstain:
+            result["misinjected"] = bool(section.relevant)
+        else:
+            result["hit"] = _near_in(section.kept, entry)
+            result["reachable"] = _near_in(latest, entry)
+            result["viaRelevant"] = result["hit"] and not _near_in(
+                [r for r in section.kept if all(r is not x for x in section.relevant)], entry
+            )
+        per_item.append(result)
+    by_category: dict[str, dict[str, int]] = {}
+    for m in per_item:
+        c = by_category.setdefault(
+            m["category"], {"n": 0, "hit": 0, "reachable": 0, "viaRelevant": 0, "misinjected": 0}
+        )
+        c["n"] += 1
+        for field in ("hit", "reachable", "viaRelevant", "misinjected"):
+            c[field] += int(bool(m.get(field)))
+    return {"checkpoint": checkpoint, "byCategory": dict(sorted(by_category.items())), "items": per_item}
+
+
+SECTION_OBJECTIVE = (
+    "주 지표 4범주(관계·비밀·거짓 전제·정정) 섹션 적중 합(모든 체크포인트) 최대 → 동률이면 비밀 적중 큰 쪽 → 기권 오주입 작은 쪽"
+    " → 상시 비율 큰 쪽 → 관련 임계 큰 쪽(덜 싣는 쪽)"
+)
+
+
+def section_grid(
+    items: Sequence[Mapping[str, Any]],
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    checkpoints: Sequence[int],
+    ratios: Sequence[float],
+    taus: Sequence[float],
+    names: Sequence[str] = (),
+    max_chars: int = RENDER_MAX_CHARS,
+) -> dict[str, Any]:
+    """`constant` 기준선과 `mixed` 격자(상시 비율 × 관련 임계)를 같은 항목·행으로 재고 `SECTION_OBJECTIVE` 로 하나를 고른다."""
+    configs: list[dict[str, Any]] = [{"mode": "constant"}] + [
+        {"mode": "mixed", "constant_ratio": r, "tau": t} for r in ratios for t in taus
+    ]
+    results: list[dict[str, Any]] = []
+    for config in configs:
+        per_cp = [
+            section_metrics(items, rows, checkpoint=cp, names=names, max_chars=max_chars, **config)
+            for cp in checkpoints
+        ]
+        totals: dict[str, dict[str, int]] = {}
+        for res in per_cp:
+            for category, c in res["byCategory"].items():
+                t = totals.setdefault(category, {k: 0 for k in c})
+                for k, v in c.items():
+                    t[k] += v
+        primary = sum(totals.get(c, {}).get("hit", 0) for c in SECTION_PRIMARY_CATEGORIES)
+        results.append(
+            {
+                "config": config,
+                "primaryHits": primary,
+                "secretHits": totals.get("secret", {}).get("hit", 0),
+                "abstainMisinjected": totals.get(ABSTAIN_CATEGORY, {}).get("misinjected", 0),
+                "totals": dict(sorted(totals.items())),
+                "perCheckpoint": [{"checkpoint": r["checkpoint"], "byCategory": r["byCategory"]} for r in per_cp],
+                "items": {str(r["checkpoint"]): r["items"] for r in per_cp},
+            }
+        )
+    mixed = [r for r in results if r["config"]["mode"] == "mixed"]
+    best = max(
+        mixed,
+        key=lambda r: (
+            r["primaryHits"],
+            r["secretHits"],
+            -r["abstainMisinjected"],
+            r["config"]["constant_ratio"],
+            r["config"]["tau"],
+        ),
+        default=None,
+    )
+    return {"objective": SECTION_OBJECTIVE, "checkpoints": list(checkpoints), "maxChars": max_chars, "names": list(names),
+            "results": results, "chosen": best["config"] if best else None}  # fmt: skip

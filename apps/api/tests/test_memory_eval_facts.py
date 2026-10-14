@@ -439,3 +439,130 @@ def test_a_relation_row_holding_an_older_attitude_is_not_preserved_unless_the_at
     back = _RELATION | {"history": ["믿음", "서먹함"]}
     again = _fact_row(kind="relation", subject="태민", object="민지", attribute=None, value="믿음")
     assert fact_metrics([_entry("relation-a", "relation", back)], [again])["items"][0]["preserved"]
+
+
+# ---------------------------------------------------------------- 섹션 선택(상시 + 관련)
+
+_PEOPLE = ("서준", "하린", "도윤", "지아", "태오", "유나")
+
+
+def _room(**fact_overrides: Any) -> list[dict[str, Any]]:
+    """관계 여섯 줄(렌더 순서 앞)과 중요도 낮은 사실 한 줄(렌더 순서 맨 뒤). 관계의 값 낱말은 모든 관계에 나와 흔한 명사다."""
+    relations = [
+        _row(kind="relation", subject="민지", object=p, attribute=None, value="신뢰 — 함께 일함", end_turn=10 + i)
+        for i, p in enumerate(_PEOPLE)
+    ]
+    fact = _row(attribute="고향", value="부산", importance=1, end_turn=5) | fact_overrides
+    return [*relations, fact]
+
+
+def _cap_for(rows: list[dict[str, Any]], n_lines: int) -> int:
+    """렌더 순서 앞 `n_lines` 줄이 딱 들어가는 상한."""
+    lines = [facts.render_line(r) for r in facts.render_order(facts.latest_by_key(rows))][:n_lines]
+    return sum(len(line) for line in lines) + len(lines) - 1
+
+
+def test_mixed_without_a_matching_query_cuts_exactly_like_constant() -> None:
+    rows = _room()
+    cap = _cap_for(rows, 3)
+    constant = facts.select_section(rows, max_chars=cap, mode="constant")
+    for query in ("", "오늘 날씨 어때?"):
+        mixed = facts.select_section(rows, max_chars=cap, mode="mixed", query=query, constant_ratio=0.3, tau=0.6)
+        assert [facts.render_line(r) for r in mixed.kept] == [facts.render_line(r) for r in constant.kept]
+        assert mixed.relevant == []
+    assert len(constant.kept) == 3
+
+
+def test_mixed_spends_the_constant_share_in_render_order_then_loads_the_matching_row_the_cap_would_drop() -> None:
+    rows = _room()
+    cap = _cap_for(rows, 3)
+    constant = facts.select_section(rows, max_chars=cap, mode="constant")
+    assert all(r.get("attribute") != "고향" for r in constant.kept)
+    mixed = facts.select_section(
+        rows, max_chars=cap, mode="mixed", query="내 고향이 어디였지?", constant_ratio=0.4, tau=0.6
+    )
+    assert [r.get("attribute") for r in mixed.relevant] == ["고향"]
+    # 상시 몫(상한의 40% — 관계 한 줄)이 먼저, 관련 한 줄, 남은 자리는 상시 순서로 다시 채운다. 섹션은 렌더 순서로 쓴다.
+    assert [r.get("object") for r in mixed.kept[:-1]] == ["유나", "태오"]
+    assert mixed.kept[-1].get("attribute") == "고향"
+    assert len(mixed.text) <= cap
+
+
+def test_a_matching_row_already_in_the_constant_share_is_loaded_once_and_not_counted_as_relevant() -> None:
+    rows = _room()
+    cap = _cap_for(rows, 3)
+    mixed = facts.select_section(rows, max_chars=cap, mode="mixed", query="유나는 뭐래?", constant_ratio=0.4, tau=0.6)
+    assert mixed.relevant == []
+    assert [r.get("object") for r in mixed.kept].count("유나") == 1
+
+
+@pytest.mark.parametrize(
+    ("query", "names", "why"),
+    [
+        pytest.param("민지는 어때?", ["민지"], "이름은 질의에서 뺀다", id="name"),
+        pytest.param("신뢰는 어때?", [], "방 행의 20%를 넘게 나오는 명사는 뺀다", id="common-noun"),
+        pytest.param("그거 기억나?", [], "불용어와 방 행에 없는 토큰은 질의가 아니다", id="no-room-token"),
+    ],
+)
+def test_names_common_nouns_and_tokens_absent_from_the_room_do_not_pull_rows(
+    query: str, names: list[str], why: str
+) -> None:
+    latest = facts.render_order(facts.latest_by_key(_room()))
+    assert facts.relevant_rows(latest, query, names=names, tau=0.4) == [], why
+
+
+def test_the_relevance_threshold_drops_rows_whose_only_overlap_is_a_noun_shared_by_two_rows() -> None:
+    # 고향 낱말이 사실 두 줄에 나오면(df 2, 열한 줄 중 — 흔한 명사 문턱 아래) 드문 명사 하나보다 가중이 작아 높은 임계에서 떨어진다.
+    fillers = [
+        _row(attribute=a, value=v, importance=1, end_turn=7)
+        for a, v in (("취미", "등산"), ("직업", "교사"), ("반려", "고양"))
+    ]
+    rows = [*_room(), _row(attribute="고향 친구", value="수아", importance=1, end_turn=6), *fillers]
+    latest = facts.render_order(facts.latest_by_key(rows))
+    low = facts.relevant_rows(latest, "고향 얘기 해줘", tau=0.5, current_turn=100)
+    high = facts.relevant_rows(latest, "고향 얘기 해줘", tau=0.68, current_turn=100)
+    assert {r.get("attribute") for r in low} == {"고향", "고향 친구"}
+    assert high == []
+
+
+def test_section_metrics_count_a_hit_only_when_the_near_row_is_in_the_section_and_abstains_by_relevant_lines() -> None:
+    rows = [r | {"available_from_turn": 41} for r in _room()]
+    cap = _cap_for(rows, 3)
+    item = _entry(
+        "detail-a",
+        "detail",
+        {"kind": "fact", "subject": "민지", "attribute": "고향", "value": "부산", "truth_status": "confirmed"},
+        question="민지 고향이 어디라고 했지?",
+    )
+    abstain = {"id": "abstain-a", "category": "abstain", "question": "고향 축제 갔던 거 기억나?"}
+    constant = facts.section_metrics([item, abstain], rows, checkpoint=100, max_chars=cap, mode="constant")
+    mixed = facts.section_metrics(
+        [item, abstain], rows, checkpoint=100, max_chars=cap, mode="mixed", constant_ratio=0.4, tau=0.6
+    )
+    assert constant["byCategory"]["detail"] == {"n": 1, "hit": 0, "reachable": 1, "viaRelevant": 0, "misinjected": 0}
+    assert mixed["byCategory"]["detail"] == {"n": 1, "hit": 1, "reachable": 1, "viaRelevant": 1, "misinjected": 0}
+    assert constant["byCategory"]["abstain"]["misinjected"] == 0
+    assert mixed["byCategory"]["abstain"]["misinjected"] == 1
+    # 그때 아직 읽을 수 없던 행은 천장에도 들지 않는다.
+    assert facts.section_metrics([item], rows, checkpoint=30, max_chars=cap)["items"] == []
+
+
+def test_the_grid_breaks_a_primary_tie_by_secret_then_fewer_abstain_injections_then_the_larger_ratio() -> None:
+    rows = [r | {"available_from_turn": 41} for r in _room()]
+    cap = _cap_for(rows, 3)
+    item = _entry(
+        "correction-a",
+        "correction",
+        {"kind": "fact", "subject": "민지", "attribute": "고향", "value": "부산", "truth_status": "confirmed"},
+        question="민지 고향이 어디라고 했지?",
+    )
+    abstain = {"id": "abstain-a", "category": "abstain", "question": "고향 축제 갔던 거 기억나?"}
+    grid = facts.section_grid(
+        [item, abstain], rows, checkpoints=[100], ratios=[0.4, 0.5], taus=[0.6, 0.95], max_chars=cap
+    )
+    by_config = {(r["config"].get("constant_ratio"), r["config"].get("tau")): r for r in grid["results"]}
+    assert by_config[(None, None)]["primaryHits"] == 0
+    assert by_config[(0.4, 0.6)]["primaryHits"] == 1 and by_config[(0.4, 0.6)]["abstainMisinjected"] == 1
+    assert by_config[(0.4, 0.95)]["primaryHits"] == 0
+    # 주 지표가 같은 0.4·0.5(임계 0.6)는 비밀·기권이 같아 상시 비율이 큰 쪽이 이긴다.
+    assert grid["chosen"] == {"mode": "mixed", "constant_ratio": 0.5, "tau": 0.6}
