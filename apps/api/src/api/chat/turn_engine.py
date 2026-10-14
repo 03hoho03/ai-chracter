@@ -366,6 +366,8 @@ class TurnResult:
     llm_calls: list[CallUsage]
     # 이 턴의 생성 프롬프트가 실은 장면 기억(조립 결과의 `memory_recall` 그대로). 방 턴 기록의 `memory_recall` 이다.
     memory_recall: tuple[dict[str, Any], ...] = ()
+    # 이 턴의 생성 프롬프트가 실은 사실 기억(조립 결과의 `memory_facts` 그대로). 방 턴 기록의 `memory_facts` 다.
+    memory_facts: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass
@@ -541,6 +543,7 @@ async def run_turn(
         judgments=result,
         llm_calls=llm_calls,
         memory_recall=generation.memory_recall,
+        memory_facts=generation.memory_facts,
     )
     # 쓰기 구간은 예외를 흡수하지 않는다 — 쓰기·커밋 실패는 제너레이터를 뚫고 정산 가드가 응답 행을 확인해 정산한다.
     written = await store.write(turn, settlement)
