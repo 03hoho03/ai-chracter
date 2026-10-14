@@ -822,6 +822,18 @@ def cmd_fact_metrics(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_summary_sections(args: argparse.Namespace) -> int:
+    """체크포인트 요약 본문의 칸별 글자 수·비율(특히 `[관계]` 칸)."""
+    from memory_eval.summary_sections import section_report, summaries_from_file
+
+    rows = [
+        {"source": name, **section_report(text)} for path in args.inputs for name, text in summaries_from_file(path)
+    ]
+    _write(args.out, rows)
+    _print([{"source": r["source"], "total": r["total"], "relationRatio": r["relationRatio"]} for r in rows])
+    return 0
+
+
 def cmd_s8(args: argparse.Namespace) -> int:
     from memory_eval.judge import ensure_unique_probe_rows
     from memory_eval.verdict import s8_verdict
@@ -1084,6 +1096,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-chars", type=int, help="렌더 상한(기본 700)")
     p.add_argument("--out", type=Path, required=True)
     p.set_defaults(fn=cmd_fact_metrics)
+
+    p = sub.add_parser("summary-sections", help="요약 본문의 칸별 글자 수·비율")
+    p.add_argument("--inputs", type=Path, nargs="+", required=True, help="memory-snapshots.jsonl 또는 요약 본문 파일")
+    p.add_argument("--out", type=Path, required=True)
+    p.set_defaults(fn=cmd_summary_sections)
 
     p = sub.add_parser("s8-verdict", help="최종 짝 비교 ①~⑤ 판정(시험 절반 — 봉인 해시 필요)")
     with_plants(p)
