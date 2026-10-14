@@ -302,7 +302,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
       {/* 노트가 어디까지 따라가는지 먼저 말한다 — 새 대화방이나 대화 프로필에 묶여 있다고 오해하면 같은 내용을 다시 적거나
           프로필을 바꾸면 지워질 거라 여긴다. 아래 두 칸 모두에 걸리는 말이라 칸 밖 맨 위에 둔다. */}
       <p className="text-xs break-keep text-muted-foreground">
-        이 기억은 이 대화방에만 있어요. 새 대화방에는 이어지지 않고, 대화 프로필을 바꿔도 그대로예요.
+        새 대화방에는 이어지지 않고, 대화 프로필을 바꿔도 그대로예요.
       </p>
 
       <section aria-labelledby={`${summaryId}-heading`} className="flex flex-col gap-3">
