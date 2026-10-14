@@ -190,6 +190,34 @@ def row_matches(row: Mapping[str, Any], entry: Mapping[str, Any], *, check_key: 
     return value_matches(row.get("value"), entry)
 
 
+# 기대 사실이 사용자 쪽 인물을 가리키는 자리표시 이름.
+USER_PLACEHOLDER = "사용자"
+
+
+def alias_user(rows: Sequence[Mapping[str, Any]], user_name: str | None) -> list[dict[str, Any]]:
+    """행의 주어·대상·아는 사람에서 사용자의 이야기 속 이름을 기대 사실의 자리표시(`사용자`)로 바꾼다. 추출은 이야기 속 이름으로
+    쓰고 기대 사실은 자리표시로 적으므로, 바꾸지 않으면 사용자에 관한 항목은 키·아는 사람이 늘 어긋난다."""
+    if not user_name:
+        return [dict(r) for r in rows]
+    name = normalize_part(user_name)
+
+    def swap(text: Any) -> Any:
+        return USER_PLACEHOLDER if isinstance(text, str) and normalize_part(text) == name else text
+
+    out = []
+    for row in rows:
+        known = row.get("known_by")
+        out.append(
+            {
+                **row,
+                "subject": swap(row.get("subject")),
+                "object": swap(row.get("object")),
+                "known_by": [swap(n) for n in known] if known else known,
+            }
+        )
+    return out
+
+
 def _rate(k: int, n: int) -> dict[str, Any]:
     return {"k": k, "n": n, "rate": k / n if n else None, "wilson": wilson_interval(k, n)}
 
@@ -210,6 +238,9 @@ def fact_metrics(
     - `preservedInRead`: 그 키의 키별 최신 행(읽기가 실제로 내놓는 행)이 `row_matches` 다.
     - `droppedByCap`(분모 = `preservedInRead` 인 항목): 그 최신 행이 렌더 상한에서 잘렸다.
     - 진단: `keyFound`(그 키의 행이 있다), `matchedIgnoringKey`(키만 빼고 맞는 행이 있다 — 키 이름이 갈려 놓친 것).
+    - `readIgnoringKey`: 키만 빼고 맞는 행이 있고 그 행의 키별 최신 행도 키만 빼고 맞는다(속성 이름을 묻지 않는 읽기 보존 —
+      같은 키의 뒤 행이 덮어써 읽기에서 사라진 것은 빠진다). `droppedByCapIgnoringKey`(분모 = `readIgnoringKey`): 그런 키가
+      모두 렌더 상한에서 잘렸다.
 
     행 단위:
     - `duplicateKeyRate`: 같은 스냅샷(같은 추출 호출)에서 같은 키가 두 번 이상 나온 행 / 전체 행.
@@ -232,12 +263,19 @@ def fact_metrics(
     ]
     kept, dropped, _ = render(visible, max_chars=max_chars)
     latest = {row_key(r): r for r in kept + dropped}
+    kept_keys = {row_key(r) for r in kept}
     dropped_keys = {row_key(r) for r in dropped}
     per_item = []
     for entry in targets:
         key = expected_key(entry["expected_fact"])
         resolved = latest.get(key)
         in_read = resolved is not None and row_matches(resolved, entry)
+        # 키 이름을 묻지 않는 읽기: 키만 빼고 맞는 행이 있고, 그 행의 키에서 키별 최신 행도 키만 빼고 맞는가.
+        read_keys = {
+            row_key(r)
+            for r in visible
+            if row_matches(r, entry, check_key=False) and row_matches(latest[row_key(r)], entry, check_key=False)
+        }
         per_item.append(
             {
                 "item": entry["id"],
@@ -249,6 +287,8 @@ def fact_metrics(
                 "droppedByCap": in_read and key in dropped_keys,
                 "keyFound": resolved is not None,
                 "matchedIgnoringKey": any(row_matches(r, entry, check_key=False) for r in visible),
+                "readIgnoringKey": bool(read_keys),
+                "droppedByCapIgnoringKey": bool(read_keys) and not (read_keys & kept_keys),
             }
         )
         if with_rows:
@@ -266,12 +306,15 @@ def fact_metrics(
 
     def summary(members: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         read = [m for m in members if m["preservedInRead"]]
+        read_ik = [m for m in members if m["readIgnoringKey"]]
         return {
             "preserved": _rate(sum(1 for m in members if m["preserved"]), len(members)),
             "preservedInRead": _rate(len(read), len(members)),
             "droppedByCap": _rate(sum(1 for m in read if m["droppedByCap"]), len(read)),
             "keyFound": _rate(sum(1 for m in members if m["keyFound"]), len(members)),
             "matchedIgnoringKey": _rate(sum(1 for m in members if m["matchedIgnoringKey"]), len(members)),
+            "readIgnoringKey": _rate(len(read_ik), len(members)),
+            "droppedByCapIgnoringKey": _rate(sum(1 for m in read_ik if m["droppedByCapIgnoringKey"]), len(read_ik)),
         }
 
     by_category: dict[str, list[Mapping[str, Any]]] = {}

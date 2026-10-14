@@ -865,14 +865,14 @@ def cmd_prototype_facts(args: argparse.Namespace) -> int:
 
 def cmd_fact_metrics(args: argparse.Namespace) -> int:
     """사실 계층 오프라인 지표(보존율·중복 키·상한 탈락, 범주별). 개발 보기가 기본이다."""
-    from memory_eval.facts import RENDER_MAX_CHARS, fact_metrics
+    from memory_eval.facts import RENDER_MAX_CHARS, alias_user, fact_metrics
     from memory_eval.prototype_facts import load_fact_rows
 
     splits = _splits(args)
     if args.dev_rows and splits != {"dev"}:
         raise SystemExit("--dev-rows 는 개발 보기에서만 쓴다(시험 항목의 행을 내지 않게)")
     plant_set = _plant_view(args, splits)
-    rows = load_fact_rows(args.facts)
+    rows = alias_user(load_fact_rows(args.facts), args.user_name)
     cps: list[int | None] = list(_ints(args.checkpoints)) if args.checkpoints else [None]
     report: dict[str, Any] = {
         "splits": sorted(splits),
@@ -1234,6 +1234,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--facts", type=Path, required=True, help="사실 행(시제품 JSON 배열 또는 넣기 따라잡기 JSONL)")
     p.add_argument("--checkpoints", help="체크포인트별로 나눠 센다(비우면 전체 행 한 번)")
     p.add_argument("--max-chars", type=int, help="렌더 상한(기본 700)")
+    p.add_argument("--user-name", help="사용자의 이야기 속 이름 — 행에서 기대 사실의 자리표시(사용자)로 바꿔 견준다")
     p.add_argument(
         "--dev-rows", action="store_true", help="항목마다 기대 사실과 그 키의 행·키만 빼고 맞는 행을 붙인다(개발 전용)"
     )
