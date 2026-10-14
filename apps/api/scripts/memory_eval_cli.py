@@ -15,12 +15,17 @@ import json
 import sys
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from memory_eval import checkpoint, holdout, ledger as ledger_mod, plants as plants_mod
 from memory_eval.ledger import EXIT_BUDGET, BudgetExceededError, Ledger
 from memory_eval.seal import PREREGISTRATION_FILE, require_seal
 from memory_eval.transcript import LengthRule, check_script, load_transcript, work_text_from_seed
+
+if TYPE_CHECKING:
+    from api.llm.client import LLMClient
+
+    from memory_eval.fact_catchup import FactCatchUp
 
 DEFAULT_SEED_JSON = Path(__file__).resolve().parent / "seed_content/data/tutorial/stories/tutorial-filmclub.json"
 
@@ -244,7 +249,12 @@ def cmd_insert(args: argparse.Namespace) -> int:
     freeze_at = _ints(args.freeze_at)
     if args.dry_run:
         report = insert.plan(
-            plant_set, start_turn=args.start, until_turn=args.until, freeze_at=freeze_at, extract=args.extract
+            plant_set,
+            start_turn=args.start,
+            until_turn=args.until,
+            freeze_at=freeze_at,
+            extract=args.extract,
+            extract_facts=args.extract_facts,
         )
         report["ledgerSpentUsd"] = Ledger(args.run / "ledger.jsonl").total_usd()
         _print(report)
@@ -267,6 +277,7 @@ def cmd_insert(args: argparse.Namespace) -> int:
             stage=args.label,
             per_call_estimate_usd=insert.FOLD_CALL_ESTIMATE_USD,
         )
+    facts = _fact_catch_up(args, llm) if args.extract_facts else None
     result = asyncio.run(
         insert.run_insert(
             script=load_transcript(args.transcript),
@@ -287,10 +298,41 @@ def cmd_insert(args: argparse.Namespace) -> int:
             recall_field=args.recall_field,
             recall_header=args.recall_header,
             pinned_doc=load_pinned_doc(args.checkpoint_stats) if args.checkpoint_stats else None,
+            facts=facts,
         )
     )
     _print(result)
     return 0
+
+
+def _fact_catch_up(args: argparse.Namespace, llm: "LLMClient") -> "FactCatchUp":
+    """사실 추출 따라잡기 — 운영 모듈이 있으면 넣기의 LLM 클라이언트로 그것을, 없으면 시제품을 부른다. 시제품의 호출은 가짜
+    LLM 실행이면 빈 결과, 유료 실행이면 Anthropic 직결(원장 상한 확인 뒤)이다."""
+    from memory_eval import prototype_facts as pf
+    from memory_eval.fact_catchup import fact_catch_up
+
+    instruction = args.facts_instruction_file.read_text(encoding="utf-8") if args.facts_instruction_file else None
+    if args.fake_llm:
+
+        async def caller(prompt: str) -> pf.PrototypeFactResult:
+            return pf.PrototypeFactResult(facts=[])
+
+        instruction = instruction or "(가짜 실행 — 문안 없음)"
+    else:
+        from api.core.config import settings
+
+        book = Ledger(args.run / "ledger.jsonl")
+
+        async def caller(prompt: str) -> pf.PrototypeFactResult:
+            return await pf.call_haiku(settings.anthropic_direct_api_key, prompt, book, stage=f"{args.label}-facts")
+
+    return fact_catch_up(
+        llm,
+        store=pf.FactStore(args.run / f"facts-{args.label}.jsonl"),
+        caller=caller,
+        instruction=instruction,
+        version=args.facts_version,
+    )
 
 
 def cmd_trajectory(args: argparse.Namespace) -> int:
@@ -879,6 +921,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--freeze-at", default="50,100,300")
     p.add_argument("--fake-llm", action="store_true")
     p.add_argument("--extract", action="store_true")
+    p.add_argument(
+        "--extract-facts", action="store_true", help="턴마다 사실 추출을 따라잡는다(운영 모듈, 없으면 시제품)"
+    )
+    p.add_argument("--facts-instruction-file", type=Path, help="시제품 사실 추출 문안(운영 모듈이 없을 때)")
+    p.add_argument("--facts-version", default="v1")
     p.add_argument("--arms", default="baseline")
     p.add_argument("--trajectory-model", default="opus")
     p.add_argument("--label", default="s4")

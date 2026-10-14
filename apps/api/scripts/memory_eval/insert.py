@@ -2,7 +2,8 @@
 
 턴마다: 사용자·진행자 메시지를 한 문장씩 넣고(`clock_timestamp` 라 넣은 순서가 곧 키 순서) 방 턴 수를 올려 커밋 → 실제
 `fold_memory` 를 직접 부른다(서버 백그라운드와 같은 함수, 같은 세트·이름) → 추출을 켠 실행이면 운영처럼 턴마다
-추출 작업을 한 번(연속 3턴 진전이 없으면 멈춘다) → 되감기 항목이 있으면 그 메시지를 담은 스냅샷이 막 생기고 추출까지 끝난 턴에 실제 메시지 삭제 API(앱을 프로세스
+추출 작업을 한 번(연속 3턴 진전이 없으면 멈춘다) → 사실 추출을 켠 실행이면 같은 자리에서 사실 추출을 한 번 따라잡는다(운영
+모듈이 있으면 그것, 없으면 시제품 — `fact_catchup`; 연속 3턴 진전이 없으면 멈춘다) → 되감기 항목이 있으면 그 메시지를 담은 스냅샷이 막 생기고 추출까지 끝난 턴에 실제 메시지 삭제 API(앱을 프로세스
 안에서 ASGI 로)로 지우고 지워진 스냅샷이 정확히 1개인지 단언 → 궤적 갈래마다 다음 턴의 생성 프롬프트를 조립해 기록 → 얼릴
 체크포인트면 (스탯 고정 파일을 줬으면 그 체크포인트의 값으로 방 스탯을 맞춘 뒤) 템플릿으로 얼린다.
 
@@ -28,6 +29,7 @@ from api.llm.chat_models import ChatModelId
 from api.llm.client import CallUsage, LLMCallContext, LLMClient
 
 from memory_eval.checkpoint import database_name, freeze, pinned_path
+from memory_eval.fact_catchup import FactCatchUp
 from memory_eval.ledger import Ledger
 from memory_eval.pinned_stats import apply_pinned_stats, pinned_for_checkpoint, preflight_pinned
 from memory_eval.plants import PlantSet
@@ -99,7 +101,13 @@ def rewind_items(plant_set: PlantSet) -> list[dict[str, Any]]:
 
 
 def plan(
-    plant_set: PlantSet, *, start_turn: int, until_turn: int, freeze_at: Sequence[int], extract: bool
+    plant_set: PlantSet,
+    *,
+    start_turn: int,
+    until_turn: int,
+    freeze_at: Sequence[int],
+    extract: bool,
+    extract_facts: bool = False,
 ) -> dict[str, Any]:
     """드라이런 계획. 접기 턴은 명목(30턴에 첫 접기, 뒤로 10턴마다) — 원문이 24,000자를 넘으면 더 일찍 접힐 수 있다."""
     folds = [
@@ -107,7 +115,7 @@ def plan(
         for t in range(start_turn, until_turn + 1)
         if t >= memory_fold.FOLD_AT_TURNS and t % memory_fold.FOLD_TURNS == 0
     ]
-    calls = len(folds) * (2 if extract else 1)
+    calls = len(folds) * (1 + int(extract) + int(extract_facts))
     return {
         "turns": [start_turn, until_turn],
         "nominalFoldTurns": folds,
@@ -229,6 +237,7 @@ async def run_insert(
     recall_field: str | None = None,
     recall_header: str = DEFAULT_RECALL_HEADER,
     pinned_doc: dict[str, Any] | None = None,
+    facts: FactCatchUp | None = None,
 ) -> dict[str, Any]:
     by_turn = {t.turn: t for t in script}
     engine, session_factory = make_engine(database_url)
@@ -237,6 +246,7 @@ async def run_insert(
     done_rewinds = _done_rewinds(log_path)
     consecutive_fold_failures = 0
     extraction_streak = ExtractionStreak(limit=MAX_CONSECUTIVE_EXTRACT_FAILURES)
+    facts_streak = ExtractionStreak(limit=MAX_CONSECUTIVE_EXTRACT_FAILURES)
     try:
         async with session_factory() as db:
             ctx = await load_room(db, room_id)
@@ -288,11 +298,21 @@ async def run_insert(
                 ):
                     _append(log_path, record)
                     raise SystemExit(f"턴 {turn}: 추출이 {extraction_streak.failures}번 연속 진전 없음 — 멈춘다")
+            if facts is not None:
+                fact_state = await facts.run_once(session_factory, room_id, ctx.room.user_id)
+                record["facts"] = fact_state
+                if facts_streak.observe(
+                    pending_before=fact_state["pendingBefore"],
+                    done_before=fact_state["doneBefore"],
+                    done_after=fact_state["doneAfter"],
+                ):
+                    _append(log_path, record)
+                    raise SystemExit(f"턴 {turn}: 사실 추출이 {facts_streak.failures}번 연속 진전 없음 — 멈춘다")
             for item_id, plant in rewinds.items():
                 if item_id in done_rewinds:
                     continue
                 deleted = await _maybe_rewind(
-                    session_factory, room_id, plant, by_turn, cookie_value, extract=extract, llm=llm
+                    session_factory, room_id, plant, by_turn, cookie_value, extract=extract, llm=llm, facts=facts
                 )
                 if deleted is not None:
                     done_rewinds.add(item_id)
@@ -352,11 +372,17 @@ class RewindState:
     snapshot_id: str | None
     extraction_status: str | None
     covering_episodes: int | None
+    # 그 스냅샷의 사실 추출 상태(사실 추출을 끈 실행이면 None).
+    facts_status: str | None = None
 
 
-def rewind_ready(state: RewindState, *, extract: bool) -> bool:
+def rewind_ready(state: RewindState, *, extract: bool, facts: bool = False) -> bool:
     """지워도 되는가. 추출을 켠 실행은 그 메시지를 덮는 스냅샷의 추출이 끝났고(done) 그 턴을 덮는 에피소드가 있어야 한다 —
-    아니면 지운 핵심어가 애초에 에피소드에 없어 되감기 누출 검사가 아무것도 검증하지 못한다. 추출을 끈 실행은 기다리지 않는다."""
+    아니면 지운 핵심어가 애초에 에피소드에 없어 되감기 누출 검사가 아무것도 검증하지 못한다. 사실 추출을 켠 실행은 그 스냅샷의
+    사실 추출도 끝나야 한다 — 지운 말에서 뽑힌 사실 행이 삭제와 함께 사라지는지가 같은 검사의 몫이다. 둘 다 끈 실행은 기다리지
+    않는다."""
+    if facts and state.facts_status != "done":
+        return False
     if not extract:
         return True
     return state.extraction_status == "done" and bool(state.covering_episodes)
@@ -368,15 +394,16 @@ async def ensure_rewind_ready(
     *,
     extract_enabled: bool,
     attempts: int,
+    facts_enabled: bool = False,
 ) -> RewindState:
-    """지울 준비가 될 때까지 추출을 따라잡게 다시 부른다. 횟수 안에 안 되면 넣기를 멈춘다."""
+    """지울 준비가 될 때까지 추출(사실 추출을 켰으면 그것까지)을 따라잡게 다시 부른다. 횟수 안에 안 되면 넣기를 멈춘다."""
     state = await read()
     for _ in range(attempts):
-        if rewind_ready(state, extract=extract_enabled):
+        if rewind_ready(state, extract=extract_enabled, facts=facts_enabled):
             return state
         await extract_once()
         state = await read()
-    if rewind_ready(state, extract=extract_enabled):
+    if rewind_ready(state, extract=extract_enabled, facts=facts_enabled):
         return state
     raise SystemExit(f"되감기 전 추출이 {attempts}번 안에 끝나지 않았다 — 넣기를 멈춘다: {state}")
 
@@ -390,6 +417,7 @@ async def _maybe_rewind(
     *,
     extract: bool,
     llm: LLMClient,
+    facts: FactCatchUp | None = None,
 ) -> dict[str, Any] | None:
     """그 메시지를 담은 스냅샷이 생긴 첫 턴(그 접기와 추출이 끝난 직후, 다음 접기 전)에 지운다. 추출을 켠 실행은 그 스냅샷의
     추출이 끝나고 그 턴을 덮는 에피소드가 생길 때까지 추출을 따라잡게 한 뒤 지운다. 지울 때의 상태를 기록에 남긴다."""
@@ -406,13 +434,22 @@ async def _maybe_rewind(
 
     async def read() -> RewindState:
         async with session_factory() as db:
-            return await _rewind_state(db, room_id, key, plant_turn)
+            state = await _rewind_state(db, room_id, key, plant_turn)
+            if facts is not None and state.snapshot_id is not None:
+                status = await facts.snapshot_status(db, uuid.UUID(state.snapshot_id))
+                state = dataclasses.replace(state, facts_status=status)
+            return state
 
     async def extract_once() -> None:
         assert user_id is not None
-        await _extract_once(session_factory, llm, room_id, user_id)
+        if extract:
+            await _extract_once(session_factory, llm, room_id, user_id)
+        if facts is not None:
+            await facts.run_once(session_factory, room_id, user_id)
 
-    state = await ensure_rewind_ready(read, extract_once, extract_enabled=extract, attempts=REWIND_EXTRACT_ATTEMPTS)
+    state = await ensure_rewind_ready(
+        read, extract_once, extract_enabled=extract, attempts=REWIND_EXTRACT_ATTEMPTS, facts_enabled=facts is not None
+    )
     async with session_factory() as db:
         before = await _snapshot_count(db, room_id)
         turn_count = int(await db.scalar(select(ChatRoom.turn_count).where(ChatRoom.id == room_id)) or 0)
@@ -437,6 +474,7 @@ async def _maybe_rewind(
         "snapshotId": state.snapshot_id,
         "extractionStatus": state.extraction_status,
         "coveringEpisodes": state.covering_episodes,
+        "factsStatus": state.facts_status,
     }
 
 

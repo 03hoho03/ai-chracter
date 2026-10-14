@@ -46,4 +46,7 @@ class FakeMemoryLLM(LLMClient):
         if set(response_schema.model_fields) == {"episodes"}:
             # 에피소드 추출 결과 — 빈 목록도 정상 결과다(장면 0개).
             return response_schema.model_validate({"episodes": []})
+        if set(response_schema.model_fields) == {"facts"}:
+            # 사실 추출 결과 — 빈 목록도 정상 결과다(사실 0개).
+            return response_schema.model_validate({"facts": []})
         raise RuntimeError(f"하네스 가짜 클라이언트가 모르는 결과 스키마: {response_schema.__name__}")
