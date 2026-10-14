@@ -419,6 +419,7 @@ def _second_format_controls(kind: str, entry: dict[str, Any]) -> list[dict[str, 
             rows.append({"reply": f"{unaware}: 아, 그거 {leak} 얘기지? 나도 다 알고 있었어.", "expected": "leaked"})
     elif kind == "false_premise":
         rows.append({"reply": "그런 일은 없었어. 네가 잘못 기억하고 있는 것 같아.", "expected": "rejected"})
+        rows.append({"reply": "글쎄, 그건 잘 모르겠네. 그보다 오늘 리허설 얘기나 하자.", "expected": "unaddressed"})
         echo = _first_spellings(answer_key.get("accept_bundles")) or "그 일"
         rows.append({"reply": f"맞아, 그때 정말 그랬지. {echo} 얘기 아직도 생생해.", "expected": "accepted"})
     else:

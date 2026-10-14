@@ -398,3 +398,44 @@ def test_a_key_naming_miss_shows_up_as_matched_ignoring_key() -> None:
     row = _fact_row(attribute="이사 예정", value="다음 달 부산으로 전학", known_by=["민지", "사용자"])
     item = fact_metrics([_entry("secret-a", "secret", _SECRET)], [row])["items"][0]
     assert not item["preserved"] and item["matchedIgnoringKey"]
+
+
+_DATE = {
+    "kind": "fact",
+    "subject": "민지",
+    "attribute": "생일",
+    "value": "6월 9일",
+    "truth_status": "confirmed",
+    "superseded": [{"value": "6월", "truth_status": "disproved", "said_by": "태민"}],
+}
+
+
+@pytest.mark.parametrize(
+    ("value", "preserved"),
+    [
+        pytest.param("6월", False, id="old-value-inside-the-new-one"),
+        pytest.param("6월 9일", True, id="new-value"),
+        pytest.param("6월 9일로 바로잡힘", True, id="new-value-with-words"),
+    ],
+)
+def test_a_correction_row_holding_the_old_value_is_not_preserved_even_inside_the_new_value(
+    value: str, preserved: bool
+) -> None:
+    answer_key = {"mode": "match", "bundles": [["6월 9일"]], "reject_bundles": [["6월"]]}
+    entry = _entry("correction-a", "correction", _DATE, answer_key=answer_key)
+    assert fact_metrics([entry], [_fact_row(value=value)])["items"][0]["preserved"] is preserved
+
+
+def test_reject_bundles_alone_mark_the_old_value() -> None:
+    expected = {k: v for k, v in _DATE.items() if k != "superseded"}
+    entry = _entry("correction-a", "correction", expected, answer_key={"mode": "judge", "reject_bundles": [["6월"]]})
+    assert not fact_metrics([entry], [_fact_row(value="6월")])["items"][0]["preserved"]
+
+
+def test_a_relation_row_holding_an_older_attitude_is_not_preserved_unless_the_attitude_came_back() -> None:
+    relation = _RELATION | {"history": ["믿음 없음"]}
+    row = _fact_row(kind="relation", subject="태민", object="민지", attribute=None, value="믿음 없음")
+    assert not fact_metrics([_entry("relation-a", "relation", relation)], [row])["items"][0]["preserved"]
+    back = _RELATION | {"history": ["믿음", "서먹함"]}
+    again = _fact_row(kind="relation", subject="태민", object="민지", attribute=None, value="믿음")
+    assert fact_metrics([_entry("relation-a", "relation", back)], [again])["items"][0]["preserved"]

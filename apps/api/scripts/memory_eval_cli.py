@@ -643,11 +643,12 @@ def cmd_judge(args: argparse.Namespace) -> int:
 
 
 def cmd_judge_summary(args: argparse.Namespace) -> int:
-    """판정 결과의 종류별 합격률 — 거짓 전제의 `unaddressed` 는 따로 세고 처리 방식은 인자로."""
-    from memory_eval.judge import summarize_judged
+    """판정 결과의 종류별 합격률을 `unaddressed` 처리 방식 세 가지로 모두 낸다 — 봉인 문서가 하나를 고정하더라도 요약이 셋을
+    함께 보여 결과를 본 뒤 유리한 방식을 고르는 일이 드러나게."""
+    from memory_eval.judge import UNADDRESSED_POLICIES, summarize_judged
 
     rows = [r for path in args.judged for r in json.loads(path.read_text(encoding="utf-8"))]
-    _print(summarize_judged(rows, unaddressed=args.unaddressed))
+    _print({policy: summarize_judged(rows, unaddressed=policy) for policy in UNADDRESSED_POLICIES})
     return 0
 
 
@@ -1094,10 +1095,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("judge-summary", help="판정 결과의 종류별 합격률(unaddressed 따로)")
     p.add_argument("--judged", type=Path, nargs="+", required=True)
-    p.add_argument(
-        "--unaddressed", default="pass", choices=["pass", "fail", "exclude"],
-        help="거짓 전제 unaddressed 처리: pass=실패 아님·분모 포함(기본), fail=실패, exclude=분모 제외",
-    )  # fmt: skip
     p.set_defaults(fn=cmd_judge_summary)
 
     p = sub.add_parser("countdown", help="CP300 상영회 카운트다운 — 스탯·노트 본문 존재만, 갈래별")

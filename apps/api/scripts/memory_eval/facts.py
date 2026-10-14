@@ -131,9 +131,41 @@ def _names(value: Any) -> frozenset[str]:
     return frozenset(normalize_part(str(n)) for n in (value or []) if normalize_part(str(n)))
 
 
+def _old_values(entry: Mapping[str, Any], want: str) -> list[str]:
+    """그 사실의 옛 값(관계의 옛 태도, 뒤집힌 옛 주장)을 같은 정규화로. 지금 값과 같은 옛 값은 뺀다(옛 태도로 돌아간 관계)."""
+    expected = entry.get("expected_fact") or {}
+    raw = list(expected.get("history") or []) + [
+        s.get("value") for s in expected.get("superseded") or [] if isinstance(s, Mapping)
+    ]
+    olds = [normalize_match_text(str(v)) for v in raw if v]
+    return [o for o in olds if o and o != want]
+
+
+def holds_old_value(row_value: str | None, entry: Mapping[str, Any]) -> bool:
+    """행 값이 지금 값이 아니라 옛 값을 담는가. 새 값이 옛 값을 품는 꼴(`6월` → `6월 9일`)에서 옛 값 행이 느슨한 비교로 새 값
+    안에 들어 맞는 것을 막는다. 옛 값과 같거나, 옛 값을 품되 지금 값은 품지 않거나, 옛 값 묶음(`reject_bundles`)을 채우되 지금
+    값·정답 묶음은 채우지 않으면 옛 값이다."""
+    expected = (entry.get("expected_fact") or {}).get("value")
+    got = normalize_match_text(str(row_value or ""))
+    want = normalize_match_text(str(expected or ""))
+    has_new = bool(want) and want in got
+    olds = _old_values(entry, want)
+    if any(got == o for o in olds) or (any(o in got for o in olds) and not has_new):
+        return True
+    answer_key = entry.get("answer_key") or {}
+    rejects = answer_key.get("reject_bundles") or []
+    bundles = answer_key.get("bundles") or []
+    if rejects and answer_matches(str(row_value or ""), rejects):
+        return not has_new and not (bundles and answer_matches(str(row_value or ""), bundles))
+    return False
+
+
 def value_matches(row_value: str | None, entry: Mapping[str, Any]) -> bool:
     """값은 느슨히 본다: 정답 일치와 같은 정규화(NFC·casefold·공백 제거·숫자 표기) 뒤 기대 값과 행 값 가운데 한쪽이 다른
-    쪽에 들어 있거나, 정답 묶음이 지금 값을 묻는 범주(관계·정정·디테일)에서 행 값이 그 묶음을 채우면 맞다."""
+    쪽에 들어 있거나, 정답 묶음이 지금 값을 묻는 범주(관계·정정·디테일)에서 행 값이 그 묶음을 채우면 맞다. 단 옛 값을 담은
+    행(`holds_old_value`)은 어느 범주든 맞지 않는다."""
+    if holds_old_value(row_value, entry):
+        return False
     expected = (entry.get("expected_fact") or {}).get("value")
     got = normalize_match_text(str(row_value or ""))
     want = normalize_match_text(str(expected or ""))

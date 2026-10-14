@@ -1,6 +1,7 @@
 """비밀 누출 두 턴 프로브 — 장면 설정 턴 다음에 질문 턴을 보내고, 둘째 턴 전 요약 커서·사실 행 수가 체크포인트 지문과 다르면
 그 프로브를 불능으로 둔다."""
 
+import json
 import uuid
 from pathlib import Path
 from typing import Any
@@ -95,3 +96,51 @@ def test_guard_passes_when_every_read_matches_the_checkpoint(monkeypatch: pytest
     monkeypatch.setattr(checkpoint, "read_fingerprint", read)
     monkeypatch.setattr(probe_mod, "MEMORY_GUARD_INTERVAL_SECONDS", 0.0)
     assert probe_mod._guard_memory(_run(tmp_path), _CP) == []
+
+
+def _turns(n: int, *, chars: int = 200) -> list[Any]:
+    from api.db.models import ChatMessage, ChatMessageRole
+
+    out: list[Any] = []
+    for _ in range(n):
+        out.append(ChatMessage(role=ChatMessageRole.USER, content="가" * 30))
+        out.append(ChatMessage(role=ChatMessageRole.ASSISTANT, content="나" * chars))
+    return out
+
+
+def test_precheck_finds_the_turn_at_which_a_fold_would_start() -> None:
+    from api.chat.memory_fold import FOLD_AT_TURNS
+
+    texts = ["설정", "질문"]
+    assert probe_mod.fold_due_offsets(_turns(FOLD_AT_TURNS - 3), texts, reply_chars=200) == []
+    assert probe_mod.fold_due_offsets(_turns(FOLD_AT_TURNS - 2), texts, reply_chars=200) == [2]
+    assert probe_mod.fold_due_offsets(_turns(FOLD_AT_TURNS - 1), texts, reply_chars=200) == [1, 2]
+
+
+def test_precheck_assumes_a_generous_reply_length_for_the_character_fold() -> None:
+    assert probe_mod.assumed_reply_chars(_turns(3, chars=200)) == probe_mod.ASSUMED_REPLY_CHARS
+    assert probe_mod.assumed_reply_chars(_turns(3, chars=4_000)) == 4_000
+
+
+def _folder(tmp_path: Path, summary: str, prompts: list[str]) -> Path:
+    (tmp_path / "memory-snapshots.jsonl").write_text(
+        "\n".join(
+            json.dumps(r, ensure_ascii=False)
+            for r in [{"kind": "roomStatic"}, {"kind": "memorySnapshot", "summary": summary}]
+        ),
+        encoding="utf-8",
+    )
+    rows = [{"kind": "generation", "prompt": p} for p in prompts] + [{"kind": "judgment", "prompt": "판정"}]
+    (tmp_path / "prompt-dump.jsonl").write_text(
+        "\n".join(json.dumps(r, ensure_ascii=False) for r in rows), encoding="utf-8"
+    )
+    return tmp_path
+
+
+def test_question_prompt_must_still_carry_the_checkpoint_summary(tmp_path: Path) -> None:
+    same = _folder(tmp_path, "[지금] 금요일", ["앞 [지금] 금요일 뒤", "앞 [지금] 금요일 질문"])
+    assert probe_mod.summary_drift(same) == []
+    changed = _folder(tmp_path, "[지금] 금요일", ["앞 [지금] 금요일 뒤", "앞 [지금] 토요일 질문"])
+    assert probe_mod.summary_drift(changed) == ["질문 턴 프롬프트의 요약이 체크포인트 요약과 다르다"]
+    missing = _folder(tmp_path, "[지금] 금요일", [])
+    assert probe_mod.summary_drift(missing) == ["질문 턴 생성 프롬프트 덤프가 없다"]

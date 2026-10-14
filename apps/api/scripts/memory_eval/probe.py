@@ -11,9 +11,13 @@
 - 3(엔딩 도달): 응답이 저장됐으면 그대로 채점(재시도 안 함), 저장되지 않았으면 재시도 최대 2회.
 - 그 밖의 오류: 재시도 최대 2회. 단 서버 로그 스택이 회상 코드 안이면 재시도하지 않고 그 갈래의 오답으로 센다.
 - 재시도를 다 쓰면 "프로브 불능". 불능이 전체 프로브의 5%를 넘으면 실행을 멈춘다.
-- 장면 설정 턴이 앞서는 두 턴 프로브(비밀 문항)는 둘째 턴 전에 요약 커서·사실 행 수가 체크포인트 지문과 같은지 본다. 다르면
-  설정 턴이 접기·추출을 일으켜 질문 턴이 체크포인트와 다른 기억 위에서 묻게 되므로 재시도 없이 그 프로브를 불능으로 둔다
-  (같은 복원에서 다시 보내도 같은 접기가 다시 난다)."""
+- 장면 설정 턴이 앞서는 두 턴 프로브(비밀 문항)는 질문 턴이 체크포인트와 같은 기억 위에서 묻는지 시간에 기대지 않고 본다.
+  어긋나면 재시도 없이 불능이다(같은 복원에서 다시 보내도 같은 접기가 다시 난다).
+  (1) 보내기 전: 체크포인트 상태에 설정 턴·질문 턴을 차례로 더했다고 보고 접기 판정(`plan_fold`)을 돌려 어느 턴에서든
+      접기가 나면, 또는 사실 추출이 끝나지 않은 스냅샷이 있으면(사실 테이블이 있을 때) 서버를 띄우지 않고 불능 — 돈을 쓰지
+      않는다. 응답 글자 수는 모르므로 체크포인트 미요약 구간의 가장 긴 응답과 `ASSUMED_REPLY_CHARS` 중 큰 값으로 넉넉히 잡는다.
+  (2) 보낸 뒤: 질문 턴 생성 프롬프트(덤프)에 체크포인트 요약 본문이 그대로 있는지 대조해 없으면 불능.
+  (3) 보조: 둘째 턴 전에 요약 커서·사실 행 수를 몇 번 읽어 체크포인트 지문과 다르면 불능."""
 
 import asyncio
 import json
@@ -103,6 +107,92 @@ def memory_drift(expected: Mapping[str, Any], actual: Mapping[str, Any]) -> list
         for name in MEMORY_GUARD_FIELDS
         if expected.get(name) != actual.get(name)
     ]
+
+
+# 사전 접기 판정에서 프로브 응답 하나의 글자 수 가정(실측 응답보다 넉넉하게).
+ASSUMED_REPLY_CHARS = 1_500
+
+
+def fold_due_offsets(unsummarized: Sequence[Any], user_texts: Sequence[str], *, reply_chars: int) -> list[int]:
+    """체크포인트의 미요약 메시지 뒤에 턴(사용자 문장 + 가정 길이 응답)을 차례로 더할 때 접기가 나는 턴 순번(1부터)."""
+    from api.chat.memory_fold import plan_fold
+    from api.db.models import ChatMessage, ChatMessageRole
+
+    messages = list(unsummarized)
+    due = []
+    for k, text_ in enumerate(user_texts, start=1):
+        messages.append(ChatMessage(role=ChatMessageRole.USER, content=text_))
+        messages.append(ChatMessage(role=ChatMessageRole.ASSISTANT, content="가" * reply_chars))
+        if plan_fold(messages) is not None:
+            due.append(k)
+    return due
+
+
+def assumed_reply_chars(unsummarized: Sequence[Any]) -> int:
+    from api.db.models import ChatMessageRole
+
+    longest = max((len(m.content) for m in unsummarized if m.role == ChatMessageRole.ASSISTANT), default=0)
+    return max(longest, ASSUMED_REPLY_CHARS)
+
+
+async def memory_precheck(database_url: str, room_id: uuid.UUID, user_texts: Sequence[str]) -> list[str]:
+    """보내기 전 기억 변화 예정 사유(없으면 빈 목록): 더할 턴에서 접기가 나거나, 사실 추출이 남은 스냅샷이 있다."""
+    from sqlalchemy import text
+
+    from api.chat import memory_fold
+    from api.chat.memory_window import load_current_summary
+    from memory_eval.runtime import make_engine
+
+    engine, factory = make_engine(database_url)
+    try:
+        async with factory() as db:
+            current = await load_current_summary(db, room_id)
+            unsummarized = await memory_fold._load_unsummarized(db, room_id, current.cursor if current else None)
+            pending_facts = 0
+            if await db.scalar(text("SELECT to_regclass('chat_memory_fact_extractions') IS NOT NULL")):
+                pending_facts = int(
+                    await db.scalar(
+                        text(
+                            "SELECT count(*) FROM chat_room_memory_snapshots s WHERE s.chat_room_id = :room AND NOT "
+                            "EXISTS (SELECT 1 FROM chat_memory_fact_extractions x WHERE x.snapshot_id = s.id "
+                            "AND x.status = 'done')"
+                        ),
+                        {"room": room_id},
+                    )
+                    or 0
+                )
+    finally:
+        await engine.dispose()
+    reasons = [
+        f"턴 +{k} 에서 접기 예정"
+        for k in fold_due_offsets(unsummarized, user_texts, reply_chars=assumed_reply_chars(unsummarized))
+    ]
+    if pending_facts:
+        reasons.append(f"사실 추출이 남은 스냅샷 {pending_facts}개")
+    return reasons
+
+
+def summary_drift(folder: Path) -> list[str]:
+    """질문 턴 생성 프롬프트(덤프의 마지막 생성 기록)에 체크포인트 요약(드라이버 기억 기록의 첫 요약)이 그대로 있는가.
+    체크포인트 요약이 비었으면 대조할 것이 없어 빈 목록."""
+    snapshots = folder / "memory-snapshots.jsonl"
+    dump = folder / "prompt-dump.jsonl"
+    summary = ""
+    if snapshots.exists():
+        for line in snapshots.read_text(encoding="utf-8").splitlines():
+            if line.strip() and (row := json.loads(line)).get("kind") == "memorySnapshot":
+                summary = str(row.get("summary") or "")
+                break
+    if not summary:
+        return []
+    prompts = [
+        str(row.get("prompt") or "")
+        for line in (dump.read_text(encoding="utf-8").splitlines() if dump.exists() else [])
+        if line.strip() and (row := json.loads(line)).get("kind") == "generation"
+    ]
+    if not prompts:
+        return ["질문 턴 생성 프롬프트 덤프가 없다"]
+    return [] if summary in prompts[-1] else ["질문 턴 프롬프트의 요약이 체크포인트 요약과 다르다"]
 
 
 def should_halt(unprobeable: int, total: int) -> bool:
@@ -248,6 +338,16 @@ def run_probe(run: ProbeRun, probe: Probe) -> dict[str, Any]:
         )
         if top_up:
             asyncio.run(_top_up(run.database_url, run.room_id, run.clover_top_up))
+        if probe.guard_memory:
+            reasons = asyncio.run(memory_precheck(run.database_url, run.room_id, probe.turns))
+            if reasons:
+                records.append({"attempt": attempt_no, "action": "unprobeable", "precheck": reasons, "costUsd": 0.0,
+                                "fingerprint": restored["fingerprint"], "folder": str(folder)})  # fmt: skip
+                return {
+                    "stage": run.stage, "arm": run.arm, "checkpoint": probe.checkpoint, "item": probe.item_id,
+                    "kind": probe.kind, "split": probe.split, "status": "unprobeable", "turns": [],
+                    "attempts": records,
+                }  # fmt: skip
         server_log = folder / "server.log"
         overrides = {
             **run.server_overrides,
@@ -306,6 +406,8 @@ def run_probe(run: ProbeRun, probe: Probe) -> dict[str, Any]:
                 note=f"{probe.item_id} cp{probe.checkpoint} {run.arm}" + (" usage=missing" if call["missing"] else ""),
             )
         saved = len(turns) == len(probe.turns) and all(t["reply"] for t in turns)
+        if probe.guard_memory and saved and not drift:
+            drift = summary_drift(folder)
         attempt = Attempt(exit_code=code, response_saved=saved, recall_stack=recall_stack_in(log_text))
         if code == EXIT_OK and not saved:
             # 드라이버는 생성 오류로 유실된 턴도 0 으로 끝낸다 — 응답이 없으면 그 밖의 오류로 센다.

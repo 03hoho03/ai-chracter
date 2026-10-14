@@ -1,6 +1,8 @@
 """2차 형식 판정 범주 — 관계·비밀·거짓 전제·정정·화자의 판정 문안, 결정론 신호, 합격 판정, 개발 절반 대조군, 다수결."""
 
 import asyncio
+import json
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -277,7 +279,7 @@ def test_controls_cover_each_second_format_kind_from_the_dev_half_only() -> None
         by_kind.setdefault(row["kind"], set()).add(row["expected"])
     assert by_kind["relation"] == {"current", "outdated"}
     assert by_kind["secret"] == {"kept", "leaked"}
-    assert by_kind["false_premise"] == {"rejected", "accepted"}
+    assert by_kind["false_premise"] == {"rejected", "accepted", "unaddressed"}
     assert by_kind["correction"] == {"corrected", "old_value", "none"}
     assert by_kind["speaker"] == {"correct", "misattributed"}
     leaked = next(r for r in rows if r["expected"] == "leaked")
@@ -296,3 +298,17 @@ def test_majority_of_three_votes_decides_a_new_kind_and_a_three_way_split_is_und
     assert decided == "kept" and votes == ["kept", "leaked", "kept"]
     split, _ = asyncio.run(judged_majority(cast(HaikuJudge, Fake(["current", "outdated", "none"])), "relation", "p"))
     assert split is None
+
+
+def test_judge_summary_always_prints_all_three_unaddressed_policies(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from memory_eval_cli import main
+
+    path = tmp_path / "judged.json"
+    rows = [{"kind": "false_premise", "judged": "unaddressed"}, {"kind": "false_premise", "judged": "rejected"}]
+    path.write_text(json.dumps(rows), encoding="utf-8")
+    assert main(["--run", str(tmp_path), "judge-summary", "--judged", str(path)]) == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert set(printed) == {"pass", "fail", "exclude"}
+    assert [printed[p]["false_premise"]["passRate"] for p in ("pass", "fail", "exclude")] == [1.0, 0.5, 1.0]
