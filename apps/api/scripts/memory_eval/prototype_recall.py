@@ -74,7 +74,9 @@ class Params:
     use_kw: bool = False
     min_episodes: int = 5
     max_inject: int = 3
-    max_inject_plain: int = 1  # 회상 단서가 없는 보통 턴
+    max_inject_plain: int = 1  # 회상 단서가 없는 보통 턴(운영과 같은 1이 기본, 격자에서 2·3 도 잰다)
+    # 조사 떼기(rule) 질의에서 붙은 어절("장비점검하던")이 그 앞머리의 2자 이상 장면 명사("장비")와 겹치게 할지. 운영은 아직 끔.
+    prefix_match: bool = False
     w_noun: float = 0.7
     w_kw: float = 0.3
     w_importance: float = 0.05
@@ -158,19 +160,37 @@ def episode_nouns_rule(llm_nouns: Iterable[str], title: str, detail: str) -> fro
     return frozenset(out[:MAX_EPISODE_NOUNS])
 
 
+def prefix_hits(tokens: Iterable[str], nouns: Iterable[str]) -> set[str]:
+    """질의 토큰이 2자 이상 장면 명사로 시작하면 그 명사. 1자 명사는 여기서 걸지 않는다 — 1자 명사가 앞머리로 걸리면
+    "빵집"의 빵, "차례"의 차처럼 뜻이 다른 낱말까지 겹쳐, 1자는 어절 경계 규칙(`matches`)만 쓴다."""
+    tokens = tuple(tokens)
+    return {noun for noun in nouns if len(noun) >= 2 and any(token.startswith(noun) for token in tokens)}
+
+
 def query_nouns_rule(
-    user_text: str, previous_assistant: str, *, episode_nouns: frozenset[str], names: Iterable[str]
+    user_text: str,
+    previous_assistant: str,
+    *,
+    episode_nouns: frozenset[str],
+    names: Iterable[str],
+    prefix_match: bool = False,
 ) -> Query:
     """(e) 질의 = 같은 규칙의 토큰 ∪ 1자 에피소드 명사 중 어절 경계로 걸린 것. 사용자 쪽은 그중 방 에피소드에 한 번이라도
     나온 토큰(df > 0, `episode_nouns` 에 있는 것)만 남긴다 — 조사 떼기 토큰은 "그거·어디·뒀더라" 같은 어절도 남겨, 거르지
     않으면 대명사 후속 질문의 사용자 질의가 비지 않아 직전 AI 응답으로 찾는 경로에 들어가지 못한다. 흔한 명사 제외는 이
-    뒤(점수 함수)에서 하므로, 흔한 명사만 있던 질의("그때 회의 어땠더라?")는 여기서 비지 않고 회상 없음이 된다."""
+    뒤(점수 함수)에서 하므로, 흔한 명사만 있던 질의("그때 회의 어땠더라?")는 여기서 비지 않고 회상 없음이 된다.
+
+    `prefix_match` 를 켜면 조사 하나로 끝나지 않아 통째로 남은 어절도 앞머리의 장면 명사로 겹친다(`prefix_hits`). 이렇게 더한
+    명사도 장면 명사이므로 사용자 쪽 거르기를 지나고, 흔한 명사 제외·절대 척도 임계는 점수 함수가 똑같이 건다."""
     names = tuple(names)
     one_char = [n for n in episode_nouns if len(n) == 1]
 
     def side(text: str) -> frozenset[str]:
         norm = normalize_keyword_text(text)
-        hits = set(rule_tokens(text)) | {n for n in one_char if matches(n, norm)}
+        tokens = rule_tokens(text)
+        hits = set(tokens) | {n for n in one_char if matches(n, norm)}
+        if prefix_match:
+            hits |= prefix_hits(tokens, episode_nouns)
         return frozenset(n for n in hits if _keep(n, names))
 
     user = side(user_text) & episode_nouns
@@ -280,6 +300,18 @@ def select_injected(scored: Sequence[Scored], params: Params, *, recall_cue: boo
     return [x.id for x in scored if x.s >= params.tau][:cap]
 
 
+# 회상 줄 끝의 화자 꼬리표. 인물·섞임은 운영 회상 섹션과 같은 낱말이고, 사용자 꼬리표는 운영에 아직 없다 — 사용자가 스스로
+# 말한 장면이 꼬리표 없이 실리면 꼬리표 없는 지문 장면과 줄 모양이 같아, 누가 한 말인지가 줄에서 사라진다.
+USER_TAIL = " (사용자의 말)"
+ASSERTION_TAILS = {"character": " (인물의 말)", "mixed": " (인물의 말 포함)", "user": USER_TAIL}
+
+
+def recall_line(title: str, detail: str, asserted_by: str, *, user_tail: bool = True) -> str:
+    """회상 섹션 한 줄. `user_tail=False` 는 지금 운영과 같은 줄(사용자 장면에 꼬리표 없음)이다."""
+    tails = ASSERTION_TAILS if user_tail else {k: v for k, v in ASSERTION_TAILS.items() if k != "user"}
+    return f"- {title}: {detail}{tails.get(asserted_by, '')}"
+
+
 # ---------------------------------------------------------------- 오프라인 회상 어댑터
 
 
@@ -329,7 +361,13 @@ class Retriever:
         if self.method in ("substring", "kiwi_write"):
             query = query_nouns_substring(user_text, previous_assistant, episode_nouns=pool, names=self.names)
         elif self.method == "rule":
-            query = query_nouns_rule(user_text, previous_assistant, episode_nouns=pool, names=self.names)
+            query = query_nouns_rule(
+                user_text,
+                previous_assistant,
+                episode_nouns=pool,
+                names=self.names,
+                prefix_match=self.params.prefix_match,
+            )
         else:
             query = query_nouns_kiwi(user_text, previous_assistant, names=self.names)
         scored = score_episodes(rows, query, current_turn=current_turn, params=self.params)

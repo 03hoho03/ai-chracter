@@ -13,14 +13,18 @@ from api.db.models import ChatMessage, ChatMessageRole
 from memory_eval.recall_offline import Episode
 from memory_eval.prototype_extract import PrototypeEpisode, PrototypeResult, Window, episode_rows, truncate_detail
 from memory_eval.prototype_recall import (
+    USER_TAIL,
     EpisodeNouns,
     Params,
     Query,
+    Retriever,
     Scored,
     episode_nouns_substring,
+    prefix_hits,
     query_nouns_rule,
     query_nouns_substring,
     recall_cue,
+    recall_line,
     retrieve_e,
     rule_tokens,
     episode_nouns_rule,
@@ -472,3 +476,118 @@ def test_retrieve_e_tokenizes_body_without_morphology_and_caps_plain_turns() -> 
     assert [r.episode_id for r in asked if r.injected] == ["G"]
     plain = retrieve_e(episodes, user_text="회의0 회의1 회의2 다 끝났어", previous_assistant="", current_turn=300)
     assert sum(r.injected for r in plain) == 1
+
+
+# ---------------------------------------------------------------- 붙은 어절의 접두 일치(조사 하나로 끝나지 않는 어절)
+
+
+@pytest.mark.parametrize(
+    ("prefix", "user"),
+    [pytest.param(False, set(), id="off-whole-word-misses"), pytest.param(True, {"장비"}, id="on-prefix-hits")],
+)
+def test_glued_word_overlaps_its_leading_scene_noun_only_with_prefix_match(prefix: bool, user: set[str]) -> None:
+    # "장비점검하던" 은 끝 조사가 없어 통째로 남는다. "점검" 은 어절 가운데라 앞머리 규칙으로는 걸리지 않는다.
+    query = query_nouns_rule(
+        "장비점검하던 날 그거 뭐였지?",
+        "",
+        episode_nouns=frozenset({"장비", "점검", "박하사탕"}),
+        names=(),
+        prefix_match=prefix,
+    )
+    assert query.user == user
+
+
+@pytest.mark.parametrize(
+    ("text", "hit"),
+    [
+        pytest.param("빵집에서 만났지?", set(), id="one-char-noun-not-a-prefix"),
+        pytest.param("빵 사러 갔지?", {"빵"}, id="one-char-noun-at-word-boundary"),
+    ],
+)
+def test_prefix_match_leaves_one_char_nouns_to_the_word_boundary_rule(text: str, hit: set[str]) -> None:
+    assert prefix_hits(rule_tokens(text), {"빵"}) == set()
+    query = query_nouns_rule(text, "", episode_nouns=frozenset({"빵"}), names=(), prefix_match=True)
+    assert query.user == hit
+
+
+def test_prefix_match_does_not_add_names() -> None:
+    query = query_nouns_rule(
+        "도희네 집 앞에서", "", episode_nouns=frozenset({"도희"}), names=("도희",), prefix_match=True
+    )
+    assert query.user == frozenset()
+
+
+def _prefix_rows(df: int) -> list[EpisodeNouns]:
+    """N = 30 중 `df` 장면에 "장비" 가 있다. 질의는 붙은 어절이라 접두 일치로만 "장비" 를 얻는다."""
+    return [*_with_df("장비", df, start=0), *_filler(30 - df, start=100, snapshot=2, nouns=frozenset({"기타"}))]
+
+
+def _prefix_scored(df: int, params: Params) -> list[Scored]:
+    rows = _prefix_rows(df)
+    query = query_nouns_rule(
+        "장비점검하던 날 그거 뭐였지?",
+        "",
+        episode_nouns=frozenset(x for row in rows for x in row.nouns),
+        names=(),
+        prefix_match=params.prefix_match,
+    )
+    return score_episodes(rows, query, current_turn=300, params=params)
+
+
+@pytest.mark.parametrize(
+    ("df", "kept"),
+    [pytest.param(6, True, id="df-ratio-equal-0.2-kept"), pytest.param(7, False, id="df-ratio-above-0.2-dropped")],
+)
+def test_prefix_matched_noun_still_goes_through_the_common_noun_filter(df: int, kept: bool) -> None:
+    params = Params(tau=0.6, common_ratio=0.2, prefix_match=True)
+    assert bool(_prefix_scored(df, params)) is kept
+
+
+@pytest.mark.parametrize(
+    ("df", "injected"),
+    [pytest.param(2, True, id="df2-above-tau"), pytest.param(3, False, id="df3-below-tau")],
+)
+def test_prefix_matched_noun_still_needs_the_absolute_threshold(df: int, injected: bool) -> None:
+    params = Params(tau=0.6, common_ratio=0.2, prefix_match=True)
+    scored = _prefix_scored(df, params)
+    top = scored[0]
+    assert top.overlap == {"장비"}
+    expected = 0.7 * _w(df) / W_RARE + 0.025 + 0.02 * top.end_turn / 300
+    assert top.s == pytest.approx(expected)
+    assert (expected >= 0.6) is injected
+    assert bool(select_injected(scored, params, recall_cue=True)) is injected
+
+
+def test_retriever_prefix_match_is_a_parameter() -> None:
+    episodes = [
+        _episode("G", "세빈이 장비 보다가 박하사탕을 줬다", end_turn=12, snapshot_turn=31),
+        *[_episode(f"o{i}", f"동아리방에서 회의{i}를 했다", end_turn=20 + i, snapshot_turn=41) for i in range(6)],
+    ]
+    text = "장비점검하던 날 받은 거 뭐였지?"
+    off = Retriever("rule", params=Params(tau=0.6, common_ratio=0.2))
+    on = Retriever("rule", params=Params(tau=0.6, common_ratio=0.2, prefix_match=True))
+    assert off(episodes, user_text=text, previous_assistant="", current_turn=300) == []
+    assert [
+        r.episode_id for r in on(episodes, user_text=text, previous_assistant="", current_turn=300) if r.injected
+    ] == ["G"]
+    # 흔한 명사(모든 장면의 동아리방)는 붙은 어절로 걸려도 빠진다.
+    assert on(episodes, user_text="동아리방에서는 뭐 했었지?", previous_assistant="", current_turn=300) == []
+
+
+# ---------------------------------------------------------------- 회상 줄의 화자 꼬리표
+
+
+@pytest.mark.parametrize(
+    ("asserted_by", "user_tail", "tail"),
+    [
+        pytest.param("user", False, "", id="user-today-no-tail"),
+        pytest.param("user", True, USER_TAIL, id="user-tail"),
+        pytest.param("character", True, " (인물의 말)", id="character-unchanged"),
+        pytest.param("mixed", True, " (인물의 말 포함)", id="mixed-unchanged"),
+        pytest.param("narration", True, "", id="narration-no-tail"),
+    ],
+)
+def test_recall_line_speaker_tail(asserted_by: str, user_tail: bool, tail: str) -> None:
+    assert recall_line("보직", "사용자가 통신병이었다고 말함.", asserted_by, user_tail=user_tail) == (
+        f"- 보직: 사용자가 통신병이었다고 말함.{tail}"
+    )
