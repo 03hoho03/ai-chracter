@@ -241,6 +241,10 @@ class ChatRoomResponse(CamelModel):
     # 부정형인 이유: 이 칸을 모르는 옛 서버의 응답에서는 칸이 없어 "막지 않음"으로 읽혀야 한다(옛 서버는 막지도 않는다).
     # 기본값을 `default_factory` 로 두는 이유는 `effective_chat_model` 과 같다.
     novel_creation_blocked: bool = Field(default_factory=bool)
+    # 재생성이 밀어낸 직전 응답으로 되돌릴 수 있는 지금 응답의 id(`POST …/messages/{id}/restore-previous` 의 대상). 없거나 그 사이
+    # 대화가 바뀌었으면 None. 참/거짓이 아니라 id 인 이유는 화면이 낡은 캐시의 다른 응답에 메뉴를 띄우지 않게 마지막 응답과
+    # 맞대 보게 하려는 것이다. 기본값을 두는 이유는 `persona_id` 와 같다.
+    previous_response_for: uuid.UUID | None = None
     # 방이 고른 글쓰기 모델 — 저장된 값 그대로다(None 이 기본 모델). 레지스트리에서 내린 모델의 옛 값일 수도 있어 문자열이다.
     chat_model: str | None = None
     # 다음 턴이 실제로 쓸 모델과 그 턴의 클로버. 허용을 거뒀거나, 레지스트리에서 내렸거나 채팅에서 고를 수 없는

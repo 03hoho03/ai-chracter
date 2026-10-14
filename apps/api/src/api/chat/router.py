@@ -16,6 +16,7 @@ from api.chat.memory_episodes import extract_pending_episode
 from api.chat.memory_facts import extract_pending_facts
 from api.chat.memory_fold import SUMMARY_MAX_LENGTH, fold_memory
 from api.chat.memory_rewind import rewind_memory
+from api.chat.previous_response import clear_previous_response, previous_response_for, restore_previous_response
 from api.chat.memory_window import select_current_snapshot
 from api.chat.preview_session import create_preview_session, get_preview_session, update_preview_session
 from api.chat.prompt_builder import (
@@ -707,6 +708,7 @@ async def _to_response(db: AsyncSession, room: ChatRoom, *, message_limit: int |
         content_name=version_detail.name,
         content_restricted=content.moderation_status != ModerationStatus.NORMAL,
         novel_creation_blocked=novel_creation_blocked,
+        previous_response_for=await previous_response_for(db, room.id, messages[-1].id if messages else None),
         chat_model=room.chat_model,
         effective_chat_model=effective_model,
         effective_chat_model_name=CHAT_MODELS_BY_ID[effective_model].name,
@@ -1055,6 +1057,8 @@ async def send_message(
 
             # 사용자 메시지는 Gemini 호출 전에 먼저 커밋한다 — 이후 생성이 실패해도
             # 이미 저장된 사용자 메시지는 영향받지 않아야 하기 때문.
+            # 재생성이 밀어낸 직전 응답의 보관본도 같은 커밋에서 지운다 — 새 말 뒤로는 되돌릴 자리가 없다.
+            await clear_previous_response(db, room.id)
             user_message = ChatMessage(
                 chat_room_id=room.id, role=ChatMessageRole.USER, content=payload.content
             )
@@ -1341,6 +1345,8 @@ async def edit_message(
                         )
                     )
 
+            # 재생성이 밀어낸 직전 응답의 보관본도 절단·편집과 같은 커밋에서 지운다.
+            await clear_previous_response(db, room.id)
             message.content = payload.content
             await db.commit()
 
@@ -1401,8 +1407,48 @@ async def delete_message(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
         # 지운 메시지를 요약이 덮고 있었으면 그 요약도 되감는다 — 지운 대화가 요약으로 계속 실리지 않게.
         await rewind_memory(db, room.id, (message.created_at, message.id))
+        # 어느 메시지를 지워도 재생성이 밀어낸 직전 응답의 보관본을 지운다 — 지운 맥락에 옛 응답을 되살리지 않는다.
+        await clear_previous_response(db, room.id)
         await db.delete(message)
         await db.commit()
+
+
+@router.post(
+    "/{room_id}/messages/{message_id}/restore-previous", dependencies=[Depends(require_legal_consent)]
+)
+async def restore_previous_message(
+    room_id: uuid.UUID,
+    message_id: uuid.UUID,
+    message_limit: int | None = Query(None, alias="messageLimit", ge=1),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ChatRoomResponse:
+    """재생성이 밀어낸 직전 응답으로 되돌린다. `message_id` 는 지금 보이는 응답(재생성이 만든 응답)이다. 되살린 응답을 원래
+    id·시각으로 다시 넣고 지금 응답을 보관으로 옮기므로, 되살린 응답 id 로 한 번 더 부르면 원래대로 돌아간다. 같은 요청이 두 번
+    오면 두 번째는 `message_id` 가 더는 마지막 응답이 아니라 409 다.
+
+    모델을 부르지 않고 자기 기록을 고르는 일이라 차감 게이트·분당 상한·LLM 의존성이 없고(재생성 차감은 돌려주지 않는다),
+    이용제한된 작품의 방에서도 된다(초기화·삭제와 같다). 대화를 바꾸므로 방 턴 락 아래서 하고(진행 중 턴이면 409
+    `CHAT_TURN_IN_PROGRESS`), 락을 잡은 뒤 방 행을 잠그며 다시 읽는다 — 앞 턴이 올린 `turn_count`·엔딩을 보고, 락 없이 겹친
+    턴 쓰기와도 줄을 선다. 되돌릴 수 없으면 409 `PREVIOUS_RESPONSE_UNAVAILABLE` 이다(`chat/previous_response.py`).
+
+    응답은 방 상태다. 화면이 이 응답으로 방 캐시를 바꾸므로 위로 불러 둔 깊이만큼 `messageLimit` 을 넘긴다(버전 승격과 같다)."""
+    room = await _get_owned_room(db, room_id, user_id)
+    async with hold_room_turn_lock(room.id):
+        locked = await db.scalar(
+            select(ChatRoom)
+            .where(ChatRoom.id == room.id)
+            .with_for_update(key_share=True)
+            .execution_options(populate_existing=True)
+        )
+        if locked is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat room not found")
+        setup = await _resolve_starting_setup(db, room)
+        restored = await restore_previous_response(db, room, setup, message_id)
+        await db.commit()
+    if not restored:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "PREVIOUS_RESPONSE_UNAVAILABLE"})
+    return await _to_response(db, room, message_limit=message_limit)
 
 
 async def _persona_names(db: AsyncSession, rooms: Sequence[ChatRoom]) -> dict[uuid.UUID, str]:
@@ -1690,6 +1736,7 @@ async def reset_chat_room(
     async with hold_room_turn_lock(room.id):
         # 요약은 지운 대화에서 나왔으므로 함께 지운다. 기억 노트는 사용자가 적은 것이라 남긴다.
         await rewind_memory(db, room.id, None)
+        await clear_previous_response(db, room.id)
         await db.execute(delete(ChatMessage).where(ChatMessage.chat_room_id == room.id))
         # 방 행이 남으니 FK 때문은 아니다 — 지운 대화의 턴 기록을 남기지 않는다.
         await db.execute(delete(ChatTurn).where(ChatTurn.chat_room_id == room.id))

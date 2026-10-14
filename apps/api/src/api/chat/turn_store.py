@@ -12,9 +12,9 @@
 import logging
 import uuid
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
-from sqlalchemy import delete, select
+from sqlalchemy import Row, delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +33,7 @@ from api.db.models.chat import (
     CharacterImageExposure,
     ChatMessage,
     ChatMessageRole,
+    ChatPreviousResponse,
     ChatRoom,
     ChatRoomStat,
     ChatTurn,
@@ -78,6 +79,34 @@ def _write_room_stat(
         stat_rows[stat_id] = row
     else:
         row.current_value = Decimal(str(value))
+
+
+async def _keep_replaced_response(
+    db: AsyncSession, room_id: uuid.UUID, replaced: Row[Any], *, replaced_by_message_id: uuid.UUID
+) -> None:
+    """재생성이 지운 옛 응답(`replaced` — id·시각·본문·그림)을 방의 보관 행에 적는다. 방당 한 행이라 이미 있으면 덮는다 — 늘 바로
+    직전 응답 하나만 남는다. 되돌리기는 `chat/previous_response.py` 에 있다."""
+    statement = pg_insert(ChatPreviousResponse).values(
+        chat_room_id=room_id,
+        replaced_by_message_id=replaced_by_message_id,
+        message_id=replaced.id,
+        message_created_at=replaced.created_at,
+        content=replaced.content,
+        image_id=replaced.image_id,
+    )
+    await db.execute(
+        statement.on_conflict_do_update(
+            index_elements=[ChatPreviousResponse.chat_room_id],
+            set_={
+                "replaced_by_message_id": statement.excluded.replaced_by_message_id,
+                "message_id": statement.excluded.message_id,
+                "message_created_at": statement.excluded.message_created_at,
+                "content": statement.excluded.content,
+                "image_id": statement.excluded.image_id,
+                "created_at": func.now(),
+            },
+        )
+    )
 
 
 async def _record_character_image_exposure(
@@ -182,7 +211,7 @@ async def _sign_judged_cell(
 class RoomTurnStore:
     """실채팅 방의 턴 저장소. `mode="append"` 는 새 턴을 덧붙인다(보내기·수정) — 응답 메시지를 새로 넣고 `turn_count` 를
     하나 올린다. `mode="replace"` 는 재생성이다 — 같은 턴의 마지막 응답(`replaced_message_id`)을 지우고 새 응답으로 바꿔
-    넣으며, 응답이 실제로 지워졌다는 폐기 기록을 같은 트랜잭션에 남긴다. 턴 번호는 지금 `turn_count` 그대로이고 올리지
+    넣으며, 응답이 실제로 지워졌다는 폐기 기록과 지운 응답의 되돌리기용 보관본을 같은 트랜잭션에 남긴다. 턴 번호는 지금 `turn_count` 그대로이고 올리지
     않는다. 노출 기록·그림·커밋·정산과 커밋 뒤 표시는 두 모드가 같다.
 
     턴 기록(`chat_turns`)도 응답과 같은 커밋에 쓴다 — 응답이 저장됐는데 기록이 없거나, 응답 없이 기록만 남는 턴이 생기지
@@ -236,8 +265,8 @@ class RoomTurnStore:
         기다리는 사이 방이 지워졌으면 응답 INSERT 가 외래 키 위반으로 제너레이터를 뚫기 전에 갈라진다. 그 밖의 쓰기·커밋
         실패는 흡수하지 않는다.
 
-        append 는 새 응답을 넣고 flush 해 id 를 얻은 뒤 `turn_count` 를 올린다. replace 는 옛 응답 DELETE → 폐기 기록 →
-        미리 정한 id 의 새 응답 순서이고 flush 하지 않는다(재생성이 원래 쓰던 모양 그대로다). 그 뒤 노출 기록·스탯·엔딩·그림·
+        append 는 새 응답을 넣고 flush 해 id 를 얻은 뒤 `turn_count` 를 올린다. replace 는 옛 응답 DELETE → 보관 행 → 폐기 기록
+        → 미리 정한 id 의 새 응답 순서이고 flush 하지 않는다(보관 행 문장은 세션에 쌓인 것이 없을 때 나간다). 그 뒤 노출 기록·스탯·엔딩·그림·
         커밋은 두 모드가 같은 코드를 지난다 — 재생성은 엔딩 판정을 하지 않아 그 칸이 비어 있고, 스탯 칸은 재판정했을 때만 찬다(되돌린
         값과 새 값이 함께 들어 있다)."""
         db, room, setup = self.db, self._room, self._setup
@@ -267,13 +296,29 @@ class RoomTurnStore:
             settlement.set_pending_message(db, room.id, assistant_message.id)
             room.turn_count = turn.turn_number
         else:
-            await db.execute(delete(ChatMessage).where(ChatMessage.id == self._replaced_message_id))
+            # id 를 여기서 정한다 — 컬럼 기본값(`uuid4`)은 flush 때에야 채워지는데, 정산은 커밋 전에 이 id 를 알아야 하고 옛
+            # 응답의 보관 행도 이 id 를 가리킨다.
+            assistant_message_id = uuid.uuid4()
+            replaced = (
+                await db.execute(
+                    delete(ChatMessage)
+                    .where(ChatMessage.id == self._replaced_message_id)
+                    .returning(ChatMessage.id, ChatMessage.created_at, ChatMessage.content, ChatMessage.image_id)
+                )
+            ).one_or_none()
+            # 지운 옛 응답을 되돌리기용으로 옮겨 적는다 — 옛 응답 DELETE 와 같은 트랜잭션이라, 이 쓰기 구간에 오지 못한 재생성
+            # (생성·정책·렌더 실패)과 커밋에 실패한 재생성은 보관을 바꾸지 않는다. 지울 응답이 이미 없었으면(락 없이 겹친 요청이
+            # 먼저 지웠다) 옮길 것이 없다.
+            if replaced is not None:
+                await _keep_replaced_response(db, room.id, replaced, replaced_by_message_id=assistant_message_id)
             # 옛 응답 DELETE 와 같은 트랜잭션이라 응답이 실제로 지워진 재생성만 센다 — 렌더 실패·정책 위반·LLM 오류는 이
             # 쓰기 구간에 오기 전에 옛 응답을 남긴 채 끝나므로 기록되지 않는다.
             db.add(DiscardedResponse(user_id=room.user_id, chat_room_id=room.id, kind="regenerate", discarded_count=1))
-            # id 를 여기서 정한다 — 컬럼 기본값(`uuid4`)은 flush 때에야 채워지는데, 정산은 커밋 전에 이 id 를 알아야 한다.
             assistant_message = ChatMessage(
-                id=uuid.uuid4(), chat_room_id=room.id, role=ChatMessageRole.ASSISTANT, content=turn.assistant_content
+                id=assistant_message_id,
+                chat_room_id=room.id,
+                role=ChatMessageRole.ASSISTANT,
+                content=turn.assistant_content,
             )
             db.add(assistant_message)
             # 여기부터 아래 커밋이 돌아올 때까지 끊기면 응답이 저장됐는지 알 수 없다(위 append 의 같은 자리). 턴 수는

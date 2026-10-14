@@ -2,12 +2,14 @@
 
 방 삭제와 회원 탈퇴가 이 함수를 같이 쓴다. 두 경로가 자식 목록을 따로 가지면 자식 테이블이 늘
 때 한쪽에만 더해지기 쉽고, 빠진 쪽은 방 DELETE가 FK 위반으로 500이 된다 — 그래서 사본을 두지
-않는다. `ON DELETE CASCADE`가 없으므로(apps/api/CLAUDE.md 모델 규약) 자식을 먼저 지운다.
+않는다. 아래 자식 테이블의 방 FK 에는 `ON DELETE` 가 없으므로 자식을 먼저 지운다.
 
 예외는 요약 스냅샷의 자식인 장면 기억(`chat_memory_episodes`)과 추출 기록(`chat_memory_extractions`)이다. 이 둘은 스냅샷
 DELETE 의 CASCADE 가 지우므로 아래 목록에 넣지 않는다 — 스냅샷보다 먼저 지우면 스냅샷을 잠근 채 추출 기록을 갱신하는 추출
 작업과 서로를 기다린다(교착).
 사실 계층 두 테이블(`chat_memory_facts`·`chat_memory_fact_extractions`)도 같은 이유로 스냅샷 FK 의 CASCADE 가 지운다.
+재생성이 밀어낸 직전 응답의 보관 행(`chat_previous_responses`)도 목록에 없다 — 방 FK 가 `ON DELETE CASCADE` 라 방 DELETE 가
+지우고, 그래서 이 테이블을 모르는 옛 이미지(배포 겹침)가 방을 지워도 FK 위반으로 실패하지 않는다.
 
 이 모듈은 라우터를 import하지 않는다 — `auth/router.py`가 import해도 순환이 생기지 않게."""
 
