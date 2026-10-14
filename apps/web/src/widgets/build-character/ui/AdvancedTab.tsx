@@ -10,7 +10,11 @@ import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
 import { MAX_SITUATIONAL_IMAGE_TRIGGER_LENGTH, registerSituationalImage } from "@/entities/content";
-import type { CharacterBuilderFormValues, CharacterCollapsibleList } from "@/features/build-character";
+import {
+  CHARACTER_FIELD_LABELS,
+  type CharacterBuilderFormValues,
+  type CharacterCollapsibleList,
+} from "@/features/build-character";
 import {
   FieldCharacterCount,
   CollapsibleItemCard,
@@ -161,7 +165,7 @@ export function AdvancedTab({ ensureContentVersionId, savedImages }: AdvancedTab
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-1">
-          <Label>상황별 이미지 (선택)</Label>
+          <Label>{CHARACTER_FIELD_LABELS.situationalImages.label} (선택)</Label>
           <FieldGuideLink href={creationGuidePath("character", "advanced")} fieldLabel="상황별 이미지" />
         </div>
         <p className="text-sm text-muted-foreground">
@@ -357,7 +361,7 @@ function SituationalImageRow({
       trailing={<ItemRemoveButton label={`${title} 삭제`} onClick={onRemove} />}
     >
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={descriptionId}>노출할 상황</Label>
+        <Label htmlFor={descriptionId}>{CHARACTER_FIELD_LABELS["situationalImages.*.situationDescription"].label}</Label>
         <BuilderTextarea
           id={descriptionId}
           placeholder="어떤 상황에서 이 이미지를 노출할지 입력해주세요"

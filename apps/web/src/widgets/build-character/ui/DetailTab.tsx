@@ -19,6 +19,7 @@ import {
 import { useCreatorPayoutRate } from "@/entities/creator-payout";
 import { hasEnabledFeature, useSessionQuery } from "@/entities/session";
 import {
+  CHARACTER_FIELD_LABELS,
   TARGET_VALUES,
   VISIBILITY_VALUES,
   type CharacterBuilderFormValues,
@@ -56,7 +57,7 @@ export function DetailTab() {
   return (
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="character-detail-description"><RequiredText>등록 설명</RequiredText></Label>
+        <Label htmlFor="character-detail-description"><RequiredText>{CHARACTER_FIELD_LABELS["registration.description"].label}</RequiredText></Label>
         <BuilderTextarea
           id="character-detail-description"
           placeholder="캐릭터를 목록에서 소개할 설명을 입력해주세요"
@@ -84,7 +85,7 @@ export function DetailTab() {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="character-detail-genre"><RequiredText>장르</RequiredText></Label>
+        <Label htmlFor="character-detail-genre"><RequiredText>{CHARACTER_FIELD_LABELS["registration.genre"].label}</RequiredText></Label>
         <Controller
           control={control}
           name="registration.genre"
@@ -117,7 +118,7 @@ export function DetailTab() {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <span className="text-sm leading-none font-medium"><RequiredText>타겟</RequiredText></span>
+        <span className="text-sm leading-none font-medium"><RequiredText>{CHARACTER_FIELD_LABELS["registration.target"].label}</RequiredText></span>
         <Controller
           control={control}
           name="registration.target"
@@ -128,7 +129,7 @@ export function DetailTab() {
               ref={field.ref}
               value={field.value ?? ""}
               onValueChange={(value) => value && field.onChange(value)}
-              aria-label="타겟"
+              aria-label={CHARACTER_FIELD_LABELS["registration.target"].label}
               aria-invalid={!!errors.registration?.target}
               aria-describedby={errors.registration?.target ? "character-detail-target-error" : undefined}
             >
@@ -152,7 +153,7 @@ export function DetailTab() {
         )}
       </div>
 
-      <HashtagField idPrefix="character-detail-hashtag" labelContent="해시태그" />
+      <HashtagField idPrefix="character-detail-hashtag" labelContent={CHARACTER_FIELD_LABELS["registration.hashtags"].label} />
 
       <div className="flex flex-col gap-1.5">
         <span className="text-sm leading-none font-medium"><RequiredText>공개범위</RequiredText></span>

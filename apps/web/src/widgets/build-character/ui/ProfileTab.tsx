@@ -9,7 +9,7 @@ import {
   toThumbnailAspectRatio,
 } from "@/entities/content";
 import { FieldCharacterCount, useLimitedTextField } from "@/features/build-common";
-import type { CharacterBuilderFormValues } from "@/features/build-character";
+import { CHARACTER_FIELD_LABELS, type CharacterBuilderFormValues } from "@/features/build-character";
 import { ImageCropModal } from "@/features/crop-image";
 import { GeneratedImageField } from "@/features/select-generated-image";
 import { RequiredText } from "@/shared/ui/RequiredText";
@@ -39,7 +39,7 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
   return (
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-2" data-field-path="profile.image">
-        <Label><RequiredText>대표 이미지</RequiredText></Label>
+        <Label><RequiredText>{CHARACTER_FIELD_LABELS["profile.image"].label}</RequiredText></Label>
         <Controller
           control={control}
           name="profile.image"
@@ -67,7 +67,7 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="character-profile-name"><RequiredText>이름</RequiredText></Label>
+        <Label htmlFor="character-profile-name"><RequiredText>{CHARACTER_FIELD_LABELS["profile.name"].label}</RequiredText></Label>
         <Input
           id="character-profile-name"
           placeholder="예: 민유나"
@@ -89,7 +89,7 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="character-profile-oneliner"><RequiredText>한줄소개</RequiredText></Label>
+        <Label htmlFor="character-profile-oneliner"><RequiredText>{CHARACTER_FIELD_LABELS["profile.oneLiner"].label}</RequiredText></Label>
         <Input
           id="character-profile-oneliner"
           placeholder="캐릭터를 한 줄로 소개해주세요"
