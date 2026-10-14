@@ -2,7 +2,7 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import { useFormContext } from "react-hook-form";
 
 import { MAX_CHARACTER_PROMPT_LENGTH } from "@/entities/content";
-import type { CharacterBuilderFormValues } from "@/features/build-character";
+import { CHARACTER_FIELD_LABELS, type CharacterBuilderFormValues } from "@/features/build-character";
 import { FieldCharacterCount, FieldGuideLink, useLimitedTextField } from "@/features/build-common";
 import { creationGuidePath } from "@/shared/config/creationGuide";
 import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
@@ -26,7 +26,7 @@ export function PromptTab() {
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center gap-1">
-          <Label htmlFor="character-prompt"><RequiredText>캐릭터 프롬프트</RequiredText></Label>
+          <Label htmlFor="character-prompt"><RequiredText>{CHARACTER_FIELD_LABELS["prompt.characterPrompt"].label}</RequiredText></Label>
           {/* 캐릭터 원고는 칸 블록이 없어 앵커 없이 단계 페이지로 간다. */}
           <FieldGuideLink href={creationGuidePath("character", "prompt")} fieldLabel="캐릭터 프롬프트" />
         </div>

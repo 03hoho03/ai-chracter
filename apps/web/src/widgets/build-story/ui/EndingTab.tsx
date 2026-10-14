@@ -410,7 +410,7 @@ function EndingSection({ startingSetupIndex }: { startingSetupIndex: number }) {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4" data-field-path={endingsPath}>
       <p className="text-sm break-keep text-muted-foreground">
         같은 턴에 여러 엔딩 조건이 동시에 충족되면 목록 위쪽 엔딩부터 판정해요. 우선순위 스탯을 고른 엔딩끼리는 그 값이 가장
         높은 엔딩만 판정해요(같으면 목록 위쪽부터).

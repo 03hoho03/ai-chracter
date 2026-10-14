@@ -6,8 +6,10 @@ import { MAX_MEDIA_BOOK_CELLS, type StoryBuilderFormValues } from "./schema";
 // 표현하느라 nullable인 3필드(profile.image/registration.genre/target)도 이제는 폼
 // 스키마의 refine이 먼저 막지만, 다른 기기에서 편집된 초안처럼
 // 서버만 아는 상태가 남아 이 경로를 지우지 않는다.
-// 키 집합은 validate_story_publish가 내는 **비인덱스** 필드 전부다(인덱스가 박힌
-// `startingSetups[0].prologue` 류는 fallback 문구로 접힌다).
+// 키 집합은 validate_story_publish가 내는 **비인덱스** 필드 전부다. 인덱스가 박힌 `startingSetups[0].prologue` 류는
+// `storyMissingFieldFormPath` 가 폼 경로로 옮기고 발행 전 확인 목록이 칸 라벨 표(`STORY_FIELD_LABELS`)에서 이름을 찾는다.
+// 목록 줄 이름으로 쓰는 것은 서버 키가 목록 자리만 가리킬 때(스탯 범위 등) 무엇이 틀렸는지 말하는 라벨뿐이다
+// (`storyMissingFieldServerLabel`). 칸 하나를 짚는 키의 이름은 칸 라벨 표가 정한다.
 export const STORY_MISSING_FIELD_LABELS = {
   name: "이름",
   oneLiner: "한줄소개",
@@ -46,13 +48,8 @@ export const STORY_MISSING_FIELD_LABELS = {
 };
 
 /** 서버 필드명의 단일 소스는 위 라벨 맵이다 — 아래 폼 경로 맵이 같은 키 집합을 덮는지 `satisfies`가
- * 검사한다. 어긋난 키는 fieldLabelByFormPath가 조용히 버려 토스트가 "그 밖의 필수 항목"으로 접히는데,
- * 두 맵을 손으로 맞추는 한 그 어긋남은 화면에서만 드러난다. */
+ * 검사한다. 폼 경로가 빠진 키는 칸에 걸리지 못해 발행 전 확인 목록에 오르지 않는다. */
 type MissingField = keyof typeof STORY_MISSING_FIELD_LABELS;
-
-/** 폼에 가리킬 자리가 없는 서버 필드. 인물·장면이 사라진 칸은 초안 응답이 이미 빼고 보내므로 화면에 그 칸이 없고,
- * 미디어 북을 한 번 다시 저장하면 서버에서도 지워진다 — 라벨로 알리기만 한다. */
-type FieldWithoutFormPath = "mediaBook.orphanCells";
 
 // 위 서버 필드명을 form.setError()가 받는 폼 경로로 옮긴다 — 값은
 // tabs.ts(STORY_TABS)의 fields 프리픽스 아래에 들어간다(profile.*는
@@ -70,6 +67,9 @@ export const STORY_MISSING_FIELD_FORM_PATH: Partial<Record<string, Path<StoryBui
   genreId: "registration.genre",
   target: "registration.target",
   "mediaBook.cells": "mediaBook.cells",
+  // 인물·장면이 사라진 칸은 초안 응답이 이미 빼고 보내 화면에 그 칸이 없다. 미디어 북을 한 번 다시 저장하면 서버에서도 지워지므로
+  // 미디어 북 전체를 가리켜 그 탭으로 보낸다 — 미디어 북을 고치면(값이 바뀌면) 이 거절도 풀린다.
+  "mediaBook.orphanCells": "mediaBook",
   // 노트 하나를 짚을 수 없어 배열 자리로 보낸다 — 키워드북 탭으로 이동하고 탭 머리 한 줄에 보인다.
   "keywordNotes.triggerKeywords": "keywordNotes",
   "keywordNotes.infoText": "keywordNotes",
@@ -85,24 +85,53 @@ export const STORY_MISSING_FIELD_FORM_PATH: Partial<Record<string, Path<StoryBui
   "situationNotes.emptyConditionRules": "startingSetups.0.situationNotes",
   "situationNotes.infoText": "startingSetups.0.situationNotes",
   "situationNotes.conditionRules": "startingSetups.0.situationNotes",
-} satisfies Record<Exclude<MissingField, FieldWithoutFormPath>, Path<StoryBuilderFormValues>>;
+} satisfies Record<MissingField, Path<StoryBuilderFormValues>>;
 
-/** 시작설정 안 스탯·상황 노트·엔딩 칸의 클라 검증 오류 경로(`startingSetups.1.stats.0.max`)를 목록 하나로 접은 키와 그 라벨. 키는 그
- * 목록을 맡은 탭의 오류 경로 프리픽스(tabs.ts)와 같은 글자다. 위 서버 키 맵에 넣지 않는 것은 서버가 이런 경로를 보내지 않아서다. */
-export const STORY_STARTING_SETUP_LIST_LABELS = {
-  "startingSetups.*.stats": "스탯",
-  "startingSetups.*.situationNotes": "상황 노트",
-  "startingSetups.*.endings": "엔딩",
-};
+/** 서버가 인덱스를 박아 보내는 키(`startingSetups[1].prologue`, `startingSetups[0].endings[2].turnCountGate`)와 그 폼 경로. 클라 검사가
+ * 같은 조건을 먼저 막아 정상 흐름에서는 닿지 않고, 다른 기기에서 고친 초안처럼 서버만 아는 상태에서 온다. */
+const INDEXED_MISSING_FIELDS: readonly { pattern: RegExp; toFormPath: (match: RegExpExecArray) => string }[] = [
+  {
+    pattern: /^startingSetups\[(\d+)\]\.(name|prologue)$/,
+    toFormPath: (match) => `startingSetups.${match[1]}.${match[2]}`,
+  },
+  {
+    // 서버의 `turnCountGate` 가 폼에서는 `turnGate` 다(formToServer.ts 의 매핑).
+    pattern: /^startingSetups\[(\d+)\]\.endings\[(\d+)\]\.turnCountGate$/,
+    toFormPath: (match) => `startingSetups.${match[1]}.endings.${match[2]}.turnGate`,
+  },
+];
 
-const STARTING_SETUP_LIST_PATH = /^startingSetups\.\d+\.(stats|situationNotes|endings)(?:\.|$)/;
+/** 서버 400 의 필드명을 `form.setError()` 가 받을 폼 경로로 옮긴다. 빌더가 모르는 키면 `undefined`. 순수 함수. */
+export function storyMissingFieldFormPath(field: string): string | undefined {
+  if (Object.hasOwn(STORY_MISSING_FIELD_FORM_PATH, field)) return STORY_MISSING_FIELD_FORM_PATH[field];
+  for (const { pattern, toFormPath } of INDEXED_MISSING_FIELDS) {
+    const match = pattern.exec(field);
+    if (match) return toFormPath(match);
+  }
+  return undefined;
+}
+
+/** 칸 하나를 짚는 서버 키. 목록 줄 이름을 칸 라벨 표에서 찾아, 칸 라벨을 고치면 서버 400 줄도 같은 이름이 된다. */
+const FIELD_KEYS: ReadonlySet<string> = new Set<MissingField>([
+  "name",
+  "oneLiner",
+  "thumbnailAssetId",
+  "customPrompt",
+  "settingText",
+  "startingSetups",
+  "description",
+  "genreId",
+  "target",
+]);
 
 /**
- * 클라 검증 토스트용으로 스탯·상황 노트·엔딩 칸의 오류 경로를 `STORY_STARTING_SETUP_LIST_LABELS` 의 키로 접는다. 칸 경로마다 시작설정·
- * 항목 번호가 박혀 라벨 맵에 하나씩 적을 수 없어, 접지 않으면 토스트가 "그 밖의 항목"으로만 부른다. 정확한 칸은 인라인
- * 문구와 포커스 이동이 가리키므로 토스트는 어느 탭을 볼지만 알리면 된다. 그 밖의 경로는 그대로 돌려준다.
+ * 서버 400 의 목록 줄에 서버 쪽 라벨을 쓸 때 그 라벨. 순수 함수.
+ *
+ * 서버 키가 목록 자리만 가리키면(`stats.range` → 첫 시작설정의 스탯 목록) 칸 라벨로는 무엇이 틀렸는지 말할 수 없어 위 라벨을 준다.
+ * 칸 하나를 짚는 키와 인덱스 키(`startingSetups[1].prologue`), 모르는 키는 `undefined` 라 호출부가 칸 라벨 표에서 찾는다.
  */
-export function collapseStartingSetupListPath(path: string): string {
-  const match = STARTING_SETUP_LIST_PATH.exec(path);
-  return match ? `startingSetups.*.${match[1]}` : path;
+export function storyMissingFieldServerLabel(field: string): string | undefined {
+  if (FIELD_KEYS.has(field)) return undefined;
+  const labels: Readonly<Record<string, string | undefined>> = STORY_MISSING_FIELD_LABELS;
+  return Object.hasOwn(labels, field) ? labels[field] : undefined;
 }

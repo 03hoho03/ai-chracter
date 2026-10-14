@@ -12,7 +12,6 @@ import type { MediaTagImages } from "@/entities/media-book";
 import type { PreviewStartPayload } from "@/entities/preview-session";
 import {
   storyBuilderSchema,
-  collapseStartingSetupListPath,
   ENDING_RULE_STAT_NOT_FOUND_MESSAGE,
   formToServer,
   isEndingRuleStatNotFoundError,
@@ -28,9 +27,11 @@ import {
   STARTING_SETUP_SCOPE,
   storyAutosaveErrorMessage,
   STORY_COLLAPSIBLE_LISTS,
+  STORY_FIELD_LABELS,
   STORY_MISSING_FIELD_FORM_PATH,
   STORY_MISSING_FIELD_LABELS,
-  STORY_STARTING_SETUP_LIST_LABELS,
+  storyMissingFieldFormPath,
+  storyMissingFieldServerLabel,
   STORY_TABS,
   toMediaBookPreviewImages,
   VISIBILITY_LABELS,
@@ -45,16 +46,19 @@ import {
   BuilderUiStateContext,
   errorItemKeys,
   errorParentItemId,
+  errorsAtPaths,
   errorTabs,
-  fieldLabelByFormPath,
+  fieldLabelForPath,
   FirstPublishConfirmModal,
   firstErrorLocation,
   flattenFieldErrorPaths,
   getFilterRejectionReason,
   getMissingFields,
   getPublishFailureMessage,
-  invalidFieldsMessage,
   missingFieldsMessage,
+  PUBLISH_ISSUES_TOAST,
+  PublishIssueList,
+  publishIssueRows,
   resolveProfileImageUrl,
   tabFromSearch,
   tabToSearch,
@@ -64,6 +68,8 @@ import {
   useDraftPersistence,
   useFocusFirstError,
   useProfileImageLocalUrl,
+  usePublishChecklist,
+  type ServerIssueInput,
 } from "@/features/build-common";
 import { AppealModal } from "@/features/submit-appeal";
 import { creationGuidePath } from "@/shared/config/creationGuide";
@@ -104,21 +110,6 @@ type StoryBuilderShellProps = {
 // fields(에러 탭 매칭용 경로 프리픽스)·preview가 이 배열에 함께 실려 있다.
 const TABS = STORY_TABS;
 
-// 서버 400 의 필드명 → 라벨·폼 경로 두 맵은 features/build-story 의 publishMissingFields.ts 에 있다. 클라 검증 실패
-// 경로(handlePublishInvalid)가 들고 있는 건 서버 필드명이 아니라 폼 경로라, 그 두 맵에서 "폼 경로 → 라벨"을
-// 파생시킨다 — 세 번째 맵을 손으로 적지 않는다.
-const MISSING_FIELD_LABEL_BY_FORM_PATH = fieldLabelByFormPath(
-  STORY_MISSING_FIELD_FORM_PATH,
-  STORY_MISSING_FIELD_LABELS,
-);
-
-// 클라 검증의 미디어 북 오류는 항목마다 경로가 달라(`mediaBook.people.0.name` 등) 위 맵처럼 하나씩 적을 수 없다 — 토스트에서는
-// 경로를 `mediaBook` 하나로 접어 "미디어 북"으로 부른다(서버 400 은 미디어 북 키가 둘로 정해져 있어 접지 않고 라벨 맵에서
-// 찾는다). 미디어 북 탭은 폼 오류를 항목 옆에 그리지 않는다: 화면이 규칙에 맞지 않는 값을 폼에 넣지 않으므로(이름 오류는
-// 입력칸이 폼 밖에서 따로 보인다) 이 경로에 닿는 것은 서버만 아는 상태뿐이고, 그때 사용자가 보는 것은 이 토스트와 탭 스트립의 오류 표시다.
-const MEDIA_BOOK_PATH = "mediaBook";
-const MEDIA_BOOK_LABEL = "미디어 북";
-
 /** 탭 단일 useForm 셸. 자동저장/발행/
  * 미리보기를 CharacterBuilderShell.tsx와 동일한 방식으로 연동한다.
  *
@@ -140,8 +131,8 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
   const [isPublishing, setIsPublishing] = useState(false);
   const [rejectionReason, setRejectionReason] = useState<string>();
   // mode/reValidateMode/shouldUnregister를 명시하지 않는다 — RHF 기본값(제출 전엔 조용히, 제출 후엔
-  // onChange 재검증)이 이미 "발행 시도 후에는 고치는 즉시 에러가 풀린다"는 요구와 정확히 같다.
-  // 기본값을 그대로 두는 것 자체가 의도된 결정이다.
+  // onChange 재검증)이 "발행 시도 전에는 오류를 띄우지 않는다"는 요구와 같다. 다만 기본 재검증은 입력한 칸 이름의 오류만
+  // 고치므로, 다른 칸에 걸린 오류와 `setValue` 로 쓰는 칸의 오류는 아래 `usePublishChecklist` 가 발행 시도 뒤 통째로 갈아 끼운다.
   const form = useForm<StoryBuilderFormValues>({
     // storySetting.promptTemplate/developmentExamples 등 `.default()`가 붙은 필드는 zod의 input
     // 타입과 output 타입이 갈린다 — zodResolver()는 `Resolver<Input, any, Output>`을 돌려주는데
@@ -153,6 +144,9 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
     // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- 위 사유(zod .default()/RHF Resolver 제네릭의 구조적 한계)
     resolver: zodResolver(storyBuilderSchema) as Resolver<StoryBuilderFormValues>,
     defaultValues: serverToForm(draft),
+    // 첫 오류로 가는 포커스는 `useFocusFirstError` 가 확인 목록이 선 뒤에 준다. RHF 가 검증 직후 먼저 포커스하면 목록이 서기 전
+    // 자리로 스크롤돼 그 칸이 목록에 밀려 화면 밖에 남는다.
+    shouldFocusError: false,
   });
 
   // 대표 이미지 칸과 미리보기 카드가 같은 그림, 곧 폼이 지금 가진 그림을 보이도록 표시 주소를 여기서 한 번 정해
@@ -178,6 +172,14 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
     setActiveTab: (tabId) => {
       if (isStoryBuilderTab(tabId)) setActiveTab(tabId);
     },
+  });
+
+  // 탭 줄의 채움 표시, 발행을 누른 뒤 고친 칸의 오류 해제, 남은 서버 거절을 셸 한 곳에서 맞춘다.
+  const checklist = usePublishChecklist({
+    form,
+    schema: storyBuilderSchema,
+    tabs: TABS,
+    requiredTabIds: STORY_REQUIRED_TAB_IDS,
   });
 
   // 반복 항목의 열림과 스탯·상황 노트·엔딩 탭이 함께 보는 고른 시작설정. 탭 본문은 탭을 바꿀 때 언마운트되므로 셸이 쥐고, 폼 값이
@@ -240,6 +242,8 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
   // (default() 적용 포함) 여기서 다시 parse()할 필요가 없다.
   async function handlePublish(values: StoryBuilderFormValues) {
     setRejectionReason(undefined);
+    // 검사가 오류 객체를 통째로 바꿔 지난 서버 거절도 지워졌다. 확인 모달에서 취소하면 그대로 돌아와야 하므로 다시 건다.
+    checklist.reapplyServerIssues();
     const { visibility } = values.registration;
     const shouldPublish = await confirmFirstPublish({
       contentId: draftId,
@@ -248,6 +252,8 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
       visibilityLabel: VISIBILITY_LABELS[visibility],
     });
     if (!shouldPublish) return;
+    // 이제 실제로 보내니 지난 서버 거절은 이번 발행 응답이 새로 정한다.
+    checklist.setServerIssues([]);
     const payload = formToServer(values);
     setIsPublishing(true);
     try {
@@ -262,19 +268,30 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
       }
       const missingFields = getMissingFields(error);
       if (missingFields) {
+        const issues: ServerIssueInput[] = [];
+        const unknownFields: string[] = [];
         for (const field of missingFields) {
           // 상황 노트 키는 서버가 어느 노트인지 알려 주지 않지만 폼에서 같은 조건을 다시 따져 그 칸을 짚을 수 있다.
           const noteLocation = locateSituationNotePublishError(field, values.startingSetups);
           if (noteLocation) {
-            form.setError(noteLocation.path, { type: "server", message: noteLocation.message });
+            issues.push({ path: noteLocation.path, message: noteLocation.message });
             continue;
           }
-          const formPath = STORY_MISSING_FIELD_FORM_PATH[field];
-          if (formPath) form.setError(formPath, { type: "server", message: "필수 항목이에요." });
+          const formPath = storyMissingFieldFormPath(field);
+          if (formPath === undefined) {
+            unknownFields.push(field);
+            continue;
+          }
+          // 서버 키가 목록 자리만 가리키면(스탯 범위 등) 무엇이 틀렸는지는 서버 키의 라벨이 말한다. 칸을 짚는 키는 칸 라벨로 부른다.
+          issues.push({ path: formPath, message: "필수 항목이에요.", label: storyMissingFieldServerLabel(field) });
         }
-        // setError는 formState.errors를 동기로 갱신한다 — 위 루프 직후 바로 읽어도 최신값이다.
+        checklist.setServerIssues(issues);
+        // setError는 formState.errors를 동기로 갱신한다 — 위 호출 직후 바로 읽어도 최신값이다.
         revealAndFocusFirstError(form.formState.errors);
-        toast.error(missingFieldsMessage(missingFields, STORY_MISSING_FIELD_LABELS));
+        // 빌더가 모르는 키는 칸에 걸 수 없어 목록에 오르지 않는다 — 그때만 토스트가 직접 말한다.
+        toast.error(
+          unknownFields.length > 0 ? missingFieldsMessage(unknownFields, STORY_MISSING_FIELD_LABELS) : PUBLISH_ISSUES_TOAST,
+        );
         return;
       }
       // 발행 전 초안 저장이 지워진 스탯을 쓰는 엔딩 조건이나 우선순위 스탯으로 거절된 경우(서버는 둘에 같은 코드를 쓴다). 일반
@@ -282,7 +299,11 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
       // (`endings.statRules`)과 같은 자리로 엔딩 탭을 연다. 어느 엔딩인지는 그 카드 머리 줄의 경고 표시가 짚는다.
       if (isEndingRuleStatNotFoundError(error)) {
         const formPath = STORY_MISSING_FIELD_FORM_PATH["endings.statRules"];
-        if (formPath) form.setError(formPath, { type: "server", message: ENDING_RULE_STAT_NOT_FOUND_MESSAGE });
+        if (formPath) {
+          checklist.setServerIssues([
+            { path: formPath, message: ENDING_RULE_STAT_NOT_FOUND_MESSAGE, label: STORY_MISSING_FIELD_LABELS["endings.statRules"] },
+          ]);
+        }
         revealAndFocusFirstError(form.formState.errors);
         toast.error(ENDING_RULE_STAT_NOT_FOUND_MESSAGE);
         return;
@@ -292,7 +313,7 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
       const noteRulePaths = situationNoteStatNotFoundPaths(error);
       if (noteRulePaths) {
         const paths = noteRulePaths.length > 0 ? noteRulePaths : ["startingSetups.0.situationNotes" as const];
-        for (const path of paths) form.setError(path, { type: "server", message: SITUATION_NOTE_STAT_NOT_FOUND_MESSAGE });
+        checklist.setServerIssues(paths.map((path) => ({ path, message: SITUATION_NOTE_STAT_NOT_FOUND_MESSAGE })));
         revealAndFocusFirstError(form.formState.errors);
         toast.error(SITUATION_NOTE_STAT_NOT_FOUND_MESSAGE);
         return;
@@ -318,26 +339,14 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
     }
   }
 
-  // zodResolver 검증 실패(폼 스키마 위반) 경로. 먼저 걸리는 쪽이 덜
-  // 친절할 이유가 없어 여기서도 토스트를 띄운다. 문구는 서버 400 경로와 같은 파일이 소유하되
-  // 문장이 갈린다 — 이 경로에는 누락뿐 아니라 `.max(4)` 위반도
-  // 온다.
+  // zodResolver 검증 실패(폼 스키마 위반) 경로. 서버 400 과 같은 토스트로 폼 열 맨 위 목록을 가리킨다. 검사가 오류 객체를
+  // 통째로 바꿔 지난 서버 거절이 지워졌으므로 아직 유효한 것을 다시 걸고, 첫 오류는 둘을 합쳐 고른다.
   // `form.formState.errors` 가 아니라 인자로 받은 `errors` 를 쓴다 — 검증이 오류 객체를 새것으로 바꾼 직후라 폼 상태
   // 쪽은 아직 이전 객체다.
   function handlePublishInvalid(errors: FieldErrors<StoryBuilderFormValues>) {
-    revealAndFocusFirstError(errors);
-    toast.error(
-      invalidFieldsMessage(
-        flattenFieldErrorPaths(errors)
-          .map(collapseMediaBookPath)
-          .map(collapseStartingSetupListPath),
-        {
-          ...MISSING_FIELD_LABEL_BY_FORM_PATH,
-          ...STORY_STARTING_SETUP_LIST_LABELS,
-          [MEDIA_BOOK_PATH]: MEDIA_BOOK_LABEL,
-        },
-      ),
-    );
+    const serverPaths = checklist.reapplyServerIssues();
+    revealAndFocusFirstError(errorsAtPaths([...flattenFieldErrorPaths(errors), ...serverPaths]));
+    toast.error(PUBLISH_ISSUES_TOAST);
   }
 
   // 폼과 프리뷰가 동시에 살아 있어야 하므로(lg 이상 2단) 더 이상
@@ -371,8 +380,15 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
     thumbnailUrl,
   });
 
-  // 발행 시도가 실패하면 누락 필드를 담은 탭 라벨을 에러 상태로 표시한다.
+  // 발행 시도가 실패하면 누락 필드를 담은 탭 라벨을 에러 상태로 표시하고, 폼 열 맨 위에 남은 항목을 나열한다.
+  // 목록은 발행을 누른 뒤에만 그린다 — 칸 하나를 떠날 때 거는 검사(스탯 범위)도 오류 객체에 들어가지만, 그건 그 칸의 안내이지
+  // 발행이 막혔다는 말이 아니다.
   const errorTabIds = errorTabs(form.formState.errors, TABS);
+  const issueRows = publishIssueRows(
+    flattenFieldErrorPaths(form.formState.errors),
+    TABS,
+    (path) => checklist.serverLabel(path) ?? fieldLabelForPath(path, STORY_FIELD_LABELS),
+  );
 
   return (
     <FormProvider {...form}>
@@ -394,7 +410,10 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
             saveStatus={saveStatus}
             onPreview={() => setIsPreviewOpen((prev) => !prev)}
             onSaveNow={() => void handleSaveNow()}
-            onPublish={() => void form.handleSubmit(handlePublish, handlePublishInvalid)()}
+            onPublish={() => {
+              checklist.markAttempted();
+              void form.handleSubmit(handlePublish, handlePublishInvalid)();
+            }}
           />
         }
       />
@@ -415,6 +434,12 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
                 </>
               }
             >
+              {checklist.hasAttempted && issueRows.length > 0 && (
+                <PublishIssueList
+                  rows={issueRows}
+                  onSelect={(path) => revealAndFocusFirstError(errorsAtPaths([path]))}
+                />
+              )}
               {rejectionReason !== undefined && draftId !== undefined && (
                 <div role="alert" className="flex items-start justify-between gap-3 rounded-lg bg-destructive/10 px-4 py-3">
                   <div className="min-w-0 break-keep wrap-break-word">
@@ -447,6 +472,7 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
                   activeTab={activeTab}
                   errorTabIds={errorTabIds}
                   requiredTabIds={STORY_REQUIRED_TAB_IDS}
+                  completedTabIds={checklist.completedTabIds}
                 />
 
                 <TabsContent value="profile">
@@ -497,11 +523,4 @@ export function StoryBuilderShell({ draft, draftId, tab, onTabChange, renderPrev
  * 그리는 `TABS`를 근거로 삼는다 — 탭을 추가해도 술어가 자동으로 따라온다. */
 function isStoryBuilderTab(value: string): value is StoryBuilderTab {
   return TABS.some((tab) => tab.id === value);
-}
-
-/** 미디어 북 오류 경로를 `mediaBook` 하나로 접는다(이유는 `MEDIA_BOOK_PATH` 주석). */
-function collapseMediaBookPath(path: string): string {
-  return path === MEDIA_BOOK_PATH || path.startsWith(`${MEDIA_BOOK_PATH}.`) || path.startsWith(`${MEDIA_BOOK_PATH}[`)
-    ? MEDIA_BOOK_PATH
-    : path;
 }

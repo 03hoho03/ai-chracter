@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  collapseStartingSetupListPath,
   STORY_MISSING_FIELD_FORM_PATH,
   STORY_MISSING_FIELD_LABELS,
-  STORY_STARTING_SETUP_LIST_LABELS,
+  storyMissingFieldFormPath,
+  storyMissingFieldServerLabel,
 } from "./publishMissingFields";
 import { STORY_TABS } from "./tabs";
 
@@ -35,13 +35,14 @@ describe("STORY_MISSING_FIELD_FORM_PATH", () => {
     }
   });
 
-  it("미디어 북 칸 수 초과는 미디어 북 탭으로 가고, 연결이 끊긴 칸은 라벨만 있고 가리킬 폼 경로가 없다", () => {
+  it("미디어 북 칸 수 초과와 연결이 끊긴 칸은 둘 다 라벨이 있고 미디어 북 탭으로 간다", () => {
     const cellsPath = STORY_MISSING_FIELD_FORM_PATH["mediaBook.cells"];
     expect(tabIdsCovering(cellsPath ?? "")).toEqual(["mediaBook"]);
     expect(STORY_MISSING_FIELD_LABELS["mediaBook.cells"]).toBe("미디어 북 칸(50개 이하)");
 
+    // 화면에 그 칸이 없어 미디어 북 전체를 가리킨다 — 폼 경로가 없으면 칸에 걸리지 못해 발행 전 확인 목록에서 빠진다.
     expect(STORY_MISSING_FIELD_LABELS["mediaBook.orphanCells"]).toBeTruthy();
-    expect(STORY_MISSING_FIELD_FORM_PATH["mediaBook.orphanCells"]).toBeUndefined();
+    expect(STORY_MISSING_FIELD_FORM_PATH["mediaBook.orphanCells"]).toBe("mediaBook");
   });
 
   it("키워드북 두 키는 라벨이 있고 키워드북 탭으로 간다", () => {
@@ -89,36 +90,43 @@ describe("STORY_MISSING_FIELD_FORM_PATH — 상황 노트", () => {
   });
 });
 
-describe("collapseStartingSetupListPath", () => {
-  const labelByKey: Readonly<Record<string, string | undefined>> = STORY_STARTING_SETUP_LIST_LABELS;
-
-  it("스탯·엔딩 칸의 오류 경로를 시작설정·항목 번호와 상관없이 라벨이 있는 키 하나로 접는다", () => {
-    for (const path of ["startingSetups.0.stats.0.max", "startingSetups.3.stats.12.icon", "startingSetups.1.stats"]) {
-      expect(labelByKey[collapseStartingSetupListPath(path)]).toBe("스탯");
-    }
-    for (const path of ["startingSetups.0.endings.2.name", "startingSetups.1.endings.0.statRules.1.value"]) {
-      expect(labelByKey[collapseStartingSetupListPath(path)]).toBe("엔딩");
+describe("storyMissingFieldFormPath", () => {
+  it("비인덱스 키는 폼 경로 맵 그대로다", () => {
+    for (const [field, formPath] of Object.entries(STORY_MISSING_FIELD_FORM_PATH)) {
+      expect(storyMissingFieldFormPath(field)).toBe(formPath);
     }
   });
 
-  it("상황 노트 칸의 오류 경로도 라벨이 있는 키 하나로 접는다", () => {
-    for (const path of [
-      "startingSetups.0.situationNotes.0.content",
-      "startingSetups.2.situationNotes.4.conditionRules",
-      "startingSetups.1.situationNotes.0.conditionRules.1.rules.0.statId",
-    ]) {
-      expect(labelByKey[collapseStartingSetupListPath(path)]).toBe("상황 노트");
+  it("서버가 인덱스를 박아 보내는 시작설정 이름·프롤로그와 엔딩 최소 턴을 그 칸의 폼 경로로 옮긴다", () => {
+    expect(storyMissingFieldFormPath("startingSetups[0].name")).toBe("startingSetups.0.name");
+    expect(storyMissingFieldFormPath("startingSetups[2].prologue")).toBe("startingSetups.2.prologue");
+    expect(storyMissingFieldFormPath("startingSetups[1].endings[3].turnCountGate")).toBe(
+      "startingSetups.1.endings.3.turnGate",
+    );
+  });
+
+  it("빌더가 모르는 키는 옮기지 않는다", () => {
+    expect(storyMissingFieldFormPath("startingSetups[0].openingSituation")).toBeUndefined();
+    expect(storyMissingFieldFormPath("situationNotes.newRule")).toBeUndefined();
+  });
+});
+
+describe("storyMissingFieldServerLabel", () => {
+  it("칸 하나를 짚는 키는 서버 라벨을 주지 않아 칸 라벨 표가 이름을 정한다", () => {
+    const fieldKeys = ["name", "oneLiner", "thumbnailAssetId", "customPrompt", "settingText", "startingSetups", "description"];
+    for (const field of [...fieldKeys, "genreId", "target"]) {
+      expect(storyMissingFieldServerLabel(field)).toBeUndefined();
     }
   });
 
-  it("스탯·엔딩이 아닌 경로는 그대로 둔다(이름이 비슷한 칸도)", () => {
-    for (const path of ["startingSetups.0.name", "startingSetups", "startingSetups.0.statsNote", "registration.genre"]) {
-      expect(collapseStartingSetupListPath(path)).toBe(path);
-    }
+  it("목록 자리만 가리키는 키는 무엇이 틀렸는지 말하는 서버 라벨을 준다", () => {
+    expect(storyMissingFieldServerLabel("stats.range")).toBe(STORY_MISSING_FIELD_LABELS["stats.range"]);
+    expect(storyMissingFieldServerLabel("keywordNotes.infoText")).toBe(STORY_MISSING_FIELD_LABELS["keywordNotes.infoText"]);
+    expect(storyMissingFieldServerLabel("mediaBook.orphanCells")).toBe(STORY_MISSING_FIELD_LABELS["mediaBook.orphanCells"]);
   });
 
-  it("접은 키는 그 목록을 맡은 탭의 오류 경로 프리픽스와 같다", () => {
-    const prefixes = STORY_TABS.flatMap((tab) => tab.fields);
-    for (const key of Object.keys(STORY_STARTING_SETUP_LIST_LABELS)) expect(prefixes).toContain(key);
+  it("인덱스 키와 모르는 키는 서버 라벨이 없다", () => {
+    expect(storyMissingFieldServerLabel("startingSetups[1].prologue")).toBeUndefined();
+    expect(storyMissingFieldServerLabel("constructor")).toBeUndefined();
   });
 });

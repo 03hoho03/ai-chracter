@@ -121,7 +121,7 @@ function SituationNoteSection({ startingSetupIndex }: { startingSetupIndex: numb
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6" data-field-path={notesPath}>
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
           <Label><FieldLabelText field="startingSetups.*.situationNotes" /></Label>

@@ -94,10 +94,10 @@ export {
 } from "./model/situationNoteErrors";
 export { planStatRemoval, removeRuleListItem, type StatRemovalCounts } from "./model/removeRulesReferencingStat";
 export {
-  collapseStartingSetupListPath,
   STORY_MISSING_FIELD_FORM_PATH,
   STORY_MISSING_FIELD_LABELS,
-  STORY_STARTING_SETUP_LIST_LABELS,
+  storyMissingFieldFormPath,
+  storyMissingFieldServerLabel,
 } from "./model/publishMissingFields";
 export { serverToForm } from "./model/serverToForm";
 export { STORY_TABS, type StoryBuilderTab } from "./model/tabs";

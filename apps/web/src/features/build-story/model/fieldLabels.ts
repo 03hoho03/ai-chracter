@@ -14,11 +14,15 @@ export type FieldLabel = {
   note?: string;
   /** 빌더가 그리는 입력 자리표시. 작성 가이드가 빈 칸으로 그리는 칸에만 둔다. */
   placeholder?: string;
+  /** 목록 키에만 둔다 — 항목 하나를 부르는 이름이 목록 라벨과 다를 때. 발행 전 확인 목록이 "3번째 노트 정보"처럼 항목을 가를 때 쓴다. */
+  item?: string;
 };
 
 /**
  * 스토리 빌더 칸 라벨의 단일 소스. 빌더 탭이 이 값으로 라벨과 필수 별표를 그리고, 작성 가이드의 빌더 모양 예시도 같은
  * 값을 읽어 두 화면의 칸 이름이 어긋날 수 없게 한다.
+ *
+ * 발행 전 확인 목록도 오류 경로의 칸 이름을 이 표에서 읽는다(`fieldLabelForPath`).
  *
  * 키는 폼 경로이고 배열 위치는 `*` 로 쓴다(`STORY_TABS` 의 `fields` 와 같은 표기). 폼 값이 없는 화면 칸은 `$` 로
  * 시작하는 조각을 쓴다(고급 설정 스위치). 목록 자체(`startingSetups` 등)도 키로 둔다.
@@ -73,18 +77,19 @@ export const STORY_FIELD_LABELS = {
 
   "startingSetups.*.situationNotes": { label: "상황 노트", required: false },
   "startingSetups.*.situationNotes.*.name": { label: "이름", required: false },
-  "startingSetups.*.situationNotes.*.conditionRules": { label: "조건", required: true },
+  // 조건 줄 하나는 편집기의 손잡이·삭제 버튼 이름처럼 "규칙"이라 부른다.
+  "startingSetups.*.situationNotes.*.conditionRules": { label: "조건", required: true, item: "규칙" },
   "startingSetups.*.situationNotes.*.content": { label: "상황", required: true },
 
   mediaBook: { label: "미디어 북", required: false },
   "mediaBook.people": { label: "인물", required: false },
   "mediaBook.scenes": { label: "장면", required: false },
-  "mediaBook.cells": { label: "배치표", required: false },
+  "mediaBook.cells": { label: "배치표", required: false, item: "칸" },
   "mediaBook.cells.*.situationDescription": { label: "상황 설명", required: false },
   "mediaBook.cells.*.unlockHint": { label: "해금 힌트", required: false },
   "mediaBook.cells.*.excludeFromChat": { label: "대화 중에는 띄우지 않기", required: false },
 
-  keywordNotes: { label: "키워드북", required: false },
+  keywordNotes: { label: "키워드북", required: false, item: "노트" },
   "keywordNotes.*.name": { label: "이름", required: false },
   "keywordNotes.*.content": { label: "정보", required: true },
   "keywordNotes.*.triggerKeywords": { label: "트리거 키워드", required: "conditional" },
@@ -108,7 +113,7 @@ export const STORY_FIELD_LABELS = {
   "startingSetups.*.endings.*.judgePrompt": { label: "판단 프롬프트", required: true },
   "startingSetups.*.endings.*.epilogue": { label: "에필로그", required: false },
   "startingSetups.*.endings.*.hint": { label: "엔딩힌트", required: false },
-  "startingSetups.*.endings.*.statRules": { label: "스탯 기반 규칙", required: false, note: "선택" },
+  "startingSetups.*.endings.*.statRules": { label: "스탯 기반 규칙", required: false, note: "선택", item: "규칙" },
   "startingSetups.*.endings.*.priorityStatId": { label: "우선순위 스탯", required: false, note: "선택" },
 
   "registration.description": { label: "등록 설명", required: true },

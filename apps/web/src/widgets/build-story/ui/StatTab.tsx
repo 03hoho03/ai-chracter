@@ -514,7 +514,7 @@ function StatSection({
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4" data-field-path={statsPath}>
       {fields.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-10 text-center">
           <p className="text-sm text-muted-foreground">아직 등록된 스탯이 없어요.</p>

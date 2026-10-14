@@ -10,7 +10,11 @@ import {
   MAX_INTRO_LENGTH,
   MAX_PLAY_GUIDE_LENGTH,
 } from "@/entities/content";
-import type { CharacterBuilderFormValues, CharacterCollapsibleList } from "@/features/build-character";
+import {
+  CHARACTER_FIELD_LABELS,
+  type CharacterBuilderFormValues,
+  type CharacterCollapsibleList,
+} from "@/features/build-character";
 import {
   FieldCharacterCount,
   CollapsibleItemCard,
@@ -92,7 +96,7 @@ export function IntroTab() {
   return (
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="character-intro-first-message"><RequiredText>인트로 (첫 대화 본문)</RequiredText></Label>
+        <Label htmlFor="character-intro-first-message"><RequiredText>{CHARACTER_FIELD_LABELS["intro.firstMessage"].label}</RequiredText></Label>
         <BuilderTextarea
           id="character-intro-first-message"
           placeholder="사용자와의 첫 대화에서 캐릭터가 건넬 말을 입력해주세요"
@@ -129,7 +133,7 @@ export function IntroTab() {
 
       {isAdvancedOpen && (
         <div className="flex flex-col gap-4">
-          <Label>예시 대화</Label>
+          <Label>{CHARACTER_FIELD_LABELS["intro.exampleDialogues"].label}</Label>
           {fields.map((field, index) => (
             <ExampleDialogueItem key={field.id} index={index} onRemove={() => handleRemove(index)} />
           ))}
@@ -160,7 +164,7 @@ export function IntroTab() {
       )}
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="character-intro-play-guide">플레이가이드</Label>
+        <Label htmlFor="character-intro-play-guide">{CHARACTER_FIELD_LABELS["intro.playGuide"].label}</Label>
         <BuilderTextarea
           id="character-intro-play-guide"
           placeholder="사용자에게 노출할 플레이 안내를 입력해주세요"
@@ -236,7 +240,7 @@ function ExampleDialogueItem({ index, onRemove }: ExampleDialogueItemProps) {
       trailing={<ItemRemoveButton label={`${title} 삭제`} onClick={onRemove} />}
     >
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={userLineId}>사용자 대사</Label>
+        <Label htmlFor={userLineId}>{CHARACTER_FIELD_LABELS["intro.exampleDialogues.*.userLine"].label}</Label>
         <BuilderTextarea
           id={userLineId}
           rows={2}
@@ -258,7 +262,7 @@ function ExampleDialogueItem({ index, onRemove }: ExampleDialogueItemProps) {
         )}
       </div>
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={characterLineId}>캐릭터 대사</Label>
+        <Label htmlFor={characterLineId}>{CHARACTER_FIELD_LABELS["intro.exampleDialogues.*.characterLine"].label}</Label>
         <BuilderTextarea
           id={characterLineId}
           rows={4}
