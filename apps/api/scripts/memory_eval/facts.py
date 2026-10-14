@@ -200,6 +200,7 @@ def fact_metrics(
     *,
     checkpoint: int | None = None,
     max_chars: int = RENDER_MAX_CHARS,
+    with_rows: bool = False,
 ) -> dict[str, Any]:
     """사실 계층 오프라인 지표. 체크포인트를 주면 그때 읽을 수 있던 행(`available_from_turn` ≤ 체크포인트 + 1)과 그때 심기가
     모두 접힌 항목만 센다.
@@ -213,7 +214,11 @@ def fact_metrics(
     행 단위:
     - `duplicateKeyRate`: 같은 스냅샷(같은 추출 호출)에서 같은 키가 두 번 이상 나온 행 / 전체 행.
     - `restatedRate`: 앞 스냅샷에 같은 키·같은 값·같은 진실 상태 행이 이미 있는데 다시 쓴 행 / 전체 행(바뀐 것 없는 재진술).
-    - `capDropRate`: 키별 최신 행 가운데 렌더 상한에서 잘린 행 / 키별 최신 행."""
+    - `duplicateRelationRate`: 같은 스냅샷에서 같은 키가 두 번 이상 나온 관계 행 / 전체 관계 행.
+    - `capDropRate`: 키별 최신 행 가운데 렌더 상한에서 잘린 행 / 키별 최신 행.
+
+    `with_rows` 면 항목마다 기대 사실과, 그 키의 행·키만 빼고 맞는 행만 붙인다(문안을 고칠 때 보는 개발 보기 — 다른 행은 내지
+    않는다)."""
     visible = [
         r
         for r in rows
@@ -246,6 +251,18 @@ def fact_metrics(
                 "matchedIgnoringKey": any(row_matches(r, entry, check_key=False) for r in visible),
             }
         )
+        if with_rows:
+            shown = ("kind", "subject", "object", "attribute", "value", "truth_status", "asserted_by", "speaker",
+                     "known_by", "importance", "snapshot_id", "start_turn", "end_turn")  # fmt: skip
+            per_item[-1]["expected_fact"] = entry["expected_fact"]
+            per_item[-1]["keyRows"] = [
+                {**{f: r.get(f) for f in shown}, "matches": row_matches(r, entry)} for r in visible if row_key(r) == key
+            ]
+            per_item[-1]["matchedIgnoringKeyRows"] = [
+                {f: r.get(f) for f in shown}
+                for r in visible
+                if row_key(r) != key and row_matches(r, entry, check_key=False)
+            ]
 
     def summary(members: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         read = [m for m in members if m["preservedInRead"]]
@@ -265,6 +282,8 @@ def fact_metrics(
         pair = (str(r.get("snapshot_id")), row_key(r))
         seen_in_snapshot[pair] = seen_in_snapshot.get(pair, 0) + 1
     duplicates = sum(1 for r in visible if seen_in_snapshot[(str(r.get("snapshot_id")), row_key(r))] > 1)
+    relations = [r for r in visible if r.get("kind") == "relation"]
+    duplicate_relations = sum(1 for r in relations if seen_in_snapshot[(str(r.get("snapshot_id")), row_key(r))] > 1)
     restated = 0
     earlier: dict[tuple[str, str, str], set[str]] = {}
     for r in visible:
@@ -281,6 +300,7 @@ def fact_metrics(
         "rows": n_rows,
         "latestRows": n_latest,
         "duplicateKeyRate": _rate(duplicates, n_rows),
+        "duplicateRelationRate": _rate(duplicate_relations, len(relations)),
         "restatedRate": _rate(restated, n_rows),
         "capDropRate": _rate(len(dropped), n_latest),
         "overall": summary(per_item),

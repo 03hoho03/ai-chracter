@@ -850,7 +850,14 @@ def cmd_prototype_facts(args: argparse.Namespace) -> int:
             windows, render=render, caller=caller, instruction=instruction, user_name=user_name, version=args.version
         )
         _write(args.out, rows)
-        return {"windows": len(windows), "facts": len(rows), "out": str(args.out)}
+        per_window = [sum(1 for r in rows if r["snapshot_id"] == str(w.snapshot_id)) for w in windows]
+        return {
+            "windows": len(windows),
+            "facts": len(rows),
+            "emptyWindows": per_window.count(0),
+            "perWindow": per_window,
+            "out": str(args.out),
+        }
 
     _print(asyncio.run(go()))
     return 0
@@ -862,6 +869,8 @@ def cmd_fact_metrics(args: argparse.Namespace) -> int:
     from memory_eval.prototype_facts import load_fact_rows
 
     splits = _splits(args)
+    if args.dev_rows and splits != {"dev"}:
+        raise SystemExit("--dev-rows 는 개발 보기에서만 쓴다(시험 항목의 행을 내지 않게)")
     plant_set = _plant_view(args, splits)
     rows = load_fact_rows(args.facts)
     cps: list[int | None] = list(_ints(args.checkpoints)) if args.checkpoints else [None]
@@ -869,7 +878,13 @@ def cmd_fact_metrics(args: argparse.Namespace) -> int:
         "splits": sorted(splits),
         "facts": str(args.facts),
         "results": [
-            fact_metrics(plant_set.all_items(), rows, checkpoint=cp, max_chars=args.max_chars or RENDER_MAX_CHARS)
+            fact_metrics(
+                plant_set.all_items(),
+                rows,
+                checkpoint=cp,
+                max_chars=args.max_chars or RENDER_MAX_CHARS,
+                with_rows=args.dev_rows,
+            )
             for cp in cps
         ],
     }
@@ -1219,6 +1234,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--facts", type=Path, required=True, help="사실 행(시제품 JSON 배열 또는 넣기 따라잡기 JSONL)")
     p.add_argument("--checkpoints", help="체크포인트별로 나눠 센다(비우면 전체 행 한 번)")
     p.add_argument("--max-chars", type=int, help="렌더 상한(기본 700)")
+    p.add_argument(
+        "--dev-rows", action="store_true", help="항목마다 기대 사실과 그 키의 행·키만 빼고 맞는 행을 붙인다(개발 전용)"
+    )
     p.add_argument("--out", type=Path, required=True)
     p.set_defaults(fn=cmd_fact_metrics)
 
