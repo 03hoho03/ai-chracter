@@ -103,10 +103,26 @@ def test_render_stops_at_the_first_line_that_would_pass_the_cap_and_drops_the_re
 
 
 def test_render_line_marks_claims_refutations_and_who_knows() -> None:
-    assert facts.render_line(_row(truth_status="claimed", speaker="태민")).endswith("(주장 — 태민)")
-    assert facts.render_line(_row(truth_status="disproved")).endswith("(사실 아님)")
-    assert facts.render_line(_row(known_by=["사용자", "민지"])).endswith("(아는 사람: 사용자, 민지)")
+    assert facts.render_line(_row()) == "- 민지 · 생일: 5월 3일"
+    assert facts.render_line(_row(truth_status="claimed", speaker="태민")) == "- 민지 · 생일: 5월 3일 (태민의 말)"
+    assert facts.render_line(_row(truth_status="disproved")) == "- (사실 아님으로 밝혀짐) 민지 · 생일: 5월 3일"
+    assert facts.render_line(_row(known_by=["사용자", "민지"])) == "- 민지 · 생일: 5월 3일 (사용자·민지만 앎)"
     assert facts.render_line(_row(kind="relation", object="태민", value="믿음")) == "- 민지 → 태민: 믿음"
+
+
+def test_render_line_names_the_user_or_a_character_when_the_claim_has_no_other_speaker() -> None:
+    assert facts.render_line(_row(truth_status="claimed", speaker="사용자", asserted_by="character")).endswith(
+        " (사용자의 말)"
+    )
+    assert facts.render_line(_row(truth_status="claimed", speaker=None, asserted_by="user")).endswith(" (사용자의 말)")
+    assert facts.render_line(_row(truth_status="claimed", speaker="", asserted_by="character")).endswith(" (인물의 말)")
+    aliased = facts.alias_user([_row(truth_status="claimed", speaker="하늘", asserted_by="character")], "하늘")[0]
+    assert facts.render_line(aliased).endswith(" (사용자의 말)")
+
+
+def test_render_line_puts_the_claim_tag_before_who_knows() -> None:
+    row = _row(truth_status="claimed", speaker="태민", known_by=["태민"])
+    assert facts.render_line(row) == "- 민지 · 생일: 5월 3일 (태민의 말) (태민만 앎)"
 
 
 def test_existing_key_lines_keep_only_the_latest_per_key_and_the_most_recent_limit() -> None:

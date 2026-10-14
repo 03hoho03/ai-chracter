@@ -11,7 +11,7 @@ disproved), `asserted_by`(user·character·narration), `speaker`, `known_by`(배
 - 렌더 상한: 줄을 순서대로 이어 붙이다 다음 줄이 상한(줄바꿈 포함 글자 수)을 넘으면 거기서 멈추고 나머지는 모두 탈락이다.
 - 섹션 선택(`select_section`): `constant` 는 위 렌더 순서로만 자르고, `mixed` 는 상한의 앞 몫을 렌더 순서로, 나머지를 이번 턴
   사용자 메시지와 명사가 겹치는 행으로 채운다(질의가 없으면 둘이 같다).
-  줄 모양은 이 하네스의 시제품이다 — 운영 렌더가 생기면 그 함수의 줄로 같은 상한을 다시 잰다."""
+  줄 모양은 운영 사실 섹션의 줄 꼴을 따른다(`render_line`)."""
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -88,19 +88,30 @@ def render_order(rows: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
     return sorted(rows, key=lambda r: (_group(r), -int(r.get("importance") or 0), -int(r.get("_order") or 0)))
 
 
+def _is_user_speaker(row: Mapping[str, Any]) -> bool:
+    if row.get("asserted_by") == "user":
+        return True
+    return normalize_part(row.get("speaker")) == normalize_part(USER_PLACEHOLDER)
+
+
 def render_line(row: Mapping[str, Any]) -> str:
+    """운영 사실 섹션과 같은 줄 꼴. 반증은 줄 머리에, 주장 꼬리표 → 아는 사람 꼬리표 순으로 끝에 붙고 확정은 꼬리표가 없다.
+    화자가 사용자인지는 `asserted_by` 나 자리표시로 바뀐 `speaker`(`alias_user`)로 가린다."""
     if row.get("kind") == "relation":
-        head = f"- {row.get('subject')} → {row.get('object')}: {row.get('value')}"
+        body = f"{row.get('subject')} → {row.get('object')}: {row.get('value')}"
     else:
-        head = f"- {row.get('subject')} · {row.get('attribute')}: {row.get('value')}"
+        body = f"{row.get('subject')} · {row.get('attribute')}: {row.get('value')}"
     status = row.get("truth_status")
+    line = f"- (사실 아님으로 밝혀짐) {body}" if status == "disproved" else f"- {body}"
     if status == "claimed":
-        head += f" (주장 — {row['speaker']})" if row.get("speaker") else " (주장)"
-    elif status == "disproved":
-        head += " (사실 아님)"
+        speaker = row.get("speaker")
+        if speaker and not _is_user_speaker(row):
+            line += f" ({speaker}의 말)"
+        else:
+            line += " (사용자의 말)" if _is_user_speaker(row) else " (인물의 말)"
     if row.get("known_by"):
-        head += f" (아는 사람: {', '.join(str(n) for n in row['known_by'])})"
-    return head
+        line += f" ({'·'.join(str(n) for n in row['known_by'])}만 앎)"
+    return line
 
 
 def row_nouns(row: Mapping[str, Any]) -> frozenset[str]:
@@ -311,7 +322,7 @@ USER_PLACEHOLDER = "사용자"
 
 
 def alias_user(rows: Sequence[Mapping[str, Any]], user_name: str | None) -> list[dict[str, Any]]:
-    """행의 주어·대상·아는 사람에서 사용자의 이야기 속 이름을 기대 사실의 자리표시(`사용자`)로 바꾼다. 추출은 이야기 속 이름으로
+    """행의 주어·대상·화자·아는 사람에서 사용자의 이야기 속 이름을 기대 사실의 자리표시(`사용자`)로 바꾼다. 추출은 이야기 속 이름으로
     쓰고 기대 사실은 자리표시로 적으므로, 바꾸지 않으면 사용자에 관한 항목은 키·아는 사람이 늘 어긋난다."""
     if not user_name:
         return [dict(r) for r in rows]
@@ -328,6 +339,7 @@ def alias_user(rows: Sequence[Mapping[str, Any]], user_name: str | None) -> list
                 **row,
                 "subject": swap(row.get("subject")),
                 "object": swap(row.get("object")),
+                "speaker": swap(row.get("speaker")),
                 "known_by": [swap(n) for n in known] if known else known,
             }
         )
