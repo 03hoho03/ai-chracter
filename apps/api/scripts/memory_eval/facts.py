@@ -303,6 +303,12 @@ def fact_metrics(
                 for r in visible
                 if row_key(r) != key and row_matches(r, entry, check_key=False)
             ]
+            # 값만 맞고 진실 상태·아는 사람이 갈린 행 — 값은 다른 내용이 섞였을 수 있어 내지 않고 칸만 낸다.
+            per_item[-1]["valueOnlyRows"] = [
+                {f: r.get(f) for f in shown if f != "value"}
+                for r in visible
+                if value_matches(r.get("value"), entry) and not row_matches(r, entry, check_key=False)
+            ]
 
     def summary(members: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         read = [m for m in members if m["preservedInRead"]]
