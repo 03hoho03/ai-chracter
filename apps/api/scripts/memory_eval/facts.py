@@ -51,13 +51,13 @@ def latest_by_key(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
         order, winner = members[-1]
         if winner.get("truth_status") != "disproved":
             value = normalize_part(winner.get("value"))
-            refuted = [
+            disproved_rows = [
                 (o, r)
                 for o, r in members
                 if r.get("truth_status") == "disproved" and normalize_part(r.get("value")) == value
             ]
-            if refuted:
-                order, winner = refuted[-1]
+            if disproved_rows:
+                order, winner = disproved_rows[-1]
         winners.append((order, winner))
     return [{**row, "_order": order} for order, row in sorted(winners, key=lambda pair: pair[0])]
 
@@ -119,14 +119,8 @@ def existing_key_lines(rows: Sequence[Mapping[str, Any]], *, limit: int = EXISTI
 
 # ---------------------------------------------------------------- 오프라인 지표
 
-# 심기 표의 기대 사실은 반증을 `refuted` 로 적는다 — 행의 `disproved` 와 같은 뜻으로 맞춘다.
-_STATUS_ALIASES = {"refuted": "disproved"}
 # 정답 묶음이 지금 값을 묻는 범주(정답 = 기대 사실의 값). 나머지 범주의 묶음은 질문의 답(귀속·거절·비밀 지킴)이라 값 비교에 쓰지 않는다.
 _VALUE_BUNDLE_CATEGORIES = ("relation", "correction", "detail")
-
-
-def normalize_status(status: str | None) -> str:
-    return _STATUS_ALIASES.get(str(status or ""), str(status or ""))
 
 
 def expected_key(expected: Mapping[str, Any]) -> str:
@@ -152,12 +146,12 @@ def value_matches(row_value: str | None, entry: Mapping[str, Any]) -> bool:
 
 
 def row_matches(row: Mapping[str, Any], entry: Mapping[str, Any], *, check_key: bool = True) -> bool:
-    """행이 항목의 기대 사실을 담는가: 키(정규화 뒤 같음) · 진실 상태(반증 표기 맞춤) · 아는 사람(정규화한 이름 집합이 같음,
+    """행이 항목의 기대 사실을 담는가: 키(정규화 뒤 같음) · 진실 상태(같음) · 아는 사람(정규화한 이름 집합이 같음,
     기대가 공개면 행도 비어야 함) · 값(`value_matches`)."""
     expected = entry.get("expected_fact") or {}
     if check_key and row_key(row) != expected_key(expected):
         return False
-    if normalize_status(row.get("truth_status")) != normalize_status(expected.get("truth_status")):
+    if row.get("truth_status") != expected.get("truth_status"):
         return False
     if _names(row.get("known_by")) != _names(expected.get("known_by")):
         return False
@@ -242,7 +236,7 @@ def fact_metrics(
     restated = 0
     earlier: dict[tuple[str, str, str], set[str]] = {}
     for r in visible:
-        sig = (row_key(r), normalize_part(r.get("value")), normalize_status(r.get("truth_status")))
+        sig = (row_key(r), normalize_part(r.get("value")), str(r.get("truth_status")))
         snapshots = earlier.setdefault(sig, set())
         if snapshots - {str(r.get("snapshot_id"))}:
             restated += 1

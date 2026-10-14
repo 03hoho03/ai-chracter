@@ -37,6 +37,9 @@ SPLIT_FILES = (DEV_IDS_FILE, TEST_IDS_FILE, TEST_KEYS_FILE, MANIFEST_FILE)
 # 시험 절반의 주 지표 문항 수 하한.
 TEST_PRIMARY_MIN = 24
 ABSTAIN_CATEGORY = "abstain"
+# 심기 표는 반증된 사실을 `refuted` 로 적는다. 행·운영 스키마의 표기는 `disproved` 라 하네스 입구인 여기서 한 번만 바꾸고,
+# 나머지 코드는 `disproved` 만 쓴다.
+_TRUTH_STATUS_ALIASES = {"refuted": "disproved"}
 # 체크포인트 직전 30턴은 아직 접히지 않았을 수 있는 원문 창이다(첫 접기 30턴, 그 뒤 10턴씩 접어 원문은 20~30턴 남는다).
 # 심은 턴이 모두 이보다 앞이어야 그 체크포인트에서 장면·사실이 접힌 뒤라 오프라인 지표의 대상이 된다.
 RAW_WINDOW_TURNS = 30
@@ -119,8 +122,11 @@ def harness_entry(entry: Mapping[str, Any], half: str, checkpoints: Iterable[int
     - `speaker`: 마지막 심기 사건의 줄·말한 쪽·추출 기대 귀속.
     - `probeCheckpoints`: Opus 는 `ask_checkpoints`, 오프라인은 심기가 모두 접힌 체크포인트(기권은 묻는 체크포인트 그대로).
     - `answerKeys`: 정답 묶음(`answer_key.bundles`, 없으면 빈 목록 — 판정자 문항).
-    - `expectedAnswer`: 판정자가 읽는 성공 기준 문장(기권은 질문에 섞인 실제 장면)."""
+    - `expectedAnswer`: 판정자가 읽는 성공 기준 문장(기권은 질문에 섞인 실제 장면).
+    - `expected_fact` 와 그 `superseded` 행의 진실 상태 `refuted` → `disproved`."""
     out = dict(entry)
+    if entry.get("expected_fact"):
+        out["expected_fact"] = _normalize_fact(entry["expected_fact"])
     out["split"] = half
     turns = sorted(int(t) for t in entry.get("plant_turns") or [])
     if turns:
@@ -137,6 +143,22 @@ def harness_entry(entry: Mapping[str, Any], half: str, checkpoints: Iterable[int
     answer_key = entry.get("answer_key") or {}
     out["answerKeys"] = [list(b) for b in answer_key.get("bundles") or []]
     out["expectedAnswer"] = answer_key.get("fact") if abstain else answer_key.get("correct")
+    return out
+
+
+def _status(value: Any) -> Any:
+    return _TRUTH_STATUS_ALIASES.get(value, value) if isinstance(value, str) else value
+
+
+def _normalize_fact(fact: Mapping[str, Any]) -> dict[str, Any]:
+    out = dict(fact)
+    if "truth_status" in out:
+        out["truth_status"] = _status(out["truth_status"])
+    if isinstance(out.get("superseded"), list):
+        out["superseded"] = [
+            {**row, "truth_status": _status(row.get("truth_status"))} if isinstance(row, Mapping) else row
+            for row in out["superseded"]
+        ]
     return out
 
 

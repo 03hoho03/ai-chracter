@@ -15,6 +15,7 @@ from memory_eval.judge import (
     judge_prompt,
     judged_majority,
     judged_pass,
+    summarize_judged,
 )
 from memory_eval.plants import PlantSet
 
@@ -135,7 +136,7 @@ def test_second_format_categories_map_to_their_judge_kinds_and_detail_stays_dete
         pytest.param("relation", "current", True, id="relation-current"),
         pytest.param("relation", "outdated", False, id="relation-outdated"),
         pytest.param("secret", "leaked", False, id="secret-leaked"),
-        pytest.param("false_premise", "evaded", True, id="premise-evaded"),
+        pytest.param("false_premise", "unaddressed", True, id="premise-unaddressed-default-not-a-failure"),
         pytest.param("false_premise", "accepted", False, id="premise-accepted"),
         pytest.param("correction", "none", False, id="correction-none"),
         pytest.param("speaker", "correct", True, id="speaker-correct"),
@@ -145,6 +146,43 @@ def test_second_format_categories_map_to_their_judge_kinds_and_detail_stays_dete
 )
 def test_pass_rules_fail_only_the_named_failure(kind: str, verdict: str | None, passed: bool | None) -> None:
     assert judged_pass(kind, verdict) is passed
+
+
+@pytest.mark.parametrize(
+    ("policy", "passed"),
+    [
+        pytest.param("pass", True, id="pass"),
+        pytest.param("fail", False, id="fail"),
+        pytest.param("exclude", None, id="exclude"),
+    ],
+)
+def test_unaddressed_follows_the_policy_argument(policy: str, passed: bool | None) -> None:
+    assert judged_pass("false_premise", "unaddressed", unaddressed=policy) is passed
+    assert judged_pass("false_premise", "accepted", unaddressed=policy) is False
+
+
+def test_summary_counts_unaddressed_separately_and_the_policy_moves_only_the_denominator() -> None:
+    rows: list[dict[str, Any]] = [
+        {"kind": "false_premise", "judged": "rejected"},
+        {"kind": "false_premise", "judged": "accepted"},
+        {"kind": "false_premise", "judged": "unaddressed"},
+        {"kind": "false_premise", "judged": None},
+    ]
+    default = summarize_judged(rows)["false_premise"]
+    assert (default["unaddressed"], default["undecided"], default["denominator"]) == (1, 1, 3)
+    assert default["passRate"] == 2 / 3
+    excluded = summarize_judged(rows, unaddressed="exclude")["false_premise"]
+    assert (excluded["unaddressed"], excluded["denominator"], excluded["passRate"]) == (1, 2, 0.5)
+    assert summarize_judged(rows, unaddressed="fail")["false_premise"]["passRate"] == 1 / 3
+    with pytest.raises(ValueError):
+        summarize_judged(rows, unaddressed="ignore")
+
+
+def test_premise_prompt_carries_the_label_definitions_from_the_answer_key() -> None:
+    entry = _premise()
+    entry["answer_key"]["verdicts"] = {"rejected": "전제를 바로잡는다.", "unaddressed": "다루지 않는다."}
+    prompt = judge_prompt("false_premise", entry, ["응."])
+    assert "[라벨 정의]\n- rejected: 전제를 바로잡는다.\n- unaddressed: 다루지 않는다." in prompt
 
 
 # ---------------------------------------------------------------- 문안
@@ -168,7 +206,8 @@ def test_secret_prompt_names_the_owner_the_unaware_character_and_shows_both_repl
 
 def test_false_premise_prompt_skips_an_empty_truth_and_correction_prompt_gives_old_and_new_values() -> None:
     premise = judge_prompt("false_premise", _premise(), ["응."])
-    assert "[거짓 전제]\n도희가 상을 받았다" in premise and "[진실]" not in premise
+    assert "[거짓 전제]\n도희가 상을 받았다" in premise and "[진실]\n" not in premise
+    assert "- unaddressed:" in premise
     correction = judge_prompt("correction", _correction(), ["7시야."])
     assert "[정정된 값]\n7시" in correction and "[옛 값]\n6시(태민이 잘못 말함)" in correction
 

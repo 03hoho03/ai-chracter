@@ -234,6 +234,32 @@ def test_harness_entry_maps_second_format_fields_to_the_ones_the_probe_and_recal
     assert abstain["expectedAnswer"] == "실제 장면"
 
 
+def test_harness_entry_turns_the_plants_refuted_status_into_disproved_in_one_place() -> None:
+    entry = _item("correction", 2, primary=True)
+    entry["expected_fact"] = {
+        "kind": "fact",
+        "subject": "민지",
+        "attribute": "생일",
+        "value": "6월",
+        "truth_status": "confirmed",
+        "superseded": [{"value": "5월", "truth_status": "refuted", "said_by": "태민"}],
+    }
+    claim = _item("false_premise", 3, primary=True) | {
+        "expected_fact": {
+            "kind": "fact",
+            "subject": "도희",
+            "attribute": "수상",
+            "value": "없음",
+            "truth_status": "refuted",
+        }
+    }
+    out = holdout.harness_entry(entry, "dev", [300])
+    assert out["expected_fact"]["superseded"][0]["truth_status"] == "disproved"
+    assert out["expected_fact"]["truth_status"] == "confirmed"
+    assert holdout.harness_entry(claim, "dev", [300])["expected_fact"]["truth_status"] == "disproved"
+    assert entry["expected_fact"]["superseded"][0]["truth_status"] == "refuted"  # 원본은 건드리지 않는다
+
+
 def test_probe_dry_run_in_dev_mode_refuses_a_test_item_id(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     from memory_eval_cli import main
 

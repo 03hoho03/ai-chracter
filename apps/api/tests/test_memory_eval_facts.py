@@ -67,7 +67,7 @@ def test_latest_row_per_key_wins_and_keeps_write_order() -> None:
     assert [r["_order"] for r in latest] == [1, 2]
 
 
-def test_a_refuted_value_is_not_revived_by_a_later_claim_but_a_correction_shows_the_new_value() -> None:
+def test_a_disproved_value_is_not_revived_by_a_later_claim_but_a_correction_shows_the_new_value() -> None:
     revived = [
         _row(value="5월 3일", truth_status="claimed", speaker="태민"),
         _row(value="5월 3일", truth_status="disproved"),
@@ -78,7 +78,7 @@ def test_a_refuted_value_is_not_revived_by_a_later_claim_but_a_correction_shows_
     assert facts.latest_by_key(corrected)[0]["value"] == "6월 9일"
 
 
-def test_render_order_is_relations_then_known_by_then_refuted_then_others_by_importance_then_recency() -> None:
+def test_render_order_is_relations_then_known_by_then_disproved_then_others_by_importance_then_recency() -> None:
     rows = [
         _row(attribute="취미", value="낚시", importance=2),
         _row(attribute="비밀", value="전학", known_by=["사용자"], importance=1),
@@ -310,10 +310,10 @@ def test_preservation_compares_the_normalized_key_status_alias_known_by_set_and_
     row = _fact_row(attribute="전학  계획", value="다음 달 부산으로 전학 간다고 함", known_by=["민지", "사용자"])
     result = fact_metrics(items, [row])
     assert result["items"][0]["preserved"] is True
-    refuted = _entry("correction-a", "correction", _SECRET | {"truth_status": "refuted", "known_by": None})
-    assert fact_metrics([refuted], [_fact_row(attribute="전학 계획", value="부산으로 전학", truth_status="disproved")])[
-        "items"
-    ][0]["preserved"]
+    disproved = _entry("correction-a", "correction", _SECRET | {"truth_status": "disproved", "known_by": None})
+    assert fact_metrics(
+        [disproved], [_fact_row(attribute="전학 계획", value="부산으로 전학", truth_status="disproved")]
+    )["items"][0]["preserved"]
 
 
 @pytest.mark.parametrize(

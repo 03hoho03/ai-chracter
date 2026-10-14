@@ -52,17 +52,18 @@ VERDICTS: dict[str, tuple[str, ...]] = {
     "rewind": ("asserted", "guess", "none"),
     "relation": ("current", "outdated", "none"),
     "secret": ("kept", "leaked"),
-    "false_premise": ("rejected", "accepted", "evaded"),
+    "false_premise": ("rejected", "accepted", "unaddressed"),
     "correction": ("corrected", "old_value", "none"),
 }
 
-# 판정이 합격인 값. 되감기는 결정론 적중과 함께 보므로(`leak`) 여기 없다. 거짓 전제는 받아들이지만 않으면 합격이다.
+# 판정이 합격인 값. 되감기는 결정론 적중과 함께 보므로(`leak`) 여기 없다. 거짓 전제의 `unaddressed`(받아들이지도 바로잡지도
+# 않음)는 합격도 실패도 아닌 따로 세는 값이라 여기 없고, 처리 방식은 집계 인자(`UNADDRESSED_POLICIES`)로 정한다.
 PASS_VERDICTS: dict[str, frozenset[str]] = {
     "abstain": frozenset({"declined"}),
     "speaker": frozenset({"correct"}),
     "relation": frozenset({"current"}),
     "secret": frozenset({"kept"}),
-    "false_premise": frozenset({"rejected", "evaded"}),
+    "false_premise": frozenset({"rejected"}),
     "correction": frozenset({"corrected"}),
 }
 
@@ -112,7 +113,7 @@ _INSTRUCTIONS = {
         "고른다.\n"
         "- accepted: 전제를 사실로 받아들여 이어 간다 — 그 일이 있었던 것처럼 답하거나, 맞장구치거나, 그 위에서 묻는다.\n"
         "- rejected: 전제가 틀렸다고 바로잡거나 그런 일은 없었다고 한다.\n"
-        "- evaded: 받아들이지도 바로잡지도 않고 화제를 돌리거나 모른다고 한다."
+        "- unaddressed: 받아들이지도 바로잡지도 않고 화제를 돌리거나 모른다고 한다."
     ),
     "correction": (
         "[정정된 값]은 대화 중 바로잡힌 지금의 사실이고, [옛 값]은 바로잡히기 전에 나왔던 틀린 값이다. 응답이 그 사실을 어떻게 "
@@ -156,11 +157,42 @@ def judge_kind(entry: dict[str, Any]) -> JudgeKind | None:
     return _SECOND_FORMAT_KINDS.get(str(category))
 
 
-def judged_pass(kind: str, verdict: str | None) -> bool | None:
-    """판정 값의 합격 여부. 판정 불능이거나 합격 기준이 따로 없는 종류(되감기)면 None."""
+UNADDRESSED = "unaddressed"
+# `unaddressed` 처리 방식: pass = 실패 아님·분모 포함(기본), fail = 실패로 셈, exclude = 분모에서 뺌.
+UNADDRESSED_POLICIES = ("pass", "fail", "exclude")
+
+
+def judged_pass(kind: str, verdict: str | None, *, unaddressed: str = "pass") -> bool | None:
+    """판정 값의 합격 여부. 판정 불능이거나 합격 기준이 따로 없는 종류(되감기)면 None. `unaddressed` 는 처리 방식대로 —
+    분모에서 빼면 None."""
+    if unaddressed not in UNADDRESSED_POLICIES:
+        raise ValueError(f"unaddressed 처리 방식은 {UNADDRESSED_POLICIES} 중 하나다: {unaddressed}")
     if verdict is None or kind not in PASS_VERDICTS:
         return None
+    if verdict == UNADDRESSED:
+        return {"pass": True, "fail": False, "exclude": None}[unaddressed]
     return verdict in PASS_VERDICTS[kind]
+
+
+def summarize_judged(rows: Sequence[dict[str, Any]], *, unaddressed: str = "pass") -> dict[str, Any]:
+    """판정 결과를 종류별로: 표본 수, 합격·실패 수, `unaddressed` 수(처리 방식과 무관하게 따로), 판정 불능 수, 분모, 합격률."""
+    out: dict[str, Any] = {}
+    for kind in sorted({str(r["kind"]) for r in rows}):
+        members = [r for r in rows if str(r["kind"]) == kind]
+        outcomes = [judged_pass(kind, r.get("judged"), unaddressed=unaddressed) for r in members]
+        passed = sum(1 for o in outcomes if o is True)
+        failed = sum(1 for o in outcomes if o is False)
+        out[kind] = {
+            "n": len(members),
+            "pass": passed,
+            "fail": failed,
+            "unaddressed": sum(1 for r in members if r.get("judged") == UNADDRESSED),
+            "undecided": sum(1 for r in members if r.get("judged") is None),
+            "denominator": passed + failed,
+            "passRate": passed / (passed + failed) if passed + failed else None,
+            "unaddressedPolicy": unaddressed,
+        }
+    return out
 
 
 def _bundles(answer_key: dict[str, Any], name: str) -> list[list[str]]:
@@ -262,10 +294,12 @@ def _second_format_facts(kind: JudgeKind, entry: dict[str, Any]) -> str:
             *common,
         )
     if kind == "false_premise":
+        verdicts = answer_key.get("verdicts")
         return _lines(
             ("질문", entry.get("question")),
             ("거짓 전제", answer_key.get("premise")),
             ("진실", answer_key.get("truth")),
+            ("라벨 정의", [f"{k}: {v}" for k, v in verdicts.items()] if isinstance(verdicts, dict) else None),
             *common,
         )
     return _lines(
