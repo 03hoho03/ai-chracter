@@ -162,7 +162,7 @@ export function AdvancedTab({ ensureContentVersionId, savedImages }: AdvancedTab
   }
 
   return (
-    <div className="flex flex-col gap-6 py-6" data-field-path="situationalImages">
+    <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-1">
           <Label>{CHARACTER_FIELD_LABELS.situationalImages.label} (선택)</Label>
@@ -186,7 +186,8 @@ export function AdvancedTab({ ensureContentVersionId, savedImages }: AdvancedTab
           accessibility={sortable.accessibility}
         >
           <SortableContext items={fields.map((field) => field.id)} strategy={verticalListSortingStrategy}>
-            <div className="flex flex-col gap-3">
+            {/* 서버 거절은 어느 항목인지 알려 주지 않아 목록 자리에 걸린다 — 그 줄을 누르면 첫 항목으로 간다. */}
+            <div className="flex flex-col gap-3" data-field-path="situationalImages">
               {fields.map((field, index) => (
                 <SituationalImageRow
                   key={field.id}

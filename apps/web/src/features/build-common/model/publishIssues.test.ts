@@ -153,6 +153,15 @@ describe("unchangedServerIssues", () => {
     expect(unchangedServerIssues([issue("keywordNotes")], next)).toEqual([]);
   });
 
+  it.each([null, undefined])("빈 칸이 %s 에서 빈 문자열로 바뀐 것은 고친 것이 아니다", (empty) => {
+    const stats = { startingSetups: [{ stats: [{ name: "체력", unit: empty }] }] };
+    const rejected = { path: "startingSetups.0.stats", message: "", snapshot: valueSnapshot(stats, "startingSetups.0.stats") };
+    const mounted = { startingSetups: [{ stats: [{ name: "체력", unit: "" }] }] };
+    expect(unchangedServerIssues([rejected], mounted)).toEqual([rejected]);
+    const edited = { startingSetups: [{ stats: [{ name: "체력", unit: "점" }] }] };
+    expect(unchangedServerIssues([rejected], edited)).toEqual([]);
+  });
+
   it("값이 없던 자리도 비교할 수 있다", () => {
     const absent = issue("mediaBook");
     expect(unchangedServerIssues([absent], values)).toEqual([absent]);

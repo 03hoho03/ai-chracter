@@ -46,7 +46,8 @@ const SCROLL_EDGE_PX = 32;
  * "(필수, 입력 완료)"를 읽힌다. 체크는 지금 값이 클라 발행 검사를 통과했다는 표시다 — 서버만 아는 조건(올린 이미지 자산, 다른
  * 기기에서 고친 초안)은 발행할 때 확인하므로 체크가 떠 있어도 발행이 그 탭에서 거절될 수 있고, 입력이 멈춘 뒤 판정하므로 입력
  * 도중에는 한 박자 늦다. 체크는 별표 자리에 별표 폭 이하(띄움 1px + 10px 아이콘, 별표 " *" 는 약 11.8px)로 들어가 채우는 동안
- * 탭 폭이 늘지 않고, 글자 세로 가운데에 맞춘다(바닥에 붙이면 아래첨자처럼 보인다). 빨강도 `primary` 도 쓰지 않는다 — 완료는
+ * 탭 폭이 늘지 않고, 글자 세로 가운데에 맞춘다(바닥에 붙이면 아래첨자처럼 보인다. `align-middle` 만으로는 체크 획이 한글 글자 획의
+ * 가운데보다 1px 낮아 1px 올린다). 빨강도 `primary` 도 쓰지 않는다 — 완료는
  * 강조할 일이 아니라 남은 별표를 줄여 주는 표시이고, 이 화면에서 색은 남은 일(별표·오류)에만 둔다. 발행을 누르기 전에도 보인다.
  */
 export function BuilderTabStrip({ tabs, activeTab, errorTabIds, requiredTabIds, completedTabIds }: BuilderTabStripProps) {
@@ -104,7 +105,7 @@ export function BuilderTabStrip({ tabs, activeTab, errorTabIds, requiredTabIds, 
                 <span>
                   {tab.label}
                   {isRequired && !isCompleted && <span aria-hidden className="text-destructive-text"> *</span>}
-                  {isCompleted && <Check aria-hidden strokeWidth={3} className="ml-px inline size-2.5 align-middle text-muted-foreground" />}
+                  {isCompleted && <Check aria-hidden strokeWidth={3} className="ml-px inline size-2.5 -translate-y-px align-middle text-muted-foreground" />}
                 </span>
                 {isRequired && <span className="sr-only">{isCompleted ? " (필수, 입력 완료)" : " (필수)"}</span>}
                 {hasError && <span className="sr-only"> (입력 오류가 있어요)</span>}

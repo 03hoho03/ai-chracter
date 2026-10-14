@@ -146,9 +146,10 @@ export type ServerIssue = {
   snapshot: string;
 };
 
-/** 값 비교용 직렬화. 폼 값은 JSON 으로 옮겨지는 값뿐이라 문자열로 같으면 같은 값이다. */
+/** 값 비교용 직렬화. 폼 값은 JSON 으로 옮겨지는 값뿐이라 문자열로 같으면 같은 값이다. `null`·`undefined` 는 빈 문자열로 적는다 —
+ * 비어 있던 선택 칸(스탯 단위)은 탭을 열어 입력칸이 붙는 순간 값 변경 알림 없이 `""` 로 바뀌는데, 셋 다 빈 칸이라 고친 것이 아니다. */
 export function valueSnapshot(values: unknown, path: string): string {
-  return JSON.stringify(get(values, path)) ?? "undefined";
+  return JSON.stringify(get(values, path), (_key, value: unknown) => value ?? "");
 }
 
 /**
