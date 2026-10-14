@@ -22,6 +22,8 @@ type MessageBubbleProps = {
   // 붙일 수 없기 때문 — onDelete·onReport가 둘 다 없으면 "⋯" 메뉴 자체를 렌더링하지 않는다.
   canRegenerate?: boolean;
   isEditing?: boolean;
+  /** 수정 저장 시 지워질 뒤 메시지 수(수정 폼의 안내에 쓴다). */
+  removedOnEditCount?: number;
   disabled?: boolean;
   onRegenerate?: () => void;
   onStartEdit?: () => void;
@@ -43,6 +45,7 @@ export function MessageBubble({
   message,
   canRegenerate = false,
   isEditing = false,
+  removedOnEditCount,
   disabled = false,
   onRegenerate,
   onStartEdit,
@@ -57,7 +60,12 @@ export function MessageBubble({
   if (isEditing) {
     return (
       <div className={cn(isUser && USER_MESSAGE_FRAME)}>
-        <MessageEditForm content={message.content} onCancelEdit={onCancelEdit} onSaveEdit={onSaveEdit} />
+        <MessageEditForm
+          content={message.content}
+          removedMessageCount={removedOnEditCount}
+          onCancelEdit={onCancelEdit}
+          onSaveEdit={onSaveEdit}
+        />
       </div>
     );
   }

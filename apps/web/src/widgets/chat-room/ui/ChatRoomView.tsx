@@ -23,8 +23,10 @@ import {
   TypingIndicator,
   canReportMessage,
   chatRoomKeys,
+  countMessagesAfter,
   refreshChatRoomTurnPrice,
   roomAuthorMacroNames,
+  shouldConfirmEditTruncation,
   shouldShowSuggestedReplies,
   useAcknowledgeVersionUpgradeMutation,
   useChatRoomQuery,
@@ -49,6 +51,7 @@ import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
 import { getRateLimitDetail } from "@/shared/api/rateLimit";
 import { expandAuthorMacros, type AuthorMacroNames } from "@/shared/lib/text/authorMacros";
 
+import { confirmEditTruncation } from "../lib/confirmEditTruncation";
 import { useMemoryFollowUpRefresh } from "../lib/useMemoryFollowUpRefresh";
 import { chatSidePanelAtom } from "../model/atoms";
 import { chatModelChipName } from "../model/chatModelChip";
@@ -374,12 +377,14 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
               )}
               {room.messages.map((message, index) => {
                 const isLastMessage = index === room.messages.length - 1;
+                const removedOnEditCount = editingMessageId === message.id ? countMessagesAfter(room.messages, message.id) : 0;
                 const bubble = (
                   <MessageBubble
                     key={message.id}
                     message={message}
                     disabled={isSending}
                     isEditing={editingMessageId === message.id}
+                    removedOnEditCount={removedOnEditCount}
                     canRegenerate={
                       !isRestricted && isLastMessage && message.role === "assistant" && room.messages.length >= 2
                     }
@@ -387,8 +392,13 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                     onStartEdit={!isRestricted && message.role === "user" ? () => setEditingMessageId(message.id) : undefined}
                     onCancelEdit={() => setEditingMessageId(undefined)}
                     onSaveEdit={(newText) => {
-                      editMessage(message.id, newText);
-                      setEditingMessageId(undefined);
+                      // 저장 버튼과 Enter 가 모두 여기로 온다. 확인받는 동안 폼을 열어 두어야 취소했을 때 고쳐 쓴 글이 남는다.
+                      const save = () => {
+                        editMessage(message.id, newText);
+                        setEditingMessageId(undefined);
+                      };
+                      if (shouldConfirmEditTruncation(removedOnEditCount)) void confirmEditTruncation(removedOnEditCount, save);
+                      else save();
                     }}
                     onDelete={() => handleDeleteMessage(message.id)}
                     onReport={
