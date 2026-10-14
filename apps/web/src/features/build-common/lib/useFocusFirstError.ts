@@ -92,12 +92,13 @@ function focusAndScroll<T extends FieldValues>(form: UseFormReturn<T>, fieldPath
   // 않는 칸이거나, 서버 거절처럼 목록 자리만 가리키는 경로다. 그 경로나 가장 가까운 조상 경로에 심어 둔 FIELD_PATH_ATTRIBUTE
   // 요소를 찾아 그 요소(포커스를 받는 컨트롤이면 그 자체, 아니면 안의 첫 컨트롤)로 포커스를 옮기고 화면 안으로 민다. 포커스를
   // 그대로 두면 누른 목록 줄에 남은 채 그 줄이 스크롤로 화면 위로 밀려, 키보드 사용자가 보이지 않는 자리에서 다음 Tab 을 누르게 된다.
-  // 표식이 어디에도 없으면 열린 탭 본문으로 옮긴다.
+  // 화면에 맞추는 것은 표식이 아니라 포커스한 요소다 — 표식이 스탯·키워드 노트 목록 전체를 감싸면 화면보다 커서, 표식 가운데를
+  // 맞추면 포커스한 첫 컨트롤과 목록 머리의 오류 문장이 화면 위로 나간다. 표식이 어디에도 없으면 열린 탭 본문으로 옮긴다.
   const container = closestFieldPathElement(fieldPath);
   if (container) {
     const target = container.tabIndex >= 0 ? container : container.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
     target?.focus({ preventScroll: true });
-    container.scrollIntoView({ behavior, block: "center" });
+    (target ?? container).scrollIntoView({ behavior, block: "center" });
     return;
   }
   const panel = document.querySelector<HTMLElement>('[data-slot="tabs-content"][data-state="active"]');
