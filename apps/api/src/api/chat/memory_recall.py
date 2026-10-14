@@ -67,7 +67,10 @@ _ONE_CHAR_PARTICLES = "이|가|을|를|은|는|도|만|에|에서|랑|이랑|하
 
 # 장면을 말한 쪽(인물·섞임·사용자)을 밝히는 꼬리표이고 뜻은 회상 섹션 문안이 설명한다 — 서술 장면만 꼬리표가 없어서, 사용자
 # 꼬리표가 없으면 사용자가 지어낸 말까지 일어난 일처럼 읽혀 생성 모델이 사실이나 인물의 말로 다룬다.
-_ASSERTION_TAILS = {"character": " (인물의 말)", "mixed": " (인물의 말 포함)", "user": " (사용자의 말)"}
+# 사실 섹션(`chat/memory_fact_section.py`)도 주장의 꼬리표로 같은 두 낱말을 쓴다 — 두 섹션 문안이 같은 꼬리표를 설명한다.
+CHARACTER_ASSERTION_TAIL = " (인물의 말)"
+USER_ASSERTION_TAIL = " (사용자의 말)"
+_ASSERTION_TAILS = {"character": CHARACTER_ASSERTION_TAIL, "mixed": " (인물의 말 포함)", "user": USER_ASSERTION_TAIL}
 
 RecallPath = Literal["user", "assistant"]
 
