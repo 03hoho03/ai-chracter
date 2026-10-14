@@ -45,6 +45,8 @@ from api.db.models import (
     CharacterVersionDetail,
     ChatMemoryEpisode,
     ChatMemoryExtraction,
+    ChatMemoryFact,
+    ChatMemoryFactExtraction,
     ChatMessage,
     ChatMessageRole,
     ChatRoom,
@@ -447,6 +449,51 @@ def _make_memory_extraction(
     }
     defaults.update(overrides)
     return ChatMemoryExtraction(**defaults)
+
+
+def _make_memory_fact(chat_room_id: uuid.UUID, snapshot_id: uuid.UUID, **overrides: object) -> ChatMemoryFact:
+    """사실 기억 한 행. 기본값은 모든 CHECK 를 통과하는 평범한 관계 — 아는 인물이 정해지지 않은(공개) 한 메시지짜리 근거.
+    메시지 id 칸은 FK 가 없어 실제 메시지 없이 새 id 를 쓴다."""
+    at = datetime.now(UTC)
+    message_id = uuid.uuid4()
+    defaults: dict[str, object] = {
+        "chat_room_id": chat_room_id,
+        "snapshot_id": snapshot_id,
+        "ordinal": 0,
+        "kind": "relation",
+        "subject": "민수",
+        "object": "지아",
+        "attribute": None,
+        "fact_key": "relation|민수|지아",
+        "value": "소꿉친구",
+        "truth_status": "confirmed",
+        "asserted_by": "user",
+        "importance": 3,
+        "start_created_at": at,
+        "start_message_id": message_id,
+        "end_created_at": at,
+        "end_message_id": message_id,
+        "start_turn": 1,
+        "end_turn": 1,
+    }
+    defaults.update(overrides)
+    return ChatMemoryFact(**defaults)
+
+
+def _make_memory_fact_extraction(
+    chat_room_id: uuid.UUID, snapshot_id: uuid.UUID, **overrides: object
+) -> ChatMemoryFactExtraction:
+    """스냅샷 하나의 사실 추출 기록. 기본값은 사실 하나를 뽑고 끝난 기록이다."""
+    defaults: dict[str, object] = {
+        "chat_room_id": chat_room_id,
+        "snapshot_id": snapshot_id,
+        "status": "done",
+        "attempts": 1,
+        "claimed_at": datetime.now(UTC),
+        "fact_count": 1,
+    }
+    defaults.update(overrides)
+    return ChatMemoryFactExtraction(**defaults)
 
 
 async def _get_genre(db_session: AsyncSession, name: str | None = None) -> Genre:

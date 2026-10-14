@@ -42,6 +42,8 @@ from api.db.models import (
     CharacterVersionDetail,
     ChatMemoryEpisode,
     ChatMemoryExtraction,
+    ChatMemoryFact,
+    ChatMemoryFactExtraction,
     ChatMessage,
     ChatMessageRole,
     ChatRoom,
@@ -68,6 +70,8 @@ from factories import (
     _make_chat_turn,
     _make_memory_episode,
     _make_memory_extraction,
+    _make_memory_fact,
+    _make_memory_fact_extraction,
     _make_published_character,
     _make_user,
     _memory_version,
@@ -400,6 +404,72 @@ async def test_room_reset_and_deletion_leave_no_episode_rows(
         assert await db_session.scalar(sa.select(ChatRoom.id).where(ChatRoom.id == room.room_id)) is None
 
     assert await _episode_snapshot_ids(db_session, room.room_id) == (set(), set())
+
+
+# --- 사실 기억 · 추출 기록 -----------------------------------------------------------------------
+#
+# 장면 기억과 같은 CASCADE 로 지워진다. 경로의 DELETE 문장은 사실 계층을 모르던 이미지와 같으므로, 아래 두 테스트는 옛
+# 이미지가 사실 행이 있는 스키마 위에서 FK 위반 없이 되감고 지우는지도 본다.
+
+
+async def _seed_facts_on_every_snapshot(db_session: AsyncSession, room: Room) -> dict[str, uuid.UUID]:
+    """방의 스냅샷마다 사실 하나와 사실 추출 기록 하나를 넣고 `{요약 글: 스냅샷 id}` 를 돌려준다."""
+    snapshots = (
+        await db_session.execute(
+            sa.select(ChatRoomMemorySnapshot.id, ChatRoomMemorySnapshot.summary_text).where(
+                ChatRoomMemorySnapshot.chat_room_id == room.room_id
+            )
+        )
+    ).all()
+    for snapshot in snapshots:
+        db_session.add(_make_memory_fact(room.room_id, snapshot.id))
+        db_session.add(_make_memory_fact_extraction(room.room_id, snapshot.id))
+    await db_session.commit()
+    return {snapshot.summary_text: snapshot.id for snapshot in snapshots}
+
+
+async def _fact_snapshot_ids(db_session: AsyncSession, room_id: uuid.UUID) -> tuple[set[uuid.UUID], set[uuid.UUID]]:
+    """방에 남은 (사실 기억의 스냅샷 id 들, 사실 추출 기록의 스냅샷 id 들)."""
+    facts = await db_session.scalars(sa.select(ChatMemoryFact.snapshot_id).where(ChatMemoryFact.chat_room_id == room_id))
+    extractions = await db_session.scalars(
+        sa.select(ChatMemoryFactExtraction.snapshot_id).where(ChatMemoryFactExtraction.chat_room_id == room_id)
+    )
+    return set(facts.all()), set(extractions.all())
+
+
+async def test_rewinding_memory_deletes_facts_of_rewound_snapshots(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """요약 구간 안의 메시지를 지우면 그 지점 이상을 덮는 스냅샷과 함께 그 스냅샷에서 뽑은 사실·추출 기록도 사라진다.
+    남은 스냅샷의 것은 그대로다 — 지운 대화의 사실만 잊는다."""
+    room = await _room_with_two_snapshots(db_client, db_session, turns=24)
+    snapshot_ids = await _seed_facts_on_every_snapshot(db_session, room)
+
+    await _delete(db_client, room, room.turns[15][0])
+
+    assert [row.summary_text for row in await _snapshots(db_session, room)] == ["[S10]"]
+    kept = {snapshot_ids["[S10]"]}
+    assert await _fact_snapshot_ids(db_session, room.room_id) == (kept, kept)
+
+
+@pytest.mark.parametrize("action", ["reset", "delete"])
+async def test_room_reset_and_deletion_leave_no_fact_rows(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, action: str
+) -> None:
+    """초기화는 방의 스냅샷을 전부, 방 삭제(탈퇴도 같은 함수)는 방까지 지운다. 사실·추출 기록은 그 DELETE 의 CASCADE 로
+    0행이 되고, 방 DELETE 가 남은 자식 때문에 FK 위반으로 실패하지 않는다."""
+    room = await _room_with_two_snapshots(db_client, db_session, turns=24)
+    await _seed_facts_on_every_snapshot(db_session, room)
+
+    if action == "reset":
+        response = await db_client.post(f"/chat-rooms/{room.room_id}/reset")
+        assert response.status_code == 200, response.text
+    else:
+        response = await db_client.delete(f"/chat-rooms/{room.room_id}")
+        assert response.status_code == 204, response.text
+        assert await db_session.scalar(sa.select(ChatRoom.id).where(ChatRoom.id == room.room_id)) is None
+
+    assert await _fact_snapshot_ids(db_session, room.room_id) == (set(), set())
 
 
 # --- 커밋되는 독립 커넥션 ---------------------------------------------------------------------
