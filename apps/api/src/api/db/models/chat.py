@@ -139,6 +139,7 @@ class ChatRoomMemorySnapshot(Base):
     `relationship()`·`ondelete`는 선언하지 않는다(저장소 규약) — 위 경로들이 이 행을 직접
     지운다. 이 행을 지우면 그 접기에서 뽑은 장면 기억(`ChatMemoryEpisode`)과 추출 기록
     (`ChatMemoryExtraction`)은 그 두 테이블 쪽 `ON DELETE CASCADE`로 함께 지워진다.
+    사실 기억(`ChatMemoryFact`)과 그 추출 기록(`ChatMemoryFactExtraction`)도 같은 CASCADE 로 함께 지워진다.
     """
 
     __tablename__ = "chat_room_memory_snapshots"
@@ -299,6 +300,166 @@ class ChatMemoryExtraction(Base):
     )
 
 
+FactKind = Literal["relation", "fact"]
+FactTruthStatus = Literal["confirmed", "claimed", "disproved"]
+FactAssertedBy = Literal["user", "character", "narration"]
+# 사실 추출 기록은 장면 추출 기록과 같은 상태 흐름을 쓴다.
+FactExtractionStatus = EpisodeExtractionStatus
+
+# 사실 기억 칸의 DB 상한. 추출 결과를 자르는 쪽은 이 값 이하로 잘라야 한다 — 넘기면 잘라 낸 행이 CHECK 에 막힌다.
+FACT_NAME_MAX = 60
+FACT_VALUE_MAX = 200
+FACT_KEY_MAX = 200
+FACT_KNOWN_BY_MAX = 10
+# 한 접기에서 뽑는 사실 행의 상한이자 `ordinal` 의 범위(0 이상 이 값 미만)다.
+FACT_PER_SNAPSHOT_MAX = 20
+
+
+class ChatMemoryFact(Base):
+    """요약 접기 한 번이 접은 대화 구간에서 뽑은 사실 하나 — 인물 사이의 관계 또는 인물의 속성. 한 번 쓰면 고쳐 쓰지
+    않는다 — 같은 `fact_key` 의 새 행이 뒤에 쌓이고, 무엇이 지금 유효한지는 읽는 쪽이 원문 순서로 정한다.
+
+    그 접기의 스냅샷이 지워지면 DB 가 이 행도 함께 지운다(`ON DELETE CASCADE`). 이유는 `ChatMemoryEpisode` 와 같다 — 이
+    테이블을 모르는 옛 이미지의 스냅샷 DELETE 가 FK 위반으로 실패하지 않게 하고, 새 코드도 이 행을 스냅샷보다 먼저 지우지
+    않아 스냅샷을 잠근 추출 작업과 교착하지 않는다.
+
+    칸:
+    - `kind` 가 `relation` 이면 `subject` 와 `object` 사이의 관계이고 `attribute` 는 비어 있다. `fact` 이면 `subject` 의
+      `attribute` 이고 `object` 는 비어 있다. `value` 는 그 관계·속성의 값이다.
+    - `fact_key` 는 서버가 종류·주어·대상·속성을 정규화해 만든 키다 — 같은 사실의 갱신을 같은 키로 묶는다.
+    - `truth_status` 는 확인됨(`confirmed`)·주장됨(`claimed` — 말한 사람만 그렇다고 한 것)·반박됨(`disproved`)이다.
+    - `asserted_by` 는 누가 이 사실을 내놨는가(사용자·캐릭터·서술), `speaker` 는 그 말을 한 인물 이름이다(없으면 NULL).
+    - `known_by` 는 이 사실을 아는 인물 이름 목록이다. NULL 은 공개이거나 알 수 없다는 뜻이고, 빈 배열은 쓰지 않는다 —
+      "아무도 모른다"와 "모른다"를 둘로 나누지 않고 NULL 하나로 둔다.
+    - `start_*`·`end_*`·`start_turn`·`end_turn` 은 장면 기억의 같은 칸과 같은 뜻이다(근거 원문의 처음·마지막 메시지 키와
+      추출 시점의 어시스턴트 메시지 순번).
+    - `importance` 는 1~5, `ordinal` 은 그 접기 안의 사실 순서(0부터, 한 접기에 최대 20행)다.
+    `kind`·`truth_status`·`asserted_by` 는 native enum 이 아니라 Text 이고 위 Literal 이 값 범위다."""
+
+    __tablename__ = "chat_memory_facts"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    chat_room_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("chat_rooms.id"), nullable=False)
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("chat_room_memory_snapshots.id", ondelete="CASCADE"), nullable=False
+    )
+    ordinal: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    kind: Mapped[FactKind] = mapped_column(Text, nullable=False)
+    subject: Mapped[str] = mapped_column(Text, nullable=False)
+    object: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attribute: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fact_key: Mapped[str] = mapped_column(Text, nullable=False)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    truth_status: Mapped[FactTruthStatus] = mapped_column(Text, nullable=False)
+    asserted_by: Mapped[FactAssertedBy] = mapped_column(Text, nullable=False)
+    speaker: Mapped[str | None] = mapped_column(Text, nullable=True)
+    known_by: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
+    importance: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    start_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    start_message_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    end_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end_message_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    start_turn: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_turn: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # 🔴 `alembic check`는 CHECK 제약을 비교하지 않는다 — 아래 CHECK 의 검증은 행위 테스트가 유일하다.
+    # 유니크의 앞 열(`snapshot_id`)이 스냅샷 DELETE 의 CASCADE 가 이 테이블을 찾는 인덱스를 겸한다. 방 인덱스는 한 방의
+    # 사실을 원문 순서로 읽는 조회와, 방 DELETE 의 FK 확인을 받는다.
+    # `known_by` 원소 검사는 CHECK 에 하위 질의를 쓸 수 없어서, 원소를 제어 문자 U+001F 로 이어 붙인 문자열에 구분자 없이
+    # 61자가 이어지는 구간이 없는지로 본다(원소 안에 그 제어 문자가 들어 있으면 이 검사를 빠져나간다).
+    __table_args__ = (
+        UniqueConstraint("snapshot_id", "ordinal", name="ux_chat_memory_facts_snapshot_ordinal"),
+        CheckConstraint(f"kind IN ({_sql_in_list(FactKind)})", name="ck_chat_memory_facts_kind"),
+        CheckConstraint(
+            "(kind = 'relation' AND object IS NOT NULL AND attribute IS NULL)"
+            " OR (kind = 'fact' AND object IS NULL AND attribute IS NOT NULL)",
+            name="ck_chat_memory_facts_kind_columns",
+        ),
+        CheckConstraint(
+            f"truth_status IN ({_sql_in_list(FactTruthStatus)})", name="ck_chat_memory_facts_truth_status"
+        ),
+        CheckConstraint(f"asserted_by IN ({_sql_in_list(FactAssertedBy)})", name="ck_chat_memory_facts_asserted_by"),
+        CheckConstraint("importance BETWEEN 1 AND 5", name="ck_chat_memory_facts_importance"),
+        CheckConstraint(
+            f"ordinal >= 0 AND ordinal < {FACT_PER_SNAPSHOT_MAX}", name="ck_chat_memory_facts_ordinal"
+        ),
+        CheckConstraint("start_turn <= end_turn", name="ck_chat_memory_facts_turn_order"),
+        CheckConstraint(
+            "(start_created_at, start_message_id) <= (end_created_at, end_message_id)",
+            name="ck_chat_memory_facts_range_order",
+        ),
+        CheckConstraint(
+            f"char_length(subject) BETWEEN 1 AND {FACT_NAME_MAX}", name="ck_chat_memory_facts_subject_length"
+        ),
+        CheckConstraint(
+            f"char_length(object) BETWEEN 1 AND {FACT_NAME_MAX}", name="ck_chat_memory_facts_object_length"
+        ),
+        CheckConstraint(
+            f"char_length(attribute) BETWEEN 1 AND {FACT_NAME_MAX}", name="ck_chat_memory_facts_attribute_length"
+        ),
+        CheckConstraint(
+            f"char_length(speaker) BETWEEN 1 AND {FACT_NAME_MAX}", name="ck_chat_memory_facts_speaker_length"
+        ),
+        CheckConstraint(
+            f"char_length(value) BETWEEN 1 AND {FACT_VALUE_MAX}", name="ck_chat_memory_facts_value_length"
+        ),
+        CheckConstraint(
+            f"char_length(fact_key) BETWEEN 1 AND {FACT_KEY_MAX}", name="ck_chat_memory_facts_fact_key_length"
+        ),
+        CheckConstraint(
+            f"cardinality(known_by) BETWEEN 1 AND {FACT_KNOWN_BY_MAX}", name="ck_chat_memory_facts_known_by_count"
+        ),
+        CheckConstraint(
+            "array_position(known_by, NULL) IS NULL"
+            f" AND array_to_string(known_by, E'\\x1F') !~ '[^\\x1F]{{{FACT_NAME_MAX + 1}}}'",
+            name="ck_chat_memory_facts_known_by_items",
+        ),
+        Index("ix_chat_memory_facts_room_end", "chat_room_id", "end_created_at", "end_message_id"),
+    )
+
+
+class ChatMemoryFactExtraction(Base):
+    """스냅샷 하나의 사실 기억 추출 기록 — 한 스냅샷 = 한 행. `ChatMemoryExtraction` 과 같은 모양이고 같은 세 가지(미추출
+    표지·선점·호출 원가)를 겸한다. 장면 추출과 따로 두어 한쪽이 실패해도 다른 쪽의 완료 표지가 흔들리지 않는다.
+
+    스냅샷과 함께 지워진다(`ChatMemoryEpisode` 와 같은 이유 — 옛 이미지의 스냅샷 DELETE, 그리고 교착).
+    `status` 는 `running`·`done`(그때만 `fact_count` 가 있다)·`failed` 이고, native enum 이 아니라 Text 다.
+    `attempts` 는 선점할 때마다 센다."""
+
+    __tablename__ = "chat_memory_fact_extractions"
+
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("chat_room_memory_snapshots.id", ondelete="CASCADE"), primary_key=True
+    )
+    chat_room_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("chat_rooms.id"), nullable=False)
+    status: Mapped[FactExtractionStatus] = mapped_column(Text, nullable=False)
+    attempts: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cached_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    thoughts_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fact_count: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+
+    # 🔴 `alembic check`는 CHECK 제약을 비교하지 않는다 — 아래 CHECK 의 검증은 행위 테스트가 유일하다.
+    # 방 인덱스는 방 DELETE 의 FK 확인이 이 테이블을 방으로 찾기 위한 것이다(Postgres 는 FK 열에 인덱스를 만들지 않는다).
+    __table_args__ = (
+        CheckConstraint(
+            f"status IN ({_sql_in_list(FactExtractionStatus)})", name="ck_chat_memory_fact_extractions_status"
+        ),
+        CheckConstraint("attempts >= 1", name="ck_chat_memory_fact_extractions_attempts"),
+        CheckConstraint(
+            "(status = 'done') = (fact_count IS NOT NULL)", name="ck_chat_memory_fact_extractions_done_count"
+        ),
+        Index("ix_chat_memory_fact_extractions_room", "chat_room_id"),
+    )
+
+
 class ChatRoomStat(Base):
     """The chat room's current value for a stat_defs entity_id
     (referenced by entity_id, not id, so it keeps matching across a version switch)."""
@@ -380,6 +541,8 @@ class ChatTurn(Base):
       `stat_changes` 는 `{statEntityId: [before, after]}` 다.
     - `memory_recall` 은 그 턴 프롬프트에 실은 장면 기억 목록 `[{episodeId, score, rank, chars}]` 이다(글은 싣지 않는다).
       회상을 쓰지 않은 턴과 이 칸을 모르는 옛 이미지가 넣은 행은 DB 기본값 `[]` 이다.
+    - `memory_facts` 는 그 턴 프롬프트에 실은 사실 기억 목록이다(글은 싣지 않는다). 기본값은 `memory_recall` 과 같은 이유로
+      `[]` 다.
 
     응답이 재생성·수정·메시지 삭제로 지워져도 그 행은 방이 지워지거나 초기화될 때까지 남는다. 그래서 한 방 안에서
     `(chat_room_id, turn_number)` 는 유일하지 않고(수정 뒤 같은 턴 번호가 둘, 재생성 체인은 같은 턴의 스탯 효과를
@@ -407,6 +570,9 @@ class ChatTurn(Base):
     )
     stat_changes: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
     memory_recall: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    memory_facts: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, nullable=False, server_default=text("'[]'::jsonb")
     )
     ending_entity_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
