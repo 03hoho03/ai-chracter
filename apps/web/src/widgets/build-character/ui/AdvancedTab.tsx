@@ -162,7 +162,7 @@ export function AdvancedTab({ ensureContentVersionId, savedImages }: AdvancedTab
   }
 
   return (
-    <div className="flex flex-col gap-6 py-6">
+    <div className="flex flex-col gap-6 py-6" data-field-path="situationalImages">
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-1">
           <Label>{CHARACTER_FIELD_LABELS.situationalImages.label} (선택)</Label>

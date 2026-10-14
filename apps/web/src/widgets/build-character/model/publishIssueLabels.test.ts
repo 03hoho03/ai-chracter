@@ -93,7 +93,7 @@ describe("캐릭터 발행 전 확인 목록 라벨 전수", () => {
     for (const row of publishIssueRows(paths, CHARACTER_TABS, labelFor)) expect(row.label).not.toMatch(/그 밖의/);
   });
 
-  it("칸 이름은 탭 이름 뒤에 부모 항목 순번과 함께 붙는다", () => {
+  it("칸 이름은 탭 이름 뒤에 부모 항목 순번과 함께 붙고, 탭 이름으로 시작하면 탭 이름을 다시 붙이지 않는다", () => {
     const rows = publishIssueRows(
       ["intro.exampleDialogues.0.userLine", "situationalImages.1.situationDescription", "registration.hashtags"],
       CHARACTER_TABS,
@@ -101,7 +101,7 @@ describe("캐릭터 발행 전 확인 목록 라벨 전수", () => {
     );
     expect(rows.map((row) => row.label)).toEqual([
       "인트로 · 1번째 예시 대화 사용자 대사",
-      "상황별 이미지 · 2번째 상황별 이미지 노출할 상황",
+      "2번째 상황별 이미지 노출할 상황",
       "등록 · 해시태그",
     ]);
   });

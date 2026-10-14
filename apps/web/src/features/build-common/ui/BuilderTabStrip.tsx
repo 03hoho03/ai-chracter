@@ -15,7 +15,7 @@ type BuilderTabStripProps = {
   errorTabIds: ReadonlySet<string>;
   /** 언제나 필수인 탭 id 집합(`requiredTabIds` 로 셸 밖에서 한 번 계산한 값) — 라벨 뒤에 빨간 별표를 붙인다. */
   requiredTabIds: ReadonlySet<string>;
-  /** 필수 탭 가운데 지금 값이 발행 검사를 통과하는 탭(`usePublishChecklist`) — 별표 자리에 무채색 체크를 둔다. */
+  /** 필수 탭 가운데 지금 값이 발행 검사를 통과한 탭(`usePublishChecklist`) — 별표 자리에 무채색 체크를 둔다. */
   completedTabIds: ReadonlySet<string>;
 };
 
@@ -42,10 +42,12 @@ const SCROLL_EDGE_PX = 32;
  * 필수 탭의 별표는 칸 라벨(`RequiredText`)과 같은 빨간 `*` 지만 보조기기에는 별표 대신 "필수"를 읽힌다(DESIGN.md Inputs / Fields 의
  * Required 항목). 오류가 있는 탭은 별표와 "필수" 대신 오류 표시만 둔다 — 고칠 곳이라는 말이 이미 필수라는 말을 포함한다.
  *
- * 필수 탭을 다 채우면(지금 값이 발행 검사와 남은 서버 거절에서 그 탭 오류를 하나도 내지 않으면) 별표 자리가 무채색 체크로 바뀌고
- * "(필수, 입력 완료)"를 읽힌다. 판정은 발행 검사 그 자체라 "체크인데 발행이 막힌다"가 생기지 않는다. 체크는 별표와 같은 자리·비슷한
- * 폭이라 채우는 동안 탭 폭이 출렁이지 않고, 빨강도 `primary` 도 쓰지 않는다 — 완료는 강조할 일이 아니라 남은 별표를 줄여 주는
- * 표시이고, 이 화면에서 색은 남은 일(별표·오류)에만 둔다. 발행을 누르기 전에도 보인다.
+ * 필수 탭을 다 채우면(지금 값의 클라 발행 검사와 남은 서버 거절에서 그 탭 오류가 없으면) 별표 자리가 무채색 체크로 바뀌고
+ * "(필수, 입력 완료)"를 읽힌다. 체크는 지금 값이 클라 발행 검사를 통과했다는 표시다 — 서버만 아는 조건(올린 이미지 자산, 다른
+ * 기기에서 고친 초안)은 발행할 때 확인하므로 체크가 떠 있어도 발행이 그 탭에서 거절될 수 있고, 입력이 멈춘 뒤 판정하므로 입력
+ * 도중에는 한 박자 늦다. 체크는 별표 자리에 별표 폭 이하(띄움 1px + 10px 아이콘, 별표 " *" 는 약 11.8px)로 들어가 채우는 동안
+ * 탭 폭이 늘지 않고, 글자 세로 가운데에 맞춘다(바닥에 붙이면 아래첨자처럼 보인다). 빨강도 `primary` 도 쓰지 않는다 — 완료는
+ * 강조할 일이 아니라 남은 별표를 줄여 주는 표시이고, 이 화면에서 색은 남은 일(별표·오류)에만 둔다. 발행을 누르기 전에도 보인다.
  */
 export function BuilderTabStrip({ tabs, activeTab, errorTabIds, requiredTabIds, completedTabIds }: BuilderTabStripProps) {
   const tabsScroll = useHorizontalScrollClip();
@@ -102,7 +104,7 @@ export function BuilderTabStrip({ tabs, activeTab, errorTabIds, requiredTabIds, 
                 <span>
                   {tab.label}
                   {isRequired && !isCompleted && <span aria-hidden className="text-destructive-text"> *</span>}
-                  {isCompleted && <Check aria-hidden strokeWidth={3} className="ml-0.5 inline size-2.5 align-baseline text-muted-foreground" />}
+                  {isCompleted && <Check aria-hidden strokeWidth={3} className="ml-px inline size-2.5 align-middle text-muted-foreground" />}
                 </span>
                 {isRequired && <span className="sr-only">{isCompleted ? " (필수, 입력 완료)" : " (필수)"}</span>}
                 {hasError && <span className="sr-only"> (입력 오류가 있어요)</span>}

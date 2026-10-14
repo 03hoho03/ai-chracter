@@ -97,6 +97,7 @@ export {
   STORY_MISSING_FIELD_FORM_PATH,
   STORY_MISSING_FIELD_LABELS,
   storyMissingFieldFormPath,
+  storyMissingFieldServerLabel,
 } from "./model/publishMissingFields";
 export { serverToForm } from "./model/serverToForm";
 export { STORY_TABS, type StoryBuilderTab } from "./model/tabs";

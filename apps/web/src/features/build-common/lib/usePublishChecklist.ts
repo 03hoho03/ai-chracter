@@ -33,6 +33,9 @@ function samePaths(a: readonly string[], b: readonly string[]): boolean {
  * 발행 검사를 지금 값에 대해 계속 돌려 두 가지를 맞춘다.
  *
  * - **채움 표시** — 필수 탭마다 발행 검사 오류도, 남은 서버 거절도 없는지(`completedTabIds`). 발행을 누르기 전에도 돈다.
+ *   발행을 누른 뒤에는 이 판정 대신 화면에 걸린 오류만 본다(오류 표시가 없는 필수 탭은 모두 체크) — 마지막 오류를 고치면 RHF 가 그
+ *   칸 오류를 바로 풀고 이 판정은 입력이 멈춘 뒤에야 따라와, 둘을 따로 보면 탭이 오류 → 별표 → 체크로 한 번 깜빡인다. 그 뒤로는 오류
+ *   객체가 이 검사 결과로 맞춰지므로 둘은 같은 판정이다.
  * - **오류 갈아 끼우기** — 발행을 한 번 누른 뒤부터 값이 바뀌면 클라 오류를 검사 결과로 통째로 바꾼다. RHF 는 입력한 칸 이름의
  *   오류만 다시 따지므로, 오류가 다른 칸에 걸리는 교차 검사(최소값을 고쳤는데 오류는 최대값 칸)나 `setValue` 로 쓰는 칸(키워드 칩)을
  *   고쳐도 오류가 남았다. 서버 거절(`type: "server"`)은 클라 검사로 다시 따질 수 없어 남기되, 그 자리 값이 바뀌면 지운다
@@ -54,6 +57,8 @@ export function usePublishChecklist<T extends FieldValues>({
   requiredTabIds: ReadonlySet<string>;
 }) {
   const hasAttemptedRef = useRef(false);
+  // 셸이 확인 목록을 그릴지 정하는 데도 쓰여 상태로도 둔다(ref 는 구독 콜백이 최신값을 읽는 용도).
+  const [hasAttempted, setHasAttempted] = useState(false);
   const serverIssuesRef = useRef<ServerIssue[]>([]);
   const appliedSignatureRef = useRef<string | undefined>(undefined);
   const [clientPaths, setClientPaths] = useState(() =>
@@ -93,7 +98,8 @@ export function usePublishChecklist<T extends FieldValues>({
       const signature = JSON.stringify([clientIssues, kept.map((issue) => issue.path)]);
       if (signature === appliedSignatureRef.current) return;
       appliedSignatureRef.current = signature;
-      void form.trigger().then(() => applyServerIssues(kept));
+      // 검사가 끝나는 시점의 서버 거절을 다시 읽는다 — 검사 도중 도착한 발행 400 이 건 거절을 검사 결과가 덮은 채 두지 않는다.
+      void form.trigger().then(() => applyServerIssues(unchangedServerIssues(serverIssuesRef.current, form.getValues())));
     }
 
     const subscription = form.watch(() => {
@@ -109,12 +115,18 @@ export function usePublishChecklist<T extends FieldValues>({
   /** 발행 버튼을 누를 때 부른다. 이때부터 값이 바뀌면 오류를 갈아 끼운다(누르기 전에는 오류를 띄우지 않는다). */
   const markAttempted = useCallback(() => {
     hasAttemptedRef.current = true;
+    setHasAttempted(true);
     appliedSignatureRef.current = undefined;
   }, []);
 
-  /** 서버 거절을 건다. 같은 자리를 가리키는 키가 여럿이면(키워드북 두 키) 이름을 이어 한 줄로 둔다. 빈 배열이면 남은 거절을 모두 지운다. */
+  /** 서버 거절을 건다. 지난 거절은 칸 오류째 지우고 새것으로 바꾼다. 같은 자리를 가리키는 키가 여럿이면(키워드북 두 키) 이름을 이어
+   * 한 줄로 둔다. 빈 배열이면 남은 거절을 모두 지운다. 클라 검사를 통과한 뒤에만 부르므로 지우는 자리 아래에 클라 오류는 없다. */
   const setServerIssues = useCallback(
     (inputs: readonly ServerIssueInput[]) => {
+      for (const issue of serverIssuesRef.current) {
+        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- applyServerIssues 와 같은 사유
+        form.clearErrors(issue.path as Path<T>);
+      }
       const values = form.getValues();
       const byPath = new Map<string, ServerIssue>();
       for (const input of inputs) {
@@ -148,9 +160,9 @@ export function usePublishChecklist<T extends FieldValues>({
   );
 
   const completedTabIds = useMemo(
-    () => toCompletedTabIds(requiredTabIds, [...clientPaths, ...serverPaths], tabs),
-    [requiredTabIds, clientPaths, serverPaths, tabs],
+    () => (hasAttempted ? requiredTabIds : toCompletedTabIds(requiredTabIds, [...clientPaths, ...serverPaths], tabs)),
+    [hasAttempted, requiredTabIds, clientPaths, serverPaths, tabs],
   );
 
-  return { completedTabIds, markAttempted, setServerIssues, reapplyServerIssues, serverLabel };
+  return { hasAttempted, completedTabIds, markAttempted, setServerIssues, reapplyServerIssues, serverLabel };
 }

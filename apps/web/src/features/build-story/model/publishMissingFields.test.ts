@@ -4,6 +4,7 @@ import {
   STORY_MISSING_FIELD_FORM_PATH,
   STORY_MISSING_FIELD_LABELS,
   storyMissingFieldFormPath,
+  storyMissingFieldServerLabel,
 } from "./publishMissingFields";
 import { STORY_TABS } from "./tabs";
 
@@ -107,5 +108,25 @@ describe("storyMissingFieldFormPath", () => {
   it("빌더가 모르는 키는 옮기지 않는다", () => {
     expect(storyMissingFieldFormPath("startingSetups[0].openingSituation")).toBeUndefined();
     expect(storyMissingFieldFormPath("situationNotes.newRule")).toBeUndefined();
+  });
+});
+
+describe("storyMissingFieldServerLabel", () => {
+  it("칸 하나를 짚는 키는 서버 라벨을 주지 않아 칸 라벨 표가 이름을 정한다", () => {
+    const fieldKeys = ["name", "oneLiner", "thumbnailAssetId", "customPrompt", "settingText", "startingSetups", "description"];
+    for (const field of [...fieldKeys, "genreId", "target"]) {
+      expect(storyMissingFieldServerLabel(field)).toBeUndefined();
+    }
+  });
+
+  it("목록 자리만 가리키는 키는 무엇이 틀렸는지 말하는 서버 라벨을 준다", () => {
+    expect(storyMissingFieldServerLabel("stats.range")).toBe(STORY_MISSING_FIELD_LABELS["stats.range"]);
+    expect(storyMissingFieldServerLabel("keywordNotes.infoText")).toBe(STORY_MISSING_FIELD_LABELS["keywordNotes.infoText"]);
+    expect(storyMissingFieldServerLabel("mediaBook.orphanCells")).toBe(STORY_MISSING_FIELD_LABELS["mediaBook.orphanCells"]);
+  });
+
+  it("인덱스 키와 모르는 키는 서버 라벨이 없다", () => {
+    expect(storyMissingFieldServerLabel("startingSetups[1].prologue")).toBeUndefined();
+    expect(storyMissingFieldServerLabel("constructor")).toBeUndefined();
   });
 });

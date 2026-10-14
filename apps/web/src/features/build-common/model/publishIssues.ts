@@ -70,7 +70,7 @@ export type PublishIssueRow = {
   /** 오류가 걸린 폼 경로 — 누르면 이 칸으로 간다. */
   path: string;
   tabId: string;
-  /** "{탭 이름} · {칸 이름}". 칸 이름이 탭 이름과 같으면(목록 자체의 오류) 탭 이름만. */
+  /** "{탭 이름} · {칸 이름}". 칸 이름이 탭 이름으로 시작하면 칸 이름만(같은 말을 두 번 읽지 않게). */
   label: string;
 };
 
@@ -80,7 +80,9 @@ export type PublishIssueRow = {
  * 줄은 탭 순서(화면에 보이는 순서)를 따르고 같은 탭 안에서는 받은 순서다 — `flattenFieldErrorPaths` 가 스키마 선언 순서로 주므로
  * 첫 오류로 가는 이동과 같은 줄이 맨 위에 선다. 같은 경로나 같은 이름은 한 줄이다(한 칸의 중복 id 오류와 그 칸 자체의 오류처럼 이름이
  * 같은 줄은 같은 곳으로 가니 둘로 세지 않는다). 어느 탭에도 들지 않는 경로는 갈 곳이 없어 뺀다. 칸 이름을
- * 못 찾으면 탭 이름만 남긴다 — 영문 경로나 뜻 없는 대체 문구를 보이지 않는다.
+ * 못 찾으면 탭 이름만 남긴다 — 영문 경로나 뜻 없는 대체 문구를 보이지 않는다. 칸 이름이 탭 이름으로 시작하면("1번째 상황별
+ * 이미지 노출할 상황", "스탯 규칙(…)", 목록 자체의 오류라 칸 이름이 탭 이름인 경우 포함) 탭 이름을 앞에 다시 붙이지 않는다. 탭
+ * 이름이 뒤에 나오는 칸("1번째 시작설정 2번째 스탯 최대값")은 앞의 탭 이름이 있어야 어느 탭인지 읽히므로 그대로 둔다.
  */
 export function publishIssueRows(
   paths: readonly string[],
@@ -96,13 +98,26 @@ export function publishIssueRows(
     const order = tabs.findIndex((tab) => tab.id === tabId);
     const tab = tabs[order];
     if (tab === undefined) continue;
-    const detail = labelFor(path);
-    const label = detail === undefined || detail === tab.label ? tab.label : `${tab.label} · ${detail}`;
+    const label = rowLabel(tab.label, labelFor(path));
     if (rows.some((row) => row.label === label)) continue;
     rows.push({ path, tabId: tab.id, label, order });
   }
   // `sort` 는 안정 정렬이라 같은 탭 안에서는 받은 순서가 남는다.
   return rows.sort((a, b) => a.order - b.order).map(({ path, tabId, label }) => ({ path, tabId, label }));
+}
+
+function rowLabel(tabLabel: string, detail: string | undefined): string {
+  if (detail === undefined) return tabLabel;
+  return startsWithTab(detail, tabLabel) ? detail : `${tabLabel} · ${detail}`;
+}
+
+/** 칸 이름이 탭 이름으로 시작하는가 — 맨 앞 순번("1번째 ")은 건너뛰고 본다. 탭 이름 뒤는 끝·띄어쓰기·괄호·쉼표여야 한다
+ * ("스토리 설정/정보" 처럼 낱말 일부로 시작하는 것은 치지 않는다). */
+function startsWithTab(detail: string, tabLabel: string): boolean {
+  const rest = detail.replace(/^\d+번째 /, "");
+  if (!rest.startsWith(tabLabel)) return false;
+  const after = rest[tabLabel.length];
+  return after === undefined || /[\s(,]/.test(after);
 }
 
 /**

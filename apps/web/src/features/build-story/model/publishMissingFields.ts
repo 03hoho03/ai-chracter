@@ -8,7 +8,8 @@ import { MAX_MEDIA_BOOK_CELLS, type StoryBuilderFormValues } from "./schema";
 // 서버만 아는 상태가 남아 이 경로를 지우지 않는다.
 // 키 집합은 validate_story_publish가 내는 **비인덱스** 필드 전부다. 인덱스가 박힌 `startingSetups[0].prologue` 류는
 // `storyMissingFieldFormPath` 가 폼 경로로 옮기고 발행 전 확인 목록이 칸 라벨 표(`STORY_FIELD_LABELS`)에서 이름을 찾는다.
-// 여기 라벨은 서버 키가 목록 자리만 가리킬 때(스탯 범위 등) 그 목록 줄이 무엇이 틀렸는지 말하는 데 쓴다.
+// 목록 줄 이름으로 쓰는 것은 서버 키가 목록 자리만 가리킬 때(스탯 범위 등) 무엇이 틀렸는지 말하는 라벨뿐이다
+// (`storyMissingFieldServerLabel`). 칸 하나를 짚는 키의 이름은 칸 라벨 표가 정한다.
 export const STORY_MISSING_FIELD_LABELS = {
   name: "이름",
   oneLiner: "한줄소개",
@@ -108,4 +109,29 @@ export function storyMissingFieldFormPath(field: string): string | undefined {
     if (match) return toFormPath(match);
   }
   return undefined;
+}
+
+/** 칸 하나를 짚는 서버 키. 목록 줄 이름을 칸 라벨 표에서 찾아, 칸 라벨을 고치면 서버 400 줄도 같은 이름이 된다. */
+const FIELD_KEYS: ReadonlySet<string> = new Set<MissingField>([
+  "name",
+  "oneLiner",
+  "thumbnailAssetId",
+  "customPrompt",
+  "settingText",
+  "startingSetups",
+  "description",
+  "genreId",
+  "target",
+]);
+
+/**
+ * 서버 400 의 목록 줄에 서버 쪽 라벨을 쓸 때 그 라벨. 순수 함수.
+ *
+ * 서버 키가 목록 자리만 가리키면(`stats.range` → 첫 시작설정의 스탯 목록) 칸 라벨로는 무엇이 틀렸는지 말할 수 없어 위 라벨을 준다.
+ * 칸 하나를 짚는 키와 인덱스 키(`startingSetups[1].prologue`), 모르는 키는 `undefined` 라 호출부가 칸 라벨 표에서 찾는다.
+ */
+export function storyMissingFieldServerLabel(field: string): string | undefined {
+  if (FIELD_KEYS.has(field)) return undefined;
+  const labels: Readonly<Record<string, string | undefined>> = STORY_MISSING_FIELD_LABELS;
+  return Object.hasOwn(labels, field) ? labels[field] : undefined;
 }

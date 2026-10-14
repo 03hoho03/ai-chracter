@@ -22,6 +22,7 @@ import {
   STORY_FIELD_LABELS,
   STORY_MISSING_FIELD_LABELS,
   storyMissingFieldFormPath,
+  storyMissingFieldServerLabel,
   STORY_TABS,
 } from "@/features/build-story";
 
@@ -267,7 +268,7 @@ describe("스토리 발행 전 확인 목록 라벨 전수", () => {
     for (const row of rows) expect(row.label).not.toMatch(/그 밖의/);
   });
 
-  it("칸 이름은 탭 이름 뒤에 부모 항목 순번과 함께 붙는다", () => {
+  it("칸 이름은 탭 이름 뒤에 부모 항목 순번과 함께 붙고, 탭 이름으로 시작하면 탭 이름을 다시 붙이지 않는다", () => {
     const rows = publishIssueRows(
       [
         "startingSetups.0.prologue",
@@ -281,7 +282,7 @@ describe("스토리 발행 전 확인 목록 라벨 전수", () => {
       labelFor,
     );
     expect(rows.map((row) => row.label)).toEqual([
-      "시작설정 · 1번째 시작설정 프롤로그",
+      "1번째 시작설정 프롤로그",
       "시작설정",
       "스탯 · 1번째 시작설정 2번째 스탯 최대값",
       "미디어 북 · 4번째 칸",
@@ -297,9 +298,8 @@ describe("스토리 서버 400 키 라벨 전수", () => {
   it.each([...Object.keys(STORY_MISSING_FIELD_LABELS), ...INDEXED_KEYS])("%s 는 칸에 걸리고 목록 줄 이름이 있다", (field) => {
     const path = storyMissingFieldFormPath(field);
     expect(path).toEqual(expect.any(String));
-    const serverLabels: Readonly<Record<string, string | undefined>> = STORY_MISSING_FIELD_LABELS;
-    const serverLabel = Object.hasOwn(serverLabels, field) ? serverLabels[field] : undefined;
-    // 서버 키 라벨이 없는 인덱스 키는 칸 라벨 표에서 이름을 찾아야 한다.
+    const serverLabel = storyMissingFieldServerLabel(field);
+    // 서버 라벨을 쓰지 않는 키(칸을 짚는 키·인덱스 키)는 칸 라벨 표에서 이름을 찾아야 한다.
     if (serverLabel === undefined) expect(labelFor(path ?? "")).toEqual(expect.any(String));
     const rows = publishIssueRows([path ?? ""], STORY_TABS, (target) => serverLabel ?? labelFor(target));
     expect(rows).toHaveLength(1);

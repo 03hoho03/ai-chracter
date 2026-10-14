@@ -66,9 +66,23 @@ describe("fieldLabelForPath", () => {
 describe("publishIssueRows", () => {
   const labelFor = (path: string) => fieldLabelForPath(path, LABELS);
 
-  it("'{탭} · {칸}' 이고, 칸 이름이 탭 이름과 같으면 탭 이름만", () => {
-    const rows = publishIssueRows(["startingSetups.0.prologue", "keywordNotes"], TABS, labelFor);
-    expect(rows.map((row) => row.label)).toEqual(["시작설정 · 1번째 시작설정 프롤로그", "키워드북"]);
+  it("'{탭} · {칸}' 이고, 칸 이름이 탭 이름으로 시작하면(순번 뒤 포함) 칸 이름만", () => {
+    const rows = publishIssueRows(
+      ["profile.name", "startingSetups.0.prologue", "startingSetups.0.stats.0.max", "keywordNotes"],
+      TABS,
+      labelFor,
+    );
+    expect(rows.map((row) => row.label)).toEqual([
+      "프로필 · 이름",
+      "1번째 시작설정 프롤로그",
+      "스탯 · 1번째 시작설정 1번째 스탯 최대값",
+      "키워드북",
+    ]);
+  });
+
+  it("탭 이름이 낱말 일부로 시작하는 칸 이름에는 탭 이름을 그대로 붙인다", () => {
+    const rows = publishIssueRows(["startingSetups.0.stats"], TABS, () => "스탯값 범위");
+    expect(rows.map((row) => row.label)).toEqual(["스탯 · 스탯값 범위"]);
   });
 
   it("탭 순서로 줄을 세우고 같은 탭 안에서는 받은 순서를 지킨다", () => {
@@ -100,8 +114,11 @@ describe("publishIssueRows", () => {
   });
 
   it("호출부가 준 이름(서버 키 라벨)을 칸 이름으로 쓴다", () => {
-    const rows = publishIssueRows(["startingSetups.0.stats"], TABS, () => "스탯 범위");
-    expect(rows.map((row) => row.label)).toEqual(["스탯 · 스탯 범위"]);
+    const rows = publishIssueRows(["startingSetups.0.stats"], TABS, () => "스탯 범위(최소값 < 최대값)");
+    expect(rows.map((row) => row.label)).toEqual(["스탯 범위(최소값 < 최대값)"]);
+    expect(publishIssueRows(["startingSetups.0.stats"], TABS, () => "규칙이 없는 스탯").map((row) => row.label)).toEqual([
+      "스탯 · 규칙이 없는 스탯",
+    ]);
   });
 });
 

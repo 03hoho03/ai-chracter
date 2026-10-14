@@ -117,6 +117,9 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
     // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- 위 사유(zod .default()/RHF Resolver 제네릭의 구조적 한계)
     resolver: zodResolver(characterBuilderSchema) as Resolver<CharacterBuilderFormValues>,
     defaultValues: serverToForm(draft),
+    // 첫 오류로 가는 포커스는 `useFocusFirstError` 가 확인 목록이 선 뒤에 준다. RHF 가 검증 직후 먼저 포커스하면 목록이 서기 전
+    // 자리로 스크롤돼 그 칸이 목록에 밀려 화면 밖에 남는다.
+    shouldFocusError: false,
   });
 
   // 대표 이미지 칸과 미리보기 카드가 같은 그림, 곧 폼이 지금 가진 그림을 보이도록 표시 주소를 여기서 한 번 정해
@@ -186,8 +189,8 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
   // (default() 적용 포함) 여기서 다시 parse()할 필요가 없다.
   async function handlePublish(values: CharacterBuilderFormValues) {
     setRejectionReason(undefined);
-    // 클라 검사를 통과했으니 지난 서버 거절은 이번 발행 응답이 새로 정한다.
-    checklist.setServerIssues([]);
+    // 검사가 오류 객체를 통째로 바꿔 지난 서버 거절도 지워졌다. 확인 모달에서 취소하면 그대로 돌아와야 하므로 다시 건다.
+    checklist.reapplyServerIssues();
     const { visibility } = values.registration;
     const shouldPublish = await confirmFirstPublish({
       contentId: draftId,
@@ -196,6 +199,8 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
       visibilityLabel: VISIBILITY_LABELS[visibility],
     });
     if (!shouldPublish) return;
+    // 이제 실제로 보내니 지난 서버 거절은 이번 발행 응답이 새로 정한다.
+    checklist.setServerIssues([]);
     const payload = formToServer(values);
     setIsPublishing(true);
     try {
@@ -271,6 +276,8 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
   });
 
   // 발행 시도가 실패하면 누락 필드를 담은 탭 라벨을 에러 상태로 표시하고, 폼 열 맨 위에 남은 항목을 나열한다.
+  // 목록은 발행을 누른 뒤에만 그린다 — 칸 하나를 떠날 때 거는 검사(스탯 범위)도 오류 객체에 들어가지만, 그건 그 칸의 안내이지
+  // 발행이 막혔다는 말이 아니다.
   const errorTabIds = errorTabs(form.formState.errors, TABS);
   const issueRows = publishIssueRows(
     flattenFieldErrorPaths(form.formState.errors),
@@ -304,7 +311,7 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
           }
         />
         <BuilderLayout isPreviewOpen={isPreviewOpen} preview={previewNode}>
-          {issueRows.length > 0 && (
+          {checklist.hasAttempted && issueRows.length > 0 && (
             <PublishIssueList rows={issueRows} onSelect={(path) => revealAndFocus(errorsAtPaths([path]))} />
           )}
           {rejectionReason !== undefined && draftId !== undefined && (
