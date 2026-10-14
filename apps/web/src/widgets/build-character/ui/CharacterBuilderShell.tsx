@@ -3,17 +3,19 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Tabs, TabsContent } from "@ai-character-chat/ui/components/tabs";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "@tanstack/react-router";
-import { FormProvider, useForm, useWatch, type FieldErrors, type Path, type Resolver } from "react-hook-form";
+import { FormProvider, useForm, useWatch, type FieldErrors, type Resolver } from "react-hook-form";
 import { toast } from "sonner";
 
 import { usePublishContentMutation, type CharacterDraftContent } from "@/entities/content";
 import type { PreviewStartPayload } from "@/entities/preview-session";
 import {
   characterBuilderSchema,
+  characterMissingFieldFormPath,
   characterSaveErrorMessage,
   formToServer,
   serverToForm,
   CHARACTER_COLLAPSIBLE_LISTS,
+  CHARACTER_FIELD_LABELS,
   CHARACTER_TABS,
   type CharacterBuilderFormValues,
   type CharacterBuilderTab,
@@ -25,16 +27,19 @@ import {
   BuilderTopBar,
   BuilderTopBarActions,
   errorItemKeys,
+  errorsAtPaths,
   errorTabs,
-  fieldLabelByFormPath,
+  fieldLabelForPath,
   FirstPublishConfirmModal,
   firstErrorLocation,
   flattenFieldErrorPaths,
   getFilterRejectionReason,
   getMissingFields,
   getPublishFailureMessage,
-  invalidFieldsMessage,
   missingFieldsMessage,
+  PUBLISH_ISSUES_TOAST,
+  PublishIssueList,
+  publishIssueRows,
   resolveProfileImageUrl,
   tabFromSearch,
   tabToSearch,
@@ -44,6 +49,7 @@ import {
   useDraftPersistence,
   useFocusFirstError,
   useProfileImageLocalUrl,
+  usePublishChecklist,
 } from "@/features/build-common";
 import { AppealModal } from "@/features/submit-appeal";
 import { creationGuidePath } from "@/shared/config/creationGuide";
@@ -75,49 +81,6 @@ type CharacterBuilderShellProps = {
 // fields(에러 탭 매칭용 경로 프리픽스)·preview가 이 배열에 함께 실려 있다.
 const TABS = CHARACTER_TABS;
 
-// 서버(validate_character_publish)가 400으로 돌려주는 필드명을 한국어 라벨로 보여준다. 초안 상태를
-// 표현하느라 nullable인 3필드(profile.image/registration.genre/registration.target)도 이제는
-// 폼 스키마의 refine이 먼저 막지만, 다른 기기에서 편집된
-// 초안처럼 서버만 아는 상태가 남아 이 경로를 지우지 않는다.
-const MISSING_FIELD_LABELS = {
-  name: "이름",
-  oneLiner: "한줄소개",
-  thumbnailAssetId: "대표 이미지",
-  intro: "인트로",
-  characterPrompt: "캐릭터 프롬프트",
-  // 이미지를 올리지 않은 상황별 이미지 항목이 하나라도 있으면 서버가 이 키를 한 번 준다.
-  situationalImages: "상황별 이미지",
-  description: "등록 설명",
-  genreId: "장르",
-  target: "타겟",
-};
-
-/** 서버 필드명의 단일 소스는 위 라벨 맵이다 — 아래 폼 경로 맵이 같은 키 집합을 덮는지 `satisfies`가
- * 검사한다. 어긋난 키는 fieldLabelByFormPath가 조용히 버려 토스트가 "그 밖의 필수 항목"으로 접히는데,
- * 두 맵을 손으로 맞추는 한 그 어긋남은 화면에서만 드러난다. */
-type MissingField = keyof typeof MISSING_FIELD_LABELS;
-
-// 위 서버 필드명을 form.setError()가 받는 폼 경로로 옮긴다 — 값은
-// features/build-character/model/tabs.ts(CHARACTER_TABS)의 fields 프리픽스 아래에 들어간다(profile.*는
-// profile 탭, registration.*는 detail 탭 — 탭 id는 "detail"이지만 폼 경로는 스키마 키 "registration"을
-// 그대로 쓴다). 선언 타입이 string 인덱스인 것은 서버가 주는 임의 문자열로 조회하기 때문이고,
-// 키 커버리지는 아래 `satisfies`가 잠근다.
-const MISSING_FIELD_FORM_PATH: Partial<Record<string, Path<CharacterBuilderFormValues>>> = {
-  name: "profile.name",
-  oneLiner: "profile.oneLiner",
-  thumbnailAssetId: "profile.image",
-  intro: "intro.firstMessage",
-  characterPrompt: "prompt.characterPrompt",
-  situationalImages: "situationalImages",
-  description: "registration.description",
-  genreId: "registration.genre",
-  target: "registration.target",
-} satisfies Record<MissingField, Path<CharacterBuilderFormValues>>;
-
-// 클라 검증 실패 경로(handlePublishInvalid)가 들고 있는 건 서버 필드명이 아니라 폼 경로라, 위 두
-// 맵에서 "폼 경로 → 라벨"을 파생시킨다 — 세 번째 맵을 손으로 적지 않는다.
-const MISSING_FIELD_LABEL_BY_FORM_PATH = fieldLabelByFormPath(MISSING_FIELD_FORM_PATH, MISSING_FIELD_LABELS);
-
 /** 5탭 단일 useForm 셸. 자동저장/발행/
  * 미리보기를 여기서 연동한다.
  *
@@ -141,8 +104,8 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
   // 반복 항목의 열림 여부. 탭 본문은 탭을 바꿀 때 언마운트되므로 탭을 오가도 펼쳐 둔 항목이 남도록 셸이 쥔다.
   const uiState = useCreateBuilderUiState();
   // mode/reValidateMode/shouldUnregister를 명시하지 않는다 — RHF 기본값(제출 전엔 조용히, 제출 후엔
-  // onChange 재검증)이 이미 "발행 시도 후에는 고치는 즉시 에러가 풀린다"는 요구와 정확히 같다.
-  // 기본값을 그대로 두는 것 자체가 의도된 결정이다.
+  // onChange 재검증)이 "발행 시도 전에는 오류를 띄우지 않는다"는 요구와 같다. 다만 기본 재검증은 입력한 칸 이름의 오류만
+  // 고치므로, 다른 칸에 걸린 오류와 `setValue` 로 쓰는 칸의 오류는 아래 `usePublishChecklist` 가 발행 시도 뒤 통째로 갈아 끼운다.
   const form = useForm<CharacterBuilderFormValues>({
     // intro.exampleDialogues/situationalImages 등 `.default()`가 붙은 필드는 zod의 input 타입과
     // output 타입이 갈린다 — zodResolver()는 `Resolver<Input, any, Output>`을 돌려주는데
@@ -177,6 +140,14 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
     setActiveTab: (tabId) => {
       if (isCharacterBuilderTab(tabId)) setActiveTab(tabId);
     },
+  });
+
+  // 탭 줄의 채움 표시, 발행을 누른 뒤 고친 칸의 오류 해제, 남은 서버 거절을 셸 한 곳에서 맞춘다.
+  const checklist = usePublishChecklist({
+    form,
+    schema: characterBuilderSchema,
+    tabs: TABS,
+    requiredTabIds: CHARACTER_REQUIRED_TAB_IDS,
   });
 
   const { saveNow } = useAutosave({
@@ -215,6 +186,8 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
   // (default() 적용 포함) 여기서 다시 parse()할 필요가 없다.
   async function handlePublish(values: CharacterBuilderFormValues) {
     setRejectionReason(undefined);
+    // 클라 검사를 통과했으니 지난 서버 거절은 이번 발행 응답이 새로 정한다.
+    checklist.setServerIssues([]);
     const { visibility } = values.registration;
     const shouldPublish = await confirmFirstPublish({
       contentId: draftId,
@@ -237,15 +210,18 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
       }
       const missingFields = getMissingFields(error);
       if (missingFields) {
-        for (const field of missingFields) {
-          const formPath = MISSING_FIELD_FORM_PATH[field];
-          if (formPath) form.setError(formPath, { type: "server", message: "필수 항목이에요." });
-        }
-        // setError는 formState.errors를 동기로 갱신한다 — 위 루프 직후 바로 읽어도 최신값이다.
+        const unknownFields = missingFields.filter((field) => characterMissingFieldFormPath(field) === undefined);
+        checklist.setServerIssues(
+          missingFields.flatMap((field) => {
+            const path = characterMissingFieldFormPath(field);
+            return path === undefined ? [] : [{ path, message: "필수 항목이에요." }];
+          }),
+        );
+        // setError는 formState.errors를 동기로 갱신한다 — 위 호출 직후 바로 읽어도 최신값이다.
         // 서버는 목록 전체(상황별 이미지)만 가리켜 여기서 열릴 항목은 보통 없지만, 클라 검증 경로와 같은 순서를 지킨다.
-        revealErrorItems(form.formState.errors);
-        focusFirstError(firstErrorLocation(form.formState.errors, TABS));
-        toast.error(missingFieldsMessage(missingFields, MISSING_FIELD_LABELS));
+        revealAndFocus(form.formState.errors);
+        // 빌더가 모르는 키는 칸에 걸 수 없어 목록에 오르지 않는다 — 그때만 토스트가 직접 말한다.
+        toast.error(unknownFields.length > 0 ? missingFieldsMessage(unknownFields, {}) : PUBLISH_ISSUES_TOAST);
         return;
       }
       const publishFailure = getPublishFailureMessage(error);
@@ -263,20 +239,17 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
   // 오류로 파생하지 않고 열림으로 기록하는 이유는, 발행 뒤에는 고치는 입력마다 다시 검증돼 오류가 풀리는 순간 항목이 접히며
   // 입력 중이던 칸의 포커스를 잃기 때문이다. 값 id 는 지금 폼 값에서 읽는다 — 오류는 방금 이 값으로 검증해 만든 것이라 오류 경로의
   // 인덱스가 지금 배열의 같은 자리를 가리킨다.
-  function revealErrorItems(errors: FieldErrors<CharacterBuilderFormValues>) {
+  function revealAndFocus(errors: FieldErrors<CharacterBuilderFormValues>) {
     uiState.open(errorItemKeys(errors, form.getValues(), CHARACTER_COLLAPSIBLE_LISTS, TABS));
+    focusFirstError(firstErrorLocation(errors, TABS));
   }
 
-  // zodResolver 검증 실패(폼 스키마 위반) 경로. 먼저 걸리는 쪽이 덜
-  // 친절할 이유가 없어 여기서도 토스트를 띄운다. 문구는 서버 400 경로와 같은 파일이 소유하되
-  // 문장이 갈린다 — 이 경로에는 누락뿐 아니라 배열 상한 위반도
-  // 온다.
+  // zodResolver 검증 실패(폼 스키마 위반) 경로. 서버 400 과 같은 토스트로 폼 열 맨 위 목록을 가리킨다. 검사가 오류 객체를
+  // 통째로 바꿔 지난 서버 거절이 지워졌으므로 아직 유효한 것을 다시 걸고, 첫 오류는 둘을 합쳐 고른다.
   function handlePublishInvalid(errors: FieldErrors<CharacterBuilderFormValues>) {
-    revealErrorItems(errors);
-    focusFirstError(firstErrorLocation(errors, TABS));
-    toast.error(
-      invalidFieldsMessage(flattenFieldErrorPaths(errors), MISSING_FIELD_LABEL_BY_FORM_PATH),
-    );
+    const serverPaths = checklist.reapplyServerIssues();
+    revealAndFocus(errorsAtPaths([...flattenFieldErrorPaths(errors), ...serverPaths]));
+    toast.error(PUBLISH_ISSUES_TOAST);
   }
 
   // 폼과 프리뷰가 동시에 살아 있어야 하므로(lg 이상 2단) 더 이상
@@ -297,8 +270,13 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
     thumbnailUrl,
   });
 
-  // 발행 시도가 실패하면 누락 필드를 담은 탭 라벨을 에러 상태로 표시한다.
+  // 발행 시도가 실패하면 누락 필드를 담은 탭 라벨을 에러 상태로 표시하고, 폼 열 맨 위에 남은 항목을 나열한다.
   const errorTabIds = errorTabs(form.formState.errors, TABS);
+  const issueRows = publishIssueRows(
+    flattenFieldErrorPaths(form.formState.errors),
+    TABS,
+    (path) => checklist.serverLabel(path) ?? fieldLabelForPath(path, CHARACTER_FIELD_LABELS),
+  );
 
   return (
     <FormProvider {...form}>
@@ -318,11 +296,17 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
               saveStatus={saveStatus}
               onPreview={() => setIsPreviewOpen((prev) => !prev)}
               onSaveNow={() => void handleSaveNow()}
-              onPublish={() => void form.handleSubmit(handlePublish, handlePublishInvalid)()}
+              onPublish={() => {
+                checklist.markAttempted();
+                void form.handleSubmit(handlePublish, handlePublishInvalid)();
+              }}
             />
           }
         />
         <BuilderLayout isPreviewOpen={isPreviewOpen} preview={previewNode}>
+          {issueRows.length > 0 && (
+            <PublishIssueList rows={issueRows} onSelect={(path) => revealAndFocus(errorsAtPaths([path]))} />
+          )}
           {rejectionReason !== undefined && draftId !== undefined && (
             <div role="alert" className="flex items-start justify-between gap-3 rounded-lg bg-destructive/10 px-4 py-3">
               <div className="min-w-0 break-keep wrap-break-word">
@@ -355,6 +339,7 @@ export function CharacterBuilderShell({ draft, draftId, tab, onTabChange, render
               activeTab={activeTab}
               errorTabIds={errorTabIds}
               requiredTabIds={CHARACTER_REQUIRED_TAB_IDS}
+              completedTabIds={checklist.completedTabIds}
             />
 
             <TabsContent value="profile">
