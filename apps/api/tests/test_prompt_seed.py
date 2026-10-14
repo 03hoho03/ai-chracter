@@ -47,7 +47,8 @@ from api.db.models.story import StoryPromptTemplate
 # 레인에 얼려 둔 옛 문안이고, 소설 프롬프트 레인 리비전이 `novel` 레인에 경계 제안 4·화 생성 9·문단 수정 6 의 19행을
 # 심었다(화 생성에 인물 메모·지난 화 요약·화 수 지시 슬롯이 늘었다). `d9768bc0cfee`가 story 레인에 스탯 규칙 판정
 # 채널 `stat_rule_judgment` 4행을 더해 story 62 다. `fc6f0e134782`가 두 레인에 회상 슬롯 `memory_recall` 1행과 장면 기억
-# 추출 채널 `memory_episode` 4행을 더해 story 67 / character 43 이다.
+# 추출 채널 `memory_episode` 4행을 더해 story 67 / character 43 이고, `5cab2abe4e7b`가 두 레인에 사실 슬롯 `memory_facts` 1행과
+# 관계·사실 기억 추출 채널 `memory_fact` 4행을 더해 story 72 / character 48 이다.
 # system/generation 채널의 `scope='both'` 행은 story·character 두 레인에 사본으로 들어간다.
 _NOVELIZE_SLOTS: dict[str, set[tuple[str, str, str]]] = {
     "novelize_boundary": {
@@ -99,6 +100,7 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
             ("both", "memory_note", ""),
             ("both", "memory_summary", ""),
             ("both", "history", ""),
+            ("both", "memory_facts", ""),
             ("both", "memory_recall", ""),
             ("story", "keyword_notes", ""),
             ("story", "situation_notes", ""),
@@ -136,6 +138,12 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
             ("both", "previous_titles", ""),
             ("both", "turn_context", ""),
         },
+        "memory_fact": {
+            ("both", "instruction", ""),
+            ("both", "user_name", ""),
+            ("both", "existing_facts", ""),
+            ("both", "turn_context", ""),
+        },
         "image_judgment": {
             ("story", "image_list_intro", ""),
             ("story", "user_name", ""),
@@ -161,6 +169,7 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
             ("both", "memory_note", ""),
             ("both", "memory_summary", ""),
             ("both", "history", ""),
+            ("both", "memory_facts", ""),
             ("both", "memory_recall", ""),
             ("both", "final_frame", ""),
         },
@@ -180,6 +189,12 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
             ("both", "instruction", ""),
             ("both", "user_name", ""),
             ("both", "previous_titles", ""),
+            ("both", "turn_context", ""),
+        },
+        "memory_fact": {
+            ("both", "instruction", ""),
+            ("both", "user_name", ""),
+            ("both", "existing_facts", ""),
             ("both", "turn_context", ""),
         },
         **_NOVELIZE_SLOTS,
