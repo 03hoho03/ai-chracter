@@ -413,11 +413,11 @@ def test_recall_cue_allows_three_and_a_plain_turn_one() -> None:
     [
         pytest.param("character", " (인물의 말)", id="character"),
         pytest.param("mixed", " (인물의 말 포함)", id="mixed"),
-        pytest.param("user", "", id="user"),
+        pytest.param("user", " (사용자의 말)", id="user"),
         pytest.param("narration", "", id="narration"),
     ],
 )
-def test_character_assertion_is_marked_in_recall_line(asserted_by: str, tail: str) -> None:
+def test_spoken_scene_is_marked_with_its_speaker_and_narration_is_not(asserted_by: str, tail: str) -> None:
     assert (
         recall_line("빵집 약속", "토요일에 소금빵을 사 오기로 했다.", asserted_by)
         == f"- 빵집 약속: 토요일에 소금빵을 사 오기로 했다.{tail}"
