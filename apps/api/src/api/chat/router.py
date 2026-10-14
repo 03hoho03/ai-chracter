@@ -13,6 +13,7 @@ from starlette.concurrency import run_in_threadpool
 
 from api.chat.chat_count import record_chat_participant
 from api.chat.memory_episodes import extract_pending_episode
+from api.chat.memory_facts import extract_pending_facts
 from api.chat.memory_fold import SUMMARY_MAX_LENGTH, fold_memory
 from api.chat.memory_rewind import rewind_memory
 from api.chat.memory_window import select_current_snapshot
@@ -938,7 +939,11 @@ def _fold_after_commit(
 
     장면 기억 추출 스위치가 켜져 있으면 접기 **뒤에** 추출(`extract_pending_episode`, 추출 모델의 세트)을 예약한다.
     background 는 넣은 순서대로 차례로 돌아 접기가 이 턴에 커밋한 스냅샷을 추출이 바로 본다. 추출할 스냅샷이 없으면 읽기만
-    하고 끝난다. 스위치가 꺼져 있으면 예약이 접기 하나뿐이라 턴의 호출·트랜잭션이 이 스위치가 생기기 전과 같다."""
+    하고 끝난다. 스위치가 꺼져 있으면 예약이 접기 하나뿐이라 턴의 호출·트랜잭션이 이 스위치가 생기기 전과 같다.
+
+    관계·사실 기억 추출 스위치가 켜져 있으면 그 뒤에 사실 추출(`extract_pending_facts`, 사실 추출 모델의 세트)을 따로
+    예약한다. Starlette 는 background 태스크를 차례로 부르고 한 태스크가 예외를 내면 남은 태스크를 부르지 않는다 — 그래서
+    접기와 두 추출은 모두 어떤 예외도 밖으로 내지 않는다."""
 
     def schedule(_turn: TurnResult) -> None:
         if not settings.memory_window_generation:
@@ -966,6 +971,19 @@ def _fold_after_commit(
                 user_id=room.user_id,
                 prompt_set=episode_set,
                 sections=episode_sections,
+                is_story_chat=is_story_chat,
+                names=names,
+            )
+        if settings.memory_facts_extract:
+            fact_set, fact_sections = judgment_sets.fact
+            background_tasks.add_task(
+                extract_pending_facts,
+                session_factory,
+                llm_client,
+                room_id=room.id,
+                user_id=room.user_id,
+                prompt_set=fact_set,
+                sections=fact_sections,
                 is_story_chat=is_story_chat,
                 names=names,
             )

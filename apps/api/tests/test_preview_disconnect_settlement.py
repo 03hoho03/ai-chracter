@@ -132,6 +132,7 @@ async def _drive(
                 image=prompt_set_data,
                 summary=prompt_set_data,
                 episode=prompt_set_data,
+                fact=prompt_set_data,
             ),
             persona=None,
             media_images={cell_id: MediaTagImage(url="https://example.test/cell.png", width=10, height=20)},

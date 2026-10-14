@@ -337,6 +337,8 @@ class Settings(BaseSettings):
     memory_summary_model: PromptSetModelId = "gemini"
     # 요약 접기 뒤 장면 기억 추출(`chat/memory_episodes.py`)의 모델. 위 판정·요약 모델과 같은 규칙이다.
     memory_episode_model: PromptSetModelId = "gemini"
+    # 요약 접기 뒤 관계·사실 기억 추출(`chat/memory_facts.py`)의 모델. 위 판정·요약 모델과 같은 규칙이다.
+    memory_fact_model: PromptSetModelId = "gemini"
 
     @field_validator("llm_call_site_backends", mode="before")
     @classmethod
@@ -385,6 +387,7 @@ class Settings(BaseSettings):
         "image_judgment_model",
         "memory_summary_model",
         "memory_episode_model",
+        "memory_fact_model",
         mode="before",
     )
     @classmethod
@@ -549,6 +552,10 @@ class Settings(BaseSettings):
     # 있으면 접기 뒤에 아무것도 예약하지 않아 턴의 호출·트랜잭션이 이 스위치가 생기기 전과 같다. 위 생성 윈도우 스위치가
     # 꺼져 있으면 접기 자체가 없어 이 값과 무관하게 추출도 없다. 끄면(줄 삭제 + 재기동) 이미 뽑은 장면은 남고 새로 뽑지 않는다.
     memory_episodes_extract: bool = False
+    # 요약 접기가 접은 대화 구간을 관계·사실 기억(`chat_memory_facts`)으로 뽑는 백그라운드 추출을 켠다. 기본은 꺼짐이고 장면
+    # 추출 스위치와 따로다 — 켜면 장면 추출 예약 뒤에 따로 예약한다. 생성 윈도우 스위치가 꺼져 있으면 접기가 없어 추출도 없다.
+    # 끄면(줄 삭제 + 재기동) 이미 뽑은 사실은 남고 새로 뽑지 않는다.
+    memory_facts_extract: bool = False
     # 매 턴 방의 장면 기억에서 이번 턴과 이어질 장면을 골라 생성 프롬프트의 회상 섹션(대화 기록 뒤)에 싣는다. 기본은 꺼짐 —
     # 꺼져 있으면 장면을 읽지도 않아 생성 프롬프트·SQL 이 이 스위치가 생기기 전과 같다. 위 생성 윈도우 스위치가 꺼져 있으면
     # 요약 커서가 없어 이 값과 무관하게 회상도 없다. 끄면(줄 삭제 + 재기동) 다음 턴부터 섹션이 빠지고 장면은 남는다.

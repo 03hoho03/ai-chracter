@@ -981,6 +981,27 @@ def build_memory_episode_prompt(
     )
 
 
+# 관계·사실 기억 추출의 응답 스키마. 장면 기억 스키마와 같은 이유로 docstring·필드 설명·길이·범위 제약을 두지 않는다 — 상한은
+# `chat/memory_facts.py` 가 서버에서 자른다. 관계의 `attribute`·사실의 `object` 는 빈 문자열로 받는다(선택 칸을 두지 않으려고).
+class MemoryFactItem(BaseModel):
+    kind: Literal["relation", "fact"]
+    subject: str
+    object: str
+    attribute: str
+    value: str
+    truth_status: Literal["confirmed", "claimed", "disproved"]
+    asserted_by: Literal["user", "character", "narration"]
+    speaker: str
+    known_by: list[str]
+    importance: int
+    start_line: int
+    end_line: int
+
+
+class MemoryFactResult(BaseModel):
+    facts: list[MemoryFactItem]
+
+
 # 첫 구간처럼 앞서 뽑아 둔 행이 없을 때 기존 키 섹션에 싣는 값. 섹션이 conditional 이 아니라 머리글과 함께 늘 실린다 — 추출
 # 문안을 다듬을 때 측정한 프롬프트가 이 모양이다.
 _NO_EXISTING_FACTS = "(없음)"

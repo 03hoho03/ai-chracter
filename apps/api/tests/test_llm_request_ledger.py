@@ -1,5 +1,6 @@
 """채팅 턴 하나가 LLM 에 보내는 요청 전부를 장부로 고정한다 — 보내기·수정·재생성 × 스토리·캐릭터, 미리보기 스토리·캐릭터,
-상위 모델(opus)을 고른 스토리 방의 보내기, 단축어로 보낸 스토리 턴의 재생성, 그리고 장면 기억 추출을 켠 스토리 방의 보내기.
+상위 모델(opus)을 고른 스토리 방의 보내기, 단축어로 보낸 스토리 턴의 재생성, 장면 기억 추출을 켠 스토리 방의 보내기, 그리고
+관계·사실 기억 추출을 켠 스토리 방의 보내기.
 
 장부 한 줄은 요청만 본다(응답 텍스트·토큰 수는 보지 않는다): 부른 메서드, 실제로 간 공급자, 호출 위치, 실린 모델,
 사용자·방 귀속 유무, 프롬프트와 지시문의 sha256, 정지 시퀀스, 응답 스키마 이름, 캐시 블록 조각 수와 조각별 sha256.
@@ -37,6 +38,8 @@ from api.chat.prompt_builder import (
     ImageMatchJudgmentResult,
     MemoryEpisodeItem,
     MemoryEpisodeResult,
+    MemoryFactItem,
+    MemoryFactResult,
     MemorySummaryResult,
     StatRuleJudgmentResult,
 )
@@ -141,6 +144,25 @@ class _LedgerLLM(LLMClient):
                         keywords=[],
                         asserted_by="user",
                         evidence=[],
+                        importance=3,
+                        start_line=1,
+                        end_line=2,
+                    )
+                ]
+            )
+        if response_schema is MemoryFactResult:
+            return MemoryFactResult(
+                facts=[
+                    MemoryFactItem(
+                        kind="fact",
+                        subject="주인공",
+                        object="",
+                        attribute="행선지",
+                        value="마을 밖",
+                        truth_status="confirmed",
+                        asserted_by="user",
+                        speaker="",
+                        known_by=[],
                         importance=3,
                         start_line=1,
                         end_line=2,
@@ -331,6 +353,16 @@ async def _send_story_with_episodes(
     return _Case("POST", f"/chat-rooms/{room_id}/messages", {"content": "마을을 떠나자"}, cell_id)
 
 
+async def _send_story_with_facts(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> _Case:
+    """관계·사실 기억 추출만 켠 스토리 방의 보내기 — 접기 뒤 사실 추출이 요약 다음에 장부 끝에 남는다. 장면 추출 스위치와
+    따로라 이 경우에는 장면 추출 호출이 없다."""
+    monkeypatch.setattr(settings, "memory_facts_extract", True)
+    room_id, cell_id, _last_user = await _story_room(db_client, db_session)
+    return _Case("POST", f"/chat-rooms/{room_id}/messages", {"content": "마을을 떠나자"}, cell_id)
+
+
 _CASES: dict[str, _Builder] = {
     "send-story": _send_story,
     "edit-story": _edit_story,
@@ -343,6 +375,7 @@ _CASES: dict[str, _Builder] = {
     "preview-character": _preview_character,
     "send-story-opus": _send_story_opus,
     "send-story-episodes": _send_story_with_episodes,
+    "send-story-facts": _send_story_with_facts,
 }
 
 # 경우마다 장부가 지나야 하는 호출 위치 — 이 경로를 지나지 않으면 그 판정 프롬프트는 아무도 지문을 뜨지 않는다. 접기가
@@ -373,6 +406,7 @@ _REQUIRED_CALL_SITES: dict[str, set[str]] = {
     "preview-character": {"preview_generate"},
     "send-story-opus": _STORY_TURN_SITES,
     "send-story-episodes": _STORY_TURN_SITES | {"chat_memory_episode"},
+    "send-story-facts": _STORY_TURN_SITES | {"chat_memory_fact"},
 }
 
 

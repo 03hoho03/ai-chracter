@@ -175,6 +175,50 @@
       }
     }
   },
+  "chat_memory_fact": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  },
   "chat_memory_summary": {
     "gemini": {
       "generate": {

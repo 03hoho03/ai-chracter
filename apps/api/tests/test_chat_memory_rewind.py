@@ -25,13 +25,16 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from api.chat import memory_episodes, memory_fold
+from api.chat import memory_episodes, memory_facts, memory_fold
 from api.chat.memory_episodes import extract_pending_episode
+from api.chat.memory_facts import extract_pending_facts
 from api.chat.memory_fold import fold_memory
 from api.chat.memory_rewind import rewind_memory
 from api.chat.prompt_builder import (
     MemoryEpisodeItem,
     MemoryEpisodeResult,
+    MemoryFactItem,
+    MemoryFactResult,
     MemorySummaryResult,
     PromptNames,
     load_active_prompt_set,
@@ -1071,3 +1074,226 @@ async def test_concurrent_extractions_of_one_snapshot_call_llm_once(
 
     assert llm.calls == 1
     assert await _committed_episode_state(committed_engine, room) == (1, [("done", 1)])
+
+
+# --- 사실 기억 추출과 되감기·다른 추출의 경합 ---------------------------------------------------
+#
+# 사실 추출도 장면 추출과 같은 순서를 따른다 — 마지막 트랜잭션이 스냅샷을 `FOR KEY SHARE` 로 먼저 잡고 나서 추출 기록을 갱신하고
+# 사실을 넣는다. 사실·추출 기록은 되감기의 스냅샷 DELETE 의 CASCADE 로만 지워진다.
+
+
+class _FactClient(LLMClient):
+    """사실 추출만 부른다. `before_answer` 는 결과를 돌려주기 전에(추출이 창을 다 읽고 세션을 닫은 뒤) 불린다."""
+
+    def __init__(self, before_answer: Callable[[], Awaitable[None]] | None = None) -> None:
+        self.before_answer = before_answer
+        self.calls = 0
+
+    async def generate(
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+        stop_sequences: list[str] | None = None,
+        *,
+        usage: LLMCallContext,
+    ) -> AsyncIterator[str]:
+        raise AssertionError("추출은 생성을 부르지 않는다")
+        yield ""  # pragma: no cover
+
+    async def generate_structured(
+        self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
+    ) -> Any:
+        assert response_schema is MemoryFactResult, response_schema
+        self.calls += 1
+        if self.before_answer is not None:
+            await self.before_answer()
+        return MemoryFactResult(
+            facts=[
+                MemoryFactItem(
+                    kind="relation",
+                    subject="민수",
+                    object="지아",
+                    attribute="",
+                    value="소꿉친구",
+                    truth_status="confirmed",
+                    asserted_by="user",
+                    speaker="",
+                    known_by=[],
+                    importance=3,
+                    start_line=1,
+                    end_line=20,
+                )
+            ]
+        )
+
+
+async def _run_fact_extraction(engine: AsyncEngine, room: Room, llm: LLMClient) -> None:
+    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+        prompt_set, sections = await load_active_prompt_set(session, lane="character")
+    await extract_pending_facts(
+        async_sessionmaker(engine, expire_on_commit=False),
+        llm,
+        room_id=room.room_id,
+        user_id=room.user_id,
+        prompt_set=prompt_set,
+        sections=sections,
+        is_story_chat=False,
+        names=PromptNames(persona_name=None, char_name=None),
+    )
+
+
+async def _committed_fact_state(engine: AsyncEngine, room: Room) -> tuple[int, list[tuple[str, int]]]:
+    """(사실 수, 사실 추출 기록의 (상태, 시도) 목록)."""
+    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+        facts = await session.scalar(
+            sa.select(sa.func.count()).select_from(ChatMemoryFact).where(ChatMemoryFact.chat_room_id == room.room_id)
+        )
+        extractions = (
+            await session.execute(
+                sa.select(ChatMemoryFactExtraction.status, ChatMemoryFactExtraction.attempts).where(
+                    ChatMemoryFactExtraction.chat_room_id == room.room_id
+                )
+            )
+        ).all()
+    return int(facts or 0), [(row.status, row.attempts) for row in extractions]
+
+
+def _capture_fact_failures(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    captured: list[str] = []
+    monkeypatch.setattr(
+        memory_facts, "capture_dependency_failure", lambda exc, *, dependency: captured.append(dependency)
+    )
+    return captured
+
+
+async def _reached(event: asyncio.Event, seconds: float) -> bool:
+    """`event` 가 `seconds` 안에 서는가 — 멈춤 지점에 닿지 못한 것을 시간 초과 예외가 아니라 단언 실패로 드러낸다."""
+    try:
+        await asyncio.wait_for(event.wait(), seconds)
+    except TimeoutError:
+        return False
+    return True
+
+
+async def test_message_deleted_during_fact_extraction_drops_its_facts(
+    committed_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """추출이 창을 읽고 모델을 기다리는 사이 사용자가 창 안 메시지를 지운다. 되감기가 스냅샷을 지우면 사실 추출 기록도 함께
+    사라지고, 추출은 마지막 트랜잭션에서 스냅샷이 없음을 보고 아무것도 쓰지 않는다 — 실패로 세지도 않는다."""
+    captured = _capture_fact_failures(monkeypatch)
+    room = await _seed_committed_room(committed_engine, turns=10)
+    await _commit_snapshot(committed_engine, room, turn=10)
+
+    async def _user_deletes_a_message_in_the_window() -> None:
+        await _delete_message_committed(committed_engine, room, room.turns[5][0])
+
+    llm = _FactClient(before_answer=_user_deletes_a_message_in_the_window)
+    await _run_fact_extraction(committed_engine, room, llm)
+
+    assert llm.calls == 1
+    assert captured == []
+    assert await _committed_snapshots(committed_engine, room) == []
+    assert await _committed_fact_state(committed_engine, room) == (0, [])
+
+
+async def test_snapshot_rewound_between_pick_and_fact_claim_is_skipped_without_counting_a_failure(
+    committed_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """추출이 후보를 고른 뒤 선점하기 전에, 다른 세션의 되감기가 그 스냅샷을 지우고 커밋한다. 선점 INSERT 가 외래 키(23503)에
+    걸리지만 경합이라 실패로 세지 않고 모델도 부르지 않는다."""
+    captured = _capture_fact_failures(monkeypatch)
+    room = await _seed_committed_room(committed_engine, turns=10)
+    await _commit_snapshot(committed_engine, room, turn=10)
+    pick = memory_facts._next_candidate
+    rewound: list[bool] = []
+
+    async def _then_another_session_rewinds(*args: Any, **kwargs: Any) -> Any:
+        candidate = await pick(*args, **kwargs)
+        await _delete_message_committed(committed_engine, room, room.turns[5][0])
+        rewound.append(True)
+        return candidate
+
+    monkeypatch.setattr(memory_facts, "_next_candidate", _then_another_session_rewinds)
+    llm = _FactClient()
+
+    await _run_fact_extraction(committed_engine, room, llm)
+
+    assert rewound == [True]
+    assert llm.calls == 0
+    assert captured == []
+    assert await _committed_snapshots(committed_engine, room) == []
+    assert await _committed_fact_state(committed_engine, room) == (0, [])
+
+
+@pytest.mark.parametrize(
+    "pause_after",
+    [
+        # 스냅샷 잠금만 쥔 채 — 되감기가 추출 기록을 스냅샷보다 먼저 지우면 여기서 교착이 난다.
+        pytest.param("_lock_snapshot", id="holding-the-snapshot-lock"),
+        # 추출 기록까지 갱신한 채 — 스냅샷을 먼저 잠그지 않으면 되감기의 CASCADE 와 사실 INSERT 의 FK 확인이 교착한다.
+        pytest.param("_finish_claim", id="holding-the-claim-update"),
+    ],
+)
+async def test_rewind_during_fact_extraction_finishes_without_deadlock(
+    committed_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch, pause_after: str
+) -> None:
+    """추출이 마지막 트랜잭션 중간에 멈춘 사이 되감기(창 안 메시지 삭제)가 시작된다. 되감기는 추출 커밋을 기다렸다가
+    스냅샷을 지우고, CASCADE 가 방금 넣은 사실과 추출 기록까지 지운다. 어느 쪽도 교착으로 끊기지 않는다."""
+    captured = _capture_fact_failures(monkeypatch)
+    room = await _seed_committed_room(committed_engine, turns=10)
+    await _commit_snapshot(committed_engine, room, turn=10)
+    gate = _Gate()
+    original = getattr(memory_facts, pause_after)
+
+    async def _pause_there(*args: Any, **kwargs: Any) -> Any:
+        result = await original(*args, **kwargs)
+        gate.holding.set()
+        await gate.release.wait()
+        return result
+
+    monkeypatch.setattr(memory_facts, pause_after, _pause_there)
+    extraction = asyncio.create_task(_run_fact_extraction(committed_engine, room, _FactClient()))
+    rewind: asyncio.Task[None] | None = None
+    try:
+        paused = await _reached(gate.holding, 5)
+        if paused:
+            rewind = asyncio.create_task(_delete_message_committed(committed_engine, room, room.turns[5][0]))
+            await _wait_until_a_lock_is_awaited(committed_engine)
+    finally:
+        gate.release.set()
+        await asyncio.wait_for(extraction, 15)
+        if rewind is not None:
+            await asyncio.wait_for(rewind, 15)
+
+    assert paused
+    assert captured == []
+    assert await _committed_snapshots(committed_engine, room) == []
+    assert await _committed_fact_state(committed_engine, room) == (0, [])
+
+
+async def test_concurrent_fact_extractions_of_one_snapshot_call_llm_once(
+    committed_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """두 턴의 백그라운드가 다른 워커에서 같은 스냅샷을 골랐다. 선점은 하나만 이기고, 모델은 한 번만 불린다."""
+    room = await _seed_committed_room(committed_engine, turns=10)
+    await _commit_snapshot(committed_engine, room, turn=10)
+    both_picked = asyncio.Barrier(2)
+    pick = memory_facts._next_candidate
+
+    async def _both_pick_before_either_claims(*args: Any, **kwargs: Any) -> Any:
+        candidate = await pick(*args, **kwargs)
+        await both_picked.wait()
+        return candidate
+
+    monkeypatch.setattr(memory_facts, "_next_candidate", _both_pick_before_either_claims)
+    llm = _FactClient()
+
+    await asyncio.wait_for(
+        asyncio.gather(
+            _run_fact_extraction(committed_engine, room, llm), _run_fact_extraction(committed_engine, room, llm)
+        ),
+        15,
+    )
+
+    assert llm.calls == 1
+    assert await _committed_fact_state(committed_engine, room) == (1, [("done", 1)])
