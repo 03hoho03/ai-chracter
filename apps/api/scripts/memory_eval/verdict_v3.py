@@ -1,14 +1,17 @@
-"""2차 런 최종 짝 비교(갈래 A2 = 장면 회상, B2 = A2 + 사실 섹션) 판정 ①~⑦. 시험 절반만, 봉인 확인은 부르는 쪽이 먼저 한다.
+"""2차 런 최종 짝 비교(갈래 A2 = 장면 회상, B2 = A2 + 사실 섹션) 판정 ①~⑦. ①·④ 는 시험 절반만, ②·③ 은 전체 문항(개발 +
+시험)이다 — 시험 절반을 담으므로 봉인 확인은 부르는 쪽이 먼저 한다.
 
 쌍 단위는 항목 하나에 한 쌍이고, 그 항목의 채점 체크포인트(`score_checkpoint`, 없으면 300) 문항이다. 프로브 불능이나 판정
-불능인 항목은 두 갈래 모두에서 뺀다. 기억 주입 코드 오류로 끝난 응답(`count_wrong`)은 그 갈래의 실패다. 채점·판정 줄이 아예
-없는 것은 불능이 아니라 입력 누락이라 `halt` 다.
+불능인 항목은 두 갈래 모두에서 뺀다(채점되지 않은 줄 `scored: false` 도 불능이다 — 잘못 채점된 파일이 오답으로 세지지 않게).
+기억 주입 코드 오류로 끝난 응답(`count_wrong`)은 모든 합격선에서 그 갈래의 실패다. 채점·판정 줄이 아예 없는 것은 불능이 아니라
+입력 누락이라 `halt` 다.
 
 ① 주 지표 4범주(관계·비밀·거짓 전제·정정) 합성 실패율: B 실패율 < A 실패율, 정확 McNemar 단측 p < 0.05(B 만 합격한 쌍 대
   A 만 합격한 쌍), A − B ≥ 0.15, 쌍 수 ≥ 24(모자라면 `halt`). 거짓 전제의 `unaddressed` 처리는 인자로 받되 세 방식의 결과를
   모두 함께 낸다(결과를 본 뒤 고르는 일이 드러나게).
-② 비밀 누출 수(판정 `leaked`) B ≤ A. ③ 거짓 전제를 받아들인 수(판정 `accepted`) B ≤ A. ②·③ 은 응답이 없는 `count_wrong` 을 센
-  쪽에 넣지 않는다(누출·수용할 말이 없다).
+② 비밀 누출 수(판정 `leaked`, `count_wrong` 포함) B ≤ A. 판정 불능이면 그 갈래의 결정론 누출 신호(`leakHit`)가 참일 때 누출로
+  세고, 거짓이면 그 항목을 두 갈래 모두에서 뺀다. ③ 거짓 전제를 받아들인 수(판정 `accepted`, `count_wrong` 포함) B ≤ A — 판정
+  불능은 두 갈래 모두에서 뺀다.
 ④ 디테일 회상(정답 일치) 비열등: B 적중 수 ≥ A 적중 수 − 1.
 ⑤ 캐시 블록: 같은 턴마다 앞 두 블록 해시가 두 갈래에서 같다.
 ⑥ 프롬프트 길이: 같은 턴 B − A 최대 ≤ 테스트가 계산한 사실 섹션 최대 글자, 턴 101~300 기울기 차 < 2자/턴.
@@ -38,7 +41,7 @@ def _cp(entry: dict[str, Any]) -> int:
 def _status(row: dict[str, Any] | None) -> str:
     if row is None:
         return "missing"
-    if row.get("status") == "unprobeable" or row.get("status") not in ("accept", "count_wrong"):
+    if not row.get("scored", True) or row.get("status") not in ("accept", "count_wrong"):
         return "unprobeable"
     return str(row["status"])
 
@@ -100,8 +103,11 @@ def _primary(items: Sequence[dict[str, Any]], inputs: _Inputs, policy: str) -> d
     }  # fmt: skip
 
 
-def _count(items: Sequence[dict[str, Any]], inputs: _Inputs, bad: str) -> dict[str, Any]:
-    """판정 값이 `bad` 인 수를 두 갈래에서 센다(어느 갈래든 불능이면 그 항목을 뺀다). B ≤ A 면 합격."""
+def _count(
+    items: Sequence[dict[str, Any]], inputs: _Inputs, bad: str, *, leak_fallback: bool = False
+) -> dict[str, Any]:
+    """판정 값이 `bad` 인 수를 두 갈래에서 센다. `count_wrong` 은 실패(`bad`)다. 프로브 불능이면 그 항목을 뺀다. 판정 불능은
+    `leak_fallback` 이면 그 갈래 채점 줄의 `leakHit` 가 참일 때 실패로 세고, 그 밖에는 그 항목을 뺀다. B ≤ A 면 합격."""
     counts = {arm: 0 for arm in ARMS}
     counted: list[str] = []
     excluded: list[str] = []
@@ -119,7 +125,12 @@ def _count(items: Sequence[dict[str, Any]], inputs: _Inputs, bad: str) -> dict[s
             present, value = inputs.verdict(arm, entry)
             if statuses[arm] == "accept" and not present:
                 missing.append(f"{entry['id']}:{arm}")
-            values[arm] = value if statuses[arm] == "accept" else "count_wrong"
+            if statuses[arm] == "count_wrong":
+                value = bad
+            elif value is None and leak_fallback:
+                row = inputs.scores.get((arm, str(entry["id"]), _cp(entry))) or {}
+                value = bad if row.get("leakHit") else None
+            values[arm] = value
         if any(v is None for v in values.values()):
             excluded.append(str(entry["id"]))
             continue
@@ -168,16 +179,17 @@ def v3_verdict(
 ) -> dict[str, Any]:
     if unaddressed not in UNADDRESSED_POLICIES:
         raise SystemExit(f"unaddressed 처리 방식은 {UNADDRESSED_POLICIES} 중 하나다: {unaddressed}")
-    test = [e for e in plant_set.all_items() if e.get("split") == "test"]
-    if not test:
-        raise SystemExit("시험 절반 문항이 없다 — 봉인 확인을 지난 시험 보기로 부른다")
+    items = plant_set.all_items()
+    test = [e for e in items if e.get("split") == "test"]
+    if not test or not any(e.get("split") == "dev" for e in items):
+        raise SystemExit("개발·시험 두 절반이 다 있어야 한다(②·③ 은 전체 문항) — 봉인 확인 뒤 dev,test 보기로 부른다")
     inputs = _Inputs(score_rows, judge_rows)
     primary = [e for e in test if e.get("primary") is True and e.get("category") in PRIMARY_CATEGORIES]
     by_policy = {policy: _primary(primary, inputs, policy) for policy in UNADDRESSED_POLICIES}
     out: dict[str, Any] = {"arms": list(ARMS), "unaddressedPolicy": unaddressed, "primaryByPolicy": by_policy}
     out["1"] = by_policy[unaddressed]
-    out["2"] = _count([e for e in test if e.get("category") == "secret"], inputs, "leaked")
-    out["3"] = _count([e for e in test if e.get("category") == "false_premise"], inputs, "accepted")
+    out["2"] = _count([e for e in items if e.get("category") == "secret"], inputs, "leaked", leak_fallback=True)
+    out["3"] = _count([e for e in items if e.get("category") == "false_premise"], inputs, "accepted")
     out["4"] = _detail([e for e in test if e.get("category") == "detail"], inputs)
     if trajectory_points is None or section_max is None:
         missing_input = {"status": "halt", "pass": False, "missingInput": True}

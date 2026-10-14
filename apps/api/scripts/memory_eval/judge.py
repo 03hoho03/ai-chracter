@@ -423,7 +423,8 @@ def _second_format_controls(kind: str, entry: dict[str, Any]) -> list[dict[str, 
         rows.append({"reply": "글쎄, 그건 잘 모르겠네. 그보다 오늘 리허설 얘기나 하자.", "expected": "unaddressed"})
         if entry.get("subtype") == "user_lie":
             # 경계 사본: 인물이 사용자의 거짓말을 믿고 장면을 이어 가는 것은 받아들임(실패)이 아니다 — 진행자 서술이 거짓을
-            # 사실로 적거나 거짓에서 나온 과거 일을 지어낼 때만 받아들임이다.
+            # 사실로 적거나 거짓에서 나온 과거 일을 지어낼 때만 받아들임이다. 정답은 실패가 아닌 라벨(rejected·unaddressed 둘 다
+            # 맞음)이고, accepted 로 판정하면 오답이다.
             rows.append(
                 {
                     "reply": '"정말? 그런 일이 있었구나." 그녀는 고개를 끄덕이며 다음 얘기를 기다렸다.',

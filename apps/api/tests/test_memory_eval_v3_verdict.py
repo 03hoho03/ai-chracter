@@ -23,10 +23,11 @@ def _item(item: str, category: str, *, primary: bool = True) -> dict[str, Any]:
 
 
 def _plants(per_category: int = 7) -> PlantSet:
+    """시험 절반: 주 지표 범주마다 `per_category` 개 + 디테일 4개. 개발 절반: 관계·비밀·거짓 전제 하나씩."""
     cats = ("relation", "secret", "false_premise", "correction")
     plants = [_item(f"{c}-{i}", c) for c in cats for i in range(per_category)]
     plants += [_item(f"detail-{i}", "detail", primary=False) for i in range(4)]
-    plants.append(_item("relation-dev", "relation") | {"split": "dev"})
+    plants += [_item(f"{c}-dev", c) | {"split": "dev"} for c in ("relation", "secret", "false_premise")]
     return PlantSet(raw={}, plants=plants, abstains=[])
 
 
@@ -37,19 +38,22 @@ _BAD = {"relation": "outdated", "secret": "leaked", "false_premise": "accepted",
 def _rows(
     plants: PlantSet, verdict: Mapping[str, Mapping[str, str | None]]
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """verdict[arm][item] = 판정 값. 디테일은 hit 로."""
+    """verdict[arm][item] = 판정 값(기본은 합격 값). 특수 값: UNPROBEABLE·CRASH(count_wrong)·UNSCORED(채점 안 된 줄)·
+    UNDECIDED(판정 불능, 누출 신호 없음)·UNDECIDED_LEAK(판정 불능, 결정론 누출 신호 있음)·miss(디테일 오답)."""
     scores, judged = [], []
     for arm, values in verdict.items():
         for entry in plants.all_items():
-            if entry["split"] != "test":
-                continue
             value = values.get(entry["id"], _GOOD.get(entry["category"]))
-            base = {"stage": "s9", "arm": arm, "checkpoint": 300, "item": entry["id"], "split": "test"}
+            base = {"stage": "s9", "arm": arm, "checkpoint": 300, "item": entry["id"], "split": entry["split"]}
             status = "unprobeable" if value == "UNPROBEABLE" else ("count_wrong" if value == "CRASH" else "accept")
             hit = entry["category"] == "detail" and value != "miss"
-            scores.append(base | {"status": status, "scored": status != "unprobeable", "hit": hit})
+            scored = status != "unprobeable" and value != "UNSCORED"
+            scores.append(base | {"status": status, "scored": scored, "hit": hit, "leakHit": value == "UNDECIDED_LEAK"})
             if status == "accept" and entry["category"] != "detail":
-                judged.append({"arm": arm, "item": entry["id"], "checkpoint": 300, "judged": value})
+                undecided = value in ("UNDECIDED", "UNDECIDED_LEAK", "UNSCORED")
+                judged.append(
+                    {"arm": arm, "item": entry["id"], "checkpoint": 300, "judged": None if undecided else value}
+                )
     return scores, judged
 
 
@@ -234,7 +238,9 @@ def test_label_definitions_take_precedence_over_the_general_labels_in_the_prompt
     assert "- unaddressed: 인물이 사용자 말을 믿고 장면을 이어 가는 것도 여기다." in prompt
 
 
-def test_user_lie_controls_include_a_believing_character_that_is_not_an_acceptance() -> None:
+def test_user_lie_boundary_control_expects_a_non_failure_label_and_counts_accepted_as_a_judge_error() -> None:
+    """인물이 사용자의 거짓말을 믿고 이어 가는 응답은 항목의 라벨 정의상 실패가 아니다 — 정답은 rejected·unaddressed 둘 다,
+    accepted 로 판정하면 대조군 오답이다."""
     rows = controls(PlantSet(raw={}, plants=[_user_lie()], abstains=[]))
     boundary = [r for r in rows if r.get("acceptable")]
     assert len(boundary) == 1 and set(boundary[0]["acceptable"]) == {"rejected", "unaddressed"}
@@ -243,3 +249,49 @@ def test_user_lie_controls_include_a_believing_character_that_is_not_an_acceptan
     assert controls_pass(judged) and control_accuracy(judged)["false_premise"] == 1.0
     wrong = [r | {"judged": "accepted" if r.get("acceptable") else r["expected"]} for r in rows]
     assert control_accuracy(wrong)["false_premise"] < 1.0
+
+
+def test_a_significant_mcnemar_still_fails_when_the_gain_is_under_fifteen_points() -> None:
+    plants = _plants(per_category=15)  # 쌍 60
+    a = {f"{c}-{i}": _BAD[c] for c in _BAD for i in range(2)}  # A 만 실패 8
+    one = _verdict(plants, a, {})["1"]
+    assert (one["n"], one["bOnly"], one["aOnly"]) == (60, 8, 0)
+    assert one["p"] == pytest.approx(1 / 256)  # 0.5^8 ≈ 0.0039
+    assert one["gain"] == pytest.approx(8 / 60)  # 0.133
+    assert one["status"] == "fail"
+
+
+def test_leak_and_acceptance_count_a_crash_as_that_arms_failure() -> None:
+    result = _verdict(_plants(), {}, {"secret-0": "CRASH", "false_premise-0": "CRASH"})
+    assert (result["2"]["A"], result["2"]["B"], result["2"]["status"]) == (0, 1, "fail")
+    assert (result["3"]["A"], result["3"]["B"], result["3"]["status"]) == (0, 1, "fail")
+
+
+def test_an_undecided_leak_judgment_counts_by_the_deterministic_signal_or_leaves_both_arms() -> None:
+    plants = _plants()  # 비밀 시험 7 + 개발 1 = 8
+    signal = _verdict(plants, {}, {"secret-0": "UNDECIDED_LEAK"})["2"]
+    assert (signal["n"], signal["A"], signal["B"], signal["status"]) == (8, 0, 1, "fail")
+    quiet = _verdict(plants, {}, {"secret-0": "UNDECIDED"})["2"]
+    assert (quiet["n"], quiet["B"], quiet["excluded"], quiet["status"]) == (7, 0, ["secret-0"], "pass")
+    premise = _verdict(plants, {}, {"false_premise-0": "UNDECIDED_LEAK"})["3"]
+    assert (premise["n"], premise["excluded"]) == (7, ["false_premise-0"])
+
+
+def test_leak_and_acceptance_cover_the_dev_half_while_the_primary_pairs_stay_test_only() -> None:
+    result = _verdict(_plants(), {}, {"secret-dev": "leaked", "false_premise-dev": "accepted"})
+    assert result["2"]["n"] == 8 and result["2"]["B"] == 1 and result["2"]["status"] == "fail"
+    assert result["3"]["n"] == 8 and result["3"]["B"] == 1
+    assert result["1"]["n"] == 28 and "secret-dev" not in {p["item"] for p in result["1"]["pairs"]}
+
+
+def test_an_unscored_row_is_unprobeable_not_a_wrong_answer() -> None:
+    one = _verdict(_plants(), {}, {"relation-0": "UNSCORED"})["1"]
+    assert one["n"] == 27 and "relation-0" in one["excluded"] and one["aOnly"] == 0
+
+
+def test_the_verdict_refuses_a_view_without_the_dev_half() -> None:
+    plants = _plants()
+    test_only = PlantSet(raw={}, plants=[e for e in plants.plants if e["split"] == "test"], abstains=[])
+    scores, judged = _rows(test_only, {"A2": {}, "B2": {}})
+    with pytest.raises(SystemExit, match="두 절반"):
+        v3_verdict(test_only, scores, judge_rows=judged, control_rows=None, trajectory_points=None, section_max=None)

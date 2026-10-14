@@ -926,12 +926,12 @@ def cmd_s8(args: argparse.Namespace) -> int:
 
 
 def cmd_v3_verdict(args: argparse.Namespace) -> int:
-    """2차 런 최종 짝 비교 ①~⑦(시험 절반 — 봉인 확인 뒤). 결과는 `verdict.json`."""
+    """2차 런 최종 짝 비교 ①~⑦(①·④ 시험 절반, ②·③ 전체 문항 — 봉인 확인 뒤). 결과는 `verdict.json`."""
     from memory_eval.judge import ensure_unique_probe_rows
     from memory_eval.verdict_v3 import v3_verdict
 
     require_seal({"test"}, args.run / PREREGISTRATION_FILE, seal_sha=args.seal_sha)
-    plant_set = _plant_view(args, {"test"})
+    plant_set = _plant_view(args, {"dev", "test"})
     scores = [r for path in args.scores for r in json.loads(path.read_text(encoding="utf-8"))]
     ensure_unique_probe_rows(scores)
     judge_rows = [r for path in args.judged for r in json.loads(path.read_text(encoding="utf-8"))]
