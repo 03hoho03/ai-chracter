@@ -51,6 +51,7 @@ from api.db.models import (
     ChatMessageRole,
     ChatRoom,
     ChatRoomMemorySnapshot,
+    ChatRoomStat,
     ChatTurn,
     CloverLedger,
     CloverLot,
@@ -1396,6 +1397,71 @@ async def _open_room(
     await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room_id).values(turn_count=turns))
     await db_session.commit()
     return Room(room_id=room_id, user_id=user.id, base=base, turns=seeded)
+
+
+# 스토리 방의 스탯 두 개 — 판정 스탯 "신뢰"(73, 규칙 a1 +5·a2 -2)와 카운터 "남은 날"(30, 턴마다 -1). 재생성 재판정과
+# 직전 응답 되돌리기가 같은 방으로 스탯 효과를 본다.
+
+
+class _Stats:
+    """방의 두 스탯 entity_id(문자열)."""
+
+    def __init__(self, trust: str, days: str) -> None:
+        self.trust = trust
+        self.days = days
+
+
+async def _story_room(db_session: AsyncSession, db_client: httpx.AsyncClient, *, turns: int = 0) -> tuple[Room, _Stats]:
+    room = await _open_room(db_client, db_session, turns=turns, lane="story")
+    setup = await _setup_of(db_session, room.room_id)
+    trust = await db_session.scalar(sa.select(StatDef).where(StatDef.starting_setup_id == setup.id))
+    assert trust is not None
+    db_session.add(
+        StatRule(entity_id=uuid.uuid4(), stat_def_id=trust.id, condition="[RULE]약속을 어긴다", delta=-2, order=1)
+    )
+    days = StatDef(
+        entity_id=uuid.uuid4(),
+        starting_setup_id=setup.id,
+        name="남은 날",
+        icon="clock",
+        color="#00ff00",
+        min_value=0,
+        max_value=30,
+        initial_value=30,
+        per_turn_delta=-1,
+        unit=None,
+        description="남은 날",
+        order=2,
+    )
+    db_session.add(days)
+    await db_session.commit()
+    return room, _Stats(str(trust.entity_id), str(days.entity_id))
+
+
+async def _setup_of(db_session: AsyncSession, room_id: uuid.UUID) -> StartingSetup:
+    version_id, setup_entity_id = (
+        await db_session.execute(
+            sa.select(ChatRoom.content_version_id, ChatRoom.starting_setup_entity_id).where(ChatRoom.id == room_id)
+        )
+    ).one()
+    setup = await db_session.scalar(
+        sa.select(StartingSetup).where(
+            StartingSetup.content_version_id == version_id, StartingSetup.entity_id == setup_entity_id
+        )
+    )
+    assert setup is not None
+    return setup
+
+
+async def _stat_values(db_session: AsyncSession, room: Room, stats: _Stats) -> tuple[float, float]:
+    db_session.expire_all()
+    rows = {
+        str(row.stat_entity_id): float(row.current_value)
+        for row in (
+            await db_session.scalars(sa.select(ChatRoomStat).where(ChatRoomStat.chat_room_id == room.room_id))
+        ).all()
+    }
+    return rows[stats.trust], rows[stats.days]
 
 
 async def _add_room_situational_image(db_session: AsyncSession, room_id: uuid.UUID) -> uuid.UUID:
