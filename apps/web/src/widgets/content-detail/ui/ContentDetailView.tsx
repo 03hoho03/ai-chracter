@@ -43,6 +43,7 @@ import { expandAuthorMacros, resolveAuthorMacroNames } from "@/shared/lib/text/a
 
 import { CharacterChatHistoryLink } from "./CharacterChatHistoryLink";
 import { CharacterPlayBar } from "./CharacterPlayBar";
+import { CollapsibleDescription } from "./CollapsibleDescription";
 import { ContentActionsMenu } from "./ContentActionsMenu";
 import { ContentDetailModalShell } from "./ContentDetailModalShell";
 import { ContentUnavailableState } from "./ContentUnavailableState";
@@ -464,13 +465,15 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
           안 들어간다. 긴 산문은 2열에 넣지 않고 전폭으로 둔다. */}
       {/* 글 속 미디어 북 태그 자리에만 그림 블록이 선다. 그림 자리 면은 모달 표면 위에서 `muted` 가 사라지므로 변형을
           따라 고른다. */}
-      <MediaTagText
-        text={content.detailDescription}
-        images={toMediaTagImages(content.mediaTagImages)}
-        names={macroNames}
-        className="whitespace-pre-wrap text-sm text-muted-foreground"
-        surface={variant === "modal" ? "secondary" : "muted"}
-      />
+      <CollapsibleDescription text={content.detailDescription}>
+        <MediaTagText
+          text={content.detailDescription}
+          images={toMediaTagImages(content.mediaTagImages)}
+          names={macroNames}
+          className="whitespace-pre-wrap text-sm text-muted-foreground"
+          surface={variant === "modal" ? "secondary" : "muted"}
+        />
+      </CollapsibleDescription>
 
       {content.type === "story" && (
         <StoryDetailBody
