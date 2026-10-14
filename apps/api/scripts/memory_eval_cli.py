@@ -17,7 +17,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from memory_eval import checkpoint, ledger as ledger_mod, plants as plants_mod
+from memory_eval import checkpoint, holdout, ledger as ledger_mod, plants as plants_mod
 from memory_eval.ledger import EXIT_BUDGET, BudgetExceededError, Ledger
 from memory_eval.seal import PREREGISTRATION_FILE, require_seal
 from memory_eval.transcript import LengthRule, check_script, load_transcript, work_text_from_seed
@@ -49,10 +49,33 @@ def _splits(args: argparse.Namespace) -> set[str]:
     return splits
 
 
+def _plant_view(args: argparse.Namespace, splits: set[str] | None = None) -> plants_mod.PlantSet:
+    """심기 표를 읽는 모든 명령의 입구. 1차 형식은 항목의 분할 칸을 그대로 쓰고, 2차 형식은 분할 파일로 보기를 만든다 — 절반을
+    주지 않으면 개발 보기이고, 시험 절반은 봉인 확인을 지나야 시험 정답 파일을 연다."""
+    raw = json.loads(args.plants.read_text(encoding="utf-8"))
+    if not holdout.is_v2(raw):
+        return plants_mod.load_plants(args.plants)
+    return holdout.load_view(
+        args.plants,
+        args.split_dir or args.run / holdout.SPLIT_DIR,
+        splits or {"dev"},
+        preregistration=args.run / PREREGISTRATION_FILE,
+        seal_sha=getattr(args, "seal_sha", None),
+    )
+
+
+def _refuse_v2(args: argparse.Namespace, command: str) -> None:
+    if holdout.is_v2(json.loads(args.plants.read_text(encoding="utf-8"))):
+        raise SystemExit(
+            f"{command} 는 1차 형식 심기 표 전용이다(2차 형식은 항목에 분할 칸이 없고 시험 문항을 함께 읽게 된다)"
+        )
+
+
 # ---------------------------------------------------------------- 대본·심기 표·예산
 
 
 def cmd_check_script(args: argparse.Namespace) -> int:
+    _refuse_v2(args, "check-script")
     plant_set = plants_mod.load_plants(args.plants)
     report = check_script(
         load_transcript(args.transcript),
@@ -71,13 +94,27 @@ def cmd_check_script(args: argparse.Namespace) -> int:
 
 
 def cmd_split_check(args: argparse.Namespace) -> int:
+    _refuse_v2(args, "split-check")
     plant_set = plants_mod.load_plants(args.plants)
     _print([plants_mod.split_agreement(plant_set, rule=rule) for rule in ("category", "role")])
     return 0
 
 
+def cmd_split(args: argparse.Namespace) -> int:
+    """2차 형식 심기 표를 개발/시험으로 한 번 나눈다. 표준출력은 범주별 개수와 시험 정답 파일 sha256 뿐이다."""
+    result = holdout.write_split(args.plants, args.out_dir or args.run / holdout.SPLIT_DIR)
+    _print({"counts": result["counts"], "testKeysSha256": result["testKeysSha256"]})
+    if not result["ok"]:
+        print(
+            f"시험 절반 주 지표 {result['testPrimary']}개 — 하한 {holdout.TEST_PRIMARY_MIN} 미만이라 쓰지 않았다",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
 def cmd_budget(args: argparse.Namespace) -> int:
-    plant_set = plants_mod.load_plants(args.plants)
+    plant_set = _plant_view(args, _splits(args))
     extras = {name: float(value) for name, value in (e.split("=") for e in args.extra)}
     estimate = ledger_mod.budget_estimate(
         plant_set,
@@ -203,7 +240,7 @@ def cmd_insert(args: argparse.Namespace) -> int:
     from memory_eval import insert
     from memory_eval.pinned_stats import load_pinned_doc
 
-    plant_set = plants_mod.load_plants(args.plants)
+    plant_set = _plant_view(args)
     freeze_at = _ints(args.freeze_at)
     if args.dry_run:
         report = insert.plan(
@@ -293,7 +330,7 @@ def cmd_recall_offline(args: argparse.Namespace) -> int:
     from memory_eval import recall_offline as ro
 
     splits = _splits(args)
-    plant_set = plants_mod.load_plants(args.plants)
+    plant_set = _plant_view(args, splits)
     script = load_transcript(args.transcript)
     context = {}
     if args.context_responses:
@@ -380,9 +417,11 @@ def cmd_recall_warnings(args: argparse.Namespace) -> int:
 def cmd_probe(args: argparse.Namespace) -> int:
     from memory_eval import probe as probe_mod
 
-    plant_set = plants_mod.load_plants(args.plants)
+    plant_set = _plant_view(args, _splits(args))
     cps = _ints(args.checkpoints)
     items = set(args.items.split(",")) if args.items else None
+    for item_id in sorted(items or ()):
+        plant_set.item(item_id)  # 숨긴 시험 문항이면 거부, 없는 문항이면 KeyError
     probes = [p for cp in cps for p in plants_mod.opus_probes(plant_set, cp) if items is None or p.item_id in items]
     book = Ledger(args.run / "ledger.jsonl")
     out = args.run / "probes" / f"{args.stage}-{args.arm}.jsonl"
@@ -465,7 +504,7 @@ def cmd_score(args: argparse.Namespace) -> int:
     splits = _splits(args)
     from memory_eval.judge import ensure_unique_probe_rows
 
-    plant_set = plants_mod.load_plants(args.plants)
+    plant_set = _plant_view(args, splits)
     source = _probe_rows(args.probes)
     ensure_unique_probe_rows(source)
     rows = []
@@ -488,14 +527,16 @@ def cmd_score(args: argparse.Namespace) -> int:
 def cmd_judge(args: argparse.Namespace) -> int:
     from memory_eval import judge as judge_mod
 
-    plant_set = plants_mod.load_plants(args.plants)
     controls_path = args.run / "judge" / "controls.json"
     if args.controls:
+        # 대조군은 개발 절반 문항만 — 판정 문안을 대조군 오판으로 다듬으므로 시험 문항이 섞이면 안 된다.
+        plant_set = _plant_view(args, {"dev"})
         items = judge_mod.controls(plant_set)
         for path in args.extra_controls:
             items += judge_mod.load_extra_controls(path, plant_set)
     else:
         splits = _splits(args)
+        plant_set = _plant_view(args, splits)
         rows = [r for r in _probe_rows(args.probes) if r["split"] in splits and r["status"] == "accept"]
         items = [
             {
@@ -560,7 +601,7 @@ def cmd_attribution(args: argparse.Namespace) -> int:
     from memory_eval.transcript import work_text_from_seed as seed_text
 
     splits = _splits(args)
-    plant_set = plants_mod.load_plants(args.plants)
+    plant_set = _plant_view(args, splits)
     statics = [seed_text(args.seed_json)]
     out = []
     for row in _probe_rows(args.probes):
@@ -668,7 +709,7 @@ def cmd_s8(args: argparse.Namespace) -> int:
     from memory_eval.verdict import s8_verdict
 
     require_seal({"test"}, args.run / PREREGISTRATION_FILE, seal_sha=args.seal_sha)
-    plant_set = plants_mod.load_plants(args.plants)
+    plant_set = _plant_view(args, {"dev", "test"})
     scores = [r for path in args.scores for r in json.loads(path.read_text(encoding="utf-8"))]
     ensure_unique_probe_rows(scores)
     judge_rows = [r for path in args.judged for r in json.loads(path.read_text(encoding="utf-8"))]
@@ -705,6 +746,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     def with_plants(p: argparse.ArgumentParser) -> None:
         p.add_argument("--plants", type=Path, required=True)
+        p.add_argument("--split-dir", type=Path, help="2차 형식 분할 폴더(기본 <원자료>/split)")
 
     def with_splits(p: argparse.ArgumentParser) -> None:
         p.add_argument("--splits", default="dev", help="dev · test · dev,test (시험 절반은 봉인 해시가 있어야 한다)")
@@ -728,8 +770,14 @@ def build_parser() -> argparse.ArgumentParser:
     with_plants(p)
     p.set_defaults(fn=cmd_split_check)
 
+    p = sub.add_parser("split", help="2차 형식 심기 표를 개발/시험으로 한 번 나눈다(이미 있으면 거부)")
+    p.add_argument("--plants", type=Path, required=True)
+    p.add_argument("--out-dir", type=Path, help="분할 폴더(기본 <원자료>/split)")
+    p.set_defaults(fn=cmd_split)
+
     p = sub.add_parser("budget")
     with_plants(p)
+    with_splits(p)
     p.add_argument("--arms", type=int, default=3)
     p.add_argument("--opus-turn-usd", type=float, default=0.13)
     p.add_argument("--judgment-turn-usd", type=float, default=0.003)
@@ -835,6 +883,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("probe")
     with_plants(p)
+    with_splits(p)
     paid(p)
     p.add_argument("--checkpoint-label", help="복원할 템플릿의 단계 이름(넣기 실행의 --label, 기본 = --stage)")
     p.add_argument("--stage", required=True)

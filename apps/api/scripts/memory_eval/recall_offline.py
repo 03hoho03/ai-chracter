@@ -84,7 +84,7 @@ def build_queries(
             continue
         item_id = str(entry["id"])
         form = str(entry.get("questionForm", ""))
-        if entry.get("category") == "기권":
+        if entry.get("category") in ("기권", "abstain"):
             queries.append(
                 RecallQuery(
                     item_id, checkpoint, "abstain", form, split, str(entry["question"]), last_line, "checkpoint_line"
@@ -128,8 +128,8 @@ def build_queries(
 
 def gold_keys(plant: Mapping[str, Any]) -> list[list[str]]:
     """정답 에피소드·추출 보존의 일치 키. 화자 항목의 정답 키는 귀속("말한 적 없"·인물 이름)이라 에피소드 본문에 있을 이유가
-    없으므로 주장 내용 낱말(`keywords`)로 센다."""
-    if plant.get("category") == "화자":
+    없으므로 주장 내용 낱말(`keywords`)로 센다. 2차 형식의 판정자 문항(정답 묶음이 없는 항목)도 같은 까닭으로 핵심어로 센다."""
+    if plant.get("category") in ("화자", "speaker") or ("answer_key" in plant and not plant.get("answerKeys")):
         return [[str(k)] for k in plant.get("keywords", [])]
     return [[str(s) for s in bundle] for bundle in plant.get("answerKeys") or []]
 

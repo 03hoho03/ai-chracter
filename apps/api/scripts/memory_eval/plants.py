@@ -4,7 +4,7 @@
 `recompute_split` 은 파일의 분할이 사전 등록한 층 규칙과 같은지 대조하는 용도이고, 하네스의 집계는 파일의 `split` 만 쓴다."""
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -19,11 +19,15 @@ class PlantSet:
     raw: dict[str, Any]
     plants: list[dict[str, Any]]
     abstains: list[dict[str, Any]]
+    # 이 보기에서 일부러 뺀 문항 id(봉인 확인 없이 연 개발 보기의 시험 문항). 찾으면 없는 문항이 아니라 거부로 알린다.
+    hidden: frozenset[str] = field(default_factory=frozenset)
 
     def item(self, item_id: str) -> dict[str, Any]:
         for entry in self.plants + self.abstains:
             if entry["id"] == item_id:
                 return entry
+        if item_id in self.hidden:
+            raise SystemExit(f"시험 문항 {item_id} 은 봉인 확인을 지난 시험 모드에서만 연다")
         raise KeyError(item_id)
 
     def all_items(self) -> list[dict[str, Any]]:
