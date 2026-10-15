@@ -15,7 +15,11 @@ ARG PGVECTOR_SHA256=cac0b10c360f05b2d521200105ba3697e773d4cd3731f5a915a7e37ebe0b
 # 서버와 다른 빌드의 헤더가 섞인다. 필요한 것은 컴파일러와 make 뿐이다.
 # with_llvm=no: JIT 비트코드를 만들지 않는다(이미지에 clang·llvm 이 없다).
 # OPTFLAGS="": 빌드 머신 CPU 에 맞춘 -march=native 를 끄고 같은 아키텍처의 어느 CPU 에서도 돌게 한다.
+# 설치 패키지 목록을 빌드 전후로 떠서 다르면 실패시킨다: 빌드 도구(예 musl-dev)가 의존성으로
+# 런타임 패키지(예 musl)를 조용히 올리면 apk del 뒤에도 올라간 버전이 남아 베이스와 바이트로
+# 같다는 전제가 깨진다. 비교용 파일은 같은 RUN 안에서 지워 레이어에 남기지 않는다.
 RUN set -eux; \
+    apk info -v | sort > /tmp/apk-before.txt; \
     apk add --no-cache --virtual .pgvector-build-deps make gcc musl-dev; \
     cd /tmp; \
     wget -O pgvector.tar.gz "https://github.com/pgvector/pgvector/archive/refs/tags/v${PGVECTOR_VERSION}.tar.gz"; \
@@ -27,4 +31,7 @@ RUN set -eux; \
     cd /; \
     rm -rf /tmp/pgvector.tar.gz "/tmp/pgvector-${PGVECTOR_VERSION}"; \
     apk del --no-network .pgvector-build-deps; \
+    apk info -v | sort > /tmp/apk-after.txt; \
+    diff -u /tmp/apk-before.txt /tmp/apk-after.txt; \
+    rm -f /tmp/apk-before.txt /tmp/apk-after.txt; \
     test -f /usr/local/share/postgresql/extension/vector.control
