@@ -25,6 +25,8 @@
 > ```
 > 로컬 개발 DB만 사라지고 시드는 `dev-up.sh`가 다시 채웁니다. **손으로 만든 대화방·업로드는 복구되지 않으니** 남길 게 있으면 먼저 덤프하세요. Redis도 8로 올렸지만 볼륨이 없어 아무 조치가 필요 없습니다.
 
+> **Postgres 이미지를 pgvector 판으로 바꾼 뒤에는 볼륨을 지우지 않아도 됩니다.** 같은 18 메이저·같은 데이터 위치·같은 alpine 정렬 규칙이라 기존 `pgdata`를 그대로 읽습니다(실측). 다음 `./dev-up.sh`(또는 `docker compose -f docker-compose.dev.yml up -d --wait`)가 새 이미지를 받아 컨테이너만 다시 만듭니다. worktree 스택도 같습니다. 거꾸로 벡터 칸이 생긴 로컬 DB의 덤프는 확장 없는 원래 `postgres:18-alpine` 서버에는 복원되지 않습니다.
+
 > 처음이라면 `apps/api/.env`를 열어 `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GEMINI_API_KEY` 줄의 주석을 풀고 값을 채운 뒤 `./dev-up.sh`를 한 번 더 실행하세요. (나머지 값 — DB/Redis/S3/AWS 더미 자격증명 — 은 로컬 기본값으로 이미 채워져 있습니다.)
 
 ### env 파일 형식
@@ -209,7 +211,7 @@ uv run --env-file .env python scripts/generate_seed_images.py --only romance-3rd
 
 | 서비스 | 포트 | 비고 |
 |---|---|---|
-| Postgres 18 | 5432 | 볼륨(`pgdata`)으로 데이터 유지. 운영 GCE VM과 같은 메이저다 |
+| Postgres 18 + pgvector | 5432 | 볼륨(`pgdata`)으로 데이터 유지. 운영 GCE VM과 같은 메이저·같은 alpine 베이스에 벡터 확장을 얹은 이미지다 |
 | Redis 8 | 6379 | 세션·이메일코드·미리보기세션(휘발성). 볼륨 없음 |
 | moto (S3 호환) | 5001 | **인메모리** — 컨테이너 재생성 시 업로드 객체 소실 (macOS 5000=AirPlay 회피) |
 | API | 8000 | `uv run --env-file .env uvicorn ...` |
