@@ -80,6 +80,9 @@ export function useSendMessage(
    * 안 넘기면 확인 429가 평소의 오류 배너로 떨어질 뿐 동작은 깨지지 않는다 — 다만 그 화면에서는
    * 클로버를 영영 못 쓴다. */
   confirmCloverSpend?: (error: unknown) => Promise<CloverSpendConfirmOutcome>,
+  /** 재생성이 새 답을 방 캐시에 반영하고 스트림이 끝났을 때 그 답을 받는다(되돌리기 안내를 띄우는 자리). 재생성의 재시도·클로버
+   * 동의 뒤 재전송이 성공해도 한 번 불린다. */
+  onRegenerated?: (message: ChatMessage) => void,
 ) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<SendMessageStatus>({ kind: "idle" });
@@ -131,6 +134,7 @@ export function useSendMessage(
     // 안에서 불리므로 캐시가 없으면 호출되지 않는다). 실패 분기를 열거하지 않고 이 값 하나로
     // 복원 여부를 판단한다.
     let hasCommitted = false;
+    let committedMessage: ChatMessage | undefined;
 
     try {
       for await (const event of openChatStream(pending.payload, chatStreamEventSchema)) {
@@ -147,6 +151,7 @@ export function useSendMessage(
           kind: pending.kind,
           onDone: (message) => {
             hasCommitted = true;
+            committedMessage = message;
             const archiveKey = imageArchiveKeyToInvalidate(imageArchive, message);
             if (archiveKey) void queryClient.invalidateQueries({ queryKey: archiveKey });
           },
@@ -205,6 +210,7 @@ export function useSendMessage(
       setStreamingText("");
       settleTurnStreamEnd(queryClient, roomId, { dropped, hasCommitted });
       if (!hasErrored) setStatus({ kind: "idle" });
+      if (pending.kind === "regenerate" && committedMessage) onRegenerated?.(committedMessage);
     }
   }
 

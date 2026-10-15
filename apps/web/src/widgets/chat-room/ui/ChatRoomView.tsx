@@ -22,6 +22,7 @@ import {
   StatGaugePanel,
   TypingIndicator,
   canReportMessage,
+  canRestorePreviousResponse,
   chatRoomKeys,
   countMessagesAfter,
   refreshChatRoomTurnPrice,
@@ -53,6 +54,7 @@ import { expandAuthorMacros, type AuthorMacroNames } from "@/shared/lib/text/aut
 
 import { confirmEditTruncation } from "../lib/confirmEditTruncation";
 import { useMemoryFollowUpRefresh } from "../lib/useMemoryFollowUpRefresh";
+import { useRestorePreviousResponse } from "../lib/useRestorePreviousResponse";
 import { chatSidePanelAtom } from "../model/atoms";
 import { chatModelChipName } from "../model/chatModelChip";
 import { loadOlderKeepingScroll, restorePrependScroll } from "../model/prependScrollAnchor";
@@ -82,6 +84,16 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   // 기본 모델 가격을 매기는데 캐시는 옛 모델 가격이다. 다시 받은 값이 캐시에도 들어가 부족 안내도 함께 맞춰진다.
   const queryClient = useQueryClient();
   const confirmCloverSpend = useConfirmCloverSpend();
+  // 되돌리면 메뉴를 연 응답이 다른 id 의 응답으로 바뀌어 그 "⋯"가 사라진다. 포커스가 갈 곳을 잃었으면 바뀐 마지막 응답의
+  // "⋯"로 옮긴다(아래 마지막 메시지 효과가 처리한다).
+  const shouldFocusLastMessageMenuRef = useRef(false);
+  const {
+    restore: restorePreviousResponse,
+    offerRestore,
+    dismissRestoreOffer,
+  } = useRestorePreviousResponse(roomId, () => {
+    shouldFocusLastMessageMenuRef.current = true;
+  });
   const { send, retry, regenerate, editMessage, status, policyWarning, streamingText } = useSendMessage(
     roomId,
     room && { contentType: room.contentType, contentId: room.contentId },
@@ -92,8 +104,13 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
           : room?.turnCost;
       return confirmCloverSpend(error, turnCost, "chat");
     },
+    (message) => offerRestore(message.id),
   );
   const isSending = status.kind === "sending";
+  // 턴이 시작되면(보내기·수정·다시 생성·재시도 모두 여기로 모인다) 재생성 직후의 되돌리기 안내를 거둔다.
+  useEffect(() => {
+    if (isSending) dismissRestoreOffer();
+  }, [isSending]);
   const isMemoryPanelOpen = useAtomValue(chatSidePanelAtom) === "memory";
   useMemoryFollowUpRefresh({ roomId, isSending, isPanelOpen: isMemoryPanelOpen });
   // 기본 모델 방은 무료 일일분을 쓴 뒤에만, 상위 모델 방은 첫 턴부터 턴마다 깎이므로 언제나 나타난다.
@@ -154,6 +171,13 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [lastMessageId, streamingText]);
+  useLayoutEffect(() => {
+    if (!shouldFocusLastMessageMenuRef.current) return;
+    shouldFocusLastMessageMenuRef.current = false;
+    if (document.activeElement !== document.body) return;
+    const menuTriggers = scrollAreaRef.current?.querySelectorAll<HTMLButtonElement>('button[aria-label="메시지 옵션"]');
+    menuTriggers?.[menuTriggers.length - 1]?.focus({ preventScroll: true });
+  }, [lastMessageId]);
 
   // 앞에 붙은 높이만큼 스크롤을 밀어 읽던 메시지를 제자리에 둔다. 그리기 전에 맞춰야 한 프레임 튀는 것이 안 보인다.
   const firstMessageId = room?.messages[0]?.id;
@@ -389,6 +413,11 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                       !isRestricted && isLastMessage && message.role === "assistant" && room.messages.length >= 2
                     }
                     onRegenerate={!isRestricted && isLastMessage && message.role === "assistant" ? regenerate : undefined}
+                    onRestorePrevious={
+                      canRestorePreviousResponse(room, message)
+                        ? () => void restorePreviousResponse(message.id)
+                        : undefined
+                    }
                     onStartEdit={!isRestricted && message.role === "user" ? () => setEditingMessageId(message.id) : undefined}
                     onCancelEdit={() => setEditingMessageId(undefined)}
                     onSaveEdit={(newText) => {

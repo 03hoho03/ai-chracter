@@ -145,5 +145,6 @@ export function toChatRoomState(dto: ChatRoomResponseDto): ChatRoomState {
     // 이름은 기본 모델 이름으로 채우지 않는다 — 모델 칸이 없어 기본 모델로 읽은 방이 실제로는 상위 모델 방일 수 있다.
     effectiveChatModelName: dto.effectiveChatModelName,
     turnCost: dto.turnCost,
+    previousResponseFor: dto.previousResponseFor ?? undefined,
   };
 }

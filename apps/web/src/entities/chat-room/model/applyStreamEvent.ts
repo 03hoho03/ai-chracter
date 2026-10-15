@@ -65,6 +65,9 @@ export function applyStreamEvent(
           ...prev,
           messages: [...base, event.finalMessage],
           turnCount: kind === "newTurn" ? prev.turnCount + 1 : prev.turnCount,
+          // 서버는 재생성이 옛 응답을 지우는 같은 커밋에서 그 응답을 보관하고, 보내기·수정은 보관을 지운다. 방을 다시
+          // 받지 않고 그 결과를 따라 적어야 "방금 전 답변으로" 메뉴가 재생성 직후부터 맞게 선다.
+          previousResponseFor: kind === "regenerate" ? event.finalMessage.id : undefined,
         };
         opts.onDone?.(event.finalMessage, prev);
         return next;

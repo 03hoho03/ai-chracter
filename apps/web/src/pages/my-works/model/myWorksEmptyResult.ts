@@ -34,7 +34,7 @@ export function resolveMyWorksEmptyResult({
   if (filterLabel === undefined) {
     if (q === undefined) return { kind: "noPublished", message: "아직 발행한 작품이 없어요." };
     if (hasUnpublishedMatch) {
-      return { kind: "noPublished", message: `${quote(q)}${koreanParticle(q, "으로/로")} 찾은 작품은 미등록에 있어요.` };
+      return { kind: "noPublished", message: `${quote(q)}${roParticle(q)} 찾은 작품은 미등록에 있어요.` };
     }
   }
 
@@ -43,9 +43,9 @@ export function resolveMyWorksEmptyResult({
 
   if (hasMore) return { kind: "noMatch", message: `지금까지 불러온 작품 중에는 ${scope}에 해당하는 게 없어요.`, action };
   // 검색만 걸렸을 때는 "해당하는"이 아니라 "찾은"이다 — 사용자가 한 일이 찾기였으므로. 조사는 검색어의 끝 글자에
-  // 맞춘다(`‘목욕탕’으로`, `‘바다’로`). 끝이 한글이 아니면 받침을 알 수 없어 `으로(로)`가 된다.
+  // 맞춘다(`‘목욕탕’으로`, `‘바다’로`). 끝이 한글이 아니면 받침을 알 수 없어 `(으)로`가 된다.
   if (q !== undefined && filterLabel === undefined) {
-    return { kind: "noMatch", message: `${quote(q)}${koreanParticle(q, "으로/로")} 찾은 작품이 없어요.`, action };
+    return { kind: "noMatch", message: `${quote(q)}${roParticle(q)} 찾은 작품이 없어요.`, action };
   }
   return { kind: "noMatch", message: `${scope}에 해당하는 작품이 없어요.`, action };
 }
@@ -61,6 +61,14 @@ export function toMyWorksScopeLabel({
 }): string {
   const parts = [q === undefined ? undefined : quote(q), filterLabel].filter((part) => part !== undefined);
   return parts.length === 0 ? "전체" : parts.join(" · ");
+}
+
+/** 검색어 뒤의 `으로/로`. 끝이 한글이 아니면 공용 도우미는 두 꼴을 `으로(로)`로 함께 적는데, 이 꼴은 `‘zq’으로(로)`처럼
+ * 괄호 밖이 틀린 조사로 먼저 읽힌다. 덧붙는 소리를 괄호에 넣는 `(으)로`로 적는다 — 도우미 자체를 바꾸면 같은 조사를 쓰는 다른
+ * 화면의 문구도 함께 바뀌어 여기서만 바꾼다. */
+function roParticle(q: string): string {
+  const particle = koreanParticle(q, "으로/로");
+  return particle === "으로(로)" ? "(으)로" : particle;
 }
 
 /** 사용자가 친 말을 문장 안에 넣을 때는 둥근 홑따옴표로 감싼다 — 앱의 다른 화면(스냅샷 삭제 확인, 엔딩 삭제

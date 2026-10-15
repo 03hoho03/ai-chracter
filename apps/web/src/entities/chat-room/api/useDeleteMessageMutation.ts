@@ -5,9 +5,10 @@ import { apiClient } from "@/shared/api/client";
 
 import { chatRoomKeys } from "./keys";
 import type { ChatRoomState } from "../model/chatRoomState";
+import { removeDeletedMessage } from "../model/removeDeletedMessage";
 
 // 삭제는 204라 서버가 갱신된 목록을 돌려주지 않는다. useResetChatRoomMutation(서버가
-// 통째로 교체)과 달리, 여기서는 성공한 messageId만큼 캐시에서 직접 filter로 제거한다.
+// 통째로 교체)과 달리, 여기서는 성공한 messageId만큼 캐시에서 직접 제거한다(`removeDeletedMessage`).
 export function useDeleteMessageMutation(roomId: string) {
   const queryClient = useQueryClient();
   return useMutation<void, ApiError, string>({
@@ -17,7 +18,7 @@ export function useDeleteMessageMutation(roomId: string) {
     onSuccess: (_data, messageId) => {
       queryClient.setQueryData<ChatRoomState>(
         chatRoomKeys.detail(roomId),
-        (prev) => prev && { ...prev, messages: prev.messages.filter((message) => message.id !== messageId) },
+        (prev) => prev && removeDeletedMessage(prev, messageId),
       );
       // 요약이 덮는 메시지를 지우면 서버가 요약을 이전 판으로 되돌린다.
       void queryClient.invalidateQueries({ queryKey: chatRoomKeys.memory(roomId) });
