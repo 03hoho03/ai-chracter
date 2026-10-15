@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.ending_rules import evaluate_rule_list
 from api.chat.keyword_notes import match_keyword_notes
-from api.chat.memory_fact_section import NO_FACTS, FactSection, facts_for_turn
+from api.chat.memory_fact_section import NO_FACTS, FactSection, KnowledgeScope, facts_for_turn
 from api.chat.memory_recall import NO_RECALL, Recall, recall_for_turn
 from api.chat.memory_window import CurrentSummary, load_current_summary, prompt_window
 from api.chat.prompt_builder import (
@@ -296,7 +296,8 @@ async def build_room_prompt(
 
     사실 주입 스위치(`memory_facts_inject`)도 같은 조건(생성 윈도우가 켜져 있고 요약 커서가 있음)에서만 방의 관계·사실 기억을
     골라 대화 기록 뒤·회상 앞 섹션에 싣는다(`chat/memory_fact_section.py`). 기록 뒤라 앞 두 캐시 블록은 사실과 무관하게 같고,
-    꺼져 있으면 사실을 읽지도 않는다."""
+    꺼져 있으면 사실을 읽지도 않는다. 지식 범위 필터 스위치(`memory_knowledge_filter`)는 그 사실 섹션 안에서만 걸리므로, 사실
+    주입이 꺼져 있으면 켜져 있어도 프롬프트·SQL 이 같다."""
     memory_summary = ""
     full_history = history
     current_summary: CurrentSummary | None = None
@@ -326,6 +327,14 @@ async def build_room_prompt(
             return NO_FACTS
         if turn_state is not None and turn_state.fact_lines is not None:
             return FactSection(turn_state.fact_lines, ())
+        knowledge = (
+            KnowledgeScope(
+                user_label=prompt_set.user_label,
+                media_book_version_id=room.content_version_id if setup is not None else None,
+            )
+            if settings.memory_knowledge_filter
+            else None
+        )
         return await facts_for_turn(
             db,
             room_id=room.id,
@@ -333,6 +342,7 @@ async def build_room_prompt(
             history=full_history,
             user_content=user_content,
             names=names,
+            knowledge=knowledge,
         )
 
     if turn_state is None:
