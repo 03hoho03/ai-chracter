@@ -327,14 +327,7 @@ async def build_room_prompt(
             return NO_FACTS
         if turn_state is not None and turn_state.fact_lines is not None:
             return FactSection(turn_state.fact_lines, ())
-        knowledge = (
-            KnowledgeScope(
-                user_label=prompt_set.user_label,
-                media_book_version_id=room.content_version_id if setup is not None else None,
-            )
-            if settings.memory_knowledge_filter
-            else None
-        )
+        knowledge = KnowledgeScope(user_label=prompt_set.user_label) if settings.memory_knowledge_filter else None
         return await facts_for_turn(
             db,
             room_id=room.id,
@@ -528,9 +521,7 @@ def build_preview_prompt(
             sections=prompt_sections,
             prompt_template=payload.prompt_template,
             setting_text=payload.setting_text,
-            development_examples=[
-                example.model_dump(by_alias=True) for example in payload.development_examples
-            ],
+            development_examples=[example.model_dump(by_alias=True) for example in payload.development_examples],
             user_goal=payload.user_goal,
             rules=payload.rules,
             custom_prompt=payload.custom_prompt,

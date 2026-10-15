@@ -19,8 +19,9 @@ DB 가 그 행을 함께 지우므로 다음 읽기에 앞 값이 돌아온다.
 속성·값의 조사 뗀 토큰, 질의에서 이름·불용어·방 행의 20% 넘게 나오는 명사를 뺀다, 행 5개 미만이면 관련 행 없음).
 
 지식 범위 필터(`chat/memory_knowledge.py`, 호출부가 켰을 때만): 키별 최신 행 중 아는 사람이 이번 장면에 없는 행을 고르기
-전에 뺀다 — 빠진 자리는 다음 후보가 채우고, 같은 키의 앞 값이 지금 값처럼 되살아나지 않는다. 이름 출처는 읽은 사실 행을 그대로
-쓰고, 스토리 방은 작품 버전의 미디어 북 인물을 한 번 더 읽는다(아는 사람이 정해진 행이 없으면 걸러 낼 것이 없어 읽지 않는다).
+전에 뺀다 — 빠진 자리는 다음 후보가 채우고, 같은 키의 앞 값이 지금 값처럼 되살아나지 않는다. 이름 출처는 읽은 사실 행뿐이라
+SQL 을 더하지 않는다. 판정은 아는 사람 원소가 장면에 나오는가뿐이고 그 원소는 이미 사실 행에서 이름 출처에 들어 있어, 미디어 북
+인물이나 작품 이름을 더해도 판정이 바뀌지 않는다(더 읽으면 그 읽기의 실패로 섹션이 통째로 빠질 자리만 는다).
 
 상수와 고르기는 평가 하네스의 시제품을 개발 절반 격자로 맞춘 값과 절차다. 줄 모양만 하네스와 다르다 — 운영 섹션 문안이 설명하는
 꼬리표를 쓴다.
@@ -48,7 +49,6 @@ from api.chat.memory_window import MessageKey, opening_message
 from api.chat.prompt_builder import PromptNames
 from api.core.sentry import capture_dependency_failure
 from api.db.models.chat import ChatMemoryFact, ChatMessage, ChatMessageRole, ChatRoomMemorySnapshot
-from api.db.models.story import MediaBookPerson
 
 logger = logging.getLogger(__name__)
 
@@ -73,11 +73,9 @@ NO_FACTS = FactSection("", ())
 
 @dataclass(frozen=True)
 class KnowledgeScope:
-    """지식 범위 필터를 켠 턴에 호출부가 넘기는 이름 출처 — 그 턴 생성 프롬프트 세트의 대화 줄 라벨(사용자 표기)과, 스토리 방이면
-    미디어 북 인물을 읽을 작품 버전 id(캐릭터 방은 None — 작품 이름은 `PromptNames.char_name` 으로 이미 안다)."""
+    """지식 범위 필터를 켠 턴에 호출부가 넘기는 이름 출처 — 그 턴 생성 프롬프트 세트의 대화 줄 라벨(사용자 표기)."""
 
     user_label: str
-    media_book_version_id: uuid.UUID | None
 
 
 class FactRecordMissingError(Exception):
@@ -215,13 +213,7 @@ def _fact_statement(room_id: uuid.UUID, cursor: MessageKey) -> Executable:
     )
 
 
-def _media_book_statement(version_id: uuid.UUID) -> Executable:
-    """작품 버전의 미디어 북 인물 이름."""
-    return select(MediaBookPerson.name).where(MediaBookPerson.content_version_id == version_id)
-
-
-async def _knowledge_filter(
-    db: AsyncSession,
+def _knowledge_filter(
     rows: Sequence[ChatMemoryFact],
     scope: KnowledgeScope,
     *,
@@ -231,12 +223,9 @@ async def _knowledge_filter(
 ) -> Callable[[ChatMemoryFact], bool]:
     """이번 턴의 장면 인물로 행을 남길지 정하는 판정. 직전 응답은 키워드북·회상과 같은 스캔 글(이미지 태그를 지우고
     `{{user}}`·`{{char}}` 를 이름으로 바꾼 것)이다."""
-    extra = [names.char_name] if names.char_name else []
-    if scope.media_book_version_id is not None:
-        extra += (await db.scalars(_media_book_statement(scope.media_book_version_id))).all()
     previous_response = recent_scan_turns(history, user_content, 0, names=names)[0].assistant_text
     users = user_names(names.persona_name, scope.user_label)
-    scene = scene_people(room_names(rows, extra, users=users), (user_content, previous_response))
+    scene = scene_people(room_names(rows, (), users=users), (user_content, previous_response))
     return lambda row: known_in_scene(row, scene)
 
 
@@ -255,7 +244,7 @@ async def _facts(
         return NO_FACTS
     keep = None
     if knowledge is not None and any(row.known_by for row in rows):
-        keep = await _knowledge_filter(db, rows, knowledge, history=history, user_content=user_content, names=names)
+        keep = _knowledge_filter(rows, knowledge, history=history, user_content=user_content, names=names)
     # 이번 턴 번호 — 오프닝을 뺀 어시스턴트 메시지 수 + 1(회상과 같은 셈, 사실 행의 끝 턴과 같은 셈이다).
     opening = opening_message(history)
     current_turn = 1 + sum(1 for m in history if m.role == ChatMessageRole.ASSISTANT and m is not opening)
