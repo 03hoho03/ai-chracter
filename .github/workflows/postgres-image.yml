@@ -1,0 +1,109 @@
+# pgvector 를 얹은 Postgres 이미지를 빌드해 GHCR 에 올린다.
+#
+# 이 워크플로는 이미지를 레지스트리에 올리기만 한다. 운영·CI·개발 compose 가 이 이미지를 쓰게 바꾸는
+# 일은 각자 별도 변경이고, 그때 여기 요약에 남긴 매니페스트 digest 로 고정한다(태그는 다시 밀릴 수 있다).
+# infra/postgres/ 는 deploy-api 의 트리거 경로 밖이라 여기를 고친 병합이 운영 배포를 부르지 않는다.
+#
+# PR 에서는 빌드와 스모크만 하고 올리지 않는다. 올리기는 main 에서만 한다 — 수동 실행을 기능 브랜치에서
+# 돌려도 고정 태그를 덮지 않게. 스모크는 대조군(원래 alpine 에서는 확장이 없어 실패해야
+# 한다)도 같이 돌려, 스모크가 확장 유무를 실제로 가려내는지 매번 확인한다.
+
+name: postgres-image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/postgres/**"
+      - ".github/workflows/postgres-image.yml"
+  pull_request:
+    paths:
+      - "infra/postgres/**"
+      - ".github/workflows/postgres-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/03hoho03/postgres-pgvector
+  # infra/postgres/Dockerfile 의 FROM 과 같은 값이어야 한다(대조군 스모크가 이 이미지를 돌린다).
+  BASE_IMAGE: postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dockerfile 의 FROM 이 대조군 베이스와 같은지 확인
+        run: grep -qxF "FROM ${BASE_IMAGE}" infra/postgres/Dockerfile
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: amd64 빌드(로컬 적재)
+        uses: docker/build-push-action@v6
+        with:
+          context: infra/postgres
+          platforms: linux/amd64
+          load: true
+          tags: postgres-pgvector:smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 스모크 — 새 이미지
+        run: infra/postgres/smoke.sh postgres-pgvector:smoke
+
+      - name: 스모크 대조군 — 원래 alpine 은 확장이 없어 실패해야 한다
+        run: infra/postgres/smoke.sh --expect-no-vector "${BASE_IMAGE}"
+
+      - name: GHCR 로그인
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 버전 태그 읽기
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        id: meta
+        run: |
+          v=$(sed -n 's/^ARG PGVECTOR_VERSION=//p' infra/postgres/Dockerfile)
+          test -n "$v"
+          echo "tag=18-alpine-pgvector${v}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: amd64·arm64 빌드·푸시
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: infra/postgres
+          platforms: linux/amd64,linux/arm64
+          push: true
+          # 저장소와 패키지를 잇는다(패키지 페이지의 저장소 링크·권한 상속).
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.meta.outputs.tag }}
+            ${{ env.IMAGE }}:sha-${{ steps.meta.outputs.short_sha }}
+          cache-from: type=gha
+
+      - name: 올린 이미지를 digest 로 다시 받아 스모크
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: infra/postgres/smoke.sh "${IMAGE}@${{ steps.push.outputs.digest }}"
+
+      - name: digest 를 요약에 남기기
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          {
+            echo "### postgres-pgvector"
+            echo
+            echo "- 태그: \`${IMAGE}:${{ steps.meta.outputs.tag }}\`, \`${IMAGE}:sha-${{ steps.meta.outputs.short_sha }}\`"
+            echo "- 매니페스트(amd64·arm64 인덱스) digest: \`${{ steps.push.outputs.digest }}\`"
+            echo "- 고정해 쓸 참조: \`${IMAGE}@${{ steps.push.outputs.digest }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
