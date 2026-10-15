@@ -18,6 +18,11 @@ DB 가 그 행을 함께 지우므로 다음 읽기에 앞 값이 돌아온다.
 건너뛰지 않는다). 실린 행은 렌더 순서로 쓴다. 관련 점수는 장면 회상의 토큰·점수 함수를 그대로 쓴다(행 명사 = 주어·대상이나
 속성·값의 조사 뗀 토큰, 질의에서 이름·불용어·방 행의 20% 넘게 나오는 명사를 뺀다, 행 5개 미만이면 관련 행 없음).
 
+지식 범위 필터(`chat/memory_knowledge.py`, 호출부가 켰을 때만): 키별 최신 행 중 아는 사람이 이번 장면에 없는 행을 고르기
+전에 뺀다 — 빠진 자리는 다음 후보가 채우고, 같은 키의 앞 값이 지금 값처럼 되살아나지 않는다. 이름 출처는 읽은 사실 행뿐이라
+SQL 을 더하지 않는다. 판정은 아는 사람 원소가 장면에 나오는가뿐이고 그 원소는 이미 사실 행에서 이름 출처에 들어 있어, 미디어 북
+인물이나 작품 이름을 더해도 판정이 바뀌지 않는다(더 읽으면 그 읽기의 실패로 섹션이 통째로 빠질 자리만 는다).
+
 상수와 고르기는 평가 하네스의 시제품을 개발 절반 격자로 맞춘 값과 절차다. 줄 모양만 하네스와 다르다 — 운영 섹션 문안이 설명하는
 꼬리표를 쓴다.
 
@@ -26,7 +31,7 @@ DB 가 그 행을 함께 지우므로 다음 읽기에 앞 값이 돌아온다.
 
 import logging
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -35,7 +40,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat import memory_recall
+from api.chat.keyword_notes import recent_scan_turns
 from api.chat.memory_facts import normalize_part
+from api.chat.memory_knowledge import known_in_scene, room_names, scene_people, user_names
 from api.chat.memory_nouns import rule_tokens
 from api.chat.memory_recall import RecallCandidate, query_tokens, score_episodes
 from api.chat.memory_window import MessageKey, opening_message
@@ -62,6 +69,13 @@ class FactSection:
 
 
 NO_FACTS = FactSection("", ())
+
+
+@dataclass(frozen=True)
+class KnowledgeScope:
+    """지식 범위 필터를 켠 턴에 호출부가 넘기는 이름 출처 — 그 턴 생성 프롬프트 세트의 대화 줄 라벨(사용자 표기)."""
+
+    user_label: str
 
 
 class FactRecordMissingError(Exception):
@@ -142,13 +156,15 @@ def select_fact_rows(
     names: Sequence[str],
     current_turn: int,
     user_name: str | None = None,
+    keep: Callable[[ChatMemoryFact], bool] | None = None,
 ) -> list[ChatMemoryFact]:
     """쓴 순서의 행 전부에서 섹션에 실을 행을 렌더 순서로 고른다(규칙은 모듈 설명). `query` 는 이번 턴 사용자 메시지, `names`
-    는 질의에서 뺄 이름, `current_turn` 은 이번 턴 번호(관련 점수의 최근성)다."""
-    ordered = [
-        row
-        for _, row in sorted(_latest_by_key(rows), key=lambda pair: (_group(pair[1]), -pair[1].importance, -pair[0]))
-    ]
+    는 질의에서 뺄 이름, `current_turn` 은 이번 턴 번호(관련 점수의 최근성)다. `keep` 을 주면 키별 최신 행 중 그 값이 거짓인
+    행을 고르기 전에 뺀다(지식 범위 필터)."""
+    winners = _latest_by_key(rows)
+    if keep is not None:
+        winners = [pair for pair in winners if keep(pair[1])]
+    ordered = [row for _, row in sorted(winners, key=lambda pair: (_group(pair[1]), -pair[1].importance, -pair[0]))]
     lengths = [len(fact_line(row, user_name=user_name)) for row in ordered]
     chosen: set[int] = set()
     used = 0
@@ -197,6 +213,22 @@ def _fact_statement(room_id: uuid.UUID, cursor: MessageKey) -> Executable:
     )
 
 
+def _knowledge_filter(
+    rows: Sequence[ChatMemoryFact],
+    scope: KnowledgeScope,
+    *,
+    history: Sequence[ChatMessage],
+    user_content: str,
+    names: PromptNames,
+) -> Callable[[ChatMemoryFact], bool]:
+    """이번 턴의 장면 인물로 행을 남길지 정하는 판정. 직전 응답은 키워드북·회상과 같은 스캔 글(이미지 태그를 지우고
+    `{{user}}`·`{{char}}` 를 이름으로 바꾼 것)이다."""
+    previous_response = recent_scan_turns(history, user_content, 0, names=names)[0].assistant_text
+    users = user_names(names.persona_name, scope.user_label)
+    scene = scene_people(room_names(rows, (), users=users), (user_content, previous_response))
+    return lambda row: known_in_scene(row, scene)
+
+
 async def _facts(
     db: AsyncSession,
     *,
@@ -205,10 +237,14 @@ async def _facts(
     history: Sequence[ChatMessage],
     user_content: str,
     names: PromptNames,
+    knowledge: KnowledgeScope | None,
 ) -> FactSection:
     rows = (await db.scalars(_fact_statement(room_id, cursor))).all()
     if not rows:
         return NO_FACTS
+    keep = None
+    if knowledge is not None and any(row.known_by for row in rows):
+        keep = _knowledge_filter(rows, knowledge, history=history, user_content=user_content, names=names)
     # 이번 턴 번호 — 오프닝을 뺀 어시스턴트 메시지 수 + 1(회상과 같은 셈, 사실 행의 끝 턴과 같은 셈이다).
     opening = opening_message(history)
     current_turn = 1 + sum(1 for m in history if m.role == ChatMessageRole.ASSISTANT and m is not opening)
@@ -218,6 +254,7 @@ async def _facts(
         names=[name for name in (names.persona_name, names.char_name) if name],
         current_turn=current_turn,
         user_name=names.persona_name,
+        keep=keep,
     )
     if not picked:
         return NO_FACTS
@@ -234,14 +271,22 @@ async def facts_for_turn(
     history: Sequence[ChatMessage],
     user_content: str,
     names: PromptNames,
+    knowledge: KnowledgeScope | None = None,
 ) -> FactSection:
-    """이번 턴의 사실 섹션. `history` 는 방의 전체 대화(턴 번호를 센다), `cursor` 는 그 턴의 요약 커서다. 무엇이 실패하든 섹션
+    """이번 턴의 사실 섹션. `history` 는 방의 전체 대화(턴 번호를 세고 직전 응답을 찾는다), `cursor` 는 그 턴의 요약 커서,
+    `knowledge` 는 지식 범위 필터를 켰을 때의 이름 출처다(None 이면 필터 없이 고른다). 무엇이 실패하든 섹션
     없음이다 — 회상(`memory_recall.recall_for_turn`)과 같은 이유와 같은 방법(SAVEPOINT 로 감싼 읽기, 고르기·렌더 예외도 같은
     자리에서 받음, 스택을 실은 경고와 승격). 취소(`CancelledError`)는 `Exception` 이 아니라 그대로 올라간다."""
     try:
         async with db.begin_nested():
             return await _facts(
-                db, room_id=room_id, cursor=cursor, history=history, user_content=user_content, names=names
+                db,
+                room_id=room_id,
+                cursor=cursor,
+                history=history,
+                user_content=user_content,
+                names=names,
+                knowledge=knowledge,
             )
     except Exception as exc:
         logger.warning(
