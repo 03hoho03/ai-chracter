@@ -37,8 +37,10 @@ def _load(revision: str) -> ModuleType:
     return module
 
 
-# head 의 추출 지시문·회상 문안은 관계·사실 기억 문안 리비전이 바꾼 판이다(채널의 슬롯 모양은 이 리비전 그대로다).
+# head 의 추출 지시문은 관계·사실 기억 문안 리비전이 바꾼 판이다(채널의 슬롯 모양은 이 리비전 그대로다).
 _M = _load("5cab2abe4e7b")
+# 회상 섹션 문안의 지금 판 — 글을 쓰는 여섯 체인의 활성 세트가 이 리비전의 것이다.
+_RECALL = _load("726aad108167")
 _NAMES = PromptNames(persona_name="하늘", char_name="민지")
 _NO_NAMES = PromptNames(persona_name=None, char_name=None)
 _RECALL_LINES = "- 빵집 약속: 토요일 열한 시에 소금빵을 사 오기로 했다. (인물의 말)"
@@ -224,7 +226,7 @@ async def test_generation_preview_shows_the_recall_section(
     """회상 섹션도 샘플 줄로 채워 머리글과 우선순위 문구가 보이게 한다. 다른 채널 항목에는 없다."""
     items = await _preview(db_client, db_session, lane, model)
 
-    header = _M.RECALL_BODY.split("{memory_recall_lines}")[0]
+    header = _RECALL.RECALL_BODY.split("{memory_recall_lines}")[0]
     generation = [item for item in items if item["channel"] == "generation"]
     others = [item for item in items if item["channel"] != "generation"]
     assert generation and others

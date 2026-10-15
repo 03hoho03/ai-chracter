@@ -41,6 +41,8 @@ def _load(revision: str) -> ModuleType:
 
 
 _M = _load("5cab2abe4e7b")
+# 회상 섹션 문안의 지금 판 — 글을 쓰는 여섯 체인의 활성 세트가 이 리비전의 것이다.
+_RECALL = _load("726aad108167")
 _NAMES = PromptNames(persona_name="하늘", char_name="민지")
 _NO_NAMES = PromptNames(persona_name=None, char_name=None)
 _EXISTING = ["relation|민지|하늘 = 경계 — 말을 아낌 (confirmed)", "fact|민지|생일 달 = 삼월 (claimed)"]
@@ -218,7 +220,7 @@ async def test_generation_preview_shows_the_facts_section_before_the_recall_sect
     items = await _preview(db_client, db_session, lane, model)
 
     facts_header = _M.FACTS_BODY.split("{memory_fact_lines}")[0]
-    recall_header = _M.RECALL_BODY.split("{memory_recall_lines}")[0]
+    recall_header = _RECALL.RECALL_BODY.split("{memory_recall_lines}")[0]
     generation = [item for item in items if item["channel"] == "generation"]
     others = [item for item in items if item["channel"] != "generation"]
     assert generation and others

@@ -52,7 +52,7 @@ from factories import (
 from replay.logs import ReplayRefusedError
 from replay.state import turn_fact_lines
 
-# 머리글 줄(줄바꿈까지) — 두 섹션 문안이 서로의 이름을 우선순위 문장에서 부르므로 이름만으로는 섹션 위치를 가를 수 없다.
+# 머리글 줄(줄바꿈까지) — 사실 섹션 문안이 우선순위 문장에서 회상 섹션 이름을 부르므로 이름만으로는 섹션 위치를 가를 수 없다.
 HEADER = "[관계와 사실]\n"
 RECALL_HEADER = "[지난 기억 — 참고]\n"
 TURN = 9
@@ -375,12 +375,8 @@ async def test_facts_off_keeps_generation_prompt_bytes_and_reads_no_facts(
     assert with_facts.memory_facts == ()
 
 
-async def test_facts_section_follows_history_and_precedes_recall(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """켜면 사실 섹션 하나가 대화 기록 뒤·회상 섹션 앞에 더해질 뿐 나머지는 꺼졌을 때와 같다."""
-    room, snapshots = await _fact_room(db_client, db_session)
-    await _plant(db_session, room, snapshots[2], [_AUDITION, _FRIENDS])
+async def _plant_scenes(db_session: AsyncSession, room: Room, snapshot_id: uuid.UUID) -> None:
+    """"밀알당" 을 물으면 회상에 걸리는 장면 하나와 걸리지 않는 잡담 장면 다섯을 심는다."""
     turn_one = room.turns[1]
     scenes = [
         *[(f"잡담 {i}", f"평범한 하루 {i}번째.", [f"일상{i}"]) for i in range(5)],
@@ -390,7 +386,7 @@ async def test_facts_section_follows_history_and_precedes_recall(
         db_session.add(
             _make_memory_episode(
                 room.room_id,
-                snapshots[2],
+                snapshot_id,
                 ordinal=ordinal,
                 start_created_at=turn_one[0].created_at,
                 start_message_id=turn_one[0].id,
@@ -403,6 +399,15 @@ async def test_facts_section_follows_history_and_precedes_recall(
             )
         )
     await db_session.commit()
+
+
+async def test_facts_section_follows_history_and_precedes_recall(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """켜면 사실 섹션 하나가 대화 기록 뒤·회상 섹션 앞에 더해질 뿐 나머지는 꺼졌을 때와 같다."""
+    room, snapshots = await _fact_room(db_client, db_session)
+    await _plant(db_session, room, snapshots[2], [_AUDITION, _FRIENDS])
+    await _plant_scenes(db_session, room, snapshots[2])
     monkeypatch.setattr(settings, "memory_episodes_recall", True)
     off = await _build(db_session, room, "밀알당 기억나?")
     _facts_on(monkeypatch)
@@ -418,6 +423,29 @@ async def test_facts_section_follows_history_and_precedes_recall(
         < on.prompt.index(RECALL_HEADER)
         < on.prompt.rindex("밀알당 기억나?")
     )
+
+
+@pytest.mark.parametrize("lane", ["story", "character"])
+async def test_recall_on_with_facts_off_never_names_the_facts_section(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    lane: PromptLane,
+) -> None:
+    """회상만 켜고 사실 주입은 끈 턴 — 회상 섹션은 실리지만 프롬프트 어디에도 사실 섹션 이름이 없다. 실리지 않은 섹션을 우선순위
+    문장이 가리키면 모델이 없는 정보를 찾는다."""
+    room, snapshots = await _fact_room(db_client, db_session, lane=lane)
+    await _plant(db_session, room, snapshots[2], [_AUDITION, _FRIENDS])
+    await _plant_scenes(db_session, room, snapshots[2])
+    monkeypatch.setattr(settings, "memory_episodes_recall", True)
+    monkeypatch.setattr(settings, "memory_facts_inject", False)
+
+    built = await _build(db_session, room, "밀알당 기억나?", lane=lane)
+
+    assert RECALL_HEADER in built.prompt
+    assert "밀알당에서 소금빵" in built.prompt
+    assert HEADER.strip() not in built.prompt
+    assert built.memory_facts == ()
 
 
 async def test_facts_keep_first_two_cache_blocks_identical(
