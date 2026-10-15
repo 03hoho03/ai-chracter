@@ -15,6 +15,8 @@ httpx `ASGITransport`는 background까지 끝난 뒤 응답을 돌려주므로 �
 끝나 있다. 단언은 컬럼 단위 `select()`로 한다(요청과 같은 세션의 identity map에 속지 않게).
 """
 
+import builtins
+import json
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime, timedelta
@@ -67,6 +69,7 @@ from factories import (
     _plant_snapshot,
     _snapshots,
 )
+from replay import logs as replay_logs
 
 SUMMARY_TEXT = "[SUMMARY] 둘은 서점에서 만났다"
 
@@ -591,3 +594,116 @@ async def test_a_folding_turn_costs_one_turn_of_clover_and_counts_once_against_r
     assert [tuple(row) for row in ledger] == [("chat_spend", -clover.CHAT_TURN_COST)]
     counters = [await redis_client.get(key) for key in await redis_client.keys(f"rate_limit:*{user.id}*")]
     assert counters and all(value == "1" for value in counters)
+
+
+# --- 측정 서버의 프롬프트 덤프 -------------------------------------------------------------
+
+
+def _background_dump_lines(path: Path) -> list[dict[str, Any]]:
+    """덤프 파일에서 백그라운드 작업(요약 접기·기억 추출)의 줄만."""
+    records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    return [record for record in records if record["kind"] == "background"]
+
+
+async def test_fold_writes_its_summary_prompt_to_the_measurement_dump(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """측정 서버는 요약 모델을 바꿔 볼 때 같은 입력을 다시 보내야 한다 — 접기의 요약 프롬프트도 생성·판정 프롬프트와 같은
+    파일에 한 줄로 남는다. 커서는 이 접기가 접는 마지막 메시지(새 스냅샷의 커서)다."""
+    dump = tmp_path / "prompts.jsonl"
+    monkeypatch.setattr(settings, "prompt_dump_path", str(dump))
+    room = await _open_room(db_client, db_session, turns=29)
+    fake = SummaryLLMClient()
+
+    events = await _request(db_client, room, "send", fake)
+
+    assert events[-1] == "done"
+    assert _background_dump_lines(dump) == [
+        {
+            "roomId": str(room.room_id),
+            "turn": 30,
+            "kind": "background",
+            "callSite": "chat_memory_summary",
+            "model": settings.gemini_model_name,
+            "schema": "MemorySummaryResult",
+            "prompt": fake.summary_prompts[0],
+            "cursorMessageId": str(room.turns[10][1].id),
+        }
+    ]
+
+
+async def test_fold_dump_is_written_even_when_the_summary_call_fails(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """덤프는 호출 앞에서 쓴다 — 실패한 요약의 입력도 남아야 그 실패를 다시 보내 볼 수 있다. 요약이 실패해도 턴은 그대로
+    끝나고 스냅샷은 생기지 않는다."""
+    dump = tmp_path / "prompts.jsonl"
+    monkeypatch.setattr(settings, "prompt_dump_path", str(dump))
+    room = await _open_room(db_client, db_session, turns=29)
+    fake = SummaryLLMClient(LLMClientError("boom"))
+
+    events = await _request(db_client, room, "send", fake)
+
+    assert events == ["token", "done"]
+    assert await _snapshots(db_session, room) == []
+    assert [line["prompt"] for line in _background_dump_lines(dump)] == fake.summary_prompts
+    assert len(fake.summary_prompts) == 1
+
+
+async def test_failed_dump_write_does_not_change_the_fold(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """덤프는 측정용 부가 기록이다 — 쓰다 실패해도 접기는 덤프가 없을 때와 같은 스냅샷을 남긴다."""
+    # 디렉터리를 덤프 파일 자리로 주면 추가 모드로 열지 못해 쓰기가 실패한다.
+    monkeypatch.setattr(settings, "prompt_dump_path", str(tmp_path))
+    room = await _open_room(db_client, db_session, turns=29)
+    fake = SummaryLLMClient()
+
+    events = await _request(db_client, room, "send", fake)
+
+    assert events[-1] == "done"
+    assert len(fake.summary_prompts) == 1
+    tenth = room.turns[10][1]
+    assert await _snapshots(db_session, room) == [SnapshotRow(tenth.created_at, tenth.id, SUMMARY_TEXT, None, "auto")]
+    assert await _memory_version(db_session, room) == 1
+
+
+async def test_fold_opens_no_file_without_a_dump_path(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """운영은 덤프 경로가 없다 — 접기는 어떤 파일도 추가 모드로 열지 않고 지금처럼 스냅샷만 남긴다."""
+    monkeypatch.setattr(settings, "prompt_dump_path", None)
+    appended: list[str] = []
+    real_open = builtins.open
+
+    def spy_open(file: Any, mode: str = "r", *args: Any, **kwargs: Any) -> Any:
+        if "a" in mode:
+            appended.append(str(file))
+        return real_open(file, mode, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", spy_open)
+    room = await _open_room(db_client, db_session, turns=29)
+    fake = SummaryLLMClient()
+
+    events = await _request(db_client, room, "send", fake)
+
+    assert events[-1] == "done"
+    assert len(fake.summary_prompts) == 1
+    assert len(await _snapshots(db_session, room)) == 1
+    assert appended == []
+
+
+async def test_replay_reader_still_picks_the_generation_line_when_a_fold_line_shares_its_turn(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """접기 줄은 그 턴 생성 줄과 방·턴 번호가 같고 그 뒤에 남는다. 리플레이가 덤프에서 고르는 것은 여전히 그 턴의 생성 줄
+    하나다 — 접기 줄을 세면 유실 턴의 재시도로 읽고, 고르면 지시문 없는 줄과 대조한다."""
+    dump = tmp_path / "prompts.jsonl"
+    monkeypatch.setattr(settings, "prompt_dump_path", str(dump))
+    room = await _open_room(db_client, db_session, turns=29)
+
+    await _request(db_client, room, "send", SummaryLLMClient())
+
+    assert [line["turn"] for line in _background_dump_lines(dump)] == [30]
+    record, count = replay_logs.dump_record(dump, room.room_id, 30)
+    assert (record["kind"], record["turn"], count) == ("generation", 30, 1)
