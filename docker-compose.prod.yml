@@ -123,7 +123,12 @@ services:
 
   postgres:
     # Neon 이 18.6(실측)이라 18 미만이면 덤프 복원이 거부된다.
-    image: postgres:18-alpine
+    # 벡터 확장(pgvector)을 얹은 자체 이미지다. `postgres:18-alpine` 과 같은 베이스 위에서 확장만 컴파일해
+    # 얹었으므로 musl 정렬과 데이터 디렉터리 배치가 그대로라 지금 볼륨을 그대로 받는다. 태그가 아니라 digest 로
+    # 고정하는 것은 태그를 다시 밀어도 운영 DB 서버가 모르는 사이에 바뀌지 않게 하려는 것이다.
+    # ⚠️ 이 줄(또는 postgres 설정)을 바꾼 병합은 그 배포 중에 postgres 를 다시 만든다 — 교체 스크립트가
+    # `--no-deps` 없이 api 색을 띄우고, api 색이 postgres 에 `depends_on` 이라 바뀐 설정이 함께 반영된다.
+    image: ghcr.io/03hoho03/postgres-pgvector@sha256:fe16e6e8926fa50cdc2d90e8a101e40d3b92efa555e310024dcec7f8a0913bc1
     restart: unless-stopped
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}

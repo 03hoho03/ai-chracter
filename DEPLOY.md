@@ -871,6 +871,34 @@ sudo tail -f /var/log/ddona-backup.log
 버전별 하위 디렉터리에 데이터를 두므로 관례대로 `/data`에 걸면 기동을 거부한다 — `caddy_data`가
 없으면 재시작마다 인증서를 새로 받다가 Let's Encrypt 레이트리밋에 걸린다.
 
+**운영 Postgres 이미지 — 벡터 확장을 얹은 자체 이미지**. `docker-compose.prod.yml`의 postgres 는
+`postgres:18-alpine`이 아니라 같은 베이스 위에 벡터 확장(pgvector)만 컴파일해 얹은
+`ghcr.io/03hoho03/postgres-pgvector@sha256:…`(digest 고정, 값은 compose 파일)이다. musl 정렬·데이터 디렉터리 배치가
+같아 기존 `pgdata` 볼륨을 그대로 받는다. VM 재구축·"빈 상태에서 첫 기동"의 `up -d --wait postgres redis`도 compose 파일의
+이 이미지를 그대로 받으므로 따로 할 일은 없고, 2026-12 무렵 VM 사양·형상을 다시 판단할 때도 이 이미지가 기준이다.
+
+- **이 이미지 줄(또는 postgres 설정)을 바꾸는 병합은 그 배포 중에 postgres 를 다시 만든다.** 교체 스크립트가 `--no-deps`
+  없이 api 색을 띄우고 api 색이 postgres 에 `depends_on`이라, 설정이 달라진 postgres 가 함께 재생성된다(그동안 DB 가 잠깐 끊긴다).
+- **새 이미지가 받아지지만 healthy 가 되지 않으면** 옛 postgres 컨테이너는 이미 지워진 뒤다. 배포는 postgres 헬스체크
+  (5초 간격 20회)만큼 약 100초 기다리다 실패한다. 비상 복구는 원래 이미지 줄만 담은 override 파일을 얹어 postgres 만 되살리는 것이다
+  (볼륨은 그대로라 데이터는 남아 있다).
+
+  override 파일은 `/opt/ddona/pg-rollback.override.yml`이고 VM 에 이미 준비돼 있을 수 있다 — 있으면 내용만 확인하고,
+  없으면 아래 `printf`로 만든다.
+
+  ```sh
+  cd /opt/ddona/app
+  sudo cat /opt/ddona/pg-rollback.override.yml 2>/dev/null ||
+    printf 'services:\n  postgres:\n    image: postgres:18-alpine\n' | sudo tee /opt/ddona/pg-rollback.override.yml
+  sudo docker compose -f docker-compose.prod.yml -f /opt/ddona/pg-rollback.override.yml --env-file /opt/ddona/.env \
+       up -d --no-deps --wait postgres
+  ```
+
+- **벡터 확장을 만든 뒤에는(`CREATE EXTENSION vector`) 원래 이미지로 되돌리면 그 타입을 읽지 못한다.** 되돌리기 전에 벡터
+  칸과 확장을 먼저 내린다(마이그레이션 downgrade). 위 비상 복구는 확장을 아직 만들지 않은 상태에서만 그대로 쓴다.
+- 백업 클라이언트(`apps/api/scripts/ops/pg.py`의 `postgres:18-alpine`)는 그대로 둔다 — `pg_dump`·`pg_restore` 는 확장 없이도
+  벡터 칸을 덤프한다. 다만 **복원 대상 서버에는 확장이 있어야 하므로** 이 이미지로 뜬 postgres 에 복원한다.
+
 **백업 알림 · check-in · R2 용량 감시**. `backup_db.py`가
 Discord 웹훅(`ops/notify.py`)·healthchecks.io check-in·R2 용량 임계 알림을 전부 겸한다 — 새
 스크립트·새 크론·새 Cloudflare 토큰은 없다.
