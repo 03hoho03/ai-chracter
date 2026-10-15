@@ -45,6 +45,9 @@ _M = _load("5cab2abe4e7b")
 # 이 리비전 직전의 활성 세트 — 여덟 체인 모두 장면 기억 문안 리비전의 세트다(그 사이에 프롬프트를 게시한 리비전이 없다).
 _EPISODE_MIGRATION = _load("fc6f0e134782")
 _PREVIOUS_SET_IDS: dict[tuple[str, str], uuid.UUID] = _EPISODE_MIGRATION.NEW_SET_IDS
+# 이 리비전 뒤에 글을 쓰는 여섯 체인에 회상 문안만 바꾼 새 세트를 게시하는 리비전. head 상태에서는 그 세트들이 활성이라,
+# "이 리비전 직후 상태"를 보는 테스트와 이 리비전을 되돌리는 테스트는 그 리비전을 먼저 되돌린다(실제 downgrade 순서).
+_LATER = _load("726aad108167")
 
 _LANES: tuple[PromptLane, ...] = ("story", "character")
 _WRITING_MODELS: tuple[PromptSetModelId, ...] = ("gemini", "sonnet", "opus")
@@ -105,6 +108,11 @@ def _expected_after(before: dict[Key, Value], model: str) -> dict[Key, Value]:
         expected[_RECALL_KEY] = (_M.RECALL_BODY, True, recall_order + 1)
         expected[_FACTS_KEY] = (_M.FACTS_BODY, True, recall_order)
     return {**expected, **_FACT_ROWS}
+
+
+async def _undo_later_revisions(db_session: AsyncSession) -> None:
+    connection = await db_session.connection()
+    await connection.run_sync(_LATER.delete_seeded_rows)
 
 
 async def _active_id(db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId) -> uuid.UUID:
@@ -200,12 +208,14 @@ def test_recall_section_gains_the_user_tag_and_the_facts_section_in_its_priority
 async def test_each_chain_is_active_at_its_seeded_set(
     db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId
 ) -> None:
+    await _undo_later_revisions(db_session)
     assert await _active_id(db_session, lane, model) == _M.NEW_SET_IDS[(lane, model)]
 
 
 @pytest.mark.parametrize("lane", _LANES)
 async def test_the_lane_only_select_picks_the_new_gemini_set(db_session: AsyncSession, lane: PromptLane) -> None:
     """모델 열을 모르는 원시 SQL 이 레인만 보고 최신 게시본을 고를 때도 새 Gemini 세트를 집는다."""
+    await _undo_later_revisions(db_session)
     assert await _lane_only_active_id(db_session, lane) == _M.NEW_SET_IDS[(lane, "gemini")]
 
 
@@ -269,11 +279,13 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
     others = (
         await db_session.scalars(
             sa.select(sa.cast(PromptSet.version, sa.Integer)).where(
-                PromptSet.status == "published", PromptSet.id.not_in(order)
+                PromptSet.status == "published",
+                PromptSet.id.not_in(order),
+                PromptSet.id.not_in(list(_LATER.NEW_SET_IDS.values())),
             )
         )
     ).all()
-    # 테스트 DB에는 이 리비전 뒤에 게시한 세트가 없다.
+    # 테스트 DB에는 이 리비전 뒤에 게시한 세트가 회상 문안 리비전의 것뿐이다(그 세트들의 버전은 이 리비전보다 뒤다).
     assert versions == list(range(max(others) + 1, max(others) + 1 + len(order)))
 
 
@@ -353,6 +365,7 @@ async def test_downgrade_then_upgrade_swaps_every_chain_back_and_forth(db_sessio
     본문은 처음부터 옛 문안이다), 다시 올리면 같은 리터럴 세트가 활성이 된다."""
     connection = await db_session.connection()
 
+    await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
 
     for lane, model in _ALL_PAIRS:
@@ -375,6 +388,7 @@ async def test_downgrade_then_upgrade_swaps_every_chain_back_and_forth(db_sessio
 async def test_upgrade_copies_the_operators_edited_text_not_the_seed(db_session: AsyncSession) -> None:
     """어드민이 고쳐 게시한 다른 문안(요약 지시문)은 새 세트에 그대로 실린다 — 바꾸는 것은 두 본문뿐이다."""
     connection = await db_session.connection()
+    await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     instruction_key: Key = ("memory_summary", "both", "instruction", "")
     edited_body = "운영자가 고친 요약 지시문"
@@ -398,6 +412,7 @@ async def test_upgrade_copies_the_operators_edited_text_not_the_seed(db_session:
 
 async def test_upgrade_copies_each_chains_own_labels(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     await db_session.execute(
         sa.update(PromptSet).where(PromptSet.id == _PREVIOUS_SET_IDS[("character", "opus")]).values(user_label="독자")
@@ -423,6 +438,7 @@ async def test_upgrade_refuses_to_overwrite_a_body_the_admin_edited(
     """바꾸려는 본문이 앞 리비전 문안과 한 글자라도 다르면 어드민이 고친 운영 문안이다 — 조용히 덮어쓰지 않고, 그 레인에는 아무
     세트도 넣지 않은 채 멈춘다."""
     connection = await db_session.connection()
+    await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     await db_session.execute(
         sa.update(PromptSection)
@@ -449,6 +465,7 @@ async def test_upgrade_refuses_to_run_twice(db_session: AsyncSession) -> None:
 
 async def test_upgrade_stops_when_the_lane_only_select_does_not_pick_gemini(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     previous = await _get_set(db_session, _PREVIOUS_SET_IDS[("story", "gemini")])
     assert previous.published_at is not None
@@ -465,6 +482,7 @@ async def test_upgrade_stops_when_the_lane_only_select_does_not_pick_gemini(db_s
 async def test_downgrade_stops_when_the_admin_published_after_the_seed(
     db_session: AsyncSession, lane: PromptLane, model: str
 ) -> None:
+    await _undo_later_revisions(db_session)
     seeded = await _get_set(db_session, _M.NEW_SET_IDS[(lane, model)])
     assert seeded.published_at is not None
     db_session.add(_set(lane=lane, model=model, published_at=seeded.published_at + timedelta(seconds=1)))

@@ -469,8 +469,8 @@ async def test_list_returns_metadata_only_and_marks_active(
     # Gemini: story v1·v2·v4·v6·v9·v10·v12, character v1·v3·v5·v11·v13, publish_filter v1·v7·v8 (모듈 docstring — 세트를
     # 만든 여덟 마이그레이션이 v2·v3, v4·v5, v6, v7, v8, v9, v10·v11, v12·v13을 만든다). Claude: v14~v17. 소설: v18~v21.
     # 스탯 규칙 판정: story v22. 노벨 텍스트 심사: v23. 판정 문안 체인: v24~v29. 장면 기억 문안: v30~v37.
-    # 관계·사실 기억 문안: v38~v45.
-    assert len(published) == 47
+    # 관계·사실 기억 문안: v38~v45. 회상 문안 우선순위: v46~v51(글을 쓰는 여섯 체인).
+    assert len(published) == 53
     assert len(draft) == 1
     active = [item for item in published if item["isActive"]]
     # (레인, 모델)마다 하나 — Claude 세트는 원본 Gemini 세트보다 published_at 이 과거지만 모델이 달라 각자 활성이다.
@@ -932,9 +932,9 @@ async def test_publish_version_conflict_returns_409(
         )
     ).all()
     # story Gemini published는 v1(a69cbd40dec8)·v2(b72c33c70240)·v4(c328445d4c2d)·v6(2519dde454e0)·v9(2417f5829bb1)·
-    # v10(8e895c898730)·v12(3bb2cc159b6d)·v22(d9768bc0cfee)·v30(fc6f0e134782)·v38(5cab2abe4e7b) 열이다 — 실패한 시도가
-    # 열하나째를 남기지 않는다.
-    assert len(published) == 10
+    # v10(8e895c898730)·v12(3bb2cc159b6d)·v22(d9768bc0cfee)·v30(fc6f0e134782)·v38(5cab2abe4e7b)·v46(726aad108167)
+    # 열하나다 — 실패한 시도가 열두째를 남기지 않는다.
+    assert len(published) == 11
 
 
 # ---- 롤백 (restore) -------------------------------------------------------------

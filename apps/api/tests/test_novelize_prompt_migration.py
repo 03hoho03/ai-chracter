@@ -42,7 +42,7 @@ _M = _load("3bb2cc159b6d")
 _STAT_RULE_MIGRATION = _load("d9768bc0cfee")
 _MEMORY_EPISODE_MIGRATION = _load("fc6f0e134782")
 # 그 뒤 여덟 체인에 관계·사실 기억 문안을 더하고 장면 추출·회상 문안을 바꾼 세트를 게시하는 리비전 — 초안 게시 검사가
-# head 코드 표를 쓰므로 초안은 이것도 거치고, head 의 활성 세트를 되돌릴 때는 이것부터 되돌린다.
+# head 코드 표를 쓰므로 초안은 이것도 거친다.
 _MEMORY_FACT_MIGRATION = _load("5cab2abe4e7b")
 # 이 리비전이 복사한 원본 — 테스트 DB에서는 두 레인 모두 사용자 이름 한 줄 리비전의 세트다.
 _SOURCE_SET_IDS: dict[str, uuid.UUID] = _load("8e895c898730").NEW_SET_IDS

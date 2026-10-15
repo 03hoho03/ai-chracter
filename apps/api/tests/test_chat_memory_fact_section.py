@@ -52,7 +52,7 @@ from factories import (
 from replay.logs import ReplayRefusedError
 from replay.state import turn_fact_lines
 
-# 머리글 줄(줄바꿈까지) — 두 섹션 문안이 서로의 이름을 우선순위 문장에서 부르므로 이름만으로는 섹션 위치를 가를 수 없다.
+# 머리글 줄(줄바꿈까지) — 사실 섹션 문안이 우선순위 문장에서 회상 섹션 이름을 부르므로 이름만으로는 섹션 위치를 가를 수 없다.
 HEADER = "[관계와 사실]\n"
 RECALL_HEADER = "[지난 기억 — 참고]\n"
 TURN = 9
