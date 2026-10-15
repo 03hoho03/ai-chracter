@@ -87,7 +87,11 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   // 되돌리면 메뉴를 연 응답이 다른 id 의 응답으로 바뀌어 그 "⋯"가 사라진다. 포커스가 갈 곳을 잃었으면 바뀐 마지막 응답의
   // "⋯"로 옮긴다(아래 마지막 메시지 효과가 처리한다).
   const shouldFocusLastMessageMenuRef = useRef(false);
-  const { restore: restorePreviousResponse, offerRestore } = useRestorePreviousResponse(roomId, () => {
+  const {
+    restore: restorePreviousResponse,
+    offerRestore,
+    dismissRestoreOffer,
+  } = useRestorePreviousResponse(roomId, () => {
     shouldFocusLastMessageMenuRef.current = true;
   });
   const { send, retry, regenerate, editMessage, status, policyWarning, streamingText } = useSendMessage(
@@ -103,6 +107,10 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
     (message) => offerRestore(message.id),
   );
   const isSending = status.kind === "sending";
+  // 턴이 시작되면(보내기·수정·다시 생성·재시도 모두 여기로 모인다) 재생성 직후의 되돌리기 안내를 거둔다.
+  useEffect(() => {
+    if (isSending) dismissRestoreOffer();
+  }, [isSending]);
   const isMemoryPanelOpen = useAtomValue(chatSidePanelAtom) === "memory";
   useMemoryFollowUpRefresh({ roomId, isSending, isPanelOpen: isMemoryPanelOpen });
   // 기본 모델 방은 무료 일일분을 쓴 뒤에만, 상위 모델 방은 첫 턴부터 턴마다 깎이므로 언제나 나타난다.

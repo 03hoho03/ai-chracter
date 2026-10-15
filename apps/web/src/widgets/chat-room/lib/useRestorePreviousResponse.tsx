@@ -57,5 +57,11 @@ export function useRestorePreviousResponse(roomId: string, onRestored: () => voi
     });
   }
 
-  return { restore, offerRestore };
+  /** 재생성 직후 띄운 되돌리기 안내를 거둔다. 턴이 시작되면 부른다 — 보내기·수정은 서버가 보관한 직전 응답을 지우고 다시
+   * 생성은 그 보관본을 새 직전 응답으로 바꾸므로, 남은 [되돌리기]는 누르면 거절될 버튼이다. */
+  function dismissRestoreOffer() {
+    toast.dismiss(REGENERATED_TOAST_ID);
+  }
+
+  return { restore, offerRestore, dismissRestoreOffer };
 }
