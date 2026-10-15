@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.chat.memory_window import MessageKey, load_current_summary, opening_message
 from api.chat.prompt_builder import MemorySummaryResult, PromptNames, PromptRenderError, build_memory_summary_prompt
+from api.chat.prompt_dump import dump_background_prompt
 from api.core.redis import redis_client
 from api.core.sentry import capture_dependency_failure
 from api.db.models import ChatMessage, ChatMessageRole, ChatRoom, ChatRoomMemorySnapshot, PromptSection, PromptSet
@@ -143,6 +144,15 @@ async def fold_memory(
         )
         if not prompt:
             raise PromptRenderError("요약 channel 이 비어 있다 — 활성 세트에 요약 지시문이 없다")
+        dump_background_prompt(
+            room_id=room_id,
+            call_site=_SUMMARY_CALL_SITE,
+            schema=MemorySummaryResult.__name__,
+            prompt=prompt,
+            log=logger,
+            turn=turn,
+            cursor_message_id=plan.cursor[1],
+        )
         result = await llm_client.generate_structured(
             prompt,
             MemorySummaryResult,

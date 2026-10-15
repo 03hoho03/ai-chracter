@@ -37,6 +37,7 @@ from api.chat.prompt_builder import (
     PromptRenderError,
     build_memory_fact_prompt,
 )
+from api.chat.prompt_dump import dump_background_prompt
 from api.core.sentry import capture_dependency_failure
 from api.db.models import (
     ChatMemoryFact,
@@ -262,6 +263,14 @@ async def extract_pending_facts(
         )
         if not prompt:
             raise PromptRenderError("사실 기억 channel 이 비어 있다 — 활성 세트에 추출 지시문이 없다")
+        dump_background_prompt(
+            room_id=candidate.room_id,
+            call_site=_FACT_CALL_SITE,
+            schema=MemoryFactResult.__name__,
+            prompt=prompt,
+            log=logger,
+            snapshot_id=candidate.snapshot_id,
+        )
         result = await llm_client.generate_structured(
             prompt,
             MemoryFactResult,
