@@ -22,12 +22,23 @@ from sqlalchemy import select, tuple_, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from api.chat.memory_knowledge import room_people, user_names
 from api.chat.memory_window import MessageKey, load_current_summary, opening_message
 from api.chat.prompt_builder import MemorySummaryResult, PromptNames, PromptRenderError, build_memory_summary_prompt
 from api.chat.prompt_dump import dump_background_prompt
+from api.core.config import settings
 from api.core.redis import redis_client
 from api.core.sentry import capture_dependency_failure
-from api.db.models import ChatMessage, ChatMessageRole, ChatRoom, ChatRoomMemorySnapshot, PromptSection, PromptSet
+from api.db.models import (
+    ChatMemoryFact,
+    ChatMessage,
+    ChatMessageRole,
+    ChatRoom,
+    ChatRoomMemorySnapshot,
+    MediaBookPerson,
+    PromptSection,
+    PromptSet,
+)
 from api.llm.chat_models import configured_call_site_model
 from api.llm.client import LLMCallContext, LLMCallSite, LLMClient, LLMClientError, dependency_tag
 from api.llm.routing import resolve_backend
@@ -105,6 +116,9 @@ async def fold_memory(
     `names` 는 이 접기를 예약한 턴의 이름이다(작가 글의 `{{user}}` 를 바꾸고 이름 한 줄을 채운다). 백그라운드라 방
     프로필을 다시 읽지 않고 그 턴의 생성 프롬프트와 같은 값을 받는다.
 
+    요약 비밀 표기 스위치가 켜져 있으면 접을 때가 된 접기만 요약 호출 전에 이름 출처(방 사실 행, 스토리 방이면 미디어 북 인물)를
+    새 세션으로 읽어 슬롯의 인물 이름 목록을 채운다(`_room_people`). 꺼져 있으면 읽지 않고 슬롯이 빠진다.
+
     순서가 정합성의 전부다.
     1. 방의 `memory_version`을 **가장 먼저** 읽고, 그다음 현재 요약과 커서 뒤 메시지를 읽는다.
        반대 순서면 그 사이 커밋된 메시지 삭제의 버전 증가를 먼저 읽은 버전이 흡수해, 지운 메시지를
@@ -134,6 +148,13 @@ async def fold_memory(
         if plan is None:
             return
 
+        people = (
+            await _room_people(
+                session_factory, room_id, is_story_chat=is_story_chat, names=names, user_label=prompt_set.user_label
+            )
+            if settings.memory_summary_secret_marking
+            else None
+        )
         prompt = build_memory_summary_prompt(
             prompt_set=prompt_set,
             sections=sections,
@@ -141,6 +162,7 @@ async def fold_memory(
             previous_summary=current.text if current else "",
             turns=plan.turns,
             names=names,
+            room_people=people,
         )
         if not prompt:
             raise PromptRenderError("요약 channel 이 비어 있다 — 활성 세트에 요약 지시문이 없다")
@@ -194,6 +216,57 @@ async def fold_memory(
         capture_dependency_failure(exc, dependency=_dependency_tag(exc))
         if turn is not None:
             await _record_failure(room_id, turn)
+
+
+async def _load_name_sources(
+    session_factory: async_sessionmaker[AsyncSession], room_id: uuid.UUID, *, is_story_chat: bool
+) -> tuple[list[ChatMemoryFact], list[str]]:
+    """방 사실 행 전부를 쓴 순서(스냅샷 커서 순, 그 안은 순번 순)로, 그리고 스토리 방이면 방이 고정한 작품 버전의 미디어 북 인물
+    이름을 순서대로. 첫 접기에는 사실 행이 아직 없다(사실 추출은 접기 뒤에 예약된다) — 그래서 미디어 북 인물을 따로 읽는다."""
+    fact, snapshot = ChatMemoryFact, ChatRoomMemorySnapshot
+    async with session_factory() as session:
+        rows = (
+            await session.scalars(
+                select(fact)
+                .join(snapshot, snapshot.id == fact.snapshot_id)
+                .where(fact.chat_room_id == room_id)
+                .order_by(snapshot.cursor_created_at, snapshot.cursor_message_id, fact.ordinal)
+            )
+        ).all()
+        media: list[str] = []
+        if is_story_chat:
+            media = list(
+                (
+                    await session.scalars(
+                        select(MediaBookPerson.name)
+                        .join(ChatRoom, ChatRoom.content_version_id == MediaBookPerson.content_version_id)
+                        .where(ChatRoom.id == room_id)
+                        .order_by(MediaBookPerson.order, MediaBookPerson.id)
+                    )
+                ).all()
+            )
+    return list(rows), media
+
+
+async def _room_people(
+    session_factory: async_sessionmaker[AsyncSession],
+    room_id: uuid.UUID,
+    *,
+    is_story_chat: bool,
+    names: PromptNames,
+    user_label: str,
+) -> list[str]:
+    """비밀 표기 슬롯의 인물 이름 목록 — 캐릭터 작품 이름 → 미디어 북 인물 → 방 사실 행 이름, 원래 표기 그대로, 사용자 표기
+    제외(`memory_knowledge.room_people`). 이름 출처를 못 읽으면 경고·승격을 남기고 이미 손에 있는 작품 이름만으로 채운다 — 이름
+    목록은 요약을 돕는 입력일 뿐이라 그 실패로 접기를 포기하지 않는다."""
+    rows: list[ChatMemoryFact] = []
+    media: list[str] = []
+    try:
+        rows, media = await _load_name_sources(session_factory, room_id, is_story_chat=is_story_chat)
+    except Exception as exc:
+        logger.warning("대화방 %s 요약 비밀 표기의 이름 출처를 못 읽었다 — 작품 이름만으로 채운다: %s", room_id, exc)
+        capture_dependency_failure(exc, dependency="db" if isinstance(exc, SQLAlchemyError) else "memory_fold")
+    return room_people(rows, [names.char_name, *media], users=user_names(names.persona_name, user_label))
 
 
 async def _load_unsummarized(

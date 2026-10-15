@@ -125,6 +125,8 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
     ("memory_summary", "previous_summary"): frozenset({"previous_summary"}),
     ("memory_summary", "turn_context"): frozenset({"turn_lines"}),
     ("memory_summary", "user_name"): frozenset({"user_name"}),
+    # 비밀 표기 지시와 방 인물 이름 목록. conditional 이라 스위치가 꺼져 값이 비면 섹션째 빠진다.
+    ("memory_summary", "secret_marking"): frozenset({"room_people"}),
     # 장면 기억 추출 호출 전용 channel — `build_memory_episode_prompt`가 만드는 `values`.
     ("memory_episode", "instruction"): frozenset(),
     ("memory_episode", "user_name"): frozenset({"user_name"}),
@@ -898,6 +900,11 @@ class MemorySummaryResult(BaseModel):
     summary: str
 
 
+# 비밀 표기 슬롯이 켜졌는데 방 인물 이름이 하나도 없을 때(첫 접기 — 사실 행이 아직 없고 미디어 북 인물도 없는 방) 이름 목록
+# 자리에 넣는 문구. 빈 값이면 conditional 로 슬롯이 빠져 첫 요약에 비밀 표기 지시가 없게 된다.
+NO_ROOM_PEOPLE = "아직 이름이 정해진 인물 없음 — 대화에 나온 이름이나 호칭을 그대로 쓴다"
+
+
 def build_memory_summary_prompt(
     *,
     prompt_set: PromptSet,
@@ -906,6 +913,7 @@ def build_memory_summary_prompt(
     previous_summary: str,
     turns: list[ChatMessage],
     names: PromptNames,
+    room_people: Sequence[str] | None = None,
 ) -> str:
     """요약 호출 프롬프트를 조립한다 — 긴 방에서 윈도우 밖으로 접을 대화를 요약한다.
 
@@ -916,14 +924,22 @@ def build_memory_summary_prompt(
     진실 소스가 둘이 되며, 계정 정보는 프롬프트에 넣지 않는다. 사용자 이름은 계정 정보가 아니라 이야기 속에서 사용자를
     부르는 이름이라(대화 프로필 이름) 이름 한 줄로 싣는다 — 요약이 대화 속 그 이름이 사용자라는 걸
     알게 하려는 것이다. 모델 응답 줄은 `names` 로 `{{user}}`·`{{char}}` 를 바꾼다(태그는 지우지 않는다 — 요약 입력에는
-    작가 글의 복사본인 첫 메시지가 빠져 있다)."""
+    작가 글의 복사본인 첫 메시지가 빠져 있다).
+
+    `room_people` 은 비밀 표기 슬롯의 인물 이름 목록이다. None(스위치 꺼짐)이면 값이 비어 슬롯이 섹션째 빠지고, 목록이면 ", "로
+    이어 넣는다 — 빈 목록이면 `NO_ROOM_PEOPLE` 을 넣어 슬롯이 늘 실린다."""
     assistant_label = prompt_set.story_assistant_label if is_story_chat else prompt_set.character_assistant_label
     turn_lines = "\n".join(
         f"{prompt_set.user_label if message.role == ChatMessageRole.USER else assistant_label}: "
         f"{_turn_text(message, names, strip_tags=False)}"
         for message in turns
     )
-    values = {"previous_summary": previous_summary, "turn_lines": turn_lines, "user_name": names.judgment_user_name}
+    values = {
+        "previous_summary": previous_summary,
+        "turn_lines": turn_lines,
+        "user_name": names.judgment_user_name,
+        "room_people": "" if room_people is None else ", ".join(room_people) or NO_ROOM_PEOPLE,
+    }
     return render_prompt_channel(
         sections, channel="memory_summary", scope="story" if is_story_chat else "character", values=values
     )

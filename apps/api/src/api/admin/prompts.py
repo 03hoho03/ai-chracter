@@ -133,7 +133,7 @@ _NOVEL_LANE_ROWS: dict[str, frozenset[tuple[str, str, str]]] = {
 # character 에 16행씩 더한 58/38/4행, 스탯 규칙 판정 채널 리비전 `d9768bc0cfee`가 story 에 4행을 더한 62/38/4행, 여기에
 # 장면 기억 문안 리비전 `fc6f0e134782`가 두 레인에 회상 슬롯 `memory_recall` 1행과 추출 채널 `memory_episode` 4행을 더한
 # 67/43/4행, 관계·사실 기억 문안 리비전 `5cab2abe4e7b`가 두 레인에 사실 슬롯 `memory_facts` 1행과 추출 채널 `memory_fact` 4행을
-# 더한 72/48/4행과 정확히 같다. 소설 프롬프트 레인 리비전이 만든 `novel` 레인은 경계 제안 4·화 생성
+# 더한 72/48/4행, 요약 비밀 표기 리비전 `0aeadefcf159`가 두 레인 요약 채널에 `secret_marking` 1행을 더한 73/49/4행과 정확히 같다. 소설 프롬프트 레인 리비전이 만든 `novel` 레인은 경계 제안 4·화 생성
 # 9·문단 수정 6 의 19행이다(story·character 의 소설화 16행은 그대로 얼려 둔다).
 # `tests/test_prompt_seed.py`의 `_EXPECTED_SLOTS_BY_LANE`이 "시드가 이 표와 일치하는가"를 보는
 # 반면, 이 상수는 "임의의 초안이 이 표와 일치하는가"(게시 검증)를 본다 — 검증 대상이
@@ -221,6 +221,7 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
         "memory_summary": frozenset(
             {
                 ("both", "instruction", ""),
+                ("both", "secret_marking", ""),
                 ("both", "user_name", ""),
                 ("both", "previous_summary", ""),
                 ("both", "turn_context", ""),
@@ -292,6 +293,7 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
         "memory_summary": frozenset(  # 위 story와 같다
             {
                 ("both", "instruction", ""),
+                ("both", "secret_marking", ""),
                 ("both", "user_name", ""),
                 ("both", "previous_summary", ""),
                 ("both", "turn_context", ""),
@@ -1169,6 +1171,8 @@ _SAMPLE_CHARACTER_NAMES = _SamplePromptNames(persona_name=None, char_name="[샘�
 # 기억 슬롯도 비우면 conditional 드롭으로 안 보인다(위 프로필과 같은 이유).
 _SAMPLE_MEMORY_NOTE = "[샘플] 주인공의 여동생 이름은 서연이다."
 _SAMPLE_MEMORY_SUMMARY = "[샘플] 두 사람은 비 오는 밤 편의점에서 처음 만났고, 다음 주에 다시 보기로 약속했다."
+# 요약 비밀 표기 슬롯의 인물 이름 목록. 실채팅은 스위치가 켜졌을 때만 채우지만, 비우면 conditional 드롭으로 문안이 안 보인다.
+_SAMPLE_ROOM_PEOPLE = ["[샘플] 민아", "[샘플] 준호"]
 # 회상 섹션과 추출 호출의 앞 구간 장면 제목도 비우면 conditional 드롭으로 안 보인다(위 프로필과 같은 이유). 회상 줄은 실채팅의
 # 줄 모양(`- 제목: 내용`, 인물이 한 말이면 꼬리표)을 흉내 낸다.
 _SAMPLE_MEMORY_RECALL_LINES = "- [샘플] 빵집 약속: [샘플] 토요일 열한 시에 소금빵을 사 오기로 했다. (인물의 말)"
@@ -1232,8 +1236,8 @@ _SAMPLE_MEDIA_BOOK_FILTER_CELLS = [
 def _memory_summary_preview_item(
     prompt_set: PromptSet, sections: list[PromptSection], *, is_story_chat: bool, names: PromptNames
 ) -> AdminPromptPreviewItem:
-    """요약 호출 프롬프트. 직전 요약이 있는 경우(두 번째 접기부터)를 보여 준다 — 비우면 그 섹션이
-    드롭돼 운영자가 문안을 못 본다."""
+    """요약 호출 프롬프트. 직전 요약이 있는 경우(두 번째 접기부터)와 비밀 표기 슬롯이 켜진 경우를 보여 준다 — 비우면 그
+    섹션이 드롭돼 운영자가 문안을 못 본다."""
     return AdminPromptPreviewItem(
         channel="memory_summary",
         label="memory_summary",
@@ -1244,6 +1248,7 @@ def _memory_summary_preview_item(
             previous_summary=_SAMPLE_MEMORY_SUMMARY,
             turns=_SAMPLE_HISTORY,
             names=names,
+            room_people=_SAMPLE_ROOM_PEOPLE,
         ),
     )
 

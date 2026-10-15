@@ -4,7 +4,8 @@
 방 이름: 방 사실 행의 주어·관계 대상·말한 사람·아는 사람 원소와, 호출부가 더 주는 이름이다. 매 턴 조립은 더 주지 않는다 —
 필터 판정은 아는 사람 원소가 장면에 나오는가뿐이고 그 원소는 이미 사실 행에서 들어오므로, 미디어 북 인물이나 작품 이름을 더해도
 판정이 바뀌지 않는다. 키워드북 키워드는 이름인지 사물인지 가를 수 없어 쓰지 않는다. 사실 키와 같은 정규화(`normalize_part`)를
-하고, 2자 미만은 흔한 글자라 아무 턴에나 걸리므로 버린다.
+하고, 2자 미만은 흔한 글자라 아무 턴에나 걸리므로 버린다. 요약 접기의 비밀 표기 슬롯에 싣는 인물 이름 목록(`room_people`)도 같은
+출처·같은 거름을 쓰되 원래 표기를 지키고, 접기가 작품 이름과 미디어 북 인물을 더 준다(첫 접기에는 사실 행이 아직 없다).
 
 사용자는 장면 인물에서 뺀다. 생성 모델이 연기하는 쪽은 사용자가 아니라 사용자의 앎은 누출 위험이 아니고, 진행자는 사용자를
 이름으로 자주 불러 사용자를 세면 그런 턴마다 다른 인물만 있는 장면에서도 사용자에게 털어놓은 비밀이 남는다. 사용자 표기는
@@ -35,13 +36,33 @@ def user_names(persona_name: str | None, user_label: str) -> frozenset[str]:
     return frozenset(normalized for normalized in (normalize_part(form) for form in forms) if normalized)
 
 
-def room_names(rows: Iterable[ChatMemoryFact], extra: Iterable[str], *, users: frozenset[str]) -> frozenset[str]:
-    """방 이름(정규화, 2자 이상, 사용자 표기 제외). `rows` 는 그 턴에 읽은 방 사실 행 전부, `extra` 는 호출부의 이름 출처다."""
+def _raw_names(rows: Iterable[ChatMemoryFact], extra: Iterable[str | None]) -> list[str | None]:
+    """이름 출처를 차례로 — 호출부 이름, 그다음 행마다 주어·관계 대상·말한 사람·아는 사람 원소. 사실의 속성은 이름이 아니다."""
     raw: list[str | None] = list(extra)
     for row in rows:
         raw += [row.subject, row.object if row.kind == "relation" else None, row.speaker, *(row.known_by or ())]
-    names = (normalize_part(name) for name in raw)
+    return raw
+
+
+def room_names(rows: Iterable[ChatMemoryFact], extra: Iterable[str], *, users: frozenset[str]) -> frozenset[str]:
+    """방 이름(정규화, 2자 이상, 사용자 표기 제외). `rows` 는 그 턴에 읽은 방 사실 행 전부, `extra` 는 호출부의 이름 출처다."""
+    names = (normalize_part(name) for name in _raw_names(rows, extra))
     return frozenset(name for name in names if len(name) >= MIN_NAME_CHARS and name not in users)
+
+
+def room_people(rows: Iterable[ChatMemoryFact], extra: Iterable[str | None], *, users: frozenset[str]) -> list[str]:
+    """요약에 줄 방 인물 이름 목록 — `room_names` 와 같은 출처·같은 거름(정규형 2자 이상, 사용자 표기 제외)이지만 출처 순서대로
+    처음 나온 **원래 표기**(앞뒤 공백만 지운다)를 남긴다. 요약 모델이 아는 사람을 이 이름 꼴 그대로 적게 하려는 목록이라 정규형을
+    주면 대소문자·띄어쓰기가 바뀐 이름이 적힌다. 같은 이름인지는 정규형으로 본다."""
+    people: list[str] = []
+    seen: set[str] = set()
+    for name in _raw_names(rows, extra):
+        key = normalize_part(name)
+        if len(key) < MIN_NAME_CHARS or key in users or key in seen:
+            continue
+        seen.add(key)
+        people.append((name or "").strip())
+    return people
 
 
 def scene_people(names: Iterable[str], texts: Iterable[str]) -> frozenset[str]:
