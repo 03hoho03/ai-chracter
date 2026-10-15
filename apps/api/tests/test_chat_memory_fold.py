@@ -28,12 +28,13 @@ import pytest
 import sqlalchemy as sa
 from fastapi import BackgroundTasks
 from redis.exceptions import RedisError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.chat import memory_fold, turn_engine
 from api.chat import router as chat_router
 from api.chat.memory_fold import backoff_allows, plan_fold
-from api.chat.prompt_builder import MemorySummaryResult, StatRuleJudgmentResult
+from api.chat.prompt_builder import NO_ROOM_PEOPLE, MemorySummaryResult, StatRuleJudgmentResult
 from api.chat.schemas import ChatStreamEvent
 from api.core import clover, rate_limit_gate
 from api.core.config import settings
@@ -42,10 +43,12 @@ from api.db.models import (
     ChatMessage,
     ChatMessageRole,
     ChatRoom,
+    ChatRoomMemorySnapshot,
     ChatRoomStat,
     CloverLedger,
     User,
 )
+from api.db.models.story import MediaBookPerson
 from api.db.session import get_session_factory
 from api.llm.claude_messages import claude_error
 from api.llm.client import (
@@ -60,6 +63,7 @@ from factories import (
     Room,
     SnapshotRow,
     _clear_llm_override,
+    _make_memory_fact,
     _make_user,
     _make_user_with_clover_lot,
     _memory_version,
@@ -707,3 +711,140 @@ async def test_replay_reader_still_picks_the_generation_line_when_a_fold_line_sh
     assert [line["turn"] for line in _background_dump_lines(dump)] == [30]
     record, count = replay_logs.dump_record(dump, room.room_id, 30)
     assert (record["kind"], record["turn"], count) == ("generation", 30, 1)
+
+
+# --- 요약 비밀 표기 슬롯 ------------------------------------------------------------------
+
+_SLOT_HEAD = "[비밀 표기]\n- 이 이야기의 인물 이름: "
+
+
+async def _plant_fact_snapshot(db_session: AsyncSession, room: Room, *, turn: int, facts: list[dict[str, Any]]) -> None:
+    """`turn` 턴까지 접은 스냅샷 하나와 그 접기에서 뽑은 사실 행들을 심는다."""
+    assistant = room.turns[turn][1]
+    snapshot = ChatRoomMemorySnapshot(
+        chat_room_id=room.room_id,
+        cursor_created_at=assistant.created_at,
+        cursor_message_id=assistant.id,
+        summary_text="앞 요약",
+        source="auto",
+    )
+    db_session.add(snapshot)
+    await db_session.flush()
+    for ordinal, fields in enumerate(facts):
+        db_session.add(_make_memory_fact(room.room_id, snapshot.id, ordinal=ordinal, **fields))
+    await db_session.commit()
+
+
+async def _add_media_book_people(db_session: AsyncSession, room: Room, names: list[str]) -> None:
+    version_id = await db_session.scalar(sa.select(ChatRoom.content_version_id).where(ChatRoom.id == room.room_id))
+    assert version_id is not None
+    for order, name in enumerate(names):
+        db_session.add(MediaBookPerson(entity_id=uuid.uuid4(), content_version_id=version_id, name=name, order=order))
+    await db_session.commit()
+
+
+async def _story_room_with_names(db_client: httpx.AsyncClient, db_session: AsyncSession) -> Room:
+    """미디어 북 인물 둘과, 앞 접기(10턴)의 사실 행이 있는 스토리 방. 커서 뒤가 29턴이라 다음 보내기가 접는다."""
+    room = await _open_room(db_client, db_session, turns=39, lane="story")
+    await _add_media_book_people(db_session, room, ["한서윤", "Mina"])
+    await _plant_fact_snapshot(
+        db_session,
+        room,
+        turn=10,
+        facts=[
+            {"kind": "relation", "subject": "오태민", "object": "한서윤"},
+            {
+                "kind": "fact",
+                "subject": "MINA",
+                "object": None,
+                "attribute": "숨긴 일",
+                "fact_key": "fact|mina|숨긴 일",
+                "speaker": "당신",
+                "known_by": ["사용자", "오태민", "지아 "],
+            },
+        ],
+    )
+    return room
+
+
+async def test_secret_marking_switched_off_leaves_the_slot_out_even_with_names(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """스위치가 꺼져 있으면 이름 출처가 있는 방에서도 요약 프롬프트에 슬롯이 없다."""
+    monkeypatch.setattr(settings, "memory_summary_secret_marking", False)
+    room = await _story_room_with_names(db_client, db_session)
+    fake = SummaryLLMClient()
+
+    await _request(db_client, room, "send", fake)
+
+    (prompt,) = fake.summary_prompts
+    assert "[비밀 표기]" not in prompt and "앞 요약" in prompt
+
+
+async def test_secret_marking_lists_the_story_people_in_their_original_spelling(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """스토리 방: 미디어 북 인물(순서대로) → 앞 접기 사실 행의 이름. 처음 나온 표기를 지키고 사용자 표기(대화 줄 라벨,
+    `{{user}}` 대체어)는 뺀다. 슬롯은 지시문 바로 뒤, 직전 요약 앞이다."""
+    monkeypatch.setattr(settings, "memory_summary_secret_marking", True)
+    room = await _story_room_with_names(db_client, db_session)
+    fake = SummaryLLMClient()
+
+    await _request(db_client, room, "send", fake)
+
+    (prompt,) = fake.summary_prompts
+    assert f"{_SLOT_HEAD}한서윤, Mina, 오태민, 지아. 아는 사람을" in prompt
+    assert prompt.index(_SLOT_HEAD) < prompt.index("앞 요약")
+    assert len(await _snapshots(db_session, room)) == 2
+
+
+async def test_secret_marking_names_the_character_in_a_character_room(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """캐릭터 방의 첫 접기: 사실 행이 아직 없어도 작품(캐릭터) 이름이 실린다."""
+    monkeypatch.setattr(settings, "memory_summary_secret_marking", True)
+    room = await _open_room(db_client, db_session, turns=29)
+    fake = SummaryLLMClient()
+
+    await _request(db_client, room, "send", fake)
+
+    (prompt,) = fake.summary_prompts
+    assert f"{_SLOT_HEAD}캐릭터. 아는 사람을" in prompt
+
+
+async def test_secret_marking_without_any_name_still_carries_the_slot_on_the_first_fold(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """미디어 북 인물이 없는 스토리 방의 첫 접기는 이름이 0개다 — 고정 문구로 슬롯이 실린다."""
+    monkeypatch.setattr(settings, "memory_summary_secret_marking", True)
+    room = await _open_room(db_client, db_session, turns=29, lane="story")
+    fake = SummaryLLMClient()
+
+    await _request(db_client, room, "send", fake)
+
+    (prompt,) = fake.summary_prompts
+    assert f"{_SLOT_HEAD}{NO_ROOM_PEOPLE}. 아는 사람을" in prompt
+
+
+async def test_secret_marking_name_read_failure_falls_back_and_the_fold_still_commits(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """이름 출처를 읽다 DB 가 실패해도 접기는 그대로 커밋한다 — 이름은 이미 손에 있는 작품 이름만으로 채우고, 실패는 승격한다."""
+    monkeypatch.setattr(settings, "memory_summary_secret_marking", True)
+    captured: list[str] = []
+    monkeypatch.setattr(memory_fold, "capture_dependency_failure", lambda exc, *, dependency: captured.append(dependency))
+
+    async def _broken(*args: Any, **kwargs: Any) -> Any:
+        raise SQLAlchemyError("이름 출처 읽기 실패")
+
+    monkeypatch.setattr(memory_fold, "_load_name_sources", _broken)
+    room = await _open_room(db_client, db_session, turns=29)
+    fake = SummaryLLMClient()
+
+    events = await _request(db_client, room, "send", fake)
+
+    assert events[-1] == "done"
+    (prompt,) = fake.summary_prompts
+    assert f"{_SLOT_HEAD}캐릭터. 아는 사람을" in prompt
+    assert captured == ["db"]
+    assert len(await _snapshots(db_session, room)) == 1
