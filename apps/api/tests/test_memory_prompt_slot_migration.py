@@ -67,6 +67,9 @@ _MEMORY_EPISODE_MIGRATION = _load("fc6f0e134782")
 # 그 뒤 여덟 체인에 관계·사실 기억 문안을 더하고 장면 추출·회상 문안을 바꾼 세트를 게시하는 리비전 — 초안 게시 검사가
 # head 코드 표를 쓰므로 초안은 이것도 거친다.
 _MEMORY_FACT_MIGRATION = _load("5cab2abe4e7b")
+# 그 뒤 여덟 체인의 요약 채널에 비밀 표기 슬롯을 더한 세트를 게시하는 리비전 — 초안 게시 검사가 head 코드 표를 쓰므로 초안은
+# 이것도 거친다.
+_SECRET_MARKING_MIGRATION = _load("0aeadefcf159")
 
 _NOTE_KEY = ("generation", "both", "memory_note", "")
 _GEN_SUMMARY_KEY = ("generation", "both", "memory_summary", "")
@@ -502,6 +505,7 @@ async def test_patch_draft_adds_memory_rows_in_place_and_draft_then_publishes(
     assert await connection.run_sync(_STAT_RULE_MIGRATION._patch_draft) is (lane == "story")
     assert await connection.run_sync(_MEMORY_EPISODE_MIGRATION._patch_drafts) == [(lane, "gemini")]
     assert await connection.run_sync(_MEMORY_FACT_MIGRATION._patch_drafts) == [(lane, "gemini")]
+    assert await connection.run_sync(_SECRET_MARKING_MIGRATION._patch_drafts) == [(lane, "gemini")]
     db_session.expire_all()  # 원시 SQL이 민 order를 식별자 맵의 옛 값이 가리지 않게
     draft = await db_session.get(PromptSet, draft_id)
     assert draft is not None

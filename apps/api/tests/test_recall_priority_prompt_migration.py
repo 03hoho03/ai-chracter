@@ -16,6 +16,7 @@ from types import ModuleType
 
 import pytest
 import sqlalchemy as sa
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin.prompts import _validate_prompt_draft_for_publish
@@ -42,6 +43,9 @@ _PREVIOUS_SET_IDS: dict[tuple[str, str], uuid.UUID] = _FACT_MIGRATION.NEW_SET_ID
 # 이 리비전 뒤에 여덟 체인에 사실 추출 지시문만 바꾼 새 세트를 게시하는 리비전. head 상태에서는 그 세트들이 활성이라, "이 리비전
 # 직후 상태"를 보는 테스트와 이 리비전을 되돌리는 테스트는 그 리비전을 먼저 되돌린다(실제 downgrade 순서).
 _LATER = _load("e4e407a62d03")
+# 그 뒤 여덟 체인의 요약 채널에 비밀 표기 슬롯을 더한 새 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴 때는
+# 이것부터다.
+_LATEST = _load("0aeadefcf159")
 
 _LANES: tuple[PromptLane, ...] = ("story", "character")
 _WRITING_MODELS: tuple[PromptSetModelId, ...] = ("gemini", "sonnet", "opus")
@@ -81,6 +85,7 @@ def _expected_after(before: dict[Key, Value]) -> dict[Key, Value]:
 
 async def _undo_later_revisions(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_LATEST.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
 
 
@@ -216,22 +221,29 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
                 PromptSet.status == "published",
                 PromptSet.id.not_in(order),
                 PromptSet.id.not_in(list(_LATER.NEW_SET_IDS.values())),
+                PromptSet.id.not_in(list(_LATEST.NEW_SET_IDS.values())),
             )
         )
     ).all()
-    # 테스트 DB에는 이 리비전 뒤에 게시한 세트가 사실 추출 지시문 리비전의 것뿐이다(그 세트들의 버전은 이 리비전보다 뒤다).
+    # 테스트 DB에는 이 리비전 뒤에 게시한 세트가 사실 추출 지시문 리비전과 요약 비밀 표기 리비전의 것뿐이다(그 세트들의 버전은
+    # 이 리비전보다 뒤다).
     assert versions == list(range(max(others) + 1, max(others) + 1 + len(order)))
 
 
 @pytest.mark.parametrize(("lane", "model"), _WRITING_PAIRS, ids=_ids(_WRITING_PAIRS))
-async def test_seeded_sets_pass_publish_validation(
+async def test_seeded_sets_pass_publish_validation_but_for_the_later_summary_slot(
     db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId
 ) -> None:
-    """행 집합·자리표시자가 그대로라 게시 검증을 통과한다 — 어긋나면 운영자가 그 체인을 손대는 순간 게시가 막힌다."""
-    await _undo_later_revisions(db_session)
-    prompt_set, sections = await load_active_prompt_set(db_session, lane=lane, model=model)
-    assert prompt_set.id == _M.NEW_SET_IDS[(lane, model)]
-    _validate_prompt_draft_for_publish(prompt_set, sections, lane=lane, model=model)
+    """이 리비전은 행 집합·자리표시자를 바꾸지 않는다. 지금 코드 표는 뒤 리비전(요약 비밀 표기 슬롯)까지 기준이라 이 세트는 그
+    슬롯 "누락"으로만 막히고, 그 슬롯을 더한 뒤 리비전의 세트(head 활성)는 통과한다."""
+    prompt_set = await _get_set(db_session, _M.NEW_SET_IDS[(lane, model)])
+    with pytest.raises(HTTPException):
+        _validate_prompt_draft_for_publish(
+            prompt_set, await _sections_of(db_session, _M.NEW_SET_IDS[(lane, model)]), lane=lane, model=model
+        )
+    later_set, later_sections = await load_active_prompt_set(db_session, lane=lane, model=model)
+    assert later_set.id == _LATEST.NEW_SET_IDS[(lane, model)]
+    _validate_prompt_draft_for_publish(later_set, later_sections, lane=lane, model=model)
 
 
 # ---- 되돌리기·다시 올리기 ----------------------------------------------------------------------
@@ -294,6 +306,7 @@ async def test_downgrade_then_upgrade_swaps_every_writing_chain_back_and_forth(d
     올리면 같은 리터럴 세트가 활성이 된다."""
     connection = await db_session.connection()
 
+    await connection.run_sync(_LATEST.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
 
@@ -320,6 +333,7 @@ async def test_upgrade_refuses_to_overwrite_a_recall_body_the_admin_edited(
     """활성 회상 본문이 앞 리비전 문안과 한 글자라도 다르면 어드민이 고친 운영 문안이다 — 조용히 덮어쓰지 않고, 그 레인에는
     아무 세트도 넣지 않은 채 멈춘다."""
     connection = await db_session.connection()
+    await connection.run_sync(_LATEST.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     await db_session.execute(
@@ -341,6 +355,7 @@ async def test_upgrade_refuses_to_overwrite_a_recall_body_the_admin_edited(
 
 async def test_upgrade_stops_when_the_recall_row_is_not_exactly_one(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_LATEST.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     await db_session.execute(
@@ -365,6 +380,7 @@ async def test_upgrade_refuses_to_run_twice(db_session: AsyncSession) -> None:
 
 async def test_upgrade_stops_when_the_lane_only_select_does_not_pick_gemini(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_LATEST.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     previous = await _get_set(db_session, _PREVIOUS_SET_IDS[("story", "gemini")])
@@ -411,10 +427,14 @@ async def test_patch_drafts_swaps_the_recall_body_in_place_and_the_draft_publish
 
     assert await connection.run_sync(_M._patch_drafts) == [(lane, model)]
 
+    assert _keyed(await _sections_of(db_session, draft_id)) == _expected_after(before)
+    # 코드 표는 head 기준이라, 체인이 실제로 하듯 뒤 리비전(요약 비밀 표기 슬롯)의 초안 패치도 거친 뒤 게시 게이트를 태운다.
+    assert await connection.run_sync(_LATEST._patch_drafts) == [(lane, model)]
     sections = await _sections_of(db_session, draft_id)
-    assert _keyed(sections) == _expected_after(before)
     _validate_prompt_draft_for_publish(await _get_set(db_session, draft_id), sections, lane=lane, model=model)
 
+    # 되돌리기도 실제 순서대로 뒤 리비전부터.
+    assert await connection.run_sync(_LATEST._delete_draft_rows) == [(lane, model)]
     assert await connection.run_sync(_M._delete_draft_rows) == [(lane, model)]
     assert _keyed(await _sections_of(db_session, draft_id)) == before
 

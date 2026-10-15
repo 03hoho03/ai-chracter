@@ -58,8 +58,11 @@ _MEMORY_EPISODE_MIGRATION = _load("fc6f0e134782")
 _MEMORY_FACT_MIGRATION = _load("5cab2abe4e7b")
 # 그 뒤 글을 쓰는 여섯 체인에 회상 문안만 바꾼 새 세트를 게시하는 리비전.
 _RECALL_PRIORITY_MIGRATION = _load("726aad108167")
-# 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 새 세트를 게시하는 리비전 — head 의 활성 세트를 되돌릴 때는 이것부터 되돌린다.
+# 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 새 세트를 게시하는 리비전.
 _FACT_INSTRUCTION_MIGRATION = _load("e4e407a62d03")
+# 그 뒤 여덟 체인의 요약 채널에 비밀 표기 슬롯을 더한 세트를 게시하는 리비전 — head 의 활성 세트를 되돌릴 때는 이것부터
+# 되돌린다. 초안 게시 검사가 head 코드 표를 쓰므로 초안은 이것도 거친다.
+_SECRET_MARKING_MIGRATION = _load("0aeadefcf159")
 
 _NEW_KEYS = {(row[0], row[1], row[2], row[3]) for row in _M.NEW_ROWS}
 
@@ -119,6 +122,7 @@ async def test_active_story_gemini_set_is_the_source_plus_four_rows(db_session: 
     나중 게시이며, 새 4행 말고는 원본과 바이트까지 같다. `published_at`이 원본보다 과거가 되면 새 세트가 활성이 되지
     못하므로 활성 id 를 직접 단언한다."""
     connection = await db_session.connection()
+    await connection.run_sync(_SECRET_MARKING_MIGRATION.delete_seeded_rows)
     await connection.run_sync(_FACT_INSTRUCTION_MIGRATION.delete_seeded_rows)
     await connection.run_sync(_RECALL_PRIORITY_MIGRATION.delete_seeded_rows)
     await connection.run_sync(_MEMORY_FACT_MIGRATION.delete_seeded_rows)
@@ -154,6 +158,7 @@ async def test_downgrade_then_upgrade_swaps_the_active_set_and_back(db_session: 
     """되돌리면 활성 story Gemini 세트가 원본으로 돌아가고 이 채널 행이 어디에도 남지 않는다. 다시 올리면 같은 리터럴
     세트가 활성이 된다. Claude 체인 활성 세트는 내내 그대로다."""
     connection = await db_session.connection()
+    await connection.run_sync(_SECRET_MARKING_MIGRATION.delete_seeded_rows)
     await connection.run_sync(_FACT_INSTRUCTION_MIGRATION.delete_seeded_rows)
     await connection.run_sync(_RECALL_PRIORITY_MIGRATION.delete_seeded_rows)
     await connection.run_sync(_MEMORY_FACT_MIGRATION.delete_seeded_rows)
@@ -243,12 +248,14 @@ async def test_patch_draft_adds_rows_in_place_and_the_draft_publishes_then_downg
     patched = _keyed(await _sections_of(db_session, draft_id))
     assert await connection.run_sync(_MEMORY_EPISODE_MIGRATION._patch_drafts) == [("story", "gemini")]
     assert await connection.run_sync(_MEMORY_FACT_MIGRATION._patch_drafts) == [("story", "gemini")]
+    assert await connection.run_sync(_SECRET_MARKING_MIGRATION._patch_drafts) == [("story", "gemini")]
     sections = await _sections_of(db_session, draft_id)
     draft = await db_session.get(PromptSet, draft_id)  # 섹션을 읽으며 세션이 만료시킨 뒤에 읽는다
     assert draft is not None
     _validate_prompt_draft_for_publish(draft, sections, lane="story")
 
     # 되돌리기도 실제 순서대로 뒤 리비전부터.
+    await connection.run_sync(_SECRET_MARKING_MIGRATION._delete_draft_rows)
     await connection.run_sync(_MEMORY_FACT_MIGRATION._delete_draft_rows)
     await connection.run_sync(_MEMORY_EPISODE_MIGRATION._delete_draft_rows)
     assert _keyed(await _sections_of(db_session, draft_id)) == patched

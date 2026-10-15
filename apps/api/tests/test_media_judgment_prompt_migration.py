@@ -54,8 +54,11 @@ _MEMORY_EPISODE_MIGRATION = _load("fc6f0e134782")
 _MEMORY_FACT_MIGRATION = _load("5cab2abe4e7b")
 # 그 뒤 글을 쓰는 여섯 체인에 회상 문안만 바꾼 세트를 게시하는 리비전.
 _RECALL_PRIORITY_MIGRATION = _load("726aad108167")
-# 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 세트를 게시하는 리비전 — character 레인 활성 Gemini 세트가 그 세트다.
+# 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 세트를 게시하는 리비전.
 _FACT_INSTRUCTION_MIGRATION = _load("e4e407a62d03")
+# 그 뒤 여덟 체인의 요약 채널에 비밀 표기 슬롯을 더한 세트를 게시하는 리비전 — character 레인 활성 Gemini 세트가 그 세트다.
+# 초안 게시 검사가 head 코드 표를 쓰므로 초안은 이것도 거친다.
+_SECRET_MARKING_MIGRATION = _load("0aeadefcf159")
 
 _NEW_KEYS = {
     ("image_judgment", "story", "image_list_intro", ""),
@@ -143,6 +146,7 @@ async def test_character_lane_keeps_its_active_set(db_session: AsyncSession) -> 
         _MEMORY_FACT_MIGRATION.NEW_SET_IDS[("character", "gemini")],
         _RECALL_PRIORITY_MIGRATION.NEW_SET_IDS[("character", "gemini")],
         _FACT_INSTRUCTION_MIGRATION.NEW_SET_IDS[("character", "gemini")],
+        _SECRET_MARKING_MIGRATION.NEW_SET_IDS[("character", "gemini")],
     )
 
 
@@ -236,6 +240,7 @@ async def test_patch_draft_adds_rows_in_place_and_draft_then_publishes(db_sessio
     assert await connection.run_sync(_STAT_RULE_MIGRATION._patch_draft) is True
     assert await connection.run_sync(_MEMORY_EPISODE_MIGRATION._patch_drafts) == [("story", "gemini")]
     assert await connection.run_sync(_MEMORY_FACT_MIGRATION._patch_drafts) == [("story", "gemini")]
+    assert await connection.run_sync(_SECRET_MARKING_MIGRATION._patch_drafts) == [("story", "gemini")]
     sections = await _sections_of(db_session, draft_id)
     draft = await db_session.get(PromptSet, draft_id)
     assert draft is not None
