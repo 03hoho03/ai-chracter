@@ -12,7 +12,7 @@ import base64
 import json
 import os
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable, Generator, Iterable
+from collections.abc import AsyncIterator, Awaitable, Callable, Collection, Generator, Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, UTC
@@ -2261,13 +2261,15 @@ PRODUCTION_ENV_TYPED_VALUES = {
 }
 
 
-def load_production_env(monkeypatch: pytest.MonkeyPatch, **extra: str) -> Settings:
-    """운영 env 키 이름 집합(값은 형식만 맞춘 가짜)에 `extra` 를 더해 `Settings` 를 새로 만든다. 테스트 프로세스가 물려받은
-    설정 env 는 먼저 지워, 운영에 있는 키와 `extra` 만 남긴다."""
+def load_production_env(monkeypatch: pytest.MonkeyPatch, *, without: Collection[str] = (), **extra: str) -> Settings:
+    """운영 env 키 이름 집합(값은 형식만 맞춘 가짜)에서 `without` 을 빼고 `extra` 를 더해 `Settings` 를 새로 만든다. 테스트
+    프로세스가 물려받은 설정 env 는 먼저 지워, 운영에 있는 키와 `extra` 만 남긴다. `without` 은 운영 env 에서 줄 하나가
+    빠진 배포를 흉내 낸다."""
     for name in Settings.model_fields:
         monkeypatch.delenv(name.upper(), raising=False)
     for name in PRODUCTION_ENV_NAMES:
-        monkeypatch.setenv(name, PRODUCTION_ENV_TYPED_VALUES.get(name, "x"))
+        if name not in without:
+            monkeypatch.setenv(name, PRODUCTION_ENV_TYPED_VALUES.get(name, "x"))
     for name, value in extra.items():
         monkeypatch.setenv(name, value)
     return Settings(_env_file=None)  # type: ignore[call-arg]

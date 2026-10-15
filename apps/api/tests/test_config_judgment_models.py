@@ -15,7 +15,7 @@ from api.core.config import Settings
 from api.llm import backends
 from api.llm.backends import PromptSetModelId
 from api.llm.call_policy import CALL_POLICIES
-from factories import PRODUCTION_ENV_NAMES, load_production_env
+from factories import PRODUCTION_ENV_NAMES, PRODUCTION_ENV_TYPED_VALUES, load_production_env
 
 _MODEL_KEYS = (
     "STAT_JUDGMENT_MODEL",
@@ -214,12 +214,13 @@ def test_the_judgment_only_model_is_not_a_premium_writing_model(monkeypatch: pyt
 # ── 운영 env ────────────────────────────────────────────────────────────────────────────────
 
 
-def test_the_production_env_key_set_has_no_judgment_model_keys_and_judges_with_gemini(
+def test_the_production_env_judges_and_summarizes_with_haiku_through_anthropic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """이 변경은 운영 env 를 바꾸지 않는다 — 판정·요약 모델 키가 운영에 없으면 판정은 지금처럼 Gemini 로 가고, 운영의 Bedrock
-    자격 없음·상위 모델 Anthropic 배정 그대로 뜬다."""
-    assert not {*_MODEL_KEYS, *_HAIKU_ID_KEYS, *_EFFORT_KEYS} & set(PRODUCTION_ENV_NAMES)
+    """운영은 판정·요약·기억 추출 모델 여섯을 모두 `haiku` 로 두고 그 호출 위치 전부를 Anthropic 직결로 배정해 돈다. Haiku 의
+    실제 id·깊이 키는 운영에 없어 코드 기본값(직결 Haiku 5.5, 사고를 끈 요청이 받는 깊이)으로 뜨고, Bedrock 자격 없이 기동한다."""
+    assert set(_MODEL_KEYS) <= set(PRODUCTION_ENV_NAMES)
+    assert not {*_HAIKU_ID_KEYS, *_EFFORT_KEYS, *_BEDROCK_KEYS} & set(PRODUCTION_ENV_NAMES)
 
     loaded = load_production_env(monkeypatch)
 
@@ -231,12 +232,43 @@ def test_the_production_env_key_set_has_no_judgment_model_keys_and_judges_with_g
         loaded.memory_episode_model,
         loaded.memory_fact_model,
     ]
-    assert models == ["gemini"] * 6
+    assert models == ["haiku"] * 6
+    assert loaded.anthropic_haiku_model_id.startswith("claude-haiku-5")
     judged = [cs for cs, policy in CALL_POLICIES.items() if policy.model_setting is not None]
     assert judged
     for call_site in judged:
         model = backends.call_site_model(call_site, lambda name: str(getattr(loaded, name)))
-        assert backends.pick_backend(call_site, model, loaded.llm_call_site_backends, call_model=model) == ("gemini", "gemini")
+        assert backends.pick_backend(call_site, model, loaded.llm_call_site_backends, call_model=model) == (
+            "haiku",
+            "anthropic",
+        ), call_site
+
+
+_JUDGED_CALL_SITES = [cs for cs, policy in CALL_POLICIES.items() if policy.model_setting is not None]
+
+
+def _production_assignment_without(call_site: str) -> str:
+    return ",".join(pair for pair in PRODUCTION_ENV_TYPED_VALUES[_ASSIGN].split(",") if pair.split(":")[0] != call_site)
+
+
+@pytest.mark.parametrize("call_site", _JUDGED_CALL_SITES)
+def test_production_env_missing_one_judgment_assignment_refuses_to_start(
+    monkeypatch: pytest.MonkeyPatch, call_site: str
+) -> None:
+    """운영 배정에서 판정·요약 호출 하나만 빠지면 그 호출은 `haiku` 의 기본 구현인 Bedrock 으로 가는데 운영엔 Bedrock 자격이
+    없다 — 그 줄 하나 잃은 env 로는 새 이미지가 뜨지 않아야 한다(매 판정이 조용히 실패하는 대신)."""
+    with pytest.raises(ValidationError, match="BEDROCK_ACCESS_KEY_ID"):
+        load_production_env(monkeypatch, **{_ASSIGN: _production_assignment_without(call_site)})
+
+
+@pytest.mark.parametrize("model_key", _MODEL_KEYS)
+def test_production_env_missing_one_judgment_model_line_refuses_to_start(
+    monkeypatch: pytest.MonkeyPatch, model_key: str
+) -> None:
+    """운영 env 에서 판정·요약 모델 줄 하나만 빠지면 그 모델은 `gemini` 로 돌아가는데 배정은 그 호출을 Anthropic 으로
+    옮긴다 — Anthropic 은 Gemini 를 서비스하지 않아 배정이 조용히 무시되므로 기동을 거부해야 한다."""
+    with pytest.raises(ValidationError, match="서비스하지 않는다"):
+        load_production_env(monkeypatch, without=(model_key,))
 
 
 def test_turning_on_a_claude_judgment_model_in_production_without_bedrock_credentials_refuses_to_start(
