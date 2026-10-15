@@ -30,7 +30,11 @@ name: "ai-character-chat-wt-${WT_NAME:?WT_NAME 을 지정하세요 - 예를 들�
 
 services:
   postgres:
-    image: postgres:18-alpine
+    # 벡터 칸(pgvector)을 쓰는 스키마가 돌려면 확장이 깔린 서버여야 해서 postgres:18-alpine 위에
+    # pgvector 를 얹은 이미지(infra/postgres/Dockerfile)를 쓴다. alpine 위에서 컴파일했으므로 정렬
+    # 규칙(musl)이 운영의 postgres:18-alpine 과 같다. 태그는 다시 밀릴 수 있어 매니페스트 digest 로
+    # 고정한다 — api.yml·docker-compose.dev.yml·docker-compose.worktree.yml 이 같은 digest 를 쓴다.
+    image: ghcr.io/03hoho03/postgres-pgvector@sha256:fe16e6e8926fa50cdc2d90e8a101e40d3b92efa555e310024dcec7f8a0913bc1
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: ai_character_chat
