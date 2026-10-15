@@ -48,6 +48,8 @@ _PREVIOUS_SET_IDS: dict[tuple[str, str], uuid.UUID] = _EPISODE_MIGRATION.NEW_SET
 # 이 리비전 뒤에 글을 쓰는 여섯 체인에 회상 문안만 바꾼 새 세트를 게시하는 리비전. head 상태에서는 그 세트들이 활성이라,
 # "이 리비전 직후 상태"를 보는 테스트와 이 리비전을 되돌리는 테스트는 그 리비전을 먼저 되돌린다(실제 downgrade 순서).
 _LATER = _load("726aad108167")
+# 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 새 세트를 게시하는 리비전 — 되돌릴 때는 이것부터 되돌린다.
+_LATEST = _load("e4e407a62d03")
 
 _LANES: tuple[PromptLane, ...] = ("story", "character")
 _WRITING_MODELS: tuple[PromptSetModelId, ...] = ("gemini", "sonnet", "opus")
@@ -112,6 +114,7 @@ def _expected_after(before: dict[Key, Value], model: str) -> dict[Key, Value]:
 
 async def _undo_later_revisions(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_LATEST.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
 
 
@@ -282,10 +285,12 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
                 PromptSet.status == "published",
                 PromptSet.id.not_in(order),
                 PromptSet.id.not_in(list(_LATER.NEW_SET_IDS.values())),
+                PromptSet.id.not_in(list(_LATEST.NEW_SET_IDS.values())),
             )
         )
     ).all()
-    # 테스트 DB에는 이 리비전 뒤에 게시한 세트가 회상 문안 리비전의 것뿐이다(그 세트들의 버전은 이 리비전보다 뒤다).
+    # 테스트 DB에는 이 리비전 뒤에 게시한 세트가 회상 문안 리비전과 사실 추출 지시문 리비전의 것뿐이다(그 세트들의 버전은 이
+    # 리비전보다 뒤다).
     assert versions == list(range(max(others) + 1, max(others) + 1 + len(order)))
 
 
@@ -365,6 +370,7 @@ async def test_downgrade_then_upgrade_swaps_every_chain_back_and_forth(db_sessio
     본문은 처음부터 옛 문안이다), 다시 올리면 같은 리터럴 세트가 활성이 된다."""
     connection = await db_session.connection()
 
+    await connection.run_sync(_LATEST.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
 
@@ -388,6 +394,7 @@ async def test_downgrade_then_upgrade_swaps_every_chain_back_and_forth(db_sessio
 async def test_upgrade_copies_the_operators_edited_text_not_the_seed(db_session: AsyncSession) -> None:
     """어드민이 고쳐 게시한 다른 문안(요약 지시문)은 새 세트에 그대로 실린다 — 바꾸는 것은 두 본문뿐이다."""
     connection = await db_session.connection()
+    await connection.run_sync(_LATEST.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     instruction_key: Key = ("memory_summary", "both", "instruction", "")
@@ -412,6 +419,7 @@ async def test_upgrade_copies_the_operators_edited_text_not_the_seed(db_session:
 
 async def test_upgrade_copies_each_chains_own_labels(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_LATEST.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     await db_session.execute(
@@ -438,6 +446,7 @@ async def test_upgrade_refuses_to_overwrite_a_body_the_admin_edited(
     """바꾸려는 본문이 앞 리비전 문안과 한 글자라도 다르면 어드민이 고친 운영 문안이다 — 조용히 덮어쓰지 않고, 그 레인에는 아무
     세트도 넣지 않은 채 멈춘다."""
     connection = await db_session.connection()
+    await connection.run_sync(_LATEST.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     await db_session.execute(
@@ -465,6 +474,7 @@ async def test_upgrade_refuses_to_run_twice(db_session: AsyncSession) -> None:
 
 async def test_upgrade_stops_when_the_lane_only_select_does_not_pick_gemini(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_LATEST.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     previous = await _get_set(db_session, _PREVIOUS_SET_IDS[("story", "gemini")])

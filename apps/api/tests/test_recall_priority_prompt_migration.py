@@ -39,6 +39,9 @@ _M = _load("726aad108167")
 # 이 리비전 직전의 활성 세트 — 여덟 체인 모두 관계·사실 기억 문안 리비전의 세트다(그 사이에 프롬프트를 게시한 리비전이 없다).
 _FACT_MIGRATION = _load("5cab2abe4e7b")
 _PREVIOUS_SET_IDS: dict[tuple[str, str], uuid.UUID] = _FACT_MIGRATION.NEW_SET_IDS
+# 이 리비전 뒤에 여덟 체인에 사실 추출 지시문만 바꾼 새 세트를 게시하는 리비전. head 상태에서는 그 세트들이 활성이라, "이 리비전
+# 직후 상태"를 보는 테스트와 이 리비전을 되돌리는 테스트는 그 리비전을 먼저 되돌린다(실제 downgrade 순서).
+_LATER = _load("e4e407a62d03")
 
 _LANES: tuple[PromptLane, ...] = ("story", "character")
 _WRITING_MODELS: tuple[PromptSetModelId, ...] = ("gemini", "sonnet", "opus")
@@ -74,6 +77,11 @@ def _expected_after(before: dict[Key, Value]) -> dict[Key, Value]:
     """이전 행 그대로, 회상 본문만 새 상수."""
     _old_body, conditional, order = before[_RECALL_KEY]
     return {**before, _RECALL_KEY: (_M.RECALL_BODY, conditional, order)}
+
+
+async def _undo_later_revisions(db_session: AsyncSession) -> None:
+    connection = await db_session.connection()
+    await connection.run_sync(_LATER.delete_seeded_rows)
 
 
 async def _active_id(db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId) -> uuid.UUID:
@@ -138,6 +146,7 @@ def test_new_recall_body_agrees_with_the_facts_section_priority() -> None:
 async def test_each_writing_chain_is_active_at_its_seeded_set_with_the_new_recall_bytes(
     db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId
 ) -> None:
+    await _undo_later_revisions(db_session)
     assert await _active_id(db_session, lane, model) == _M.NEW_SET_IDS[(lane, model)]
     _prompt_set, sections = await load_active_prompt_set(db_session, lane=lane, model=model)
     (recall,) = [s for s in sections if (s.channel, s.slot) == ("generation", "memory_recall")]
@@ -147,6 +156,7 @@ async def test_each_writing_chain_is_active_at_its_seeded_set_with_the_new_recal
 @pytest.mark.parametrize("lane", _LANES)
 async def test_judgment_only_chain_keeps_its_active_set(db_session: AsyncSession, lane: PromptLane) -> None:
     """판정 전용 체인에는 회상 슬롯이 없어 새 세트를 만들지 않는다."""
+    await _undo_later_revisions(db_session)
     assert await _active_id(db_session, lane, "haiku") == _PREVIOUS_SET_IDS[(lane, "haiku")]
     assert (lane, "haiku") not in _M.NEW_SET_IDS
 
@@ -154,6 +164,7 @@ async def test_judgment_only_chain_keeps_its_active_set(db_session: AsyncSession
 @pytest.mark.parametrize("lane", _LANES)
 async def test_the_lane_only_select_picks_the_new_gemini_set(db_session: AsyncSession, lane: PromptLane) -> None:
     """모델 열을 모르는 원시 SQL 이 레인만 보고 최신 게시본을 고를 때도 새 Gemini 세트를 집는다."""
+    await _undo_later_revisions(db_session)
     assert await _lane_only_active_id(db_session, lane) == _M.NEW_SET_IDS[(lane, "gemini")]
 
 
@@ -202,11 +213,13 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
     others = (
         await db_session.scalars(
             sa.select(sa.cast(PromptSet.version, sa.Integer)).where(
-                PromptSet.status == "published", PromptSet.id.not_in(order)
+                PromptSet.status == "published",
+                PromptSet.id.not_in(order),
+                PromptSet.id.not_in(list(_LATER.NEW_SET_IDS.values())),
             )
         )
     ).all()
-    # 테스트 DB에는 이 리비전 뒤에 게시한 세트가 없다.
+    # 테스트 DB에는 이 리비전 뒤에 게시한 세트가 사실 추출 지시문 리비전의 것뿐이다(그 세트들의 버전은 이 리비전보다 뒤다).
     assert versions == list(range(max(others) + 1, max(others) + 1 + len(order)))
 
 
@@ -215,6 +228,7 @@ async def test_seeded_sets_pass_publish_validation(
     db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId
 ) -> None:
     """행 집합·자리표시자가 그대로라 게시 검증을 통과한다 — 어긋나면 운영자가 그 체인을 손대는 순간 게시가 막힌다."""
+    await _undo_later_revisions(db_session)
     prompt_set, sections = await load_active_prompt_set(db_session, lane=lane, model=model)
     assert prompt_set.id == _M.NEW_SET_IDS[(lane, model)]
     _validate_prompt_draft_for_publish(prompt_set, sections, lane=lane, model=model)
@@ -280,6 +294,7 @@ async def test_downgrade_then_upgrade_swaps_every_writing_chain_back_and_forth(d
     올리면 같은 리터럴 세트가 활성이 된다."""
     connection = await db_session.connection()
 
+    await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
 
     for lane, model in _WRITING_PAIRS:
@@ -305,6 +320,7 @@ async def test_upgrade_refuses_to_overwrite_a_recall_body_the_admin_edited(
     """활성 회상 본문이 앞 리비전 문안과 한 글자라도 다르면 어드민이 고친 운영 문안이다 — 조용히 덮어쓰지 않고, 그 레인에는
     아무 세트도 넣지 않은 채 멈춘다."""
     connection = await db_session.connection()
+    await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     await db_session.execute(
         sa.update(PromptSection)
@@ -325,6 +341,7 @@ async def test_upgrade_refuses_to_overwrite_a_recall_body_the_admin_edited(
 
 async def test_upgrade_stops_when_the_recall_row_is_not_exactly_one(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     await db_session.execute(
         sa.delete(PromptSection).where(
@@ -348,6 +365,7 @@ async def test_upgrade_refuses_to_run_twice(db_session: AsyncSession) -> None:
 
 async def test_upgrade_stops_when_the_lane_only_select_does_not_pick_gemini(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     previous = await _get_set(db_session, _PREVIOUS_SET_IDS[("story", "gemini")])
     assert previous.published_at is not None
@@ -364,6 +382,7 @@ async def test_upgrade_stops_when_the_lane_only_select_does_not_pick_gemini(db_s
 async def test_downgrade_stops_when_the_admin_published_after_the_seed(
     db_session: AsyncSession, lane: PromptLane, model: str
 ) -> None:
+    await _undo_later_revisions(db_session)
     seeded = await _get_set(db_session, _M.NEW_SET_IDS[(lane, model)])
     assert seeded.published_at is not None
     db_session.add(_set(lane=lane, model=model, published_at=seeded.published_at + timedelta(seconds=1)))

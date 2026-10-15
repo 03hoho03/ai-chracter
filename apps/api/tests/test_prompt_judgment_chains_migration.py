@@ -48,8 +48,10 @@ _GEMINI_SET_IDS: dict[str, uuid.UUID] = {
 _LATER = _load("fc6f0e134782")
 # 그 뒤 여덟 체인에 관계·사실 기억 문안을 더한 새 세트를 게시하는 리비전.
 _LATEST = _load("5cab2abe4e7b")
-# 그 뒤 글을 쓰는 여섯 체인에 회상 문안만 바꾼 새 세트를 게시하는 리비전 — 그 여섯 체인의 head 활성이라 되돌릴 때는 이것부터다.
+# 그 뒤 글을 쓰는 여섯 체인에 회상 문안만 바꾼 새 세트를 게시하는 리비전.
 _RECALL_PRIORITY = _load("726aad108167")
+# 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 새 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴 때는 이것부터다.
+_FACT_INSTRUCTION = _load("e4e407a62d03")
 
 _LANES: tuple[PromptLane, ...] = ("story", "character")
 _CLAUDE_MODELS: tuple[PromptSetModelId, ...] = ("sonnet", "opus")
@@ -71,6 +73,7 @@ def _ids(pairs: list[tuple[PromptLane, PromptSetModelId]]) -> list[str]:
 
 async def _undo_later_revisions(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_FACT_INSTRUCTION.delete_seeded_rows)
     await connection.run_sync(_RECALL_PRIORITY.delete_seeded_rows)
     await connection.run_sync(_LATEST.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
@@ -280,7 +283,7 @@ async def test_seeded_sets_match_publish_validation_but_for_the_later_revisions_
     with pytest.raises(HTTPException):
         _validate_prompt_draft_for_publish(prompt_set, sections, lane=lane, model=model)
     later_set, later_sections = await load_active_prompt_set(db_session, lane=lane, model=model)
-    assert later_set.id == _RECALL_PRIORITY.NEW_SET_IDS.get((lane, model), _LATEST.NEW_SET_IDS[(lane, model)])
+    assert later_set.id == _FACT_INSTRUCTION.NEW_SET_IDS[(lane, model)]
     _validate_prompt_draft_for_publish(later_set, later_sections, lane=lane, model=model)
     with pytest.raises(HTTPException):
         _validate_prompt_draft_for_publish(later_set, later_sections, lane=lane, model="gemini")

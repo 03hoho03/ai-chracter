@@ -50,8 +50,10 @@ _MEMORY_EPISODE_MIGRATION = _load("fc6f0e134782")
 # 그 뒤 여덟 체인에 관계·사실 기억 문안을 더하고 장면 추출·회상 문안을 바꾼 세트를 게시하는 리비전 — 초안 게시 검사가
 # head 코드 표를 쓰므로 초안은 이것도 거친다.
 _MEMORY_FACT_MIGRATION = _load("5cab2abe4e7b")
-# 그 뒤 글을 쓰는 여섯 체인에 회상 문안만 바꾼 세트를 게시하는 리비전 — character 레인 활성 Gemini 세트가 그 세트다.
+# 그 뒤 글을 쓰는 여섯 체인에 회상 문안만 바꾼 세트를 게시하는 리비전.
 _RECALL_PRIORITY_MIGRATION = _load("726aad108167")
+# 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 세트를 게시하는 리비전 — character 레인 활성 Gemini 세트가 그 세트다.
+_FACT_INSTRUCTION_MIGRATION = _load("e4e407a62d03")
 
 _NEW_KEY = ("generation", "story", "situation_notes", "")
 
@@ -221,6 +223,7 @@ async def test_character_lane_is_untouched(db_session: AsyncSession) -> None:
         _MEMORY_EPISODE_MIGRATION.NEW_SET_IDS[("character", "gemini")],
         _MEMORY_FACT_MIGRATION.NEW_SET_IDS[("character", "gemini")],
         _RECALL_PRIORITY_MIGRATION.NEW_SET_IDS[("character", "gemini")],
+        _FACT_INSTRUCTION_MIGRATION.NEW_SET_IDS[("character", "gemini")],
     )
     assert all(s.slot != "situation_notes" for s in sections)
 

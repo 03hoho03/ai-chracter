@@ -44,6 +44,8 @@ def _load(revision: str) -> ModuleType:
 _M = _load("5cab2abe4e7b")
 # 회상 섹션 문안의 지금 판 — 글을 쓰는 여섯 체인의 활성 세트가 이 리비전의 것이다.
 _RECALL = _load("726aad108167")
+# 사실 추출 지시문의 지금 판 — 여덟 체인의 활성 세트가 이 리비전의 것이다(채널의 슬롯 모양은 위 리비전 그대로다).
+_INSTRUCTION = _load("e4e407a62d03")
 _NAMES = PromptNames(persona_name="하늘", char_name="민지")
 _NO_NAMES = PromptNames(persona_name=None, char_name=None)
 _EXISTING = ["relation|민지|하늘 = 경계 — 말을 아낌 (confirmed)", "fact|민지|생일 달 = 삼월 (claimed)"]
@@ -63,7 +65,7 @@ def _window() -> list[ChatMessage]:
 def _harness_prompt(user_name: str, existing: list[str], turn_lines: str) -> str:
     """측정 하네스의 조립을 옮긴 것. 이름이 있을 때 하네스와 같다. 이름이 비면 운영은 이름 줄을 통째로 빼고(그 슬롯이
     conditional 이다) 하네스는 빈 이름 줄을 넣지만, 측정에서는 이름이 늘 있었으므로 운영 쪽을 기대값으로 둔다."""
-    parts = [_M.FACT_INSTRUCTION_BODY.strip()]
+    parts = [_INSTRUCTION.FACT_INSTRUCTION_BODY.strip()]
     if user_name:
         parts.append(f"사용자의 이야기 속 이름: {user_name}")
     parts.append("[기존 키]\n" + ("\n".join(existing) if existing else "(없음)"))
@@ -100,7 +102,7 @@ async def test_fact_prompt_has_the_layout_the_harness_measured(
     assert prompt == _harness_prompt("하늘", _EXISTING, turn_lines)
     # 위 사본과 따로, 하네스가 만든 모양을 글자로 한 번 더 적는다.
     assert prompt == (
-        f"{_M.FACT_INSTRUCTION_BODY}\n\n사용자의 이야기 속 이름: 하늘\n\n[기존 키]\n{_EXISTING[0]}\n{_EXISTING[1]}"
+        f"{_INSTRUCTION.FACT_INSTRUCTION_BODY}\n\n사용자의 이야기 속 이름: 하늘\n\n[기존 키]\n{_EXISTING[0]}\n{_EXISTING[1]}"
         f"\n\n[접힌 대화]\n{turn_lines}"
     )
 
@@ -151,7 +153,7 @@ async def test_without_a_name_the_name_line_drops_and_no_existing_keys_reads_non
     )
 
     assert prompt == (
-        f"{_M.FACT_INSTRUCTION_BODY}\n\n[기존 키]\n(없음)\n\n[접힌 대화]\n[1] {prompt_set.user_label}: 빵집 가자 {{{{user}}}}"
+        f"{_INSTRUCTION.FACT_INSTRUCTION_BODY}\n\n[기존 키]\n(없음)\n\n[접힌 대화]\n[1] {prompt_set.user_label}: 빵집 가자 {{{{user}}}}"
     )
     assert not any(line.startswith("사용자의 이야기 속 이름: ") for line in prompt.split("\n"))
 
@@ -238,7 +240,9 @@ async def test_preview_shows_the_fact_prompt_with_every_section(
     fact = [item for item in items if item["channel"] == "memory_fact"]
     assert len(fact) == 1
     text = fact[0]["text"]
-    assert text.startswith(_M.FACT_INSTRUCTION_BODY + "\n\n사용자의 이야기 속 이름: [샘플] 하늘\n\n[기존 키]\n")
+    assert text.startswith(
+        _INSTRUCTION.FACT_INSTRUCTION_BODY + "\n\n사용자의 이야기 속 이름: [샘플] 하늘\n\n[기존 키]\n"
+    )
     assert "[기존 키]\n(없음)" not in text
     assert "\n\n[접힌 대화]\n[1] " in text
 
