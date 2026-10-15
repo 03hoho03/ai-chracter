@@ -6,7 +6,7 @@
 
 - HTTP 상태와 SSE 이벤트 순서(토큰 글, 오류·정책 문구, 스탯 변화, 엔딩, 마지막 메시지의 글·그림 유무)
 - 앱 밖으로 샌 예외(있으면 — 그때 스트림은 done·error 없이 끊긴다)
-- 저장된 상태: 실제 방은 컬럼 `select()` 로 읽은 턴 수·엔딩 여부·메시지·스탯·폐기 기록, 미리보기는 Redis 세션
+- 저장된 상태: 실제 방은 컬럼 `select()` 로 읽은 턴 수·엔딩 여부·메시지·스탯·폐기 기록·직전 응답 보관본, 미리보기는 Redis 세션
 - 클로버 잔액 증감과 원장 종류(환급 여부)
 - 그 턴에 나간 LLM 호출(메서드, 호출 위치)
 - Bugsink 로 올린 실패(예외 타입, `dependency` 태그) — `sentry_sdk.capture_exception` 자체를 바꿔 끼워 잡으므로 올리는
@@ -72,6 +72,7 @@ from api.db.models import (
     AssetStatus,
     ChatMessage,
     ChatMessageRole,
+    ChatPreviousResponse,
     ChatRoom,
     ChatRoomStat,
     Ending,
@@ -717,11 +718,16 @@ async def _room_state(db_session: AsyncSession, room_id: uuid.UUID, ids: dict[st
     discarded = (
         await db_session.scalars(sa.select(DiscardedResponse.kind).where(DiscardedResponse.chat_room_id == room_id))
     ).all()
+    # 재생성이 밀어낸 직전 응답의 보관본(본문). 성공한 재생성만 옛 응답을 여기 옮기고, 실패한 칸은 비어 있어야 한다.
+    previous = await db_session.scalar(
+        sa.select(ChatPreviousResponse.content).where(ChatPreviousResponse.chat_room_id == room_id)
+    )
     return {
         "room": None if room is None else {"turnCount": room.turn_count, "endingReached": room.ending_reached},
         "messages": [[m.role.value, m.content, _norm(m.image_id, ids)] for m in messages],
         "stats": [str(value) for value in stats],
         "discarded": sorted(discarded),
+        "previous": previous,
     }
 
 

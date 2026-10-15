@@ -27,13 +27,21 @@ from google.genai import errors as genai_errors
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.prompt_builder import EndingJudgmentResult, ImageMatchJudgmentResult, StatRuleJudgmentResult
-from api.db.models import ChatMessage, ChatMessageRole, ChatRoom, ChatRoomStat, Ending, StartingSetup, StatDef
+from api.db.models import ChatMessage, ChatMessageRole, ChatRoom, ChatRoomStat, Ending
 from api.db.models.chat import ChatTurn
 from api.db.models.story import StatRule
 from api.llm import gemini as gemini_module
 from api.llm.client import CallUsage, LLMCallContext, LLMClient
 from api.llm.gemini import GeminiLLMClient
-from factories import Room, _clear_llm_override, _open_room, _override_llm_client, _parse_sse_events
+from factories import (
+    Room,
+    _clear_llm_override,
+    _override_llm_client,
+    _parse_sse_events,
+    _setup_of,
+    _stat_values as _values,
+    _story_room,
+)
 
 _REQUEST = httpx.Request("POST", "https://example.invalid")
 _USAGE = SimpleNamespace(
@@ -128,56 +136,6 @@ class _TurnLLM(LLMClient):
         return self.call_sites.count("chat_stat_judgment")
 
 
-class _Stats:
-    """방의 두 스탯 entity_id(문자열)."""
-
-    def __init__(self, trust: str, days: str) -> None:
-        self.trust = trust
-        self.days = days
-
-
-async def _story_room(db_session: AsyncSession, db_client: httpx.AsyncClient, *, turns: int = 0) -> tuple[Room, _Stats]:
-    room = await _open_room(db_client, db_session, turns=turns, lane="story")
-    setup = await _setup_of(db_session, room.room_id)
-    trust = await db_session.scalar(sa.select(StatDef).where(StatDef.starting_setup_id == setup.id))
-    assert trust is not None
-    db_session.add(
-        StatRule(entity_id=uuid.uuid4(), stat_def_id=trust.id, condition="[RULE]약속을 어긴다", delta=-2, order=1)
-    )
-    days = StatDef(
-        entity_id=uuid.uuid4(),
-        starting_setup_id=setup.id,
-        name="남은 날",
-        icon="clock",
-        color="#00ff00",
-        min_value=0,
-        max_value=30,
-        initial_value=30,
-        per_turn_delta=-1,
-        unit=None,
-        description="남은 날",
-        order=2,
-    )
-    db_session.add(days)
-    await db_session.commit()
-    return room, _Stats(str(trust.entity_id), str(days.entity_id))
-
-
-async def _setup_of(db_session: AsyncSession, room_id: uuid.UUID) -> StartingSetup:
-    version_id, setup_entity_id = (
-        await db_session.execute(
-            sa.select(ChatRoom.content_version_id, ChatRoom.starting_setup_entity_id).where(ChatRoom.id == room_id)
-        )
-    ).one()
-    setup = await db_session.scalar(
-        sa.select(StartingSetup).where(
-            StartingSetup.content_version_id == version_id, StartingSetup.entity_id == setup_entity_id
-        )
-    )
-    assert setup is not None
-    return setup
-
-
 async def _turn(
     client: httpx.AsyncClient, method: str, path: str, body: dict[str, object] | None, fake: _TurnLLM
 ) -> list[dict[str, Any]]:
@@ -206,17 +164,6 @@ async def _send(
 
 async def _regenerate(client: httpx.AsyncClient, room: Room, fake: _TurnLLM) -> list[dict[str, Any]]:
     return await _turn(client, "POST", f"/chat-rooms/{room.room_id}/regenerate", None, fake)
-
-
-async def _values(db_session: AsyncSession, room: Room, stats: _Stats) -> tuple[float, float]:
-    db_session.expire_all()
-    rows = {
-        str(row.stat_entity_id): float(row.current_value)
-        for row in (
-            await db_session.scalars(sa.select(ChatRoomStat).where(ChatRoomStat.chat_room_id == room.room_id))
-        ).all()
-    }
-    return rows[stats.trust], rows[stats.days]
 
 
 def _stat_events(events: list[dict[str, Any]]) -> dict[str, float]:

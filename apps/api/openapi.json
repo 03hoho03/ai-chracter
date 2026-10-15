@@ -11726,6 +11726,77 @@
         }
       }
     },
+    "/chat-rooms/{room_id}/messages/{message_id}/restore-previous": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Restore Previous Message",
+        "description": "재생성이 밀어낸 직전 응답으로 되돌린다. `message_id` 는 지금 보이는 응답(재생성이 만든 응답)이다. 되살린 응답을 원래\nid·시각으로 다시 넣고 지금 응답을 보관으로 옮기므로, 되살린 응답 id 로 한 번 더 부르면 원래대로 돌아간다. 같은 요청이 두 번\n오면 두 번째는 `message_id` 가 더는 마지막 응답이 아니라 409 다.\n\n모델을 부르지 않고 자기 기록을 고르는 일이라 차감 게이트·분당 상한·LLM 의존성이 없고(재생성 차감은 돌려주지 않는다),\n이용제한된 작품의 방에서도 된다(초기화·삭제와 같다). 대화를 바꾸므로 방 턴 락 아래서 하고(진행 중 턴이면 409\n`CHAT_TURN_IN_PROGRESS`), 락을 잡은 뒤 방 행을 잠그며 다시 읽는다 — 앞 턴이 올린 `turn_count`·엔딩을 보고, 락 없이 겹친\n턴 쓰기와도 줄을 선다. 되돌릴 수 없으면 409 `PREVIOUS_RESPONSE_UNAVAILABLE` 이다(`chat/previous_response.py`).\n\n응답은 방 상태다. 화면이 이 응답으로 방 캐시를 바꾸므로 위로 불러 둔 깊이만큼 `messageLimit` 을 넘긴다(버전 승격과 같다).",
+        "operationId": "restore_previous_message_chat_rooms__room_id__messages__message_id__restore_previous_post",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          },
+          {
+            "name": "message_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Message Id"
+            }
+          },
+          {
+            "name": "messageLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Messagelimit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatRoomResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/chat-rooms/{room_id}/reset": {
       "post": {
         "tags": [
@@ -21861,6 +21932,18 @@
           "novelCreationBlocked": {
             "type": "boolean",
             "title": "Novelcreationblocked"
+          },
+          "previousResponseFor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previousresponsefor"
           },
           "chatModel": {
             "anyOf": [
