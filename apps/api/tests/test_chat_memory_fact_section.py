@@ -878,28 +878,28 @@ async def _statements(db_session: AsyncSession, room: Room, user_content: str, *
         return count()
 
 
-async def test_filter_reads_media_book_people_once_and_only_when_a_secret_exists(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("lane", ["story", "character"])
+async def test_filter_adds_no_statements_with_or_without_a_secret(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, lane: PromptLane
 ) -> None:
-    """스토리 방에서 아는 사람이 정해진 행이 있으면 미디어 북 인물 SELECT 하나가 더해진다. 그런 행이 없으면 걸러 낼 것이 없어 더하지
-    않는다. 캐릭터 방은 작품 이름을 이미 알아 더하지 않는다."""
-    room, snapshots = await _fact_room(db_client, db_session)
+    """필터는 읽은 사실 행만으로 판정하므로 켜도 SQL 문을 더하지 않는다 — 아는 사람이 정해진 행이 있든 없든, 스토리·캐릭터 방
+    모두 꺼짐과 문 수가 같다. 판정은 승자 행의 아는 사람 원소가 장면에 나오는가뿐이고 그 원소는 이미 사실 행에서 이름 출처에
+    들어 있어, 미디어 북 인물이나 작품 이름을 더 읽어도 판정이 바뀌지 않고 실패 지점만 는다."""
+    room, snapshots = await _fact_room(db_client, db_session, lane=lane)
     await _plant(db_session, room, snapshots[2], [_FRIENDS])
     _facts_on(monkeypatch)
-    public_off = await _statements(db_session, room, "민수는 뭐 해?")
-    _filter_on(monkeypatch)
-    assert await _statements(db_session, room, "민수는 뭐 해?") == public_off
 
+    async def off_and_on() -> tuple[int, int]:
+        monkeypatch.setattr(settings, "memory_knowledge_filter", False)
+        off = await _statements(db_session, room, "민수는 뭐 해?", lane=lane)
+        _filter_on(monkeypatch)
+        return off, await _statements(db_session, room, "민수는 뭐 해?", lane=lane)
+
+    public_off, public_on = await off_and_on()
+    assert public_on == public_off
     await _plant(db_session, room, snapshots[2], [_SECRET], start=1)
-    secret_on = await _statements(db_session, room, "민수는 뭐 해?")
-    monkeypatch.setattr(settings, "memory_knowledge_filter", False)
-    assert secret_on == await _statements(db_session, room, "민수는 뭐 해?") + 1
-
-    character, character_snapshots = await _fact_room(db_client, db_session, lane="character")
-    await _plant(db_session, character, character_snapshots[2], [_SECRET])
-    character_off = await _statements(db_session, character, "민수는 뭐 해?", lane="character")
-    _filter_on(monkeypatch)
-    assert await _statements(db_session, character, "민수는 뭐 해?", lane="character") == character_off
+    secret_off, secret_on = await off_and_on()
+    assert secret_on == secret_off
 
 
 @pytest.mark.parametrize("lane", ["story", "character"])
@@ -920,32 +920,6 @@ async def test_filter_on_with_facts_off_keeps_prompt_and_statements(
     assert HEADER not in on.prompt
     assert on.prompt == off.prompt
     assert statements_on == statements_off
-
-
-async def test_name_read_failure_is_absorbed_and_the_turn_finishes(
-    db_client: httpx.AsyncClient,
-    db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """미디어 북 인물 읽기가 DB 오류로 끝나면 사실 읽기 실패와 같이 섹션 없이 턴을 마치고 경고·승격을 남긴다."""
-    room, snapshots = await _fact_room(db_client, db_session)
-    await _plant(db_session, room, snapshots[2], [_SECRET, _FRIENDS])
-    _facts_on(monkeypatch)
-    _filter_on(monkeypatch)
-    monkeypatch.setattr(memory_fact_section, "_media_book_statement", lambda version_id: sa.text("SELECT 1/0"))
-    captured: list[str] = []
-    monkeypatch.setattr(
-        memory_fact_section, "capture_dependency_failure", lambda exc, *, dependency: captured.append(dependency)
-    )
-    fake = _PromptCapture()
-    with caplog.at_level(logging.WARNING):
-        await _send(db_client, "POST", f"/chat-rooms/{room.room_id}/messages", {"content": "민수는 뭐 해?"}, fake)
-
-    assert HEADER not in fake.prompts[-1]
-    assert captured == ["db"]
-    assert any("사실" in record.getMessage() for record in caplog.records)
-    assert [record.memory_facts for record in (await _records(db_session, room.room_id)).values()] == [[]]
 
 
 def test_production_env_leaves_the_knowledge_filter_off(monkeypatch: pytest.MonkeyPatch) -> None:
