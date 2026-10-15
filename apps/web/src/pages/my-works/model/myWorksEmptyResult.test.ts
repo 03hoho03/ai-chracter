@@ -18,14 +18,22 @@ describe("resolveMyWorksEmptyResult", () => {
     });
   });
 
-  it("조사는 검색어 끝 글자에 맞춘다 — 받침 없음·ㄹ 받침은 '로', 한글이 아니면 두 꼴을 함께", () => {
+  it("조사는 검색어 끝 글자에 맞춘다 — 받침 없음·ㄹ 받침은 '로', 한글이 아니면 '(으)로'", () => {
     const messageOf = (q: string) => {
       const result = resolveMyWorksEmptyResult({ q, filterLabel: undefined, hasUnpublishedMatch: false, hasMore: false });
       return result.kind === "noMatch" ? result.message : undefined;
     };
     expect(messageOf("바다")).toBe("‘바다’로 찾은 작품이 없어요.");
     expect(messageOf("마을")).toBe("‘마을’로 찾은 작품이 없어요.");
-    expect(messageOf("100%")).toBe("‘100%’으로(로) 찾은 작품이 없어요.");
+    expect(messageOf("100%")).toBe("‘100%’(으)로 찾은 작품이 없어요.");
+    expect(messageOf("zq")).toBe("‘zq’(으)로 찾은 작품이 없어요.");
+  });
+
+  it("미등록 안내도 한글이 아닌 끝 글자 뒤에는 '(으)로'다", () => {
+    expect(resolveMyWorksEmptyResult({ q: "zq", filterLabel: undefined, hasUnpublishedMatch: true, hasMore: false })).toEqual({
+      kind: "noPublished",
+      message: "‘zq’(으)로 찾은 작품은 미등록에 있어요.",
+    });
   });
 
   it("검색과 칩 필터가 함께 걸렸으면 둘을 한 문장에 적고 필터 모두 해제 하나로 둘 다 푼다", () => {
