@@ -7,6 +7,7 @@
 
 생성 프롬프트에 사실 값을 넘기는 호출부는 아직 없어서, 자리는 렌더 함수에 값을 직접 넣어 본다."""
 
+import hashlib
 import importlib.util
 from pathlib import Path
 from types import ModuleType
@@ -102,6 +103,37 @@ async def test_fact_prompt_has_the_layout_the_harness_measured(
         f"{_M.FACT_INSTRUCTION_BODY}\n\n사용자의 이야기 속 이름: 하늘\n\n[기존 키]\n{_EXISTING[0]}\n{_EXISTING[1]}"
         f"\n\n[접힌 대화]\n{turn_lines}"
     )
+
+
+# 비밀 규칙(아는 인물·주인 이름)을 넓힌 사실 추출 지시문의 지문 — 글자 하나가 바뀌어도 여기서 깨진다.
+_KNOWN_BY_INSTRUCTION_MD5 = "31fab9859bca21d5f9831b5415528a1f"
+
+
+@pytest.mark.parametrize("model", ["gemini", "sonnet", "opus", "haiku"])
+@pytest.mark.parametrize("lane", ["story", "character"])
+async def test_every_chain_extracts_facts_with_the_known_by_rules(
+    db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId
+) -> None:
+    """여덟 체인 어느 것을 추출 모델로 고르든 추출 프롬프트의 지시문이 비밀의 주인·물려받는 아는 인물·주인 이름 표기 규칙을 담은
+    판이다 — 한 체인이라도 옛 판이면 그 모델로 추출한 비밀 행은 주인을 빠뜨린다. 지시문 뒤의 이름·기존 키·대화 줄 모양은 그대로다."""
+    prompt_set, sections = await load_active_prompt_set(db_session, lane=lane, model=model)
+
+    prompt = build_memory_fact_prompt(
+        prompt_set=prompt_set,
+        sections=sections,
+        is_story_chat=lane == "story",
+        existing_facts=[],
+        turns=_window()[:1],
+        names=_NAMES,
+    )
+
+    instruction, separator, rest = prompt.partition("\n\n사용자의 이야기 속 이름: 하늘\n\n")
+    assert separator
+    assert hashlib.md5(instruction.encode()).hexdigest() == _KNOWN_BY_INSTRUCTION_MD5
+    assert "비밀의 주인(그 비밀이 자기 일인 인물)은 언제나 known_by 에 넣는다" in instruction
+    assert "relation 의 두 인물을 그 fact 행의 known_by 에 넣는다" in instruction
+    assert '"<주인 온 이름>: <원문 토막>"' in instruction
+    assert rest == f"[기존 키]\n(없음)\n\n[접힌 대화]\n[1] {prompt_set.user_label}: 빵집 가자 {{{{user}}}}"
 
 
 async def test_without_a_name_the_name_line_drops_and_no_existing_keys_reads_none(db_session: AsyncSession) -> None:
