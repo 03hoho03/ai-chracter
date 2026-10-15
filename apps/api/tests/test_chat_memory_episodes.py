@@ -845,8 +845,10 @@ async def test_a_failure_under_a_superseded_claim_leaves_the_new_claim_alone(
     assert [(row.status, row.attempts) for row in await _extractions(db_session, room)] == [("running", 2)]
 
 
-def test_production_env_leaves_extraction_off(monkeypatch: pytest.MonkeyPatch) -> None:
-    """운영 env 에는 추출 스위치·추출 모델 키가 없다 — 이 코드는 꺼진 채, 켜도 Gemini 로 배포된다."""
-    assert not {"MEMORY_EPISODES_EXTRACT", "MEMORY_EPISODE_MODEL"} & set(PRODUCTION_ENV_NAMES)
+def test_production_env_extracts_episodes_on_haiku_through_anthropic(monkeypatch: pytest.MonkeyPatch) -> None:
+    """운영은 장면 기억 추출을 켜고 그 모델을 `haiku` 로, 그 호출을 Anthropic 직결로 배정해 돈다 — 운영 env 그대로 뜬 설정이
+    추출을 예약하고 Haiku 로 보내야 운영에서 도는 경로가 이 저장소의 테스트가 보는 경로다."""
+    assert {"MEMORY_EPISODES_EXTRACT", "MEMORY_EPISODE_MODEL"} <= set(PRODUCTION_ENV_NAMES)
     loaded = load_production_env(monkeypatch)
-    assert (loaded.memory_episodes_extract, loaded.memory_episode_model) == (False, "gemini")
+    assert (loaded.memory_episodes_extract, loaded.memory_episode_model) == (True, "haiku")
+    assert loaded.llm_call_site_backends.get("chat_memory_episode") == "anthropic"

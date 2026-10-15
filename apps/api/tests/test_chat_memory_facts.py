@@ -942,8 +942,12 @@ async def test_late_finisher_with_superseded_claim_writes_nothing(
     ]
 
 
-def test_production_env_leaves_fact_extraction_off(monkeypatch: pytest.MonkeyPatch) -> None:
-    """운영 env 에는 사실 추출 스위치·모델 키가 없다 — 이 코드는 꺼진 채, 켜도 Gemini 로 배포된다."""
-    assert not {"MEMORY_FACTS_EXTRACT", "MEMORY_FACT_MODEL"} & set(PRODUCTION_ENV_NAMES)
+def test_production_env_extracts_facts_on_haiku_through_anthropic(monkeypatch: pytest.MonkeyPatch) -> None:
+    """운영은 관계·사실 기억 추출을 켜고 그 모델을 `haiku` 로, 그 호출을 Anthropic 직결로 배정해 돈다. 뽑은 사실을 대화에
+    싣는 스위치는 운영에 없어 추출만 돈다."""
+    assert {"MEMORY_FACTS_EXTRACT", "MEMORY_FACT_MODEL"} <= set(PRODUCTION_ENV_NAMES)
+    assert "MEMORY_FACTS_INJECT" not in PRODUCTION_ENV_NAMES
     loaded = load_production_env(monkeypatch)
-    assert (loaded.memory_facts_extract, loaded.memory_fact_model) == (False, "gemini")
+    assert (loaded.memory_facts_extract, loaded.memory_fact_model) == (True, "haiku")
+    assert loaded.llm_call_site_backends.get("chat_memory_fact") == "anthropic"
+    assert not loaded.memory_facts_inject
