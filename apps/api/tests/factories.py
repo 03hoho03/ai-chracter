@@ -2161,7 +2161,9 @@ class _FakeProviderSdks:
 
 # 운영 API 컨테이너가 받는 env 키 이름(값 없이). 컨테이너는 `.env` 를 통째로 받으므로 compose·다른 서비스 키도 섞여 있다.
 # 운영 키 이름이 바뀌면 이 목록 하나만 고친다 — 운영 env 그대로 새 이미지가 뜨는지 보는 테스트들이 모두 이 목록을 읽는다.
-# 운영은 상위 모델 호출 셋을 모두 Anthropic 으로 배정하고, Bedrock 자격(`BEDROCK_*`)은 운영에 없다.
+# 운영은 상위 모델 글쓰기 호출과 판정·요약·기억 추출 호출을 모두 Anthropic 직결로 배정하고(판정·요약 모델은 모두 `haiku`),
+# 장면·사실 기억 추출을 켠다. Bedrock 자격(`BEDROCK_*`), Haiku 실제 id(`ANTHROPIC_HAIKU_MODEL_ID`), 기억 회상·주입 스위치와
+# 기억 창 키(`MEMORY_WINDOW_*`)는 운영에 없어 코드 기본값으로 뜬다.
 PRODUCTION_ENV_NAMES = (
     "ANTHROPIC_DIRECT_API_KEY",
     "API_BASE_URL",
@@ -2184,6 +2186,7 @@ PRODUCTION_ENV_NAMES = (
     "DISCORD_WEBHOOK_URL",
     "EMAIL_FROM",
     "EMAIL_PROVIDER",
+    "ENDING_JUDGMENT_MODEL",
     "FORWARDED_ALLOW_IPS",
     "FRONTEND_BASE_URL",
     "GEMINI_API_KEY",
@@ -2196,6 +2199,7 @@ PRODUCTION_ENV_NAMES = (
     "HEALTHCHECKS_RESOURCE_PING_URL",
     "IDENTITY_CI_HMAC_KEY",
     "IMAGE_DECODE_CONCURRENCY",
+    "IMAGE_JUDGMENT_MODEL",
     "INGEST_SHARED_SECRET",
     "KAKAO_ADMIN_KEY",
     "KAKAO_CLIENT_SECRET",
@@ -2206,6 +2210,11 @@ PRODUCTION_ENV_NAMES = (
     "LOCAL_IMAGE_BASE_URL",
     "LOCAL_IMAGE_MODEL_WIRE_ID",
     "LOCAL_IMAGE_REFERENCE_ENABLED",
+    "MEMORY_EPISODES_EXTRACT",
+    "MEMORY_EPISODE_MODEL",
+    "MEMORY_FACTS_EXTRACT",
+    "MEMORY_FACT_MODEL",
+    "MEMORY_SUMMARY_MODEL",
     "NOVELIZE_ENABLED",
     "NOVELIZE_GRANT_ALLOWLIST",
     "NOVELIZE_PREMIUM_MODEL_ALLOWLIST",
@@ -2228,15 +2237,35 @@ PRODUCTION_ENV_NAMES = (
     "SESSION_COOKIE_SAMESITE",
     "SESSION_COOKIE_SECURE",
     "SITE_ADDRESS",
+    "STAT_JUDGMENT_MODEL",
     "WEB_CONCURRENCY",
     "WITHDRAWN_EMAIL_HMAC_KEY",
 )
 
-# 운영의 상위 모델 배정 — 상위 모델 스위치가 쓰는 호출 위치 셋을 모두 Anthropic 으로 옮긴다.
-PRODUCTION_PREMIUM_ASSIGNMENT = "chat_generate:anthropic,replay_generate:anthropic,novelize_chapter:anthropic"
+# 운영의 호출 위치 배정 — 상위 모델 스위치가 쓰는 글쓰기 호출 셋과, 판정·요약·기억 추출 호출(모델이 `haiku` 라 배정이 없으면
+# Bedrock 으로 간다) 열을 모두 Anthropic 직결로 옮긴다.
+PRODUCTION_CALL_SITE_BACKENDS = ",".join(
+    f"{call_site}:anthropic"
+    for call_site in (
+        "chat_generate",
+        "replay_generate",
+        "novelize_chapter",
+        "chat_stat_judgment",
+        "chat_ending_judgment",
+        "chat_situational_image",
+        "chat_media_book_image",
+        "chat_memory_summary",
+        "preview_stat_judgment",
+        "preview_ending_judgment",
+        "preview_media_book_image",
+        "chat_memory_episode",
+        "chat_memory_fact",
+    )
+)
 
 # 문자열이 아닌 설정만 형식에 맞는 가짜 값을 둔다. 나머지(문자열 설정과 `Settings` 가 모르는 키)는 아무 글자다. 배정은
-# 운영 값 그대로다 — 형식만 맞는 다른 배정이면 Bedrock 으로 남는 호출이 생겨 이 집합으로는 기동하지 못한다. 두 상위 모델
+# 운영 값 그대로다 — 형식만 맞는 다른 배정이면 Bedrock 으로 남는 호출이 생겨 이 집합으로는 기동하지 못한다. 판정·요약 모델과
+# 두 기억 추출 스위치도 운영 값 그대로다 — 모델과 배정은 서로 맞아야 기동하고, 추출 스위치는 운영에서 켜져 있다. 두 상위 모델
 # 스위치는 켠 상태가 기동 검증이 더 엄격한 경우라 켠 상태로 둔다.
 PRODUCTION_ENV_TYPED_VALUES = {
     "CHAT_PREMIUM_MODELS_ENABLED": "true",
@@ -2245,9 +2274,16 @@ PRODUCTION_ENV_TYPED_VALUES = {
     "DB_POOL_SIZE": "5",
     "DB_POOL_TIMEOUT": "30",
     "EMAIL_PROVIDER": "resend",
+    "ENDING_JUDGMENT_MODEL": "haiku",
     "IMAGE_DECODE_CONCURRENCY": "3",
-    "LLM_CALL_SITE_BACKENDS": PRODUCTION_PREMIUM_ASSIGNMENT,
+    "IMAGE_JUDGMENT_MODEL": "haiku",
+    "LLM_CALL_SITE_BACKENDS": PRODUCTION_CALL_SITE_BACKENDS,
     "LOCAL_IMAGE_REFERENCE_ENABLED": "true",
+    "MEMORY_EPISODES_EXTRACT": "true",
+    "MEMORY_EPISODE_MODEL": "haiku",
+    "MEMORY_FACTS_EXTRACT": "true",
+    "MEMORY_FACT_MODEL": "haiku",
+    "MEMORY_SUMMARY_MODEL": "haiku",
     "NOVELIZE_ENABLED": "true",
     "NOVELIZE_GRANT_ALLOWLIST": "11111111-1111-4111-8111-111111111111",
     "NOVELIZE_PREMIUM_MODEL_ALLOWLIST": "22222222-2222-4222-8222-222222222222",
@@ -2258,6 +2294,7 @@ PRODUCTION_ENV_TYPED_VALUES = {
     "SENTRY_ENVIRONMENT": "production",
     "SESSION_COOKIE_SAMESITE": "none",
     "SESSION_COOKIE_SECURE": "true",
+    "STAT_JUDGMENT_MODEL": "haiku",
 }
 
 

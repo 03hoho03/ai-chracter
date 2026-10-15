@@ -271,14 +271,5 @@ def test_production_env_missing_one_judgment_model_line_refuses_to_start(
         load_production_env(monkeypatch, without=(model_key,))
 
 
-def test_turning_on_a_claude_judgment_model_in_production_without_bedrock_credentials_refuses_to_start(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """운영에는 Bedrock 자격이 없다 — 판정 모델만 바꾸고 배정을 함께 옮기지 않으면 새 이미지가 뜨지 않는다(조용히 매 판정이
-    실패하는 대신)."""
-    with pytest.raises(ValidationError, match="BEDROCK_ACCESS_KEY_ID"):
-        load_production_env(monkeypatch, STAT_JUDGMENT_MODEL="haiku")
-
-
 def test_judgment_model_values_are_the_prompt_chain_ids() -> None:
     assert set(get_args(PromptSetModelId)) == {"gemini", "sonnet", "opus", "haiku"}
