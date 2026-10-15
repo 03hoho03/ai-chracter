@@ -153,6 +153,16 @@ describe("applyStreamEvent", () => {
     ]);
   });
 
+  it("done on regenerate marks the new answer as restorable, and a new turn clears the mark", () => {
+    const regenerated: ChatMessage = { id: "a1-regen", role: "assistant", content: "다시 생성됨", createdAt: "2026-07-08T00:02:00Z" };
+    applyStreamEvent(queryClient, ROOM_ID, { type: "done", finalMessage: regenerated }, { kind: "regenerate" });
+    expect(queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(ROOM_ID))?.previousResponseFor).toBe("a1-regen");
+
+    const nextTurn: ChatMessage = { id: "a2", role: "assistant", content: "다음 대사", createdAt: "2026-07-08T00:03:00Z" };
+    applyStreamEvent(queryClient, ROOM_ID, { type: "done", finalMessage: nextTurn });
+    expect(queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(ROOM_ID))?.previousResponseFor).toBeUndefined();
+  });
+
   it("done calls onDone with the final message and the pre-update state", () => {
     const finalMessage: ChatMessage = { id: "m2", role: "assistant", content: "다음 대사", createdAt: "2026-07-08T00:01:00Z" };
     const onDone = vi.fn();

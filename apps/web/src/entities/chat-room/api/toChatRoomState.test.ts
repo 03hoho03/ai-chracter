@@ -210,6 +210,28 @@ describe("toChatRoomState", () => {
     expect(toChatRoomState({ ...base, personaId: null })).toHaveProperty("personaId", undefined);
   });
 
+  // 되돌릴 수 있는 응답 id. 서버 `null`(되돌릴 답 없음)과 필드 부재(이 칸이 생기기 전의 서버)는 둘 다 undefined다.
+  it("carries previousResponseFor and folds null or a missing field to undefined", () => {
+    const base = {
+      id: "room-1",
+      contentId: "content-1",
+      contentType: "character" as const,
+      name: "대화 1",
+      turnCount: 1,
+      endingReached: false,
+      messages: [],
+      latestVersionAvailable: false,
+      versionAutoUpgraded: false,
+      contentRestricted: false,
+      hasMoreMessagesBefore: false,
+      createdAt: "2026-07-08T00:00:00Z",
+      updatedAt: "2026-07-08T00:00:00Z",
+    };
+    expect(toChatRoomState({ ...base, previousResponseFor: "a1-regen" }).previousResponseFor).toBe("a1-regen");
+    expect(toChatRoomState({ ...base, previousResponseFor: null })).toHaveProperty("previousResponseFor", undefined);
+    expect(toChatRoomState(base).previousResponseFor).toBeUndefined();
+  });
+
   // 이 칸이 생기기 전의 서버는 도달 여부만 보낸다 — 에필로그 없이 도달 표시만 옮긴다(배포가 겹치는 동안의 옛 API).
   it("carries the endingReached flag through into endingStatus.reached without an ending field (older server)", () => {
     const state = toChatRoomState({

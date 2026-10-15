@@ -7,7 +7,7 @@ import {
   DropdownMenuTrigger,
 } from "@ai-character-chat/ui/components/dropdown-menu";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { Flag, MoreHorizontal, Pencil, RotateCw, Trash2 } from "lucide-react";
+import { Flag, MoreHorizontal, Pencil, RotateCw, Trash2, Undo2 } from "lucide-react";
 
 import { MediaImageFrame } from "@/shared/ui/media-image-frame/MediaImageFrame";
 
@@ -26,6 +26,8 @@ type MessageBubbleProps = {
   removedOnEditCount?: number;
   disabled?: boolean;
   onRegenerate?: () => void;
+  /** 재생성이 밀어낸 직전 응답으로 되돌린다. 되돌릴 수 있는 응답에만 넘긴다(없으면 항목이 없다). */
+  onRestorePrevious?: () => void;
   onStartEdit?: () => void;
   onCancelEdit?: () => void;
   onSaveEdit?: (text: string) => void;
@@ -48,6 +50,7 @@ export function MessageBubble({
   removedOnEditCount,
   disabled = false,
   onRegenerate,
+  onRestorePrevious,
   onStartEdit,
   onCancelEdit,
   onSaveEdit,
@@ -98,11 +101,19 @@ export function MessageBubble({
                 <MoreHorizontal aria-hidden />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
+            {/* 메뉴 폭은 트리거(아이콘 버튼) 폭에 묶여 128px 에 갇힌다 — "방금 전 답변으로"가 두 줄로 깨지지 않게 내용 폭을 따른다. */}
+            <DropdownMenuContent align="start" className="w-auto">
               {canRegenerate && onRegenerate && (
                 <DropdownMenuItem onSelect={onRegenerate}>
                   <RotateCw aria-hidden />
                   다시 생성
+                </DropdownMenuItem>
+              )}
+              {/* 다시 생성의 짝이라 바로 아래에 두고, 아이콘도 다시 생성(시계 방향)과 반대로 돌아가는 화살표다. */}
+              {onRestorePrevious && (
+                <DropdownMenuItem onSelect={onRestorePrevious}>
+                  <Undo2 aria-hidden />
+                  방금 전 답변으로
                 </DropdownMenuItem>
               )}
               {onStartEdit && (
