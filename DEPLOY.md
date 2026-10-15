@@ -883,10 +883,14 @@ sudo tail -f /var/log/ddona-backup.log
   (5초 간격 20회)만큼 약 100초 기다리다 실패한다. 비상 복구는 원래 이미지 줄만 담은 override 파일을 얹어 postgres 만 되살리는 것이다
   (볼륨은 그대로라 데이터는 남아 있다).
 
+  override 파일은 `/opt/ddona/pg-rollback.override.yml`이고 VM 에 이미 준비돼 있을 수 있다 — 있으면 내용만 확인하고,
+  없으면 아래 `printf`로 만든다.
+
   ```sh
   cd /opt/ddona/app
-  printf 'services:\n  postgres:\n    image: postgres:18-alpine\n' | sudo tee /opt/ddona/pg-rollback.yml
-  sudo docker compose -f docker-compose.prod.yml -f /opt/ddona/pg-rollback.yml --env-file /opt/ddona/.env \
+  sudo cat /opt/ddona/pg-rollback.override.yml 2>/dev/null ||
+    printf 'services:\n  postgres:\n    image: postgres:18-alpine\n' | sudo tee /opt/ddona/pg-rollback.override.yml
+  sudo docker compose -f docker-compose.prod.yml -f /opt/ddona/pg-rollback.override.yml --env-file /opt/ddona/.env \
        up -d --no-deps --wait postgres
   ```
 
