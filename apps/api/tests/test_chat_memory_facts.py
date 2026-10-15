@@ -14,6 +14,7 @@
 경합은 `test_chat_memory_rewind.py` 의 커밋되는 독립 커넥션 절에 있다.
 """
 
+import json
 import unicodedata
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -951,3 +952,53 @@ def test_production_env_extracts_facts_on_haiku_through_anthropic(monkeypatch: p
     assert (loaded.memory_facts_extract, loaded.memory_fact_model) == (True, "haiku")
     assert loaded.llm_call_site_backends.get("chat_memory_fact") == "anthropic"
     assert not loaded.memory_facts_inject
+
+
+# --- 측정 서버의 프롬프트 덤프 -------------------------------------------------------------
+
+
+async def test_fact_extraction_writes_its_prompt_to_the_measurement_dump(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """측정 서버는 추출 모델을 바꿔 볼 때 같은 입력을 다시 보내야 한다 — 사실 추출 프롬프트도 생성·판정 프롬프트와 같은
+    파일에 한 줄로 남는다. 턴 번호 대신 추출하는 스냅샷을 적는다."""
+    dump = tmp_path / "prompts.jsonl"
+    monkeypatch.setattr(settings, "prompt_dump_path", str(dump))
+    room = await _open_room(db_client, db_session, turns=10)
+    snapshot_id = await _plant(db_session, room, 10)
+    fake = FactLLMClient()
+
+    await _extract(db_session, room, fake)
+
+    records = [json.loads(line) for line in dump.read_text(encoding="utf-8").splitlines()]
+    assert records == [
+        {
+            "roomId": str(room.room_id),
+            "kind": "background",
+            "callSite": "chat_memory_fact",
+            "model": settings.gemini_model_name,
+            "schema": "MemoryFactResult",
+            "prompt": fake.fact_prompts[0],
+            "snapshotId": str(snapshot_id),
+        }
+    ]
+
+
+async def test_failed_dump_write_does_not_change_the_fact_extraction(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """덤프는 측정용 부가 기록이다 — 쓰다 실패해도 추출은 덤프가 없을 때처럼 끝까지 가서 `done` 이 된다."""
+    captured = _capture_failures(monkeypatch)
+    # 디렉터리를 덤프 파일 자리로 주면 추가 모드로 열지 못해 쓰기가 실패한다.
+    monkeypatch.setattr(settings, "prompt_dump_path", str(tmp_path))
+    room = await _open_room(db_client, db_session, turns=10)
+    snapshot_id = await _plant(db_session, room, 10)
+    fake = FactLLMClient()
+
+    await _extract(db_session, room, fake)
+
+    assert len(fake.fact_prompts) == 1
+    assert captured == []
+    assert [(row.snapshot_id, row.status, row.attempts) for row in await _extractions(db_session, room)] == [
+        (snapshot_id, "done", 1)
+    ]

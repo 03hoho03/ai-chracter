@@ -426,8 +426,9 @@ def _dump_lines(path: Path) -> list[dict[str, Any]]:
     lines = []
     for line in path.read_text(encoding="utf-8").splitlines():
         record = json.loads(line)
-        # 판정 프롬프트 줄은 리플레이가 거르는 줄이라 여기 남기지 않는다 — 그 줄은 판정 덤프 테스트가 따로 본다.
-        if record["kind"] == "judgment":
+        # 생성 줄만 남긴다. 판정 줄과 백그라운드 접기·추출 줄은 리플레이가 거르는 줄이라 여기 남기지 않는다 — 그 줄들은
+        # 판정 덤프 테스트와 접기·추출 덤프 테스트가 따로 본다. 백그라운드 줄에는 생성 모델 칸도 없다.
+        if record["kind"] != "generation":
             continue
         lines.append(
             {"hasRoomId": record["roomId"] is not None, "turn": record["turn"], "chatModel": record["chatModel"]}
