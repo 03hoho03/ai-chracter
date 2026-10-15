@@ -472,7 +472,11 @@ async def test_patch_drafts_adds_the_judgment_rows_in_place_and_the_draft_publis
     db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId
 ) -> None:
     """이 리비전 이전에 저장한 Claude 초안(이전 Claude 세트 복제)에 판정·요약 행이 더해지고 다른 행은 그대로이며, 그 체인의
-    게시 게이트를 통과한다. 되돌리기는 초안의 그 행만 지운다."""
+    게시 게이트를 통과한다. 되돌리기는 초안의 그 행만 지운다.
+
+    이 리비전의 초안 패치는 판정·요약 행을 그때의 Gemini 활성 세트에서 복사한다 — 실제 체인에서 이 패치가 돌 때는 뒤 리비전들의
+    세트가 아직 없으므로(요약 채널에 슬롯을 더한 뒤 리비전의 세트가 활성이면 그 슬롯까지 복사된다) 뒤 리비전부터 먼저 되돌린다."""
+    await _undo_later_revisions(db_session)
     draft_id = await _clone_as_draft(db_session, _PREVIOUS_CLAUDE_SET_IDS[(lane, model)], lane, model)
     before = _keyed(await _sections_of(db_session, draft_id))
     gemini = _keyed(await _sections_of(db_session, _GEMINI_SET_IDS[lane]))
