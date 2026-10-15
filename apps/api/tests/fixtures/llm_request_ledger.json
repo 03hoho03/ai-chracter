@@ -762,7 +762,7 @@
         "hasUser": true,
         "method": "generate_structured",
         "model": "gemini",
-        "promptSha": "f24a419450e1ae441519f25ac821c97a758ed16a97c6a020b2486d583a67e6f7",
+        "promptSha": "82456e898ea8b5b9b2d1b19fdf88db3f24706c715675593483095fd19fb09221",
         "provider": "gemini",
         "responseSchema": "MemoryFactResult",
         "segments": null,

@@ -7,6 +7,7 @@
 
 생성 프롬프트에 사실 값을 넘기는 호출부는 아직 없어서, 자리는 렌더 함수에 값을 직접 넣어 본다."""
 
+import hashlib
 import importlib.util
 from pathlib import Path
 from types import ModuleType
@@ -43,6 +44,8 @@ def _load(revision: str) -> ModuleType:
 _M = _load("5cab2abe4e7b")
 # 회상 섹션 문안의 지금 판 — 글을 쓰는 여섯 체인의 활성 세트가 이 리비전의 것이다.
 _RECALL = _load("726aad108167")
+# 사실 추출 지시문의 지금 판 — 여덟 체인의 활성 세트가 이 리비전의 것이다(채널의 슬롯 모양은 위 리비전 그대로다).
+_INSTRUCTION = _load("e4e407a62d03")
 _NAMES = PromptNames(persona_name="하늘", char_name="민지")
 _NO_NAMES = PromptNames(persona_name=None, char_name=None)
 _EXISTING = ["relation|민지|하늘 = 경계 — 말을 아낌 (confirmed)", "fact|민지|생일 달 = 삼월 (claimed)"]
@@ -62,7 +65,7 @@ def _window() -> list[ChatMessage]:
 def _harness_prompt(user_name: str, existing: list[str], turn_lines: str) -> str:
     """측정 하네스의 조립을 옮긴 것. 이름이 있을 때 하네스와 같다. 이름이 비면 운영은 이름 줄을 통째로 빼고(그 슬롯이
     conditional 이다) 하네스는 빈 이름 줄을 넣지만, 측정에서는 이름이 늘 있었으므로 운영 쪽을 기대값으로 둔다."""
-    parts = [_M.FACT_INSTRUCTION_BODY.strip()]
+    parts = [_INSTRUCTION.FACT_INSTRUCTION_BODY.strip()]
     if user_name:
         parts.append(f"사용자의 이야기 속 이름: {user_name}")
     parts.append("[기존 키]\n" + ("\n".join(existing) if existing else "(없음)"))
@@ -99,9 +102,40 @@ async def test_fact_prompt_has_the_layout_the_harness_measured(
     assert prompt == _harness_prompt("하늘", _EXISTING, turn_lines)
     # 위 사본과 따로, 하네스가 만든 모양을 글자로 한 번 더 적는다.
     assert prompt == (
-        f"{_M.FACT_INSTRUCTION_BODY}\n\n사용자의 이야기 속 이름: 하늘\n\n[기존 키]\n{_EXISTING[0]}\n{_EXISTING[1]}"
+        f"{_INSTRUCTION.FACT_INSTRUCTION_BODY}\n\n사용자의 이야기 속 이름: 하늘\n\n[기존 키]\n{_EXISTING[0]}\n{_EXISTING[1]}"
         f"\n\n[접힌 대화]\n{turn_lines}"
     )
+
+
+# 비밀 규칙(아는 인물·주인 이름)을 넓힌 사실 추출 지시문의 지문 — 글자 하나가 바뀌어도 여기서 깨진다.
+_KNOWN_BY_INSTRUCTION_MD5 = "31fab9859bca21d5f9831b5415528a1f"
+
+
+@pytest.mark.parametrize("model", ["gemini", "sonnet", "opus", "haiku"])
+@pytest.mark.parametrize("lane", ["story", "character"])
+async def test_every_chain_extracts_facts_with_the_known_by_rules(
+    db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId
+) -> None:
+    """여덟 체인 어느 것을 추출 모델로 고르든 추출 프롬프트의 지시문이 비밀의 주인·물려받는 아는 인물·주인 이름 표기 규칙을 담은
+    판이다 — 한 체인이라도 옛 판이면 그 모델로 추출한 비밀 행은 주인을 빠뜨린다. 지시문 뒤의 이름·기존 키·대화 줄 모양은 그대로다."""
+    prompt_set, sections = await load_active_prompt_set(db_session, lane=lane, model=model)
+
+    prompt = build_memory_fact_prompt(
+        prompt_set=prompt_set,
+        sections=sections,
+        is_story_chat=lane == "story",
+        existing_facts=[],
+        turns=_window()[:1],
+        names=_NAMES,
+    )
+
+    instruction, separator, rest = prompt.partition("\n\n사용자의 이야기 속 이름: 하늘\n\n")
+    assert separator
+    assert hashlib.md5(instruction.encode()).hexdigest() == _KNOWN_BY_INSTRUCTION_MD5
+    assert "비밀의 주인(그 비밀이 자기 일인 인물)은 언제나 known_by 에 넣는다" in instruction
+    assert "relation 의 두 인물을 그 fact 행의 known_by 에 넣는다" in instruction
+    assert '"<주인 온 이름>: <원문 토막>"' in instruction
+    assert rest == f"[기존 키]\n(없음)\n\n[접힌 대화]\n[1] {prompt_set.user_label}: 빵집 가자 {{{{user}}}}"
 
 
 async def test_without_a_name_the_name_line_drops_and_no_existing_keys_reads_none(db_session: AsyncSession) -> None:
@@ -119,7 +153,7 @@ async def test_without_a_name_the_name_line_drops_and_no_existing_keys_reads_non
     )
 
     assert prompt == (
-        f"{_M.FACT_INSTRUCTION_BODY}\n\n[기존 키]\n(없음)\n\n[접힌 대화]\n[1] {prompt_set.user_label}: 빵집 가자 {{{{user}}}}"
+        f"{_INSTRUCTION.FACT_INSTRUCTION_BODY}\n\n[기존 키]\n(없음)\n\n[접힌 대화]\n[1] {prompt_set.user_label}: 빵집 가자 {{{{user}}}}"
     )
     assert not any(line.startswith("사용자의 이야기 속 이름: ") for line in prompt.split("\n"))
 
@@ -206,7 +240,9 @@ async def test_preview_shows_the_fact_prompt_with_every_section(
     fact = [item for item in items if item["channel"] == "memory_fact"]
     assert len(fact) == 1
     text = fact[0]["text"]
-    assert text.startswith(_M.FACT_INSTRUCTION_BODY + "\n\n사용자의 이야기 속 이름: [샘플] 하늘\n\n[기존 키]\n")
+    assert text.startswith(
+        _INSTRUCTION.FACT_INSTRUCTION_BODY + "\n\n사용자의 이야기 속 이름: [샘플] 하늘\n\n[기존 키]\n"
+    )
     assert "[기존 키]\n(없음)" not in text
     assert "\n\n[접힌 대화]\n[1] " in text
 
