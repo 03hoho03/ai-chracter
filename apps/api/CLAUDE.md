@@ -67,7 +67,7 @@ uv run alembic check                 # 모델과 마이그레이션이 정확히
 
 ## 모델 규약
 
-- **`relationship()`을 선언하지 않는다** — 순수 FK 컬럼만 쓰고 INSERT/DELETE 순서를 직접 지킨다. `ON DELETE`는 FK마다 고른다. 채팅방의 메시지·스탯·턴 기록·요약 스냅샷처럼 아무것도 두지 않은 FK는 부모를 지우는 쪽이 자식을 먼저 지운다(`chat/room_deletion.py`). `CASCADE`는 소설 계열(소설·화의 자식)과 스탯 규칙에 있고, 채팅에서는 그 테이블을 모르는 옛 이미지(배포 겹침)의 DELETE가 FK 위반으로 실패하면 안 되는 자식에 둔다 — 요약 스냅샷의 장면·사실 기억과 그 추출 기록(스냅샷 FK), 재생성이 밀어낸 직전 응답의 보관(`chat_previous_responses`, 방 FK). `SET NULL`은 부모가 지워져도 남아야 하는 기록(폐기 기록·채팅 응답 신고 등)에 있다.
+- **`relationship()`을 선언하지 않는다** — 순수 FK 컬럼만 쓰고 INSERT/DELETE 순서를 직접 지킨다. `ON DELETE`는 FK마다 고른다. 채팅방의 메시지·스탯·턴 기록·요약 스냅샷처럼 아무것도 두지 않은 FK는 부모를 지우는 쪽이 자식을 먼저 지운다(`chat/room_deletion.py`). `CASCADE`는 소설 계열(소설·화의 자식)과 스탯 규칙에 있고, 채팅에서는 그 테이블을 모르는 옛 이미지(배포 겹침)의 DELETE가 FK 위반으로 실패하면 안 되는 자식에 둔다 — 요약 스냅샷의 장면·사실 기억과 그 추출 기록(스냅샷 FK), 장면·사실 기억의 임베딩(장면·사실 FK), 재생성이 밀어낸 직전 응답의 보관(`chat_previous_responses`, 방 FK). `SET NULL`은 부모가 지워져도 남아야 하는 기록(폐기 기록·채팅 응답 신고 등)에 있다.
   - **3단 이상 캐스케이드 삭제는 계층 사이마다 `await db.flush()`를 넣어야 한다.** 안 넣으면 SQLAlchemy가 한 flush 안의 DELETE 순서를 재정렬해 `ForeignKeyViolationError`가 난다.
 - **`entity_id` 패턴**: 물리 PK `id`와 별개로 `entity_id`(버전을 넘어 안정적인 참조)를 둔다. 그래서 **버전 복제 시 `entity_id` 참조는 그대로 복사, 물리 FK는 반드시 remap**해야 한다 — 이 구분을 먼저 하고 코드를 짤 것.
 - **Postgres ENUM 컬럼은 `.value`(소문자)가 아니라 `.name`(대문자)이 저장된다.** ORM만 쓰면 안 드러나지만 raw SQL에서 소문자를 쓰면 `invalid input value for enum`이다. 반대로 **plain `Text` 컬럼에 `str, Enum` 값을 넣을 때는 `.value`를 명시**한다(`str(member)`는 `"ClassName.MEMBER"`).
