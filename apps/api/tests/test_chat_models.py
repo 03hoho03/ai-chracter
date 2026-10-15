@@ -13,6 +13,7 @@ from api.db.models import (
     CharacterImageExposure,
     ChatMessage,
     ChatMessageReport,
+    ChatMemoryEmbedding,
     ChatMemoryEpisode,
     ChatMemoryExtraction,
     ChatMemoryFact,
@@ -39,6 +40,7 @@ from api.db.models import (
 )
 from factories import (
     _make_chat_turn,
+    _make_memory_embedding,
     _make_memory_episode,
     _make_memory_extraction,
     _make_memory_fact,
@@ -849,6 +851,124 @@ async def test_snapshot_delete_statements_succeed_over_fact_rows(db_session: Asy
         .where(ChatMemoryFactExtraction.chat_room_id == room.id)
     )
     assert (facts, extractions) == (0, 0)
+
+
+# --- 임베딩 -------------------------------------------------------------------------------------------
+#
+# 위 두 절과 같은 규칙이다 — CHECK 는 거부 테스트가 유일한 검증이고, 어느 제약이 거부했는지까지 본다.
+
+
+async def _make_episode_and_fact(
+    db_session: AsyncSession, room: ChatRoom
+) -> tuple[ChatRoomMemorySnapshot, ChatMemoryEpisode, ChatMemoryFact]:
+    """새 스냅샷 하나와 거기서 뽑은 장면 하나·사실 하나."""
+    snapshot = await _make_snapshot(db_session, room)
+    episode = _make_memory_episode(room.id, snapshot.id)
+    fact = _make_memory_fact(room.id, snapshot.id)
+    db_session.add_all([episode, fact])
+    await db_session.flush()
+    return snapshot, episode, fact
+
+
+async def test_memory_embedding_accepts_both_targets_at_the_dimension_limits(db_session: AsyncSession) -> None:
+    """장면 대상 1차원과 사실 대상 halfvec 상한 차원이 들어가고, 한 칸에 차원이 다른 벡터가 함께 들어간다."""
+    room = await _make_chat_room(db_session)
+    _, episode, fact = await _make_episode_and_fact(db_session, room)
+
+    db_session.add(_make_memory_embedding(room.id, episode_id=episode.id, dims=1, embedding=[0.5]))
+    db_session.add(_make_memory_embedding(room.id, fact_id=fact.id, dims=16000, embedding=[0.5] * 16000))
+    await db_session.flush()
+
+    dims = await db_session.scalars(
+        sa.select(ChatMemoryEmbedding.dims)
+        .where(ChatMemoryEmbedding.chat_room_id == room.id)
+        .order_by(ChatMemoryEmbedding.dims)
+    )
+    assert dims.all() == [1, 16000]
+
+
+@pytest.mark.parametrize(
+    ("targets", "overrides", "constraint"),
+    [
+        pytest.param((), {}, "ck_chat_memory_embeddings_one_target", id="no-target"),
+        pytest.param(("episode", "fact"), {}, "ck_chat_memory_embeddings_one_target", id="both-targets"),
+        # 차원 범위를 벗어난 값은 벡터 차원과도 어긋나지만, Postgres 는 CHECK 를 이름 순으로 검사해 범위 제약이 먼저
+        # 거부한다. 차원 0·16001 짜리 halfvec 은 값 자체가 만들어지지 않아 벡터는 1차원으로 둔다.
+        pytest.param(("episode",), {"dims": 0, "embedding": [0.5]}, "ck_chat_memory_embeddings_dims", id="dims-0"),
+        pytest.param(
+            ("episode",), {"dims": 16001, "embedding": [0.5]}, "ck_chat_memory_embeddings_dims", id="dims-16001"
+        ),
+        pytest.param(
+            ("episode",), {"dims": 3, "embedding": [0.5, 0.5]}, "ck_chat_memory_embeddings_dims_match", id="dims-over"
+        ),
+        pytest.param(
+            ("fact",), {"dims": 2, "embedding": [0.5, 0.5, 0.5]}, "ck_chat_memory_embeddings_dims_match", id="dims-under"
+        ),
+    ],
+)
+async def test_memory_embedding_rejects_values_outside_its_checks(
+    db_session: AsyncSession, targets: tuple[str, ...], overrides: dict[str, object], constraint: str
+) -> None:
+    """대상이 없거나 둘이면 어느 행의 벡터인지 모른다. `dims` 칸이 실제 벡터 차원과 다르면 `dims` 로 거른 질의에 차원이
+    다른 벡터가 섞여 거리 연산이 질의째 실패한다."""
+    room = await _make_chat_room(db_session)
+    _, episode, fact = await _make_episode_and_fact(db_session, room)
+    values = dict(overrides)
+    if "episode" in targets:
+        values["episode_id"] = episode.id
+    if "fact" in targets:
+        values["fact_id"] = fact.id
+
+    with pytest.raises(IntegrityError) as raised:
+        async with db_session.begin_nested():
+            db_session.add(_make_memory_embedding(room.id, **values))
+
+    assert _violated_constraint(raised.value) == constraint
+
+
+@pytest.mark.parametrize(
+    ("target", "constraint"),
+    [
+        pytest.param("episode_id", "chat_memory_embeddings_episode_id_fkey", id="episode"),
+        pytest.param("fact_id", "chat_memory_embeddings_fact_id_fkey", id="fact"),
+    ],
+)
+async def test_embedding_insert_for_missing_target_is_rejected(
+    db_session: AsyncSession, target: str, constraint: str
+) -> None:
+    """임베딩을 넣을 때 대상 장면·사실 행이 이미 지워졌으면(그 구간 대화가 되감겼다) 넣지 못해야 한다 — 지운 대화의
+    벡터가 남지 않게 하는 마지막 방어선이 이 FK 다."""
+    room = await _make_chat_room(db_session)
+
+    with pytest.raises(IntegrityError) as raised:
+        async with db_session.begin_nested():
+            db_session.add(_make_memory_embedding(room.id, **{target: uuid.uuid4()}))
+
+    assert _violated_constraint(raised.value) == constraint
+
+
+@pytest.mark.parametrize("path", ["rewind", "reset", "room-deletion"])
+async def test_snapshot_delete_statements_succeed_over_embedding_rows(db_session: AsyncSession, path: str) -> None:
+    """되감기·초기화(`rewind_memory`)와 방 삭제·탈퇴(`delete_chat_rooms`)의 스냅샷 DELETE 문장은 임베딩 표를 모르던
+    이미지의 것과 같다. 장면·사실 행에 임베딩이 달린 DB 위에서 그 문장이 FK 위반 없이 끝나고 임베딩이 비어야, 배포
+    겹침·이미지 롤백 동안 옛 이미지의 되감기·삭제가 500 이 되지 않는다(근거는 스냅샷 → 장면·사실 → 임베딩 CASCADE)."""
+    room = await _make_chat_room(db_session)
+    snapshot, episode, fact = await _make_episode_and_fact(db_session, room)
+    db_session.add(_make_memory_embedding(room.id, episode_id=episode.id))
+    db_session.add(_make_memory_embedding(room.id, fact_id=fact.id))
+    await db_session.flush()
+
+    if path == "rewind":
+        await rewind_memory(db_session, room.id, (snapshot.cursor_created_at, snapshot.cursor_message_id))
+    elif path == "reset":
+        await rewind_memory(db_session, room.id, None)
+    else:
+        await delete_chat_rooms(db_session, [room.id])
+
+    embeddings = await db_session.scalar(
+        sa.select(sa.func.count()).select_from(ChatMemoryEmbedding).where(ChatMemoryEmbedding.chat_room_id == room.id)
+    )
+    assert embeddings == 0
 
 
 async def test_room_deletion_keeps_discarded_responses_and_reports_with_references_cleared(

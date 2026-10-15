@@ -4,6 +4,7 @@ from api.db.models.auth import AdminUser, GuardianConsent, User, WithdrawnEmail,
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.chat import (
     CharacterImageExposure,
+    ChatMemoryEmbedding,
     ChatMemoryEpisode,
     ChatMemoryExtraction,
     ChatMemoryFact,
@@ -147,6 +148,7 @@ __all__ = [
     "AssetStatus",
     "CharacterImageExposure",
     "CharacterVersionDetail",
+    "ChatMemoryEmbedding",
     "ChatMemoryEpisode",
     "ChatMemoryExtraction",
     "ChatMemoryFact",

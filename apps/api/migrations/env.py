@@ -1,15 +1,19 @@
 import asyncio
 from logging.config import fileConfig
+from typing import Any, Literal
 
 from sqlalchemy import pool
+from sqlalchemy.dialects.postgresql.base import ischema_names
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
+from alembic.autogenerate.api import AutogenContext
 
 from api.core.config import settings
 from api.db import models
 from api.db.base import Base
+from api.db.types import HalfVec
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -27,6 +31,20 @@ config.set_main_option("sqlalchemy.url", settings.database_url)
 # add your model's MetaData object here
 # for 'autogenerate' support
 target_metadata = Base.metadata
+
+# 확장 타입은 SQLAlchemy 의 Postgres 방언이 모른다. 반영(reflection)이 `halfvec` 칸을 알아보게 이름을 등록해 둔다 — 없으면
+# `alembic check` 가 그 칸을 타입 미상으로 보고 타입 비교를 건너뛴다(모델의 칸 타입이 바뀌어도 초록).
+ischema_names["halfvec"] = HalfVec
+
+
+def render_item(type_: str, obj: Any, autogen_context: AutogenContext) -> str | Literal[False]:
+    """autogenerate 가 `HalfVec` 칸을 import 없이 `api.db.types.HalfVec()` 로 적어 그 파일이 로드되지 않는 것을 막는다.
+    import 를 함께 적어 두지만, 리비전 파일은 `api.*` 를 import 하지 않는 관례라 손으로 고칠 때 파일 안 타입으로 바꾼다."""
+    if type_ == "type" and isinstance(obj, HalfVec):
+        autogen_context.imports.add("from api.db.types import HalfVec")
+        return "HalfVec()"
+    return False
+
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
@@ -59,7 +77,7 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(connection=connection, target_metadata=target_metadata, render_item=render_item)
 
     with context.begin_transaction():
         context.run_migrations()

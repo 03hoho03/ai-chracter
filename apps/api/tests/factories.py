@@ -43,6 +43,7 @@ from api.db.models import (
     AssetKind,
     AssetStatus,
     CharacterVersionDetail,
+    ChatMemoryEmbedding,
     ChatMemoryEpisode,
     ChatMemoryExtraction,
     ChatMemoryFact,
@@ -495,6 +496,18 @@ def _make_memory_fact_extraction(
     }
     defaults.update(overrides)
     return ChatMemoryFactExtraction(**defaults)
+
+
+def _make_memory_embedding(chat_room_id: uuid.UUID, **overrides: object) -> ChatMemoryEmbedding:
+    """임베딩 한 행. 대상(`episode_id` 또는 `fact_id`)은 호출부가 정한다. 기본값은 3차원 벡터와 그 차원이다."""
+    defaults: dict[str, object] = {
+        "chat_room_id": chat_room_id,
+        "model": "test-embedding",
+        "dims": 3,
+        "embedding": [0.25, -0.5, 1.0],
+    }
+    defaults.update(overrides)
+    return ChatMemoryEmbedding(**defaults)
 
 
 async def _get_genre(db_session: AsyncSession, name: str | None = None) -> Genre:

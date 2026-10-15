@@ -8,6 +8,7 @@
 DELETE 의 CASCADE 가 지우므로 아래 목록에 넣지 않는다 — 스냅샷보다 먼저 지우면 스냅샷을 잠근 채 추출 기록을 갱신하는 추출
 작업과 서로를 기다린다(교착).
 사실 계층 두 테이블(`chat_memory_facts`·`chat_memory_fact_extractions`)도 같은 이유로 스냅샷 FK 의 CASCADE 가 지운다.
+임베딩(`chat_memory_embeddings`)도 장면·사실 행 FK 의 CASCADE 가 지운다.
 재생성이 밀어낸 직전 응답의 보관 행(`chat_previous_responses`)도 목록에 없다 — 방 FK 가 `ON DELETE CASCADE` 라 방 DELETE 가
 지우고, 그래서 이 테이블을 모르는 옛 이미지(배포 겹침)가 방을 지워도 FK 위반으로 실패하지 않는다.
 

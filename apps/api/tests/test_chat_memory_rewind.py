@@ -43,6 +43,7 @@ from api.chat.room_deletion import delete_chat_rooms
 from api.db.models import (
     Asset,
     CharacterVersionDetail,
+    ChatMemoryEmbedding,
     ChatMemoryEpisode,
     ChatMemoryExtraction,
     ChatMemoryFact,
@@ -71,6 +72,7 @@ from factories import (
     _get_genre,
     _login_as,
     _make_chat_turn,
+    _make_memory_embedding,
     _make_memory_episode,
     _make_memory_extraction,
     _make_memory_fact,
@@ -473,6 +475,83 @@ async def test_room_reset_and_deletion_leave_no_fact_rows(
         assert await db_session.scalar(sa.select(ChatRoom.id).where(ChatRoom.id == room.room_id)) is None
 
     assert await _fact_snapshot_ids(db_session, room.room_id) == (set(), set())
+
+
+# --- 임베딩 ---------------------------------------------------------------------------------------
+#
+# 장면·사실 행 FK 의 CASCADE 로 지워진다(스냅샷 → 장면·사실 → 임베딩). 경로의 DELETE 문장은 임베딩 표를 모르던 이미지와
+# 같으므로, 아래 두 테스트는 옛 이미지가 임베딩이 있는 스키마 위에서 FK 위반 없이 되감고 지우는지도 본다.
+
+
+async def _seed_embeddings_on_every_snapshot(db_session: AsyncSession, room: Room) -> dict[str, uuid.UUID]:
+    """방의 스냅샷마다 장면·사실 하나씩과 그 둘의 임베딩을 넣고 `{요약 글: 스냅샷 id}` 를 돌려준다."""
+    snapshots = (
+        await db_session.execute(
+            sa.select(ChatRoomMemorySnapshot.id, ChatRoomMemorySnapshot.summary_text).where(
+                ChatRoomMemorySnapshot.chat_room_id == room.room_id
+            )
+        )
+    ).all()
+    for snapshot in snapshots:
+        episode = _make_memory_episode(room.room_id, snapshot.id)
+        fact = _make_memory_fact(room.room_id, snapshot.id)
+        db_session.add_all([episode, fact])
+        await db_session.flush()
+        db_session.add(_make_memory_embedding(room.room_id, episode_id=episode.id))
+        db_session.add(_make_memory_embedding(room.room_id, fact_id=fact.id))
+    await db_session.commit()
+    return {snapshot.summary_text: snapshot.id for snapshot in snapshots}
+
+
+async def _embedding_snapshot_ids(db_session: AsyncSession, room_id: uuid.UUID) -> list[uuid.UUID]:
+    """방에 남은 임베딩마다 그 대상 행이 뽑힌 스냅샷 id(정렬)."""
+    rows = await db_session.scalars(
+        sa.select(sa.func.coalesce(ChatMemoryEpisode.snapshot_id, ChatMemoryFact.snapshot_id))
+        .select_from(ChatMemoryEmbedding)
+        .outerjoin(ChatMemoryEpisode, ChatMemoryEpisode.id == ChatMemoryEmbedding.episode_id)
+        .outerjoin(ChatMemoryFact, ChatMemoryFact.id == ChatMemoryEmbedding.fact_id)
+        .where(ChatMemoryEmbedding.chat_room_id == room_id)
+    )
+    return sorted(rows.all())
+
+
+async def test_rewinding_memory_deletes_embeddings_of_rewound_snapshots(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """요약 구간 안의 메시지를 지우면 그 지점 이상을 덮는 스냅샷의 장면·사실과 함께 그 임베딩도 사라진다. 남은 스냅샷의
+    장면·사실 임베딩은 그대로다 — 지운 대화의 벡터만 잊는다."""
+    room = await _room_with_two_snapshots(db_client, db_session, turns=24)
+    snapshot_ids = await _seed_embeddings_on_every_snapshot(db_session, room)
+
+    await _delete(db_client, room, room.turns[15][0])
+
+    assert [row.summary_text for row in await _snapshots(db_session, room)] == ["[S10]"]
+    assert await _embedding_snapshot_ids(db_session, room.room_id) == [snapshot_ids["[S10]"]] * 2
+
+
+@pytest.mark.parametrize("action", ["reset", "delete", "withdraw"])
+async def test_room_reset_deletion_and_withdrawal_leave_no_embedding_rows(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, action: str
+) -> None:
+    """초기화는 방의 스냅샷을 전부, 방 삭제와 탈퇴는 방까지 지운다. 임베딩은 그 DELETE 의 CASCADE 로 0행이 되고, 방
+    DELETE 가 방 FK 로 남은 임베딩 때문에 FK 위반으로 실패하지 않는다."""
+    room = await _room_with_two_snapshots(db_client, db_session, turns=24)
+    await _seed_embeddings_on_every_snapshot(db_session, room)
+
+    if action == "reset":
+        response = await db_client.post(f"/chat-rooms/{room.room_id}/reset")
+        assert response.status_code == 200, response.text
+    else:
+        response = await db_client.delete(f"/chat-rooms/{room.room_id}" if action == "delete" else "/me")
+        assert response.status_code == 204, response.text
+        assert await db_session.scalar(sa.select(ChatRoom.id).where(ChatRoom.id == room.room_id)) is None
+
+    count = await db_session.scalar(
+        sa.select(sa.func.count())
+        .select_from(ChatMemoryEmbedding)
+        .where(ChatMemoryEmbedding.chat_room_id == room.room_id)
+    )
+    assert count == 0
 
 
 # --- 커밋되는 독립 커넥션 ---------------------------------------------------------------------

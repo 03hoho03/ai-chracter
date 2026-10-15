@@ -28,6 +28,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from api.db.base import Base
 from api.db.models.moderation import ReportStatus
 from api.db.models.payment import _sql_in_list
+from api.db.types import HalfVec
 
 
 class ChatMessageRole(str, enum.Enum):
@@ -457,6 +458,61 @@ class ChatMemoryFactExtraction(Base):
             "(status = 'done') = (fact_count IS NOT NULL)", name="ck_chat_memory_fact_extractions_done_count"
         ),
         Index("ix_chat_memory_fact_extractions_room", "chat_room_id"),
+    )
+
+
+# pgvector 의 halfvec 이 담을 수 있는 최대 차원.
+EMBEDDING_DIMS_MAX = 16000
+
+
+class ChatMemoryEmbedding(Base):
+    """장면 기억 한 행 또는 사실 기억 한 행의 임베딩 하나 — (대상 행, 모델, 차원)마다 한 행. INSERT 만 하고 고쳐 쓰지
+    않는다. 모델이나 차원을 바꿔 다시 임베딩하면 새 행이 쌓이고, 읽는 쪽은 늘 지금 모델·차원으로 거른다.
+
+    장면·사실 행에 칸을 두지 않고 따로 둔 이유: 두 테이블의 행은 한 번 쓰면 고쳐 쓰지 않는다. 같은 행에 임베딩 칸을 두고
+    나중에 채우거나 모델을 바꿔 다시 채우면 그 행의 UPDATE 가 생긴다. 이 표는 INSERT 만으로 채우고, 장면·사실 행의 렌더
+    줄은 그대로다.
+
+    대상 행이 지워지면 DB 가 이 행도 함께 지운다(두 FK 모두 `ON DELETE CASCADE`). 되감기·초기화·방 삭제·탈퇴는 요약
+    스냅샷을 지우고, 스냅샷 DELETE 의 CASCADE 가 장면·사실 행을, 그 CASCADE 가 다시 이 행을 지운다 — 새 삭제 문장이 없다.
+    이 표를 모르는 옛 이미지(배포 겹침·이미지 롤백)의 스냅샷 DELETE 도 FK 위반 없이 끝난다. 방 FK 는 CASCADE 가 아니다 —
+    방 DELETE 앞에 스냅샷 DELETE 가 이 행을 이미 지웠다.
+
+    칸:
+    - `episode_id`·`fact_id` 는 대상 행이고 정확히 하나만 채운다.
+    - `model` 은 임베딩 모델 id, `dims` 는 벡터 차원이다.
+    - `embedding` 은 차원을 적지 않은 `halfvec` 이다 — 모델·차원을 바꿔도 마이그레이션이 다시 필요 없다. 대신 차원이 섞인
+      행에 거리 연산을 걸면 질의째 실패하므로 읽는 쪽은 늘 `model = 지금 모델 AND dims = 지금 차원` 으로 거르고, `dims`
+      칸이 실제 벡터 차원과 같다는 것은 CHECK 가 지킨다.
+    인덱스를 쓰지 않는 방 단위 정확 탐색을 전제로 한다(차원 없는 칸에는 HNSW 를 바로 만들 수 없다)."""
+
+    __tablename__ = "chat_memory_embeddings"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    chat_room_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("chat_rooms.id"), nullable=False)
+    episode_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("chat_memory_episodes.id", ondelete="CASCADE"), nullable=True
+    )
+    fact_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("chat_memory_facts.id", ondelete="CASCADE"), nullable=True
+    )
+    model: Mapped[str] = mapped_column(Text, nullable=False)
+    dims: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    embedding: Mapped[list[float]] = mapped_column(HalfVec(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # 🔴 `alembic check`는 CHECK 제약을 비교하지 않는다 — 아래 CHECK 의 검증은 행위 테스트가 유일하다.
+    # 두 유니크는 대상 칸이 NULL 인 행끼리는 겹치지 않으므로 장면·사실 각각의 (대상 행, 모델, 차원)을 지키고, 앞 열이 대상
+    # 행 DELETE 의 CASCADE 가 이 표를 찾는 인덱스를 겸한다. 방 인덱스는 방 단위 탐색과 방 DELETE 의 FK 확인을 받는다.
+    __table_args__ = (
+        UniqueConstraint("episode_id", "model", "dims", name="ux_chat_memory_embeddings_episode_model_dims"),
+        UniqueConstraint("fact_id", "model", "dims", name="ux_chat_memory_embeddings_fact_model_dims"),
+        CheckConstraint("num_nonnulls(episode_id, fact_id) = 1", name="ck_chat_memory_embeddings_one_target"),
+        CheckConstraint(f"dims BETWEEN 1 AND {EMBEDDING_DIMS_MAX}", name="ck_chat_memory_embeddings_dims"),
+        CheckConstraint("vector_dims(embedding) = dims", name="ck_chat_memory_embeddings_dims_match"),
+        Index("ix_chat_memory_embeddings_room_model_dims", "chat_room_id", "model", "dims"),
     )
 
 
