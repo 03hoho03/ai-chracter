@@ -164,11 +164,13 @@ async def test_new_set_is_the_previous_active_set_with_only_the_recall_body_chan
     """이전 활성 세트의 행이 바이트 그대로 옮겨지고(회상 본문만 다르다), 더하거나 빠진 행이 없다. 라벨도 이전 활성 세트 것이다."""
     new_sections = await _sections_of(db_session, _M.NEW_SET_IDS[(lane, model)])
     new = _keyed(new_sections)
+    # 다음 `_sections_of` 가 `expire_all` 로 이 객체들을 만료시키므로 그 전에 읽어 둔다(만료된 속성을 읽으면 동기 지연 로드다).
+    ids = {s.id: (s.channel, s.scope, s.slot, s.variant) for s in new_sections}
     before = _keyed(await _sections_of(db_session, _PREVIOUS_SET_IDS[(lane, model)]))
 
     assert before[_RECALL_KEY][0] == _M.OLD_RECALL_BODY
     assert new == _expected_after(before)
-    assert all(s.id == _M._section_id(lane, model, s.channel, s.scope, s.slot, s.variant) for s in new_sections)
+    assert all(section_id == _M._section_id(lane, model, *key) for section_id, key in ids.items())
 
     this_set = await _get_set(db_session, _M.NEW_SET_IDS[(lane, model)])
     old_set = await _get_set(db_session, _PREVIOUS_SET_IDS[(lane, model)])
