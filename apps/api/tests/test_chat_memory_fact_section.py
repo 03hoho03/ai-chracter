@@ -14,7 +14,10 @@
 - 줄: 관계 `- 주어 → 대상: 값`, 사실 `- 주어 · 속성: 값`. 반증은 줄 앞에 표지, 주장은 끝에 말한 사람(사용자가 내놓은 주장은
   회상 섹션과 같은 사용자 꼬리표, 말한 인물이 없으면 회상 섹션과 같은 인물 꼬리표), 아는 사람이 있으면 그 뒤에 `(이름·이름만 앎)`.
 - 섹션은 대화 기록 뒤, 회상 섹션 앞(캐시 블록 셋째)이다. 턴 기록(`chat_turns.memory_facts`)에 실은 사실의 id·글자 수를 줄
-  순서로 남기고, 리플레이는 그 id 로 줄을 다시 렌더한다. 사실 읽기가 실패하면 섹션 없이 턴을 계속한다."""
+  순서로 남기고, 리플레이는 그 id 로 줄을 다시 렌더한다. 사실 읽기가 실패하면 섹션 없이 턴을 계속한다.
+- 지식 범위 필터 스위치(`memory_knowledge_filter`)가 켜져 있으면 키별 최신 행 중 아는 사람이 이번 장면에 없는 행을 고르기 전에
+  뺀다(빠진 자리는 다음 후보가 채운다). 스토리 방은 아는 사람이 정해진 행이 있을 때만 미디어 북 인물을 한 번 읽는다. 사실 주입이
+  꺼져 있으면 필터가 켜져 있어도 프롬프트·SQL 이 같다."""
 
 import logging
 import uuid
@@ -39,6 +42,7 @@ from api.db.models import ChatMemoryFact, ChatMessage, ChatMessageRole, ChatRoom
 from api.db.models.chat import FACT_VALUE_MAX, ChatTurn
 from api.llm.client import LLMCallContext, LLMClient, SegmentedPrompt
 from factories import (
+    PRODUCTION_ENV_NAMES,
     Room,
     _clear_llm_override,
     _count_queries,
@@ -48,6 +52,7 @@ from factories import (
     _override_llm_client,
     _parse_sse_events,
     _room_messages,
+    load_production_env,
 )
 from replay.logs import ReplayRefusedError
 from replay.state import turn_fact_lines
@@ -780,3 +785,170 @@ async def test_replay_of_a_turn_without_facts_gets_no_lines(
     _facts_on(monkeypatch)
     assert await turn_fact_lines(db_session, record.assistant_message_id) == ""
     assert await turn_fact_lines(db_session, uuid.uuid4()) == ""
+
+
+# --- 지식 범위 필터 ---------------------------------------------------------------------------
+# 아는 사람이 이번 장면(이번 사용자 메시지·직전 응답에 이름이 나온 인물, 사용자 제외)에 없는 비밀 행은 고르기 전에 뺀다. 경계
+# 규칙 자체는 `test_chat_memory_knowledge.py` 가 보고, 여기서는 고르기와의 순서와 조립·SQL·실패 흡수를 본다.
+
+
+def test_filter_runs_before_selection_so_the_next_row_takes_the_freed_room() -> None:
+    """비밀 줄(100자)이 렌더 순서 맨 앞이면 150자 줄이 셋만 들어간다. 필터가 그 줄을 빼면 넷째 줄이 그 자리를 채운다 — 고른 뒤에
+    빼면 셋만 남는다. 결과는 비밀 행을 처음부터 넣지 않고 고른 것과 같다."""
+    head = "- 유나 · 비밀: "
+    tail = " (유나·사용자만 앎)"
+    secret = _fields("유나", "비밀", "가" * (100 - len(head) - len(tail)), known_by=["유나", "사용자"], importance=5)
+    rows = _rows(secret, *_fillers(6))
+    assert len(fact_line(rows[0])) == 100
+
+    unfiltered = select_fact_rows(rows, query="", names=[], current_turn=TURN)
+    filtered = select_fact_rows(rows, query="", names=[], current_turn=TURN, keep=lambda row: row is not rows[0])
+
+    assert [row.attribute for row in unfiltered] == ["비밀", "취향0", "취향1", "취향2"]
+    assert [row.attribute for row in filtered] == ["취향0", "취향1", "취향2", "취향3"]
+    assert filtered == _select(rows[1:])
+
+
+def test_filtered_latest_value_does_not_bring_back_an_older_value_of_the_same_key() -> None:
+    """키의 지금 값이 비밀이라 빠지면 그 키는 통째로 빠진다 — 앞의 공개 값이 지금 값처럼 되살아나지 않는다."""
+    rows = _rows(_fields("유나", "전학", "안 감"), _fields("유나", "전학", "다음 달에 감", known_by=["유나"]))
+    assert select_fact_rows(rows, query="", names=[], current_turn=TURN, keep=lambda row: not row.known_by) == []
+
+
+_SECRET = _fields("유나", "전학", "다음 달에 간다", known_by=["유나", "사용자"])
+_SECRET_LINE = "- 유나 · 전학: 다음 달에 간다 (유나·사용자만 앎)"
+
+
+def _filter_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "memory_knowledge_filter", True)
+
+
+async def _set_last_response(db_session: AsyncSession, room: Room, content: str) -> None:
+    last = room.turns[max(room.turns)][1]
+    await db_session.execute(sa.update(ChatMessage).where(ChatMessage.id == last.id).values(content=content))
+    await db_session.commit()
+
+
+@pytest.mark.parametrize("lane", ["story", "character"])
+async def test_secret_drops_unless_someone_who_knows_is_in_the_scene(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, lane: PromptLane
+) -> None:
+    """프로필 이름 없는 방(사용자는 대화 줄 라벨 "사용자" 로 적힌다). 민수만 나온 턴에는 유나의 비밀이 빠지고 공개 관계는 남는다.
+    이번 메시지나 직전 응답에 유나가 나오면 남는다. 필터를 끄면 지금처럼 늘 실린다."""
+    room, snapshots = await _fact_room(db_client, db_session, lane=lane)
+    await _plant(db_session, room, snapshots[2], [_SECRET, _FRIENDS])
+    _facts_on(monkeypatch)
+    _filter_on(monkeypatch)
+
+    others = _section((await _build(db_session, room, "민수는 뭐 해?", lane=lane)).prompt)
+    assert _SECRET_LINE not in others and "- 민수 → 지아: 소꿉친구" in others
+    assert _SECRET_LINE in _section((await _build(db_session, room, "유나는 뭐 해?", lane=lane)).prompt)
+    await _set_last_response(db_session, room, "유나가 고개를 들었다.")
+    assert _SECRET_LINE in _section((await _build(db_session, room, "그래서?", lane=lane)).prompt)
+
+    monkeypatch.setattr(settings, "memory_knowledge_filter", False)
+    await _set_last_response(db_session, room, "바람이 분다.")
+    assert _SECRET_LINE in _section((await _build(db_session, room, "민수는 뭐 해?", lane=lane)).prompt)
+
+
+async def test_profile_name_is_the_user_not_a_scene_person(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """그 턴 대화 프로필 이름(하늘)이 사용자다 — 메시지에 하늘이 나와도 하늘만 아는 쪽으로는 비밀이 남지 않는다."""
+    room, snapshots = await _fact_room(db_client, db_session)
+    await _plant(db_session, room, snapshots[2], [_fields("유나", "전학", "다음 달에 간다", known_by=["유나", "하늘"])])
+    _facts_on(monkeypatch)
+    _filter_on(monkeypatch)
+    state = InjectedTurnState(
+        summary=await load_current_summary(db_session, room.room_id),
+        memory_note="",
+        stats={},
+        persona=InjectedPersona(name="하늘", gender=None, description=""),
+    )
+
+    built = await _build(db_session, room, "하늘이는 민수랑 같이 있어", turn_state=state)
+    assert HEADER not in built.prompt and built.memory_facts == ()
+    kept = await _build(db_session, room, "하늘이는 유나랑 같이 있어", turn_state=state)
+    assert "전학" in _section(kept.prompt)
+
+
+async def _statements(db_session: AsyncSession, room: Room, user_content: str, *, lane: PromptLane = "story") -> int:
+    with _count_queries() as count:
+        await _build(db_session, room, user_content, lane=lane)
+        return count()
+
+
+async def test_filter_reads_media_book_people_once_and_only_when_a_secret_exists(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """스토리 방에서 아는 사람이 정해진 행이 있으면 미디어 북 인물 SELECT 하나가 더해진다. 그런 행이 없으면 걸러 낼 것이 없어 더하지
+    않는다. 캐릭터 방은 작품 이름을 이미 알아 더하지 않는다."""
+    room, snapshots = await _fact_room(db_client, db_session)
+    await _plant(db_session, room, snapshots[2], [_FRIENDS])
+    _facts_on(monkeypatch)
+    public_off = await _statements(db_session, room, "민수는 뭐 해?")
+    _filter_on(monkeypatch)
+    assert await _statements(db_session, room, "민수는 뭐 해?") == public_off
+
+    await _plant(db_session, room, snapshots[2], [_SECRET], start=1)
+    secret_on = await _statements(db_session, room, "민수는 뭐 해?")
+    monkeypatch.setattr(settings, "memory_knowledge_filter", False)
+    assert secret_on == await _statements(db_session, room, "민수는 뭐 해?") + 1
+
+    character, character_snapshots = await _fact_room(db_client, db_session, lane="character")
+    await _plant(db_session, character, character_snapshots[2], [_SECRET])
+    character_off = await _statements(db_session, character, "민수는 뭐 해?", lane="character")
+    _filter_on(monkeypatch)
+    assert await _statements(db_session, character, "민수는 뭐 해?", lane="character") == character_off
+
+
+@pytest.mark.parametrize("lane", ["story", "character"])
+async def test_filter_on_with_facts_off_keeps_prompt_and_statements(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, lane: PromptLane
+) -> None:
+    """사실 주입이 꺼져 있으면 필터를 켜도 생성 프롬프트가 바이트까지 같고, 이름 출처를 읽지 않아 SQL 문 수도 같다."""
+    room, snapshots = await _fact_room(db_client, db_session, lane=lane)
+    await _plant(db_session, room, snapshots[2], [_SECRET, _FRIENDS])
+    with _count_queries() as count_off:
+        off = await _build(db_session, room, "민수는 뭐 해?", lane=lane)
+        statements_off = count_off()
+    _filter_on(monkeypatch)
+    with _count_queries() as count_on:
+        on = await _build(db_session, room, "민수는 뭐 해?", lane=lane)
+        statements_on = count_on()
+
+    assert HEADER not in on.prompt
+    assert on.prompt == off.prompt
+    assert statements_on == statements_off
+
+
+async def test_name_read_failure_is_absorbed_and_the_turn_finishes(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """미디어 북 인물 읽기가 DB 오류로 끝나면 사실 읽기 실패와 같이 섹션 없이 턴을 마치고 경고·승격을 남긴다."""
+    room, snapshots = await _fact_room(db_client, db_session)
+    await _plant(db_session, room, snapshots[2], [_SECRET, _FRIENDS])
+    _facts_on(monkeypatch)
+    _filter_on(monkeypatch)
+    monkeypatch.setattr(memory_fact_section, "_media_book_statement", lambda version_id: sa.text("SELECT 1/0"))
+    captured: list[str] = []
+    monkeypatch.setattr(
+        memory_fact_section, "capture_dependency_failure", lambda exc, *, dependency: captured.append(dependency)
+    )
+    fake = _PromptCapture()
+    with caplog.at_level(logging.WARNING):
+        await _send(db_client, "POST", f"/chat-rooms/{room.room_id}/messages", {"content": "민수는 뭐 해?"}, fake)
+
+    assert HEADER not in fake.prompts[-1]
+    assert captured == ["db"]
+    assert any("사실" in record.getMessage() for record in caplog.records)
+    assert [record.memory_facts for record in (await _records(db_session, room.room_id)).values()] == [[]]
+
+
+def test_production_env_leaves_the_knowledge_filter_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    """운영 env 에는 필터 스위치가 없어 꺼진 기본값으로 돈다."""
+    assert "MEMORY_KNOWLEDGE_FILTER" not in PRODUCTION_ENV_NAMES
+    assert not load_production_env(monkeypatch).memory_knowledge_filter
