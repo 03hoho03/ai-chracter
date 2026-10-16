@@ -955,6 +955,18 @@ def test_vector_neighbour_enters_the_relevant_share_like_a_noun_hit() -> None:
     assert select_fact_rows(rows, query="", names=[], current_turn=TURN, distances={}) == _select(rows)
 
 
+def test_noun_and_vector_hits_compete_for_the_relevant_room_noun_first_on_a_tie() -> None:
+    """상시 한 줄 뒤 관련 몫에 400자 줄이 하나만 들어간다. 명사 1위(등대)와 벡터 1위(수국)가 1/61 로 같으면 명사 쪽이 들어간다 —
+    관련 몫 순서가 두 목록의 RRF 라 벡터 목록만으로 고르지 않는다. 등대 줄이 벡터로도 가까우면(두 목록 합) 같은 결과다."""
+    lighthouse = _sized(20, 400, word="등대", importance=1)
+    garden = _sized(21, 400, word="수국", importance=1)
+    rows = _with_ids(_rows(lighthouse, garden, *_fillers(6)))
+
+    picked = select_fact_rows(rows, query="등대 기억나?", names=[], current_turn=TURN, distances={rows[1].id: 0.1})
+
+    assert [row.attribute for row in picked] == ["취향0", lighthouse["attribute"]]
+
+
 def test_vector_rank_never_brings_back_a_row_the_filter_dropped() -> None:
     """필터가 뺀 비밀 행이 질의와 가장 가까워도 관련 몫으로 되돌아오지 않는다 — 거리 순위는 필터를 지난 행 사이에서만 매긴다.
     결과는 비밀 행 없이 고른 것과 같다."""
@@ -979,9 +991,10 @@ async def test_fact_section_uses_the_turn_query_embedding_and_its_model_and_dims
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """회상과 사실 섹션이 둘 다 켜져 있어도 질의 임베딩은 한 번이다. 질의와 가까운 등대 행이 명사 겹침 없이 사실 섹션에 들어오고,
-    같은 모델의 다른 차원 행이 섞여도 거리 읽기가 실패하지 않는다(섞이면 명사 단독으로 떨어져 등대 행이 빠진다)."""
+    같은 모델의 다른 차원 행이 섞여도 거리 읽기가 실패하지 않는다(섞이면 명사 단독으로 떨어져 등대 행이 빠진다). 다른 모델로만
+    가까운 사물함 행은 들어오지 않는다 — 그 행은 렌더 순서로는 빠지는 자리라, 모델로 거르지 않으면 관련 몫으로 들어온다."""
     room, snapshots = await _fact_room(db_client, db_session)
-    ids = await _plant(db_session, room, snapshots[2], [_LIGHTHOUSE, *_fillers(6)])
+    ids = await _plant(db_session, room, snapshots[2], [_LIGHTHOUSE, *_fillers(6), _LOCKER])
     db_session.add_all(
         [
             _make_memory_embedding(
@@ -990,6 +1003,9 @@ async def test_fact_section_uses_the_turn_query_embedding_and_its_model_and_dims
             _make_memory_embedding(room.room_id, fact_id=ids[1], model="voyage-test", dims=2, embedding=[1.0, 0.5]),
             _make_memory_embedding(
                 room.room_id, fact_id=ids[2], model="other-model", dims=3, embedding=[1.0, 0.5, 0.5]
+            ),
+            _make_memory_embedding(
+                room.room_id, fact_id=ids[-1], model="other-model", dims=3, embedding=[1.0, 0.5, 0.5]
             ),
         ]
     )
@@ -1014,5 +1030,53 @@ async def test_fact_section_uses_the_turn_query_embedding_and_its_model_and_dims
 
     assert _LIGHTHOUSE["value"] not in _section(noun_only.prompt)
     assert _LIGHTHOUSE["value"] in _section(built.prompt)
+    assert _LOCKER["value"] not in _section(built.prompt)
     assert str(ids[0]) in [entry["factId"] for entry in built.memory_facts]
     assert len(stub.bodies) == 1
+
+
+async def test_fact_vector_side_never_reaches_past_the_turn_cursor(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """지난 턴을 그때의 요약(턴 4 커서)으로 다시 조립하면, 그 뒤에 접힌 턴 6 스냅샷의 사실은 질의와 가장 가까워도 싣지 않는다."""
+    room, snapshots = await _fact_room(db_client, db_session)
+    await _plant(db_session, room, snapshots[2], [_LIGHTHOUSE, *_fillers(6)])
+    [later] = await _plant(db_session, room, snapshots[6], [_LOCKER], start=10)
+    db_session.add(
+        _make_memory_embedding(room.room_id, fact_id=later, model="voyage-test", dims=3, embedding=[1.0, 0.5, 0.5])
+    )
+    await db_session.commit()
+    _facts_on(monkeypatch)
+    monkeypatch.setattr(settings, "memory_embed_recall", True)
+    stub = VoyageStub()
+    client = VoyageEmbeddingClient(
+        api_key="test-key", model="voyage-test", dims=3, transport=stub.transport(), retry_delays=(0.0, 0.0)
+    )
+    cursor = room.turns[4][1]
+    then = InjectedTurnState(
+        summary=CurrentSummary(cursor=(cursor.created_at, cursor.id), text="턴 4 까지의 요약"),
+        memory_note="",
+        stats={},
+        persona=None,
+    )
+    chat_room = await db_session.get(ChatRoom, room.room_id)
+    assert chat_room is not None
+    setup = await _resolve_starting_setup(db_session, chat_room)
+    prompt_set, sections = await load_active_prompt_set(db_session, lane="story")
+    history = await _room_messages(db_session, room.room_id)
+
+    built = await build_room_prompt(
+        db_session,
+        chat_room,
+        setup,
+        history,
+        "오늘 날씨 좋다",
+        None,
+        prompt_set,
+        sections,
+        turn_state=then,
+        embedding_client=client,
+    )
+
+    assert len(stub.bodies) == 1
+    assert _LOCKER["value"] not in _section(built.prompt)

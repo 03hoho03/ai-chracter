@@ -1004,7 +1004,8 @@ _EMBED_MODEL = "voyage-test"
 _NEAR = [1.0, 0.5, 0.5]  # 거리 0
 _MID = [1.0, 0.0, 0.0]  # 거리 ≈ 0.18
 _FAR = [0.0, 1.0, -1.0]  # 거리 1
-_GARDEN = Scene("정원 산책", "비 갠 오후에 수국 길을 걸었다.", ["수국"], turn=5)
+# id 를 가장 작은 값으로 둔다 — RRF 동점을 id 순으로 깨면 정원이 앞서므로, 명사 쪽 먼저 규칙이 id 순과 갈린다.
+_GARDEN = Scene("정원 산책", "비 갠 오후에 수국 길을 걸었다.", ["수국"], turn=5, key=1)
 # 장면 명사와 하나도 겹치지 않고 시간 단서도 없는 턴 — 명사 쪽은 회상하지 않는다.
 _PLAIN = "오늘 날씨 좋다"
 
@@ -1048,6 +1049,8 @@ def test_rrf_orders_by_summed_reciprocal_ranks_and_breaks_ties_toward_the_first_
 
     assert rrf_order([["a", "b"], ["b", "c"]], k=60) == ["b", "a", "c"]
     assert rrf_order([["a"], ["c"]], k=60) == ["a", "c"]
+    # id 순과 반대인 동점 — 앞 목록이 이긴다.
+    assert rrf_order([["c"], ["a"]], k=60) == ["c", "a"]
     assert rrf_order([["a"], []], k=60) == ["a"]
     # k = 0: a = 1/1, b = 1/2 + 1/3 — a 가 앞선다. k = 60 이면 b 가 앞선다.
     assert rrf_order([["a", "b"], ["x", "x2", "b"]], k=0)[0] == "a"
@@ -1196,6 +1199,29 @@ async def test_vector_side_skips_rows_past_the_cursor_other_models_and_other_dim
     await db_session.commit()
     await _embed_scene(db_session, room, past.title, _NEAR)
     _hybrid_on(monkeypatch)
+
+    built = await _build(db_session, room, _PLAIN, embedding_client=_embed_client(VoyageStub()))
+
+    assert _vector_ids(built) == [str(kept)]
+
+
+async def test_rows_past_the_cursor_do_not_take_the_vector_limit(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """벡터 순위 길이가 1 이고 가장 가까운 임베딩이 커서 뒤 장면이어도, 그 행이 자리를 차지하지 않아 커서 안의 이웃이 실린다 —
+    커서 거름이 거리 읽기 안에 있어야 한다(읽은 뒤에 후보와 맞춰 거르면 자리가 비어 버린다)."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, _GARDEN])
+    kept = await _embed_scene(db_session, room, _GARDEN.title, _MID)
+    snapshot_id = await db_session.scalar(
+        sa.select(ChatMemoryEpisode.snapshot_id).where(ChatMemoryEpisode.title == _GARDEN.title)
+    )
+    assert snapshot_id is not None
+    past = Scene("커서 뒤 장면", "아직 접히지 않은 일.", ["미래"], turn=6)
+    await _add_scene(db_session, room, past, snapshot_id=snapshot_id, ordinal=90, end=room.turns[8][1])
+    await db_session.commit()
+    await _embed_scene(db_session, room, past.title, _NEAR)
+    _hybrid_on(monkeypatch)
+    monkeypatch.setattr(settings, "memory_embed_recall_vector_limit", 1)
 
     built = await _build(db_session, room, _PLAIN, embedding_client=_embed_client(VoyageStub()))
 
