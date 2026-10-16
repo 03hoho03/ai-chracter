@@ -59,7 +59,7 @@ from api.chat.turn_prompt import GenerationPrompt, InjectedTurnState, build_room
 from api.core.config import settings
 from api.db.models import ChatMemoryEpisode, ChatMessage, ChatMessageRole, ChatRoom, ChatRoomMemorySnapshot
 from api.db.models.chat import EPISODE_DETAIL_MAX, EPISODE_TITLE_MAX, ChatTurn
-from api.llm.client import LLMCallContext, LLMClient, SegmentedPrompt
+from api.llm.client import LLMCallContext, LLMClient, SegmentedPrompt, collect_usage
 from api.llm.dependencies import get_embedding_client
 from api.llm.voyage import VoyageEmbeddingClient
 from api.main import app
@@ -850,7 +850,8 @@ async def test_recall_scoring_failure_is_absorbed_and_the_turn_finishes(
 
 
 class _PromptCapture(LLMClient):
-    """생성 프롬프트를 모으고 고정 응답을 낸다. 판정은 아무 규칙도 고르지 않는다."""
+    """생성 프롬프트를 모으고 고정 응답을 낸다. 판정은 아무 규칙도 고르지 않는다. 생성은 실제 공급자 구현처럼 끝날 때 사용량을
+    그 호출의 목록에 더한다(턴 기록 호출 목록의 생성 칸)."""
 
     def __init__(self) -> None:
         self.prompts: list[str] = []
@@ -865,6 +866,7 @@ class _PromptCapture(LLMClient):
     ) -> AsyncIterator[str]:
         self.prompts.append(prompt)
         yield "응답"
+        collect_usage(usage, "fake-generate", None)
 
     async def generate_structured(
         self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
