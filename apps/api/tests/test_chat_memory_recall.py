@@ -1538,6 +1538,37 @@ async def test_vector_limit_is_filled_by_eligible_scenes_not_character_scenes(
     assert [entry["vectorRank"] for entry in built.memory_recall] == [1]
 
 
+async def test_vector_limit_keeps_a_mixed_scene(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """거리 읽기가 빼는 것은 인물만 말한 장면이다 — 질의와 가장 가까운 섞임 장면은 거리 순위 길이 1 을 그대로 차지한다."""
+    mixed = Scene("고백 뒤", "민수의 고백을 듣고 둘이 걸었다.", ["고백"], turn=5, asserted_by="mixed")
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _GARDEN, mixed])
+    mixed_id = await _embed_scene(db_session, room, mixed.title, _NEAR)
+    await _embed_scene(db_session, room, _GARDEN.title, _MID)
+    _hybrid_on(monkeypatch)
+    monkeypatch.setattr(settings, "memory_embed_recall_vector_limit", 1)
+
+    built = await _build(db_session, room, _PLAIN, embedding_client=_embed_client(VoyageStub()))
+
+    assert _vector_ids(built) == [str(mixed_id)]
+
+
+async def test_hybrid_noun_side_drops_a_character_scene_too(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """벡터 쪽이 비지 않은 턴(하이브리드)에도 명사 쪽 순위에서 인물 장면을 뺀다 — 명사 1위인 인물 장면은 RRF 에 들지 않고 벡터
+    이웃(정원)만 실린다."""
+    spoken = Scene("밀알당 고백", "민수가 밀알당 얘기를 꺼냈다.", ["밀알당"], turn=3, asserted_by="character")
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _GARDEN, spoken])
+    garden_id = await _embed_scene(db_session, room, _GARDEN.title, _NEAR)
+    _hybrid_on(monkeypatch)
+
+    built = await _build(db_session, room, "밀알당 기억나?", embedding_client=_embed_client(VoyageStub()))
+
+    assert _vector_ids(built) == [str(garden_id)]
+
+
 async def test_replay_renders_a_recorded_character_scene_as_it_was(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
@@ -1612,6 +1643,9 @@ async def test_scene_overlapping_a_secret_drops_unless_someone_who_knows_is_in_t
     민수가 나오면 남는다."""
     room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY])
     await _plant_fact(db_session, room, turn=3, known_by=["민수"])
+    # 아는 사람이 정해지지 않은 다른 키의 공개 사실 — 방에 공개 행이 섞여 있어도 비밀 판정은 그대로다.
+    db_session.add(_make_memory_fact(room.room_id, await _snapshot_for(db_session, room, 1), ordinal=5))
+    await db_session.commit()
     _recall_on(monkeypatch)
     assert not settings.memory_facts_inject and not settings.memory_knowledge_filter
 
