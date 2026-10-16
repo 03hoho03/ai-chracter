@@ -82,16 +82,20 @@ class FactRecordMissingError(Exception):
     """턴 기록에 남은 사실이 지금 DB 에 없다(그 뒤 되감기로 지워졌다)."""
 
 
+def fact_body(row: ChatMemoryFact) -> str:
+    """사실 한 줄의 꼬리표 없는 본문 — 관계면 `주어 → 대상: 값`, 속성이면 `주어 · 속성: 값`. 임베딩 채우기도 이 글을 임베딩한다."""
+    if row.kind == "relation":
+        return f"{row.subject} → {row.object}: {row.value}"
+    return f"{row.subject} · {row.attribute}: {row.value}"
+
+
 def fact_line(row: ChatMemoryFact, *, user_name: str | None = None) -> str:
     """사실 한 줄. 꼬리표는 이 순서로 붙는다 — 반증이면 줄 앞 표지, 주장이면 끝에 말한 쪽, 아는 사람이 있으면 그 뒤에
     `(이름·이름만 앎)`. 말한 쪽은 사용자가 내놓은 주장이거나 말한 사람이 그 턴 사용자의 이야기 속 이름(`user_name`, 사실 키와
     같은 정규화로 견준다)이면 사용자 꼬리표다 — 추출이 사용자 말을 그 이름의 인물 말로 적어도 사용자가 한 말로 읽히게. 그 밖은
     말한 인물 이름, 이름이 없으면 인물 꼬리표다. 사용자·인물 꼬리표는 회상 줄과 같은 상수다(두 섹션 문안이 같은 꼬리표를
     설명한다)."""
-    if row.kind == "relation":
-        line = f"{row.subject} → {row.object}: {row.value}"
-    else:
-        line = f"{row.subject} · {row.attribute}: {row.value}"
+    line = fact_body(row)
     if row.truth_status == "disproved":
         line = DISPROVED_MARK + line
     elif row.truth_status == "claimed":

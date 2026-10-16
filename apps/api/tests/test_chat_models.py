@@ -887,6 +887,21 @@ async def test_memory_embedding_accepts_both_targets_at_the_dimension_limits(db_
     assert dims.all() == [1, 16000]
 
 
+async def test_memory_embedding_reads_back_as_the_float_list_it_was_written_as(db_session: AsyncSession) -> None:
+    """벡터 칸은 글자로 오가므로 읽는 쪽이 글자를 숫자 목록으로 되돌려야 한다 — 되돌리지 못하면 벡터를 다시 쓰거나 견주는
+    코드가 글자를 받는다. 값은 반정밀도로 정확히 담기는 수라 그대로 돌아오고, 음수·정수·소수가 섞여 있다."""
+    room = await _make_chat_room(db_session)
+    _, episode, _ = await _make_episode_and_fact(db_session, room)
+    db_session.add(_make_memory_embedding(room.id, episode_id=episode.id, dims=4, embedding=[0.5, -0.25, 2.0, 0.0]))
+    await db_session.flush()
+
+    read = await db_session.scalar(
+        sa.select(ChatMemoryEmbedding.embedding).where(ChatMemoryEmbedding.episode_id == episode.id)
+    )
+
+    assert read == [0.5, -0.25, 2.0, 0.0]
+
+
 @pytest.mark.parametrize(
     ("targets", "overrides", "constraint"),
     [

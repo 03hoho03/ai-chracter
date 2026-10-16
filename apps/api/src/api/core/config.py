@@ -429,6 +429,14 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def _embedding_needs_a_voyage_key(self) -> "Settings":
+        """키 없이 켜진 채우기는 채울 때마다 실패할 뿐이라 켠 것이 성공한 것처럼 보인다 — 배포 단계에서 드러나게 기동을 막는다.
+        꺼져 있으면 키를 보지 않는다."""
+        if self.memory_embed_write and not self.voyage_api_key.strip():
+            raise ValueError("MEMORY_EMBED_WRITE 가 켜져 있는데 VOYAGE_API_KEY 가 비어 있다")
+        return self
+
+    @model_validator(mode="after")
     def _call_site_backends_can_be_followed(self) -> "Settings":
         """배정이나 판정·요약 모델이 틀린 채 뜨면 그 호출이 첫 호출에서야 실패하거나 배정이 조용히 무시된다. 규칙은 등록부
         쪽에 있다(`llm/backends.py` 의 `assignment_errors`) — 구현 행이 늘어도 여기는 그대로다."""
@@ -576,6 +584,17 @@ class Settings(BaseSettings):
     # 비어 conditional 로 섹션째 빠져, 요약 프롬프트가 이 스위치가 생기기 전과 바이트까지 같다. 생성 윈도우 스위치가 꺼져 있으면
     # 접기가 없어 이 값과 무관하다. 끄면(줄 삭제 + 재기동) 다음 접기부터 슬롯이 빠지고, 이미 쓴 요약은 그대로 남는다.
     memory_summary_secret_marking: bool = False
+    # 요약 접기 뒤 장면·사실 기억 행을 Voyage 로 임베딩해 `chat_memory_embeddings` 에 채우는 백그라운드 작업을 켠다
+    # (`chat/memory_embeddings.py`). 기본은 꺼짐 — 꺼져 있으면 예약하지 않아 Voyage 를 부르지도 임베딩 표를 읽지도 않고, 턴의
+    # 호출·트랜잭션이 이 스위치가 생기기 전과 같다. 생성 윈도우 스위치가 꺼져 있으면 접기가 없어 이 값과 무관하게 채우지 않는다.
+    # 켜면 Voyage 키(`voyage_api_key`)가 있어야 기동한다. 끄면(줄 삭제 + 재기동) 이미 채운 행은 남고 새로 채우지 않는다.
+    memory_embed_write: bool = False
+    # 임베딩 모델 id 와 출력 차원. 임베딩 표는 행마다 모델·차원을 적고 읽는 쪽이 늘 지금 값으로 거르므로, 바꾸면 그 모델·차원의
+    # 행이 없는 장면·사실을 처음부터 다시 채운다(옛 행은 남는다). 기본값은 Voyage 4 계열에서 가장 싼 모델과 Voyage 의 기본 출력
+    # 차원이고, 회상 품질 비교 뒤 env 로 확정한다.
+    memory_embed_model: str = "voyage-4-lite"
+    memory_embed_dims: int = 1024
+    voyage_api_key: str = Field(default="", repr=False)
 
     # 소설화 전역 스위치. 꺼져 있으면 허용 행이 있어도 아무도 못 쓴다 — 코드 기본값이 닫힘이어야 env 설정 없이
     # 배포해도 닫힌 채로 뜬다. 끄면 다음 요청부터 막히고(재기동 필요), 허용 행은 남아 다시 켜면 그대로 돌아온다.

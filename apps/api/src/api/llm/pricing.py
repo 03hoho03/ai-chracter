@@ -23,6 +23,10 @@ Anthropic API 로 직접 부르는 id(`claude-` 로 시작)는 같은 문서의 
 3.8 Flash 는 2026-12-31 까지 할인가가 붙어 있는데, 할인가를 넣으면 날짜가 지나 조용히 틀린 값이 된다. 그래서 2027-01-01
 부터의 정가로 넣었다 — 연말까지는 원가를 실제의 두 배로 높게 보인다(낮게 보이는 쪽보다 안전하다). 할인가가 붙은 다른
 3.6·3.7 Flash 는 쓰지 않아 넣지 않았다.
+
+Voyage 임베딩 세 줄은 Voyage 가격표(docs.voyageai.com/docs/pricing)의 100만 토큰당 값을 2026-10-15 에 옮겼다. 임베딩은 입력만
+과금되어 캐시·출력 단가가 0 이다. 가격표가 모델마다 적는 무료 몫(2억 토큰)은 빼지 않았다 — 모델끼리 몫을 나누는지 적혀 있지
+않고, 다 쓴 뒤에도 원가가 낮게 보이지 않게 정가로 센다.
 """
 
 from dataclasses import dataclass
@@ -54,6 +58,9 @@ MODEL_PRICES: dict[str, ModelPrice] = {
     "global.anthropic.claude-haiku-4-5-20251001-v1:0": ModelPrice(1.00, 0.10, 5.00, cache_write_usd_per_million=1.25),
     "claude-haiku-4-5": ModelPrice(1.00, 0.10, 5.00, cache_write_usd_per_million=1.25),
     "claude-haiku-5-5": ModelPrice(0.10, 0.01, 0.50, cache_write_usd_per_million=0.125),
+    "voyage-4-lite": ModelPrice(0.02, 0.0, 0.0),
+    "voyage-4": ModelPrice(0.06, 0.0, 0.0),
+    "voyage-4-large": ModelPrice(0.12, 0.0, 0.0),
 }
 
 
