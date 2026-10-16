@@ -508,6 +508,26 @@ async def test_fill_takes_the_oldest_rows_up_to_the_cap_and_catches_up_on_the_ne
     assert len(await _embeddings(db_session, room)) == 4
 
 
+async def test_a_scene_goes_before_a_fact_with_the_same_source_end_even_at_a_higher_ordinal(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """근거 원문의 끝 키가 같으면 장면이 사실보다 먼저다 — 순번은 그다음이라, 장면의 순번이 사실보다 커도 장면이 앞이다."""
+    room = await _open_room(db_client, db_session, turns=10)
+    snapshot_id = await _plant(db_session, room, 10)
+    db_session.add_all(
+        [
+            _fact(room, snapshot_id, turn=8, ordinal=0, value="같은 끝 사실"),
+            _episode(room, snapshot_id, turn=8, ordinal=1, title="같은 끝 장면"),
+        ]
+    )
+    await db_session.commit()
+    stub = VoyageStub()
+
+    await _fill(db_session, room, stub)
+
+    assert stub.inputs == [["같은 끝 장면\n같은 끝 장면 본문", "민수 → 지아: 같은 끝 사실"]]
+
+
 async def test_a_target_row_gone_before_the_insert_is_skipped_and_the_rest_are_inserted(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
