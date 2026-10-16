@@ -362,6 +362,7 @@ async def build_room_prompt(
             window=history,
             user_content=user_content,
             names=names,
+            scope=KnowledgeScope(user_label=prompt_set.user_label),
             query_vector=query.vector if query is not None else None,
         )
 

@@ -28,6 +28,7 @@ from dataclasses import dataclass
 
 from api.chat.keyword_notes import recent_scan_turns
 from api.chat.memory_facts import normalize_part
+from api.chat.memory_window import MessageKey
 from api.chat.prompt_builder import PromptNames
 from api.content.author_macros import FALLBACK_USER_NAME
 from api.db.models.chat import ChatMemoryFact, ChatMessage
@@ -123,3 +124,24 @@ def latest_by_key(rows: Sequence[ChatMemoryFact]) -> list[tuple[int, ChatMemoryF
                 winner = disproved[-1]
         winners.append(winner)
     return winners
+
+
+def hidden_fact_keys(rows: Sequence[ChatMemoryFact], scene: frozenset[str]) -> frozenset[str]:
+    """키별 최신 행이 필터를 지나지 못하는 키 — 사실 섹션의 지식 범위 필터가 이번 턴 빼는 키와 같다."""
+    return frozenset(row.fact_key for _, row in latest_by_key(rows) if not known_in_scene(row, scene))
+
+
+def hidden_ranges(rows: Sequence[ChatMemoryFact], scene: frozenset[str]) -> list[tuple[MessageKey, MessageKey]]:
+    """가려진 키의 모든 행(옛 행 포함)의 근거 메시지 범위 (시작 키, 끝 키), 쓴 순서로. 회상이 이 범위와 겹치는 장면을 뺀다 —
+    옛 행과만 겹치는 장면도 같은 비밀을 담고 있다."""
+    keys = hidden_fact_keys(rows, scene)
+    return [
+        ((row.start_created_at, row.start_message_id), (row.end_created_at, row.end_message_id))
+        for row in rows
+        if row.fact_key in keys
+    ]
+
+
+def overlaps(a: tuple[MessageKey, MessageKey], b: tuple[MessageKey, MessageKey]) -> bool:
+    """두 메시지 범위(양 끝 포함)가 한 메시지라도 겹치는가."""
+    return a[0] <= b[1] and b[0] <= a[1]

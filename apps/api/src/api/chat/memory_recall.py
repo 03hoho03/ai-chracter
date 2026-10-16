@@ -39,11 +39,13 @@ from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from sqlalchemy import Executable, select, tuple_
+from sqlalchemy import Executable, Row, select, tuple_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.keyword_notes import normalize_keyword_text, recent_scan_turns
+from api.chat.memory_facts import fact_rows_statement
+from api.chat.memory_knowledge import KnowledgeScope, hidden_ranges, overlaps, scene_for_turn
 from api.chat.memory_nouns import STOPWORDS, rule_tokens
 from api.chat.memory_vector import QueryVector, episode_distances, rrf_order
 from api.chat.memory_window import MessageKey, opening_message
@@ -243,6 +245,10 @@ def _candidate_statement(room_id: uuid.UUID, cursor: MessageKey) -> Executable:
             snapshot.cursor_created_at,
             snapshot.cursor_message_id,
             episode.asserted_by,
+            episode.start_created_at,
+            episode.start_message_id,
+            episode.end_created_at,
+            episode.end_message_id,
         )
         .join(snapshot, snapshot.id == episode.snapshot_id)
         .where(
@@ -277,11 +283,15 @@ async def _recall(
     window: Sequence[ChatMessage],
     user_content: str,
     names: PromptNames,
+    scope: KnowledgeScope,
     query_vector: QueryVector | None,
 ) -> Recall:
     rows = (await db.execute(_candidate_statement(room_id, cursor))).all()
     if len(rows) < MIN_EPISODES:
         return NO_RECALL
+    hidden = await _hidden_episodes(
+        db, rows, room_id=room_id, cursor=cursor, history=history, user_content=user_content, names=names, scope=scope
+    )
     snapshot_order = {key: rank for rank, key in enumerate(sorted({(row[4], row[5]) for row in rows}))}
     candidates = [
         RecallCandidate(
@@ -295,7 +305,7 @@ async def _recall(
     ]
     # 통계(장면 수·흔한 명사·사용자 토큰 풀·최근 스냅샷 둘)는 방 장면 전부로 내고, 싣지 않을 장면은 순위에서만 뺀다 — 먼저 빼면
     # 최근 스냅샷 둘이 옛 스냅샷으로 밀리고, 빠진 장면에만 있던 사용자 토큰이 사라져 질의 쪽이 바뀌고, 작은 방은 하한 아래로 내려간다.
-    excluded = {str(row[0]) for row in rows if row[6] == CHARACTER_ASSERTED}
+    excluded = {str(row[0]) for row in rows if row[6] == CHARACTER_ASSERTED} | {str(episode_id) for episode_id in hidden}
     scan = recent_scan_turns(window, user_content, 0, names=names)[0]
     user_text = "\n".join(scan.user_texts)
     query = query_tokens(
@@ -318,6 +328,7 @@ async def _recall(
             query=query_vector,
             limit=settings.memory_embed_recall_vector_limit,
             max_distance=settings.memory_embed_recall_max_distance,
+            exclude=hidden,
         )
         vector_ids = [str(episode_id) for episode_id, _ in nearest if str(episode_id) in candidate_ids]
     if vector_ids:
@@ -344,6 +355,35 @@ async def _recall(
         for row in injected
     )
     return Recall("\n".join(lines.values()), record)
+
+
+async def _hidden_episodes(
+    db: AsyncSession,
+    rows: Sequence[Row[Any]],
+    *,
+    room_id: uuid.UUID,
+    cursor: MessageKey,
+    history: Sequence[ChatMessage],
+    user_content: str,
+    names: PromptNames,
+    scope: KnowledgeScope,
+) -> set[uuid.UUID]:
+    """후보 장면 중 이번 턴 가려진 비밀과 근거가 겹치는 장면(`chat/memory_knowledge.py` 의 `hidden_ranges`). 방 사실 행을 사실
+    섹션과 같은 조건(커서 이하 스냅샷, 쓴 순서)으로 읽고 장면 인물도 사실 섹션과 같은 함수로 센다 — 사실 섹션이 이번 턴 빼는
+    비밀이 회상 줄로 새지 않게."""
+    facts = (await db.scalars(fact_rows_statement(room_id, cursor))).all()
+    if not any(fact.known_by for fact in facts):
+        return set()
+    scene = scene_for_turn(facts, scope, history=history, user_content=user_content, names=names)
+    ranges = hidden_ranges(facts, scene)
+    return {
+        row.id
+        for row in rows
+        if any(
+            overlaps(((row.start_created_at, row.start_message_id), (row.end_created_at, row.end_message_id)), span)
+            for span in ranges
+        )
+    }
 
 
 async def _hybrid(
@@ -400,6 +440,7 @@ async def recall_for_turn(
     window: Sequence[ChatMessage],
     user_content: str,
     names: PromptNames,
+    scope: KnowledgeScope,
     query_vector: QueryVector | None = None,
 ) -> Recall:
     """이번 턴의 회상. `history` 는 방의 전체 대화(턴 번호를 센다), `window` 는 이번 생성 프롬프트에 실리는 대화(스캔 글을
@@ -418,6 +459,7 @@ async def recall_for_turn(
                 window=window,
                 user_content=user_content,
                 names=names,
+                scope=scope,
                 query_vector=query_vector,
             )
     except Exception as exc:

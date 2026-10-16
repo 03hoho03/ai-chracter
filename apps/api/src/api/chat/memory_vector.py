@@ -23,7 +23,7 @@ import logging
 import math
 import time
 import uuid
-from collections.abc import Hashable, Sequence
+from collections.abc import Collection, Hashable, Sequence
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
@@ -124,12 +124,14 @@ def _distance(query: QueryVector) -> Any:
     )
 
 
-def _episode_distance_statement(room_id: uuid.UUID, cursor: MessageKey, query: QueryVector, limit: int) -> Executable:
+def _episode_distance_statement(
+    room_id: uuid.UUID, cursor: MessageKey, query: QueryVector, limit: int, exclude: Collection[uuid.UUID] = ()
+) -> Executable:
     """그 방에서 회상 후보와 같은 조건(커서까지 접힌 스냅샷이 뽑았고 커서 이하에서 끝나는 장면)이고 회상에 실을 수 있는 장면의
-    임베딩을 질의와 가까운 순으로 `limit` 개. 거리가 같으면 장면 id 순이다."""
+    임베딩을 질의와 가까운 순으로 `limit` 개. 거리가 같으면 장면 id 순이다. `exclude` 는 이번 턴 가려진 장면이다."""
     embedding, episode, snapshot = ChatMemoryEmbedding, ChatMemoryEpisode, ChatRoomMemorySnapshot
     distance = _distance(query)
-    return (
+    statement = (
         select(embedding.episode_id, distance)
         .join(episode, episode.id == embedding.episode_id)
         .join(snapshot, snapshot.id == episode.snapshot_id)
@@ -146,6 +148,8 @@ def _episode_distance_statement(room_id: uuid.UUID, cursor: MessageKey, query: Q
         .order_by(distance, embedding.episode_id)
         .limit(limit)
     )
+    # 회상과 마찬가지로 자르기 전에 뺀다. 빈 목록이면 조건을 더하지 않는다.
+    return statement.where(episode.id.not_in(exclude)) if exclude else statement
 
 
 def _fact_distance_statement(room_id: uuid.UUID, cursor: MessageKey, query: QueryVector) -> Executable:
@@ -189,10 +193,14 @@ async def episode_distances(
     query: QueryVector,
     limit: int,
     max_distance: float,
+    exclude: Collection[uuid.UUID] = (),
 ) -> list[tuple[uuid.UUID, float]]:
-    """회상 후보 장면의 (id, 거리)를 가까운 순으로 — 앞 `limit` 개 중 거리 상한 안의 것."""
+    """회상 후보 장면의 (id, 거리)를 가까운 순으로 — `exclude` 를 뺀 앞 `limit` 개 중 거리 상한 안의 것."""
     return await _read_distances(
-        db, _episode_distance_statement(room_id, cursor, query, limit), room_id=room_id, max_distance=max_distance
+        db,
+        _episode_distance_statement(room_id, cursor, query, limit, exclude),
+        room_id=room_id,
+        max_distance=max_distance,
     )
 
 
