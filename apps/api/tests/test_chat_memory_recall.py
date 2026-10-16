@@ -456,9 +456,7 @@ class Scene:
 
 
 _FILLER_SCENES = [Scene(f"잡담 {i}", f"평범한 하루 {i}번째.", [f"일상{i}"], turn=1 + i % 4) for i in range(5)]
-_BAKERY = Scene(
-    "밀알당에 간 날", "태민이랑 밀알당에서 소금빵을 먹었다.", ["밀알당", "소금빵"], turn=3, asserted_by="character"
-)
+_BAKERY = Scene("밀알당에 간 날", "태민이랑 밀알당에서 소금빵을 먹었다.", ["밀알당", "소금빵"], turn=3)
 
 
 async def _story_room(
@@ -598,7 +596,7 @@ async def test_recall_section_follows_history_and_changes_nothing_else(
     on = await _build(db_session, room, "밀알당 기억나?")
 
     section = _section(on.prompt)
-    assert section.endswith("- 밀알당에 간 날: 태민이랑 밀알당에서 소금빵을 먹었다. (인물의 말)")
+    assert section.endswith("- 밀알당에 간 날: 태민이랑 밀알당에서 소금빵을 먹었다.")
     assert on.prompt.replace(section + "\n\n", "", 1) == off.prompt
     last_history_line = room.turns[8][1].content
     assert on.prompt.index(last_history_line) < on.prompt.index(HEADER) < on.prompt.rindex("밀알당 기억나?")
@@ -628,7 +626,7 @@ async def test_recall_result_is_recorded_on_the_prompt_for_the_harness(
 
     bakery_id = await db_session.scalar(sa.select(ChatMemoryEpisode.id).where(ChatMemoryEpisode.title == _BAKERY.title))
     [entry] = json.loads(json.dumps(on._asdict()["memory_recall"]))
-    line = "- 밀알당에 간 날: 태민이랑 밀알당에서 소금빵을 먹었다. (인물의 말)"
+    line = "- 밀알당에 간 날: 태민이랑 밀알당에서 소금빵을 먹었다."
     assert math.isclose(entry.pop("score"), 0.7 + 0.05 * (3 - 1) / 4 + 0.02 * 3 / 9, abs_tol=1e-9)
     assert entry == {"episodeId": str(bakery_id), "rank": 1, "chars": len(line), "path": "user"}
 
@@ -1388,3 +1386,156 @@ def test_embed_recall_needs_a_voyage_key_and_production_leaves_it_off(monkeypatc
     with pytest.raises(ValidationError, match="MEMORY_EMBED_RECALL"):
         load_production_env(monkeypatch, MEMORY_EMBED_RECALL="true")
     assert load_production_env(monkeypatch, MEMORY_EMBED_RECALL="true", VOYAGE_API_KEY="k").memory_embed_recall
+
+
+# --- 인물이 말한 장면 ------------------------------------------------------------------------
+# 인물이 대사로 말한 장면(`asserted_by = 'character'`)은 확인되지 않은 말이라 회상 줄에 싣지 않는다. 섞임·사용자·서술 장면은
+# 그대로 싣는다. 명사 쪽은 방 장면 전부로 통계(장면 수·흔한 명사·사용자 토큰 풀·최근 스냅샷 둘)를 낸 뒤 순위에서 빼고, 벡터 쪽은
+# 거리 읽기 안에서 빼서 거리 순위 길이를 자격 있는 장면이 채운다. 리플레이는 기록한 장면을 그때처럼 렌더한다.
+
+
+def _lines(prompt: str) -> list[str]:
+    """회상 섹션의 장면 줄(머리글 문안을 뺀 것)."""
+    return [line for line in _section(prompt).splitlines() if line.startswith("- ")]
+
+
+async def test_top_ranked_character_scene_gives_way_to_the_next_eligible_scene(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """보통 턴(상한 1)에 명사 1위는 중요도가 높은 인물 장면이다. 그 장면은 빠지고 2위 서술 장면이 실린다 — 상한을 채운 뒤에
+    빼면 섹션이 빈다."""
+    spoken = Scene("밀알당 고백", "민수가 밀알당 얘기를 꺼냈다.", ["밀알당"], turn=3, asserted_by="character", importance=5)
+    walk = Scene("소금빵 산책", "소금빵을 들고 걸었다.", ["소금빵"], turn=5, importance=1)
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, spoken, walk])
+    _recall_on(monkeypatch)
+
+    built = await _build(db_session, room, "밀알당 소금빵 가자")
+
+    assert _lines(built.prompt) == ["- 소금빵 산책: 소금빵을 들고 걸었다."]
+    assert [entry["episodeId"] for entry in built.memory_recall] == [str(await _episode_id(db_session, walk.title))]
+
+
+async def test_mixed_user_and_narration_scenes_are_still_recalled_with_their_tails(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """섞임 장면(인물의 말이 섞인 장면)·사용자 장면·서술 장면은 그대로 실린다 — 빼는 것은 인물만 말한 장면뿐이다."""
+    scenes = [
+        Scene("등대 약속", "등대 앞에서 둘이 약속을 나눴다.", ["등대"], turn=1, asserted_by="mixed"),
+        Scene("자물쇠 이야기", "사용자가 자물쇠를 잃어버렸다고 했다.", ["자물쇠"], turn=3, asserted_by="user"),
+        Scene("벤치 오후", "벤치에 앉아 해를 봤다.", ["벤치"], turn=5),
+    ]
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, *scenes])
+    _recall_on(monkeypatch)
+
+    built = await _build(db_session, room, "그때 등대랑 자물쇠랑 벤치 기억나?")
+
+    assert _lines(built.prompt) == [
+        "- 등대 약속: 등대 앞에서 둘이 약속을 나눴다. (인물의 말 포함)",
+        "- 자물쇠 이야기: 사용자가 자물쇠를 잃어버렸다고 했다. (사용자의 말)",
+        "- 벤치 오후: 벤치에 앉아 해를 봤다.",
+    ]
+
+
+async def test_character_scenes_still_count_toward_the_minimum_episode_count(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """장면 여섯 중 둘이 인물 장면인 방 — 장면 수 하한(5)은 방 장면 전부로 센다. 인물 장면을 먼저 빼면 넷이라 회상이 통째로
+    꺼진다."""
+    scenes = [
+        Scene("등대 밤", "등대 불빛 아래를 걸었다.", ["등대"], turn=1),
+        *[Scene(f"잡담 {i}", f"평범한 하루 {i}번째.", [f"일상{i}"], turn=2 + i) for i in range(3)],
+        *[
+            Scene(f"말 {i}", f"민수가 이야기 {i}을 했다.", [f"대사{i}"], turn=1 + i, asserted_by="character")
+            for i in range(2)
+        ],
+    ]
+    room = await _story_room(db_client, db_session, scenes)
+    _recall_on(monkeypatch)
+
+    built = await _build(db_session, room, "등대 기억나?")
+
+    assert _lines(built.prompt) == ["- 등대 밤: 등대 불빛 아래를 걸었다."]
+
+
+async def test_character_scenes_still_count_as_the_two_most_recent_snapshots(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """가장 최근 스냅샷(턴 5~6)의 장면이 전부 인물 장면인 방에서 대명사 후속 질문은 직전 응답 낱말 중 최근 스냅샷 둘(턴 3~6)의
+    낱말을 빼고 찾는다 — 우산(턴 3)은 빠지고 렌즈(턴 1)가 실린다. 인물 장면을 먼저 빼면 최근 스냅샷 둘이 턴 1~4 로 밀려 렌즈도
+    빠진다."""
+    scenes = [
+        Scene("편의점", "렌즈 케이스는 가방 앞주머니에 넣었다.", ["렌즈 케이스", "가방"], turn=1),
+        Scene("비 오는 날", "우산을 같이 썼다.", ["우산"], turn=3),
+        *[
+            Scene(f"지금 {i}", f"민수가 지금 장면 {i} 얘기를 했다.", [f"현재{i}"], turn=5 + i, asserted_by="character")
+            for i in range(2)
+        ],
+        *_FILLER_SCENES,
+    ]
+    room = await _story_room(db_client, db_session, scenes)
+    await db_session.execute(
+        sa.update(ChatMessage).where(ChatMessage.id == room.turns[8][1].id).values(content="렌즈 우산 얘기가 나왔다.")
+    )
+    await db_session.commit()
+    _recall_on(monkeypatch)
+
+    built = await _build(db_session, room, "그때 그거 어디 뒀더라?")
+
+    assert _lines(built.prompt) == ["- 편의점: 렌즈 케이스는 가방 앞주머니에 넣었다."]
+    assert [entry["path"] for entry in built.memory_recall] == ["assistant"]
+
+
+async def test_a_noun_only_in_character_scenes_still_keeps_the_user_side_query(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """사용자 질의 토큰은 방 장면 전부의 낱말로 거른다 — 인물 장면에만 나온 소금빵을 물으면 사용자 쪽으로 찾고, 그 장면이
+    빠지니 회상이 없다. 인물 장면을 먼저 빼면 사용자 질의가 비어 직전 응답(렌즈)으로 넘어가 엉뚱한 장면이 실린다."""
+    scenes = [
+        Scene("편의점", "렌즈 케이스는 가방 앞주머니에 넣었다.", ["렌즈 케이스", "가방"], turn=1),
+        Scene("빵 이야기", "민수가 소금빵을 자랑했다.", ["소금빵"], turn=3, asserted_by="character"),
+        *[Scene(f"최근 {i}", f"지금 장면 {i}.", [f"현재{i}"], turn=5 + i) for i in range(2)],
+        *_FILLER_SCENES,
+    ]
+    room = await _story_room(db_client, db_session, scenes)
+    await db_session.execute(
+        sa.update(ChatMessage).where(ChatMessage.id == room.turns[8][1].id).values(content="렌즈 얘기가 나왔다.")
+    )
+    await db_session.commit()
+    _recall_on(monkeypatch)
+
+    built = await _build(db_session, room, "그때 소금빵 어디 뒀더라?")
+
+    assert HEADER not in built.prompt
+    assert built.memory_recall == ()
+
+
+async def test_vector_limit_is_filled_by_eligible_scenes_not_character_scenes(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """거리 순위 길이가 1 이고 질의와 가장 가까운 장면이 인물 장면이면, 그 장면은 거리 읽기에서 빠져 그다음 서술 장면(정원)이
+    실린다 — 읽은 뒤에 빼면 자리가 비어 회상이 없다."""
+    spoken = Scene("고백", "민수가 비밀을 털어놓았다.", ["비밀"], turn=5, asserted_by="character")
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _GARDEN, spoken])
+    await _embed_scene(db_session, room, spoken.title, _NEAR)
+    garden_id = await _embed_scene(db_session, room, _GARDEN.title, _MID)
+    _hybrid_on(monkeypatch)
+    monkeypatch.setattr(settings, "memory_embed_recall_vector_limit", 1)
+
+    built = await _build(db_session, room, _PLAIN, embedding_client=_embed_client(VoyageStub()))
+
+    assert _vector_ids(built) == [str(garden_id)]
+    assert [entry["vectorRank"] for entry in built.memory_recall] == [1]
+
+
+async def test_replay_renders_a_recorded_character_scene_as_it_was(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """리플레이는 기록한 장면을 고르지 않고 렌더만 한다 — 이 거름이 생기기 전 턴에 실린 인물 장면도 그때처럼 인물 꼬리표로
+    다시 만든다."""
+    spoken = Scene("고백", "민수가 비밀을 털어놓았다.", ["비밀"], turn=3, asserted_by="character")
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, spoken])
+    spoken_id = await _episode_id(db_session, spoken.title)
+
+    lines = await memory_recall.recall_lines_from_record(db_session, [{"episodeId": str(spoken_id)}])
+
+    assert lines == "- 고백: 민수가 비밀을 털어놓았다. (인물의 말)"
