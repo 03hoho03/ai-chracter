@@ -982,6 +982,30 @@ def test_exact_share_stops_at_its_end(spare: int, pulled: bool) -> None:
     assert (named["value"] in _values(_scene_select(rows, _MINSU))) is pulled
 
 
+def test_exact_share_stops_at_the_first_name_line_that_overflows() -> None:
+    """정확 조회 몫도 다음 줄이 넘치면 그 자리에서 멈춘다. 상시 첫 줄 뒤 민수의 270자 줄은 몫 끝(420)을 한 글자 넘어 빠지고, 그 뒤의
+    50자 민수 줄은 자리가 있어도 정확 조회로 싣지 않는다 — 남은 자리는 렌더 순서로 앞의 150자 줄들이 채운다."""
+    long_line = _sized(10, 270, subject="민수", importance=2)
+    short_line = _sized(11, 50, subject="민수", importance=1)
+    rows = _rows(long_line, short_line, *_fillers(6))
+
+    picked = _scene_select(rows, _MINSU)
+
+    assert [row.attribute for row in picked] == ["취향0", "취향1", "취향2", "취향3"]
+
+
+def test_protagonist_named_every_turn_still_leaves_room_for_a_relevant_row() -> None:
+    """모든 행의 주어가 장면 인물(유나)인 방 — 정확 조회 몫이 상시 첫 줄 뒤 150자 한 줄(누적 301)에서 멈추고(다음 줄이면 452 >
+    420), 그 뒤 관련 몫으로 등대 줄(100자)이 들어온다. 정확 조회가 상한 끝까지 채우면 150자 줄 넷(603)이 자리를 차지해 등대 줄이
+    넘친다."""
+    lighthouse = _sized(20, 100, word="등대", importance=1)
+    rows = _rows(lighthouse, *_fillers(6))
+
+    picked = _scene_select(rows, frozenset({"유나"}), "등대 기억나?")
+
+    assert [row.attribute for row in picked] == ["취향0", "취향1", "취향2", "취향20"]
+
+
 def test_exact_lookup_matches_the_subject_or_the_relation_target_only() -> None:
     """관계 150자 여섯(중요도 5)이 앞에 서면 지아 → 민수 관계는 렌더 순서로는 빠진다. 민수(대상)나 지아(주어)가 장면에 나오면
     들어온다. 값에 민수가 들어 있을 뿐인 유나의 사실은 이름이 나와도 정확 조회로 들어오지 않는다."""
