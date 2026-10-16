@@ -15,9 +15,10 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.ending_rules import evaluate_rule_list
-from api.chat.keyword_notes import match_keyword_notes
+from api.chat.keyword_notes import match_keyword_notes, recent_scan_turns
 from api.chat.memory_fact_section import NO_FACTS, FactSection, KnowledgeScope, facts_for_turn
 from api.chat.memory_recall import NO_RECALL, Recall, recall_for_turn
+from api.chat.memory_vector import QueryEmbedding, embed_query, query_text
 from api.chat.memory_window import CurrentSummary, load_current_summary, prompt_window
 from api.chat.prompt_builder import (
     PromptLane,
@@ -51,6 +52,7 @@ from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import KeywordNote, Shortcut, SituationNote, StartingSetup, StoryVersionDetail
 from api.llm.chat_models import DEFAULT_CHAT_MODEL, ChatModelId, PromptSetModelId, configured_call_site_model
 from api.llm.client import LLMCallSite
+from api.llm.voyage import VoyageEmbeddingClient
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +65,11 @@ class GenerationPrompt(NamedTuple):
     `memory_recall` 은 이 프롬프트의 회상 섹션에 실은 장면 목록 `[{episodeId, score, rank, chars, path}]`(순위 순)이다 — 턴
     기록이 그대로 쓰고, 평가 하네스가 조립 결과에서 이 이름으로 읽는다. 회상을 하지 않았거나 실은 장면이 없으면 빈 튜플이다.
 
-    `memory_facts` 는 이 프롬프트의 사실 섹션에 실은 사실 목록 `[{factId, chars}]`(줄 순서)이고 같은 규칙이다. 끝의 두 칸은
-    기본값이 있지만 튜플 길이가 늘었으므로 위치로 풀어 쓰는 쪽은 일곱 칸으로 받는다."""
+    `memory_facts` 는 이 프롬프트의 사실 섹션에 실은 사실 목록 `[{factId, chars}]`(줄 순서)이고 같은 규칙이다.
+
+    `memory_query` 는 이 턴에 질의 임베딩을 불렀으면 그 호출 한 칸(`chat/memory_vector.py` 의 `QueryEmbedding.record`)이고 턴
+    기록의 호출 목록 맨 앞에 들어간다. 부르지 않았으면 None 이다. 끝의 세 칸은 기본값이 있지만 튜플 길이가 늘었으므로 위치로
+    풀어 쓰는 쪽은 여덟 칸으로 받는다."""
 
     prompt: str
     system_instruction: str
@@ -73,6 +78,7 @@ class GenerationPrompt(NamedTuple):
     names: PromptNames
     memory_recall: tuple[dict[str, Any], ...] = ()
     memory_facts: tuple[dict[str, Any], ...] = ()
+    memory_query: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -254,6 +260,7 @@ async def build_room_prompt(
     prompt_sections: list[PromptSection],
     *,
     turn_state: InjectedTurnState | None = None,
+    embedding_client: VoyageEmbeddingClient | None = None,
 ) -> GenerationPrompt:
     """캐릭터 챗은 character_prompt+exampleDialogues로, 스토리 챗은 스토리 설정 템플릿+시작설정
     프롤로그로 생성 프롬프트를 조립한다. `send_message`/`edit_message`/`regenerate_message` 가
@@ -297,7 +304,13 @@ async def build_room_prompt(
     사실 주입 스위치(`memory_facts_inject`)도 같은 조건(생성 윈도우가 켜져 있고 요약 커서가 있음)에서만 방의 관계·사실 기억을
     골라 대화 기록 뒤·회상 앞 섹션에 싣는다(`chat/memory_fact_section.py`). 기록 뒤라 앞 두 캐시 블록은 사실과 무관하게 같고,
     꺼져 있으면 사실을 읽지도 않는다. 지식 범위 필터 스위치(`memory_knowledge_filter`)는 그 사실 섹션 안에서만 걸리므로, 사실
-    주입이 꺼져 있으면 켜져 있어도 프롬프트·SQL 이 같다."""
+    주입이 꺼져 있으면 켜져 있어도 프롬프트·SQL 이 같다.
+
+    임베딩 회상 스위치(`memory_embed_recall`)가 켜져 있고 `embedding_client` 를 받았으며 이번 턴에 회상이나 사실 섹션을 새로
+    고르면(주입 상태의 줄로 다시 렌더하는 칸은 고르지 않는다) 둘을 고르기 전에 질의 임베딩을 한 번 받아 둘이 함께 쓴다
+    (`chat/memory_vector.py`). 그 앞에서 요청 세션의 읽기 트랜잭션을 커밋해 반납한다 — 턴 골격이 생성 LLM 앞에서 반납하는 것과 같은
+    이유로, 외부 호출을 기다리는 동안 커넥션을 쥐지 않는다. 꺼져 있거나 클라이언트가 없으면(리플레이·측정 도구) 부르지도 커밋하지도
+    않는다."""
     memory_summary = ""
     full_history = history
     current_summary: CurrentSummary | None = None
@@ -307,7 +320,35 @@ async def build_room_prompt(
             history = prompt_window(history, current_summary.cursor)
             memory_summary = current_summary.text
 
-    async def recall(names: PromptNames) -> Recall:
+    recall_searches = settings.memory_episodes_recall and (turn_state is None or turn_state.recall_lines is None)
+    facts_select = settings.memory_facts_inject and (turn_state is None or turn_state.fact_lines is None)
+
+    async def query_embedding(names: PromptNames) -> QueryEmbedding | None:
+        if (
+            embedding_client is None
+            or not settings.memory_embed_recall
+            or current_summary is None
+            or not (recall_searches or facts_select)
+        ):
+            return None
+        # 스캔 글은 회상과 같은 규칙이다. 회상은 그 안에서 난 예외를 흡수하므로 여기서도 흡수한다(SSE 본문 안이다).
+        try:
+            scan = recent_scan_turns(history, user_content, 0, names=names)[0]
+            text = query_text("\n".join(scan.user_texts), scan.assistant_text)
+        except Exception as exc:
+            logger.warning(
+                "대화방 %s 질의 임베딩 글을 만들지 못해 명사 단독으로 고른다: %s", room.id, exc, exc_info=True
+            )
+            return None
+        await db.commit()
+        return await embed_query(
+            embedding_client,
+            text,
+            timeout_seconds=settings.memory_embed_recall_timeout_ms / 1000,
+            room_id=room.id,
+        )
+
+    async def recall(names: PromptNames, query: QueryEmbedding | None) -> Recall:
         if not settings.memory_episodes_recall or current_summary is None:
             return NO_RECALL
         if turn_state is not None and turn_state.recall_lines is not None:
@@ -320,9 +361,10 @@ async def build_room_prompt(
             window=history,
             user_content=user_content,
             names=names,
+            query_vector=query.vector if query is not None else None,
         )
 
-    async def facts(names: PromptNames) -> FactSection:
+    async def facts(names: PromptNames, query: QueryEmbedding | None) -> FactSection:
         if not settings.memory_facts_inject or current_summary is None:
             return NO_FACTS
         if turn_state is not None and turn_state.fact_lines is not None:
@@ -336,6 +378,7 @@ async def build_room_prompt(
             user_content=user_content,
             names=names,
             knowledge=knowledge,
+            query_vector=query.vector if query is not None else None,
         )
 
     if turn_state is None:
@@ -369,8 +412,9 @@ async def build_room_prompt(
             )
         ).all()
         names = PromptNames(persona_name=persona_name, char_name=None)
-        recalled = await recall(names)
-        fact_section = await facts(names)
+        query = await query_embedding(names)
+        recalled = await recall(names, query)
+        fact_section = await facts(names, query)
         matched_notes = match_keyword_notes(notes, history, user_content, names=names)
         situation_notes = (
             await db.scalars(
@@ -423,13 +467,15 @@ async def build_room_prompt(
             names,
             recalled.record,
             fact_section.record,
+            query.record if query is not None else None,
         )
 
     detail = await db.get(CharacterVersionDetail, room.content_version_id)
     assert detail is not None
     names = PromptNames(persona_name=persona_name, char_name=detail.name)
-    recalled = await recall(names)
-    fact_section = await facts(names)
+    query = await query_embedding(names)
+    recalled = await recall(names, query)
+    fact_section = await facts(names, query)
     prompt = build_generation_prompt(
         prompt_set=prompt_set,
         sections=prompt_sections,
@@ -453,6 +499,7 @@ async def build_room_prompt(
         names,
         recalled.record,
         fact_section.record,
+        query.record if query is not None else None,
     )
 
 

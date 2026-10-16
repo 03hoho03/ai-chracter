@@ -17,7 +17,10 @@
   순서로 남기고, 리플레이는 그 id 로 줄을 다시 렌더한다. 사실 읽기가 실패하면 섹션 없이 턴을 계속한다.
 - 지식 범위 필터 스위치(`memory_knowledge_filter`)가 켜져 있으면 키별 최신 행 중 아는 사람이 이번 장면에 없는 행을 고르기 전에
   뺀다(빠진 자리는 다음 후보가 채운다). 스토리 방은 아는 사람이 정해진 행이 있을 때만 미디어 북 인물을 한 번 읽는다. 사실 주입이
-  꺼져 있으면 필터가 켜져 있어도 프롬프트·SQL 이 같다."""
+  꺼져 있으면 필터가 켜져 있어도 프롬프트·SQL 이 같다.
+- 임베딩 회상 스위치(`memory_embed_recall`)가 켜져 있으면 관련 몫은 명사 순위와, 회상과 같은 질의 임베딩으로 잰 사실 임베딩
+  거리 순위(지금 모델·차원, 거리 상한 안)를 RRF 로 합친 순서다. 거리 순위는 지식 범위 필터를 지난 행 사이에서만 매긴다. 벡터
+  쪽이 비면 명사 단독과 같다."""
 
 import logging
 import uuid
@@ -41,11 +44,14 @@ from api.core.config import settings
 from api.db.models import ChatMemoryFact, ChatMessage, ChatMessageRole, ChatRoom, ChatRoomMemorySnapshot
 from api.db.models.chat import FACT_VALUE_MAX, ChatTurn
 from api.llm.client import LLMCallContext, LLMClient, SegmentedPrompt
+from api.llm.voyage import VoyageEmbeddingClient
 from factories import (
     PRODUCTION_ENV_NAMES,
     Room,
+    VoyageStub,
     _clear_llm_override,
     _count_queries,
+    _make_memory_embedding,
     _make_memory_episode,
     _make_memory_fact,
     _open_room,
@@ -926,3 +932,151 @@ def test_production_env_leaves_the_knowledge_filter_off(monkeypatch: pytest.Monk
     """운영 env 에는 필터 스위치가 없어 꺼진 기본값으로 돈다."""
     assert "MEMORY_KNOWLEDGE_FILTER" not in PRODUCTION_ENV_NAMES
     assert not load_production_env(monkeypatch).memory_knowledge_filter
+
+
+# --- 임베딩 관련 몫(RRF) ------------------------------------------------------------------------
+# 거리는 호출부가 거리 상한으로 거른 값이다. 순수 함수 테스트는 행에 id 를 직접 준다(세션 없이 만든 행은 id 가 없다).
+
+
+def _with_ids(rows: list[ChatMemoryFact]) -> list[ChatMemoryFact]:
+    for row in rows:
+        row.id = uuid.uuid4()
+    return rows
+
+
+def test_vector_neighbour_enters_the_relevant_share_like_a_noun_hit() -> None:
+    """질의와 명사가 겹치지 않아도 벡터 이웃은 관련 몫으로 들어온다 — 등대를 꺼냈을 때와 같은 결과다. 벡터 쪽이 비면 명사 단독과
+    같다."""
+    rows = _with_ids(_rows(_LIGHTHOUSE, *_fillers(6)))
+
+    by_vector = select_fact_rows(rows, query="", names=[], current_turn=TURN, distances={rows[0].id: 0.1})
+
+    assert by_vector == _select(rows, "등대 기억나?")
+    assert select_fact_rows(rows, query="", names=[], current_turn=TURN, distances={}) == _select(rows)
+
+
+def test_noun_and_vector_hits_compete_for_the_relevant_room_noun_first_on_a_tie() -> None:
+    """상시 한 줄 뒤 관련 몫에 400자 줄이 하나만 들어간다. 명사 1위(등대)와 벡터 1위(수국)가 1/61 로 같으면 명사 쪽이 들어간다 —
+    관련 몫 순서가 두 목록의 RRF 라 벡터 목록만으로 고르지 않는다. 등대 줄이 벡터로도 가까우면(두 목록 합) 같은 결과다."""
+    lighthouse = _sized(20, 400, word="등대", importance=1)
+    garden = _sized(21, 400, word="수국", importance=1)
+    rows = _with_ids(_rows(lighthouse, garden, *_fillers(6)))
+
+    picked = select_fact_rows(rows, query="등대 기억나?", names=[], current_turn=TURN, distances={rows[1].id: 0.1})
+
+    assert [row.attribute for row in picked] == ["취향0", lighthouse["attribute"]]
+
+
+def test_vector_rank_never_brings_back_a_row_the_filter_dropped() -> None:
+    """필터가 뺀 비밀 행이 질의와 가장 가까워도 관련 몫으로 되돌아오지 않는다 — 거리 순위는 필터를 지난 행 사이에서만 매긴다.
+    결과는 비밀 행 없이 고른 것과 같다."""
+    secret = _fields("유나", "비밀", "등대 아래 묻은 편지", known_by=["유나"], importance=1)
+    rows = _with_ids(_rows(secret, _LIGHTHOUSE, *_fillers(6)))
+
+    picked = select_fact_rows(
+        rows,
+        query="",
+        names=[],
+        current_turn=TURN,
+        keep=lambda row: not row.known_by,
+        distances={rows[0].id: 0.0, rows[1].id: 0.3},
+    )
+
+    assert secret["value"] not in _values(picked)
+    assert _LIGHTHOUSE["value"] in _values(picked)
+    assert picked == select_fact_rows(rows[1:], query="", names=[], current_turn=TURN, distances={rows[1].id: 0.3})
+
+
+async def test_fact_section_uses_the_turn_query_embedding_and_its_model_and_dims(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """회상과 사실 섹션이 둘 다 켜져 있어도 질의 임베딩은 한 번이다. 질의와 가까운 등대 행이 명사 겹침 없이 사실 섹션에 들어오고,
+    같은 모델의 다른 차원 행이 섞여도 거리 읽기가 실패하지 않는다(섞이면 명사 단독으로 떨어져 등대 행이 빠진다). 다른 모델로만
+    가까운 사물함 행은 들어오지 않는다 — 그 행은 렌더 순서로는 빠지는 자리라, 모델로 거르지 않으면 관련 몫으로 들어온다."""
+    room, snapshots = await _fact_room(db_client, db_session)
+    ids = await _plant(db_session, room, snapshots[2], [_LIGHTHOUSE, *_fillers(6), _LOCKER])
+    db_session.add_all(
+        [
+            _make_memory_embedding(
+                room.room_id, fact_id=ids[0], model="voyage-test", dims=3, embedding=[1.0, 0.5, 0.5]
+            ),
+            _make_memory_embedding(room.room_id, fact_id=ids[1], model="voyage-test", dims=2, embedding=[1.0, 0.5]),
+            _make_memory_embedding(
+                room.room_id, fact_id=ids[2], model="other-model", dims=3, embedding=[1.0, 0.5, 0.5]
+            ),
+            _make_memory_embedding(
+                room.room_id, fact_id=ids[-1], model="other-model", dims=3, embedding=[1.0, 0.5, 0.5]
+            ),
+        ]
+    )
+    await db_session.commit()
+    _facts_on(monkeypatch)
+    monkeypatch.setattr(settings, "memory_episodes_recall", True)
+    monkeypatch.setattr(settings, "memory_embed_recall", True)
+    stub = VoyageStub()
+    client = VoyageEmbeddingClient(
+        api_key="test-key", model="voyage-test", dims=3, transport=stub.transport(), retry_delays=(0.0, 0.0)
+    )
+
+    noun_only = await _build(db_session, room, "오늘 날씨 좋다")
+    chat_room = await db_session.get(ChatRoom, room.room_id)
+    assert chat_room is not None
+    setup = await _resolve_starting_setup(db_session, chat_room)
+    prompt_set, sections = await load_active_prompt_set(db_session, lane="story")
+    history = await _room_messages(db_session, room.room_id)
+    built = await build_room_prompt(
+        db_session, chat_room, setup, history, "오늘 날씨 좋다", None, prompt_set, sections, embedding_client=client
+    )
+
+    assert _LIGHTHOUSE["value"] not in _section(noun_only.prompt)
+    assert _LIGHTHOUSE["value"] in _section(built.prompt)
+    assert _LOCKER["value"] not in _section(built.prompt)
+    assert str(ids[0]) in [entry["factId"] for entry in built.memory_facts]
+    assert len(stub.bodies) == 1
+
+
+async def test_fact_vector_side_never_reaches_past_the_turn_cursor(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """지난 턴을 그때의 요약(턴 4 커서)으로 다시 조립하면, 그 뒤에 접힌 턴 6 스냅샷의 사실은 질의와 가장 가까워도 싣지 않는다."""
+    room, snapshots = await _fact_room(db_client, db_session)
+    await _plant(db_session, room, snapshots[2], [_LIGHTHOUSE, *_fillers(6)])
+    [later] = await _plant(db_session, room, snapshots[6], [_LOCKER], start=10)
+    db_session.add(
+        _make_memory_embedding(room.room_id, fact_id=later, model="voyage-test", dims=3, embedding=[1.0, 0.5, 0.5])
+    )
+    await db_session.commit()
+    _facts_on(monkeypatch)
+    monkeypatch.setattr(settings, "memory_embed_recall", True)
+    stub = VoyageStub()
+    client = VoyageEmbeddingClient(
+        api_key="test-key", model="voyage-test", dims=3, transport=stub.transport(), retry_delays=(0.0, 0.0)
+    )
+    cursor = room.turns[4][1]
+    then = InjectedTurnState(
+        summary=CurrentSummary(cursor=(cursor.created_at, cursor.id), text="턴 4 까지의 요약"),
+        memory_note="",
+        stats={},
+        persona=None,
+    )
+    chat_room = await db_session.get(ChatRoom, room.room_id)
+    assert chat_room is not None
+    setup = await _resolve_starting_setup(db_session, chat_room)
+    prompt_set, sections = await load_active_prompt_set(db_session, lane="story")
+    history = await _room_messages(db_session, room.room_id)
+
+    built = await build_room_prompt(
+        db_session,
+        chat_room,
+        setup,
+        history,
+        "오늘 날씨 좋다",
+        None,
+        prompt_set,
+        sections,
+        turn_state=then,
+        embedding_client=client,
+    )
+
+    assert len(stub.bodies) == 1
+    assert _LOCKER["value"] not in _section(built.prompt)

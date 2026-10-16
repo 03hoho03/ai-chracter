@@ -18,6 +18,10 @@ DB 가 그 행을 함께 지우므로 다음 읽기에 앞 값이 돌아온다.
 건너뛰지 않는다). 실린 행은 렌더 순서로 쓴다. 관련 점수는 장면 회상의 토큰·점수 함수를 그대로 쓴다(행 명사 = 주어·대상이나
 속성·값의 조사 뗀 토큰, 질의에서 이름·불용어·방 행의 20% 넘게 나오는 명사를 뺀다, 행 5개 미만이면 관련 행 없음).
 
+임베딩 회상(`memory_embed_recall`, `chat/memory_vector.py`)이 켜져 질의 벡터가 오면 ②의 순서는 명사 순위와, 키별 최신이고
+필터를 지난 행 중 질의와 가까운 순(거리 상한 안)의 RRF 다 — 명사가 겹치지 않는 바꿔 말하기도 관련 몫에 든다. 거리 순위를 필터 뒤
+행 사이에서만 매기므로 필터가 뺀 비밀 행은 거리가 가까워도 돌아오지 않는다. 가까운 행이 없으면 ②는 명사 단독 그대로다.
+
 지식 범위 필터(`chat/memory_knowledge.py`, 호출부가 켰을 때만): 키별 최신 행 중 아는 사람이 이번 장면에 없는 행을 고르기
 전에 뺀다 — 빠진 자리는 다음 후보가 채우고, 같은 키의 앞 값이 지금 값처럼 되살아나지 않는다. 이름 출처는 읽은 사실 행뿐이라
 SQL 을 더하지 않는다. 판정은 아는 사람 원소가 장면에 나오는가뿐이고 그 원소는 이미 사실 행에서 이름 출처에 들어 있어, 미디어 북
@@ -31,7 +35,7 @@ SQL 을 더하지 않는다. 판정은 아는 사람 원소가 장면에 나오�
 
 import logging
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -45,8 +49,10 @@ from api.chat.memory_facts import normalize_part
 from api.chat.memory_knowledge import known_in_scene, room_names, scene_people, user_names
 from api.chat.memory_nouns import rule_tokens
 from api.chat.memory_recall import RecallCandidate, query_tokens, score_episodes
+from api.chat.memory_vector import QueryVector, fact_distances, rrf_order
 from api.chat.memory_window import MessageKey, opening_message
 from api.chat.prompt_builder import PromptNames
+from api.core.config import settings
 from api.core.sentry import capture_dependency_failure
 from api.db.models.chat import ChatMemoryFact, ChatMessage, ChatMessageRole, ChatRoomMemorySnapshot
 
@@ -153,6 +159,12 @@ def _relevant(ordered: Sequence[ChatMemoryFact], query: str, names: Sequence[str
     return [int(x.id) for x in scored if x.overlap and x.s >= RELEVANCE_TAU]
 
 
+def _nearest(ordered: Sequence[ChatMemoryFact], distances: Mapping[uuid.UUID, float]) -> list[int]:
+    """`ordered` 가운데 거리가 있는 행의 위치, 가까운 순(같으면 렌더 순서)."""
+    near = [i for i, row in enumerate(ordered) if row.id in distances]
+    return sorted(near, key=lambda i: (distances[ordered[i].id], i))
+
+
 def select_fact_rows(
     rows: Sequence[ChatMemoryFact],
     *,
@@ -161,10 +173,13 @@ def select_fact_rows(
     current_turn: int,
     user_name: str | None = None,
     keep: Callable[[ChatMemoryFact], bool] | None = None,
+    distances: Mapping[uuid.UUID, float] | None = None,
+    rrf_k: int = 60,
 ) -> list[ChatMemoryFact]:
     """쓴 순서의 행 전부에서 섹션에 실을 행을 렌더 순서로 고른다(규칙은 모듈 설명). `query` 는 이번 턴 사용자 메시지, `names`
     는 질의에서 뺄 이름, `current_turn` 은 이번 턴 번호(관련 점수의 최근성)다. `keep` 을 주면 키별 최신 행 중 그 값이 거짓인
-    행을 고르기 전에 뺀다(지식 범위 필터)."""
+    행을 고르기 전에 뺀다(지식 범위 필터). `distances` 는 질의 임베딩과 사실 행의 거리(행 id → 거리, 거리 상한으로 거른 것)이고,
+    필터를 지난 행 중 거리가 있는 행의 가까운 순 목록이 비지 않으면 관련 몫의 순서는 명사 순위와 그 목록의 RRF(`rrf_k`)다."""
     winners = _latest_by_key(rows)
     if keep is not None:
         winners = [pair for pair in winners if keep(pair[1])]
@@ -192,7 +207,11 @@ def select_fact_rows(
 
     stop = fill(CONSTANT_RATIO * RENDER_MAX_CHARS)
     if stop < len(ordered):
-        for i in _relevant(ordered, query, names, current_turn):
+        relevant = _relevant(ordered, query, names, current_turn)
+        near = _nearest(ordered, distances or {})
+        if near:
+            relevant = rrf_order([relevant, near], k=rrf_k)
+        for i in relevant:
             if i in chosen:
                 continue
             if not fits(i, RENDER_MAX_CHARS):
@@ -242,10 +261,20 @@ async def _facts(
     user_content: str,
     names: PromptNames,
     knowledge: KnowledgeScope | None,
+    query_vector: QueryVector | None,
 ) -> FactSection:
     rows = (await db.scalars(_fact_statement(room_id, cursor))).all()
     if not rows:
         return NO_FACTS
+    distances = None
+    if query_vector is not None:
+        distances = await fact_distances(
+            db,
+            room_id=room_id,
+            cursor=cursor,
+            query=query_vector,
+            max_distance=settings.memory_embed_recall_max_distance,
+        )
     keep = None
     if knowledge is not None and any(row.known_by for row in rows):
         keep = _knowledge_filter(rows, knowledge, history=history, user_content=user_content, names=names)
@@ -259,6 +288,8 @@ async def _facts(
         current_turn=current_turn,
         user_name=names.persona_name,
         keep=keep,
+        distances=distances,
+        rrf_k=settings.memory_embed_recall_rrf_k,
     )
     if not picked:
         return NO_FACTS
@@ -276,9 +307,11 @@ async def facts_for_turn(
     user_content: str,
     names: PromptNames,
     knowledge: KnowledgeScope | None = None,
+    query_vector: QueryVector | None = None,
 ) -> FactSection:
     """이번 턴의 사실 섹션. `history` 는 방의 전체 대화(턴 번호를 세고 직전 응답을 찾는다), `cursor` 는 그 턴의 요약 커서,
-    `knowledge` 는 지식 범위 필터를 켰을 때의 이름 출처다(None 이면 필터 없이 고른다). 무엇이 실패하든 섹션
+    `knowledge` 는 지식 범위 필터를 켰을 때의 이름 출처다(None 이면 필터 없이 고른다). `query_vector` 는 임베딩 회상이 켜졌고
+    질의 임베딩을 받은 턴의 질의 벡터다(None 이면 관련 몫이 명사 단독). 무엇이 실패하든 섹션
     없음이다 — 회상(`memory_recall.recall_for_turn`)과 같은 이유와 같은 방법(SAVEPOINT 로 감싼 읽기, 고르기·렌더 예외도 같은
     자리에서 받음, 스택을 실은 경고와 승격). 취소(`CancelledError`)는 `Exception` 이 아니라 그대로 올라간다."""
     try:
@@ -291,6 +324,7 @@ async def facts_for_turn(
                 user_content=user_content,
                 names=names,
                 knowledge=knowledge,
+                query_vector=query_vector,
             )
     except Exception as exc:
         logger.warning(

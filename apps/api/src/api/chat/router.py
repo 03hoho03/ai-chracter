@@ -902,10 +902,12 @@ async def _room_generation_prompt(
     charge: ChatCharge,
     settlement: TurnSettlement,
     *,
+    embedding_client: VoyageEmbeddingClient,
     render_failure_log: str = "대화방 %s 프롬프트 렌더 실패: %s",
 ) -> tuple[PromptSet, GenerationPrompt] | None:
     """방 턴(보내기·수정·재생성)의 생성 프롬프트를 조립한다. 생성은 값을 낸 모델의 세트로 한다 — 받은 Gemini 세트
     (`prompt_set`)는 Gemini 턴의 생성 세트다(판정·요약 세트는 라우트가 따로 받는다). 렌더 실패·생성 세트 없음이면 환불까지 마치고 `None` — 호출부가 오류 이벤트로 끝낸다.
+    `embedding_client` 는 임베딩 회상이 켜졌을 때 질의 임베딩을 부르는 클라이언트다(`build_room_prompt`).
     `render_failure_log` 는 그 실패의 경고 문구다 — 재생성은 원래 "재생성" 이 들어간 자기 문구로 남겼고 그 문장을 지킨다.
 
     이 함수는 제너레이터가 아니다. 환불은 호출부의 `yield` **앞**이어야 하는데(뒤에 두면 클라이언트가 이미 끊었을 때
@@ -915,7 +917,15 @@ async def _room_generation_prompt(
             db, lane=_lane_for_setup(setup), model=charge.model, gemini_set=(prompt_set, prompt_sections)
         )
         generation = await build_room_prompt(
-            db, room, setup, history, user_content, shortcut, generation_set, generation_sections
+            db,
+            room,
+            setup,
+            history,
+            user_content,
+            shortcut,
+            generation_set,
+            generation_sections,
+            embedding_client=embedding_client,
         )
     except (PromptRenderError, PromptSetNotFoundError) as exc:
         # apps/api/CLAUDE.md 의 SSE 스트리밍 절: 이 예외를 흡수하지 않으면 제너레이터 본문을 뚫고
@@ -1020,7 +1030,7 @@ async def send_message(
     # — 차감이 이미 커밋된 뒤라 같은 세션에 얹으면 라우트가 롤백될 때 환불만 사라진다.
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
     llm_client: LLMClient = Depends(get_llm_client),
-    # 턴 뒤 기억 임베딩 채우기용(`_fold_after_commit`). 만들 때 네트워크·키를 쓰지 않는다.
+    # 턴 앞 질의 임베딩(임베딩 회상)과 턴 뒤 기억 임베딩 채우기용(`_fold_after_commit`). 만들 때 네트워크·키를 쓰지 않는다.
     embedding_client: VoyageEmbeddingClient = Depends(get_embedding_client),
     prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
     # 판정·요약 모델마다의 세트. 세트가 없으면 여기서 실패해 스트림 전 오류 응답이고 차감 게이트(`charge`)보다 앞이다.
@@ -1076,7 +1086,17 @@ async def send_message(
             await db.commit()
 
             prepared = await _room_generation_prompt(
-                db, room, setup, history, payload.content, shortcut, prompt_set, prompt_sections, charge, settlement
+                db,
+                room,
+                setup,
+                history,
+                payload.content,
+                shortcut,
+                prompt_set,
+                prompt_sections,
+                charge,
+                settlement,
+                embedding_client=embedding_client,
             )
             if prepared is None:
                 yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
@@ -1230,6 +1250,7 @@ async def regenerate_message(
                 prompt_sections,
                 charge,
                 settlement,
+                embedding_client=embedding_client,
                 render_failure_log="대화방 %s 재생성 프롬프트 렌더 실패: %s",
             )
             if prepared is None:
@@ -1366,7 +1387,17 @@ async def edit_message(
 
             # 수정 요청은 단축어를 받지 않는다(`ChatMessageEditRequest` 는 글만 싣는다).
             prepared = await _room_generation_prompt(
-                db, room, setup, history, payload.content, None, prompt_set, prompt_sections, charge, settlement
+                db,
+                room,
+                setup,
+                history,
+                payload.content,
+                None,
+                prompt_set,
+                prompt_sections,
+                charge,
+                settlement,
+                embedding_client=embedding_client,
             )
             if prepared is None:
                 yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)

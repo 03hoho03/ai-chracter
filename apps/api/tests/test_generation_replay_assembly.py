@@ -194,7 +194,7 @@ async def _scenario(
         messages = await _messages(db_session, room.room_id)
         user_message = room.turns[turn][0]
         index = next(i for i, m in enumerate(messages) if m.id == user_message.id)
-        prompt, system_instruction, _, _, _, _, _ = await build_room_prompt(
+        prompt, system_instruction, _, _, _, _, _, _ = await build_room_prompt(
             db_session,
             chat_room,
             setup,

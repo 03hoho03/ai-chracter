@@ -389,7 +389,9 @@ class RoomTurnStore:
             charge_source=charge.source,
             clover_amount=charge.clover_amount,
             spend_ledger_id=charge.spend_ledger_id,
-            llm_calls=[call.as_record() for call in turn.llm_calls],
+            # 질의 임베딩은 생성보다 먼저 불렸다 — 부른 턴만 맨 앞에 한 칸이 붙고, 부르지 않은 턴의 목록은 그대로다.
+            llm_calls=([dict(turn.memory_query)] if turn.memory_query is not None else [])
+            + [call.as_record() for call in turn.llm_calls],
         )
         # 회상한 턴만 칸을 채운다 — 비어 있으면 INSERT 에 칸을 싣지 않아 DB 기본값 `[]` 이 들어가고, 문장이 회상 전과 같다.
         # 재생성·수정도 그 턴에 새로 조립한 프롬프트의 회상이다(대체되는 기록에서 물려받지 않는다).

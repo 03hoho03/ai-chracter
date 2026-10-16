@@ -594,9 +594,11 @@ class ChatTurn(Base):
       차감의 사용처는 `clover_spend_usages` 가 맡으므로 여기서는 그와 잇는 조인 키로만 쓴다.
     - `turn_number` 는 이 응답이 속한 턴이다. 재생성 행은 대체한 응답 기록의 값을 이어받는다.
     - `llm_calls` 는 `[{callSite, model, promptTokens, cachedTokens, cacheWriteTokens, outputTokens, thoughtsTokens}]`,
-      `stat_changes` 는 `{statEntityId: [before, after]}` 다.
+      `stat_changes` 는 `{statEntityId: [before, after]}` 다. 임베딩 회상을 켠 턴은 맨 앞에 질의 임베딩 한 칸
+      `{callSite, model, dims, promptTokens, latencyMs, outcome}` 이 붙는다(`chat/memory_vector.py`).
     - `memory_recall` 은 그 턴 프롬프트에 실은 장면 기억 목록 `[{episodeId, score, rank, chars}]` 이다(글은 싣지 않는다).
-      회상을 쓰지 않은 턴과 이 칸을 모르는 옛 이미지가 넣은 행은 DB 기본값 `[]` 이다.
+      회상을 쓰지 않은 턴과 이 칸을 모르는 옛 이미지가 넣은 행은 DB 기본값 `[]` 이다. 벡터 순위와 합쳐 고른 턴은 칸마다 벡터
+      순위 `vectorRank` 가 더해지고, 명사 쪽에 없던 장면은 `score`·`rank` 가 null 이다.
     - `memory_facts` 는 그 턴 프롬프트에 실은 사실 기억 목록이다(글은 싣지 않는다). 기본값은 `memory_recall` 과 같은 이유로
       `[]` 다.
 

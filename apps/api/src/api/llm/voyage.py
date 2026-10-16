@@ -20,7 +20,8 @@ import httpx
 from api.llm.usage_store import record_usage
 
 VOYAGE_EMBEDDINGS_URL = "https://api.voyageai.com/v1/embeddings"
-# 한 요청의 시간 상한(초). 백그라운드 채우기가 쓰는 값이라 턴을 기다리게 하지 않는다 — 넘기면 다시 보낸다.
+# 한 요청의 시간 상한(초). 백그라운드 채우기가 쓰는 값이라 턴을 기다리게 하지 않는다 — 넘기면 다시 보낸다. 턴 안의 질의
+# 임베딩은 부르는 쪽(`chat/memory_vector.py`)이 훨씬 짧은 상한으로 호출 전체를 끊는다.
 TIMEOUT_SECONDS = 10.0
 # 다시 보내기 전 쉬는 시간(초). 길이 + 1 이 한 번 부를 때의 최대 시도 수다.
 RETRY_DELAYS_SECONDS: tuple[float, ...] = (1.0, 4.0)
@@ -51,7 +52,7 @@ def _retryable(status: int) -> bool:
 class VoyageEmbeddingClient:
     """`model`·`dims` 는 이 클라이언트가 내는 벡터의 모델 id 와 차원이다 — 임베딩 표의 같은 칸에 그대로 적는다.
     `transport` 는 테스트가 응답을 흉내 낼 때만 넘긴다. 호출마다 HTTP 클라이언트를 새로 연다(백그라운드 채우기는 턴마다 많아야
-    한 번 부른다)."""
+    한 번 부르고, 턴 안의 질의 임베딩도 턴마다 한 번이다)."""
 
     def __init__(
         self,
@@ -70,6 +71,13 @@ class VoyageEmbeddingClient:
 
     async def embed(self, texts: Sequence[str], *, input_type: EmbeddingInputType, call_site: str) -> list[list[float]]:
         """`texts` 의 벡터를 같은 순서로 돌려준다. `call_site` 는 사용량 기록의 호출 이름이다."""
+        vectors, _tokens = await self.embed_with_usage(texts, input_type=input_type, call_site=call_site)
+        return vectors
+
+    async def embed_with_usage(
+        self, texts: Sequence[str], *, input_type: EmbeddingInputType, call_site: str
+    ) -> tuple[list[list[float]], int]:
+        """`embed` 와 같고 그 호출이 보고한 토큰 수를 함께 돌려준다 — 턴 기록에 질의 임베딩의 사용량을 남기는 쪽이 쓴다."""
         body = {"input": list(texts), "model": self.model, "input_type": input_type, "output_dimension": self.dims}
         headers = {"Authorization": f"Bearer {self._api_key}"}
         attempts = len(self._retry_delays) + 1
@@ -91,7 +99,7 @@ class VoyageEmbeddingClient:
                     raise error
         raise error
 
-    async def _vectors(self, response: httpx.Response, count: int, call_site: str) -> list[list[float]]:
+    async def _vectors(self, response: httpx.Response, count: int, call_site: str) -> tuple[list[list[float]], int]:
         try:
             payload = response.json()
             data = sorted(payload["data"], key=lambda item: int(item["index"]))
@@ -104,4 +112,4 @@ class VoyageEmbeddingClient:
             raise EmbeddingError(f"Voyage 응답 벡터 {len(vectors)}개가 입력 {count}개와 다르다", status=200)
         if any(len(vector) != self.dims for vector in vectors):
             raise EmbeddingError(f"Voyage 응답 벡터 차원이 {self.dims} 가 아니다", status=200)
-        return vectors
+        return vectors, tokens
