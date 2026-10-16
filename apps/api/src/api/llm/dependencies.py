@@ -38,9 +38,9 @@ def get_llm_client() -> LLMClient:
 
 
 def get_embedding_client() -> VoyageEmbeddingClient:
-    """FastAPI dependency: 기억 임베딩을 채우는 쪽은 이 함수로 Voyage 클라이언트를 받는다 — 테스트는
-    `app.dependency_overrides[get_embedding_client]` 로 응답을 흉내 내는 클라이언트를 넣는다. 만들 때 네트워크를 쓰지 않고
-    키도 보지 않는다(채우기 스위치가 꺼져 있으면 키가 비어 있고 이 클라이언트는 쓰이지 않는다). 설정은 요청마다 읽는다."""
+    """FastAPI dependency: 기억 임베딩을 채우는 쪽과 턴의 질의 임베딩(임베딩 회상)은 이 함수로 Voyage 클라이언트를 받는다 —
+    테스트는 `app.dependency_overrides[get_embedding_client]` 로 응답을 흉내 내는 클라이언트를 넣는다. 만들 때 네트워크를 쓰지
+    않고 키도 보지 않는다(두 스위치가 꺼져 있으면 키가 비어 있고 이 클라이언트는 쓰이지 않는다). 설정은 요청마다 읽는다."""
     return VoyageEmbeddingClient(
         api_key=settings.voyage_api_key, model=settings.memory_embed_model, dims=settings.memory_embed_dims
     )

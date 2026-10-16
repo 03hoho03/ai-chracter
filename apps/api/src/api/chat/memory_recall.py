@@ -21,6 +21,12 @@ LLM 을 부르지 않는다(DB 읽기 한두 번과 파이썬 점수).
 한다 — 테스트가 하네스가 낸 기준 벡터(`tests/fixtures/memory_recall_vectors.json`)와 견준다. 이 모듈은 하네스를 import 하지
 않는다.
 
+임베딩 회상(`memory_embed_recall`, `chat/memory_vector.py`)이 켜져 질의 벡터가 오면 같은 후보의 장면 임베딩을 질의와 가까운
+순으로 읽어 벡터 순위를 만든다. 그 순위가 비지 않으면 명사 쪽(임계 이상인 장면의 순위)과 RRF 로 합쳐 같은 상한만큼 싣는다 —
+명사가 하나도 겹치지 않는 바꿔 말하기·지시어 턴에도 가까운 장면이 실린다. 비면(질의 벡터 없음·임베딩 행 없음·거리 상한 밖·
+거리 읽기 실패) 위 명사 단독 절차 그대로라 프롬프트·턴 기록이 바이트까지 같다. 합칠 때의 상한·k·거리 상한·긴 방 df 상한은 설정
+값이고 벡터 순위가 있는 턴에만 쓴다.
+
 후보는 지금 요약 커서까지 접힌 스냅샷에서 뽑혔고 커서 이하에서 끝나는 장면뿐이다 — 커서 뒤는 원문 윈도우로 이미 실린다.
 읽기는 요청 세션의 SAVEPOINT 안이고, DB 오류든 그 밖의 예외든 경고·승격을 남기고 회상 없이 조립한다(생성 프롬프트 조립은
 SSE 제너레이터 본문 안이라 예외가 새면 무관한 요청까지 500 이 된다)."""
@@ -39,8 +45,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.keyword_notes import normalize_keyword_text, recent_scan_turns
 from api.chat.memory_nouns import STOPWORDS, rule_tokens
+from api.chat.memory_vector import QueryVector, episode_distances, rrf_order
 from api.chat.memory_window import MessageKey, opening_message
 from api.chat.prompt_builder import PromptNames
+from api.core.config import settings
 from api.core.sentry import capture_dependency_failure
 from api.db.models.chat import ChatMemoryEpisode, ChatMessage, ChatMessageRole, ChatRoomMemorySnapshot
 
@@ -161,9 +169,12 @@ def query_path(query: RecallQuery) -> RecallPath | None:
     return "assistant" if query.time_cue else None
 
 
-def score_episodes(rows: Sequence[RecallCandidate], query: RecallQuery, *, current_turn: int) -> list[ScoredEpisode]:
+def score_episodes(
+    rows: Sequence[RecallCandidate], query: RecallQuery, *, current_turn: int, df_max: int | None = None
+) -> list[ScoredEpisode]:
     """모든 장면에 점수를 매겨 순위 순으로(원점수 내림차순, 같으면 끝 턴·스냅샷이 나중인 것) 돌려준다. 회상하지 않는 턴은
-    빈 목록이다(장면 부족, 질의 없음, 흔한 명사를 빼고 나니 질의가 빔)."""
+    빈 목록이다(장면 부족, 질의 없음, 흔한 명사를 빼고 나니 질의가 빔). `df_max` 를 주면 비율과 별도로 그보다 많은 장면에 나오는
+    명사도 흔한 명사로 뺀다 — 긴 방에서는 비율 기준이 수십 장면에 나오는 명사까지 남긴다."""
     n = len(rows)
     if n < MIN_EPISODES:
         return []
@@ -173,7 +184,11 @@ def score_episodes(rows: Sequence[RecallCandidate], query: RecallQuery, *, curre
             df[noun] = df.get(noun, 0) + 1
 
     def kept(nouns: frozenset[str]) -> frozenset[str]:
-        return frozenset(noun for noun in nouns if 0 < df.get(noun, 0) and df[noun] / n <= COMMON_RATIO)
+        return frozenset(
+            noun
+            for noun in nouns
+            if 0 < df.get(noun, 0) and df[noun] / n <= COMMON_RATIO and (df_max is None or df[noun] <= df_max)
+        )
 
     path = query_path(query)
     if path == "user":
@@ -257,6 +272,7 @@ async def _recall(
     window: Sequence[ChatMessage],
     user_content: str,
     names: PromptNames,
+    query_vector: QueryVector | None,
 ) -> Recall:
     rows = (await db.execute(_candidate_statement(room_id, cursor))).all()
     if len(rows) < MIN_EPISODES:
@@ -283,8 +299,23 @@ async def _recall(
     # 이번 턴 번호 — 오프닝을 뺀 어시스턴트 메시지 수 + 1. 장면의 끝 턴과 같은 셈이다.
     opening = opening_message(history)
     current_turn = 1 + sum(1 for m in history if m.role == ChatMessageRole.ASSISTANT and m is not opening)
+    cue = recall_cue(user_text)
+    vector_ids: list[str] = []
+    if query_vector is not None:
+        candidate_ids = {candidate.id for candidate in candidates}
+        nearest = await episode_distances(
+            db,
+            room_id=room_id,
+            cursor=cursor,
+            query=query_vector,
+            limit=settings.memory_embed_recall_vector_limit,
+            max_distance=settings.memory_embed_recall_max_distance,
+        )
+        vector_ids = [str(episode_id) for episode_id, _ in nearest if str(episode_id) in candidate_ids]
+    if vector_ids:
+        return await _hybrid(db, candidates, query, vector_ids, current_turn=current_turn, cue=cue)
     scored = score_episodes(candidates, query, current_turn=current_turn)
-    injected = select_injected(scored, recall_cue=recall_cue(user_text))
+    injected = select_injected(scored, recall_cue=cue)
     if not injected:
         return NO_RECALL
     lines = dict(await _render(db, [uuid.UUID(row.id) for row in injected]))
@@ -307,6 +338,45 @@ async def _recall(
     return Recall("\n".join(lines.values()), record)
 
 
+async def _hybrid(
+    db: AsyncSession,
+    candidates: Sequence[RecallCandidate],
+    query: RecallQuery,
+    vector_ids: Sequence[str],
+    *,
+    current_turn: int,
+    cue: bool,
+) -> Recall:
+    """벡터 쪽이 비지 않은 턴의 회상. 명사 쪽은 임계 이상인 장면의 순위 목록(긴 방 df 상한을 건 점수), 벡터 쪽은 거리 순 목록이고
+    둘을 RRF 로 합쳐 상한(보통 턴·회상 단서 턴)만큼 싣는다. 턴 기록 칸에 명사 순위·점수(명사 쪽에 없으면 None)와 벡터 순위를
+    함께 남긴다."""
+    scored = score_episodes(candidates, query, current_turn=current_turn, df_max=settings.memory_embed_recall_df_max)
+    by_id = {row.id: row for row in scored}
+    noun_ids = [row.id for row in scored if row.s >= TAU]
+    cap = settings.memory_embed_recall_max_cue if cue else settings.memory_embed_recall_max_plain
+    chosen = rrf_order([noun_ids, vector_ids], k=settings.memory_embed_recall_rrf_k)[:cap]
+    lines = dict(await _render(db, [uuid.UUID(episode_id) for episode_id in chosen]))
+    # 두 읽기 사이에 되감기가 커밋돼 사라진 장면은 싣지 않는다.
+    chosen = [episode_id for episode_id in chosen if uuid.UUID(episode_id) in lines]
+    if not chosen:
+        return NO_RECALL
+    path = query_path(query)
+    ranks = {row.id: rank for rank, row in enumerate(scored, start=1)}
+    vector_ranks = {episode_id: rank for rank, episode_id in enumerate(vector_ids, start=1)}
+    record = tuple(
+        {
+            "episodeId": episode_id,
+            "score": by_id[episode_id].s if episode_id in noun_ids else None,
+            "rank": ranks[episode_id] if episode_id in noun_ids else None,
+            "chars": len(lines[uuid.UUID(episode_id)]),
+            "path": path,
+            "vectorRank": vector_ranks.get(episode_id),
+        }
+        for episode_id in chosen
+    )
+    return Recall("\n".join(lines.values()), record)
+
+
 async def recall_for_turn(
     db: AsyncSession,
     *,
@@ -316,9 +386,11 @@ async def recall_for_turn(
     window: Sequence[ChatMessage],
     user_content: str,
     names: PromptNames,
+    query_vector: QueryVector | None = None,
 ) -> Recall:
     """이번 턴의 회상. `history` 는 방의 전체 대화(턴 번호를 센다), `window` 는 이번 생성 프롬프트에 실리는 대화(스캔 글을
-    뽑는다), `cursor` 는 지금 요약 커서다. 무엇이 실패하든 회상 없음이다 — 이 함수는 SSE 제너레이터 본문 안에서 불려 예외가
+    뽑는다), `cursor` 는 지금 요약 커서, `query_vector` 는 임베딩 회상이 켜졌고 질의 임베딩을 받은 턴의 질의 벡터다(None 이면
+    명사 단독). 무엇이 실패하든 회상 없음이다 — 이 함수는 SSE 제너레이터 본문 안에서 불려 예외가
     새면 무관한 요청까지 500 이 된다. 읽기를 SAVEPOINT 로 감싸 실패한 문장이 요청 세션의 트랜잭션을 망가뜨리지 않게 하고(DB
     실패), 토큰화·점수에서 난 예외도 같은 자리에서 받는다(커밋 뒤 조회를 흡수하는 `turn_store.present` 와 같은 규칙). 경고에
     스택을 싣는다. 취소(`CancelledError`)는 `Exception` 이 아니라 그대로 올라간다."""
@@ -332,6 +404,7 @@ async def recall_for_turn(
                 window=window,
                 user_content=user_content,
                 names=names,
+                query_vector=query_vector,
             )
     except Exception as exc:
         logger.warning(

@@ -89,7 +89,7 @@ async def _build(
         ).all()
     )
     prompt_set, sections = await load_active_prompt_set(db_session, lane="story")
-    prompt, _, persona_rendered, _, names, _, _ = await build_room_prompt(
+    prompt, _, persona_rendered, _, names, _, _, _ = await build_room_prompt(
         db_session, chat_room, setup, history, "이번 메시지", None, prompt_set, sections, turn_state=turn_state
     )
     return prompt, persona_rendered, names.persona_name

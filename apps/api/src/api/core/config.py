@@ -431,9 +431,11 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _embedding_needs_a_voyage_key(self) -> "Settings":
         """키 없이 켜진 채우기는 채울 때마다 실패할 뿐이라 켠 것이 성공한 것처럼 보인다 — 배포 단계에서 드러나게 기동을 막는다.
-        꺼져 있으면 키를 보지 않는다."""
+        임베딩 회상도 같다(키 없이 켜면 매 턴 질의 임베딩이 실패해 조용히 명사 단독으로 돈다). 꺼져 있으면 키를 보지 않는다."""
         if self.memory_embed_write and not self.voyage_api_key.strip():
             raise ValueError("MEMORY_EMBED_WRITE 가 켜져 있는데 VOYAGE_API_KEY 가 비어 있다")
+        if self.memory_embed_recall and not self.voyage_api_key.strip():
+            raise ValueError("MEMORY_EMBED_RECALL 이 켜져 있는데 VOYAGE_API_KEY 가 비어 있다")
         return self
 
     @model_validator(mode="after")
@@ -595,6 +597,24 @@ class Settings(BaseSettings):
     memory_embed_model: str = "voyage-4-lite"
     memory_embed_dims: int = 1024
     voyage_api_key: str = Field(default="", repr=False)
+    # 매 턴 질의 임베딩을 한 번 받아(이번 사용자 메시지 + 직전 응답) 장면 회상과 사실 섹션의 관련 몫을 명사 순위와 벡터 거리
+    # 순위의 RRF 로 고른다(`chat/memory_vector.py`). 기본은 꺼짐 — 꺼져 있으면 Voyage 를 부르지도 임베딩 표를 읽지도 않아 생성
+    # 프롬프트·SQL·턴 기록이 이 스위치가 생기기 전과 같다. 회상(`memory_episodes_recall`)이나 사실 주입(`memory_facts_inject`)이
+    # 켜져 있어야 효과가 있다. 질의 임베딩이 시간 상한을 넘기거나 실패하거나 방에 지금 모델·차원의 임베딩이 없으면 그 턴은 명사
+    # 단독과 바이트까지 같다. 켜면 Voyage 키가 있어야 기동한다. 끄면(줄 삭제 + 재기동) 다음 턴부터 명사 단독이다.
+    memory_embed_recall: bool = False
+    # 질의 임베딩의 시간 상한(밀리초). 생성 앞에서 기다리므로 첫 글자 지연이 이만큼까지 는다 — 넘기면 기다리지 않고 명사 단독이다.
+    memory_embed_recall_timeout_ms: int = 250
+    # 아래는 벡터 쪽이 비지 않은 턴에만 쓰는 값이다(비면 명사 단독의 모듈 상수 그대로라 이 값과 무관하게 바이트가 같다). 기본값은
+    # 명사 단독과 같은 주입 상한(보통 턴 1·회상 단서 턴 3), RRF 의 관례값 k = 60, 거리로 거르지 않음(코사인 거리의 최댓값 2),
+    # 흔한 명사의 절대 상한 없음(비율 기준만)이고, 개발 절반 격자로 다시 정한다. 회상의 벡터 순위는 거리 순 앞 `vector_limit`
+    # 개까지다. k 와 거리 상한은 사실 섹션 관련 몫에도 쓴다(사실 쪽 벡터 순위는 지식 범위 필터를 지난 행 전부라 길이 상한이 없다).
+    memory_embed_recall_rrf_k: int = 60
+    memory_embed_recall_max_plain: int = 1
+    memory_embed_recall_max_cue: int = 3
+    memory_embed_recall_max_distance: float = 2.0
+    memory_embed_recall_vector_limit: int = 10
+    memory_embed_recall_df_max: int | None = None
 
     # 소설화 전역 스위치. 꺼져 있으면 허용 행이 있어도 아무도 못 쓴다 — 코드 기본값이 닫힘이어야 env 설정 없이
     # 배포해도 닫힌 채로 뜬다. 끄면 다음 요청부터 막히고(재기동 필요), 허용 행은 남아 다시 켜면 그대로 돌아온다.

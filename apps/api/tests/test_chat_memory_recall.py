@@ -544,10 +544,6 @@ async def _build(
     setup = await _resolve_starting_setup(db_session, chat_room)
     prompt_set, sections = await load_active_prompt_set(db_session, lane="story")
     history = await _history(db_session, room.room_id)
-    if embedding_client is None:
-        return await build_room_prompt(
-            db_session, chat_room, setup, history, user_content, None, prompt_set, sections, turn_state=turn_state
-        )
     return await build_room_prompt(
         db_session,
         chat_room,
