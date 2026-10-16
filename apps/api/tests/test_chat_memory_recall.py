@@ -57,7 +57,14 @@ from api.chat.prompt_builder import (
 from api.chat.router import _resolve_starting_setup
 from api.chat.turn_prompt import GenerationPrompt, InjectedTurnState, build_room_prompt
 from api.core.config import settings
-from api.db.models import ChatMemoryEpisode, ChatMessage, ChatMessageRole, ChatRoom, ChatRoomMemorySnapshot
+from api.db.models import (
+    ChatMemoryEpisode,
+    ChatMemoryFact,
+    ChatMessage,
+    ChatMessageRole,
+    ChatRoom,
+    ChatRoomMemorySnapshot,
+)
 from api.db.models.chat import EPISODE_DETAIL_MAX, EPISODE_TITLE_MAX, ChatTurn
 from api.llm.client import LLMCallContext, LLMClient, SegmentedPrompt, collect_usage
 from api.llm.dependencies import get_embedding_client
@@ -71,6 +78,7 @@ from factories import (
     _count_queries,
     _make_memory_embedding,
     _make_memory_episode,
+    _make_memory_fact,
     _open_room,
     _open_transaction_probe,
     _override_llm_client,
@@ -1539,3 +1547,174 @@ async def test_replay_renders_a_recorded_character_scene_as_it_was(
     lines = await memory_recall.recall_lines_from_record(db_session, [{"episodeId": str(spoken_id)}])
 
     assert lines == "- 고백: 민수가 비밀을 털어놓았다. (인물의 말)"
+
+
+# --- 회상 줄의 지식 범위 ---------------------------------------------------------------------
+# 장면 행에는 아는 사람 칸이 없어, 회상은 같은 턴에 방 사실 행을 읽어 비밀 장면을 끌어낸다 — 키별 최신 행의 아는 사람이 이번
+# 장면 인물(이번 사용자 메시지·직전 응답에 나온 방 이름, 사용자 제외)에 없는 키의 어느 행과든 근거 범위가 겹치는 장면을 뺀다.
+# 회상 스위치에 묶여 사실 주입·지식 범위 필터 스위치와 무관하게 걸리고, 사실 읽기가 실패하면 회상 없이 조립한다(걸러지지
+# 않은 회상을 싣지 않는다).
+
+
+async def _snapshot_for(db_session: AsyncSession, room: Room, turn: int) -> uuid.UUID:
+    """`_story_room` 이 그 턴을 접은 스냅샷(턴 1~2 → 턴 2 응답 커서, 3~4 → 4, 5~6 → 6)."""
+    cursor = room.turns[2 * ((turn + 1) // 2)][1]
+    snapshot_id = await db_session.scalar(
+        sa.select(ChatRoomMemorySnapshot.id).where(ChatRoomMemorySnapshot.cursor_message_id == cursor.id)
+    )
+    assert snapshot_id is not None
+    return snapshot_id
+
+
+async def _plant_fact(
+    db_session: AsyncSession,
+    room: Room,
+    *,
+    turn: int,
+    known_by: list[str] | None,
+    value: str = "전학",
+    ordinal: int = 0,
+    snapshot_turn: int | None = None,
+) -> None:
+    """유나의 비밀 사실 한 행 — 근거는 `turn` 턴의 사용자 메시지~응답. `snapshot_turn` 을 주면 그 턴을 접은 스냅샷에 붙인다."""
+    start, end = room.turns[turn]
+    db_session.add(
+        _make_memory_fact(
+            room.room_id,
+            await _snapshot_for(db_session, room, snapshot_turn or turn),
+            ordinal=ordinal,
+            kind="fact",
+            subject="유나",
+            object=None,
+            attribute="비밀",
+            fact_key="fact|유나|비밀",
+            value=value,
+            asserted_by="narration",
+            known_by=known_by,
+            start_created_at=start.created_at,
+            start_message_id=start.id,
+            end_created_at=end.created_at,
+            end_message_id=end.id,
+            start_turn=turn,
+            end_turn=turn,
+        )
+    )
+    await db_session.commit()
+
+
+async def test_scene_overlapping_a_secret_drops_unless_someone_who_knows_is_in_the_scene(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """밀알당 장면(턴 3)이 민수만 아는 비밀과 같은 턴에 걸쳐 있다. 사실 주입이 꺼져 있어도 회상에서 빠지고, 이번 사용자 메시지에
+    민수가 나오면 남는다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY])
+    await _plant_fact(db_session, room, turn=3, known_by=["민수"])
+    _recall_on(monkeypatch)
+    assert not settings.memory_facts_inject and not settings.memory_knowledge_filter
+
+    hidden = await _build(db_session, room, "밀알당 기억나?")
+    known = await _build(db_session, room, "민수랑 밀알당 기억나?")
+
+    assert HEADER not in hidden.prompt
+    assert hidden.memory_recall == ()
+    assert _lines(known.prompt) == ["- 밀알당에 간 날: 태민이랑 밀알당에서 소금빵을 먹었다."]
+
+
+async def test_secret_only_the_user_knows_always_hides_its_scene(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """사용자는 장면 인물이 아니다 — 사용자만 아는 비밀과 겹치는 장면은 사용자 표기가 대사에 나와도 빠진다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY])
+    await _plant_fact(db_session, room, turn=3, known_by=["사용자 인물"])
+    _recall_on(monkeypatch)
+
+    assert HEADER not in (await _build(db_session, room, "사용자 인물이랑 밀알당 기억나?")).prompt
+
+
+async def test_secret_whose_latest_value_is_public_no_longer_hides_its_scenes(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """같은 키의 뒤 행(턴 5 근거, 턴 6 스냅샷)이 공개면 그 키는 가려지지 않는다 — 옛 비밀 행과 겹치는 장면도 실린다. 반대로 뒤
+    행이 여전히 비밀이면 옛 행과만 겹치는 장면도 빠진다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY])
+    await _plant_fact(db_session, room, turn=3, known_by=["민수"])
+    await _plant_fact(db_session, room, turn=5, known_by=["민수"], value="유학")
+    _recall_on(monkeypatch)
+    assert HEADER not in (await _build(db_session, room, "밀알당 기억나?")).prompt
+
+    await _plant_fact(db_session, room, turn=5, known_by=None, value="졸업", ordinal=1)
+
+    assert _lines((await _build(db_session, room, "밀알당 기억나?")).prompt) == [
+        "- 밀알당에 간 날: 태민이랑 밀알당에서 소금빵을 먹었다."
+    ]
+
+
+async def test_vector_limit_is_filled_past_a_hidden_scene(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """거리 순위 길이 1 에서 가장 가까운 장면(밀알당)이 가려지면 그 장면은 거리 읽기에서 빠져 그다음 정원이 실린다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, _GARDEN])
+    await _plant_fact(db_session, room, turn=3, known_by=["민수"])
+    await _embed_scene(db_session, room, _BAKERY.title, _NEAR)
+    garden_id = await _embed_scene(db_session, room, _GARDEN.title, _MID)
+    _hybrid_on(monkeypatch)
+    monkeypatch.setattr(settings, "memory_embed_recall_vector_limit", 1)
+
+    built = await _build(db_session, room, _PLAIN, embedding_client=_embed_client(VoyageStub()))
+
+    assert _vector_ids(built) == [str(garden_id)]
+
+
+async def test_fact_read_failure_drops_the_recall_with_a_warning(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """비밀 장면을 가릴 사실 행을 읽지 못하면 걸러지지 않은 회상을 싣지 않는다 — 회상 없이 조립하고 경고·승격을 남긴다. 요청
+    세션은 다음 문장을 계속 쓴다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY])
+    _recall_on(monkeypatch)
+    assert HEADER in (await _build(db_session, room, "밀알당 기억나?")).prompt
+    monkeypatch.setattr(memory_recall, "fact_rows_statement", lambda room_id, cursor: sa.text("SELECT 1/0"))
+    captured: list[str] = []
+    monkeypatch.setattr(
+        memory_recall, "capture_dependency_failure", lambda exc, *, dependency: captured.append(dependency)
+    )
+
+    with caplog.at_level(logging.WARNING):
+        built = await _build(db_session, room, "밀알당 기억나?")
+
+    assert HEADER not in built.prompt
+    assert built.memory_recall == ()
+    assert captured == ["db"]
+    assert any("회상" in record.getMessage() for record in caplog.records)
+    assert await db_session.scalar(sa.select(sa.literal(1))) == 1
+
+
+async def test_recall_off_reads_no_facts_either(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """회상 스위치가 꺼져 있으면 장면도 사실도 읽지 않는다 — 장면·사실이 있는 방과 없는 방의 프롬프트·SQL 문 수가 같다. 켜면
+    사실 주입이 꺼져 있어도 사실을 한 번 더 읽는다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY])
+    await _plant_fact(db_session, room, turn=3, known_by=["민수"])
+    with _count_queries() as with_memory_count:
+        with_memory = await _build(db_session, room, "민수랑 밀알당 기억나?")
+        statements_with_memory = with_memory_count()
+    _recall_on(monkeypatch)
+    with _count_queries() as recall_on_count:
+        await _build(db_session, room, "민수랑 밀알당 기억나?")
+        statements_recall_on = recall_on_count()
+    monkeypatch.setattr(settings, "memory_episodes_recall", False)
+    await db_session.execute(sa.delete(ChatMemoryFact).where(ChatMemoryFact.chat_room_id == room.room_id))
+    await db_session.execute(sa.delete(ChatMemoryEpisode).where(ChatMemoryEpisode.chat_room_id == room.room_id))
+    await db_session.commit()
+    with _count_queries() as without_memory_count:
+        without_memory = await _build(db_session, room, "민수랑 밀알당 기억나?")
+        statements_without_memory = without_memory_count()
+
+    assert with_memory.prompt == without_memory.prompt
+    assert statements_with_memory == statements_without_memory
+    # 켠 턴: SAVEPOINT·장면 후보·사실 행·줄 렌더·RELEASE 다섯 문장이 더해진다.
+    assert statements_recall_on == statements_with_memory + 5
