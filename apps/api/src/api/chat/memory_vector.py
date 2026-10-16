@@ -125,8 +125,8 @@ def _distance(query: QueryVector) -> Any:
 
 
 def _episode_distance_statement(room_id: uuid.UUID, cursor: MessageKey, query: QueryVector, limit: int) -> Executable:
-    """그 방에서 회상 후보와 같은 조건(커서까지 접힌 스냅샷이 뽑았고 커서 이하에서 끝나는 장면)의 장면 임베딩을 질의와 가까운
-    순으로 `limit` 개. 거리가 같으면 장면 id 순이다."""
+    """그 방에서 회상 후보와 같은 조건(커서까지 접힌 스냅샷이 뽑았고 커서 이하에서 끝나는 장면)이고 회상에 실을 수 있는 장면의
+    임베딩을 질의와 가까운 순으로 `limit` 개. 거리가 같으면 장면 id 순이다."""
     embedding, episode, snapshot = ChatMemoryEmbedding, ChatMemoryEpisode, ChatRoomMemorySnapshot
     distance = _distance(query)
     return (
@@ -139,6 +139,9 @@ def _episode_distance_statement(room_id: uuid.UUID, cursor: MessageKey, query: Q
             embedding.dims == query.dims,
             tuple_(episode.end_created_at, episode.end_message_id) <= cursor,
             tuple_(snapshot.cursor_created_at, snapshot.cursor_message_id) <= cursor,
+            # 회상하지 않는 인물 장면(`memory_recall.CHARACTER_ASSERTED`)은 자르기 전에 뺀다 — 뒤에서 빼면 앞 `limit` 개의 절반 넘게가
+            # 인물 장면인 방에서 벡터 순위가 몇 개로 준다.
+            episode.asserted_by != "character",
         )
         .order_by(distance, embedding.episode_id)
         .limit(limit)

@@ -35,7 +35,7 @@ import logging
 import math
 import re
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -81,6 +81,10 @@ USER_ASSERTION_TAIL = " (사용자의 말)"
 _ASSERTION_TAILS = {"character": CHARACTER_ASSERTION_TAIL, "mixed": " (인물의 말 포함)", "user": USER_ASSERTION_TAIL}
 
 RecallPath = Literal["user", "assistant"]
+
+# 인물이 대사로만 말한 장면의 `asserted_by`. 확인되지 않은 말이라 회상 줄에 싣지 않는다 — 실으면 생성 모델이 꼬리표를 넘어 사실로
+# 굳힌다. 섞임(인물의 말이 일부 섞인 장면)·사용자·서술 장면은 싣는다. 벡터 쪽 거리 읽기(`chat/memory_vector.py`)도 같은 값을 거른다.
+CHARACTER_ASSERTED = "character"
 
 
 @dataclass(frozen=True)
@@ -227,7 +231,7 @@ def recall_line(title: str, detail: str, asserted_by: str) -> str:
 
 
 def _candidate_statement(room_id: uuid.UUID, cursor: MessageKey) -> Executable:
-    """그 방에서 지금 커서까지 접힌 스냅샷이 뽑았고 커서 이하에서 끝나는 장면(점수에 필요한 칸만)과 그 스냅샷의 커서. 방
+    """그 방에서 지금 커서까지 접힌 스냅샷이 뽑았고 커서 이하에서 끝나는 장면(점수와 거름에 필요한 칸만)과 그 스냅샷의 커서. 방
     조건 인덱스(`ix_chat_memory_episodes_room_end`)를 탄다. 이 읽기는 대화 길이에 따라 선형으로 는다."""
     episode, snapshot = ChatMemoryEpisode, ChatRoomMemorySnapshot
     return (
@@ -238,6 +242,7 @@ def _candidate_statement(room_id: uuid.UUID, cursor: MessageKey) -> Executable:
             episode.end_turn,
             snapshot.cursor_created_at,
             snapshot.cursor_message_id,
+            episode.asserted_by,
         )
         .join(snapshot, snapshot.id == episode.snapshot_id)
         .where(
@@ -288,6 +293,9 @@ async def _recall(
         )
         for row in rows
     ]
+    # 통계(장면 수·흔한 명사·사용자 토큰 풀·최근 스냅샷 둘)는 방 장면 전부로 내고, 싣지 않을 장면은 순위에서만 뺀다 — 먼저 빼면
+    # 최근 스냅샷 둘이 옛 스냅샷으로 밀리고, 빠진 장면에만 있던 사용자 토큰이 사라져 질의 쪽이 바뀌고, 작은 방은 하한 아래로 내려간다.
+    excluded = {str(row[0]) for row in rows if row[6] == CHARACTER_ASSERTED}
     scan = recent_scan_turns(window, user_content, 0, names=names)[0]
     user_text = "\n".join(scan.user_texts)
     query = query_tokens(
@@ -313,8 +321,8 @@ async def _recall(
         )
         vector_ids = [str(episode_id) for episode_id, _ in nearest if str(episode_id) in candidate_ids]
     if vector_ids:
-        return await _hybrid(db, candidates, query, vector_ids, current_turn=current_turn, cue=cue)
-    scored = score_episodes(candidates, query, current_turn=current_turn)
+        return await _hybrid(db, candidates, query, vector_ids, excluded, current_turn=current_turn, cue=cue)
+    scored = [row for row in score_episodes(candidates, query, current_turn=current_turn) if row.id not in excluded]
     injected = select_injected(scored, recall_cue=cue)
     if not injected:
         return NO_RECALL
@@ -343,14 +351,20 @@ async def _hybrid(
     candidates: Sequence[RecallCandidate],
     query: RecallQuery,
     vector_ids: Sequence[str],
+    excluded: Collection[str],
     *,
     current_turn: int,
     cue: bool,
 ) -> Recall:
-    """벡터 쪽이 비지 않은 턴의 회상. 명사 쪽은 임계 이상인 장면의 순위 목록(긴 방 df 상한을 건 점수), 벡터 쪽은 거리 순 목록이고
+    """벡터 쪽이 비지 않은 턴의 회상. 명사 쪽은 임계 이상인 장면의 순위 목록(긴 방 df 상한을 건 점수, `excluded` 를 뺀 것), 벡터
+    쪽은 거리 순 목록(거리 읽기가 이미 거른 것)이고
     둘을 RRF 로 합쳐 상한(보통 턴·회상 단서 턴)만큼 싣는다. 턴 기록 칸에 명사 순위·점수(명사 쪽에 없으면 None)와 벡터 순위를
     함께 남긴다."""
-    scored = score_episodes(candidates, query, current_turn=current_turn, df_max=settings.memory_embed_recall_df_max)
+    scored = [
+        row
+        for row in score_episodes(candidates, query, current_turn=current_turn, df_max=settings.memory_embed_recall_df_max)
+        if row.id not in excluded
+    ]
     by_id = {row.id: row for row in scored}
     noun_ids = [row.id for row in scored if row.s >= TAU]
     cap = settings.memory_embed_recall_max_cue if cue else settings.memory_embed_recall_max_plain
