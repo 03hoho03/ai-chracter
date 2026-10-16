@@ -592,9 +592,9 @@ class Settings(BaseSettings):
     # 켜면 Voyage 키(`voyage_api_key`)가 있어야 기동한다. 끄면(줄 삭제 + 재기동) 이미 채운 행은 남고 새로 채우지 않는다.
     memory_embed_write: bool = False
     # 임베딩 모델 id 와 출력 차원. 임베딩 표는 행마다 모델·차원을 적고 읽는 쪽이 늘 지금 값으로 거르므로, 바꾸면 그 모델·차원의
-    # 행이 없는 장면·사실을 처음부터 다시 채운다(옛 행은 남는다). 기본값은 Voyage 4 계열에서 가장 싼 모델과 Voyage 의 기본 출력
-    # 차원이고, 회상 품질 비교 뒤 env 로 확정한다.
-    memory_embed_model: str = "voyage-4-lite"
+    # 행이 없는 장면·사실을 처음부터 다시 채운다(옛 행은 남는다). 기본값은 회상 품질 측정(Voyage 4 계열 모델 × 출력 차원 비교)이
+    # 고른 값이라 스위치만 켜도 측정한 설정으로 돈다. 두 임베딩 스위치가 꺼져 있으면 이 값을 읽는 호출이 없다.
+    memory_embed_model: str = "voyage-4-large"
     memory_embed_dims: int = 1024
     voyage_api_key: str = Field(default="", repr=False)
     # 매 턴 질의 임베딩을 한 번 받아(이번 사용자 메시지 + 직전 응답) 장면 회상과 사실 섹션의 관련 몫을 명사 순위와 벡터 거리
@@ -606,10 +606,10 @@ class Settings(BaseSettings):
     # 질의 임베딩의 시간 상한(밀리초). 생성 앞에서 기다리므로 첫 글자 지연이 이만큼까지 는다 — 넘기면 기다리지 않고 명사 단독이다.
     memory_embed_recall_timeout_ms: int = 250
     # 아래는 벡터 쪽이 비지 않은 턴에만 쓰는 값이다(비면 명사 단독의 모듈 상수 그대로라 이 값과 무관하게 바이트가 같다). 기본값은
-    # 명사 단독과 같은 주입 상한(보통 턴 1·회상 단서 턴 3), RRF 의 관례값 k = 60, 거리로 거르지 않음(코사인 거리의 최댓값 2),
-    # 흔한 명사의 절대 상한 없음(비율 기준만)이고, 개발 절반 격자로 다시 정한다. 회상의 벡터 순위는 거리 순 앞 `vector_limit`
+    # 회상 품질 측정의 격자가 고른 값이다 — 명사 단독과 같은 주입 상한(보통 턴 1·회상 단서 턴 3), RRF k = 20, 거리로 거르지 않음
+    # (코사인 거리의 최댓값 2), 흔한 명사의 절대 상한 없음(비율 기준만). 회상의 벡터 순위는 거리 순 앞 `vector_limit`
     # 개까지다. k 와 거리 상한은 사실 섹션 관련 몫에도 쓴다(사실 쪽 벡터 순위는 지식 범위 필터를 지난 행 전부라 길이 상한이 없다).
-    memory_embed_recall_rrf_k: int = 60
+    memory_embed_recall_rrf_k: int = 20
     memory_embed_recall_max_plain: int = 1
     memory_embed_recall_max_cue: int = 3
     memory_embed_recall_max_distance: float = 2.0

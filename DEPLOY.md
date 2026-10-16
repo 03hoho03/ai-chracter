@@ -268,12 +268,23 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `MEMORY_WINDOW_GENERATION` | 설정 안 함(기본 `true`) | 긴 방의 생성 프롬프트에서 요약이 덮은 메시지를 빼는 히스토리 윈도우. `false` 면 전체 히스토리를 싣는다 — 요약 품질 사고 때 재기동만으로 예전 동작으로 돌아가는 스위치이고, 끄면 아래 두 판정 스위치도 무시된다 |
 | `MEMORY_WINDOW_ENDING_JUDGMENT` | 설정 안 함(기본 `true`) | 엔딩 판정에도 윈도우를 씌운다(요약이 덮은 원문 대신 현재 요약을 싣는다). `false` 는 판정 품질 사고 때 되돌리는 용도다 — 끄면 판정이 대화 전체를 실어 긴 방에서 토큰 원가·지연이 턴 수만큼 늘고 판정 타임아웃·컨텍스트 한도에 닿을 수 있다. 되돌리기는 VM `.env` 에 `MEMORY_WINDOW_ENDING_JUDGMENT=false`·`MEMORY_WINDOW_IMAGE_JUDGMENT=false` 두 줄을 추가 → 아래 형식 검사 → `sudo bash ops/swap-api.sh`(`restart` 는 env 를 다시 읽지 않는다 — "env 반영 재기동" 절). 넣으면 위 VM 키 수를 다시 센다 |
 | `MEMORY_WINDOW_IMAGE_JUDGMENT` | 설정 안 함(기본 `true`) | 그림 매칭 판정 — 캐릭터 상황 이미지와 스토리 미디어 북 칸 둘 다 — 에도 윈도우를 씌운다(최근 원문만 싣고 요약은 싣지 않는다). 미디어 북 칸 판정은 엔딩 뒤·재생성까지 매 턴 돌아 끄면 가장 크게 늘어난다. 끄는 법·주의는 위와 같다 |
-| `MEMORY_EPISODES_EXTRACT` | 설정 안 함(기본 `false`) | 요약 접기가 접은 구간을 장면 기억으로 뽑는 백그라운드 추출(턴 뒤, 접기 다음). 꺼져 있으면 아무것도 예약하지 않아 턴 동작이 이 키가 생기기 전과 같고, `MEMORY_WINDOW_GENERATION=false` 면 켜도 돌지 않는다. 추출 호출은 클로버·레이트리밋에 세지 않는다. 켜는 법은 줄 추가(`MEMORY_EPISODES_EXTRACT=true`) → 형식 검사 → `sudo bash ops/swap-api.sh` 다. 켠 직후에는 이미 요약이 접힌 기존 방의 밀린 스냅샷을 그 방의 턴마다 하나씩 소화하므로, 따라잡을 때까지 추출 원가가 접기당 1회보다 일시적으로 많다(밀린 수는 방마다 지금까지의 접기 수다). 끄기는 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 이미 뽑은 장면은 남고 새로 뽑지 않는다 |
-| `MEMORY_EPISODES_RECALL` | 설정 안 함(기본 `false`) | 매 턴 방의 장면 기억에서 이번 턴과 이어질 장면을 골라 생성 프롬프트의 대화 기록 바로 뒤 섹션에 싣는다(LLM 호출 없음, 장면 읽기 한두 번). 꺼져 있으면 장면을 읽지도 않아 생성 프롬프트가 이 키가 생기기 전과 같고, `MEMORY_WINDOW_GENERATION=false` 면 켜도 돌지 않는다. 실은 장면은 턴 기록(`chat_turns.memory_recall`)에 id·점수·순위·글자 수·질의 쪽으로 남는다. 장면은 추출(`MEMORY_EPISODES_EXTRACT`)이 만들므로 추출 없이 켜면 실을 장면이 없다. 켜는 법은 줄 추가(`MEMORY_EPISODES_RECALL=true`) → 형식 검사 → `sudo bash ops/swap-api.sh`, 끄기는 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 다음 턴부터 섹션이 빠지고 장면·기록은 남는다 |
-| `MEMORY_EPISODE_MODEL` | 설정 안 함(기본 `gemini`) | 장면 기억 추출의 모델(문안 체인의 모델 id). 판정·요약 모델 키와 같은 규칙이다 — `haiku`·`sonnet`·`opus` 면 그 모델이 갈 구현의 배정·자격이 있어야 기동한다 |
-| `MEMORY_FACTS_EXTRACT` | 설정 안 함(기본 `false`) | 요약 접기가 접은 구간을 관계·사실 기억(인물 관계와 인물 속성, 누가 말했고 무엇이 뒤집혔는지)으로 뽑는 백그라운드 추출(턴 뒤, 장면 추출 다음). 장면 추출과 따로 켜고 끈다 — 한쪽이 실패해도 다른 쪽 완료 표지는 흔들리지 않는다. 꺼져 있으면 아무것도 예약하지 않아 턴 동작이 이 키가 생기기 전과 같고, `MEMORY_WINDOW_GENERATION=false` 면 켜도 돌지 않는다. 추출 호출은 클로버·레이트리밋에 세지 않는다. 켜는 법은 줄 추가(`MEMORY_FACTS_EXTRACT=true`) → 형식 검사 → `sudo bash ops/swap-api.sh` 다. 켠 직후에는 장면 추출과 같은 이유로 기존 방의 밀린 스냅샷을 턴마다 하나씩 소화해 따라잡을 때까지 추출 원가가 일시적으로 많다. 끄기는 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 이미 뽑은 사실은 남고 새로 뽑지 않는다 |
-| `MEMORY_FACT_MODEL` | 설정 안 함(기본 `gemini`) | 관계·사실 기억 추출의 모델(문안 체인의 모델 id). 판정·요약 모델 키와 같은 규칙이다 — `haiku`·`sonnet`·`opus` 면 그 모델이 갈 구현의 배정·자격이 있어야 기동한다 |
-| `MEMORY_FACTS_INJECT` | 설정 안 함(기본 `false`) | 매 턴 방의 관계·사실 기억을 키마다 지금 값으로 줄여(뒤집힌 값은 되살리지 않는다) 생성 프롬프트의 대화 기록 뒤·회상 앞 섹션에 싣는다(LLM 호출 없음, 사실 읽기 한 번, 줄 합계 700자 상한 — 상한의 앞 30% 는 관계 → 아는 사람이 정해진 사실 → 뒤집힌 사실 → 그 밖 순서, 나머지는 이번 사용자 메시지와 드문 낱말이 겹치는 사실을 먼저 채운다). 꺼져 있으면 사실을 읽지도 않아 생성 프롬프트가 이 키가 생기기 전과 같고, `MEMORY_WINDOW_GENERATION=false` 면 켜도 돌지 않는다(원문이 전체로 실리면 같은 사실이 두 번 들어간다). 실은 사실은 턴 기록(`chat_turns.memory_facts`)에 id·글자 수로 남는다. 사실은 추출(`MEMORY_FACTS_EXTRACT`)이 만들므로 추출 없이 켜면 실을 사실이 없다. 켜는 법은 줄 추가(`MEMORY_FACTS_INJECT=true`) → 형식 검사 → `sudo bash ops/swap-api.sh`, 끄기는 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 다음 턴부터 섹션이 빠지고 사실·기록은 남는다 |
+| `STAT_JUDGMENT_MODEL` / `ENDING_JUDGMENT_MODEL` / `IMAGE_JUDGMENT_MODEL` / `MEMORY_SUMMARY_MODEL` | **운영 `haiku`**(2026-10-13부터, 코드 기본값 `gemini`) | 스탯 판정 / 엔딩 판정 / 그림 매칭 판정(캐릭터 상황 이미지·스토리 미디어 북 칸) / 기억 요약 접기의 모델(문안 체인의 모델 id `gemini`·`haiku`·`sonnet`·`opus`, 미리보기 판정도 같은 키를 쓴다). 방의 모델과 무관하다. `gemini` 면 실제 Gemini 모델은 위 `GEMINI_*_JUDGMENT_MODEL_NAME`·`GEMINI_MODEL_NAME` 이 고른다. Claude 모델은 배정이 없으면 Bedrock 으로 가고, 운영은 `LLM_CALL_SITE_BACKENDS` 에 그 호출 위치를 `anthropic` 으로 배정해 Anthropic 직결(`ANTHROPIC_HAIKU_MODEL_ID`, 설정 안 함 — 기본값은 `.env.example`)로 보낸다. 🔴 모델 줄과 그 호출 위치의 배정 항목은 **한 편집에서 함께** 바꾼다 — 모델을 `gemini` 로 돌리고 배정을 남기면(`anthropic` 은 Gemini 를 서비스하지 않는다) 배정만 지우고 `haiku` 를 남기면(운영 `.env` 에 `BEDROCK_*` 키가 없다) api 가 기동하지 못한다. 배정의 호출 위치 이름을 모르는 옛 이미지로 태그 롤백할 때도 그 항목을 먼저 지운다. 장면·사실 추출 모델(`MEMORY_EPISODE_MODEL`·`MEMORY_FACT_MODEL`)도 같은 규칙이다 |
+| `MEMORY_EPISODES_EXTRACT` | **운영 `true`**(2026-10-14부터, 코드 기본값 `false`) | 요약 접기가 접은 구간을 장면 기억으로 뽑는 백그라운드 추출(턴 뒤, 접기 다음). 꺼져 있으면 아무것도 예약하지 않아 턴 동작이 이 키가 생기기 전과 같고, `MEMORY_WINDOW_GENERATION=false` 면 켜도 돌지 않는다. 추출 호출은 클로버·레이트리밋에 세지 않는다. 켜는 법은 줄 추가(`MEMORY_EPISODES_EXTRACT=true`) → 형식 검사 → `sudo bash ops/swap-api.sh` 다. 켠 직후에는 이미 요약이 접힌 기존 방의 밀린 스냅샷을 그 방의 턴마다 하나씩 소화하므로, 따라잡을 때까지 추출 원가가 접기당 1회보다 일시적으로 많다(밀린 수는 방마다 지금까지의 접기 수다). 끄기는 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 이미 뽑은 장면은 남고 새로 뽑지 않는다 |
+| `MEMORY_EPISODES_RECALL` | 설정 안 함(기본 `false`) | 매 턴 방의 장면 기억에서 이번 턴과 이어질 장면을 골라 생성 프롬프트의 대화 기록 바로 뒤 섹션에 싣는다(LLM 호출 없음, 장면 읽기 한두 번). 꺼져 있으면 장면을 읽지도 않아 생성 프롬프트가 이 키가 생기기 전과 같고, `MEMORY_WINDOW_GENERATION=false` 면 켜도 돌지 않는다. 실은 장면은 턴 기록(`chat_turns.memory_recall`)에 id·점수·순위·글자 수·질의 쪽으로 남는다. 장면은 추출(`MEMORY_EPISODES_EXTRACT`)이 만들므로 추출 없이 켜면 실을 장면이 없다. 켜는 법은 줄 추가(`MEMORY_EPISODES_RECALL=true`) → 형식 검사 → `sudo bash ops/swap-api.sh`, 끄기는 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 다음 턴부터 섹션이 빠지고 장면·기록은 남는다. 다른 기억 스위치와의 켜는 순서는 「장기 기억 — 켜는 순서 · 끄기 · 되돌리기」 절 |
+| `MEMORY_EPISODE_MODEL` | **운영 `haiku`**(2026-10-13부터, 코드 기본값 `gemini`) | 장면 기억 추출의 모델(문안 체인의 모델 id). 판정·요약 모델 키와 같은 규칙이다 — `haiku`·`sonnet`·`opus` 면 그 모델이 갈 구현의 배정·자격이 있어야 기동한다 |
+| `MEMORY_FACTS_EXTRACT` | **운영 `true`**(2026-10-14부터, 코드 기본값 `false`) | 요약 접기가 접은 구간을 관계·사실 기억(인물 관계와 인물 속성, 누가 말했고 무엇이 뒤집혔는지)으로 뽑는 백그라운드 추출(턴 뒤, 장면 추출 다음). 장면 추출과 따로 켜고 끈다 — 한쪽이 실패해도 다른 쪽 완료 표지는 흔들리지 않는다. 꺼져 있으면 아무것도 예약하지 않아 턴 동작이 이 키가 생기기 전과 같고, `MEMORY_WINDOW_GENERATION=false` 면 켜도 돌지 않는다. 추출 호출은 클로버·레이트리밋에 세지 않는다. 켜는 법은 줄 추가(`MEMORY_FACTS_EXTRACT=true`) → 형식 검사 → `sudo bash ops/swap-api.sh` 다. 켠 직후에는 장면 추출과 같은 이유로 기존 방의 밀린 스냅샷을 턴마다 하나씩 소화해 따라잡을 때까지 추출 원가가 일시적으로 많다. 끄기는 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 이미 뽑은 사실은 남고 새로 뽑지 않는다 |
+| `MEMORY_FACT_MODEL` | **운영 `haiku`**(2026-10-14부터, 코드 기본값 `gemini`) | 관계·사실 기억 추출의 모델(문안 체인의 모델 id). 판정·요약 모델 키와 같은 규칙이다 — `haiku`·`sonnet`·`opus` 면 그 모델이 갈 구현의 배정·자격이 있어야 기동한다 |
+| `MEMORY_FACTS_INJECT` | 설정 안 함(기본 `false`) | 매 턴 방의 관계·사실 기억을 키마다 지금 값으로 줄여(뒤집힌 값은 되살리지 않는다) 생성 프롬프트의 대화 기록 뒤·회상 앞 섹션에 싣는다(LLM 호출 없음, 사실 읽기 한 번, 줄 합계 700자 상한 — 상한의 앞 30% 는 관계 → 아는 사람이 정해진 사실 → 뒤집힌 사실 → 그 밖 순서, 나머지는 이번 사용자 메시지와 드문 낱말이 겹치는 사실을 먼저 채운다). 꺼져 있으면 사실을 읽지도 않아 생성 프롬프트가 이 키가 생기기 전과 같고, `MEMORY_WINDOW_GENERATION=false` 면 켜도 돌지 않는다(원문이 전체로 실리면 같은 사실이 두 번 들어간다). 실은 사실은 턴 기록(`chat_turns.memory_facts`)에 id·글자 수로 남는다. 사실은 추출(`MEMORY_FACTS_EXTRACT`)이 만들므로 추출 없이 켜면 실을 사실이 없다. 켜는 법은 줄 추가(`MEMORY_FACTS_INJECT=true`) → 형식 검사 → `sudo bash ops/swap-api.sh`, 끄기는 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh` — 다음 턴부터 섹션이 빠지고 사실·기록은 남는다. 🔴 임베딩 쓰기·읽기를 켠 뒤 마지막에 켠다(「장기 기억 — 켜는 순서 · 끄기 · 되돌리기」 절) |
+| `MEMORY_KNOWLEDGE_FILTER` | 설정 안 함(기본 `false`) | 사실 섹션을 고르기 전에, 아는 사람이 정해진 사실 중 그 사람이 이번 장면(이번 사용자 메시지·직전 응답에 이름이 나온 인물, 사용자 제외)에 없는 행을 뺀다 — 비밀을 모르는 인물만 있는 장면에서 그 비밀이 새지 않게. 사실 섹션 안에서만 걸리므로 `MEMORY_FACTS_INJECT` 가 꺼져 있으면 켜도 생성 프롬프트·SQL 이 같다. 🔴 켤 때는 `MEMORY_SUMMARY_SECRET_MARKING` 과 한 번에 켠다(「장기 기억 — 켜는 순서 · 끄기 · 되돌리기」 절). 끄면 다음 턴부터 걸러 내지 않는다 |
+| `MEMORY_SUMMARY_SECRET_MARKING` | 설정 안 함(기본 `false`) | 요약 접기 프롬프트의 지시문 바로 뒤에 비밀 표기 슬롯(비밀에 아는 사람 표기를 붙이고 그 내용을 표기 없이 다시 쓰지 않게 하는 지시와 그 방의 인물 이름 목록)을 싣는다. 꺼져 있으면 이름을 읽지도 않고 슬롯이 빠져 요약 프롬프트가 바이트까지 그대로다. 🔴 켜면 다음 접기부터 **모든 방**의 요약 글이 바뀌고, 그 요약이 생성 프롬프트와 엔딩 판정 입력에도 실린다. 끄면 다음 접기부터 슬롯이 빠지고 이미 쓴 요약은 그대로 남는다. 슬롯 문안은 프롬프트 세트 데이터라 이미지 롤백으로는 빠지지 않는다(옛 코드는 슬롯 값을 넘기지 않아 조용히 빠진다) |
+| `MEMORY_EMBED_WRITE` | 설정 안 함(기본 `false`) | 턴 뒤 백그라운드(접기·장면 추출·사실 추출 다음)에서 방의 장면·사실 행 중 지금 모델·차원의 임베딩이 없는 것을 오래된 순서로 한 번에 64행까지 Voyage 로 임베딩해 `chat_memory_embeddings` 에 넣는다. 꺼져 있으면 예약하지 않아 Voyage 호출·임베딩 표 읽기·쓰기가 0 이다. 사용자 프롬프트는 켜도 그대로다(읽는 쪽은 `MEMORY_EMBED_RECALL`). 켜면 `VOYAGE_API_KEY` 가 있어야 기동한다. 켠 직후에는 이미 쌓인 행을 방마다 턴당 64행씩 따라잡아 그동안 임베딩 원가가 평소보다 많다. 클로버·레이트리밋에 세지 않는다. 끄면 이미 넣은 행은 남고 새로 채우지 않는다 |
+| `MEMORY_EMBED_MODEL` / `MEMORY_EMBED_DIMS` | 설정 안 함(기본 `voyage-4-large` / `1024`) | 임베딩 모델 id 와 출력 차원. 임베딩 행은 모델·차원을 함께 적고 읽는 쪽이 늘 지금 값으로 거르므로, 바꾸면 그 모델·차원의 행이 없는 장면·사실을 처음부터 다시 채운다(옛 행은 남는다). 기본값이 회상 품질 측정이 고른 값이라 켤 때 줄을 넣지 않는다 — 측정과 다른 모델·차원으로 돌릴 때만 넣는다. 단가표(`apps/api/src/api/llm/pricing.py`)에 없는 모델 id 면 원가가 "단가 없음"으로 빠진다 |
+| `VOYAGE_API_KEY` | Voyage 콘솔에서 만든 이 서비스 전용 API 키 | 임베딩 쓰기·읽기의 자격. 둘 중 하나라도 켜졌는데 비어 있으면 api 가 기동하지 못한다(교체가 실패하고 옛 색이 계속 서빙한다). 🔴 꺼진 채로는 넣지 않아도 된다. 지울 때는 두 스위치 줄을 먼저 지운다. 켜기 전 조건(처리방침 게시·학습 데이터 설정)은 「장기 기억 — 켜는 순서 · 끄기 · 되돌리기」 절 |
+| `MEMORY_EMBED_RECALL` | 설정 안 함(기본 `false`) | 매 턴 질의 임베딩을 한 번 받아(이번 사용자 메시지 + 직전 응답) 장면 회상과 사실 섹션의 관련 몫을 명사 순위와 벡터 거리 순위의 RRF 로 고른다. `MEMORY_EPISODES_RECALL` 이나 `MEMORY_FACTS_INJECT` 가 켜진 턴에만 부른다. 질의 임베딩이 시간 상한을 넘기거나 실패하거나 방에 지금 모델·차원의 임베딩이 없으면 그 턴은 명사 단독과 바이트까지 같다. 질의 임베딩 한 칸(`{callSite, model, dims, promptTokens, latencyMs, outcome}`)이 턴 기록 `chat_turns.llm_calls` 맨 앞에 남는다. 켜면 `VOYAGE_API_KEY` 가 있어야 기동한다. 🔴 `MEMORY_EMBED_WRITE` 를 먼저 켠다 — 읽기만 켜면 임베딩 행이 없어 매 턴 결과를 쓰지 못할 Voyage 호출을 하고(원가와 첫 글자 지연만 는다) 기동 검사로도 막지 않는다. 끄면 다음 턴부터 명사 단독이다 |
+| `MEMORY_EMBED_RECALL_TIMEOUT_MS` | 설정 안 함(기본 `250`) | 질의 임베딩의 시간 상한(ms). 생성 앞에서 기다리므로 첫 글자 지연이 이만큼까지 는다 — 넘기면 기다리지 않고 그 턴은 명사 단독이다. 측정이 고른 값도 `250` 이다. 켠 뒤 턴 기록의 `outcome` 이 `timeout` 인 칸 비율로 다시 본다(아래 원가 스크립트가 센다) |
+| `MEMORY_EMBED_RECALL_RRF_K` | 설정 안 함(기본 `20`) | RRF `Σ 1/(k + 순위)` 의 k. 장면 회상과 사실 섹션 관련 몫이 함께 쓴다. 기본값이 측정이 고른 값이다 |
+| `MEMORY_EMBED_RECALL_MAX_PLAIN` / `MEMORY_EMBED_RECALL_MAX_CUE` | 설정 안 함(기본 `1` / `3`) | 벡터 쪽이 비지 않은 턴의 회상 주입 상한 — 보통 턴 / 회상 단서("예전에"·"기억나" 등)가 있는 턴. 명사 단독의 상한과 같은 값이고 측정이 고른 값도 같다 |
+| `MEMORY_EMBED_RECALL_MAX_DISTANCE` / `MEMORY_EMBED_RECALL_VECTOR_LIMIT` / `MEMORY_EMBED_RECALL_DF_MAX` | 설정 안 함(기본 `2.0` / `10` / 비어 있음) | 벡터 순위에 넣는 코사인 거리 상한 / 회상의 벡터 순위에 넣는 거리 순 앞 개수 / 흔한 명사의 절대 상한(비면 비율 기준만). 🔴 거리 상한 `2.0` 은 코사인 거리의 최댓값이라 **아무것도 거르지 않는다** — 그래서 보통 턴에도 거의 매번 가장 가까운 장면 하나가 실린다. 측정 격자에서 상한을 둔 점과 목적함수가 같아 기본값에 가장 가까운 점(`2.0`·`10`·비어 있음)을 골랐고, 보통 턴 주입률이 명사 단독 0.95 에서 1.00 으로 오르는 것을 받아들였다. 사실 섹션 관련 몫도 같은 거리 상한을 쓴다 |
 | `NOVELIZE_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 소설화(대화를 장편 소설의 장으로 옮겨 쓰기) 전역 스위치. 쓰려면 이 스위치·아래 명단·어드민이 준 계정별 허용 셋이 모두 있어야 한다 — 코드 기본값이 닫힘이라 이 줄 없이 배포하면 닫힌 채 뜬다. 끄면 재기동 뒤 모든 소설 화면·API 가 403 이고 허용 행은 남는다(다시 켜면 그대로 돌아온다). 켜기·끄기·회수·롤백은 "소설화 켜기 · 끄기 · 회수 · 롤백" 절 |
 | `NOVELIZE_GRANT_ALLOWLIST` | 허용할 수 있는 계정 id, **쉼표 구분**(공백·따옴표 없이) | 어드민이 허용을 줄 때와 사용자가 접근할 때 둘 다 본다 — 명단 밖 계정에는 어드민이 허용을 줄 수 없고(422), 명단에서 빼고 재기동하면 허용 행이 남아 있어도 바로 막힌다. 비면 아무에게도 줄 수 없다(기본값). UUID 가 아닌 항목이 있으면 api 가 기동하지 못한다. 개인정보 처리방침이 소설화를 적기 전에는 운영자 계정만 넣는다 |
 | `GEMINI_NOVELIZE_MODEL_NAME` | 설정 안 함(기본값은 `apps/api/.env.example` 주석 줄) | 소설화 장 생성·문단 수정 모델. 장 경계 제안은 이 키가 아니라 `GEMINI_MODEL_NAME` 을 쓴다. 값이 비면 `GEMINI_MODEL_NAME` |
@@ -294,7 +305,7 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `BEDROCK_CHAT_TIMEOUT_MS` / `BEDROCK_CHAPTER_TIMEOUT_MS` | 설정 안 함(기본 `45000` / `300000`) | 상위 모델 채팅 턴 / 소설 장 생성의 요청 타임아웃(ms). 스트리밍이라 "다음 청크까지"의 상한이다. 재시도는 하지 않는다 |
 | `BEDROCK_CHAT_MAX_TOKENS` / `BEDROCK_CHAPTER_MAX_TOKENS` | 설정 안 함(기본 `4096` / `32768`) | 출력 상한. Bedrock 은 요청의 출력 상한만큼 분당 토큰 쿼터를 먼저 잡으므로 올리면 동시 요청이 스로틀되기 쉽다. 장이 잘리면 실패·환불이다 |
 | `ANTHROPIC_DIRECT_API_KEY` | Anthropic 콘솔에서 만든 이 서비스 전용 API 키 | 상위 모델을 Anthropic API 로 직접 보낼 때의 자격. SDK 가 스스로 읽는 `ANTHROPIC_API_KEY` 와 이름을 나눴다. 아래 배정이 호출을 직결로 옮기는데 비어 있으면 스위치와 무관하게 api 가 기동하지 못한다. 직결의 모델 id·타임아웃·출력 상한·사고 깊이(나머지 `ANTHROPIC_*`)는 설정 안 함이 기본이다(기본값은 `.env.example`) |
-| `LLM_CALL_SITE_BACKENDS` | `chat_generate:anthropic,replay_generate:anthropic,novelize_chapter:anthropic`(쉼표 구분, 공백·따옴표 없이. 코드 기본값은 배정 없음) | 호출 위치마다 공급자 구현을 배정한다. 배정이 없는 호출 위치의 상위 모델은 코드 기본 경로인 Bedrock 으로 간다. 🔴 운영은 이 세 배정을 유지한다 — 빼면 채팅 Opus 가 Bedrock 으로 가고, 스위치가 켜진 채 Bedrock 키가 없으면 api 가 기동하지 못한다. 따를 수 없는 배정(모르는 이름, 그 모델을 서비스하지 않는 구현)도 기동을 막는다. 절은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" |
+| `LLM_CALL_SITE_BACKENDS` | `chat_generate:anthropic,replay_generate:anthropic,novelize_chapter:anthropic` 에 더해 판정·요약·추출 호출 위치 열 `chat_stat_judgment`·`chat_ending_judgment`·`chat_situational_image`·`chat_media_book_image`·`chat_memory_summary`·`chat_memory_episode`·`preview_stat_judgment`·`preview_ending_judgment`·`preview_media_book_image`(2026-10-13)·`chat_memory_fact`(2026-10-14)도 `:anthropic`(쉼표 구분, 공백·따옴표 없이. 코드 기본값은 배정 없음) | 호출 위치마다 공급자 구현을 배정한다. 배정이 없는 호출 위치의 상위 모델은 코드 기본 경로인 Bedrock 으로 간다. 판정·요약·추출 항목은 위 `STAT_JUDGMENT_MODEL` 행의 모델 줄과 짝이라 함께 넣고 함께 지운다. 🔴 운영은 채팅 세 배정을 유지한다 — 빼면 채팅 Opus 가 Bedrock 으로 가고, 스위치가 켜진 채 Bedrock 키가 없으면 api 가 기동하지 못한다. 따를 수 없는 배정(모르는 이름, 그 모델을 서비스하지 않는 구현)도 기동을 막는다. 절은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" |
 | `CHAT_PREMIUM_MODELS_ENABLED` | 켤 때 `true`(코드 기본값은 꺼짐) | 채팅 상위 모델 스위치. 켜면 로그인 회원 모두가 채팅방에 상위 모델(Opus)을 고를 수 있다 — 명단·계정별 허용은 없다. 운영 `.env` 에 남은 `CHAT_PREMIUM_MODEL_ALLOWLIST` 줄은 지금 이미지가 읽지 않지만 지우지 않는다(채팅 명단이 있던 옛 이미지로 태그 롤백하면 옛 판정이 그 명단을 다시 읽는다). 켜고 끄는 법은 "상위 모델(채팅 Opus 직결) — 꺼진 채 배포 · 켜기 · 끄기" 절 |
 | `NOVELIZE_PREMIUM_MODELS_ENABLED` / `NOVELIZE_PREMIUM_MODEL_ALLOWLIST` | 켤 때 `true` / 계정 id **쉼표 구분**(코드 기본값은 꺼짐·빈 명단) | 소설 장 상위 모델 스위치와 허용 가능 계정 명단. 뜻은 소설화 스위치·명단과 같고, 어드민이 준 계정별 허용 행도 있어야 한다. 소설화 자체(`NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`)도 열려 있어야 쓸 수 있다 |
 | `NOVEL_PUBLIC_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 노벨(공개 소설) 스위치. 소설화(`NOVELIZE_ENABLED`·명단·계정별 허용)와 별개로 이 스위치도 켜져 있어야 소설을 노벨에 공개·다시 공개할 수 있다 — 코드 기본값이 닫힘이라 이 줄 없이 배포하면 닫힌 채 뜬다. 끄면 재기동 뒤 공개·다시 공개·게시자의 공개 상태 조회가 403 `NOVEL_PUBLIC_DISABLED` 이고, 공개 상태 행은 남아 다시 켜면 그대로 돌아온다. 켜기·끄기는 "노벨(공개 소설) 켜기 · 끄기" 절 |
@@ -2078,6 +2089,107 @@ sudo bash ops/swap-api.sh
 정보를 다시 입력받는다(새 판이 새 키로 저장된다). 이미 신청된 건은 반려한 뒤 다시 신청받는다.
 
 ---
+
+### 3-15. 장기 기억 — 켜는 순서 · 끄기 · 되돌리기
+
+장기 기억 스위치는 env 표의 `MEMORY_*` 행이고 전부 코드 기본값이 꺼짐이라, 줄이 없으면 배포만으로는 아무것도 켜지지 않는다.
+켜고 끄는 법은 모두 같다 — 편집 전 `sudo cp -p /opt/ddona/.env /opt/ddona/.env.bak-<날짜>-memory-<스위치>` → 줄 추가·삭제(같은 키가
+이미 있으면 새 줄을 더하지 말고 그 줄을 고친다) → `sudo python3 ops/check_env.py --format /opt/ddona/.env` →
+`sudo bash ops/swap-api.sh`("env 반영 재기동" 절). 백업은 비교용이다 — 통째로 복원하지 않는다(교체 스크립트가 같은 파일의
+`API_IMAGE_BLUE`·`API_IMAGE_GREEN` 을 고친다). 줄을 넣거나 빼면 "BE 런타임" 절의 키 개수 문장을 VM 에서 다시 센다.
+
+**지금 운영(2026-10-16).** 장면·사실 추출(`MEMORY_EPISODES_EXTRACT`·`MEMORY_FACTS_EXTRACT`)이 켜져 있고 추출·요약·판정 모델은
+`haiku`(Anthropic 직결)다. 회상·사실 주입·지식 범위 필터·요약 비밀 표기·임베딩 쓰기·읽기는 꺼져 있고 `VOYAGE_API_KEY` 는 없다.
+사실 추출의 `known_by`·화자 문안은 프롬프트 세트 데이터라 스위치 없이 이미 운영 문안이다.
+
+**켜는 순서.** 한 단계씩 켜고, 단계마다 기존 방 10~15턴으로 내용·스탯·토큰과 섹션이 실렸는지(운영 읽기 전용 SELECT 로
+`chat_turns.memory_recall`·`memory_facts`)를 본 뒤 다음 단계로 간다. 이 순서만 켜는 도중의 상태가 전부 회상 품질 측정이 잰
+조합과 같다 — 순서를 바꾸면 재지 않은 조합이 운영에 생긴다.
+
+1. `MEMORY_EPISODES_RECALL=true` — 장면 회상(명사 순위만).
+2. `MEMORY_SUMMARY_SECRET_MARKING=true` 와 `MEMORY_KNOWLEDGE_FILTER=true` 를 **한 번에**. 1 을 보류하면 2 도 보류한다(회상 없이 표기·
+   필터만 켠 조합은 재지 않았다). 🔴 요약 표기는 다음 접기부터 모든 방의 요약 글을 바꾸고 그 요약이 엔딩 판정 입력에도 실린다.
+   필터는 사실 주입이 꺼진 동안 생성 프롬프트를 바꾸지 않지만 측정한 조합과 같게 하려고 함께 켠다.
+3. 임베딩과 사실 주입. 🔴 Voyage 로 대화 내용(장면·사실 글과 매 턴 질의 글)이 나가므로 그 국외이전을 담은 개인정보처리방침이
+   켜기 최소 하루 전에 게시된 뒤에만 켠다. Voyage 조직 설정에서 학습 데이터 사용이 꺼져 있는지 먼저 본다. 그 뒤 차례로:
+   1. **쓰기 먼저** — `VOYAGE_API_KEY` 와 `MEMORY_EMBED_WRITE=true` 를 한 편집에서(키 없이 스위치가
+      먼저 들어가면 기동하지 못한다). 사용자 프롬프트는 그대로이고, 밀린 행을 따라잡는 동안 임베딩 원가가 평소보다 많다.
+      사용량 집계의 `chat_memory_embedding` 줄과 Bugsink 로 실패율을 본다.
+   2. **읽기** — 회상할 방에 행이 쌓인 뒤 `MEMORY_EMBED_RECALL=true`. 🔴 쓰기를 켜지
+      않고 읽기만 켜면 매 턴 결과를 쓰지 못할 Voyage 호출만 생긴다(기동 검사가 막지 않는다).
+   3. **사실 주입** — `MEMORY_FACTS_INJECT=true` 를 마지막에. 사실 주입을 임베딩 없이 켠 조합은 재지 않았다.
+
+   측정이 고른 값은 모델 `voyage-4-large` · 차원 `1024` · RRF k `20` · 보통 턴 상한 `1` · 회상 단서 턴 상한 `3` · 거리 상한 `2.0`(거르지
+   않음 — env 표 그 행) · 거리 순 앞 `10` · 흔한 명사 절대 상한 없음 · 질의 임베딩 상한 `250` ms 이고, 사실 섹션의 이름 정확 조회 몫
+   0.3 은 코드 상수(`apps/api/src/api/chat/memory_fact_section.py` 의 `EXACT_RATIO`)다. 모두 코드 기본값이라
+   스위치·키 줄 말고는 넣을 줄이 없다.
+
+**알려진 성질 — 켜기 전에 정할 것.** Voyage 가 계속 실패해도(키 회수·쿼터 소진·장애) 멈추는 장치가 없다. 쓰기는 턴마다 채우기가
+다시 부르고(한 번에 10초 상한·세 번까지), 읽기는 턴마다 질의 임베딩을 다시 부른다(250 ms 상한 뒤 명사 단독). 두 쪽 다 매번 경고
+로그와 Bugsink 이벤트(`dependency=voyage`, 쿼터 소진은 `voyage_rate_limit`)를 남긴다. 켜기 전에 연속 실패의 상한·백오프를 코드로
+넣을지, 아니면 그 태그의 경보를 끄는 기준으로 삼을지 정한다. 같은 방에서 턴이 빠르게 겹치면 두 채우기가 같은 행을 임베딩할 수
+있다 — 중복 행은 들어가지 않고 원가만 두 번이다.
+
+**원가 보기.** 턴에 실린 호출(생성·판정·질의 임베딩)의 호출 위치별·턴별 원가 분포는 `scripts/turn_cost_report.py`(읽기 전용
+트랜잭션, 턴 기록 `chat_turns.llm_calls`), 턴 뒤 백그라운드(요약 접기·추출·임베딩 채우기)까지 포함한 일 단위 합계는
+`scripts/llm_usage_report.py` 다. 🔴 두 표를 더하지 않는다 — 일 단위 집계가 턴 기록의 호출도 함께 세어 더하면 그 몫이 두 번
+들어간다. 실행은 두 스크립트 모두 서빙 중인 색 안에서:
+
+```sh
+cd /opt/ddona/app && sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env \
+  exec -T api_$(sudo bash ops/active-color.sh) python scripts/turn_cost_report.py --from 2026-10-16 --to 2026-10-22 --chat-model opus
+```
+
+**끄기 — 켠 역순.** 줄 삭제 → 형식 검사 → `sudo bash ops/swap-api.sh`. 역순이면 되돌리는 도중의 상태도 전부 잰 조합이다.
+
+1. `MEMORY_FACTS_INJECT` → 다음 턴부터 사실 섹션이 빠진다(사실 행은 남는다).
+2. `MEMORY_EMBED_RECALL` → 다음 턴부터 명사 단독.
+3. `MEMORY_EMBED_WRITE` → 그다음 편집에서 `VOYAGE_API_KEY`. 키를 스위치보다 먼저 지우면 "켜졌는데 키 없음"으로
+   기동하지 못한다. 넣은 임베딩 행은 남는다(다시 켜면 이어서 채운다).
+4. `MEMORY_SUMMARY_SECRET_MARKING`·`MEMORY_KNOWLEDGE_FILTER` → 다음 접기부터 표기 없음. 이미 표기한 요약은 남는다.
+5. `MEMORY_EPISODES_RECALL` → 지금 운영 상태.
+
+옛 이미지는 모르는 키를 무시하므로(`extra="ignore"`) 스위치 줄이 남은 채 이미지를 되돌려도 기동은 된다 — 다만 그 기능이 조용히
+꺼진 채 돌므로 스위치부터 지운다.
+
+**되돌리기 — 스위치 → (이미지 또는 데이터).** ① 위 끄기를 먼저 한다. 그다음 ②와 ③ 중 **하나**를 고른다. ② 코드만 되돌리면 이미지 롤백(`sudo DDONA_ROLLBACK=1 bash ops/swap-api.sh
+<이전SHA>`, "BE → GCE VM" 절의 「롤백」)이 1순위다. 이 묶음의 스키마·데이터 변경은 셋이고 옛 이미지는 셋 위에서 그대로 돈다 —
+임베딩 표는 모르고 지나가고(스냅샷 삭제가 CASCADE 로 끝난다), 요약 슬롯은 옛 코드가 값을 넘기지 않아 빠지고, 사실 추출 문안은
+**옛 이미지도 새 문안을 쓴다**(DB 의 활성 세트라서). 요약 슬롯을 모르는 이미지의 어드민 게시 검증은 그 슬롯을 잉여로 보고 그 체인의
+게시만 막는다.
+③ 데이터까지 되돌릴 때(문안을 옛것으로, 또는 revert 병합이 필요할 때)는 ② **대신** 아래 downgrade 를 새 코드 이미지로 먼저 돌리고, 그
+다음에 revert(또는 이미지 롤백)한다. ②를 먼저 하면 서빙 이미지가 리비전 파일을 모르는 옛 이미지라 그 이미지로는 downgrade 가
+`Can't locate revision` 으로 멈춘다 — 그때는 아래 `IMG` 에 서빙 색이 아니라 그 리비전 파일을 가진 새 코드 이미지
+(`<IMAGE>:<새 코드 TAG>`, 롤백 전 커밋 SHA 7자리 태그)를 넣는다.
+
+| 순서 | 리비전 | 바꾼 것 | downgrade 목표 | downgrade 가 하는 일 |
+|---|---|---|---|---|
+| 1 | `0aeadefcf159` | 요약 비밀 표기 슬롯을 더한 새 세트(8 체인) | `e4e407a62d03` | 이 리비전이 만든 세트만 리터럴 id 로 지워 그 앞 세트가 다시 활성이 된다 |
+| 2 | `e4e407a62d03` | 사실 추출 `known_by`·화자 문안을 바꾼 새 세트(8 체인) | `b3b2636b9184` | 이 리비전이 만든 세트만 리터럴 id 로 지워 옛 문안이 다시 활성이 된다 |
+| 3 | `b3b2636b9184` | 임베딩 표 `chat_memory_embeddings`·`vector` 확장 | `726aad108167` | 표를 지우고, 확장은 그것에 기대는 객체가 없을 때만 지운다(임베딩은 장면·사실에서 다시 만들 수 있다) |
+
+- **리비전 하나마다 [그 리비전 파일을 가진 이미지로 downgrade → 그 PR revert 병합] 짝**이고 위 순서(위가 head 쪽)로만 내려간다 —
+  `alembic downgrade` 는 목표 위에 쌓인 리비전을 전부 내리므로, 목표가 아래일수록 위의 것까지 함께 내려간다. 이 셋 위에 다른 런의
+  리비전이 쌓였으면 멈추고 판단한다.
+- 🔴 downgrade 는 **그 리비전 파일을 가진 이미지**로 돌린다 — ②를 하지 않았으면 서빙 중인 색의 이미지가 그것이다. 리비전 파일이
+  없는 이미지는 그 리비전을 내리지 못한다. 먼저 백업(`sudo /opt/ddona/backup.sh`), 이미지는 서빙 중인 색의 것(②를 이미 했다면
+  첫 줄 대신 `IMG=<IMAGE>:<새 코드 TAG>`):
+
+  ```sh
+  cd /opt/ddona/app
+  IMG=$(sudo docker inspect --format '{{.Config.Image}}' ddona-api_$(sudo bash ops/active-color.sh)-1)
+  sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env "$IMG" alembic downgrade e4e407a62d03
+  ```
+
+- 🔴 downgrade 와 revert 병합 사이에 교체·재기동·다른 병합을 하지 않는다 — 교체 스크립트가 서빙 이미지로 `alembic upgrade head`
+  를 다시 돌려 지운 것을 되살린다.
+- 시드 뒤 어드민이 같은 체인에 새로 게시했으면 1·2 의 downgrade 는 지우지 않고 멈춘다 — 사람이 판단한다. 프롬프트 시드를 손으로
+  지우거나 옛 프롬프트 버전을 통째로 복원하지 않는다.
+- revert 의 순서는 병합의 역순이다. 마이그레이션 없는 PR(사실 섹션 선택·하이브리드 회상·Voyage 채우기·지식 범위 필터·이
+  문서와 원가 스크립트)은 이미지 롤백이나 revert 만으로 되돌아간다. 임베딩 표를 읽고 쓰는 코드(하이브리드 회상·채우기)는 3 의
+  downgrade 보다 먼저 revert 한다.
+- 🔴 Postgres 이미지(pgvector 를 실은 것)를 원래 이미지로 되돌리는 것은 3 의 downgrade 가 끝난 **뒤에만** 한다 — `vector` 타입이 남은
+  DB 를 확장 없는 이미지로 띄우면 그 표를 읽지 못한다.
 
 ## 4. 배포 후 스모크 검증
 

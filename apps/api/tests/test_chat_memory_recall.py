@@ -1375,7 +1375,7 @@ async def test_replay_rebuilds_hybrid_recall_without_calling_voyage(
 
 def test_embed_recall_needs_a_voyage_key_and_production_leaves_it_off(monkeypatch: pytest.MonkeyPatch) -> None:
     """키 없이 켜진 임베딩 회상은 매 턴 실패해 명사 단독으로 떨어질 뿐이라 켠 것이 성공한 것처럼 보인다 — 기동을 막는다. 운영
-    env 에는 아직 이 스위치가 없어 꺼진 채 뜨고, 상한·거리·k 의 기본값은 명사 단독의 상한과 같다."""
+    env 에는 아직 이 스위치가 없어 꺼진 채 뜨고, 주입 상한의 기본값은 명사 단독의 상한과 같다."""
     assert "MEMORY_EMBED_RECALL" not in PRODUCTION_ENV_NAMES
     production = load_production_env(monkeypatch)
     assert not production.memory_embed_recall
@@ -1383,7 +1383,8 @@ def test_embed_recall_needs_a_voyage_key_and_production_leaves_it_off(monkeypatc
         memory_recall.MAX_INJECT_PLAIN,
         memory_recall.MAX_INJECT_RECALL_CUE,
     )
-    assert production.memory_embed_recall_rrf_k == 60
+    # k 는 회상 품질 측정이 고른 값이다 — 스위치만 켜도 측정한 설정으로 돈다.
+    assert production.memory_embed_recall_rrf_k == 20
     with pytest.raises(ValidationError, match="MEMORY_EMBED_RECALL"):
         load_production_env(monkeypatch, MEMORY_EMBED_RECALL="true")
     assert load_production_env(monkeypatch, MEMORY_EMBED_RECALL="true", VOYAGE_API_KEY="k").memory_embed_recall
