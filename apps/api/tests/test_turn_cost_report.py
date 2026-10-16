@@ -42,7 +42,12 @@ def _query_embedding(*, tokens: int | None, latency_ms: int, outcome: str) -> di
 
 def test_generation_call_costs_what_the_price_table_says() -> None:
     call = _generation(
-        "chat_generate", "claude-opus-5-5", promptTokens=10_000, cachedTokens=6_000, cacheWriteTokens=1_000, outputTokens=500
+        "chat_generate",
+        "claude-opus-5-5",
+        promptTokens=10_000,
+        cachedTokens=6_000,
+        cacheWriteTokens=1_000,
+        outputTokens=500,
     )
 
     cost = script.call_cost(call)
@@ -176,7 +181,9 @@ async def test_read_llm_calls_keeps_turns_inside_the_kst_window_and_chat_model(d
     db_session.add_all(
         [
             _make_chat_turn(room.id, chat_model="opus", created_at=inside, llm_calls=[marker | {"promptTokens": 1}]),
-            _make_chat_turn(room.id, chat_model="opus", created_at=last_inside, llm_calls=[marker | {"promptTokens": 2}]),
+            _make_chat_turn(
+                room.id, chat_model="opus", created_at=last_inside, llm_calls=[marker | {"promptTokens": 2}]
+            ),
             _make_chat_turn(room.id, chat_model="gemini", created_at=inside, llm_calls=[marker | {"promptTokens": 3}]),
             _make_chat_turn(room.id, chat_model="opus", created_at=before, llm_calls=[marker | {"promptTokens": 4}]),
             _make_chat_turn(room.id, chat_model="opus", created_at=after, llm_calls=[marker | {"promptTokens": 5}]),
@@ -221,4 +228,3 @@ def test_format_report_prints_every_site_and_the_turn_distribution() -> None:
     assert "chat_generate" in report
     assert "turns 1" in report
     assert "ok=1" in report
-
