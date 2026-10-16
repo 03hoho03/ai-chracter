@@ -108,8 +108,7 @@ def fact_line(row: ChatMemoryFact, *, user_name: str | None = None) -> str:
     if row.truth_status == "disproved":
         line = DISPROVED_MARK + line
     elif row.truth_status == "claimed":
-        spoken_by_user = bool(user_name and row.speaker and normalize_part(row.speaker) == normalize_part(user_name))
-        if row.asserted_by == "user" or spoken_by_user:
+        if _claimed_by_user(row, user_name):
             line += memory_recall.USER_ASSERTION_TAIL
         elif row.speaker:
             line += f" ({row.speaker}의 말)"
@@ -118,6 +117,18 @@ def fact_line(row: ChatMemoryFact, *, user_name: str | None = None) -> str:
     if row.known_by:
         line += f" ({'·'.join(row.known_by)}만 앎)"
     return f"- {line}"
+
+
+def _claimed_by_user(row: ChatMemoryFact, user_name: str | None) -> bool:
+    """주장의 말한 쪽이 사용자인가 — 사용자가 내놓은 주장이거나 말한 사람이 사용자의 이야기 속 이름(정규형)이다."""
+    spoken_by_user = bool(user_name and row.speaker and normalize_part(row.speaker) == normalize_part(user_name))
+    return row.asserted_by == "user" or spoken_by_user
+
+
+def unverified_claim(row: ChatMemoryFact, *, user_name: str | None) -> bool:
+    """섹션에 싣지 않는 행인가 — 확인되지 않은 주장이고 사용자 꼬리표가 붙지 않는다(인물·서술이 말로만 전한 것). 꼬리표를
+    붙여도 생성 모델이 사실로 굳혀 싣지 않는다. 확인된 행·반증 행·사용자 주장은 싣는다."""
+    return row.truth_status == "claimed" and not _claimed_by_user(row, user_name)
 
 
 def _group(row: ChatMemoryFact) -> int:
@@ -175,9 +186,13 @@ def select_fact_rows(
     행을 고르기 전에 뺀다(지식 범위 필터). `scene` 은 이번 턴 장면 인물(정규형)이고 정확 조회는 그 이름이 주어·관계 대상인 행을
     `keep` 을 지난 행 사이에서 고른다. `distances` 는 질의 임베딩과 사실 행의 거리(행 id → 거리, 거리 상한으로 거른 것)이고,
     필터를 지난 행 중 거리가 있는 행의 가까운 순 목록이 비지 않으면 관련 몫의 순서는 명사 순위와 그 목록의 RRF(`rrf_k`)다."""
-    winners = latest_by_key(rows)
-    if keep is not None:
-        winners = [pair for pair in winners if keep(pair[1])]
+    # 키별 최신 뒤에서 거른다 — 앞에서 빼면 그 키의 옛 값이 지금 값처럼 되살아난다. 확인되지 않은 주장 거름은 지식 범위 필터와
+    # 별도 판정이라 `keep` 이 없어도(필터 꺼짐, 아는 사람이 정해진 행 없음) 걸린다.
+    winners = [
+        pair
+        for pair in latest_by_key(rows)
+        if not unverified_claim(pair[1], user_name=user_name) and (keep is None or keep(pair[1]))
+    ]
     ordered = [row for _, row in sorted(winners, key=lambda pair: (_group(pair[1]), -pair[1].importance, -pair[0]))]
     lengths = [len(fact_line(row, user_name=user_name)) for row in ordered]
     chosen: set[int] = set()
