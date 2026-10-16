@@ -1162,6 +1162,67 @@ def _clear_llm_override() -> None:
     app.dependency_overrides.pop(get_llm_client, None)
 
 
+VoyageOutcome = int | Exception
+
+
+class VoyageStub:
+    """Voyage 임베딩 엔드포인트 흉내 — `httpx.MockTransport` 에 넘기는 처리기. 받은 요청 본문을 `bodies` 에 적고, 입력 i 번째에
+    `[i + 1, 0.5, …]` 꼴의 `dims` 차원 벡터를 응답 순서를 뒤집어(`index` 로만 원래 순서를 알 수 있게) 돌려준다.
+
+    `failures` 는 앞 요청부터 차례로 줄 실패다(정수면 그 상태 코드 응답, 예외면 raise). `before_answer` 는 응답을 만들기 전에
+    불린다(호출 도중의 경합을 흉내 낸다). `total_tokens` 는 응답이 보고하는 사용량이다."""
+
+    def __init__(
+        self,
+        *,
+        dims: int = 3,
+        failures: Iterable[VoyageOutcome] = (),
+        before_answer: Callable[[], Awaitable[None]] | None = None,
+        total_tokens: int = 7,
+    ) -> None:
+        self.dims = dims
+        self.failures = list(failures)
+        self.before_answer = before_answer
+        self.total_tokens = total_tokens
+        self.bodies: list[dict[str, Any]] = []
+        self.requests: list[httpx.Request] = []
+
+    def vector(self, index: int) -> list[float]:
+        return [float(index + 1)] + [0.5] * (self.dims - 1)
+
+    @property
+    def inputs(self) -> list[list[str]]:
+        return [body["input"] for body in self.bodies]
+
+    async def __call__(self, request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        self.bodies.append(body)
+        self.requests.append(request)
+        if self.failures:
+            failure = self.failures.pop(0)
+            if isinstance(failure, Exception):
+                raise failure
+            return httpx.Response(failure, json={"detail": "실패"})
+        if self.before_answer is not None:
+            await self.before_answer()
+        data = [
+            {"object": "embedding", "embedding": self.vector(index), "index": index}
+            for index in range(len(body["input"]))
+        ]
+        return httpx.Response(
+            200,
+            json={
+                "object": "list",
+                "data": list(reversed(data)),
+                "model": body["model"],
+                "usage": {"total_tokens": self.total_tokens},
+            },
+        )
+
+    def transport(self) -> httpx.MockTransport:
+        return httpx.MockTransport(self)
+
+
 def _parse_sse_events(body: str) -> list[dict[str, Any]]:
     events = []
     for chunk in body.split("\n\n"):

@@ -25,7 +25,8 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from api.chat import memory_episodes, memory_facts, memory_fold
+from api.chat import memory_embeddings, memory_episodes, memory_facts, memory_fold
+from api.chat.memory_embeddings import fill_pending_embeddings
 from api.chat.memory_episodes import extract_pending_episode
 from api.chat.memory_facts import extract_pending_facts
 from api.chat.memory_fold import fold_memory
@@ -64,10 +65,12 @@ from api.db.models import (
 )
 from api.db.session import get_db_session, get_session_factory
 from api.llm.client import LLMCallContext, LLMClient, LLMClientError
+from api.llm.voyage import VoyageEmbeddingClient
 from api.main import app
 from factories import (
     Room,
     SnapshotRow,
+    VoyageStub,
     _clear_llm_override,
     _get_genre,
     _login_as,
@@ -1376,3 +1379,151 @@ async def test_concurrent_fact_extractions_of_one_snapshot_call_llm_once(
 
     assert llm.calls == 1
     assert await _committed_fact_state(committed_engine, room) == (1, [("done", 1)])
+
+
+# --- 임베딩 채우기와 되감기의 경합 ---------------------------------------------------------------
+#
+# 채우기도 추출과 같은 순서를 따른다 — Voyage 는 세션 없이 부르고, 넣는 트랜잭션은 스냅샷을 `FOR KEY SHARE` 로 먼저 잡은 뒤 행마다
+# INSERT 한다. 임베딩은 되감기의 스냅샷 DELETE → 장면·사실 CASCADE → 임베딩 CASCADE 로만 지워진다.
+
+
+def _voyage(stub: VoyageStub) -> VoyageEmbeddingClient:
+    return VoyageEmbeddingClient(
+        api_key="test-key", model="voyage-test", dims=stub.dims, transport=stub.transport(), retry_delays=()
+    )
+
+
+async def _run_fill(engine: AsyncEngine, room: Room, stub: VoyageStub) -> None:
+    await fill_pending_embeddings(
+        async_sessionmaker(engine, expire_on_commit=False), _voyage(stub), room_id=room.room_id
+    )
+
+
+async def _commit_facts_against_source_order(engine: AsyncEngine, room: Room, *, turn: int) -> None:
+    """턴 `turn` 스냅샷에 사실 둘을 순번 순서로 넣는다. 순번 0 의 근거는 턴 9, 순번 1 의 근거는 턴 2 라 원문 순서는 그 반대다 —
+    채우기는 원문 순서로 넣고, 스냅샷 DELETE 의 CASCADE 는 순번(유니크 인덱스·넣은 순서) 순서로 지운다."""
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        snapshot_id = await session.scalar(
+            sa.select(ChatRoomMemorySnapshot.id).where(
+                ChatRoomMemorySnapshot.chat_room_id == room.room_id,
+                ChatRoomMemorySnapshot.cursor_message_id == room.turns[turn][1].id,
+            )
+        )
+        assert snapshot_id is not None
+        facts = []
+        for ordinal, source_turn in enumerate((9, 2)):
+            message = room.turns[source_turn][1]
+            facts.append(
+                _make_memory_fact(
+                    room.room_id,
+                    snapshot_id,
+                    ordinal=ordinal,
+                    value=f"근거 턴 {source_turn}",
+                    start_created_at=message.created_at,
+                    start_message_id=message.id,
+                    end_created_at=message.created_at,
+                    end_message_id=message.id,
+                    start_turn=source_turn,
+                    end_turn=source_turn,
+                )
+            )
+        for fact in facts:
+            session.add(fact)
+            await session.flush()
+        await session.commit()
+
+
+async def _committed_embedding_count(engine: AsyncEngine, room: Room) -> int:
+    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+        count = await session.scalar(
+            sa.select(sa.func.count())
+            .select_from(ChatMemoryEmbedding)
+            .where(ChatMemoryEmbedding.chat_room_id == room.room_id)
+        )
+    return int(count or 0)
+
+
+def _capture_embedding_failures(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    captured: list[str] = []
+    monkeypatch.setattr(
+        memory_embeddings, "capture_dependency_failure", lambda exc, *, dependency: captured.append(dependency)
+    )
+    return captured
+
+
+async def test_a_rewind_while_voyage_answers_does_not_wait_for_the_fill(
+    committed_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Voyage 가 답하지 않는 동안 사용자가 창 안 메시지를 지운다. 채우기는 그동안 아무 잠금도 쥐지 않아 되감기가 곧바로 끝난다
+    (기다리면 시간 상한에 걸린다). Voyage 가 답한 뒤 채우기는 스냅샷이 없음을 보고 아무것도 넣지 않고, 실패로 세지 않는다."""
+    captured = _capture_embedding_failures(monkeypatch)
+    room = await _seed_committed_room(committed_engine, turns=10)
+    await _commit_snapshot(committed_engine, room, turn=10)
+    await _commit_facts_against_source_order(committed_engine, room, turn=10)
+    gate = _Gate()
+
+    async def _voyage_hangs() -> None:
+        gate.holding.set()
+        await gate.release.wait()
+
+    stub = VoyageStub(before_answer=_voyage_hangs)
+    fill = asyncio.create_task(_run_fill(committed_engine, room, stub))
+    rewound = False
+    try:
+        if await _reached(gate.holding, 5):
+            await asyncio.wait_for(_delete_message_committed(committed_engine, room, room.turns[5][0]), 3)
+            rewound = True
+    finally:
+        gate.release.set()
+        await asyncio.wait_for(fill, 15)
+
+    assert rewound
+    assert len(stub.inputs) == 1
+    assert captured == []
+    assert await _committed_snapshots(committed_engine, room) == []
+    assert await _committed_embedding_count(committed_engine, room) == 0
+
+
+async def test_rewind_during_the_embedding_inserts_finishes_without_deadlock(
+    committed_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """채우기가 첫 행을 넣고(그 사실 행에 FK 확인 잠금을 쥔 채) 멈춘 사이 되감기가 시작된다. 채우기가 스냅샷을 먼저 잡았으므로
+    되감기는 스냅샷 DELETE 에서 채우기 커밋을 기다리고, 채우기는 둘째 행까지 넣고 커밋한다. 그 뒤 CASCADE 가 사실과 임베딩을
+    지운다. 스냅샷을 먼저 잡지 않으면 되감기의 CASCADE 가 둘째 행(순번 0)을 먼저 지우고 첫 행에서 기다리는 사이 채우기가 둘째 행의
+    FK 확인으로 되감기를 기다려 교착이 난다 — 넣는 순서(원문 순)와 지우는 순서(순번 순)를 일부러 엇갈리게 두었다."""
+    captured = _capture_embedding_failures(monkeypatch)
+    room = await _seed_committed_room(committed_engine, turns=10)
+    await _commit_snapshot(committed_engine, room, turn=10)
+    await _commit_facts_against_source_order(committed_engine, room, turn=10)
+    gate = _Gate()
+    original = memory_embeddings._insert_row
+    inserted: list[bool] = []
+
+    async def _pause_after_the_first_row(*args: Any, **kwargs: Any) -> Any:
+        result = await original(*args, **kwargs)
+        if not inserted:
+            inserted.append(result)
+            gate.holding.set()
+            await gate.release.wait()
+        return result
+
+    monkeypatch.setattr(memory_embeddings, "_insert_row", _pause_after_the_first_row)
+    fill = asyncio.create_task(_run_fill(committed_engine, room, VoyageStub()))
+    rewind: asyncio.Task[None] | None = None
+    try:
+        paused = await _reached(gate.holding, 5)
+        if paused:
+            rewind = asyncio.create_task(_delete_message_committed(committed_engine, room, room.turns[5][0]))
+            await _wait_until_a_lock_is_awaited(committed_engine)
+    finally:
+        gate.release.set()
+        await asyncio.wait_for(fill, 15)
+        if rewind is not None:
+            await asyncio.wait_for(rewind, 15)
+
+    assert paused
+    assert inserted == [True]
+    assert captured == []
+    assert await _committed_snapshots(committed_engine, room) == []
+    assert await _committed_embedding_count(committed_engine, room) == 0
