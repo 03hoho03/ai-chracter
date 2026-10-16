@@ -204,7 +204,8 @@ def test_production_env_starts_with_embedding_off_and_no_voyage_key(monkeypatch:
     loaded = load_production_env(monkeypatch)
 
     assert (loaded.memory_embed_write, loaded.voyage_api_key) == (False, "")
-    assert (loaded.memory_embed_model, loaded.memory_embed_dims) == ("voyage-4-lite", 1024)
+    # 기본값은 회상 품질 측정이 고른 모델·차원이다 — 스위치만 켜도 측정한 설정으로 돈다.
+    assert (loaded.memory_embed_model, loaded.memory_embed_dims) == ("voyage-4-large", 1024)
 
 
 def test_embedding_model_and_dims_follow_the_env(monkeypatch: pytest.MonkeyPatch) -> None:
