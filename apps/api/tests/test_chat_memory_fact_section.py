@@ -11,6 +11,9 @@
   드문 명사가 겹치는 행(장면 회상과 같은 토큰·점수, 임계 0.6, 행 5개 미만이면 없음)을 700자까지, 남은 자리는 상시가 멈춘
   곳부터 렌더 순서로 다시 채운다. 다음 줄이 넘치면 그 자리에서 멈춘다(뒤의 짧은 줄로 건너뛰지 않는다). 실린 행은 렌더 순서로
   쓴다.
+- 이름 정확 조회: 상시 몫 뒤·관련 몫 앞에, 장면 인물(이번 사용자 메시지·직전 응답에 이름이 나온 방 인물, 사용자 제외)이 주어거나
+  관계 대상인 행을 렌더 순서로 420자(상시 몫 끝 210자 + 같은 크기)까지 싣는다. 값·속성에 이름이 나오는 것만으로는 걸리지 않고,
+  지식 범위 필터가 뺀 행은 이름이 나와도 돌아오지 않는다. 섹션 최대는 여전히 머리글 + 700자다.
 - 줄: 관계 `- 주어 → 대상: 값`, 사실 `- 주어 · 속성: 값`. 반증은 줄 앞에 표지, 주장은 끝에 말한 사람(사용자가 내놓은 주장은
   회상 섹션과 같은 사용자 꼬리표, 말한 인물이 없으면 회상 섹션과 같은 인물 꼬리표), 아는 사람이 있으면 그 뒤에 `(이름·이름만 앎)`.
 - 섹션은 대화 기록 뒤, 회상 섹션 앞(캐시 블록 셋째)이다. 턴 기록(`chat_turns.memory_facts`)에 실은 사실의 id·글자 수를 줄
@@ -91,17 +94,17 @@ def _fields(subject: str, target: str, value: str, *, kind: str = "fact", **extr
     }
 
 
-def _sized(index: int, length: int, *, word: str = "", importance: int = 3) -> dict[str, Any]:
+def _sized(index: int, length: int, *, word: str = "", importance: int = 3, subject: str = "유나") -> dict[str, Any]:
     """줄 길이가 정확히 `length` 인 평범한 사실. 값의 낱말은 행마다 달라 다른 행과 명사가 겹치지 않는다(`word` 를 주면 그
     낱말이 값 앞에 붙는다)."""
     attribute = f"취향{index}"
     # 값 상한을 넘는 몫은 속성에 덧붙인다(값만 늘리면 DB 에 넣을 수 없는 행이 된다).
-    over = length - len(f"- 유나 · {attribute}: ") - FACT_VALUE_MAX
+    over = length - len(f"- {subject} · {attribute}: ") - FACT_VALUE_MAX
     if over > 0:
         attribute = attribute.ljust(len(attribute) + over, "다")
-    head = f"- 유나 · {attribute}: "
+    head = f"- {subject} · {attribute}: "
     value = (f"{word} 취미{index}" if word else f"취미{index}").ljust(length - len(head), "가")
-    return _fields("유나", attribute, value, importance=importance)
+    return _fields(subject, attribute, value, importance=importance)
 
 
 def _rows(*fields: dict[str, Any]) -> list[ChatMemoryFact]:
@@ -932,6 +935,146 @@ def test_production_env_leaves_the_knowledge_filter_off(monkeypatch: pytest.Monk
     """운영 env 에는 필터 스위치가 없어 꺼진 기본값으로 돈다."""
     assert "MEMORY_KNOWLEDGE_FILTER" not in PRODUCTION_ENV_NAMES
     assert not load_production_env(monkeypatch).memory_knowledge_filter
+
+
+# --- 이름 정확 조회 ------------------------------------------------------------------------------
+# 장면 인물은 이번 사용자 메시지·직전 응답에 이름이 나온 방 인물(사용자 제외, `memory_knowledge.scene_people`)이다. 순수 함수
+# 테스트는 장면 인물(정규형)을 직접 준다. 150자 줄 여섯(중요도 5)이 렌더 순서 앞에 서면 상시 몫은 첫 줄(150자)에서 멈춘다.
+
+_MINSU = frozenset({"민수"})
+
+
+def _scene_select(
+    rows: list[ChatMemoryFact], scene: frozenset[str], query: str = "", **extra: Any
+) -> list[ChatMemoryFact]:
+    return select_fact_rows(rows, query=query, names=[], current_turn=TURN, scene=scene, **extra)
+
+
+def test_exact_share_follows_the_constant_share_and_comes_before_relevance() -> None:
+    """민수 줄(100자)과 등대 줄(449자)은 둘 다 렌더 순서 맨 끝이다. 장면에 민수가 없으면 등대가 관련으로 들어와 600자다.
+    민수가 나오면 상시 첫 줄 뒤에 민수 줄이 먼저 들어오고(251자) 등대 줄은 701자로 넘쳐 빠진 채, 남은 자리를 렌더 순서로 채운다.
+    정확 조회가 상시보다 앞이면 상시 몫이 첫 줄을 못 실어(100 + 1 + 150 > 210) 등대가 들어오고, 관련 뒤면 등대가 먼저 자리를
+    차지한다 — 두 순서 모두 이 결과와 다르다."""
+    named = _sized(10, 100, subject="민수", importance=1)
+    lighthouse = _sized(11, 449, word="등대", importance=1)
+    rows = _rows(named, lighthouse, *_fillers(6))
+
+    assert [row.attribute for row in _scene_select(rows, frozenset(), "등대 기억나?")] == ["취향0", "취향11"]
+    picked = _scene_select(rows, _MINSU, "등대 기억나?")
+    assert [row.attribute for row in picked] == ["취향0", "취향1", "취향2", "취향10"]
+
+
+@pytest.mark.parametrize(
+    ("spare", "pulled"),
+    [pytest.param(0, True, id="exactly-at-the-share-end"), pytest.param(1, False, id="one-char-over")],
+)
+def test_exact_share_stops_at_its_end(spare: int, pulled: bool) -> None:
+    """정확 조회 몫의 끝은 상한의 (상시 비율 + 정확 조회 비율)이다(상시 몫처럼 섹션 첫 줄부터 센 누적 글자). 상시 첫 줄 150자 +
+    줄바꿈 뒤 민수 줄이 그 끝에 정확히 닿으면 실리고, 한 글자 넘으면 빠진다 — 남은 자리 채우기는 렌더 순서라 맨 끝의 민수 줄까지
+    가지 못한다."""
+    share_end = (
+        memory_fact_section.CONSTANT_RATIO + memory_fact_section.EXACT_RATIO
+    ) * memory_fact_section.RENDER_MAX_CHARS
+    named = _sized(10, int(share_end) - 151 + spare, subject="민수", importance=1)
+    rows = _rows(named, *_fillers(6))
+
+    assert (named["value"] in _values(_scene_select(rows, _MINSU))) is pulled
+
+
+def test_exact_lookup_matches_the_subject_or_the_relation_target_only() -> None:
+    """관계 150자 여섯(중요도 5)이 앞에 서면 지아 → 민수 관계는 렌더 순서로는 빠진다. 민수(대상)나 지아(주어)가 장면에 나오면
+    들어온다. 값에 민수가 들어 있을 뿐인 유나의 사실은 이름이 나와도 정확 조회로 들어오지 않는다."""
+    fillers = [
+        _fields(
+            "유나", f"인물{i}", f"관계{i}".ljust(150 - len(f"- 유나 → 인물{i}: "), "가"), kind="relation", importance=5
+        )
+        for i in reversed(range(6))
+    ]
+    target = _fields("지아", "민수", "짝사랑", kind="relation", importance=1)
+    mention = _fields("유나", "친구", "민수랑 제일 친함", importance=1)
+    rows = _rows(target, mention, *fillers)
+    assert len(fact_line(rows[2])) == 150
+
+    assert target["value"] not in _values(_scene_select(rows, frozenset()))
+    for scene in (_MINSU, frozenset({"지아"})):
+        picked = _values(_scene_select(rows, scene))
+        assert target["value"] in picked and mention["value"] not in picked
+
+
+def test_exact_lookup_never_brings_back_a_row_the_filter_dropped() -> None:
+    """민수의 비밀(지아만 앎)은 민수가 장면에 나와도 필터가 빼면 정확 조회로 돌아오지 않는다 — 정확 조회는 필터를 지난 행
+    사이에서만 고른다. 같은 장면의 민수 공개 줄은 들어오고, 결과는 비밀 행 없이 고른 것과 같다."""
+    secret = _fields("민수", "비밀", "지아한테만 말한 고백", known_by=["지아"], importance=1)
+    named = _sized(10, 100, subject="민수", importance=1)
+    rows = _rows(secret, named, *_fillers(6))
+
+    picked = _scene_select(rows, _MINSU, keep=lambda row: not row.known_by)
+
+    assert secret["value"] not in _values(picked)
+    assert named["value"] in _values(picked)
+    assert picked == _scene_select(rows[1:], _MINSU)
+
+
+async def test_name_in_the_previous_response_pulls_rows_up_to_the_computed_maximum(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """직전 응답에 민수가 나오면(이번 메시지 "그래서?" 에는 이름도 관련 명사도 없다) 렌더 순서로는 빠지는 민수 줄(247자)이
+    상시 첫 줄 뒤에 들어오고, 남은 자리를 150자 줄 둘이 채워 정확히 700자 — 섹션은 계산한 최대(머리글 + 700)에 닿고 넘지
+    않는다. 정확 조회가 없으면 150자 넷(603자)이다."""
+    _, sections = await load_active_prompt_set(db_session, lane="story")
+    [body] = [section.body for section in sections if section.slot == "memory_facts"]
+    maximum = len(body.replace("{memory_fact_lines}", "")) + memory_fact_section.RENDER_MAX_CHARS
+    room, snapshots = await _fact_room(db_client, db_session)
+    named = _sized(10, 247, subject="민수", importance=1)
+    await _plant(db_session, room, snapshots[2], [named, *_fillers(6)])
+    await _set_last_response(db_session, room, "민수가 웃었다.")
+    _facts_on(monkeypatch)
+
+    built = await _build(db_session, room, "그래서?")
+
+    section = _section(built.prompt)
+    assert named["value"] in section
+    assert len(built.memory_facts) == 4
+    assert len(section) == maximum
+
+
+async def test_room_exact_lookup_runs_after_the_knowledge_filter(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """필터를 켠 방에서 직전 응답에 민수만 나오면 민수의 공개 줄은 정확 조회로 들어오고, 지아만 아는 민수의 비밀은 이름이
+    나와도 빠진다."""
+    room, snapshots = await _fact_room(db_client, db_session)
+    secret = _fields("민수", "비밀", "지아한테만 말한 고백", known_by=["지아"], importance=1)
+    named = _sized(10, 100, subject="민수", importance=1)
+    await _plant(db_session, room, snapshots[2], [secret, named, *_fillers(6)])
+    await _set_last_response(db_session, room, "민수가 웃었다.")
+    _facts_on(monkeypatch)
+    _filter_on(monkeypatch)
+
+    section = _section((await _build(db_session, room, "그래서?")).prompt)
+
+    assert named["value"] in section
+    assert secret["value"] not in section
+
+
+async def test_the_user_is_not_looked_up_by_name(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """그 턴 대화 프로필 이름(하늘)은 사용자라 직전 응답에 나와도 하늘의 줄을 정확 조회로 끌어오지 않는다(필터를 끈 방에서도).
+    프로필이 없는 턴이면 하늘은 방의 한 인물이라 끌어온다."""
+    room, snapshots = await _fact_room(db_client, db_session)
+    named = _sized(10, 100, subject="하늘", importance=1)
+    await _plant(db_session, room, snapshots[2], [named, *_fillers(6)])
+    await _set_last_response(db_session, room, "하늘이 웃었다.")
+    _facts_on(monkeypatch)
+    summary = await load_current_summary(db_session, room.room_id)
+    as_user = InjectedTurnState(
+        summary=summary, memory_note="", stats={}, persona=InjectedPersona(name="하늘", gender=None, description="")
+    )
+    no_profile = InjectedTurnState(summary=summary, memory_note="", stats={}, persona=None)
+
+    assert named["value"] not in _section((await _build(db_session, room, "그래서?", turn_state=as_user)).prompt)
+    assert named["value"] in _section((await _build(db_session, room, "그래서?", turn_state=no_profile)).prompt)
 
 
 # --- 임베딩 관련 몫(RRF) ------------------------------------------------------------------------
