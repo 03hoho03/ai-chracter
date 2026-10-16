@@ -16,9 +16,14 @@
 겹침, 교착)은 `test_chat_memory_rewind.py` 의 커밋되는 독립 커넥션 절에 있다.
 """
 
+import asyncio
+import json
+import threading
+import time
 import uuid
 from collections.abc import AsyncIterator, Callable
 from datetime import datetime
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -26,6 +31,7 @@ import pytest
 import sqlalchemy as sa
 from fastapi import BackgroundTasks
 from pydantic import ValidationError
+from httpcore._async import http11
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.chat import memory_embeddings
@@ -42,6 +48,7 @@ from api.core.config import Settings, settings
 from api.core.rate_limit import KST
 from api.db.models import ChatMemoryEmbedding, ChatMemoryEpisode, ChatMemoryFact, ChatRoomMemorySnapshot
 from api.llm.client import LLMCallContext, LLMClient
+from api.llm import voyage
 from api.llm.dependencies import get_embedding_client
 from api.llm.pricing import MODEL_PRICES, ModelPrice, estimate_cost_usd
 from api.llm.usage_store import read_usage
@@ -652,3 +659,189 @@ async def test_a_database_error_in_the_insert_transaction_is_absorbed(
     assert captured == ["db"]
     assert await _embeddings(db_session, room) == []
 
+
+# --- 공유 연결 풀 ----------------------------------------------------------------------------------
+# 운영 클라이언트(`transport` 없음)는 프로세스 하나가 연결 풀 하나를 나눠 쓴다 — 턴마다 새로 연결하면 TCP·TLS 왕복이 질의 임베딩의
+# 시간 상한 안에 그대로 더해진다. 흉내 트랜스포트로는 연결 풀을 거치지 않으므로 이 절은 같은 머신의 진짜 HTTP 서버로 잰다.
+
+
+class _LocalVoyage:
+    """127.0.0.1 에서 도는 HTTP/1.1 서버. 연결을 닫지 않고(keep-alive) 받은 연결 수(`connections`)와 클라이언트가 닫은 연결 수
+    (`closed`)를 센다. `delays` 는 앞 요청부터 응답 전에 쉴 초다."""
+
+    def __init__(self, *, delays: tuple[float, ...] = ()) -> None:
+        self.delays = list(delays)
+        self.connections = 0
+        self.closed = 0
+        self.any_closed = asyncio.Event()
+        self.url = ""
+        self._server: asyncio.Server | None = None
+        self._writers: list[asyncio.StreamWriter] = []
+
+    async def __aenter__(self) -> "_LocalVoyage":
+        self._server = await asyncio.start_server(self._serve, "127.0.0.1", 0)
+        port = self._server.sockets[0].getsockname()[1]
+        self.url = f"http://127.0.0.1:{port}/v1/embeddings"
+        return self
+
+    async def __aexit__(self, *_exc: object) -> None:
+        assert self._server is not None
+        self._server.close()
+        for writer in self._writers:
+            writer.close()
+        await self._server.wait_closed()
+
+    async def _serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        self.connections += 1
+        self._writers.append(writer)
+        try:
+            while True:
+                head = await reader.readuntil(b"\r\n\r\n")
+                length = next(
+                    int(line.split(b":", 1)[1])
+                    for line in head.split(b"\r\n")
+                    if line.lower().startswith(b"content-length:")
+                )
+                body = json.loads(await reader.readexactly(length))
+                if self.delays:
+                    await asyncio.sleep(self.delays.pop(0))
+                data = [{"index": i, "embedding": [1.0, 0.5, 0.5]} for i in range(len(body["input"]))]
+                payload = json.dumps({"data": data, "usage": {"total_tokens": 1}}).encode()
+                writer.write(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n" % len(payload)
+                    + payload
+                )
+                await writer.drain()
+        except (asyncio.IncompleteReadError, ConnectionError):
+            pass
+        finally:
+            self.closed += 1
+            self.any_closed.set()
+            writer.close()
+
+
+@pytest.fixture
+async def local_voyage(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[_LocalVoyage]:
+    """운영 클라이언트가 이 서버로 가게 하고, 앞뒤로 공유 풀을 닫아 테스트끼리 연결을 나누지 않게 한다."""
+    await voyage.aclose_shared_client()
+    async with _LocalVoyage() as server:
+        monkeypatch.setattr(voyage, "VOYAGE_EMBEDDINGS_URL", server.url)
+        yield server
+        await voyage.aclose_shared_client()
+
+
+def _production_client() -> VoyageEmbeddingClient:
+    return VoyageEmbeddingClient(api_key="test-key", model=_MODEL, dims=3, retry_delays=())
+
+
+async def _embed_once(client: VoyageEmbeddingClient) -> list[list[float]]:
+    return await client.embed(["가"], input_type="query", call_site=EMBEDDING_CALL_SITE)
+
+
+async def test_production_clients_share_one_connection_across_calls(local_voyage: _LocalVoyage) -> None:
+    """의존성은 요청마다 클라이언트를 새로 만든다 — 그래도 두 호출이 연결 하나를 다시 쓴다."""
+    assert await _embed_once(_production_client()) == [[1.0, 0.5, 0.5]]
+    assert await _embed_once(_production_client()) == [[1.0, 0.5, 0.5]]
+
+    assert local_voyage.connections == 1
+
+
+async def test_shared_pool_keeps_an_idle_connection_for_at_least_a_minute(
+    local_voyage: _LocalVoyage, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """턴 사이 간격은 수십 초다 — httpx 기본(5초)이면 거의 매 턴 새로 연결한다. 연결 풀이 읽는 시계만 앞으로 돌린다: 59초 뒤에는
+    그 연결을 다시 쓰고, 유지 시간을 넘긴 뒤에는 새로 연결한다(시계가 실제로 먹힌다는 대조)."""
+    ahead = [0.0]
+    monkeypatch.setattr(http11, "time", SimpleNamespace(monotonic=lambda: time.monotonic() + ahead[0]))
+
+    await _embed_once(_production_client())
+    ahead[0] = 59.0
+    await _embed_once(_production_client())
+    assert local_voyage.connections == 1
+
+    ahead[0] = 59.0 + voyage.KEEPALIVE_EXPIRY_SECONDS + 1
+    await _embed_once(_production_client())
+    assert local_voyage.connections == 2
+
+
+async def test_a_call_cut_by_the_recall_timeout_does_not_break_the_next(local_voyage: _LocalVoyage) -> None:
+    """질의 임베딩은 부르는 쪽의 시간 상한이 호출을 취소한다 — 끊긴 연결이 풀에 남아 다음 호출이 그 늦은 응답을 읽거나 막히면
+    안 된다. 다음 호출은 새 연결로 바로 받는다."""
+    local_voyage.delays = [1.0]
+
+    with pytest.raises(TimeoutError):
+        async with asyncio.timeout(0.05):
+            await _embed_once(_production_client())
+    async with asyncio.timeout(0.5):
+        assert await _embed_once(_production_client()) == [[1.0, 0.5, 0.5]]
+
+    assert local_voyage.connections == 2
+
+
+def test_each_event_loop_gets_its_own_pool(monkeypatch: pytest.MonkeyPatch) -> None:
+    """연결은 연 이벤트 루프에 묶인다 — 스크립트처럼 한 프로세스에서 `asyncio.run` 을 거듭 부르면, 앞 루프의 연결을 다음 루프가
+    쓰지 않고 새로 연다. 테스트 세션 루프를 건드리지 않게 다른 스레드에서 돌린다(사용량 기록은 세션 루프의 Redis 라 뺀다)."""
+
+    async def _no_usage(*_args: object) -> None:
+        return None
+
+    monkeypatch.setattr(voyage, "record_usage", _no_usage)
+    results: list[list[list[float]]] = []
+    errors: list[BaseException] = []
+
+    async def _one_loop() -> None:
+        async with _LocalVoyage() as server:
+            monkeypatch.setattr(voyage, "VOYAGE_EMBEDDINGS_URL", server.url)
+            results.append(await _embed_once(_production_client()))
+
+    def _run() -> None:
+        try:
+            asyncio.run(_one_loop())
+            asyncio.run(_one_loop())
+        except BaseException as exc:  # 스레드 안의 실패를 테스트로 옮긴다.
+            errors.append(exc)
+
+    thread = threading.Thread(target=_run)
+    thread.start()
+    thread.join(10)
+
+    assert errors == []
+    assert results == [[[1.0, 0.5, 0.5]], [[1.0, 0.5, 0.5]]]
+
+
+async def test_lifespan_closes_the_shared_pool_on_shutdown(
+    local_voyage: _LocalVoyage, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """서버가 내려갈 때 열린 연결을 닫는다 — 내려간 뒤 상대 쪽에 반쯤 열린 연결을 남기지 않는다."""
+    from api import main
+
+    async def _nothing(_factory: object) -> None:
+        return None
+
+    monkeypatch.setattr(main, "rebuild_suspended_user_markers", _nothing)
+    monkeypatch.setattr(main, "expire_stale_jobs_after_startup", _nothing)
+
+    async with main.lifespan(main.app):
+        await _embed_once(_production_client())
+        # 떠 있는 동안은 연결을 쥐고 있다 — 닫힘이 서버에 닿을 틈을 준 뒤에도 그대로다.
+        await asyncio.sleep(0.05)
+        assert local_voyage.closed == 0
+    await asyncio.wait_for(local_voyage.any_closed.wait(), 2)
+
+    assert local_voyage.connections == 1
+
+
+async def test_turn_with_embedding_switches_off_opens_no_connection(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, local_voyage: _LocalVoyage
+) -> None:
+    """운영 의존성 그대로(흉내 클라이언트 없이) 두 임베딩 스위치가 꺼진 턴은 Voyage 쪽으로 연결조차 열지 않는다."""
+    assert (settings.memory_embed_write, settings.memory_embed_recall) == (False, False)
+    room = await _open_room(db_client, db_session, turns=29)
+    _override_llm_client(_TurnLLMClient())
+    try:
+        response = await db_client.post(f"/chat-rooms/{room.room_id}/messages", json={"content": "새 메시지"})
+    finally:
+        _clear_llm_override()
+
+    assert response.status_code == 200, response.text
+    assert local_voyage.connections == 0

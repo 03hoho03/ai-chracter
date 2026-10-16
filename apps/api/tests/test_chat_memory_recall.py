@@ -1399,6 +1399,13 @@ def test_embed_recall_needs_a_voyage_key_and_production_leaves_it_off(monkeypatc
     assert load_production_env(monkeypatch, MEMORY_EMBED_RECALL="true", VOYAGE_API_KEY="k").memory_embed_recall
 
 
+def test_query_embedding_waits_up_to_a_second_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """운영 VM 에서 잰 Voyage 왕복은 다시 쓰는 연결로도 p95 가 약 480ms 다 — 250ms 상한이면 켜자마자 턴의 상당수가 명사 단독으로
+    떨어진다. 기본 상한은 1초이고 env 로 바꾼다."""
+    assert load_production_env(monkeypatch).memory_embed_recall_timeout_ms == 1000
+    assert load_production_env(monkeypatch, MEMORY_EMBED_RECALL_TIMEOUT_MS="400").memory_embed_recall_timeout_ms == 400
+
+
 # --- 인물이 말한 장면 ------------------------------------------------------------------------
 # 인물이 대사로 말한 장면(`asserted_by = 'character'`)은 확인되지 않은 말이라 회상 줄에 싣지 않는다. 섞임·사용자·서술 장면은
 # 그대로 싣는다. 명사 쪽은 방 장면 전부로 통계(장면 수·흔한 명사·사용자 토큰 풀·최근 스냅샷 둘)를 낸 뒤 순위에서 빼고, 벡터 쪽은
