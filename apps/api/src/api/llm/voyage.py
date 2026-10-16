@@ -10,9 +10,11 @@ LLM 호출 정책 표(`llm/call_policy.py`)에 넣지 않는다 — 그 표는 �
   것이라 바로 실패다. 실패는 전부 `EmbeddingError` 로 올린다(키 값은 싣지 않는다).
 - 응답을 받은 호출마다 `usage.total_tokens` 를 사용량 기록의 입력 토큰과 합계에 더한다 — 임베딩은 입력만 과금된다.
 - 연결: 운영 클라이언트(`transport` 없음)는 프로세스 하나가 HTTP 클라이언트 하나를 나눠 쓴다. 요청마다 새로 열면 TCP·TLS 왕복이
-  턴 안의 질의 임베딩 시간 상한 안에 그대로 더해진다(운영 VM 30회: 새 클라이언트 p50 224ms·p95 578ms, 다시 쓰는 연결 p50
-  130ms·p95 482ms). 턴 사이 간격이 수십 초라 유휴 연결을 `KEEPALIVE_EXPIRY_SECONDS` 동안 쥔다(httpx 기본 5초면 거의 매 턴 새로
-  연결한다). 연결은 연 이벤트 루프에 묶이므로 지금 루프가 연 풀이 아니면 새로 연다 — 스크립트가 `asyncio.run` 을 거듭 불러도 앞
+  턴 안의 질의 임베딩 시간 상한 안에 그대로 더해진다(운영 VM 에서 키 없이 401 을 받는 왕복 30회: 새 클라이언트 p50 224ms·p95
+  578ms, 다시 쓰는 연결 p50 130ms·p95 482ms — 임베딩 계산이 빠진 값이다). 턴 사이 간격이 수십 초라 유휴 연결을
+  `KEEPALIVE_EXPIRY_SECONDS` 동안 쥔다(httpx 기본 5초면 거의 매 턴 새로 연결한다). 연결 수 상한은 httpx 기본값 그대로다.
+  상대가 유휴 연결을 닫는 순간 그 연결로 보내면 연결 실패로 보고 다시 보낸다 — 질의 임베딩은 첫 재시도 대기(1초)가 시간 상한을
+  다 써 그 턴은 명사 단독이 된다(요청마다 새로 열 때는 없던 드문 경우다). 연결은 연 이벤트 루프에 묶이므로 지금 루프가 연 풀이 아니면 새로 연다 — 스크립트가 `asyncio.run` 을 거듭 불러도 앞
   루프의 연결을 쓰지 않는다. 처음 부를 때 만들므로 import·의존성 해석만으로는 네트워크도 풀도 생기지 않는다. 서버가 내려갈 때
   `aclose_shared_client` 가 닫는다(`main.py` lifespan). 시간 상한에 취소된 요청의 연결은 httpcore 가 풀에 돌려놓지 않고 닫는다.
   `transport` 를 넘긴 클라이언트(테스트·측정 흉내)는 호출마다 그 트랜스포트로 클라이언트를 새로 연다."""
@@ -67,7 +69,9 @@ def _shared_client() -> httpx.AsyncClient:
     global _shared
     loop = asyncio.get_running_loop()
     if _shared is None or _shared[0] is not loop or _shared[1].is_closed:
-        limits = httpx.Limits(keepalive_expiry=KEEPALIVE_EXPIRY_SECONDS)
+        limits = httpx.Limits(
+            max_connections=100, max_keepalive_connections=20, keepalive_expiry=KEEPALIVE_EXPIRY_SECONDS
+        )
         _shared = (loop, httpx.AsyncClient(timeout=TIMEOUT_SECONDS, limits=limits))
     return _shared[1]
 

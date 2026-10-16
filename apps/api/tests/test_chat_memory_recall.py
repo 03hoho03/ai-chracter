@@ -1400,8 +1400,8 @@ def test_embed_recall_needs_a_voyage_key_and_production_leaves_it_off(monkeypatc
 
 
 def test_query_embedding_waits_up_to_a_second_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    """운영 VM 에서 잰 Voyage 왕복은 다시 쓰는 연결로도 p95 가 약 480ms 다 — 250ms 상한이면 켜자마자 턴의 상당수가 명사 단독으로
-    떨어진다. 기본 상한은 1초이고 env 로 바꾼다."""
+    """운영 VM 에서 키 없이 401 을 받는 Voyage 왕복만 해도 다시 쓰는 연결의 p95 가 약 480ms 다(임베딩 계산 전) — 250ms 상한이면
+    켜자마자 일부 턴이 명사 단독으로 떨어진다. 기본 상한은 1초이고 env 로 바꾼다."""
     assert load_production_env(monkeypatch).memory_embed_recall_timeout_ms == 1000
     assert load_production_env(monkeypatch, MEMORY_EMBED_RECALL_TIMEOUT_MS="400").memory_embed_recall_timeout_ms == 400
 
