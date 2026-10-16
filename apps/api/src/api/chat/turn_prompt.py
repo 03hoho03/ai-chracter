@@ -16,7 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.ending_rules import evaluate_rule_list
 from api.chat.keyword_notes import match_keyword_notes, recent_scan_turns
-from api.chat.memory_fact_section import NO_FACTS, FactSection, KnowledgeScope, facts_for_turn
+from api.chat.memory_fact_section import NO_FACTS, FactSection, facts_for_turn
+from api.chat.memory_knowledge import KnowledgeScope
 from api.chat.memory_recall import NO_RECALL, Recall, recall_for_turn
 from api.chat.memory_vector import QueryEmbedding, embed_query, query_text
 from api.chat.memory_window import CurrentSummary, load_current_summary, prompt_window

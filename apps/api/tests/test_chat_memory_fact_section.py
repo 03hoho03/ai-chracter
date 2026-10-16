@@ -693,7 +693,7 @@ async def test_fact_read_failure_is_absorbed_and_the_turn_finishes(
     room, snapshots = await _fact_room(db_client, db_session)
     await _plant(db_session, room, snapshots[2], [_AUDITION])
     _facts_on(monkeypatch)
-    monkeypatch.setattr(memory_fact_section, "_fact_statement", lambda room_id, cursor: sa.text("SELECT 1/0"))
+    monkeypatch.setattr(memory_fact_section, "fact_rows_statement", lambda room_id, cursor: sa.text("SELECT 1/0"))
     captured: list[str] = []
     monkeypatch.setattr(
         memory_fact_section, "capture_dependency_failure", lambda exc, *, dependency: captured.append(dependency)

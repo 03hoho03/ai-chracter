@@ -17,17 +17,32 @@
 따로 본다 — 이어 붙이면 경계를 걸친 가짜 일치가 생긴다.
 
 필터: 아는 사람이 정해진 행은 그 이름 중 하나가 장면 인물일 때만 남는다. 정해지지 않은 행(공개이거나 알 수 없음)은 늘 남는다.
-장면 인물에 사용자가 없으므로 사용자만 아는 비밀은 늘 빠진다."""
+장면 인물에 사용자가 없으므로 사용자만 아는 비밀은 늘 빠진다.
 
-from collections.abc import Iterable
+키별 최신: 같은 키의 마지막 행이 이기되, 같은 키에 같은 값의 반증 행이 앞에 있으면 그 반증 행이 이긴다 — 반증된 값이 뒤의
+같은 값 주장으로 되살아나지 않게. 값이 다른 새 행은 옛 값의 반증 행에 가려지지 않는다(정정). 사실 추출이 추출 입력의 기존 키
+목록을 만드는 규칙(`chat/memory_facts.py` 의 `existing_key_lines`)과 같다. 필터는 이긴 행에 건다."""
 
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
+
+from api.chat.keyword_notes import recent_scan_turns
 from api.chat.memory_facts import normalize_part
+from api.chat.prompt_builder import PromptNames
 from api.content.author_macros import FALLBACK_USER_NAME
-from api.db.models.chat import ChatMemoryFact
+from api.db.models.chat import ChatMemoryFact, ChatMessage
 
 # 사실 추출 지시문이 사용자를 부르는 낱말 — 프로필 이름이 없는 방에서 추출이 아는 사람·말한 사람에 이 낱말을 그대로 적을 수 있다.
 USER_INSTRUCTION_WORD = "사용자 인물"
 MIN_NAME_CHARS = 2
+
+
+@dataclass(frozen=True)
+class KnowledgeScope:
+    """장면 인물을 셀 때 호출부가 넘기는 이름 출처 — 그 턴 생성 프롬프트 세트의 대화 줄 라벨(사용자 표기). 지식 범위 필터와 이름
+    정확 조회가 같은 장면 인물을 쓴다."""
+
+    user_label: str
 
 
 def user_names(persona_name: str | None, user_label: str) -> frozenset[str]:
@@ -76,3 +91,35 @@ def known_in_scene(row: ChatMemoryFact, scene: frozenset[str]) -> bool:
     if not row.known_by:
         return True
     return any(normalize_part(name) in scene for name in row.known_by)
+
+
+def scene_for_turn(
+    rows: Sequence[ChatMemoryFact],
+    scope: KnowledgeScope,
+    *,
+    history: Sequence[ChatMessage],
+    user_content: str,
+    names: PromptNames,
+) -> frozenset[str]:
+    """이번 턴의 장면 인물(정규형). `rows` 는 그 턴에 읽은 방 사실 행 전부, `history` 는 방의 전체 대화다. 직전 응답은
+    키워드북·회상과 같은 스캔 글(이미지 태그를 지우고 `{{user}}`·`{{char}}` 를 이름으로 바꾼 것)이다."""
+    previous_response = recent_scan_turns(history, user_content, 0, names=names)[0].assistant_text
+    users = user_names(names.persona_name, scope.user_label)
+    return scene_people(room_names(rows, (), users=users), (user_content, previous_response))
+
+
+def latest_by_key(rows: Sequence[ChatMemoryFact]) -> list[tuple[int, ChatMemoryFact]]:
+    """키마다 이긴 행 하나와 그 행의 쓴 순번(`rows` 는 쓴 순서, 규칙은 모듈 설명)."""
+    groups: dict[str, list[tuple[int, ChatMemoryFact]]] = {}
+    for order, row in enumerate(rows):
+        groups.setdefault(row.fact_key, []).append((order, row))
+    winners: list[tuple[int, ChatMemoryFact]] = []
+    for members in groups.values():
+        winner = members[-1]
+        if winner[1].truth_status != "disproved":
+            value = normalize_part(winner[1].value)
+            disproved = [m for m in members if m[1].truth_status == "disproved" and normalize_part(m[1].value) == value]
+            if disproved:
+                winner = disproved[-1]
+        winners.append(winner)
+    return winners
