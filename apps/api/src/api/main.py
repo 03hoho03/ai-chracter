@@ -48,6 +48,7 @@ from api.identity.router import me_router as identity_me_router
 from api.images.router import router as images_router
 from api.inquiry.router import me_router as inquiry_me_router, router as inquiry_router
 from api.legal.router import router as legal_router
+from api.llm.voyage import aclose_shared_client
 from api.moderation.router import router as moderation_router
 from api.notice.router import router as notice_router
 from api.novel_public.admin import router as novel_public_admin_router
@@ -89,6 +90,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         novelize_cleanup.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await novelize_cleanup
+        # 기억 임베딩이 쥐고 있던 Voyage 연결을 닫는다(쓴 적이 없으면 할 일이 없다).
+        await aclose_shared_client()
 
 
 def _init_sentry() -> None:
