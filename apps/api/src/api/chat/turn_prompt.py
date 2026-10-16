@@ -369,7 +369,6 @@ async def build_room_prompt(
             return NO_FACTS
         if turn_state is not None and turn_state.fact_lines is not None:
             return FactSection(turn_state.fact_lines, ())
-        knowledge = KnowledgeScope(user_label=prompt_set.user_label) if settings.memory_knowledge_filter else None
         return await facts_for_turn(
             db,
             room_id=room.id,
@@ -377,7 +376,8 @@ async def build_room_prompt(
             history=full_history,
             user_content=user_content,
             names=names,
-            knowledge=knowledge,
+            scope=KnowledgeScope(user_label=prompt_set.user_label),
+            knowledge_filter=settings.memory_knowledge_filter,
             query_vector=query.vector if query is not None else None,
         )
 
