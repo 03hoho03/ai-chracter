@@ -959,9 +959,10 @@ def test_exact_share_follows_the_constant_share_and_comes_before_relevance() -> 
     lighthouse = _sized(11, 449, word="등대", importance=1)
     rows = _rows(named, lighthouse, *_fillers(6))
 
-    assert [row.attribute for row in _scene_select(rows, frozenset(), "등대 기억나?")] == ["취향0", "취향11"]
+    without_name = _scene_select(rows, frozenset(), "등대 기억나?")
+    assert [row.attribute for row in without_name] == ["취향0", lighthouse["attribute"]]
     picked = _scene_select(rows, _MINSU, "등대 기억나?")
-    assert [row.attribute for row in picked] == ["취향0", "취향1", "취향2", "취향10"]
+    assert [row.attribute for row in picked] == ["취향0", "취향1", "취향2", named["attribute"]]
 
 
 @pytest.mark.parametrize(
