@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, NamedTuple
 
-from sqlalchemy import ColumnElement, and_, func, literal_column, or_, select, tuple_, update
+from sqlalchemy import ColumnElement, Executable, and_, func, literal_column, or_, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -114,6 +114,21 @@ def normalize_part(text: str | None) -> str:
 def fact_key(kind: str, subject: str | None, target: str | None) -> str:
     """사실 키 = 종류 | 주어 | (관계는 대상, 사실은 속성). 평가 하네스와 같은 규칙이라 두 쪽이 같은 사실을 같은 키로 묶는다."""
     return "|".join(normalize_part(part) for part in (kind, subject, target))
+
+
+def fact_rows_statement(room_id: uuid.UUID, cursor: MessageKey) -> Executable:
+    """그 방에서 커서 이하로 접힌 스냅샷의 사실 행 전부, 쓴 순서(스냅샷 커서 순, 그 안은 순번 순)로 — 매 턴 조립이 그 턴 요약
+    커서로 읽는다(사실 섹션과 회상의 비밀 장면 거름이 같은 행을 본다). 이 읽기는 대화 길이에 따라 선형으로 는다."""
+    fact, snapshot = ChatMemoryFact, ChatRoomMemorySnapshot
+    return (
+        select(fact)
+        .join(snapshot, snapshot.id == fact.snapshot_id)
+        .where(
+            fact.chat_room_id == room_id,
+            tuple_(snapshot.cursor_created_at, snapshot.cursor_message_id) <= cursor,
+        )
+        .order_by(snapshot.cursor_created_at, snapshot.cursor_message_id, fact.ordinal)
+    )
 
 
 def normalize_facts(

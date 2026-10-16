@@ -16,6 +16,8 @@
   지식 범위 필터가 뺀 행은 이름이 나와도 돌아오지 않는다. 섹션 최대는 여전히 머리글 + 700자다.
 - 줄: 관계 `- 주어 → 대상: 값`, 사실 `- 주어 · 속성: 값`. 반증은 줄 앞에 표지, 주장은 끝에 말한 사람(사용자가 내놓은 주장은
   회상 섹션과 같은 사용자 꼬리표, 말한 인물이 없으면 회상 섹션과 같은 인물 꼬리표), 아는 사람이 있으면 그 뒤에 `(이름·이름만 앎)`.
+- 키별 최신 행이 확인되지 않은 주장이고 사용자 꼬리표가 붙지 않으면(인물·서술이 말로만 전한 것) 그 키는 싣지 않는다 — 옛 값이
+  되살아나지 않고, 지식 범위 필터와 무관하게 걸린다. 확인된 행·반증 행·사용자 주장은 싣는다.
 - 섹션은 대화 기록 뒤, 회상 섹션 앞(캐시 블록 셋째)이다. 턴 기록(`chat_turns.memory_facts`)에 실은 사실의 id·글자 수를 줄
   순서로 남기고, 리플레이는 그 id 로 줄을 다시 렌더한다. 사실 읽기가 실패하면 섹션 없이 턴을 계속한다.
 - 지식 범위 필터 스위치(`memory_knowledge_filter`)가 켜져 있으면 키별 최신 행 중 아는 사람이 이번 장면에 없는 행을 고르기 전에
@@ -214,12 +216,12 @@ def test_same_key_keeps_only_the_latest_row() -> None:
 def test_disproved_value_does_not_come_back_but_a_corrected_value_does() -> None:
     disproved = _fields("유나", "오디션", "겨울", truth_status="disproved")
     again = _fields("유나", "오디션", "겨울", truth_status="claimed", asserted_by="character", speaker="민수")
-    corrected = _fields("유나", "오디션", "봄", truth_status="claimed", asserted_by="character", speaker="민수")
+    corrected = _fields("유나", "오디션", "봄")
 
     assert [fact_line(row) for row in _select(_rows(disproved, again))] == [
         "- (사실 아님으로 밝혀짐) 유나 · 오디션: 겨울"
     ]
-    assert [fact_line(row) for row in _select(_rows(disproved, corrected))] == ["- 유나 · 오디션: 봄 (민수의 말)"]
+    assert [fact_line(row) for row in _select(_rows(disproved, corrected))] == ["- 유나 · 오디션: 봄"]
 
 
 def test_render_order_groups_then_importance_then_recency() -> None:
@@ -364,7 +366,7 @@ def _section(prompt: str) -> str:
     return prompt[start:] if end == -1 else prompt[start:end]
 
 
-_AUDITION = _fields("유나", "오디션", "겨울", truth_status="claimed", asserted_by="character", speaker="민수")
+_AUDITION = _fields("유나", "오디션", "겨울", truth_status="claimed", asserted_by="user")
 _FRIENDS = _fields("민수", "지아", "소꿉친구", kind="relation")
 
 
@@ -428,7 +430,7 @@ async def test_facts_section_follows_history_and_precedes_recall(
     on = await _build(db_session, room, "밀알당 기억나?")
 
     section = _section(on.prompt)
-    assert section.endswith("\n- 민수 → 지아: 소꿉친구\n- 유나 · 오디션: 겨울 (민수의 말)")
+    assert section.endswith("\n- 민수 → 지아: 소꿉친구\n- 유나 · 오디션: 겨울 (사용자의 말)")
     assert on.prompt.replace(section + "\n\n", "", 1) == off.prompt
     last_history_line = room.turns[8][1].content
     assert (
@@ -559,7 +561,7 @@ async def test_character_lane_gets_the_facts_section_too(
     await _plant(db_session, room, snapshots[2], [_AUDITION])
     _facts_on(monkeypatch)
     built = await _build(db_session, room, "오디션 언제야?", lane="character")
-    assert _section(built.prompt).endswith("\n- 유나 · 오디션: 겨울 (민수의 말)")
+    assert _section(built.prompt).endswith("\n- 유나 · 오디션: 겨울 (사용자의 말)")
     assert len(built.memory_facts) == 1
 
 
@@ -693,7 +695,7 @@ async def test_fact_read_failure_is_absorbed_and_the_turn_finishes(
     room, snapshots = await _fact_room(db_client, db_session)
     await _plant(db_session, room, snapshots[2], [_AUDITION])
     _facts_on(monkeypatch)
-    monkeypatch.setattr(memory_fact_section, "_fact_statement", lambda room_id, cursor: sa.text("SELECT 1/0"))
+    monkeypatch.setattr(memory_fact_section, "fact_rows_statement", lambda room_id, cursor: sa.text("SELECT 1/0"))
     captured: list[str] = []
     monkeypatch.setattr(
         memory_fact_section, "capture_dependency_failure", lambda exc, *, dependency: captured.append(dependency)
@@ -1248,3 +1250,109 @@ async def test_fact_vector_side_never_reaches_past_the_turn_cursor(
 
     assert len(stub.bodies) == 1
     assert _LOCKER["value"] not in _section(built.prompt)
+
+
+# --- 인물의 확인되지 않은 말 -------------------------------------------------------------------
+# 확인되지 않은 주장(`claimed`) 중 사용자 꼬리표가 붙지 않는 행(인물·서술이 말로만 전한 것)은 섹션에 싣지 않는다 — 꼬리표가
+# 있어도 생성 모델이 사실로 굳힌다. 키별 최신 뒤에서 빼므로 그런 행이 키의 지금 값이면 그 키가 통째로 빠지고 옛 값이 되살아나지
+# 않는다. 지식 범위 필터와 별도 판정이라 필터가 꺼져 있어도 걸린다. 확인된 행·반증 행·사용자 주장은 그대로 싣는다.
+
+_HANEUL = "하늘"
+
+
+def _claim(value: str = "겨울", **extra: Any) -> dict[str, Any]:
+    return _fields("유나", "오디션", value, truth_status="claimed", **{"asserted_by": "character", **extra})
+
+
+def test_character_claim_as_the_latest_value_drops_its_key_without_reviving_the_older_value() -> None:
+    """앞에 확인된 겨울, 뒤에 민수가 말한 봄 — 그 키는 섹션에서 빠진다. 앞 값을 지금 값처럼 싣지 않는다."""
+    rows = _rows(_fields("유나", "오디션", "겨울"), _claim("봄", speaker="민수"), _FRIENDS)
+
+    assert _values(_select(rows)) == ["소꿉친구"]
+
+
+@pytest.mark.parametrize(
+    ("fields", "line"),
+    [
+        pytest.param(_claim(speaker="민수"), None, id="claimed-by-a-named-character"),
+        pytest.param(_claim(), None, id="claimed-by-an-unnamed-character"),
+        pytest.param(_claim(asserted_by="narration"), None, id="claimed-in-narration"),
+        pytest.param(_claim(asserted_by="user"), "- 유나 · 오디션: 겨울 (사용자의 말)", id="claimed-by-the-user"),
+        pytest.param(
+            _claim(speaker=" 하늘 "), "- 유나 · 오디션: 겨울 (사용자의 말)", id="claimed-under-the-user-name"
+        ),
+        pytest.param(
+            _fields("유나", "오디션", "겨울", asserted_by="character", speaker="민수"),
+            "- 유나 · 오디션: 겨울",
+            id="confirmed-by-a-character",
+        ),
+        pytest.param(
+            _fields("유나", "오디션", "겨울", truth_status="disproved", asserted_by="character", speaker="민수"),
+            "- (사실 아님으로 밝혀짐) 유나 · 오디션: 겨울",
+            id="disproved-by-a-character",
+        ),
+    ],
+)
+def test_only_unverified_claims_without_the_user_tail_drop(fields: dict[str, Any], line: str | None) -> None:
+    """빠지는지는 줄의 꼬리표와 같은 판정이다 — 사용자 꼬리표가 붙는 주장(사용자가 내놓았거나 사용자의 이야기 속 이름으로 말한
+    것)은 남고, 남은 줄은 꼬리표가 그대로다."""
+    picked = select_fact_rows(_rows(fields), query="", names=[], current_turn=TURN, user_name=_HANEUL)
+
+    assert [fact_line(row, user_name=_HANEUL) for row in picked] == ([line] if line else [])
+
+
+def test_exact_lookup_and_the_vector_rank_never_bring_back_a_character_claim() -> None:
+    """민수가 장면에 나와도 민수가 주어인 인물 주장은 정확 조회로 들어오지 않고, 질의와 가장 가까워도 관련 몫으로 들어오지
+    않는다 — 네 몫 모두 그 행을 뺀 뒤에서 고른다. 결과는 그 행 없이 고른 것과 같다."""
+    claim = _sized(10, 100, subject="민수", importance=1) | {"truth_status": "claimed", "asserted_by": "character"}
+    rows = _with_ids(_rows(claim, _LIGHTHOUSE, *_fillers(6)))
+    distances = {rows[0].id: 0.0, rows[1].id: 0.3}
+
+    picked = _scene_select(rows, _MINSU, distances=distances)
+
+    assert claim["value"] not in _values(picked)
+    assert picked == _scene_select(rows[1:], _MINSU, distances={rows[1].id: 0.3})
+
+
+@pytest.mark.parametrize(
+    ("knowledge_filter", "secret"),
+    [
+        pytest.param(False, False, id="filter-off"),
+        pytest.param(True, False, id="filter-on-without-known-by-rows"),
+        pytest.param(True, True, id="filter-on-with-a-secret"),
+    ],
+)
+async def test_character_claims_drop_from_the_room_section_whatever_the_knowledge_filter(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    knowledge_filter: bool,
+    secret: bool,
+) -> None:
+    """사실 주입이 켜진 턴이면 지식 범위 필터가 꺼져 있어도, 켜졌지만 아는 사람이 정해진 행이 없어 필터 판정이 없어도 인물 주장은
+    빠진다."""
+    room, snapshots = await _fact_room(db_client, db_session)
+    planted = [_claim(speaker="민수"), _FRIENDS]
+    if secret:
+        planted.append(_fields("민수", "비밀", "전학", known_by=["민수"]))
+    await _plant(db_session, room, snapshots[2], planted)
+    _facts_on(monkeypatch)
+    monkeypatch.setattr(settings, "memory_knowledge_filter", knowledge_filter)
+
+    built = await _build(db_session, room, "민수야 오디션 언제야?")
+
+    lines = _section(built.prompt).splitlines()
+    assert "- 민수 → 지아: 소꿉친구" in lines
+    assert not any("오디션" in line for line in lines)
+
+
+async def test_replay_renders_a_recorded_character_claim_as_it_was(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """리플레이는 기록한 행을 고르지 않고 돌려준다 — 이 거름이 생기기 전 턴에 실린 인물 주장도 그때처럼 그 인물의 말로 렌더한다."""
+    room, snapshots = await _fact_room(db_client, db_session)
+    [claim_id] = await _plant(db_session, room, snapshots[2], [_claim(speaker="민수")])
+
+    rows = await memory_fact_section.fact_rows_from_record(db_session, [{"factId": str(claim_id)}])
+
+    assert memory_fact_section.fact_lines(rows, user_name=None) == "- 유나 · 오디션: 겨울 (민수의 말)"

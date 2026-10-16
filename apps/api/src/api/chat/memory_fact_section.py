@@ -6,9 +6,8 @@
 이미 실리고, 지난 턴을 그때의 커서로 다시 조립하면 그 뒤에 접힌 스냅샷의 행은 그때 없던 사실이다. 되감기는 스냅샷을 지우고
 DB 가 그 행을 함께 지우므로 다음 읽기에 앞 값이 돌아온다.
 
-키별 최신: 같은 키의 마지막 행이 이기되, 같은 키에 같은 값의 반증 행이 앞에 있으면 그 반증 행이 이긴다 — 반증된 값이 뒤의
-같은 값 주장으로 되살아나지 않게. 값이 다른 새 행은 옛 값의 반증 행에 가려지지 않는다(정정). 사실 추출이 추출 입력의 기존 키
-목록을 만드는 규칙(`chat/memory_facts.py` 의 `existing_key_lines`)과 같다.
+키별 최신(`chat/memory_knowledge.py` 의 `latest_by_key`): 같은 키의 마지막 행이 이기되, 같은 키에 같은 값의 반증 행이 앞에
+있으면 그 반증 행이 이긴다(규칙은 그 모듈 설명).
 
 렌더 순서: 관계 → 아는 사람이 정해진 사실 → 반증 → 그 밖. 묶음 안은 중요도가 높은 쪽, 같으면 나중에 쓴 쪽이 먼저다.
 
@@ -32,6 +31,11 @@ DB 가 그 행을 함께 지우므로 다음 읽기에 앞 값이 돌아온다.
 필터를 지난 행 중 질의와 가까운 순(거리 상한 안)의 RRF 다 — 명사가 겹치지 않는 바꿔 말하기도 관련 몫에 든다. 거리 순위를 필터 뒤
 행 사이에서만 매기므로 필터가 뺀 비밀 행은 거리가 가까워도 돌아오지 않는다. 가까운 행이 없으면 ③은 명사 단독 그대로다.
 
+확인되지 않은 주장: 키별 최신 행이 `claimed` 이고 사용자 꼬리표가 붙지 않는 행(인물·서술이 말로만 전한 것)이면 고르기 전에
+뺀다(`unverified_claim`) — 꼬리표를 붙여도 생성 모델이 사실로 굳힌다. 키별 최신 뒤에서 빼므로 그 키는 이번 턴 통째로 빠지고 옛
+값이 되살아나지 않는다. 지식 범위 필터와 별도 판정이라 필터가 꺼져 있어도 걸리고, 네 몫(상시·정확 조회·관련·임베딩) 모두 뺀 뒤의
+행에서 고른다. 확인된 행·반증 행·사용자 주장은 싣는다. 리플레이는 기록한 행을 그대로 렌더한다.
+
 지식 범위 필터(`chat/memory_knowledge.py`, 호출부가 켰을 때만): 키별 최신 행 중 아는 사람이 이번 장면에 없는 행을 고르기
 전에 뺀다 — 빠진 자리는 다음 후보가 채우고, 같은 키의 앞 값이 지금 값처럼 되살아나지 않는다. 이름 출처는 읽은 사실 행뿐이라
 SQL 을 더하지 않는다. 판정은 아는 사람 원소가 장면에 나오는가뿐이고 그 원소는 이미 사실 행에서 이름 출처에 들어 있어, 미디어 북
@@ -49,14 +53,13 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import Executable, select, tuple_
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat import memory_recall
-from api.chat.keyword_notes import recent_scan_turns
-from api.chat.memory_facts import normalize_part
-from api.chat.memory_knowledge import known_in_scene, room_names, scene_people, user_names
+from api.chat.memory_facts import fact_rows_statement, normalize_part
+from api.chat.memory_knowledge import KnowledgeScope, known_in_scene, latest_by_key, scene_for_turn
 from api.chat.memory_nouns import rule_tokens
 from api.chat.memory_recall import RecallCandidate, query_tokens, score_episodes
 from api.chat.memory_vector import QueryVector, fact_distances, rrf_order
@@ -64,7 +67,7 @@ from api.chat.memory_window import MessageKey, opening_message
 from api.chat.prompt_builder import PromptNames
 from api.core.config import settings
 from api.core.sentry import capture_dependency_failure
-from api.db.models.chat import ChatMemoryFact, ChatMessage, ChatMessageRole, ChatRoomMemorySnapshot
+from api.db.models.chat import ChatMemoryFact, ChatMessage, ChatMessageRole
 
 logger = logging.getLogger(__name__)
 
@@ -89,14 +92,6 @@ class FactSection:
 NO_FACTS = FactSection("", ())
 
 
-@dataclass(frozen=True)
-class KnowledgeScope:
-    """장면 인물을 셀 때 호출부가 넘기는 이름 출처 — 그 턴 생성 프롬프트 세트의 대화 줄 라벨(사용자 표기). 지식 범위 필터와 이름
-    정확 조회가 같은 장면 인물을 쓴다."""
-
-    user_label: str
-
-
 class FactRecordMissingError(Exception):
     """턴 기록에 남은 사실이 지금 DB 에 없다(그 뒤 되감기로 지워졌다)."""
 
@@ -118,8 +113,7 @@ def fact_line(row: ChatMemoryFact, *, user_name: str | None = None) -> str:
     if row.truth_status == "disproved":
         line = DISPROVED_MARK + line
     elif row.truth_status == "claimed":
-        spoken_by_user = bool(user_name and row.speaker and normalize_part(row.speaker) == normalize_part(user_name))
-        if row.asserted_by == "user" or spoken_by_user:
+        if _claimed_by_user(row, user_name):
             line += memory_recall.USER_ASSERTION_TAIL
         elif row.speaker:
             line += f" ({row.speaker}의 말)"
@@ -130,21 +124,16 @@ def fact_line(row: ChatMemoryFact, *, user_name: str | None = None) -> str:
     return f"- {line}"
 
 
-def _latest_by_key(rows: Sequence[ChatMemoryFact]) -> list[tuple[int, ChatMemoryFact]]:
-    """키마다 이긴 행 하나와 그 행의 쓴 순번(규칙은 모듈 설명)."""
-    groups: dict[str, list[tuple[int, ChatMemoryFact]]] = {}
-    for order, row in enumerate(rows):
-        groups.setdefault(row.fact_key, []).append((order, row))
-    winners: list[tuple[int, ChatMemoryFact]] = []
-    for members in groups.values():
-        winner = members[-1]
-        if winner[1].truth_status != "disproved":
-            value = normalize_part(winner[1].value)
-            disproved = [m for m in members if m[1].truth_status == "disproved" and normalize_part(m[1].value) == value]
-            if disproved:
-                winner = disproved[-1]
-        winners.append(winner)
-    return winners
+def _claimed_by_user(row: ChatMemoryFact, user_name: str | None) -> bool:
+    """주장의 말한 쪽이 사용자인가 — 사용자가 내놓은 주장이거나 말한 사람이 사용자의 이야기 속 이름(정규형)이다."""
+    spoken_by_user = bool(user_name and row.speaker and normalize_part(row.speaker) == normalize_part(user_name))
+    return row.asserted_by == "user" or spoken_by_user
+
+
+def unverified_claim(row: ChatMemoryFact, *, user_name: str | None) -> bool:
+    """섹션에 싣지 않는 행인가 — 확인되지 않은 주장이고 사용자 꼬리표가 붙지 않는다(인물·서술이 말로만 전한 것). 꼬리표를
+    붙여도 생성 모델이 사실로 굳혀 싣지 않는다. 확인된 행·반증 행·사용자 주장은 싣는다."""
+    return row.truth_status == "claimed" and not _claimed_by_user(row, user_name)
 
 
 def _group(row: ChatMemoryFact) -> int:
@@ -202,9 +191,13 @@ def select_fact_rows(
     행을 고르기 전에 뺀다(지식 범위 필터). `scene` 은 이번 턴 장면 인물(정규형)이고 정확 조회는 그 이름이 주어·관계 대상인 행을
     `keep` 을 지난 행 사이에서 고른다. `distances` 는 질의 임베딩과 사실 행의 거리(행 id → 거리, 거리 상한으로 거른 것)이고,
     필터를 지난 행 중 거리가 있는 행의 가까운 순 목록이 비지 않으면 관련 몫의 순서는 명사 순위와 그 목록의 RRF(`rrf_k`)다."""
-    winners = _latest_by_key(rows)
-    if keep is not None:
-        winners = [pair for pair in winners if keep(pair[1])]
+    # 키별 최신 뒤에서 거른다 — 앞에서 빼면 그 키의 옛 값이 지금 값처럼 되살아난다. 확인되지 않은 주장 거름은 지식 범위 필터와
+    # 별도 판정이라 `keep` 이 없어도(필터 꺼짐, 아는 사람이 정해진 행 없음) 걸린다.
+    winners = [
+        pair
+        for pair in latest_by_key(rows)
+        if not unverified_claim(pair[1], user_name=user_name) and (keep is None or keep(pair[1]))
+    ]
     ordered = [row for _, row in sorted(winners, key=lambda pair: (_group(pair[1]), -pair[1].importance, -pair[0]))]
     lengths = [len(fact_line(row, user_name=user_name)) for row in ordered]
     chosen: set[int] = set()
@@ -248,36 +241,6 @@ def select_fact_rows(
     return [ordered[i] for i in sorted(chosen)]
 
 
-def _fact_statement(room_id: uuid.UUID, cursor: MessageKey) -> Executable:
-    """그 방에서 커서 이하로 접힌 스냅샷의 사실 행 전부, 쓴 순서(스냅샷 커서 순, 그 안은 순번 순)로. 이 읽기는 대화 길이에 따라
-    선형으로 는다."""
-    fact, snapshot = ChatMemoryFact, ChatRoomMemorySnapshot
-    return (
-        select(fact)
-        .join(snapshot, snapshot.id == fact.snapshot_id)
-        .where(
-            fact.chat_room_id == room_id,
-            tuple_(snapshot.cursor_created_at, snapshot.cursor_message_id) <= cursor,
-        )
-        .order_by(snapshot.cursor_created_at, snapshot.cursor_message_id, fact.ordinal)
-    )
-
-
-def _scene(
-    rows: Sequence[ChatMemoryFact],
-    scope: KnowledgeScope,
-    *,
-    history: Sequence[ChatMessage],
-    user_content: str,
-    names: PromptNames,
-) -> frozenset[str]:
-    """이번 턴의 장면 인물(정규형). 직전 응답은 키워드북·회상과 같은 스캔 글(이미지 태그를 지우고 `{{user}}`·`{{char}}` 를
-    이름으로 바꾼 것)이다."""
-    previous_response = recent_scan_turns(history, user_content, 0, names=names)[0].assistant_text
-    users = user_names(names.persona_name, scope.user_label)
-    return scene_people(room_names(rows, (), users=users), (user_content, previous_response))
-
-
 def _knowledge_filter(
     rows: Sequence[ChatMemoryFact],
     scope: KnowledgeScope,
@@ -287,7 +250,7 @@ def _knowledge_filter(
     names: PromptNames,
 ) -> Callable[[ChatMemoryFact], bool]:
     """이번 턴의 장면 인물로 행을 남길지 정하는 판정."""
-    scene = _scene(rows, scope, history=history, user_content=user_content, names=names)
+    scene = scene_for_turn(rows, scope, history=history, user_content=user_content, names=names)
     return lambda row: known_in_scene(row, scene)
 
 
@@ -303,7 +266,7 @@ async def _facts(
     knowledge_filter: bool,
     query_vector: QueryVector | None,
 ) -> FactSection:
-    rows = (await db.scalars(_fact_statement(room_id, cursor))).all()
+    rows = (await db.scalars(fact_rows_statement(room_id, cursor))).all()
     if not rows:
         return NO_FACTS
     distances = None
@@ -330,7 +293,7 @@ async def _facts(
         keep=keep,
         distances=distances,
         rrf_k=settings.memory_embed_recall_rrf_k,
-        scene=_scene(rows, scope, history=history, user_content=user_content, names=names),
+        scene=scene_for_turn(rows, scope, history=history, user_content=user_content, names=names),
     )
     if not picked:
         return NO_FACTS

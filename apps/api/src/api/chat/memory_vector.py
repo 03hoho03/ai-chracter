@@ -12,7 +12,8 @@
 아니라 그대로 올라간다.
 
 거리 읽기: 방 단위 정확 탐색(인덱스 없음)이고 늘 `model = 질의 모델 AND dims = 질의 차원` 으로 거른다 — 임베딩 칸은 차원을 적지
-않아 차원이 다른 행에 거리 연산이 걸리면 질의째 실패한다. 질의 벡터는 글자로 보내 `CAST(… AS halfvec)` 로 감싼다(`db/types.py`).
+않아 차원이 다른 행에 거리 연산이 걸리면 질의째 실패한다. 장면 거리는 회상이 싣지 않는 장면(인물이 대사로만 말한 장면, 그 턴
+가려진 장면)을 같은 읽기 안에서 빼고 자른다 — 읽은 뒤에 빼면 거리 순위가 몇 개로 준다. 질의 벡터는 글자로 보내 `CAST(… AS halfvec)` 로 감싼다(`db/types.py`).
 읽기는 요청 세션의 SAVEPOINT 안이고 실패하면 경고·승격을 남기고 벡터 쪽을 빈 것으로 본다 — 명사 쪽 결과는 그대로 남는다.
 
 RRF: 순위 목록마다 `1/(k + 순위)`(순위는 1부터)를 더한 값의 내림차순. 같으면 앞 목록(명사)에서 순위가 높은 쪽이 먼저다 — 벡터
@@ -23,7 +24,7 @@ import logging
 import math
 import time
 import uuid
-from collections.abc import Hashable, Sequence
+from collections.abc import Collection, Hashable, Sequence
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
@@ -124,12 +125,14 @@ def _distance(query: QueryVector) -> Any:
     )
 
 
-def _episode_distance_statement(room_id: uuid.UUID, cursor: MessageKey, query: QueryVector, limit: int) -> Executable:
-    """그 방에서 회상 후보와 같은 조건(커서까지 접힌 스냅샷이 뽑았고 커서 이하에서 끝나는 장면)의 장면 임베딩을 질의와 가까운
-    순으로 `limit` 개. 거리가 같으면 장면 id 순이다."""
+def _episode_distance_statement(
+    room_id: uuid.UUID, cursor: MessageKey, query: QueryVector, limit: int, exclude: Collection[uuid.UUID] = ()
+) -> Executable:
+    """그 방에서 회상 후보와 같은 조건(커서까지 접힌 스냅샷이 뽑았고 커서 이하에서 끝나는 장면)이고 회상에 실을 수 있는 장면의
+    임베딩을 질의와 가까운 순으로 `limit` 개. 거리가 같으면 장면 id 순이다. `exclude` 는 이번 턴 가려진 장면이다."""
     embedding, episode, snapshot = ChatMemoryEmbedding, ChatMemoryEpisode, ChatRoomMemorySnapshot
     distance = _distance(query)
-    return (
+    statement = (
         select(embedding.episode_id, distance)
         .join(episode, episode.id == embedding.episode_id)
         .join(snapshot, snapshot.id == episode.snapshot_id)
@@ -139,10 +142,15 @@ def _episode_distance_statement(room_id: uuid.UUID, cursor: MessageKey, query: Q
             embedding.dims == query.dims,
             tuple_(episode.end_created_at, episode.end_message_id) <= cursor,
             tuple_(snapshot.cursor_created_at, snapshot.cursor_message_id) <= cursor,
+            # 회상하지 않는 인물 장면(`memory_recall.CHARACTER_ASSERTED`)은 자르기 전에 뺀다 — 뒤에서 빼면 앞 `limit` 개의 절반 넘게가
+            # 인물 장면인 방에서 벡터 순위가 몇 개로 준다.
+            episode.asserted_by != "character",
         )
         .order_by(distance, embedding.episode_id)
         .limit(limit)
     )
+    # 회상과 마찬가지로 자르기 전에 뺀다. 빈 목록이면 조건을 더하지 않는다.
+    return statement.where(episode.id.not_in(exclude)) if exclude else statement
 
 
 def _fact_distance_statement(room_id: uuid.UUID, cursor: MessageKey, query: QueryVector) -> Executable:
@@ -186,10 +194,14 @@ async def episode_distances(
     query: QueryVector,
     limit: int,
     max_distance: float,
+    exclude: Collection[uuid.UUID] = (),
 ) -> list[tuple[uuid.UUID, float]]:
-    """회상 후보 장면의 (id, 거리)를 가까운 순으로 — 앞 `limit` 개 중 거리 상한 안의 것."""
+    """회상 후보 장면의 (id, 거리)를 가까운 순으로 — `exclude` 를 뺀 앞 `limit` 개 중 거리 상한 안의 것."""
     return await _read_distances(
-        db, _episode_distance_statement(room_id, cursor, query, limit), room_id=room_id, max_distance=max_distance
+        db,
+        _episode_distance_statement(room_id, cursor, query, limit, exclude),
+        room_id=room_id,
+        max_distance=max_distance,
     )
 
 

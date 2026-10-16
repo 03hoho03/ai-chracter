@@ -1,5 +1,7 @@
-"""장면 인물 집합과 지식 범위 필터 — 아는 사람이 이번 장면에 없는 비밀 사실을 사실 섹션 후보에서 뺀다. DB·LLM 을 쓰지 않는
-순수 함수라 매 턴 조립(`chat/memory_fact_section.py`)과 지난 턴을 다시 계산하는 측정 도구가 같은 함수를 부른다.
+"""장면 인물 집합과 지식 범위 필터 — 아는 사람이 이번 장면에 없는 비밀 사실을 사실 섹션 후보에서 빼고, 그 비밀과 근거가 겹치는
+장면을 회상에서 가린다. DB·LLM 을 쓰지 않는 순수 함수라 매 턴 조립(`chat/memory_fact_section.py`·`chat/memory_recall.py`)과 지난
+턴을 다시 계산하는 측정 도구가 같은 함수를 부른다. 두 섹션이 같은 키별 최신·같은 장면 인물을 쓰도록 여기 둔다(사실 섹션이 회상을
+import 하므로 어느 한쪽에 두면 순환이 된다).
 
 방 이름: 방 사실 행의 주어·관계 대상·말한 사람·아는 사람 원소와, 호출부가 더 주는 이름이다. 매 턴 조립은 더 주지 않는다 —
 필터 판정은 아는 사람 원소가 장면에 나오는가뿐이고 그 원소는 이미 사실 행에서 들어오므로, 미디어 북 인물이나 작품 이름을 더해도
@@ -17,17 +19,38 @@
 따로 본다 — 이어 붙이면 경계를 걸친 가짜 일치가 생긴다.
 
 필터: 아는 사람이 정해진 행은 그 이름 중 하나가 장면 인물일 때만 남는다. 정해지지 않은 행(공개이거나 알 수 없음)은 늘 남는다.
-장면 인물에 사용자가 없으므로 사용자만 아는 비밀은 늘 빠진다."""
+장면 인물에 사용자가 없으므로 사용자만 아는 비밀은 늘 빠진다.
 
-from collections.abc import Iterable
+키별 최신: 같은 키의 마지막 행이 이기되, 같은 키에 같은 값의 반증 행이 앞에 있으면 그 반증 행이 이긴다 — 반증된 값이 뒤의
+같은 값 주장으로 되살아나지 않게. 값이 다른 새 행은 옛 값의 반증 행에 가려지지 않는다(정정). 사실 추출이 추출 입력의 기존 키
+목록을 만드는 규칙(`chat/memory_facts.py` 의 `existing_key_lines`)과 같다. 필터는 이긴 행에 건다.
 
+회상 줄의 가림: 장면 행에는 아는 사람 칸이 없다. 키별 최신 행이 필터를 지나지 못하는 키(가려진 키)의 모든 행 — 옛 행 포함, 옛
+행과만 겹치는 장면도 같은 비밀을 담는다 — 의 근거 메시지 범위와 양 끝 포함으로 겹치는 장면을 가린다. 키의 최신 행이 공개면 옛
+행이 비밀이었어도 가리지 않는다. 범위 겹침은 거칠어 공개 내용이 함께 든 장면도 가려지고, 사실 추출이 비밀을 놓치거나 아직 따라잡지
+못한 구간의 장면은 가려지지 않는다."""
+
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
+
+from api.chat.keyword_notes import recent_scan_turns
 from api.chat.memory_facts import normalize_part
+from api.chat.memory_window import MessageKey
+from api.chat.prompt_builder import PromptNames
 from api.content.author_macros import FALLBACK_USER_NAME
-from api.db.models.chat import ChatMemoryFact
+from api.db.models.chat import ChatMemoryFact, ChatMessage
 
 # 사실 추출 지시문이 사용자를 부르는 낱말 — 프로필 이름이 없는 방에서 추출이 아는 사람·말한 사람에 이 낱말을 그대로 적을 수 있다.
 USER_INSTRUCTION_WORD = "사용자 인물"
 MIN_NAME_CHARS = 2
+
+
+@dataclass(frozen=True)
+class KnowledgeScope:
+    """장면 인물을 셀 때 호출부가 넘기는 이름 출처 — 그 턴 생성 프롬프트 세트의 대화 줄 라벨(사용자 표기). 지식 범위 필터와 이름
+    정확 조회가 같은 장면 인물을 쓴다."""
+
+    user_label: str
 
 
 def user_names(persona_name: str | None, user_label: str) -> frozenset[str]:
@@ -76,3 +99,56 @@ def known_in_scene(row: ChatMemoryFact, scene: frozenset[str]) -> bool:
     if not row.known_by:
         return True
     return any(normalize_part(name) in scene for name in row.known_by)
+
+
+def scene_for_turn(
+    rows: Sequence[ChatMemoryFact],
+    scope: KnowledgeScope,
+    *,
+    history: Sequence[ChatMessage],
+    user_content: str,
+    names: PromptNames,
+) -> frozenset[str]:
+    """이번 턴의 장면 인물(정규형). `rows` 는 그 턴에 읽은 방 사실 행 전부, `history` 는 방의 전체 대화다. 직전 응답은
+    키워드북·회상과 같은 스캔 글(이미지 태그를 지우고 `{{user}}`·`{{char}}` 를 이름으로 바꾼 것)이다."""
+    previous_response = recent_scan_turns(history, user_content, 0, names=names)[0].assistant_text
+    users = user_names(names.persona_name, scope.user_label)
+    return scene_people(room_names(rows, (), users=users), (user_content, previous_response))
+
+
+def latest_by_key(rows: Sequence[ChatMemoryFact]) -> list[tuple[int, ChatMemoryFact]]:
+    """키마다 이긴 행 하나와 그 행의 쓴 순번(`rows` 는 쓴 순서, 규칙은 모듈 설명)."""
+    groups: dict[str, list[tuple[int, ChatMemoryFact]]] = {}
+    for order, row in enumerate(rows):
+        groups.setdefault(row.fact_key, []).append((order, row))
+    winners: list[tuple[int, ChatMemoryFact]] = []
+    for members in groups.values():
+        winner = members[-1]
+        if winner[1].truth_status != "disproved":
+            value = normalize_part(winner[1].value)
+            disproved = [m for m in members if m[1].truth_status == "disproved" and normalize_part(m[1].value) == value]
+            if disproved:
+                winner = disproved[-1]
+        winners.append(winner)
+    return winners
+
+
+def hidden_fact_keys(rows: Sequence[ChatMemoryFact], scene: frozenset[str]) -> frozenset[str]:
+    """키별 최신 행이 필터를 지나지 못하는 키 — 사실 섹션의 지식 범위 필터가 이번 턴 빼는 키와 같다."""
+    return frozenset(row.fact_key for _, row in latest_by_key(rows) if not known_in_scene(row, scene))
+
+
+def hidden_ranges(rows: Sequence[ChatMemoryFact], scene: frozenset[str]) -> list[tuple[MessageKey, MessageKey]]:
+    """가려진 키의 모든 행(옛 행 포함)의 근거 메시지 범위 (시작 키, 끝 키), 쓴 순서로. 회상이 이 범위와 겹치는 장면을 뺀다 —
+    옛 행과만 겹치는 장면도 같은 비밀을 담고 있다."""
+    keys = hidden_fact_keys(rows, scene)
+    return [
+        ((row.start_created_at, row.start_message_id), (row.end_created_at, row.end_message_id))
+        for row in rows
+        if row.fact_key in keys
+    ]
+
+
+def overlaps(a: tuple[MessageKey, MessageKey], b: tuple[MessageKey, MessageKey]) -> bool:
+    """두 메시지 범위(양 끝 포함)가 한 메시지라도 겹치는가."""
+    return a[0] <= b[1] and b[0] <= a[1]

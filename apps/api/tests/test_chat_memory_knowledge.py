@@ -10,11 +10,29 @@
 - 아는 사람이 정해진 행은 그 이름 중 하나가 장면 인물일 때만 남는다. 아는 사람이 정해지지 않은 행(공개·불명)은 늘 남는다."""
 
 import unicodedata
+import uuid
 from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 
-from api.chat.memory_knowledge import known_in_scene, room_names, scene_people, user_names
+import pytest
+
+from api.chat import memory_fact_section
+from api.chat.memory_knowledge import (
+    KnowledgeScope,
+    hidden_fact_keys,
+    hidden_ranges,
+    known_in_scene,
+    latest_by_key,
+    overlaps,
+    room_names,
+    scene_for_turn,
+    scene_people,
+    user_names,
+)
+from api.chat.memory_window import MessageKey
+from api.chat.prompt_builder import PromptNames
 from api.content.author_macros import FALLBACK_USER_NAME
-from api.db.models import ChatMemoryFact
+from api.db.models import ChatMemoryFact, ChatMessage, ChatMessageRole
 
 PERSONA = "하늘"
 LABEL = "사용자"
@@ -114,3 +132,101 @@ def test_room_names_come_from_every_name_field_and_the_extra_names() -> None:
         "강현우",
         "mina",
     }
+
+
+# --- 회상 줄의 비밀 장면 ---------------------------------------------------------------------
+# 장면 행에는 아는 사람 칸이 없다. 그래서 회상은 사실 행에서 끌어낸다 — 키별 최신 행이 위 필터를 지나지 못하는 키(가려진 키)의
+# 어느 행과든 근거 메시지 범위가 겹치는(양 끝 포함) 장면을 그 턴 회상에서 뺀다. 키의 최신 행이 공개면 옛 행이 비밀이었어도
+# 가리지 않는다.
+
+_T0 = datetime(2026, 10, 1, tzinfo=UTC)
+
+
+def _key(minute: int) -> MessageKey:
+    """분 단위로 늘어나는 메시지 키(같은 분이면 id 로 갈린다 — 여기서는 분마다 id 하나)."""
+    return (_T0 + timedelta(minutes=minute), uuid.UUID(int=minute))
+
+
+def _fact(value: str, *, known_by: list[str] | None, span: tuple[int, int], status: str = "confirmed") -> ChatMemoryFact:
+    """유나의 오디션 사실 한 행 — 근거는 `span` 분의 메시지 범위."""
+    start, end = _key(span[0]), _key(span[1])
+    return _row(
+        known_by=known_by,
+        attribute="오디션",
+        fact_key="fact|유나|오디션",
+        value=value,
+        truth_status=status,
+        start_created_at=start[0],
+        start_message_id=start[1],
+        end_created_at=end[0],
+        end_message_id=end[1],
+    )
+
+
+def _span(start: int, end: int) -> tuple[MessageKey, MessageKey]:
+    return (_key(start), _key(end))
+
+
+def test_latest_secret_row_hides_every_row_of_its_key() -> None:
+    """최신 행이 여전히 비밀이면 그 키의 옛 행(다른 범위)도 가린다 — 옛 행과만 겹치는 장면도 같은 비밀을 담는다."""
+    rows = [_fact("겨울", known_by=None, span=(1, 2)), _fact("봄", known_by=["유나"], span=(10, 11))]
+    assert hidden_fact_keys(rows, frozenset()) == {"fact|유나|오디션"}
+    assert hidden_ranges(rows, frozenset()) == [_span(1, 2), _span(10, 11)]
+    # 아는 사람이 장면에 있으면 가리지 않는다.
+    assert hidden_ranges(rows, frozenset({"유나"})) == []
+
+
+def test_latest_public_row_unhides_an_older_secret() -> None:
+    """키의 지금 값이 공개면 옛 값이 비밀이었어도 가리지 않는다 — 판정은 키별 최신 행으로 한다."""
+    rows = [_fact("겨울", known_by=["유나"], span=(1, 2)), _fact("봄", known_by=None, span=(10, 11))]
+    assert hidden_ranges(rows, frozenset()) == []
+
+
+def test_latest_by_key_decides_with_the_disproved_winner() -> None:
+    """같은 값의 반증 행이 앞에 있으면 뒤의 주장보다 반증 행이 키의 승자다 — 그 반증 행이 공개면 가리지 않는다. 마지막 행만 보면
+    비밀인 주장 행으로 가린다."""
+    rows = [
+        _fact("겨울", known_by=None, span=(1, 2), status="disproved"),
+        _fact("겨울", known_by=["유나"], span=(10, 11), status="claimed"),
+    ]
+    assert hidden_ranges(rows, frozenset()) == []
+
+
+@pytest.mark.parametrize(
+    ("episode", "hit"),
+    [
+        pytest.param((3, 5), True, id="ends-on-the-fact-start"),
+        pytest.param((7, 9), True, id="starts-on-the-fact-end"),
+        pytest.param((5, 5), True, id="one-message-fact-inside"),
+        pytest.param((4, 6), True, id="covers-the-fact"),
+        pytest.param((1, 4), False, id="right-before"),
+        pytest.param((8, 9), False, id="right-after"),
+    ],
+)
+def test_overlap_counts_both_ends(episode: tuple[int, int], hit: bool) -> None:
+    """사실 근거 5~7분. 한 메시지라도 닿으면 겹치고, 맞붙기만 하면 겹치지 않는다."""
+    assert overlaps(_span(*episode), _span(5, 7)) is hit
+    assert overlaps(_span(5, 7), _span(*episode)) is hit
+
+
+def test_recall_hides_the_same_keys_the_fact_section_filter_drops() -> None:
+    """같은 사실 행·같은 턴 글이면 사실 섹션의 지식 범위 필터가 빼는 키와 회상이 가리는 키가 같다 — 장면 인물은 같은 함수
+    (`scene_for_turn`)로 센다."""
+    rows = [
+        _row("유나", known_by=["유나", PERSONA], fact_key="fact|유나|비밀", value="전학", attribute="비밀"),
+        _row("민수", known_by=["민수"], fact_key="fact|민수|꿈", value="배우", attribute="꿈"),
+        _row("지아", known_by=None, fact_key="fact|지아|취미", value="테니스", attribute="취미"),
+    ]
+    history = [
+        ChatMessage(role=ChatMessageRole.ASSISTANT, content="오프닝"),
+        ChatMessage(role=ChatMessageRole.USER, content="안녕"),
+        ChatMessage(role=ChatMessageRole.ASSISTANT, content="민수가 하늘에게 손을 흔들었다."),
+    ]
+    names = PromptNames(persona_name=PERSONA, char_name=None)
+    scope = KnowledgeScope(user_label=LABEL)
+    keep = memory_fact_section._knowledge_filter(rows, scope, history=history, user_content="뭐 해?", names=names)
+    scene = scene_for_turn(rows, scope, history=history, user_content="뭐 해?", names=names)
+
+    dropped = {row.fact_key for _, row in latest_by_key(rows) if not keep(row)}
+    assert dropped == {"fact|유나|비밀"}
+    assert hidden_fact_keys(rows, scene) == dropped
