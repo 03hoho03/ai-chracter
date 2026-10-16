@@ -12,6 +12,7 @@ from sqlalchemy.orm import aliased
 from starlette.concurrency import run_in_threadpool
 
 from api.chat.chat_count import record_chat_participant
+from api.chat.memory_embeddings import fill_pending_embeddings
 from api.chat.memory_episodes import extract_pending_episode
 from api.chat.memory_facts import extract_pending_facts
 from api.chat.memory_fold import SUMMARY_MAX_LENGTH, fold_memory
@@ -159,8 +160,9 @@ from api.llm.chat_models import (
     is_chat_room_model,
 )
 from api.llm.client import LLMClient
-from api.llm.dependencies import get_llm_client
+from api.llm.dependencies import get_embedding_client, get_llm_client
 from api.llm.model_access import effective_room_model, has_chat_premium_access
+from api.llm.voyage import VoyageEmbeddingClient
 from api.persona.router import get_owned_persona, lock_user_default_persona, promote_oldest_persona
 from api.persona.schemas import PersonaSelectRequest, RoomPersonaResponse
 from api.session.dependencies import get_current_user_id
@@ -930,6 +932,7 @@ def _fold_after_commit(
     background_tasks: BackgroundTasks,
     session_factory: async_sessionmaker[AsyncSession],
     llm_client: LLMClient,
+    embedding_client: VoyageEmbeddingClient,
     room: ChatRoom,
     setup: StartingSetup | None,
     judgment_sets: JudgmentPromptSets,
@@ -945,7 +948,10 @@ def _fold_after_commit(
 
     관계·사실 기억 추출 스위치가 켜져 있으면 그 뒤에 사실 추출(`extract_pending_facts`, 사실 추출 모델의 세트)을 따로
     예약한다. Starlette 는 background 태스크를 차례로 부르고 한 태스크가 예외를 내면 남은 태스크를 부르지 않는다 — 그래서
-    접기와 두 추출은 모두 어떤 예외도 밖으로 내지 않는다."""
+    접기와 두 추출은 모두 어떤 예외도 밖으로 내지 않는다.
+
+    기억 임베딩 쓰기 스위치가 켜져 있으면 맨 뒤에 임베딩 채우기(`fill_pending_embeddings`)를 따로 예약한다 — 두 추출이 이 턴에
+    넣은 행까지 본다. 이것도 예외를 밖으로 내지 않는다. 꺼져 있으면 예약하지 않아 Voyage 호출도 임베딩 표 SELECT·INSERT 도 없다."""
 
     def schedule(_turn: TurnResult) -> None:
         if not settings.memory_window_generation:
@@ -989,6 +995,8 @@ def _fold_after_commit(
                 is_story_chat=is_story_chat,
                 names=names,
             )
+        if settings.memory_embed_write:
+            background_tasks.add_task(fill_pending_embeddings, session_factory, embedding_client, room_id=room.id)
 
     return schedule
 
@@ -1012,6 +1020,8 @@ async def send_message(
     # — 차감이 이미 커밋된 뒤라 같은 세션에 얹으면 라우트가 롤백될 때 환불만 사라진다.
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
     llm_client: LLMClient = Depends(get_llm_client),
+    # 턴 뒤 기억 임베딩 채우기용(`_fold_after_commit`). 만들 때 네트워크·키를 쓰지 않는다.
+    embedding_client: VoyageEmbeddingClient = Depends(get_embedding_client),
     prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
     # 판정·요약 모델마다의 세트. 세트가 없으면 여기서 실패해 스트림 전 오류 응답이고 차감 게이트(`charge`)보다 앞이다.
     judgment_sets: JudgmentPromptSets = Depends(_judgment_prompt_sets_dependency),
@@ -1099,6 +1109,7 @@ async def send_message(
                     background_tasks,
                     session_factory,
                     llm_client,
+                    embedding_client,
                     room,
                     setup,
                     judgment_sets,
@@ -1152,6 +1163,7 @@ async def regenerate_message(
     # — 차감이 이미 커밋된 뒤라 같은 세션에 얹으면 라우트가 롤백될 때 환불만 사라진다.
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
     llm_client: LLMClient = Depends(get_llm_client),
+    embedding_client: VoyageEmbeddingClient = Depends(get_embedding_client),
     prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
     # 판정·요약 모델마다의 세트. 세트가 없으면 여기서 실패해 스트림 전 오류 응답이고 차감 게이트(`charge`)보다 앞이다.
     judgment_sets: JudgmentPromptSets = Depends(_judgment_prompt_sets_dependency),
@@ -1244,6 +1256,7 @@ async def regenerate_message(
                     background_tasks,
                     session_factory,
                     llm_client,
+                    embedding_client,
                     room,
                     setup,
                     judgment_sets,
@@ -1289,6 +1302,7 @@ async def edit_message(
     # — 차감이 이미 커밋된 뒤라 같은 세션에 얹으면 라우트가 롤백될 때 환불만 사라진다.
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
     llm_client: LLMClient = Depends(get_llm_client),
+    embedding_client: VoyageEmbeddingClient = Depends(get_embedding_client),
     prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
     # 판정·요약 모델마다의 세트. 세트가 없으면 여기서 실패해 스트림 전 오류 응답이고 차감 게이트(`charge`)보다 앞이다.
     judgment_sets: JudgmentPromptSets = Depends(_judgment_prompt_sets_dependency),
@@ -1378,6 +1392,7 @@ async def edit_message(
                     background_tasks,
                     session_factory,
                     llm_client,
+                    embedding_client,
                     room,
                     setup,
                     judgment_sets,
