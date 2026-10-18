@@ -3,7 +3,11 @@
 같은 커넥션의 테스트로는 두 요청이 순서대로 돌아 경쟁이 드러나지 않는다. 그래서 공개 상태 행을 붙든 트랜잭션을 먼저 세우고
 그 뒤에 라우트 함수 둘을 차례로 띄워, 둘 다 정말 막혀 있는 것(`_assert_blocked`)을 확인한 뒤 붙든 것을 놓는다. 행 잠금을
 기다리는 쪽은 도착 순서대로 줄을 서므로 먼저 띄운 승인이 먼저 끝난다. 막힘 확인이 없으면 둘을 순서대로 돌려도 같은 최종
-상태가 나와 아무것도 증명하지 못한다."""
+상태가 나와 아무것도 증명하지 못한다.
+
+작가의 소설 삭제·마지막 묶음 삭제와 겹치는 경우는 삭제를 먼저 띄운다. 삭제는 사용자 행을 잡은 뒤 붙든 공개 상태 행에서 막히고,
+그 뒤에 띄운 승인·반려는 게시자 사용자 행에서 막혀야 한다. 승인·반려가 그 행을 건너뛰고 화 행부터 쥐면, 놓는 순간 삭제가
+공개 상태 행을 얻고 화 행을 기다리며 승인·반려는 공개 상태 행을 기다려 교착한다(교착 오류는 500 감이라 테스트가 터진다)."""
 
 import asyncio
 import uuid
@@ -21,6 +25,7 @@ from api.novel_public.admin import review_admin_novel
 from api.novel_public.admin_schemas import AdminNovelReviewRequest
 from api.novel_public.router import withdraw_novel_publication
 from api.novelize.deletion import delete_novels
+from api.novelize.router import delete_last_novel_batch, delete_novel
 from factories import PublicNovel, _assert_blocked, _make_public_novel, _make_user
 
 _MARKER_DOMAIN = "novel-review-races.test"
@@ -111,6 +116,27 @@ def _approve(factory: async_sessionmaker[AsyncSession], novel: PublicNovel, admi
     )
 
 
+def _reject(factory: async_sessionmaker[AsyncSession], novel: PublicNovel, admin_id: uuid.UUID) -> "asyncio.Task[object]":
+    body = AdminNovelReviewRequest(action="reject", admin_comment="원작 허락을 확인할 수 없다")
+    return _in_own_session(
+        factory, lambda s: review_admin_novel(novel_id=novel.novel_id, body=body, admin_id=admin_id, db=s)
+    )
+
+
+def _delete_novel(factory: async_sessionmaker[AsyncSession], novel: PublicNovel) -> "asyncio.Task[object]":
+    async def call(s: AsyncSession) -> None:
+        await delete_novel(novel=await s.get_one(Novel, novel.novel_id), db=s)
+
+    return _in_own_session(factory, call)
+
+
+def _delete_last_batch(factory: async_sessionmaker[AsyncSession], novel: PublicNovel) -> "asyncio.Task[object]":
+    async def call(s: AsyncSession) -> None:
+        await delete_last_novel_batch(batch_id=novel.batch_ids[-1], novel=await s.get_one(Novel, novel.novel_id), db=s)
+
+    return _in_own_session(factory, call)
+
+
 def _withdraw(factory: async_sessionmaker[AsyncSession], novel: PublicNovel) -> "asyncio.Task[object]":
     return _in_own_session(
         factory,
@@ -194,3 +220,64 @@ async def test_two_operators_approving_at_once_approve_once(
     assert publication is not None
     assert (publication.visibility, publication.review_status) == ("public", "approved")
     assert approvals == 1
+
+
+def _assert_rejected(result: object, status_code: int, code: str) -> None:
+    assert isinstance(result, HTTPException)
+    # `detail` 은 문자열로 선언돼 있지만 이 라우트는 dict 를 싣는다.
+    detail: object = result.detail
+    assert (result.status_code, detail) == (status_code, {"code": code})
+
+
+async def test_an_operator_rejecting_while_the_author_deletes_the_novel_waits_instead_of_deadlocking(
+    independent_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """작가가 승인 대기 중인 소설을 지우는 사이 운영자가 반려를 누르면, 반려는 삭제가 끝나기를 기다렸다가 지워진 소설이라
+    404 다. 둘이 서로를 기다려 한쪽이 교착 오류로 끊기지 않는다."""
+    novel = await _pending_novel(independent_factory)
+    admin_id = await _admin(independent_factory)
+    holder = await _hold_publication(independent_factory, novel)
+    try:
+        deletion = _delete_novel(independent_factory, novel)
+        await _assert_blocked(deletion)
+        reject = _reject(independent_factory, novel, admin_id)
+        await _assert_blocked(reject)
+    finally:
+        await _release(holder)
+
+    assert await deletion is None
+    _assert_rejected(await reject, 404, "NOVEL_NOT_FOUND")
+    async with independent_factory() as s:
+        assert await s.get(Novel, novel.novel_id) is None
+        assert await s.get(NovelPublication, novel.novel_id) is None
+
+
+async def test_an_operator_approving_while_the_author_deletes_the_last_batch_waits_instead_of_deadlocking(
+    independent_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """작가가 승인 대기 중인 소설의 마지막(1화가 든) 묶음을 지우는 사이 운영자가 승인을 누르면, 승인은 삭제가 끝나기를
+    기다렸다가 1화 공개본이 없어 409 다. 둘이 서로를 기다려 한쪽이 교착 오류로 끊기지 않고, 대기 행은 그대로 남아 운영자가
+    반려로 처리할 수 있다."""
+    novel = await _pending_novel(independent_factory)
+    admin_id = await _admin(independent_factory)
+    holder = await _hold_publication(independent_factory, novel)
+    try:
+        deletion = _delete_last_batch(independent_factory, novel)
+        await _assert_blocked(deletion)
+        approve = _approve(independent_factory, novel, admin_id)
+        await _assert_blocked(approve)
+    finally:
+        await _release(holder)
+
+    assert await deletion is None
+    _assert_rejected(await approve, 409, "NOVEL_REVIEW_NO_FIRST_CHAPTER")
+    async with independent_factory() as s:
+        publication = await s.get(NovelPublication, novel.novel_id)
+        frozen = await s.scalar(
+            select(func.count())
+            .select_from(NovelChapterPublication)
+            .where(NovelChapterPublication.novel_id == novel.novel_id)
+        )
+    assert publication is not None
+    assert (publication.visibility, publication.review_status) == ("withdrawn", "pending")
+    assert frozen == 0

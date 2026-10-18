@@ -812,8 +812,21 @@ async def test_switch_off_a_leftover_pending_request_opens_at_once_and_clears_th
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
 ) -> None:
     """켜져 있을 때 들어간 승인 대기가 스위치를 끈 뒤에도 남아 있으면, 게시자의 다시 신청은 지금 동작대로 바로 공개되고
-    심사 칸이 비워지며 그 순간 잠긴다."""
+    심사 칸이 비워지며 그 순간 잠긴다. 승인처럼 그 순간이 처음 공개 시각이 된다(신청 시각을 하루 앞으로 옮겨 두어 다시
+    썼는지 가린다)."""
     novel_id, chapters = await _pending(db_client, db_session, monkeypatch)
+    await db_session.execute(
+        sa.update(NovelPublication)
+        .where(NovelPublication.novel_id == novel_id)
+        .values(
+            first_published_at=sa.func.now() - sa.text("interval '1 day'"),
+            published_at=sa.func.now() - sa.text("interval '1 day'"),
+        )
+    )
+    await db_session.commit()
+    requested = await _publication_row(db_session, novel_id)
+    assert requested is not None
+    requested_at = requested.first_published_at
     _policy(monkeypatch, on=False)
 
     resp = await _publish(db_client, novel_id, chapters[0])
@@ -823,6 +836,7 @@ async def test_switch_off_a_leftover_pending_request_opens_at_once_and_clears_th
     publication = await _publication_row(db_session, novel_id)
     assert publication is not None
     assert (publication.visibility, publication.review_status) == ("public", None)
+    assert (publication.first_published_at > requested_at, publication.published_at > requested_at) == (True, True)
     await _assert_locked_at_first_publish(db_session, novel_id)
     listed, detail_status, _chapter_status, _like_status = await _reader_view(
         db_client, db_session, novel_id, chapters[0]

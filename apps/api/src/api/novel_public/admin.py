@@ -16,8 +16,10 @@
 섞지 않는다. 노벨 스위치와 무관하게 돈다(켜기 전에도 운영자가 볼 수 있게).
 
 **첫 공개 승인·반려**도 노벨 스위치·정책 스위치와 무관하게 돈다 — 스위치를 끈 뒤 남은 대기도 운영자가 처리할 수 있어야
-한다. 잠금은 그 소설의 화 행 → 공개 상태 행 순서다. 소설 삭제가 화 행을 먼저 잠근 뒤 화 공개본·공개 상태 행을 지우므로,
-반려(화 공개본 삭제)나 승인(1화 공개본 확인)이 공개 상태 행을 먼저 쥐면 그 삭제와 반대 방향으로 엇갈려 교착한다."""
+한다. 잠금은 게시자 사용자 행 → 그 소설의 화 행 → 공개 상태 행 순서다. 작가의 소설 삭제·마지막 묶음 삭제는 게시자와
+구매자 사용자 행 → 공개 상태 행(구매 환급) → 화 행 순서로 잡고, 작가의 공개 쓰기와 탈퇴도 사용자 행을 먼저 잡는다. 승인·반려가
+게시자 행 없이 화 행이나 공개 상태 행부터 쥐면 그 경로들과 반대 방향으로 엇갈려 교착하므로, 같은 첫 자리(게시자 행)에서
+줄을 서게 한다. 그 뒤의 화 행 → 공개 상태 행은 탈퇴가 화 행을 지운 뒤 공개 상태 행을 지우는 순서와 같다."""
 
 import uuid
 from datetime import UTC, datetime
@@ -75,6 +77,7 @@ from api.novel_public.admin_schemas import (
     AdminNovelScreeningItem,
 )
 from api.novel_public.serial_lock import lock_serial
+from api.novelize.billing import _lock_user
 from api.novelize.text import split_paragraphs
 
 ADMIN_NOVEL_PAGE_SIZE = 20
@@ -423,6 +426,11 @@ async def review_admin_novel(
     사유를 들고 남긴다. 잠금 순서는 모듈 docstring."""
     reject = body.action == "reject"
     reason = _require_reason(body.admin_comment) if reject else body.admin_comment.strip()
+    # 소설의 게시자는 바뀌지 않으므로 잠그기 전에 읽어도 된다. 그사이 지워졌으면 아래 공개 상태 행 확인이 404 를 낸다.
+    publisher_id = await db.scalar(select(Novel.user_id).where(Novel.id == novel_id))
+    if publisher_id is None:
+        raise _error(status.HTTP_404_NOT_FOUND, "NOVEL_NOT_FOUND")
+    await _lock_user(db, publisher_id)
     await db.execute(select(NovelChapter.id).where(NovelChapter.novel_id == novel_id).with_for_update())
     publication = await _lock_publication(db, novel_id)
     if publication is None:

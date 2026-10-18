@@ -365,8 +365,16 @@ async def _apply(db: AsyncSession, novel: Novel, plan: _PublishPlan, *, terms_ve
         elif plan.reopen:
             values["visibility"] = "public"
             if plan.unseen:
-                # 스위치가 꺼진 뒤 남은 대기·반려 행을 승인 없이 연다(원작 판정은 계획에서 처음 공개처럼 거쳤다).
-                values.update(review_status=None, review_reason=None, reviewed_at=None)
+                # 스위치가 꺼진 뒤 남은 대기·반려 행을 승인 없이 연다(원작 판정은 계획에서 처음 공개처럼 거쳤다). 독자에게
+                # 처음 열리는 때라 승인처럼 처음 공개 시각과 공개 시각을 지금으로 찍는다 — 신청 시각이 남으면 연재권 잠금
+                # 시각과 어긋나고 최신순 목록에서도 신청한 날 자리에 놓인다.
+                values.update(
+                    review_status=None,
+                    review_reason=None,
+                    reviewed_at=None,
+                    first_published_at=now,
+                    published_at=now,
+                )
         if plan.metadata is not None:
             values["title"], values["synopsis"] = plan.metadata
         if plan.metadata is not None or plan.chapter is not None:
