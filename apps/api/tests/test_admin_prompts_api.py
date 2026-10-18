@@ -45,6 +45,7 @@ story·character 활성이 v72·v76이 되므로 다음 게시 버전은 "80"부
 import importlib.util
 import logging
 import uuid
+from datetime import timedelta
 from pathlib import Path
 from string import Formatter
 from types import ModuleType
@@ -157,6 +158,18 @@ def _select_active_id(lane: str) -> sa.Select[tuple[uuid.UUID]]:
         .where(PromptSet.status == "published", PromptSet.lane == lane)
         .order_by(PromptSet.published_at.desc())
         .limit(1)
+    )
+
+
+async def _backdate_published_sets(db_session: AsyncSession) -> None:
+    """게시된 세트를 전부 사흘 앞당긴다(서로의 순서는 그대로). 세트를 심는 마이그레이션은 새 세트를 원본보다 1초 늦게
+    두므로, 테스트 세션 시작 때 마이그레이션이 한꺼번에 돌면 그 1초가 쌓여 마지막 시드 세트가 벽시계보다 몇 초 미래에
+    놓인다. 어드민 게시는 지금 시각을 쓰니, 세션 직후 몇 초 안에 돈 테스트에서는 방금 게시한 세트가 최신이 되지 못한다.
+    게시 직후 활성 세트가 새 게시본인지 보는 테스트는 게시 전에 이것을 불러 실행 시각에 기대지 않게 한다."""
+    await db_session.execute(
+        sa.update(PromptSet)
+        .where(PromptSet.status == "published")
+        .values(published_at=PromptSet.published_at - timedelta(days=3))
     )
 
 
@@ -1504,6 +1517,7 @@ async def test_claude_publish_becomes_that_models_active_set_and_invalidates_onl
     sonnet_before, sonnet_sections = await load_active_prompt_set(db_session, lane="story", model="sonnet")
     await set_cached_active_prompt_set("story", gemini_before, gemini_sections, model="gemini")
     await set_cached_active_prompt_set("story", sonnet_before, sonnet_sections, model="sonnet")
+    await _backdate_published_sets(db_session)
     await _make_valid_draft(db_client, "story", "sonnet")
 
     resp = await db_client.post("/admin/prompt-sets/story/publish", params={"model": "sonnet"}, json={"note": "s"})
@@ -1630,6 +1644,7 @@ async def test_judgment_only_draft_publishes_and_becomes_that_chains_active_set(
     haiku_before, haiku_sections = await load_active_prompt_set(db_session, lane=lane, model="haiku")
     await set_cached_active_prompt_set(lane, gemini_before, gemini_sections, model="gemini")
     await set_cached_active_prompt_set(lane, haiku_before, haiku_sections, model="haiku")
+    await _backdate_published_sets(db_session)
     await _make_valid_draft(db_client, lane, "haiku")
 
     resp = await db_client.post(f"/admin/prompt-sets/{lane}/publish", params={"model": "haiku"}, json={"note": "h"})
@@ -1737,6 +1752,7 @@ async def test_novel_sonnet_publish_passes_with_only_the_chapter_channel_and_rej
     """Claude 세트의 R-1 기대 집합은 레인마다 다르다 — 채팅 레인 집합(system·generation)을 소설 레인에 쓰면 화 생성만 가진
     소설 Claude 체인은 영원히 게시할 수 없다. 반대로 다른 채널이 섞이면 아무 호출도 읽지 않는 잉여다."""
     await _login_new_admin(db_client, db_session)
+    await _backdate_published_sets(db_session)
     await _make_valid_draft(db_client, "novel", "sonnet")
 
     ok = await db_client.post("/admin/prompt-sets/novel/publish", params={"model": "sonnet"}, json={"note": "n"})
@@ -1771,6 +1787,7 @@ async def test_novel_publish_leaves_the_chat_sets_alone(
     await _login_new_admin(db_client, db_session)
     story_before = (await load_active_prompt_set(db_session, lane="story"))[0].id
     character_before = (await load_active_prompt_set(db_session, lane="character"))[0].id
+    await _backdate_published_sets(db_session)
     await _make_valid_draft(db_client, "novel")
 
     resp = await db_client.post("/admin/prompt-sets/novel/publish", json={"note": "소설"})
