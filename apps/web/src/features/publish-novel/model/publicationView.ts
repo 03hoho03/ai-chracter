@@ -16,7 +16,8 @@ export type PublishSourceBlock = "permission" | "source";
  * - `reviewRejected`: 운영자가 첫 공개를 반려했다. `reason` 은 운영자가 쓴 글 그대로다. 반려된 공개는 독자에게 보인 적이
  *   없어 새로 공개하는 것과 같은 원작 판정을 받는다 — 그 판정이 막지 않고 화가 있어야 다시 신청할 수 있다(`canReapply`),
  *   막혔으면 `block` 이 그 까닭이다.
- * - `withdrawn`: 게시자가 공개를 거뒀다. 원작이 공개돼 있지 않으면 다시 열 수 없다.
+ * - `withdrawn`: 게시자가 공개를 거뒀다. 원작이 공개돼 있지 않으면 다시 열 수 없다. 승인 없이 열 수 있게 된 대기·반려
+ *   행(정책 스위치를 끈 뒤 남은 것)도 여기로 온다.
  * - `public`: 공개 중. 아직 공개하지 않은 화 수, 원작 때문에 더 공개할 수 없는가, 공개한 뒤 고친 화·제목·소개,
  *   그리고 다시 공개할 것이 있는가. */
 export type PublicationView =
@@ -46,6 +47,10 @@ export function toPublicationView(status: NovelPublicationStatus): PublicationVi
   if (status.moderationStatus === "restricted") return { kind: "restricted" };
   const newBlock = toSourceBlock(status.newPublishBlock);
   // 심사 칸이 없는 옛 응답(`undefined`)은 엄격 비교에 걸리지 않아 아래의 지금 판정으로 떨어진다.
+  const inReviewRow = status.reviewStatus === "pending" || status.reviewStatus === "rejected";
+  // 정책 스위치를 켰다가 끄면 대기·반려 행이 남는데, 서버는 그 행을 승인 없이 다시 연다(`reviewRequired` 거짓). 그래서
+  // 심사 상태가 아니라 거둔 공개로 그린다. 독자에게 보인 적 없는 행을 여는 것이라 새로 공개하는 것과 같은 원작 판정을 받는다.
+  if (inReviewRow && status.reviewRequired === false) return { kind: "withdrawn", canReopen: newBlock === undefined };
   if (status.reviewStatus === "pending") return { kind: "inReview" };
   if (status.reviewStatus === "rejected") {
     return {

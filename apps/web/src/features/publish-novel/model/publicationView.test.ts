@@ -103,6 +103,30 @@ describe("toPublicationView 첫 공개 심사", () => {
     ).toEqual({ kind: "reviewRejected", reason: "사유", canReapply: false, block: "permission" });
   });
 
+  it("승인 없이 열 수 있게 된 대기는 거둔 공개로 보여 다시 공개할 수 있다", () => {
+    expect(
+      toPublicationView(status({ ...IN_REVIEW, reviewRequired: false, publishedChapterCount: 1, reviewStatus: "pending" })),
+    ).toEqual({ kind: "withdrawn", canReopen: true });
+  });
+
+  it("승인 없이 열 수 있게 된 반려는 거둔 공개로 보이고 원작이 막으면 다시 열 수 없다", () => {
+    expect(toPublicationView(status({ ...IN_REVIEW, reviewRequired: false, reviewStatus: "rejected", reviewReason: "사유" }))).toEqual({
+      kind: "withdrawn",
+      canReopen: true,
+    });
+    expect(
+      toPublicationView(
+        status({
+          ...IN_REVIEW,
+          reviewRequired: false,
+          reviewStatus: "rejected",
+          reviewReason: "사유",
+          newPublishBlock: "source_unavailable",
+        }),
+      ),
+    ).toEqual({ kind: "withdrawn", canReopen: false });
+  });
+
   it("운영 조치는 승인 대기보다 앞선다", () => {
     expect(
       toPublicationView(status({ ...IN_REVIEW, moderationStatus: "restricted", reviewStatus: "pending", publishedChapterCount: 1 })),

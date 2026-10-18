@@ -46,13 +46,14 @@ const COPY: Record<
   },
 };
 
-/** 고칠 입력이 없는 409·404 — 다른 운영자가 먼저 처리했거나, 게시자가 신청을 취소했거나, 승인할 수 없는 상태가 됐다.
- * 토스트를 띄우고 모달을 닫으며, 상세는 무효화로 새로 읽힌다. */
+/** 고칠 입력이 없는 409·404. 409 는 공개 상태 행이 남아 있는데 대기가 아니게 됐거나(다른 운영자가 먼저 처리했다) 승인할
+ * 수 없는 상태다. 404 는 그 행이 없어졌다는 뜻이다 — 게시자가 신청을 취소하면 서버가 대기 행을 지우므로 소설을 지운 것과
+ * 같은 404 가 온다. 토스트를 띄우고 모달을 닫으며, 목록·상세는 무효화로 새로 읽힌다. */
 const REJECTION_MESSAGES: Record<string, string> = {
-  NOVEL_REVIEW_NOT_PENDING: "이미 처리됐거나 게시자가 신청을 취소했어요. 화면을 새로 불러왔어요.",
+  NOVEL_REVIEW_NOT_PENDING: "다른 운영자가 이미 처리했어요. 화면을 새로 불러왔어요.",
   NOVEL_REVIEW_NO_FIRST_CHAPTER: "1화 공개본이 없어 승인할 수 없어요. 반려로 정리해 주세요.",
   NOVEL_SOURCE_NOT_PUBLISHABLE: "원작이 지금 공개할 수 없는 상태라 승인할 수 없어요. 반려로 정리해 주세요.",
-  NOVEL_NOT_FOUND: "노벨을 찾을 수 없어요. 게시자가 지웠을 수 있어요.",
+  NOVEL_NOT_FOUND: "게시자가 공개 신청을 취소했거나 소설을 지웠어요. 목록으로 돌아갈게요.",
 };
 
 const ERROR_MESSAGE = "처리하지 못했어요. 잠시 후 다시 시도해주세요.";
@@ -69,6 +70,8 @@ type NovelReviewConfirmModalProps = {
   action: NovelReviewAction;
   /** 처리가 성공해 모달이 닫힌 뒤 부른다 — 상세 레이아웃이 하단 시트를 닫는다. */
   onSuccess?: () => void;
+  /** 404 로 노벨이 없어졌을 때 모달이 닫힌 뒤 부른다 — 상세는 다시 읽어도 404 라 목록으로 옮긴다. */
+  onNovelGone?: () => void;
 };
 
 /** 첫 공개 승인·반려 확인. 한 번짜리 처리라 한 모달이 문구만 바꿔 맡는다.
@@ -76,7 +79,7 @@ type NovelReviewConfirmModalProps = {
  * 요청 중에는 Esc·바깥 누르기·닫기(X)·취소로 닫지 않는다 — 닫은 뒤 실패하면 그 오류를 보일 자리가 없고, 닫힌 모달을 보고
  * 처리가 안 됐다고 여겨 다시 누르게 된다. */
 export const NovelReviewConfirmModal = createCallable<NovelReviewConfirmModalProps, void>(
-  ({ call, novelId, novelTitle, action, onSuccess }) => {
+  ({ call, novelId, novelTitle, action, onSuccess, onNovelGone }) => {
     const reviewMutation = useNovelReviewMutation(novelId);
     const [failureMessage, setFailureMessage] = useState<string | null>(null);
     const copy = COPY[action];
@@ -102,6 +105,7 @@ export const NovelReviewConfirmModal = createCallable<NovelReviewConfirmModalPro
         if (rejection) {
           toast.error(rejection);
           call.end();
+          if (code === "NOVEL_NOT_FOUND") onNovelGone?.();
           return;
         }
         setFailureMessage(ERROR_MESSAGE);

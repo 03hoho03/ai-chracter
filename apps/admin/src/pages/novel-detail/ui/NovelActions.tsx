@@ -1,6 +1,7 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ai-character-chat/ui/components/select";
+import { useNavigate } from "@tanstack/react-router";
 import { useId, useState } from "react";
 
 import {
@@ -8,6 +9,7 @@ import {
   type AdminHomeNovelCurationSlot,
   type AdminNovelDetailResponse,
 } from "@/entities/admin-novel";
+import { useRememberedListSearch } from "@/shared/lib/list-search-memory/listSearchMemory";
 
 import { HomeNovelCurationConfirmModal } from "./HomeNovelCurationConfirmModal";
 import { NovelModerationConfirmModal } from "./NovelModerationConfirmModal";
@@ -28,6 +30,9 @@ export function NovelActions({ novel, onSuccess }: NovelActionsProps) {
   const novelTitle = novel.title || "(제목 없음)";
   const isRestricted = novel.moderationStatus === "restricted";
   const isPendingReview = novel.reviewStatus === "pending";
+  const navigate = useNavigate();
+  const rememberedListSearch = useRememberedListSearch("/novels/");
+  const goToList = () => void navigate({ to: "/novels", search: rememberedListSearch ?? {} });
 
   return (
     <div className="flex flex-col gap-4">
@@ -41,7 +46,7 @@ export function NovelActions({ novel, onSuccess }: NovelActionsProps) {
           <Button
             type="button"
             onClick={() =>
-              void NovelReviewConfirmModal.call({ novelId: novel.id, novelTitle, action: "approve", onSuccess })
+              void NovelReviewConfirmModal.call({ novelId: novel.id, novelTitle, action: "approve", onSuccess, onNovelGone: goToList })
             }
           >
             승인
@@ -50,7 +55,7 @@ export function NovelActions({ novel, onSuccess }: NovelActionsProps) {
             type="button"
             variant="outline"
             onClick={() =>
-              void NovelReviewConfirmModal.call({ novelId: novel.id, novelTitle, action: "reject", onSuccess })
+              void NovelReviewConfirmModal.call({ novelId: novel.id, novelTitle, action: "reject", onSuccess, onNovelGone: goToList })
             }
           >
             반려
