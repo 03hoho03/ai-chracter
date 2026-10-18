@@ -13398,7 +13398,7 @@
           "chat"
         ],
         "summary": "Get Ending Collection",
-        "description": "`starting_setup_id`는 물리적 PK(`_build_content_snapshot`의\n`startingSetupId`와 동일한 값 — `POST /chat-rooms`의 startingSetupId 관례를 따른다), 도달\n여부는 `story_ending_unlocks`를 entity_id(버전 불변)로 조인해 같은 시작설정으로\n새 대화방을 만들어도 이전 기록이 유지되게 한다.",
+        "description": "`starting_setup_id`는 물리적 PK(`_build_content_snapshot`의\n`startingSetupId`와 동일한 값 — `POST /chat-rooms`의 startingSetupId 관례를 따른다), 도달\n여부는 `story_ending_unlocks`를 entity_id(버전 불변)로 조인해 같은 시작설정으로\n새 대화방을 만들어도 이전 기록이 유지되게 한다.\n\n작품을 읽을 수 있는 사람에게만 연다 — 이미지 보관함과 같은 기준(`is_open_to_participant`)이라, 비공개 작품은 작가\n본인과 그 작품에 대화방이 있는 사용자(공개였을 때 대화를 시작한 플레이어)에게만 열린다. 막힌 경우는 없는 시작설정과\n같은 404 다.",
         "operationId": "get_ending_collection_stories_starting_setups__starting_setup_id__ending_collection_get",
         "parameters": [
           {
@@ -31085,6 +31085,25 @@
               }
             ],
             "title": "Perturndelta"
+          },
+          "hiddenFromPlayer": {
+            "type": "boolean",
+            "title": "Hiddenfromplayer"
+          },
+          "playerDescription": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playerdescription"
+          },
+          "signalHiddenChange": {
+            "type": "boolean",
+            "title": "Signalhiddenchange"
           },
           "rules": {
             "items": {
