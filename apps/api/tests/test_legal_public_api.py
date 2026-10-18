@@ -1,5 +1,5 @@
 import uuid
-from datetime import timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.verification import get_verification_code
 from api.db.models import LegalDocument, User
+from api.legal import documents
 from factories import _make_published
 
 
@@ -401,3 +402,77 @@ async def test_signup_records_null_version_when_no_published_document(
     assert user is not None
     assert user.terms_version is None
     assert user.privacy_version is None
+
+
+# ---- 시행 예정 판 --------------------------------------------------------------
+
+
+async def test_public_document_serves_current_edition_and_announces_the_scheduled_one(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """시행 예정 판은 시행 전에는 `upcoming` 으로만 알리고 현행판 자리에 오지 않는다. 시계가 시행 시각을 넘으면 그 판이
+    현행판이 된다. 깨지는 시나리오: 공개 조회가 게시 시각만 보아 예약하자마자 효력 없는 약관을 현행이라고 보여 준다."""
+    effective_at = datetime.now(UTC) + timedelta(days=30)
+    await _make_published(db_session, kind="terms", version="2026-11-17", body_markdown="예정 본문", effective_at=effective_at)
+    await db_session.commit()
+
+    before = (await db_client.get("/legal/terms")).json()
+    assert before["version"] == "2026-09-06"
+    assert before["effectiveAt"] == before["publishedAt"]
+    assert before["upcoming"]["version"] == "2026-11-17"
+    assert datetime.fromisoformat(before["upcoming"]["effectiveAt"]) == effective_at
+    upcoming = await db_client.get("/legal/terms/upcoming")
+    assert upcoming.status_code == 200
+    assert (upcoming.json()["version"], upcoming.json()["bodyMarkdown"]) == ("2026-11-17", "예정 본문")
+
+    monkeypatch.setattr(documents, "utcnow", lambda: effective_at + timedelta(minutes=1))
+    after = (await db_client.get("/legal/terms")).json()
+    assert (after["version"], after["bodyMarkdown"], after["upcoming"]) == ("2026-11-17", "예정 본문", None)
+    assert datetime.fromisoformat(after["effectiveAt"]) == effective_at
+    assert (await db_client.get("/legal/terms/upcoming")).status_code == 404
+
+
+async def test_scheduled_reconsent_edition_reaches_me_and_signup_only_after_it_takes_effect(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """시행 예정인 재동의 판은 시행 전에는 `/me` 의 재동의 플래그도, 가입이 기록하는 동의 버전도 바꾸지 않는다. 시계가
+    시행 시각을 넘으면 기존 회원은 재동의 대상이 되고 새 가입은 그 판 버전을 기록한다. 깨지는 시나리오: 가입이 아직
+    효력 없는 판에 동의한 것으로 기록되거나, 기존 회원이 시행 전부터 재동의 모달에 갇힌다."""
+    effective_at = datetime.now(UTC) + timedelta(days=30)
+    await _make_published(
+        db_session, kind="privacy", version="2026-11-17", requires_reconsent=True, effective_at=effective_at
+    )
+    await db_session.commit()
+    early = await _signup_and_login(db_client)
+    early_user = await db_session.scalar(select(User).where(User.email == early["email"]))
+    assert early_user is not None
+    assert (early_user.privacy_version, early_user.transfer_version) == ("2026-09-06", "2026-09-06")
+    assert (await db_client.get("/me")).json()["privacyReconsentRequired"] is False
+
+    monkeypatch.setattr(documents, "utcnow", lambda: effective_at + timedelta(minutes=1))
+    assert (await db_client.get("/me")).json()["privacyReconsentRequired"] is True
+    late = _signup_payload()
+    assert (await db_client.post("/auth/signup", json=late)).status_code == 201
+    late_user = await db_session.scalar(select(User).where(User.email == late["email"]))
+    assert late_user is not None
+    assert (late_user.privacy_version, late_user.transfer_version) == ("2026-11-17", "2026-11-17")
+
+
+async def test_consent_records_current_edition_not_the_scheduled_one(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """재동의 기록도 현행판 버전이다. 깨지는 시나리오: 시행 전 판에 동의한 것으로 기록돼, 그 판이 시행된 뒤 재동의를
+    요구받지 않는다(시행 전 판은 회원이 동의할 대상이 아니다)."""
+    payload = await _signup_and_login(db_client)
+    await _make_published(
+        db_session, kind="terms", version="2026-11-17", effective_at=datetime.now(UTC) + timedelta(days=30)
+    )
+    await db_session.commit()
+
+    resp = await db_client.post("/legal/consent", json={"kind": "terms", "version": "2026-11-17"})
+
+    assert resp.status_code == 204
+    user = await db_session.scalar(select(User).where(User.email == payload["email"]))
+    assert user is not None
+    await db_session.refresh(user)
+    assert user.terms_version == "2026-09-06"

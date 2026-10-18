@@ -212,6 +212,7 @@ AdminActionType = Literal[
     "image-view",
     "inquiry-reply",
     "legal-publish",
+    "legal-withdraw",
     "notice-publish",
     "notice-unpublish",
     "novel-comment-delete",

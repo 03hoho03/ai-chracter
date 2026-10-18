@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import EmailStr, Field
+from pydantic import AwareDatetime, EmailStr, Field
 
 from api.chat.prompt_builder import PromptLane
 from api.core.schema import CamelModel
@@ -462,13 +462,17 @@ class AdminLegalPublishedItem(CamelModel):
     version: str
     body_markdown: str
     published_at: datetime
+    effective_at: datetime
     requires_reconsent: bool
 
 
 class AdminLegalDocumentResponse(CamelModel):
+    """`published` 는 지금 시행 중인 현행판, `upcoming` 은 시행 시각이 아직 오지 않은 예약 판이다."""
+
     kind: LegalDocumentKind
     draft: AdminLegalDraftItem | None
     published: AdminLegalPublishedItem | None
+    upcoming: AdminLegalPublishedItem | None
 
 
 class AdminLegalDraftUpsertRequest(CamelModel):
@@ -476,22 +480,29 @@ class AdminLegalDraftUpsertRequest(CamelModel):
 
 
 class AdminLegalPublishRequest(CamelModel):
-    """`version`은 zero-padded ISO 날짜(`YYYY-MM-DD`)로 강제한다 — `_reconsent_required`
-    (`api/auth/router.py`)가 이 값을 문자열째로 비교해 재동의 필요 여부를 판정하고, 그
-    비교가 시간순과 일치하려면 모든 버전이 같은 자릿수로 zero-padding돼 있어야 한다
-    (그렇지 않으면 예: `"2026-9-6" < "2026-10-01"`이 문자열 비교로는 `False`가 되어
-    재동의가 영원히 뜨지 않는다). 달력상 유효한 날짜인지(`2026-13-45` 등)는 검사하지
-    않는다 — 자릿수 고정 포맷만 지키면 무효한 날짜라도 문자열 비교의 시간순 일치라는
-    전제 자체는 깨지지 않으므로, 이 정규식만으로 방어 목적은 충분하다고 판단했다."""
+    """`version` 은 날짜(`YYYY-MM-DD`)이고, 같은 날 다시 게시하면 순번 접미사를 붙인다(첫 판은 접미사 없음, 둘째부터
+    `.2`, `.3`, … `.10`). 접미사는 `.0`·`.1`·앞자리 0 을 받지 않아 한 판에 이름이 하나뿐이다. 판의 앞뒤는 버전 문자열이
+    아니라 시행 시각으로 정하므로(`api/legal/documents.py`) 이 형식은 사람이 읽는 이름을 고르게 할 뿐이다. 달력상 유효한
+    날짜인지는 검사하지 않는다.
 
-    version: str = Field(min_length=1, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    `effective_at` 은 시행 시각이다. 비우면 게시 시각과 같아 즉시 현행이 되고, 미래면 그 시각까지 시행 예정 판으로
+    남는다. 시간대가 없는 값은 받지 않는다(서버 시계와 비교할 수 없다)."""
+
+    version: str = Field(min_length=1, pattern=r"^\d{4}-\d{2}-\d{2}(\.([2-9]|[1-9]\d+))?$")
     requires_reconsent: bool
+    effective_at: AwareDatetime | None = None
+
+
+# 이력 표의 판 상태. 현행 = 지금 시행 중, 예정 = 시행 시각 전, 철회 = 시행 전에 거둔 판, 지난 판 = 다음 판이 시행돼 밀려난 판.
+AdminLegalVersionState = Literal["current", "scheduled", "withdrawn", "past"]
 
 
 class AdminLegalVersionItem(CamelModel):
     version: str
     published_at: datetime
+    effective_at: datetime
     requires_reconsent: bool
+    state: AdminLegalVersionState
 
 
 class AdminLegalVersionsResponse(CamelModel):

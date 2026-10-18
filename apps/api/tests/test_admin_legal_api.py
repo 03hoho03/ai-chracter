@@ -3,10 +3,12 @@ from datetime import datetime, timedelta, timezone, UTC
 import httpx
 import pytest
 import sqlalchemy as sa
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin import legal as admin_legal
 from api.db.models import AdminActionLog, LegalDocument
+from api.legal import documents
 from api.legal.schemas import LegalDocumentKind
 from factories import _create_admin, _login_as, _login_as_admin, _make_published, _make_user
 
@@ -506,3 +508,175 @@ async def test_versions_is_scoped_to_kind(
     resp = await db_client.get("/admin/legal/terms/versions")
     versions = [item["version"] for item in resp.json()["items"]]
     assert versions == ["2024-01-01"]
+
+
+# ---- 시행 예약·철회 -------------------------------------------------------------
+
+
+def _schedule_body(version: str, effective_at: datetime) -> dict[str, object]:
+    return {"version": version, "requiresReconsent": False, "effectiveAt": effective_at.isoformat()}
+
+
+async def test_withdraw_requires_admin_session(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+    await _assert_requires_admin_session(
+        db_client, db_session, "post", "/admin/legal/terms/versions/2026-09-06/withdraw"
+    )
+
+
+async def test_scheduled_publish_stays_upcoming_and_a_second_schedule_is_409(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """미래 시행 시각으로 게시하면 현행판은 그대로이고 그 판은 예정 판이 된다. 예정 판은 kind 마다 하나라 두 번째 예약은
+    409 이고 아무것도 남기지 않는다. 깨지는 시나리오: 예정 판이 둘 생기면 어느 쪽이 먼저 시행될지 운영자가 놓치고, 먼저
+    예약한 판의 철회가 뒤 판을 드러낸다."""
+    await _make_draft(db_session, kind="terms", body_markdown="예약 본문")
+    await db_session.commit()
+    await _login_new_admin(db_client, db_session)
+    effective_at = datetime.now(UTC) + timedelta(days=30)
+
+    resp = await db_client.post("/admin/legal/terms/publish", json=_schedule_body("2026-11-17", effective_at))
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["published"]["version"] == "2026-09-06"
+    assert body["upcoming"]["version"] == "2026-11-17"
+    assert datetime.fromisoformat(body["upcoming"]["effectiveAt"]) == effective_at
+    versions = (await db_client.get("/admin/legal/terms/versions")).json()["items"]
+    assert [(item["version"], item["state"]) for item in versions] == [
+        ("2026-11-17", "scheduled"),
+        ("2026-09-06", "current"),
+    ]
+
+    second = await db_client.post(
+        "/admin/legal/terms/publish", json=_schedule_body("2026-11-18", effective_at + timedelta(days=1))
+    )
+    assert second.status_code == 409
+    count = await db_session.scalar(
+        sa.select(sa.func.count()).select_from(LegalDocument).where(LegalDocument.version == "2026-11-18")
+    )
+    assert count == 0
+
+
+async def test_any_publish_is_409_while_an_edition_is_scheduled_until_it_is_withdrawn(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """예정 판이 있는 동안 같은 kind 의 게시는 즉시든 예약이든 409 이고 아무것도 남기지 않는다. 예정 판을 철회하면 즉시
+    게시가 된다. 깨지는 시나리오: 예정 판을 둔 채 즉시 게시한 수정이 예정 판 시행 순간 조용히 사라지거나, 초안에 남은
+    예정 판 본문이 즉시 게시로 공지 기간 없이 오늘 시행된다."""
+    await _make_draft(db_session, kind="terms")
+    await db_session.commit()
+    await _login_new_admin(db_client, db_session)
+    effective_at = datetime.now(UTC) + timedelta(days=30)
+    assert (
+        await db_client.post("/admin/legal/terms/publish", json=_schedule_body("2026-11-17", effective_at))
+    ).status_code == 200
+
+    immediate = await db_client.post(
+        "/admin/legal/terms/publish", json={"version": "2026-10-18", "requiresReconsent": False}
+    )
+    scheduled = await db_client.post(
+        "/admin/legal/terms/publish", json=_schedule_body("2026-11-20", effective_at + timedelta(days=3))
+    )
+
+    assert (immediate.status_code, scheduled.status_code) == (409, 409)
+    assert "철회" in immediate.json()["detail"]
+    count = await db_session.scalar(
+        sa.select(sa.func.count())
+        .select_from(LegalDocument)
+        .where(LegalDocument.version.in_(("2026-10-18", "2026-11-20")))
+    )
+    assert count == 0
+
+    assert (await db_client.post("/admin/legal/terms/versions/2026-11-17/withdraw")).status_code == 200
+    after = await db_client.post(
+        "/admin/legal/terms/publish", json={"version": "2026-10-18", "requiresReconsent": False}
+    )
+    assert after.status_code == 200
+    assert after.json()["published"]["version"] == "2026-10-18"
+
+
+async def test_publish_rejects_effective_time_before_publish_time(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """시행 시각을 게시 시각보다 이르게 줄 수 없다. 깨지는 시나리오: 소급 시행된 판이 직전 현행판보다 앞에 놓여 영영
+    현행이 되지 못하거나, 그 사이 옛 판에 동의한 회원이 새 판에 동의한 것으로 읽힌다."""
+    await _make_draft(db_session, kind="terms")
+    await db_session.commit()
+    await _login_new_admin(db_client, db_session)
+
+    resp = await db_client.post(
+        "/admin/legal/terms/publish", json=_schedule_body("2026-10-18", datetime.now(UTC) - timedelta(hours=1))
+    )
+
+    assert resp.status_code == 422
+    assert await db_session.scalar(sa.select(LegalDocument).where(LegalDocument.version == "2026-10-18")) is None
+
+
+async def test_withdraw_scheduled_edition_keeps_the_row_and_retires_its_version_name(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """예정 판을 철회하면 행은 `withdrawn` 으로 남고 감사 로그가 남으며, 예정 판이 사라져 다시 예약할 수 있다. 철회한
+    판의 버전 이름은 다시 쓸 수 없다. 깨지는 시나리오: 공지로 나간 버전 이름에 다른 본문이 실려 두 판을 가를 수 없다."""
+    await _make_draft(db_session, kind="terms")
+    await db_session.commit()
+    await _login_new_admin(db_client, db_session)
+    effective_at = datetime.now(UTC) + timedelta(days=30)
+    assert (
+        await db_client.post("/admin/legal/terms/publish", json=_schedule_body("2026-11-17", effective_at))
+    ).status_code == 200
+
+    resp = await db_client.post("/admin/legal/terms/versions/2026-11-17/withdraw")
+
+    assert resp.status_code == 200
+    assert [(item["version"], item["state"]) for item in resp.json()["items"]] == [
+        ("2026-11-17", "withdrawn"),
+        ("2026-09-06", "current"),
+    ]
+    assert (await db_client.get("/admin/legal/terms")).json()["upcoming"] is None
+    logs = (
+        await db_session.scalars(sa.select(AdminActionLog).where(AdminActionLog.action_type == "legal-withdraw"))
+    ).all()
+    assert len(logs) == 1
+    reuse = await db_client.post("/admin/legal/terms/publish", json=_schedule_body("2026-11-17", effective_at))
+    assert reuse.status_code == 409
+    rescheduled = await db_client.post("/admin/legal/terms/publish", json=_schedule_body("2026-11-17.2", effective_at))
+    assert rescheduled.status_code == 200
+    assert rescheduled.json()["upcoming"]["version"] == "2026-11-17.2"
+
+
+async def test_withdraw_refuses_an_edition_already_in_effect(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """시행 시각이 지난 판은 철회할 수 없다(409) — 현행판도, 예약했다가 시행된 판도. 없는 판은 404. 깨지는 시나리오: 이미
+    회원이 동의했을 수 있는 판이 사라져 그 동의가 가리키는 게시본이 없어진다."""
+    await _make_draft(db_session, kind="terms")
+    await db_session.commit()
+    await _login_new_admin(db_client, db_session)
+    effective_at = datetime.now(UTC) + timedelta(days=30)
+    assert (
+        await db_client.post("/admin/legal/terms/publish", json=_schedule_body("2026-11-17", effective_at))
+    ).status_code == 200
+
+    current = await db_client.post("/admin/legal/terms/versions/2026-09-06/withdraw")
+    missing = await db_client.post("/admin/legal/terms/versions/2030-01-01/withdraw")
+    monkeypatch.setattr(documents, "utcnow", lambda: effective_at + timedelta(minutes=1))
+    took_effect = await db_client.post("/admin/legal/terms/versions/2026-11-17/withdraw")
+
+    assert (current.status_code, missing.status_code, took_effect.status_code) == (409, 404, 409)
+    states = (await db_client.get("/admin/legal/terms/versions")).json()["items"]
+    assert [(item["version"], item["state"]) for item in states] == [
+        ("2026-11-17", "current"),
+        ("2026-09-06", "past"),
+    ]
+
+
+async def test_released_row_without_effective_time_is_rejected_by_the_database(db_session: AsyncSession) -> None:
+    """초안이 아닌 행은 시행 시각이 반드시 있다(CHECK). 깨지는 시나리오: 시행 시각 없는 게시본이 현행 조회에서 조용히
+    빠져 영영 현행이 되지 못한다 — 시행 시각을 모르는 옛 코드가 배포 겹침 동안 게시하는 경우가 그렇다."""
+    db_session.add(
+        LegalDocument(
+            kind="terms", version="2026-10-18", body_markdown="본문", status="published", published_at=datetime.now(UTC)
+        )
+    )
+    with pytest.raises(IntegrityError):
+        await db_session.flush()

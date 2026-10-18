@@ -1,5 +1,4 @@
 import uuid
-from datetime import UTC, datetime
 from typing import get_args
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -17,9 +16,11 @@ from api.admin.schemas import (
     AdminLegalPublishRequest,
     AdminLegalVersionItem,
     AdminLegalVersionsResponse,
+    AdminLegalVersionState,
 )
 from api.db.models.legal import LegalDocument
 from api.db.session import get_db_session
+from api.legal import documents
 from api.legal.schemas import LegalConsentKind, LegalDocumentKind
 
 router = APIRouter(tags=["admin"])
@@ -27,49 +28,84 @@ router = APIRouter(tags=["admin"])
 _CONSENT_KINDS: frozenset[str] = frozenset(get_args(LegalConsentKind))
 
 
-async def _get_draft(db: AsyncSession, kind: LegalDocumentKind) -> LegalDocument | None:
-    document: LegalDocument | None = await db.scalar(
-        select(LegalDocument).where(LegalDocument.kind == kind, LegalDocument.status == "draft")
-    )
+async def _get_draft(
+    db: AsyncSession, kind: LegalDocumentKind, *, for_update: bool = False
+) -> LegalDocument | None:
+    query = select(LegalDocument).where(LegalDocument.kind == kind, LegalDocument.status == "draft")
+    if for_update:
+        query = query.with_for_update()
+    document: LegalDocument | None = await db.scalar(query)
     return document
 
 
-async def _get_latest_published(db: AsyncSession, kind: LegalDocumentKind) -> LegalDocument | None:
-    """`api/legal/router.py`의 동명 헬퍼와 조회 내용이 같지만 파일 간 헬퍼 비공유
-    관례(apps/api/CLAUDE.md)에 따라 이 파일에도 복제한다."""
-    document: LegalDocument | None = await db.scalar(
-        select(LegalDocument)
-        .where(LegalDocument.kind == kind, LegalDocument.status == "published")
-        .order_by(LegalDocument.published_at.desc())
-        .limit(1)
+def _published_item(document: LegalDocument | None) -> AdminLegalPublishedItem | None:
+    if document is None:
+        return None
+    assert document.version is not None  # 게시 행은 publish_legal_document가 항상 채운다
+    effective_at, published_at = documents.effective_order(document)
+    return AdminLegalPublishedItem(
+        version=document.version,
+        body_markdown=document.body_markdown,
+        published_at=published_at,
+        effective_at=effective_at,
+        requires_reconsent=document.requires_reconsent,
     )
-    return document
 
 
 async def _build_legal_document_response(
     db: AsyncSession, kind: LegalDocumentKind
 ) -> AdminLegalDocumentResponse:
     draft = await _get_draft(db, kind)
-    published = await _get_latest_published(db, kind)
+    now = documents.utcnow()
 
     draft_item = (
         AdminLegalDraftItem(body_markdown=draft.body_markdown, created_at=draft.created_at)
         if draft is not None
         else None
     )
+    return AdminLegalDocumentResponse(
+        kind=kind,
+        draft=draft_item,
+        published=_published_item(await documents.current_legal_document(db, kind, now=now)),
+        upcoming=_published_item(await documents.upcoming_legal_document(db, kind, now=now)),
+    )
 
-    published_item = None
-    if published is not None:
-        assert published.version is not None  # 게시 행은 publish_legal_document가 항상 채운다
-        assert published.published_at is not None  # 위와 동일
-        published_item = AdminLegalPublishedItem(
-            version=published.version,
-            body_markdown=published.body_markdown,
-            published_at=published.published_at,
-            requires_reconsent=published.requires_reconsent,
+
+async def _build_versions_response(db: AsyncSession, kind: LegalDocumentKind) -> AdminLegalVersionsResponse:
+    """게시본과 철회본을 시행 순서(최신 먼저)로. 상태는 현행 조회 함수가 고른 판과 시행 시각으로 매긴다."""
+    now = documents.utcnow()
+    current = await documents.current_legal_document(db, kind, now=now)
+    rows = (
+        await db.scalars(
+            select(LegalDocument)
+            .where(LegalDocument.kind == kind, LegalDocument.status.in_(("published", "withdrawn")))
+            .order_by(LegalDocument.effective_at.desc(), LegalDocument.published_at.desc())
         )
+    ).all()
 
-    return AdminLegalDocumentResponse(kind=kind, draft=draft_item, published=published_item)
+    items = []
+    for document in rows:
+        assert document.version is not None  # 게시 행은 항상 채워짐
+        effective_at, published_at = documents.effective_order(document)
+        state: AdminLegalVersionState
+        if document.status == "withdrawn":
+            state = "withdrawn"
+        elif effective_at > now:
+            state = "scheduled"
+        elif current is not None and document.id == current.id:
+            state = "current"
+        else:
+            state = "past"
+        items.append(
+            AdminLegalVersionItem(
+                version=document.version,
+                published_at=published_at,
+                effective_at=effective_at,
+                requires_reconsent=document.requires_reconsent,
+                state=state,
+            )
+        )
+    return AdminLegalVersionsResponse(items=items)
 
 
 @router.get("/admin/legal/{kind}")
@@ -137,16 +173,36 @@ async def publish_legal_document(
     게시할 수 없다. 재동의 게이트와 `GET /me` 는 약관·처리방침만 보므로 그 플래그는 아무
     효과가 없는데, 게시 이력·감사 로그에는 "재동의 필요"로 남아 운영자가 회원 재동의를
     받은 것으로 믿게 된다.
+
+    **시행 시각**: 비우면 게시 시각으로 즉시 시행한다. 게시 시각보다 이르면 422 — 과거로 소급하면 그 판이 직전 현행판보다
+    앞에 놓여 영영 현행이 되지 못하거나, 그 사이에 옛 판에 동의한 회원이 새 판에 동의한 것으로 읽힌다. 미래면 시행 예정
+    판이 된다. **예정 판이 있는 동안 같은 kind 의 다른 게시는 즉시든 예약이든 409 다**(먼저 예정 판을 철회한다). 즉시 게시를
+    허용하면 예정 판이 시행되는 순간 그 판이 현행이 되어 사이에 게시한 수정이 조용히 사라지고, 초안에 남은 예정 판 본문을
+    즉시 게시하면 공지 기간 없이 오늘 시행된다. 급한 수정은 예정 판 철회 → 수정판 게시 → 수정을 반영한 판 재예약 순서로 한다.
+    이 검사는 부분 유니크 인덱스로 할 수 없다(인덱스 조건에 현재 시각을 쓸 수 없다). 그래서 kind 의 초안 행을 잠가 같은
+    kind 의 게시를 줄 세운 뒤 검사한다 — 게시는 초안이 있어야 하므로 초안 행이 kind 단위의 잠금 대상이 된다.
     """
     if body.requires_reconsent and kind not in _CONSENT_KINDS:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="이 문서는 회원 동의 대상이 아니라 재동의를 요구할 수 없습니다.",
         )
+    now = documents.utcnow()
+    effective_at = body.effective_at if body.effective_at is not None else now
+    if effective_at < now:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="시행 시각은 게시 시각보다 이를 수 없습니다.",
+        )
 
-    draft = await _get_draft(db, kind)
+    draft = await _get_draft(db, kind, for_update=True)
     if draft is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="발행할 초안이 없습니다.")
+    if await documents.upcoming_legal_document(db, kind, now=now) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="시행 예정인 판이 있어 게시할 수 없습니다. 그 판을 먼저 철회한 뒤 게시해 주세요.",
+        )
 
     # 부분 유니크 인덱스(`kind`, `version`) WHERE status='published'가 중복 버전을
     # 막아준다 — 그 IntegrityError를 500으로 흘리지 않고 409로 정리해 내려준다.
@@ -164,7 +220,8 @@ async def publish_legal_document(
                     body_markdown=draft.body_markdown,
                     status="published",
                     requires_reconsent=body.requires_reconsent,
-                    published_at=datetime.now(UTC),
+                    published_at=now,
+                    effective_at=effective_at,
                 )
             )
             await db.flush()
@@ -181,6 +238,7 @@ async def publish_legal_document(
         reason_text=(
             f"{kind} 문서를 버전 {body.version}으로 게시"
             + ("(재동의 필요)" if body.requires_reconsent else "")
+            + (f", 시행 {effective_at.isoformat()}" if effective_at > now else "")
         ),
     )
     await db.commit()
@@ -194,23 +252,39 @@ async def list_legal_document_versions(
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminLegalVersionsResponse:
-    documents = (
-        await db.scalars(
-            select(LegalDocument)
-            .where(LegalDocument.kind == kind, LegalDocument.status == "published")
-            .order_by(LegalDocument.published_at.desc())
-        )
-    ).all()
+    return await _build_versions_response(db, kind)
 
-    items = []
-    for document in documents:
-        assert document.version is not None  # 게시 행은 항상 채워짐
-        assert document.published_at is not None  # 게시 행은 항상 채워짐
-        items.append(
-            AdminLegalVersionItem(
-                version=document.version,
-                published_at=document.published_at,
-                requires_reconsent=document.requires_reconsent,
-            )
+
+@router.post("/admin/legal/{kind}/versions/{version}/withdraw")
+async def withdraw_legal_document(
+    kind: LegalDocumentKind,
+    version: str,
+    admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> AdminLegalVersionsResponse:
+    """시행 예정 판을 철회한다. 행은 지우지 않고 `withdrawn` 으로 남기며 그 버전 이름은 다시 쓸 수 없다(이미 공지로
+    나갔을 수 있다). 시행 시각이 지난 판은 409 — 시행된 판에는 이미 동의한 회원이 있을 수 있어 거둘 수 없고, 고치려면 새
+    판을 게시한다. 행을 잠그고 시각을 본다(같은 판을 두 번 철회하는 요청이 둘 다 감사 로그를 남기지 않게)."""
+    now = documents.utcnow()
+    document: LegalDocument | None = await db.scalar(
+        select(LegalDocument)
+        .where(LegalDocument.kind == kind, LegalDocument.version == version, LegalDocument.status == "published")
+        .with_for_update()
+    )
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="철회할 게시본이 없습니다.")
+    if documents.effective_order(document)[0] <= now:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="이미 시행된 판은 철회할 수 없습니다. 고치려면 새 판을 게시해 주세요.",
         )
-    return AdminLegalVersionsResponse(items=items)
+
+    document.status = "withdrawn"
+    await record_admin_action(
+        db,
+        admin_id=admin_id,
+        action_type="legal-withdraw",
+        reason_text=f"{kind} 문서의 시행 예정 판 {version}을 철회",
+    )
+    await db.commit()
+    return await _build_versions_response(db, kind)

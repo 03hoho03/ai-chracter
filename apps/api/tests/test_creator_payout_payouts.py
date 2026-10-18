@@ -58,7 +58,7 @@ from api.db.models.creator_payout import (
     CreatorPayoutStatus,
 )
 from api.db.models.moderation import AdminActionLog
-from api.legal.dependencies import _latest_published_legal_version
+from api.legal.documents import current_legal_version, utcnow
 from api.main import app
 from api.payments.notify import get_payment_notifier
 from factories import (
@@ -68,6 +68,7 @@ from factories import (
     _create_admin,
     _login_as,
     _login_as_admin,
+    _make_published,
     _make_user,
 )
 
@@ -394,6 +395,22 @@ async def test_unverified_member_cannot_touch_payouts(db_client: httpx.AsyncClie
         assert (resp.status_code, resp.json()["detail"]) == (403, {"code": "IDENTITY_VERIFICATION_REQUIRED"})
 
 
+async def test_payout_info_records_current_privacy_version_not_a_scheduled_one(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """시행 예정 처리방침이 있어도 지급 정보 동의는 지금 시행 중인 판의 버전을 남긴다."""
+    await _make_published(
+        db_session, kind="privacy", version="2026-11-01", effective_at=datetime.now(UTC) + timedelta(days=30)
+    )
+    user = await _member(db_session)
+    await _login_as(db_client, user.id)
+
+    await _register(db_client)
+
+    [profile] = await _profiles(db_session, user)
+    assert profile.privacy_version == "2026-09-06"
+
+
 async def test_payout_info_is_stored_encrypted_with_its_consent(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
@@ -409,7 +426,7 @@ async def test_payout_info_is_stored_encrypted_with_its_consent(
         "6789",
         None,
     )
-    assert profile.privacy_version == await _latest_published_legal_version(db_session, "privacy")
+    assert profile.privacy_version == await current_legal_version(db_session, "privacy", now=utcnow())
     assert profile.consented_at is not None
     for column, plaintext in PLAINTEXTS:
         blob = getattr(profile, f"{column}_ciphertext")
