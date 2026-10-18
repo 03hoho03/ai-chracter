@@ -36,7 +36,8 @@ const CHIP_EXIT_MS = 300;
 /**
  * 스토리 챗의 상태 줄 — 지금 장면(장소·시간) 한 줄과, contentSnapshot.stats(정의)와 현재값을 statId 로 조인한 게이지 칸들,
  * 접기·익명 신호를 담은 흐름 줄 하나다(채팅 열 안의 `shrink-0` 줄이라 sticky 띠가 아니다). 캐릭터 챗은 스냅숏이 없어
- * ChatRoomView 가 그리지 않는다. 보이는 스탯이 없는 작품도 장면이 있으면 장면 줄만 그린다 — 접을 칸이 없어 접기 버튼도 없다.
+ * ChatRoomView 가 그리지 않는다. 보이는 스탯이 없는 작품도 장면이나 익명 신호가 있으면 그 줄만 그린다 — 접을 칸이 없어 접기
+ * 버튼도 없다.
  *
  * 칸은 버튼이고 누르면 팝오버로 이름·값·범위·플레이어용 설명을 보인다. 버튼은 자식을 표현용으로 취급해 안의 막대가
  * progressbar 로 읽히지 않으므로, 값은 버튼 접근 이름("호감도 48/100, 자세히")에 싣는다.
@@ -70,16 +71,18 @@ export function StatGaugePanel({ stats, values, feedback, scene, hiddenStatIds }
     writeStatusLineCollapsed(next);
   }
 
-  // 스탯이 없고 장면도 아직 없으면 보이는 줄은 없지만 빈 라이브 영역은 남긴다 — 첫 장면이 생기는 턴에 안내를 품은 영역이
-  // 그제야 삽입되면 스크린리더가 읽지 않는다. 장면이 생겨도 같은 바깥 상자의 같은 자리라 영역이 다시 마운트되지 않는다.
-  // 영역은 `sr-only` 이고 줄이 없을 때 바깥 상자는 높이 0 이라 배치에 아무것도 더하지 않는다.
+  // 스탯이 없고 장면도 신호도 없으면 보이는 줄은 없지만 빈 라이브 영역은 남긴다 — 첫 장면이 생기는 턴에 안내를 품은 영역이
+  // 그제야 삽입되면 스크린리더가 읽지 않는다. 줄이 생겨도 같은 바깥 상자의 같은 자리라 영역이 다시 마운트되지 않는다.
+  // 영역은 `sr-only` 이고 줄이 없을 때 바깥 상자는 높이 0 이라 배치에 아무것도 더하지 않는다. 장면 없이 익명 신호만 있는
+  // 턴에도 줄을 그린다 — 라이브 영역이 읽는 신호를 화면에서도 보여야 한다. 신호는 장면이 있을 때처럼 오른쪽 끝에 선다.
   if (stats.length === 0) {
+    const hasLine = hasScene || hasHiddenSignal;
     return (
-      <div className={cn("shrink-0", hasScene && "border-b border-border")}>
+      <div className={cn("shrink-0", hasLine && "border-b border-border")}>
         {liveRegion}
-        {hasScene && (
-          <div className="flex min-h-10 items-center gap-2 py-1 pr-2 pl-4 sm:pr-4 sm:pl-6">
-            <SceneLine scene={scene} />
+        {hasLine && (
+          <div className="flex min-h-10 items-center justify-end gap-2 py-1 pr-2 pl-4 sm:pr-4 sm:pl-6">
+            {hasScene && <SceneLine scene={scene} />}
             {hasHiddenSignal && <HiddenStatSignal isCompact={false} />}
           </div>
         )}

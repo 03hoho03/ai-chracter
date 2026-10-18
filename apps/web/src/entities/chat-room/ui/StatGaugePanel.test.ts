@@ -36,6 +36,22 @@ describe("StatGaugePanel", () => {
     expect(timeClass).not.toMatch(/max-w-|shrink-0/);
   });
 
+  // 보이는 스탯이 없고(전부 숨긴 스탯) 장면도 없는 방에서 숨긴 스탯이 바뀐 턴 — 라이브 영역이 "무언가 달라졌다"를 읽으니
+  // 화면에도 같은 신호가 보여야 한다. 장면 줄 자리에 신호만 서고, 접을 칸이 없어 접기 버튼은 없다.
+  it("shows the anonymous signal line without a scene when no stats are visible", () => {
+    const html = renderToStaticMarkup(
+      createElement(StatGaugePanel, {
+        stats: [],
+        values: {},
+        feedback: { turn: 1, roomId: "room", messageId: "message", deltas: {}, hiddenSignal: true, announcement: "무언가 달라졌다" },
+      }),
+    );
+    expect(html).toMatch(/^<div class="shrink-0 border-b border-border">/);
+    expect(html.match(/무언가 달라졌다/g)).toHaveLength(2);
+    expect(html).not.toContain("지금 장면");
+    expect(html).not.toContain("상태 줄");
+  });
+
   it("does not fade the scene drawn on entry", () => {
     expect(render({ place: "카페 뒷골목", time: undefined })).not.toContain("fade-in");
   });
