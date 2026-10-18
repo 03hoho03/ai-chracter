@@ -56,6 +56,7 @@ from api.chat.prompt_builder import (
 from api.chat.room_stats import load_room_stats
 from api.chat.schemas import (
     ChatEndingReachedEvent,
+    ChatHiddenStatSignalEvent,
     ChatStatChangeEvent,
     EndingRuleGroupItem,
     EndingRuleItem,
@@ -684,11 +685,33 @@ class TurnJudgmentResult:
     # 재생성이 스탯을 다시 판정해 위 칸들을 채웠는가. 거짓이면 재생성 기록은 바꾸는 응답의 기록에서 스탯 변화를 이어받는다.
     stats_rejudged: bool = False
     stat_change_events: list[ChatStatChangeEvent] = field(default_factory=list)
+    # 플레이어에게 숨긴 스탯 id 와, 그중 바뀌면 익명 신호를 주는 스탯 id. 방 스탯 판정(보내기·수정·재생성)만 채우고 빌더
+    # 미리보기는 비워 둔다 — 미리보기는 작가 전용이라 거르지 않는다. 판정·쓰기는 이 칸을 보지 않고, 스트림으로 내보낼 때만
+    # 거른다(`player_stat_events`).
+    hidden_stat_ids: frozenset[str] = frozenset()
+    signal_stat_ids: frozenset[str] = frozenset()
     judged_cell_id: uuid.UUID | None = None
     matched_image: SituationalImage | None = None
     # 방 엔딩만 채운다 — 미리보기 엔딩은 DB 행이 없어 이벤트만 남긴다.
     reached_ending: Ending | None = None
     ending_reached_event: ChatEndingReachedEvent | None = None
+
+
+def player_stat_events(result: TurnJudgmentResult) -> list[ChatStatChangeEvent | ChatHiddenStatSignalEvent]:
+    """플레이어에게 내보낼 스탯 이벤트 — 숨긴 스탯의 `statChange` 는 빼고, 그중 신호를 켠 스탯이 하나라도 바뀌었으면 익명
+    신호 하나를 `statChange` 들 뒤에 붙인다."""
+    events: list[ChatStatChangeEvent | ChatHiddenStatSignalEvent] = [
+        event for event in result.stat_change_events if event.stat_id not in result.hidden_stat_ids
+    ]
+    if any(event.stat_id in result.signal_stat_ids for event in result.stat_change_events):
+        events.append(ChatHiddenStatSignalEvent())
+    return events
+
+
+def _mark_hidden_stats(result: TurnJudgmentResult, stat_defs: list[StatDef]) -> None:
+    hidden = [stat_def for stat_def in stat_defs if stat_def.hidden_from_player]
+    result.hidden_stat_ids = frozenset(str(stat_def.entity_id) for stat_def in hidden)
+    result.signal_stat_ids = frozenset(str(stat_def.entity_id) for stat_def in hidden if stat_def.signal_hidden_change)
 
 
 class TurnJudgment(Protocol):
@@ -805,6 +828,7 @@ class StatJudgment:
 
     def apply(self, ctx: JudgmentContext, result: TurnJudgmentResult) -> None:
         result.stat_rows = self._stat_rows
+        _mark_hidden_stats(result, self._stat_defs)
         _apply_stat_result(ctx, result, self._current_stats, self._updated)
 
 
@@ -918,6 +942,7 @@ class RegenerateStatJudgment:
             return
         result.stat_rows = self._stat_rows
         result.stats_rejudged = True
+        _mark_hidden_stats(result, self._stat_defs)
         for stat_id, new_value in updated.items():
             if new_value != self._current_stats.get(stat_id):
                 result.stat_writes[stat_id] = new_value

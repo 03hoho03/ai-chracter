@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
+import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -253,3 +254,90 @@ async def test_the_author_room_hides_the_stats_too(db_client: httpx.AsyncClient,
 
     assert resp.status_code == 200
     _assert_only_hidden_left_out(resp.json(), story)
+
+
+@pytest.mark.parametrize(
+    ("signal", "fired", "expected_types"),
+    [
+        pytest.param(
+            True, ["a1", "b1", "c1"], ["token", "statChange", "hiddenStatSignal", "done"], id="two-hidden-one-signal"
+        ),
+        pytest.param(True, ["b1"], ["token", "hiddenStatSignal", "done"], id="one-hidden-signal"),
+        pytest.param(False, ["a1", "b1", "c1"], ["token", "statChange", "done"], id="signal-off"),
+        pytest.param(True, ["a1"], ["token", "statChange", "done"], id="no-hidden-change"),
+    ],
+)
+async def test_a_turn_streams_only_visible_stat_changes_and_one_anonymous_signal(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    signal: bool,
+    fired: list[str],
+    expected_types: list[str],
+) -> None:
+    """엔딩 문턱(속마음 ≥ 40)을 넘겨도 판정이 거절하는 턴. 숨긴 스탯 값은 DB 에서 바뀐다."""
+    story = await _hidden_story(db_session, signal=signal)
+    room_id = await _player_room(db_client, db_session, story)
+
+    events = await _send(db_client, room_id, _JudgeLLM(fired))
+
+    assert _types(events) == expected_types
+    assert [(e["statId"], e["newValue"]) for e in events if e["type"] == "statChange"] == (
+        [(story.shown, 40)] if "a1" in fired else []
+    )
+    assert [e for e in events if e["type"] == "hiddenStatSignal"] == (
+        [{"type": "hiddenStatSignal"}] if "hiddenStatSignal" in expected_types else []
+    )
+    assert await _room_stat(db_session, room_id, story.hidden) == (42 if "b1" in fired else 37)
+
+
+async def test_an_ending_on_a_hidden_stat_is_still_reached(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """엔딩 판정의 입력은 숨김과 무관하다 — 숨긴 스탯이 문턱을 넘긴 턴에 엔딩에 닿는다. 신호는 엔딩 앞에 나간다."""
+    story = await _hidden_story(db_session)
+    room_id = await _player_room(db_client, db_session, story)
+
+    events = await _send(db_client, room_id, _JudgeLLM(["b1"], ending=True))
+
+    assert _types(events) == ["token", "hiddenStatSignal", "endingReached", "done"]
+    room = await db_client.get(f"/chat-rooms/{room_id}")
+    assert room.json()["endingReached"] is True
+
+
+async def test_editing_a_message_streams_the_signal_instead_of_hidden_stat_changes(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    story = await _hidden_story(db_session)
+    room_id = await _player_room(db_client, db_session, story)
+    await _send(db_client, room_id, _JudgeLLM([]))
+    user_message = await _last_message(db_session, room_id, ChatMessageRole.USER)
+
+    events = await _turn(
+        db_client,
+        "PATCH",
+        f"/chat-rooms/{room_id}/messages/{user_message}",
+        {"content": "고쳐 말한다"},
+        _JudgeLLM(["a1", "b1", "c1"]),
+    )
+
+    assert _types(events) == ["token", "statChange", "hiddenStatSignal", "done"]
+    assert [e["statId"] for e in events if e["type"] == "statChange"] == [story.shown]
+
+
+async def test_regenerating_streams_the_signal_instead_of_hidden_stat_changes(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """재생성의 재판정이 숨긴 스탯을 바꾸면 신호 하나, 바꾸지 않으면 없다."""
+    story = await _hidden_story(db_session)
+    room_id = await _player_room(db_client, db_session, story)
+    await _send(db_client, room_id, _JudgeLLM([]))
+    path = f"/chat-rooms/{room_id}/regenerate"
+
+    changed = await _turn(db_client, "POST", path, None, _JudgeLLM(["a1", "b1", "c1"]))
+    unchanged = await _turn(db_client, "POST", path, None, _JudgeLLM(["a1", "b1", "c1"]))
+    reverted = await _turn(db_client, "POST", path, None, _JudgeLLM(["a1"]))
+
+    assert _types(changed) == ["token", "statChange", "hiddenStatSignal", "done"]
+    assert [e["statId"] for e in changed if e["type"] == "statChange"] == [story.shown]
+    assert _types(unchanged) == ["token", "done"]
+    assert _types(reverted) == ["token", "hiddenStatSignal", "done"]

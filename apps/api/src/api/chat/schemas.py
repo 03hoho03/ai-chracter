@@ -369,6 +369,13 @@ class ChatStatChangeEvent(CamelModel):
     new_value: float
 
 
+class ChatHiddenStatSignalEvent(CamelModel):
+    """플레이어에게 숨긴 스탯 가운데 익명 신호를 켠 것이 이번 턴에 바뀌었다는 표시. 몇 개가 바뀌었든 한 턴에 하나이고,
+    어느 스탯인지·어느 쪽으로 얼마나 움직였는지는 싣지 않는다 — 싣는 순간 숨긴 스탯을 되짚을 수 있다."""
+
+    type: Literal["hiddenStatSignal"] = "hiddenStatSignal"
+
+
 class ChatEndingReachedEvent(CamelModel):
     type: Literal["endingReached"] = "endingReached"
     ending_id: uuid.UUID
@@ -395,6 +402,7 @@ class ChatErrorEvent(CamelModel):
 ChatStreamEvent = Annotated[
     ChatTokenEvent
     | ChatStatChangeEvent
+    | ChatHiddenStatSignalEvent
     | ChatEndingReachedEvent
     | ChatPolicyWarningEvent
     | ChatDoneEvent
