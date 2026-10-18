@@ -58,14 +58,23 @@ describe("choosePersonaForNewRoom", () => {
     expect(openNameModal).not.toHaveBeenCalled();
   });
 
-  it("asks nothing and does not start while reconsent is required", async () => {
-    queryClient.setQueryData(sessionKeys.current(), { termsReconsentRequired: true, privacyReconsentRequired: false });
-    get.mockResolvedValue({ data: list([], null) });
+  // 국외이전만 다시 받는 판에서도 막아야 한다 — 서버는 그 회원의 프로필·방 생성을 거절한다.
+  it.each(["termsReconsentRequired", "collectionReconsentRequired", "transferReconsentRequired"] as const)(
+    "asks nothing and does not start while %s",
+    async (flag) => {
+      queryClient.setQueryData(sessionKeys.current(), {
+        termsReconsentRequired: false,
+        collectionReconsentRequired: false,
+        transferReconsentRequired: false,
+        [flag]: true,
+      });
+      get.mockResolvedValue({ data: list([], null) });
 
-    expect(await choosePersonaForNewRoom(queryClient, undefined, openNameModal)).toEqual({ kind: "cancelled" });
-    expect(openNameModal).not.toHaveBeenCalled();
-    expect(get).not.toHaveBeenCalled();
-  });
+      expect(await choosePersonaForNewRoom(queryClient, undefined, openNameModal)).toEqual({ kind: "cancelled" });
+      expect(openNameModal).not.toHaveBeenCalled();
+      expect(get).not.toHaveBeenCalled();
+    },
+  );
 
   // 로그아웃 전 다른 계정이 남긴 "0개" 캐시로 판정하면 프로필이 있는 계정에 이름 모달이 떠 기본을 덮어쓴다.
   it("refetches instead of trusting a cached list from before", async () => {
