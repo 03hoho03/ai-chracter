@@ -51,17 +51,7 @@ export function StatGaugePanel({ stats, values, feedback, scene, hiddenStatIds }
   const stripId = useId();
 
   const hasScene = hasSceneText(scene);
-  if (stats.length === 0 && !hasScene) return null;
-
-  const deltas = chipPhase === "gone" ? {} : (feedback?.deltas ?? {});
-  const hasHiddenSignal = feedback?.hiddenSignal ?? false;
   const announcement = unshownFeedback?.announcement ?? "";
-
-  function handleToggle() {
-    const next = !isCollapsed;
-    setIsCollapsed(next);
-    writeStatusLineCollapsed(next);
-  }
 
   // 한 턴의 변화(스탯 증감·장면 변화·익명 신호)를 한 번에 읽는다. 턴마다 새 자식을 넣어 같은 문장이 두 턴 연달아 와도 다시
   // 읽힌다. 이미 읽은 응답으로 돌아오면 자식을 넣지 않는다(`useUnshownTurnFeedback`).
@@ -71,14 +61,28 @@ export function StatGaugePanel({ stats, values, feedback, scene, hiddenStatIds }
     </div>
   );
 
+  const deltas = chipPhase === "gone" ? {} : (feedback?.deltas ?? {});
+  const hasHiddenSignal = feedback?.hiddenSignal ?? false;
+
+  function handleToggle() {
+    const next = !isCollapsed;
+    setIsCollapsed(next);
+    writeStatusLineCollapsed(next);
+  }
+
+  // 스탯이 없고 장면도 아직 없으면 보이는 줄은 없지만 빈 라이브 영역은 남긴다 — 첫 장면이 생기는 턴에 안내를 품은 영역이
+  // 그제야 삽입되면 스크린리더가 읽지 않는다. 장면이 생겨도 같은 바깥 상자의 같은 자리라 영역이 다시 마운트되지 않는다.
+  // 영역은 `sr-only` 이고 줄이 없을 때 바깥 상자는 높이 0 이라 배치에 아무것도 더하지 않는다.
   if (stats.length === 0) {
     return (
-      <div className="shrink-0 border-b border-border">
+      <div className={cn("shrink-0", hasScene && "border-b border-border")}>
         {liveRegion}
-        <div className="flex min-h-10 items-center gap-2 py-1 pr-2 pl-4 sm:pr-4 sm:pl-6">
-          {hasScene && <SceneLine scene={scene} />}
-          {hasHiddenSignal && <HiddenStatSignal isCompact={false} />}
-        </div>
+        {hasScene && (
+          <div className="flex min-h-10 items-center gap-2 py-1 pr-2 pl-4 sm:pr-4 sm:pl-6">
+            <SceneLine scene={scene} />
+            {hasHiddenSignal && <HiddenStatSignal isCompact={false} />}
+          </div>
+        )}
       </div>
     );
   }
@@ -377,22 +381,26 @@ function HiddenStatSignal({ isCompact }: { isCompact: boolean }) {
 }
 
 /**
- * 장면 한 줄 — 장소 · 시간. 하나만 있으면 그것만 보인다. 줄이 좁으면 장소가 먼저 말줄임되고 시간은 줄의 절반까지 남는다.
- * 잘린 글은 `title` 이 아니라 눌러 여는 팝오버로 전체를 보인다(`title` 은 터치·키보드로 열 수 없다). 버튼 이름에 전체 글을
+ * 장면 한 줄 — 장소 · 시간. 하나만 있으면 그것만 보이고 줄 폭을 다 쓴다. 둘 다 줄에 들어가면 자르지 않고, 넘치면 장소가
+ * 먼저 말줄임된다. 시간은 줄 폭의 절반까지는 통째로 남는다 — 절반의 기준이 줄(컨테이너)이어야 한다. 내용 폭으로 줄어든 글
+ * 묶음을 기준으로 잡으면 짧은 시간도 늘 반쯤에서 잘린다. 잘린 글은 `title` 이 아니라 눌러 여는 팝오버로 전체를 보인다(`title` 은 터치·키보드로 열 수 없다). 버튼 이름에 전체 글을
  * 실어 스크린리더는 누르지 않아도 다 읽는다.
  *
  * 장면이 바뀌면 글을 다시 마운트해 페이드로 들인다 — 장식 전환이라 `motion-safe:` 로 가드하고, 처음 그릴 때(방에 들어올 때)는
- * 페이드하지 않는다.
+ * 페이드하지 않는다. 한 번 바뀐 뒤로는 모든 변화가 페이드한다 — 앞서 본 장면으로 돌아가는 변화(되돌리기, A→B→A 턴)도
+ * 바뀐 것이다. 글은 장면이 바뀔 때만 다시 마운트되므로 클래스를 계속 달아 두어도 같은 장면에서 다시 페이드하지 않는다.
  */
 function SceneLine({ scene }: { scene: StoryScene }) {
   const { place, time } = scene;
   const sceneKey = `${place ?? ""}\n${time ?? ""}`;
   const [firstSceneKey] = useState(sceneKey);
+  const [hasChanged, setHasChanged] = useState(false);
+  if (!hasChanged && sceneKey !== firstSceneKey) setHasChanged(true);
   const Icon = place === undefined ? Clock : MapPin;
   const label = ["지금 장면", place && `장소 ${place}`, time && `시간 ${time}`].filter(Boolean).join(", ");
 
   return (
-    <div className="flex min-w-0 flex-1">
+    <div className="@container flex min-w-0 flex-1">
       <Popover>
         <PopoverTrigger asChild>
           <button
@@ -404,7 +412,7 @@ function SceneLine({ scene }: { scene: StoryScene }) {
               key={sceneKey}
               className={cn(
                 "flex min-w-0 items-center gap-1.5",
-                sceneKey !== firstSceneKey && "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-300",
+                hasChanged && "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-300",
               )}
             >
               <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
@@ -415,7 +423,12 @@ function SceneLine({ scene }: { scene: StoryScene }) {
                 </span>
               )}
               {time !== undefined && (
-                <span className={cn("max-w-1/2 shrink-0 truncate", place === undefined ? "font-medium" : "text-muted-foreground")}>
+                <span
+                  className={cn(
+                    "truncate",
+                    place === undefined ? "min-w-0 font-medium" : "max-w-[50cqw] shrink-0 text-muted-foreground",
+                  )}
+                >
                   {time}
                 </span>
               )}
