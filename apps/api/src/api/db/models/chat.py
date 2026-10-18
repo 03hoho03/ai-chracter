@@ -180,6 +180,9 @@ EPISODE_DETAIL_MAX = 300
 EPISODE_NOUNS_MAX = 30
 EPISODE_KEYWORDS_MAX = 8
 EPISODE_EVIDENCE_MAX = 2
+# 인물 이름 하나와 아는 사람 목록의 상한. 사실 기억과 장면 기억의 `known_by` 가 같은 규칙을 쓰도록 한 상수를 함께 쓴다.
+FACT_NAME_MAX = 60
+FACT_KNOWN_BY_MAX = 10
 
 
 class ChatMemoryEpisode(Base):
@@ -200,6 +203,8 @@ class ChatMemoryEpisode(Base):
     - `nouns` 는 검색에 쓰는 정규화된 명사, `keywords` 는 짧은 핵심 구절, `evidence` 는 원문에서 옮긴 짧은 근거다.
     - `asserted_by` 는 장면의 사실을 누가 말했는가다: 사용자 본인(`user`), 캐릭터(`character` — 캐릭터가 사용자에 대해
       지어낸 말을 사실로 회상하지 않게 구별한다), 서술(`narration`), 섞임(`mixed`).
+    - `known_by` 는 이 장면을 아는 인물 이름 목록이고 뜻과 규칙은 `ChatMemoryFact` 의 같은 칸과 같다(NULL 은 공개이거나
+      알 수 없음, 빈 배열은 쓰지 않는다). 추출 결과가 아직 이 칸을 모르므로 지금은 늘 NULL 이다.
     - `importance` 는 1~5, `ordinal` 은 그 접기 안의 장면 순서(0부터)다.
     `asserted_by` 는 native enum 이 아니라 Text 이고 위 Literal 이 값 범위다."""
 
@@ -224,6 +229,7 @@ class ChatMemoryEpisode(Base):
     evidence: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default=text("'{}'::text[]"))
     asserted_by: Mapped[EpisodeAssertedBy] = mapped_column(Text, nullable=False)
     importance: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    known_by: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -231,6 +237,8 @@ class ChatMemoryEpisode(Base):
     # 🔴 `alembic check`는 CHECK 제약을 비교하지 않는다 — 아래 CHECK 의 검증은 행위 테스트가 유일하다.
     # 유니크의 앞 열(`snapshot_id`)이 스냅샷 DELETE 의 CASCADE 가 이 테이블을 찾는 인덱스를 겸한다. 방 인덱스는 한 방의
     # 장면을 원문 순서로 읽는 검색과, 방 DELETE 의 FK 확인을 받는다.
+    # `known_by` 의 두 CHECK 는 `ChatMemoryFact` 의 것과 같은 식이다(원소 검사가 제어 문자 U+001F 로 이어 붙인 문자열을
+    # 보는 이유도 그쪽 주석과 같다).
     __table_args__ = (
         UniqueConstraint("snapshot_id", "ordinal", name="ux_chat_memory_episodes_snapshot_ordinal"),
         CheckConstraint(
@@ -255,6 +263,14 @@ class ChatMemoryEpisode(Base):
         ),
         CheckConstraint(
             f"cardinality(evidence) <= {EPISODE_EVIDENCE_MAX}", name="ck_chat_memory_episodes_evidence_count"
+        ),
+        CheckConstraint(
+            f"cardinality(known_by) BETWEEN 1 AND {FACT_KNOWN_BY_MAX}", name="ck_chat_memory_episodes_known_by_count"
+        ),
+        CheckConstraint(
+            "array_position(known_by, NULL) IS NULL"
+            f" AND array_to_string(known_by, E'\\x1F') !~ '[^\\x1F]{{{FACT_NAME_MAX + 1}}}'",
+            name="ck_chat_memory_episodes_known_by_items",
         ),
         Index("ix_chat_memory_episodes_room_end", "chat_room_id", "end_created_at", "end_message_id"),
     )
@@ -308,10 +324,9 @@ FactAssertedBy = Literal["user", "character", "narration"]
 FactExtractionStatus = EpisodeExtractionStatus
 
 # 사실 기억 칸의 DB 상한. 추출 결과를 자르는 쪽은 이 값 이하로 잘라야 한다 — 넘기면 잘라 낸 행이 CHECK 에 막힌다.
-FACT_NAME_MAX = 60
+# 인물 이름 상한과 아는 사람 수 상한(`FACT_NAME_MAX`·`FACT_KNOWN_BY_MAX`)은 장면 기억 앞에 있다.
 FACT_VALUE_MAX = 200
 FACT_KEY_MAX = 200
-FACT_KNOWN_BY_MAX = 10
 # 한 접기에서 뽑는 사실 행의 상한이자 `ordinal` 의 범위(0 이상 이 값 미만)다.
 FACT_PER_SNAPSHOT_MAX = 20
 
