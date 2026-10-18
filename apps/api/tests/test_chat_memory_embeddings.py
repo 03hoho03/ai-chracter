@@ -757,6 +757,22 @@ async def test_a_database_failure_after_voyage_answered_is_not_a_voyage_failure(
     assert await voyage_allowed() is True
 
 
+async def test_fill_still_retries_a_passing_failure_and_does_not_count_it(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """채우기는 턴을 기다리게 하지 않으므로 질의 임베딩과 달리 지나가는 실패(5xx)를 다시 보낸다 — 두 번 실패하고 세 번째에
+    받으면 행을 넣고, 클라이언트 안에서 회복한 실패는 연속 실패 수에 남지 않는다."""
+    _capture_failures(monkeypatch)
+    room = await _room_with_a_pending_fact(db_client, db_session)
+    stub = VoyageStub(failures=[503, 503])
+
+    await _fill(db_session, room, stub)
+
+    assert len(stub.bodies) == 3
+    assert len(await _embeddings(db_session, room)) == 1
+    assert await redis_client.hgetall(VOYAGE_BACKOFF_KEY) == {}
+
+
 # --- 공유 연결 풀 ----------------------------------------------------------------------------------
 # 운영 클라이언트(`transport` 없음)는 프로세스 하나가 연결 풀 하나를 나눠 쓴다 — 턴마다 새로 연결하면 TCP·TLS 왕복이 질의 임베딩의
 # 시간 상한 안에 그대로 더해진다. 흉내 트랜스포트로는 연결 풀을 거치지 않으므로 이 절은 같은 머신의 진짜 HTTP 서버로 잰다.

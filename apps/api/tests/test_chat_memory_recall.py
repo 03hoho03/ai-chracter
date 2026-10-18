@@ -1539,6 +1539,54 @@ async def test_query_embedding_timeouts_do_not_count_as_failures(
     assert len(failing.bodies) == _N
 
 
+@pytest.mark.parametrize(
+    "failure",
+    [pytest.param(503, id="5xx"), pytest.param(httpx.ConnectError("끊김"), id="connect")],
+)
+async def test_query_embedding_sends_one_request_on_a_passing_failure(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: int | Exception,
+) -> None:
+    """질의 임베딩은 지나가는 실패(5xx·연결 실패)에도 다시 보내지 않는다 — 다시 보낼 수 있는 클라이언트를 넘겨도 요청 하나로
+    끝나고 실패로 기록된다. 시간 상한이 첫 재시도 대기보다 짧아 다시 보낸 요청이 답을 가져올 수 없기 때문이다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, _GARDEN])
+    await _embed_scene(db_session, room, _GARDEN.title, _NEAR)
+    _hybrid_on(monkeypatch)
+    stub = VoyageStub(failures=[failure] * 3)
+
+    built = await _turns(db_session, room, stub, 1)
+
+    assert len(stub.bodies) == 1
+    assert built.memory_query is not None and built.memory_query["outcome"] == "failed"
+
+
+async def test_query_embedding_pauses_after_consecutive_server_errors_within_the_timeout(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Voyage 가 5xx 를 잇달아 내면 질의 임베딩은 시간 초과가 아니라 시간 상한 안의 실패로 끝나 연속 실패 수가 오르고, 문턱만큼
+    쌓이면 다음 턴은 부르지 않는다. 운영에서 첫 재시도 대기(1초)가 시간 상한(1초)을 다 쓰는 관계를 짧은 값(대기 0.2초, 상한
+    0.1초)으로 흉내 낸다 — 질의 경로가 다시 보내려 기다리면 시간 초과로 분류돼 실패 수가 오르지 않고 멈춤이 걸리지 않는다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, _GARDEN])
+    await _embed_scene(db_session, room, _GARDEN.title, _NEAR)
+    _hybrid_on(monkeypatch)
+    monkeypatch.setattr(settings, "memory_embed_recall_timeout_ms", 100)
+    VoyageClock(monkeypatch)
+    stub = VoyageStub(failures=[503] * (3 * (_N + 1)))
+    client = VoyageEmbeddingClient(
+        api_key="test-key", model=_EMBED_MODEL, dims=stub.dims, transport=stub.transport(), retry_delays=(0.2, 0.2)
+    )
+
+    for _ in range(_N):
+        built = await _build(db_session, room, "밀알당 기억나?", embedding_client=client)
+        assert built.memory_query is not None and built.memory_query["outcome"] == "failed"
+    assert len(stub.bodies) == _N
+    paused = await _build(db_session, room, "밀알당 기억나?", embedding_client=client)
+    assert paused.memory_query is None
+    assert len(stub.bodies) == _N
+
+
 async def test_a_paused_turn_is_byte_identical_to_noun_only_and_to_a_failed_turn(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
