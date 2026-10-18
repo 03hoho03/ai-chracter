@@ -10,7 +10,8 @@
 호출을 끊고 명사 단독으로 조립한다. 실패(키 거부·연결·응답 형식)도 같다 — 무엇이 실패하든 예외를 밖으로 내지 않는다(생성
 프롬프트 조립은 SSE 제너레이터 본문 안이라 예외가 새면 무관한 요청까지 500 이 된다). 취소(`CancelledError`)는 `Exception` 이
 아니라 그대로 올라간다. 실패는 Voyage 연속 실패 수에 세고 성공은 그 수를 지운다(`chat/voyage_backoff.py`). 시간 초과는 세지도
-지우지도 않는다.
+지우지도 않는다. 지나가는 실패(5xx·429·연결 실패)에도 다시 보내지 않는다 — 클라이언트의 첫 재시도 대기(1초)가 기본 시간
+상한(1초)을 다 써 다시 보낸 요청은 답을 가져올 수 없고, 기다리는 동안 시간 초과로 분류돼 장애가 연속 실패 수에 잡히지 않는다.
 
 거리 읽기: 방 단위 정확 탐색(인덱스 없음)이고 늘 `model = 질의 모델 AND dims = 질의 차원` 으로 거른다 — 임베딩 칸은 차원을 적지
 않아 차원이 다른 행에 거리 연산이 걸리면 질의째 실패한다. 장면 거리는 회상이 싣지 않는 장면(인물이 대사로만 말한 장면, 그 턴
@@ -81,7 +82,7 @@ async def embed_query(
     try:
         async with asyncio.timeout(timeout_seconds):
             vectors, tokens = await client.embed_with_usage(
-                [text], input_type="query", call_site=QUERY_EMBEDDING_CALL_SITE
+                [text], input_type="query", call_site=QUERY_EMBEDDING_CALL_SITE, retry_delays=()
             )
         vector = QueryVector(model=client.model, dims=client.dims, vector=vectors[0])
     except TimeoutError:
