@@ -1,8 +1,9 @@
 """장면 헤더 — 작가가 켠 스토리 방에서 매 턴 응답 뒤 판정 모델이 지금 장면의 장소·시간을 적고, 그 값이 AI 메시지에 저장되고
 스트림(`sceneChange`)과 메시지 응답으로 나가는지.
 
-"직전 장면"(판정이 이어받을 값) 규칙: 방에 아직 AI 턴이 없으면(오프닝뿐) 시작설정의 첫 장면, 아니면 마지막 AI 메시지의 장면 —
-그 장면이 비어 있으면(토글 전 메시지·버전을 옮긴 방) 첫 장면으로 떨어지지 않고 비운다. 재생성은 바꾸는 응답 이전 메시지 기준이다.
+"직전 장면"(판정이 이어받을 값) 규칙: 마지막 AI 메시지에 장면이 저장돼 있으면 그 장면, 비어 있으면 그 메시지가 오프닝(AI 턴
+없음)일 때만 시작설정의 첫 장면이고 아니면(토글 전 메시지·버전을 옮긴 방) 첫 장면으로 떨어지지 않고 비운다. 재생성은 바꾸는 응답
+이전 메시지 기준이다.
 판정이 비운 칸·길이를 넘긴 칸·판정 실패는 직전 장면을 그대로 잇는다. 생성 프롬프트에는 싣지 않는다.
 
 판정 호출은 가짜 클라이언트가 호출 위치별 큐로 답하고 받은 프롬프트를 남긴다 — 직전 장면이 프롬프트에 실렸는지로 이어받을
@@ -422,6 +423,25 @@ async def test_deleting_back_to_the_opening_returns_to_the_initial_scene(
     await _send(db_client, fake, room)
 
     assert (await _last_assistant(db_session, room)).scene == _INITIAL
+
+
+async def test_deleting_only_the_user_message_keeps_the_scene_saved_on_the_answer(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """사용자 메시지만 지워 그 답 앞에 사용자 메시지가 없어져도, 답에 저장된 장면이 있으면 그것을 잇는다 — 오프닝처럼 보인다고
+    첫 장면으로 되돌아가지 않는다."""
+    room = await _story_room(db_client, db_session, turns=1)
+    user_message, answer = room.turns[1]
+    await _set_scene(db_session, answer, {"place": "교실", "time": "아침"})
+    deleted = await db_client.delete(f"/chat-rooms/{room.room_id}/messages/{user_message.id}")
+    assert deleted.status_code == 204, deleted.text
+    fake = _SceneLLM(scene=[SceneJudgmentResult(place=None, time=None)])
+
+    await _send(db_client, fake, room)
+
+    (scene_prompt,) = fake.prompts("chat_scene_judgment")
+    assert "교실" in scene_prompt and "낡은 등대" not in scene_prompt
+    assert (await _last_assistant(db_session, room)).scene == {"place": "교실", "time": "아침"}
 
 
 # ── 빌더 미리보기 ──────────────────────────────────────────────────────────────────────────────

@@ -66,7 +66,16 @@ GUARDED = frozenset(
 )
 MOVED_CALLER_MODULES = ("turn_prompt.py", "room_stats.py", "turn_judgments.py", "turn_engine.py", "turn_store.py")
 # 위 조건에 맞지만 지키지 않는 이름 → 이유.
-EXCLUDED: dict[str, str] = {}
+EXCLUDED: dict[str, str] = {
+    "initial_story_scene": (
+        "시작설정의 장소·시간을 장면 값으로 감싸기만 하는 순수 함수다(I/O·LLM·DB 없음). 테스트는 시작설정 칸을 바꿔 결과를 "
+        "고르지 이 함수를 갈아끼울 까닭이 없어, 라우터 쪽 패치가 판정 모듈의 호출부를 빗나갈 일이 생기지 않는다."
+    ),
+    "story_scene_of": (
+        "저장된 장면 칸(dict)을 응답 모양으로 검증·변환하기만 하는 순수 함수다(I/O 없음). 테스트는 메시지의 장면 칸을 바꿔 "
+        "결과를 고르지 이 함수를 갈아끼울 까닭이 없어, 라우터 쪽 패치가 턴 골격·판정 모듈의 호출부를 빗나갈 일이 생기지 않는다."
+    ),
+}
 
 # `capture_dependency_failure` 를 라우터에 패치해 그 자리의 Bugsink 태그를 재는 테스트들의 공통 이유. 재는 흡수 자리가
 # 라우터에 남아 있어(턴 생성 프롬프트 렌더·미리보기 저장), 판정·턴 골격·턴 저장소 모듈의 흡수 자리는 이 패치와 무관하다.

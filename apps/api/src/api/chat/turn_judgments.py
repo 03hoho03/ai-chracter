@@ -1302,15 +1302,20 @@ def previous_story_scene(history: Sequence[ChatMessage], initial: StoryScene | N
     """이번 턴 장면 판정이 이어받을 직전 장면 — `history` 는 이번 입력 앞까지의 메시지다(재생성은 바꾸는 응답과 그 입력을 뺀
     것이라 바꾸는 응답 이전 기준이 된다).
 
-    - 방에 아직 AI 턴이 없으면(AI 메시지가 없거나, 마지막 AI 메시지 앞에 사용자 메시지가 없는 오프닝뿐이면) 시작설정의 첫 장면.
-    - 아니면 마지막 AI 메시지의 장면. 그 장면이 비어 있으면(장면 헤더를 켜기 전 메시지, 판정 구간 밖에서 쓰인 응답) 첫 장면으로
-      떨어지지 않고 없음이다 — 버전을 옮긴 긴 방에 프롤로그 장소가 뜨고 다음 판정이 그것을 이어받는 것을 막는다."""
+    - AI 메시지가 없으면 시작설정의 첫 장면.
+    - 마지막 AI 메시지에 장면이 저장돼 있으면 그 장면. 그 앞의 사용자 메시지만 지워져 오프닝처럼 보여도 저장된 장면을 따른다.
+    - 장면이 비어 있으면, 그 메시지가 오프닝(앞에 사용자 메시지가 없다 — 오프닝의 장면은 늘 비어 있다)일 때만 첫 장면이다.
+      아니면(장면 헤더를 켜기 전 메시지, 판정 구간 밖에서 쓰인 응답) 첫 장면으로 떨어지지 않고 없음이다 — 버전을 옮긴 긴 방에
+      프롤로그 장소가 뜨고 다음 판정이 그것을 이어받는 것을 막는다."""
     last_index = next(
         (index for index in range(len(history) - 1, -1, -1) if history[index].role == ChatMessageRole.ASSISTANT), None
     )
-    if last_index is None or not any(message.role == ChatMessageRole.USER for message in history[:last_index]):
+    if last_index is None:
         return initial
-    return story_scene_of(history[last_index].scene)
+    saved = story_scene_of(history[last_index].scene)
+    if saved is not None or any(message.role == ChatMessageRole.USER for message in history[:last_index]):
+        return saved
+    return initial
 
 
 def _scene_field(judged: str | None, previous: str | None) -> str | None:
