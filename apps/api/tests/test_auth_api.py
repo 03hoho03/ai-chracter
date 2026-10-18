@@ -591,6 +591,11 @@ async def test_login_adult_issues_session_and_me_returns_user(
         "privacyReconsentRequired": False,
         "collectionReconsentRequired": False,
         "transferReconsentRequired": False,
+        "legalConsentVersions": {
+            "terms": user.terms_version,
+            "collection": user.privacy_version,
+            "transfer": user.transfer_version,
+        },
         "hasPassword": True,
         "socialProvider": None,
         "enabledFeatures": [],

@@ -51,6 +51,7 @@ from api.auth.password_reset import delete_reset_token, get_reset_token, store_r
 from api.auth.schemas import (
     ChangePasswordRequest,
     EnabledFeature,
+    LegalConsentVersions,
     LoginRequest,
     MeResponse,
     PasswordResetConfirmRequest,
@@ -920,6 +921,11 @@ async def get_me(
         privacy_reconsent_required="privacy" in reconsent_kinds,
         collection_reconsent_required="collection" in reconsent_units,
         transfer_reconsent_required="transfer" in reconsent_units,
+        legal_consent_versions=LegalConsentVersions(
+            terms=user.terms_version,
+            collection=user.privacy_version,
+            transfer=user.transfer_version,
+        ),
         has_password=user.password_hash is not None,
         social_provider=None if method == "email" else method,
         enabled_features=await _enabled_features(db, user.id),

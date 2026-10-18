@@ -16,6 +16,7 @@ const ME: MeResponse = {
   privacyReconsentRequired: false,
   collectionReconsentRequired: false,
   transferReconsentRequired: false,
+  legalConsentVersions: { terms: null, collection: null, transfer: null },
   hasPassword: true,
   socialProvider: null,
   enabledFeatures: [],

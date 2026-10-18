@@ -10587,6 +10587,20 @@ export interface components {
             version?: string | null;
         };
         /**
+         * LegalConsentVersions
+         * @description 회원이 마지막으로 동의한 판의 버전을 동의 단위별로 낸다(약관·처리방침 수집·이용·국외이전). 동의한 적 없는 단위는
+         *     null 이다. 재동의 화면이 마지막으로 동의한 판 이후의 변경 안내만 고를 때 이 값을 since 로 쓴다 — 판의 앞뒤 순서는
+         *     변경 안내 API 가 시행 순서로 판정하므로 여기서는 저장된 값을 그대로 싣는다.
+         */
+        LegalConsentVersions: {
+            /** Terms */
+            terms: string | null;
+            /** Collection */
+            collection: string | null;
+            /** Transfer */
+            transfer: string | null;
+        };
+        /**
          * LegalDocumentPublicResponse
          * @description `published_at` 은 게시(공지) 시각, `effective_at` 은 이 판이 현행이 된 시행 시각이다. `change_notice` 는 이 판의
          *     변경 안내(마크다운)이고 없으면 null 이다.
@@ -10692,6 +10706,7 @@ export interface components {
             collectionReconsentRequired: boolean;
             /** Transferreconsentrequired */
             transferReconsentRequired: boolean;
+            legalConsentVersions: components["schemas"]["LegalConsentVersions"];
             /** Haspassword */
             hasPassword: boolean;
             /** Socialprovider */

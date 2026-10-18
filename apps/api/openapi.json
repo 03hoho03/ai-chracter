@@ -26123,6 +26123,51 @@
         "title": "LegalConsentRequest",
         "description": "동의할 단위를 `consents` 로 받는다. 이전 웹이 보내는 `{kind, version}` 도 받는다 — `kind` 가 `privacy` 면 수집·이용과\n국외이전 둘 다에 동의한 것으로 본다(이전 화면은 두 체크박스를 모두 받은 뒤 처리방침 한 번으로 보낸다). 둘 다 오면\n`consents` 를 따른다. `version` 은 어느 쪽이든 쓰지 않는다 — 서버가 현행판 버전을 기록한다."
       },
+      "LegalConsentVersions": {
+        "properties": {
+          "terms": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terms"
+          },
+          "collection": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collection"
+          },
+          "transfer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transfer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "terms",
+          "collection",
+          "transfer"
+        ],
+        "title": "LegalConsentVersions",
+        "description": "회원이 마지막으로 동의한 판의 버전을 동의 단위별로 낸다(약관·처리방침 수집·이용·국외이전). 동의한 적 없는 단위는\nnull 이다. 재동의 화면이 마지막으로 동의한 판 이후의 변경 안내만 고를 때 이 값을 since 로 쓴다 — 판의 앞뒤 순서는\n변경 안내 API 가 시행 순서로 판정하므로 여기서는 저장된 값을 그대로 싣는다."
+      },
       "LegalDocumentPublicResponse": {
         "properties": {
           "kind": {
@@ -26358,6 +26403,9 @@
             "type": "boolean",
             "title": "Transferreconsentrequired"
           },
+          "legalConsentVersions": {
+            "$ref": "#/components/schemas/LegalConsentVersions"
+          },
           "hasPassword": {
             "type": "boolean",
             "title": "Haspassword"
@@ -26448,6 +26496,7 @@
           "privacyReconsentRequired",
           "collectionReconsentRequired",
           "transferReconsentRequired",
+          "legalConsentVersions",
           "hasPassword",
           "socialProvider",
           "enabledFeatures",

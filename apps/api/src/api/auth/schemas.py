@@ -138,6 +138,16 @@ class WithdrawRequest(CamelModel):
     current_password: str | None = None
 
 
+class LegalConsentVersions(CamelModel):
+    """회원이 마지막으로 동의한 판의 버전을 동의 단위별로 낸다(약관·처리방침 수집·이용·국외이전). 동의한 적 없는 단위는
+    null 이다. 재동의 화면이 마지막으로 동의한 판 이후의 변경 안내만 고를 때 이 값을 since 로 쓴다 — 판의 앞뒤 순서는
+    변경 안내 API 가 시행 순서로 판정하므로 여기서는 저장된 값을 그대로 싣는다."""
+
+    terms: str | None
+    collection: str | None
+    transfer: str | None
+
+
 class MeResponse(CamelModel):
     id: uuid.UUID
     email: str
@@ -150,6 +160,8 @@ class MeResponse(CamelModel):
     privacy_reconsent_required: bool
     collection_reconsent_required: bool
     transfer_reconsent_required: bool
+    # 동의 단위별로 마지막에 동의한 판. 재동의 화면이 그 판 이후의 변경 안내를 고르는 since 값이다.
+    legal_consent_versions: LegalConsentVersions
     # 한 계정이 비밀번호와 소셜 연동을 함께 가질 수 있어(이메일이 같으면 구글 로그인이 기존
     # 비밀번호 계정에 연동된다) 단일 "가입 방식" 값이 아니라 두 필드로 낸다.
     has_password: bool
