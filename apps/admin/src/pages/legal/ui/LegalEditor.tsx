@@ -1,45 +1,49 @@
-import type { ApiError } from "@ai-character-chat/api-types";
+import type { ApiError, components } from "@ai-character-chat/api-types";
 import { Button } from "@ai-character-chat/ui/components/button";
-import { Markdown } from "@ai-character-chat/ui/components/markdown";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@ai-character-chat/ui/components/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/components/tabs";
-import { Textarea } from "@ai-character-chat/ui/components/textarea";
-import { cn } from "@ai-character-chat/ui/lib/utils";
 import type { UseQueryResult } from "@tanstack/react-query";
-import { useState } from "react";
 import { toast } from "sonner";
 
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 import { RESTING_DISABLED_PRIMARY_CLASS } from "@/shared/ui/restingDisabledPrimaryClass";
 
-import { LEGAL_KIND_LABELS, type LegalKind } from "../model/legalKind";
+import { changeNoticeToServer, type DraftBuffer, isDraftBufferDirty, toDraftBuffer } from "../model/draftBuffer";
+import { toKstDate } from "../model/effectiveDate";
+import { formatReconsentScopes, LEGAL_KIND_LABELS, type LegalKind } from "../model/legalKind";
 import type { AdminLegalDocumentResponse } from "../api/useLegalDocumentQuery";
 import { useSaveDraftMutation } from "../api/useSaveDraftMutation";
 import { useVersionsQuery } from "../api/useVersionsQuery";
+import { MarkdownEditPane } from "./MarkdownEditPane";
 import { PublishDialog } from "./PublishDialog";
+import { WithdrawDialog } from "./WithdrawDialog";
 
-/** 좁은 화면에서는 고른 탭만 보이고, `lg` 이상에서는 두 패널이 늘 함께 보인다. */
-const PANE_CLASS = "data-[state=inactive]:hidden lg:data-[state=inactive]:block";
+type AdminLegalPublishedItem = components["schemas"]["AdminLegalPublishedItem"];
+type AdminLegalVersionState = components["schemas"]["AdminLegalVersionItem"]["state"];
+
+const VERSION_STATE_LABELS: Record<AdminLegalVersionState, string> = {
+  current: "현행",
+  scheduled: "예정",
+  withdrawn: "철회",
+  past: "지난 판",
+};
 
 type LegalEditorProps = {
   kind: LegalKind;
   documentQuery: UseQueryResult<AdminLegalDocumentResponse, ApiError>;
-  draftBody: string;
-  onDraftBodyChange: (next: string) => void;
+  buffer: DraftBuffer;
+  onBufferChange: (patch: Partial<DraftBuffer>) => void;
+  /** 게시가 끝났을 때. 서버가 초안의 변경 안내를 비우므로 연 쪽이 이 문서의 편집 버퍼를 서버 값으로 되돌린다. */
+  onPublished: () => void;
 };
 
-/** 넓은 화면(`lg` 이상)에서는 편집(좌)/미리보기(우)를 나란히 둔다 — 약관 본문이 6천~1만2천 자라 탭 전환보다 동시에
- * 비교하는 편이 낫고, 각 패널은 `max-h`로 캡을 씌워 스크롤한다(안 그러면 Textarea의
- * `field-sizing-content`가 본문 길이만큼 그대로 늘어나 페이지가 지나치게 길어진다). 그보다 좁으면 반 폭 두 칸이 한
- * 줄에 몇 글자 못 담아 둘 다 읽기 어렵고, 위아래로 쌓으면 미리보기가 512px 편집기 아래로 밀려 안 보이므로 편집/미리보기
- * 탭으로 바꾼다. 두 패널은 늘 마운트돼 있다(탭은 숨기기만 한다) — 폭을 넘나들어도 편집기의 커서·스크롤이 남는다.
+/** 본문과 변경 안내를 같은 화면에서 나란히 쓴다 — 안내는 본문에서 무엇이 바뀌었는지를 회원에게 먼저 보여 주는 요약이라,
+ * 따로 쓰면 둘이 어긋나기 쉽다. 둘은 한 번에 저장된다.
  *
- * 게시 버튼은 "저장된 초안이 있고, 지금 버퍼가 그 초안과 같을 때"만 활성화한다 — 게시는
- * 서버에 저장된 초안을 발행하지 화면의 버퍼를 발행하지 않으므로, 저장 전에 게시를 누르면
- * 방금 타이핑한 내용이 아니라 이전 저장분이 나간다. 이 간극을 버튼 disabled로 막는다. */
-export function LegalEditor({ kind, documentQuery, draftBody, onDraftBodyChange }: LegalEditorProps) {
+ * 게시 버튼은 "저장된 초안이 있고, 지금 본문·안내가 그 초안과 같을 때"만 활성화한다 — 게시는 서버에 저장된 초안을 발행하지
+ * 화면의 버퍼를 발행하지 않으므로, 저장 전에 게시를 누르면 방금 타이핑한 내용이 아니라 이전 저장분이 나간다. 이 간극을 버튼
+ * disabled로 막는다. */
+export function LegalEditor({ kind, documentQuery, buffer, onBufferChange, onPublished }: LegalEditorProps) {
   const saveDraftMutation = useSaveDraftMutation(kind);
-  const [pane, setPane] = useState<"edit" | "preview">("edit");
 
   if (documentQuery.isPending) {
     return <div className="h-96 animate-pulse rounded-xl bg-muted" />;
@@ -54,9 +58,9 @@ export function LegalEditor({ kind, documentQuery, draftBody, onDraftBodyChange 
   }
 
   const document = documentQuery.data;
-  const savedDraftBody = document.draft?.bodyMarkdown ?? "";
-  const hasUnsavedChanges = draftBody !== savedDraftBody;
+  const hasUnsavedChanges = isDraftBufferDirty(buffer, toDraftBuffer(document.draft));
   const canPublish = document.draft !== null && !hasUnsavedChanges;
+  const hasSavedNotice = changeNoticeToServer(document.draft?.changeNoticeMarkdown ?? "") !== null;
 
   let publishDisabledReason: string | undefined;
   if (document.draft === null) {
@@ -67,27 +71,50 @@ export function LegalEditor({ kind, documentQuery, draftBody, onDraftBodyChange 
 
   const handleSave = async () => {
     try {
-      await saveDraftMutation.mutateAsync({ bodyMarkdown: draftBody });
+      // 안내는 늘 함께 보낸다 — 칸을 빼면 서버가 "그대로 두기"로 읽어 지운 안내가 되살아난다.
+      await saveDraftMutation.mutateAsync({
+        bodyMarkdown: buffer.bodyMarkdown,
+        changeNoticeMarkdown: changeNoticeToServer(buffer.changeNotice),
+      });
       toast.success("초안을 저장했어요.");
     } catch {
       toast.error("저장에 실패했어요. 잠시 후 다시 시도해주세요.");
     }
   };
 
+  const handlePublish = async () => {
+    const isPublished = await PublishDialog.call({ kind, hasSavedNotice });
+    if (isPublished) onPublished();
+  };
+
   return (
     <div className="flex flex-col gap-6">
-      <section className="flex flex-col gap-1 rounded-xl border border-border bg-card p-6">
+      <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-6">
         <h2 className="text-sm font-medium text-muted-foreground">현재 게시본</h2>
-        {document.published ? (
-          <p className="text-sm text-foreground">
-            <span className="font-semibold">v{document.published.version}</span>
-            {" · "}
-            {formatDateTime(document.published.publishedAt)} 게시
-            {document.published.requiresReconsent && " · 재동의 필요"}
-          </p>
-        ) : (
-          <p className="text-sm text-muted-foreground">아직 게시된 문서가 없어요.</p>
-        )}
+        <dl className="flex flex-col gap-3 text-sm">
+          <div className="flex flex-col gap-1">
+            <dt className="text-xs font-medium text-muted-foreground">현행</dt>
+            <dd className="text-foreground">
+              {document.published ? (
+                <PublishedSummary item={document.published} effectiveLabel="시행" />
+              ) : (
+                <span className="text-muted-foreground">아직 시행 중인 판이 없어요.</span>
+              )}
+            </dd>
+          </div>
+          {document.upcoming && (
+            <div className="flex flex-col gap-1">
+              <dt className="text-xs font-medium text-muted-foreground">시행 예정</dt>
+              <dd className="flex flex-col gap-1 text-foreground">
+                <PublishedSummary item={document.upcoming} effectiveLabel="시행 예정" />
+                <span className="text-xs break-keep text-muted-foreground">
+                  예정 판이 있는 동안은 이 문서의 다른 판을 게시할 수 없어요. 고치려면 아래 게시 이력에서 이 판을 철회한 뒤
+                  다시 게시하세요.
+                </span>
+              </dd>
+            </div>
+          )}
+        </dl>
       </section>
 
       <section className="flex flex-col gap-3">
@@ -104,47 +131,28 @@ export function LegalEditor({ kind, documentQuery, draftBody, onDraftBodyChange 
           </p>
         )}
 
-        <Tabs
-          value={pane}
-          onValueChange={(value) => {
-            if (value === "edit" || value === "preview") setPane(value);
-          }}
-          className="gap-3"
-        >
-          {/* 위의 문서 종류 탭(밑줄)과 층이 다르다는 걸 모양으로 가른다. */}
-          <TabsList className="lg:hidden">
-            <TabsTrigger value="edit">편집</TabsTrigger>
-            <TabsTrigger value="preview">미리보기</TabsTrigger>
-          </TabsList>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {/* Radix 탭 패널은 Tab 정지(`tabIndex=0`)인데 편집 패널은 진입점이 곧 안의 편집칸이라 정지를 뺀다 — 남기면
-                포커스가 보이지 않는 칸에 한 번 앉았다가 다음 Tab 에야 편집칸에 닿는다. */}
-            <TabsContent value="edit" forceMount tabIndex={-1} className={PANE_CLASS}>
-              <Textarea
-                value={draftBody}
-                onChange={(event) => onDraftBodyChange(event.target.value)}
-                placeholder="마크다운으로 본문을 작성하세요."
-                aria-label={`${LEGAL_KIND_LABELS[kind]} 초안 편집`}
-                className="max-h-128 min-h-128 resize-none overflow-y-auto"
-              />
-            </TabsContent>
-            <TabsContent
-              value="preview"
-              forceMount
-              // 미리보기는 긴 본문을 키보드로 스크롤하는 Tab 정지로 남긴다 — 그래서 하우스 포커스 표시(불투명 보더 + 50% 링)를 준다.
-              className={cn(
-                PANE_CLASS,
-                "max-h-128 overflow-y-auto rounded-lg border border-border bg-card p-4 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
-              )}
-            >
-              {draftBody.trim() ? (
-                <Markdown content={draftBody} className="[&_code]:bg-secondary" />
-              ) : (
-                <p className="text-sm text-muted-foreground">미리볼 내용이 없어요.</p>
-              )}
-            </TabsContent>
-          </div>
-        </Tabs>
+        <MarkdownEditPane
+          value={buffer.bodyMarkdown}
+          onChange={(next) => onBufferChange({ bodyMarkdown: next })}
+          label={`${LEGAL_KIND_LABELS[kind]} 초안 편집`}
+          placeholder="마크다운으로 본문을 작성하세요."
+          height="tall"
+        />
+
+        <div className="mt-3 flex flex-col gap-1">
+          <h3 className="text-base font-semibold text-foreground">변경 안내</h3>
+          <p className="text-xs break-keep text-muted-foreground">
+            회원에게 전문보다 먼저 보이는 "무엇이 바뀌었는지" 요약이에요. 재동의를 받는 판은 안내가 있어야 게시할 수 있어요.
+            게시하면 초안의 안내는 그 판으로 옮겨지고 비워져요.
+          </p>
+        </div>
+        <MarkdownEditPane
+          value={buffer.changeNotice}
+          onChange={(next) => onBufferChange({ changeNotice: next })}
+          label={`${LEGAL_KIND_LABELS[kind]} 변경 안내 편집`}
+          placeholder="마크다운으로 이번 판의 변경 내용을 작성하세요."
+          height="short"
+        />
 
         <div className="flex flex-wrap items-center gap-2">
           <Button
@@ -161,7 +169,7 @@ export function LegalEditor({ kind, documentQuery, draftBody, onDraftBodyChange 
             variant="outline"
             size="sm"
             disabled={!canPublish}
-            onClick={() => void PublishDialog.call({ kind })}
+            onClick={() => void handlePublish()}
           >
             게시
           </Button>
@@ -179,11 +187,29 @@ export function LegalEditor({ kind, documentQuery, draftBody, onDraftBodyChange 
   );
 }
 
+type PublishedSummaryProps = {
+  item: AdminLegalPublishedItem;
+  effectiveLabel: string;
+};
+
+function PublishedSummary({ item, effectiveLabel }: PublishedSummaryProps) {
+  return (
+    <span className="break-keep">
+      <span className="font-semibold">v{item.version}</span>
+      {" · "}
+      {toKstDate(item.effectiveAt)} {effectiveLabel}
+      {" · "}
+      재동의: {formatReconsentScopes(item.reconsentScopes)}
+    </span>
+  );
+}
+
 type VersionHistoryProps = {
   kind: LegalKind;
 };
 
-/** 섹션 제목은 로딩·에러에도 남아야 해서 쿼리에 의존하는 본문만 갈라낸다. */
+/** 섹션 제목은 로딩·에러에도 남아야 해서 쿼리에 의존하는 본문만 갈라낸다. 시행일은 한국 날짜로 보인다 — 예약 시행은 한국
+ * 시각 0시라 브라우저 시간대로 보이면 KST 밖에서 하루 앞 날짜가 된다. */
 function VersionHistory({ kind }: VersionHistoryProps) {
   const versionsQuery = useVersionsQuery(kind);
 
@@ -205,16 +231,42 @@ function VersionHistory({ kind }: VersionHistoryProps) {
         <TableHeader>
           <TableRow>
             <TableHead>버전</TableHead>
+            <TableHead>시행일(한국)</TableHead>
             <TableHead>게시일</TableHead>
-            <TableHead>재동의 필요</TableHead>
+            <TableHead>상태</TableHead>
+            <TableHead>재동의 범위</TableHead>
+            <TableHead>변경 안내</TableHead>
+            <TableHead>
+              <span className="sr-only">조치</span>
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {versionsQuery.data.items.map((item) => (
             <TableRow key={item.version}>
-              <TableCell>{item.version}</TableCell>
+              <TableCell className="font-medium">{item.version}</TableCell>
+              <TableCell>{toKstDate(item.effectiveAt)}</TableCell>
               <TableCell>{formatDateTime(item.publishedAt)}</TableCell>
-              <TableCell>{item.requiresReconsent ? "예" : "아니오"}</TableCell>
+              <TableCell className={item.state === "current" || item.state === "scheduled" ? "font-semibold" : undefined}>
+                {VERSION_STATE_LABELS[item.state]}
+              </TableCell>
+              <TableCell>{formatReconsentScopes(item.reconsentScopes)}</TableCell>
+              <TableCell>{changeNoticeToServer(item.changeNoticeMarkdown ?? "") === null ? "없음" : "있음"}</TableCell>
+              <TableCell>
+                {item.state === "scheduled" && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    aria-label={`v${item.version} 예약 철회`}
+                    onClick={() =>
+                      void WithdrawDialog.call({ kind, version: item.version, effectiveAt: item.effectiveAt })
+                    }
+                  >
+                    철회
+                  </Button>
+                )}
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
