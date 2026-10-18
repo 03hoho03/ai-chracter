@@ -44,8 +44,15 @@ from api.chat.prompt_builder import (
     MemorySummaryResult,
     StatRuleJudgmentResult,
 )
+from api.chat.voyage_backoff import (
+    BACKOFF_AFTER_FAILURES,
+    BACKOFF_BASE_SECONDS,
+    VOYAGE_BACKOFF_KEY,
+    voyage_allowed,
+)
 from api.core.config import Settings, settings
 from api.core.rate_limit import KST
+from api.core.redis import redis_client
 from api.db.models import ChatMemoryEmbedding, ChatMemoryEpisode, ChatMemoryFact, ChatRoomMemorySnapshot
 from api.llm.client import LLMCallContext, LLMClient
 from api.llm import voyage
@@ -57,6 +64,7 @@ from api.main import app
 from factories import (
     PRODUCTION_ENV_NAMES,
     Room,
+    VoyageClock,
     VoyageStub,
     _clear_llm_override,
     _make_memory_embedding,
@@ -658,6 +666,111 @@ async def test_a_database_error_in_the_insert_transaction_is_absorbed(
 
     assert captured == ["db"]
     assert await _embeddings(db_session, room) == []
+
+
+# --- 연속 실패 백오프 ------------------------------------------------------------------------------
+# 채우기는 질의 임베딩과 같은 실패 수를 쓴다. 키 거부(401)는 다시 보내지 않아 채우기 한 번에 요청 하나다.
+
+
+async def _room_with_a_pending_fact(db_client: httpx.AsyncClient, db_session: AsyncSession) -> Room:
+    room = await _open_room(db_client, db_session, turns=10)
+    snapshot_id = await _plant(db_session, room, 10)
+    db_session.add(_fact(room, snapshot_id, turn=5, ordinal=0, value="값"))
+    await db_session.commit()
+    return room
+
+
+async def test_fill_pauses_after_consecutive_voyage_failures_and_resumes_when_the_pause_ends(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """채우기가 문턱만큼 연속 실패하면 질의 임베딩까지 멈추고(같은 실패 수), 다음 채우기는 Voyage 를 부르지 않는다. 멈춤이 풀리는
+    시각이 되면 다시 불러 밀린 행을 넣는다."""
+    _capture_failures(monkeypatch)
+    room = await _room_with_a_pending_fact(db_client, db_session)
+    clock = VoyageClock(monkeypatch)
+    stub = VoyageStub(failures=[401] * BACKOFF_AFTER_FAILURES)
+
+    for _ in range(BACKOFF_AFTER_FAILURES):
+        await _fill(db_session, room, stub)
+    assert await voyage_allowed() is False
+    await _fill(db_session, room, stub)
+    assert len(stub.bodies) == BACKOFF_AFTER_FAILURES
+
+    clock.advance(BACKOFF_BASE_SECONDS)
+    await _fill(db_session, room, stub)
+    assert len(stub.bodies) == BACKOFF_AFTER_FAILURES + 1
+    assert len(await _embeddings(db_session, room)) == 1
+
+
+async def test_a_successful_fill_resets_the_failure_count(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """문턱 하나 모자라게 실패 → 성공 → 다시 문턱 하나 모자라게 실패하면 연속이 아니라 멈추지 않는다. 하나 더 실패해 연속
+    실패가 문턱에 닿아야 멈춘다. 성공한 채우기가 행을 다 넣으므로 두 번째 실패 묶음은 새 행으로 부른다."""
+    _capture_failures(monkeypatch)
+    room = await _room_with_a_pending_fact(db_client, db_session)
+    VoyageClock(monkeypatch)
+
+    first = VoyageStub(failures=[401] * (BACKOFF_AFTER_FAILURES - 1))
+    for _ in range(BACKOFF_AFTER_FAILURES - 1):
+        await _fill(db_session, room, first)
+    await _fill(db_session, room, VoyageStub())
+    assert len(await _embeddings(db_session, room)) == 1
+    snapshot_id = await _plant(db_session, room, 8)
+    db_session.add(_fact(room, snapshot_id, turn=4, ordinal=0, value="새 값"))
+    await db_session.commit()
+
+    second = VoyageStub(failures=[401] * BACKOFF_AFTER_FAILURES)
+    for _ in range(BACKOFF_AFTER_FAILURES):
+        await _fill(db_session, room, second)
+    assert len(second.bodies) == BACKOFF_AFTER_FAILURES
+    assert await voyage_allowed() is False
+
+
+async def test_a_database_failure_after_voyage_answered_is_not_a_voyage_failure(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Voyage 는 답했는데 넣는 트랜잭션이 DB 오류로 깨진 채우기는 Voyage 실패로 세지 않는다 — 문턱보다 많이 되풀이해도 다음
+    채우기는 Voyage 를 부르고, 마지막 채우기 뒤에 실패 수가 남지 않는다. Voyage 의 성공이 매번 실패 수를 지우므로 "다음 채우기가
+    부른다"만으로는 DB 실패를 하나씩 세는 구현과 갈리지 않는다 — 남은 상태와, 그 위에 Voyage 실패를 문턱 하나 모자라게 쌓아도
+    멈추지 않는다는 것으로 가른다."""
+    _capture_failures(monkeypatch)
+    room = await _room_with_a_pending_fact(db_client, db_session)
+    VoyageClock(monkeypatch)
+
+    async def _statement_fails(session: AsyncSession, *args: Any, **kwargs: Any) -> bool:
+        await session.execute(sa.text("SELECT 1/0"))
+        return True
+
+    monkeypatch.setattr(memory_embeddings, "_lock_snapshot", _statement_fails)
+    stub = VoyageStub()
+    for _ in range(BACKOFF_AFTER_FAILURES + 1):
+        await _fill(db_session, room, stub)
+
+    assert len(stub.bodies) == BACKOFF_AFTER_FAILURES + 1
+    assert await redis_client.hgetall(VOYAGE_BACKOFF_KEY) == {}
+
+    failing = VoyageStub(failures=[401] * (BACKOFF_AFTER_FAILURES - 1))
+    for _ in range(BACKOFF_AFTER_FAILURES - 1):
+        await _fill(db_session, room, failing)
+    assert len(failing.bodies) == BACKOFF_AFTER_FAILURES - 1
+    assert await voyage_allowed() is True
+
+
+async def test_fill_still_retries_a_passing_failure_and_does_not_count_it(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """채우기는 턴을 기다리게 하지 않으므로 질의 임베딩과 달리 지나가는 실패(5xx)를 다시 보낸다 — 두 번 실패하고 세 번째에
+    받으면 행을 넣고, 클라이언트 안에서 회복한 실패는 연속 실패 수에 남지 않는다."""
+    _capture_failures(monkeypatch)
+    room = await _room_with_a_pending_fact(db_client, db_session)
+    stub = VoyageStub(failures=[503, 503])
+
+    await _fill(db_session, room, stub)
+
+    assert len(stub.bodies) == 3
+    assert len(await _embeddings(db_session, room)) == 1
+    assert await redis_client.hgetall(VOYAGE_BACKOFF_KEY) == {}
 
 
 # --- 공유 연결 풀 ----------------------------------------------------------------------------------
