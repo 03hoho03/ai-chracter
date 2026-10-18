@@ -71,6 +71,9 @@ NovelSnapshotKind = Literal["manual", "auto_before_restore"]
 # 집필권 잠금이 어디서 왔는지. 첫 화 저장이 쓴 잠금과, 이 칸이 생기기 전에 이미 첫 화를 만든 소설에 마이그레이션이 채운
 # 잠금을 가른다 — 뒤의 것은 그때 원작 권한을 알 수 없다.
 NovelWritingLockSource = Literal["first_chapter", "backfill"]
+# 연재권 잠금이 어디서 왔는지. 첫 공개가 쓴 잠금과, 이 칸이 생기기 전에 이미 공개한 소설에 마이그레이션이 채운 잠금을
+# 가른다 — 뒤의 것은 그때 원작 권한을 알 수 없다.
+NovelSerialLockSource = Literal["first_publish", "backfill"]
 
 
 def _sql_in_list(literal: Any) -> str:
@@ -125,6 +128,15 @@ class Novel(Base):
     writing_lock_permission: Mapped[NovelPermission | None] = mapped_column(Text, nullable=True)
     writing_lock_content_version_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     writing_lock_source: Mapped[NovelWritingLockSource | None] = mapped_column(Text, nullable=True)
+    # 연재권 잠금. 소설이 처음 독자에게 보인 순간(첫 공개, 승인 심사가 있으면 승인) 한 번 찍히고 풀리지 않는다. 잠긴
+    # 소설은 원작자가 소설화 허락을 나중에 거둬도 다음 화를 이어 공개한다. 권한·원작 버전·약관 판은 잠글 때의 사본이고
+    # (권한 NULL 은 알 수 없음 또는 원작 행 없음, 약관 판 NULL 은 그때 약관 게시본이 없었음), 원작 버전에 FK 가 없는 것과
+    # 다섯 다 nullable 인 것은 집필권 잠금과 같은 이유다.
+    serial_locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    serial_lock_permission: Mapped[NovelPermission | None] = mapped_column(Text, nullable=True)
+    serial_lock_content_version_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    serial_lock_terms_version: Mapped[str | None] = mapped_column(Text, nullable=True)
+    serial_lock_source: Mapped[NovelSerialLockSource | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -148,6 +160,16 @@ class Novel(Base):
         # 잠긴 시각과 출처는 함께 있거나 함께 없다.
         CheckConstraint(
             "(writing_locked_at IS NULL) = (writing_lock_source IS NULL)", name="ck_novels_writing_lock_complete"
+        ),
+        # 연재권 잠금 CHECK 셋은 위 집필권 잠금 CHECK 셋과 같은 뜻이다.
+        CheckConstraint(
+            f"serial_lock_permission IN ({_sql_in_list(NovelPermission)})", name="ck_novels_serial_lock_permission"
+        ),
+        CheckConstraint(
+            f"serial_lock_source IN ({_sql_in_list(NovelSerialLockSource)})", name="ck_novels_serial_lock_source"
+        ),
+        CheckConstraint(
+            "(serial_locked_at IS NULL) = (serial_lock_source IS NULL)", name="ck_novels_serial_lock_complete"
         ),
         Index("ix_novels_user_id_updated_at", "user_id", updated_at.desc()),
         Index("ux_novels_chat_room_id", "chat_room_id", unique=True),
@@ -514,6 +536,8 @@ class NovelReadingPosition(Base):
 # 노벨(공개 소설) — 소설 소유자가 자기 소설을 로그인 회원 누구나 읽게 내놓은 상태와, 그때 얼린 공개 화면 글.
 NovelPublicationVisibility = Literal["public", "withdrawn"]
 NovelPublicationModerationStatus = Literal["normal", "restricted"]
+# 첫 공개의 운영자 심사. 칸이 NULL 이면 심사 없이 공개된 행이다.
+NovelPublicationReviewStatus = Literal["pending", "approved", "rejected"]
 NovelScreeningOutcome = Literal["passed", "rejected"]
 # 텍스트 심사가 문제로 짚을 수 있는 공개 화면 글의 자리.
 NovelScreeningPart = Literal["novel_title", "synopsis", "chapter_title", "author_note", "chapter_body"]
@@ -533,6 +557,11 @@ class NovelPublication(Base):
 
     공개한 화 수는 칸으로 두지 않고 화 공개본 행(`NovelChapterPublication`) 수로 센다 — 마지막 묶음을 지우면 그 화의
     공개본도 함께 지워지므로 칸을 두면 두 곳을 맞춰야 한다.
+
+    첫 공개가 운영자 심사를 거치면 `review_status` 가 대기(`pending`)·승인(`approved`)·반려(`rejected`)를 담는다. 대기·반려
+    행은 공개 범위를 `withdrawn` 으로 둔다 — 심사 칸을 모르는 코드가 읽어도 독자에게 나가지 않게. DB 가 CHECK 로 이것을
+    지키므로, 대기·반려 행을 공개로 돌리는 쓰기는 `visibility` 와 심사 칸을 한 UPDATE 문으로 바꿔야 한다. 반려 사유
+    (`review_reason`)는 운영자가 쓴 글 그대로 작가에게 보인다.
 
     소설을 지우면 함께 지워지는 `ON DELETE CASCADE` 다(모듈 docstring 의 예외와 같은 이유 — 이 테이블을 모르는 옛 판 코드의
     소설 삭제·탈퇴가 FK 위반으로 500 이 되지 않게). 새 코드는 `novelize/deletion.py` 에서 직접 지운다."""
@@ -559,6 +588,10 @@ class NovelPublication(Base):
     published_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # 셋 다 nullable·기본값 없음인 것은 옛 코드의 공개 행 INSERT 가 이 칸들을 모르기 때문이다.
+    review_status: Mapped[NovelPublicationReviewStatus | None] = mapped_column(Text, nullable=True)
+    review_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # 최신순 목록은 마지막 공개 시각으로, 인기순 목록은 좋아요 수 → 마지막 공개 시각으로 줄 세운다.
     __table_args__ = (
@@ -571,6 +604,18 @@ class NovelPublication(Base):
         CheckConstraint(
             f"moderation_status IN ({_sql_in_list(NovelPublicationModerationStatus)})",
             name="ck_novel_publications_moderation_status",
+        ),
+        CheckConstraint(
+            f"review_status IN ({_sql_in_list(NovelPublicationReviewStatus)})",
+            name="ck_novel_publications_review_status",
+        ),
+        CheckConstraint(
+            "review_status IS DISTINCT FROM 'rejected' OR review_reason IS NOT NULL",
+            name="ck_novel_publications_review_reason",
+        ),
+        CheckConstraint(
+            "review_status IS NULL OR review_status NOT IN ('pending', 'rejected') OR visibility = 'withdrawn'",
+            name="ck_novel_publications_review_hidden",
         ),
     )
 

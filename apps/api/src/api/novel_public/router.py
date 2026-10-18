@@ -22,6 +22,13 @@
 화면이 가진다), 심사 호출이 실패하면 503 `NOVEL_SCREENING_UNAVAILABLE`(작품 발행 심사의 장애와 같은 코드 — 기다렸다 다시
 시도하면 되는 일이라), 오늘 거부 상한이나 시간당 심사 호출 상한에 닿았으면 429.
 
+**첫 공개 운영자 승인** — 정책 스위치(`novel_public_policy_v2_enabled`)가 켜졌고 소설이 아직 연재권 잠금을 갖지 않았으면
+(한 번도 독자에게 보인 적 없음, `novel_public/serial_lock.py`) 자동 글 심사를 통과한 첫 공개는 바로 열리지 않고 운영자
+승인을 기다린다(공개 상태 행의 `review_status` 대기, 공개 범위 `withdrawn`). 대기 중에는 그 소설의 공개 요청을 모두 409
+`NOVEL_PUBLICATION_IN_REVIEW` 로 막아 운영자가 본 글과 승인되는 글을 같게 한다. 대기·반려 행은 독자에게 보인 적 없는 공개라
+그 위의 공개 요청은 처음 공개와 같이 지금 원작 판정을 거친다. 잠금은 스위치와 무관하게 결과가 독자에게 열리는 쓰기(또는
+승인)에서 찍힌다.
+
 공개 화면에 내보내는 표지는 원작 썸네일뿐이라 공개본에 표지 사본을 두지 않는다(소설 생성 표지는 심사를 거친 적이 없다)."""
 
 import logging
@@ -31,11 +38,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.chat.prompt_builder import PromptRenderError, PromptSetNotFoundError, load_active_prompt_set
+from api.core.config import settings
 from api.core.sentry import capture_dependency_failure
 from api.db.models.novel import (
     Novel,
@@ -48,6 +56,7 @@ from api.db.models.novel import (
 )
 from api.db.session import get_db_session, get_session_factory
 from api.legal.dependencies import require_legal_consent
+from api.legal.documents import current_legal_version
 from api.llm.client import LLMClient, LLMClientError, LLMRateLimitError
 from api.llm.dependencies import get_llm_client
 from api.novel_public.access import RepublishBlock, judge_source, require_novel_public_enabled
@@ -66,6 +75,7 @@ from api.novel_public.screening import (
     rejections_left,
     screen_novel_text,
 )
+from api.novel_public.serial_lock import lock_in_effect, lock_serial, needs_review
 from api.novelize.access import require_novelize_access
 from api.novelize.billing import _lock_user
 from api.novelize.router import _get_owned_novel
@@ -107,6 +117,11 @@ class _PublishPlan:
 
     has_publication: bool
     reopen: bool
+    # 공개 상태 행이 운영자 승인 대기·반려라 독자에게 보인 적이 없다. 이 위의 공개는 처음 공개처럼 원작 판정을 거치고,
+    # 승인 없이 열면 심사 칸을 비운다.
+    unseen: bool
+    # 이 요청의 결과가 독자에게 열리지 않고 운영자 승인을 기다린다.
+    review: bool
     # 다시 낼 소설 제목·소개. 공개본과 같으면 None.
     metadata: tuple[str | None, str] | None
     # 새로 공개하거나 다시 낼 화. 이미 공개한 화가 공개본과 같으면 None.
@@ -163,15 +178,24 @@ async def _plan(
     publication = await db.get(NovelPublication, novel.id, populate_existing=True)
     if publication is not None and publication.moderation_status == "restricted":
         raise _error(status.HTTP_409_CONFLICT, "NOVEL_PUBLICATION_RESTRICTED")
-    gate = await judge_source(db, novel.content_id, user_id)
+    if (
+        publication is not None
+        and publication.review_status == "pending"
+        and settings.novel_public_policy_v2_enabled
+    ):
+        raise _error(status.HTTP_409_CONFLICT, "NOVEL_PUBLICATION_IN_REVIEW")
+    unseen = publication is not None and publication.review_status in ("pending", "rejected")
+    gate = await judge_source(db, novel.content_id, user_id, permission_locked=lock_in_effect(novel))
     if not gate.source_available:
         raise _error(status.HTTP_409_CONFLICT, "NOVEL_SOURCE_UNAVAILABLE")
 
     published = await _published_count(db, novel.id)
     chapter_plan: _ChapterPlan | None = None
-    is_new = publication is None
+    # 보인 적 없는 공개 상태 행 위의 요청은 처음 공개와 같다 — 허락·목록 판정을 건너뛴 채 잠금을 얻는 길을 막는다.
+    is_new = publication is None or unseen
     if chapter_id is None:
-        if publication is None:
+        # 화 공개본이 하나도 없는 보인 적 없는 행(반려로 화 공개본이 지워짐)도 처음 공개처럼 1화부터 내야 한다.
+        if publication is None or (unseen and published == 0):
             raise _error(status.HTTP_409_CONFLICT, "NOVEL_PUBLISH_NOT_CONTIGUOUS", nextOrdinal=1)
     else:
         chapter = await db.scalar(
@@ -207,6 +231,8 @@ async def _plan(
     return _PublishPlan(
         has_publication=publication is not None,
         reopen=publication is not None and publication.visibility == "withdrawn",
+        unseen=unseen,
+        review=needs_review(novel) and (publication is None or unseen),
         metadata=metadata,
         chapter=chapter_plan,
         items=_items(metadata, chapter_plan),
@@ -259,7 +285,7 @@ async def _changed_chapter_ordinals(db: AsyncSession, novel_id: uuid.UUID) -> li
 
 async def _status(db: AsyncSession, novel: Novel, user_id: uuid.UUID) -> NovelPublicationStatusResponse:
     publication = await db.get(NovelPublication, novel.id, populate_existing=True)
-    gate = await judge_source(db, novel.content_id, user_id)
+    gate = await judge_source(db, novel.content_id, user_id, permission_locked=lock_in_effect(novel))
     republish_block: RepublishBlock | None = None
     if publication is not None and publication.moderation_status == "restricted":
         republish_block = "restricted"
@@ -299,27 +325,64 @@ async def _status(db: AsyncSession, novel: Novel, user_id: uuid.UUID) -> NovelPu
         screening_rejection_limit=NOVEL_SCREEN_DAILY_REJECTION_LIMIT,
         first_published_at=publication.first_published_at if publication is not None else None,
         published_at=publication.published_at if publication is not None else None,
+        review_status=publication.review_status if publication is not None else None,
+        review_reason=(
+            publication.review_reason
+            if publication is not None and publication.review_status == "rejected"
+            else None
+        ),
+        reviewed_at=publication.reviewed_at if publication is not None else None,
+        review_required=needs_review(novel),
     )
 
 
 # ── 쓰기 ────────────────────────────────────────────────────────────────────
-async def _apply(db: AsyncSession, novel: Novel, plan: _PublishPlan) -> None:
+async def _apply(db: AsyncSession, novel: Novel, plan: _PublishPlan, *, terms_version: str | None) -> None:
+    """계획대로 공개본을 쓴다. 승인 대기로 가는 요청(`plan.review`)은 공개 범위를 `withdrawn` 으로 두고 대기를 표시하고,
+    그 밖에는 결과가 독자에게 열리므로 연재권 잠금을 찍는다(이미 잠겼으면 그대로).
+
+    공개 범위와 심사 칸은 같은 UPDATE 문으로 바꾼다 — 대기·반려 행은 `withdrawn` 이어야 한다는 CHECK 가 문장마다 걸리므로
+    나눠 쓰면 첫 문장이 거부된다."""
     now = func.now()
     if not plan.has_publication:
         assert plan.metadata is not None  # 처음 공개는 언제나 소설 제목·소개를 얼린다
         title, synopsis = plan.metadata
-        db.add(NovelPublication(novel_id=novel.id, visibility="public", title=title, synopsis=synopsis))
+        db.add(
+            NovelPublication(
+                novel_id=novel.id,
+                visibility="withdrawn" if plan.review else "public",
+                review_status="pending" if plan.review else None,
+                title=title,
+                synopsis=synopsis,
+            )
+        )
         await db.flush()
     else:
         values: dict[str, object] = {}
-        if plan.reopen:
+        if plan.review:
+            # 반려 뒤 다시 신청 — 공개 범위는 `withdrawn` 그대로 두고 새 대기로 돌린다.
+            values.update(review_status="pending", review_reason=None, reviewed_at=None, published_at=now)
+        elif plan.reopen:
             values["visibility"] = "public"
+            if plan.unseen:
+                # 스위치가 꺼진 뒤 남은 대기·반려 행을 승인 없이 연다(원작 판정은 계획에서 처음 공개처럼 거쳤다). 독자에게
+                # 처음 열리는 때라 승인처럼 처음 공개 시각과 공개 시각을 지금으로 찍는다 — 신청 시각이 남으면 연재권 잠금
+                # 시각과 어긋나고 최신순 목록에서도 신청한 날 자리에 놓인다.
+                values.update(
+                    review_status=None,
+                    review_reason=None,
+                    reviewed_at=None,
+                    first_published_at=now,
+                    published_at=now,
+                )
         if plan.metadata is not None:
             values["title"], values["synopsis"] = plan.metadata
         if plan.metadata is not None or plan.chapter is not None:
             values["published_at"] = now
         if values:
             await db.execute(update(NovelPublication).where(NovelPublication.novel_id == novel.id).values(**values))
+    if not plan.review:
+        await lock_serial(db, novel.id, terms_version=terms_version)
     chapter = plan.chapter
     if chapter is None:
         return
@@ -455,10 +518,13 @@ async def publish_novel(
             flaggedParts=list(verdict.flagged_parts),
         )
     if not plan.writes_nothing:
-        await _apply(db, novel, plan)
+        terms_version = await current_legal_version(db, "terms", now=datetime.now(UTC))
+        await _apply(db, novel, plan, terms_version=terms_version)
         if verdict is not None:
             db.add(_screening_row(novel, plan, user_id, passed=True, flagged_parts=(), reason=None, model=verdict.model))
         await db.commit()
+        # 잠금은 ORM 객체를 거치지 않는 UPDATE 로 찍혀 객체의 잠금 칸이 낡았다. 상태 응답의 승인 필요 여부가 그 칸을 본다.
+        await db.refresh(novel)
     return await _status(db, novel, user_id)
 
 
@@ -469,9 +535,23 @@ async def withdraw_novel_publication(
     db: AsyncSession = Depends(get_db_session),
 ) -> Response:
     """공개를 거둔다. 공개 상태 행과 공개본은 지우지 않고 공개 범위만 바꾼다 — 다시 공개하면 공개본이 그대로 살아난다.
-    이미 거둔 공개면 그대로 204 다. 재동의 게이트를 걸지 않는다(자기 글을 내리는 일이라)."""
+    이미 거둔 공개면 그대로 204 다. 재동의 게이트를 걸지 않는다(자기 글을 내리는 일이라).
+
+    운영자 승인을 기다리는 공개를 거두는 것은 신청 취소다 — 독자에게 보인 적 없는 글이라 공개 상태 행과 화 공개본을 지운다.
+    대기 조건을 건 DELETE 를 먼저 낸다. 그 문장이 승인과 같은 공개 상태 행 잠금에서 줄을 서므로, 승인이 먼저 커밋했으면
+    다시 평가한 조건에 걸려 아무것도 지우지 않고 아래의 보통 거두기가 된다. 읽어서 대기면 지우는 식으로 하면 승인 커밋 뒤에도
+    지워져 공개 상태 행 없이 잠금만 남은 소설이 생긴다. 정책 스위치와 무관하다."""
     await _lock_user(db, user_id)
     await _get_owned_novel(db, novel_id, user_id)
+    cancelled = await db.scalar(
+        delete(NovelPublication)
+        .where(NovelPublication.novel_id == novel_id, NovelPublication.review_status == "pending")
+        .returning(NovelPublication.novel_id)
+    )
+    if cancelled is not None:
+        await db.execute(delete(NovelChapterPublication).where(NovelChapterPublication.novel_id == novel_id))
+        await db.commit()
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
     updated = await db.scalar(
         update(NovelPublication)
         .where(NovelPublication.novel_id == novel_id)

@@ -3390,6 +3390,11 @@ export interface paths {
          * Withdraw Novel Publication
          * @description 공개를 거둔다. 공개 상태 행과 공개본은 지우지 않고 공개 범위만 바꾼다 — 다시 공개하면 공개본이 그대로 살아난다.
          *     이미 거둔 공개면 그대로 204 다. 재동의 게이트를 걸지 않는다(자기 글을 내리는 일이라).
+         *
+         *     운영자 승인을 기다리는 공개를 거두는 것은 신청 취소다 — 독자에게 보인 적 없는 글이라 공개 상태 행과 화 공개본을 지운다.
+         *     대기 조건을 건 DELETE 를 먼저 낸다. 그 문장이 승인과 같은 공개 상태 행 잠금에서 줄을 서므로, 승인이 먼저 커밋했으면
+         *     다시 평가한 조건에 걸려 아무것도 지우지 않고 아래의 보통 거두기가 된다. 읽어서 대기면 지우는 식으로 하면 승인 커밋 뒤에도
+         *     지워져 공개 상태 행 없이 잠금만 남은 소설이 생긴다. 정책 스위치와 무관하다.
          */
         post: operations["withdraw_novel_publication_novels__novel_id__publication_withdraw_post"];
         delete?: never;
@@ -3659,7 +3664,8 @@ export interface paths {
         };
         /**
          * List Admin Novels
-         * @description 공개한 적 있는 노벨 전부, 마지막 공개 시각 최신순 20개씩(쪽 번호). 이용제한 상태로 거를 수 있다.
+         * @description 공개한 적 있는(또는 첫 공개를 신청한) 노벨 전부, 마지막 공개 시각 최신순 20개씩(쪽 번호). 이용제한 상태·첫 공개 심사
+         *     상태로 거를 수 있다(승인 대기열 = `reviewStatus=pending`).
          */
         get: operations["list_admin_novels_admin_novels_get"];
         put?: never;
@@ -3726,6 +3732,35 @@ export interface paths {
          *     않게).
          */
         post: operations["moderate_admin_novel_admin_novels__novel_id__moderation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/novels/{novel_id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Review Admin Novel
+         * @description 운영자 승인을 기다리는 첫 공개를 승인(`approve`)하거나 반려(`reject`)한다. 공개 상태 행이 없으면 404
+         *     `NOVEL_NOT_FOUND`, 대기가 아니면 409 `NOVEL_REVIEW_NOT_PENDING`(이미 처리됨 — 감사 로그가 빈 조치로 쌓이지 않게).
+         *
+         *     승인은 독자에게 처음 여는 순간이라 그때의 원작 판정을 다시 본다 — 아직 잠기지 않은 소설이라 지금 허락을 따르고, 막히면
+         *     409 `NOVEL_SOURCE_NOT_PUBLISHABLE`+`reason` 이며 운영자는 반려로 처리한다. 대기 중에 1화가 든 마지막 묶음이 지워져 1화
+         *     공개본이 없으면 409 `NOVEL_REVIEW_NO_FIRST_CHAPTER` 다(공개 화가 없는 소설에 잠금을 주지 않는다 — 이것도 반려로 처리).
+         *     통과하면 공개 범위·심사 칸·처음 공개 시각을 한 UPDATE 로 바꾸고 연재권 잠금을 찍는다.
+         *
+         *     반려는 사유가 필요하고(공백뿐이면 422) 그 글이 그대로 작가의 공개 상태에 실린다. 화 공개본을 지우고 공개 상태 행은
+         *     사유를 들고 남긴다. 잠금 순서는 모듈 docstring.
+         */
+        post: operations["review_admin_novel_admin_novels__novel_id__review_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7430,6 +7465,11 @@ export interface components {
          *     는 게시자 정지 여부다 — 둘 다 `readable` 이 거짓인 이유를 가른다. `reports` 는 최근 노벨 신고 20개다.
          *     `purchase_amount` 는 환급되지 않은 구매의 가격 합(탈퇴한 구매자의 구매 포함), `purchase_buyer_count` 는 그 구매를 한 사람
          *     수다 — 탈퇴한 구매자는 누구인지 남지 않아 사람 수에 들지 않는다.
+         *
+         *     `review_reason` 은 반려 사유(작가에게 그대로 보인다), `reviewed_at` 은 마지막 승인·반려 시각이다. `serial_lock_*` 는 연재권
+         *     잠금 기록이다 — 잠긴 시각, 그때의 원작 소설화 허락·원작 게시본 id·시행 중이던 약관 판의 사본과 출처(`first_publish` 는
+         *     첫 공개·승인이 찍음, `backfill` 은 이 기록이 생기기 전 공개된 소설을 뒤늦게 채움 — 허락·원작 게시본을 알 수 없어 비어
+         *     있다). 잠기지 않았으면 모두 비어 있다.
          */
         AdminNovelDetailResponse: {
             /**
@@ -7475,6 +7515,8 @@ export interface components {
              * Format: date-time
              */
             publishedAt: string;
+            /** Reviewstatus */
+            reviewStatus: ("pending" | "approved" | "rejected") | null;
             /** Synopsis */
             synopsis: string;
             /**
@@ -7500,12 +7542,28 @@ export interface components {
             purchaseBuyerCount: number;
             /** Purchaseamount */
             purchaseAmount: number;
+            /** Reviewreason */
+            reviewReason: string | null;
+            /** Reviewedat */
+            reviewedAt: string | null;
+            /** Seriallockedat */
+            serialLockedAt: string | null;
+            /** Seriallockpermission */
+            serialLockPermission: ("forbidden" | "private" | "public") | null;
+            /** Seriallockcontentversionid */
+            serialLockContentVersionId: string | null;
+            /** Seriallocktermsversion */
+            serialLockTermsVersion: string | null;
+            /** Seriallocksource */
+            serialLockSource: ("first_publish" | "backfill") | null;
         };
         /**
          * AdminNovelListItem
          * @description 공개 상태 행이 있는 소설 하나(거둔 것·이용제한된 것 포함). `readable` 은 지금 독자에게 보이는가(거둠·이용제한·게시자
-         *     정지·원작 숨김·공개 화 없음이면 거짓). `purchase_count` 는 환급되지 않은 구매 수(탈퇴한 구매자의 구매도 거래 기록이라
-         *     센다), `pending_report_count` 는 처리 전 노벨 신고 수다.
+         *     정지·원작 숨김·공개 화 없음·첫 공개 승인 대기나 반려면 거짓). `purchase_count` 는 환급되지 않은 구매 수(탈퇴한 구매자의
+         *     구매도 거래 기록이라 센다), `pending_report_count` 는 처리 전 노벨 신고 수다. `review_status` 는 첫 공개의 운영자 심사
+         *     (대기·승인·반려, 심사 없이 공개됐으면 비어 있다) — 대기·반려 행의 `visibility` 는 `withdrawn` 이지만 게시자가 거둔 것이
+         *     아니다.
          */
         AdminNovelListItem: {
             /**
@@ -7551,6 +7609,8 @@ export interface components {
              * Format: date-time
              */
             publishedAt: string;
+            /** Reviewstatus */
+            reviewStatus: ("pending" | "approved" | "rejected") | null;
         };
         /** AdminNovelListResponse */
         AdminNovelListResponse: {
@@ -7725,6 +7785,38 @@ export interface components {
             totalPages: number;
             /** Totalcount */
             totalCount: number;
+        };
+        /**
+         * AdminNovelReviewRequest
+         * @description 첫 공개 승인(`approve`)·반려(`reject`). `admin_comment` 는 감사 로그에 남는 글이고, 반려에서는 운영자가 쓴 글 그대로
+         *     작가에게 보이는 반려 사유이기도 하다(반려는 공백뿐이면 422).
+         */
+        AdminNovelReviewRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "approve" | "reject";
+            /** Admincomment */
+            adminComment: string;
+        };
+        /** AdminNovelReviewResponse */
+        AdminNovelReviewResponse: {
+            /**
+             * Novelid
+             * Format: uuid
+             */
+            novelId: string;
+            /**
+             * Reviewstatus
+             * @enum {string}
+             */
+            reviewStatus: "pending" | "approved" | "rejected";
+            /**
+             * Visibility
+             * @enum {string}
+             */
+            visibility: "public" | "withdrawn";
         };
         /**
          * AdminNovelScreeningItem
@@ -8108,7 +8200,7 @@ export interface components {
              * Actiontype
              * @enum {string}
              */
-            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "home-novel-curation-clear" | "home-novel-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "legal-withdraw" | "notice-publish" | "notice-unpublish" | "novel-comment-delete" | "novel-comment-hide" | "novel-comment-report-reject" | "novel-comment-restore" | "novel-lift" | "novel-report-reject" | "novel-restrict" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-creator-payout-approve" | "user-creator-payout-hold" | "user-creator-payout-info-view" | "user-creator-payout-payee-replace" | "user-creator-payout-reject" | "user-creator-payout-return" | "user-creator-payout-revoke" | "user-creator-payout-transfer" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-payment-refund" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
+            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "home-novel-curation-clear" | "home-novel-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "legal-withdraw" | "notice-publish" | "notice-unpublish" | "novel-comment-delete" | "novel-comment-hide" | "novel-comment-report-reject" | "novel-comment-restore" | "novel-lift" | "novel-report-reject" | "novel-restrict" | "novel-review-approve" | "novel-review-reject" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-creator-payout-approve" | "user-creator-payout-hold" | "user-creator-payout-info-view" | "user-creator-payout-payee-replace" | "user-creator-payout-reject" | "user-creator-payout-return" | "user-creator-payout-revoke" | "user-creator-payout-transfer" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-payment-refund" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
             /** Targetcontentid */
             targetContentId: string | null;
             /** Contentname */
@@ -11800,6 +11892,11 @@ export interface components {
          *     - `republish_block`: 이미 공개한 것을 다시 내거나 거둔 공개를 다시 열 수 없는 이유.
          *     - `screening_rejections_left`: 오늘 더 걸릴 수 있는 심사 횟수(상한 `screening_rejection_limit`). 상한을 적용하지 않는
          *       계정이면 비어 있다.
+         *     - `review_status`: 첫 공개의 운영자 심사 — 대기·승인·반려. 심사 없이 공개됐거나 공개한 적이 없으면 비어 있다. 대기·
+         *       반려인 동안 `visibility` 는 `withdrawn` 이지만 게시자가 거둔 것이 아니다.
+         *     - `review_reason`: 반려 사유. 운영자가 쓴 글 그대로이고 반려일 때만 있다. `reviewed_at` 은 마지막 승인·반려 시각이다.
+         *     - `review_required`: 지금 공개하면 독자에게 바로 열리지 않고 운영자 승인을 기다리는가(정책 스위치가 켜졌고 아직 독자에게
+         *       보인 적 없는 소설).
          */
         NovelPublicationStatusResponse: {
             /** Published */
@@ -11829,6 +11926,14 @@ export interface components {
             firstPublishedAt: string | null;
             /** Publishedat */
             publishedAt: string | null;
+            /** Reviewstatus */
+            reviewStatus: ("pending" | "approved" | "rejected") | null;
+            /** Reviewreason */
+            reviewReason: string | null;
+            /** Reviewedat */
+            reviewedAt: string | null;
+            /** Reviewrequired */
+            reviewRequired: boolean;
         };
         /**
          * NovelPublishRequest
@@ -12592,7 +12697,9 @@ export interface components {
          * PublicNovelSource
          * @description 원작 표기. `title`·`character_name` 은 소설을 만들 때의 원작 사본이다. `cover_url` 은 원작의 지금 게시본 썸네일 —
          *     노벨 표지는 이것뿐이고, 원작자가 탈퇴했거나 썸네일이 없으면 비어 있다(화면이 기본 표지를 그린다). `linkable` 은 원작이
-         *     지금 작품 목록에 실려 원작 상세로 링크를 걸 수 있는가다.
+         *     지금 작품 목록에 실려 원작 상세로 링크를 걸 수 있는가다. `creator_nickname` 은 원작자의 지금 닉네임이다(복사해 두지 않고
+         *     읽을 때 가져온다) — 원작자가 탈퇴했거나 원작 행이 없으면 비어 있다. `unofficial` 은 원작자가 게시자가 아닌가(화면이
+         *     "비공식 2차 창작"을 붙인다)이고, 원작 행이 없으면 참이다(근거 없이 공식으로 표시하지 않는다).
          */
         PublicNovelSource: {
             /**
@@ -12613,6 +12720,10 @@ export interface components {
             coverUrl: string | null;
             /** Linkable */
             linkable: boolean;
+            /** Creatornickname */
+            creatorNickname: string | null;
+            /** Unofficial */
+            unofficial: boolean;
         };
         /**
          * PutPayoutInfoRequest
@@ -18885,6 +18996,7 @@ export interface operations {
             query?: {
                 page?: number;
                 moderationStatus?: ("normal" | "restricted") | null;
+                reviewStatus?: ("pending" | "approved" | "rejected") | null;
             };
             header?: never;
             path?: never;
@@ -18997,6 +19109,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminNovelModerationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_admin_novel_admin_novels__novel_id__review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminNovelReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNovelReviewResponse"];
                 };
             };
             /** @description Validation Error */

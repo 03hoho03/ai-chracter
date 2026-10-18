@@ -8216,7 +8216,7 @@
           "novels"
         ],
         "summary": "Withdraw Novel Publication",
-        "description": "공개를 거둔다. 공개 상태 행과 공개본은 지우지 않고 공개 범위만 바꾼다 — 다시 공개하면 공개본이 그대로 살아난다.\n이미 거둔 공개면 그대로 204 다. 재동의 게이트를 걸지 않는다(자기 글을 내리는 일이라).",
+        "description": "공개를 거둔다. 공개 상태 행과 공개본은 지우지 않고 공개 범위만 바꾼다 — 다시 공개하면 공개본이 그대로 살아난다.\n이미 거둔 공개면 그대로 204 다. 재동의 게이트를 걸지 않는다(자기 글을 내리는 일이라).\n\n운영자 승인을 기다리는 공개를 거두는 것은 신청 취소다 — 독자에게 보인 적 없는 글이라 공개 상태 행과 화 공개본을 지운다.\n대기 조건을 건 DELETE 를 먼저 낸다. 그 문장이 승인과 같은 공개 상태 행 잠금에서 줄을 서므로, 승인이 먼저 커밋했으면\n다시 평가한 조건에 걸려 아무것도 지우지 않고 아래의 보통 거두기가 된다. 읽어서 대기면 지우는 식으로 하면 승인 커밋 뒤에도\n지워져 공개 상태 행 없이 잠금만 남은 소설이 생긴다. 정책 스위치와 무관하다.",
         "operationId": "withdraw_novel_publication_novels__novel_id__publication_withdraw_post",
         "parameters": [
           {
@@ -8927,7 +8927,7 @@
           "admin"
         ],
         "summary": "List Admin Novels",
-        "description": "공개한 적 있는 노벨 전부, 마지막 공개 시각 최신순 20개씩(쪽 번호). 이용제한 상태로 거를 수 있다.",
+        "description": "공개한 적 있는(또는 첫 공개를 신청한) 노벨 전부, 마지막 공개 시각 최신순 20개씩(쪽 번호). 이용제한 상태·첫 공개 심사\n상태로 거를 수 있다(승인 대기열 = `reviewStatus=pending`).",
         "operationId": "list_admin_novels_admin_novels_get",
         "parameters": [
           {
@@ -8959,6 +8959,27 @@
                 }
               ],
               "title": "Moderationstatus"
+            }
+          },
+          {
+            "name": "reviewStatus",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "approved",
+                    "rejected"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reviewstatus"
             }
           }
         ],
@@ -9121,6 +9142,60 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AdminNovelModerationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/novels/{novel_id}/review": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Review Admin Novel",
+        "description": "운영자 승인을 기다리는 첫 공개를 승인(`approve`)하거나 반려(`reject`)한다. 공개 상태 행이 없으면 404\n`NOVEL_NOT_FOUND`, 대기가 아니면 409 `NOVEL_REVIEW_NOT_PENDING`(이미 처리됨 — 감사 로그가 빈 조치로 쌓이지 않게).\n\n승인은 독자에게 처음 여는 순간이라 그때의 원작 판정을 다시 본다 — 아직 잠기지 않은 소설이라 지금 허락을 따르고, 막히면\n409 `NOVEL_SOURCE_NOT_PUBLISHABLE`+`reason` 이며 운영자는 반려로 처리한다. 대기 중에 1화가 든 마지막 묶음이 지워져 1화\n공개본이 없으면 409 `NOVEL_REVIEW_NO_FIRST_CHAPTER` 다(공개 화가 없는 소설에 잠금을 주지 않는다 — 이것도 반려로 처리).\n통과하면 공개 범위·심사 칸·처음 공개 시각을 한 UPDATE 로 바꾸고 연재권 잠금을 찍는다.\n\n반려는 사유가 필요하고(공백뿐이면 422) 그 글이 그대로 작가의 공개 상태에 실린다. 화 공개본을 지우고 공개 상태 행은\n사유를 들고 남긴다. 잠금 순서는 모듈 docstring.",
+        "operationId": "review_admin_novel_admin_novels__novel_id__review_post",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminNovelReviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNovelReviewResponse"
                 }
               }
             }
@@ -18309,6 +18384,22 @@
             "format": "date-time",
             "title": "Publishedat"
           },
+          "reviewStatus": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "approved",
+                  "rejected"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewstatus"
+          },
           "synopsis": {
             "type": "string",
             "title": "Synopsis"
@@ -18365,6 +18456,95 @@
           "purchaseAmount": {
             "type": "integer",
             "title": "Purchaseamount"
+          },
+          "reviewReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewreason"
+          },
+          "reviewedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewedat"
+          },
+          "serialLockedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seriallockedat"
+          },
+          "serialLockPermission": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "forbidden",
+                  "private",
+                  "public"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seriallockpermission"
+          },
+          "serialLockContentVersionId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seriallockcontentversionid"
+          },
+          "serialLockTermsVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seriallocktermsversion"
+          },
+          "serialLockSource": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "first_publish",
+                  "backfill"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seriallocksource"
           }
         },
         "type": "object",
@@ -18383,6 +18563,7 @@
           "purchaseCount",
           "pendingReportCount",
           "publishedAt",
+          "reviewStatus",
           "synopsis",
           "contentId",
           "sourceModerationStatus",
@@ -18392,10 +18573,17 @@
           "screenings",
           "reports",
           "purchaseBuyerCount",
-          "purchaseAmount"
+          "purchaseAmount",
+          "reviewReason",
+          "reviewedAt",
+          "serialLockedAt",
+          "serialLockPermission",
+          "serialLockContentVersionId",
+          "serialLockTermsVersion",
+          "serialLockSource"
         ],
         "title": "AdminNovelDetailResponse",
-        "description": "공개본 글과 운영 판단 재료. `source_moderation_status` 는 원작의 지금 상태(원작이 없으면 비어 있다), `publisher_suspended`\n는 게시자 정지 여부다 — 둘 다 `readable` 이 거짓인 이유를 가른다. `reports` 는 최근 노벨 신고 20개다.\n`purchase_amount` 는 환급되지 않은 구매의 가격 합(탈퇴한 구매자의 구매 포함), `purchase_buyer_count` 는 그 구매를 한 사람\n수다 — 탈퇴한 구매자는 누구인지 남지 않아 사람 수에 들지 않는다."
+        "description": "공개본 글과 운영 판단 재료. `source_moderation_status` 는 원작의 지금 상태(원작이 없으면 비어 있다), `publisher_suspended`\n는 게시자 정지 여부다 — 둘 다 `readable` 이 거짓인 이유를 가른다. `reports` 는 최근 노벨 신고 20개다.\n`purchase_amount` 는 환급되지 않은 구매의 가격 합(탈퇴한 구매자의 구매 포함), `purchase_buyer_count` 는 그 구매를 한 사람\n수다 — 탈퇴한 구매자는 누구인지 남지 않아 사람 수에 들지 않는다.\n\n`review_reason` 은 반려 사유(작가에게 그대로 보인다), `reviewed_at` 은 마지막 승인·반려 시각이다. `serial_lock_*` 는 연재권\n잠금 기록이다 — 잠긴 시각, 그때의 원작 소설화 허락·원작 게시본 id·시행 중이던 약관 판의 사본과 출처(`first_publish` 는\n첫 공개·승인이 찍음, `backfill` 은 이 기록이 생기기 전 공개된 소설을 뒤늦게 채움 — 허락·원작 게시본을 알 수 없어 비어\n있다). 잠기지 않았으면 모두 비어 있다."
       },
       "AdminNovelListItem": {
         "properties": {
@@ -18472,6 +18660,22 @@
             "type": "string",
             "format": "date-time",
             "title": "Publishedat"
+          },
+          "reviewStatus": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "approved",
+                  "rejected"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewstatus"
           }
         },
         "type": "object",
@@ -18489,10 +18693,11 @@
           "viewCount",
           "purchaseCount",
           "pendingReportCount",
-          "publishedAt"
+          "publishedAt",
+          "reviewStatus"
         ],
         "title": "AdminNovelListItem",
-        "description": "공개 상태 행이 있는 소설 하나(거둔 것·이용제한된 것 포함). `readable` 은 지금 독자에게 보이는가(거둠·이용제한·게시자\n정지·원작 숨김·공개 화 없음이면 거짓). `purchase_count` 는 환급되지 않은 구매 수(탈퇴한 구매자의 구매도 거래 기록이라\n센다), `pending_report_count` 는 처리 전 노벨 신고 수다."
+        "description": "공개 상태 행이 있는 소설 하나(거둔 것·이용제한된 것 포함). `readable` 은 지금 독자에게 보이는가(거둠·이용제한·게시자\n정지·원작 숨김·공개 화 없음·첫 공개 승인 대기나 반려면 거짓). `purchase_count` 는 환급되지 않은 구매 수(탈퇴한 구매자의\n구매도 거래 기록이라 센다), `pending_report_count` 는 처리 전 노벨 신고 수다. `review_status` 는 첫 공개의 운영자 심사\n(대기·승인·반려, 심사 없이 공개됐으면 비어 있다) — 대기·반려 행의 `visibility` 는 `withdrawn` 이지만 게시자가 거둔 것이\n아니다."
       },
       "AdminNovelListResponse": {
         "properties": {
@@ -18951,6 +19156,62 @@
           "totalCount"
         ],
         "title": "AdminNovelReportListResponse"
+      },
+      "AdminNovelReviewRequest": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "reject"
+            ],
+            "title": "Action"
+          },
+          "adminComment": {
+            "type": "string",
+            "title": "Admincomment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action",
+          "adminComment"
+        ],
+        "title": "AdminNovelReviewRequest",
+        "description": "첫 공개 승인(`approve`)·반려(`reject`). `admin_comment` 는 감사 로그에 남는 글이고, 반려에서는 운영자가 쓴 글 그대로\n작가에게 보이는 반려 사유이기도 하다(반려는 공백뿐이면 422)."
+      },
+      "AdminNovelReviewResponse": {
+        "properties": {
+          "novelId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Novelid"
+          },
+          "reviewStatus": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected"
+            ],
+            "title": "Reviewstatus"
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "withdrawn"
+            ],
+            "title": "Visibility"
+          }
+        },
+        "type": "object",
+        "required": [
+          "novelId",
+          "reviewStatus",
+          "visibility"
+        ],
+        "title": "AdminNovelReviewResponse"
       },
       "AdminNovelScreeningItem": {
         "properties": {
@@ -19879,6 +20140,8 @@
               "novel-lift",
               "novel-report-reject",
               "novel-restrict",
+              "novel-review-approve",
+              "novel-review-reject",
               "prompt-set-publish",
               "report-reject",
               "user-beta-off",
@@ -29175,6 +29438,49 @@
               }
             ],
             "title": "Publishedat"
+          },
+          "reviewStatus": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "approved",
+                  "rejected"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewstatus"
+          },
+          "reviewReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewreason"
+          },
+          "reviewedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewedat"
+          },
+          "reviewRequired": {
+            "type": "boolean",
+            "title": "Reviewrequired"
           }
         },
         "type": "object",
@@ -29192,10 +29498,14 @@
           "screeningRejectionsLeft",
           "screeningRejectionLimit",
           "firstPublishedAt",
-          "publishedAt"
+          "publishedAt",
+          "reviewStatus",
+          "reviewReason",
+          "reviewedAt",
+          "reviewRequired"
         ],
         "title": "NovelPublicationStatusResponse",
-        "description": "게시자가 보는 공개 상태. 화면이 이 값들로 \"공개 전·공개 중·확인 실패·원작 허락 미달·원작 비공개·허락 하향 뒤·운영\n조치\" 상태를 가른다(\"확인 중\"과 심사 장애는 요청 중·요청 실패로 화면이 안다).\n\n- `published`: 공개 상태 행이 있는가(한 번이라도 공개했는가). 거둔 뒤에도 참이다.\n- `visibility`·`moderation_status`: 공개 범위·이용제한 두 축. 공개한 적이 없으면 비어 있다.\n- `published_chapter_count`: 1화부터 이어진 공개 화 수. `chapter_count` 는 소설의 화 수다.\n- `changed_chapter_ordinals`·`metadata_changed`: 공개한 뒤 고쳐서 공개본과 다른 화·소설 제목·소개. 다시 공개해야\n  반영된다.\n- `new_publish_block`: 새로 공개(처음 공개·다음 화)할 수 없는 이유. 없으면 비어 있다.\n- `republish_block`: 이미 공개한 것을 다시 내거나 거둔 공개를 다시 열 수 없는 이유.\n- `screening_rejections_left`: 오늘 더 걸릴 수 있는 심사 횟수(상한 `screening_rejection_limit`). 상한을 적용하지 않는\n  계정이면 비어 있다."
+        "description": "게시자가 보는 공개 상태. 화면이 이 값들로 \"공개 전·공개 중·확인 실패·원작 허락 미달·원작 비공개·허락 하향 뒤·운영\n조치\" 상태를 가른다(\"확인 중\"과 심사 장애는 요청 중·요청 실패로 화면이 안다).\n\n- `published`: 공개 상태 행이 있는가(한 번이라도 공개했는가). 거둔 뒤에도 참이다.\n- `visibility`·`moderation_status`: 공개 범위·이용제한 두 축. 공개한 적이 없으면 비어 있다.\n- `published_chapter_count`: 1화부터 이어진 공개 화 수. `chapter_count` 는 소설의 화 수다.\n- `changed_chapter_ordinals`·`metadata_changed`: 공개한 뒤 고쳐서 공개본과 다른 화·소설 제목·소개. 다시 공개해야\n  반영된다.\n- `new_publish_block`: 새로 공개(처음 공개·다음 화)할 수 없는 이유. 없으면 비어 있다.\n- `republish_block`: 이미 공개한 것을 다시 내거나 거둔 공개를 다시 열 수 없는 이유.\n- `screening_rejections_left`: 오늘 더 걸릴 수 있는 심사 횟수(상한 `screening_rejection_limit`). 상한을 적용하지 않는\n  계정이면 비어 있다.\n- `review_status`: 첫 공개의 운영자 심사 — 대기·승인·반려. 심사 없이 공개됐거나 공개한 적이 없으면 비어 있다. 대기·\n  반려인 동안 `visibility` 는 `withdrawn` 이지만 게시자가 거둔 것이 아니다.\n- `review_reason`: 반려 사유. 운영자가 쓴 글 그대로이고 반려일 때만 있다. `reviewed_at` 은 마지막 승인·반려 시각이다.\n- `review_required`: 지금 공개하면 독자에게 바로 열리지 않고 운영자 승인을 기다리는가(정책 스위치가 켜졌고 아직 독자에게\n  보인 적 없는 소설)."
       },
       "NovelPublishRequest": {
         "properties": {
@@ -30959,6 +31269,21 @@
           "linkable": {
             "type": "boolean",
             "title": "Linkable"
+          },
+          "creatorNickname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creatornickname"
+          },
+          "unofficial": {
+            "type": "boolean",
+            "title": "Unofficial"
           }
         },
         "type": "object",
@@ -30968,10 +31293,12 @@
           "title",
           "characterName",
           "coverUrl",
-          "linkable"
+          "linkable",
+          "creatorNickname",
+          "unofficial"
         ],
         "title": "PublicNovelSource",
-        "description": "원작 표기. `title`·`character_name` 은 소설을 만들 때의 원작 사본이다. `cover_url` 은 원작의 지금 게시본 썸네일 —\n노벨 표지는 이것뿐이고, 원작자가 탈퇴했거나 썸네일이 없으면 비어 있다(화면이 기본 표지를 그린다). `linkable` 은 원작이\n지금 작품 목록에 실려 원작 상세로 링크를 걸 수 있는가다."
+        "description": "원작 표기. `title`·`character_name` 은 소설을 만들 때의 원작 사본이다. `cover_url` 은 원작의 지금 게시본 썸네일 —\n노벨 표지는 이것뿐이고, 원작자가 탈퇴했거나 썸네일이 없으면 비어 있다(화면이 기본 표지를 그린다). `linkable` 은 원작이\n지금 작품 목록에 실려 원작 상세로 링크를 걸 수 있는가다. `creator_nickname` 은 원작자의 지금 닉네임이다(복사해 두지 않고\n읽을 때 가져온다) — 원작자가 탈퇴했거나 원작 행이 없으면 비어 있다. `unofficial` 은 원작자가 게시자가 아닌가(화면이\n\"비공식 2차 창작\"을 붙인다)이고, 원작 행이 없으면 참이다(근거 없이 공식으로 표시하지 않는다)."
       },
       "PutPayoutInfoRequest": {
         "properties": {
