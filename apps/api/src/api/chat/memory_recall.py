@@ -11,9 +11,11 @@ LLM 을 부르지 않는다(DB 읽기 한두 번과 파이썬 점수).
 질의가 흔한 명사로만 남았던 경우는 AI 쪽으로 가지 않고 회상 없음이다 — 사용자가 꺼낸 화제가 흔한 것일 뿐 앞 맥락을 가리킨
 것이 아니다.
 
-싣지 않는 장면: 인물이 대사로만 말한 장면(`CHARACTER_ASSERTED`)과, 이번 턴 가려진 비밀과 근거가 겹치는 장면이다. 비밀은
-장면 행에 아는 사람 칸이 없어 방 사실 행에서 끌어낸다 — 사실 섹션과 같은 조건으로 사실 행을 읽고 같은 함수로 장면 인물을 세어,
-키별 최신 행의 아는 사람이 장면에 없는 키의 어느 행과든 근거 메시지 범위가 겹치는(양 끝 포함) 장면을 가린다(`chat/memory_knowledge.py`).
+싣지 않는 장면: 인물이 대사로만 말한 장면(`CHARACTER_ASSERTED`)과, 이번 턴 가려진 비밀 장면이다. 비밀 장면은 두 가림의
+합집합이다(`chat/memory_knowledge.py`) — 장면 행 자신의 아는 사람 칸이 차 있고 그 원소를 아는 사람이 장면 인물에 없는 장면, 그리고
+사실 섹션과 같은 조건으로 읽은 사실 행에서 키별 최신 행의 아는 사람이 장면에 없는 키의 어느 행과든 근거 메시지 범위가 겹치는(양
+끝 포함) 장면. 장면 인물은 사실 섹션과 같은 함수로 세되, 후보 이름에 후보 장면들의 아는 사람 원소를 더한다 — 사실 행이 없는
+방에서도 장면 칸의 인물이 턴에 나오면 그 장면이 남는다.
 이 둘은 아래 통계를 낸 뒤 순위 목록에서만 뺀다 — 장면 수·흔한 명사·사용자 토큰 풀·최근 스냅샷 둘은 방 장면 전부로 센다(먼저
 빼면 작은 방이 하한 아래로 내려가고, 최근 스냅샷 둘이 옛 스냅샷으로 밀리고, 빠진 장면에만 있던 사용자 토큰이 사라져 질의 쪽이
 바뀐다). 벡터 쪽은 거리 읽기 안에서 빼서 거리 순위 길이를 자격 있는 장면이 채운다. 사실 섹션 스위치와 무관하게 회상이 도는
@@ -54,7 +56,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.keyword_notes import normalize_keyword_text, recent_scan_turns
 from api.chat.memory_facts import fact_rows_statement
-from api.chat.memory_knowledge import KnowledgeScope, hidden_ranges, overlaps, scene_for_turn
+from api.chat.memory_knowledge import KnowledgeScope, hidden_ranges, known_in_scene, overlaps, scene_for_turn
 from api.chat.memory_nouns import STOPWORDS, rule_tokens
 from api.chat.memory_vector import QueryVector, episode_distances, rrf_order
 from api.chat.memory_window import MessageKey, opening_message
@@ -259,6 +261,7 @@ def _candidate_statement(room_id: uuid.UUID, cursor: MessageKey) -> Executable:
             episode.start_message_id,
             episode.end_created_at,
             episode.end_message_id,
+            episode.known_by,
         )
         .join(snapshot, snapshot.id == episode.snapshot_id)
         .where(
@@ -378,18 +381,21 @@ async def _hidden_episodes(
     names: PromptNames,
     scope: KnowledgeScope,
 ) -> set[uuid.UUID]:
-    """후보 장면 중 이번 턴 가려진 비밀과 근거가 겹치는 장면(`chat/memory_knowledge.py` 의 `hidden_ranges`). 방 사실 행을 사실
-    섹션과 같은 조건(커서 이하 스냅샷, 쓴 순서)으로 읽고 장면 인물도 사실 섹션과 같은 함수로 센다 — 사실 섹션이 이번 턴 빼는
-    비밀이 회상 줄로 새지 않게."""
+    """후보 장면 중 이번 턴 가려진 비밀 장면 — 자기 아는 사람 칸이 장면에 없는 장면과, 가려진 사실과 근거가 겹치는 장면
+    (`chat/memory_knowledge.py` 의 `hidden_ranges`)의 합집합. 방 사실 행을 사실 섹션과 같은 조건(커서 이하 스냅샷, 쓴 순서)으로
+    읽고 장면 인물도 사실 섹션과 같은 함수로 센다 — 사실 섹션이 이번 턴 빼는 비밀이 회상 줄로 새지 않게. 후보 이름에는 후보
+    장면들의 아는 사람 원소를 더한다."""
     facts = (await db.scalars(fact_rows_statement(room_id, cursor))).all()
-    if not any(fact.known_by for fact in facts):
+    if not any(fact.known_by for fact in facts) and not any(row.known_by for row in rows):
         return set()
-    scene = scene_for_turn(facts, scope, history=history, user_content=user_content, names=names)
+    episode_names = [name for row in rows for name in (row.known_by or ())]
+    scene = scene_for_turn(facts, scope, history=history, user_content=user_content, names=names, extra=episode_names)
     ranges = hidden_ranges(facts, scene)
     return {
         row.id
         for row in rows
-        if any(
+        if not known_in_scene(row.known_by, scene)
+        or any(
             overlaps(((row.start_created_at, row.start_message_id), (row.end_created_at, row.end_message_id)), span)
             for span in ranges
         )

@@ -306,8 +306,10 @@ async def build_room_prompt(
 
     사실 주입 스위치(`memory_facts_inject`)도 같은 조건(생성 윈도우가 켜져 있고 요약 커서가 있음)에서만 방의 관계·사실 기억을
     골라 대화 기록 뒤·회상 앞 섹션에 싣는다(`chat/memory_fact_section.py`). 기록 뒤라 앞 두 캐시 블록은 사실과 무관하게 같고,
-    꺼져 있으면 사실을 읽지도 않는다. 지식 범위 필터 스위치(`memory_knowledge_filter`)는 그 사실 섹션 안에서만 걸리므로, 사실
-    주입이 꺼져 있으면 켜져 있어도 프롬프트·SQL 이 같다. 회상 줄의 같은 가림은 이 스위치가 아니라 회상 스위치를 따른다.
+    꺼져 있으면 사실을 읽지도 않는다. 지식 범위 필터 스위치(`memory_knowledge_filter`)의 거름은 그 사실 섹션 안에서만 걸린다.
+    회상 줄의 같은 가림은 이 스위치가 아니라 회상 스위치를 따르되, 이 스위치를 켠 턴은 두 섹션 모두 직전 응답의 대사 따옴표
+    안에만 나온 이름을 장면 인물로 세지 않는다 — 회상이 사실 섹션보다 넓은 장면 인물로 덜 가리면 사실 섹션이 뺀 비밀이 회상
+    줄로 샌다. 회상과 사실 주입이 둘 다 꺼져 있으면 이 스위치를 켜도 프롬프트·SQL 이 같다.
 
     임베딩 회상 스위치(`memory_embed_recall`)가 켜져 있고 `embedding_client` 를 받았으며 이번 턴에 회상이나 사실 섹션을 새로
     고르면(주입 상태의 줄로 다시 렌더하는 칸은 고르지 않는다) 둘을 고르기 전에 질의 임베딩을 한 번 받아 둘이 함께 쓴다
@@ -368,7 +370,9 @@ async def build_room_prompt(
             window=history,
             user_content=user_content,
             names=names,
-            scope=KnowledgeScope(user_label=prompt_set.user_label),
+            scope=KnowledgeScope(
+                user_label=prompt_set.user_label, ignore_quoted_reply_names=settings.memory_knowledge_filter
+            ),
             query_vector=query.vector if query is not None else None,
         )
 
@@ -384,7 +388,9 @@ async def build_room_prompt(
             history=full_history,
             user_content=user_content,
             names=names,
-            scope=KnowledgeScope(user_label=prompt_set.user_label),
+            scope=KnowledgeScope(
+                user_label=prompt_set.user_label, ignore_quoted_reply_names=settings.memory_knowledge_filter
+            ),
             knowledge_filter=settings.memory_knowledge_filter,
             query_vector=query.vector if query is not None else None,
         )

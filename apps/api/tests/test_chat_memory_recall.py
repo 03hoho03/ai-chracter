@@ -9,8 +9,9 @@
 - 방 장면의 20% 넘게 나오는 명사는 질의에서 빠진다. 임계용 점수는 드문 명사 하나를 1 로 둔 절대 척도(상한 1)이고 순위는
   상한 없는 원점수다. 주입은 임계 0.60 이상이 회상 단서 턴에 3개, 그 밖의 턴에 1개. 장면 5개 미만이면 회상하지 않는다.
 - 섹션은 대화 기록 뒤(캐시 블록 셋째)에 있고 줄은 일어난 순서다. 섞임·사용자 장면은 꼬리표로 표시한다.
-- 인물이 대사로만 말한 장면과, 이번 턴 가려진 비밀(키별 최신 행의 아는 사람이 장면에 없는 사실 키)과 근거 범위가 겹치는 장면은
-  싣지 않는다. 통계(장면 수 하한·흔한 명사·사용자 토큰 풀·최근 스냅샷 둘)는 방 장면 전부로 낸 뒤 순위에서만 빼고, 벡터 쪽은 거리
+- 인물이 대사로만 말한 장면과, 이번 턴 가려진 비밀(키별 최신 행의 아는 사람이 장면에 없는 사실 키)과 근거 범위가 겹치는 장면,
+  장면 행 자신의 아는 사람이 하나도 장면에 없는 장면은 싣지 않는다(두 가림의 합집합). 장면 칸이 비어 있으면 그 칸으로는 가리지
+  않는다. 지식 범위 필터 스위치를 켜면 직전 응답의 대사 따옴표 안에만 나온 이름은 장면 인물이 아니다. 통계(장면 수 하한·흔한 명사·사용자 토큰 풀·최근 스냅샷 둘)는 방 장면 전부로 낸 뒤 순위에서만 빼고, 벡터 쪽은 거리
   읽기 안에서 뺀다. 사실 읽기가 실패하면 회상 없이 조립한다. 리플레이는 기록한 장면을 그대로 렌더한다.
 - 턴 기록(`chat_turns.memory_recall`)에 실은 장면의 id·점수·순위·글자 수·질의 쪽을 남기고, 리플레이는 그 id 로 줄을 다시
   렌더한다. 장면 읽기가 실패하면 회상 없이 턴을 계속한다.
@@ -30,7 +31,7 @@ import math
 import time
 import uuid
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -473,6 +474,7 @@ class Scene:
     importance: int = 3
     # 장면 id 를 정하고 싶을 때(id 순과 일어난 순서를 일부러 다르게 둔다).
     key: int | None = None
+    known_by: list[str] | None = None
 
 
 _FILLER_SCENES = [Scene(f"잡담 {i}", f"평범한 하루 {i}번째.", [f"일상{i}"], turn=1 + i % 4) for i in range(5)]
@@ -530,6 +532,7 @@ async def _add_scene(
         nouns=episode_nouns(scene.nouns, scene.title, scene.detail),
         asserted_by=scene.asserted_by,
         importance=scene.importance,
+        known_by=scene.known_by,
         **({"id": uuid.UUID(int=scene.key)} if scene.key is not None else {}),
     )
     db_session.add(episode)
@@ -1857,7 +1860,7 @@ async def test_replay_renders_a_recorded_character_scene_as_it_was(
 
 
 # --- 회상 줄의 지식 범위 ---------------------------------------------------------------------
-# 장면 행에는 아는 사람 칸이 없어, 회상은 같은 턴에 방 사실 행을 읽어 비밀 장면을 끌어낸다 — 키별 최신 행의 아는 사람이 이번
+# 회상은 장면 행의 아는 사람 칸과 함께, 같은 턴에 방 사실 행을 읽어 비밀 장면을 끌어낸다 — 키별 최신 행의 아는 사람이 이번
 # 장면 인물(이번 사용자 메시지·직전 응답에 나온 방 이름, 사용자 제외)에 없는 키의 어느 행과든 근거 범위가 겹치는 장면을 뺀다.
 # 회상 스위치에 묶여 사실 주입·지식 범위 필터 스위치와 무관하게 걸리고, 사실 읽기가 실패하면 회상 없이 조립한다(걸러지지
 # 않은 회상을 싣지 않는다).
@@ -2028,3 +2031,120 @@ async def test_recall_off_reads_no_facts_either(
     assert statements_with_memory == statements_without_memory
     # 켠 턴: SAVEPOINT·장면 후보·사실 행·줄 렌더·RELEASE 다섯 문장이 더해진다.
     assert statements_recall_on == statements_with_memory + 5
+
+
+# --- 장면 행의 아는 사람 칸 ------------------------------------------------------------------
+# 후보 장면의 아는 사람 칸이 차 있으면 그 원소를 아는 사람이 이번 장면에 하나도 없을 때 그 장면을 뺀다(사실 행 유래 가림과
+# 합집합). 장면 인물 후보 이름에는 사실 행 이름에 더해 후보 장면들의 아는 사람 원소가 든다 — 사실 행이 없거나 그 인물 행이 없는
+# 방에서도 장면 칸의 인물이 턴에 나오면 장면 인물이다. 칸이 비어 있으면(옛 행) 그 칸으로는 가리지 않는다.
+
+_BAKERY_LINE = "- 밀알당에 간 날: 태민이랑 밀알당에서 소금빵을 먹었다."
+
+
+async def _set_last_response(db_session: AsyncSession, room: Room, content: str) -> None:
+    last = room.turns[max(room.turns)][1]
+    await db_session.execute(sa.update(ChatMessage).where(ChatMessage.id == last.id).values(content=content))
+    await db_session.commit()
+
+
+async def test_scene_known_only_by_someone_absent_drops_even_in_a_room_without_facts(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """방에 사실 행이 하나도 없어도 장면 칸으로 가린다. 민수만 아는 밀알당 장면은 민수가 없는 턴에 빠지고, 민수가 나온 턴에는
+    남는다 — 민수는 사실 행이 아니라 장면 칸에서 방 이름이 된다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, replace(_BAKERY, known_by=["민수"])])
+    _recall_on(monkeypatch)
+    facts = await db_session.scalar(
+        sa.select(sa.func.count()).select_from(ChatMemoryFact).where(ChatMemoryFact.chat_room_id == room.room_id)
+    )
+    assert facts == 0
+
+    hidden = await _build(db_session, room, "밀알당 기억나?")
+    assert HEADER not in hidden.prompt
+    assert hidden.memory_recall == ()
+    assert _lines((await _build(db_session, room, "민수랑 밀알당 기억나?")).prompt) == [_BAKERY_LINE]
+
+
+async def test_scene_without_known_by_is_not_hidden_by_its_column(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """칸이 빈 장면(아는 사람이 정해지지 않은 옛 행)은 누가 나오든 남는다 — 다른 장면의 칸이 차 있어도 그렇다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, replace(_GARDEN, known_by=["민수"])])
+    _recall_on(monkeypatch)
+
+    assert _lines((await _build(db_session, room, "밀알당 기억나?")).prompt) == [_BAKERY_LINE]
+
+
+async def test_scene_column_hides_even_when_the_room_has_only_public_facts(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """사실 행이 있지만 모두 공개(아는 사람 없음)인 방 — 사실 쪽으로는 가릴 것이 없어도 장면 칸으로는 가린다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, replace(_BAKERY, known_by=["민수"])])
+    db_session.add(_make_memory_fact(room.room_id, await _snapshot_for(db_session, room, 1), ordinal=5))
+    await db_session.commit()
+    _recall_on(monkeypatch)
+
+    assert HEADER not in (await _build(db_session, room, "밀알당 기억나?")).prompt
+
+
+async def test_fact_secret_and_scene_column_hide_as_a_union(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """밀알당(턴 3)은 민수만 아는 비밀 사실과 겹치고, 정원(턴 5)은 장면 칸으로 지아만 안다. 둘 다 묻는 회상 단서 턴에 아무도
+    없으면 둘 다 빠지고, 민수만 나오면 밀알당만, 둘 다 나오면 둘 다 실린다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, replace(_GARDEN, known_by=["지아"])])
+    await _plant_fact(db_session, room, turn=3, known_by=["민수"])
+    _recall_on(monkeypatch)
+    garden_line = "- 정원 산책: 비 갠 오후에 수국 길을 걸었다."
+
+    assert HEADER not in (await _build(db_session, room, "밀알당이랑 수국 기억나?")).prompt
+    assert _lines((await _build(db_session, room, "민수랑 밀알당이랑 수국 기억나?")).prompt) == [_BAKERY_LINE]
+    assert _lines((await _build(db_session, room, "민수랑 지아랑 밀알당이랑 수국 기억나?")).prompt) == [
+        _BAKERY_LINE,
+        garden_line,
+    ]
+
+
+async def test_user_name_in_the_scene_column_is_not_a_scene_person(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """사용자만 아는 장면은 사용자 표기가 메시지에 나와도 빠진다 — 사실 행의 사용자 처리와 같다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, replace(_BAKERY, known_by=["사용자 인물"])])
+    _recall_on(monkeypatch)
+
+    assert HEADER not in (await _build(db_session, room, "사용자 인물이랑 밀알당 기억나?")).prompt
+
+
+async def test_vector_limit_is_filled_past_a_scene_hidden_by_its_column(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """벡터 쪽도 장면 칸으로 가린다 — 거리 순위 길이 1 에서 가장 가까운 밀알당이 칸으로 가려지면 그다음 정원이 실린다. 민수가
+    나온 턴에는 밀알당이 실린다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, replace(_BAKERY, known_by=["민수"]), _GARDEN])
+    bakery_id = await _embed_scene(db_session, room, _BAKERY.title, _NEAR)
+    garden_id = await _embed_scene(db_session, room, _GARDEN.title, _MID)
+    _hybrid_on(monkeypatch)
+    monkeypatch.setattr(settings, "memory_embed_recall_vector_limit", 1)
+
+    hidden = await _build(db_session, room, _PLAIN, embedding_client=_embed_client(VoyageStub()))
+    known = await _build(db_session, room, f"민수랑 {_PLAIN}", embedding_client=_embed_client(VoyageStub()))
+
+    assert _vector_ids(hidden) == [str(garden_id)]
+    assert _vector_ids(known) == [str(bakery_id)]
+
+
+async def test_name_only_inside_the_reply_dialogue_hides_the_scene_when_the_filter_is_on(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """직전 응답에서 민수가 대사 안에만 나온다. 필터가 꺼져 있으면 지금처럼 민수를 장면 인물로 세어 민수만 아는 장면이 남고, 켜면
+    빠진다. 켠 채로도 서술에 민수가 나오거나 이번 사용자 메시지에 나오면 남는다."""
+    room = await _story_room(db_client, db_session, [*_FILLER_SCENES, replace(_BAKERY, known_by=["민수"])])
+    await _set_last_response(db_session, room, "“민수는 어디 갔지?” 유나가 중얼거렸다.")
+    _recall_on(monkeypatch)
+
+    assert _lines((await _build(db_session, room, "밀알당 기억나?")).prompt) == [_BAKERY_LINE]
+    monkeypatch.setattr(settings, "memory_knowledge_filter", True)
+    assert HEADER not in (await _build(db_session, room, "밀알당 기억나?")).prompt
+    assert _lines((await _build(db_session, room, "민수랑 밀알당 기억나?")).prompt) == [_BAKERY_LINE]
+    await _set_last_response(db_session, room, "“민수는 어디 갔지?” 유나가 민수를 찾았다.")
+    assert _lines((await _build(db_session, room, "밀알당 기억나?")).prompt) == [_BAKERY_LINE]
