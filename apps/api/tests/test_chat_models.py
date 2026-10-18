@@ -432,6 +432,9 @@ _SECOND_ID = uuid.UUID(int=2)
         ),
         pytest.param({"asserted_by": "character"}, id="character"),
         pytest.param({"asserted_by": "user"}, id="user"),
+        pytest.param({"known_by": ["바" * 60 for _ in range(10)]}, id="known-by-max"),
+        pytest.param({"known_by": ["바"]}, id="known-by-one"),
+        pytest.param({"known_by": None}, id="known-by-null"),
         pytest.param(
             {
                 "start_created_at": _AT,
@@ -501,6 +504,15 @@ async def test_memory_episode_accepts_values_on_the_boundary(
         pytest.param(
             {"evidence": ["하나", "둘", "셋"]}, "ck_chat_memory_episodes_evidence_count", id="evidence-3"
         ),
+        # 아는 사람 칸은 사실 기억 행과 같은 규칙이다 — "아무도 모른다"와 "모른다"를 NULL 하나로 두어 빈 배열을 막는다.
+        pytest.param({"known_by": []}, "ck_chat_memory_episodes_known_by_count", id="known-by-empty"),
+        pytest.param(
+            {"known_by": [f"인물{i}" for i in range(11)]}, "ck_chat_memory_episodes_known_by_count", id="known-by-11"
+        ),
+        pytest.param(
+            {"known_by": ["민수", "바" * 61]}, "ck_chat_memory_episodes_known_by_items", id="known-by-item-61"
+        ),
+        pytest.param({"known_by": ["민수", None]}, "ck_chat_memory_episodes_known_by_items", id="known-by-null-item"),
     ],
 )
 async def test_memory_episode_rejects_values_outside_its_checks(
@@ -532,6 +544,28 @@ async def test_memory_episode_without_keywords_and_evidence_gets_empty_lists(db_
         )
     ).one()
     assert (row.keywords, row.evidence) == ([], [])
+
+
+async def test_memory_episode_insert_without_known_by_column_gets_null(db_session: AsyncSession) -> None:
+    """아는 사람 칸을 모르는 옛 이미지의 장면 INSERT(배포 겹침·이미지 롤백)가 그대로 성공하고 칸은 NULL 로 남는다 — 칸에
+    NOT NULL 이나 빈 배열 기본값이 붙으면 그 INSERT 가 막히거나 빈 배열 CHECK 에 걸린다."""
+    room = await _make_chat_room(db_session)
+    snapshot = await _make_snapshot(db_session, room)
+    episode_id = uuid.uuid4()
+    message_id = uuid.uuid4()
+
+    await db_session.execute(
+        sa.text(
+            "INSERT INTO chat_memory_episodes (id, chat_room_id, snapshot_id, ordinal, start_created_at, "
+            "start_message_id, end_created_at, end_message_id, start_turn, end_turn, title, detail, nouns, "
+            "asserted_by, importance) VALUES (:id, :room, :snapshot, 0, :at, :message, :at, :message, 1, 1, "
+            "'제목', '본문', ARRAY['우산']::text[], 'user', 3)"
+        ),
+        {"id": episode_id, "room": room.id, "snapshot": snapshot.id, "at": _AT, "message": message_id},
+    )
+
+    known_by = await db_session.scalar(sa.select(ChatMemoryEpisode.known_by).where(ChatMemoryEpisode.id == episode_id))
+    assert known_by is None
 
 
 async def test_memory_extraction_accepts_each_status_with_its_count(db_session: AsyncSession) -> None:
@@ -851,6 +885,30 @@ async def test_snapshot_delete_statements_succeed_over_fact_rows(db_session: Asy
         .where(ChatMemoryFactExtraction.chat_room_id == room.id)
     )
     assert (facts, extractions) == (0, 0)
+
+
+@pytest.mark.parametrize("path", ["rewind", "reset", "room-deletion"])
+async def test_snapshot_delete_statements_succeed_over_episode_rows_with_known_by(
+    db_session: AsyncSession, path: str
+) -> None:
+    """되감기·초기화(`rewind_memory`)와 방 삭제·탈퇴(`delete_chat_rooms`)의 스냅샷 DELETE 는 아는 사람 칸이 채워진 장면
+    행도 스냅샷 FK 의 CASCADE 로 함께 지운다 — 누가 아는지 적힌 장면이 지운 대화 뒤에 남지 않아야 한다."""
+    room = await _make_chat_room(db_session)
+    snapshot = await _make_snapshot(db_session, room)
+    db_session.add(_make_memory_episode(room.id, snapshot.id, known_by=["민수", "지아"]))
+    await db_session.flush()
+
+    if path == "rewind":
+        await rewind_memory(db_session, room.id, (snapshot.cursor_created_at, snapshot.cursor_message_id))
+    elif path == "reset":
+        await rewind_memory(db_session, room.id, None)
+    else:
+        await delete_chat_rooms(db_session, [room.id])
+
+    episodes = await db_session.scalar(
+        sa.select(sa.func.count()).select_from(ChatMemoryEpisode).where(ChatMemoryEpisode.chat_room_id == room.id)
+    )
+    assert episodes == 0
 
 
 # --- 임베딩 -------------------------------------------------------------------------------------------

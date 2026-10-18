@@ -13,6 +13,7 @@
 `test_chat_memory_rewind.py` 의 커밋되는 독립 커넥션 절에 있다.
 """
 
+import hashlib
 import json
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -585,6 +586,32 @@ async def test_empty_episode_list_marks_extraction_done(db_client: httpx.AsyncCl
     assert [(row.snapshot_id, row.status, row.episode_count) for row in await _extractions(db_session, room)] == [
         (snapshot_id, "done", 0)
     ]
+
+
+async def test_extracted_episode_rows_leave_known_by_null(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+    """추출 결과에는 아직 아는 사람 칸이 없으므로 추출이 넣은 장면 행의 칸은 NULL(공개이거나 알 수 없음)이다."""
+    room = await _open_room(db_client, db_session, turns=10)
+    await _plant(db_session, room, 10)
+
+    await _extract(db_session, room, EpisodeLLMClient(_result(_item(), _item(title="두 번째 장면"))))
+
+    known_by = (
+        await db_session.scalars(
+            sa.select(ChatMemoryEpisode.known_by).where(ChatMemoryEpisode.chat_room_id == room.room_id)
+        )
+    ).all()
+    assert known_by == [None, None]
+
+
+# 장면 추출 결과 스키마를 키 순서로 정렬한 JSON 의 sha256.
+_EPISODE_RESULT_SCHEMA_SHA256 = "fa8ce9c5d69f018c4220b453fb33f917a98223573dff11a53af3eab672c6c925"
+
+
+def test_episode_result_schema_bytes_are_pinned() -> None:
+    """결과 스키마는 추출 요청에 그대로 실린다 — 스키마가 바뀌면 운영의 추출 요청이 바뀌고, 규칙 문안 없이 칸만 늘면 그 칸이
+    규칙 없이 채워진 채 쌓인다. 의도한 변경이면 문안과 함께 이 값을 갱신한다."""
+    schema = json.dumps(MemoryEpisodeResult.model_json_schema(), sort_keys=True, ensure_ascii=False)
+    assert hashlib.sha256(schema.encode()).hexdigest() == _EPISODE_RESULT_SCHEMA_SHA256
 
 
 async def test_failed_extraction_retries_up_to_three_times(
