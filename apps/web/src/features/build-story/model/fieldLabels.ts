@@ -48,11 +48,14 @@ export const STORY_FIELD_LABELS = {
   },
   "storySetting.developmentExamples.*.userLine": { label: "사용자 메시지", required: false },
   "storySetting.developmentExamples.*.assistantLine": { label: "스토리 응답", required: false },
+  "storySetting.sceneHeaderEnabled": { label: "장면 헤더 사용", required: false },
 
   startingSetups: { label: "시작설정", required: true, note: `최대 ${MAX_STARTING_SETUPS}개` },
   "startingSetups.*.name": { label: "이름", required: true },
   "startingSetups.*.prologue": { label: "프롤로그", required: true },
   "startingSetups.*.openingSituation": { label: "시작상황", required: false },
+  "startingSetups.*.initialScenePlace": { label: "첫 장면 장소", required: false },
+  "startingSetups.*.initialSceneTime": { label: "첫 장면 시간", required: false },
   "startingSetups.*.$advanced": { label: "고급 설정", required: false },
   "startingSetups.*.playGuide": { label: "플레이가이드", required: false },
   "startingSetups.*.suggestedReplies": {

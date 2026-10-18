@@ -14,6 +14,7 @@ import {
   MAX_SITUATION_NOTE_NAME_LENGTH,
   MAX_STAT_PLAYER_DESCRIPTION_LENGTH,
   MAX_STAT_RULE_CONDITION_LENGTH,
+  MAX_STORY_SCENE_FIELD_LENGTH,
   MAX_TRIGGER_KEYWORD_LENGTH,
   type StoryFieldKey,
 } from "@/features/build-story";
@@ -115,6 +116,8 @@ export const STORY_FIELD_MOCKUPS = {
     seedPath: "developmentExamples.*.assistantLine",
     readTiming: null,
   },
+  // 장면 헤더는 생성 AI 가 읽지 않는 화면 설정이고 튜토리얼 시드도 쓰지 않는다(첫 장면 두 칸도 같다).
+  "storySetting.sceneHeaderEnabled": { kind: "switch", seedPath: null, readTiming: null },
 
   startingSetups: { kind: "cardList", seedPath: "startingSetups", readTiming: null },
   "startingSetups.*.name": { kind: "text", seedPath: "startingSetups.*.name", readTiming: null },
@@ -123,6 +126,20 @@ export const STORY_FIELD_MOCKUPS = {
     kind: "textarea",
     seedPath: "startingSetups.*.openingMessage",
     readTiming: "firstScreen",
+  },
+  "startingSetups.*.initialScenePlace": {
+    kind: "text",
+    seedPath: null,
+    readTiming: null,
+    limit: MAX_STORY_SCENE_FIELD_LENGTH,
+    counter: true,
+  },
+  "startingSetups.*.initialSceneTime": {
+    kind: "text",
+    seedPath: null,
+    readTiming: null,
+    limit: MAX_STORY_SCENE_FIELD_LENGTH,
+    counter: true,
   },
   "startingSetups.*.$advanced": { kind: "switch", seedPath: null, readTiming: null },
   "startingSetups.*.playGuide": { kind: "textarea", seedPath: "startingSetups.*.playguide", readTiming: "notRead" },

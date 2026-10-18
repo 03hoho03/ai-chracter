@@ -167,6 +167,10 @@ function toApiStartingSetup(setup: StartingSetupValues): StartingSetupDraftItem 
     // 빈 목록이어도 늘 보낸다 — 서버는 이 키가 없으면 그 시작설정의 노트를 그대로 두므로, 빼면 지운 노트·스탯 삭제로 함께
     // 지운 조건이 서버에 남는다.
     situationNotes: setup.situationNotes.map(toApiSituationNote),
+    // 빈 칸은 "없음"(null)이다. 장면 헤더가 꺼져 칸이 숨어 있어도 늘 보낸다 — 서버는 이 키가 없으면 저장된 첫 장면을 그대로
+    // 두지만, 화면은 숨긴 칸의 값도 지우지 않고 들고 있으므로 보낸 값이 곧 화면의 값이다.
+    initialScenePlace: setup.initialScenePlace?.trim() || null,
+    initialSceneTime: setup.initialSceneTime?.trim() || null,
   };
 }
 
@@ -212,6 +216,8 @@ export function formToServer(values: StoryBuilderFormValues): StoryBuilderDraftP
     userGoal: values.storySetting.userGoal ?? null,
     rules: values.storySetting.rules ?? null,
     customPrompt: values.storySetting.customPrompt ?? null,
+    // 서버는 빠진 토글을 "기존 값 유지"로 읽는다(토글을 모르는 옛 화면용). 이 화면은 늘 보내야 끈 것이 저장된다.
+    sceneHeaderEnabled: values.storySetting.sceneHeaderEnabled,
     startingSetups: values.startingSetups.map(toApiStartingSetup),
     keywordNotes: values.keywordNotes.map(toApiKeywordNote),
     shortcuts: values.shortcuts,

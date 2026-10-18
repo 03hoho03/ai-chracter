@@ -32,6 +32,7 @@ import { MediaBookConfirmModal } from "@/features/edit-media-book";
 import { creationGuidePath } from "@/shared/config/creationGuide";
 import { BuilderTextarea } from "@/shared/ui/BuilderTextarea";
 
+import { InitialSceneFields } from "./InitialSceneFields";
 import { MediaTagInsertButton } from "./MediaTagInsertButton";
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
 import { StoryMacroNotice } from "./StoryMacroNotice";
@@ -130,6 +131,8 @@ export function StartingSetupTab() {
         stats: [],
         endings: [],
         situationNotes: [],
+        initialScenePlace: "",
+        initialSceneTime: "",
       },
       { focusName: `startingSetups.${fields.length}.name` },
     );
@@ -399,6 +402,8 @@ function StartingSetupRow({
           </p>
         )}
       </div>
+
+      <InitialSceneFields id={id} index={index} />
 
       <div className="flex items-center justify-between gap-4 rounded-xl border border-border px-4 py-3">
         <div className="flex flex-col gap-0.5">
