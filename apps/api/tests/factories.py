@@ -2003,6 +2003,31 @@ async def _add_batch(
     return chapters
 
 
+async def _lock_novel(
+    db_session: AsyncSession,
+    novel_id: uuid.UUID,
+    *,
+    permission: str | None = "private",
+    source: str = "first_chapter",
+    version_id: uuid.UUID | None = None,
+    locked_at: datetime | None = None,
+) -> None:
+    """작업을 거치지 않고 소설에 집필권 잠금을 써 넣고 커밋한다 — 첫 화를 실제로 저장한 소설(잠금이 함께 생긴다)을
+    `_add_chapter` 로 흉내 낼 때 함께 부른다. `_add_chapter` 만 부르면 잠금 없이 화만 있는 소설이 된다(잠금 칸을 모르는
+    옛 코드가 첫 화를 저장한 상태와 같다)."""
+    await db_session.execute(
+        sa.update(Novel)
+        .where(Novel.id == novel_id)
+        .values(
+            writing_locked_at=locked_at if locked_at is not None else sa.func.now(),
+            writing_lock_permission=permission,
+            writing_lock_content_version_id=version_id,
+            writing_lock_source=source,
+        )
+    )
+    await db_session.commit()
+
+
 async def _queue_job(
     db_session: AsyncSession, novel_id: uuid.UUID, start: ChatMessage, end: ChatMessage
 ) -> NovelJob:

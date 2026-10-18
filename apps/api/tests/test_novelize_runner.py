@@ -18,7 +18,17 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.core.config import settings
-from api.db.models import ChatMessage, ChatRoom, Novel, NovelChapter, NovelChapterRevision, NovelJob, User
+from api.db.models import (
+    ChatMessage,
+    ChatRoom,
+    Content,
+    ContentVersion,
+    Novel,
+    NovelChapter,
+    NovelChapterRevision,
+    NovelJob,
+    User,
+)
 from api.db.models.clover import CloverLot
 from api.db.models.novel import NovelBatch, NovelChapterCharacter, NovelCharacter
 from api.db.models.clover import CloverLedger
@@ -34,6 +44,7 @@ from api.llm.client import (
     T,
 )
 from api.novelize import billing, runner
+from api.novelize import router as novelize_router
 from api.novelize import inputs
 from api.novelize.deletion import delete_novels
 from api.novelize.source import segment_hash
@@ -41,14 +52,19 @@ from api.novelize.paragraphs import resplit_long_paragraphs
 from api.novelize.text import clean_chapter_body
 from factories import (
     Room,
+    _NeverCalledLLMClient,
     _batch_output,
+    _clear_llm_override,
     _clover_lots,
     _episode_text,
     _grant_novelize,
+    _lock_novel,
     _login_as,
+    _make_user,
     _make_user_with_clover_lot,
     _open_room,
     _open_transaction_probe,
+    _override_llm_client,
 )
 
 pytestmark = pytest.mark.usefixtures("novel_prices_for_flow_tests")
@@ -290,6 +306,110 @@ async def test_story_novel_uses_the_story_setting_and_the_narrator_label(
     prompt = llm.calls[0][0]
     assert "세계관 설정" in prompt
     assert "[턴 1] 진행자: " in prompt
+
+
+# ── 집필권 잠금 ─────────────────────────────────────────────────────────────
+async def _writing_lock(db: AsyncSession, novel_id: uuid.UUID) -> tuple[object, ...]:
+    novel = await db.scalar(sa.select(Novel).where(Novel.id == novel_id).execution_options(populate_existing=True))
+    assert novel is not None
+    return (
+        novel.writing_locked_at,
+        novel.writing_lock_source,
+        novel.writing_lock_permission,
+        novel.writing_lock_content_version_id,
+    )
+
+
+async def test_the_first_saved_chapter_locks_the_novel_with_the_permission_and_the_version_it_was_written_from(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """남의 작품(나만 보는 소설 허락)에서 첫 화가 저장되면 그 저장과 함께 소설이 잠긴다 — 출처는 첫 화, 권한은 저장 순간
+    원작의 허락, 원작 버전은 생성이 실제로 읽은 버전(방이 고정한 버전)이다. 원작이 그 뒤 새 버전을 발행해 지금 발행본이
+    달라도 방의 버전이 남아야 한다. 잠긴 뒤에는 작가가 허용 안 함으로 바꿔도 다음 화를 받아들인다."""
+    room, novel = await _novel_for(db_client, db_session)
+    author = _make_user()
+    db_session.add(author)
+    await db_session.flush()
+    content = await db_session.get_one(Content, novel.content_id)
+    room_version = await db_session.scalar(sa.select(ChatRoom.content_version_id).where(ChatRoom.id == room.room_id))
+    newer = ContentVersion(
+        content_id=content.id, version_number=2, published_at=datetime.now(UTC), detail_description="설명"
+    )
+    db_session.add(newer)
+    await db_session.flush()
+    content.creator_user_id = author.id
+    content.novel_permission = "private"
+    content.current_published_version_id = newer.id
+    await db_session.commit()
+    assert room_version is not None and room_version != newer.id
+    messages = await _room_messages(db_session, room.room_id)
+    job = await _chapter_job(db_session, novel, messages[0], room.turns[1][1])
+
+    await runner.run_job(_factory(db_session), _NovelLLM(), job.id)
+
+    assert (await _job(db_session, job.id)).status == "succeeded"
+    locked_at, source, permission, version_id = await _writing_lock(db_session, novel.id)
+    assert locked_at is not None
+    assert (source, permission, version_id) == ("first_chapter", "private", room_version)
+
+    content.novel_permission = "forbidden"
+    await db_session.commit()
+    await _allow(db_session, monkeypatch, novel.user_id)
+
+    async def drop(_factory: Any, _llm: Any, _job_id: uuid.UUID) -> None:
+        return None
+
+    monkeypatch.setattr(novelize_router, "enqueue_job", drop)
+    _override_llm_client(_NeverCalledLLMClient())
+    try:
+        resp = await db_client.post(
+            f"/novels/{novel.id}/chapters", json={"endMessageId": str(room.turns[2][1].id), "expectedCost": 40}
+        )
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 202, resp.text
+
+
+async def test_a_failure_after_the_lock_rolls_the_lock_back_with_the_chapter(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """잠금은 첫 화 저장과 같은 트랜잭션이다 — 화를 넣고 잠금을 쓴 뒤 같은 저장의 다음 단계(인물 연결)가 실패하면 묶음·화와
+    함께 잠금도 남지 않는다(값을 돌려받은 실패가 권리를 남기면 안 된다). 잠금 쓰기가 화 저장 직후, 인물 연결 앞에 있다는
+    순서를 전제로 한다 — 잠금이 인물 연결 뒤로 가면 이 주입 지점이 잠금 앞이 되어 아무것도 시험하지 못한다."""
+
+    async def boom(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError("인물 연결 실패 주입")
+
+    monkeypatch.setattr(runner, "_link_characters", boom)
+    monkeypatch.setattr(runner, "capture_dependency_failure", lambda exc=None, *, dependency: None)
+    room, novel = await _novel_for(db_client, db_session)
+    messages = await _room_messages(db_session, room.room_id)
+    job = await _chapter_job(db_session, novel, messages[0], room.turns[1][1])
+
+    await runner.run_job(_factory(db_session), _NovelLLM(), job.id)
+
+    await _assert_failed_and_refunded_once(db_session, job.id, novel.user_id, "internal")
+    assert await _chapters(db_session, novel.id) == []
+    assert await _batches(db_session, novel.id) == []
+    assert await _writing_lock(db_session, novel.id) == (None, None, None, None)
+
+
+async def test_a_later_saved_batch_leaves_an_existing_lock_as_it_was(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """잠금은 한 번만 찍힌다 — 이미 잠긴 소설(여기서는 배포 때 채운 잠금)에 묶음이 더 저장돼도 시각·출처·권한·버전을
+    덮지 않는다."""
+    room, novel = await _novel_for(db_client, db_session)
+    earlier = datetime(2026, 1, 1, tzinfo=UTC)
+    await _lock_novel(db_session, novel.id, permission=None, source="backfill", locked_at=earlier)
+    messages = await _room_messages(db_session, room.room_id)
+    job = await _chapter_job(db_session, novel, messages[0], room.turns[1][1])
+
+    await runner.run_job(_factory(db_session), _NovelLLM(), job.id)
+
+    assert (await _job(db_session, job.id)).status == "succeeded"
+    assert await _writing_lock(db_session, novel.id) == (earlier, "backfill", None, None)
 
 
 # ── 여러 화 묶음 ────────────────────────────────────────────────────────────
