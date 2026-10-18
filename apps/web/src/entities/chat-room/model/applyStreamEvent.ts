@@ -26,9 +26,10 @@ export function applyStreamEvent(
 
   switch (event.type) {
     case "token":
+    case "hiddenStatSignal":
     case "policyWarning":
     case "error":
-      return; // Query 캐시 대상 아님 — 스트리밍 버퍼/로컬 에러·경고 상태로만 처리
+      return; // Query 캐시 대상 아님 — 스트리밍 버퍼/로컬 에러·경고·턴 알림 상태로만 처리
     case "statChange":
       queryClient.setQueryData<ChatRoomState>(
         chatRoomKeys.detail(roomId),

@@ -10,10 +10,11 @@ import { chatStreamEventSchema } from "./chatStream";
  * 참조: `apps/api/src/api/chat/schemas.py`의 ChatStreamEvent.
  */
 describe("chatStreamEventSchema", () => {
-  it("여섯 이벤트 타입을 전부 파싱한다", () => {
+  it("일곱 이벤트 타입을 전부 파싱한다", () => {
     const events: unknown[] = [
       { type: "token", delta: "안녕" },
       { type: "statChange", statId: "s1", newValue: 42 },
+      { type: "hiddenStatSignal" },
       { type: "endingReached", endingId: "e1", epilogue: "끝" },
       { type: "policyWarning", message: "주의" },
       {
@@ -26,6 +27,10 @@ describe("chatStreamEventSchema", () => {
     for (const event of events) {
       expect(chatStreamEventSchema.safeParse(event).success).toBe(true);
     }
+  });
+
+  it("숨긴 스탯 신호는 type 하나뿐인 이벤트로 받는다 — 서버가 싣는 칸이 없다", () => {
+    expect(chatStreamEventSchema.parse({ type: "hiddenStatSignal" })).toEqual({ type: "hiddenStatSignal" });
   });
 
   it("endingReached의 epilogue는 null일 수 있다", () => {
