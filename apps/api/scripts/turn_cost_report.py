@@ -19,6 +19,8 @@
 - 행 하나가 응답 하나다. 재생성·수정 행은 각자 실제로 부른 호출이라 원가는 행마다 더해도 이중 계산이 아니다(행마다 같은
   턴의 효과를 다시 적는 스탯 변화와 다르다). 방 삭제·초기화로 지운 행과 미리보기 턴은 없어, 합계는 실제보다 낮게 나온다.
 - 질의 임베딩 칸은 `{callSite, model, dims, promptTokens, latencyMs, outcome}` 모양이라 캐시·출력 칸이 없다 — 입력만 친다.
+- `first token ms` 줄은 생성 칸의 첫 글자 지연(`firstTokenMs`) 분포다. 글 없이 끝난 생성과 이 키를 쓰기 전의 행은 키가 없어
+  빠진다. 모델마다 지연이 크게 달라 섞으면 읽기 어려우므로 `--chat-model` 로 나눠 본다.
 - 단가는 `llm/pricing.py` 의 단가표다. 표에 없는 모델의 호출은 `unpriced` 로 세고 합계에서 빼며, 그런 호출이 하나라도 있는
   턴은 턴별 분포에서 빼고 따로 센다(낮게 보이는 합계가 분포에 섞이지 않게).
 - 입력 토큰을 보고하지 않은 호출(이미지가 실린 판정, 시간 초과로 끊은 질의 임베딩)은 `missing` 으로 세고 보고된 칸만 친다 —
@@ -72,6 +74,7 @@ class Summary:
     turn_usd: list[float]
     query_outcomes: dict[str, int] = field(default_factory=dict)
     query_latency_ms: list[int] = field(default_factory=list)
+    first_token_ms: list[int] = field(default_factory=list)
 
 
 def _tokens(call: dict[str, Any], key: str) -> int:
@@ -107,6 +110,7 @@ def summarize(turns: list[list[dict[str, Any]]]) -> Summary:
     unpriced_turns = 0
     outcomes: Counter[str] = Counter()
     latencies: list[int] = []
+    first_tokens: list[int] = []
     for calls in turns:
         costs = [call_cost(call) for call in calls]
         for call, cost in zip(calls, costs, strict=True):
@@ -116,6 +120,9 @@ def summarize(turns: list[list[dict[str, Any]]]) -> Summary:
                 outcomes[str(call["outcome"])] += 1
                 if isinstance(call.get("latencyMs"), int):
                     latencies.append(call["latencyMs"])
+            # 생성 칸만 첫 글자 지연을 가진다 — 질의 임베딩의 결과 칸 조건과 섞지 않는다(생성 칸에는 `outcome` 이 없다).
+            if isinstance(call.get("firstTokenMs"), int):
+                first_tokens.append(call["firstTokenMs"])
         if any(cost.usd is None for cost in costs):
             unpriced_turns += 1
         else:
@@ -136,7 +143,7 @@ def summarize(turns: list[list[dict[str, Any]]]) -> Summary:
                 max_usd=max(priced, default=None),
             )
         )
-    return Summary(sites, len(turns), unpriced_turns, turn_usd, dict(outcomes), latencies)
+    return Summary(sites, len(turns), unpriced_turns, turn_usd, dict(outcomes), latencies, first_tokens)
 
 
 def _usd(value: float | None) -> str:
@@ -179,6 +186,12 @@ def format_report(summary: Summary) -> str:
         lines.append(
             f"query embedding {outcomes} · latency ms p50 {percentile([float(v) for v in latency], 0.5)}"
             f" p90 {percentile([float(v) for v in latency], 0.9)} max {max(latency, default=None)}"
+        )
+    if summary.first_token_ms:
+        first = [float(v) for v in summary.first_token_ms]
+        lines.append(
+            f"first token ms n {len(first)} p50 {percentile(first, 0.5)} p90 {percentile(first, 0.9)}"
+            f" max {max(summary.first_token_ms)}"
         )
     return "\n".join(lines)
 

@@ -138,6 +138,31 @@ def test_summary_groups_calls_by_site_and_model_and_distributes_turn_totals() ->
     assert summary.query_latency_ms == [100, 250]
 
 
+def test_summary_collects_first_token_latency_only_from_calls_that_carry_it() -> None:
+    """첫 글자 지연은 생성 칸에만 있다. 글 없이 끝난 생성은 키가 없어 분포에 들지 않고, 질의 임베딩의 `latencyMs` 와 섞지 않는다."""
+    turns = [
+        [
+            _query_embedding(tokens=100, latency_ms=100, outcome="ok"),
+            _generation("chat_generate", "claude-opus-5-5", promptTokens=1_000, outputTokens=100, firstTokenMs=900),
+            _generation("chat_stat_judgment", "claude-haiku-5-5", promptTokens=500, outputTokens=10),
+        ],
+        [_generation("chat_generate", "claude-opus-5-5", promptTokens=1_000, outputTokens=0)],
+        [_generation("chat_generate", "claude-opus-5-5", promptTokens=1_000, outputTokens=100, firstTokenMs=1_500)],
+    ]
+
+    summary = script.summarize(turns)
+
+    assert sorted(summary.first_token_ms) == [900, 1_500]
+    assert summary.query_latency_ms == [100]
+    assert "first token ms n 2 p50 900.0 p90 1500.0 max 1500" in script.format_report(summary)
+
+
+def test_format_report_has_no_first_token_line_when_no_call_carries_it() -> None:
+    summary = script.summarize([[_generation("chat_generate", "claude-opus-5-5", promptTokens=1, outputTokens=1)]])
+
+    assert "first token" not in script.format_report(summary)
+
+
 def test_percentile_is_nearest_rank() -> None:
     values = [float(v) for v in range(1, 11)]
 

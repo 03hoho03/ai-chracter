@@ -596,6 +596,8 @@ class ChatTurn(Base):
     - `llm_calls` 는 `[{callSite, model, promptTokens, cachedTokens, cacheWriteTokens, outputTokens, thoughtsTokens}]`,
       `stat_changes` 는 `{statEntityId: [before, after]}` 다. 임베딩 회상을 켠 턴은 맨 앞에 질의 임베딩 한 칸
       `{callSite, model, dims, promptTokens, latencyMs, outcome}` 이 붙는다(`chat/memory_vector.py`).
+      생성 칸에는 첫 글자 지연 `firstTokenMs`(생성을 시작한 때부터 처음으로 글이 든 델타가 온 때까지, 정수 ms)가 더해진다.
+      글 없이 끝난 생성과 이 키를 쓰기 전 이미지가 넣은 행에는 없다. 판정·질의 임베딩 칸에는 붙지 않는다.
     - `memory_recall` 은 그 턴 프롬프트에 실은 장면 기억 목록 `[{episodeId, score, rank, chars}]` 이다(글은 싣지 않는다).
       회상을 쓰지 않은 턴과 이 칸을 모르는 옛 이미지가 넣은 행은 DB 기본값 `[]` 이다. 벡터 순위와 합쳐 고른 턴은 칸마다 벡터
       순위 `vectorRank` 가 더해지고, 명사 쪽에 없던 장면은 `score`·`rank` 가 null 이다.
