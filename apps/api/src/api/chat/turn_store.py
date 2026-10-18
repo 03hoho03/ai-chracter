@@ -382,13 +382,17 @@ class RoomTurnStore:
 
     @staticmethod
     def _call_record(turn: TurnResult, call: CallUsage) -> dict[str, Any]:
-        """호출 칸 하나. 생성 칸에만 첫 글자 지연 `firstTokenMs` 를 더한다 — 잰 것은 생성 스트림이고, 판정·임베딩 칸에 붙이면
-        그 호출의 지연으로 읽힌다. 글 없이 끝난 생성은 잰 값이 없어 키를 싣지 않는다. 재생성·수정도 이 턴에 새로 생성한
+        """호출 칸 하나. 생성 칸에만 첫 글자 지연 둘(`firstTokenMs` 턴 시작부터, `streamFirstTokenMs` 생성 스트림을 연
+        때부터 — 뜻은 `TurnResult` 의 같은 칸)을 더한다 — 판정·임베딩 칸에 붙이면 그 호출의 지연으로 읽힌다. 글 없이 끝난
+        생성은 잰 값이 없어 두 키 다 싣지 않는다. 재생성·수정도 이 턴에 새로 생성한
         스트림에서 잰 값이다(대체되는 기록에서 물려받지 않는다). 생성 칸에는 `outcome` 을 붙이지 않는다 — 원가 보기
         스크립트가 그 키가 있는 칸을 질의 임베딩으로 센다."""
         record = call.as_record()
-        if call.call_site == _GENERATE_CALL_SITE[turn.kind] and turn.first_token_ms is not None:
-            record["firstTokenMs"] = turn.first_token_ms
+        if call.call_site == _GENERATE_CALL_SITE[turn.kind]:
+            if turn.first_token_ms is not None:
+                record["firstTokenMs"] = turn.first_token_ms
+            if turn.stream_first_token_ms is not None:
+                record["streamFirstTokenMs"] = turn.stream_first_token_ms
         return record
 
     def _add_turn_record(
