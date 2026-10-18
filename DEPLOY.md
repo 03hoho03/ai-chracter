@@ -199,8 +199,8 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**68개 키다**(2026-10-10 VM 실측, 키 이름만 셈): 아래 표 109개 중 52개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
-`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 7개·소설화 조정용 `NOVELIZE_*` 19개, 실측 때 넣지 않은 상위 모델 Bedrock 키 9개(`BEDROCK_*`), 실측 때 넣지 않은 결제·본인인증 키 2개(`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 실측 때 넣지 않은 크리에이터 정산 키 5개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`·`CREATOR_PAYOUT_MINIMUM_KRW`·`CREATOR_PAYOUT_ENCRYPTION_KEYS`), 모두 57개 제외 —
+**68개 키다**(2026-10-10 VM 실측, 키 이름만 셈): 아래 표 110개 중 52개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS`·`GEMINI_IMAGE_JUDGMENT_MODEL_NAME`·`GEMINI_PUBLISH_FILTER_MODEL_NAME`·`GEMINI_THINKING_BUDGET`·`MEMORY_WINDOW_*` 3개·`GEMINI_*_TIMEOUT_MS` 5개·`GEMINI_NOVELIZE_*` 7개·소설화 조정용 `NOVELIZE_*` 19개, 실측 때 넣지 않은 상위 모델 Bedrock 키 9개(`BEDROCK_*`), 실측 때 넣지 않은 결제·본인인증 키 2개(`IDENTITY_GATE_ENABLED`·`PAYMENT_DISCORD_WEBHOOK_URL`), 실측 때 넣지 않은 크리에이터 정산 키 5개(`CREATOR_PAYOUT_ENABLED`·`CREATOR_PAYOUT_RATE_BPS`·`CREATOR_PAYOUT_RETRO_DAYS`·`CREATOR_PAYOUT_MINIMUM_KRW`·`CREATOR_PAYOUT_ENCRYPTION_KEYS`), 아직 켜지 않은 노벨 공개 정책 스위치 1개(`NOVEL_PUBLIC_POLICY_V2_ENABLED`), 모두 58개 제외 —
 운영에서 켜 둔 소설화 `NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`, 상위 모델 스위치·명단 3개(`CHAT_PREMIUM_MODELS_ENABLED`·`NOVELIZE_PREMIUM_*` 2개), 상위 모델 직결 키·배정 2개(`ANTHROPIC_DIRECT_API_KEY`·`LLM_CALL_SITE_BACKENDS`), 결제·본인인증 키 7개(`PORTONE_*` 5개·
 `IDENTITY_CI_HMAC_KEY`·`PAYMENTS_ENABLED`), 노벨 키 2개(`NOVEL_PUBLIC_ENABLED`·`NOVEL_PUBLIC_PREVIEW_ALLOWLIST`)는 셈에 들어간다) + 앱이 읽지 않지만
 옛 이미지로 태그 롤백할 때를 위해 남긴 키 1개(`CHAT_PREMIUM_MODEL_ALLOWLIST`) + compose용 6개(`API_IMAGE_BLUE`·`API_IMAGE_GREEN`·`SITE_ADDRESS`·
@@ -310,6 +310,7 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `NOVELIZE_PREMIUM_MODELS_ENABLED` / `NOVELIZE_PREMIUM_MODEL_ALLOWLIST` | 켤 때 `true` / 계정 id **쉼표 구분**(코드 기본값은 꺼짐·빈 명단) | 소설 장 상위 모델 스위치와 허용 가능 계정 명단. 뜻은 소설화 스위치·명단과 같고, 어드민이 준 계정별 허용 행도 있어야 한다. 소설화 자체(`NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`)도 열려 있어야 쓸 수 있다 |
 | `NOVEL_PUBLIC_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 노벨(공개 소설) 스위치. 소설화(`NOVELIZE_ENABLED`·명단·계정별 허용)와 별개로 이 스위치도 켜져 있어야 소설을 노벨에 공개·다시 공개할 수 있다 — 코드 기본값이 닫힘이라 이 줄 없이 배포하면 닫힌 채 뜬다. 끄면 재기동 뒤 공개·다시 공개·게시자의 공개 상태 조회가 403 `NOVEL_PUBLIC_DISABLED` 이고, 공개 상태 행은 남아 다시 켜면 그대로 돌아온다. 켜기·끄기는 "노벨(공개 소설) 켜기 · 끄기" 절 |
 | `NOVEL_PUBLIC_PREVIEW_ALLOWLIST` | 미리보기 동안 계정 id, **쉼표 구분**(공백·따옴표 없이). 전체 공개 뒤에는 줄을 지운다(코드 기본값은 빈 명단) | 노벨 미리보기 명단. 비어 있으면 스위치가 켜졌을 때 모두에게 열리고, 비어 있지 않으면 스위치가 켜져 있어도 명단의 로그인 회원에게만 열린다 — 그 밖의 회원·비로그인은 스위치를 끈 것과 같은 응답이고, 인증 없는 가격 응답의 `novelPublicEnabled` 도 거짓이다. UUID 가 아닌 항목이 있으면 api 가 기동하지 못한다. 절차는 "노벨(공개 소설) 켜기 · 끄기" 절 |
+| `NOVEL_PUBLIC_POLICY_V2_ENABLED` | 개정 약관 시행 뒤 켤 때 `true`(코드 기본값은 `false`) | 노벨 공개 정책 스위치. 꺼져 있으면 지금 약관대로다 — 첫 공개는 자동 글 심사를 통과하면 바로 열리고, 원작자가 소설화 허락을 거두면 다음 화가 막힌다. 켜면 아직 독자에게 보인 적 없는 소설의 첫 공개가 운영자 승인(어드민 `POST /admin/novels/{id}/review`)을 기다리고, 한 번 독자에게 보인 소설(연재권 잠금)은 원작자가 허락을 거둬도 다음 화를 이어 공개한다. 잠금 기록은 스위치와 무관하게 첫 공개마다 쌓인다. 켜는 순서·롤백은 "노벨(공개 소설) 켜기 · 끄기" 절의 "공개 정책 스위치" |
 
 > **`CORS_ALLOW_ORIGINS`**: `config.py` 가 쉼표 구분과 JSON 배열을 둘 다 받는다(`[` 로 시작하면 JSON). 항목 앞뒤 공백은
 > 지우고 빈 항목은 버리며, 남는 오리진이 없으면 기동에 실패한다. 새로 쓸 때는 쉼표 구분으로 쓴다.
@@ -1976,6 +1977,53 @@ sudo bash ops/swap-api.sh
 무관하게 된다. 작품 정보·화 읽기는 그 소설을 소장한 회원에게 410 `NOVEL_READING_ENDED`(`reason: "service_off"`),
 나머지에게 404 다. 화면은 인증 없는 `GET /clover/pricing` 의 `novelPublicEnabled` 로 노벨 탭을 숨긴다. 줄을 지웠으니 키 개수
 문장을 다시 센다.
+
+**공개 정책 스위치(`NOVEL_PUBLIC_POLICY_V2_ENABLED`) 켜기 · 끄기** — 첫 공개 운영자 승인과 연재권 잠금의 효력을 켠다(키 표의
+설명). 개정 약관(승인 반려의 이의제기 경로, 연재권 조항)이 시행된 뒤에, 그리고 어드민의 승인 대기열 화면과 작가의 대기·반려
+표시 화면이 배포된 뒤에 켠다 — 화면이 없으면 작가에게 대기 행이 "거둠"으로 보이고 운영자는 승인할 화면이 없다. 순서가
+고정이다(끝에 `ok` 가 찍힐 때만 다음 줄로 간다):
+
+1. 옛 이미지가 내려갔는지 확인한다 — 서빙 중인 색의 이미지가 스위치를 아는 판인지 본다. 잠금을 모르는 옛 이미지가 남아 있는
+   동안의 첫 공개는 잠금 없이 생기므로 2 를 그 뒤에 돌려야 한다.
+2. 연재권 잠금 백필을 다시 돌린다. 문장은 마이그레이션 `6fbf1e9a65b8` 의 `BACKFILL_SERIAL_LOCK_SQL` 하나다(멱등 — 이미 잠긴
+   소설과 대기·반려 행은 건드리지 않는다). 배포 겹침 동안 옛 이미지가 만든 첫 공개가 여기서 잠긴다 — 빠뜨리면 그 소설은
+   켠 뒤에도 잠기지 않은 채라 원작자가 허락을 거두면 다음 화가 막힌다(다음 공개가 그 순간을 잠금 시각으로 찍는다). 출력의 `UPDATE n` 이 잠근 소설 수다.
+3. 스위치 줄을 더하고 올린다.
+
+```sh
+cd /opt/ddona/app
+C="sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env"
+$C exec -T api_$(sudo bash ops/active-color.sh) \
+  python -c "from api.core.config import settings; settings.novel_public_policy_v2_enabled; print('ok')"
+$C exec -T api_$(sudo bash ops/active-color.sh) python -c \
+  "import runpy; print(runpy.run_path('migrations/versions/6fbf1e9a65b8_novel_serial_lock_and_publication_review.py')['BACKFILL_SERIAL_LOCK_SQL'])" \
+  | $C exec -T postgres psql -U postgres -d ai_character_chat -v ON_ERROR_STOP=1
+sudo sh -c 'printf "\nNOVEL_PUBLIC_POLICY_V2_ENABLED=true\n" >> /opt/ddona/.env'
+sudo python3 ops/check_env.py --format /opt/ddona/.env
+sudo bash ops/swap-api.sh
+$C exec -T api_$(sudo bash ops/active-color.sh) \
+  python -c "from api.core.config import settings; print(settings.novel_public_policy_v2_enabled)"
+```
+
+`True` 가 나오면 켜졌다. 새 소설의 첫 공개가 어드민 노벨 목록의 승인 대기(`reviewStatus=pending`)에 들어오는지 본다. 줄을
+더했으니 "BE 런타임" 절의 키 개수 문장을 다시 센다.
+
+**끄기·롤백 — 스위치 줄부터.** 끄면 지금 약관 동작으로 돌아간다 — 첫 공개가 바로 열리고 잠긴 소설도 허락을 거두면 다음 화가
+막힌다. 남은 승인 대기 행은 독자에게 보이지 않은 채 남고, 작가가 다시 신청하면 처음 공개처럼 원작 허락·목록 판정을 거쳐
+바로 공개된다. 운영자의 승인·반려는 스위치와 무관하게 계속 된다.
+
+```sh
+cd /opt/ddona/app
+sudo sed -i '/^NOVEL_PUBLIC_POLICY_V2_ENABLED=/d' /opt/ddona/.env
+sudo python3 ops/check_env.py --format /opt/ddona/.env
+sudo bash ops/swap-api.sh
+```
+
+이미지를 이 판보다 옛 것으로 되돌릴 때는 위 끄기를 먼저 하고 재기동한 뒤 되돌린다. 🔴 되돌리기 전에 승인 대기·반려 행이
+있으면 운영자가 먼저 처리하거나 작가에게 알린다 — 옛 코드는 심사 칸을 몰라 작가에게 그 행이 "거둠"으로 보이고, 다시 열기는
+DB CHECK(대기·반려 행은 공개 범위 `withdrawn`)에 걸려 500 이다(공개되지는 않는다 — 이미지 롤백 동안 이것이 정상이다).
+마이그레이션까지 downgrade 하면 그 CHECK 가 사라져 작가의 다시 열기가 승인 없이 공개된다. 승인·반려 조치 로그가 생긴 뒤
+옛 이미지로 되돌리면 그 게시자의 어드민 회원 상세가 500 이다(옛 코드가 새 조치 종류를 모른다 — 독자 영향은 없다).
 
 **구매·삭제 환급** — 화 가격(30)과 소설마다 무료인 앞 화 수(5)는 env 가 아니라 `core/clover.py` 의 상수다(바꾸려면 배포).
 게시자가 산 화가 든 소설·마지막 묶음을 지우면 같은 트랜잭션에서 구매자에게 환급한다(원장 `novel_read_refund`, 이미 결제
