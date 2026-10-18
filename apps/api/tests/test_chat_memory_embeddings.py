@@ -44,9 +44,15 @@ from api.chat.prompt_builder import (
     MemorySummaryResult,
     StatRuleJudgmentResult,
 )
-from api.chat.voyage_backoff import BACKOFF_AFTER_FAILURES, BACKOFF_BASE_SECONDS, voyage_allowed
+from api.chat.voyage_backoff import (
+    BACKOFF_AFTER_FAILURES,
+    BACKOFF_BASE_SECONDS,
+    VOYAGE_BACKOFF_KEY,
+    voyage_allowed,
+)
 from api.core.config import Settings, settings
 from api.core.rate_limit import KST
+from api.core.redis import redis_client
 from api.db.models import ChatMemoryEmbedding, ChatMemoryEpisode, ChatMemoryFact, ChatRoomMemorySnapshot
 from api.llm.client import LLMCallContext, LLMClient
 from api.llm import voyage
@@ -725,7 +731,9 @@ async def test_a_database_failure_after_voyage_answered_is_not_a_voyage_failure(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Voyage 는 답했는데 넣는 트랜잭션이 DB 오류로 깨진 채우기는 Voyage 실패로 세지 않는다 — 문턱보다 많이 되풀이해도 다음
-    채우기는 Voyage 를 부른다."""
+    채우기는 Voyage 를 부르고, 마지막 채우기 뒤에 실패 수가 남지 않는다. Voyage 의 성공이 매번 실패 수를 지우므로 "다음 채우기가
+    부른다"만으로는 DB 실패를 하나씩 세는 구현과 갈리지 않는다 — 남은 상태와, 그 위에 Voyage 실패를 문턱 하나 모자라게 쌓아도
+    멈추지 않는다는 것으로 가른다."""
     _capture_failures(monkeypatch)
     room = await _room_with_a_pending_fact(db_client, db_session)
     VoyageClock(monkeypatch)
@@ -740,6 +748,12 @@ async def test_a_database_failure_after_voyage_answered_is_not_a_voyage_failure(
         await _fill(db_session, room, stub)
 
     assert len(stub.bodies) == BACKOFF_AFTER_FAILURES + 1
+    assert await redis_client.hgetall(VOYAGE_BACKOFF_KEY) == {}
+
+    failing = VoyageStub(failures=[401] * (BACKOFF_AFTER_FAILURES - 1))
+    for _ in range(BACKOFF_AFTER_FAILURES - 1):
+        await _fill(db_session, room, failing)
+    assert len(failing.bodies) == BACKOFF_AFTER_FAILURES - 1
     assert await voyage_allowed() is True
 
 

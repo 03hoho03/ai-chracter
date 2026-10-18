@@ -1542,24 +1542,38 @@ async def test_query_embedding_timeouts_do_not_count_as_failures(
 async def test_a_paused_turn_is_byte_identical_to_noun_only_and_to_a_failed_turn(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """멈춤으로 건너뛴 턴은 임베딩 회상이 꺼진 턴(클라이언트 없음)과 프롬프트·회상 기록·SQL 문 수가 같고 질의 칸도 없다 — 요청
-    세션 커밋 앞에서 돌아온다. 프롬프트·회상 기록은 질의 임베딩이 실패한 턴과도 같다. 정원 장면이 질의와 가장 가까워 벡터 쪽이
-    살아 있으면 정원이 실리는 배치라 같음이 우연이 아니다."""
+    """멈춤으로 건너뛴 턴은 임베딩 회상이 꺼진 턴(클라이언트 없음)과 프롬프트·회상 기록·SQL 문 수·요청 세션 커밋 수가 같고 질의
+    칸도 없다 — 커밋 앞에서 돌아오므로 트랜잭션 경계까지 꺼진 턴과 같다. 질의 임베딩을 부르는 턴은 기다리는 동안 커넥션을 쥐지
+    않으려고 한 번 더 커밋하므로, 커밋 수가 그 차이를 실제로 가른다. 프롬프트·회상 기록은 질의 임베딩이 실패한 턴과도 같다. 정원
+    장면이 질의와 가장 가까워 벡터 쪽이 살아 있으면 정원이 실리는 배치라 같음이 우연이 아니다."""
     room = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, _GARDEN])
     await _embed_scene(db_session, room, _GARDEN.title, _NEAR)
     _hybrid_on(monkeypatch)
     VoyageClock(monkeypatch)
     stub = VoyageStub(failures=[401] * _N)
+    commits = 0
+    real_commit = db_session.commit
 
-    with _count_queries() as noun_only_count:
-        noun_only = await _build(db_session, room, "밀알당 기억나?")
-        statements_noun_only = noun_only_count()
+    async def _counting_commit() -> None:
+        nonlocal commits
+        commits += 1
+        await real_commit()
+
+    monkeypatch.setattr(db_session, "commit", _counting_commit)
+
+    async def _counted(embedding_client: VoyageEmbeddingClient | None) -> tuple[GenerationPrompt, int, int]:
+        nonlocal commits
+        commits = 0
+        with _count_queries() as statements:
+            built = await _build(db_session, room, "밀알당 기억나?", embedding_client=embedding_client)
+            return built, statements(), commits
+
+    noun_only, statements_noun_only, commits_noun_only = await _counted(None)
     # 실패를 쌓기 전에 본다 — 성공은 실패 수를 지우므로 순서가 바뀌면 아래 멈춤이 오지 않는다.
     working = await _build(db_session, room, "밀알당 기억나?", embedding_client=_embed_client(VoyageStub()))
-    failed = await _turns(db_session, room, stub, _N)
-    with _count_queries() as paused_count:
-        paused = await _build(db_session, room, "밀알당 기억나?", embedding_client=_embed_client(stub))
-        statements_paused = paused_count()
+    await _turns(db_session, room, stub, _N - 1)
+    failed, _, commits_failed = await _counted(_embed_client(stub))
+    paused, statements_paused, commits_paused = await _counted(_embed_client(stub))
 
     assert working.prompt != noun_only.prompt
     assert len(stub.bodies) == _N
@@ -1567,6 +1581,8 @@ async def test_a_paused_turn_is_byte_identical_to_noun_only_and_to_a_failed_turn
     assert paused.prompt == noun_only.prompt == failed.prompt
     assert paused.memory_recall == noun_only.memory_recall == failed.memory_recall
     assert statements_paused == statements_noun_only
+    assert commits_failed == commits_noun_only + 1
+    assert commits_paused == commits_noun_only
 
 
 async def test_rooms_share_one_failure_count(
