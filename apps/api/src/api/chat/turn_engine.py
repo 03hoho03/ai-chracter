@@ -404,9 +404,9 @@ class TurnResult:
     # 이 턴의 조립이 부른 질의 임베딩 한 칸(조립 결과의 `memory_query` 그대로). 방 턴 기록의 `llm_calls` 맨 앞에 들어간다.
     memory_query: dict[str, Any] | None = None
     # 처음으로 글이 든 델타가 오기까지의 지연(정수 ms) 둘. 앞은 턴 시작(생성 프롬프트 조립 직전)부터, 뒤는 생성 스트림을
-    # 연 때부터다 — 앞은 기억 기능의 조립·질의 임베딩이 늘리는 지연까지 품고, 뒤는 모델 쪽 지연만이라 둘을 빼면 조립 몫이
-    # 나온다. 글이 든 델타 없이 끝난 생성은 잴 첫 글자가 없어 둘 다 `None` 이다 — 0 으로 채우면 분포에 가짜 빠른 값이
-    # 섞인다. 방 턴 기록의 생성 칸 `firstTokenMs`·`streamFirstTokenMs` 다.
+    # 연 때부터다 — 앞은 기억 기능의 조립·질의 임베딩이 늘리는 지연까지 품고, 뒤는 생성 호출(공급자 왕복 — 네트워크 왕복과
+    # 백엔드 클라이언트 첫 생성을 포함) 쪽 지연이라 둘을 빼면 조립 몫이 나온다. 글이 든 델타 없이 끝난 생성은 잴 첫
+    # 글자가 없어 둘 다 `None` 이다 — 0 으로 채우면 분포에 가짜 빠른 값이 섞인다. 방 턴 기록의 생성 칸 `firstTokenMs`·`streamFirstTokenMs` 다.
     first_token_ms: int | None = None
     stream_first_token_ms: int | None = None
 
