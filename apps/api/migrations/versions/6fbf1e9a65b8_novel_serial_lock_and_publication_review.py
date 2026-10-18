@@ -1,7 +1,7 @@
 """novel serial lock and publication review
 
 Revision ID: 6fbf1e9a65b8
-Revises: e05462d680f0
+Revises: c1f3945cb802
 Create Date: 2026-10-19 12:00:00.000000
 
 소설에 연재권 잠금 칸 다섯을, 노벨 공개 행에 운영자 심사 칸 셋을 더하고, 이미 공개한 적이 있는 소설을 연재권 잠금으로
@@ -58,7 +58,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "6fbf1e9a65b8"
-down_revision: str | Sequence[str] | None = "e05462d680f0"
+down_revision: str | Sequence[str] | None = "c1f3945cb802"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
