@@ -35,6 +35,7 @@ from api.chat.prompt_builder import (
 from api.chat.prompt_set_cache import get_cached_active_prompt_set, set_cached_active_prompt_set
 from api.chat.room_stats import load_room_stats
 from api.chat.schemas import EndingRuleGroupItem, EndingRuleItem, EndingRuleListItem
+from api.chat.voyage_backoff import voyage_allowed
 from api.content.schemas import (
     CharacterDraftPayload,
     RULE_LIST_ADAPTER,
@@ -312,7 +313,7 @@ async def build_room_prompt(
     고르면(주입 상태의 줄로 다시 렌더하는 칸은 고르지 않는다) 둘을 고르기 전에 질의 임베딩을 한 번 받아 둘이 함께 쓴다
     (`chat/memory_vector.py`). 그 앞에서 요청 세션의 읽기 트랜잭션을 커밋해 반납한다 — 턴 골격이 생성 LLM 앞에서 반납하는 것과 같은
     이유로, 외부 호출을 기다리는 동안 커넥션을 쥐지 않는다. 꺼져 있거나 클라이언트가 없으면(리플레이·측정 도구) 부르지도 커밋하지도
-    않는다."""
+    않는다. Voyage 가 연속으로 실패해 멈춘 동안(`chat/voyage_backoff.py`)도 커밋 앞에서 돌아와 꺼진 턴과 같다."""
     memory_summary = ""
     full_history = history
     current_summary: CurrentSummary | None = None
@@ -341,6 +342,10 @@ async def build_room_prompt(
             logger.warning(
                 "대화방 %s 질의 임베딩 글을 만들지 못해 명사 단독으로 고른다: %s", room.id, exc, exc_info=True
             )
+            return None
+        # 멈춤 중이면 커밋하기 전에 돌아온다 — 임베딩 회상이 꺼진 턴과 SQL 문까지 같다.
+        if not await voyage_allowed():
+            logger.warning("대화방 %s 질의 임베딩을 Voyage 연속 실패 멈춤으로 건너뛰고 명사 단독으로 고른다", room.id)
             return None
         await db.commit()
         return await embed_query(

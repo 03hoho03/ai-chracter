@@ -9,7 +9,8 @@
 시간 상한: 질의 임베딩은 생성 앞에서 기다리므로 첫 글자 지연에 그대로 더해진다. 상한(`memory_embed_recall_timeout_ms`)을 넘기면
 호출을 끊고 명사 단독으로 조립한다. 실패(키 거부·연결·응답 형식)도 같다 — 무엇이 실패하든 예외를 밖으로 내지 않는다(생성
 프롬프트 조립은 SSE 제너레이터 본문 안이라 예외가 새면 무관한 요청까지 500 이 된다). 취소(`CancelledError`)는 `Exception` 이
-아니라 그대로 올라간다.
+아니라 그대로 올라간다. 실패는 Voyage 연속 실패 수에 세고 성공은 그 수를 지운다(`chat/voyage_backoff.py`). 시간 초과는 세지도
+지우지도 않는다.
 
 거리 읽기: 방 단위 정확 탐색(인덱스 없음)이고 늘 `model = 질의 모델 AND dims = 질의 차원` 으로 거른다 — 임베딩 칸은 차원을 적지
 않아 차원이 다른 행에 거리 연산이 걸리면 질의째 실패한다. 장면 거리는 회상이 싣지 않는 장면(인물이 대사로만 말한 장면, 그 턴
@@ -33,6 +34,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.memory_window import MessageKey
+from api.chat.voyage_backoff import clear_voyage_backoff, record_voyage_failure
 from api.core.sentry import capture_dependency_failure
 from api.db.models.chat import ChatMemoryEmbedding, ChatMemoryEpisode, ChatMemoryFact, ChatRoomMemorySnapshot
 from api.db.types import HalfVec
@@ -91,6 +93,10 @@ async def embed_query(
         outcome = "failed"
         logger.warning("대화방 %s 질의 임베딩 실패 — 이번 턴은 명사 단독으로 회상한다: %s", room_id, exc)
         capture_dependency_failure(exc, dependency=_dependency_tag(exc))
+    if outcome == "ok":
+        await clear_voyage_backoff()
+    elif outcome == "failed":
+        await record_voyage_failure()
     record = {
         "callSite": QUERY_EMBEDDING_CALL_SITE,
         "model": client.model,
