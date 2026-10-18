@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type FocusEvent, type ReactNode } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@ai-character-chat/ui/components/popover";
 import { cn } from "@ai-character-chat/ui/lib/utils";
@@ -80,14 +80,16 @@ export function StatGaugePanel({ stats, values, feedback, scene, hiddenStatIds }
             </div>
           )}
 
-          {/* 스크롤바를 숨겨도 칸이 버튼이라 Tab 이 칸마다 멈추고, 포커스된 칸은 브라우저가 보이는 곳으로 스크롤한다. */}
+          {/* 스크롤바를 숨겨도 칸이 버튼이라 Tab 이 칸마다 멈춘다. 일부만 보이는 칸은 브라우저가 포커스 때 스크롤하지 않으므로
+              칸이 포커스를 받을 때 직접 보이는 곳으로 당긴다(`revealFocusedCell`). 당긴 칸이 줄 끝에 붙어 포커스 링이 잘리지
+              않게 스크롤 여백을 좌우 패딩과 같게 둔다. */}
           <div
             id={stripId}
             role="group"
             aria-label="스탯"
             hidden={isCollapsed}
             className={cn(
-              "flex gap-1 overflow-x-auto px-2.5 pb-1.5 [scrollbar-width:none] sm:px-4.5 [&::-webkit-scrollbar]:hidden",
+              "flex scroll-px-2.5 gap-1 overflow-x-auto px-2.5 pb-1.5 [scrollbar-width:none] sm:scroll-px-4.5 sm:px-4.5 [&::-webkit-scrollbar]:hidden",
               !scene && "pt-1.5",
             )}
           >
@@ -170,6 +172,7 @@ function StatCell({ stat, value, delta, isChipLeaving, isHidden }: StatCellProps
         <button
           type="button"
           aria-label={label}
+          onFocus={revealFocusedCell}
           className="flex w-39 shrink-0 flex-col gap-1 rounded-lg p-1.5 text-left hover:bg-secondary/50 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none aria-expanded:inset-ring aria-expanded:inset-ring-input"
         >
           <span className="flex w-full items-center justify-between gap-1.5 text-xs">
@@ -226,6 +229,13 @@ function StatDetail({ stat, value, isHidden }: { stat: StatDef; value: number; i
       {isHidden && <p className="text-xs break-keep text-muted-foreground">플레이어에게 숨긴 스탯이에요. 미리보기에서만 보여요.</p>}
     </div>
   );
+}
+
+/** 포커스된 칸을 가로 줄 안에서 보이는 곳으로 당긴다. 브라우저는 포커스 때 요소가 조금이라도 보이면 스크롤하지 않아,
+ * 끝에 걸쳐 일부만 보이는 칸이 가려진 채 남는다. `nearest` 라 이미 다 보이는 칸은 움직이지 않고, 즉시 이동이라 줄인 모션
+ * 설정과 부딪히지 않는다. */
+function revealFocusedCell(event: FocusEvent<HTMLButtonElement>) {
+  event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" });
 }
 
 /** 트랙은 `secondary` 다 — 팝오버(`popover`) 위에서 `muted` 는 같은 값이라 사라진다. 채움 색은 작가가 고른 스탯 색(사용자
