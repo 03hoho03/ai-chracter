@@ -83,6 +83,10 @@ class StoryVersionDetail(Base):
     # 필수로 만들지 않는다 — 기존 33건이 비어 있는 채로 발행돼 있다.
     user_goal: Mapped[str | None] = mapped_column(Text, nullable=True)
     rules: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 작가가 켜는 장면 헤더 — 켜면 이 버전의 스토리 방에서 매 턴 응답 뒤 판정 모델이 지금 장면의 장소·시간을 적어 화면 머리에
+    # 보인다(생성 프롬프트에는 싣지 않는다). 발행·편집 취소가 이 행을 손으로 옮기므로 그 두 자리도 이 칸을 옮긴다.
+    # `server_default` 는 배포 중 겹쳐 도는 옛 API 이미지가 이 칸을 모른 채 행을 INSERT 해도 꺼진 값으로 채우려는 것이다.
+    scene_header_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
 
 
 class StartingSetup(Base):
@@ -101,6 +105,10 @@ class StartingSetup(Base):
     playguide: Mapped[str | None] = mapped_column(Text, nullable=True)
     suggested_replies: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     order: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 장면 헤더의 첫 장면 — 방에 아직 AI 턴이 없을 때(오프닝만 있을 때) 헤더에 보이고, 첫 턴 장면 판정이 이어받을 직전 장면이다.
+    # 작가가 비워 두면 없음(null)이다. 길이 상한은 저장 요청에만 건다(`StoryDraftPayload` 의 검증).
+    initial_scene_place: Mapped[str | None] = mapped_column(Text, nullable=True)
+    initial_scene_time: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class StatDef(Base):

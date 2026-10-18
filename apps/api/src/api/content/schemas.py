@@ -447,6 +447,17 @@ class StartingSetupDraftItem(CamelModel):
     stat_defs: list[StatDefDraftItem]
     endings: list[EndingDraftItem]
     situation_notes: list[SituationNoteDraftItem] = Field(default_factory=list)
+    # 장면 헤더의 첫 장면(장소·시간). 앞뒤 공백을 떼고 빈 글은 없음(null)으로 본다. 안 보내면 기존 시작설정의 값을 건드리지
+    # 않는다(router 가 `model_fields_set` 으로 가른다) — 이 칸을 모르는 옛 화면 번들의 자동저장이 작가가 쓴 첫 장면을 지우지
+    # 않게. 길이 상한은 요청에만 건다(`StoryDraftPayload` 의 검증, 이유는 `SituationNoteDraftItem` docstring). 기본값을
+    # `default_factory` 로 두는 이유는 `KeywordNoteDraftInput` 의 같은 주석과 같다.
+    initial_scene_place: Annotated[str | None, AfterValidator(_strip_to_none)] = Field(default_factory=lambda: None)
+    initial_scene_time: Annotated[str | None, AfterValidator(_strip_to_none)] = Field(default_factory=lambda: None)
+
+
+# 장면 헤더의 장소·시간 한 칸의 글자 수 상한(앞뒤 공백을 뗀 뒤 코드 포인트 수). 작가가 쓰는 첫 장면과 판정이 적는 매 턴 장면이
+# 같은 상한이다 — 화면 머리 한 줄에 들어가는 길이다.
+STORY_SCENE_FIELD_MAX_LENGTH = 24
 
 
 # 상황 노트 저장 상한(시작설정마다). 빌더가 입력 단계에서 같은 상한을 지켜야 하는 이유는 아래 키워드북 상한 주석과 같다.
@@ -698,6 +709,20 @@ class StoryDraftPayload(CamelModel):
     # 있던 탭의 옛 번들)·시드도 이 저장 경로를 쓰므로, 빈 목록을 기본값으로 두면 그 저장 한 번이 칸을
     # 전부 지운다. 보냈을 때만 칸·축을 페이로드에 맞춘다 — 빈 목록이면 전부 지운다.
     media_book: MediaBookPayload | None = None
+    # 장면 헤더 토글. 안 보내면(또는 null 이면) 저장된 값을 둔다 — 이 칸을 모르는 옛 화면의 자동저장이 작가가 켠 헤더를 끄지 않게.
+    scene_header_enabled: bool | None = None
+
+    @model_validator(mode="after")
+    def _check_initial_scene_length(self) -> Self:
+        # 상한을 여기(요청 전용 모델)에 두는 이유는 `SituationNoteDraftItem` docstring.
+        for setup in self.starting_setups:
+            for value in (setup.initial_scene_place, setup.initial_scene_time):
+                if value is not None and len(value) > STORY_SCENE_FIELD_MAX_LENGTH:
+                    raise ValueError(
+                        f"initial scene place and time must be at most {STORY_SCENE_FIELD_MAX_LENGTH} characters"
+                        " after trimming"
+                    )
+        return self
 
     @model_validator(mode="after")
     def _check_always_on_count(self) -> Self:
@@ -787,3 +812,4 @@ class StoryDraftResponse(CamelModel):
     novel_permission: NovelPermission = Field(default_factory=_default_novel_permission)
     # 기본값은 응답을 옛 화면·생성 타입과 호환시키려는 것이고, 서버는 항상 채워 보낸다.
     media_book: MediaBookDraft = Field(default_factory=lambda: MediaBookDraft(people=[], scenes=[], cells=[]))
+    scene_header_enabled: bool = False
