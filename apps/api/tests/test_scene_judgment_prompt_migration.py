@@ -43,8 +43,11 @@ _PREVIOUS_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("0aeadefcf159").NEW_
 # 이 리비전 뒤에 두 레인 여덟 체인에 장면 추출 지시문만 바꾼 새 세트를 게시하는 리비전. head 상태에서는 그 뒤 리비전의 세트들이
 # 활성이라, "이 리비전 직후 상태"를 보는 테스트와 이 리비전을 되돌리는 테스트는 뒤 리비전부터 먼저 되돌린다(실제 downgrade 순서).
 _LATER = _load("eb8d3cc6d5c2")
-# 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴 때는 이것부터다.
+# 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 세트를 게시하는 리비전.
 _FACT_KNOWN_BY_ORDER = _load("c1f3945cb802")
+# 그 뒤 여덟 체인의 요약 비밀 표기 슬롯 본문에 미확인 주장의 출처 규칙을 더한 세트를 게시하는 리비전 — 여덟 체인의 head
+# 활성이라 되돌릴 때는 이것부터다.
+_SOURCE_MARKING = _load("0c1a85bc5c2f")
 
 _MODELS: tuple[PromptSetModelId, ...] = ("gemini", "sonnet", "opus", "haiku")
 
@@ -89,6 +92,7 @@ def _fingerprinted(rows: dict[Key, Value]) -> dict[Key, tuple[str, bool, int]]:
 
 async def _undo_later_revisions(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
 
@@ -198,11 +202,12 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
                 PromptSet.id.not_in(order),
                 PromptSet.id.not_in(list(_LATER.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_FACT_KNOWN_BY_ORDER.NEW_SET_IDS.values())),
+                PromptSet.id.not_in(list(_SOURCE_MARKING.NEW_SET_IDS.values())),
             )
         )
     ).all()
-    # 테스트 DB에는 이 리비전 뒤에 게시한 세트가 장면 추출 지시문·사실 추출 지시문 차례 리비전의 것뿐이다(그 세트들의 버전은 이
-    # 리비전보다 뒤다).
+    # 테스트 DB에는 이 리비전 뒤에 게시한 세트가 장면 추출 지시문·사실 추출 지시문 차례·요약 비밀 표기 출처 리비전의
+    # 것뿐이다(그 세트들의 버전은 이 리비전보다 뒤다).
     assert versions == list(range(max(others) + 1, max(others) + 1 + len(order)))
 
 
@@ -255,6 +260,7 @@ async def test_the_seeded_channel_renders_and_drops_the_previous_scene_when_both
 async def test_downgrade_then_upgrade_swaps_every_chain_back_and_forth(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
 
+    await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
@@ -283,6 +289,7 @@ async def test_upgrade_refuses_to_run_twice(db_session: AsyncSession) -> None:
 async def test_upgrade_stops_when_a_chain_already_has_the_channel(db_session: AsyncSession) -> None:
     """어느 체인의 활성 세트에 이 채널 행이 이미 있으면 네 체인 어디에도 넣지 않은 채 멈춘다."""
     connection = await db_session.connection()
+    await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
@@ -308,6 +315,7 @@ async def test_upgrade_stops_when_a_chain_already_has_the_channel(db_session: As
 
 async def test_upgrade_stops_when_the_lane_only_select_does_not_pick_gemini(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)

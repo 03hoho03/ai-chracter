@@ -36,7 +36,9 @@ gemini v64·sonnet v65·opus v66·haiku v67)를 심고, 장면 헤더 판정 문
 세트(story gemini v68·sonnet v69·opus v70·haiku v71)를 심고, 장면 추출 지시문 마이그레이션이 여덟 체인에 그 지시문만 바꾼
 세트(story gemini v72·sonnet v73·opus v74·haiku v75, character gemini v76·sonnet v77·opus v78·haiku v79)를 심고, 사실 추출
 지시문 차례 마이그레이션이 여덟 체인에 그 지시문만 바꾼 세트(story gemini v80·sonnet v81·opus v82·haiku v83, character gemini
-v84·sonnet v85·opus v86·haiku v87)를 심어 story·character 활성이 v80·v84가 되므로 다음 게시 버전은 "88"부터다
+v84·sonnet v85·opus v86·haiku v87)를 심고, 요약 비밀 표기 출처 마이그레이션이 여덟 체인에 그 슬롯 본문만 바꾼 세트(story
+gemini v88·sonnet v89·opus v90·haiku v91, character gemini v92·sonnet v93·opus v94·haiku v95)를 심어 story·character 활성이
+v88·v92가 되므로 다음 게시 버전은 "96"부터다
 (전 레인·전 모델 대상 자동 증가).
 채팅 레인 Gemini 초안 응답은 얼린 소설화 행을 싣지 않는다(`_visible_section_count`).
 섹션 수는 `_expected_section_count`로 코드 표에서 도출한다 — DB 행은 마이그레이션이
@@ -492,21 +494,21 @@ async def test_list_returns_metadata_only_and_marks_active(
     # 스탯 규칙 판정: story v22. 노벨 텍스트 심사: v23. 판정 문안 체인: v24~v29. 장면 기억 문안: v30~v37.
     # 관계·사실 기억 문안: v38~v45. 회상 문안 우선순위: v46~v51(글을 쓰는 여섯 체인). 사실 추출 지시문: v52~v59.
     # 요약 비밀 표기: v60~v67. 장면 헤더 판정 문안: v68~v71(story 네 체인). 장면 추출 지시문: v72~v79.
-    # 사실 추출 지시문 차례: v80~v87.
-    assert len(published) == 89
+    # 사실 추출 지시문 차례: v80~v87. 요약 비밀 표기 출처: v88~v95.
+    assert len(published) == 97
     assert len(draft) == 1
     active = [item for item in published if item["isActive"]]
     # (레인, 모델)마다 하나 — Claude 세트는 원본 Gemini 세트보다 published_at 이 과거지만 모델이 달라 각자 활성이다.
     assert {(item["lane"], item["model"], item["version"]) for item in active} == {
-        ("story", "gemini", "80"),
-        ("character", "gemini", "84"),
+        ("story", "gemini", "88"),
+        ("character", "gemini", "92"),
         ("publish_filter", "gemini", "8"),
-        ("story", "sonnet", "81"),
-        ("story", "opus", "82"),
-        ("story", "haiku", "83"),
-        ("character", "sonnet", "85"),
-        ("character", "opus", "86"),
-        ("character", "haiku", "87"),
+        ("story", "sonnet", "89"),
+        ("story", "opus", "90"),
+        ("story", "haiku", "91"),
+        ("character", "sonnet", "93"),
+        ("character", "opus", "94"),
+        ("character", "haiku", "95"),
         ("novel", "gemini", "19"),
         ("novel", "sonnet", "20"),
         ("novel", "opus", "21"),
@@ -590,9 +592,17 @@ async def test_list_returns_metadata_only_and_marks_active(
         ("character", "77"),
         ("character", "78"),
         ("character", "79"),
+        ("story", "80"),
+        ("story", "81"),
+        ("story", "82"),
+        ("story", "83"),
+        ("character", "84"),
+        ("character", "85"),
+        ("character", "86"),
+        ("character", "87"),
     }
     assert draft[0]["isActive"] is False
-    assert {item["version"] for item in published} == {str(n) for n in range(1, 88)}
+    assert {item["version"] for item in published} == {str(n) for n in range(1, 96)}
 
 
 async def test_get_by_id_returns_full_sections(
@@ -605,7 +615,7 @@ async def test_get_by_id_returns_full_sections(
     assert resp.status_code == 200
     body = resp.json()
     assert len(body["sections"]) == _expected_section_count("story")
-    assert body["version"] == "80"  # story 활성은 사실 추출 지시문 차례 마이그레이션의 Gemini 세트다
+    assert body["version"] == "88"  # story 활성은 요약 비밀 표기 출처 마이그레이션의 Gemini 세트다
     assert body["lane"] == "story"
 
 
@@ -827,7 +837,7 @@ async def test_publish_valid_unmodified_draft_succeeds_with_next_version(
     resp = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "정기 점검 후 재게시"})
     assert resp.status_code == 200
     body = resp.json()
-    assert body["version"] == "88"
+    assert body["version"] == "96"
     assert body["status"] == "published"
     assert body["lane"] == "story"
     assert body["note"] == "정기 점검 후 재게시"
@@ -855,11 +865,11 @@ async def test_publish_assigns_sequential_integer_versions(
     await _login_new_admin(db_client, db_session)
     await _make_valid_draft(db_client, "story")
     first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v30"})
-    assert first.json()["version"] == "88"
+    assert first.json()["version"] == "96"
 
     await _make_valid_draft(db_client, "story")
     second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v31"})
-    assert second.json()["version"] == "89"
+    assert second.json()["version"] == "97"
 
 
 async def test_next_version_is_global_monotonic_not_per_lane(
@@ -870,7 +880,8 @@ async def test_next_version_is_global_monotonic_not_per_lane(
     DB(+ Claude 세트 v14~v17, 소설 세트 v18~v21, 스탯 규칙 판정 story 세트 v22, 노벨 텍스트 심사 세트 v23, 판정 문안 체인
     세트 v24~v29, 장면 기억 문안 세트 v30~v37, 관계·사실 기억 문안 세트 v38~v45, 회상 문안 우선순위 세트 v46~v51, 사실 추출
     지시문 세트 v52~v59, 요약 비밀 표기 세트 v60~v67, 장면 헤더 판정 문안 세트 v68~v71, 장면 추출 지시문 세트 v72~v79, 사실
-    추출 지시문 차례 세트 v80~v87)에서, story가 v88·v89를 게시한 뒤 character 게시가 v90을 받아야
+    추출 지시문 차례 세트 v80~v87, 요약 비밀 표기 출처 세트 v88~v95)에서, story가 v96·v97을 게시한 뒤 character 게시가
+    v98을 받아야
     한다(레인별
     독립 증가라면 character의 다음 게시는 v18일 것이다) —
     이 테스트는 그 레인 필터의 **부재**를 고정한다."""
@@ -878,15 +889,15 @@ async def test_next_version_is_global_monotonic_not_per_lane(
 
     await _make_valid_draft(db_client, "story")
     first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v30"})
-    assert first.json()["version"] == "88"
+    assert first.json()["version"] == "96"
 
     await _make_valid_draft(db_client, "story")
     second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v31"})
-    assert second.json()["version"] == "89"
+    assert second.json()["version"] == "97"
 
     await _make_valid_draft(db_client, "character")
     third = await db_client.post("/admin/prompt-sets/character/publish", json={"note": "character v32"})
-    assert third.json()["version"] == "90"
+    assert third.json()["version"] == "98"
 
 
 async def test_publishing_one_lane_does_not_affect_other_lanes_active_set(
@@ -970,7 +981,7 @@ async def test_publish_succeeds_even_when_cache_invalidation_fails(
         resp = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "캐시 실패해도 성공"})
 
     assert resp.status_code == 200
-    assert resp.json()["version"] == "88"
+    assert resp.json()["version"] == "96"
     assert any(record.levelno >= logging.WARNING for record in caplog.records)
     assert captured == ["redis"]
 
@@ -1001,9 +1012,9 @@ async def test_publish_version_conflict_returns_409(
     ).all()
     # story Gemini published는 v1(a69cbd40dec8)·v2(b72c33c70240)·v4(c328445d4c2d)·v6(2519dde454e0)·v9(2417f5829bb1)·
     # v10(8e895c898730)·v12(3bb2cc159b6d)·v22(d9768bc0cfee)·v30(fc6f0e134782)·v38(5cab2abe4e7b)·v46(726aad108167)·
-    # v52(e4e407a62d03)·v60(0aeadefcf159)·v68(0346abdbcc92)·v72(eb8d3cc6d5c2)·v80(c1f3945cb802) 열여섯이다 — 실패한
-    # 시도가 열일곱째를 남기지 않는다.
-    assert len(published) == 16
+    # v52(e4e407a62d03)·v60(0aeadefcf159)·v68(0346abdbcc92)·v72(eb8d3cc6d5c2)·v80(c1f3945cb802)·v88(0c1a85bc5c2f)
+    # 열일곱이다 — 실패한 시도가 열여덟째를 남기지 않는다.
+    assert len(published) == 17
 
 
 # ---- 롤백 (restore) -------------------------------------------------------------
@@ -1535,7 +1546,7 @@ async def test_claude_publish_becomes_that_models_active_set_and_invalidates_onl
     assert resp.status_code == 200
     body = resp.json()
     assert body["model"] == "sonnet"
-    assert body["version"] == "88"
+    assert body["version"] == "96"
     assert len(body["sections"]) == _section_count("story", _claude_channels("story"))
     # 얼린 소설화 행은 채팅 Gemini 체인에만 있다 — Claude 채팅 체인 게시에 끼워 넣지 않는다.
     assert {s["channel"] for s in body["sections"]} == _claude_channels("story")
@@ -1684,8 +1695,8 @@ async def test_judgment_only_versions_are_listed_fetched_and_restored(
     haiku_items = [item for item in listed.json()["items"] if item["model"] == "haiku"]
     # 판정 전용 체인의 첫 세트(v26·v29), 장면 기억 문안을 더한 세트(v33·v37), 관계·사실 기억 문안을 더한 세트(v41·v45),
     # 사실 추출 지시문을 바꾼 세트(v55·v59), 요약 비밀 표기 슬롯을 더한 세트(v63·v67), story 에 장면 헤더 판정 채널을 더한
-    # 세트(v71), 장면 추출 지시문을 바꾼 세트(v75·v79), 사실 추출 지시문 차례를 바꾼 세트(v83·v87). 활성은 레인마다 맨 뒤의
-    # 것이다.
+    # 세트(v71), 장면 추출 지시문을 바꾼 세트(v75·v79), 사실 추출 지시문 차례를 바꾼 세트(v83·v87), 요약 비밀 표기 슬롯 본문을
+    # 바꾼 세트(v91·v95). 활성은 레인마다 맨 뒤의 것이다.
     assert {(item["lane"], item["version"], item["isActive"]) for item in haiku_items} == {
         ("story", "26", False),
         ("story", "33", False),
@@ -1694,14 +1705,16 @@ async def test_judgment_only_versions_are_listed_fetched_and_restored(
         ("story", "63", False),
         ("story", "71", False),
         ("story", "75", False),
-        ("story", "83", True),
+        ("story", "83", False),
+        ("story", "91", True),
         ("character", "29", False),
         ("character", "37", False),
         ("character", "45", False),
         ("character", "59", False),
         ("character", "67", False),
         ("character", "79", False),
-        ("character", "87", True),
+        ("character", "87", False),
+        ("character", "95", True),
     }
     assert detail.status_code == 200
     assert (detail.json()["model"], len(detail.json()["sections"])) == ("haiku", len(haiku_sections))
@@ -1945,5 +1958,5 @@ async def test_novel_screen_lane_publishes_its_seed_and_previews_with_sample_tex
     (item,) = preview.json()["items"]
     assert item["channel"] == "novel_screen"
     assert "[판정 방법]" in item["text"] and "=== chapter_body: 본문 ===\n[샘플] 첫 문단이다." in item["text"]
-    assert (published.status_code, published.json()["version"]) == (200, "88")
+    assert (published.status_code, published.json()["version"]) == (200, "96")
     assert (claude.status_code, claude.json()["detail"]["rule"]) == (422, "lane-model")

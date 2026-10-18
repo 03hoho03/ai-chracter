@@ -56,8 +56,11 @@ _SECRET_MARKING_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("0aeadefcf159"
 _SCENE_JUDGMENT_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("0346abdbcc92").NEW_SET_IDS
 # 그 뒤 여덟 체인에 장면 추출 지시문만 바꾼 세트를 게시하는 리비전의 세트 — 버전이 이 리비전의 세트들보다 뒤다.
 _EPISODE_KNOWN_BY_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("eb8d3cc6d5c2").NEW_SET_IDS
-# 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 세트를 게시하는 리비전의 세트 — story·character 활성 Gemini 세트이기도 하다.
+# 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 세트를 게시하는 리비전의 세트 — 버전이 이 리비전의 세트들보다 뒤다.
 _FACT_KNOWN_BY_ORDER_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("c1f3945cb802").NEW_SET_IDS
+# 그 뒤 여덟 체인의 요약 비밀 표기 슬롯 본문에 미확인 주장의 출처 규칙을 더한 세트를 게시하는 리비전의 세트 — story·character
+# 활성 Gemini 세트이기도 하다.
+_SOURCE_MARKING_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("0c1a85bc5c2f").NEW_SET_IDS
 
 Row = tuple[str, str, str, str, str, bool, int]
 
@@ -158,6 +161,7 @@ async def test_versions_follow_the_global_sequence_and_the_copy_is_older(db_sess
             PromptSet.id.not_in(list(_SCENE_JUDGMENT_SET_IDS.values())),
             PromptSet.id.not_in(list(_EPISODE_KNOWN_BY_SET_IDS.values())),
             PromptSet.id.not_in(list(_FACT_KNOWN_BY_ORDER_SET_IDS.values())),
+            PromptSet.id.not_in(list(_SOURCE_MARKING_SET_IDS.values())),
         )
     )
     assert others is not None
@@ -169,7 +173,7 @@ async def test_versions_follow_the_global_sequence_and_the_copy_is_older(db_sess
 async def test_chat_lanes_keep_their_active_sets_and_frozen_novelize_rows(db_session: AsyncSession) -> None:
     """옛 이미지로 되돌리면 옛 코드는 채팅 레인 Gemini 세트에서 소설 문안을 읽는다 — 그 세트와 행이 그대로여야 이미지만
     되돌리는 롤백이 된다."""
-    chat_sets = {lane: _FACT_KNOWN_BY_ORDER_SET_IDS[(lane, "gemini")] for lane in ("story", "character")}
+    chat_sets = {lane: _SOURCE_MARKING_SET_IDS[(lane, "gemini")] for lane in ("story", "character")}
     for lane in ("story", "character"):
         assert await _active_id(db_session, lane) == chat_sets[lane]
         assert len(await _novelize_rows_of_chat(db_session, lane)) == 16
