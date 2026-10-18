@@ -231,7 +231,7 @@ _SWAP_BODY_SQL = sa.text(
 
 
 def _assert_instruction_row(rows: Sequence[Row], *, what: str) -> None:
-    """게시본에 사실 추출 지시문 행이 정확히 하나이고 그 본문이 앞 리비전 문안과 바이트로 같은지 본다. 어긋나면 `RuntimeError` —
+    """게시본에 장면 추출 지시문 행이 정확히 하나이고 그 본문이 앞 리비전 문안과 바이트로 같은지 본다. 어긋나면 `RuntimeError` —
     `what` 은 메시지에 쓸 세트 이름이다."""
     matches = [row for row in rows if row[0] == EPISODE_CHANNEL and row[2] == INSTRUCTION_SLOT]
     if len(matches) != 1:
@@ -244,7 +244,7 @@ def _assert_instruction_row(rows: Sequence[Row], *, what: str) -> None:
 
 
 def _with_new_instruction(rows: Sequence[Row]) -> list[Row]:
-    """기존 행 그대로, 사실 추출 지시문만 새 문안."""
+    """기존 행 그대로, 장면 추출 지시문만 새 문안."""
     return [
         (
             channel,
@@ -383,7 +383,7 @@ def seed_published_sets(conn: Connection) -> None:
 
 
 def _swap_draft_instruction(conn: Connection, *, from_body: str, to_body: str) -> list[tuple[str, str]]:
-    """초안의 사실 추출 지시문이 `from_body` 와 같으면 `to_body` 로 바꾸고, 바꾼 (레인, 모델) 목록을 돌려준다."""
+    """초안의 장면 추출 지시문이 `from_body` 와 같으면 `to_body` 로 바꾸고, 바꾼 (레인, 모델) 목록을 돌려준다."""
     swapped: list[tuple[str, str]] = []
     for lane in _LANES:
         for model in _MODELS:
@@ -406,13 +406,13 @@ def _swap_draft_instruction(conn: Connection, *, from_body: str, to_body: str) -
 
 
 def _patch_drafts(conn: Connection) -> list[tuple[str, str]]:
-    """초안의 사실 추출 지시문이 앞 리비전 문안과 같으면 새 문안으로 바꾼다(위 docstring). `op` 를 쓰지 않는 이유는
+    """초안의 장면 추출 지시문이 앞 리비전 문안과 같으면 새 문안으로 바꾼다(위 docstring). `op` 를 쓰지 않는 이유는
     `seed_published_sets` 와 같다."""
     return _swap_draft_instruction(conn, from_body=OLD_EPISODE_INSTRUCTION_BODY, to_body=EPISODE_INSTRUCTION_BODY)
 
 
 def _delete_draft_rows(conn: Connection) -> list[tuple[str, str]]:
-    """초안의 사실 추출 지시문이 이 리비전의 새 문안이면 옛 문안으로 되돌린다."""
+    """초안의 장면 추출 지시문이 이 리비전의 새 문안이면 옛 문안으로 되돌린다."""
     return _swap_draft_instruction(conn, from_body=EPISODE_INSTRUCTION_BODY, to_body=OLD_EPISODE_INSTRUCTION_BODY)
 
 

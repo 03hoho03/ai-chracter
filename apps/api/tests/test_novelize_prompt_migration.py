@@ -47,8 +47,8 @@ _MEMORY_FACT_MIGRATION = _load("5cab2abe4e7b")
 # 그 뒤 여덟 체인의 요약 채널에 비밀 표기 슬롯을 더한 세트를 게시하는 리비전 — 초안 게시 검사가 head 코드 표를 쓰므로 초안은
 # 이것도 거친다.
 _SECRET_MARKING_MIGRATION = _load("0aeadefcf159")
-# 그 뒤 story 레인 네 체인에 장면 헤더 판정 채널을 더한 세트를 게시하는 리비전 — story 레인의 head 활성이라 되돌릴 때는
-# 이것부터다. 초안 게시 검사가 head 코드 표를 쓰므로 story 초안은 이것도 거친다.
+# 그 뒤 story 레인 네 체인에 장면 헤더 판정 채널을 더한 세트를 게시하는 리비전 — 초안 게시 검사가 head 코드 표를 쓰므로
+# story 초안은 이것도 거친다.
 _SCENE_JUDGMENT = _load("0346abdbcc92")
 # 이 리비전이 복사한 원본 — 테스트 DB에서는 두 레인 모두 사용자 이름 한 줄 리비전의 세트다.
 _SOURCE_SET_IDS: dict[str, uuid.UUID] = _load("8e895c898730").NEW_SET_IDS
