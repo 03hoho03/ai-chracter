@@ -475,9 +475,8 @@ async def _seed_initial_stats(db: AsyncSession, room: ChatRoom, setup: StartingS
 
 
 def _ending_snapshot(ending: Ending) -> EndingSnapshot:
-    """스냅숏은 아직 도달하지 않은 엔딩까지 싣는다. 그래서 에필로그의 미디어 북 태그는 그림으로 해석하지
-    않고 지운다 — 해석하면 플레이어가 보지 못한 칸의 원본 URL 이 응답에 실린다. 화면은 에필로그를
-    엔딩 이벤트·엔딩 모음에서 그리므로 여기서 태그가 사라져도 보이는 것이 없다.
+    """스냅숏은 아직 도달하지 않은 엔딩까지 싣는다. 그래서 판정 문안(판정 재료)과 에필로그(플레이어가 아직 보지 못한
+    내용)는 싣지 않는다. 화면은 에필로그를 엔딩 이벤트·방 응답의 엔딩 칸·엔딩 모음에서, 힌트는 엔딩 모음에서 그린다.
 
     스탯 규칙은 언제나 빈 목록이다 — 어느 스탯이 몇을 넘으면 어느 엔딩인지는 엔딩 판정만 쓰는 정보이고, 플레이어에게
     실으면 숨긴 스탯의 id 와 엔딩 조건이 함께 드러난다. 엔딩 판정은 규칙을 DB 에서 따로 읽는다(`turn_judgments._ending_rule_items`)."""
@@ -485,9 +484,6 @@ def _ending_snapshot(ending: Ending) -> EndingSnapshot:
         id=ending.entity_id,
         name=ending.name,
         turn_count_gate=ending.turn_count_gate,
-        judgment_prompt=ending.judgment_prompt,
-        epilogue=strip_media_tags(ending.epilogue) if ending.epilogue is not None else None,
-        hint=ending.hint,
         stat_rules=[],
     )
 
@@ -525,7 +521,6 @@ async def _build_content_snapshot(
                 max_value=s.max_value,
                 initial_value=s.initial_value,
                 unit=s.unit,
-                description=s.description,
                 player_description=s.player_description,
             )
             for s in stat_defs

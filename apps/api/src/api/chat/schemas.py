@@ -151,10 +151,9 @@ class StatDefSnapshot(CamelModel):
     max_value: int
     initial_value: int
     unit: str | None
-    description: str
-    # 작가가 플레이어에게 보여 주려고 쓴 짧은 설명(게이지 칸을 눌러 여는 팝오버). 판정용 `description` 과 다른 칸이고
-    # 판정·생성 프롬프트에는 실리지 않는다. 숨긴 스탯은 스탯째 스냅숏에서 빠지므로 여기 실리는 것은 보이는 스탯 것뿐이다.
-    # 쓰지 않았으면 None.
+    # 작가가 플레이어에게 보여 주려고 쓴 짧은 설명(게이지 칸을 눌러 여는 팝오버). 판정용 설명과 다른 칸이고
+    # 판정·생성 프롬프트에는 실리지 않는다. 판정용 설명은 판정 재료라 이 스냅숏에 싣지 않는다. 숨긴 스탯은 스탯째
+    # 스냅숏에서 빠지므로 여기 실리는 것은 보이는 스탯 것뿐이다. 쓰지 않았으면 None.
     player_description: str | None
 
 
@@ -188,12 +187,13 @@ EndingRuleListItem = Annotated[
 
 
 class EndingSnapshot(CamelModel):
+    """플레이어 방 응답의 엔딩. 판정 문안은 판정 재료이고 에필로그는 아직 닿지 않은 엔딩의 내용이라 싣지 않는다 — 도달한
+    엔딩의 에필로그는 방 응답의 `ending` 칸에 실린다. 힌트는 엔딩 모음이 미도달 엔딩에만 골라 싣는 칸이라 여기에는 없다."""
+
     id: uuid.UUID
     name: str
     turn_count_gate: int
-    judgment_prompt: str
-    epilogue: str | None
-    hint: str | None
+    # 언제나 빈 목록이다. 이 칸을 목록으로 읽는 옛 화면이 깨지지 않도록 키만 남겨 둔다.
     stat_rules: list[EndingRuleListItem]
 
 

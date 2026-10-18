@@ -5,6 +5,8 @@
   스탯 정의와 스탯 값에서 숨긴 스탯만 빠진다. 값은 보이는 정의 기준으로 싣는다 — 정의가 없는 고아 값도 빠진다. 작가
   본인의 방도 같다.
 - 스냅숏의 엔딩 스탯 규칙은 언제나 빈 목록이다. 엔딩 판정은 여전히 규칙(숨긴 스탯에 건 것 포함)대로 돈다.
+- 스냅숏에는 판정 재료(스탯의 판정용 설명, 엔딩의 판정 문안·에필로그·힌트)가 키째 없다. 도달한 엔딩의 에필로그는 방 응답의
+  엔딩 칸에 실린다.
 - 턴 스트림(보내기·수정·재생성)에서 숨긴 스탯의 `statChange` 는 나가지 않는다. 그 턴에 바뀐 숨긴 스탯 가운데 익명 신호를 켠
   것이 하나라도 있으면 `hiddenStatSignal` 하나를 `statChange` 자리에서 낸다 — 몇 개가 바뀌었든 하나이고, 스탯 id·이름·방향·
   크기는 싣지 않는다. 신호를 끈 숨긴 스탯만 바뀌었거나 숨긴 스탯이 바뀌지 않았으면 내지 않는다.
@@ -118,6 +120,7 @@ async def _hidden_story(db_session: AsyncSession, *, signal: bool = True) -> _St
         turn_count_gate=1,
         judgment_prompt="마음을 털어놓았는가?",
         epilogue="끝",
+        hint="고백 힌트",
         order=1,
     )
     db_session.add(ending)
@@ -194,22 +197,26 @@ async def _room_stat(db_session: AsyncSession, room_id: uuid.UUID, stat_id: str)
     return float(row.current_value)
 
 
-def _assert_only_hidden_left_out(body: dict[str, Any], story: _Story) -> None:
+def _assert_player_snapshot(body: dict[str, Any], story: _Story) -> None:
     snapshot = body["contentSnapshot"]
     assert [stat["id"] for stat in snapshot["stats"]] == [story.shown]
     assert list(body["stats"]) == [story.shown]
     assert [ending["statRules"] for ending in snapshot["endings"]] == [[]]
+    assert [sorted(stat) for stat in snapshot["stats"]] == [
+        ["color", "icon", "id", "initialValue", "maxValue", "minValue", "name", "playerDescription", "unit"]
+    ]
+    assert [sorted(ending) for ending in snapshot["endings"]] == [["id", "name", "statRules", "turnCountGate"]]
 
 
 def _types(events: list[dict[str, Any]]) -> list[str]:
     return [event["type"] for event in events]
 
 
-async def test_every_room_response_leaves_out_only_the_hidden_stats_and_the_ending_rules(
+async def test_every_room_response_leaves_out_the_hidden_stats_and_the_judgment_material(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """방 응답을 돌려주는 여덟 경로가 모두 숨긴 두 스탯의 정의·값만 빼고 보이는 스탯은 남긴다. 정의가 없는 고아 값도 빠진다.
-    숨긴 스탯 값은 DB 에 그대로 남아 판정이 읽는다."""
+    스냅숏의 스탯·엔딩에는 판정 재료 칸이 없고 엔딩 규칙은 빈 목록이다. 숨긴 스탯 값은 DB 에 그대로 남아 판정이 읽는다."""
     story = await _hidden_story(db_session)
     player = _make_user()
     db_session.add(player)
@@ -241,7 +248,7 @@ async def test_every_room_response_leaves_out_only_the_hidden_stats_and_the_endi
 
     for path, resp in responses.items():
         assert resp.status_code in (200, 201), (path, resp.text)
-        _assert_only_hidden_left_out(resp.json(), story)
+        _assert_player_snapshot(resp.json(), story)
     assert await _room_stat(db_session, room_id, story.hidden) == 37
     assert await _room_stat(db_session, room_id, story.doubt) == 37
 
@@ -255,7 +262,7 @@ async def test_the_author_room_hides_the_stats_too(db_client: httpx.AsyncClient,
     resp = await db_client.get(f"/chat-rooms/{room_id}")
 
     assert resp.status_code == 200
-    _assert_only_hidden_left_out(resp.json(), story)
+    _assert_player_snapshot(resp.json(), story)
 
 
 async def test_the_room_snapshot_carries_the_player_description_of_visible_stats_only(
@@ -327,6 +334,9 @@ async def test_an_ending_on_a_hidden_stat_is_still_reached(
     assert _types(events) == ["token", "hiddenStatSignal", "endingReached", "done"]
     room = await db_client.get(f"/chat-rooms/{room_id}")
     assert room.json()["endingReached"] is True
+    # 스냅숏에서 에필로그가 빠져도 도달한 엔딩의 에필로그는 방 응답의 엔딩 칸으로 다시 받는다.
+    assert room.json()["ending"]["epilogue"] == "끝"
+    _assert_player_snapshot(room.json(), story)
 
 
 async def test_editing_a_message_streams_the_signal_instead_of_hidden_stat_changes(
