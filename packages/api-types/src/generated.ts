@@ -754,6 +754,12 @@ export interface paths {
          *     게시할 수 없다. 재동의 게이트와 `GET /me` 는 약관·처리방침만 보므로 그 플래그는 아무
          *     효과가 없는데, 게시 이력·감사 로그에는 "재동의 필요"로 남아 운영자가 회원 재동의를
          *     받은 것으로 믿게 된다.
+         *
+         *     **시행 시각**: 비우면 게시 시각으로 즉시 시행한다. 게시 시각보다 이르면 422 — 과거로 소급하면 그 판이 직전 현행판보다
+         *     앞에 놓여 영영 현행이 되지 못하거나, 그 사이에 옛 판에 동의한 회원이 새 판에 동의한 것으로 읽힌다. 미래면 시행 예정
+         *     판이 되고, kind 마다 하나만 둔다(두 번째는 409, 고치려면 먼저 철회한다). 이 검사는 부분 유니크 인덱스로 할 수 없다
+         *     (인덱스 조건에 현재 시각을 쓸 수 없다). 그래서 kind 의 초안 행을 잠가 같은 kind 의 게시를 줄 세운 뒤 검사한다 —
+         *     게시는 초안이 있어야 하므로 초안 행이 kind 단위의 잠금 대상이 된다.
          */
         post: operations["publish_legal_document_admin_legal__kind__publish_post"];
         delete?: never;
@@ -773,6 +779,28 @@ export interface paths {
         get: operations["list_legal_document_versions_admin_legal__kind__versions_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/legal/{kind}/versions/{version}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Withdraw Legal Document
+         * @description 시행 예정 판을 철회한다. 행은 지우지 않고 `withdrawn` 으로 남기며 그 버전 이름은 다시 쓸 수 없다(이미 공지로
+         *     나갔을 수 있다). 시행 시각이 지난 판은 409 — 시행된 판에는 이미 동의한 회원이 있을 수 있어 거둘 수 없고, 고치려면 새
+         *     판을 게시한다. 행을 잠그고 시각을 본다(같은 판을 두 번 철회하는 요청이 둘 다 감사 로그를 남기지 않게).
+         */
+        post: operations["withdraw_legal_document_admin_legal__kind__versions__version__withdraw_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1950,9 +1978,30 @@ export interface paths {
         };
         /**
          * Get Legal Document
-         * @description 공개 조회 — 인증 없음. web `/terms`가 최신 게시본을 그대로 보여주는 데 쓴다.
+         * @description 공개 조회 — 인증 없음. web `/terms` 등이 현행판을 보여 주는 데 쓴다. 시행 예정 판이 있으면 그 버전과 시행 시각을
+         *     `upcoming` 으로 곁들인다(시행일 전 게시를 알리기 위해서다).
          */
         get: operations["get_legal_document_legal__kind__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/legal/{kind}/upcoming": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Upcoming Legal Document
+         * @description 시행 예정 판의 전문 — 인증 없음. 없으면 404.
+         */
+        get: operations["get_upcoming_legal_document_legal__kind__upcoming_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1975,7 +2024,7 @@ export interface paths {
          * @description 재동의 기록. **요청의 `version`은 신뢰하지 않는다** — 클라이언트가 값을 조작해
          *     보내면 실제로 게시된 적 없는 버전이 `users.terms_version`에 남아 `GET /me`의
          *     재동의 판정을 영구히 우회할 수 있다. 그래서 body의 `kind`로 어떤 문서에 동의했는지만
-         *     받고, 실제로 기록하는 version은 서버가 다시 조회한 "현재 최신 게시본"의 것이다.
+         *     받고, 실제로 기록하는 version은 서버가 다시 조회한 현행판의 것이다(시행 예정 판이 아니다).
          *
          *     ⚠️ 정지된 유저는 `get_current_user_id`가 403으로 막아 여기 도달하지 못한다. 정지
          *     중에도 통과시켜야 할 이유는 없다고 판단했다 — 재동의도 다른 유저 행위와 마찬가지로
@@ -6851,7 +6900,10 @@ export interface components {
             /** Replybody */
             replyBody: string;
         };
-        /** AdminLegalDocumentResponse */
+        /**
+         * AdminLegalDocumentResponse
+         * @description `published` 는 지금 시행 중인 현행판, `upcoming` 은 시행 시각이 아직 오지 않은 예약 판이다.
+         */
         AdminLegalDocumentResponse: {
             /**
              * Kind
@@ -6860,6 +6912,7 @@ export interface components {
             kind: "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy" | "creator-payout-policy";
             draft: components["schemas"]["AdminLegalDraftItem"] | null;
             published: components["schemas"]["AdminLegalPublishedItem"] | null;
+            upcoming: components["schemas"]["AdminLegalPublishedItem"] | null;
         };
         /** AdminLegalDraftItem */
         AdminLegalDraftItem: {
@@ -6878,19 +6931,21 @@ export interface components {
         };
         /**
          * AdminLegalPublishRequest
-         * @description `version`은 zero-padded ISO 날짜(`YYYY-MM-DD`)로 강제한다 — `_reconsent_required`
-         *     (`api/auth/router.py`)가 이 값을 문자열째로 비교해 재동의 필요 여부를 판정하고, 그
-         *     비교가 시간순과 일치하려면 모든 버전이 같은 자릿수로 zero-padding돼 있어야 한다
-         *     (그렇지 않으면 예: `"2026-9-6" < "2026-10-01"`이 문자열 비교로는 `False`가 되어
-         *     재동의가 영원히 뜨지 않는다). 달력상 유효한 날짜인지(`2026-13-45` 등)는 검사하지
-         *     않는다 — 자릿수 고정 포맷만 지키면 무효한 날짜라도 문자열 비교의 시간순 일치라는
-         *     전제 자체는 깨지지 않으므로, 이 정규식만으로 방어 목적은 충분하다고 판단했다.
+         * @description `version` 은 날짜(`YYYY-MM-DD`)이고, 같은 날 다시 게시하면 순번 접미사를 붙인다(첫 판은 접미사 없음, 둘째부터
+         *     `.2`, `.3`, … `.10`). 접미사는 `.0`·`.1`·앞자리 0 을 받지 않아 한 판에 이름이 하나뿐이다. 판의 앞뒤는 버전 문자열이
+         *     아니라 시행 시각으로 정하므로(`api/legal/documents.py`) 이 형식은 사람이 읽는 이름을 고르게 할 뿐이다. 달력상 유효한
+         *     날짜인지는 검사하지 않는다.
+         *
+         *     `effective_at` 은 시행 시각이다. 비우면 게시 시각과 같아 즉시 현행이 되고, 미래면 그 시각까지 시행 예정 판으로
+         *     남는다. 시간대가 없는 값은 받지 않는다(서버 시계와 비교할 수 없다).
          */
         AdminLegalPublishRequest: {
             /** Version */
             version: string;
             /** Requiresreconsent */
             requiresReconsent: boolean;
+            /** Effectiveat */
+            effectiveAt?: string | null;
         };
         /** AdminLegalPublishedItem */
         AdminLegalPublishedItem: {
@@ -6903,6 +6958,11 @@ export interface components {
              * Format: date-time
              */
             publishedAt: string;
+            /**
+             * Effectiveat
+             * Format: date-time
+             */
+            effectiveAt: string;
             /** Requiresreconsent */
             requiresReconsent: boolean;
         };
@@ -6915,8 +6975,18 @@ export interface components {
              * Format: date-time
              */
             publishedAt: string;
+            /**
+             * Effectiveat
+             * Format: date-time
+             */
+            effectiveAt: string;
             /** Requiresreconsent */
             requiresReconsent: boolean;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "current" | "scheduled" | "withdrawn" | "past";
         };
         /** AdminLegalVersionsResponse */
         AdminLegalVersionsResponse: {
@@ -7976,7 +8046,7 @@ export interface components {
              * Actiontype
              * @enum {string}
              */
-            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "home-novel-curation-clear" | "home-novel-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "notice-publish" | "notice-unpublish" | "novel-comment-delete" | "novel-comment-hide" | "novel-comment-report-reject" | "novel-comment-restore" | "novel-lift" | "novel-report-reject" | "novel-restrict" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-creator-payout-approve" | "user-creator-payout-hold" | "user-creator-payout-info-view" | "user-creator-payout-payee-replace" | "user-creator-payout-reject" | "user-creator-payout-return" | "user-creator-payout-revoke" | "user-creator-payout-transfer" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-payment-refund" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
+            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "home-novel-curation-clear" | "home-novel-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "legal-withdraw" | "notice-publish" | "notice-unpublish" | "novel-comment-delete" | "novel-comment-hide" | "novel-comment-report-reject" | "novel-comment-restore" | "novel-lift" | "novel-report-reject" | "novel-restrict" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-creator-payout-approve" | "user-creator-payout-hold" | "user-creator-payout-info-view" | "user-creator-payout-payee-replace" | "user-creator-payout-reject" | "user-creator-payout-return" | "user-creator-payout-revoke" | "user-creator-payout-transfer" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-payment-refund" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
             /** Targetcontentid */
             targetContentId: string | null;
             /** Contentname */
@@ -10419,7 +10489,10 @@ export interface components {
             /** Version */
             version: string;
         };
-        /** LegalDocumentPublicResponse */
+        /**
+         * LegalDocumentPublicResponse
+         * @description `published_at` 은 게시(공지) 시각, `effective_at` 은 이 판이 현행이 된 시행 시각이다.
+         */
         LegalDocumentPublicResponse: {
             /**
              * Kind
@@ -10435,6 +10508,47 @@ export interface components {
              * Format: date-time
              */
             publishedAt: string;
+            /**
+             * Effectiveat
+             * Format: date-time
+             */
+            effectiveAt: string;
+            upcoming: components["schemas"]["LegalUpcomingSummary"] | null;
+        };
+        /** LegalUpcomingDocumentResponse */
+        LegalUpcomingDocumentResponse: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy" | "creator-payout-policy";
+            /** Version */
+            version: string;
+            /** Bodymarkdown */
+            bodyMarkdown: string;
+            /**
+             * Publishedat
+             * Format: date-time
+             */
+            publishedAt: string;
+            /**
+             * Effectiveat
+             * Format: date-time
+             */
+            effectiveAt: string;
+        };
+        /**
+         * LegalUpcomingSummary
+         * @description 현행판 응답에 곁들이는 시행 예정 판 요약. 전문은 `GET /legal/{kind}/upcoming` 이 준다.
+         */
+        LegalUpcomingSummary: {
+            /** Version */
+            version: string;
+            /**
+             * Effectiveat
+             * Format: date-time
+             */
+            effectiveAt: string;
         };
         /**
          * LogicalOp
@@ -13961,6 +14075,38 @@ export interface operations {
             };
         };
     };
+    withdraw_legal_document_admin_legal__kind__versions__version__withdraw_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy" | "creator-payout-policy";
+                version: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLegalVersionsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_admin_notices_admin_notices_get: {
         parameters: {
             query?: {
@@ -15868,6 +16014,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LegalDocumentPublicResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_upcoming_legal_document_legal__kind__upcoming_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy" | "creator-payout-policy";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegalUpcomingDocumentResponse"];
                 };
             };
             /** @description Validation Error */

@@ -75,6 +75,7 @@ export const ACTION_TYPE_LABELS = {
   "novel-comment-report-reject": "노벨 댓글 신고 반려",
   "inquiry-reply": "문의 답변",
   "legal-publish": "약관·정책 게시",
+  "legal-withdraw": "약관·정책 예약 철회",
   "notice-publish": "공지 게시",
   "notice-unpublish": "공지 숨김",
   "prompt-set-publish": "프롬프트 세트 게시",
