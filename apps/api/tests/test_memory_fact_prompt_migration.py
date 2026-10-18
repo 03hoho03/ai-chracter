@@ -56,8 +56,10 @@ _SECRET_MARKING = _load("0aeadefcf159")
 # 그 뒤 story 레인 네 체인에 장면 헤더 판정 채널을 더한 세트를 게시하는 리비전 — 초안 게시 검사가 head 코드 표를 쓰므로
 # story 초안은 이것도 거친다.
 _SCENE_JUDGMENT = _load("0346abdbcc92")
-# 그 뒤 여덟 체인에 장면 추출 지시문만 바꾼 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴 때는 이것부터다.
+# 그 뒤 여덟 체인에 장면 추출 지시문만 바꾼 세트를 게시하는 리비전.
 _EPISODE_KNOWN_BY = _load("eb8d3cc6d5c2")
+# 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴 때는 이것부터다.
+_FACT_KNOWN_BY_ORDER = _load("c1f3945cb802")
 
 _LANES: tuple[PromptLane, ...] = ("story", "character")
 _WRITING_MODELS: tuple[PromptSetModelId, ...] = ("gemini", "sonnet", "opus")
@@ -122,6 +124,7 @@ def _expected_after(before: dict[Key, Value], model: str) -> dict[Key, Value]:
 
 async def _undo_later_revisions(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
     await connection.run_sync(_EPISODE_KNOWN_BY.delete_seeded_rows)
     await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
     await connection.run_sync(_SECRET_MARKING.delete_seeded_rows)
@@ -300,11 +303,12 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
                 PromptSet.id.not_in(list(_SECRET_MARKING.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_SCENE_JUDGMENT.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_EPISODE_KNOWN_BY.NEW_SET_IDS.values())),
+                PromptSet.id.not_in(list(_FACT_KNOWN_BY_ORDER.NEW_SET_IDS.values())),
             )
         )
     ).all()
-    # 테스트 DB에는 이 리비전 뒤에 게시한 세트가 회상 문안·사실 추출 지시문·요약 비밀 표기·장면 추출 지시문 리비전의 것뿐이다(그
-    # 세트들의 버전은 이 리비전보다 뒤다).
+    # 테스트 DB에는 이 리비전 뒤에 게시한 세트가 회상 문안·사실 추출 지시문·요약 비밀 표기·장면 추출 지시문·사실 추출 지시문 차례
+    # 리비전의 것뿐이다(그 세트들의 버전은 이 리비전보다 뒤다).
     assert versions == list(range(max(others) + 1, max(others) + 1 + len(order)))
 
 
@@ -384,6 +388,7 @@ async def test_downgrade_then_upgrade_swaps_every_chain_back_and_forth(db_sessio
     본문은 처음부터 옛 문안이다), 다시 올리면 같은 리터럴 세트가 활성이 된다."""
     connection = await db_session.connection()
 
+    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
     await connection.run_sync(_EPISODE_KNOWN_BY.delete_seeded_rows)
     await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
 
@@ -412,6 +417,7 @@ async def test_downgrade_then_upgrade_swaps_every_chain_back_and_forth(db_sessio
 async def test_upgrade_copies_the_operators_edited_text_not_the_seed(db_session: AsyncSession) -> None:
     """어드민이 고쳐 게시한 다른 문안(요약 지시문)은 새 세트에 그대로 실린다 — 바꾸는 것은 두 본문뿐이다."""
     connection = await db_session.connection()
+    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
     await connection.run_sync(_EPISODE_KNOWN_BY.delete_seeded_rows)
     await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
     await connection.run_sync(_SECRET_MARKING.delete_seeded_rows)
@@ -440,6 +446,7 @@ async def test_upgrade_copies_the_operators_edited_text_not_the_seed(db_session:
 
 async def test_upgrade_copies_each_chains_own_labels(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
     await connection.run_sync(_EPISODE_KNOWN_BY.delete_seeded_rows)
     await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
     await connection.run_sync(_SECRET_MARKING.delete_seeded_rows)
@@ -470,6 +477,7 @@ async def test_upgrade_refuses_to_overwrite_a_body_the_admin_edited(
     """바꾸려는 본문이 앞 리비전 문안과 한 글자라도 다르면 어드민이 고친 운영 문안이다 — 조용히 덮어쓰지 않고, 그 레인에는 아무
     세트도 넣지 않은 채 멈춘다."""
     connection = await db_session.connection()
+    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
     await connection.run_sync(_EPISODE_KNOWN_BY.delete_seeded_rows)
     await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
     await connection.run_sync(_SECRET_MARKING.delete_seeded_rows)
@@ -501,6 +509,7 @@ async def test_upgrade_refuses_to_run_twice(db_session: AsyncSession) -> None:
 
 async def test_upgrade_stops_when_the_lane_only_select_does_not_pick_gemini(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
     await connection.run_sync(_EPISODE_KNOWN_BY.delete_seeded_rows)
     await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
     await connection.run_sync(_SECRET_MARKING.delete_seeded_rows)

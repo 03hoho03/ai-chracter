@@ -66,8 +66,10 @@ _SECRET_MARKING_MIGRATION = _load("0aeadefcf159")
 # 그 뒤 story 레인 네 체인에 장면 헤더 판정 채널을 더한 세트를 게시하는 리비전 — 초안 게시 검사가 head 코드 표를 쓰므로
 # story 초안은 이것도 거친다.
 _SCENE_JUDGMENT = _load("0346abdbcc92")
-# 그 뒤 여덟 체인에 장면 추출 지시문만 바꾼 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴 때는 이것부터다.
+# 그 뒤 여덟 체인에 장면 추출 지시문만 바꾼 세트를 게시하는 리비전.
 _EPISODE_KNOWN_BY_MIGRATION = _load("eb8d3cc6d5c2")
+# 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴 때는 이것부터다.
+_FACT_KNOWN_BY_ORDER = _load("c1f3945cb802")
 
 _NEW_KEYS = {(row[0], row[1], row[2], row[3]) for row in _M.NEW_ROWS}
 
@@ -127,6 +129,7 @@ async def test_active_story_gemini_set_is_the_source_plus_four_rows(db_session: 
     나중 게시이며, 새 4행 말고는 원본과 바이트까지 같다. `published_at`이 원본보다 과거가 되면 새 세트가 활성이 되지
     못하므로 활성 id 를 직접 단언한다."""
     connection = await db_session.connection()
+    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
     await connection.run_sync(_EPISODE_KNOWN_BY_MIGRATION.delete_seeded_rows)
     await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
     await connection.run_sync(_SECRET_MARKING_MIGRATION.delete_seeded_rows)
@@ -165,6 +168,7 @@ async def test_downgrade_then_upgrade_swaps_the_active_set_and_back(db_session: 
     """되돌리면 활성 story Gemini 세트가 원본으로 돌아가고 이 채널 행이 어디에도 남지 않는다. 다시 올리면 같은 리터럴
     세트가 활성이 된다. Claude 체인 활성 세트는 내내 그대로다."""
     connection = await db_session.connection()
+    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
     await connection.run_sync(_EPISODE_KNOWN_BY_MIGRATION.delete_seeded_rows)
     await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
     await connection.run_sync(_SECRET_MARKING_MIGRATION.delete_seeded_rows)
