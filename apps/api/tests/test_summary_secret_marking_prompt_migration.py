@@ -43,9 +43,12 @@ _M = _load("0aeadefcf159")
 _SCENE_JUDGMENT = _load("0346abdbcc92")
 # 이 리비전 직전 여덟 체인의 활성 세트(사실 추출 지시문만 바꾼 리비전 — 그 사이에 프롬프트를 게시한 리비전이 없다).
 _PREVIOUS = _load("e4e407a62d03")
-# 장면 헤더 판정 채널 리비전 뒤에 여덟 체인에 장면 추출 지시문만 바꾼 새 세트를 게시하는 리비전. head 상태에서는 그 세트들이
-# 활성이라, "이 리비전 직후 상태"를 보는 테스트와 이 리비전을 되돌리는 테스트는 그 리비전을 먼저 되돌린다(실제 downgrade 순서).
+# 장면 헤더 판정 채널 리비전 뒤에 여덟 체인에 장면 추출 지시문만 바꾼 새 세트를 게시하는 리비전. head 상태에서는 그 뒤 리비전의
+# 세트들이 활성이라, "이 리비전 직후 상태"를 보는 테스트와 이 리비전을 되돌리는 테스트는 뒤 리비전부터 먼저 되돌린다(실제
+# downgrade 순서).
 _LATER = _load("eb8d3cc6d5c2")
+# 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴 때는 이것부터다.
+_FACT_KNOWN_BY_ORDER = _load("c1f3945cb802")
 
 _LANES: tuple[PromptLane, ...] = ("story", "character")
 _MODELS: tuple[PromptSetModelId, ...] = ("gemini", "sonnet", "opus", "haiku")
@@ -94,6 +97,7 @@ def _summary_slots(sections: list[PromptSection]) -> list[str]:
 
 async def _undo_later_revisions(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
 
 
@@ -203,11 +207,12 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
                 PromptSet.id.not_in(order),
                 PromptSet.id.not_in(list(_SCENE_JUDGMENT.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_LATER.NEW_SET_IDS.values())),
+                PromptSet.id.not_in(list(_FACT_KNOWN_BY_ORDER.NEW_SET_IDS.values())),
             )
         )
     ).all()
-    # 테스트 DB에는 이 리비전 뒤에 게시한 세트가 뒤 두 리비전(장면 헤더 판정 채널, 장면 추출 지시문)의 것뿐이다(그 세트들의
-    # 버전은 이 리비전보다 뒤다).
+    # 테스트 DB에는 이 리비전 뒤에 게시한 세트가 뒤 세 리비전(장면 헤더 판정 채널, 장면 추출 지시문, 사실 추출 지시문 차례)의
+    # 것뿐이다(그 세트들의 버전은 이 리비전보다 뒤다).
     assert versions == list(range(max(others) + 1, max(others) + 1 + len(order)))
 
 
@@ -297,6 +302,7 @@ async def test_downgrade_then_upgrade_swaps_every_chain_back_and_forth(db_sessio
     올리면 같은 리터럴 세트가 활성이 된다."""
     connection = await db_session.connection()
 
+    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
 
@@ -322,6 +328,7 @@ async def test_upgrade_copies_an_instruction_the_admin_edited(db_session: AsyncS
     """운영 story 요약 지시문처럼 어드민이 고쳐 게시한 지시문이 활성이면 멈추지 않고 그 본문을 그대로 옮긴다 — 가정 검사는
     본문이 아니라 슬롯 모양만 본다."""
     connection = await db_session.connection()
+    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
@@ -360,6 +367,7 @@ async def test_upgrade_stops_when_the_summary_layout_is_not_the_expected_one(
     """요약 채널이 기대한 슬롯 집합·순서가 아니면(행이 빠짐, 어드민이 순서를 바꿈, 이 슬롯이 이미 있음) 그 레인에는 아무 세트도
     넣지 않은 채 멈춘다."""
     connection = await db_session.connection()
+    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
@@ -402,6 +410,7 @@ async def test_upgrade_refuses_to_run_twice(db_session: AsyncSession) -> None:
 
 async def test_upgrade_stops_when_the_lane_only_select_does_not_pick_gemini(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
@@ -421,6 +430,7 @@ async def test_downgrade_stops_when_the_admin_published_after_the_seed(
     db_session: AsyncSession, lane: PromptLane, model: str
 ) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
     seeded = await _get_set(db_session, _M.NEW_SET_IDS[(lane, model)])

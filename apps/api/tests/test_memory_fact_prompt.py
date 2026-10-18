@@ -45,7 +45,7 @@ _M = _load("5cab2abe4e7b")
 # 회상 섹션 문안의 지금 판 — 글을 쓰는 여섯 체인의 활성 세트가 이 리비전의 것이다.
 _RECALL = _load("726aad108167")
 # 사실 추출 지시문의 지금 판 — 여덟 체인의 활성 세트가 이 리비전의 것이다(채널의 슬롯 모양은 위 리비전 그대로다).
-_INSTRUCTION = _load("e4e407a62d03")
+_INSTRUCTION = _load("c1f3945cb802")
 _NAMES = PromptNames(persona_name="하늘", char_name="민지")
 _NO_NAMES = PromptNames(persona_name=None, char_name=None)
 _EXISTING = ["relation|민지|하늘 = 경계 — 말을 아낌 (confirmed)", "fact|민지|생일 달 = 삼월 (claimed)"]
