@@ -115,6 +115,13 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
     ),
     ("stat_rule_judgment", "judgment_instruction"): frozenset(),
     ("stat_rule_judgment", "user_name"): frozenset({"user_name"}),
+    # 장면 헤더 판정 — `build_scene_judgment_prompt` 가 만드는 `values`. 직전 장면은 conditional 이라 장소·시간이 둘 다 없으면
+    # 섹션째 빠진다. 사용자 이름 한 줄은 두지 않는다 — 이 판정은 이번 턴 글과 직전 장면만 본다.
+    ("scene_judgment", "instruction"): frozenset(),
+    ("scene_judgment", "previous_scene"): frozenset({"previous_place", "previous_time"}),
+    ("scene_judgment", "turn_context"): frozenset(
+        {"user_label", "user_message", "assistant_label", "assistant_message"}
+    ),
     ("ending_judgment", "memory_summary"): frozenset({"memory_summary"}),
     ("ending_judgment", "history_header"): frozenset(),
     ("ending_judgment", "turn_context"): frozenset({"turn_lines"}),
@@ -698,6 +705,38 @@ def build_stat_rule_judgment_prompt(
         "user_name": names.judgment_user_name,
     }
     return render_prompt_channel(sections, channel="stat_rule_judgment", scope="story", values=values), rule_ids
+
+
+def build_scene_judgment_prompt(
+    *,
+    prompt_set: PromptSet,
+    sections: Sequence[PromptSection],
+    previous_place: str | None,
+    previous_time: str | None,
+    user_message: str,
+    assistant_message: str,
+    names: PromptNames,
+) -> str:
+    """장면 헤더 판정 프롬프트 — 이번 턴의 사용자 메시지·모델 응답과 직전 장면(장소·시간)만 싣는다. 스토리 설정·지난 대화·대화
+    프로필은 싣지 않는다: 장면은 이번 턴에 무엇이 바뀌었는지로 정하고, 바뀐 근거가 없으면 판정이 비워 직전 장면을 이어받는다.
+    직전 장면이 둘 다 없으면 그 섹션째 빠진다(conditional). 모델 응답은 스탯 판정처럼 `names` 로 `{{user}}` 를 바꾸고, 사용자
+    메시지는 그대로 둔다. 이 레인 세트에 채널 행이 없으면 빈 문자열이다 — 부르는 쪽이 판정을 건너뛴다."""
+    values = {
+        "previous_place": previous_place or "",
+        "previous_time": previous_time or "",
+        "user_label": prompt_set.user_label,
+        "user_message": user_message,
+        "assistant_label": prompt_set.story_assistant_label,
+        "assistant_message": names.expand(assistant_message),
+    }
+    return render_prompt_channel(sections, channel="scene_judgment", scope="story", values=values)
+
+
+class SceneJudgmentResult(BaseModel):
+    """지금 장면의 장소·시간. 이번 턴 글에 근거가 없는 칸은 null(직전 장면을 이어받는다)."""
+
+    place: str | None
+    time: str | None
 
 
 class StatRuleJudgmentResult(BaseModel):

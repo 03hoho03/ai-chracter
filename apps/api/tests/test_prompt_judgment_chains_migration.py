@@ -55,6 +55,9 @@ _FACT_INSTRUCTION = _load("e4e407a62d03")
 # 그 뒤 여덟 체인의 요약 채널에 비밀 표기 슬롯을 더한 새 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴 때는
 # 이것부터다.
 _SECRET_MARKING = _load("0aeadefcf159")
+# 그 뒤 story 레인 네 체인에 장면 헤더 판정 채널을 더한 세트를 게시하는 리비전 — story 레인의 head 활성이라 되돌릴 때는
+# 이것부터다. 초안 게시 검사가 head 코드 표를 쓰므로 story 초안은 이것도 거친다.
+_SCENE_JUDGMENT = _load("0346abdbcc92")
 
 _LANES: tuple[PromptLane, ...] = ("story", "character")
 _CLAUDE_MODELS: tuple[PromptSetModelId, ...] = ("sonnet", "opus")
@@ -76,6 +79,7 @@ def _ids(pairs: list[tuple[PromptLane, PromptSetModelId]]) -> list[str]:
 
 async def _undo_later_revisions(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
     await connection.run_sync(_SECRET_MARKING.delete_seeded_rows)
     await connection.run_sync(_FACT_INSTRUCTION.delete_seeded_rows)
     await connection.run_sync(_RECALL_PRIORITY.delete_seeded_rows)
@@ -281,6 +285,8 @@ async def test_seeded_sets_match_publish_validation_but_for_the_later_revisions_
     if model != "haiku":
         later |= {("generation", "both", _LATER.RECALL_SLOT), ("generation", "both", _LATEST.FACTS_SLOT)}
     later.add((_SECRET_MARKING.SUMMARY_CHANNEL, _SECRET_MARKING.SCOPE, _SECRET_MARKING.SLOT))
+    if lane == "story":
+        later |= {(row[0], row[1], row[2]) for row in _SCENE_JUDGMENT.NEW_ROWS}
     seeded = {(s.channel, s.scope, s.slot) for s in sections}
     expected = {(channel, scope, slot) for channel, slots in _expected_slots(lane, model).items() for scope, slot in slots}
     assert seeded | later == expected and not seeded & later
@@ -288,7 +294,7 @@ async def test_seeded_sets_match_publish_validation_but_for_the_later_revisions_
     with pytest.raises(HTTPException):
         _validate_prompt_draft_for_publish(prompt_set, sections, lane=lane, model=model)
     later_set, later_sections = await load_active_prompt_set(db_session, lane=lane, model=model)
-    assert later_set.id == _SECRET_MARKING.NEW_SET_IDS[(lane, model)]
+    assert later_set.id == (_SCENE_JUDGMENT if lane == "story" else _SECRET_MARKING).NEW_SET_IDS[(lane, model)]
     _validate_prompt_draft_for_publish(later_set, later_sections, lane=lane, model=model)
     with pytest.raises(HTTPException):
         _validate_prompt_draft_for_publish(later_set, later_sections, lane=lane, model="gemini")
@@ -494,11 +500,13 @@ async def test_patch_drafts_adds_the_judgment_rows_in_place_and_the_draft_publis
     assert await connection.run_sync(_LATER._patch_drafts) == [(lane, model)]
     assert await connection.run_sync(_LATEST._patch_drafts) == [(lane, model)]
     assert await connection.run_sync(_SECRET_MARKING._patch_drafts) == [(lane, model)]
+    await connection.run_sync(_SCENE_JUDGMENT._patch_drafts)
     sections = await _sections_of(db_session, draft_id)
     draft = await _get_set(db_session, draft_id)  # 섹션을 읽으며 세션이 만료시킨 뒤에 읽는다
     _validate_prompt_draft_for_publish(draft, sections, lane=lane, model=model)
 
     # 되돌리기도 실제 순서대로 뒤 리비전부터.
+    await connection.run_sync(_SCENE_JUDGMENT._delete_draft_rows)
     await connection.run_sync(_SECRET_MARKING._delete_draft_rows)
     await connection.run_sync(_LATEST._delete_draft_rows)
     await connection.run_sync(_LATER._delete_draft_rows)

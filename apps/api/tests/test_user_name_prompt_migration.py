@@ -54,6 +54,9 @@ _MEMORY_FACT_MIGRATION = _load("5cab2abe4e7b")
 # 그 뒤 여덟 체인의 요약 채널에 비밀 표기 슬롯을 더한 세트를 게시하는 리비전 — 초안 게시 검사가 head 코드 표를 쓰므로 초안은
 # 이것도 거친다.
 _SECRET_MARKING_MIGRATION = _load("0aeadefcf159")
+# 그 뒤 story 레인 네 체인에 장면 헤더 판정 채널을 더한 세트를 게시하는 리비전 — story 레인의 head 활성이라 되돌릴 때는
+# 이것부터다. 초안 게시 검사가 head 코드 표를 쓰므로 story 초안은 이것도 거친다.
+_SCENE_JUDGMENT = _load("0346abdbcc92")
 
 Layout = list[tuple[str, str, str, str, int]]
 
@@ -397,6 +400,7 @@ async def test_patch_draft_adds_rows_in_place_and_draft_then_publishes(
     assert await connection.run_sync(_MEMORY_EPISODE_MIGRATION._patch_drafts) == [(lane, "gemini")]
     assert await connection.run_sync(_MEMORY_FACT_MIGRATION._patch_drafts) == [(lane, "gemini")]
     assert await connection.run_sync(_SECRET_MARKING_MIGRATION._patch_drafts) == [(lane, "gemini")]
+    await connection.run_sync(_SCENE_JUDGMENT._patch_drafts)
     sections = await _sections_of(db_session, draft_id)
     draft = await db_session.get(PromptSet, draft_id)
     assert draft is not None
