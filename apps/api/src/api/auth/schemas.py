@@ -154,10 +154,8 @@ class MeResponse(CamelModel):
     nickname: str
     bio: str | None
     profile_image_asset_id: uuid.UUID | None
-    # 재동의 플래그. 앞의 둘은 문서 단위(처리방침 = 수집·이용 또는 국외이전 중 하나라도)이고 동의 단위를 모르는 이전 웹이
-    # 읽는다. 뒤의 둘이 처리방침의 두 동의 단위를 따로 낸다(약관의 동의 단위는 약관 하나라 `terms_reconsent_required` 와 같다).
+    # 동의 단위별 재동의 플래그(약관, 개인정보 수집·이용, 국외이전).
     terms_reconsent_required: bool
-    privacy_reconsent_required: bool
     collection_reconsent_required: bool
     transfer_reconsent_required: bool
     # 동의 단위별로 마지막에 동의한 판. 재동의 화면이 그 판 이후의 변경 안내를 고르는 since 값이다.

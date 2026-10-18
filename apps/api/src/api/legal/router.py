@@ -114,11 +114,9 @@ async def consent_legal_document(
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
     """재동의 기록. 동의 단위(`consents`)마다 그 문서의 현행판 버전을 `users` 칸에 적고 동의 이력 행을 하나씩 더한다.
-    이전 웹의 `{kind}` 바디는 그 문서의 동의 단위 전부로 읽는다(`LegalConsentRequest`).
 
-    **요청의 `version`은 신뢰하지 않는다** — 클라이언트가 값을 조작해
-    보내면 실제로 게시된 적 없는 버전이 `users.terms_version`에 남아 `GET /me`의
-    재동의 판정을 영구히 우회할 수 있다. 그래서 어떤 동의인지만
+    **요청은 버전을 받지 않는다** — 클라이언트가 보낸 버전을 기록하면 실제로 게시된 적 없는 버전이
+    `users.terms_version`에 남아 `GET /me`의 재동의 판정을 영구히 우회할 수 있다. 그래서 어떤 동의인지만
     받고, 실제로 기록하는 version은 서버가 다시 조회한 현행판의 것이다(시행 예정 판이 아니다).
 
     **회원 행을 잠그고 탈퇴 여부를 다시 본 뒤 쓴다.** 잠그지 않으면 탈퇴와 겹친 요청이 탈퇴 커밋을 기다렸다가 이력 행을
@@ -129,11 +127,7 @@ async def consent_legal_document(
     "서비스 이용"의 일부고, 정지가 풀리면 다음 로그인 때 `/me`가 재동의 필요를 다시
     알려주므로 동의 자체를 영영 놓치는 것도 아니다.
     """
-    if payload.consents is not None:
-        units = list(dict.fromkeys(payload.consents))
-    else:
-        assert payload.kind is not None  # 스키마 검증이 둘 중 하나를 요구한다
-        units = list(consents.kind_consent_units(payload.kind))
+    units = list(dict.fromkeys(payload.consents))
     consented = await consents.current_consent_documents(db, units, now=documents.utcnow())
     if any(document is None for document in consented.values()):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Published document not found")

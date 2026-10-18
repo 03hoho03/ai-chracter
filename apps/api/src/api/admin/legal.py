@@ -26,27 +26,17 @@ router = APIRouter(tags=["admin"])
 
 
 def _requested_reconsent_scopes(kind: LegalDocumentKind, body: AdminLegalPublishRequest) -> tuple[LegalConsentUnit, ...]:
-    """게시가 다시 받을 동의 단위. `reconsent_scopes` 가 오면 그것을, 없으면 이전 화면의 `requires_reconsent` 를 그 문서의
-    동의 단위 전부로 읽는다. 그 문서에 없는 동의 단위는 422 다 — 재동의 게이트는 문서의 동의 단위만 보므로 그 범위는 아무
-    효과가 없는데, 게시 이력·감사 로그에는 재동의를 받은 것으로 남아 운영자를 오도한다(정책 문서에 재동의를 거는 것도
+    """게시가 다시 받을 동의 단위. 그 문서에 없는 동의 단위는 422 다 — 재동의 게이트는 문서의 동의 단위만 보므로 그 범위는
+    아무 효과가 없는데, 게시 이력·감사 로그에는 재동의를 받은 것으로 남아 운영자를 오도한다(정책 문서에 재동의를 거는 것도
     같다)."""
     allowed = consents.kind_consent_units(kind)
-    if body.reconsent_scopes is not None:
-        requested = set(body.reconsent_scopes)
-        if not requested <= set(allowed):
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="이 문서가 받지 않는 동의를 재동의 범위로 고를 수 없습니다.",
-            )
-        return tuple(unit for unit in allowed if unit in requested)
-    if body.requires_reconsent:
-        if not allowed:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="이 문서는 회원 동의 대상이 아니라 재동의를 요구할 수 없습니다.",
-            )
-        return allowed
-    return ()
+    requested = set(body.reconsent_scopes)
+    if not requested <= set(allowed):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="이 문서가 받지 않는 동의를 재동의 범위로 고를 수 없습니다.",
+        )
+    return tuple(unit for unit in allowed if unit in requested)
 
 
 async def _get_draft(
@@ -70,7 +60,6 @@ def _published_item(document: LegalDocument | None) -> AdminLegalPublishedItem |
         change_notice_markdown=document.change_notice_markdown,
         published_at=published_at,
         effective_at=effective_at,
-        requires_reconsent=document.requires_reconsent,
         reconsent_scopes=consents.reconsent_scopes(document),
     )
 
@@ -128,7 +117,6 @@ async def _build_versions_response(db: AsyncSession, kind: LegalDocumentKind) ->
                 version=document.version,
                 published_at=published_at,
                 effective_at=effective_at,
-                requires_reconsent=document.requires_reconsent,
                 reconsent_scopes=consents.reconsent_scopes(document),
                 change_notice_markdown=document.change_notice_markdown,
                 state=state,

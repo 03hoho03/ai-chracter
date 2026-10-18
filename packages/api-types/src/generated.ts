@@ -2053,11 +2053,9 @@ export interface paths {
         /**
          * Consent Legal Document
          * @description 재동의 기록. 동의 단위(`consents`)마다 그 문서의 현행판 버전을 `users` 칸에 적고 동의 이력 행을 하나씩 더한다.
-         *     이전 웹의 `{kind}` 바디는 그 문서의 동의 단위 전부로 읽는다(`LegalConsentRequest`).
          *
-         *     **요청의 `version`은 신뢰하지 않는다** — 클라이언트가 값을 조작해
-         *     보내면 실제로 게시된 적 없는 버전이 `users.terms_version`에 남아 `GET /me`의
-         *     재동의 판정을 영구히 우회할 수 있다. 그래서 어떤 동의인지만
+         *     **요청은 버전을 받지 않는다** — 클라이언트가 보낸 버전을 기록하면 실제로 게시된 적 없는 버전이
+         *     `users.terms_version`에 남아 `GET /me`의 재동의 판정을 영구히 우회할 수 있다. 그래서 어떤 동의인지만
          *     받고, 실제로 기록하는 version은 서버가 다시 조회한 현행판의 것이다(시행 예정 판이 아니다).
          *
          *     **회원 행을 잠그고 탈퇴 여부를 다시 본 뒤 쓴다.** 잠그지 않으면 탈퇴와 겹친 요청이 탈퇴 커밋을 기다렸다가 이력 행을
@@ -6990,23 +6988,22 @@ export interface components {
          *     남는다. 시간대가 없는 값은 받지 않는다(서버 시계와 비교할 수 없다).
          *
          *     재동의 범위는 `reconsent_scopes` 로 받는다. 약관은 `terms`, 처리방침은 `collection`·`transfer` 를 고를 수 있고 정책
-         *     문서는 고를 수 없다. 동의 단위를 모르는 이전 어드민 화면이 보내는 `requires_reconsent` 도 받는다 — true 면 그 문서의
-         *     동의 단위 전부를 고른 것으로 본다. 둘 다 오면 `reconsent_scopes` 를 따른다.
+         *     문서는 고를 수 없다. 비우면 재동의 없는 게시다.
+         *
+         *     모르는 칸은 422 로 거부한다. 동의 단위를 모르던 이전 어드민 화면은 재동의를 불리언 `requiresReconsent` 로 보냈는데,
+         *     그 칸을 조용히 버리면 재동의를 걸려던 게시가 재동의 없는 게시로 나간다.
          */
         AdminLegalPublishRequest: {
             /** Version */
             version: string;
             /** Reconsentscopes */
-            reconsentScopes?: ("terms" | "collection" | "transfer")[] | null;
-            /** Requiresreconsent */
-            requiresReconsent?: boolean | null;
+            reconsentScopes?: ("terms" | "collection" | "transfer")[];
             /** Effectiveat */
             effectiveAt?: string | null;
         };
         /**
          * AdminLegalPublishedItem
-         * @description `reconsent_scopes` 는 이 판이 다시 받은 동의 단위이고, `requires_reconsent` 는 그것이 비어 있지 않음과 같다(동의
-         *     단위를 모르는 이전 어드민 화면이 읽는다).
+         * @description `reconsent_scopes` 는 이 판이 다시 받은 동의 단위다.
          */
         AdminLegalPublishedItem: {
             /** Version */
@@ -7025,8 +7022,6 @@ export interface components {
              * Format: date-time
              */
             effectiveAt: string;
-            /** Requiresreconsent */
-            requiresReconsent: boolean;
             /** Reconsentscopes */
             reconsentScopes: ("terms" | "collection" | "transfer")[];
         };
@@ -7044,8 +7039,6 @@ export interface components {
              * Format: date-time
              */
             effectiveAt: string;
-            /** Requiresreconsent */
-            requiresReconsent: boolean;
             /** Reconsentscopes */
             reconsentScopes: ("terms" | "collection" | "transfer")[];
             /** Changenoticemarkdown */
@@ -10574,17 +10567,11 @@ export interface components {
         };
         /**
          * LegalConsentRequest
-         * @description 동의할 단위를 `consents` 로 받는다. 이전 웹이 보내는 `{kind, version}` 도 받는다 — `kind` 가 `privacy` 면 수집·이용과
-         *     국외이전 둘 다에 동의한 것으로 본다(이전 화면은 두 체크박스를 모두 받은 뒤 처리방침 한 번으로 보낸다). 둘 다 오면
-         *     `consents` 를 따른다. `version` 은 어느 쪽이든 쓰지 않는다 — 서버가 현행판 버전을 기록한다.
+         * @description 동의할 단위를 `consents` 로 받는다. 버전은 받지 않는다 — 서버가 단위마다 그 문서의 현행판 버전을 기록한다.
          */
         LegalConsentRequest: {
             /** Consents */
-            consents?: ("terms" | "collection" | "transfer")[] | null;
-            /** Kind */
-            kind?: ("terms" | "privacy") | null;
-            /** Version */
-            version?: string | null;
+            consents: ("terms" | "collection" | "transfer")[];
         };
         /**
          * LegalConsentVersions
@@ -10700,8 +10687,6 @@ export interface components {
             profileImageAssetId: string | null;
             /** Termsreconsentrequired */
             termsReconsentRequired: boolean;
-            /** Privacyreconsentrequired */
-            privacyReconsentRequired: boolean;
             /** Collectionreconsentrequired */
             collectionReconsentRequired: boolean;
             /** Transferreconsentrequired */
