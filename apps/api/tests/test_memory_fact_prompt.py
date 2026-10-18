@@ -107,8 +107,8 @@ async def test_fact_prompt_has_the_layout_the_harness_measured(
     )
 
 
-# 비밀 규칙(아는 인물·주인 이름)을 넓힌 사실 추출 지시문의 지문 — 글자 하나가 바뀌어도 여기서 깨진다.
-_KNOWN_BY_INSTRUCTION_MD5 = "31fab9859bca21d5f9831b5415528a1f"
+# 비밀 규칙에 아는 인물을 정하는 차례를 붙인 사실 추출 지시문의 지문 — 글자 하나가 바뀌어도 여기서 깨진다.
+_KNOWN_BY_INSTRUCTION_MD5 = "1dc4e0fabaea765f4056ea4ab84433a5"
 
 
 @pytest.mark.parametrize("model", ["gemini", "sonnet", "opus", "haiku"])
