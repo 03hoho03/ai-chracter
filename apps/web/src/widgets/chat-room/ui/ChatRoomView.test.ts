@@ -40,3 +40,14 @@ describe("ChatRoomView session-ended notice", () => {
     expect(viewSource).toMatch(/shouldShowClover =\s*clover !== undefined &&\s*me !== undefined &&/);
   });
 });
+
+// 방을 옮겨도 이 화면은 다시 마운트되지 않는다(쿼리 캐시가 있으면 스켈레톤도 거치지 않는다). 상태 줄이 같은 마운트로 남으면
+// 장면 줄이 이전 방의 장면을 "처음 그린 장면"으로 기억해, 들어오자마자 새 방의 장면을 바뀐 것으로 보고 페이드한다. 방마다
+// 새로 마운트해야 들어올 때 그린 장면이 그 방의 첫 장면이 된다.
+describe("ChatRoomView status line mount", () => {
+  it("remounts the status line per room", () => {
+    const panels = viewSource.match(/<StatGaugePanel\b[\s\S]*?\/>/g) ?? [];
+    expect(panels).toHaveLength(1);
+    expect(panels[0]).toMatch(/\bkey=\{roomId\}/);
+  });
+});

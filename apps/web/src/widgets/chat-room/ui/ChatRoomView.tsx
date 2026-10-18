@@ -377,8 +377,12 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
             </div>
           )}
 
+          {/* 방을 옮겨도 이 화면은 그대로라 상태 줄을 방마다 새로 마운트한다 — 그러지 않으면 장면 줄이 이전 방의 장면을 들어올
+              때 그린 장면으로 기억해 새 방의 장면을 바뀐 것으로 보고 페이드한다. 접힘은 기기 저장값이고 이미 띄운 칩·안내는
+              모듈 단위로 기억하므로 다시 마운트해도 잃는 것이 없다. */}
           {snapshot && (
             <StatGaugePanel
+              key={roomId}
               stats={snapshot.stats}
               values={room.stats}
               feedback={selectVisibleTurnFeedback(turnFeedback, roomId, room.messages)}
