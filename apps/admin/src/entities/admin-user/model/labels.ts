@@ -68,6 +68,8 @@ export const ACTION_TYPE_LABELS = {
   // 노벨 조치의 대상 유저는 게시자, 노벨 댓글 조치의 대상 유저는 댓글 작성자다(그 회원의 조치 이력 표에 뜬다).
   "novel-restrict": "노벨 이용제한",
   "novel-lift": "노벨 이용제한 해제",
+  "novel-review-approve": "노벨 첫 공개 승인",
+  "novel-review-reject": "노벨 첫 공개 반려",
   "novel-report-reject": "노벨 신고 반려",
   "novel-comment-hide": "노벨 댓글 운영 숨김",
   "novel-comment-restore": "노벨 댓글 운영 숨김 해제",

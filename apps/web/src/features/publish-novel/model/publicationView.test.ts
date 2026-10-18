@@ -26,6 +26,10 @@ function status(patch: Partial<NovelPublicationStatus>): NovelPublicationStatus 
     screeningRejectionLimit: 3,
     firstPublishedAt: null,
     publishedAt: null,
+    reviewStatus: null,
+    reviewReason: null,
+    reviewedAt: null,
+    reviewRequired: false,
     ...patch,
   };
 }

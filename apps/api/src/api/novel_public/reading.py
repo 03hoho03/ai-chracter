@@ -113,23 +113,27 @@ def _title(publication: NovelPublication, novel: Novel) -> str:
 
 
 async def _sources(db: AsyncSession, novels: Sequence[Novel]) -> dict[uuid.UUID, PublicNovelSource]:
-    """소설마다 원작 표기. 표지는 원작의 지금 게시본 썸네일이고, 원작자가 탈퇴했으면 싣지 않는다. 한 페이지를 쿼리 셋(원작
-    상태·썸네일 자산·자산 키)으로 읽는다. 서명은 네트워크 없이 로컬에서 한다(소유자 소설 목록의 표지와 같다)."""
+    """소설마다 원작 표기. 표지는 원작의 지금 게시본 썸네일이고, 원작자 이름은 원작자의 지금 닉네임이다 — 원작자가
+    탈퇴했으면 둘 다 싣지 않는다. 비공식 표시는 원작자가 게시자가 아닌가다. 한 페이지를 쿼리 넷(목록 조건·원작자·썸네일
+    자산·자산 키)으로 읽는다. 서명은 네트워크 없이 로컬에서 한다(소유자 소설 목록의 표지와 같다)."""
     content_ids = {novel.content_id for novel in novels}
     if not content_ids:
         return {}
     listed = set(
         (await db.scalars(select(Content.id).where(Content.id.in_(content_ids), *publicly_listed_conditions()))).all()
     )
-    creator_gone = set(
-        (
-            await db.scalars(
-                select(Content.id)
+    # 원작 id → (원작자 id, 원작자 탈퇴 여부, 닉네임). 원작 행이 없으면 항목이 없다.
+    creators: dict[uuid.UUID, tuple[uuid.UUID, bool, str | None]] = {
+        content_id: (creator_id, deleted_at is not None, nickname)
+        for content_id, creator_id, nickname, deleted_at in (
+            await db.execute(
+                select(Content.id, Content.creator_user_id, _source_creator.nickname, _source_creator.deleted_at)
                 .join(_source_creator, _source_creator.id == Content.creator_user_id)
-                .where(Content.id.in_(content_ids), _source_creator.deleted_at.is_not(None))
+                .where(Content.id.in_(content_ids))
             )
-        ).all()
-    )
+        ).tuples()
+    }
+    creator_gone = {content_id for content_id, (_, gone, _) in creators.items() if gone}
     thumbnails = await _work_thumbnail_asset_ids(db, content_ids - creator_gone)
     storage_keys = (
         dict(
@@ -146,6 +150,7 @@ async def _sources(db: AsyncSession, novels: Sequence[Novel]) -> dict[uuid.UUID,
     for novel in novels:
         asset_id = thumbnails.get(novel.content_id)
         key = storage_keys.get(asset_id) if asset_id is not None else None
+        creator = creators.get(novel.content_id)
         sources[novel.id] = PublicNovelSource(
             content_id=novel.content_id,
             content_type=novel.content_type,
@@ -153,6 +158,8 @@ async def _sources(db: AsyncSession, novels: Sequence[Novel]) -> dict[uuid.UUID,
             character_name=novel.character_name,
             cover_url=generate_presigned_get_url(build_thumbnail_key(key)) if key is not None else None,
             linkable=novel.content_id in listed,
+            creator_nickname=creator[2] if creator is not None and not creator[1] else None,
+            unofficial=creator is None or creator[0] != novel.user_id,
         )
     return sources
 
