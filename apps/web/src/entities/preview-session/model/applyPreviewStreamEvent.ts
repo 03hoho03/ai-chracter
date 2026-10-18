@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 
+import { attachSceneToMessages, takePendingScene } from "@/entities/chat-room/@x/preview-session";
 import { assertNever } from "@/shared/lib/assertNever";
 
 import { previewSessionKeys } from "../api/keys";
@@ -34,14 +35,26 @@ export function applyPreviewStreamEvent(
           },
       );
       return;
+    case "sceneChange":
+      // 실제 방과 같다 — 응답 메시지에 붙여 두고, 응답이 아직 없으면 들고 있다가 `done` 이 붙인다.
+      queryClient.setQueryData<PreviewSessionState>(previewSessionKeys.detail(previewSessionId), (prev) => {
+        if (!prev) return prev;
+        const scene = { place: event.place ?? undefined, time: event.time ?? undefined };
+        const messages = attachSceneToMessages(prev.messages, event.messageId, scene);
+        return messages
+          ? { ...prev, messages, pendingScene: undefined }
+          : { ...prev, pendingScene: { messageId: event.messageId, scene } };
+      });
+      return;
     case "done":
       queryClient.setQueryData<PreviewSessionState>(
         previewSessionKeys.detail(previewSessionId),
         (prev) =>
           prev && {
             ...prev,
-            messages: [...prev.messages, event.finalMessage],
+            messages: [...prev.messages, takePendingScene(event.finalMessage, prev.pendingScene)],
             turnCount: prev.turnCount + 1,
+            pendingScene: undefined,
           },
       );
       return;

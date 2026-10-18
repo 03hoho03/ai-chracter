@@ -1,3 +1,4 @@
+import type { PendingScene, StoryScene } from "@/entities/chat-room/@x/preview-session";
 import type { MediaTagImages } from "@/entities/media-book/@x/preview-session";
 
 import type { PreviewChatMessage } from "../api/previewStream";
@@ -53,4 +54,9 @@ export type PreviewSessionState = {
   // `mediaTagImages` 는 에필로그의 칸 id 형태 태그가 가리키는 그림이다(엔딩 도달 이벤트에 실려 온다).
   endingStatus: { reached: boolean; epilogue?: string; mediaTagImages?: MediaTagImages };
   turnCount: number;
+  // 장면 헤더 — 세션을 시작할 때의 초안 토글과 첫 시작설정의 첫 장면(장소·시간이 둘 다 비면 undefined). 캐릭터는 늘 꺼짐이다.
+  sceneHeaderEnabled: boolean;
+  initialScene?: StoryScene;
+  // 장면 이벤트가 응답보다 먼저 와서 붙일 메시지가 아직 없을 때 잠시 든 장면(실제 방 캐시와 같다).
+  pendingScene?: PendingScene;
 };

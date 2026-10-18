@@ -9,11 +9,14 @@ import type { PreviewShortcut, PreviewStartPayload } from "@/entities/preview-se
 import {
   AuthorMacroNamesProvider,
   EndingDivider,
+  expandStoryScene,
+  hasSceneText,
   isAuthorOpeningMessage,
   isAuthorTextMessage,
   MediaTagImagesProvider,
   MessageBubble,
   RateLimitNotice,
+  selectCurrentScene,
   StatGaugePanel,
   TypingIndicator,
   shouldShowSuggestedReplies,
@@ -73,6 +76,10 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
   const macroNames = previewAuthorMacroNames(state.authorNameSource, state.contentType, personaList);
   const expandForPreview = (text: string) => expandAuthorMacros(text, macroNames);
   const emptyHint = previewEmptyHint(state.contentType, state.messages);
+  // 장면 헤더를 켠 초안은 실제 방과 같은 규칙으로 지금 장면을 고른다. 세션 전에도 첫 장면이 보여 작가가 바로 확인한다.
+  const scene = state.sceneHeaderEnabled
+    ? expandStoryScene(selectCurrentScene(state.messages, state.initialScene), expandForPreview)
+    : undefined;
 
   // 미리보기도 채팅 4경로와 **같은 게이트**를 지나므로 같은
   // 확인이 필요하다. 트리거를 위젯이 만들어 넘기는 이유와 단가를 여기서 묶는 이유는
@@ -203,7 +210,7 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
       />
 
       <div className="mx-auto flex w-full min-h-0 max-w-5xl flex-1 flex-col">
-        {state.statDefs.length > 0 && (
+        {(state.statDefs.length > 0 || hasSceneText(scene)) && (
           <StatGaugePanel
             stats={state.statDefs.map((stat) => ({
               ...stat,
@@ -213,6 +220,7 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
                 stat.playerDescription === undefined ? undefined : expandForPreview(stat.playerDescription),
             }))}
             values={state.stats}
+            scene={scene}
             hiddenStatIds={new Set(state.statDefs.filter((stat) => stat.hiddenFromPlayer).map((stat) => stat.id))}
           />
         )}

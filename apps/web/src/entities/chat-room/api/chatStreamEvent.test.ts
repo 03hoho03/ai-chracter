@@ -10,12 +10,13 @@ import { chatStreamEventSchema } from "./chatStream";
  * 참조: `apps/api/src/api/chat/schemas.py`의 ChatStreamEvent.
  */
 describe("chatStreamEventSchema", () => {
-  it("일곱 이벤트 타입을 전부 파싱한다", () => {
+  it("여덟 이벤트 타입을 전부 파싱한다", () => {
     const events: unknown[] = [
       { type: "token", delta: "안녕" },
       { type: "statChange", statId: "s1", newValue: 42 },
       { type: "hiddenStatSignal" },
       { type: "endingReached", endingId: "e1", epilogue: "끝" },
+      { type: "sceneChange", messageId: "m1", place: "갱도", time: "새벽" },
       { type: "policyWarning", message: "주의" },
       {
         type: "done",
@@ -78,6 +79,30 @@ describe("chatStreamEventSchema", () => {
       expect(parsed.data.finalMessage.imageId).toBeUndefined();
       expect(parsed.data.finalMessage.imageUrl).toBeUndefined();
     }
+  });
+
+  it("장면 이벤트와 메시지의 장면 칸을 받고, null 칸은 undefined 로 바꾼다", () => {
+    expect(
+      chatStreamEventSchema.parse({ type: "sceneChange", messageId: "m1", place: "갱도", time: null }),
+    ).toEqual({ type: "sceneChange", messageId: "m1", place: "갱도", time: null });
+
+    const parsed = chatStreamEventSchema.parse({
+      type: "done",
+      finalMessage: {
+        id: "m1",
+        role: "assistant",
+        content: "본문",
+        createdAt: "2026-08-29T00:00:00Z",
+        scene: { place: "갱도", time: null },
+      },
+    });
+    expect(parsed.type === "done" && parsed.finalMessage.scene).toEqual({ place: "갱도", time: undefined });
+
+    const withoutScene = chatStreamEventSchema.parse({
+      type: "done",
+      finalMessage: { id: "m1", role: "assistant", content: "본문", createdAt: "2026-08-29T00:00:00Z", scene: null },
+    });
+    expect(withoutScene.type === "done" && withoutScene.finalMessage.scene).toBeUndefined();
   });
 
   it("모르는 타입과 필드가 빠진 이벤트는 거부한다 — 이게 `as` 단언과 갈리는 지점이다", () => {

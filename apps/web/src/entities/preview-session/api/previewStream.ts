@@ -11,6 +11,11 @@ import { mediaTagImagesSchema } from "@/entities/media-book/@x/preview-session";
 export type PreviewStartPayload =
   components["schemas"]["CharacterDraftPayload"] | components["schemas"]["StoryDraftPayload"];
 
+/** 장면 헤더를 켠 초안의 턴 장면. entities/chat-room `chatStream.ts` 의 장면 스키마와 같은 이유로 null 칸을 undefined 로 바꾼다. */
+const previewSceneSchema = z
+  .object({ place: z.string().nullable(), time: z.string().nullable() })
+  .transform(({ place, time }) => ({ place: place ?? undefined, time: time ?? undefined }));
+
 /** SSE `done` 이벤트가 실어 나르므로 스키마에서 도출한다 — 타입을 따로 쓰면 스키마와 갈린다. */
 const previewChatMessageSchema = z.object({
   id: z.string(),
@@ -39,6 +44,11 @@ const previewChatMessageSchema = z.object({
     .nullish()
     .transform((value) => value ?? undefined)
     .optional(),
+  // 장면 헤더를 켠 초안이면 서버가 그 턴의 장면을 응답에 싣는다. 끈 초안·캐릭터 미리보기는 null 이다.
+  scene: previewSceneSchema
+    .nullish()
+    .transform((value) => value ?? undefined)
+    .optional(),
   createdAt: z.string(),
 });
 
@@ -56,6 +66,13 @@ export const previewStreamEventSchema = z.discriminatedUnion("type", [
     epilogue: z.string().nullable(),
     // 에필로그 속 칸 id 형태 태그가 가리키는 그림(`{칸 id: 그림}`).
     mediaTagImages: mediaTagImagesSchema,
+  }),
+  // 장면 헤더를 켠 초안의 매 턴 장면 — 실제 방과 같은 엔진이 `done` 바로 앞에 보낸다.
+  z.object({
+    type: z.literal("sceneChange"),
+    messageId: z.string(),
+    place: z.string().nullable(),
+    time: z.string().nullable(),
   }),
   z.object({ type: z.literal("policyWarning"), message: z.string() }),
   z.object({ type: z.literal("done"), finalMessage: previewChatMessageSchema }),

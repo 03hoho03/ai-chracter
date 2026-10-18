@@ -22,6 +22,7 @@ function buildState(overrides: Partial<ChatRoomState> = {}): ChatRoomState {
       shortcuts: [],
       suggestedReplies: [],
       pinnedStartingSetupId: "physical-setup-1",
+      sceneHeaderEnabled: true,
     },
     messages: [{ id: "m1", role: "assistant", content: "안녕", createdAt: "2026-07-08T00:00:00Z" }],
     openingMediaTagImages: {},
@@ -170,6 +171,27 @@ describe("applyStreamEvent", () => {
     applyStreamEvent(queryClient, ROOM_ID, { type: "done", finalMessage }, { onDone });
 
     expect(onDone).toHaveBeenCalledWith(finalMessage, initialState);
+  });
+
+  it("sceneChange before done holds the scene and done attaches it to that response", () => {
+    applyStreamEvent(queryClient, ROOM_ID, { type: "sceneChange", messageId: "m2", place: "갱도", time: null });
+    const held = queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(ROOM_ID));
+    expect(held?.messages).toBe(initialState.messages);
+
+    const finalMessage: ChatMessage = { id: "m2", role: "assistant", content: "다음 대사", createdAt: "2026-07-08T00:01:00Z" };
+    applyStreamEvent(queryClient, ROOM_ID, { type: "done", finalMessage });
+
+    const state = queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(ROOM_ID));
+    expect(state?.messages.at(-1)?.scene).toEqual({ place: "갱도", time: undefined });
+    expect(state?.pendingScene).toBeUndefined();
+  });
+
+  it("sceneChange for a message already in the cache attaches the scene to it", () => {
+    applyStreamEvent(queryClient, ROOM_ID, { type: "sceneChange", messageId: "m1", place: "광장", time: "밤" });
+
+    const state = queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(ROOM_ID));
+    expect(state?.messages[0]?.scene).toEqual({ place: "광장", time: "밤" });
+    expect(state?.pendingScene).toBeUndefined();
   });
 
   it("is a no-op when there is no cached state yet for the room", () => {
