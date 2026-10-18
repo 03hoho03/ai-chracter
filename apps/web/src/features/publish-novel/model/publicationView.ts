@@ -11,7 +11,11 @@ export type PublishSourceBlock = "permission" | "source";
  * - `noChapters`: 화가 없어 공개할 것이 없다.
  * - `unpublished`: 공개한 적이 없고 공개할 수 있다.
  * - `blocked`: 공개한 적이 없고 원작 때문에 공개할 수 없다.
- * - `restricted`: 운영자가 노벨에서 내렸다(거둠·공개 중 무관하게 이것이 앞선다).
+ * - `restricted`: 운영자가 노벨에서 내렸다(거둠·공개 중·승인 대기 무관하게 이것이 앞선다).
+ * - `inReview`: 첫 공개를 신청했고 운영자가 1화를 확인하고 있다. 공개 범위는 `withdrawn` 이지만 게시자가 거둔 것이 아니다.
+ * - `reviewRejected`: 운영자가 첫 공개를 반려했다. `reason` 은 운영자가 쓴 글 그대로다. 반려된 공개는 독자에게 보인 적이
+ *   없어 새로 공개하는 것과 같은 원작 판정을 받는다 — 그 판정이 막지 않고 화가 있어야 다시 신청할 수 있다(`canReapply`),
+ *   막혔으면 `block` 이 그 까닭이다.
  * - `withdrawn`: 게시자가 공개를 거뒀다. 원작이 공개돼 있지 않으면 다시 열 수 없다.
  * - `public`: 공개 중. 아직 공개하지 않은 화 수, 원작 때문에 더 공개할 수 없는가, 공개한 뒤 고친 화·제목·소개,
  *   그리고 다시 공개할 것이 있는가. */
@@ -20,6 +24,8 @@ export type PublicationView =
   | { kind: "unpublished" }
   | { kind: "blocked"; block: PublishSourceBlock }
   | { kind: "restricted" }
+  | { kind: "inReview" }
+  | { kind: "reviewRejected"; reason: string; canReapply: boolean; block: PublishSourceBlock | undefined }
   | { kind: "withdrawn"; canReopen: boolean }
   | {
       kind: "public";
@@ -39,6 +45,16 @@ function toSourceBlock(block: NovelPublicationStatus["newPublishBlock"]): Publis
 export function toPublicationView(status: NovelPublicationStatus): PublicationView {
   if (status.moderationStatus === "restricted") return { kind: "restricted" };
   const newBlock = toSourceBlock(status.newPublishBlock);
+  // 심사 칸이 없는 옛 응답(`undefined`)은 엄격 비교에 걸리지 않아 아래의 지금 판정으로 떨어진다.
+  if (status.reviewStatus === "pending") return { kind: "inReview" };
+  if (status.reviewStatus === "rejected") {
+    return {
+      kind: "reviewRejected",
+      reason: status.reviewReason ?? "",
+      canReapply: newBlock === undefined && status.chapterCount > 0,
+      block: newBlock,
+    };
+  }
   if (!status.published) {
     if (status.chapterCount === 0) return { kind: "noChapters" };
     return newBlock === undefined ? { kind: "unpublished" } : { kind: "blocked", block: newBlock };
@@ -60,8 +76,14 @@ export function toPublicationView(status: NovelPublicationStatus): PublicationVi
 
 /** 공개 모달에서 고를 수 있는 "N화까지"의 범위. 1화부터 이어진 화만 공개하므로 고르는 것은 끝 화 하나다 — 아래 끝은
  * 지금 공개한 범위(줄일 수 없다 — 줄이는 길은 마지막 묶음 삭제나 거두기다), 위 끝은 새로 공개할 수 있으면 마지막 화,
- * 없으면 지금 공개한 범위다. 고를 것이 없으면(화가 없거나 공개한 적 없이 막힘) `undefined`. */
+ * 없으면 지금 공개한 범위다. 고를 것이 없으면(화가 없거나 공개한 적 없이 막힘) `undefined`.
+ *
+ * 첫 공개에 운영자 승인이 필요하면(`reviewRequired`) 1화만 고를 수 있다 — 승인을 기다리는 동안 다음 화 요청은 서버가
+ * 막으므로, 신청하는 것은 1화 하나다. */
 export function toPublishRange(status: NovelPublicationStatus): { min: number; max: number } | undefined {
+  if (status.reviewRequired) {
+    return status.chapterCount > 0 && status.newPublishBlock === null ? { min: 1, max: 1 } : undefined;
+  }
   const min = Math.max(status.publishedChapterCount, 1);
   const max = status.newPublishBlock === null ? status.chapterCount : status.publishedChapterCount;
   return max < min ? undefined : { min, max };
@@ -70,7 +92,10 @@ export function toPublishRange(status: NovelPublicationStatus): { min: number; m
 /** 공개할 때 보낼 요청들(요청 하나 = 화 하나, 차례대로). 먼저 이미 공개한 화 중 고친 것을 다시 내고, 그다음 공개한
  * 범위 다음 화부터 `targetOrdinal` 화까지 새로 공개한다 — 앞 화가 걸려 멈추면 그 앞까지는 공개된 채 남고 1화부터의
  * 이어짐이 깨지지 않는다. 화를 다시 내지 않아도 제목·소개가 바뀌었거나 거둔 공개를 다시 여는 것이면 화 없이 한 번
- * 보낸다(`null`). 서버는 어느 요청에서든 바뀐 제목·소개를 함께 심사해 내고 거둔 공개를 다시 연다. */
+ * 보낸다(`null`). 서버는 어느 요청에서든 바뀐 제목·소개를 함께 심사해 내고 거둔 공개를 다시 연다.
+ *
+ * 첫 공개에 운영자 승인이 필요하면(`reviewRequired`) 첫 요청 하나만 보낸다 — 그 요청이 승인 대기를 만들고, 대기 중의
+ * 다음 요청은 서버가 409 로 막는다. */
 export function toPublishRequests({
   status,
   chapters,
@@ -89,8 +114,23 @@ export function toPublishRequests({
     const id = idByOrdinal.get(ordinal);
     return id === undefined ? [] : [id];
   });
-  if (ids.length === 0 && (status.metadataChanged || status.visibility === "withdrawn")) return [null];
-  return ids;
+  const requests = ids.length === 0 && (status.metadataChanged || status.visibility === "withdrawn") ? [null] : ids;
+  return status.reviewRequired ? requests.slice(0, 1) : requests;
+}
+
+/** 첫 공개를 신청한 뒤(승인 대기로 끝난 공개) 알리는 말. 작품 정보의 공개 절과 보드의 공개 버튼이 함께 쓴다. */
+export const REVIEW_REQUESTED_MESSAGE = "공개를 신청했어요. 운영자가 확인하면 노벨에 열려요.";
+
+/** 신청 취소를 보낸 뒤 다시 받은 공개 상태로 무엇이 일어났는지 가른다. 서버는 승인 대기면 신청을 지우고, 그사이 승인됐으면
+ * 보통의 거두기를 한다 — 누른 버튼이 아니라 결과로 말해야 한다. 공개 상태 행이 없으면 취소됐고, 대기가 아니게 됐으면
+ * 승인된 뒤 거둬졌다. 다시 받지 못했거나 아직 대기로 보이면 말할 것이 없다(`undefined`). */
+export function toCancelReviewOutcome(
+  status: Pick<NovelPublicationStatus, "published" | "reviewStatus"> | undefined,
+): "cancelled" | "withdrawnAfterApproval" | undefined {
+  if (status === undefined) return undefined;
+  if (!status.published) return "cancelled";
+  if (status.reviewStatus === "approved") return "withdrawnAfterApproval";
+  return undefined;
 }
 
 const CHAPTER_PART_LABELS = {

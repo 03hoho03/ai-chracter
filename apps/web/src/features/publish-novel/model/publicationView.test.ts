@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { NovelPublicationStatus } from "@/entities/novel";
 
 import {
+  toCancelReviewOutcome,
   toPublicationView,
   toPublicPendingLines,
   toPublishRange,
@@ -80,6 +81,60 @@ describe("toPublicationView", () => {
   });
 });
 
+describe("toPublicationView 첫 공개 심사", () => {
+  // 승인 대기·반려 행은 공개 범위가 거둠이다 — 서버가 그렇게 둔다.
+  const IN_REVIEW = { published: true, visibility: "withdrawn", moderationStatus: "normal", reviewRequired: true } as const;
+
+  it("승인 대기는 공개 범위가 거둠이어도 대기로 보인다", () => {
+    expect(toPublicationView(status({ ...IN_REVIEW, publishedChapterCount: 1, reviewStatus: "pending" }))).toEqual({
+      kind: "inReview",
+    });
+  });
+
+  it("반려는 사유를 싣고 원작이 열려 있으면 다시 신청할 수 있다", () => {
+    expect(
+      toPublicationView(status({ ...IN_REVIEW, reviewStatus: "rejected", reviewReason: "1화 첫 문단을 고쳐 주세요.\n다시 봐요." })),
+    ).toEqual({ kind: "reviewRejected", reason: "1화 첫 문단을 고쳐 주세요.\n다시 봐요.", canReapply: true, block: undefined });
+  });
+
+  it("반려인데 원작 때문에 막히면 다시 신청할 수 없다", () => {
+    expect(
+      toPublicationView(status({ ...IN_REVIEW, reviewStatus: "rejected", reviewReason: "사유", newPublishBlock: "source_permission" })),
+    ).toEqual({ kind: "reviewRejected", reason: "사유", canReapply: false, block: "permission" });
+  });
+
+  it("운영 조치는 승인 대기보다 앞선다", () => {
+    expect(
+      toPublicationView(status({ ...IN_REVIEW, moderationStatus: "restricted", reviewStatus: "pending", publishedChapterCount: 1 })),
+    ).toEqual({ kind: "restricted" });
+  });
+
+  it("승인된 공개는 심사 없던 공개와 같게 보인다", () => {
+    expect(toPublicationView(status({ ...PUBLIC, publishedChapterCount: 8, reviewStatus: "approved" }))).toMatchObject({
+      kind: "public",
+    });
+  });
+});
+
+describe("toCancelReviewOutcome", () => {
+  it("공개 상태 행이 없어졌으면 신청이 취소됐다", () => {
+    expect(toCancelReviewOutcome(status({}))).toBe("cancelled");
+  });
+
+  it("그사이 승인돼 거둬졌으면 그렇게 말한다", () => {
+    expect(toCancelReviewOutcome(status({ ...PUBLIC, visibility: "withdrawn", reviewStatus: "approved" }))).toBe(
+      "withdrawnAfterApproval",
+    );
+  });
+
+  it("다시 받지 못했거나 아직 대기로 보이면 말하지 않는다", () => {
+    expect(toCancelReviewOutcome(undefined)).toBeUndefined();
+    expect(
+      toCancelReviewOutcome(status({ ...PUBLIC, visibility: "withdrawn", reviewStatus: "pending" })),
+    ).toBeUndefined();
+  });
+});
+
 describe("toPublishRange", () => {
   it("처음 공개는 1화부터 마지막 화까지 고를 수 있다", () => {
     expect(toPublishRange(status({}))).toEqual({ min: 1, max: 8 });
@@ -93,6 +148,11 @@ describe("toPublishRange", () => {
     });
   });
 
+  it("승인이 필요하면 고를 수 있는 범위가 1화뿐이다", () => {
+    expect(toPublishRange(status({ reviewRequired: true }))).toEqual({ min: 1, max: 1 });
+    expect(toPublishRange(status({ reviewRequired: true, newPublishBlock: "source_permission" }))).toBeUndefined();
+  });
+
   it("공개한 적 없이 막혔거나 화가 없으면 고를 것이 없다", () => {
     expect(toPublishRange(status({ newPublishBlock: "source_permission" }))).toBeUndefined();
     expect(toPublishRange(status({ chapterCount: 0 }))).toBeUndefined();
@@ -102,6 +162,20 @@ describe("toPublishRange", () => {
 describe("toPublishRequests", () => {
   it("1화부터 고른 화까지 한 화씩 차례로 보낸다", () => {
     expect(toPublishRequests({ status: status({}), chapters, targetOrdinal: 3 })).toEqual(["c1", "c2", "c3"]);
+  });
+
+  it("승인이 필요하면 첫 요청 하나만 보낸다", () => {
+    expect(toPublishRequests({ status: status({ reviewRequired: true }), chapters, targetOrdinal: 3 })).toEqual(["c1"]);
+    // 반려 뒤 다시 신청 — 반려가 화 공개본을 지워 공개한 화가 없다.
+    const rejected = status({
+      published: true,
+      visibility: "withdrawn",
+      moderationStatus: "normal",
+      reviewStatus: "rejected",
+      reviewRequired: true,
+      changedChapterOrdinals: [1],
+    });
+    expect(toPublishRequests({ status: rejected, chapters, targetOrdinal: 1 })).toEqual(["c1"]);
   });
 
   it("고친 화를 먼저 다시 내고 그다음 새 화를 잇는다", () => {

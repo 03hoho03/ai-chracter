@@ -10,8 +10,10 @@ import type { NovelPublicationStatus } from "@/entities/novel";
 import { useWebnovelQuery } from "@/entities/webnovel";
 import { formatCompactCount } from "@/shared/lib/number/formatCompactCount";
 
-import { toPublishFailureMessage } from "../model/publishFailure";
+import type { PublishRunResult } from "../api/usePublishNovelRun";
+import { isRetryablePublishFailure, toPublishFailureMessage } from "../model/publishFailure";
 import {
+  REVIEW_REQUESTED_MESSAGE,
   toPublicationView,
   toPublicPendingLines,
   toPublishPriceSentence,
@@ -27,7 +29,7 @@ type PublishableNovel = { id: string; chapters: readonly { id: string; ordinal: 
 const BADGE_CLASS = "inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-badge font-medium";
 
 /** 작품 정보(`/novels/$novelId`)의 "노벨 공개" 절 — 행동 줄 아래, 소개 위. 공개 상태(공개 전·공개 중·거둠·운영 조치·
- * 원작 때문에 막힘)와 요청 중("확인 중 · n/N")·요청 실패(심사 장애·상한·낡음), 마지막 심사 거절을 한자리에서 말한다.
+ * 원작 때문에 막힘·첫 공개 승인 대기·반려)와 요청 중("확인 중 · n/N")·요청 실패(심사 장애·상한·낡음), 마지막 심사 거절을 한자리에서 말한다.
  *
  * 카드 껍데기 없이 위 경계선과 제목으로만 갈린다. 이 절의 버튼은 전부 outline·ghost 다 — 이 화면의 솔리드 채움은
  * "이어 읽기" 하나로 남는다. 공개 상태를 못 읽으면(소설화를 쓸 수 없는 계정, 노벨이 꺼져 있음, 일시 실패) 절을 그리지
@@ -51,12 +53,19 @@ export function NovelPublicSection({ novel }: { novel: PublishableNovel }) {
   async function publish() {
     if (status === undefined || isChecking) return;
     actions.clearFailure();
-    if (await actions.openPublish(status)) toast.success("노벨에 공개했어요.");
+    announcePublishResult(await actions.openPublish(status));
   }
 
   async function retry() {
     if (isChecking) return;
-    if (await actions.retry()) toast.success("노벨에 공개했어요.");
+    announcePublishResult(await actions.retry());
+  }
+
+  async function withdraw() {
+    if (view === undefined) return;
+    const outcome = await actions.openWithdraw(view.kind === "inReview" ? "cancelReview" : "withdraw");
+    if (outcome === "cancelled") toast.success("신청을 취소했어요.");
+    if (outcome === "withdrawnAfterApproval") toast.success("그사이 승인돼 공개를 거뒀어요.");
   }
 
   return (
@@ -106,16 +115,24 @@ export function NovelPublicSection({ novel }: { novel: PublishableNovel }) {
           novelId={novel.id}
           rejectionFixOrdinal={rejection?.fixOrdinal}
           fixChapterId={novel.chapters.find((chapter) => chapter.ordinal === rejection?.fixOrdinal)?.id}
-          canRetry={runState.kind === "failed" && (runState.failure.kind === "unavailable" || runState.failure.kind === "failed")}
+          firstChapterId={novel.chapters.find((chapter) => chapter.ordinal === 1)?.id}
+          canRetry={runState.kind === "failed" && isRetryablePublishFailure(runState.failure)}
           onPublish={() => void publish()}
           onRetry={() => void retry()}
-          onWithdraw={() => void actions.openWithdraw()}
+          onWithdraw={() => void withdraw()}
         />
       )}
     </section>
   );
 }
 
+function announcePublishResult(result: PublishRunResult) {
+  if (result === "published") toast.success("노벨에 공개했어요.");
+  if (result === "inReview") toast.success(REVIEW_REQUESTED_MESSAGE);
+}
+
+/** 승인 대기는 게시자가 할 일 없는 기다림이라 거둠과 같은 흐린 잉크, 반려는 읽을 사유가 생긴 상태라 잉크만 올린다 —
+ * 반려는 제재가 아니라 고쳐서 다시 낼 수 있는 상태여서 이용제한의 `destructive` 틴트를 쓰지 않는다. */
 function ViewBadge({ view }: { view: PublicationView }) {
   switch (view.kind) {
     case "public":
@@ -124,6 +141,10 @@ function ViewBadge({ view }: { view: PublicationView }) {
       return <span className={cn(BADGE_CLASS, "border-border text-muted-foreground")}>공개 거둠</span>;
     case "restricted":
       return <span className={cn(BADGE_CLASS, "border-transparent bg-destructive/10 text-destructive-text")}>이용제한</span>;
+    case "inReview":
+      return <span className={cn(BADGE_CLASS, "border-border text-muted-foreground")}>승인 대기</span>;
+    case "reviewRejected":
+      return <span className={cn(BADGE_CLASS, "border-border text-foreground")}>반려</span>;
     default:
       return null;
   }
@@ -177,6 +198,29 @@ function ViewBody({
           <p>조치에 대해 묻고 싶은 것이 있으면 고객센터로 문의해 주세요.</p>
         </Lines>
       );
+    case "inReview":
+      return (
+        <Lines>
+          <p className="text-foreground">
+            운영자가 1화를 확인하고 있어요. 승인되면 노벨에 공개되고, 그다음 화부터는 바로 공개할 수 있어요.
+          </p>
+          <p>확인을 기다리는 동안에는 다른 화를 공개할 수 없어요.</p>
+        </Lines>
+      );
+    case "reviewRejected":
+      return (
+        <Lines>
+          <p className="text-foreground">운영자가 첫 공개를 반려했어요.</p>
+          {view.reason !== "" && (
+            // 운영자가 쓴 글 그대로라 길이·줄바꿈을 모른다. 윤곽 상자 하나로 남의 글임을 가른다.
+            <div className="my-1 flex max-w-prose flex-col gap-1 rounded-lg border border-border p-3">
+              <p className="text-xs font-medium text-muted-foreground">운영자가 남긴 사유</p>
+              <p className="whitespace-pre-wrap text-foreground wrap-anywhere">{view.reason}</p>
+            </div>
+          )}
+          <p>{toReapplyLine(view)}</p>
+        </Lines>
+      );
     case "withdrawn":
       return (
         <Lines>
@@ -208,11 +252,19 @@ function ViewBody({
   }
 }
 
+function toReapplyLine(view: Extract<PublicationView, { kind: "reviewRejected" }>): string {
+  if (view.canReapply) return "고친 뒤 다시 신청할 수 있어요.";
+  if (view.block === "permission") return "원작자가 이 작품으로 만든 소설의 공개를 허락하지 않아 다시 신청할 수 없어요.";
+  if (view.block === "source") return "원작이 지금 공개돼 있지 않아 다시 신청할 수 없어요.";
+  return "첫 화를 만든 뒤 다시 신청할 수 있어요.";
+}
+
 function ViewActions({
   view,
   novelId,
   rejectionFixOrdinal,
   fixChapterId,
+  firstChapterId,
   canRetry,
   onPublish,
   onRetry,
@@ -222,6 +274,7 @@ function ViewActions({
   novelId: string;
   rejectionFixOrdinal: number | undefined;
   fixChapterId: string | undefined;
+  firstChapterId: string | undefined;
   canRetry: boolean;
   onPublish: () => void;
   onRetry: () => void;
@@ -282,6 +335,33 @@ function ViewActions({
           공개 거두기
         </Button>,
       );
+      break;
+    case "inReview":
+      buttons.push(
+        <Button key="withdraw" type="button" variant="ghost" size="sm" onClick={onWithdraw}>
+          신청 취소
+        </Button>,
+      );
+      break;
+    case "reviewRejected":
+      // 반려 사유는 어느 화인지 말하지 않는다 — 신청한 1화로 보낸다. 심사 거절이 이미 고칠 화를 걸었으면 그것을 따른다.
+      if (rejectionFixOrdinal === undefined && firstChapterId !== undefined) {
+        buttons.push(
+          <Button key="fix" asChild variant="outline" size="sm">
+            <Link to="/novels/$novelId/board" params={{ novelId }} search={{ select: `episode:${firstChapterId}` }}>
+              1화 고치러 가기
+            </Link>
+          </Button>,
+        );
+      }
+      if (view.canReapply) {
+        buttons.push(
+          <Button key="publish" type="button" variant="outline" size="sm" onClick={onPublish}>
+            <Globe aria-hidden />
+            다시 신청하기
+          </Button>,
+        );
+      }
       break;
     case "restricted":
       buttons.push(

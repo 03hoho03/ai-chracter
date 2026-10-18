@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { toast } from "sonner";
 
 import { toPublishFailureMessage } from "../model/publishFailure";
-import { toPublicationView, toRejectionNotice } from "../model/publicationView";
+import { REVIEW_REQUESTED_MESSAGE, toPublicationView, toRejectionNotice } from "../model/publicationView";
 import { useNovelPublishActions } from "../model/useNovelPublishActions";
 import { PublishNovelModal } from "./PublishNovelModal";
 import { WithdrawNovelPublicationModal } from "./WithdrawNovelPublicationModal";
@@ -12,7 +12,7 @@ import { WithdrawNovelPublicationModal } from "./WithdrawNovelPublicationModal";
 type PublishableNovel = { id: string; chapters: readonly { id: string; ordinal: number }[] };
 
 /** 편집 보드 상단 바의 "노벨 공개" — 작품 정보의 공개 절과 같은 공개 모달을 연다. 공개할 것이 있을 때만(공개 전,
- * 거둔 공개를 다시 열 수 있을 때, 공개 중인데 새 화·고친 내용이 있을 때) 보인다 — 상태 안내와 거두기는 작품 정보가
+ * 거둔 공개를 다시 열 수 있을 때, 반려된 첫 공개를 다시 신청할 수 있을 때, 공개 중인데 새 화·고친 내용이 있을 때) 보인다 — 상태 안내와 거두기는 작품 정보가
  * 맡는다. 확인하는 동안은 아이콘이 스피너로 바뀌고 접근 이름이 진행을 말한다. 결과는 토스트로 알린다(보드에는 공개
  * 절이 없다). `sm` 미만은 아이콘만 남긴다(빌더 상단 바와 같은 규칙). */
 export function NovelPublishBoardButton({ novel }: { novel: PublishableNovel }) {
@@ -41,8 +41,10 @@ export function NovelPublishBoardButton({ novel }: { novel: PublishableNovel }) 
   if (status === undefined) return null;
   const view = toPublicationView(status);
   const isChecking = runState.kind === "checking";
+  // 승인 대기는 공개할 것이 없어 숨긴다 — 대기 상태는 작품 정보의 공개 절이 말한다.
   const canPublish =
     view.kind === "unpublished" ||
+    (view.kind === "reviewRejected" && view.canReapply) ||
     (view.kind === "withdrawn" && view.canReopen) ||
     (view.kind === "public" && view.canRepublish);
   if (!canPublish && !isChecking) return null;
@@ -63,8 +65,9 @@ export function NovelPublishBoardButton({ novel }: { novel: PublishableNovel }) 
         onClick={() => {
           if (isChecking) return;
           actions.clearFailure();
-          void actions.openPublish(status).then((isDone) => {
-            if (isDone) toast.success("노벨에 공개했어요.");
+          void actions.openPublish(status).then((result) => {
+            if (result === "published") toast.success("노벨에 공개했어요.");
+            if (result === "inReview") toast.success(REVIEW_REQUESTED_MESSAGE);
           });
         }}
       >

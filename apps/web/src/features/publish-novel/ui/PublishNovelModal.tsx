@@ -23,6 +23,13 @@ type PublishNovelModalProps = {
   /** "N화까지"에서 고를 수 있는 범위(`toPublishRange`). 아래 끝이 위 끝과 같으면 고를 것이 없어 글로만 보인다. */
   range: { min: number; max: number };
   chapterCount: number;
+  /** 첫 공개에 운영자 승인이 필요한가. 참이면 범위는 1화로 고정되고(`toPublishRange`), 공개가 아니라 신청이라고 말한다. */
+  reviewRequired: boolean;
+};
+
+const MODE_TITLES: Record<PublishNovelModalProps["mode"], string> = {
+  publish: "노벨에 공개하기",
+  republish: "다시 공개하기",
 };
 
 /** 노벨 공개 확인. 1화부터 이어진 화만 공개하므로 고르는 것은 "몇 화까지" 하나다 — 띄엄띄엄 고르는 모양 자체를 두지
@@ -31,14 +38,17 @@ type PublishNovelModalProps = {
  *
  * 고른 끝 화를 돌려준다(취소면 `undefined`). 실제 요청은 호출부가 화 하나씩 보낸다(`usePublishNovelRun`) — 모달은
  * 바로 닫히고 공개 절이 "확인 중 · n/N화"를 그린다. 공개 화면의 페이지·보드에 마운트한다(루트에 두면 첫 화면 번들이
- * 커진다). */
+ * 커진다).
+ *
+ * 첫 공개에 운영자 승인이 필요하면 무엇이 다른지를 설명 첫 줄에 먼저 말하고 실행 문구를 "1화 공개 신청하기"로 바꾼다.
+ * 확인에 걸리는 시간은 정해진 값이 없어 약속하지 않는다. */
 export const PublishNovelModal = createCallable<PublishNovelModalProps, number | undefined>(
-  ({ call, mode, range, chapterCount }) => {
+  ({ call, mode, range, chapterCount, reviewRequired }) => {
     const selectId = useId();
     const [target, setTarget] = useState(range.max);
     const pricing = useCloverPricingQuery().data;
     const isFixed = range.min === range.max;
-    const title = mode === "publish" ? "노벨에 공개하기" : "다시 공개하기";
+    const title = reviewRequired ? "노벨에 공개 신청하기" : MODE_TITLES[mode];
     const options = Array.from({ length: range.max - range.min + 1 }, (_, index) => range.min + index);
 
     return (
@@ -47,6 +57,7 @@ export const PublishNovelModal = createCallable<PublishNovelModalProps, number |
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
             <DialogDescription className="break-keep">
+              {reviewRequired && "첫 공개는 운영자가 1화를 확인한 뒤 독자에게 열려요. "}
               로그인한 회원 누구나 읽을 수 있어요. 1화부터 이어진 화만 공개할 수 있어요.
             </DialogDescription>
           </DialogHeader>
@@ -54,7 +65,7 @@ export const PublishNovelModal = createCallable<PublishNovelModalProps, number |
           <DialogBody className="flex flex-col gap-5">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-foreground tabular-nums">
               {isFixed ? (
-                <span>1~{range.max}화</span>
+                <span>{range.max === 1 ? "1화" : `1~${range.max}화`}</span>
               ) : (
                 <>
                   <label htmlFor={selectId}>1화부터</label>
@@ -102,7 +113,7 @@ export const PublishNovelModal = createCallable<PublishNovelModalProps, number |
               취소
             </Button>
             <Button type="button" onClick={() => call.end(isFixed ? range.max : target)}>
-              {(isFixed ? range.max : target).toLocaleString()}화까지 공개하기
+              {reviewRequired ? "1화 공개 신청하기" : `${(isFixed ? range.max : target).toLocaleString()}화까지 공개하기`}
             </Button>
           </DialogFooter>
         </DialogContent>
