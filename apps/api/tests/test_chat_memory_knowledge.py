@@ -1,13 +1,18 @@
 """장면 인물 집합과 지식 범위 필터 — 아는 사람이 이번 장면에 없는 비밀 사실을 사실 섹션 후보에서 뺀다(DB·LLM 없음).
 
 규칙(결과를 보기 전에 적었다):
-- 방 이름 = 방 사실 행의 주어·관계 대상·말한 사람·아는 사람 원소 + 호출부가 더 주는 이름(매 턴 조립은 주지 않는다 — 판정은
-  아는 사람 원소로만 하고 그 원소는 이미 행에서 들어온다). 사실 키와 같은 정규화를 하고, 2자 미만은 버리고, 사용자 표기는 뺀다.
+- 방 이름 = 방 사실 행의 주어·관계 대상·말한 사람·아는 사람 원소 + 호출부가 더 주는 이름(사실 섹션은 주지 않는다 — 판정은
+  아는 사람 원소로만 하고 그 원소는 이미 행에서 들어온다. 회상의 가림은 후보 장면 행의 아는 사람 원소를 더 준다 — 사실 행에 없는
+  이름이 장면 칸에만 있을 수 있다). 사실 키와 같은 정규화를 하고, 2자 미만은 버리고, 사용자 표기는 뺀다.
 - 사용자 표기 = 대화 프로필 이름(있으면)·대화 줄 라벨·`{{user}}` 대체어·추출 지시문이 사용자를 부르는 낱말. 프로필 이름이
   없는 방에서 추출이 사용자를 이 중 어느 것으로 적어도 사용자로 본다. 생성 모델이 연기하는 쪽은 사용자가 아니라서 사용자의
   앎은 누출 위험이 아니고, 진행자가 사용자를 이름으로 부르는 일이 흔해 사용자를 세면 그런 턴마다 비밀이 남는다.
 - 장면 인물 = 방 이름 중 정규화한 이번 턴 사용자 메시지나 직전 응답에 부분 문자열로 나오는 것(조사가 몇 겹 붙어도 잡힌다).
-- 아는 사람이 정해진 행은 그 이름 중 하나가 장면 인물일 때만 남는다. 아는 사람이 정해지지 않은 행(공개·불명)은 늘 남는다."""
+- 지식 범위 필터 스위치를 켠 턴(`KnowledgeScope` 가 그렇게 받는다)은 직전 응답에서 대사 따옴표(`"…"`·`“…”`·`「…」`·`『…』`)
+  안에서만 나온 이름을 장면 인물로 세지 않는다 — 인물이 말로 꺼낸 이름은 그 사람이 장면에 있다는 뜻이 아니다. 사용자 메시지는
+  따옴표 안이어도 세고, 직전 응답 서술(따옴표 밖)에 한 번이라도 나오면 센다. 짝이 맞지 않는 따옴표는 대사로 보지 않는다.
+- 아는 사람이 정해진 행은 그 이름 중 하나가 장면 인물일 때만 남는다. 아는 사람이 정해지지 않은 행(공개·불명)은 늘 남는다. 사실
+  행과 장면 행이 아는 사람 목록 하나로 같은 판정을 쓴다."""
 
 import unicodedata
 import uuid
@@ -54,7 +59,7 @@ def _kept(
 ) -> bool:
     users = user_names(persona, LABEL)
     scene = scene_people(room_names([row], extra, users=users), (user_text, previous_response))
-    return known_in_scene(row, scene)
+    return known_in_scene(row.known_by, scene)
 
 
 # 유나가 사용자(하늘)에게만 털어놓은 비밀.
@@ -135,7 +140,7 @@ def test_room_names_come_from_every_name_field_and_the_extra_names() -> None:
 
 
 # --- 회상 줄의 비밀 장면 ---------------------------------------------------------------------
-# 장면 행에는 아는 사람 칸이 없다. 그래서 회상은 사실 행에서 끌어낸다 — 키별 최신 행이 위 필터를 지나지 못하는 키(가려진 키)의
+# 회상은 장면 행 자신의 아는 사람 칸과 함께 사실 행에서도 비밀을 끌어낸다 — 키별 최신 행이 위 필터를 지나지 못하는 키(가려진 키)의
 # 어느 행과든 근거 메시지 범위가 겹치는(양 끝 포함) 장면을 그 턴 회상에서 뺀다. 키의 최신 행이 공개면 옛 행이 비밀이었어도
 # 가리지 않는다.
 
@@ -230,3 +235,88 @@ def test_recall_hides_the_same_keys_the_fact_section_filter_drops() -> None:
     dropped = {row.fact_key for _, row in latest_by_key(rows) if not keep(row)}
     assert dropped == {"fact|유나|비밀"}
     assert hidden_fact_keys(rows, scene) == dropped
+
+
+# --- 장면 행의 아는 사람 칸과 직전 응답의 대사 ------------------------------------------------------
+
+
+def test_known_by_judgment_takes_a_bare_name_list() -> None:
+    """사실 행과 장면 행이 같은 판정을 쓰도록 아는 사람 목록만 받는다 — 목록이 없으면 남고, 원소 하나라도 장면 인물이면 남는다.
+    원소는 사실 키와 같은 정규화로 맞춘다."""
+    scene = frozenset({"민수"})
+    assert known_in_scene(None, scene)
+    assert known_in_scene(["유나", "민수"], scene)
+    assert known_in_scene([" 민수 "], scene)
+    assert not known_in_scene(["유나"], scene)
+    assert not known_in_scene(["유나"], frozenset())
+    # 사실 행은 자기 칸을 넘긴다.
+    assert known_in_scene(_row(known_by=["민수"]).known_by, scene)
+    assert not known_in_scene(_TOLD_THE_USER.known_by, scene)
+    assert known_in_scene(_row().known_by, frozenset())
+
+
+_NAMES = PromptNames(persona_name=PERSONA, char_name=None)
+
+
+def _history_with(reply: str) -> list[ChatMessage]:
+    return [
+        ChatMessage(role=ChatMessageRole.ASSISTANT, content="오프닝"),
+        ChatMessage(role=ChatMessageRole.USER, content="안녕"),
+        ChatMessage(role=ChatMessageRole.ASSISTANT, content=reply),
+    ]
+
+
+def test_extra_names_join_the_room_names_but_user_forms_do_not() -> None:
+    """사실 행이 하나도 없어도 호출부가 준 이름(회상 후보 장면의 아는 사람 원소)이 턴에 나오면 장면 인물이다. 사용자 표기는 더 줘도
+    장면 인물이 아니다."""
+    scope = KnowledgeScope(user_label=LABEL)
+    history = _history_with("바람이 분다.")
+    message = "유나랑 하늘이 왔어"
+
+    assert scene_for_turn([], scope, history=history, user_content=message, names=_NAMES) == frozenset()
+    assert scene_for_turn(
+        [], scope, history=history, user_content=message, names=_NAMES, extra=["유나", PERSONA, "사용자 인물"]
+    ) == {"유나"}
+
+
+_BOTH = [_row("유나", known_by=["유나"]), _row("민수", known_by=["민수"])]
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        pytest.param('"민수는 어디 갔어?" 유나가 물었다.', id="straight"),
+        pytest.param("“민수는 어디 갔어?” 유나가 물었다.", id="curly"),
+        pytest.param("「민수는 어디 갔어?」 유나가 물었다.", id="corner"),
+        pytest.param("『민수는 어디 갔어?』 유나가 물었다.", id="white-corner"),
+    ],
+)
+def test_name_only_inside_reply_dialogue_is_not_a_scene_person_when_the_filter_is_on(reply: str) -> None:
+    """직전 응답에서 민수는 대사 안에만, 유나는 서술에 나온다. 필터를 켠 턴은 민수를 세지 않고, 끈 턴은 지금처럼 센다."""
+    on = KnowledgeScope(user_label=LABEL, ignore_quoted_reply_names=True)
+    off = KnowledgeScope(user_label=LABEL)
+    history = _history_with(reply)
+
+    assert scene_for_turn(_BOTH, on, history=history, user_content="그래서?", names=_NAMES) == {"유나"}
+    assert scene_for_turn(_BOTH, off, history=history, user_content="그래서?", names=_NAMES) == {"유나", "민수"}
+
+
+@pytest.mark.parametrize(
+    ("user_content", "reply"),
+    [
+        pytest.param('"민수 어디 갔어?" 하고 물었다', "바람이 분다.", id="user-message-even-in-quotes"),
+        pytest.param("그래서?", "“민수는 어디 갔어?” 유나가 민수를 찾았다.", id="also-in-the-narration"),
+        pytest.param("그래서?", "“민수는 어디 갔어? 유나가 물었다.", id="unpaired-quote-is-not-dialogue"),
+    ],
+)
+def test_name_in_the_user_message_or_the_reply_narration_still_counts(user_content: str, reply: str) -> None:
+    on = KnowledgeScope(user_label=LABEL, ignore_quoted_reply_names=True)
+    scene = scene_for_turn(_BOTH, on, history=_history_with(reply), user_content=user_content, names=_NAMES)
+    assert "민수" in scene
+
+
+def test_dropping_reply_dialogue_does_not_join_the_words_around_it() -> None:
+    """대사를 지운 앞뒤 서술은 이어 붙이지 않는다 — 붙이면 경계를 걸친 가짜 이름이 생긴다."""
+    on = KnowledgeScope(user_label=LABEL, ignore_quoted_reply_names=True)
+    history = _history_with("유“아무 말”나무가 흔들렸다.")
+    assert scene_for_turn(_BOTH, on, history=history, user_content="그래서?", names=_NAMES) == frozenset()

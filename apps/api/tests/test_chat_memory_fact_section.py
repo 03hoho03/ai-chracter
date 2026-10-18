@@ -22,7 +22,8 @@
   순서로 남기고, 리플레이는 그 id 로 줄을 다시 렌더한다. 사실 읽기가 실패하면 섹션 없이 턴을 계속한다.
 - 지식 범위 필터 스위치(`memory_knowledge_filter`)가 켜져 있으면 키별 최신 행 중 아는 사람이 이번 장면에 없는 행을 고르기 전에
   뺀다(빠진 자리는 다음 후보가 채운다). 스토리 방은 아는 사람이 정해진 행이 있을 때만 미디어 북 인물을 한 번 읽는다. 사실 주입이
-  꺼져 있으면 필터가 켜져 있어도 프롬프트·SQL 이 같다.
+  꺼져 있으면 필터가 켜져 있어도 프롬프트·SQL 이 같다. 켠 턴은 직전 응답의 대사 따옴표 안에만 나온 이름을 장면 인물로 세지
+  않는다. 장면 인물의 이름 출처는 사실 행뿐이다(장면 행의 아는 사람 칸은 회상의 가림에만 쓴다).
 - 임베딩 회상 스위치(`memory_embed_recall`)가 켜져 있으면 관련 몫은 명사 순위와, 회상과 같은 질의 임베딩으로 잰 사실 임베딩
   거리 순위(지금 모델·차원, 거리 상한 안)를 RRF 로 합친 순서다. 거리 순위는 지식 범위 필터를 지난 행 사이에서만 매긴다. 벡터
   쪽이 비면 명사 단독과 같다."""
@@ -46,7 +47,14 @@ from api.chat.prompt_builder import MemorySummaryResult, PromptLane, StatRuleJud
 from api.chat.router import _resolve_starting_setup
 from api.chat.turn_prompt import GenerationPrompt, InjectedPersona, InjectedTurnState, build_room_prompt
 from api.core.config import settings
-from api.db.models import ChatMemoryFact, ChatMessage, ChatMessageRole, ChatRoom, ChatRoomMemorySnapshot
+from api.db.models import (
+    ChatMemoryEpisode,
+    ChatMemoryFact,
+    ChatMessage,
+    ChatMessageRole,
+    ChatRoom,
+    ChatRoomMemorySnapshot,
+)
 from api.db.models.chat import FACT_VALUE_MAX, ChatTurn
 from api.llm.client import LLMCallContext, LLMClient, SegmentedPrompt
 from api.llm.voyage import VoyageEmbeddingClient
@@ -881,6 +889,45 @@ async def test_profile_name_is_the_user_not_a_scene_person(
     assert HEADER not in built.prompt and built.memory_facts == ()
     kept = await _build(db_session, room, "하늘이는 유나랑 같이 있어", turn_state=state)
     assert "전학" in _section(kept.prompt)
+
+
+async def test_name_only_inside_the_reply_dialogue_is_not_a_scene_person(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """필터를 켠 턴 — 직전 응답에서 유나가 대사 안에만 나오면 유나의 비밀이 빠지고, 서술에도 나오면 남는다."""
+    room, snapshots = await _fact_room(db_client, db_session)
+    await _plant(db_session, room, snapshots[2], [_SECRET, _FRIENDS])
+    _facts_on(monkeypatch)
+    _filter_on(monkeypatch)
+
+    await _set_last_response(db_session, room, "“유나는 어디 있어?” 민수가 물었다.")
+    assert _SECRET_LINE not in _section((await _build(db_session, room, "그래서?")).prompt)
+    await _set_last_response(db_session, room, "“유나는 어디 있어?” 민수가 유나를 찾았다.")
+    assert _SECRET_LINE in _section((await _build(db_session, room, "그래서?")).prompt)
+
+
+async def test_scene_known_by_is_not_a_name_source_for_the_fact_section(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """장면 행의 아는 사람 칸은 사실 섹션의 장면 인물 출처가 아니다 — 장면 칸에 유나·지아를 채워도 필터를 켠 사실 섹션이 바이트까지
+    같다(회상은 꺼 두어 사실 섹션만 본다)."""
+    room, snapshots = await _fact_room(db_client, db_session)
+    await _plant(db_session, room, snapshots[2], [_SECRET, _FRIENDS])
+    await _plant_scenes(db_session, room, snapshots[2])
+    _facts_on(monkeypatch)
+    _filter_on(monkeypatch)
+    before = await _build(db_session, room, "지아는 뭐 해?")
+
+    await db_session.execute(
+        sa.update(ChatMemoryEpisode)
+        .where(ChatMemoryEpisode.chat_room_id == room.room_id)
+        .values(known_by=["유나", "지아"])
+    )
+    await db_session.commit()
+    after = await _build(db_session, room, "지아는 뭐 해?")
+
+    assert _SECRET_LINE not in _section(before.prompt)
+    assert after.prompt == before.prompt
 
 
 async def _statements(db_session: AsyncSession, room: Room, user_content: str, *, lane: PromptLane = "story") -> int:
