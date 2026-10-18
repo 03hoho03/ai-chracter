@@ -152,7 +152,8 @@ export function useSendMessage(
     let committedMessage: ChatMessage | undefined;
     // 이번 턴의 증감은 캐시의 직전 값과 `statChange` 새 값의 차다. 재생성은 서버가 그 턴의 스탯을 반영 전 값으로 되돌린 뒤
     // 다시 판정하므로 캐시의 직전 값(옛 응답의 결과)과의 차는 이번 턴의 변화가 아니다 — 칩을 세우지 않는다. 익명 신호는
-    // 서버가 그 턴 기준으로 판정해 보내므로 재생성에도 그대로 쓴다.
+    // 서버가 `statChange` 와 따로, 턴 시작 값(반영 전 값)과 이번 판정 결과가 다른 신호 켠 숨긴 스탯으로 정해 보낸다. 재생성도
+    // 같은 기준이라 그대로 쓴다.
     let deltas: StatDeltas = {};
     let hiddenSignal = false;
 

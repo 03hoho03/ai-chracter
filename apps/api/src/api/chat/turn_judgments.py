@@ -698,12 +698,16 @@ class TurnJudgmentResult:
 
 
 def player_stat_events(result: TurnJudgmentResult) -> list[ChatStatChangeEvent | ChatHiddenStatSignalEvent]:
-    """플레이어에게 내보낼 스탯 이벤트 — 숨긴 스탯의 `statChange` 는 빼고, 그중 신호를 켠 스탯이 하나라도 바뀌었으면 익명
-    신호 하나를 `statChange` 들 뒤에 붙인다."""
+    """플레이어에게 내보낼 스탯 이벤트 — 숨긴 스탯의 `statChange` 는 빼고, 신호를 켠 숨긴 스탯이 이번 턴에 하나라도 바뀌었으면
+    익명 신호 하나를 `statChange` 들 뒤에 붙인다.
+
+    "이번 턴에 바뀌었다" 는 `statChange` 가 아니라 턴 시작 값(반영 전 값) 대비 변화인 `stat_changes` 로 정한다. 보내기·수정은
+    둘이 같지만, 재생성의 `statChange` 는 옛 응답이 남긴 지금 값 대비라 옛 응답과 같은 결과면 이번 턴에 바뀌었어도 나가지 않고,
+    시작값으로 돌아가면 바뀐 것이 없는데도 나간다."""
     events: list[ChatStatChangeEvent | ChatHiddenStatSignalEvent] = [
         event for event in result.stat_change_events if event.stat_id not in result.hidden_stat_ids
     ]
-    if any(event.stat_id in result.signal_stat_ids for event in result.stat_change_events):
+    if any(stat_id in result.signal_stat_ids for stat_id in result.stat_changes):
         events.append(ChatHiddenStatSignalEvent())
     return events
 
