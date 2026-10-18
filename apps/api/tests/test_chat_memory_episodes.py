@@ -588,7 +588,9 @@ async def test_empty_episode_list_marks_extraction_done(db_client: httpx.AsyncCl
     ]
 
 
-async def test_extracted_episode_rows_leave_known_by_null(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+async def test_extracted_episode_rows_leave_known_by_null(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
     """추출 결과에는 아직 아는 사람 칸이 없으므로 추출이 넣은 장면 행의 칸은 NULL(공개이거나 알 수 없음)이다."""
     room = await _open_room(db_client, db_session, turns=10)
     await _plant(db_session, room, 10)
