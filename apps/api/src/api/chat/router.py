@@ -138,6 +138,7 @@ from api.db.models.chat import (
 from api.db.models.content import Content, ContentType, ContentVersion, ModerationStatus
 from api.db.models.media import Asset
 from api.db.models.novel import Novel
+from api.novelize.writing_lock import refuses_novelize
 from api.db.models.persona import UserPersona
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import (
@@ -685,11 +686,14 @@ async def _to_response(db: AsyncSession, room: ChatRoom, *, message_limit: int |
     image_urls, cell_images = await _sign_message_images(db, room, setup, messages)
     # 다음 턴이 실제로 쓸 모델. 기본 모델 방이거나 상위 모델 스위치가 꺼져 있으면 쿼리가 없다.
     effective_model = await effective_room_model(db, room.user_id, room.chat_model)
-    # 소설 유무는 허용 안 함 작품의 남의 방에서만 본다(방 하나에 소설 하나 — 방 유니크 인덱스로 찾는다).
+    # 잠긴 소설 유무는 허용 안 함 작품의 남의 방에서만 본다(방 하나에 소설 하나 — 방 유니크 인덱스로 찾는다). 잠기기
+    # 전의 빈 소설은 이어 쓸 수 없으니 소설이 없는 것과 같이 막힌 것으로 보인다. 잠긴 소설은 화를 다 지워도 잠겨 있다.
     novel_creation_blocked = (
-        content.novel_permission == "forbidden"
-        and room.user_id != content.creator_user_id
-        and await db.scalar(select(Novel.id).where(Novel.chat_room_id == room.id)) is None
+        refuses_novelize(content, room.user_id)
+        and await db.scalar(
+            select(Novel.id).where(Novel.chat_room_id == room.id, Novel.writing_locked_at.is_not(None))
+        )
+        is None
     )
 
     # 미디어 북 태그는 첫 메시지(작성자 글을 칸 id 형태로 복사한 것)에서만 해석하고, 그중에서도 방 버전의

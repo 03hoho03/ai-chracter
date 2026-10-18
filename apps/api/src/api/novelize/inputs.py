@@ -73,12 +73,11 @@ async def _version_id(db: AsyncSession, novel: Novel) -> uuid.UUID | None:
     return await db.scalar(select(Content.current_published_version_id).where(Content.id == novel.content_id))
 
 
-async def load_work_setting(db: AsyncSession, novel: Novel) -> str:
-    """작품 설정 원문. 캐릭터는 `이름: {캐릭터명}` 한 줄 + 캐릭터 프롬프트, 스토리는 세계관 설정 + 빈 줄 + 규칙(빈
-    값은 뺀다). 스토리의 대화 응답 지시문·사용자 목표·프롤로그는 넣지 않는다 — 대화용 지시가 많아 소설 문체를 흔들 수
-    있어서이고, 넣을지는 스토리 방으로 하는 본 시험에서 다시 본다. 이미지 태그를 지운 뒤 작가 글의 이름 자리를
-    소설 주인공 이름으로 바꾼다. 읽을 버전이 없으면 빈 문자열."""
-    version_id = await _version_id(db, novel)
+async def load_work_setting(db: AsyncSession, novel: Novel, version_id: uuid.UUID | None) -> str:
+    """`version_id`(`_version_id` 가 고른 버전)의 작품 설정 원문. 캐릭터는 `이름: {캐릭터명}` 한 줄 + 캐릭터
+    프롬프트, 스토리는 세계관 설정 + 빈 줄 + 규칙(빈 값은 뺀다). 스토리의 대화 응답 지시문·사용자 목표·프롤로그는 넣지
+    않는다 — 대화용 지시가 많아 소설 문체를 흔들 수 있어서이고, 넣을지는 스토리 방으로 하는 본 시험에서 다시 본다.
+    이미지 태그를 지운 뒤 작가 글의 이름 자리를 소설 주인공 이름으로 바꾼다. 읽을 버전이 없으면 빈 문자열."""
     if version_id is None:
         return ""
     if novel.content_type == "story":
@@ -120,6 +119,9 @@ class ChapterInput:
     source_hash: str
     episode_count: int
     writes_novel_title: bool
+    # 작품 설정을 읽은 원작 버전(읽을 버전이 없었으면 None). 첫 화 저장이 집필권 잠금에 "그때 원작 버전"으로 적는다 —
+    # 저장 때 다시 고르면 그 사이 방이 지워져 원작의 지금 발행본으로 바뀔 수 있다.
+    content_version_id: uuid.UUID | None = None
 
 
 class SourceChangedError(Exception):
@@ -173,6 +175,7 @@ async def build_chapter_input(db: AsyncSession, job: NovelJob, novel: Novel) -> 
     # 따로 고칠 수 있게 체인을 나눴고, 등급 규칙은 모델과 무관하게 한 곳이다.
     source = await load_novel_prompt_source(db, novel, model=chapter_job_model(job))
     is_story = novel.content_type == "story"
+    version_id = await _version_id(db, novel)
     turns = group_turns(segment)
     names = novel_prompt_names(protagonist_name=protagonist, character_name=novel.character_name)
     chat_set = source.chat_set
@@ -182,7 +185,7 @@ async def build_chapter_input(db: AsyncSession, job: NovelJob, novel: Novel) -> 
         chat_sections=source.chat_sections,
         sections=source.sections,
         is_story_chat=is_story,
-        work_setting=await load_work_setting(db, novel),
+        work_setting=await load_work_setting(db, novel, version_id),
         user_name=protagonist,
         setting_notes=novel.setting_notes,
         previous_excerpt=previous_excerpt,
@@ -202,6 +205,7 @@ async def build_chapter_input(db: AsyncSession, job: NovelJob, novel: Novel) -> 
         source_hash=source_hash,
         episode_count=count,
         writes_novel_title=writes_novel_title,
+        content_version_id=version_id,
     )
 
 
@@ -280,7 +284,7 @@ async def build_revise_input(db: AsyncSession, job: NovelJob, novel: Novel) -> R
         chat_sections=source.chat_sections,
         sections=source.sections,
         is_story_chat=novel.content_type == "story",
-        work_setting=await load_work_setting(db, novel),
+        work_setting=await load_work_setting(db, novel, await _version_id(db, novel)),
         setting_notes=novel.setting_notes,
         paragraphs=paragraphs,
         first_index=job.paragraph_start,

@@ -39,8 +39,9 @@ WorkHashtags = Annotated[
 
 def _default_novel_permission() -> NovelPermission:
     """응답의 소설화 허락 기본값. 서버는 언제나 작품 행의 값을 채워 보낸다 — 기본값은 이 칸을 모르는 생성 타입·화면과의
-    호환용이다(`default_factory` 여야 생성 타입에서 선택 칸이 된다)."""
-    return "private"
+    호환용이다(`default_factory` 여야 생성 타입에서 선택 칸이 된다). 새 작품의 기본값(허용 안 함)과 같아야 한다 — 다르면
+    칸을 빠뜨린 응답이 실제보다 넓은 허락으로 읽힌다."""
+    return "forbidden"
 
 
 class DraftSummary(CamelModel):

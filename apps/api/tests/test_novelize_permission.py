@@ -302,7 +302,8 @@ async def test_an_empty_novel_of_someone_elses_work_follows_the_current_permissi
     if permission == "private":
         assert resp.status_code == _MODEL_ROUTES[action], resp.text
         return
-    assert (resp.status_code, resp.json()["detail"]) == _FORBIDDEN
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["detail"] == _FORBIDDEN[1]
     assert await _job_count(db_session, novel_id) == 0
     assert await _novel_ledger(db_session, room.user_id) == []
     assert await _balance(db_session, room.user_id) == balance
@@ -332,7 +333,8 @@ async def test_chapters_without_a_lock_or_a_successful_chapter_job_hold_no_right
 
     resp = await _request(action, db_client, db_session, room, novel_id, chapter_id)
 
-    assert (resp.status_code, resp.json()["detail"]) == _FORBIDDEN
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["detail"] == _FORBIDDEN[1]
     assert await _job_count(db_session, novel_id) == jobs_before
     assert await _novel_ledger(db_session, room.user_id) == []
     assert await _balance(db_session, room.user_id) == balance

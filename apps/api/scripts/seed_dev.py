@@ -204,6 +204,8 @@ async def main() -> None:
                 hashtags=["데모", "샘플"],
                 visibility=ContentVisibility.PUBLIC,
                 moderation_status=ModerationStatus.NORMAL,
+                # 새 작품의 기본값(허용 안 함)이면 작가 아닌 dev 계정이 데모 작품으로 소설을 만들 수 없어 명시한다.
+                novel_permission="private",
             )
         )
         await session.flush()  # content_versions.content_id -> contents.id
