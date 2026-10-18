@@ -47,9 +47,11 @@ _SCENE_JUDGMENT = _load("0346abdbcc92")
 # 이 리비전 뒤에 여덟 체인에 사실 추출 지시문만 바꾼 새 세트를 게시하는 리비전. head 상태에서는 그 뒤 리비전의 세트들이 활성이라,
 # "이 리비전 직후 상태"를 보는 테스트와 이 리비전을 되돌리는 테스트는 뒤 리비전부터 먼저 되돌린다(실제 downgrade 순서).
 _LATER = _load("c1f3945cb802")
-# 그 뒤 여덟 체인의 요약 비밀 표기 슬롯 본문에 미확인 주장의 출처 규칙을 더한 세트를 게시하는 리비전 — 여덟 체인의 head
-# 활성이라 되돌릴 때는 이것부터다.
+# 그 뒤 여덟 체인의 요약 비밀 표기 슬롯 본문에 미확인 주장의 출처 규칙을 더한 세트를 게시하는 리비전 — character 레인의
+# head 활성이다.
 _SOURCE_MARKING = _load("0c1a85bc5c2f")
+# 그 뒤 story 레인 네 체인에 장면 판정 지시문만 바꾼 세트를 게시하는 리비전 — story 레인의 head 활성이라 되돌릴 때는 이것부터다.
+_SCENE_INSTRUCTION_V2 = _load("0f82ea9f9fa5")
 
 _LANES: tuple[PromptLane, ...] = ("story", "character")
 _MODELS: tuple[PromptSetModelId, ...] = ("gemini", "sonnet", "opus", "haiku")
@@ -94,6 +96,7 @@ def _expected_after(before: dict[Key, Value]) -> dict[Key, Value]:
 
 async def _undo_later_revisions(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
     await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
 
@@ -243,11 +246,12 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
                 PromptSet.id.not_in(order),
                 PromptSet.id.not_in(list(_LATER.NEW_SET_IDS.values())),
                 PromptSet.id.not_in(list(_SOURCE_MARKING.NEW_SET_IDS.values())),
+                PromptSet.id.not_in(list(_SCENE_INSTRUCTION_V2.NEW_SET_IDS.values())),
             )
         )
     ).all()
-    # 테스트 DB에는 이 리비전 뒤에 게시한 세트가 사실 추출 지시문 차례·요약 비밀 표기 출처 리비전의 것뿐이다(그 세트들의 버전은
-    # 이 리비전보다 뒤다).
+    # 테스트 DB에는 이 리비전 뒤에 게시한 세트가 사실 추출 지시문 차례·요약 비밀 표기 출처·장면 판정 지시문
+    # 교체 리비전의 것뿐이다(그 세트들의 버전은 이 리비전보다 뒤다).
     assert versions == list(range(max(others) + 1, max(others) + 1 + len(order)))
 
 
@@ -322,6 +326,8 @@ async def test_downgrade_then_upgrade_swaps_every_chain_back_and_forth(db_sessio
     같은 리터럴 세트가 활성이 된다."""
     connection = await db_session.connection()
 
+    await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
+
     await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
@@ -352,6 +358,7 @@ async def test_upgrade_refuses_to_overwrite_an_instruction_the_admin_edited(
     """활성 지시문이 앞 리비전 문안과 한 글자라도 다르면 어드민이 고친 운영 문안이다 — 조용히 덮어쓰지 않고, 그 레인에는 아무
     세트도 넣지 않은 채 멈춘다."""
     connection = await db_session.connection()
+    await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
     await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
@@ -375,6 +382,7 @@ async def test_upgrade_refuses_to_overwrite_an_instruction_the_admin_edited(
 async def test_upgrade_stops_on_the_text_before_the_last_episode_text_revision(db_session: AsyncSession) -> None:
     """활성 본문이 장면 채널을 처음 심은 리비전의 문안(그 뒤 한 번 바뀌기 전 판)이어도 바꾸지 않고 멈춘다."""
     connection = await db_session.connection()
+    await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
     await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
@@ -394,6 +402,7 @@ async def test_upgrade_stops_on_the_text_before_the_last_episode_text_revision(d
 
 async def test_upgrade_stops_when_the_instruction_row_is_not_exactly_one(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
     await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
@@ -421,6 +430,7 @@ async def test_upgrade_refuses_to_run_twice(db_session: AsyncSession) -> None:
 
 async def test_upgrade_stops_when_the_lane_only_select_does_not_pick_gemini(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_SCENE_INSTRUCTION_V2.delete_seeded_rows)
     await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
