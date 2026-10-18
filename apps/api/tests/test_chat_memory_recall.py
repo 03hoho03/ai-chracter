@@ -1574,7 +1574,9 @@ async def test_rooms_share_one_failure_count(
 ) -> None:
     """실패 수는 방마다가 아니라 하나다 — 한 방에서 문턱만큼 실패하면 다른 방의 다음 턴도 Voyage 를 부르지 않는다."""
     first = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, _GARDEN])
-    second = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY, _GARDEN])
+    # 정원 장면은 id 를 고정하므로 두 방에 같이 심으면 키가 겹친다. 둘째 방은 id 를 고정하지 않은 장면만 둔다 — 질의 임베딩을
+    # 부를 조건(요약 커서가 있고 회상이 고른다)은 장면 내용과 무관하다.
+    second = await _story_room(db_client, db_session, [*_FILLER_SCENES, _BAKERY])
     _hybrid_on(monkeypatch)
     VoyageClock(monkeypatch)
 
