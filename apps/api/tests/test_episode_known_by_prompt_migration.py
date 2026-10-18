@@ -238,8 +238,9 @@ async def test_seeded_sets_pass_publish_validation(
     db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId
 ) -> None:
     """이 리비전은 행 집합·자리표시자를 바꾸지 않으므로 새 세트가 지금 코드 표의 게시 검증을 통과한다."""
-    prompt_set = await _get_set(db_session, _M.NEW_SET_IDS[(lane, model)])
+    # 행을 먼저 읽는다: `_sections_of` 가 세션을 만료시키므로, 세트를 먼저 읽으면 검증이 동기 문맥에서 만료된 속성을 다시 읽으려다 실패한다.
     sections = await _sections_of(db_session, _M.NEW_SET_IDS[(lane, model)])
+    prompt_set = await _get_set(db_session, _M.NEW_SET_IDS[(lane, model)])
     _validate_prompt_draft_for_publish(prompt_set, sections, lane=lane, model=model)
 
 

@@ -1659,19 +1659,21 @@ async def test_judgment_only_versions_are_listed_fetched_and_restored(
     haiku_items = [item for item in listed.json()["items"] if item["model"] == "haiku"]
     # 판정 전용 체인의 첫 세트(v26·v29), 장면 기억 문안을 더한 세트(v33·v37), 관계·사실 기억 문안을 더한 세트(v41·v45),
     # 사실 추출 지시문을 바꾼 세트(v55·v59), 요약 비밀 표기 슬롯을 더한 세트(v63·v67), story 에 장면 헤더 판정 채널을 더한
-    # 세트(v71). 활성은 레인마다 맨 뒤의 것이다.
+    # 세트(v71), 장면 추출 지시문을 바꾼 세트(v75·v79). 활성은 레인마다 맨 뒤의 것이다.
     assert {(item["lane"], item["version"], item["isActive"]) for item in haiku_items} == {
         ("story", "26", False),
         ("story", "33", False),
         ("story", "41", False),
         ("story", "55", False),
         ("story", "63", False),
-        ("story", "71", True),
+        ("story", "71", False),
+        ("story", "75", True),
         ("character", "29", False),
         ("character", "37", False),
         ("character", "45", False),
         ("character", "59", False),
-        ("character", "67", True),
+        ("character", "67", False),
+        ("character", "79", True),
     }
     assert detail.status_code == 200
     assert (detail.json()["model"], len(detail.json()["sections"])) == ("haiku", len(haiku_sections))
