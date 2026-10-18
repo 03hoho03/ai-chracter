@@ -20,7 +20,7 @@ describe("createEmptyDraft", () => {
       target: null,
       hashtags: [],
       visibility: "private",
-      novelPermission: "private",
+      novelPermission: "forbidden",
     });
   });
 
@@ -47,7 +47,7 @@ describe("createEmptyDraft", () => {
       target: null,
       hashtags: [],
       visibility: "private",
-      novelPermission: "private",
+      novelPermission: "forbidden",
     });
   });
 

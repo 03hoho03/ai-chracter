@@ -118,6 +118,6 @@ describe("serverToForm", () => {
 
     const form = serverToForm(oldResponse as CharacterDraftResponse);
 
-    expect(form.registration.novelPermission).toBe("private");
+    expect(form.registration.novelPermission).toBe("forbidden");
   });
 });

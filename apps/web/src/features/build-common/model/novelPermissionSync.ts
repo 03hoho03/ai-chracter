@@ -15,6 +15,18 @@ import type { ContentDraftPayload, NovelPermission } from "@/entities/content";
  * 기준을 저장 응답의 값으로 바꾸지 않는 이유: 응답에는 다른 곳에서 바꾼 값이 실려 오는데, 그걸 기준으로 삼으면 폼의 옛
  * 값과 달라져 다음 저장이 도로 덮는다.
  */
+/**
+ * 저장 기록의 첫 기준. 아직 서버에 없는 초안의 폼 값은 서버가 아니라 이 화면의 기본값에서 왔으므로 기준으로 삼지 않는다 —
+ * 기준이 없으면 첫 저장이 칸을 실어, 서버의 칸 기본값이 무엇이든 화면에 보인 값이 저장된다. 이미 있는 초안은 불러온 값이
+ * 곧 서버 값이라 그대로 기준이 된다.
+ */
+export function toNovelPermissionBaseline(
+  draftId: string | undefined,
+  loaded: NovelPermission | undefined,
+): NovelPermission | undefined {
+  return draftId === undefined ? undefined : loaded;
+}
+
 export function createNovelPermissionSync(initial: NovelPermission | undefined) {
   let lastSent = initial;
 

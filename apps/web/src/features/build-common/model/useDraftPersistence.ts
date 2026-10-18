@@ -16,7 +16,7 @@ import { draftKeys } from "@/entities/draft";
 
 import { runOnce } from "../lib/runOnce";
 import { createAutosaveStatusStore, hasUnsavedChanges, type AutosaveStatusStore } from "./autosaveStatus";
-import { createNovelPermissionSync } from "./novelPermissionSync";
+import { createNovelPermissionSync, toNovelPermissionBaseline } from "./novelPermissionSync";
 import { AUTOSAVE_ERROR_TOAST_ID } from "./useAutosave";
 
 /**
@@ -33,7 +33,8 @@ export function useDraftPersistence({
 }: {
   type: ContentType;
   draftId: string | undefined;
-  /** 폼을 채운 초안의 소설 만들기 허락 값. 이 화면이 바꾸지 않은 저장에서는 그 칸을 빼고 보내는 기준이다(`novelPermissionSync`). */
+  /** 폼을 채운 초안의 소설 만들기 허락 값. 이미 있는 초안이면 이 화면이 바꾸지 않은 저장에서 그 칸을 빼고 보내는 기준이다.
+   * 아직 없는 초안이면 기준으로 쓰지 않아 첫 저장이 칸을 싣는다(`novelPermissionSync`). */
   initialNovelPermission: NovelPermission | undefined;
 }) {
   const navigate = useNavigate();
@@ -62,7 +63,9 @@ export function useDraftPersistence({
 
   // 마운트 동안 하나여야 기준이 저장 사이에 이어진다 — 첫 렌더의 값으로 한 번 만든다(`saveDraft`가 같은 함수로 남는 데도 필요하다).
   const novelPermissionSyncRef = useRef<ReturnType<typeof createNovelPermissionSync>>(undefined);
-  const novelPermissionSync = (novelPermissionSyncRef.current ??= createNovelPermissionSync(initialNovelPermission));
+  const novelPermissionSync = (novelPermissionSyncRef.current ??= createNovelPermissionSync(
+    toNovelPermissionBaseline(draftId, initialNovelPermission),
+  ));
 
   const persist = useCallback(
     async (payload: ContentDraftPayload): Promise<ContentDraftResponse> => {
