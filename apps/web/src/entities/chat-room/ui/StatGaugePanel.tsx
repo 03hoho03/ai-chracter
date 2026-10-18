@@ -225,8 +225,9 @@ function StatDetail({ stat, value, isHidden }: { stat: StatDef; value: number; i
         </span>
       </p>
       <StatBar stat={stat} value={value} isHidden={isHidden} />
-      {/* 띄어쓰기 없는 긴 글은 `break-keep` 만으로는 끊을 자리가 없어 팝오버 밖으로 넘치므로, 넘칠 때만 아무 데서나 끊는다. */}
-      {stat.playerDescription && <p className="text-xs break-keep wrap-anywhere">{stat.playerDescription}</p>}
+      {/* 숨긴 스탯의 플레이어용 설명은 플레이어에게 가지 않는다 — 작가 미리보기도 그대로 보이지 않게 둔다. 띄어쓰기 없는 긴
+          글은 `break-keep` 만으로는 끊을 자리가 없어 팝오버 밖으로 넘치므로, 넘칠 때만 아무 데서나 끊는다. */}
+      {stat.playerDescription && !isHidden && <p className="text-xs break-keep wrap-anywhere">{stat.playerDescription}</p>}
       {isHidden && <p className="text-xs break-keep text-muted-foreground">플레이어에게 숨긴 스탯이에요. 미리보기에서만 보여요.</p>}
     </div>
   );
