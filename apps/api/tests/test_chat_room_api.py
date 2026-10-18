@@ -960,31 +960,8 @@ async def test_get_story_chat_room_embeds_content_snapshot(
     assert len(snapshot["endings"]) == 1
     ending_body = snapshot["endings"][0]
     assert ending_body["id"] == str(ending.entity_id)
-    assert ending_body["statRules"] == [
-        {
-            "kind": "rule",
-            "id": str(top_rule.entity_id),
-            "statId": str(stat.entity_id),
-            "operator": "gte",
-            "threshold": 80.0,
-            "nextOp": "and",
-        },
-        {
-            "kind": "group",
-            "id": str(group.entity_id),
-            "nextOp": None,
-            "rules": [
-                {
-                    "kind": "rule",
-                    "id": str(nested_rule.entity_id),
-                    "statId": str(stat.entity_id),
-                    "operator": "lt",
-                    "threshold": 20.0,
-                    "nextOp": None,
-                }
-            ],
-        },
-    ]
+    # 엔딩 규칙은 판정에만 쓰고 플레이어 응답에는 싣지 않는다 — 규칙이 있는 엔딩도 빈 목록이다.
+    assert ending_body["statRules"] == []
 
 
 async def test_reset_story_chat_room_resets_stats_to_initial_values(

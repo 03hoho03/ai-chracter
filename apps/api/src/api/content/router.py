@@ -926,6 +926,9 @@ async def _story_draft_response(
                         unit=stat_def.unit,
                         description=stat_def.description,
                         per_turn_delta=stat_def.per_turn_delta,
+                        hidden_from_player=stat_def.hidden_from_player,
+                        player_description=stat_def.player_description,
+                        signal_hidden_change=stat_def.signal_hidden_change,
                         rules=[
                             StatRuleDraftItem(id=rule.entity_id, condition=rule.condition, delta=rule.delta)
                             for rule in (
@@ -1595,6 +1598,7 @@ async def _update_story_draft(
         }
         for stat_order, stat_item in enumerate(setup_item.stat_defs):
             stat_def = existing_stat_defs.get(stat_item.id)
+            is_new_stat = stat_def is None
             if stat_def is None:
                 stat_def = StatDef(entity_id=stat_item.id, starting_setup_id=setup.id)
                 db.add(stat_def)
@@ -1608,6 +1612,14 @@ async def _update_story_draft(
             stat_def.description = stat_item.description
             stat_def.per_turn_delta = stat_item.per_turn_delta
             stat_def.order = stat_order
+            # 기존 스탯에서 안 보낸 노출 설정은 그대로 둔다(`StatDefDraftItem` 의 주석). 새 스탯은 기본값을 직접 넣는다 —
+            # DB 기본값에 맡기면 INSERT 뒤 그 칸이 만료돼 응답을 만들 때 다시 읽어야 한다.
+            if is_new_stat or "hidden_from_player" in stat_item.model_fields_set:
+                stat_def.hidden_from_player = stat_item.hidden_from_player
+            if is_new_stat or "player_description" in stat_item.model_fields_set:
+                stat_def.player_description = stat_item.player_description
+            if is_new_stat or "signal_hidden_change" in stat_item.model_fields_set:
+                stat_def.signal_hidden_change = stat_item.signal_hidden_change
             if "rules" in stat_item.model_fields_set:
                 # 새 스탯의 물리 id 는 파이썬 쪽 기본값이라 flush 해야 채워진다.
                 await db.flush()
@@ -2425,6 +2437,9 @@ async def _clone_story_children(
                 change_direction=stat_def.change_direction,
                 max_change_per_turn=stat_def.max_change_per_turn,
                 order=stat_def.order,
+                hidden_from_player=stat_def.hidden_from_player,
+                player_description=stat_def.player_description,
+                signal_hidden_change=stat_def.signal_hidden_change,
             )
             db.add(new_stat_def)
             await db.flush()

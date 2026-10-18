@@ -446,3 +446,29 @@ async def test_preview_turn_without_rules_skips_the_stat_call_and_judges_endings
     assert fake.call_sites == ["preview_generate", "preview_ending_judgment"]
     state = await get_preview_session(session_id)
     assert state is not None and state.stats == {stat_id: 95.0, counter_id: 9.0} and state.ending_reached is True
+
+
+async def test_preview_turn_streams_hidden_stat_changes_without_the_anonymous_signal(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """빌더 미리보기는 작가 전용이라 숨긴 스탯도 거르지 않는다 — 그 변화가 `statChange` 로 나가고 익명 신호는 없다."""
+    user_id, _, _ = await _story_with_setup(db_session, opening_message=None)
+    await db_session.commit()
+    await _login_as(db_client, user_id)
+    stat_id = str(uuid.uuid4())
+    payload = _preview_payload(stat_id, str(uuid.uuid4()))
+    stat = payload["startingSetups"][0]["statDefs"][0]  # type: ignore[index]
+    stat.update(hiddenFromPlayer=True, signalHiddenChange=True)
+    started = await db_client.post("/preview-sessions", json=payload)
+    session_id = started.json()["previewSessionId"]
+    fake = _FakeLLMClient([StatRuleJudgmentResult(fired_rule_ids=["a2"]), EndingJudgmentResult(triggered=False)])
+
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "모른 척한다"})
+    finally:
+        _clear_llm_override()
+
+    events = _parse_sse_events(resp.text)
+    assert [e["type"] for e in events] == ["token", "statChange", "done"]
+    assert (events[1]["statId"], events[1]["newValue"]) == (stat_id, 92)
