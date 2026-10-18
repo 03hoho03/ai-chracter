@@ -11,6 +11,8 @@ import {
   formatStatDelta,
   formatStatValue,
   HIDDEN_STAT_SIGNAL_TEXT,
+  isUnshownTurnFeedback,
+  turnFeedbackKey,
   type StatTurnFeedback,
 } from "../model/statTurnFeedback";
 
@@ -41,14 +43,15 @@ const CHIP_EXIT_MS = 300;
  */
 export function StatGaugePanel({ stats, values, feedback, scene, hiddenStatIds }: StatGaugePanelProps) {
   const [isCollapsed, setIsCollapsed] = useState(readStatusLineCollapsed);
-  const chipPhase = useChipPhase(feedback);
+  const unshownFeedback = useUnshownTurnFeedback(feedback);
+  const chipPhase = useChipPhase(unshownFeedback);
   const stripId = useId();
 
   if (stats.length === 0) return null;
 
   const deltas = chipPhase === "gone" ? {} : (feedback?.deltas ?? {});
   const hasHiddenSignal = feedback?.hiddenSignal ?? false;
-  const announcement = feedback?.announcement ?? "";
+  const announcement = unshownFeedback?.announcement ?? "";
 
   function handleToggle() {
     const next = !isCollapsed;
@@ -58,9 +61,10 @@ export function StatGaugePanel({ stats, values, feedback, scene, hiddenStatIds }
 
   return (
     <div className="shrink-0 border-b border-border">
-      {/* 한 턴의 변화를 한 번에 읽는다. 턴마다 새 자식을 넣어 같은 문장이 두 턴 연달아 와도 다시 읽힌다. */}
+      {/* 한 턴의 변화를 한 번에 읽는다. 턴마다 새 자식을 넣어 같은 문장이 두 턴 연달아 와도 다시 읽힌다. 이미 읽은 응답으로
+          돌아오면 자식을 넣지 않는다(`useUnshownTurnFeedback`). */}
       <div aria-live="polite" aria-atomic="true" className="sr-only">
-        {announcement && <span key={feedback?.turn}>{announcement}</span>}
+        {announcement && <span key={unshownFeedback?.turn}>{announcement}</span>}
       </div>
 
       {/* 접기 버튼은 접힘과 무관하게 늘 오른쪽 같은 자리의 같은 요소다 — 누른 버튼이 숨거나 사라지면 포커스가 문서 처음으로
@@ -81,7 +85,7 @@ export function StatGaugePanel({ stats, values, feedback, scene, hiddenStatIds }
           )}
 
           {/* 스크롤바를 숨겨도 칸이 버튼이라 Tab 이 칸마다 멈춘다. 일부만 보이는 칸은 브라우저가 포커스 때 스크롤하지 않으므로
-              칸이 포커스를 받을 때 직접 보이는 곳으로 당긴다(`revealFocusedCell`). 당긴 칸이 줄 끝에 붙어 포커스 링이 잘리지
+              칸이 키보드 포커스를 받을 때 직접 보이는 곳으로 당긴다(`revealFocusedCell`). 당긴 칸이 줄 끝에 붙어 포커스 링이 잘리지
               않게 스크롤 여백을 좌우 패딩과 같게 둔다. */}
           <div
             id={stripId}
@@ -123,6 +127,32 @@ export function StatGaugePanel({ stats, values, feedback, scene, hiddenStatIds }
       </div>
     </div>
   );
+}
+
+/** 이 탭에서 칩·안내를 이미 띄운 응답의 키. 다른 방에 다녀오는 동안 상태 줄이 언마운트돼도 남아야 해서 컴포넌트 밖에 둔다.
+ * 새로고침하면 비지만, 그때는 확정된 턴 알림 자체가 없다. */
+const shownTurnFeedbackKeys = new Set<string>();
+
+/** 알림 가운데 칩·안내를 띄울 몫만 돌려준다 — 응답 하나에 한 번이다. 판정은 알림이 바뀐 렌더에서 한 번 하고 그 알림이
+ * 머무는 동안 유지한다. 그래서 띄운 직후 키를 기억해도 이 마운트의 칩 4초는 끝까지 가고, 다른 방에 갔다 돌아오면(다시
+ * 마운트됐든 아니든) 같은 응답은 칩도 안내도 없다. 익명 신호는 알림 원본을 따라 다음 메시지까지 남는다. */
+function useUnshownTurnFeedback(feedback: StatTurnFeedback | undefined): StatTurnFeedback | undefined {
+  const key = feedback && turnFeedbackKey(feedback);
+  const [decision, setDecision] = useState(() => ({
+    key,
+    isUnshown: isUnshownTurnFeedback(feedback, shownTurnFeedbackKeys),
+  }));
+  let current = decision;
+  if (decision.key !== key) {
+    current = { key, isUnshown: isUnshownTurnFeedback(feedback, shownTurnFeedbackKeys) };
+    setDecision(current);
+  }
+
+  useEffect(() => {
+    if (current.isUnshown && current.key !== undefined) shownTurnFeedbackKeys.add(current.key);
+  }, [current.isUnshown, current.key]);
+
+  return current.isUnshown ? feedback : undefined;
 }
 
 type ChipPhase = "shown" | "leaving" | "gone";
@@ -212,7 +242,7 @@ function StatDetail({ stat, value, isHidden }: { stat: StatDef; value: number; i
       <p className="flex items-center gap-1.5 text-sm font-semibold">
         <span aria-hidden className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: stat.color }} />
         {Icon && <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />}
-        <span className="min-w-0 break-keep">{stat.name}</span>
+        <span className="min-w-0 break-keep wrap-anywhere">{stat.name}</span>
       </p>
       <p className="flex items-baseline justify-between gap-2 text-xs tabular-nums">
         <span>
@@ -226,17 +256,19 @@ function StatDetail({ stat, value, isHidden }: { stat: StatDef; value: number; i
       </p>
       <StatBar stat={stat} value={value} isHidden={isHidden} />
       {/* 숨긴 스탯의 플레이어용 설명은 플레이어에게 가지 않는다 — 작가 미리보기도 그대로 보이지 않게 둔다. 띄어쓰기 없는 긴
-          글은 `break-keep` 만으로는 끊을 자리가 없어 팝오버 밖으로 넘치므로, 넘칠 때만 아무 데서나 끊는다. */}
+          글은 `break-keep` 만으로는 끊을 자리가 없어 팝오버 밖으로 넘치므로, 넘칠 때만 아무 데서나 끊는다(위 이름 줄도 같다). */}
       {stat.playerDescription && !isHidden && <p className="text-xs break-keep wrap-anywhere">{stat.playerDescription}</p>}
       {isHidden && <p className="text-xs break-keep text-muted-foreground">플레이어에게 숨긴 스탯이에요. 미리보기에서만 보여요.</p>}
     </div>
   );
 }
 
-/** 포커스된 칸을 가로 줄 안에서 보이는 곳으로 당긴다. 브라우저는 포커스 때 요소가 조금이라도 보이면 스크롤하지 않아,
- * 끝에 걸쳐 일부만 보이는 칸이 가려진 채 남는다. `nearest` 라 이미 다 보이는 칸은 움직이지 않고, 즉시 이동이라 줄인 모션
- * 설정과 부딪히지 않는다. */
+/** 키보드로 포커스된 칸을 가로 줄 안에서 보이는 곳으로 당긴다. 브라우저는 포커스 때 요소가 조금이라도 보이면 스크롤하지
+ * 않아, 끝에 걸쳐 일부만 보이는 칸이 가려진 채 남는다. 마우스·터치 포커스(`:focus-visible` 아님)에는 당기지 않는다 —
+ * 누르는 순간 줄이 움직이면 손을 뗄 때 포인터가 칸 밖이라 클릭이 칸에 닿지 않고 팝오버가 안 열린다. `nearest` 라 이미 다
+ * 보이는 칸은 움직이지 않고, 즉시 이동이라 줄인 모션 설정과 부딪히지 않는다. */
 function revealFocusedCell(event: FocusEvent<HTMLButtonElement>) {
+  if (!event.currentTarget.matches(":focus-visible")) return;
   event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" });
 }
 

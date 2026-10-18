@@ -7,7 +7,9 @@ import {
   formatStatDelta,
   formatStatValue,
   HIDDEN_STAT_SIGNAL_TEXT,
+  isUnshownTurnFeedback,
   selectVisibleTurnFeedback,
+  turnFeedbackKey,
   type StatTurnFeedback,
 } from "./statTurnFeedback";
 
@@ -111,5 +113,27 @@ describe("selectVisibleTurnFeedback", () => {
 
   it("알림이 없으면 없다", () => {
     expect(selectVisibleTurnFeedback(undefined, "room-a", messages)).toBeUndefined();
+  });
+});
+
+describe("isUnshownTurnFeedback", () => {
+  const feedback = { roomId: "room-a", messageId: "ai-2" };
+
+  it("처음 보이는 응답이면 칩과 안내를 띄울 차례다", () => {
+    expect(isUnshownTurnFeedback(feedback, new Set())).toBe(true);
+  });
+
+  it("같은 방의 같은 응답을 이미 보였으면 다시 띄우지 않는다 — 다른 방에 갔다 돌아와 다시 마운트돼도", () => {
+    expect(isUnshownTurnFeedback(feedback, new Set([turnFeedbackKey(feedback)]))).toBe(false);
+  });
+
+  it("같은 방의 새 응답(재생성 포함)이나 다른 방의 응답은 따로 센다", () => {
+    const shown = new Set([turnFeedbackKey(feedback)]);
+    expect(isUnshownTurnFeedback({ roomId: "room-a", messageId: "ai-3" }, shown)).toBe(true);
+    expect(isUnshownTurnFeedback({ roomId: "room-b", messageId: "ai-2" }, shown)).toBe(true);
+  });
+
+  it("알림이 없으면 띄울 것도 없다", () => {
+    expect(isUnshownTurnFeedback(undefined, new Set())).toBe(false);
   });
 });

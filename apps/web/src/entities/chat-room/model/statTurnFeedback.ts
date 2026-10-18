@@ -79,3 +79,18 @@ export function selectVisibleTurnFeedback(
   const lastAssistant = messages.filter((message) => message.role === "assistant").at(-1);
   return lastAssistant?.id === feedback.messageId ? feedback : undefined;
 }
+
+/** 한 응답의 알림을 가리키는 키 — 방과 확정 응답 id 둘이다. */
+export function turnFeedbackKey(feedback: Pick<StatTurnFeedback, "roomId" | "messageId">): string {
+  return `${feedback.roomId}/${feedback.messageId}`;
+}
+
+/** 증감 칩과 스크린리더 안내를 띄울 차례인가 — 응답 하나에 한 번이다. 다른 방에 갔다 돌아오거나 뒤로·앞으로 와서 같은
+ * 응답이 다시 마지막 AI 메시지가 돼도, 이미 보인 키면 지난 턴 변화를 다시 띄우거나 다시 읽지 않는다. 익명 신호는 다음
+ * 메시지까지 남는 표시라 이 판정을 따르지 않는다. */
+export function isUnshownTurnFeedback(
+  feedback: Pick<StatTurnFeedback, "roomId" | "messageId"> | undefined,
+  shownKeys: ReadonlySet<string>,
+): boolean {
+  return feedback !== undefined && !shownKeys.has(turnFeedbackKey(feedback));
+}
