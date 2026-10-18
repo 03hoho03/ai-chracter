@@ -705,7 +705,8 @@ async def test_generate_structured_usage_missing_and_logging_failure_do_not_rais
 
 # ── call_site 로 고르는 구조화 호출 모델, 사용량 집계 ─────────────────────────────────
 
-_STAT_SITES = ("chat_stat_judgment", "preview_stat_judgment")
+# 장면 헤더 판정은 판정 종류가 스탯이라 스탯 판정의 Gemini 모델 스위치를 따른다.
+_STAT_SITES = ("chat_stat_judgment", "preview_stat_judgment", "chat_scene_judgment", "preview_scene_judgment")
 _ENDING_SITES = ("chat_ending_judgment", "preview_ending_judgment")
 _IMAGE_SITES = ("chat_situational_image", "chat_media_book_image", "preview_media_book_image")
 _JUDGMENT_SITES = _STAT_SITES + _ENDING_SITES + _IMAGE_SITES
@@ -943,6 +944,9 @@ _EXPECTED_TIMEOUT_MS: dict[str, int] = {
     "preview_stat_judgment": 20_000,
     "preview_ending_judgment": 20_000,
     "preview_media_book_image": 20_000,
+    # 장면 헤더 판정은 스탯 판정과 같은 판정 타임아웃이다.
+    "chat_scene_judgment": 20_000,
+    "preview_scene_judgment": 20_000,
     "chat_memory_summary": 60_000,
     # 장면 기억 추출은 요약과 같은 백그라운드 구조화 호출이라 요약 타임아웃을 쓴다.
     "chat_memory_episode": 60_000,

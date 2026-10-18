@@ -263,6 +263,50 @@
       }
     }
   },
+  "chat_scene_judgment": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  },
   "chat_situational_image": {
     "gemini": {
       "generate": {
@@ -616,6 +660,50 @@
     }
   },
   "preview_media_book_image": {
+    "gemini": {
+      "generate": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "opus": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    },
+    "sonnet": {
+      "generate": {
+        "reached": "gemini",
+        "warned": true
+      },
+      "generate_structured": {
+        "reached": "gemini",
+        "warned": false
+      },
+      "generate_structured_with_instruction": {
+        "reached": "gemini",
+        "warned": false
+      }
+    }
+  },
+  "preview_scene_judgment": {
     "gemini": {
       "generate": {
         "reached": "gemini",
