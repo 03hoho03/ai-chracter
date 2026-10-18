@@ -792,6 +792,59 @@ async def test_publish_reconsent_scopes_follow_the_document_consent_units(
     assert (versions[0]["reconsentScopes"], versions[0]["changeNoticeMarkdown"]) == (expected, "안내")
 
 
+async def test_reconsent_republish_from_the_same_draft_needs_a_new_notice(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """게시가 성공하면 초안의 안내는 비워진다. 그래서 같은 초안으로 다시 재동의 게시를 하면, 본문만 고친 저장을 거쳐도
+    422 다. 깨지는 시나리오: 이미 나간 안내가 다음 재동의 게시의 "안내 필수" 검사를 통과시켜, 회원이 이번 판에서 바뀐 것이
+    아닌 지난 판의 안내를 보고 동의한다."""
+    await _make_draft(db_session, kind="privacy", body_markdown="본문", change_notice_markdown="첫 안내")
+    await db_session.commit()
+    await _login_new_admin(db_client, db_session)
+
+    first = await db_client.post(
+        "/admin/legal/privacy/publish", json={"version": "2099-01-01", "reconsentScopes": ["transfer"]}
+    )
+    assert first.status_code == 200
+    assert first.json()["published"]["changeNoticeMarkdown"] == "첫 안내"
+    # 본문은 남고 안내만 비워진다.
+    assert (first.json()["draft"]["bodyMarkdown"], first.json()["draft"]["changeNoticeMarkdown"]) == ("본문", None)
+
+    # 안내 칸을 모르는 화면처럼 본문만 고쳐 저장한다.
+    await db_client.put("/admin/legal/privacy/draft", json={"bodyMarkdown": "본문 2"})
+    second = await db_client.post(
+        "/admin/legal/privacy/publish", json={"version": "2099-01-02", "reconsentScopes": ["collection"]}
+    )
+
+    assert second.status_code == 422
+    assert (
+        await db_session.scalar(
+            sa.select(LegalDocument).where(LegalDocument.kind == "privacy", LegalDocument.version == "2099-01-02")
+        )
+    ) is None
+
+
+async def test_publish_after_a_reconsent_publish_does_not_inherit_its_notice(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """재동의 게시 뒤 재동의 없는 게시를 하면 새 판의 안내는 비어 있다. 깨지는 시나리오: 오타만 고친 판이 지난 판의 안내를
+    복제해, 누적 변경 안내에 같은 안내가 두 판의 것으로 나온다."""
+    await _make_draft(db_session, kind="terms", body_markdown="본문", change_notice_markdown="첫 안내")
+    await db_session.commit()
+    await _login_new_admin(db_client, db_session)
+
+    first = await db_client.post("/admin/legal/terms/publish", json={"version": "2099-01-01", "reconsentScopes": ["terms"]})
+    assert first.status_code == 200
+    second = await db_client.post("/admin/legal/terms/publish", json={"version": "2099-01-02", "reconsentScopes": []})
+
+    assert second.status_code == 200
+    assert second.json()["published"]["version"] == "2099-01-02"
+    assert second.json()["published"]["changeNoticeMarkdown"] is None
+    versions = (await db_client.get("/admin/legal/terms/versions")).json()["items"]
+    notices = {item["version"]: item["changeNoticeMarkdown"] for item in versions}
+    assert (notices["2099-01-01"], notices["2099-01-02"]) == ("첫 안내", None)
+
+
 async def test_requires_reconsent_must_match_reconsent_scopes_in_the_database(db_session: AsyncSession) -> None:
     """`requires_reconsent` 는 재동의 범위가 비어 있지 않음과 같다(CHECK). 이 칸을 모르는 이전 이미지가 배포 겹침·롤백 동안
     그 불리언으로 판정하므로 어긋나면 이전 이미지가 재동의를 놓치거나 잘못 건다."""

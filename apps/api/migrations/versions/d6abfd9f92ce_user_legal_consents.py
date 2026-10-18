@@ -99,5 +99,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # 테이블을 지우면 FK 가 가리키는 `users`·`legal_documents` 에도 락이 걸린다 — upgrade 와 같은 이유로 대기 상한을 둔다.
+    op.execute("SET LOCAL lock_timeout = '5s'")
     op.drop_index(op.f("ix_user_legal_consents_user_id"), table_name="user_legal_consents")
     op.drop_table("user_legal_consents")
