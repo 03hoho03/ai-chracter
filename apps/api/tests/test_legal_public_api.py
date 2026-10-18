@@ -512,6 +512,20 @@ _UNIT_FLAGS = (
 )
 
 
+async def test_me_reports_last_agreed_version_per_consent_unit(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """`/me` 는 동의 단위별 마지막 동의 판을 users 의 세 칸 그대로 내고, 국외이전에 동의한 적 없는 회원은 null 이다.
+    깨지는 시나리오: 수집·이용 칸에 약관 버전을 싣거나 비어 있는 국외이전을 다른 판으로 채워, 재동의 화면이 엉뚱한 판
+    이후의 변경 안내를 고른다."""
+    _, user = await _signed_up_user(db_client, db_session)
+    user.terms_version, user.privacy_version, user.transfer_version = "2026-01-01", "2026-02-01", None
+    await db_session.commit()
+
+    me = (await db_client.get("/me")).json()
+    assert me["legalConsentVersions"] == {"terms": "2026-01-01", "collection": "2026-02-01", "transfer": None}
+
+
 async def test_transfer_only_privacy_edition_blocks_only_members_behind_on_transfer(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
