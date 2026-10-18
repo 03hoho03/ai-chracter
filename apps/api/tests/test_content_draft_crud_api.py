@@ -22,6 +22,7 @@ from sqlalchemy.pool import NullPool
 from api.core.config import settings
 from api.core.s3 import build_thumbnail_key
 from api.db.models.character import CharacterVersionDetail, SituationalImage
+from api.content.schemas import CharacterDraftResponse, ContentDetailResponse, StoryDraftResponse
 from api.db.models.content import (
     Content,
     ContentTarget,
@@ -1041,12 +1042,37 @@ async def test_patch_draft_from_an_old_bundle_ignores_the_removed_default_user_n
         assert "defaultUserName" not in resp.json()
 
 
+async def test_a_new_draft_forbids_novelizing_until_the_creator_chooses(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """초안 생성은 허락을 넘기지 않는다 — 새 작품은 허용 안 함으로 시작하고, 초안 응답이 그 값을 싣는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
+
+    created = await db_client.post("/contents", json={"type": "character"})
+    assert created.status_code == 201
+    draft = await db_client.get(f"/contents/{created.json()['contentId']}/draft")
+
+    assert draft.status_code == 200
+    assert draft.json()["novelPermission"] == "forbidden"
+
+
+def test_responses_that_omit_the_novel_permission_default_to_forbidden() -> None:
+    """서버는 응답에 작품 행의 허락을 늘 채우고, 응답 스키마의 기본값은 이 칸을 모르는 생성 타입·화면과의 호환용이다.
+    그 기본값도 새 작품의 기본값과 같아야 한다 — 다르면 칸을 빠뜨린 응답이 실제보다 넓은 허락으로 읽힌다."""
+    for schema in (ContentDetailResponse, CharacterDraftResponse, StoryDraftResponse):
+        field = schema.model_fields["novel_permission"]
+        assert field.get_default(call_default_factory=True) == "forbidden", schema.__name__
+
+
 @pytest.mark.parametrize(("make_draft", "make_payload"), _DRAFT_KINDS)
 async def test_patch_draft_keeps_novel_permission_when_key_omitted(
     db_client: httpx.AsyncClient, db_session: AsyncSession, make_draft: Any, make_payload: Any
 ) -> None:
-    """소설화 허락 칸을 모르는 옛 화면의 자동저장은 이 키를 안 보낸다. 그 저장이 작가가 고른 "허용 안 함"을 기본값으로
-    되돌리면 안 된다. 보낸 값은 헤더에 바로 쓴다."""
+    """소설화 허락 칸을 모르는 옛 화면의 자동저장은 이 키를 안 보낸다. 그 저장이 작가가 고른 값을 기본값으로 되돌리면
+    안 된다 — 고른 값은 기본값(허용 안 함)과 다른 "공개 허용"이어야 되돌림이 보인다. 보낸 값은 헤더에 바로 쓴다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -1054,16 +1080,16 @@ async def test_patch_draft_keeps_novel_permission_when_key_omitted(
     await db_session.commit()
     await _login_as(db_client, user.id)
 
-    saved = await db_client.patch(f"/contents/{content.id}/draft", json=make_payload(novelPermission="forbidden"))
+    saved = await db_client.patch(f"/contents/{content.id}/draft", json=make_payload(novelPermission="public"))
     assert saved.status_code == 200
-    assert saved.json()["novelPermission"] == "forbidden"
+    assert saved.json()["novelPermission"] == "public"
 
     omitted = await db_client.patch(f"/contents/{content.id}/draft", json=make_payload(name="새 이름"))
     assert omitted.status_code == 200
-    assert omitted.json()["novelPermission"] == "forbidden"
-    assert (await db_client.get(f"/contents/{content.id}/draft")).json()["novelPermission"] == "forbidden"
+    assert omitted.json()["novelPermission"] == "public"
+    assert (await db_client.get(f"/contents/{content.id}/draft")).json()["novelPermission"] == "public"
     stored = await db_session.scalar(sa.select(Content.novel_permission).where(Content.id == content.id))
-    assert stored == "forbidden"
+    assert stored == "public"
 
 
 async def test_patch_content_draft_upserts_starting_setup_tree(

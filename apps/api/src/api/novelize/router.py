@@ -175,6 +175,7 @@ from api.novelize.source import (
     segment_hash,
 )
 from api.novelize.text import split_paragraphs
+from api.novelize.writing_lock import first_saved_chapter_at, lock_as_backfill, refuses_novelize
 from api.persona.schemas import PERSONA_NAME_MAX_LENGTH
 from api.session.dependencies import get_current_user_id
 
@@ -660,15 +661,16 @@ async def create_room_novel(
     받는다. 이용 제한 작품이어도 만들 수 있다(모델을 부르지 않는다).
 
     작가가 소설화를 허용하지 않은 작품이면 작가 본인이 아닌 사람은 새로 만들 수 없다(403 `CONTENT_NOVELIZE_FORBIDDEN`).
-    이 판정은 이미 있는 소설을 돌려주는 분기 뒤에 둔다 — 허락을 낮춰도 이미 만든 소설은 계속 열리고 이어 쓸 수 있어야
-    한다. 같은 이유로 모델을 부르는 라우트(다음 화·연쇄·다시 만들기·AI 수정)는 허락을 보지 않는다. 허락 변경과 겹친
-    생성은 잠그지 않는다 — 놓치는 것은 금지로 바꾸는 순간과 겹친 생성 하나이고, 그 소설은 어차피 유지되는 대상이다."""
+    이 판정은 이미 있는 소설을 돌려주는 분기 뒤에 둔다 — 허락을 낮춰도 이미 만든 소설은 계속 열려야 한다. 이어 쓰기는
+    따로 판정한다: 모델을 부르는 라우트는 첫 화가 저장되어 잠긴 소설이면 허락을 보지 않고, 잠기기 전(빈 소설)이면 이와
+    같은 판정으로 403 이다(`_ensure_novelize_permission`). 허락 변경과 겹친 생성은 잠그지 않는다 — 놓치는 것은 금지로
+    바꾸는 순간과 겹친 생성 하나이고, 그 빈 소설은 다음 생성 요청에서 같은 판정을 받는다."""
     existing = await _room_novel_id(db, room.id)
     if existing is not None:
         return await _expire_and_detail(db, existing)
 
     content = await db.get_one(Content, room.content_id)
-    if content.novel_permission == "forbidden" and content.creator_user_id != user_id:
+    if refuses_novelize(content, user_id):
         raise _novel_error(status.HTTP_403_FORBIDDEN, "CONTENT_NOVELIZE_FORBIDDEN")
     persona = await db.get(UserPersona, room.persona_id) if room.persona_id is not None else None
     character_name: str | None
@@ -932,12 +934,33 @@ async def _get_chapter(db: AsyncSession, novel: Novel, chapter_id: uuid.UUID) ->
 
 
 async def _ensure_content_allows_model(db: AsyncSession, novel: Novel) -> None:
-    """모델을 부르는 라우트(경계 제안·장 생성·재생성·AI 수정)만 막는다. 작품은 소설 행에 사본으로 둔 원작 id 로
-    읽어 방이 지워져도 판정한다. 원작 행이 아예 없으면 이용 제한과 같이 막는다(풀어 줄 근거가 없다)."""
+    """모델을 부르는 라우트(경계 제안·장 생성·연쇄·재생성·AI 수정)와 연쇄 견적의 원작 판정. 차감·모델 호출보다 앞에서
+    부른다. 이용 제한(403 `CONTENT_RESTRICTED`)을 먼저 보고, 다음으로 잠기기 전 소설의 소설화 허락을 본다. 작품은 소설
+    행에 사본으로 둔 원작 id 로 읽어 방이 지워져도 판정한다. 원작 행이 아예 없으면 이용 제한과 같이 막는다(풀어 줄 근거가
+    없다)."""
     content = await db.get(Content, novel.content_id, populate_existing=True)
     if content is None:
         raise _novel_error(status.HTTP_403_FORBIDDEN, "CONTENT_RESTRICTED")
     _ensure_content_playable(content)
+    await _ensure_novelize_permission(db, novel, content)
+
+
+async def _ensure_novelize_permission(db: AsyncSession, novel: Novel, content: Content) -> None:
+    """잠기지 않은 소설은 지금 허락을 따른다 — 작가가 허용 안 함이고 요청자가 작가 본인이 아니면 403
+    `CONTENT_NOVELIZE_FORBIDDEN`. 잠긴 소설(첫 화가 저장된 소설)은 허락과 무관하게 통과한다.
+
+    예외로, 잠금은 없지만 그 소설에 성공한 화 생성 작업이 있으면 거절하지 않고 그 자리에서 출처 `backfill`(그때 허락·
+    버전은 알 수 없음)로 잠근 뒤 통과시킨다. 배포가 겹치는 1분 남짓 동안 잠금 칸을 모르는 옛 코드가 첫 화를 저장하면
+    잠금 없이 화와 성공한 작업만 남기 때문이다 — 그 소설은 이미 권리를 얻었는데 거절하면 사용자가 다음 화를 잃는다.
+    잠금은 곧바로 커밋한다: 이 요청이 뒤에서 다른 이유로 거절되어도 판정이 다음 요청에서 다시 갈리지 않게. 거절 경로에서만
+    작업 행을 조회하므로 잠긴 소설과 허락된 소설은 쿼리가 늘지 않는다."""
+    if novel.writing_locked_at is not None or not refuses_novelize(content, novel.user_id):
+        return
+    first_saved_at = await first_saved_chapter_at(db, novel.id)
+    if first_saved_at is None:
+        raise _novel_error(status.HTTP_403_FORBIDDEN, "CONTENT_NOVELIZE_FORBIDDEN")
+    await lock_as_backfill(db, novel.id, first_saved_at)
+    await db.commit()
 
 
 def _source_room_id(novel: Novel) -> uuid.UUID:

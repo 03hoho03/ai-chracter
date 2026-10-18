@@ -377,10 +377,15 @@ def enqueued(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[uuid.UUID]]:
 
 
 async def _hand_to_another_creator(db: AsyncSession, novel_id: uuid.UUID) -> tuple[Novel, User]:
-    """소설 원작의 작가를 다른 회원으로 바꾼다 — 플레이어가 남의 작품으로 소설을 만드는 상태."""
+    """소설 원작의 작가를 다른 회원으로 바꾼다 — 플레이어가 남의 작품으로 소설을 만드는 상태. 허락은 "나만 보는 소설"로
+    둔다: 새 작품의 기본값(허용 안 함)이면 첫 화 전의 남의 소설은 모델을 부르는 요청이 모두 거절된다."""
     novel = await db.get_one(Novel, novel_id)
     creator = await _another_creator(db)
-    await db.execute(sa.update(Content).where(Content.id == novel.content_id).values(creator_user_id=creator.id))
+    await db.execute(
+        sa.update(Content)
+        .where(Content.id == novel.content_id)
+        .values(creator_user_id=creator.id, novel_permission="private")
+    )
     await db.commit()
     return novel, creator
 

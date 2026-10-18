@@ -32,7 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.core import clover
 from api.core.config import settings
-from api.db.models import Novel, NovelBatch, NovelChapter, NovelJob, User
+from api.db.models import ChatRoom, Content, Novel, NovelBatch, NovelChapter, NovelJob, User
 from api.db.models.clover import CloverLot
 from api.llm.client import LLMCallContext, LLMClient, LLMClientError, T
 from api.novelize import router as novelize_router
@@ -382,6 +382,33 @@ async def test_chain_makes_each_batch_and_refunds_the_unused_share(
     assert "novelize_refund" not in [kind for kind, _ in await _clover_lots(db_session, owner_id)]
     polled = (await db_client.get(f"/novels/{novel_id}/jobs/{parent_id}")).json()
     assert (polled["completedBatches"], polled["plannedBatches"], polled["refundedAmount"]) == (2, 2, 160)
+
+
+async def test_a_chain_child_that_saves_the_first_chapter_locks_the_novel(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueued: list[uuid.UUID],
+) -> None:
+    """빈 소설의 첫 화를 연쇄의 자식이 저장해도 화 하나짜리 생성과 같이 그 저장에서 소설이 잠긴다 — 출처는 첫 화, 권한은
+    그때 원작의 허락, 원작 버전은 방이 고정한 버전이다. 연쇄 부모는 화를 저장하지 않으므로 잠금을 쓰는 곳은 자식뿐이다."""
+    room, novel_id, _ = await _chain_novel(db_client, db_session, monkeypatch, turns=2)
+    novel = await db_session.get_one(Novel, novel_id)
+    await db_session.execute(sa.update(Content).where(Content.id == novel.content_id).values(novel_permission="public"))
+    await db_session.commit()
+    room_version = await db_session.scalar(sa.select(ChatRoom.content_version_id).where(ChatRoom.id == room.room_id))
+    parent_id = await _start(db_client, novel_id, max_batches=1)
+
+    await runner.run_chain(_factory(db_session), _ChainLLM(end_turns=[None]), parent_id)
+
+    assert (await _job(db_session, parent_id)).status == "succeeded"
+    locked = await db_session.get_one(Novel, novel_id, populate_existing=True)
+    assert locked.writing_locked_at is not None
+    assert (locked.writing_lock_source, locked.writing_lock_permission, locked.writing_lock_content_version_id) == (
+        "first_chapter",
+        "public",
+        room_version,
+    )
 
 
 async def test_consumed_share_is_the_smaller_of_the_planned_and_delivered_episodes(

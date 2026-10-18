@@ -246,6 +246,8 @@ async def _ensure_content(
             hashtags=hashtags,
             visibility=ContentVisibility.PUBLIC,
             moderation_status=ModerationStatus.NORMAL,
+            # 새 작품의 기본값(허용 안 함)이 아니라 이 값을 명시해, 기본값이 바뀌어도 시드 작품의 소설화가 그대로 열려 있게 한다.
+            novel_permission="private",
         )
         session.add(content)
         await session.flush()

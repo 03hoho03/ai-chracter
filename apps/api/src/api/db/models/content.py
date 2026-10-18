@@ -109,9 +109,9 @@ class Content(Base):
     # 않는다: 값이 하나뿐이라 보여 줄 것이 없고, 노출 경로를 미리 만들어 두면 성인 값이 새어 나갈 길이 하나 더 생긴다.
     rating: Mapped[ContentRating] = mapped_column(Text, server_default="all", nullable=False)
     # 소설화 허락(`NovelPermission`). 등급처럼 버전이 아니라 헤더에 둔다 — 허락은 작가의 지금 의사이고, 버전에 두면 발행할
-    # 때마다 기존 방의 판정이 바뀐다. 기본값이 "나만 보는 소설"인 것은 이 칸 전부터 있던 작품의 동작(누구나 자기 대화를
-    # 소설로 만들 수 있었다)을 그대로 두려는 것이다.
-    novel_permission: Mapped[NovelPermission] = mapped_column(Text, server_default="private", nullable=False)
+    # 때마다 기존 방의 판정이 바뀐다. 기본값이 "허용 안 함"인 것은 작가가 고르기 전에는 남의 소설화를 열지 않으려는 것이다.
+    # 기본값을 "나만 보는 소설"에서 이 값으로 바꿀 때 이미 있던 작품의 값은 그대로 두었다.
+    novel_permission: Mapped[NovelPermission] = mapped_column(Text, server_default="forbidden", nullable=False)
     current_published_version_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid,
         ForeignKey(

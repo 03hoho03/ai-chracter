@@ -179,15 +179,15 @@ async def test_adult_rating_is_rejected_by_the_database(db_session: AsyncSession
         await db_session.execute(sa.text("UPDATE contents SET rating = 'adult' WHERE id = :id"), {"id": content.id})
 
 
-async def test_new_content_may_be_novelized_privately_without_naming_it(db_session: AsyncSession) -> None:
-    """작품을 만드는 코드(초안 생성·시드)는 소설화 허락을 넘기지 않는다 — DB 기본값 "나만 보는 소설"이 채운다. 기본값이
-    빠지면 모든 작품 생성이 NOT NULL 위반으로 실패한다. `alembic check` 는 `server_default` 를 비교하지 않아 이 테스트가
-    유일한 신호다."""
+async def test_new_content_forbids_novelizing_unless_the_creator_names_it(db_session: AsyncSession) -> None:
+    """초안 생성은 소설화 허락을 넘기지 않는다 — DB 기본값 "허용 안 함"이 채운다. 작가가 고르지 않은 작품을 남이 소설로
+    만들지 못하게 하는 기본값이다. 기본값이 빠지면 모든 작품 생성이 NOT NULL 위반으로 실패한다. `alembic check` 는
+    `server_default` 를 비교하지 않아 이 테스트가 유일한 신호다."""
     _, content = await _make_user_and_content(db_session)
 
     permission = await db_session.scalar(sa.select(Content.novel_permission).where(Content.id == content.id))
 
-    assert permission == "private"
+    assert permission == "forbidden"
 
 
 async def test_unknown_novel_permission_is_rejected_by_the_database(db_session: AsyncSession) -> None:

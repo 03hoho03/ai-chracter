@@ -461,10 +461,11 @@ async def test_someone_elses_source_needs_public_novel_permission(
 async def test_own_source_skips_permission_but_not_the_listing_condition(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
 ) -> None:
-    """원작자 본인은 허락이 '나만 보는 소설'이어도 공개할 수 있다. 원작이 비공개면 본인도 새로 공개할 수 없다."""
+    """원작자 본인은 허락이 '허용 안 함'이어도 공개할 수 있다(허락은 남에게 거는 조건이다). 원작이 비공개면 본인도 새로
+    공개할 수 없다."""
     novel_id, chapters = await _novel_with_chapters(db_client, db_session, monkeypatch)
     source = await _source(db_session, novel_id)
-    assert source.novel_permission == "private"
+    source.novel_permission = "forbidden"
     source.visibility = ContentVisibility.PRIVATE
     await db_session.commit()
 

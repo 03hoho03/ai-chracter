@@ -45,6 +45,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base
+from api.db.models.content import NovelPermission
 from api.db.models.moderation import ReportReasonCategory, ReportStatus
 
 # 소설이 어느 레인(story·character)의 문안으로 고쳐지는지. 방이 사라진 뒤에도 AI 수정은 할 수 있으므로 방에서
@@ -67,6 +68,9 @@ NovelJobFailureCode = Literal[
     "episode_count_mismatch",
 ]
 NovelSnapshotKind = Literal["manual", "auto_before_restore"]
+# 집필권 잠금이 어디서 왔는지. 첫 화 저장이 쓴 잠금과, 이 칸이 생기기 전에 이미 첫 화를 만든 소설에 마이그레이션이 채운
+# 잠금을 가른다 — 뒤의 것은 그때 원작 권한을 알 수 없다.
+NovelWritingLockSource = Literal["first_chapter", "backfill"]
 
 
 def _sql_in_list(literal: Any) -> str:
@@ -113,6 +117,14 @@ class Novel(Base):
     )
     # 편집 보드의 노드 위치. 형식은 화면이 정하고 서버는 통째로 저장한다(노드별 행을 두지 않는다).
     board_layout: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    # 집필권 잠금. 첫 화가 저장된 순간 한 번 찍히고 풀리지 않는다 — 화를 다 지워도 남는다. 잠긴 소설은 원작의 소설화
+    # 권한이 나중에 바뀌어도 계속 이어 쓴다. 권한·원작 버전은 잠글 때의 사본이고(권한 NULL 은 알 수 없음), 원작 버전에
+    # FK 가 없는 것은 위 원작 사본 칸들과 같은 이유다(원작이 지워져도 소설은 남는다). 넷 다 nullable 인 것은 옛 코드의
+    # 소설 INSERT 가 이 칸들을 모르기 때문이다.
+    writing_locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    writing_lock_permission: Mapped[NovelPermission | None] = mapped_column(Text, nullable=True)
+    writing_lock_content_version_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    writing_lock_source: Mapped[NovelWritingLockSource | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -124,6 +136,19 @@ class Novel(Base):
     # 찾아 비우는 조회도 겸한다. 표지 인덱스는 이미지 DELETE 때 SET NULL 이 이 이미지를 표지로 쓴 소설을 찾는 조회용이고,
     # 표지 없는 소설이 대부분이라 NULL 은 담지 않는다.
     __table_args__ = (
+        # 권한 칸은 NULL 이 통과한다(IN 비교가 NULL 이 되어 CHECK 를 막지 않는다). 첫 화 출처에 권한을 강제하지 않는 것은,
+        # 요청 판정과 저장 사이에 원작 행이 지워지면 사본이 NULL 이 되는데 그때 값을 치른 화 저장 전체가 실패하지 않게
+        # 하려는 것이다. 알 수 없음은 권한 NULL 이 아니라 출처 `backfill` 로 가른다.
+        CheckConstraint(
+            f"writing_lock_permission IN ({_sql_in_list(NovelPermission)})", name="ck_novels_writing_lock_permission"
+        ),
+        CheckConstraint(
+            f"writing_lock_source IN ({_sql_in_list(NovelWritingLockSource)})", name="ck_novels_writing_lock_source"
+        ),
+        # 잠긴 시각과 출처는 함께 있거나 함께 없다.
+        CheckConstraint(
+            "(writing_locked_at IS NULL) = (writing_lock_source IS NULL)", name="ck_novels_writing_lock_complete"
+        ),
         Index("ix_novels_user_id_updated_at", "user_id", updated_at.desc()),
         Index("ux_novels_chat_room_id", "chat_room_id", unique=True),
         Index(
