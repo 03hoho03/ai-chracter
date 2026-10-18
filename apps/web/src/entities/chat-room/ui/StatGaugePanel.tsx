@@ -56,23 +56,6 @@ export function StatGaugePanel({ stats, values, feedback, scene, hiddenStatIds }
     writeStatusLineCollapsed(next);
   }
 
-  const actions = (
-    <div className="flex shrink-0 items-center gap-2">
-      {hasHiddenSignal && <HiddenStatSignal isCompact={isCollapsed} />}
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-expanded={!isCollapsed}
-        aria-controls={stripId}
-        aria-label={isCollapsed ? "상태 줄 펼치기" : "상태 줄 접기"}
-        className="text-muted-foreground hover:text-foreground"
-        onClick={handleToggle}
-      >
-        {isCollapsed ? <ChevronDown aria-hidden className="size-4" /> : <ChevronUp aria-hidden className="size-4" />}
-      </Button>
-    </div>
-  );
-
   return (
     <div className="shrink-0 border-b border-border">
       {/* 한 턴의 변화를 한 번에 읽는다. 턴마다 새 자식을 넣어 같은 문장이 두 턴 연달아 와도 다시 읽힌다. */}
@@ -80,44 +63,61 @@ export function StatGaugePanel({ stats, values, feedback, scene, hiddenStatIds }
         {announcement && <span key={feedback?.turn}>{announcement}</span>}
       </div>
 
-      {isCollapsed && (
-        <div className="flex min-h-10 items-center gap-2 py-1 pr-2 pl-4 sm:pr-4 sm:pl-6">
-          {scene ? <SceneLine scene={scene} /> : <span className="flex-1 text-xs text-muted-foreground">스탯 {stats.length}개</span>}
-          <CollapsedDeltaChips stats={stats} deltas={deltas} isLeaving={chipPhase === "leaving"} />
-          {actions}
-        </div>
-      )}
-
-      {!isCollapsed && scene && (
-        <div className="flex min-h-9 items-center gap-2 pt-1 pr-2 pl-4 sm:pr-4 sm:pl-6">
-          <SceneLine scene={scene} />
-          {actions}
-        </div>
-      )}
-
-      <div hidden={isCollapsed} className={cn(!scene && "flex items-center gap-1 pr-2 sm:pr-4")}>
-        {/* 스크롤바를 숨겨도 칸이 버튼이라 Tab 이 칸마다 멈추고, 포커스된 칸은 브라우저가 보이는 곳으로 스크롤한다. */}
-        <div
-          id={stripId}
-          role="group"
-          aria-label="스탯"
-          className={cn(
-            "flex min-w-0 flex-1 gap-1 overflow-x-auto px-2.5 pb-1.5 [scrollbar-width:none] sm:px-4.5 [&::-webkit-scrollbar]:hidden",
-            !scene && "pt-1.5",
+      {/* 접기 버튼은 접힘과 무관하게 늘 오른쪽 같은 자리의 같은 요소다 — 누른 버튼이 숨거나 사라지면 포커스가 문서 처음으로
+          빠진다. 접힘에 따라 바뀌는 것은 왼쪽 내용(요약 줄 / 장면·칸 줄)뿐이다. */}
+      <div className={cn("flex items-center pr-2 sm:pr-4", isCollapsed ? "gap-2" : "gap-1")}>
+        <div className="min-w-0 flex-1">
+          {isCollapsed && (
+            <div className="flex min-h-10 items-center gap-2 py-1 pl-4 sm:pl-6">
+              {scene ? <SceneLine scene={scene} /> : <span className="flex-1 text-xs text-muted-foreground">스탯 {stats.length}개</span>}
+              <CollapsedDeltaChips stats={stats} deltas={deltas} isLeaving={chipPhase === "leaving"} />
+            </div>
           )}
-        >
-          {stats.map((stat) => (
-            <StatCell
-              key={stat.id}
-              stat={stat}
-              value={values[stat.id] ?? stat.initial}
-              delta={deltas[stat.id]}
-              isChipLeaving={chipPhase === "leaving"}
-              isHidden={hiddenStatIds?.has(stat.id) ?? false}
-            />
-          ))}
+
+          {!isCollapsed && scene && (
+            <div className="flex min-h-9 items-center pt-1 pl-4 sm:pl-6">
+              <SceneLine scene={scene} />
+            </div>
+          )}
+
+          {/* 스크롤바를 숨겨도 칸이 버튼이라 Tab 이 칸마다 멈추고, 포커스된 칸은 브라우저가 보이는 곳으로 스크롤한다. */}
+          <div
+            id={stripId}
+            role="group"
+            aria-label="스탯"
+            hidden={isCollapsed}
+            className={cn(
+              "flex gap-1 overflow-x-auto px-2.5 pb-1.5 [scrollbar-width:none] sm:px-4.5 [&::-webkit-scrollbar]:hidden",
+              !scene && "pt-1.5",
+            )}
+          >
+            {stats.map((stat) => (
+              <StatCell
+                key={stat.id}
+                stat={stat}
+                value={values[stat.id] ?? stat.initial}
+                delta={deltas[stat.id]}
+                isChipLeaving={chipPhase === "leaving"}
+                isHidden={hiddenStatIds?.has(stat.id) ?? false}
+              />
+            ))}
+          </div>
         </div>
-        {!scene && actions}
+
+        <div className="flex shrink-0 items-center gap-2">
+          {hasHiddenSignal && <HiddenStatSignal isCompact={isCollapsed} />}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-expanded={!isCollapsed}
+            aria-controls={stripId}
+            aria-label={isCollapsed ? "상태 줄 펼치기" : "상태 줄 접기"}
+            className="text-muted-foreground hover:text-foreground"
+            onClick={handleToggle}
+          >
+            {isCollapsed ? <ChevronDown aria-hidden className="size-4" /> : <ChevronUp aria-hidden className="size-4" />}
+          </Button>
+        </div>
       </div>
     </div>
   );
