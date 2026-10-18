@@ -950,6 +950,7 @@ async def test_get_story_chat_room_embeds_content_snapshot(
             "initialValue": stat.initial_value,
             "unit": stat.unit,
             "description": stat.description,
+            "playerDescription": stat.player_description,
         }
     ]
     assert snapshot["shortcuts"] == [

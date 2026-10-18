@@ -31719,6 +31719,17 @@
           "description": {
             "type": "string",
             "title": "Description"
+          },
+          "playerDescription": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playerdescription"
           }
         },
         "type": "object",
@@ -31731,7 +31742,8 @@
           "maxValue",
           "initialValue",
           "unit",
-          "description"
+          "description",
+          "playerDescription"
         ],
         "title": "StatDefSnapshot"
       },

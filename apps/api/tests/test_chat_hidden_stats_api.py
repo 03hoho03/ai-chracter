@@ -256,6 +256,29 @@ async def test_the_author_room_hides_the_stats_too(db_client: httpx.AsyncClient,
     _assert_only_hidden_left_out(resp.json(), story)
 
 
+async def test_the_room_snapshot_carries_the_player_description_of_visible_stats_only(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """방 스냅숏의 보이는 스탯에는 플레이어용 설명이 실리고(판정용 설명과 다른 칸), 숨긴 스탯의 설명은 스탯째 빠진다.
+    설명이 없는 스탯은 null 로 실린다."""
+    story = await _hidden_story(db_session)
+    bare = _stat(story.setup, "체력", 3, hidden=False, signal=False)
+    bare.player_description = None
+    db_session.add(bare)
+    await db_session.commit()
+    room_id = await _player_room(db_client, db_session, story)
+
+    resp = await db_client.get(f"/chat-rooms/{room_id}")
+
+    assert resp.status_code == 200
+    stats = resp.json()["contentSnapshot"]["stats"]
+    assert [(stat["id"], stat["playerDescription"]) for stat in stats] == [
+        (story.shown, "호감 플레이어 설명"),
+        (str(bare.entity_id), None),
+    ]
+    assert "속마음 플레이어 설명" not in resp.text
+
+
 @pytest.mark.parametrize(
     ("signal", "fired", "expected_types"),
     [
