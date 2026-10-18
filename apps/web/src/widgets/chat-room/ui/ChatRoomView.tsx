@@ -27,6 +27,7 @@ import {
   countMessagesAfter,
   refreshChatRoomTurnPrice,
   roomAuthorMacroNames,
+  selectVisibleTurnFeedback,
   shouldConfirmEditTruncation,
   shouldShowSuggestedReplies,
   useAcknowledgeVersionUpgradeMutation,
@@ -94,7 +95,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   } = useRestorePreviousResponse(roomId, () => {
     shouldFocusLastMessageMenuRef.current = true;
   });
-  const { send, retry, regenerate, editMessage, status, policyWarning, streamingText } = useSendMessage(
+  const { send, retry, regenerate, editMessage, status, policyWarning, streamingText, turnFeedback } = useSendMessage(
     roomId,
     room && { contentType: room.contentType, contentId: room.contentId },
     async (error) => {
@@ -261,6 +262,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
       ...stat,
       name: expandForRoom(stat.name),
       unit: stat.unit === undefined ? undefined : expandForRoom(stat.unit),
+      playerDescription: stat.playerDescription === undefined ? undefined : expandForRoom(stat.playerDescription),
     })),
     shortcuts: room.contentSnapshot.shortcuts.map((shortcut) => ({
       ...shortcut,
@@ -374,7 +376,13 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
             </div>
           )}
 
-          {snapshot && <StatGaugePanel stats={snapshot.stats} values={room.stats} />}
+          {snapshot && (
+            <StatGaugePanel
+              stats={snapshot.stats}
+              values={room.stats}
+              feedback={selectVisibleTurnFeedback(turnFeedback, roomId, room.messages)}
+            />
+          )}
 
           <div ref={scrollAreaRef} className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
             {/* 메시지 사이 gap-6(24px)은 한 메시지 안 문단 간격(12px)의 두 배다. 상자 없는 산문이 한 컬럼에 흐르므로

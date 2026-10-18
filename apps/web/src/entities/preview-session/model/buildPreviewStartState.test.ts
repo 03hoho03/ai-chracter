@@ -164,7 +164,36 @@ describe("buildPreviewStartState", () => {
 
     expect(state.stats).toEqual({ hp: 80 });
     expect(state.statDefs).toEqual([
-      { id: "hp", name: "체력", icon: "heart", color: "rose", min: 0, max: 100, initial: 80, unit: "pt", description: "생존에 필요한 신체 상태" },
+      {
+        id: "hp",
+        name: "체력",
+        icon: "heart",
+        color: "rose",
+        min: 0,
+        max: 100,
+        initial: 80,
+        unit: "pt",
+        description: "생존에 필요한 신체 상태",
+        playerDescription: undefined,
+        hiddenFromPlayer: false,
+      },
+    ]);
+  });
+
+  it("숨김·플레이어용 설명을 옮긴다 — 미리보기 게이지가 숨긴 스탯을 흐리게 그리고 팝오버가 설명을 보인다", () => {
+    const state = buildPreviewStartState(
+      undefined,
+      storyPayload({
+        startingSetups: [
+          startingSetup({
+            statDefs: [statDef({ id: "hp", hiddenFromPlayer: true, playerDescription: "바닥나면 쓰러진다" })],
+          }),
+        ],
+      }),
+    );
+
+    expect(state.statDefs.map(({ hiddenFromPlayer, playerDescription }) => ({ hiddenFromPlayer, playerDescription }))).toEqual([
+      { hiddenFromPlayer: true, playerDescription: "바닥나면 쓰러진다" },
     ]);
   });
 

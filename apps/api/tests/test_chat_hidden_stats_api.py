@@ -8,6 +8,8 @@
 - 턴 스트림(보내기·수정·재생성)에서 숨긴 스탯의 `statChange` 는 나가지 않는다. 그 턴에 바뀐 숨긴 스탯 가운데 익명 신호를 켠
   것이 하나라도 있으면 `hiddenStatSignal` 하나를 `statChange` 자리에서 낸다 — 몇 개가 바뀌었든 하나이고, 스탯 id·이름·방향·
   크기는 싣지 않는다. 신호를 끈 숨긴 스탯만 바뀌었거나 숨긴 스탯이 바뀌지 않았으면 내지 않는다.
+- "그 턴에 바뀌었다" 는 턴 시작 값(반영 전 값) 대비다. 재생성은 옛 응답이 남긴 지금 값이 아니라 옛 응답의 효과를 되돌린 값과
+  재판정 결과를 비교한다 — 옛 응답과 같은 결과여도 이번 턴에 바뀌었으면 신호가 서고, 시작값으로 돌아갔으면 서지 않는다.
 
 방에는 판정 스탯 셋이 있다 — 보이는 "호감"(규칙 a1 +3), 숨긴 "속마음"(규칙 b1 +5), 숨긴 "의심"(규칙 c1 +4). 셋 다 시작값
 37 이다. 엔딩 "고백"은 숨긴 "속마음" ≥ 40 에 걸려 있다."""
@@ -256,6 +258,29 @@ async def test_the_author_room_hides_the_stats_too(db_client: httpx.AsyncClient,
     _assert_only_hidden_left_out(resp.json(), story)
 
 
+async def test_the_room_snapshot_carries_the_player_description_of_visible_stats_only(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """방 스냅숏의 보이는 스탯에는 플레이어용 설명이 실리고(판정용 설명과 다른 칸), 숨긴 스탯의 설명은 스탯째 빠진다.
+    설명이 없는 스탯은 null 로 실린다."""
+    story = await _hidden_story(db_session)
+    bare = _stat(story.setup, "체력", 3, hidden=False, signal=False)
+    bare.player_description = None
+    db_session.add(bare)
+    await db_session.commit()
+    room_id = await _player_room(db_client, db_session, story)
+
+    resp = await db_client.get(f"/chat-rooms/{room_id}")
+
+    assert resp.status_code == 200
+    stats = resp.json()["contentSnapshot"]["stats"]
+    assert [(stat["id"], stat["playerDescription"]) for stat in stats] == [
+        (story.shown, "호감 플레이어 설명"),
+        (str(bare.entity_id), None),
+    ]
+    assert "속마음 플레이어 설명" not in resp.text
+
+
 @pytest.mark.parametrize(
     ("signal", "fired", "expected_types"),
     [
@@ -324,20 +349,23 @@ async def test_editing_a_message_streams_the_signal_instead_of_hidden_stat_chang
     assert [e["statId"] for e in events if e["type"] == "statChange"] == [story.shown]
 
 
-async def test_regenerating_streams_the_signal_instead_of_hidden_stat_changes(
+async def test_regenerating_signals_hidden_stats_changed_from_the_turn_start(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """재생성의 재판정이 숨긴 스탯을 바꾸면 신호 하나, 바꾸지 않으면 없다."""
+    """재생성의 신호는 턴 시작 값(37) 대비 재판정 결과로 정한다. 옛 응답이 남긴 지금 값과 같아도(42 → 42) 이번 턴에 바뀌었으니
+    신호가 서고, 시작값으로 돌아가면(42 → 37) 지금 값과는 달라도 이번 턴에 바뀐 것이 없으니 서지 않는다. 보이는 스탯의
+    `statChange` 는 그대로 지금 값 대비다(화면이 지금 값을 들고 있다)."""
     story = await _hidden_story(db_session)
     room_id = await _player_room(db_client, db_session, story)
     await _send(db_client, room_id, _JudgeLLM([]))
     path = f"/chat-rooms/{room_id}/regenerate"
 
     changed = await _turn(db_client, "POST", path, None, _JudgeLLM(["a1", "b1", "c1"]))
-    unchanged = await _turn(db_client, "POST", path, None, _JudgeLLM(["a1", "b1", "c1"]))
-    reverted = await _turn(db_client, "POST", path, None, _JudgeLLM(["a1"]))
+    same_as_old = await _turn(db_client, "POST", path, None, _JudgeLLM(["a1", "b1", "c1"]))
+    back_to_start = await _turn(db_client, "POST", path, None, _JudgeLLM(["a1"]))
 
     assert _types(changed) == ["token", "statChange", "hiddenStatSignal", "done"]
     assert [e["statId"] for e in changed if e["type"] == "statChange"] == [story.shown]
-    assert _types(unchanged) == ["token", "done"]
-    assert _types(reverted) == ["token", "hiddenStatSignal", "done"]
+    assert _types(same_as_old) == ["token", "hiddenStatSignal", "done"]
+    assert _types(back_to_start) == ["token", "done"]
+    assert await _room_stat(db_session, room_id, story.hidden) == 37

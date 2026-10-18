@@ -89,6 +89,9 @@ export const MAX_STAT_RULES = 10;
 export const MAX_STAT_RULE_CONDITION_LENGTH = 100;
 export const STAT_RULE_LIMIT_MESSAGE = `규칙은 스탯마다 ${MAX_STAT_RULES}개까지예요. 더 넣으려면 쓰지 않는 규칙을 지워 주세요.`;
 export const STAT_RULE_DELTA_MESSAGE = "0이 아닌 정수로 입력해주세요(예: +3, -5)";
+/** 플레이어용 스탯 설명 상한(서버 상한과 같은 값). 서버처럼 앞뒤 공백을 뗀 뒤 코드 포인트로 센다. 서버는 넘는 설명이 든
+ * 초안 저장을 통째로 거절하므로 입력칸이 이 상한에서 자른다. */
+export const MAX_STAT_PLAYER_DESCRIPTION_LENGTH = 60;
 
 /**
  * 턴당 자동 변화가 있는 스탯은 판정 AI 가 보지 않아 규칙이 발동할 일이 없다 — 서버는 둘을 함께 건 스탯의 발행을 거절한다. 스탯
@@ -184,6 +187,19 @@ export const statDefSchema = z
     perTurnDelta: z.number().int(STAT_INTEGER_MESSAGE).nullable(),
     /** 「조건 → 증감」 규칙. 판정을 받는 스탯(턴당 자동 변화가 없는 스탯)에는 하나 이상 있어야 발행된다(아래 검사). */
     rules: statRulesSchema,
+    /** 플레이어 화면에서 이 스탯을 뺀다. 판정·엔딩은 그대로 이 스탯을 쓴다. */
+    hiddenFromPlayer: z.boolean(),
+    /** 플레이어가 게이지 칸을 눌러 보는 짧은 설명. 판정에는 실리지 않는다. 빈 글이 "없음"이다(`formToServer` 가 null 로
+     * 보낸다) — 글 칸이라 RHF 가 빈 칸을 `undefined` 가 아니라 빈 글로 주므로 옛 값으로 되살아나지 않는다. 숨긴 스탯이면
+     * 칸이 잠기지만 값은 지우지 않는다. */
+    playerDescription: z
+      .string()
+      .refine(
+        (value) => countCharacters(value.trim()) <= MAX_STAT_PLAYER_DESCRIPTION_LENGTH,
+        `플레이어에게 보일 설명은 ${MAX_STAT_PLAYER_DESCRIPTION_LENGTH}자 이하로 입력해주세요`,
+      ),
+    /** 숨긴 스탯이 한 턴에 바뀌면 방향·크기 없는 익명 신호를 줄지. 숨기지 않은 스탯에서는 쓰지 않아 칸이 잠기지만 값은 남긴다. */
+    signalHiddenChange: z.boolean(),
   })
   .superRefine((stat, ctx) => {
     // 오류는 턴당 자동 변화 칸에 붙인다 — 발행 때 이 스탯을 열고 그 칸으로 포커스가 가, 바로 아래 문장이 이유를 말한다.

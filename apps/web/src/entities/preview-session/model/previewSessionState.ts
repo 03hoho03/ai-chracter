@@ -12,6 +12,10 @@ export type PreviewStatDef = {
   initial: number;
   unit?: string;
   description: string;
+  playerDescription?: string;
+  // 플레이어에게 숨긴 스탯. 미리보기는 작가 전용이라 숨긴 스탯도 게이지에 그리고(흐리게 + "숨김"), 서버도 미리보기 스트림은
+  // 거르지 않는다.
+  hiddenFromPlayer: boolean;
 };
 
 export type PreviewShortcut = {

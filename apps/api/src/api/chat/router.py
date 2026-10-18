@@ -509,6 +509,7 @@ async def _build_content_snapshot(
                 initial_value=s.initial_value,
                 unit=s.unit,
                 description=s.description,
+                player_description=s.player_description,
             )
             for s in stat_defs
         ],

@@ -114,6 +114,10 @@ function toApiStatDef(stat: StatDefValues): StatDefDraftItem {
     description: stat.description,
     perTurnDelta: stat.perTurnDelta ?? null,
     rules: toApiStatRules(stat.rules),
+    hiddenFromPlayer: stat.hiddenFromPlayer,
+    // 빈 글은 "없음"이다. 서버도 앞뒤 공백을 떼고 빈 글을 null 로 보지만, 화면의 약속을 요청에 그대로 적는다.
+    playerDescription: stat.playerDescription.trim() || null,
+    signalHiddenChange: stat.signalHiddenChange,
   };
 }
 

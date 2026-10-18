@@ -209,8 +209,11 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
               ...stat,
               name: expandForPreview(stat.name),
               unit: stat.unit === undefined ? undefined : expandForPreview(stat.unit),
+              playerDescription:
+                stat.playerDescription === undefined ? undefined : expandForPreview(stat.playerDescription),
             }))}
             values={state.stats}
+            hiddenStatIds={new Set(state.statDefs.filter((stat) => stat.hiddenFromPlayer).map((stat) => stat.id))}
           />
         )}
 

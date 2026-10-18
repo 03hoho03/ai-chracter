@@ -12955,6 +12955,8 @@ export interface components {
             unit: string | null;
             /** Description */
             description: string;
+            /** Playerdescription */
+            playerDescription: string | null;
         };
         /**
          * StatRuleDraftItem

@@ -1,6 +1,25 @@
+import type { components } from "@ai-character-chat/api-types";
 import { describe, expect, it } from "vitest";
 
 import { toChatRoomState } from "./toChatRoomState";
+
+const storyRoomBase: Omit<components["schemas"]["ChatRoomResponse"], "contentSnapshot"> = {
+  id: "room-2",
+  contentId: "story-1",
+  contentType: "story",
+  name: "대화 1",
+  startingSetupId: "setup-1",
+  turnCount: 5,
+  endingReached: false,
+  stats: { "stat-1": 42 },
+  messages: [],
+  latestVersionAvailable: true,
+  versionAutoUpgraded: false,
+  contentRestricted: false,
+  hasMoreMessagesBefore: false,
+  createdAt: "2026-07-08T00:00:00Z",
+  updatedAt: "2026-07-08T00:00:00Z",
+};
 
 describe("toChatRoomState", () => {
   it("maps the character chat ChatRoomResponse into ChatRoomState with empty story-only fields", () => {
@@ -336,17 +355,10 @@ describe("toChatRoomState", () => {
     expect(toChatRoomState({ ...base, hasMoreMessagesBefore: false }).hasMoreMessagesBefore).toBe(false);
   });
 
-  it("maps story chat contentSnapshot/stats/startingSetupId, translating raw operators to comparison symbols", () => {
+  it("maps story chat contentSnapshot/stats/startingSetupId from a snapshot without the judgment fields", () => {
+    // 서버가 판정 재료(스탯 판정용 설명, 엔딩 판정 문안·에필로그·힌트·규칙)를 지운 응답이다 — 그 키가 없어도 받는다.
     const state = toChatRoomState({
-      id: "room-2",
-      contentId: "story-1",
-      contentType: "story",
-      name: "대화 1",
-      startingSetupId: "setup-1",
-      turnCount: 5,
-      endingReached: false,
-      stats: { "stat-1": 42 },
-      messages: [],
+      ...storyRoomBase,
       contentSnapshot: {
         stats: [
           {
@@ -358,38 +370,25 @@ describe("toChatRoomState", () => {
             maxValue: 100,
             initialValue: 50,
             unit: null,
-            description: "캐릭터와의 호감도",
+            playerDescription: "가까워질수록 오른다",
           },
-        ],
-        endings: [
           {
-            id: "ending-1",
-            name: "해피엔딩",
-            turnCountGate: 10,
-            judgmentPrompt: "충분히 가까워졌는가?",
-            epilogue: "그 후로 오래오래...",
-            hint: null,
-            statRules: [
-              { kind: "rule", id: "rule-1", statId: "stat-1", operator: "gte", threshold: 80, nextOp: null },
-              {
-                kind: "group",
-                id: "group-1",
-                nextOp: "or",
-                rules: [{ kind: "rule", id: "rule-2", statId: "stat-1", operator: "lt", threshold: 10, nextOp: null }],
-              },
-            ],
+            id: "stat-2",
+            name: "체력",
+            icon: "Heart",
+            color: "#3366ff",
+            minValue: 0,
+            maxValue: 10,
+            initialValue: 10,
+            unit: "칸",
+            playerDescription: null,
           },
         ],
+        endings: [{ id: "ending-1", name: "해피엔딩", turnCountGate: 10 }],
         shortcuts: [{ id: "shortcut-1", name: "인사", description: "인사하기", prompt: "안녕이라고 인사해줘" }],
         suggestedReplies: ["계속 이야기해줘"],
         pinnedStartingSetupId: "physical-setup-1",
       },
-      latestVersionAvailable: true,
-      versionAutoUpgraded: false,
-      contentRestricted: false,
-      hasMoreMessagesBefore: false,
-      createdAt: "2026-07-08T00:00:00Z",
-      updatedAt: "2026-07-08T00:00:00Z",
     });
 
     expect(state.startingSetupId).toBe("setup-1");
@@ -405,31 +404,65 @@ describe("toChatRoomState", () => {
           max: 100,
           initial: 50,
           unit: undefined,
-          description: "캐릭터와의 호감도",
+          playerDescription: "가까워질수록 오른다",
         },
-      ],
-      endings: [
         {
-          id: "ending-1",
-          name: "해피엔딩",
-          turnGate: 10,
-          judgePrompt: "충분히 가까워졌는가?",
-          epilogue: "그 후로 오래오래...",
-          endingHint: undefined,
-          statRules: [
-            { kind: "rule", id: "rule-1", statId: "stat-1", operator: ">=", value: 80, nextOp: null },
-            {
-              kind: "group",
-              id: "group-1",
-              nextOp: "or",
-              rules: [{ kind: "rule", id: "rule-2", statId: "stat-1", operator: "<", value: 10, nextOp: null }],
-            },
-          ],
+          id: "stat-2",
+          name: "체력",
+          icon: "Heart",
+          color: "#3366ff",
+          min: 0,
+          max: 10,
+          initial: 10,
+          unit: "칸",
+          playerDescription: undefined,
         },
       ],
+      endings: [{ id: "ending-1", name: "해피엔딩", turnGate: 10 }],
       shortcuts: [{ id: "shortcut-1", name: "인사", description: "인사하기", prompt: "안녕이라고 인사해줘" }],
       suggestedReplies: ["계속 이야기해줘"],
       pinnedStartingSetupId: "physical-setup-1",
     });
+  });
+
+  it("does not carry the judgment fields into the screen state even when the server still sends them", () => {
+    const response: components["schemas"]["ChatRoomResponse"] = {
+      ...storyRoomBase,
+      contentSnapshot: {
+        stats: [
+          {
+            id: "stat-1",
+            name: "호감도",
+            icon: "Heart",
+            color: "#ff4d6d",
+            minValue: 0,
+            maxValue: 100,
+            initialValue: 50,
+            unit: null,
+            description: "판정용 설명",
+            playerDescription: null,
+          },
+        ],
+        endings: [
+          {
+            id: "ending-1",
+            name: "해피엔딩",
+            turnCountGate: 10,
+            judgmentPrompt: "충분히 가까워졌는가?",
+            epilogue: "그 후로 오래오래...",
+            hint: "힌트",
+            statRules: [{ kind: "rule", id: "rule-1", statId: "stat-1", operator: "gte", threshold: 80, nextOp: null }],
+          },
+        ],
+        shortcuts: [],
+        suggestedReplies: [],
+        pinnedStartingSetupId: "physical-setup-1",
+      },
+    };
+
+    const snapshot = toChatRoomState(response).contentSnapshot;
+
+    expect(snapshot?.stats[0]).not.toHaveProperty("description");
+    expect(snapshot?.endings).toEqual([{ id: "ending-1", name: "해피엔딩", turnGate: 10 }]);
   });
 });

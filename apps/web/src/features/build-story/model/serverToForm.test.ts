@@ -86,6 +86,9 @@ function baseDraftResponse(): StoryDraftResponse {
             description: "생존에 필요한 신체 상태",
             perTurnDelta: -1,
             rules: [],
+            hiddenFromPlayer: false,
+            playerDescription: null,
+            signalHiddenChange: false,
           },
         ],
         endings: [],
@@ -149,6 +152,9 @@ describe("serverToForm", () => {
               description: "생존에 필요한 신체 상태",
               perTurnDelta: -1,
               rules: [],
+              hiddenFromPlayer: false,
+              playerDescription: "",
+              signalHiddenChange: false,
             },
           ],
           endings: [],
@@ -336,6 +342,36 @@ describe("serverToForm", () => {
     delete stat.rules;
 
     expect(requireFirst(requireFirst(serverToForm(response).startingSetups).stats).rules).toEqual([]);
+  });
+
+  it("reads a stat's player visibility settings, and the server defaults when the response omits them", () => {
+    const response = baseDraftResponse();
+    const stat = requireFirst(requireFirst(response.startingSetups).statDefs);
+    stat.hiddenFromPlayer = true;
+    stat.playerDescription = "바닥나면 쓰러진다";
+    stat.signalHiddenChange = true;
+
+    const formStat = requireFirst(requireFirst(serverToForm(response).startingSetups).stats);
+    expect(formStat).toMatchObject({ hiddenFromPlayer: true, playerDescription: "바닥나면 쓰러진다", signalHiddenChange: true });
+
+    delete stat.hiddenFromPlayer;
+    delete stat.playerDescription;
+    delete stat.signalHiddenChange;
+    expect(requireFirst(requireFirst(serverToForm(response).startingSetups).stats)).toMatchObject({
+      hiddenFromPlayer: false,
+      playerDescription: "",
+      signalHiddenChange: false,
+    });
+  });
+
+  it("round-trips a hidden stat's settings back to the same payload, keeping a description the locked field still holds", () => {
+    const response = baseDraftResponse();
+    const stat = requireFirst(requireFirst(response.startingSetups).statDefs);
+    stat.hiddenFromPlayer = true;
+    stat.playerDescription = "숨기기 전에 쓴 설명";
+    stat.signalHiddenChange = true;
+
+    expect(formToServer(serverToForm(response)).startingSetups).toEqual(response.startingSetups);
   });
 
   it("maps situation notes with their condition rule trees, and an omitted list to an empty one", () => {

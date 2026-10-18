@@ -17,6 +17,9 @@ function stat(id: string): StatDefValues {
     description: "d",
     perTurnDelta: null,
     rules: [],
+    hiddenFromPlayer: false,
+    playerDescription: "",
+    signalHiddenChange: false,
   };
 }
 

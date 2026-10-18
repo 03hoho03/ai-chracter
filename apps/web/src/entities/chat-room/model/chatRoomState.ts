@@ -5,7 +5,6 @@ import type { ChatModelId } from "@/entities/chat-model/@x/chat-room";
 import type { MediaTagImages } from "@/entities/media-book/@x/chat-room";
 
 import type { ChatMessage } from "../api/chatStream";
-import type { RuleListItem } from "./endingRules";
 
 export type { ComparisonOp, LogicOp, RuleGroup, RuleListItem, SingleRule } from "./endingRules";
 
@@ -18,7 +17,8 @@ export type StatDef = {
   max: number;
   initial: number;
   unit?: string;
-  description: string;
+  // 작가가 플레이어에게 보여 주려고 쓴 짧은 설명(게이지 칸 팝오버). 판정용 설명은 플레이어 화면이 읽지 않는다.
+  playerDescription?: string;
 };
 
 export type Shortcut = {
@@ -28,14 +28,12 @@ export type Shortcut = {
   prompt: string;
 };
 
+// 플레이어 화면이 엔딩 정의에서 읽는 것은 이름(도달 구분선)과 최소 턴뿐이다. 판정 문안·규칙·힌트·에필로그는 작가가 쓴 판정
+// 재료라 화면이 쓰지 않고, 도달한 엔딩의 에필로그는 방 응답의 엔딩 칸(`endingStatus`)으로 따로 온다.
 export type Ending = {
   id: string;
   name: string;
   turnGate: number;
-  judgePrompt: string;
-  statRules: RuleListItem[]; // 비어있으면 judgePrompt만으로 판정
-  epilogue?: string;
-  endingHint?: string;
 };
 
 // BE의 실제 ChatRoomResponse(캐릭터 챗)는 storyId가 아니라 contentId를 쓰고

@@ -25,6 +25,9 @@ function toStatDef(item: StatDefDraftItem): PreviewStatDef {
     initial: item.initialValue,
     unit: item.unit ?? undefined,
     description: item.description,
+    playerDescription: item.playerDescription ?? undefined,
+    // 생성 타입에서 선택 필드다(서버 기본값이 있는 칸) — 빠지면 숨기지 않은 스탯이다.
+    hiddenFromPlayer: item.hiddenFromPlayer ?? false,
   };
 }
 

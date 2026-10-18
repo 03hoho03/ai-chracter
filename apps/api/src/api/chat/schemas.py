@@ -137,6 +137,10 @@ class StatDefSnapshot(CamelModel):
     initial_value: int
     unit: str | None
     description: str
+    # 작가가 플레이어에게 보여 주려고 쓴 짧은 설명(게이지 칸을 눌러 여는 팝오버). 판정용 `description` 과 다른 칸이고
+    # 판정·생성 프롬프트에는 실리지 않는다. 숨긴 스탯은 스탯째 스냅숏에서 빠지므로 여기 실리는 것은 보이는 스탯 것뿐이다.
+    # 쓰지 않았으면 None.
+    player_description: str | None
 
 
 class ShortcutSnapshot(CamelModel):

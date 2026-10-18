@@ -153,6 +153,9 @@ function validStatDef() {
     perTurnDelta: null,
     // 턴당 자동 변화가 없는 스탯은 규칙이 하나 이상 있어야 발행 검증을 통과한다.
     rules: [{ id: "stat-1-rule-1", condition: "사용자가 물을 나눠 마셨다", delta: 3 }],
+    hiddenFromPlayer: false,
+    playerDescription: "",
+    signalHiddenChange: false,
   };
 }
 
@@ -172,6 +175,23 @@ describe("statDefSchema", () => {
 
     expect(missingName.success).toBe(false);
     expect(withoutUnit.success).toBe(true);
+  });
+
+  it("caps the player description at 60 characters counted after trimming, the way the server counts", () => {
+    const sixty = "가".repeat(60);
+    expect(statDefSchema.safeParse({ ...validStatDef(), playerDescription: `  ${sixty}  ` }).success).toBe(true);
+    const result = statDefSchema.safeParse({ ...validStatDef(), playerDescription: `${sixty}가` });
+    expect(result.error?.issues.map((issue) => [issue.path.join("."), issue.message])).toEqual([
+      ["playerDescription", "플레이어에게 보일 설명은 60자 이하로 입력해주세요"],
+    ]);
+  });
+
+  it("keeps a hidden stat's description and an unhidden stat's signal — locking a field does not make its value invalid", () => {
+    expect(
+      statDefSchema.safeParse({ ...validStatDef(), hiddenFromPlayer: true, playerDescription: "남은 설명", signalHiddenChange: true })
+        .success,
+    ).toBe(true);
+    expect(statDefSchema.safeParse({ ...validStatDef(), hiddenFromPlayer: false, signalHiddenChange: true }).success).toBe(true);
   });
 
   it("requires min/max/initial to be numbers", () => {

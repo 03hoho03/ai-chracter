@@ -53,6 +53,9 @@ const chatMessageSchema = z.object({
 export const chatStreamEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("token"), delta: z.string() }),
   z.object({ type: z.literal("statChange"), statId: z.string(), newValue: z.number() }),
+  // 플레이어에게 숨긴 스탯 가운데 신호를 켠 것이 이번 턴에 바뀌었다는 표시 — 인자가 없다(어느 스탯인지·얼마나인지 싣는
+  // 순간 숨긴 스탯을 되짚을 수 있다). 한 턴에 많아야 하나이고 `statChange` 들 뒤에 온다. 캐시 변경 없음.
+  z.object({ type: z.literal("hiddenStatSignal") }),
   z.object({
     type: z.literal("endingReached"),
     endingId: z.string(),

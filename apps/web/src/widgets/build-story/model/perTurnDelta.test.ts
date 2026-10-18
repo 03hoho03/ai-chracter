@@ -12,7 +12,7 @@ const perTurnDeltaOptions = { setValueAs: perTurnDeltaFromInput };
 const STATS = "startingSetups.0.stats" as const;
 
 function stat(id: string, perTurnDelta: number | null): StatDefValues {
-  return { id, name: id, icon: "Heart", color: "c", min: 0, max: 100, initial: 0, description: "d", perTurnDelta, rules: [] };
+  return { id, name: id, icon: "Heart", color: "c", min: 0, max: 100, initial: 0, description: "d", perTurnDelta, rules: [], hiddenFromPlayer: false, playerDescription: "", signalHiddenChange: false };
 }
 
 /** 초안을 불러온 순간의 스탯이 `defaultValues` 로 굳은 폼. */
