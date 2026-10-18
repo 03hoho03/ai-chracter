@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 
+import { hasPendingReconsent } from "@/entities/legal";
 import { personaListQueryOptions, resolveStartPersona, type Persona, type PersonaList } from "@/entities/persona";
 import { sessionKeys, type MeResponse } from "@/entities/session";
 
@@ -23,7 +24,7 @@ export async function choosePersonaForNewRoom(
   openNameModal: () => Promise<Persona | undefined>,
 ): Promise<NewRoomPersonaChoice> {
   const session = queryClient.getQueryData<MeResponse>(sessionKeys.current());
-  if (session?.termsReconsentRequired || session?.privacyReconsentRequired) return { kind: "cancelled" };
+  if (session !== undefined && hasPendingReconsent(session)) return { kind: "cancelled" };
 
   let personaList: PersonaList;
   try {
