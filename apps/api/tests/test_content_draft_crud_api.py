@@ -3828,6 +3828,97 @@ async def test_patch_story_draft_enforces_stat_rule_limits(
     assert sum(len(items) for items in saved.values()) == (len(rules) if accepted else 0)
 
 
+async def _saved_stat_visibility(db_session: AsyncSession, version_id: uuid.UUID) -> list[tuple[object, ...]]:
+    saved = (
+        await db_session.scalars(
+            sa.select(StatDef)
+            .join(StartingSetup, StatDef.starting_setup_id == StartingSetup.id)
+            .where(StartingSetup.content_version_id == version_id)
+            .order_by(StatDef.order)
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    return [(s.name, s.hidden_from_player, s.player_description, s.signal_hidden_change) for s in saved]
+
+
+def _visibility_keys(stat: dict[str, object]) -> tuple[object, ...]:
+    return (stat["name"], stat["hiddenFromPlayer"], stat["playerDescription"], stat["signalHiddenChange"])
+
+
+async def test_patch_story_draft_round_trips_stat_player_visibility_and_keeps_it_when_keys_omitted(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """숨김·플레이어용 설명·익명 신호 세 칸은 저장·초안 응답에서 왕복한다. 플레이어용 설명은 앞뒤 공백을 떼어 저장하고,
+    숨긴 스탯에 설명이 있어도 받는다(빌더가 칸을 잠가도 값은 지우지 않는다). 세 칸을 모르는 옛 화면 번들의 자동저장은 키를
+    보내지 않는데, 그 저장이 작가가 켠 숨김을 꺼 버리면 숨긴 스탯이 플레이어에게 드러나므로 키가 없으면 값을 그대로 둔다.
+    키 없이 들어온 새 스탯은 숨기지 않음·설명 없음·신호 없음으로 생긴다. 공백뿐인 설명은 비운 것으로 본다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    setup_id = str(uuid.uuid4())
+    hidden = _limited_stat_item(
+        name="숨김", hiddenFromPlayer=True, playerDescription="  마음속 무언가  ", signalHiddenChange=True
+    )
+    shown = _limited_stat_item(name="보임", playerDescription="함께 보낸 시간")
+
+    def payload(*stats: dict[str, object]) -> dict[str, object]:
+        return _story_draft_payload(startingSetups=[_starting_setup_item(id=setup_id, statDefs=list(stats))])
+
+    created = await db_client.patch(f"/contents/{content.id}/draft", json=payload(hidden, shown))
+
+    assert created.status_code == 200
+    expected = [("숨김", True, "마음속 무언가", True), ("보임", False, "함께 보낸 시간", False)]
+    assert await _saved_stat_visibility(db_session, version.id) == expected
+    assert [_visibility_keys(s) for s in created.json()["startingSetups"][0]["statDefs"]] == expected
+    got = await db_client.get(f"/contents/{content.id}/draft")
+    assert [_visibility_keys(s) for s in got.json()["startingSetups"][0]["statDefs"]] == expected
+
+    visibility_keys = {"hiddenFromPlayer", "playerDescription", "signalHiddenChange"}
+
+    def old_bundle(stat: dict[str, object]) -> dict[str, object]:
+        return {key: value for key, value in stat.items() if key not in visibility_keys}
+
+    omitted = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=payload(old_bundle(hidden), old_bundle(shown), _limited_stat_item(name="새 스탯")),
+    )
+
+    assert omitted.status_code == 200
+    assert await _saved_stat_visibility(db_session, version.id) == [*expected, ("새 스탯", False, None, False)]
+
+    blanked = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=payload({**hidden, "hiddenFromPlayer": False, "playerDescription": "   ", "signalHiddenChange": False}),
+    )
+
+    assert blanked.status_code == 200
+    assert await _saved_stat_visibility(db_session, version.id) == [("숨김", False, None, False)]
+
+
+@pytest.mark.parametrize(
+    ("player_description", "accepted"),
+    [
+        pytest.param("가" * 60, True, id="sixty"),
+        pytest.param("  " + "가" * 60 + "  ", True, id="sixty-padded"),
+        pytest.param("가" * 61, False, id="sixty-one"),
+    ],
+)
+async def test_patch_story_draft_limits_stat_player_description_length(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, player_description: str, accepted: bool
+) -> None:
+    """플레이어용 설명은 앞뒤 공백을 뗀 뒤 60자까지 받는다. 넘으면 422 로 막고 아무것도 저장하지 않는다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            startingSetups=[_starting_setup_item(statDefs=[_limited_stat_item(playerDescription=player_description)])]
+        ),
+    )
+
+    assert resp.status_code == (200 if accepted else 422)
+    saved = await _saved_stat_visibility(db_session, version.id)
+    assert [description for _, _, description, _ in saved] == (["가" * 60] if accepted else [])
+
+
 async def test_removing_stat_starting_setup_or_draft_leaves_no_stat_rules(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

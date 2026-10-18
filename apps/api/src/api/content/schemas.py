@@ -327,6 +327,12 @@ class StatRuleDraftItem(CamelModel):
     delta: int
 
 
+def _strip_to_none(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return value.strip() or None
+
+
 class StatDefDraftItem(CamelModel):
     """스탯 하나. 저장 요청·초안 응답·미리보기 세션이 함께 쓴다.
 
@@ -347,6 +353,17 @@ class StatDefDraftItem(CamelModel):
     # 굴린다(`api.chat.stats.apply_rule_judgment`) — "매 턴 반드시 1씩 줄어든다" 같은 카운터용.
     # 턴당 변화와 행동 반응이 섞인 스탯에는 쓰지 말 것(쓰면 LLM이 영영 못 건드린다).
     per_turn_delta: int | None = None
+    # 아래 세 칸은 안 보내면 기존 스탯의 값을 건드리지 않는다(router 가 `model_fields_set` 으로 가른다) — 이 칸을 모르는
+    # 화면(배포 전부터 열려 있던 탭의 옛 번들)의 자동저장이 작가가 켠 숨김을 꺼 버리면 숨긴 스탯이 플레이어에게 드러난다.
+    # 새 스탯은 기본값으로 생긴다. 기본값을 `default_factory` 로 두는 이유는 `KeywordNoteDraftInput` 의 같은 주석과 같다.
+    # 숨긴 스탯은 플레이어에게 나가는 응답에서만 빠지고 판정·엔딩은 그대로 쓴다.
+    hidden_from_player: bool = Field(default_factory=bool)
+    # 플레이어용 짧은 설명. 화면 전용이라 판정 프롬프트에 실리지 않는다. 앞뒤 공백을 떼고, 빈 글은 없음(null)으로 본다.
+    # 길이 상한은 요청에만 건다(`StoryDraftPayload` 의 검증, 이유는 `StatRuleDraftItem` docstring). 숨긴 스탯에 값이
+    # 있어도 받는다 — 빌더가 숨긴 스탯의 칸을 잠가도 작가가 쓴 값은 지우지 않는다.
+    player_description: Annotated[str | None, AfterValidator(_strip_to_none)] = Field(default_factory=lambda: None)
+    # 숨긴 스탯이 한 턴에 바뀌면 방향·크기 없는 익명 신호를 줄지. 숨기지 않은 스탯에서는 쓰지 않는다.
+    signal_hidden_change: bool = Field(default_factory=bool)
     # 안 보내면 기존 스탯의 규칙을 건드리지 않는다(router 가 `model_fields_set` 으로 가른다). 규칙을 모르는 화면(배포
     # 전부터 열려 있던 탭의 옛 번들)·이 키를 적지 않은 시드는 보내지 않으므로, 빈 목록과 같게 다루면 그 저장 한 번이
     # 작가가 쓴 규칙을 전부 지운다. 보냈을 때만 페이로드에 맞춘다 — 빈 목록이면 전부 지운다.
@@ -444,6 +461,8 @@ SITUATION_NOTE_MAX_RULES = 10
 # 포인트 수다.
 MAX_STAT_RULES_PER_STAT = 10
 STAT_RULE_MAX_CONDITION_LENGTH = 100
+# 스탯 플레이어용 설명의 앞뒤 공백을 뗀 뒤 코드 포인트 수 상한. 게이지 곁에 한 줄로 보이는 글이다.
+STAT_PLAYER_DESCRIPTION_MAX_LENGTH = 60
 
 
 # 상황 노트의 조건은 JSONB 한 칸에 `model_dump(mode="json")` 꼴로 저장한다(UUID·enum 이 문자열이 된다). 읽는 쪽은 이것으로
@@ -723,6 +742,14 @@ class StoryDraftPayload(CamelModel):
                     raise ValueError(f"a stat holds at most {MAX_STAT_RULES_PER_STAT} rules")
                 if _first_repeated([rule.id for rule in stat.rules]) is not None:
                     raise ValueError("stat rule ids must be unique within a stat")
+                if (
+                    stat.player_description is not None
+                    and len(stat.player_description) > STAT_PLAYER_DESCRIPTION_MAX_LENGTH
+                ):
+                    raise ValueError(
+                        f"stat player description must be at most {STAT_PLAYER_DESCRIPTION_MAX_LENGTH} characters"
+                        " after trimming"
+                    )
                 for rule in stat.rules:
                     if not 1 <= len(rule.condition) <= STAT_RULE_MAX_CONDITION_LENGTH:
                         raise ValueError(

@@ -2538,6 +2538,9 @@ def _stat_def_fields(stat_def: StatDef) -> tuple[object, ...]:
         stat_def.change_direction,
         stat_def.max_change_per_turn,
         stat_def.order,
+        stat_def.hidden_from_player,
+        stat_def.player_description,
+        stat_def.signal_hidden_change,
     )
 
 
@@ -2545,7 +2548,8 @@ async def test_publish_and_reset_clone_every_stat_def_field(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
     """발행과 편집 취소는 스탯을 생성자에 필드를 하나씩 나열해 복사한다. 하나를 빠뜨리면 그 필드가 조용히 기본값으로
-    돌아가므로(방향은 양방향, 폭·턴당 변화는 없음으로), 모든 필드를 기본값이 아닌 값으로 채워 두고 복사본과 맞춰 본다.
+    돌아가므로(방향은 양방향, 폭·턴당 변화·플레이어용 설명은 없음으로, 숨김·익명 신호는 꺼짐으로 — 숨김이 꺼지면
+    숨긴 스탯이 플레이어에게 드러난다), 모든 필드를 기본값이 아닌 값으로 채워 두고 복사본과 맞춰 본다.
     방향·폭은 더 이상 읽지 않지만 옛 이미지로 되돌렸을 때를 위해 값 그대로 옮긴다. 턴당 변화가 있는 스탯에는 규칙을 달 수
     없고(발행이 막는다) 판정 스탯에는 규칙이 있어야 하므로 스탯 둘로 나눠 싣는다."""
     user = _make_user()
@@ -2558,6 +2562,9 @@ async def test_publish_and_reset_clone_every_stat_def_field(
     judged.unit = "일"
     judged.change_direction = "decrease"
     judged.max_change_per_turn = 7
+    judged.hidden_from_player = True
+    judged.player_description = "숨겨도 남는 설명"
+    judged.signal_hidden_change = True
     counter = StatDef(
         entity_id=uuid.uuid4(),
         starting_setup_id=setup.id,
@@ -2571,6 +2578,9 @@ async def test_publish_and_reset_clone_every_stat_def_field(
         description="매 턴 준다",
         per_turn_delta=-3,
         order=1,
+        hidden_from_player=False,
+        player_description="보이는 스탯의 설명",
+        signal_hidden_change=False,
     )
     db_session.add(counter)
     await db_session.flush()
