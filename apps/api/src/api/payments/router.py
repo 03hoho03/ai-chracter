@@ -21,7 +21,8 @@ from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User
 from api.db.models.payment import Payment
 from api.db.session import get_db_session
-from api.legal.dependencies import _latest_published_legal_version, require_legal_consent
+from api.legal import documents as legal_documents
+from api.legal.dependencies import require_legal_consent
 from api.payments.config import payments_active
 from api.payments.errors import PaymentWebhookConfigError, PortOneUnavailableError
 from api.payments.notify import PaymentNotifier, get_payment_notifier
@@ -78,8 +79,10 @@ async def create_payment(
     product = next((p for p in products.CLOVER_PRODUCTS if p.key == body.product_key), None)
     if product is None:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail={"code": "PRODUCT_NOT_FOUND"})
-    terms_version = await _latest_published_legal_version(db, "terms")
-    refund_policy_version = await _latest_published_legal_version(db, "refund-policy")
+    # 동의 기록은 현행판 버전이다 — 시행 예정 판은 아직 이 주문에 적용되는 조건이 아니다.
+    legal_now = legal_documents.utcnow()
+    terms_version = await legal_documents.current_legal_version(db, "terms", now=legal_now)
+    refund_policy_version = await legal_documents.current_legal_version(db, "refund-policy", now=legal_now)
     if terms_version is None or refund_policy_version is None:
         # 동의 기록에 남길 게시본이 없으면 유료 조건 동의가 성립하지 않는다.
         raise _payments_unavailable()

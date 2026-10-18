@@ -38,7 +38,7 @@ from api.core.security import hash_password, hash_withdrawn_email
 from api.db.models.auth import User, WithdrawnEmail
 from api.db.models.media import Asset, AssetKind, AssetStatus
 from api.db.session import engine
-from api.legal.dependencies import _latest_published_legal_version
+from api.legal.documents import current_legal_version, utcnow
 from api.main import app
 from api.session.store import create_session, get_session
 from factories import _login_as, _make_user, _patch_httpx, _wait_until_lock_wait
@@ -486,8 +486,8 @@ async def test_onboarding_kakao_creates_verified_member_and_issues_session(
     assert user.email_verified_at is not None
     assert user.nickname == "카카오유저"
     assert user.birth_date == date(2000, 1, 1)
-    privacy_version = await _latest_published_legal_version(db_session, "privacy")
-    assert user.terms_version == await _latest_published_legal_version(db_session, "terms")
+    privacy_version = await current_legal_version(db_session, "privacy", now=utcnow())
+    assert user.terms_version == await current_legal_version(db_session, "terms", now=utcnow())
     assert user.privacy_version == privacy_version
     assert user.transfer_version == privacy_version
     assert user.transfer_agreed_at is not None

@@ -15,11 +15,30 @@ LegalDocumentKind = Literal[
 LegalConsentKind = Literal["terms", "privacy"]
 
 
+class LegalUpcomingSummary(CamelModel):
+    """현행판 응답에 곁들이는 시행 예정 판 요약. 전문은 `GET /legal/{kind}/upcoming` 이 준다."""
+
+    version: str
+    effective_at: datetime
+
+
 class LegalDocumentPublicResponse(CamelModel):
+    """`published_at` 은 게시(공지) 시각, `effective_at` 은 이 판이 현행이 된 시행 시각이다."""
+
     kind: LegalDocumentKind
     version: str
     body_markdown: str
     published_at: datetime
+    effective_at: datetime
+    upcoming: LegalUpcomingSummary | None
+
+
+class LegalUpcomingDocumentResponse(CamelModel):
+    kind: LegalDocumentKind
+    version: str
+    body_markdown: str
+    published_at: datetime
+    effective_at: datetime
 
 
 class LegalConsentRequest(CamelModel):

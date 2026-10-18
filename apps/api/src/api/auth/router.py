@@ -85,7 +85,8 @@ from api.core.sentry import capture_dependency_failure
 from api.creator_payout.config import creator_payout_active
 from api.db.models.auth import User, WithdrawnEmail
 from api.db.session import get_db_session
-from api.legal.dependencies import _latest_published_legal_version, _reconsent_required
+from api.legal import documents as legal_documents
+from api.legal.dependencies import reconsent_required_kinds
 from api.llm.model_access import has_chat_premium_access, has_novel_premium_access
 from api.novel_public.access import novel_public_open_to
 from api.novelize.access import has_novelize_access
@@ -131,14 +132,15 @@ def _onboarding_conflict(code: str) -> HTTPException:
 async def _apply_onboarding_consent(
     db: AsyncSession, user: User, payload: SocialOnboardingRequest, now: datetime
 ) -> None:
-    """소셜 온보딩이 받은 프로필과 약관 3종 동의를 행에 적는다. 동의 버전은 지금 게시된 최신본이다.
+    """소셜 온보딩이 받은 프로필과 약관 3종 동의를 행에 적는다. 동의 버전은 지금의 현행판이다(시행 예정 판이 아니다).
 
     버전 조회가 자동 flush 를 일으키지 않게 막는다. 카카오 온보딩은 기존 행을 대체할 때 회원번호를
     이 함수 호출 전에 대입하는데, 여기서 flush 되면 그 UPDATE 가 UNIQUE 충돌을 409 로 바꾸는
     `_flush_social_signup` 의 savepoint 밖에서 나가 500 이 된다. 쓰기는 그 함수에서만 나가야 한다."""
+    legal_now = legal_documents.utcnow()
     with db.no_autoflush:
-        privacy_version = await _latest_published_legal_version(db, "privacy")
-        terms_version = await _latest_published_legal_version(db, "terms")
+        privacy_version = await legal_documents.current_legal_version(db, "privacy", now=legal_now)
+        terms_version = await legal_documents.current_legal_version(db, "terms", now=legal_now)
     user.nickname = payload.nickname
     user.birth_date = payload.birth_date
     user.terms_agreed_at = now
@@ -245,15 +247,17 @@ async def signup(
         existing.terms_agreed_at = now
         existing.privacy_agreed_at = now
         existing.transfer_agreed_at = now
-        existing.terms_version = await _latest_published_legal_version(db, "terms")
-        privacy_version = await _latest_published_legal_version(db, "privacy")
+        legal_now = legal_documents.utcnow()
+        existing.terms_version = await legal_documents.current_legal_version(db, "terms", now=legal_now)
+        privacy_version = await legal_documents.current_legal_version(db, "privacy", now=legal_now)
         existing.privacy_version = privacy_version
         # 국외이전 동의는 처리방침 버전에 묶인다.
         existing.transfer_version = privacy_version
         await replace_signup_personas(db, existing, payload.persona_name)
         await db.commit()
     else:
-        privacy_version = await _latest_published_legal_version(db, "privacy")
+        legal_now = legal_documents.utcnow()
+        privacy_version = await legal_documents.current_legal_version(db, "privacy", now=legal_now)
         user = User(
             email=payload.email,
             password_hash=await hash_password(payload.password),
@@ -262,7 +266,7 @@ async def signup(
             terms_agreed_at=now,
             privacy_agreed_at=now,
             transfer_agreed_at=now,
-            terms_version=await _latest_published_legal_version(db, "terms"),
+            terms_version=await legal_documents.current_legal_version(db, "terms", now=legal_now),
             privacy_version=privacy_version,
             # 국외이전 동의는 처리방침 버전에 묶인다.
             transfer_version=privacy_version,
@@ -905,10 +909,8 @@ async def get_me(
     if user is None or user.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
-    required_terms_version = await _latest_published_legal_version(db, "terms", requires_reconsent=True)
-    required_privacy_version = await _latest_published_legal_version(
-        db, "privacy", requires_reconsent=True
-    )
+    # 쓰기 게이트(`require_legal_consent`)와 같은 판정 함수다 — 따로 판정하면 모달이 뜨지 않는데 쓰기가 막히거나 그 반대가 된다.
+    reconsent_kinds = await reconsent_required_kinds(db, user, now=legal_documents.utcnow())
 
     # 위 조건문이 deleted_at is not None인 계정을 이미 배제했다 — nickname은 탈퇴 파기
     # 시에만 None이 된다.
@@ -920,8 +922,8 @@ async def get_me(
         nickname=user.nickname,
         bio=user.bio,
         profile_image_asset_id=user.profile_image_asset_id,
-        terms_reconsent_required=_reconsent_required(user.terms_version, required_terms_version),
-        privacy_reconsent_required=_reconsent_required(user.privacy_version, required_privacy_version),
+        terms_reconsent_required="terms" in reconsent_kinds,
+        privacy_reconsent_required="privacy" in reconsent_kinds,
         has_password=user.password_hash is not None,
         social_provider=None if method == "email" else method,
         enabled_features=await _enabled_features(db, user.id),

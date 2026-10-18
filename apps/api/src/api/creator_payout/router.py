@@ -63,7 +63,8 @@ from api.db.models.creator_payout import (
 )
 from api.db.models.story import StoryVersionDetail
 from api.db.session import get_db_session
-from api.legal.dependencies import _latest_published_legal_version, require_legal_consent
+from api.legal import documents as legal_documents
+from api.legal.dependencies import require_legal_consent
 from api.payments.notify import PaymentNotifier, get_payment_notifier
 from api.session.dependencies import get_current_user_id
 
@@ -380,7 +381,7 @@ async def apply_creator_payout(
     )
     if live:
         raise _error(status.HTTP_409_CONFLICT, "CREATOR_PAYOUT_ALREADY_APPLIED")
-    privacy_version = await _latest_published_legal_version(db, "privacy")
+    privacy_version = await legal_documents.current_legal_version(db, "privacy", now=legal_documents.utcnow())
     if privacy_version is None:
         raise _unavailable()
 
@@ -450,7 +451,7 @@ async def put_payout_info(
             raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "CREATOR_PAYOUT_RRN_MISMATCH")
     if await _in_progress_payout(db, user_id) is not None:
         raise _error(status.HTTP_409_CONFLICT, "CREATOR_PAYOUT_IN_PROGRESS")
-    privacy_version = await _latest_published_legal_version(db, "privacy")
+    privacy_version = await legal_documents.current_legal_version(db, "privacy", now=legal_documents.utcnow())
     if privacy_version is None:
         raise _unavailable()
 
