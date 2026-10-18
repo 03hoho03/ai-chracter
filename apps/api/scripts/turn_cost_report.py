@@ -75,6 +75,7 @@ class Summary:
     query_outcomes: dict[str, int] = field(default_factory=dict)
     query_latency_ms: list[int] = field(default_factory=list)
     first_token_ms: list[int] = field(default_factory=list)
+    stream_first_token_ms: list[int] = field(default_factory=list)
 
 
 def _tokens(call: dict[str, Any], key: str) -> int:

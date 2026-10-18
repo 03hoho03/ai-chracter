@@ -13,9 +13,12 @@ LLM 호출 칸은 공급자 구현이 호출 컨텍스트의 사용량 목록에
 턴이 생성·판정 호출 전부에 같은 목록을 넘기는지를 본다. 공급자 구현이 실제로 더하는지는 아래 공급자 절이 SDK 경계만 가짜로
 두고 따로 본다.
 
-생성 칸에는 첫 글자 지연 `firstTokenMs`(생성을 시작한 때부터 처음으로 글이 든 델타가 온 때까지, 정수 ms)가 붙는다.
-판정·질의 임베딩 칸에는 붙지 않는다. 글이 든 델타가 하나도 없이 끝난 생성은 잴 첫 글자가 없으므로 키를 싣지 않는다.
-시각은 턴 엔진의 단조 시계를 가짜로 바꿔 정한다 — 가짜 LLM 이 델타를 내기 전에 시계를 옮긴다."""
+생성 칸에는 처음으로 글이 든 델타가 온 때까지의 지연 둘(정수 ms)이 붙는다. `firstTokenMs` 는 턴을 시작한 때(생성
+프롬프트 조립·질의 임베딩 전)부터, `streamFirstTokenMs` 는 생성 스트림을 연 때부터다. 기억 기능을 켜서 늘어나는 지연은
+조립·질의 임베딩이라 스트림을 열기 전에 생기므로, 앞의 값으로 그 증가분을 보고 뒤의 값으로 모델 쪽 지연과 가른다.
+판정·질의 임베딩 칸에는 붙지 않는다. 글이 든 델타가 하나도 없이 끝난 생성은 잴 첫 글자가 없으므로 둘 다 싣지 않는다.
+시각은 턴 엔진의 단조 시계를 가짜로 바꿔 정한다 — 생성 프롬프트 조립과 가짜 LLM 이 각자 정해진 만큼 시계를 옮겨, 두 값이
+늘 다르게 나온다(시작점을 잘못 잡으면 값으로 드러난다)."""
 
 import uuid
 from collections.abc import AsyncIterator
@@ -28,7 +31,8 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat import turn_engine
+from api.chat import router as chat_router
+from api.chat import turn_engine, turn_prompt
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
     ImageMatchJudgmentResult,
@@ -74,13 +78,24 @@ class _FakeClock:
 _CLOCK = _FakeClock()
 # 기본 가짜 LLM 이 첫 델타 앞에서 옮기는 시간. 이진 소수로 정확히 떨어지는 값이라 ms 로 바꿔도 반올림이 끼지 않는다.
 _SINK_FIRST_TOKEN_SECONDS = 0.125
-_SINK_FIRST_TOKEN_MS = 125
+_SINK_STREAM_FIRST_TOKEN_MS = 125
+# 방 턴의 생성 프롬프트 조립(질의 임베딩 포함)이 걸리는 시간. 스트림 쪽 값과 겹치지 않게 고른다.
+_ASSEMBLY_SECONDS = 0.5
+_ASSEMBLY_MS = 500
+_SINK_FIRST_TOKEN_MS = _ASSEMBLY_MS + _SINK_STREAM_FIRST_TOKEN_MS
 
 
 @pytest.fixture(autouse=True)
 def _fake_clock(monkeypatch: pytest.MonkeyPatch) -> None:
     _CLOCK.now = 1000.0
     monkeypatch.setattr(turn_engine, "_clock", _CLOCK)
+
+    async def _slow_build_room_prompt(*args: Any, **kwargs: Any) -> Any:
+        _CLOCK.now += _ASSEMBLY_SECONDS
+        return await turn_prompt.build_room_prompt(*args, **kwargs)
+
+    # 라우트가 이름을 가져다 쓰므로 라우트 모듈의 이름을 바꿔 끼운다.
+    monkeypatch.setattr(chat_router, "build_room_prompt", _slow_build_room_prompt)
 
 
 class _SinkLLMClient(LLMClient):
@@ -140,7 +155,11 @@ def _calls(tag: str, *call_sites: str) -> list[dict[str, Any]]:
             "cacheWriteTokens": None,
             "outputTokens": 7,
             "thoughtsTokens": 0,
-            **({"firstTokenMs": _SINK_FIRST_TOKEN_MS} if call_site == "chat_generate" else {}),
+            **(
+                {"firstTokenMs": _SINK_FIRST_TOKEN_MS, "streamFirstTokenMs": _SINK_STREAM_FIRST_TOKEN_MS}
+                if call_site == "chat_generate"
+                else {}
+            ),
         }
         for call_site in call_sites
     ]
@@ -377,11 +396,13 @@ async def test_each_send_and_edit_writes_one_record(db_client: httpx.AsyncClient
     assert records[1].llm_calls == _calls("c", "chat_generate", "chat_stat_judgment")
 
 
-async def test_first_token_latency_counts_from_generation_start_to_the_first_delta_with_text(
+async def test_first_token_latency_counts_from_turn_start_and_from_stream_start_to_the_first_delta_with_text(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """빈 델타는 화면에 아무것도 띄우지 않으므로 첫 글자가 아니다. 마지막 델타 시각을 쓰면 2250, 빈 델타를 세면 125 가
-    나와 값으로 갈린다. 판정 칸에는 생성 지연이 붙지 않는다."""
+    """조립 0.5초 뒤 스트림을 열고, 빈 델타(0.125초)·첫 글자(0.25초)·끝(2.25초)이 온다. 빈 델타는 화면에 아무것도
+    띄우지 않으므로 첫 글자가 아니다. 턴 시작부터는 750, 스트림 시작부터는 250 이다 — 마지막 델타 시각을 쓰면 2750·2250,
+    빈 델타를 세면 625·125, 턴 시작을 스트림 시작으로 잡으면 둘 다 250 이 나와 값으로 갈린다. 판정 칸에는 생성 지연이
+    붙지 않는다."""
     room = await _open_room(db_client, db_session, turns=1, lane="story")
 
     await _post(
@@ -394,16 +415,19 @@ async def test_first_token_latency_counts_from_generation_start_to_the_first_del
 
     [record] = await _records(db_session, room.room_id)
     by_site = {call["callSite"]: call for call in record.llm_calls}
-    first_token_ms = by_site["chat_generate"].get("firstTokenMs")
-    assert (type(first_token_ms), first_token_ms) == (int, 250)
-    assert [site for site, call in by_site.items() if "firstTokenMs" in call] == ["chat_generate"]
+    generate_call = by_site["chat_generate"]
+    latencies = (generate_call.get("firstTokenMs"), generate_call.get("streamFirstTokenMs"))
+    assert [(type(value), value) for value in latencies] == [(int, 750), (int, 250)]
+    assert [site for site, call in by_site.items() if {"firstTokenMs", "streamFirstTokenMs"} & call.keys()] == [
+        "chat_generate"
+    ]
 
 
 @pytest.mark.parametrize("steps", [pytest.param([], id="no-delta"), pytest.param([(0.25, "")], id="only-empty-delta")])
 async def test_generation_that_ends_without_text_records_no_first_token_latency(
     db_client: httpx.AsyncClient, db_session: AsyncSession, steps: list[tuple[float, str]]
 ) -> None:
-    """글 없이 정상 종료한 생성은 잴 첫 글자가 없다. 0 이나 종료 시각으로 채우면 분포에 가짜 빠른 값이 섞이므로 키를 뺀다.
+    """글 없이 정상 종료한 생성은 잴 첫 글자가 없다. 0 이나 종료 시각으로 채우면 분포에 가짜 빠른 값이 섞이므로 두 키를 다 뺀다.
     생성 칸 자체는 남는다(호출은 과금됐다)."""
     room = await _open_room(db_client, db_session, turns=1, lane="story")
 
@@ -417,7 +441,7 @@ async def test_generation_that_ends_without_text_records_no_first_token_latency(
 
     [record] = await _records(db_session, room.room_id)
     [generate_call] = [call for call in record.llm_calls if call["callSite"] == "chat_generate"]
-    assert "firstTokenMs" not in generate_call
+    assert {"firstTokenMs", "streamFirstTokenMs"} & generate_call.keys() == set()
 
 
 # ── 재생성 ─────────────────────────────────────────────────────────────────────────────

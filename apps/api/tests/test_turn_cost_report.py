@@ -138,23 +138,43 @@ def test_summary_groups_calls_by_site_and_model_and_distributes_turn_totals() ->
     assert summary.query_latency_ms == [100, 250]
 
 
-def test_summary_collects_first_token_latency_only_from_calls_that_carry_it() -> None:
-    """첫 글자 지연은 생성 칸에만 있다. 글 없이 끝난 생성은 키가 없어 분포에 들지 않고, 질의 임베딩의 `latencyMs` 와 섞지 않는다."""
+def test_summary_collects_both_first_token_latencies_only_from_calls_that_carry_them() -> None:
+    """첫 글자 지연 둘은 생성 칸에만 있다. 글 없이 끝난 생성은 키가 없어 분포에 들지 않고, 질의 임베딩의 `latencyMs` 와
+    섞지 않는다. 턴 시작부터 잰 값과 스트림 시작부터 잰 값은 각자 한 줄이다."""
     turns = [
         [
             _query_embedding(tokens=100, latency_ms=100, outcome="ok"),
-            _generation("chat_generate", "claude-opus-5-5", promptTokens=1_000, outputTokens=100, firstTokenMs=900),
+            _generation(
+                "chat_generate",
+                "claude-opus-5-5",
+                promptTokens=1_000,
+                outputTokens=100,
+                firstTokenMs=1_200,
+                streamFirstTokenMs=900,
+            ),
             _generation("chat_stat_judgment", "claude-haiku-5-5", promptTokens=500, outputTokens=10),
         ],
         [_generation("chat_generate", "claude-opus-5-5", promptTokens=1_000, outputTokens=0)],
-        [_generation("chat_generate", "claude-opus-5-5", promptTokens=1_000, outputTokens=100, firstTokenMs=1_500)],
+        [
+            _generation(
+                "chat_generate",
+                "claude-opus-5-5",
+                promptTokens=1_000,
+                outputTokens=100,
+                firstTokenMs=1_600,
+                streamFirstTokenMs=1_500,
+            )
+        ],
     ]
 
     summary = script.summarize(turns)
 
-    assert sorted(summary.first_token_ms) == [900, 1_500]
+    assert sorted(summary.first_token_ms) == [1_200, 1_600]
+    assert sorted(summary.stream_first_token_ms) == [900, 1_500]
     assert summary.query_latency_ms == [100]
-    assert "first token ms n 2 p50 900.0 p90 1500.0 max 1500" in script.format_report(summary)
+    lines = script.format_report(summary).splitlines()
+    assert "first token ms (turn start) n 2 p50 1200.0 p90 1600.0 max 1600" in lines
+    assert "first token ms (stream start) n 2 p50 900.0 p90 1500.0 max 1500" in lines
 
 
 def test_format_report_has_no_first_token_line_when_no_call_carries_it() -> None:
