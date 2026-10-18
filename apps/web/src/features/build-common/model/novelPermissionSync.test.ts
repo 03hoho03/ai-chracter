@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ContentDraftPayload, NovelPermission } from "@/entities/content";
 
-import { createNovelPermissionSync } from "./novelPermissionSync";
+import { createNovelPermissionSync, toNovelPermissionBaseline } from "./novelPermissionSync";
 
 /** 빌더가 보내는 캐릭터 초안 저장 모양. 허락 칸 말고는 이 기록이 보지 않는다. */
 function payloadWith(novelPermission: NovelPermission): ContentDraftPayload {
@@ -81,5 +81,19 @@ describe("createNovelPermissionSync", () => {
     const sync = createNovelPermissionSync(undefined);
 
     expect(sync.prepare(payloadWith("private")).novelPermission).toBe("private");
+  });
+
+  // 새 초안의 폼 값은 화면의 기본값에서 왔다. 그 값을 기준으로 삼으면 첫 저장이 칸을 빼고, 서버 기본값이 다를 때 화면에 보인
+  // 값과 다른 값이 저장된다.
+  it("sends the untouched form value on the first save of a draft that is not on the server yet", () => {
+    const sync = createNovelPermissionSync(toNovelPermissionBaseline(undefined, "forbidden"));
+
+    expect(sync.prepare(payloadWith("forbidden")).novelPermission).toBe("forbidden");
+  });
+
+  it("keeps the loaded value as the baseline for a draft that is already on the server", () => {
+    const sync = createNovelPermissionSync(toNovelPermissionBaseline("draft-1", "forbidden"));
+
+    expect("novelPermission" in sync.prepare(payloadWith("forbidden"))).toBe(false);
   });
 });

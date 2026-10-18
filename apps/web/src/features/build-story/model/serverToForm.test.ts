@@ -581,7 +581,7 @@ describe("serverToForm", () => {
 
     const form = serverToForm(oldResponse as StoryDraftResponse);
 
-    expect(form.registration.novelPermission).toBe("private");
+    expect(form.registration.novelPermission).toBe("forbidden");
   });
 
   it("round-trips up to 3 development example pairs losslessly", () => {

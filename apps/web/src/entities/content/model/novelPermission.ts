@@ -7,8 +7,9 @@ export type NovelPermission = components["schemas"]["ContentNovelPermissionUpdat
 /** 화면에 나열하는 순서 — 막는 쪽에서 넓히는 쪽으로. 빌더 두 탭과 발행 후 설정 모달이 같은 목록을 쓴다. */
 export const NOVEL_PERMISSION_VALUES = ["forbidden", "private", "public"] as const satisfies readonly NovelPermission[];
 
-/** 새 작품의 기본값. 서버의 칸 기본값과 같아야 한다 — 어긋나면 빈 초안의 첫 자동저장이 서버 기본값을 이 값으로 덮는다. */
-export const DEFAULT_NOVEL_PERMISSION: NovelPermission = "private";
+/** 새 작품의 기본값. 서버의 칸 기본값과 같게 둔다. 새 초안은 첫 저장에 이 칸을 늘 실어 보내므로(`novelPermissionSync`),
+ * 작가가 손대지 않은 새 작품에는 서버 기본값이 아니라 화면에 보인 이 값이 저장된다. */
+export const DEFAULT_NOVEL_PERMISSION: NovelPermission = "forbidden";
 
 export const NOVEL_PERMISSION_FIELD_LABEL = "다른 회원의 소설 만들기";
 
@@ -17,7 +18,7 @@ export const NOVEL_PERMISSION_FIELD_LABEL = "다른 회원의 소설 만들기";
 export const NOVEL_PERMISSION_COPY: Record<NovelPermission, { label: string; description: string }> = {
   forbidden: {
     label: "허용 안 함",
-    description: "다른 회원은 이 작품의 대화로 새 소설을 만들 수 없어요. 이미 만든 소설은 그대로 남아요.",
+    description: "다른 회원은 이 작품의 대화로 새 소설을 만들 수 없어요. 첫 화를 이미 만든 소설은 이어 쓸 수 있어요.",
   },
   private: {
     label: "나만 보는 소설",
