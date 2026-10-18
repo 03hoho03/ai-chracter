@@ -133,6 +133,15 @@ class StatDef(Base):
     change_direction: Mapped[StatChangeDirection] = mapped_column(Text, server_default="both", nullable=False)
     max_change_per_turn: Mapped[int | None] = mapped_column(Integer, nullable=True)
     order: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 플레이어 화면에서 숨기는 스탯. 판정·상황 노트·엔딩 판정은 그대로 이 스탯을 쓰고, 플레이어에게 나가는 응답(방 응답의
+    # 스탯 정의·값, 턴 SSE 의 스탯 변화)에서만 빠진다. 작가 본인의 방도 같다.
+    # 배포 중 1분 남짓 겹쳐 도는 옛 API 이미지가 아래 세 칸을 모른 채 스탯을 INSERT 해도 NOT NULL 위반이 나지 않는다 — 두
+    # 불리언(이 칸과 `signal_hidden_change`)은 `server_default` 가 채우고, `player_description` 은 NULL 을 허용한다.
+    hidden_from_player: Mapped[bool] = mapped_column(Boolean, server_default=false(), nullable=False)
+    # 플레이어에게 보여 줄 짧은 설명(60자 이하). 화면 전용이라 판정 프롬프트에는 실리지 않는다 — 판정은 `description` 을 읽는다.
+    player_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 숨긴 스탯이 한 턴에 바뀌었을 때 방향·크기·이름 없는 익명 신호를 플레이어에게 줄지. 숨기지 않은 스탯에서는 쓰지 않는다.
+    signal_hidden_change: Mapped[bool] = mapped_column(Boolean, server_default=false(), nullable=False)
 
 
 class StatRule(Base):

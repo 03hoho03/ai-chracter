@@ -5412,6 +5412,11 @@ export interface paths {
          *     `startingSetupId`와 동일한 값 — `POST /chat-rooms`의 startingSetupId 관례를 따른다), 도달
          *     여부는 `story_ending_unlocks`를 entity_id(버전 불변)로 조인해 같은 시작설정으로
          *     새 대화방을 만들어도 이전 기록이 유지되게 한다.
+         *
+         *     작품을 읽을 수 있는 사람에게만 연다 — 이미지 보관함과 같은 기준(`is_open_to_participant`)이라, 비공개 작품은 작가
+         *     본인과 그 작품에 대화방이 있는 사용자(공개였을 때 대화를 시작한 플레이어)에게만 열린다. 이용제한·삭제된 작품은
+         *     이미지 보관함처럼 그 방의 주인과 작가 본인에게도 닫힌다 — 두 화면이 같은 판정을 써야 한쪽만 열리는 일이 없다.
+         *     막힌 경우는 없는 시작설정과 같은 404 다.
          */
         get: operations["get_ending_collection_stories_starting_setups__starting_setup_id__ending_collection_get"];
         put?: never;
@@ -12817,6 +12822,12 @@ export interface components {
             description: string;
             /** Perturndelta */
             perTurnDelta?: number | null;
+            /** Hiddenfromplayer */
+            hiddenFromPlayer?: boolean;
+            /** Playerdescription */
+            playerDescription?: string | null;
+            /** Signalhiddenchange */
+            signalHiddenChange?: boolean;
             /** Rules */
             rules?: components["schemas"]["StatRuleDraftItem"][];
         };

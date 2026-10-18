@@ -39,10 +39,9 @@ GUARDED = frozenset(
         "set_cached_active_prompt_set",
         "load_active_prompt_set",
         # 턴 판정이 부르는 것. 라우터도 계속 쓴다 — 생성 프롬프트 렌더 실패(방·미리보기)와 미리보기 저장 실패의 Bugsink
-        # 승격, 엔딩 스냅숏의 규칙 조회, 스탯 정의 조회(첫 스탯 심기·콘텐츠 스냅숏).
+        # 승격, 스탯 정의 조회(첫 스탯 심기·콘텐츠 스냅숏).
         "capture_dependency_failure",
         "_llm_dependency_tag",
-        "_ending_rule_items",
         "StatDef",
         # 턴 골격(`turn_engine`)과 턴 저장소(`turn_store`)가 부르는 것. 라우터의 다른 라우트가 쓴다(폐기 기록과 `delete` 는
         # 편집·메시지 삭제가 라우터에서 계속 쓴다).

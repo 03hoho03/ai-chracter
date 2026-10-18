@@ -234,8 +234,10 @@ async def test_upgrade_seeds_stats_added_in_new_version_and_keeps_existing_value
     expected = {upgraded.kept: 30.0, upgraded.added: 50.0, upgraded.dropped: 50.0}
     assert await _stat_values(db_session, upgraded.room_id) == expected
     if pin_response is not None:
-        # 화면의 스탯 패널은 이 응답으로 그린다 — 새 스탯이 바로 보여야 한다.
-        assert pin_response.json()["stats"] == {str(stat_id): value for stat_id, value in expected.items()}
+        # 화면의 스탯 패널은 이 응답으로 그린다 — 새 스탯이 바로 보여야 한다. 응답 값은 옮겨 간 버전의 보이는 정의
+        # 기준이라, 새 버전에서 정의가 사라진 스탯의 값은 DB 에 행이 남아 있어도 응답에서 빠진다.
+        shown = {upgraded.kept: 30.0, upgraded.added: 50.0}
+        assert pin_response.json()["stats"] == {str(stat_id): value for stat_id, value in shown.items()}
 
 
 @pytest.mark.parametrize(

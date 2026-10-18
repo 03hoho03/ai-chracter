@@ -58,7 +58,6 @@ from api.chat.turn_store import (
     _record_story_media_unlocks,
 )
 from api.chat.turn_judgments import (
-    _ending_rule_items,
     _llm_dependency_tag,
     new_turn_judgments,
     preview_judgments,
@@ -134,7 +133,7 @@ from api.db.models.chat import (
     StoryEndingUnlock,
     StoryMediaExposure,
 )
-from api.db.models.content import Content, ContentType, ModerationStatus
+from api.db.models.content import Content, ContentType, ContentVersion, ModerationStatus
 from api.db.models.media import Asset
 from api.db.models.novel import Novel
 from api.db.models.persona import UserPersona
@@ -458,10 +457,13 @@ async def _seed_initial_stats(db: AsyncSession, room: ChatRoom, setup: StartingS
     await db.flush()
 
 
-async def _ending_snapshot(db: AsyncSession, ending: Ending) -> EndingSnapshot:
+def _ending_snapshot(ending: Ending) -> EndingSnapshot:
     """스냅숏은 아직 도달하지 않은 엔딩까지 싣는다. 그래서 에필로그의 미디어 북 태그는 그림으로 해석하지
     않고 지운다 — 해석하면 플레이어가 보지 못한 칸의 원본 URL 이 응답에 실린다. 화면은 에필로그를
-    엔딩 이벤트·엔딩 모음에서 그리므로 여기서 태그가 사라져도 보이는 것이 없다."""
+    엔딩 이벤트·엔딩 모음에서 그리므로 여기서 태그가 사라져도 보이는 것이 없다.
+
+    스탯 규칙은 언제나 빈 목록이다 — 어느 스탯이 몇을 넘으면 어느 엔딩인지는 엔딩 판정만 쓰는 정보이고, 플레이어에게
+    실으면 숨긴 스탯의 id 와 엔딩 조건이 함께 드러난다. 엔딩 판정은 규칙을 DB 에서 따로 읽는다(`turn_judgments._ending_rule_items`)."""
     return EndingSnapshot(
         id=ending.entity_id,
         name=ending.name,
@@ -469,7 +471,7 @@ async def _ending_snapshot(db: AsyncSession, ending: Ending) -> EndingSnapshot:
         judgment_prompt=ending.judgment_prompt,
         epilogue=strip_media_tags(ending.epilogue) if ending.epilogue is not None else None,
         hint=ending.hint,
-        stat_rules=await _ending_rule_items(db, ending),
+        stat_rules=[],
     )
 
 
@@ -477,10 +479,13 @@ async def _build_content_snapshot(
     db: AsyncSession, room: ChatRoom, setup: StartingSetup
 ) -> ChatRoomContentSnapshot:
     """stats/endings는 방이 고정한 시작설정(setup) 기준,
-    단축어는 작품 전역(content_version_id) 기준."""
+    단축어는 작품 전역(content_version_id) 기준. 플레이어에게 숨긴 스탯은 싣지 않는다 — 작가 본인의 방도 같다(작가가
+    숨긴 스탯을 보는 곳은 빌더 미리보기다)."""
     stat_defs = (
         await db.scalars(
-            select(StatDef).where(StatDef.starting_setup_id == setup.id).order_by(StatDef.order)
+            select(StatDef)
+            .where(StatDef.starting_setup_id == setup.id, StatDef.hidden_from_player.is_(False))
+            .order_by(StatDef.order)
         )
     ).all()
     endings = (
@@ -507,7 +512,7 @@ async def _build_content_snapshot(
             )
             for s in stat_defs
         ],
-        endings=[await _ending_snapshot(db, ending) for ending in endings],
+        endings=[_ending_snapshot(ending) for ending in endings],
         shortcuts=[
             ShortcutSnapshot(id=sc.entity_id, name=sc.name, description=sc.description, prompt=sc.prompt)
             for sc in shortcuts
@@ -646,7 +651,13 @@ async def _to_response(db: AsyncSession, room: ChatRoom, *, message_limit: int |
         stat_rows = (
             await db.scalars(select(ChatRoomStat).where(ChatRoomStat.chat_room_id == room.id))
         ).all()
-        stats = {str(row.stat_entity_id): float(row.current_value) for row in stat_rows}
+        # 값은 스냅숏에 실린(보이는) 정의 기준으로만 싣는다 — 숨긴 스탯 값과, 방이 버전을 옮기며 정의를 잃은 고아 값이 빠진다.
+        visible_stat_ids = {stat.id for stat in content_snapshot.stats}
+        stats = {
+            str(row.stat_entity_id): float(row.current_value)
+            for row in stat_rows
+            if row.stat_entity_id in visible_stat_ids
+        }
 
     image_urls, cell_images = await _sign_message_images(db, room, setup, messages)
     # 다음 턴이 실제로 쓸 모델. 기본 모델 방이거나 상위 모델 스위치가 꺼져 있으면 쿼리가 없다.
@@ -2147,9 +2158,16 @@ async def get_ending_collection(
     """`starting_setup_id`는 물리적 PK(`_build_content_snapshot`의
     `startingSetupId`와 동일한 값 — `POST /chat-rooms`의 startingSetupId 관례를 따른다), 도달
     여부는 `story_ending_unlocks`를 entity_id(버전 불변)로 조인해 같은 시작설정으로
-    새 대화방을 만들어도 이전 기록이 유지되게 한다."""
+    새 대화방을 만들어도 이전 기록이 유지되게 한다.
+
+    작품을 읽을 수 있는 사람에게만 연다 — 이미지 보관함과 같은 기준(`is_open_to_participant`)이라, 비공개 작품은 작가
+    본인과 그 작품에 대화방이 있는 사용자(공개였을 때 대화를 시작한 플레이어)에게만 열린다. 이용제한·삭제된 작품은
+    이미지 보관함처럼 그 방의 주인과 작가 본인에게도 닫힌다 — 두 화면이 같은 판정을 써야 한쪽만 열리는 일이 없다.
+    막힌 경우는 없는 시작설정과 같은 404 다."""
     setup = await db.get(StartingSetup, starting_setup_id)
-    if setup is None:
+    version = await db.get(ContentVersion, setup.content_version_id) if setup is not None else None
+    content = await db.get(Content, version.content_id) if version is not None else None
+    if setup is None or content is None or not await is_open_to_participant(db, content, user_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Starting setup not found")
 
     endings = (

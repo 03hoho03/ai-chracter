@@ -1,7 +1,7 @@
 """legal documents effective_at, withdrawn status
 
 Revision ID: 1c4ff252c34a
-Revises: 0aeadefcf159
+Revises: 49b68a8a681e
 Create Date: 2026-10-18 12:00:00.000000
 
 법무 문서 게시본에 **시행 시각**(`effective_at`)을 더한다. 지금까지는 게시하는 순간 현행이 되어 약관 제4조 제2항("시행일
@@ -44,7 +44,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "1c4ff252c34a"
-down_revision: str | Sequence[str] | None = "0aeadefcf159"
+down_revision: str | Sequence[str] | None = "49b68a8a681e"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

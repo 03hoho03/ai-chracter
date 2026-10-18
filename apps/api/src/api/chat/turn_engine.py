@@ -35,7 +35,13 @@ from api.chat.schemas import (
     ChatStreamEvent,
     ChatTokenEvent,
 )
-from api.chat.turn_judgments import JudgmentContext, TurnJudgment, TurnJudgmentResult, _llm_dependency_tag
+from api.chat.turn_judgments import (
+    JudgmentContext,
+    TurnJudgment,
+    TurnJudgmentResult,
+    _llm_dependency_tag,
+    player_stat_events,
+)
 from api.chat.turn_prompt import GenerationPrompt, JudgmentPromptSets
 from api.chat.turn_settlement import TurnSettlement
 from api.content.schemas import MediaTagImage
@@ -607,8 +613,8 @@ async def run_turn(
     if after_commit is not None:
         after_commit(turn)
 
-    for stat_change_event in result.stat_change_events:
-        yield stat_change_event
+    for stat_event in player_stat_events(result):
+        yield stat_event
 
     if shown.ending_reached_event is not None:
         yield shown.ending_reached_event

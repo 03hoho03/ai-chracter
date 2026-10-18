@@ -2,11 +2,14 @@ import uuid
 from datetime import timezone
 
 import httpx
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models import (
     Content,
+    ContentVisibility,
     Ending,
+    ModerationStatus,
     StartingSetup,
     StoryEndingUnlock,
 )
@@ -152,3 +155,73 @@ async def test_ending_collection_returns_empty_list_when_no_endings_registered(
     resp = await db_client.get(f"/stories/starting-setups/{setup.id}/ending-collection")
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+@pytest.mark.parametrize(
+    ("private", "has_room", "expected_status"),
+    [
+        pytest.param(True, False, 404, id="private-stranger"),
+        pytest.param(True, True, 200, id="private-after-the-player-opened-a-room"),
+        pytest.param(False, False, 200, id="public-stranger"),
+    ],
+)
+async def test_ending_collection_opens_to_whoever_may_read_the_story(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, private: bool, has_room: bool, expected_status: int
+) -> None:
+    """엔딩 모음은 엔딩 이름·힌트를 싣는다. 비공개 작품의 것을 아무에게나 내주면 작품 본문을 못 보는 사람이 시작설정 id
+    하나로 엔딩 목록을 읽는다. 공개였을 때 대화를 시작한 플레이어는 작품이 비공개로 바뀐 뒤에도 자기 기록을 본다(이미지
+    보관함과 같은 기준). 막힌 경우는 없는 시작설정과 같은 404 다."""
+    author = _make_user()
+    player = _make_user()
+    db_session.add_all([author, player])
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_story(db_session, creator_user_id=author.id, genre_id=genre.id)
+    setup = await _add_starting_setup(db_session, content)
+    await _add_ending(db_session, setup)
+    await db_session.commit()
+    await _login_as(db_client, player.id)
+    if has_room:
+        created = await db_client.post(
+            "/chat-rooms",
+            json={"contentId": str(content.id), "contentType": "story", "startingSetupId": str(setup.id)},
+        )
+        assert created.status_code == 201
+    if private:
+        content.visibility = ContentVisibility.PRIVATE
+        await db_session.commit()
+
+    resp = await db_client.get(f"/stories/starting-setups/{setup.id}/ending-collection")
+
+    assert resp.status_code == expected_status
+    if expected_status == 200:
+        assert [item["name"] for item in resp.json()] == ["엔딩"]
+
+
+@pytest.mark.parametrize("viewer", [pytest.param("player", id="player-with-a-room"), pytest.param("author", id="author")])
+async def test_ending_collection_stays_closed_on_a_restricted_story_even_to_its_room_owner_and_author(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, viewer: str
+) -> None:
+    """이용제한된 작품은 이미지 보관함처럼 방이 있는 플레이어와 작가 본인에게도 엔딩 모음을 닫는다 — 두 화면이 같은
+    판정을 써야 한쪽만 열리는 일이 없다. 비공개 전환과 달리 방이 있어도 열리지 않는다."""
+    author = _make_user()
+    player = _make_user()
+    db_session.add_all([author, player])
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_story(db_session, creator_user_id=author.id, genre_id=genre.id)
+    setup = await _add_starting_setup(db_session, content)
+    await _add_ending(db_session, setup)
+    await db_session.commit()
+    viewer_id = player.id if viewer == "player" else author.id
+    await _login_as(db_client, viewer_id)
+    created = await db_client.post(
+        "/chat-rooms", json={"contentId": str(content.id), "contentType": "story", "startingSetupId": str(setup.id)}
+    )
+    assert created.status_code == 201
+    content.moderation_status = ModerationStatus.RESTRICTED
+    await db_session.commit()
+
+    resp = await db_client.get(f"/stories/starting-setups/{setup.id}/ending-collection")
+
+    assert resp.status_code == 404
