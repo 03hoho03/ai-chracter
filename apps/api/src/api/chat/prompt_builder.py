@@ -997,6 +997,7 @@ class MemoryEpisodeItem(BaseModel):
     importance: int
     start_line: int
     end_line: int
+    known_by: list[str]
 
 
 class MemoryEpisodeResult(BaseModel):

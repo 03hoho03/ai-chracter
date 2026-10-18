@@ -29,6 +29,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from api.chat.memory_facts import cut_known_by
 from api.chat.memory_nouns import episode_nouns
 from api.chat.memory_window import MessageKey, opening_message
 from api.chat.prompt_builder import (
@@ -94,8 +95,8 @@ class EpisodeDraft:
     evidence: list[str]
     asserted_by: EpisodeAssertedBy
     importance: int
-    # 이 장면을 아는 인물 이름 목록(NULL 은 공개이거나 알 수 없음). 추출 결과 스키마가 아직 이 칸을 모르므로 지금은 늘
-    # None 이다. 사실 기억처럼 사용자 인물의 이름도 거르지 않고 넣는다 — 거르는 것은 읽는 쪽이다.
+    # 이 장면을 아는 인물 이름 목록(NULL 은 공개이거나 알 수 없음). 사실 기억처럼 사용자 인물의 이름도 거르지 않고 넣는다 —
+    # 거르는 것은 읽는 쪽이다.
     known_by: list[str] | None = None
 
 
@@ -121,7 +122,8 @@ def normalize_episodes(
     - 줄 번호(1부터, `window` 순서)는 1~n 으로 맞추고 뒤집혔으면 맞바꾼 뒤 메시지 키로 바꾼다.
     - 턴은 오프닝을 뺀 어시스턴트 메시지 순번이다. `window` 앞에 그런 메시지가 `turns_before` 개 있었다. 사용자 줄은 그 답이 붙을
       턴, 어시스턴트 줄은 자기 턴이라 어느 메시지든 "1 + 앞선 어시스턴트 메시지 수"다 — 그래서 시작 턴이 끝 턴보다 커지지 않는다.
-    - 명사는 `memory_nouns.episode_nouns`(자른 뒤의 제목·본문으로)."""
+    - 명사는 `memory_nouns.episode_nouns`(자른 뒤의 제목·본문으로).
+    - 아는 인물은 사실 행과 같은 `memory_facts.cut_known_by` 로 자른다(같은 CHECK 를 쓴다)."""
     if not window:
         return []
     turn_at: list[int] = []
@@ -158,6 +160,7 @@ def _draft(ordinal: int, item: MemoryEpisodeItem, window: Sequence[ChatMessage],
         evidence=_kept_texts(item.evidence, EPISODE_EVIDENCE_MAX),
         asserted_by=item.asserted_by,
         importance=min(max(item.importance, 1), 5),
+        known_by=cut_known_by(item.known_by),
     )
 
 

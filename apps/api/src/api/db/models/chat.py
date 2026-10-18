@@ -208,7 +208,7 @@ class ChatMemoryEpisode(Base):
     - `asserted_by` 는 장면의 사실을 누가 말했는가다: 사용자 본인(`user`), 캐릭터(`character` — 캐릭터가 사용자에 대해
       지어낸 말을 사실로 회상하지 않게 구별한다), 서술(`narration`), 섞임(`mixed`).
     - `known_by` 는 이 장면을 아는 인물 이름 목록이고 뜻과 규칙은 `ChatMemoryFact` 의 같은 칸과 같다(NULL 은 공개이거나
-      알 수 없음, 빈 배열은 쓰지 않는다). 추출 결과가 아직 이 칸을 모르므로 지금은 늘 NULL 이다.
+      알 수 없음, 빈 배열은 쓰지 않는다). 장면 추출이 결과의 같은 칸을 사실 행과 같은 규칙으로 잘라 채운다.
     - `importance` 는 1~5, `ordinal` 은 그 접기 안의 장면 순서(0부터)다.
     `asserted_by` 는 native enum 이 아니라 Text 이고 위 Literal 이 값 범위다."""
 
