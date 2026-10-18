@@ -161,7 +161,9 @@ export const PublishDialog = createCallable<PublishDialogProps, boolean>(({ call
   };
 
   return (
-    <Dialog open={!call.ended} onOpenChange={(open) => !open && call.end(false)}>
+    // 게시 요청 중에는 닫지 않는다(Esc·바깥 클릭·닫기 버튼·취소 모두). 먼저 `false` 로 끝나면 성공 뒤의 `true` 가 버려져,
+    // 연 쪽이 서버가 비운 초안 안내를 편집 버퍼에 그대로 남긴다.
+    <Dialog open={!call.ended} onOpenChange={(open) => !open && !isSubmitting && call.end(false)}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{LEGAL_KIND_LABELS[kind]} 게시</DialogTitle>
@@ -306,7 +308,7 @@ export const PublishDialog = createCallable<PublishDialogProps, boolean>(({ call
                 재동의를 받는 판은 변경 안내가 있어야 해요. 편집기에서 변경 안내를 쓰고 저장하세요.
               </p>
             )}
-            <Button type="button" variant="outline" autoFocus onClick={() => call.end(false)}>
+            <Button type="button" variant="outline" autoFocus disabled={isSubmitting} onClick={() => call.end(false)}>
               취소
             </Button>
             <Button

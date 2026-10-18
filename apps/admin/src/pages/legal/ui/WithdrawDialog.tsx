@@ -43,7 +43,8 @@ export const WithdrawDialog = createCallable<WithdrawDialogProps, void>(({ call,
   };
 
   return (
-    <Dialog open={!call.ended} onOpenChange={(open) => !open && call.end()}>
+    // 철회 요청 중에는 닫지 않는다 — 닫힌 뒤에 결과 토스트가 따로 뜨지 않게, 결과를 본 뒤 닫힌다.
+    <Dialog open={!call.ended} onOpenChange={(open) => !open && !withdrawMutation.isPending && call.end()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>v{version} 예약 철회</DialogTitle>
@@ -54,7 +55,13 @@ export const WithdrawDialog = createCallable<WithdrawDialogProps, void>(({ call,
         </DialogHeader>
 
         <DialogFooter>
-          <Button type="button" variant="outline" autoFocus onClick={() => call.end()}>
+          <Button
+            type="button"
+            variant="outline"
+            autoFocus
+            disabled={withdrawMutation.isPending}
+            onClick={() => call.end()}
+          >
             취소
           </Button>
           <Button
