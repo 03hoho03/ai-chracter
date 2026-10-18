@@ -5,7 +5,7 @@ import { NovelCommentDeleteConfirmModal } from "../features/act-on-novel-comment
 import { DeleteConfirmModal, LiftRestrictionConfirmModal } from "../features/act-on-report";
 import { ApproveApplicationModal, DecisionReasonModal } from "../features/decide-creator-payout-application";
 import { ContentActionConfirmModal, HomeCurationConfirmModal } from "../pages/content-detail";
-import { PublishDialog } from "../pages/legal";
+import { PublishDialog, WithdrawDialog } from "../pages/legal";
 import {
   HomeNovelCurationConfirmModal,
   NovelCommentActionConfirmModal,
@@ -50,6 +50,7 @@ function RootComponent() {
       <UserActionConfirmModal />
       <RefundPaymentModal />
       <PublishDialog />
+      <WithdrawDialog />
       <PublishNoticeDialog />
       <PublishPromptSetDialog />
       <RestorePromptSetDialog />
