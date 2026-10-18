@@ -81,7 +81,7 @@ async def test_publish_requires_admin_session(
         db_session,
         "post",
         "/admin/legal/terms/publish",
-        json={"version": "2024-01-01", "requiresReconsent": False},
+        json={"version": "2024-01-01"},
     )
 
 
@@ -129,7 +129,7 @@ async def test_get_document_returns_draft_and_published_together(
     assert body["draft"]["bodyMarkdown"] == "편집 중인 초안"
     assert body["published"]["version"] == "2024-01-01"
     assert body["published"]["bodyMarkdown"] == "게시본"
-    assert body["published"]["requiresReconsent"] is True
+    assert body["published"]["reconsentScopes"] == ["terms"]
 
 
 async def test_get_document_published_picks_latest_by_published_at(
@@ -300,14 +300,13 @@ async def test_publish_creates_published_row_from_draft_and_keeps_draft(
 
     resp = await db_client.post(
         "/admin/legal/terms/publish",
-        json={"version": "2024-01-01", "requiresReconsent": True},
+        json={"version": "2024-01-01", "reconsentScopes": ["terms"]},
     )
     assert resp.status_code == 200
     body = resp.json()
     assert body["published"]["version"] == "2024-01-01"
     assert body["published"]["bodyMarkdown"] == "발행할 내용"
-    assert body["published"]["requiresReconsent"] is True
-    # 이전 화면의 `requiresReconsent` 는 그 문서의 동의 단위 전부로 읽는다. 안내는 초안에서 복제되고 앞뒤 공백을 걷는다.
+    # 안내는 초안에서 복제되고 앞뒤 공백을 걷는다.
     assert body["published"]["reconsentScopes"] == ["terms"]
     assert body["published"]["changeNoticeMarkdown"] == "바뀐 점"
     # 게시 후에도 초안 행은 남는다(재게시가 원고를 다시 붙여넣지 않아도 되도록).
@@ -344,7 +343,7 @@ async def test_publish_without_draft_returns_400(
 
     resp = await db_client.post(
         "/admin/legal/terms/publish",
-        json={"version": "2024-01-01", "requiresReconsent": False},
+        json={"version": "2024-01-01"},
     )
     assert resp.status_code == 400
 
@@ -365,7 +364,7 @@ async def test_publish_duplicate_version_returns_409_with_korean_message(
 
     resp = await db_client.post(
         "/admin/legal/terms/publish",
-        json={"version": "2024-01-01", "requiresReconsent": False},
+        json={"version": "2024-01-01"},
     )
     assert resp.status_code == 409
     assert resp.json()["detail"] == "이미 존재하는 버전입니다. 버전을 수정해 주세요."
@@ -394,13 +393,13 @@ async def test_publish_after_duplicate_conflict_can_retry_with_new_version(
 
     conflict_resp = await db_client.post(
         "/admin/legal/terms/publish",
-        json={"version": "2024-01-01", "requiresReconsent": False},
+        json={"version": "2024-01-01"},
     )
     assert conflict_resp.status_code == 409
 
     retry_resp = await db_client.post(
         "/admin/legal/terms/publish",
-        json={"version": "2024-02-01", "requiresReconsent": False},
+        json={"version": "2024-02-01"},
     )
     assert retry_resp.status_code == 200
     assert retry_resp.json()["published"]["version"] == "2024-02-01"
@@ -424,11 +423,11 @@ async def test_policy_kind_draft_publish_and_versions_round_trip(
 
     publish_resp = await db_client.post(
         f"/admin/legal/{kind}/publish",
-        json={"version": "2026-10-06", "requiresReconsent": False},
+        json={"version": "2026-10-06"},
     )
     assert publish_resp.status_code == 200
     assert publish_resp.json()["published"]["version"] == "2026-10-06"
-    assert publish_resp.json()["published"]["requiresReconsent"] is False
+    assert publish_resp.json()["published"]["reconsentScopes"] == []
 
     versions_resp = await db_client.get(f"/admin/legal/{kind}/versions")
     assert [item["version"] for item in versions_resp.json()["items"]] == ["2026-10-06"]
@@ -450,7 +449,7 @@ async def test_publish_policy_kind_with_reconsent_returns_422_and_writes_nothing
 
     resp = await db_client.post(
         f"/admin/legal/{kind}/publish",
-        json={"version": "2026-10-06", "requiresReconsent": True},
+        json={"version": "2026-10-06", "reconsentScopes": ["terms"]},
     )
     assert resp.status_code == 422
 
@@ -500,8 +499,8 @@ async def test_versions_lists_published_history_ordered_by_recency(
     assert resp.status_code == 200
     items = resp.json()["items"]
     assert [item["version"] for item in items] == ["2024-06-01", "2024-01-01"]
-    assert items[0]["requiresReconsent"] is True
-    assert items[1]["requiresReconsent"] is False
+    assert items[0]["reconsentScopes"] == ["terms"]
+    assert items[1]["reconsentScopes"] == []
 
 
 async def test_versions_is_scoped_to_kind(
@@ -525,7 +524,7 @@ async def test_versions_is_scoped_to_kind(
 
 
 def _schedule_body(version: str, effective_at: datetime) -> dict[str, object]:
-    return {"version": version, "requiresReconsent": False, "effectiveAt": effective_at.isoformat()}
+    return {"version": version, "effectiveAt": effective_at.isoformat()}
 
 
 async def test_withdraw_requires_admin_session(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
@@ -583,7 +582,7 @@ async def test_any_publish_is_409_while_an_edition_is_scheduled_until_it_is_with
     ).status_code == 200
 
     immediate = await db_client.post(
-        "/admin/legal/terms/publish", json={"version": "2026-10-18", "requiresReconsent": False}
+        "/admin/legal/terms/publish", json={"version": "2026-10-18"}
     )
     scheduled = await db_client.post(
         "/admin/legal/terms/publish", json=_schedule_body("2026-11-20", effective_at + timedelta(days=3))
@@ -600,7 +599,7 @@ async def test_any_publish_is_409_while_an_edition_is_scheduled_until_it_is_with
 
     assert (await db_client.post("/admin/legal/terms/versions/2026-11-17/withdraw")).status_code == 200
     after = await db_client.post(
-        "/admin/legal/terms/publish", json={"version": "2026-10-18", "requiresReconsent": False}
+        "/admin/legal/terms/publish", json={"version": "2026-10-18"}
     )
     assert after.status_code == 200
     assert after.json()["published"]["version"] == "2026-10-18"
@@ -716,10 +715,9 @@ async def test_draft_upsert_keeps_change_notice_unless_the_field_is_sent(
     [
         pytest.param(None, {"reconsentScopes": ["transfer"]}, 422, id="scoped-without-notice"),
         pytest.param(" \n\t ", {"reconsentScopes": ["collection"]}, 422, id="scoped-with-blank-notice"),
-        pytest.param(None, {"requiresReconsent": True}, 422, id="old-body-without-notice"),
         pytest.param("바뀐 점", {"reconsentScopes": ["transfer"]}, 200, id="scoped-with-notice"),
         pytest.param(" \n ", {"reconsentScopes": []}, 200, id="unscoped-with-blank-notice"),
-        pytest.param(None, {"requiresReconsent": False}, 200, id="old-unscoped-without-notice"),
+        pytest.param(None, {}, 200, id="scopes-omitted-without-notice"),
     ],
 )
 async def test_reconsent_publish_requires_a_change_notice(
@@ -753,13 +751,7 @@ async def test_reconsent_publish_requires_a_change_notice(
     ("kind", "publish_body", "expected"),
     [
         pytest.param("privacy", {"reconsentScopes": ["transfer"]}, ["transfer"], id="privacy-transfer-only"),
-        pytest.param("privacy", {"requiresReconsent": True}, ["collection", "transfer"], id="old-body-whole-document"),
-        pytest.param(
-            "privacy",
-            {"reconsentScopes": ["collection"], "requiresReconsent": True},
-            ["collection"],
-            id="new-field-wins",
-        ),
+        pytest.param("privacy", {"reconsentScopes": ["transfer", "collection"]}, ["collection", "transfer"], id="unit-order"),
         pytest.param("privacy", {"reconsentScopes": ["terms"]}, None, id="privacy-rejects-terms-scope"),
         pytest.param("terms", {"reconsentScopes": ["transfer"]}, None, id="terms-rejects-transfer-scope"),
         pytest.param("refund-policy", {"reconsentScopes": ["terms"]}, None, id="policy-rejects-any-scope"),
@@ -772,9 +764,8 @@ async def test_publish_reconsent_scopes_follow_the_document_consent_units(
     publish_body: dict[str, object],
     expected: list[str] | None,
 ) -> None:
-    """재동의 범위는 그 문서의 동의 단위 안에서만 고른다. 이전 화면의 `requiresReconsent: true` 는 그 문서의 동의 단위
-    전부이고, 두 칸이 같이 오면 새 칸을 따른다. 깨지는 시나리오: 처리방침 게시에 약관 범위를 걸어 게이트에는 효과가
-    없는데 이력에는 재동의를 받은 것으로 남거나, 이전 화면의 재동의 게시가 아무 범위도 걸지 않는다."""
+    """재동의 범위는 그 문서의 동의 단위 안에서만 고르고, 동의 단위 순서로 저장한다. 깨지는 시나리오: 처리방침 게시에 약관
+    범위를 걸어 게이트에는 효과가 없는데 이력에는 재동의를 받은 것으로 남는다."""
     await _make_draft(db_session, kind=kind, body_markdown="본문", change_notice_markdown="안내")
     await db_session.commit()
     await _login_new_admin(db_client, db_session)
@@ -786,10 +777,35 @@ async def test_publish_reconsent_scopes_follow_the_document_consent_units(
         return
     assert resp.status_code == 200
     assert resp.json()["published"]["reconsentScopes"] == expected
-    assert resp.json()["published"]["requiresReconsent"] is True
     assert resp.json()["published"]["changeNoticeMarkdown"] == "안내"
     versions = (await db_client.get(f"/admin/legal/{kind}/versions")).json()["items"]
     assert (versions[0]["reconsentScopes"], versions[0]["changeNoticeMarkdown"]) == (expected, "안내")
+
+
+@pytest.mark.parametrize(
+    "publish_body",
+    [
+        pytest.param({"requiresReconsent": True}, id="old-field-only"),
+        pytest.param({"reconsentScopes": ["collection"], "requiresReconsent": True}, id="old-field-with-scopes"),
+    ],
+)
+async def test_publish_rejects_the_old_boolean_reconsent_field(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, publish_body: dict[str, object]
+) -> None:
+    """동의 단위를 모르던 이전 어드민 화면의 불리언 `requiresReconsent` 는 422 이고 아무것도 게시하지 않는다. 깨지는
+    시나리오: 그 칸을 조용히 버려, 재동의를 걸려던 게시가 재동의 없는 게시로 나가 회원이 바뀐 처리방침에 동의하지 않은
+    채로 남는다."""
+    await _make_draft(db_session, kind="privacy", body_markdown="본문", change_notice_markdown="안내")
+    await db_session.commit()
+    await _login_new_admin(db_client, db_session)
+
+    resp = await db_client.post("/admin/legal/privacy/publish", json={"version": "2099-01-01", **publish_body})
+
+    assert resp.status_code == 422
+    published = await db_session.scalar(
+        sa.select(LegalDocument).where(LegalDocument.kind == "privacy", LegalDocument.version == "2099-01-01")
+    )
+    assert published is None
 
 
 async def test_reconsent_republish_from_the_same_draft_needs_a_new_notice(

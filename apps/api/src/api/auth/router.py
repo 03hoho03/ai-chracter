@@ -89,7 +89,7 @@ from api.db.models.legal import LegalDocument
 from api.db.session import get_db_session
 from api.legal import consents as legal_consents
 from api.legal import documents as legal_documents
-from api.legal.dependencies import reconsent_required_kinds, reconsent_required_units
+from api.legal.dependencies import reconsent_required_units
 from api.legal.schemas import LegalConsentUnit
 from api.llm.model_access import has_chat_premium_access, has_novel_premium_access
 from api.novel_public.access import novel_public_open_to
@@ -905,7 +905,6 @@ async def get_me(
 
     # 쓰기 게이트(`require_legal_consent`)와 같은 판정 함수다 — 따로 판정하면 모달이 뜨지 않는데 쓰기가 막히거나 그 반대가 된다.
     reconsent_units = await reconsent_required_units(db, user, now=legal_documents.utcnow())
-    reconsent_kinds = reconsent_required_kinds(reconsent_units)
 
     # 위 조건문이 deleted_at is not None인 계정을 이미 배제했다 — nickname은 탈퇴 파기
     # 시에만 None이 된다.
@@ -917,8 +916,7 @@ async def get_me(
         nickname=user.nickname,
         bio=user.bio,
         profile_image_asset_id=user.profile_image_asset_id,
-        terms_reconsent_required="terms" in reconsent_kinds,
-        privacy_reconsent_required="privacy" in reconsent_kinds,
+        terms_reconsent_required="terms" in reconsent_units,
         collection_reconsent_required="collection" in reconsent_units,
         transfer_reconsent_required="transfer" in reconsent_units,
         legal_consent_versions=LegalConsentVersions(

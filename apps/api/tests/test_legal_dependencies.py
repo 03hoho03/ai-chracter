@@ -44,7 +44,6 @@ async def test_require_legal_consent_blocks_when_terms_unconsented(db_session: A
     # (기존 라우터들의 detail={"reason": ...} 관례와 같다) — cast로 그 간극만 메운다.
     assert cast(dict[str, object], exc_info.value.detail) == {
         "code": "LEGAL_RECONSENT_REQUIRED",
-        "kinds": ["terms"],
         "consents": ["terms"],
     }
 
@@ -62,7 +61,6 @@ async def test_require_legal_consent_blocks_when_privacy_unconsented(db_session:
     assert exc_info.value.status_code == 403
     assert cast(dict[str, object], exc_info.value.detail) == {
         "code": "LEGAL_RECONSENT_REQUIRED",
-        "kinds": ["privacy"],
         "consents": ["collection", "transfer"],
     }
 
@@ -81,7 +79,6 @@ async def test_require_legal_consent_blocks_when_both_unconsented(db_session: As
     assert exc_info.value.status_code == 403
     assert cast(dict[str, object], exc_info.value.detail) == {
         "code": "LEGAL_RECONSENT_REQUIRED",
-        "kinds": ["terms", "privacy"],
         "consents": ["terms", "collection", "transfer"],
     }
 
@@ -172,6 +169,5 @@ async def test_scheduled_reconsent_edition_applies_only_once_its_effective_time_
         await require_legal_consent(user_id=user.id, db=db_session)
     assert cast(dict[str, object], exc_info.value.detail) == {
         "code": "LEGAL_RECONSENT_REQUIRED",
-        "kinds": ["terms"],
         "consents": ["terms"],
     }

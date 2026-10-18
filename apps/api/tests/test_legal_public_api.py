@@ -117,7 +117,8 @@ async def test_me_reconsent_not_required_when_no_published_document(
     resp = await db_client.get("/me")
     assert resp.status_code == 200
     assert resp.json()["termsReconsentRequired"] is False
-    assert resp.json()["privacyReconsentRequired"] is False
+    assert resp.json()["collectionReconsentRequired"] is False
+    assert resp.json()["transferReconsentRequired"] is False
 
 
 async def test_me_reconsent_not_required_when_published_does_not_require_it(
@@ -198,7 +199,7 @@ async def test_consent_marks_me_reconsent_required_false(
     assert before.json()["termsReconsentRequired"] is True
 
     consent_resp = await db_client.post(
-        "/legal/consent", json={"kind": "terms", "version": "2099-01-01"}
+        "/legal/consent", json={"consents": ["terms"]}
     )
     assert consent_resp.status_code == 204
 
@@ -219,7 +220,7 @@ async def test_consent_ignores_client_supplied_version_and_records_current_publi
     await db_session.commit()
 
     resp = await db_client.post(
-        "/legal/consent", json={"kind": "terms", "version": "9999-99-99"}
+        "/legal/consent", json={"consents": ["terms"], "version": "9999-99-99"}
     )
     assert resp.status_code == 204
 
@@ -239,14 +240,14 @@ async def test_consent_returns_404_when_no_published_document(
     await _signup_and_login(db_client)
 
     resp = await db_client.post(
-        "/legal/consent", json={"kind": "privacy", "version": "2024-01-01"}
+        "/legal/consent", json={"consents": ["collection", "transfer"]}
     )
     assert resp.status_code == 404
 
 
 async def test_consent_requires_user_session(db_client: httpx.AsyncClient) -> None:
     resp = await db_client.post(
-        "/legal/consent", json={"kind": "terms", "version": "2024-01-01"}
+        "/legal/consent", json={"consents": ["terms"]}
     )
     assert resp.status_code == 401
 
@@ -265,7 +266,7 @@ async def test_consent_terms_updates_version_and_agreed_at(
     await db_session.commit()
 
     resp = await db_client.post(
-        "/legal/consent", json={"kind": "terms", "version": "2099-01-01"}
+        "/legal/consent", json={"consents": ["terms"]}
     )
     assert resp.status_code == 204
 
@@ -295,7 +296,7 @@ async def test_consent_privacy_updates_privacy_and_transfer_pair(
     await db_session.commit()
 
     resp = await db_client.post(
-        "/legal/consent", json={"kind": "privacy", "version": "2099-02-01"}
+        "/legal/consent", json={"consents": ["collection", "transfer"]}
     )
     assert resp.status_code == 204
 
@@ -330,7 +331,7 @@ async def test_consent_rejects_policy_kind_and_leaves_consent_versions_untouched
     await _make_published(db_session, kind=kind, version="2099-12-31")
     await db_session.commit()
 
-    resp = await db_client.post("/legal/consent", json={"kind": kind, "version": "2099-12-31"})
+    resp = await db_client.post("/legal/consent", json={"consents": [kind]})
     assert resp.status_code == 422
 
     await db_session.refresh(user)
@@ -342,8 +343,8 @@ async def test_consent_rejects_policy_kind_and_leaves_consent_versions_untouched
         user.transfer_version,
         user.transfer_agreed_at,
     ) == before
-    me = await db_client.get("/me")
-    assert me.json()["privacyReconsentRequired"] is True
+    me = (await db_client.get("/me")).json()
+    assert (me["collectionReconsentRequired"], me["transferReconsentRequired"]) == (True, True)
 
 
 @pytest.mark.parametrize("kind", ["operation-policy", "youth-policy", "refund-policy", "creator-payout-policy"])
@@ -363,7 +364,8 @@ async def test_me_reconsent_flags_ignore_policy_kind_marked_reconsent(
     resp = await db_client.get("/me")
     assert resp.status_code == 200
     assert resp.json()["termsReconsentRequired"] is False
-    assert resp.json()["privacyReconsentRequired"] is False
+    assert resp.json()["collectionReconsentRequired"] is False
+    assert resp.json()["transferReconsentRequired"] is False
 
 
 # ---- 신규 가입 시 버전 기록 -----------------------------------------------------
@@ -451,10 +453,10 @@ async def test_scheduled_reconsent_edition_reaches_me_and_signup_only_after_it_t
     early_user = await db_session.scalar(select(User).where(User.email == early["email"]))
     assert early_user is not None
     assert (early_user.privacy_version, early_user.transfer_version) == ("2026-09-06", "2026-09-06")
-    assert (await db_client.get("/me")).json()["privacyReconsentRequired"] is False
+    assert (await db_client.get("/me")).json()["collectionReconsentRequired"] is False
 
     monkeypatch.setattr(documents, "utcnow", lambda: effective_at + timedelta(minutes=1))
-    assert (await db_client.get("/me")).json()["privacyReconsentRequired"] is True
+    assert (await db_client.get("/me")).json()["collectionReconsentRequired"] is True
     late = _signup_payload()
     assert (await db_client.post("/auth/signup", json=late)).status_code == 201
     late_user = await db_session.scalar(select(User).where(User.email == late["email"]))
@@ -473,7 +475,7 @@ async def test_consent_records_current_edition_not_the_scheduled_one(
     )
     await db_session.commit()
 
-    resp = await db_client.post("/legal/consent", json={"kind": "terms", "version": "2026-11-17"})
+    resp = await db_client.post("/legal/consent", json={"consents": ["terms"]})
 
     assert resp.status_code == 204
     user = await db_session.scalar(select(User).where(User.email == payload["email"]))
@@ -506,7 +508,6 @@ async def _signed_up_user(db_client: httpx.AsyncClient, db_session: AsyncSession
 _GATED_BODY = {"contentType": "character"}
 _UNIT_FLAGS = (
     "termsReconsentRequired",
-    "privacyReconsentRequired",
     "collectionReconsentRequired",
     "transferReconsentRequired",
 )
@@ -540,19 +541,18 @@ async def test_transfer_only_privacy_edition_blocks_only_members_behind_on_trans
     user.privacy_version, user.transfer_version = "2026-09-06", "2099-02-01"
     await db_session.commit()
     me = (await db_client.get("/me")).json()
-    assert [me[flag] for flag in _UNIT_FLAGS] == [False, False, False, False]
+    assert [me[flag] for flag in _UNIT_FLAGS] == [False, False, False]
     open_resp = await db_client.post("/chat-rooms", json={**_GATED_BODY, "contentId": str(uuid.uuid4())})
     assert open_resp.status_code != 403
 
     user.privacy_version, user.transfer_version = "2099-02-01", "2099-01-01"
     await db_session.commit()
     me = (await db_client.get("/me")).json()
-    assert [me[flag] for flag in _UNIT_FLAGS] == [False, True, False, True]
+    assert [me[flag] for flag in _UNIT_FLAGS] == [False, False, True]
     blocked = await db_client.post("/chat-rooms", json={**_GATED_BODY, "contentId": str(uuid.uuid4())})
     assert blocked.status_code == 403
     assert blocked.json()["detail"] == {
         "code": "LEGAL_RECONSENT_REQUIRED",
-        "kinds": ["privacy"],
         "consents": ["transfer"],
     }
 
@@ -582,27 +582,24 @@ async def test_consent_with_units_records_each_unit_and_appends_history(
     ]
 
 
-async def test_consent_with_old_privacy_body_records_collection_and_transfer(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    """이전 웹의 `{kind: "privacy"}` 는 수집·이용과 국외이전 둘 다에 동의한 것이다(이전 모달은 두 체크박스를 다 받고
-    처리방침 한 번으로 보낸다). 깨지는 시나리오: 새 웹 배포 전에 이전 웹으로 동의한 회원의 국외이전 동의가 빠져 모달이 다시
-    뜬다."""
+async def test_consent_rejects_old_document_body(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+    """문서 하나로 동의하던 옛 바디(`{kind, version}`)는 422 이고 아무것도 기록하지 않는다. 깨지는 시나리오: 옛 바디를 계속
+    받아 처리방침 한 번을 수집·이용과 국외이전 동의 둘 다로 읽으면, 회원이 화면에서 고르지 않은 동의 단위까지 동의한 것으로
+    남는다."""
     _, user = await _signed_up_user(db_client, db_session)
     await _make_published(db_session, kind="privacy", version="2099-02-01")
     await db_session.commit()
+    before = await _consent_history(db_session, user.id)
 
-    resp = await db_client.post("/legal/consent", json={"kind": "privacy", "version": "1999-01-01"})
+    resp = await db_client.post("/legal/consent", json={"kind": "privacy", "version": "2099-02-01"})
 
-    assert resp.status_code == 204
-    history = await _consent_history(db_session, user.id)
-    assert [row for row in history if row[1] == "2099-02-01"] == [
-        ("collection", "2099-02-01"),
-        ("transfer", "2099-02-01"),
-    ]
+    assert resp.status_code == 422
+    await db_session.refresh(user)
+    assert (user.privacy_version, user.transfer_version) == ("2026-09-06", "2026-09-06")
+    assert await _consent_history(db_session, user.id) == before
 
 
-async def test_consent_without_units_or_kind_is_422(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+async def test_consent_without_units_is_422(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
     await _signed_up_user(db_client, db_session)
     assert (await db_client.post("/legal/consent", json={})).status_code == 422
     assert (await db_client.post("/legal/consent", json={"consents": []})).status_code == 422

@@ -122,7 +122,7 @@ describe("toNovelActionError", () => {
   });
 
   it("재동의 403 은 이 화면이 말하지 않는다(전역 모달이 맡는다)", () => {
-    expect(toNovelActionError(apiError(403, { code: "LEGAL_RECONSENT_REQUIRED", kinds: ["privacy"] }), "generate")).toBeNull();
+    expect(toNovelActionError(apiError(403, { code: "LEGAL_RECONSENT_REQUIRED", consents: ["collection", "transfer"] }), "generate")).toBeNull();
   });
 
   describe("429 소설화 창", () => {

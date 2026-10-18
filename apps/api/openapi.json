@@ -4720,7 +4720,7 @@
           "legal"
         ],
         "summary": "Consent Legal Document",
-        "description": "재동의 기록. 동의 단위(`consents`)마다 그 문서의 현행판 버전을 `users` 칸에 적고 동의 이력 행을 하나씩 더한다.\n이전 웹의 `{kind}` 바디는 그 문서의 동의 단위 전부로 읽는다(`LegalConsentRequest`).\n\n**요청의 `version`은 신뢰하지 않는다** — 클라이언트가 값을 조작해\n보내면 실제로 게시된 적 없는 버전이 `users.terms_version`에 남아 `GET /me`의\n재동의 판정을 영구히 우회할 수 있다. 그래서 어떤 동의인지만\n받고, 실제로 기록하는 version은 서버가 다시 조회한 현행판의 것이다(시행 예정 판이 아니다).\n\n**회원 행을 잠그고 탈퇴 여부를 다시 본 뒤 쓴다.** 잠그지 않으면 탈퇴와 겹친 요청이 탈퇴 커밋을 기다렸다가 이력 행을\n넣어(회원 행은 지우지 않으므로 FK 검사도 통과한다) 탈퇴 뒤에 그 회원의 동의 이력이 남는다.\n\n⚠️ 정지된 유저는 `get_current_user_id`가 403으로 막아 여기 도달하지 못한다. 정지\n중에도 통과시켜야 할 이유는 없다고 판단했다 — 재동의도 다른 유저 행위와 마찬가지로\n\"서비스 이용\"의 일부고, 정지가 풀리면 다음 로그인 때 `/me`가 재동의 필요를 다시\n알려주므로 동의 자체를 영영 놓치는 것도 아니다.",
+        "description": "재동의 기록. 동의 단위(`consents`)마다 그 문서의 현행판 버전을 `users` 칸에 적고 동의 이력 행을 하나씩 더한다.\n\n**요청은 버전을 받지 않는다** — 클라이언트가 보낸 버전을 기록하면 실제로 게시된 적 없는 버전이\n`users.terms_version`에 남아 `GET /me`의 재동의 판정을 영구히 우회할 수 있다. 그래서 어떤 동의인지만\n받고, 실제로 기록하는 version은 서버가 다시 조회한 현행판의 것이다(시행 예정 판이 아니다).\n\n**회원 행을 잠그고 탈퇴 여부를 다시 본 뒤 쓴다.** 잠그지 않으면 탈퇴와 겹친 요청이 탈퇴 커밋을 기다렸다가 이력 행을\n넣어(회원 행은 지우지 않으므로 FK 검사도 통과한다) 탈퇴 뒤에 그 회원의 동의 이력이 남는다.\n\n⚠️ 정지된 유저는 `get_current_user_id`가 403으로 막아 여기 도달하지 못한다. 정지\n중에도 통과시켜야 할 이유는 없다고 판단했다 — 재동의도 다른 유저 행위와 마찬가지로\n\"서비스 이용\"의 일부고, 정지가 풀리면 다음 로그인 때 `/me`가 재동의 필요를 다시\n알려주므로 동의 자체를 영영 놓치는 것도 아니다.",
         "operationId": "consent_legal_document_legal_consent_post",
         "requestBody": {
           "content": {
@@ -17143,34 +17143,16 @@
             "title": "Version"
           },
           "reconsentScopes": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string",
-                  "enum": [
-                    "terms",
-                    "collection",
-                    "transfer"
-                  ]
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "terms",
+                "collection",
+                "transfer"
+              ]
+            },
+            "type": "array",
             "title": "Reconsentscopes"
-          },
-          "requiresReconsent": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Requiresreconsent"
           },
           "effectiveAt": {
             "anyOf": [
@@ -17185,12 +17167,13 @@
             "title": "Effectiveat"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "version"
         ],
         "title": "AdminLegalPublishRequest",
-        "description": "`version` 은 날짜(`YYYY-MM-DD`)이고, 같은 날 다시 게시하면 순번 접미사를 붙인다(첫 판은 접미사 없음, 둘째부터\n`.2`, `.3`, … `.10`). 접미사는 `.0`·`.1`·앞자리 0 을 받지 않아 한 판에 이름이 하나뿐이다. 판의 앞뒤는 버전 문자열이\n아니라 시행 시각으로 정하므로(`api/legal/documents.py`) 이 형식은 사람이 읽는 이름을 고르게 할 뿐이다. 달력상 유효한\n날짜인지는 검사하지 않는다.\n\n`effective_at` 은 시행 시각이다. 비우면 게시 시각과 같아 즉시 현행이 되고, 미래면 그 시각까지 시행 예정 판으로\n남는다. 시간대가 없는 값은 받지 않는다(서버 시계와 비교할 수 없다).\n\n재동의 범위는 `reconsent_scopes` 로 받는다. 약관은 `terms`, 처리방침은 `collection`·`transfer` 를 고를 수 있고 정책\n문서는 고를 수 없다. 동의 단위를 모르는 이전 어드민 화면이 보내는 `requires_reconsent` 도 받는다 — true 면 그 문서의\n동의 단위 전부를 고른 것으로 본다. 둘 다 오면 `reconsent_scopes` 를 따른다."
+        "description": "`version` 은 날짜(`YYYY-MM-DD`)이고, 같은 날 다시 게시하면 순번 접미사를 붙인다(첫 판은 접미사 없음, 둘째부터\n`.2`, `.3`, … `.10`). 접미사는 `.0`·`.1`·앞자리 0 을 받지 않아 한 판에 이름이 하나뿐이다. 판의 앞뒤는 버전 문자열이\n아니라 시행 시각으로 정하므로(`api/legal/documents.py`) 이 형식은 사람이 읽는 이름을 고르게 할 뿐이다. 달력상 유효한\n날짜인지는 검사하지 않는다.\n\n`effective_at` 은 시행 시각이다. 비우면 게시 시각과 같아 즉시 현행이 되고, 미래면 그 시각까지 시행 예정 판으로\n남는다. 시간대가 없는 값은 받지 않는다(서버 시계와 비교할 수 없다).\n\n재동의 범위는 `reconsent_scopes` 로 받는다. 약관은 `terms`, 처리방침은 `collection`·`transfer` 를 고를 수 있고 정책\n문서는 고를 수 없다. 비우면 재동의 없는 게시다.\n\n모르는 칸은 422 로 거부한다. 동의 단위를 모르던 이전 어드민 화면은 재동의를 불리언 `requiresReconsent` 로 보냈는데,\n그 칸을 조용히 버리면 재동의를 걸려던 게시가 재동의 없는 게시로 나간다."
       },
       "AdminLegalPublishedItem": {
         "properties": {
@@ -17223,10 +17206,6 @@
             "format": "date-time",
             "title": "Effectiveat"
           },
-          "requiresReconsent": {
-            "type": "boolean",
-            "title": "Requiresreconsent"
-          },
           "reconsentScopes": {
             "items": {
               "type": "string",
@@ -17247,11 +17226,10 @@
           "changeNoticeMarkdown",
           "publishedAt",
           "effectiveAt",
-          "requiresReconsent",
           "reconsentScopes"
         ],
         "title": "AdminLegalPublishedItem",
-        "description": "`reconsent_scopes` 는 이 판이 다시 받은 동의 단위이고, `requires_reconsent` 는 그것이 비어 있지 않음과 같다(동의\n단위를 모르는 이전 어드민 화면이 읽는다)."
+        "description": "`reconsent_scopes` 는 이 판이 다시 받은 동의 단위다."
       },
       "AdminLegalVersionItem": {
         "properties": {
@@ -17268,10 +17246,6 @@
             "type": "string",
             "format": "date-time",
             "title": "Effectiveat"
-          },
-          "requiresReconsent": {
-            "type": "boolean",
-            "title": "Requiresreconsent"
           },
           "reconsentScopes": {
             "items": {
@@ -17312,7 +17286,6 @@
           "version",
           "publishedAt",
           "effectiveAt",
-          "requiresReconsent",
           "reconsentScopes",
           "changeNoticeMarkdown",
           "state"
@@ -26073,55 +26046,25 @@
       "LegalConsentRequest": {
         "properties": {
           "consents": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string",
-                  "enum": [
-                    "terms",
-                    "collection",
-                    "transfer"
-                  ]
-                },
-                "type": "array",
-                "minItems": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "terms",
+                "collection",
+                "transfer"
+              ]
+            },
+            "type": "array",
+            "minItems": 1,
             "title": "Consents"
-          },
-          "kind": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "terms",
-                  "privacy"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Kind"
-          },
-          "version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Version"
           }
         },
         "type": "object",
+        "required": [
+          "consents"
+        ],
         "title": "LegalConsentRequest",
-        "description": "동의할 단위를 `consents` 로 받는다. 이전 웹이 보내는 `{kind, version}` 도 받는다 — `kind` 가 `privacy` 면 수집·이용과\n국외이전 둘 다에 동의한 것으로 본다(이전 화면은 두 체크박스를 모두 받은 뒤 처리방침 한 번으로 보낸다). 둘 다 오면\n`consents` 를 따른다. `version` 은 어느 쪽이든 쓰지 않는다 — 서버가 현행판 버전을 기록한다."
+        "description": "동의할 단위를 `consents` 로 받는다. 버전은 받지 않는다 — 서버가 단위마다 그 문서의 현행판 버전을 기록한다."
       },
       "LegalConsentVersions": {
         "properties": {
@@ -26391,10 +26334,6 @@
             "type": "boolean",
             "title": "Termsreconsentrequired"
           },
-          "privacyReconsentRequired": {
-            "type": "boolean",
-            "title": "Privacyreconsentrequired"
-          },
           "collectionReconsentRequired": {
             "type": "boolean",
             "title": "Collectionreconsentrequired"
@@ -26493,7 +26432,6 @@
           "bio",
           "profileImageAssetId",
           "termsReconsentRequired",
-          "privacyReconsentRequired",
           "collectionReconsentRequired",
           "transferReconsentRequired",
           "legalConsentVersions",

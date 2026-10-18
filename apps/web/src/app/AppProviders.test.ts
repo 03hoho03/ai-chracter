@@ -13,7 +13,6 @@ const ME: MeResponse = {
   bio: null,
   profileImageAssetId: null,
   termsReconsentRequired: false,
-  privacyReconsentRequired: false,
   collectionReconsentRequired: false,
   transferReconsentRequired: false,
   legalConsentVersions: { terms: null, collection: null, transfer: null },

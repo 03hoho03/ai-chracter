@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import AwareDatetime, EmailStr, Field
+from pydantic import AwareDatetime, ConfigDict, EmailStr, Field
 
 from api.chat.prompt_builder import PromptLane
 from api.core.schema import CamelModel
@@ -460,15 +460,13 @@ class AdminLegalDraftItem(CamelModel):
 
 
 class AdminLegalPublishedItem(CamelModel):
-    """`reconsent_scopes` 는 이 판이 다시 받은 동의 단위이고, `requires_reconsent` 는 그것이 비어 있지 않음과 같다(동의
-    단위를 모르는 이전 어드민 화면이 읽는다)."""
+    """`reconsent_scopes` 는 이 판이 다시 받은 동의 단위다."""
 
     version: str
     body_markdown: str
     change_notice_markdown: str | None
     published_at: datetime
     effective_at: datetime
-    requires_reconsent: bool
     reconsent_scopes: list[LegalConsentUnit]
 
 
@@ -499,12 +497,15 @@ class AdminLegalPublishRequest(CamelModel):
     남는다. 시간대가 없는 값은 받지 않는다(서버 시계와 비교할 수 없다).
 
     재동의 범위는 `reconsent_scopes` 로 받는다. 약관은 `terms`, 처리방침은 `collection`·`transfer` 를 고를 수 있고 정책
-    문서는 고를 수 없다. 동의 단위를 모르는 이전 어드민 화면이 보내는 `requires_reconsent` 도 받는다 — true 면 그 문서의
-    동의 단위 전부를 고른 것으로 본다. 둘 다 오면 `reconsent_scopes` 를 따른다."""
+    문서는 고를 수 없다. 비우면 재동의 없는 게시다.
+
+    모르는 칸은 422 로 거부한다. 동의 단위를 모르던 이전 어드민 화면은 재동의를 불리언 `requiresReconsent` 로 보냈는데,
+    그 칸을 조용히 버리면 재동의를 걸려던 게시가 재동의 없는 게시로 나간다."""
+
+    model_config = ConfigDict(extra="forbid")
 
     version: str = Field(min_length=1, pattern=r"^\d{4}-\d{2}-\d{2}(\.([2-9]|[1-9]\d+))?$")
-    reconsent_scopes: list[LegalConsentUnit] | None = None
-    requires_reconsent: bool | None = None
+    reconsent_scopes: list[LegalConsentUnit] = Field(default_factory=list)
     effective_at: AwareDatetime | None = None
 
 
@@ -516,7 +517,6 @@ class AdminLegalVersionItem(CamelModel):
     version: str
     published_at: datetime
     effective_at: datetime
-    requires_reconsent: bool
     reconsent_scopes: list[LegalConsentUnit]
     change_notice_markdown: str | None
     state: AdminLegalVersionState

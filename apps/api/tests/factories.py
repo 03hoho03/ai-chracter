@@ -905,7 +905,7 @@ async def _make_published(
     change_notice_markdown: str | None = None,
 ) -> LegalDocument:
     """`effective_at` 을 비우면 게시 즉시 시행한 판(시행 시각 = 게시 시각)이다. `reconsent_scopes` 를 비우면
-    `requires_reconsent=True` 는 그 문서의 동의 단위 전부를 다시 받는 판이 된다(게시 API 가 이전 바디를 읽는 방식과 같다)."""
+    `requires_reconsent=True` 는 그 문서의 동의 단위 전부를 다시 받는 판이 된다(테스트가 문서 전체 재동의를 짧게 쓰는 줄임)."""
     published_at = published_at or datetime.now(UTC)
     if reconsent_scopes is None:
         reconsent_scopes = list(kind_consent_units(kind)) if requires_reconsent else []

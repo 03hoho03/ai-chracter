@@ -1,7 +1,7 @@
 from datetime import datetime
-from typing import Literal, Self
+from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field
 
 from api.core.schema import CamelModel
 
@@ -68,16 +68,6 @@ class LegalChangesResponse(CamelModel):
 
 
 class LegalConsentRequest(CamelModel):
-    """동의할 단위를 `consents` 로 받는다. 이전 웹이 보내는 `{kind, version}` 도 받는다 — `kind` 가 `privacy` 면 수집·이용과
-    국외이전 둘 다에 동의한 것으로 본다(이전 화면은 두 체크박스를 모두 받은 뒤 처리방침 한 번으로 보낸다). 둘 다 오면
-    `consents` 를 따른다. `version` 은 어느 쪽이든 쓰지 않는다 — 서버가 현행판 버전을 기록한다."""
+    """동의할 단위를 `consents` 로 받는다. 버전은 받지 않는다 — 서버가 단위마다 그 문서의 현행판 버전을 기록한다."""
 
-    consents: list[LegalConsentUnit] | None = Field(default=None, min_length=1)
-    kind: LegalConsentKind | None = None
-    version: str | None = None
-
-    @model_validator(mode="after")
-    def _require_consents_or_kind(self) -> Self:
-        if self.consents is None and self.kind is None:
-            raise ValueError("consents 또는 kind 가 필요합니다.")
-        return self
+    consents: list[LegalConsentUnit] = Field(min_length=1)

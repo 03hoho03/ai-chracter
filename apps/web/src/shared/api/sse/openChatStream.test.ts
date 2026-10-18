@@ -48,7 +48,7 @@ describe("openChatStream", () => {
   // 읽는 세 가지(status 403 · detail이 object · code)를 여기서 직접 고정한다.
   it("403 재동의 바디를 detail째로 던진다", async () => {
     stubFetchWith(
-      new Response(JSON.stringify({ detail: { code: "LEGAL_RECONSENT_REQUIRED", kinds: ["terms"] } }), {
+      new Response(JSON.stringify({ detail: { code: "LEGAL_RECONSENT_REQUIRED", consents: ["terms"] } }), {
         status: 403,
       }),
     );
@@ -58,7 +58,7 @@ describe("openChatStream", () => {
     expect(rejection).toBeInstanceOf(ApiErrorObject);
     expect(rejection).toMatchObject({
       status: 403,
-      detail: { code: "LEGAL_RECONSENT_REQUIRED", kinds: ["terms"] },
+      detail: { code: "LEGAL_RECONSENT_REQUIRED", consents: ["terms"] },
     });
   });
 

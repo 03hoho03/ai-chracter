@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.db.models.auth import User
 from api.db.session import get_db_session
 from api.legal import consents, documents
-from api.legal.schemas import LegalConsentKind, LegalConsentUnit
+from api.legal.schemas import LegalConsentUnit
 from api.session.dependencies import get_current_user_id
 
 
@@ -46,23 +46,12 @@ async def reconsent_required_units(db: AsyncSession, user: User, *, now: datetim
     ]
 
 
-def reconsent_required_kinds(units: list[LegalConsentUnit]) -> list[LegalConsentKind]:
-    """동의 단위를 문서 종류로 묶는다(약관 → 처리방침 순서). 동의 단위를 모르는 이전 웹이 403 의 `kinds` 와 `GET /me` 의
-    두 플래그로 모달을 띄우므로 이 값을 계속 낸다."""
-    kinds: list[LegalConsentKind] = []
-    for unit in units:
-        kind = consents.consent_kind(unit)
-        if kind not in kinds:
-            kinds.append(kind)
-    return kinds
-
-
 async def require_legal_consent(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
     """동의 단위 중 하나라도 재동의가
-    필요하면 403 + 기계 판독 가능한 detail로 막는다. detail 의 `kinds` 는 문서 종류, `consents` 는 동의 단위다. `get_current_user_id`에는
+    필요하면 403 + 기계 판독 가능한 detail로 막는다. detail 의 `consents` 는 다시 받을 동의 단위다. `get_current_user_id`에는
     재동의(버전) 검사를 끼워넣지 않는다 — 그 의존성은 읽기 엔드포인트와 재동의 전에도
     허용하는 쓰기 예외에도 함께 쓰이므로, 거기 넣으면 읽기까지 막힌다. 존재·탈퇴(`deleted_at`)
     확인은 이 제약 밖이라 그쪽이 한다."""
@@ -78,5 +67,5 @@ async def require_legal_consent(
     if units:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail={"code": "LEGAL_RECONSENT_REQUIRED", "kinds": reconsent_required_kinds(units), "consents": units},
+            detail={"code": "LEGAL_RECONSENT_REQUIRED", "consents": units},
         )

@@ -8,8 +8,8 @@ export type LegalConsentUnit = components["schemas"]["LegalChangeItem"]["reconse
 
 type MeResponse = components["schemas"]["MeResponse"];
 
-/** 재동의 판정에 쓰는 세션 칸. 처리방침 하나로 묶인 옛 플래그(`privacyReconsentRequired`)는 읽지 않는다 — 국외이전만 다시
- * 받는 판에서 수집·이용 체크까지 요구하게 되고, 그 칸은 곧 응답에서 빠진다. */
+/** 재동의 판정에 쓰는 세션 칸. 문서가 아니라 동의 단위로 본다 — 처리방침 하나로 묶어 보면 국외이전만 다시 받는 판에서
+ * 수집·이용 체크까지 요구하게 된다. */
 export type ReconsentFlags = Pick<
   MeResponse,
   "termsReconsentRequired" | "collectionReconsentRequired" | "transferReconsentRequired"
