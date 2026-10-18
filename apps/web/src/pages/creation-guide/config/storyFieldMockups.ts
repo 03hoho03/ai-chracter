@@ -12,6 +12,7 @@ import {
   MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH,
   MAX_SITUATION_NOTE_CONTENT_LENGTH,
   MAX_SITUATION_NOTE_NAME_LENGTH,
+  MAX_STAT_PLAYER_DESCRIPTION_LENGTH,
   MAX_STAT_RULE_CONDITION_LENGTH,
   MAX_TRIGGER_KEYWORD_LENGTH,
   type StoryFieldKey,
@@ -152,6 +153,16 @@ export const STORY_FIELD_MOCKUPS = {
     seedPath: "startingSetups.*.statDefs.*.description",
     readTiming: "judge",
   },
+  // 숨김·플레이어용 설명·익명 신호는 AI가 읽지 않는 화면 설정이고 튜토리얼 시드도 쓰지 않는다.
+  "startingSetups.*.stats.*.hiddenFromPlayer": { kind: "switch", seedPath: null, readTiming: null },
+  "startingSetups.*.stats.*.playerDescription": {
+    kind: "text",
+    seedPath: null,
+    readTiming: null,
+    limit: MAX_STAT_PLAYER_DESCRIPTION_LENGTH,
+    counter: true,
+  },
+  "startingSetups.*.stats.*.signalHiddenChange": { kind: "switch", seedPath: null, readTiming: null },
   "startingSetups.*.stats.*.rules": {
     kind: "statChangeRules",
     seedPath: "startingSetups.*.statDefs.*.rules",

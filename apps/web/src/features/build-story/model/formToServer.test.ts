@@ -43,6 +43,9 @@ function baseFormValues(): StoryBuilderFormValues {
             description: "생존에 필요한 신체 상태",
             perTurnDelta: -1,
             rules: [],
+            hiddenFromPlayer: false,
+            playerDescription: "",
+            signalHiddenChange: false,
           },
         ],
         endings: [],
@@ -126,6 +129,9 @@ describe("formToServer", () => {
               description: "생존에 필요한 신체 상태",
               perTurnDelta: -1,
               rules: [],
+              hiddenFromPlayer: false,
+              playerDescription: null,
+              signalHiddenChange: false,
             },
           ],
           endings: [],
@@ -289,6 +295,28 @@ describe("formToServer", () => {
       { id: "rule-b", condition: "사용자가 약속에 늦었다", delta: -3 },
       { id: "rule-a", condition: "사용자가 짐을 나눠 들었다", delta: 3 },
     ]);
+  });
+
+  it("always sends a stat's player visibility settings, with a trimmed description and an empty one as null", () => {
+    const values = baseFormValues();
+    const stat = requireFirst(requireFirst(values.startingSetups).stats);
+    expect(requireFirst(requireFirst(formToServer(values).startingSetups).statDefs)).toMatchObject({
+      hiddenFromPlayer: false,
+      playerDescription: null,
+      signalHiddenChange: false,
+    });
+
+    stat.hiddenFromPlayer = true;
+    stat.playerDescription = "  바닥나면 쓰러진다 ";
+    stat.signalHiddenChange = true;
+    expect(requireFirst(requireFirst(formToServer(values).startingSetups).statDefs)).toMatchObject({
+      hiddenFromPlayer: true,
+      playerDescription: "바닥나면 쓰러진다",
+      signalHiddenChange: true,
+    });
+
+    stat.playerDescription = "   ";
+    expect(requireFirst(requireFirst(formToServer(values).startingSetups).statDefs)).toHaveProperty("playerDescription", null);
   });
 
   it("sends only the finished rules while some are half written, so the rest of the draft still saves", () => {

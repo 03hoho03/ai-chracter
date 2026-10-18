@@ -77,6 +77,9 @@ const STAT: StatDefValues = {
   description: "d",
   perTurnDelta: null,
   rules: [],
+  hiddenFromPlayer: false,
+  playerDescription: "",
+  signalHiddenChange: false,
 };
 
 function setup(situationNotes: StartingSetupValues["situationNotes"]): StartingSetupValues {

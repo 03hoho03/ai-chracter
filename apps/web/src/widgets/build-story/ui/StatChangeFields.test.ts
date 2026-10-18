@@ -28,6 +28,9 @@ function stat(overrides: Partial<StatDefValues>): StatDefValues {
     description: "d",
     perTurnDelta: null,
     rules: [],
+    hiddenFromPlayer: false,
+    playerDescription: "",
+    signalHiddenChange: false,
     ...overrides,
   };
 }

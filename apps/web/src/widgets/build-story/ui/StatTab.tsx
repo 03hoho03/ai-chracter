@@ -38,6 +38,7 @@ import { StartingSetupPicker } from "./StartingSetupPicker";
 import { StartingSetupRequiredState } from "./StartingSetupRequiredState";
 import { StatChangeFields } from "./StatChangeFields";
 import { StatRuleList } from "./StatRuleList";
+import { StatVisibilityFields } from "./StatVisibilityFields";
 import { StoryMacroNotice } from "./StoryMacroNotice";
 import { moveStatErrorsById } from "../model/moveStatErrorsById";
 import {
@@ -331,6 +332,8 @@ function StatRow({
       </div>
 
       <StatRuleList id={id} startingSetupIndex={startingSetupIndex} statIndex={statIndex} stat={stat} />
+
+      <StatVisibilityFields id={id} startingSetupIndex={startingSetupIndex} statIndex={statIndex} stat={stat} />
     </CollapsibleItemCard>
   );
 }
@@ -508,6 +511,9 @@ function StatSection({
         description: "",
         perTurnDelta: null,
         rules: [],
+        hiddenFromPlayer: false,
+        playerDescription: "",
+        signalHiddenChange: false,
       },
       { focusName: `${statsPath}.${fields.length}.name` },
     );

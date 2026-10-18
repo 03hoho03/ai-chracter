@@ -16,6 +16,7 @@ import {
   MAX_MEDIA_BOOK_CELLS,
   MAX_SITUATION_NOTE_NAME_LENGTH,
   MAX_SITUATION_NOTES,
+  MAX_STAT_PLAYER_DESCRIPTION_LENGTH,
   MAX_STAT_RULES,
   serverToForm,
   storyBuilderSchema,
@@ -46,6 +47,9 @@ function stat(id: string, overrides: Record<string, unknown> = {}) {
     description: "생존에 필요한 신체 상태",
     perTurnDelta: null,
     rules: [{ id: `${id}-rule`, condition: "물을 마셨다", delta: 3 }],
+    hiddenFromPlayer: false,
+    playerDescription: "",
+    signalHiddenChange: false,
     ...overrides,
   };
 }
@@ -149,6 +153,7 @@ const SCENARIOS: Record<string, unknown> = {
           stat("s-initial", { min: 0, max: 10, initial: 50 }),
           stat("s-norules", { rules: [] }),
           stat("s-counter", { perTurnDelta: -1 }),
+          stat("s-player-description", { playerDescription: "가".repeat(MAX_STAT_PLAYER_DESCRIPTION_LENGTH + 1) }),
           stat("s-badrule", {
             rules: [
               { id: "r1", condition: "", delta: 0 },

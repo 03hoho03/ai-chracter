@@ -83,6 +83,10 @@ function fromApiStatDef(stat: StatDefDraftItem): StatDefValues {
     perTurnDelta: stat.perTurnDelta ?? null,
     // 생성 타입에서 선택 필드라(서버는 늘 채워 보낸다) 빠지면 빈 목록. 서버가 순서대로 준다.
     rules: (stat.rules ?? []).map(({ id, condition, delta }) => ({ id, condition, delta })),
+    // 아래 셋도 생성 타입에서 선택 필드다 — 빠지면 서버 기본값(숨기지 않음·설명 없음·신호 없음)으로 읽는다.
+    hiddenFromPlayer: stat.hiddenFromPlayer ?? false,
+    playerDescription: stat.playerDescription ?? "",
+    signalHiddenChange: stat.signalHiddenChange ?? false,
   };
 }
 
