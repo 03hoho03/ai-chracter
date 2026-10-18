@@ -21,7 +21,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from api.chat.schemas import PreviewSessionState
-from api.chat.turn_engine import TurnPresentation, TurnResult, TurnWrite, _turn_message_response
+from api.chat.turn_engine import (
+    _GENERATE_CALL_SITE,
+    TurnPresentation,
+    TurnResult,
+    TurnWrite,
+    _turn_message_response,
+)
 from api.chat.turn_settlement import TurnSettlement
 from api.core.rate_limit_gate import ChatCharge
 from api.content.media_book import normalize_texts, normalize_texts_for_display, resolve_media_tag_images
@@ -43,6 +49,7 @@ from api.db.models.chat import (
 )
 from api.db.models.media import Asset
 from api.db.models.story import StartingSetup
+from api.llm.client import CallUsage
 
 TurnStoreMode = Literal["append", "replace"]
 
@@ -373,6 +380,21 @@ class RoomTurnStore:
         settlement.mark_settled()
         return TurnWrite(message=assistant_message, matched_image=matched_image, judged_cell_id=judged_cell_id)
 
+    @staticmethod
+    def _call_record(turn: TurnResult, call: CallUsage) -> dict[str, Any]:
+        """호출 칸 하나. 생성 칸에만 첫 글자 지연 둘(`firstTokenMs` 턴 시작부터, `streamFirstTokenMs` 생성 스트림을 연
+        때부터 — 뜻은 `TurnResult` 의 같은 칸)을 더한다 — 판정·임베딩 칸에 붙이면 그 호출의 지연으로 읽힌다. 글 없이 끝난
+        생성은 잰 값이 없어 두 키 다 싣지 않는다. 재생성·수정도 이 턴에 새로 생성한
+        스트림에서 잰 값이다(대체되는 기록에서 물려받지 않는다). 생성 칸에는 `outcome` 을 붙이지 않는다 — 원가 보기
+        스크립트가 그 키가 있는 칸을 질의 임베딩으로 센다."""
+        record = call.as_record()
+        if call.call_site == _GENERATE_CALL_SITE[turn.kind]:
+            if turn.first_token_ms is not None:
+                record["firstTokenMs"] = turn.first_token_ms
+            if turn.stream_first_token_ms is not None:
+                record["streamFirstTokenMs"] = turn.stream_first_token_ms
+        return record
+
     def _add_turn_record(
         self,
         turn: TurnResult,
@@ -391,7 +413,7 @@ class RoomTurnStore:
             spend_ledger_id=charge.spend_ledger_id,
             # 질의 임베딩은 생성보다 먼저 불렸다 — 부른 턴만 맨 앞에 한 칸이 붙고, 부르지 않은 턴의 목록은 그대로다.
             llm_calls=([dict(turn.memory_query)] if turn.memory_query is not None else [])
-            + [call.as_record() for call in turn.llm_calls],
+            + [self._call_record(turn, call) for call in turn.llm_calls],
         )
         # 회상한 턴만 칸을 채운다 — 비어 있으면 INSERT 에 칸을 싣지 않아 DB 기본값 `[]` 이 들어가고, 문장이 회상 전과 같다.
         # 재생성·수정도 그 턴에 새로 조립한 프롬프트의 회상이다(대체되는 기록에서 물려받지 않는다).

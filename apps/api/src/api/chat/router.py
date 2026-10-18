@@ -50,6 +50,7 @@ from api.chat.turn_engine import (
     TurnInput,
     TurnResult,
     run_turn,
+    turn_clock,
 )
 from api.chat.turn_store import (
     PreviewTurnStore,
@@ -1085,6 +1086,8 @@ async def send_message(
             db.add(user_message)
             await db.commit()
 
+            # 첫 글자 지연의 턴 시작점 — 기억 기능이 늘리는 조립·질의 임베딩 지연이 들도록 조립 직전에 읽는다.
+            started_at = turn_clock()
             prepared = await _room_generation_prompt(
                 db,
                 room,
@@ -1113,6 +1116,7 @@ async def send_message(
                     generation_set=generation_set,
                     judgment_sets=judgment_sets,
                     charge=charge,
+                    started_at=started_at,
                 ),
                 llm=llm_client,
                 judgments=new_turn_judgments(db, room, setup, log=logger),
@@ -1239,6 +1243,8 @@ async def regenerate_message(
             )
             # 이번 입력은 바꿀 응답 바로 앞의 사용자 메시지이고, 생성·판정이 보는 히스토리는 그 앞까지다.
             user_content = history[-1].content
+            # 첫 글자 지연의 턴 시작점 — 기억 기능이 늘리는 조립·질의 임베딩 지연이 들도록 조립 직전에 읽는다.
+            started_at = turn_clock()
             prepared = await _room_generation_prompt(
                 db,
                 room,
@@ -1268,6 +1274,7 @@ async def regenerate_message(
                     generation_set=generation_set,
                     judgment_sets=judgment_sets,
                     charge=charge,
+                    started_at=started_at,
                 ),
                 llm=llm_client,
                 judgments=regenerate_judgments(db, room, setup, last_message.id, log=logger),
@@ -1386,6 +1393,8 @@ async def edit_message(
             await db.commit()
 
             # 수정 요청은 단축어를 받지 않는다(`ChatMessageEditRequest` 는 글만 싣는다).
+            # 첫 글자 지연의 턴 시작점 — 기억 기능이 늘리는 조립·질의 임베딩 지연이 들도록 조립 직전에 읽는다.
+            started_at = turn_clock()
             prepared = await _room_generation_prompt(
                 db,
                 room,
@@ -1414,6 +1423,7 @@ async def edit_message(
                     generation_set=generation_set,
                     judgment_sets=judgment_sets,
                     charge=charge,
+                    started_at=started_at,
                 ),
                 llm=llm_client,
                 judgments=new_turn_judgments(db, room, setup, log=logger),
@@ -2595,6 +2605,8 @@ async def send_preview_message(
             )
         )
 
+        # 첫 글자 지연의 턴 시작점 — 방 경로와 같은 자리(조립 직전)다. 미리보기는 턴 기록을 쓰지 않지만 턴 입력의 모양을 맞춘다.
+        started_at = turn_clock()
         try:
             # 초안 페이로드와 세션 상태로 조립한다(DB 조회 없음). 상황 노트 조건은 이번 턴 판정 반영 전 세션 스탯으로 본다.
             generation = build_preview_prompt(
@@ -2631,6 +2643,7 @@ async def send_preview_message(
                     generation_set=prompt_set,
                     judgment_sets=judgment_sets,
                     charge=charge,
+                    started_at=started_at,
                 ),
                 llm=llm_client,
                 judgments=preview_judgments(state, media_images, user_id, log=logger),
