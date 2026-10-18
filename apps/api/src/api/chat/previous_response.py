@@ -57,7 +57,7 @@ async def restore_previous_response(
       (같은 되돌리기가 두 번 왔다) 행을 그대로 두고 거절한다.
     - 요약은 두 응답 중 앞선 키부터 되감는다. 되살릴 응답이 더 앞이면 지금 응답까지 덮던 요약이, 다시 맞바꾸는 경우처럼 지금
       응답이 더 앞이면 그 응답을 덮던 요약이 사라진다.
-    - 스탯은 `_restore_stats`, 메시지는 원래 id·시각 그대로 다시 넣고 지운 지금 응답을 보관 행에 옮겨 적는다. 턴 기록은 쓰지
+    - 스탯은 `_restore_stats`, 메시지는 원래 id·시각(과 본문·그림·장면) 그대로 다시 넣고 지운 지금 응답을 보관 행에 옮겨 적는다. 턴 기록은 쓰지
       않는다 — 두 응답의 기록이 메시지 id 로 이미 남아 있어 다음 재생성이 되살린 응답의 기록으로 정확히 되돌린다. 엔딩은 손대지
       않는다."""
     kept = await db.scalar(
@@ -91,6 +91,7 @@ async def restore_previous_response(
             content=kept.content,
             created_at=kept.message_created_at,
             image_id=kept.image_id,
+            scene=kept.scene,
         )
     )
     kept.replaced_by_message_id = restored_id
@@ -98,6 +99,7 @@ async def restore_previous_response(
     kept.message_created_at = last.created_at
     kept.content = last.content
     kept.image_id = last.image_id
+    kept.scene = last.scene
     db.add(DiscardedResponse(user_id=room.user_id, chat_room_id=room.id, kind="undo", discarded_count=1))
     return True
 

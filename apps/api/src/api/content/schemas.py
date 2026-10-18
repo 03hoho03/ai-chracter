@@ -812,4 +812,5 @@ class StoryDraftResponse(CamelModel):
     novel_permission: NovelPermission = Field(default_factory=_default_novel_permission)
     # 기본값은 응답을 옛 화면·생성 타입과 호환시키려는 것이고, 서버는 항상 채워 보낸다.
     media_book: MediaBookDraft = Field(default_factory=lambda: MediaBookDraft(people=[], scenes=[], cells=[]))
-    scene_header_enabled: bool = False
+    # 서버는 항상 채워 보낸다. `default_factory` 인 이유는 `KeywordNoteDraftInput` 의 같은 주석과 같다.
+    scene_header_enabled: bool = Field(default_factory=bool)

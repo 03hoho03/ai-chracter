@@ -21684,6 +21684,16 @@
               }
             ],
             "title": "Imageheight"
+          },
+          "scene": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StoryScene"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -21770,6 +21780,20 @@
             "type": "string",
             "format": "uuid",
             "title": "Pinnedstartingsetupid"
+          },
+          "sceneHeaderEnabled": {
+            "type": "boolean",
+            "title": "Sceneheaderenabled"
+          },
+          "initialScene": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StoryScene"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -31584,6 +31608,28 @@
             },
             "type": "array",
             "title": "Situationnotes"
+          },
+          "initialScenePlace": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initialsceneplace"
+          },
+          "initialSceneTime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initialscenetime"
           }
         },
         "type": "object",
@@ -31998,6 +32044,17 @@
                 "type": "null"
               }
             ]
+          },
+          "sceneHeaderEnabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sceneheaderenabled"
           }
         },
         "type": "object",
@@ -32196,6 +32253,10 @@
           },
           "mediaBook": {
             "$ref": "#/components/schemas/MediaBookDraft"
+          },
+          "sceneHeaderEnabled": {
+            "type": "boolean",
+            "title": "Sceneheaderenabled"
           }
         },
         "type": "object",
@@ -32294,6 +32355,39 @@
           "custom"
         ],
         "title": "StoryPromptTemplate"
+      },
+      "StoryScene": {
+        "properties": {
+          "place": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Place"
+          },
+          "time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time"
+          }
+        },
+        "type": "object",
+        "required": [
+          "place",
+          "time"
+        ],
+        "title": "StoryScene",
+        "description": "장면 헤더의 장면 — 지금 장소와 시간. 모르는 칸은 null 이다. 같은 이름의 미디어 북 장면 축·장면 기억과는 다른 것이다."
       },
       "UpdateProfileRequest": {
         "properties": {

@@ -8800,6 +8800,7 @@ export interface components {
             imageWidth?: number | null;
             /** Imageheight */
             imageHeight?: number | null;
+            scene?: components["schemas"]["StoryScene"] | null;
         };
         /**
          * ChatMessageRole
@@ -8838,6 +8839,9 @@ export interface components {
              * Format: uuid
              */
             pinnedStartingSetupId: string;
+            /** Sceneheaderenabled */
+            sceneHeaderEnabled?: boolean;
+            initialScene?: components["schemas"]["StoryScene"] | null;
         };
         /** ChatRoomCreateRequest */
         ChatRoomCreateRequest: {
@@ -12893,6 +12897,10 @@ export interface components {
             endings: components["schemas"]["EndingDraftItem"][];
             /** Situationnotes */
             situationNotes?: components["schemas"]["SituationNoteDraftItem"][];
+            /** Initialsceneplace */
+            initialScenePlace?: string | null;
+            /** Initialscenetime */
+            initialSceneTime?: string | null;
         };
         /** StartingSetupSummary */
         StartingSetupSummary: {
@@ -13030,6 +13038,8 @@ export interface components {
             /** Novelpermission */
             novelPermission?: ("forbidden" | "private" | "public") | null;
             mediaBook?: components["schemas"]["MediaBookPayload"] | null;
+            /** Sceneheaderenabled */
+            sceneHeaderEnabled?: boolean | null;
         };
         /** StoryDraftResponse */
         StoryDraftResponse: {
@@ -13085,6 +13095,8 @@ export interface components {
              */
             novelPermission?: "forbidden" | "private" | "public";
             mediaBook?: components["schemas"]["MediaBookDraft"];
+            /** Sceneheaderenabled */
+            sceneHeaderEnabled?: boolean;
         };
         /**
          * StoryImageArchiveItem
@@ -13130,6 +13142,16 @@ export interface components {
          * @enum {string}
          */
         StoryPromptTemplate: "basic" | "emotional" | "simulation" | "custom";
+        /**
+         * StoryScene
+         * @description 장면 헤더의 장면 — 지금 장소와 시간. 모르는 칸은 null 이다. 같은 이름의 미디어 북 장면 축·장면 기억과는 다른 것이다.
+         */
+        StoryScene: {
+            /** Place */
+            place: string | null;
+            /** Time */
+            time: string | null;
+        };
         /** UpdateProfileRequest */
         UpdateProfileRequest: {
             /** Nickname */

@@ -45,10 +45,12 @@ from api.chat.prompt_builder import (
     PromptNames,
     PromptRenderError,
     PromptSetNotFoundError,
+    SceneJudgmentResult,
     StatJudgmentRequest,
     StatRuleJudgmentResult,
     build_ending_judgment_prompt,
     build_image_judgment_prompt,
+    build_scene_judgment_prompt,
     media_cell_image_lines,
     prepare_stat_judgment,
     situational_image_lines,
@@ -62,11 +64,14 @@ from api.chat.schemas import (
     EndingRuleItem,
     EndingRuleListItem,
     PreviewSessionState,
+    StoryScene,
+    story_scene_of,
 )
 from api.chat.stats import apply_rule_judgment
 from api.chat.turn_prompt import JudgmentPromptSets, preview_ending_rule_list_item
 from api.content.media_tags import normalize_media_tags
 from api.content.schemas import (
+    STORY_SCENE_FIELD_MAX_LENGTH,
     CharacterDraftPayload,
     EndingDraftItem,
     MediaTagImage,
@@ -77,7 +82,7 @@ from api.content.schemas import (
 from api.core.config import settings
 from api.core.sentry import capture_dependency_failure
 from api.db.models.character import SituationalImage
-from api.db.models.chat import ChatMessage, ChatRoom, ChatRoomStat, ChatTurn
+from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom, ChatRoomStat, ChatTurn
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import (
     Ending,
@@ -93,6 +98,7 @@ from api.db.models.story import (
 from api.llm.client import (
     CallUsage,
     LLMCallContext,
+    LLMCallSite,
     LLMClient,
     LLMClientError,
     dependency_tag,
@@ -695,6 +701,9 @@ class TurnJudgmentResult:
     # 방 엔딩만 채운다 — 미리보기 엔딩은 DB 행이 없어 이벤트만 남긴다.
     reached_ending: Ending | None = None
     ending_reached_event: ChatEndingReachedEvent | None = None
+    # 장면 헤더를 켠 작품의 이번 턴 장면 — 판정이 실패해도 직전 장면으로 채운다. 꺼진 작품은 판정이 없어 `None` 이고, 그러면
+    # 응답 메시지의 장면도 비고 `sceneChange` 도 나가지 않는다.
+    story_scene: StoryScene | None = None
 
 
 def player_stat_events(result: TurnJudgmentResult) -> list[ChatStatChangeEvent | ChatHiddenStatSignalEvent]:
@@ -1282,18 +1291,153 @@ class PreviewMediaCellJudgment:
         result.judged_cell_id = self._cell_id
 
 
+def initial_story_scene(place: str | None, time: str | None) -> StoryScene | None:
+    """시작설정의 첫 장면 — 장소·시간이 둘 다 없으면 첫 장면이 없다."""
+    if place is None and time is None:
+        return None
+    return StoryScene(place=place, time=time)
+
+
+def previous_story_scene(history: Sequence[ChatMessage], initial: StoryScene | None) -> StoryScene | None:
+    """이번 턴 장면 판정이 이어받을 직전 장면 — `history` 는 이번 입력 앞까지의 메시지다(재생성은 바꾸는 응답과 그 입력을 뺀
+    것이라 바꾸는 응답 이전 기준이 된다).
+
+    - 방에 아직 AI 턴이 없으면(AI 메시지가 없거나, 마지막 AI 메시지 앞에 사용자 메시지가 없는 오프닝뿐이면) 시작설정의 첫 장면.
+    - 아니면 마지막 AI 메시지의 장면. 그 장면이 비어 있으면(장면 헤더를 켜기 전 메시지, 판정 구간 밖에서 쓰인 응답) 첫 장면으로
+      떨어지지 않고 없음이다 — 버전을 옮긴 긴 방에 프롤로그 장소가 뜨고 다음 판정이 그것을 이어받는 것을 막는다."""
+    last_index = next(
+        (index for index in range(len(history) - 1, -1, -1) if history[index].role == ChatMessageRole.ASSISTANT), None
+    )
+    if last_index is None or not any(message.role == ChatMessageRole.USER for message in history[:last_index]):
+        return initial
+    return story_scene_of(history[last_index].scene)
+
+
+def _scene_field(judged: str | None, previous: str | None) -> str | None:
+    """판정이 적은 한 칸 — 앞뒤 공백을 떼고, 비었거나 상한을 넘으면 직전 장면의 그 칸을 잇는다."""
+    value = judged.strip() if judged is not None else ""
+    if not value or len(value) > STORY_SCENE_FIELD_MAX_LENGTH:
+        return previous
+    return value
+
+
+def merge_story_scene(previous: StoryScene | None, judged: SceneJudgmentResult | None) -> StoryScene:
+    """이번 턴 장면 — 판정이 없거나 실패했으면(`judged` 가 `None`) 직전 장면 그대로, 있으면 칸마다 `_scene_field`."""
+    previous_place = previous.place if previous is not None else None
+    previous_time = previous.time if previous is not None else None
+    if judged is None:
+        return StoryScene(place=previous_place, time=previous_time)
+    return StoryScene(place=_scene_field(judged.place, previous_place), time=_scene_field(judged.time, previous_time))
+
+
+class _StorySceneJudgmentBase:
+    """장면 헤더 판정 — 이번 턴 사용자 메시지·응답과 직전 장면만 보고 지금 장면의 장소·시간을 적는다. 스탯 판정 모델의 세트
+    (`ctx.prompt_sets.stat`)로 렌더한다 — 같은 판정 모델 설정을 따르므로 세트 로딩이 늘지 않는다.
+
+    자기 실패를 전부 흡수한다(첫 물결에서 다른 판정과 함께 부르므로 예외가 다른 판정 결과를 지우면 안 된다). 렌더가 비면(배포
+    직후 캐시에 남은, 이 채널이 없는 옛 세트) 부르지 않는다. 판정이 없거나 실패해도 반영은 직전 장면으로 채운다 — 실패 표식은
+    로그·사용량 기록에만 남는다. 엔딩 뒤에도 돈다(미디어 북 칸 판정과 같다). 화면 표시 전용이라 생성 프롬프트와 무관하다."""
+
+    wave = 1
+
+    def __init__(self, *, user_id: uuid.UUID, log: logging.Logger) -> None:
+        self._user_id = user_id
+        self._log = log
+        self._previous: StoryScene | None = None
+        self._prompt: str | None = None
+        self._judged: SceneJudgmentResult | None = None
+
+    def _render(self, ctx: JudgmentContext, previous: StoryScene | None) -> None:
+        self._previous = previous
+        try:
+            prompt = build_scene_judgment_prompt(
+                prompt_set=ctx.prompt_sets.stat[0],
+                sections=ctx.prompt_sets.stat[1],
+                previous_place=previous.place if previous is not None else None,
+                previous_time=previous.time if previous is not None else None,
+                user_message=ctx.user_message,
+                assistant_message=ctx.assistant_message,
+                names=ctx.names,
+            )
+        except PromptRenderError as exc:
+            self._log.warning("%s 장면 판정 프롬프트 렌더 실패 — 이번 턴은 직전 장면을 잇는다: %s", ctx.log_subject, exc)
+            capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+            return
+        self._prompt = prompt or None
+
+    def _usage(self, ctx: JudgmentContext) -> LLMCallContext:
+        raise NotImplementedError
+
+    async def judge(self, llm_client: LLMClient, ctx: JudgmentContext) -> None:
+        if self._prompt is None:
+            return
+        try:
+            self._judged = await llm_client.generate_structured(self._prompt, SceneJudgmentResult, usage=self._usage(ctx))
+        except LLMClientError as exc:
+            self._log.warning("%s 장면 판정 실패 — 이번 턴은 직전 장면을 잇는다: %s", ctx.log_subject, exc)
+            capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+
+    def apply(self, ctx: JudgmentContext, result: TurnJudgmentResult) -> None:
+        result.story_scene = merge_story_scene(self._previous, self._judged)
+
+
+class StorySceneJudgment(_StorySceneJudgmentBase):
+    """방의 장면 헤더 판정(새 턴·수정·재생성 공용). 직전 장면은 판정 입력 히스토리와 시작설정의 첫 장면으로 정한다
+    (`previous_story_scene`). DB 를 읽지 않는다."""
+
+    _CALL_SITE: LLMCallSite = "chat_scene_judgment"
+
+    def __init__(self, room: ChatRoom, setup: StartingSetup, *, log: logging.Logger) -> None:
+        super().__init__(user_id=room.user_id, log=log)
+        self._room_id = room.id
+        self._initial = initial_story_scene(setup.initial_scene_place, setup.initial_scene_time)
+
+    async def prepare(self, ctx: JudgmentContext) -> None:
+        self._render(ctx, previous_story_scene(ctx.history, self._initial))
+
+    def _usage(self, ctx: JudgmentContext) -> LLMCallContext:
+        return LLMCallContext(
+            call_site=self._CALL_SITE, user_id=self._user_id, room_id=self._room_id, usage_sink=ctx.usage_sink
+        )
+
+
+class PreviewStorySceneJudgment(_StorySceneJudgmentBase):
+    """미리보기의 장면 헤더 판정 — 직전 장면은 세션의 지금 장면이다. 미리보기 판정처럼 사용량을 기록하지 않는다."""
+
+    _CALL_SITE: LLMCallSite = "preview_scene_judgment"
+
+    def __init__(self, previous: StoryScene | None, *, user_id: uuid.UUID, log: logging.Logger) -> None:
+        super().__init__(user_id=user_id, log=log)
+        self._session_previous = previous
+
+    async def prepare(self, ctx: JudgmentContext) -> None:
+        self._render(ctx, self._session_previous)
+
+    def _usage(self, ctx: JudgmentContext) -> LLMCallContext:
+        return LLMCallContext(call_site=self._CALL_SITE, user_id=self._user_id, room_id=None)
+
+
 def new_turn_judgments(
-    db: AsyncSession, room: ChatRoom, setup: StartingSetup | None, *, log: logging.Logger
+    db: AsyncSession,
+    room: ChatRoom,
+    setup: StartingSetup | None,
+    *,
+    log: logging.Logger,
+    scene_header_enabled: bool = False,
 ) -> list[TurnJudgment]:
     """새 턴이 할 판정과 그 준비 순서. 스토리는 스탯 → 엔딩 → 칸 순으로 준비하고 스탯·칸을 함께 부른 뒤 엔딩을
-    부른다(함께 부르는 순서도 이 목록 순서다). 캐릭터는 상황 이미지 하나다. 판정은 요청 세션(`db`)으로 방을 읽는다.
-    `log` 는 스탯·엔딩 준비 실패 경고의 로거다."""
+    부른다(함께 부르는 순서도 이 목록 순서다). 작가가 장면 헤더를 켠 스토리면 장면 판정을 칸 판정 뒤에 더해 첫 물결에서
+    함께 부르고, 꺼졌으면 목록에 넣지 않아 호출이 없다. 캐릭터는 상황 이미지 하나다. 판정은 요청 세션(`db`)으로 방을 읽는다.
+    `log` 는 스탯·엔딩·장면 판정 실패 경고의 로거다."""
     if setup is not None:
-        return [
+        judgments: list[TurnJudgment] = [
             StatJudgment(db, room, setup, log=log),
             EndingJudgment(db, room, setup, log=log),
             MediaCellJudgment(db, room),
         ]
+        if scene_header_enabled:
+            judgments.append(StorySceneJudgment(room, setup, log=log))
+        return judgments
     return [SituationalImageJudgment(db, room)]
 
 
@@ -1304,13 +1448,22 @@ def regenerate_judgments(
     replaced_message_id: uuid.UUID,
     *,
     log: logging.Logger,
+    scene_header_enabled: bool = False,
 ) -> list[TurnJudgment]:
     """재생성이 할 판정과 그 준비 순서. 스토리는 스탯 재판정 → 칸 순으로 준비하고 둘을 함께 부른다. 스탯은 바꾸는 응답의 턴
     효과를 되돌린 값에서 다시 판정하되 그럴 수 있는 턴에서만 한다(`RegenerateStatJudgment`). 엔딩 판정은 하지 않는다. 그림
     판정은 다시 한다 — 노출 기록은 첫 노출만 남겨 멱등이라 중복이 생기지 않고, 새 응답 글에 맞는 그림이 붙는다. 스토리 칸
-    판정은 엔딩 뒤에도 한다(새 턴과 같다). 캐릭터는 상황 이미지 하나다. `log` 는 스탯 재판정 준비 실패 경고의 로거다."""
+    판정은 엔딩 뒤에도 한다(새 턴과 같다). 장면 헤더를 켠 스토리면 장면도 다시 판정한다 — 직전 장면은 바꾸는 응답 이전 메시지
+    기준이다(판정 입력 히스토리가 그 앞까지다). 캐릭터는 상황 이미지 하나다. `log` 는 스탯 재판정 준비·장면 판정 실패 경고의
+    로거다."""
     if setup is not None:
-        return [RegenerateStatJudgment(db, room, setup, replaced_message_id, log=log), MediaCellJudgment(db, room)]
+        judgments: list[TurnJudgment] = [
+            RegenerateStatJudgment(db, room, setup, replaced_message_id, log=log),
+            MediaCellJudgment(db, room),
+        ]
+        if scene_header_enabled:
+            judgments.append(StorySceneJudgment(room, setup, log=log))
+        return judgments
     return [SituationalImageJudgment(db, room)]
 
 
@@ -1340,4 +1493,7 @@ def preview_judgments(
             PreviewEndingJudgment(setup, payload, media_images, user_id=user_id),
         ]
     judgments.append(PreviewMediaCellJudgment(payload, media_images, user_id=user_id, log=log))
+    # 장면 헤더를 켠 초안이면 세션의 지금 장면을 이어 장면을 판정한다(실채팅과 같은 차례 — 칸 판정 뒤).
+    if payload.scene_header_enabled:
+        judgments.append(PreviewStorySceneJudgment(state.story_scene, user_id=user_id, log=log))
     return judgments

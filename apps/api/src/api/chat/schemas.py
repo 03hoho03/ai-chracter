@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import ConfigDict, Field, StringConstraints, field_validator
 
@@ -98,6 +98,18 @@ class ChatRoomMemoryResponse(CamelModel):
     limits: ChatRoomMemoryLimits
 
 
+class StoryScene(CamelModel):
+    """장면 헤더의 장면 — 지금 장소와 시간. 모르는 칸은 null 이다. 같은 이름의 미디어 북 장면 축·장면 기억과는 다른 것이다."""
+
+    place: str | None
+    time: str | None
+
+
+def story_scene_of(value: dict[str, Any] | None) -> StoryScene | None:
+    """저장된 장면 칸(`chat_messages.scene`·`chat_previous_responses.scene`)을 응답 모양으로. 비어 있으면 `None`."""
+    return StoryScene.model_validate(value) if value is not None else None
+
+
 class ChatMessageResponse(CamelModel):
     id: uuid.UUID
     role: ChatMessageRole
@@ -115,6 +127,9 @@ class ChatMessageResponse(CamelModel):
     # 싣지 않는다(그쪽은 고정 비율 칸으로 그린다). 크기를 모르는 자산도 None 이다.
     image_width: int | None = None
     image_height: int | None = None
+    # 장면 헤더를 켠 스토리 방의 AI 응답에 저장된 그 턴의 장면(`chat_messages.scene`). 꺼진 작품·켜기 전 메시지·사용자
+    # 메시지·오프닝은 null 이다. 화면은 마지막 AI 응답의 장면을 헤더에 보이고, 아직 AI 턴이 없으면 방 스냅숏의 첫 장면을 보인다.
+    scene: StoryScene | None = None
 
 
 class ChatMessagePageResponse(CamelModel):
@@ -192,6 +207,12 @@ class ChatRoomContentSnapshot(CamelModel):
     # 동일), ChatRoomResponse.startingSetupId(entity_id, 이미 테스트로 고정됨)로는 그 호출을 만들 수
     # 없어 room이 고정한 물리적 StartingSetup 행의 id를 별도로 노출한다.
     pinned_starting_setup_id: uuid.UUID
+    # 작가가 켠 장면 헤더(방이 고정한 버전의 토글)와 시작설정의 첫 장면. 첫 장면은 방에 아직 AI 턴이 없을 때 헤더에 보인다 —
+    # 작가가 장소·시간을 둘 다 비워 두었으면 null 이다.
+    # 기본값을 `default_factory` 로 두는 이유는 `KeywordNoteDraftInput`(content/schemas.py)의 같은 주석과 같다 — OpenAPI 에
+    # `default` 가 찍히면 FE 생성 타입이 이 칸을 필수로 만든다.
+    scene_header_enabled: bool = Field(default_factory=bool)
+    initial_scene: StoryScene | None = None
 
 
 class ChatRoomEnding(CamelModel):
@@ -355,6 +376,9 @@ class PreviewSessionState(CamelModel):
     stats: dict[str, float]
     turn_count: int = 0
     ending_reached: bool = False
+    # 장면 헤더를 켠 초안의 지금 장면 — 시작은 첫 시작설정의 첫 장면이고, 턴마다 장면 판정이 적은 장면으로 바뀐다. 켜지
+    # 않았으면 null 이다. 다음 턴 장면 판정이 이 값을 직전 장면으로 잇는다.
+    story_scene: StoryScene | None = None
 
 
 class PreviewSessionStartResponse(CamelModel):
@@ -388,6 +412,16 @@ class ChatEndingReachedEvent(CamelModel):
     media_tag_images: dict[uuid.UUID, MediaTagImage] = Field(default_factory=dict)
 
 
+class ChatSceneChangeEvent(CamelModel):
+    """장면 헤더를 켠 스토리 방(과 미리보기)의 매 턴 장면 — 바뀌지 않았어도 턴마다 보낸다. `message_id` 는 그 장면이 저장된 AI
+    응답이다(뒤따르는 `done` 의 메시지와 같다)."""
+
+    type: Literal["sceneChange"] = "sceneChange"
+    message_id: uuid.UUID
+    place: str | None
+    time: str | None
+
+
 class ChatPolicyWarningEvent(CamelModel):
     type: Literal["policyWarning"] = "policyWarning"
     message: str
@@ -408,6 +442,7 @@ ChatStreamEvent = Annotated[
     | ChatStatChangeEvent
     | ChatHiddenStatSignalEvent
     | ChatEndingReachedEvent
+    | ChatSceneChangeEvent
     | ChatPolicyWarningEvent
     | ChatDoneEvent
     | ChatErrorEvent,
