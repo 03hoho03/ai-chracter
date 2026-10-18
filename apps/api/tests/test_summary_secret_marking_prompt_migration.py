@@ -38,6 +38,9 @@ def _load(revision: str) -> ModuleType:
 
 
 _M = _load("0aeadefcf159")
+# 그 뒤 story 레인 네 체인에 장면 헤더 판정 채널을 더한 세트를 게시하는 리비전 — story 레인의 head 활성이라 되돌릴 때는
+# 이것부터다. 초안 게시 검사가 head 코드 표를 쓰므로 story 초안은 이것도 거친다.
+_SCENE_JUDGMENT = _load("0346abdbcc92")
 # 이 리비전 직전 여덟 체인의 활성 세트(사실 추출 지시문만 바꾼 리비전 — 그 사이에 프롬프트를 게시한 리비전이 없다).
 _PREVIOUS = _load("e4e407a62d03")
 
@@ -122,7 +125,9 @@ def test_slot_body_is_the_measured_wording_with_one_placeholder() -> None:
 async def test_each_chain_is_active_at_its_seeded_set_with_the_slot_right_after_the_instruction(
     db_session: AsyncSession, lane: PromptLane, model: PromptSetModelId
 ) -> None:
-    assert await _active_id(db_session, lane, model) == _M.NEW_SET_IDS[(lane, model)]
+    # story 레인의 head 활성은 이 세트를 바이트 그대로 옮긴 뒤 리비전(장면 헤더 판정 채널)의 세트다.
+    head = _SCENE_JUDGMENT if lane == "story" else _M
+    assert await _active_id(db_session, lane, model) == head.NEW_SET_IDS[(lane, model)]
     _prompt_set, sections = await load_active_prompt_set(db_session, lane=lane, model=model)
     assert _summary_slots(sections) == _SLOTS_AFTER
     (slot,) = [s for s in sections if (s.channel, s.slot) == ("memory_summary", "secret_marking")]
@@ -133,7 +138,8 @@ async def test_each_chain_is_active_at_its_seeded_set_with_the_slot_right_after_
 @pytest.mark.parametrize("lane", _LANES)
 async def test_the_lane_only_select_picks_the_new_gemini_set(db_session: AsyncSession, lane: PromptLane) -> None:
     """모델 열을 모르는 원시 SQL 이 레인만 보고 최신 게시본을 고를 때도 새 Gemini 세트를 집는다."""
-    assert await _lane_only_active_id(db_session, lane) == _M.NEW_SET_IDS[(lane, "gemini")]
+    head = _SCENE_JUDGMENT if lane == "story" else _M  # story 는 뒤 리비전의 Gemini 세트가 head 다
+    assert await _lane_only_active_id(db_session, lane) == head.NEW_SET_IDS[(lane, "gemini")]
 
 
 @pytest.mark.parametrize(("lane", "model"), _PAIRS, ids=_ids(_PAIRS))
@@ -183,11 +189,13 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
     others = (
         await db_session.scalars(
             sa.select(sa.cast(PromptSet.version, sa.Integer)).where(
-                PromptSet.status == "published", PromptSet.id.not_in(order)
+                PromptSet.status == "published",
+                PromptSet.id.not_in(order),
+                PromptSet.id.not_in(list(_SCENE_JUDGMENT.NEW_SET_IDS.values())),
             )
         )
     ).all()
-    # 테스트 DB에는 이 리비전 뒤에 게시한 세트가 없다.
+    # 테스트 DB에는 이 리비전 뒤에 게시한 세트가 뒤 리비전(장면 헤더 판정 채널)의 것뿐이다.
     assert versions == list(range(max(others) + 1, max(others) + 1 + len(order)))
 
 
@@ -198,8 +206,19 @@ async def test_seeded_sets_pass_publish_validation_and_the_previous_sets_no_long
     """새 세트는 지금 코드의 게시 검증(슬롯 집합·자리표시자 허용 목록)을 통과한다. 이전 세트는 이 슬롯이 없어 "누락"으로
     막힌다 — 코드 표와 시드가 같이 움직였다는 증거다."""
     prompt_set, sections = await load_active_prompt_set(db_session, lane=lane, model=model)
-    assert prompt_set.id == _M.NEW_SET_IDS[(lane, model)]
-    _validate_prompt_draft_for_publish(prompt_set, sections, lane=lane, model=model)
+    # story 레인의 head 활성은 뒤 리비전(장면 헤더 판정 채널)의 세트다 — 이 세트는 그 채널 "누락"으로 막히고, 그 채널만 더한 뒤
+    # 리비전의 세트가 통과한다.
+    if lane == "story":
+        assert prompt_set.id == _SCENE_JUDGMENT.NEW_SET_IDS[(lane, model)]
+        _validate_prompt_draft_for_publish(prompt_set, sections, lane=lane, model=model)
+        prompt_set = await _get_set(db_session, _M.NEW_SET_IDS[(lane, model)])
+        with pytest.raises(HTTPException):
+            _validate_prompt_draft_for_publish(
+                prompt_set, await _sections_of(db_session, _M.NEW_SET_IDS[(lane, model)]), lane=lane, model=model
+            )
+    else:
+        assert prompt_set.id == _M.NEW_SET_IDS[(lane, model)]
+        _validate_prompt_draft_for_publish(prompt_set, sections, lane=lane, model=model)
 
     previous = await _get_set(db_session, _PREVIOUS_SET_IDS[(lane, model)])
     with pytest.raises(HTTPException):
@@ -265,6 +284,8 @@ async def test_downgrade_then_upgrade_swaps_every_chain_back_and_forth(db_sessio
     올리면 같은 리터럴 세트가 활성이 된다."""
     connection = await db_session.connection()
 
+    await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
+
     await connection.run_sync(_M.delete_seeded_rows)
 
     for lane, model in _PAIRS:
@@ -287,6 +308,7 @@ async def test_upgrade_copies_an_instruction_the_admin_edited(db_session: AsyncS
     """운영 story 요약 지시문처럼 어드민이 고쳐 게시한 지시문이 활성이면 멈추지 않고 그 본문을 그대로 옮긴다 — 가정 검사는
     본문이 아니라 슬롯 모양만 본다."""
     connection = await db_session.connection()
+    await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     edited = "운영자가 어드민에서 고쳐 게시한 요약 지시문"
     for model in _MODELS:
@@ -323,6 +345,7 @@ async def test_upgrade_stops_when_the_summary_layout_is_not_the_expected_one(
     """요약 채널이 기대한 슬롯 집합·순서가 아니면(행이 빠짐, 어드민이 순서를 바꿈, 이 슬롯이 이미 있음) 그 레인에는 아무 세트도
     넣지 않은 채 멈춘다."""
     connection = await db_session.connection()
+    await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     target = _PREVIOUS_SET_IDS[("character", "opus")]
     in_summary = (PromptSection.prompt_set_id == target, PromptSection.channel == "memory_summary")
@@ -363,6 +386,7 @@ async def test_upgrade_refuses_to_run_twice(db_session: AsyncSession) -> None:
 
 async def test_upgrade_stops_when_the_lane_only_select_does_not_pick_gemini(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     previous = await _get_set(db_session, _PREVIOUS_SET_IDS[("story", "gemini")])
     assert previous.published_at is not None
@@ -379,11 +403,12 @@ async def test_upgrade_stops_when_the_lane_only_select_does_not_pick_gemini(db_s
 async def test_downgrade_stops_when_the_admin_published_after_the_seed(
     db_session: AsyncSession, lane: PromptLane, model: str
 ) -> None:
+    connection = await db_session.connection()
+    await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
     seeded = await _get_set(db_session, _M.NEW_SET_IDS[(lane, model)])
     assert seeded.published_at is not None
     db_session.add(_set(lane=lane, model=model, published_at=seeded.published_at + timedelta(seconds=1)))
     await db_session.flush()
-    connection = await db_session.connection()
 
     with pytest.raises(RuntimeError, match=f"{lane}/{model}"):
         await connection.run_sync(_M.delete_seeded_rows)
@@ -407,9 +432,16 @@ async def test_patch_drafts_adds_the_slot_in_place_and_the_draft_publishes(
 
     assert await connection.run_sync(_M._patch_drafts) == [(lane, model)]
 
+    # 코드 표는 head 기준이라 story 초안은 뒤 리비전(장면 헤더 판정 채널)의 패치도 거친 뒤 게시 게이트를 태운다.
+    await connection.run_sync(_SCENE_JUDGMENT._patch_drafts)
+
     sections = await _sections_of(db_session, draft_id)
-    assert _keyed(sections) == _expected_after(before)
+    assert {key: value for key, value in _keyed(sections).items() if key[0] != "scene_judgment"} == _expected_after(
+        before
+    )
     _validate_prompt_draft_for_publish(await _get_set(db_session, draft_id), sections, lane=lane, model=model)
+
+    await connection.run_sync(_SCENE_JUDGMENT._delete_draft_rows)
 
     assert await connection.run_sync(_M._delete_draft_rows) == [(lane, model)]
     assert _keyed(await _sections_of(db_session, draft_id)) == before
@@ -429,4 +461,5 @@ async def test_patch_drafts_leaves_a_draft_with_another_summary_layout(db_sessio
     connection = await db_session.connection()
 
     assert await connection.run_sync(_M._patch_drafts) == []
+
     assert _keyed(await _sections_of(db_session, draft_id)) == before

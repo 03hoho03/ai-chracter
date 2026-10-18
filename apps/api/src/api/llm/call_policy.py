@@ -31,10 +31,15 @@ LLMCallSite = Literal[
     # 요약 접기가 접은 구간을 관계·사실 기억으로 뽑는 백그라운드 추출(`chat/memory_facts.py`). 장면 추출과 같은 이유로 클로버를
     # 깎지 않고 레이트리밋에도 세지 않는다.
     "chat_memory_fact",
+    # 스토리 장면 헤더 판정 — 매 턴 응답 직후 지금 장면의 장소·시간을 짧은 글로 적는다(새 턴·수정·재생성 공용). 화면 표시
+    # 전용 부수 호출이라 클로버를 깎지 않고 레이트리밋에도 세지 않는다.
+    "chat_scene_judgment",
     "preview_generate",
     "preview_stat_judgment",
     "preview_ending_judgment",
     "preview_media_book_image",
+    # 빌더 미리보기의 장면 헤더 판정.
+    "preview_scene_judgment",
     "publish_filter_character",
     "publish_filter_story",
     "seed_story_generate",
@@ -102,6 +107,11 @@ class CallPolicy:
     # 이 호출 위치의 구현 배정. None 이면 모델의 기본 구현이다. env `LLM_CALL_SITE_BACKENDS` 의 배정이 이 값보다 앞서고,
     # 어느 배정이든 그 구현이 그 모델을 서비스할 때만 따른다(`llm/backends.py` 의 `pick_backend`).
     backend: BackendId | None = None
+    # 구현 배정을 물려받을 다른 호출 위치. 그 호출 위치의 env 배정(없으면 정책 표의 `backend`)을 이 호출의 배정으로 쓴다 —
+    # 이 호출 위치 자신의 env 배정이 있으면 그것이 앞선다. 장면 헤더 판정이 스탯 판정과 같은 구현으로 가게 하려고 둔다:
+    # 운영 env 는 스탯 판정 호출 위치만 배정하므로, 물려받지 않으면 장면 판정은 모델의 기본 구현으로 가 그 자격을 따로
+    # 요구한다. 모델은 이것이 아니라 `model_setting` 이 정한다.
+    backend_from: LLMCallSite | None = None
     # 사용자가 고른 모델(상위 모델이면 Bedrock)을 따르는 호출인가. 아니면 상위 모델이 실려 와도 경고 후 Gemini 로 간다.
     model_selectable: bool = False
     # 판정 종류. 판정 모델이 Gemini 일 때 실제 Gemini 모델을 `gemini_<종류>_judgment_model_name` 스위치로 고르고, 어드민
@@ -177,6 +187,15 @@ CALL_POLICIES: dict[LLMCallSite, CallPolicy] = {
     "chat_memory_fact": CallPolicy(
         gemini_timeout="gemini_memory_summary_timeout_ms", call_kind="structured", model_setting="memory_fact_model"
     ),
+    # 장면 헤더 판정은 스탯 판정과 같은 판정 모델·타임아웃·판정 종류를 쓰고, 구현 배정도 스탯 판정 호출 위치의 것을 물려받는다.
+    # 판정 종류가 스탯이라 Gemini 일 때 스탯 판정의 실제 모델로 가고 어드민 판정 비율에도 든다.
+    "chat_scene_judgment": CallPolicy(
+        gemini_timeout="gemini_judgment_timeout_ms",
+        call_kind="structured",
+        judgment_kind="stat",
+        model_setting="stat_judgment_model",
+        backend_from="chat_stat_judgment",
+    ),
     "preview_generate": CallPolicy(gemini_timeout="gemini_generate_timeout_ms", call_kind="stream"),
     "preview_stat_judgment": CallPolicy(
         gemini_timeout="gemini_judgment_timeout_ms",
@@ -195,6 +214,13 @@ CALL_POLICIES: dict[LLMCallSite, CallPolicy] = {
         call_kind="structured",
         judgment_kind="image",
         model_setting="image_judgment_model",
+    ),
+    "preview_scene_judgment": CallPolicy(
+        gemini_timeout="gemini_judgment_timeout_ms",
+        call_kind="structured",
+        judgment_kind="stat",
+        model_setting="stat_judgment_model",
+        backend_from="preview_stat_judgment",
     ),
     "publish_filter_character": CallPolicy(
         gemini_timeout="gemini_publish_filter_timeout_ms", call_kind="structured_images", publish_filter=True

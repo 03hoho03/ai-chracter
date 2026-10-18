@@ -116,6 +116,10 @@ class ChatMessage(Base):
     # entity_id 다. assistant 메시지에만 채워진다. FK 없음 — entity_id는 버전 간 복제돼 유니크가
     # 아니고, 방 종류에 따라 가리키는 테이블도 달라 형제 컬럼과 같은 다형 참조 관례를 따른다.
     image_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    # 장면 헤더를 켠 스토리 방의 AI 응답에만 채우는 그 턴의 장면 `{"place": str|null, "time": str|null}` — 판정이 적은 값에
+    # 언급이 없던 칸은 직전 장면을 이어받아 채운다. 장면 헤더가 꺼진 작품·켜기 전 메시지·사용자 메시지·오프닝은 null 이다.
+    # 화면 표시 전용이라 생성 프롬프트에 싣지 않는다.
+    scene: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     # 턴마다의 히스토리 로드·방 조회·방 목록의 마지막 메시지가 전부 "한 방의 메시지를 `(created_at, id)` 순으로"
     # 찾는다. 없으면 그 조회마다 플랫폼 전체 메시지를 순차 스캔한다(FK 는 Postgres 에서 인덱스를 만들지 않는다).
@@ -694,6 +698,8 @@ class ChatPreviousResponse(Base):
     message_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     image_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    # 밀려난 응답의 장면(메시지의 `scene` 과 같은 꼴). 맞바꾸기가 본문·그림과 함께 옮긴다.
+    scene: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

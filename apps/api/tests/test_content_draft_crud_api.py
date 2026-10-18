@@ -4165,3 +4165,93 @@ async def test_get_character_draft_signs_situational_images_without_a_query_per_
     many, _, _ = await _character_draft_with_situational_images(db_client, db_session, imaged=4, bare=0)
     large = await _get_count(many)
     assert large == small
+
+
+# ── 장면 헤더 토글·첫 장면 ──────────────────────────────────────────────────────────────────────
+
+
+async def _saved_scene_header(db_session: AsyncSession, version_id: uuid.UUID) -> tuple[object, ...]:
+    detail = await db_session.get(StoryVersionDetail, version_id, populate_existing=True)
+    assert detail is not None
+    setups = (
+        await db_session.scalars(
+            sa.select(StartingSetup)
+            .where(StartingSetup.content_version_id == version_id)
+            .order_by(StartingSetup.order)
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    return (detail.scene_header_enabled, [(s.initial_scene_place, s.initial_scene_time) for s in setups])
+
+
+def _response_scene_header(body: dict[str, Any]) -> tuple[object, ...]:
+    return (
+        body["sceneHeaderEnabled"],
+        [(s["initialScenePlace"], s["initialSceneTime"]) for s in body["startingSetups"]],
+    )
+
+
+async def test_patch_story_draft_round_trips_the_scene_header_and_keeps_it_when_keys_omitted(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """장면 헤더 토글과 시작설정의 첫 장면(장소·시간)은 저장·초안 응답에서 왕복하고, 첫 장면은 앞뒤 공백을 떼며 공백뿐이면
+    없음이다. 이 키들을 모르는 옛 빌더 번들의 자동저장은 키를 보내지 않는데, 그 저장이 작가가 켠 토글을 끄거나 첫 장면을 지우면
+    안 되므로 키가 없으면 값을 그대로 둔다. 키 없이 들어온 새 시작설정은 첫 장면 없이 생긴다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    setup = _starting_setup_item(initialScenePlace="  학교 옥상  ", initialSceneTime="방과 후")
+
+    created = await db_client.patch(
+        f"/contents/{content.id}/draft", json=_story_draft_payload(sceneHeaderEnabled=True, startingSetups=[setup])
+    )
+
+    assert created.status_code == 200
+    expected = (True, [("학교 옥상", "방과 후")])
+    assert await _saved_scene_header(db_session, version.id) == expected
+    assert _response_scene_header(created.json()) == expected
+    assert _response_scene_header((await db_client.get(f"/contents/{content.id}/draft")).json()) == expected
+
+    old_bundle_setup = {k: v for k, v in setup.items() if k not in {"initialScenePlace", "initialSceneTime"}}
+    omitted = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(startingSetups=[old_bundle_setup, _starting_setup_item(name="새 시작설정")]),
+    )
+
+    assert omitted.status_code == 200
+    assert await _saved_scene_header(db_session, version.id) == (True, [("학교 옥상", "방과 후"), (None, None)])
+
+    cleared = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            sceneHeaderEnabled=False, startingSetups=[{**setup, "initialScenePlace": "   ", "initialSceneTime": None}]
+        ),
+    )
+
+    assert cleared.status_code == 200
+    assert await _saved_scene_header(db_session, version.id) == (False, [(None, None)])
+
+
+@pytest.mark.parametrize("key", ["initialScenePlace", "initialSceneTime"])
+@pytest.mark.parametrize(
+    ("value", "accepted"),
+    [
+        pytest.param("가" * 24, True, id="twenty-four"),
+        pytest.param("  " + "가" * 24 + "  ", True, id="twenty-four-padded"),
+        pytest.param("가" * 25, False, id="twenty-five"),
+    ],
+)
+async def test_patch_story_draft_limits_the_initial_scene_length(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, key: str, value: str, accepted: bool
+) -> None:
+    """첫 장면의 장소·시간은 앞뒤 공백을 뗀 뒤 24자까지 받는다(판정이 적는 장면과 같은 상한). 넘으면 422 로 막고 아무것도
+    저장하지 않는다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(startingSetups=[_starting_setup_item(**{key: value})]),
+    )
+
+    assert resp.status_code == (200 if accepted else 422)
+    _enabled, scenes = await _saved_scene_header(db_session, version.id)
+    expected = [("가" * 24, None) if key == "initialScenePlace" else (None, "가" * 24)] if accepted else []
+    assert scenes == expected

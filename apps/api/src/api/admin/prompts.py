@@ -37,6 +37,7 @@ from api.chat.prompt_builder import (
     build_memory_episode_prompt,
     build_memory_fact_prompt,
     build_memory_summary_prompt,
+    build_scene_judgment_prompt,
     build_stat_rule_judgment_prompt,
     build_story_generation_prompt,
     format_user_persona,
@@ -133,7 +134,8 @@ _NOVEL_LANE_ROWS: dict[str, frozenset[tuple[str, str, str]]] = {
 # character 에 16행씩 더한 58/38/4행, 스탯 규칙 판정 채널 리비전 `d9768bc0cfee`가 story 에 4행을 더한 62/38/4행, 여기에
 # 장면 기억 문안 리비전 `fc6f0e134782`가 두 레인에 회상 슬롯 `memory_recall` 1행과 추출 채널 `memory_episode` 4행을 더한
 # 67/43/4행, 관계·사실 기억 문안 리비전 `5cab2abe4e7b`가 두 레인에 사실 슬롯 `memory_facts` 1행과 추출 채널 `memory_fact` 4행을
-# 더한 72/48/4행, 요약 비밀 표기 리비전 `0aeadefcf159`가 두 레인 요약 채널에 `secret_marking` 1행을 더한 73/49/4행과 정확히 같다. 소설 프롬프트 레인 리비전이 만든 `novel` 레인은 경계 제안 4·화 생성
+# 더한 72/48/4행, 요약 비밀 표기 리비전 `0aeadefcf159`가 두 레인 요약 채널에 `secret_marking` 1행을 더한 73/49/4행, 장면 헤더 판정
+# 문안 리비전이 story 에 판정 채널 `scene_judgment` 3행을 더한 76/49/4행과 정확히 같다. 소설 프롬프트 레인 리비전이 만든 `novel` 레인은 경계 제안 4·화 생성
 # 9·문단 수정 6 의 19행이다(story·character 의 소설화 16행은 그대로 얼려 둔다).
 # `tests/test_prompt_seed.py`의 `_EXPECTED_SLOTS_BY_LANE`이 "시드가 이 표와 일치하는가"를 보는
 # 반면, 이 상수는 "임의의 초안이 이 표와 일치하는가"(게시 검증)를 본다 — 검증 대상이
@@ -207,6 +209,14 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
                 ("story", "user_name", ""),
                 ("story", "turn_context", ""),
                 ("story", "judgment_instruction", ""),
+            }
+        ),
+        # 장면 헤더 판정 문안 리비전이 DB에 넣는 행과 같이 간다(위 user_persona와 같은 이유).
+        "scene_judgment": frozenset(
+            {
+                ("story", "instruction", ""),
+                ("story", "previous_scene", ""),
+                ("story", "turn_context", ""),
             }
         ),
         "ending_judgment": frozenset(
@@ -345,11 +355,19 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str]]]]
     for lane, by_channel in _EXPECTED_ROWS_BY_LANE.items()
 }
 
-# 채팅 레인의 판정(스탯 규칙·엔딩·그림)·기억 요약·장면 기억 추출·관계·사실 기억 추출 호출이 읽는 채널. 옛 `stat_judgment` 은 읽는 코드가 없어
+# 채팅 레인의 판정(스탯 규칙·장면 헤더·엔딩·그림)·기억 요약·장면 기억 추출·관계·사실 기억 추출 호출이 읽는 채널. 옛 `stat_judgment` 은 읽는 코드가 없어
 # Gemini 체인에만 남아 있다. 판정·요약 문안 체인이 있는 레인은 story·character 뿐이다.
 _JUDGMENT_CHANNELS_BY_LANE: dict[PromptLane, frozenset[str]] = {
     "story": frozenset(
-        {"stat_rule_judgment", "ending_judgment", "image_judgment", "memory_summary", "memory_episode", "memory_fact"}
+        {
+            "stat_rule_judgment",
+            "scene_judgment",
+            "ending_judgment",
+            "image_judgment",
+            "memory_summary",
+            "memory_episode",
+            "memory_fact",
+        }
     ),
     "character": frozenset({"image_judgment", "memory_summary", "memory_episode", "memory_fact"}),
     "publish_filter": frozenset(),
@@ -1469,6 +1487,22 @@ def _story_preview_items(
         )
         items.append(
             AdminPromptPreviewItem(channel="stat_rule_judgment", label="stat_rule_judgment", text=rule_judgment_text)
+        )
+    if "scene_judgment" in channels:
+        items.append(
+            AdminPromptPreviewItem(
+                channel="scene_judgment",
+                label="scene_judgment",
+                text=build_scene_judgment_prompt(
+                    prompt_set=prompt_set,
+                    sections=sections,
+                    previous_place="[샘플] 직전 장소",
+                    previous_time="[샘플] 직전 시간",
+                    user_message="[샘플] 사용자 메시지",
+                    assistant_message="[샘플] 진행자 응답",
+                    names=_SAMPLE_STORY_NAMES,
+                ),
+            )
         )
     if "ending_judgment" in channels:
         items.append(

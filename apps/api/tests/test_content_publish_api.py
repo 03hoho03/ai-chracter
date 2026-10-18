@@ -4064,3 +4064,71 @@ async def test_publish_still_succeeds_when_only_text_changes_while_it_is_being_s
         sa.select(CharacterVersionDetail.one_liner).where(CharacterVersionDetail.content_version_id == version.id)
     )
     assert published_one_liner == "바뀐 한 줄 소개"
+
+
+async def test_publish_and_reset_copy_the_scene_header_toggle_and_initial_scene(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """장면 헤더 토글은 버전 상세 행에 있어 발행(새 초안 상세를 만든다)과 편집 취소(초안 상세에 칸을 대입한다)가 손으로
+    옮기고, 시작설정의 첫 장면은 버전 복제가 옮긴다. 하나를 빠뜨리면 발행 직후 새 초안·편집 취소한 초안에서 그 값이 조용히
+    꺼진 값·없음으로 돌아가 다음 발행에서 작가가 켠 헤더가 사라진다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, _, setup, _, _ = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    detail = await db_session.get(StoryVersionDetail, version.id)
+    assert detail is not None
+    detail.scene_header_enabled = True
+    setup.initial_scene_place = "버려진 등대"
+    setup.initial_scene_time = "새벽"
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        publish_resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+    assert publish_resp.status_code == 200
+    content_id = content.id
+
+    async def _draft_scene_header() -> tuple[object, ...]:
+        draft_version_id = await db_session.scalar(
+            sa.select(ContentVersion.id).where(
+                ContentVersion.content_id == content_id, ContentVersion.published_at.is_(None)
+            )
+        )
+        assert draft_version_id is not None
+        draft_detail = await db_session.get(StoryVersionDetail, draft_version_id, populate_existing=True)
+        draft_setup = await db_session.scalar(
+            sa.select(StartingSetup)
+            .where(StartingSetup.content_version_id == draft_version_id)
+            .execution_options(populate_existing=True)
+        )
+        assert draft_detail is not None and draft_setup is not None
+        return (draft_detail.scene_header_enabled, draft_setup.initial_scene_place, draft_setup.initial_scene_time)
+
+    assert await _draft_scene_header() == (True, "버려진 등대", "새벽")
+
+    draft_version_id = await db_session.scalar(
+        sa.select(ContentVersion.id).where(ContentVersion.content_id == content_id, ContentVersion.published_at.is_(None))
+    )
+    await db_session.execute(
+        sa.update(StoryVersionDetail)
+        .where(StoryVersionDetail.content_version_id == draft_version_id)
+        .values(scene_header_enabled=False)
+    )
+    await db_session.execute(
+        sa.update(StartingSetup)
+        .where(StartingSetup.content_version_id == draft_version_id)
+        .values(initial_scene_place=None, initial_scene_time="밤")
+    )
+    await db_session.commit()
+    assert await _draft_scene_header() == (False, None, "밤")
+
+    reset_resp = await db_client.post(f"/contents/{content_id}/draft/reset")
+    assert reset_resp.status_code == 204
+    assert await _draft_scene_header() == (True, "버려진 등대", "새벽")

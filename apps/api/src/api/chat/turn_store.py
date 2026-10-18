@@ -91,7 +91,7 @@ def _write_room_stat(
 async def _keep_replaced_response(
     db: AsyncSession, room_id: uuid.UUID, replaced: Row[Any], *, replaced_by_message_id: uuid.UUID
 ) -> None:
-    """재생성이 지운 옛 응답(`replaced` — id·시각·본문·그림)을 방의 보관 행에 적는다. 방당 한 행이라 이미 있으면 덮는다 — 늘 바로
+    """재생성이 지운 옛 응답(`replaced` — id·시각·본문·그림·장면)을 방의 보관 행에 적는다. 방당 한 행이라 이미 있으면 덮는다 — 늘 바로
     직전 응답 하나만 남는다. 되돌리기는 `chat/previous_response.py` 에 있다."""
     statement = pg_insert(ChatPreviousResponse).values(
         chat_room_id=room_id,
@@ -100,6 +100,7 @@ async def _keep_replaced_response(
         message_created_at=replaced.created_at,
         content=replaced.content,
         image_id=replaced.image_id,
+        scene=replaced.scene,
     )
     await db.execute(
         statement.on_conflict_do_update(
@@ -110,6 +111,7 @@ async def _keep_replaced_response(
                 "message_created_at": statement.excluded.message_created_at,
                 "content": statement.excluded.content,
                 "image_id": statement.excluded.image_id,
+                "scene": statement.excluded.scene,
                 "created_at": func.now(),
             },
         )
@@ -293,9 +295,11 @@ class RoomTurnStore:
             else None
         )
 
+        # 장면 헤더를 켠 작품이면 이번 턴 장면을 응답 메시지에 함께 쓴다(꺼졌으면 null).
+        scene = result.story_scene.model_dump() if result.story_scene is not None else None
         if self._replaced_message_id is None:
             assistant_message = ChatMessage(
-                chat_room_id=room.id, role=ChatMessageRole.ASSISTANT, content=turn.assistant_content
+                chat_room_id=room.id, role=ChatMessageRole.ASSISTANT, content=turn.assistant_content, scene=scene
             )
             db.add(assistant_message)
             await db.flush()
@@ -310,7 +314,9 @@ class RoomTurnStore:
                 await db.execute(
                     delete(ChatMessage)
                     .where(ChatMessage.id == self._replaced_message_id)
-                    .returning(ChatMessage.id, ChatMessage.created_at, ChatMessage.content, ChatMessage.image_id)
+                    .returning(
+                        ChatMessage.id, ChatMessage.created_at, ChatMessage.content, ChatMessage.image_id, ChatMessage.scene
+                    )
                 )
             ).one_or_none()
             # 지운 옛 응답을 되돌리기용으로 옮겨 적는다 — 옛 응답 DELETE 와 같은 트랜잭션이라, 이 쓰기 구간에 오지 못한 재생성
@@ -326,6 +332,7 @@ class RoomTurnStore:
                 chat_room_id=room.id,
                 role=ChatMessageRole.ASSISTANT,
                 content=turn.assistant_content,
+                scene=scene,
             )
             db.add(assistant_message)
             # 여기부터 아래 커밋이 돌아올 때까지 끊기면 응답이 저장됐는지 알 수 없다(위 append 의 같은 자리). 턴 수는
@@ -529,6 +536,7 @@ class PreviewTurnStore:
             role=ChatMessageRole.ASSISTANT,
             content=turn.assistant_content,
             created_at=turn.generated_at,
+            scene=result.story_scene.model_dump() if result.story_scene is not None else None,
         )
         judged_cell_id = result.judged_cell_id
         judged_cell_image = self._media_images.get(judged_cell_id) if judged_cell_id is not None else None
@@ -538,6 +546,9 @@ class PreviewTurnStore:
         self._state.stats.update(result.stat_writes)
         if result.ending_reached_event is not None:
             self._state.ending_reached = True
+        # 장면 헤더를 켠 초안이면 다음 턴 장면 판정이 이을 지금 장면을 바꾼다.
+        if result.story_scene is not None:
+            self._state.story_scene = result.story_scene
         return TurnWrite(message=message, matched_image=None, judged_cell_id=judged_cell_id)
 
     async def present(self, turn: TurnResult, written: TurnWrite) -> TurnPresentation:

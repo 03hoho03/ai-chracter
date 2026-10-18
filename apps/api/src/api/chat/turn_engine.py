@@ -32,8 +32,10 @@ from api.chat.schemas import (
     ChatErrorEvent,
     ChatMessageResponse,
     ChatPolicyWarningEvent,
+    ChatSceneChangeEvent,
     ChatStreamEvent,
     ChatTokenEvent,
+    story_scene_of,
 )
 from api.chat.turn_judgments import (
     JudgmentContext,
@@ -313,7 +315,7 @@ def _turn_message_response(
 ) -> ChatMessageResponse:
     """턴(새 턴·재생성)의 `done.finalMessage`. 스토리 칸은 원본 비율로 그리게 너비·높이를 싣고, 캐릭터 상황별
     이미지는 싣지 않는다(지금의 고정 비율 칸 그대로). 칸 그림을 서명하지 못했으면 이미지 없이 보낸다 —
-    상황별 이미지 URL 조립 실패와 같은 규칙이다."""
+    상황별 이미지 URL 조립 실패와 같은 규칙이다. 장면은 메시지에 저장된 그대로다(장면 헤더가 꺼졌으면 null)."""
     if judged_cell_id is not None and judged_cell_image is not None:
         return ChatMessageResponse(
             id=message.id,
@@ -324,6 +326,7 @@ def _turn_message_response(
             image_url=judged_cell_image.url,
             image_width=judged_cell_image.width,
             image_height=judged_cell_image.height,
+            scene=story_scene_of(message.scene),
         )
     return ChatMessageResponse(
         id=message.id,
@@ -332,6 +335,7 @@ def _turn_message_response(
         created_at=message.created_at,
         image_id=matched_image.entity_id if matched_image is not None else None,
         image_url=matched_image_url,
+        scene=story_scene_of(message.scene),
     )
 
 
@@ -618,6 +622,12 @@ async def run_turn(
 
     if shown.ending_reached_event is not None:
         yield shown.ending_reached_event
+
+    # 장면 헤더를 켠 작품은 매 턴(바뀌지 않았어도) 저장한 장면을 그 메시지 id 와 함께 보낸다. 꺼진 작품은 판정이 없어 보내지 않는다.
+    if result.story_scene is not None:
+        yield ChatSceneChangeEvent(
+            message_id=written.message.id, place=result.story_scene.place, time=result.story_scene.time
+        )
 
     # 미리보기는 `done` 을 내보내는 순간 응답이 확정된다 — 이 앞의 이벤트에서 끊기면 환급하고, `done` 에 멈춘 뒤 끊기면
     # 소모다. 방은 쓰기 구간의 커밋에서 이미 세웠으니(그 뒤 이벤트에서 끊겨도 환급하지 않는다) 다시 세워도 같다. 미리보기는 DB 에 남기는 것이 없어 여기서 처음 선다 — 쓰기

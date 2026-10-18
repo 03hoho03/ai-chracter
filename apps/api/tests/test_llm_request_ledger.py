@@ -41,13 +41,14 @@ from api.chat.prompt_builder import (
     MemoryFactItem,
     MemoryFactResult,
     MemorySummaryResult,
+    SceneJudgmentResult,
     StatRuleJudgmentResult,
 )
 from api.chat.prompt_set_cache import ACTIVE_PROMPT_SET_KEY_PREFIX
 from api.core.config import settings
 from api.core.redis import redis_client
 from api.db.models import AssetStatus, ChatMessage, ChatMessageRole, ChatRoom, PromptSection, PromptSet
-from api.db.models.story import Shortcut
+from api.db.models.story import Shortcut, StoryVersionDetail
 from api.llm.client import LLMCallContext, LLMCallSite, LLMClient, SegmentedPrompt
 from api.llm.routing import RoutingLLMClient
 from factories import (
@@ -134,6 +135,8 @@ class _LedgerLLM(LLMClient):
             return ImageMatchJudgmentResult(matched_image_entity_id=self._match_id)
         if response_schema is MemorySummaryResult:
             return MemorySummaryResult(summary="요약")
+        if response_schema is SceneJudgmentResult:
+            return SceneJudgmentResult(place="마을 어귀", time=None)
         if response_schema is MemoryEpisodeResult:
             return MemoryEpisodeResult(
                 episodes=[
@@ -283,7 +286,7 @@ async def _regenerate_character(db_client: httpx.AsyncClient, db_session: AsyncS
 
 
 async def _start_preview(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, *, story: bool
+    db_client: httpx.AsyncClient, db_session: AsyncSession, *, story: bool, scene_header: bool = False
 ) -> tuple[str, str | None]:
     user = _make_user()
     db_session.add(user)
@@ -295,6 +298,8 @@ async def _start_preview(
     if story:
         cell, payload = _preview_story_payload(asset.id)
         cell_id = str(cell)
+        if scene_header:
+            payload["sceneHeaderEnabled"] = True
     else:
         payload = _preview_character_payload()
     started = await db_client.post("/preview-sessions", json=payload)
@@ -363,6 +368,29 @@ async def _send_story_with_facts(
     return _Case("POST", f"/chat-rooms/{room_id}/messages", {"content": "마을을 떠나자"}, cell_id)
 
 
+async def _send_story_with_scene_header(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, _: pytest.MonkeyPatch
+) -> _Case:
+    """장면 헤더를 켠 스토리 방의 보내기 — 첫 물결에 장면 판정이 더해진다. 나머지 스토리 경우는 토글이 꺼진 기본값이라 이
+    호출이 없고, 그 경우들의 장부는 장면 헤더가 생기기 전과 같다."""
+    room_id, cell_id, _last_user = await _story_room(db_client, db_session)
+    version_id = await db_session.scalar(sa.select(ChatRoom.content_version_id).where(ChatRoom.id == room_id))
+    await db_session.execute(
+        sa.update(StoryVersionDetail)
+        .where(StoryVersionDetail.content_version_id == version_id)
+        .values(scene_header_enabled=True)
+    )
+    await db_session.commit()
+    return _Case("POST", f"/chat-rooms/{room_id}/messages", {"content": "마을을 떠나자"}, cell_id)
+
+
+async def _preview_story_with_scene_header(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, _: pytest.MonkeyPatch
+) -> _Case:
+    session_id, cell_id = await _start_preview(db_client, db_session, story=True, scene_header=True)
+    return _Case("POST", f"/preview-sessions/{session_id}/messages", {"content": "행복해지자"}, cell_id)
+
+
 _CASES: dict[str, _Builder] = {
     "send-story": _send_story,
     "edit-story": _edit_story,
@@ -376,6 +404,8 @@ _CASES: dict[str, _Builder] = {
     "send-story-opus": _send_story_opus,
     "send-story-episodes": _send_story_with_episodes,
     "send-story-facts": _send_story_with_facts,
+    "send-story-scene": _send_story_with_scene_header,
+    "preview-story-scene": _preview_story_with_scene_header,
 }
 
 # 경우마다 장부가 지나야 하는 호출 위치 — 이 경로를 지나지 않으면 그 판정 프롬프트는 아무도 지문을 뜨지 않는다. 접기가
@@ -407,6 +437,14 @@ _REQUIRED_CALL_SITES: dict[str, set[str]] = {
     "send-story-opus": _STORY_TURN_SITES,
     "send-story-episodes": _STORY_TURN_SITES | {"chat_memory_episode"},
     "send-story-facts": _STORY_TURN_SITES | {"chat_memory_fact"},
+    "send-story-scene": _STORY_TURN_SITES | {"chat_scene_judgment"},
+    "preview-story-scene": {
+        "preview_generate",
+        "preview_stat_judgment",
+        "preview_media_book_image",
+        "preview_scene_judgment",
+        "preview_ending_judgment",
+    },
 }
 
 

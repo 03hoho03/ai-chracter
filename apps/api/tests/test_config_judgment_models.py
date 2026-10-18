@@ -14,7 +14,7 @@ from pydantic import ValidationError
 from api.core.config import Settings
 from api.llm import backends
 from api.llm.backends import PromptSetModelId
-from api.llm.call_policy import CALL_POLICIES
+from api.llm.call_policy import CALL_POLICIES, LLMCallSite
 from factories import PRODUCTION_ENV_NAMES, PRODUCTION_ENV_TYPED_VALUES, load_production_env
 
 _MODEL_KEYS = (
@@ -244,7 +244,11 @@ def test_the_production_env_judges_and_summarizes_with_haiku_through_anthropic(
         ), call_site
 
 
-_JUDGED_CALL_SITES = [cs for cs, policy in CALL_POLICIES.items() if policy.model_setting is not None]
+# 배정을 다른 호출 위치에서 물려받는 호출(장면 헤더 판정)은 운영 배정에 자기 줄이 없어 아래 "한 줄 빠짐" 경우가 성립하지 않는다 —
+# 물려받는 쪽의 경우는 그 원래 호출 위치의 줄이 빠지는 경우가 덮는다.
+_JUDGED_CALL_SITES = [
+    cs for cs, policy in CALL_POLICIES.items() if policy.model_setting is not None and policy.backend_from is None
+]
 
 
 def _production_assignment_without(call_site: str) -> str:
@@ -273,3 +277,53 @@ def test_production_env_missing_one_judgment_model_line_refuses_to_start(
 
 def test_judgment_model_values_are_the_prompt_chain_ids() -> None:
     assert set(get_args(PromptSetModelId)) == {"gemini", "sonnet", "opus", "haiku"}
+
+
+# ── 장면 헤더 판정의 배정 물려받기 ──────────────────────────────────────────────────────────────
+
+_SCENE_SOURCES: dict[LLMCallSite, LLMCallSite] = {
+    "chat_scene_judgment": "chat_stat_judgment",
+    "preview_scene_judgment": "preview_stat_judgment",
+}
+
+
+def _resolved(loaded: Settings, call_site: LLMCallSite) -> tuple[str, str]:
+    model = backends.call_site_model(call_site, lambda name: str(getattr(loaded, name)))
+    return backends.pick_backend(call_site, model, loaded.llm_call_site_backends, call_model=model)
+
+
+def test_scene_judgment_follows_each_stat_judgment_assignment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """장면 판정은 자기 배정 줄이 없어도 짝인 스탯 판정 호출 위치의 배정으로 간다 — 채팅·미리보기를 서로 다르게 배정하면 각자
+    자기 짝을 따른다."""
+    loaded = _load(
+        monkeypatch,
+        STAT_JUDGMENT_MODEL="haiku",
+        **{_ASSIGN: "chat_stat_judgment:anthropic", _ANTHROPIC_KEY: "sk-ant-test"},
+        **_BEDROCK_CREDENTIALS,
+    )
+
+    assert _resolved(loaded, "chat_scene_judgment") == ("haiku", "anthropic")
+    assert _resolved(loaded, "preview_scene_judgment") == ("haiku", "bedrock")
+    for scene, source in _SCENE_SOURCES.items():
+        assert _resolved(loaded, scene) == _resolved(loaded, source)
+
+
+def test_scene_judgment_starts_on_a_bedrock_only_setup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """배정 없이 Bedrock 자격만 둔 구성에서도 뜨고, 장면 판정은 스탯 판정처럼 haiku 의 기본 구현(Bedrock)으로 간다 — 직결 키를
+    따로 요구하지 않는다."""
+    loaded = _load(monkeypatch, STAT_JUDGMENT_MODEL="haiku", **_BEDROCK_CREDENTIALS)
+
+    for scene, source in _SCENE_SOURCES.items():
+        assert _resolved(loaded, scene) == _resolved(loaded, source) == ("haiku", "bedrock")
+
+
+def test_scene_judgment_needs_the_credentials_of_the_backend_it_inherits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """기동 검증은 장면 판정이 물려받아 실제로 갈 구현의 자격을 본다 — 스탯 판정을 직결로 옮기고 키를 비우면 장면 판정 줄도
+    같은 이유로 걸린다."""
+    with pytest.raises(ValidationError, match="chat_scene_judgment — 가는 구현 anthropic"):
+        _load(
+            monkeypatch,
+            STAT_JUDGMENT_MODEL="haiku",
+            **{_ASSIGN: "chat_stat_judgment:anthropic,preview_stat_judgment:anthropic"},
+        )
+

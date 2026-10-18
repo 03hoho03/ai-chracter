@@ -59,6 +59,7 @@ from api.chat.turn_store import (
 )
 from api.chat.turn_judgments import (
     _llm_dependency_tag,
+    initial_story_scene,
     new_turn_judgments,
     preview_judgments,
     regenerate_judgments,
@@ -71,6 +72,7 @@ from api.chat.schemas import (
     ChatMessageEditRequest,
     ChatMessagePageResponse,
     ChatMessageResponse,
+    story_scene_of,
     ChatModelItem,
     ChatRoomContentSnapshot,
     ChatRoomCreateRequest,
@@ -446,6 +448,19 @@ async def _require_starting_setup(db: AsyncSession, room: ChatRoom) -> StartingS
     return setup
 
 
+async def _scene_header_enabled(db: AsyncSession, room: ChatRoom, setup: StartingSetup | None) -> bool:
+    """방이 고정한 버전에서 작가가 장면 헤더를 켰는가. 캐릭터 방은 장면 헤더가 없다. 턴 골격이 판정 LLM 앞에서 요청 세션을
+    반납하므로 생성 전에 읽어도 트랜잭션을 쥐고 기다리지 않는다."""
+    if setup is None:
+        return False
+    enabled = await db.scalar(
+        select(StoryVersionDetail.scene_header_enabled).where(
+            StoryVersionDetail.content_version_id == room.content_version_id
+        )
+    )
+    return bool(enabled)
+
+
 async def _seed_initial_stats(db: AsyncSession, room: ChatRoom, setup: StartingSetup) -> None:
     stat_defs = (await db.scalars(select(StatDef).where(StatDef.starting_setup_id == setup.id))).all()
     for stat_def in stat_defs:
@@ -476,7 +491,7 @@ def _ending_snapshot(ending: Ending) -> EndingSnapshot:
 
 
 async def _build_content_snapshot(
-    db: AsyncSession, room: ChatRoom, setup: StartingSetup
+    db: AsyncSession, room: ChatRoom, setup: StartingSetup, *, scene_header_enabled: bool
 ) -> ChatRoomContentSnapshot:
     """stats/endings는 방이 고정한 시작설정(setup) 기준,
     단축어는 작품 전역(content_version_id) 기준. 플레이어에게 숨긴 스탯은 싣지 않는다 — 작가 본인의 방도 같다(작가가
@@ -520,6 +535,8 @@ async def _build_content_snapshot(
         ],
         suggested_replies=setup.suggested_replies or [],
         pinned_starting_setup_id=setup.id,
+        scene_header_enabled=scene_header_enabled,
+        initial_scene=initial_story_scene(setup.initial_scene_place, setup.initial_scene_time),
     )
 
 
@@ -648,7 +665,12 @@ async def _to_response(db: AsyncSession, room: ChatRoom, *, message_limit: int |
     content_snapshot = None
     stats = None
     if setup is not None:
-        content_snapshot = await _build_content_snapshot(db, room, setup)
+        content_snapshot = await _build_content_snapshot(
+            db,
+            room,
+            setup,
+            scene_header_enabled=isinstance(version_detail, StoryVersionDetail) and version_detail.scene_header_enabled,
+        )
         stat_rows = (
             await db.scalars(select(ChatRoomStat).where(ChatRoomStat.chat_room_id == room.id))
         ).all()
@@ -747,6 +769,7 @@ def _room_message_response(
             image_url=cell_image.url,
             image_width=cell_image.width,
             image_height=cell_image.height,
+            scene=story_scene_of(message.scene),
         )
     return ChatMessageResponse(
         id=message.id,
@@ -755,6 +778,7 @@ def _room_message_response(
         created_at=message.created_at,
         image_id=message.image_id,
         image_url=image_urls.get(message.image_id) if message.image_id is not None else None,
+        scene=story_scene_of(message.scene),
     )
 
 
@@ -1131,7 +1155,9 @@ async def send_message(
                     started_at=started_at,
                 ),
                 llm=llm_client,
-                judgments=new_turn_judgments(db, room, setup, log=logger),
+                judgments=new_turn_judgments(
+                    db, room, setup, log=logger, scene_header_enabled=await _scene_header_enabled(db, room, setup)
+                ),
                 store=RoomTurnStore(
                     db,
                     room,
@@ -1289,7 +1315,14 @@ async def regenerate_message(
                     started_at=started_at,
                 ),
                 llm=llm_client,
-                judgments=regenerate_judgments(db, room, setup, last_message.id, log=logger),
+                judgments=regenerate_judgments(
+                    db,
+                    room,
+                    setup,
+                    last_message.id,
+                    log=logger,
+                    scene_header_enabled=await _scene_header_enabled(db, room, setup),
+                ),
                 store=RoomTurnStore(db, room, setup, mode="replace", replaced_message_id=last_message.id, log=logger),
                 settlement=settlement,
                 after_commit=_fold_after_commit(
@@ -1438,7 +1471,9 @@ async def edit_message(
                     started_at=started_at,
                 ),
                 llm=llm_client,
-                judgments=new_turn_judgments(db, room, setup, log=logger),
+                judgments=new_turn_judgments(
+                    db, room, setup, log=logger, scene_header_enabled=await _scene_header_enabled(db, room, setup)
+                ),
                 store=RoomTurnStore(db, room, setup, mode="append", log=logger),
                 settlement=settlement,
                 after_commit=_fold_after_commit(
@@ -2424,7 +2459,11 @@ def _build_preview_start_state(payload: CharacterDraftPayload | StoryDraftPayloa
         ChatMessageResponse(id=uuid.uuid4(), role=ChatMessageRole.ASSISTANT, content=opening_text, created_at=now)
     ]
     stats = {str(stat.id): float(stat.initial_value) for stat in setup.stat_defs}
-    return PreviewSessionState(payload=payload, messages=messages, stats=stats)
+    # 장면 헤더를 켠 초안은 첫 시작설정의 첫 장면에서 시작한다(실채팅의 오프닝뿐인 방과 같다).
+    story_scene = (
+        initial_story_scene(setup.initial_scene_place, setup.initial_scene_time) if payload.scene_header_enabled else None
+    )
+    return PreviewSessionState(payload=payload, messages=messages, stats=stats, story_scene=story_scene)
 
 
 @preview_router.post(

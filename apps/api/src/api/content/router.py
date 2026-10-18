@@ -914,6 +914,8 @@ async def _story_draft_response(
                 opening_message=setup.opening_message,
                 playguide=setup.playguide,
                 suggested_replies=setup.suggested_replies or [],
+                initial_scene_place=setup.initial_scene_place,
+                initial_scene_time=setup.initial_scene_time,
                 stat_defs=[
                     StatDefDraftItem(
                         id=stat_def.entity_id,
@@ -993,6 +995,7 @@ async def _story_draft_response(
         ],
         user_goal=detail.user_goal,
         rules=detail.rules,
+        scene_header_enabled=detail.scene_header_enabled,
         starting_setups=starting_setups,
         keyword_notes=[
             KeywordNoteDraftItem(
@@ -1500,6 +1503,9 @@ async def _update_story_draft(
     ]
     detail.user_goal = payload.user_goal
     detail.rules = payload.rules
+    # 안 보냈으면 저장된 값을 둔다(아래 `novel_permission` 과 같은 이유).
+    if payload.scene_header_enabled is not None:
+        detail.scene_header_enabled = payload.scene_header_enabled
     version.detail_description = payload.description
     content.genre_id = payload.genre_id
     content.target = payload.target
@@ -1580,9 +1586,15 @@ async def _update_story_draft(
     setup_physical_id: dict[uuid.UUID, uuid.UUID] = {}
     for order, setup_item in enumerate(payload.starting_setups):
         setup = existing_setups.get(setup_item.id)
+        is_new_setup = setup is None
         if setup is None:
             setup = StartingSetup(entity_id=setup_item.id, content_version_id=version.id)
             db.add(setup)
+        # 첫 장면은 보냈을 때(또는 새 시작설정일 때)만 맞춘다(`StartingSetupDraftItem` 의 같은 칸 주석).
+        if is_new_setup or "initial_scene_place" in setup_item.model_fields_set:
+            setup.initial_scene_place = setup_item.initial_scene_place
+        if is_new_setup or "initial_scene_time" in setup_item.model_fields_set:
+            setup.initial_scene_time = setup_item.initial_scene_time
         setup.name = setup_item.name
         setup.prologue = setup_item.prologue
         setup.opening_message = setup_item.opening_message
@@ -1881,6 +1893,7 @@ async def _restore_draft_detail(
     draft_story.development_examples = published_story.development_examples
     draft_story.user_goal = published_story.user_goal
     draft_story.rules = published_story.rules
+    draft_story.scene_header_enabled = published_story.scene_header_enabled
 
 
 @router.post(
@@ -2413,6 +2426,8 @@ async def _clone_story_children(
             playguide=setup.playguide,
             suggested_replies=setup.suggested_replies,
             order=setup.order,
+            initial_scene_place=setup.initial_scene_place,
+            initial_scene_time=setup.initial_scene_time,
         )
         db.add(new_setup)
         await db.flush()
@@ -2810,6 +2825,7 @@ async def _write_story_publish(
             development_examples=detail.development_examples,
             user_goal=detail.user_goal,
             rules=detail.rules,
+            scene_header_enabled=detail.scene_header_enabled,
         )
     )
 

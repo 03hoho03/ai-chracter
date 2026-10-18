@@ -49,7 +49,8 @@ from api.db.models.story import StoryPromptTemplate
 # 채널 `stat_rule_judgment` 4행을 더해 story 62 다. `fc6f0e134782`가 두 레인에 회상 슬롯 `memory_recall` 1행과 장면 기억
 # 추출 채널 `memory_episode` 4행을 더해 story 67 / character 43 이고, `5cab2abe4e7b`가 두 레인에 사실 슬롯 `memory_facts` 1행과
 # 관계·사실 기억 추출 채널 `memory_fact` 4행을 더해 story 72 / character 48 이고, `0aeadefcf159`가 두 레인 요약 채널에 비밀
-# 표기 슬롯 `secret_marking` 1행을 더해 story 73 / character 49 다.
+# 표기 슬롯 `secret_marking` 1행을 더해 story 73 / character 49 이고, `0346abdbcc92`가 story 레인에 장면 헤더 판정 채널
+# `scene_judgment` 3행을 더해 story 76 이다.
 # system/generation 채널의 `scope='both'` 행은 story·character 두 레인에 사본으로 들어간다.
 _NOVELIZE_SLOTS: dict[str, set[tuple[str, str, str]]] = {
     "novelize_boundary": {
@@ -119,6 +120,11 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
             ("story", "user_name", ""),
             ("story", "turn_context", ""),
             ("story", "judgment_instruction", ""),
+        },
+        "scene_judgment": {
+            ("story", "instruction", ""),
+            ("story", "previous_scene", ""),
+            ("story", "turn_context", ""),
         },
         "ending_judgment": {
             ("story", "user_name", ""),
