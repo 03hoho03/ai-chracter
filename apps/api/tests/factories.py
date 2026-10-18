@@ -102,6 +102,7 @@ from api.db.models import (
     UserPersona,
 )
 from api.db.session import engine
+from api.legal.consents import kind_consent_units
 from api.llm import bedrock as bedrock_module
 from api.llm import gemini as gemini_module
 from api.llm.bedrock import BedrockLLMClient
@@ -899,15 +900,24 @@ async def _make_published(
     requires_reconsent: bool = False,
     published_at: datetime | None = None,
     effective_at: datetime | None = None,
+    reconsent_scopes: list[str] | None = None,
+    change_notice_markdown: str | None = None,
 ) -> LegalDocument:
-    """`effective_at` 을 비우면 게시 즉시 시행한 판(시행 시각 = 게시 시각)이다."""
+    """`effective_at` 을 비우면 게시 즉시 시행한 판(시행 시각 = 게시 시각)이다. `reconsent_scopes` 를 비우면
+    `requires_reconsent=True` 는 그 문서의 동의 단위 전부를 다시 받는 판이 된다(게시 API 가 이전 바디를 읽는 방식과 같다)."""
     published_at = published_at or datetime.now(UTC)
+    if reconsent_scopes is None:
+        reconsent_scopes = list(kind_consent_units(kind)) if requires_reconsent else []
+        # 정책 문서에는 동의 단위가 없어 `requires_reconsent=True` 가 조용히 "재동의 없음"이 된다 — 범위를 직접 준다.
+        assert reconsent_scopes or not requires_reconsent, "정책 문서의 재동의는 reconsent_scopes 로 준다"
     document = LegalDocument(
         kind=kind,
         version=version,
         body_markdown=body_markdown,
         status="published",
-        requires_reconsent=requires_reconsent,
+        requires_reconsent=bool(reconsent_scopes),
+        reconsent_scopes=reconsent_scopes,
+        change_notice_markdown=change_notice_markdown,
         published_at=published_at,
         effective_at=effective_at or published_at,
     )

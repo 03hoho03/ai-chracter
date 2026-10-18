@@ -1,5 +1,4 @@
 import uuid
-from typing import get_args
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -20,12 +19,34 @@ from api.admin.schemas import (
 )
 from api.db.models.legal import LegalDocument
 from api.db.session import get_db_session
-from api.legal import documents
-from api.legal.schemas import LegalConsentKind, LegalDocumentKind
+from api.legal import consents, documents
+from api.legal.schemas import LegalConsentUnit, LegalDocumentKind
 
 router = APIRouter(tags=["admin"])
 
-_CONSENT_KINDS: frozenset[str] = frozenset(get_args(LegalConsentKind))
+
+def _requested_reconsent_scopes(kind: LegalDocumentKind, body: AdminLegalPublishRequest) -> tuple[LegalConsentUnit, ...]:
+    """게시가 다시 받을 동의 단위. `reconsent_scopes` 가 오면 그것을, 없으면 이전 화면의 `requires_reconsent` 를 그 문서의
+    동의 단위 전부로 읽는다. 그 문서에 없는 동의 단위는 422 다 — 재동의 게이트는 문서의 동의 단위만 보므로 그 범위는 아무
+    효과가 없는데, 게시 이력·감사 로그에는 재동의를 받은 것으로 남아 운영자를 오도한다(정책 문서에 재동의를 거는 것도
+    같다)."""
+    allowed = consents.kind_consent_units(kind)
+    if body.reconsent_scopes is not None:
+        requested = set(body.reconsent_scopes)
+        if not requested <= set(allowed):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="이 문서가 받지 않는 동의를 재동의 범위로 고를 수 없습니다.",
+            )
+        return tuple(unit for unit in allowed if unit in requested)
+    if body.requires_reconsent:
+        if not allowed:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="이 문서는 회원 동의 대상이 아니라 재동의를 요구할 수 없습니다.",
+            )
+        return allowed
+    return ()
 
 
 async def _get_draft(
@@ -46,9 +67,11 @@ def _published_item(document: LegalDocument | None) -> AdminLegalPublishedItem |
     return AdminLegalPublishedItem(
         version=document.version,
         body_markdown=document.body_markdown,
+        change_notice_markdown=document.change_notice_markdown,
         published_at=published_at,
         effective_at=effective_at,
         requires_reconsent=document.requires_reconsent,
+        reconsent_scopes=consents.reconsent_scopes(document),
     )
 
 
@@ -59,7 +82,11 @@ async def _build_legal_document_response(
     now = documents.utcnow()
 
     draft_item = (
-        AdminLegalDraftItem(body_markdown=draft.body_markdown, created_at=draft.created_at)
+        AdminLegalDraftItem(
+            body_markdown=draft.body_markdown,
+            change_notice_markdown=draft.change_notice_markdown,
+            created_at=draft.created_at,
+        )
         if draft is not None
         else None
     )
@@ -102,6 +129,8 @@ async def _build_versions_response(db: AsyncSession, kind: LegalDocumentKind) ->
                 published_at=published_at,
                 effective_at=effective_at,
                 requires_reconsent=document.requires_reconsent,
+                reconsent_scopes=consents.reconsent_scopes(document),
+                change_notice_markdown=document.change_notice_markdown,
                 state=state,
             )
         )
@@ -134,18 +163,28 @@ async def upsert_legal_draft(
     거부하지 않는다 — "초안이 이 내용이 되게 하라"는 upsert의 의미는 먼저 커밋된 게
     자신인지 남인지와 무관하게 그대로 성립하므로, 방금 다른 요청이 만든 초안을 다시
     읽어 이 요청의 내용으로 덮어쓴다."""
+    # 안내 칸을 보내지 않은 요청(안내 칸을 모르는 이전 화면)은 초안의 안내를 건드리지 않는다.
+    notice_given = "change_notice_markdown" in body.model_fields_set
     draft = await _get_draft(db, kind)
     if draft is None:
         try:
             async with db.begin_nested():
-                db.add(LegalDocument(kind=kind, body_markdown=body.body_markdown, status="draft"))
+                db.add(
+                    LegalDocument(
+                        kind=kind,
+                        body_markdown=body.body_markdown,
+                        change_notice_markdown=body.change_notice_markdown,
+                        status="draft",
+                    )
+                )
                 await db.flush()
         except IntegrityError:
             draft = await _get_draft(db, kind)
             assert draft is not None  # 유니크 위반은 곧 초안이 이제 존재한다는 뜻이다
-            draft.body_markdown = body.body_markdown
-    else:
+    if draft is not None:
         draft.body_markdown = body.body_markdown
+        if notice_given:
+            draft.change_notice_markdown = body.change_notice_markdown
 
     await db.commit()
     return await _build_legal_document_response(db, kind)
@@ -169,10 +208,9 @@ async def publish_legal_document(
     오타 하나만 고쳐 재게시). 지우는 쪽을 골랐다면 매번 원고를 통째로 다시 붙여넣게
     되어 더 불편해질 뿐, 더 안전해지는 지점이 없다.
 
-    동의를 기록하지 않는 문서(운영정책·청소년 보호정책·환불정책·크리에이터 정산 정책)는 `requires_reconsent=true` 로
-    게시할 수 없다. 재동의 게이트와 `GET /me` 는 약관·처리방침만 보므로 그 플래그는 아무
-    효과가 없는데, 게시 이력·감사 로그에는 "재동의 필요"로 남아 운영자가 회원 재동의를
-    받은 것으로 믿게 된다.
+    재동의 범위는 그 문서의 동의 단위 안에서만 고른다(`_requested_reconsent_scopes`). 변경 안내도 초안에서 복제하고, 앞뒤
+    공백만 있는 안내는 없는 것으로 저장한다. **재동의 범위가 하나라도 걸린 게시는 안내가 없으면 422 다** — 재동의 화면은
+    전문보다 안내를 먼저 보여 주므로, 안내 없이 재동의를 걸면 회원이 무엇이 바뀌었는지 모른 채 동의하게 된다.
 
     **시행 시각**: 비우면 게시 시각으로 즉시 시행한다. 게시 시각보다 이르면 422 — 과거로 소급하면 그 판이 직전 현행판보다
     앞에 놓여 영영 현행이 되지 못하거나, 그 사이에 옛 판에 동의한 회원이 새 판에 동의한 것으로 읽힌다. 미래면 시행 예정
@@ -182,11 +220,7 @@ async def publish_legal_document(
     이 검사는 부분 유니크 인덱스로 할 수 없다(인덱스 조건에 현재 시각을 쓸 수 없다). 그래서 kind 의 초안 행을 잠가 같은
     kind 의 게시를 줄 세운 뒤 검사한다 — 게시는 초안이 있어야 하므로 초안 행이 kind 단위의 잠금 대상이 된다.
     """
-    if body.requires_reconsent and kind not in _CONSENT_KINDS:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="이 문서는 회원 동의 대상이 아니라 재동의를 요구할 수 없습니다.",
-        )
+    reconsent_scopes = _requested_reconsent_scopes(kind, body)
     now = documents.utcnow()
     effective_at = body.effective_at if body.effective_at is not None else now
     if effective_at < now:
@@ -198,6 +232,12 @@ async def publish_legal_document(
     draft = await _get_draft(db, kind, for_update=True)
     if draft is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="발행할 초안이 없습니다.")
+    change_notice = (draft.change_notice_markdown or "").strip() or None
+    if reconsent_scopes and change_notice is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="재동의를 받는 판은 변경 안내가 있어야 합니다. 초안에 변경 안내를 써 주세요.",
+        )
     if await documents.upcoming_legal_document(db, kind, now=now) is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -218,8 +258,10 @@ async def publish_legal_document(
                     kind=kind,
                     version=body.version,
                     body_markdown=draft.body_markdown,
+                    change_notice_markdown=change_notice,
                     status="published",
-                    requires_reconsent=body.requires_reconsent,
+                    requires_reconsent=bool(reconsent_scopes),
+                    reconsent_scopes=list(reconsent_scopes),
                     published_at=now,
                     effective_at=effective_at,
                 )
@@ -237,7 +279,7 @@ async def publish_legal_document(
         action_type="legal-publish",
         reason_text=(
             f"{kind} 문서를 버전 {body.version}으로 게시"
-            + ("(재동의 필요)" if body.requires_reconsent else "")
+            + (f"(재동의 필요: {', '.join(reconsent_scopes)})" if reconsent_scopes else "")
             + (f", 시행 {effective_at.isoformat()}" if effective_at > now else "")
         ),
     )

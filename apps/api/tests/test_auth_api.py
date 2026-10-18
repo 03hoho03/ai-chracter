@@ -589,6 +589,8 @@ async def test_login_adult_issues_session_and_me_returns_user(
         "profileImageAssetId": None,
         "termsReconsentRequired": False,
         "privacyReconsentRequired": False,
+        "collectionReconsentRequired": False,
+        "transferReconsentRequired": False,
         "hasPassword": True,
         "socialProvider": None,
         "enabledFeatures": [],

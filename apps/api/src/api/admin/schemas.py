@@ -23,7 +23,7 @@ from api.db.models.moderation import (
 )
 from api.db.models.novel import NovelPublicationModerationStatus, NovelPublicationVisibility
 from api.db.models.payment import PaymentStatus
-from api.legal.schemas import LegalDocumentKind
+from api.legal.schemas import LegalConsentUnit, LegalDocumentKind
 from api.llm.chat_models import PromptSetModelId
 
 
@@ -455,15 +455,21 @@ class AdminCloverLedgerListResponse(CamelModel):
 
 class AdminLegalDraftItem(CamelModel):
     body_markdown: str
+    change_notice_markdown: str | None
     created_at: datetime
 
 
 class AdminLegalPublishedItem(CamelModel):
+    """`reconsent_scopes` 는 이 판이 다시 받은 동의 단위이고, `requires_reconsent` 는 그것이 비어 있지 않음과 같다(동의
+    단위를 모르는 이전 어드민 화면이 읽는다)."""
+
     version: str
     body_markdown: str
+    change_notice_markdown: str | None
     published_at: datetime
     effective_at: datetime
     requires_reconsent: bool
+    reconsent_scopes: list[LegalConsentUnit]
 
 
 class AdminLegalDocumentResponse(CamelModel):
@@ -476,7 +482,11 @@ class AdminLegalDocumentResponse(CamelModel):
 
 
 class AdminLegalDraftUpsertRequest(CamelModel):
+    """`change_notice_markdown` 을 아예 보내지 않으면 초안의 변경 안내를 그대로 둔다 — 안내 칸을 모르는 이전 어드민 화면이
+    본문만 저장해도 안내가 지워지지 않게 한다. null 을 보내면 비운다."""
+
     body_markdown: str
+    change_notice_markdown: str | None = None
 
 
 class AdminLegalPublishRequest(CamelModel):
@@ -486,10 +496,15 @@ class AdminLegalPublishRequest(CamelModel):
     날짜인지는 검사하지 않는다.
 
     `effective_at` 은 시행 시각이다. 비우면 게시 시각과 같아 즉시 현행이 되고, 미래면 그 시각까지 시행 예정 판으로
-    남는다. 시간대가 없는 값은 받지 않는다(서버 시계와 비교할 수 없다)."""
+    남는다. 시간대가 없는 값은 받지 않는다(서버 시계와 비교할 수 없다).
+
+    재동의 범위는 `reconsent_scopes` 로 받는다. 약관은 `terms`, 처리방침은 `collection`·`transfer` 를 고를 수 있고 정책
+    문서는 고를 수 없다. 동의 단위를 모르는 이전 어드민 화면이 보내는 `requires_reconsent` 도 받는다 — true 면 그 문서의
+    동의 단위 전부를 고른 것으로 본다. 둘 다 오면 `reconsent_scopes` 를 따른다."""
 
     version: str = Field(min_length=1, pattern=r"^\d{4}-\d{2}-\d{2}(\.([2-9]|[1-9]\d+))?$")
-    requires_reconsent: bool
+    reconsent_scopes: list[LegalConsentUnit] | None = None
+    requires_reconsent: bool | None = None
     effective_at: AwareDatetime | None = None
 
 
@@ -502,6 +517,8 @@ class AdminLegalVersionItem(CamelModel):
     published_at: datetime
     effective_at: datetime
     requires_reconsent: bool
+    reconsent_scopes: list[LegalConsentUnit]
+    change_notice_markdown: str | None
     state: AdminLegalVersionState
 
 
