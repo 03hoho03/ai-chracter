@@ -14,6 +14,8 @@ const ME: MeResponse = {
   profileImageAssetId: null,
   termsReconsentRequired: false,
   privacyReconsentRequired: false,
+  collectionReconsentRequired: false,
+  transferReconsentRequired: false,
   hasPassword: true,
   socialProvider: null,
   enabledFeatures: [],

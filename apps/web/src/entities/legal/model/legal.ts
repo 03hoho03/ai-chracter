@@ -7,7 +7,7 @@ export type LegalDocumentKind = components["schemas"]["LegalDocumentPublicRespon
 
 /** `POST /legal/consent`가 받는 문서 종류 — 회원 동의를 기록하는 약관·처리방침뿐이다. 재동의 모달은 이 타입만
  * 다룬다. 문서 종류 전체와 섞으면 운영정책 같은 공지성 문서가 동의 흐름에 들어갈 길이 생긴다. */
-export type LegalConsentKind = components["schemas"]["LegalConsentRequest"]["kind"];
+export type LegalConsentKind = NonNullable<components["schemas"]["LegalConsentRequest"]["kind"]>;
 
 /** 문서 이름은 헤더 메뉴·푸터 링크 라벨과 같은 문자열이어야 해서 그 목적지 목록에서 가져온다. */
 export const LEGAL_DOCUMENT_LABEL: Record<LegalDocumentKind, string> = {
