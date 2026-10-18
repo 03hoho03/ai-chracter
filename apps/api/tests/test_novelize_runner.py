@@ -50,6 +50,7 @@ from api.novelize.deletion import delete_novels
 from api.novelize.source import segment_hash
 from api.novelize.paragraphs import resplit_long_paragraphs
 from api.novelize.text import clean_chapter_body
+from api.novelize import writing_lock
 from factories import (
     Room,
     _NeverCalledLLMClient,
@@ -393,6 +394,39 @@ async def test_a_failure_after_the_lock_rolls_the_lock_back_with_the_chapter(
     assert await _chapters(db_session, novel.id) == []
     assert await _batches(db_session, novel.id) == []
     assert await _writing_lock(db_session, novel.id) == (None, None, None, None)
+
+
+async def test_the_lock_is_written_through_the_same_session_that_saves_the_chapters(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """잠금은 화를 저장한 바로 그 세션으로 쓴다. 바로 위 롤백 테스트는 잠금을 다른 세션에서 쓰고 곧장 커밋하는 회귀를
+    보지 못한다 — 이 파일의 세션 팩토리는 테스트 연결 하나에 SAVEPOINT 로 붙어, 다른 세션의 커밋도 저장 세션이
+    롤백하면 함께 사라지기 때문이다. 운영에서는 다른 세션이 다른 연결의 진짜 커밋이라 화가 롤백돼도 잠금이 남는다. 그래서
+    세션이 같다는 사실을 직접 본다."""
+    saved_in: list[AsyncSession] = []
+    locked_in: list[AsyncSession] = []
+    save_generated = runner._save_generated
+
+    async def recording_save(db: AsyncSession, *args: Any, **kwargs: Any) -> Any:
+        saved_in.append(db)
+        return await save_generated(db, *args, **kwargs)
+
+    async def recording_lock(db: AsyncSession, *args: Any, **kwargs: Any) -> None:
+        locked_in.append(db)
+        await writing_lock.lock_with_first_chapter(db, *args, **kwargs)
+
+    monkeypatch.setattr(runner, "_save_generated", recording_save)
+    monkeypatch.setattr(runner, "lock_with_first_chapter", recording_lock)
+    room, novel = await _novel_for(db_client, db_session)
+    messages = await _room_messages(db_session, room.room_id)
+    job = await _chapter_job(db_session, novel, messages[0], room.turns[1][1])
+
+    await runner.run_job(_factory(db_session), _NovelLLM(), job.id)
+
+    assert (await _job(db_session, job.id)).status == "succeeded"
+    assert len(saved_in) == 1
+    assert len(locked_in) == 1
+    assert locked_in[0] is saved_in[0]
 
 
 async def test_a_later_saved_batch_leaves_an_existing_lock_as_it_was(

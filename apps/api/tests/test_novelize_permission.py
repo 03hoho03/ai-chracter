@@ -437,6 +437,12 @@ async def test_the_lock_survives_deleting_every_chapter(
         pytest.param("forbidden", "other", "empty", True, id="empty-novel-holds-no-right"),
         pytest.param("forbidden", "other", "locked", False, id="locked-novel"),
         pytest.param("forbidden", "other", "locked_then_emptied", False, id="locked-novel-with-every-chapter-deleted"),
+        pytest.param(
+            "forbidden", "other", "unlocked_succeeded_job", False, id="unlocked-novel-with-a-successful-chapter-job"
+        ),
+        pytest.param(
+            "forbidden", "other", "unlocked_failed_job", True, id="unlocked-novel-with-only-a-failed-chapter-job"
+        ),
     ],
 )
 async def test_room_response_says_whether_a_new_novel_is_blocked(
@@ -448,12 +454,21 @@ async def test_room_response_says_whether_a_new_novel_is_blocked(
     novel: str,
     blocked: bool,
 ) -> None:
-    """세 조건(허용 안 함 · 작가가 아님 · 이 방에 잠긴 소설 없음)이 모두일 때만 참이다 — 하나씩 뒤집으면 거짓. 잠기지
-    않은 빈 소설은 소설 없음과 같다(이어 쓸 수 없으니 막힌 것으로 보여야 한다). 잠긴 소설은 화를 다 지워도 잠긴 소설이다."""
+    """세 조건(허용 안 함 · 작가가 아님 · 이 방 소설에 잠금도 성공한 화 생성 작업도 없음)이 모두일 때만 참이다 — 하나씩 뒤집으면 거짓. 잠기지
+    않은 빈 소설은 소설 없음과 같다(이어 쓸 수 없으니 막힌 것으로 보여야 한다). 잠긴 소설은 화를 다 지워도 잠긴 소설이다.
+    잠금이 없어도 성공한 화 생성 작업이 있으면 생성 경로가 그 자리에서 잠그고 통과시키므로 막히지 않는다 — 배포가 겹친
+    동안 옛 코드가 잠금 없이 첫 화를 저장한 소설이다. 실패한 작업만 있으면 근거가 아니라 막힌다."""
     if novel == "none":
         room = await _room_without_novel(db_client, db_session, monkeypatch, actor=actor, permission=permission)
     elif novel == "empty":
         room, _ = await _empty_novel(db_client, db_session, monkeypatch, actor=actor, permission=permission)
+    elif novel in ("unlocked_succeeded_job", "unlocked_failed_job"):
+        room, novel_id, _ = await _novel_with_chapter(
+            db_client, db_session, monkeypatch, actor=actor, permission=permission, locked=False
+        )
+        await _add_finished_chapter_job(
+            db_session, novel_id, "succeeded" if novel == "unlocked_succeeded_job" else "failed"
+        )
     else:
         room, novel_id, chapter_id = await _novel_with_chapter(
             db_client, db_session, monkeypatch, actor=actor, permission=permission
@@ -467,3 +482,6 @@ async def test_room_response_says_whether_a_new_novel_is_blocked(
 
     assert resp.status_code == 200
     assert resp.json()["novelCreationBlocked"] is blocked
+    if novel in ("unlocked_succeeded_job", "unlocked_failed_job"):
+        # 방 응답은 읽기만 한다 — 잠금은 생성 경로에서만 쓴다.
+        assert await _lock(db_session, novel_id) == (None, None, None, None)
