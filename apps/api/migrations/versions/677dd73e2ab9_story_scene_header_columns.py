@@ -1,7 +1,7 @@
 """story scene header columns
 
 Revision ID: 677dd73e2ab9
-Revises: d6abfd9f92ce
+Revises: 131ec072bed3
 Create Date: 2026-10-18 20:32:39.982148
 
 장면 헤더(스토리 방 화면 머리에 지금 장면의 장소·시간을 보이는 것)의 저장 칸을 더한다.
@@ -25,7 +25,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = '677dd73e2ab9'
-down_revision: str | Sequence[str] | None = 'd6abfd9f92ce'
+down_revision: str | Sequence[str] | None = '131ec072bed3'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
