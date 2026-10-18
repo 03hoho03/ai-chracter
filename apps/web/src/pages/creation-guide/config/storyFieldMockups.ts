@@ -116,8 +116,8 @@ export const STORY_FIELD_MOCKUPS = {
     seedPath: "developmentExamples.*.assistantLine",
     readTiming: null,
   },
-  // 장면 헤더는 생성 AI 가 읽지 않는 화면 설정이고 튜토리얼 시드도 쓰지 않는다(첫 장면 두 칸도 같다).
-  "storySetting.sceneHeaderEnabled": { kind: "switch", seedPath: null, readTiming: null },
+  // 장면 헤더는 생성 AI 가 읽지 않는 화면 설정이다(첫 장면 두 칸도 같다). 튜토리얼 시드는 헤더를 켜고 첫 장면을 채운다.
+  "storySetting.sceneHeaderEnabled": { kind: "switch", seedPath: "sceneHeaderEnabled", readTiming: null },
 
   startingSetups: { kind: "cardList", seedPath: "startingSetups", readTiming: null },
   "startingSetups.*.name": { kind: "text", seedPath: "startingSetups.*.name", readTiming: null },
@@ -129,14 +129,14 @@ export const STORY_FIELD_MOCKUPS = {
   },
   "startingSetups.*.initialScenePlace": {
     kind: "text",
-    seedPath: null,
+    seedPath: "startingSetups.*.initialScenePlace",
     readTiming: null,
     limit: MAX_STORY_SCENE_FIELD_LENGTH,
     counter: true,
   },
   "startingSetups.*.initialSceneTime": {
     kind: "text",
-    seedPath: null,
+    seedPath: "startingSetups.*.initialSceneTime",
     readTiming: null,
     limit: MAX_STORY_SCENE_FIELD_LENGTH,
     counter: true,
