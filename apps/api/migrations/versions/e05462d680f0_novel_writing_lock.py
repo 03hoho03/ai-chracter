@@ -1,7 +1,7 @@
 """novel writing lock
 
 Revision ID: e05462d680f0
-Revises: d6abfd9f92ce
+Revises: 0346abdbcc92
 Create Date: 2026-10-18 22:00:00.000000
 
 소설에 집필권 잠금 칸 넷을 더하고, 새 작품의 소설화 허락 기본값을 "허용 안 함"으로 바꾸고, 이미 첫 화를 만든 소설을
@@ -35,7 +35,7 @@ NULL 이다 — 그때 값을 알 수 없다. 아직 잠기지 않은 소설만 
 남긴 허락·원작 버전 사본이 사라지고, 다시 올리면 백필이 출처 `backfill`·사본 NULL 로만 채운다. 그래도 잠금 행이 있으면
 멈추는 가드를 두지 않는 것은, 테스트 세션 끝의 `alembic downgrade base` 가 테스트가 커밋한 잠금 행 하나 때문에 깨지기
 때문이다. 옛 코드로 돌아가기만 하려면 downgrade 없이 이미지만 되돌린다(이 스키마에서 옛 코드가 그대로 돈다). 이미 저장된
-`'forbidden'` 값은 되돌리지 않는다 — 작가가 고른 값과 기본값으로 들어간 값을 구별할 수 없다. 그래서 한 리비전 더 내려
+`'forbidden'` 값은 되돌리지 않는다 — 작가가 고른 값과 기본값으로 들어간 값을 구별할 수 없다. 그래서 더 내려
 `92f51f19de16` 을 지나면 그 downgrade 의 "기본값 아닌 행" 거부가 걸릴 수 있다.
 
 이 파일은 `api.*` 를 import 하지 않는다(저장소 관례).
@@ -50,7 +50,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "e05462d680f0"
-down_revision: str | Sequence[str] | None = "d6abfd9f92ce"
+down_revision: str | Sequence[str] | None = "0346abdbcc92"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
