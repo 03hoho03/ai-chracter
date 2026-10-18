@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   addStatDelta,
   applyStreamEvent,
+  buildStatTurnAnnouncement,
   buildEditPayload,
   buildRegeneratePayload,
   buildSendPayload,
@@ -97,7 +98,8 @@ export function useSendMessage(
   const [policyWarning, setPolicyWarning] = useState<string>();
   const [streamingText, setStreamingText] = useState("");
   // 확정된 마지막 턴이 상태 줄에 알릴 것(증감 칩·익명 신호·스크린리더 안내). 다음 턴이 시작되면 거둔다 — 익명 신호는 다음
-  // 메시지를 보낼 때까지 남는다. `turn` 은 이 훅 안에서만 쓰는 일련번호다.
+  // 메시지를 보낼 때까지 남는다. 방 이동·초기화·되돌리기는 이 훅이 모르므로, 화면은 `selectVisibleTurnFeedback` 으로
+  // 그 턴의 방·응답이 아직 지금 것인지 가려 보인다. `turn` 은 이 훅 안에서만 쓰는 일련번호다.
   const [turnFeedback, setTurnFeedback] = useState<StatTurnFeedback>();
   const turnFeedbackSeqRef = useRef(0);
 
@@ -233,9 +235,21 @@ export function useSendMessage(
       setStreamingText("");
       settleTurnStreamEnd(queryClient, roomId, { dropped, hasCommitted });
       // 칩·안내는 턴이 확정된 뒤 한 번만 — 스트리밍 도중이나 응답이 커밋되지 않은 턴에는 알리지 않는다.
-      if (hasCommitted) {
+      // 안내 문장은 여기서 그 턴의 값으로 한 번 만들어 둔다 — 뒤에 값이 바뀌어도 다시 만들지 않는다.
+      if (hasCommitted && committedMessage) {
+        const room = queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(roomId));
         turnFeedbackSeqRef.current += 1;
-        setTurnFeedback({ turn: turnFeedbackSeqRef.current, deltas, hiddenSignal });
+        setTurnFeedback({
+          turn: turnFeedbackSeqRef.current,
+          roomId,
+          messageId: committedMessage.id,
+          deltas,
+          hiddenSignal,
+          announcement: buildStatTurnAnnouncement(room?.contentSnapshot?.stats ?? [], room?.stats ?? {}, {
+            deltas,
+            hiddenSignal,
+          }),
+        });
       }
       if (!hasErrored) setStatus({ kind: "idle" });
       if (pending.kind === "regenerate" && committedMessage) onRegenerated?.(committedMessage);

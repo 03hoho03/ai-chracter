@@ -1,14 +1,22 @@
+import type { ChatMessage } from "../api/chatStream";
 import type { StatDef } from "./chatRoomState";
 
 /** statId → 이번 턴에 움직인 양. 움직이지 않은 스탯은 키가 없다. */
 export type StatDeltas = Record<string, number>;
 
 /** 한 턴이 확정된 뒤 상태 줄이 알릴 것. `turn` 은 턴마다 새 값이라 같은 증감이 두 턴 연달아 와도 칩 타이머와 스크린리더
- * 안내가 다시 선다. 숨긴 스탯은 이름·값 없이 "바뀌었다"는 표시 하나만 온다. */
+ * 안내가 다시 선다. 숨긴 스탯은 이름·값 없이 "바뀌었다"는 표시 하나만 온다.
+ *
+ * `roomId`·`messageId` 는 그 턴의 방과 확정 응답이다 — 방을 옮기거나 초기화·되돌리기로 그 응답이 마지막이 아니게 되면
+ * 알림을 거두는 근거다(`selectVisibleTurnFeedback`). `announcement` 는 알림이 생길 때 만든 스크린리더 문장이다. 나중에
+ * 값이 바뀌어도 다시 만들지 않아야 한 턴의 변화를 한 번만, 그 턴의 값으로 읽는다. */
 export type StatTurnFeedback = {
   turn: number;
+  roomId: string;
+  messageId: string;
   deltas: StatDeltas;
   hiddenSignal: boolean;
+  announcement: string;
 };
 
 /** 숨긴 스탯이 바뀐 턴의 익명 신호 문구. 화면 글자와 스크린리더 안내가 같은 말을 쓴다. */
@@ -58,4 +66,16 @@ export function buildStatTurnAnnouncement(
   });
   if (feedback.hiddenSignal) sentences.push(HIDDEN_STAT_SIGNAL_TEXT);
   return sentences.join(". ");
+}
+
+/** 턴 알림을 지금 화면에 보여도 되는지 가린다. 알림은 그 턴의 방에서, 그 턴의 응답이 아직 마지막 AI 메시지일 때만
+ * 참이다. 방 이동·초기화·직전 응답 되돌리기·메시지 삭제는 모두 이 둘 중 하나를 깨므로 따로 알릴 필요가 없다. */
+export function selectVisibleTurnFeedback(
+  feedback: StatTurnFeedback | undefined,
+  roomId: string,
+  messages: readonly Pick<ChatMessage, "id" | "role">[],
+): StatTurnFeedback | undefined {
+  if (!feedback || feedback.roomId !== roomId) return undefined;
+  const lastAssistant = messages.filter((message) => message.role === "assistant").at(-1);
+  return lastAssistant?.id === feedback.messageId ? feedback : undefined;
 }

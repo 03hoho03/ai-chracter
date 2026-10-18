@@ -8,7 +8,6 @@ import type { StatDef } from "../model/chatRoomState";
 import { getIconByName } from "../model/statIcons";
 import { readStatusLineCollapsed, writeStatusLineCollapsed } from "../model/statusLineCollapse";
 import {
-  buildStatTurnAnnouncement,
   formatStatDelta,
   formatStatValue,
   HIDDEN_STAT_SIGNAL_TEXT,
@@ -18,7 +17,7 @@ import {
 type StatGaugePanelProps = {
   stats: StatDef[];
   values: Record<string, number>;
-  /** 확정된 마지막 턴의 증감·익명 신호. 없으면 칩·신호·안내가 없다(첫 진입·새로고침·재접속). */
+  /** 확정된 마지막 턴의 증감·익명 신호·안내 문장. 없으면 칩·신호·안내가 없다(첫 진입·새로고침·재접속, 방 이동·초기화·되돌리기 뒤). */
   feedback?: StatTurnFeedback;
   /** 윗줄에 놓을 지금 장면(장소·시간). 아직 장면 데이터가 없어 지금은 아무도 넘기지 않는다. */
   scene?: string;
@@ -49,7 +48,7 @@ export function StatGaugePanel({ stats, values, feedback, scene, hiddenStatIds }
 
   const deltas = chipPhase === "gone" ? {} : (feedback?.deltas ?? {});
   const hasHiddenSignal = feedback?.hiddenSignal ?? false;
-  const announcement = feedback ? buildStatTurnAnnouncement(stats, values, feedback) : "";
+  const announcement = feedback?.announcement ?? "";
 
   function handleToggle() {
     const next = !isCollapsed;

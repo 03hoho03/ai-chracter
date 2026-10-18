@@ -7,6 +7,8 @@ import {
   formatStatDelta,
   formatStatValue,
   HIDDEN_STAT_SIGNAL_TEXT,
+  selectVisibleTurnFeedback,
+  type StatTurnFeedback,
 } from "./statTurnFeedback";
 
 function stat(overrides: Partial<StatDef> = {}): StatDef {
@@ -68,5 +70,46 @@ describe("buildStatTurnAnnouncement", () => {
 
   it("정의에 없는 스탯의 증감은 읽지 않고, 바뀐 것이 없으면 빈 글이다", () => {
     expect(buildStatTurnAnnouncement(stats, {}, { deltas: { gone: 5 }, hiddenSignal: false })).toBe("");
+  });
+});
+
+describe("selectVisibleTurnFeedback", () => {
+  const feedback: StatTurnFeedback = {
+    turn: 1,
+    roomId: "room-a",
+    messageId: "ai-2",
+    deltas: { aff: 3 },
+    hiddenSignal: true,
+    announcement: `호감도 3 올라 48. ${HIDDEN_STAT_SIGNAL_TEXT}`,
+  };
+  const messages = [
+    { id: "ai-1", role: "assistant" as const },
+    { id: "user-1", role: "user" as const },
+    { id: "ai-2", role: "assistant" as const },
+  ];
+
+  it("지금 방이고 캐시의 마지막 AI 메시지가 그 턴의 응답이면 알림을 그대로 보인다", () => {
+    expect(selectVisibleTurnFeedback(feedback, "room-a", messages)).toBe(feedback);
+  });
+
+  it("다른 방으로 옮기면 보이지 않는다 — 같은 스토리의 방이라 스탯 id 가 같아도", () => {
+    expect(selectVisibleTurnFeedback(feedback, "room-b", messages)).toBeUndefined();
+  });
+
+  it("되돌리기·초기화·삭제로 마지막 AI 메시지가 그 응답이 아니게 되면 보이지 않는다", () => {
+    const restored = [...messages.slice(0, 2), { id: "ai-2-old", role: "assistant" as const }];
+    expect(selectVisibleTurnFeedback(feedback, "room-a", restored)).toBeUndefined();
+    expect(selectVisibleTurnFeedback(feedback, "room-a", [{ id: "opening", role: "assistant" as const }])).toBeUndefined();
+    expect(selectVisibleTurnFeedback(feedback, "room-a", [])).toBeUndefined();
+  });
+
+  it("응답 뒤에 사용자 메시지가 붙어도 마지막 AI 메시지로 가린다 — 다음 턴이 시작되면 훅이 알림을 거둔다", () => {
+    expect(selectVisibleTurnFeedback(feedback, "room-a", [...messages, { id: "user-2", role: "user" as const }])).toBe(
+      feedback,
+    );
+  });
+
+  it("알림이 없으면 없다", () => {
+    expect(selectVisibleTurnFeedback(undefined, "room-a", messages)).toBeUndefined();
   });
 });
