@@ -36,6 +36,7 @@ from api.core.redis import redis_client
 from api.core.s3 import build_variant_keys
 from api.core.security import hash_password, hash_withdrawn_email
 from api.db.models.auth import User, WithdrawnEmail
+from api.db.models.legal import UserLegalConsent
 from api.db.models.media import Asset, AssetKind, AssetStatus
 from api.db.session import engine
 from api.legal.documents import current_legal_version, utcnow
@@ -491,6 +492,11 @@ async def test_onboarding_kakao_creates_verified_member_and_issues_session(
     assert user.privacy_version == privacy_version
     assert user.transfer_version == privacy_version
     assert user.transfer_agreed_at is not None
+    # 동의 이력은 회원 행이 들어간 뒤 동의 단위마다 한 행씩 남는다.
+    consented = await db_session.scalars(
+        select(UserLegalConsent.consent).where(UserLegalConsent.user_id == user.id).order_by(UserLegalConsent.consent)
+    )
+    assert consented.all() == ["collection", "terms", "transfer"]
 
     me = await db_client.get("/me")
     assert me.status_code == 200

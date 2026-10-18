@@ -84,9 +84,12 @@ from api.core.security import hash_password, hash_withdrawn_email, verify_passwo
 from api.core.sentry import capture_dependency_failure
 from api.creator_payout.config import creator_payout_active
 from api.db.models.auth import User, WithdrawnEmail
+from api.db.models.legal import LegalDocument
 from api.db.session import get_db_session
+from api.legal import consents as legal_consents
 from api.legal import documents as legal_documents
-from api.legal.dependencies import reconsent_required_kinds
+from api.legal.dependencies import reconsent_required_kinds, reconsent_required_units
+from api.legal.schemas import LegalConsentUnit
 from api.llm.model_access import has_chat_premium_access, has_novel_premium_access
 from api.novel_public.access import novel_public_open_to
 from api.novelize.access import has_novelize_access
@@ -131,25 +134,21 @@ def _onboarding_conflict(code: str) -> HTTPException:
 
 async def _apply_onboarding_consent(
     db: AsyncSession, user: User, payload: SocialOnboardingRequest, now: datetime
-) -> None:
+) -> dict[LegalConsentUnit, LegalDocument | None]:
     """소셜 온보딩이 받은 프로필과 약관 3종 동의를 행에 적는다. 동의 버전은 지금의 현행판이다(시행 예정 판이 아니다).
+    동의한 판을 돌려준다 — 동의 이력은 회원 행이 `_flush_social_signup` 으로 들어간 뒤에 더한다.
 
     버전 조회가 자동 flush 를 일으키지 않게 막는다. 카카오 온보딩은 기존 행을 대체할 때 회원번호를
     이 함수 호출 전에 대입하는데, 여기서 flush 되면 그 UPDATE 가 UNIQUE 충돌을 409 로 바꾸는
     `_flush_social_signup` 의 savepoint 밖에서 나가 500 이 된다. 쓰기는 그 함수에서만 나가야 한다."""
-    legal_now = legal_documents.utcnow()
     with db.no_autoflush:
-        privacy_version = await legal_documents.current_legal_version(db, "privacy", now=legal_now)
-        terms_version = await legal_documents.current_legal_version(db, "terms", now=legal_now)
+        consented = await legal_consents.current_consent_documents(
+            db, legal_consents.CONSENT_UNITS, now=legal_documents.utcnow()
+        )
     user.nickname = payload.nickname
     user.birth_date = payload.birth_date
-    user.terms_agreed_at = now
-    user.privacy_agreed_at = now
-    user.transfer_agreed_at = now
-    user.terms_version = terms_version
-    user.privacy_version = privacy_version
-    # 국외이전 동의는 처리방침 버전에 묶인다.
-    user.transfer_version = privacy_version
+    legal_consents.apply_consent_versions(user, consented, at=now)
+    return consented
 
 
 async def _flush_social_signup(db: AsyncSession, user: User) -> None:
@@ -244,33 +243,24 @@ async def signup(
         existing.password_hash = await hash_password(payload.password)
         existing.nickname = payload.nickname
         existing.birth_date = payload.birth_date
-        existing.terms_agreed_at = now
-        existing.privacy_agreed_at = now
-        existing.transfer_agreed_at = now
-        legal_now = legal_documents.utcnow()
-        existing.terms_version = await legal_documents.current_legal_version(db, "terms", now=legal_now)
-        privacy_version = await legal_documents.current_legal_version(db, "privacy", now=legal_now)
-        existing.privacy_version = privacy_version
-        # 국외이전 동의는 처리방침 버전에 묶인다.
-        existing.transfer_version = privacy_version
+        consented = await legal_consents.current_consent_documents(
+            db, legal_consents.CONSENT_UNITS, now=legal_documents.utcnow()
+        )
+        legal_consents.apply_consent_versions(existing, consented, at=now)
+        await legal_consents.replace_signup_consent_history(db, existing.id, consented, at=now)
         await replace_signup_personas(db, existing, payload.persona_name)
         await db.commit()
     else:
-        legal_now = legal_documents.utcnow()
-        privacy_version = await legal_documents.current_legal_version(db, "privacy", now=legal_now)
+        consented = await legal_consents.current_consent_documents(
+            db, legal_consents.CONSENT_UNITS, now=legal_documents.utcnow()
+        )
         user = User(
             email=payload.email,
             password_hash=await hash_password(payload.password),
             nickname=payload.nickname,
             birth_date=payload.birth_date,
-            terms_agreed_at=now,
-            privacy_agreed_at=now,
-            transfer_agreed_at=now,
-            terms_version=await legal_documents.current_legal_version(db, "terms", now=legal_now),
-            privacy_version=privacy_version,
-            # 국외이전 동의는 처리방침 버전에 묶인다.
-            transfer_version=privacy_version,
         )
+        legal_consents.apply_consent_versions(user, consented, at=now)
         try:
             async with db.begin_nested():
                 db.add(user)
@@ -282,6 +272,7 @@ async def signup(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
             ) from None
+        await legal_consents.replace_signup_consent_history(db, user.id, consented, at=now)
         await create_signup_persona(db, user, payload.persona_name)
         await db.commit()
 
@@ -485,8 +476,9 @@ async def onboarding_google(
         if await _reregistration_blocked(db, pending["email"], now):
             raise _onboarding_conflict("REREGISTRATION_BLOCKED")
         user = User(email=pending["email"], google_sub=pending["sub"], email_verified_at=now)
-        await _apply_onboarding_consent(db, user, payload, now)
+        consented = await _apply_onboarding_consent(db, user, payload, now)
         await _flush_social_signup(db, user)
+        await legal_consents.replace_signup_consent_history(db, user.id, consented, at=now)
         await create_signup_persona(db, user, payload.persona_name)
     else:
         # 대입·커밋·pending 토큰 삭제 **전**에 막는다 — 뒤에서 막으면 403인데도
@@ -634,8 +626,9 @@ async def onboarding_kakao(
             replaced_email_signup = True
         else:
             raise _onboarding_conflict("EMAIL_ALREADY_REGISTERED")
-        await _apply_onboarding_consent(db, user, payload, now)
+        consented = await _apply_onboarding_consent(db, user, payload, now)
         await _flush_social_signup(db, user)
+        await legal_consents.replace_signup_consent_history(db, user.id, consented, at=now)
         if replaced_email_signup:
             await replace_signup_personas(db, user, payload.persona_name)
         else:
@@ -910,7 +903,8 @@ async def get_me(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
     # 쓰기 게이트(`require_legal_consent`)와 같은 판정 함수다 — 따로 판정하면 모달이 뜨지 않는데 쓰기가 막히거나 그 반대가 된다.
-    reconsent_kinds = await reconsent_required_kinds(db, user, now=legal_documents.utcnow())
+    reconsent_units = await reconsent_required_units(db, user, now=legal_documents.utcnow())
+    reconsent_kinds = reconsent_required_kinds(reconsent_units)
 
     # 위 조건문이 deleted_at is not None인 계정을 이미 배제했다 — nickname은 탈퇴 파기
     # 시에만 None이 된다.
@@ -924,6 +918,8 @@ async def get_me(
         profile_image_asset_id=user.profile_image_asset_id,
         terms_reconsent_required="terms" in reconsent_kinds,
         privacy_reconsent_required="privacy" in reconsent_kinds,
+        collection_reconsent_required="collection" in reconsent_units,
+        transfer_reconsent_required="transfer" in reconsent_units,
         has_password=user.password_hash is not None,
         social_provider=None if method == "email" else method,
         enabled_features=await _enabled_features(db, user.id),

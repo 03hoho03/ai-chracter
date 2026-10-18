@@ -750,10 +750,14 @@ export interface paths {
          *     오타 하나만 고쳐 재게시). 지우는 쪽을 골랐다면 매번 원고를 통째로 다시 붙여넣게
          *     되어 더 불편해질 뿐, 더 안전해지는 지점이 없다.
          *
-         *     동의를 기록하지 않는 문서(운영정책·청소년 보호정책·환불정책·크리에이터 정산 정책)는 `requires_reconsent=true` 로
-         *     게시할 수 없다. 재동의 게이트와 `GET /me` 는 약관·처리방침만 보므로 그 플래그는 아무
-         *     효과가 없는데, 게시 이력·감사 로그에는 "재동의 필요"로 남아 운영자가 회원 재동의를
-         *     받은 것으로 믿게 된다.
+         *     **다만 게시가 성공하면 초안의 변경 안내는 비운다.** 안내는 그 판에서 무엇이 바뀌었는지를 적은 것이라 다음 판에 그대로
+         *     쓸 수 없다. 남겨 두면 다음 게시가 이미 나간 안내를 자기 안내로 복제하고, 재동의 게시의 "안내 필수" 검사도 그 낡은
+         *     안내로 통과해 회원이 엉뚱한 안내를 보고 동의하게 된다. 비우면 새 판의 안내는 늘 새로 써야 한다. 직전 안내를 고쳐 쓰고
+         *     싶으면 화면이 게시본의 안내를 불러와 채우면 된다.
+         *
+         *     재동의 범위는 그 문서의 동의 단위 안에서만 고른다(`_requested_reconsent_scopes`). 변경 안내도 초안에서 복제하고, 앞뒤
+         *     공백만 있는 안내는 없는 것으로 저장한다. **재동의 범위가 하나라도 걸린 게시는 안내가 없으면 422 다** — 재동의 화면은
+         *     전문보다 안내를 먼저 보여 주므로, 안내 없이 재동의를 걸면 회원이 무엇이 바뀌었는지 모른 채 동의하게 된다.
          *
          *     **시행 시각**: 비우면 게시 시각으로 즉시 시행한다. 게시 시각보다 이르면 422 — 과거로 소급하면 그 판이 직전 현행판보다
          *     앞에 놓여 영영 현행이 되지 못하거나, 그 사이에 옛 판에 동의한 회원이 새 판에 동의한 것으로 읽힌다. 미래면 시행 예정
@@ -2012,6 +2016,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/legal/{kind}/changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Legal Document Changes
+         * @description 누적 변경 안내 — 인증 없음. `since` 판보다 뒤에 시행된 판들의 변경 안내를 최신 판부터 준다. 재동의 화면이 회원이
+         *     마지막으로 동의한 판을 `since` 로 넘겨, 그 뒤로 바뀐 것을 재동의가 걸리지 않은 판까지 모두 보여 준다(지금 동의하는
+         *     대상은 최신 전문 전체라 그 안에 다 들어 있다). 시행 예정 판과 철회본은 들지 않는다.
+         *
+         *     `since` 가 없거나 시행된 판에서 찾지 못하면 시행된 판 전부를 준다 — 모르는 판을 기준으로 아무것도 안 보여 주는 것보다
+         *     전부 보여 주는 쪽이 안전하다. 판의 앞뒤는 버전 문자열이 아니라 시행 순서로 정한다.
+         */
+        get: operations["list_legal_document_changes_legal__kind__changes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/legal/consent": {
         parameters: {
             query?: never;
@@ -2023,10 +2052,16 @@ export interface paths {
         put?: never;
         /**
          * Consent Legal Document
-         * @description 재동의 기록. **요청의 `version`은 신뢰하지 않는다** — 클라이언트가 값을 조작해
+         * @description 재동의 기록. 동의 단위(`consents`)마다 그 문서의 현행판 버전을 `users` 칸에 적고 동의 이력 행을 하나씩 더한다.
+         *     이전 웹의 `{kind}` 바디는 그 문서의 동의 단위 전부로 읽는다(`LegalConsentRequest`).
+         *
+         *     **요청의 `version`은 신뢰하지 않는다** — 클라이언트가 값을 조작해
          *     보내면 실제로 게시된 적 없는 버전이 `users.terms_version`에 남아 `GET /me`의
-         *     재동의 판정을 영구히 우회할 수 있다. 그래서 body의 `kind`로 어떤 문서에 동의했는지만
+         *     재동의 판정을 영구히 우회할 수 있다. 그래서 어떤 동의인지만
          *     받고, 실제로 기록하는 version은 서버가 다시 조회한 현행판의 것이다(시행 예정 판이 아니다).
+         *
+         *     **회원 행을 잠그고 탈퇴 여부를 다시 본 뒤 쓴다.** 잠그지 않으면 탈퇴와 겹친 요청이 탈퇴 커밋을 기다렸다가 이력 행을
+         *     넣어(회원 행은 지우지 않으므로 FK 검사도 통과한다) 탈퇴 뒤에 그 회원의 동의 이력이 남는다.
          *
          *     ⚠️ 정지된 유저는 `get_current_user_id`가 403으로 막아 여기 도달하지 못한다. 정지
          *     중에도 통과시켜야 할 이유는 없다고 판단했다 — 재동의도 다른 유저 행위와 마찬가지로
@@ -6925,16 +6960,24 @@ export interface components {
         AdminLegalDraftItem: {
             /** Bodymarkdown */
             bodyMarkdown: string;
+            /** Changenoticemarkdown */
+            changeNoticeMarkdown: string | null;
             /**
              * Createdat
              * Format: date-time
              */
             createdAt: string;
         };
-        /** AdminLegalDraftUpsertRequest */
+        /**
+         * AdminLegalDraftUpsertRequest
+         * @description `change_notice_markdown` 을 아예 보내지 않으면 초안의 변경 안내를 그대로 둔다 — 안내 칸을 모르는 이전 어드민 화면이
+         *     본문만 저장해도 안내가 지워지지 않게 한다. null 을 보내면 비운다.
+         */
         AdminLegalDraftUpsertRequest: {
             /** Bodymarkdown */
             bodyMarkdown: string;
+            /** Changenoticemarkdown */
+            changeNoticeMarkdown?: string | null;
         };
         /**
          * AdminLegalPublishRequest
@@ -6945,21 +6988,33 @@ export interface components {
          *
          *     `effective_at` 은 시행 시각이다. 비우면 게시 시각과 같아 즉시 현행이 되고, 미래면 그 시각까지 시행 예정 판으로
          *     남는다. 시간대가 없는 값은 받지 않는다(서버 시계와 비교할 수 없다).
+         *
+         *     재동의 범위는 `reconsent_scopes` 로 받는다. 약관은 `terms`, 처리방침은 `collection`·`transfer` 를 고를 수 있고 정책
+         *     문서는 고를 수 없다. 동의 단위를 모르는 이전 어드민 화면이 보내는 `requires_reconsent` 도 받는다 — true 면 그 문서의
+         *     동의 단위 전부를 고른 것으로 본다. 둘 다 오면 `reconsent_scopes` 를 따른다.
          */
         AdminLegalPublishRequest: {
             /** Version */
             version: string;
+            /** Reconsentscopes */
+            reconsentScopes?: ("terms" | "collection" | "transfer")[] | null;
             /** Requiresreconsent */
-            requiresReconsent: boolean;
+            requiresReconsent?: boolean | null;
             /** Effectiveat */
             effectiveAt?: string | null;
         };
-        /** AdminLegalPublishedItem */
+        /**
+         * AdminLegalPublishedItem
+         * @description `reconsent_scopes` 는 이 판이 다시 받은 동의 단위이고, `requires_reconsent` 는 그것이 비어 있지 않음과 같다(동의
+         *     단위를 모르는 이전 어드민 화면이 읽는다).
+         */
         AdminLegalPublishedItem: {
             /** Version */
             version: string;
             /** Bodymarkdown */
             bodyMarkdown: string;
+            /** Changenoticemarkdown */
+            changeNoticeMarkdown: string | null;
             /**
              * Publishedat
              * Format: date-time
@@ -6972,6 +7027,8 @@ export interface components {
             effectiveAt: string;
             /** Requiresreconsent */
             requiresReconsent: boolean;
+            /** Reconsentscopes */
+            reconsentScopes: ("terms" | "collection" | "transfer")[];
         };
         /** AdminLegalVersionItem */
         AdminLegalVersionItem: {
@@ -6989,6 +7046,10 @@ export interface components {
             effectiveAt: string;
             /** Requiresreconsent */
             requiresReconsent: boolean;
+            /** Reconsentscopes */
+            reconsentScopes: ("terms" | "collection" | "transfer")[];
+            /** Changenoticemarkdown */
+            changeNoticeMarkdown: string | null;
             /**
              * State
              * @enum {string}
@@ -10486,19 +10547,49 @@ export interface components {
             /** Alwayson */
             alwaysOn?: boolean;
         };
-        /** LegalConsentRequest */
-        LegalConsentRequest: {
-            /**
-             * Kind
-             * @enum {string}
-             */
-            kind: "terms" | "privacy";
+        /**
+         * LegalChangeItem
+         * @description 시행된 판 하나의 변경 안내. `reconsent_scopes` 는 그 판이 다시 받은 동의 단위다(없으면 빈 목록).
+         */
+        LegalChangeItem: {
             /** Version */
             version: string;
+            /**
+             * Effectiveat
+             * Format: date-time
+             */
+            effectiveAt: string;
+            /** Changenotice */
+            changeNotice: string | null;
+            /** Reconsentscopes */
+            reconsentScopes: ("terms" | "collection" | "transfer")[];
+        };
+        /**
+         * LegalChangesResponse
+         * @description 시행 순서로 최신 판이 먼저다.
+         */
+        LegalChangesResponse: {
+            /** Items */
+            items: components["schemas"]["LegalChangeItem"][];
+        };
+        /**
+         * LegalConsentRequest
+         * @description 동의할 단위를 `consents` 로 받는다. 이전 웹이 보내는 `{kind, version}` 도 받는다 — `kind` 가 `privacy` 면 수집·이용과
+         *     국외이전 둘 다에 동의한 것으로 본다(이전 화면은 두 체크박스를 모두 받은 뒤 처리방침 한 번으로 보낸다). 둘 다 오면
+         *     `consents` 를 따른다. `version` 은 어느 쪽이든 쓰지 않는다 — 서버가 현행판 버전을 기록한다.
+         */
+        LegalConsentRequest: {
+            /** Consents */
+            consents?: ("terms" | "collection" | "transfer")[] | null;
+            /** Kind */
+            kind?: ("terms" | "privacy") | null;
+            /** Version */
+            version?: string | null;
         };
         /**
          * LegalDocumentPublicResponse
-         * @description `published_at` 은 게시(공지) 시각, `effective_at` 은 이 판이 현행이 된 시행 시각이다.
+         * @description `published_at` 은 게시(공지) 시각, `effective_at` 은 이 판이 현행이 된 시행 시각이다. `change_notice` 는 이 판의
+         *     변경 안내(마크다운)이고 없으면 null 이다.
          */
         LegalDocumentPublicResponse: {
             /**
@@ -10520,6 +10611,8 @@ export interface components {
              * Format: date-time
              */
             effectiveAt: string;
+            /** Changenotice */
+            changeNotice: string | null;
             upcoming: components["schemas"]["LegalUpcomingSummary"] | null;
         };
         /** LegalUpcomingDocumentResponse */
@@ -10543,6 +10636,8 @@ export interface components {
              * Format: date-time
              */
             effectiveAt: string;
+            /** Changenotice */
+            changeNotice: string | null;
         };
         /**
          * LegalUpcomingSummary
@@ -10556,6 +10651,8 @@ export interface components {
              * Format: date-time
              */
             effectiveAt: string;
+            /** Changenotice */
+            changeNotice: string | null;
         };
         /**
          * LogicalOp
@@ -10591,6 +10688,10 @@ export interface components {
             termsReconsentRequired: boolean;
             /** Privacyreconsentrequired */
             privacyReconsentRequired: boolean;
+            /** Collectionreconsentrequired */
+            collectionReconsentRequired: boolean;
+            /** Transferreconsentrequired */
+            transferReconsentRequired: boolean;
             /** Haspassword */
             hasPassword: boolean;
             /** Socialprovider */
@@ -16058,6 +16159,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LegalUpcomingDocumentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_legal_document_changes_legal__kind__changes_get: {
+        parameters: {
+            query?: {
+                since?: string | null;
+            };
+            header?: never;
+            path: {
+                kind: "terms" | "privacy" | "operation-policy" | "youth-policy" | "refund-policy" | "creator-payout-policy";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegalChangesResponse"];
                 };
             };
             /** @description Validation Error */

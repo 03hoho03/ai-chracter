@@ -20,9 +20,15 @@ async def _login_new_admin(db_client: httpx.AsyncClient, db_session: AsyncSessio
 
 
 async def _make_draft(
-    db_session: AsyncSession, *, kind: str = "terms", body_markdown: str = "초안 내용"
+    db_session: AsyncSession,
+    *,
+    kind: str = "terms",
+    body_markdown: str = "초안 내용",
+    change_notice_markdown: str | None = None,
 ) -> LegalDocument:
-    document = LegalDocument(kind=kind, body_markdown=body_markdown, status="draft")
+    document = LegalDocument(
+        kind=kind, body_markdown=body_markdown, change_notice_markdown=change_notice_markdown, status="draft"
+    )
     db_session.add(document)
     await db_session.flush()
     return document
@@ -283,7 +289,9 @@ async def test_publish_creates_published_row_from_draft_and_keeps_draft(
     await db_session.execute(
         sa.delete(LegalDocument).where(LegalDocument.kind == "terms", LegalDocument.status == "published")
     )
-    draft = await _make_draft(db_session, kind="terms", body_markdown="발행할 내용")
+    draft = await _make_draft(
+        db_session, kind="terms", body_markdown="발행할 내용", change_notice_markdown="  바뀐 점  \n"
+    )
     await db_session.commit()
 
     admin_payload = await _create_admin(db_session)
@@ -299,6 +307,9 @@ async def test_publish_creates_published_row_from_draft_and_keeps_draft(
     assert body["published"]["version"] == "2024-01-01"
     assert body["published"]["bodyMarkdown"] == "발행할 내용"
     assert body["published"]["requiresReconsent"] is True
+    # 이전 화면의 `requiresReconsent` 는 그 문서의 동의 단위 전부로 읽는다. 안내는 초안에서 복제되고 앞뒤 공백을 걷는다.
+    assert body["published"]["reconsentScopes"] == ["terms"]
+    assert body["published"]["changeNoticeMarkdown"] == "바뀐 점"
     # 게시 후에도 초안 행은 남는다(재게시가 원고를 다시 붙여넣지 않아도 되도록).
     assert body["draft"]["bodyMarkdown"] == "발행할 내용"
 
@@ -676,6 +687,177 @@ async def test_released_row_without_effective_time_is_rejected_by_the_database(d
     db_session.add(
         LegalDocument(
             kind="terms", version="2026-10-18", body_markdown="본문", status="published", published_at=datetime.now(UTC)
+        )
+    )
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+
+
+# ---- 변경 안내·재동의 범위 ----------------------------------------------------------
+
+
+async def test_draft_upsert_keeps_change_notice_unless_the_field_is_sent(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """안내 칸을 보내지 않은 초안 저장은 안내를 그대로 두고, null 을 보내면 비운다. 깨지는 시나리오: 안내 칸을 모르는 이전
+    어드민 화면이 본문만 저장할 때마다 운영자가 쓴 안내가 지워진다."""
+    await _login_new_admin(db_client, db_session)
+
+    first = await db_client.put("/admin/legal/terms/draft", json={"bodyMarkdown": "본문", "changeNoticeMarkdown": "안내"})
+    assert first.json()["draft"]["changeNoticeMarkdown"] == "안내"
+    kept = await db_client.put("/admin/legal/terms/draft", json={"bodyMarkdown": "본문 2"})
+    assert (kept.json()["draft"]["bodyMarkdown"], kept.json()["draft"]["changeNoticeMarkdown"]) == ("본문 2", "안내")
+    cleared = await db_client.put("/admin/legal/terms/draft", json={"bodyMarkdown": "본문 2", "changeNoticeMarkdown": None})
+    assert cleared.json()["draft"]["changeNoticeMarkdown"] is None
+
+
+@pytest.mark.parametrize(
+    ("notice", "publish_body", "expected_status"),
+    [
+        pytest.param(None, {"reconsentScopes": ["transfer"]}, 422, id="scoped-without-notice"),
+        pytest.param(" \n\t ", {"reconsentScopes": ["collection"]}, 422, id="scoped-with-blank-notice"),
+        pytest.param(None, {"requiresReconsent": True}, 422, id="old-body-without-notice"),
+        pytest.param("바뀐 점", {"reconsentScopes": ["transfer"]}, 200, id="scoped-with-notice"),
+        pytest.param(" \n ", {"reconsentScopes": []}, 200, id="unscoped-with-blank-notice"),
+        pytest.param(None, {"requiresReconsent": False}, 200, id="old-unscoped-without-notice"),
+    ],
+)
+async def test_reconsent_publish_requires_a_change_notice(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    notice: str | None,
+    publish_body: dict[str, object],
+    expected_status: int,
+) -> None:
+    """재동의 범위가 하나라도 걸린 게시는 안내가 없거나 공백뿐이면 422 이고 아무것도 쓰지 않는다. 범위 없는 게시는 안내가
+    없어도 된다. 깨지는 시나리오: 재동의 화면이 무엇이 바뀌었는지 보여 주지 못한 채 회원을 막는다."""
+    await _make_draft(db_session, kind="privacy", body_markdown="본문", change_notice_markdown=notice)
+    await db_session.commit()
+    await _login_new_admin(db_client, db_session)
+
+    resp = await db_client.post("/admin/legal/privacy/publish", json={"version": "2099-01-01", **publish_body})
+
+    assert resp.status_code == expected_status
+    published = await db_session.scalar(
+        sa.select(LegalDocument).where(LegalDocument.kind == "privacy", LegalDocument.version == "2099-01-01")
+    )
+    if expected_status == 422:
+        assert published is None
+    else:
+        assert published is not None
+        # 공백뿐인 안내는 없는 것으로 저장한다.
+        assert published.change_notice_markdown == ((notice.strip() or None) if notice is not None else None)
+
+
+@pytest.mark.parametrize(
+    ("kind", "publish_body", "expected"),
+    [
+        pytest.param("privacy", {"reconsentScopes": ["transfer"]}, ["transfer"], id="privacy-transfer-only"),
+        pytest.param("privacy", {"requiresReconsent": True}, ["collection", "transfer"], id="old-body-whole-document"),
+        pytest.param(
+            "privacy",
+            {"reconsentScopes": ["collection"], "requiresReconsent": True},
+            ["collection"],
+            id="new-field-wins",
+        ),
+        pytest.param("privacy", {"reconsentScopes": ["terms"]}, None, id="privacy-rejects-terms-scope"),
+        pytest.param("terms", {"reconsentScopes": ["transfer"]}, None, id="terms-rejects-transfer-scope"),
+        pytest.param("refund-policy", {"reconsentScopes": ["terms"]}, None, id="policy-rejects-any-scope"),
+    ],
+)
+async def test_publish_reconsent_scopes_follow_the_document_consent_units(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    kind: str,
+    publish_body: dict[str, object],
+    expected: list[str] | None,
+) -> None:
+    """재동의 범위는 그 문서의 동의 단위 안에서만 고른다. 이전 화면의 `requiresReconsent: true` 는 그 문서의 동의 단위
+    전부이고, 두 칸이 같이 오면 새 칸을 따른다. 깨지는 시나리오: 처리방침 게시에 약관 범위를 걸어 게이트에는 효과가
+    없는데 이력에는 재동의를 받은 것으로 남거나, 이전 화면의 재동의 게시가 아무 범위도 걸지 않는다."""
+    await _make_draft(db_session, kind=kind, body_markdown="본문", change_notice_markdown="안내")
+    await db_session.commit()
+    await _login_new_admin(db_client, db_session)
+
+    resp = await db_client.post(f"/admin/legal/{kind}/publish", json={"version": "2099-01-01", **publish_body})
+
+    if expected is None:
+        assert resp.status_code == 422
+        return
+    assert resp.status_code == 200
+    assert resp.json()["published"]["reconsentScopes"] == expected
+    assert resp.json()["published"]["requiresReconsent"] is True
+    assert resp.json()["published"]["changeNoticeMarkdown"] == "안내"
+    versions = (await db_client.get(f"/admin/legal/{kind}/versions")).json()["items"]
+    assert (versions[0]["reconsentScopes"], versions[0]["changeNoticeMarkdown"]) == (expected, "안내")
+
+
+async def test_reconsent_republish_from_the_same_draft_needs_a_new_notice(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """게시가 성공하면 초안의 안내는 비워진다. 그래서 같은 초안으로 다시 재동의 게시를 하면, 본문만 고친 저장을 거쳐도
+    422 다. 깨지는 시나리오: 이미 나간 안내가 다음 재동의 게시의 "안내 필수" 검사를 통과시켜, 회원이 이번 판에서 바뀐 것이
+    아닌 지난 판의 안내를 보고 동의한다."""
+    await _make_draft(db_session, kind="privacy", body_markdown="본문", change_notice_markdown="첫 안내")
+    await db_session.commit()
+    await _login_new_admin(db_client, db_session)
+
+    first = await db_client.post(
+        "/admin/legal/privacy/publish", json={"version": "2099-01-01", "reconsentScopes": ["transfer"]}
+    )
+    assert first.status_code == 200
+    assert first.json()["published"]["changeNoticeMarkdown"] == "첫 안내"
+    # 본문은 남고 안내만 비워진다.
+    assert (first.json()["draft"]["bodyMarkdown"], first.json()["draft"]["changeNoticeMarkdown"]) == ("본문", None)
+
+    # 안내 칸을 모르는 화면처럼 본문만 고쳐 저장한다.
+    await db_client.put("/admin/legal/privacy/draft", json={"bodyMarkdown": "본문 2"})
+    second = await db_client.post(
+        "/admin/legal/privacy/publish", json={"version": "2099-01-02", "reconsentScopes": ["collection"]}
+    )
+
+    assert second.status_code == 422
+    assert (
+        await db_session.scalar(
+            sa.select(LegalDocument).where(LegalDocument.kind == "privacy", LegalDocument.version == "2099-01-02")
+        )
+    ) is None
+
+
+async def test_publish_after_a_reconsent_publish_does_not_inherit_its_notice(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """재동의 게시 뒤 재동의 없는 게시를 하면 새 판의 안내는 비어 있다. 깨지는 시나리오: 오타만 고친 판이 지난 판의 안내를
+    복제해, 누적 변경 안내에 같은 안내가 두 판의 것으로 나온다."""
+    await _make_draft(db_session, kind="terms", body_markdown="본문", change_notice_markdown="첫 안내")
+    await db_session.commit()
+    await _login_new_admin(db_client, db_session)
+
+    first = await db_client.post("/admin/legal/terms/publish", json={"version": "2099-01-01", "reconsentScopes": ["terms"]})
+    assert first.status_code == 200
+    second = await db_client.post("/admin/legal/terms/publish", json={"version": "2099-01-02", "reconsentScopes": []})
+
+    assert second.status_code == 200
+    assert second.json()["published"]["version"] == "2099-01-02"
+    assert second.json()["published"]["changeNoticeMarkdown"] is None
+    versions = (await db_client.get("/admin/legal/terms/versions")).json()["items"]
+    notices = {item["version"]: item["changeNoticeMarkdown"] for item in versions}
+    assert (notices["2099-01-01"], notices["2099-01-02"]) == ("첫 안내", None)
+
+
+async def test_requires_reconsent_must_match_reconsent_scopes_in_the_database(db_session: AsyncSession) -> None:
+    """`requires_reconsent` 는 재동의 범위가 비어 있지 않음과 같다(CHECK). 이 칸을 모르는 이전 이미지가 배포 겹침·롤백 동안
+    그 불리언으로 판정하므로 어긋나면 이전 이미지가 재동의를 놓치거나 잘못 건다."""
+    db_session.add(
+        LegalDocument(
+            kind="terms",
+            version="2099-01-01",
+            body_markdown="본문",
+            status="published",
+            requires_reconsent=True,
+            reconsent_scopes=[],
+            published_at=datetime.now(UTC),
+            effective_at=datetime.now(UTC),
         )
     )
     with pytest.raises(IntegrityError):

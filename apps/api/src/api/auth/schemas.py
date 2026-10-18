@@ -144,8 +144,12 @@ class MeResponse(CamelModel):
     nickname: str
     bio: str | None
     profile_image_asset_id: uuid.UUID | None
+    # 재동의 플래그. 앞의 둘은 문서 단위(처리방침 = 수집·이용 또는 국외이전 중 하나라도)이고 동의 단위를 모르는 이전 웹이
+    # 읽는다. 뒤의 둘이 처리방침의 두 동의 단위를 따로 낸다(약관의 동의 단위는 약관 하나라 `terms_reconsent_required` 와 같다).
     terms_reconsent_required: bool
     privacy_reconsent_required: bool
+    collection_reconsent_required: bool
+    transfer_reconsent_required: bool
     # 한 계정이 비밀번호와 소셜 연동을 함께 가질 수 있어(이메일이 같으면 구글 로그인이 기존
     # 비밀번호 계정에 연동된다) 단일 "가입 방식" 값이 아니라 두 필드로 낸다.
     has_password: bool

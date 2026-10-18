@@ -31,6 +31,7 @@ from api.db.models.content import Content, ContentChatParticipant, ContentVisibi
 from api.db.models.creator_payout import CreatorPayout, CreatorPayoutApplication, CreatorPayoutProfile
 from api.db.models.feature_grant import UserFeatureGrant
 from api.db.models.inquiry import Inquiry
+from api.db.models.legal import UserLegalConsent
 from api.db.models.media import Asset, AssetKind, ImageGenerationRequest
 from api.db.models.novel import Novel, NovelComment, NovelPurchase, NovelReaderPosition
 from api.db.models.persona import UserPersona
@@ -213,6 +214,10 @@ async def erase_account(
     )
     # 기능 허용은 계정에 딸린 설정이라 계정과 함께 지운다. 누가 언제 허용했는지는 감사 로그에 남는다.
     await db.execute(delete(UserFeatureGrant).where(UserFeatureGrant.user_id == user_id))
+    # 동의 이력(어느 판에 어떤 동의 단위로 언제 동의했는지)은 계정에 딸린 기록이라 탈퇴하면 지체 없이 파기한다. `users` 의
+    # 동의 버전·시각 칸은 회원 행과 함께 남는다 — 그 칸을 비울지는 이 파기와 따로 정할 일이다. 재동의 기록도 이 회원 행을
+    # 잠그고 탈퇴 여부를 다시 본 뒤 쓰므로, 잠금을 쥔 지금 지우면 탈퇴 뒤에 이력 행이 새로 남지 않는다.
+    await db.execute(delete(UserLegalConsent).where(UserLegalConsent.user_id == user_id))
     # 정산 신청 기록(신청·동의 시각, 처리 결과와 사유, 적립 구간)은 동의로 받은 기록이라 탈퇴하면 지체 없이 파기한다.
     # 확정 행·내역 줄·배치 실행 기록은 신청 행을 참조하지 않아 그대로 남는다 — 그쪽은 세법상 장부로 보존한다. 적립 구간이
     # 사라져도 탈퇴한 회원은 월 확정 배치가 건너뛰므로 정산이 달라지지 않는다. 어드민의 신청 처리도 이 회원의 `users` 행을

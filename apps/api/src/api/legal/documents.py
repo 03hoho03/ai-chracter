@@ -14,7 +14,7 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, any_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models.legal import LegalDocument
@@ -42,14 +42,20 @@ def effective_order(document: LegalDocument) -> tuple[datetime, datetime]:
 
 
 async def current_legal_document(
-    db: AsyncSession, kind: str, *, now: datetime, requires_reconsent: bool | None = None
+    db: AsyncSession, kind: str, *, now: datetime, reconsent_scope: str | None = None
 ) -> LegalDocument | None:
-    """kind 의 현행판. `requires_reconsent=True` 를 주면 시행된 재동의 요구 판 가운데 가장 늦은 것(재동의 기준 판)을 준다."""
+    """kind 의 현행판. `reconsent_scope` 를 주면 그 동의 단위를 다시 받은 시행된 판 가운데 가장 늦은 것(그 단위의 재동의
+    기준 판)을 준다."""
     query = _published_in_order(kind).where(LegalDocument.effective_at <= now)
-    if requires_reconsent is not None:
-        query = query.where(LegalDocument.requires_reconsent.is_(requires_reconsent))
+    if reconsent_scope is not None:
+        query = query.where(any_(LegalDocument.reconsent_scopes) == reconsent_scope)
     document: LegalDocument | None = await db.scalar(query.limit(1))
     return document
+
+
+async def effective_legal_documents(db: AsyncSession, kind: str, *, now: datetime) -> list[LegalDocument]:
+    """kind 의 시행된 판 전부를 최신 판부터. 시행 예정 판과 철회본은 들지 않는다."""
+    return list((await db.scalars(_published_in_order(kind).where(LegalDocument.effective_at <= now))).all())
 
 
 async def current_legal_version(db: AsyncSession, kind: str, *, now: datetime) -> str | None:

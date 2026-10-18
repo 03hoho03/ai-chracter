@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models import LegalDocument
 from api.legal import documents
-from api.legal.dependencies import reconsent_required_kinds, require_legal_consent
+from api.legal.dependencies import reconsent_required_units, require_legal_consent
 from factories import _make_published, _make_user
 
 
@@ -45,6 +45,7 @@ async def test_require_legal_consent_blocks_when_terms_unconsented(db_session: A
     assert cast(dict[str, object], exc_info.value.detail) == {
         "code": "LEGAL_RECONSENT_REQUIRED",
         "kinds": ["terms"],
+        "consents": ["terms"],
     }
 
 
@@ -62,6 +63,7 @@ async def test_require_legal_consent_blocks_when_privacy_unconsented(db_session:
     assert cast(dict[str, object], exc_info.value.detail) == {
         "code": "LEGAL_RECONSENT_REQUIRED",
         "kinds": ["privacy"],
+        "consents": ["collection", "transfer"],
     }
 
 
@@ -80,12 +82,13 @@ async def test_require_legal_consent_blocks_when_both_unconsented(db_session: As
     assert cast(dict[str, object], exc_info.value.detail) == {
         "code": "LEGAL_RECONSENT_REQUIRED",
         "kinds": ["terms", "privacy"],
+        "consents": ["terms", "collection", "transfer"],
     }
 
 
 async def test_require_legal_consent_passes_when_both_consented(db_session: AsyncSession) -> None:
     await _clear_published_legal_documents(db_session)
-    user = _make_user(terms_version="2099-01-01", privacy_version="2099-02-01")
+    user = _make_user(terms_version="2099-01-01", privacy_version="2099-02-01", transfer_version="2099-02-01")
     db_session.add(user)
     await db_session.flush()
     await _make_published(db_session, kind="terms", version="2099-01-01", requires_reconsent=True)
@@ -98,15 +101,15 @@ async def test_require_legal_consent_passes_when_both_consented(db_session: Asyn
 async def test_require_legal_consent_ignores_policy_kind_marked_reconsent(
     db_session: AsyncSession, kind: str
 ) -> None:
-    """게이트는 약관·처리방침만 요구한다 — 정책 문서 행에 `requires_reconsent=true` 가
-    들어가 있어도 두 문서에 동의한 회원은 막히지 않는다."""
+    """게이트는 약관·처리방침의 동의 단위만 요구한다 — 정책 문서 행에 재동의 범위가 들어가 있어도(게시 경로는 막지만
+    DB 직접 수정 등으로) 두 문서에 동의한 회원은 막히지 않는다."""
     await _clear_published_legal_documents(db_session)
-    user = _make_user(terms_version="2099-01-01", privacy_version="2099-02-01")
+    user = _make_user(terms_version="2099-01-01", privacy_version="2099-02-01", transfer_version="2099-02-01")
     db_session.add(user)
     await db_session.flush()
     await _make_published(db_session, kind="terms", version="2099-01-01", requires_reconsent=True)
     await _make_published(db_session, kind="privacy", version="2099-02-01", requires_reconsent=True)
-    await _make_published(db_session, kind=kind, version="2099-12-31", requires_reconsent=True)
+    await _make_published(db_session, kind=kind, version="2099-12-31", reconsent_scopes=["terms", "collection", "transfer"])
 
     await require_legal_consent(user_id=user.id, db=db_session)  # 예외 없이 통과하면 성공
 
@@ -128,19 +131,23 @@ async def test_same_day_editions_are_ordered_by_effective_time_not_by_version_st
     await _make_published(
         db_session, kind="privacy", version="2026-10-18.10", requires_reconsent=True, published_at=later
     )
-    user = _make_user(terms_version="2026-10-18.10", privacy_version="2026-10-18.2")
+    user = _make_user(terms_version="2026-10-18.10", privacy_version="2026-10-18.2", transfer_version="2026-10-18.10")
 
-    assert await reconsent_required_kinds(db_session, user, now=datetime.now(UTC)) == ["privacy"]
+    assert await reconsent_required_units(db_session, user, now=datetime.now(UTC)) == ["collection"]
 
 
 async def test_version_missing_from_published_documents_counts_as_unconsented(db_session: AsyncSession) -> None:
     """회원이 동의한 버전 문자열이 게시본에 없으면 미동의다. 깨지는 시나리오: DB 직접 수정이나 오타로 들어간 버전을
     동의로 읽어 재동의 게이트를 영영 건너뛴다. 시드 판(`_make_user` 기본값)에 동의한 회원은 그대로 통과한다."""
     consented = _make_user()
-    unknown = _make_user(terms_version="2026-10-17", privacy_version="2026-10-17")
+    unknown = _make_user(terms_version="2026-10-17", privacy_version="2026-10-17", transfer_version="2026-10-17")
 
-    assert await reconsent_required_kinds(db_session, consented, now=datetime.now(UTC)) == []
-    assert await reconsent_required_kinds(db_session, unknown, now=datetime.now(UTC)) == ["terms", "privacy"]
+    assert await reconsent_required_units(db_session, consented, now=datetime.now(UTC)) == []
+    assert await reconsent_required_units(db_session, unknown, now=datetime.now(UTC)) == [
+        "terms",
+        "collection",
+        "transfer",
+    ]
 
 
 async def test_scheduled_reconsent_edition_applies_only_once_its_effective_time_passes(
@@ -156,11 +163,15 @@ async def test_scheduled_reconsent_edition_applies_only_once_its_effective_time_
     db_session.add(user)
     await db_session.flush()
 
-    assert await reconsent_required_kinds(db_session, user, now=effective_at - timedelta(seconds=1)) == []
-    assert await reconsent_required_kinds(db_session, user, now=effective_at) == ["terms"]
+    assert await reconsent_required_units(db_session, user, now=effective_at - timedelta(seconds=1)) == []
+    assert await reconsent_required_units(db_session, user, now=effective_at) == ["terms"]
 
     await require_legal_consent(user_id=user.id, db=db_session)  # 지금은 시행 전이라 통과한다
     monkeypatch.setattr(documents, "utcnow", lambda: effective_at + timedelta(minutes=1))
     with pytest.raises(HTTPException) as exc_info:
         await require_legal_consent(user_id=user.id, db=db_session)
-    assert cast(dict[str, object], exc_info.value.detail) == {"code": "LEGAL_RECONSENT_REQUIRED", "kinds": ["terms"]}
+    assert cast(dict[str, object], exc_info.value.detail) == {
+        "code": "LEGAL_RECONSENT_REQUIRED",
+        "kinds": ["terms"],
+        "consents": ["terms"],
+    }
