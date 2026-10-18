@@ -176,9 +176,11 @@ async def publish_legal_document(
 
     **시행 시각**: 비우면 게시 시각으로 즉시 시행한다. 게시 시각보다 이르면 422 — 과거로 소급하면 그 판이 직전 현행판보다
     앞에 놓여 영영 현행이 되지 못하거나, 그 사이에 옛 판에 동의한 회원이 새 판에 동의한 것으로 읽힌다. 미래면 시행 예정
-    판이 되고, kind 마다 하나만 둔다(두 번째는 409, 고치려면 먼저 철회한다). 이 검사는 부분 유니크 인덱스로 할 수 없다
-    (인덱스 조건에 현재 시각을 쓸 수 없다). 그래서 kind 의 초안 행을 잠가 같은 kind 의 게시를 줄 세운 뒤 검사한다 —
-    게시는 초안이 있어야 하므로 초안 행이 kind 단위의 잠금 대상이 된다.
+    판이 된다. **예정 판이 있는 동안 같은 kind 의 다른 게시는 즉시든 예약이든 409 다**(먼저 예정 판을 철회한다). 즉시 게시를
+    허용하면 예정 판이 시행되는 순간 그 판이 현행이 되어 사이에 게시한 수정이 조용히 사라지고, 초안에 남은 예정 판 본문을
+    즉시 게시하면 공지 기간 없이 오늘 시행된다. 급한 수정은 예정 판 철회 → 수정판 게시 → 수정을 반영한 판 재예약 순서로 한다.
+    이 검사는 부분 유니크 인덱스로 할 수 없다(인덱스 조건에 현재 시각을 쓸 수 없다). 그래서 kind 의 초안 행을 잠가 같은
+    kind 의 게시를 줄 세운 뒤 검사한다 — 게시는 초안이 있어야 하므로 초안 행이 kind 단위의 잠금 대상이 된다.
     """
     if body.requires_reconsent and kind not in _CONSENT_KINDS:
         raise HTTPException(
@@ -196,10 +198,10 @@ async def publish_legal_document(
     draft = await _get_draft(db, kind, for_update=True)
     if draft is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="발행할 초안이 없습니다.")
-    if effective_at > now and await documents.upcoming_legal_document(db, kind, now=now) is not None:
+    if await documents.upcoming_legal_document(db, kind, now=now) is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="이미 시행 예정인 판이 있습니다. 그 판을 철회한 뒤 다시 예약해 주세요.",
+            detail="시행 예정인 판이 있어 게시할 수 없습니다. 그 판을 먼저 철회한 뒤 게시해 주세요.",
         )
 
     # 부분 유니크 인덱스(`kind`, `version`) WHERE status='published'가 중복 버전을

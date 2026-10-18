@@ -492,6 +492,8 @@ cd /opt/ddona/app && sudo DDONA_ROLLBACK=1 bash ops/swap-api.sh <이전SHA>
 건너뛰면 새 코드가 자기 마이그레이션 없는 스키마에서 뜨고 `/health` 는 DB 를 보지 않아 배포가 초록으로 끝난다. 롤백해 둔 동안
 태그를 생략한 env 반영 재교체도 같은 상황이라 표시를 붙인다(`sudo DDONA_ROLLBACK=1 bash ops/swap-api.sh`). DB 가 이미지보다
 뒤거나 같으면 표시와 상관없이 upgrade 한다. 판정 자체가 실패하면(DB 에 못 닿음 등) 건너뛰지 않고 멈춘다.
+법무 문서에 시행 예정(예약) 판이 있으면 먼저 어드민에서 철회한 뒤 시행 시각(`effective_at`)이 생기기 전 이미지로 롤백한다(옛 코드는
+예약 판을 즉시 현행으로 본다).
 과거 태그는 `gcloud artifacts docker tags list asia-northeast3-docker.pkg.dev/ddona-ai-character-chat/ddona/api`.
 배포 워크플로가 끝에서(실행 이미지 확인 뒤) `apps/api/scripts/ops/prune_api_images.py`로 VM 로컬 API 이미지를
 **현재 것 포함 최근 3개**(+ 실행 중 이미지)만 남기고 지운다 — 다른 저장소 이미지(caddy·postgres 등)는 건드리지

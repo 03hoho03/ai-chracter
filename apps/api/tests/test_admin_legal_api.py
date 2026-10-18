@@ -557,6 +557,44 @@ async def test_scheduled_publish_stays_upcoming_and_a_second_schedule_is_409(
     assert count == 0
 
 
+async def test_any_publish_is_409_while_an_edition_is_scheduled_until_it_is_withdrawn(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """예정 판이 있는 동안 같은 kind 의 게시는 즉시든 예약이든 409 이고 아무것도 남기지 않는다. 예정 판을 철회하면 즉시
+    게시가 된다. 깨지는 시나리오: 예정 판을 둔 채 즉시 게시한 수정이 예정 판 시행 순간 조용히 사라지거나, 초안에 남은
+    예정 판 본문이 즉시 게시로 공지 기간 없이 오늘 시행된다."""
+    await _make_draft(db_session, kind="terms")
+    await db_session.commit()
+    await _login_new_admin(db_client, db_session)
+    effective_at = datetime.now(UTC) + timedelta(days=30)
+    assert (
+        await db_client.post("/admin/legal/terms/publish", json=_schedule_body("2026-11-17", effective_at))
+    ).status_code == 200
+
+    immediate = await db_client.post(
+        "/admin/legal/terms/publish", json={"version": "2026-10-18", "requiresReconsent": False}
+    )
+    scheduled = await db_client.post(
+        "/admin/legal/terms/publish", json=_schedule_body("2026-11-20", effective_at + timedelta(days=3))
+    )
+
+    assert (immediate.status_code, scheduled.status_code) == (409, 409)
+    assert "철회" in immediate.json()["detail"]
+    count = await db_session.scalar(
+        sa.select(sa.func.count())
+        .select_from(LegalDocument)
+        .where(LegalDocument.version.in_(("2026-10-18", "2026-11-20")))
+    )
+    assert count == 0
+
+    assert (await db_client.post("/admin/legal/terms/versions/2026-11-17/withdraw")).status_code == 200
+    after = await db_client.post(
+        "/admin/legal/terms/publish", json={"version": "2026-10-18", "requiresReconsent": False}
+    )
+    assert after.status_code == 200
+    assert after.json()["published"]["version"] == "2026-10-18"
+
+
 async def test_publish_rejects_effective_time_before_publish_time(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
