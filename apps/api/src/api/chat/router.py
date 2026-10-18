@@ -133,7 +133,7 @@ from api.db.models.chat import (
     StoryEndingUnlock,
     StoryMediaExposure,
 )
-from api.db.models.content import Content, ContentType, ModerationStatus
+from api.db.models.content import Content, ContentType, ContentVersion, ModerationStatus
 from api.db.models.media import Asset
 from api.db.models.novel import Novel
 from api.db.models.persona import UserPersona
@@ -2158,9 +2158,15 @@ async def get_ending_collection(
     """`starting_setup_id`는 물리적 PK(`_build_content_snapshot`의
     `startingSetupId`와 동일한 값 — `POST /chat-rooms`의 startingSetupId 관례를 따른다), 도달
     여부는 `story_ending_unlocks`를 entity_id(버전 불변)로 조인해 같은 시작설정으로
-    새 대화방을 만들어도 이전 기록이 유지되게 한다."""
+    새 대화방을 만들어도 이전 기록이 유지되게 한다.
+
+    작품을 읽을 수 있는 사람에게만 연다 — 이미지 보관함과 같은 기준(`is_open_to_participant`)이라, 비공개 작품은 작가
+    본인과 그 작품에 대화방이 있는 사용자(공개였을 때 대화를 시작한 플레이어)에게만 열린다. 막힌 경우는 없는 시작설정과
+    같은 404 다."""
     setup = await db.get(StartingSetup, starting_setup_id)
-    if setup is None:
+    version = await db.get(ContentVersion, setup.content_version_id) if setup is not None else None
+    content = await db.get(Content, version.content_id) if version is not None else None
+    if setup is None or content is None or not await is_open_to_participant(db, content, user_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Starting setup not found")
 
     endings = (
