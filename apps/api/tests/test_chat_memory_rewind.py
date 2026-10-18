@@ -1007,6 +1007,7 @@ class _EpisodeClient(LLMClient):
                     importance=3,
                     start_line=1,
                     end_line=20,
+                    known_by=[],
                 )
             ]
         )

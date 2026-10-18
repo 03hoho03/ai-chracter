@@ -54,12 +54,14 @@ _MEMORY_FACT_MIGRATION = _load("5cab2abe4e7b")
 _RECALL_PRIORITY_MIGRATION = _load("726aad108167")
 # 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 세트를 게시하는 리비전.
 _FACT_INSTRUCTION_MIGRATION = _load("e4e407a62d03")
-# 그 뒤 여덟 체인의 요약 채널에 비밀 표기 슬롯을 더한 세트를 게시하는 리비전 — character 레인 활성 Gemini 세트가 그 세트다.
-# 초안 게시 검사가 head 코드 표를 쓰므로 초안은 이것도 거친다.
+# 그 뒤 여덟 체인의 요약 채널에 비밀 표기 슬롯을 더한 세트를 게시하는 리비전 — 초안 게시 검사가 head 코드 표를 쓰므로 초안은
+# 이것도 거친다.
 _SECRET_MARKING_MIGRATION = _load("0aeadefcf159")
-# 그 뒤 story 레인 네 체인에 장면 헤더 판정 채널을 더한 세트를 게시하는 리비전 — story 레인의 head 활성이라 되돌릴 때는
-# 이것부터다. 초안 게시 검사가 head 코드 표를 쓰므로 story 초안은 이것도 거친다.
+# 그 뒤 story 레인 네 체인에 장면 헤더 판정 채널을 더한 세트를 게시하는 리비전 — 초안 게시 검사가 head 코드 표를 쓰므로
+# story 초안은 이것도 거친다.
 _SCENE_JUDGMENT = _load("0346abdbcc92")
+# 그 뒤 여덟 체인에 장면 추출 지시문만 바꾼 세트를 게시하는 리비전 — character 레인 활성 Gemini 세트가 그 세트다.
+_EPISODE_KNOWN_BY_MIGRATION = _load("eb8d3cc6d5c2")
 
 _NEW_KEY = ("generation", "story", "situation_notes", "")
 
@@ -231,6 +233,7 @@ async def test_character_lane_is_untouched(db_session: AsyncSession) -> None:
         _RECALL_PRIORITY_MIGRATION.NEW_SET_IDS[("character", "gemini")],
         _FACT_INSTRUCTION_MIGRATION.NEW_SET_IDS[("character", "gemini")],
         _SECRET_MARKING_MIGRATION.NEW_SET_IDS[("character", "gemini")],
+        _EPISODE_KNOWN_BY_MIGRATION.NEW_SET_IDS[("character", "gemini")],
     )
     assert all(s.slot != "situation_notes" for s in sections)
 

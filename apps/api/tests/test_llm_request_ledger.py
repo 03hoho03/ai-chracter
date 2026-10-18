@@ -150,6 +150,7 @@ class _LedgerLLM(LLMClient):
                         importance=3,
                         start_line=1,
                         end_line=2,
+                        known_by=[],
                     )
                 ]
             )
