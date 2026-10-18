@@ -11,7 +11,11 @@
 
 LLM 호출 칸은 공급자 구현이 호출 컨텍스트의 사용량 목록에 더한 것이다. 여기서는 가짜 LLM 이 공급자 대신 그 목록에 더해,
 턴이 생성·판정 호출 전부에 같은 목록을 넘기는지를 본다. 공급자 구현이 실제로 더하는지는 아래 공급자 절이 SDK 경계만 가짜로
-두고 따로 본다."""
+두고 따로 본다.
+
+생성 칸에는 첫 글자 지연 `firstTokenMs`(생성을 시작한 때부터 처음으로 글이 든 델타가 온 때까지, 정수 ms)가 붙는다.
+판정·질의 임베딩 칸에는 붙지 않는다. 글이 든 델타가 하나도 없이 끝난 생성은 잴 첫 글자가 없으므로 키를 싣지 않는다.
+시각은 턴 엔진의 단조 시계를 가짜로 바꿔 정한다 — 가짜 LLM 이 델타를 내기 전에 시계를 옮긴다."""
 
 import uuid
 from collections.abc import AsyncIterator
@@ -24,6 +28,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.chat import turn_engine
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
     ImageMatchJudgmentResult,
@@ -56,6 +61,28 @@ from factories import (
 )
 
 
+class _FakeClock:
+    """턴 엔진의 단조 시계 대신. 값은 가짜 LLM 이 옮기는 대로만 바뀐다."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+_CLOCK = _FakeClock()
+# 기본 가짜 LLM 이 첫 델타 앞에서 옮기는 시간. 이진 소수로 정확히 떨어지는 값이라 ms 로 바꿔도 반올림이 끼지 않는다.
+_SINK_FIRST_TOKEN_SECONDS = 0.125
+_SINK_FIRST_TOKEN_MS = 125
+
+
+@pytest.fixture(autouse=True)
+def _fake_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    _CLOCK.now = 1000.0
+    monkeypatch.setattr(turn_engine, "_clock", _CLOCK)
+
+
 class _SinkLLMClient(LLMClient):
     """생성은 고정 응답, 스탯 판정은 규칙 a1(+5), 엔딩은 `ending` 대로 답한다. 공급자 구현처럼 호출 컨텍스트의 사용량
     목록에 호출 한 건씩 더하고, 모델 이름에 `tag` 를 붙여 어느 요청의 호출인지 가른다."""
@@ -86,6 +113,7 @@ class _SinkLLMClient(LLMClient):
         *,
         usage: LLMCallContext,
     ) -> AsyncIterator[str]:
+        _CLOCK.now += _SINK_FIRST_TOKEN_SECONDS
         yield f"{self._tag} 응답"
         self._sink(usage)
 
@@ -112,9 +140,31 @@ def _calls(tag: str, *call_sites: str) -> list[dict[str, Any]]:
             "cacheWriteTokens": None,
             "outputTokens": 7,
             "thoughtsTokens": 0,
+            **({"firstTokenMs": _SINK_FIRST_TOKEN_MS} if call_site == "chat_generate" else {}),
         }
         for call_site in call_sites
     ]
+
+
+class _ScriptedLLMClient(_SinkLLMClient):
+    """생성이 `(앞서 흐르는 초, 델타)` 차례대로 시계를 옮기며 델타를 낸다. 판정은 기본 가짜 LLM 그대로다."""
+
+    def __init__(self, *, tag: str, steps: list[tuple[float, str]]) -> None:
+        super().__init__(tag=tag)
+        self._steps = steps
+
+    async def generate(
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+        stop_sequences: list[str] | None = None,
+        *,
+        usage: LLMCallContext,
+    ) -> AsyncIterator[str]:
+        for seconds, delta in self._steps:
+            _CLOCK.now += seconds
+            yield delta
+        self._sink(usage)
 
 
 async def _post(
@@ -325,6 +375,49 @@ async def test_each_send_and_edit_writes_one_record(db_client: httpx.AsyncClient
     ]
     assert records[1].assistant_message_id == await _last_assistant_id(db_session, room.room_id)
     assert records[1].llm_calls == _calls("c", "chat_generate", "chat_stat_judgment")
+
+
+async def test_first_token_latency_counts_from_generation_start_to_the_first_delta_with_text(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """빈 델타는 화면에 아무것도 띄우지 않으므로 첫 글자가 아니다. 마지막 델타 시각을 쓰면 2250, 빈 델타를 세면 125 가
+    나와 값으로 갈린다. 판정 칸에는 생성 지연이 붙지 않는다."""
+    room = await _open_room(db_client, db_session, turns=1, lane="story")
+
+    await _post(
+        db_client,
+        "POST",
+        f"/chat-rooms/{room.room_id}/messages",
+        {"content": "약속을 지킨다"},
+        _ScriptedLLMClient(tag="send", steps=[(0.125, ""), (0.125, "첫 "), (2.0, "끝")]),
+    )
+
+    [record] = await _records(db_session, room.room_id)
+    by_site = {call["callSite"]: call for call in record.llm_calls}
+    first_token_ms = by_site["chat_generate"].get("firstTokenMs")
+    assert (type(first_token_ms), first_token_ms) == (int, 250)
+    assert [site for site, call in by_site.items() if "firstTokenMs" in call] == ["chat_generate"]
+
+
+@pytest.mark.parametrize("steps", [pytest.param([], id="no-delta"), pytest.param([(0.25, "")], id="only-empty-delta")])
+async def test_generation_that_ends_without_text_records_no_first_token_latency(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, steps: list[tuple[float, str]]
+) -> None:
+    """글 없이 정상 종료한 생성은 잴 첫 글자가 없다. 0 이나 종료 시각으로 채우면 분포에 가짜 빠른 값이 섞이므로 키를 뺀다.
+    생성 칸 자체는 남는다(호출은 과금됐다)."""
+    room = await _open_room(db_client, db_session, turns=1, lane="story")
+
+    await _post(
+        db_client,
+        "POST",
+        f"/chat-rooms/{room.room_id}/messages",
+        {"content": "약속을 지킨다"},
+        _ScriptedLLMClient(tag="send", steps=steps),
+    )
+
+    [record] = await _records(db_session, room.room_id)
+    [generate_call] = [call for call in record.llm_calls if call["callSite"] == "chat_generate"]
+    assert "firstTokenMs" not in generate_call
 
 
 # ── 재생성 ─────────────────────────────────────────────────────────────────────────────

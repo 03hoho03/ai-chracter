@@ -16,6 +16,7 @@ import 한다)."""
 import asyncio
 import json
 import logging
+import time
 import uuid
 from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import dataclass
@@ -66,6 +67,9 @@ _PERSONA_AND_NOTE_POLICY_WARNING_MESSAGE = (
     f"{_POLICY_WARNING_MESSAGE} 대화 프로필이나 기억 노트 내용이 원인일 수 있어요."
 )
 _GENERATION_ERROR_MESSAGE = "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+# 생성 첫 글자 지연을 재는 단조 시계(초). 벽시계는 NTP 보정으로 뒤로 갈 수 있어 쓰지 않는다. 테스트가 정해진 값을 내는
+# 가짜로 바꿔 끼우므로, 읽는 자리는 이 이름을 부를 때마다 모듈에서 찾아야 한다.
+_clock: Callable[[], float] = time.monotonic
 
 
 def _policy_warning_message(persona_description_rendered: bool, note_rendered: bool) -> str:

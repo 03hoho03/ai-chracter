@@ -1320,7 +1320,10 @@ async def test_send_records_the_query_embedding_and_holds_no_transaction_while_w
         stub.total_tokens,
         "ok",
     )
+    # 첫 글자 지연은 생성 칸에만 붙는다 — 질의 임베딩 칸의 지연은 `latencyMs` 하나다.
+    assert "firstTokenMs" not in first_call
     assert record.llm_calls[1]["callSite"] == "chat_generate"
+    assert type(record.llm_calls[1].get("firstTokenMs")) is int
 
 
 async def test_turn_record_has_no_query_embedding_call_when_the_switch_is_off(
