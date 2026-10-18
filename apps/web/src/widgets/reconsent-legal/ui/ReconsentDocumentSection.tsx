@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { type ReactNode, useId, useState } from "react";
 import type { ApiError, components } from "@ai-character-chat/api-types";
 import { Markdown } from "@ai-character-chat/ui/components/markdown";
 import { cn } from "@ai-character-chat/ui/lib/utils";
@@ -31,8 +31,8 @@ type ReconsentDocumentSectionProps = {
   consentedVersions: (string | null)[];
 };
 
-/** 다시 동의할 문서 하나 — [문서명 · 판 · 시행일] → 마지막 동의 이후 누적 변경 안내 → 접힌 전문. 안내를 먼저 두는 것은
- * "무엇이 바뀌었나"를 먼저 읽히려는 것이고, 전문은 동의 전에 이 자리에서 펼쳐 볼 수 있게 모달 안에 둔다.
+/** 다시 동의할 문서 하나 — [문서명 · 판 · 시행일] → 접힌 전문 → 마지막 동의 이후 변경 안내. 전문 토글을 문서 머리 바로
+ * 아래에 두는 것은 안내가 길어도 "전문 보기"가 늘 같은 자리에 있게 하려는 것이고, 안내는 가장 최근 판만 펼쳐 둔다.
  *
  * 문서끼리는 테두리 상자가 아니라 제목과 구분선으로 가른다. 대화상자 안에 상자를 한 겹 더 두면 좁은 화면에서 긴 안내가
  * 읽히는 폭이 양쪽 32px 줄어든다. */
@@ -51,8 +51,8 @@ export function ReconsentDocumentSection({ kind, docQuery, changesQuery, consent
         </h3>
         <DocumentMeta docQuery={docQuery} />
       </div>
-      <ChangeNotices changesQuery={changesQuery} consentedVersions={consentedVersions} />
       <FullText label={label} docQuery={docQuery} />
+      <ChangeNotices label={label} changesQuery={changesQuery} consentedVersions={consentedVersions} />
     </section>
   );
 }
@@ -68,11 +68,12 @@ function DocumentMeta({ docQuery }: { docQuery: UseQueryResult<LegalDocumentResp
 }
 
 type ChangeNoticesProps = {
+  label: string;
   changesQuery: UseQueryResult<LegalChangesResponse, ApiError>;
   consentedVersions: (string | null)[];
 };
 
-function ChangeNotices({ changesQuery, consentedVersions }: ChangeNoticesProps) {
+function ChangeNotices({ label, changesQuery, consentedVersions }: ChangeNoticesProps) {
   if (changesQuery.isPending) {
     return (
       <div className="flex flex-col gap-2">
@@ -91,31 +92,54 @@ function ChangeNotices({ changesQuery, consentedVersions }: ChangeNoticesProps) 
   }
 
   const entries = toChangeNoticeEntries(selectChangesSinceOldestConsent(changesQuery.data.items, consentedVersions));
-  if (entries.length === 0) {
+  const [latest, ...earlier] = entries;
+  if (latest === undefined) {
     return <p className="text-sm break-keep text-muted-foreground">{EMPTY_NOTICE_TEXT}</p>;
   }
+  // 판이 하나면 그 판은 문서 머리의 판과 같아 판 표시를 되풀이하지 않는다.
+  if (earlier.length === 0) {
+    return <ChangeNoticeItem entry={latest} showVersion={false} />;
+  }
 
-  // 판이 하나면 그 판은 카드 머리의 판과 같아 판 표시를 되풀이하지 않는다. 여럿이면 판마다 어느 판의 안내인지 단다.
-  const isCumulative = entries.length > 1;
   return (
     <div className="flex flex-col gap-3">
-      {isCumulative && (
-        <p className="text-xs break-keep text-muted-foreground">
-          마지막으로 동의하신 뒤 {entries.length}개 판이 시행됐어요. 최신 판부터 보여요.
-        </p>
+      <p className="text-xs break-keep text-muted-foreground">
+        마지막으로 동의하신 뒤 {entries.length}개 판이 시행됐어요.
+      </p>
+      <ChangeNoticeItem entry={latest} showVersion />
+      <EarlierChangeNotices label={label} entries={earlier} />
+    </div>
+  );
+}
+
+/** 가장 최근 판보다 앞선 판들의 안내. 여러 판을 건너뛴 회원에게 판마다 긴 안내를 한꺼번에 펼치면 모달이 안내로 가득 차므로
+ * 접어 두고, 펼칠 때만 그린다. */
+function EarlierChangeNotices({ label, entries }: { label: string; entries: ChangeNoticeEntry[] }) {
+  const panelId = useId();
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  return (
+    <div className="flex flex-col gap-3 border-t border-border pt-3">
+      <DisclosureButton isExpanded={isExpanded} panelId={panelId} onToggle={() => setIsExpanded((previous) => !previous)}>
+        <span className="sr-only">{label} </span>
+        {isExpanded ? "이전 변경 접기" : `이전 변경 ${entries.length}건 더 보기`}
+      </DisclosureButton>
+      {isExpanded && (
+        <ol id={panelId} className="flex flex-col gap-4">
+          {entries.map((entry) => (
+            <li key={entry.version} className="not-first:border-t not-first:border-border not-first:pt-4">
+              <ChangeNoticeItem entry={entry} showVersion />
+            </li>
+          ))}
+        </ol>
       )}
-      <ol className="flex flex-col gap-4">
-        {entries.map((entry) => (
-          <ChangeNoticeItem key={entry.version} entry={entry} showVersion={isCumulative} />
-        ))}
-      </ol>
     </div>
   );
 }
 
 function ChangeNoticeItem({ entry, showVersion }: { entry: ChangeNoticeEntry; showVersion: boolean }) {
   return (
-    <li className="flex flex-col gap-2 not-first:border-t not-first:border-border not-first:pt-4">
+    <div className="flex flex-col gap-2">
       {showVersion && (
         <p className="text-xs font-medium text-muted-foreground">
           {entry.version} 판 · {entry.effectiveDate} 시행
@@ -126,7 +150,7 @@ function ChangeNoticeItem({ entry, showVersion }: { entry: ChangeNoticeEntry; sh
       ) : (
         <Markdown content={entry.notice} className={MODAL_MARKDOWN_CLASSNAME} />
       )}
-    </li>
+    </div>
   );
 }
 
@@ -150,25 +174,40 @@ function FullText({ label, docQuery }: FullTextProps) {
 
   return (
     <div className="flex flex-col gap-3">
-      <button
-        type="button"
-        aria-expanded={isExpanded}
-        aria-controls={panelId}
-        onClick={() => setIsExpanded((previous) => !previous)}
-        className="-mx-2 flex min-h-9 items-center gap-1 self-start rounded-md px-2 text-sm font-medium text-primary outline-none hover:bg-secondary/50 focus-visible:outline-1 focus-visible:outline-solid focus-visible:outline-ring focus-visible:ring-3 focus-visible:ring-ring/50 motion-safe:transition-colors"
-      >
+      <DisclosureButton isExpanded={isExpanded} panelId={panelId} onToggle={() => setIsExpanded((previous) => !previous)}>
         <span className="sr-only">{label} </span>
         {isExpanded ? "전문 접기" : "전문 보기"}
-        <ChevronDown
-          aria-hidden
-          className={cn("size-4 motion-safe:transition-transform motion-safe:duration-200", isExpanded && "rotate-180")}
-        />
-      </button>
+      </DisclosureButton>
       {isExpanded && (
         <div id={panelId} className="border-t border-border pt-3">
           <Markdown content={docQuery.data.bodyMarkdown} className={MODAL_MARKDOWN_CLASSNAME} />
         </div>
       )}
     </div>
+  );
+}
+
+type DisclosureButtonProps = {
+  isExpanded: boolean;
+  panelId: string;
+  onToggle: () => void;
+  children: ReactNode;
+};
+
+function DisclosureButton({ isExpanded, panelId, onToggle, children }: DisclosureButtonProps) {
+  return (
+    <button
+      type="button"
+      aria-expanded={isExpanded}
+      aria-controls={panelId}
+      onClick={onToggle}
+      className="-mx-2 flex min-h-9 items-center gap-1 self-start rounded-md px-2 text-sm font-medium text-primary outline-none hover:bg-secondary/50 focus-visible:outline-1 focus-visible:outline-solid focus-visible:outline-ring focus-visible:ring-3 focus-visible:ring-ring/50 motion-safe:transition-colors"
+    >
+      {children}
+      <ChevronDown
+        aria-hidden
+        className={cn("size-4 motion-safe:transition-transform motion-safe:duration-200", isExpanded && "rotate-180")}
+      />
+    </button>
   );
 }
