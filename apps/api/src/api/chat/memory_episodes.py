@@ -94,6 +94,9 @@ class EpisodeDraft:
     evidence: list[str]
     asserted_by: EpisodeAssertedBy
     importance: int
+    # 이 장면을 아는 인물 이름 목록(NULL 은 공개이거나 알 수 없음). 추출 결과 스키마가 아직 이 칸을 모르므로 지금은 늘
+    # None 이다. 사실 기억처럼 사용자 인물의 이름도 거르지 않고 넣는다 — 거르는 것은 읽는 쪽이다.
+    known_by: list[str] | None = None
 
 
 class _Candidate(NamedTuple):
@@ -453,6 +456,7 @@ def _episode_rows(candidate: _Candidate, drafts: Sequence[EpisodeDraft]) -> list
             evidence=draft.evidence,
             asserted_by=draft.asserted_by,
             importance=draft.importance,
+            known_by=draft.known_by,
         )
         for draft in drafts
     ]
