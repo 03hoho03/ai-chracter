@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 from sqlalchemy.orm import Session, SessionTransaction
 from starlette.types import Message
 
+from api.chat import voyage_backoff
 from api.chat.prompt_builder import ImageMatchJudgmentResult, stat_rule_letters
 from api.content.schemas import RULE_LIST_ADAPTER, EndingRuleListDraftItem
 from api.core.clover import CloverKind, SpendUsage, refund_spend, revoke_purchase_lots, spend
@@ -1236,6 +1237,17 @@ class VoyageStub:
 
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self)
+
+
+class VoyageClock:
+    """Voyage 연속 실패 백오프가 읽는 시계를 손으로 넘긴다 — 멈춤이 풀리는 시각 앞뒤를 실제로 기다리지 않고 본다."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, *, start: float = 1_000_000.0) -> None:
+        self.now = start
+        monkeypatch.setattr(voyage_backoff, "_now", lambda: self.now)
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
 
 
 def _parse_sse_events(body: str) -> list[dict[str, Any]]:
