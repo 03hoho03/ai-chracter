@@ -40,6 +40,9 @@ def _load(revision: str) -> ModuleType:
 _M = _load("0346abdbcc92")
 # 이 리비전 직전 story 네 체인의 활성 세트(요약 비밀 표기 슬롯 리비전 — 그 사이에 프롬프트를 게시한 리비전이 없다).
 _PREVIOUS_SET_IDS: dict[tuple[str, str], uuid.UUID] = _load("0aeadefcf159").NEW_SET_IDS
+# 이 리비전 뒤에 두 레인 여덟 체인에 장면 추출 지시문만 바꾼 새 세트를 게시하는 리비전. head 상태에서는 그 세트들이 활성이라,
+# "이 리비전 직후 상태"를 보는 테스트와 이 리비전을 되돌리는 테스트는 그 리비전을 먼저 되돌린다(실제 downgrade 순서).
+_LATER = _load("eb8d3cc6d5c2")
 
 _MODELS: tuple[PromptSetModelId, ...] = ("gemini", "sonnet", "opus", "haiku")
 
@@ -80,6 +83,11 @@ def _expected_new_rows() -> dict[Key, tuple[str, bool, int]]:
 
 def _fingerprinted(rows: dict[Key, Value]) -> dict[Key, tuple[str, bool, int]]:
     return {key: (hashlib.md5(body.encode()).hexdigest(), cond, order) for key, (body, cond, order) in rows.items()}
+
+
+async def _undo_later_revisions(db_session: AsyncSession) -> None:
+    connection = await db_session.connection()
+    await connection.run_sync(_LATER.delete_seeded_rows)
 
 
 async def _active_id(db_session: AsyncSession, model: PromptSetModelId) -> uuid.UUID:
@@ -135,6 +143,7 @@ async def test_each_story_chain_is_active_at_its_seed_which_is_the_previous_set_
 ) -> None:
     """네 체인 모두 새 세트가 활성이고, 새 세트는 이전 활성 세트의 행을 바이트 그대로 옮긴 데에 새 세 행만 더한 것이다(기존
     채널의 렌더는 그대로). 라벨도 이전 활성 세트 것이다."""
+    await _undo_later_revisions(db_session)
     assert await _active_id(db_session, model) == _M.NEW_SET_IDS[("story", model)]
     new_sections = await _sections_of(db_session, _M.NEW_SET_IDS[("story", model)])
     new = _keyed(new_sections)
@@ -157,6 +166,7 @@ async def test_each_story_chain_is_active_at_its_seed_which_is_the_previous_set_
 async def test_the_lane_only_select_picks_the_new_gemini_set_and_character_is_untouched(
     db_session: AsyncSession,
 ) -> None:
+    await _undo_later_revisions(db_session)
     assert await _lane_only_active_id(db_session) == _M.NEW_SET_IDS[("story", "gemini")]
     _set, sections = await load_active_prompt_set(db_session, lane="character", model="gemini")
     assert not any(s.channel == "scene_judgment" for s in sections)
@@ -181,10 +191,13 @@ async def test_versions_continue_the_global_sequence_in_fixed_order(db_session: 
     others = (
         await db_session.scalars(
             sa.select(sa.cast(PromptSet.version, sa.Integer)).where(
-                PromptSet.status == "published", PromptSet.id.not_in(order)
+                PromptSet.status == "published",
+                PromptSet.id.not_in(order),
+                PromptSet.id.not_in(list(_LATER.NEW_SET_IDS.values())),
             )
         )
     ).all()
+    # 테스트 DB에는 이 리비전 뒤에 게시한 세트가 장면 추출 지시문 리비전의 것뿐이다(그 세트들의 버전은 이 리비전보다 뒤다).
     assert versions == list(range(max(others) + 1, max(others) + 1 + len(order)))
 
 
@@ -194,6 +207,7 @@ async def test_seeded_sets_pass_publish_validation_and_the_previous_sets_no_long
 ) -> None:
     """새 세트는 지금 코드의 게시 검증(슬롯 집합·자리표시자 허용 목록)을 통과하고, 이전 세트는 이 채널이 없어 "누락"으로
     막힌다 — 코드 표와 시드가 같이 움직였다는 증거다."""
+    await _undo_later_revisions(db_session)
     prompt_set, sections = await load_active_prompt_set(db_session, lane="story", model=model)
     _validate_prompt_draft_for_publish(prompt_set, sections, lane="story", model=model)
 
@@ -236,6 +250,7 @@ async def test_the_seeded_channel_renders_and_drops_the_previous_scene_when_both
 async def test_downgrade_then_upgrade_swaps_every_chain_back_and_forth(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
 
+    await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
 
     for model in _MODELS:
@@ -262,6 +277,7 @@ async def test_upgrade_refuses_to_run_twice(db_session: AsyncSession) -> None:
 async def test_upgrade_stops_when_a_chain_already_has_the_channel(db_session: AsyncSession) -> None:
     """어느 체인의 활성 세트에 이 채널 행이 이미 있으면 네 체인 어디에도 넣지 않은 채 멈춘다."""
     connection = await db_session.connection()
+    await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     db_session.add(
         PromptSection(
@@ -285,6 +301,7 @@ async def test_upgrade_stops_when_a_chain_already_has_the_channel(db_session: As
 
 async def test_upgrade_stops_when_the_lane_only_select_does_not_pick_gemini(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_LATER.delete_seeded_rows)
     await connection.run_sync(_M.delete_seeded_rows)
     previous = await _get_set(db_session, _PREVIOUS_SET_IDS[("story", "gemini")])
     assert previous.published_at is not None
@@ -300,6 +317,7 @@ async def test_downgrade_stops_when_the_admin_published_after_the_seed(
     db_session: AsyncSession, model: PromptSetModelId
 ) -> None:
     """시드 뒤에 어드민이 네 체인 중 하나라도 새 버전을 게시했으면 아무것도 지우지 않고 멈춘다."""
+    await _undo_later_revisions(db_session)
     seeded = await _get_set(db_session, _M.NEW_SET_IDS[("story", model)])
     assert seeded.published_at is not None
     db_session.add(_published(model=model, published_at=seeded.published_at + timedelta(seconds=1)))

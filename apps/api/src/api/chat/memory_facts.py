@@ -169,10 +169,17 @@ def _cut(text: str, limit: int) -> str:
     return text.strip()[:limit].strip()
 
 
+def cut_known_by(names: Sequence[str]) -> list[str] | None:
+    """아는 인물 칸을 저장할 수 있게 자른다 — 빈 이름을 버리고 이름마다 `FACT_NAME_MAX`, 앞에서부터 `FACT_KNOWN_BY_MAX` 개.
+    남는 게 없으면 None(공개이거나 알 수 없음 — 빈 배열은 쓰지 않는다). 상수는 테이블 CHECK 와 같은 것이고, 장면 기억 행도 같은
+    CHECK 라 같은 함수로 자른다. 사용자 표기는 거르지 않는다 — 거르는 것은 읽는 쪽이다."""
+    kept = [_cut(name, FACT_NAME_MAX) for name in names if name.strip()][:FACT_KNOWN_BY_MAX]
+    return kept or None
+
+
 def _draft(ordinal: int, item: MemoryFactItem, window: Sequence[ChatMessage], turn_at: list[int]) -> FactDraft:
     target = _cut(_target(item), FACT_NAME_MAX)
     relation = item.kind == "relation"
-    known_by = [_cut(name, FACT_NAME_MAX) for name in item.known_by if name.strip()][:FACT_KNOWN_BY_MAX]
     last = len(window)
     start, end = (min(max(line, 1), last) - 1 for line in (item.start_line, item.end_line))
     if start > end:
@@ -188,7 +195,7 @@ def _draft(ordinal: int, item: MemoryFactItem, window: Sequence[ChatMessage], tu
         truth_status=item.truth_status,
         asserted_by=item.asserted_by,
         speaker=_cut(item.speaker, FACT_NAME_MAX) or None,
-        known_by=known_by or None,
+        known_by=cut_known_by(item.known_by),
         importance=min(max(item.importance, 1), 5),
         start_key=(window[start].created_at, window[start].id),
         end_key=(window[end].created_at, window[end].id),
