@@ -76,6 +76,9 @@ def backfill_consent_history(connection: sa.Connection) -> int:
 
 
 def upgrade() -> None:
+    # 새 테이블의 FK 를 만들면 `users`·`legal_documents` 에 락이 걸린다. 매 요청이 읽는 두 테이블이라, 오래 걸린 트랜잭션
+    # 뒤에서 그 락을 기다리며 읽기를 줄 세우지 않게 못 잡으면 마이그레이션이 실패하게 한다.
+    op.execute("SET LOCAL lock_timeout = '5s'")
     op.create_table(
         "user_legal_consents",
         sa.Column("id", sa.Uuid(), nullable=False),
