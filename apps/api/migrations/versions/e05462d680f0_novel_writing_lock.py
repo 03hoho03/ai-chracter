@@ -1,7 +1,7 @@
 """novel writing lock
 
 Revision ID: e05462d680f0
-Revises: 0346abdbcc92
+Revises: eb8d3cc6d5c2
 Create Date: 2026-10-18 22:00:00.000000
 
 소설에 집필권 잠금 칸 넷을 더하고, 새 작품의 소설화 허락 기본값을 "허용 안 함"으로 바꾸고, 이미 첫 화를 만든 소설을
@@ -50,7 +50,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "e05462d680f0"
-down_revision: str | Sequence[str] | None = "0346abdbcc92"
+down_revision: str | Sequence[str] | None = "eb8d3cc6d5c2"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
