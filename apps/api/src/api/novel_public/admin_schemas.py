@@ -10,12 +10,14 @@ from api.db.models.moderation import ReportReasonCategory, ReportStatus
 from api.db.models.novel import (
     NovelCommentDeletedBy,
     NovelPublicationModerationStatus,
+    NovelPublicationReviewStatus,
     NovelPublicationVisibility,
     NovelScreeningOutcome,
     NovelScreeningPart,
 )
 
 AdminNovelModerationAction = Literal["restrict", "lift"]
+AdminNovelReviewAction = Literal["approve", "reject"]
 AdminNovelReportAction = Literal["restrict", "reject"]
 AdminNovelCommentAction = Literal["hide", "restore", "delete"]
 AdminNovelCommentReportAction = Literal["hide", "delete", "reject"]
@@ -125,6 +127,19 @@ class AdminNovelModerationRequest(CamelModel):
 class AdminNovelModerationResponse(CamelModel):
     novel_id: uuid.UUID
     moderation_status: NovelPublicationModerationStatus
+
+
+class AdminNovelReviewRequest(CamelModel):
+    """첫 공개 승인(`approve`)·반려(`reject`). 반려의 `admin_comment` 는 운영자가 쓴 글 그대로 작가에게 보이는 반려 사유다."""
+
+    action: AdminNovelReviewAction
+    admin_comment: str
+
+
+class AdminNovelReviewResponse(CamelModel):
+    novel_id: uuid.UUID
+    review_status: NovelPublicationReviewStatus
+    visibility: NovelPublicationVisibility
 
 
 class AdminNovelReportEvidence(CamelModel):

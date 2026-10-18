@@ -59,6 +59,8 @@ from api.novel_public.admin_schemas import (
     AdminNovelListResponse,
     AdminNovelModerationRequest,
     AdminNovelModerationResponse,
+    AdminNovelReviewRequest,
+    AdminNovelReviewResponse,
     AdminNovelReportActionRequest,
     AdminNovelReportDetailResponse,
     AdminNovelReportEvidence,
@@ -380,6 +382,18 @@ async def moderate_admin_novel(
     )
     await db.commit()
     return AdminNovelModerationResponse(novel_id=novel_id, moderation_status=publication.moderation_status)
+
+
+# ── 첫 공개 승인·반려 ─────────────────────────────────────────────────────────
+async def review_admin_novel(
+    novel_id: uuid.UUID,
+    body: AdminNovelReviewRequest,
+    admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> AdminNovelReviewResponse:
+    """운영자 승인을 기다리는 첫 공개를 승인하거나 반려한다. `POST /admin/novels/{novel_id}/review` 로 걸고 본문을 채워야
+    한다 — 지금은 경합 시험이 부르는 자리만 있다."""
+    raise NotImplementedError
 
 
 # ── 노벨 신고 ───────────────────────────────────────────────────────────────
