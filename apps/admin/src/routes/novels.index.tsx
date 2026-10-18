@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 
-import { NOVEL_MODERATION_STATUS_VALUES } from "../entities/admin-novel";
+import { NOVEL_MODERATION_STATUS_VALUES, NOVEL_REVIEW_STATUS_VALUES } from "../entities/admin-novel";
 import { requireSession } from "../entities/session";
 import { useRememberListSearch } from "../shared/lib/list-search-memory/listSearchMemory";
 import { NovelsListPage } from "../pages/novels";
@@ -11,6 +11,7 @@ import { NovelsListPage } from "../pages/novels";
 const novelsSearchSchema = z.object({
   page: z.coerce.number().int().min(1).optional().catch(undefined),
   moderationStatus: z.enum(NOVEL_MODERATION_STATUS_VALUES).optional().catch(undefined),
+  reviewStatus: z.enum(NOVEL_REVIEW_STATUS_VALUES).optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/novels/")({
@@ -21,7 +22,7 @@ export const Route = createFileRoute("/novels/")({
 
 function RouteComponent() {
   const search = Route.useSearch();
-  const { page = 1, moderationStatus } = search;
+  const { page = 1, moderationStatus, reviewStatus } = search;
   const navigate = Route.useNavigate();
   useRememberListSearch("/novels/", search);
 
@@ -29,8 +30,13 @@ function RouteComponent() {
     <NovelsListPage
       page={page}
       moderationStatus={moderationStatus}
+      reviewStatus={reviewStatus}
       onPageChange={(nextPage) => void navigate({ search: (prev) => ({ ...prev, page: nextPage }) })}
       onModerationStatusChange={(next) => void navigate({ search: (prev) => ({ ...prev, moderationStatus: next, page: 1 }) })}
+      onReviewStatusChange={(next) => void navigate({ search: (prev) => ({ ...prev, reviewStatus: next, page: 1 }) })}
+      onResetFilters={() =>
+        void navigate({ search: (prev) => ({ ...prev, moderationStatus: undefined, reviewStatus: undefined, page: 1 }) })
+      }
     />
   );
 }
