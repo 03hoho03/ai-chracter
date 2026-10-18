@@ -58,7 +58,6 @@ from api.chat.turn_store import (
     _record_story_media_unlocks,
 )
 from api.chat.turn_judgments import (
-    _ending_rule_items,
     _llm_dependency_tag,
     new_turn_judgments,
     preview_judgments,
@@ -458,10 +457,13 @@ async def _seed_initial_stats(db: AsyncSession, room: ChatRoom, setup: StartingS
     await db.flush()
 
 
-async def _ending_snapshot(db: AsyncSession, ending: Ending) -> EndingSnapshot:
+def _ending_snapshot(ending: Ending) -> EndingSnapshot:
     """스냅숏은 아직 도달하지 않은 엔딩까지 싣는다. 그래서 에필로그의 미디어 북 태그는 그림으로 해석하지
     않고 지운다 — 해석하면 플레이어가 보지 못한 칸의 원본 URL 이 응답에 실린다. 화면은 에필로그를
-    엔딩 이벤트·엔딩 모음에서 그리므로 여기서 태그가 사라져도 보이는 것이 없다."""
+    엔딩 이벤트·엔딩 모음에서 그리므로 여기서 태그가 사라져도 보이는 것이 없다.
+
+    스탯 규칙은 언제나 빈 목록이다 — 어느 스탯이 몇을 넘으면 어느 엔딩인지는 엔딩 판정만 쓰는 정보이고, 플레이어에게
+    실으면 숨긴 스탯의 id 와 엔딩 조건이 함께 드러난다. 엔딩 판정은 규칙을 DB 에서 따로 읽는다(`turn_judgments._ending_rule_items`)."""
     return EndingSnapshot(
         id=ending.entity_id,
         name=ending.name,
@@ -469,7 +471,7 @@ async def _ending_snapshot(db: AsyncSession, ending: Ending) -> EndingSnapshot:
         judgment_prompt=ending.judgment_prompt,
         epilogue=strip_media_tags(ending.epilogue) if ending.epilogue is not None else None,
         hint=ending.hint,
-        stat_rules=await _ending_rule_items(db, ending),
+        stat_rules=[],
     )
 
 
@@ -477,10 +479,13 @@ async def _build_content_snapshot(
     db: AsyncSession, room: ChatRoom, setup: StartingSetup
 ) -> ChatRoomContentSnapshot:
     """stats/endings는 방이 고정한 시작설정(setup) 기준,
-    단축어는 작품 전역(content_version_id) 기준."""
+    단축어는 작품 전역(content_version_id) 기준. 플레이어에게 숨긴 스탯은 싣지 않는다 — 작가 본인의 방도 같다(작가가
+    숨긴 스탯을 보는 곳은 빌더 미리보기다)."""
     stat_defs = (
         await db.scalars(
-            select(StatDef).where(StatDef.starting_setup_id == setup.id).order_by(StatDef.order)
+            select(StatDef)
+            .where(StatDef.starting_setup_id == setup.id, StatDef.hidden_from_player.is_(False))
+            .order_by(StatDef.order)
         )
     ).all()
     endings = (
@@ -507,7 +512,7 @@ async def _build_content_snapshot(
             )
             for s in stat_defs
         ],
-        endings=[await _ending_snapshot(db, ending) for ending in endings],
+        endings=[_ending_snapshot(ending) for ending in endings],
         shortcuts=[
             ShortcutSnapshot(id=sc.entity_id, name=sc.name, description=sc.description, prompt=sc.prompt)
             for sc in shortcuts
@@ -646,7 +651,13 @@ async def _to_response(db: AsyncSession, room: ChatRoom, *, message_limit: int |
         stat_rows = (
             await db.scalars(select(ChatRoomStat).where(ChatRoomStat.chat_room_id == room.id))
         ).all()
-        stats = {str(row.stat_entity_id): float(row.current_value) for row in stat_rows}
+        # 값은 스냅숏에 실린(보이는) 정의 기준으로만 싣는다 — 숨긴 스탯 값과, 방이 버전을 옮기며 정의를 잃은 고아 값이 빠진다.
+        visible_stat_ids = {stat.id for stat in content_snapshot.stats}
+        stats = {
+            str(row.stat_entity_id): float(row.current_value)
+            for row in stat_rows
+            if row.stat_entity_id in visible_stat_ids
+        }
 
     image_urls, cell_images = await _sign_message_images(db, room, setup, messages)
     # 다음 턴이 실제로 쓸 모델. 기본 모델 방이거나 상위 모델 스위치가 꺼져 있으면 쿼리가 없다.
