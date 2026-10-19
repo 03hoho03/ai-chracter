@@ -290,6 +290,7 @@ def cmd_judge(args: argparse.Namespace) -> int:
     controls_path = args.run / "judge" / judge_mod.controls_filename(args.judge_model, categories)
     sources = args.control_sources or list(judge_mod.CONTROL_INPUTS)
     reused: dict[str, dict[str, Any]] = {}
+    other_rule = 0
     # 판정 문구는 측정 데이터다 — 견적만 내는 드라이런도 같은 판정 입력을 세도록 먼저 읽는다.
     wording = judge_mod.load_wording(data_file(args, judge_mod.JUDGE_WORDING_FILE))
     if args.controls:
@@ -333,6 +334,11 @@ def cmd_judge(args: argparse.Namespace) -> int:
                 prompt = judge_mod.judge_prompt(item["kind"], plant_set.item(item["item"]), item["replies"], wording)
                 if control.get("promptSha256") != judge_mod.prompt_sha256(prompt):
                     raise SystemExit(f"판정 입력이 대조군 때와 다르다: {item['key']}")
+                # 다른 표 규칙(규칙 칸이 없던 옛 기록 포함)의 판정을 다시 쓰면 한 결과 파일에 두 규칙의 판정이 섞인다 — 지금
+                # 규칙으로 다시 판정한다. 결과를 보고 고르는 것이 아니라 규칙이 다른 줄 전부라 특정 판정에 기회를 더 주지 않는다.
+                if control.get("voteRule") != judge_mod.VOTE_RULE:
+                    other_rule += 1
+                    continue
                 reused[item["key"]] = control
 
     def gate() -> dict[str, Any] | None:
@@ -346,7 +352,7 @@ def cmd_judge(args: argparse.Namespace) -> int:
         _print(
             {
                 "calls": len(items) - len(reused),
-                **({"reused": len(reused)} if args.reuse_judged else {}),
+                **({"reused": len(reused), "notReusedForVoteRule": other_rule} if args.reuse_judged else {}),
                 **({"controlsOverride": override} if override else {}),
                 "model": args.judge_model,
                 # 줄마다 최대 표 수(안전 범주는 다섯)로 센 위쪽 견적 — 첫 두 표가 같으면 덜 쓴다.
@@ -386,13 +392,15 @@ def cmd_judge(args: argparse.Namespace) -> int:
             sha = judge_mod.prompt_sha256(prompts[n])
             if n not in by_index:
                 control = reused[item["key"]]
-                # 이유 칸이 생기기 전 기록은 이유가 없다 — 없으면 비운다.
+                # 다시 쓰는 줄은 지금 표 규칙의 기록뿐이고, 그 기록은 이유 칸을 함께 남긴다.
                 out.append({**item, "judged": control["judged"], "votes": control["votes"],
-                            "reasons": control.get("reasons"), "promptSha256": sha, "reused": True})  # fmt: skip
+                            "reasons": control["reasons"], "promptSha256": sha, "voteRule": control["voteRule"],
+                            "reused": True})  # fmt: skip
                 continue
             judged, votes, reasons = by_index[n]
             # 이유는 표 순서대로 한 문장씩(불능 표는 None) — 표 목록(`votes`)의 모양은 그대로 둔다.
-            out.append({**item, "judged": judged, "votes": votes, "reasons": reasons, "promptSha256": sha})
+            out.append({**item, "judged": judged, "votes": votes, "reasons": reasons, "promptSha256": sha,
+                        "voteRule": judge_mod.VOTE_RULE})  # fmt: skip
         if override is not None:
             out = [{**row, "controlsOverride": override} for row in out]
         return out
@@ -1310,7 +1318,7 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     p.add_argument(
         "--reuse-judged",
         type=Path,
-        help="본 판정: 이 대조군 기록이 같은 입력으로 이미 판정한 응답은 다시 부르지 않고 그 판정을 쓴다",
+        help="본 판정: 이 대조군 기록이 같은 입력·같은 표 규칙으로 이미 판정한 응답은 다시 부르지 않고 그 판정을 쓴다",
     )
     p.add_argument(
         "--accept-failed-controls",
