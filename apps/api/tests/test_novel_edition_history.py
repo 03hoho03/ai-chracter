@@ -302,3 +302,26 @@ async def test_the_edition_picker_shows_the_date_and_summary_of_the_bought_and_t
     assert _edition_info(second_buyer, "purchasedEdition") == (2, second_at, "중간 장면을 고쳤어요.")
     assert _edition_info(second_buyer, "latestEdition") == (3, third_at, "결말을 바꿨어요.")
     assert (other["purchasedEdition"], other["latestEdition"]) == (None, None)
+
+
+async def test_a_latest_edition_without_its_edition_row_is_shown_without_a_summary(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """지금 판의 판 행이 없으면(판 이력 표를 모르는 옛 이미지가 다시 낸 판) 최신 판은 화 공개본의 판 번호·공개 시각으로 싣고
+    요약은 비운다. 깨지는 시나리오: 판 행이 없다고 산 사람의 화 읽기가 500 이 된다."""
+    novel = await _novel(db_session)
+    buyer = await _member(db_session)
+    await _buy(db_client, novel, 6, buyer)
+    second_at = datetime.now(UTC) + timedelta(days=1)
+    await _republish(db_session, novel, 6, body="2판 본문", title="2판", note="", at=second_at)
+    await db_session.execute(
+        sa.delete(NovelChapterEdition).where(
+            NovelChapterEdition.chapter_id == novel.chapter_ids[5], NovelChapterEdition.edition == 2
+        )
+    )
+    await db_session.commit()
+
+    resp = await _read(db_client, novel, 6, as_user=buyer)
+
+    assert resp.status_code == 200, resp.text
+    assert _edition_info(resp.json(), "latestEdition") == (2, second_at, None)

@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import Field, StringConstraints
+from pydantic import Field, StringConstraints, field_validator
 
 from api.core.schema import CamelModel
 from api.db.models.moderation import ReportReasonCategory, ReportStatus
@@ -35,7 +35,8 @@ class NovelPublishRequest(CamelModel):
     보내면 409 `NOVEL_CHAPTER_ALREADY_PRICED`(무료로 바꾸기는 따로 있는 "무료로 전환"만 한다 — 다시 공개 흐름을 타면 심사·판
     올림이 따라온다). 스위치가 꺼져 있으면 이 칸을 보지 않고 새 화는 앞 화 무료·그 뒤 유료로 저장한다(지금 약관의 규칙).
 
-    `change_summary` 는 이미 공개한 화를 고쳐 다시 낼 때 작가가 쓰는 짧은 변경 요약이다(앞뒤 공백을 덜고 1~100자). 정책
+    `change_summary` 는 이미 공개한 화를 고쳐 다시 낼 때 작가가 쓰는 짧은 변경 요약이다(앞뒤 공백을 덜고 1~100자, 빈 글·
+    공백만이면 보내지 않은 것과 같다 — 입력 칸을 비운 채 보내는 화면이 요약이 필요 없는 요청에서 422 를 받지 않게). 정책
     스위치가 켜져 있으면 그런 요청에 꼭 있어야 하고(없으면 422 `NOVEL_CHANGE_SUMMARY_REQUIRED`), 공개 화면 글이라 고친 화의
     글과 함께 심사한 뒤 새 판에 남는다 — 산 사람의 판 고르기가 공개 시각과 함께 보인다. 새 화(첫 판)·소설 제목·소개만 다시
     내는 요청·스위치가 꺼진 동안에는 보지 않는다."""
@@ -46,6 +47,13 @@ class NovelPublishRequest(CamelModel):
         Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=NOVEL_CHANGE_SUMMARY_MAX_LENGTH)]
         | None
     ) = None
+
+    @field_validator("change_summary", mode="before")
+    @classmethod
+    def _blank_summary_is_none(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
 
 class NovelPublicationScreening(CamelModel):

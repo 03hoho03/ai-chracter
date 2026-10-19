@@ -1930,7 +1930,7 @@ async def test_republishing_a_published_chapter_stores_the_trimmed_summary_on_th
 async def test_with_the_switch_on_republishing_a_published_chapter_needs_a_summary(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
 ) -> None:
-    """정책 스위치가 켜졌을 때 공개한 화를 고쳐 다시 내는 요청에 요약이 없으면 심사를 부르기 전에 422
+    """정책 스위치가 켜졌을 때 공개한 화를 고쳐 다시 내는 요청에 요약이 없거나 공백뿐이면 심사를 부르기 전에 422
     `NOVEL_CHANGE_SUMMARY_REQUIRED` 이고 아무것도 쓰지 않는다(판도 그대로). 깨지는 시나리오: 독자가 판 고르기에서 무엇이
     바뀌었는지 모른 채 새 판을 받거나, 거절할 요청에 심사 호출(원가·시간당 상한)을 쓴다."""
     novel_id, chapters = await _published_through(db_client, db_session, monkeypatch, published=2, chapters=2)
@@ -1938,8 +1938,10 @@ async def test_with_the_switch_on_republishing_a_published_chapter_needs_a_summa
     screened = len(llm.calls)
 
     resp = await _republish_with(db_client, novel_id, chapters[0])
+    blank = await _republish_with(db_client, novel_id, chapters[0], "   ")
 
     assert (resp.status_code, resp.json()["detail"]) == (422, {"code": "NOVEL_CHANGE_SUMMARY_REQUIRED"})
+    assert (blank.status_code, blank.json()["detail"]) == (422, {"code": "NOVEL_CHANGE_SUMMARY_REQUIRED"})
     assert len(llm.calls) == screened
     frozen = await db_session.get_one(NovelChapterPublication, chapters[0].id, populate_existing=True)
     assert frozen.edition == 1
@@ -1952,7 +1954,6 @@ async def test_with_the_switch_on_republishing_a_published_chapter_needs_a_summa
         pytest.param("가" * 100, True, id="100-chars"),
         pytest.param(" " + "가" * 100 + " ", True, id="100-chars-after-trim"),
         pytest.param("가" * 101, False, id="101-chars"),
-        pytest.param("   ", False, id="blank"),
     ],
 )
 async def test_a_summary_is_one_to_a_hundred_characters_after_trimming(
@@ -1963,8 +1964,8 @@ async def test_a_summary_is_one_to_a_hundred_characters_after_trimming(
     summary: str,
     accepted: bool,
 ) -> None:
-    """요약은 앞뒤 공백을 덜고 1~100자다. 밖이면 요청 검증의 422 이고 아무것도 쓰지 않는다. 깨지는 시나리오: 빈 요약이
-    요약을 쓴 것으로 통과하거나, 긴 글이 "짧은 변경 요약" 자리에 들어간다."""
+    """요약은 앞뒤 공백을 덜고 1~100자다. 넘으면 요청 검증의 422 이고 아무것도 쓰지 않는다. 깨지는 시나리오: 긴 글이 "짧은
+    변경 요약" 자리에 들어가거나, 공백 때문에 상한 안의 요약이 거절된다."""
     novel_id, chapters = await _published_through(db_client, db_session, monkeypatch, published=1, chapters=1)
     await _new_revision(db_session, chapters[0], "고친 첫 문단이다.")
 
@@ -1982,8 +1983,9 @@ async def test_a_summary_sent_with_a_first_edition_or_metadata_only_is_ignored(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
 ) -> None:
     """요약은 이미 공개한 화를 다시 낼 때만 쓰인다. 새 화(1판)나 소설 제목·소개만 다시 내는 요청에 실려 오면 보지 않는다 —
-    판 행에 남지 않고 심사에도 실리지 않는다. 깨지는 시나리오: 첫 판에 "바뀐 것" 설명이 붙거나, 쓰이지 않을 글이 심사에
-    실려 그 글 때문에 공개가 거절된다."""
+    판 행에 남지 않고 심사에도 실리지 않는다. 빈 글·공백뿐인 요약은 보내지 않은 것과 같다. 깨지는 시나리오: 첫 판에 "바뀐
+    것" 설명이 붙거나, 쓰이지 않을 글이 심사에 실려 그 글 때문에 공개가 거절되거나, 비워 둔 입력 칸 때문에 새 화 공개가
+    422 가 된다."""
     novel_id, chapters = await _published_through(db_client, db_session, monkeypatch, published=1, chapters=2)
     await db_session.execute(sa.update(Novel).where(Novel.id == novel_id).values(synopsis="고친 소개."))
     await db_session.commit()
@@ -1992,9 +1994,15 @@ async def test_a_summary_sent_with_a_first_edition_or_metadata_only_is_ignored(
     metadata_only = await db_client.post(
         f"/novels/{novel_id}/publication", json={"chapterId": None, "changeSummary": "소개만 고친 요약"}
     )
+    await db_session.execute(sa.update(Novel).where(Novel.id == novel_id).values(synopsis="또 고친 소개."))
+    await db_session.commit()
+    blank_metadata = await db_client.post(
+        f"/novels/{novel_id}/publication", json={"chapterId": None, "changeSummary": "  "}
+    )
 
     assert new_chapter.status_code == 200, new_chapter.text
     assert metadata_only.status_code == 200, metadata_only.text
+    assert blank_metadata.status_code == 200, blank_metadata.text
     assert await _summaries(db_session, chapters[1].id) == {1: None}
     assert all("change_summary" not in prompt for _, prompt, _ in llm.calls)
 
