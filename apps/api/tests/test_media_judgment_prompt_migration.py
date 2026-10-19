@@ -64,8 +64,11 @@ _SECRET_MARKING_MIGRATION = _load("0aeadefcf159")
 _SCENE_JUDGMENT = _load("0346abdbcc92")
 # 그 뒤 여덟 체인에 장면 추출 지시문만 바꾼 세트를 게시하는 리비전.
 _EPISODE_KNOWN_BY_MIGRATION = _load("eb8d3cc6d5c2")
-# 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 세트를 게시하는 리비전 — character 레인 활성 Gemini 세트가 그 세트다.
+# 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 세트를 게시하는 리비전.
 _FACT_KNOWN_BY_ORDER = _load("c1f3945cb802")
+# 그 뒤 여덟 체인의 요약 비밀 표기 슬롯 본문에 미확인 주장의 출처 규칙을 더한 세트를 게시하는 리비전 — character 레인
+# 활성 Gemini 세트가 그 세트다.
+_SOURCE_MARKING = _load("0c1a85bc5c2f")
 
 _NEW_KEYS = {
     ("image_judgment", "story", "image_list_intro", ""),
@@ -156,6 +159,7 @@ async def test_character_lane_keeps_its_active_set(db_session: AsyncSession) -> 
         _SECRET_MARKING_MIGRATION.NEW_SET_IDS[("character", "gemini")],
         _EPISODE_KNOWN_BY_MIGRATION.NEW_SET_IDS[("character", "gemini")],
         _FACT_KNOWN_BY_ORDER.NEW_SET_IDS[("character", "gemini")],
+        _SOURCE_MARKING.NEW_SET_IDS[("character", "gemini")],
     )
 
 

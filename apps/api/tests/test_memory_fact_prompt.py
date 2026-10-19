@@ -44,7 +44,8 @@ def _load(revision: str) -> ModuleType:
 _M = _load("5cab2abe4e7b")
 # 회상 섹션 문안의 지금 판 — 글을 쓰는 여섯 체인의 활성 세트가 이 리비전의 것이다.
 _RECALL = _load("726aad108167")
-# 사실 추출 지시문의 지금 판 — 여덟 체인의 활성 세트가 이 리비전의 것이다(채널의 슬롯 모양은 위 리비전 그대로다).
+# 사실 추출 지시문의 지금 판 — 이 리비전이 바꾼 지시문이 뒤 리비전의 사본을 거쳐 여덟 체인 활성 세트에 그대로 있다(채널의 슬롯
+# 모양은 위 리비전 그대로다).
 _INSTRUCTION = _load("c1f3945cb802")
 _NAMES = PromptNames(persona_name="하늘", char_name="민지")
 _NO_NAMES = PromptNames(persona_name=None, char_name=None)

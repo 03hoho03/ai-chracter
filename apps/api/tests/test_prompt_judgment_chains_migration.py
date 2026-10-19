@@ -59,8 +59,11 @@ _SECRET_MARKING = _load("0aeadefcf159")
 _SCENE_JUDGMENT = _load("0346abdbcc92")
 # 그 뒤 여덟 체인에 장면 추출 지시문만 바꾼 세트를 게시하는 리비전.
 _EPISODE_KNOWN_BY = _load("eb8d3cc6d5c2")
-# 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 세트를 게시하는 리비전 — 여덟 체인의 head 활성이라 되돌릴 때는 이것부터다.
+# 그 뒤 여덟 체인에 사실 추출 지시문만 바꾼 세트를 게시하는 리비전.
 _FACT_KNOWN_BY_ORDER = _load("c1f3945cb802")
+# 그 뒤 여덟 체인의 요약 비밀 표기 슬롯 본문에 미확인 주장의 출처 규칙을 더한 세트를 게시하는 리비전 — 여덟 체인의 head
+# 활성이라 되돌릴 때는 이것부터다.
+_SOURCE_MARKING = _load("0c1a85bc5c2f")
 
 _LANES: tuple[PromptLane, ...] = ("story", "character")
 _CLAUDE_MODELS: tuple[PromptSetModelId, ...] = ("sonnet", "opus")
@@ -82,6 +85,7 @@ def _ids(pairs: list[tuple[PromptLane, PromptSetModelId]]) -> list[str]:
 
 async def _undo_later_revisions(db_session: AsyncSession) -> None:
     connection = await db_session.connection()
+    await connection.run_sync(_SOURCE_MARKING.delete_seeded_rows)
     await connection.run_sync(_FACT_KNOWN_BY_ORDER.delete_seeded_rows)
     await connection.run_sync(_EPISODE_KNOWN_BY.delete_seeded_rows)
     await connection.run_sync(_SCENE_JUDGMENT.delete_seeded_rows)
@@ -299,7 +303,7 @@ async def test_seeded_sets_match_publish_validation_but_for_the_later_revisions_
     with pytest.raises(HTTPException):
         _validate_prompt_draft_for_publish(prompt_set, sections, lane=lane, model=model)
     later_set, later_sections = await load_active_prompt_set(db_session, lane=lane, model=model)
-    assert later_set.id == _FACT_KNOWN_BY_ORDER.NEW_SET_IDS[(lane, model)]
+    assert later_set.id == _SOURCE_MARKING.NEW_SET_IDS[(lane, model)]
     _validate_prompt_draft_for_publish(later_set, later_sections, lane=lane, model=model)
     with pytest.raises(HTTPException):
         _validate_prompt_draft_for_publish(later_set, later_sections, lane=lane, model="gemini")
