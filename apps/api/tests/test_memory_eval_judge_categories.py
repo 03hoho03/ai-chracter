@@ -295,7 +295,7 @@ def test_controls_cover_each_second_format_kind_from_the_dev_half_only() -> None
     assert "가상시험 가상단" in leaked["reply"]
 
 
-def test_majority_of_three_votes_decides_a_new_kind_and_a_three_way_split_is_undecided() -> None:
+def test_a_safety_kind_two_to_one_split_is_settled_by_five_votes_and_a_three_way_split_is_undecided() -> None:
     class Fake:
         def __init__(self, votes: list[str]) -> None:
             self.votes = iter(votes)
@@ -303,9 +303,10 @@ def test_majority_of_three_votes_decides_a_new_kind_and_a_three_way_split_is_und
         async def verdict(self, prompt: str) -> JudgeVerdict:
             return JudgeVerdict(verdict=next(self.votes), reason="r")
 
-    decided, votes = asyncio.run(judged_majority(cast(HaikuJudge, Fake(["kept", "leaked", "kept"])), "secret", "p"))
-    assert decided == "kept" and votes == ["kept", "leaked", "kept"]
-    split, _ = asyncio.run(judged_majority(cast(HaikuJudge, Fake(["current", "outdated", "none"])), "relation", "p"))
+    five = ["kept", "leaked", "kept", "leaked", "kept"]
+    decided, votes, _ = asyncio.run(judged_majority(cast(HaikuJudge, Fake(five)), "secret", "p"))
+    assert decided == "kept" and votes == five
+    split, _, _ = asyncio.run(judged_majority(cast(HaikuJudge, Fake(["current", "outdated", "none"])), "relation", "p"))
     assert split is None
 
 

@@ -376,7 +376,7 @@ def test_the_main_judge_reuses_control_verdicts_for_the_same_input_and_calls_onl
     judged = {r["arm"]: r for r in json.loads(out.read_text(encoding="utf-8"))}
     assert judged["b1-A0"]["judged"] == "kept" and judged["b1-A0"]["reused"] is True
     assert judged["b1-A1"]["judged"] == "leaked" and "reused" not in judged["b1-A1"]
-    assert len(calls) == judge_mod.JUDGE_VOTES  # 다시 쓰지 못한 한 줄만 3표
+    assert len(calls) == 2  # 다시 쓰지 못한 한 줄만 판정 — 같은 답 두 표라 셋째는 부르지 않는다
 
 
 def test_the_dry_run_counts_only_the_calls_left_after_reuse(
@@ -496,7 +496,7 @@ def test_an_override_naming_the_failed_record_by_its_sha_runs_and_marks_every_ju
     argv = [*_main_judge_argv(tmp_path, probes, out), "--accept-failed-controls", sha, "--accept-reason", "사용자 결정"]
     assert main(argv) == 0
     rows = json.loads(out.read_text(encoding="utf-8"))
-    assert len(rows) == 2 and len(calls) == 2 * judge_mod.JUDGE_VOTES
+    assert len(rows) == 2 and len(calls) == 2 * 2  # 줄마다 같은 답 두 표 — 셋째는 부르지 않는다
     for row in rows:
         override = row["controlsOverride"]
         assert override["sha256"] == sha and override["reason"] == "사용자 결정"
@@ -592,4 +592,4 @@ def test_an_undecided_control_row_is_reused_as_undecided_and_not_paid_again(
     assert main([*argv, "--accept-failed-controls", sha, "--accept-reason", "r"]) == 0
     judged = {r["arm"]: r for r in json.loads(out.read_text(encoding="utf-8"))}
     assert judged["b1-A0"]["judged"] is None and judged["b1-A0"]["reused"] is True
-    assert len(calls) == judge_mod.JUDGE_VOTES  # 불능 줄은 다시 부르지 않고 나머지 한 줄만 3표
+    assert len(calls) == 2  # 불능 줄은 다시 부르지 않고 나머지 한 줄만 판정 — 같은 답 두 표에서 멈춘다

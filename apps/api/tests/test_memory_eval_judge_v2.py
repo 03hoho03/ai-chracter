@@ -244,7 +244,7 @@ def _majority(
 
     monkeypatch.setattr(asyncio, "sleep", no_wait)
     judge = _Scripted(verdicts)
-    result, votes = asyncio.run(judge_mod.judged_majority(judge, kind, "p"))  # type: ignore[arg-type]
+    result, votes, _ = asyncio.run(judge_mod.judged_majority(judge, kind, "p"))  # type: ignore[arg-type]
     return result, votes, judge.calls
 
 

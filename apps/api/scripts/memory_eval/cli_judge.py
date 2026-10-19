@@ -349,7 +349,10 @@ def cmd_judge(args: argparse.Namespace) -> int:
                 **({"reused": len(reused)} if args.reuse_judged else {}),
                 **({"controlsOverride": override} if override else {}),
                 "model": args.judge_model,
-                "estimateUsd": judge_mod.judge_estimate_usd(len(items) - len(reused), args.judge_model),
+                # 줄마다 최대 표 수(안전 범주는 다섯)로 센 위쪽 견적 — 첫 두 표가 같으면 덜 쓴다.
+                "estimateUsd": judge_mod.judge_estimate_usd_for(
+                    [i["kind"] for i in items if i.get("key", "") not in reused], args.judge_model
+                ),
                 "controls": args.controls,
                 **(
                     {"bySource": dict(Counter(i.get("source", "plants") for i in items)), "categories": categories}
@@ -367,19 +370,29 @@ def cmd_judge(args: argparse.Namespace) -> int:
     )
 
     async def go() -> list[dict[str, Any]]:
-        out = []
+        prompts = []
         for item in items:
             entry = judge_mod.control_entry(item, plant_set)
             replies = judge_mod.control_replies(item) if args.controls else item["replies"]
-            prompt = judge_mod.judge_prompt(item["kind"], entry, replies, wording)
-            sha = judge_mod.prompt_sha256(prompt)
-            control = reused.get(item.get("key", ""))
-            if control is not None:
-                out.append({**item, "judged": control["judged"], "votes": control["votes"], "promptSha256": sha,
-                            "reused": True})  # fmt: skip
+            prompts.append(judge_mod.judge_prompt(item["kind"], entry, replies, wording))
+        fresh = [n for n, item in enumerate(items) if item.get("key", "") not in reused]
+        # 다시 쓰지 않는 줄만 동시 판정에 넣고, 결과는 입력 순서로 제자리에 놓는다.
+        judged_rows = await judge_mod.judge_all(
+            judge, [(items[n]["kind"], prompts[n]) for n in fresh], concurrency=args.concurrency
+        )
+        by_index = dict(zip(fresh, judged_rows, strict=True))
+        out = []
+        for n, item in enumerate(items):
+            sha = judge_mod.prompt_sha256(prompts[n])
+            if n not in by_index:
+                control = reused[item["key"]]
+                # 이유 칸이 생기기 전 기록은 이유가 없다 — 없으면 비운다.
+                out.append({**item, "judged": control["judged"], "votes": control["votes"],
+                            "reasons": control.get("reasons"), "promptSha256": sha, "reused": True})  # fmt: skip
                 continue
-            judged, votes = await judge_mod.judged_majority(judge, item["kind"], prompt)
-            out.append({**item, "judged": judged, "votes": votes, "promptSha256": sha})
+            judged, votes, reasons = by_index[n]
+            # 이유는 표 순서대로 한 문장씩(불능 표는 None) — 표 목록(`votes`)의 모양은 그대로 둔다.
+            out.append({**item, "judged": judged, "votes": votes, "reasons": reasons, "promptSha256": sha})
         if override is not None:
             out = [{**row, "controlsOverride": override} for row in out]
         return out
@@ -1193,6 +1206,7 @@ def _extend_infra(sub: "argparse._SubParsersAction[argparse.ArgumentParser]", pa
 
 def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None:
     from memory_eval.judge import (
+        JUDGE_CONCURRENCY,
         JUDGE_MODEL,
         JUDGE_MODELS,
         parse_categories,
@@ -1307,6 +1321,12 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     p.add_argument("--accept-reason", help="--accept-failed-controls 의 이유(누가 왜 — 판정 줄마다 남는다)")
     p.add_argument("--probes", type=Path, nargs="*", default=[])
     p.add_argument("--out", type=Path)
+    p.add_argument(
+        "--concurrency",
+        type=int,
+        default=JUDGE_CONCURRENCY,
+        help=f"동시에 보내는 판정 호출 수 상한(기본 {JUDGE_CONCURRENCY}, 1 이면 직렬)",
+    )
     p.set_defaults(fn=cmd_judge, check_args=_check_judge_args)
 
     p = sub.add_parser("judge-controls-merge", help="작품별 대조군 결과를 본 판정 관문 파일 하나로 합친다")
