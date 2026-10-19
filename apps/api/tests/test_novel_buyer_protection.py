@@ -1516,6 +1516,13 @@ async def test_stopping_or_resuming_twice_is_refused_and_logs_nothing(
     blank = await _sales(db_client, novel, "stop", "  ")
     missing = await db_client.post(f"/admin/novels/{uuid.uuid4()}/sales", json={"action": "stop", "adminComment": "x"})
     assert (await _sales(db_client, novel, "stop")).status_code == 200
+    # 한 테스트 안에서는 `now()` 가 같은 값이라, 멈춘 시각을 하루 앞으로 옮겨 두 번째 멈춤이 덮어쓰면 드러나게 한다.
+    await db_session.execute(
+        sa.update(NovelPublication)
+        .where(NovelPublication.novel_id == novel.novel_id)
+        .values(sales_stopped_at=sa.func.now() - sa.text("interval '1 day'"))
+    )
+    await db_session.commit()
     first = await _stopped_at(db_session, novel)
     again = await _sales(db_client, novel, "stop")
 
@@ -1591,6 +1598,13 @@ async def test_a_novel_report_resolved_by_stopping_sales_logs_the_report_reason_
     resolved = await db_client.post(
         f"/admin/novel-reports/{first}/actions", json={"action": "stop_sales", "adminComment": "선정적"}
     )
+    # 한 테스트 안에서는 `now()` 가 같은 값이라, 처음 멈춘 시각을 하루 앞으로 옮겨 두 번째 처리가 덮어쓰면 드러나게 한다.
+    await db_session.execute(
+        sa.update(NovelPublication)
+        .where(NovelPublication.novel_id == novel.novel_id)
+        .values(sales_stopped_at=sa.func.now() - sa.text("interval '1 day'"))
+    )
+    await db_session.commit()
     stopped_at = await _stopped_at(db_session, novel)
     again = await db_client.post(
         f"/admin/novel-reports/{second}/actions", json={"action": "stop_sales", "adminComment": "선정적"}
@@ -1710,20 +1724,23 @@ async def test_a_source_report_resolved_by_restricting_while_keeping_buyers_refu
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """원작 신고를 이용제한으로 처리하면서 판매만 멈추기로 고르면 환급이 없고 표식이 선다(삭제 쪽은 "열람만 남는 경우"
-    매개변수가 본다). 깨지는 시나리오: 신고 처리 경로만 칸을 무시해 닫고 환급한다."""
+    매개변수가 본다). 그 뒤 다른 신고를 반려하면 작품 상태가 그대로라 표식도 그대로이고 소장자는 계속 읽는다. 깨지는 시나리오:
+    신고 처리 경로만 칸을 무시해 닫고 환급하거나, 반려가 표식을 내려 환급 없이 열람을 닫는다."""
     novel = await _novel(db_session)
     buyer = await _member(db_session)
     await _bought(db_client, novel, 6, buyer)
-    report = await _source_report(db_session, novel)
+    report, later = await _source_report(db_session, novel), await _source_report(db_session, novel)
     await _as_admin(db_client, db_session)
 
     resp = await db_client.post(
         f"/admin/reports/{report}/action", json={"action": "restrict", "derivativeNovels": "stop_sales"}
     )
+    rejected = await db_client.post(f"/admin/reports/{later}/action", json={"action": "reject"})
 
-    assert resp.status_code == 200, resp.text
+    assert (resp.status_code, rejected.status_code) == (200, 200), resp.text
     assert _refunds(await _purchases(db_session, buyer)) == [(6, None, None)]
     assert (await _source(db_session, novel)).novel_buyers_kept is True
+    assert (await _get(db_client, _path(novel, 6), as_user=buyer)).status_code == 200
 
 
 async def test_with_the_policy_switch_off_every_sales_stop_is_refused_and_writes_nothing(
@@ -1757,6 +1774,11 @@ async def test_with_the_policy_switch_off_every_sales_stop_is_refused_and_writes
         ),
     ]
     explicit_close = await _source_action(db_client, closed, "restrict", "close")
+    # 닫는 조치가 아닌 해제에 실린 선택은 보지 않으므로 꺼져 있어도 거절하지 않는다.
+    lift_with_choice = await db_client.post(
+        f"/admin/contents/{closed.content_id}/action",
+        json={"action": "lift-restriction", "adminComment": "오판", "derivativeNovels": "stop_sales"},
+    )
 
     assert [(r.status_code, r.json()["detail"]["code"]) for r in responses] == [(409, "NOVEL_SALES_STOP_DISABLED")] * 5
     assert (await _stopped_at(db_session, novel), await _stopped_at(db_session, stopped) is not None) == (None, True)
@@ -1773,9 +1795,9 @@ async def test_with_the_policy_switch_off_every_sales_stop_is_refused_and_writes
         sa.select(sa.func.count()).select_from(ModerationAction).where(ModerationAction.content_id == novel.content_id)
     )
     assert actions == 0
-    assert {log[0] for log in await _action_logs(db_session)} == {"content-restrict"}
+    assert {log[0] for log in await _action_logs(db_session)} == {"content-restrict", "content-lift"}
     assert explicit_close.status_code == 200, explicit_close.text
-    assert (await _source(db_session, closed)).novel_buyers_kept is False
+    assert lift_with_choice.status_code == 200, lift_with_choice.text
 
 
 async def test_the_admin_list_shows_when_sales_were_stopped(

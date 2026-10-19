@@ -111,8 +111,9 @@ class Content(Base):
     restricted_by_suspension: Mapped[bool] = mapped_column(Boolean, server_default=false(), nullable=False)
     # 운영자가 이 작품을 이용제한·삭제하면서 파생 소설은 판매만 멈추고 산 사람의 열람을 남기기로 골랐는가(환급 없음,
     # `DerivativeNovelsChoice`). 작품 단위 조치(제한·삭제·해제, 직접·신고)가 매번 새로 쓰고 이의 수용이 내린다. 신고 반려와
-    # 정지·정지 해제는 건드리지 않는다 — 정지는 정상 작품만 내리고(정상으로 돌리는 쓰기가 이미 내렸다) 그동안은 정지 표식이
-    # 열람을 둔다. 소장자 조건은 정상이 아닌 작품에서만 이 칸을 본다. CHECK 를 두지 않는 이유는 마이그레이션 `e9ad8ed93e90` 에
+    # 정지·정지 해제는 건드리지 않는다 — 정지가 내린 작품은 그동안 정지 표식이 열람을 두므로 이 칸이 무엇이든 결과가 같고,
+    # 정지 해제는 작품을 정상으로 돌려 이 칸을 보지 않게 한다. 정지 중에 작품 단위 조치가 오면 그 조치가 이 칸을 새로 쓴다.
+    # 소장자 조건은 정상이 아니고 정지 표식도 없는 작품에서만 이 칸으로 결과가 갈린다. CHECK 를 두지 않는 이유는 마이그레이션 `e9ad8ed93e90` 에
     # 있다.
     novel_buyers_kept: Mapped[bool] = mapped_column(Boolean, server_default=false(), nullable=False)
     # 작품 등급(`ContentRating` — 왜 전연령만 허용하는지는 그 정의에). 버전이 아니라 헤더에 둔다 — 버전마다 등급이

@@ -687,6 +687,38 @@ async def test_a_restriction_waiting_behind_a_sales_stop_still_refunds_once_and_
     assert await _refund_entries(world, buyer) == 1
 
 
+async def test_a_second_sales_stop_waits_for_the_first_and_is_refused(world: _World) -> None:
+    """판매 중단이 공개 상태 행을 쥔 채 커밋 전일 때 다른 운영자가 같은 노벨의 판매를 멈춘다. 뒤의 것은 그 행에서 기다렸다가,
+    잠근 뒤 다시 읽은 행에서 이미 멈춘 것을 보고 409 `NOVEL_SALES_ALREADY_STOPPED` 로 끝난다 — 감사 로그는 한 줄이다. 깨지는
+    시나리오: 잠그지 않고 읽은 상태로 판정해 둘 다 통과하고, 빈 조치가 감사 로그에 두 번 쌓이며 멈춘 시각이 늦춰진다."""
+    publisher = await world.member()
+    novel = await world.publish(publisher)
+    admin = await world.admin()
+    first = world.factory()
+    tasks: list[asyncio.Task[object]] = []
+    try:
+        await set_novel_sales(first, novel.novel_id, admin_id=admin, stop=True, reason="운영정책 위반")
+        tasks.append(_stop_sales_task(world, novel, admin))
+        await _assert_blocked(tasks[0])
+        await first.commit()
+        second = await asyncio.wait_for(tasks[0], _SETTLE_SECONDS)
+    finally:
+        await first.close()
+        if tasks:
+            await asyncio.wait(tasks, timeout=_SETTLE_SECONDS)
+
+    assert isinstance(second, HTTPException) and second.status_code == 409, second
+    detail: object = second.detail
+    assert detail == {"code": "NOVEL_SALES_ALREADY_STOPPED"}
+    async with world.factory() as s:
+        logs = await s.scalar(
+            select(func.count())
+            .select_from(AdminActionLog)
+            .where(AdminActionLog.target_novel_id == novel.novel_id, AdminActionLog.action_type == "novel-sales-stop")
+        )
+    assert logs == 1
+
+
 @pytest.mark.parametrize("stop_first", [True, False], ids=["stop-queued-first", "restriction-queued-first"])
 async def test_a_sales_stop_and_a_restriction_queued_on_the_same_publication_both_apply_without_deadlock(
     world: _World, stop_first: bool

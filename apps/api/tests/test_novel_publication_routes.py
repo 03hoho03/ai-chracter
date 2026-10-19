@@ -1858,3 +1858,25 @@ async def test_with_the_policy_off_a_remembered_number_is_neither_shown_nor_enfo
     assert before["freeLockedOrdinals"] == []
     assert sixth.status_code == 200, sixth.text
     assert (await _prices(db_session, novel_id))[6] == 30
+
+
+async def test_a_publication_whose_sales_were_stopped_still_turns_a_paid_chapter_free_but_does_not_reopen(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """판매를 멈춘 공개 소설에서도 작가는 유료 화를 무료로 바꿀 수 있다(산 사람에게 손해가 없다). 거둔 공개를 다시 여는 것은
+    다른 공개 쓰기와 같이 409 `NOVEL_PUBLICATION_SALES_STOPPED` 다 — 열어도 독자에게는 보이지 않으므로 재개 뒤에 연다. 깨지는
+    시나리오: 판매 중단이 무료 전환까지 막아 작가가 할 수 있는 일을 잃거나, 거둔 공개가 판매 중단 중에 다시 열린다."""
+    novel_id, added = await _published_through(db_client, db_session, monkeypatch, published=6)
+    await db_session.execute(
+        sa.update(NovelPublication).where(NovelPublication.novel_id == novel_id).values(sales_stopped_at=sa.func.now())
+    )
+    await db_session.commit()
+
+    made_free = await _make_free(db_client, novel_id, added[5].id)
+    withdrawn = await db_client.post(f"/novels/{novel_id}/publication/withdraw")
+    reopened = await _publish(db_client, novel_id, None)
+
+    assert made_free.status_code < 300, made_free.text
+    assert (await _prices(db_session, novel_id))[6] == 0
+    assert withdrawn.status_code == 204
+    assert (reopened.status_code, reopened.json()["detail"]["code"]) == (409, "NOVEL_PUBLICATION_SALES_STOPPED")
