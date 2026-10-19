@@ -716,11 +716,18 @@ async def judged_or_none(
 
 
 async def _gather_or_cancel(coros: Sequence[Awaitable[_T]]) -> list[_T]:
-    """모두 기다려 입력 순서대로 돌려준다. 하나가 예외(원장 상한 멈춤 등)로 끝나면 나머지를 취소한 뒤 그 예외를 다시 낸다 —
-    남은 호출이 상한을 넘어 계속 나가지 않게."""
+    """모두 기다려 입력 순서대로 돌려준다.
+
+    하나가 원장 상한 멈춤으로 끝나면 나머지를 취소하지 않고 끝까지 기다린 뒤 그 예외를 다시 낸다. 이미 나간 요청은 청구됐을 수
+    있으므로 응답을 받아 원장에 남겨야 누적 원가를 낮게 보지 않는다. 그 사이 새 호출은 나가지 않는다 — 판정기는 보내기 전에 원장
+    여유를 확인하고, 누적 원가는 줄지 않으므로 한 번 넘은 상한은 그 뒤의 확인에서도 넘는다. 그 밖의 예외(취소·중단 등)면
+    나머지를 취소한 뒤 다시 낸다."""
     tasks = [asyncio.ensure_future(c) for c in coros]
     try:
         return list(await asyncio.gather(*tasks))
+    except BudgetExceededError:
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
     except BaseException:
         for task in tasks:
             task.cancel()
