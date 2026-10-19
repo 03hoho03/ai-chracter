@@ -10,7 +10,7 @@ import boto3
 import httpx
 import pytest
 from botocore.exceptions import ClientError
-from PIL import Image
+from PIL import Image, ImageSequence
 from redis.exceptions import RedisError
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -185,6 +185,35 @@ async def test_complete_stores_the_type_of_the_checked_image_even_when_the_key_h
     assert asset.storage_key == f"assets/situational-image/{asset_id}"
     final = _s3().head_object(Bucket=settings.s3_bucket_name, Key=asset.storage_key)
     assert final["ContentType"] == "image/webp"
+
+
+async def test_complete_keeps_an_animated_gif_inquiry_attachment_moving(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """화면은 문의 첨부의 GIF 를 리사이즈하지 않고 그대로 올린다 — 버그를 녹화한 움직임이 신고 내용이라서다. 문의
+    첨부는 원본 주소로 보이므로, 원본 자리에 모든 프레임이 GIF 로 남아야 작성자와 운영자가 움직이는 채로 본다."""
+    await _logged_in_user(db_client, db_session)
+    resp = await db_client.post(
+        "/assets/presigned-upload", json={"contentType": "image/gif", "purpose": "inquiry-attachment"}
+    )
+    assert resp.status_code == 201
+    asset_id, upload_url = resp.json()["assetId"], resp.json()["uploadUrl"]
+    frames = [Image.new("RGB", (64, 64), color=color) for color in ((255, 0, 0), (0, 255, 0), (0, 0, 255))]
+    output = io.BytesIO()
+    frames[0].save(output, format="GIF", save_all=True, append_images=frames[1:], duration=100, loop=0)
+    uploaded = output.getvalue()
+    _put_via_presigned_url(upload_url, uploaded, content_type="image/gif")
+
+    assert (await db_client.post(f"/assets/{asset_id}/complete")).status_code == 200
+
+    asset = await db_session.get(Asset, uuid.UUID(asset_id))
+    assert asset is not None
+    final = _s3().get_object(Bucket=settings.s3_bucket_name, Key=asset.storage_key)
+    assert final["ContentType"] == "image/gif"
+    stored = final["Body"].read()
+    assert stored == uploaded
+    with Image.open(io.BytesIO(stored)) as image:
+        assert sum(1 for _ in ImageSequence.Iterator(image)) == 3
 
 
 async def test_reusing_the_upload_url_after_complete_cannot_change_the_stored_image(

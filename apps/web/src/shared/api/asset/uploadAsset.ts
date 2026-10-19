@@ -28,6 +28,15 @@ const RESIZE_SPEC_BY_PURPOSE: Record<AssetPurpose, ResizeSpec> = {
   "inquiry-attachment": { maxEdge: 2048, quality: 0.9 },
 };
 
+/**
+ * 리사이즈하지 않고 원본 바이트를 그대로 올리는 형식. 문의 첨부의 GIF는 버그를 녹화한 움직임 자체가 신고 내용인데,
+ * `resizeImage`는 canvas에 첫 프레임만 그려 정지 그림으로 바꾼다. 원본 그대로여도 아래 용량 상한은 같게 걸리고, 서버는
+ * 업로드 완료 때 바이트에서 형식을 읽어 저장한다.
+ */
+const KEEP_ORIGINAL_TYPES_BY_PURPOSE: Partial<Record<AssetPurpose, readonly string[]>> = {
+  "inquiry-attachment": ["image/gif"],
+};
+
 /** 서버의 `UPLOAD_SIZE_LIMIT_BYTES`(apps/api/src/api/assets/schemas.py)와 같은 값 — 리사이즈 *결과물*에 건다. */
 const MAX_UPLOAD_BYTES_BY_PURPOSE: Record<AssetPurpose, number> = {
   "profile-image": 2 * 1024 * 1024,
@@ -59,8 +68,8 @@ export class UploadAssetError extends Error {
  * 감싼 유틸. S3로의 PUT은 우리 API가 아니라 발급받은 절대 URL로 직접 나가야 하므로(쿠키/공통 헤더가
  * 불필요하고 응답도 FastAPI 에러 포맷이 아니다) `apiClient`가 아닌 `fetch`를 그대로 쓴다.
  *
- * PUT 전에 항상 `resizeImage`를 거치므로 올라가는 바이트는 언제나 `image/webp`이고, presigned 요청의
- * contentType과 PUT의 Content-Type도 그 결과 타입으로 맞춘다(원본 `file.type`을 보내지 않는다).
+ * PUT 전에 `resizeImage`를 거치므로 올라가는 바이트는 `image/webp`이고(예외는 `KEEP_ORIGINAL_TYPES_BY_PURPOSE`),
+ * presigned 요청의 contentType과 PUT의 Content-Type도 올라가는 파일의 타입으로 맞춘다.
  */
 export async function uploadAsset(file: File, purpose: AssetPurpose): Promise<string> {
   const resized = await resizeForUpload(file, purpose);
@@ -99,6 +108,7 @@ export async function uploadAsset(file: File, purpose: AssetPurpose): Promise<st
 
 /** 호출부가 두 에러 타입을 갈라 보지 않도록 리사이즈 실패도 code를 승계해 `UploadAssetError`로 합친다. */
 async function resizeForUpload(file: File, purpose: AssetPurpose): Promise<File> {
+  if (KEEP_ORIGINAL_TYPES_BY_PURPOSE[purpose]?.includes(file.type)) return file;
   try {
     return await resizeImage(file, RESIZE_SPEC_BY_PURPOSE[purpose]);
   } catch (error) {
