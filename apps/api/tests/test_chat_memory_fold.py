@@ -34,7 +34,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from api.chat import memory_fold, turn_engine
 from api.chat import router as chat_router
 from api.chat.memory_fold import backoff_allows, plan_fold
-from api.chat.prompt_builder import NO_ROOM_PEOPLE, MemorySummaryResult, StatRuleJudgmentResult
+from api.chat.prompt_builder import (
+    NO_ROOM_PEOPLE,
+    MemorySummaryResult,
+    PromptNames,
+    StatRuleJudgmentResult,
+    load_active_prompt_set,
+)
 from api.chat.schemas import ChatStreamEvent
 from api.core import clover, rate_limit_gate
 from api.core.config import settings
@@ -50,6 +56,7 @@ from api.db.models import (
 )
 from api.db.models.story import MediaBookPerson
 from api.db.session import get_session_factory
+from api.llm.chat_models import ChatModelId, PromptSetModelId
 from api.llm.claude_messages import claude_error
 from api.llm.client import (
     LLMCallContext,
@@ -66,6 +73,7 @@ from factories import (
     _make_memory_fact,
     _make_user,
     _make_user_with_clover_lot,
+    _memory_scope_covers_gemini,
     _memory_version,
     _open_room,
     _override_llm_client,
@@ -787,6 +795,7 @@ async def test_secret_marking_lists_the_story_people_in_their_original_spelling(
     """스토리 방: 미디어 북 인물(순서대로) → 앞 접기 사실 행의 이름. 처음 나온 표기를 지키고 사용자 표기(대화 줄 라벨,
     `{{user}}` 대체어)는 뺀다. 슬롯은 지시문 바로 뒤, 직전 요약 앞이다."""
     monkeypatch.setattr(settings, "memory_summary_secret_marking", True)
+    _memory_scope_covers_gemini(monkeypatch)
     room = await _story_room_with_names(db_client, db_session)
     fake = SummaryLLMClient()
 
@@ -803,6 +812,7 @@ async def test_secret_marking_names_the_character_in_a_character_room(
 ) -> None:
     """캐릭터 방의 첫 접기: 사실 행이 아직 없어도 작품(캐릭터) 이름이 실린다."""
     monkeypatch.setattr(settings, "memory_summary_secret_marking", True)
+    _memory_scope_covers_gemini(monkeypatch)
     room = await _open_room(db_client, db_session, turns=29)
     fake = SummaryLLMClient()
 
@@ -817,6 +827,7 @@ async def test_secret_marking_without_any_name_still_carries_the_slot_on_the_fir
 ) -> None:
     """미디어 북 인물이 없는 스토리 방의 첫 접기는 이름이 0개다 — 고정 문구로 슬롯이 실린다."""
     monkeypatch.setattr(settings, "memory_summary_secret_marking", True)
+    _memory_scope_covers_gemini(monkeypatch)
     room = await _open_room(db_client, db_session, turns=29, lane="story")
     fake = SummaryLLMClient()
 
@@ -831,6 +842,7 @@ async def test_secret_marking_name_read_failure_falls_back_and_the_fold_still_co
 ) -> None:
     """이름 출처를 읽다 DB 가 실패해도 접기는 그대로 커밋한다 — 이름은 이미 손에 있는 작품 이름만으로 채우고, 실패는 승격한다."""
     monkeypatch.setattr(settings, "memory_summary_secret_marking", True)
+    _memory_scope_covers_gemini(monkeypatch)
     captured: list[str] = []
     monkeypatch.setattr(memory_fold, "capture_dependency_failure", lambda exc, *, dependency: captured.append(dependency))
 
@@ -848,3 +860,83 @@ async def test_secret_marking_name_read_failure_falls_back_and_the_fold_still_co
     assert f"{_SLOT_HEAD}캐릭터. 아는 사람을" in prompt
     assert captured == ["db"]
     assert len(await _snapshots(db_session, room)) == 1
+
+
+# --- 비밀 표기 슬롯의 기억 사용 범위 ----------------------------------------------------------
+
+
+async def _fold_directly(
+    db_session: AsyncSession,
+    room: Room,
+    fake: SummaryLLMClient,
+    *,
+    summary_model: PromptSetModelId,
+    writing_model: ChatModelId,
+) -> str:
+    """접기를 직접 한 번 부르고 그 요약 프롬프트를 돌려준다. 요약은 실패로 끝내 커서가 그대로라 같은 방을 다시 접을 수 있다."""
+    prompt_set, sections = await load_active_prompt_set(db_session, lane="story", model=summary_model)
+    await memory_fold.fold_memory(
+        async_sessionmaker(bind=db_session.bind, expire_on_commit=False),
+        fake,
+        room_id=room.room_id,
+        user_id=room.user_id,
+        prompt_set=prompt_set,
+        sections=sections,
+        is_story_chat=True,
+        names=PromptNames(persona_name=None, char_name=None),
+        writing_model=writing_model,
+    )
+    return fake.summary_prompts[-1]
+
+
+async def _named_story_room_due_to_fold(db_client: httpx.AsyncClient, db_session: AsyncSession) -> Room:
+    room = await _open_room(db_client, db_session, turns=30, lane="story")
+    await _add_media_book_people(db_session, room, ["한서윤", "Mina"])
+    return room
+
+
+async def test_secret_marking_outside_the_scope_leaves_the_summary_prompt_as_if_switched_off(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """기본 범위(Opus 방뿐)에서 Gemini 가 쓴 턴의 접기는 스위치를 켜도 요약 프롬프트가 꺼진 것과 바이트까지 같다. 같은 방의
+    Opus 턴이면 슬롯이 실린다."""
+    monkeypatch.setattr(settings, "memory_model_scope", [("story", "opus"), ("character", "opus")])
+    room = await _named_story_room_due_to_fold(db_client, db_session)
+    fake = SummaryLLMClient(*[LLMClientError("요약 실패")] * 3)
+
+    monkeypatch.setattr(settings, "memory_summary_secret_marking", False)
+    switched_off = await _fold_directly(db_session, room, fake, summary_model="gemini", writing_model="gemini")
+    monkeypatch.setattr(settings, "memory_summary_secret_marking", True)
+    outside = await _fold_directly(db_session, room, fake, summary_model="gemini", writing_model="gemini")
+    inside = await _fold_directly(db_session, room, fake, summary_model="gemini", writing_model="opus")
+
+    assert outside == switched_off
+    assert _SLOT_HEAD not in outside
+    assert f"{_SLOT_HEAD}한서윤, Mina. 아는 사람을" in inside
+
+
+@pytest.mark.parametrize(
+    ("summary_model", "writing_model", "carried"),
+    [
+        pytest.param("haiku", "opus", True, id="summary-set-outside-writing-inside"),
+        pytest.param("opus", "gemini", False, id="summary-set-inside-writing-outside"),
+    ],
+)
+async def test_secret_marking_scope_is_judged_by_the_writing_model_not_the_summary_set_model(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    summary_model: PromptSetModelId,
+    writing_model: ChatModelId,
+    carried: bool,
+) -> None:
+    """접기가 받는 세트는 요약 모델의 것이다. 그 세트의 모델로 가르면 Opus 방의 접기가 범위 밖이 되고 Gemini 방의 접기가 요약
+    모델이 Opus 라는 이유로 범위 안이 된다 — 그래서 범위는 그 턴에 응답을 쓴 모델로 가른다."""
+    monkeypatch.setattr(settings, "memory_model_scope", [("story", "opus"), ("character", "opus")])
+    monkeypatch.setattr(settings, "memory_summary_secret_marking", True)
+    room = await _named_story_room_due_to_fold(db_client, db_session)
+    fake = SummaryLLMClient(LLMClientError("요약 실패"))
+
+    prompt = await _fold_directly(db_session, room, fake, summary_model=summary_model, writing_model=writing_model)
+
+    assert (_SLOT_HEAD in prompt) is carried
