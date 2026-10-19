@@ -5,7 +5,7 @@
  *
  * - `list`: 그 밖에는 없다(다른 사람의 공개·좋아요는 들어올 때마다 새로 받는다).
  * - `detail`: 화 소장(그 화의 상태)과 소장 거절(살 것 없음·지금 소장할 수 없음), 읽은 자리(떠날 때 다시 받는다), 좋아요.
- * - `chapter`: 화 소장(잠긴 화가 본문을 싣는다)과 소장 거절(위와 같다).
+ * - `chapter`: 화 소장(잠긴 화가 본문을 싣는다)과 소장 거절(위와 같다). 판별 키(`chapterEdition`)의 접두사다.
  * - `comments`: 그 화의 댓글 쓰기·지우기(다른 사람의 댓글은 시트를 열 때마다 새로 받는다).
  * - `home`: 그 밖에는 없다(운영자가 고른다). */
 export const webnovelKeys = {
@@ -14,6 +14,9 @@ export const webnovelKeys = {
   list: (sort: WebnovelListSort) => [...webnovelKeys.lists(), sort] as const,
   detail: (novelId: string) => [...webnovelKeys.all, "detail", novelId] as const,
   chapter: (novelId: string, chapterId: string) => [...webnovelKeys.all, "chapter", novelId, chapterId] as const,
+  // 판마다 따로 담는다(없으면 최신 판). `chapter` 가 접두사라 그 키로 무효화·리셋하면 두 판이 함께 잡힌다.
+  chapterEdition: (novelId: string, chapterId: string, edition: number | undefined) =>
+    [...webnovelKeys.chapter(novelId, chapterId), edition ?? "latest"] as const,
   comments: (novelId: string, chapterId: string) => [...webnovelKeys.all, "comments", novelId, chapterId] as const,
   home: () => [...webnovelKeys.all, "home"] as const,
 };

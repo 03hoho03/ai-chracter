@@ -2,6 +2,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { SheetTitle } from "@ai-character-chat/ui/components/sheet";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { MessageCircle } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -11,6 +12,7 @@ import { NovelReadProgressSummary, toNovelReadProgress } from "@/entities/novel"
 import {
   saveWebnovelReadingPosition,
   sendWebnovelReadingPositionKeepalive,
+  toEditionNotice,
   toWebnovelReportErrorMessage,
   useReportWebnovelCommentMutation,
   useReportWebnovelMutation,
@@ -18,6 +20,7 @@ import {
   webnovelKeys,
   withWebnovelReadingPosition,
   WebnovelTocList,
+  type EditionNotice,
   type WebnovelChapterItem,
   type WebnovelChapterResponse,
   type WebnovelDetailResponse,
@@ -90,6 +93,8 @@ export function WebnovelViewer({ novel, summary, chapter, paragraphs }: Webnovel
     }
   }
   const { edition } = chapter;
+  // 산 뒤 고쳐진 화면 제목 아래에 판 안내 한 줄. 없으면 머리에 아무것도 더하지 않는다(판형 쪽 수가 지금과 같다).
+  const editionNotice = toEditionNotice(chapter);
   const position = summary.readingPosition;
   const chapters = novel.chapters.map(toViewerChapter);
 
@@ -115,6 +120,11 @@ export function WebnovelViewer({ novel, summary, chapter, paragraphs }: Webnovel
       <EpisodeReader
         route="public"
         isExtraSheetOpen={isCommentsOpen || isReportOpen}
+        headerNote={
+          editionNotice === undefined ? undefined : (
+            <EditionNoteLine novelId={novel.id} chapterId={chapter.id} notice={editionNotice} />
+          )
+        }
         topBarAction={
           <Button
             type="button"
@@ -211,6 +221,31 @@ export function WebnovelViewer({ novel, summary, chapter, paragraphs }: Webnovel
           void openReport("댓글 신고하기", (reasonCategory) => reportComment.mutateAsync({ commentId, reasonCategory }))
         }
       />
+    </>
+  );
+}
+
+const EDITION_LINK_CLASS =
+  "text-foreground underline underline-offset-2 outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring";
+
+/** 화 제목 아래 판 안내 — 산 뒤 고쳐진 화를 연 소장자에게, 지금 읽는 판과 다른 판으로 가는 길을 낸다. 고른 판은
+ * 주소의 `edition` 이라 같은 화면에서 search 만 바꾼다(판이 바뀌면 읽기 화면이 새로 마운트된다). */
+function EditionNoteLine({ novelId, chapterId, notice }: { novelId: string; chapterId: string; notice: EditionNotice }) {
+  const params = { novelId, chapterId };
+  const purchasedLabel = `산 때의 판(${notice.purchasedDateLabel} 공개)`;
+  return notice.kind === "newerAvailable" ? (
+    <>
+      소장하신 뒤 고쳐진 화예요.{" "}
+      <Link to="/webnovels/$novelId/episodes/$chapterId" params={params} search={{ edition: notice.purchasedEdition }} className={EDITION_LINK_CLASS}>
+        {purchasedLabel}으로 읽기
+      </Link>
+    </>
+  ) : (
+    <>
+      {purchasedLabel}을 읽고 있어요.{" "}
+      <Link to="/webnovels/$novelId/episodes/$chapterId" params={params} search={{}} className={EDITION_LINK_CLASS}>
+        최신 판으로 읽기
+      </Link>
     </>
   );
 }

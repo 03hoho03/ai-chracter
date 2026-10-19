@@ -25,6 +25,7 @@ export {
   type WebnovelDetailResponse,
   type WebnovelReadingPosition,
 } from "./api/useWebnovelQuery";
+export { toEditionNotice, type EditionNotice } from "./model/editionNotice";
 export { toReadingEndedNotice, type ReadingEndedAction, type ReadingEndedNotice } from "./model/readingEndedNotice";
 export { toWebnovelReportErrorMessage } from "./model/reportFailure";
 export { toSourceCredit } from "./model/sourceCredit";
