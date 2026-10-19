@@ -1,4 +1,4 @@
-"""묶음 1 측정의 여섯 갈래 env 표 — 갈래마다 다섯 스위치만 다르고, 캐릭터 레인은 네 갈래만 받으며, 템플릿 계열(요약 표기
+"""묶음 1 측정의 여섯 갈래 env 표 — 갈래마다 다섯 스위치만 다르고, 두 레인 모두 여섯 갈래를 받으며, 템플릿 계열(요약 표기
 꺼짐 A · 켜짐 B)이 갈래마다 정해진다. 2차 런의 A2·B2 표는 그대로 남는다. 스위치가 없는 코드에서는 하네스가 먼저 거부한다
 (서버는 모르는 환경변수를 조용히 버려서, 그대로 돌리면 스위치 없이 돈다). 임베딩 쓰기·읽기의 모델·차원과 하이브리드 회상
 설정도 앱 설정 칸 그대로 env 에 실린다 — 여섯 갈래 모두 이 코드의 설정으로 거부 없이 만들어져야 한다."""
@@ -15,7 +15,6 @@ from memory_eval import embed_offline as eo
 from memory_eval.arm_env import (
     BUNDLE1_ARMS,
     BUNDLE1_SWITCHES,
-    CHARACTER_LANE_ARMS,
     bundle1_env_pairs,
     series_label,
     template_series,
@@ -96,17 +95,17 @@ def test_every_arm_pins_the_memory_model_scope_to_opus_on_both_lanes() -> None:
     """기억 스위치가 꺼진 갈래도 같은 값을 받는다 — 갈래 사이 차이가 다섯 스위치뿐이라는 조건이 이 줄에도 걸린다."""
     for arm in EXPECTED:
         assert dict(_pairs(arm))["MEMORY_MODEL_SCOPE"] == "opus", arm
-    for arm in CHARACTER_LANE_ARMS:
+    for arm in EXPECTED:
         assert dict(_pairs(arm, lane="character"))["MEMORY_MODEL_SCOPE"] == "opus", arm
 
 
-def test_character_lane_takes_only_the_four_arms() -> None:
-    assert set(CHARACTER_LANE_ARMS) == {"b1-A0", "b1-A0M", "b1-A1", "b1-B2"}
-    for arm in CHARACTER_LANE_ARMS:
-        assert _switches(arm, "character") == EXPECTED[arm]
-    for arm in ("b1-B1", "b1-B1E"):
-        with pytest.raises(SystemExit, match="캐릭터"):
-            _pairs(arm, lane="character")
+def test_character_lane_takes_all_six_arms_with_their_switches_and_the_opus_scope() -> None:
+    """캐릭터 대본도 스위치 하나짜리 비교(요약 표기 위 임베딩 읽기 등)를 잰다 — 여섯 갈래 모두 스토리 레인과 같은 스위치를 받는다."""
+    for arm, switches in EXPECTED.items():
+        assert _switches(arm, "character") == switches, arm
+        env = dict(_pairs(arm, lane="character"))
+        assert env["MEMORY_MODEL_SCOPE"] == "opus", arm
+        assert env == dict(_pairs(arm, lane="story")), arm
 
 
 def test_unknown_lane_or_arm_or_empty_embedding_model_is_refused() -> None:

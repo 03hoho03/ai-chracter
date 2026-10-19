@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.chat import memory_fold
 from api.chat.memory_window import load_current_summary
+from api.core.config import Settings
 from api.db.models import ChatMessage, ChatMessageRole, ChatRoom, ChatRoomMemorySnapshot
 from api.llm.chat_models import ChatModelId
 from api.llm.client import CallUsage, LLMCallContext, LLMClient
@@ -52,6 +53,36 @@ MAX_CONSECUTIVE_EXTRACT_FAILURES = 3
 REWIND_EXTRACT_ATTEMPTS = 3
 # 얼리기 직전 임베딩을 다 채우게 부르는 최대 횟수. 한 번에 상한(64행)까지 채우므로 밀린 행이 상한의 두 배를 넘지 않으면 끝난다.
 FREEZE_EMBED_ATTEMPTS = 3
+
+
+def _setting_matches(name: str, current: object, raw: str) -> bool:
+    """env 글(`raw`)이 앱 설정 칸 값(`current`)과 같은가. 목록 꼴 두 칸은 앱 설정이 env 글을 펴는 함수로 펴서 비교한다."""
+    if name == "llm_call_site_backends":
+        return current == Settings._split_call_site_backends(raw)
+    if name == "memory_model_scope":
+        return current == Settings._split_memory_model_scope(raw)
+    if isinstance(current, bool):
+        return raw == ("true" if current else "false")
+    return str(current) == raw
+
+
+def require_insert_settings(current: Settings, *, embed_model: str | None, embed_dims: int | None) -> None:
+    """투입 프로세스의 설정이 투입 env 표(`insert_env_pairs`)와 같은지 본다. 투입은 접기·추출을 이 프로세스 안에서 부르므로, 다르면
+    투입한 요약·추출이 프로브 서버와 다른 모델·스위치로 만들어진다. 다른 키는 이름만 댄다(값에는 키가 섞일 수 있다). 프롬프트
+    덤프 경로가 없으면 투입이 보낸 프롬프트가 남지 않아 나중에 다시 보내 볼 수 없으므로 거부한다."""
+    from memory_eval.arm_env import insert_env_pairs
+
+    differ = [
+        key
+        for key, raw in insert_env_pairs(embed_model=embed_model, embed_dims=embed_dims)
+        if not _setting_matches(key.lower(), getattr(current, key.lower()), raw)
+    ]
+    if differ:
+        raise SystemExit(
+            f"투입 프로세스 설정이 투입 env 표와 다르다: {differ} — arm-env --insert 출력을 명령 앞에 env 로 붙여 다시"
+        )
+    if current.prompt_dump_path is None:
+        raise SystemExit("투입은 PROMPT_DUMP_PATH 가 있어야 돈다 — arm-env --insert --prompt-dump 로 넣는다")
 
 
 class LedgerTap(LLMClient):

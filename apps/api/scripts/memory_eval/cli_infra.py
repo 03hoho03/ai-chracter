@@ -373,6 +373,13 @@ def cmd_insert(args: argparse.Namespace) -> int:
         return 0
     if args.fake_llm == args.allow_paid:
         raise SystemExit("--fake-llm 과 --allow-paid 중 정확히 하나(또는 --dry-run)")
+    from api.core.config import settings
+
+    insert.require_insert_settings(
+        settings,
+        embed_model=args.embed_model if args.fill_embeddings else None,
+        embed_dims=args.embed_dims if args.fill_embeddings else None,
+    )
     from api.llm.client import LLMClient
 
     llm: LLMClient
@@ -698,37 +705,69 @@ def cmd_probe(args: argparse.Namespace) -> int:
 
     # 같은 프로브가 큐에 두 번 들면 두 작업자가 같은 시도 폴더를 쓴다 — 한쪽이 다시 돌며 옆으로 옮기는 지난 폴더가 다른 쪽이 쓰는
     # 폴더다. 계획 전에 거부한다.
-    for flag, raw in (("--checkpoints", args.checkpoints), ("--items", args.items or "")):
+    for flag, raw in (("--checkpoints", args.checkpoints), ("--items", args.items or ""), ("--redo", args.redo or "")):
         values = [v.strip() for v in raw.split(",") if v.strip()]
         repeated = sorted({v for v in values if values.count(v) > 1})
         if repeated:
             raise SystemExit(f"{flag} 에 중복된 값이 있다: {repeated}")
+    if args.items and args.redo:
+        raise SystemExit("--items 와 --redo 는 함께 쓰지 않는다(다시 돌릴 단위가 곧 돌 문항이다)")
+    redo = probe_mod.parse_units(args.redo) if args.redo else None
     plant_set = _plant_view(args, _splits(args))
     bundle1 = args.arm in BUNDLE1_ARMS
     if bundle1:
         require_lane_arm(args.arm, plant_set.raw.get("lane"))
     cps = _ints(args.checkpoints)
     items = set(args.items.split(",")) if args.items else None
-    for item_id in sorted(items or ()):
-        plant_set.item(item_id)  # 숨긴 시험 문항이면 거부, 없는 문항이면 KeyError
-    planned = [p for cp in cps for p in plants_mod.opus_probes(plant_set, cp)]
+    unknown = []
+    for item_id in sorted((items or set()) | {item for _, item in redo or ()}):
+        try:
+            plant_set.item(item_id)  # 숨긴 시험 문항이면 여기서 거부한다
+        except KeyError:
+            unknown.append(item_id)
+    if unknown:
+        raise SystemExit(f"심기 표에 없는 문항이다: {unknown}")
+    at_checkpoints = [p for cp in cps for p in plants_mod.opus_probes(plant_set, cp)]
+    planned = at_checkpoints
     plan_filter = getattr(args, "plan_filter", None)
     if plan_filter is not None:
         # 다른 묶음이 덧붙인 문항 거르기(판정 종류) — 거른 문항이 이번 실행의 계획이고, 멈춤 기준도 그 계획으로 센다.
         planned = [p for p in planned if plan_filter(args, plant_set.item(p.item_id))]
+    # 요청한 문항·단위가 계획에서 빠지면 돌 것이 없는데도 정상 종료해, 다시 돌렸다고 믿은 결과가 비어 있게 된다. 하나라도 빠지면
+    # 무엇이 왜 빠졌는지 대고 거부한다.
+    asked_at_checkpoints = {p.item_id for p in at_checkpoints}
+    left_out = {
+        item_id: ("범주 거르기에서 빠졌다" if item_id in asked_at_checkpoints else f"체크포인트 {cps} 에서 묻지 않는다")
+        for item_id in sorted((items or set()) - {p.item_id for p in planned})
+    }
+    if left_out:
+        raise SystemExit(f"요청한 문항이 이번 계획에 없다: {left_out}")
+    planned_units = {(p.checkpoint, p.item_id) for p in planned}
+    unplanned = [f"{cp}:{item}" for cp, item in sorted(redo or ()) if (cp, item) not in planned_units]
+    if unplanned:
+        raise SystemExit(f"다시 돌릴 단위가 이번 계획에 없다(범주 거르기나 체크포인트 조건): {unplanned}")
     # 불능 멈춤의 기준은 이번 실행이 사전 등록 문항으로 계획한 프로브 전체(일부 문항만 다시 돌려도 같다). 앞 측정의 문항 수가
     # 기본값으로 남으면 문항 수가 다른 측정에서 멈춤 선이 조용히 어긋나므로, 명시한 기준이 계획과 다르면 거부한다.
     halt_base = len(planned)
     if args.halt_base is not None and args.halt_base != halt_base:
         raise SystemExit(f"불능 멈춤 기준 {args.halt_base} 가 계획한 프로브 수 {halt_base} 와 다르다")
-    probes = [p for p in planned if items is None or p.item_id in items]
+    probes = [
+        p
+        for p in planned
+        if (items is None or p.item_id in items) and (redo is None or (p.checkpoint, p.item_id) in redo)
+    ]
     book = _ledger(args)
     out = args.run / "probes" / f"{args.stage}-{args.arm}.jsonl"
-    done = (
-        [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines() if line.strip()]
-        if out.exists()
-        else []
-    )
+    done = [
+        row
+        for row in (
+            [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines() if line.strip()]
+            if out.exists()
+            else []
+        )
+        # 다시 돌릴 단위의 결과는 실제로 돌기 직전에 옆으로 옮긴다 — 계획·불능 수는 옮긴 뒤의 결과 파일로 센다.
+        if redo is None or (int(row["checkpoint"]), str(row["item"])) not in redo
+    ]
     probes, unprobeable = probe_mod.pending_probes(probes, done)
     if args.dry_run or not args.allow_paid:
         turns = sum(len(p.turns) for p in probes)
@@ -857,6 +896,10 @@ def cmd_probe(args: argparse.Namespace) -> int:
         if args.status_dir is not None:
             update_status(args.status_dir, {"workers": states})
 
+    if redo:
+        stale = probe_mod.set_aside_units(args.run, stage=args.stage, arm=args.arm, out=out, units=redo)
+        if stale is not None:
+            print(f"다시 돌릴 단위의 지난 결과 행·문항 폴더를 {stale} 로 옮겼다", flush=True)
     outcome = workers.run_parallel(
         run,
         probes,
@@ -876,6 +919,22 @@ def cmd_probe(args: argparse.Namespace) -> int:
             f"작업 단위 {len(outcome.failures)}건 실패(남은 단위 {outcome.remaining}) — "
             f"{args.stage}-{args.arm}.failures.jsonl 을 보고 다시 돌리면 결과 파일에 없는 단위만 돈다"
         )
+    return 0
+
+
+def cmd_probe_cleanup(args: argparse.Namespace) -> int:
+    """중단된 프로브 실행이 남긴 작업자 서버를 내린다 — 이 트리에서 작업자 포트(기준 포트 + 1 … + 작업자 수 상한)로 뜬 서버만."""
+    from memory_eval import server
+
+    ports = range(args.port + 1, args.port + workers.MAX_WORKERS + 1)
+    targets = server.leftover_worker_servers(server.running_api_servers(), own_tree=str(server.API_DIR), ports=ports)
+    killed = server.stop_pids([pid for pid, _ in targets], timeout=args.timeout)
+    _print(
+        {
+            "stopped": [{"pid": pid, "port": port} for pid, port in targets],
+            "forcedKill": killed,
+        }
+    )
     return 0
 
 
@@ -1063,10 +1122,16 @@ def cmd_fact_metrics(args: argparse.Namespace) -> int:
 
 
 def cmd_arm_env(args: argparse.Namespace) -> int:
-    """2차 런 갈래의 측정 서버 env 줄을 출력한다(`--server-env` 파일로 쓸 수 있다)."""
-    from memory_eval.arm_env import env_text
+    """2차 런 갈래의 측정 서버 env 줄(`--server-env` 파일로 쓸 수 있다), 또는 `--insert` 면 투입 프로세스 env 줄을 출력한다."""
+    from memory_eval.arm_env import env_text, insert_env_text
 
-    print(env_text(args.arm, prompt_dump=args.prompt_dump), end="")
+    if args.insert:
+        print(
+            insert_env_text(embed_model=args.embed_model, embed_dims=args.embed_dims, prompt_dump=args.prompt_dump),
+            end="",
+        )
+    else:
+        print(env_text(args.arm, prompt_dump=args.prompt_dump), end="")
     return 0
 
 
@@ -1397,6 +1462,10 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     )
     p.add_argument("--checkpoints", default="50,100,300")
     p.add_argument("--items")
+    p.add_argument(
+        "--redo",
+        help="다시 돌릴 작업 단위(체크포인트:문항,...) — 그 단위의 지난 결과 행·문항 폴더를 probes/stale-<UTC 시각>/ 로 옮기고 그 단위만 돈다",
+    )
     p.add_argument("--room", type=uuid.UUID)
     p.add_argument("--cred-file", type=Path)
     p.add_argument("--cookie-file", type=Path)
@@ -1421,6 +1490,13 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
         "--halt-base", type=int, help="불능 멈춤 기준 프로브 수(갈래당, 기본 = 계획한 프로브 수 — 다르면 거부)"
     )
     p.set_defaults(fn=cmd_probe)
+
+    p = sub.add_parser(
+        "probe-cleanup", help="중단된 프로브 실행이 남긴 이 트리의 작업자 서버(작업자 포트)만 내린다 — pid·포트만 출력"
+    )
+    p.add_argument("--port", type=int, default=8130, help="프로브의 --port 와 같은 기준 포트(작업자 포트는 이 값 + i)")
+    p.add_argument("--timeout", type=float, default=30.0, help="SIGTERM 뒤 SIGKILL 까지 기다리는 초")
+    p.set_defaults(fn=cmd_probe_cleanup)
 
     p = sub.add_parser("latency", help="프로브 결과의 갈래별 상태 수·첫 글자 지연 p50/p95")
     p.add_argument("--probes", type=Path, nargs="+", required=True)
@@ -1462,9 +1538,19 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     p.add_argument("--out", type=Path, required=True)
     p.set_defaults(fn=cmd_fact_metrics)
 
-    p = sub.add_parser("arm-env", help="2차 런 갈래(A2·B2)의 측정 서버 env 줄")
-    p.add_argument("--arm", required=True, choices=["A2", "B2"])
-    p.add_argument("--prompt-dump", help="PROMPT_DUMP_PATH 줄을 더한다(프로브는 폴더마다 따로 넣는다)")
+    p = sub.add_parser("arm-env", help="2차 런 갈래(A2·B2)의 측정 서버 env 줄, 또는 투입 프로세스 env 줄(--insert)")
+    which = p.add_mutually_exclusive_group(required=True)
+    which.add_argument("--arm", choices=["A2", "B2"])
+    which.add_argument(
+        "--insert",
+        action="store_true",
+        help="투입(insert) 명령 앞에 env 로 붙일 줄 — 투입은 이 줄과 다른 설정이면 거부한다",
+    )
+    p.add_argument("--embed-model", help="--insert: 임베딩을 채우는 투입의 모델(MEMORY_EMBED_MODEL)")
+    p.add_argument("--embed-dims", type=int, help="--insert: 임베딩을 채우는 투입의 차원(MEMORY_EMBED_DIMS)")
+    p.add_argument(
+        "--prompt-dump", help="PROMPT_DUMP_PATH 줄을 더한다(프로브는 폴더마다 따로 넣는다, 투입은 반드시 준다)"
+    )
     p.set_defaults(fn=cmd_arm_env)
 
     p = sub.add_parser(

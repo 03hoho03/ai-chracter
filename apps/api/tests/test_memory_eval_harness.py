@@ -701,6 +701,21 @@ def test_a_preregistration_sealed_under_the_spent_v3_edition_cannot_open_the_tes
             require_seal({"test"}, prereg, seal_sha=digest)
 
 
+def test_a_preregistration_sealed_under_the_spent_v4_edition_cannot_open_the_test_half(tmp_path: Path) -> None:
+    """v4 판의 시험 절반도 앞 측정이 이미 열어 썼다 — 해시가 맞게 봉인돼 있어도 다시 열 수 없다."""
+    import hashlib
+
+    from memory_eval.seal import PREREGISTRATION_FILE, require_seal
+
+    prereg = tmp_path / PREREGISTRATION_FILE
+    for header in ("# 사전 등록 (v4)", "# 사전 등록 (v4.1)"):
+        prereg.write_text(f"{header}\n봉인\n", encoding="utf-8")
+        digest = hashlib.sha256(prereg.read_bytes()).hexdigest()
+        prereg.with_suffix(".sha256").write_text(f"{digest}  {PREREGISTRATION_FILE}\n", encoding="utf-8")
+        with pytest.raises(SystemExit, match="봉인 판"):
+            require_seal({"test"}, prereg, seal_sha=digest)
+
+
 def test_speaker_gold_episode_is_judged_by_keywords_not_attribution_keys() -> None:
     plant = _plant(category="화자", plantTurn=8, keywords=["취사병"], answerKeys=[["말한 적 없"], ["태민"]])
     episodes = [

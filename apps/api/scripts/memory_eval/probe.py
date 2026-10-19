@@ -28,7 +28,7 @@ import re
 import subprocess
 import time
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -283,8 +283,63 @@ class ProbeInterruptedError(Exception):
     """멈춤 표지가 서서 프로브를 끝내지 않고 빠졌다. 결과가 없으므로 결과 파일·불능 수에 들지 않고 다음 실행이 다시 돈다."""
 
 
+def unit_dir(run_dir: Path, *, stage: str, arm: str, checkpoint: int, item_id: str) -> Path:
+    """작업 단위(체크포인트, 문항)의 문항 폴더 — 시도 폴더들이 그 아래에 있다."""
+    return run_dir / "probes" / f"{stage}-cp{checkpoint}-{arm}" / item_id
+
+
 def probe_dir(run: ProbeRun, probe: Probe, attempt: int) -> Path:
-    return run.run_dir / "probes" / f"{run.stage}-cp{probe.checkpoint}-{run.arm}" / probe.item_id / f"attempt{attempt}"
+    item_dir = unit_dir(run.run_dir, stage=run.stage, arm=run.arm, checkpoint=probe.checkpoint, item_id=probe.item_id)
+    return item_dir / f"attempt{attempt}"
+
+
+def parse_units(raw: str) -> set[tuple[int, str]]:
+    """`체크포인트:문항,...` 를 작업 단위 집합으로. 꼴이 틀리면 거부한다(중복은 부르는 쪽이 먼저 거부한다)."""
+    units = set()
+    for part in (v.strip() for v in raw.split(",")):
+        cp, sep, item = part.partition(":")
+        if not sep or not cp.strip().isdigit() or not item.strip():
+            raise SystemExit(f"다시 돌릴 단위는 체크포인트:문항 꼴이다: {part!r}")
+        units.add((int(cp), item.strip()))
+    return units
+
+
+def set_aside_units(
+    run_dir: Path, *, stage: str, arm: str, out: Path, units: Collection[tuple[int, str]]
+) -> Path | None:
+    """다시 돌릴 단위의 결과 행과 문항 폴더를 `<원자료>/probes/stale-<UTC 시각>/` 아래로 옮긴다(옮길 결과 행이 없으면 None).
+
+    결과 파일에 행이 남아 있으면 재실행이 그 단위를 끝난 것으로 건너뛰므로 행을 뺀다. 남길 행은 임시 파일에 쓴 뒤 바꿔 끼워, 도중에
+    멈춰도 결과 파일이 반쯤 쓰인 채 남지 않는다. 뺀 행은 같은 이름의 파일로, 문항 폴더는 `<단계>-cp<체크포인트>-<갈래>/<문항>`
+    그대로 옮긴다 — 지난 시도의 증거(돈을 쓴 호출의 로그)라 지우지 않는다. 결과 행이 없는 단위는 건드리지 않는다(보통 실행이
+    그 폴더를 옆으로 옮긴다)."""
+    lines = [line for line in out.read_text(encoding="utf-8").splitlines() if line.strip()] if out.exists() else []
+
+    def unit(line: str) -> tuple[int, str]:
+        row = json.loads(line)
+        return int(row["checkpoint"]), str(row["item"])
+
+    moving = [line for line in lines if unit(line) in units]
+    if not moving:
+        return None
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    stale = run_dir / "probes" / f"stale-{stamp}"
+    n = 2
+    while stale.exists():
+        stale = run_dir / "probes" / f"stale-{stamp}-{n}"
+        n += 1
+    stale.mkdir(parents=True)
+    (stale / out.name).write_text("".join(line + "\n" for line in moving), encoding="utf-8")
+    tmp = out.with_name(out.name + ".tmp")
+    tmp.write_text("".join(line + "\n" for line in lines if unit(line) not in units), encoding="utf-8")
+    os.replace(tmp, out)
+    for checkpoint, item_id in sorted({unit(line) for line in moving}):
+        folder = unit_dir(run_dir, stage=stage, arm=arm, checkpoint=checkpoint, item_id=item_id)
+        if folder.exists():
+            target = stale / folder.parent.name / item_id
+            target.parent.mkdir(parents=True, exist_ok=True)
+            folder.rename(target)
+    return stale
 
 
 def set_aside_previous_run(item_dir: Path) -> Path | None:
