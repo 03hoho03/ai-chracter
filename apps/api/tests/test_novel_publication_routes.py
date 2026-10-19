@@ -20,9 +20,11 @@ from api.core.config import Settings, settings
 from api.db.models import AdminActionLog, Content, ContentVisibility, ModerationStatus, Novel
 from api.db.models.novel import (
     NovelChapter,
+    NovelChapterEdition,
     NovelChapterPublication,
     NovelChapterRevision,
     NovelPublication,
+    NovelPurchase,
     NovelScreening,
 )
 from api.legal.documents import current_legal_version
@@ -1294,3 +1296,119 @@ async def test_own_source_needs_no_permission_with_the_switch_on_either(
 
     assert status_body["newPublishBlock"] is None
     assert (resp.status_code, resp.json()["reviewStatus"]) == (200, "pending")
+
+
+# ── 판 이력 ─────────────────────────────────────────────────────────────────
+async def _editions(db_session: AsyncSession, novel_id: uuid.UUID) -> list[tuple[uuid.UUID, int, uuid.UUID, str | None, str]]:
+    rows = await db_session.execute(
+        sa.select(
+            NovelChapterEdition.chapter_id,
+            NovelChapterEdition.edition,
+            NovelChapterEdition.revision_id,
+            NovelChapterEdition.title,
+            NovelChapterEdition.author_note,
+        )
+        .where(NovelChapterEdition.novel_id == novel_id)
+        .order_by(NovelChapterEdition.chapter_id, NovelChapterEdition.edition)
+        .execution_options(populate_existing=True)
+    )
+    return [(row[0], row[1], row[2], row[3], row[4]) for row in rows]
+
+
+async def _publications(db_session: AsyncSession, novel_id: uuid.UUID) -> list[tuple[uuid.UUID, int, uuid.UUID, str | None, str]]:
+    """지금 화 공개본들 — 판 행과 같은 모양으로."""
+    rows = await db_session.execute(
+        sa.select(
+            NovelChapterPublication.chapter_id,
+            NovelChapterPublication.edition,
+            NovelChapterPublication.revision_id,
+            NovelChapterPublication.title,
+            NovelChapterPublication.author_note,
+        )
+        .where(NovelChapterPublication.novel_id == novel_id)
+        .execution_options(populate_existing=True)
+    )
+    return [(row[0], row[1], row[2], row[3], row[4]) for row in rows]
+
+
+async def test_every_first_and_later_publish_adds_one_edition_row_and_keeps_the_earlier_ones(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """정책 스위치가 꺼져 있어도 처음 공개·다음 화·다시 공개마다 그 판의 판 행이 하나씩 쌓이고(그때 화 공개본의 개정·제목·
+    작가의 말 사본), 앞 판의 행은 다시 공개 뒤에도 그대로다. 바뀐 것이 없는 공개는 판 행을 더하지 않는다. 깨지는 시나리오:
+    다시 공개가 판 행을 쓰지 않거나 앞 판 행을 덮어, 앞 판을 산 사람이 산 때의 글을 다시 읽을 수 없다."""
+    novel_id, chapters = await _novel_with_chapters(db_client, db_session, monkeypatch)
+    await db_session.execute(
+        sa.update(NovelChapter).where(NovelChapter.id == chapters[0].id).values(title="첫 화", author_note="고마워요")
+    )
+    await db_session.commit()
+    assert (await _publish(db_client, novel_id, chapters[0])).status_code == 200
+    assert (await _publish(db_client, novel_id, chapters[1])).status_code == 200
+    first_publications = await _publications(db_session, novel_id)
+    first_editions = await _editions(db_session, novel_id)
+
+    edited = await _new_revision(db_session, chapters[0], "고친 첫 문단이다.")
+    assert (await _publish(db_client, novel_id, chapters[0])).status_code == 200
+    assert (await _publish(db_client, novel_id, chapters[0])).status_code == 200
+
+    assert sorted(first_editions) == sorted(first_publications)
+    assert len(first_publications) == 2
+    assert sorted(await _editions(db_session, novel_id)) == sorted(
+        [*first_editions, (chapters[0].id, 2, edited.id, "첫 화", "고마워요")]
+    )
+
+
+async def test_revising_a_sold_chapter_publishes_a_new_edition_through_screening(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """팔린 6화를 고쳐 다시 공개하면 고친 글이 다시 심사를 거치고(심사 호출 하나) 새 판이 된다. 산 사람의 구매는 산 때의 판
+    번호를 그대로 들고, 그 판의 판 행이 남아 있다. 깨지는 시나리오: 판매 뒤 개정이 심사 없이 나가거나, 산 때의 판이 사라진다."""
+    novel_id, chapters = await _novel_with_chapters(db_client, db_session, monkeypatch, chapters=6)
+    for chapter in chapters:
+        assert (await _publish(db_client, novel_id, chapter)).status_code == 200
+    owner = (await _novel_row(db_session, novel_id)).user_id
+    buyer = await _make_user_with_clover_lot(db_session, clover_balance=100)
+    await db_session.commit()
+    await _login_as(db_client, buyer.id)
+    bought = await db_client.post(
+        f"/webnovels/{novel_id}/chapters/{chapters[5].id}/purchase", json={"expectedPrice": 30}
+    )
+    assert bought.status_code == 200, bought.text
+    await _login_as(db_client, owner)
+    screened_before = len(llm.calls)
+    sold_revision = await db_session.scalar(
+        sa.select(NovelChapterRevision.id).where(NovelChapterRevision.chapter_id == chapters[5].id)
+    )
+
+    edited = await _new_revision(db_session, chapters[5], "팔린 뒤 고친 6화.")
+    resp = await _publish(db_client, novel_id, chapters[5])
+
+    assert resp.status_code == 200, resp.text
+    assert len(llm.calls) == screened_before + 1
+    assert "팔린 뒤 고친 6화." in llm.calls[-1][1]
+    sixth = [row for row in await _editions(db_session, novel_id) if row[0] == chapters[5].id]
+    assert [(edition, revision_id) for _, edition, revision_id, _, _ in sixth] == [(1, sold_revision), (2, edited.id)]
+    purchase_edition = await db_session.scalar(
+        sa.select(NovelPurchase.edition).where(NovelPurchase.buyer_user_id == buyer.id)
+    )
+    assert purchase_edition == 1
+
+
+@pytest.mark.parametrize("ending", ["reject", "cancel"])
+async def test_a_rejected_or_cancelled_first_publish_leaves_no_edition_rows(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM, ending: str
+) -> None:
+    """승인을 기다리는 첫 공개도 판 행을 쓰지만, 운영자가 반려하거나 작가가 신청을 취소하면 화 공개본과 함께 그 소설의 판
+    행도 지운다 — 독자에게 보인 적 없는 판이다. 깨지는 시나리오: 반려된 글이 판 이력에 남아 다시 신청한 첫 판과 같은 판
+    번호로 부딪히거나(500), 보인 적 없는 판이 "산 때의 판" 후보로 남는다."""
+    novel_id, _chapters = await _pending(db_client, db_session, monkeypatch)
+    waiting = len(await _editions(db_session, novel_id))
+    if ending == "reject":
+        await _as_admin(db_client, db_session)
+        resp = await _review(db_client, novel_id, "reject", "고쳐서 다시 신청해 주세요.")
+        assert resp.status_code == 200, resp.text
+    else:
+        assert (await db_client.post(f"/novels/{novel_id}/publication/withdraw")).status_code == 204
+
+    assert waiting == 1
+    assert await _editions(db_session, novel_id) == []

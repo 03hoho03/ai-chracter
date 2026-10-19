@@ -26,6 +26,7 @@ from factories import (
     _allow_novelize,
     _create_admin,
     _login_as,
+    _login_as_admin,
     _make_payment,
     _make_public_novel,
     _make_user,
@@ -518,6 +519,84 @@ async def _settle_cancellation(
         sa.update(User).where(User.id == lot.user_id).values(clover_balance=User.clover_balance - revoked)
     )
     await db_session.commit()
+
+
+# ── 닫힘 환급의 로트 규칙 ────────────────────────────────────────────────────
+async def _restrict_with_policy_on(
+    client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, novel: PublicNovel
+) -> None:
+    """정책 스위치를 켜고 운영자가 노벨을 이용제한한다(닫힘 환급이 도는 쓰기 지점 하나)."""
+    monkeypatch.setattr(settings, "novel_public_policy_v2_enabled", True)
+    admin = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(client, admin)
+    resp = await client.post(
+        f"/admin/novels/{novel.novel_id}/moderation", json={"action": "restrict", "adminComment": "운영정책 위반"}
+    )
+    assert resp.status_code == 200, resp.text
+
+
+async def test_a_closing_refund_skips_what_came_from_a_fully_cancelled_payment(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """무료 10 + 결제 유료 로트로 30 을 산 뒤 그 결제가 전액 취소로 확정됐다. 노벨 이용제한의 환급도 삭제 환급과 같이 무료 10 만
+    돌려준다. 깨지는 시나리오: 닫힘 환급이 결제 로트로 20 을 되돌려 돈과 클로버를 함께 돌려받는다."""
+    novel = await _setup(db_session)
+    buyer = await _buyer(db_session, balance=10)
+    payment = await _make_payment(db_session, user_id=buyer, status="paid")
+    paid_lot = CloverLot(
+        user_id=buyer, granted_amount=100, remaining=100, expires_at=None, kind="purchase_paid", payment_id=payment.id
+    )
+    db_session.add(paid_lot)
+    await db_session.execute(sa.update(User).where(User.id == buyer).values(clover_balance=110))
+    await db_session.commit()
+    assert (await _buy(db_client, novel, 6, as_user=buyer)).status_code == 200
+    await _settle_cancellation(db_session, payment.id, paid_lot.id, "full")
+
+    await _restrict_with_policy_on(db_client, db_session, monkeypatch, novel)
+
+    assert await _balance(db_session, buyer) == 10
+    [purchase] = await _purchases(db_session, buyer)
+    assert (purchase.refunded_amount, purchase.refund_reason) == (10, "novel_restricted")
+
+
+async def test_a_closing_refund_returns_to_the_lot_it_came_from_even_if_that_lot_has_expired(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """만료가 있는 무료 로트 30 으로 산 뒤 그 로트의 만료 시각이 지났다. 노벨 이용제한의 환급은 그 30 을 같은 로트로 되돌린다 —
+    새 지급(새 만료)으로 돌려주지 않으므로 다음 만료 배치가 태운다. 깨지는 시나리오: 닫힘 환급만 새 수명의 지급을 만들어, 만료로
+    사라질 클로버를 환급이 살려 낸다."""
+    novel = await _setup(db_session)
+    buyer_user = _make_user(clover_balance=30)
+    db_session.add(buyer_user)
+    await db_session.flush()
+    lot = CloverLot(
+        user_id=buyer_user.id,
+        granted_amount=30,
+        remaining=30,
+        expires_at=sa.func.now() + sa.text("interval '1 day'"),
+        kind="mission_grant",
+    )
+    db_session.add(lot)
+    await db_session.commit()
+    assert (await _buy(db_client, novel, 6, as_user=buyer_user.id)).status_code == 200
+    await db_session.execute(
+        sa.update(CloverLot).where(CloverLot.id == lot.id).values(expires_at=sa.func.now() - sa.text("interval '1 day'"))
+    )
+    await db_session.commit()
+
+    await _restrict_with_policy_on(db_client, db_session, monkeypatch, novel)
+
+    lots = (
+        await db_session.execute(
+            sa.select(CloverLot.id, CloverLot.remaining)
+            .where(CloverLot.user_id == buyer_user.id)
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    assert [(row[0], row[1]) for row in lots] == [(lot.id, 30)]
+    [purchase] = await _purchases(db_session, buyer_user.id)
+    assert (purchase.refunded_amount, purchase.refund_reason) == (30, "novel_restricted")
 
 
 # ── 탈퇴 ────────────────────────────────────────────────────────────────────
