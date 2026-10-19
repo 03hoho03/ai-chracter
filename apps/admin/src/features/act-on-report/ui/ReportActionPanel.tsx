@@ -4,7 +4,13 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
+import {
+  CONTENT_ACTION_NOVEL_REFUND_NOTE,
+  isNovelRefundConflict,
+  NOVEL_REFUND_CONFLICT_MESSAGE,
+} from "@/entities/admin-novel";
 import { useModerationActionMutation } from "@/entities/report";
+import { useSessionQuery } from "@/entities/session";
 import { ActionChoice, type ActionChoiceOption } from "@/shared/ui/ActionChoice";
 
 import {
@@ -51,6 +57,11 @@ const SUCCESS_MESSAGE: Record<ProcessAction, string> = {
 
 const ERROR_MESSAGE = "처리에 실패했어요. 잠시 후 다시 시도해주세요.";
 
+/** 이용제한·삭제 실패 문장. 그 작품으로 만든 노벨의 새 구매자 경합으로 조치 전체가 되돌려졌으면 다시 누르라고 한다. */
+function toProcessErrorMessage(error: unknown): string {
+  return isNovelRefundConflict(error) ? NOVEL_REFUND_CONFLICT_MESSAGE.content : ERROR_MESSAGE;
+}
+
 /** POST /admin/reports/{id}/action의 첫 FE 소비처.
  *
  * 처리 방식·코멘트는 useState 버퍼가 아니라 RHF+zod가 든다(`apps/web/CLAUDE.md` 폼 규약). 미선택
@@ -76,6 +87,7 @@ export function ReportActionPanel({
 
   const moderationAction = useModerationActionMutation(reportId);
   const action = useWatch({ control, name: "action" });
+  const isPolicyOn = useSessionQuery().data?.novelPublicPolicyV2Enabled === true;
 
   async function handleValidSubmit(values: ReportActionFormValues) {
     if (moderationAction.isPending) return;
@@ -94,8 +106,8 @@ export function ReportActionPanel({
             toast.success(SUCCESS_MESSAGE.delete);
             call.end();
             onSuccess?.();
-          } catch {
-            toast.error(ERROR_MESSAGE);
+          } catch (error) {
+            toast.error(toProcessErrorMessage(error));
           }
         },
       });
@@ -107,8 +119,8 @@ export function ReportActionPanel({
       toast.success(SUCCESS_MESSAGE[values.action]);
       reset({ adminComment: "" });
       onSuccess?.();
-    } catch {
-      toast.error(ERROR_MESSAGE);
+    } catch (error) {
+      toast.error(toProcessErrorMessage(error));
     }
   }
 
@@ -173,6 +185,11 @@ export function ReportActionPanel({
 
           {(action === "restrict" || action === "delete") && (
             <Textarea placeholder="관리자 코멘트 (선택)" aria-label="관리자 코멘트 (선택)" rows={3} {...register("adminComment")} />
+          )}
+
+          {/* 정책 스위치가 켜져 있으면 이용제한·삭제가 이 작품으로 만든 노벨의 구매를 돌려준다 — 확정 전에 말한다. */}
+          {isPolicyOn && (action === "restrict" || action === "delete") && (
+            <p className="text-sm break-keep text-muted-foreground">{CONTENT_ACTION_NOVEL_REFUND_NOTE}</p>
           )}
 
           {/* 삭제를 고르면 확정 버튼도 destructive 틴트로 바뀐다 — 솔리드 레드 채움은 이 시스템에 없다. */}

@@ -17,7 +17,13 @@ import { toast } from "sonner";
 import { z } from "zod";
 
 import { useContentActionMutation, type AdminContentActionType } from "@/entities/admin-content";
+import {
+  CONTENT_ACTION_NOVEL_REFUND_NOTE,
+  isNovelRefundConflict,
+  NOVEL_REFUND_CONFLICT_MESSAGE,
+} from "@/entities/admin-novel";
 import { isReportReasonCategory, REPORT_REASON_OPTIONS, REPORT_REASON_VALUES } from "@/entities/report";
+import { useSessionQuery } from "@/entities/session";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 import { focusInitialElement } from "@/shared/lib/callable/focusInitialElement";
 
@@ -84,6 +90,9 @@ export const ContentActionConfirmModal = createCallable<ContentActionConfirmModa
 
     const isReasonCategoryRequired = action !== "lift-restriction";
     const isNameMatchRequired = action === "delete";
+    // 정책 스위치가 켜져 있으면 이용제한·삭제가 이 작품으로 만든 노벨의 구매를 돌려준다 — 확정 전에 말한다.
+    const isNovelRefunding =
+      useSessionQuery().data?.novelPublicPolicyV2Enabled === true && (action === "restrict" || action === "delete");
 
     const onSubmit = async (values: ContentActionFormValues) => {
       try {
@@ -91,8 +100,9 @@ export const ContentActionConfirmModal = createCallable<ContentActionConfirmModa
         toast.success(SUCCESS_MESSAGE[action]);
         call.end();
         onSuccess?.();
-      } catch {
-        toast.error(ERROR_MESSAGE);
+      } catch (error) {
+        // 새 구매자 경합으로 조치 전체가 되돌려졌다 — 모달을 열어 둔 채 바로 다시 누르게 한다.
+        toast.error(isNovelRefundConflict(error) ? NOVEL_REFUND_CONFLICT_MESSAGE.content : ERROR_MESSAGE);
       }
     };
 
@@ -103,6 +113,7 @@ export const ContentActionConfirmModal = createCallable<ContentActionConfirmModa
             <DialogTitle>{ACTION_TITLE[action]}</DialogTitle>
             <DialogDescription>
               <span className="font-medium text-foreground">{contentName}</span>에 대해 {ACTION_EFFECT[action]}
+              {isNovelRefunding && ` ${CONTENT_ACTION_NOVEL_REFUND_NOTE}`}
             </DialogDescription>
           </DialogHeader>
 

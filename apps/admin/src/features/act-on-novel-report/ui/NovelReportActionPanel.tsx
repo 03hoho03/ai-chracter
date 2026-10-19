@@ -7,7 +7,7 @@ import { useId, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
-import { adminNovelKeys } from "@/entities/admin-novel";
+import { adminNovelKeys, isNovelRefundConflict, NOVEL_REFUND_CONFLICT_MESSAGE } from "@/entities/admin-novel";
 import { reportKeys, useNovelReportActionMutation, type NovelReportDetail } from "@/entities/report";
 import { apiErrorCode } from "@/shared/lib/api/client";
 import { ActionChoice } from "@/shared/ui/ActionChoice";
@@ -56,6 +56,11 @@ export function NovelReportActionPanel({ report, onSuccess }: NovelReportActionP
         setGoneMessage("그사이 노벨이 지워져 이용제한할 대상이 없어요. 반려로 처리해주세요.");
         form.setValue("action", "reject");
         await queryClient.invalidateQueries({ queryKey: reportKeys.all });
+        return;
+      }
+      // 새 구매자 경합으로 조치 전체가 되돌려졌다 — 사유는 그대로 남아 있어 바로 다시 누르면 된다.
+      if (isNovelRefundConflict(error)) {
+        toast.error(NOVEL_REFUND_CONFLICT_MESSAGE.novel);
         return;
       }
       toast.error("처리하지 못했어요. 사유는 그대로 남아 있으니 다시 시도해주세요.");

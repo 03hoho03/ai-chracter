@@ -15,8 +15,14 @@ import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 
-import { useNovelModerationMutation, type NovelModerationAction } from "@/entities/admin-novel";
+import {
+  isNovelRefundConflict,
+  NOVEL_REFUND_CONFLICT_MESSAGE,
+  useNovelModerationMutation,
+  type NovelModerationAction,
+} from "@/entities/admin-novel";
 import { isReportReasonCategory, REPORT_REASON_OPTIONS, REPORT_REASON_VALUES } from "@/entities/report";
+import { useSessionQuery } from "@/entities/session";
 import { apiErrorCode } from "@/shared/lib/api/client";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 import { focusInitialElement } from "@/shared/lib/callable/focusInitialElement";
@@ -26,10 +32,20 @@ const ACTION_TITLE: Record<NovelModerationAction, string> = {
   lift: "노벨 이용제한 해제",
 };
 
-const ACTION_EFFECT: Record<NovelModerationAction, string> = {
-  restrict:
-    "을(를) 이용제한합니다. 노벨 목록·홈에서 바로 빠지고, 구매한 독자도 열람이 끝나요. 해제하면 소장한 화가 다시 열려요. 게시자에게 알림은 가지 않아요.",
-  lift: "의 이용제한을 해제합니다. 다른 이유(공개 거둠·원작 숨김 등)가 없으면 독자에게 다시 보이고, 구매한 독자의 소장도 다시 열려요.",
+/** 조치가 구매한 독자에게 하는 일 — 정책 스위치(`/admin/me` 의 `novelPublicPolicyV2Enabled`)에 따라 다르다. 꺼져
+ * 있으면 이용제한은 열람만 막고 해제하면 소장이 다시 열린다. 켜져 있으면 이용제한이 구매를 자동으로 돌려주고, 해제해도
+ * 환급은 그대로라 다시 사야 읽는다. 값이 없으면(옛 서버) 꺼진 쪽 문장이다. */
+const ACTION_EFFECT: Record<"off" | "on", Record<NovelModerationAction, string>> = {
+  off: {
+    restrict:
+      "을(를) 이용제한합니다. 노벨 목록·홈에서 바로 빠지고, 구매한 독자도 열람이 끝나요. 해제하면 소장한 화가 다시 열려요. 게시자에게 알림은 가지 않아요.",
+    lift: "의 이용제한을 해제합니다. 다른 이유(공개 거둠·원작 숨김 등)가 없으면 독자에게 다시 보이고, 구매한 독자의 소장도 다시 열려요.",
+  },
+  on: {
+    restrict:
+      "을(를) 이용제한합니다. 노벨 목록·홈에서 바로 빠지고, 구매한 독자의 열람이 끝나며 쓴 클로버를 자동으로 돌려드려요. 해제해도 환급은 그대로라 다시 사야 읽을 수 있어요. 게시자에게 알림은 가지 않아요.",
+    lift: "의 이용제한을 해제합니다. 다른 이유(공개 거둠·원작 숨김 등)가 없으면 독자에게 다시 보여요. 이용제한 때 클로버를 돌려받은 독자는 다시 사야 읽을 수 있어요.",
+  },
 };
 
 const SUCCESS_MESSAGE: Record<NovelModerationAction, string> = {
@@ -76,6 +92,7 @@ export const NovelModerationConfirmModal = createCallable<NovelModerationConfirm
       defaultValues: { reasonCategory: undefined, adminComment: "" },
     });
     const isRestrict = action === "restrict";
+    const policy = useSessionQuery().data?.novelPublicPolicyV2Enabled === true ? "on" : "off";
 
     const onSubmit = async (values: ModerationFormValues) => {
       try {
@@ -88,6 +105,11 @@ export const NovelModerationConfirmModal = createCallable<NovelModerationConfirm
         call.end();
         onSuccess?.();
       } catch (error) {
+        // 새 구매자 경합으로 조치 전체가 되돌려졌다 — 입력을 남긴 채 열어 두어 바로 다시 누르게 한다.
+        if (isNovelRefundConflict(error)) {
+          toast.error(NOVEL_REFUND_CONFLICT_MESSAGE.novel);
+          return;
+        }
         const code = apiErrorCode(error);
         const rejection = code === null ? undefined : REJECTION_MESSAGES[code];
         toast.error(rejection ?? ERROR_MESSAGE);
@@ -102,7 +124,7 @@ export const NovelModerationConfirmModal = createCallable<NovelModerationConfirm
             <DialogTitle>{ACTION_TITLE[action]}</DialogTitle>
             <DialogDescription>
               <span className="font-medium text-foreground">{novelTitle}</span>
-              {ACTION_EFFECT[action]}
+              {ACTION_EFFECT[policy][action]}
             </DialogDescription>
           </DialogHeader>
 
