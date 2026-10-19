@@ -9,6 +9,7 @@ import pytest
 
 from memory_eval import bundle_split, holdout
 from memory_eval.metrics import stratified_split
+from memory_eval.seal import PREREGISTRATION_FILE
 
 
 def _entry(item_id: str, category: str, stratum: str | None = None) -> dict[str, Any]:
@@ -137,7 +138,7 @@ def test_written_split_is_readable_by_the_dev_view_and_hides_test_items(tmp_path
     manifest = json.loads((tmp_path / "split" / "a" / holdout.MANIFEST_FILE).read_text(encoding="utf-8"))
     assert manifest["strataSeeds"] == {"secret:early": 1000, "secret:main": 1001, "detail": 1002}
     view = holdout.load_view(
-        tmp_path / "plants-a.json", tmp_path / "split" / "a", {"dev"}, preregistration=tmp_path / "x.md", seal_sha=None
+        tmp_path / "plants-a.json", tmp_path / "split" / "a", {"dev"}, preregistration=tmp_path / PREREGISTRATION_FILE, seal_sha=None
     )
     test_ids = json.loads((tmp_path / "split" / "a" / holdout.TEST_IDS_FILE).read_text(encoding="utf-8"))
     assert len(view.plants) == 10 and len(test_ids) == 10
