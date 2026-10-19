@@ -76,18 +76,38 @@ def build_frame_sheet_key(storage_key: str) -> str:
     return f"{base}_frames.webp"
 
 
+def build_animated_thumbnail_key(storage_key: str) -> str:
+    """`assets/content-thumbnail/abc.gif` -> `assets/content-thumbnail/abc_thumb_anim.webp`.
+
+    움직이는 대표 이미지의 카드용 움직이는 변형(긴 변 512). 정지 썸네일(`_thumb.webp`)과 따로 두는 이유: 채팅 목록·
+    댓글·공유 미리보기처럼 정지 그림을 쓰는 자리는 그대로 정지 썸네일을 받고, 카드만 이것을 받는다."""
+    base, _extension = posixpath.splitext(storage_key)
+    return f"{base}_thumb_anim.webp"
+
+
+def build_animated_display_key(storage_key: str) -> str:
+    """`assets/content-thumbnail/abc.gif` -> `assets/content-thumbnail/abc_display_anim.webp`. 상세 화면용(긴 변 1024)."""
+    base, _extension = posixpath.splitext(storage_key)
+    return f"{base}_display_anim.webp"
+
+
 def build_required_variant_keys(storage_key: str) -> tuple[str, str]:
     """READY 이미지 자산이 원본 곁에 늘 갖는 변형 키. 응답이 존재 확인 없이 이 키들을 유도하고, 변형 점검·백필 스크립트는
     이 중 빠진 것을 찾는다. 프레임 모음은 움직이는 그림에만 있어 여기 없다."""
     return build_thumbnail_key(storage_key), build_display_key(storage_key)
 
 
-def build_variant_keys(storage_key: str) -> tuple[str, str, str]:
+def build_variant_keys(storage_key: str) -> tuple[str, str, str, str, str]:
     """READY 이미지 자산이 원본 곁에 가질 수 있는 변형 키 전부. 자산을 지우는 경로는 이 목록을 그대로 지운다 — 하나라도
-    빠뜨리면 사용자가 올리거나 만든 그림의 사본이 저장소에 남는다. 지우는 쪽은 그림이 움직이는지 모르므로 프레임 모음까지
-    늘 지운다(없는 키 삭제는 저장소가 성공으로 답한다). 만드는 쪽(`generate_variants`)이 만드는 키는 전부 이 안에 있다
-    (테스트가 본다)."""
-    return (*build_required_variant_keys(storage_key), build_frame_sheet_key(storage_key))
+    빠뜨리면 사용자가 올리거나 만든 그림의 사본이 저장소에 남는다. 지우는 쪽은 그림이 움직이는지 모르므로 프레임 모음·
+    움직이는 변형까지 늘 지운다(없는 키 삭제는 저장소가 성공으로 답한다). 만드는 쪽(`generate_variants`·
+    `generate_animated_variants`)이 만드는 키는 전부 이 안에 있다(테스트가 본다)."""
+    return (
+        *build_required_variant_keys(storage_key),
+        build_frame_sheet_key(storage_key),
+        build_animated_thumbnail_key(storage_key),
+        build_animated_display_key(storage_key),
+    )
 
 
 def generate_presigned_put_url(key: str, content_type: str) -> tuple[str, datetime]:

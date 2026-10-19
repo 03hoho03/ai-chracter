@@ -21,6 +21,8 @@ from api.assets.schemas import UPLOAD_SIZE_LIMIT_BYTES, AssetPurpose
 from api.core import rate_limit_gate
 from api.core.config import settings
 from api.core.s3 import (
+    build_animated_display_key,
+    build_animated_thumbnail_key,
     build_display_key,
     build_frame_sheet_key,
     build_thumbnail_key,
@@ -192,6 +194,126 @@ async def test_complete_stores_the_type_of_the_checked_image_even_when_the_key_h
     assert asset.storage_key == f"assets/situational-image/{asset_id}"
     final = _s3().head_object(Bucket=settings.s3_bucket_name, Key=asset.storage_key)
     assert final["ContentType"] == "image/webp"
+
+
+def _split_gif_bytes() -> bytes:
+    """80×40, 왼쪽 절반 빨강·오른쪽 절반은 프레임마다 파랑/초록인 두 프레임 GIF. 오른쪽 절반만 크롭하면 빨강이 없다."""
+    frames = []
+    for color in ((0, 0, 255), (0, 255, 0)):
+        frame = Image.new("RGB", (80, 40), color=(255, 0, 0))
+        frame.paste(color, (40, 0, 80, 40))
+        frames.append(frame)
+    output = io.BytesIO()
+    frames[0].save(output, format="GIF", save_all=True, append_images=frames[1:], duration=100, loop=0)
+    return output.getvalue()
+
+
+_RIGHT_HALF = {"x": 40, "y": 0, "width": 40, "height": 40}
+
+
+async def _upload_gif_thumbnail(db_client: httpx.AsyncClient, crop: dict[str, int] | None = _RIGHT_HALF) -> str:
+    body: dict[str, object] = {"contentType": "image/gif", "purpose": "content-thumbnail"}
+    if crop is not None:
+        body["crop"] = crop
+    resp = await db_client.post("/assets/presigned-upload", json=body)
+    assert resp.status_code == 201
+    _put_via_presigned_url(resp.json()["uploadUrl"], _split_gif_bytes(), content_type="image/gif")
+    return str(resp.json()["assetId"])
+
+
+async def test_presigned_upload_stores_the_crop_of_an_animated_thumbnail(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """GIF 대표 이미지는 화면이 자르지 못해 영역만 보낸다. 업로드 완료와 그 뒤의 백그라운드가 같은 영역을 읽도록 자산 행에
+    남는다."""
+    await _logged_in_user(db_client, db_session)
+    asset_id = await _upload_gif_thumbnail(db_client)
+
+    asset = await db_session.get(Asset, uuid.UUID(asset_id))
+    assert asset is not None
+    assert asset.crop == _RIGHT_HALF
+
+
+async def test_presigned_upload_refuses_a_crop_outside_the_representative_image(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """크롭 영역은 대표 이미지에만 쓴다 — 상황 이미지·프로필 이미지는 그 영역을 읽는 곳이 없어 받으면 조용히 버려진다."""
+    await _logged_in_user(db_client, db_session)
+    resp = await db_client.post(
+        "/assets/presigned-upload",
+        json={"contentType": "image/gif", "purpose": "situational-image", "crop": _RIGHT_HALF},
+    )
+
+    assert resp.status_code == 422
+
+
+async def test_complete_crops_an_animated_thumbnail_and_builds_its_animated_variants(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """업로드 완료는 크롭한 첫 프레임으로 정지 변형을 만들어 바로 READY 로 답하고, 응답 뒤 백그라운드가 모든 프레임을
+    크롭한 움직이는 변형을 올린 다음 준비됨으로 표시한다. 크기는 크롭한 크기로 남는다(화면이 그 비율로 그린다)."""
+    await _logged_in_user(db_client, db_session)
+    asset_id = await _upload_gif_thumbnail(db_client)
+
+    assert (await db_client.post(f"/assets/{asset_id}/complete")).status_code == 200
+
+    asset = await db_session.get(Asset, uuid.UUID(asset_id))
+    assert asset is not None
+    await db_session.refresh(asset)
+    assert (asset.width, asset.height, asset.frame_count) == (40, 40, 2)
+    assert asset.animated_variants_ready is True
+    thumbnail = _object_bytes(build_thumbnail_key(asset.storage_key))
+    assert thumbnail is not None
+    with Image.open(io.BytesIO(thumbnail)) as still:
+        assert still.size == (40, 40)
+        pixel = still.convert("RGB").getpixel((2, 2))
+        assert isinstance(pixel, tuple) and pixel[0] < 60
+    for key in (build_animated_thumbnail_key(asset.storage_key), build_animated_display_key(asset.storage_key)):
+        animated = _object_bytes(key)
+        assert animated is not None
+        with Image.open(io.BytesIO(animated)) as image:
+            assert getattr(image, "n_frames", 1) == 2
+
+
+async def test_complete_builds_no_animated_variants_outside_the_representative_image(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """움직이는 변형은 카드·상세의 대표 이미지만 쓴다. 상황 이미지는 채팅이 원본을 그대로 보여 주므로 만들지 않는다."""
+    await _logged_in_user(db_client, db_session)
+    resp = await db_client.post(
+        "/assets/presigned-upload", json={"contentType": "image/gif", "purpose": "situational-image"}
+    )
+    asset_id = resp.json()["assetId"]
+    _put_via_presigned_url(resp.json()["uploadUrl"], _split_gif_bytes(), content_type="image/gif")
+
+    assert (await db_client.post(f"/assets/{asset_id}/complete")).status_code == 200
+
+    asset = await db_session.get(Asset, uuid.UUID(asset_id))
+    assert asset is not None
+    await db_session.refresh(asset)
+    assert asset.animated_variants_ready is False
+    assert _object_bytes(build_animated_thumbnail_key(asset.storage_key)) is None
+
+
+async def test_complete_stays_ready_with_still_variants_when_building_animated_variants_fails(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """움직이는 변형은 응답 뒤에 만든다 — 실패해도 업로드는 이미 끝났고 카드는 정지 변형을 계속 받는다."""
+
+    def failing(*_args: object, **_kwargs: object) -> list[tuple[str, bytes]]:
+        raise OSError("encoder failed")
+
+    monkeypatch.setattr("api.assets.animated_variants.generate_animated_variants", failing)
+    await _logged_in_user(db_client, db_session)
+    asset_id = await _upload_gif_thumbnail(db_client)
+
+    assert (await db_client.post(f"/assets/{asset_id}/complete")).status_code == 200
+
+    asset = await db_session.get(Asset, uuid.UUID(asset_id))
+    assert asset is not None
+    await db_session.refresh(asset)
+    assert asset.status == AssetStatus.READY
+    assert asset.animated_variants_ready is False
 
 
 async def test_complete_keeps_an_animated_gif_inquiry_attachment_moving(

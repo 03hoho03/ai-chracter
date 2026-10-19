@@ -10,8 +10,10 @@ from PIL import Image
 from api.assets import image_processing
 from api.assets.image_processing import (
     IMAGE_WORK_CONCURRENCY,
+    ImageCrop,
     ImageTooLargeError,
     ReferenceImageRejectedError,
+    generate_animated_variants,
     generate_blurred_image,
     generate_display_image,
     generate_thumbnail,
@@ -21,7 +23,14 @@ from api.assets.image_processing import (
     run_image_work,
     validate_reference_image,
 )
-from api.core.s3 import build_display_key, build_frame_sheet_key, build_thumbnail_key, build_variant_keys
+from api.core.s3 import (
+    build_animated_display_key,
+    build_animated_thumbnail_key,
+    build_display_key,
+    build_frame_sheet_key,
+    build_thumbnail_key,
+    build_variant_keys,
+)
 
 
 def _png_bytes(width: int, height: int) -> bytes:
@@ -36,6 +45,23 @@ def _gif_bytes(colors: list[tuple[int, int, int]], size: tuple[int, int] = (64, 
     output = io.BytesIO()
     frames[0].save(output, format="GIF", save_all=True, append_images=frames[1:], duration=100, loop=0)
     return output.getvalue()
+
+
+def _split_gif_bytes(right_colors: list[tuple[int, int, int]], size: tuple[int, int] = (80, 40)) -> bytes:
+    """왼쪽 절반은 늘 빨강, 오른쪽 절반은 프레임마다 다른 색인 움직이는 GIF. 오른쪽 절반만 크롭하면 빨강이 하나도 남지
+    않아야 하고, 오른쪽 색으로 어느 프레임인지 가린다."""
+    width, height = size
+    frames = []
+    for color in right_colors:
+        frame = Image.new("RGB", size, color=(255, 0, 0))
+        frame.paste(color, (width // 2, 0, width, height))
+        frames.append(frame)
+    output = io.BytesIO()
+    frames[0].save(output, format="GIF", save_all=True, append_images=frames[1:], duration=[100, 200, 300][: len(frames)], loop=0)
+    return output.getvalue()
+
+
+_RIGHT_HALF = ImageCrop(x=40, y=0, width=40, height=40)
 
 
 def _open(thumbnail_bytes: bytes) -> Image.Image:
@@ -143,7 +169,12 @@ def test_generate_variants_adds_a_frame_sheet_for_an_animated_gif() -> None:
     storage_key = "assets/situational-image/abc.gif"
     variants = dict(generate_variants(storage_key, _gif_bytes([(255, 0, 0), (0, 255, 0), (0, 0, 255)])))
 
-    assert list(variants) == list(build_variant_keys(storage_key))
+    assert list(variants) == [
+        build_thumbnail_key(storage_key),
+        build_display_key(storage_key),
+        build_frame_sheet_key(storage_key),
+    ]
+    assert set(variants) <= set(build_variant_keys(storage_key))
     thumbnail = _open(variants[build_thumbnail_key(storage_key)]).convert("RGB")
     assert _is_close(thumbnail.getpixel((32, 24)), (255, 0, 0))
     sheet = _open(variants[build_frame_sheet_key(storage_key)])
@@ -186,6 +217,65 @@ def test_animated_image_over_the_total_pixel_limit_is_rejected(monkeypatch: pyte
 
     assert raised.value.actual_pixels == 3 * 40 * 30
     assert raised.value.max_pixels == 3 * 40 * 30 - 1
+
+
+def test_generate_variants_crops_the_still_variants_and_frame_sheet_of_an_animated_gif() -> None:
+    """움직이는 대표 이미지는 원본을 그대로 올리고 크롭 영역만 보낸다 — 정지 변형(썸네일·표시용)과 심사용 프레임 모음에
+    같은 크롭이 걸려야 카드·심사가 작가가 고른 영역을 본다."""
+    variants = dict(generate_variants("a.gif", _split_gif_bytes([(0, 0, 255), (0, 255, 0)]), crop=_RIGHT_HALF))
+
+    thumbnail = _open(variants[build_thumbnail_key("a.gif")]).convert("RGB")
+    assert thumbnail.size == (40, 40)
+    assert _is_close(thumbnail.getpixel((2, 2)), (0, 0, 255))
+    sheet = _open(variants[build_frame_sheet_key("a.gif")])
+    _assert_tiles(sheet, columns=2, rows=1, expected=[(0, 0, 255), (0, 255, 0)])
+
+
+def test_crop_reaching_past_the_image_is_clamped_to_its_edges() -> None:
+    """화면 크롭 영역은 반올림으로 그림 밖으로 1px 넘칠 수 있다. 거절하지 않고 그림 경계로 자른다."""
+    crop = ImageCrop(x=40, y=0, width=41, height=41)
+    thumbnail = _open(dict(generate_variants("a.gif", _split_gif_bytes([(0, 0, 255), (0, 255, 0)]), crop=crop))[
+        build_thumbnail_key("a.gif")
+    ])
+
+    assert thumbnail.size == (40, 40)
+
+
+def test_generate_animated_variants_keeps_every_frame_cropped_and_its_timing() -> None:
+    """카드·상세가 재생할 움직이는 변형. 모든 프레임에 같은 크롭이 걸리고, 프레임 수·순서·프레임별 길이가 원본과 같다."""
+    colors = [(0, 0, 255), (0, 255, 0), (255, 255, 0)]
+    variants = dict(generate_animated_variants("a.gif", _split_gif_bytes(colors), crop=_RIGHT_HALF))
+
+    assert list(variants) == [build_animated_thumbnail_key("a.gif"), build_animated_display_key("a.gif")]
+    with _open(variants[build_animated_thumbnail_key("a.gif")]) as animated:
+        assert animated.format == "WEBP"
+        assert animated.size == (40, 40)
+        assert getattr(animated, "n_frames", 1) == 3
+        for index, color in enumerate(colors):
+            animated.seek(index)
+            frame = animated.convert("RGB")  # WebP 는 프레임을 풀어야 그 프레임의 길이를 info 에 채운다
+            assert animated.info["duration"] == [100, 200, 300][index]
+            assert _is_close(frame.getpixel((2, 2)), color), index
+
+
+def test_animated_variants_shrink_to_512_and_1024_long_edges() -> None:
+    gif = _gif_bytes([(0, 0, 0), (255, 255, 255)], size=(900, 1200))
+    variants = dict(generate_animated_variants("a.gif", gif, crop=None))
+
+    assert _open(variants[build_animated_thumbnail_key("a.gif")]).size == (384, 512)
+    assert _open(variants[build_animated_display_key("a.gif")]).size == (768, 1024)
+
+
+def test_generate_animated_variants_makes_nothing_for_a_still_image() -> None:
+    assert generate_animated_variants("a.png", _png_bytes(10, 10), crop=None) == []
+
+
+def test_animated_variants_respect_the_total_pixel_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    data = _gif_bytes([(0, 0, 0), (9, 9, 9), (99, 99, 99)], size=(40, 30))
+    monkeypatch.setattr(image_processing, "MAX_ANIMATED_DECODE_PIXELS", 3 * 40 * 30 - 1)
+
+    with pytest.raises(ImageTooLargeError):
+        generate_animated_variants("a.gif", data, crop=None)
 
 
 def _is_close(actual: object, expected: tuple[int, int, int], tolerance: int = 24) -> bool:

@@ -30665,6 +30665,16 @@
           },
           "purpose": {
             "$ref": "#/components/schemas/AssetPurpose"
+          },
+          "crop": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UploadCrop"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -33068,6 +33078,39 @@
           "nickname"
         ],
         "title": "UpdateProfileRequest"
+      },
+      "UploadCrop": {
+        "properties": {
+          "x": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "X"
+          },
+          "y": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Y"
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Width"
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Height"
+          }
+        },
+        "type": "object",
+        "required": [
+          "x",
+          "y",
+          "width",
+          "height"
+        ],
+        "title": "UploadCrop",
+        "description": "원본 픽셀 좌표의 크롭 영역. 움직이는 대표 이미지(GIF)만 보낸다 — 화면의 크롭 모달은 canvas 로 한 장만 그려 움직임을\n지우므로, 원본은 그대로 올리고 영역만 받아 서버가 모든 프레임에 건다."
       },
       "UsageMetricsResponse": {
         "properties": {

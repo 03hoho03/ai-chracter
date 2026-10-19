@@ -3,16 +3,18 @@ import uuid
 from collections.abc import Sequence
 
 from botocore.exceptions import BotoCoreError, ClientError
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from redis.exceptions import RedisError
 from sqlalchemy import delete, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
+from api.assets.animated_variants import build_animated_variants
 from api.assets.blur import blurred_asset_row, upload_blurred_copy
 from api.assets.image_processing import (
     THUMBNAIL_CONTENT_TYPE,
+    ImageCrop,
     ImageTooLargeError,
     generate_variants,
     read_frame_count,
@@ -52,7 +54,7 @@ from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import Content, ContentType, ContentVersion
 from api.db.models.media import Asset, AssetKind, AssetStatus
 from api.db.models.story import MediaBookCell, StoryVersionDetail
-from api.db.session import get_db_session
+from api.db.session import get_db_session, get_session_factory
 from api.legal.dependencies import require_legal_consent
 from api.session.dependencies import get_current_user_id
 
@@ -72,6 +74,11 @@ async def create_presigned_upload(
     owner_user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> PresignedUploadResponse:
+    if payload.crop is not None and payload.purpose != AssetPurpose.CONTENT_THUMBNAIL:
+        # 크롭 영역을 읽는 곳은 대표 이미지의 변형뿐이다. 다른 용도에서 받으면 조용히 버려진다.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="crop is only accepted for content-thumbnail"
+        )
     asset_id = uuid.uuid4()
     storage_key = build_object_key(payload.purpose.value, asset_id, payload.content_type)
     # 서명은 임시 키에 한다 — 최종 키는 `complete_asset_upload` 가 검사한 바이트로만 채워진다.
@@ -86,6 +93,7 @@ async def create_presigned_upload(
             storage_key=storage_key,
             kind=AssetKind.ORIGINAL,
             status=AssetStatus.PENDING,
+            crop=payload.crop.model_dump() if payload.crop is not None else None,
         )
     )
     await db.commit()
@@ -93,17 +101,21 @@ async def create_presigned_upload(
     return PresignedUploadResponse(upload_url=upload_url, asset_id=asset_id, expires_at=expires_at)
 
 
-def _upload_size_limit(storage_key: str) -> int | None:
+def _upload_purpose(storage_key: str) -> AssetPurpose | None:
     """Presigned-upload keys are `assets/{purpose}/{uuid}{ext}` (build_object_key);
     the Asset table has no purpose column, so the purpose is recovered from the key
-    path. Keys outside the user-upload purposes (e.g. `assets/generated/...`) have
-    no limit — the size check is a bypass safety net for presigned uploads only.
-    """
+    path. Keys outside the user-upload purposes (e.g. `assets/generated/...`) give None."""
     try:
-        purpose = AssetPurpose(storage_key.split("/")[1])
+        return AssetPurpose(storage_key.split("/")[1])
     except ValueError:
         return None
-    return UPLOAD_SIZE_LIMIT_BYTES[purpose]
+
+
+def _upload_size_limit(storage_key: str) -> int | None:
+    """Keys outside the user-upload purposes have no limit — the size check is a bypass safety net for
+    presigned uploads only."""
+    purpose = _upload_purpose(storage_key)
+    return UPLOAD_SIZE_LIMIT_BYTES[purpose] if purpose is not None else None
 
 
 # 같은 자산의 업로드 완료를 한 번에 하나만 들이는 락. TTL 은 완료 한 번이 걸릴 수 있는 가장 긴 시간보다 넉넉해야 한다
@@ -146,8 +158,10 @@ async def _response_for_current_state(db: AsyncSession, asset_id: uuid.UUID) -> 
 )
 async def complete_asset_upload(
     asset_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
     current_user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> AssetCompleteResponse:
     """브라우저가 임시 키에 올린 객체를 검사하고, 검사한 그 바이트를 최종 키(`storage_key`)에 다시 올린다.
 
@@ -191,7 +205,7 @@ async def complete_asset_upload(
         # 락의 TTL 만큼 기다렸는데도 못 잡았다 — 다른 요청이 계속 새로 잡고 있다. 지금 상태대로 답한다.
         return await _response_for_current_state(db, asset_id)
     try:
-        return await _complete_locked_upload(db, asset_id, storage_key)
+        return await _complete_locked_upload(db, asset_id, storage_key, background_tasks, session_factory)
     finally:
         try:
             await release_lock(redis_client, lock_key, token)
@@ -199,11 +213,19 @@ async def complete_asset_upload(
             logger.warning("Failed to release upload completion lock %s; it expires on its own", lock_key)
 
 
-async def _complete_locked_upload(db: AsyncSession, asset_id: uuid.UUID, storage_key: str) -> AssetCompleteResponse:
+async def _complete_locked_upload(
+    db: AsyncSession,
+    asset_id: uuid.UUID,
+    storage_key: str,
+    background_tasks: BackgroundTasks,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> AssetCompleteResponse:
     """락을 쥔 채 하는 업로드 완료 본체. DB 는 처음의 상태 확인과 마지막의 조건부 쓰기에서만 짧게 쓴다."""
     # 락을 기다리는 사이 앞의 요청이 끝냈거나 지웠을 수 있다. 세션에 남은 옛 객체가 아니라 행을 다시 읽는다.
-    current = await db.scalar(select(Asset.status).where(Asset.id == asset_id))
+    row = (await db.execute(select(Asset.status, Asset.crop).where(Asset.id == asset_id))).one_or_none()
     await db.commit()
+    current = row.status if row is not None else None
+    crop = ImageCrop(**row.crop) if row is not None and row.crop is not None else None
     if current is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
     if current == AssetStatus.READY:
@@ -239,8 +261,11 @@ async def _complete_locked_upload(db: AsyncSession, asset_id: uuid.UUID, storage
     # responses can derive the keys without an existence check. A failed variant
     # therefore fails the whole asset — never READY with only the original.
     try:
-        variants = await run_image_work(generate_variants, storage_key, original_bytes)
+        variants = await run_image_work(generate_variants, storage_key, original_bytes, crop)
         width, height = await run_in_threadpool(read_image_size, original_bytes)
+        if crop is not None:
+            left, top, right, bottom = crop.box((width, height))
+            width, height = right - left, bottom - top
         frame_count = await run_in_threadpool(read_frame_count, original_bytes)
         detected_content_type = await run_in_threadpool(read_image_content_type, original_bytes)
     except ImageTooLargeError as exc:
@@ -285,6 +310,11 @@ async def _complete_locked_upload(db: AsyncSession, asset_id: uuid.UUID, storage
     await db.commit()
     if marked is None:
         return await _response_for_current_state(db, asset_id)
+
+    # 움직이는 대표 이미지면 카드·상세가 재생할 움직이는 변형을 응답 뒤에 만든다(`assets/animated_variants.py`).
+    # 상황 이미지 등은 원본을 그대로 보여 주는 자리라 만들지 않는다.
+    if frame_count > 1 and _upload_purpose(storage_key) == AssetPurpose.CONTENT_THUMBNAIL:
+        background_tasks.add_task(build_animated_variants, session_factory, asset_id, storage_key, original_bytes, crop)
 
     # 임시 객체는 이제 아무도 읽지 않는다. 지우지 못해도 업로드는 끝난 것이라 실패로 돌리지 않는다 — 남은
     # 객체는 임시 접두사의 버킷 수명 규칙이 치운다.

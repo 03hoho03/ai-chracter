@@ -10,6 +10,12 @@ import {
 import { apiClient, isApiError } from "../client";
 
 type PresignedUploadResponse = components["schemas"]["PresignedUploadResponse"];
+/** 원본 픽셀 좌표의 크롭 영역. 서버가 모든 프레임에 같은 크롭을 건다. */
+export type UploadCrop = components["schemas"]["UploadCrop"];
+
+/** 업로드 직전까지 가공한 결과. 움직이는 대표 이미지는 canvas 로 자르면 첫 프레임만 남아, 원본 파일과 크롭 영역을 따로
+ * 들고 와 서버가 자르게 한다(`crop`). 정지 그림은 이미 자른 파일만 있다. */
+export type PreparedUpload = { file: File; crop?: UploadCrop };
 type AssetCompleteResponse = components["schemas"]["AssetCompleteResponse"];
 export type AssetPurpose = components["schemas"]["AssetPurpose"];
 
@@ -32,11 +38,12 @@ const RESIZE_SPEC_BY_PURPOSE: Record<AssetPurpose, ResizeSpec> = {
  * 리사이즈하지 않고 원본 바이트를 그대로 올리는 형식. `resizeImage`는 canvas에 첫 프레임만 그려 GIF를 정지 그림으로
  * 바꾸는데, 문의 첨부는 버그를 녹화한 움직임 자체가 신고 내용이고 상황 이미지는 채팅에서 원본 그대로 움직여야 한다.
  * 원본 그대로여도 아래 용량 상한은 같게 걸리고, 서버는 업로드 완료 때 바이트에서 형식을 읽어 저장한다. 대표 이미지는
- * 크롭이 canvas에서 다시 그려 움직임이 어차피 사라지고 카드 용량이 크게 늘어 넣지 않는다.
+ * 크롭 모달이 canvas 로 한 장만 그려 움직임을 지우므로, 원본과 크롭 영역(`crop`)을 함께 보내 서버가 모든 프레임을 자른다.
  */
 const KEEP_ORIGINAL_TYPES_BY_PURPOSE: Partial<Record<AssetPurpose, readonly string[]>> = {
   "inquiry-attachment": ["image/gif"],
   "situational-image": ["image/gif"],
+  "content-thumbnail": ["image/gif"],
 };
 
 /** 서버의 `UPLOAD_SIZE_LIMIT_BYTES`(apps/api/src/api/assets/schemas.py)와 같은 값 — 리사이즈 *결과물*에 건다. */
@@ -75,7 +82,7 @@ export class UploadAssetError extends Error {
  * PUT 전에 `resizeImage`를 거치므로 올라가는 바이트는 `image/webp`이고(예외는 `KEEP_ORIGINAL_TYPES_BY_PURPOSE`),
  * presigned 요청의 contentType과 PUT의 Content-Type도 올라가는 파일의 타입으로 맞춘다.
  */
-export async function uploadAsset(file: File, purpose: AssetPurpose): Promise<string> {
+export async function uploadAsset(file: File, purpose: AssetPurpose, crop?: UploadCrop): Promise<string> {
   const resized = await resizeForUpload(file, purpose);
 
   const maxBytes = MAX_UPLOAD_BYTES_BY_PURPOSE[purpose];
@@ -85,7 +92,7 @@ export async function uploadAsset(file: File, purpose: AssetPurpose): Promise<st
 
   const { data: presigned } = await apiClient.post<PresignedUploadResponse>(
     "/assets/presigned-upload",
-    { contentType: resized.type, purpose },
+    { contentType: resized.type, purpose, ...(crop && { crop }) },
   );
 
   // 우리 API 호출(presigned 발급/완료 확인)의 실패는 apiClient가 ApiError로 정규화하므로 그대로 두고,
