@@ -411,6 +411,32 @@ async def test_a_refunded_owner_is_told_the_closing_reason_and_what_came_back(
     assert "reason" not in as_stranger.json()["detail"]
 
 
+async def test_a_refunded_buyer_does_not_keep_reading_a_novel_later_withdrawn(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """이용제한으로 환급받은 뒤 해제됐다가 게시자가 공개를 거둔 노벨에서, 다시 사지 않은 옛 구매자는 소장자가 아니다 — 작품
+    정보·무료 화 모두 410 `withdrawn` 이다(작품 정보는 돌려받은 클로버를 싣는다). 깨지는 시나리오: 환급된 구매를 소장으로 쳐서
+    돈을 돌려받은 사람이 판매가 멈춘 소설의 목차·무료 화를 계속 연다."""
+    novel = await _novel(db_session)
+    buyer = await _member(db_session)
+    await _bought(db_client, novel, 6, buyer)
+    await _restrict_novel(db_client, db_session, novel)
+    await _lift_novel(db_client, novel)
+    await _withdraw(db_client, db_session, novel)
+
+    detail = await _get(db_client, f"/webnovels/{novel.novel_id}", as_user=buyer)
+    free = await db_client.get(_path(novel, 1))
+
+    assert (detail.status_code, detail.json()["detail"]) == (
+        410,
+        {"code": "NOVEL_READING_ENDED", "reason": "withdrawn", "refundedAmount": 30},
+    )
+    assert (free.status_code, free.json()["detail"]) == (
+        410,
+        {"code": "NOVEL_READING_ENDED", "reason": "withdrawn"},
+    )
+
+
 async def test_restricting_a_novel_refunds_every_buyer_once_and_lifting_keeps_the_refunds(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

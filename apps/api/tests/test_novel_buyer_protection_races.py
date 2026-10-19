@@ -344,23 +344,27 @@ Restrict = Callable[[_World, PublicNovel, uuid.UUID], "asyncio.Task[object]"]
 async def test_a_restriction_racing_a_purchase_by_a_lower_id_buyer_refunds_once_without_deadlock(
     world: _World, restrict: Restrict
 ) -> None:
-    """구매자 id 가 게시자 id 보다 작다. 6화를 이미 산 그 사람이 7화를 사는 동안 운영자가 노벨(또는 원작)을 이용제한한다. 구매자
-    행을 쥔 트랜잭션 뒤에 구매·제재가 차례로 막히고, 놓으면 교착 없이 둘 다 끝나며 그 사람의 구매는 모두 정확히 한 번 환급된다.
-    깨지는 시나리오: 제재가 공개 상태 행(또는 작품 조치 행)을 먼저 쥔 채 환급하러 구매자 행을 기다리고, 구매는 구매자 행을 쥔
-    채 공개 상태 행을 기다려 교착한다(500)."""
+    """구매자 id 가 게시자 id 보다 작다. 6화를 이미 산 그 사람이 7화를 사는 동안 운영자가 노벨(또는 원작)을 이용제한한다. 게시자
+    행을 쥔 트랜잭션이 있어 구매는 구매자 행을 쥔 채 게시자 행에서 막히고, 제재는 그 구매자 행에서 막힌다. 놓으면 교착 없이 둘
+    다 끝나며 그 사람의 구매는 모두 정확히 한 번 환급된다. 깨지는 시나리오: 제재가 공개 상태 행(또는 작품 조치 행)을 먼저 쥔 채
+    환급하러 구매자 행을 기다리고, 구매는 구매자 행을 쥔 채 공개 상태 행을 기다려 교착한다(500). 구매자 행을 쥐면 놓는 순간
+    누가 먼저 그 행을 잡느냐에 따라 교착이 나기도 안 나기도 하므로, 게시자 행을 쥐고 구매가 구매자 행을 잡은 뒤에 제재를 띄운다."""
     buyer, publisher = await world.pair()
     novel = await world.publish(publisher)
     await _bought(world, novel, buyer, 6)
     admin = await world.admin()
-    holder = await _hold_user(world, buyer)
+    holder = await _hold_user(world, publisher)
     purchase = _purchase_task(world, novel, buyer, 7)
-    restriction = restrict(world, novel, admin)
+    tasks = [purchase]
     try:
+        # 제재는 구매가 구매자 행을 쥐고 막힌 뒤에 띄운다 — 함께 띄우면 제재가 먼저 구매자 행을 잡을 수 있다.
         await _assert_blocked(purchase)
+        restriction = restrict(world, novel, admin)
+        tasks.append(restriction)
         await _assert_blocked(restriction)
-        bought, restricted = await _settle(holder, [purchase, restriction])
+        bought, restricted = await _settle(holder, tasks)
     finally:
-        await _close_quietly(holder, [purchase, restriction])
+        await _close_quietly(holder, tasks)
 
     assert not isinstance(restricted, HTTPException), restricted
     assert isinstance(bought, NovelChapterPurchaseResponse) or (
