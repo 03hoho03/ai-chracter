@@ -23,6 +23,7 @@ from api.db.models.novel import (
     NovelChapterEdition,
     NovelChapterPublication,
     NovelChapterRevision,
+    NovelFreeOrdinal,
     NovelPublication,
     NovelPurchase,
     NovelScreening,
@@ -32,6 +33,7 @@ from api.llm.client import LLMCallContext, LLMClient, LLMClientError, LLMPolicyV
 from api.novel_public import screening
 from api.novel_public.screening import NovelScreenResult
 from factories import (
+    Room,
     _add_batch,
     _clear_llm_override,
     _create_admin,
@@ -1625,3 +1627,119 @@ async def test_making_free_needs_a_published_chapter_of_ones_own_novel(
     third = await db_session.get_one(NovelChapterPublication, chapters[2].id, populate_existing=True)
     assert (third.price, third.price_changed_at) == (0, None)
     assert (foreign.status_code, foreign.json()["detail"]["code"]) == (403, "NOVEL_FORBIDDEN")
+
+
+# ── 무료 번호 기억 ──────────────────────────────────────────────────────────
+async def _front_published_then_tail(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, *, tail: int
+) -> tuple[uuid.UUID, Room, list[NovelChapter]]:
+    """앞 묶음 5화를 정책 스위치가 꺼진 채 공개하고(바로 열리고 연재권이 잠긴다) 6화부터 `tail` 화짜리 마지막 묶음을 더한 뒤
+    스위치를 켠다. 마지막 묶음은 지우고 다시 만들 수 있다."""
+    room, novel_id = await _novel_setup(db_client, db_session, monkeypatch, turns=3)
+    messages = await _room_messages(db_session, room.room_id)
+    front = await _add_batch(db_session, novel_id, room, messages[0], messages[2], episodes=5)
+    for chapter in front:
+        assert (await _publish(db_client, novel_id, chapter)).status_code == 200
+    added = await _add_batch(db_session, novel_id, room, messages[3], messages[-1], episodes=tail)
+    _policy(monkeypatch, on=True)
+    return novel_id, room, added
+
+
+async def _delete_and_remake(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, novel_id: uuid.UUID, room: Room, last: list[NovelChapter]
+) -> list[NovelChapter]:
+    """마지막 묶음을 지우고 같은 번호의 새 화로 다시 만든다(새 chapter_id)."""
+    assert (await db_client.delete(f"/novels/{novel_id}/batches/{last[0].batch_id}")).status_code == 204
+    messages = await _room_messages(db_session, room.room_id)
+    remade = await _add_batch(db_session, novel_id, room, messages[3], messages[-1], episodes=len(last))
+    assert [c.ordinal for c in remade] == [c.ordinal for c in last]
+    assert {c.id for c in remade}.isdisjoint({c.id for c in last})
+    return remade
+
+
+async def _remembered(db_session: AsyncSession, novel_id: uuid.UUID) -> list[int]:
+    rows = await db_session.scalars(
+        sa.select(NovelFreeOrdinal.ordinal).where(NovelFreeOrdinal.novel_id == novel_id).order_by(NovelFreeOrdinal.ordinal)
+    )
+    return list(rows.all())
+
+
+async def test_a_chapter_number_published_free_stays_free_after_the_chapter_is_deleted_and_remade(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """6화를 무료로, 7화를 유료로 공개한 뒤 마지막 묶음을 지우고 다시 만들면 새 6화는 무료 고정이다 — 유료로 공개하려는 요청은
+    409 `NOVEL_CHAPTER_PRICE_LOCKED` 이고 아무것도 쓰지 않으며, 가격을 비우면 무료로 공개된다. 유료였던 7화는 그대로 고를 수
+    있다(비우면 유료). 상태 응답은 아직 공개하지 않은 기억 번호를 `freeLockedOrdinals` 로 알리고, 다시 공개하면 목록에서
+    빠진다. 앞 화(1~5)는 상수가 지키므로 기억하지 않고, 다른 소설이 기억한 번호(7)는 이 소설과 무관하다. 깨지는 시나리오:
+    독자에게 무료로 준 화가 지웠다 다시 만드는 것만으로 유료가 되거나, 남의 소설의 기억이 이 소설의 가격을 묶는다."""
+    novel_id, room, tail = await _front_published_then_tail(db_client, db_session, monkeypatch, tail=2)
+    others = Novel(
+        user_id=(await _make_stranger(db_session)).id,
+        content_id=uuid.uuid4(),
+        content_type="character",
+        content_title="남의 원작",
+    )
+    db_session.add(others)
+    await db_session.flush()
+    db_session.add(NovelFreeOrdinal(novel_id=others.id, ordinal=7))
+    await db_session.commit()
+    assert (await _publish_priced(db_client, novel_id, tail[0], free=True)).status_code == 200
+    assert (await _publish_priced(db_client, novel_id, tail[1], free=False)).status_code == 200
+
+    remade = await _delete_and_remake(db_client, db_session, novel_id, room, tail)
+    before = (await db_client.get(f"/novels/{novel_id}/publication")).json()
+    paid_sixth = await _publish_priced(db_client, novel_id, remade[0], free=False)
+    published_after_refusal = await _prices(db_session, novel_id)
+    sixth = await _publish_priced(db_client, novel_id, remade[0], free=None)
+    seventh = await _publish_priced(db_client, novel_id, remade[1], free=None)
+
+    assert before["freeLockedOrdinals"] == [6]
+    assert (paid_sixth.status_code, paid_sixth.json()["detail"]) == (409, {"code": "NOVEL_CHAPTER_PRICE_LOCKED"})
+    assert published_after_refusal == {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+    assert sixth.status_code == 200, sixth.text
+    assert seventh.status_code == 200, seventh.text
+    assert seventh.json()["freeLockedOrdinals"] == []
+    assert await _prices(db_session, novel_id) == {1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 30}
+    assert await _remembered(db_session, novel_id) == [6]
+
+
+async def test_a_chapter_made_free_keeps_its_number_free_after_the_chapter_is_deleted_and_remade(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """유료로 공개한 7화를 "무료로 전환"한 뒤 마지막 묶음을 지우고 다시 만들면 새 7화도 무료 고정이다(유료 요청 409, 비우면
+    무료). 6화는 유료로 공개했을 뿐이라 기억하지 않는다. 깨지는 시나리오: 무료로 전환한 화는 공개 때의 선택이 아니라서
+    기억이 빠지고, 지웠다 다시 만들면 다시 유료가 된다."""
+    novel_id, room, tail = await _front_published_then_tail(db_client, db_session, monkeypatch, tail=2)
+    for chapter in tail:
+        assert (await _publish_priced(db_client, novel_id, chapter, free=False)).status_code == 200
+    assert (await _make_free(db_client, novel_id, tail[1].id)).status_code == 200
+
+    remade = await _delete_and_remake(db_client, db_session, novel_id, room, tail)
+    sixth = await _publish_priced(db_client, novel_id, remade[0], free=None)
+    paid_seventh = await _publish_priced(db_client, novel_id, remade[1], free=False)
+    seventh = await _publish_priced(db_client, novel_id, remade[1], free=None)
+
+    assert sixth.json()["freeLockedOrdinals"] == [7]
+    assert (paid_seventh.status_code, paid_seventh.json()["detail"]) == (409, {"code": "NOVEL_CHAPTER_PRICE_LOCKED"})
+    assert seventh.status_code == 200, seventh.text
+    assert await _prices(db_session, novel_id) == {1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 30, 7: 0}
+    assert await _remembered(db_session, novel_id) == [7]
+
+
+async def test_with_the_policy_off_a_remembered_number_is_neither_shown_nor_enforced(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """정책 스위치가 꺼져 있으면 지금 약관대로다 — 기억된 번호가 있어도 상태 응답의 `freeLockedOrdinals` 는 비어 있고, 그
+    번호의 새 화는 6화 이후 규칙대로 유료로 공개된다. 깨지는 시나리오: 스위치를 끈 롤백 중에 꺼진 동작이 켜진 동작을 따라
+    달라진다."""
+    novel_id, _room, tail = await _front_published_then_tail(db_client, db_session, monkeypatch, tail=1)
+    db_session.add(NovelFreeOrdinal(novel_id=novel_id, ordinal=6))
+    await db_session.commit()
+    _policy(monkeypatch, on=False)
+
+    before = (await db_client.get(f"/novels/{novel_id}/publication")).json()
+    sixth = await _publish_priced(db_client, novel_id, tail[0], free=None)
+
+    assert before["freeLockedOrdinals"] == []
+    assert sixth.status_code == 200, sixth.text
+    assert (await _prices(db_session, novel_id))[6] == 30

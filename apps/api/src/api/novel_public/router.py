@@ -29,11 +29,17 @@
 그 위의 공개 요청은 처음 공개와 같이 지금 원작 판정을 거친다. 잠금은 스위치와 무관하게 결과가 독자에게 열리는 쓰기(또는
 승인)에서 찍힌다.
 
-**화별 가격** — 가격은 화를 처음 공개할 때 정해 화 공개본에 얼린다(`NovelPublishRequest.free`). 앞 화
-(`NOVEL_FREE_CHAPTER_COUNT` 까지)는 늘 무료이고, 정책 스위치가 켜져 있으면 그 뒤 화마다 무료·유료를 고른다(꺼져 있으면
-지금 약관대로 그 뒤는 유료). 다시 공개는 가격을 덮지 않으므로 무료로 공개한 화는 무료로 남는다. 유료 화를 무료로 바꾸는
-것은 따로 있는 "무료로 전환"(`make_chapter_free`, 스위치가 켜졌을 때만)뿐이다 — 글이 바뀌지 않으므로 심사·판 올림·공개 시각
-갱신이 없고, 거둔 공개를 다시 열지 않으며, 이미 산 사람에게 환불하지 않는다. 무료에서 유료로 가는 길은 없다.
+**화별 가격** — 무료·유료는 화를 처음 공개할 때 정해 화 공개본에 남긴다(`NovelPublishRequest.free`). 유료 화의 가격은
+남긴 값이 아니라 늘 지금 화당 가격이다(`purchases.chapter_price`). 앞 화(`NOVEL_FREE_CHAPTER_COUNT` 까지)는 늘 무료이고,
+정책 스위치가 켜져 있으면 그 뒤 화마다 무료·유료를 고른다(꺼져 있으면 지금 약관대로 그 뒤는 유료). 다시 공개는 가격을 덮지
+않으므로 무료로 공개한 화는 무료로 남는다. 유료 화를 무료로 바꾸는 것은 따로 있는 "무료로 전환"(`make_chapter_free`, 스위치가
+켜졌을 때만)뿐이다 — 글이 바뀌지 않으므로 심사·판 올림·공개 시각 갱신이 없고, 거둔 공개를 다시 열지 않으며, 이미 산 사람에게
+환불하지 않는다. 무료에서 유료로 가는 길은 없다.
+
+**무료 번호 기억** — 6화부터를 무료로 공개하거나 무료로 전환하면 그 번호를 소설마다 남긴다(`NovelFreeOrdinal`). 마지막 묶음
+삭제로 그 화를 지우고 같은 번호의 화를 다시 만들어도, 정책 스위치가 켜져 있으면 그 번호는 무료로만 공개한다 — 독자에게 한 번
+무료로 준 번호를 지웠다 다시 만드는 것으로 유료로 돌릴 수 없게. 기록과 확인은 모두 게시자 사용자 행 잠금 안에서 한다
+(공개 쓰기·무료로 전환·묶음 삭제가 같은 행에서 줄을 선다).
 
 공개 화면에 내보내는 표지는 원작 썸네일뿐이라 공개본에 표지 사본을 두지 않는다(소설 생성 표지는 심사를 거친 적이 없다)."""
 
@@ -59,6 +65,7 @@ from api.db.models.novel import (
     NovelChapterEdition,
     NovelChapterPublication,
     NovelChapterRevision,
+    NovelFreeOrdinal,
     NovelPublication,
     NovelScreening,
     NovelScreeningPart,
@@ -110,9 +117,9 @@ def _error(status_code: int, code: str, **extra: object) -> HTTPException:
 # ── 계획 ────────────────────────────────────────────────────────────────────
 @dataclass(frozen=True)
 class _ChapterPlan:
-    """공개하거나 다시 낼 화 하나와 그때 얼릴 값. `price` 는 새로 공개하는 화면 그때 저장할 가격, 다시 내는 화면 지금 가격이다
-    — 다시 내기는 가격을 쓰지 않지만 재계획 비교에 들어가, 심사를 기다리는 사이 그 화가 무료로 바뀌면 쓰지 않고 409
-    `NOVEL_PUBLISH_CONFLICT` 다(다시 누르면 된다)."""
+    """공개하거나 다시 낼 화 하나와 그때 얼릴 값. `price` 는 새로 공개하는 화면 그때 저장할 값(0 = 무료, 유료면 지금 화당
+    가격), 다시 내는 화면 지금 가격이다 — 다시 내기는 가격을 쓰지 않지만 재계획 비교에 들어가, 심사를 기다리는 사이 그 화가
+    무료로 바뀌면 쓰지 않고 409 `NOVEL_PUBLISH_CONFLICT` 다(다시 누르면 된다)."""
 
     chapter_id: uuid.UUID
     ordinal: int
@@ -186,9 +193,12 @@ async def _published_count(db: AsyncSession, novel_id: uuid.UUID) -> int:
     return count or 0
 
 
-def _price_for(ordinal: int, frozen: NovelChapterPublication | None, free: bool | None) -> int:
+def _price_for(
+    ordinal: int, frozen: NovelChapterPublication | None, free: bool | None, *, remembered_free: bool
+) -> int:
     """이 요청이 그 화에 둘 가격(`NovelPublishRequest.free` 의 규칙). 이미 공개한 화는 지금 가격을 돌려준다(쓰지 않는다).
-    정책 스위치가 꺼져 있으면 요청의 선택을 보지 않는다."""
+    정책 스위치가 꺼져 있으면 요청의 선택을 보지 않는다. `remembered_free` 는 새 화의 번호가 무료로 나간 적 있는가(스위치가
+    켜졌을 때만 참) — 앞 화처럼 무료로만 공개한다."""
     choice = free if settings.novel_public_policy_v2_enabled else None
     if frozen is not None:
         current = chapter_price(frozen.ordinal, frozen.price)
@@ -197,11 +207,30 @@ def _price_for(ordinal: int, frozen: NovelChapterPublication | None, free: bool 
         if choice is True and current > 0:
             raise _error(status.HTTP_409_CONFLICT, "NOVEL_CHAPTER_ALREADY_PRICED")
         return current
-    if ordinal <= clover.NOVEL_FREE_CHAPTER_COUNT:
+    if ordinal <= clover.NOVEL_FREE_CHAPTER_COUNT or remembered_free:
         if choice is False:
             raise _error(status.HTTP_409_CONFLICT, "NOVEL_CHAPTER_PRICE_LOCKED")
         return 0
     return 0 if choice is True else clover.NOVEL_READ_COST
+
+
+async def _remembered_free(db: AsyncSession, novel_id: uuid.UUID, ordinal: int) -> bool:
+    """새로 공개할 화의 번호가 무료로 나간 적 있는가. 정책 스위치가 꺼져 있으면 보지 않는다(지금 약관대로 6화부터 유료)."""
+    if not settings.novel_public_policy_v2_enabled or ordinal <= clover.NOVEL_FREE_CHAPTER_COUNT:
+        return False
+    found = await db.scalar(
+        select(NovelFreeOrdinal.ordinal).where(NovelFreeOrdinal.novel_id == novel_id, NovelFreeOrdinal.ordinal == ordinal)
+    )
+    return found is not None
+
+
+async def _remember_free(db: AsyncSession, novel_id: uuid.UUID, ordinal: int) -> None:
+    """이 번호가 무료로 나갔다고 남긴다(이미 있으면 그대로). 앞 화는 상수가 무료로 지키므로 남기지 않는다."""
+    if ordinal <= clover.NOVEL_FREE_CHAPTER_COUNT:
+        return
+    await db.execute(
+        insert(NovelFreeOrdinal).values(novel_id=novel_id, ordinal=ordinal).on_conflict_do_nothing()
+    )
 
 
 async def _plan(
@@ -241,7 +270,8 @@ async def _plan(
             raise _error(status.HTTP_409_CONFLICT, "NOVEL_PUBLISH_NOT_CONTIGUOUS", nextOrdinal=published + 1)
         revision = await _current_revision(db, chapter.id)
         frozen = await db.get(NovelChapterPublication, chapter.id, populate_existing=True)
-        price = _price_for(chapter.ordinal, frozen, free)
+        remembered_free = frozen is None and await _remembered_free(db, novel.id, chapter.ordinal)
+        price = _price_for(chapter.ordinal, frozen, free, remembered_free=remembered_free)
         chapter_is_new = frozen is None
         is_new = is_new or chapter_is_new
         if frozen is None or await _chapter_changed(db, frozen, chapter, revision):
@@ -330,6 +360,18 @@ async def _published_chapters(db: AsyncSession, novel_id: uuid.UUID) -> list[Nov
     ]
 
 
+async def _free_locked_ordinals(db: AsyncSession, novel_id: uuid.UUID, published: int) -> list[int]:
+    """아직 공개하지 않은 번호 중 무료로만 공개할 수 있는 번호(오름차순). 정책 스위치가 꺼져 있으면 지키지 않으므로 비운다."""
+    if not settings.novel_public_policy_v2_enabled:
+        return []
+    rows = await db.scalars(
+        select(NovelFreeOrdinal.ordinal)
+        .where(NovelFreeOrdinal.novel_id == novel_id, NovelFreeOrdinal.ordinal > published)
+        .order_by(NovelFreeOrdinal.ordinal)
+    )
+    return list(rows.all())
+
+
 async def _status(db: AsyncSession, novel: Novel, user_id: uuid.UUID) -> NovelPublicationStatusResponse:
     publication = await db.get(NovelPublication, novel.id, populate_existing=True)
     gate = await judge_source(db, novel.content_id, user_id, permission_locked=lock_in_effect(novel))
@@ -347,12 +389,14 @@ async def _status(db: AsyncSession, novel: Novel, user_id: uuid.UUID) -> NovelPu
         .order_by(NovelScreening.created_at.desc(), NovelScreening.id.desc())
         .limit(1)
     )
+    published_count = await _published_count(db, novel.id)
     return NovelPublicationStatusResponse(
         published=publication is not None,
         visibility=publication.visibility if publication is not None else None,
         moderation_status=publication.moderation_status if publication is not None else None,
-        published_chapter_count=await _published_count(db, novel.id),
+        published_chapter_count=published_count,
         published_chapters=await _published_chapters(db, novel.id),
+        free_locked_ordinals=await _free_locked_ordinals(db, novel.id, published_count),
         chapter_count=chapter_count or 0,
         changed_chapter_ordinals=await _changed_chapter_ordinals(db, novel.id) if publication is not None else [],
         metadata_changed=publication is not None
@@ -388,7 +432,8 @@ async def _status(db: AsyncSession, novel: Novel, user_id: uuid.UUID) -> NovelPu
 async def _apply(db: AsyncSession, novel: Novel, plan: _PublishPlan, *, terms_version: str | None) -> None:
     """계획대로 공개본을 쓴다. 승인 대기로 가는 요청(`plan.review`)은 공개 범위를 `withdrawn` 으로 두고 대기를 표시하고,
     그 밖에는 결과가 독자에게 열리므로 연재권 잠금을 찍는다(이미 잠겼으면 그대로). 화를 공개하거나 다시 내면 그 판의 판 행을
-    하나 쌓는다(`_record_edition`) — 다시 내기가 화 공개본을 덮어도 산 사람이 산 때의 판을 다시 읽을 수 있게.
+    하나 쌓는다(`_record_edition`) — 다시 내기가 화 공개본을 덮어도 산 사람이 산 때의 판을 다시 읽을 수 있게. 새 화를
+    6화부터 무료로 공개하면 그 번호를 남긴다(`_remember_free`).
 
     공개 범위와 심사 칸은 같은 UPDATE 문으로 바꾼다 — 대기·반려 행은 `withdrawn` 이어야 한다는 CHECK 가 문장마다 걸리므로
     나눠 쓰면 첫 문장이 거부된다."""
@@ -448,6 +493,8 @@ async def _apply(db: AsyncSession, novel: Novel, plan: _PublishPlan, *, terms_ve
             )
         )
         await db.flush()
+        if chapter.price == 0:
+            await _remember_free(db, novel.id, chapter.ordinal)
     else:
         await db.execute(
             update(NovelChapterPublication)
@@ -618,7 +665,8 @@ async def make_chapter_free(
 ) -> None:
     """게시자가 공개한 유료 화를 무료로 바꾼다. **커밋하지 않는다**(라우트가 한다). 그 화의 가격 칸과 바꾼 시각만 쓴다 —
     글이 바뀌지 않으므로 심사·판 올림·판 행·공개 상태(공개 범위·공개 시각)는 그대로다. 이미 무료인 화면 아무것도 쓰지
-    않는다. 산 사람의 구매는 그대로 두고 환불하지 않는다.
+    않는다. 산 사람의 구매는 그대로 두고 환불하지 않는다. 바꾼 화의 번호는 무료로 나간 번호로 남겨, 그 화를 지우고 다시
+    만들어도 무료로만 공개한다(모듈 docstring 의 무료 번호 기억).
 
     - 409 `NOVEL_PRICE_CHOICE_DISABLED`: 정책 스위치가 꺼져 있다(지금 약관은 화 번호로 가격을 정한다).
     - 404 `NOVEL_NOT_FOUND`·403 `NOVEL_FORBIDDEN`: 없는(숨긴) 소설·남의 소설.
@@ -644,6 +692,7 @@ async def make_chapter_free(
         .where(NovelChapterPublication.chapter_id == chapter_id)
         .values(price=0, price_changed_at=func.now())
     )
+    await _remember_free(db, novel_id, publication.ordinal)
 
 
 @router.post("/{novel_id}/publication/chapters/{chapter_id}/free", dependencies=[Depends(require_legal_consent)])

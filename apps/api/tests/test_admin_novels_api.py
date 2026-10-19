@@ -174,7 +174,7 @@ async def test_admin_detail_shows_the_public_copy_screenings_and_reports(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """상세는 공개본 글(제목·소개·화 목록과 화마다의 가격)과 심사 사유(운영자만 본다)·신고·구매 수를 싣고, 화 공개본 본문은
-    따로 연다. 앞 5화는 저장값과 무관하게 무료로, 6화 이후는 저장된 가격으로 보인다. 공개한 적 없는 소설·없는 화는 404 다."""
+    따로 연다. 앞 5화는 저장값과 무관하게 무료로, 6화 이후는 저장된 무료·유료대로(유료는 화당 가격) 보인다. 공개한 적 없는 소설·없는 화는 404 다."""
     novel = await _novel(db_session)
     await db_session.execute(
         sa.update(NovelChapterPublication)

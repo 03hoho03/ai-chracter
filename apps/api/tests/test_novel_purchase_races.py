@@ -20,7 +20,14 @@ from api.db.models import User
 from api.db.models.clover import CloverLedger, CloverLot, CloverSpendAllocation, CloverSpendRefund, CloverSpendUsage
 from api.db.models.content import Content
 from api.db.models.moderation import Notification
-from api.db.models.novel import Novel, NovelChapterPublication, NovelLike, NovelPublication, NovelPurchase
+from api.db.models.novel import (
+    Novel,
+    NovelChapterPublication,
+    NovelFreeOrdinal,
+    NovelLike,
+    NovelPublication,
+    NovelPurchase,
+)
 from api.novel_public.purchases import NovelChapterPurchaseResponse, purchase_chapter
 from api.novel_public.reading import like_webnovel
 from api.novel_public.router import make_chapter_free
@@ -338,3 +345,46 @@ async def test_making_the_chapter_free_behind_a_purchase_keeps_that_purchase_unr
 
     assert await _balance(independent_factory, buyer) == 70
     assert await _sixth_price_and_purchases(independent_factory, novel) == (0, [(30, None)])
+
+
+# ── 무료로 전환과 마지막 묶음 삭제 ──────────────────────────────────────────
+async def test_deleting_the_last_batch_behind_making_its_chapter_free_keeps_the_number_free(
+    independent_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """게시자가 8화(마지막 묶음 7·8화)를 무료로 바꾸는 트랜잭션이 게시자 행을 쥔 채 커밋 전이다. 그때 시작한 마지막 묶음
+    삭제는 게시자 행에서 기다리고(막힘 확인), 전환이 커밋된 뒤 두 화를 지운다. 화 공개본은 화와 함께 사라지지만 8번이 무료로
+    나갔다는 기억은 남는다. 깨지는 시나리오: 기억이 화 공개본에 매달려 있어 전환 직후의 삭제가 그 기억까지 지우거나, 전환이
+    기억을 남기지 않아 지운 뒤 다시 만든 8화를 유료로 낼 수 있다."""
+    monkeypatch.setattr(settings, "novel_public_policy_v2_enabled", True)
+    async with independent_factory() as s:
+        novel = await _make_public_novel(s, await _member(independent_factory), batches=(6, 2))
+        creator_id = select(Content.creator_user_id).where(Content.id == novel.content_id).scalar_subquery()
+        await s.execute(update(User).where(User.id == creator_id).values(email=f"{uuid.uuid4()}@{_MARKER_DOMAIN}"))
+        await s.commit()
+    converting = independent_factory()
+    try:
+        await make_chapter_free(
+            converting, user_id=novel.publisher_id, novel_id=novel.novel_id, chapter_id=novel.chapter_ids[7]
+        )
+
+        async def delete_last_batch() -> None:
+            async with independent_factory() as s:
+                owned = await s.get_one(Novel, novel.novel_id)
+                await novelize_router.delete_last_novel_batch(batch_id=novel.batch_ids[1], novel=owned, db=s)
+
+        deleting = asyncio.create_task(delete_last_batch())
+        await _assert_blocked(deleting)
+        await converting.commit()
+        await asyncio.wait_for(deleting, 10)
+    finally:
+        await converting.close()
+
+    async with independent_factory() as s:
+        published = (
+            await s.scalars(select(NovelChapterPublication.ordinal).where(NovelChapterPublication.novel_id == novel.novel_id))
+        ).all()
+        remembered = (
+            await s.scalars(select(NovelFreeOrdinal.ordinal).where(NovelFreeOrdinal.novel_id == novel.novel_id))
+        ).all()
+    assert sorted(published) == [1, 2, 3, 4, 5, 6]
+    assert list(remembered) == [8]

@@ -18,6 +18,7 @@ function status(patch: Partial<NovelPublicationStatus>): NovelPublicationStatus 
     moderationStatus: null,
     publishedChapterCount: 0,
     publishedChapters: [],
+    freeLockedOrdinals: [],
     chapterCount: 8,
     changedChapterOrdinals: [],
     metadataChanged: false,

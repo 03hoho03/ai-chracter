@@ -665,10 +665,10 @@ class NovelChapterPublication(Base):
     published_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    # 이 화를 사는 값(클로버, 0 = 무료). 처음 공개 때 정해 얼리고 다시 공개가 덮지 않는다 — 화당 가격 상수를 바꿔도 이미
-    # 공개한 화는 그대로이고, 무료로 공개한 화는 무료로 남는다. 유료에서 무료로만 바꿀 수 있고 그 시각을 `price_changed_at`
-    # 에 남긴다(공개 때 정한 그대로면 비어 있다). 기본값 30 은 이 칸을 모르는 옛 코드의 INSERT 가 유료 값을 쓰게 하려는
-    # 것이다 — 0 이면 배포 겹침 동안 옛 코드가 공개한 6화 이후가 되돌릴 수 없는 무료가 된다. 그래서 옛 코드가 넣은 앞
+    # 이 화가 무료(0)인지 유료(그 밖)인지. 유료 화의 가격은 이 값이 아니라 늘 지금 화당 가격 상수다(`chapter_price`) —
+    # 상수를 바꾸면 이미 공개한 유료 화도 새 값으로 팔린다. 처음 공개 때 정하고 다시 공개가 덮지 않으므로 무료로 공개한 화는
+    # 무료로 남는다. 유료에서 무료로만 바꿀 수 있고 그 시각을 `price_changed_at` 에 남긴다(공개 때 정한 그대로면 비어
+    # 있다). 기본값 30 은 이 칸을 모르는 옛 코드의 INSERT 가 유료 값을 쓰게 하려는 것이다 — 0 이면 배포 겹침 동안 옛 코드가 공개한 6화 이후가 되돌릴 수 없는 무료가 된다. 그래서 옛 코드가 넣은 앞
     # 무료 화에는 30 이 들어갈 수 있고, 읽는 쪽은 앞 무료 화를 이 값과 무관하게 무료로 판정한다(`chapter_price`).
     price: Mapped[int] = mapped_column(Integer, nullable=False, server_default="30")
     price_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
