@@ -12,8 +12,5 @@ export const NOVEL_REFUND_CONFLICT_MESSAGE = {
   content: "그사이 이 작품으로 만든 노벨을 새로 산 회원이 생겨 조치를 되돌렸어요. 다시 눌러 주세요.",
 } as const;
 
-/** 정책 스위치가 켜졌을 때 원작 작품의 이용제한·삭제가 더 하는 일. 작품 조치 확인에 덧붙인다. */
-export const CONTENT_ACTION_NOVEL_REFUND_NOTE = "이 작품으로 만든 노벨을 산 회원에게는 쓴 클로버를 자동으로 돌려드려요.";
-
 /** 정책 스위치가 켜졌을 때 노벨 이용제한이 더 하는 일. 노벨 신고 처리 확정 앞에 덧붙인다. */
 export const NOVEL_RESTRICT_REFUND_NOTE = "이 노벨을 산 회원에게 쓴 클로버를 자동으로 돌려드려요.";

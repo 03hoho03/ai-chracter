@@ -3,6 +3,7 @@ import { ChevronDown } from "lucide-react";
 import { useId, useState } from "react";
 
 import { useNovelChapterQuery, type AdminNovelDetailResponse } from "@/entities/admin-novel";
+import { formatCount } from "@/shared/lib/format/formatCount";
 import { QueryState } from "@/shared/ui/QueryState";
 
 type NovelChapter = AdminNovelDetailResponse["chapters"][number];
@@ -12,7 +13,7 @@ type NovelChaptersSectionProps = {
   chapters: NovelChapter[];
 };
 
-/** 공개본 화 목록. 본문은 상세 응답에 없어 화를 펼칠 때 그 화만 불러온다 — 한 번에 하나만 펼친다(5천 자 남짓한 화 여럿이
+/** 공개본 화 목록. 행마다 지금 가격(무료·유료 화의 지금 표준가)과 판을 보인다. 본문은 상세 응답에 없어 화를 펼칠 때 그 화만 불러온다 — 한 번에 하나만 펼친다(5천 자 남짓한 화 여럿이
  * 한꺼번에 열리면 아래 심사·신고 칸이 멀리 밀린다). */
 export function NovelChaptersSection({ novelId, chapters }: NovelChaptersSectionProps) {
   const [openChapterId, setOpenChapterId] = useState<string | null>(null);
@@ -73,7 +74,9 @@ function ChapterRow({ novelId, chapter, isOpen, onToggle }: ChapterRowProps) {
         <span className="min-w-0 flex-1 break-keep text-sm font-medium text-foreground wrap-anywhere">
           {chapter.title || "(제목 없음)"}
         </span>
-        <span className="shrink-0 text-xs text-muted-foreground">{chapter.edition}판</span>
+        <span className="shrink-0 text-xs text-muted-foreground">
+          {chapter.price === 0 ? "무료" : `${formatCount(chapter.price)}클로버`} · {chapter.edition}판
+        </span>
         <ChevronDown aria-hidden className={isOpen ? "rotate-180 motion-safe:transition-transform" : "motion-safe:transition-transform"} />
       </Button>
       {isOpen && (

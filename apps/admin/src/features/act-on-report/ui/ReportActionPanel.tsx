@@ -1,16 +1,23 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useQueryClient } from "@tanstack/react-query";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
 import {
-  CONTENT_ACTION_NOVEL_REFUND_NOTE,
+  DERIVATIVE_NOVELS_DEFAULT,
+  DERIVATIVE_NOVELS_LEGEND,
+  DERIVATIVE_NOVELS_OPTIONS,
+  derivativeNovelsNote,
   isNovelRefundConflict,
+  isNovelSalesStopDisabled,
   NOVEL_REFUND_CONFLICT_MESSAGE,
+  NOVEL_SALES_STOP_DISABLED_MESSAGE,
+  toDerivativeNovelsField,
 } from "@/entities/admin-novel";
 import { useModerationActionMutation } from "@/entities/report";
-import { useSessionQuery } from "@/entities/session";
+import { sessionKeys, useSessionQuery } from "@/entities/session";
 import { ActionChoice, type ActionChoiceOption } from "@/shared/ui/ActionChoice";
 
 import {
@@ -57,8 +64,10 @@ const SUCCESS_MESSAGE: Record<ProcessAction, string> = {
 
 const ERROR_MESSAGE = "처리에 실패했어요. 잠시 후 다시 시도해주세요.";
 
-/** 이용제한·삭제 실패 문장. 그 작품으로 만든 노벨의 새 구매자 경합으로 조치 전체가 되돌려졌으면 다시 누르라고 한다. */
+/** 이용제한·삭제 실패 문장. 그 작품으로 만든 노벨의 새 구매자 경합으로 조치 전체가 되돌려졌으면 다시 누르라고 하고,
+ * 판매 중단을 골랐는데 그사이 정책 스위치가 꺼졌으면 그렇게 말한다(호출부가 세션을 새로 받는다). */
 function toProcessErrorMessage(error: unknown): string {
+  if (isNovelSalesStopDisabled(error)) return NOVEL_SALES_STOP_DISABLED_MESSAGE.content;
   return isNovelRefundConflict(error) ? NOVEL_REFUND_CONFLICT_MESSAGE.content : ERROR_MESSAGE;
 }
 
@@ -82,12 +91,21 @@ export function ReportActionPanel({
     formState: { errors },
   } = useForm<ReportActionFormValues>({
     resolver: zodResolver(reportActionSchema),
-    defaultValues: { adminComment: "" },
+    defaultValues: { adminComment: "", derivativeNovels: DERIVATIVE_NOVELS_DEFAULT },
   });
+  const queryClient = useQueryClient();
 
   const moderationAction = useModerationActionMutation(reportId);
   const action = useWatch({ control, name: "action" });
+  const derivativeNovelsChoice = useWatch({ control, name: "derivativeNovels" });
   const isPolicyOn = useSessionQuery().data?.novelPublicPolicyV2Enabled === true;
+  const isClosing = action === "restrict" || action === "delete";
+
+  /** 실패를 알리고, 스위치가 꺼져 판매 중단이 거부됐으면 세션을 새로 받아 고르는 칸을 꺼짐 화면으로 돌린다. */
+  function handleProcessError(error: unknown) {
+    toast.error(toProcessErrorMessage(error));
+    if (isNovelSalesStopDisabled(error)) void queryClient.invalidateQueries({ queryKey: sessionKeys.all });
+  }
 
   async function handleValidSubmit(values: ReportActionFormValues) {
     if (moderationAction.isPending) return;
@@ -96,18 +114,25 @@ export function ReportActionPanel({
     // 값이 남아 있어도 보내지 않는다.
     const adminComment =
       values.action === "reject" || values.adminComment === "" ? undefined : values.adminComment;
+    const derivativeNovels = toDerivativeNovelsField(
+      isPolicyOn,
+      values.action === "restrict" || values.action === "delete",
+      values.derivativeNovels,
+    );
 
     if (values.action === "delete") {
       void DeleteConfirmModal.call({
         contentName,
         mutationFn: async (call) => {
           try {
-            await moderationAction.mutateAsync({ action: "delete", adminComment });
+            await moderationAction.mutateAsync({ action: "delete", adminComment, derivativeNovels });
             toast.success(SUCCESS_MESSAGE.delete);
             call.end();
             onSuccess?.();
           } catch (error) {
-            toast.error(toProcessErrorMessage(error));
+            handleProcessError(error);
+            // 스위치가 꺼졌으면 고른 값이 뜻을 잃었다 — 확인 모달을 닫아 패널의 바뀐 설명을 보고 다시 고르게 한다.
+            if (isNovelSalesStopDisabled(error)) call.end();
           }
         },
       });
@@ -115,12 +140,12 @@ export function ReportActionPanel({
     }
 
     try {
-      await moderationAction.mutateAsync({ action: values.action, adminComment });
+      await moderationAction.mutateAsync({ action: values.action, adminComment, derivativeNovels });
       toast.success(SUCCESS_MESSAGE[values.action]);
-      reset({ adminComment: "" });
+      reset({ adminComment: "", derivativeNovels: DERIVATIVE_NOVELS_DEFAULT });
       onSuccess?.();
     } catch (error) {
-      toast.error(toProcessErrorMessage(error));
+      handleProcessError(error);
     }
   }
 
@@ -187,9 +212,24 @@ export function ReportActionPanel({
             <Textarea placeholder="관리자 코멘트 (선택)" aria-label="관리자 코멘트 (선택)" rows={3} {...register("adminComment")} />
           )}
 
-          {/* 정책 스위치가 켜져 있으면 이용제한·삭제가 이 작품으로 만든 노벨의 구매를 돌려준다 — 확정 전에 말한다. */}
-          {isPolicyOn && (action === "restrict" || action === "delete") && (
-            <p className="text-sm break-keep text-muted-foreground">{CONTENT_ACTION_NOVEL_REFUND_NOTE}</p>
+          {/* 정책 스위치가 켜져 있으면 이용제한·삭제가 이 작품으로 만든 노벨을 어떻게 할지 고른다 — 처음 값은 판매 중단이고,
+              환급 문장은 닫기를 골랐을 때만 나온다. 삭제는 확인 모달로 가기 전에 여기서 고른 값을 넘긴다. */}
+          {isPolicyOn && isClosing && (
+            <div className="flex flex-col gap-1.5">
+              <Controller
+                control={control}
+                name="derivativeNovels"
+                render={({ field }) => (
+                  <ActionChoice
+                    legend={DERIVATIVE_NOVELS_LEGEND}
+                    options={DERIVATIVE_NOVELS_OPTIONS}
+                    value={field.value}
+                    onValueChange={field.onChange}
+                  />
+                )}
+              />
+              <p className="text-sm break-keep text-muted-foreground">{derivativeNovelsNote(derivativeNovelsChoice, action === "delete" ? "delete" : "restrict")}</p>
+            </div>
           )}
 
           {/* 삭제를 고르면 확정 버튼도 destructive 틴트로 바뀐다 — 솔리드 레드 채움은 이 시스템에 없다. */}

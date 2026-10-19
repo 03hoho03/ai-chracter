@@ -9,11 +9,15 @@ import {
   type AdminHomeNovelCurationSlot,
   type AdminNovelDetailResponse,
 } from "@/entities/admin-novel";
+import { useSessionQuery } from "@/entities/session";
+import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 import { useRememberedListSearch } from "@/shared/lib/list-search-memory/listSearchMemory";
 
+import { salesStopReaderNote } from "../lib/hiddenReasons";
 import { HomeNovelCurationConfirmModal } from "./HomeNovelCurationConfirmModal";
 import { NovelModerationConfirmModal } from "./NovelModerationConfirmModal";
 import { NovelReviewConfirmModal } from "./NovelReviewConfirmModal";
+import { NovelSalesConfirmModal } from "./NovelSalesConfirmModal";
 
 type NovelActionsProps = {
   novel: AdminNovelDetailResponse;
@@ -22,7 +26,11 @@ type NovelActionsProps = {
 
 /** 조치 열·시트 하나에 홈 노벨과 상태 조치를 두 묶음으로 둔다(작품 상세와 같은 짜임) — 둘 다 이 노벨을 운영자가 바꾸는
  * 일이라 한 자리에서 찾고, 묶음 제목으로 어느 쪽 버튼인지 가른다. 첫 공개 승인 대기면 운영자가 지금 할 일이라 "첫 공개
- * 심사" 묶음을 맨 위에 더한다. 대기 중에도 이용제한은 걸 수 있어 나머지 두 묶음은 그대로 둔다. */
+ * 심사" 묶음을 맨 위에 더한다. 대기 중에도 이용제한은 걸 수 있어 나머지 두 묶음은 그대로 둔다.
+ *
+ * 상태 조치는 정책 스위치(`/admin/me` 의 `novelPublicPolicyV2Enabled`)가 켜져 있으면 판매 중단을 이용제한보다 위에 둔다 —
+ * 산 회원의 열람을 남기는 가벼운 조치를 먼저 보게 하고, 열람을 끊고 환급하는 이용제한은 불가피할 때 고르게 한다. 꺼져
+ * 있으면 판매 중단이 없던 때와 같은 화면이다(멈춘 채 스위치가 꺼진 노벨만 상태와 막힌 재개 버튼을 보인다). */
 export function NovelActions({ novel, onSuccess }: NovelActionsProps) {
   const reviewHeadingId = useId();
   const curationHeadingId = useId();
@@ -30,6 +38,7 @@ export function NovelActions({ novel, onSuccess }: NovelActionsProps) {
   const novelTitle = novel.title || "(제목 없음)";
   const isRestricted = novel.moderationStatus === "restricted";
   const isPendingReview = novel.reviewStatus === "pending";
+  const isPolicyOn = useSessionQuery().data?.novelPublicPolicyV2Enabled === true;
   const navigate = useNavigate();
   const rememberedListSearch = useRememberedListSearch("/novels/");
   const goToList = () => void navigate({ to: "/novels", search: rememberedListSearch ?? {} });
@@ -77,8 +86,11 @@ export function NovelActions({ novel, onSuccess }: NovelActionsProps) {
         <h3 id={moderationHeadingId} className="text-sm font-semibold text-foreground">
           상태 조치
         </h3>
+        {(isPolicyOn || novel.salesStoppedAt !== null) && (
+          <NovelSalesActions novel={novel} novelTitle={novelTitle} isPolicyOn={isPolicyOn} onSuccess={onSuccess} />
+        )}
         <p className="break-keep text-sm text-muted-foreground">
-          {isRestricted ? "이용제한 중이에요. 독자에게 보이지 않아요." : "이용제한하면 독자 목록·열람에서 바로 빠져요."}
+          {restrictionDescription(isRestricted, isPolicyOn)}
         </p>
         <Button
           type="button"
@@ -95,6 +107,59 @@ export function NovelActions({ novel, onSuccess }: NovelActionsProps) {
           {isRestricted ? "이용제한 해제" : "이용제한"}
         </Button>
       </section>
+    </div>
+  );
+}
+
+/** 이용제한 설명. 스위치가 켜져 있으면 판매 중단이 위에 있어, 이용제한은 열람까지 막아야 할 때 쓰는 것임을 말한다. */
+function restrictionDescription(isRestricted: boolean, isPolicyOn: boolean): string {
+  if (isRestricted) return "이용제한 중이에요. 독자에게 보이지 않아요.";
+  if (isPolicyOn) {
+    return "이용제한은 열람까지 막아야 할 때만 써요. 독자 목록·열람에서 바로 빠지고, 산 회원에게 클로버를 돌려드려요.";
+  }
+  return "이용제한하면 독자 목록·열람에서 바로 빠져요.";
+}
+
+type NovelSalesActionsProps = {
+  novel: AdminNovelDetailResponse;
+  novelTitle: string;
+  isPolicyOn: boolean;
+  onSuccess: () => void;
+};
+
+/** 판매 중단·재개. 이용제한과 따로 걸리고 따로 풀려, 이용제한 중이어도 판매 중단 상태를 따로 보인다. 서버는 스위치가 꺼져
+ * 있으면 재개도 거부하므로(끄기 전에 재개하는 것이 순서다) 꺼짐에서는 재개 버튼을 막고 이유를 버튼 바로 아래에 적는다. */
+function NovelSalesActions({ novel, novelTitle, isPolicyOn, onSuccess }: NovelSalesActionsProps) {
+  const disabledReasonId = useId();
+  const isStopped = novel.salesStoppedAt !== null;
+  const action = isStopped ? "resume" : "stop";
+
+  return (
+    <div className="flex flex-col gap-2 border-b border-border pb-3">
+      <p className="break-keep text-sm text-muted-foreground">
+        {novel.salesStoppedAt !== null
+          ? `${formatDateTime(novel.salesStoppedAt)}부터 판매 중단 중이에요. 목록·홈에 보이지 않고 새로 팔지 않아요. ${salesStopReaderNote(isPolicyOn)}`
+          : "판매를 멈추면 목록·홈에서 빠지고 새로 팔지 않아요. 산 회원은 계속 읽고 환급은 없어요. 게시자는 새 화·다시 공개를 낼 수 없어요."}
+      </p>
+      {/* 막아도 포커스는 받게 `aria-disabled` 로 둔다 — 키보드로 닿아야 이유 문장이 함께 읽힌다. */}
+      <Button
+        type="button"
+        variant="outline"
+        aria-disabled={!isPolicyOn}
+        aria-describedby={isPolicyOn ? undefined : disabledReasonId}
+        className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
+        onClick={() => {
+          if (!isPolicyOn) return;
+          void NovelSalesConfirmModal.call({ novelId: novel.id, novelTitle, action, onSuccess });
+        }}
+      >
+        {isStopped ? "판매 재개" : "판매 중단"}
+      </Button>
+      {!isPolicyOn && (
+        <p id={disabledReasonId} className="break-keep text-xs text-muted-foreground">
+          정책 스위치가 꺼져 있어 재개할 수 없어요. 스위치를 다시 켜야 재개할 수 있어요.
+        </p>
+      )}
     </div>
   );
 }

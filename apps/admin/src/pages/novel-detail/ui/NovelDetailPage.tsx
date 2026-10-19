@@ -13,6 +13,7 @@ import {
   type AdminNovelDetailResponse,
 } from "@/entities/admin-novel";
 import { REPORT_REASON_LABELS, REPORT_STATUS_LABELS } from "@/entities/report";
+import { useSessionQuery } from "@/entities/session";
 import { formatCount } from "@/shared/lib/format/formatCount";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 import { useRememberedListSearch } from "@/shared/lib/list-search-memory/listSearchMemory";
@@ -70,7 +71,13 @@ function NovelDetailBody({ novelId }: NovelDetailPageProps) {
           actions={{
             title: "조치",
             triggerLabel: "조치하기",
-            summary: `${novelPublicationLabel(novel)} · ${NOVEL_MODERATION_STATUS_LABELS[novel.moderationStatus]}`,
+            summary: [
+              novelPublicationLabel(novel),
+              NOVEL_MODERATION_STATUS_LABELS[novel.moderationStatus],
+              novel.salesStoppedAt !== null && "판매 중단",
+            ]
+              .filter(Boolean)
+              .join(" · "),
             render: (host) => <NovelActions novel={novel} onSuccess={host.onDone} />,
           }}
         >
@@ -86,7 +93,7 @@ function NovelDetailBody({ novelId }: NovelDetailPageProps) {
 }
 
 function NovelSummary({ novel }: { novel: AdminNovelDetailResponse }) {
-  const reasons = hiddenReasons(novel);
+  const reasons = hiddenReasons(novel, useSessionQuery().data?.novelPublicPolicyV2Enabled === true);
 
   return (
     <section className={`${SECTION_CLASS} gap-4`}>
@@ -96,6 +103,12 @@ function NovelSummary({ novel }: { novel: AdminNovelDetailResponse }) {
           <span aria-hidden>·</span>
           <span>{NOVEL_MODERATION_STATUS_LABELS[novel.moderationStatus]}</span>
           <span aria-hidden>·</span>
+          {novel.salesStoppedAt !== null && (
+            <>
+              <span>판매 중단</span>
+              <span aria-hidden>·</span>
+            </>
+          )}
           <span className={novel.readable ? undefined : "text-destructive-text"}>
             {novel.readable ? "독자에게 보임" : "독자에게 안 보임"}
           </span>
@@ -136,13 +149,18 @@ function NovelSummary({ novel }: { novel: AdminNovelDetailResponse }) {
         <div className="min-w-0">
           <dt className="text-muted-foreground">게시자</dt>
           <dd className="flex flex-wrap items-baseline gap-x-2">
-            <Link
-              to="/users/$userId"
-              params={{ userId: novel.publisherUserId }}
-              className="admin-hit-area break-keep font-medium text-primary wrap-anywhere hover:underline focus-visible:underline"
-            >
-              {novel.publisherNickname ?? "(탈퇴한 게시자)"}
-            </Link>
+            {/* 탈퇴한 회원은 회원 상세가 없어(404) 링크를 걸지 않는다. */}
+            {novel.publisherWithdrawn ? (
+              <span className="text-muted-foreground">탈퇴한 회원</span>
+            ) : (
+              <Link
+                to="/users/$userId"
+                params={{ userId: novel.publisherUserId }}
+                className="admin-hit-area break-keep font-medium text-primary wrap-anywhere hover:underline focus-visible:underline"
+              >
+                {novel.publisherNickname ?? "(탈퇴한 게시자)"}
+              </Link>
+            )}
             {novel.publisherSuspended && <span className="text-xs text-destructive-text">이용정지 중</span>}
           </dd>
         </div>

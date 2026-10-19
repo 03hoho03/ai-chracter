@@ -54,6 +54,7 @@ export function NovelReportDetailBody({ reportId }: { reportId: string }) {
                       노벨 상세 보기
                       {report.novelModerationStatus !== null &&
                         ` · ${NOVEL_MODERATION_STATUS_LABELS[report.novelModerationStatus]}`}
+                      {report.novelSalesStoppedAt !== null && " · 판매 중단"}
                     </Link>
                   )}
                 </dd>

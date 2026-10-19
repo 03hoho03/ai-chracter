@@ -28,6 +28,8 @@ export const PROCESS_OPTIONS = PROCESS_ACTION_VALUES.map((value) => ({
 export const reportActionSchema = z.object({
   action: z.enum(PROCESS_ACTION_VALUES, { message: "처리 방법을 선택해주세요" }),
   adminComment: z.string().trim(),
+  /** 이용제한·삭제가 이 작품으로 만든 노벨을 어떻게 할지. 정책 스위치가 켜져 있을 때만 보이고 실린다(패널이 가른다). */
+  derivativeNovels: z.enum(["stop_sales", "close"]),
 });
 
 export type ReportActionFormValues = z.infer<typeof reportActionSchema>;
