@@ -208,6 +208,50 @@ async def test_the_publisher_reads_every_chapter_without_buying(
     assert chapter["paragraphs"] == ["8화 본문"]
 
 
+async def test_each_chapter_is_free_or_paid_by_its_own_stored_price(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """가격은 화마다 저장된 값이다 — 7화를 무료(0)로, 8화를 40 으로 공개했으면 사지 않은 독자에게 7화는 무료(본문·읽은 자리
+    저장·댓글이 열린다)이고 8화는 40 이다. 6화 화면의 다음 화 링크도 7화를 무료로 알린다. 앞 5화는 저장값이 30 이어도(가격
+    칸을 모르는 옛 코드가 공개하면 기본값이 들어간다) 무료다. 깨지는 시나리오: 화 번호로만 무료를 판정하는 곳이 하나라도
+    남아 무료로 공개한 화가 그 화면에서만 잠기거나, 옛 코드가 넣은 기본값 때문에 앞 화가 잠긴다."""
+    novel = await _novel(db_session)
+    reader = await _member(db_session)
+    for ordinal, price in ((1, 30), (7, 0), (8, 40)):
+        await db_session.execute(
+            sa.update(NovelChapterPublication)
+            .where(NovelChapterPublication.chapter_id == novel.chapter_ids[ordinal - 1])
+            .values(price=price)
+        )
+    await db_session.commit()
+
+    detail = (await _get(db_client, f"/webnovels/{novel.novel_id}", as_user=reader)).json()
+    seventh = (await db_client.get(_chapter_path(novel, 7))).json()
+    eighth = (await db_client.get(_chapter_path(novel, 8))).json()
+    sixth = (await db_client.get(_chapter_path(novel, 6))).json()
+    position = await db_client.put(
+        f"{_chapter_path(novel, 7)}/reading-position",
+        json={"paragraphIndex": 0, "paragraphCount": 1, "edition": 1, "finished": False},
+    )
+    comment = await db_client.post(f"{_chapter_path(novel, 7)}/comments", json={"body": "무료로 읽었어요"})
+
+    assert [(c["ordinal"], c["access"], c["price"]) for c in detail["chapters"]] == [
+        (1, "free", None),
+        (2, "free", None),
+        (3, "free", None),
+        (4, "free", None),
+        (5, "free", None),
+        (6, "locked", 30),
+        (7, "free", None),
+        (8, "locked", 40),
+    ]
+    assert (seventh["access"], seventh["price"], seventh["paragraphs"]) == ("free", None, ["7화 본문"])
+    assert (eighth["access"], eighth["price"], eighth["paragraphs"]) == ("locked", 40, None)
+    assert (sixth["previousChapter"]["access"], sixth["nextChapter"]["access"]) == ("free", "free")
+    assert position.status_code == 204
+    assert comment.status_code == 201, comment.text
+
+
 async def test_cover_is_the_source_thumbnail_until_the_source_creator_withdraws(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

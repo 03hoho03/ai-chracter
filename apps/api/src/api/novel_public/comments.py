@@ -55,7 +55,7 @@ async def require_chapter_reader(
     자리 저장과 같은 판정이다."""
     row = (
         await db.execute(
-            select_readable_publications(Novel.user_id, NovelChapterPublication.ordinal)
+            select_readable_publications(Novel.user_id, NovelChapterPublication.ordinal, NovelChapterPublication.price)
             .join(NovelChapterPublication, NovelChapterPublication.novel_id == NovelPublication.novel_id)
             .where(NovelPublication.novel_id == novel_id, NovelChapterPublication.chapter_id == chapter_id)
         )
@@ -64,8 +64,9 @@ async def require_chapter_reader(
         raise _error(status.HTTP_404_NOT_FOUND, "NOVEL_CHAPTER_NOT_FOUND")
     publisher_id: uuid.UUID = row[0]
     ordinal: int = row[1]
+    price: int = row[2]
     owned = await _owned_chapter_ids(db, user_id, novel_id)
-    if _chapter_access(ordinal, chapter_id, is_publisher=publisher_id == user_id, owned=owned) == "locked":
+    if _chapter_access(ordinal, price, chapter_id, is_publisher=publisher_id == user_id, owned=owned) == "locked":
         raise _error(status.HTTP_403_FORBIDDEN, "NOVEL_CHAPTER_LOCKED")
     return publisher_id
 

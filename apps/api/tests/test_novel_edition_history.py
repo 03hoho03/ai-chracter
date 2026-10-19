@@ -222,3 +222,33 @@ async def test_with_the_policy_switch_off_picking_an_edition_still_serves_the_cu
     assert resp.status_code == 200, resp.text
     assert (resp.json()["edition"], resp.json()["paragraphs"]) == (2, ["고친 6화"])
     assert _purchased_edition(resp.json()) is None
+
+
+async def test_a_buyer_keeps_picking_the_edition_bought_after_the_chapter_is_made_free(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """6화를 1판일 때 산 뒤 작가가 2판을 내고 그 화를 무료로 바꿨다. 목차와 화 응답은 그 화를 무료로 알리지만, 산 사람은 여전히
+    산 때의 판(1판)을 알림받고 골라 읽는다. 사지 않은 독자는 무료가 된 화의 지금 판만 읽는다. 깨지는 시나리오: 판 고르기가
+    소장 표시(`owned`)에만 걸려 있어, 무료가 되는 순간 산 사람이 산 글을 잃는다."""
+    novel = await _novel(db_session)
+    buyer, stranger = await _member(db_session), await _member(db_session)
+    await _buy(db_client, novel, 6, buyer)
+    bought_at = await _first_published_at(db_session, novel, 6)
+    await _republish(db_session, novel, 6, body="고친 6화", title="6", note="", at=bought_at + timedelta(days=1))
+    await db_session.execute(
+        sa.update(NovelChapterPublication)
+        .where(NovelChapterPublication.chapter_id == novel.chapter_ids[5])
+        .values(price=0)
+    )
+    await db_session.commit()
+
+    latest = await _read(db_client, novel, 6, as_user=buyer)
+    bought = await _read(db_client, novel, 6, as_user=buyer, edition=1)
+    toc = (await db_client.get(f"/webnovels/{novel.novel_id}")).json()["chapters"][5]
+    stranger_old = await _read(db_client, novel, 6, as_user=stranger, edition=1)
+
+    assert (latest.json()["access"], latest.json()["price"]) == ("free", None)
+    assert _purchased_edition(latest.json()) == (1, bought_at)
+    assert (bought.status_code, bought.json()["paragraphs"]) == (200, ["6화 본문"])
+    assert (toc["access"], toc["price"]) == ("free", None)
+    assert stranger_old.status_code == 404

@@ -741,7 +741,8 @@ class Settings(BaseSettings):
     novel_public_preview_allowlist: Annotated[list[uuid.UUID], NoDecode] = []
     # 노벨 공개 정책 스위치. 꺼져 있으면(기본값) 지금 약관대로다 — 첫 공개는 자동 글 심사를 통과하면 바로 독자에게 열리고,
     # 원작자가 소설화 허락을 거두면 다음 화 공개가 막힌다. 켜면 아직 독자에게 보인 적 없는 소설의 첫 공개가 운영자 승인을
-    # 기다리고, 한 번 독자에게 보인 소설은 원작자가 허락을 거둬도 다음 화를 이어 공개한다. 개정 약관이 시행된 뒤에 켠다.
+    # 기다리고, 한 번 독자에게 보인 소설은 원작자가 허락을 거둬도 다음 화를 이어 공개한다. 6화부터 화마다 무료·유료를
+    # 고르고 유료 화를 무료로 바꾸는 것도 켜졌을 때만 된다. 개정 약관이 시행된 뒤에 켠다.
     novel_public_policy_v2_enabled: bool = False
 
     @field_validator(
