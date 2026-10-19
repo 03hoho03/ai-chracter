@@ -289,13 +289,16 @@ async def test_a_withdrawal_racing_a_purchase_refunds_it_once_or_stops_it_withou
     await _bought(world, novel, buyer, 6)
     holder = await _hold_user(world, lower)
     purchase = _purchase_task(world, novel, buyer, 7)
-    withdrawal = _withdraw_task(publisher)
+    tasks = [purchase]
     try:
+        # 탈퇴는 구매가 막힌 뒤에 띄운다 — 함께 띄우면 탈퇴가 먼저 줄을 서 엇갈린 잠금이 생기지 않을 수 있다.
         await _assert_blocked(purchase)
+        withdrawal = _withdraw_task(publisher)
+        tasks.append(withdrawal)
         await _assert_blocked(withdrawal)
-        bought, withdrawn = await _settle(holder, [purchase, withdrawal])
+        bought, withdrawn = await _settle(holder, tasks)
     finally:
-        await _close_quietly(holder, [purchase, withdrawal])
+        await _close_quietly(holder, tasks)
 
     assert withdrawn == 204
     assert isinstance(bought, NovelChapterPurchaseResponse) or (
