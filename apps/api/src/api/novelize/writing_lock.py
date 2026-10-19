@@ -11,14 +11,29 @@ from datetime import datetime
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.core.config import settings
+from api.db.models.auth import User
 from api.db.models.content import Content
 from api.db.models.novel import Novel, NovelJob
 
 
 def refuses_novelize(content: Content, user_id: uuid.UUID) -> bool:
     """작가가 소설화를 허용하지 않았고 `user_id` 가 그 작가가 아니다. 허락은 남에게 거는 조건이라 작가 본인은 늘
-    통과한다. 새 소설 만들기·방 응답의 차단 표시·잠기기 전 소설의 생성 경로가 같은 판정을 쓴다."""
+    통과한다."""
     return content.novel_permission == "forbidden" and content.creator_user_id != user_id
+
+
+async def novelize_refused(db: AsyncSession, content: Content, user_id: uuid.UUID) -> bool:
+    """`user_id` 가 이 작품으로 아직 권리를 얻지 않은 소설화(새 소설 만들기, 잠기기 전 소설의 생성)를 할 수 없는가 — 작가가
+    허용하지 않았거나(`refuses_novelize`), 정책 스위치가 켜졌고 작가가 탈퇴했다. 탈퇴한 작가의 작품으로 새 소설화를 시작하지
+    않게 하려는 것이고, 첫 화를 저장해 잠긴 소설은 이 판정을 지나지 않는다(이미 얻은 권리). 새 소설 만들기·방 응답의 차단
+    표시·잠기기 전 소설의 생성 경로가 같은 판정을 쓴다. 작가 탈퇴는 허락이 막지 않을 때만 조회한다."""
+    if refuses_novelize(content, user_id):
+        return True
+    if not settings.novel_public_policy_v2_enabled or content.creator_user_id == user_id:
+        return False
+    withdrawn_at = await db.scalar(select(User.deleted_at).where(User.id == content.creator_user_id))
+    return withdrawn_at is not None
 
 
 async def lock_with_first_chapter(db: AsyncSession, novel_id: uuid.UUID, content_version_id: uuid.UUID | None) -> None:

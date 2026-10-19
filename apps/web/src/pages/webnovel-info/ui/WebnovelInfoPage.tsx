@@ -121,7 +121,7 @@ function WebnovelInfoContent({ novel }: { novel: WebnovelDetailResponse }) {
                 원작자 · <span className="text-foreground">{credit.creatorNickname}</span>
               </p>
             )}
-            {novel.publisherNickname !== null && (
+            {novel.publisherNickname !== null && novel.publisherUserId !== null && (
               <p className="min-w-0 break-keep text-muted-foreground">
                 게시자 ·{" "}
                 <Link

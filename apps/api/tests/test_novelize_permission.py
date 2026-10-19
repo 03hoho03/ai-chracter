@@ -22,6 +22,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core import clover
+from api.core.config import settings
 from api.db.models import ChatRoom, Content, Novel, NovelChapter, NovelChapterRevision, NovelJob, User
 from api.llm.client import LLMCallContext, LLMClient, LLMClientError, T
 from api.novelize import router as novelize_router
@@ -31,6 +32,7 @@ from factories import (
     _allow_novelize,
     _clear_llm_override,
     _lock_novel,
+    _login_as,
     _make_user,
     _novel_ledger,
     _novel_setup,
@@ -485,3 +487,95 @@ async def test_room_response_says_whether_a_new_novel_is_blocked(
     if novel in ("unlocked_succeeded_job", "unlocked_failed_job"):
         # 방 응답은 읽기만 한다 — 잠금은 생성 경로에서만 쓴다.
         assert await _lock(db_session, novel_id) == (None, None, None, None)
+
+
+# ── 원작자 탈퇴 뒤 새 소설화(정책 스위치 켜짐) ─────────────────────────────────
+async def _creator_withdraws(db_client: httpx.AsyncClient, db_session: AsyncSession, room: Room) -> None:
+    """방 원작의 작가가 실제 탈퇴(`DELETE /me`)로 떠난다. 끝나면 방 주인으로 다시 로그인한다."""
+    creator = await db_session.scalar(
+        sa.select(Content.creator_user_id)
+        .join(ChatRoom, ChatRoom.content_id == Content.id)
+        .where(ChatRoom.id == room.room_id)
+    )
+    assert creator is not None and creator != room.user_id
+    await _login_as(db_client, creator)
+    assert (await db_client.delete("/me")).status_code == 204
+    await _login_as(db_client, room.user_id)
+
+
+def _policy(monkeypatch: pytest.MonkeyPatch, *, on: bool) -> None:
+    monkeypatch.setattr(settings, "novel_public_policy_v2_enabled", on)
+
+
+@pytest.mark.parametrize("policy_on", [True, False], ids=["on", "off"])
+async def test_a_chat_without_a_novel_cannot_start_one_after_the_creator_withdraws(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, policy_on: bool
+) -> None:
+    """원작자가 탈퇴하면 그 원작의 대화에서 새로 소설을 시작할 수 없고(403, 소설 행 없음), 방 응답도 막힘으로 보인다 — 허락이
+    공개였어도 그렇다. 스위치가 꺼져 있으면 지금처럼 만든다. 깨지는 시나리오: 떠난 원작자의 작품으로 새 소설화가 계속
+    시작되거나, 스위치를 끈 운영에서 그 동작이 먼저 바뀐다."""
+    _policy(monkeypatch, on=policy_on)
+    room = await _room_without_novel(db_client, db_session, monkeypatch, actor="other", permission="public")
+    await _creator_withdraws(db_client, db_session, room)
+
+    room_resp = await db_client.get(f"/chat-rooms/{room.room_id}")
+    resp = await db_client.post(f"/chat-rooms/{room.room_id}/novel")
+
+    novels = await db_session.scalar(
+        sa.select(sa.func.count()).select_from(Novel).where(Novel.chat_room_id == room.room_id)
+    )
+    assert room_resp.status_code == 200, room_resp.text
+    assert room_resp.json()["novelCreationBlocked"] is policy_on
+    if policy_on:
+        assert (resp.status_code, resp.json()["detail"]) == _FORBIDDEN
+        assert novels == 0
+    else:
+        assert resp.status_code == 201, resp.text
+        assert novels == 1
+
+
+@pytest.mark.parametrize("policy_on", [True, False], ids=["on", "off"])
+@pytest.mark.parametrize("action", _ROUTES_WITHOUT_A_CHAPTER)
+async def test_an_empty_novel_cannot_call_the_model_after_the_creator_withdraws(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    llm: _CountingLLM,
+    action: str,
+    policy_on: bool,
+) -> None:
+    """첫 화가 없는 빈 소설은 고정된 권리가 없다 — 원작자가 탈퇴하면 모델을 부르는 경로가 차감·작업 행·모델 호출 없이 403
+    이다. 스위치가 꺼져 있으면 지금처럼 받아들인다. 깨지는 시나리오: 빈 소설을 미리 만들어 두는 것으로 원작자 탈퇴 뒤의 새
+    소설화 차단을 피한다."""
+    _policy(monkeypatch, on=policy_on)
+    room, novel_id = await _empty_novel(db_client, db_session, monkeypatch, actor="other", permission="public")
+    await _creator_withdraws(db_client, db_session, room)
+    balance = await _balance(db_session, room.user_id)
+
+    resp = await _request(action, db_client, db_session, room, novel_id, None)
+
+    if not policy_on:
+        assert resp.status_code == _MODEL_ROUTES[action], resp.text
+        return
+    assert (resp.status_code, resp.json()["detail"]) == _FORBIDDEN
+    assert await _job_count(db_session, novel_id) == 0
+    assert await _balance(db_session, room.user_id) == balance
+    assert llm.calls == 0
+
+
+async def test_a_novel_with_a_saved_first_chapter_keeps_going_after_the_creator_withdraws(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """첫 화를 저장해 집필권이 고정된 소설은 원작자가 탈퇴해도 다음 화를 만들고, 방 응답도 막히지 않는다. 깨지는 시나리오:
+    원작자 탈퇴가 이미 고정된 남의 집필까지 끊는다."""
+    _policy(monkeypatch, on=True)
+    room, novel_id, chapter_id = await _novel_with_chapter(
+        db_client, db_session, monkeypatch, actor="other", permission="public"
+    )
+    await _creator_withdraws(db_client, db_session, room)
+
+    room_resp = await db_client.get(f"/chat-rooms/{room.room_id}")
+    resp = await _request("next_chapter", db_client, db_session, room, novel_id, chapter_id)
+
+    assert room_resp.json()["novelCreationBlocked"] is False
+    assert resp.status_code == 202, resp.text

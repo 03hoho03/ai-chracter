@@ -74,8 +74,9 @@ NovelWritingLockSource = Literal["first_chapter", "backfill"]
 # 연재권 잠금이 어디서 왔는지. 첫 공개가 쓴 잠금과, 이 칸이 생기기 전에 이미 공개한 소설에 마이그레이션이 채운 잠금을
 # 가른다 — 뒤의 것은 그때 원작 권한을 알 수 없다.
 NovelSerialLockSource = Literal["first_publish", "backfill"]
-# 노벨 구매를 왜 환급했는가. 게시자가 소설·마지막 묶음을 지움 / 게시자 탈퇴 / 운영자의 노벨 이용제한 / 원작의 자체 이용제한
-# / 원작 삭제. 독자에게 열람이 끝난 이유를 알려 줄 때 이 값을 읽는다.
+# 노벨 구매를 왜 환급했는가. 게시자가 소설·마지막 묶음을 지움 / 게시자 탈퇴(새로 쓰지 않는다 — 탈퇴는 판매된 소설을 숨겨
+# 남기고 환급하지 않는다) / 운영자의 노벨 이용제한 / 원작의 자체 이용제한 / 원작 삭제. 독자에게 열람이 끝난 이유를 알려 줄 때
+# 이 값을 읽는다.
 NovelPurchaseRefundReason = Literal[
     "deleted", "publisher_withdrawn", "novel_restricted", "source_restricted", "source_deleted"
 ]
@@ -99,8 +100,8 @@ class Novel(Base):
     두었다가 첫 장을 만들기 전에 입력받는다. 나중에 바꿔도 이미 만든 장 본문은
     그대로다.
 
-    `hidden_at` 은 노벨로 팔린 소설을 작가가 지운 시각이다. 산 사람이 계속 읽을 수 있게 소설과 하위 행을 그대로 두고
-    작가에게서만 감춘다(작가 목록·주소에서 사라지고, 방 칸을 비워 같은 방에서 새 소설을 만들 수 있다). 미환급 소장자가
+    `hidden_at` 은 노벨로 팔린 소설을 작가가 지웠거나 그 작가가 탈퇴해 숨긴 시각이다. 산 사람이 계속 읽을 수 있게 소설과
+    하위 행을 그대로 두고 작가에게서만 감춘다(작가 목록·주소에서 사라지고, 방 칸을 비워 같은 방에서 새 소설을 만들 수 있다). 미환급 소장자가
     모두 사라지면 하루 한 번 도는 파기가 진짜로 지운다."""
 
     __tablename__ = "novels"
@@ -665,10 +666,10 @@ class NovelChapterPublication(Base):
     published_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    # 이 화를 사는 값(클로버, 0 = 무료). 처음 공개 때 정해 얼리고 다시 공개가 덮지 않는다 — 화당 가격 상수를 바꿔도 이미
-    # 공개한 화는 그대로이고, 무료로 공개한 화는 무료로 남는다. 유료에서 무료로만 바꿀 수 있고 그 시각을 `price_changed_at`
-    # 에 남긴다(공개 때 정한 그대로면 비어 있다). 기본값 30 은 이 칸을 모르는 옛 코드의 INSERT 가 유료 값을 쓰게 하려는
-    # 것이다 — 0 이면 배포 겹침 동안 옛 코드가 공개한 6화 이후가 되돌릴 수 없는 무료가 된다. 그래서 옛 코드가 넣은 앞
+    # 이 화가 무료(0)인지 유료(그 밖)인지. 유료 화의 가격은 이 값이 아니라 늘 지금 화당 가격 상수다(`chapter_price`) —
+    # 상수를 바꾸면 이미 공개한 유료 화도 새 값으로 팔린다. 처음 공개 때 정하고 다시 공개가 덮지 않으므로 무료로 공개한 화는
+    # 무료로 남는다. 유료에서 무료로만 바꿀 수 있고 그 시각을 `price_changed_at` 에 남긴다(공개 때 정한 그대로면 비어
+    # 있다). 기본값 30 은 이 칸을 모르는 옛 코드의 INSERT 가 유료 값을 쓰게 하려는 것이다 — 0 이면 배포 겹침 동안 옛 코드가 공개한 6화 이후가 되돌릴 수 없는 무료가 된다. 그래서 옛 코드가 넣은 앞
     # 무료 화에는 30 이 들어갈 수 있고, 읽는 쪽은 앞 무료 화를 이 값과 무관하게 무료로 판정한다(`chapter_price`).
     price: Mapped[int] = mapped_column(Integer, nullable=False, server_default="30")
     price_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -719,6 +720,28 @@ class NovelChapterEdition(Base):
         Index("ix_novel_chapter_editions_novel_id", "novel_id"),
         Index("ix_novel_chapter_editions_revision_id", "revision_id"),
     )
+
+
+class NovelFreeOrdinal(Base):
+    """소설마다 무료로 독자에게 내놓은 적이 있는 화 번호. 독자에게 한 번 무료로 준 번호는 그 화를 지우고 다시 만들어도
+    무료로 공개한다 — 화를 지우면 화 공개본(과 그 가격 칸)이 함께 사라지고 다시 만든 화는 새 화라, 화 공개본만으로는 "이
+    번호는 무료였다"를 기억하지 못한다. 그래서 화가 아니라 (소설, 번호)로 남긴다.
+
+    6화부터를 무료로 공개할 때와 유료 화를 무료로 바꿀 때 한 행이 생기고 지워지지 않는다(소설과 함께 지워질 뿐이다). 앞 무료
+    화(`NOVEL_FREE_CHAPTER_COUNT` 까지)는 상수가 무료로 지키므로 남기지 않는다. 소설 행 칸이 아니라 따로 둔 표인 것은 기록이
+    소설 행을 잠그지 않게 하려는 것이다 — 이 표의 INSERT 는 FK 로 소설 행에 가장 약한 공유 잠금만 걸어 소설 행 UPDATE 와
+    부딪치지 않는다.
+
+    소설을 지우면 함께 지워지는 `ON DELETE CASCADE` 다 — 이 표를 모르는 옛 코드의 소설 삭제·숨긴 소설 파기가 FK 위반이 되지
+    않게. 복합 PK 와 CHECK 는 `alembic check` 가 비교하지 않아 `pytest.raises(IntegrityError)` 행위 테스트가 검증한다."""
+
+    __tablename__ = "novel_free_ordinals"
+
+    novel_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("novels.id", ondelete="CASCADE"), primary_key=True)
+    ordinal: Mapped[int] = mapped_column(Integer, primary_key=True)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (CheckConstraint("ordinal >= 1", name="ck_novel_free_ordinals_ordinal_positive"),)
 
 
 class NovelScreening(Base):

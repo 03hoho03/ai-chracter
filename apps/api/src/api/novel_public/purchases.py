@@ -1,18 +1,20 @@
 """노벨 화 소장 구매와, 산 화를 더 읽을 수 없게 될 때의 자동 환급.
 
-**구매**는 화 하나를 클로버로 소장하는 것이다. 가격은 화마다 처음 공개 때 얼린 값(`NovelChapterPublication.price`)이고,
-소설마다 앞 화들(`NOVEL_FREE_CHAPTER_COUNT`)은 그 값과 무관하게 무료다(`chapter_price`). 무료 화와 게시자 본인의 열람은 살
+**구매**는 화 하나를 클로버로 소장하는 것이다. 화마다 무료·유료는 화 공개본에 저장된 값(`NovelChapterPublication.price`,
+0 = 무료)이 정하고 유료 화의 가격은 늘 지금 화당 가격(`NOVEL_READ_COST`)이며, 소설마다 앞 화들(`NOVEL_FREE_CHAPTER_COUNT`)은
+그 값과 무관하게 무료다(`chapter_price`). 구매 행에는 그때 낸 값을 남기고 환급은 그 값을 돌려준다. 무료 화와 게시자 본인의 열람은 살
 것이 없다(원작자도 무료가 아니다 — 원작자는 이 소설을 쓴 사람이 아니다). 산 뒤 작가가 그 화를 무료로 바꿔도 환불하지 않는다. 환급되지 않은 구매가 있는 화는 다시 사지 않는다.
 다시 공개로 본문이 바뀌어도 같은 화이고, 거뒀다 다시 공개하면 소장이 그대로 살아난다(구매 행은 공개 상태를 따라 지워지지
 않는다). 환급된 구매는 소장이 아니다 — 그 화가 다시 열리면 다시 산다. 무료·보너스 클로버로도 산다 — 차감 순서는 다른 차감과
 같다.
 
 **환급** — 산 화를 더 읽을 수 없게 만드는 쓰기마다 그 구매를 환급하고 사유(`refund_reason`)를 적는다. 게시자가 산 화가 든
-소설이나 마지막 묶음을 지우는 것(`deleted`)은 늘 환급한다. 정책 스위치(`novel_public_policy_v2_enabled`)가 켜져 있으면 게시자
-탈퇴(`publisher_withdrawn`), 운영자의 노벨 이용제한(`novel_restricted`), 원작의 자체 이용제한·삭제(`source_restricted`·
-`source_deleted`)도 환급한다 — 켜져 있을 때는 산 사람이 읽지 못하게 되는 경우와 환급되는 경우가 같다. 공개 거둠·게시자
-정지·원작자 정지로 인한 원작 일괄 제한·판매된 소설 삭제(숨김)는 환급하지 않는다 — 산 사람은 계속 읽는다(`access.py` 의
-소장자 열람 조건). 다시 열려도 환급은 되돌리지 않는다.
+소설이나 마지막 묶음을 지우는 것(`deleted`)은 늘 환급한다. 정책 스위치(`novel_public_policy_v2_enabled`)가 켜져 있으면 운영자의
+노벨 이용제한(`novel_restricted`), 원작의 자체 이용제한·삭제(`source_restricted`·`source_deleted`)도 환급한다 — 켜져 있을 때는
+산 사람이 읽지 못하게 되는 경우와 환급되는 경우가 같다. 공개 거둠·게시자 정지·원작자 정지로 인한 원작 일괄 제한·판매된 소설
+삭제(숨김)·게시자 탈퇴(판매된 소설을 숨겨 남김)는 환급하지 않는다 — 산 사람은 계속 읽는다(`access.py` 의 소장자 열람 조건).
+다시 열려도 환급은 되돌리지 않는다. 사유 `publisher_withdrawn` 은 새로 쓰지 않는다 — 그 사유로 적힌 옛 행을 읽기 위해 값만
+남긴다.
 
 환급은 차감을 깎은 로트로 되돌린다(유료는 유료로, 무료·보너스는 그대로, 만료된 로트면 다음 만료 배치가 태운다). 전액 취소가
 성공으로 확정된 결제에서 나온 로트의 몫은 돌려주지 않는다 — 그 로트로 되돌리면 돈과 클로버를 함께 돌려받는다. 부분 환불·진행
@@ -20,15 +22,15 @@
 구매자 칸이 비어 남지만 환급 대상이 아니다 — 탈퇴로 잔액이 이미 소멸했고 돌려받을 사람이 없다(`_REFUNDABLE`).
 
 **잠금 순서는 사용자 행(관련된 모든 사람, id 순, 한 번에) → 공개 상태 행 → 구매 행 → 클로버(배분 → 로트)다.** 구매는
-구매자와 게시자를, 환급하는 쓰기는 대상 소설들의 게시자와 아직 환급하지 않은 구매자 전부(탈퇴면 탈퇴자도)를 같은 규칙으로
-잡는다. 사용자 행을 사람마다 따로 잡으면 서로의 소설을 산 두 게시자가 동시에 지울 때, 각자 자기 행을 쥐고 상대(자기 소설의
+구매자와 게시자를, 환급하는 쓰기는 대상 소설들의 게시자와 아직 환급하지 않은 구매자 전부를 같은 규칙으로 잡는다. 게시자
+탈퇴는 환급하지 않아 탈퇴자 행 하나만 잡는다 — 구매가 게시자 행을 잡으므로 그것으로 구매와 줄을 선다. 사용자 행을 사람마다 따로 잡으면 서로의 소설을 산 두 게시자가 동시에 지울 때, 각자 자기 행을 쥐고 상대(자기 소설의
 구매자) 행을 기다려 교착한다. 공개 상태 행을 사용자 행보다 먼저 잡아도 같다 — 구매가 사용자 행을 쥔 채 공개 상태 행을
 기다리기 때문이다.
 
 환급하는 쓰기는 구매자를 잠그기 전에 잠금 없이 고른다. 그 사이 새 구매가 커밋되면(그 구매는 게시자 행을 쥐었다 놓았다) 잠근
 뒤 다시 고른 목록에 잠그지 않은 구매자가 생긴다. 그 사람을 그 자리에서 더 잡으면 id 순서가 깨지므로 `NovelPartiesChangedError` 로
 아무것도 쓰지 않고 돌아간다 — 소설 삭제는 409 `NOVEL_DELETE_CONFLICT`, 운영자 조치는 409 `NOVEL_REFUND_CONFLICT`(다시 누르면
-새 구매자까지 잠근다), 탈퇴는 처음부터 다시 한다.
+새 구매자까지 잠근다).
 
 이 모듈은 라우터를 import 하지 않는다 — 소설 라우터와 탈퇴가 import 해도 순환이 생기지 않게."""
 
@@ -99,9 +101,13 @@ async def lock_users_in_order(db: AsyncSession, user_ids: Iterable[uuid.UUID]) -
 
 # ── 구매 ────────────────────────────────────────────────────────────────────
 def chapter_price(ordinal: int, stored_price: int) -> int:
-    """화의 지금 가격(0 = 무료). 앞 화들은 저장된 값과 무관하게 무료다 — 가격 칸을 모르는 옛 코드가 앞 화를 공개하면 칸의
-    기본값(유료)이 들어가기 때문이다. 무료 화 수는 호출 때 모듈 전역으로 읽는다(테스트가 바꿔 끼울 수 있게)."""
-    return 0 if ordinal <= clover.NOVEL_FREE_CHAPTER_COUNT else stored_price
+    """화의 지금 가격(0 = 무료). 저장된 값은 무료(0)인지 유료(그 밖)인지만 뜻하고, 유료 화는 늘 지금 화당 가격이다 — 화당
+    가격 상수를 바꾸면 이미 공개한 유료 화도 그 값으로 팔린다(이미 산 구매 행은 낸 값 그대로다). 앞 화들은 저장된 값과
+    무관하게 무료다 — 가격 칸을 모르는 옛 코드가 앞 화를 공개하면 칸의 기본값(유료)이 들어가기 때문이다. 두 상수는 호출 때
+    모듈 전역으로 읽는다(테스트가 바꿔 끼울 수 있게)."""
+    if ordinal <= clover.NOVEL_FREE_CHAPTER_COUNT or stored_price == 0:
+        return 0
+    return clover.NOVEL_READ_COST
 
 
 @dataclass(frozen=True)
@@ -463,6 +469,17 @@ async def novel_was_sold(db: AsyncSession, novel_id: uuid.UUID) -> bool:
     고지(`purchase_refund_preview`)도 이것을 써서 안내와 실제 동작이 같다."""
     found = await db.scalar(select(NovelPurchase.id).where(NovelPurchase.novel_id == novel_id, *_REFUNDABLE).limit(1))
     return found is not None
+
+
+async def sold_novel_ids(db: AsyncSession, novel_ids: Sequence[uuid.UUID]) -> frozenset[uuid.UUID]:
+    """소설들 가운데 `novel_was_sold` 가 참인 것 — 탈퇴가 지우지 않고 숨겨 남길 소설을 한 번에 고른다. 판정 조건은 같다
+    (아직 환급되지 않은 구매, 탈퇴하지 않은 구매자). 탈퇴자 행을 잠근 뒤에 부른다(같은 이유 — 구매가 게시자 행을 잡는다)."""
+    if not novel_ids:
+        return frozenset()
+    found = await db.scalars(
+        select(distinct(NovelPurchase.novel_id)).where(NovelPurchase.novel_id.in_(novel_ids), *_REFUNDABLE)
+    )
+    return frozenset(found.all())
 
 
 async def chapters_with_unrefunded_purchase(db: AsyncSession, chapter_ids: Sequence[uuid.UUID]) -> bool:

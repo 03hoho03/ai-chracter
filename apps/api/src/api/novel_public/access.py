@@ -8,8 +8,9 @@
 원작의 공개 소설은 독자에게 보이지 않으므로 고쳐 다시 내는 것도 막는다.
 
 정책 스위치가 켜졌고 소설이 연재권 잠금(한 번 독자에게 보임, `novel_public/serial_lock.py`)을 가졌으면 새로 공개하는 것도
-허락은 따지지 않는다 — 원작자가 소설화 허락을 거둬도 그 소설의 다음 화는 이어 공개한다. 면제는 허락뿐이고 공개 목록 조건은
-그대로 본다(원작자가 작품 자체를 비공개로 돌리거나 내리면 다음 화도 막힌다).
+원작자 쪽 사정은 따지지 않는다 — 원작자가 소설화 허락을 거두거나, 작품을 비공개로 돌리거나, 탈퇴해(탈퇴는 작품을 모두
+비공개로 돌린다) 원작이 공개 목록에서 빠져도 그 소설의 다음 화는 이어 공개한다. 막는 것은 이미 공개한 것과 같이 원작의
+이용제한·삭제(운영 조치)뿐이다.
 
 원작 행이 없으면(소설은 원작 id 를 FK 없는 사본으로 들고 있다) 이용제한과 같이 본다 — 풀어 줄 근거가 없다."""
 
@@ -70,12 +71,14 @@ async def judge_source(
     db: AsyncSession, content_id: uuid.UUID, publisher_id: uuid.UUID, *, permission_locked: bool
 ) -> SourceGate:
     """공개 목록 조건은 작품 목록과 같은 식(`publicly_listed_conditions`)을 SQL 로 다시 물어 판정한다 — 조건을 여기 따로
-    적으면 목록 조건이 바뀔 때 한쪽만 고쳐진다. `permission_locked` 가 참이면(연재권 잠금이 효력 있음) 허락 판정을 건너뛰고
-    목록 조건까지 본다."""
+    적으면 목록 조건이 바뀔 때 한쪽만 고쳐진다. `permission_locked` 가 참이면(연재권 잠금이 효력 있음) 이용제한·삭제만 보고
+    허락·목록 조건은 보지 않는다(모듈 docstring)."""
     source = await db.get(Content, content_id, populate_existing=True)
     if source is None or source.moderation_status != ModerationStatus.NORMAL:
         return SourceGate(new_publish_block="source_unavailable", source_available=False)
-    if not permission_locked and source.creator_user_id != publisher_id and source.novel_permission != "public":
+    if permission_locked:
+        return SourceGate(new_publish_block=None, source_available=True)
+    if source.creator_user_id != publisher_id and source.novel_permission != "public":
         return SourceGate(new_publish_block="source_permission", source_available=True)
     listed = await db.scalar(select(Content.id).where(Content.id == content_id, *publicly_listed_conditions()))
     return SourceGate(new_publish_block=None if listed is not None else "source_not_listed", source_available=True)
@@ -108,7 +111,7 @@ def readable_publication_conditions() -> tuple[ColumnElement[bool], ...]:
         # 경로에서 깨져도 승인 전 글이 나가지 않게 하려는 것이다.
         or_(NovelPublication.review_status.is_(None), NovelPublication.review_status == "approved"),
         NovelPublication.moderation_status == "normal",
-        # 숨긴 소설(노벨로 팔린 뒤 작가가 지운 소설)은 공개를 거둔 채 숨기므로 위 공개 범위 조건으로 이미 빠진다. 숨김을 따로
+        # 숨긴 소설(노벨로 팔린 뒤 작가가 지웠거나 그 작가가 탈퇴한 소설)은 공개를 거둔 채 숨기므로 위 공개 범위 조건으로 이미 빠진다. 숨김을 따로
         # 보는 것은 그 약속이 깨져도(숨김을 모르는 옛 이미지로 되돌린 동안 작가가 다시 공개) 지운 소설이 독자 목록·구매에
         # 나가지 않게 하려는 것이다.
         Novel.hidden_at.is_(None),
@@ -137,17 +140,16 @@ def select_readable_publications(*columns: Any) -> Select[Any]:
 
 def owner_readable_publication_conditions() -> tuple[ColumnElement[bool], ...]:
     """정책 스위치가 켜졌을 때, 아직 환급되지 않은 구매를 가진 사람(소장자)이 이 공개 소설을 계속 읽을 수 있는가 — SQL 조건.
-    운영자 이용제한 없음 ∧ 첫 공개 승인 대기·반려 아님 ∧ 게시자 미탈퇴 ∧ 원작이 정상이거나 원작자 정지로만 일괄 제한됨 ∧ 공개
-    화가 하나 이상. 조인은 `readable_publication_conditions` 와 같다.
+    운영자 이용제한 없음 ∧ 첫 공개 승인 대기·반려 아님 ∧ 원작이 정상이거나 원작자 정지로만 일괄 제한됨 ∧ 공개 화가 하나 이상.
+    조인은 `readable_publication_conditions` 와 같다.
 
-    공개 범위(게시자의 거둠·판매된 소설 삭제의 숨김)와 게시자 정지는 보지 않는다 — 게시자 쪽 사정이라 산 사람의 소장을 끝내지
-    않는다(새로 보이거나 팔리지 않는 것은 목록·구매가 쓰는 `readable_publication_conditions` 가 맡는다). 여기서 빠지는 경우
-    (노벨 이용제한·원작 자체 이용제한·원작 삭제·게시자 탈퇴)는 그 쓰기마다 구매를 환급한다(`purchases.py` 모듈 docstring) —
-    두 목록이 어긋나면 환급 없이 닫히는 소장이 생긴다."""
+    공개 범위(게시자의 거둠·판매된 소설 삭제의 숨김)와 게시자 정지·탈퇴는 보지 않는다 — 게시자 쪽 사정이라 산 사람의 소장을
+    끝내지 않는다(새로 보이거나 팔리지 않는 것은 목록·구매가 쓰는 `readable_publication_conditions` 가 맡는다). 여기서 빠지는
+    경우(노벨 이용제한·원작 자체 이용제한·원작 삭제)는 그 쓰기마다 구매를 환급한다(`purchases.py` 모듈 docstring) — 두 목록이
+    어긋나면 환급 없이 닫히는 소장이 생긴다."""
     return (
         or_(NovelPublication.review_status.is_(None), NovelPublication.review_status == "approved"),
         NovelPublication.moderation_status == "normal",
-        User.deleted_at.is_(None),
         or_(Content.moderation_status == ModerationStatus.NORMAL, Content.restricted_by_suspension.is_(True)),
         exists().where(_any_chapter.novel_id == NovelPublication.novel_id).correlate_except(_any_chapter),
     )

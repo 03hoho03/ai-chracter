@@ -1951,11 +1951,7 @@ export interface paths {
         get: operations["get_me_me_get"];
         put?: never;
         post?: never;
-        /**
-         * Withdraw
-         * @description 탈퇴. 노벨 게시자면 정책 스위치가 켜졌을 때 그 소설의 구매자에게 환급한다 — 잠금과 다시 하기는 `auth/withdrawal.py`
-         *     모듈 docstring. 다시 하기 상한을 넘기면 409 `WITHDRAWAL_CONFLICT` 이고 아무것도 지우지 않았다(다시 누르면 된다).
-         */
+        /** Withdraw */
         delete: operations["withdraw_me_delete"];
         options?: never;
         head?: never;
@@ -3353,7 +3349,7 @@ export interface paths {
          *     받는다. 이용 제한 작품이어도 만들 수 있다(모델을 부르지 않는다).
          *
          *     작가가 소설화를 허용하지 않은 작품이면 작가 본인이 아닌 사람은 새로 만들 수 없다(403 `CONTENT_NOVELIZE_FORBIDDEN`).
-         *     이 판정은 이미 있는 소설을 돌려주는 분기 뒤에 둔다 — 허락을 낮춰도 이미 만든 소설은 계속 열려야 한다. 이어 쓰기는
+         *     정책 스위치가 켜졌고 작가가 탈퇴했어도 같다(`novelize_refused`). 이 판정은 이미 있는 소설을 돌려주는 분기 뒤에 둔다 — 허락을 낮춰도 이미 만든 소설은 계속 열려야 한다. 이어 쓰기는
          *     따로 판정한다: 모델을 부르는 라우트는 첫 화가 저장되어 잠긴 소설이면 허락을 보지 않고, 잠기기 전(빈 소설)이면 이와
          *     같은 판정으로 403 이다(`_ensure_novelize_permission`). 허락 변경과 겹친 생성은 잠그지 않는다 — 놓치는 것은 금지로
          *     바꾸는 순간과 겹친 생성 하나이고, 그 빈 소설은 다음 생성 요청에서 같은 판정을 받는다.
@@ -7531,7 +7527,9 @@ export interface components {
         /**
          * AdminNovelDetailResponse
          * @description 공개본 글과 운영 판단 재료. `source_moderation_status` 는 원작의 지금 상태(원작이 없으면 비어 있다), `publisher_suspended`
-         *     는 게시자 정지 여부다 — 둘 다 `readable` 이 거짓인 이유를 가른다. `reports` 는 최근 노벨 신고 20개다.
+         *     는 게시자 정지 여부, `publisher_withdrawn` 은 게시자 탈퇴 여부다 — 셋 다 `readable` 이 거짓인 이유를 가른다(탈퇴한
+         *     게시자의 팔린 소설은 숨긴 채 남아 `hidden_at` 이 있다 — 탈퇴로 숨겼는지는 이것으로 본다. 작가가 지워 숨긴 뒤 탈퇴했으면
+         *     둘 다 참이다). `reports` 는 최근 노벨 신고 20개다.
          *     `purchase_amount` 는 환급되지 않은 구매의 가격 합(탈퇴한 구매자의 구매 포함), `purchase_buyer_count` 는 그 구매를 한 사람
          *     수다 — 탈퇴한 구매자는 누구인지 남지 않아 사람 수에 들지 않는다.
          *
@@ -7598,6 +7596,8 @@ export interface components {
             sourceModerationStatus: components["schemas"]["ModerationStatus"] | null;
             /** Publishersuspended */
             publisherSuspended: boolean;
+            /** Publisherwithdrawn */
+            publisherWithdrawn: boolean;
             /**
              * Firstpublishedat
              * Format: date-time
@@ -7634,7 +7634,7 @@ export interface components {
          *     정지·원작 숨김·공개 화 없음·첫 공개 승인 대기나 반려면 거짓). `purchase_count` 는 환급되지 않은 구매 수(탈퇴한 구매자의
          *     구매도 거래 기록이라 센다), `pending_report_count` 는 처리 전 노벨 신고 수다. `review_status` 는 첫 공개의 운영자 심사
          *     (대기·승인·반려, 심사 없이 공개됐으면 비어 있다) — 대기·반려 행의 `visibility` 는 `withdrawn` 이지만 게시자가 거둔 것이
-         *     아니다. `hidden_at` 은 노벨로 팔린 소설을 작가가 지워 숨긴 시각이다 — 숨긴 소설도 공개 범위가 `withdrawn` 이라 이 값으로
+         *     아니다. `hidden_at` 은 노벨로 팔린 소설을 작가가 지웠거나 그 작가가 탈퇴해 숨긴 시각이다 — 숨긴 소설도 공개 범위가 `withdrawn` 이라 이 값으로
          *     게시자가 거둔 것과 가른다(숨기지 않았으면 비어 있다).
          */
         AdminNovelListItem: {
@@ -11964,6 +11964,9 @@ export interface components {
          *     - `published_chapter_count`: 1화부터 이어진 공개 화 수. `chapter_count` 는 소설의 화 수다.
          *     - `published_chapters`: 공개한 화마다 가격(번호 순). 화면이 무료로 공개한 화를 고정으로 그리고 유료 화에 "무료로 전환"을
          *       건다.
+         *     - `free_locked_ordinals`: 아직 공개하지 않은 번호 중 무료로만 공개할 수 있는 번호(오름차순) — 무료로 공개하거나 무료로
+         *       전환한 화를 지우고 다시 만든 번호다. 화면이 그 번호의 가격 선택을 "무료 고정"으로 그린다. 정책 스위치가 꺼져 있으면
+         *       비어 있다.
          *     - `changed_chapter_ordinals`·`metadata_changed`: 공개한 뒤 고쳐서 공개본과 다른 화·소설 제목·소개. 다시 공개해야
          *       반영된다.
          *     - `new_publish_block`: 새로 공개(처음 공개·다음 화)할 수 없는 이유. 없으면 비어 있다.
@@ -11987,6 +11990,8 @@ export interface components {
             publishedChapterCount: number;
             /** Publishedchapters */
             publishedChapters: components["schemas"]["NovelPublishedChapter"][];
+            /** Freelockedordinals */
+            freeLockedOrdinals: number[];
             /** Chaptercount */
             chapterCount: number;
             /** Changedchapterordinals */
@@ -12025,12 +12030,12 @@ export interface components {
          *     한 화씩 부르면 앞 화까지는 공개된 채로 남고 이어짐도 요청마다 지켜진다.
          *
          *     `free` 는 새로 공개하는 화의 가격 선택이다(정책 스위치가 켜졌을 때만 본다). 참이면 무료, 거짓이면 유료(화당 가격)이고,
-         *     비우면 앞 화(`NOVEL_FREE_CHAPTER_COUNT` 까지)는 무료·그 뒤는 유료다. 앞 화는 유료로 낼 수 없다(409
-         *     `NOVEL_CHAPTER_PRICE_LOCKED`). 이미 공개한 화를 다시 낼 때 비우면 지금 가격을 그대로 두고 — 이 칸을 모르는 옛 화면도 무료로
-         *     공개한 화를 고쳐 다시 낼 수 있게 — 무료로 공개한 화에 거짓을 보내면 409 `NOVEL_CHAPTER_PRICE_LOCKED`(무료로 공개한 화는
-         *     다시 유료가 되지 않는다), 유료 화에 참을 보내면 409 `NOVEL_CHAPTER_ALREADY_PRICED`(무료로 바꾸기는 따로 있는 "무료로
-         *     전환"만 한다 — 다시 공개 흐름을 타면 심사·판 올림이 따라온다). 스위치가 꺼져 있으면 이 칸을 보지 않고 새 화는 앞 화 무료·
-         *     그 뒤 유료로 저장한다(지금 약관의 규칙).
+         *     비우면 앞 화(`NOVEL_FREE_CHAPTER_COUNT` 까지)와 무료로 나간 적 있는 번호(상태 응답의 `free_locked_ordinals`)는 무료·그
+         *     밖은 유료다. 앞 화와 무료로 나간 적 있는 번호는 유료로 낼 수 없다(409 `NOVEL_CHAPTER_PRICE_LOCKED`). 이미 공개한 화를
+         *     다시 낼 때 비우면 지금 가격을 그대로 두고 — 이 칸을 모르는 옛 화면도 무료로 공개한 화를 고쳐 다시 낼 수 있게 — 무료로
+         *     공개한 화에 거짓을 보내면 409 `NOVEL_CHAPTER_PRICE_LOCKED`(무료로 공개한 화는 다시 유료가 되지 않는다), 유료 화에 참을
+         *     보내면 409 `NOVEL_CHAPTER_ALREADY_PRICED`(무료로 바꾸기는 따로 있는 "무료로 전환"만 한다 — 다시 공개 흐름을 타면 심사·판
+         *     올림이 따라온다). 스위치가 꺼져 있으면 이 칸을 보지 않고 새 화는 앞 화 무료·그 뒤 유료로 저장한다(지금 약관의 규칙).
          */
         NovelPublishRequest: {
             /** Chapterid */
@@ -12639,11 +12644,13 @@ export interface components {
          * @description 노벨 작품 정보. 제목·소개·화 제목은 공개본 사본이다.
          *
          *     - `is_publisher`: 보는 사람이 게시자 본인인가(모든 화를 무료로 읽고, 화면이 "내 소설에서 관리"를 보인다).
-         *     - `free_chapter_count`·`chapter_price`: 앞 무료 화 수와 새로 공개하는 유료 화의 화당 가격(지금 설정값). 6화 이후에도
-         *       작가가 무료로 둔 화가 있을 수 있고 이미 공개한 화의 가격은 공개 때 값이므로, 화마다의 값은 목차의 `price` 다.
+         *     - `free_chapter_count`·`chapter_price`: 앞 무료 화 수와 유료 화의 화당 가격(지금 설정값 — 이미 공개한 유료 화도 이
+         *       값이다). 6화 이후에도 작가가 무료로 둔 화가 있을 수 있으므로 화마다의 값은 목차의 `price` 다.
          *     - `liked`: 보는 사람이 좋아요했는가.
-         *     - `sales_stopped`: 새로 보이거나 팔리지 않는 노벨을 소장자가 열었다(게시자의 거둠·정지, 원작자 정지로 인한 원작 일괄
-         *       제한, 판매된 소설 삭제). 산 화·무료 화·목차는 그대로 읽고, 사지 않은 유료 화는 잠김으로 보이되 살 수 없다.
+         *     - `sales_stopped`: 새로 보이거나 팔리지 않는 노벨을 소장자가 열었다(게시자의 거둠·정지·탈퇴, 원작자 정지로 인한 원작
+         *       일괄 제한, 판매된 소설 삭제). 산 화·무료 화·목차는 그대로 읽고, 사지 않은 유료 화는 잠김으로 보이되 살 수 없다.
+         *     - `publisher_withdrawn`: 게시자가 탈퇴했다. 그때 `publisher_user_id`·`publisher_nickname` 은 비어 있다 — 탈퇴한 사람의
+         *       회원 id 를 남겨 두면 이 소설을 그 사람과 다시 이어 붙일 수 있다.
          */
         PublicNovelDetailResponse: {
             /**
@@ -12656,13 +12663,12 @@ export interface components {
             /** Synopsis */
             synopsis: string;
             source: components["schemas"]["PublicNovelSource"];
-            /**
-             * Publisheruserid
-             * Format: uuid
-             */
-            publisherUserId: string;
+            /** Publisheruserid */
+            publisherUserId: string | null;
             /** Publishernickname */
             publisherNickname: string | null;
+            /** Publisherwithdrawn */
+            publisherWithdrawn: boolean;
             /** Ispublisher */
             isPublisher: boolean;
             /** Chapters */
@@ -12744,7 +12750,8 @@ export interface components {
         /**
          * PublicNovelListItem
          * @description 노벨 목록의 한 줄. `title` 은 공개본 제목(비어 있던 공개본은 원작 제목), `synopsis` 는 공개본 소개다.
-         *     `published_at` 은 공개 화면 글이 마지막으로 바뀐 시각(최신순 정렬 키)이다.
+         *     `published_at` 은 공개 화면 글이 마지막으로 바뀐 시각(최신순 정렬 키)이다. `publisher_withdrawn` 은 게시자가 탈퇴했는가다
+         *     (탈퇴한 게시자의 소설은 판매를 멈춘 채 소장자에게만 보인다) — 닉네임이 비어 있는 살아 있는 게시자와 가른다.
          */
         PublicNovelListItem: {
             /**
@@ -12759,6 +12766,8 @@ export interface components {
             source: components["schemas"]["PublicNovelSource"];
             /** Publishernickname */
             publisherNickname: string | null;
+            /** Publisherwithdrawn */
+            publisherWithdrawn: boolean;
             /** Chaptercount */
             chapterCount: number;
             /** Likecount */
@@ -12796,6 +12805,8 @@ export interface components {
             source: components["schemas"]["PublicNovelSource"];
             /** Publishernickname */
             publisherNickname: string | null;
+            /** Publisherwithdrawn */
+            publisherWithdrawn: boolean;
             /** Chaptercount */
             chapterCount: number;
             /** Likecount */
@@ -12887,7 +12898,9 @@ export interface components {
          *     노벨 표지는 이것뿐이고, 원작자가 탈퇴했거나 썸네일이 없으면 비어 있다(화면이 기본 표지를 그린다). `linkable` 은 원작이
          *     지금 작품 목록에 실려 원작 상세로 링크를 걸 수 있는가다. `creator_nickname` 은 원작자의 지금 닉네임이다(복사해 두지 않고
          *     읽을 때 가져온다) — 원작자가 탈퇴했거나 원작 행이 없으면 비어 있다. `unofficial` 은 원작자가 게시자가 아닌가(화면이
-         *     "비공식 2차 창작"을 붙인다)이고, 원작 행이 없으면 참이다(근거 없이 공식으로 표시하지 않는다).
+         *     "비공식 2차 창작"을 붙인다)이고, 원작 행이 없으면 참이다(근거 없이 공식으로 표시하지 않는다). `creator_withdrawn` 은
+         *     원작자가 탈퇴했는가다 — 이름이 빈 것은 탈퇴·원작 행 없음·닉네임 미설정이 모두 같아 보여, 화면이 "탈퇴한 사용자"로 그릴지를
+         *     이것으로 가른다(원작 행이 없으면 거짓).
          */
         PublicNovelSource: {
             /**
@@ -12912,6 +12925,8 @@ export interface components {
             creatorNickname: string | null;
             /** Unofficial */
             unofficial: boolean;
+            /** Creatorwithdrawn */
+            creatorWithdrawn: boolean;
         };
         /**
          * PutPayoutInfoRequest

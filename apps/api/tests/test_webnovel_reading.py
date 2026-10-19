@@ -208,13 +208,14 @@ async def test_the_publisher_reads_every_chapter_without_buying(
     assert chapter["paragraphs"] == ["8화 본문"]
 
 
-async def test_each_chapter_is_free_or_paid_by_its_own_stored_price(
+async def test_each_chapter_is_free_or_paid_by_its_own_stored_choice(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """가격은 화마다 저장된 값이다 — 7화를 무료(0)로, 8화를 40 으로 공개했으면 사지 않은 독자에게 7화는 무료(본문·읽은 자리
-    저장·댓글이 열린다)이고 8화는 40 이다. 6화 화면의 다음 화 링크도 7화를 무료로 알린다. 앞 5화는 저장값이 30 이어도(가격
-    칸을 모르는 옛 코드가 공개하면 기본값이 들어간다) 무료다. 깨지는 시나리오: 화 번호로만 무료를 판정하는 곳이 하나라도
-    남아 무료로 공개한 화가 그 화면에서만 잠기거나, 옛 코드가 넣은 기본값 때문에 앞 화가 잠긴다."""
+    """무료·유료는 화마다 저장된 값이 정하고 유료 화의 가격은 지금 화당 가격이다 — 7화를 무료(0)로 공개했으면 사지 않은
+    독자에게 7화는 무료(본문·읽은 자리 저장·댓글이 열린다)이고, 저장값이 40 인 8화는 유료로 화당 가격 30 이다. 6화 화면의
+    다음 화 링크도 7화를 무료로 알린다. 앞 5화는 저장값이 30 이어도(가격 칸을 모르는 옛 코드가 공개하면 기본값이 들어간다)
+    무료다. 깨지는 시나리오: 화 번호로만 무료를 판정하는 곳이 하나라도 남아 무료로 공개한 화가 그 화면에서만 잠기거나, 옛
+    코드가 넣은 기본값 때문에 앞 화가 잠기거나, 저장된 값이 그대로 가격으로 보여 유료 화마다 가격이 갈린다."""
     novel = await _novel(db_session)
     reader = await _member(db_session)
     for ordinal, price in ((1, 30), (7, 0), (8, 40)):
@@ -243,10 +244,10 @@ async def test_each_chapter_is_free_or_paid_by_its_own_stored_price(
         (5, "free", None),
         (6, "locked", 30),
         (7, "free", None),
-        (8, "locked", 40),
+        (8, "locked", 30),
     ]
     assert (seventh["access"], seventh["price"], seventh["paragraphs"]) == ("free", None, ["7화 본문"])
-    assert (eighth["access"], eighth["price"], eighth["paragraphs"]) == ("locked", 40, None)
+    assert (eighth["access"], eighth["price"], eighth["paragraphs"]) == ("locked", 30, None)
     assert (sixth["previousChapter"]["access"], sixth["nextChapter"]["access"]) == ("free", "free")
     assert position.status_code == 204
     assert comment.status_code == 201, comment.text
@@ -297,7 +298,7 @@ async def _source_creator_id(db_session: AsyncSession, novel: PublicNovel) -> uu
     return creator_id
 
 
-async def _set_nickname(db_session: AsyncSession, user_id: uuid.UUID, nickname: str) -> None:
+async def _set_nickname(db_session: AsyncSession, user_id: uuid.UUID, nickname: str | None) -> None:
     await db_session.execute(sa.update(User).where(User.id == user_id).values(nickname=nickname))
     await db_session.commit()
 
@@ -327,6 +328,7 @@ async def test_someone_elses_source_is_credited_to_its_creator_and_marked_unoffi
     credits = await _source_credits(db_client, db_session, novel, as_user=reader)
 
     assert [(c["creatorNickname"], c["unofficial"]) for c in credits] == [("원작쓴이", True)] * 3
+    assert [c["creatorWithdrawn"] for c in credits] == [False] * 3
 
 
 async def test_a_novel_of_the_publishers_own_source_is_not_marked_unofficial(
@@ -358,7 +360,25 @@ async def test_a_withdrawn_source_creator_is_not_named(db_client: httpx.AsyncCli
     detail = await db_client.get(f"/webnovels/{novel.novel_id}")
 
     assert [(c["creatorNickname"], c["unofficial"]) for c in credits] == [(None, True)] * 3
+    assert [c["creatorWithdrawn"] for c in credits] == [True] * 3
     assert "떠난원작자" not in detail.text
+
+
+async def test_a_living_publisher_without_a_nickname_is_not_shown_as_withdrawn(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """닉네임이 비어 있는 살아 있는 게시자는 이름이 없을 뿐 탈퇴가 아니다 — 목록·작품 정보 모두 탈퇴 표시가 거짓이고 회원
+    id 를 싣는다. 깨지는 시나리오: 이름이 빈 것만으로 "탈퇴한 사용자"로 그려지거나 프로필 링크를 잃는다."""
+    novel = await _novel(db_session)
+    reader = await _member(db_session)
+    await _set_nickname(db_session, novel.publisher_id, None)
+
+    listed = (await _get(db_client, "/webnovels", as_user=reader)).json()["items"]
+    detail = (await db_client.get(f"/webnovels/{novel.novel_id}")).json()
+
+    assert [(item["publisherNickname"], item["publisherWithdrawn"]) for item in listed] == [(None, False)]
+    assert (detail["publisherNickname"], detail["publisherWithdrawn"]) == (None, False)
+    assert detail["publisherUserId"] == str(novel.publisher_id)
 
 
 async def test_the_creator_name_follows_a_nickname_change_at_once(

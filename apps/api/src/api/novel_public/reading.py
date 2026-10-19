@@ -11,7 +11,7 @@
 
 **소장자 열람** — 정책 스위치(`novel_public_policy_v2_enabled`)가 켜져 있으면, 목록에서 빠진 노벨이어도 아직 환급되지 않은
 구매를 가진 사람은 작품 정보·산 화·무료 화를 계속 읽고 읽은 자리를 저장한다(`select_owner_readable_publications` — 게시자의
-거둠·정지, 원작자 정지로 인한 원작 일괄 제한, 판매된 소설 삭제). 그때 응답의 `salesStopped` 가 참이고, 사지 않은 유료 화는
+거둠·정지·탈퇴, 원작자 정지로 인한 원작 일괄 제한, 판매된 소설 삭제). 탈퇴한 게시자는 이름·회원 id 없이 탈퇴 표시만 싣는다. 그때 응답의 `salesStopped` 가 참이고, 사지 않은 유료 화는
 살 수 없다(구매는 목록 조건을 본다). 산 사람은 산 때의 판을 골라 다시 읽는다(화 읽기의 쿼리 `edition`). 소장 목록
 (`GET /webnovels/owned`)은 그런 노벨로 돌아가는 길이다 — 작품 정보가 여는 노벨 가운데 미환급 구매가 있는 것을 싣는다.
 
@@ -174,6 +174,7 @@ async def _sources(db: AsyncSession, novels: Sequence[Novel]) -> dict[uuid.UUID,
             linkable=novel.content_id in listed,
             creator_nickname=creator[2] if creator is not None and not creator[1] else None,
             unofficial=creator is None or creator[0] != novel.user_id,
+            creator_withdrawn=creator is not None and creator[1],
         )
     return sources
 
@@ -258,7 +259,8 @@ async def _ended_or_not_found(
     2. `service_off` — 노벨 스위치가 꺼져 있다(켜면 그대로 다시 열린다).
     3. 소설이 없다 — 게시자가 탈퇴했으면 `publisher_withdrawn`, 아니면 `deleted`(이미지를 옛 판으로 되돌린 동안의 삭제는
        환급하지 않아 이 길로 온다 — `refundedAmount` 0).
-    4. `restricted`(운영 이용제한이나 게시자 정지) → `withdrawn`(게시자가 거둠) → `source_unavailable`(원작 이용제한·삭제).
+    4. `restricted`(운영 이용제한이나 게시자 정지) → `publisher_withdrawn`(게시자가 탈퇴해 숨겨 남긴 소설 — 정책 스위치를
+       다시 끄면 소장자 열람이 없어 이 길로 온다) → `withdrawn`(게시자가 거둠) → `source_unavailable`(원작 이용제한·삭제).
     5. 소설은 읽을 수 있는데 그 화가 없다 — 환급된 구매가 있으면 그 사유(마지막 묶음을 지워 공개 화가 모두 사라지면
        `deleted`), 아니면 404.
 
@@ -305,6 +307,8 @@ async def _ended_or_not_found(
         return not_found
     if publication.moderation_status == "restricted" or (publisher is not None and publisher.suspended_at is not None):
         return ended("restricted")
+    if publisher is not None and publisher.deleted_at is not None:
+        return ended("publisher_withdrawn")
     if publication.visibility == "withdrawn":
         return ended("withdrawn")
     if source is None or source.moderation_status != ModerationStatus.NORMAL:
@@ -354,6 +358,12 @@ async def get_home_novels(
 
 
 # ── 목록 ────────────────────────────────────────────────────────────────────
+def _publisher_withdrawn() -> Any:
+    """게시자가 탈퇴했는가 — 목록·작품 정보 쿼리의 열(게시자 `User` 를 조인한 쿼리에서). 목록 조건은 탈퇴한 게시자를 빼므로
+    판매 중인 노벨에서는 늘 거짓이고, 소장자 조건으로만 열린 노벨에서 참일 수 있다."""
+    return User.deleted_at.is_not(None)
+
+
 def _chapter_count() -> Any:
     """공개 화 수 — 목록 쿼리의 열로 쓰는 상관 하위 쿼리."""
     return (
@@ -381,7 +391,7 @@ async def list_webnovels(
 ) -> PublicNovelListResponse:
     """노벨 목록, 한 번에 20편. `latest` 는 공개 화면 글이 마지막으로 바뀐 시각 순, `popular` 는 좋아요 수 순(같으면 최신순).
     다음 페이지는 `nextCursor` 를 그대로 `cursor` 로 넘긴다."""
-    query = select_readable_publications(NovelPublication, Novel, User.nickname, _chapter_count())
+    query = select_readable_publications(NovelPublication, Novel, User.nickname, _publisher_withdrawn(), _chapter_count())
     if sort == "popular":
         query = query.order_by(
             NovelPublication.like_count.desc(), NovelPublication.published_at.desc(), NovelPublication.novel_id.desc()
@@ -404,7 +414,7 @@ async def list_webnovels(
 
     rows = (await db.execute(query.limit(PUBLIC_NOVEL_LIST_PAGE_SIZE + 1))).all()
     page = rows[:PUBLIC_NOVEL_LIST_PAGE_SIZE]
-    sources = await _sources(db, [novel for _, novel, _, _ in page])
+    sources = await _sources(db, [novel for _, novel, _, _, _ in page])
     items = [
         PublicNovelListItem(
             id=novel.id,
@@ -412,12 +422,13 @@ async def list_webnovels(
             synopsis=publication.synopsis,
             source=sources[novel.id],
             publisher_nickname=nickname,
+            publisher_withdrawn=withdrawn,
             chapter_count=count,
             like_count=publication.like_count,
             view_count=publication.view_count,
             published_at=publication.published_at,
         )
-        for publication, novel, nickname, count in page
+        for publication, novel, nickname, withdrawn, count in page
     ]
     next_cursor: str | None = None
     if len(rows) > PUBLIC_NOVEL_LIST_PAGE_SIZE and page:
@@ -451,7 +462,7 @@ async def list_owned_webnovels(
         .exists()
     )
     query = (
-        select_publications(NovelPublication, Novel, User.nickname, _chapter_count())
+        select_publications(NovelPublication, Novel, User.nickname, _publisher_withdrawn(), _chapter_count())
         .where(owns)
         .order_by(NovelPublication.published_at.desc(), NovelPublication.novel_id.desc())
     )
@@ -461,7 +472,7 @@ async def list_owned_webnovels(
         )
     rows = (await db.execute(query.limit(PUBLIC_NOVEL_LIST_PAGE_SIZE + 1))).all()
     page = rows[:PUBLIC_NOVEL_LIST_PAGE_SIZE]
-    page_ids = [novel.id for _, novel, _, _ in page]
+    page_ids = [novel.id for _, novel, _, _, _ in page]
     on_sale = (
         set(
             (
@@ -475,7 +486,7 @@ async def list_owned_webnovels(
         if policy_v2 and page_ids
         else set(page_ids)
     )
-    sources = await _sources(db, [novel for _, novel, _, _ in page])
+    sources = await _sources(db, [novel for _, novel, _, _, _ in page])
     items = [
         PublicNovelOwnedItem(
             id=novel.id,
@@ -483,13 +494,14 @@ async def list_owned_webnovels(
             synopsis=publication.synopsis,
             source=sources[novel.id],
             publisher_nickname=nickname,
+            publisher_withdrawn=withdrawn,
             chapter_count=count,
             like_count=publication.like_count,
             view_count=publication.view_count,
             published_at=publication.published_at,
             sales_stopped=novel.id not in on_sale,
         )
-        for publication, novel, nickname, count in page
+        for publication, novel, nickname, withdrawn, count in page
     ]
     next_cursor: str | None = None
     if len(rows) > PUBLIC_NOVEL_LIST_PAGE_SIZE and page:
@@ -513,7 +525,7 @@ async def get_webnovel(
     async def find(select_publications: Callable[..., Select[Any]]) -> Row[Any] | None:
         return (
             await db.execute(
-                select_publications(NovelPublication, Novel, User.nickname).where(
+                select_publications(NovelPublication, Novel, User.nickname, _publisher_withdrawn()).where(
                     NovelPublication.novel_id == novel_id
                 )
             )
@@ -526,7 +538,7 @@ async def get_webnovel(
         sales_stopped = row is not None
     if row is None or not open_to_viewer:
         raise await _ended_or_not_found(db, user_id=user_id, novel_id=novel_id, chapter_id=None)
-    publication, novel, nickname = row
+    publication, novel, nickname, publisher_withdrawn = row
     is_publisher = novel.user_id == user_id
     owned = await _owned_chapter_ids(db, user_id, novel_id)
     chapter_rows = (
@@ -584,8 +596,9 @@ async def get_webnovel(
         title=_title(publication, novel),
         synopsis=publication.synopsis,
         source=(await _sources(db, [novel]))[novel.id],
-        publisher_user_id=novel.user_id,
+        publisher_user_id=None if publisher_withdrawn else novel.user_id,
         publisher_nickname=nickname,
+        publisher_withdrawn=publisher_withdrawn,
         is_publisher=is_publisher,
         chapters=chapters,
         free_chapter_count=clover.NOVEL_FREE_CHAPTER_COUNT,

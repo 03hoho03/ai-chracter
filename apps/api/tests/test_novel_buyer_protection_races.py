@@ -1,5 +1,5 @@
-"""노벨 구매자 보호의 경합 — 환급이 걸린 쓰기(탈퇴·노벨 이용제한·원작 이용제한·판매 소설 숨김·숨긴 소설 파기)가 구매나 서로와
-실제로 겹칠 때(독립 커넥션, 정책 스위치 켜짐).
+"""노벨 구매자 보호의 경합 — 구매자의 소장을 바꾸는 쓰기(게시자 탈퇴의 숨김·노벨 이용제한·원작 이용제한·판매 소설 숨김·숨긴
+소설 파기)가 구매나 서로와 실제로 겹칠 때(독립 커넥션, 정책 스위치 켜짐).
 
 같은 커넥션의 테스트로는 두 요청이 순서대로 돌아 경합이 드러나지 않는다. 그래서 잠금을 쥔 상대 트랜잭션(`holder`)을 세워
 두고 두 쓰기를 띄워, 둘 다 정말 막혀 있는 것(`_assert_blocked`)을 먼저 확인한 뒤 놓는다. 막힘 확인이 없으면 둘을 순서대로
@@ -275,23 +275,29 @@ async def test_the_same_buyer_buying_a_reopened_chapter_twice_at_once_pays_once(
 
 
 # ── 탈퇴 ────────────────────────────────────────────────────────────────────
+async def _hidden(world: _World, novel_id: uuid.UUID) -> bool:
+    async with world.factory() as s:
+        hidden_at = await s.scalar(select(Novel.hidden_at).where(Novel.id == novel_id))
+    return hidden_at is not None
+
+
 @pytest.mark.parametrize("buyer_below_publisher", [True, False], ids=["buyer-id-lower", "buyer-id-higher"])
-async def test_a_withdrawal_racing_a_purchase_refunds_it_once_or_stops_it_without_deadlock(
+async def test_a_withdrawal_racing_a_purchase_hides_the_novel_or_stops_the_purchase_without_deadlock(
     world: _World, buyer_below_publisher: bool
 ) -> None:
-    """6화를 이미 산 사람이 7화를 사는 동안 게시자가 탈퇴한다. 두 사람 중 id 가 작은 쪽의 행을 쥔 트랜잭션 뒤에 구매·탈퇴가
-    차례로 막힌다. 놓으면 교착 없이 둘 다 끝나고, 그 사람의 구매는 모두 정확히 한 번 환급된다(구매가 먼저면 7화도 환급, 탈퇴가
-    먼저면 7화 구매는 없다). 깨지는 시나리오: 탈퇴가 게시자 행을 먼저 쥐고 구매자 행을 나중에 잡아, 구매자 id 가 더 작을 때
-    구매(구매자 → 게시자)와 서로 기다린다."""
+    """6화를 이미 산 사람이 7화를 사는 동안 게시자가 탈퇴한다. 게시자 행을 쥔 트랜잭션 뒤에 구매·탈퇴가 차례로 막힌다(구매는
+    게시자 행을, 탈퇴는 탈퇴자 행을 기다린다). 놓으면 교착 없이 둘 다 끝나고, 소설은 팔린 소설이라 숨겨 남으며 환급은 없다 —
+    구매가 먼저면 7화도 소장이고, 탈퇴가 먼저면 7화 구매는 404 로 차감이 없다. 깨지는 시나리오: 탈퇴가 게시자 행이 아닌 다른
+    행을 먼저 잡아 구매와 서로 기다리거나, 탈퇴가 먼저 커밋됐는데 구매가 이미 읽은 판매 조건으로 7화를 판다."""
     lower, higher = await world.pair()
     publisher, buyer = (higher, lower) if buyer_below_publisher else (lower, higher)
     novel = await world.publish(publisher)
     await _bought(world, novel, buyer, 6)
-    holder = await _hold_user(world, lower)
+    holder = await _hold_user(world, publisher)
     purchase = _purchase_task(world, novel, buyer, 7)
     tasks = [purchase]
     try:
-        # 탈퇴는 구매가 막힌 뒤에 띄운다 — 함께 띄우면 탈퇴가 먼저 줄을 서 엇갈린 잠금이 생기지 않을 수 있다.
+        # 탈퇴는 구매가 막힌 뒤에 띄운다 — 함께 띄우면 탈퇴가 먼저 줄을 서 겹침이 생기지 않을 수 있다.
         await _assert_blocked(purchase)
         withdrawal = _withdraw_task(publisher)
         tasks.append(withdrawal)
@@ -301,17 +307,21 @@ async def test_a_withdrawal_racing_a_purchase_refunds_it_once_or_stops_it_withou
         await _close_quietly(holder, tasks)
 
     assert withdrawn == 204
-    assert isinstance(bought, NovelChapterPurchaseResponse) or (
-        isinstance(bought, HTTPException) and bought.status_code == 404
-    ), bought
-    _assert_each_purchase_refunded_once(await _refunds(world, buyer), await _refund_entries(world, buyer))
-    assert await _balance(world, buyer) == 100
+    assert await _hidden(world, novel.novel_id)
+    assert await _refund_entries(world, buyer) == 0
+    if isinstance(bought, NovelChapterPurchaseResponse):
+        assert await _refunds(world, buyer) == [(6, None), (7, None)]
+        assert await _balance(world, buyer) == 40
+    else:
+        assert isinstance(bought, HTTPException) and bought.status_code == 404, bought
+        assert await _refunds(world, buyer) == [(6, None)]
+        assert await _balance(world, buyer) == 70
 
 
-async def test_a_withdrawal_that_waited_for_a_new_purchase_retries_and_refunds_that_buyer_too(world: _World) -> None:
-    """탈퇴가 구매자 집합을 읽은 뒤, 아직 커밋되지 않은 새 구매가 게시자 행을 쥐고 있다. 탈퇴는 그 구매를 기다렸다가 잠그지
-    않은 새 구매자를 보고 처음부터 다시 해, 새 구매자까지 환급하고 204 로 끝난다. 깨지는 시나리오: 잠그지 않은 구매자를 건너뛰어
-    그 구매가 환급 없이 버려지거나, 그 사람을 순서 밖에서 잡아 교착하거나, 다시 하지 않고 탈퇴를 실패시킨다."""
+async def test_a_withdrawal_that_waited_for_a_new_purchase_keeps_that_purchase_readable(world: _World) -> None:
+    """아직 커밋되지 않은 새 구매가 게시자 행을 쥐고 있는 동안 게시자가 탈퇴한다. 탈퇴는 그 구매를 기다렸다가 커밋된 구매를
+    보고 소설을 숨겨 남긴다 — 다시 하기도 환급도 없이 204 이고, 먼저 산 사람과 새로 산 사람 모두 소장이 그대로다. 깨지는
+    시나리오: 탈퇴가 기다리기 전에 읽은 구매 목록으로 판정해 새 구매자의 소장을 버리거나, 그 구매자를 기다리며 실패한다."""
     publisher = await world.member()
     earlier, later = await world.member(), await world.member()
     novel = await world.publish(publisher)
@@ -331,9 +341,37 @@ async def test_a_withdrawal_that_waited_for_a_new_purchase_retries_and_refunds_t
             await asyncio.wait(tasks, timeout=_SETTLE_SECONDS)
 
     assert status_code == 204
+    assert await _hidden(world, novel.novel_id)
     for buyer in (earlier, later):
-        assert await _refunds(world, buyer) == [(6, 30)]
-        assert await _balance(world, buyer) == 100
+        assert await _refunds(world, buyer) == [(6, None)]
+        assert await _balance(world, buyer) == 70
+
+
+async def test_a_withdrawal_waiting_for_the_first_purchase_hides_the_novel_instead_of_deleting_it(
+    world: _World,
+) -> None:
+    """아무도 사지 않은 소설의 첫 구매가 게시자 행을 쥔 채 커밋 전이다. 그때 게시자가 탈퇴하면 탈퇴는 그 구매를 기다린 뒤에
+    "팔렸는가"를 판정하므로, 소설을 지우지 않고 숨겨 남기고 산 사람은 그 화를 계속 읽는다. 깨지는 시나리오: 탈퇴가 탈퇴자
+    행을 잡기 전에 판정해(그때는 아무도 사지 않았다) 소설을 지우고, 뒤에 커밋된 구매는 환급도 열람도 없이 남는다."""
+    publisher, buyer = await world.member(), await world.member()
+    novel = await world.publish(publisher)
+    purchase = world.factory()
+    tasks: list[asyncio.Task[object]] = []
+    try:
+        await _buy(purchase, novel, buyer, 6)
+        tasks.append(_withdraw_task(publisher))
+        await _assert_blocked(tasks[0])
+        await purchase.commit()
+        status_code = await asyncio.wait_for(tasks[0], _SETTLE_SECONDS)
+    finally:
+        await purchase.close()
+        if tasks:
+            await asyncio.wait(tasks, timeout=_SETTLE_SECONDS)
+
+    assert status_code == 204
+    assert await _hidden(world, novel.novel_id)
+    assert await _refunds(world, buyer) == [(6, None)]
+    assert await _balance(world, buyer) == 70
 
 
 # ── 제재 ────────────────────────────────────────────────────────────────────
@@ -378,14 +416,16 @@ async def test_a_restriction_racing_a_purchase_by_a_lower_id_buyer_refunds_once_
 
 
 async def test_a_restriction_racing_the_publishers_withdrawal_refunds_each_purchase_once(world: _World) -> None:
-    """노벨 이용제한과 게시자 탈퇴가 겹친다. 두 사람 중 id 가 작은 쪽의 행을 쥔 트랜잭션 뒤에 둘 다 막히고, 놓으면 어느 쪽이
-    먼저든 산 사람의 구매는 한 번만 환급된다(뒤에 온 쪽은 돌려줄 것이 없거나, 소설이 지워져 이용제한할 대상이 없다). 깨지는
-    시나리오: 둘이 같은 구매를 각자 미환급으로 읽어 이중 환급하거나 환급 초과 오류로 하나가 500 이 된다."""
+    """노벨 이용제한과 게시자 탈퇴가 겹친다. 게시자 행을 쥔 트랜잭션 뒤에 둘 다 막히고(탈퇴는 게시자 행을, 이용제한은 게시자·구매자 행을 id 순으로 한 번에 잡으므로
+    어느 쪽이든 게시자 행에서 기다린다), 놓으면
+    어느 쪽이 먼저든 산 사람의 구매는 한 번만 환급된다 — 탈퇴가 먼저면 숨겨 남긴 소설을 이용제한이 환급하고, 이용제한이 먼저면
+    환급 뒤 소장자가 없어 탈퇴가 소설을 지운다. 깨지는 시나리오: 둘이 같은 구매를 각자 미환급으로 읽어 이중 환급하거나 환급 초과
+    오류로 하나가 500 이 된다."""
     publisher, buyer = await world.member(), await world.member()
     novel = await world.publish(publisher)
     await _bought(world, novel, buyer, 6)
     admin = await world.admin()
-    holder = await _hold_user(world, min(publisher, buyer))
+    holder = await _hold_user(world, publisher)
     withdrawal = _withdraw_task(publisher)
     restriction = _restrict_task(world, novel, admin)
     try:
