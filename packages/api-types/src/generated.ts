@@ -1951,7 +1951,11 @@ export interface paths {
         get: operations["get_me_me_get"];
         put?: never;
         post?: never;
-        /** Withdraw */
+        /**
+         * Withdraw
+         * @description 탈퇴. 노벨 게시자면 정책 스위치가 켜졌을 때 그 소설의 구매자에게 환급한다 — 잠금과 다시 하기는 `auth/withdrawal.py`
+         *     모듈 docstring. 다시 하기 상한을 넘기면 409 `WITHDRAWAL_CONFLICT` 이고 아무것도 지우지 않았다(다시 누르면 된다).
+         */
         delete: operations["withdraw_me_delete"];
         options?: never;
         head?: never;
@@ -2632,7 +2636,7 @@ export interface paths {
         };
         /**
          * List Novels
-         * @description 내 소설을 최근 수정 순으로. 원래 방이 지워진 소설도 나온다(`chatRoomId` null).
+         * @description 내 소설을 최근 수정 순으로. 원래 방이 지워진 소설도 나온다(`chatRoomId` null). 숨긴 소설은 나오지 않는다.
          */
         get: operations["list_novels_novels_get"];
         put?: never;
@@ -2668,6 +2672,12 @@ export interface paths {
          *     노벨에서 이 소설의 화를 산 구매자가 있으면 같은 트랜잭션에서 그 구매를 환급한다 — 그래서 게시자 행과 함께 그 구매자들의
          *     행도 id 순으로 잠근다(`novel_public/purchases.py` 모듈 docstring). 잠근 뒤 새 구매가 보이면 409
          *     `NOVEL_DELETE_CONFLICT` 이고 지우지 않는다(다시 누르면 된다).
+         *
+         *     정책 스위치가 켜져 있고 노벨로 팔린 소설(`novel_was_sold`)이면 지우지 않고 숨긴다 — 산 사람이 계속 읽어야 해서다. 진행
+         *     중 작업을 환불하고, 공개를 거두고(새로 보이거나 팔리지 않는다), 숨긴 시각을 찍고 방 칸을 비운다(같은 방에서 새 소설을
+         *     만들 수 있고, 진행 중이던 연쇄 생성도 방이 없어 다음 묶음을 만들지 않는다). 환급은 없다. 숨긴 소설은 작가의 목록·주소
+         *     에서 사라지고(`_get_owned_novel`), 미환급 소장자가 모두 사라지면 하루 한 번 도는 파기가 지운다(`hidden_purge.py`).
+         *     판정은 사용자 행을 잠근 뒤에 한다 — 구매가 게시자 행을 잡으므로 그 뒤로는 새 구매가 끼지 않는다.
          */
         delete: operations["delete_novel_novels__novel_id__delete"];
         options?: never;
@@ -3391,7 +3401,8 @@ export interface paths {
          * @description 공개를 거둔다. 공개 상태 행과 공개본은 지우지 않고 공개 범위만 바꾼다 — 다시 공개하면 공개본이 그대로 살아난다.
          *     이미 거둔 공개면 그대로 204 다. 재동의 게이트를 걸지 않는다(자기 글을 내리는 일이라).
          *
-         *     운영자 승인을 기다리는 공개를 거두는 것은 신청 취소다 — 독자에게 보인 적 없는 글이라 공개 상태 행과 화 공개본을 지운다.
+         *     운영자 승인을 기다리는 공개를 거두는 것은 신청 취소다 — 독자에게 보인 적 없는 글이라 공개 상태 행과 화 공개본, 그 판
+         *     행을 지운다.
          *     대기 조건을 건 DELETE 를 먼저 낸다. 그 문장이 승인과 같은 공개 상태 행 잠금에서 줄을 서므로, 승인이 먼저 커밋했으면
          *     다시 평가한 조건에 걸려 아무것도 지우지 않고 아래의 보통 거두기가 된다. 읽어서 대기면 지우는 식으로 하면 승인 커밋 뒤에도
          *     지워져 공개 상태 행 없이 잠금만 남은 소설이 생긴다. 정책 스위치와 무관하다.
@@ -3475,7 +3486,8 @@ export interface paths {
         /**
          * Get Webnovel
          * @description 노벨 작품 정보와 목차. 읽을 수 없으면 소장했던 사람에게 410 `NOVEL_READING_ENDED`, 아니면 404 `NOVEL_NOT_FOUND`
-         *     (모듈 docstring). 목차의 화마다 독자에게의 상태(`access`)와 가격, 그 화를 읽던 자리를 싣는다.
+         *     (모듈 docstring). 목차의 화마다 독자에게의 상태(`access`)와 가격, 그 화를 읽던 자리를 싣는다. 목록에서 빠진 노벨을
+         *     소장자가 열면 `salesStopped` 가 참이다(모듈 docstring 의 소장자 열람).
          */
         get: operations["get_webnovel_webnovels__novel_id__get"];
         put?: never;
@@ -3499,6 +3511,10 @@ export interface paths {
          *     (자기 글을 다시 열어 본 것은 독자의 조회가 아니다). 아니면 본문 없이
          *     `access: locked` 와 가격만 싣는다(소장 화면용). 읽을 수 없으면 소장했던 사람에게 410 `NOVEL_READING_ENDED`, 아니면 404
          *     `NOVEL_CHAPTER_NOT_FOUND`(모듈 docstring).
+         *
+         *     `edition` 은 고를 판이다(정책 스위치가 켜졌을 때). 지금 판이거나, 그 화를 산 사람의 산 때의 판(`purchasedEdition`)만
+         *     고를 수 있고 그 밖의 값은 404 `NOVEL_CHAPTER_NOT_FOUND` 다 — 사지 않은 사람·무료 화·게시자 본인은 지금 판만 읽는다.
+         *     스위치가 꺼져 있으면 이 값을 보지 않고 지금 판을 준다.
          */
         get: operations["get_webnovel_chapter_webnovels__novel_id__chapters__chapter_id__get"];
         put?: never;
@@ -3521,7 +3537,8 @@ export interface paths {
          * Save Webnovel Reading Position
          * @description 노벨 화를 읽던 자리를 저장한다(소유자 읽은 자리와 같은 계약 — 문단 번호, 같은 값을 다시 보내도 같고, 다 읽은 화는
          *     다 읽은 화로 남는다). 문단 번호가 문단 수 밖이면 422 `NOVEL_PARAGRAPH_RANGE_INVALID`, 지금 읽을 수 없는 화(없음·숨김)는
-         *     404 `NOVEL_CHAPTER_NOT_FOUND`, 소장하지 않은 유료 화는 403 `NOVEL_CHAPTER_LOCKED` 다.
+         *     404 `NOVEL_CHAPTER_NOT_FOUND`, 소장하지 않은 유료 화는 403 `NOVEL_CHAPTER_LOCKED` 다. 소장자는 목록에서 빠진 노벨에서도
+         *     저장한다(모듈 docstring 의 소장자 열람).
          *
          *     화 행을 키 공유 잠금으로 확인한 뒤 저장한다 — 소유자 읽은 자리와 같은 이유다. 묶음·소설 삭제는 화를 `FOR UPDATE` 로
          *     잠근 뒤 읽은 자리를 지우므로, 이쪽이 먼저 잡으면 삭제가 이 저장을 기다렸다가 함께 지우고, 삭제가 먼저면 이 확인이
@@ -3729,7 +3746,8 @@ export interface paths {
          * Moderate Admin Novel
          * @description 노벨을 이용제한(`restrict`)하거나 해제(`lift`)한다. 사유가 공백뿐이면 422, 공개 상태 행이 없으면 404
          *     `NOVEL_NOT_FOUND`, 이미 그 상태면 409 `NOVEL_ALREADY_RESTRICTED`·`NOVEL_NOT_RESTRICTED`(감사 로그가 빈 조치로 쌓이지
-         *     않게).
+         *     않게). 정책 스위치가 켜져 있으면 이용제한이 그 노벨의 모든 미환급 구매를 환급한다(해제는 환급을 되돌리지 않는다) —
+         *     환급 대상을 잠근 뒤 새 구매가 보이면 409 `NOVEL_REFUND_CONFLICT`(다시 누르면 된다).
          */
         post: operations["moderate_admin_novel_admin_novels__novel_id__moderation_post"];
         delete?: never;
@@ -3758,7 +3776,7 @@ export interface paths {
          *     통과하면 공개 범위·심사 칸·처음 공개 시각을 한 UPDATE 로 바꾸고 연재권 잠금을 찍는다.
          *
          *     반려는 사유가 필요하고(공백뿐이면 422) 그 글이 그대로 작가의 공개 상태에 실린다. 화 공개본을 지우고 공개 상태 행은
-         *     사유를 들고 남긴다. 잠금 순서는 모듈 docstring.
+         *     사유를 들고 남긴다(대기 공개가 쌓은 판 행도 지운다 — 독자에게 보인 적 없는 판이다). 잠금 순서는 모듈 docstring.
          */
         post: operations["review_admin_novel_admin_novels__novel_id__review_post"];
         delete?: never;
@@ -3817,7 +3835,8 @@ export interface paths {
          * Act On Admin Novel Report
          * @description 신고를 처리한다 — `restrict` 는 그 노벨을 이용제한하고 신고를 처리완료로(이미 이용제한이어도 처리된다), `reject` 는
          *     노벨을 건드리지 않고 반려로 둔다. 이미 처리된 신고도 다시 처리할 수 있다(상태·처리자·시각을 덮어쓴다). 노벨이 지워져
-         *     이용제한할 대상이 없으면 409 `NOVEL_GONE`(반려는 된다).
+         *     이용제한할 대상이 없으면 409 `NOVEL_GONE`(반려는 된다). 이용제한은 직접 이용제한과 같이 환급한다 — 이미 이용제한된
+         *     노벨이면 돌려줄 것이 없다.
          */
         post: operations["act_on_admin_novel_report_admin_novel_reports__report_id__actions_post"];
         delete?: never;
@@ -11080,6 +11099,8 @@ export interface components {
         NotificationResponse: {
             comment?: components["schemas"]["CommentNotificationTargetResponse"] | null;
             novelRefund?: components["schemas"]["NovelRefundNotificationResponse"] | null;
+            /** Novelrefundreason */
+            novelRefundReason?: ("deleted" | "publisher_withdrawn" | "novel_restricted" | "source_restricted" | "source_deleted") | null;
             /** Commentactionid */
             commentActionId?: string | null;
             /**
@@ -11975,6 +11996,16 @@ export interface components {
              * @default 0
              */
             lastBatchRefundAmount: number;
+            /**
+             * Novelsold
+             * @default false
+             */
+            novelSold: boolean;
+            /**
+             * Lastbatchsold
+             * @default false
+             */
+            lastBatchSold: boolean;
         };
         /**
          * NovelReadingPositionRequest
@@ -11996,8 +12027,8 @@ export interface components {
         };
         /**
          * NovelRefundNotificationResponse
-         * @description 노벨 삭제 환급 알림의 내용 — 게시자가 지운 소장 화 수와 실제로 돌려준 클로버. 소설 제목은 없다(지운 글의 사본을
-         *     남기지 않는다).
+         * @description 노벨 구매 환급 알림의 내용 — 환급한 소장 화 수와 실제로 돌려준 클로버. 소설 제목은 없다(지운 글의 사본을 남기지
+         *     않는다).
          */
         NovelRefundNotificationResponse: {
             /** Chaptercount */
@@ -12417,7 +12448,12 @@ export interface components {
          * PublicNovelChapterResponse
          * @description 노벨 화 하나. `access` 가 `locked` 면 본문(`paragraphs`)과 작가의 말이 비어 있고 `price` 로 소장 화면을 그린다 —
          *     잠긴 화의 글은 한 글자도 싣지 않는다. 읽을 수 있으면 공개본 개정의 본문을 문단 배열로 싣는다(소유자 화 조회의
-         *     `paragraphs` 와 같은 나눔이라 읽은 자리의 문단 번호가 같은 뜻이다). `edition` 은 공개본 판이다(읽은 자리 저장에 싣는다).
+         *     `paragraphs` 와 같은 나눔이라 읽은 자리의 문단 번호가 같은 뜻이다). `edition` 은 실어 준 글의 판이다(읽은 자리 저장에
+         *     싣는다) — 보통은 지금 판이고, 산 사람이 산 때의 판을 고르면 그 판이다.
+         *
+         *     `purchased_edition` 은 그 화를 산 사람에게만, 산 때의 판이 지금 판과 다를 때 싣는다(정책 스위치가 켜졌을 때). 판 이력이
+         *     생기기 전의 판을 샀으면 남아 있는 가장 오래된 판으로 대신한다. 그 판 번호를 쿼리 `edition` 으로 보내면 그 판의 본문·
+         *     제목·작가의 말을 준다. `sales_stopped` 는 작품 정보의 같은 칸과 같다.
          */
         PublicNovelChapterResponse: {
             /**
@@ -12452,6 +12488,12 @@ export interface components {
             previousChapter: components["schemas"]["PublicNovelChapterLink"] | null;
             nextChapter: components["schemas"]["PublicNovelChapterLink"] | null;
             readingPosition: components["schemas"]["PublicNovelReadingPosition"] | null;
+            purchasedEdition?: components["schemas"]["PublicNovelPurchasedEdition"] | null;
+            /**
+             * Salesstopped
+             * @default false
+             */
+            salesStopped: boolean;
         };
         /**
          * PublicNovelCommentCreateRequest
@@ -12513,6 +12555,8 @@ export interface components {
          *     - `is_publisher`: 보는 사람이 게시자 본인인가(모든 화를 무료로 읽고, 화면이 "내 소설에서 관리"를 보인다).
          *     - `free_chapter_count`·`chapter_price`: "1~5화 무료 · 6화부터 화당 30클로버" 안내용 지금 설정값.
          *     - `liked`: 보는 사람이 좋아요했는가.
+         *     - `sales_stopped`: 새로 보이거나 팔리지 않는 노벨을 소장자가 열었다(게시자의 거둠·정지, 원작자 정지로 인한 원작 일괄
+         *       제한, 판매된 소설 삭제). 산 화·무료 화·목차는 그대로 읽고, 사지 않은 유료 화는 잠김으로 보이되 살 수 없다.
          */
         PublicNovelDetailResponse: {
             /**
@@ -12557,6 +12601,11 @@ export interface components {
              * Format: date-time
              */
             publishedAt: string;
+            /**
+             * Salesstopped
+             * @default false
+             */
+            salesStopped: boolean;
         };
         /**
          * PublicNovelHomeItem
@@ -12641,6 +12690,19 @@ export interface components {
             items: components["schemas"]["PublicNovelListItem"][];
             /** Nextcursor */
             nextCursor: string | null;
+        };
+        /**
+         * PublicNovelPurchasedEdition
+         * @description 산 사람이 고를 수 있는 "산 때의 판" — 판 번호와 그 판을 공개한 시각.
+         */
+        PublicNovelPurchasedEdition: {
+            /** Edition */
+            edition: number;
+            /**
+             * Publishedat
+             * Format: date-time
+             */
+            publishedAt: string;
         };
         /**
          * PublicNovelReadingPosition
@@ -18698,7 +18760,9 @@ export interface operations {
     };
     get_webnovel_chapter_webnovels__novel_id__chapters__chapter_id__get: {
         parameters: {
-            query?: never;
+            query?: {
+                edition?: number | null;
+            };
             header?: never;
             path: {
                 novel_id: string;

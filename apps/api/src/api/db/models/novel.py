@@ -74,6 +74,11 @@ NovelWritingLockSource = Literal["first_chapter", "backfill"]
 # 연재권 잠금이 어디서 왔는지. 첫 공개가 쓴 잠금과, 이 칸이 생기기 전에 이미 공개한 소설에 마이그레이션이 채운 잠금을
 # 가른다 — 뒤의 것은 그때 원작 권한을 알 수 없다.
 NovelSerialLockSource = Literal["first_publish", "backfill"]
+# 노벨 구매를 왜 환급했는가. 게시자가 소설·마지막 묶음을 지움 / 게시자 탈퇴 / 운영자의 노벨 이용제한 / 원작의 자체 이용제한
+# / 원작 삭제. 독자에게 열람이 끝난 이유를 알려 줄 때 이 값을 읽는다.
+NovelPurchaseRefundReason = Literal[
+    "deleted", "publisher_withdrawn", "novel_restricted", "source_restricted", "source_deleted"
+]
 
 
 def _sql_in_list(literal: Any) -> str:
@@ -92,7 +97,11 @@ class Novel(Base):
 
     `protagonist_name` 은 본문에서 사용자 쪽 인물을 부르는 이름이다. 대화 프로필 이름으로 미리 채우고, 없으면 NULL 로
     두었다가 첫 장을 만들기 전에 입력받는다. 나중에 바꿔도 이미 만든 장 본문은
-    그대로다."""
+    그대로다.
+
+    `hidden_at` 은 노벨로 팔린 소설을 작가가 지운 시각이다. 산 사람이 계속 읽을 수 있게 소설과 하위 행을 그대로 두고
+    작가에게서만 감춘다(작가 목록·주소에서 사라지고, 방 칸을 비워 같은 방에서 새 소설을 만들 수 있다). 미환급 소장자가
+    모두 사라지면 하루 한 번 도는 파기가 진짜로 지운다."""
 
     __tablename__ = "novels"
 
@@ -137,6 +146,8 @@ class Novel(Base):
     serial_lock_content_version_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     serial_lock_terms_version: Mapped[str | None] = mapped_column(Text, nullable=True)
     serial_lock_source: Mapped[NovelSerialLockSource | None] = mapped_column(Text, nullable=True)
+    # 숨긴 시각(클래스 docstring). nullable 인 것은 옛 코드의 소설 INSERT 가 이 칸을 모르기 때문이다.
+    hidden_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -171,6 +182,9 @@ class Novel(Base):
         CheckConstraint(
             "(serial_locked_at IS NULL) = (serial_lock_source IS NULL)", name="ck_novels_serial_lock_complete"
         ),
+        # 숨긴 소설은 방에 묶여 있지 않다. 방의 소설 조회·채팅 화면의 소설 진입·같은 방의 새 소설 만들기가 모두 방 칸으로
+        # 소설을 찾으므로, 방 칸이 남으면 숨긴 소설이 그 길로 되살아난다.
+        CheckConstraint("hidden_at IS NULL OR chat_room_id IS NULL", name="ck_novels_hidden_without_room"),
         Index("ix_novels_user_id_updated_at", "user_id", updated_at.desc()),
         Index("ux_novels_chat_room_id", "chat_room_id", unique=True),
         Index(
@@ -661,6 +675,42 @@ class NovelChapterPublication(Base):
     )
 
 
+class NovelChapterEdition(Base):
+    """화 공개본의 판 하나 — 그 판으로 공개한 개정과 공개 화면 글(제목·작가의 말) 사본, 그 판을 공개한 시각. 화 공개본
+    (`NovelChapterPublication`)은 지금 판 하나만 들고 다시 공개할 때 덮이므로, 산 사람이 "산 때의 판"을 다시 읽으려면 지난
+    판을 따로 남겨야 한다. 공개(처음·다시)마다 한 행이 쌓이고 쌓인 행은 바뀌지 않는다.
+
+    이 표가 생기기 전의 판은 남아 있지 않다 — 그때 공개 중이던 판만 마이그레이션이 한 행씩 채웠다. 그 이전 판을 산 사람의
+    "산 때의 판"은 그 화의 가장 오래된 판 행으로 대신한다.
+
+    소설·화·개정을 지우면 함께 지워지는 `ON DELETE CASCADE` 다(모듈 docstring 의 예외 — 옛 코드의 삭제는 이 표를 모른다).
+    복합 PK 와 CHECK 는 `alembic check` 가 비교하지 않아 `pytest.raises(IntegrityError)` 행위 테스트가 검증한다."""
+
+    __tablename__ = "novel_chapter_editions"
+
+    chapter_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("novel_chapters.id", ondelete="CASCADE"), primary_key=True
+    )
+    edition: Mapped[int] = mapped_column(Integer, primary_key=True)
+    novel_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("novels.id", ondelete="CASCADE"), nullable=False)
+    revision_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("novel_chapter_revisions.id", ondelete="CASCADE"), nullable=False
+    )
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    author_note: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    published_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # 소설 인덱스는 반려·신청 취소가 그 소설의 판 행을 지울 때와 소설 DELETE 때 FK 검사용이고, 개정 인덱스는 개정 DELETE 때
+    # FK 검사용이다. 화 쪽은 PK 가 맡는다.
+    __table_args__ = (
+        CheckConstraint("edition >= 1", name="ck_novel_chapter_editions_edition_positive"),
+        Index("ix_novel_chapter_editions_novel_id", "novel_id"),
+        Index("ix_novel_chapter_editions_revision_id", "revision_id"),
+    )
+
+
 class NovelScreening(Base):
     """공개 전 텍스트 심사 한 번의 판정. 통과·거부만 남는다 — 심사 호출이 실패해(장애) 판정이 없으면 행이 없다.
 
@@ -702,8 +752,9 @@ class NovelScreening(Base):
 
 
 class NovelPurchase(Base):
-    """노벨 화 하나의 소장 구매. 구매자가 클로버로 산 화마다 한 행이고, 같은 화는 다시 사지 않는다(`(chapter_id,
-    buyer_user_id)` 유니크 — 다시 공개로 본문이 바뀌어도 같은 화다). 무료 화와 게시자 본인의 열람은 행을 만들지 않는다.
+    """노벨 화 하나의 소장 구매. 구매자가 클로버로 산 화마다 한 행이다. 환급되지 않은 구매는 화·구매자마다 하나뿐이고
+    (미환급 행만 담는 `(chapter_id, buyer_user_id)` 부분 유니크 — 다시 공개로 본문이 바뀌어도 같은 화다), 환급된 구매는
+    소장이 아니어서 그 화가 다시 열리면 다시 살 수 있다(새 행). 무료 화와 게시자 본인의 열람은 행을 만들지 않는다.
 
     소설·화를 가리키는 칸은 **FK 없는 사본**이다. 게시자가 소설이나 마지막 묶음을 지우거나 탈퇴해도 이 행은 남아, 구매자에게
     "지워져 환급했다"·"게시자가 탈퇴했다"를 알려 줄 근거가 된다. 그래서 화 제목 같은 게시자 글의 사본은 두지 않는다 — 지운
@@ -713,14 +764,16 @@ class NovelPurchase(Base):
     - `edition`: 산 시점의 화 공개본 판 번호(어느 판을 보고 샀는가).
     - `spend_ledger_id`: 이 구매의 차감 원장 행. 삭제 환급이 이 id 로 차감 배분을 찾아 깎은 로트로 되돌리고, 정산이 붙을 키다.
     - `price`: 산 시점의 가격 사본 — 가격 설정이 바뀌어도 환급액은 낸 값이다.
-    - `refunded_at`·`refunded_amount`: 게시자 삭제로 환급한 시각과 실제로 돌려준 양. 결제가 전액 취소된 구매분에서 나간 몫은
-      돌려주지 않으므로 `price` 보다 작을 수 있다. `refund_notification_id` 는 그때 구매자에게 보낸 알림이다(알림 문구의 화
-      수·클로버 수가 이 행들에서 나온다).
+    - `refunded_at`·`refunded_amount`: 환급한 시각과 실제로 돌려준 양. 결제가 전액 취소된 구매분에서 나간 몫은 돌려주지
+      않으므로 `price` 보다 작을 수 있다. `refund_notification_id` 는 그때 구매자에게 보낸 알림이다(알림 문구의 화 수·클로버
+      수가 이 행들에서 나온다).
+    - `refund_reason`: 왜 환급했는가(`NovelPurchaseRefundReason`). NULL 인 환급 행은 이 칸이 생기기 전이나 이 칸을 모르는
+      옛 코드가 쓴 것이고, 그때 환급은 게시자 삭제뿐이었으므로 `deleted` 로 읽는다.
 
     구매자가 탈퇴하면 행을 지우지 않고 `buyer_user_id` 만 비운다(`auth/withdrawal.py`). 화·가격·차감 원장·판·시각은 거래
     기록으로 남고 누가 샀는지만 사라진다. 구매자 칸이 빈 행은 삭제 환급에서 빠지고(탈퇴로 잔액이 이미 소멸했다) 독자 화면에는
-    나타나지 않으며, 어드민의 구매 수·합계에는 들어간다(산 사람 수에는 들지 않는다). 유니크 `(chapter_id, buyer_user_id)` 는
-    NULL 끼리 겹치지 않으므로 같은 화를 산 탈퇴 구매자가 여럿이어도 행이 함께 남는다.
+    나타나지 않으며, 어드민의 구매 수·합계에는 들어간다(산 사람 수에는 들지 않는다). 부분 유니크 `(chapter_id,
+    buyer_user_id)` 는 NULL 끼리 겹치지 않으므로 같은 화를 산 탈퇴 구매자가 여럿이어도 행이 함께 남는다.
 
     CHECK 는 `alembic check` 가 비교하지 않아 `pytest.raises(IntegrityError)` 행위 테스트가 유일한 검증이다."""
 
@@ -749,9 +802,11 @@ class NovelPurchase(Base):
     refund_notification_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("notifications.id", name="fk_novel_purchases_refund_notification_id"), nullable=True
     )
+    # 위 목록의 환급 사유. nullable 인 것은 옛 코드의 환급 UPDATE 가 이 칸을 모르기 때문이다.
+    refund_reason: Mapped[NovelPurchaseRefundReason | None] = mapped_column(Text, nullable=True)
 
-    # 화 단위 조회(구매했는가·삭제 환급)는 유니크 인덱스가, 소설 삭제 환급은 소설 인덱스가, 탈퇴 정리와 내 구매 목록은 구매자
-    # 인덱스가 맡는다. 원장 유니크는 차감 하나가 구매 둘로 쓰이지 않게 하는 그물이다.
+    # 화 단위 조회(지금 소장했는가·화 환급)는 미환급 부분 유니크 인덱스가, 소설 단위 환급은 소설 인덱스가, 탈퇴 정리와 내
+    # 구매 목록은 구매자 인덱스가 맡는다. 원장 유니크는 차감 하나가 구매 둘로 쓰이지 않게 하는 그물이다.
     __table_args__ = (
         CheckConstraint("price > 0", name="ck_novel_purchases_price_positive"),
         CheckConstraint("chapter_ordinal >= 1 AND edition >= 1", name="ck_novel_purchases_ordinal_edition_positive"),
@@ -766,7 +821,19 @@ class NovelPurchase(Base):
             "refund_notification_id IS NULL OR refunded_at IS NOT NULL",
             name="ck_novel_purchases_notification_after_refund",
         ),
-        Index("ux_novel_purchases_chapter_id_buyer_user_id", "chapter_id", "buyer_user_id", unique=True),
+        CheckConstraint(
+            f"refund_reason IN ({_sql_in_list(NovelPurchaseRefundReason)})", name="ck_novel_purchases_refund_reason"
+        ),
+        CheckConstraint(
+            "refund_reason IS NULL OR refunded_at IS NOT NULL", name="ck_novel_purchases_refund_reason_after_refund"
+        ),
+        Index(
+            "ux_novel_purchases_unrefunded_chapter_buyer",
+            "chapter_id",
+            "buyer_user_id",
+            unique=True,
+            postgresql_where=text("refunded_at IS NULL"),
+        ),
         Index("ix_novel_purchases_novel_id", "novel_id"),
         Index("ix_novel_purchases_buyer_user_id", "buyer_user_id"),
         Index("ux_novel_purchases_spend_ledger_id", "spend_ledger_id", unique=True),

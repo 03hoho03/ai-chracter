@@ -311,7 +311,7 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `NOVELIZE_PREMIUM_MODELS_ENABLED` / `NOVELIZE_PREMIUM_MODEL_ALLOWLIST` | 켤 때 `true` / 계정 id **쉼표 구분**(코드 기본값은 꺼짐·빈 명단) | 소설 장 상위 모델 스위치와 허용 가능 계정 명단. 뜻은 소설화 스위치·명단과 같고, 어드민이 준 계정별 허용 행도 있어야 한다. 소설화 자체(`NOVELIZE_ENABLED`·`NOVELIZE_GRANT_ALLOWLIST`)도 열려 있어야 쓸 수 있다 |
 | `NOVEL_PUBLIC_ENABLED` | 켤 때 `true`(코드 기본값은 `false`) | 노벨(공개 소설) 스위치. 소설화(`NOVELIZE_ENABLED`·명단·계정별 허용)와 별개로 이 스위치도 켜져 있어야 소설을 노벨에 공개·다시 공개할 수 있다 — 코드 기본값이 닫힘이라 이 줄 없이 배포하면 닫힌 채 뜬다. 끄면 재기동 뒤 공개·다시 공개·게시자의 공개 상태 조회가 403 `NOVEL_PUBLIC_DISABLED` 이고, 공개 상태 행은 남아 다시 켜면 그대로 돌아온다. 켜기·끄기는 "노벨(공개 소설) 켜기 · 끄기" 절 |
 | `NOVEL_PUBLIC_PREVIEW_ALLOWLIST` | 미리보기 동안 계정 id, **쉼표 구분**(공백·따옴표 없이). 전체 공개 뒤에는 줄을 지운다(코드 기본값은 빈 명단) | 노벨 미리보기 명단. 비어 있으면 스위치가 켜졌을 때 모두에게 열리고, 비어 있지 않으면 스위치가 켜져 있어도 명단의 로그인 회원에게만 열린다 — 그 밖의 회원·비로그인은 스위치를 끈 것과 같은 응답이고, 인증 없는 가격 응답의 `novelPublicEnabled` 도 거짓이다. UUID 가 아닌 항목이 있으면 api 가 기동하지 못한다. 절차는 "노벨(공개 소설) 켜기 · 끄기" 절 |
-| `NOVEL_PUBLIC_POLICY_V2_ENABLED` | 개정 약관 시행 뒤 켤 때 `true`(코드 기본값은 `false`) | 노벨 공개 정책 스위치. 꺼져 있으면 지금 약관대로다 — 첫 공개는 자동 글 심사를 통과하면 바로 열리고, 원작자가 소설화 허락을 거두면 다음 화가 막힌다. 켜면 아직 독자에게 보인 적 없는 소설의 첫 공개가 운영자 승인(어드민 `POST /admin/novels/{id}/review`)을 기다리고, 한 번 독자에게 보인 소설(연재권 잠금)은 원작자가 허락을 거둬도 다음 화를 이어 공개한다. 잠금 기록은 스위치와 무관하게 첫 공개마다 쌓인다. 켜는 순서·롤백은 "노벨(공개 소설) 켜기 · 끄기" 절의 "공개 정책 스위치" |
+| `NOVEL_PUBLIC_POLICY_V2_ENABLED` | 개정 약관 시행 뒤 켤 때 `true`(코드 기본값은 `false`) | 노벨 공개 정책 스위치. 꺼져 있으면 지금 약관대로다 — 첫 공개는 자동 글 심사를 통과하면 바로 열리고, 원작자가 소설화 허락을 거두면 다음 화가 막힌다. 켜면 아직 독자에게 보인 적 없는 소설의 첫 공개가 운영자 승인(어드민 `POST /admin/novels/{id}/review`)을 기다리고, 한 번 독자에게 보인 소설(연재권 잠금)은 원작자가 허락을 거둬도 다음 화를 이어 공개한다. 산 사람 보호도 켜진다 — 산 때의 판을 고를 수 있고, 거둠·게시자 정지·판매된 소설 삭제 뒤에도 소장자는 계속 읽으며, 노벨 이용제한·원작 이용제한·원작 삭제·게시자 탈퇴는 구매를 환급한다. 판매된 소설 삭제는 숨김, 판매된 화가 든 마지막 묶음 삭제는 409 다. 잠금 기록(첫 공개마다)과 판 행(공개마다)은 스위치와 무관하게 쌓인다. 켜는 순서·롤백은 "노벨(공개 소설) 켜기 · 끄기" 절의 "공개 정책 스위치" |
 
 > **`CORS_ALLOW_ORIGINS`**: `config.py` 가 쉼표 구분과 JSON 배열을 둘 다 받는다(`[` 로 시작하면 JSON). 항목 앞뒤 공백은
 > 지우고 빈 항목은 버리며, 남는 오리진이 없으면 기동에 실패한다. 새로 쓸 때는 쉼표 구분으로 쓴다.
@@ -1980,8 +1980,9 @@ sudo bash ops/swap-api.sh
 나머지에게 404 다. 화면은 인증 없는 `GET /clover/pricing` 의 `novelPublicEnabled` 로 노벨 탭을 숨긴다. 줄을 지웠으니 키 개수
 문장을 다시 센다.
 
-**공개 정책 스위치(`NOVEL_PUBLIC_POLICY_V2_ENABLED`) 켜기 · 끄기** — 첫 공개 운영자 승인과 연재권 잠금의 효력을 켠다(키 표의
-설명). 개정 약관(승인 반려의 이의제기 경로, 연재권 조항)이 시행된 뒤에, 그리고 어드민의 승인 대기열 화면과 작가의 대기·반려
+**공개 정책 스위치(`NOVEL_PUBLIC_POLICY_V2_ENABLED`) 켜기 · 끄기** — 첫 공개 운영자 승인과 연재권 잠금, 그리고 산 사람
+보호(산 때의 판 고르기, 거둠·게시자 정지·판매된 소설 삭제 뒤에도 소장자 열람 유지, 노벨 이용제한·원작 이용제한·원작 삭제·
+게시자 탈퇴 때 환급, 판매된 소설 삭제는 숨김)의 효력을 켠다(키 표의 설명). 개정 약관(승인 반려의 이의제기 경로, 연재권 조항)이 시행된 뒤에, 그리고 어드민의 승인 대기열 화면과 작가의 대기·반려
 표시 화면이 배포된 뒤에 켠다 — 화면이 없으면 작가에게 대기 행이 "거둠"으로 보이고 운영자는 승인할 화면이 없다. 순서가
 고정이다(끝에 `ok` 가 찍힐 때만 다음 줄로 간다):
 
@@ -1990,7 +1991,16 @@ sudo bash ops/swap-api.sh
 2. 연재권 잠금 백필을 다시 돌린다. 문장은 마이그레이션 `6fbf1e9a65b8` 의 `BACKFILL_SERIAL_LOCK_SQL` 하나다(멱등 — 이미 잠긴
    소설과 대기·반려 행은 건드리지 않는다). 배포 겹침 동안 옛 이미지가 만든 첫 공개가 여기서 잠긴다 — 빠뜨리면 그 소설은
    켠 뒤에도 잠기지 않은 채라 원작자가 허락을 거두면 다음 화가 막힌다(다음 공개가 그 순간을 잠금 시각으로 찍는다). 출력의 `UPDATE n` 이 잠근 소설 수다.
-3. 스위치 줄을 더하고 올린다.
+3. 판 행 백필을 다시 돌린다. 문장은 마이그레이션 `d77bce2bba4c` 의 `BACKFILL_CHAPTER_EDITIONS_SQL` 하나다(멱등 — 이미 있는
+   판 행은 바꾸지 않고 없는 판만 더한다). 배포 겹침 동안 옛 이미지가 다시 공개한 판은 판 행 없이 올라가는데, 그 판을 산
+   사람은 켠 뒤 "산 때의 판" 대신 그 화의 가장 오래된 판을 받는다. 출력의 `INSERT 0 n` 이 채운 판 수다.
+4. 닫혔는데 환급되지 않은 구매를 센다(읽기 전용). 스위치가 꺼진 동안의 노벨 이용제한·원작 이용제한·원작 삭제는 환급하지
+   않는다 — 켠 뒤 그 소장자는 410 을 받는데, 환급할 쓰기가 다시 오지 않는다. 출력이 `0` 이면 5 로 간다. 0 이 아니면 같은
+   조건에서 `count(*)` 를 `p.novel_id, n.content_id` 로 바꿔 대상을 적어 두고 5 로 간 뒤, 켠 상태에서 그 노벨·원작을 어드민에서
+   해제했다가 다시 제한해 환급한다(꺼진 동안의 해제·재제한은 환급하지 않는다). 다시 세어 0 인지 본다. 스위치가 꺼진 동안의
+   게시자 탈퇴는 지금 약관대로 환급 없이 소설을 지웠으므로 이 수에 들지 않는다. 원작 상태는 DB 에 대문자 라벨(`NORMAL`·
+   `RESTRICTED`·`DELETED`)로, 노벨 공개의 운영 상태는 소문자(`normal`·`restricted`)로 저장된다.
+5. 스위치 줄을 더하고 올린다.
 
 ```sh
 cd /opt/ddona/app
@@ -2000,6 +2010,19 @@ $C exec -T api_$(sudo bash ops/active-color.sh) \
 $C exec -T api_$(sudo bash ops/active-color.sh) python -c \
   "import runpy; print(runpy.run_path('migrations/versions/6fbf1e9a65b8_novel_serial_lock_and_publication_review.py')['BACKFILL_SERIAL_LOCK_SQL'])" \
   | $C exec -T postgres psql -U postgres -d ai_character_chat -v ON_ERROR_STOP=1
+$C exec -T api_$(sudo bash ops/active-color.sh) python -c \
+  "import runpy; print(runpy.run_path('migrations/versions/d77bce2bba4c_novel_editions_and_buyer_protection.py')['BACKFILL_CHAPTER_EDITIONS_SQL'])" \
+  | $C exec -T postgres psql -U postgres -d ai_character_chat -v ON_ERROR_STOP=1
+$C exec -T postgres psql -U postgres -d ai_character_chat -At -v ON_ERROR_STOP=1 <<'SQL'
+SELECT count(*) FROM novel_purchases p
+JOIN novels n ON n.id = p.novel_id
+JOIN novel_publications np ON np.novel_id = n.id
+LEFT JOIN contents c ON c.id = n.content_id
+WHERE p.refunded_at IS NULL AND p.buyer_user_id IS NOT NULL
+  AND (np.moderation_status = 'restricted'
+       OR c.id IS NULL
+       OR (c.moderation_status <> 'NORMAL' AND NOT c.restricted_by_suspension));
+SQL
 sudo sh -c 'printf "\nNOVEL_PUBLIC_POLICY_V2_ENABLED=true\n" >> /opt/ddona/.env'
 sudo python3 ops/check_env.py --format /opt/ddona/.env
 sudo bash ops/swap-api.sh
@@ -2014,6 +2037,23 @@ $C exec -T api_$(sudo bash ops/active-color.sh) \
 막힌다. 남은 승인 대기 행은 독자에게 보이지 않은 채 남고, 작가가 다시 신청하면 처음 공개처럼 원작 허락·목록 판정을 거쳐
 바로 공개된다. 운영자의 승인·반려는 스위치와 무관하게 계속 된다.
 
+산 사람 보호도 함께 꺼진다. 켜져 있는 동안 거둔 소설·게시자가 정지된 소설·원작자 정지로 일괄 제한된 원작의 소설·숨긴 소설
+(판매된 소설 삭제)의 소장자는 끄는 순간 환급 없이 410 을 받는다 — 그 소장을 끝낸 쓰기는 이미 지나가서 환급할 쓰기가 다시
+오지 않는다. 숨긴 소설은 그 소장자들의 구매가 미환급으로 남으므로 파기 크론("숨긴 소설 파기 — purge cron" 절)도 지우지
+않고 남겨 둔다. 그래서 끄기는 롤백 때만 하고, 끄기 전에 아래로 그런 소장자가 몇 명인지 본다(0 이 아니면 다시 켤 때까지
+그 사람들은 읽지 못한다). 끈 동안 판매된 소설 삭제는 다시 진짜 삭제 + 환급이고, 게시자 탈퇴·운영자 제재는 환급하지 않는다.
+
+```sql
+SELECT count(DISTINCT p.buyer_user_id) FROM novel_purchases p
+JOIN novels n ON n.id = p.novel_id
+JOIN novel_publications np ON np.novel_id = n.id
+JOIN users u ON u.id = n.user_id
+LEFT JOIN contents c ON c.id = n.content_id
+WHERE p.refunded_at IS NULL AND p.buyer_user_id IS NOT NULL
+  AND (np.visibility = 'withdrawn' OR n.hidden_at IS NOT NULL OR u.suspended_at IS NOT NULL
+       OR c.restricted_by_suspension);
+```
+
 ```sh
 cd /opt/ddona/app
 sudo sed -i '/^NOVEL_PUBLIC_POLICY_V2_ENABLED=/d' /opt/ddona/.env
@@ -2025,11 +2065,14 @@ sudo bash ops/swap-api.sh
 있으면 운영자가 먼저 처리하거나 작가에게 알린다 — 옛 코드는 심사 칸을 몰라 작가에게 그 행이 "거둠"으로 보이고, 다시 열기는
 DB CHECK(대기·반려 행은 공개 범위 `withdrawn`)에 걸려 500 이다(공개되지는 않는다 — 이미지 롤백 동안 이것이 정상이다).
 마이그레이션까지 downgrade 하면 그 CHECK 가 사라져 작가의 다시 열기가 승인 없이 공개된다. 승인·반려 조치 로그가 생긴 뒤
-옛 이미지로 되돌리면 그 게시자의 어드민 회원 상세가 500 이다(옛 코드가 새 조치 종류를 모른다 — 독자 영향은 없다).
+옛 이미지로 되돌리면 그 게시자의 어드민 회원 상세가 500 이다(옛 코드가 새 조치 종류를 모른다 — 독자 영향은 없다). 숨긴
+소설이 있으면 옛 코드는 숨김 칸을 몰라 되돌린 동안 그 소설이 작가 목록에 다시 보이고 작가가 고치거나 다시 공개할 수 있다.
+새 이미지로 돌아오면 숨김이 찍힌 소설은 다시 공개돼 있어도 독자 목록·구매에서 빠지고 작가에게서도 사라진다.
 
 **구매·삭제 환급** — 화 가격(30)과 소설마다 무료인 앞 화 수(5)는 env 가 아니라 `core/clover.py` 의 상수다(바꾸려면 배포).
-게시자가 산 화가 든 소설·마지막 묶음을 지우면 같은 트랜잭션에서 구매자에게 환급한다(원장 `novel_read_refund`, 이미 결제
-환불된 구매분은 건너뜀). 🔴 **구매가 생긴 뒤 이 판보다 옛 이미지로 되돌리면** 옛 코드의 소설·묶음 삭제는 구매를 몰라 환급
+공개 정책 스위치가 꺼져 있으면 게시자가 산 화가 든 소설·마지막 묶음을 지울 때 같은 트랜잭션에서 구매자에게 환급한다(원장
+`novel_read_refund`, 이미 결제 환불된 구매분은 건너뜀). 켜져 있으면 아직 환급되지 않은 구매가 있는 소설의 삭제는 지우지
+않고 숨기며(환급 없음, 소장자는 계속 읽는다), 그런 구매가 든 마지막 묶음의 삭제는 409 `NOVEL_BATCH_SOLD` 로 거절한다. 🔴 **구매가 생긴 뒤 이 판보다 옛 이미지로 되돌리면** 옛 코드의 소설·묶음 삭제는 구매를 몰라 환급
 없이 지운다 — 되돌리기 전에 먼저 스위치를 끄고(위 "끄기"), 되돌린 동안 지워진 구매는 아래로 찾아 어드민 지급으로 보정한다.
 `novel_purchases` 에 행이 있으면 그 리비전의 downgrade 는 거부되므로 스키마는 그대로 두고 이미지만 되돌린다.
 
@@ -2282,6 +2325,38 @@ cd /opt/ddona/app && sudo docker compose -f docker-compose.prod.yml --env-file /
   downgrade 보다 먼저 revert 한다.
 - 🔴 Postgres 이미지(pgvector 를 실은 것)를 원래 이미지로 되돌리는 것은 7 의 downgrade 가 끝난 **뒤에만** 한다 — `vector` 타입이 남은
   DB 를 확장 없는 이미지로 띄우면 그 표를 읽지 못한다.
+
+### 3-16. 숨긴 소설 파기 — purge cron
+
+노벨 정책 스위치(`NOVEL_PUBLIC_POLICY_V2_ENABLED`)가 켜진 뒤 노벨로 팔린 소설을 작가가 지우면, 산 사람이 계속 읽도록 소설을
+숨긴다(`novels.hidden_at`). 아직 환급되지 않은 소장자가 모두 사라진(구매자가 모두 탈퇴했거나 모두 환급받은) 숨긴 소설을 이
+크론이 **매일** 진짜로 지운다. 구매 행(거래 기록)은 남는다. 지울 것이 없는 날은 아무것도 바꾸지 않고, 실패한 날은 다음 날
+저절로 다시 돈다. 스위치와 무관하게 돈다 — 스위치를 끈 뒤에도 남은 숨긴 소설은 소장이 끝나면 지워져야 한다.
+
+"크리에이터 정산 월 확정 — settle cron" 절과 같이 **서빙 중인 api 컨테이너 안에서** `python -m api.novelize.hidden_purge` 를
+돌린다(소설 삭제·탈퇴와 같은 삭제 코드를 쓴다). 래퍼 `ops/purge-hidden-novels.sh` 는 `ops/active-color.sh` 로 색을 고르고
+`compose exec -T api_<색>` 으로 들어간다. 교체 중이라 색을 하나로 못 고르면 그날은 실패로 끝난다. 래퍼는 `.env` 를 읽지 않는다.
+알림은 없다 — 실패는 Bugsink 에 `dependency=hidden_novel_purge` 태그로 남고 로그 파일에 종료 코드가 남는다.
+
+**최초 1회 — 심볼릭 링크 설치**:
+
+```sh
+sudo ln -sf /opt/ddona/app/ops/purge-hidden-novels.sh /opt/ddona/purge-hidden-novels.sh
+sudo ln -sf /opt/ddona/app/ops/cron.d/ddona-hidden-novel-purge /etc/cron.d/ddona-hidden-novel-purge
+```
+
+**검증**:
+
+```sh
+# 1. 수동 1회 실행 — 정상 종료와 마지막 줄 "숨긴 소설 파기: N편" 확인
+sudo -u root /opt/ddona/purge-hidden-novels.sh
+tail /var/log/ddona-hidden-novel-purge.log
+
+# 2. 다음 17:35 UTC(KST 02:35)에 크론이 실제로 도는지
+tail -f /var/log/ddona-hidden-novel-purge.log
+```
+
+⚠️ 17:35 UTC — 다른 크론(05:00·06:00·15:05·16:35·18:00 UTC, 매시 17분, 5분마다)과 겹치지 않는다.
 
 ## 4. 배포 후 스모크 검증
 

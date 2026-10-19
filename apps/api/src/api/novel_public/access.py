@@ -95,7 +95,7 @@ async def require_novel_public_readable(request: Request, db: AsyncSession = Dep
 
 def readable_publication_conditions() -> tuple[ColumnElement[bool], ...]:
     """독자가 지금 이 공개 소설을 읽을 수 있는가 — SQL 조건. 공개 중(거두지 않음) ∧ 첫 공개가 운영자 승인을 기다리거나
-    반려되지 않음 ∧ 운영자 이용제한 없음 ∧ 게시자가 탈퇴·정지
+    반려되지 않음 ∧ 운영자 이용제한 없음 ∧ 작가가 숨기지 않음 ∧ 게시자가 탈퇴·정지
     되지 않음 ∧ 원작이 이용제한·삭제되지 않음 ∧ 공개 화가 하나 이상(마지막 묶음을 지워 공개 화가 모두 사라진 공개 상태 행은
     소설 제목·소개만 남아 읽을 것이 없다). 호출부가 `NovelPublication`·`Novel`·게시자 `User`(`User.id ==
     Novel.user_id`)·원작 `Content`(`Content.id == Novel.content_id`)를 조인한다.
@@ -108,6 +108,10 @@ def readable_publication_conditions() -> tuple[ColumnElement[bool], ...]:
         # 경로에서 깨져도 승인 전 글이 나가지 않게 하려는 것이다.
         or_(NovelPublication.review_status.is_(None), NovelPublication.review_status == "approved"),
         NovelPublication.moderation_status == "normal",
+        # 숨긴 소설(노벨로 팔린 뒤 작가가 지운 소설)은 공개를 거둔 채 숨기므로 위 공개 범위 조건으로 이미 빠진다. 숨김을 따로
+        # 보는 것은 그 약속이 깨져도(숨김을 모르는 옛 이미지로 되돌린 동안 작가가 다시 공개) 지운 소설이 독자 목록·구매에
+        # 나가지 않게 하려는 것이다.
+        Novel.hidden_at.is_(None),
         User.deleted_at.is_(None),
         User.suspended_at.is_(None),
         Content.moderation_status == ModerationStatus.NORMAL,
@@ -128,4 +132,35 @@ def select_readable_publications(*columns: Any) -> Select[Any]:
         .join(User, User.id == Novel.user_id)
         .join(Content, Content.id == Novel.content_id)
         .where(*readable_publication_conditions())
+    )
+
+
+def owner_readable_publication_conditions() -> tuple[ColumnElement[bool], ...]:
+    """정책 스위치가 켜졌을 때, 아직 환급되지 않은 구매를 가진 사람(소장자)이 이 공개 소설을 계속 읽을 수 있는가 — SQL 조건.
+    운영자 이용제한 없음 ∧ 첫 공개 승인 대기·반려 아님 ∧ 게시자 미탈퇴 ∧ 원작이 정상이거나 원작자 정지로만 일괄 제한됨 ∧ 공개
+    화가 하나 이상. 조인은 `readable_publication_conditions` 와 같다.
+
+    공개 범위(게시자의 거둠·판매된 소설 삭제의 숨김)와 게시자 정지는 보지 않는다 — 게시자 쪽 사정이라 산 사람의 소장을 끝내지
+    않는다(새로 보이거나 팔리지 않는 것은 목록·구매가 쓰는 `readable_publication_conditions` 가 맡는다). 여기서 빠지는 경우
+    (노벨 이용제한·원작 자체 이용제한·원작 삭제·게시자 탈퇴)는 그 쓰기마다 구매를 환급한다(`purchases.py` 모듈 docstring) —
+    두 목록이 어긋나면 환급 없이 닫히는 소장이 생긴다."""
+    return (
+        or_(NovelPublication.review_status.is_(None), NovelPublication.review_status == "approved"),
+        NovelPublication.moderation_status == "normal",
+        User.deleted_at.is_(None),
+        or_(Content.moderation_status == ModerationStatus.NORMAL, Content.restricted_by_suspension.is_(True)),
+        exists().where(_any_chapter.novel_id == NovelPublication.novel_id).correlate_except(_any_chapter),
+    )
+
+
+def select_owner_readable_publications(*columns: Any) -> Select[Any]:
+    """`select_readable_publications` 의 소장자 판(`owner_readable_publication_conditions`). 이 사람이 그 소설의 소장자인지는
+    호출자가 먼저 본다."""
+    return (
+        select(*columns)
+        .select_from(NovelPublication)
+        .join(Novel, Novel.id == NovelPublication.novel_id)
+        .join(User, User.id == Novel.user_id)
+        .join(Content, Content.id == Novel.content_id)
+        .where(*owner_readable_publication_conditions())
     )

@@ -28,6 +28,7 @@ from api.db.models.moderation import (
 )
 from api.db.models.story import StoryPromptTemplate, StoryVersionDetail
 from api.db.session import get_db_session
+from api.novel_public.purchases import lock_source_closing, refund_source_closing
 from api.moderation.schemas import (
     AdminAppealListItem,
     AdminAppealListResponse,
@@ -328,6 +329,13 @@ async def act_on_report(
             detail="lift-restriction is only allowed on restricted content",
         )
 
+    # 이용제한·삭제는 직접 조치(`admin/contents.py`)와 같이 그 원작의 노벨 구매를 환급한다 — 조치 행 INSERT 보다 먼저 잠근다.
+    # 반려는 상태가 그대로라 환급하지 않는다.
+    closing = (
+        await lock_source_closing(db, content_id=content.id, deleting=body.action == ModerationActionType.DELETE)
+        if body.action in (ModerationActionType.RESTRICT, ModerationActionType.DELETE)
+        else None
+    )
     action_row = ModerationAction(content_id=content.id, admin_id=admin_id, action=body.action)
     db.add(action_row)
     await db.flush()
@@ -373,6 +381,7 @@ async def act_on_report(
         reason_category=report.reason_category.value,
         reason_text=body.admin_comment or "",
     )
+    await refund_source_closing(db, closing)
 
     await db.commit()
 
