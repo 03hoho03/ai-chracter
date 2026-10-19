@@ -1,4 +1,4 @@
-"""측정 드라이버 — 시뮬레이터(대화 에이전트)나 사람이 응답을 읽고 다음 말을 정해, 스토리 방에 한 번에 한 턴씩 보낸다.
+"""측정 드라이버 — 시뮬레이터(대화 에이전트)나 사람이 응답을 읽고 다음 말을 정해, 스토리·캐릭터 방에 한 번에 한 턴씩 보낸다.
 남는 로그는 대화 품질 판정과 지난 턴 다시 생성(리플레이)의 입력이다.
 
     cd apps/api
@@ -17,7 +17,9 @@
 - 드라이버는 `--env-file` 로 준 `DATABASE_URL` 의 DB 를 직접 읽는다(작품 버전 id·대화 프로필 본문·칸 이름은 API 에
   없다). 그 DB 가 로컬(localhost 류)이 아니면 네트워크 요청 전에 거부한다 — 실제 사용자 대화를 측정·생성 모델에 다시
   보내지 않기 위해서다. 그리고 그 DB 가 `--base` 서버의 DB 인지 방 행·프로필 id·턴 수·시작 설정 행으로 확인한다.
-- 스토리 작품만 다룬다. 캐릭터 작품·방은 명시 오류로 거부한다(리플레이의 재현 검증이 스토리 대본만 덮는다).
+- 스토리와 캐릭터 작품을 다룬다. 캐릭터 방은 시작 설정 없이 만들고, 작가 글과 보낼 말의 `{{char}}` 를 방 버전의 캐릭터
+  이름으로 바꾼다. 리플레이의 재현 검증은 스토리 대본만 덮으므로 캐릭터 방은 판정 표본처럼 리플레이하지 않는 측정에만 쓴다.
+  그 밖의 작품 종류는 명시 오류로 거부한다.
 - `--log` 가 있는 폴더가 곧 실행 폴더다. 턴 간격 스탬프(`.last_turn`)와 앱 429 의 재시도 시각(`.retry_at`)을 그 옆에
   둔다 — 프로세스가 턴마다 새로 뜨므로 메모리에 둘 수 없다. 방 하나를 한 폴더에서 잰다.
 - `--base` 는 필수다 — 기본값을 두면 빠뜨렸을 때 공유 dev 서버에 방이 생긴다.
@@ -40,7 +42,7 @@
 
 종료 코드: 0 정상(생성 오류·정책 경고로 유실된 턴 포함 — 출력에 이유가 나간다) · 1 그 밖의 HTTP 오류·턴 도중 연결
 오류(턴 줄은 남고 다음 실행이 조회로 기준을 다시 잡는다) · 2 인증(401 재로그인 실패·403·자격 파일 거부·로그인 429·
-상한 창 안 두 번째 로그인)·운영 DB·드라이버 DB 와 서버 불일치·스토리가 아닌 작품·방 고정값 기록이 없는 옛 로그
+상한 창 안 두 번째 로그인)·운영 DB·드라이버 DB 와 서버 불일치·스토리·캐릭터가 아닌 작품·방 고정값 기록이 없는 옛 로그
 (`--rebase` 로 다시 기록하면 이어 칠 수는 있지만 그 방은 리플레이할 수 없게 된다), 인자 오류도 argparse 가 2 · 3 엔딩 도달 · 4 앱 버스트 429(같은 명령을 다시 실행하면
 retryAfterSeconds 만큼 기다린다) · 5 Gemini 한도(`--server-log` 를 줬을 때, 그 로그에 이 방의 429) · 6 턴 진행 중
 409 · 7 클로버 429 · 8 누적값과 조회값 불일치 · 9 노트가 길이 상한을 넘음 · 10 일시 정지(정지 파일 · `--pause-at`).
@@ -74,6 +76,7 @@ from api.content.author_macros import expand_author_macros
 from api.content.media_tags import media_tag_refs
 from api.core.config import settings
 from api.core.rate_limit import LOGIN_EMAIL_WINDOW_SECONDS
+from api.db.models.character import CharacterVersionDetail
 from api.db.models.chat import ChatRoom
 from api.db.models.story import MediaBookCell, MediaBookPerson, MediaBookScene
 from replay.local_db import ensure_local_database
@@ -256,6 +259,8 @@ class DbRoom:
     turn_count: int
     # 칸 entity_id 문자열 → "인물/장면". API 는 칸 이름을 주지 않고 화면 글의 태그는 칸 id 형태라 DB 에서 찾는다.
     cell_labels: dict[str, str]
+    # 캐릭터 방이면 방 버전의 캐릭터 이름(`{{char}}` 자리, 서버의 턴 프롬프트와 같은 칸). 스토리 방은 None.
+    char_name: str | None = None
 
 
 DbRoomReader = Callable[[str], DbRoom | None]
@@ -263,7 +268,7 @@ DbRoomReader = Callable[[str], DbRoom | None]
 
 async def read_db_room(db: AsyncSession, room_id: uuid.UUID) -> DbRoom | None:
     """방이 없으면 None. 칸 이름은 방이 고정한 버전의 미디어 북에서 읽는다 — 화면도 그 버전의 칸으로 태그를 푼다."""
-    fixed = await load_room_fixed(db, room_id)
+    fixed = await load_room_fixed(db, room_id, allow_character=True)
     if fixed is None:
         return None
     turn_count = await db.scalar(select(ChatRoom.turn_count).where(ChatRoom.id == room_id))
@@ -283,7 +288,9 @@ async def read_db_room(db: AsyncSession, room_id: uuid.UUID) -> DbRoom | None:
     scenes = dict(
         (
             await db.execute(
-                select(MediaBookScene.entity_id, MediaBookScene.name).where(MediaBookScene.content_version_id == version)
+                select(MediaBookScene.entity_id, MediaBookScene.name).where(
+                    MediaBookScene.content_version_id == version
+                )
             )
         )
         .tuples()
@@ -297,7 +304,10 @@ async def read_db_room(db: AsyncSession, room_id: uuid.UUID) -> DbRoom | None:
         )
     ).tuples()
     labels = {str(cell): f"{people.get(person, '?')}/{scenes.get(scene, '?')}" for cell, person, scene in cells}
-    return DbRoom(fixed=fixed, turn_count=turn_count, cell_labels=labels)
+    char_name = await db.scalar(
+        select(CharacterVersionDetail.name).where(CharacterVersionDetail.content_version_id == version)
+    )
+    return DbRoom(fixed=fixed, turn_count=turn_count, cell_labels=labels, char_name=char_name)
 
 
 async def _read_db_room_with_own_engine(room_id: str) -> DbRoom | None:
@@ -330,14 +340,14 @@ def default_db_reader() -> DbRoomReader:
 # ── 화면 글 (작가 글 이름 치환 · 그림 태그) ──────────────────────────────────
 
 
-def render_author_text(text: str, user_name: str, labels: dict[str, str]) -> str:
+def render_author_text(text: str, user_name: str, labels: dict[str, str], char_name: str | None = None) -> str:
     """작가 글(오프닝·추천 답변·플레이가이드·에필로그)을 화면과 같게 바꾼다. 칸 태그는 그림 대신 `[그림: 인물/장면]` —
     방 버전에 없는 칸은 화면처럼 지운다. 태그를 먼저 바꾸고 이름을 바꾼다(서버 빌더와 같은 순서). 모델 응답은 화면이
-    바꾸지 않으므로 이 함수를 지나지 않는다. 스토리 방만 다루므로 `{{char}}` 이름은 없다."""
+    바꾸지 않으므로 이 함수를 지나지 않는다. `{{char}}` 는 캐릭터 방에서만 이름이 있고 스토리 방은 글자 그대로 둔다."""
     for cell_id in media_tag_refs(text):
         label = labels.get(str(cell_id))
         text = text.replace("{{img::" + str(cell_id) + "}}", f"[그림: {label}]" if label else "")
-    return expand_author_macros(text, user_name=user_name, char_name=None)
+    return expand_author_macros(text, user_name=user_name, char_name=char_name)
 
 
 def cell_label(image_id: str | None, labels: dict[str, str]) -> str | None:
@@ -370,12 +380,13 @@ def room_static(room: dict[str, Any], db: DbRoom) -> dict[str, Any]:
         **db.fixed.as_record(),
         "effectiveChatModel": room.get("effectiveChatModel"),
         "cellLabels": db.cell_labels,
+        "charName": db.char_name,
     }
 
 
-def _require_story(content_type: object) -> None:
-    if content_type != "story":
-        raise DriverExitError(2, f"스토리 작품만 다룬다(이 작품: {content_type}) — 캐릭터 방은 지원하지 않는다")
+def _require_known(content_type: object) -> None:
+    if content_type not in ("story", "character"):
+        raise DriverExitError(2, f"스토리·캐릭터 작품만 다룬다(이 작품: {content_type})")
 
 
 def check_same_database(room: dict[str, Any], db: DbRoom | None) -> DbRoom:
@@ -658,30 +669,32 @@ def create_room(
     args: argparse.Namespace, session: Session, read_db: DbRoomReader, log: Path, snapshot_log: Path
 ) -> int:
     detail = _ok(session.request("GET", f"/contents/{args.content_id}"), "작품 조회")
-    _require_story(detail.get("type"))
-    setup = (detail.get("startingSetups") or [])[args.setup]
-    created = session.request(
-        "POST",
-        "/chat-rooms",
-        json={"contentId": args.content_id, "contentType": "story", "startingSetupId": setup["id"]},
-    )
+    content_type = detail.get("type")
+    _require_known(content_type)
+    # 캐릭터 작품에는 시작 설정이 없다.
+    setup = (detail.get("startingSetups") or [])[args.setup] if content_type == "story" else None
+    body: dict[str, Any] = {"contentId": args.content_id, "contentType": content_type}
+    if setup is not None:
+        body["startingSetupId"] = setup["id"]
+    created = session.request("POST", "/chat-rooms", json=body)
     room = _ok(created, "방 만들기")
     room_id = room["id"]
     db = check_same_database(room, read_db(room_id))
     static = room_static(room, db)
     labels = db.cell_labels
     user_name = db.fixed.user_name
+    char_name = db.char_name
     _append(snapshot_log, static)
     guide = _ok(session.request("GET", f"/chat-rooms/{room_id}/play-guide"), "플레이가이드").get("playGuide")
-    messages = [render_author_text(m["content"], user_name, labels) for m in room.get("messages") or []]
+    messages = [render_author_text(m["content"], user_name, labels, char_name) for m in room.get("messages") or []]
     chips = [
-        render_author_text(c, user_name, labels)
+        render_author_text(c, user_name, labels, char_name)
         for c in (room.get("contentSnapshot") or {}).get("suggestedReplies") or []
     ]
-    guide_text = render_author_text(guide, user_name, labels) if guide else None
+    guide_text = render_author_text(guide, user_name, labels, char_name) if guide else None
     after = room_after(room, static, "create")
     pinned = (room.get("contentSnapshot") or {}).get("pinnedStartingSetupId")
-    print(f"room={room_id}  「{detail.get('name')}」 / 시작설정: {setup['name']}")
+    print(f"room={room_id}  「{detail.get('name')}」 / 시작설정: {setup['name'] if setup else '(캐릭터 — 없음)'}")
     print(f"contentVersionId={db.fixed.content_version_id}  effectiveChatModel={room.get('effectiveChatModel')}")
     print(f"startingSetupId={room.get('startingSetupId')}  pinnedStartingSetupId={pinned}")
     for message in messages:
@@ -700,7 +713,7 @@ def create_room(
             "contentId": args.content_id,
             "storyName": detail.get("name"),
             "setupIndex": args.setup,
-            "setupName": setup["name"],
+            "setupName": setup["name"] if setup else None,
             "startingSetupId": room.get("startingSetupId"),
             "pinnedStartingSetupId": pinned,
             "shortcutNames": [s["name"] for s in static["shortcuts"]],
@@ -728,7 +741,7 @@ def rebase(
     """전체 조회로 누적 기준을 다시 잡는다. 방 고정값도 다시 읽어 남긴다 — 사람 구간에 화면에서 프로필이나 모델을
     바꿨다면 이 기록이 앞 기록과 달라지고, 리플레이는 어느 턴에 어느 값이 걸렸는지 가릴 수 없어 그 방 전체를 거부한다."""
     room = fetch_room(session, room_id)
-    _require_story(room.get("contentType"))
+    _require_known(room.get("contentType"))
     db = check_same_database(room, read_db(room_id))
     static = room_static(room, db)
     _append(snapshot_log, static)
@@ -812,6 +825,7 @@ def play_turn(
     print(f"[기억 노트]\n{current_note or '(비어 있음)'}\n")
 
     user_name: str = static["userName"]
+    char_name: str | None = static.get("charName")
     shortcut = None
     if args.shortcut is not None:
         shortcut = next((s for s in static["shortcuts"] if s["name"] == args.shortcut), None)
@@ -819,10 +833,10 @@ def play_turn(
             raise DriverExitError(
                 1, f"단축어가 없다: {args.shortcut} (있는 것: {', '.join(s['name'] for s in static['shortcuts'])})"
             )
-        content = expand_author_macros(shortcut["prompt"], user_name=user_name, char_name=None)
+        content = expand_author_macros(shortcut["prompt"], user_name=user_name, char_name=char_name)
         body: dict[str, Any] = {"content": content, "shortcutId": shortcut["id"]}
     else:
-        content = expand_author_macros(args.say, user_name=user_name, char_name=None)
+        content = expand_author_macros(args.say, user_name=user_name, char_name=char_name)
         body = {"content": content}
 
     record: dict[str, Any] = {
@@ -905,7 +919,7 @@ def play_turn(
             stat_changes.append({"name": name, "value": b})
             print(f"\n  · {name} → {b:g}")
         elif kind == "ENDING":
-            epilogue = render_author_text(b, user_name, labels) if b else b
+            epilogue = render_author_text(b, user_name, labels, char_name) if b else b
             ending = {"id": a, "name": static["endings"].get(a, a), "epilogue": epilogue}
             after["endingReached"] = True
             print(f"\n  ★★ 엔딩 도달: 「{ending['name']}」\n  에필로그: {epilogue}")

@@ -30,3 +30,10 @@ mutants/
 # (디렉터리 자체를 제외하면 하위 예외가 안 먹으므로 `*` 로 내용물만 제외한다)
 apps/api/probe-runs/*
 !apps/api/probe-runs/archive/
+
+# 장기 기억 측정 하네스의 데이터(대본·심기 표·정답·대조군·사전 등록 문서)는 공개 저장소에 올리지 않는다. 하네스는 그 파일을
+# 저장소 밖 폴더(`memory_eval_cli.py --data-dir`)에서 읽는다. 옛 실험 브랜치처럼 모듈 옆에 놓아도 커밋되지 않게 막는다.
+apps/api/scripts/memory_eval/**/*.json
+apps/api/scripts/memory_eval/**/*.jsonl
+apps/api/scripts/memory_eval/**/*.md
+apps/api/scripts/memory_eval/**/*.txt
