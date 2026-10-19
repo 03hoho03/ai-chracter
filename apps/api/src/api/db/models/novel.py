@@ -554,8 +554,13 @@ NovelPublicationModerationStatus = Literal["normal", "restricted"]
 # 첫 공개의 운영자 심사. 칸이 NULL 이면 심사 없이 공개된 행이다.
 NovelPublicationReviewStatus = Literal["pending", "approved", "rejected"]
 NovelScreeningOutcome = Literal["passed", "rejected"]
-# 텍스트 심사가 문제로 짚을 수 있는 공개 화면 글의 자리.
-NovelScreeningPart = Literal["novel_title", "synopsis", "chapter_title", "author_note", "chapter_body"]
+# 텍스트 심사가 문제로 짚을 수 있는 공개 화면 글의 자리. `change_summary` 는 다시 공개 때 작가가 쓴 변경 요약이다.
+NovelScreeningPart = Literal[
+    "novel_title", "synopsis", "chapter_title", "author_note", "chapter_body", "change_summary"
+]
+# 다시 공개 때 받는 변경 요약의 최대 글자 수(앞뒤 공백을 던 뒤). 판 고르기 한 줄에 날짜와 함께 보이는 "짧은" 요약이라 화
+# 제목 상한과 같은 값으로 골랐다. 요청 검증과 판 행 CHECK 가 함께 쓴다.
+NOVEL_CHANGE_SUMMARY_MAX_LENGTH = 100
 
 
 class NovelPublication(Base):
@@ -716,11 +721,19 @@ class NovelChapterEdition(Base):
     published_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # 이 판을 낼 때 작가가 쓴 짧은 변경 요약(글 심사를 거친 글). 첫 판·정책 스위치가 꺼진 동안 낸 판·이 칸이 생기기 전의
+    # 판은 비어 있다. 화 공개본에는 두지 않는다 — 판 행은 화 공개본을 베껴 쓰므로, 거기 두면 다시 공개 UPDATE 가 이 칸을
+    # 모르는 옛 이미지에서 지난 판의 요약이 새 판 행으로 베껴진다.
+    change_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # 소설 인덱스는 반려·신청 취소가 그 소설의 판 행을 지울 때와 소설 DELETE 때 FK 검사용이고, 개정 인덱스는 개정 DELETE 때
     # FK 검사용이다. 화 쪽은 PK 가 맡는다.
     __table_args__ = (
         CheckConstraint("edition >= 1", name="ck_novel_chapter_editions_edition_positive"),
+        CheckConstraint(
+            f"char_length(change_summary) BETWEEN 1 AND {NOVEL_CHANGE_SUMMARY_MAX_LENGTH}",
+            name="ck_novel_chapter_editions_change_summary_length",
+        ),
         Index("ix_novel_chapter_editions_novel_id", "novel_id"),
         Index("ix_novel_chapter_editions_revision_id", "revision_id"),
     )

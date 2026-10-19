@@ -81,7 +81,7 @@ from api.novel_public.schemas import (
     PublicNovelListSort,
     PublicNovelOwnedItem,
     PublicNovelOwnedListResponse,
-    PublicNovelPurchasedEdition,
+    PublicNovelEdition,
     PublicNovelReadingPosition,
     PublicNovelReadingPositionRequest,
     PublicNovelSource,
@@ -644,6 +644,12 @@ async def _purchased_edition(
     return oldest
 
 
+def _edition_info(edition: NovelChapterEdition) -> PublicNovelEdition:
+    return PublicNovelEdition(
+        edition=edition.edition, published_at=edition.published_at, change_summary=edition.change_summary
+    )
+
+
 @reading_router.get("/{novel_id}/chapters/{chapter_id}")
 async def get_webnovel_chapter(
     novel_id: uuid.UUID,
@@ -703,6 +709,18 @@ async def get_webnovel_chapter(
         old_revision = await db.get_one(NovelChapterRevision, bought.revision_id)
         served_edition, title, author_note, body = bought.edition, bought.title, bought.author_note, old_revision.body
 
+    # 산 때의 판이 있을 때만 판 고르기가 보이므로 지금 판의 요약도 그때만 읽는다. 지금 판의 공개 시각은 화 공개본의 것이다
+    # (판 행과 같은 값). 판 행이 없으면(판 이력 표가 생긴 배포의 겹침 동안 그 표를 모르는 옛 이미지가 다시 낸 판) 요약 없이
+    # 싣는다.
+    latest: PublicNovelEdition | None = None
+    if bought is not None:
+        current = await db.get(NovelChapterEdition, (chapter_id, chapter.edition))
+        latest = PublicNovelEdition(
+            edition=chapter.edition,
+            published_at=chapter.published_at,
+            change_summary=current.change_summary if current is not None else None,
+        )
+
     neighbours = {
         ordinal: (neighbour_id, price)
         for neighbour_id, ordinal, price in (
@@ -746,11 +764,8 @@ async def get_webnovel_chapter(
         previous_chapter=link(chapter.ordinal - 1),
         next_chapter=link(chapter.ordinal + 1),
         reading_position=_position(position) if position is not None else None,
-        purchased_edition=(
-            PublicNovelPurchasedEdition(edition=bought.edition, published_at=bought.published_at)
-            if bought is not None
-            else None
-        ),
+        purchased_edition=_edition_info(bought) if bought is not None else None,
+        latest_edition=latest,
         sales_stopped=sales_stopped,
     )
 
