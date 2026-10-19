@@ -8,8 +8,8 @@ import { toast } from "sonner";
 import {
   DERIVATIVE_NOVELS_DEFAULT,
   DERIVATIVE_NOVELS_LEGEND,
-  DERIVATIVE_NOVELS_NOTE,
   DERIVATIVE_NOVELS_OPTIONS,
+  derivativeNovelsNote,
   isNovelRefundConflict,
   isNovelSalesStopDisabled,
   NOVEL_REFUND_CONFLICT_MESSAGE,
@@ -228,7 +228,7 @@ export function ReportActionPanel({
                   />
                 )}
               />
-              <p className="text-sm break-keep text-muted-foreground">{DERIVATIVE_NOVELS_NOTE[derivativeNovelsChoice]}</p>
+              <p className="text-sm break-keep text-muted-foreground">{derivativeNovelsNote(derivativeNovelsChoice, action === "delete" ? "delete" : "restrict")}</p>
             </div>
           )}
 

@@ -21,8 +21,8 @@ import { useContentActionMutation, type AdminContentActionType } from "@/entitie
 import {
   DERIVATIVE_NOVELS_DEFAULT,
   DERIVATIVE_NOVELS_LEGEND,
-  DERIVATIVE_NOVELS_NOTE,
   DERIVATIVE_NOVELS_OPTIONS,
+  derivativeNovelsNote,
   isNovelRefundConflict,
   isNovelSalesStopDisabled,
   NOVEL_REFUND_CONFLICT_MESSAGE,
@@ -200,7 +200,7 @@ export const ContentActionConfirmModal = createCallable<ContentActionConfirmModa
                     />
                   )}
                 />
-                <p className="break-keep text-sm text-muted-foreground">{DERIVATIVE_NOVELS_NOTE[derivativeNovels]}</p>
+                <p className="break-keep text-sm text-muted-foreground">{derivativeNovelsNote(derivativeNovels, action === "delete" ? "delete" : "restrict")}</p>
               </div>
             )}
 

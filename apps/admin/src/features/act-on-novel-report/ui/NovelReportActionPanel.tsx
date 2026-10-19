@@ -47,8 +47,8 @@ type NovelReportActionPanelProps = {
   onSuccess?: () => void;
 };
 
-/** 노벨 신고 처리. 이미 처리된 신고도 다시 처리할 수 있어(상태·처리자·시각을 덮어쓴다) 늘 그린다. 노벨이 지워져 이용제한할
- * 대상이 없으면 서버가 409 `NOVEL_GONE` 을 내는데, 응답에 이미 `novelId` 가 비어 있으면 그 처리를 미리 막고 반려만 남긴다 —
+/** 노벨 신고 처리. 이미 처리된 신고도 다시 처리할 수 있어(상태·처리자·시각을 덮어쓴다) 늘 그린다. 노벨이 지워져 이용제한·판매
+ * 중단할 대상이 없으면 서버가 409 `NOVEL_GONE` 을 내는데, 응답에 이미 `novelId` 가 비어 있으면 그 처리를 미리 막고 반려만 남긴다 —
  * 409 는 상세를 연 뒤 지워진 경우에만 닿는다. 해제는 신고가 아니라 노벨 상세에서 한다(서버 신고 처리에 해제가 없다). */
 export function NovelReportActionPanel({ report, onSuccess }: NovelReportActionPanelProps) {
   const id = useId();
@@ -83,7 +83,7 @@ export function NovelReportActionPanel({ report, onSuccess }: NovelReportActionP
       }
       // 그사이 정책 스위치가 꺼져 판매 중단을 받지 않는다 — 세션을 새로 받아 선택지를 꺼짐 화면으로 돌리고 고른 값을 비운다.
       if (isNovelSalesStopDisabled(error)) {
-        toast.error(NOVEL_SALES_STOP_DISABLED_MESSAGE.novel);
+        toast.error(NOVEL_SALES_STOP_DISABLED_MESSAGE.novelReport);
         form.resetField("action");
         await queryClient.invalidateQueries({ queryKey: sessionKeys.all });
         return;

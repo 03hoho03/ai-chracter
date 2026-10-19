@@ -13,6 +13,7 @@ import {
   type AdminNovelDetailResponse,
 } from "@/entities/admin-novel";
 import { REPORT_REASON_LABELS, REPORT_STATUS_LABELS } from "@/entities/report";
+import { useSessionQuery } from "@/entities/session";
 import { formatCount } from "@/shared/lib/format/formatCount";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 import { useRememberedListSearch } from "@/shared/lib/list-search-memory/listSearchMemory";
@@ -92,7 +93,7 @@ function NovelDetailBody({ novelId }: NovelDetailPageProps) {
 }
 
 function NovelSummary({ novel }: { novel: AdminNovelDetailResponse }) {
-  const reasons = hiddenReasons(novel);
+  const reasons = hiddenReasons(novel, useSessionQuery().data?.novelPublicPolicyV2Enabled === true);
 
   return (
     <section className={`${SECTION_CLASS} gap-4`}>

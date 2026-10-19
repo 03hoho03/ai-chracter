@@ -13,6 +13,7 @@ import { useSessionQuery } from "@/entities/session";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 import { useRememberedListSearch } from "@/shared/lib/list-search-memory/listSearchMemory";
 
+import { salesStopReaderNote } from "../lib/hiddenReasons";
 import { HomeNovelCurationConfirmModal } from "./HomeNovelCurationConfirmModal";
 import { NovelModerationConfirmModal } from "./NovelModerationConfirmModal";
 import { NovelReviewConfirmModal } from "./NovelReviewConfirmModal";
@@ -137,15 +138,20 @@ function NovelSalesActions({ novel, novelTitle, isPolicyOn, onSuccess }: NovelSa
     <div className="flex flex-col gap-2 border-b border-border pb-3">
       <p className="break-keep text-sm text-muted-foreground">
         {novel.salesStoppedAt !== null
-          ? `${formatDateTime(novel.salesStoppedAt)}부터 판매 중단 중이에요. 목록·홈에 보이지 않고 새로 팔지 않아요. 산 회원은 계속 읽어요.`
+          ? `${formatDateTime(novel.salesStoppedAt)}부터 판매 중단 중이에요. 목록·홈에 보이지 않고 새로 팔지 않아요. ${salesStopReaderNote(isPolicyOn)}`
           : "판매를 멈추면 목록·홈에서 빠지고 새로 팔지 않아요. 산 회원은 계속 읽고 환급은 없어요. 게시자는 새 화·다시 공개를 낼 수 없어요."}
       </p>
+      {/* 막아도 포커스는 받게 `aria-disabled` 로 둔다 — 키보드로 닿아야 이유 문장이 함께 읽힌다. */}
       <Button
         type="button"
         variant="outline"
-        disabled={!isPolicyOn}
+        aria-disabled={!isPolicyOn}
         aria-describedby={isPolicyOn ? undefined : disabledReasonId}
-        onClick={() => void NovelSalesConfirmModal.call({ novelId: novel.id, novelTitle, action, onSuccess })}
+        className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
+        onClick={() => {
+          if (!isPolicyOn) return;
+          void NovelSalesConfirmModal.call({ novelId: novel.id, novelTitle, action, onSuccess });
+        }}
       >
         {isStopped ? "판매 재개" : "판매 중단"}
       </Button>
