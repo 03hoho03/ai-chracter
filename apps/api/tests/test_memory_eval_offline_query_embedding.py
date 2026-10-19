@@ -188,6 +188,68 @@ def test_trajectory_point_refuses_an_embedding_arm_without_a_vector_file(
     assert "b1-B2" in err and "--embeddings" in err
 
 
+async def test_trajectory_point_records_the_query_outcome_and_a_room_out_of_memory_scope_stops(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """단독 궤적 점도 질의 임베딩 결과를 적는다. 기억 사용 범위 밖 방은 임베딩 회상 갈래라도 질의 임베딩을 부르지 않아 명사
+    단독으로 조립되므로, 재조립과 같은 단언이 그 점을 거부해야 한다."""
+    from memory_eval.trajectory import assemble_point
+    from memory_eval.trajectory_replay import require_query_embedded
+
+    room, ids = await _room_with_scenes(db_client, db_session)
+    history = list(
+        (
+            await db_session.scalars(
+                sa.select(ChatMessage)
+                .where(ChatMessage.chat_room_id == room.id)
+                .order_by(ChatMessage.created_at, ChatMessage.id)
+            )
+        ).all()
+    )
+    user_text = "오늘 날씨 좋다"
+    table = _table({query_text(user_text, history[-1].content): _NEAR})
+
+    async def point() -> dict[str, object]:
+        built, _ = await assemble_point(
+            db_session, room.id, next_turn=9, user_content=user_text, arm="b1-B1E", model="gemini",
+            recall_field="memory_recall", embeddings=table,
+        )  # fmt: skip
+        return built
+
+    _memory_scope_covers_gemini(monkeypatch)
+    inside = await point()
+    assert (inside["queryOutcome"], inside["snapshotsSeen"]) == ("ok", 1)
+    assert [entry["episodeId"] for entry in inside["recall"]] == [str(ids[2])]  # type: ignore[attr-defined]
+    assert require_query_embedded([inside]) == {"expected": 1, "ok": 1}
+
+    monkeypatch.setattr(settings, "memory_model_scope", [("story", "opus"), ("character", "opus")])
+    outside = await point()
+    assert (outside["queryOutcome"], outside["snapshotsSeen"]) == (None, 1)
+    with pytest.raises(SystemExit, match="질의 임베딩"):
+        require_query_embedded([outside])
+
+
+def test_trajectory_command_writes_no_point_whose_query_embedding_is_not_ok(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from memory_eval import runtime, trajectory
+    from memory_eval_cli import main
+
+    async def unembedded(*_: object, arm: str, next_turn: int, **__: object) -> tuple[dict[str, object], str]:
+        return {"turn": next_turn, "arm": arm, "queryOutcome": None, "snapshotsSeen": 1}, ""
+
+    monkeypatch.setattr(runtime, "work_database_url", lambda *, writes: "postgresql+asyncpg://x@localhost/lm_eval_work")
+    monkeypatch.setattr(trajectory, "assemble_point", unembedded)
+    vectors = tmp_path / "vectors.jsonl"
+    vectors.write_text("", encoding="utf-8")
+    args = ["--run", str(tmp_path), "trajectory", "--room", str(uuid.uuid4()), "--next-turn", "9",
+            "--user-text", "안녕", "--arms", "b1-B2", "--embeddings", str(vectors),
+            "--embed-model", MODEL, "--embed-dims", "3"]  # fmt: skip
+    assert main(args) == 2
+    assert "질의 임베딩" in capsys.readouterr().err
+    assert not list(tmp_path.glob("trajectory-*.jsonl"))
+
+
 def test_replay_applies_the_given_hybrid_settings_and_restores_them() -> None:
     """재조립 프로세스의 하이브리드 설정은 `.env` 가 아니라 실행 인자(측정 서버에 준 값)로 정한다 — df 상한 '없음'도."""
     saved = {name: getattr(settings, name) for name in eo.CONFIG_NAMES}
