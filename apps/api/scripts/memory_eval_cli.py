@@ -16,7 +16,8 @@ DB 를 쓰는 명령은 실행 명령의 `DATABASE_URL` 로 작업 DB(이름 `lm
 오래 도는 명령은 `--status-dir` 를 주면 시작할 때 `status.json`(명령·pid·시작 시각·상태)을 쓰고, 끝나면 상태를 고친 뒤 완료
 표지 `done.<종료 코드>` 를 만든다. 밖에서는 표지 파일이 생겼는지로 끝을 안다(출력 마지막 줄을 견주지 않는다).
 
-종료 코드: 0 정상 · 1 검사 위반(check-script) · 2 인자·환경 거부 · 20 원장 상한."""
+종료 코드: 0 정상 · 1 검사 위반(check-script) · 2 인자·환경 거부 · 20 원장 상한 · 130 Ctrl-C 중단(`--status-dir` 를 주면
+상태 `interrupted` 와 표지 `done.130`)."""
 
 import argparse
 import json
@@ -28,8 +29,11 @@ from pathlib import Path
 from typing import Any
 
 from memory_eval import cli_infra, cli_judge
-from memory_eval.cli_common import add_global_args
+from memory_eval.cli_common import add_global_args, read_status, write_status
 from memory_eval.ledger import EXIT_BUDGET, BudgetExceededError
+
+# Ctrl-C 로 멈춘 실행의 종료 코드 — 셸이 SIGINT 로 끝난 프로세스에 주는 값(128 + 2)과 같다.
+EXIT_INTERRUPTED = 130
 
 Register = Callable[["argparse._SubParsersAction[argparse.ArgumentParser]"], None]
 # 하위 명령 묶음의 등록 함수. 판정·집계 묶음은 인프라 묶음의 두 명령에 인자를 덧붙이므로 인프라 뒤에 둔다.
@@ -47,14 +51,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
-
-
-def write_status(status_dir: Path, status: dict[str, Any]) -> None:
-    """상태 파일을 통째로 바꿔 쓴다(임시 파일 뒤 이름 바꾸기) — 지켜보는 쪽이 반쯤 쓴 JSON 을 읽지 않게."""
-    status_dir.mkdir(parents=True, exist_ok=True)
-    tmp = status_dir / "status.json.tmp"
-    tmp.write_text(json.dumps(status, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-    tmp.replace(status_dir / "status.json")
 
 
 def _run(args: argparse.Namespace) -> int:
@@ -94,11 +90,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         stale.unlink()
     write_status(status_dir, status)
     code = 1
+    state = "done"
     try:
         code = _run(args)
+    except KeyboardInterrupt:
+        # 명령이 정리(돌던 작업이 끝나기를 기다림)를 마친 뒤에야 여기 온다 — 상태는 그 뒤에 쓴다.
+        code, state = EXIT_INTERRUPTED, "interrupted"
     finally:
         # 예외로 끝나도(코드 1) 표지를 남긴다 — 표지가 없으면 지켜보는 쪽이 끝을 모르고 기다린다.
-        write_status(status_dir, {**status, "state": "done", "exitCode": code, "endedAt": _now()})
+        # 명령이 진행 중에 더한 칸(작업자별 진행 등)은 남긴다.
+        write_status(
+            status_dir, {**read_status(status_dir), **status, "state": state, "exitCode": code, "endedAt": _now()}
+        )
         (status_dir / f"done.{code}").write_text(_now() + "\n", encoding="utf-8")
     return code
 

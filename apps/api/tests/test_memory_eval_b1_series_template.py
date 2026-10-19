@@ -205,10 +205,10 @@ async def test_summary_digest_follows_the_room_snapshot_text_so_a_and_b_template
 def _fake_restore(monkeypatch: pytest.MonkeyPatch, fingerprint: dict[str, Any], db_digest: str) -> list[str]:
     digest_reads: list[str] = []
 
-    async def clone(url: str, *, source: str, target: str, replace: bool) -> None:
+    async def clone(url: str, *, source: str, target: str, replace: bool, lock: Path | None = None) -> None:
         return None
 
-    async def clear(room_id: uuid.UUID) -> list[str]:
+    async def clear(room_id: uuid.UUID, redis_url: str | None = None) -> list[str]:
         return []
 
     async def read_fp(url: str, room_id: uuid.UUID) -> dict[str, Any]:
