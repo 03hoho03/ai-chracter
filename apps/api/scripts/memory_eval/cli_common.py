@@ -37,6 +37,11 @@ def add_global_args(ap: argparse.ArgumentParser) -> None:
     ap.add_argument(
         "--bundle", help="승인 묶음 이름(원장 행에 적히고 멈춤은 이 묶음 누적으로 본다) — 유료 실행은 명시해야 한다"
     )
+    ap.add_argument(
+        "--expect-head",
+        help="측정 커밋 sha — 주면 명령 전에 HEAD 가 이 커밋이고 추적 파일 변경이 없는지 단언하고 상태 파일에 남긴다"
+        "(env MEMORY_EVAL_EXPECT_HEAD 로도 준다)",
+    )
 
 
 def data_file(args: argparse.Namespace, name: str) -> Path:

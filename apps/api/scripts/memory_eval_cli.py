@@ -3,7 +3,7 @@
     cd apps/api
     uv run --env-file .env python scripts/memory_eval_cli.py --run <원자료 폴더> [--data-dir <측정 데이터 폴더>] <명령> ...
 
-전역 인자(`--run`·`--data-dir`·`--status-dir`·`--cap-usd`·`--halt-usd`·`--bundle`)는 하위 명령 **앞에** 준다. 대본·심기 표·
+전역 인자(`--run`·`--data-dir`·`--status-dir`·`--cap-usd`·`--halt-usd`·`--bundle`·`--expect-head`)는 하위 명령 **앞에** 준다. 대본·심기 표·
 명세 같은 측정 데이터는 공개 저장소에 두지 않으므로 기본 경로가 없고, 데이터를 읽는 명령은 `--data-dir` 를 요구한다.
 
 DB 를 쓰는 명령은 실행 명령의 `DATABASE_URL` 로 작업 DB(이름 `lm_eval_` 로 시작)를 준다 — `.env` 의 값보다 명령의 값이 이긴다.
@@ -28,8 +28,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from memory_eval import cli_infra, cli_judge
-from memory_eval.cli_common import add_global_args, read_status, write_status
+from memory_eval import cli_infra, cli_judge, head_check
+from memory_eval.cli_common import add_global_args, read_status, update_status, write_status
 from memory_eval.ledger import EXIT_BUDGET, BudgetExceededError
 
 # Ctrl-C 로 멈춘 실행의 종료 코드 — 셸이 SIGINT 로 끝난 프로세스에 주는 값(128 + 2)과 같다.
@@ -69,6 +69,23 @@ def _run(args: argparse.Namespace) -> int:
     return code
 
 
+def _checked_run(args: argparse.Namespace, status_dir: Path | None) -> int:
+    """측정 커밋을 받았으면(인자 또는 env) 명령 전에 HEAD·작업 트리를 단언하고 그 결과를 상태 파일에 남긴 뒤 명령을 돌린다.
+    단언이 실패하면 명령을 돌리지 않고 종료 코드 2."""
+    expected = args.expect_head or os.environ.get(head_check.EXPECT_HEAD_ENV)
+    if expected:
+        try:
+            record = head_check.measured_head(head_check.REPO, expected)
+        except SystemExit as stop:
+            if status_dir is not None:
+                update_status(status_dir, {"headCheck": {"ok": False, "expected": expected, "reason": str(stop.code)}})
+            print(stop.code, file=sys.stderr)
+            return 2
+        if status_dir is not None:
+            update_status(status_dir, {"headCheck": record})
+    return _run(args)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -78,7 +95,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         check_args(parser, args)
     status_dir: Path | None = args.status_dir
     if status_dir is None:
-        return _run(args)
+        return _checked_run(args, None)
     status: dict[str, Any] = {
         "command": args.command,
         "argv": list(sys.argv[1:] if argv is None else argv),
@@ -92,7 +109,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     code = 1
     state = "done"
     try:
-        code = _run(args)
+        code = _checked_run(args, status_dir)
     except KeyboardInterrupt:
         # 명령이 정리(돌던 작업이 끝나기를 기다림)를 마친 뒤에야 여기 온다 — 상태는 그 뒤에 쓴다.
         code, state = EXIT_INTERRUPTED, "interrupted"

@@ -467,12 +467,42 @@ def cmd_judge_controls_merge(args: argparse.Namespace) -> int:
     return 0
 
 
+def _require_ran(args: argparse.Namespace, rows: list[dict[str, Any]]) -> None:
+    """집계 입구의 "실제로 돌았나" 단언(`memory_eval.ran_gate`). 집계할 행에 문턱이 걸린 갈래가 있으면 프로브 결과와 필터 재계산
+    출력을 받아, 그 입력이 집계 행을 모두 덮는지 본 뒤 갈래별 문턱을 본다. 입력이 없거나, 덮지 못하거나, 문턱에 못 미치면 무엇을
+    집계하기 전에 거부한다."""
+    from memory_eval import ran_gate
+
+    arms = {str(row["arm"]) for row in rows if "arm" in row}
+    if not ran_gate.needs_inputs(arms):
+        return
+    if not args.ran_probes or not args.ran_recompute:
+        gated = sorted(arms & set(ran_gate.GATED_ARMS))
+        raise SystemExit(
+            f"갈래 {gated} 를 집계하려면 --ran-probes(프로브 결과)와 --ran-recompute(filter-recompute 출력)를 준다"
+        )
+    recompute = [r for path in args.ran_recompute for r in json.loads(path.read_text(encoding="utf-8"))]
+    probes = _probe_rows(args.ran_probes)
+    ran_gate.require_covered(rows, probe_rows=probes, recompute_rows=recompute)
+    ran_gate.require_ran(arms, probe_rows=probes, recompute_rows=recompute)
+
+
+def _ran_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "--ran-probes", type=Path, nargs="+", help="실제로 돌았나 단언 — 프로브 결과(jsonl, 질의 임베딩 성공 비율)"
+    )
+    p.add_argument(
+        "--ran-recompute", type=Path, nargs="+", help="실제로 돌았나 단언 — filter-recompute 출력(가림·재분류 합계)"
+    )
+
+
 def cmd_judge_summary(args: argparse.Namespace) -> int:
     """판정 결과의 종류별 합격률을 `unaddressed` 처리 방식 세 가지로 모두 낸다 — 봉인 문서가 하나를 고정하더라도 요약이 셋을
     함께 보여 결과를 본 뒤 유리한 방식을 고르는 일이 드러나게."""
     from memory_eval.judge import UNADDRESSED_POLICIES, summarize_judged
 
     rows = [r for path in args.judged for r in json.loads(path.read_text(encoding="utf-8"))]
+    _require_ran(args, rows)
     _print({policy: summarize_judged(rows, unaddressed=policy) for policy in UNADDRESSED_POLICIES})
     return 0
 
@@ -706,6 +736,9 @@ def cmd_v4_verdict(args: argparse.Namespace) -> int:
     from memory_eval.judge import ensure_unique_probe_rows
     from memory_eval.verdict_v4 import v4_verdict
 
+    scores = [r for path in args.scores for r in json.loads(path.read_text(encoding="utf-8"))]
+    judge_rows = [r for path in args.judged for r in json.loads(path.read_text(encoding="utf-8"))]
+    _require_ran(args, scores + judge_rows)
     require_seal({"test"}, args.run / PREREGISTRATION_FILE, seal_sha=args.seal_sha)
 
     def view(pair: list[str]) -> plants_mod.PlantSet:
@@ -716,9 +749,7 @@ def cmd_v4_verdict(args: argparse.Namespace) -> int:
 
     story = [view(pair) for pair in args.story]
     character = view(args.character) if args.character else None
-    scores = [r for path in args.scores for r in json.loads(path.read_text(encoding="utf-8"))]
     ensure_unique_probe_rows(scores)
-    judge_rows = [r for path in args.judged for r in json.loads(path.read_text(encoding="utf-8"))]
     controls_path = args.controls or args.run / "judge" / "controls.json"
     control_rows, override = v4_controls_input(
         controls_path, accept_sha256=args.accept_failed_controls, accept_reason=args.accept_reason
@@ -1358,6 +1389,7 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
 
     p = sub.add_parser("judge-summary", help="판정 결과의 종류별 합격률(unaddressed 따로)")
     p.add_argument("--judged", type=Path, nargs="+", required=True)
+    _ran_args(p)
     p.set_defaults(fn=cmd_judge_summary)
 
     p = sub.add_parser("countdown", help="CP300 상영회 카운트다운 — 스탯·노트 본문 존재만, 갈래별")
@@ -1450,6 +1482,7 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
         "--section-max", nargs="*", default=[], help="쌍마다 섹션 계산 최대 — '기준:비교=글자'(예 b1-A0:b1-A1=970)"
     )
     p.add_argument("--out", type=Path, help="기본 <원자료>/b1/measure/verdict.json")
+    _ran_args(p)
     p.set_defaults(fn=cmd_v4_verdict)
 
     from memory_eval import judge_agreement as ja
