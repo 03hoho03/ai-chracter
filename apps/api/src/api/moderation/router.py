@@ -28,7 +28,7 @@ from api.db.models.moderation import (
 )
 from api.db.models.story import StoryPromptTemplate, StoryVersionDetail
 from api.db.session import get_db_session
-from api.novel_public.purchases import lock_source_closing, refund_source_closing
+from api.novel_public.purchases import lock_source_closing, refund_source_closing, source_closing_keeps_buyers
 from api.moderation.schemas import (
     AdminAppealListItem,
     AdminAppealListResponse,
@@ -330,10 +330,12 @@ async def act_on_report(
         )
 
     # 이용제한·삭제는 직접 조치(`admin/contents.py`)와 같이 그 원작의 노벨 구매를 환급한다 — 조치 행 INSERT 보다 먼저 잠근다.
-    # 반려는 상태가 그대로라 환급하지 않는다.
+    # 반려는 상태가 그대로라 환급하지 않는다. 파생 소설은 판매만 멈추기로 고르면 환급하지 않으므로 잠그지도 않는다.
+    closes = body.action in (ModerationActionType.RESTRICT, ModerationActionType.DELETE)
+    keeps_buyers = source_closing_keeps_buyers(closes=closes, choice=body.derivative_novels)
     closing = (
         await lock_source_closing(db, content_id=content.id, deleting=body.action == ModerationActionType.DELETE)
-        if body.action in (ModerationActionType.RESTRICT, ModerationActionType.DELETE)
+        if closes and not keeps_buyers
         else None
     )
     action_row = ModerationAction(content_id=content.id, admin_id=admin_id, action=body.action)
@@ -346,6 +348,8 @@ async def act_on_report(
     # flush 하면서 "정상 + 표식" 을 쓰면 CHECK 에 걸린다.
     if body.action != ModerationActionType.REJECT:
         content.restricted_by_suspension = False
+        # 산 사람을 남기는 표식도 조치마다 새로 쓴다(직접 조치와 같다). 반려는 상태를 바꾸지 않아 표식도 그대로 둔다.
+        content.novel_buyers_kept = keeps_buyers
     if body.action == ModerationActionType.RESTRICT:
         content.moderation_status = ModerationStatus.RESTRICTED
     elif body.action == ModerationActionType.DELETE:
@@ -477,8 +481,10 @@ async def resolve_appeal(
             assert content is not None
 
             content.moderation_status = ModerationStatus.NORMAL
-            # 정지 표식은 제한 상태에서만 설 수 있다 — 수용으로 정상이 됐으니 내린다.
+            # 정지 표식은 제한 상태에서만 설 수 있다 — 수용으로 정상이 됐으니 내린다. 산 사람을 남기는 표식도 정상 작품에서는
+            # 뜻이 없어 함께 내린다.
             content.restricted_by_suspension = False
+            content.novel_buyers_kept = False
             await upgrade_content_chat_rooms_to_latest_version(db, content)
 
             # 작품 상태를 되돌리는 건 이 분기뿐이라 로그도 여기서만

@@ -70,6 +70,8 @@ export const ACTION_TYPE_LABELS = {
   "novel-lift": "노벨 이용제한 해제",
   "novel-review-approve": "노벨 첫 공개 승인",
   "novel-review-reject": "노벨 첫 공개 반려",
+  "novel-sales-stop": "노벨 판매 중단",
+  "novel-sales-resume": "노벨 판매 재개",
   "novel-report-reject": "노벨 신고 반려",
   "novel-comment-hide": "노벨 댓글 운영 숨김",
   "novel-comment-restore": "노벨 댓글 운영 숨김 해제",

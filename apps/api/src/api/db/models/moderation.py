@@ -224,6 +224,8 @@ AdminActionType = Literal[
     "novel-restrict",
     "novel-review-approve",
     "novel-review-reject",
+    "novel-sales-resume",
+    "novel-sales-stop",
     "prompt-set-publish",
     "report-reject",
     "user-beta-off",

@@ -9281,6 +9281,60 @@
         }
       }
     },
+    "/admin/novels/{novel_id}/sales": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Act On Admin Novel Sales",
+        "description": "노벨 판매를 멈추거나(`stop`) 다시 연다(`resume`). 멈추면 목록·검색·홈에서 빠지고 새로 팔지 않으며 게시자는 새 화·다시\n공개를 낼 수 없다. 산 사람은 계속 읽고 환급·알림은 없다(`set_novel_sales`). 정책 스위치가 꺼져 있으면 409\n`NOVEL_SALES_STOP_DISABLED`, 사유가 공백뿐이면 422.",
+        "operationId": "act_on_admin_novel_sales_admin_novels__novel_id__sales_post",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminNovelSalesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNovelSalesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/novels/{novel_id}/review": {
       "post": {
         "tags": [
@@ -9445,7 +9499,7 @@
           "admin"
         ],
         "summary": "Act On Admin Novel Report",
-        "description": "신고를 처리한다 — `restrict` 는 그 노벨을 이용제한하고 신고를 처리완료로(이미 이용제한이어도 처리된다), `reject` 는\n노벨을 건드리지 않고 반려로 둔다. 이미 처리된 신고도 다시 처리할 수 있다(상태·처리자·시각을 덮어쓴다). 노벨이 지워져\n이용제한할 대상이 없으면 409 `NOVEL_GONE`(반려는 된다). 이용제한은 직접 이용제한과 같이 환급한다 — 이미 이용제한된\n노벨이면 돌려줄 것이 없다.",
+        "description": "신고를 처리한다 — `restrict` 는 그 노벨을 이용제한하고 신고를 처리완료로(이미 이용제한이어도 처리된다), `stop_sales` 는\n그 노벨의 판매를 멈추고 처리완료로(이미 멈췄어도 처리되고 멈춘 시각은 그대로), `reject` 는 노벨을 건드리지 않고 반려로\n둔다. 이미 처리된 신고도 다시 처리할 수 있다(상태·처리자·시각을 덮어쓴다). 노벨이 지워져 조치할 대상이 없으면 409\n`NOVEL_GONE`(반려는 된다). 이용제한은 직접 이용제한과 같이 환급한다 — 이미 이용제한된 노벨이면 돌려줄 것이 없다. 판매\n중단은 환급하지 않고, 정책 스위치가 꺼져 있으면 409 `NOVEL_SALES_STOP_DISABLED`.",
         "operationId": "act_on_admin_novel_report_admin_novel_reports__report_id__actions_post",
         "parameters": [
           {
@@ -15212,6 +15266,21 @@
               }
             ],
             "title": "Admincomment"
+          },
+          "derivativeNovels": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "close",
+                  "stop_sales"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Derivativenovels"
           }
         },
         "type": "object",
@@ -15328,6 +15397,10 @@
             },
             "type": "array",
             "title": "Versions"
+          },
+          "novelBuyersKept": {
+            "type": "boolean",
+            "title": "Novelbuyerskept"
           }
         },
         "type": "object",
@@ -15347,7 +15420,8 @@
           "thumbnailUrl",
           "publishedImages",
           "hasUnpublishedChanges",
-          "versions"
+          "versions",
+          "novelBuyersKept"
         ],
         "title": "AdminContentDetailResponse"
       },
@@ -18545,6 +18619,18 @@
             ],
             "title": "Hiddenat"
           },
+          "salesStoppedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Salesstoppedat"
+          },
           "synopsis": {
             "type": "string",
             "title": "Synopsis"
@@ -18714,6 +18800,7 @@
           "publishedAt",
           "reviewStatus",
           "hiddenAt",
+          "salesStoppedAt",
           "synopsis",
           "contentId",
           "sourceModerationStatus",
@@ -18839,6 +18926,18 @@
               }
             ],
             "title": "Hiddenat"
+          },
+          "salesStoppedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Salesstoppedat"
           }
         },
         "type": "object",
@@ -18858,10 +18957,11 @@
           "pendingReportCount",
           "publishedAt",
           "reviewStatus",
-          "hiddenAt"
+          "hiddenAt",
+          "salesStoppedAt"
         ],
         "title": "AdminNovelListItem",
-        "description": "공개 상태 행이 있는 소설 하나(거둔 것·이용제한된 것 포함). `readable` 은 지금 독자에게 보이는가(거둠·이용제한·게시자\n정지·원작 숨김·공개 화 없음·첫 공개 승인 대기나 반려면 거짓). `purchase_count` 는 환급되지 않은 구매 수(탈퇴한 구매자의\n구매도 거래 기록이라 센다), `pending_report_count` 는 처리 전 노벨 신고 수다. `review_status` 는 첫 공개의 운영자 심사\n(대기·승인·반려, 심사 없이 공개됐으면 비어 있다) — 대기·반려 행의 `visibility` 는 `withdrawn` 이지만 게시자가 거둔 것이\n아니다. `hidden_at` 은 노벨로 팔린 소설을 작가가 지웠거나 그 작가가 탈퇴해 숨긴 시각이다 — 숨긴 소설도 공개 범위가 `withdrawn` 이라 이 값으로\n게시자가 거둔 것과 가른다(숨기지 않았으면 비어 있다)."
+        "description": "공개 상태 행이 있는 소설 하나(거둔 것·이용제한된 것 포함). `readable` 은 지금 독자에게 보이는가(거둠·이용제한·게시자\n정지·원작 숨김·공개 화 없음·첫 공개 승인 대기나 반려면 거짓). `purchase_count` 는 환급되지 않은 구매 수(탈퇴한 구매자의\n구매도 거래 기록이라 센다), `pending_report_count` 는 처리 전 노벨 신고 수다. `review_status` 는 첫 공개의 운영자 심사\n(대기·승인·반려, 심사 없이 공개됐으면 비어 있다) — 대기·반려 행의 `visibility` 는 `withdrawn` 이지만 게시자가 거둔 것이\n아니다. `hidden_at` 은 노벨로 팔린 소설을 작가가 지웠거나 그 작가가 탈퇴해 숨긴 시각이다 — 숨긴 소설도 공개 범위가 `withdrawn` 이라 이 값으로\n게시자가 거둔 것과 가른다(숨기지 않았으면 비어 있다). `sales_stopped_at` 은 운영자가 판매를 멈춘 시각이다 — 이용제한과\n따로 걸리고 따로 풀리며, 멈춘 노벨은 `readable` 이 거짓이지만 산 사람은 계속 읽는다(멈추지 않았으면 비어 있다)."
       },
       "AdminNovelListResponse": {
         "properties": {
@@ -18956,6 +19056,7 @@
             "type": "string",
             "enum": [
               "restrict",
+              "stop_sales",
               "reject"
             ],
             "title": "Action"
@@ -19094,6 +19195,18 @@
             ],
             "title": "Novelmoderationstatus"
           },
+          "novelSalesStoppedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Novelsalesstoppedat"
+          },
           "evidence": {
             "$ref": "#/components/schemas/AdminNovelReportEvidence"
           }
@@ -19115,10 +19228,11 @@
           "resolvedByAdminId",
           "resolvedAt",
           "novelModerationStatus",
+          "novelSalesStoppedAt",
           "evidence"
         ],
         "title": "AdminNovelReportDetailResponse",
-        "description": "`novel_moderation_status` 는 신고된 노벨의 지금 이용제한 상태(소설이 지워졌으면 비어 있다)."
+        "description": "`novel_moderation_status` 는 신고된 노벨의 지금 이용제한 상태, `novel_sales_stopped_at` 은 판매를 멈춘 시각이다(소설이\n지워졌거나 멈추지 않았으면 비어 있다)."
       },
       "AdminNovelReportEvidence": {
         "properties": {
@@ -19376,6 +19490,67 @@
           "visibility"
         ],
         "title": "AdminNovelReviewResponse"
+      },
+      "AdminNovelSalesRequest": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "stop",
+              "resume"
+            ],
+            "title": "Action"
+          },
+          "adminComment": {
+            "type": "string",
+            "title": "Admincomment"
+          },
+          "reasonCategory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportReasonCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "action",
+          "adminComment"
+        ],
+        "title": "AdminNovelSalesRequest",
+        "description": "판매 중단(`stop`)·재개(`resume`). `admin_comment` 는 감사 로그에 남는 조치 사유(공백만이면 422). `reason_category` 는\n신고 사유 분류를 고를 때만."
+      },
+      "AdminNovelSalesResponse": {
+        "properties": {
+          "novelId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Novelid"
+          },
+          "salesStoppedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Salesstoppedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "novelId",
+          "salesStoppedAt"
+        ],
+        "title": "AdminNovelSalesResponse",
+        "description": "`sales_stopped_at` 은 판매를 멈춘 시각(재개했으면 비어 있다)."
       },
       "AdminNovelScreeningItem": {
         "properties": {
@@ -20306,6 +20481,8 @@
               "novel-restrict",
               "novel-review-approve",
               "novel-review-reject",
+              "novel-sales-resume",
+              "novel-sales-stop",
               "prompt-set-publish",
               "report-reject",
               "user-beta-off",
@@ -29554,7 +29731,8 @@
                 "type": "string",
                 "enum": [
                   "source_unavailable",
-                  "restricted"
+                  "restricted",
+                  "sales_stopped"
                 ]
               },
               {
@@ -29654,6 +29832,10 @@
           "reviewRequired": {
             "type": "boolean",
             "title": "Reviewrequired"
+          },
+          "salesStopped": {
+            "type": "boolean",
+            "title": "Salesstopped"
           }
         },
         "type": "object",
@@ -29677,10 +29859,11 @@
           "reviewStatus",
           "reviewReason",
           "reviewedAt",
-          "reviewRequired"
+          "reviewRequired",
+          "salesStopped"
         ],
         "title": "NovelPublicationStatusResponse",
-        "description": "게시자가 보는 공개 상태. 화면이 이 값들로 \"공개 전·공개 중·확인 실패·원작 허락 미달·원작 비공개·허락 하향 뒤·운영\n조치\" 상태를 가른다(\"확인 중\"과 심사 장애는 요청 중·요청 실패로 화면이 안다).\n\n- `published`: 공개 상태 행이 있는가(한 번이라도 공개했는가). 거둔 뒤에도 참이다.\n- `visibility`·`moderation_status`: 공개 범위·이용제한 두 축. 공개한 적이 없으면 비어 있다.\n- `published_chapter_count`: 1화부터 이어진 공개 화 수. `chapter_count` 는 소설의 화 수다.\n- `published_chapters`: 공개한 화마다 가격(번호 순). 화면이 무료로 공개한 화를 고정으로 그리고 유료 화에 \"무료로 전환\"을\n  건다.\n- `free_locked_ordinals`: 아직 공개하지 않은 번호 중 무료로만 공개할 수 있는 번호(오름차순) — 무료로 공개하거나 무료로\n  전환한 화를 지우고 다시 만든 번호다. 화면이 그 번호의 가격 선택을 \"무료 고정\"으로 그린다. 정책 스위치가 꺼져 있으면\n  비어 있다.\n- `changed_chapter_ordinals`·`metadata_changed`: 공개한 뒤 고쳐서 공개본과 다른 화·소설 제목·소개. 다시 공개해야\n  반영된다.\n- `new_publish_block`: 새로 공개(처음 공개·다음 화)할 수 없는 이유. 없으면 비어 있다.\n- `republish_block`: 이미 공개한 것을 다시 내거나 거둔 공개를 다시 열 수 없는 이유.\n- `screening_rejections_left`: 오늘 더 걸릴 수 있는 심사 횟수(상한 `screening_rejection_limit`). 상한을 적용하지 않는\n  계정이면 비어 있다.\n- `review_status`: 첫 공개의 운영자 심사 — 대기·승인·반려. 심사 없이 공개됐거나 공개한 적이 없으면 비어 있다. 대기·\n  반려인 동안 `visibility` 는 `withdrawn` 이지만 게시자가 거둔 것이 아니다.\n- `review_reason`: 반려 사유. 운영자가 쓴 글 그대로이고 반려일 때만 있다. `reviewed_at` 은 마지막 승인·반려 시각이다.\n- `review_required`: 지금 공개하면 독자에게 바로 열리지 않고 운영자 승인을 기다리는가(정책 스위치가 켜졌고 아직 독자에게\n  보인 적 없는 소설)."
+        "description": "게시자가 보는 공개 상태. 화면이 이 값들로 \"공개 전·공개 중·확인 실패·원작 허락 미달·원작 비공개·허락 하향 뒤·운영\n조치\" 상태를 가른다(\"확인 중\"과 심사 장애는 요청 중·요청 실패로 화면이 안다).\n\n- `published`: 공개 상태 행이 있는가(한 번이라도 공개했는가). 거둔 뒤에도 참이다.\n- `visibility`·`moderation_status`: 공개 범위·이용제한 두 축. 공개한 적이 없으면 비어 있다.\n- `published_chapter_count`: 1화부터 이어진 공개 화 수. `chapter_count` 는 소설의 화 수다.\n- `published_chapters`: 공개한 화마다 가격(번호 순). 화면이 무료로 공개한 화를 고정으로 그리고 유료 화에 \"무료로 전환\"을\n  건다.\n- `free_locked_ordinals`: 아직 공개하지 않은 번호 중 무료로만 공개할 수 있는 번호(오름차순) — 무료로 공개하거나 무료로\n  전환한 화를 지우고 다시 만든 번호다. 화면이 그 번호의 가격 선택을 \"무료 고정\"으로 그린다. 정책 스위치가 꺼져 있으면\n  비어 있다.\n- `changed_chapter_ordinals`·`metadata_changed`: 공개한 뒤 고쳐서 공개본과 다른 화·소설 제목·소개. 다시 공개해야\n  반영된다.\n- `new_publish_block`: 새로 공개(처음 공개·다음 화)할 수 없는 이유. 없으면 비어 있다.\n- `republish_block`: 이미 공개한 것을 다시 내거나 거둔 공개를 다시 열 수 없는 이유.\n- `screening_rejections_left`: 오늘 더 걸릴 수 있는 심사 횟수(상한 `screening_rejection_limit`). 상한을 적용하지 않는\n  계정이면 비어 있다.\n- `review_status`: 첫 공개의 운영자 심사 — 대기·승인·반려. 심사 없이 공개됐거나 공개한 적이 없으면 비어 있다. 대기·\n  반려인 동안 `visibility` 는 `withdrawn` 이지만 게시자가 거둔 것이 아니다.\n- `review_reason`: 반려 사유. 운영자가 쓴 글 그대로이고 반려일 때만 있다. `reviewed_at` 은 마지막 승인·반려 시각이다.\n- `review_required`: 지금 공개하면 독자에게 바로 열리지 않고 운영자 승인을 기다리는가(정책 스위치가 켜졌고 아직 독자에게\n  보인 적 없는 소설).\n- `sales_stopped`: 운영자가 이 공개 소설의 판매를 멈췄는가. 멈춘 동안 목록에 보이지 않고 새로 팔리지 않으며(산 사람은\n  계속 읽는다) 새 화·다시 공개를 낼 수 없다. 이용제한(`moderation_status`)과 따로 걸리고 풀린다."
       },
       "NovelPublishRequest": {
         "properties": {
@@ -31775,6 +31958,21 @@
               }
             ],
             "title": "Admincomment"
+          },
+          "derivativeNovels": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "close",
+                  "stop_sales"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Derivativenovels"
           }
         },
         "type": "object",

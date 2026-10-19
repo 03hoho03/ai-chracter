@@ -3795,6 +3795,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/novels/{novel_id}/sales": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Act On Admin Novel Sales
+         * @description 노벨 판매를 멈추거나(`stop`) 다시 연다(`resume`). 멈추면 목록·검색·홈에서 빠지고 새로 팔지 않으며 게시자는 새 화·다시
+         *     공개를 낼 수 없다. 산 사람은 계속 읽고 환급·알림은 없다(`set_novel_sales`). 정책 스위치가 꺼져 있으면 409
+         *     `NOVEL_SALES_STOP_DISABLED`, 사유가 공백뿐이면 422.
+         */
+        post: operations["act_on_admin_novel_sales_admin_novels__novel_id__sales_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/novels/{novel_id}/review": {
         parameters: {
             query?: never;
@@ -3872,10 +3894,11 @@ export interface paths {
         put?: never;
         /**
          * Act On Admin Novel Report
-         * @description 신고를 처리한다 — `restrict` 는 그 노벨을 이용제한하고 신고를 처리완료로(이미 이용제한이어도 처리된다), `reject` 는
-         *     노벨을 건드리지 않고 반려로 둔다. 이미 처리된 신고도 다시 처리할 수 있다(상태·처리자·시각을 덮어쓴다). 노벨이 지워져
-         *     이용제한할 대상이 없으면 409 `NOVEL_GONE`(반려는 된다). 이용제한은 직접 이용제한과 같이 환급한다 — 이미 이용제한된
-         *     노벨이면 돌려줄 것이 없다.
+         * @description 신고를 처리한다 — `restrict` 는 그 노벨을 이용제한하고 신고를 처리완료로(이미 이용제한이어도 처리된다), `stop_sales` 는
+         *     그 노벨의 판매를 멈추고 처리완료로(이미 멈췄어도 처리되고 멈춘 시각은 그대로), `reject` 는 노벨을 건드리지 않고 반려로
+         *     둔다. 이미 처리된 신고도 다시 처리할 수 있다(상태·처리자·시각을 덮어쓴다). 노벨이 지워져 조치할 대상이 없으면 409
+         *     `NOVEL_GONE`(반려는 된다). 이용제한은 직접 이용제한과 같이 환급한다 — 이미 이용제한된 노벨이면 돌려줄 것이 없다. 판매
+         *     중단은 환급하지 않고, 정책 스위치가 꺼져 있으면 409 `NOVEL_SALES_STOP_DISABLED`.
          */
         post: operations["act_on_admin_novel_report_admin_novel_reports__report_id__actions_post"];
         delete?: never;
@@ -6187,6 +6210,8 @@ export interface components {
             reasonCategory?: components["schemas"]["ReportReasonCategory"] | null;
             /** Admincomment */
             adminComment?: string | null;
+            /** Derivativenovels */
+            derivativeNovels?: ("close" | "stop_sales") | null;
         };
         /** AdminContentCreator */
         AdminContentCreator: {
@@ -6236,6 +6261,8 @@ export interface components {
             hasUnpublishedChanges: boolean;
             /** Versions */
             versions: components["schemas"]["AdminContentVersionItem"][];
+            /** Novelbuyerskept */
+            novelBuyersKept: boolean;
         };
         /**
          * AdminContentImage
@@ -7586,6 +7613,8 @@ export interface components {
             reviewStatus: ("pending" | "approved" | "rejected") | null;
             /** Hiddenat */
             hiddenAt: string | null;
+            /** Salesstoppedat */
+            salesStoppedAt: string | null;
             /** Synopsis */
             synopsis: string;
             /**
@@ -7635,7 +7664,8 @@ export interface components {
          *     구매도 거래 기록이라 센다), `pending_report_count` 는 처리 전 노벨 신고 수다. `review_status` 는 첫 공개의 운영자 심사
          *     (대기·승인·반려, 심사 없이 공개됐으면 비어 있다) — 대기·반려 행의 `visibility` 는 `withdrawn` 이지만 게시자가 거둔 것이
          *     아니다. `hidden_at` 은 노벨로 팔린 소설을 작가가 지웠거나 그 작가가 탈퇴해 숨긴 시각이다 — 숨긴 소설도 공개 범위가 `withdrawn` 이라 이 값으로
-         *     게시자가 거둔 것과 가른다(숨기지 않았으면 비어 있다).
+         *     게시자가 거둔 것과 가른다(숨기지 않았으면 비어 있다). `sales_stopped_at` 은 운영자가 판매를 멈춘 시각이다 — 이용제한과
+         *     따로 걸리고 따로 풀리며, 멈춘 노벨은 `readable` 이 거짓이지만 산 사람은 계속 읽는다(멈추지 않았으면 비어 있다).
          */
         AdminNovelListItem: {
             /**
@@ -7685,6 +7715,8 @@ export interface components {
             reviewStatus: ("pending" | "approved" | "rejected") | null;
             /** Hiddenat */
             hiddenAt: string | null;
+            /** Salesstoppedat */
+            salesStoppedAt: string | null;
         };
         /** AdminNovelListResponse */
         AdminNovelListResponse: {
@@ -7730,13 +7762,14 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "restrict" | "reject";
+            action: "restrict" | "stop_sales" | "reject";
             /** Admincomment */
             adminComment: string;
         };
         /**
          * AdminNovelReportDetailResponse
-         * @description `novel_moderation_status` 는 신고된 노벨의 지금 이용제한 상태(소설이 지워졌으면 비어 있다).
+         * @description `novel_moderation_status` 는 신고된 노벨의 지금 이용제한 상태, `novel_sales_stopped_at` 은 판매를 멈춘 시각이다(소설이
+         *     지워졌거나 멈추지 않았으면 비어 있다).
          */
         AdminNovelReportDetailResponse: {
             /**
@@ -7782,6 +7815,8 @@ export interface components {
             resolvedAt: string | null;
             /** Novelmoderationstatus */
             novelModerationStatus: ("normal" | "restricted") | null;
+            /** Novelsalesstoppedat */
+            novelSalesStoppedAt: string | null;
             evidence: components["schemas"]["AdminNovelReportEvidence"];
         };
         /**
@@ -7891,6 +7926,34 @@ export interface components {
              * @enum {string}
              */
             visibility: "public" | "withdrawn";
+        };
+        /**
+         * AdminNovelSalesRequest
+         * @description 판매 중단(`stop`)·재개(`resume`). `admin_comment` 는 감사 로그에 남는 조치 사유(공백만이면 422). `reason_category` 는
+         *     신고 사유 분류를 고를 때만.
+         */
+        AdminNovelSalesRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "stop" | "resume";
+            /** Admincomment */
+            adminComment: string;
+            reasonCategory?: components["schemas"]["ReportReasonCategory"] | null;
+        };
+        /**
+         * AdminNovelSalesResponse
+         * @description `sales_stopped_at` 은 판매를 멈춘 시각(재개했으면 비어 있다).
+         */
+        AdminNovelSalesResponse: {
+            /**
+             * Novelid
+             * Format: uuid
+             */
+            novelId: string;
+            /** Salesstoppedat */
+            salesStoppedAt: string | null;
         };
         /**
          * AdminNovelScreeningItem
@@ -8274,7 +8337,7 @@ export interface components {
              * Actiontype
              * @enum {string}
              */
-            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "home-novel-curation-clear" | "home-novel-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "legal-withdraw" | "notice-publish" | "notice-unpublish" | "novel-comment-delete" | "novel-comment-hide" | "novel-comment-report-reject" | "novel-comment-restore" | "novel-lift" | "novel-report-reject" | "novel-restrict" | "novel-review-approve" | "novel-review-reject" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-creator-payout-approve" | "user-creator-payout-hold" | "user-creator-payout-info-view" | "user-creator-payout-payee-replace" | "user-creator-payout-reject" | "user-creator-payout-return" | "user-creator-payout-revoke" | "user-creator-payout-transfer" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-payment-refund" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
+            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "home-novel-curation-clear" | "home-novel-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "legal-withdraw" | "notice-publish" | "notice-unpublish" | "novel-comment-delete" | "novel-comment-hide" | "novel-comment-report-reject" | "novel-comment-restore" | "novel-lift" | "novel-report-reject" | "novel-restrict" | "novel-review-approve" | "novel-review-reject" | "novel-sales-resume" | "novel-sales-stop" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-chat-premium-models-off" | "user-chat-premium-models-on" | "user-clover-grant" | "user-clover-revoke" | "user-creator-payout-approve" | "user-creator-payout-hold" | "user-creator-payout-info-view" | "user-creator-payout-payee-replace" | "user-creator-payout-reject" | "user-creator-payout-return" | "user-creator-payout-revoke" | "user-creator-payout-transfer" | "user-novelize-off" | "user-novelize-on" | "user-novelize-premium-models-off" | "user-novelize-premium-models-on" | "user-payment-refund" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
             /** Targetcontentid */
             targetContentId: string | null;
             /** Contentname */
@@ -11978,6 +12041,8 @@ export interface components {
          *     - `review_reason`: 반려 사유. 운영자가 쓴 글 그대로이고 반려일 때만 있다. `reviewed_at` 은 마지막 승인·반려 시각이다.
          *     - `review_required`: 지금 공개하면 독자에게 바로 열리지 않고 운영자 승인을 기다리는가(정책 스위치가 켜졌고 아직 독자에게
          *       보인 적 없는 소설).
+         *     - `sales_stopped`: 운영자가 이 공개 소설의 판매를 멈췄는가. 멈춘 동안 목록에 보이지 않고 새로 팔리지 않으며(산 사람은
+         *       계속 읽는다) 새 화·다시 공개를 낼 수 없다. 이용제한(`moderation_status`)과 따로 걸리고 풀린다.
          */
         NovelPublicationStatusResponse: {
             /** Published */
@@ -12001,7 +12066,7 @@ export interface components {
             /** Newpublishblock */
             newPublishBlock: ("source_unavailable" | "source_permission" | "source_not_listed") | null;
             /** Republishblock */
-            republishBlock: ("source_unavailable" | "restricted") | null;
+            republishBlock: ("source_unavailable" | "restricted" | "sales_stopped") | null;
             lastScreening: components["schemas"]["NovelPublicationScreening"] | null;
             /** Screeningrejectionsleft */
             screeningRejectionsLeft: number | null;
@@ -12019,6 +12084,8 @@ export interface components {
             reviewedAt: string | null;
             /** Reviewrequired */
             reviewRequired: boolean;
+            /** Salesstopped */
+            salesStopped: boolean;
         };
         /**
          * NovelPublishRequest
@@ -12971,6 +13038,8 @@ export interface components {
             action: components["schemas"]["ModerationActionType"];
             /** Admincomment */
             adminComment?: string | null;
+            /** Derivativenovels */
+            derivativeNovels?: ("close" | "stop_sales") | null;
         };
         /**
          * ReportReasonCategory
@@ -19390,6 +19459,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminNovelModerationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    act_on_admin_novel_sales_admin_novels__novel_id__sales_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                novel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminNovelSalesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNovelSalesResponse"];
                 };
             };
             /** @description Validation Error */

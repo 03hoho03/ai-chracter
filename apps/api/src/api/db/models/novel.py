@@ -607,6 +607,10 @@ class NovelPublication(Base):
     review_status: Mapped[NovelPublicationReviewStatus | None] = mapped_column(Text, nullable=True)
     review_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 운영자가 이 소설의 판매를 멈춘 시각(비어 있으면 판매 중). 이용제한(`moderation_status`)과 따로 걸리고 따로 풀린다 —
+    # 판매 중단은 목록·새 판매만 멈추고 산 사람의 열람을 두며 환급하지 않는다. 이용제한 칸의 값으로 두지 않은 이유는 마이그레이션
+    # `e9ad8ed93e90` 에 있다.
+    sales_stopped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # 최신순 목록은 마지막 공개 시각으로, 인기순 목록은 좋아요 수 → 마지막 공개 시각으로 줄 세운다.
     __table_args__ = (

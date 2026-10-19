@@ -33,6 +33,7 @@ function status(patch: Partial<NovelPublicationStatus>): NovelPublicationStatus 
     reviewReason: null,
     reviewedAt: null,
     reviewRequired: false,
+    salesStopped: false,
     ...patch,
   };
 }

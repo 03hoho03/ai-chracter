@@ -34,8 +34,12 @@ from api.db.models.content import Content
 from api.db.models.moderation import ModerationAction, ModerationActionType, Notification, ReportReasonCategory
 from api.db.models.novel import Novel, NovelBatch, NovelChapter, NovelChapterRevision, NovelPublication, NovelPurchase
 from api.main import app
-from api.novel_public.admin import moderate_admin_novel
-from api.novel_public.admin_schemas import AdminNovelModerationRequest
+from api.novel_public.admin import act_on_admin_novel_sales, moderate_admin_novel, set_novel_sales
+from api.novel_public.admin_schemas import (
+    AdminNovelModerationRequest,
+    AdminNovelSalesRequest,
+    AdminNovelSalesResponse,
+)
 from api.novel_public.purchases import NovelChapterPurchaseResponse, purchase_chapter
 from api.novelize import router as novelize_router
 from api.novelize.deletion import delete_novels
@@ -578,3 +582,170 @@ async def test_a_withdrawal_waits_for_a_late_draft_of_an_unpublished_chapter_and
         assert await s.scalar(select(NovelChapter.id).where(NovelChapter.id == draft.id)) is None
         assert await s.scalar(select(func.count()).where(NovelChapterRevision.chapter_id == draft.id)) == 0
         assert await s.scalar(select(Novel.hidden_at).where(Novel.id == novel.novel_id)) is not None
+
+
+# ── 판매 중단 ────────────────────────────────────────────────────────────────
+# 판매 중단은 환급하지 않으므로 사용자 행을 잡지 않고 공개 상태 행 하나만 `FOR UPDATE` 로 잡는다. 구매는 사용자 행을 잡은 뒤
+# 공개 상태 행을 `FOR SHARE` 로 잡고 판매 조건을 다시 읽으므로, 둘은 공개 상태 행에서 줄을 선다.
+def _stop_sales_task(world: _World, novel: PublicNovel, admin_id: uuid.UUID) -> "asyncio.Task[object]":
+    body = AdminNovelSalesRequest(action="stop", admin_comment="운영정책 위반")
+    return _in_own_session(
+        world, lambda s: act_on_admin_novel_sales(novel_id=novel.novel_id, body=body, admin_id=admin_id, db=s)
+    )
+
+
+async def _publication_state(world: _World, novel_id: uuid.UUID) -> tuple[str | None, bool]:
+    async with world.factory() as s:
+        row = (
+            await s.execute(
+                select(NovelPublication.moderation_status, NovelPublication.sales_stopped_at).where(
+                    NovelPublication.novel_id == novel_id
+                )
+            )
+        ).one()
+    return row[0], row[1] is not None
+
+
+async def test_a_sales_stop_waits_for_a_purchase_in_progress_and_that_purchase_stays_owned(world: _World) -> None:
+    """구매가 공개 상태 행을 `FOR SHARE` 로 쥔 채 커밋 전일 때 운영자가 판매를 멈춘다. 판매 중단은 그 구매를 기다렸다가 멈추고,
+    먼저 산 화는 환급 없이 소장으로 남는다. 깨지는 시나리오: 판매 중단이 공개 상태 행을 잡지 않아 멈춘 뒤에 구매가 커밋되거나
+    (멈춘 노벨이 팔린다), 판매 중단이 사용자 행을 잡으러 가 구매와 교착한다."""
+    publisher, buyer = await world.member(), await world.member()
+    novel = await world.publish(publisher)
+    admin = await world.admin()
+    purchase = world.factory()
+    tasks: list[asyncio.Task[object]] = []
+    try:
+        await _buy(purchase, novel, buyer, 6)
+        tasks.append(_stop_sales_task(world, novel, admin))
+        await _assert_blocked(tasks[0])
+        await purchase.commit()
+        stopped = await asyncio.wait_for(tasks[0], _SETTLE_SECONDS)
+    finally:
+        await purchase.close()
+        if tasks:
+            await asyncio.wait(tasks, timeout=_SETTLE_SECONDS)
+
+    assert isinstance(stopped, AdminNovelSalesResponse) and stopped.sales_stopped_at is not None, stopped
+    assert await _publication_state(world, novel.novel_id) == ("normal", True)
+    assert await _refunds(world, buyer) == [(6, None)]
+    assert await _refund_entries(world, buyer) == 0
+    assert await _balance(world, buyer) == 70
+
+
+async def test_a_purchase_queued_behind_a_sales_stop_finds_the_chapter_off_sale_and_charges_nothing(
+    world: _World,
+) -> None:
+    """판매 중단이 공개 상태 행을 쥔 채 커밋 전일 때 구매가 들어온다. 구매는 그 행에서 기다렸다가, 잠근 뒤 다시 읽은 판매
+    조건에서 판매 중단을 보고 404 로 끝난다 — 차감도 구매 행도 없다. 깨지는 시나리오: 구매가 잠그기 전에 읽은 판매 조건으로
+    멈춘 노벨의 화를 판다."""
+    publisher, buyer = await world.member(), await world.member()
+    novel = await world.publish(publisher)
+    admin = await world.admin()
+    stop = world.factory()
+    tasks: list[asyncio.Task[object]] = []
+    try:
+        await set_novel_sales(stop, novel.novel_id, admin_id=admin, stop=True, reason="운영정책 위반")
+        tasks.append(_purchase_task(world, novel, buyer, 6))
+        await _assert_blocked(tasks[0])
+        await stop.commit()
+        bought = await asyncio.wait_for(tasks[0], _SETTLE_SECONDS)
+    finally:
+        await stop.close()
+        if tasks:
+            await asyncio.wait(tasks, timeout=_SETTLE_SECONDS)
+
+    assert isinstance(bought, HTTPException) and bought.status_code == 404, bought
+    assert await _refunds(world, buyer) == []
+    assert await _balance(world, buyer) == 100
+
+
+async def test_a_restriction_waiting_behind_a_sales_stop_still_refunds_once_and_both_states_stay(world: _World) -> None:
+    """판매 중단이 공개 상태 행을 쥔 채 커밋 전일 때 운영자가 같은 노벨을 이용제한한다. 이용제한은 사용자 행을 잡은 뒤 공개
+    상태 행에서 기다리고, 판매 중단이 커밋되면 이용제한대로 환급한다 — 끝에 두 상태가 함께 남는다. 깨지는 시나리오: 이용제한이
+    잠그기 전에 읽은 공개 상태 행을 통째로 다시 써 판매 중단을 지우거나, 두 조치가 서로 기다려 교착한다."""
+    buyer, publisher = await world.pair()
+    novel = await world.publish(publisher)
+    await _bought(world, novel, buyer, 6)
+    admin = await world.admin()
+    stop = world.factory()
+    tasks: list[asyncio.Task[object]] = []
+    try:
+        await set_novel_sales(stop, novel.novel_id, admin_id=admin, stop=True, reason="운영정책 위반")
+        tasks.append(_restrict_task(world, novel, admin))
+        await _assert_blocked(tasks[0])
+        await stop.commit()
+        restricted = await asyncio.wait_for(tasks[0], _SETTLE_SECONDS)
+    finally:
+        await stop.close()
+        if tasks:
+            await asyncio.wait(tasks, timeout=_SETTLE_SECONDS)
+
+    assert not isinstance(restricted, HTTPException), restricted
+    assert await _publication_state(world, novel.novel_id) == ("restricted", True)
+    assert await _refunds(world, buyer) == [(6, 30)]
+    assert await _refund_entries(world, buyer) == 1
+
+
+async def test_a_second_sales_stop_waits_for_the_first_and_is_refused(world: _World) -> None:
+    """판매 중단이 공개 상태 행을 쥔 채 커밋 전일 때 다른 운영자가 같은 노벨의 판매를 멈춘다. 뒤의 것은 그 행에서 기다렸다가,
+    잠근 뒤 다시 읽은 행에서 이미 멈춘 것을 보고 409 `NOVEL_SALES_ALREADY_STOPPED` 로 끝난다 — 감사 로그는 한 줄이다. 깨지는
+    시나리오: 잠그지 않고 읽은 상태로 판정해 둘 다 통과하고, 빈 조치가 감사 로그에 두 번 쌓이며 멈춘 시각이 늦춰진다."""
+    publisher = await world.member()
+    novel = await world.publish(publisher)
+    admin = await world.admin()
+    first = world.factory()
+    tasks: list[asyncio.Task[object]] = []
+    try:
+        await set_novel_sales(first, novel.novel_id, admin_id=admin, stop=True, reason="운영정책 위반")
+        tasks.append(_stop_sales_task(world, novel, admin))
+        await _assert_blocked(tasks[0])
+        await first.commit()
+        second = await asyncio.wait_for(tasks[0], _SETTLE_SECONDS)
+    finally:
+        await first.close()
+        if tasks:
+            await asyncio.wait(tasks, timeout=_SETTLE_SECONDS)
+
+    assert isinstance(second, HTTPException) and second.status_code == 409, second
+    detail: object = second.detail
+    assert detail == {"code": "NOVEL_SALES_ALREADY_STOPPED"}
+    async with world.factory() as s:
+        logs = await s.scalar(
+            select(func.count())
+            .select_from(AdminActionLog)
+            .where(AdminActionLog.target_novel_id == novel.novel_id, AdminActionLog.action_type == "novel-sales-stop")
+        )
+    assert logs == 1
+
+
+@pytest.mark.parametrize("stop_first", [True, False], ids=["stop-queued-first", "restriction-queued-first"])
+async def test_a_sales_stop_and_a_restriction_queued_on_the_same_publication_both_apply_without_deadlock(
+    world: _World, stop_first: bool
+) -> None:
+    """공개 상태 행을 쥔 트랜잭션 뒤에 판매 중단과 이용제한이 차례로 줄을 선다(이용제한은 사용자 행을 쥔 채 기다린다). 놓으면
+    어느 순서든 교착 없이 둘 다 끝나고, 노벨은 이용제한 + 판매 중단이며 산 화는 한 번 환급된다. 깨지는 시나리오: 판매 중단이
+    사용자 행을 잡으러 가 이용제한과 엇갈려 교착하거나, 뒤에 커밋된 쪽이 앞의 상태를 덮는다."""
+    buyer, publisher = await world.pair()
+    novel = await world.publish(publisher)
+    await _bought(world, novel, buyer, 6)
+    admin = await world.admin()
+    holder = world.factory()
+    await holder.execute(
+        select(NovelPublication.novel_id).where(NovelPublication.novel_id == novel.novel_id).with_for_update()
+    )
+    starts = [_stop_sales_task, _restrict_task] if stop_first else [_restrict_task, _stop_sales_task]
+    tasks: list[asyncio.Task[object]] = []
+    try:
+        for start in starts:
+            # 앞의 것이 줄에 선 뒤에 뒤의 것을 띄운다 — 함께 띄우면 줄 순서가 매개변수와 달라질 수 있다.
+            tasks.append(start(world, novel, admin))
+            await _assert_blocked(tasks[-1])
+        results = await _settle(holder, tasks)
+    finally:
+        await _close_quietly(holder, tasks)
+
+    assert not any(isinstance(result, HTTPException) for result in results), results
+    assert await _publication_state(world, novel.novel_id) == ("restricted", True)
+    assert await _refunds(world, buyer) == [(6, 30)]
+    assert await _refund_entries(world, buyer) == 1

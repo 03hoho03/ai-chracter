@@ -77,7 +77,9 @@ class NovelPublicationStatusResponse(CamelModel):
       반려인 동안 `visibility` 는 `withdrawn` 이지만 게시자가 거둔 것이 아니다.
     - `review_reason`: 반려 사유. 운영자가 쓴 글 그대로이고 반려일 때만 있다. `reviewed_at` 은 마지막 승인·반려 시각이다.
     - `review_required`: 지금 공개하면 독자에게 바로 열리지 않고 운영자 승인을 기다리는가(정책 스위치가 켜졌고 아직 독자에게
-      보인 적 없는 소설)."""
+      보인 적 없는 소설).
+    - `sales_stopped`: 운영자가 이 공개 소설의 판매를 멈췄는가. 멈춘 동안 목록에 보이지 않고 새로 팔리지 않으며(산 사람은
+      계속 읽는다) 새 화·다시 공개를 낼 수 없다. 이용제한(`moderation_status`)과 따로 걸리고 풀린다."""
 
     published: bool
     visibility: NovelPublicationVisibility | None
@@ -99,6 +101,7 @@ class NovelPublicationStatusResponse(CamelModel):
     review_reason: str | None
     reviewed_at: datetime | None
     review_required: bool
+    sales_stopped: bool
 
 
 # ── 독자 화면 ───────────────────────────────────────────────────────────────

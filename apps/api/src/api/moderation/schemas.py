@@ -5,7 +5,7 @@ from pydantic import Field
 
 from api.core.schema import CamelModel
 from api.comments.schemas import CommentNotificationTargetResponse
-from api.db.models.content import ContentType, ModerationStatus
+from api.db.models.content import ContentType, DerivativeNovelsChoice, ModerationStatus
 from api.db.models.novel import NovelPurchaseRefundReason
 from api.db.models.moderation import (
     AppealStatus,
@@ -112,6 +112,9 @@ class AdminReportDetailResponse(CamelModel):
 class ReportActionRequest(CamelModel):
     action: ModerationActionType
     admin_comment: str | None = None
+    # 이용제한·삭제 때 그 원작의 파생 소설을 어떻게 하나(`DerivativeNovelsChoice`). 빼면 `close`(지금 동작), 다른 조치에서는
+    # 보지 않는다.
+    derivative_novels: DerivativeNovelsChoice | None = None
 
 
 class AdminAppealListItem(CamelModel):

@@ -60,6 +60,11 @@ ContentRating = Literal["all"]
 # 코드는 다음 배포에 넣는다.
 NovelPermission = Literal["forbidden", "private", "public"]
 
+# 운영자가 작품을 이용제한·삭제할 때 그 파생 소설을 어떻게 하나 — 저장하지 않는 요청 칸이다. `close` 는 열람까지 닫고 구매를
+# 환급하고, `stop_sales` 는 판매만 멈추고 산 사람은 계속 읽게 한다(`Content.novel_buyers_kept` 를 세운다). 요청에서 빠지면
+# `close` 다 — 이 칸을 모르는 어드민 화면도 지금처럼 돈다.
+DerivativeNovelsChoice = Literal["close", "stop_sales"]
+
 
 class Genre(Base):
     """Master data, seeded via migration."""
@@ -104,6 +109,13 @@ class Content(Base):
     # 조치로 제한된 작품, 정지 전부터 제한이던 작품은 해제 뒤에도 그대로다. 정지가 세우고, 작품 단위 조치(제한·삭제·
     # 해제)와 이의 수용이 내린다. 신고 반려는 상태를 바꾸지 않으므로 내리지 않는다.
     restricted_by_suspension: Mapped[bool] = mapped_column(Boolean, server_default=false(), nullable=False)
+    # 운영자가 이 작품을 이용제한·삭제하면서 파생 소설은 판매만 멈추고 산 사람의 열람을 남기기로 골랐는가(환급 없음,
+    # `DerivativeNovelsChoice`). 작품 단위 조치(제한·삭제·해제, 직접·신고)가 매번 새로 쓰고 이의 수용이 내린다. 신고 반려와
+    # 정지·정지 해제는 건드리지 않는다 — 정지가 내린 작품은 그동안 정지 표식이 열람을 두므로 이 칸이 무엇이든 결과가 같고,
+    # 정지 해제는 작품을 정상으로 돌려 이 칸을 보지 않게 한다. 정지 중에 작품 단위 조치가 오면 그 조치가 이 칸을 새로 쓴다.
+    # 소장자 조건은 정상이 아니고 정지 표식도 없는 작품에서만 이 칸으로 결과가 갈린다. CHECK 를 두지 않는 이유는 마이그레이션 `e9ad8ed93e90` 에
+    # 있다.
+    novel_buyers_kept: Mapped[bool] = mapped_column(Boolean, server_default=false(), nullable=False)
     # 작품 등급(`ContentRating` — 왜 전연령만 허용하는지는 그 정의에). 버전이 아니라 헤더에 둔다 — 버전마다 등급이
     # 바뀌면 이미 공유된 링크·목록의 노출 기준이 버전 게시 때마다 바뀐다. API 요청·응답·어드민·빌더 어디에도 싣지
     # 않는다: 값이 하나뿐이라 보여 줄 것이 없고, 노출 경로를 미리 만들어 두면 성인 값이 새어 나갈 길이 하나 더 생긴다.
