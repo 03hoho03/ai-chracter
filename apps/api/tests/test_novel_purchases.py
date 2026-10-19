@@ -298,8 +298,8 @@ async def test_refund_notification_needs_a_refund(db_session: AsyncSession) -> N
 
 
 async def test_withdrawn_buyers_of_the_same_chapter_all_keep_their_rows(db_session: AsyncSession) -> None:
-    """구매자 칸이 빈 행은 같은 화에 여럿 남는다(유니크가 NULL 끼리 겹치지 않는다). 대조군 — 구매자가 있으면 같은 화 두 번째
-    행은 유니크에 걸린다."""
+    """구매자 칸이 빈 행은 같은 화에 여럿 남는다(유니크가 NULL 끼리 겹치지 않는다). 대조군 — 구매자가 있으면 같은 화의 미환급
+    두 번째 행은 유니크에 걸린다."""
     chapter_id = uuid.uuid4()
     await _purchase_row(db_session, chapter_id=chapter_id, buyer_user_id=None)
     await _purchase_row(db_session, chapter_id=chapter_id, buyer_user_id=None)
@@ -308,7 +308,7 @@ async def test_withdrawn_buyers_of_the_same_chapter_all_keep_their_rows(db_sessi
     db_session.add(buyer)
     await db_session.flush()
     await _purchase_row(db_session, chapter_id=chapter_id, buyer_user_id=buyer.id)
-    with pytest.raises(IntegrityError, match="ux_novel_purchases_chapter_id_buyer_user_id"):
+    with pytest.raises(IntegrityError, match="ux_novel_purchases_unrefunded_chapter_buyer"):
         await _purchase_row(db_session, chapter_id=chapter_id, buyer_user_id=buyer.id)
 
 
