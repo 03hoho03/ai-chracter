@@ -61,9 +61,9 @@ export function NotificationItemContent({ notification }: { notification: Notifi
     </span>;
   }
 
-  // 노벨 삭제 환급 — 제목과 돌려준 화·클로버 한 줄. 모르는 type 의 폴백(이용제한 제목)에 걸리지 않게 먼저 가른다.
+  // 노벨 환급 — 제목과 돌려준 화·클로버 한 줄. 모르는 type 의 폴백(이용제한 제목)에 걸리지 않게 먼저 가른다.
   if (destination.kind === "cloverHistory") {
-    const text = toNovelRefundNotificationText(notification.novelRefund);
+    const text = toNovelRefundNotificationText(notification.novelRefund, notification.novelRefundReason);
     return (
       <span className="flex min-w-0 w-full items-center justify-between gap-2">
         <span className="flex min-w-0 flex-col gap-0.5">

@@ -1,3 +1,4 @@
+import type { NovelPurchaseRefundPreview } from "@/entities/novel";
 import { koreanParticle } from "@/shared/lib/text/koreanParticle";
 
 /** 지우기 전 환급 고지 — 노벨에서 지울 화를 소장한 회원 수와 자동으로 돌려줄 클로버. 소장한 회원이 없으면 `undefined`
@@ -13,3 +14,21 @@ export function toRefundNotice(
     `지우면 그 회원들이 쓴 클로버 ${preview.amount.toLocaleString()}개를 자동으로 돌려드리고, 지운 화는 더 볼 수 없게 돼요.`,
   ];
 }
+
+/** 판매된 소설 지우기 안내 — 노벨에서 이 소설을 소장한 회원이 있으면 서버는 지우지 않고 숨긴다(소장한 회원은 계속
+ * 읽고, 클로버는 돌려주지 않는다). 그때 확인 모달의 설명을 갈아 끼울 문장이다. 판매 표시가 없거나 거짓(정책 스위치
+ * 꺼짐·옛 서버)이면 `undefined` — 지금의 지우기 설명과 환급 고지를 그대로 쓴다. */
+export function toNovelHideDescription(
+  preview: Pick<NovelPurchaseRefundPreview, "novelSold" | "novelBuyerCount"> | undefined,
+): string | undefined {
+  if (preview?.novelSold !== true) return undefined;
+  return `노벨에서 이 소설을 소장한 회원이 ${preview.novelBuyerCount.toLocaleString()}명 있어 바로 지우지 않고 숨겨요. 내 소설과 노벨에서 사라지고 다시 고치거나 공개할 수 없어요. 소장한 회원은 산 화를 계속 읽고, 소장한 회원이 모두 없어지면 완전히 지워져요. 원래 대화방에서는 새 소설을 만들 수 있어요.`;
+}
+
+/** 노벨에서 마지막 묶음 화를 소장한 회원이 있어 그 묶음을 지울 수 없는가. 판매 표시가 없으면(꺼짐·옛 서버) 거짓이다. */
+export function isLastBatchSold(preview: Pick<NovelPurchaseRefundPreview, "lastBatchSold"> | undefined): boolean {
+  return preview?.lastBatchSold === true;
+}
+
+/** 판매된 마지막 묶음을 지울 수 없는 이유 — 보드 패널의 사유 줄과 지우기 확인 모달이 같은 문장을 쓴다. */
+export const LAST_BATCH_SOLD_REASON = "노벨에서 소장한 회원이 있는 화라 지울 수 없어요.";
