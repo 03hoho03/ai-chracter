@@ -55,6 +55,11 @@ def test_two_probes_in_a_row_restore_through_real_redis(monkeypatch: pytest.Monk
     async def usage(*_: Any) -> list[dict[str, Any]]:
         return []
 
+    consented: list[uuid.UUID] = []
+
+    async def consent(_url: str, room_id: uuid.UUID) -> None:
+        consented.append(room_id)
+
     # 복원은 실제 함수 — DB 복제·지문 읽기만 흉내 내고 Redis 키 지우기는 실제 격리 Redis 로 돈다.
     monkeypatch.setattr(checkpoint_mod, "clone_database", clone)
     monkeypatch.setattr(checkpoint_mod, "read_fingerprint", read_fp)
@@ -62,6 +67,8 @@ def test_two_probes_in_a_row_restore_through_real_redis(monkeypatch: pytest.Monk
     monkeypatch.setattr(server_mod, "stop", lambda _h: None)
     monkeypatch.setattr(probe_mod, "_driver", driver)
     monkeypatch.setattr(probe_mod, "_turn_usage", usage)
+    # 복원 뒤 약관 동의 맞추기도 측정 DB 를 타므로 같은 자리에서 흉내 내고, 복원마다 불렸는지 센다.
+    monkeypatch.setattr(probe_mod, "_ensure_consent", consent)
     # 턴 기록의 실은 사실 행 읽기도 DB 를 타므로 같은 자리에서 흉내 낸다(필터 재계산이 결과의 `memoryFacts` 를 읽는다).
     monkeypatch.setattr(probe_mod, "_turn_memory_facts", memory_facts)
     monkeypatch.setattr(probe_mod, "_turn_memory_recall", memory_facts)
@@ -85,3 +92,4 @@ def test_two_probes_in_a_row_restore_through_real_redis(monkeypatch: pytest.Monk
     for item in ("obj01", "obj03"):
         result = probe_mod.run_probe(run, Probe(item_id=item, checkpoint=50, turns=["질문"], kind="plant", split="dev"))
         assert result["status"] == "accept"
+    assert consented == [room, room]

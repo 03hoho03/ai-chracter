@@ -18,7 +18,7 @@ from api.chat.router import _resolve_starting_setup
 from api.chat.turn_prompt import GenerationPrompt, build_room_prompt
 from api.core.config import settings
 from api.db.models import ChatMessage, ChatRoom, ChatRoomMemorySnapshot
-from factories import _make_memory_embedding, _make_memory_episode, _open_room
+from factories import _make_memory_embedding, _make_memory_episode, _memory_scope_covers_gemini, _open_room
 from memory_eval import embed_offline as eo
 from memory_eval import offline_embedding as oe
 
@@ -116,6 +116,9 @@ async def test_app_assembly_with_the_offline_client_recalls_the_vector_neighbour
     room, ids = await _room_with_scenes(db_client, db_session)
     monkeypatch.setattr(settings, "memory_episodes_recall", True)
     monkeypatch.setattr(settings, "memory_embed_recall", True)
+    # 이 테스트는 Gemini 세트로 조립하는데 기억 사용 범위의 기본값은 Opus 방뿐이다 — 범위를 넓히지 않으면 회상과 질의 임베딩이
+    # 둘 다 꺼진 채 조립돼 빈 회상을 본다.
+    _memory_scope_covers_gemini(monkeypatch)
     setup = await _resolve_starting_setup(db_session, room)
     prompt_set, sections = await load_active_prompt_set(db_session, lane="story")
     history = list(
