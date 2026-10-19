@@ -593,3 +593,59 @@ def test_an_undecided_control_row_is_reused_as_undecided_and_not_paid_again(
     judged = {r["arm"]: r for r in json.loads(out.read_text(encoding="utf-8"))}
     assert judged["b1-A0"]["judged"] is None and judged["b1-A0"]["reused"] is True
     assert len(calls) == 2  # 불능 줄은 다시 부르지 않고 나머지 한 줄만 판정 — 같은 답 두 표에서 멈춘다
+
+
+def _mark_real_control_rule(pooled: Path, rule: str | None) -> None:
+    """합친 대조군 기록의 실제 응답 줄에 다른 표 규칙을 적는다(None 이면 표 규칙 칸이 없던 옛 기록처럼 지운다)."""
+    data = json.loads(pooled.read_text(encoding="utf-8"))
+    for row in data["rows"]:
+        if row["source"] == "real":
+            row.pop("voteRule", None)
+            if rule is not None:
+                row["voteRule"] = rule
+    pooled.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+
+def test_every_judged_row_records_the_vote_rule_it_was_judged_under(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from memory_eval_cli import main
+
+    pooled, probes, _ = _main_judge_setup(tmp_path, monkeypatch)
+    assert {r["voteRule"] for r in json.loads(pooled.read_text(encoding="utf-8"))["rows"]} == {judge_mod.VOTE_RULE}
+    out = tmp_path / "judged.json"
+    assert main(_main_judge_argv(tmp_path, probes, out)) == 0
+    assert {r["voteRule"] for r in json.loads(out.read_text(encoding="utf-8"))} == {judge_mod.VOTE_RULE}
+
+
+@pytest.mark.parametrize("rule", [None, "older-rule"], ids=["no-rule-field", "other-rule"])
+def test_a_control_row_judged_under_another_vote_rule_is_judged_again_instead_of_reused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rule: str | None
+) -> None:
+    """표 규칙이 다른 대조군 판정을 다시 쓰면 한 결과 파일 안에 두 규칙의 판정이 섞인다 — 그 줄은 지금 규칙으로 다시 판정한다."""
+    from memory_eval_cli import main
+
+    pooled, probes, calls = _main_judge_setup(tmp_path, monkeypatch)
+    _mark_real_control_rule(pooled, rule)
+    out = tmp_path / "judged.json"
+    assert main([*_main_judge_argv(tmp_path, probes, out), "--reuse-judged", str(pooled)]) == 0
+    judged = {r["arm"]: r for r in json.loads(out.read_text(encoding="utf-8"))}
+    assert judged["b1-A0"]["judged"] == "leaked" and "reused" not in judged["b1-A0"]
+    assert {r["voteRule"] for r in judged.values()} == {judge_mod.VOTE_RULE}
+    assert len(calls) == 4  # 두 줄 모두 판정 — 같은 답 두 표에서 멈춘다
+
+
+def test_the_dry_run_counts_control_rows_left_out_of_reuse_for_their_vote_rule(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from memory_eval_cli import main
+
+    pooled, probes, _ = _main_judge_setup(tmp_path, monkeypatch)
+    _mark_real_control_rule(pooled, None)
+    capsys.readouterr()
+    argv = ["--run", str(tmp_path), "--data-dir", str(_data(tmp_path)), "judge", "--dry-run"]
+    argv += ["--plants", str(tmp_path / "plants.json"), "--judge-model", SONNET, "--probes", str(probes)]
+    argv += ["--reuse-judged", str(pooled)]
+    assert main(argv) == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["calls"] == 2 and printed["reused"] == 0 and printed["notReusedForVoteRule"] == 1
