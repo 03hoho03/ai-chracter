@@ -11,14 +11,14 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.keyword_notes import match_keyword_notes
 from api.chat.memory_window import load_current_summary, prompt_window
 from api.chat.turn_prompt import build_room_prompt
 from api.core.config import settings
-from api.db.models import ChatMessage
+from api.db.models import ChatMessage, ChatRoomMemorySnapshot
 from api.db.models.story import KeywordNote
 from api.llm.chat_models import ChatModelId
 from api.llm.client import SegmentedPrompt
@@ -80,6 +80,10 @@ async def assemble_point(
         build_ms = (time.perf_counter() - started) * 1000
     prompt = generation.prompt
     summary = await load_current_summary(db, room_id) if settings.memory_window_generation else None
+    # 지금 DB 상태에서 조립하므로 방의 스냅샷이 모두 보인다 — 재조립 점과 같은 칸으로 적어 같은 질의 임베딩 단언을 건다.
+    snapshots = await db.scalar(
+        select(func.count()).select_from(ChatRoomMemorySnapshot).where(ChatRoomMemorySnapshot.chat_room_id == room_id)
+    )
     window = (
         prompt_window(history, summary.cursor if summary else None) if settings.memory_window_generation else history
     )
@@ -114,6 +118,9 @@ async def assemble_point(
         "keywordNoteChars": sum(len(n.info_text) for n in matched if n.info_text in prompt),
         "recallChars": len(recall),
         "recall": recalled,
+        # 질의 임베딩 결과(`ok`·`failed` 등). 부르지 않은 조립(임베딩 회상이 꺼짐·요약 없음·기억 사용 범위 밖)은 None.
+        "queryOutcome": generation.memory_query["outcome"] if generation.memory_query else None,
+        "snapshotsSeen": int(snapshots or 0),
         "historyMessages": len(history),
         "historySelectMs": round(history_ms, 3),
         "buildMs": round(build_ms, 3),

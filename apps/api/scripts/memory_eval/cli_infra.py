@@ -424,6 +424,7 @@ def cmd_trajectory(args: argparse.Namespace) -> int:
     from memory_eval.offline_embedding import recall_settings
     from memory_eval.runtime import make_engine
     from memory_eval.trajectory import append_point, assemble_point
+    from memory_eval.trajectory_replay import require_query_embedded
 
     embeddings = _replay_embeddings(args, args.arms.split(","))
 
@@ -444,6 +445,8 @@ def cmd_trajectory(args: argparse.Namespace) -> int:
                         recall_field=args.recall_field,
                         embeddings=embeddings,
                     )
+                # 임베딩 회상 갈래가 명사 단독으로 조립된 점은 쓰기 전에 끊는다(재조립 명령과 같은 단언).
+                require_query_embedded([point])
                 append_point(args.run / f"trajectory-{args.label}-{arm}.jsonl", point)
                 points.append(point)
         finally:
