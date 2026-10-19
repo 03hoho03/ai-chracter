@@ -90,6 +90,7 @@ export {
   hasNovelErrorCode,
   isContentNovelizeForbiddenError,
   isNovelizeNotAllowedError,
+  toNovelizeForbiddenCopy,
   toNovelLoadFailure,
   type NovelLoadFailure,
 } from "./model/novelError";

@@ -8,6 +8,7 @@ import { useCloverPricingQuery } from "@/entities/clover";
 import { ContentListEmptyState } from "@/entities/content";
 import { isWebnovelOpen, useSessionQuery } from "@/entities/session";
 import {
+  toPublisherName,
   toUniqueWebnovels,
   toWebnovelLoadFailure,
   useOwnedWebnovelListQuery,
@@ -171,13 +172,13 @@ function WebnovelListBody({ query, isOwned }: { query: WebnovelListQuery; isOwne
   );
 }
 
-/** 목록의 한 줄 — 표지 · 제목 두 줄 · 원작 한 줄 · 소개 두 줄 · 게시자와 지표. 껍데기(배경·보더·hover) 없이 그림과
+/** 목록의 한 줄 — 표지 · 제목 두 줄 · 원작 한 줄 · 소개 두 줄 · 게시자(탈퇴했으면 "탈퇴한 사용자")와 지표. 껍데기(배경·보더·hover) 없이 그림과
  * 글만 놓는 것은 홈 큐레이션 블록과 같은 어휘다. 줄 전체가 작품 정보로 가는 링크 하나라 포커스 링과 눌림 표시를
  * 링크에 직접 단다(전역 1px 아웃라인은 3:1 미달). 링크 이름은 제목만 — 소개까지 읽히면 목록을 훑기 어렵다. 소장
  * 목록에서 판매를 멈춘 노벨은 지표 줄 끝에 "판매 중지"를 단다(무채색 — 경고가 아니라 상태다). */
 function WebnovelRow({ item, isPriority }: { item: WebnovelRowItem; isPriority: boolean }) {
   const titleId = useId();
-  const meta = [item.publisherNickname, `${item.chapterCount}화`].filter((part) => part !== null);
+  const meta = [toPublisherName(item), `${item.chapterCount}화`].filter((part) => part !== null);
 
   return (
     <Link

@@ -63,6 +63,21 @@ describe("toNovelActionError", () => {
     expect(new Set(messages).size).toBe(messages.length);
   });
 
+  it("소설 만들기 거절 403 은 스위치를 넘기지 않으면 원작자 허락 문장, 켜짐이면 중립 문장이다", () => {
+    const error = apiError(403, { code: "CONTENT_NOVELIZE_FORBIDDEN" });
+    expect(toNovelActionError(error, "generate")).toEqual({
+      message: "원작자가 이 작품의 소설 만들기를 허용하지 않아 새 화를 만들 수 없어요.",
+      shouldRefetchNovel: false,
+    });
+    expect(toNovelActionError(error, "generate", { isPolicyV2Enabled: false })?.message).toBe(
+      "원작자가 이 작품의 소설 만들기를 허용하지 않아 새 화를 만들 수 없어요.",
+    );
+    expect(toNovelActionError(error, "proposal", { isPolicyV2Enabled: true })).toEqual({
+      message: "이 작품으로는 지금 새 화를 만들 수 없어요.",
+      shouldRefetchNovel: false,
+    });
+  });
+
   it("판매된 마지막 묶음 409 는 지울 수 없는 이유를 말하고 상세를 다시 받는다", () => {
     expect(toNovelActionError(apiError(409, { code: "NOVEL_BATCH_SOLD" }), "deleteChapter")).toEqual({
       message: "노벨에서 소장한 회원이 있는 화라 지울 수 없어요. 소설 전체를 지우면 숨겨 둘 수 있어요.",

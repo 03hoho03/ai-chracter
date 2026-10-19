@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useRef, useState } from "react";
 
-import { cloverKeys } from "@/entities/clover";
+import { cloverKeys, useCloverPricingQuery } from "@/entities/clover";
 import {
   hasNovelJobPollError,
   isNovelJobGone,
@@ -87,6 +87,8 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
   const createMutation = useCreateChapterMutation();
   const chainMutation = useCreateChainMutation();
   const regenerateMutation = useRegenerateChapterMutation();
+  // 소설 만들기 거절의 문장이 노벨 정책 스위치에 따라 다르다(`toNovelizeForbiddenCopy`).
+  const isPolicyV2Enabled = useCloverPricingQuery().data?.novelPublicPolicyV2Enabled === true;
 
   const activeChapterJob: TrackedJob | undefined =
     novel.activeJob && novel.activeJob.kind !== "ai_edit"
@@ -188,7 +190,7 @@ export function useNovelChapterJob({ novel, confirmSpend, onChapterReady }: UseN
   }
 
   function handleRequestError(error: unknown, action: NovelAction) {
-    const result = toNovelActionError(error, action);
+    const result = toNovelActionError(error, action, { isPolicyV2Enabled });
     if (result === null) return;
     setNotice({ tone: "error", message: result.message });
     if (result.shouldRefetchNovel) void queryClient.invalidateQueries({ queryKey: novelKeys.detail(novel.id) });

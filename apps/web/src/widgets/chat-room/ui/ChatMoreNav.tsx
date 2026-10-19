@@ -7,10 +7,12 @@ import { useId } from "react";
 import { toast } from "sonner";
 
 import { chatRoomKeys } from "@/entities/chat-room";
+import { useCloverPricingQuery } from "@/entities/clover";
 import { isLegalReconsentRequiredError } from "@/entities/legal";
 import {
   isContentNovelizeForbiddenError,
   isNovelizeNotAllowedError,
+  toNovelizeForbiddenCopy,
   useEnsureRoomNovelMutation,
 } from "@/entities/novel";
 import { useSessionQuery } from "@/entities/session";
@@ -82,14 +84,10 @@ export type ChatMoreNavProps = {
   storyId?: string;
   /** 이 방의 `{{user}}`·`{{char}}` 이름. 여기서 여는 모달은 방 밖(루트)에 마운트돼 방을 모르므로 이름을 넘겨받는다. */
   macroNames: AuthorMacroNames;
-  /** 원작자가 소설 만들기를 허용하지 않아 이 방에서 새 소설을 만들 수 없는지(방 응답이 계산해 준다). */
+  /** 이 방에서 새 소설을 만들 수 없는지(방 응답이 계산해 준다) — 원작자가 소설 만들기를 허용하지 않았거나, 노벨 정책
+   * 스위치가 켜져 있으면 원작자가 탈퇴했을 때도 참이다. */
   novelCreationBlocked: boolean;
 };
-
-/** 막힌 「소설로 보기」 아래에 적는 이유. 방을 연 뒤 원작자가 허락을 바꿔 생성 요청이 거절됐을 때의 토스트도 같은 문장이다 —
- * 기다려도 풀리지 않는 거절이라 "다시 시도"를 말하지 않는다. "작가"가 아니라 "원작자"인 이유: 이 화면의 이용자는 자기 대화로
- * 만들 소설의 작가이기도 해서, "작가"라고 쓰면 누구의 허락인지 흐려진다. */
-const NOVEL_CREATION_BLOCKED_REASON = "원작자가 소설 만들기를 허용하지 않은 작품이에요.";
 
 // 항목 목록 자체는 react-call을 쓰지 않는다
 // (열림/닫힘만 있는 목록일 뿐 "호출→결과 반환"이 필요 없다). 항목을 누르면 패널을 닫고 해당 기능
@@ -113,6 +111,10 @@ export function ChatMoreNav({
   const router = useRouter();
   const { data: me } = useSessionQuery();
   const ensureRoomNovel = useEnsureRoomNovelMutation();
+  // 막힌 「소설로 보기」 아래에 적는 이유. 방을 연 뒤 막혀 생성 요청이 거절됐을 때의 토스트도 같은 문장이다. 문장은 노벨 정책
+  // 스위치에 따라 다르다(`toNovelizeForbiddenCopy`). 꺼짐 문장이 "작가"가 아니라 "원작자"인 이유: 이 화면의 이용자는 자기
+  // 대화로 만들 소설의 작가이기도 해서, "작가"라고 쓰면 누구의 허락인지 흐려진다.
+  const blockedReason = toNovelizeForbiddenCopy(useCloverPricingQuery().data).room;
   const items = visibleMoreItems(contentType === "story" ? STORY_ITEMS : CHARACTER_ITEMS, me?.enabledFeatures ?? []);
 
   // 패널은 누르는 즉시 닫히므로(다른 항목과 같은 순서) 이 버튼은 결과를 기다리는 동안 화면에 없다 — 진행 표시를
@@ -129,10 +131,11 @@ export function ChatMoreNav({
     } catch (error) {
       // 재동의가 필요하면 전역 처리가 재동의 모달을 띄운다 — 토스트를 겹치지 않는다.
       if (isLegalReconsentRequiredError(error)) return;
-      // 방을 연 뒤 원작자가 허락을 거둔 경우다. 방을 다시 읽어 이 항목도 막힌 상태로 그린다.
+      // 방을 연 뒤 막힌 경우다(원작자가 허락을 거뒀거나, 스위치가 켜져 있으면 원작자가 탈퇴했다). 방을 다시 읽어 이 항목도
+      // 막힌 상태로 그린다.
       if (isContentNovelizeForbiddenError(error)) {
         void queryClient.invalidateQueries({ queryKey: chatRoomKeys.detail(roomId) });
-        toast.error(NOVEL_CREATION_BLOCKED_REASON);
+        toast.error(blockedReason);
         return;
       }
       // 허용을 회수한 직후라면 전역 처리가 세션을 다시 읽어 이 항목도 사라진다.
@@ -196,7 +199,7 @@ export function ChatMoreNav({
               <span className="flex flex-1 flex-col gap-0.5">
                 <span id={blockedLabelId}>{item.label}</span>
                 <span id={blockedReasonId} className="text-xs break-keep">
-                  {NOVEL_CREATION_BLOCKED_REASON}
+                  {blockedReason}
                 </span>
               </span>
             ) : (

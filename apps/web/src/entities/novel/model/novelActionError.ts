@@ -2,6 +2,7 @@ import { isApiError } from "@/shared/api/client";
 import { getRateLimitDetail } from "@/shared/api/rateLimit";
 
 import type { NovelJobResponse } from "../api/useNovelJobQuery";
+import { toNovelizeForbiddenCopy } from "./novelError";
 
 /** 오류를 받은 요청이 무엇이었나. 같은 코드라도 요청에 따라 문장이 갈리는 자리가 있다 — 시간당 상한과 하루
  * 상한이 같은 429 로 오고, 이용 제한·일반 실패도 무엇을 못 했는지가 달라서다. */
@@ -141,12 +142,6 @@ const MESSAGE_BY_CODE: Record<string, NovelActionErrorNotice> = {
     message: "이미 진행 중인 작업이 있어요. 끝나면 다시 해주세요.",
     shouldRefetchNovel: true,
   },
-  // 아직 첫 화가 없는 남의 작품 소설에서, 원작자가 소설 만들기를 허용하지 않을 때 온다. 첫 화를 만든 소설은 이 거절을
-  // 받지 않으므로 "새 화"로 다시 만들기·AI 수정까지 아우른다. 원작자가 허락을 바꾸기 전에는 풀리지 않아 다시 시도를 말하지 않는다.
-  CONTENT_NOVELIZE_FORBIDDEN: {
-    message: "원작자가 이 작품의 소설 만들기를 허용하지 않아 새 화를 만들 수 없어요.",
-    shouldRefetchNovel: false,
-  },
   CONTENT_RESTRICTED: {
     message: "이용이 제한된 작품이라 새로 쓰는 작업을 할 수 없어요. 지금까지 만든 화는 그대로 볼 수 있어요.",
     shouldRefetchNovel: false,
@@ -181,7 +176,11 @@ function fallback(action: NovelAction): NovelActionErrorNotice {
  * 429 는 코드보다 먼저 본다. 제안의 시간당 상한과 장 생성·재생성의 하루 상한이 같은 `USER_LIMIT`·같은
  * `novelize` 창으로 오고 요청으로만 갈리기 때문이다. 하루 상한은 서버가 한국 날짜로 세므로 자정을 말해도 참이다.
  * 모르는 코드(서버가 새 코드를 더했는데 여기 아직 없을 때)는 요청별 일반 문구로 접는다. */
-export function toNovelActionError(error: unknown, action: NovelAction): NovelActionErrorNotice | null {
+export function toNovelActionError(
+  error: unknown,
+  action: NovelAction,
+  options: { isPolicyV2Enabled?: boolean } = {},
+): NovelActionErrorNotice | null {
   const rateLimit = getRateLimitDetail(error);
   if (rateLimit?.window === "novelize") {
     if (rateLimit.code === "CLOVER_REQUIRED") {
@@ -203,6 +202,13 @@ export function toNovelActionError(error: unknown, action: NovelAction): NovelAc
   // 재동의 403 은 전역 재동의 모달이 맡는다(같은 엔티티 밖 판정 함수를 끌어오지 않으려고 코드로 직접 본다).
   if (error.status === 403 && code === "LEGAL_RECONSENT_REQUIRED") return null;
 
+  // 아직 첫 화가 없는 남의 작품 소설에서 원작자가 소설 만들기를 허용하지 않을 때(스위치가 켜져 있으면 원작자가 탈퇴했을
+  // 때도) 온다. 첫 화를 만든 소설은 이 거절을 받지 않으므로 "새 화"로 다시 만들기·AI 수정까지 아우른다. 문장은 스위치에
+  // 따라 다르다(`toNovelizeForbiddenCopy`) — 호출부가 가격 응답의 스위치를 넘기지 않으면 꺼짐 문장이다.
+  if (code === "CONTENT_NOVELIZE_FORBIDDEN") {
+    const copy = toNovelizeForbiddenCopy({ novelPublicPolicyV2Enabled: options.isPolicyV2Enabled });
+    return { message: copy.chapter, shouldRefetchNovel: false };
+  }
   if (code === "NOVELIZE_PRICE_CHANGED") {
     const currentCost = currentCostOf(error.detail);
     return {
