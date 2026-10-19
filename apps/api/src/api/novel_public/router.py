@@ -110,7 +110,9 @@ def _error(status_code: int, code: str, **extra: object) -> HTTPException:
 # ── 계획 ────────────────────────────────────────────────────────────────────
 @dataclass(frozen=True)
 class _ChapterPlan:
-    """공개하거나 다시 낼 화 하나와 그때 얼릴 값. `price` 는 새로 공개하는 화에만 쓴다 — 다시 내기는 가격을 덮지 않는다."""
+    """공개하거나 다시 낼 화 하나와 그때 얼릴 값. `price` 는 새로 공개하는 화면 그때 저장할 가격, 다시 내는 화면 지금 가격이다
+    — 다시 내기는 가격을 쓰지 않지만 재계획 비교에 들어가, 심사를 기다리는 사이 그 화가 무료로 바뀌면 쓰지 않고 409
+    `NOVEL_PUBLISH_CONFLICT` 다(다시 누르면 된다)."""
 
     chapter_id: uuid.UUID
     ordinal: int

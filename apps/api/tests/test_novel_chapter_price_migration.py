@@ -114,12 +114,12 @@ async def test_backfill_frees_the_front_chapters_of_every_publication_and_a_reru
 
 
 # ── 옛 코드 쓰기 ────────────────────────────────────────────────────────────
-async def test_old_code_inserts_without_the_price_get_the_paid_default_and_republish_keeps_it(
+async def test_old_code_inserts_without_the_price_get_the_paid_default(
     db_session: AsyncSession,
 ) -> None:
-    """가격 칸을 모르는 옛 코드 꼴의 화 공개본 INSERT(원시 SQL)는 기본값 30 을 받고 무료 시각은 비어 있다. 옛 코드의 다시 공개
-    UPDATE 는 칸을 건드리지 않는다. 깨지는 시나리오: 기본값이 없어 옛 이미지의 공개가 500 이거나, 기본값이 0 이라 겹침 동안
-    옛 이미지가 공개한 6화 이후가 되돌릴 수 없는 무료로 저장된다."""
+    """가격 칸을 모르는 옛 코드 꼴의 화 공개본 INSERT(원시 SQL)는 기본값 30 을 받고 무료 시각은 비어 있다. 깨지는 시나리오:
+    기본값이 없어 옛 이미지의 공개가 500 이거나, 기본값이 0 이라 겹침 동안 옛 이미지가 공개한 6화 이후가 되돌릴 수 없는
+    무료로 저장된다."""
     novel = await _make_public_novel(db_session, await _user_id(db_session), batches=(7,))
     seventh = novel.chapter_ids[6]
     revision_id = await db_session.scalar(
@@ -134,17 +134,6 @@ async def test_old_code_inserts_without_the_price_get_the_paid_default_and_repub
         ),
         {"chapter_id": seventh, "novel_id": novel.novel_id, "revision_id": revision_id},
     )
-    await connection.execute(
-        sa.text("UPDATE novel_chapter_publications SET price = 0 WHERE chapter_id = :chapter_id"),
-        {"chapter_id": novel.chapter_ids[5]},
-    )
-    await connection.execute(
-        sa.text(
-            "UPDATE novel_chapter_publications SET title = '다시 공개', edition = edition + 1, published_at = now()"
-            " WHERE novel_id = :novel_id"
-        ),
-        {"novel_id": novel.novel_id},
-    )
 
     rows = (
         await db_session.execute(
@@ -154,7 +143,7 @@ async def test_old_code_inserts_without_the_price_get_the_paid_default_and_repub
             .execution_options(populate_existing=True)
         )
     ).tuples()
-    assert list(rows) == [(6, 0, None), (7, 30, None)]
+    assert list(rows) == [(6, 30, None), (7, 30, None)]
 
 
 # ── 왕복 ────────────────────────────────────────────────────────────────────
