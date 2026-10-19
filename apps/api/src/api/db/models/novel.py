@@ -665,11 +665,21 @@ class NovelChapterPublication(Base):
     published_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # 이 화를 사는 값(클로버, 0 = 무료). 처음 공개 때 정해 얼리고 다시 공개가 덮지 않는다 — 화당 가격 상수를 바꿔도 이미
+    # 공개한 화는 그대로이고, 무료로 공개한 화는 무료로 남는다. 유료에서 무료로만 바꿀 수 있고 그 시각을 `price_changed_at`
+    # 에 남긴다(공개 때 정한 그대로면 비어 있다). 기본값 30 은 이 칸을 모르는 옛 코드의 INSERT 가 유료 값을 쓰게 하려는
+    # 것이다 — 0 이면 배포 겹침 동안 옛 코드가 공개한 6화 이후가 되돌릴 수 없는 무료가 된다. 그래서 옛 코드가 넣은 앞
+    # 무료 화에는 30 이 들어갈 수 있고, 읽는 쪽은 앞 무료 화를 이 값과 무관하게 무료로 판정한다(`chapter_price`).
+    price: Mapped[int] = mapped_column(Integer, nullable=False, server_default="30")
+    price_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # 번호 유니크가 소설의 공개 화 목록 조회와 소설 DELETE 때 FK 검사도 겸한다. 개정 인덱스는 개정 DELETE 때 FK 검사용이다.
+    # 가격 CHECK 는 음수만 막는다 — 무료 화 수·화당 가격은 코드 상수라 CHECK 에 박으면 상수를 바꿀 때마다 마이그레이션이
+    # 필요하고, 옛 코드가 앞 화에 기본값 30 을 넣는 것도 막혀 500 이 된다.
     __table_args__ = (
         CheckConstraint("ordinal >= 1", name="ck_novel_chapter_publications_ordinal_positive"),
         CheckConstraint("edition >= 1", name="ck_novel_chapter_publications_edition_positive"),
+        CheckConstraint("price >= 0", name="ck_novel_chapter_publications_price_nonnegative"),
         Index("ux_novel_chapter_publications_novel_id_ordinal", "novel_id", "ordinal", unique=True),
         Index("ix_novel_chapter_publications_revision_id", "revision_id"),
     )
