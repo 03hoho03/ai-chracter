@@ -1,7 +1,7 @@
 """assets frame count
 
 Revision ID: 3dd505128e7b
-Revises: 0aeadefcf159
+Revises: d77bce2bba4c
 Create Date: 2026-10-19 15:50:40.789516
 
 자산 행에 원본의 프레임 수(`frame_count`)를 더한다. 업로드 완료가 값을 채우고, 발행 심사가 2 이상인 자산에 첫 프레임
@@ -20,7 +20,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "3dd505128e7b"
-down_revision: str | Sequence[str] | None = "0aeadefcf159"
+down_revision: str | Sequence[str] | None = "d77bce2bba4c"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
