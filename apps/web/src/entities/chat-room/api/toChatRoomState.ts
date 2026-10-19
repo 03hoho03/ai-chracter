@@ -67,6 +67,7 @@ export function toChatMessage(dto: ChatMessageDto): ChatMessage {
     imageUrl: dto.imageUrl ?? undefined,
     imageWidth: dto.imageWidth ?? undefined,
     imageHeight: dto.imageHeight ?? undefined,
+    scene: dto.scene ? { place: dto.scene.place ?? undefined, time: dto.scene.time ?? undefined } : undefined,
     createdAt: dto.createdAt,
   };
 }
@@ -89,6 +90,14 @@ export function toChatRoomState(dto: ChatRoomResponseDto): ChatRoomState {
           shortcuts: dto.contentSnapshot.shortcuts.map(toShortcut),
           suggestedReplies: dto.contentSnapshot.suggestedReplies,
           pinnedStartingSetupId: dto.contentSnapshot.pinnedStartingSetupId,
+          // 두 칸은 응답 스키마상 선택이다(서버 기본값이 있는 칸). 이 칸이 없는 옛 서버는 장면 헤더가 없는 서버다.
+          sceneHeaderEnabled: dto.contentSnapshot.sceneHeaderEnabled ?? false,
+          initialScene: dto.contentSnapshot.initialScene
+            ? {
+                place: dto.contentSnapshot.initialScene.place ?? undefined,
+                time: dto.contentSnapshot.initialScene.time ?? undefined,
+              }
+            : undefined,
         }
       : undefined,
     messages: dto.messages.map(toChatMessage),

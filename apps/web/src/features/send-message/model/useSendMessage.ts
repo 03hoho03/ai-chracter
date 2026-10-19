@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   addStatDelta,
   applyStreamEvent,
-  buildStatTurnAnnouncement,
+  buildRoomTurnAnnouncement,
   buildEditPayload,
   buildRegeneratePayload,
   buildSendPayload,
@@ -12,6 +12,7 @@ import {
   dropLastMessage,
   getChatRateLimit,
   isContentRestrictedError,
+  selectRoomScene,
 } from "@/entities/chat-room";
 import { chatStreamEventSchema } from "@/entities/chat-room";
 import type {
@@ -135,6 +136,10 @@ export function useSendMessage(
     // 낙관적 변경을 이 줄보다 *앞에서* 하므로, 무조건 부르면 방금 추가한 사용자 메시지나 편집
     // 절단이 조용히 사라진다. 재생성은 제거가 이 줄 *뒤*라 그 창이 없다.
     let dropped: ChatMessage | undefined;
+    // 턴을 보내기 직전 상태 줄이 보이던 장면 — 확정된 장면과 견줘 바뀐 칸만 안내한다. 수정의 절단·재생성의 제거보다 먼저 읽어야
+    // 사용자가 보고 있던 장면이다.
+    const roomBeforeTurn = queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(roomId));
+    const sceneBeforeTurn = roomBeforeTurn && selectRoomScene(roomBeforeTurn);
     // 편집 절단을 여기서 하는 이유: retry()가 같은 payload로 다시 들어올 때도 같은 절단을 다시 한다. 되돌릴 목록은
     // 첫 시도 것을 이어 받아 이후의 retryPayload에 실린다.
     const pending: PendingRequest = {
@@ -236,7 +241,8 @@ export function useSendMessage(
       setStreamingText("");
       settleTurnStreamEnd(queryClient, roomId, { dropped, hasCommitted });
       // 칩·안내는 턴이 확정된 뒤 한 번만 — 스트리밍 도중이나 응답이 커밋되지 않은 턴에는 알리지 않는다.
-      // 안내 문장은 여기서 그 턴의 값으로 한 번 만들어 둔다 — 뒤에 값이 바뀌어도 다시 만들지 않는다.
+      // 안내 문장은 여기서 그 턴의 값으로 한 번 만들어 둔다 — 뒤에 값이 바뀌어도 다시 만들지 않는다. 스탯 이름·장면 글은 화면과
+      // 같이 작가 매크로를 펼친 글로 읽는다.
       if (hasCommitted && committedMessage) {
         const room = queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(roomId));
         turnFeedbackSeqRef.current += 1;
@@ -246,10 +252,7 @@ export function useSendMessage(
           messageId: committedMessage.id,
           deltas,
           hiddenSignal,
-          announcement: buildStatTurnAnnouncement(room?.contentSnapshot?.stats ?? [], room?.stats ?? {}, {
-            deltas,
-            hiddenSignal,
-          }),
+          announcement: room ? buildRoomTurnAnnouncement(room, { deltas, hiddenSignal }, sceneBeforeTurn) : "",
         });
       }
       if (!hasErrored) setStatus({ kind: "idle" });

@@ -2,7 +2,7 @@ import { useEffect, useId, useState, type FocusEvent, type ReactNode } from "rea
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@ai-character-chat/ui/components/popover";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { ChevronDown, ChevronUp, Sparkles } from "lucide-react";
+import { ChevronDown, ChevronUp, Clock, MapPin, Sparkles } from "lucide-react";
 
 import type { StatDef } from "../model/chatRoomState";
 import { getIconByName } from "../model/statIcons";
@@ -15,14 +15,16 @@ import {
   turnFeedbackKey,
   type StatTurnFeedback,
 } from "../model/statTurnFeedback";
+import { hasSceneText, type StoryScene } from "../model/storyScene";
 
 type StatGaugePanelProps = {
   stats: StatDef[];
   values: Record<string, number>;
   /** 확정된 마지막 턴의 증감·익명 신호·안내 문장. 없으면 칩·신호·안내가 없다(첫 진입·새로고침·재접속, 방 이동·초기화·되돌리기 뒤). */
   feedback?: StatTurnFeedback;
-  /** 윗줄에 놓을 지금 장면(장소·시간). 아직 장면 데이터가 없어 지금은 아무도 넘기지 않는다. */
-  scene?: string;
+  /** 윗줄에 놓을 지금 장면(장소·시간, 작가 매크로를 펼친 글). 장면 헤더를 끈 작품은 넘기지 않고, 장소·시간이 둘 다 비면 장면
+   * 줄이 없다. */
+  scene?: StoryScene;
   /** 플레이어에게 숨긴 스탯 id — 작가만 보는 빌더 미리보기가 넘긴다. 플레이어 화면에는 숨긴 스탯이 오지 않는다. */
   hiddenStatIds?: ReadonlySet<string>;
 };
@@ -32,8 +34,10 @@ const CHIP_VISIBLE_MS = 4000;
 const CHIP_EXIT_MS = 300;
 
 /**
- * 스토리 챗의 상태 줄 — contentSnapshot.stats(정의)와 현재값을 statId 로 조인한 게이지 칸들과, 접기·익명 신호를 담은 흐름 줄
- * 하나다(채팅 열 안의 `shrink-0` 줄이라 sticky 띠가 아니다). 캐릭터 챗은 스냅숏이 없어 ChatRoomView 가 그리지 않는다.
+ * 스토리 챗의 상태 줄 — 지금 장면(장소·시간) 한 줄과, contentSnapshot.stats(정의)와 현재값을 statId 로 조인한 게이지 칸들,
+ * 접기·익명 신호를 담은 흐름 줄 하나다(채팅 열 안의 `shrink-0` 줄이라 sticky 띠가 아니다). 캐릭터 챗은 스냅숏이 없어
+ * ChatRoomView 가 그리지 않는다. 보이는 스탯이 없는 작품도 장면이나 익명 신호가 있으면 그 줄만 그린다 — 접을 칸이 없어 접기
+ * 버튼도 없다.
  *
  * 칸은 버튼이고 누르면 팝오버로 이름·값·범위·플레이어용 설명을 보인다. 버튼은 자식을 표현용으로 취급해 안의 막대가
  * progressbar 로 읽히지 않으므로, 값은 버튼 접근 이름("호감도 48/100, 자세히")에 싣는다.
@@ -47,11 +51,19 @@ export function StatGaugePanel({ stats, values, feedback, scene, hiddenStatIds }
   const chipPhase = useChipPhase(unshownFeedback);
   const stripId = useId();
 
-  if (stats.length === 0) return null;
+  const hasScene = hasSceneText(scene);
+  const announcement = unshownFeedback?.announcement ?? "";
+
+  // 한 턴의 변화(스탯 증감·장면 변화·익명 신호)를 한 번에 읽는다. 턴마다 새 자식을 넣어 같은 문장이 두 턴 연달아 와도 다시
+  // 읽힌다. 이미 읽은 응답으로 돌아오면 자식을 넣지 않는다(`useUnshownTurnFeedback`).
+  const liveRegion = (
+    <div aria-live="polite" aria-atomic="true" className="sr-only">
+      {announcement && <span key={unshownFeedback?.turn}>{announcement}</span>}
+    </div>
+  );
 
   const deltas = chipPhase === "gone" ? {} : (feedback?.deltas ?? {});
   const hasHiddenSignal = feedback?.hiddenSignal ?? false;
-  const announcement = unshownFeedback?.announcement ?? "";
 
   function handleToggle() {
     const next = !isCollapsed;
@@ -59,13 +71,28 @@ export function StatGaugePanel({ stats, values, feedback, scene, hiddenStatIds }
     writeStatusLineCollapsed(next);
   }
 
+  // 스탯이 없고 장면도 신호도 없으면 보이는 줄은 없지만 빈 라이브 영역은 남긴다 — 첫 장면이 생기는 턴에 안내를 품은 영역이
+  // 그제야 삽입되면 스크린리더가 읽지 않는다. 줄이 생겨도 같은 바깥 상자의 같은 자리라 영역이 다시 마운트되지 않는다.
+  // 영역은 `sr-only` 이고 줄이 없을 때 바깥 상자는 높이 0 이라 배치에 아무것도 더하지 않는다. 장면 없이 익명 신호만 있는
+  // 턴에도 줄을 그린다 — 라이브 영역이 읽는 신호를 화면에서도 보여야 한다. 신호는 장면이 있을 때처럼 오른쪽 끝에 선다.
+  if (stats.length === 0) {
+    const hasLine = hasScene || hasHiddenSignal;
+    return (
+      <div className={cn("shrink-0", hasLine && "border-b border-border")}>
+        {liveRegion}
+        {hasLine && (
+          <div className="flex min-h-10 items-center justify-end gap-2 py-1 pr-2 pl-4 sm:pr-4 sm:pl-6">
+            {hasScene && <SceneLine scene={scene} />}
+            {hasHiddenSignal && <HiddenStatSignal isCompact={false} />}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="shrink-0 border-b border-border">
-      {/* 한 턴의 변화를 한 번에 읽는다. 턴마다 새 자식을 넣어 같은 문장이 두 턴 연달아 와도 다시 읽힌다. 이미 읽은 응답으로
-          돌아오면 자식을 넣지 않는다(`useUnshownTurnFeedback`). */}
-      <div aria-live="polite" aria-atomic="true" className="sr-only">
-        {announcement && <span key={unshownFeedback?.turn}>{announcement}</span>}
-      </div>
+      {liveRegion}
 
       {/* 접기 버튼은 접힘과 무관하게 늘 오른쪽 같은 자리의 같은 요소다 — 누른 버튼이 숨거나 사라지면 포커스가 문서 처음으로
           빠진다. 접힘에 따라 바뀌는 것은 왼쪽 내용(요약 줄 / 장면·칸 줄)뿐이다. */}
@@ -73,12 +100,16 @@ export function StatGaugePanel({ stats, values, feedback, scene, hiddenStatIds }
         <div className="min-w-0 flex-1">
           {isCollapsed && (
             <div className="flex min-h-10 items-center gap-2 py-1 pl-4 sm:pl-6">
-              {scene ? <SceneLine scene={scene} /> : <span className="flex-1 text-xs text-muted-foreground">스탯 {stats.length}개</span>}
+              {hasScene ? (
+                <SceneLine scene={scene} />
+              ) : (
+                <span className="flex-1 text-xs text-muted-foreground">스탯 {stats.length}개</span>
+              )}
               <CollapsedDeltaChips stats={stats} deltas={deltas} isLeaving={chipPhase === "leaving"} />
             </div>
           )}
 
-          {!isCollapsed && scene && (
+          {!isCollapsed && hasScene && (
             <div className="flex min-h-9 items-center pt-1 pl-4 sm:pl-6">
               <SceneLine scene={scene} />
             </div>
@@ -94,7 +125,7 @@ export function StatGaugePanel({ stats, values, feedback, scene, hiddenStatIds }
             hidden={isCollapsed}
             className={cn(
               "flex scroll-px-2.5 gap-1 overflow-x-auto px-2.5 pb-1.5 [scrollbar-width:none] sm:scroll-px-4.5 sm:px-4.5 [&::-webkit-scrollbar]:hidden",
-              !scene && "pt-1.5",
+              !hasScene && "pt-1.5",
             )}
           >
             {stats.map((stat) => (
@@ -352,11 +383,78 @@ function HiddenStatSignal({ isCompact }: { isCompact: boolean }) {
   );
 }
 
-/** 장면 한 줄. 길면 말줄임되고 전체 글은 `title` 로 남는다. */
-function SceneLine({ scene }: { scene: string }) {
+/**
+ * 장면 한 줄 — 장소 · 시간. 하나만 있으면 그것만 보이고 줄 폭을 다 쓴다. 둘 다 줄에 들어가면 자르지 않고, 넘치면 장소가
+ * 먼저 말줄임된다. 시간은 줄 폭의 절반까지는 통째로 남는다 — 절반의 기준이 줄(컨테이너)이어야 한다. 내용 폭으로 줄어든 글
+ * 묶음을 기준으로 잡으면 짧은 시간도 늘 반쯤에서 잘린다. 잘린 글은 `title` 이 아니라 눌러 여는 팝오버로 전체를 보인다(`title` 은 터치·키보드로 열 수 없다). 버튼 이름에 전체 글을
+ * 실어 스크린리더는 누르지 않아도 다 읽는다.
+ *
+ * 장면이 바뀌면 글을 다시 마운트해 페이드로 들인다 — 장식 전환이라 `motion-safe:` 로 가드하고, 처음 그릴 때(방에 들어올 때)는
+ * 페이드하지 않는다. 한 번 바뀐 뒤로는 모든 변화가 페이드한다 — 앞서 본 장면으로 돌아가는 변화(되돌리기, A→B→A 턴)도
+ * 바뀐 것이다. 글은 장면이 바뀔 때만 다시 마운트되므로 클래스를 계속 달아 두어도 같은 장면에서 다시 페이드하지 않는다.
+ */
+function SceneLine({ scene }: { scene: StoryScene }) {
+  const { place, time } = scene;
+  const sceneKey = `${place ?? ""}\n${time ?? ""}`;
+  const [firstSceneKey] = useState(sceneKey);
+  const [hasChanged, setHasChanged] = useState(false);
+  if (!hasChanged && sceneKey !== firstSceneKey) setHasChanged(true);
+  const Icon = place === undefined ? Clock : MapPin;
+  const label = ["지금 장면", place && `장소 ${place}`, time && `시간 ${time}`].filter(Boolean).join(", ");
+
   return (
-    <span className="min-w-0 flex-1 truncate text-xs font-medium" title={scene}>
-      {scene}
-    </span>
+    <div className="@container flex min-w-0 flex-1">
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            aria-label={`${label}, 자세히`}
+            className="-mx-1 flex max-w-full min-w-0 items-center rounded-md px-1 py-0.5 text-left text-xs hover:bg-secondary/50 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none aria-expanded:inset-ring aria-expanded:inset-ring-input"
+          >
+            <span
+              key={sceneKey}
+              className={cn(
+                "flex min-w-0 items-center gap-1.5",
+                hasChanged && "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-300",
+              )}
+            >
+              <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+              {place !== undefined && <span className="min-w-0 truncate font-medium">{place}</span>}
+              {place !== undefined && time !== undefined && (
+                <span aria-hidden className="shrink-0 text-muted-foreground">
+                  ·
+                </span>
+              )}
+              {time !== undefined && (
+                <span
+                  className={cn(
+                    "truncate",
+                    place === undefined ? "min-w-0 font-medium" : "max-w-[50cqw] shrink-0 text-muted-foreground",
+                  )}
+                >
+                  {time}
+                </span>
+              )}
+            </span>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent aria-label="지금 장면">
+          <dl className="flex flex-col gap-2 text-xs">
+            {place !== undefined && <SceneDetailRow term="장소" value={place} />}
+            {time !== undefined && <SceneDetailRow term="시간" value={time} />}
+          </dl>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
+function SceneDetailRow({ term, value }: { term: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <dt className="text-muted-foreground">{term}</dt>
+      {/* 띄어쓰기 없는 긴 글은 `break-keep` 만으로 끊을 자리가 없어 넘치므로 넘칠 때만 아무 데서나 끊는다(스탯 팝오버와 같다). */}
+      <dd className="text-sm font-semibold break-keep wrap-anywhere">{value}</dd>
+    </div>
   );
 }

@@ -1,5 +1,6 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Label } from "@ai-character-chat/ui/components/label";
+import { Switch } from "@ai-character-chat/ui/components/switch";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useRef } from "react";
@@ -268,6 +269,33 @@ export function SettingTab() {
             전개 예시 추가
           </Button>
         ) : null}
+      </div>
+
+      {/* 플레이 화면 설정이라 프롬프트 칸들 뒤에 둔다. 켜면 시작설정 탭에 첫 장면 칸이 나타난다. */}
+      <div className="flex items-center justify-between gap-4 rounded-xl border border-border px-4 py-3">
+        <div className="flex flex-col gap-0.5">
+          <Label htmlFor="story-setting-scene-header">
+            <FieldLabelText field="storySetting.sceneHeaderEnabled" />
+          </Label>
+          <p id="story-setting-scene-header-hint" className="text-sm break-keep text-muted-foreground">
+            매 턴 응답을 읽고 지금 장소·시간을 따로 짚어 플레이어 화면 위 장면 줄에만 보여요. 이야기 생성에는 들어가지 않아요.
+            본문이나 스탯으로 이미 장소·시간을 보여 주고 있다면 겹치지 않는지 살펴 주세요. 첫 장면은 시작설정에서 적어요.
+          </p>
+        </div>
+        <Controller
+          control={control}
+          name="storySetting.sceneHeaderEnabled"
+          render={({ field }) => (
+            <Switch
+              id="story-setting-scene-header"
+              ref={field.ref}
+              checked={field.value}
+              onCheckedChange={field.onChange}
+              onBlur={field.onBlur}
+              aria-describedby="story-setting-scene-header-hint"
+            />
+          )}
+        />
       </div>
     </div>
   );

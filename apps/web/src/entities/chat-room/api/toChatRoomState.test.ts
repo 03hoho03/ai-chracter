@@ -422,7 +422,39 @@ describe("toChatRoomState", () => {
       shortcuts: [{ id: "shortcut-1", name: "인사", description: "인사하기", prompt: "안녕이라고 인사해줘" }],
       suggestedReplies: ["계속 이야기해줘"],
       pinnedStartingSetupId: "physical-setup-1",
+      // 장면 헤더 칸이 없는 옛 서버 응답은 헤더가 꺼진 방이다.
+      sceneHeaderEnabled: false,
     });
+  });
+
+  it("carries the scene header switch, the first scene and each message's scene with nulls folded to undefined", () => {
+    const state = toChatRoomState({
+      ...storyRoomBase,
+      messages: [
+        { id: "o", role: "assistant", content: "프롤로그", createdAt: "2026-07-08T00:00:00Z", scene: null },
+        {
+          id: "a1",
+          role: "assistant",
+          content: "대사",
+          createdAt: "2026-07-08T00:01:00Z",
+          scene: { place: "갱도", time: null },
+        },
+      ],
+      contentSnapshot: {
+        stats: [],
+        endings: [],
+        shortcuts: [],
+        suggestedReplies: [],
+        pinnedStartingSetupId: "physical-setup-1",
+        sceneHeaderEnabled: true,
+        initialScene: { place: null, time: "해 질 녘" },
+      },
+    });
+
+    expect(state.contentSnapshot?.sceneHeaderEnabled).toBe(true);
+    expect(state.contentSnapshot?.initialScene).toEqual({ place: undefined, time: "해 질 녘" });
+    expect(state.messages[0]?.scene).toBeUndefined();
+    expect(state.messages[1]?.scene).toEqual({ place: "갱도", time: undefined });
   });
 
   it("does not carry the judgment fields into the screen state even when the server still sends them", () => {

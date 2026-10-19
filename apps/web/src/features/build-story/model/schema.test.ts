@@ -350,6 +350,18 @@ describe("startingSetupSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("caps each first scene field at 24 characters after trimming, like the server", () => {
+    const max = "가".repeat(24);
+    expect(
+      startingSetupSchema.safeParse({ ...validStartingSetup(), initialScenePlace: `  ${max}  `, initialSceneTime: max })
+        .success,
+    ).toBe(true);
+    const result = startingSetupSchema.safeParse({ ...validStartingSetup(), initialSceneTime: `${max}가` });
+    expect(result.success ? [] : result.error.issues.map((issue) => [issue.path.join("."), issue.message])).toEqual([
+      ["initialSceneTime", "첫 장면 시간은 24자 이하로 입력해주세요"],
+    ]);
+  });
+
   it("rejects a 5th suggested reply", () => {
     const fiveReplies = Array.from({ length: 5 }, (_, i) => `추천 답변 ${i}`);
 

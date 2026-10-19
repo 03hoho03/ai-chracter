@@ -25,8 +25,11 @@ import {
   canRestorePreviousResponse,
   chatRoomKeys,
   countMessagesAfter,
+  expandRoomStats,
+  expandStoryScene,
   refreshChatRoomTurnPrice,
   roomAuthorMacroNames,
+  selectRoomScene,
   selectVisibleTurnFeedback,
   shouldConfirmEditTruncation,
   shouldShowSuggestedReplies,
@@ -256,20 +259,18 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   // 보인 글과 저장되는 글이 같다.
   const macroNames = roomAuthorMacroNames(room);
   const expandForRoom = (text: string) => expandAuthorMacros(text, macroNames);
+  // 스탯 이름과 장면 글은 스크린리더 턴 안내(`useSendMessage`)도 같은 함수로 펼친다 — 화면과 안내가 같은 이름을 읽는다.
   const snapshot = room.contentSnapshot && {
     ...room.contentSnapshot,
-    stats: room.contentSnapshot.stats.map((stat) => ({
-      ...stat,
-      name: expandForRoom(stat.name),
-      unit: stat.unit === undefined ? undefined : expandForRoom(stat.unit),
-      playerDescription: stat.playerDescription === undefined ? undefined : expandForRoom(stat.playerDescription),
-    })),
+    stats: expandRoomStats(room.contentSnapshot.stats, macroNames),
     shortcuts: room.contentSnapshot.shortcuts.map((shortcut) => ({
       ...shortcut,
       name: expandForRoom(shortcut.name),
       description: expandForRoom(shortcut.description),
     })),
   };
+
+  const scene = expandStoryScene(selectRoomScene(room), expandForRoom);
 
   // no-nested-ternary — 갈래(세션 끝남/레이트리밋/본인인증/앞 턴 진행 중/거절/실패)를 렌더 전에 미리 갈라 둔다.
   // 제한 거부는 실패 배너를 띄우지 않는다 — 다시 시도해도 안 풀리고, 안내는 입력창 자리가 맡는다.
@@ -376,11 +377,16 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
             </div>
           )}
 
+          {/* 방을 옮겨도 이 화면은 그대로라 상태 줄을 방마다 새로 마운트한다 — 그러지 않으면 장면 줄이 이전 방의 장면을 들어올
+              때 그린 장면으로 기억해 새 방의 장면을 바뀐 것으로 보고 페이드한다. 접힘은 기기 저장값이고 이미 띄운 칩·안내는
+              모듈 단위로 기억하므로 다시 마운트해도 잃는 것이 없다. */}
           {snapshot && (
             <StatGaugePanel
+              key={roomId}
               stats={snapshot.stats}
               values={room.stats}
               feedback={selectVisibleTurnFeedback(turnFeedback, roomId, room.messages)}
+              scene={scene}
             />
           )}
 

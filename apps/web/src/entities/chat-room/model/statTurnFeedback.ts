@@ -51,12 +51,14 @@ export function formatStatValue(
   return { value: String(value), rest: `/${stat.max}${unit}` };
 }
 
-/** 한 턴의 변화를 스크린리더가 한 번에 읽을 문장. 보이는 스탯 증감을 정의 순서대로("호감도 3 올라 48"), 그 뒤에 익명
- * 신호를 잇는다. 바뀐 것이 없으면 빈 글이다. */
+/** 한 턴의 변화를 스크린리더가 한 번에 읽을 문장. 보이는 스탯 증감을 정의 순서대로("호감도 3 올라 48"), 그 뒤에 장면 변화
+ * 문장(`sceneSentences`, "장소 바뀜: 갱도"), 끝에 익명 신호를 잇는다. 바뀐 것이 없으면 빈 글이다. 스탯 이름·단위는 화면에 보이는
+ * 그대로(작가 매크로를 펼친 글) 넘겨야 한다. */
 export function buildStatTurnAnnouncement(
   stats: StatDef[],
   values: Record<string, number>,
   feedback: Pick<StatTurnFeedback, "deltas" | "hiddenSignal">,
+  sceneSentences: readonly string[] = [],
 ): string {
   const sentences = stats.flatMap((stat) => {
     const delta = feedback.deltas[stat.id];
@@ -64,6 +66,7 @@ export function buildStatTurnAnnouncement(
     const value = values[stat.id] ?? stat.initial;
     return [`${stat.name} ${Math.abs(delta)} ${delta > 0 ? "올라" : "내려"} ${value}${stat.unit ?? ""}`];
   });
+  sentences.push(...sceneSentences);
   if (feedback.hiddenSignal) sentences.push(HIDDEN_STAT_SIGNAL_TEXT);
   return sentences.join(". ");
 }

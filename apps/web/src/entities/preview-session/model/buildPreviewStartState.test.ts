@@ -197,6 +197,25 @@ describe("buildPreviewStartState", () => {
     ]);
   });
 
+  it("장면 헤더 토글과 첫 시작설정의 첫 장면을 옮긴다 — 공백만 있는 칸은 없음이다", () => {
+    const state = buildPreviewStartState(
+      undefined,
+      storyPayload({
+        sceneHeaderEnabled: true,
+        startingSetups: [startingSetup({ initialScenePlace: " 폐광 입구 ", initialSceneTime: "  " })],
+      }),
+    );
+
+    expect(state.sceneHeaderEnabled).toBe(true);
+    expect(state.initialScene).toEqual({ place: "폐광 입구", time: undefined });
+  });
+
+  it("첫 장면 칸이 없는 옛 초안과 캐릭터 payload는 장면 헤더가 꺼진 상태다", () => {
+    expect(buildPreviewStartState(undefined, storyPayload()).sceneHeaderEnabled).toBe(false);
+    expect(buildPreviewStartState(undefined, storyPayload()).initialScene).toBeUndefined();
+    expect(buildPreviewStartState(undefined, characterPayload()).sceneHeaderEnabled).toBe(false);
+  });
+
   it("suggestedReplies는 선택된 startingSetup의 것을 그대로 옮긴다", () => {
     const state = buildPreviewStartState(
       undefined,

@@ -48,11 +48,18 @@ export { TypingIndicator } from "./ui/TypingIndicator";
 export { StatGaugePanel } from "./ui/StatGaugePanel";
 export {
   addStatDelta,
-  buildStatTurnAnnouncement,
+  HIDDEN_STAT_SIGNAL_TEXT,
   selectVisibleTurnFeedback,
   type StatDeltas,
   type StatTurnFeedback,
 } from "./model/statTurnFeedback";
+export { buildRoomTurnAnnouncement, expandRoomStats, selectRoomScene } from "./model/roomTurnAnnouncement";
+export {
+  expandStoryScene,
+  hasSceneText,
+  selectCurrentScene,
+  type StoryScene,
+} from "./model/storyScene";
 export { applyRoomChatModel } from "./model/applyRoomChatModel";
 export { applyStreamEvent } from "./model/applyStreamEvent";
 export { buildEditPayload } from "./model/buildEditPayload";

@@ -3,6 +3,7 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import { Switch } from "@ai-character-chat/ui/components/switch";
 import { Controller, useFormContext } from "react-hook-form";
 
+import { HIDDEN_STAT_SIGNAL_TEXT } from "@/entities/chat-room";
 import { FieldCharacterCount, useLimitedTextField } from "@/features/build-common";
 import {
   FieldLabelText,
@@ -114,7 +115,7 @@ export function StatVisibilityFields({ id, startingSetupIndex, statIndex, stat }
           </Label>
           <p id={ids.signalHint} className="text-sm break-keep text-muted-foreground">
             {isHidden
-              ? "이 스탯이 바뀐 턴에 플레이어 화면에 ‘무언가 달라졌다’만 보여요. 무엇이 얼마나 바뀌었는지는 보이지 않아요."
+              ? `이 스탯이 바뀐 턴에 플레이어 화면에 ‘${HIDDEN_STAT_SIGNAL_TEXT}’만 보여요. 무엇이 얼마나 바뀌었는지는 보이지 않아요.`
               : "숨긴 스탯에서만 써요. 위에서 숨김을 켜면 고를 수 있어요."}
           </p>
         </div>

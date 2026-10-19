@@ -5,6 +5,7 @@ import { assertNever } from "@/shared/lib/assertNever";
 import { chatRoomKeys } from "../api/keys";
 import type { ChatMessage, ChatStreamEvent } from "../api/chatStream";
 import type { ChatRoomState } from "./chatRoomState";
+import { attachSceneToMessages, takePendingScene } from "./storyScene";
 
 type ApplyStreamEventOptions = {
   // 기본은 새 턴(전송·편집). 재생성은 turnCount를 올리지
@@ -53,6 +54,18 @@ export function applyStreamEvent(
           },
       );
       return;
+    case "sceneChange":
+      // 장면은 그 응답 메시지에 붙여 두기만 한다 — 상태 줄은 메시지 목록에서 지금 장면을 고른다(`selectCurrentScene`). 서버는
+      // 이 이벤트를 `done` 앞에 보내 그 응답이 아직 캐시에 없는 것이 보통이라, 그때는 들고 있다가 `done` 이 붙인다.
+      queryClient.setQueryData<ChatRoomState>(chatRoomKeys.detail(roomId), (prev) => {
+        if (!prev) return prev;
+        const scene = { place: event.place ?? undefined, time: event.time ?? undefined };
+        const messages = attachSceneToMessages(prev.messages, event.messageId, scene);
+        return messages
+          ? { ...prev, messages, pendingScene: undefined }
+          : { ...prev, pendingScene: { messageId: event.messageId, scene } };
+      });
+      return;
     case "done":
       queryClient.setQueryData<ChatRoomState>(chatRoomKeys.detail(roomId), (prev) => {
         if (!prev) return prev;
@@ -62,15 +75,17 @@ export function applyStreamEvent(
         const tail = prev.messages.at(-1);
         const base =
           kind === "regenerate" && tail?.role === "assistant" ? prev.messages.slice(0, -1) : prev.messages;
+        const finalMessage = takePendingScene(event.finalMessage, prev.pendingScene);
         const next: ChatRoomState = {
           ...prev,
-          messages: [...base, event.finalMessage],
+          messages: [...base, finalMessage],
+          pendingScene: undefined,
           turnCount: kind === "newTurn" ? prev.turnCount + 1 : prev.turnCount,
           // 서버는 재생성이 옛 응답을 지우는 같은 커밋에서 그 응답을 보관하고, 보내기·수정은 보관을 지운다. 방을 다시
           // 받지 않고 그 결과를 따라 적어야 "방금 전 답변으로" 메뉴가 재생성 직후부터 맞게 선다.
           previousResponseFor: kind === "regenerate" ? event.finalMessage.id : undefined,
         };
-        opts.onDone?.(event.finalMessage, prev);
+        opts.onDone?.(finalMessage, prev);
         return next;
       });
       return;
