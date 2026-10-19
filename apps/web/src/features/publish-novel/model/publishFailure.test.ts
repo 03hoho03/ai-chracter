@@ -38,6 +38,29 @@ describe("toPublishFailure", () => {
     );
   });
 
+  it("고른 가격이 지금 상태와 맞지 않으면 화면이 낡은 것으로 본다", () => {
+    expect(toPublishFailure(apiError(409, { code: "NOVEL_CHAPTER_PRICE_LOCKED" }))).toEqual({ kind: "stale" });
+    expect(toPublishFailure(apiError(409, { code: "NOVEL_CHAPTER_ALREADY_PRICED" }))).toEqual({ kind: "stale" });
+  });
+
+  it("판매 중단 409 는 다시 시도를 권하지 않고 판매가 멈췄다고 말한다", () => {
+    const failure = toPublishFailure(apiError(409, { code: "NOVEL_PUBLICATION_SALES_STOPPED" }));
+    expect(failure).toEqual({ kind: "salesStopped" });
+    expect(isRetryablePublishFailure(failure)).toBe(false);
+    expect(toPublishFailureMessage(failure)).toBe(
+      "운영 정책에 따라 판매가 멈춰 공개하지 못했어요. 판매가 멈춘 동안은 새 화와 고친 내용을 공개할 수 없어요.",
+    );
+  });
+
+  it("변경 요약이 없다는 422 는 다시 시도 대신 모달을 다시 열라고 한다", () => {
+    const failure = toPublishFailure(apiError(422, { code: "NOVEL_CHANGE_SUMMARY_REQUIRED" }));
+    expect(failure).toEqual({ kind: "summaryRequired" });
+    expect(isRetryablePublishFailure(failure)).toBe(false);
+    expect(toPublishFailureMessage(failure)).toBe(
+      "고친 화를 다시 공개하려면 변경 요약이 필요해요. 다시 공개하기를 눌러 고친 화마다 바뀐 것을 적어 주세요.",
+    );
+  });
+
   it("심사 장애와 그 밖의 실패만 다시 시도를 권한다", () => {
     expect(isRetryablePublishFailure({ kind: "unavailable" })).toBe(true);
     expect(isRetryablePublishFailure({ kind: "failed" })).toBe(true);

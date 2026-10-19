@@ -1,7 +1,7 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Link } from "@tanstack/react-router";
-import { Globe, Loader2 } from "lucide-react";
+import { ChevronDown, Globe, Loader2 } from "lucide-react";
 import { useId, type ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -21,7 +21,9 @@ import {
   toRejectionNotice,
   type PublicationView,
 } from "../model/publicationView";
+import { toPublishedPriceRows } from "../model/publishPricing";
 import { useNovelPublishActions } from "../model/useNovelPublishActions";
+import { MakeChapterFreeModal } from "./MakeChapterFreeModal";
 import { PublishNovelModal } from "./PublishNovelModal";
 import { WithdrawNovelPublicationModal } from "./WithdrawNovelPublicationModal";
 
@@ -34,7 +36,11 @@ const BADGE_CLASS = "inline-flex w-fit items-center rounded-full border px-2 py-
  *
  * 카드 껍데기 없이 위 경계선과 제목으로만 갈린다. 이 절의 버튼은 전부 outline·ghost 다 — 이 화면의 솔리드 채움은
  * "이어 읽기" 하나로 남는다. 공개 상태를 못 읽으면(소설화를 쓸 수 없는 계정, 노벨이 꺼져 있음, 일시 실패) 절을 그리지
- * 않는다 — 공개는 이 화면의 주된 일이 아니다. 공개·거두기 모달은 여기 마운트한다. */
+ * 않는다 — 공개는 이 화면의 주된 일이 아니다. 공개·거두기·무료로 전환 모달은 여기 마운트한다.
+ *
+ * 노벨 정책 스위치가 켜져 있으면 맨 아래에 "화별 가격" 펼침 목록을 둔다 — 공개한 화 중 앞 화 다음부터 화마다 지금
+ * 가격과, 유료 화면 "무료로 전환". 거둠·판매 중단·이용제한 중에도 서버가 전환을 받아 그대로 둔다. 작가 목차는 행
+ * 전체가 링크이고 읽기 화면 목차와 함께 쓰는 컴포넌트라 버튼을 넣지 않는다. */
 export function NovelPublicSection({ novel }: { novel: PublishableNovel }) {
   const headingId = useId();
   const actions = useNovelPublishActions(novel);
@@ -73,11 +79,15 @@ export function NovelPublicSection({ novel }: { novel: PublishableNovel }) {
     <section aria-labelledby={headingId} className="flex flex-col items-start gap-3 border-t border-border pt-6">
       <PublishNovelModal />
       <WithdrawNovelPublicationModal />
+      <MakeChapterFreeModal />
       <div className="flex flex-wrap items-center gap-2">
         <h2 id={headingId} className="text-lg font-semibold text-foreground">
           노벨 공개
         </h2>
         <ViewBadge view={view} />
+        {(view.kind === "public" || view.kind === "withdrawn") && view.salesStopped && (
+          <span className={cn(BADGE_CLASS, "border-border text-muted-foreground")}>판매 중단</span>
+        )}
       </div>
 
       {isChecking ? (
@@ -123,6 +133,8 @@ export function NovelPublicSection({ novel }: { novel: PublishableNovel }) {
           onWithdraw={() => void withdraw()}
         />
       )}
+
+      {!isChecking && <ChapterPriceList novelId={novel.id} status={status} />}
     </section>
   );
 }
@@ -167,7 +179,13 @@ function ViewBody({
   const pricing = useCloverPricingQuery().data;
   const buyerPolicy = toBuyerPolicyCopy(pricing);
   const priceSentence = toPublishPriceSentence(
-    pricing === undefined ? undefined : { freeChapterCount: pricing.novelFreeChapterCount, chapterPrice: pricing.novelReadCost },
+    pricing === undefined
+      ? undefined
+      : {
+          freeChapterCount: pricing.novelFreeChapterCount,
+          chapterPrice: pricing.novelReadCost,
+          isPolicyV2Enabled: pricing.novelPublicPolicyV2Enabled === true,
+        },
   );
   switch (view.kind) {
     case "noChapters":
@@ -197,7 +215,7 @@ function ViewBody({
       return (
         <Lines>
           <p className="text-foreground">{buyerPolicy.restrictedStatus}</p>
-          <p>조치에 대해 묻고 싶은 것이 있으면 고객센터로 문의해 주세요.</p>
+          <p>{CONTACT_LINE}</p>
         </Lines>
       );
     case "inReview":
@@ -224,6 +242,8 @@ function ViewBody({
         </Lines>
       );
     case "withdrawn":
+      // 판매 중단은 다시 열 수 없는 까닭이 원작이 아니라 운영 조치라 그 사실을 먼저 말한다.
+      if (view.salesStopped) return <SalesStoppedLines status={buyerPolicy.salesStoppedStatus} />;
       return (
         <Lines>
           <p className="text-foreground">{buyerPolicy.withdrawnStatus}</p>
@@ -245,13 +265,26 @@ function ViewBody({
       return (
         <Lines>
           <p className="text-foreground tabular-nums">{summary}</p>
-          {toPublicPendingLines(view, { republishBlocked: status.republishBlock !== null }).map((line) => (
+          {view.salesStopped && <p className="text-foreground">{buyerPolicy.salesStoppedStatus}</p>}
+          {toPublicPendingLines(view, { republishBlock: status.republishBlock }).map((line) => (
             <p key={line}>{line}</p>
           ))}
+          {view.salesStopped && <p>{CONTACT_LINE}</p>}
         </Lines>
       );
     }
   }
+}
+
+const CONTACT_LINE = "조치에 대해 묻고 싶은 것이 있으면 고객센터로 문의해 주세요.";
+
+function SalesStoppedLines({ status }: { status: string }) {
+  return (
+    <Lines>
+      <p className="text-foreground">{status}</p>
+      <p>판매가 멈춘 동안은 다시 공개할 수 없어요. {CONTACT_LINE}</p>
+    </Lines>
+  );
 }
 
 function toReapplyLine(view: Extract<PublicationView, { kind: "reviewRejected" }>): string {
@@ -309,6 +342,7 @@ function ViewActions({
       );
       break;
     case "withdrawn":
+      if (view.salesStopped) buttons.push(<InquiryButton key="inquiry" />);
       if (view.canReopen) {
         buttons.push(
           <Button key="publish" type="button" variant="outline" size="sm" onClick={onPublish}>
@@ -337,6 +371,7 @@ function ViewActions({
           공개 거두기
         </Button>,
       );
+      if (view.salesStopped) buttons.push(<InquiryButton key="inquiry" />);
       break;
     case "inReview":
       buttons.push(
@@ -366,11 +401,7 @@ function ViewActions({
       }
       break;
     case "restricted":
-      buttons.push(
-        <Button key="inquiry" asChild variant="outline" size="sm">
-          <Link to="/inquiries/new">문의하기</Link>
-        </Button>,
-      );
+      buttons.push(<InquiryButton key="inquiry" />);
       break;
     case "noChapters":
     case "blocked":
@@ -378,4 +409,63 @@ function ViewActions({
   }
   if (buttons.length === 0) return null;
   return <div className="flex flex-wrap gap-2">{buttons}</div>;
+}
+
+function InquiryButton() {
+  return (
+    <Button asChild variant="outline" size="sm">
+      <Link to="/inquiries/new">문의하기</Link>
+    </Button>
+  );
+}
+
+/** "화별 가격" 펼침 목록 — 노벨 정책 스위치가 켜졌고 앞 화 다음 화를 공개한 적이 있을 때만. 접힌 머리에 유료 화 수를
+ * 말해 펼치지 않아도 무엇이 들었는지 안다. 전환은 확인 모달을 거친다(되돌릴 수 없다). */
+function ChapterPriceList({ novelId, status }: { novelId: string; status: NovelPublicationStatus }) {
+  const pricing = useCloverPricingQuery().data;
+  if (pricing?.novelPublicPolicyV2Enabled !== true) return null;
+  const rows = toPublishedPriceRows(status.publishedChapters, pricing.novelFreeChapterCount);
+  if (rows.length === 0) return null;
+  const paidCount = rows.filter((row) => row.price > 0).length;
+
+  return (
+    <details className="group w-full max-w-prose">
+      <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded-md text-sm font-medium text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring focus-visible:outline-solid [&::-webkit-details-marker]:hidden">
+        화별 가격
+        <span className="font-normal text-muted-foreground tabular-nums">
+          · {paidCount > 0 ? `유료 ${paidCount}화` : "모두 무료"}
+        </span>
+        <ChevronDown aria-hidden className="size-4 text-muted-foreground motion-safe:transition-transform group-open:rotate-180" />
+      </summary>
+      <ul className="mt-2 flex flex-col">
+        {rows.map((row) => (
+          <li
+            key={row.chapterId}
+            className="flex min-h-10 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-border py-1 text-sm last:border-b-0"
+          >
+            <span className="text-foreground tabular-nums">
+              {row.ordinal}화
+              <span className="text-muted-foreground">
+                {" "}
+                · {row.price === 0 ? "무료" : `유료 · 클로버 ${row.price.toLocaleString()}개`}
+              </span>
+            </span>
+            {row.price > 0 && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => void MakeChapterFreeModal.call({ novelId, chapterId: row.chapterId, ordinal: row.ordinal })}
+              >
+                무료로 전환
+              </Button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-xs break-keep text-muted-foreground">
+        무료로 바꾼 화는 다시 유료로 되돌릴 수 없어요. 이미 산 회원에게 클로버를 돌려드리지 않아요.
+      </p>
+    </details>
+  );
 }

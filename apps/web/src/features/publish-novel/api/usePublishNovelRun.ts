@@ -6,6 +6,7 @@ import { novelKeys, type NovelPublicationStatus } from "@/entities/novel";
 import { webnovelKeys } from "@/entities/webnovel";
 import { apiClient } from "@/shared/api/client";
 
+import type { PublishRequestBody } from "../model/publicationView";
 import { toPublishFailure, type PublishFailure } from "../model/publishFailure";
 
 /** 공개를 끝까지 보낸 결과. */
@@ -37,9 +38,8 @@ export function usePublishNovelRun(novelId: string) {
   const [state, setState] = useState<PublishRunState>({ kind: "idle" });
   const isRunningRef = useRef(false);
   const isMountedRef = useRef(true);
-  const publishChapter = useMutation<NovelPublicationStatus, ApiError, string | null>({
-    mutationFn: async (chapterId) =>
-      (await apiClient.post<NovelPublicationStatus>(`/novels/${novelId}/publication`, { chapterId })).data,
+  const publishChapter = useMutation<NovelPublicationStatus, ApiError, PublishRequestBody>({
+    mutationFn: async (body) => (await apiClient.post<NovelPublicationStatus>(`/novels/${novelId}/publication`, body)).data,
   });
 
   useEffect(() => {
@@ -49,15 +49,15 @@ export function usePublishNovelRun(novelId: string) {
     };
   }, []);
 
-  async function run(requests: readonly (string | null)[]): Promise<PublishRunResult> {
+  async function run(requests: readonly PublishRequestBody[]): Promise<PublishRunResult> {
     if (isRunningRef.current || requests.length === 0) return false;
     isRunningRef.current = true;
     try {
-      for (const [index, chapterId] of requests.entries()) {
+      for (const [index, body] of requests.entries()) {
         if (index > 0 && !isMountedRef.current) return false;
         setState({ kind: "checking", current: index + 1, total: requests.length });
         try {
-          const data = await publishChapter.mutateAsync(chapterId);
+          const data = await publishChapter.mutateAsync(body);
           queryClient.setQueryData(novelKeys.publication(novelId), data);
           if (data.reviewStatus === "pending") {
             setState({ kind: "idle" });

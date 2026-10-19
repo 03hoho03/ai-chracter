@@ -9,8 +9,11 @@ import { getRateLimitDetail } from "@/shared/api/rateLimit";
  *   다르다.
  * - `inReview`: 운영자가 첫 공개를 확인하고 있어 지금은 공개할 수 없다(409). 다시 시도해도 같으므로 다시 시도를 권하지
  *   않고, 공개 상태를 다시 받아 승인 대기를 그린다.
- * - `stale`: 화면이 낡았다(409 — 그사이 화가 바뀌었거나 다른 요청이 먼저 공개했거나, 원작·운영 상태가 바뀌었다). 공개
- *   상태를 다시 받아 맞춘다.
+ * - `stale`: 화면이 낡았다(409 — 그사이 화가 바뀌었거나 다른 요청이 먼저 공개했거나, 원작·운영 상태가 바뀌었거나, 고른
+ *   가격이 지금 상태와 맞지 않는다 — 무료로만 낼 수 있게 된 번호, 그사이 가격이 정해진 화). 공개 상태를 다시 받아 맞춘다.
+ * - `salesStopped`: 운영자가 판매를 멈춰 새 화·다시 공개를 낼 수 없다(409). 다시 시도해도 같다.
+ * - `summaryRequired`: 이미 공개한 화를 고쳐 다시 내는데 변경 요약이 없다(422). 화면이 낡아 요약 칸 없이 보낸 경우만
+ *   닿는다 — 공개 모달을 다시 열면 칸이 나온다.
  * - `failed`: 그 밖(네트워크·5xx). */
 export type PublishFailure =
   | { kind: "rejected" }
@@ -19,6 +22,8 @@ export type PublishFailure =
   | { kind: "dailyLimit" }
   | { kind: "inReview" }
   | { kind: "stale" }
+  | { kind: "salesStopped" }
+  | { kind: "summaryRequired" }
   | { kind: "failed" };
 
 const STALE_CODES = new Set([
@@ -28,6 +33,8 @@ const STALE_CODES = new Set([
   "NOVEL_SOURCE_UNAVAILABLE",
   "NOVEL_PUBLICATION_RESTRICTED",
   "NOVEL_CHAPTER_NOT_FOUND",
+  "NOVEL_CHAPTER_PRICE_LOCKED",
+  "NOVEL_CHAPTER_ALREADY_PRICED",
 ]);
 
 export function toPublishFailure(error: unknown): PublishFailure {
@@ -39,6 +46,8 @@ export function toPublishFailure(error: unknown): PublishFailure {
   if (error.status === 400 && code === "NOVEL_SCREENING_REJECTED") return { kind: "rejected" };
   if (error.status === 503 && code === "NOVEL_SCREENING_UNAVAILABLE") return { kind: "unavailable" };
   if (error.status === 409 && code === "NOVEL_PUBLICATION_IN_REVIEW") return { kind: "inReview" };
+  if (error.status === 409 && code === "NOVEL_PUBLICATION_SALES_STOPPED") return { kind: "salesStopped" };
+  if (error.status === 422 && code === "NOVEL_CHANGE_SUMMARY_REQUIRED") return { kind: "summaryRequired" };
   if (typeof code === "string" && STALE_CODES.has(code)) return { kind: "stale" };
   return { kind: "failed" };
 }
@@ -64,6 +73,10 @@ export function toPublishFailureMessage(failure: PublishFailure): string | undef
       return "운영자가 첫 공개를 확인하고 있어 지금은 공개할 수 없어요. 확인이 끝나면 다시 공개할 수 있어요.";
     case "stale":
       return "그사이 소설이나 원작의 상태가 바뀌어 공개하지 못했어요. 바뀐 상태를 확인한 뒤 다시 시도해 주세요.";
+    case "salesStopped":
+      return "운영 정책에 따라 판매가 멈춰 공개하지 못했어요. 판매가 멈춘 동안은 새 화와 고친 내용을 공개할 수 없어요.";
+    case "summaryRequired":
+      return "고친 화를 다시 공개하려면 변경 요약이 필요해요. 다시 공개하기를 눌러 고친 화마다 바뀐 것을 적어 주세요.";
     case "failed":
       return "공개하지 못했어요. 잠시 후 다시 시도해 주세요.";
   }
