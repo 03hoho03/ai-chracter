@@ -32,14 +32,14 @@ from api.db.models import AdminActionLog, AdminUser, User
 from api.db.models.clover import CloverLedger, CloverLot, CloverSpendAllocation, CloverSpendRefund, CloverSpendUsage
 from api.db.models.content import Content
 from api.db.models.moderation import ModerationAction, ModerationActionType, Notification, ReportReasonCategory
-from api.db.models.novel import Novel, NovelPublication, NovelPurchase
+from api.db.models.novel import Novel, NovelBatch, NovelChapter, NovelChapterRevision, NovelPublication, NovelPurchase
 from api.main import app
 from api.novel_public.admin import moderate_admin_novel
 from api.novel_public.admin_schemas import AdminNovelModerationRequest
 from api.novel_public.purchases import NovelChapterPurchaseResponse, purchase_chapter
 from api.novelize import router as novelize_router
 from api.novelize.deletion import delete_novels
-from api.novelize.hidden_purge import purge_hidden_novels
+from api.novelize.hidden_purge import purge_hidden_novels, strip_withdrawn_publisher_novels
 
 _SETTLE_SECONDS = 10
 
@@ -504,3 +504,77 @@ async def test_the_purge_and_the_publishers_withdrawal_delete_a_hidden_novel_onc
 
     assert withdrawn == 204
     assert not await _novel_exists(world, novel.novel_id)
+
+
+async def test_two_overlapping_strips_of_a_withdrawn_publishers_hidden_novel_count_it_once(world: _World) -> None:
+    """탈퇴한 게시자의 숨긴 소설에 작가 데이터가 남아 있을 때 정리 둘(예약 실행과 수동 실행)이 겹친다. 둘 다 게시자 행을 쥔
+    트랜잭션 뒤에 막히고(정리도 파기처럼 게시자 행을 먼저 잡는다), 놓으면 오류 없이 하나가 정리하고 다른 하나는 바꿀 것이 없어
+    0 이다. 깨지는 시나리오: 정리가 게시자 행을 건너뛰고 화부터 잡아 사용자 행 → 화 순서의 다른 쓰기와 엇갈리거나, 겹친 두
+    정리가 같은 소설을 두 번 센다."""
+    publisher, buyer = await world.member(), await world.member()
+    novel = await world.publish(publisher)
+    await _bought(world, novel, buyer, 6)
+    async with world.factory() as s:
+        await s.execute(update(User).where(User.id == publisher).values(deleted_at=func.now()))
+        await s.execute(
+            update(Novel)
+            .where(Novel.id == novel.novel_id)
+            .values(hidden_at=func.now(), chat_room_id=None, setting_notes="탈퇴한 작가의 노트")
+        )
+        await s.commit()
+    holder = await _hold_user(world, publisher)
+    first = _in_own_session(world, strip_withdrawn_publisher_novels)
+    second = _in_own_session(world, strip_withdrawn_publisher_novels)
+    try:
+        await _assert_blocked(first)
+        await _assert_blocked(second)
+        counts = await _settle(holder, [first, second])
+    finally:
+        await _close_quietly(holder, [first, second])
+
+    assert sorted(counts, key=str) == [0, 1]
+    async with world.factory() as s:
+        assert await s.scalar(select(Novel.setting_notes).where(Novel.id == novel.novel_id)) == ""
+
+
+async def test_a_withdrawal_waits_for_a_late_draft_of_an_unpublished_chapter_and_removes_it_too(world: _World) -> None:
+    """게시자가 탈퇴하는 순간 공개되지 않은 9화에 새 개정을 쓰는 요청(직접 수정 — 화 행을 잠근 채 개정을 넣는다)이 아직 커밋
+    전이다. 탈퇴의 정리는 화 행을 먼저 잠그므로 그 요청 뒤에 막히고, 커밋되면 새 개정까지 보고 9화와 함께 지운다. 깨지는
+    시나리오: 정리가 화를 잠그지 않고 개정부터 지워 커밋 전 개정을 못 보고, 9화 DELETE 가 그 개정의 FK 에 걸려 탈퇴가 500 이 된다."""
+    publisher, buyer = await world.member(), await world.member()
+    novel = await world.publish(publisher)
+    await _bought(world, novel, buyer, 6)
+    async with world.factory() as s:
+        segment = {
+            "start_message_id": uuid.uuid4(),
+            "start_message_created_at": func.now(),
+            "end_message_id": uuid.uuid4(),
+            "end_message_created_at": func.now(),
+            "assistant_message_count": 1,
+            "source_hash": "0" * 64,
+        }
+        batch = NovelBatch(novel_id=novel.novel_id, ordinal=3, target_episode_count=1, **segment)
+        s.add(batch)
+        await s.flush()
+        draft = NovelChapter(novel_id=novel.novel_id, ordinal=9, batch_id=batch.id, episode_index=0, **segment)
+        s.add(draft)
+        await s.flush()
+        s.add(NovelChapterRevision(chapter_id=draft.id, revision_no=1, body="9화 초고", source="generate"))
+        await s.commit()
+    holder = world.factory()
+    await holder.execute(select(NovelChapter.id).where(NovelChapter.id == draft.id).with_for_update(key_share=True))
+    holder.add(NovelChapterRevision(chapter_id=draft.id, revision_no=2, body="9화 늦은 초고", source="manual_edit"))
+    await holder.flush()
+    withdrawal = _withdraw_task(publisher)
+    try:
+        await _assert_blocked(withdrawal)
+        await holder.commit()
+        status = await asyncio.wait_for(withdrawal, _SETTLE_SECONDS)
+    finally:
+        await _close_quietly(holder, [withdrawal])
+
+    assert status == 204
+    async with world.factory() as s:
+        assert await s.scalar(select(NovelChapter.id).where(NovelChapter.id == draft.id)) is None
+        assert await s.scalar(select(func.count()).where(NovelChapterRevision.chapter_id == draft.id)) == 0
+        assert await s.scalar(select(Novel.hidden_at).where(Novel.id == novel.novel_id)) is not None

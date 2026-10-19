@@ -1,5 +1,5 @@
-"""소설과 그 아래 행을 지우는 단 한 곳, 마지막 묶음을 지우는 곳, 그리고 더 쓸 데가 없어진 AI 수정 지시문·결과 본문을
-비우는 곳.
+"""소설과 그 아래 행을 지우는 단 한 곳, 마지막 묶음을 지우는 곳, 탈퇴한 작가의 숨겨 남긴 소설에서 작가만 쓰던 것을 지우는
+곳, 그리고 더 쓸 데가 없어진 AI 수정 지시문·결과 본문을 비우는 곳.
 
 소설 단독 삭제와 회원 탈퇴가 `delete_novels` 를 같이 쓴다. 두 경로가 자식 목록을 따로 가지면 테이블이 늘 때 한쪽에만
 더해지기 쉽고, 빠진 쪽은 소설 DELETE 가 FK 위반으로 500 이 된다. 뼈대 테이블(작업·개정·화·소설)에는 `ON DELETE
@@ -15,7 +15,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import Delete, Update, delete, literal_column, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models.novel import (
@@ -24,6 +24,7 @@ from api.db.models.novel import (
     NovelBatch,
     NovelChapter,
     NovelChapterCharacter,
+    NovelChapterEdition,
     NovelChapterRevision,
     NovelChapterPublication,
     NovelCharacter,
@@ -77,6 +78,109 @@ async def delete_novels(db: AsyncSession, novel_ids: Sequence[uuid.UUID]) -> Non
     await db.execute(delete(HomeNovelCuration).where(HomeNovelCuration.novel_id.in_(novel_ids)))
     await db.execute(delete(NovelPublication).where(NovelPublication.novel_id.in_(novel_ids)))
     await db.execute(delete(Novel).where(Novel.id.in_(novel_ids)))
+
+
+async def strip_author_only_data(db: AsyncSession, novel_ids: Sequence[uuid.UUID]) -> int:
+    """탈퇴한 작가의 숨겨 남긴 소설들에서 독자가 읽는 것만 남기고 작가만 쓰던 것을 지운다. 바꾼 행 수를 돌려준다(0 이면 이미
+    정리된 소설이다 — 몇 번 불러도 결과가 같다). 커밋은 호출부가 한다.
+
+    남는 것은 독자·운영자 경로가 읽는 것뿐이다 — 공개 상태 행, 화 공개본과 판 행(누가 어느 판을 샀든), 그 둘이 가리키는 개정과
+    그 화 행, 소설의 원작 사본·권리 잠금 칸, 그리고 독자가 남긴 읽은 자리·댓글·좋아요와 구매·심사·신고 기록. 독자에게 나가는 제목·
+    소개·화 제목·작가의 말은 모두 공개 때 얼린 사본이라 작업본 칸을 비워도 화면이 그대로다.
+
+    지우거나 비우는 것: 작업 행, 작가 읽은 자리, 스냅숏, 등장 인물·인물 카드, 공개본·판 행이 없는 화(공개되지 않은 화 — 그
+    화의 심사 기록·읽은 자리·댓글과 함께)와 화가 남지 않은 묶음, 공개본·판 행이 가리키지 않는 개정(초고·수정 이력), 남는 개정의
+    되돌리기 원본 칸, 남는 화의 작업본 제목·요약·작가의 말, 소설의 설정 노트·주인공 이름·작업본 제목과 소개·편집 보드·표지.
+
+    잠금과 순서는 `delete_novels` 와 같다 — 작업 행을 먼저 지우고(진행 중 작업의 조건부 전이가 0행이 된다) 화 행을 잠근 뒤
+    읽은 자리·댓글·개정을 지운다. 비우는 UPDATE 는 이미 빈 행을 고르지 않아 바꾼 행 수가 "정리할 것이 있었는가"를 뜻한다."""
+    if not novel_ids:
+        return 0
+    chapter_ids = select(NovelChapter.id).where(NovelChapter.novel_id.in_(novel_ids))
+    kept_revision_ids = select(NovelChapterPublication.revision_id).where(
+        NovelChapterPublication.novel_id.in_(novel_ids)
+    ).union(select(NovelChapterEdition.revision_id).where(NovelChapterEdition.novel_id.in_(novel_ids)))
+    kept_chapter_ids = select(NovelChapterPublication.chapter_id).where(
+        NovelChapterPublication.novel_id.in_(novel_ids)
+    ).union(select(NovelChapterEdition.chapter_id).where(NovelChapterEdition.novel_id.in_(novel_ids)))
+    dropped_chapter_ids = select(NovelChapter.id).where(
+        NovelChapter.novel_id.in_(novel_ids), NovelChapter.id.not_in(kept_chapter_ids)
+    )
+    changed = 0
+
+    async def run(statement: Delete | Update) -> None:
+        # 바꾼 행 수는 `.rowcount` 대신 돌려받은 행으로 센다(`Result` 가 mypy strict 에서 그 속성을 노출하지 않는다).
+        nonlocal changed
+        changed += len((await db.execute(statement.returning(literal_column("1")))).all())
+
+    await run(delete(NovelJob).where(NovelJob.novel_id.in_(novel_ids)))
+    await db.execute(chapter_ids.with_for_update())
+    await run(delete(NovelReadingPosition).where(NovelReadingPosition.novel_id.in_(novel_ids)))
+    await run(delete(NovelSnapshot).where(NovelSnapshot.novel_id.in_(novel_ids)))
+    await run(delete(NovelChapterCharacter).where(NovelChapterCharacter.chapter_id.in_(chapter_ids)))
+    await run(delete(NovelCharacter).where(NovelCharacter.novel_id.in_(novel_ids)))
+    await run(delete(NovelReaderPosition).where(NovelReaderPosition.chapter_id.in_(dropped_chapter_ids)))
+    await run(delete(NovelComment).where(NovelComment.chapter_id.in_(dropped_chapter_ids)))
+    await run(delete(NovelScreening).where(NovelScreening.chapter_id.in_(dropped_chapter_ids)))
+    # 남는 개정이 지울 개정을 되돌리기 원본으로 가리키면 개정 DELETE 가 FK 위반이다. 되돌리기 이력은 작가 기록이라 모두 비운다.
+    await run(
+        update(NovelChapterRevision)
+        .where(
+            NovelChapterRevision.chapter_id.in_(chapter_ids),
+            NovelChapterRevision.reverted_from_revision_id.is_not(None),
+        )
+        .values(reverted_from_revision_id=None)
+    )
+    await run(
+        delete(NovelChapterRevision).where(
+            NovelChapterRevision.chapter_id.in_(chapter_ids), NovelChapterRevision.id.not_in(kept_revision_ids)
+        )
+    )
+    await run(delete(NovelChapter).where(NovelChapter.id.in_(dropped_chapter_ids)))
+    await run(
+        delete(NovelBatch).where(
+            NovelBatch.novel_id.in_(novel_ids),
+            ~select(NovelChapter.id).where(NovelChapter.batch_id == NovelBatch.id).exists(),
+        )
+    )
+    await run(
+        update(NovelChapter)
+        .where(
+            NovelChapter.novel_id.in_(novel_ids),
+            or_(
+                NovelChapter.title.is_not(None),
+                NovelChapter.title_edited_at.is_not(None),
+                NovelChapter.summary.is_not(None),
+                NovelChapter.author_note != "",
+            ),
+        )
+        .values(title=None, title_edited_at=None, summary=None, author_note="")
+    )
+    await run(
+        update(Novel)
+        .where(
+            Novel.id.in_(novel_ids),
+            or_(
+                Novel.setting_notes != "",
+                Novel.protagonist_name.is_not(None),
+                Novel.title.is_not(None),
+                Novel.title_edited_at.is_not(None),
+                Novel.synopsis != "",
+                Novel.board_layout != text("'{}'::jsonb"),
+                Novel.cover_asset_id.is_not(None),
+            ),
+        )
+        .values(
+            setting_notes="",
+            protagonist_name=None,
+            title=None,
+            title_edited_at=None,
+            synopsis="",
+            board_layout={},
+            cover_asset_id=None,
+        )
+    )
+    return changed
 
 
 async def delete_batch(db: AsyncSession, *, novel_id: uuid.UUID, batch_id: uuid.UUID) -> None:
