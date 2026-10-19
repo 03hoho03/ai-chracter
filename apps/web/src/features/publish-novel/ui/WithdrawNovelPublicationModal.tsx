@@ -14,13 +14,15 @@ import { createCallable } from "@/shared/lib/callable/createCallable";
 import { useWithdrawNovelPublicationMutation } from "../api/useWithdrawNovelPublicationMutation";
 
 /** 거두기와 신청 취소의 문구. 둘은 같은 요청이다 — 서버가 승인 대기면 신청을 지우고 아니면 거둔다. 신청 취소는 아무에게도
- * 보인 적 없는 글이라 잃는 것이 없어 실행 버튼을 `outline` 으로 두고, 잃는 것이 있는 거두기만 `destructive` 틴트다. */
+ * 보인 적 없는 글이라 잃는 것이 없어 실행 버튼을 `outline` 으로 두고, 잃는 것이 있는 거두기만 `destructive` 틴트다.
+ * 신청 취소의 물러나기 버튼은 "닫기"다 — 실행 버튼에 이미 "취소"가 들어 있어 물러나기까지 "취소"면 어느 쪽이 신청을 지우는지 갈리지 않는다. */
 const COPY = {
   withdraw: {
     title: "노벨 공개를 거둘까요?",
     description:
       "목록과 작품 화면에서 바로 사라지고, 소장한 회원도 더 볼 수 없게 돼요. 클로버는 돌려드리지 않아요. 나중에 다시 공개하면 소장한 화도 다시 열려요.",
     confirm: "공개 거두기",
+    dismiss: "취소",
     pending: "거두는 중…",
     error: "공개를 거두지 못했어요. 잠시 후 다시 시도해 주세요.",
     variant: "destructive",
@@ -29,6 +31,7 @@ const COPY = {
     title: "공개 신청을 취소할까요?",
     description: "아직 아무에게도 보이지 않았어요. 취소하면 신청이 없어지고 언제든 다시 신청할 수 있어요.",
     confirm: "신청 취소하기",
+    dismiss: "닫기",
     pending: "취소하는 중…",
     error: "신청을 취소하지 못했어요. 잠시 후 다시 시도해 주세요.",
     variant: "outline",
@@ -75,7 +78,7 @@ export const WithdrawNovelPublicationModal = createCallable<WithdrawNovelPublica
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => call.end(false)}>
-            취소
+            {copy.dismiss}
           </Button>
           <Button
             type="button"
