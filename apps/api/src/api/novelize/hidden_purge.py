@@ -5,7 +5,8 @@
 
 노벨로 팔린 소설을 작가가 지우거나 그 게시자가 탈퇴하면 소설을 지우지 않고 숨긴다(`novels.hidden_at`) — 산 사람이 계속
 읽어야 해서다. 그 소장이 모두 끝나면(구매자가 모두 탈퇴했거나 모두 환급받음) 남겨 둘 까닭이 없으므로 이 정리가 진짜로
-지운다. 구매자의 탈퇴·환급 경로는 남의 소설을 지우지 않는다 — 그 자리에서 지우면 구매자 탈퇴가 남의 소설 행을 잠그게 되어
+지운다. 그다음 게시자가 탈퇴한 숨긴 소설에 작가만 쓰던 것이 남아 있으면 지운다(`strip_withdrawn_publisher_novels`
+— 탈퇴가 숨길 때 하는 정리를 놓친 소설을 메운다). 구매자의 탈퇴·환급 경로는 남의 소설을 지우지 않는다 — 그 자리에서 지우면 구매자 탈퇴가 남의 소설 행을 잠그게 되어
 잠금 순서를 새로 맞춰야 한다.
 
 소설을 지우는 코드(`delete_novels`)를 소설 삭제·탈퇴와 함께 쓰려고 앱 코드로 두고 api 컨테이너 안에서 돈다(크리에이터 정산
@@ -24,10 +25,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
 from api.core.sentry import build_sentry_options, capture_dependency_failure
+from api.db.models.auth import User
 from api.db.models.novel import Novel, NovelPurchase
 from api.db.session import async_session_factory, engine
-from api.novel_public.purchases import lock_novel_parties
-from api.novelize.deletion import delete_novels
+from api.novel_public.purchases import lock_novel_parties, lock_users_in_order
+from api.novelize.deletion import delete_novels, strip_author_only_data
 
 # 숨긴 소설 중 아직 환급되지 않은 구매(탈퇴하지 않은 구매자)가 남지 않은 것 — 소장이 모두 끝났다.
 _PURGEABLE = (
@@ -58,6 +60,38 @@ async def purge_hidden_novels(db: AsyncSession) -> int:
     return purged
 
 
+# 게시자가 탈퇴한 숨긴 소설 — 탈퇴가 숨겨 남긴 소설이다.
+_KEPT_FOR_OWNERS_OF_A_WITHDRAWN_PUBLISHER = (
+    Novel.hidden_at.is_not(None),
+    select(User.id).where(User.id == Novel.user_id, User.deleted_at.is_not(None)).exists(),
+)
+
+
+async def strip_withdrawn_publisher_novels(db: AsyncSession) -> int:
+    """게시자가 탈퇴한 숨긴 소설마다 작가만 쓰던 것을 지우고(`strip_author_only_data`) 실제로 무언가 지운 소설 수를 돌려준다.
+    탈퇴는 숨길 때 이미 같은 정리를 하므로 대개 0 이다. 0 이 아닌 것은 (1) 배포 겹침 동안 정리를 모르는 옛 이미지가 숨긴 소설,
+    (2) 탈퇴 직전에 시작된 작가 요청(직접 수정·소설 정보 수정·인물 카드·스냅숏 등)이 탈퇴 커밋 뒤에 잠금을 얻어 다시 쓴 개정·칸·
+    행 — 그 요청들은 잠그기 전에 숨김을 확인하고, 잠근 뒤에는 탈퇴 여부를 다시 보지 않는다. 이미 정리된 소설은 아무것도 바뀌지 않는다.
+
+    소설마다 게시자 행을 먼저 잠그고(구매·파기·환급하는 운영자 조치·첫 공개 승인과 같은 첫 잠금이라 함께 돌아도 줄을 선다) 같은 조건으로 다시 확인한
+    뒤 정리하고 커밋한다. 파기(`purge_hidden_novels`)와 같이 정책 스위치와 무관하게 돈다 — 그런 소설은 스위치가 켜져 있을 때만
+    생기지만 끈 뒤에도 정리돼야 한다."""
+    candidates = (
+        await db.execute(
+            select(Novel.id, Novel.user_id).where(*_KEPT_FOR_OWNERS_OF_A_WITHDRAWN_PUBLISHER).order_by(Novel.id)
+        )
+    ).tuples().all()
+    await db.commit()
+    stripped = 0
+    for novel_id, publisher_id in candidates:
+        await lock_users_in_order(db, [publisher_id])
+        still = await db.scalar(select(Novel.id).where(Novel.id == novel_id, *_KEPT_FOR_OWNERS_OF_A_WITHDRAWN_PUBLISHER))
+        if still is not None and await strip_author_only_data(db, [novel_id]) > 0:
+            stripped += 1
+        await db.commit()
+    return stripped
+
+
 def _init_sentry() -> None:
     # 서버(`main.py`)와 같은 옵션. DSN 이 없으면(dev) 부르지 않아 실패 기록이 no-op 이다.
     if settings.sentry_dsn:
@@ -68,9 +102,10 @@ async def _main() -> None:
     try:
         async with async_session_factory() as db:
             purged = await purge_hidden_novels(db)
+            stripped = await strip_withdrawn_publisher_novels(db)
     finally:
         await engine.dispose()
-    print(f"숨긴 소설 파기: {purged}편")
+    print(f"숨긴 소설 파기: {purged}편 · 탈퇴 게시자 소설 정리: {stripped}편")
 
 
 def main() -> int:

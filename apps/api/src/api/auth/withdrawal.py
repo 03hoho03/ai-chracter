@@ -4,7 +4,8 @@
 요청에 묶인 일(현재 세션 삭제·쿠키 지우기)과 세션 일괄 폐기는 커밋 뒤 호출자가 한다.
 
 **노벨 게시자의 탈퇴** — 정책 스위치(`novel_public_policy_v2_enabled`)가 켜져 있으면 탈퇴자의 소설 가운데 노벨로 팔린 것(아직
-환급되지 않은 구매가 있는 것, 이미 숨긴 소설 포함)은 지우지 않고 숨겨 남긴다 — 산 사람이 계속 읽는다. 환급은 없다. 팔리지 않은
+환급되지 않은 구매가 있는 것, 이미 숨긴 소설 포함)은 지우지 않고 숨겨 남긴다 — 산 사람이 계속 읽는다. 환급은 없다. 남기는 것은
+독자가 읽는 공개본·판과 그 본문뿐이고 작가만 쓰던 것(스냅숏·설정 노트·주인공 이름·공개되지 않은 화와 개정 등)은 지운다. 팔리지 않은
 소설은 지금처럼 지운다. 꺼져 있으면 모두 지운다(환급 없이 열람이 끝난다). "팔렸는가"는 탈퇴자 행을 잠근 뒤에 판정한다 — 구매가
 게시자 행을 잡으므로 그 뒤로는 새 구매가 끼지 않고, 먼저 커밋된 구매는 판정 쿼리가 본다. 그래서 구매자 행은 잡지 않는다.
 """
@@ -39,10 +40,10 @@ from api.db.models.feature_grant import UserFeatureGrant
 from api.db.models.inquiry import Inquiry
 from api.db.models.legal import UserLegalConsent
 from api.db.models.media import Asset, AssetKind, ImageGenerationRequest
-from api.db.models.novel import Novel, NovelComment, NovelJob, NovelPublication, NovelPurchase, NovelReaderPosition
+from api.db.models.novel import Novel, NovelComment, NovelPublication, NovelPurchase, NovelReaderPosition
 from api.db.models.persona import UserPersona
 from api.novel_public.purchases import sold_novel_ids
-from api.novelize.deletion import delete_novels
+from api.novelize.deletion import delete_novels, strip_author_only_data
 
 logger = logging.getLogger(__name__)
 
@@ -100,13 +101,18 @@ async def _keep_sold_novels_hidden(db: AsyncSession, novel_ids: Sequence[uuid.UU
     작가가 팔린 소설을 지울 때의 숨김과 같은 모양이라 소장자 열람·하루 한 번 파기가 그대로 따라온다. 이미 숨긴 소설은 숨긴
     시각을 그대로 둔다.
 
-    작업 행(진행 중이든 끝났든)은 먼저 지운다. 진행 중 작업이 살아 있으면 성공해 탈퇴자의 숨긴 소설에 화를 더 쓰거나, 실패해
-    탈퇴 뒤의 계정에 클로버를 되돌린다(아래 `burn_all` 뒤에 잔액이 다시 생긴다) — 소설을 지울 때(`delete_novels`)처럼 작업 행이
-    사라지면 실행 경로의 조건부 전이가 0행이 되어 둘 다 일어나지 않는다. 환불하지 않는 것은 탈퇴가 잔액을 통째로 소멸시키기
-    때문이다. 끝난 작업 행도 지운다 — AI 수정 지시문·결과 본문처럼 작가만 쓰던 기록이다."""
+    숨기기 전에 작가만 쓰던 것을 지운다(`strip_author_only_data` — 독자가 읽는 공개본·판과 그 본문만 남는다). 탈퇴한 작가는 숨긴
+    소설을 되살릴 수 없으니 작업 데이터를 둘 까닭이 없다. 그 첫 단계가 작업 행(진행 중이든 끝났든) 삭제다. 진행 중 작업이 살아
+    있으면 성공해 탈퇴자의 숨긴 소설에 화를 더 쓰거나, 실패해 탈퇴 뒤의 계정에 클로버를 되돌린다(아래 `burn_all` 뒤에 잔액이
+    다시 생긴다) — 소설을 지울 때(`delete_novels`)처럼 작업 행이 사라지면 실행 경로의 조건부 전이가 0행이 되어 둘 다 일어나지
+    않는다. 환불하지 않는 것은 탈퇴가 잔액을 통째로 소멸시키기 때문이다.
+
+    잠금은 탈퇴자 사용자 행(호출자) → 작업 행 → 화 행 → 소설 행(정리의 마지막 UPDATE) → 공개 상태 행 순이다. 공개 상태 행을 소설
+    행보다 먼저 잡는 경로(첫 공개 승인·게시자의 공개)는 모두 게시자 사용자 행을 먼저 잡으므로 이 탈퇴와 그 행에서 줄을 선다.
+    구매 행·클로버는 건드리지 않는다."""
     if not novel_ids:
         return
-    await db.execute(delete(NovelJob).where(NovelJob.novel_id.in_(novel_ids)))
+    await strip_author_only_data(db, novel_ids)
     await db.execute(
         update(NovelPublication).where(NovelPublication.novel_id.in_(novel_ids)).values(visibility="withdrawn")
     )
