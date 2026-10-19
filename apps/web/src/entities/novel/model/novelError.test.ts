@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { ApiErrorObject } from "@/shared/api/client";
 
-import { isContentNovelizeForbiddenError, isNovelizeNotAllowedError, toNovelLoadFailure } from "./novelError";
+import {
+  isContentNovelizeForbiddenError,
+  isNovelizeNotAllowedError,
+  toNovelizeForbiddenCopy,
+  toNovelLoadFailure,
+} from "./novelError";
 
 function apiError(status: number, detail: string | Record<string, unknown> | undefined) {
   return new ApiErrorObject({ status, message: "x", detail });
@@ -62,5 +67,22 @@ describe("toNovelLoadFailure", () => {
     expect(toNovelLoadFailure(apiError(0, undefined))).toBe("failed");
     expect(toNovelLoadFailure(apiError(500, undefined))).toBe("failed");
     expect(toNovelLoadFailure(apiError(404, "Not Found"))).toBe("failed");
+  });
+});
+
+describe("toNovelizeForbiddenCopy", () => {
+  // 스위치가 꺼져 있으면 막는 이유가 원작자의 허락 거부 하나라 지금 문장 그대로다.
+  it.each([undefined, {}, { novelPublicPolicyV2Enabled: false }])("꺼졌거나 모르면 원작자 허락 문장이다 (%o)", (pricing) => {
+    expect(toNovelizeForbiddenCopy(pricing)).toEqual({
+      room: "원작자가 소설 만들기를 허용하지 않은 작품이에요.",
+      chapter: "원작자가 이 작품의 소설 만들기를 허용하지 않아 새 화를 만들 수 없어요.",
+    });
+  });
+
+  it("켜져 있으면 원작자 탈퇴로도 막히므로 이유를 말하지 않는 중립 문장이다", () => {
+    expect(toNovelizeForbiddenCopy({ novelPublicPolicyV2Enabled: true })).toEqual({
+      room: "이 작품으로는 지금 새 소설을 만들 수 없어요.",
+      chapter: "이 작품으로는 지금 새 화를 만들 수 없어요.",
+    });
   });
 });

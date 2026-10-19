@@ -37,6 +37,8 @@ import {
   type ViewerChapter,
 } from "@/widgets/novel-viewer";
 
+import { EditionChangesDialog } from "./EditionChangesDialog";
+
 type WebnovelViewerProps = {
   novel: WebnovelDetailResponse;
   /** 지금 화의 목차 항목(읽던 자리). 화 조회 응답에도 자리가 실리지만, 떠날 때 먼저 써 두는 곳이 작품 정보 캐시라
@@ -60,6 +62,9 @@ export function WebnovelViewer({ novel, summary, chapter, paragraphs }: Webnovel
   const [isCommentsOpen, setIsCommentsOpen] = useState(false);
   // 신고 모달은 루트에 마운트돼 읽기 화면이 모르므로 열린 동안을 여기서 센다 — 그동안 Esc 는 모달만 닫는다.
   const [isReportOpen, setIsReportOpen] = useState(false);
+  // 판 안내의 "바뀐 내용" 다이얼로그. 열린 동안 Esc 는 다이얼로그만 닫는다(신고 모달과 같다).
+  const [isEditionChangesOpen, setIsEditionChangesOpen] = useState(false);
+  const editionChangesOpenerRef = useRef<HTMLElement | null>(null);
   const commentsOpenerRef = useRef<HTMLElement | null>(null);
   // 판매를 멈춘 소설(소장자만 연다)은 댓글·좋아요·신고가 닫혀 있다(서버가 404) — 그 자리를 그리지 않고 댓글도 묻지
   // 않는다.
@@ -97,7 +102,8 @@ export function WebnovelViewer({ novel, summary, chapter, paragraphs }: Webnovel
     }
   }
   const { edition } = chapter;
-  // 산 뒤 고쳐진 화면 제목 아래에 판 안내 한 줄. 없으면 머리에 아무것도 더하지 않는다(판형 쪽 수가 지금과 같다).
+  // 산 뒤 고쳐진 화면 제목 아래에 판 안내 한 줄. 없으면 머리에 아무것도 더하지 않는다(판형 쪽 수가 지금과 같다). 두 판의
+  // 날짜·요약은 판형 밖의 "바뀐 내용" 다이얼로그가 맡는다 — 한 줄에 펴면 첫 쪽이 밀려 쪽 수가 바뀐다.
   const editionNotice = toEditionNotice(chapter);
   const position = summary.readingPosition;
   const chapters = novel.chapters.map((item) => toViewerChapter(item, isSalesStopped));
@@ -123,10 +129,18 @@ export function WebnovelViewer({ novel, summary, chapter, paragraphs }: Webnovel
     <>
       <EpisodeReader
         route="public"
-        isExtraSheetOpen={isCommentsOpen || isReportOpen}
+        isExtraSheetOpen={isCommentsOpen || isReportOpen || isEditionChangesOpen}
         headerNote={
           editionNotice === undefined ? undefined : (
-            <EditionNoteLine novelId={novel.id} chapterId={chapter.id} notice={editionNotice} />
+            <EditionNoteLine
+              novelId={novel.id}
+              chapterId={chapter.id}
+              notice={editionNotice}
+              onOpenChanges={(opener) => {
+                editionChangesOpenerRef.current = opener;
+                setIsEditionChangesOpen(true);
+              }}
+            />
           )
         }
         topBarAction={
@@ -221,6 +235,19 @@ export function WebnovelViewer({ novel, summary, chapter, paragraphs }: Webnovel
           </ViewerTocSheet>
         )}
       />
+      {editionNotice?.latest !== undefined && (
+        <EditionChangesDialog
+          open={isEditionChangesOpen}
+          onOpenChange={setIsEditionChangesOpen}
+          novelId={novel.id}
+          chapterId={chapter.id}
+          ordinal={chapter.ordinal}
+          purchased={editionNotice.purchased}
+          latest={editionNotice.latest}
+          isReadingPurchased={editionNotice.kind === "readingPurchased"}
+          returnFocusTo={() => editionChangesOpenerRef.current}
+        />
+      )}
       {!isSalesStopped && (
         <WebnovelCommentsSheet
           novelId={novel.id}
@@ -241,17 +268,37 @@ export function WebnovelViewer({ novel, summary, chapter, paragraphs }: Webnovel
 const EDITION_LINK_CLASS =
   "text-foreground underline underline-offset-2 outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring";
 
-/** 화 제목 아래 판 안내 — 산 뒤 고쳐진 화를 연 소장자에게, 지금 읽는 판과 다른 판으로 가는 길을 낸다. 고른 판은
- * 주소의 `edition` 이라 같은 화면에서 search 만 바꾼다(판이 바뀌면 읽기 화면이 새로 마운트된다). */
-function EditionNoteLine({ novelId, chapterId, notice }: { novelId: string; chapterId: string; notice: EditionNotice }) {
+/** 화 제목 아래 판 안내 — 산 뒤 고쳐진 화를 연 소장자에게, 지금 읽는 판과 다른 판으로 가는 길과 두 판의 "바뀐 내용"을
+ * 여는 버튼을 낸다. 고른 판은 주소의 `edition` 이라 같은 화면에서 search 만 바꾼다(판이 바뀌면 읽기 화면이 새로
+ * 마운트된다). 최신 판 칸을 모르는 옛 서버면 "바뀐 내용"이 없다(보일 날짜·요약이 없다). */
+function EditionNoteLine({
+  novelId,
+  chapterId,
+  notice,
+  onOpenChanges,
+}: {
+  novelId: string;
+  chapterId: string;
+  notice: EditionNotice;
+  onOpenChanges: (opener: HTMLElement) => void;
+}) {
   const params = { novelId, chapterId };
-  const purchasedLabel = `산 때의 판(${notice.purchasedDateLabel} 공개)`;
+  const purchasedLabel = `구매 당시 판(${notice.purchased.dateLabel} 공개)`;
+  const changesButton = notice.latest !== undefined && (
+    <>
+      {" · "}
+      <button type="button" className={EDITION_LINK_CLASS} onClick={(event) => onOpenChanges(event.currentTarget)}>
+        바뀐 내용
+      </button>
+    </>
+  );
   return notice.kind === "newerAvailable" ? (
     <>
       소장하신 뒤 고쳐진 화예요.{" "}
-      <Link to="/webnovels/$novelId/episodes/$chapterId" params={params} search={{ edition: notice.purchasedEdition }} className={EDITION_LINK_CLASS}>
+      <Link to="/webnovels/$novelId/episodes/$chapterId" params={params} search={{ edition: notice.purchased.edition }} className={EDITION_LINK_CLASS}>
         {purchasedLabel}으로 읽기
       </Link>
+      {changesButton}
     </>
   ) : (
     <>
@@ -259,6 +306,7 @@ function EditionNoteLine({ novelId, chapterId, notice }: { novelId: string; chap
       <Link to="/webnovels/$novelId/episodes/$chapterId" params={params} search={{}} className={EDITION_LINK_CLASS}>
         최신 판으로 읽기
       </Link>
+      {changesButton}
     </>
   );
 }

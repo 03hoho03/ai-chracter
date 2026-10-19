@@ -6,6 +6,7 @@ import { useId } from "react";
 import { NovelReadProgressSummary, NovelStatusState, toNovelReadProgress, toResumeTarget } from "@/entities/novel";
 import {
   ReadingEndedState,
+  toPublisherCredit,
   toSourceCredit,
   toWebnovelLoadFailure,
   toWebnovelPriceSummary,
@@ -13,6 +14,7 @@ import {
   WebnovelCover,
   WebnovelSourceCredit,
   WebnovelTocList,
+  WITHDRAWN_USER_LABEL,
   type WebnovelDetailResponse,
 } from "@/entities/webnovel";
 import { WebnovelLikeButton } from "@/features/like-webnovel";
@@ -102,6 +104,7 @@ function WebnovelInfoContent({ novel }: { novel: WebnovelDetailResponse }) {
   const progress = toNovelReadProgress(chapters);
   const resume = toResumeTarget(chapters, novel.lastRead?.chapterId);
   const credit = toSourceCredit(novel.source);
+  const publisher = toPublisherCredit(novel);
   const isSalesStopped = novel.salesStopped === true;
   const meta = [`${novel.chapters.length}화`, toPriceMeta(novel, isSalesStopped)].join(" · ");
 
@@ -115,22 +118,32 @@ function WebnovelInfoContent({ novel }: { novel: WebnovelDetailResponse }) {
           <h1 className="text-2xl font-bold tracking-tight text-balance break-keep text-foreground">{novel.title}</h1>
           <div className="flex flex-col gap-1 text-sm">
             <WebnovelSourceCredit source={novel.source} isLinked />
-            {/* 원작자 닉네임은 글자만 — 응답에 원작자 회원 id 가 없어 프로필로 걸 수 없다. 목록 행(한 줄 잘림)에는 넣지 않는다. */}
-            {credit.creatorNickname !== undefined && (
+            {/* 원작자 닉네임은 글자만 — 응답에 원작자 회원 id 가 없어 프로필로 걸 수 없다. 목록 행(한 줄 잘림)에는 넣지 않는다.
+                탈퇴한 사람은 이름 자리에 "탈퇴한 사용자"를 이름 잉크가 아니라 줄 잉크 그대로 쓴다 — 이름이 아니라 상태다. */}
+            {credit.creator !== undefined && (
               <p className="min-w-0 break-keep text-muted-foreground">
-                원작자 · <span className="text-foreground">{credit.creatorNickname}</span>
+                원작자 ·{" "}
+                {credit.creator.kind === "nickname" ? (
+                  <span className="text-foreground">{credit.creator.nickname}</span>
+                ) : (
+                  WITHDRAWN_USER_LABEL
+                )}
               </p>
             )}
-            {novel.publisherNickname !== null && novel.publisherUserId !== null && (
+            {publisher !== undefined && (
               <p className="min-w-0 break-keep text-muted-foreground">
                 게시자 ·{" "}
-                <Link
-                  to="/profile/$userId"
-                  params={{ userId: novel.publisherUserId }}
-                  className="rounded-sm text-foreground hover:underline focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                >
-                  {novel.publisherNickname}
-                </Link>
+                {publisher.kind === "profile" ? (
+                  <Link
+                    to="/profile/$userId"
+                    params={{ userId: publisher.userId }}
+                    className="rounded-sm text-foreground hover:underline focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                  >
+                    {publisher.nickname}
+                  </Link>
+                ) : (
+                  WITHDRAWN_USER_LABEL
+                )}
                 {credit.publisherIsCreator && " · 원작자"}
               </p>
             )}
@@ -145,7 +158,7 @@ function WebnovelInfoContent({ novel }: { novel: WebnovelDetailResponse }) {
             {/* 원작자가 아닌 사람이 공개한 소설. 같은 중립 배지 꼴 — 경고가 아니라 출처 표기다. */}
             {credit.isUnofficial && (
               <span className="inline-flex w-fit items-center rounded-full border border-border px-2 py-0.5 text-badge font-medium text-muted-foreground">
-                비공식 2차 창작
+                또나 채팅 기반 파생 소설
               </span>
             )}
           </div>
@@ -220,7 +233,7 @@ function toPriceMeta(novel: WebnovelDetailResponse, isSalesStopped: boolean): st
   if (novel.isPublisher) return "내가 공개한 소설이라 모든 화 무료";
   if (isSalesStopped) return "판매 중지";
   return toWebnovelPriceSummary({
-    chapterCount: novel.chapters.length,
+    chapters: novel.chapters,
     freeChapterCount: novel.freeChapterCount,
     chapterPrice: novel.chapterPrice,
   });

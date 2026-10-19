@@ -20,7 +20,7 @@ import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/t
 import { Loader2 } from "lucide-react";
 import { useId, useRef, useState } from "react";
 
-import { CloverSpendSummary, useCloverBalanceQuery } from "@/entities/clover";
+import { CloverSpendSummary, useCloverBalanceQuery, useCloverPricingQuery } from "@/entities/clover";
 import {
   ChapterModelSelect,
   hasChapterModelChoice,
@@ -85,6 +85,7 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, Ch
   ({ call, novelId, proposal: initialProposal, modelOptions, initialModelId, firstEpisodeOrdinal }) => {
     const isDialogLayout = useIsChapterBoundaryDialogLayout();
     const { data: clover } = useCloverBalanceQuery();
+    const isPolicyV2Enabled = useCloverPricingQuery().data?.novelPublicPolicyV2Enabled === true;
     const proposalMutation = useChapterProposalMutation();
     // 열 때마다 새로 받는다 — 대화가 이어지면 남은 대화의 견적이 바뀐다.
     const chainEstimateQuery = useNovelChainEstimateQuery(novelId, true);
@@ -141,7 +142,7 @@ export const ChapterBoundaryModal = createCallable<ChapterBoundaryModalProps, Ch
         // 확인받는 셈이다.
         setModelId(previous);
         setReloadError(
-          toNovelActionError(error, "proposal")?.message ?? "이 모델의 후보를 받지 못했어요. 잠시 후 다시 시도해주세요.",
+          toNovelActionError(error, "proposal", { isPolicyV2Enabled })?.message ?? "이 모델의 후보를 받지 못했어요. 잠시 후 다시 시도해주세요.",
         );
       } finally {
         if (requestNo === latestRequestRef.current) setIsReloading(false);

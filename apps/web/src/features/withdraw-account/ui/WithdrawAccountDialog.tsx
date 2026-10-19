@@ -15,6 +15,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 
+import { useCloverPricingQuery } from "@/entities/clover";
 import { creatorPayoutKeys, useCreatorPayoutQuery } from "@/entities/creator-payout";
 import { hasEnabledFeature, sessionKeys, useSessionQuery } from "@/entities/session";
 import { CONTACT_EMAIL } from "@/shared/config/site";
@@ -24,6 +25,7 @@ import { getCreatorEarningsWarning } from "../model/creatorEarningsWarning";
 import { getPaidBalanceWarning, type PaidBalanceWarning } from "../model/paidBalanceWarning";
 import { getWithdrawalPayoutAction } from "../model/withdrawalPayoutAction";
 import { getWithdrawError } from "../model/withdrawError";
+import { toWithdrawalNotice } from "../model/withdrawalNotice";
 import { CreatorEarningsWarningMessage } from "./CreatorEarningsWarningMessage";
 import { WithdrawPasswordForm } from "./WithdrawPasswordForm";
 
@@ -59,6 +61,9 @@ export function WithdrawAccountDialog({ label = "회원탈퇴", isBehindReconsen
     error: payoutQuery.error,
     now: new Date(),
   });
+  // 만든 소설이 어떻게 되는지는 노벨 정책 스위치에 따라 다르다(기준은 `toWithdrawalNotice`). 가격 응답은 로그인·재동의
+  // 없이 읽히는 공개 응답이라 재동의 모달 안에서도 온다.
+  const withdrawalNotice = toWithdrawalNotice(useCloverPricingQuery().data);
   const withdrawalPayoutAction = getWithdrawalPayoutAction({
     payout: payoutQuery.data,
     error: payoutQuery.error,
@@ -104,10 +109,7 @@ export function WithdrawAccountDialog({ label = "회원탈퇴", isBehindReconsen
               문장이 **양쪽 폭 모두에서** 어절 중간에 끊긴다(실측 1280: `접근할 수 없`/`어요.` · 390:
               `비공개`/`로 전환되고`, `작성 중`/`인 초안은`, `접근`/`할 수 없어요`). 하필 대화기록 삭제를
               알리는 유일한 문장이다. */}
-          <AlertDialogDescription className="break-keep">
-            탈퇴하면 발행한 캐릭터·스토리는 비공개로 전환되고, 대화기록과 만든 소설은 삭제돼요. 작성 중인 초안은
-            보존되지만 탈퇴 후에는 접근할 수 없어요. 이 작업은 되돌릴 수 없어요.
-          </AlertDialogDescription>
+          <AlertDialogDescription className="break-keep">{withdrawalNotice}</AlertDialogDescription>
           <PaidBalanceWarningMessage warning={paidBalanceWarning} />
           <CreatorEarningsWarningMessage warning={creatorEarningsWarning} action={withdrawalPayoutAction} />
         </AlertDialogHeader>

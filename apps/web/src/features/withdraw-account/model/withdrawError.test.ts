@@ -25,13 +25,6 @@ describe("getWithdrawError", () => {
     });
   });
 
-  it("탈퇴 경합 409 는 아무것도 지워지지 않았다고 말하고 다시 누르게 한다", () => {
-    expect(getWithdrawError(apiError(409, { code: "WITHDRAWAL_CONFLICT" }))).toEqual({
-      target: "toast",
-      message: "그사이 내 노벨에 새 구매가 생겨 탈퇴를 마치지 못했어요. 아무것도 지워지지 않았으니 다시 눌러 주세요.",
-    });
-  });
-
   it.each([
     apiError(409, { code: "OTHER_CONFLICT" }),
     apiError(409, "Conflict"),

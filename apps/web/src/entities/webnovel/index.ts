@@ -30,10 +30,17 @@ export {
   type WebnovelDetailResponse,
   type WebnovelReadingPosition,
 } from "./api/useWebnovelQuery";
-export { toEditionNotice, type EditionNotice } from "./model/editionNotice";
+export { toEditionNotice, type EditionInfo, type EditionNotice } from "./model/editionNotice";
 export { toReadingEndedNotice, type ReadingEndedAction, type ReadingEndedNotice } from "./model/readingEndedNotice";
 export { toWebnovelReportErrorMessage } from "./model/reportFailure";
-export { toSourceCredit } from "./model/sourceCredit";
+export {
+  toPublisherCredit,
+  toPublisherName,
+  toSourceCredit,
+  WITHDRAWN_USER_LABEL,
+  type CreatorCredit,
+  type PublisherCredit,
+} from "./model/sourceCredit";
 export { toUniqueWebnovels } from "./model/uniqueWebnovels";
 export {
   toWebnovelLoadFailure,
