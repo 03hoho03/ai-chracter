@@ -2283,6 +2283,38 @@ cd /opt/ddona/app && sudo docker compose -f docker-compose.prod.yml --env-file /
 - 🔴 Postgres 이미지(pgvector 를 실은 것)를 원래 이미지로 되돌리는 것은 7 의 downgrade 가 끝난 **뒤에만** 한다 — `vector` 타입이 남은
   DB 를 확장 없는 이미지로 띄우면 그 표를 읽지 못한다.
 
+### 3-16. 숨긴 소설 파기 — purge cron
+
+노벨 정책 스위치(`NOVEL_PUBLIC_POLICY_V2_ENABLED`)가 켜진 뒤 노벨로 팔린 소설을 작가가 지우면, 산 사람이 계속 읽도록 소설을
+숨긴다(`novels.hidden_at`). 아직 환급되지 않은 소장자가 모두 사라진(구매자가 모두 탈퇴했거나 모두 환급받은) 숨긴 소설을 이
+크론이 **매일** 진짜로 지운다. 구매 행(거래 기록)은 남는다. 지울 것이 없는 날은 아무것도 바꾸지 않고, 실패한 날은 다음 날
+저절로 다시 돈다. 스위치와 무관하게 돈다 — 스위치를 끈 뒤에도 남은 숨긴 소설은 소장이 끝나면 지워져야 한다.
+
+"크리에이터 정산 월 확정 — settle cron" 절과 같이 **서빙 중인 api 컨테이너 안에서** `python -m api.novelize.hidden_purge` 를
+돌린다(소설 삭제·탈퇴와 같은 삭제 코드를 쓴다). 래퍼 `ops/purge-hidden-novels.sh` 는 `ops/active-color.sh` 로 색을 고르고
+`compose exec -T api_<색>` 으로 들어간다. 교체 중이라 색을 하나로 못 고르면 그날은 실패로 끝난다. 래퍼는 `.env` 를 읽지 않는다.
+알림은 없다 — 실패는 Bugsink 에 `dependency=hidden_novel_purge` 태그로 남고 로그 파일에 종료 코드가 남는다.
+
+**최초 1회 — 심볼릭 링크 설치**:
+
+```sh
+sudo ln -sf /opt/ddona/app/ops/purge-hidden-novels.sh /opt/ddona/purge-hidden-novels.sh
+sudo ln -sf /opt/ddona/app/ops/cron.d/ddona-hidden-novel-purge /etc/cron.d/ddona-hidden-novel-purge
+```
+
+**검증**:
+
+```sh
+# 1. 수동 1회 실행 — 정상 종료와 마지막 줄 "숨긴 소설 파기: N편" 확인
+sudo -u root /opt/ddona/purge-hidden-novels.sh
+tail /var/log/ddona-hidden-novel-purge.log
+
+# 2. 다음 17:35 UTC(KST 02:35)에 크론이 실제로 도는지
+tail -f /var/log/ddona-hidden-novel-purge.log
+```
+
+⚠️ 17:35 UTC — 다른 크론(05:00·06:00·15:05·16:35·18:00 UTC, 매시 17분, 5분마다)과 겹치지 않는다.
+
 ## 4. 배포 후 스모크 검증
 
 1. `curl https://api.ddona.site/health` → `{"status":"ok"}` · `/ready`로 DB·Redis까지 확인. 배포 로그에서 교체 스크립트의
