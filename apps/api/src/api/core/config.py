@@ -15,6 +15,8 @@ from api.llm.call_policy import BackendId, LLMCallSite
 
 # Anthropic API 의 사고 깊이(`output_config.effort`). API 가 받는 값만 둔다 — 오타가 첫 호출의 거부가 아니라 기동 거부가 되게.
 ClaudeEffort = Literal["low", "medium", "high", "xhigh", "max"]
+# 기억 사용 범위(`memory_model_scope`)가 받는 레인 — 기억 기능이 있는 대화 레인 둘뿐이다.
+MemoryScopeLane = Literal["story", "character"]
 
 
 class Settings(BaseSettings):
@@ -428,6 +430,28 @@ class Settings(BaseSettings):
             raise ValueError(f"상위 모델 스위치가 켜져 있는데 {', '.join(missing)} 가 비어 있다")
         return self
 
+    @field_validator("memory_model_scope", mode="before")
+    @classmethod
+    def _split_memory_model_scope(cls, value: object) -> object:
+        """env 문자열을 `(레인, 모델)` 목록으로 편다. 항목은 쉼표로 나누고 앞뒤 공백은 지우며 빈 항목은 버린다. `모델` 만 쓴
+        항목은 두 레인 모두로, `레인:모델` 은 그 레인 하나로 편다. 콜론이 둘 이상이거나 한쪽이 비면 거부하고, 모르는 레인·모델
+        이름(판정 전용 `haiku` 포함)은 pydantic 이 거부한다 — 오타가 조용히 "어떤 방도 범위에 없음"이 되면 켠 스위치가 아무
+        데서도 동작하지 않는데 기동은 성공한다."""
+        if not isinstance(value, str):
+            return value
+        pairs: list[tuple[str, str]] = []
+        for item in value.split(","):
+            if not item.strip():
+                continue
+            parts = [part.strip() for part in item.split(":")]
+            if len(parts) == 1:
+                pairs += [(lane, parts[0]) for lane in get_args(MemoryScopeLane)]
+            elif len(parts) == 2 and all(parts):
+                pairs.append((parts[0], parts[1]))
+            else:
+                raise ValueError(f"MEMORY_MODEL_SCOPE 의 항목 {item.strip()!r} 은 모델 또는 레인:모델 모양이 아니다")
+        return pairs
+
     @model_validator(mode="after")
     def _embedding_needs_a_voyage_key(self) -> "Settings":
         """키 없이 켜진 채우기는 채울 때마다 실패할 뿐이라 켠 것이 성공한 것처럼 보인다 — 배포 단계에서 드러나게 기동을 막는다.
@@ -592,6 +616,16 @@ class Settings(BaseSettings):
     # 비어 conditional 로 섹션째 빠져, 요약 프롬프트가 이 스위치가 생기기 전과 바이트까지 같다. 생성 윈도우 스위치가 꺼져 있으면
     # 접기가 없어 이 값과 무관하다. 끄면(줄 삭제 + 재기동) 다음 접기부터 슬롯이 빠지고, 이미 쓴 요약은 그대로 남는다.
     memory_summary_secret_marking: bool = False
+    # 위 기억 사용 스위치(회상·사실 주입·지식 범위 필터·요약 비밀 표기)와 아래 임베딩 회상이 실제로 동작하는 방의 범위 — 그 턴의
+    # 레인과 글쓰기 모델이 이 목록에 있어야 켜진 스위치가 동작하고, 없으면 그 턴은 스위치를 다 끈 것과 프롬프트·SQL 이 같다.
+    # 기억 품질은 Opus 방에서만 재 보았고 다른 모델 방에서 켜면 측정하지 않은 동작이 나가므로 기본은 Opus 방뿐이다. 값은 쉼표로
+    # 나눈 목록이고 원소는 `모델`(두 레인 모두) 또는 `레인:모델`이다 — 레인은 `story`·`character`, 모델은 글쓰기 모델 id
+    # (`gemini`·`sonnet`·`opus`, 판정 전용 `haiku` 는 아니다). 모르는 레인·모델이면 기동하지 않는다. 비우면(`KEY=`) 어떤 방도
+    # 범위에 없다. 추출(장면·사실)과 임베딩 쓰기는 이 범위와 무관하다 — 쌓아 두는 일이라 어느 방에서 켜도 그 방 대화가 바뀌지 않는다.
+    memory_model_scope: Annotated[list[tuple[MemoryScopeLane, backends.ChatModelId]], NoDecode] = [
+        ("story", "opus"),
+        ("character", "opus"),
+    ]
     # 요약 접기 뒤 장면·사실 기억 행을 Voyage 로 임베딩해 `chat_memory_embeddings` 에 채우는 백그라운드 작업을 켠다
     # (`chat/memory_embeddings.py`). 기본은 꺼짐 — 꺼져 있으면 예약하지 않아 Voyage 를 부르지도 임베딩 표를 읽지도 않고, 턴의
     # 호출·트랜잭션이 이 스위치가 생기기 전과 같다. 생성 윈도우 스위치가 꺼져 있으면 접기가 없어 이 값과 무관하게 채우지 않는다.
