@@ -13,7 +13,8 @@ export const DERIVATIVE_NOVELS_LEGEND = "이 작품으로 만든 노벨";
 
 export const DERIVATIVE_NOVELS_OPTIONS: readonly { value: DerivativeNovelsChoice; label: string }[] = [
   { value: "stop_sales", label: "판매 중단" },
-  { value: "close", label: "이용제한(열람 차단 + 자동 환급)" },
+  // 노벨 상태값 "이용제한"과 헷갈리지 않게 하는 일만 적는다 — 파생 노벨 자신의 상태는 바뀌지 않는다.
+  { value: "close", label: "열람 차단 + 자동 환급" },
 ];
 
 const DERIVATIVE_NOVELS_EFFECT: Record<DerivativeNovelsChoice, string> = {
@@ -25,7 +26,7 @@ const DERIVATIVE_NOVELS_EFFECT: Record<DerivativeNovelsChoice, string> = {
  * 돌아온다 — 노벨 상세에서 풀 것이 없다는 것을 이용제한 때 함께 말한다. 삭제는 되돌릴 수 없어 이 문장이 없다. */
 const DERIVATIVE_NOVELS_ON_LIFT: Record<DerivativeNovelsChoice, string> = {
   stop_sales: "노벨에 판매 중단이 따로 걸리지 않아 원작 이용제한을 풀면 다시 팔려요.",
-  close: "노벨에 이용제한이 따로 걸리지 않아 원작 이용제한을 풀면 다시 열리고, 돌려받은 회원은 다시 사야 읽어요.",
+  close: "노벨 상태가 이용제한으로 바뀌지는 않아 원작 이용제한을 풀면 다시 열리고, 돌려받은 회원은 다시 사야 읽어요.",
 };
 
 /** 고른 값이 산 회원에게 하는 일. 확정 전에 고른 값 바로 아래에 보인다 — 환급 문장은 `close` 일 때만이다. */
