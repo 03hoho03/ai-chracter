@@ -251,7 +251,7 @@ function InquiryAttachmentField({
         <input
           id="submit-inquiry-attachment"
           type="file"
-          accept="image/png,image/jpeg,image/webp"
+          accept="image/png,image/jpeg,image/webp,image/gif"
           className="sr-only"
           disabled={isUploading}
           onChange={(event) => void handleFileChange(event)}
