@@ -12,13 +12,15 @@ import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { useCloverPricingQuery } from "@/entities/clover";
 import { hasNovelErrorCode, novelKeys, toNovelActionError, useNovelQuery } from "@/entities/novel";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { useDeleteNovelMutation } from "../api/useDeleteNovelMutation";
 import { withDeleteConflictRetry } from "../lib/deleteConflictRetry";
-import { toNovelHideDescription } from "../model/refundNotice";
+import { isPreviewRequiredToDelete, toNovelHideDescription } from "../model/refundNotice";
 import { RefundNoticeBox } from "./RefundNoticeBox";
+import { RefundPreviewFailed } from "./RefundPreviewFailed";
 
 type DeleteNovelModalProps = {
   novelId: string;
@@ -36,7 +38,8 @@ type DeleteNovelModalProps = {
  * 돌려주는 값은 지웠는가다 — 연 버튼이 그 소설과 함께 사라지므로 호출부가 포커스를 둘 곳을 정한다.
  *
  * 노벨에서 이 소설의 화를 소장한 회원이 있으면 몇 명에게 클로버 몇 개를 돌려주는지 확정 전에 말한다(소설 상세의
- * 삭제 전 확인 값 — 목록에서 열었으면 여기서 받는다). 그 값을 받는 동안은 지우기를 막는다. 그사이 새 소장자가 생겨
+ * 삭제 전 확인 값 — 목록에서 열었으면 여기서 받는다). 그 값을 받는 동안은 지우기를 막고, 정책 스위치가 켜졌는데 받지
+ * 못했으면 숨길지 지울지 몰라 다시 받을 때까지 막는다. 그사이 새 소장자가 생겨
  * 서버가 돌려보내면 한 번은 저절로 다시 보낸다.
  *
  * 노벨에서 팔린 소설이면(삭제 전 확인 값의 판매 표시) 서버가 지우지 않고 숨긴다 — 그때는 설명을 숨김으로 갈아 끼우고
@@ -54,9 +57,12 @@ export const DeleteNovelModal = createCallable<DeleteNovelModalProps, boolean>((
   const isDeleting = deleteMutation.isPending;
   const isPreviewPending = detail.isPending;
   const hideDescription = toNovelHideDescription(detail.data?.purchaseRefunds);
+  const pricing = useCloverPricingQuery().data;
+  // 켜짐에서 상세를 받지 못했으면 숨김인지 지움인지 모른다 — 틀린 설명으로 지우게 두지 않고 다시 받게 한다.
+  const isPreviewMissing = detail.data === undefined && !isPreviewPending && isPreviewRequiredToDelete(pricing);
 
   async function handleDelete() {
-    if (isDeleting || isPreviewPending) return;
+    if (isDeleting || isPreviewPending || isPreviewMissing) return;
     setError(undefined);
     try {
       await withDeleteConflictRetry(() => deleteMutation.mutateAsync(novelId));
@@ -86,7 +92,10 @@ export const DeleteNovelModal = createCallable<DeleteNovelModalProps, boolean>((
         <DialogHeader>
           <DialogTitle className="break-keep">‘{title}’ 소설을 지울까요?</DialogTitle>
           <DialogDescription className="break-keep">
-            {hideDescription ?? "모든 화와 판 이력, 설정 노트가 함께 지워지고 되돌릴 수 없어요. 원래 대화방은 그대로예요."}
+            {hideDescription ??
+              (isPreviewMissing
+                ? "노벨에서 이 소설을 소장한 회원이 있으면 지우지 않고 숨기고, 없으면 지워요."
+                : "모든 화와 판 이력, 설정 노트가 함께 지워지고 되돌릴 수 없어요. 원래 대화방은 그대로예요.")}
             {hasActiveJob === true && " 진행 중인 작업은 멈추고, 쓴 클로버는 돌려드려요."}
             {hasActiveJob === undefined && " 진행 중인 작업이 있으면 멈추고, 쓴 클로버는 돌려드려요."}
           </DialogDescription>
@@ -97,7 +106,9 @@ export const DeleteNovelModal = createCallable<DeleteNovelModalProps, boolean>((
             소장한 회원에게 클로버는 돌려드리지 않아요 — 산 화를 계속 읽을 수 있어서예요.
           </p>
         )}
+        {isPreviewMissing && <RefundPreviewFailed isRetrying={detail.isFetching} onRetry={() => void detail.refetch()} />}
         {hideDescription === undefined &&
+          !isPreviewMissing &&
           (detail.data === undefined ? (
             <RefundNoticeBox preview={isPreviewPending ? "pending" : "unknown"} scope="novel" subject="이 소설의 화" />
           ) : (
@@ -119,7 +130,7 @@ export const DeleteNovelModal = createCallable<DeleteNovelModalProps, boolean>((
           <Button
             type="button"
             variant="destructive"
-            aria-disabled={isDeleting || isPreviewPending}
+            aria-disabled={isDeleting || isPreviewPending || isPreviewMissing}
             className="aria-disabled:opacity-65"
             onClick={() => void handleDelete()}
           >

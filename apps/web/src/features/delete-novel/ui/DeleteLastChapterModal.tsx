@@ -10,13 +10,15 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { useCloverPricingQuery } from "@/entities/clover";
 import { hasNovelErrorCode, novelKeys, novelScoped, toNovelActionError, useNovelQuery } from "@/entities/novel";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { useDeleteLastChapterMutation } from "../api/useDeleteLastChapterMutation";
 import { withDeleteConflictRetry } from "../lib/deleteConflictRetry";
-import { isLastBatchSold, LAST_BATCH_SOLD_REASON } from "../model/refundNotice";
+import { isLastBatchSold, isPreviewRequiredToDelete, LAST_BATCH_SOLD_REASON } from "../model/refundNotice";
 import { RefundNoticeBox } from "./RefundNoticeBox";
+import { RefundPreviewFailed } from "./RefundPreviewFailed";
 
 type DeleteLastChapterModalProps = {
   novelId: string;
@@ -49,7 +51,10 @@ export const DeleteLastChapterModal = createCallable<DeleteLastChapterModalProps
     const isDeleting = deleteMutation.isPending;
     const isPreviewPending = detail.isPending;
     const isSold = isLastBatchSold(detail.data?.purchaseRefunds);
-    const isBlocked = isDeleting || isPreviewPending || isSold;
+    const pricing = useCloverPricingQuery().data;
+    // 켜짐에서 상세를 받지 못했으면 그 화들이 팔렸는지 모른다 — 틀린 환급 고지로 지우게 두지 않고 다시 받게 한다.
+    const isPreviewMissing = detail.data === undefined && !isPreviewPending && isPreviewRequiredToDelete(pricing);
+    const isBlocked = isDeleting || isPreviewPending || isSold || isPreviewMissing;
 
     async function handleDelete() {
       if (isBlocked) return;
@@ -94,7 +99,11 @@ export const DeleteLastChapterModal = createCallable<DeleteLastChapterModalProps
               {LAST_BATCH_SOLD_REASON}
             </p>
           )}
+          {isPreviewMissing && (
+            <RefundPreviewFailed isRetrying={detail.isFetching} onRetry={() => void detail.refetch()} />
+          )}
           {!isSold &&
+            !isPreviewMissing &&
             (detail.data === undefined ? (
               <RefundNoticeBox preview={isPreviewPending ? "pending" : "unknown"} scope="lastBatch" subject={rangeLabel} />
             ) : (

@@ -32,3 +32,11 @@ export function isLastBatchSold(preview: Pick<NovelPurchaseRefundPreview, "lastB
 
 /** 판매된 마지막 묶음을 지울 수 없는 이유 — 보드 패널의 사유 줄과 지우기 확인 모달이 같은 문장을 쓴다. */
 export const LAST_BATCH_SOLD_REASON = "노벨에서 소장한 회원이 있는 화라 지울 수 없어요.";
+
+/** 삭제 전 확인 값(소설 상세)을 받지 못했을 때 지우기를 막고 다시 받게 하는가. 정책 스위치(가격 응답의
+ * `novelPublicPolicyV2Enabled`)가 켜져 있으면 판매된 소설은 지워지지 않고 숨겨지며(클로버를 돌려주지 않는다) 판매된
+ * 마지막 묶음은 지울 수 없어, 확인 값 없이는 맞는 안내를 할 수 없다. 꺼져 있거나 가격을 아직 못 받았으면 거짓 —
+ * 지금처럼 "소장한 회원이 있으면 돌려드려요"로 말하고 지우게 둔다. */
+export function isPreviewRequiredToDelete(pricing: { novelPublicPolicyV2Enabled?: boolean } | undefined): boolean {
+  return pricing?.novelPublicPolicyV2Enabled === true;
+}

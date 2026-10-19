@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isLastBatchSold, toNovelHideDescription, toRefundNotice } from "./refundNotice";
+import { isLastBatchSold, isPreviewRequiredToDelete, toNovelHideDescription, toRefundNotice } from "./refundNotice";
 
 describe("toRefundNotice", () => {
   it("소장한 회원이 없으면 고지하지 않는다", () => {
@@ -32,5 +32,15 @@ describe("isLastBatchSold", () => {
     expect(isLastBatchSold({ lastBatchSold: true })).toBe(true);
     expect(isLastBatchSold({ lastBatchSold: false })).toBe(false);
     expect(isLastBatchSold(undefined)).toBe(false);
+  });
+});
+
+describe("isPreviewRequiredToDelete", () => {
+  it("정책 스위치가 켜져 있으면 확인 값 없이 지우지 않는다", () => {
+    expect(isPreviewRequiredToDelete({ novelPublicPolicyV2Enabled: true })).toBe(true);
+  });
+
+  it.each([{ novelPublicPolicyV2Enabled: false }, {}, undefined])("꺼짐·옛 서버·가격을 못 받음이면 지금처럼 지우게 둔다 (%#)", (pricing) => {
+    expect(isPreviewRequiredToDelete(pricing)).toBe(false);
   });
 });
