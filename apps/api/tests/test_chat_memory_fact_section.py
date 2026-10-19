@@ -1502,6 +1502,36 @@ async def test_memory_switches_work_in_an_opus_room_under_the_default_scope(
     assert len(stub.bodies) == 1
 
 
+@pytest.mark.parametrize("lane", ["story", "character"])
+async def test_an_opus_room_builds_the_same_prompt_as_when_every_writing_model_is_in_the_scope(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, lane: PromptLane
+) -> None:
+    """범위 제한이 없던 코드는 모든 글쓰기 모델이 범위 안인 것과 같다. 기본 범위의 Opus 방은 기억 스위치를 다 켰을 때 그 넓은
+    범위로 조립한 턴과 프롬프트 바이트·SQL 문 수·질의 임베딩 호출 수가 같다 — 범위 제한이 Opus 방의 프롬프트를 바꾸지 않는다.
+    스위치를 끈 턴과는 달라야 기능이 실제로 켜진 채 비교한 것이다."""
+    room = await _memory_room(db_client, db_session, lane)
+
+    async def _build_under(scope: list[tuple[str, str]], *, on: bool) -> tuple[GenerationPrompt, int, int]:
+        monkeypatch.setattr(settings, "memory_model_scope", scope)
+        _memory_switches(monkeypatch, on)
+        stub = VoyageStub()
+        built, statements = await _built_and_statements(db_session, room, lane=lane, model="opus", stub=stub)
+        return built, statements, len(stub.bodies)
+
+    default_scope = [("story", "opus"), ("character", "opus")]
+    every_model = [(each_lane, model) for each_lane in ("story", "character") for model in ("gemini", "sonnet", "opus")]
+    scoped, scoped_statements, scoped_embeds = await _build_under(default_scope, on=True)
+    unscoped, unscoped_statements, unscoped_embeds = await _build_under(every_model, on=True)
+    switched_off, _, _ = await _build_under(default_scope, on=False)
+
+    assert scoped.prompt == unscoped.prompt
+    assert (scoped.memory_facts, scoped.memory_recall) == (unscoped.memory_facts, unscoped.memory_recall)
+    assert scoped_statements == unscoped_statements
+    assert scoped_embeds == unscoped_embeds == 1
+    assert scoped.prompt != switched_off.prompt
+    assert HEADER in scoped.prompt and RECALL_HEADER in scoped.prompt
+
+
 async def test_a_lane_scoped_entry_leaves_the_other_lane_of_the_same_model_out(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -915,6 +915,28 @@ async def test_secret_marking_outside_the_scope_leaves_the_summary_prompt_as_if_
     assert f"{_SLOT_HEAD}한서윤, Mina. 아는 사람을" in inside
 
 
+async def test_secret_marking_in_an_opus_turn_matches_a_scope_that_holds_every_writing_model(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """범위 제한이 없던 코드는 모든 글쓰기 모델이 범위 안인 것과 같다. Opus 가 쓴 턴의 접기는 기본 범위에서도 그 넓은 범위에서와
+    요약 프롬프트가 바이트까지 같다. 스위치를 끈 접기와는 달라야 슬롯이 실제로 실린 채 비교한 것이다."""
+    room = await _named_story_room_due_to_fold(db_client, db_session)
+    fake = SummaryLLMClient(*[LLMClientError("요약 실패")] * 3)
+    every_model = [(lane, model) for lane in ("story", "character") for model in ("gemini", "sonnet", "opus")]
+
+    monkeypatch.setattr(settings, "memory_summary_secret_marking", True)
+    monkeypatch.setattr(settings, "memory_model_scope", [("story", "opus"), ("character", "opus")])
+    scoped = await _fold_directly(db_session, room, fake, summary_model="gemini", writing_model="opus")
+    monkeypatch.setattr(settings, "memory_model_scope", every_model)
+    unscoped = await _fold_directly(db_session, room, fake, summary_model="gemini", writing_model="opus")
+    monkeypatch.setattr(settings, "memory_summary_secret_marking", False)
+    switched_off = await _fold_directly(db_session, room, fake, summary_model="gemini", writing_model="opus")
+
+    assert scoped == unscoped
+    assert scoped != switched_off
+    assert f"{_SLOT_HEAD}한서윤, Mina. 아는 사람을" in scoped
+
+
 @pytest.mark.parametrize(
     ("summary_model", "writing_model", "carried"),
     [
