@@ -8,7 +8,9 @@ import {
   toPublicPendingLines,
   toPublishRange,
   toPublishRequests,
+  toPublishPriceSentence,
   toRejectionNotice,
+  type PublishChoice,
 } from "./publicationView";
 
 function status(patch: Partial<NovelPublicationStatus>): NovelPublicationStatus {
@@ -41,6 +43,15 @@ function status(patch: Partial<NovelPublicationStatus>): NovelPublicationStatus 
 const PUBLIC = { published: true, visibility: "public", moderationStatus: "normal" } as const;
 const chapters = Array.from({ length: 8 }, (_, index) => ({ id: `c${index + 1}`, ordinal: index + 1 }));
 
+/** 가격·요약을 고르지 않은 선택(스위치 꺼짐에서 모달이 돌려주는 모양). */
+function plain(targetOrdinal: number): PublishChoice {
+  return { targetOrdinal, freeByOrdinal: {}, changeSummaries: {} };
+}
+
+function bodies(...ids: string[]) {
+  return ids.map((chapterId) => ({ chapterId }));
+}
+
 describe("toPublicationView", () => {
   it("공개한 적 없는 소설은 원작 판정에 따라 공개 가능·막힘으로 갈린다", () => {
     expect(toPublicationView(status({}))).toEqual({ kind: "unpublished" });
@@ -56,10 +67,10 @@ describe("toPublicationView", () => {
   });
 
   it("거둔 공개는 원작이 공개돼 있어야 다시 열 수 있다", () => {
-    expect(toPublicationView(status({ ...PUBLIC, visibility: "withdrawn" }))).toEqual({ kind: "withdrawn", canReopen: true });
+    expect(toPublicationView(status({ ...PUBLIC, visibility: "withdrawn" }))).toEqual({ kind: "withdrawn", canReopen: true, salesStopped: false });
     expect(
       toPublicationView(status({ ...PUBLIC, visibility: "withdrawn", republishBlock: "source_unavailable" })),
-    ).toEqual({ kind: "withdrawn", canReopen: false });
+    ).toEqual({ kind: "withdrawn", canReopen: false, salesStopped: false });
   });
 
   it("공개 중이면 새 화나 고친 내용이 있을 때만 다시 공개할 것이 있다", () => {
@@ -109,13 +120,14 @@ describe("toPublicationView 첫 공개 심사", () => {
   it("승인 없이 열 수 있게 된 대기는 거둔 공개로 보여 다시 공개할 수 있다", () => {
     expect(
       toPublicationView(status({ ...IN_REVIEW, reviewRequired: false, publishedChapterCount: 1, reviewStatus: "pending" })),
-    ).toEqual({ kind: "withdrawn", canReopen: true });
+    ).toEqual({ kind: "withdrawn", canReopen: true, salesStopped: false });
   });
 
   it("승인 없이 열 수 있게 된 반려는 거둔 공개로 보이고 원작이 막으면 다시 열 수 없다", () => {
     expect(toPublicationView(status({ ...IN_REVIEW, reviewRequired: false, reviewStatus: "rejected", reviewReason: "사유" }))).toEqual({
       kind: "withdrawn",
       canReopen: true,
+      salesStopped: false,
     });
     expect(
       toPublicationView(
@@ -127,7 +139,7 @@ describe("toPublicationView 첫 공개 심사", () => {
           newPublishBlock: "source_unavailable",
         }),
       ),
-    ).toEqual({ kind: "withdrawn", canReopen: false });
+    ).toEqual({ kind: "withdrawn", canReopen: false, salesStopped: false });
   });
 
   it("운영 조치는 승인 대기보다 앞선다", () => {
@@ -188,11 +200,11 @@ describe("toPublishRange", () => {
 
 describe("toPublishRequests", () => {
   it("1화부터 고른 화까지 한 화씩 차례로 보낸다", () => {
-    expect(toPublishRequests({ status: status({}), chapters, targetOrdinal: 3 })).toEqual(["c1", "c2", "c3"]);
+    expect(toPublishRequests({ status: status({}), chapters, choice: plain(3), isPolicyV2Enabled: false })).toEqual(bodies("c1", "c2", "c3"));
   });
 
   it("승인이 필요하면 첫 요청 하나만 보낸다", () => {
-    expect(toPublishRequests({ status: status({ reviewRequired: true }), chapters, targetOrdinal: 3 })).toEqual(["c1"]);
+    expect(toPublishRequests({ status: status({ reviewRequired: true }), chapters, choice: plain(3), isPolicyV2Enabled: false })).toEqual(bodies("c1"));
     // 반려 뒤 다시 신청 — 반려가 화 공개본을 지워 공개한 화가 없다.
     const rejected = status({
       published: true,
@@ -202,7 +214,7 @@ describe("toPublishRequests", () => {
       reviewRequired: true,
       changedChapterOrdinals: [1],
     });
-    expect(toPublishRequests({ status: rejected, chapters, targetOrdinal: 1 })).toEqual(["c1"]);
+    expect(toPublishRequests({ status: rejected, chapters, choice: plain(1), isPolicyV2Enabled: false })).toEqual(bodies("c1"));
   });
 
   it("고친 화를 먼저 다시 내고 그다음 새 화를 잇는다", () => {
@@ -210,20 +222,21 @@ describe("toPublishRequests", () => {
       toPublishRequests({
         status: status({ ...PUBLIC, publishedChapterCount: 5, changedChapterOrdinals: [4, 2] }),
         chapters,
-        targetOrdinal: 7,
+        choice: plain(7),
+      isPolicyV2Enabled: false,
       }),
-    ).toEqual(["c2", "c4", "c6", "c7"]);
+    ).toEqual(bodies("c2", "c4", "c6", "c7"));
   });
 
   it("화를 다시 낼 것이 없어도 제목·소개가 바뀌었거나 거둔 공개면 화 없이 한 번 보낸다", () => {
     const published = { ...PUBLIC, publishedChapterCount: 8 };
-    expect(toPublishRequests({ status: status({ ...published, metadataChanged: true }), chapters, targetOrdinal: 8 })).toEqual([
-      null,
+    expect(toPublishRequests({ status: status({ ...published, metadataChanged: true }), chapters, choice: plain(8), isPolicyV2Enabled: false })).toEqual([
+      { chapterId: null },
     ]);
     expect(
-      toPublishRequests({ status: status({ ...published, visibility: "withdrawn" }), chapters, targetOrdinal: 8 }),
-    ).toEqual([null]);
-    expect(toPublishRequests({ status: status(published), chapters, targetOrdinal: 8 })).toEqual([]);
+      toPublishRequests({ status: status({ ...published, visibility: "withdrawn" }), chapters, choice: plain(8), isPolicyV2Enabled: false }),
+    ).toEqual([{ chapterId: null }]);
+    expect(toPublishRequests({ status: status(published), chapters, choice: plain(8), isPolicyV2Enabled: false })).toEqual([]);
   });
 });
 
@@ -233,7 +246,7 @@ describe("toPublicPendingLines", () => {
       status({ ...PUBLIC, publishedChapterCount: 8, chapterCount: 10, changedChapterOrdinals: [3, 5], metadataChanged: true }),
     );
     if (view.kind !== "public") throw new Error("공개 중이어야 한다");
-    expect(toPublicPendingLines(view, { republishBlocked: false })).toEqual([
+    expect(toPublicPendingLines(view, { republishBlock: null })).toEqual([
       "9~10화는 아직 공개하지 않았어요.",
       "공개한 뒤 고친 화 2개(3화·5화)와 제목·소개가 노벨에는 아직 옛 내용이에요.",
     ]);
@@ -242,7 +255,7 @@ describe("toPublicPendingLines", () => {
   it("남은 것이 없으면 아무것도 말하지 않는다", () => {
     const view = toPublicationView(status({ ...PUBLIC, publishedChapterCount: 8 }));
     if (view.kind !== "public") throw new Error("공개 중이어야 한다");
-    expect(toPublicPendingLines(view, { republishBlocked: false })).toEqual([]);
+    expect(toPublicPendingLines(view, { republishBlock: null })).toEqual([]);
   });
 });
 
@@ -259,5 +272,157 @@ describe("toRejectionNotice", () => {
       message: "소개가 운영 정책에 맞지 않는 내용으로 확인돼 공개하지 못했어요. 소개를 고친 뒤 다시 공개해 주세요.",
       fixOrdinal: undefined,
     });
+  });
+});
+
+describe("판매 중단", () => {
+  const STOPPED = { ...PUBLIC, salesStopped: true } as const;
+
+  it("공개 중이어도 새 화·고친 내용을 다시 공개할 수 없다", () => {
+    expect(
+      toPublicationView(status({ ...STOPPED, publishedChapterCount: 6, changedChapterOrdinals: [2], metadataChanged: true })),
+    ).toMatchObject({ kind: "public", canRepublish: false, salesStopped: true });
+    expect(toPublicationView(status({ ...PUBLIC, publishedChapterCount: 6 }))).toMatchObject({ salesStopped: false });
+  });
+
+  it("거둔 공개는 다시 열 수 없다", () => {
+    expect(toPublicationView(status({ ...STOPPED, visibility: "withdrawn", republishBlock: "sales_stopped" }))).toEqual({
+      kind: "withdrawn",
+      canReopen: false,
+      salesStopped: true,
+    });
+    // 다시 열기 막음 이유 칸이 비어 있어도 판매 중단이면 막는다.
+    expect(toPublicationView(status({ ...STOPPED, visibility: "withdrawn" }))).toMatchObject({ canReopen: false });
+  });
+
+  it("운영 이용제한이 판매 중단보다 앞선다", () => {
+    expect(toPublicationView(status({ ...STOPPED, moderationStatus: "restricted" }))).toEqual({ kind: "restricted" });
+  });
+
+  it("새 화를 고를 수 없어 범위가 지금 공개 범위에 묶인다", () => {
+    expect(toPublishRange(status({ ...STOPPED, publishedChapterCount: 5 }))).toEqual({ min: 5, max: 5 });
+  });
+
+  it("남은 것을 말한 뒤 판매가 멈춘 동안 공개할 수 없다고 한 줄로 말하고 원작 탓을 하지 않는다", () => {
+    const view = toPublicationView(
+      status({
+        ...STOPPED,
+        publishedChapterCount: 6,
+        chapterCount: 8,
+        changedChapterOrdinals: [2],
+        newPublishBlock: "source_not_listed",
+      }),
+    );
+    if (view.kind !== "public") throw new Error("공개 중이어야 한다");
+    expect(toPublicPendingLines(view, { republishBlock: "sales_stopped" })).toEqual([
+      "7~8화는 아직 공개하지 않았어요.",
+      "공개한 뒤 고친 화 1개(2화)가 노벨에는 아직 옛 내용이에요.",
+      "판매가 멈춘 동안은 새 화와 고친 내용을 공개할 수 없어요.",
+    ]);
+  });
+
+  it("남은 것이 없으면 판매 중단 줄도 없다", () => {
+    const view = toPublicationView(status({ ...STOPPED, publishedChapterCount: 8 }));
+    if (view.kind !== "public") throw new Error("공개 중이어야 한다");
+    expect(toPublicPendingLines(view, { republishBlock: "sales_stopped" })).toEqual([]);
+  });
+});
+
+describe("toPublicPendingLines 다시 공개 막힘", () => {
+  it("원작이 공개돼 있지 않을 때만 원작 문장을 붙인다", () => {
+    const view = toPublicationView(status({ ...PUBLIC, publishedChapterCount: 8, changedChapterOrdinals: [3] }));
+    if (view.kind !== "public") throw new Error("공개 중이어야 한다");
+    expect(toPublicPendingLines(view, { republishBlock: "source_unavailable" })).toContain(
+      "원작이 지금 공개돼 있지 않아 고친 내용을 다시 공개할 수 없어요.",
+    );
+    expect(toPublicPendingLines(view, { republishBlock: "restricted" })).toEqual([
+      "공개한 뒤 고친 화 1개(3화)가 노벨에는 아직 옛 내용이에요.",
+    ]);
+  });
+});
+
+describe("toPublishRequests 가격·변경 요약", () => {
+  const republish = status({ ...PUBLIC, publishedChapterCount: 6, changedChapterOrdinals: [3, 6] });
+  const choice: PublishChoice = {
+    targetOrdinal: 8,
+    freeByOrdinal: { 7: true, 8: false },
+    changeSummaries: { 3: "  오타를 고쳤어요 ", 6: "결말 문단을 바꿨어요" },
+  };
+
+  it("켜짐: 새 화에 고른 가격을, 다시 내는 화에 공백을 던 변경 요약을 싣고 다시 내는 화 가격은 비운다", () => {
+    expect(toPublishRequests({ status: republish, chapters, choice, isPolicyV2Enabled: true })).toEqual([
+      { chapterId: "c3", changeSummary: "오타를 고쳤어요" },
+      { chapterId: "c6", changeSummary: "결말 문단을 바꿨어요" },
+      { chapterId: "c7", free: true },
+      { chapterId: "c8", free: false },
+    ]);
+  });
+
+  it("켜짐: 가격을 고르지 않은 새 화(앞 화·무료 고정 번호)는 가격 칸을 비운다", () => {
+    expect(
+      toPublishRequests({
+        status: status({}),
+        chapters,
+        choice: { targetOrdinal: 7, freeByOrdinal: { 6: false }, changeSummaries: {} },
+        isPolicyV2Enabled: true,
+      }),
+    ).toEqual([...bodies("c1", "c2", "c3", "c4", "c5"), { chapterId: "c6", free: false }, { chapterId: "c7" }]);
+  });
+
+  it("켜짐: 요약이 비었거나 공백뿐이면 싣지 않는다", () => {
+    expect(
+      toPublishRequests({
+        status: republish,
+        chapters,
+        choice: { targetOrdinal: 6, freeByOrdinal: {}, changeSummaries: { 3: "   " } },
+        isPolicyV2Enabled: true,
+      }),
+    ).toEqual(bodies("c3", "c6"));
+  });
+
+  it("꺼짐: 고른 가격·요약이 있어도 싣지 않는다", () => {
+    expect(toPublishRequests({ status: republish, chapters, choice, isPolicyV2Enabled: false })).toEqual(
+      bodies("c3", "c6", "c7", "c8"),
+    );
+  });
+});
+
+describe("toRejectionNotice 변경 요약", () => {
+  it("요약만 걸리면 고치러 갈 화 없이 요약을 고쳐 다시 공개하라고 한다", () => {
+    expect(toRejectionNotice({ chapterOrdinal: 3, flaggedParts: ["change_summary"] })).toEqual({
+      message:
+        "3화의 변경 요약이 운영 정책에 맞지 않는 내용으로 확인돼 공개하지 못했어요. 변경 요약을 고친 뒤 다시 공개해 주세요.",
+      fixOrdinal: undefined,
+    });
+  });
+
+  it("본문과 함께 걸리면 둘 다 말하고 고치러 갈 화를 남긴다", () => {
+    expect(toRejectionNotice({ chapterOrdinal: 3, flaggedParts: ["chapter_body", "change_summary"] })).toEqual({
+      message:
+        "3화의 본문·변경 요약이 운영 정책에 맞지 않는 내용으로 확인돼 공개하지 못했어요. 3화와 변경 요약을 고친 뒤 다시 공개해 주세요.",
+      fixOrdinal: 3,
+    });
+  });
+
+  it("소개와 함께 걸리면 소개와 요약을 고치라고 한다", () => {
+    expect(toRejectionNotice({ chapterOrdinal: 3, flaggedParts: ["synopsis", "change_summary"] })).toEqual({
+      message:
+        "소개, 3화의 변경 요약이 운영 정책에 맞지 않는 내용으로 확인돼 공개하지 못했어요. 소개와 변경 요약을 고친 뒤 다시 공개해 주세요.",
+      fixOrdinal: undefined,
+    });
+  });
+});
+
+describe("toPublishPriceSentence", () => {
+  it("꺼짐은 번호로 정해진 가격을 말한다", () => {
+    expect(toPublishPriceSentence({ freeChapterCount: 5, chapterPrice: 30, isPolicyV2Enabled: false })).toBe(
+      "1~5화는 무료, 그 뒤 화는 화마다 클로버 30개예요.",
+    );
+  });
+
+  it("켜짐은 그 뒤 화를 화마다 고른다고 말한다", () => {
+    expect(toPublishPriceSentence({ freeChapterCount: 5, chapterPrice: 30, isPolicyV2Enabled: true })).toBe(
+      "1~5화는 무료이고, 그 뒤 화는 공개할 때 화마다 무료나 유료(클로버 30개)를 골라요.",
+    );
   });
 });
