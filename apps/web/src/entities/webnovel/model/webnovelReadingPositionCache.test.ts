@@ -41,6 +41,7 @@ function detail(finished: boolean): WebnovelDetailResponse {
     lastRead: null,
     firstPublishedAt: "2026-10-09T00:00:00Z",
     publishedAt: "2026-10-09T00:00:00Z",
+    salesStopped: false,
   };
 }
 
