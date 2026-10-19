@@ -54,7 +54,7 @@ from api.db.models.novel import (
 from api.db.session import get_db_session
 from api.legal.documents import current_legal_version
 from api.novel_public.access import judge_source, select_readable_publications
-from api.novel_public.purchases import lock_novel_parties, refund_closing_purchases
+from api.novel_public.purchases import chapter_price, lock_novel_parties, refund_closing_purchases
 from api.novel_public.admin_schemas import (
     AdminNovelChapterItem,
     AdminNovelChapterResponse,
@@ -283,7 +283,14 @@ async def _detail(db: AsyncSession, novel_id: uuid.UUID) -> AdminNovelDetailResp
         publisher_suspended=publisher.suspended_at is not None,
         first_published_at=publication.first_published_at,
         chapters=[
-            AdminNovelChapterItem(id=c.chapter_id, ordinal=c.ordinal, title=c.title, edition=c.edition) for c in chapters
+            AdminNovelChapterItem(
+                id=c.chapter_id,
+                ordinal=c.ordinal,
+                title=c.title,
+                edition=c.edition,
+                price=chapter_price(c.ordinal, c.price),
+            )
+            for c in chapters
         ],
         screenings=[
             AdminNovelScreeningItem(

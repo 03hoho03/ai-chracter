@@ -8211,6 +8211,60 @@
         }
       }
     },
+    "/novels/{novel_id}/publication/chapters/{chapter_id}/free": {
+      "post": {
+        "tags": [
+          "novels"
+        ],
+        "summary": "Make Novel Chapter Free",
+        "description": "공개한 유료 화를 무료로 바꾸고 바뀐 공개 상태를 돌려준다(`make_chapter_free`).",
+        "operationId": "make_novel_chapter_free_novels__novel_id__publication_chapters__chapter_id__free_post",
+        "parameters": [
+          {
+            "name": "novel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Novel Id"
+            }
+          },
+          {
+            "name": "chapter_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chapter Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovelPublicationStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/novels/{novel_id}/publication/withdraw": {
       "post": {
         "tags": [
@@ -17882,6 +17936,10 @@
           "edition": {
             "type": "integer",
             "title": "Edition"
+          },
+          "price": {
+            "type": "integer",
+            "title": "Price"
           }
         },
         "type": "object",
@@ -17889,9 +17947,11 @@
           "id",
           "ordinal",
           "title",
-          "edition"
+          "edition",
+          "price"
         ],
-        "title": "AdminNovelChapterItem"
+        "title": "AdminNovelChapterItem",
+        "description": "공개 화 한 줄. `price` 는 그 화의 지금 가격(0 = 무료)이다."
       },
       "AdminNovelChapterResponse": {
         "properties": {
@@ -28195,7 +28255,7 @@
           "expectedPrice"
         ],
         "title": "NovelChapterPurchaseRequest",
-        "description": "`expected_price` 는 구매 확인 화면에 보인 가격이다. 지금 가격과 다르면 사지 않는다 — 배포로 가격이 바뀌는 사이 열어 둔\n화면의 금액으로 차감하지 않으려는 것이다(소설화의 `expected_cost` 와 같은 규칙)."
+        "description": "`expected_price` 는 구매 확인 화면에 보인 가격이다. 그 화의 지금 가격과 다르면 사지 않는다 — 확인 화면에 보이지 않은\n금액으로 차감하지 않으려는 것이다(소설화의 `expected_cost` 와 같은 규칙)."
       },
       "NovelChapterPurchaseResponse": {
         "properties": {
@@ -29439,6 +29499,13 @@
             "type": "integer",
             "title": "Publishedchaptercount"
           },
+          "publishedChapters": {
+            "items": {
+              "$ref": "#/components/schemas/NovelPublishedChapter"
+            },
+            "type": "array",
+            "title": "Publishedchapters"
+          },
           "chapterCount": {
             "type": "integer",
             "title": "Chaptercount"
@@ -29584,6 +29651,7 @@
           "visibility",
           "moderationStatus",
           "publishedChapterCount",
+          "publishedChapters",
           "chapterCount",
           "changedChapterOrdinals",
           "metadataChanged",
@@ -29600,7 +29668,7 @@
           "reviewRequired"
         ],
         "title": "NovelPublicationStatusResponse",
-        "description": "게시자가 보는 공개 상태. 화면이 이 값들로 \"공개 전·공개 중·확인 실패·원작 허락 미달·원작 비공개·허락 하향 뒤·운영\n조치\" 상태를 가른다(\"확인 중\"과 심사 장애는 요청 중·요청 실패로 화면이 안다).\n\n- `published`: 공개 상태 행이 있는가(한 번이라도 공개했는가). 거둔 뒤에도 참이다.\n- `visibility`·`moderation_status`: 공개 범위·이용제한 두 축. 공개한 적이 없으면 비어 있다.\n- `published_chapter_count`: 1화부터 이어진 공개 화 수. `chapter_count` 는 소설의 화 수다.\n- `changed_chapter_ordinals`·`metadata_changed`: 공개한 뒤 고쳐서 공개본과 다른 화·소설 제목·소개. 다시 공개해야\n  반영된다.\n- `new_publish_block`: 새로 공개(처음 공개·다음 화)할 수 없는 이유. 없으면 비어 있다.\n- `republish_block`: 이미 공개한 것을 다시 내거나 거둔 공개를 다시 열 수 없는 이유.\n- `screening_rejections_left`: 오늘 더 걸릴 수 있는 심사 횟수(상한 `screening_rejection_limit`). 상한을 적용하지 않는\n  계정이면 비어 있다.\n- `review_status`: 첫 공개의 운영자 심사 — 대기·승인·반려. 심사 없이 공개됐거나 공개한 적이 없으면 비어 있다. 대기·\n  반려인 동안 `visibility` 는 `withdrawn` 이지만 게시자가 거둔 것이 아니다.\n- `review_reason`: 반려 사유. 운영자가 쓴 글 그대로이고 반려일 때만 있다. `reviewed_at` 은 마지막 승인·반려 시각이다.\n- `review_required`: 지금 공개하면 독자에게 바로 열리지 않고 운영자 승인을 기다리는가(정책 스위치가 켜졌고 아직 독자에게\n  보인 적 없는 소설)."
+        "description": "게시자가 보는 공개 상태. 화면이 이 값들로 \"공개 전·공개 중·확인 실패·원작 허락 미달·원작 비공개·허락 하향 뒤·운영\n조치\" 상태를 가른다(\"확인 중\"과 심사 장애는 요청 중·요청 실패로 화면이 안다).\n\n- `published`: 공개 상태 행이 있는가(한 번이라도 공개했는가). 거둔 뒤에도 참이다.\n- `visibility`·`moderation_status`: 공개 범위·이용제한 두 축. 공개한 적이 없으면 비어 있다.\n- `published_chapter_count`: 1화부터 이어진 공개 화 수. `chapter_count` 는 소설의 화 수다.\n- `published_chapters`: 공개한 화마다 가격(번호 순). 화면이 무료로 공개한 화를 고정으로 그리고 유료 화에 \"무료로 전환\"을\n  건다.\n- `changed_chapter_ordinals`·`metadata_changed`: 공개한 뒤 고쳐서 공개본과 다른 화·소설 제목·소개. 다시 공개해야\n  반영된다.\n- `new_publish_block`: 새로 공개(처음 공개·다음 화)할 수 없는 이유. 없으면 비어 있다.\n- `republish_block`: 이미 공개한 것을 다시 내거나 거둔 공개를 다시 열 수 없는 이유.\n- `screening_rejections_left`: 오늘 더 걸릴 수 있는 심사 횟수(상한 `screening_rejection_limit`). 상한을 적용하지 않는\n  계정이면 비어 있다.\n- `review_status`: 첫 공개의 운영자 심사 — 대기·승인·반려. 심사 없이 공개됐거나 공개한 적이 없으면 비어 있다. 대기·\n  반려인 동안 `visibility` 는 `withdrawn` 이지만 게시자가 거둔 것이 아니다.\n- `review_reason`: 반려 사유. 운영자가 쓴 글 그대로이고 반려일 때만 있다. `reviewed_at` 은 마지막 승인·반려 시각이다.\n- `review_required`: 지금 공개하면 독자에게 바로 열리지 않고 운영자 승인을 기다리는가(정책 스위치가 켜졌고 아직 독자에게\n  보인 적 없는 소설)."
       },
       "NovelPublishRequest": {
         "properties": {
@@ -29615,11 +29683,47 @@
               }
             ],
             "title": "Chapterid"
+          },
+          "free": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free"
           }
         },
         "type": "object",
         "title": "NovelPublishRequest",
-        "description": "공개 요청 하나 = 화 하나(또는 소설 제목·소개만). `chapter_id` 가 다음 화(공개한 화 수 + 1번째)면 그 화를 새로\n공개하고, 이미 공개한 화면 바뀐 경우 다시 공개한다. 비우면 소설 제목·소개만 다시 공개한다(처음 공개에는 1화가 있어야\n한다). 어느 경우든 소설 제목·소개가 공개본과 다르면 같은 요청에서 함께 심사해 다시 공개하고, 거둔 공개는 다시 연다.\n\n여러 화를 한 요청에 받지 않는 것은 심사 호출이 화마다 수 초 걸려 요청 하나가 그만큼 붙잡히기 때문이다 — 화면이 1화부터\n한 화씩 부르면 앞 화까지는 공개된 채로 남고 이어짐도 요청마다 지켜진다."
+        "description": "공개 요청 하나 = 화 하나(또는 소설 제목·소개만). `chapter_id` 가 다음 화(공개한 화 수 + 1번째)면 그 화를 새로\n공개하고, 이미 공개한 화면 바뀐 경우 다시 공개한다. 비우면 소설 제목·소개만 다시 공개한다(처음 공개에는 1화가 있어야\n한다). 어느 경우든 소설 제목·소개가 공개본과 다르면 같은 요청에서 함께 심사해 다시 공개하고, 거둔 공개는 다시 연다.\n\n여러 화를 한 요청에 받지 않는 것은 심사 호출이 화마다 수 초 걸려 요청 하나가 그만큼 붙잡히기 때문이다 — 화면이 1화부터\n한 화씩 부르면 앞 화까지는 공개된 채로 남고 이어짐도 요청마다 지켜진다.\n\n`free` 는 새로 공개하는 화의 가격 선택이다(정책 스위치가 켜졌을 때만 본다). 참이면 무료, 거짓이면 유료(화당 가격)이고,\n비우면 앞 화(`NOVEL_FREE_CHAPTER_COUNT` 까지)는 무료·그 뒤는 유료다. 앞 화는 유료로 낼 수 없다(409\n`NOVEL_CHAPTER_PRICE_LOCKED`). 이미 공개한 화를 다시 낼 때 비우면 지금 가격을 그대로 두고 — 이 칸을 모르는 옛 화면도 무료로\n공개한 화를 고쳐 다시 낼 수 있게 — 무료로 공개한 화에 거짓을 보내면 409 `NOVEL_CHAPTER_PRICE_LOCKED`(무료로 공개한 화는\n다시 유료가 되지 않는다), 유료 화에 참을 보내면 409 `NOVEL_CHAPTER_ALREADY_PRICED`(무료로 바꾸기는 따로 있는 \"무료로\n전환\"만 한다 — 다시 공개 흐름을 타면 심사·판 올림이 따라온다). 스위치가 꺼져 있으면 이 칸을 보지 않고 새 화는 앞 화 무료·\n그 뒤 유료로 저장한다(지금 약관의 규칙)."
+      },
+      "NovelPublishedChapter": {
+        "properties": {
+          "chapterId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Chapterid"
+          },
+          "ordinal": {
+            "type": "integer",
+            "title": "Ordinal"
+          },
+          "price": {
+            "type": "integer",
+            "title": "Price"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chapterId",
+          "ordinal",
+          "price"
+        ],
+        "title": "NovelPublishedChapter",
+        "description": "공개한 화 하나와 지금 가격(0 = 무료). 앞 화는 늘 0 이다."
       },
       "NovelPurchaseRefundPreview": {
         "properties": {
@@ -30660,7 +30764,7 @@
           "readingPosition"
         ],
         "title": "PublicNovelChapterItem",
-        "description": "목차의 화 한 줄. `title` 은 공개본 화 제목(비어 있으면 화면이 \"n화\"로 그린다). `price` 는 앞 무료 화가 아니면 지금\n화당 가격이고 무료 화면 비어 있다(소장·게시자 본인이어도 가격은 싣고, 표식은 `access` 로 고른다)."
+        "description": "목차의 화 한 줄. `title` 은 공개본 화 제목(비어 있으면 화면이 \"n화\"로 그린다). `price` 는 그 화의 가격이고 무료 화면\n비어 있다 — 앞 화와 작가가 무료로 공개하거나 무료로 바꾼 화(소장·게시자 본인이어도 가격은 싣고, 표식은 `access` 로\n고른다). 산 뒤 무료가 된 화는 산 사람에게도 `free` 다."
       },
       "PublicNovelChapterLink": {
         "properties": {
@@ -31068,7 +31172,7 @@
           "publishedAt"
         ],
         "title": "PublicNovelDetailResponse",
-        "description": "노벨 작품 정보. 제목·소개·화 제목은 공개본 사본이다.\n\n- `is_publisher`: 보는 사람이 게시자 본인인가(모든 화를 무료로 읽고, 화면이 \"내 소설에서 관리\"를 보인다).\n- `free_chapter_count`·`chapter_price`: \"1~5화 무료 · 6화부터 화당 30클로버\" 안내용 지금 설정값.\n- `liked`: 보는 사람이 좋아요했는가.\n- `sales_stopped`: 새로 보이거나 팔리지 않는 노벨을 소장자가 열었다(게시자의 거둠·정지, 원작자 정지로 인한 원작 일괄\n  제한, 판매된 소설 삭제). 산 화·무료 화·목차는 그대로 읽고, 사지 않은 유료 화는 잠김으로 보이되 살 수 없다."
+        "description": "노벨 작품 정보. 제목·소개·화 제목은 공개본 사본이다.\n\n- `is_publisher`: 보는 사람이 게시자 본인인가(모든 화를 무료로 읽고, 화면이 \"내 소설에서 관리\"를 보인다).\n- `free_chapter_count`·`chapter_price`: 앞 무료 화 수와 새로 공개하는 유료 화의 화당 가격(지금 설정값). 6화 이후에도\n  작가가 무료로 둔 화가 있을 수 있고 이미 공개한 화의 가격은 공개 때 값이므로, 화마다의 값은 목차의 `price` 다.\n- `liked`: 보는 사람이 좋아요했는가.\n- `sales_stopped`: 새로 보이거나 팔리지 않는 노벨을 소장자가 열었다(게시자의 거둠·정지, 원작자 정지로 인한 원작 일괄\n  제한, 판매된 소설 삭제). 산 화·무료 화·목차는 그대로 읽고, 사지 않은 유료 화는 잠김으로 보이되 살 수 없다."
       },
       "PublicNovelHomeItem": {
         "properties": {

@@ -58,10 +58,13 @@ class AdminNovelListResponse(CamelModel):
 
 
 class AdminNovelChapterItem(CamelModel):
+    """공개 화 한 줄. `price` 는 그 화의 지금 가격(0 = 무료)이다."""
+
     id: uuid.UUID
     ordinal: int
     title: str | None
     edition: int
+    price: int
 
 
 class AdminNovelScreeningItem(CamelModel):

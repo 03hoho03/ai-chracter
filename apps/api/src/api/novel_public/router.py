@@ -1,4 +1,4 @@
-"""노벨 게시자 라우트 — 공개 상태 조회, 공개(처음 공개·다음 화·다시 공개), 공개 거두기.
+"""노벨 게시자 라우트 — 공개 상태 조회, 공개(처음 공개·다음 화·다시 공개), 화 무료로 전환, 공개 거두기.
 
 조회와 공개는 소설화 접근 게이트와 노벨 스위치 게이트를 라우터 수준에서 거친다 — 공개할 수 있는 사람은 소설화를 쓸 수 있는
 계정뿐이다. 공개 거두기는 두 게이트 밖의 두 번째 라우터에 있고 로그인·소유권만 본다. 자기 글을 내리는 일은 기능 허용과
@@ -29,6 +29,12 @@
 그 위의 공개 요청은 처음 공개와 같이 지금 원작 판정을 거친다. 잠금은 스위치와 무관하게 결과가 독자에게 열리는 쓰기(또는
 승인)에서 찍힌다.
 
+**화별 가격** — 가격은 화를 처음 공개할 때 정해 화 공개본에 얼린다(`NovelPublishRequest.free`). 앞 화
+(`NOVEL_FREE_CHAPTER_COUNT` 까지)는 늘 무료이고, 정책 스위치가 켜져 있으면 그 뒤 화마다 무료·유료를 고른다(꺼져 있으면
+지금 약관대로 그 뒤는 유료). 다시 공개는 가격을 덮지 않으므로 무료로 공개한 화는 무료로 남는다. 유료 화를 무료로 바꾸는
+것은 따로 있는 "무료로 전환"(`make_chapter_free`, 스위치가 켜졌을 때만)뿐이다 — 글이 바뀌지 않으므로 심사·판 올림·공개 시각
+갱신이 없고, 거둔 공개를 다시 열지 않으며, 이미 산 사람에게 환불하지 않는다. 무료에서 유료로 가는 길은 없다.
+
 공개 화면에 내보내는 표지는 원작 썸네일뿐이라 공개본에 표지 사본을 두지 않는다(소설 생성 표지는 심사를 거친 적이 없다)."""
 
 import logging
@@ -44,6 +50,7 @@ from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.chat.prompt_builder import PromptRenderError, PromptSetNotFoundError, load_active_prompt_set
+from api.core import clover
 from api.core.config import settings
 from api.core.sentry import capture_dependency_failure
 from api.db.models.novel import (
@@ -62,9 +69,11 @@ from api.legal.documents import current_legal_version
 from api.llm.client import LLMClient, LLMClientError, LLMRateLimitError
 from api.llm.dependencies import get_llm_client
 from api.novel_public.access import RepublishBlock, judge_source, require_novel_public_enabled
+from api.novel_public.purchases import chapter_price
 from api.novel_public.schemas import (
     NovelPublicationScreening,
     NovelPublicationStatusResponse,
+    NovelPublishedChapter,
     NovelPublishRequest,
 )
 from api.novel_public.screening import (
@@ -101,7 +110,9 @@ def _error(status_code: int, code: str, **extra: object) -> HTTPException:
 # ── 계획 ────────────────────────────────────────────────────────────────────
 @dataclass(frozen=True)
 class _ChapterPlan:
-    """공개하거나 다시 낼 화 하나와 그때 얼릴 값."""
+    """공개하거나 다시 낼 화 하나와 그때 얼릴 값. `price` 는 새로 공개하는 화면 그때 저장할 가격, 다시 내는 화면 지금 가격이다
+    — 다시 내기는 가격을 쓰지 않지만 재계획 비교에 들어가, 심사를 기다리는 사이 그 화가 무료로 바뀌면 쓰지 않고 409
+    `NOVEL_PUBLISH_CONFLICT` 다(다시 누르면 된다)."""
 
     chapter_id: uuid.UUID
     ordinal: int
@@ -110,6 +121,7 @@ class _ChapterPlan:
     author_note: str
     body: str
     is_new: bool
+    price: int
 
 
 @dataclass(frozen=True)
@@ -174,8 +186,26 @@ async def _published_count(db: AsyncSession, novel_id: uuid.UUID) -> int:
     return count or 0
 
 
+def _price_for(ordinal: int, frozen: NovelChapterPublication | None, free: bool | None) -> int:
+    """이 요청이 그 화에 둘 가격(`NovelPublishRequest.free` 의 규칙). 이미 공개한 화는 지금 가격을 돌려준다(쓰지 않는다).
+    정책 스위치가 꺼져 있으면 요청의 선택을 보지 않는다."""
+    choice = free if settings.novel_public_policy_v2_enabled else None
+    if frozen is not None:
+        current = chapter_price(frozen.ordinal, frozen.price)
+        if choice is False and current == 0:
+            raise _error(status.HTTP_409_CONFLICT, "NOVEL_CHAPTER_PRICE_LOCKED")
+        if choice is True and current > 0:
+            raise _error(status.HTTP_409_CONFLICT, "NOVEL_CHAPTER_ALREADY_PRICED")
+        return current
+    if ordinal <= clover.NOVEL_FREE_CHAPTER_COUNT:
+        if choice is False:
+            raise _error(status.HTTP_409_CONFLICT, "NOVEL_CHAPTER_PRICE_LOCKED")
+        return 0
+    return 0 if choice is True else clover.NOVEL_READ_COST
+
+
 async def _plan(
-    db: AsyncSession, novel: Novel, user_id: uuid.UUID, chapter_id: uuid.UUID | None
+    db: AsyncSession, novel: Novel, user_id: uuid.UUID, chapter_id: uuid.UUID | None, free: bool | None
 ) -> _PublishPlan:
     publication = await db.get(NovelPublication, novel.id, populate_existing=True)
     if publication is not None and publication.moderation_status == "restricted":
@@ -211,6 +241,7 @@ async def _plan(
             raise _error(status.HTTP_409_CONFLICT, "NOVEL_PUBLISH_NOT_CONTIGUOUS", nextOrdinal=published + 1)
         revision = await _current_revision(db, chapter.id)
         frozen = await db.get(NovelChapterPublication, chapter.id, populate_existing=True)
+        price = _price_for(chapter.ordinal, frozen, free)
         chapter_is_new = frozen is None
         is_new = is_new or chapter_is_new
         if frozen is None or await _chapter_changed(db, frozen, chapter, revision):
@@ -222,6 +253,7 @@ async def _plan(
                 author_note=chapter.author_note,
                 body=revision.body,
                 is_new=chapter_is_new,
+                price=price,
             )
     if is_new and gate.new_publish_block is not None:
         status_code = status.HTTP_403_FORBIDDEN if gate.new_publish_block == "source_permission" else 409
@@ -285,6 +317,19 @@ async def _changed_chapter_ordinals(db: AsyncSession, novel_id: uuid.UUID) -> li
     return list(rows.all())
 
 
+async def _published_chapters(db: AsyncSession, novel_id: uuid.UUID) -> list[NovelPublishedChapter]:
+    rows = await db.execute(
+        select(NovelChapterPublication.chapter_id, NovelChapterPublication.ordinal, NovelChapterPublication.price)
+        .where(NovelChapterPublication.novel_id == novel_id)
+        .order_by(NovelChapterPublication.ordinal)
+        .execution_options(populate_existing=True)
+    )
+    return [
+        NovelPublishedChapter(chapter_id=chapter_id, ordinal=ordinal, price=chapter_price(ordinal, price))
+        for chapter_id, ordinal, price in rows.tuples()
+    ]
+
+
 async def _status(db: AsyncSession, novel: Novel, user_id: uuid.UUID) -> NovelPublicationStatusResponse:
     publication = await db.get(NovelPublication, novel.id, populate_existing=True)
     gate = await judge_source(db, novel.content_id, user_id, permission_locked=lock_in_effect(novel))
@@ -307,6 +352,7 @@ async def _status(db: AsyncSession, novel: Novel, user_id: uuid.UUID) -> NovelPu
         visibility=publication.visibility if publication is not None else None,
         moderation_status=publication.moderation_status if publication is not None else None,
         published_chapter_count=await _published_count(db, novel.id),
+        published_chapters=await _published_chapters(db, novel.id),
         chapter_count=chapter_count or 0,
         changed_chapter_ordinals=await _changed_chapter_ordinals(db, novel.id) if publication is not None else [],
         metadata_changed=publication is not None
@@ -398,6 +444,7 @@ async def _apply(db: AsyncSession, novel: Novel, plan: _PublishPlan, *, terms_ve
                 revision_id=chapter.revision_id,
                 title=chapter.title,
                 author_note=chapter.author_note,
+                price=chapter.price,
             )
         )
         await db.flush()
@@ -474,12 +521,12 @@ def _screening_row(
 
 
 async def _lock_and_replan(
-    db: AsyncSession, novel_id: uuid.UUID, user_id: uuid.UUID, chapter_id: uuid.UUID | None, planned: _PublishPlan
+    db: AsyncSession, novel_id: uuid.UUID, user_id: uuid.UUID, body: NovelPublishRequest, planned: _PublishPlan
 ) -> Novel:
     """쓰기 구간의 시작. 사용자 행을 잠근 뒤 계획을 다시 세워 읽기 구간의 것과 같은지 본다."""
     await _lock_user(db, user_id)
     novel = await _get_owned_novel(db, novel_id, user_id)
-    if await _plan(db, novel, user_id, chapter_id) != planned:
+    if await _plan(db, novel, user_id, body.chapter_id, body.free) != planned:
         raise _error(status.HTTP_409_CONFLICT, "NOVEL_PUBLISH_CONFLICT")
     return novel
 
@@ -522,7 +569,7 @@ async def publish_novel(
     now = datetime.now(UTC)
     async with session_factory() as read_db:
         novel = await _get_owned_novel(read_db, novel_id, user_id)
-        plan = await _plan(read_db, novel, user_id, body.chapter_id)
+        plan = await _plan(read_db, novel, user_id, body.chapter_id, body.free)
         if plan.items:
             await enforce_rejection_limit(read_db, user_id, now)
             try:
@@ -539,7 +586,7 @@ async def publish_novel(
         except (LLMClientError, PromptRenderError) as exc:
             raise _screening_unavailable(exc) from exc
 
-    novel = await _lock_and_replan(db, novel_id, user_id, body.chapter_id, plan)
+    novel = await _lock_and_replan(db, novel_id, user_id, body, plan)
     if verdict is not None and not verdict.passed:
         db.add(
             _screening_row(
@@ -563,6 +610,53 @@ async def publish_novel(
         await db.commit()
         # 잠금은 ORM 객체를 거치지 않는 UPDATE 로 찍혀 객체의 잠금 칸이 낡았다. 상태 응답의 승인 필요 여부가 그 칸을 본다.
         await db.refresh(novel)
+    return await _status(db, novel, user_id)
+
+
+async def make_chapter_free(
+    db: AsyncSession, *, user_id: uuid.UUID, novel_id: uuid.UUID, chapter_id: uuid.UUID
+) -> None:
+    """게시자가 공개한 유료 화를 무료로 바꾼다. **커밋하지 않는다**(라우트가 한다). 그 화의 가격 칸과 바꾼 시각만 쓴다 —
+    글이 바뀌지 않으므로 심사·판 올림·판 행·공개 상태(공개 범위·공개 시각)는 그대로다. 이미 무료인 화면 아무것도 쓰지
+    않는다. 산 사람의 구매는 그대로 두고 환불하지 않는다.
+
+    - 409 `NOVEL_PRICE_CHOICE_DISABLED`: 정책 스위치가 꺼져 있다(지금 약관은 화 번호로 가격을 정한다).
+    - 404 `NOVEL_NOT_FOUND`·403 `NOVEL_FORBIDDEN`: 없는(숨긴) 소설·남의 소설.
+    - 404 `NOVEL_CHAPTER_NOT_FOUND`: 그 소설의 공개한 화가 아니다.
+
+    게시자 행을 먼저 잠근다 — 구매도 게시자 행을 잡으므로 둘은 줄을 서고, 뒤에 선 구매는 잠근 뒤 다시 읽은 가격(0)으로 살
+    것이 없다고 거절하며, 앞선 구매는 낸 그대로 남는다."""
+    if not settings.novel_public_policy_v2_enabled:
+        raise _error(status.HTTP_409_CONFLICT, "NOVEL_PRICE_CHOICE_DISABLED")
+    await _lock_user(db, user_id)
+    await _get_owned_novel(db, novel_id, user_id)
+    publication = await db.scalar(
+        select(NovelChapterPublication)
+        .where(NovelChapterPublication.chapter_id == chapter_id, NovelChapterPublication.novel_id == novel_id)
+        .execution_options(populate_existing=True)
+    )
+    if publication is None:
+        raise _error(status.HTTP_404_NOT_FOUND, "NOVEL_CHAPTER_NOT_FOUND")
+    if chapter_price(publication.ordinal, publication.price) == 0:
+        return
+    await db.execute(
+        update(NovelChapterPublication)
+        .where(NovelChapterPublication.chapter_id == chapter_id)
+        .values(price=0, price_changed_at=func.now())
+    )
+
+
+@router.post("/{novel_id}/publication/chapters/{chapter_id}/free", dependencies=[Depends(require_legal_consent)])
+async def make_novel_chapter_free(
+    novel_id: uuid.UUID,
+    chapter_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> NovelPublicationStatusResponse:
+    """공개한 유료 화를 무료로 바꾸고 바뀐 공개 상태를 돌려준다(`make_chapter_free`)."""
+    await make_chapter_free(db, user_id=user_id, novel_id=novel_id, chapter_id=chapter_id)
+    await db.commit()
+    novel = await _get_owned_novel(db, novel_id, user_id)
     return await _status(db, novel, user_id)
 
 

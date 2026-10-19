@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.core.config import settings
 from api.db.models import (
     AdminActionLog,
+    NovelChapterPublication,
     NovelComment,
     NovelCommentReport,
     NovelPublication,
@@ -172,9 +173,14 @@ async def test_admin_purchase_totals_keep_a_withdrawn_buyers_purchase(
 async def test_admin_detail_shows_the_public_copy_screenings_and_reports(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """상세는 공개본 글(제목·소개·화 목록)과 심사 사유(운영자만 본다)·신고·구매 수를 싣고, 화 공개본 본문은 따로 연다.
-    공개한 적 없는 소설·없는 화는 404 다."""
+    """상세는 공개본 글(제목·소개·화 목록과 화마다의 가격)과 심사 사유(운영자만 본다)·신고·구매 수를 싣고, 화 공개본 본문은
+    따로 연다. 앞 5화는 저장값과 무관하게 무료로, 6화 이후는 저장된 가격으로 보인다. 공개한 적 없는 소설·없는 화는 404 다."""
     novel = await _novel(db_session)
+    await db_session.execute(
+        sa.update(NovelChapterPublication)
+        .where(NovelChapterPublication.chapter_id == novel.chapter_ids[6])
+        .values(price=0)
+    )
     reporter = await _member(db_session)
     db_session.add_all(
         [
@@ -200,7 +206,9 @@ async def test_admin_detail_shows_the_public_copy_screenings_and_reports(
     foreign = await db_client.get(f"/admin/novels/{novel.novel_id}/chapters/{uuid.uuid4()}")
 
     assert (detail["title"], detail["synopsis"], detail["publisherUserId"]) == ("공개 제목", "소개", str(novel.publisher_id))
-    assert [c["ordinal"] for c in detail["chapters"]] == list(range(1, 9))
+    assert [(c["ordinal"], c["price"]) for c in detail["chapters"]] == [
+        (1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (6, 30), (7, 0), (8, 30)
+    ]
     assert [(s["chapterOrdinal"], s["outcome"], s["reason"]) for s in detail["screenings"]] == [(2, "rejected", "폭력 묘사")]
     assert [(r["reporterUserId"], r["status"]) for r in detail["reports"]] == [(str(reporter), "pending")]
     assert (chapter.status_code, chapter.json()["paragraphs"]) == (200, ["2화 본문"])

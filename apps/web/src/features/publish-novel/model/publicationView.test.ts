@@ -17,6 +17,7 @@ function status(patch: Partial<NovelPublicationStatus>): NovelPublicationStatus 
     visibility: null,
     moderationStatus: null,
     publishedChapterCount: 0,
+    publishedChapters: [],
     chapterCount: 8,
     changedChapterOrdinals: [],
     metadataChanged: false,

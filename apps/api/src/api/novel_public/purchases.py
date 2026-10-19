@@ -1,7 +1,8 @@
 """노벨 화 소장 구매와, 산 화를 더 읽을 수 없게 될 때의 자동 환급.
 
-**구매**는 화 하나를 클로버로 소장하는 것이다. 소설마다 앞 화들(`NOVEL_FREE_CHAPTER_COUNT`)과 게시자 본인의 열람은 무료라
-살 것이 없다(원작자도 무료가 아니다 — 원작자는 이 소설을 쓴 사람이 아니다). 환급되지 않은 구매가 있는 화는 다시 사지 않는다.
+**구매**는 화 하나를 클로버로 소장하는 것이다. 가격은 화마다 처음 공개 때 얼린 값(`NovelChapterPublication.price`)이고,
+소설마다 앞 화들(`NOVEL_FREE_CHAPTER_COUNT`)은 그 값과 무관하게 무료다(`chapter_price`). 무료 화와 게시자 본인의 열람은 살
+것이 없다(원작자도 무료가 아니다 — 원작자는 이 소설을 쓴 사람이 아니다). 산 뒤 작가가 그 화를 무료로 바꿔도 환불하지 않는다. 환급되지 않은 구매가 있는 화는 다시 사지 않는다.
 다시 공개로 본문이 바뀌어도 같은 화이고, 거뒀다 다시 공개하면 소장이 그대로 살아난다(구매 행은 공개 상태를 따라 지워지지
 않는다). 환급된 구매는 소장이 아니다 — 그 화가 다시 열리면 다시 산다. 무료·보너스 클로버로도 산다 — 차감 순서는 다른 차감과
 같다.
@@ -97,15 +98,17 @@ async def lock_users_in_order(db: AsyncSession, user_ids: Iterable[uuid.UUID]) -
 
 
 # ── 구매 ────────────────────────────────────────────────────────────────────
-def is_free_chapter(ordinal: int) -> bool:
-    """소설마다 앞 화들은 누구나 무료다. 무료 화 수는 호출 때 모듈 전역으로 읽는다(테스트가 바꿔 끼울 수 있게)."""
-    return ordinal <= clover.NOVEL_FREE_CHAPTER_COUNT
+def chapter_price(ordinal: int, stored_price: int) -> int:
+    """화의 지금 가격(0 = 무료). 앞 화들은 저장된 값과 무관하게 무료다 — 가격 칸을 모르는 옛 코드가 앞 화를 공개하면 칸의
+    기본값(유료)이 들어가기 때문이다. 무료 화 수는 호출 때 모듈 전역으로 읽는다(테스트가 바꿔 끼울 수 있게)."""
+    return 0 if ordinal <= clover.NOVEL_FREE_CHAPTER_COUNT else stored_price
 
 
 @dataclass(frozen=True)
 class _ChapterForSale:
     ordinal: int
     edition: int
+    price: int
     publisher_id: uuid.UUID
     content_id: uuid.UUID
 
@@ -118,6 +121,7 @@ async def _chapter_for_sale(db: AsyncSession, novel_id: uuid.UUID, chapter_id: u
             select(
                 NovelChapterPublication.ordinal,
                 NovelChapterPublication.edition,
+                NovelChapterPublication.price,
                 Novel.user_id,
                 Novel.content_id,
             )
@@ -134,13 +138,19 @@ async def _chapter_for_sale(db: AsyncSession, novel_id: uuid.UUID, chapter_id: u
     ).one_or_none()
     if row is None:
         return None
-    ordinal, edition, publisher_id, content_id = row
-    return _ChapterForSale(ordinal=ordinal, edition=edition, publisher_id=publisher_id, content_id=content_id)
+    ordinal, edition, stored_price, publisher_id, content_id = row
+    return _ChapterForSale(
+        ordinal=ordinal,
+        edition=edition,
+        price=chapter_price(ordinal, stored_price),
+        publisher_id=publisher_id,
+        content_id=content_id,
+    )
 
 
 class NovelChapterPurchaseRequest(CamelModel):
-    """`expected_price` 는 구매 확인 화면에 보인 가격이다. 지금 가격과 다르면 사지 않는다 — 배포로 가격이 바뀌는 사이 열어 둔
-    화면의 금액으로 차감하지 않으려는 것이다(소설화의 `expected_cost` 와 같은 규칙)."""
+    """`expected_price` 는 구매 확인 화면에 보인 가격이다. 그 화의 지금 가격과 다르면 사지 않는다 — 확인 화면에 보이지 않은
+    금액으로 차감하지 않으려는 것이다(소설화의 `expected_cost` 와 같은 규칙)."""
 
     expected_price: int
 
@@ -158,24 +168,24 @@ async def purchase_chapter(
 ) -> NovelChapterPurchaseResponse:
     """화 하나를 산다. **커밋하지 않는다**(라우트가 한다). 실패는 `HTTPException` 이고 그때 쓴 것은 없다(호출부가 롤백).
 
-    - 409 `NOVEL_READ_PRICE_CHANGED` + `currentPrice`: 확인 화면의 가격이 지금 가격과 다르다.
     - 404 `NOVEL_CHAPTER_NOT_FOUND`: 지금 읽을 수 있는 공개 화가 아니다.
-    - 409 `NOVEL_CHAPTER_NOT_FOR_SALE`: 무료 화이거나 게시자 본인이다(살 것이 없다).
+    - 409 `NOVEL_CHAPTER_NOT_FOR_SALE`: 무료 화이거나 게시자 본인이다(살 것이 없다). 가격 비교보다 먼저 본다 — 무료가 된 화에
+      열려 있던 확인 화면이 "가격이 바뀌었다(0)"를 받으면 0 클로버 확인을 다시 띄운다.
+    - 409 `NOVEL_READ_PRICE_CHANGED` + `currentPrice`: 확인 화면의 가격이 그 화의 지금 가격과 다르다.
     - 429 `CLOVER_REQUIRED`(`window: "novel_read"`): 잔액 부족. 재시도 초는 소설화 차감과 같은 KST 자정까지다(참인 재시도
       시각은 없지만 정기적으로 클로버가 생기는 가장 이른 시점이라).
 
     이미 산 화(환급되지 않은 구매가 있는 화)면 차감 없이 소장 응답이다. 환급된 구매만 있으면 다시 산다. 같은 사람의 동시
     구매 둘은 구매자 행에서 줄을 서고, 뒤의 것은 앞의 구매 행을 본다(미환급 행만 담는 `(chapter_id, buyer_user_id)` 부분
-    유니크가 마지막 그물)."""
-    price = clover.NOVEL_READ_COST
-    if expected_price != price:
-        raise _error(status.HTTP_409_CONFLICT, "NOVEL_READ_PRICE_CHANGED", currentPrice=price)
-    # 잠그기 전에 게시자를 알아야 사용자 행을 id 순으로 함께 잡는다. 판정은 잠근 뒤 다시 한다.
+    유니크가 마지막 그물).
+
+    가격·무료 판정·차감·구매 기록은 모두 잠근 뒤 다시 읽은 화의 가격으로 한다. 무료로 전환은 게시자 행을 잡고 쓰므로 그와
+    겹친 구매는 게시자 행에서 줄을 서고, 잠근 뒤의 조회가 전환 결과를 본다 — 잠그기 전에 읽은 가격을 쓰면 이미 무료가 된 화에
+    차감한다."""
+    # 잠그기 전에 게시자를 알아야 사용자 행을 id 순으로 함께 잡는다. 판정은 잠근 뒤에 한다.
     preview = await _chapter_for_sale(db, novel_id, chapter_id)
     if preview is None:
         raise _error(status.HTTP_404_NOT_FOUND, "NOVEL_CHAPTER_NOT_FOUND")
-    if is_free_chapter(preview.ordinal) or preview.publisher_id == buyer_id:
-        raise _error(status.HTTP_409_CONFLICT, "NOVEL_CHAPTER_NOT_FOR_SALE")
 
     locked = await lock_users_in_order(db, (buyer_id, preview.publisher_id))
     buyer = locked.get(buyer_id)
@@ -188,6 +198,11 @@ async def purchase_chapter(
     chapter = await _chapter_for_sale(db, novel_id, chapter_id)
     if chapter is None:
         raise _error(status.HTTP_404_NOT_FOUND, "NOVEL_CHAPTER_NOT_FOUND")
+    if chapter.price == 0 or chapter.publisher_id == buyer_id:
+        raise _error(status.HTTP_409_CONFLICT, "NOVEL_CHAPTER_NOT_FOR_SALE")
+    price = chapter.price
+    if expected_price != price:
+        raise _error(status.HTTP_409_CONFLICT, "NOVEL_READ_PRICE_CHANGED", currentPrice=price)
 
     owned = await db.scalar(
         select(NovelPurchase.id).where(

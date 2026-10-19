@@ -9,18 +9,21 @@ import uuid
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 
+import pytest
 import pytest_asyncio
 from fastapi import HTTPException
 from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from api.core.config import settings
 from api.db.models import User
 from api.db.models.clover import CloverLedger, CloverLot, CloverSpendAllocation, CloverSpendRefund, CloverSpendUsage
 from api.db.models.content import Content
 from api.db.models.moderation import Notification
-from api.db.models.novel import Novel, NovelLike, NovelPublication, NovelPurchase
+from api.db.models.novel import Novel, NovelChapterPublication, NovelLike, NovelPublication, NovelPurchase
 from api.novel_public.purchases import NovelChapterPurchaseResponse, purchase_chapter
 from api.novel_public.reading import like_webnovel
+from api.novel_public.router import make_chapter_free
 from api.novelize import router as novelize_router
 from api.novelize.deletion import delete_novels
 from factories import PublicNovel, _assert_blocked, _make_public_novel, _make_user_with_clover_lot
@@ -242,3 +245,96 @@ async def test_the_same_member_liking_twice_at_once_counts_once(
             select(NovelPublication.like_count).where(NovelPublication.novel_id == novel.novel_id)
         )
     assert (likes, count) == (1, 1)
+
+
+# ── 무료로 전환과 구매 ───────────────────────────────────────────────────────
+async def _buyer_and_novel(
+    factory: async_sessionmaker[AsyncSession], *, buyer_id_first: bool
+) -> tuple[uuid.UUID, PublicNovel]:
+    """회원 둘 중 id 가 작은 쪽(`buyer_id_first`)이나 큰 쪽을 구매자로, 다른 쪽을 게시자로 정한다 — 구매는 둘을 id 순으로
+    잠그므로 어느 쪽이 먼저 잡히는지가 갈린다."""
+    low, high = sorted([await _member(factory), await _member(factory)])
+    buyer, publisher = (low, high) if buyer_id_first else (high, low)
+    return buyer, await _publish(factory, publisher)
+
+
+async def _sixth_price_and_purchases(
+    factory: async_sessionmaker[AsyncSession], novel: PublicNovel
+) -> tuple[int | None, list[tuple[int, object]]]:
+    async with factory() as s:
+        price = await s.scalar(
+            select(NovelChapterPublication.price).where(NovelChapterPublication.chapter_id == novel.chapter_ids[5])
+        )
+        purchases = (
+            await s.execute(
+                select(NovelPurchase.price, NovelPurchase.refunded_at).where(NovelPurchase.novel_id == novel.novel_id)
+            )
+        ).tuples()
+        return price, list(purchases)
+
+
+@pytest.mark.parametrize("buyer_id_first", [pytest.param(True, id="buyer-id-first"), pytest.param(False, id="publisher-id-first")])
+async def test_a_purchase_waiting_behind_making_the_chapter_free_buys_nothing(
+    independent_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch, buyer_id_first: bool
+) -> None:
+    """게시자가 6화를 무료로 바꾸는 트랜잭션이 게시자 행을 쥔 채 커밋 전이다. 그때 시작한 구매(확인 화면 30)는 잠금 전에 아직
+    유료인 가격을 보지만 게시자 행에서 기다리고(막힘 확인), 전환이 커밋된 뒤 다시 읽은 가격 0 으로 살 것이 없다는 409 다 —
+    아무것도 차감하지 않는다. 깨지는 시나리오: 잠그기 전에 읽은 가격으로 판정해 이미 무료가 된 화에 30 이 빠진다."""
+    monkeypatch.setattr(settings, "novel_public_policy_v2_enabled", True)
+    buyer, novel = await _buyer_and_novel(independent_factory, buyer_id_first=buyer_id_first)
+    converting = independent_factory()
+    try:
+        await make_chapter_free(
+            converting, user_id=novel.publisher_id, novel_id=novel.novel_id, chapter_id=novel.chapter_ids[5]
+        )
+
+        async def purchase() -> object:
+            async with independent_factory() as s:
+                try:
+                    return await _buy(s, novel, buyer)
+                except HTTPException as exc:
+                    return exc
+
+        buying = asyncio.create_task(purchase())
+        await _assert_blocked(buying)
+        await converting.commit()
+        refused = await asyncio.wait_for(buying, 10)
+    finally:
+        await converting.close()
+
+    assert isinstance(refused, HTTPException)
+    detail: object = refused.detail
+    assert (refused.status_code, detail) == (409, {"code": "NOVEL_CHAPTER_NOT_FOR_SALE"})
+    assert await _balance(independent_factory, buyer) == 100
+    assert await _sixth_price_and_purchases(independent_factory, novel) == (0, [])
+
+
+@pytest.mark.parametrize("buyer_id_first", [pytest.param(True, id="buyer-id-first"), pytest.param(False, id="publisher-id-first")])
+async def test_making_the_chapter_free_behind_a_purchase_keeps_that_purchase_unrefunded(
+    independent_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch, buyer_id_first: bool
+) -> None:
+    """구매가 사용자 행을 쥔 채 커밋 전이다. 그때 시작한 무료로 전환은 게시자 행에서 기다리고(막힘 확인), 구매가 커밋된 뒤
+    전환한다. 산 사람은 30 을 낸 그대로이고 구매는 환급되지 않는다 — 유료에서 무료로 바뀌어도 환불은 없다. 깨지는
+    시나리오: 전환이 구매와 줄을 서지 않아 구매가 차감한 값과 화의 가격이 엇갈리거나, 전환이 구매를 환급한다."""
+    monkeypatch.setattr(settings, "novel_public_policy_v2_enabled", True)
+    buyer, novel = await _buyer_and_novel(independent_factory, buyer_id_first=buyer_id_first)
+    buying = independent_factory()
+    try:
+        assert (await _buy(buying, novel, buyer)).charged == 30
+
+        async def convert() -> None:
+            async with independent_factory() as s:
+                await make_chapter_free(
+                    s, user_id=novel.publisher_id, novel_id=novel.novel_id, chapter_id=novel.chapter_ids[5]
+                )
+                await s.commit()
+
+        converting = asyncio.create_task(convert())
+        await _assert_blocked(converting)
+        await buying.commit()
+        await asyncio.wait_for(converting, 10)
+    finally:
+        await buying.close()
+
+    assert await _balance(independent_factory, buyer) == 70
+    assert await _sixth_price_and_purchases(independent_factory, novel) == (0, [(30, None)])

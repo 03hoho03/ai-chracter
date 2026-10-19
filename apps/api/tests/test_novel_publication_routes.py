@@ -1441,3 +1441,187 @@ async def test_a_new_request_over_edition_rows_an_old_image_left_behind_replaces
     assert [(chapter_id, edition, revision_id) for chapter_id, edition, revision_id, *_ in editions] == [
         (chapters[0].id, 1, edited.id)
     ]
+
+
+# ── 화별 가격 ───────────────────────────────────────────────────────────────
+async def _publish_priced(
+    db_client: httpx.AsyncClient, novel_id: uuid.UUID, chapter: NovelChapter, *, free: bool | None
+) -> httpx.Response:
+    body: dict[str, object] = {"chapterId": str(chapter.id)}
+    if free is not None:
+        body["free"] = free
+    return await db_client.post(f"/novels/{novel_id}/publication", json=body)
+
+
+async def _make_free(db_client: httpx.AsyncClient, novel_id: uuid.UUID, chapter_id: uuid.UUID) -> httpx.Response:
+    return await db_client.post(f"/novels/{novel_id}/publication/chapters/{chapter_id}/free")
+
+
+async def _prices(db_session: AsyncSession, novel_id: uuid.UUID) -> dict[int, int]:
+    rows = await db_session.execute(
+        sa.select(NovelChapterPublication.ordinal, NovelChapterPublication.price)
+        .where(NovelChapterPublication.novel_id == novel_id)
+        .execution_options(populate_existing=True)
+    )
+    return {ordinal: price for ordinal, price in rows.tuples()}
+
+
+async def _published_through(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    published: int,
+    chapters: int = 8,
+) -> tuple[uuid.UUID, list[NovelChapter]]:
+    """화 `chapters` 개짜리 소설의 1화부터 `published` 화까지를 정책 스위치가 꺼진 채 공개한 뒤(바로 열리고 연재권이 잠긴다)
+    스위치를 켠다 — 그 뒤의 공개는 승인 대기 없이 바로 열린다."""
+    novel_id, added = await _novel_with_chapters(db_client, db_session, monkeypatch, chapters=chapters)
+    for chapter in added[:published]:
+        assert (await _publish(db_client, novel_id, chapter)).status_code == 200
+    _policy(monkeypatch, on=True)
+    return novel_id, added
+
+
+async def test_from_the_sixth_chapter_the_publisher_picks_free_or_paid_and_free_stays_free(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """스위치가 켜지면 6화부터 새로 공개하는 화마다 무료를 고를 수 있고, 고르지 않으면 유료(화당 가격)다. 무료로 공개한 화를
+    유료로 다시 내는 요청은 409 이고 값이 그대로다. 가격 칸 없이 그 화의 본문만 고쳐 다시 내면(옛 화면·옛 탭의 요청) 무료가
+    유지되고, 거뒀다 다시 열어도 그대로다. 상태 응답이 공개 화마다 가격을 알린다. 깨지는 시나리오: 가격을 고르지 않은 요청이
+    무료로 저장되거나, 다시 공개가 가격을 덮어 무료로 공개한 화가 유료가 된다."""
+    novel_id, chapters = await _published_through(db_client, db_session, monkeypatch, published=5)
+
+    free_sixth = await _publish_priced(db_client, novel_id, chapters[5], free=True)
+    paid_seventh = await _publish_priced(db_client, novel_id, chapters[6], free=None)
+    explicit_eighth = await _publish_priced(db_client, novel_id, chapters[7], free=False)
+    back_to_paid = await _publish_priced(db_client, novel_id, chapters[5], free=False)
+    await _new_revision(db_session, chapters[5], "고친 6화.")
+    revised = await _publish_priced(db_client, novel_id, chapters[5], free=None)
+    assert (await db_client.post(f"/novels/{novel_id}/publication/withdraw")).status_code == 204
+    reopened = await _publish(db_client, novel_id, None)
+
+    for resp in (free_sixth, paid_seventh, explicit_eighth, revised, reopened):
+        assert resp.status_code == 200, resp.text
+    assert (back_to_paid.status_code, back_to_paid.json()["detail"]) == (409, {"code": "NOVEL_CHAPTER_PRICE_LOCKED"})
+    assert await _prices(db_session, novel_id) == {1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 30, 8: 30}
+    sixth = await db_session.get_one(NovelChapterPublication, chapters[5].id, populate_existing=True)
+    assert (sixth.edition, sixth.price_changed_at) == (2, None)
+    assert [(c["chapterId"], c["ordinal"], c["price"]) for c in reopened.json()["publishedChapters"]] == [
+        (str(chapter.id), ordinal, 30 if ordinal in (7, 8) else 0)
+        for ordinal, chapter in enumerate(chapters, start=1)
+    ]
+
+
+async def test_the_front_chapters_are_always_free(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """5화까지는 고를 수 없는 무료다 — 유료로 공개하려는 요청은 409 이고 아무것도 쓰지 않는다(심사도 부르지 않는다).
+    깨지는 시나리오: 앞 화가 유료로 저장돼 "앞 화 무료" 약속이 깨진다."""
+    novel_id, chapters = await _published_through(db_client, db_session, monkeypatch, published=4, chapters=5)
+    screened = len(llm.calls)
+
+    paid_fifth = await _publish_priced(db_client, novel_id, chapters[4], free=False)
+    fifth = await _publish_priced(db_client, novel_id, chapters[4], free=None)
+
+    assert (paid_fifth.status_code, paid_fifth.json()["detail"]) == (409, {"code": "NOVEL_CHAPTER_PRICE_LOCKED"})
+    assert len(llm.calls) == screened + 1
+    assert fifth.status_code == 200, fifth.text
+    assert (await _prices(db_session, novel_id))[5] == 0
+
+
+async def test_a_publish_request_cannot_make_an_already_published_paid_chapter_free(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """이미 유료로 공개한 화를 무료로 바꾸는 것은 따로 있는 "무료로 전환" 동작만 한다 — 공개 요청에 무료를 실으면 409 이고
+    그대로 유료다. 깨지는 시나리오: 공개 요청의 가격 칸이 조용히 버려져 작가는 무료로 바꿨다고 알고 독자는 계속 산다."""
+    novel_id, chapters = await _published_through(db_client, db_session, monkeypatch, published=6, chapters=6)
+
+    resp = await _publish_priced(db_client, novel_id, chapters[5], free=True)
+
+    assert (resp.status_code, resp.json()["detail"]) == (409, {"code": "NOVEL_CHAPTER_ALREADY_PRICED"})
+    assert (await _prices(db_session, novel_id))[6] == 30
+
+
+async def test_with_the_policy_off_the_price_choice_is_ignored_and_prices_follow_the_chapter_number(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """스위치가 꺼져 있으면 지금 약관대로 앞 5화는 무료, 6화부터는 화당 가격이다 — 요청의 가격 칸은 보지 않는다(무료를
+    실어도 유료, 유료를 실어도 앞 화는 무료, 이미 공개한 유료 화에 무료를 실어도 그대로 다시 공개된다). 무료로 전환도
+    409 다. 깨지는 시나리오: 약관 개정 전에 6화 이후 무료 공개가 먼저 열리거나, 꺼진 동안의 저장값이 지금 규칙과 달라진다."""
+    novel_id, chapters = await _novel_with_chapters(db_client, db_session, monkeypatch, chapters=7)
+
+    for chapter in chapters[:4]:
+        assert (await _publish(db_client, novel_id, chapter)).status_code == 200
+    paid_fifth = await _publish_priced(db_client, novel_id, chapters[4], free=False)
+    free_sixth = await _publish_priced(db_client, novel_id, chapters[5], free=True)
+    seventh = await _publish_priced(db_client, novel_id, chapters[6], free=None)
+    await _new_revision(db_session, chapters[5], "고친 6화.")
+    free_again = await _publish_priced(db_client, novel_id, chapters[5], free=True)
+    made_free = await _make_free(db_client, novel_id, chapters[6].id)
+
+    for resp in (paid_fifth, free_sixth, seventh, free_again):
+        assert resp.status_code == 200, resp.text
+    assert (made_free.status_code, made_free.json()["detail"]) == (409, {"code": "NOVEL_PRICE_CHOICE_DISABLED"})
+    assert await _prices(db_session, novel_id) == {1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 30, 7: 30}
+
+
+async def test_making_a_paid_chapter_free_changes_only_its_price(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """유료로 공개한 6화를 "무료로 전환"하면 그 화의 가격만 0 이 되고 바꾼 시각이 남는다. 심사를 부르지 않고, 판도 판 행도
+    그대로이며, 공개 상태(거둔 상태 포함)와 공개 시각도 그대로다 — 거둔 소설을 다시 열지 않는다. 다시 눌러도 같다. 깨지는
+    시나리오: 가격만 바꾸는 일이 공개 흐름을 타 심사가 걸리고 판이 오르고 최신순 목록 자리가 바뀌거나, 거둔 소설이 다시
+    열린다."""
+    novel_id, chapters = await _published_through(db_client, db_session, monkeypatch, published=7, chapters=7)
+    assert (await db_client.post(f"/novels/{novel_id}/publication/withdraw")).status_code == 204
+    publication_before = await _publication_row(db_session, novel_id)
+    assert publication_before is not None
+    before = (publication_before.visibility, publication_before.published_at)
+    editions_before = await _editions(db_session, novel_id)
+    screened = len(llm.calls)
+
+    resp = await _make_free(db_client, novel_id, chapters[5].id)
+    sixth = await db_session.get_one(NovelChapterPublication, chapters[5].id, populate_existing=True)
+    changed_at = sixth.price_changed_at
+    again = await _make_free(db_client, novel_id, chapters[5].id)
+
+    assert resp.status_code == 200, resp.text
+    assert [(c["ordinal"], c["price"]) for c in resp.json()["publishedChapters"]][5:] == [(6, 0), (7, 30)]
+    assert again.status_code == 200, again.text
+    assert await _prices(db_session, novel_id) == {1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 30}
+    sixth = await db_session.get_one(NovelChapterPublication, chapters[5].id, populate_existing=True)
+    assert (sixth.edition, sixth.price_changed_at) == (1, changed_at)
+    assert changed_at is not None
+    assert len(llm.calls) == screened
+    assert await _editions(db_session, novel_id) == editions_before
+    publication_after = await _publication_row(db_session, novel_id)
+    assert publication_after is not None
+    assert (publication_after.visibility, publication_after.published_at) == before
+
+
+async def test_making_free_needs_a_published_chapter_of_ones_own_novel(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """무료로 전환은 게시자 본인이 공개한 화에만 된다 — 공개하지 않은 화는 404, 남의 소설은 403 이다. 이미 무료인 앞 화는
+    아무것도 쓰지 않는다(바꾼 시각이 남지 않는다). 깨지는 시나리오: 남이 작가의 유료 화를 무료로 돌리거나, 공개 전 화에
+    가격이 먼저 생긴다."""
+    novel_id, chapters = await _published_through(db_client, db_session, monkeypatch, published=6, chapters=7)
+    others = Novel(
+        user_id=(await _make_stranger(db_session)).id,
+        content_id=uuid.uuid4(),
+        content_type="character",
+        content_title="남의 원작",
+    )
+    db_session.add(others)
+    await db_session.commit()
+
+    unpublished = await _make_free(db_client, novel_id, chapters[6].id)
+    front = await _make_free(db_client, novel_id, chapters[2].id)
+    foreign = await _make_free(db_client, others.id, uuid.uuid4())
+
+    assert (unpublished.status_code, unpublished.json()["detail"]["code"]) == (404, "NOVEL_CHAPTER_NOT_FOUND")
+    assert front.status_code == 200, front.text
+    third = await db_session.get_one(NovelChapterPublication, chapters[2].id, populate_existing=True)
+    assert (third.price, third.price_changed_at) == (0, None)
+    assert (foreign.status_code, foreign.json()["detail"]["code"]) == (403, "NOVEL_FORBIDDEN")

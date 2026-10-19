@@ -65,7 +65,7 @@ from api.novel_public.access import (
     select_readable_publications,
 )
 from api.novel_public.no_store import NoStoreRoute
-from api.novel_public.purchases import is_free_chapter
+from api.novel_public.purchases import chapter_price
 from api.novel_public.schemas import (
     PublicNovelChapterAccess,
     PublicNovelChapterItem,
@@ -178,19 +178,24 @@ async def _sources(db: AsyncSession, novels: Sequence[Novel]) -> dict[uuid.UUID,
     return sources
 
 
-def _chapter_access(ordinal: int, chapter_id: uuid.UUID, *, is_publisher: bool, owned: set[uuid.UUID]) -> PublicNovelChapterAccess:
+def _chapter_access(
+    ordinal: int, stored_price: int, chapter_id: uuid.UUID, *, is_publisher: bool, owned: set[uuid.UUID]
+) -> PublicNovelChapterAccess:
+    """독자에게의 화 상태. 무료가 소장보다 먼저다 — 산 뒤 무료가 된 화는 "무료"로 보인다(산 때의 판 고르기는 구매 행으로
+    따로 정한다)."""
     if is_publisher:
         return "publisher"
-    if is_free_chapter(ordinal):
+    if chapter_price(ordinal, stored_price) == 0:
         return "free"
     if chapter_id in owned:
         return "owned"
     return "locked"
 
 
-def _price(ordinal: int) -> int | None:
-    """무료 화가 아니면 지금 화당 가격. 호출 때 모듈 전역으로 읽는다(테스트가 바꿔 끼울 수 있게)."""
-    return None if is_free_chapter(ordinal) else clover.NOVEL_READ_COST
+def _price(ordinal: int, stored_price: int) -> int | None:
+    """무료 화가 아니면 그 화의 가격."""
+    price = chapter_price(ordinal, stored_price)
+    return None if price == 0 else price
 
 
 async def _owned_chapter_ids(db: AsyncSession, user_id: uuid.UUID, novel_id: uuid.UUID) -> set[uuid.UUID]:
@@ -526,7 +531,12 @@ async def get_webnovel(
     owned = await _owned_chapter_ids(db, user_id, novel_id)
     chapter_rows = (
         await db.execute(
-            select(NovelChapterPublication.chapter_id, NovelChapterPublication.ordinal, NovelChapterPublication.title)
+            select(
+                NovelChapterPublication.chapter_id,
+                NovelChapterPublication.ordinal,
+                NovelChapterPublication.title,
+                NovelChapterPublication.price,
+            )
             .where(NovelChapterPublication.novel_id == novel_id)
             .order_by(NovelChapterPublication.ordinal)
         )
@@ -546,13 +556,13 @@ async def get_webnovel(
             id=chapter_id,
             ordinal=ordinal,
             title=title,
-            access=_chapter_access(ordinal, chapter_id, is_publisher=is_publisher, owned=owned),
-            price=_price(ordinal),
+            access=_chapter_access(ordinal, price, chapter_id, is_publisher=is_publisher, owned=owned),
+            price=_price(ordinal, price),
             reading_position=_position(positions[chapter_id]) if chapter_id in positions else None,
         )
-        for chapter_id, ordinal, title in chapter_rows
+        for chapter_id, ordinal, title, price in chapter_rows
     ]
-    ordinals = {chapter_id: ordinal for chapter_id, ordinal, _ in chapter_rows}
+    ordinals = {chapter_id: ordinal for chapter_id, ordinal, _, _ in chapter_rows}
     last_read: PublicNovelLastRead | None = None
     recent = max(
         (p for p in positions.values() if p.chapter_id in ordinals), key=lambda p: p.updated_at, default=None
@@ -657,12 +667,14 @@ async def get_webnovel_chapter(
     publication, novel, chapter, body = row
     is_publisher = novel.user_id == user_id
     owned = await _owned_chapter_ids(db, user_id, novel_id)
-    access = _chapter_access(chapter.ordinal, chapter_id, is_publisher=is_publisher, owned=owned)
+    access = _chapter_access(chapter.ordinal, chapter.price, chapter_id, is_publisher=is_publisher, owned=owned)
 
     policy_v2 = settings.novel_public_policy_v2_enabled
+    # 산 때의 판은 소장 표시가 아니라 미환급 구매로 고른다 — 산 뒤 무료가 된 화는 "무료"로 보이지만 산 사람은 산 글을 계속
+    # 고른다. 게시자 본인은 지금 판만 읽는다.
     bought = (
         await _purchased_edition(db, user_id=user_id, chapter_id=chapter_id)
-        if policy_v2 and access == "owned"
+        if policy_v2 and not is_publisher and chapter_id in owned
         else None
     )
     if bought is not None and bought.edition == chapter.edition:
@@ -675,10 +687,12 @@ async def get_webnovel_chapter(
         served_edition, title, author_note, body = bought.edition, bought.title, bought.author_note, old_revision.body
 
     neighbours = {
-        ordinal: neighbour_id
-        for neighbour_id, ordinal in (
+        ordinal: (neighbour_id, price)
+        for neighbour_id, ordinal, price in (
             await db.execute(
-                select(NovelChapterPublication.chapter_id, NovelChapterPublication.ordinal).where(
+                select(
+                    NovelChapterPublication.chapter_id, NovelChapterPublication.ordinal, NovelChapterPublication.price
+                ).where(
                     NovelChapterPublication.novel_id == novel_id,
                     NovelChapterPublication.ordinal.in_((chapter.ordinal - 1, chapter.ordinal + 1)),
                 )
@@ -687,13 +701,14 @@ async def get_webnovel_chapter(
     }
 
     def link(ordinal: int) -> PublicNovelChapterLink | None:
-        neighbour_id = neighbours.get(ordinal)
-        if neighbour_id is None:
+        neighbour = neighbours.get(ordinal)
+        if neighbour is None:
             return None
+        neighbour_id, price = neighbour
         return PublicNovelChapterLink(
             id=neighbour_id,
             ordinal=ordinal,
-            access=_chapter_access(ordinal, neighbour_id, is_publisher=is_publisher, owned=owned),
+            access=_chapter_access(ordinal, price, neighbour_id, is_publisher=is_publisher, owned=owned),
         )
 
     position = await db.get(NovelReaderPosition, (user_id, chapter_id))
@@ -707,7 +722,7 @@ async def get_webnovel_chapter(
         ordinal=chapter.ordinal,
         title=title,
         access=access,
-        price=_price(chapter.ordinal),
+        price=_price(chapter.ordinal, chapter.price),
         edition=served_edition,
         paragraphs=split_paragraphs(body) if readable else None,
         author_note=author_note if readable else None,
@@ -755,7 +770,7 @@ async def save_webnovel_reading_position(
     async def find(select_publications: Callable[..., Select[Any]]) -> Row[Any] | None:
         return (
             await db.execute(
-                select_publications(Novel.user_id, NovelChapterPublication.ordinal)
+                select_publications(Novel.user_id, NovelChapterPublication.ordinal, NovelChapterPublication.price)
                 .join(NovelChapterPublication, NovelChapterPublication.novel_id == NovelPublication.novel_id)
                 .where(NovelPublication.novel_id == novel_id, NovelChapterPublication.chapter_id == chapter_id)
             )
@@ -766,9 +781,9 @@ async def save_webnovel_reading_position(
         row = await find(select_owner_readable_publications)
     if row is None:
         raise _error(status.HTTP_404_NOT_FOUND, "NOVEL_CHAPTER_NOT_FOUND")
-    publisher_id, ordinal = row
+    publisher_id, ordinal, price = row
     owned = await _owned_chapter_ids(db, user_id, novel_id)
-    if _chapter_access(ordinal, chapter_id, is_publisher=publisher_id == user_id, owned=owned) == "locked":
+    if _chapter_access(ordinal, price, chapter_id, is_publisher=publisher_id == user_id, owned=owned) == "locked":
         raise _error(status.HTTP_403_FORBIDDEN, "NOVEL_CHAPTER_LOCKED")
     stmt = insert(NovelReaderPosition).values(
         user_id=user_id,

@@ -18,7 +18,7 @@ from api.db.models import User
 from api.db.models.clover import CloverLedger, CloverLot, CloverSpendUsage
 from api.db.models.content import Content
 from api.db.models.moderation import Notification
-from api.db.models.novel import Novel, NovelChapter, NovelPublication, NovelPurchase
+from api.db.models.novel import Novel, NovelChapter, NovelChapterPublication, NovelPublication, NovelPurchase
 from api.db.models.payment import Payment, PaymentCancellation
 from api.payments.refund import kst_today
 from factories import (
@@ -91,6 +91,15 @@ async def _purchases(db_session: AsyncSession, buyer_id: uuid.UUID) -> Sequence[
     ).all()
 
 
+async def _set_price(db_session: AsyncSession, novel: PublicNovel, ordinal: int, price: int) -> None:
+    await db_session.execute(
+        sa.update(NovelChapterPublication)
+        .where(NovelChapterPublication.chapter_id == novel.chapter_ids[ordinal - 1])
+        .values(price=price)
+    )
+    await db_session.commit()
+
+
 # ── 구매 ────────────────────────────────────────────────────────────────────
 async def test_buying_a_locked_chapter_charges_and_records_who_gets_what(
     db_client: httpx.AsyncClient, db_session: AsyncSession
@@ -151,10 +160,12 @@ async def test_an_owned_chapter_is_never_charged_again_even_after_withdraw_and_r
 async def test_free_chapters_and_the_publisher_have_nothing_to_buy(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """5화는 무료(6화는 유료 — 위 시험)라 살 것이 없다. 게시자 본인은 유료 화도 무료다. 무료 화 수는 호출 때 읽는 설정값이라
-    6 으로 바꾸면 6화도 무료가 된다."""
+    """5화는 무료(6화는 유료 — 위 시험)라 살 것이 없다 — 5화에 저장된 가격이 30 이어도 그렇다(가격 칸을 모르는 옛 코드가
+    앞 화를 공개하면 기본값 30 이 들어간다). 게시자 본인은 유료 화도 무료다. 무료 화 수는 호출 때 읽는 설정값이라 6 으로
+    바꾸면 6화도 무료가 된다."""
     novel = await _setup(db_session)
     buyer = await _buyer(db_session)
+    await _set_price(db_session, novel, 5, 30)
 
     fifth = await _buy(db_client, novel, 5, as_user=buyer)
     by_publisher = await _buy(db_client, novel, 6, as_user=novel.publisher_id)
@@ -191,17 +202,57 @@ async def test_short_balance_is_429_and_writes_nothing(db_client: httpx.AsyncCli
     assert await _balance(db_session, buyer) == 29
 
 
-async def test_a_stale_price_is_409_and_writes_nothing(
+async def test_a_price_other_than_the_chapters_stored_price_is_409_and_writes_nothing(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """확인 화면의 가격(30)이 지금 가격(40)과 다르면 사지 않는다 — 가격은 호출 때 읽는 설정값이다."""
+    """확인 화면의 가격(30)이 그 화에 저장된 가격(40)과 다르면 사지 않는다. 화당 가격 상수를 바꿔도(50) 이미 공개한 화의
+    가격은 저장된 값 그대로다. 깨지는 시나리오: 확인 화면에 보이지 않은 금액이 차감되거나, 상수를 바꾼 배포가 이미 공개한
+    화의 가격까지 바꾼다."""
     novel = await _setup(db_session)
     buyer = await _buyer(db_session)
-    monkeypatch.setattr(clover, "NOVEL_READ_COST", 40)
+    await _set_price(db_session, novel, 6, 40)
+    monkeypatch.setattr(clover, "NOVEL_READ_COST", 50)
+
+    resp = await _buy(db_client, novel, 6, as_user=buyer)
+    at_constant = await _buy(db_client, novel, 6, as_user=buyer, price=50)
+
+    assert (resp.status_code, resp.json()["detail"]) == (409, {"code": "NOVEL_READ_PRICE_CHANGED", "currentPrice": 40})
+    assert (at_constant.status_code, at_constant.json()["detail"]) == (
+        409,
+        {"code": "NOVEL_READ_PRICE_CHANGED", "currentPrice": 40},
+    )
+    assert await _ledger(db_session, buyer) == []
+
+
+async def test_the_charge_is_the_chapters_stored_price_everywhere_it_is_recorded(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """저장된 가격(40)으로 사면 응답의 차감액·원장 차감·구매 행의 가격이 모두 40 이다 — 환급은 구매 행의 가격을 돌려준다.
+    깨지는 시나리오: 차감은 상수(30)로, 기록은 칸 값으로 해 환급액과 낸 값이 어긋난다."""
+    novel = await _setup(db_session)
+    buyer = await _buyer(db_session)
+    await _set_price(db_session, novel, 6, 40)
+
+    resp = await _buy(db_client, novel, 6, as_user=buyer, price=40)
+
+    assert resp.json() == {"chapterId": str(novel.chapter_ids[5]), "charged": 40, "balance": 60}
+    assert await _ledger(db_session, buyer) == [("novel_read_spend", -40)]
+    [purchase] = await _purchases(db_session, buyer)
+    assert purchase.price == 40
+
+
+async def test_a_chapter_made_free_is_not_for_sale_even_from_a_confirm_showing_the_old_price(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """무료가 된 6화에 열려 있던 구매 확인 화면(30)이 사려 하면 가격이 바뀌었다(0)가 아니라 살 것이 없다는 409 다. 깨지는
+    시나리오: 가격 비교가 먼저 나와 화면이 0 클로버 확인을 다시 띄운다."""
+    novel = await _setup(db_session)
+    buyer = await _buyer(db_session)
+    await _set_price(db_session, novel, 6, 0)
 
     resp = await _buy(db_client, novel, 6, as_user=buyer)
 
-    assert (resp.status_code, resp.json()["detail"]) == (409, {"code": "NOVEL_READ_PRICE_CHANGED", "currentPrice": 40})
+    assert (resp.status_code, resp.json()["detail"]) == (409, {"code": "NOVEL_CHAPTER_NOT_FOR_SALE"})
     assert await _ledger(db_session, buyer) == []
 
 
