@@ -27,6 +27,7 @@ export {
 } from "./api/useWebnovelQuery";
 export { toReadingEndedNotice, type ReadingEndedAction, type ReadingEndedNotice } from "./model/readingEndedNotice";
 export { toWebnovelReportErrorMessage } from "./model/reportFailure";
+export { toSourceCredit } from "./model/sourceCredit";
 export { toUniqueWebnovels } from "./model/uniqueWebnovels";
 export {
   toWebnovelLoadFailure,

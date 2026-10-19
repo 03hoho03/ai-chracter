@@ -1,6 +1,7 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ai-character-chat/ui/components/select";
+import { useNavigate } from "@tanstack/react-router";
 import { useId, useState } from "react";
 
 import {
@@ -8,9 +9,11 @@ import {
   type AdminHomeNovelCurationSlot,
   type AdminNovelDetailResponse,
 } from "@/entities/admin-novel";
+import { useRememberedListSearch } from "@/shared/lib/list-search-memory/listSearchMemory";
 
 import { HomeNovelCurationConfirmModal } from "./HomeNovelCurationConfirmModal";
 import { NovelModerationConfirmModal } from "./NovelModerationConfirmModal";
+import { NovelReviewConfirmModal } from "./NovelReviewConfirmModal";
 
 type NovelActionsProps = {
   novel: AdminNovelDetailResponse;
@@ -18,16 +21,52 @@ type NovelActionsProps = {
 };
 
 /** 조치 열·시트 하나에 홈 노벨과 상태 조치를 두 묶음으로 둔다(작품 상세와 같은 짜임) — 둘 다 이 노벨을 운영자가 바꾸는
- * 일이라 한 자리에서 찾고, 묶음 제목으로 어느 쪽 버튼인지 가른다. */
+ * 일이라 한 자리에서 찾고, 묶음 제목으로 어느 쪽 버튼인지 가른다. 첫 공개 승인 대기면 운영자가 지금 할 일이라 "첫 공개
+ * 심사" 묶음을 맨 위에 더한다. 대기 중에도 이용제한은 걸 수 있어 나머지 두 묶음은 그대로 둔다. */
 export function NovelActions({ novel, onSuccess }: NovelActionsProps) {
+  const reviewHeadingId = useId();
   const curationHeadingId = useId();
   const moderationHeadingId = useId();
   const novelTitle = novel.title || "(제목 없음)";
   const isRestricted = novel.moderationStatus === "restricted";
+  const isPendingReview = novel.reviewStatus === "pending";
+  const navigate = useNavigate();
+  const rememberedListSearch = useRememberedListSearch("/novels/");
+  const goToList = () => void navigate({ to: "/novels", search: rememberedListSearch ?? {} });
 
   return (
     <div className="flex flex-col gap-4">
-      <section aria-labelledby={curationHeadingId} className="flex flex-col gap-2">
+      {isPendingReview && (
+        <section aria-labelledby={reviewHeadingId} className="flex flex-col gap-2">
+          <h3 id={reviewHeadingId} className="text-sm font-semibold text-foreground">
+            첫 공개 심사
+          </h3>
+          <p className="break-keep text-sm text-muted-foreground">1화를 읽고 승인하면 독자에게 열려요.</p>
+          {/* 승인이 이 조치 열의 유일한 채움 버튼이다 — 대기 노벨에서 운영자가 내릴 주된 결정이라서. */}
+          <Button
+            type="button"
+            onClick={() =>
+              void NovelReviewConfirmModal.call({ novelId: novel.id, novelTitle, action: "approve", onSuccess, onNovelGone: goToList })
+            }
+          >
+            승인
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() =>
+              void NovelReviewConfirmModal.call({ novelId: novel.id, novelTitle, action: "reject", onSuccess, onNovelGone: goToList })
+            }
+          >
+            반려
+          </Button>
+        </section>
+      )}
+
+      <section
+        aria-labelledby={curationHeadingId}
+        className={isPendingReview ? "flex flex-col gap-2 border-t border-border pt-4" : "flex flex-col gap-2"}
+      >
         <h3 id={curationHeadingId} className="text-sm font-semibold text-foreground">
           홈 노벨
         </h3>

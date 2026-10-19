@@ -4,11 +4,13 @@ import { Link } from "@tanstack/react-router";
 import {
   NOVEL_MODERATION_STATUS_LABELS,
   NOVEL_MODERATION_STATUS_OPTIONS,
-  NOVEL_VISIBILITY_LABELS,
+  NOVEL_REVIEW_STATUS_OPTIONS,
+  novelPublicationLabel,
   useNovelListQuery,
   type AdminNovelListParams,
   type AdminNovelListResponse,
   type NovelModerationStatus,
+  type NovelReviewStatus,
 } from "@/entities/admin-novel";
 import { formatCount } from "@/shared/lib/format/formatCount";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
@@ -25,13 +27,25 @@ import { HomeNovelCurationStatus } from "./HomeNovelCurationStatus";
 type NovelsListPageProps = {
   page: number;
   moderationStatus?: NovelModerationStatus;
+  reviewStatus?: NovelReviewStatus;
   onPageChange: (page: number) => void;
   onModerationStatusChange: (moderationStatus?: NovelModerationStatus) => void;
+  onReviewStatusChange: (reviewStatus?: NovelReviewStatus) => void;
+  onResetFilters: () => void;
 };
 
-/** 공개한 적 있는 노벨 전부(거둔 것·이용제한된 것 포함). 서버에 이름 검색이 없어 필터는 이용제한 상태 하나다. 필터·페이지는
- * 라우트 search 에 담긴다(routes/novels.index.tsx). */
-export function NovelsListPage({ page, moderationStatus, onPageChange, onModerationStatusChange }: NovelsListPageProps) {
+/** 공개한 적 있는 노벨 전부(거둔 것·이용제한된 것·첫 공개 승인을 기다리거나 반려된 것 포함). 서버에 이름 검색이 없어 필터는
+ * 이용제한 상태와 첫 공개 심사 상태 둘이다. 첫 공개 승인 대기열도 별도 화면 없이 이 목록을 "승인 대기"로 거른 것이다 — 기존
+ * 목록·기억된 목록 복귀를 그대로 쓰고 내비 항목을 늘리지 않는다. 필터·페이지는 라우트 search 에 담긴다(routes/novels.index.tsx). */
+export function NovelsListPage({
+  page,
+  moderationStatus,
+  reviewStatus,
+  onPageChange,
+  onModerationStatusChange,
+  onReviewStatusChange,
+  onResetFilters,
+}: NovelsListPageProps) {
   useDocumentTitle("노벨 관리");
 
   return (
@@ -48,15 +62,23 @@ export function NovelsListPage({ page, moderationStatus, onPageChange, onModerat
             defaultLabel: "전체",
             onChange: onModerationStatusChange,
           }),
+          selectFilter({
+            id: "review-status",
+            label: "첫 공개 심사",
+            options: NOVEL_REVIEW_STATUS_OPTIONS,
+            value: reviewStatus,
+            defaultLabel: "전체",
+            onChange: onReviewStatusChange,
+          }),
         ]}
-        onReset={() => onModerationStatusChange(undefined)}
+        onReset={onResetFilters}
       />
 
       <HomeNovelCurationStatus />
 
       <NovelsList
-        params={{ page, moderationStatus }}
-        onReset={() => onModerationStatusChange(undefined)}
+        params={{ page, moderationStatus, reviewStatus }}
+        onReset={onResetFilters}
         onPageChange={onPageChange}
       />
     </PageContainer>
@@ -70,11 +92,16 @@ function NovelStatus({ novel }: { novel: NovelListItem }) {
   return (
     <span className="flex flex-col">
       <span>
-        {NOVEL_VISIBILITY_LABELS[novel.visibility]} · {NOVEL_MODERATION_STATUS_LABELS[novel.moderationStatus]}
+        {novelPublicationLabel(novel)} · {NOVEL_MODERATION_STATUS_LABELS[novel.moderationStatus]}
       </span>
       {!novel.readable && <span className="text-xs text-destructive-text">독자에게 안 보임</span>}
     </span>
   );
+}
+
+/** 승인 대기 행의 `publishedAt` 은 게시자가 첫 공개를 신청한 시각이라, 승인 대기로 거른 목록에서는 마지막 칸 머리를 "신청"으로 바꾼다. */
+function publishedHeader(reviewStatus: NovelReviewStatus | undefined): string {
+  return reviewStatus === "pending" ? "신청" : "최근 공개";
 }
 
 const COLUMNS: readonly DataListColumn<NovelListItem>[] = [
@@ -98,8 +125,14 @@ const COLUMNS: readonly DataListColumn<NovelListItem>[] = [
       </span>
     ),
   },
-  { id: "published", header: "최근 공개", cell: (item) => formatDateTime(item.publishedAt) },
 ];
+
+function columnsFor(reviewStatus: NovelReviewStatus | undefined): readonly DataListColumn<NovelListItem>[] {
+  return [
+    ...COLUMNS,
+    { id: "published", header: publishedHeader(reviewStatus), cell: (item) => formatDateTime(item.publishedAt) },
+  ];
+}
 
 type NovelsListProps = {
   params: AdminNovelListParams;
@@ -118,7 +151,7 @@ function NovelsList({ params, onReset, onPageChange }: NovelsListProps) {
       isEmpty={(data) => data.items.length === 0}
       getPage={(data) => data}
       empty={
-        params.moderationStatus === undefined
+        params.moderationStatus === undefined && params.reviewStatus === undefined
           ? { title: "아직 공개된 노벨이 없어요. 게시자가 소설을 노벨에 공개하면 여기에 나타나요." }
           : {
               title: "이 상태의 노벨이 없어요.",
@@ -136,7 +169,7 @@ function NovelsList({ params, onReset, onPageChange }: NovelsListProps) {
             caption="노벨 목록"
             rows={data.items}
             getRowKey={(item) => item.id}
-            columns={COLUMNS}
+            columns={columnsFor(params.reviewStatus)}
             renderRowTarget={(item, props) => <Link to="/novels/$novelId" params={{ novelId: item.id }} {...props} />}
             card={{
               title: (item) => item.title || "(제목 없음)",
@@ -144,7 +177,7 @@ function NovelsList({ params, onReset, onPageChange }: NovelsListProps) {
                 <>
                   <span className="wrap-anywhere">{item.sourceTitle}</span>
                   <span aria-hidden>·</span>
-                  <span>{NOVEL_VISIBILITY_LABELS[item.visibility]}</span>
+                  <span>{novelPublicationLabel(item)}</span>
                   <span aria-hidden>·</span>
                   <span className="font-medium text-foreground">{NOVEL_MODERATION_STATUS_LABELS[item.moderationStatus]}</span>
                   {!item.readable && (
