@@ -10382,7 +10382,11 @@ export interface components {
          * @enum {string}
          */
         EndingRuleOperator: "gte" | "lte" | "eq" | "gt" | "lt";
-        /** EndingSnapshot */
+        /**
+         * EndingSnapshot
+         * @description 플레이어 방 응답의 엔딩. 판정 문안은 판정 재료이고 에필로그는 아직 닿지 않은 엔딩의 내용이라 싣지 않는다 — 도달한
+         *     엔딩의 에필로그는 방 응답의 `ending` 칸에 실린다. 힌트는 엔딩 모음이 미도달 엔딩에만 골라 싣는 칸이라 여기에는 없다.
+         */
         EndingSnapshot: {
             /**
              * Id
@@ -10393,12 +10397,6 @@ export interface components {
             name: string;
             /** Turncountgate */
             turnCountGate: number;
-            /** Judgmentprompt */
-            judgmentPrompt: string;
-            /** Epilogue */
-            epilogue: string | null;
-            /** Hint */
-            hint: string | null;
             /** Statrules */
             statRules: (components["schemas"]["EndingRuleItem"] | components["schemas"]["EndingRuleGroupItem"])[];
         };
@@ -13206,8 +13204,6 @@ export interface components {
             initialValue: number;
             /** Unit */
             unit: string | null;
-            /** Description */
-            description: string;
             /** Playerdescription */
             playerDescription: string | null;
         };

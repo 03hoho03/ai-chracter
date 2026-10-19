@@ -433,10 +433,11 @@ async def test_character_room_message_image_carries_no_dimensions(
 # ---- 엔딩 에필로그 -------------------------------------------------------------------------------------
 
 
-async def test_room_snapshot_epilogue_strips_media_tags_without_url_map(
+async def test_room_snapshot_leaves_out_the_epilogue_and_its_media_url(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """스냅숏에는 아직 도달하지 않은 엔딩도 실린다 — 그 에필로그의 칸을 서명하면 미해금 원본이 샌다."""
+    """스냅숏에는 아직 도달하지 않은 엔딩도 실린다 — 그 에필로그나 그 칸의 서명 URL 이 실리면 미해금 내용이 샌다.
+    에필로그는 도달한 엔딩의 것만 방 응답의 엔딩 칸에 실린다."""
     user_id, content, setup = await _story_with_setup(db_session, opening_message="태그 없는 시작")
     assert content.current_published_version_id is not None
     await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "옥상")
@@ -446,7 +447,7 @@ async def test_room_snapshot_epilogue_strips_media_tags_without_url_map(
 
     room = await _create_room(db_client, content, setup)
 
-    assert room["contentSnapshot"]["endings"][0]["epilogue"] == "끝났다.\n\n안녕."
+    assert "epilogue" not in room["contentSnapshot"]["endings"][0]
     assert room["mediaTagImages"] == {}
 
 

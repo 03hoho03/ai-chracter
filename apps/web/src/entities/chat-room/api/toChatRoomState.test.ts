@@ -457,35 +457,34 @@ describe("toChatRoomState", () => {
     expect(state.messages[1]?.scene).toEqual({ place: "갱도", time: undefined });
   });
 
-  it("does not carry the judgment fields into the screen state even when the server still sends them", () => {
+  it("does not carry the judgment fields into the screen state even when an older server still sends them", () => {
+    // 지금 서버 스키마에는 없는 칸이라 객체 리터럴로 바로 넣으면 타입 검사가 막는다 — 변수로 꺼내 옛 서버 응답 모양을 만든다.
+    const olderServerStat = {
+      id: "stat-1",
+      name: "호감도",
+      icon: "Heart",
+      color: "#ff4d6d",
+      minValue: 0,
+      maxValue: 100,
+      initialValue: 50,
+      unit: null,
+      description: "판정용 설명",
+      playerDescription: null,
+    };
+    const olderServerEnding = {
+      id: "ending-1",
+      name: "해피엔딩",
+      turnCountGate: 10,
+      judgmentPrompt: "충분히 가까워졌는가?",
+      epilogue: "그 후로 오래오래...",
+      hint: "힌트",
+      statRules: [{ kind: "rule" as const, id: "rule-1", statId: "stat-1", operator: "gte" as const, threshold: 80, nextOp: null }],
+    };
     const response: components["schemas"]["ChatRoomResponse"] = {
       ...storyRoomBase,
       contentSnapshot: {
-        stats: [
-          {
-            id: "stat-1",
-            name: "호감도",
-            icon: "Heart",
-            color: "#ff4d6d",
-            minValue: 0,
-            maxValue: 100,
-            initialValue: 50,
-            unit: null,
-            description: "판정용 설명",
-            playerDescription: null,
-          },
-        ],
-        endings: [
-          {
-            id: "ending-1",
-            name: "해피엔딩",
-            turnCountGate: 10,
-            judgmentPrompt: "충분히 가까워졌는가?",
-            epilogue: "그 후로 오래오래...",
-            hint: "힌트",
-            statRules: [{ kind: "rule", id: "rule-1", statId: "stat-1", operator: "gte", threshold: 80, nextOp: null }],
-          },
-        ],
+        stats: [olderServerStat],
+        endings: [olderServerEnding],
         shortcuts: [],
         suggestedReplies: [],
         pinnedStartingSetupId: "physical-setup-1",

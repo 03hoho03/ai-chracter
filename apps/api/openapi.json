@@ -25629,32 +25629,6 @@
             "type": "integer",
             "title": "Turncountgate"
           },
-          "judgmentPrompt": {
-            "type": "string",
-            "title": "Judgmentprompt"
-          },
-          "epilogue": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Epilogue"
-          },
-          "hint": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Hint"
-          },
           "statRules": {
             "items": {
               "oneOf": [
@@ -25682,12 +25656,10 @@
           "id",
           "name",
           "turnCountGate",
-          "judgmentPrompt",
-          "epilogue",
-          "hint",
           "statRules"
         ],
-        "title": "EndingSnapshot"
+        "title": "EndingSnapshot",
+        "description": "플레이어 방 응답의 엔딩. 판정 문안은 판정 재료이고 에필로그는 아직 닿지 않은 엔딩의 내용이라 싣지 않는다 — 도달한\n엔딩의 에필로그는 방 응답의 `ending` 칸에 실린다. 힌트는 엔딩 모음이 미도달 엔딩에만 골라 싣는 칸이라 여기에는 없다."
       },
       "ExampleDialogueItem": {
         "properties": {
@@ -32344,10 +32316,6 @@
             ],
             "title": "Unit"
           },
-          "description": {
-            "type": "string",
-            "title": "Description"
-          },
           "playerDescription": {
             "anyOf": [
               {
@@ -32370,7 +32338,6 @@
           "maxValue",
           "initialValue",
           "unit",
-          "description",
           "playerDescription"
         ],
         "title": "StatDefSnapshot"
