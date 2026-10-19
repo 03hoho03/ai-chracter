@@ -37,8 +37,9 @@ _any_chapter = aliased(NovelChapterPublication)
 # 새로 공개할 수 없는 이유. 앞의 것이 먼저다 — 이용제한은 모든 공개를 막고, 허락은 원작자가 바꿔야 풀리고, 목록 조건은
 # 원작자가 다시 공개하면 풀린다.
 NewPublishBlock = Literal["source_unavailable", "source_permission", "source_not_listed"]
-# 이미 공개한 것을 다시 낼 수 없는 이유. `restricted` 는 운영자가 이 공개 소설을 내린 상태다.
-RepublishBlock = Literal["source_unavailable", "restricted"]
+# 이미 공개한 것을 다시 낼 수 없는 이유. `restricted` 는 운영자가 이 공개 소설을 내린 상태, `sales_stopped` 는 운영자가 이 공개
+# 소설의 판매를 멈춘 상태다(새 화·다시 공개를 받지 않는다).
+RepublishBlock = Literal["source_unavailable", "restricted", "sales_stopped"]
 
 
 def novel_public_open_to(user_id: uuid.UUID | None) -> bool:
@@ -98,7 +99,7 @@ async def require_novel_public_readable(request: Request, db: AsyncSession = Dep
 
 def readable_publication_conditions() -> tuple[ColumnElement[bool], ...]:
     """독자가 지금 이 공개 소설을 읽을 수 있는가 — SQL 조건. 공개 중(거두지 않음) ∧ 첫 공개가 운영자 승인을 기다리거나
-    반려되지 않음 ∧ 운영자 이용제한 없음 ∧ 작가가 숨기지 않음 ∧ 게시자가 탈퇴·정지
+    반려되지 않음 ∧ 운영자 이용제한·판매 중단 없음 ∧ 작가가 숨기지 않음 ∧ 게시자가 탈퇴·정지
     되지 않음 ∧ 원작이 이용제한·삭제되지 않음 ∧ 공개 화가 하나 이상(마지막 묶음을 지워 공개 화가 모두 사라진 공개 상태 행은
     소설 제목·소개만 남아 읽을 것이 없다). 호출부가 `NovelPublication`·`Novel`·게시자 `User`(`User.id ==
     Novel.user_id`)·원작 `Content`(`Content.id == Novel.content_id`)를 조인한다.
@@ -111,6 +112,9 @@ def readable_publication_conditions() -> tuple[ColumnElement[bool], ...]:
         # 경로에서 깨져도 승인 전 글이 나가지 않게 하려는 것이다.
         or_(NovelPublication.review_status.is_(None), NovelPublication.review_status == "approved"),
         NovelPublication.moderation_status == "normal",
+        # 판매 중단은 이 조건(목록·구매)에만 있고 소장자 조건에는 없다 — 산 사람은 계속 읽는다. 정책 스위치와 무관하게 본다:
+        # 켠 동안 멈춘 노벨이 스위치를 끈다고 다시 팔리지 않게.
+        NovelPublication.sales_stopped_at.is_(None),
         # 숨긴 소설(노벨로 팔린 뒤 작가가 지웠거나 그 작가가 탈퇴한 소설)은 공개를 거둔 채 숨기므로 위 공개 범위 조건으로 이미 빠진다. 숨김을 따로
         # 보는 것은 그 약속이 깨져도(숨김을 모르는 옛 이미지로 되돌린 동안 작가가 다시 공개) 지운 소설이 독자 목록·구매에
         # 나가지 않게 하려는 것이다.
@@ -140,17 +144,22 @@ def select_readable_publications(*columns: Any) -> Select[Any]:
 
 def owner_readable_publication_conditions() -> tuple[ColumnElement[bool], ...]:
     """정책 스위치가 켜졌을 때, 아직 환급되지 않은 구매를 가진 사람(소장자)이 이 공개 소설을 계속 읽을 수 있는가 — SQL 조건.
-    운영자 이용제한 없음 ∧ 첫 공개 승인 대기·반려 아님 ∧ 원작이 정상이거나 원작자 정지로만 일괄 제한됨 ∧ 공개 화가 하나 이상.
-    조인은 `readable_publication_conditions` 와 같다.
+    운영자 이용제한 없음 ∧ 첫 공개 승인 대기·반려 아님 ∧ 원작이 정상이거나, 원작자 정지로만 일괄 제한됐거나, 운영자가 원작을
+    제한·삭제하면서 파생 소설은 판매만 멈추기로 골랐음(`Content.novel_buyers_kept`) ∧ 공개 화가 하나 이상. 조인은
+    `readable_publication_conditions` 와 같다.
 
-    공개 범위(게시자의 거둠·판매된 소설 삭제의 숨김)와 게시자 정지·탈퇴는 보지 않는다 — 게시자 쪽 사정이라 산 사람의 소장을
-    끝내지 않는다(새로 보이거나 팔리지 않는 것은 목록·구매가 쓰는 `readable_publication_conditions` 가 맡는다). 여기서 빠지는
-    경우(노벨 이용제한·원작 자체 이용제한·원작 삭제)는 그 쓰기마다 구매를 환급한다(`purchases.py` 모듈 docstring) — 두 목록이
-    어긋나면 환급 없이 닫히는 소장이 생긴다."""
+    공개 범위(게시자의 거둠·판매된 소설 삭제의 숨김)와 게시자 정지·탈퇴, 운영자의 노벨 판매 중단은 보지 않는다 — 산 사람의
+    소장을 끝내지 않는 사정이다(새로 보이거나 팔리지 않는 것은 목록·구매가 쓰는 `readable_publication_conditions` 가 맡는다).
+    여기서 빠지는 경우(노벨 이용제한, 판매만 멈추기로 고르지 않은 원작 이용제한·삭제)는 그 쓰기마다 구매를 환급한다
+    (`purchases.py` 모듈 docstring) — 두 목록이 어긋나면 환급 없이 닫히는 소장이 생긴다."""
     return (
         or_(NovelPublication.review_status.is_(None), NovelPublication.review_status == "approved"),
         NovelPublication.moderation_status == "normal",
-        or_(Content.moderation_status == ModerationStatus.NORMAL, Content.restricted_by_suspension.is_(True)),
+        or_(
+            Content.moderation_status == ModerationStatus.NORMAL,
+            Content.restricted_by_suspension.is_(True),
+            Content.novel_buyers_kept.is_(True),
+        ),
         exists().where(_any_chapter.novel_id == NovelPublication.novel_id).correlate_except(_any_chapter),
     )
 

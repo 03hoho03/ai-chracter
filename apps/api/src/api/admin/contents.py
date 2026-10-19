@@ -43,7 +43,7 @@ from api.db.models.story import (
     StoryVersionDetail,
 )
 from api.db.session import get_db_session
-from api.novel_public.purchases import lock_source_closing, refund_source_closing
+from api.novel_public.purchases import lock_source_closing, refund_source_closing, source_closing_keeps_buyers
 from api.moderation.router import upgrade_content_chat_rooms_to_latest_version
 
 router = APIRouter(tags=["admin"])
@@ -380,6 +380,7 @@ async def _build_content_detail_response(db: AsyncSession, content: Content) -> 
             await _published_images(db, content.type, version_id, thumbnail_asset_id) if version_id is not None else []
         ),
         has_unpublished_changes=content.has_unpublished_changes,
+        novel_buyers_kept=content.novel_buyers_kept,
         versions=await _content_version_history(db, content),
     )
 
@@ -451,10 +452,12 @@ async def act_on_content(
 
     # 이용제한·삭제는 그 원작으로 만든 노벨의 구매를 환급한다(정책 스위치가 켜졌을 때). 환급할 사람들의 사용자 행을 조치
     # 행 INSERT 보다 먼저 잡는다(`lock_source_closing`). 정지 표식이 붙은 작품을 다시 제한해 표식이 내려가는 것도 이제 작품
-    # 자체의 제재라 환급한다.
+    # 자체의 제재라 환급한다. 운영자가 파생 소설은 판매만 멈추기로 고르면 환급하지 않으므로 잠그지도 않는다.
+    closes = body.action in (ModerationActionType.RESTRICT, ModerationActionType.DELETE)
+    keeps_buyers = source_closing_keeps_buyers(closes=closes, choice=body.derivative_novels)
     closing = (
         await lock_source_closing(db, content_id=content.id, deleting=body.action == ModerationActionType.DELETE)
-        if body.action in (ModerationActionType.RESTRICT, ModerationActionType.DELETE)
+        if closes and not keeps_buyers
         else None
     )
     action_row = ModerationAction(content_id=content.id, admin_id=admin_id, action=body.action)
@@ -465,6 +468,8 @@ async def act_on_content(
     # (이미 정지로 제한인 작품을 다시 제한하면 상태가 그대로라 이 줄 없이는 구분되지 않는다). 반려는 위에서 400 이다.
     # 상태보다 먼저 내린다 — 제한 해제가 부르는 대화방 갱신 쿼리가 자동 flush 하면서 "정상 + 표식" 을 쓰면 CHECK 에 걸린다.
     content.restricted_by_suspension = False
+    # 산 사람을 남기는 표식도 조치마다 새로 쓴다 — 판매만 멈추기로 고른 제한·삭제만 세우고, 닫는 제한·삭제와 해제는 내린다.
+    content.novel_buyers_kept = keeps_buyers
     if body.action == ModerationActionType.RESTRICT:
         content.moderation_status = ModerationStatus.RESTRICTED
     elif body.action == ModerationActionType.DELETE:

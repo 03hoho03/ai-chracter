@@ -5,6 +5,11 @@
 구매 행이 그대로라 소장한 화를 다시 읽는다 — 운영자가 잘못 내린 조치는 해제로 되돌린다. 게시자에게 따로 알림을 보내지
 않는다(게시자의 공개 설정 화면이 이용제한 상태를 보여 준다).
 
+**판매 중단**은 공개 상태 행의 `sales_stopped_at` 이다(정책 스위치가 켜졌을 때만 쓸 수 있다). 목록·작품 정보·구매·홈 판정
+(`select_readable_publications`)만 이 칸을 보고 소장자 조건은 보지 않으므로, 새로 보이거나 팔리지 않을 뿐 산 사람은 계속 읽고
+환급도 알림도 없다. 이용제한과 따로 걸리고 따로 풀린다 — 판매를 멈춘 노벨을 이용제한했다 해제해도 판매는 멈춘 채다. 게시자에게
+알림을 보내지 않는 것은 이용제한과 같다(공개 설정 화면이 판매 중단을 보여 준다).
+
 **감사 로그** — 조치마다 한 줄. 대상 회원은 노벨 조치면 게시자, 댓글 조치면 작성자라 그 회원 상세의 조치 이력에 보인다.
 신고로 한 조치는 신고 사유 분류를 함께 남긴다.
 
@@ -12,7 +17,8 @@
 행 → (댓글 DELETE) → (신고 행의 `SET NULL`) 순서로 잡기 때문이다. 신고 행을 먼저 쥐면 그 삭제와 엇갈려 교착한다. 반려는 신고
 행만 잡는다. 정책 스위치가 켜져 있으면 이용제한이 구매를 환급하므로(`novel_public/purchases.py`) 그 앞에 게시자와 미환급
 구매자의 사용자 행을 먼저 잡는다 — 구매는 사용자 행을 쥔 채 공개 상태 행을 기다리므로, 공개 상태 행을 쥐고 구매자 행을
-기다리면 그 구매와 교착한다.
+기다리면 그 구매와 교착한다. 판매 중단은 환급이 없어 사용자 행을 잡지 않는다 — 공개 상태 행 하나(→ 신고 행)만 잡고 그 뒤에
+아무것도 기다리지 않으므로 사용자 행을 쥔 쪽과 엇갈리지 않는다.
 
 작품 신고 처리(`moderation/router.py`)와 나란히 둔 별도 라우트다 — 작품 신고 표·조치 표는 작품 FK 를 전제하므로 노벨을
 섞지 않는다. 노벨 스위치와 무관하게 돈다(켜기 전에도 운영자가 볼 수 있게).
@@ -74,6 +80,8 @@ from api.novel_public.admin_schemas import (
     AdminNovelModerationResponse,
     AdminNovelReviewRequest,
     AdminNovelReviewResponse,
+    AdminNovelSalesRequest,
+    AdminNovelSalesResponse,
     AdminNovelReportActionRequest,
     AdminNovelReportDetailResponse,
     AdminNovelReportEvidence,
@@ -179,6 +187,7 @@ async def _list_items(db: AsyncSession, rows: list[tuple[NovelPublication, Novel
             published_at=publication.published_at,
             review_status=publication.review_status,
             hidden_at=novel.hidden_at,
+            sales_stopped_at=publication.sales_stopped_at,
         )
         for publication, novel, nickname in rows
     ]
@@ -432,6 +441,90 @@ async def moderate_admin_novel(
     return AdminNovelModerationResponse(novel_id=novel_id, moderation_status=publication.moderation_status)
 
 
+# ── 판매 중단·재개 ──────────────────────────────────────────────────────────
+def _require_sales_stop_enabled() -> None:
+    """판매 중단은 정책 스위치가 켜졌을 때만이다 — 꺼진 동안은 소장자 열람이 없어 "판매만 멈춤"이 환급 없는 닫힘이 된다."""
+    if not settings.novel_public_policy_v2_enabled:
+        raise _error(status.HTTP_409_CONFLICT, "NOVEL_SALES_STOP_DISABLED")
+
+
+async def _record_sales_stop(
+    db: AsyncSession,
+    publication: NovelPublication,
+    *,
+    admin_id: uuid.UUID,
+    stop: bool,
+    reason_category: str | None,
+    reason: str,
+) -> None:
+    """판매 중단 칸을 바꾸고 감사 로그를 남긴다(커밋은 호출부). 대상 회원은 게시자다. 이미 멈춘 노벨을 다시 멈추면(신고 처리)
+    멈춘 시각은 처음 그대로 둔다 — 이용제한 신고 처리가 이미 이용제한된 노벨에도 조치를 기록하는 것과 같이 로그는 남긴다."""
+    if not stop:
+        publication.sales_stopped_at = None
+    elif publication.sales_stopped_at is None:
+        publication.sales_stopped_at = await db.scalar(select(func.now()))
+    publisher_id = await db.scalar(select(Novel.user_id).where(Novel.id == publication.novel_id))
+    await record_admin_action(
+        db,
+        admin_id=admin_id,
+        action_type="novel-sales-stop" if stop else "novel-sales-resume",
+        target_user_id=publisher_id,
+        target_novel_id=publication.novel_id,
+        reason_category=reason_category,
+        reason_text=reason,
+    )
+
+
+async def set_novel_sales(
+    db: AsyncSession,
+    novel_id: uuid.UUID,
+    *,
+    admin_id: uuid.UUID,
+    stop: bool,
+    reason: str,
+    reason_category: str | None = None,
+) -> NovelPublication:
+    """노벨 판매를 멈추거나(`stop`) 다시 연다. **커밋하지 않는다**(라우트가 한다). 공개 상태 행 하나만 `FOR UPDATE` 로 잡는다 —
+    환급이 없어 사용자 행이 필요 없고, 구매가 공개 상태 행을 `FOR SHARE` 로 잡은 뒤 판매 조건을 다시 읽으므로 그 행에서 줄을
+    서면 멈춘 뒤의 구매는 404 다. 이용제한 칸은 건드리지 않는다(두 조치는 따로 걸리고 따로 풀린다). 공개 상태 행이 없으면 404
+    `NOVEL_NOT_FOUND`, 이미 그 상태면 409 `NOVEL_SALES_ALREADY_STOPPED`·`NOVEL_SALES_NOT_STOPPED`."""
+    publication = await _lock_publication(db, novel_id)
+    if publication is None:
+        raise _error(status.HTTP_404_NOT_FOUND, "NOVEL_NOT_FOUND")
+    if stop and publication.sales_stopped_at is not None:
+        raise _error(status.HTTP_409_CONFLICT, "NOVEL_SALES_ALREADY_STOPPED")
+    if not stop and publication.sales_stopped_at is None:
+        raise _error(status.HTTP_409_CONFLICT, "NOVEL_SALES_NOT_STOPPED")
+    await _record_sales_stop(
+        db, publication, admin_id=admin_id, stop=stop, reason_category=reason_category, reason=reason
+    )
+    return publication
+
+
+@router.post("/admin/novels/{novel_id}/sales")
+async def act_on_admin_novel_sales(
+    novel_id: uuid.UUID,
+    body: AdminNovelSalesRequest,
+    admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> AdminNovelSalesResponse:
+    """노벨 판매를 멈추거나(`stop`) 다시 연다(`resume`). 멈추면 목록·검색·홈에서 빠지고 새로 팔지 않으며 게시자는 새 화·다시
+    공개를 낼 수 없다. 산 사람은 계속 읽고 환급·알림은 없다(`set_novel_sales`). 정책 스위치가 꺼져 있으면 409
+    `NOVEL_SALES_STOP_DISABLED`, 사유가 공백뿐이면 422."""
+    _require_sales_stop_enabled()
+    reason = _require_reason(body.admin_comment)
+    publication = await set_novel_sales(
+        db,
+        novel_id,
+        admin_id=admin_id,
+        stop=body.action == "stop",
+        reason=reason,
+        reason_category=body.reason_category.value if body.reason_category is not None else None,
+    )
+    await db.commit()
+    return AdminNovelSalesResponse(novel_id=novel_id, sales_stopped_at=publication.sales_stopped_at)
+
+
 # ── 첫 공개 승인·반려 ─────────────────────────────────────────────────────────
 @router.post("/admin/novels/{novel_id}/review")
 async def review_admin_novel(
@@ -518,6 +611,7 @@ async def _report_detail(db: AsyncSession, report: NovelReport) -> AdminNovelRep
         resolved_by_admin_id=report.resolved_by_admin_id,
         resolved_at=report.resolved_at,
         novel_moderation_status=publication.moderation_status if publication is not None else None,
+        novel_sales_stopped_at=publication.sales_stopped_at if publication is not None else None,
         evidence=AdminNovelReportEvidence(
             expires_at=report.evidence_expires_at,
             available=available,
@@ -580,10 +674,11 @@ async def act_on_admin_novel_report(
     admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminNovelReportDetailResponse:
-    """신고를 처리한다 — `restrict` 는 그 노벨을 이용제한하고 신고를 처리완료로(이미 이용제한이어도 처리된다), `reject` 는
-    노벨을 건드리지 않고 반려로 둔다. 이미 처리된 신고도 다시 처리할 수 있다(상태·처리자·시각을 덮어쓴다). 노벨이 지워져
-    이용제한할 대상이 없으면 409 `NOVEL_GONE`(반려는 된다). 이용제한은 직접 이용제한과 같이 환급한다 — 이미 이용제한된
-    노벨이면 돌려줄 것이 없다."""
+    """신고를 처리한다 — `restrict` 는 그 노벨을 이용제한하고 신고를 처리완료로(이미 이용제한이어도 처리된다), `stop_sales` 는
+    그 노벨의 판매를 멈추고 처리완료로(이미 멈췄어도 처리되고 멈춘 시각은 그대로), `reject` 는 노벨을 건드리지 않고 반려로
+    둔다. 이미 처리된 신고도 다시 처리할 수 있다(상태·처리자·시각을 덮어쓴다). 노벨이 지워져 조치할 대상이 없으면 409
+    `NOVEL_GONE`(반려는 된다). 이용제한은 직접 이용제한과 같이 환급한다 — 이미 이용제한된 노벨이면 돌려줄 것이 없다. 판매
+    중단은 환급하지 않고, 정책 스위치가 꺼져 있으면 409 `NOVEL_SALES_STOP_DISABLED`."""
     reason = _require_reason(body.admin_comment)
     report = await _get_novel_report(db, report_id)
     if body.action == "restrict":
@@ -605,6 +700,16 @@ async def act_on_admin_novel_report(
             await refund_closing_purchases(
                 db, novel_ids=[publication.novel_id], locked_user_ids=locked, reason="novel_restricted"
             )
+        report.status = ReportStatus.RESOLVED
+    elif body.action == "stop_sales":
+        _require_sales_stop_enabled()
+        publication = await _lock_publication(db, report.novel_id) if report.novel_id is not None else None
+        if publication is None:
+            raise _error(status.HTTP_409_CONFLICT, "NOVEL_GONE")
+        report = await _get_novel_report(db, report_id, lock=True)
+        await _record_sales_stop(
+            db, publication, admin_id=admin_id, stop=True, reason_category=report.reason_category.value, reason=reason
+        )
         report.status = ReportStatus.RESOLVED
     else:
         report = await _get_novel_report(db, report_id, lock=True)

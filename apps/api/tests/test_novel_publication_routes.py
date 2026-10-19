@@ -547,6 +547,48 @@ async def test_operator_restricted_publication_cannot_be_republished(
     assert (status_body["moderationStatus"], status_body["republishBlock"]) == ("restricted", "restricted")
 
 
+async def test_a_publication_whose_sales_were_stopped_takes_no_new_or_edited_chapter_but_can_be_withdrawn(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """운영자가 판매를 멈춘 공개 소설에는 다음 화도, 고친 화의 다시 공개도 낼 수 없다(409 `NOVEL_PUBLICATION_SALES_STOPPED`,
+    심사를 부르기 전). 작가의 공개 상태 화면은 판매 중단을 보이고(`salesStopped`, 다시 공개를 막는 이유 `sales_stopped`), 이용제한
+    칸은 그대로 `normal` 이다. 거두기는 된다(자기 글을 내리는 일이라). 깨지는 시나리오: 판매를 멈춘 노벨에 새 화가 공개돼 판매
+    중단의 뜻("공개·신규 판매 중단")이 무너지거나, 작가가 왜 막혔는지 모른다."""
+    novel_id, chapters = await _novel_with_chapters(db_client, db_session, monkeypatch)
+    assert (await _publish(db_client, novel_id, chapters[0])).status_code == 200
+    calls_before = len(llm.calls)
+    await db_session.execute(
+        sa.update(NovelPublication).where(NovelPublication.novel_id == novel_id).values(sales_stopped_at=sa.func.now())
+    )
+    await db_session.commit()
+
+    next_chapter = await _publish(db_client, novel_id, chapters[1])
+    status_body = (await db_client.get(f"/novels/{novel_id}/publication")).json()
+    withdrawn = await db_client.post(f"/novels/{novel_id}/publication/withdraw")
+
+    assert (next_chapter.status_code, next_chapter.json()["detail"]["code"]) == (409, "NOVEL_PUBLICATION_SALES_STOPPED")
+    assert len(llm.calls) == calls_before
+    assert (status_body["moderationStatus"], status_body["republishBlock"], status_body["salesStopped"]) == (
+        "normal",
+        "sales_stopped",
+        True,
+    )
+    assert withdrawn.status_code == 204, withdrawn.text
+
+
+async def test_an_unstopped_publication_says_its_sales_are_not_stopped(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """판매를 멈추지 않은 공개 소설의 공개 상태는 `salesStopped` 가 거짓이다(공개한 적 없는 소설도). 깨지는 시나리오: 화면이
+    모든 작가에게 판매 중단 안내를 띄운다."""
+    novel_id, chapters = await _novel_with_chapters(db_client, db_session, monkeypatch)
+    before = (await db_client.get(f"/novels/{novel_id}/publication")).json()
+    assert (await _publish(db_client, novel_id, chapters[0])).status_code == 200
+    after = (await db_client.get(f"/novels/{novel_id}/publication")).json()
+
+    assert (before["salesStopped"], after["salesStopped"], after["republishBlock"]) == (False, False, None)
+
+
 # ── 거두기 ──────────────────────────────────────────────────────────────────
 async def test_withdraw_keeps_the_frozen_copies_and_republish_reopens_without_screening(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM

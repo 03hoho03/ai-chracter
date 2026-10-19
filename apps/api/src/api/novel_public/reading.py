@@ -313,7 +313,13 @@ async def _ended_or_not_found(
         return ended("withdrawn")
     if source is None or source.moderation_status != ModerationStatus.NORMAL:
         return ended("source_unavailable")
-    return ended_by_refund() if refunded else not_found
+    if refunded:
+        return ended_by_refund()
+    # 판매 중단은 정책 스위치가 켜졌을 때만 걸리고 그동안 소장자는 계속 읽는다. 여기 오는 것은 스위치를 다시 끈 뒤의 소장자다 —
+    # 운영 조치로 열람이 끝난 것으로 알린다(환급 없음).
+    if publication.sales_stopped_at is not None:
+        return ended("restricted")
+    return not_found
 
 
 async def _count_view(

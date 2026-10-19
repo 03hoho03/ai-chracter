@@ -239,6 +239,10 @@ async def _plan(
     publication = await db.get(NovelPublication, novel.id, populate_existing=True)
     if publication is not None and publication.moderation_status == "restricted":
         raise _error(status.HTTP_409_CONFLICT, "NOVEL_PUBLICATION_RESTRICTED")
+    # 운영자가 판매를 멈춘 공개는 새 화도 고친 글도 받지 않는다 — 판매 중단은 "공개·신규 판매 중단"이다. 거두기·무료로 전환은
+    # 이 계획을 거치지 않아 된다.
+    if publication is not None and publication.sales_stopped_at is not None:
+        raise _error(status.HTTP_409_CONFLICT, "NOVEL_PUBLICATION_SALES_STOPPED")
     if (
         publication is not None
         and publication.review_status == "pending"
@@ -378,6 +382,8 @@ async def _status(db: AsyncSession, novel: Novel, user_id: uuid.UUID) -> NovelPu
     republish_block: RepublishBlock | None = None
     if publication is not None and publication.moderation_status == "restricted":
         republish_block = "restricted"
+    elif publication is not None and publication.sales_stopped_at is not None:
+        republish_block = "sales_stopped"
     elif not gate.source_available:
         republish_block = "source_unavailable"
     chapter_count = await db.scalar(
@@ -425,6 +431,7 @@ async def _status(db: AsyncSession, novel: Novel, user_id: uuid.UUID) -> NovelPu
         ),
         reviewed_at=publication.reviewed_at if publication is not None else None,
         review_required=needs_review(novel),
+        sales_stopped=publication is not None and publication.sales_stopped_at is not None,
     )
 
 

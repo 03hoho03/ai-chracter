@@ -8,7 +8,7 @@ from pydantic import AwareDatetime, ConfigDict, EmailStr, Field
 from api.chat.prompt_builder import PromptLane
 from api.core.schema import CamelModel
 from api.db.models.chat import ChatMessageRole
-from api.db.models.content import ContentType, ContentVisibility, ModerationStatus
+from api.db.models.content import ContentType, ContentVisibility, DerivativeNovelsChoice, ModerationStatus
 from api.db.models.creator_payout import (
     BankCode,
     CreatorPayoutApplicationStatus,
@@ -189,6 +189,8 @@ class AdminContentDetailResponse(CamelModel):
     published_images: list[AdminContentImage]
     has_unpublished_changes: bool
     versions: list[AdminContentVersionItem]
+    # 이 작품을 제한·삭제하면서 파생 소설은 판매만 멈추고 산 사람의 열람을 남겼는가(정상 작품이면 의미 없다).
+    novel_buyers_kept: bool
 
 
 class AdminContentActionRequest(CamelModel):
@@ -199,6 +201,9 @@ class AdminContentActionRequest(CamelModel):
     action: ModerationActionType
     reason_category: ReportReasonCategory | None = None
     admin_comment: str | None = None
+    # 이용제한·삭제 때 그 원작의 파생 소설을 어떻게 하나(`DerivativeNovelsChoice`). 빼면 `close`(지금 동작), 다른 조치에서는
+    # 보지 않는다.
+    derivative_novels: DerivativeNovelsChoice | None = None
 
 
 class AdminHomeCurationContent(CamelModel):

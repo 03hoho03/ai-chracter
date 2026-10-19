@@ -19,7 +19,8 @@ from api.db.models.novel import (
 
 AdminNovelModerationAction = Literal["restrict", "lift"]
 AdminNovelReviewAction = Literal["approve", "reject"]
-AdminNovelReportAction = Literal["restrict", "reject"]
+AdminNovelReportAction = Literal["restrict", "stop_sales", "reject"]
+AdminNovelSalesAction = Literal["stop", "resume"]
 AdminNovelCommentAction = Literal["hide", "restore", "delete"]
 AdminNovelCommentReportAction = Literal["hide", "delete", "reject"]
 
@@ -30,7 +31,8 @@ class AdminNovelListItem(CamelModel):
     구매도 거래 기록이라 센다), `pending_report_count` 는 처리 전 노벨 신고 수다. `review_status` 는 첫 공개의 운영자 심사
     (대기·승인·반려, 심사 없이 공개됐으면 비어 있다) — 대기·반려 행의 `visibility` 는 `withdrawn` 이지만 게시자가 거둔 것이
     아니다. `hidden_at` 은 노벨로 팔린 소설을 작가가 지웠거나 그 작가가 탈퇴해 숨긴 시각이다 — 숨긴 소설도 공개 범위가 `withdrawn` 이라 이 값으로
-    게시자가 거둔 것과 가른다(숨기지 않았으면 비어 있다)."""
+    게시자가 거둔 것과 가른다(숨기지 않았으면 비어 있다). `sales_stopped_at` 은 운영자가 판매를 멈춘 시각이다 — 이용제한과
+    따로 걸리고 따로 풀리며, 멈춘 노벨은 `readable` 이 거짓이지만 산 사람은 계속 읽는다(멈추지 않았으면 비어 있다)."""
 
     id: uuid.UUID
     title: str
@@ -48,6 +50,7 @@ class AdminNovelListItem(CamelModel):
     published_at: datetime
     review_status: NovelPublicationReviewStatus | None
     hidden_at: datetime | None
+    sales_stopped_at: datetime | None
 
 
 class AdminNovelListResponse(CamelModel):
@@ -153,6 +156,22 @@ class AdminNovelModerationResponse(CamelModel):
     moderation_status: NovelPublicationModerationStatus
 
 
+class AdminNovelSalesRequest(CamelModel):
+    """판매 중단(`stop`)·재개(`resume`). `admin_comment` 는 감사 로그에 남는 조치 사유(공백만이면 422). `reason_category` 는
+    신고 사유 분류를 고를 때만."""
+
+    action: AdminNovelSalesAction
+    admin_comment: str
+    reason_category: ReportReasonCategory | None = None
+
+
+class AdminNovelSalesResponse(CamelModel):
+    """`sales_stopped_at` 은 판매를 멈춘 시각(재개했으면 비어 있다)."""
+
+    novel_id: uuid.UUID
+    sales_stopped_at: datetime | None
+
+
 class AdminNovelReviewRequest(CamelModel):
     """첫 공개 승인(`approve`)·반려(`reject`). `admin_comment` 는 감사 로그에 남는 글이고, 반려에서는 운영자가 쓴 글 그대로
     작가에게 보이는 반려 사유이기도 하다(반려는 공백뿐이면 422)."""
@@ -186,11 +205,13 @@ class AdminNovelReportListResponse(CamelModel):
 
 
 class AdminNovelReportDetailResponse(AdminNovelReportListItem):
-    """`novel_moderation_status` 는 신고된 노벨의 지금 이용제한 상태(소설이 지워졌으면 비어 있다)."""
+    """`novel_moderation_status` 는 신고된 노벨의 지금 이용제한 상태, `novel_sales_stopped_at` 은 판매를 멈춘 시각이다(소설이
+    지워졌거나 멈추지 않았으면 비어 있다)."""
 
     resolved_by_admin_id: uuid.UUID | None
     resolved_at: datetime | None
     novel_moderation_status: NovelPublicationModerationStatus | None
+    novel_sales_stopped_at: datetime | None
     evidence: AdminNovelReportEvidence
 
 

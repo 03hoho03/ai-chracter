@@ -12,7 +12,8 @@
 소설이나 마지막 묶음을 지우는 것(`deleted`)은 늘 환급한다. 정책 스위치(`novel_public_policy_v2_enabled`)가 켜져 있으면 운영자의
 노벨 이용제한(`novel_restricted`), 원작의 자체 이용제한·삭제(`source_restricted`·`source_deleted`)도 환급한다 — 켜져 있을 때는
 산 사람이 읽지 못하게 되는 경우와 환급되는 경우가 같다. 공개 거둠·게시자 정지·원작자 정지로 인한 원작 일괄 제한·판매된 소설
-삭제(숨김)·게시자 탈퇴(판매된 소설을 숨겨 남김)는 환급하지 않는다 — 산 사람은 계속 읽는다(`access.py` 의 소장자 열람 조건).
+삭제(숨김)·게시자 탈퇴(판매된 소설을 숨겨 남김)·운영자의 판매 중단(노벨 판매 중단, 원작을 제한·삭제하면서 파생 소설은 판매만
+멈추기로 고른 것 — `source_closing_keeps_buyers`)은 환급하지 않는다 — 산 사람은 계속 읽는다(`access.py` 의 소장자 열람 조건).
 다시 열려도 환급은 되돌리지 않는다. 사유 `publisher_withdrawn` 은 새로 쓰지 않는다 — 그 사유로 적힌 옛 행을 읽기 위해 값만
 남긴다.
 
@@ -50,7 +51,7 @@ from api.core.rate_limit_gate import _too_many_requests
 from api.core.schema import CamelModel
 from api.db.models.auth import User
 from api.db.models.clover import CloverSpendAllocation, CloverSpendRefund
-from api.db.models.content import Content
+from api.db.models.content import Content, DerivativeNovelsChoice
 from api.db.models.moderation import Notification
 from api.db.models.novel import (
     Novel,
@@ -456,6 +457,18 @@ async def refund_source_closing(db: AsyncSession, closing: SourceClosing | None)
     await refund_closing_purchases(
         db, novel_ids=closing.novel_ids, locked_user_ids=closing.locked_user_ids, reason=closing.reason
     )
+
+
+def source_closing_keeps_buyers(*, closes: bool, choice: DerivativeNovelsChoice | None) -> bool:
+    """원작 조치(직접·신고 처리)가 파생 소설의 산 사람을 남기는가 — 원작을 닫는 조치(`closes`)이고 `stop_sales` 를 골랐을 때만
+    참이다. 참이면 호출자는 `lock_source_closing`·환급을 건너뛰고 원작에 `novel_buyers_kept` 를 세운다(소장자 조건이 그 표식으로
+    열람을 둔다). 정책 스위치가 꺼져 있는데 `stop_sales` 를 고르면 409 `NOVEL_SALES_STOP_DISABLED` — 꺼진 동안은 소장자 열람이
+    없어 "판매만 멈춤"이 환급 없는 닫힘이 된다. 아무것도 쓰기 전에 부른다."""
+    if not closes or choice != "stop_sales":
+        return False
+    if not settings.novel_public_policy_v2_enabled:
+        raise _error(status.HTTP_409_CONFLICT, "NOVEL_SALES_STOP_DISABLED")
+    return True
 
 
 # ── 판매된 소설·묶음 ────────────────────────────────────────────────────────

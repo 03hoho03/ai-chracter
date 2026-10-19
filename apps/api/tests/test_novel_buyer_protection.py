@@ -2,7 +2,8 @@
 돌려받는가.
 
 - 열람만 남는 경우: 게시자의 공개 거둠·게시자 정지·원작자 정지로 인한 원작 일괄 제한·판매된 소설 삭제(숨김)·게시자 탈퇴
-  (판매된 소설을 숨겨 남긴다). 새로 보이거나 팔리지는 않지만 산 사람은 산 화·무료 화·목차를 계속 읽는다.
+  (판매된 소설을 숨겨 남긴다)·운영자의 판매 중단(노벨 직접·신고 처리, 원작을 제한·삭제하면서 파생 소설은 판매만 멈추기로
+  고른 경우). 새로 보이거나 팔리지는 않지만 산 사람은 산 화·무료 화·목차를 계속 읽는다.
 - 닫히는 경우: 노벨 이용제한·원작 자체 이용제한·원작 삭제. 산 사람은 410 이고 그 구매는 사유와 함께 환급된다 — 닫히는
   경우와 환급되는 경우가 같다. 다시 열려도 환급은 그대로이고 다시 살 수 있다.
 - 판매된 소설을 지우면 숨긴다. 판매된 화가 든 마지막 묶음은 지울 수 없다. 숨긴 소설은 미환급 소장자가 사라지면 하루 한 번
@@ -27,10 +28,12 @@ from api.db.models import User
 from api.db.models.clover import CloverLedger
 from api.db.models.content import Content, ModerationStatus
 from api.db.models.moderation import (
+    AdminActionLog,
     Appeal,
     AppealStatus,
     AppealTargetKind,
     ModerationAction,
+    Notification,
     Report,
     ReportReasonCategory,
     ReportStatus,
@@ -214,12 +217,48 @@ async def _publisher_withdraws(client: httpx.AsyncClient, _db: AsyncSession, nov
     assert (await client.delete("/me")).status_code == 204
 
 
+async def _stop_novel_sales(client: httpx.AsyncClient, db: AsyncSession, novel: PublicNovel) -> None:
+    await _as_admin(client, db)
+    resp = await client.post(
+        f"/admin/novels/{novel.novel_id}/sales", json={"action": "stop", "adminComment": "운영정책 위반"}
+    )
+    assert resp.status_code == 200, resp.text
+
+
+async def _stop_novel_sales_by_report(client: httpx.AsyncClient, db: AsyncSession, novel: PublicNovel) -> None:
+    report = await _novel_report(db, novel)
+    await _as_admin(client, db)
+    resp = await client.post(
+        f"/admin/novel-reports/{report}/actions", json={"action": "stop_sales", "adminComment": "운영정책 위반"}
+    )
+    assert resp.status_code == 200, resp.text
+
+
+async def _restrict_source_keeping_buyers(client: httpx.AsyncClient, db: AsyncSession, novel: PublicNovel) -> None:
+    await _as_admin(client, db)
+    resp = await client.post(
+        f"/admin/contents/{novel.content_id}/action",
+        json={"action": "restrict", "reasonCategory": "spam", "derivativeNovels": "stop_sales"},
+    )
+    assert resp.status_code == 200, resp.text
+
+
+async def _delete_source_keeping_buyers_by_report(
+    client: httpx.AsyncClient, db: AsyncSession, novel: PublicNovel
+) -> None:
+    await _act_on_source_report(client, db, novel, "delete", derivative_novels="stop_sales")
+
+
 _KEEPS = [
     pytest.param(_withdraw, id="withdrawn"),
     pytest.param(_suspend_publisher, id="publisher-suspended"),
     pytest.param(_restrict_source_by_suspension, id="source-restricted-by-creator-suspension"),
     pytest.param(_delete_sold_novel, id="sold-novel-deleted"),
     pytest.param(_publisher_withdraws, id="publisher-withdrew"),
+    pytest.param(_stop_novel_sales, id="novel-sales-stopped"),
+    pytest.param(_stop_novel_sales_by_report, id="novel-report-sales-stop"),
+    pytest.param(_restrict_source_keeping_buyers, id="source-restricted-keeping-buyers"),
+    pytest.param(_delete_source_keeping_buyers_by_report, id="source-report-delete-keeping-buyers"),
 ]
 
 
@@ -307,7 +346,14 @@ async def _delete_source(client: httpx.AsyncClient, db: AsyncSession, novel: Pub
     await _act_on_source(client, db, novel, "delete")
 
 
-async def _act_on_source_report(client: httpx.AsyncClient, db: AsyncSession, novel: PublicNovel, action: str) -> None:
+async def _act_on_source_report(
+    client: httpx.AsyncClient,
+    db: AsyncSession,
+    novel: PublicNovel,
+    action: str,
+    *,
+    derivative_novels: str | None = None,
+) -> None:
     reporter = await _member(db)
     report = Report(
         reporter_user_id=reporter,
@@ -318,7 +364,8 @@ async def _act_on_source_report(client: httpx.AsyncClient, db: AsyncSession, nov
     db.add(report)
     await db.commit()
     await _as_admin(client, db)
-    resp = await client.post(f"/admin/reports/{report.id}/action", json={"action": action})
+    body = {"action": action} if derivative_novels is None else {"action": action, "derivativeNovels": derivative_novels}
+    resp = await client.post(f"/admin/reports/{report.id}/action", json=body)
     assert resp.status_code == 200, resp.text
 
 
@@ -1332,3 +1379,415 @@ async def test_the_admin_sees_a_hidden_novel_apart_from_a_withdrawn_one(
     }
     assert (hidden_detail.get("hiddenAt") is not None, "hiddenAt" in withdrawn_detail) == (True, True)
     assert withdrawn_detail["hiddenAt"] is None
+
+
+# ── 판매 중단 ────────────────────────────────────────────────────────────────
+# 소장자가 계속 읽는 것·목록과 구매에서 빠지는 것·소장 목록 표시는 위 "열람만 남는 경우" 매개변수가 본다. 아래는 조치 자체
+# (감사 로그·알림·재개·거절·이용제한과의 독립·스위치)를 본다.
+async def _sales(
+    client: httpx.AsyncClient, novel: PublicNovel, action: str, comment: str = "운영정책 위반"
+) -> httpx.Response:
+    return await client.post(f"/admin/novels/{novel.novel_id}/sales", json={"action": action, "adminComment": comment})
+
+
+async def _stopped_at(db_session: AsyncSession, novel: PublicNovel) -> datetime | None:
+    return await db_session.scalar(
+        sa.select(NovelPublication.sales_stopped_at)
+        .where(NovelPublication.novel_id == novel.novel_id)
+        .execution_options(populate_existing=True)
+    )
+
+
+async def _notification_types(db_session: AsyncSession, user_id: uuid.UUID) -> list[str]:
+    return list((await db_session.scalars(sa.select(Notification.type).where(Notification.user_id == user_id))).all())
+
+
+async def _action_logs(
+    db_session: AsyncSession,
+) -> set[tuple[str, uuid.UUID | None, uuid.UUID | None, str | None, str | None]]:
+    rows = await db_session.execute(
+        sa.select(
+            AdminActionLog.action_type,
+            AdminActionLog.target_user_id,
+            AdminActionLog.target_novel_id,
+            AdminActionLog.reason_category,
+            AdminActionLog.reason_text,
+        )
+    )
+    return set(rows.tuples().all())
+
+
+async def _source(db_session: AsyncSession, novel: PublicNovel) -> Content:
+    content = await db_session.scalar(
+        sa.select(Content).where(Content.id == novel.content_id).execution_options(populate_existing=True)
+    )
+    assert content is not None
+    return content
+
+
+async def _source_action(
+    client: httpx.AsyncClient, novel: PublicNovel, action: str, derivative_novels: str | None = None
+) -> httpx.Response:
+    body: dict[str, object] = {"action": action, "reasonCategory": "spam", "adminComment": "사유"}
+    if derivative_novels is not None:
+        body["derivativeNovels"] = derivative_novels
+    return await client.post(f"/admin/contents/{novel.content_id}/action", json=body)
+
+
+async def _source_report(db_session: AsyncSession, novel: PublicNovel) -> uuid.UUID:
+    report = Report(
+        reporter_user_id=await _member(db_session),
+        content_id=novel.content_id,
+        reason_category=ReportReasonCategory.SPAM,
+        status=ReportStatus.PENDING,
+    )
+    db_session.add(report)
+    await db_session.commit()
+    return report.id
+
+
+async def test_stopping_sales_keeps_the_buyer_reading_without_a_refund_or_a_notice_and_is_logged(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """판매를 멈추면 환급·알림 없이 산 사람이 6화를 계속 읽고, 노벨은 목록에서 빠지며 이용제한 칸은 `normal` 그대로다. 어드민
+    상세는 멈춘 시각을 싣고 독자에게 보이지 않는다(`readable` 거짓). 감사 로그는 게시자를 대상으로 한 줄(`novel-sales-stop`)이고
+    그 게시자의 회원 상세 조치 이력에 보인다. 깨지는 시나리오: 판매 중단이 이용제한처럼 환급하거나 열람을 닫고, 운영자의 조치가
+    기록에 남지 않는다."""
+    novel = await _novel(db_session)
+    buyer, stranger = await _member(db_session), await _member(db_session)
+    await _bought(db_client, novel, 6, buyer)
+    await _as_admin(db_client, db_session)
+
+    stopped = await _sales(db_client, novel, "stop")
+    detail = (await db_client.get(f"/admin/novels/{novel.novel_id}")).json()
+    user_detail = (await db_client.get(f"/admin/users/{novel.publisher_id}")).json()
+
+    assert stopped.status_code == 200, stopped.text
+    assert (stopped.json()["novelId"], stopped.json()["salesStoppedAt"] is not None) == (str(novel.novel_id), True)
+    assert (detail["salesStoppedAt"] is not None, detail["readable"], detail["moderationStatus"]) == (
+        True,
+        False,
+        "normal",
+    )
+    assert {log["actionType"] for log in user_detail["actionLogs"]} == {"novel-sales-stop"}
+    assert await _action_logs(db_session) == {
+        ("novel-sales-stop", novel.publisher_id, novel.novel_id, None, "운영정책 위반")
+    }
+    assert _refunds(await _purchases(db_session, buyer)) == [(6, None, None)]
+    assert await _notification_types(db_session, buyer) == []
+    assert await _notification_types(db_session, novel.publisher_id) == []
+    chapter = await _get(db_client, _path(novel, 6), as_user=buyer)
+    assert (chapter.status_code, chapter.json()["access"]) == (200, "owned")
+    assert await _listed_ids(db_client, as_user=stranger) == []
+
+
+async def test_resuming_sales_puts_the_novel_back_on_the_list_and_on_sale(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """판매를 다시 열면 목록에 돌아오고 사지 않은 사람이 7화를 산다. 산 사람은 그대로 읽는다. 감사 로그는 `novel-sales-resume`.
+    깨지는 시나리오: 잘못 멈춘 판매를 되돌릴 길이 없거나, 재개가 다른 상태(이용제한·공개 범위)를 건드린다."""
+    novel = await _novel(db_session)
+    buyer, stranger = await _member(db_session), await _member(db_session)
+    await _bought(db_client, novel, 6, buyer)
+    await _as_admin(db_client, db_session)
+    assert (await _sales(db_client, novel, "stop")).status_code == 200
+
+    resumed = await _sales(db_client, novel, "resume", "오판 정정")
+    detail = (await db_client.get(f"/admin/novels/{novel.novel_id}")).json()
+
+    assert (resumed.status_code, resumed.json()["salesStoppedAt"]) == (200, None)
+    assert (detail["salesStoppedAt"], detail["readable"], detail["visibility"]) == (None, True, "public")
+    assert await _listed_ids(db_client, as_user=stranger) == [str(novel.novel_id)]
+    assert (await _buy(db_client, novel, 7, as_user=stranger)).status_code == 200
+    assert (await _get(db_client, _path(novel, 6), as_user=buyer)).status_code == 200
+    assert ("novel-sales-resume", novel.publisher_id, novel.novel_id, None, "오판 정정") in await _action_logs(db_session)
+
+
+async def test_stopping_or_resuming_twice_is_refused_and_logs_nothing(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """이미 멈춘 판매를 다시 멈추면 409 `NOVEL_SALES_ALREADY_STOPPED`(멈춘 시각은 처음 그대로), 멈추지 않은 판매를 재개하면 409
+    `NOVEL_SALES_NOT_STOPPED`, 사유가 공백뿐이면 422, 공개 상태 행이 없으면 404 `NOVEL_NOT_FOUND`. 거절된 조치는 감사 로그에
+    남지 않는다. 깨지는 시나리오: 빈 조치가 감사 로그에 쌓이거나 두 번째 멈춤이 멈춘 시각을 늦춘다."""
+    novel = await _novel(db_session)
+    await _as_admin(db_client, db_session)
+
+    not_stopped = await _sales(db_client, novel, "resume")
+    blank = await _sales(db_client, novel, "stop", "  ")
+    missing = await db_client.post(f"/admin/novels/{uuid.uuid4()}/sales", json={"action": "stop", "adminComment": "x"})
+    assert (await _sales(db_client, novel, "stop")).status_code == 200
+    first = await _stopped_at(db_session, novel)
+    again = await _sales(db_client, novel, "stop")
+
+    assert (not_stopped.status_code, not_stopped.json()["detail"]["code"]) == (409, "NOVEL_SALES_NOT_STOPPED")
+    assert blank.status_code == 422
+    assert (missing.status_code, missing.json()["detail"]["code"]) == (404, "NOVEL_NOT_FOUND")
+    assert (again.status_code, again.json()["detail"]["code"]) == (409, "NOVEL_SALES_ALREADY_STOPPED")
+    assert first is not None and await _stopped_at(db_session, novel) == first
+    assert {log[0] for log in await _action_logs(db_session)} == {"novel-sales-stop"}
+
+
+async def test_sales_stop_and_restriction_are_set_and_lifted_apart(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """판매를 멈춘 노벨을 이용제한하면 이용제한대로 환급하고, 이용제한을 해제해도 판매 중단은 남아 목록에 돌아오지 않는다 —
+    재개해야 돌아온다. 이용제한된 노벨의 판매도 멈출 수 있고 해제 뒤에도 멈춘 채다. 깨지는 시나리오: 이용제한 해제가 판매
+    중단까지 풀어 운영자가 멈춘 노벨이 다시 팔리거나, 판매 중단이 이용제한의 환급을 막는다."""
+    novel, restricted_first = await _novel(db_session), await _novel(db_session)
+    buyer, stranger = await _member(db_session), await _member(db_session)
+    await _bought(db_client, novel, 6, buyer)
+    await _as_admin(db_client, db_session)
+    assert (await _sales(db_client, novel, "stop")).status_code == 200
+    stopped_at = await _stopped_at(db_session, novel)
+
+    await _restrict_novel(db_client, db_session, novel)
+    await _lift_novel(db_client, novel)
+    await _restrict_novel(db_client, db_session, restricted_first)
+    stop_restricted = await _sales(db_client, restricted_first, "stop")
+    await _lift_novel(db_client, restricted_first)
+
+    assert stop_restricted.status_code == 200, stop_restricted.text
+    assert _refunds(await _purchases(db_session, buyer)) == [(6, 30, "novel_restricted")]
+    assert stopped_at is not None and await _stopped_at(db_session, novel) == stopped_at
+    assert await _stopped_at(db_session, restricted_first) is not None
+    assert await _listed_ids(db_client, as_user=stranger) == []
+    await _as_admin(db_client, db_session)
+    assert (await _sales(db_client, novel, "resume")).status_code == 200
+    assert await _listed_ids(db_client, as_user=stranger) == [str(novel.novel_id)]
+
+
+async def test_a_holder_of_a_stopped_novel_is_told_reading_ended_once_the_policy_switch_is_off_again(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """켠 동안 판매를 멈춘 노벨의 소장자는 스위치를 다시 끄면 소장자 열람이 없어 410 `NOVEL_READING_ENDED`(이유 `restricted`,
+    환급 없음)를 받는다 — 까닭 없는 404 가 아니다. 산 적 없는 사람은 404. 깨지는 시나리오: 소장자가 "없는 소설"로 안내받는다."""
+    novel = await _novel(db_session)
+    buyer, stranger = await _member(db_session), await _member(db_session)
+    await _bought(db_client, novel, 6, buyer)
+    await _stop_novel_sales(db_client, db_session, novel)
+    monkeypatch.setattr(settings, "novel_public_policy_v2_enabled", False)
+
+    chapter = await _get(db_client, _path(novel, 6), as_user=buyer)
+    info = await db_client.get(f"/webnovels/{novel.novel_id}")
+    stranger_free = await _get(db_client, _path(novel, 1), as_user=stranger)
+
+    assert chapter.status_code == 410, chapter.text
+    assert chapter.json()["detail"] == {"code": "NOVEL_READING_ENDED", "reason": "restricted"}
+    assert (info.status_code, info.json()["detail"]["reason"]) == (410, "restricted")
+    assert stranger_free.status_code == 404
+
+
+async def test_a_novel_report_resolved_by_stopping_sales_logs_the_report_reason_and_keeps_the_first_stop(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """신고를 판매 중단으로 처리하면 신고가 처리완료가 되고 응답이 노벨의 판매 중단 시각을 싣는다. 감사 로그는
+    `novel-sales-stop` 에 신고 사유 분류를 남긴다. 이미 판매를 멈춘 노벨의 다른 신고도 판매 중단으로 처리되고 멈춘 시각은 처음
+    그대로다. 깨지는 시나리오: 신고 처리에서 고른 판매 중단이 이용제한으로 처리되거나, 같은 노벨의 두 번째 신고를 처리할 수
+    없다."""
+    novel = await _novel(db_session)
+    first, second = await _novel_report(db_session, novel), await _novel_report(db_session, novel)
+    await _as_admin(db_client, db_session)
+
+    resolved = await db_client.post(
+        f"/admin/novel-reports/{first}/actions", json={"action": "stop_sales", "adminComment": "선정적"}
+    )
+    stopped_at = await _stopped_at(db_session, novel)
+    again = await db_client.post(
+        f"/admin/novel-reports/{second}/actions", json={"action": "stop_sales", "adminComment": "선정적"}
+    )
+
+    assert resolved.status_code == 200, resolved.text
+    body = resolved.json()
+    assert (body["status"], body["novelModerationStatus"], body["novelSalesStoppedAt"] is not None) == (
+        "resolved",
+        "normal",
+        True,
+    )
+    assert (again.status_code, again.json()["status"]) == (200, "resolved")
+    assert stopped_at is not None and await _stopped_at(db_session, novel) == stopped_at
+    assert ("novel-sales-stop", novel.publisher_id, novel.novel_id, "spam", "선정적") in await _action_logs(db_session)
+
+
+async def test_a_report_on_a_deleted_novel_cannot_stop_its_sales(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """신고된 노벨이 지워졌으면 판매 중단으로 처리할 대상이 없어 409 `NOVEL_GONE` 이고 신고는 그대로 처리 전이다. 깨지는
+    시나리오: 대상 없는 신고가 처리완료로 닫힌다."""
+    novel = await _novel(db_session)
+    report = await _novel_report(db_session, novel)
+    await _login_as(db_client, novel.publisher_id)
+    assert (await db_client.delete(f"/novels/{novel.novel_id}")).status_code == 204
+    await _as_admin(db_client, db_session)
+
+    resp = await db_client.post(
+        f"/admin/novel-reports/{report}/actions", json={"action": "stop_sales", "adminComment": "선정적"}
+    )
+
+    assert (resp.status_code, resp.json()["detail"]["code"]) == (409, "NOVEL_GONE")
+    status = await db_session.scalar(
+        sa.select(NovelReport.status).where(NovelReport.id == report).execution_options(populate_existing=True)
+    )
+    assert status == ReportStatus.PENDING
+
+
+async def test_restricting_a_source_while_keeping_buyers_refunds_nothing_and_still_tells_the_creator(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """원작을 이용제한하면서 파생 소설은 판매만 멈추기로 고르면 환급·환급 알림이 없고 소장자는 계속 읽는다. 원작자 알림은 지금
+    그대로다. 어드민 작품 상세는 그 선택(`novelBuyersKept`)을 싣는다. 깨지는 시나리오: 판매 중단을 골랐는데 닫는 조치처럼
+    환급하거나, 원작자가 자기 작품의 제한을 모른다."""
+    novel = await _novel(db_session)
+    buyer = await _member(db_session)
+    await _bought(db_client, novel, 6, buyer)
+    creator = await _creator_id(db_session, novel)
+    await _as_admin(db_client, db_session)
+
+    resp = await _source_action(db_client, novel, "restrict", "stop_sales")
+
+    assert resp.status_code == 200, resp.text
+    assert (resp.json()["moderationStatus"], resp.json()["novelBuyersKept"]) == ("restricted", True)
+    assert _refunds(await _purchases(db_session, buyer)) == [(6, None, None)]
+    assert await _notification_types(db_session, buyer) == []
+    assert await _notification_types(db_session, creator) == ["moderation-action"]
+    assert (await _get(db_client, _path(novel, 6), as_user=buyer)).status_code == 200
+
+
+async def test_closing_a_source_again_after_keeping_buyers_refunds_them_and_drops_the_mark(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """판매만 멈추고 제한한 원작을, 칸을 빼고(지금 어드민 화면처럼) 다시 제한하면 그때 닫고 환급하며 표식이 내려간다 — 칸을
+    빼면 늘 지금 동작이다. 깨지는 시나리오: 한 번 남긴 표식이 남아 더 무거운 조치에서도 열람이 이어지고 환급이 빠진다."""
+    novel = await _novel(db_session)
+    buyer = await _member(db_session)
+    await _bought(db_client, novel, 6, buyer)
+    await _as_admin(db_client, db_session)
+    assert (await _source_action(db_client, novel, "restrict", "stop_sales")).status_code == 200
+
+    closed = await _source_action(db_client, novel, "restrict")
+
+    assert (closed.status_code, closed.json()["novelBuyersKept"]) == (200, False)
+    assert _refunds(await _purchases(db_session, buyer)) == [(6, 30, "source_restricted")]
+    chapter = await _get(db_client, _path(novel, 6), as_user=buyer)
+    assert (chapter.status_code, chapter.json()["detail"]["reason"]) == (410, "source_unavailable")
+
+
+async def test_lifting_or_accepting_an_appeal_drops_the_keep_mark(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """작품 상태를 바꾸는 조치는 표식을 매번 새로 쓴다 — 해제(판매 중단 칸을 함께 보내도)와 이의 수용은 정상으로 돌리며
+    표식을 내린다. 깨지는 시나리오: 정상으로 돌아간 원작에 지난 선택이 남아, 운영 확인 쿼리가 판매 중단 원작을 잘못 센다."""
+    lifted, appealed = await _novel(db_session), await _novel(db_session)
+    await _as_admin(db_client, db_session)
+    for novel in (lifted, appealed):
+        assert (await _source_action(db_client, novel, "restrict", "stop_sales")).status_code == 200
+
+    lift = await db_client.post(
+        f"/admin/contents/{lifted.content_id}/action",
+        json={"action": "lift-restriction", "adminComment": "오판", "derivativeNovels": "stop_sales"},
+    )
+    action = await db_session.scalar(
+        sa.select(ModerationAction.id).where(ModerationAction.content_id == appealed.content_id)
+    )
+    assert action is not None
+    appeal = Appeal(
+        user_id=await _creator_id(db_session, appealed),
+        target_kind=AppealTargetKind.MODERATION_ACTION,
+        target_id=action,
+        reason_text="오인 조치입니다",
+        status=AppealStatus.PENDING,
+    )
+    db_session.add(appeal)
+    await db_session.commit()
+    accepted = await db_client.post(f"/admin/appeals/{appeal.id}/resolve", json={"verdict": "accepted"})
+
+    assert (lift.status_code, accepted.status_code) == (200, 200)
+    for novel in (lifted, appealed):
+        source = await _source(db_session, novel)
+        assert (source.moderation_status, source.novel_buyers_kept) == (ModerationStatus.NORMAL, False)
+
+
+async def test_a_source_report_resolved_by_restricting_while_keeping_buyers_refunds_nothing(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """원작 신고를 이용제한으로 처리하면서 판매만 멈추기로 고르면 환급이 없고 표식이 선다(삭제 쪽은 "열람만 남는 경우"
+    매개변수가 본다). 깨지는 시나리오: 신고 처리 경로만 칸을 무시해 닫고 환급한다."""
+    novel = await _novel(db_session)
+    buyer = await _member(db_session)
+    await _bought(db_client, novel, 6, buyer)
+    report = await _source_report(db_session, novel)
+    await _as_admin(db_client, db_session)
+
+    resp = await db_client.post(
+        f"/admin/reports/{report}/action", json={"action": "restrict", "derivativeNovels": "stop_sales"}
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert _refunds(await _purchases(db_session, buyer)) == [(6, None, None)]
+    assert (await _source(db_session, novel)).novel_buyers_kept is True
+
+
+async def test_with_the_policy_switch_off_every_sales_stop_is_refused_and_writes_nothing(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """스위치가 꺼져 있으면 노벨 판매 중단·재개, 노벨 신고의 판매 중단, 원작 조치(직접·신고)의 판매 중단 선택이 모두 409
+    `NOVEL_SALES_STOP_DISABLED` 이고 아무것도 쓰지 않는다 — 노벨·원작 상태, 신고, 조치 행, 감사 로그 모두 그대로다. 원작
+    조치에서 `close` 로 보내면 지금 동작이다(칸을 뺀 경우는 위 스위치 꺼짐 환급 테스트가 본다). 깨지는 시나리오: 약관 개정
+    전에 "판매만 멈추고 열람 유지"가 생기는데, 꺼진 동안은 소장자 열람이 없어 소장자가 환급 없이 열람을 잃는다."""
+    monkeypatch.setattr(settings, "novel_public_policy_v2_enabled", False)
+    novel, stopped, closed = await _novel(db_session), await _novel(db_session), await _novel(db_session)
+    await db_session.execute(
+        sa.update(NovelPublication)
+        .where(NovelPublication.novel_id == stopped.novel_id)
+        .values(sales_stopped_at=sa.func.now())
+    )
+    await db_session.commit()
+    novel_report = await _novel_report(db_session, novel)
+    source_report = await _source_report(db_session, novel)
+    await _as_admin(db_client, db_session)
+
+    responses = [
+        await _sales(db_client, novel, "stop"),
+        await _sales(db_client, stopped, "resume"),
+        await db_client.post(
+            f"/admin/novel-reports/{novel_report}/actions", json={"action": "stop_sales", "adminComment": "x"}
+        ),
+        await _source_action(db_client, novel, "restrict", "stop_sales"),
+        await db_client.post(
+            f"/admin/reports/{source_report}/action", json={"action": "delete", "derivativeNovels": "stop_sales"}
+        ),
+    ]
+    explicit_close = await _source_action(db_client, closed, "restrict", "close")
+
+    assert [(r.status_code, r.json()["detail"]["code"]) for r in responses] == [(409, "NOVEL_SALES_STOP_DISABLED")] * 5
+    assert (await _stopped_at(db_session, novel), await _stopped_at(db_session, stopped) is not None) == (None, True)
+    source = await _source(db_session, novel)
+    assert (source.moderation_status, source.novel_buyers_kept) == (ModerationStatus.NORMAL, False)
+    novel_report_status = await db_session.scalar(
+        sa.select(NovelReport.status).where(NovelReport.id == novel_report).execution_options(populate_existing=True)
+    )
+    source_report_status = await db_session.scalar(
+        sa.select(Report.status).where(Report.id == source_report).execution_options(populate_existing=True)
+    )
+    assert (novel_report_status, source_report_status) == (ReportStatus.PENDING, ReportStatus.PENDING)
+    actions = await db_session.scalar(
+        sa.select(sa.func.count()).select_from(ModerationAction).where(ModerationAction.content_id == novel.content_id)
+    )
+    assert actions == 0
+    assert {log[0] for log in await _action_logs(db_session)} == {"content-restrict"}
+    assert explicit_close.status_code == 200, explicit_close.text
+    assert (await _source(db_session, closed)).novel_buyers_kept is False
+
+
+async def test_the_admin_list_shows_when_sales_were_stopped(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """어드민 노벨 목록의 행이 판매를 멈춘 시각을 싣는다(멈추지 않았으면 비어 있다). 깨지는 시나리오: 운영자가 목록에서 어느
+    노벨을 멈췄는지 가르지 못한다."""
+    stopped, selling = await _novel(db_session), await _novel(db_session)
+    await _stop_novel_sales(db_client, db_session, stopped)
+
+    items = (await db_client.get("/admin/novels")).json()["items"]
+
+    by_id = {item["id"]: item["salesStoppedAt"] for item in items}
+    assert by_id[str(selling.novel_id)] is None
+    assert by_id[str(stopped.novel_id)] is not None
