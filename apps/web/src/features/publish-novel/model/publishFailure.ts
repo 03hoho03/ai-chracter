@@ -76,7 +76,7 @@ export function toPublishFailureMessage(failure: PublishFailure): string | undef
     case "salesStopped":
       return "운영 정책에 따라 판매가 멈춰 공개하지 못했어요. 판매가 멈춘 동안은 새 화와 고친 내용을 공개할 수 없어요.";
     case "summaryRequired":
-      return "고친 화를 다시 공개하려면 변경 요약이 필요해요. 다시 공개하기를 눌러 고친 화마다 바뀐 것을 적어 주세요.";
+      return "고친 화를 다시 공개하려면 변경 요약이 필요해요. 다시 공개할 때 고친 화마다 바뀐 것을 적어 주세요.";
     case "failed":
       return "공개하지 못했어요. 잠시 후 다시 시도해 주세요.";
   }

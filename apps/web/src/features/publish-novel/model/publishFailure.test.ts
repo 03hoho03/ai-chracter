@@ -57,7 +57,7 @@ describe("toPublishFailure", () => {
     expect(failure).toEqual({ kind: "summaryRequired" });
     expect(isRetryablePublishFailure(failure)).toBe(false);
     expect(toPublishFailureMessage(failure)).toBe(
-      "고친 화를 다시 공개하려면 변경 요약이 필요해요. 다시 공개하기를 눌러 고친 화마다 바뀐 것을 적어 주세요.",
+      "고친 화를 다시 공개하려면 변경 요약이 필요해요. 다시 공개할 때 고친 화마다 바뀐 것을 적어 주세요.",
     );
   });
 

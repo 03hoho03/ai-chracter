@@ -280,7 +280,7 @@ function SummaryFields({
   const summaries = useWatch({ control: form.control, name: "summaries" });
 
   return (
-    <section aria-labelledby={headingId} aria-describedby={`${headingId}-help`} className="flex flex-col gap-3">
+    <section aria-labelledby={headingId} className="flex flex-col gap-3">
       <div className="flex flex-col gap-1">
         <h3 id={headingId} className="text-sm font-medium text-foreground">
           변경 요약
@@ -292,7 +292,8 @@ function SummaryFields({
       {ordinals.map((ordinal, index) => {
         const fieldId = `${headingId}-${ordinal}`;
         const error = errors.summaries?.[index]?.text;
-        const describedBy = [`${fieldId}-count`, error ? `${fieldId}-error` : undefined]
+        // 칸마다 묶음 설명(누가 언제 보는가)도 읽히게 — 묶음의 설명은 칸에 들어갈 때 읽히지 않는다.
+        const describedBy = [`${headingId}-help`, `${fieldId}-count`, error ? `${fieldId}-error` : undefined]
           .filter((id) => id !== undefined)
           .join(" ");
         return (

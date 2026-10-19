@@ -16,13 +16,10 @@ export type BuyerPolicyCopy = {
   publishWithdrawNote: string;
   /** 운영 이용제한으로 내려진 소설의 공개 절 첫 줄. */
   restrictedStatus: string;
-  /** 운영자가 판매를 멈춘 소설의 공개 절 첫 줄. 판매 중단은 스위치가 켜졌을 때만 걸 수 있어 문장은 하나지만, 켰다 끈
-   * 뒤에도 남을 수 있어 꺼짐에도 같은 값을 둔다. */
+  /** 운영자가 판매를 멈춘 소설의 공개 절 첫 줄. 판매 중단은 스위치가 켜졌을 때만 걸 수 있지만 켰다 끈 뒤에도 남는다 —
+   * 그때는 소장한 회원이 계속 읽는 길도 닫혀(서버가 운영 조치로 알린다) 꺼짐 문장이 다르다. */
   salesStoppedStatus: string;
 };
-
-const SALES_STOPPED_STATUS =
-  "운영 정책에 따라 판매가 멈췄어요. 노벨 목록에 보이지 않고 새로 소장할 수 없어요. 이미 소장한 회원은 계속 읽어요.";
 
 const OFF: BuyerPolicyCopy = {
   withdrawConfirm:
@@ -31,7 +28,7 @@ const OFF: BuyerPolicyCopy = {
   withdrawnReopen: "다시 공개하면 소장한 화도 다시 열려요.",
   publishWithdrawNote: "공개를 거두면 소장한 회원도 더 볼 수 없게 돼요.",
   restrictedStatus: "운영 정책에 따라 노벨에서 내려졌어요. 소장한 회원도 지금은 볼 수 없어요.",
-  salesStoppedStatus: SALES_STOPPED_STATUS,
+  salesStoppedStatus: "운영 정책에 따라 판매가 멈췄어요. 노벨 목록에 보이지 않고 새로 소장할 수 없어요. 소장한 회원도 지금은 볼 수 없어요.",
 };
 
 const ON: BuyerPolicyCopy = {
@@ -41,7 +38,8 @@ const ON: BuyerPolicyCopy = {
   withdrawnReopen: "다시 공개하면 다시 판매돼요.",
   publishWithdrawNote: "공개를 거두면 새로 소장할 수 없게 되고, 이미 소장한 회원은 계속 읽어요.",
   restrictedStatus: "운영 정책에 따라 노벨에서 내려졌어요. 소장한 회원도 지금은 볼 수 없고, 쓴 클로버는 돌려드렸어요.",
-  salesStoppedStatus: SALES_STOPPED_STATUS,
+  salesStoppedStatus:
+    "운영 정책에 따라 판매가 멈췄어요. 노벨 목록에 보이지 않고 새로 소장할 수 없어요. 이미 소장한 회원은 계속 읽어요.",
 };
 
 export function toBuyerPolicyCopy(pricing: { novelPublicPolicyV2Enabled?: boolean } | undefined): BuyerPolicyCopy {
