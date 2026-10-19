@@ -1,0 +1,103 @@
+"""장기 기억 측정 하네스 CLI.
+
+    cd apps/api
+    uv run --env-file .env python scripts/memory_eval_cli.py --run <원자료 폴더> [--data-dir <측정 데이터 폴더>] <명령> ...
+
+전역 인자(`--run`·`--data-dir`·`--status-dir`·`--cap-usd`·`--halt-usd`·`--bundle`)는 하위 명령 **앞에** 준다. 대본·심기 표·
+명세 같은 측정 데이터는 공개 저장소에 두지 않으므로 기본 경로가 없고, 데이터를 읽는 명령은 `--data-dir` 를 요구한다.
+
+DB 를 쓰는 명령은 실행 명령의 `DATABASE_URL` 로 작업 DB(이름 `lm_eval_` 로 시작)를 준다 — `.env` 의 값보다 명령의 값이 이긴다.
+유료 호출이 날 수 있는 명령(insert·probe·prototype-facts·embed-run)은 `--dry-run` 이 기본 동작이고, 실제 호출은 `--allow-paid`
+를 명시해야 한다(원장 상한을 본 뒤). 가짜 LLM(`--fake-llm`)은 절차 확인용이다.
+
+하위 명령은 묶음 모듈마다 등록한다(`COMMAND_GROUPS`). 묶음은 공용 모듈(`memory_eval.cli_common`)만 함께 쓰고 서로 import 하지
+않는다 — 인프라 묶음은 판정 모듈 없이 돈다.
+
+오래 도는 명령은 `--status-dir` 를 주면 시작할 때 `status.json`(명령·pid·시작 시각·상태)을 쓰고, 끝나면 상태를 고친 뒤 완료
+표지 `done.<종료 코드>` 를 만든다. 밖에서는 표지 파일이 생겼는지로 끝을 안다(출력 마지막 줄을 견주지 않는다).
+
+종료 코드: 0 정상 · 1 검사 위반(check-script) · 2 인자·환경 거부 · 20 원장 상한."""
+
+import argparse
+import json
+import os
+import sys
+from collections.abc import Callable, Sequence
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+from memory_eval import cli_infra
+from memory_eval.cli_common import add_global_args
+from memory_eval.ledger import EXIT_BUDGET, BudgetExceededError
+
+Register = Callable[["argparse._SubParsersAction[argparse.ArgumentParser]"], None]
+# 하위 명령 묶음의 등록 함수. 판정·집계 묶음은 같은 꼴의 `register` 를 가진 모듈을 여기 더한다.
+COMMAND_GROUPS: tuple[Register, ...] = (cli_infra.register,)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    ap = argparse.ArgumentParser(prog="memory_eval_cli")
+    add_global_args(ap)
+    sub = ap.add_subparsers(dest="command", required=True)
+    for register in COMMAND_GROUPS:
+        register(sub)
+    return ap
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def write_status(status_dir: Path, status: dict[str, Any]) -> None:
+    """상태 파일을 통째로 바꿔 쓴다(임시 파일 뒤 이름 바꾸기) — 지켜보는 쪽이 반쯤 쓴 JSON 을 읽지 않게."""
+    status_dir.mkdir(parents=True, exist_ok=True)
+    tmp = status_dir / "status.json.tmp"
+    tmp.write_text(json.dumps(status, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    tmp.replace(status_dir / "status.json")
+
+
+def _run(args: argparse.Namespace) -> int:
+    try:
+        code: int = args.fn(args)
+    except BudgetExceededError as stop:
+        print(stop)
+        return EXIT_BUDGET
+    except SystemExit as stop:
+        if isinstance(stop.code, str):
+            print(stop.code, file=sys.stderr)
+            return 2
+        if isinstance(stop.code, int):
+            return stop.code
+        return 0 if stop.code is None else 1
+    return code
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    status_dir: Path | None = args.status_dir
+    if status_dir is None:
+        return _run(args)
+    status: dict[str, Any] = {
+        "command": args.command,
+        "argv": list(sys.argv[1:] if argv is None else argv),
+        "pid": os.getpid(),
+        "startedAt": _now(),
+        "state": "running",
+    }
+    for stale in status_dir.glob("done.*"):
+        stale.unlink()
+    write_status(status_dir, status)
+    code = 1
+    try:
+        code = _run(args)
+    finally:
+        # 예외로 끝나도(코드 1) 표지를 남긴다 — 표지가 없으면 지켜보는 쪽이 끝을 모르고 기다린다.
+        write_status(status_dir, {**status, "state": "done", "exitCode": code, "endedAt": _now()})
+        (status_dir / f"done.{code}").write_text(_now() + "\n", encoding="utf-8")
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

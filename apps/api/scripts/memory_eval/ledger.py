@@ -64,6 +64,10 @@ def cost_usd(
     ) / 1_000_000
 
 
+# 원장 요약에서 단계 칸이 없는 줄(하네스 전에 손으로 남긴 줄)을 묶는 이름.
+NO_STAGE = "(단계 없음)"
+
+
 def row_cost(row: Mapping[str, Any]) -> float:
     """원장 한 줄의 원가. 하네스가 쓰는 줄은 `costUsd`, 하네스 전에 손으로 남긴 줄은 `cost_usd` 다 — 둘 다 상한 계산에 든다."""
     if "costUsd" in row:
