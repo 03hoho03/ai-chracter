@@ -4476,7 +4476,6 @@
           "auth"
         ],
         "summary": "Withdraw",
-        "description": "탈퇴. 노벨 게시자면 정책 스위치가 켜졌을 때 그 소설의 구매자에게 환급한다 — 잠금과 다시 하기는 `auth/withdrawal.py`\n모듈 docstring. 다시 하기 상한을 넘기면 409 `WITHDRAWAL_CONFLICT` 이고 아무것도 지우지 않았다(다시 누르면 된다).",
         "operationId": "withdraw_me_delete",
         "requestBody": {
           "content": {
@@ -8078,7 +8077,7 @@
           "novels"
         ],
         "summary": "Create Room Novel",
-        "description": "방의 소설을 만들거나, 이미 있으면 그대로 돌려준다(201 / 200). 무과금이다.\n\n원작 제목·캐릭터 이름·레인은 방이 고정한 버전에서 사본으로 떠 둔다 — 방이 지워지거나 작품이 바뀌어도 소설은\n그대로 읽혀야 한다. 주인공 이름은 방에 건 대화 프로필 이름이고, 없으면 비워 두었다가 첫 장을 만들기 전에\n받는다. 이용 제한 작품이어도 만들 수 있다(모델을 부르지 않는다).\n\n작가가 소설화를 허용하지 않은 작품이면 작가 본인이 아닌 사람은 새로 만들 수 없다(403 `CONTENT_NOVELIZE_FORBIDDEN`).\n이 판정은 이미 있는 소설을 돌려주는 분기 뒤에 둔다 — 허락을 낮춰도 이미 만든 소설은 계속 열려야 한다. 이어 쓰기는\n따로 판정한다: 모델을 부르는 라우트는 첫 화가 저장되어 잠긴 소설이면 허락을 보지 않고, 잠기기 전(빈 소설)이면 이와\n같은 판정으로 403 이다(`_ensure_novelize_permission`). 허락 변경과 겹친 생성은 잠그지 않는다 — 놓치는 것은 금지로\n바꾸는 순간과 겹친 생성 하나이고, 그 빈 소설은 다음 생성 요청에서 같은 판정을 받는다.",
+        "description": "방의 소설을 만들거나, 이미 있으면 그대로 돌려준다(201 / 200). 무과금이다.\n\n원작 제목·캐릭터 이름·레인은 방이 고정한 버전에서 사본으로 떠 둔다 — 방이 지워지거나 작품이 바뀌어도 소설은\n그대로 읽혀야 한다. 주인공 이름은 방에 건 대화 프로필 이름이고, 없으면 비워 두었다가 첫 장을 만들기 전에\n받는다. 이용 제한 작품이어도 만들 수 있다(모델을 부르지 않는다).\n\n작가가 소설화를 허용하지 않은 작품이면 작가 본인이 아닌 사람은 새로 만들 수 없다(403 `CONTENT_NOVELIZE_FORBIDDEN`).\n정책 스위치가 켜졌고 작가가 탈퇴했어도 같다(`novelize_refused`). 이 판정은 이미 있는 소설을 돌려주는 분기 뒤에 둔다 — 허락을 낮춰도 이미 만든 소설은 계속 열려야 한다. 이어 쓰기는\n따로 판정한다: 모델을 부르는 라우트는 첫 화가 저장되어 잠긴 소설이면 허락을 보지 않고, 잠기기 전(빈 소설)이면 이와\n같은 판정으로 403 이다(`_ensure_novelize_permission`). 허락 변경과 겹친 생성은 잠그지 않는다 — 놓치는 것은 금지로\n바꾸는 순간과 겹친 생성 하나이고, 그 빈 소설은 다음 생성 요청에서 같은 판정을 받는다.",
         "operationId": "create_room_novel_chat_rooms__room_id__novel_post",
         "parameters": [
           {
@@ -18569,6 +18568,10 @@
             "type": "boolean",
             "title": "Publishersuspended"
           },
+          "publisherWithdrawn": {
+            "type": "boolean",
+            "title": "Publisherwithdrawn"
+          },
           "firstPublishedAt": {
             "type": "string",
             "format": "date-time",
@@ -18715,6 +18718,7 @@
           "contentId",
           "sourceModerationStatus",
           "publisherSuspended",
+          "publisherWithdrawn",
           "firstPublishedAt",
           "chapters",
           "screenings",
@@ -18730,7 +18734,7 @@
           "serialLockSource"
         ],
         "title": "AdminNovelDetailResponse",
-        "description": "공개본 글과 운영 판단 재료. `source_moderation_status` 는 원작의 지금 상태(원작이 없으면 비어 있다), `publisher_suspended`\n는 게시자 정지 여부다 — 둘 다 `readable` 이 거짓인 이유를 가른다. `reports` 는 최근 노벨 신고 20개다.\n`purchase_amount` 는 환급되지 않은 구매의 가격 합(탈퇴한 구매자의 구매 포함), `purchase_buyer_count` 는 그 구매를 한 사람\n수다 — 탈퇴한 구매자는 누구인지 남지 않아 사람 수에 들지 않는다.\n\n`review_reason` 은 반려 사유(작가에게 그대로 보인다), `reviewed_at` 은 마지막 승인·반려 시각이다. `serial_lock_*` 는 연재권\n잠금 기록이다 — 잠긴 시각, 그때의 원작 소설화 허락·원작 게시본 id·시행 중이던 약관 판의 사본과 출처(`first_publish` 는\n첫 공개·승인이 찍음, `backfill` 은 이 기록이 생기기 전 공개된 소설을 뒤늦게 채움 — 허락·원작 게시본을 알 수 없어 비어\n있다). 잠기지 않았으면 모두 비어 있다."
+        "description": "공개본 글과 운영 판단 재료. `source_moderation_status` 는 원작의 지금 상태(원작이 없으면 비어 있다), `publisher_suspended`\n는 게시자 정지 여부, `publisher_withdrawn` 은 게시자 탈퇴 여부다 — 셋 다 `readable` 이 거짓인 이유를 가른다(탈퇴한\n게시자의 팔린 소설은 숨긴 채 남아 `hidden_at` 이 있다 — 탈퇴로 숨겼는지는 이것으로 본다. 작가가 지워 숨긴 뒤 탈퇴했으면\n둘 다 참이다). `reports` 는 최근 노벨 신고 20개다.\n`purchase_amount` 는 환급되지 않은 구매의 가격 합(탈퇴한 구매자의 구매 포함), `purchase_buyer_count` 는 그 구매를 한 사람\n수다 — 탈퇴한 구매자는 누구인지 남지 않아 사람 수에 들지 않는다.\n\n`review_reason` 은 반려 사유(작가에게 그대로 보인다), `reviewed_at` 은 마지막 승인·반려 시각이다. `serial_lock_*` 는 연재권\n잠금 기록이다 — 잠긴 시각, 그때의 원작 소설화 허락·원작 게시본 id·시행 중이던 약관 판의 사본과 출처(`first_publish` 는\n첫 공개·승인이 찍음, `backfill` 은 이 기록이 생기기 전 공개된 소설을 뒤늦게 채움 — 허락·원작 게시본을 알 수 없어 비어\n있다). 잠기지 않았으면 모두 비어 있다."
       },
       "AdminNovelListItem": {
         "properties": {
@@ -18857,7 +18861,7 @@
           "hiddenAt"
         ],
         "title": "AdminNovelListItem",
-        "description": "공개 상태 행이 있는 소설 하나(거둔 것·이용제한된 것 포함). `readable` 은 지금 독자에게 보이는가(거둠·이용제한·게시자\n정지·원작 숨김·공개 화 없음·첫 공개 승인 대기나 반려면 거짓). `purchase_count` 는 환급되지 않은 구매 수(탈퇴한 구매자의\n구매도 거래 기록이라 센다), `pending_report_count` 는 처리 전 노벨 신고 수다. `review_status` 는 첫 공개의 운영자 심사\n(대기·승인·반려, 심사 없이 공개됐으면 비어 있다) — 대기·반려 행의 `visibility` 는 `withdrawn` 이지만 게시자가 거둔 것이\n아니다. `hidden_at` 은 노벨로 팔린 소설을 작가가 지워 숨긴 시각이다 — 숨긴 소설도 공개 범위가 `withdrawn` 이라 이 값으로\n게시자가 거둔 것과 가른다(숨기지 않았으면 비어 있다)."
+        "description": "공개 상태 행이 있는 소설 하나(거둔 것·이용제한된 것 포함). `readable` 은 지금 독자에게 보이는가(거둠·이용제한·게시자\n정지·원작 숨김·공개 화 없음·첫 공개 승인 대기나 반려면 거짓). `purchase_count` 는 환급되지 않은 구매 수(탈퇴한 구매자의\n구매도 거래 기록이라 센다), `pending_report_count` 는 처리 전 노벨 신고 수다. `review_status` 는 첫 공개의 운영자 심사\n(대기·승인·반려, 심사 없이 공개됐으면 비어 있다) — 대기·반려 행의 `visibility` 는 `withdrawn` 이지만 게시자가 거둔 것이\n아니다. `hidden_at` 은 노벨로 팔린 소설을 작가가 지웠거나 그 작가가 탈퇴해 숨긴 시각이다 — 숨긴 소설도 공개 범위가 `withdrawn` 이라 이 값으로\n게시자가 거둔 것과 가른다(숨기지 않았으면 비어 있다)."
       },
       "AdminNovelListResponse": {
         "properties": {
@@ -31088,8 +31092,15 @@
             "$ref": "#/components/schemas/PublicNovelSource"
           },
           "publisherUserId": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Publisheruserid"
           },
           "publisherNickname": {
@@ -31102,6 +31113,10 @@
               }
             ],
             "title": "Publishernickname"
+          },
+          "publisherWithdrawn": {
+            "type": "boolean",
+            "title": "Publisherwithdrawn"
           },
           "isPublisher": {
             "type": "boolean",
@@ -31168,6 +31183,7 @@
           "source",
           "publisherUserId",
           "publisherNickname",
+          "publisherWithdrawn",
           "isPublisher",
           "chapters",
           "freeChapterCount",
@@ -31180,7 +31196,7 @@
           "publishedAt"
         ],
         "title": "PublicNovelDetailResponse",
-        "description": "노벨 작품 정보. 제목·소개·화 제목은 공개본 사본이다.\n\n- `is_publisher`: 보는 사람이 게시자 본인인가(모든 화를 무료로 읽고, 화면이 \"내 소설에서 관리\"를 보인다).\n- `free_chapter_count`·`chapter_price`: 앞 무료 화 수와 유료 화의 화당 가격(지금 설정값 — 이미 공개한 유료 화도 이\n  값이다). 6화 이후에도 작가가 무료로 둔 화가 있을 수 있으므로 화마다의 값은 목차의 `price` 다.\n- `liked`: 보는 사람이 좋아요했는가.\n- `sales_stopped`: 새로 보이거나 팔리지 않는 노벨을 소장자가 열었다(게시자의 거둠·정지, 원작자 정지로 인한 원작 일괄\n  제한, 판매된 소설 삭제). 산 화·무료 화·목차는 그대로 읽고, 사지 않은 유료 화는 잠김으로 보이되 살 수 없다."
+        "description": "노벨 작품 정보. 제목·소개·화 제목은 공개본 사본이다.\n\n- `is_publisher`: 보는 사람이 게시자 본인인가(모든 화를 무료로 읽고, 화면이 \"내 소설에서 관리\"를 보인다).\n- `free_chapter_count`·`chapter_price`: 앞 무료 화 수와 유료 화의 화당 가격(지금 설정값 — 이미 공개한 유료 화도 이\n  값이다). 6화 이후에도 작가가 무료로 둔 화가 있을 수 있으므로 화마다의 값은 목차의 `price` 다.\n- `liked`: 보는 사람이 좋아요했는가.\n- `sales_stopped`: 새로 보이거나 팔리지 않는 노벨을 소장자가 열었다(게시자의 거둠·정지·탈퇴, 원작자 정지로 인한 원작\n  일괄 제한, 판매된 소설 삭제). 산 화·무료 화·목차는 그대로 읽고, 사지 않은 유료 화는 잠김으로 보이되 살 수 없다.\n- `publisher_withdrawn`: 게시자가 탈퇴했다. 그때 `publisher_user_id`·`publisher_nickname` 은 비어 있다 — 탈퇴한 사람의\n  회원 id 를 남겨 두면 이 소설을 그 사람과 다시 이어 붙일 수 있다."
       },
       "PublicNovelHomeItem": {
         "properties": {
@@ -31293,6 +31309,10 @@
             ],
             "title": "Publishernickname"
           },
+          "publisherWithdrawn": {
+            "type": "boolean",
+            "title": "Publisherwithdrawn"
+          },
           "chapterCount": {
             "type": "integer",
             "title": "Chaptercount"
@@ -31318,13 +31338,14 @@
           "synopsis",
           "source",
           "publisherNickname",
+          "publisherWithdrawn",
           "chapterCount",
           "likeCount",
           "viewCount",
           "publishedAt"
         ],
         "title": "PublicNovelListItem",
-        "description": "노벨 목록의 한 줄. `title` 은 공개본 제목(비어 있던 공개본은 원작 제목), `synopsis` 는 공개본 소개다.\n`published_at` 은 공개 화면 글이 마지막으로 바뀐 시각(최신순 정렬 키)이다."
+        "description": "노벨 목록의 한 줄. `title` 은 공개본 제목(비어 있던 공개본은 원작 제목), `synopsis` 는 공개본 소개다.\n`published_at` 은 공개 화면 글이 마지막으로 바뀐 시각(최신순 정렬 키)이다. `publisher_withdrawn` 은 게시자가 탈퇴했는가다\n(탈퇴한 게시자의 소설은 판매를 멈춘 채 소장자에게만 보인다) — 닉네임이 비어 있는 살아 있는 게시자와 가른다."
       },
       "PublicNovelListResponse": {
         "properties": {
@@ -31383,6 +31404,10 @@
             ],
             "title": "Publishernickname"
           },
+          "publisherWithdrawn": {
+            "type": "boolean",
+            "title": "Publisherwithdrawn"
+          },
           "chapterCount": {
             "type": "integer",
             "title": "Chaptercount"
@@ -31412,6 +31437,7 @@
           "synopsis",
           "source",
           "publisherNickname",
+          "publisherWithdrawn",
           "chapterCount",
           "likeCount",
           "viewCount",
@@ -31636,6 +31662,10 @@
           "unofficial": {
             "type": "boolean",
             "title": "Unofficial"
+          },
+          "creatorWithdrawn": {
+            "type": "boolean",
+            "title": "Creatorwithdrawn"
           }
         },
         "type": "object",
@@ -31647,10 +31677,11 @@
           "coverUrl",
           "linkable",
           "creatorNickname",
-          "unofficial"
+          "unofficial",
+          "creatorWithdrawn"
         ],
         "title": "PublicNovelSource",
-        "description": "원작 표기. `title`·`character_name` 은 소설을 만들 때의 원작 사본이다. `cover_url` 은 원작의 지금 게시본 썸네일 —\n노벨 표지는 이것뿐이고, 원작자가 탈퇴했거나 썸네일이 없으면 비어 있다(화면이 기본 표지를 그린다). `linkable` 은 원작이\n지금 작품 목록에 실려 원작 상세로 링크를 걸 수 있는가다. `creator_nickname` 은 원작자의 지금 닉네임이다(복사해 두지 않고\n읽을 때 가져온다) — 원작자가 탈퇴했거나 원작 행이 없으면 비어 있다. `unofficial` 은 원작자가 게시자가 아닌가(화면이\n\"비공식 2차 창작\"을 붙인다)이고, 원작 행이 없으면 참이다(근거 없이 공식으로 표시하지 않는다)."
+        "description": "원작 표기. `title`·`character_name` 은 소설을 만들 때의 원작 사본이다. `cover_url` 은 원작의 지금 게시본 썸네일 —\n노벨 표지는 이것뿐이고, 원작자가 탈퇴했거나 썸네일이 없으면 비어 있다(화면이 기본 표지를 그린다). `linkable` 은 원작이\n지금 작품 목록에 실려 원작 상세로 링크를 걸 수 있는가다. `creator_nickname` 은 원작자의 지금 닉네임이다(복사해 두지 않고\n읽을 때 가져온다) — 원작자가 탈퇴했거나 원작 행이 없으면 비어 있다. `unofficial` 은 원작자가 게시자가 아닌가(화면이\n\"비공식 2차 창작\"을 붙인다)이고, 원작 행이 없으면 참이다(근거 없이 공식으로 표시하지 않는다). `creator_withdrawn` 은\n원작자가 탈퇴했는가다 — 이름이 빈 것은 탈퇴·원작 행 없음·닉네임 미설정이 모두 같아 보여, 화면이 \"탈퇴한 사용자\"로 그릴지를\n이것으로 가른다(원작 행이 없으면 거짓)."
       },
       "PutPayoutInfoRequest": {
         "properties": {
