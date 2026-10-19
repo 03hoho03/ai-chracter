@@ -12,7 +12,8 @@
 **소장자 열람** — 정책 스위치(`novel_public_policy_v2_enabled`)가 켜져 있으면, 목록에서 빠진 노벨이어도 아직 환급되지 않은
 구매를 가진 사람은 작품 정보·산 화·무료 화를 계속 읽고 읽은 자리를 저장한다(`select_owner_readable_publications` — 게시자의
 거둠·정지, 원작자 정지로 인한 원작 일괄 제한, 판매된 소설 삭제). 그때 응답의 `salesStopped` 가 참이고, 사지 않은 유료 화는
-살 수 없다(구매는 목록 조건을 본다). 산 사람은 산 때의 판을 골라 다시 읽는다(화 읽기의 쿼리 `edition`).
+살 수 없다(구매는 목록 조건을 본다). 산 사람은 산 때의 판을 골라 다시 읽는다(화 읽기의 쿼리 `edition`). 소장 목록
+(`GET /webnovels/owned`)은 그런 노벨로 돌아가는 길이다 — 작품 정보가 여는 노벨 가운데 미환급 구매가 있는 것을 싣는다.
 
 **열람 종료** — 읽을 수 없게 된 소설·화를 소장한 사람이 열면 410 `NOVEL_READING_ENDED` 와 이유(`reason`)를 준다. 소장하지
 않은 사람에게는 이유 없이 404 다 — 게시자의 철회·운영 조치 사실을 제3자에게 알릴 까닭이 없다. 이유는 구매 행(소설·화가
@@ -78,6 +79,8 @@ from api.novel_public.schemas import (
     PublicNovelListItem,
     PublicNovelListResponse,
     PublicNovelListSort,
+    PublicNovelOwnedItem,
+    PublicNovelOwnedListResponse,
     PublicNovelPurchasedEdition,
     PublicNovelReadingPosition,
     PublicNovelReadingPositionRequest,
@@ -346,6 +349,24 @@ async def get_home_novels(
 
 
 # ── 목록 ────────────────────────────────────────────────────────────────────
+def _chapter_count() -> Any:
+    """공개 화 수 — 목록 쿼리의 열로 쓰는 상관 하위 쿼리."""
+    return (
+        select(func.count())
+        .where(NovelChapterPublication.novel_id == NovelPublication.novel_id)
+        .correlate(NovelPublication)
+        .scalar_subquery()
+    )
+
+
+def _decode_latest_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
+    published_at, last_id = _decode_cursor(cursor, 2)
+    try:
+        return datetime.fromisoformat(published_at), uuid.UUID(last_id)
+    except ValueError:
+        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "INVALID_CURSOR") from None
+
+
 @reading_router.get("", dependencies=[Depends(require_novel_public_readable)])
 async def list_webnovels(
     sort: PublicNovelListSort = "latest",
@@ -355,13 +376,7 @@ async def list_webnovels(
 ) -> PublicNovelListResponse:
     """노벨 목록, 한 번에 20편. `latest` 는 공개 화면 글이 마지막으로 바뀐 시각 순, `popular` 는 좋아요 수 순(같으면 최신순).
     다음 페이지는 `nextCursor` 를 그대로 `cursor` 로 넘긴다."""
-    chapter_count = (
-        select(func.count())
-        .where(NovelChapterPublication.novel_id == NovelPublication.novel_id)
-        .correlate(NovelPublication)
-        .scalar_subquery()
-    )
-    query = select_readable_publications(NovelPublication, Novel, User.nickname, chapter_count)
+    query = select_readable_publications(NovelPublication, Novel, User.nickname, _chapter_count())
     if sort == "popular":
         query = query.order_by(
             NovelPublication.like_count.desc(), NovelPublication.published_at.desc(), NovelPublication.novel_id.desc()
@@ -378,12 +393,9 @@ async def list_webnovels(
     else:
         query = query.order_by(NovelPublication.published_at.desc(), NovelPublication.novel_id.desc())
         if cursor is not None:
-            published_at, last_id = _decode_cursor(cursor, 2)
-            try:
-                latest_key = (datetime.fromisoformat(published_at), uuid.UUID(last_id))
-            except ValueError:
-                raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "INVALID_CURSOR") from None
-            query = query.where(tuple_(NovelPublication.published_at, NovelPublication.novel_id) < latest_key)
+            query = query.where(
+                tuple_(NovelPublication.published_at, NovelPublication.novel_id) < _decode_latest_cursor(cursor)
+            )
 
     rows = (await db.execute(query.limit(PUBLIC_NOVEL_LIST_PAGE_SIZE + 1))).all()
     page = rows[:PUBLIC_NOVEL_LIST_PAGE_SIZE]
@@ -408,6 +420,77 @@ async def list_webnovels(
         parts = [last.published_at.isoformat(), str(last.novel_id)]
         next_cursor = _encode_cursor([str(last.like_count), *parts] if sort == "popular" else parts)
     return PublicNovelListResponse(items=items, next_cursor=next_cursor)
+
+
+# ── 소장 목록 ───────────────────────────────────────────────────────────────
+# `/{novel_id}` 보다 먼저 둔다(홈 노벨과 같은 이유).
+@reading_router.get("/owned", dependencies=[Depends(require_novel_public_readable)])
+async def list_owned_webnovels(
+    cursor: str | None = None,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> PublicNovelOwnedListResponse:
+    """내가 소장한 노벨 — 아직 환급되지 않은 구매가 하나라도 있고 지금 작품 정보가 열리는 노벨을, 노벨 목록의 최신순과 같은
+    순서·커서로 20편씩. 판단은 작품 정보와 같다: 목록 조건으로 읽히면 판매 중이고, 정책 스위치가 켜졌을 때 소장자 조건으로만
+    읽히면 `salesStopped` 가 참이다(모듈 docstring 의 소장자 열람). 스위치가 꺼져 있으면 소장자 열람이 없어 판매 중인 노벨만
+    싣는다 — 누르면 410 인 노벨을 "소장"으로 보이지 않는다. 환급으로 닫힌 노벨은 미환급 구매가 없어 빠진다."""
+    policy_v2 = settings.novel_public_policy_v2_enabled
+    select_publications = select_owner_readable_publications if policy_v2 else select_readable_publications
+    owns = (
+        select(NovelPurchase.id)
+        .where(
+            NovelPurchase.novel_id == NovelPublication.novel_id,
+            NovelPurchase.buyer_user_id == user_id,
+            NovelPurchase.refunded_at.is_(None),
+        )
+        .exists()
+    )
+    query = (
+        select_publications(NovelPublication, Novel, User.nickname, _chapter_count())
+        .where(owns)
+        .order_by(NovelPublication.published_at.desc(), NovelPublication.novel_id.desc())
+    )
+    if cursor is not None:
+        query = query.where(
+            tuple_(NovelPublication.published_at, NovelPublication.novel_id) < _decode_latest_cursor(cursor)
+        )
+    rows = (await db.execute(query.limit(PUBLIC_NOVEL_LIST_PAGE_SIZE + 1))).all()
+    page = rows[:PUBLIC_NOVEL_LIST_PAGE_SIZE]
+    page_ids = [novel.id for _, novel, _, _ in page]
+    on_sale = (
+        set(
+            (
+                await db.scalars(
+                    select_readable_publications(NovelPublication.novel_id).where(
+                        NovelPublication.novel_id.in_(page_ids)
+                    )
+                )
+            ).all()
+        )
+        if policy_v2 and page_ids
+        else set(page_ids)
+    )
+    sources = await _sources(db, [novel for _, novel, _, _ in page])
+    items = [
+        PublicNovelOwnedItem(
+            id=novel.id,
+            title=_title(publication, novel),
+            synopsis=publication.synopsis,
+            source=sources[novel.id],
+            publisher_nickname=nickname,
+            chapter_count=count,
+            like_count=publication.like_count,
+            view_count=publication.view_count,
+            published_at=publication.published_at,
+            sales_stopped=novel.id not in on_sale,
+        )
+        for publication, novel, nickname, count in page
+    ]
+    next_cursor: str | None = None
+    if len(rows) > PUBLIC_NOVEL_LIST_PAGE_SIZE and page:
+        last: NovelPublication = page[-1][0]
+        next_cursor = _encode_cursor([last.published_at.isoformat(), str(last.novel_id)])
+    return PublicNovelOwnedListResponse(items=items, next_cursor=next_cursor)
 
 
 # ── 작품 정보 ───────────────────────────────────────────────────────────────

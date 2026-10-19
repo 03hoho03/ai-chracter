@@ -178,6 +178,7 @@ async def _list_items(db: AsyncSession, rows: list[tuple[NovelPublication, Novel
             pending_report_count=report_counts.get(novel.id, 0),
             published_at=publication.published_at,
             review_status=publication.review_status,
+            hidden_at=novel.hidden_at,
         )
         for publication, novel, nickname in rows
     ]

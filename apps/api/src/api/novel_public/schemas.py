@@ -132,6 +132,18 @@ class PublicNovelListResponse(CamelModel):
     next_cursor: str | None
 
 
+class PublicNovelOwnedItem(PublicNovelListItem):
+    """소장 목록의 한 줄 — 노벨 목록의 한 줄에 판매 중지 표시를 더한 것. `sales_stopped` 는 노벨 목록에서 빠졌지만 소장자
+    조건으로 열리는 노벨인가다(작품 정보의 같은 이름 값과 같다)."""
+
+    sales_stopped: bool
+
+
+class PublicNovelOwnedListResponse(CamelModel):
+    items: list[PublicNovelOwnedItem]
+    next_cursor: str | None
+
+
 class PublicNovelReadingPosition(CamelModel):
     """화 하나를 읽던 자리. `edition` 은 그때 읽던 공개본 판이다 — 지금 판과 다르면 문단 수가 달라졌을 수 있어 화면이
     `paragraph_count` 비율로 옮긴다. `finished` 는 그 화를 끝까지 읽은 적이 있는가다."""

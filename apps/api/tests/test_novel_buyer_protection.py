@@ -43,6 +43,7 @@ from api.db.models.novel import (
     NovelPurchase,
     NovelReport,
 )
+from api.novel_public import reading
 from api.novelize.hidden_purge import purge_hidden_novels
 from factories import (
     PublicNovel,
@@ -1012,3 +1013,164 @@ async def test_running_the_purge_again_destroys_nothing(db_client: httpx.AsyncCl
 
     assert (first, again) == (2, 0)
     assert await _novel_exists(db_session, ids["owner_left"])
+
+
+# ── 소장 목록 ───────────────────────────────────────────────────────────────
+async def _owned(client: httpx.AsyncClient, *, as_user: uuid.UUID, cursor: str | None = None) -> httpx.Response:
+    await _login_as(client, as_user)
+    return await client.get("/webnovels/owned", params={"cursor": cursor} if cursor is not None else None)
+
+
+async def _owned_sales_stopped(client: httpx.AsyncClient, *, as_user: uuid.UUID) -> dict[str, object]:
+    """소장 목록의 소설 id → 판매 중지 표시(한 쪽 안에서)."""
+    resp = await _owned(client, as_user=as_user)
+    assert resp.status_code == 200, resp.text
+    return {item["id"]: item.get("salesStopped") for item in resp.json()["items"]}
+
+
+@pytest.mark.parametrize("keep", _KEEPS)
+async def test_the_owned_list_keeps_a_novel_no_longer_on_sale_and_marks_it(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, keep: Keep
+) -> None:
+    """소장 목록에는 내가 아직 환급받지 않은 구매를 가진 노벨만 실린다 — 목록에서 빠진 노벨(거둠·게시자 정지·원작자 정지
+    일괄 제한·판매된 소설 삭제)도 판매 중지 표시를 달고 남는다. 남이 산 노벨은 내 목록에 없다. 판매 중인 노벨의 칸은 노벨
+    목록 행과 같다. 깨지는 시나리오: 목록에서 빠진 노벨의 소장자가 그 노벨로 돌아갈 길을 잃거나, 남의 소장이 내 목록에 섞인다."""
+    kept, on_sale, others = await _novel(db_session), await _novel(db_session), await _novel(db_session)
+    buyer, other = await _member(db_session), await _member(db_session)
+    await _bought(db_client, kept, 6, buyer)
+    await _bought(db_client, on_sale, 6, buyer)
+    await _bought(db_client, others, 6, other)
+    listed_row = next(
+        item
+        for item in (await _get(db_client, "/webnovels", as_user=buyer)).json()["items"]
+        if item["id"] == str(on_sale.novel_id)
+    )
+
+    await keep(db_client, db_session, kept)
+
+    assert await _owned_sales_stopped(db_client, as_user=buyer) == {
+        str(on_sale.novel_id): False,
+        str(kept.novel_id): True,
+    }
+    assert await _owned_sales_stopped(db_client, as_user=other) == {str(others.novel_id): False}
+    owned_row = next(
+        item
+        for item in (await _owned(db_client, as_user=buyer)).json()["items"]
+        if item["id"] == str(on_sale.novel_id)
+    )
+    assert {key: value for key, value in owned_row.items() if key != "salesStopped"} == listed_row
+
+
+async def test_a_refunded_purchase_does_not_put_a_novel_in_the_owned_list(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """이용제한으로 환급받은 노벨이 해제돼 다시 판매 중이어도, 다시 사지 않았으면 소장 목록에 없다. 다시 사면 실린다. 깨지는
+    시나리오: 돈을 돌려받은 구매를 소장으로 쳐서 사지 않은 노벨이 "소장"으로 보인다."""
+    novel = await _novel(db_session)
+    buyer = await _member(db_session)
+    await _bought(db_client, novel, 6, buyer)
+    await _restrict_novel(db_client, db_session, novel)
+    await _lift_novel(db_client, novel)
+
+    before_rebuy = await _owned_sales_stopped(db_client, as_user=buyer)
+    await _bought(db_client, novel, 6, buyer)
+
+    assert before_rebuy == {}
+    assert await _owned_sales_stopped(db_client, as_user=buyer) == {str(novel.novel_id): False}
+
+
+@pytest.mark.parametrize(("close", "_refund_reason", "_ended"), _CLOSES[:4])
+async def test_a_novel_closed_with_a_refund_leaves_the_owned_list(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, close: Close, _refund_reason: str, _ended: str
+) -> None:
+    """노벨 이용제한·원작 이용제한·원작 삭제로 닫혀 환급된 노벨은 소장 목록에서 빠진다. 깨지는 시나리오: 열면 410 인 노벨이
+    "소장"으로 남는다."""
+    closed, on_sale = await _novel(db_session), await _novel(db_session)
+    buyer = await _member(db_session)
+    await _bought(db_client, closed, 6, buyer)
+    await _bought(db_client, on_sale, 6, buyer)
+
+    await close(db_client, db_session, closed)
+
+    assert await _owned_sales_stopped(db_client, as_user=buyer) == {str(on_sale.novel_id): False}
+
+
+async def test_with_the_policy_switch_off_the_owned_list_shows_only_novels_on_sale(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """정책 스위치가 꺼져 있으면 소장자 열람이 없으므로, 소장 목록도 지금 열리는 노벨(판매 중)만 싣고 판매 중지 표시는 늘
+    거짓이다 — 작품 정보가 여는 것과 같다. 깨지는 시나리오: 꺼진 동안 목록에서 빠진 노벨이 소장 목록에 남아 누르면 410 이다."""
+    monkeypatch.setattr(settings, "novel_public_policy_v2_enabled", False)
+    withdrawn, on_sale = await _novel(db_session), await _novel(db_session)
+    buyer = await _member(db_session)
+    await _bought(db_client, withdrawn, 6, buyer)
+    await _bought(db_client, on_sale, 6, buyer)
+
+    await _withdraw(db_client, db_session, withdrawn)
+
+    assert await _owned_sales_stopped(db_client, as_user=buyer) == {str(on_sale.novel_id): False}
+    assert (await _get(db_client, f"/webnovels/{withdrawn.novel_id}", as_user=buyer)).status_code == 410
+
+
+async def test_the_owned_list_needs_a_login(db_client: httpx.AsyncClient) -> None:
+    """로그인하지 않으면 401 이다. 깨지는 시나리오: 누구의 소장인지 모르는 요청이 남의 소장 목록을 받는다."""
+    assert not db_client.cookies
+
+    assert (await db_client.get("/webnovels/owned")).status_code == 401
+
+
+async def test_the_owned_list_pages_by_the_latest_public_change_like_the_novel_list(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """소장 목록은 노벨 목록의 최신순과 같은 순서(공개 글이 마지막으로 바뀐 시각)로 쪽을 나눈다 — 판매 중지 노벨도 같은
+    순서에 섞인다. 다음 쪽은 `nextCursor` 로, 마지막 쪽이면 null 이다. 깨진 커서는 422 다. 깨지는 시나리오: 쪽 경계에서 소장한
+    노벨이 빠지거나 두 번 나온다."""
+    monkeypatch.setattr(reading, "PUBLIC_NOVEL_LIST_PAGE_SIZE", 2)
+    novels = [await _novel(db_session) for _ in range(3)]
+    buyer = await _member(db_session)
+    base = datetime.now(UTC)
+    for minutes, novel in enumerate(novels):
+        await _bought(db_client, novel, 6, buyer)
+        await db_session.execute(
+            sa.update(NovelPublication)
+            .where(NovelPublication.novel_id == novel.novel_id)
+            .values(published_at=base - timedelta(minutes=minutes))
+        )
+    await db_session.commit()
+    await _withdraw(db_client, db_session, novels[1])
+
+    first = await _owned(db_client, as_user=buyer)
+    cursor = first.json().get("nextCursor")
+    second = await _owned(db_client, as_user=buyer, cursor=cursor)
+    broken = await _owned(db_client, as_user=buyer, cursor="not-a-cursor")
+
+    assert [item["id"] for item in first.json()["items"]] == [str(novels[0].novel_id), str(novels[1].novel_id)]
+    assert cursor is not None
+    assert [item["id"] for item in second.json()["items"]] == [str(novels[2].novel_id)]
+    assert second.json().get("nextCursor") is None
+    assert (broken.status_code, broken.json()["detail"]) == (422, {"code": "INVALID_CURSOR"})
+
+
+# ── 어드민 숨김 표시 ─────────────────────────────────────────────────────────
+async def test_the_admin_sees_a_hidden_novel_apart_from_a_withdrawn_one(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """판매된 소설을 작가가 지워 숨기면 공개 범위가 거둠이 되어, 어드민 목록·상세에서 게시자가 거둔 노벨과 같아 보인다 —
+    숨긴 시각(`hiddenAt`)으로 가른다. 깨지는 시나리오: 운영자가 숨긴 소설을 "게시자가 공개를 거뒀다"고 읽고 판단한다."""
+    hidden, withdrawn = await _novel(db_session), await _novel(db_session)
+    buyer = await _member(db_session)
+    await _bought(db_client, hidden, 6, buyer)
+    await _delete_sold_novel(db_client, db_session, hidden)
+    await _withdraw(db_client, db_session, withdrawn)
+    await _as_admin(db_client, db_session)
+
+    listed = (await db_client.get("/admin/novels")).json()["items"]
+    hidden_detail = (await db_client.get(f"/admin/novels/{hidden.novel_id}")).json()
+    withdrawn_detail = (await db_client.get(f"/admin/novels/{withdrawn.novel_id}")).json()
+
+    assert {item["id"]: (item["visibility"], item.get("hiddenAt") is not None) for item in listed} == {
+        str(hidden.novel_id): ("withdrawn", True),
+        str(withdrawn.novel_id): ("withdrawn", False),
+    }
+    assert (hidden_detail.get("hiddenAt") is not None, "hiddenAt" in withdrawn_detail) == (True, True)
+    assert withdrawn_detail["hiddenAt"] is None

@@ -145,6 +145,9 @@ class CloverPricingResponse(CamelModel):
     # 값이 있어야 한다 — `GET /me` 는 로그인한 사람만 읽는다. 꺼져 있으면 화면이 탭과 노벨 화면을 숨긴다. 누가 보는지 모르는
     # 응답이라 미리보기 명단이 있는 동안은 거짓이다 — 명단 회원에게는 `GET /me` 의 같은 이름 값이 탭을 연다.
     novel_public_enabled: bool
+    # 노벨 공개 정책 스위치(`novel_public_policy_v2_enabled`)가 켜져 있는가. 노벨 구매 전 고지와 작가의 공개 거두기 안내(공개가
+    # 끝나면 산 사람이 계속 읽는가, 환급받는가)가 이 값으로 갈린다 — 꺼진 동안 켜진 정책 문장을 쓰면 거짓이다.
+    novel_public_policy_v2_enabled: bool
     # 지금 결제를 받는가. 거짓이면 구매 화면이 "준비 중"을 보인다.
     payments_enabled: bool
     # 구매 화면이 고를 수 있는 결제수단(`payments/methods.py` 가 유일한 목록).

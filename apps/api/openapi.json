@@ -8398,6 +8398,56 @@
         }
       }
     },
+    "/webnovels/owned": {
+      "get": {
+        "tags": [
+          "webnovels"
+        ],
+        "summary": "List Owned Webnovels",
+        "description": "내가 소장한 노벨 — 아직 환급되지 않은 구매가 하나라도 있고 지금 작품 정보가 열리는 노벨을, 노벨 목록의 최신순과 같은\n순서·커서로 20편씩. 판단은 작품 정보와 같다: 목록 조건으로 읽히면 판매 중이고, 정책 스위치가 켜졌을 때 소장자 조건으로만\n읽히면 `salesStopped` 가 참이다(모듈 docstring 의 소장자 열람). 스위치가 꺼져 있으면 소장자 열람이 없어 판매 중인 노벨만\n싣는다 — 누르면 410 인 노벨을 \"소장\"으로 보이지 않는다. 환급으로 닫힌 노벨은 미환급 구매가 없어 빠진다.",
+        "operationId": "list_owned_webnovels_webnovels_owned_get",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicNovelOwnedListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/webnovels/{novel_id}": {
       "get": {
         "tags": [
@@ -17625,12 +17675,17 @@
           "email": {
             "type": "string",
             "title": "Email"
+          },
+          "novelPublicPolicyV2Enabled": {
+            "type": "boolean",
+            "title": "Novelpublicpolicyv2Enabled"
           }
         },
         "type": "object",
         "required": [
           "id",
-          "email"
+          "email",
+          "novelPublicPolicyV2Enabled"
         ],
         "title": "AdminMeResponse"
       },
@@ -18419,6 +18474,18 @@
             ],
             "title": "Reviewstatus"
           },
+          "hiddenAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hiddenat"
+          },
           "synopsis": {
             "type": "string",
             "title": "Synopsis"
@@ -18583,6 +18650,7 @@
           "pendingReportCount",
           "publishedAt",
           "reviewStatus",
+          "hiddenAt",
           "synopsis",
           "contentId",
           "sourceModerationStatus",
@@ -18695,6 +18763,18 @@
               }
             ],
             "title": "Reviewstatus"
+          },
+          "hiddenAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hiddenat"
           }
         },
         "type": "object",
@@ -18713,10 +18793,11 @@
           "purchaseCount",
           "pendingReportCount",
           "publishedAt",
-          "reviewStatus"
+          "reviewStatus",
+          "hiddenAt"
         ],
         "title": "AdminNovelListItem",
-        "description": "공개 상태 행이 있는 소설 하나(거둔 것·이용제한된 것 포함). `readable` 은 지금 독자에게 보이는가(거둠·이용제한·게시자\n정지·원작 숨김·공개 화 없음·첫 공개 승인 대기나 반려면 거짓). `purchase_count` 는 환급되지 않은 구매 수(탈퇴한 구매자의\n구매도 거래 기록이라 센다), `pending_report_count` 는 처리 전 노벨 신고 수다. `review_status` 는 첫 공개의 운영자 심사\n(대기·승인·반려, 심사 없이 공개됐으면 비어 있다) — 대기·반려 행의 `visibility` 는 `withdrawn` 이지만 게시자가 거둔 것이\n아니다."
+        "description": "공개 상태 행이 있는 소설 하나(거둔 것·이용제한된 것 포함). `readable` 은 지금 독자에게 보이는가(거둠·이용제한·게시자\n정지·원작 숨김·공개 화 없음·첫 공개 승인 대기나 반려면 거짓). `purchase_count` 는 환급되지 않은 구매 수(탈퇴한 구매자의\n구매도 거래 기록이라 센다), `pending_report_count` 는 처리 전 노벨 신고 수다. `review_status` 는 첫 공개의 운영자 심사\n(대기·승인·반려, 심사 없이 공개됐으면 비어 있다) — 대기·반려 행의 `visibility` 는 `withdrawn` 이지만 게시자가 거둔 것이\n아니다. `hidden_at` 은 노벨로 팔린 소설을 작가가 지워 숨긴 시각이다 — 숨긴 소설도 공개 범위가 `withdrawn` 이라 이 값으로\n게시자가 거둔 것과 가른다(숨기지 않았으면 비어 있다)."
       },
       "AdminNovelListResponse": {
         "properties": {
@@ -22936,6 +23017,10 @@
             "type": "boolean",
             "title": "Novelpublicenabled"
           },
+          "novelPublicPolicyV2Enabled": {
+            "type": "boolean",
+            "title": "Novelpublicpolicyv2Enabled"
+          },
           "paymentsEnabled": {
             "type": "boolean",
             "title": "Paymentsenabled"
@@ -22965,6 +23050,7 @@
           "novelReadCost",
           "novelFreeChapterCount",
           "novelPublicEnabled",
+          "novelPublicPolicyV2Enabled",
           "paymentsEnabled",
           "payMethods",
           "identityGateEnabled"
@@ -31183,6 +31269,101 @@
           "nextCursor"
         ],
         "title": "PublicNovelListResponse"
+      },
+      "PublicNovelOwnedItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "synopsis": {
+            "type": "string",
+            "title": "Synopsis"
+          },
+          "source": {
+            "$ref": "#/components/schemas/PublicNovelSource"
+          },
+          "publisherNickname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publishernickname"
+          },
+          "chapterCount": {
+            "type": "integer",
+            "title": "Chaptercount"
+          },
+          "likeCount": {
+            "type": "integer",
+            "title": "Likecount"
+          },
+          "viewCount": {
+            "type": "integer",
+            "title": "Viewcount"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Publishedat"
+          },
+          "salesStopped": {
+            "type": "boolean",
+            "title": "Salesstopped"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "synopsis",
+          "source",
+          "publisherNickname",
+          "chapterCount",
+          "likeCount",
+          "viewCount",
+          "publishedAt",
+          "salesStopped"
+        ],
+        "title": "PublicNovelOwnedItem",
+        "description": "소장 목록의 한 줄 — 노벨 목록의 한 줄에 판매 중지 표시를 더한 것. `sales_stopped` 는 노벨 목록에서 빠졌지만 소장자\n조건으로 열리는 노벨인가다(작품 정보의 같은 이름 값과 같다)."
+      },
+      "PublicNovelOwnedListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PublicNovelOwnedItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "title": "PublicNovelOwnedListResponse"
       },
       "PublicNovelPurchasedEdition": {
         "properties": {

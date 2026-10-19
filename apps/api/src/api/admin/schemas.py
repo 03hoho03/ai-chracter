@@ -35,6 +35,9 @@ class AdminLoginRequest(CamelModel):
 class AdminMeResponse(CamelModel):
     id: uuid.UUID
     email: str
+    # 노벨 공개 정책 스위치(`novel_public_policy_v2_enabled`)가 켜져 있는가. 노벨 이용제한·작품 조치의 확인 문구(산 사람에게
+    # 환급되는가)가 이 값으로 갈린다 — 조치 화면마다 받는 응답이 달라, 운영 화면이 늘 읽는 이 응답에 둔다.
+    novel_public_policy_v2_enabled: bool
 
 
 class AdminDashboardCountsResponse(CamelModel):
