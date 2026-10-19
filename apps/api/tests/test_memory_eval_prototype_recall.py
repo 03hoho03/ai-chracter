@@ -7,6 +7,8 @@
 
 import math
 import uuid
+from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -609,3 +611,41 @@ def test_rendered_instruction_is_the_episode_instruction_row_after_rendering() -
     sections = with_episode_instruction(base, "장면을 {{제목}} 꼴로 적는다")
     names = PromptNames(persona_name=None, char_name=None)
     assert rendered_instruction(sections, is_story_chat=True, names=names) == "장면을 {제목} 꼴로 적는다"
+
+
+# ---------------------------------------------------------------- 장면 시제품 실행 명령
+
+
+def test_prototype_extract_clears_the_active_set_cache_before_reading_the_room(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """활성 프롬프트 세트는 Redis 에 (레인, 모델)만 키로 몇 분 캐시된다 — 지우지 않고 읽으면 직전 실행이 본 세트를 다시 받는다.
+    방을 읽기 전에 그 방의 캐시를 비워야 한다."""
+    import memory_eval_cli as cli
+    from memory_eval import cli_judge
+    from memory_eval import checkpoint as checkpoint_mod
+    from memory_eval import runtime as runtime_mod
+
+    calls: list[Any] = []
+
+    class _StopError(Exception):
+        pass
+
+    async def clear(room_id: uuid.UUID) -> list[str]:
+        calls.append(("clear", room_id))
+        return []
+
+    def make_engine(url: str) -> Any:
+        calls.append("engine")
+        raise _StopError
+
+    monkeypatch.setattr(checkpoint_mod, "clear_room_redis_keys", clear)
+    monkeypatch.setattr(runtime_mod, "make_engine", make_engine)
+    monkeypatch.setattr(cli_judge, "_db_url", lambda *, writes: "postgresql+asyncpg://가짜/lm_eval_work")
+    instruction = tmp_path / "instruction.txt"
+    instruction.write_text("지시문", encoding="utf-8")
+    room = uuid.uuid4()
+    argv = ["--run", str(tmp_path), "prototype-extract", "--room", str(room), "--instruction-file", str(instruction)]
+    with pytest.raises(_StopError):
+        cli.main(argv)
+    assert calls == [("clear", room), "engine"]
