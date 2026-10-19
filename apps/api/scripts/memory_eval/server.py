@@ -108,6 +108,44 @@ def conflicting_servers(
     return conflicts
 
 
+def leftover_worker_servers(
+    procs: list[tuple[int, str, int | None]], *, own_tree: str, ports: Collection[int]
+) -> list[tuple[int, int]]:
+    """중단된 프로브 실행이 남긴 작업자 서버(pid, 포트): 이 트리(`own_tree`) 안에서 이 실행의 작업자 포트(`ports`)로 뜬 서버만.
+    다른 트리의 측정 서버, 이 트리라도 작업자 포트가 아닌 서버(개발 서버 등), 작업 디렉터리를 읽지 못한 서버는 고르지 않는다 —
+    내리는 일은 되돌릴 수 없어, 거부할 때(`conflicting_servers`)와 달리 모르는 쪽을 건드리지 않는 편으로 고른다."""
+    return [
+        (pid, port) for pid, cwd, port in procs if cwd and port is not None and port in ports and _under(cwd, own_tree)
+    ]
+
+
+def stop_pids(pids: Collection[int], *, timeout: float = 30.0) -> list[int]:
+    """프로세스마다 SIGTERM 을 보내고 `timeout` 초까지 기다린 뒤 남은 것에 SIGKILL 을 보낸다. SIGKILL 까지 간 pid 를 돌려준다."""
+
+    def alive(pid: int) -> bool:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        return True
+
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline and any(alive(pid) for pid in pids):
+        time.sleep(0.5)
+    killed = [pid for pid in pids if alive(pid)]
+    for pid in killed:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    return killed
+
+
 def _under(path: str, tree: str) -> bool:
     return path == tree.rstrip("/") or path.startswith(tree.rstrip("/") + "/")
 

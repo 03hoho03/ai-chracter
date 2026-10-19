@@ -24,3 +24,15 @@ DATABASE_URL="$WORK_DB_URL" uv run --env-file .env python scripts/memory_eval_cl
 
 # 다른 셸에서 끝을 기다릴 때(출력 마지막 줄을 견주지 않는다):
 #   until ls "$STATUS_DIR"/done.* >/dev/null 2>&1; do sleep 30; done; ls "$STATUS_DIR"/done.*
+
+# 투입(insert)은 요약 접기·추출을 이 프로세스 안에서 부르므로, 이 프로세스의 설정이 투입 env 표와 한 줄이라도 다르거나
+# PROMPT_DUMP_PATH 가 없으면 시작 전에 거부한다. 표를 파일로 뽑아 명령 앞에 env 로 붙인다(값에 공백이 없어 그대로 펼친다).
+# 임베딩을 채우는 투입(--fill-embeddings)이면 --embed-model·--embed-dims 를 투입 인자와 같은 값으로 준다.
+#   uv run --env-file .env python scripts/memory_eval_cli.py --run "$RUN_DIR" arm-env --insert \
+#     --embed-model "<모델>" --embed-dims "<차원>" --prompt-dump "$RUN_DIR/dumps/insert-<단계 이름>.jsonl" \
+#     > "$RUN_DIR/insert-env.txt"
+#   env $(grep -v '^#' "$RUN_DIR/insert-env.txt") DATABASE_URL="$WORK_DB_URL" \
+#     uv run --env-file .env python scripts/memory_eval_cli.py --run "$RUN_DIR" ... insert <투입 인자...>
+
+# 중단된 프로브가 남긴 작업자 서버 내리기(이 트리·작업자 포트만, pid·포트만 출력). --port 는 프로브의 --port 와 같게:
+#   uv run --env-file .env python scripts/memory_eval_cli.py --run "$RUN_DIR" probe-cleanup --port <기준 포트>

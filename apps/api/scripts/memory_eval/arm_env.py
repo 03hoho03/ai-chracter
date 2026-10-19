@@ -96,9 +96,6 @@ BUNDLE1_ARMS: dict[str, tuple[bool, ...]] = {
     "b1-B2": (True, True, True, True, True),
     "b1-B1E": (True, True, True, False, True),
 }
-# 캐릭터 대본은 다인물 비밀 범주가 없어 스위치 하나짜리 비교(B1·B1E)의 판별력이 거의 없다 — 그 둘을 뺀 네 갈래만 돈다. A0M 은
-# 회상 없이 요약 표기를 켜는 길이 두 레인 모두에 걸리므로 캐릭터에서도 돈다.
-CHARACTER_LANE_ARMS = ("b1-A0", "b1-A0M", "b1-A1", "b1-B2")
 # 투입하는 동안 언제나 켜 두는 줄은 임베딩 쓰기다. 투입이 벡터를 쓴 채로 돌아야 어느 갈래로 재든 같은 행에서 출발한다.
 BUNDLE1_COMMON_EXTRA = (("MEMORY_EMBED_WRITE", "true"),)
 B_SERIES_SUFFIX = "-b"
@@ -122,12 +119,11 @@ def series_label(base_label: str, arm: str) -> str:
 
 
 def require_lane_arm(arm: str, lane: object) -> None:
-    """심기 표의 레인(`lane` 칸)이 있어야 하고, 캐릭터 레인은 `CHARACTER_LANE_ARMS` 갈래만 받는다."""
+    """심기 표의 레인(`lane` 칸)이 있어야 한다. 두 레인 모두 여섯 갈래를 받는다 — 캐릭터 대본도 스위치 하나짜리 비교(요약 표기만,
+    그 위 임베딩 읽기)를 스토리 대본과 같은 조건으로 잰다."""
     template_series(arm)
     if lane not in ("story", "character"):
         raise SystemExit(f"묶음 1 갈래는 심기 표의 레인이 story·character 중 하나여야 한다: {lane!r}")
-    if lane == "character" and arm not in CHARACTER_LANE_ARMS:
-        raise SystemExit(f"캐릭터 레인 대본은 {list(CHARACTER_LANE_ARMS)} 갈래만 돈다: {arm}")
 
 
 def bundle1_env_pairs(
@@ -140,7 +136,7 @@ def bundle1_env_pairs(
     embed_timeout_ms: int,
     prompt_dump: str | None = None,
 ) -> list[tuple[str, str]]:
-    """묶음 1 갈래의 측정 서버 env. 레인은 심기 표의 `lane` 이고, 캐릭터 레인은 `CHARACTER_LANE_ARMS` 갈래만 받는다. 임베딩 모델·차원과 하이브리드
+    """묶음 1 갈래의 측정 서버 env. 레인은 심기 표의 `lane` 이고, 두 레인이 같은 줄을 받는다. 임베딩 모델·차원과 하이브리드
     회상 설정(`memory_embed_recall_*`)은 개발 절반에서 정한 값을 실행마다 준다(기본값을 두면 확정 전 값으로 조용히 돈다). 모든
     갈래가 같은 줄을 받는다 — 임베딩 읽기가 꺼진 갈래에서는 회상 설정이 쓰이지 않을 뿐이다. 질의 임베딩 시간 상한
     (`MEMORY_EMBED_RECALL_TIMEOUT_MS`)도 실행마다 받아 싣는다 — 측정 서버가 실제로 쓴 값이 env 에 남게. 긴 방 df 상한이 없음(None)이면
@@ -162,6 +158,27 @@ def bundle1_env_pairs(
     if prompt_dump:
         pairs.append(("PROMPT_DUMP_PATH", prompt_dump))
     return pairs
+
+
+def insert_env_pairs(*, embed_model: str | None, embed_dims: int | None) -> list[tuple[str, str]]:
+    """투입(`insert`) 프로세스가 가져야 할 설정 표. 투입은 요약 접기·장면·사실 추출을 서버가 아니라 하네스 프로세스 안에서
+    부르므로, 이 표가 그 프로세스의 env 다 — 측정 서버와 같은 공통 줄, 투입하는 동안 늘 켜 두는 임베딩 쓰기, 임베딩을 채우는
+    투입이면 그 모델·차원 줄(프로브 서버가 받을 값과 같아야 같은 벡터 공간에서 회상한다)."""
+    pairs = [*COMMON_ENV, *BUNDLE1_COMMON_EXTRA]
+    if embed_model is not None or embed_dims is not None:
+        if not embed_model or not embed_dims:
+            raise SystemExit("임베딩 줄은 모델과 차원을 함께 준다")
+        pairs += [("MEMORY_EMBED_MODEL", embed_model), ("MEMORY_EMBED_DIMS", str(embed_dims))]
+    return pairs
+
+
+def insert_env_text(*, embed_model: str | None, embed_dims: int | None, prompt_dump: str | None) -> str:
+    """투입 명령 앞에 env 로 붙일 KEY=VALUE 줄(주석 줄은 `#` 로 시작한다)."""
+    pairs = insert_env_pairs(embed_model=embed_model, embed_dims=embed_dims)
+    if prompt_dump:
+        pairs.append(("PROMPT_DUMP_PATH", prompt_dump))
+    head = ["# 투입 프로세스 env — 키 값은 넣지 않는다(.env 그대로)"]
+    return "\n".join(head + [f"{k}={v}" for k, v in pairs]) + "\n"
 
 
 # 임베딩 쓰기·읽기 설정 줄의 머리. 묶음 1 env 가 싣지 않은 이 머리의 키는 서버가 `.env`·실행 환경에서 읽는다.

@@ -15,7 +15,7 @@ from api.chat import memory_fold
 from api.core.config import Settings, settings
 from factories import _open_room
 from memory_eval import runtime
-from memory_eval.arm_env import insert_env_pairs
+from memory_eval.arm_env import COMMON_ENV, insert_env_pairs
 from memory_eval.fake_llm import FakeMemoryLLM
 from memory_eval.insert import require_insert_settings
 
@@ -24,10 +24,11 @@ MODEL, DIMS = "voyage-지어낸-모델", 384
 
 
 def _matching(**changed: object) -> Settings:
-    """표의 줄을 env 처럼 글로 넘겨 만든 설정. 표의 모델 배정이 요구하는 자격은 지어낸 값으로 채운다."""
+    """표의 줄을 env 처럼 글로 넘겨 만든 설정(실행 환경·`.env` 는 읽지 않는다). 표의 모델 배정이 요구하는 자격은 지어낸 값으로
+    채운다."""
     values: dict[str, object] = {k.lower(): v for k, v in insert_env_pairs(embed_model=MODEL, embed_dims=DIMS)}
     values |= {"voyage_api_key": "지어낸-키", "anthropic_direct_api_key": "지어낸-키", **changed}
-    return Settings(_env_file=None, **values)  # type: ignore[call-arg]
+    return Settings.model_validate(values)
 
 
 def test_settings_matching_the_table_with_a_dump_path_pass(tmp_path: Path) -> None:
@@ -41,7 +42,11 @@ def test_settings_matching_the_table_with_a_dump_path_pass(tmp_path: Path) -> No
         pytest.param({"memory_facts_extract": False}, "MEMORY_FACTS_EXTRACT", id="switch"),
         pytest.param({"memory_embed_write": False}, "MEMORY_EMBED_WRITE", id="embed-write"),
         pytest.param({"memory_embed_model": "voyage-다른-지어낸-모델"}, "MEMORY_EMBED_MODEL", id="embed-model"),
-        pytest.param({"llm_call_site_backends": {}}, "LLM_CALL_SITE_BACKENDS", id="assignment"),
+        pytest.param(
+            {"llm_call_site_backends": dict(COMMON_ENV)["LLM_CALL_SITE_BACKENDS"] + ",chat_scene_judgment:anthropic"},
+            "LLM_CALL_SITE_BACKENDS",
+            id="assignment",
+        ),
     ],
 )
 def test_one_setting_differing_from_the_table_is_refused_by_key_name_only(
