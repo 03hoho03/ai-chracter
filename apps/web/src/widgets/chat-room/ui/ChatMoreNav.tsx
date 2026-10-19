@@ -7,8 +7,8 @@ import { useId } from "react";
 import { toast } from "sonner";
 
 import { chatRoomKeys } from "@/entities/chat-room";
-import { isLegalReconsentRequiredError } from "@/entities/legal";
 import { useCloverPricingQuery } from "@/entities/clover";
+import { isLegalReconsentRequiredError } from "@/entities/legal";
 import {
   isContentNovelizeForbiddenError,
   isNovelizeNotAllowedError,
@@ -88,7 +88,6 @@ export type ChatMoreNavProps = {
    * 스위치가 켜져 있으면 원작자가 탈퇴했을 때도 참이다. */
   novelCreationBlocked: boolean;
 };
-
 
 // 항목 목록 자체는 react-call을 쓰지 않는다
 // (열림/닫힘만 있는 목록일 뿐 "호출→결과 반환"이 필요 없다). 항목을 누르면 패널을 닫고 해당 기능
