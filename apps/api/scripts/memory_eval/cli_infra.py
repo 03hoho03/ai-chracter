@@ -698,6 +698,33 @@ def cmd_injection_warnings(args: argparse.Namespace) -> int:
     return 0
 
 
+def _require_synced_templates(args: argparse.Namespace, checkpoints: list[int], label: str) -> None:
+    """프로브가 복원할 체크포인트 템플릿마다 운영 내보내기와 대조(읽기만) — 맞추기 전에 얼린 템플릿이면 거부한다."""
+    from contextlib import asynccontextmanager
+    from collections.abc import AsyncIterator
+
+    from sqlalchemy.engine import make_url
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from memory_eval import prompt_sync as ps
+    from memory_eval.runtime import make_engine
+
+    exported = ps.load_export(args.prompt_export)
+    work_url = make_url(_db_url(writes=False))
+
+    @asynccontextmanager
+    async def open_template(name: str) -> AsyncIterator[AsyncSession]:
+        engine, factory = make_engine(work_url.set(database=name).render_as_string(hide_password=False))
+        try:
+            async with factory() as db:
+                yield db
+        finally:
+            await engine.dispose()
+
+    templates = [checkpoint.template_db_name(cp, label) for cp in checkpoints]
+    asyncio.run(ps.require_templates_synced(templates, exported, open_template))
+
+
 def cmd_probe(args: argparse.Namespace) -> int:
     from memory_eval import probe as probe_mod
 
@@ -769,6 +796,12 @@ def cmd_probe(args: argparse.Namespace) -> int:
         if redo is None or (int(row["checkpoint"]), str(row["item"])) not in redo
     ]
     probes, unprobeable = probe_mod.pending_probes(probes, done)
+    # 묶음 1 갈래는 자기 템플릿 계열의 단계 이름으로 복원한다(요약 표기 갈래는 B 계열 템플릿).
+    checkpoint_label = (
+        series_label(args.checkpoint_label or args.stage, args.arm) if bundle1 else args.checkpoint_label or args.stage
+    )
+    if args.prompt_export is not None:
+        _require_synced_templates(args, sorted({p.checkpoint for p in planned}), checkpoint_label)
     if args.dry_run or not args.allow_paid:
         turns = sum(len(p.turns) for p in probes)
         _print(
@@ -872,12 +905,7 @@ def cmd_probe(args: argparse.Namespace) -> int:
         judgment_turn_usd=args.judgment_turn_usd,
         ledger=book,
         pacer=probe_mod.BurstPacer(limit=args.burst_limit, window_seconds=60.0),
-        # 묶음 1 갈래는 자기 템플릿 계열의 단계 이름으로 복원한다(요약 표기 갈래는 B 계열 템플릿).
-        checkpoint_label=(
-            series_label(args.checkpoint_label or args.stage, args.arm)
-            if bundle1
-            else args.checkpoint_label or args.stage
-        ),
+        checkpoint_label=checkpoint_label,
         clone_lock=args.run / "clone.lock",
         before_start=no_other_servers,
     )
@@ -1138,13 +1166,15 @@ def cmd_arm_env(args: argparse.Namespace) -> int:
 def cmd_filter_recompute(args: argparse.Namespace) -> int:
     """프로브 결과 줄마다 질문 턴의 지식 범위 필터를 서버 함수로 다시 계산한다(LLM 없음, 템플릿 DB 읽기만). 프로브는 그 갈래 계열의
     체크포인트 템플릿에서 보냈으므로 같은 템플릿을 열고, 열기 전에 지문을 견준다. 필터를 켠 갈래에서 턴 기록의 실은 행이 뺀 행에
-    들면 `consistent: false` 다."""
+    들면 `consistent: false` 다. 줄마다 회상의 장면 가림 수(`hiddenEpisodes`)와 따옴표 안 이름 재분류 수(`reclassified`)도 싣는다
+    — 판정·집계 입구의 "실제로 돌았나" 단언 입력이다."""
     from sqlalchemy.engine import make_url
 
     from api.chat.memory_window import load_current_summary
     from memory_eval import knowledge_recompute as kr
     from memory_eval import trajectory_replay as tr
     from memory_eval.arm_env import series_label
+    from memory_eval.ran_gate import recompute_totals
     from memory_eval.runtime import ARMS, generation_set, load_room, make_engine
 
     rows = [
@@ -1190,10 +1220,15 @@ def cmd_filter_recompute(args: argparse.Namespace) -> int:
                         )
                         recorded = (row.get("memoryFacts") or [None])[-1]
                         compared = kr.compare_recorded(result, recorded, filter_on=filter_on)
+                        ran = await kr.recompute_ran(
+                            db, args.room, cursor=current.cursor, turns=row["turns"], names=ctx.names,
+                            user_label=prompt_set.user_label, arm_overrides=arm_settings_of,
+                        )  # fmt: skip
                         out.append(
                             {"arm": row["arm"], "item": row["item"], "checkpoint": cp, "filterOn": filter_on}
                             | result
                             | compared
+                            | ran
                         )
             finally:
                 await engine.dispose()
@@ -1206,9 +1241,39 @@ def cmd_filter_recompute(args: argparse.Namespace) -> int:
             "rows": len(result),
             "inconsistent": [f"{r['arm']}:{r['item']}" for r in result if r["consistent"] is False],
             "droppedSecretTotal": sum(len(r["droppedSecret"]) for r in result),
+            "ranByArm": recompute_totals(result),
         }
     )
     return 0
+
+
+def cmd_sync_prompts(args: argparse.Namespace) -> int:
+    """운영 활성 세트를 내보낸 파일로 측정 DB 의 story·character 활성 세트를 통째로 바꾸고(`--check-only` 면 바꾸지 않고), DB 를
+    다시 읽어 섹션 키별 본문 해시·조건·순서와 세트 라벨을 견준다. 차이 건수와 키만 내고 차이가 있으면 종료 코드 1. 측정 DB
+    (`lm_eval_`)만 받는다 — 운영 DB 에는 닿지 않는다. 덮어쓰면 측정 서버 Redis 의 활성 세트 캐시를 지운다. 같은 자원을 쓰는
+    측정 서버가 떠 있으면 거부한다 — 떠 있는 서버가 덮어쓰기 사이에 옛 세트를 다시 캐시할 수 있다."""
+    from memory_eval import prompt_sync as ps
+    from memory_eval import server
+    from memory_eval.runtime import make_engine
+
+    running = server.conflicting_servers(
+        server.running_api_servers(), server.harness_trees(server.API_DIR), own_pids=set()
+    )
+    if running:
+        raise SystemExit(f"같은 격리 DB·Redis 를 쓰는 API 서버가 떠 있다 — 내린 뒤 맞춘다: {running}")
+    url = _db_url(writes=True)
+    exported = ps.load_export(args.export)
+
+    async def go() -> dict[str, Any]:
+        engine, factory = make_engine(url)
+        try:
+            return await ps.run_sync(factory, exported, check_only=args.check_only, redis_url=args.redis_url)
+        finally:
+            await engine.dispose()
+
+    result = asyncio.run(go())
+    _print(result)
+    return ps.exit_code(result["compare"])
 
 
 def cmd_ledger(args: argparse.Namespace) -> int:
@@ -1449,6 +1514,12 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     with_splits(p)
     paid(p)
     p.add_argument("--checkpoint-label", help="복원할 템플릿의 단계 이름(넣기 실행의 --label, 기본 = --stage)")
+    p.add_argument(
+        "--prompt-export",
+        type=Path,
+        help="운영 활성 세트 내보내기(sync-prompts 와 같은 파일) — 주면 계획한 체크포인트 템플릿마다 시작 전에 대조하고 "
+        "다르면 거부한다. 실행 틀에서는 늘 준다",
+    )
     p.add_argument("--stage", required=True)
     p.add_argument("--arm", required=True, choices=["baseline", "A", "B", "A2", "B2", *BUNDLE1_ARMS])
     p.add_argument("--embed-model", help="묶음 1 갈래의 서버 env 임베딩 모델(MEMORY_EMBED_MODEL)")
@@ -1562,6 +1633,19 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     p.add_argument("--model", default="opus")
     p.add_argument("--out", type=Path, required=True)
     p.set_defaults(fn=cmd_filter_recompute)
+
+    p = sub.add_parser(
+        "sync-prompts", help="운영 활성 세트 내보내기로 측정 DB 활성 세트를 통째로 바꾸고 섹션 해시 대조(차이 있으면 1)"
+    )
+    p.add_argument(
+        "--export",
+        type=Path,
+        required=True,
+        help="운영 활성 세트 섹션 내보내기 파일(psql 출력, JSON 한 줄, 화자 라벨을 실은 꼴 2)",
+    )
+    p.add_argument("--redis-url", help="측정 서버가 쓰는 Redis — 덮어쓴 뒤 활성 세트 캐시 키를 지운다")
+    p.add_argument("--check-only", action="store_true", help="덮어쓰지 않고 대조만")
+    p.set_defaults(fn=cmd_sync_prompts)
 
     p = sub.add_parser("ledger")
     p.set_defaults(fn=cmd_ledger)

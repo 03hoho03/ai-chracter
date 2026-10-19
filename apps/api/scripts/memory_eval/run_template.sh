@@ -6,7 +6,13 @@
 # - 측정 데이터(대본·심기 표·명세)는 공개 저장소 밖 폴더에 두고 --data-dir 로 준다. 기본 경로는 없다.
 # - 작업 DB 는 명령 앞의 DATABASE_URL 로 준다(이름이 lm_eval_ 로 시작해야 한다). .env 의 값보다 명령의 값이 이긴다.
 # - 끝났는지는 --status-dir 의 완료 표지(done.<종료 코드>)로 본다. status.json 은 진행 중 상태(명령·pid·시작 시각)다.
+# - 측정 커밋(MEASURE_COMMIT)을 env 로 준다. 명령은 시작할 때 HEAD 가 그 커밋이고 추적 파일 변경이 없는지 단언하고
+#   결과를 status.json 의 headCheck 칸에 남긴다. 다르거나 고친 파일이 있으면 명령을 돌리지 않고 done.2 로 끝난다.
 set -euo pipefail
+
+MEASURE_COMMIT="${MEASURE_COMMIT:?측정 커밋 sha 를 env MEASURE_COMMIT 로 준다}"
+# 운영 활성 세트 내보내기(꼴 2) — 저장소 밖 원자료 폴더에 0600 으로 둔다.
+PROMPT_EXPORT="${PROMPT_EXPORT:?운영 활성 세트 내보내기 파일 경로를 env PROMPT_EXPORT 로 준다}"
 
 API_DIR="<저장소>/apps/api"
 RUN_DIR="<원자료 폴더>"
@@ -20,7 +26,15 @@ DATABASE_URL="$WORK_DB_URL" uv run --env-file .env python scripts/memory_eval_cl
   --data-dir "$DATA_DIR" \
   --status-dir "$STATUS_DIR" \
   --cap-usd "<묶음 상한>" --halt-usd "<멈춤 선>" --bundle "<승인 묶음>" \
+  --expect-head "$MEASURE_COMMIT" \
   <하위 명령> <하위 명령 인자...>
+
+# 순서: 운영 문안 맞추기(sync-prompts) → 투입( insert ) → 체크포인트 얼리기( freeze ) → 프로브. 프로브 시도마다 작업 DB 가
+# 템플릿 복제본으로 바뀌어, 템플릿이 맞추기보다 먼저 얼려졌으면 그 템플릿의 이전 문안이 실린다. 측정 서버를 내린 채 맞춘다.
+#   DATABASE_URL="$WORK_DB_URL" uv run --env-file .env python scripts/memory_eval_cli.py --run "$RUN_DIR" \
+#     --expect-head "$MEASURE_COMMIT" sync-prompts --export "$PROMPT_EXPORT" --redis-url "<측정 서버 Redis>"
+# 프로브는 늘 같은 내보내기를 준다 — 계획한 체크포인트 템플릿마다 시작 전에 대조하고 다르면 거부한다:
+#   ... probe --prompt-export "$PROMPT_EXPORT" <프로브 인자...>
 
 # 다른 셸에서 끝을 기다릴 때(출력 마지막 줄을 견주지 않는다):
 #   until ls "$STATUS_DIR"/done.* >/dev/null 2>&1; do sleep 30; done; ls "$STATUS_DIR"/done.*

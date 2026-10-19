@@ -7,7 +7,10 @@
 들어 있으면 재계산이 서버와 어긋난 것이다.
 
 센 것: 후보 수, 뺀 비밀 행(아는 사람이 정해졌는데 아무도 장면에 없다), 남긴 비밀 행과 그 이유(장면에 나온 아는 사람). 아는 사람이
-정해지지 않은 행은 필터가 늘 남기므로 세지 않는다. 이 값은 판정을 바꾸지 않는다 — 누출 판정 문항의 공변량으로만 싣는다."""
+정해지지 않은 행은 필터가 늘 남기므로 세지 않는다. 이 값은 판정을 바꾸지 않는다 — 누출 판정 문항의 공변량으로만 싣는다.
+
+같은 입력으로 회상의 장면 가림 수와 따옴표 안 이름 재분류 수도 다시 센다(`recompute_ran`) — 판정·집계 입구가 그 장치가 측정
+중에 실제로 일했는지 단언하는 입력이다(`memory_eval.ran_gate`)."""
 
 import uuid
 from collections.abc import Mapping, Sequence
@@ -95,19 +98,8 @@ async def recompute_probe(
     ignore_quoted_reply_names: bool,
 ) -> dict[str, Any]:
     """템플릿 DB(`db`, 프로브를 보낸 체크포인트 그대로)에서 그 프로브 질문 턴을 다시 계산한다."""
-    from sqlalchemy import select
-
     rows = list((await db.scalars(fact_rows_statement(room_id, cursor))).all())
-    base = list(
-        (
-            await db.scalars(
-                select(ChatMessage)
-                .where(ChatMessage.chat_room_id == room_id)
-                .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
-            )
-        ).all()
-    )
-    history, question = probe_history(base, turns)
+    history, question = probe_history(await room_history(db, room_id), turns)
     return recompute_turn(
         rows,
         history=history,
@@ -116,3 +108,90 @@ async def recompute_probe(
         user_label=user_label,
         ignore_quoted_reply_names=ignore_quoted_reply_names,
     )
+
+
+async def room_history(db: Any, room_id: uuid.UUID) -> list[ChatMessage]:
+    """템플릿 DB 의 방 대화 전부(오프닝 포함), 서버가 읽는 순서로."""
+    from sqlalchemy import select
+
+    return list(
+        (
+            await db.scalars(
+                select(ChatMessage)
+                .where(ChatMessage.chat_room_id == room_id)
+                .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
+            )
+        ).all()
+    )
+
+
+async def recompute_ran(
+    db: Any,
+    room_id: uuid.UUID,
+    *,
+    cursor: MessageKey,
+    turns: Sequence[Mapping[str, Any]],
+    names: PromptNames,
+    user_label: str,
+    arm_overrides: Mapping[str, Any],
+) -> dict[str, Any]:
+    """그 프로브 질문 턴에 지식 범위 장치가 실제로 일했는지 — 서버의 회상·사실 섹션 함수를 그 갈래 설정으로 그대로 불러 센다
+    (템플릿 DB 읽기만).
+
+    실행 조건을 하네스에 베껴 두지 않으려고 서버 함수 본문을 그대로 돌리고 안쪽 호출만 엿본다. 회상 스위치를 켠 갈래는
+    `memory_recall._recall`, 사실 주입을 켠 갈래는 `memory_fact_section._facts` 를 부른다 — 후보 장면이 회상 하한 아래면 가림까지
+    가지 않고, 아는 사람이 정해진 행이 없으면 장면 인물을 세지 않으며, 사실 섹션은 지식 범위 필터를 켜고 비밀 행이 있을 때만
+    필터를 거는 조건이 모두 서버 코드 그대로 걸린다.
+
+    가림: 회상이 그 턴 후보에서 뺀 비밀 장면(`_hidden_episodes` 의 반환). 재분류: 서버가 따옴표 안을 지우고 장면 인물을 센
+    호출(`scene_for_turn` — 지식 범위 필터를 켠 턴만 지운다)마다, 지우지 않고 셌으면 장면 인물이었을 이름. 질의 벡터는 주지
+    않는다 — 가림과 장면 인물은 벡터를 읽기 전에 정해진다. 엿보기는 모듈 속성을 이 호출 동안만 바꾸므로 같은 프로세스에서
+    서버 조립과 동시에 돌리지 않는다(하네스 명령은 한 흐름으로 돈다)."""
+    from dataclasses import replace
+    from unittest import mock
+
+    from api.chat import memory_fact_section, memory_knowledge, memory_recall
+
+    recall_on = bool(arm_overrides.get("memory_episodes_recall"))
+    facts_on = bool(arm_overrides.get("memory_facts_inject"))
+    filter_on = ignores_quoted_reply_names(arm_overrides)
+    hidden: set[str] = set()
+    reclassified: set[str] = set()
+    if recall_on or facts_on:
+        history, question = probe_history(await room_history(db, room_id), turns)
+        scope = KnowledgeScope(user_label=user_label, ignore_quoted_reply_names=filter_on)
+        real_scene = memory_knowledge.scene_for_turn
+        real_hidden = memory_recall._hidden_episodes
+
+        def scene_spy(rows: Any, used: KnowledgeScope, **kwargs: Any) -> frozenset[str]:
+            found = real_scene(rows, used, **kwargs)
+            if used.ignore_quoted_reply_names:
+                reclassified.update(real_scene(rows, replace(used, ignore_quoted_reply_names=False), **kwargs) - found)
+            return found
+
+        async def hidden_spy(*args: Any, **kwargs: Any) -> set[uuid.UUID]:
+            ids = await real_hidden(*args, **kwargs)
+            hidden.update(str(episode_id) for episode_id in ids)
+            return ids
+
+        with (
+            mock.patch.object(memory_recall, "scene_for_turn", scene_spy),
+            mock.patch.object(memory_fact_section, "scene_for_turn", scene_spy),
+            mock.patch.object(memory_recall, "_hidden_episodes", hidden_spy),
+        ):
+            if recall_on:
+                await memory_recall._recall(
+                    db, room_id=room_id, cursor=cursor, history=history, window=history, user_content=question,
+                    names=names, scope=scope, query_vector=None,
+                )  # fmt: skip
+            if facts_on:
+                await memory_fact_section._facts(
+                    db, room_id=room_id, cursor=cursor, history=history, user_content=question, names=names,
+                    scope=scope, knowledge_filter=filter_on, query_vector=None,
+                )  # fmt: skip
+    return {
+        "hiddenEpisodeIds": sorted(hidden),
+        "hiddenEpisodes": len(hidden),
+        "reclassifiedNames": sorted(reclassified),
+        "reclassified": len(reclassified),
+    }
