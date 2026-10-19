@@ -29,7 +29,7 @@ class AdminNovelListItem(CamelModel):
     정지·원작 숨김·공개 화 없음·첫 공개 승인 대기나 반려면 거짓). `purchase_count` 는 환급되지 않은 구매 수(탈퇴한 구매자의
     구매도 거래 기록이라 센다), `pending_report_count` 는 처리 전 노벨 신고 수다. `review_status` 는 첫 공개의 운영자 심사
     (대기·승인·반려, 심사 없이 공개됐으면 비어 있다) — 대기·반려 행의 `visibility` 는 `withdrawn` 이지만 게시자가 거둔 것이
-    아니다. `hidden_at` 은 노벨로 팔린 소설을 작가가 지워 숨긴 시각이다 — 숨긴 소설도 공개 범위가 `withdrawn` 이라 이 값으로
+    아니다. `hidden_at` 은 노벨로 팔린 소설을 작가가 지웠거나 그 작가가 탈퇴해 숨긴 시각이다 — 숨긴 소설도 공개 범위가 `withdrawn` 이라 이 값으로
     게시자가 거둔 것과 가른다(숨기지 않았으면 비어 있다)."""
 
     id: uuid.UUID
@@ -98,7 +98,9 @@ class AdminNovelReportListItem(CamelModel):
 
 class AdminNovelDetailResponse(AdminNovelListItem):
     """공개본 글과 운영 판단 재료. `source_moderation_status` 는 원작의 지금 상태(원작이 없으면 비어 있다), `publisher_suspended`
-    는 게시자 정지 여부다 — 둘 다 `readable` 이 거짓인 이유를 가른다. `reports` 는 최근 노벨 신고 20개다.
+    는 게시자 정지 여부, `publisher_withdrawn` 은 게시자 탈퇴 여부다 — 셋 다 `readable` 이 거짓인 이유를 가른다(탈퇴한
+    게시자의 팔린 소설은 숨긴 채 남아 `hidden_at` 이 있다 — 탈퇴로 숨겼는지는 이것으로 본다. 작가가 지워 숨긴 뒤 탈퇴했으면
+    둘 다 참이다). `reports` 는 최근 노벨 신고 20개다.
     `purchase_amount` 는 환급되지 않은 구매의 가격 합(탈퇴한 구매자의 구매 포함), `purchase_buyer_count` 는 그 구매를 한 사람
     수다 — 탈퇴한 구매자는 누구인지 남지 않아 사람 수에 들지 않는다.
 
@@ -111,6 +113,7 @@ class AdminNovelDetailResponse(AdminNovelListItem):
     content_id: uuid.UUID
     source_moderation_status: ModerationStatus | None
     publisher_suspended: bool
+    publisher_withdrawn: bool
     first_published_at: datetime
     chapters: list[AdminNovelChapterItem]
     screenings: list[AdminNovelScreeningItem]

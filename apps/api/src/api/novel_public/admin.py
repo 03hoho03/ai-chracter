@@ -281,6 +281,7 @@ async def _detail(db: AsyncSession, novel_id: uuid.UUID) -> AdminNovelDetailResp
         content_id=novel.content_id,
         source_moderation_status=source.moderation_status if source is not None else None,
         publisher_suspended=publisher.suspended_at is not None,
+        publisher_withdrawn=publisher.deleted_at is not None,
         first_published_at=publication.first_published_at,
         chapters=[
             AdminNovelChapterItem(

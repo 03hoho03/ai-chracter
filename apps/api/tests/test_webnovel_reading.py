@@ -298,7 +298,7 @@ async def _source_creator_id(db_session: AsyncSession, novel: PublicNovel) -> uu
     return creator_id
 
 
-async def _set_nickname(db_session: AsyncSession, user_id: uuid.UUID, nickname: str) -> None:
+async def _set_nickname(db_session: AsyncSession, user_id: uuid.UUID, nickname: str | None) -> None:
     await db_session.execute(sa.update(User).where(User.id == user_id).values(nickname=nickname))
     await db_session.commit()
 
@@ -328,6 +328,7 @@ async def test_someone_elses_source_is_credited_to_its_creator_and_marked_unoffi
     credits = await _source_credits(db_client, db_session, novel, as_user=reader)
 
     assert [(c["creatorNickname"], c["unofficial"]) for c in credits] == [("원작쓴이", True)] * 3
+    assert [c["creatorWithdrawn"] for c in credits] == [False] * 3
 
 
 async def test_a_novel_of_the_publishers_own_source_is_not_marked_unofficial(
@@ -359,7 +360,25 @@ async def test_a_withdrawn_source_creator_is_not_named(db_client: httpx.AsyncCli
     detail = await db_client.get(f"/webnovels/{novel.novel_id}")
 
     assert [(c["creatorNickname"], c["unofficial"]) for c in credits] == [(None, True)] * 3
+    assert [c["creatorWithdrawn"] for c in credits] == [True] * 3
     assert "떠난원작자" not in detail.text
+
+
+async def test_a_living_publisher_without_a_nickname_is_not_shown_as_withdrawn(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """닉네임이 비어 있는 살아 있는 게시자는 이름이 없을 뿐 탈퇴가 아니다 — 목록·작품 정보 모두 탈퇴 표시가 거짓이고 회원
+    id 를 싣는다. 깨지는 시나리오: 이름이 빈 것만으로 "탈퇴한 사용자"로 그려지거나 프로필 링크를 잃는다."""
+    novel = await _novel(db_session)
+    reader = await _member(db_session)
+    await _set_nickname(db_session, novel.publisher_id, None)
+
+    listed = (await _get(db_client, "/webnovels", as_user=reader)).json()["items"]
+    detail = (await db_client.get(f"/webnovels/{novel.novel_id}")).json()
+
+    assert [(item["publisherNickname"], item["publisherWithdrawn"]) for item in listed] == [(None, False)]
+    assert (detail["publisherNickname"], detail["publisherWithdrawn"]) == (None, False)
+    assert detail["publisherUserId"] == str(novel.publisher_id)
 
 
 async def test_the_creator_name_follows_a_nickname_change_at_once(

@@ -1,10 +1,10 @@
 """노벨 구매자 보호 — 정책 스위치(`novel_public_policy_v2_enabled`)가 켜졌을 때 산 사람이 무엇을 계속 읽고, 언제 무엇을
 돌려받는가.
 
-- 열람만 남는 경우: 게시자의 공개 거둠·게시자 정지·원작자 정지로 인한 원작 일괄 제한·판매된 소설 삭제(숨김). 새로 보이거나
-  팔리지는 않지만 산 사람은 산 화·무료 화·목차를 계속 읽는다.
-- 닫히는 경우: 노벨 이용제한·원작 자체 이용제한·원작 삭제·게시자 탈퇴. 산 사람은 410 이고 그 구매는 사유와 함께 환급된다
-  — 닫히는 경우와 환급되는 경우가 같다. 다시 열려도 환급은 그대로이고 다시 살 수 있다.
+- 열람만 남는 경우: 게시자의 공개 거둠·게시자 정지·원작자 정지로 인한 원작 일괄 제한·판매된 소설 삭제(숨김)·게시자 탈퇴
+  (판매된 소설을 숨겨 남긴다). 새로 보이거나 팔리지는 않지만 산 사람은 산 화·무료 화·목차를 계속 읽는다.
+- 닫히는 경우: 노벨 이용제한·원작 자체 이용제한·원작 삭제. 산 사람은 410 이고 그 구매는 사유와 함께 환급된다 — 닫히는
+  경우와 환급되는 경우가 같다. 다시 열려도 환급은 그대로이고 다시 살 수 있다.
 - 판매된 소설을 지우면 숨긴다. 판매된 화가 든 마지막 묶음은 지울 수 없다. 숨긴 소설은 미환급 소장자가 사라지면 하루 한 번
   파기된다.
 
@@ -21,6 +21,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.core import clover
 from api.core.config import settings
 from api.db.models import User
 from api.db.models.clover import CloverLedger
@@ -39,6 +40,7 @@ from api.db.models.novel import (
     NovelChapter,
     NovelChapterPublication,
     NovelChapterRevision,
+    NovelJob,
     NovelPublication,
     NovelPurchase,
     NovelReport,
@@ -207,11 +209,17 @@ async def _delete_sold_novel(client: httpx.AsyncClient, _db: AsyncSession, novel
     assert (await client.delete(f"/novels/{novel.novel_id}")).status_code == 204
 
 
+async def _publisher_withdraws(client: httpx.AsyncClient, _db: AsyncSession, novel: PublicNovel) -> None:
+    await _login_as(client, novel.publisher_id)
+    assert (await client.delete("/me")).status_code == 204
+
+
 _KEEPS = [
     pytest.param(_withdraw, id="withdrawn"),
     pytest.param(_suspend_publisher, id="publisher-suspended"),
     pytest.param(_restrict_source_by_suspension, id="source-restricted-by-creator-suspension"),
     pytest.param(_delete_sold_novel, id="sold-novel-deleted"),
+    pytest.param(_publisher_withdraws, id="publisher-withdrew"),
 ]
 
 
@@ -219,9 +227,9 @@ _KEEPS = [
 async def test_an_owner_keeps_reading_what_was_bought_while_the_novel_leaves_the_list_and_the_shop(
     db_client: httpx.AsyncClient, db_session: AsyncSession, keep: Keep
 ) -> None:
-    """공개 거둠·게시자 정지·원작자 정지 일괄 제한·판매된 소설 삭제 뒤에도 6화를 산 사람은 6화를 그대로 읽는다. 노벨은 목록에서
-    빠지고, 산 사람을 포함해 누구도 7화를 새로 살 수 없다(404). 깨지는 시나리오: 게시자 사정으로 산 사람이 산 화를 잃거나,
-    목록에서 빠진 노벨이 구매 주소로는 계속 팔린다."""
+    """공개 거둠·게시자 정지·원작자 정지 일괄 제한·판매된 소설 삭제·게시자 탈퇴 뒤에도 6화를 산 사람은 6화를 그대로 읽는다.
+    노벨은 목록에서 빠지고, 산 사람을 포함해 누구도 7화를 새로 살 수 없다(404). 깨지는 시나리오: 게시자 사정으로 산 사람이
+    산 화를 잃거나, 목록에서 빠진 노벨이 구매 주소로는 계속 팔린다."""
     novel = await _novel(db_session)
     buyer, stranger = await _member(db_session), await _member(db_session)
     await _bought(db_client, novel, 6, buyer)
@@ -887,51 +895,91 @@ async def test_the_last_batch_cannot_be_deleted_while_one_of_its_chapters_is_sol
 
 
 # ── 탈퇴 ────────────────────────────────────────────────────────────────────
-async def test_a_withdrawing_publisher_refunds_every_buyer_including_those_of_hidden_novels(
+async def _hidden_and_withdrawn(db_session: AsyncSession, novel_id: uuid.UUID) -> tuple[bool, str | None, object]:
+    """(숨김 시각이 있는가, 공개 범위, 방 칸)."""
+    row = await db_session.get_one(Novel, novel_id, populate_existing=True)
+    visibility = await db_session.scalar(
+        sa.select(NovelPublication.visibility).where(NovelPublication.novel_id == novel_id)
+    )
+    return row.hidden_at is not None, visibility, row.chat_room_id
+
+
+async def test_a_withdrawing_publisher_hides_sold_novels_without_refunds_and_deletes_unsold_ones(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """게시자가 탈퇴하면 그 사람의 소설(숨긴 소설 포함)이 지워지고 모든 구매가 사유 `publisher_withdrawn` 으로 환급되며
-    구매자마다 알림이 하나씩 간다. 산 사람이 열면 410 `publisher_withdrawn` 과 돌려준 클로버를 받는다. 깨지는 시나리오: 게시자
-    탈퇴로 산 화를 읽을 수 없게 됐는데 클로버는 돌아오지 않는다."""
+    """게시자가 탈퇴하면 팔린 소설(이미 숨긴 소설 포함 — 숨긴 시각은 그대로)은 지우지 않고 숨겨 남기며(공개 거둠·방 칸
+    비움), 팔리지 않은 소설과 구매가 모두 환급된 소설은 지운다. 환급도 알림도 없고, 산 사람은 산 화를 계속 읽으며 작품 정보는
+    판매 중지·탈퇴한 게시자로 보인다(이름·회원 id 없음). 깨지는 시나리오: 게시자 한 명의 탈퇴로 산 사람의 소장이 사라지거나,
+    읽을 사람이 없는 소설까지 탈퇴 뒤에 남는다."""
     publisher = _make_user()
     db_session.add(publisher)
     await db_session.flush()
     public = await _novel(db_session, publisher)
     hidden = await _novel(db_session, publisher)
+    unsold = await _novel(db_session, publisher)
+    refunded = await _novel(db_session, publisher)
     first, second = await _member(db_session), await _member(db_session)
     await _bought(db_client, public, 6, first)
     await _bought(db_client, public, 7, first)
     await _bought(db_client, hidden, 6, second)
+    await _bought(db_client, refunded, 6, second)
+    await db_session.execute(
+        sa.update(NovelPurchase)
+        .where(NovelPurchase.novel_id == refunded.novel_id)
+        .values(refunded_at=sa.func.now(), refunded_amount=30, refund_reason="novel_restricted")
+    )
     await _hide_in_db(db_session, hidden.novel_id)
+    await db_session.execute(
+        sa.update(Novel).where(Novel.id == hidden.novel_id).values(hidden_at=datetime(2026, 1, 1, tzinfo=UTC))
+    )
+    await db_session.commit()
 
     await _login_as(db_client, publisher.id)
     assert (await db_client.delete("/me")).status_code == 204
 
-    assert not await _novel_exists(db_session, public.novel_id)
-    assert not await _novel_exists(db_session, hidden.novel_id)
-    assert _refunds(await _purchases(db_session, first)) == [
-        (6, 30, "publisher_withdrawn"),
-        (7, 30, "publisher_withdrawn"),
+    assert await _hidden_and_withdrawn(db_session, public.novel_id) == (True, "withdrawn", None)
+    assert await _hidden_and_withdrawn(db_session, hidden.novel_id) == (True, "withdrawn", None)
+    assert (await db_session.get_one(Novel, hidden.novel_id)).hidden_at == datetime(2026, 1, 1, tzinfo=UTC)
+    assert not await _novel_exists(db_session, unsold.novel_id)
+    assert not await _novel_exists(db_session, refunded.novel_id)
+    assert _refunds(await _purchases(db_session, first)) == [(6, None, None), (7, None, None)]
+    assert sorted(_refunds(await _purchases(db_session, second)), key=str) == [
+        (6, 30, "novel_restricted"),
+        (6, None, None),
     ]
-    assert _refunds(await _purchases(db_session, second)) == [(6, 30, "publisher_withdrawn")]
-    assert (await _balance(db_session, first), await _balance(db_session, second)) == (100, 100)
-    [notice] = await _notifications(db_client, first)
-    assert (notice["novelRefund"], notice.get("novelRefundReason")) == (
-        {"chapterCount": 2, "cloverAmount": 60},
-        "publisher_withdrawn",
-    )
-    ended = await _get(db_client, _path(public, 6), as_user=first)
-    assert (ended.status_code, ended.json()["detail"]) == (
-        410,
-        {"code": "NOVEL_READING_ENDED", "reason": "publisher_withdrawn", "refundedAmount": 30},
-    )
+    assert (await _balance(db_session, first), await _balance(db_session, second)) == (40, 40)
+    assert await _notifications(db_client, first) == []
+    chapter = await _get(db_client, _path(public, 7), as_user=first)
+    assert (chapter.status_code, chapter.json().get("paragraphs")) == (200, ["7화 본문"])
+    detail = (await _get(db_client, f"/webnovels/{public.novel_id}", as_user=first)).json()
+    assert (detail["salesStopped"], detail["publisherWithdrawn"]) == (True, True)
+    assert (detail["publisherNickname"], detail["publisherUserId"]) == (None, None)
+    hidden_chapter = await _get(db_client, _path(hidden, 6), as_user=second)
+    assert hidden_chapter.status_code == 200, hidden_chapter.text
 
 
-async def test_a_kakao_unlink_of_a_publisher_refunds_the_buyers_too(
+async def test_a_novel_whose_only_buyer_already_left_is_deleted_when_the_publisher_withdraws(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """팔린 적이 있어도 산 사람이 모두 먼저 탈퇴했으면 읽을 사람이 없다 — 게시자 탈퇴는 그 소설을 숨기지 않고 지운다. 구매
+    행(거래 기록)은 남는다. 깨지는 시나리오: 아무도 읽지 못할 소설이 탈퇴한 작가의 글째 다음 파기까지 남는다."""
+    novel = await _novel(db_session)
+    buyer = await _member(db_session)
+    await _bought(db_client, novel, 6, buyer)
+    await _login_as(db_client, buyer)
+    assert (await db_client.delete("/me")).status_code == 204
+
+    await _publisher_withdraws(db_client, db_session, novel)
+
+    assert not await _novel_exists(db_session, novel.novel_id)
+    assert await _purchase_count(db_session, [novel.novel_id]) == 1
+
+
+async def test_a_kakao_unlink_of_a_publisher_hides_the_sold_novel_too(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """카카오 연결 끊기 알림으로 게시자가 파기돼도 탈퇴와 같이 구매자에게 환급한다. 깨지는 시나리오: 카카오 쪽에서 연결을
-    끊어 탈퇴하면 환급을 건너뛴다(같은 파기의 두 입구)."""
+    """카카오 연결 끊기 알림으로 게시자가 파기돼도 탈퇴와 같이 팔린 소설을 숨겨 남기고 환급하지 않는다. 깨지는 시나리오: 카카오
+    쪽에서 연결을 끊어 탈퇴하면 팔린 소설을 지워 산 사람의 소장이 사라진다(같은 파기의 두 입구)."""
     admin_key = "test-kakao-admin-key"
     monkeypatch.setattr(settings, "kakao_admin_key", admin_key)
     publisher = _make_user(kakao_id=f"kakao-{uuid.uuid4().hex[:12]}")
@@ -948,9 +996,119 @@ async def test_a_kakao_unlink_of_a_publisher_refunds_the_buyers_too(
     )
 
     assert resp.status_code == 200
+    assert await _hidden_and_withdrawn(db_session, novel.novel_id) == (True, "withdrawn", None)
+    assert _refunds(await _purchases(db_session, buyer)) == [(6, None, None)]
+    assert await _balance(db_session, buyer) == 70
+    assert (await _get(db_client, _path(novel, 6), as_user=buyer)).status_code == 200
+
+
+async def _running_job(db_session: AsyncSession, novel: PublicNovel, user_id: uuid.UUID) -> None:
+    """그 소설에 차감까지 한 진행 중 화 생성 작업 하나(30 클로버)."""
+    spent = await clover.spend(db_session, user_id=user_id, amount=30, kind="novelize_spend")
+    assert spent is not None
+    now = datetime.now(UTC)
+    db_session.add(
+        NovelJob(
+            novel_id=novel.novel_id,
+            user_id=user_id,
+            kind="chapter_generate",
+            status="running",
+            charged_amount=30,
+            spend_ledger_id=spent.ledger_id,
+            start_message_id=uuid.uuid4(),
+            start_message_created_at=now,
+            end_message_id=uuid.uuid4(),
+            end_message_created_at=now,
+            started_at=now,
+            heartbeat_at=now,
+        )
+    )
+    await db_session.commit()
+
+
+async def test_a_withdrawal_ends_the_running_jobs_of_every_novel_without_handing_clover_back(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """탈퇴하는 게시자의 진행 중 작업은 숨겨 남기는 팔린 소설에서도 팔리지 않아 지우는 소설에서도 끝난다 — 작업 행이 사라져
+    실행 경로가 화를 저장하지 못하고, 환불하지 않으며 잔액은 0 이다(탈퇴는 잔액을 통째로 소멸시킨다). 깨지는 시나리오: 숨겨 남긴
+    소설의 작업이 살아 탈퇴자의 소설에 화를 더 쓰거나, 뒤늦은 실패 환불이 탈퇴 계정에 클로버를 되살린다."""
+    publisher = await _make_user_with_clover_lot(db_session, clover_balance=100)
+    await db_session.commit()
+    sold, unsold = await _novel(db_session, publisher), await _novel(db_session, publisher)
+    buyer = await _member(db_session)
+    await _bought(db_client, sold, 6, buyer)
+    await _running_job(db_session, sold, publisher.id)
+    await _running_job(db_session, unsold, publisher.id)
+
+    await _login_as(db_client, publisher.id)
+    assert (await db_client.delete("/me")).status_code == 204
+
+    assert await _novel_exists(db_session, sold.novel_id)
+    jobs = await db_session.scalar(
+        sa.select(sa.func.count()).select_from(NovelJob).where(NovelJob.novel_id.in_([sold.novel_id, unsold.novel_id]))
+    )
+    assert jobs == 0
+    assert await _balance(db_session, publisher.id) == 0
+    assert [kind for kind, _ in await _ledger(db_session, publisher.id) if kind == "novelize_refund"] == []
+
+
+async def test_a_novel_kept_for_owners_of_a_withdrawn_publisher_is_purged_once_its_owners_leave(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """탈퇴한 게시자의 숨겨 남긴 소설도 다른 숨긴 소설과 같이, 미환급 소장자가 모두 떠나면 하루 한 번 파기가 지운다. 깨지는
+    시나리오: 탈퇴자의 소설이 읽을 사람 없이 기한 없이 남는다."""
+    novel = await _novel(db_session)
+    buyer = await _member(db_session)
+    await _bought(db_client, novel, 6, buyer)
+    await _publisher_withdraws(db_client, db_session, novel)
+    assert await purge_hidden_novels(db_session) == 0
+
+    await _login_as(db_client, buyer)
+    assert (await db_client.delete("/me")).status_code == 204
+    purged = await purge_hidden_novels(db_session)
+
+    assert purged == 1
     assert not await _novel_exists(db_session, novel.novel_id)
-    assert _refunds(await _purchases(db_session, buyer)) == [(6, 30, "publisher_withdrawn")]
-    assert await _balance(db_session, buyer) == 100
+
+
+async def test_an_owner_of_a_withdrawn_publishers_novel_is_told_so_when_the_policy_switch_is_off_again(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """게시자 탈퇴로 숨겨 남긴 소설은 정책 스위치를 다시 끄면 소장자 열람이 없어 닫힌다. 그때 산 사람이 받는 이유는 게시자
+    탈퇴(`publisher_withdrawn`)이고 돌려준 클로버는 없다 — 공개를 거둔 상태라도 "게시자가 거뒀다"로 알리지 않는다. 깨지는
+    시나리오: 탈퇴한 게시자의 소설이 "게시자가 공개를 거뒀어요"로 안내된다."""
+    novel = await _novel(db_session)
+    buyer = await _member(db_session)
+    await _bought(db_client, novel, 6, buyer)
+    await _publisher_withdraws(db_client, db_session, novel)
+    monkeypatch.setattr(settings, "novel_public_policy_v2_enabled", False)
+
+    chapter = await _get(db_client, _path(novel, 6), as_user=buyer)
+
+    assert (chapter.status_code, chapter.json()["detail"]) == (
+        410,
+        {"code": "NOVEL_READING_ENDED", "reason": "publisher_withdrawn"},
+    )
+
+
+async def test_the_admin_sees_that_the_publisher_of_a_hidden_novel_withdrew(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """어드민 노벨 상세는 게시자가 탈퇴했는지 따로 싣는다 — 숨김 시각만으로는 작가가 지운 숨김과 탈퇴로 남긴 숨김이 같아
+    보인다. 깨지는 시나리오: 운영자가 탈퇴로 남긴 소설을 "게시자가 지웠다"로 읽는다."""
+    kept, deleted = await _novel(db_session), await _novel(db_session)
+    buyer = await _member(db_session)
+    await _bought(db_client, kept, 6, buyer)
+    await _bought(db_client, deleted, 6, buyer)
+    await _publisher_withdraws(db_client, db_session, kept)
+    await _delete_sold_novel(db_client, db_session, deleted)
+    await _as_admin(db_client, db_session)
+
+    kept_detail = (await db_client.get(f"/admin/novels/{kept.novel_id}")).json()
+    deleted_detail = (await db_client.get(f"/admin/novels/{deleted.novel_id}")).json()
+
+    assert (kept_detail.get("publisherWithdrawn"), deleted_detail.get("publisherWithdrawn")) == (True, False)
+    assert kept_detail["publisherUserId"] == str(kept.publisher_id)
 
 
 # ── 숨긴 소설 파기 ───────────────────────────────────────────────────────────
@@ -1033,8 +1191,8 @@ async def test_the_owned_list_keeps_a_novel_no_longer_on_sale_and_marks_it(
     db_client: httpx.AsyncClient, db_session: AsyncSession, keep: Keep
 ) -> None:
     """소장 목록에는 내가 아직 환급받지 않은 구매를 가진 노벨만 실린다 — 목록에서 빠진 노벨(거둠·게시자 정지·원작자 정지
-    일괄 제한·판매된 소설 삭제)도 판매 중지 표시를 달고 남는다. 남이 산 노벨은 내 목록에 없다. 판매 중인 노벨의 칸은 노벨
-    목록 행과 같다. 깨지는 시나리오: 목록에서 빠진 노벨의 소장자가 그 노벨로 돌아갈 길을 잃거나, 남의 소장이 내 목록에 섞인다."""
+    일괄 제한·판매된 소설 삭제·게시자 탈퇴)도 판매 중지 표시를 달고 남는다. 남이 산 노벨은 내 목록에 없다. 판매 중인 노벨의
+    칸은 노벨 목록 행과 같다. 깨지는 시나리오: 목록에서 빠진 노벨의 소장자가 그 노벨로 돌아갈 길을 잃거나, 남의 소장이 내 목록에 섞인다."""
     kept, on_sale, others = await _novel(db_session), await _novel(db_session), await _novel(db_session)
     buyer, other = await _member(db_session), await _member(db_session)
     await _bought(db_client, kept, 6, buyer)
