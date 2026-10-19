@@ -66,3 +66,18 @@ def test_arm_env_command_prints_the_file_body(capsys: pytest.CaptureFixture[str]
     assert main(["--run", str(tmp_path), "arm-env", "--arm", "A2"]) == 0
     lines = [ln for ln in capsys.readouterr().out.splitlines() if ln and not ln.startswith("#")]
     assert dict(ln.split("=", 1) for ln in lines) == dict(env_pairs("A2"))
+
+
+def test_in_process_arm_settings_pin_the_memory_model_scope_to_the_table_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    """궤적 재조립처럼 앱 조립을 이 프로세스 안에서 부르는 경로는 로컬 `.env` 로 뜬다 — 그 범위가 Opus 를 빼면 임베딩 없는
+    회상 갈래가 빈 회상으로 조용히 재진다. 갈래 설정을 씌우는 동안에는 측정 서버 env 표와 같은 범위(두 레인의 Opus)여야 하고,
+    나오면 로컬 값으로 돌아간다."""
+    from api.core.config import settings
+    from memory_eval.runtime import arm_settings
+
+    local = [("story", "gemini"), ("character", "gemini")]
+    monkeypatch.setattr(settings, "memory_model_scope", local)
+    for arm in ("A2", "B2", "b1-A1", "b1-B2"):
+        with arm_settings(arm):
+            assert settings.memory_model_scope == [("story", "opus"), ("character", "opus")], arm
+        assert settings.memory_model_scope == local, arm
