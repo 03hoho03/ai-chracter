@@ -1,7 +1,7 @@
 """assets crop and animated variants
 
 Revision ID: c60f5b9b11bc
-Revises: 3b4b814583dc
+Revises: 2975c3a6fa6f
 Create Date: 2026-10-19 18:25:53.623680
 
 움직이는 대표 이미지(GIF)를 위해 자산 행에 두 칸을 더한다.
@@ -23,7 +23,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "c60f5b9b11bc"
-down_revision: str | Sequence[str] | None = "3b4b814583dc"
+down_revision: str | Sequence[str] | None = "2975c3a6fa6f"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
