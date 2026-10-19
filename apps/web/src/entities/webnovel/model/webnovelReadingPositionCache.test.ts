@@ -18,9 +18,11 @@ function detail(finished: boolean): WebnovelDetailResponse {
       linkable: true,
       creatorNickname: null,
       unofficial: false,
+      creatorWithdrawn: false,
     },
     publisherUserId: "p",
     publisherNickname: null,
+    publisherWithdrawn: false,
     isPublisher: false,
     chapters: [
       {

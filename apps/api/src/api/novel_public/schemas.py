@@ -124,7 +124,9 @@ class PublicNovelSource(CamelModel):
     노벨 표지는 이것뿐이고, 원작자가 탈퇴했거나 썸네일이 없으면 비어 있다(화면이 기본 표지를 그린다). `linkable` 은 원작이
     지금 작품 목록에 실려 원작 상세로 링크를 걸 수 있는가다. `creator_nickname` 은 원작자의 지금 닉네임이다(복사해 두지 않고
     읽을 때 가져온다) — 원작자가 탈퇴했거나 원작 행이 없으면 비어 있다. `unofficial` 은 원작자가 게시자가 아닌가(화면이
-    "비공식 2차 창작"을 붙인다)이고, 원작 행이 없으면 참이다(근거 없이 공식으로 표시하지 않는다)."""
+    "비공식 2차 창작"을 붙인다)이고, 원작 행이 없으면 참이다(근거 없이 공식으로 표시하지 않는다). `creator_withdrawn` 은
+    원작자가 탈퇴했는가다 — 이름이 빈 것은 탈퇴·원작 행 없음·닉네임 미설정이 모두 같아 보여, 화면이 "탈퇴한 사용자"로 그릴지를
+    이것으로 가른다(원작 행이 없으면 거짓)."""
 
     content_id: uuid.UUID
     content_type: NovelContentType
@@ -134,17 +136,20 @@ class PublicNovelSource(CamelModel):
     linkable: bool
     creator_nickname: str | None
     unofficial: bool
+    creator_withdrawn: bool
 
 
 class PublicNovelListItem(CamelModel):
     """노벨 목록의 한 줄. `title` 은 공개본 제목(비어 있던 공개본은 원작 제목), `synopsis` 는 공개본 소개다.
-    `published_at` 은 공개 화면 글이 마지막으로 바뀐 시각(최신순 정렬 키)이다."""
+    `published_at` 은 공개 화면 글이 마지막으로 바뀐 시각(최신순 정렬 키)이다. `publisher_withdrawn` 은 게시자가 탈퇴했는가다
+    (탈퇴한 게시자의 소설은 판매를 멈춘 채 소장자에게만 보인다) — 닉네임이 비어 있는 살아 있는 게시자와 가른다."""
 
     id: uuid.UUID
     title: str
     synopsis: str
     source: PublicNovelSource
     publisher_nickname: str | None
+    publisher_withdrawn: bool
     chapter_count: int
     like_count: int
     view_count: int
@@ -209,15 +214,18 @@ class PublicNovelDetailResponse(CamelModel):
     - `free_chapter_count`·`chapter_price`: 앞 무료 화 수와 유료 화의 화당 가격(지금 설정값 — 이미 공개한 유료 화도 이
       값이다). 6화 이후에도 작가가 무료로 둔 화가 있을 수 있으므로 화마다의 값은 목차의 `price` 다.
     - `liked`: 보는 사람이 좋아요했는가.
-    - `sales_stopped`: 새로 보이거나 팔리지 않는 노벨을 소장자가 열었다(게시자의 거둠·정지, 원작자 정지로 인한 원작 일괄
-      제한, 판매된 소설 삭제). 산 화·무료 화·목차는 그대로 읽고, 사지 않은 유료 화는 잠김으로 보이되 살 수 없다."""
+    - `sales_stopped`: 새로 보이거나 팔리지 않는 노벨을 소장자가 열었다(게시자의 거둠·정지·탈퇴, 원작자 정지로 인한 원작
+      일괄 제한, 판매된 소설 삭제). 산 화·무료 화·목차는 그대로 읽고, 사지 않은 유료 화는 잠김으로 보이되 살 수 없다.
+    - `publisher_withdrawn`: 게시자가 탈퇴했다. 그때 `publisher_user_id`·`publisher_nickname` 은 비어 있다 — 탈퇴한 사람의
+      회원 id 를 남겨 두면 이 소설을 그 사람과 다시 이어 붙일 수 있다."""
 
     id: uuid.UUID
     title: str
     synopsis: str
     source: PublicNovelSource
-    publisher_user_id: uuid.UUID
+    publisher_user_id: uuid.UUID | None
     publisher_nickname: str | None
+    publisher_withdrawn: bool
     is_publisher: bool
     chapters: list[PublicNovelChapterItem]
     free_chapter_count: int

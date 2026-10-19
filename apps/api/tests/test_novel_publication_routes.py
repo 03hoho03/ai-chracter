@@ -1237,11 +1237,12 @@ async def test_a_locked_novel_extends_after_the_source_withdraws_permission(
     assert (body["visibility"], body["publishedChapterCount"], body["reviewStatus"]) == ("public", 2, None)
 
 
-async def test_a_locked_novel_still_stops_when_the_source_leaves_the_public_list(
+async def test_a_locked_novel_extends_after_the_source_leaves_the_public_list(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
 ) -> None:
-    """잠금이 면제하는 것은 소설화 허락 철회뿐이다. 원작자가 허락을 거두고 원작도 비공개로 돌리면 막는 이유는 허락이 아니라
-    목록 조건이다 — 허락을 건너뛴 판정이 목록 조건까지 내려가 본다."""
+    """잠금은 허락 철회만이 아니라 원작이 공개 목록에서 빠지는 것(원작자가 허락을 거두고 원작도 비공개로 돌림)도 넘는다 —
+    고정된 연재권이라 다음 화를 이어 공개한다. 깨지는 시나리오: 원작자가 작품을 비공개로 돌리는 것만으로 이미 연재 중인
+    남의 소설이 다음 화를 못 낸다."""
     novel_id, chapters = await _locked_on_someone_elses_source(db_client, db_session, monkeypatch)
     source = await _source(db_session, novel_id)
     source.novel_permission = "private"
@@ -1251,11 +1252,83 @@ async def test_a_locked_novel_still_stops_when_the_source_leaves_the_public_list
     status_body = (await db_client.get(f"/novels/{novel_id}/publication")).json()
     resp = await _publish(db_client, novel_id, chapters[1])
 
-    assert status_body["newPublishBlock"] == "source_not_listed"
+    assert status_body["newPublishBlock"] is None
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["publishedChapterCount"] == 2
+
+
+async def _source_creator_withdraws(db_client: httpx.AsyncClient, db_session: AsyncSession, novel_id: uuid.UUID) -> None:
+    """원작자가 실제 탈퇴(`DELETE /me`)로 떠난다 — 원작은 비공개가 된다. 끝나면 소설 게시자로 다시 로그인한다."""
+    source = await _source(db_session, novel_id)
+    owner = (await _novel_row(db_session, novel_id)).user_id
+    await _login_as(db_client, source.creator_user_id)
+    assert (await db_client.delete("/me")).status_code == 204
+    await _login_as(db_client, owner)
+
+
+@pytest.mark.parametrize(("policy_on", "expected"), [(True, None), (False, "source_not_listed")], ids=["on", "off"])
+async def test_a_locked_novel_extends_after_the_source_creator_withdraws(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    llm: _ScreenLLM,
+    policy_on: bool,
+    expected: str | None,
+) -> None:
+    """원작자가 탈퇴해도 첫 공개로 연재권이 고정된 남의 소설은 다음 화를 이어 공개한다(정책 스위치 켜짐). 스위치가 꺼져
+    있으면 지금처럼 원작이 공개 목록에서 빠져 409 다. 깨지는 시나리오: 원작자 한 명의 탈퇴로 고정된 연재가 끊기거나, 스위치를
+    끈 운영에서 그 동작이 먼저 바뀐다."""
+    novel_id, chapters = await _locked_on_someone_elses_source(db_client, db_session, monkeypatch)
+    _policy(monkeypatch, on=policy_on)
+    await _source_creator_withdraws(db_client, db_session, novel_id)
+
+    status_body = (await db_client.get(f"/novels/{novel_id}/publication")).json()
+    resp = await _publish(db_client, novel_id, chapters[1])
+
+    assert status_body["newPublishBlock"] == expected
+    if expected is None:
+        assert resp.status_code == 200, resp.text
+    else:
+        assert (resp.status_code, resp.json()["detail"]) == (
+            409,
+            {"code": "NOVEL_SOURCE_NOT_PUBLISHABLE", "reason": expected},
+        )
+
+
+async def test_an_unlocked_novel_cannot_first_publish_after_the_source_creator_withdraws(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """고정되지 않은 소설(한 번도 독자에게 보이지 않음)은 원작자가 탈퇴한 원작으로 처음 공개할 수 없다 — 원작이 공개 목록에서
+    빠졌다. 깨지는 시나리오: 잠금 면제가 잠기지 않은 소설에까지 번져, 떠난 원작자의 작품으로 새 연재가 시작된다."""
+    _policy(monkeypatch, on=True)
+    novel_id, chapters = await _novel_with_chapters(db_client, db_session, monkeypatch)
+    await _hand_source_to_someone_else(db_session, novel_id, "public")
+    await _source_creator_withdraws(db_client, db_session, novel_id)
+
+    resp = await _publish(db_client, novel_id, chapters[0])
+
     assert (resp.status_code, resp.json()["detail"]) == (
         409,
         {"code": "NOVEL_SOURCE_NOT_PUBLISHABLE", "reason": "source_not_listed"},
     )
+    assert await _count(db_session, NovelPublication, novel_id) == 0
+
+
+async def test_a_locked_novel_still_stops_when_the_source_is_restricted(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, llm: _ScreenLLM
+) -> None:
+    """잠금이 넘는 것은 원작자 쪽 사정(허락·비공개·탈퇴)이다. 원작이 이용제한되면 잠긴 소설도 다음 화를 낼 수 없다. 깨지는
+    시나리오: 잠금 면제가 이용제한까지 넘어 운영자가 내린 원작으로 새 화가 나간다."""
+    novel_id, chapters = await _locked_on_someone_elses_source(db_client, db_session, monkeypatch)
+    (await _source(db_session, novel_id)).moderation_status = ModerationStatus.RESTRICTED
+    await db_session.commit()
+
+    status_body = (await db_client.get(f"/novels/{novel_id}/publication")).json()
+    resp = await _publish(db_client, novel_id, chapters[1])
+
+    assert status_body["newPublishBlock"] == "source_unavailable"
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["detail"]["code"] == "NOVEL_SOURCE_UNAVAILABLE"
 
 
 async def test_another_unlocked_novel_from_the_same_source_needs_the_current_permission(

@@ -3,24 +3,20 @@
 
 요청에 묶인 일(현재 세션 삭제·쿠키 지우기)과 세션 일괄 폐기는 커밋 뒤 호출자가 한다.
 
-**노벨 게시자의 탈퇴** — 정책 스위치(`novel_public_policy_v2_enabled`)가 켜져 있으면 탈퇴자의 소설(숨긴 소설 포함)을 산 사람
-모두에게 환급한다(사유 `publisher_withdrawn`). 그래서 탈퇴자 행만이 아니라 그 구매자들의 행도 id 순으로 한 번에 잠근다
-(`lock_withdrawal_parties`, `novel_public/purchases.py` 의 잠금 순서) — 탈퇴자 행을 먼저 쥐고 구매자 행을 따로 잡으면, 탈퇴자의
-다른 화를 사는 중인(구매자 → 게시자 순으로 잡는) 그 구매자와 교착한다. 누구를 잠글지는 잠그기 전에 고르므로 그 사이 새 구매가
-커밋되면 잠그지 않은 구매자가 생긴다 — 그때 환급이 `NovelPartiesChangedError` 를 내고, 호출자가 롤백한 뒤 처음부터 다시 한다
-(`retry_on_new_buyers`). 탈퇴자 행을 잠근 뒤에는 새 구매가 끼지 않으므로(구매가 게시자 행을 잡는다) 다시 할 때마다 새 구매자는
-그 사이에 커밋된 것뿐이다.
+**노벨 게시자의 탈퇴** — 정책 스위치(`novel_public_policy_v2_enabled`)가 켜져 있으면 탈퇴자의 소설 가운데 노벨로 팔린 것(아직
+환급되지 않은 구매가 있는 것, 이미 숨긴 소설 포함)은 지우지 않고 숨겨 남긴다 — 산 사람이 계속 읽는다. 환급은 없다. 팔리지 않은
+소설은 지금처럼 지운다. 꺼져 있으면 모두 지운다(환급 없이 열람이 끝난다). "팔렸는가"는 탈퇴자 행을 잠근 뒤에 판정한다 — 구매가
+게시자 행을 잡으므로 그 뒤로는 새 구매가 끼지 않고, 먼저 커밋된 구매는 판정 쿼리가 본다. 그래서 구매자 행은 잡지 않는다.
 """
 
 import logging
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
-from typing import TypeVar
 
 from botocore.exceptions import BotoCoreError, ClientError
 
-from sqlalchemy import delete, exists, select, update
+from sqlalchemy import delete, exists, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
@@ -43,41 +39,14 @@ from api.db.models.feature_grant import UserFeatureGrant
 from api.db.models.inquiry import Inquiry
 from api.db.models.legal import UserLegalConsent
 from api.db.models.media import Asset, AssetKind, ImageGenerationRequest
-from api.db.models.novel import Novel, NovelComment, NovelPurchase, NovelReaderPosition
+from api.db.models.novel import Novel, NovelComment, NovelJob, NovelPublication, NovelPurchase, NovelReaderPosition
 from api.db.models.persona import UserPersona
-from api.novel_public.purchases import NovelPartiesChangedError, lock_novel_parties, refund_purchases
+from api.novel_public.purchases import sold_novel_ids
 from api.novelize.deletion import delete_novels
 
 logger = logging.getLogger(__name__)
 
 StorageObjectDeleter = Callable[[str], Awaitable[None]]
-
-T = TypeVar("T")
-
-# 새 구매자가 끼어 처음부터 다시 하는 횟수까지 친 탈퇴 시도 상한. 다시 할 때마다 그 사이에 새 구매가 또 커밋돼야 다음 시도가
-# 필요하므로 연달아 넘기기는 어렵다. 넘기면 `DELETE /me` 는 409, 카카오 연결 끊기 알림은 500 이다.
-WITHDRAWAL_ATTEMPTS = 4
-
-
-async def lock_withdrawal_parties(db: AsyncSession, user_id: uuid.UUID) -> frozenset[uuid.UUID] | None:
-    """정책 스위치가 켜져 있으면 탈퇴자와, 탈퇴자의 소설(숨긴 소설 포함)의 미환급 구매자를 id 순으로 한 번에 잠그고 잠근
-    사람들을 돌려준다(`erase_account` 의 `refund_locked` 로 넘긴다). 꺼져 있으면 아무것도 잠그지 않고 None — 호출자가 지금처럼
-    탈퇴자 행만 잠근다. 탈퇴·정지 판정은 호출자가 잠근 뒤에 한다."""
-    if not settings.novel_public_policy_v2_enabled:
-        return None
-    novel_ids = (await db.scalars(select(Novel.id).where(Novel.user_id == user_id))).all()
-    return await lock_novel_parties(db, novel_ids=novel_ids, extra_user_ids=(user_id,))
-
-
-async def retry_on_new_buyers(db: AsyncSession, attempt: Callable[[], Awaitable[T]]) -> T:
-    """`attempt`(잠금부터 파기 커밋까지)를 부르고, 잠근 뒤 새 구매자가 보여 `NovelPartiesChangedError` 가 나면 롤백하고 처음부터
-    다시 부른다(모듈 docstring). `WITHDRAWAL_ATTEMPTS` 번째도 그러면 그 예외를 그대로 낸다."""
-    for _ in range(WITHDRAWAL_ATTEMPTS - 1):
-        try:
-            return await attempt()
-        except NovelPartiesChangedError:
-            await db.rollback()
-    return await attempt()
 
 
 async def delete_storage_object_now(storage_key: str) -> None:
@@ -126,17 +95,30 @@ async def _retain_withdrawn_identity(
     row.withdrawn_at = now
 
 
-async def erase_account(
-    db: AsyncSession,
-    user: User,
-    *,
-    delete_storage_object: StorageObjectDeleter,
-    refund_locked: frozenset[uuid.UUID] | None = None,
-) -> None:
-    """탈퇴 파기를 수행하고 커밋한다.
+async def _keep_sold_novels_hidden(db: AsyncSession, novel_ids: Sequence[uuid.UUID]) -> None:
+    """탈퇴자의 팔린 소설을 지우지 않고 숨긴다 — 공개를 거두고(새로 보이거나 팔리지 않는다) 숨긴 시각을 찍고 방 칸을 비운다.
+    작가가 팔린 소설을 지울 때의 숨김과 같은 모양이라 소장자 열람·하루 한 번 파기가 그대로 따라온다. 이미 숨긴 소설은 숨긴
+    시각을 그대로 둔다.
 
-    `refund_locked` 는 `lock_withdrawal_parties` 가 잠근 사람들이다. 주면 탈퇴자의 소설을 지우기 전에 그 구매를 모두
-    환급한다(모듈 docstring). 잠그지 않은 구매자가 보이면 `NovelPartiesChangedError` 이고 아무것도 커밋하지 않는다.
+    작업 행(진행 중이든 끝났든)은 먼저 지운다. 진행 중 작업이 살아 있으면 성공해 탈퇴자의 숨긴 소설에 화를 더 쓰거나, 실패해
+    탈퇴 뒤의 계정에 클로버를 되돌린다(아래 `burn_all` 뒤에 잔액이 다시 생긴다) — 소설을 지울 때(`delete_novels`)처럼 작업 행이
+    사라지면 실행 경로의 조건부 전이가 0행이 되어 둘 다 일어나지 않는다. 환불하지 않는 것은 탈퇴가 잔액을 통째로 소멸시키기
+    때문이다. 끝난 작업 행도 지운다 — AI 수정 지시문·결과 본문처럼 작가만 쓰던 기록이다."""
+    if not novel_ids:
+        return
+    await db.execute(delete(NovelJob).where(NovelJob.novel_id.in_(novel_ids)))
+    await db.execute(
+        update(NovelPublication).where(NovelPublication.novel_id.in_(novel_ids)).values(visibility="withdrawn")
+    )
+    await db.execute(
+        update(Novel)
+        .where(Novel.id.in_(novel_ids))
+        .values(hidden_at=func.coalesce(Novel.hidden_at, func.now()), chat_room_id=None)
+    )
+
+
+async def erase_account(db: AsyncSession, user: User, *, delete_storage_object: StorageObjectDeleter) -> None:
+    """탈퇴 파기를 수행하고 커밋한다.
 
     호출자가 `user` 행을 FOR UPDATE 로 잠그고 탈퇴·정지 여부를 판정한 뒤 부른다 —
     `lock_active_user` 는 정지 회원에게 403 을 던지는 요청 전용 검사라, 요청이 아닌 경로가 같은
@@ -220,15 +202,14 @@ async def erase_account(
     )
     # 소설은 방과 따로 남는 문서라(방이 지워진 소설도 있다) 방 파기에 딸려 지워지지 않는다 — 여기서 직접 파기한다.
     # 방보다 먼저 지우면 방 DELETE 가 소설의 방 참조를 비우는 UPDATE 를 할 일이 없다. 진행 중 작업도 환불하지 않고
-    # 지운다 — 잔액은 아래 `burn_all` 이 통째로 소멸시킨다.
+    # 지운다 — 잔액은 아래 `burn_all` 이 통째로 소멸시킨다. 정책 스위치가 켜져 있으면 노벨로 팔린 소설은 지우지 않고 숨겨
+    # 남긴다(모듈 docstring). 판정은 탈퇴자 행을 잠근 지금 한다.
     novel_ids = (await db.scalars(select(Novel.id).where(Novel.user_id == user_id))).all()
-    if refund_locked is not None:
-        await refund_purchases(
-            db, novel_ids=novel_ids, locked_user_ids=refund_locked, reason="publisher_withdrawn"
-        )
-    await delete_novels(db, novel_ids)
-    # 노벨: 이 사람이 게시자면 위에서 소설이 지워지고 남의 구매 행은 그대로 남는다 — 구매 행이 구매자에게 "게시자가
-    # 탈퇴했다"를 알려 줄 근거다(정책 스위치가 켜져 있으면 위에서 환급했고, 꺼져 있으면 환급 없이 열람만 끝난다). 이 사람이
+    kept = await sold_novel_ids(db, novel_ids) if settings.novel_public_policy_v2_enabled else frozenset()
+    await _keep_sold_novels_hidden(db, [novel_id for novel_id in novel_ids if novel_id in kept])
+    await delete_novels(db, [novel_id for novel_id in novel_ids if novel_id not in kept])
+    # 노벨: 이 사람이 게시자면 위에서 팔리지 않은 소설은 지워지고, 남의 구매 행은 그대로 남는다 — 지운 소설에서는 구매 행이
+    # 구매자에게 "게시자가 탈퇴했다"를 알려 줄 근거다(환급 없이 열람만 끝난다). 이 사람이
     # 산 구매 행은 지우지 않고 구매자 칸만 비운다 — 화·가격·
     # 차감 원장이 거래 기록으로 남아야 하지만 "이 사람이 어느 소설을 읽었는가"는 남기지 않는다. 구매자가 빈 구매는 그 뒤
     # 게시자가 소설을 지워도 환급 대상이 아니다(탈퇴로 잔액이 이미 소멸했다).
