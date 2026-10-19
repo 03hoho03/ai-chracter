@@ -16,6 +16,7 @@ from api.chat.turn_prompt import InjectedPersona
 from api.content.author_macros import resolve_user_name
 from api.db.models.chat import ChatRoom
 from api.db.models.persona import UserPersona
+from api.db.models.character import CharacterVersionDetail
 from api.db.models.story import StartingSetup, StoryVersionDetail
 
 # 작품 기본 이름 단계를 지우기 전의 기록에만 있는 키. 그때는 프로필 없는 방의 `{{user}}` 이름이 이 값이었다.
@@ -109,16 +110,25 @@ def _uuid_or_none(value: str | None) -> uuid.UUID | None:
     return uuid.UUID(value) if value else None
 
 
-async def load_room_fixed(db: AsyncSession, room_id: uuid.UUID) -> RoomFixed | None:
-    """방이 없으면 None. 스토리 방만 다룬다 — 스토리 상세가 없는 방은 거부한다. 읽기만 하고 세션에 아무것도 남기지
-    않는다(리플레이는 받은 세션을 되돌리지 않고 그대로 쓴다)."""
+async def load_room_fixed(db: AsyncSession, room_id: uuid.UUID, *, allow_character: bool = False) -> RoomFixed | None:
+    """방이 없으면 None. 기본은 스토리 방만 다룬다 — 스토리 상세가 없는 방은 거부한다(리플레이의 재현 검증이 스토리
+    대본만 덮는다). 측정 드라이버는 `allow_character` 로 캐릭터 방도 받는다(시작 설정 칸이 비어 있다). 읽기만 하고 세션에
+    아무것도 남기지 않는다(리플레이는 받은 세션을 되돌리지 않고 그대로 쓴다)."""
     room = await db.scalar(select(ChatRoom).where(ChatRoom.id == room_id))
     if room is None:
         return None
     detail = await db.scalar(
         select(StoryVersionDetail).where(StoryVersionDetail.content_version_id == room.content_version_id)
     )
-    if detail is None:
+    if detail is None and not (
+        allow_character
+        and await db.scalar(
+            select(CharacterVersionDetail.content_version_id).where(
+                CharacterVersionDetail.content_version_id == room.content_version_id
+            )
+        )
+        is not None
+    ):
         raise ValueError(f"대화방 {room_id} 은 스토리 방이 아니다 — 캐릭터 방은 다루지 않는다")
     pinned = None
     if room.starting_setup_entity_id is not None:

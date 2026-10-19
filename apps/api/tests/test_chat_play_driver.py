@@ -1,5 +1,6 @@
 """측정 드라이버를 가짜 서버(`httpx.MockTransport`)와 가짜 DB 읽기로 돌린다 — LLM·실서버 없이 종료 코드 경로, 쿠키 재사용,
-누적 상태, 은폐(시뮬레이터 로그에 요약·단축어 원문이 없음), 방 고정값 기록, 드라이버 DB 와 서버가 같은지 확인을 본다.
+누적 상태, 은폐(시뮬레이터 로그에 요약·단축어 원문이 없음), 방 고정값 기록, 드라이버 DB 와 서버가 같은지 확인, 캐릭터 방(시작
+설정 없이 만들고 `{{char}}` 를 캐릭터 이름으로 바꿈)을 본다.
 마지막 테스트 하나만 실제 테스트 DB 로 기본 DB 읽기를 돈다."""
 
 import json
@@ -18,7 +19,7 @@ import chat_play
 from api.chat.turn_prompt import InjectedPersona
 from api.core.config import settings
 from api.db.models.chat import ChatRoom
-from factories import _add_named_media_cell, _story_with_setup
+from factories import _add_named_media_cell, _get_genre, _make_published_character, _make_user, _story_with_setup
 from replay.room_fixed import RoomFixed
 
 ROOM_ID = "11111111-1111-4111-8111-111111111111"
@@ -66,12 +67,14 @@ class FakeServer:
             "contentId": CONTENT_ID,
             "contentType": self.content_type,
             "name": "방",
-            "startingSetupId": SETUP_ID,
+            "startingSetupId": SETUP_ID if self.content_type != "character" else None,
             "turnCount": self.turn_count,
             "endingReached": self.ending,
             "stats": dict(self.stats),
             "messages": [
-                {"id": "m0", "role": "assistant", "content": "{{user}}, 왔어?\n\n{{img::" + str(CELL_ID) + "}}"}
+                {"id": "m0", "role": "assistant", "content": "{{char}}: {{user}}, 왔어?"}
+                if self.content_type == "character"
+                else {"id": "m0", "role": "assistant", "content": "{{user}}, 왔어?\n\n{{img::" + str(CELL_ID) + "}}"}
             ],
             "contentSnapshot": {
                 "stats": [
@@ -81,7 +84,7 @@ class FakeServer:
                 "endings": [{"id": ENDING_ID, "name": "새 학기의 첫 장", "judgmentPrompt": "비공개 판정문"}],
                 "shortcuts": [{"id": SHORTCUT_ID, "name": "며칠 뒤로", "description": "", "prompt": SHORTCUT_PROMPT}],
                 "suggestedReplies": ["{{user}}입니다"],
-                "pinnedStartingSetupId": str(SETUP_ROW_ID),
+                "pinnedStartingSetupId": str(SETUP_ROW_ID) if self.content_type != "character" else None,
             },
             "personaId": str(PERSONA_ID) if self.persona is not None else None,
             "personaName": self.persona.name if self.persona is not None else None,
@@ -94,10 +97,11 @@ class FakeServer:
         self.db_reads.append(room_id)
         if self.db_room_missing:
             return None
+        character = self.content_type == "character"
         fields: dict[str, Any] = {
             "content_version_id": VERSION_ID,
-            "starting_setup_entity_id": uuid.UUID(SETUP_ID),
-            "pinned_starting_setup_id": SETUP_ROW_ID,
+            "starting_setup_entity_id": None if character else uuid.UUID(SETUP_ID),
+            "pinned_starting_setup_id": None if character else SETUP_ROW_ID,
             "chat_model": "sonnet",
             "persona_id": PERSONA_ID if self.persona is not None else None,
             "persona_name": self.persona.name if self.persona is not None else None,
@@ -106,7 +110,10 @@ class FakeServer:
         turn_count = self.db_changes.get("turn_count", self.turn_count)
         fields.update({k: v for k, v in self.db_changes.items() if k != "turn_count"})
         return chat_play.DbRoom(
-            fixed=RoomFixed(**fields), turn_count=turn_count, cell_labels={str(CELL_ID): "서진/옥상"}
+            fixed=RoomFixed(**fields),
+            turn_count=turn_count,
+            cell_labels={str(CELL_ID): "서진/옥상"},
+            char_name="서진" if character else None,
         )
 
     def handler(self, request: httpx.Request) -> httpx.Response:
@@ -127,7 +134,9 @@ class FakeServer:
                     "type": self.content_type,
                     "name": "등대지기",
                     "versionNumber": 6,
-                    "startingSetups": [{"id": SETUP_ID, "name": "첫 기획 회의"}],
+                    "startingSetups": None
+                    if self.content_type == "character"
+                    else [{"id": SETUP_ID, "name": "첫 기획 회의"}],
                 },
             )
         if path == "/chat-rooms" and request.method == "POST":
@@ -329,9 +338,7 @@ def test_production_database_is_refused_before_any_request(
     # 읽기 함수를 주지 않으면 드라이버가 자기 DB 를 연다 — 그 전에, 네트워크보다 먼저 호스트를 본다.
     monkeypatch.setattr(settings, "database_url", "postgresql+asyncpg://u:p@postgres:5432/ai_character_chat")
     server: FakeServer = run["server"]
-    code = chat_play.main(
-        [*run["common"], "--content-id", CONTENT_ID], transport=httpx.MockTransport(server.handler)
-    )
+    code = chat_play.main([*run["common"], "--content-id", CONTENT_ID], transport=httpx.MockTransport(server.handler))
     assert code == 2
     assert server.calls == []
     assert "'postgres'" in capsys.readouterr().out
@@ -366,17 +373,44 @@ def test_rebase_against_another_database_is_refused(run: dict[str, Any]) -> None
     assert _records(run["log"], "rebase") == []
 
 
-def test_character_content_is_refused_before_a_room_is_made(run: dict[str, Any]) -> None:
+def test_character_content_makes_a_room_without_a_starting_setup_and_fills_in_the_character_name(
+    run: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
     run["server"].content_type = "character"
+    assert _main(run, "--content-id", CONTENT_ID) == 0
+    ((_, _, body, _),) = run["server"].paths("POST", "/chat-rooms")
+    assert body == {"contentId": CONTENT_ID, "contentType": "character"}
+    opening = _records(run["log"], "opening")[0]
+    assert opening["messages"] == ["서진: 당신, 왔어?"]
+    assert _records(run["log"], "meta")[0]["setupName"] is None
+    static = _records(run["snap"], "roomStatic")[0]
+    assert (static["charName"], static["startingSetupEntityId"], static["pinnedStartingSetupId"]) == (
+        "서진",
+        None,
+        None,
+    )
+
+
+def test_character_turn_fills_in_the_character_name_in_what_it_sends(run: dict[str, Any]) -> None:
+    run["server"].content_type = "character"
+    assert _main(run, "--content-id", CONTENT_ID) == 0
+    run["server"].turns.append(_turn({"type": "token", "delta": "응"}))
+    assert _say(run, "{{char}}, 같이 가자") == 0
+    ((_, _, body, _),) = run["server"].paths("POST", "/messages")
+    assert body == {"content": "서진, 같이 가자"}
+
+
+def test_character_room_rebase_records_the_fixed_values(run: dict[str, Any]) -> None:
+    run["server"].content_type = "character"
+    assert _main(run, "--room", ROOM_ID, "--rebase", "x") == 0
+    assert _records(run["snap"], "roomStatic")[0]["charName"] == "서진"
+
+
+def test_a_content_type_the_driver_does_not_know_is_refused_before_a_room_is_made(run: dict[str, Any]) -> None:
+    run["server"].content_type = "novel"
     assert _main(run, "--content-id", CONTENT_ID) == 2
     assert run["server"].paths("POST", "/chat-rooms") == []
     assert run["server"].db_reads == []
-
-
-def test_character_room_is_refused_on_rebase(run: dict[str, Any]) -> None:
-    run["server"].content_type = "character"
-    assert _main(run, "--room", ROOM_ID, "--rebase", "x") == 2
-    assert _records(run["snap"], "roomStatic") == []
 
 
 # ── 한 턴 · 누적 상태 · 은폐 ─────────────────────────────────────────────────
@@ -452,7 +486,10 @@ def test_records_keep_the_keys_the_pair_judge_reads(run: dict[str, Any]) -> None
     opening = _records(run["log"], "opening")[0]
     assert opening["messages"] == ["당신, 왔어?\n\n[그림: 서진/옥상]"]
     turns = _records(run["log"], "turn")
-    assert [(t["clientTurn"], t["userText"], t["reply"]) for t in turns] == [(1, "첫 말", "답 하나"), (2, None, "답 둘")]
+    assert [(t["clientTurn"], t["userText"], t["reply"]) for t in turns] == [
+        (1, "첫 말", "답 하나"),
+        (2, None, "답 둘"),
+    ]
 
 
 def test_memory_snapshot_is_written_only_when_note_or_summary_changes(run: dict[str, Any]) -> None:
@@ -839,3 +876,28 @@ async def test_db_read_returns_turn_count_fixed_values_and_cell_labels_of_the_ro
     )
     assert read.cell_labels == {str(cell.entity_id): "서진/옥상"}
     assert await chat_play.read_db_room(db_session, uuid.uuid4()) is None
+
+
+async def test_db_read_of_a_character_room_returns_the_character_name_and_no_starting_setup(
+    db_session: AsyncSession,
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_published_character(
+        db_session, creator_user_id=user.id, genre_id=(await _get_genre(db_session)).id
+    )
+    version_id = content.current_published_version_id
+    assert version_id is not None
+    room = ChatRoom(user_id=user.id, content_id=content.id, content_version_id=version_id, turn_count=2)
+    db_session.add(room)
+    await db_session.flush()
+
+    read = await chat_play.read_db_room(db_session, room.id)
+
+    assert read is not None
+    assert (read.char_name, read.fixed.starting_setup_entity_id, read.fixed.pinned_starting_setup_id) == (
+        "캐릭터",
+        None,
+        None,
+    )
