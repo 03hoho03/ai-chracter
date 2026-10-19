@@ -46,8 +46,8 @@ export function NovelPublicSection({ novel }: { novel: PublishableNovel }) {
   const actions = useNovelPublishActions(novel);
   const status = actions.publication.data;
   const view = status === undefined ? undefined : toPublicationView(status);
-  // 좋아요·조회 수는 노벨 작품 정보에만 있다 — 공개 중일 때만 묻는다.
-  const counts = useWebnovelQuery(novel.id, { enabled: view?.kind === "public" }).data;
+  // 좋아요·조회 수는 노벨 작품 정보에만 있다 — 공개 중일 때만 묻는다. 판매가 멈춘 노벨은 게시자에게도 404 라 묻지 않는다.
+  const counts = useWebnovelQuery(novel.id, { enabled: view?.kind === "public" && !view.salesStopped }).data;
 
   if (status === undefined || view === undefined) return null;
 
@@ -361,17 +361,22 @@ function ViewActions({
           </Button>,
         );
       }
+      // 판매가 멈춘 노벨은 게시자에게도 노벨 화면이 열리지 않는다(소장자만 읽는다) — 닿지 않는 길을 내지 않는다.
+      if (!view.salesStopped) {
+        buttons.push(
+          <Button key="open" asChild variant="outline" size="sm">
+            <Link to="/webnovels/$novelId" params={{ novelId }}>
+              노벨에서 보기
+            </Link>
+          </Button>,
+        );
+      }
+      if (view.salesStopped) buttons.push(<InquiryButton key="inquiry" />);
       buttons.push(
-        <Button key="open" asChild variant="outline" size="sm">
-          <Link to="/webnovels/$novelId" params={{ novelId }}>
-            노벨에서 보기
-          </Link>
-        </Button>,
         <Button key="withdraw" type="button" variant="ghost" size="sm" onClick={onWithdraw}>
           공개 거두기
         </Button>,
       );
-      if (view.salesStopped) buttons.push(<InquiryButton key="inquiry" />);
       break;
     case "inReview":
       buttons.push(

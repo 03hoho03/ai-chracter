@@ -60,6 +60,7 @@ describe("toPublishedPriceRows", () => {
         [
           { chapterId: "c7", ordinal: 7, price: 0 },
           { chapterId: "c2", ordinal: 2, price: 0 },
+          { chapterId: "c5", ordinal: 5, price: 0 },
           { chapterId: "c6", ordinal: 6, price: 30 },
         ],
         5,
