@@ -12,6 +12,7 @@ import { formatCompactCount } from "@/shared/lib/number/formatCompactCount";
 
 import type { PublishRunResult } from "../api/usePublishNovelRun";
 import { isRetryablePublishFailure, toPublishFailureMessage } from "../model/publishFailure";
+import { toBuyerPolicyCopy } from "../model/buyerPolicyCopy";
 import {
   REVIEW_REQUESTED_MESSAGE,
   toPublicationView,
@@ -164,6 +165,7 @@ function ViewBody({
   counts: { likeCount: number; viewCount: number } | undefined;
 }) {
   const pricing = useCloverPricingQuery().data;
+  const buyerPolicy = toBuyerPolicyCopy(pricing);
   const priceSentence = toPublishPriceSentence(
     pricing === undefined ? undefined : { freeChapterCount: pricing.novelFreeChapterCount, chapterPrice: pricing.novelReadCost },
   );
@@ -194,7 +196,7 @@ function ViewBody({
     case "restricted":
       return (
         <Lines>
-          <p className="text-foreground">운영 정책에 따라 노벨에서 내려졌어요. 소장한 회원도 지금은 볼 수 없어요.</p>
+          <p className="text-foreground">{buyerPolicy.restrictedStatus}</p>
           <p>조치에 대해 묻고 싶은 것이 있으면 고객센터로 문의해 주세요.</p>
         </Lines>
       );
@@ -224,10 +226,10 @@ function ViewBody({
     case "withdrawn":
       return (
         <Lines>
-          <p className="text-foreground">공개를 거둔 소설이에요. 노벨에 보이지 않고, 소장한 회원도 지금은 볼 수 없어요.</p>
+          <p className="text-foreground">{buyerPolicy.withdrawnStatus}</p>
           <p>
             {view.canReopen
-              ? "다시 공개하면 소장한 화도 다시 열려요."
+              ? buyerPolicy.withdrawnReopen
               : "원작이 지금 공개돼 있지 않아 다시 공개할 수 없어요."}
           </p>
         </Lines>

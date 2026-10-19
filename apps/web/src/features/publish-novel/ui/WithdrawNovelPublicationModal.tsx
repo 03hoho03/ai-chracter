@@ -9,9 +9,11 @@ import {
 } from "@ai-character-chat/ui/components/dialog";
 import { useState } from "react";
 
+import { useCloverPricingQuery } from "@/entities/clover";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { useWithdrawNovelPublicationMutation } from "../api/useWithdrawNovelPublicationMutation";
+import { toBuyerPolicyCopy } from "../model/buyerPolicyCopy";
 
 /** 거두기와 신청 취소의 문구. 둘은 같은 요청이다 — 서버가 승인 대기면 신청을 지우고 아니면 거둔다. 신청 취소는 아무에게도
  * 보인 적 없는 글이라 잃는 것이 없어 실행 버튼을 `outline` 으로 두고, 잃는 것이 있는 거두기만 `destructive` 틴트다.
@@ -19,8 +21,8 @@ import { useWithdrawNovelPublicationMutation } from "../api/useWithdrawNovelPubl
 const COPY = {
   withdraw: {
     title: "노벨 공개를 거둘까요?",
-    description:
-      "목록과 작품 화면에서 바로 사라지고, 소장한 회원도 더 볼 수 없게 돼요. 클로버는 돌려드리지 않아요. 나중에 다시 공개하면 소장한 화도 다시 열려요.",
+    // 소장한 회원에게 생기는 일은 정책 스위치에 따라 달라 `toBuyerPolicyCopy` 가 고른다.
+    description: undefined,
     confirm: "공개 거두기",
     dismiss: "취소",
     pending: "거두는 중…",
@@ -43,12 +45,14 @@ type WithdrawNovelPublicationModalProps = {
   mode: keyof typeof COPY;
 };
 
-/** 노벨 공개 거두기·신청 취소 확인. 거두기는 목록·작품 화면에서 바로 사라지고 소장한 회원도 못 보며 클로버는 돌려주지
- * 않는다는 것을, 다시 공개하면 소장한 화가 다시 열린다는 것과 함께 확정 전에 말한다. 요청이 끝났으면 `true` — 신청
+/** 노벨 공개 거두기·신청 취소 확인. 거두기는 목록·작품 화면에서 바로 사라진다는 것과 소장한 회원에게 생기는 일(정책
+ * 스위치에 따라 — 꺼져 있으면 못 보고 다시 공개하면 다시 열리며, 켜져 있으면 계속 읽는다)을 확정 전에 말한다. 요청이 끝났으면 `true` — 신청
  * 취소였는지 그사이 승인돼 거두기가 됐는지는 호출부가 다시 받은 공개 상태로 가른다. */
 export const WithdrawNovelPublicationModal = createCallable<WithdrawNovelPublicationModalProps, boolean>(({ call, novelId, mode }) => {
   const withdraw = useWithdrawNovelPublicationMutation(novelId);
   const copy = COPY[mode];
+  const buyerPolicy = toBuyerPolicyCopy(useCloverPricingQuery().data);
+  const description = copy.description ?? buyerPolicy.withdrawConfirm;
   const [error, setError] = useState<string | undefined>(undefined);
 
   async function handleWithdraw() {
@@ -67,7 +71,7 @@ export const WithdrawNovelPublicationModal = createCallable<WithdrawNovelPublica
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>{copy.title}</DialogTitle>
-          <DialogDescription className="break-keep">{copy.description}</DialogDescription>
+          <DialogDescription className="break-keep">{description}</DialogDescription>
         </DialogHeader>
 
         {error !== undefined && (

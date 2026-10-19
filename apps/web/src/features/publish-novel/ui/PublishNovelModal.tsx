@@ -15,6 +15,7 @@ import { useId, useState } from "react";
 import { useCloverPricingQuery } from "@/entities/clover";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
+import { toBuyerPolicyCopy } from "../model/buyerPolicyCopy";
 import { toPublishPriceSentence } from "../model/publicationView";
 
 type PublishNovelModalProps = {
@@ -105,7 +106,7 @@ export const PublishNovelModal = createCallable<PublishNovelModalProps, number |
               ))}
             </ul>
 
-            <p className="text-sm break-keep text-muted-foreground">공개를 거두면 소장한 회원도 더 볼 수 없게 돼요.</p>
+            <p className="text-sm break-keep text-muted-foreground">{toBuyerPolicyCopy(pricing).publishWithdrawNote}</p>
           </DialogBody>
 
           <DialogFooter>
