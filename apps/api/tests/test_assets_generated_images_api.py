@@ -698,7 +698,7 @@ async def test_delete_generated_image_conflicts_when_used_by_media_book_draft(
 
 # ── 생성 이미지 삭제가 저장소 삭제를 기다리는 동안 DB 트랜잭션을 쥐지 않는다 ──────────────────────
 #
-# 저장소 삭제 넷(원본·변형 셋 — 프레임 모음은 없어도 지운다)을 기다리는 동안 사용처 조회가 연 트랜잭션이 열려 있으면 커넥션 하나를 쥔다. 그래서
+# 저장소 삭제(원본과 `build_variant_keys` 전부 — 프레임 모음·움직이는 변형은 없어도 지운다)를 기다리는 동안 사용처 조회가 연 트랜잭션이 열려 있으면 커넥션 하나를 쥔다. 그래서
 # 조회를 커밋으로 닫고 저장소를 지운 뒤, 짧은 트랜잭션에서 사용처를 다시 보고 행을 지운다.
 
 
@@ -719,7 +719,7 @@ async def test_delete_generated_image_holds_no_transaction_while_deleting_from_s
         resp = await db_client.delete(f"/me/generated-images/{asset.id}")
 
     assert resp.status_code == 204
-    assert seen == [("delete", 0)] * 4
+    assert seen == [("delete", 0)] * (1 + len(build_variant_keys(asset.storage_key)))
     assert await db_session.get(Asset, asset.id) is None
 
 

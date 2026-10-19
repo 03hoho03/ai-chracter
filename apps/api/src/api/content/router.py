@@ -91,6 +91,8 @@ from api.core.config import settings
 from api.core.constants import WITHDRAWN_USER_NICKNAME
 from api.core.rate_limit_gate import enforce_publish_screen_limit
 from api.core.s3 import (
+    build_animated_display_key,
+    build_animated_thumbnail_key,
     build_display_key,
     build_frame_sheet_key,
     build_thumbnail_key,
@@ -425,7 +427,13 @@ async def _resolve_display_url(db: AsyncSession, asset_id: uuid.UUID | None) -> 
     asset = await db.get(Asset, asset_id)
     if asset is None:
         return None
-    return await run_in_threadpool(generate_presigned_get_url, build_display_key(asset.storage_key))
+    # 움직이는 대표 이미지는 백그라운드가 움직이는 변형을 다 올린 뒤에만 그것을 서명한다(그 전에는 없는 객체다).
+    key = (
+        build_animated_display_key(asset.storage_key)
+        if asset.animated_variants_ready
+        else build_display_key(asset.storage_key)
+    )
+    return await run_in_threadpool(generate_presigned_get_url, key)
 
 
 async def _resolve_thumbnail_url(db: AsyncSession, asset_id: uuid.UUID | None) -> str | None:
@@ -439,9 +447,12 @@ async def _resolve_thumbnail_url(db: AsyncSession, asset_id: uuid.UUID | None) -
     asset = await db.get(Asset, asset_id)
     if asset is None:
         return None
-    return await run_in_threadpool(
-        generate_presigned_get_url, build_thumbnail_key(asset.storage_key)
+    key = (
+        build_animated_thumbnail_key(asset.storage_key)
+        if asset.animated_variants_ready
+        else build_thumbnail_key(asset.storage_key)
     )
+    return await run_in_threadpool(generate_presigned_get_url, key)
 
 
 @router.get("/users/{id}/profile")

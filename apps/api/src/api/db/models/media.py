@@ -2,7 +2,10 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, SmallInteger, Text, Uuid, func
+from typing import Any
+
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Integer, SmallInteger, Text, Uuid, false, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base
@@ -55,7 +58,7 @@ class Asset(Base):
         Uuid, ForeignKey("image_generation_requests.id"), nullable=True
     )
     # 이 자산 이미지의 픽셀 너비·높이. 화면이 이미지를 제 비율로 그리려고 쓰며, 둘은 언제나 함께
-    # 기록한다. NULL 은 이 컬럼이 생기기 전에 만들어져 아직 값을 채우지 못했거나, 원본을 읽지
+    # 기록한다. 크롭(`crop`)이 있으면 크롭한 크기다 — 화면에 그려지는 변형이 그 크기라서다. NULL 은 이 컬럼이 생기기 전에 만들어져 아직 값을 채우지 못했거나, 원본을 읽지
     # 못해 크기를 모르는 자산이다 — 그런 자산은 화면이 고정 비율 칸에 맞춰 그린다.
     width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     height: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -63,6 +66,14 @@ class Asset(Base):
     # 이 값으로 첫 프레임 썸네일 대신 프레임 모음을 싣는다. NULL 은 이 컬럼이 생기기 전에 만들어진 자산으로, 그때는
     # 화면이 모든 그림을 정지 WebP 로 바꿔 올렸으므로 정지 그림으로 다룬다.
     frame_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 움직이는 대표 이미지의 크롭 영역 `{x, y, width, height}`(원본 픽셀). 화면의 크롭 모달은 canvas 로 한 장만 그려
+    # 움직임을 지우므로, GIF 는 원본을 그대로 올리고 영역만 보내 서버가 모든 프레임에 같은 크롭을 건다. 원본은 크롭하지
+    # 않은 채 두고 변형에만 적용한다. 정지 그림은 화면이 이미 잘라 올리므로 NULL 이다.
+    crop: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    # 움직이는 대표 이미지의 움직이는 변형(`_thumb_anim.webp`·`_display_anim.webp`)이 다 올라갔는가. 업로드 완료는
+    # 정지 변형만 만들고 응답하며, 움직이는 변형은 그 뒤에 백그라운드로 만든다 — 끝나기 전에는 카드·상세가 정지 변형을
+    # 받는다. 정지 그림은 늘 false 다.
+    animated_variants_ready: Mapped[bool] = mapped_column(Boolean, server_default=false(), nullable=False)
 
 
 class ImageGenerationRequest(Base):

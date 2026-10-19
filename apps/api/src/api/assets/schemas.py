@@ -38,9 +38,20 @@ UPLOAD_SIZE_LIMIT_BYTES: dict[AssetPurpose, int] = {
 }
 
 
+class UploadCrop(CamelModel):
+    """원본 픽셀 좌표의 크롭 영역. 움직이는 대표 이미지(GIF)만 보낸다 — 화면의 크롭 모달은 canvas 로 한 장만 그려 움직임을
+    지우므로, 원본은 그대로 올리고 영역만 받아 서버가 모든 프레임에 건다."""
+
+    x: int = Field(ge=0)
+    y: int = Field(ge=0)
+    width: int = Field(ge=1)
+    height: int = Field(ge=1)
+
+
 class PresignedUploadRequest(CamelModel):
     content_type: str = Field(min_length=1)
     purpose: AssetPurpose
+    crop: UploadCrop | None = None
 
 
 class PresignedUploadResponse(CamelModel):

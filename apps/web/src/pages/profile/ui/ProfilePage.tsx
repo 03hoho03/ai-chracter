@@ -94,15 +94,17 @@ function ProfileBody({ query, userId, isOwner, contentType, onContentTypeChange 
           <EditProfileDialog
             userId={userId}
             profile={profile}
-            beforeUpload={(file) =>
-              ImageCropModal.call({
+            beforeUpload={async (file) => {
+              const cropped = await ImageCropModal.call({
                 file,
                 // 유저 프로필 사진은 ContentType이 아니라 toThumbnailAspect 매핑 밖이고, 아바타는
                 // 전부 원형 1:1이라 리터럴로 둔다.
                 aspect: 1,
                 shape: "round",
-              })
-            }
+              });
+              // 프로필 사진은 움짤을 받지 않아(`keepAnimation` 없음) 언제나 잘라낸 파일 하나다.
+              return cropped?.file;
+            }}
           />
         )}
       </section>

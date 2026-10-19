@@ -15,11 +15,19 @@ import {
 } from "@ai-character-chat/ui/components/dialog";
 import { Slider } from "@ai-character-chat/ui/components/slider";
 
+import type { PreparedUpload } from "@/shared/api/asset/uploadAsset";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { cropToFile } from "../lib/cropToFile";
 
-export type ImageCropModalProps = { file: File; aspect: number; shape?: "rect" | "round" };
+export type ImageCropModalProps = {
+  file: File;
+  aspect: number;
+  shape?: "rect" | "round";
+  /** GIF 를 움직이는 채로 둔다 — canvas 로 자르면 첫 프레임만 남으므로, 원본 파일과 크롭 영역을 그대로 돌려줘 서버가
+   * 모든 프레임을 자르게 한다. 그 영역을 서버에 넘기는 업로드(대표 이미지)에서만 켠다. */
+  keepAnimation?: boolean;
+};
 
 // 확대는 원본 크기와 무관하게 항상 1~3배다.
 // 처음엔 "결과가 목표 해상도 밑으로 안 내려가는 배율"로 상한을 계산했는데, AI 생성 이미지가
@@ -31,10 +39,10 @@ const MIN_ZOOM = 1;
 const MAX_ZOOM = 3;
 
 // react-call 자체 호출형. 성공 후 동작이 호출부마다 갈리지 않고
-// 잘라낸 File을 그대로 돌려주는 순수 입력 모달이라 mutationFn 주입형이 아니다. 취소·ESC·바깥클릭·✕는
+// 잘라낸 File(움직이는 GIF 는 원본과 크롭 영역)을 그대로 돌려주는 순수 입력 모달이라 mutationFn 주입형이 아니다. 취소·ESC·바깥클릭·✕는
 // 전부 onOpenChange 한 지점으로 모여 call.end(undefined)로 수렴한다(GeneratedImagePickerModal과 동일 패턴).
-export const ImageCropModal = createCallable<ImageCropModalProps, File | undefined>(
-  ({ call, file, aspect, shape = "rect" }) => {
+export const ImageCropModal = createCallable<ImageCropModalProps, PreparedUpload | undefined>(
+  ({ call, file, aspect, shape = "rect", keepAnimation = false }) => {
     const isOpen = !call.ended;
 
     const [imageUrl, setImageUrl] = useState<string>();
@@ -53,9 +61,15 @@ export const ImageCropModal = createCallable<ImageCropModalProps, File | undefin
 
     const handleApply = async () => {
       if (!croppedAreaPixels) return;
+      if (keepAnimation && file.type === "image/gif") {
+        // 라이브러리가 주는 영역은 소수 픽셀이라 반올림한다. 경계를 1px 넘는 것은 서버가 그림 안으로 자른다.
+        const { x, y, width, height } = croppedAreaPixels;
+        call.end({ file, crop: { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) } });
+        return;
+      }
       setIsApplying(true);
       try {
-        call.end(await cropToFile(file, croppedAreaPixels));
+        call.end({ file: await cropToFile(file, croppedAreaPixels) });
       } catch {
         toast.error("이미지를 자르지 못했어요. 다시 시도해주세요.");
         setIsApplying(false);

@@ -12465,6 +12465,7 @@ export interface components {
             /** Contenttype */
             contentType: string;
             purpose: components["schemas"]["AssetPurpose"];
+            crop?: components["schemas"]["UploadCrop"] | null;
         };
         /** PresignedUploadResponse */
         PresignedUploadResponse: {
@@ -13442,6 +13443,21 @@ export interface components {
             bio?: string | null;
             /** Profileimageassetid */
             profileImageAssetId?: string | null;
+        };
+        /**
+         * UploadCrop
+         * @description 원본 픽셀 좌표의 크롭 영역. 움직이는 대표 이미지(GIF)만 보낸다 — 화면의 크롭 모달은 canvas 로 한 장만 그려 움직임을
+         *     지우므로, 원본은 그대로 올리고 영역만 받아 서버가 모든 프레임에 건다.
+         */
+        UploadCrop: {
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
         };
         /** UsageMetricsResponse */
         UsageMetricsResponse: {

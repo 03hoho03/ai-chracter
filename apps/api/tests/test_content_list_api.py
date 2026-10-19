@@ -305,6 +305,39 @@ async def test_list_signs_thumbnail_variant_while_detail_signs_display_variant(
     assert ".png" not in detail_url
 
 
+async def test_list_and_detail_sign_animated_variants_once_they_are_ready(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """움직이는 대표 이미지는 백그라운드가 움직이는 변형을 다 올린 뒤에만 카드·상세가 그것을 받는다 — 그 전에는 정지
+    변형이다(준비되기 전에 움직이는 키를 서명하면 없는 객체를 가리킨다)."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = (await _get_genres(db_session))[0]
+    content = await _make_published_content(db_session, creator_user_id=user.id, genre_id=genre.id, name="캐릭터")
+    detail = await db_session.scalar(
+        sa.select(CharacterVersionDetail).where(
+            CharacterVersionDetail.content_version_id == content.current_published_version_id
+        )
+    )
+    assert detail is not None and detail.thumbnail_asset_id is not None
+    asset = await db_session.get(Asset, detail.thumbnail_asset_id)
+    assert asset is not None
+    asset.frame_count = 12
+    await db_session.commit()
+
+    [item] = (await db_client.get("/contents", params={"type": "character"})).json()["items"]
+    assert "_thumb.webp" in item["thumbnailUrl"]
+    assert "_display.webp" in (await db_client.get(f"/contents/{content.id}")).json()["thumbnailUrl"]
+
+    asset.animated_variants_ready = True
+    await db_session.commit()
+
+    [item] = (await db_client.get("/contents", params={"type": "character"})).json()["items"]
+    assert "_thumb_anim.webp" in item["thumbnailUrl"]
+    assert "_display_anim.webp" in (await db_client.get(f"/contents/{content.id}")).json()["thumbnailUrl"]
+
+
 async def test_list_thumbnail_url_is_identical_within_a_window_and_changes_at_its_boundary(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:

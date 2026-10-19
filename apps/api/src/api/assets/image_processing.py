@@ -10,12 +10,19 @@ import io
 import math
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, ParamSpec, TypeVar
 
 from starlette.concurrency import run_in_threadpool
 
 from api.core.config import settings
-from api.core.s3 import build_display_key, build_frame_sheet_key, build_thumbnail_key
+from api.core.s3 import (
+    build_animated_display_key,
+    build_animated_thumbnail_key,
+    build_display_key,
+    build_frame_sheet_key,
+    build_thumbnail_key,
+)
 
 if TYPE_CHECKING:
     from PIL.Image import Image as PILImage
@@ -66,6 +73,25 @@ IMAGE_WORK_CONCURRENCY = settings.image_decode_concurrency
 # 스레드풀을 채워, 이미지와 무관한 `run_in_threadpool` 호출(저장소 왕복·비밀번호 해시)까지 줄을 선다.
 # 모듈 전역이라 처음 기다림이 생긴 이벤트 루프에 묶인다 — 앱은 루프 하나로 돌고, 테스트도 세션 루프 하나다.
 _image_work_slots = asyncio.Semaphore(IMAGE_WORK_CONCURRENCY)
+
+
+@dataclass(frozen=True)
+class ImageCrop:
+    """원본 픽셀 좌표의 크롭 영역. 움직이는 대표 이미지는 화면이 자르지 못해(canvas 는 한 장만 그린다) 영역만 받아 서버가
+    모든 프레임에 건다. 정지 그림은 화면이 이미 잘라 올리므로 쓰지 않는다."""
+
+    x: int
+    y: int
+    width: int
+    height: int
+
+    def box(self, size: tuple[int, int]) -> tuple[int, int, int, int]:
+        """그림 경계 안으로 줄인 `(left, top, right, bottom)`. 화면의 영역은 반올림으로 경계를 1px 넘을 수 있어 거절하지
+        않고 자른다. 경계 밖에서 시작하는 영역도 1px 은 남긴다(빈 그림을 만들지 않는다)."""
+        width, height = size
+        left = min(max(self.x, 0), width - 1)
+        top = min(max(self.y, 0), height - 1)
+        return left, top, max(left + 1, min(self.x + self.width, width)), max(top + 1, min(self.y + self.height, height))
 
 
 class ImageTooLargeError(ValueError):
@@ -153,37 +179,44 @@ def read_frame_count(image_bytes: bytes) -> int:
         return int(getattr(image, "n_frames", 1))
 
 
-def generate_thumbnail(image_bytes: bytes) -> bytes:
+def generate_thumbnail(image_bytes: bytes, crop: ImageCrop | None = None) -> bytes:
     """CPU-bound (Pillow) — run via `run_image_work`.
 
     Shrinks the long edge to THUMBNAIL_MAX_EDGE (never upscales) and encodes as WebP."""
-    return _shrink_to_webp(image_bytes, THUMBNAIL_MAX_EDGE, THUMBNAIL_WEBP_QUALITY)
+    return _shrink_to_webp(image_bytes, THUMBNAIL_MAX_EDGE, THUMBNAIL_WEBP_QUALITY, crop)
 
 
-def generate_display_image(image_bytes: bytes) -> bytes:
+def generate_display_image(image_bytes: bytes, crop: ImageCrop | None = None) -> bytes:
     """CPU-bound (Pillow) — run via `run_image_work`.
 
     `generate_thumbnail` 과 같은 규칙으로 긴 변을 DISPLAY_MAX_EDGE 로 줄인다. 원본이 더 작으면 원본 크기 그대로다."""
-    return _shrink_to_webp(image_bytes, DISPLAY_MAX_EDGE, DISPLAY_WEBP_QUALITY)
+    return _shrink_to_webp(image_bytes, DISPLAY_MAX_EDGE, DISPLAY_WEBP_QUALITY, crop)
 
 
-def generate_variants(storage_key: str, image_bytes: bytes) -> list[tuple[str, bytes]]:
+def generate_variants(storage_key: str, image_bytes: bytes, crop: ImageCrop | None = None) -> list[tuple[str, bytes]]:
     """CPU-bound (Pillow) — run via `run_image_work`.
 
     원본 곁에 둘 변형 전부를 `(저장 키, WebP 바이트)` 로 만든다. 썸네일·표시용은 늘(움직이는 그림이면 첫 프레임),
-    프레임 모음은 움직이는 그림에만 만든다. 응답이 썸네일·표시용 키를 존재 확인 없이 유도하므로, 자산을 만드는 경로는
-    이 목록을 전부 올린 뒤에만 READY 로 둔다. 키 순서는 `build_variant_keys`(지우는 쪽) 와 같다."""
+    프레임 모음은 움직이는 그림에만 만든다. `crop` 은 셋 모두에 같게 건다. 응답이 썸네일·표시용 키를 존재 확인 없이
+    유도하므로, 자산을 만드는 경로는 이 목록을 전부 올린 뒤에만 READY 로 둔다. 키 순서는 `build_variant_keys`(지우는
+    쪽) 와 같다. 움직이는 변형은 여기서 만들지 않는다 — 오래 걸려 업로드 완료 뒤 `generate_animated_variants` 로 만든다."""
     variants = [
-        (build_thumbnail_key(storage_key), generate_thumbnail(image_bytes)),
-        (build_display_key(storage_key), generate_display_image(image_bytes)),
+        (build_thumbnail_key(storage_key), generate_thumbnail(image_bytes, crop)),
+        (build_display_key(storage_key), generate_display_image(image_bytes, crop)),
     ]
-    frame_sheet = _generate_frame_sheet(image_bytes)
+    frame_sheet = _generate_frame_sheet(image_bytes, crop)
     if frame_sheet is not None:
         variants.append((build_frame_sheet_key(storage_key), frame_sheet))
     return variants
 
 
-def _generate_frame_sheet(image_bytes: bytes) -> bytes | None:
+def _check_animated_pixels(frame_count: int, size: tuple[int, int]) -> None:
+    width, height = size
+    if frame_count * width * height > MAX_ANIMATED_DECODE_PIXELS:
+        raise ImageTooLargeError(frame_count * width * height, max_pixels=MAX_ANIMATED_DECODE_PIXELS)
+
+
+def _generate_frame_sheet(image_bytes: bytes, crop: ImageCrop | None) -> bytes | None:
     """움직이는 그림에서 처음과 마지막을 포함해 프레임을 고르게 `FRAME_SHEET_SLOTS` 장 뽑아 격자 한 장에 붙인다.
     정지 그림이면 `None`. 격자는 정사각에 가깝게 열을 먼저 채우고(3장 2×2, 9장 3×3), 비는 칸은 투명이다. 칸은 프레임
     비율 그대로 줄이고 늘리지 않는다."""
@@ -193,9 +226,9 @@ def _generate_frame_sheet(image_bytes: bytes) -> bytes | None:
         frame_count = int(getattr(original, "n_frames", 1))
         if frame_count <= 1:
             return None
-        width, height = original.size
-        if frame_count * width * height > MAX_ANIMATED_DECODE_PIXELS:
-            raise ImageTooLargeError(frame_count * width * height, max_pixels=MAX_ANIMATED_DECODE_PIXELS)
+        _check_animated_pixels(frame_count, original.size)
+        box = crop.box(original.size) if crop is not None else (0, 0, *original.size)
+        width, height = box[2] - box[0], box[3] - box[1]
 
         slots = min(FRAME_SHEET_SLOTS, frame_count)
         indices = [round(slot * (frame_count - 1) / (slots - 1)) for slot in range(slots)]
@@ -207,7 +240,7 @@ def _generate_frame_sheet(image_bytes: bytes) -> bytes | None:
         sheet = Image.new("RGBA", (columns * tile_width, rows * tile_height), (0, 0, 0, 0))
         for slot, index in enumerate(indices):
             original.seek(index)
-            frame = original.convert("RGBA").resize((tile_width, tile_height))
+            frame = original.convert("RGBA").crop(box).resize((tile_width, tile_height))
             row, column = divmod(slot, columns)
             sheet.paste(frame, (column * tile_width, row * tile_height))
 
@@ -216,12 +249,61 @@ def _generate_frame_sheet(image_bytes: bytes) -> bytes | None:
     return output.getvalue()
 
 
-def _shrink_to_webp(image_bytes: bytes, max_edge: int, quality: int) -> bytes:
+def generate_animated_variants(storage_key: str, image_bytes: bytes, crop: ImageCrop | None) -> list[tuple[str, bytes]]:
+    """CPU-bound (Pillow) — run via `run_image_work`.
+
+    움직이는 대표 이미지의 움직이는 변형(카드 긴 변 512, 상세 1024)을 `(저장 키, 움직이는 WebP 바이트)` 로 만든다. 정지
+    그림이면 빈 목록. 모든 프레임에 같은 크롭을 걸고 프레임별 길이를 그대로 옮긴다.
+
+    프레임을 다 들고 `save(save_all=True)` 하지 않고 Pillow 의 애니메이션 인코더에 한 장씩 넣는다 — 결과 바이트는 같고
+    메모리는 2~3배 덜 쓴다(로컬 측정: 896×1152 100프레임의 1024 변형 313MB → 110MB). 그 인코더(`PIL._webp.
+    WebPAnimEncoder`)는 공개 API 가 아니라 Pillow 를 올리면 바뀔 수 있다 — 이 함수의 테스트가 프레임 수·길이·크기를
+    확인해 깨지면 드러난다."""
+    from PIL import _webp
+
+    with _open_for_decode(image_bytes) as original:
+        frame_count = int(getattr(original, "n_frames", 1))
+        if frame_count <= 1:
+            return []
+        _check_animated_pixels(frame_count, original.size)
+        box = crop.box(original.size) if crop is not None else (0, 0, *original.size)
+        cropped_size = (box[2] - box[0], box[3] - box[1])
+        targets = [
+            (build_animated_thumbnail_key(storage_key), _fit_within(cropped_size, THUMBNAIL_MAX_EDGE)),
+            (build_animated_display_key(storage_key), _fit_within(cropped_size, DISPLAY_MAX_EDGE)),
+        ]
+        encoders = [_webp.WebPAnimEncoder(size, 0, 0, False, 3, 5, False, False) for _, size in targets]
+        timestamp = 0
+        for index in range(frame_count):
+            original.seek(index)
+            frame = original.convert("RGBA").crop(box)
+            for encoder, (_, size) in zip(encoders, targets, strict=True):
+                resized = frame if frame.size == size else frame.resize(size)
+                encoder.add(resized.getim(), timestamp, False, THUMBNAIL_WEBP_QUALITY, 100, 0)
+            timestamp += int(original.info.get("duration", 0))
+        variants = []
+        for encoder, (key, _) in zip(encoders, targets, strict=True):
+            encoder.add(None, timestamp, False, THUMBNAIL_WEBP_QUALITY, 100, 0)
+            variants.append((key, bytes(encoder.assemble("", b"", ""))))
+    return variants
+
+
+def _fit_within(size: tuple[int, int], max_edge: int) -> tuple[int, int]:
+    """긴 변이 `max_edge` 를 넘으면 비율을 지켜 줄인 크기. 늘리지 않는다(`Image.thumbnail` 과 같은 규칙)."""
+    width, height = size
+    scale = min(1.0, max_edge / max(width, height))
+    return max(1, round(width * scale)), max(1, round(height * scale))
+
+
+def _shrink_to_webp(image_bytes: bytes, max_edge: int, quality: int, crop: ImageCrop | None = None) -> bytes:
     """Like `generate_blurred_image`, always normalizes to RGBA first so palette-mode sources and the output
-    encoding have one predictable mode. `Image.thumbnail` only ever shrinks, so small sources keep their size."""
+    encoding have one predictable mode. `Image.thumbnail` only ever shrinks, so small sources keep their size.
+    `crop` 이 있으면 줄이기 전에 그 영역으로 자른다(움직이는 그림은 첫 프레임)."""
     with _open_for_decode(image_bytes) as original:
         original.load()
         shrunk = original.convert("RGBA")
+        if crop is not None:
+            shrunk = shrunk.crop(crop.box(original.size))
         shrunk.thumbnail((max_edge, max_edge))
 
     output = io.BytesIO()

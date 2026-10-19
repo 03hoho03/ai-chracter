@@ -6,7 +6,7 @@ import { Camera, ImageOff, Images, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { toThumbnailAspectClass, type ThumbnailAspect } from "@/entities/content";
-import { uploadAsset, type AssetPurpose } from "@/shared/api/asset/uploadAsset";
+import { uploadAsset, type AssetPurpose, type PreparedUpload } from "@/shared/api/asset/uploadAsset";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
 import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
 
@@ -31,10 +31,10 @@ type GeneratedImageFieldProps = {
    * 따라가므로 스토리 빌더에서만 이 줄이 56px 높아진다. */
   previewAspect?: ThumbnailAspect;
   /** 슬라이스끼리는 직접 import 하지 않는 관례라(eslint 가 강제하지는 않는다) `features/crop-image`를
-   * 여기서 부르지 않고 콜백 주입으로 뒤집는다. 파일 선택 직후 원본을 가로채 가공한 File을 돌려주고,
-   * undefined를 돌려주면 취소로 간주해 업로드하지 않는다. 갤러리 선택 경로(`handlePickFromGallery`)는
+   * 여기서 부르지 않고 콜백 주입으로 뒤집는다. 파일 선택 직후 원본을 가로채 가공한 파일(움직이는 GIF 는 원본과 크롭
+   * 영역)을 돌려주고, undefined를 돌려주면 취소로 간주해 업로드하지 않는다. 갤러리 선택 경로(`handlePickFromGallery`)는
    * 거치지 않는다. */
-  beforeUpload?: (file: File) => Promise<File | undefined>;
+  beforeUpload?: (file: File) => Promise<PreparedUpload | undefined>;
   /** 파일 고르기 입력에 붙일 ref. 폼이 발행 실패 때 이 칸으로 포커스를 보낼 수 있게 RHF `Controller` 의 `field.ref` 를 넘긴다 —
    * 그림이 없을 때(필수 오류가 나는 때) 이 칸에서 키보드로 닿는 첫 컨트롤이 파일 업로드다. 키보드로 발행했으면 그 라벨에 포커스 링이
    * 보인다(마우스로 눌렀으면 링 없이 포커스만 온다). */
@@ -87,14 +87,15 @@ export function GeneratedImageField({
     event.target.value = "";
     if (!file) return;
 
-    const prepared = beforeUpload ? await beforeUpload(file) : file;
+    const prepared = beforeUpload ? await beforeUpload(file) : { file };
     if (!prepared) return; // 크롭 취소 — 기존 이미지를 그대로 둔다
 
-    setSelectedFile(prepared);
+    // 움직이는 GIF 는 크롭하지 않은 원본이 그려진다(칸 비율로 가운데가 보인다). 크롭은 서버가 변형에 건다.
+    setSelectedFile(prepared.file);
     setIsUploading(true);
     try {
-      const assetId = await uploadAsset(prepared, purpose);
-      onUploadComplete(assetId, prepared);
+      const assetId = await uploadAsset(prepared.file, purpose, prepared.crop);
+      onUploadComplete(assetId, prepared.file);
       onChange({ assetId });
     } catch (error) {
       toast.error(uploadAssetErrorMessage(error));
@@ -182,7 +183,7 @@ export function GeneratedImageField({
             ref={inputRef}
             id={inputId}
             type="file"
-            accept="image/png,image/jpeg,image/webp"
+            accept="image/png,image/jpeg,image/webp,image/gif"
             className="sr-only"
             disabled={isUploading}
             onChange={(event) => void handleFileChange(event)}
